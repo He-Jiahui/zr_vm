@@ -23,11 +23,16 @@ import type {
 } from './types';
 import { ZrDbgClient } from './zrdbgClient';
 
+/** 将 DAP variablesReference 限定在产生它的暂停快照中；继续运行后不可复用。 */
 type VariablesHandle = {
     handleId: number;
     stateId: number;
 };
 
+/**
+ * launch 会话拥有的本地源码查找上下文；attach 没有项目根，不进行模块路径推断。
+ * TODO: binaryRoot 已从清单计算却未被任何调试路径使用；核对二进制源码映射是否仍需它。
+ */
 type LaunchSourceContext = {
     projectPath: string;
     projectRoot: string;
@@ -36,23 +41,39 @@ type LaunchSourceContext = {
     cwd: string;
 };
 
+/**
+ * 桌面扩展的内联 DAP 桥：VS Code 请求转为 zrdbg/1，runtime 事件再转为 DAP。
+ * 每个 DebugSession 新建一个实例；launch 拥有 CLI 子进程，attach 只拥有客户端连接。
+ */
 export class ZrDebugAdapter implements vscode.DebugAdapter {
+    /** DAP 响应和事件共享消息序列；宿主通过 onDidSendMessage 订阅。 */
     private readonly emitter = new vscode.EventEmitter<vscode.DebugProtocolMessage>();
+    /** 仅登记当前停止状态下可展开的 scope/value；continued 会清空。 */
     private readonly variableHandles = new Map<number, VariablesHandle>();
+    /** 本地编辑器路径映射回 runtime 的 sourceFile，避免绝对路径断点错过相对路径模块。 */
     private readonly runtimeSourcePaths = new Map<string, string>();
+    /** 源断点意图独立于连接和模块加载状态，解析出 runtime 路径后可重放。 */
     private readonly pendingSourceBreakpoints = new PendingSourceBreakpointStore();
+    /** CLI 输出同时进入 DAP output 与 VS Code 调试控制台；显示一致性待宿主核对。 */
     private readonly debugConsole = vscode.debug.activeDebugConsole;
+    /** 每个会话的 CLI/连接诊断来源标记。 */
     private readonly sessionOutputPrefix: string;
+    /** client 是当前 zrdbg/1 连接；launcher 仅 launch 创建并由该会话拥有。 */
     private client: ZrDbgClient | undefined;
     private launcher: ZrCliLauncher | undefined;
+    /** 发往 VS Code 的 DAP 消息序号，与 zrdbg 内部请求 id 独立。 */
     private seq = 1;
+    /** stopOnEntry=false 仍等待配置完成与 entry stop 两端到齐，再自动恢复运行。 */
     private stopOnEntry = true;
     private configurationDone = false;
     private initialStopSeen = false;
     private pendingAutoContinue = false;
     private currentStateId = 0;
+    /** 只保留最近一次异常停止信息，继续执行后失效。 */
     private lastExceptionStack: string | undefined;
+    /** runtime、socket 和 CLI exit 都可宣布结束；只向宿主发一次 terminated。 */
     private terminated = false;
+    /** 记录资源归属和源码推断权限；attach 不拥有外部进程。 */
     private launchMode = false;
     private launchSourceContext: LaunchSourceContext | undefined;
     /**
@@ -62,17 +83,22 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
      */
     private requestChain: Promise<void> = Promise.resolve();
 
+    /** VS Code 内联适配器的唯一消息输出通道。 */
     readonly onDidSendMessage = this.emitter.event;
 
+    /** 工厂按调试会话创建，输出前缀帮助区分同时存在的 launch/attach 会话。 */
     constructor(private readonly session: vscode.DebugSession) {
         this.sessionOutputPrefix = `[zr:${session.name}] `;
     }
 
+    /** 宿主释放适配器的同步入口；协议 disconnect 负责异步善后。 */
     dispose(): void {
+        // TODO: 此路径固定不停止 launcher；核查 launch 失败后仅触发 dispose 时子进程的归属与退出。
         void this.shutdown(false);
         this.emitter.dispose();
     }
 
+    /** 宿主入口：串行化 DAP 请求，令 launch/attach 先完成连接，再处理后续断点与查询。 */
     handleMessage(message: vscode.DebugProtocolMessage): void {
         const request = message as DapRequest;
         if (request.type !== 'request' || typeof request.command !== 'string') {
@@ -86,6 +112,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         );
     }
 
+    /** 将受支持的 DAP 命令交给会话操作；未支持命令必须返回明确失败响应。 */
     private async dispatchRequest(request: DapRequest): Promise<void> {
         switch (request.command) {
             case 'initialize':
@@ -110,6 +137,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
                 await this.handleConfigurationDone(request);
                 return;
             case 'threads':
+                // TODO: runtime 已有 threads/threadId 协议；此桥仍固定主线程，需对照 test_debug_threads.c 扩展会话映射。
                 this.sendResponse(request, {
                     threads: [{ id: ZR_DEBUG_MAIN_THREAD_ID, name: ZR_DEBUG_MAIN_THREAD_NAME }],
                 });
@@ -156,6 +184,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         }
     }
 
+    /** 告知 VS Code 可用交互；initialized 事件留待 runtime 握手后再发，避免过早配置断点。 */
     private handleInitialize(request: DapRequest): void {
         this.sendResponse(request, {
             supportsConfigurationDoneRequest: true,
@@ -182,7 +211,10 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         });
     }
 
+    /** 启动由本会话拥有的 CLI，取得调试端点并握手后才确认 DAP launch。 */
     private async handleLaunch(request: DapRequest): Promise<void> {
+        // BUG: CLI 成功启动后若 connect/initialize 失败，此 handler 仅把错误交给 DAP 队列；
+        // launcher 未 stop，而 dispose() 调 shutdown(false)，--debug-wait 进程可继续留存。
         const args = request.arguments as unknown as ZrLaunchRequestArguments;
         const authToken = typeof args.authToken === 'string' ? args.authToken : undefined;
         const cliPath = typeof args.cliPath === 'string' ? args.cliPath : '';
@@ -194,9 +226,11 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         this.launchSourceContext = await this.createLaunchSourceContext(args.project, args.cwd);
         this.stopOnEntry = args.stopOnEntry !== false;
         this.launcher = new ZrCliLauncher((channel, text) => {
+            // CLI 原始输出用于启动诊断；独立于 zrdbg 的结构化 output 事件。
             this.sendOutput(text, channel === 'stderr' ? 'stderr' : 'stdout');
         });
         this.launcher.onExit((code) => {
+            // CLI exit 给出进程退出码；socket close 与 runtime terminated 可能更早到达。
             this.sendExitedEvent(code ?? 0);
             if (!this.terminated) {
                 this.sendTerminatedEvent();
@@ -212,6 +246,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         this.sendResponse(request);
     }
 
+    /** 连接外部拥有的 runtime；不推测项目源码根，也不在断开时终止外部 CLI。 */
     private async handleAttach(request: DapRequest): Promise<void> {
         const args = request.arguments as unknown as ZrAttachRequestArguments;
         const authToken = typeof args.authToken === 'string' ? args.authToken : undefined;
@@ -223,12 +258,16 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         this.sendResponse(request);
     }
 
+    /** launch/attach 共用握手与事件桥；连接完成后重放启动前记住的源断点。 */
     private async connectRuntime(endpoint: string, authToken?: string): Promise<void> {
         this.client = new ZrDbgClient();
         this.client.onEvent((message) => {
+            // BUG: 断点重放的 RPC 在断线/错误响应时会拒绝；这里丢弃 async Promise，
+            // 形成未处理 rejection，且后续 DAP 请求队列无法替该事件报告失败。
             void this.handleRuntimeEvent(message);
         });
         this.client.onClose((error) => {
+            // runtime 可能先于 CLI 退出断开；只把尚未结束的会话报告给 DAP。
             if (!this.terminated && error) {
                 this.sendOutput(`${error.message}\n`, 'stderr');
             }
@@ -245,6 +284,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         await this.replayDesiredSourceBreakpointsUsingKnownPaths();
     }
 
+    /** 保存一份编辑器的完整源断点意图；未连接时先回未验证断点，路径解析后再绑定。 */
     private async handleSetBreakpoints(request: DapRequest): Promise<void> {
         const args = request.arguments ?? {};
         const source = args.source as { path?: string } | undefined;
@@ -259,6 +299,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
             pathText.length > 0 &&
             !path.isAbsolute(pathText)
         ) {
+            // launch 的相对编辑器路径先以清单 source 根解释，使源码项目与构建产物的路径可会合。
             const candidate = path.normalize(path.resolve(this.launchSourceContext.sourceRoot, pathText));
             const resolved = await existingFilePath(candidate);
             if (resolved !== undefined) {
@@ -281,6 +322,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         });
     }
 
+    /** 将函数名断点及条件透传 runtime；与源断点不同，此入口要求连接已完成。 */
     private async handleSetFunctionBreakpoints(request: DapRequest): Promise<void> {
         const args = request.arguments ?? {};
         const breakpoints = Array.isArray(args.breakpoints) ? args.breakpoints : [];
@@ -296,6 +338,8 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
 
         this.sendResponse(request, {
             breakpoints: resolvedBreakpoints.map((item, index) => ({
+                // BUG: 函数断点也从 id=1 编号，与源断点及其他函数断点请求的 id 冲突；
+                // breakpoint changed 事件要求 id 定位唯一原断点，当前映射无法满足该约束。
                 id: index + 1,
                 verified: item.verified !== false,
                 line: typeof item.line === 'number' ? item.line : undefined,
@@ -303,6 +347,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         });
     }
 
+    /** 提取可重放的源断点契约，过滤无效行号，保留条件、命中计数和日志表达式。 */
     private normalizeDesiredSourceBreakpoints(rawBreakpoints: unknown[]): DesiredSourceBreakpoint[] {
         return rawBreakpoints
             .map((item) => {
@@ -324,11 +369,14 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
             .filter((breakpoint) => Number.isInteger(breakpoint.line) && breakpoint.line > 0);
     }
 
+    /** 所有初次绑定与重放共用的提交入口；成功回复后记录编辑器/runtime 路径对应关系。 */
     private async bindDesiredSourceBreakpoints(
         sourcePath: string,
         runtimeSourcePath: string,
         breakpoints: DesiredSourceBreakpoint[],
     ): Promise<ZrDbgBreakpoint[]> {
+        // BUG: DAP 每次只传一个 sourceFile；runtime 的 ZrDebug_SetBreakpoints 却替换所有 LINE 断点。
+        // 在 A.zr、B.zr 依次设断点后，B 的请求删除 A 的断点；跨文件编辑器断点无法共存。
         const result = await this.requireClient().request('setBreakpoints', {
             sourceFile: runtimeSourcePath,
             breakpoints,
@@ -341,11 +389,14 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         return resolvedBreakpoints;
     }
 
+    /** 保持编辑器请求次序与 runtime 返回次序对应；连接前或未解析项显示为未验证。 */
     private toDapSourceBreakpoints(
         sourcePath: string,
         requestedBreakpoints: DesiredSourceBreakpoint[],
         resolvedBreakpoints?: ZrDbgBreakpoint[],
     ): Array<Record<string, unknown>> {
+        // BUG: id 从每个文件的 1 重新开始；两个文件的首个断点拥有相同 id。
+        // breakpoint changed 事件靠 id 查找目标，此处不能为异步验证提供唯一关联。
         return requestedBreakpoints.map((breakpoint, index) => {
             const resolved = resolvedBreakpoints?.[index];
             return {
@@ -357,6 +408,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         });
     }
 
+    /** 模块/栈/停止事件提供真实 sourceFile 后，把编辑器保存的断点重新提交给 runtime。 */
     private async replayPendingSourceBreakpointsForResolvedSource(
         runtimeSourcePath: string,
         resolvedSourcePath: string | undefined,
@@ -378,7 +430,10 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         }
     }
 
+    /** 握手及 initialized 事件触发的补偿步骤，覆盖 launch 前已经收到 setBreakpoints 的情况。 */
     private async replayDesiredSourceBreakpointsUsingKnownPaths(): Promise<void> {
+        // BUG: 遍历多个源文件的重放同样逐次覆盖 runtime 的全局 LINE 断点集合，
+        // 因而启动后最终只保留最后一次绑定的文件；见 bindDesiredSourceBreakpoints。
         if (!this.client) {
             return;
         }
@@ -390,6 +445,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         }
     }
 
+    /** VS Code 异常筛选器转为 runtime 的 caught/uncaught 开关，空筛选器表示均不暂停。 */
     private async handleSetExceptionBreakpoints(request: DapRequest): Promise<void> {
         const args = request.arguments ?? {};
         const filters = Array.isArray(args.filters) ? args.filters.filter((item): item is string => typeof item === 'string') : [];
@@ -401,6 +457,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         this.sendResponse(request);
     }
 
+    /** 配置完成后才允许自动跳过 entry stop，防止用户断点尚未安装就开始执行。 */
     private async handleConfigurationDone(request: DapRequest): Promise<void> {
         this.configurationDone = true;
         this.sendResponse(request);
@@ -414,6 +471,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         }
     }
 
+    /** 把 runtime 快照映射为可导航的 DAP 栈帧；源码解析也会补全待重放的断点路径。 */
     private async handleStackTrace(request: DapRequest): Promise<void> {
         const result = await this.requireClient().request('stackTrace');
         const frames = Array.isArray(result.frames) ? result.frames as ZrDbgFrame[] : [];
@@ -432,6 +490,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         });
     }
 
+    /** 登记当前帧作用域为本次暂停可用的 DAP 句柄，再交给变量树请求展开。 */
     private async handleScopes(request: DapRequest): Promise<void> {
         const frameId = Number((request.arguments ?? {}).frameId);
         const result = await this.requireClient().request('scopes', { frameId });
@@ -453,6 +512,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         });
     }
 
+    /** 只展开当前停止状态登记过的句柄，并将 runtime 子句柄继续纳入相同生命周期。 */
     private async handleVariables(request: DapRequest): Promise<void> {
         const args = request.arguments ?? {};
         const variablesReference = Number(args.variablesReference);
@@ -489,6 +549,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         });
     }
 
+    /** hover/watch/控制台求值交给 runtime；结果中的可展开引用仅在当前暂停快照有效。 */
     private async handleEvaluate(request: DapRequest): Promise<void> {
         const args = request.arguments ?? {};
         const expression = typeof args.expression === 'string' ? args.expression : '';
@@ -513,7 +574,10 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         });
     }
 
+    /** 异常停止的详情来自最近 stopped 事件保存的栈文本，继续运行后清除。 */
     private handleExceptionInfo(request: DapRequest): void {
+        // BUG: runtime stopped 已携带 exceptionKind=caught/uncaught，但本适配器未保存该字段；
+        // 启用 caught 筛选器并命中已捕获异常时，exceptionInfo 仍误报 breakMode=unhandled。
         const stackTrace = this.lastExceptionStack ?? '';
         const firstLine = stackTrace.split(/\r?\n/, 1)[0] ?? 'ZR exception';
 
@@ -530,6 +594,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         });
     }
 
+    /** 为 DAP source 请求读取本地源文件；attach 仅接受可解析的本地绝对路径。 */
     private async handleSource(request: DapRequest): Promise<void> {
         const source = (request.arguments ?? {}).source as { path?: unknown; name?: unknown } | undefined;
         const sourcePath = typeof source?.path === 'string' ? source.path : undefined;
@@ -550,6 +615,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         });
     }
 
+    /** 继续/暂停/单步共用控制出口；状态和句柄失效由随后到达的 runtime 事件驱动。 */
     private async handleSimpleControl(
         request: DapRequest,
         method: 'continue' | 'pause' | 'next' | 'stepIn' | 'stepOut',
@@ -559,11 +625,13 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         this.sendResponse(request, responseBody);
     }
 
+    /** 先应答宿主退出请求，再按 launch/attach 的资源所有权关闭连接与子进程。 */
     private async handleDisconnect(request: DapRequest): Promise<void> {
         this.sendResponse(request);
         await this.shutdown(this.launchMode);
     }
 
+    /** 脱离会话可访问资源后尽力发协议 disconnect；只有拥有 launch 子进程的路径要求停止它。 */
     private async shutdown(stopLauncher: boolean): Promise<void> {
         const client = this.client;
         const launcher = this.launcher;
@@ -574,6 +642,8 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         this.lastExceptionStack = undefined;
 
         if (client) {
+            // BUG: 对端保持连接但不回 disconnect 时 request 无超时，此 await 永不结束；
+            // client.close 与 launch 子进程 stop 都被阻塞，DAP 已成功应答 disconnect 却不能清理。
             try {
                 await client.request('disconnect');
             } catch {
@@ -587,6 +657,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         }
     }
 
+    /** runtime 的异步生命周期入口：更新源码映射/暂停代次并向 VS Code 发布可观察状态。 */
     private async handleRuntimeEvent(message: ZrDbgEventMessage): Promise<void> {
         switch (message.method) {
             case 'initialized':
@@ -594,6 +665,9 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
                 await this.replayDesiredSourceBreakpointsUsingKnownPaths();
                 break;
             case 'breakpointResolved':
+                // BUG: changed 事件未携带原断点 id，且 setBreakpoints 按每个文件重用 1..N；
+                // VS Code 无法把异步验证结果稳定对应到原断点，runtime 事件本身也不提供该 id。
+                // TODO: runtime 可能先发 breakpointResolved 再回 setBreakpoints；需验证事件早于 DAP 响应的宿主行为。
                 await this.rememberRuntimeSourcePath(
                     String(message.params?.sourceFile ?? ''),
                     typeof message.params?.moduleName === 'string' ? message.params.moduleName : undefined,
@@ -608,12 +682,14 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
                 });
                 break;
             case 'stopped':
+                // 源码映射可能触发断点 RPC；完成后再公布暂停状态，便于编辑器导航和绑定。
                 await this.rememberRuntimeSourcePath(
                     String(message.params?.sourceFile ?? ''),
                     typeof message.params?.moduleName === 'string' ? message.params.moduleName : undefined,
                 );
                 {
                     const nextStateId = Number(message.params?.stateId ?? 0);
+                    // 同一快照可重复通知；只有代次变化才废弃变量句柄。
                     if (nextStateId !== this.currentStateId) {
                         this.variableHandles.clear();
                     }
@@ -629,6 +705,8 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
                     break;
                 }
                 {
+                    // BUG: runtime 数据断点发 dataBreakpoint，DAP 的标准数据断点原因为 data breakpoint；
+                    // attach 到已由原生 zrdbg 客户端设置数据断点的 runtime 时，这里原样转发导致宿主按未知原因显示。
                     const reason = String(message.params?.reason ?? 'pause');
                     const exceptionStack =
                         typeof message.params?.exceptionStack === 'string' && message.params.exceptionStack.length > 0
@@ -657,6 +735,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
                 });
                 break;
             case 'continued':
+                // 继续执行即失效，不能等下一次 stopped 才拒绝旧变量展开。
                 this.currentStateId = 0;
                 this.lastExceptionStack = undefined;
                 this.variableHandles.clear();
@@ -679,6 +758,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         }
     }
 
+    /** entry stop 与配置完成的汇合点；由两个到达顺序之一负责发自动 continue。 */
     private async continueAfterEntry(): Promise<void> {
         if (!this.pendingAutoContinue && !this.initialStopSeen) {
             return;
@@ -688,6 +768,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         await this.requireClient().request('continue');
     }
 
+    /** 已进入协议阶段的 handler 共用前置检查；连接对象存在不替代 socket 自身的状态检查。 */
     private requireClient(): ZrDbgClient {
         if (!this.client) {
             throw new Error('ZR debugger is not connected.');
@@ -696,6 +777,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         return this.client;
     }
 
+    /** 将 runtime 调用来源、receiver/参数和异常标记带入栈视图，帮助区分同名调用帧。 */
     private formatFrameName(frame: ZrDbgFrame): string {
         const receiverName = typeof frame.receiver?.name === 'string' && frame.receiver.name.length > 0
             ? `${frame.receiver.name}.`
@@ -720,6 +802,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         return `${callKind}${receiverName}${frame.functionName}${argumentsPreview}${moduleName}${frameDepth}${returnSlot}${exceptionMarker}`;
     }
 
+    /** 对应入站 request.seq 应答；事件和响应共用本会话递增序号。 */
     private sendResponse(request: DapRequest, body?: Record<string, unknown>): void {
         const response: DapResponse = {
             seq: this.seq++,
@@ -734,6 +817,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         this.emitter.fire(response);
     }
 
+    /** 将 handler 失败归属到原 DAP 请求，避免宿主把运行错误误当作缺少响应。 */
     private sendErrorResponse(request: DapRequest, message: string): void {
         const response: DapResponse = {
             seq: this.seq++,
@@ -746,6 +830,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         this.emitter.fire(response);
     }
 
+    /** 会话状态与 runtime 通知的统一 DAP 事件出口。 */
     private sendEvent(event: string, body?: Record<string, unknown>): void {
         const payload: DapEvent = {
             seq: this.seq++,
@@ -758,7 +843,9 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         this.emitter.fire(payload);
     }
 
+    /** 带会话前缀展示 CLI 及连接错误，使并行调试时仍能追溯输出来源。 */
     private sendOutput(text: string, category: 'stdout' | 'stderr'): void {
+        // TODO: 同时发送 DAP output 和 append 到 DebugConsole；需在 VS Code 实测宿主是否重复展示同一文本。
         const lines = text.length > 0 ? text : '\n';
         this.sendEvent('output', {
             category,
@@ -767,10 +854,12 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         this.debugConsole.append(`${this.sessionOutputPrefix}${lines}`);
     }
 
+    /** CLI 子进程退出才携带 exitCode；外部 attach 的断线不能推断进程退出码。 */
     private sendExitedEvent(exitCode: number): void {
         this.sendEvent('exited', { exitCode });
     }
 
+    /** 汇合 runtime terminated、socket close 和 CLI exit，避免重复结束宿主会话。 */
     private sendTerminatedEvent(): void {
         if (this.terminated) {
             return;
@@ -780,6 +869,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         this.sendEvent('terminated');
     }
 
+    /** 读取 launch 项目清单的源码定位信息；本地解析失败时仍允许 CLI 自行解析项目并启动。 */
     private async createLaunchSourceContext(projectPath: string, cwd?: string): Promise<LaunchSourceContext> {
         const resolvedProjectPath = path.resolve(projectPath);
         const projectRoot = path.dirname(resolvedProjectPath);
@@ -814,6 +904,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         };
     }
 
+    /** 将 runtime 源身份转为编辑器可打开的位置，同时保留回传断点所需的原始身份。 */
     private async toSource(sourceFile: unknown, moduleName?: unknown): Promise<{ path: string; name: string } | undefined> {
         if (typeof sourceFile !== 'string' || sourceFile.length === 0) {
             return undefined;
@@ -831,6 +922,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         };
     }
 
+    /** 建立本地路径到 runtime sourceFile 的映射，并借此激活先于模块加载创建的断点。 */
     private async rememberRuntimeSourcePath(sourceFile: string, moduleName?: string): Promise<string | undefined> {
         if (!sourceFile) {
             return undefined;
@@ -849,6 +941,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         return resolvedPath;
     }
 
+    /** 优先相信存在的显式路径，再用 launch 上下文解释相对路径，最后才推断模块源码。 */
     private async resolveSourceReference(
         sourceLike: string | undefined,
         options?: {
@@ -887,6 +980,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         return undefined;
     }
 
+    /** launch/attach 都可使用同机绝对路径；只返回实际文件，交给 source 请求读取。 */
     private async resolveAbsoluteSourcePath(sourceLike: string): Promise<string | undefined> {
         if (!sourceLike || !path.isAbsolute(sourceLike)) {
             return undefined;
@@ -895,6 +989,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         return await existingFilePath(sourceLike);
     }
 
+    /** launch 相对路径按 CLI cwd 优先、项目根次之解释，与运行时启动目录保持关联。 */
     private async resolveRelativeSourcePath(
         sourceLike: string,
         context: LaunchSourceContext,
@@ -914,6 +1009,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         return undefined;
     }
 
+    /** 二进制模块只带模块名时，用清单 source 根寻找对应 .zr；仅 launch 启用此推断。 */
     private async resolveModuleSourcePath(
         sourceLike: string,
         context: LaunchSourceContext,
@@ -926,17 +1022,20 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         return await existingFilePath(path.resolve(context.sourceRoot, `${moduleName}.zr`));
     }
 
+    /** source 查找失败时保留请求中的路径/模块线索，便于诊断 launch 与产物位置差异。 */
     private describeSourceRequest(sourcePath: string | undefined, sourceName: string | undefined): string {
         const description = collectSourceCandidates(sourcePath, sourceName);
         return description.length > 0 ? description.join(', ') : 'unknown';
     }
 }
 
+/** 路径映射与去重使用宿主平台的大小写语义；保持与 PendingSourceBreakpointStore 一致。 */
 function canonicalSourcePath(sourceFile: string): string {
     const normalized = sourceFile.replace(/[\\/]+/g, '/');
     return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
 }
 
+/** 将 source.path/source.name 等线索按调用方给定优先级归并，供解析与错误信息共用。 */
 function collectSourceCandidates(...values: Array<string | undefined>): string[] {
     return dedupeStrings(
         values
@@ -946,6 +1045,7 @@ function collectSourceCandidates(...values: Array<string | undefined>): string[]
     );
 }
 
+/** 按路径身份去重而保留首次出现次序，防止改变 cwd/项目根/模块推断的优先级。 */
 function dedupeStrings(values: string[]): string[] {
     const seen = new Set<string>();
     const result: string[] = [];
@@ -963,6 +1063,7 @@ function dedupeStrings(values: string[]): string[] {
     return result;
 }
 
+/** 将 .zro/.zri/.zr 模块身份归一为 source 根下的相对模块名，供二进制调试定位源码。 */
 function normalizeModuleName(modulePath: string): string | undefined {
     let normalized = modulePath.trim();
     if (!normalized) {
@@ -987,6 +1088,7 @@ function normalizeModuleName(modulePath: string): string | undefined {
     return normalized.length > 0 ? normalized : undefined;
 }
 
+/** 候选路径仅在 stat 确认为普通文件时参与导航；读取失败仍由后续 source 请求报告。 */
 async function existingFilePath(filePath: string): Promise<string | undefined> {
     try {
         const stat = await fs.stat(filePath);
