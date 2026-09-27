@@ -141,5 +141,6 @@ doc_type: category-index
 | parser 编译期导入所有权与调用绑定测试 | [64 项](coverage/tests_parser_import_call_binding.tsv) | 2 个 C 文件独立复核，314 个非空证据锚点与 20 个 Unity 注册有效，源码仅增 49 行注释；GCC/Clang 语法检查 4/4 通过。2 个 BUG 记录断言失败后的旧状态或编译器资源清理缺口，1 个 TODO 待核首个缓存项是否为目标调用；未运行 CTest。 |
 | parser FFI wrapper 与 variance 诊断测试 | [26 项](coverage/tests_parser_ffi_variance_diagnostics.tsv) | 2 个 C 文件独立复核，183 个 callers/evidence 锚点有效，源码仅增 36 行注释；GCC/Clang 语法检查 4/4 通过。2 个 BUG 记录断言失败跳过 AST 与编译状态清理，3 个 TODO 记录 CTest 注册缺口及 variance 诊断位置覆盖疑问；未运行动态测试。 |
 | core 优化记录存储与发布接口 | [64 项](coverage/zr_vm_core_optimization_remark.tsv) | 2 个 C/H 文件独立复核，280 个非空证据锚点有效，源码仅改注释；GCC/Clang 严格 C11 语法检查通过。1 个 BUG 记录满容量时 `Append` 自别名指针在扩容后失效，3 个 TODO 留待核对发布链、原始 ABI 与跨版本丢弃统计；未运行动态测试。 |
+| core 连续视图的切片与索引边界 | [25 项](coverage/zr_vm_core_contiguous_view.tsv) | 2 个 C/H 文件独立复核，86 个 evidence 与 47 个 callers 锚点有效，源码仅增注释；GCC/Clang 语法及定向数组切片测试通过。5 个 BUG 行归纳为索引误报溢出、空尾切片误报边界和成功返回不可验证视图三类，4 个 TODO 保留 GC、布局及代数契约疑问。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。
