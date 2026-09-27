@@ -1,6 +1,8 @@
 #ifndef ZR_VM_TEST_COMPILE_TIME_DECLARATION_PATCH_TRANSACTION_CASES_H
 #define ZR_VM_TEST_COMPILE_TIME_DECLARATION_PATCH_TRANSACTION_CASES_H
 
+/* 由 test_compile_time_execution.c 纳入 Unity 入口；故障注入覆盖声明补丁的提交、回滚与 GC 后元数据。 */
+
 #include "zr_vm_core/gc_domain.h"
 
 static TZrBool fail_declaration_patch_after_first_commit(

@@ -1,3 +1,4 @@
+/* 核对内建属性的归属、稳定 ID 与应用约束，防止编译工具元数据偏离解析器契约。 */
 #include "unity.h"
 
 #include "zr_vm_parser/attribute_contract.h"

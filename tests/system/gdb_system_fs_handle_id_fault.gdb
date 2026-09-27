@@ -1,3 +1,4 @@
+# 用固定 Debug 测试二进制检查 handle_id wrapper 降低、字段读取及异常抛出的先后顺序。
 set pagination off
 set confirm off
 set breakpoint pending on

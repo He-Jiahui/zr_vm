@@ -1,6 +1,4 @@
-//
-// zr.system.assembly resource access tests.
-//
+/* 构造临时 .zrm 资源归档，验证 zr.system.assembly 的导出及项目资源读取路径。 */
 
 #include "unity.h"
 
@@ -17,9 +15,9 @@
 #include <string.h>
 
 void setUp(void) {}
-
+/* BUG: 持有 global 后的断言失败会经 Unity longjmp 跳过局部释放；空 tearDown 不回收 global。 */
 void tearDown(void) {}
-
+/* BUG: fwrite 写满后若 fclose 刷盘失败仍返回真，夹具会把可能不完整的文件当作写入成功。 */
 static TZrBool write_bytes_file(const TZrChar *path, const TZrByte *bytes, TZrSize byteCount) {
     FILE *file;
     size_t written;
@@ -187,7 +185,7 @@ static void test_system_assembly_module_links_and_exports_resource_api(void) {
     SZrString *assemblyPath;
     SZrObjectModule *rootModule;
     SZrObjectModule *assemblyModule;
-
+    /* BUG: 建立 global 后任一断言失败都会跳过函数末尾的 Free，泄漏该全局状态。 */
     TEST_ASSERT_TRUE(create_assembly_resource_fixture(projectPath,
                                                       sizeof(projectPath),
                                                       resourceText,
@@ -223,7 +221,7 @@ static void test_system_assembly_reads_current_project_zrm_resources(void) {
     SZrState *state;
     SZrTypeValue argument;
     SZrTypeValue result;
-
+    /* BUG: 建立 global 后资源读取断言若失败，Unity 中断用例并跳过末尾释放。 */
     TEST_ASSERT_TRUE(create_assembly_resource_fixture(projectPath,
                                                       sizeof(projectPath),
                                                       resourceText,

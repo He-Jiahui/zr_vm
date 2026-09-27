@@ -1,3 +1,4 @@
+/* 验证线程描述符、Send/Sync 语义及调度器的共享和隔离 GC 域行为。 */
 #include <stdio.h>
 #include <string.h>
 

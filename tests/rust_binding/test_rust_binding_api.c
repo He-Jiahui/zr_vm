@@ -1,3 +1,4 @@
+/* 通过 C API 的项目会话与原生模块注册路径验证 Rust binding 的资源所有权和错误面。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -8,7 +9,7 @@
 #include "zr_vm_rust_binding.h"
 
 void setUp(void) {}
-
+/* BUG: 已持有句柄后的断言失败会经 Unity longjmp 中断用例；空 tearDown 无法回收这些句柄。 */
 void tearDown(void) {}
 
 static int should_run_test(const char *testName) {
@@ -24,7 +25,7 @@ static int should_run_test(const char *testName) {
             RUN_TEST(TEST_FN);                                  \
         }                                                       \
     } while (0)
-
+/* BUG: fopen 成功后忽略 fwrite 和 fclose 结果；部分写入或刷盘失败仍返回真，调用方误认夹具写入成功。 */
 static TZrBool write_text_file(const TZrChar *path, const TZrChar *text) {
     FILE *file;
 
@@ -141,7 +142,7 @@ static void test_rust_binding_scaffold_compile_and_run_round_trip(void) {
     snprintf(manifestPath, sizeof(manifestPath), "%s/bin/.zr_cli_manifest", workspaceRoot);
     snprintf(zroPath, sizeof(zroPath), "%s/bin/main.zro", workspaceRoot);
     snprintf(zriPath, sizeof(zriPath), "%s/bin/main.zri", workspaceRoot);
-
+    /* BUG: scaffold 返回 workspace 后若后续断言失败，Unity 跳过末尾 Free，导致句柄泄漏。 */
     scaffoldOptions.rootPath = workspaceRoot;
     scaffoldOptions.projectName = projectName;
     scaffoldOptions.overwriteExisting = ZR_TRUE;

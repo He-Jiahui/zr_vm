@@ -1,3 +1,4 @@
+/* 仅把命令行筛选参数转交给 ctest，套件发现与执行以 CTest 注册表为准。 */
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #endif
@@ -80,6 +81,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
+        /* BUG: -R "a|b" 未转义即交给 system，| 成为管道；WSL --ctest -N -R "__zr_a__|__zr_b__" 输出 __zr_b__: not found。 */
         for (int i = arg_index + 1; i < argc; ++i) {
             int written = snprintf(command + offset, sizeof(command) - (size_t)offset, " %s", argv[i]);
             if (written < 0 || (size_t)written >= sizeof(command) - (size_t)offset) {
@@ -89,6 +91,8 @@ int main(int argc, char* argv[]) {
             offset += written;
         }
 
+        /* BUG: POSIX system() 返回编码后的等待状态；ctest 失败码 1 经 main 截断为 0。
+         * 复现：WSL 下运行包装器 --ctest --preset __zr_vm_no_such_preset__ 返回 0，直接运行 ctest 返回 1。 */
         return system(command);
     }
 }

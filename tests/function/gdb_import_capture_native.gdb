@@ -1,3 +1,4 @@
+# 运行原生捕获 fixture 到中止点，检查调用参数和函数槽；frame 7 需按实际回溯确认。
 set pagination off
 set confirm off
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_cli

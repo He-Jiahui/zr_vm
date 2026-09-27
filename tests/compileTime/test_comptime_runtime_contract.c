@@ -1,3 +1,4 @@
+/* 以真实编译器状态验证编译工具诊断、预算、缓存及归档解析的运行时契约。 */
 #include "unity.h"
 
 #include <stdlib.h>

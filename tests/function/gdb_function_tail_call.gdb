@@ -1,4 +1,5 @@
 # GDB 脚本：在 FUNCTION_TAIL_CALL 断言处断点，查看 opA、base、BASE(functionSlot)
+# TODO: 断点仍指向旧工作树 execution.c:1469；当前分发实现位于 execution/execution_dispatch.c，复用前须重定位指令体并核对局部变量。
 # 用法: cd build && gdb -x ../tests/function/gdb_function_tail_call.gdb --args ./bin/zr_vm_named_arguments_test
 
 set pagination off

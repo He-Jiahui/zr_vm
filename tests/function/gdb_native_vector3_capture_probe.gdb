@@ -1,3 +1,5 @@
+# 检查 vector3 成员读取与后续空值函数调用在同一次 fixture 运行中的关系。
+# TODO: execution.c:1956/1701 是旧单文件位置；当前指令分发在 execution/execution_dispatch.c，需重定位后再解释探针输出。
 set pagination off
 set confirm off
 set print pretty on

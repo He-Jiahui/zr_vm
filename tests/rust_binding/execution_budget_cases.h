@@ -1,6 +1,8 @@
 #ifndef ZR_RUST_BINDING_EXECUTION_BUDGET_CASES_H
 #define ZR_RUST_BINDING_EXECUTION_BUDGET_CASES_H
 
+/* 由 Rust binding API 测试包含；原生回调用于观测指令、时限、取消、内存与 GC 预算边界。 */
+
 #include "../../zr_vm_rust_binding/src/zr_vm_rust_binding/native_call_context_internal.h"
 #include "zr_vm_core/execution_budget.h"
 #include "zr_vm_core/gc.h"

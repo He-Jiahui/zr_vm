@@ -1,3 +1,4 @@
+# 运行 import_capture_native 直到中止后观察闭包捕获与上一调用帧；frame 7 依赖当次栈形状。
 set pagination off
 set confirm off
 set print pretty on

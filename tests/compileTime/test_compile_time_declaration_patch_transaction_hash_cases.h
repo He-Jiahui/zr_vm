@@ -1,6 +1,8 @@
 #ifndef ZR_VM_TEST_COMPILE_TIME_DECLARATION_PATCH_TRANSACTION_HASH_CASES_H
 #define ZR_VM_TEST_COMPILE_TIME_DECLARATION_PATCH_TRANSACTION_HASH_CASES_H
 
+/* 在哈希表成对分配的失败点重试补丁，核对旧元数据与新声明的原子性。 */
+
 typedef struct SDeclarationPatchHashPairFailure {
     FZrAllocator allocator;
     TZrPtr allocatorUserData;

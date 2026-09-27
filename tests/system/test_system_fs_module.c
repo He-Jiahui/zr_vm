@@ -1,6 +1,4 @@
-//
-// zr.system.fs object model and FileStream handle_id wrapper tests.
-//
+/* 从模块元数据与 ZR 源码调用两侧验证 zr.system.fs 对象模型及 FileStream handle_id 降低。 */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,7 +30,7 @@
 
 void setUp(void) {
 }
-
+/* BUG: 持有测试 state 后的断言失败会经 Unity longjmp 跳过局部销毁；空 tearDown 不回收 state。 */
 void tearDown(void) {
 }
 
@@ -304,7 +302,7 @@ static void test_system_fs_module_metadata_exposes_object_surface_and_wrapper_fi
     SZrObject *writerEntry;
     SZrObject *ioExceptionEntry;
     SZrObjectPrototype *streamPrototype;
-
+    /* BUG: create_test_state 成功后任一断言失败都会跳过末尾 destroy_test_state，泄漏 state。 */
     ZR_TEST_START("zr.system.fs metadata exposes object surface and wrapper fields");
     timer.startTime = clock();
 

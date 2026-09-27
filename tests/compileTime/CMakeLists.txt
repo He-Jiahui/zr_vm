@@ -1,4 +1,4 @@
-# ZR-VM Compile-Time Execution Tests CMakeLists.txt
+# 旧目录配方未被顶层 tests/CMakeLists.txt 包含；顶层直接注册同名测试目标。
 
 # 添加测试源文件
 set(COMPILE_TIME_TEST_SOURCES
@@ -24,6 +24,7 @@ target_include_directories(zr_vm_compile_time_test PRIVATE
     ${CMAKE_SOURCE_DIR}/zr_vm_library/include
 )
 
+# TODO: 仓库无 zr_configure_unity_test 定义；启用前改用现行 Unity 配置，并避免与顶层同名目标重复。
 zr_configure_unity_test(zr_vm_compile_time_test)
 
 # 添加测试目标

@@ -1,6 +1,4 @@
-//
-// Created by Auto on 2025/01/XX.
-//
+/* 命名参数回归入口：同时检查参考 fixture 的诊断与编译后调用的参数绑定顺序。 */
 
 #include <stdio.h>
 #include <time.h>

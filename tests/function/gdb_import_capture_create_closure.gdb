@@ -1,3 +1,4 @@
+# 在导入捕获创建闭包时记录被捕获函数、upvalue 描述及栈槽，供手工 GDB 调查。
 set pagination off
 set confirm off
 set print pretty on

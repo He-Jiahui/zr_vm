@@ -1,6 +1,4 @@
-//
-// Created by Auto on 2025/01/XX.
-//
+/* 编译期语言回归主入口：从源码编译与直接导入走到执行、声明补丁和构建事实验证。 */
 
 #include <stdio.h>
 #include <stdlib.h>

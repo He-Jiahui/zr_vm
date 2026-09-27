@@ -1,6 +1,4 @@
-//
-// Created by Auto on 2025/01/XX.
-//
+/* 手工构造字节码执行指令级回归，并以 GC/PIC 场景验证缓存中的年轻代引用。 */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -7759,6 +7757,9 @@ static void test_function_tail_call(void) {
     TEST_START("FUNCTION_TAIL_CALL Instruction");
     SZrTestTimer timer;
     timer.startTime = clock();
+
+    /* TODO: 本例只创建并销毁状态，没有构造或执行 FUNCTION_TAIL_CALL；main 已注册它但无法检出尾调用退化。
+     * 下一步以实际调用帧和返回值构造手工指令，再断言执行结果。 */
 
     // FUNCTION_TAIL_CALL测试与FUNCTION_CALL类似，但使用TAIL_CALL指令
     // 由于实现复杂性，这里只做占位测试

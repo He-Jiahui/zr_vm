@@ -1,3 +1,5 @@
+# 追踪模块导出记录和对应调用帧槽位，供 import_capture_native 手工诊断。
+# TODO: 断点仍指向旧工作树 module/module.c:857；当前模块加载实现位于 module/module_loader.c，复用前须重定位导出收集入口。
 set pagination off
 set confirm off
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_cli

@@ -1,3 +1,5 @@
+# 逐阶段追踪原生模块物化的成功及失败分支。
+# TODO: 断点硬编码旧工作树 native_binding.c 行号；当前实现已拆分，复用前须按函数/分支重定位全部断点。
 set pagination off
 set confirm off
 set breakpoint pending on

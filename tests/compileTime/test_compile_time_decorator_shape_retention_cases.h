@@ -1,6 +1,8 @@
 #ifndef ZR_VM_TEST_COMPILE_TIME_DECORATOR_SHAPE_RETENTION_CASES_H
 #define ZR_VM_TEST_COMPILE_TIME_DECORATOR_SHAPE_RETENTION_CASES_H
 
+/* 由编译期主测试包含；跨编译、产物和反射边界核对装饰器及生成字段的形状来源。 */
+
 static const SZrTypeValue *decorator_shape_object_field(
         SZrState *state,
         SZrObject *object,

@@ -1,6 +1,8 @@
 #ifndef ZR_VM_TEST_COMPTIME_CACHE_SNAPSHOT_CASES_H
 #define ZR_VM_TEST_COMPTIME_CACHE_SNAPSHOT_CASES_H
 
+/* 由编译期运行契约测试包含；验证缓存快照失败时不发布半成品且重写保持字节稳定。 */
+
 #include "zr_vm_parser/comptime_cache.h"
 
 static void comptime_cache_snapshot_prepare_compiler(

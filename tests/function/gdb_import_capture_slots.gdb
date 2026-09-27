@@ -1,3 +1,5 @@
+# 追踪导入模块导出收集时的局部变量及调用栈槽。
+# TODO: 断点仍指向旧工作树 module/module.c:858；当前模块加载实现位于 module/module_loader.c，复用前须重定位导出收集入口。
 set pagination off
 set confirm off
 set print pretty on

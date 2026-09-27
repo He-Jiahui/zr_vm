@@ -1,3 +1,4 @@
+/* 直接核对编译期 effect 与预算策略，避免编译器调用点绕过纯值及资源上限约束。 */
 #include "unity.h"
 
 #include "zr_vm_parser/comptime_contract.h"
