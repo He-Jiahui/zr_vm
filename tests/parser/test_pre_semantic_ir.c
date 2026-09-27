@@ -1418,6 +1418,7 @@ static void test_into_gc_semantic_operation_preserves_source_place_identity(void
 #include "test_pre_semantic_ir_optional_value.inc"
 #include "test_pre_semantic_ir_general_call.inc"
 #include "test_pre_semantic_ir_exception_fallback.inc"
+#include "test_pre_semantic_ir_catch_assignment.inc"
 #include "test_pre_semantic_ir_typed_catch.inc"
 #include "test_pre_semantic_ir_multi_catch.inc"
 #include "test_pre_semantic_ir_catch_name_preflight.inc"
@@ -1492,6 +1493,8 @@ int main(void) {
     RUN_TEST(test_source_catch_payload_initializes_readable_binding);
     RUN_TEST(test_source_catch_flows_payload_through_handler_local);
     RUN_TEST(test_source_catch_captures_simple_argument_before_invoke);
+    RUN_TEST(test_source_catch_reads_preinvoke_assignment_value);
+    RUN_TEST(test_source_catch_compound_assignment_keeps_legacy_cfg);
     RUN_TEST(test_source_catch_captures_literal_argument_before_invoke);
     RUN_TEST(test_source_catch_local_flow_rejects_hidden_name_bindings);
     RUN_TEST(test_source_catch_direct_rethrow_keeps_normal_continuation);

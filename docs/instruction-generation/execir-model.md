@@ -87,6 +87,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_general_call.inc
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
   - tests/parser/test_pre_semantic_ir_typed_catch.inc
+  - tests/parser/test_pre_semantic_ir_catch_assignment.inc
   - tests/parser/test_pre_semantic_ir_multi_catch.inc
   - tests/parser/test_pre_semantic_ir_catch_abrupt.inc
   - tests/parser/test_pre_semantic_ir_throw_cfg.inc
@@ -542,11 +543,13 @@ graph for a conditionally executed operation.
 Source catch selection is intentionally narrow: one or more catch parameters,
 each annotated with one simple already-resolvable canonical type, optionally
 followed by one terminal catch-all, no `finally`, one resolved direct protected
-call with either no
-arguments or one unmarked positional `int` identifier that exactly matches one
-value parameter without conversion, ownership, reference, or GC-bridge work,
-and for every handler either an empty catch body, one expression statement that
-reads the catch binding, the exact cleanup-free sequence
+call either as an expression statement or as the right side of a plain
+assignment to an already initialized local, with either no arguments or one
+unmarked positional `int` identifier that exactly matches one value parameter
+without conversion, ownership, reference, or GC-bridge work, and for every
+handler either an empty catch body, one expression statement that reads the
+catch binding or another previously initialized local, the exact cleanup-free
+sequence
 `var local = binding; local;`, a
 direct `return` whose result is void, a literal, or the catch binding, or an
 exact `throw binding;` rethrow.
@@ -575,11 +578,14 @@ A direct return or binding rethrow instead closes only that handler as a zero-
 successor abrupt sink; later catch clauses remain independently selectable and
 any other falling-through path can reach the join and a later call. The payload
 is not fabricated as an entry value, and the invoke result is never made
-available on the handler path. The compiler clears the active handler target
-before compiling the catch body, so a call introduced by a later phase cannot
-recursively target the same handler; after the join, a later call uses its
-independent propagation sink. Declared callable bodies use disposable
-SemanticIR isolation for this control form and cannot publish their handler
+available on the handler path. For the plain assignment, the normal
+continuation stores the completed call result into the existing local Place;
+the handler's load resolves to the pre-invoke definition of that Place. The
+compiler clears the active handler target before compiling the catch body, so
+a call introduced by a later phase cannot recursively target the same handler;
+after the join, a later call uses its independent propagation sink. Declared
+callable bodies use disposable SemanticIR isolation for this control form and
+cannot publish their handler
 graph into the entry sidecar; direct child catch returns preflight to fallback
 because child returns do not publish entry-sidecar terminators. If the
 syntactic shape passes preflight but the
@@ -591,11 +597,13 @@ fallback.
 A catch-all followed by another clause; unresolved, generic, qualified, array,
 ownership-qualified, or reference-qualified catch annotations; catch bodies
 other than the empty,
-single binding read, exact nonshadowing inferred-local propagation, canonical
-direct return, or exact binding-rethrow shapes;
+single binding or initialized-prior-local read, exact nonshadowing
+inferred-local propagation, canonical direct return, or exact binding-rethrow
+shapes;
 protected calls with multiple, named, marked, generic, member, literal,
 computed, type-converting, or non-value arguments, protected bodies with other
-  control or effects, direct handler exits under active ownership/`@close`
+  control or effects (including compound assignment), direct handler exits
+  under active ownership/`@close`
   cleanup, and `finally` cleanup shapes other than the bounded no-catch cases
   above remain an explicit conservative boundary. Such a scope
 abandons any partial source CFG and keeps

@@ -7,12 +7,15 @@ contract for one closed, auditable shape:
 
 - one untyped catch-all parameter;
 - no `finally` block;
-- one resolved direct function call with no arguments or one unmarked
-  positional `int` identifier that exactly matches one value parameter without
-  conversion, ownership, reference, or GC-bridge work in the protected block;
+- one resolved direct function call, as an expression statement or the right
+  side of a plain assignment to an already initialized local, with no
+  arguments or one unmarked positional `int` identifier that exactly matches
+  one value parameter without conversion, ownership, reference, or GC-bridge
+  work in the protected block;
   and
-- either an empty catch body, one expression that reads the catch binding, the
-  exact cleanup-free sequence `var local = binding; local;`, with neither
+- either an empty catch body, one expression that reads the catch binding or
+  another previously initialized local, the exact cleanup-free sequence
+  `var local = binding; local;`, with neither
   identifier already bound as a variable, runtime/compile-time callable, or
   type prototype, a direct `return` whose result is void, a literal, or the
   catch binding, or an exact `throw binding;` rethrow. The two direct abrupt
@@ -36,17 +39,22 @@ handler path and at the join, which keeps the call result unavailable to the
 handler and the catch binding local to the exceptional block. The active handler target is
 cleared before the catch body is compiled, so a later call receives a separate
 propagation sink.
+In the assignment form, the normal successor stores the call result into the
+existing Place while the exceptional handler reads its original value. ExecIR
+SSA resolves that handler load to the pre-invoke initialization, not the
+incomplete call result.
 
 The legacy exception bytecode remains in place. One simple, resolved typed
 catch is covered separately by `ssa-source-typed-catch-cfg.md`. Multiple
 catches and unresolved or structurally richer annotations, plus catch bodies
-other than the empty, single binding-read, exact inferred-local
+other than the empty, single binding/prior-local read, exact inferred-local
 propagation, canonical direct-return, or exact binding-rethrow shapes, inferred
 locals whose catch/local names collide with an
 existing variable, callable, or type prototype,
 calls with multiple, named,
 marked, generic, member, literal, or computed arguments, protected bodies
-without the single resolved call, nested control, broader handled throws,
+without the single resolved call or its plain initialized-local assignment,
+compound assignment, nested control, broader handled throws,
 direct handler exits under active cleanup, and every `finally` shape retain
 the persistent conservative fallback barrier.
 Declared callable bodies lower inside disposable SemanticIR
@@ -103,8 +111,28 @@ publish a partial source exception graph.
 - the rethrow operand is exactly the ValueId defined by loading the catch
   parameter Place.
 
+`tests/parser/test_pre_semantic_ir_catch_assignment.inc` verifies:
+
+- the protected plain assignment stores the call result on the normal path,
+  while the handler loads the same Place through the exceptional edge;
+- the handler's ExecIR `COPY` reads the pre-invoke initialization ValueId,
+  never the invoke result; and
+- compound assignment remains on the complete legacy fallback path without
+  publishing an exception payload into the source graph.
+
 ## Validation
 
+- The interrupted-assignment source fixture began RED at `1/106` when the
+  protected assignment was routed to legacy CFG. Its strengthened GREEN checks
+  the call's normal/exception edges, the normal-only Store, the handler Load,
+  successful ExecIR construction, and the handler `COPY` of the pre-invoke
+  ValueId. The compound-assignment fallback fixture brings the producer suite
+  to 107/107 on WSL GCC 11.4 and Clang 14. The GCC/Clang SSA construction,
+  effect verification, and place promotion adjacency suites each pass 3/3;
+  the MSVC 19.44 Debug shared-parser build and the same adjacency suite pass
+  3/3. Wiki validation passes for 116 pages and 646 local links.
+  Windows shared-parser source tests cannot link four existing unexported
+  compiler-internal helpers, so no MSVC source-fixture result is claimed.
 - TDD started with the new source fixture failing `1/78`: the protected call
   had no exceptional successor targeting a source handler. Independent review
   then drove a `2/79` RED for declared-child pollution and nested argument

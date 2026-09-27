@@ -57,6 +57,36 @@ static TZrBool compiler_semantic_cfg_is_catch_binding_read(
                     ZrCore_String_Equal(identifierName, bindingName));
 }
 
+static TZrBool compiler_semantic_cfg_has_initialized_local(
+        SZrCompilerState *cs, SZrString *name) {
+    TZrUInt32 stackSlot;
+    SZrCompilerSemanticIrSlot *slot;
+
+    if (cs == ZR_NULL || name == ZR_NULL ||
+        (stackSlot = find_local_var(cs, name)) == ZR_PARSER_SLOT_NONE) {
+        return ZR_FALSE;
+    }
+    slot = compiler_semantic_ir_find_slot(cs, stackSlot);
+    return (TZrBool)(slot != ZR_NULL &&
+                    slot->placeId != ZR_PLACE_ID_INVALID &&
+                    slot->valueId != ZR_VALUE_ID_INVALID);
+}
+
+static TZrBool compiler_semantic_cfg_is_prior_local_read(
+        SZrCompilerState *cs, const SZrAstNode *node,
+        SZrString *bindingName) {
+    SZrString *name;
+
+    if (node == ZR_NULL || node->type != ZR_AST_EXPRESSION_STATEMENT) {
+        return ZR_FALSE;
+    }
+    name = compiler_semantic_cfg_simple_identifier_name(
+            node->data.expressionStatement.expr);
+    return (TZrBool)(name != ZR_NULL && bindingName != ZR_NULL &&
+                    !ZrCore_String_Equal(name, bindingName) &&
+                    compiler_semantic_cfg_has_initialized_local(cs, name));
+}
+
 static TZrBool compiler_semantic_cfg_is_canonical_catch_return(
         const SZrAstNode *expression,
         SZrString *bindingName) {
@@ -204,8 +234,10 @@ static TZrBool compiler_semantic_cfg_is_supported_catch_block(
     if (node != ZR_NULL && node->type == ZR_AST_BLOCK &&
         node->data.block.body != ZR_NULL &&
         node->data.block.body->count == 1U &&
-        compiler_semantic_cfg_is_catch_binding_read(
-                node->data.block.body->nodes[0], bindingName)) {
+        (compiler_semantic_cfg_is_catch_binding_read(
+                 node->data.block.body->nodes[0], bindingName) ||
+         compiler_semantic_cfg_is_prior_local_read(
+                 cs, node->data.block.body->nodes[0], bindingName))) {
         return ZR_TRUE;
     }
     if (compiler_semantic_cfg_is_direct_catch_abrupt(
@@ -335,6 +367,26 @@ const SZrAstNode *compiler_semantic_cfg_supported_direct_call(
     return callNode;
 }
 
+static const SZrAstNode *compiler_semantic_cfg_supported_local_assignment_call(
+        SZrCompilerState *cs, const SZrAstNode *expression) {
+    const SZrAstNode *left;
+
+    if (expression == ZR_NULL ||
+        expression->type != ZR_AST_ASSIGNMENT_EXPRESSION ||
+        expression->data.assignmentExpression.op.op == ZR_NULL ||
+        strcmp(expression->data.assignmentExpression.op.op, "=") != 0) {
+        return ZR_NULL;
+    }
+    left = expression->data.assignmentExpression.left;
+    if (left == ZR_NULL || left->type != ZR_AST_IDENTIFIER_LITERAL ||
+        !compiler_semantic_cfg_has_initialized_local(
+                cs, left->data.identifier.name)) {
+        return ZR_NULL;
+    }
+    return compiler_semantic_cfg_supported_direct_call(
+            expression->data.assignmentExpression.right);
+}
+
 TZrBool compiler_semantic_cfg_try_catch_is_supported(
         SZrCompilerState *cs,
         const SZrAstNode *node) {
@@ -365,6 +417,11 @@ TZrBool compiler_semantic_cfg_try_catch_is_supported(
                     ? ZR_NULL
                     : compiler_semantic_cfg_supported_direct_call(
                               protectedStatement->data.expressionStatement.expr);
+    if (protectedCall == ZR_NULL && protectedStatement != ZR_NULL &&
+        protectedStatement->type == ZR_AST_EXPRESSION_STATEMENT) {
+        protectedCall = compiler_semantic_cfg_supported_local_assignment_call(
+                cs, protectedStatement->data.expressionStatement.expr);
+    }
     if (protectedStatement == ZR_NULL ||
         protectedStatement->type != ZR_AST_EXPRESSION_STATEMENT ||
         protectedStatement->data.expressionStatement.expr == ZR_NULL ||

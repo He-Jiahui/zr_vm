@@ -89,6 +89,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_optional_value.inc
   - tests/parser/test_pre_semantic_ir_general_call.inc
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
+  - tests/parser/test_pre_semantic_ir_catch_assignment.inc
   - tests/parser/test_pre_semantic_ir_typed_catch.inc
   - tests/parser/test_pre_semantic_ir_multi_catch.inc
   - tests/parser/test_pre_semantic_ir_catch_abrupt.inc
@@ -411,11 +412,13 @@ an inactive graph and falsely model conditional execution as unconditional.
 A deliberately bounded source `try`/`catch` form now owns an exceptional CFG:
 one or more catch parameters, each with one simple already-resolvable canonical
 type annotation, optionally followed by one terminal catch-all, no `finally`,
-one resolved direct call with either no
-arguments or one unmarked positional `int` identifier that exactly matches one
-value parameter without conversion, ownership, reference, or GC-bridge work in
-the protected block, and for every handler either an empty catch body, one
-expression that reads the catch binding, the exact cleanup-free sequence
+one resolved direct call, either as its own expression statement or as the
+right side of a plain assignment to an already initialized local, with either
+no arguments or one unmarked positional `int` identifier that exactly matches
+one value parameter without conversion, ownership, reference, or GC-bridge
+work in the protected block, and for every handler either an empty catch body,
+one expression that reads the catch binding or a previously initialized local
+other than the catch binding, the exact cleanup-free sequence
 `var local = binding; local;`, a direct `return` whose result is void, a
 literal, or the catch binding, or an exact `throw binding;` rethrow. A
 supported argument is loaded before the
@@ -451,6 +454,9 @@ terminating the whole function.
 The compiler restores the pre-try
 slot bridge before constructing the handler and at the join, so the invoke
 result remains normal-path-only and the catch binding remains handler-local.
+For a plain assignment, the normal continuation stores the call result into
+the existing local Place; the exceptional handler instead loads its pre-try
+value, which SSA construction keeps distinct from the unfinished invoke result.
 The handler target is cleared before the body is compiled; the completed catch
 cannot capture later calls, which receive their ordinary propagation sink.
 If call lowering discovers missing canonical facts after this source form
@@ -463,9 +469,10 @@ All broader `try`/`catch`/`finally` scopes remain the conservative boundary:
 a catch-all followed by another clause; unresolved, generic, qualified, array,
 ownership-qualified, or reference-qualified catch annotations; a catch body
 other than the empty,
-single binding read, exact nonshadowing inferred-local propagation, canonical
-direct return, or exact binding-rethrow shapes; a
-protected body without the single resolved direct call, multiple/named/marked/
+single binding or initialized-prior-local read, exact nonshadowing
+inferred-local propagation, canonical direct return, or exact binding-rethrow
+shapes; a protected body without the single resolved direct call or its plain
+initialized-local assignment, compound assignment, multiple/named/marked/
 generic arguments, argument expressions other than the simple identifier,
 type-converting or non-value arguments, nested control, every `finally` shape,
 and direct handler exits under active ownership cleanup abandon an earlier
