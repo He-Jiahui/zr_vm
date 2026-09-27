@@ -24,15 +24,20 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* TODO: 此手写内部声明在当前文件没有调用；核对是否为遗留链接契约并可删除。 */
 TZrUInt64 metadata_signature_hash_v1(const TZrByte *signatureBlob, TZrSize signatureBlobLength);
+/* 诊断输出在此只作不透明类型传递，由验证入口维护其具体布局。 */
 typedef struct SZrModuleImportSignatureMismatch SZrModuleImportSignatureMismatch;
+/* 使用真实模块链接校验路径检查人工构造的 TypeSpec 不匹配诊断。 */
 TZrBool zr_module_import_signature_verify(SZrState *state,
                                            SZrFunction *callerFunction,
                                            SZrString *path,
                                            SZrObjectModule *module,
                                            SZrModuleImportSignatureMismatch *outMismatch);
+/* 手工函数夹具仍使用编译器的 token 构建器，保证被破坏前的基线元数据有效。 */
 TZrBool compiler_build_function_metadata_tokens(SZrCompilerState *cs, SZrFunction *function);
 
+/* 相对路径与 @ 别名测试共享的落盘项目；路径缓冲区归夹具栈对象所有。 */
 typedef struct SZrProjectImportFixture {
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
     TZrChar mainPath[ZR_TESTS_PATH_MAX];
@@ -40,6 +45,7 @@ typedef struct SZrProjectImportFixture {
     TZrChar sharedPath[ZR_TESTS_PATH_MAX];
 } SZrProjectImportFixture;
 
+/* 多项目依赖、版本区间与二进制回读场景共享的关键路径。 */
 typedef struct SZrProjectDependencyImportFixture {
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
     TZrChar rootMainPath[ZR_TESTS_PATH_MAX];
@@ -47,10 +53,14 @@ typedef struct SZrProjectDependencyImportFixture {
     TZrChar mathBinaryPath[ZR_TESTS_PATH_MAX];
 } SZrProjectDependencyImportFixture;
 
+/* 每个用例自行创建所需项目和运行时，Unity 不提供跨用例共享状态。 */
 void setUp(void) {}
 
+/* BUG: 用例内创建 global/function 后若断言失败，Unity 会跳过用例尾部释放；
+ * 此空钩子无法回收原生状态，失败用例会泄漏其持有的资源。 */
 void tearDown(void) {}
 
+/* 元数据断言同时接受短/长字符串表示，避免测试绑定字符串存储布局。 */
 static const TZrChar *test_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -63,6 +73,7 @@ static const TZrChar *test_string_text(SZrString *value) {
     return ZrCore_String_GetNativeString(value);
 }
 
+/* 夹具从项目文件反推目录，需兼容 Windows 与类 Unix 路径分隔符。 */
 static TZrChar *find_last_path_separator(TZrChar *path) {
     TZrChar *forwardSlash;
     TZrChar *backSlash;
@@ -83,6 +94,7 @@ static TZrChar *find_last_path_separator(TZrChar *path) {
     return forwardSlash > backSlash ? forwardSlash : backSlash;
 }
 
+/* 真实项目导入需要磁盘上的 manifest 和源码；调用者据返回值决定是否继续。 */
 static TZrBool write_text_file(const TZrChar *path, const TZrChar *content) {
     FILE *file;
     size_t contentLength;
@@ -103,6 +115,7 @@ static TZrBool write_text_file(const TZrChar *path, const TZrChar *content) {
     return written == contentLength;
 }
 
+/* 为无源码装载场景生成可回读的 .zro；本层统一回收临时文本、函数和全局状态。 */
 static TZrBool compile_project_source_to_zro(const TZrChar *projectPath,
                                              const TZrChar *sourcePath,
                                              const TZrChar *binaryPath,
@@ -121,7 +134,7 @@ static TZrBool compile_project_source_to_zro(const TZrChar *projectPath,
         return ZR_FALSE;
     }
 
-    global = ZrLibrary_CommonState_CommonGlobalState_New(projectPath);
+    global = ZrLibrary_CommonState_CommonGlobalState_New(projectPath); /* TODO: API 要求可写路径，实参为 const；核对是否只读及签名。 */
     if (global == ZR_NULL || global->mainThreadState == ZR_NULL) {
         goto cleanup;
     }
@@ -160,6 +173,7 @@ cleanup:
     return success;
 }
 
+/* 运行时错误消息从对象字段读取，供负向导入测试核对用户可见诊断。 */
 static const SZrTypeValue *get_object_field_value(SZrState *state, SZrObject *object, const TZrChar *fieldName) {
     SZrString *fieldNameString;
     SZrTypeValue key;
@@ -178,6 +192,7 @@ static const SZrTypeValue *get_object_field_value(SZrState *state, SZrObject *ob
     return ZrCore_Object_GetValue(state, object, &key);
 }
 
+/* 从当前异常对象提取文本，使必需导入失败测试检查具体错误类别。 */
 static const TZrChar *current_exception_message(SZrState *state) {
     SZrObject *errorObject;
     const SZrTypeValue *messageValue;
@@ -203,6 +218,7 @@ static const TZrChar *current_exception_message(SZrState *state) {
     return ZrCore_String_GetNativeString(ZR_CAST_STRING(state, messageValue->value.object));
 }
 
+/* 把测试产物路径统一为清单可读形式，避免平台分隔符影响身份比较。 */
 static void normalize_test_path_to_forward_slashes(TZrChar *path) {
     if (path == ZR_NULL) {
         return;
@@ -215,6 +231,7 @@ static void normalize_test_path_to_forward_slashes(TZrChar *path) {
     }
 }
 
+/* 只在 Windows 注入混合分隔符，检验项目路径归一化而不改变其他平台语义。 */
 static void inject_windows_mixed_separator(TZrChar *path) {
     normalize_test_path_to_forward_slashes(path);
 
@@ -232,6 +249,7 @@ static void inject_windows_mixed_separator(TZrChar *path) {
 #endif
 }
 
+/* TypeSpec 对照用例需要一个带名字的对象返回类型，供真实 token 构建器编码。 */
 static void project_import_init_named_object_type_ref(SZrState *state,
                                                       SZrFunctionTypedTypeRef *typeRef,
                                                       const TZrChar *typeName) {
@@ -242,6 +260,7 @@ static void project_import_init_named_object_type_ref(SZrState *state,
     TEST_ASSERT_NOT_NULL(typeRef->typeName);
 }
 
+/* 构造最小公开 make 签名以隔离 TypeSpec 校验；返回函数由用例负责释放。 */
 static SZrFunction *create_project_import_typespec_entry_function(SZrState *state,
                                                                   const TZrChar *returnTypeName) {
     SZrFunction *function;
@@ -280,6 +299,7 @@ static SZrFunction *create_project_import_typespec_entry_function(SZrState *stat
         ZrCore_Function_Free(state, function);
         return ZR_NULL;
     }
+    /* BUG: 下层 TEST_ASSERT 失败会从 Unity 长跳转，跳过本函数对 function 的释放。 */
     project_import_init_named_object_type_ref(state, &symbol->valueType, returnTypeName);
 
     ZrCore_Memory_RawSet(&compilerState, 0, sizeof(compilerState));
@@ -293,6 +313,7 @@ static SZrFunction *create_project_import_typespec_entry_function(SZrState *stat
     return function;
 }
 
+/* 把调用方入口与提供方 make 元数据连成真实模块效果，供链接校验定位目标。 */
 static TZrBool attach_project_import_typespec_effect(SZrState *state,
                                                      SZrFunction *callerFunction,
                                                      SZrString *moduleName,
@@ -331,6 +352,7 @@ static TZrBool attach_project_import_typespec_effect(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 按宿主平台选择插件扩展名，供错误诊断场景拼装可识别候选路径。 */
 static const TZrChar *native_plugin_extension_for_test(void) {
 #ifdef ZR_VM_PLATFORM_IS_WIN
     return ".dll";
@@ -341,6 +363,7 @@ static const TZrChar *native_plugin_extension_for_test(void) {
 #endif
 }
 
+/* 落盘相对路径与 @shared 别名共存的项目，供编译和 guard 用例复用。 */
 static TZrBool prepare_project_import_fixture(SZrProjectImportFixture *fixture) {
     static const TZrChar *projectContent =
             "{\n"
@@ -401,6 +424,7 @@ static TZrBool prepare_project_import_fixture(SZrProjectImportFixture *fixture) 
            write_text_file(fixture->sharedPath, sharedContent);
 }
 
+/* 构造 root/math/trig 依赖图，覆盖包别名、相对路径和传递依赖的规范键。 */
 static TZrBool prepare_project_dependency_import_fixture(SZrProjectDependencyImportFixture *fixture) {
     static const TZrChar *projectContent =
             "{\n"
@@ -497,6 +521,7 @@ static TZrBool prepare_project_dependency_import_fixture(SZrProjectDependencyImp
            write_text_file(trigWavePath, "pub var value = 5;\n");
 }
 
+/* 固定依赖版本区间，供 AssemblyRef 请求版本与界限的编译断言。 */
 static TZrBool prepare_project_dependency_import_version_range_fixture(SZrProjectDependencyImportFixture *fixture) {
     static const TZrChar *projectContent =
             "{\n"
@@ -563,6 +588,7 @@ static TZrBool prepare_project_dependency_import_version_range_fixture(SZrProjec
            write_text_file(mathOpsPath, "pub var value = 42;\n");
 }
 
+/* 构造项目引用与模块引用并存的来源，检验 AssemblyRef 身份独立于源码可用性。 */
 static TZrBool prepare_project_assembly_reference_import_fixture(SZrProjectDependencyImportFixture *fixture) {
     static const TZrChar *projectContent =
             "{\n"
@@ -636,6 +662,7 @@ static TZrBool prepare_project_assembly_reference_import_fixture(SZrProjectDepen
            write_text_file(mathOpsPath, "pub var value = 42;\n");
 }
 
+/* 按规范模块键统计静态导入，避免只凭总数遗漏别名重写错误。 */
 static TZrSize count_static_imports_named(const SZrFunction *function, const TZrChar *moduleName) {
     TZrSize count = 0;
 
@@ -653,6 +680,7 @@ static TZrSize count_static_imports_named(const SZrFunction *function, const TZr
     return count;
 }
 
+/* 从函数入口效果检查规范模块名，验证编译输出不保留源级别名。 */
 static TZrBool function_contains_module_effect_named(const SZrFunction *function, const TZrChar *moduleName) {
     if (function == ZR_NULL || moduleName == ZR_NULL) {
         return ZR_FALSE;
@@ -668,6 +696,7 @@ static TZrBool function_contains_module_effect_named(const SZrFunction *function
     return ZR_FALSE;
 }
 
+/* 检查模块效果与 AssemblyRef 的组合身份，供二进制往返前后对照。 */
 static TZrBool function_contains_module_effect_with_assembly(const SZrFunction *function,
                                                              const TZrChar *moduleName,
                                                              const TZrChar *assemblyName) {
@@ -691,6 +720,7 @@ static TZrBool function_contains_module_effect_with_assembly(const SZrFunction *
     return ZR_FALSE;
 }
 
+/* 在未载入运行时函数前检查 .zro 源树里的模块效果身份。 */
 static TZrBool io_function_contains_module_effect_with_assembly(const SZrIoFunction *function,
                                                                 const TZrChar *moduleName,
                                                                 const TZrChar *assemblyName) {
@@ -714,6 +744,7 @@ static TZrBool io_function_contains_module_effect_with_assembly(const SZrIoFunct
     return ZR_FALSE;
 }
 
+/* 定位公开调用摘要，验证函数内部 import 的依赖进入调用者契约。 */
 static const SZrFunctionCallableSummary *find_exported_callable_summary_named(const SZrFunction *function,
                                                                               const TZrChar *callableName) {
     if (function == ZR_NULL || callableName == ZR_NULL) {
@@ -731,6 +762,7 @@ static const SZrFunctionCallableSummary *find_exported_callable_summary_named(co
     return ZR_NULL;
 }
 
+/* 检查调用摘要里的模块效果，防止 guard 依赖只写入入口表。 */
 static TZrBool callable_summary_contains_module_effect_named(const SZrFunctionCallableSummary *summary,
                                                              const TZrChar *moduleName) {
     if (summary == ZR_NULL || moduleName == ZR_NULL) {
@@ -747,6 +779,7 @@ static TZrBool callable_summary_contains_module_effect_named(const SZrFunctionCa
     return ZR_FALSE;
 }
 
+/* 按元数据表计数，验证 guard 编译产出完整模块、程序集和成员引用链。 */
 static TZrSize count_metadata_records_with_table(const SZrFunction *function, TZrUInt32 tableTag) {
     TZrSize count = 0;
 
@@ -763,6 +796,7 @@ static TZrSize count_metadata_records_with_table(const SZrFunction *function, TZ
     return count;
 }
 
+/* 验证 MemberRef 保存签名字节，使运行时可在哈希之外复核实体。 */
 static TZrBool function_has_member_ref_signature_blob(const SZrFunction *function) {
     if (function == ZR_NULL || function->metadataTokenRecords == ZR_NULL ||
         function->signatureBlobHeap == ZR_NULL) {
@@ -788,6 +822,7 @@ static TZrBool function_has_member_ref_signature_blob(const SZrFunction *functio
     return ZR_FALSE;
 }
 
+/* 校验指定表的签名节点类型，防止仅生成空 token 而缺少可验证负载。 */
 static TZrBool function_has_table_signature_blob_node(const SZrFunction *function,
                                                       TZrUInt32 tableTag,
                                                       TZrUInt8 nodeKind) {
@@ -815,6 +850,7 @@ static TZrBool function_has_table_signature_blob_node(const SZrFunction *functio
     return ZR_FALSE;
 }
 
+/* 校验成员引用保留声明签名哈希，供导入者与提供者比较。 */
 static TZrBool function_has_member_ref_signature_hash(const SZrFunction *function) {
     if (function == ZR_NULL || function->metadataTokenRecords == ZR_NULL) {
         return ZR_FALSE;
@@ -842,6 +878,7 @@ static TZrBool function_has_member_ref_signature_hash(const SZrFunction *functio
     return ZR_FALSE;
 }
 
+/* 在签名堆边界内推进游标，供破坏器定位字段时保持其余 blob 有效。 */
 static TZrBool read_metadata_blob_u32(const TZrByte *blob,
                                       TZrUInt32 blobLength,
                                       TZrUInt32 *ioOffset,
@@ -865,6 +902,7 @@ static TZrBool read_metadata_blob_u32(const TZrByte *blob,
     return ZR_TRUE;
 }
 
+/* 签名字节引用字符串堆索引；测试借此按语义名称选中目标记录。 */
 static SZrString *metadata_string_heap_lookup(const SZrFunction *function, TZrUInt32 stringIndex) {
     if (function == ZR_NULL || stringIndex == 0u ||
         function->metadataStringHeap == ZR_NULL || function->metadataStringHeapLength == 0u) {
@@ -880,6 +918,7 @@ static SZrString *metadata_string_heap_lookup(const SZrFunction *function, TZrUI
     return ZR_NULL;
 }
 
+/* 对照签名堆里的名称与期望模块/成员，避免修改无关元数据项。 */
 static TZrBool read_metadata_blob_string_matches(const SZrFunction *function,
                                                  const TZrByte *blob,
                                                  TZrUInt32 blobLength,
@@ -911,6 +950,7 @@ static TZrBool read_metadata_blob_string_matches(const SZrFunction *function,
     return ZR_TRUE;
 }
 
+/* 跳过签名中的字符串索引并保持边界检查，供目标字节定位继续解析。 */
 static TZrBool skip_metadata_blob_string(const SZrFunction *function,
                                          const TZrByte *blob,
                                          TZrUInt32 blobLength,
@@ -936,6 +976,7 @@ static TZrBool skip_metadata_blob_string(const SZrFunction *function,
     return ZR_TRUE;
 }
 
+/* 跳过 TypeSpec 或成员类型签名，以便只改变目标负载而保留整体编码。 */
 static TZrBool skip_metadata_blob_type_signature(const SZrFunction *function,
                                                  const TZrByte *blob,
                                                  TZrUInt32 blobLength,
@@ -992,6 +1033,7 @@ static TZrBool skip_metadata_blob_type_signature(const SZrFunction *function,
     }
 }
 
+/* 确认调用点 MemberRef 写入方法参数/返回类型，守护重载链接所需语义。 */
 static TZrBool function_has_member_ref_method_signature(const SZrFunction *function,
                                                         const TZrChar *symbolName,
                                                         TZrUInt32 expectedParameterCount) {
@@ -1061,6 +1103,7 @@ static TZrBool function_has_member_ref_method_signature(const SZrFunction *funct
     return ZR_FALSE;
 }
 
+/* 确认方法目标哈希随 MemberRef 输出，供运行时验证提供者签名。 */
 static TZrBool function_has_member_ref_target_method_signature_hash(const SZrFunction *function,
                                                                     const TZrChar *symbolName,
                                                                     TZrUInt32 expectedParameterCount) {
@@ -1128,6 +1171,7 @@ static TZrBool function_has_member_ref_target_method_signature_hash(const SZrFun
     return ZR_FALSE;
 }
 
+/* 确认目标签名哈希非零，后续篡改测试才有有效基线。 */
 static TZrBool function_has_member_ref_target_signature_hash(const SZrFunction *function) {
     if (function == ZR_NULL || function->metadataTokenRecords == ZR_NULL) {
         return ZR_FALSE;
@@ -1154,6 +1198,7 @@ static TZrBool function_has_member_ref_target_signature_hash(const SZrFunction *
     return ZR_FALSE;
 }
 
+/* 只破坏入口效果的目标哈希，区分 guard 回退与必需导入抛错。 */
 static TZrBool function_corrupt_module_effect_target_signature_hash(SZrFunction *function,
                                                                     const TZrChar *moduleName,
                                                                     const TZrChar *symbolName) {
@@ -1184,6 +1229,7 @@ static TZrBool function_corrupt_module_effect_target_signature_hash(SZrFunction 
     return ZR_FALSE;
 }
 
+/* 只改变 token 行号而保留表标记，制造类型正确但目标身份错误的输入。 */
 static TZrMetadataToken corrupt_metadata_token_rid(TZrMetadataToken token) {
     TZrUInt32 table = ZR_METADATA_TOKEN_TABLE(token);
     TZrUInt32 rid = ZR_METADATA_TOKEN_RID(token);
@@ -1199,6 +1245,7 @@ static TZrMetadataToken corrupt_metadata_token_rid(TZrMetadataToken token) {
     return ZR_METADATA_TOKEN_MAKE(table, rid);
 }
 
+/* 沿 token 查找同一元数据记录数组中的关联节点，供所有权链破坏器使用。 */
 static SZrMetadataTokenRecord *find_metadata_token_record(SZrMetadataTokenRecord *records,
                                                           TZrUInt32 recordCount,
                                                           TZrMetadataToken token) {
@@ -1215,6 +1262,7 @@ static SZrMetadataTokenRecord *find_metadata_token_record(SZrMetadataTokenRecord
     return ZR_NULL;
 }
 
+/* 按模块和成员定位 MemberRef，确保篡改落在当前导入效果对应的目标。 */
 static const SZrMetadataTokenRecord *function_find_module_member_ref_record(const SZrFunction *function,
                                                                             const TZrChar *moduleName,
                                                                             const TZrChar *symbolName) {
@@ -1249,6 +1297,7 @@ static const SZrMetadataTokenRecord *function_find_module_member_ref_record(cons
     return ZR_NULL;
 }
 
+/* 制造入口效果目标 metadata token 错配，检验运行时身份拒绝路径。 */
 static TZrBool function_corrupt_module_effect_target_metadata_token(SZrFunction *function,
                                                                     const TZrChar *moduleName,
                                                                     const TZrChar *symbolName) {
@@ -1281,6 +1330,7 @@ static TZrBool function_corrupt_module_effect_target_metadata_token(SZrFunction 
     return ZR_FALSE;
 }
 
+/* 制造目标签名 token 错配，以验证诊断同时报告两侧 token。 */
 static TZrBool function_corrupt_module_effect_target_signature_token(SZrFunction *function,
                                                                      const TZrChar *moduleName,
                                                                      const TZrChar *symbolName) {
@@ -1313,6 +1363,7 @@ static TZrBool function_corrupt_module_effect_target_signature_token(SZrFunction
     return ZR_FALSE;
 }
 
+/* 破坏提供方模块哈希，区分程序集身份错误与成员签名错误。 */
 static TZrBool function_corrupt_module_effect_target_module_signature_hash(SZrFunction *function,
                                                                            const TZrChar *moduleName,
                                                                            const TZrChar *symbolName) {
@@ -1343,6 +1394,7 @@ static TZrBool function_corrupt_module_effect_target_module_signature_hash(SZrFu
     return ZR_FALSE;
 }
 
+/* 清除入口效果目标身份，迫使运行时回退到 ModuleRef 元数据校验。 */
 static TZrBool function_clear_module_effect_target_identity(SZrFunction *function,
                                                             const TZrChar *moduleName,
                                                             const TZrChar *symbolName) {
@@ -1373,16 +1425,18 @@ static TZrBool function_clear_module_effect_target_identity(SZrFunction *functio
     return ZR_FALSE;
 }
 
+/* 去掉入口效果作为捷径，验证 ModuleRef 表本身仍会被校验。 */
 static TZrBool function_drop_module_entry_effects(SZrFunction *function) {
     if (function == ZR_NULL || function->moduleEntryEffects == ZR_NULL ||
         function->moduleEntryEffectLength == 0u) {
         return ZR_FALSE;
     }
 
-    function->moduleEntryEffectLength = 0u;
+    function->moduleEntryEffectLength = 0u; /* BUG: Function_Free 只在长度 > 0 时释放非空数组；两个调用用例均泄漏。 */
     return ZR_TRUE;
 }
 
+/* 确认 guard/原生目标在效果中携带可比较的目标哈希。 */
 static TZrBool function_has_module_effect_target_signature_hash(const SZrFunction *function,
                                                                 const TZrChar *moduleName,
                                                                 const TZrChar *symbolName) {
@@ -1408,6 +1462,7 @@ static TZrBool function_has_module_effect_target_signature_hash(const SZrFunctio
     return ZR_FALSE;
 }
 
+/* 统计同名公开候选，验证运行时用签名消歧而非首个同名项。 */
 static TZrUInt32 count_typed_exported_symbols_named(const SZrFunction *function, const TZrChar *symbolName) {
     TZrUInt32 count = 0;
 
@@ -1427,6 +1482,7 @@ static TZrUInt32 count_typed_exported_symbols_named(const SZrFunction *function,
     return count;
 }
 
+/* 仅破坏嵌套调用者的效果，防止校验只覆盖入口函数。 */
 static TZrBool function_corrupt_child_module_effect_target_signature_hash(SZrFunction *function,
                                                                           const TZrChar *moduleName,
                                                                           const TZrChar *symbolName) {
@@ -1446,6 +1502,7 @@ static TZrBool function_corrupt_child_module_effect_target_signature_hash(SZrFun
     return ZR_FALSE;
 }
 
+/* 保持已记录哈希而改动 MemberRef 字节，验证运行时不是只信哈希。 */
 static TZrBool function_corrupt_member_ref_target_signature_blob_byte(SZrFunction *function,
                                                                       const TZrChar *moduleName,
                                                                       const TZrChar *symbolName) {
@@ -1526,6 +1583,7 @@ static TZrBool function_corrupt_member_ref_target_signature_blob_byte(SZrFunctio
     return ZR_FALSE;
 }
 
+/* 复制签名堆并只改 ModuleRef 目标字节，隔离表级验证与入口效果。 */
 static TZrBool function_corrupt_module_ref_target_signature_blob_byte_only(SZrState *state,
                                                                            SZrFunction *function,
                                                                            const TZrChar *moduleName,
@@ -1638,6 +1696,7 @@ static TZrBool function_corrupt_module_ref_target_signature_blob_byte_only(SZrSt
     return ZR_FALSE;
 }
 
+/* 复制 ModuleRef 记录并只改目标 token，保持编译产物原记录作对照。 */
 static TZrBool function_corrupt_module_ref_target_metadata_token_only(SZrState *state,
                                                                       SZrFunction *function,
                                                                       const TZrChar *moduleName,
@@ -1706,6 +1765,7 @@ static TZrBool function_corrupt_module_ref_target_metadata_token_only(SZrState *
     return ZR_FALSE;
 }
 
+/* 复制 ModuleRef 记录并破坏 TypeRef 所有者，覆盖引用链而非成员本身。 */
 static TZrBool function_corrupt_module_ref_type_owner_token_only(SZrState *state,
                                                                  SZrFunction *function,
                                                                  const TZrChar *moduleName,
@@ -1782,6 +1842,7 @@ static TZrBool function_corrupt_module_ref_type_owner_token_only(SZrState *state
     return ZR_FALSE;
 }
 
+/* 只改 ModuleRef 的 AssemblyRef 版本范围，检验加载器拒绝不兼容版本。 */
 static TZrBool function_corrupt_module_ref_assembly_version_range_only(SZrState *state,
                                                                        SZrFunction *function,
                                                                        const TZrChar *moduleName) {
@@ -1837,6 +1898,7 @@ static TZrBool function_corrupt_module_ref_assembly_version_range_only(SZrState 
     return ZR_FALSE;
 }
 
+/* 从编译元数据中按签名名称定位 AssemblyRef，供版本与身份断言使用。 */
 static const SZrMetadataTokenRecord *find_assembly_ref_record_named(const SZrFunction *function,
                                                                     const TZrChar *moduleName) {
     if (function == ZR_NULL || function->metadataTokenRecords == ZR_NULL ||
@@ -1866,6 +1928,7 @@ static const SZrMetadataTokenRecord *find_assembly_ref_record_named(const SZrFun
     return ZR_NULL;
 }
 
+/* 沿 ModuleRef owner token 验证引用链的表类型与目标记录。 */
 static const SZrMetadataTokenRecord *find_module_ref_owner_record(const SZrFunction *function,
                                                                   const SZrMetadataTokenRecord *record,
                                                                   EZrMetadataTableTag expectedTable) {
@@ -1888,6 +1951,7 @@ static const SZrMetadataTokenRecord *find_module_ref_owner_record(const SZrFunct
     return ownerRecord;
 }
 
+/* 比较请求版及上下界，防止只记录单一版本号却丢失范围。 */
 static TZrBool metadata_token_record_module_versions_match(const SZrMetadataTokenRecord *record,
                                                            const TZrChar *requestedVersion,
                                                            const TZrChar *minVersionInclusive,
@@ -1911,6 +1975,7 @@ static TZrBool metadata_token_record_module_versions_match(const SZrMetadataToke
            strcmp(actualMaxVersionExclusive, maxVersionExclusive) == 0;
 }
 
+/* 同一模块的相对名与规范名须合并为相同依赖，调用摘要也应使用规范键。 */
 static void test_project_compile_canonicalizes_relative_and_alias_imports(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -1956,6 +2021,7 @@ static void test_project_compile_canonicalizes_relative_and_alias_imports(void) 
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 可选导入虽有 else 分支，编译结果仍须保留完整的模块/程序集/成员引用契约。 */
 static void test_project_compile_records_using_import_guard_dependencies(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2021,6 +2087,7 @@ static void test_project_compile_records_using_import_guard_dependencies(void) {
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* guard 内的方法调用应输出可验证参数签名与目标哈希，避免只按名称链接。 */
 static void test_project_compile_records_using_import_guard_method_signature(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2061,6 +2128,7 @@ static void test_project_compile_records_using_import_guard_method_signature(voi
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 可选导入的成员哈希不符时应走 else，不得执行不兼容提供方。 */
 static void test_using_import_guard_runtime_rejects_signature_hash_mismatch(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2098,6 +2166,7 @@ static void test_using_import_guard_runtime_rejects_signature_hash_mismatch(void
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 可选导入的目标 token 错配应视为 guard 不成立并走 else。 */
 static void test_using_import_guard_runtime_rejects_target_token_mismatch(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2135,6 +2204,7 @@ static void test_using_import_guard_runtime_rejects_target_token_mismatch(void) 
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 提供方模块身份变化时 guard 应回退，不能仅凭同名成员通过。 */
 static void test_using_import_guard_runtime_rejects_target_module_hash_mismatch(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2172,6 +2242,7 @@ static void test_using_import_guard_runtime_rejects_target_module_hash_mismatch(
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 必需导入没有 else，成员签名错误必须暴露带模块和成员名的异常。 */
 static void test_required_import_runtime_rejects_signature_hash_mismatch(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2212,6 +2283,7 @@ static void test_required_import_runtime_rejects_signature_hash_mismatch(void) {
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 必需导入的 token 错配诊断需同时呈现期望和实际身份。 */
 static void test_required_import_runtime_reports_target_token_mismatch(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2259,6 +2331,7 @@ static void test_required_import_runtime_reports_target_token_mismatch(void) {
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 必需导入需报告程序集签名错误及双方模块哈希，供定位提供方漂移。 */
 static void test_required_import_runtime_rejects_target_module_hash_mismatch(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2301,6 +2374,7 @@ static void test_required_import_runtime_rejects_target_module_hash_mismatch(voi
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* AssemblyRef 版本范围不满足时，必需导入必须拒绝加载。 */
 static void test_required_import_runtime_rejects_assembly_ref_version_mismatch(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2345,6 +2419,7 @@ static void test_required_import_runtime_rejects_assembly_ref_version_mismatch(v
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 同名候选存在时，运行时应按完整签名选中兼容导出。 */
 static void test_required_import_runtime_resolves_same_name_signature_candidate(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2398,6 +2473,7 @@ static void test_required_import_runtime_resolves_same_name_signature_candidate(
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 即使目标哈希未变，签名字节不一致也必须使可选导入回退。 */
 static void test_using_import_guard_runtime_rejects_signature_blob_mismatch_with_matching_hash(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2435,6 +2511,7 @@ static void test_using_import_guard_runtime_rejects_signature_blob_mismatch_with
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 运行时 guard 应消费 ModuleRef 的签名字节，而非只读入口效果。 */
 static void test_using_import_guard_runtime_consumes_module_ref_signature_blob(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2473,6 +2550,7 @@ static void test_using_import_guard_runtime_consumes_module_ref_signature_blob(v
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* ModuleRef 目标 token 独立错误时，guard 应拒绝该提供方。 */
 static void test_using_import_guard_runtime_rejects_module_ref_target_token_mismatch(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2511,6 +2589,7 @@ static void test_using_import_guard_runtime_rejects_module_ref_target_token_mism
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* ModuleRef 到 TypeRef/AssemblyRef 的 owner 链错误时，guard 不得成功。 */
 static void test_using_import_guard_runtime_rejects_module_ref_owner_chain_mismatch(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2549,6 +2628,7 @@ static void test_using_import_guard_runtime_rejects_module_ref_owner_chain_misma
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 入口效果缺目标身份时，ModuleRef 元数据仍应成为校验依据。 */
 static void test_using_import_guard_runtime_uses_module_ref_identity_when_effect_targets_are_missing(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2590,6 +2670,7 @@ static void test_using_import_guard_runtime_uses_module_ref_identity_when_effect
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 手工 TypeSpec 夹具检查类型身份不匹配的具体诊断边界。 */
 static void test_using_import_signature_reports_typespec_mismatch_diagnostic(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2647,6 +2728,7 @@ static void test_using_import_signature_reports_typespec_mismatch_diagnostic(voi
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 删除入口效果后仍验证 ModuleRef 表，防止校验只挂在快速路径。 */
 static void test_using_import_guard_runtime_verifies_module_ref_table_without_entry_effects(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2686,6 +2768,7 @@ static void test_using_import_guard_runtime_verifies_module_ref_table_without_en
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 成功 guard 应记录所选 ModuleRef 绑定，供后续执行复用。 */
 static void test_using_import_guard_runtime_records_module_ref_binding_result(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2762,6 +2845,7 @@ static void test_using_import_guard_runtime_records_module_ref_binding_result(vo
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 可选提供方不可用时须执行 else，而非升级为必需导入异常。 */
 static void test_using_import_guard_runtime_unavailable_provider_falls_back_to_else(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2797,6 +2881,7 @@ static void test_using_import_guard_runtime_unavailable_provider_falls_back_to_e
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 嵌套调用者的目标哈希也需校验，避免只审入口函数。 */
 static void test_using_import_guard_runtime_checks_nested_caller_signature_hash(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2837,6 +2922,7 @@ static void test_using_import_guard_runtime_checks_nested_caller_signature_hash(
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 原生提供方也应为 guard 输出目标签名哈希，统一跨来源验证。 */
 static void test_using_import_guard_records_native_target_signature_hash(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2870,6 +2956,7 @@ static void test_using_import_guard_records_native_target_signature_hash(void) {
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 原生目标签名改变时 guard 必须拒绝旧调用契约。 */
 static void test_using_import_guard_runtime_rejects_native_target_signature_hash_mismatch(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2907,6 +2994,7 @@ static void test_using_import_guard_runtime_rejects_native_target_signature_hash
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 必需导入可接受正确的原生模块链接签名，防止只支持源码模块。 */
 static void test_required_import_runtime_accepts_native_module_link_signature(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2941,6 +3029,7 @@ static void test_required_import_runtime_accepts_native_module_link_signature(vo
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 原生提供方不可用时，异常须指出来源与缺失原因。 */
 static void test_required_import_runtime_reports_native_provider_unavailable(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -2981,6 +3070,7 @@ static void test_required_import_runtime_reports_native_provider_unavailable(voi
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 源码加载失败的诊断应保留尝试路径，便于辨认真实搜索范围。 */
 static void test_required_import_runtime_reports_source_loader_attempts(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -3024,6 +3114,7 @@ static void test_required_import_runtime_reports_source_loader_attempts(void) {
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 描述符指向的插件加载失败应向调用者呈现底层错误上下文。 */
 static void test_required_import_runtime_reports_descriptor_plugin_load_error(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -3074,6 +3165,7 @@ static void test_required_import_runtime_reports_descriptor_plugin_load_error(vo
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* AOT 描述符加载失败应在项目导入处报告而非静默降级。 */
 static void test_project_import_reports_aot_descriptor_load_error(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -3109,6 +3201,7 @@ static void test_project_import_reports_aot_descriptor_load_error(void) {
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 依赖声明的版本约束应写入 AssemblyRef 的请求版和上下界。 */
 static void test_project_compile_applies_dependency_import_version_range_to_assembly_ref(void) {
     SZrProjectDependencyImportFixture fixture;
     SZrGlobalState *global;
@@ -3151,6 +3244,7 @@ static void test_project_compile_applies_dependency_import_version_range_to_asse
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 项目引用需要在编译元数据中形成独立的程序集身份。 */
 static void test_project_compile_emits_assembly_ref_identity_from_zrp_references(void) {
     SZrProjectDependencyImportFixture fixture;
     SZrGlobalState *global;
@@ -3192,6 +3286,7 @@ static void test_project_compile_emits_assembly_ref_identity_from_zrp_references
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 仅有 .zro 的被引用程序集仍应可供编译期解析。 */
 static void test_project_compile_reads_referenced_assembly_from_zro_without_source(void) {
     SZrProjectDependencyImportFixture fixture;
     SZrGlobalState *global;
@@ -3249,6 +3344,7 @@ static void test_project_compile_reads_referenced_assembly_from_zro_without_sour
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 验证程序集身份经函数编译、.zro 源树和运行时载入保持一致。 */
 static void test_project_assembly_ref_identity_roundtrips_through_zro_module_effects(void) {
     SZrProjectDependencyImportFixture fixture;
     SZrGlobalState *global;
@@ -3304,6 +3400,8 @@ static void test_project_assembly_ref_identity_roundtrips_through_zro_module_eff
     ZrCore_Io_Init(state, &io, ZrTests_Fixture_ReaderRead, ZR_NULL, &reader);
     io.isBinary = ZR_TRUE;
 
+    /* BUG: ReadSourceNew 成功返回的源树归调用方，正常成功路径没有调用
+     * ZrCore_Io_ReadSourceFree；每次运行都会泄漏源树的原生存储。 */
     sourceObject = ZrCore_Io_ReadSourceNew(&io);
     TEST_ASSERT_NOT_NULL(sourceObject);
     TEST_ASSERT_EQUAL_UINT32(1u, sourceObject->modulesLength);
@@ -3326,6 +3424,7 @@ static void test_project_assembly_ref_identity_roundtrips_through_zro_module_eff
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 根项目与依赖项目中的不同导入语法都应映射到各自规范包键。 */
 static void test_project_compile_canonicalizes_dependency_imports(void) {
     SZrProjectDependencyImportFixture fixture;
     SZrGlobalState *global;
@@ -3380,6 +3479,7 @@ static void test_project_compile_canonicalizes_dependency_imports(void) {
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 同一源文件的混合 Windows 分隔符应导出同一模块键。 */
 static void test_project_derive_current_module_key_accepts_mixed_windows_separators(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -3415,6 +3515,7 @@ static void test_project_derive_current_module_key_accepts_mixed_windows_separat
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* 显式 module 键与项目路径不一致时，编译应拒绝身份伪装。 */
 static void test_project_compile_rejects_explicit_module_key_path_mismatch(void) {
     SZrProjectImportFixture fixture;
     static const TZrChar *mismatchSource =
@@ -3441,6 +3542,8 @@ static void test_project_compile_rejects_explicit_module_key_path_mismatch(void)
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+/* Unity 入口覆盖编译规范键、元数据破坏、运行时拒绝、诊断与二进制回读。 */
+/* TODO: 当前 CMake 只创建可执行目标，未注册 CTest；核对是否预期手工执行。 */
 int main(void) {
     UNITY_BEGIN();
 

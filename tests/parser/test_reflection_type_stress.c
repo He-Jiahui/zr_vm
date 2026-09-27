@@ -17,13 +17,18 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
 
+/* 各 Unity 用例独立持有运行时，反射缓存和 GC 统计不会跨用例复用。 */
 static SZrState *g_state;
 
+/* 压力场景需要可执行的解析/模块环境，每例重新构造以隔离缓存命中数。 */
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
+/* Unity 断言跳出用例时也会销毁运行时；用例内的原生函数仍须自行释放。 */
+/* BUG: 用例断言失败会跳过 Function_Free 和部分 GC 解锁，当前钩子并不接管
+ * 这些局部所有权；失败路径会留下原生函数分配。 */
 void tearDown(void) {
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
@@ -31,6 +36,7 @@ void tearDown(void) {
     }
 }
 
+/* 深继承源生成器的有界写入契约；调用方以 false 中止并释放缓冲区。 */
 static TZrBool append_text(
         TZrChar *buffer,
         TZrSize capacity,
@@ -57,6 +63,7 @@ static TZrBool append_text(
     return ZR_TRUE;
 }
 
+/* 生成有序继承链以考验成员汇总深度；返回 malloc 缓冲区由调用方释放。 */
 static TZrChar *build_deep_type_source(TZrUInt32 depth) {
     TZrSize capacity = (TZrSize)depth * 96u + 256u;
     TZrChar *source = (TZrChar *)malloc(capacity);
@@ -87,6 +94,7 @@ static TZrChar *build_deep_type_source(TZrUInt32 depth) {
     return source;
 }
 
+/* 从源码编译并建立公开原型供反射查询；outFunction 的原生所有权留给用例。 */
 static SZrObjectModule *create_module(
         const TZrChar *moduleName,
         const TZrChar *fileName,
@@ -101,6 +109,8 @@ static SZrObjectModule *create_module(
     if (outFunction != ZR_NULL) {
         *outFunction = function;
     }
+    /* TODO: 编译成功而模块/原型创建失败时，function 已交给 outFunction；
+     * 四个用例随即断言 module 非空。核对运行时销毁是否兜底回收该原生函数。 */
     if (function == ZR_NULL) {
         return ZR_NULL;
     }
@@ -122,6 +132,7 @@ static SZrObjectModule *create_module(
     return module;
 }
 
+/* 从模块公开导出定位原型，避免绕过真实导出路径直接制造反射对象。 */
 static SZrObjectPrototype *module_prototype(
         SZrObjectModule *module,
         const TZrChar *name) {
@@ -139,6 +150,7 @@ static SZrObjectPrototype *module_prototype(
             g_state, value->value.object);
 }
 
+/* 通过正式 TypeOfValue API 取得描述符，使缓存测试覆盖运行时实际入口。 */
 static SZrObject *type_descriptor(SZrObjectPrototype *prototype) {
     SZrTypeValue prototypeValue;
     SZrTypeValue descriptorValue;
@@ -161,6 +173,7 @@ static SZrObject *type_descriptor(SZrObjectPrototype *prototype) {
     return ZR_CAST_OBJECT(g_state, descriptorValue.value.object);
 }
 
+/* 读取反射数组的边界元素，验证大容量缓存没有截断或重建对象。 */
 static SZrObject *member_at(SZrObject *members, TZrUInt32 index) {
     SZrTypeValue key;
     const SZrTypeValue *entryValue;
@@ -174,6 +187,7 @@ static SZrObject *member_at(SZrObject *members, TZrUInt32 index) {
     return ZR_CAST_OBJECT(g_state, entryValue->value.object);
 }
 
+/* 沿反射对象字段取得容器，供人工放大成员集合的压力夹具使用。 */
 static SZrObject *object_field(
         SZrObject *object,
         const TZrChar *name,
@@ -197,6 +211,7 @@ static SZrObject *object_field(
     return ZR_CAST_OBJECT(g_state, value->value.object);
 }
 
+/* 构造结果通过公开字段读取，验证 compacting GC 后对象值仍可访问。 */
 static const SZrTypeValue *value_field(SZrObject *object, const TZrChar *name) {
     SZrString *keyString = ZrCore_String_CreateFromNative(g_state, (TZrNativeString) name);
     SZrTypeValue key;
@@ -209,12 +224,14 @@ static const SZrTypeValue *value_field(SZrObject *object, const TZrChar *name) {
     return ZrCore_Object_GetValue(g_state, object, &key);
 }
 
+/* 仅撤销本层实际新增的 GC 忽略标记，保留调用方原有的固定状态。 */
 static void unpin_if_added(SZrRawObject *object, TZrBool added) {
     if (added) {
         ZrCore_GarbageCollector_UnignoreObject(g_state->global, object);
     }
 }
 
+/* 放大稠密成员表但复用同一 seed 对象，隔离缓存容量压力与对象图压力。 */
 static TZrBool append_synthetic_member_entries(
         SZrObject *descriptor,
         TZrUInt32 targetCount) {
@@ -297,6 +314,7 @@ cleanup:
     return success;
 }
 
+/* 大表两次查询应只构建一次缓存，且固定后强制压缩仍保留结果身份。 */
 static void test_reflection_query_caches_one_hundred_thousand_members(void) {
     const TZrUInt32 memberCount = 100000u;
     static const TZrChar *source =
@@ -335,6 +353,8 @@ static void test_reflection_query_caches_one_hundred_thousand_members(void) {
     collector = g_state->global->garbageCollector;
     TEST_ASSERT_NOT_NULL(collector);
     savedDebt = collector->gcDebtSize;
+    /* BUG: 以下断言若失败，Unity 长跳转会跳过本用例尾部的 gcDebtSize 恢复、
+     * 固定对象解锁及 Function_Free；tearDown 只销毁运行时。 */
     collector->gcDebtSize = -((TZrMemoryOffset)1024 * 1024 * 1024);
     appendSucceeded = append_synthetic_member_entries(
             descriptor, memberCount);
@@ -424,6 +444,7 @@ static void test_reflection_query_caches_one_hundred_thousand_members(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
+/* 深继承汇总与万次命中跨压缩 GC 保持同一缓存对象，防止链深导致重算。 */
 static void test_reflection_deep_inheritance_cache_survives_compacting_gc(void) {
     const TZrUInt32 depth = 512u;
     TZrChar typeName[16];
@@ -448,6 +469,7 @@ static void test_reflection_deep_inheritance_cache_survives_compacting_gc(void) 
     snprintf(typeName, sizeof(typeName), "C%04u", depth - 1u);
     descriptor = type_descriptor(module_prototype(module, typeName));
     TEST_ASSERT_NOT_NULL(descriptor);
+    /* BUG: 固定模块后若任一断言失败，Unity 跳过尾部解锁和原生 Function_Free。 */
     TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IgnoreObject(
             g_state, ZR_CAST_RAW_OBJECT_AS_SUPER(module)));
     TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IgnoreObject(
@@ -485,6 +507,7 @@ static void test_reflection_deep_inheritance_cache_survives_compacting_gc(void) 
     ZrCore_Function_Free(g_state, function);
 }
 
+/* 构造器抛错后反射边界须清空结果并恢复异常处理栈及 GC 根帧深度。 */
 static void test_reflection_constructor_throw_reports_boundary_and_clears_result(void) {
     static const TZrChar *source =
             "module reflection_throw_stress;\n"
@@ -535,6 +558,7 @@ static void test_reflection_constructor_throw_reports_boundary_and_clears_result
     ZrCore_Function_Free(g_state, function);
 }
 
+/* 已固定描述符和首个实例跨压缩 GC 后，万次构造应复用查找缓存且值正确。 */
 static void test_reflection_constructor_cache_and_result_survive_compacting_gc(void) {
     static const TZrChar *source = "module reflection_constructor_gc_stress;\n"
                                    "pub class Box {\n"
@@ -556,6 +580,7 @@ static void test_reflection_constructor_cache_and_result_survive_compacting_gc(v
     TEST_ASSERT_NOT_NULL(module);
     descriptor = type_descriptor(module_prototype(module, "Box"));
     TEST_ASSERT_NOT_NULL(descriptor);
+    /* BUG: 固定对象后的断言失败会绕过用例尾部 UnignoreObject/Function_Free。 */
     TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IgnoreObject(g_state, ZR_CAST_RAW_OBJECT_AS_SUPER(module)));
     TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IgnoreObject(g_state, ZR_CAST_RAW_OBJECT_AS_SUPER(descriptor)));
 
@@ -575,6 +600,8 @@ static void test_reflection_constructor_cache_and_result_survive_compacting_gc(v
 
         ZrCore_Value_InitAsInt(g_state, &argument, (TZrInt64) iteration);
         TEST_ASSERT_TRUE(ZrCore_Reflection_CreateInstance(g_state, descriptor, &argument, 1u, &result, &status));
+        /* TODO: CreateInstance 返回前已解除新实例固定；核对 value_field 创建键字符串时
+         * 是否可能触发 GC，以及调用方是否需临时 root result。 */
         value = value_field(ZR_CAST_OBJECT(g_state, result.value.object), "value");
         TEST_ASSERT_NOT_NULL(value);
         TEST_ASSERT_EQUAL_INT64(iteration, value->value.nativeObject.nativeInt64);
@@ -590,6 +617,7 @@ static void test_reflection_constructor_cache_and_result_survive_compacting_gc(v
     ZrCore_Function_Free(g_state, function);
 }
 
+/* 显式 CTest stress 入口：依次覆盖大表、深继承、异常边界和构造缓存。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_reflection_query_caches_one_hundred_thousand_members);

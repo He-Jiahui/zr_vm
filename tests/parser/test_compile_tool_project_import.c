@@ -18,9 +18,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Unity 每个用例重建运行时；项目通过 global->userData 供导入解析和编译阶段读取。 */
 static SZrState *g_state;
 static SZrLibrary_Project *g_project;
 
+/* 提供只有 buildDependencies、没有 lock 的基线项目，用于区分路径规范化与工具装载。 */
 void setUp(void) {
     static TZrChar manifest[] =
             "{"
@@ -47,6 +49,9 @@ void setUp(void) {
     g_state->global->userData = g_project;
 }
 
+/* 用例正常退出或 Unity 断言跳转后均由此释放基线项目及运行时。 */
+/* BUG: 断言跳过用例尾部时，局部 AST/CompilerState 等未交给此钩子，
+ * 因而其原生分配不会随基线项目的释放得到完整回收。 */
 void tearDown(void) {
     if (g_state != ZR_NULL && g_state->global != ZR_NULL) {
         g_state->global->userData = ZR_NULL;
@@ -61,6 +66,7 @@ void tearDown(void) {
     }
 }
 
+/* 让导入断言复用同一源模块身份；返回 AST 由用例负责释放。 */
 static SZrAstNode *parse_import_source(const TZrChar *specifier) {
     TZrChar source[256];
     SZrString *sourceName;
@@ -79,6 +85,7 @@ static SZrAstNode *parse_import_source(const TZrChar *specifier) {
             g_state, source, (TZrSize)written, sourceName);
 }
 
+/* 只读取测试脚本首条导入，借此判断 canonicalize 是否改写编译工具别名。 */
 static const TZrChar *first_import_specifier(SZrAstNode *ast) {
     SZrAstNode *statement;
     SZrAstNode *value;
@@ -106,6 +113,7 @@ static const TZrChar *first_import_specifier(SZrAstNode *ast) {
             modulePath->data.stringLiteral.value);
 }
 
+/* 锁解析前的编译工具别名必须留给 build-facts 阶段，不能变成运行时模块键。 */
 static void test_build_dependency_import_preserves_compile_tool_specifier(void) {
     SZrAstNode *ast = parse_import_source("@derive");
     SZrString *sourceName;
@@ -137,6 +145,7 @@ static void test_build_dependency_import_preserves_compile_tool_specifier(void) 
     ZrParser_Ast_Free(g_state, ast);
 }
 
+/* 未声明的 @ 别名仍需报普通导入错误，不能被 buildDependencies 路径吞掉。 */
 static void test_unknown_package_import_is_not_treated_as_compile_tool(void) {
     SZrAstNode *ast = parse_import_source("@missing");
     SZrString *sourceName;
@@ -164,6 +173,7 @@ static void test_unknown_package_import_is_not_treated_as_compile_tool(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+/* 工具包子模块仍保持原始限定名，供后续锁与 provider 解析使用。 */
 static void test_build_dependency_submodule_preserves_compile_tool_specifier(void) {
     SZrAstNode *ast = parse_import_source("@derive.tools.derive");
     SZrString *sourceName;
@@ -193,6 +203,7 @@ static void test_build_dependency_submodule_preserves_compile_tool_specifier(voi
     ZrParser_Ast_Free(g_state, ast);
 }
 
+/* 编译期依赖不应污染运行时静态导入图；AST 身份需先从分析缓存撤销。 */
 static void test_build_dependency_import_is_excluded_from_runtime_module_graph(void) {
     SZrAstNode *ast = parse_import_source("@derive");
     SZrString *sourceName;
@@ -231,6 +242,7 @@ static void test_build_dependency_import_is_excluded_from_runtime_module_graph(v
     ZrParser_Ast_Free(g_state, ast);
 }
 
+/* build-facts 无锁时必须失败且不留下工具绑定，防止使用未经固定的构建输入。 */
 static void test_build_dependency_import_requires_compile_tool_lock(void) {
     SZrAstNode *ast = parse_import_source("@derive");
     SZrString *sourceName;
@@ -270,6 +282,7 @@ static void test_build_dependency_import_requires_compile_tool_lock(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+/* provider 的公开入口筛选依赖 AST 可见性，覆盖显式和默认私有修饰符。 */
 static void test_function_access_modifiers_are_retained_in_ast(void) {
     static const TZrChar source[] =
             "pub fn exported(): int { return 1; }\n"
@@ -300,6 +313,7 @@ static void test_function_access_modifiers_are_retained_in_ast(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+/* provider 源码的传递依赖失败时，编译状态四类导入/拥有权记录都要回滚。 */
 static void test_provider_source_rolls_back_failed_transitive_build_dependency(void) {
     static const TZrByte source[] =
             "let nested = import(\"@derive\");\n"
@@ -330,6 +344,7 @@ static void test_provider_source_rolls_back_failed_transitive_build_dependency(v
     ZrParser_CompilerState_Free(&compiler);
 }
 
+/* 供真实 .zrs 与 .zrm 夹具落盘；调用方负责检查返回值。 */
 static TZrBool write_bytes(
         const TZrChar *path,
         const TZrByte *bytes,
@@ -349,6 +364,7 @@ static TZrBool write_bytes(
     return ok;
 }
 
+/* 清单和锁使用可移植正斜杠路径，避免 Windows 转义改变 JSON 中的路径。 */
 static void normalize_json_path(TZrChar *path) {
     if (path == ZR_NULL) {
         return;
@@ -360,12 +376,14 @@ static void normalize_json_path(TZrChar *path) {
     }
 }
 
+/* 同时保留源路径、归档路径与内容哈希，供 manifest/lock 构造同一制品身份。 */
 typedef struct STestCompileToolArchive {
     TZrChar modulePath[ZR_TESTS_PATH_MAX];
     TZrChar archivePath[ZR_TESTS_PATH_MAX];
     TZrChar archiveHash[ZR_PARSER_COMPILE_TOOL_CONTENT_HASH_BUFFER_LENGTH];
 } STestCompileToolArchive;
 
+/* 构造带公开契约哈希的真实工具归档；输出路径/哈希由调用方用于锁定。 */
 static void create_compile_tool_archive(
         const TZrChar *stem,
         const TZrChar *packageName,
@@ -436,6 +454,7 @@ static void create_compile_tool_archive(
             outArchive->archivePath,
             &archiveBytes,
             &archiveByteCount));
+    /* BUG: ReadFileBytes 后若哈希断言失败，Unity 长跳转会越过 free(archiveBytes)。 */
     TEST_ASSERT_TRUE(ZrParser_CompileToolContentHash_Bytes(
             archiveBytes,
             archiveByteCount,
@@ -444,6 +463,7 @@ static void create_compile_tool_archive(
     free(archiveBytes);
 }
 
+/* 两个已锁定 provider 互相导入时，错误链应可诊断且加载事务不得残留。 */
 static void test_transitive_build_dependency_cycle_reports_chain_and_rolls_back(void) {
     static const TZrByte cycleAModuleBytes[] =
             "let cycleb = import(\"@cycleb\");\n"
@@ -530,6 +550,8 @@ static void test_transitive_build_dependency_cycle_reports_chain_and_rolls_back(
             ZrLibrary_ProjectManifestV2_ReadDependencyLock(
                     g_state, project, lock, error, sizeof(error)),
             error);
+    /* BUG: 此后任一 Unity 断言失败会跳过本用例尾部恢复/释放，tearDown 仅回收
+     * g_project；临时 project 与可能已建的编译状态因此泄漏。证据见本用例尾部。 */
     g_state->global->userData = project;
 
     ast = parse_import_source("@cyclea");
@@ -567,6 +589,7 @@ static void test_transitive_build_dependency_cycle_reports_chain_and_rolls_back(
     ZrLibrary_Project_Free(g_state, project);
 }
 
+/* 锁定工具及其 helper 应成为编译状态拥有的 provider，仅公开 transform 可供消费。 */
 static void test_locked_build_dependency_import_executes_owned_compile_tool_transform(void) {
     static const TZrByte helperModuleBytes[] =
             "pub comptime fn generatedName(): string { return \"generated\"; }\n";
@@ -727,6 +750,7 @@ static void test_locked_build_dependency_import_executes_owned_compile_tool_tran
             error);
     TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(
             archivePath, &archiveBytes, &archiveByteCount));
+    /* BUG: 两次归档读取后的哈希断言都可能长跳转并泄漏各自 malloc 缓冲区。 */
     TEST_ASSERT_TRUE(ZrParser_CompileToolContentHash_Bytes(
             archiveBytes,
             archiveByteCount,
@@ -735,6 +759,7 @@ static void test_locked_build_dependency_import_executes_owned_compile_tool_tran
     free(archiveBytes);
     TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(
             helperArchivePath, &helperArchiveBytes, &helperArchiveByteCount));
+    /* BUG: helper 哈希断言失败时 helperArchiveBytes 同样越过尾部 free。 */
     TEST_ASSERT_TRUE(ZrParser_CompileToolContentHash_Bytes(
             helperArchiveBytes,
             helperArchiveByteCount,
@@ -780,6 +805,8 @@ static void test_locked_build_dependency_import_executes_owned_compile_tool_tran
             ZrLibrary_ProjectManifestV2_ReadDependencyLock(
                     g_state, project, lock, error, sizeof(error)),
             error);
+    /* BUG: 切换项目后断言失败会绕过本用例尾部的编译状态、AST、临时项目清理；
+     * Unity 只调用 tearDown，而 tearDown 不拥有这里新建的 project。 */
     g_state->global->userData = project;
 
     ast = parse_import_source("@derive");
@@ -838,6 +865,8 @@ static void test_locked_build_dependency_import_executes_owned_compile_tool_tran
     ZrLibrary_Project_Free(g_state, project);
 }
 
+/* Unity 入口覆盖别名、锁、循环和工具执行；可执行目标由 tests/CMakeLists.txt 构建。 */
+/* TODO: 当前 CMake 未把此目标注册为 CTest 用例；核对是否预期只手工执行。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_build_dependency_import_preserves_compile_tool_specifier);
