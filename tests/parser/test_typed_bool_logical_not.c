@@ -9,6 +9,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser/compiler.h"
 
+/* 连同子函数扫描指令图，避免只看顶层而漏判 typed 或通用逻辑非。 */
 static TZrUInt32 count_opcode_recursive(const SZrFunction *function, EZrInstructionCode opcode, TZrUInt32 depth) {
     TZrUInt32 count = 0;
     TZrUInt32 index;
@@ -31,6 +32,7 @@ static TZrUInt32 count_opcode_recursive(const SZrFunction *function, EZrInstruct
     return count;
 }
 
+/* 在给定运行时编译脚本；返回的函数图由用例在成功路径释放。 */
 static SZrFunction *compile_source(SZrState *state, const char *source) {
     SZrString *sourceName;
 
@@ -42,6 +44,7 @@ static SZrFunction *compile_source(SZrState *state, const char *source) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* 静态 bool 取反应发出专用指令、不退回通用指令，随后执行三元分支验证结果。 */
 static void test_typed_bool_logical_not_emits_direct_opcode_and_executes(void) {
     const char *source =
             "var flag: bool = false;\n"
@@ -65,10 +68,15 @@ static void test_typed_bool_logical_not_emits_direct_opcode_and_executes(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 每个用例在本地创建运行时，不使用共享 Unity fixture。 */
 void setUp(void) {}
 
+/* BUG: 断言失败会经 Unity longjmp 跳过用例末尾的函数和运行时释放；
+ * 此空钩子无法清理失败用例持有的运行时及函数图。 */
 void tearDown(void) {}
 
+/* Unity 入口执行 typed bool 逻辑非用例。 */
+/* TODO: CMake 只定义可执行目标，未见 add_test；需确认是否要求纳入 CTest 自动回归。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_typed_bool_logical_not_emits_direct_opcode_and_executes);
