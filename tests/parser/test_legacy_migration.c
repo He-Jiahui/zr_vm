@@ -1,3 +1,4 @@
+/* 验证旧语法迁移计划的分类、可应用编辑、幂等性与拒绝条件。 */
 #include "unity.h"
 
 #include <string.h>
@@ -13,6 +14,7 @@
 #include "zr_vm_parser/legacy_migration.h"
 #include "zr_vm_parser/parser.h"
 
+/* Unity 每个用例独占测试 state，由 tearDown 统一销毁。 */
 static SZrState *g_state;
 
 typedef struct SZrMigrationExpectation {
@@ -38,6 +40,7 @@ static const TZrChar *migration_string_text(const SZrString *value) {
     return value != ZR_NULL ? ZrCore_String_GetNativeString((SZrString *)value) : ZR_NULL;
 }
 
+/* 返回计划内借用的迁移项；调用者须在 PlanFree 之前使用。 */
 static const SZrLegacyMigrationItem *migration_find_item(
         const SZrLegacyMigrationPlan *plan,
         const TZrChar *oldConstructKind) {
@@ -349,6 +352,7 @@ static void test_legacy_migration_plan_covers_inventory_classification_contract(
     ZrParser_LegacyMigration_PlanFree(g_state, &plan);
 }
 
+/* 机器可应用编辑应生成当前语法；再次规划不得出现迁移项。 */
 static void test_legacy_migration_apply_machine_edits_is_idempotent(void) {
     const TZrChar *source =
             "%module app.current\n"
@@ -587,6 +591,7 @@ static void test_incomplete_dynamic_dollar_construct_is_blocked(void) {
     ZrParser_LegacyMigration_PlanFree(g_state, &plan);
 }
 
+/* 源文本改变或计划重叠时禁止套用旧编辑，避免写入错误偏移。 */
 static void test_legacy_migration_apply_rejects_stale_or_overlapping_plan(void) {
     const TZrChar *source = "%owned class FileHandle {}\n";
     const TZrChar *changedSource = "%owned class FileHandle { }\n";

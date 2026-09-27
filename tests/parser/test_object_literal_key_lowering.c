@@ -1,3 +1,4 @@
+/* 回归计算式对象字面量键与固定成员键的不同写入 opcode。 */
 #include <stdlib.h>
 #include <string.h>
 
@@ -70,6 +71,7 @@ static TZrUInt32 function_count_opcode(const SZrFunction *function, EZrInstructi
     return count;
 }
 
+/* 同一对象里 [key] 应走动态索引，name 应走静态成员写入。 */
 static void test_computed_identifier_object_key_emits_index_set(void) {
     const char *source =
             "var key = \"name\";\n"
@@ -96,6 +98,7 @@ static void test_computed_identifier_object_key_emits_index_set(void) {
     destroy_test_state(state);
 }
 
+/* TODO: CMake 仅构建此目标，验收记录为手工运行；未见 CTest/manifest 注册，需确认是否要求自动回归。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_computed_identifier_object_key_emits_index_set);

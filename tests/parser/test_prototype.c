@@ -1,3 +1,4 @@
+// 覆盖 struct/class 原型的编译、继承、字段布局及值复制；由 literal_surface_main 注册。
 //
 // Created by Auto on 2025/01/XX.
 //
@@ -100,6 +101,7 @@ static char *find_test_file(const char *filename) {
 }
 
 // 生成输出文件名（将 .zr 替换为新的扩展名）
+/* 根据扩展名选择测试产物目录，返回需要调用方 free 的绝对输出路径。 */
 static char *generate_output_filename(const char *inputFile, const char *newExt) {
     const char *fileName = inputFile;
     const char *forwardSlash;
@@ -973,6 +975,7 @@ void test_prototype_inheritance_loading(void) {
     ZR_TEST_PASS(timer, "Prototype Inheritance Loading");
 }
 
+/* 值类型复制后修改嵌套字段，防止原对象与副本共享可写内部存储。 */
 void test_struct_value_copy_clones_nested_storage(void) {
     ZR_TEST_START("Struct Value Copy Clones Nested Storage");
     ZR_TEST_INFO("Struct copy semantics",

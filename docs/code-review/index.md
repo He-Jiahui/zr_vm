@@ -115,5 +115,6 @@ doc_type: category-index
 | parser 类、接口、结构、联合与属性迁移语法 | [71 项](coverage/zr_vm_parser_syntax_declarations.tsv) | 7 个 C/H 文件独立复核，245 个证据锚点有效，源码仅改注释；GCC/Clang 对 6 个实现文件语法检查通过。26 个 BUG 行含 malformed where 失败清理与属性迁移分配失败路径，另有 2 个 TODO；未运行完整 CMake/CTest。 |
 | parser 状态、诊断与 AST 释放契约 | [294 项](coverage/zr_vm_parser_syntax_state.tsv) | 4 个 C/H 文件独立复核，319 个证据条目（其中 3 个以函数名锚定并发变动的调用点），源码仅改注释；GCC 对 4 个翻译单元语法检查通过。5 个 BUG 行涵盖位置换算与临时错误文本寿命，另有 2 个 TODO；未运行运行时测试。 |
 | parser 调用展开、闭包捕获与值类型运行测试 | [65 项](coverage/tests_parser_call_value_runtime.tsv) | 3 个 C 文件独立复核，201 个证据锚点有效，源码仅增 70 行注释；GCC 语法检查通过。6 个 BUG 行记录 Unity 失败后清理跳过，另有 3 个覆盖 TODO；未运行运行时测试。 |
+| parser 字面量、语法与旧式迁移测试 | [362 项](coverage/tests_parser_syntax_literals_migration.tsv) | 10 个 C 文件独立复核，1,195 个证据锚点有效，源码仅增 37 行注释；GCC 语法检查 10/10 通过。1 个 BUG 行记录未注册 Unity 用例，5 个 TODO 行归于 3 类覆盖疑点；定向构建停在共享 CMake 再生成，未运行测试。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

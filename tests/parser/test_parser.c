@@ -1,3 +1,4 @@
+// 覆盖 parser 的字面量、表达式、声明和脚本入口，并由本文件注册 extern 翻译单元的用例。
 //
 // Created by Auto on 2025/01/XX.
 //
@@ -55,6 +56,7 @@ static char* test_realpath(const char* path, char* resolved_path) {
 #define realpath test_realpath
 #endif
 
+/* 将生成产物位置打印为可定位路径；realpath 失败时退回工作目录或原文件名。 */
 static void print_generated_file_path(const char* description, const char* fileName) {
 #ifdef _MSC_VER
     char resolvedPath[_MAX_PATH];
@@ -88,6 +90,7 @@ static void print_generated_file_path(const char* description, const char* fileN
     printf("  Generated %s: %s\n", description, fileName);
 }
 
+/* 将 parser fixture 解析到测试源目录并读成拥有型缓冲；调用方负责 free。 */
 static char* read_parser_fixture(const char* fileName, TZrSize* outLength) {
     char filePath[ZR_TESTS_PATH_MAX];
 
@@ -156,6 +159,7 @@ static const char *module_declaration_name_native(SZrState *state, SZrAstNode *a
     return string_node_native(state, ast->data.script.moduleName->data.moduleDeclaration.name);
 }
 
+/* 保留首条解析错误的 token、位置和消息，供恢复/诊断用例对比。 */
 typedef struct {
     TZrBool reported;
     EZrToken token;
@@ -194,6 +198,7 @@ static void capture_parser_error(void *userData,
     }
 }
 
+/* 以局部 parser state 捕获诊断；返回的 AST 仍由调用方用测试 state 释放。 */
 static SZrAstNode *parse_source_with_diagnostic(SZrState *state,
                                                 const char *source,
                                                 size_t sourceLength,
@@ -1444,6 +1449,7 @@ static void assert_ownership_generic_type(SZrType *typeInfo,
     TEST_ASSERT_EQUAL_INT(ZR_AST_TYPE, argumentNode->type);
 }
 
+/* TODO: 此结构及回调未注册到 parser state；本文件尚未用它断言旧所有权迁移建议，需核对现有用例后决定接入或清理。 */
 typedef struct SLegacyOwnershipWarningCapture {
     TZrUInt32 warningCount;
     TZrUInt32 errorCount;
@@ -2851,6 +2857,7 @@ static void assert_array_type_value_alias_parsing_case(void) {
     destroy_test_state(state);
 }
 
+/* BUG: 此用例检查函数型与数组型值别名，但 main 未 RUN_TEST 注册，language_pipeline 不会执行这两组断言；需补注册。 */
 static void test_type_value_alias_parsing_variants(void) {
     SZrTestTimer timer;
     const char *testSummary = "Type Value Alias Parsing Variants";
@@ -3660,6 +3667,7 @@ static void test_parser_yield_statement(void) {
     TEST_DIVIDER();
 }
 
+// 同时注册 test_parser_extern.c 中的六个 decorator/extern 用例。
 // 主函数
 int main(void) {
     UNITY_BEGIN();

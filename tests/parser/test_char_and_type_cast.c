@@ -1,3 +1,4 @@
+// 字符与 cast 回归同时读取参考语言 fixture、清单及测试矩阵文档。
 //
 // Created by Auto on 2025/01/XX.
 //
@@ -73,6 +74,7 @@ static char* read_repo_doc_file(const char* relativePath, size_t* outSize) {
     return ZrTests_Reference_ReadDoc(relativePath, outSize);
 }
 
+/* 将 tests 源目录中的相对路径读成拥有型缓冲；调用方负责 free。 */
 static char* read_tests_repo_file(const char* relativePath, size_t* outSize) {
     char path[ZR_TESTS_PATH_MAX];
 
@@ -116,6 +118,7 @@ static void capture_reference_parser_error(TZrPtr userData,
     }
 }
 
+/* TODO: 这里只按字段名子串计数，尚不能证明 JSON 结构及每条 case 的字段配对；需核对清单消费者的解析测试。 */
 static void assert_reference_manifest_shape(const char* manifestText,
                                            const char* featureGroup,
                                            size_t minimumCases) {
@@ -128,6 +131,7 @@ static void assert_reference_manifest_shape(const char* manifestText,
     TEST_ASSERT_TRUE(count_substring_occurrences(manifestText, "\"expected_outcome\"") >= minimumCases);
 }
 
+/* 从参考 fixture 执行到整数结果；成功路径按函数、源码、VM state 顺序释放。 */
 static void execute_reference_test_fixture_expect_int(const char* relativePath, TZrInt64 expectedValue) {
     size_t fileSize = 0;
     char* source = ZR_NULL;
@@ -178,6 +182,7 @@ static void compile_reference_fixture_expect_failure(const char* relativePath) {
     destroy_test_state(state);
 }
 
+/* 用局部 parser state 捕获指定诊断；AST 与 parser state 均在成功断言后释放。 */
 static void parse_reference_fixture_expect_diagnostic(const char* relativePath,
                                                       const char* expectedMessageFragment) {
     size_t fileSize = 0;

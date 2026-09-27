@@ -1,3 +1,4 @@
+// 用同一组字符字面量与 cast 场景贯通 lexer、AST、编译器和执行器。
 //
 // Created by Auto on 2025/01/XX.
 //
@@ -97,6 +98,7 @@ static char* test_realpath(const char* path, char* resolved_path) {
 void setUp(void) {}
 void tearDown(void) {}
 
+/* 搜索函数及子函数中的目标 opcode；深度上限防止异常函数树无限递归。 */
 static TZrBool function_contains_opcode_recursive(
         const SZrFunction *function,
         EZrInstructionCode opcode,
@@ -149,6 +151,7 @@ static char* read_file_content(const char* filename, TZrSize* size) {
 }
 
 // 查找测试文件路径
+/* 把 parser fixture 路径复制成拥有型字符串，供各阶段用例传递并释放。 */
 static char* find_test_file(const char* filename) {
     char resolved[ZR_TESTS_PATH_MAX];
     TZrSize length = 0;

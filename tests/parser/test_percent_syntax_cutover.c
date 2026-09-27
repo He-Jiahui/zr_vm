@@ -1,3 +1,4 @@
+/* 旧百分号语法仅保留迁移诊断；当前语法与普通取模仍须可解析。 */
 #include "unity.h"
 
 #include <string.h>
@@ -16,6 +17,7 @@ typedef struct SZrCutoverDiagnosticCapture {
     TZrUInt32 removedSyntaxTypedNoFixCount;
 } SZrCutoverDiagnosticCapture;
 
+/* Unity 每个用例独占测试 state，由 tearDown 统一销毁。 */
 static SZrState *g_state;
 
 static TZrBool function_tree_contains_opcode(const SZrFunction *function,
@@ -54,6 +56,7 @@ void tearDown(void) {
     }
 }
 
+/* 统计结构化移除诊断及其 typed no-fix 原因，与普通解析错误区分。 */
 static void capture_cutover_diagnostic(TZrPtr userData,
                                        const SZrStructuredDiagnostic *diagnostic,
                                        EZrToken token) {
@@ -93,6 +96,7 @@ static void capture_cutover_parser_error(TZrPtr userData,
     }
 }
 
+/* 要求旧语法既报结构化迁移诊断，也不能产生可接受的 AST。 */
 static void assert_legacy_source_is_rejected(const TZrChar *source) {
     SZrString *sourceName;
     SZrParserState parserState;

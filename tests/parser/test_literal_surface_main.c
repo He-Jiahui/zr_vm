@@ -1,3 +1,4 @@
+/* 汇总 prototype、const 与字符/cast 三个翻译单元的 Unity 用例。 */
 #include <stdio.h>
 
 #include "unity.h"
@@ -61,6 +62,7 @@ extern void test_reference_expressions_fixture_matrix(void);
 extern void test_reference_types_casts_const_fixture_matrix(void);
 extern void test_reference_construct_target_misuse_fixture_matrix(void);
 
+/* 每个 RUN_TEST 进入对应模块实现；此入口统一返回 Unity 失败计数。 */
 int main(void) {
     printf("\n");
     ZR_TEST_MODULE_DIVIDER();

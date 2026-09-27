@@ -1,3 +1,4 @@
+// 为 zr_vm_parser_test 补充 extern/decorator AST 用例；Unity main 位于 test_parser.c。
 //
 // Created by Auto on 2026/03/31.
 //
@@ -66,6 +67,7 @@ static const char *identifier_native(SZrIdentifier *identifier) {
     return ZrCore_String_GetNativeString(identifier->name);
 }
 
+/* 对 #zr.ffi.* 装饰器核对非计算式成员链，避免仅比较末尾标识符。 */
 static void assert_decorator_leaf_name(SZrState *state, SZrAstNode *decoratorNode, const char *expectedLeafName) {
     SZrAstNode *expr;
     SZrPrimaryExpression *primaryExpr;

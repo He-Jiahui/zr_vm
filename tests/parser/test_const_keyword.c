@@ -2,6 +2,7 @@
 // Created by Auto on 2025/01/XX.
 //
 
+/* const 语义矩阵：声明、赋值、接口匹配与构造函数各控制流分支。 */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -76,6 +77,7 @@ static SZrState *create_test_state(void) {
 // 返回编译后的函数，如果编译失败则返回 ZR_NULL
 // 通过 outHasError 参数返回是否有编译错误
 // 注意：由于 ZrParser_Compiler_Compile 在 hasError 时返回 ZR_NULL，我们通过检查返回值来判断是否有错误
+/* 返回编译函数或错误标记；解析成功后总是释放中间 AST。 */
 static SZrFunction *compile_source_and_check_error(SZrState *state, const TZrChar *source, TZrSize sourceLength, SZrString *sourceName, TZrBool *outHasError) {
     if (state == ZR_NULL || source == ZR_NULL || sourceLength == 0 || outHasError == ZR_NULL) {
         if (outHasError != ZR_NULL) {
