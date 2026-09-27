@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadWorker } = require('./helpers/workerHost');
 
+// Web 当前不宣告项目级请求；能力宣告与未注册的请求路由必须同时收缩。
 test('Web advertises document diagnostics and omits project indexing routes', async () => {
     const worker = loadWorker();
     const result = await worker.handlers.get('onInitialize')({ capabilities: {} });
@@ -14,6 +15,7 @@ test('Web advertises document diagnostics and omits project indexing routes', as
     assert.equal(worker.requests.has('zr/nativeDeclarationDocument'), true);
 });
 
+// 失败封装的错误码和数据必须穿过 worker，否则客户端会误认为返回了空功能结果。
 test('browser worker propagates WASM error envelopes as JSON-RPC ResponseError', async () => {
     const uri = 'file:///workspace/main.zr';
     const position = { line: 0, character: 0 };
@@ -62,6 +64,7 @@ test('browser worker propagates WASM error envelopes as JSON-RPC ResponseError',
     }
 });
 
+// 基础响应由 WASM 一次给齐；Web 端不承诺尚未实现的 resolve 往返。
 for (const name of [
     'inlayHintProvider',
     'documentLinkProvider',
@@ -91,6 +94,7 @@ test('browser worker does not register withdrawn identity resolve handlers', () 
     }
 });
 
+// 定义导航仍可用，而无 WASM 映射的别名路由不能被客户端发现。
 test('browser navigation aliases are neither advertised nor registered', async () => {
     const worker = loadWorker();
     const result = await worker.handlers.get('onInitialize')({ capabilities: {} });
@@ -104,6 +108,9 @@ test('browser navigation aliases are neither advertised nor registered', async (
     assert.equal(worker.handlers.has('onDefinition'), true);
 });
 
+// WASM 的数字 token 流依赖同一类别顺序；Web 只实现全量请求。
+// TODO: 此测试仅与本文件中的硬编码列表对照；需增加读取 C token registry
+// 的契约核查，防止原生类别顺序变化而本测试仍通过。
 test('browser semantic-token legend matches the native registry', async () => {
     const worker = loadWorker();
     const result = await worker.handlers.get('onInitialize')({ capabilities: {} });
@@ -121,6 +128,7 @@ test('browser semantic-token legend matches the native registry', async () => {
     assert.equal(worker.requests.has('textDocument/semanticTokens/range'), false);
 });
 
+// 客户端不同动态注册能力下，未实现的颜色请求都不得被宣告。
 test('browser color scanning is neither advertised nor registered', async () => {
     for (const capabilities of [{}, { textDocument: { colorProvider: { dynamicRegistration: false } } }]) {
         const worker = loadWorker();
@@ -135,6 +143,7 @@ test('browser color scanning is neither advertised nor registered', async () => 
     }
 });
 
+// 以真实 handler 的基础响应验证链接、lens、hint、符号和动作均可直接消费。
 test('browser base requests return complete initial payloads without resolve', async () => {
     const uri = 'file:///workspace/main.zr';
     const range = { start: { line: 0, character: 0 }, end: { line: 0, character: 4 } };
