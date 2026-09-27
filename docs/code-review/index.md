@@ -179,5 +179,6 @@ doc_type: category-index
 | parser CFG 数值条件测试 | [61 项](coverage/tests_parser_cfg_numeric_conditions.tsv) | 2 个 C 测试文件独立复核，385 个证据锚点，覆盖 17 个 Unity 注册；源码仅增 62 行注释，GCC/Clang 四项定向语法检查通过。13 个 BUG 行记录失败断言后跳过资源释放的可达路径，1 个 TODO 保留边界测试缺口。目标测试构建触发大量不相关重编译并已停止，未运行对应可执行测试。 |
 | core artifact 公共格式与 ExecIR 接口 | [155 项](coverage/zr_vm_core_artifact_public_contracts.tsv) | 2 个 H 文件逐定义复核，353 个证据锚点，源码仅增注释；GCC/Clang 严格头文件语法检查通过。17 条 BUG 台账行包含公共行读取器共同的节边界缺口、ExecIR 失败状态与诊断问题；5 条 TODO 保留输入重叠、跨模块证明及文本转换契约。5 份旧台账的 44 次行号引用已映射到等价源码行。 |
 | language server stdio 请求传输 | [40 项](coverage/zr_vm_language_server_stdio_transport.tsv) | 1 个 C 文件独立复核，覆盖 26 个函数定义与 247 个证据锚点；源码仅增 41 行注释，GCC/Clang C11 严格语法检查通过。1 个 BUG 标明入队内存分配失败后请求 ID 保留，3 个 TODO 记录队列容量、JSON 解析失败分类和停止时阻塞读取的待确认问题。同步修正 2 份旧台账中随注释增行移动的引用；目标运行测试未执行。 |
+| language server stdio 生命周期测试 | [38 项](coverage/tests_language_server_stdio_lifecycle.tsv) | 1 个 C 测试文件独立复核，覆盖 10 个函数及状态与关键分支，533 个证据锚点；仅将空行换成注释，保持全部源码行号，GCC/Clang C11 严格语法检查通过。1 个 BUG 标明 JSON 解析分配失败后读取已释放参数，6 个 TODO 记录短写、输出清零、exit 路径观测与故障注入证明缺口；目标测试未构建运行。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。
