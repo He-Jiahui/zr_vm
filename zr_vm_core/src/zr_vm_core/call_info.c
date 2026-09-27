@@ -7,6 +7,7 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
 
+/* 入口帧借用 state 的基础栈槽；清零上下文后建立 native 边界，供异常回溯在此停止。 */
 void ZrCore_CallInfo_EntryNativeInit(SZrState *state, SZrCallInfo *callInfo, TZrStackPointer functionIndex,
                                TZrStackPointer functionTop, SZrCallInfo *previous) {
     ZR_UNUSED_PARAMETER(state);
@@ -30,11 +31,14 @@ void ZrCore_CallInfo_EntryNativeInit(SZrState *state, SZrCallInfo *callInfo, TZr
     callInfo->argumentSourceStartSlot = 0;
     callInfo->hasArgumentSourceFrame = ZR_FALSE;
     // ready to call native function
+    // TODO: 同一入口栈槽已在上方 ResetAsNull，第二次清零会重复记录 profile helper；
+    // 核对历史入口约定与 profile 计数要求后决定是否保留两次调用。
     ZrCore_Value_ResetAsNull(&functionIndex.valuePointer->value);
     callInfo->functionTop.valuePointer = functionTop.valuePointer;
 }
 
 
+/* 帧只在缓存链尾追加；分配失败时不得发布 next 或推进帧链长度。 */
 SZrCallInfo *ZrCore_CallInfo_Extend(struct SZrState *state) {
     SZrCallInfo *callInfo = ZR_NULL;
     ZR_ASSERT(state->callInfoList->next == ZR_NULL);
