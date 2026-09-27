@@ -153,12 +153,79 @@ def check_coverage(known_files: set[str], reviewed_files: set[str]) -> list[str]
     return problems
 
 
+def review_source_path(name: str) -> Path | None:
+    """仅接受仓库内现存文件的规范相对路径。"""
+    if "\\" in name or ":" in name or any(part in {"", ".", ".."} for part in name.split("/")):
+        return None
+    source_path = (REPO_ROOT / name).resolve()
+    return source_path if source_path.is_relative_to(REPO_ROOT) and source_path.is_file() else None
+
+
+def check_batch(path: Path) -> list[str]:
+    """检查新批次的逐单元台账及当前工作树中的行号证据。"""
+    problems: list[str] = []
+    seen: set[tuple[str, str, str]] = set()
+    source_lines: dict[str, list[str]] = {}
+    try:
+        with path.open("r", encoding="utf-8", newline="") as stream:
+            reader = csv.DictReader(stream, delimiter="\t")
+            if tuple(reader.fieldnames or ()) != COVERAGE_FIELDS:
+                return [f"{path}: invalid coverage header"]
+            for number, row in enumerate(reader, start=2):
+                if None in row or any(
+                    not (row.get(field) or "").strip() or
+                    any(character in (row.get(field) or "") for character in "\t\r\n")
+                    for field in COVERAGE_FIELDS
+                ):
+                    problems.append(f"{path}:{number}: missing or extra field")
+                    continue
+                key = (row["file"], row["unit"], row["kind"])
+                if key in seen:
+                    problems.append(f"{path}:{number}: duplicate unit")
+                seen.add(key)
+                if row["decision"] not in {"commented", "no-comment", "TODO", "BUG"}:
+                    problems.append(f"{path}:{number}: invalid decision")
+                if review_source_path(row["file"]) is None:
+                    problems.append(f"{path}:{number}: unknown reviewed file")
+                for anchor in row["evidence"].split(";"):
+                    source, separator, line_text = anchor.strip().rpartition(":")
+                    source_path = review_source_path(source)
+                    if not separator or not line_text.isdecimal() or source_path is None:
+                        problems.append(f"{path}:{number}: invalid evidence {anchor!r}")
+                        continue
+                    if source not in source_lines:
+                        source_lines[source] = source_path.read_text(
+                            encoding="utf-8", errors="replace").splitlines()
+                    line = int(line_text)
+                    if line < 1 or line > len(source_lines[source]) or not source_lines[source][line - 1].strip():
+                        problems.append(f"{path}:{number}: empty or missing evidence line {anchor!r}")
+    except (OSError, UnicodeError, csv.Error, ValueError) as error:
+        return [f"{path}: {error}"]
+    if not seen:
+        problems.append(f"{path}: empty coverage batch")
+    return problems
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("sync", "check"))
+    parser.add_argument("action", choices=("sync", "check", "check-batch"))
+    parser.add_argument("batch", nargs="?", help="coverage TSV for check-batch")
     parser.add_argument("--require-complete", action="store_true",
                         help="also reject any pending file")
     args = parser.parse_args()
+    if args.action == "check-batch":
+        if args.require_complete:
+            parser.error("--require-complete is not valid with check-batch")
+        if not args.batch:
+            parser.error("check-batch requires a coverage TSV")
+        problems = check_batch(Path(args.batch))
+        for problem in problems:
+            print(problem, file=sys.stderr)
+        if not problems:
+            print(f"review batch: {args.batch} valid")
+        return int(bool(problems))
+    if args.batch:
+        parser.error("batch path is only valid with check-batch")
     existing = load_existing()
     rows = expected_rows(existing)
     content = render(rows)
