@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+/* 语义判断无法安全选出唯一编辑时，用原因代替修复项；LSP 可据此解释为何不提供 code action。 */
 TZrBool ZrParser_StructuredDiagnostic_SetNoFixReason(
         SZrStructuredDiagnostic *diagnostic,
         EZrDiagnosticNoFixReason reason) {
@@ -18,6 +19,8 @@ TZrBool ZrParser_StructuredDiagnostic_SetNoFixReason(
     return ZR_TRUE;
 }
 
+/* 解析器已掌握明确的插入点或替换范围时附加修复；传入文本会成为诊断自己的字符串。
+ * 不可修复原因与修复项互斥，调用方须先完成 Build，失败后释放已建诊断。 */
 TZrBool ZrParser_StructuredDiagnostic_AddFix(
         SZrState *state,
         SZrStructuredDiagnostic *diagnostic,

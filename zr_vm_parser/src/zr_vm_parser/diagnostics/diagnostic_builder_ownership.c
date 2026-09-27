@@ -1,5 +1,6 @@
 #include "zr_vm_parser/diagnostic_builder.h"
 
+/* nullable owner 的解包策略取决于用户控制流，诊断可给出建议，但不能提供自动编辑。 */
 TZrBool ZrParser_DiagnosticBuilder_BuildNullableOwnershipIntrinsicOperand(
         SZrState *state,
         SZrStructuredDiagnostic *out,
@@ -23,6 +24,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildNullableOwnershipIntrinsicOperand(
     return ZR_TRUE;
 }
 
+/* 所有权流分析报告移动后的读取；修复需要重新安排转移，故明确记录用户决策原因。 */
 TZrBool ZrParser_DiagnosticBuilder_BuildUseAfterMove(SZrState *state,
                                                      SZrStructuredDiagnostic *out,
                                                      SZrFileRange location) {

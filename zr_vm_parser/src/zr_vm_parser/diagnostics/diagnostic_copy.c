@@ -1,5 +1,9 @@
 #include "zr_vm_parser/diagnostic_builder.h"
 
+/* 语义事实与查询结果不能借用解析阶段的诊断容器；复制文本、关联位置和修复建议后，
+ * 目标诊断由接收方负责 Free。outDiagnostic 应是独立、未持有旧数组的输出槽。
+ * TODO: 若 source 与 outDiagnostic 指向同一对象，入口 Init 会先清空源；
+ * 当前调用点均传不同地址，后续应明确禁止别名或支持原位复制。 */
 TZrBool ZrParser_StructuredDiagnostic_Copy(
         SZrState *state,
         SZrStructuredDiagnostic *outDiagnostic,
@@ -88,6 +92,7 @@ TZrBool ZrParser_StructuredDiagnostic_Copy(
             return ZR_FALSE;
         }
     }
+    /* 修复编辑与不可修复原因互斥；复制时在修复列表之后恢复原因以保留该契约。 */
     if (source->noFixReason != ZR_DIAGNOSTIC_NO_FIX_REASON_UNSPECIFIED &&
         !ZrParser_StructuredDiagnostic_SetNoFixReason(
                 outDiagnostic, source->noFixReason)) {

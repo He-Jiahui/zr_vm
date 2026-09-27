@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 
+/* 缺少唯一安全编辑的错误仍需给出可显示的原因，并明确阻止客户端猜测修复。 */
 static TZrBool diagnostic_builder_build_without_fix(
         SZrState *state,
         SZrStructuredDiagnostic *out,
@@ -29,6 +30,7 @@ static TZrBool diagnostic_builder_build_without_fix(
     return ZR_TRUE;
 }
 
+/* 赋值右侧缺失时，填入什么值取决于表达式语义，解析器只发布诊断。 */
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingExpressionAfterAssignment(
         SZrState *state,
         SZrStructuredDiagnostic *out,
@@ -136,6 +138,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingMemberName(
             ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
 }
 
+/* using guard 的 binder 形态须由 parser 判断；此处给出可迁移形式但不自动改写。 */
 TZrBool ZrParser_DiagnosticBuilder_BuildUsingBinderInvalid(
         SZrState *state,
         SZrStructuredDiagnostic *out,
@@ -151,6 +154,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildUsingBinderInvalid(
             ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
 }
 
+/* 静态导入路径参与签名绑定，非字面量路径不能留到运行时再解释。 */
 TZrBool ZrParser_DiagnosticBuilder_BuildImportPathNotConstant(
         SZrState *state,
         SZrStructuredDiagnostic *out,
@@ -185,6 +189,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildImportPathNotConstant(
             ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
 }
 
+/* 编译器可传入具体的 union 形态不匹配上下文；此层只统一稳定 code 与修复策略。 */
 TZrBool ZrParser_DiagnosticBuilder_BuildPatternShapeMismatch(
         SZrState *state,
         SZrStructuredDiagnostic *out,
@@ -327,6 +332,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildPatternVariantMismatch(
             ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
 }
 
+/* 数组元素列表必须由值表达式组成；赋值的副作用顺序应由用户移到独立语句决定。 */
 TZrBool ZrParser_DiagnosticBuilder_BuildArrayElementAssignment(
         SZrState *state,
         SZrStructuredDiagnostic *out,
@@ -357,6 +363,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionalConsequent(
             ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
 }
 
+/* 下一 token 可开始表达式时才插入 ':'；此判断来自 parser 前瞻，不表示假分支已解析完成。 */
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionalColon(
         SZrState *state,
         SZrStructuredDiagnostic *out,
@@ -427,6 +434,8 @@ TZrBool ZrParser_DiagnosticBuilder_BuildWeakWake(SZrState *state,
             ZR_DIAGNOSTIC_NO_FIX_REASON_REQUIRES_USER_DECISION);
 }
 
+/* 旧 ownership 拼写仅提供迁移提示；替换范围可能牵涉嵌套类型，故不自动编辑。
+ * TODO: 当前仅见测试直接调用；核对旧语法的生产诊断是否仍需要此构建器。 */
 TZrBool ZrParser_DiagnosticBuilder_BuildLegacyOwnershipTypeSyntaxWarning(
         SZrState *state,
         SZrStructuredDiagnostic *out,
@@ -464,6 +473,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildLegacyOwnershipTypeSyntaxWarning(
     return ZR_TRUE;
 }
 
+/* 借用逃逸与 loan 逃逸共用“必须保留 owner 生存期”的契约，但向用户分别命名来源。 */
 TZrBool ZrParser_DiagnosticBuilder_BuildBorrowEscape(SZrState *state,
                                                      SZrStructuredDiagnostic *out,
                                                      SZrFileRange location) {

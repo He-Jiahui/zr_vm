@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 诊断文本独立于调用方的栈缓冲区；结构化诊断会跨 parser、semantic 与 LSP 阶段传递。 */
 static SZrString *structured_diagnostic_create_string(SZrState *state, const TZrChar *text) {
     if (state == ZR_NULL || text == ZR_NULL) {
         return ZR_NULL;
@@ -12,6 +13,7 @@ static SZrString *structured_diagnostic_create_string(SZrState *state, const TZr
     return ZrCore_String_Create(state, (TZrNativeString)text, strlen(text));
 }
 
+/* 在构建或复制前初始化未持有资源的输出槽，默认以错误级别且无修复原因起步。 */
 void ZrParser_StructuredDiagnostic_Init(SZrStructuredDiagnostic *diagnostic) {
     if (diagnostic == ZR_NULL) {
         return;
@@ -23,6 +25,8 @@ void ZrParser_StructuredDiagnostic_Init(SZrStructuredDiagnostic *diagnostic) {
     ZrCore_Array_Construct(&diagnostic->fixes);
 }
 
+/* parser、compiler 和 semantic 查询各自在诊断寿命结束时释放数组存储；文本由 VM 状态管理。
+ * 有效数组的释放需要原建构 state，因此调用方须保留同一状态直到诊断不再使用。 */
 void ZrParser_StructuredDiagnostic_Free(SZrState *state, SZrStructuredDiagnostic *diagnostic) {
     if (diagnostic == ZR_NULL) {
         return;
@@ -40,6 +44,7 @@ void ZrParser_StructuredDiagnostic_Free(SZrState *state, SZrStructuredDiagnostic
     diagnostic->suggestion = ZR_NULL;
 }
 
+/* 附加声明位置等来源信息，供语义诊断和 LSP 展示主错误之外的定位证据。 */
 TZrBool ZrParser_StructuredDiagnostic_AddRelatedInformation(SZrState *state,
                                                             SZrStructuredDiagnostic *diagnostic,
                                                             SZrFileRange location,
@@ -68,6 +73,8 @@ TZrBool ZrParser_StructuredDiagnostic_AddRelatedInformation(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 所有专用构建器经过此入口统一 code、severity、位置与文本所有权；未知 code 的 descriptorId 为 0。
+ * out 必须是空输出槽，失败后不能把部分字段发布给语义事实或 LSP。 */
 TZrBool ZrParser_DiagnosticBuilder_Build(SZrState *state,
                                          SZrStructuredDiagnostic *out,
                                          EZrStructuredDiagnosticSeverity severity,
@@ -99,6 +106,7 @@ TZrBool ZrParser_DiagnosticBuilder_Build(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 声明头已完整而 '{' 缺失时，parser 给出确定插入点，故可提供空体补齐修复。 */
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyOpen(SZrState *state,
                                                                    SZrStructuredDiagnostic *out,
                                                                    SZrFileRange location,
@@ -148,6 +156,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyOpen(SZrState *sta
     return ZR_TRUE;
 }
 
+/* 声明体未闭合时，在 parser 判定的当前 token 边界补上 '}'；调用方可在 EOF 或恢复点报告。 */
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyClose(SZrState *state,
                                                                     SZrStructuredDiagnostic *out,
                                                                     SZrFileRange location,
@@ -197,6 +206,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyClose(SZrState *st
     return ZR_TRUE;
 }
 
+/* 语句头缺块体时保留语法恢复定位，同时给编辑器一个可明确插入的空块。 */
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingStatementBodyOpen(SZrState *state,
                                                                   SZrStructuredDiagnostic *out,
                                                                   SZrFileRange location,
@@ -336,6 +346,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingUsingResourceClose(SZrState *stat
     return ZR_TRUE;
 }
 
+/* for/foreach/switch/extern 的固定插入文本共享构造契约；调用方给出文本和插入范围，foreach 的 "in " 包含尾随空格。 */
 static TZrBool build_missing_header_fix(SZrState *state,
                                         SZrStructuredDiagnostic *out,
                                         SZrFileRange location,
@@ -488,6 +499,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingExternSpecClose(SZrState *state,
             ")");
 }
 
+/* 控制语句的条件未闭合时以 parser 的当前 token 起点插入 ')'，不吞掉后续块。 */
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionClose(SZrState *state,
                                                               SZrStructuredDiagnostic *out,
                                                               SZrFileRange location,
@@ -532,6 +544,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionClose(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 索引、调用、分组与字面量的闭合缺口分别保留稳定 code，供 LSP 区分修复位置。 */
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingIndexClose(SZrState *state,
                                                           SZrStructuredDiagnostic *out,
                                                           SZrFileRange location,
@@ -684,6 +697,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingArrayClose(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 数组和对象分隔符都在 parser 判定的相邻项之间插入逗号，不替换已有表达式。 */
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingArrayElementSeparator(SZrState *state,
                                                                      SZrStructuredDiagnostic *out,
                                                                      SZrFileRange location) {
@@ -833,6 +847,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingObjectPropertySeparator(SZrState 
     return ZR_TRUE;
 }
 
+/* 缺少语句终止符时仅编辑边界位置，避免修复动作覆盖后继语句。 */
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingStatementSemicolon(SZrState *state,
                                                                   SZrStructuredDiagnostic *out,
                                                                   SZrFileRange location,
@@ -882,6 +897,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingStatementSemicolon(SZrState *stat
     return ZR_TRUE;
 }
 
+/* 迁移诊断标出旧名称、类型和访问器体；只有 parser 提供无歧义的统一声明文本时才给自动替换。 */
 TZrBool ZrParser_DiagnosticBuilder_BuildLegacyPropertySyntax(
         SZrState *state,
         SZrStructuredDiagnostic *out,
@@ -947,6 +963,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildLegacyPropertySyntax(
     return ZR_TRUE;
 }
 
+/* 已删除的 ownership 成员调用可映射到保留 intrinsic 时提供迁移编辑，否则要求人工确认。 */
 TZrBool ZrParser_DiagnosticBuilder_BuildRemovedOwnershipMemberSyntax(
         SZrState *state,
         SZrStructuredDiagnostic *out,

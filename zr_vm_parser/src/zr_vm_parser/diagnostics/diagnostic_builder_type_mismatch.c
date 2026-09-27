@@ -4,6 +4,8 @@
 
 #include <stdio.h>
 
+/* 类型推断将预期/实际类型和声明位置交给结构化诊断；LSP 由稳定 code 找到描述符。
+ * 有 conversionHint 时只生成含占位符的人工确认建议，缺少提示时记录需用户判断。 */
 TZrBool ZrParser_DiagnosticBuilder_BuildTypeMismatchDetailed(
         SZrState *state,
         SZrStructuredDiagnostic *out,

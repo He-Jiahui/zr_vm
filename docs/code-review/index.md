@@ -93,5 +93,6 @@ doc_type: category-index
 | parser GDB 调试脚本 | [70 项](coverage/tests_parser_gdb.tsv) | 30 个非 SSA 脚本独立复核，183 个证据锚点有效，命令内容未变；断点、栈帧和观察位置的现有缺口保留 26 个 BUG 与 10 个 TODO。GDB 12.1 最小实验验证嵌套命令内注释不改行为；预设调试二进制缺失，未运行完整脚本。 |
 | AOT C lowering 的值、控制流与通用类型转换 | [338 项](coverage/zr_vm_aot_c_lowering.tsv) | 22 个 C 文件三组及整批独立复核，855 个证据锚点有效，源码仅改注释；GCC C11 语法检查通过。27 个 BUG 与 26 个 TODO 覆盖转换可达性、所有权、CFG 活性等边界；未运行完整 AOT 测试。 |
 | AOT LLVM 文本生成与 lowering | [244 项](coverage/zr_vm_aot_llvm.tsv) | 42 个 C/H 文件独立复核，1228 个调用与证据锚点有效，源码仅改注释且去注释 token 与原版一致；未运行完整构建。最终写入错误漏报、模块字符串未转义已标 BUG；主构建边界和整型溢出契约保留 TODO。 |
+| parser 诊断构建、复制与消息目录 | [78 项](coverage/zr_vm_parser_diagnostics.tsv) | 8 个 C 文件独立复核，195 个证据锚点有效，源码仅新增注释；GCC C11 语法检查通过。94 个描述符与 71 对消息的缺口、测试中固定的 71 项预期均按现行代码标 BUG；另有 2 个 TODO，未运行诊断测试。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

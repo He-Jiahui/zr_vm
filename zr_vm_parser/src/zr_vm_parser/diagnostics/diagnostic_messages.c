@@ -2,10 +2,12 @@
 
 #include <string.h>
 
+/* 消息键须与描述符中的 diagnostic.<code>.<title|message> 保持一致；文本由静态目录持有。 */
 #define ZR_DIAGNOSTIC_MESSAGE_PAIR(codeValue, titleValue, messageValue) \
     {"diagnostic." codeValue ".title", (titleValue), ZR_NULL}, \
     {"diagnostic." codeValue ".message", (messageValue), ZR_NULL}
 
+/* 英文为基准文案，中文缺失时 Resolve 回退英文。BUG: 当前 71 组消息缺注册表 5001-5023 的 23 组；Find/Resolve 对这些键返回空，test_semantic_query 的数量与逐项覆盖断言失败。 */
 static const SZrDiagnosticMessage g_diagnostic_messages[] = {
     ZR_DIAGNOSTIC_MESSAGE_PAIR(
             "missing_expression_after_assignment",
@@ -293,6 +295,7 @@ static const SZrDiagnosticMessage g_diagnostic_messages[] = {
             "Ownership transition requires a live owner"),
 };
 
+/* 供目录覆盖测试枚举静态消息项；数量只对应当前编译的消息目录。 */
 TZrSize ZrParser_DiagnosticMessages_Count(void) {
     return sizeof(g_diagnostic_messages) / sizeof(g_diagnostic_messages[0]);
 }
@@ -303,6 +306,7 @@ const SZrDiagnosticMessage *ZrParser_DiagnosticMessages_MessageAt(TZrSize index)
                    : ZR_NULL;
 }
 
+/* 给格式化诊断和客户端查文案；未知键返回空值，由上层选择其回退文案。 */
 const SZrDiagnosticMessage *ZrParser_DiagnosticMessages_Find(const TZrChar *key) {
     TZrSize index;
 
@@ -318,6 +322,7 @@ const SZrDiagnosticMessage *ZrParser_DiagnosticMessages_Find(const TZrChar *key)
     return ZR_NULL;
 }
 
+/* locale 只影响已提供的翻译；中文缺失时保留英文，以免改变稳定消息键的含义。 */
 const TZrChar *ZrParser_DiagnosticMessages_Resolve(EZrDiagnosticLocale locale,
                                                    const TZrChar *key) {
     const SZrDiagnosticMessage *message = ZrParser_DiagnosticMessages_Find(key);

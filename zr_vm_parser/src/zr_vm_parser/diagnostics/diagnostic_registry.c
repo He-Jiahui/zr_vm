@@ -4,9 +4,11 @@
 
 #include "zr_vm_core/optimization_remark.h"
 
+/* 描述符的 code/id 被结构化诊断和 LSP 同时消费；表内编号属于跨层稳定标识。 */
 #define ZR_DIAGNOSTIC_HELP_URI \
     "https://github.com/He-Jiahui/zr_vm/blob/main/docs/plans/lsp/02-diagnostics-and-errors.md"
 
+/* title/message key 与消息目录共享命名规则，新增 code 应同步核对两张表。 */
 #define ZR_DIAGNOSTIC_DESCRIPTOR(idValue, codeValue, severityValue, categoryValue) \
     { \
         (idValue), \
@@ -18,6 +20,7 @@
         (categoryValue) \
     }
 
+/* 解析、类型、所有权和优化诊断共用稳定 code/id。BUG: 5001-5023 的 23 个优化描述符无消息表键；查询其 title/message 返回空，目录覆盖测试断言 188 条消息却只有 142 条。 */
 static const SZrDiagnosticDescriptor g_diagnostic_descriptors[] = {
     ZR_DIAGNOSTIC_DESCRIPTOR(1001, "missing_expression_after_assignment",
                              ZR_STRUCTURED_DIAGNOSTIC_ERROR, ZR_LINT_CATEGORY_SYNTAX),
@@ -216,6 +219,7 @@ static const SZrDiagnosticDescriptor g_diagnostic_descriptors[] = {
                              ZR_STRUCTURED_DIAGNOSTIC_INFO, ZR_LINT_CATEGORY_STYLE),
 };
 
+/* 索引枚举供测试和客户端扫描整张静态描述符表，不转移表项所有权。 */
 TZrSize ZrParser_DiagnosticRegistry_Count(void) {
     return sizeof(g_diagnostic_descriptors) / sizeof(g_diagnostic_descriptors[0]);
 }
@@ -226,6 +230,7 @@ const SZrDiagnosticDescriptor *ZrParser_DiagnosticRegistry_DescriptorAt(TZrSize 
                    : ZR_NULL;
 }
 
+/* 构建诊断时把文本 code 解析为稳定编号；未知 code 保留为无描述符的诊断。 */
 const SZrDiagnosticDescriptor *ZrParser_DiagnosticRegistry_FindByCode(const TZrChar *code) {
     TZrSize index;
 
@@ -241,6 +246,7 @@ const SZrDiagnosticDescriptor *ZrParser_DiagnosticRegistry_FindByCode(const TZrC
     return ZR_NULL;
 }
 
+/* LSP 投影按已持有的 descriptorId 取分类、默认级别与帮助入口；返回静态借用指针。 */
 const SZrDiagnosticDescriptor *ZrParser_DiagnosticRegistry_FindById(TZrUInt32 id) {
     TZrSize index;
 
