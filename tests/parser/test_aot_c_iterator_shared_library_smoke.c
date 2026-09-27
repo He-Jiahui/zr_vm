@@ -1,3 +1,4 @@
+/* 迭代边界烟测：检查迭代指令的运行时 helper 降低，并确认要求 full AOT 时拒绝动态迭代 deopt 桥。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -212,6 +213,7 @@ static void test_aot_c_generated_shared_library_compiles_iterator_boundary_helpe
 #endif
 }
 
+/* 动态迭代需要运行时桥接；full AOT 模式必须拒绝该指令链而不是生成不可执行的纯 AOT 假象。 */
 static void test_aot_c_full_aot_rejects_dynamic_iterator_deopt_bridge(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C iterator shared-library smoke currently validates the Unix toolchain path");

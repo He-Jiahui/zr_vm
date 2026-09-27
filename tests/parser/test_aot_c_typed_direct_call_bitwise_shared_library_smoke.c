@@ -1,3 +1,4 @@
+/* i64 typed 调用位运算矩阵：按按位非、与、或、异或检查生成 thunk 及直接调用，并用共享 fixture 验证运行结果。 */
 #include "aot_c_typed_direct_call_bitwise_smoke_support.h"
 
 #define ZR_AOT_BITWISE_TWO_ARG_DECL \
@@ -67,6 +68,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_bitw
     aot_c_bitwise_smoke_run_case(&testCase);
 }
 
+/* 单参数按位非易与逻辑否定混淆，固定生成表达式和真实返回值。 */
 static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_bitwise_not_typed_thunk(void) {
     const SZrAotTypedDirectCallBitwiseSmokeCase testCase = {
             "fn invert(value: int): int {\n"
@@ -179,6 +181,8 @@ static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_bitw
     aot_c_bitwise_smoke_run_case(&testCase);
 }
 
+/* TODO: 此目标在 tests/CMakeLists.txt 创建，但未列入 language_pipeline；
+ * 验收文档按可执行文件手工运行。核对是否应加入常规 CTest 回归入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_i64_two_arg_bitwise_or_typed_thunk);

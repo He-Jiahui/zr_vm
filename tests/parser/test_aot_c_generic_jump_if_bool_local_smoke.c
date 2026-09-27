@@ -1,3 +1,4 @@
+/* 条件跳转烟测：覆盖布尔、null、字符串、对象和数值来源，核对泛型 JUMP_IF 的标量局部快路、回退与根帧约束。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -86,6 +87,7 @@ static char *read_text_file_owned_or_fail(const TZrChar *path) {
     return buffer;
 }
 
+/* 引用值即使走局部 truthiness 快路，也须保留可供 GC 扫描的根帧槽位。 */
 static void assert_reference_local_root_frame_for_slot2(const char *generatedCText) {
     TEST_ASSERT_NOT_NULL(generatedCText);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static const SZrAotGcRootSlot zr_aot_ref_root_slots_0[] = {"));
@@ -1502,6 +1504,7 @@ static void test_aot_c_generated_shared_library_executes_generic_jump_if_dynamic
 #endif
 }
 
+/* 动态对象来源必须在真实共享库中走运行时 truthiness，避免错误套用静态布尔局部值。 */
 static void test_aot_c_generated_shared_library_executes_generic_jump_if_dynamic_object_slot_branch(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C generic JUMP_IF dynamic object-slot shared-library smoke validates the Unix dlopen toolchain path");
@@ -1953,6 +1956,8 @@ static void test_aot_c_generated_shared_library_executes_generic_jump_if_numeric
 #endif
 }
 
+/* TODO: 此目标在 tests/CMakeLists.txt 创建，但未列入 language_pipeline；
+ * 验收文档按可执行文件手工运行。核对是否应加入常规 CTest 回归入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_generic_jump_if_bool_local_branch);

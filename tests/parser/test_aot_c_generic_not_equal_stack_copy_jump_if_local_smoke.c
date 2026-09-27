@@ -1,3 +1,4 @@
+/* 不等分支烟测：将泛型不等、栈拷贝和条件跳转串接，防止生成代码失去复制值的局部来源。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -200,6 +201,7 @@ static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize buff
 }
 #endif
 
+/* 把不等、复制和条件跳转连在同一函数中，防止比较结果跨指令后退回旧栈槽。 */
 static void test_aot_c_generated_shared_library_executes_generic_not_equal_stack_copy_jump_if_local_branch(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C generic not-equal stack-copy JUMP_IF local smoke validates the Unix dlopen path");
@@ -346,6 +348,8 @@ static void test_aot_c_generated_shared_library_executes_generic_not_equal_stack
 #endif
 }
 
+/* TODO: 此目标在 tests/CMakeLists.txt 创建，但未列入 language_pipeline；
+ * 验收文档按可执行文件手工运行。核对是否应加入常规 CTest 回归入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_generic_not_equal_stack_copy_jump_if_local_branch);

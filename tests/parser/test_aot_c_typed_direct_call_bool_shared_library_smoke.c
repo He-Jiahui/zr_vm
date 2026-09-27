@@ -1,3 +1,5 @@
+/* 布尔 typed direct-call 矩阵：用真实生成库核对函数签名、直接调用和返回边界，
+ * 防止全 AOT 路径退回装箱栈槽或运行时调用。每个用例由共享支持头构建并执行。 */
 #include "aot_c_typed_direct_call_bool_smoke_support.h"
 
 static void test_aot_c_generated_shared_library_executes_static_bool_no_arg_typed_thunk(void) {
@@ -28,6 +30,7 @@ static void test_aot_c_generated_shared_library_executes_static_bool_no_arg_type
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
 }
 
+/* 返回边界应保持布尔 ABI 并禁止运行时调用回退，避免直接调用只在函数体内成立。 */
 static void test_aot_c_generated_shared_library_returns_static_bool_no_arg_result_through_bool_boundary(void) {
     static const SZrAotTypedDirectCallBoolSmokeCase testCase = {
             "fn answer(): bool {\n"
@@ -840,6 +843,8 @@ static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_grea
     run_aot_c_typed_direct_call_bool_smoke(&testCase);
 }
 
+/* TODO: 此目标在 tests/CMakeLists.txt 创建，但未列入 language_pipeline；
+ * 验收文档按可执行文件手工运行。核对是否应加入常规 CTest 回归入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_bool_no_arg_typed_thunk);

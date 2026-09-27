@@ -1,3 +1,4 @@
+/* super array 边界烟测：构造数组操作字节码，检查生成 C 的运行时 helper 调用及共享库链接。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -66,6 +67,7 @@ static TZrInstruction create_return_instruction(TZrUInt16 returnCount, TZrUInt16
     return instruction;
 }
 
+/* 手工组合固定的 super array 指令序列，独立于前端输出检查 writer 的 helper 选择。 */
 static SZrFunction *create_super_array_function(SZrState *state) {
     SZrFunction *function;
 

@@ -1,3 +1,4 @@
+/* 所有权烟测：检查 canonical 与旧 artifact 指令的 helper 降低，并确认所有权写入会废弃过期的标量拷贝来源。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -85,6 +86,7 @@ static TZrInstruction create_return_instruction(TZrUInt16 returnCount, TZrUInt16
     return instruction;
 }
 
+/* 将两种 artifact 编码放进同一 fixture，锁定所有权 helper 选择在旧输入上的兼容语义。 */
 static SZrFunction *create_canonical_and_legacy_artifact_ownership_function(
         SZrState *state) {
     SZrFunction *function;
@@ -270,6 +272,7 @@ static void test_aot_c_generated_shared_library_compiles_canonical_and_legacy_ar
 #endif
 }
 
+/* 所有权写入后再读来源槽，防止 scalar copy 优化复用写入前的过期值。 */
 static void test_aot_c_ownership_write_kills_stale_scalar_copy_provenance(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C ownership provenance smoke currently validates the Unix toolchain path");

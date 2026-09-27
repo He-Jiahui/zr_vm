@@ -1,3 +1,4 @@
+/* 调用路径烟测：从源码及手工字节码生成共享库，核对动态 quicken、静态数值、栈值及元调用边界；执行路径还要回到运行时确认结果。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -86,6 +87,7 @@ static TZrInstruction create_return_instruction(TZrUInt16 returnCount, TZrUInt16
     return instruction;
 }
 
+/* 手工构造元调用边界，使 writer 的 helper 降低不依赖前端是否产出该指令。 */
 static SZrFunction *create_meta_call_boundary_function(SZrState *state) {
     SZrFunction *function;
 
@@ -175,6 +177,7 @@ static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize buff
     snprintf(buffer, bufferSize, ZR_STABLE_HASH_HEX_PRINTF_FORMAT, (unsigned long long)hash);
 }
 
+/* 从源码编译一直运行到生成库入口，防止 quickened 动态调用只满足文本针脚却不能实际执行。 */
 static void test_aot_c_generated_shared_library_executes_quickened_dynamic_call_direct_core_path(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C call shared-library smoke currently validates the Unix dlopen toolchain path");

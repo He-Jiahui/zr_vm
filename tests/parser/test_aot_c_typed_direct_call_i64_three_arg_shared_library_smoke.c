@@ -1,3 +1,4 @@
+/* 三参数 i64 typed 调用矩阵：区分无 state 与需 state 的 thunk 签名，覆盖算术及位运算，并验证共享库结果。 */
 #include "aot_c_typed_direct_call_i64_smoke_support.h"
 
 #define ZR_AOT_I64_THREE_ARG_STATE_FREE_DECL \
@@ -103,6 +104,7 @@ static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_su
     aot_c_i64_smoke_run_case(&testCase);
 }
 
+/* 三参数连续除法保留 state 以报告除零，和无失败路径的 state-free 算术形状区分。 */
 static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_divide_typed_thunk(void) {
     const SZrAotTypedDirectCallI64SmokeCase testCase = {
             "fn quotient3(left: int, middle: int, right: int): int {\n"
@@ -253,6 +255,8 @@ static void test_aot_c_generated_shared_library_executes_static_i64_three_arg_bi
     aot_c_i64_smoke_run_case(&testCase);
 }
 
+/* TODO: 此目标在 tests/CMakeLists.txt 创建，但未列入 language_pipeline；
+ * 验收文档按可执行文件手工运行。核对是否应加入常规 CTest 回归入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_i64_three_arg_add_typed_thunk);

@@ -1,3 +1,4 @@
+/* 控制流烟测：构造异常处理和带回边的字节码，检查 AOT C 在分配、调用、循环处插入 safepoint，并保证生成库可链接。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -144,6 +145,7 @@ static TZrInstruction create_jump_if_instruction(TZrUInt16 conditionSlot, TZrInt
     return instruction;
 }
 
+/* 同一字节码函数包含分配、动态调用与循环回边，强制三类 safepoint 在一条控制流上共存。 */
 static SZrFunction *create_safepoint_boundary_function(SZrState *state) {
     SZrFunction *function;
 
@@ -203,6 +205,7 @@ static char *read_text_file_owned_or_fail(const TZrChar *path) {
 }
 #endif
 
+/* 同时核对 helper 标记与最终 C 的 SafePoint 调用，防止标记存在而实际 safepoint 被遗漏。 */
 static void test_aot_c_generated_source_inserts_gc_safepoints_at_all_boundaries(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C safepoint smoke currently validates the Unix toolchain path");
@@ -244,6 +247,8 @@ static void test_aot_c_generated_source_inserts_gc_safepoints_at_all_boundaries(
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_create_object"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_dynamic_function_call"));
+    /* TODO: 当前仅检查三类标记及 SafePoint 调用均存在，未逐边界验证调用位置；
+     * 需核对生成 C 中分配、调用和回边各自的控制流块。 */
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_gc_safepoint_allocation"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_gc_safepoint_call"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_gc_safepoint_back_edge"));

@@ -1,3 +1,4 @@
+/* AOT C 基础共享库烟测：从源码、二进制与手工边界字节码生成 C，检查模块描述符、加载入口、标量路径及不支持指令的处理。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -214,6 +215,7 @@ static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize buff
     snprintf(buffer, bufferSize, ZR_STABLE_HASH_HEX_PRINTF_FORMAT, (unsigned long long)hash);
 }
 
+/* 同时检查生成描述符和真实链接，避免代码形状正确却缺少运行时可发现的导出。 */
 static void test_aot_c_generated_source_compiles_and_exports_module_descriptor(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C shared-library smoke currently validates the Unix dlopen toolchain path");
@@ -2541,6 +2543,7 @@ static void test_aot_c_generated_shared_library_executes_generic_primitive_conve
 #endif
 }
 
+/* 不支持指令的生成代码须保留运行时诊断边界，避免烟测只覆盖成功路径。 */
 static void test_aot_c_generated_shared_library_compiles_unsupported_instruction_boundary(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C shared-library smoke currently validates the Unix dlopen toolchain path");

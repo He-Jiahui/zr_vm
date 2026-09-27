@@ -1,3 +1,4 @@
+/* i64 typed 调用烟测：检查零至双参数函数的 thunk 声明、直接调用、栈槽同步消除及 full AOT 运行结果。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -45,6 +46,7 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+/* 集中检查 full AOT 标记与直接调用针脚，防止共享库运行通过但仍使用运行时 deopt 桥。 */
 static void assert_generated_i64_full_aot_direct_call(const char *generatedCText, const char *fullAotMarkerNeedle) {
     TEST_ASSERT_NOT_NULL(generatedCText);
     TEST_ASSERT_NOT_NULL(fullAotMarkerNeedle);
@@ -884,6 +886,8 @@ static void test_aot_c_generated_shared_library_executes_static_i64_two_arg_subt
 #endif
 }
 
+/* TODO: 此目标在 tests/CMakeLists.txt 创建，但未列入 language_pipeline；
+ * 验收文档按可执行文件手工运行。核对是否应加入常规 CTest 回归入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_i64_no_arg_local_constant_typed_thunk);

@@ -1,3 +1,4 @@
+/* 作用域边界烟测：构造 scope 指令链，检查生成 C 使用相应运行时 helper 并能编译为共享库。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -60,6 +61,7 @@ static TZrInstruction create_return_instruction(TZrUInt16 returnCount, TZrUInt16
     return instruction;
 }
 
+/* 手工组合固定的 scope 指令序列，检查进入、离开作用域的 helper 选择。 */
 static SZrFunction *create_scope_function(SZrState *state) {
     SZrFunction *function;
 

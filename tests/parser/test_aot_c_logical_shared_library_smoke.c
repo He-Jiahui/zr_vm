@@ -1,3 +1,4 @@
+/* 逻辑运算烟测：覆盖 truthiness、原语相等、短路和字符串比较，既检查生成 C 的局部路径，也执行共享库验证结果。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -597,6 +598,7 @@ static void test_aot_c_generated_shared_library_executes_generic_primitive_equal
 #endif
 }
 
+/* 用真实执行结果验证 AND/OR 分支，补足生成 C 文本针脚不能证明的运行语义。 */
 static void test_aot_c_generated_shared_library_executes_bool_short_circuit_logical_expressions(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C bool short-circuit logical shared-library smoke currently validates the Unix dlopen toolchain path");

@@ -1,3 +1,4 @@
+/* 浮点烟测：核对 typed 取模及比较链的生成 C 形状，并编译共享库；重点锁定标量局部值不再依赖 VM 栈帧。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -260,6 +261,7 @@ static void test_aot_c_generated_shared_library_compiles_typed_float_mod(void) {
 #endif
 }
 
+/* 比较结果继续进入分支，锁定浮点标量链在生成 C 中不回退到动态帧。 */
 static void test_aot_c_generated_shared_library_elides_frame_for_float_compare_pipeline(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C float compare frame-elision smoke currently validates the Unix toolchain path");

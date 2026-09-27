@@ -1,3 +1,4 @@
+/* 幂运算烟测：构造 typed power 字节码，检查 AOT C 选择幂运算 helper 且生成共享库能够链接。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -75,6 +76,7 @@ static TZrInstruction create_return_instruction(TZrUInt16 returnCount, TZrUInt16
     return instruction;
 }
 
+/* 直接指定 typed power 指令与常量，验证 writer 对幂运算的降低不受源码优化影响。 */
 static SZrFunction *create_typed_power_function(SZrState *state) {
     SZrFunction *function;
 

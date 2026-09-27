@@ -1,3 +1,4 @@
+/* 栈拷贝相等烟测：覆盖布尔、整数和混合数值比较，防止泛型比较读取复制前的栈槽或丢失局部分支。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -219,6 +220,7 @@ static SZrFunction *create_generic_mixed_stack_copy_equality_local_function(SZrS
     return function;
 }
 
+/* 手工串起常量、栈拷贝、泛型比较与分支，固定 writer 看到的来源追踪次序。 */
 static SZrFunction *create_generic_bool_stack_copy_equality_local_function(SZrState *state) {
     SZrFunction *function;
 
@@ -899,6 +901,8 @@ static void test_aot_c_generated_shared_library_executes_generic_i64_stack_copy_
 #endif
 }
 
+/* TODO: 此目标在 tests/CMakeLists.txt 创建，但未列入 language_pipeline；
+ * 验收文档按可执行文件手工运行。核对是否应加入常规 CTest 回归入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_generic_i64_stack_copy_equality_local_branch);

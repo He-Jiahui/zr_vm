@@ -1,3 +1,4 @@
+/* provider 导入烟测：编译带导出清单的 provider 共享库，随后从根项目按版本与路径导入，核对元数据绑定及执行结果。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -124,6 +125,7 @@ static void assert_manifest_export_member_token(TZrMetadataToken token) {
     TEST_ASSERT_GREATER_THAN_UINT32(0u, ZR_METADATA_TOKEN_RID(token));
 }
 
+/* 同一断言用于显式路径与版本范围两种导入，核对导出 method/field token 和执行结果一致。 */
 static void assert_provider_module_imports_with_manifest_exports(SZrGlobalState *runtimeGlobal,
                                                                  SZrState *runtimeState,
                                                                  TZrNativeString expectedModuleKey) {
@@ -179,6 +181,7 @@ static void assert_provider_module_imports_with_manifest_exports(SZrGlobalState 
     TEST_ASSERT_NULL(ZrLibrary_AotRuntime_GetLastError(runtimeGlobal));
 }
 
+/* 先产出 provider 的 zro/C/so，再由独立 runtime global 导入；防止编译侧状态掩盖路径或版本解析错误。 */
 static void test_aot_c_provider_import_loads_project_library_from_provider_bin(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C provider shared-library smoke currently validates the Unix dlopen toolchain path");
@@ -384,6 +387,7 @@ static void test_aot_c_provider_import_loads_project_library_from_provider_bin(v
              providerSharedLibraryPath);
     TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
 
+    /* 导入阶段另建 runtime global，避免编译侧 project/userData 掩盖 provider 定位错误。 */
     runtimeGlobal = ZrLibrary_CommonState_CommonGlobalState_New(rootProjectPath);
     TEST_ASSERT_NOT_NULL(runtimeGlobal);
     runtimeState = runtimeGlobal->mainThreadState;
@@ -412,6 +416,8 @@ static void test_aot_c_provider_import_loads_project_library_from_provider_bin(v
 #endif
 }
 
+/* TODO: 此目标在 tests/CMakeLists.txt 创建，但未列入 language_pipeline；
+ * 验收文档按可执行文件手工运行。核对是否应加入常规 CTest 回归入口。 */
 int main(void) {
     UNITY_BEGIN();
 

@@ -1,3 +1,4 @@
+/* 逻辑否定烟测：覆盖数值、null、布尔及引用来源，核对泛型 LOGICAL_NOT 的局部快路和必要的运行时回退。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -738,6 +739,7 @@ static void test_aot_c_generated_shared_library_executes_generic_logical_not_num
 #endif
 }
 
+/* reset-null 与普通数值来源不同，锁定逻辑否定的 null 语义及局部布尔结果。 */
 static void test_aot_c_generated_shared_library_executes_generic_logical_not_reset_null_source_local_bool_branch(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C generic LOGICAL_NOT reset-null-source local shared-library smoke validates the Unix dlopen toolchain path");
@@ -1824,6 +1826,8 @@ static void test_aot_c_generated_shared_library_executes_generic_logical_not_boo
 #endif
 }
 
+/* TODO: 此目标在 tests/CMakeLists.txt 创建，但未列入 language_pipeline；
+ * 验收文档按可执行文件手工运行。核对是否应加入常规 CTest 回归入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_generic_logical_not_numeric_source_local_branch);

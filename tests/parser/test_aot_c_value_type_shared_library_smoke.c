@@ -1,3 +1,4 @@
+/* 值类型烟测：验证字符串字段拷贝、类型布局、GC 描述符、所有权偏移及 span artifact 与 VM 执行的一致性。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -360,6 +361,7 @@ static void test_aot_c_generated_union_type_layout_token_uses_local_type_def(voi
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 布局描述符只标记含引用字段的偏移，防止 POD 字段被 GC 当作根或真实引用被漏扫。 */
 static void test_aot_c_generated_type_layout_gc_descriptors_are_ref_exact_and_skip_pod(void) {
     const char *refSource =
             "struct Label {\n"
@@ -682,6 +684,7 @@ static void test_aot_c_generated_union_type_layout_emits_ownership_offsets_for_o
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 对同一 span 场景比较 VM 与 artifact 的可观察结果，补足静态生成文本断言无法证明的执行语义。 */
 static void test_aot_c_span_artifact_executes_equivalently_to_vm(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C Span shared-library smoke currently validates the Unix toolchain path");

@@ -1,3 +1,4 @@
+/* f64 typed 调用矩阵：覆盖不同实参数量、算术操作与返回边界，检查直接调用形状及生成库结果。 */
 #include "aot_c_typed_direct_call_f64_smoke_support.h"
 
 static void test_aot_c_generated_shared_library_executes_static_f64_no_arg_typed_thunk(void) {
@@ -22,6 +23,7 @@ static void test_aot_c_generated_shared_library_executes_static_f64_no_arg_typed
     run_aot_c_typed_direct_call_f64_smoke(&testCase);
 }
 
+/* 单独检查浮点返回桥，防止 thunk 内部正确而跨函数返回时重新装箱。 */
 static void test_aot_c_generated_shared_library_returns_static_f64_no_arg_result_through_f64_boundary(void) {
     const SZrAotTypedDirectCallF64SmokeCase testCase = {
             "fn answer(): float {\n"
@@ -454,6 +456,8 @@ static void test_aot_c_generated_shared_library_executes_static_f64_two_arg_modu
     run_aot_c_typed_direct_call_f64_smoke(&testCase);
 }
 
+/* TODO: 此目标在 tests/CMakeLists.txt 创建，但未列入 language_pipeline；
+ * 验收文档按可执行文件手工运行。核对是否应加入常规 CTest 回归入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_f64_no_arg_typed_thunk);

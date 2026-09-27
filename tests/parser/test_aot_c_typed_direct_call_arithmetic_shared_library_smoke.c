@@ -1,3 +1,4 @@
+/* i64 typed 调用算术矩阵：各静态用例提供源码、生成 C 针脚与预期结果，交给共享 fixture 完成编译、链接和执行。 */
 #include "aot_c_typed_direct_call_arithmetic_smoke_support.h"
 
 static const char *const i64_two_arg_multiply_needles[] = {
@@ -8,6 +9,7 @@ static const char *const i64_two_arg_multiply_needles[] = {
         "zr_aot_typed_i64_fn_1(zr_aot_s",
 };
 
+/* 除法针脚同时要求 state 参数与除零诊断，区分有失败路径的 thunk 和纯算术 thunk。 */
 static const char *const i64_two_arg_divide_needles[] = {
         "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1);",
         "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {",
@@ -230,6 +232,8 @@ static void test_aot_c_generated_shared_library_executes_static_i64_one_arg_nega
     run_i64_arithmetic_smoke_case(&i64_one_arg_negate_case);
 }
 
+/* TODO: 此目标在 tests/CMakeLists.txt 创建，但未列入 language_pipeline；
+ * 验收文档按可执行文件手工运行。核对是否应加入常规 CTest 回归入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_i64_two_arg_multiply_typed_thunk);

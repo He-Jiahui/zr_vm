@@ -1,3 +1,4 @@
+/* u64 typed 调用矩阵：覆盖零至三参数算术与位运算，并核对调用签名、返回边界、full AOT 形状和共享库结果。 */
 #include "aot_c_typed_direct_call_u64_smoke_support.h"
 
 #define ZR_AOT_U64_NO_ARG_STATE_FREE_DECL "static TZrUInt64 zr_aot_typed_u64_fn_1(void);"
@@ -56,6 +57,7 @@ static void test_aot_c_generated_shared_library_executes_static_u64_no_arg_typed
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
 }
 
+/* 检查无符号返回桥的专用 helper，避免跨函数返回重新走装箱栈帧。 */
 static void test_aot_c_generated_shared_library_returns_static_u64_no_arg_result_through_u64_boundary(void) {
     const SZrAotTypedDirectCallU64SmokeCase testCase = {
             "fn answer(): uint {\n"
@@ -709,6 +711,8 @@ static void test_aot_c_generated_shared_library_executes_static_u64_three_arg_bi
     run_aot_c_typed_direct_call_u64_smoke(&testCase);
 }
 
+/* TODO: 此目标在 tests/CMakeLists.txt 创建，但未列入 language_pipeline；
+ * 验收文档按可执行文件手工运行。核对是否应加入常规 CTest 回归入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_static_u64_no_arg_typed_thunk);

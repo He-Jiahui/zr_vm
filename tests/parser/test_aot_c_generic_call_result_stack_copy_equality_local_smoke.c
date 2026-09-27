@@ -1,3 +1,4 @@
+/* 调用结果与栈拷贝烟测：让泛型相等消费复制后的返回值，核对 AOT C 的局部值传播与真实共享库执行。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -138,6 +139,7 @@ static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize buff
 }
 #endif
 
+/* 调用结果经栈拷贝后再比较与跳转，防止复制值的类型事实或返回槽同步丢失。 */
 static void test_aot_c_generated_shared_library_executes_generic_call_result_stack_copy_equality_local_branch(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C generic call-result stack-copy equality smoke validates the Unix dlopen path");
@@ -290,6 +292,8 @@ static void test_aot_c_generated_shared_library_executes_generic_call_result_sta
 #endif
 }
 
+/* TODO: 此目标在 tests/CMakeLists.txt 创建，但未列入 language_pipeline；
+ * 验收文档按可执行文件手工运行。核对是否应加入常规 CTest 回归入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_generic_call_result_stack_copy_equality_local_branch);

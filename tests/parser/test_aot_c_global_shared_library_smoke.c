@@ -1,3 +1,4 @@
+/* 全局与动态边界烟测：用手工字节码覆盖全局、闭包、反射、转换及动态成员访问，核对 AOT C 运行时 helper 的选择与链接。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -730,6 +731,7 @@ static void test_aot_c_generated_shared_library_compiles_typeof_runtime_boundary
 #endif
 }
 
+/* 反射 typeof 仍依赖运行时，要求 full AOT 的写出必须明确失败而非静默生成桥接调用。 */
 static void test_aot_c_full_aot_rejects_typeof_reflection_runtime_contract(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C TYPEOF shared-library smoke currently validates the Unix toolchain path");

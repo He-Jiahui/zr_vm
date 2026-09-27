@@ -1,3 +1,4 @@
+/* 泛型数值矩阵：手工构造不同数值类型、运算和栈拷贝来源的函数，检查生成 C 的局部化与除模保护，并验证共享库可编译。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -75,6 +76,7 @@ static TZrInstruction create_return_instruction(TZrUInt16 returnCount, TZrUInt16
     return instruction;
 }
 
+/* 手工指定泛型算术 opcode 与浮点常量，隔离前端 quicken 对 codegen 路径的影响。 */
 static SZrFunction *create_generic_numeric_binary_float_function(SZrState *state, EZrInstructionCode opcode) {
     SZrFunction *function;
 
@@ -1147,6 +1149,8 @@ static void test_aot_c_generated_shared_library_compiles_generic_numeric_div_flo
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_constant_f64_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_f64_div_scalar_local"));
+    /* TODO: 当前只分别检查零除保护和除法表达式存在，未断言保护先于除法；
+     * 需检查生成 C 的控制流或补充顺序断言。 */
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_f1 == (TZrFloat64)0.0)"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Debug_RunError(state, \"divide by zero\")"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_f2 = zr_aot_f0 / zr_aot_f1;"));
@@ -1568,6 +1572,7 @@ static void test_aot_c_generated_shared_library_compiles_generic_numeric_result_
 #endif
 }
 
+/* 检查除数来自拷贝后的结果槽，并存在除零保护与除法表达式针脚。 */
 static void test_aot_c_generated_shared_library_compiles_generic_numeric_result_stack_copy_right_div_float_local(void) {
 #if !defined(ZR_PLATFORM_UNIX)
     TEST_IGNORE_MESSAGE("AOT C generic numeric result stack-copy right div smoke currently validates the Unix toolchain path");

@@ -1,3 +1,4 @@
+/* 泛型相等烟测：用布尔、整数、混合数值及调用结果制造相等分支，核对标量局部比较、零帧生成形状和实际执行结果。 */
 #include "unity.h"
 
 #include <stdio.h>
@@ -50,6 +51,7 @@ static SZrFunction *compile_source(SZrState *state, const char *source, const ch
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+/* 将前端 quicken 后的数值比较改回泛型 opcode，单独测试 AOT C 对局部类型事实的重建。 */
 static void rewrite_typed_numeric_equality_to_generic(SZrFunction *function) {
     TZrUInt32 rewrittenCount = 0u;
     TZrUInt32 instructionIndex;
@@ -389,6 +391,7 @@ static void hash_file_or_fail(const TZrChar *path, TZrChar *buffer, TZrSize buff
     snprintf(buffer, bufferSize, ZR_STABLE_HASH_HEX_PRINTF_FORMAT, (unsigned long long)hash);
 }
 
+/* 把零帧要求集中断言，防止局部比较虽正确却重新分配 VM 栈帧。 */
 static void assert_generic_equality_generated_c_uses_zero_frame_scalar_body(const char *generatedCText) {
     TEST_ASSERT_NOT_NULL(generatedCText);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "    .registerFrameBytes = 0u,"));
@@ -1180,6 +1183,8 @@ static void test_aot_c_generated_shared_library_executes_generic_call_result_equ
 #endif
 }
 
+/* TODO: 此目标在 tests/CMakeLists.txt 创建，但未列入 language_pipeline；
+ * 验收文档按可执行文件手工运行。核对是否应加入常规 CTest 回归入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_shared_library_executes_generic_bool_equality_local_branch);
