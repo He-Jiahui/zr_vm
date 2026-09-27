@@ -3,14 +3,17 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
+// 直接读取发布给 VS Code 的语法清单，保证静态规则检查不依赖编译后的扩展入口。
 function readGrammar() {
     return JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'syntaxes', 'zr.tmLanguage.json'), 'utf8'));
 }
 
+// 以仓库分组名定位规则；测试同时核对顶层 include 次序，避免只验证孤立正则。
 function repositoryPatterns(grammar, key) {
     return grammar.repository?.[key]?.patterns ?? [];
 }
 
+// 顶层 union 声明须先于宽泛关键字匹配；变体与基础类型各自保留专用 scope。
 test('ZR grammar highlights union declarations, lowercase primitives, and variant members', () => {
     const grammar = readGrammar();
     const topLevelIncludes = grammar.patterns?.map((rule) => rule.include).filter(Boolean) ?? [];
@@ -83,6 +86,7 @@ test('ZR grammar highlights union declarations, lowercase primitives, and varian
     assert(new RegExp(variantMemberRule.match).test('.Rect'));
 });
 
+// 约束新语法的声明和属性作用域，并阻止旧的百分号、美元构造入口回流到发布清单。
 test('ZR grammar highlights redesigned declarations, references, construction, and attributes', () => {
     const grammar = readGrammar();
     const declarationPatterns = repositoryPatterns(grammar, 'declarations');

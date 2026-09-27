@@ -5,6 +5,7 @@ const path = require('node:path');
 const textmate = require('vscode-textmate');
 const oniguruma = require('vscode-oniguruma');
 
+// 复用真正的 TextMate/Oniguruma 解析器，检查跨行状态；静态 JSON 正则测试无法替代这一层。
 let registry;
 const grammarPromise = (async () => {
     const wasm = fs.readFileSync(require.resolve('vscode-oniguruma/release/onig.wasm'));
@@ -22,8 +23,10 @@ const grammarPromise = (async () => {
     return registry.loadGrammar('source.zr');
 })();
 
+// 注册表只由本测试文件创建，测试结束时清理已加载的语法对象。
 test.after(() => registry?.dispose());
 
+// scope 断言统一取覆盖目标文本起点的 token，避免检查到相邻操作符的作用域。
 function tokenFor(result, line, text, from = 0) {
     const offset = line.indexOf(text, from);
     assert.notEqual(offset, -1, `Missing fixture text: ${text}`);
@@ -32,12 +35,14 @@ function tokenFor(result, line, text, from = 0) {
     return token;
 }
 
+// 同一文本在不同词法上下文可有不同 scope；各场景指定其预期上下文。
 function assertScope(result, line, text, scope, from = 0) {
     const token = tokenFor(result, line, text, from);
     assert.ok(token.scopes.includes(scope), `${text}: ${token.scopes.join(', ')}`);
     return token;
 }
 
+// 多字符操作符必须整体归类，避免一部分被较短的比较或赋值规则抢先消耗。
 test('TextMate consumes each operator completely with its correct scope', async () => {
     const grammar = await grammarPromise;
     const cases = {
@@ -58,6 +63,7 @@ test('TextMate consumes each operator completely with its correct scope', async 
     }
 });
 
+// 所有权内建调用和对象同名成员必须使用不同 scope，供编辑器主题及导航正确区分。
 test('TextMate distinguishes ownership intrinsics from ordinary member calls', async () => {
     const grammar = await grammarPromise;
     const line = 'using (owner) { share(owner); degrade(shared); wake(weak); intoGc(owner); drop(owner); }';
@@ -74,6 +80,7 @@ test('TextMate distinguishes ownership intrinsics from ordinary member calls', a
     }
 });
 
+// 插值中的字符串、注释和嵌套括号不能提前结束外层模板；随后代码应恢复普通词法状态。
 test('TextMate tracks template text, escapes and nested interpolation braces', async () => {
     const grammar = await grammarPromise;
     const first = 'let message = `hello \\` \\n ${fn() {';
@@ -97,6 +104,7 @@ test('TextMate tracks template text, escapes and nested interpolation braces', a
     assert.ok(afterResult.tokens.every((token) => !token.scopes.includes('string.quoted.template.zr')));
 });
 
+// 成员访问可以跨注释和换行；解析器仍须区分其后的方法名与独立内建调用。
 test('TextMate preserves ordinary member names across comments and line breaks', async () => {
     const grammar = await grammarPromise;
     for (const access of ['.', '?.']) {
@@ -118,6 +126,7 @@ test('TextMate preserves ordinary member names across comments and line breaks',
     assertScope(grammar.tokenizeLine(variant, textmate.INITIAL), variant, 'Some', 'variable.other.member.variant.zr');
 });
 
+// 编辑器修复未闭合模板后会重新词法分析，旧行状态不能继续污染后面的源码。
 test('TextMate recovers the following lines when an unfinished template is repaired', async () => {
     const grammar = await grammarPromise;
     const unfinished = grammar.tokenizeLine('let label = `value ${item', textmate.INITIAL);
@@ -132,6 +141,7 @@ test('TextMate recovers the following lines when an unfinished template is repai
     assert.ok(retokenized.ruleStack.equals(fresh.ruleStack));
 });
 
+// 转义反斜杠层级不同的嵌套模板都应在正确位置闭合，下一行不得沿用插值 scope。
 test('TextMate closes escaped nested templates without leaking into following code', async () => {
     const grammar = await grammarPromise;
     const delimiter = '\\`';
@@ -160,6 +170,7 @@ test('TextMate closes escaped nested templates without leaking into following co
     }
 });
 
+// 除语法着色外，编辑器的反引号自动配对和包围也必须由语言配置声明。
 test('language configuration pairs and surrounds template backticks', () => {
     const configuration = JSON.parse(fs.readFileSync(
         path.join(__dirname, '..', 'language-configuration.json'), 'utf8'));
