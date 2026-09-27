@@ -1946,6 +1946,8 @@ static void test_phi_copy_and_critical_edge_split(void) {
     ZrCore_ExecIr_FreeFunction(&criticalFunction);
 }
 
+void test_ssa_execbc_place_differential(void);
+
 static void test_unsupported_and_transactional_failures(void) {
     static const EZrExecIrOpcode iteratorOpcodes[] = {
         ZR_EXEC_IR_OPCODE_ITER_INIT,
@@ -2039,7 +2041,7 @@ static void test_unsupported_and_transactional_failures(void) {
            diagnostic.actualVersion == ZR_EXEC_IR_OPCODE_PLACE_BASE);
     assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
     assert(bc.instructions[0u].opcode == ZR_EXEC_IR_OPCODE_PLACE_BASE &&
-           bc.instructions[0u].operands.count == 1u && !bc.runnable);
+           bc.instructions[0u].operands.count == 1u && bc.runnable);
     oldInstructions = bc.instructions;
     oldCount = bc.instructionCount;
     assert(ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic));
@@ -2054,7 +2056,7 @@ static void test_unsupported_and_transactional_failures(void) {
            diagnostic.actualVersion == ZR_EXEC_IR_OPCODE_PLACE_PROJECT);
     assert(ZrParser_ExecIr_LowerExecBc(&function, &bc, &diagnostic));
     assert(bc.instructions[0u].opcode == ZR_EXEC_IR_OPCODE_PLACE_PROJECT &&
-           bc.instructions[0u].operands.count == 2u && !bc.runnable);
+           bc.instructions[0u].operands.count == 2u && bc.runnable);
     oldInstructions = bc.instructions;
     oldCount = bc.instructionCount;
     assert(ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic));
@@ -2141,6 +2143,7 @@ int main(void) {
     test_iterator_oracle_provider();
     test_place_oracle_provider();
     test_place_token_composes_with_memory_provider();
+    test_ssa_execbc_place_differential();
     test_type_test_oracle_provider();
     test_exception_payload_oracle_provider();
     test_phi_copy_and_critical_edge_split();

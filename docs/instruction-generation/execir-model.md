@@ -31,6 +31,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build_control_edges.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_normalize_cfg.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_execbc.h
 implementation_files:
   - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
@@ -62,9 +64,12 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build_control_edges.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_normalize_cfg.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_execbc.h
 plan_sources:
   - docs/plans/ssa/01-execir-ssa/01-core-model.md
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
+  - docs/plans/ssa/01-execir-ssa/05-oracle-projections.md
 tests:
   - tests/parser/test_ssa_core_model.c
   - tests/parser/test_ssa_value_validation.c
@@ -89,6 +94,8 @@ tests:
   - tests/parser/test_ssa_cleanup_exception_state.c
   - tests/parser/test_ssa_source_cleanup_cfg.c
   - tests/parser/test_ssa_oracle_projections.c
+  - tests/parser/test_ssa_execbc_place.c
+  - tests/acceptance/ssa-oracle-execbc-place-differential.md
   - tests/parser/test_ssa_gvn_range.c
   - tests/parser/test_ssa_pass_manager_scalar.c
   - tests/acceptance/ssa-external-entry-values.md
@@ -211,13 +218,16 @@ reconstructed inside the Oracle.
 forces `runnable == false` until the executable allocator/GC ABI is available;
 the pointer-free Oracle allocation provider remains a reference-only seam.
 
-`PLACE_BASE` and `PLACE_PROJECT` likewise retain their pointer-free operand,
-result, type, layout, and source metadata in both projections while forcing
-`runnable == false`. Their physical address and layout semantics belong to a
-later backend bridge. The direct Oracle can evaluate them only through
-`FZrExecIrOraclePlace`, which returns a caller-owned pointer-free address token
-and reports provider rejection with a dedicated diagnostic; it never
-manufactures a host pointer.
+`PLACE_BASE` and `PLACE_PROJECT` retain their pointer-free operand, result,
+type, layout, and source metadata in both projections. The direct Oracle uses
+`FZrExecIrOraclePlace`, while the ExecBC projection runner is runnable for
+these operations and requires `FZrExecBcPlace` at execution time. Both
+callbacks map stable tokens to a caller-owned pointer-free address token;
+neither manufactures a host pointer. A missing provider is unsupported,
+rejection reports `ORACLE_PLACE_ERROR`, and an undefined result reports
+`INVALID_VALUE` without publishing the partially executed projection.
+The AOT projection remains non-runnable; physical address and layout semantics
+for production backends still require a separate bridge.
 
 The direct Oracle executes `ITER_INIT`, `ITER_MOVE_NEXT`, and `ITER_CURRENT`
 only through `FZrExecIrOracleIterator`. The provider returns the pointer-free

@@ -666,6 +666,41 @@ TZrBool ZrParser_ExecBcProjection_Run(
                         candidate.ownerStates[source] = ZR_EXEC_IR_STATE_MAP_OWNER_MOVED;
                     }
                     break;
+                case ZR_EXEC_IR_OPCODE_PLACE_BASE:
+                case ZR_EXEC_IR_OPCODE_PLACE_PROJECT: {
+                    SZrExecIrOracleValue operands[2];
+                    TZrUInt32 operandCount = instruction->opcode ==
+                            ZR_EXEC_IR_OPCODE_PLACE_BASE ? 1u : 2u;
+                    if (instruction->operands.count != operandCount) goto invalid;
+                    if (input == ZR_NULL || input->place == ZR_NULL) {
+                        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED,
+                                       projection, block, index + 1u,
+                                       instruction->opcode);
+                        goto fail;
+                    }
+                    for (TZrUInt32 at = 0u; at < operandCount; ++at) {
+                        if (!zr_execbc_operand(projection, instruction,
+                                               &candidate, at, &operands[at]))
+                            goto invalid;
+                    }
+                    if (!input->place(input->placeUserData, instruction,
+                                      operands, operandCount, &value)) {
+                        zr_execbc_diag(diagnostic,
+                                       ZR_EXEC_IR_DIAGNOSTIC_ORACLE_PLACE_ERROR,
+                                       projection, block, index + 1u,
+                                       operandCount);
+                        goto fail;
+                    }
+                    if (value.kind <= ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED ||
+                        value.kind >= ZR_EXEC_IR_ORACLE_VALUE_KIND_COUNT) {
+                        zr_execbc_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                                       projection, block, index + 1u, value.kind);
+                        goto fail;
+                    }
+                    if (!zr_execbc_assign(projection, instruction, &candidate,
+                                          &value)) goto invalid;
+                    break;
+                }
                 case ZR_EXEC_IR_OPCODE_CONVERT:
                     if (!zr_execbc_operand(projection, instruction, &candidate, 0u, &value))
                         goto invalid;

@@ -37,8 +37,8 @@ static TZrBool zr_projection_bytes(TZrUInt32 count, size_t element, size_t *byte
 }
 
 /* The first projection is intentionally a no-optimization scalar/control
- * slice.  PLACE_BASE/PLACE_PROJECT, ALLOC, INVOKE, and iterator operations are
- * copied as metadata; executable layout, allocation, invoke/landing-pad, and
+ * slice. Place operations require a caller-supplied token provider. ALLOC and
+ * iterator operations remain metadata-only; executable allocation and
  * iterator ABI handling remain separate backend concerns. */
 static TZrBool zr_projection_opcode_supported(EZrExecIrOpcode opcode) {
     switch (opcode) {
@@ -58,6 +58,8 @@ static TZrBool zr_projection_opcode_runnable(EZrExecIrOpcode opcode) {
         case ZR_EXEC_IR_OPCODE_BRANCH: case ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH:
         case ZR_EXEC_IR_OPCODE_SWITCH: case ZR_EXEC_IR_OPCODE_RETURN:
         case ZR_EXEC_IR_OPCODE_PHI: case ZR_EXEC_IR_OPCODE_CALL:
+        case ZR_EXEC_IR_OPCODE_PLACE_BASE:
+        case ZR_EXEC_IR_OPCODE_PLACE_PROJECT:
         case ZR_EXEC_IR_OPCODE_LOAD:
         case ZR_EXEC_IR_OPCODE_STORE: case ZR_EXEC_IR_OPCODE_BARRIER:
         case ZR_EXEC_IR_OPCODE_DROP: case ZR_EXEC_IR_OPCODE_THROW:

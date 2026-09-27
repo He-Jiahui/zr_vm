@@ -6,9 +6,12 @@ related_code:
   - tests/parser/test_ssa_oracle_memory_differential.c
   - tests/parser/test_ssa_oracle_call_differential.c
   - tests/parser/test_ssa_oracle_invoke_differential.c
+  - tests/parser/test_ssa_execbc_place.c
   - tests/parser/test_ssa_oracle_resume.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_execbc.h
 implementation_files:
   - tests/harness/ssa_differential_support.c
   - tests/harness/ssa_differential_support.h
@@ -21,6 +24,7 @@ tests:
   - tests/parser/test_ssa_oracle_memory_differential.c
   - tests/acceptance/ssa-oracle-execbc-parallel-differential.md
   - tests/acceptance/ssa-oracle-execbc-memory-differential.md
+  - tests/acceptance/ssa-oracle-execbc-place-differential.md
   - tests/acceptance/ssa-oracle-execbc-call-differential.md
 doc_type: testing-guide
 ---
@@ -64,6 +68,13 @@ Missing and rejected providers and invalid loaded values
 report their actual instruction/source and preserve the previously published
 projected result. This establishes the pointer-free memory-provider subset,
 not full effects, drop, exception, writeback, production ExecBC, or AOT parity.
+The Place differential fixture separately runs both `PLACE_BASE` and
+`PLACE_PROJECT` with a caller-owned token provider followed by `LOAD/RETURN`.
+It compares the independent Oracle and ExecBC return values, provider counts,
+and address/event source identity. Missing, rejecting, and undefined-result
+ExecBC Place providers fail at the precise instruction without replacing the
+previously published execution result. This enables pointer-free projection
+testing, not host-pointer materialization or production bytecode execution.
 The same `ssa_oracle_projections` target now verifies ordinary CALL with five
 arguments and a nine-argument allocation-path case. It compares direct-oracle
 and projected return values plus four bounded CALL operand snapshots. The

@@ -410,6 +410,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/ssa-cleanup-tests.cmake)
 if (NOT TARGET zr_vm_ssa_oracle_projections_test)
     add_executable(zr_vm_ssa_oracle_projections_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_oracle_projections.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_execbc_place.c
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_oracle_memory_differential.c
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_oracle_call_differential.c
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_oracle_drop_differential.c
