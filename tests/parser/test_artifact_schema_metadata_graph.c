@@ -7,6 +7,7 @@
 #include "zr_vm_library/native_binding.h"
 #include "zr_vm_parser/artifact_projection.h"
 
+// 同一组类型身份与哈希贯穿状态、记录、布局图和二进制节，便于定位单字段损坏。
 #define GRAPH_TYPE_ID ((TZrUInt32)0x2042u)
 #define GRAPH_TYPE_DEF_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 1u)
 #define GRAPH_TYPE_REF_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_REF, 1u)
@@ -22,6 +23,7 @@ void test_artifact_metadata_graph_roundtrips_zri_and_zro(void);
 void test_artifact_metadata_graph_rejects_stripped_forged_and_corrupt_inputs(void);
 void test_artifact_metadata_projection_matches_source_native_and_binary(void);
 
+// 把元数据状态、记录、blob 和布局图作为相互引用的一组栈上产物行。
 typedef struct SZrArtifactMetadataGraphFixture {
     TZrByte signature[5];
     TZrByte metadataBlob[4];
@@ -46,6 +48,7 @@ static void graph_write_u32(TZrByte *bytes, TZrUInt32 value) {
     bytes[3] = (TZrByte)((value >> 24u) & 0xffu);
 }
 
+// 建立同一类型身份下的完整元数据图，哈希、保留计数和节范围互相匹配。
 static void graph_init_fixture(
         SZrArtifactMetadataGraphFixture *fixture,
         EZrArtifactKind kind) {
@@ -137,6 +140,7 @@ static void graph_init_fixture(
     fixture->document.identity.callableContractHash = GRAPH_CONTRACT_HASH;
     fixture->document.identity.moduleHash = GRAPH_MODULE_HASH;
 
+    // 所有图节均带必需标志；宏只在初始化夹具时追加借用的行数据。
 #define GRAPH_ADD_SECTION(KIND, COUNT, DATA) \
     fixture->sections[sectionCount++] = (SZrArtifactSectionInput){ \
             (KIND), ZR_ARTIFACT_SECTION_FLAG_MANDATORY, (COUNT), (DATA)}
@@ -177,6 +181,7 @@ static void graph_init_fixture(
     fixture->document.sections = fixture->sections;
 }
 
+// 对完整图先核所需容量再编码，供正反两类读取测试共用。
 static TZrSize graph_write_fixture(
         SZrArtifactMetadataGraphFixture *fixture,
         TZrByte *buffer,
@@ -201,6 +206,7 @@ static TZrSize graph_write_fixture(
     return written;
 }
 
+// ZRI/ZRO 读回状态与记录节后，确认 generation 和哈希未被编码改写。
 static void graph_assert_roundtrip(EZrArtifactKind kind) {
     SZrArtifactMetadataGraphFixture fixture;
     SZrArtifactView view;
@@ -246,11 +252,13 @@ static void graph_assert_roundtrip(EZrArtifactKind kind) {
                              record.recordHash);
 }
 
+// 相同元数据图在中间产物与目标产物中均可往返。
 void test_artifact_metadata_graph_roundtrips_zri_and_zro(void) {
     graph_assert_roundtrip(ZR_ARTIFACT_KIND_ZRI);
     graph_assert_roundtrip(ZR_ARTIFACT_KIND_ZRO);
 }
 
+// 裁剪声明、类别、owner、哈希、blob 和布局图任一失配都不得被接受。
 void test_artifact_metadata_graph_rejects_stripped_forged_and_corrupt_inputs(void) {
     SZrArtifactMetadataGraphFixture fixture;
     SZrArtifactView view;
@@ -369,6 +377,7 @@ void test_artifact_metadata_graph_rejects_stripped_forged_and_corrupt_inputs(voi
             ZrCore_Artifact_Read(buffer, length, &view, &diagnostic));
 }
 
+// 源码与 native descriptor 投影须生成相同状态行，二进制再读一致；类别错配须拒绝。
 void test_artifact_metadata_projection_matches_source_native_and_binary(void) {
     ZrLibMethodDescriptor nativeMethod;
     ZrLibEnumMemberDescriptor nativeEnumMember;

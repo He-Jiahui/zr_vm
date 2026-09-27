@@ -8,6 +8,7 @@
 #include "zr_vm_parser/artifact_projection.h"
 #include "zr_vm_parser/semantic.h"
 
+// 这些固定 token 与哈希贯穿公开身份和节行，变异测试一次只改变一个契约字段。
 #define TEST_TYPE_ID ((TZrUInt32)17u)
 #define TEST_TYPE_DEF_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 1u)
 #define TEST_TYPE_REF_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_REF, 1u)
@@ -23,6 +24,7 @@
 #define TEST_CONTRACT_HASH ((TZrUInt64)0x5555666677778888ULL)
 #define TEST_MODULE_HASH ((TZrUInt64)0x6666777788889999ULL)
 
+// 将公开身份、行数据与借用的节视图放在同一栈帧，测试写入前均保持有效。
 typedef struct SZrArtifactTestFixture {
     TZrByte signature[16];
     TZrUInt32 signatureLength;
@@ -37,6 +39,7 @@ typedef struct SZrArtifactTestFixture {
 
 void setUp(void) {}
 
+// BUG: source_canonical_type 测试建立 state/context 后若断言失败，Unity 跳过函数尾部释放；此空钩子无法回收资源。
 void tearDown(void) {}
 
 void test_real_source_compile_and_binary_signature_import_are_identical(void);
@@ -57,6 +60,7 @@ static void write_u32(TZrByte *bytes, TZrUInt32 value) {
     bytes[3] = (TZrByte)((value >> 24u) & 0xffu);
 }
 
+// 提供各格式共享的公开身份基线，使单字段变异能定位精确的失配诊断。
 static SZrArtifactPublicIdentity make_identity(void) {
     SZrArtifactPublicIdentity identity;
 
@@ -75,6 +79,7 @@ static SZrArtifactPublicIdentity make_identity(void) {
     return identity;
 }
 
+// 按 ZRS/ZRI/ZRO 组合共有元数据与专属载荷；section 的 data 借用本夹具或静态数组。
 static void init_fixture(SZrArtifactTestFixture *fixture, EZrArtifactKind kind) {
     static const TZrByte strings[] = {'a', 'p', 'p', 0u};
     static const TZrByte syntaxTree[] = "FunctionDefinition range=1:1-1:28\n";
@@ -136,6 +141,7 @@ static void init_fixture(SZrArtifactTestFixture *fixture, EZrArtifactKind kind) 
             ZR_ARTIFACT_SECTION_STRING_HEAP, ZR_ARTIFACT_SECTION_FLAG_MANDATORY,
             (TZrUInt32)sizeof(strings), strings};
 
+    // 源语法产物不携带类型/契约行；ZRI/ZRO 共用这些行，但各自持有不同载荷节。
     if (kind != ZR_ARTIFACT_KIND_ZRS) {
         fixture->sections[sectionCount++] = (SZrArtifactSectionInput){
                 ZR_ARTIFACT_SECTION_TYPE_DEF_TABLE, ZR_ARTIFACT_SECTION_FLAG_MANDATORY,
@@ -179,6 +185,7 @@ static void init_fixture(SZrArtifactTestFixture *fixture, EZrArtifactKind kind) 
     fixture->document.sections = fixture->sections;
 }
 
+// 先求编码长度再写入调用方缓冲；断言大小与实际产出一致以约束写入器。
 static TZrSize write_fixture(const SZrArtifactTestFixture *fixture,
                              TZrByte *buffer,
                              TZrSize capacity) {
@@ -199,6 +206,7 @@ static TZrSize write_fixture(const SZrArtifactTestFixture *fixture,
     return writtenSize;
 }
 
+// 核对 ZRO 头部、公开身份和定宽类型/契约/布局行的往返结果。
 static void test_zro_roundtrips_fixed_width_public_contract_sections(void) {
     SZrArtifactTestFixture fixture;
     SZrArtifactView view;
@@ -272,6 +280,7 @@ static void test_zro_roundtrips_fixed_width_public_contract_sections(void) {
     TEST_ASSERT_EQUAL_UINT64(TEST_LAYOUT_HASH, layout.layoutHash);
 }
 
+// 对 ZRS/ZRI 执行二进制、文本、二进制往返，保留可读节名与原始字节。
 static void assert_text_roundtrip(EZrArtifactKind kind, const TZrChar *sectionName) {
     SZrArtifactTestFixture fixture;
     SZrArtifactView firstView;
@@ -314,11 +323,13 @@ static void assert_text_roundtrip(EZrArtifactKind kind, const TZrChar *sectionNa
     TEST_ASSERT_EQUAL_INT(kind, secondView.kind);
 }
 
+// 两种非执行产物都须保留可读载荷和稳定的二进制编码。
 static void test_zrs_and_zri_have_readable_stable_roundtrips(void) {
     assert_text_roundtrip(ZR_ARTIFACT_KIND_ZRS, "syntax-tree");
     assert_text_roundtrip(ZR_ARTIFACT_KIND_ZRI, "semantic-ir");
 }
 
+// 逐一扰动公开身份字段，要求校验器报告对应的哈希或版本失配。
 static void test_public_identity_mismatches_are_precise(void) {
     SZrArtifactTestFixture fixture;
     SZrArtifactView view;
@@ -370,6 +381,7 @@ static void test_public_identity_mismatches_are_precise(void) {
                           ZrCore_Artifact_ValidatePublicIdentity(&view, &expected, &diagnostic));
 }
 
+// 未知必需节阻止读取，未知可选节可跳过并保留其余已知节。
 static void test_reader_rejects_unknown_mandatory_but_skips_unknown_optional_section(void) {
     SZrArtifactTestFixture fixture;
     SZrArtifactView view;
@@ -391,6 +403,7 @@ static void test_reader_rejects_unknown_mandatory_but_skips_unknown_optional_sec
                           ZrCore_Artifact_Read(buffer, length, &view, &diagnostic));
 }
 
+// 截断、计数越界和非法 token 均须在编码或解码边界被拒绝。
 static void test_reader_rejects_truncation_count_limit_and_illegal_tokens(void) {
     SZrArtifactTestFixture fixture;
     SZrArtifactView view;
@@ -418,6 +431,7 @@ static void test_reader_rejects_truncation_count_limit_and_illegal_tokens(void) 
                           ZrCore_Artifact_GetEncodedSize(&fixture.document, &length, &diagnostic));
 }
 
+// 成员 owner 指向不存在的类型时，写入器与篡改后的读取器都须拒绝。
 static void test_writer_and_reader_reject_dangling_member_owner_token(void) {
     SZrArtifactTestFixture fixture;
     SZrArtifactSectionInput sections[10];
@@ -472,6 +486,7 @@ static void test_writer_and_reader_reject_dangling_member_owner_token(void) {
             ZrCore_Artifact_Read(buffer, encodedLength, &view, &diagnostic));
 }
 
+// 组合函数、参数、owner 与 readonly/ref 节点，验证签名接受与截断/未知节点拒绝。
 static void test_signature_nodes_validate_ref_readonly_owner_and_callable_contracts(void) {
     TZrByte signature[128] = {0};
     SZrArtifactDiagnostic diagnostic;
@@ -503,6 +518,7 @@ static void test_signature_nodes_validate_ref_readonly_owner_and_callable_contra
 
     TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_OK,
                           ZrCore_Artifact_ValidateSignature(signature, offset, &diagnostic));
+    // TODO: 这里把同一次 HashBytes 调用与自身比较；需核对预期是否应为固定哈希或编码往返后的独立结果。
     TEST_ASSERT_EQUAL_UINT64(ZrCore_Artifact_HashBytes(signature, offset),
                              ZrCore_Artifact_HashBytes(signature, offset));
     TEST_ASSERT_NOT_EQUAL_UINT64(0u, ZrCore_Artifact_HashBytes(signature, offset));
@@ -514,6 +530,7 @@ static void test_signature_nodes_validate_ref_readonly_owner_and_callable_contra
                           ZrCore_Artifact_ValidateSignature(signature, offset, &diagnostic));
 }
 
+// 同一文档重复编码须逐字节一致，读取后的公开身份继续通过校验。
 static void test_repeat_encoding_and_text_roundtrip_keep_hashes_stable(void) {
     SZrArtifactTestFixture fixture;
     SZrArtifactView view;
@@ -538,6 +555,7 @@ static void test_repeat_encoding_and_text_roundtrip_keep_hashes_stable(void) {
                                                                  &diagnostic));
 }
 
+// 内部类型、契约与布局行偏离公开身份时须返回字段对应的错误。
 static void test_internal_public_rows_report_the_exact_mismatch(void) {
     SZrArtifactTestFixture fixture;
     SZrArtifactDiagnostic diagnostic;
@@ -570,6 +588,7 @@ static void test_internal_public_rows_report_the_exact_mismatch(void) {
                           ZrCore_Artifact_GetEncodedSize(&fixture.document, &size, &diagnostic));
 }
 
+// 覆盖空成员节和大量成员行，确认计数边界与末行数据仍可读取。
 static void test_zero_many_and_duplicate_signature_rows_roundtrip_safely(void) {
     SZrArtifactTestFixture fixture;
     SZrArtifactSectionInput sections[9];
@@ -642,6 +661,7 @@ static void test_zero_many_and_duplicate_signature_rows_roundtrip_safely(void) {
     TEST_ASSERT_EQUAL_UINT64(members[255].contractHash, decoded.contractHash);
 }
 
+// 拒绝重复/格式禁止节以及超深或超宽的递归签名输入。
 static void test_duplicate_forbidden_and_recursive_signature_inputs_are_rejected(void) {
     SZrArtifactTestFixture fixture;
     SZrArtifactSectionInput sections[9];
@@ -679,6 +699,7 @@ static void test_duplicate_forbidden_and_recursive_signature_inputs_are_rejected
                                   countSignature, sizeof(countSignature), &diagnostic));
 }
 
+// 联合成员、属性和重定位节验证 owner、访问器 token 与代码边界。
 static void test_member_property_and_relocation_contracts_validate_tokens_and_code_bounds(void) {
     SZrArtifactTestFixture fixture;
     SZrArtifactSectionInput sections[11];
@@ -795,6 +816,7 @@ static void test_member_property_and_relocation_contracts_validate_tokens_and_co
                           ZrCore_Artifact_GetEncodedSize(&fixture.document, &length, &diagnostic));
 }
 
+// 从 canonical type 生成签名再导入同一上下文，类型 ID 与公开契约必须一致。
 static void test_source_canonical_type_and_binary_import_share_type_id_and_public_contract(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrSemanticContext *context;
@@ -989,6 +1011,7 @@ static void test_source_canonical_type_and_binary_import_share_type_id_and_publi
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 五种跨域传输契约往返保留版本/提供者字段，并拒绝重复或缺失契约。
 static void test_domain_transfer_contract_roundtrips_as_independent_artifact_schema(void) {
     SZrArtifactTestFixture fixture;
     SZrArtifactDomainTransferRow rows[5];
@@ -1109,6 +1132,7 @@ static void test_domain_transfer_contract_roundtrips_as_independent_artifact_sch
                     &fixture.document, &writtenSize, &diagnostic));
 }
 
+// 调度器节独立于代码载荷往返，校验 token 种类、策略位及保留字段。
 static void test_scheduler_contract_roundtrips_as_independent_artifact_schema(void) {
     SZrArtifactTestFixture fixture;
     SZrArtifactSchedulerContractRow row;
@@ -1205,6 +1229,7 @@ static void test_scheduler_contract_roundtrips_as_independent_artifact_schema(vo
                     &fixture.document, &binaryLength, &diagnostic));
 }
 
+// 汇合本文件及 metadata_graph/source_roundtrip 两个编译单元的 Unity 用例。
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_zro_roundtrips_fixed_width_public_contract_sections);

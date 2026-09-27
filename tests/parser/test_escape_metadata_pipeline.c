@@ -28,15 +28,18 @@ void test_binary_roundtrip_runtime_global_callable_capture_preserves_closed_capt
 void test_runtime_compiled_child_functions_detach_owner_links(void);
 void test_binary_roundtrip_runtime_child_functions_detach_owner_links(void);
 
+// 闭包逃逸夹具需要容器与 FFI 提供者；两者均注册成功才可编译 native callback。
 static TZrBool register_ffi_test_modules(SZrGlobalState *global) {
     return ZrVmLibContainer_Register(global) && ZrVmLibFfi_Register(global);
 }
 
+// 读取回调只借用调用方 binaryBytes，关闭时不得释放该缓冲。
 static void fixture_reader_close_noop(SZrState *state, TZrPtr customData) {
     ZR_UNUSED_PARAMETER(state);
     ZR_UNUSED_PARAMETER(customData);
 }
 
+// 用独立源名编译逃逸场景，返回函数由用例或共享断言负责释放。
 static SZrFunction *compile_source_fixture(SZrState *state,
                                            const TZrChar *source,
                                            const TZrChar *sourceNameText) {
@@ -51,6 +54,7 @@ static SZrFunction *compile_source_fixture(SZrState *state,
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+// 统一源码覆盖局部返回、嵌套闭包、全局绑定、模块导出和 native callback。
 static SZrFunction *compile_escape_metadata_fixture(SZrState *state) {
     static const TZrChar *kSource =
             "pub fn returnLocal(): int {\n"
@@ -148,6 +152,7 @@ static SZrFunction *compile_escape_metadata_fixture(SZrState *state) {
     return compile_source_fixture(state, kSource, "escape_metadata_fixture.zr");
 }
 
+// 将 ZRO 文件读成借用缓冲，经 IoSource 投影出可运行入口函数。
 static SZrFunction *load_runtime_entry_from_binary_file(SZrState *state, const TZrChar *binaryPath) {
     TZrSize binaryLength = 0;
     TZrByte *binaryBytes;
@@ -172,6 +177,7 @@ static SZrFunction *load_runtime_entry_from_binary_file(SZrState *state, const T
     ZrCore_Io_Init(state, io, ZrTests_Fixture_ReaderRead, fixture_reader_close_noop, &reader);
     io->isBinary = ZR_TRUE;
 
+    // BUG: ReadSourceNew 分配的 native sourceObject 未调用 ReadSourceFree；LoadEntryFunctionToRuntime 只复制数据，正常返回仍泄漏整个源图。
     sourceObject = ZrCore_Io_ReadSourceNew(io);
     TEST_ASSERT_NOT_NULL(sourceObject);
     runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
@@ -182,6 +188,7 @@ static SZrFunction *load_runtime_entry_from_binary_file(SZrState *state, const T
     return runtimeFunction;
 }
 
+// 对返回的可 GC 对象检查指定逃逸位，不把对象种类与逃逸原因混淆。
 static void assert_runtime_result_has_escape_flags(const SZrTypeValue *result, TZrUInt32 escapeFlags) {
     const SZrRawObject *rawObject;
 
@@ -194,6 +201,8 @@ static void assert_runtime_result_has_escape_flags(const SZrTypeValue *result, T
     TEST_ASSERT_TRUE((rawObject->garbageCollectMark.escapeFlags & escapeFlags) == escapeFlags);
 }
 
+// 共用源码与 ZRO 加载路径执行同一对象场景，最终检查 global/native 逃逸标记。
+// BUG: 建立局部 state/function 或写出文件后断言失败，Unity 越过尾部 Free/remove；空 tearDown 无法清理。
 static void assert_runtime_escape_for_source(const TZrChar *testSource,
                                              const TZrChar *sourceNameText,
                                              TZrUInt32 expectedEscapeFlags,
@@ -229,6 +238,8 @@ static void assert_runtime_escape_for_source(const TZrChar *testSource,
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 检查返回闭包的关闭捕获单元及其中对象同时拥有捕获和 return/global 逃逸位。
+// BUG: 局部 state 或 ZRO 建立后断言失败会跳过 state 销毁及文件删除；空 tearDown 无法回收。
 static void assert_runtime_returned_closure_capture_has_escape_flags(const TZrChar *testSource,
                                                                      const TZrChar *sourceNameText,
                                                                      TZrUInt32 expectedEscapeFlags,
@@ -282,6 +293,7 @@ static void assert_runtime_returned_closure_capture_has_escape_flags(const TZrCh
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 在嵌套子函数树中按名称定位夹具函数，不持有返回指针。
 static const SZrFunction *find_named_function_recursive(const SZrFunction *function, const char *name) {
     TZrUInt32 index;
 
@@ -306,6 +318,7 @@ static const SZrFunction *find_named_function_recursive(const SZrFunction *funct
     return ZR_NULL;
 }
 
+// 递归验证运行时子函数不保留 ownerFunction 回指，避免父函数释放后的悬空链接。
 static void assert_runtime_child_owner_links_detached_recursive(const SZrFunction *function) {
     TZrUInt32 index;
 
@@ -319,6 +332,7 @@ static void assert_runtime_child_owner_links_detached_recursive(const SZrFunctio
     }
 }
 
+// 在指定函数的局部变量表按名称定位逃逸位承载槽。
 static const SZrFunctionLocalVariable *find_local_variable_by_name(const SZrFunction *function, const char *name) {
     TZrUInt32 index;
 
@@ -338,6 +352,7 @@ static const SZrFunctionLocalVariable *find_local_variable_by_name(const SZrFunc
     return ZR_NULL;
 }
 
+// 按绑定种类和名称定位源码级逃逸边，用于同名局部/捕获区分。
 static const SZrFunctionEscapeBinding *find_escape_binding(const SZrFunction *function,
                                                            EZrFunctionEscapeBindingKind kind,
                                                            const char *name) {
@@ -361,6 +376,7 @@ static const SZrFunctionEscapeBinding *find_escape_binding(const SZrFunction *fu
     return ZR_NULL;
 }
 
+// 无名称的 native/return 绑定依靠种类和槽号定位。
 static const SZrFunctionEscapeBinding *find_escape_binding_by_slot(const SZrFunction *function,
                                                                    EZrFunctionEscapeBindingKind kind,
                                                                    TZrUInt32 slotOrIndex) {
@@ -382,6 +398,7 @@ static const SZrFunctionEscapeBinding *find_escape_binding_by_slot(const SZrFunc
     return ZR_NULL;
 }
 
+// 为无名称 global 绑定查找首个匹配种类的记录。
 static const SZrFunctionEscapeBinding *find_first_escape_binding_of_kind(const SZrFunction *function,
                                                                          EZrFunctionEscapeBindingKind kind) {
     TZrUInt32 index;
@@ -401,6 +418,7 @@ static const SZrFunctionEscapeBinding *find_first_escape_binding_of_kind(const S
     return ZR_NULL;
 }
 
+// 名称投影可能不同，按种类和要求的标志位寻找同一逃逸语义。
 static const SZrFunctionEscapeBinding *find_first_escape_binding_with_flag(const SZrFunction *function,
                                                                            EZrFunctionEscapeBindingKind kind,
                                                                            TZrUInt32 escapeFlagMask) {
@@ -422,6 +440,7 @@ static const SZrFunctionEscapeBinding *find_first_escape_binding_with_flag(const
     return ZR_NULL;
 }
 
+// 核对编译函数的返回槽摘要确实包含被检查的局部槽。
 static TZrBool function_has_return_escape_slot(const SZrFunction *function, TZrUInt32 slot) {
     TZrUInt32 index;
 
@@ -438,6 +457,7 @@ static TZrBool function_has_return_escape_slot(const SZrFunction *function, TZrU
     return ZR_FALSE;
 }
 
+// 在同一源码树对照导出根、局部返回、闭包捕获、全局与 native callback 的逐层逃逸摘要。
 static void assert_escape_metadata_shape(const SZrFunction *rootFunction) {
     const SZrFunction *returnLocalFunction;
     const SZrFunction *returnTempFunction;
@@ -613,6 +633,7 @@ static void assert_escape_metadata_shape(const SZrFunction *rootFunction) {
     payloadLocal = find_local_variable_by_name(bindGlobalLocalFunction, "payload");
     TEST_ASSERT_NOT_NULL(payloadLocal);
     binding = find_escape_binding(bindGlobalLocalFunction, ZR_FUNCTION_ESCAPE_BINDING_KIND_LOCAL, "payload");
+    // 编译投影可能改写局部名，回退时仍要求 LOCAL 种类及 global-root 位一致。
     if (binding == ZR_NULL) {
         binding = find_first_escape_binding_with_flag(bindGlobalLocalFunction,
                                                       ZR_FUNCTION_ESCAPE_BINDING_KIND_LOCAL,
@@ -629,6 +650,7 @@ static void assert_escape_metadata_shape(const SZrFunction *rootFunction) {
     payloadLocal = find_local_variable_by_name(bindGlobalCapturedFunction, "payload");
     TEST_ASSERT_NOT_NULL(payloadLocal);
     binding = find_escape_binding(bindGlobalCapturedFunction, ZR_FUNCTION_ESCAPE_BINDING_KIND_LOCAL, "payload");
+    // 捕获经中间函数转发时名称不稳定；用逃逸位确认仍是全局根绑定。
     if (binding == ZR_NULL ||
         (binding->escapeFlags & ZR_GARBAGE_COLLECT_ESCAPE_KIND_GLOBAL_ROOT) == 0u) {
         binding = find_first_escape_binding_with_flag(bindGlobalCapturedFunction,
@@ -739,6 +761,8 @@ static void assert_escape_metadata_shape(const SZrFunction *rootFunction) {
     TEST_ASSERT_TRUE((binding->escapeFlags & ZR_GARBAGE_COLLECT_ESCAPE_KIND_MODULE_ROOT) != 0u);
 }
 
+// 编译产物直接暴露完整逃逸绑定形状，供二进制往返结果对照。
+// BUG: state/function 创建后任一摘要断言失败会跳过尾部 Free，空 Unity tearDown 不持有这些句柄。
 void test_compiler_escape_metadata_summarizes_capture_return_and_exports(void) {
     SZrTestTimer timer;
     const TZrChar *testSummary = "Compiler Escape Metadata Summarizes Capture Return And Exports";
@@ -767,6 +791,8 @@ void test_compiler_escape_metadata_summarizes_capture_return_and_exports(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 将源码函数写为 ZRO 并读回，逃逸绑定和返回槽摘要应保持一致。
+// BUG: 写出文件或建立局部函数/缓冲后若断言失败，Unity 跳过尾部 Free/remove，空 tearDown 无法清理。
 void test_binary_roundtrip_preserves_escape_metadata_summaries(void) {
     SZrTestTimer timer;
     const TZrChar *testSummary = "Binary Roundtrip Preserves Escape Metadata Summaries";
@@ -807,6 +833,7 @@ void test_binary_roundtrip_preserves_escape_metadata_summaries(void) {
     ZrCore_Io_Init(state, io, ZrTests_Fixture_ReaderRead, fixture_reader_close_noop, &reader);
     io->isBinary = ZR_TRUE;
 
+    // BUG: 此处 ReadSourceNew 的 native sourceObject 未调用 ReadSourceFree；Io_Free 只释放 io，正常通过仍泄漏源图。
     sourceObject = ZrCore_Io_ReadSourceNew(io);
     TEST_ASSERT_NOT_NULL(sourceObject);
     runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
@@ -825,6 +852,8 @@ void test_binary_roundtrip_preserves_escape_metadata_summaries(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 原生编译的嵌套函数在运行时形态不得保留父函数回指。
+// BUG: state/function 创建后递归断言失败会跳过尾部释放，空 Unity tearDown 无法清理。
 void test_runtime_compiled_child_functions_detach_owner_links(void) {
     SZrTestTimer timer;
     const TZrChar *testSummary = "Runtime Compiled Child Functions Detach Owner Links";
@@ -853,6 +882,8 @@ void test_runtime_compiled_child_functions_detach_owner_links(void) {
     ZR_TEST_DIVIDER();
 }
 
+// ZRO 导入后的嵌套函数同样须清除 ownerFunction 回指。
+// BUG: 正常路径写出 escape_metadata_owner_links_roundtrip.zro 后从未 remove，CTest 工作目录留下固定名产物；断言失败还跳过局部清理。
 void test_binary_roundtrip_runtime_child_functions_detach_owner_links(void) {
     SZrTestTimer timer;
     const TZrChar *testSummary = "Binary Roundtrip Runtime Child Functions Detach Owner Links";
@@ -888,6 +919,7 @@ void test_binary_roundtrip_runtime_child_functions_detach_owner_links(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 返回对象同时绑定到 global 时须带全局根逃逸位。
 void test_runtime_global_binding_marks_returned_object_as_global_root(void) {
     static const TZrChar *kSource =
             "var payload = { value: 7 };\n"
@@ -911,6 +943,7 @@ void test_runtime_global_binding_marks_returned_object_as_global_root(void) {
     ZR_TEST_DIVIDER();
 }
 
+// FFI 回调捕获对象返回后须保留 native-handle 逃逸位。
 void test_runtime_native_callback_capture_marks_returned_object_as_native_handle(void) {
     static const TZrChar *kSource =
             "let ffiNative = import(\"zr.ffi\");\n"
@@ -938,6 +971,7 @@ void test_runtime_native_callback_capture_marks_returned_object_as_native_handle
     ZR_TEST_DIVIDER();
 }
 
+// ZRO 往返不得丢失全局绑定造成的对象逃逸位。
 void test_binary_roundtrip_runtime_global_binding_preserves_escape_flags(void) {
     static const TZrChar *kSource =
             "var payload = { value: 11 };\n"
@@ -961,6 +995,7 @@ void test_binary_roundtrip_runtime_global_binding_preserves_escape_flags(void) {
     ZR_TEST_DIVIDER();
 }
 
+// ZRO 往返不得丢失 native callback 捕获造成的逃逸位。
 void test_binary_roundtrip_runtime_native_callback_preserves_escape_flags(void) {
     static const TZrChar *kSource =
             "let ffiNative = import(\"zr.ffi\");\n"
@@ -988,6 +1023,7 @@ void test_binary_roundtrip_runtime_native_callback_preserves_escape_flags(void) 
     ZR_TEST_DIVIDER();
 }
 
+// 返回闭包应把 return 标志传播到已关闭捕获对象。
 void test_runtime_returned_callable_capture_marks_closed_capture_object(void) {
     static const TZrChar *kSource =
             "var payload = { value: 13 };\n"
@@ -1013,6 +1049,7 @@ void test_runtime_returned_callable_capture_marks_closed_capture_object(void) {
     ZR_TEST_DIVIDER();
 }
 
+// 全局持有闭包应把 global-root 标志传播到已关闭捕获对象。
 void test_runtime_global_callable_capture_marks_closed_capture_object(void) {
     static const TZrChar *kSource =
             "var payload = { value: 17 };\n"
@@ -1039,6 +1076,7 @@ void test_runtime_global_callable_capture_marks_closed_capture_object(void) {
     ZR_TEST_DIVIDER();
 }
 
+// ZRO 往返后返回闭包的关闭捕获仍保留 return 与 capture 标志。
 void test_binary_roundtrip_runtime_returned_callable_capture_preserves_closed_capture_escape_flags(void) {
     static const TZrChar *kSource =
             "var payload = { value: 19 };\n"
@@ -1066,6 +1104,7 @@ void test_binary_roundtrip_runtime_returned_callable_capture_preserves_closed_ca
     ZR_TEST_DIVIDER();
 }
 
+// ZRO 往返后全局闭包的关闭捕获仍保留 global-root 与 capture 标志。
 void test_binary_roundtrip_runtime_global_callable_capture_preserves_closed_capture_escape_flags(void) {
     static const TZrChar *kSource =
             "var payload = { value: 23 };\n"

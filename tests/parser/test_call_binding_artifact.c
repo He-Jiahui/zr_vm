@@ -10,6 +10,7 @@
 void setUp(void) {}
 void tearDown(void) {}
 
+// 构造可重定位调用绑定行：持久字段是 token、哈希、位置和槽索引。
 static SZrArtifactCallBindingRow make_row(void) {
     SZrArtifactCallBindingRow row;
     memset(&row, 0, sizeof(row));
@@ -28,6 +29,7 @@ static SZrArtifactCallBindingRow make_row(void) {
     return row;
 }
 
+// 用调用方字节缓冲构造借用节视图，供单行解码及错误边界测试。
 static SZrArtifactSectionView row_section(const TZrByte *bytes, TZrUInt32 count) {
     SZrArtifactSectionView section;
     memset(&section, 0, sizeof(section));
@@ -39,6 +41,7 @@ static SZrArtifactSectionView row_section(const TZrByte *bytes, TZrUInt32 count)
     return section;
 }
 
+// 固定 96 字节编码应只保留稳定字段，解码后逐字节恢复原绑定行。
 static void test_binding_row_roundtrip_is_fixed_width_and_pointer_free(void) {
     SZrArtifactCallBindingRow expected = make_row(), actual;
     SZrArtifactDiagnostic diagnostic;
@@ -57,6 +60,7 @@ static void test_binding_row_roundtrip_is_fixed_width_and_pointer_free(void) {
     TEST_ASSERT_EQUAL_MEMORY(&expected, &actual, sizeof(expected));
 }
 
+// 签名 token、重定位种类、版本和保留字节非法时应给出精确错误。
 static void test_binding_row_rejects_invalid_contract_relocation_and_version(void) {
     SZrArtifactCallBindingRow row = make_row(), decoded;
     SZrArtifactDiagnostic diagnostic;
@@ -84,6 +88,7 @@ static void test_binding_row_rejects_invalid_contract_relocation_and_version(voi
             ZrCore_Artifact_ReadCallBindingRow(&section, 0u, &decoded, &diagnostic));
 }
 
+// 编码容量不足、节长度截断和节种类错误均不可读成有效绑定。
 static void test_binding_row_rejects_truncation_and_wrong_section(void) {
     SZrArtifactCallBindingRow row = make_row(), decoded;
     TZrByte bytes[ZR_ARTIFACT_CALL_BINDING_ROW_ENCODED_SIZE];
@@ -99,6 +104,7 @@ static void test_binding_row_rejects_truncation_and_wrong_section(void) {
             ZrCore_Artifact_ReadCallBindingRow(&section, 0u, &decoded, ZR_NULL));
 }
 
+// 投影忽略运行时 generation/目标指针，只复制可持久化契约并拒绝越界指令。
 static void test_function_projection_copies_only_persistent_binding_fields(void) {
     SZrFunction function;
     SZrFunctionCallSiteCacheEntry caches[3];
@@ -129,6 +135,7 @@ static void test_function_projection_copies_only_persistent_binding_fields(void)
     TEST_ASSERT_EQUAL_UINT32(0u, count);
 }
 
+// 文档节视图借用同一夹具的类型、签名、布局和两个绑定行，写入前须保持存活。
 typedef struct BindingArtifactFixture {
     SZrArtifactDocument document;
     SZrArtifactSectionInput sections[7];
@@ -140,6 +147,7 @@ typedef struct BindingArtifactFixture {
     SZrArtifactCallBindingRow bindings[2];
 } BindingArtifactFixture;
 
+// 构造最小合法 ZRO 文档，使绑定节在真实文档编码与 consumer 入口中受检。
 static void init_artifact_fixture(BindingArtifactFixture *fixture) {
     static const TZrByte signature[] = {ZR_ARTIFACT_SIGNATURE_NODE_PRIMITIVE, 4u, 0u, 0u, 0u};
     SZrArtifactPublicIdentity *identity;
@@ -190,6 +198,7 @@ static void init_artifact_fixture(BindingArtifactFixture *fixture) {
     fixture->sections[6] = (SZrArtifactSectionInput){ZR_ARTIFACT_SECTION_CALL_BINDING_TABLE, 0u, 2u, fixture->bindings};
 }
 
+// 文档编码、复制和 consumer 打开后仍能读回第二条绑定及节名。
 static void test_generic_artifact_roundtrip_and_consumer_keep_binding_section(void) {
     BindingArtifactFixture fixture;
     SZrArtifactView view;
@@ -214,6 +223,7 @@ static void test_generic_artifact_roundtrip_and_consumer_keep_binding_section(vo
     TEST_ASSERT_EQUAL_STRING("call-binding-table", ZrCore_Artifact_SectionName(projection.callBindings.kind));
 }
 
+// 同一调用点重复绑定、字节篡改及 ZRI 禁止节都必须被拒绝。
 static void test_generic_artifact_rejects_duplicate_sites_and_corrupt_bindings(void) {
     BindingArtifactFixture fixture;
     SZrArtifactView view;

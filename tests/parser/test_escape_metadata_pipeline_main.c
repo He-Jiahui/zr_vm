@@ -16,6 +16,7 @@ extern void test_binary_roundtrip_runtime_global_callable_capture_preserves_clos
 extern void test_runtime_compiled_child_functions_detach_owner_links(void);
 extern void test_binary_roundtrip_runtime_child_functions_detach_owner_links(void);
 
+// 独立 escape_pipeline 目标注册全部跨编译单元用例；compiler_integration 还复用其中两例。
 int main(void) {
     printf("\n");
     ZR_TEST_MODULE_DIVIDER();

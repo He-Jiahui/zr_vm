@@ -20,6 +20,7 @@
 void test_source_without_scheduler_call_rejects_artifact_write(void);
 void test_scheduler_artifact_writer_rejects_unavailable_provider(void);
 
+// 源码签名导出与导入使用同一组三类 token，避免由测试夹具制造身份漂移。
 #define SOURCE_TYPE_REF_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_REF, 21u)
 #define SOURCE_TYPE_SPEC_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_SPEC, 21u)
 #define SOURCE_SIGNATURE_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 21u)
@@ -30,6 +31,8 @@ void test_repeated_scheduler_calls_coalesce_canonical_source_fact(void);
 void test_source_without_scheduler_call_publishes_no_scheduler_fact(void);
 void test_real_source_scheduler_call_writes_and_imports_canonical_artifact(void);
 
+// 从真实函数声明建立 canonical 签名，再导入同一上下文校验类型 ID 和公开身份。
+// BUG: 建立 state、AST、推断类型和数组后若断言失败，Unity 跳过尾部 Free；共享空 tearDown 无法回收。
 void test_real_source_compile_and_binary_signature_import_are_identical(void) {
     static const TZrChar source[] = "fn identity(value: int): int { return value; }";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -143,6 +146,7 @@ void test_real_source_compile_and_binary_signature_import_are_identical(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 为源码调度器用例注册 task/thread 提供者；注册失败时销毁已建 state。
 static SZrState *create_scheduler_artifact_test_state(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
 
@@ -158,6 +162,7 @@ static SZrState *create_scheduler_artifact_test_state(void) {
     return state;
 }
 
+// 解析并编译调度器源码，AST 在返回前释放；成功函数归调用者管理。
 static SZrFunction *compile_scheduler_artifact_source(SZrState *state,
                                                        const TZrChar *source,
                                                        TZrSize sourceLength,
@@ -185,6 +190,8 @@ static SZrFunction *compile_scheduler_artifact_source(SZrState *state,
     return function;
 }
 
+// 一次 schedule 调用须产出带提供者、协议与签名信息的 canonical source fact。
+// BUG: state/function 建立后若断言失败，函数尾部释放会被 Unity 跳过，空 tearDown 不持有这些局部资源。
 void test_real_source_scheduler_call_publishes_canonical_source_fact(void) {
     static const TZrChar source[] =
             "var task = import(\"zr.task\");\n"
@@ -221,6 +228,8 @@ void test_real_source_scheduler_call_publishes_canonical_source_fact(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 两次 schedule 调用共享同一调度器契约事实，不产生重复记录。
+// BUG: 编译后断言失败会越过局部 function/state 清理，空 tearDown 无法回收。
 void test_repeated_scheduler_calls_coalesce_canonical_source_fact(void) {
     static const TZrChar source[] =
             "var task = import(\"zr.task\");\n"
@@ -248,6 +257,8 @@ void test_repeated_scheduler_calls_coalesce_canonical_source_fact(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 仅创建 scheduler 不调用 schedule 时，不应凭类型出现就发布 source fact。
+// BUG: 断言失败跳过局部 function/state 销毁，空 tearDown 没有可回收的句柄。
 void test_source_without_scheduler_call_publishes_no_scheduler_fact(void) {
     static const TZrChar source[] =
             "var thread = import(\"zr.thread\");\n"
@@ -270,6 +281,8 @@ void test_source_without_scheduler_call_publishes_no_scheduler_fact(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 真实源码事实写入 ZRO 后，由 canonical consumer 解析并逐字段校验调度与传输契约。
+// BUG: 写入后若读取/契约断言失败，尾部 state/function 清理被跳过；ferror 断言失败还跳过 fclose/remove。
 void test_real_source_scheduler_call_writes_and_imports_canonical_artifact(void) {
     static const TZrChar source[] =
             "var task = import(\"zr.task\");\n"
@@ -331,6 +344,7 @@ void test_real_source_scheduler_call_writes_and_imports_canonical_artifact(void)
     artifact = fopen(artifactPath, "rb");
     TEST_ASSERT_NOT_NULL_MESSAGE(artifact, "artifact writer must create a real .zro file");
     byteLength = fread(bytes, 1u, sizeof(bytes), artifact);
+    // BUG: ferror 非零时断言 longjmp，下面的 fclose/remove 不执行，留下句柄和生成文件。
     TEST_ASSERT_TRUE(ferror(artifact) == 0);
     fclose(artifact);
     remove(artifactPath);
@@ -420,6 +434,8 @@ void test_real_source_scheduler_call_writes_and_imports_canonical_artifact(void)
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 缺少 schedule 事实时写入器应拒绝生成调度器产物。
+// BUG: 编译后的拒绝路径断言失败会跳过局部 function/state 释放，空 tearDown 无法补偿。
 void test_source_without_scheduler_call_rejects_artifact_write(void) {
     static const TZrChar source[] =
             "var thread = import(\"zr.thread\");\n"
@@ -450,6 +466,8 @@ void test_source_without_scheduler_call_rejects_artifact_write(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+// 篡改 job 提供者身份后，写入器必须拒绝不完整的调度器契约。
+// BUG: 篡改后的写入断言失败会跳过 function/state 释放，空 tearDown 无法补偿。
 void test_scheduler_artifact_writer_rejects_unavailable_provider(void) {
     static const TZrChar source[] =
             "var task = import(\"zr.task\");\n"

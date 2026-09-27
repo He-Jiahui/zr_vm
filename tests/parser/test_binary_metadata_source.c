@@ -10,12 +10,15 @@
 
 #include <string.h>
 
+// Unity 夹具共享 state、编译函数和已加载元数据源；路径数组只承载本例生成文件。
 static SZrState *g_state;
 static SZrFunction *g_function;
 static SZrIoSource *g_source;
+// 产物路径由 setUp 生成并在 tearDown 清理，避免三种中间文件场景相互污染。
 static char g_binaryPath[ZR_TESTS_PATH_MAX];
 static char g_intermediatePath[ZR_TESTS_PATH_MAX];
 
+// 每例重建运行时及独立 ZRO/ZRI 路径，先移除旧文件再开始身份比较。
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
@@ -29,6 +32,8 @@ void setUp(void) {
     remove(g_intermediatePath);
 }
 
+// 按 source、编译函数、state 的依赖顺序释放，再删除两种生成文件。
+// BUG: 下一例 State_Create 失败时 setUp 的断言先于重置 g_source/g_function；Unity 仍调用 tearDown，可能用空 g_state 或重复释放上一例悬空指针。
 void tearDown(void) {
     if (g_source != ZR_NULL) {
         ZrParser_ModuleInitAnalysis_FreeBinaryMetadataSource(g_state->global, g_source);
@@ -41,11 +46,13 @@ void tearDown(void) {
     remove(g_intermediatePath);
 }
 
+// 以固定虚拟源名编译提供者，产物与期望身份都来自同一编译函数。
 static SZrFunction *compile_provider(const char *source) {
     SZrString *name = ZrCore_String_CreateFromNative(g_state, "binary_metadata_provider.zr");
     return ZrParser_Source_Compile(g_state, source, strlen(source), name);
 }
 
+// 无论 ZRI 缺失、匹配或过期，直接加载 ZRO 的 typed export 身份都须等于写入时函数。
 static void assert_binary_identity(const char *intermediateSource) {
     SZrBinaryWriterOptions options = {0};
     SZrLibrary_File_Reader *reader;
@@ -105,14 +112,17 @@ static void assert_binary_identity(const char *intermediateSource) {
     TEST_ASSERT_TRUE(actualFunction->closures[0].subFunction->parameterMetadata[0].hasDefaultValue);
 }
 
+// 没有中间产物时，二进制元数据仍保留导出签名与默认参数。
 static void test_binary_identity_without_intermediate(void) {
     assert_binary_identity(ZR_NULL);
 }
 
+// 同源 ZRI 存在时，二进制元数据读取不得被中间缓存改写。
 static void test_binary_identity_with_current_intermediate(void) {
     assert_binary_identity("pub var measure = fn(value: int = 7): int => value;\n");
 }
 
+// 过期且导出不同的 ZRI 不得污染 ZRO 的模块与方法身份。
 static void test_binary_identity_with_stale_intermediate(void) {
     assert_binary_identity("pub var staleExport = fn(): float => 3.5;\n");
 }

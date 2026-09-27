@@ -1,12 +1,14 @@
 #ifndef ZR_VM_TEST_OWNERSHIP_ARTIFACT_ROUNDTRIP_CASES_H
 #define ZR_VM_TEST_OWNERSHIP_ARTIFACT_ROUNDTRIP_CASES_H
 
+// 读取回调仅借用调用方 artifactBytes，并以 consumed 限制为一次性数据源。
 typedef struct SZrOwnershipArtifactReader {
     const TZrByte *bytes;
     TZrSize length;
     TZrBool consumed;
 } SZrOwnershipArtifactReader;
 
+// 整体读入 ZRO 字节；成功返回的 malloc 缓冲由测试在 io 使用完后释放。
 static TZrByte *ownership_artifact_read_file(
         const TZrChar *path,
         TZrSize *outLength) {
@@ -42,6 +44,7 @@ static TZrByte *ownership_artifact_read_file(
     return bytes;
 }
 
+// 第一次读取移交借用字节视图，后续调用返回空以保持单次消费语义。
 static TZrBytePtr ownership_artifact_reader_read(
         SZrState *state,
         TZrPtr customData,
@@ -58,6 +61,7 @@ static TZrBytePtr ownership_artifact_reader_read(
     return (TZrBytePtr)reader->bytes;
 }
 
+// 回调关闭不持有 reader 或 bytes；真正的字节缓冲由测试显式 free。
 static void ownership_artifact_reader_close(
         SZrState *state,
         TZrPtr customData) {
@@ -65,6 +69,7 @@ static void ownership_artifact_reader_close(
     ZR_UNUSED_PARAMETER(customData);
 }
 
+// 比较 owner/ref/type 名投影；非结构体必须清除无意义的 staticCTypeId。
 static void assert_ownership_artifact_type_ref_equal(
         const SZrFunctionTypedTypeRef *expected,
         const SZrFunctionTypedTypeRef *actual) {
@@ -100,6 +105,7 @@ static void assert_ownership_artifact_type_ref_equal(
     }
 }
 
+// 递归比较运行时函数的指令、异常处理、SemIR/所有权表和 typed local 类型。
 static void assert_ownership_artifact_function_projection_equal(
         const SZrFunction *expected,
         const SZrFunction *actual) {
@@ -152,6 +158,7 @@ static void assert_ownership_artifact_function_projection_equal(
         TEST_ASSERT_EQUAL_INT(
                 expectedHandler->hasFinally, actualHandler->hasFinally);
     }
+    // 投影只比较持久化的 SemIR/所有权表内容，不比较进程内指针地址。
     TEST_ASSERT_EQUAL_UINT32(
             expected->semIrInstructionLength, actual->semIrInstructionLength);
     if (expected->semIrInstructionLength > 0u) {
@@ -234,6 +241,9 @@ static void assert_ownership_artifact_function_projection_equal(
     }
 }
 
+// 执行 live/expired weak guard 与 intoGc bridge，并比较源码和 ZRO 导入的所有权投影。
+// TODO: 当前 ownership 目标仅见构建与直接运行，未见独立 CTest 注册；需对照现行测试矩阵核定是否应纳入自动门禁。
+// BUG: 读取 artifactBytes 后若断言失败，Unity 跳过 io/bytes 的局部释放；父文件 tearDown 只销毁 state 和删除路径。
 static void test_ownership_binary_roundtrip_preserves_guard_and_bridge_projection(
         void) {
     static const TZrChar source[] =
@@ -339,6 +349,7 @@ static void test_ownership_binary_roundtrip_preserves_guard_and_bridge_projectio
             ownership_artifact_reader_close,
             &reader);
     io->isBinary = ZR_TRUE;
+    // BUG: ReadSourceNew 创建的 native sourceObject 在本测试成功路径未调用 ReadSourceFree；源图在每次运行后泄漏。
     sourceObject = ZrCore_Io_ReadSourceNew(io);
     TEST_ASSERT_NOT_NULL(sourceObject);
     runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(
