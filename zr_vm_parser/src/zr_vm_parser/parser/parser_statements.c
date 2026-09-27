@@ -1,5 +1,6 @@
 #include "parser_internal.h"
 
+// 无关键字函数与调用表达式共享起始形态；仅预读头部和函数体开括号，随后恢复游标。
 static TZrBool parser_keywordless_function_declaration_starts_here(SZrParserState *ps) {
     SZrParserCursor cursor;
     TZrInt32 parenDepth = 0;
@@ -50,6 +51,7 @@ static TZrBool parser_keywordless_function_declaration_starts_here(SZrParserStat
     return result;
 }
 
+// 分派器借此选择声明解析器；包含可见性修饰符与无关键字函数两种入口。
 static TZrBool parser_function_declaration_starts_here(SZrParserState *ps) {
     SZrParserCursor cursor;
     EZrToken token;
@@ -78,6 +80,7 @@ static TZrBool parser_function_declaration_starts_here(SZrParserState *ps) {
     return isFunction;
 }
 
+// 预留 async fn 的专用诊断路径，探测不得消费主解析游标。
 static TZrBool parser_async_function_declaration_starts_here(SZrParserState *ps) {
     SZrParserCursor cursor;
     TZrBool isAsync = ZR_FALSE;
@@ -100,6 +103,7 @@ static TZrBool parser_async_function_declaration_starts_here(SZrParserState *ps)
     return isAsync;
 }
 
+// native extern 是上下文关键字组合；预读后交给 extern 块解析器。
 static TZrBool parser_native_extern_starts_here(SZrParserState *ps) {
     SZrParserCursor cursor;
     TZrBool isNativeExtern = ZR_FALSE;
@@ -116,6 +120,7 @@ static TZrBool parser_native_extern_starts_here(SZrParserState *ps) {
     return isNativeExtern;
 }
 
+// 顶层分派需越过装饰器及修饰符识别 class；试探生成的装饰器 AST 不向外转移。
 static TZrBool parser_class_declaration_starts_here(SZrParserState *ps) {
     SZrParserCursor cursor;
     TZrBool isClass = ZR_FALSE;
@@ -128,6 +133,7 @@ static TZrBool parser_class_declaration_starts_here(SZrParserState *ps) {
     save_parser_cursor(ps, &cursor);
 
     if (ps->lexer->t.token == ZR_TK_SHARP) {
+        // TODO: 装饰器试探可能已调用诊断回调；需检查回退后的正式解析是否重复报告。
         decorators = parse_leading_decorators(ps);
         if (decorators == ZR_NULL) {
             restore_parser_cursor(ps, &cursor);
@@ -149,6 +155,7 @@ static TZrBool parser_class_declaration_starts_here(SZrParserState *ps) {
     return isClass;
 }
 
+// 两种 for 共用首 token，分派前仅预读头部中的 in/分号/赋值，不改变解析位置。
 static TZrBool parser_for_header_should_parse_foreach(SZrParserState *ps) {
     SZrParserCursor cursor;
     TZrBool parseAsForeach = ZR_FALSE;
@@ -193,6 +200,8 @@ static TZrBool parser_for_header_should_parse_foreach(SZrParserState *ps) {
     return parseAsForeach;
 }
 
+// 装饰器之后的函数形态可能与表达式重叠；静默试探失败时还原游标和诊断回调。
+// 成功返回的 AST 由分派调用者接管。
 static SZrAstNode *try_parse_function_declaration_from_current(SZrParserState *ps) {
     SZrParserCursor cursor;
     TZrBool savedSuppressErrorOutput;
@@ -236,6 +245,8 @@ static SZrAstNode *try_parse_function_declaration_from_current(SZrParserState *p
     return ZR_NULL;
 }
 
+// 块解析是语句递归入口；declarationKind 仅改变缺失右花括号的诊断上下文。
+// 成功返回的块节点持有已加入的语句数组及其所有元素。
 static SZrAstNode *parse_block_impl(SZrParserState *ps, const TZrChar *declarationKind) {
     SZrFileRange startLoc = get_current_token_location(ps);
     SZrFileRange endLoc;
@@ -267,6 +278,7 @@ static SZrAstNode *parse_block_impl(SZrParserState *ps, const TZrChar *declarati
         } else {
             expect_token(ps, ZR_TK_RBRACE);
         }
+        // BUG: 至少一个语句已加入时，普通数组 Free 不释放元素 AST，缺失 } 会泄漏它们。
         ZrParser_AstNodeArray_Free(ps->state, statements);
         return ZR_NULL;
     }
@@ -277,6 +289,7 @@ static SZrAstNode *parse_block_impl(SZrParserState *ps, const TZrChar *declarati
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_BLOCK, blockLoc);
     if (node == ZR_NULL) {
+        // BUG: 节点分配失败时只释放数组容器，已解析语句仍悬空。
         ZrParser_AstNodeArray_Free(ps->state, statements);
         return ZR_NULL;
     }
@@ -286,16 +299,19 @@ static SZrAstNode *parse_block_impl(SZrParserState *ps, const TZrChar *declarati
     return node;
 }
 
+// 普通语句体、控制流体及函数体共用的块入口，调用前必须位于左花括号。
 SZrAstNode *parse_block(SZrParserState *ps) {
     return parse_block_impl(ps, ZR_NULL);
 }
 
+// 声明解析器使用此入口，使缺失右花括号的诊断指向具体声明种类。
 SZrAstNode *parse_declaration_body_block(SZrParserState *ps, const TZrChar *declarationKind) {
     return parse_block_impl(ps, declarationKind);
 }
 
 // 解析表达式语句
 
+// 在声明/控制流预读未接管 token 后兜底解析表达式；分号错误仍交给统一诊断器。
 SZrAstNode *parse_expression_statement(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrAstNode *expr = parse_expression(ps);
@@ -311,6 +327,7 @@ SZrAstNode *parse_expression_statement(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_EXPRESSION_STATEMENT, startLoc);
     if (node == ZR_NULL) {
+        // BUG: 表达式已成功构造但语句节点分配失败时，expr 未释放。
         return ZR_NULL;
     }
 
@@ -318,6 +335,7 @@ SZrAstNode *parse_expression_statement(SZrParserState *ps) {
     return node;
 }
 
+// 装饰器并非声明前缀时，将其保留为表达式语句供后续阶段处理。
 static SZrAstNode *parse_decorator_expression_statement(SZrParserState *ps) {
     SZrAstNode *decorator = parse_decorator_expression(ps);
     SZrAstNode *stmt;
@@ -336,6 +354,7 @@ static SZrAstNode *parse_decorator_expression_statement(SZrParserState *ps) {
     return stmt;
 }
 
+// 局部 # 起始语句先试函数声明，失败才进入装饰器表达式路径。
 static SZrAstNode *parse_decorated_statement(SZrParserState *ps) {
     SZrAstNode *decoratedFunction = try_parse_function_declaration_from_current(ps);
 
@@ -348,6 +367,7 @@ static SZrAstNode *parse_decorated_statement(SZrParserState *ps) {
 
 // 解析返回语句
 
+// 返回语句可携带 ref 标记及可选值；此处仅记录语法，引用有效性留给语义阶段。
 SZrAstNode *parse_return_statement(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrFileRange referenceLocation;
@@ -376,6 +396,7 @@ SZrAstNode *parse_return_statement(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_RETURN_STATEMENT, startLoc);
     if (node == ZR_NULL) {
+        // BUG: 已解析返回值未移交节点时直接返回，非空 expr 会泄漏。
         return ZR_NULL;
     }
 
@@ -387,6 +408,8 @@ SZrAstNode *parse_return_statement(SZrParserState *ps) {
 
 // 解析 switch 表达式/语句
 
+// 语句/顶层分派构造 switch 表达式形 AST；case 头部先试 move 模式再回退通用表达式。
+// expr、各 case 和默认分支只有在 switchNode 成功建立后才转移所有权。
 SZrAstNode *parse_switch_expression(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     expect_token(ps, ZR_TK_SWITCH);
@@ -424,6 +447,7 @@ SZrAstNode *parse_switch_expression(SZrParserState *ps) {
     ZrParser_Lexer_Next(ps->lexer);
 
     SZrAstNodeArray *cases = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
+    // BUG: cases 分配失败仍可继续解析；Add 对空数组静默返回，case AST 会丢失。
     SZrAstNode *defaultCase = ZR_NULL;
 
     // 解析 switch cases
@@ -435,6 +459,7 @@ SZrAstNode *parse_switch_expression(SZrParserState *ps) {
                 if (ps->lexer->t.token != ZR_TK_LBRACE) {
                     report_missing_statement_body_open(ps, "switch default", get_current_token_location(ps));
                     ZrParser_Ast_Free(ps->state, expr);
+                    // BUG: 此前已解析的 case 元素未释放；可能还遗失先前 defaultCase。
                     ZrParser_AstNodeArray_Free(ps->state, cases);
                     return ZR_NULL;
                 }
@@ -442,6 +467,7 @@ SZrAstNode *parse_switch_expression(SZrParserState *ps) {
                 SZrAstNode *block = parse_block(ps);
                 if (block != ZR_NULL) {
                     SZrFileRange defaultLoc = get_current_location(ps);
+                    // BUG: 第二个默认分支直接覆盖前一个节点，既丢失其块，也让后续阶段看不到重复分支。
                     defaultCase = create_ast_node(ps, ZR_AST_SWITCH_DEFAULT, defaultLoc);
                     if (defaultCase != ZR_NULL) {
                         defaultCase->data.switchDefault.block = block;
@@ -460,6 +486,7 @@ SZrAstNode *parse_switch_expression(SZrParserState *ps) {
                         ZrParser_Ast_Free(ps->state, value);
                     }
                     ZrParser_Ast_Free(ps->state, expr);
+                    // BUG: 先前已加入的 case 元素不会由数组容器的 Free 递归释放。
                     ZrParser_AstNodeArray_Free(ps->state, cases);
                     return ZR_NULL;
                 }
@@ -471,6 +498,7 @@ SZrAstNode *parse_switch_expression(SZrParserState *ps) {
                         ZrParser_Ast_Free(ps->state, value);
                     }
                     ZrParser_Ast_Free(ps->state, expr);
+                    // BUG: 此出口仍可能持有已加入的 case 和 defaultCase。
                     ZrParser_AstNodeArray_Free(ps->state, cases);
                     return ZR_NULL;
                 }
@@ -485,6 +513,7 @@ SZrAstNode *parse_switch_expression(SZrParserState *ps) {
                         ZrParser_AstNodeArray_Add(ps->state, cases, caseNode);
                     }
                 }
+                // BUG: block 或 caseNode 构造失败时，value/已构造的 block 无清理路径。
             }
         } else {
             break;
@@ -494,6 +523,7 @@ SZrAstNode *parse_switch_expression(SZrParserState *ps) {
     if (ps->lexer->t.token != ZR_TK_RBRACE) {
         report_missing_switch_body_close(ps, get_current_token_location(ps));
         ZrParser_Ast_Free(ps->state, expr);
+        // BUG: 普通数组 Free 不释放已加入的 case AST。
         ZrParser_AstNodeArray_Free(ps->state, cases);
         if (defaultCase != ZR_NULL) {
             ZrParser_Ast_Free(ps->state, defaultCase);
@@ -514,11 +544,13 @@ SZrAstNode *parse_switch_expression(SZrParserState *ps) {
         switchNode->data.switchExpression.isStatement = ZR_TRUE; // 默认是语句
         return switchNode;
     }
+    // BUG: 最终节点分配失败时 expr/cases/defaultCase 均未释放。
     return ZR_NULL;
 }
 
 // 解析 if 表达式/语句
 
+// if 与 else if 共享 AST 形态；块为必需，条件/两个分支在成功时移交给 if 节点。
 SZrAstNode *parse_if_expression(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     expect_token(ps, ZR_TK_IF);
@@ -554,6 +586,7 @@ SZrAstNode *parse_if_expression(SZrParserState *ps) {
 
     SZrAstNode *thenExpr = parse_block(ps);
     if (thenExpr == ZR_NULL) {
+        // BUG: 条件 AST 已分配，then 块失败后未释放。
         return ZR_NULL;
     }
 
@@ -569,6 +602,7 @@ SZrAstNode *parse_if_expression(SZrParserState *ps) {
                 return ZR_NULL;
             }
             elseExpr = parse_block(ps);
+            // TODO: else 块失败仍可返回无 else 的 AST；核对脚本错误恢复是否禁止编译此残缺节点。
         }
     }
 
@@ -577,6 +611,7 @@ SZrAstNode *parse_if_expression(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_IF_EXPRESSION, ifLoc);
     if (node == ZR_NULL) {
+        // BUG: 最终节点分配失败时条件与已解析分支均未释放。
         return ZR_NULL;
     }
 
@@ -589,6 +624,7 @@ SZrAstNode *parse_if_expression(SZrParserState *ps) {
 
 // 解析 while 循环
 
+// while 从语句分派进入；条件与块均由成功返回的循环节点负责释放。
 SZrAstNode *parse_while_loop(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     expect_token(ps, ZR_TK_WHILE);
@@ -624,6 +660,7 @@ SZrAstNode *parse_while_loop(SZrParserState *ps) {
 
     SZrAstNode *block = parse_block(ps);
     if (block == ZR_NULL) {
+        // BUG: 块失败时 cond 仍由本函数持有，却直接返回。
         return ZR_NULL;
     }
 
@@ -632,6 +669,7 @@ SZrAstNode *parse_while_loop(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_WHILE_LOOP, loopLoc);
     if (node == ZR_NULL) {
+        // BUG: 最终节点分配失败时 cond 和 block 均未释放。
         return ZR_NULL;
     }
 
@@ -643,6 +681,7 @@ SZrAstNode *parse_while_loop(SZrParserState *ps) {
 
 // 解析 break/continue 语句
 
+// break/continue 共用 AST；同一行的可选表达式先保留给后续语义阶段判断合法性。
 SZrAstNode *parse_break_continue_statement(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     TZrBool isBreak = (ps->lexer->t.token == ZR_TK_BREAK);
@@ -671,6 +710,7 @@ SZrAstNode *parse_break_continue_statement(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_BREAK_CONTINUE_STATEMENT, startLoc);
     if (node == ZR_NULL) {
+        // BUG: 可选表达式已分配时，节点分配失败会遗失 expr。
         return ZR_NULL;
     }
 
@@ -681,6 +721,7 @@ SZrAstNode *parse_break_continue_statement(SZrParserState *ps) {
 
 // 解析 out 语句（用于生成器表达式）
 
+// TODO: 当前两级语句分派均拒绝旧 out 语法，此入口无生产调用；需确认迁移路径后删除或限定用途。
 SZrAstNode *parse_out_statement(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     expect_token(ps, ZR_TK_OUT);
@@ -711,6 +752,7 @@ SZrAstNode *parse_out_statement(SZrParserState *ps) {
 
 // 解析 throw 语句
 
+// throw 保留异常表达式供后续 CFG/异常处理构建；成功节点取得其所有权。
 SZrAstNode *parse_throw_statement(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     expect_token(ps, ZR_TK_THROW);
@@ -729,6 +771,7 @@ SZrAstNode *parse_throw_statement(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_THROW_STATEMENT, startLoc);
     if (node == ZR_NULL) {
+        // BUG: 异常表达式已构造，节点分配失败后没有释放。
         return ZR_NULL;
     }
 
@@ -738,6 +781,8 @@ SZrAstNode *parse_throw_statement(SZrParserState *ps) {
 
 // 解析 try-catch-finally 语句
 
+// 将 try、多个 catch 与可选 finally 合并为一个 AST，交给后续异常控制流构建。
+// 成功节点拥有各分支；每个失败出口须处理已解析的先前分支。
 SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     expect_token(ps, ZR_TK_TRY);
@@ -772,6 +817,7 @@ SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps) {
                 ZrParser_AstNodeArray_Free(ps->state, catchPattern);
             }
             if (catchClauses != ZR_NULL) {
+                // BUG: 之前已加入的 catch 节点不会随数组容器释放；其他同类错误出口亦然。
                 ZrParser_AstNodeArray_Free(ps->state, catchClauses);
             }
             ZrParser_Ast_Free(ps->state, block);
@@ -800,6 +846,7 @@ SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps) {
             if (catchClauses != ZR_NULL) {
                 ZrParser_AstNodeArray_Free(ps->state, catchClauses);
             }
+            // BUG: 当前出口遗失先前成功解析的 try block。
             return ZR_NULL;
         }
 
@@ -810,6 +857,7 @@ SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps) {
                     ZrParser_AstNodeArray_Free(ps->state, catchPattern);
                 }
                 ZrParser_Ast_Free(ps->state, catchBlock);
+                // BUG: try block 在 catch 数组分配失败时未释放。
                 return ZR_NULL;
             }
         }
@@ -822,6 +870,7 @@ SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps) {
                 ZrParser_AstNodeArray_Free(ps->state, catchPattern);
             }
             ZrParser_Ast_Free(ps->state, catchBlock);
+            // BUG: try block 和此前的 catch 数组在此出口仍由本函数持有。
             return ZR_NULL;
         }
 
@@ -843,6 +892,7 @@ SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps) {
         }
 
         finallyBlock = parse_block(ps);
+        // TODO: finally 块失败仍可返回无 finally 的 AST；核对脚本错误恢复是否禁止编译此残缺节点。
     }
 
     SZrFileRange endLoc = get_current_location(ps);
@@ -851,8 +901,10 @@ SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps) {
     SZrAstNode *node = create_ast_node(ps, ZR_AST_TRY_CATCH_FINALLY_STATEMENT, tryLoc);
     if (node == ZR_NULL) {
         if (catchClauses != ZR_NULL) {
+            // BUG: 已加入的 catch 节点不随数组容器释放。
             ZrParser_AstNodeArray_Free(ps->state, catchClauses);
         }
+        // BUG: 分配失败时 try/finally 块和 catch 元素没有释放。
         return ZR_NULL;
     }
 
@@ -871,6 +923,9 @@ static SZrAstNode *parse_using_binding_identifier(SZrParserState *ps);
 static SZrAstNode *parse_using_array_destructuring_pattern(SZrParserState *ps);
 static SZrAstNode *parse_using_object_destructuring_pattern(SZrParserState *ps);
 
+// using 共享块作用域资源管理、无块模式绑定和无块资源释放三种语法；普通资源走 drop 守卫，
+// 带模式的绑定保留 guardKind/else 分支供编译器建立条件释放与失败分支。
+// resource、pattern、guardTypeInfo、body 在节点建立之前都由本函数负责。
 static SZrAstNode *parse_using_statement_body(SZrParserState *ps, SZrFileRange startLoc) {
     SZrAstNode *resource = ZR_NULL;
     SZrAstNode *body = ZR_NULL;
@@ -1099,16 +1154,19 @@ static SZrAstNode *parse_using_statement_body(SZrParserState *ps, SZrFileRange s
     return node;
 }
 
+// 插件 import 仅在无显式类型的简单绑定上升级为插件守卫。
 static TZrBool using_resource_is_import_expression(SZrAstNode *resource) {
     return resource != ZR_NULL && resource->type == ZR_AST_IMPORT_EXPRESSION;
 }
 
+// 与解构/变体模式区分，以免错误地把复合绑定判为插件别名。
 static TZrBool using_pattern_is_plain_identifier(SZrAstNode *pattern) {
     return pattern != ZR_NULL &&
            pattern->type == ZR_AST_IDENTIFIER_LITERAL &&
            pattern->data.identifier.name != ZR_NULL;
 }
 
+// 限定 using 守卫可交给后续变体/解构语义处理的 AST 种类。
 static TZrBool using_pattern_has_guard_shape(SZrAstNode *pattern) {
     if (using_pattern_is_plain_identifier(pattern)) {
         return ZR_TRUE;
@@ -1120,6 +1178,7 @@ static TZrBool using_pattern_has_guard_shape(SZrAstNode *pattern) {
             pattern->type == ZR_AST_OBJECT_LITERAL);
 }
 
+// 无块 using 与普通表达式共用前缀；静默试探解构及可选类型后恢复全部游标/诊断状态。
 static TZrBool using_no_block_pattern_starts_here(SZrParserState *ps) {
     SZrParserCursor cursor;
     TZrBool savedSuppressErrorOutput;
@@ -1174,6 +1233,7 @@ static TZrBool using_no_block_pattern_starts_here(SZrParserState *ps) {
     return result;
 }
 
+// 守卫绑定统一生成可供编译器识别的标识符、变体、数组或对象模式。
 static SZrAstNode *parse_using_binding_pattern(SZrParserState *ps) {
     if (ps == ZR_NULL) {
         return ZR_NULL;
@@ -1195,6 +1255,7 @@ static SZrAstNode *parse_using_binding_pattern(SZrParserState *ps) {
     }
 }
 
+// move 仅在后接绑定名时改变所有权语义，其他位置仍按普通标识符处理。
 static TZrBool using_current_token_is_move_binding_marker(SZrParserState *ps) {
     EZrToken lookahead;
 
@@ -1208,6 +1269,7 @@ static TZrBool using_current_token_is_move_binding_marker(SZrParserState *ps) {
     return (TZrBool)(lookahead == ZR_TK_IDENTIFIER || lookahead == ZR_TK_TEST);
 }
 
+// 在解构叶子上保留 move 标记，供编译器判断绑定是否消费资源。
 static SZrAstNode *parse_using_binding_identifier(SZrParserState *ps) {
     TZrBool isMoveBinding = ZR_FALSE;
     SZrFileRange moveLocation;
@@ -1230,6 +1292,7 @@ static SZrAstNode *parse_using_binding_identifier(SZrParserState *ps) {
     return identifier;
 }
 
+// using 数组模式复用解构 AST 约定；成功节点接管所有绑定叶子。
 static SZrAstNode *parse_using_array_destructuring_pattern(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrAstNodeArray *keys;
@@ -1287,6 +1350,7 @@ static SZrAstNode *parse_using_array_destructuring_pattern(SZrParserState *ps) {
     return node;
 }
 
+// using 对象模式以键值对 AST 保留源属性与绑定名，交给后续变体守卫检查。
 static SZrAstNode *parse_using_object_destructuring_pattern(SZrParserState *ps) {
     SZrFileRange startLoc;
     SZrAstNodeArray *properties;
@@ -1377,6 +1441,7 @@ static SZrAstNode *parse_using_object_destructuring_pattern(SZrParserState *ps) 
     return node;
 }
 
+// 两级语句分派的 using 入口；消费关键字后由共用体解析决定块或无块形态。
 SZrAstNode *parse_using_statement(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
 
@@ -1393,6 +1458,7 @@ SZrAstNode *parse_using_statement(SZrParserState *ps) {
 
 // 解析语句（入口函数）
 
+// 左花括号既可开始块也可开始对象表达式；预读首属性键及冒号后恢复游标。
 static TZrBool parser_brace_starts_object_literal_statement(SZrParserState *ps) {
     SZrParserCursor cursor;
     TZrBool result = ZR_FALSE;
@@ -1434,6 +1500,8 @@ static TZrBool parser_brace_starts_object_literal_statement(SZrParserState *ps) 
     return result;
 }
 
+// 块内语句分派的递归入口；优先识别声明与控制流，再交给表达式兜底。
+// 返回节点由 parse_block_impl 接管；NULL 使块停止并交由外层错误恢复。
 SZrAstNode *parse_statement(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
 
@@ -1671,6 +1739,7 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
 
 // 解析顶层语句
 
+// 顶层 resource class 是 class AST 的所有权修饰，而非另一种独立声明节点。
 static SZrAstNode *parse_resource_class_declaration(SZrParserState *ps,
                                                      EZrAccessModifier accessModifier) {
     SZrAstNode *node;
@@ -1694,6 +1763,8 @@ static SZrAstNode *parse_resource_class_declaration(SZrParserState *ps,
     return node;
 }
 
+// 顶层装饰器先试 comptime 函数；handled 区分已认定但解析失败与应回退的情况。
+// 非 comptime 时释放试探装饰器并复原游标，成功时装饰器转给函数声明节点。
 static SZrAstNode *try_parse_top_level_decorated_comptime_declaration(
         SZrParserState *ps,
         TZrBool *handled) {
@@ -1752,6 +1823,8 @@ static SZrAstNode *try_parse_top_level_decorated_comptime_declaration(
     return node;
 }
 
+// 脚本和增量解析的顶层入口；在普通语句之外识别类型、模块与装饰器声明。
+// 返回 AST 交给脚本语句数组或增量 API，失败由各自调用者处理诊断/恢复。
 SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
 
@@ -2046,7 +2119,7 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                 }
                 // 如果后面不是声明，则作为表达式语句处理
                 // 但装饰器表达式通常不应该单独出现，这里可能需要错误处理
-                // TODO: 暂时先返回装饰器作为表达式语句
+                // TODO: 顶层非声明装饰器目前退化为表达式语句；需核对语言规则及编译器消费路径。
                 decorator = parse_decorator_expression(ps);
                 if (decorator == ZR_NULL) {
                     return ZR_NULL;

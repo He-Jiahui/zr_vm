@@ -1,5 +1,6 @@
 #include "parser_internal.h"
 
+// 仅在 for 头部尚未移交给循环节点时使用；错误分支须同时处理后续 block。
 static void free_for_loop_parts(SZrParserState *ps,
                                 SZrAstNode *init,
                                 SZrAstNode *cond,
@@ -15,6 +16,8 @@ static void free_for_loop_parts(SZrParserState *ps,
     }
 }
 
+// 由语句/顶层分派在判定为传统 for 头部后调用，要求当前 token 为 for。
+// 成功时把 init/cond/step/block 一并交给返回节点；失败时调用方只接收 NULL。
 SZrAstNode *parse_for_loop(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrAstNode *init = ZR_NULL;
@@ -81,6 +84,7 @@ SZrAstNode *parse_for_loop(SZrParserState *ps) {
 
     SZrAstNode *block = parse_block(ps);
     if (block == ZR_NULL) {
+        // BUG: 非空头部已分配时，块解析失败直接返回会遗失 init/cond/step。
         return ZR_NULL;
     }
 
@@ -89,6 +93,7 @@ SZrAstNode *parse_for_loop(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_FOR_LOOP, loopLoc);
     if (node == ZR_NULL) {
+        // BUG: 节点分配失败时头部与 block 均未移交，也未释放。
         return ZR_NULL;
     }
 
@@ -100,6 +105,8 @@ SZrAstNode *parse_for_loop(SZrParserState *ps) {
     return node;
 }
 
+// 由 for 头部预读分派调用，将绑定模式、可选类型和 iterable 保留给后续语义分析。
+// 成功节点拥有这些子对象；模式允许标识符以及数组/对象解构。
 SZrAstNode *parse_foreach_loop(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrAstNode *pattern = ZR_NULL;
@@ -147,6 +154,7 @@ SZrAstNode *parse_foreach_loop(SZrParserState *ps) {
 
     SZrAstNode *expr = parse_expression(ps);
     if (expr == ZR_NULL) {
+        // BUG: iterable 解析失败时，已取得的 pattern/typeInfo 未释放。
         return ZR_NULL;
     }
 
@@ -174,6 +182,7 @@ SZrAstNode *parse_foreach_loop(SZrParserState *ps) {
 
     SZrAstNode *block = parse_block(ps);
     if (block == ZR_NULL) {
+        // BUG: 块解析失败时，pattern/typeInfo/expr 仍由本函数持有。
         return ZR_NULL;
     }
 
@@ -182,6 +191,7 @@ SZrAstNode *parse_foreach_loop(SZrParserState *ps) {
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_FOREACH_LOOP, loopLoc);
     if (node == ZR_NULL) {
+        // BUG: 最终节点分配失败时四个已解析子对象都未释放。
         return ZR_NULL;
     }
 

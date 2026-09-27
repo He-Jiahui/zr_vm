@@ -2,6 +2,7 @@
 
 static SZrAstNode *parse_switch_binding_identifier(SZrParserState *ps);
 
+// move 在后接绑定名时才是上下文标记，单独出现仍可按普通标识符解析。
 static TZrBool switch_current_token_is_move_binding_marker(SZrParserState *ps) {
     EZrToken lookahead;
 
@@ -15,6 +16,7 @@ static TZrBool switch_current_token_is_move_binding_marker(SZrParserState *ps) {
     return (TZrBool)(lookahead == ZR_TK_IDENTIFIER || lookahead == ZR_TK_TEST);
 }
 
+// 对 switch case 头部做无副作用预读，决定是否尝试专用的 move 模式 AST。
 static TZrBool switch_case_header_has_move_binding_marker(SZrParserState *ps) {
     SZrParserCursor cursor;
     TZrInt32 parenDepth = 0;
@@ -74,6 +76,8 @@ static TZrBool switch_case_header_has_move_binding_marker(SZrParserState *ps) {
     return found;
 }
 
+// 常规表达式解析得到变体名后，尝试将紧随的对象字面量接为结构体 payload。
+// 对象试探解析失败时恢复游标并原样返还 value；成功则把 value 交给组合节点。
 SZrAstNode *try_parse_switch_struct_variant_payload_case(SZrParserState *ps, SZrAstNode *value) {
     SZrParserCursor cursor;
     TZrBool savedSuppressErrorOutput;
@@ -129,6 +133,7 @@ SZrAstNode *try_parse_switch_struct_variant_payload_case(SZrParserState *ps, SZr
     return patternNode != ZR_NULL ? patternNode : value;
 }
 
+// 专用模式解析器使用此入口保留 move 标记，供后续所有权检查区分普通绑定。
 static SZrAstNode *parse_switch_binding_identifier(SZrParserState *ps) {
     TZrBool isMoveBinding = ZR_FALSE;
     SZrFileRange moveLocation;
@@ -151,6 +156,8 @@ static SZrAstNode *parse_switch_binding_identifier(SZrParserState *ps) {
     return identifier;
 }
 
+// 将元组 payload 表示为调用形 AST，以复用变体匹配的下游节点约定。
+// outHasMoveBinding 用于外层判断此次试探是否应接管普通表达式解析。
 static SZrAstNode *parse_switch_tuple_move_payload_pattern(SZrParserState *ps, TZrBool *outHasMoveBinding) {
     SZrFileRange startLoc;
     SZrFileRange endLoc;
@@ -214,6 +221,7 @@ static SZrAstNode *parse_switch_tuple_move_payload_pattern(SZrParserState *ps, T
     return callNode;
 }
 
+// 将结构体 payload 表示为对象 AST，并把 move 信息保存在值侧绑定名上。
 static SZrAstNode *parse_switch_struct_move_payload_pattern(SZrParserState *ps, TZrBool *outHasMoveBinding) {
     SZrFileRange startLoc;
     SZrAstNodeArray *properties;
@@ -309,6 +317,8 @@ static SZrAstNode *parse_switch_struct_move_payload_pattern(SZrParserState *ps, 
     return objectNode;
 }
 
+// 只在 case 头部存在 move 绑定时接管解析；其他形态恢复游标交回通用表达式解析。
+// 返回非空节点由 parse_switch_expression 的 case 节点接管。
 SZrAstNode *try_parse_switch_move_variant_pattern_case(SZrParserState *ps) {
     SZrParserCursor cursor;
     SZrFileRange startLoc;
@@ -381,5 +391,6 @@ SZrAstNode *try_parse_switch_move_variant_pattern_case(SZrParserState *ps) {
         return ZR_NULL;
     }
 
+    // BUG: append_primary_member 分配失败可原样返回 base；payloadNode 此时无人释放。
     return append_primary_member(ps, base, payloadNode, startLoc);
 }

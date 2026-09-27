@@ -111,5 +111,6 @@ doc_type: category-index
 | AOT 源码契约与跨模块绑定投影辅助 | [30 项](coverage/tests_parser_aot_binding_support.tsv) | 3 个 C/H 文件独立复核，182 个证据锚点有效，源码仅改注释；GCC/Clang 对 3 个宿主翻译单元语法检查通过。5 个 BUG 行记录 Unity 断言失败跳过局部资源清理；未运行完整 AOT 测试。 |
 | parser 调用参数、后缀调用与所有权语法 | [21 项](coverage/zr_vm_parser_syntax_calls_ownership.tsv) | 5 个 C 文件独立复核，96 个证据锚点有效，源码仅增 30 行注释；GCC/Clang 语法检查通过。3 个 BUG 行记录分配失败后的对象释放缺口，另有 2 个 TODO；共享 WSL I/O 阻塞定向 CMake/CTest。 |
 | parser 工件、元数据与逃逸流水线测试 | [117 项](coverage/tests_parser_artifact_metadata.tsv) | 8 个 C/H 文件独立复核，490 个证据锚点有效，源码仅增 123 行注释；GCC 对 7 个实现文件及头文件包含入口语法检查通过。22 个 BUG 行含失败断言跳过清理，另有 2 个 TODO；未运行可执行测试。 |
+| parser 语句、循环、switch 与 yield 语法 | [82 项](coverage/zr_vm_parser_syntax_statements.tsv) | 4 个 C 文件独立复核，205 个证据锚点有效，源码仅改注释；GCC C11 语法检查通过。30 个 BUG 行记录错误退出清理与重复 switch default 等可达问题，另有 5 个 TODO；既有构建未登记可运行 parser CTest。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

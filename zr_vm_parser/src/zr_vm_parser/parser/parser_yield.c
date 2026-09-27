@@ -1,5 +1,7 @@
 #include "parser_internal.h"
 
+// 普通/顶层语句分派共用此入口；仅构造带表达式的 yield AST。
+// 是否处于合法迭代器上下文由后续编译阶段判定，返回节点取得 expression 所有权。
 SZrAstNode *parse_yield_statement(SZrParserState *ps) {
     SZrFileRange startLocation;
     SZrFileRange endLocation;
