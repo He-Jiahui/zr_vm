@@ -1,3 +1,4 @@
+# test_log_failure_contract 只验证一次主动失败后探针仍走到清理及 Unity 退出路径。
 if (NOT DEFINED PROBE_EXE OR PROBE_EXE STREQUAL "")
     message(FATAL_ERROR "PROBE_EXE is required")
 endif ()

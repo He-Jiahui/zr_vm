@@ -1,14 +1,6 @@
-#
-# When CTest runs build-tree executables that link shared libraries from ${HOST_BINARY_DIR}/lib,
-# the dynamic loader may not find them unless RPATH is complete. Prepend that directory to
-# LD_LIBRARY_PATH for the duration of the parent cmake -P script (execute_process children inherit it).
-#
-# On Windows, DLLs usually live under ${HOST_BINARY_DIR}/lib/<Config> while the CLI is under
-# bin/<Config>. The loader searches the executable directory first, then PATH. If an unrelated
-# directory on PATH contains an older zr_vm_core.dll, that module can be loaded instead of the
-# build-tree DLL, causing ABI mismatch crashes (e.g. access violation during GC slot rewrite).
-# Prepend the directory that contains the zr_vm_core.dll matching the invoked CLI configuration.
-#
+# 多个 cmake -P 测试入口共用此环境桥接；仅修改当前 CMake 进程的环境，子进程继承库搜索路径。
+# Linux 构建树库目录须优先于宿主路径；Windows 还需用被测 exe 的配置定位同配置 DLL，
+# 否则 PATH 中较旧的 zr_vm_core.dll 可能造成 ABI 不匹配。
 if (DEFINED HOST_BINARY_DIR AND NOT HOST_BINARY_DIR STREQUAL "")
     file(TO_CMAKE_PATH "${HOST_BINARY_DIR}" _zr_vm_test_host_binary_dir)
 
@@ -27,6 +19,7 @@ if (DEFINED HOST_BINARY_DIR AND NOT HOST_BINARY_DIR STREQUAL "")
         endif ()
 
         if (NOT _zr_vm_anchor_exe STREQUAL "")
+            # 多配置布局为 bin/<Config> 对 lib/<Config>；CLI_EXE/EXE 是本次测试的配置锚点。
             file(TO_CMAKE_PATH "${_zr_vm_anchor_exe}" _zr_vm_anchor_exe_norm)
             get_filename_component(_zr_vm_exe_dir "${_zr_vm_anchor_exe_norm}" DIRECTORY)
             get_filename_component(_zr_vm_bin_dir "${_zr_vm_exe_dir}" DIRECTORY)
@@ -45,6 +38,7 @@ if (DEFINED HOST_BINARY_DIR AND NOT HOST_BINARY_DIR STREQUAL "")
             endif ()
         endif ()
 
+        # 未找到同配置 DLL 时回退到平铺的构建树 lib；多配置路径缺失也会走此分支。
         if (NOT _zr_vm_win_prepended AND EXISTS "${_zr_vm_test_host_binary_dir}/lib/zr_vm_core.dll")
             file(TO_NATIVE_PATH "${_zr_vm_test_host_binary_dir}/lib" _zr_vm_lib_flat_native)
             set(ENV{PATH} "${_zr_vm_lib_flat_native};$ENV{PATH}")

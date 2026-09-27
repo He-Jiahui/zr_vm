@@ -1,3 +1,4 @@
+# 顶层 testing_reference CTest 用同一个项目分别验证正常、筛选和负面路径。
 if (NOT DEFINED CLI_EXE OR CLI_EXE STREQUAL "")
     message(FATAL_ERROR "CLI_EXE is required")
 endif ()
@@ -8,6 +9,7 @@ endif ()
 include("${CMAKE_CURRENT_LIST_DIR}/zr_vm_test_host_env.cmake")
 get_filename_component(reference_root "${PROJECT_FILE}" DIRECTORY)
 
+# 只接受预期退出码及汇总/列表模式；CLI 路径由 CTest 生成表达式提供。
 function(run_testing_reference_case expected_exit expected_regex)
     execute_process(
             COMMAND "${CLI_EXE}" ${ARGN}
@@ -27,6 +29,7 @@ function(run_testing_reference_case expected_exit expected_regex)
     endif ()
 endfunction()
 
+# 正常项目应保留跳过用例和参数化用例的稳定计数。
 run_testing_reference_case(
         0
         "test-result: passed=5 failed=0 skipped=1 timedout=0 crashed=0"
@@ -42,6 +45,7 @@ run_testing_reference_case(
         "test-result: passed=2 failed=0 skipped=0 timedout=0 crashed=0"
         test "${PROJECT_FILE}" --filter "*::orderedPair#*" --timeout 5s
 )
+# 负面项目用于固定失败与超时在 test-result 中的不同分类。
 run_testing_reference_case(
         1
         "test-result: passed=0 failed=1 skipped=0 timedout=0 crashed=0"

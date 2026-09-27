@@ -1,5 +1,7 @@
 include_guard(GLOBAL)
 
+# 顶层 tests/CMake 为 language_pipeline 建立一个跨配置的 CTest 入口。
+# 可执行文件路径含生成表达式，必须在 generate 阶段写 manifest，供 cmake -P runner 消费。
 function(zr_vm_add_manifest_executable_suite)
     cmake_parse_arguments(ZR_SUITE ""
             "NAME;RUNNER_SCRIPT;HOST_BINARY_DIR;RUN_WORKING_DIRECTORY"
@@ -12,6 +14,7 @@ function(zr_vm_add_manifest_executable_suite)
         endif ()
     endforeach ()
 
+    # manifest 由构建树持有；每个配置独立展开，避免多配置生成器读取错误的可执行路径。
     set(manifest_directory "${CMAKE_CURRENT_BINARY_DIR}/suite_manifests")
     file(MAKE_DIRECTORY "${manifest_directory}")
     set(manifest_path "${manifest_directory}/${ZR_SUITE_NAME}-$<CONFIG>.cmake")
