@@ -13,13 +13,19 @@
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/type_inference.h"
 
+/* 每个 Unity 用例独占一个 VM state；语义环境与 AST 的 native 所有权仍由用例负责。 */
 static SZrState *g_state;
 
+/* 隔离字符串、语义上下文和 VM 资源，供当前用例的解析与推断共用。 */
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
+/* Unity 即使中止用例也会调用此处；这里只能收回 g_state。 */
+/* BUG: 编译器初始化后的断言或用例后续断言一旦失败，Unity longjmp
+ * 跳过函数末尾的 destroy_compiler_state/Ast_Free/InferredType_Free；此处不持有
+ * malloc 的 cs，故失败路径遗留编译器状态及当时已取得的 AST/类型资源。 */
 void tearDown(void) {
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
@@ -27,6 +33,7 @@ void tearDown(void) {
     }
 }
 
+/* 在堆上建立可独立调用类型推断的编译器上下文；成功后必须配对销毁。 */
 static SZrCompilerState *create_compiler_state(void) {
     SZrCompilerState *cs = (SZrCompilerState *)malloc(sizeof(SZrCompilerState));
 
@@ -38,6 +45,7 @@ static SZrCompilerState *create_compiler_state(void) {
     return cs;
 }
 
+/* 先释放推断器持有的语义/类型环境，再释放测试自行分配的外壳。 */
 static void destroy_compiler_state(SZrCompilerState *cs) {
     if (cs == ZR_NULL) {
         return;
@@ -47,6 +55,7 @@ static void destroy_compiler_state(SZrCompilerState *cs) {
     free(cs);
 }
 
+/* 注册未定值布尔条件，使双层循环保留零次与多次执行路径。 */
 static void register_bool_variable(SZrCompilerState *cs, const char *name) {
     SZrInferredType type;
 
@@ -59,6 +68,7 @@ static void register_bool_variable(SZrCompilerState *cs, const char *name) {
     ZrParser_InferredType_Free(g_state, &type);
 }
 
+/* 给目标变量种下闭区间；环境复制临时类型，调用方随后释放临时值。 */
 static void register_int64_range_variable(SZrCompilerState *cs,
                                            const char *name,
                                            TZrInt64 minValue,
@@ -77,6 +87,7 @@ static void register_int64_range_variable(SZrCompilerState *cs,
     ZrParser_InferredType_Free(g_state, &type);
 }
 
+/* 从脚本借出指定语句，结构不符时交由用例断言报告失败。 */
 static SZrAstNode *statement_at(SZrAstNode *ast, TZrSize index) {
     if (ast == ZR_NULL ||
         ast->type != ZR_AST_SCRIPT ||
@@ -88,6 +99,7 @@ static SZrAstNode *statement_at(SZrAstNode *ast, TZrSize index) {
     return ast->data.script.statements->nodes[index];
 }
 
+/* 借出循环后表达式，确保推断与语义事实查询指向同一 AST 节点。 */
 static SZrAstNode *expression_statement_expression(SZrAstNode *statement) {
     if (statement == ZR_NULL || statement->type != ZR_AST_EXPRESSION_STATEMENT) {
         return ZR_NULL;
@@ -96,6 +108,8 @@ static SZrAstNode *expression_statement_expression(SZrAstNode *statement) {
     return statement->data.expressionStatement.expr;
 }
 
+/* 外层和内层条件都未知：narrowed 可保持 5，也可被内层改成 10；
+ * 循环后的 +1 应同时反映在推断区间与该表达式的语义数值事实中。 */
 static void test_nested_while_assignment_joins_inner_loop_range_for_following_expression(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -134,6 +148,7 @@ static void test_nested_while_assignment_joins_inner_loop_range_for_following_ex
     TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, finalExpression, &result));
     numericFact = ZrParser_SemanticFacts_FindNumericByNode(cs->semanticContext, finalExpression);
 
+    /* 两个观察面应给出同一 [6,11]，且该区间不会触及 int64 溢出。 */
     TEST_ASSERT_TRUE(result.hasRangeConstraint);
     TEST_ASSERT_EQUAL_INT64(6, result.minValue);
     TEST_ASSERT_EQUAL_INT64(11, result.maxValue);
@@ -149,6 +164,7 @@ static void test_nested_while_assignment_joins_inner_loop_range_for_following_ex
     destroy_compiler_state(cs);
 }
 
+/* 独立可执行入口；CMake 还把它纳入 language_pipeline 的 CTest 清单。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_nested_while_assignment_joins_inner_loop_range_for_following_expression);
