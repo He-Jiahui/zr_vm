@@ -5,6 +5,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 
+/* 各编辑器入口使用调用方的固定缓冲区；容量不足时统一返回失败，让入口放弃结果。 */
 static TZrBool lsp_numeric_range_text_append_format(TZrChar *buffer,
                                                     TZrSize bufferSize,
                                                     TZrSize *used,
@@ -30,6 +31,7 @@ static TZrBool lsp_numeric_range_text_append_format(TZrChar *buffer,
     return ZR_TRUE;
 }
 
+/* source/target 任一侧为浮点即按浮点范围显示，避免转换事实被格式化为整数界。 */
 static TZrBool lsp_numeric_range_text_is_float_fact(const SZrSemanticNumericFact *fact) {
     return fact != ZR_NULL &&
            (fact->sourceType == ZR_VALUE_TYPE_FLOAT ||
@@ -38,6 +40,7 @@ static TZrBool lsp_numeric_range_text_is_float_fact(const SZrSemanticNumericFact
             fact->targetType == ZR_VALUE_TYPE_DOUBLE);
 }
 
+/* 区间段可多于内联存储，必须通过 parser accessor 读取；展示上限取 LSP 常量。 */
 static TZrBool lsp_numeric_range_text_append_segments(TZrChar *buffer,
                                                       TZrSize bufferSize,
                                                       TZrSize *used,
@@ -84,6 +87,7 @@ static TZrBool lsp_numeric_range_text_append_segments(TZrChar *buffer,
     return lsp_numeric_range_text_append_format(buffer, bufferSize, used, ")");
 }
 
+/* hover、补全、签名帮助和 inlay hint 共用区间文本，使同一 fact 的展示口径一致。 */
 TZrBool ZrLanguageServer_LspNumericRangeText_AppendRange(
     TZrChar *buffer,
     TZrSize bufferSize,

@@ -5,6 +5,7 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_parser/semantic_query.h"
 
+/* 位置去重比较编辑器最终可见的范围，而不是未绑定文档的解析器偏移。 */
 static TZrBool semantic_implementation_ranges_equal(
         SZrLspRange left,
         SZrLspRange right) {
@@ -14,6 +15,7 @@ static TZrBool semantic_implementation_ranges_equal(
            left.end.character == right.end.character;
 }
 
+/* 同一关系可由多个语义事实指向，先检查结果以免导航列表出现重复入口。 */
 static TZrBool semantic_implementation_has_location(
         const SZrArray *result,
         SZrString *uri,
@@ -36,6 +38,7 @@ static TZrBool semantic_implementation_has_location(
     return ZR_FALSE;
 }
 
+/* 追加拥有独立 Location 对象的导航项；URI 借用分析快照中的字符串。 */
 static TZrBool semantic_implementation_append_location(
         SZrState *state,
         SZrLspContext *context,
@@ -72,6 +75,7 @@ static TZrBool semantic_implementation_append_location(
     return ZR_TRUE;
 }
 
+/* editor implementation 请求先规范化光标符号，再只展示本模块内可定位的实现/覆盖关系。 */
 TZrBool ZrLanguageServer_LspSemanticImplementationQuery_Append(
         SZrState *state,
         SZrLspContext *context,
@@ -111,6 +115,8 @@ TZrBool ZrLanguageServer_LspSemanticImplementationQuery_Append(
         return ZR_FALSE;
     }
 
+    /* TODO: 此处仅查询当前 analyzer 的 module 事实；项目内其他文档的实现关系
+     * 是否需并入 editor implementation，请沿项目索引及跨快照引用路径核查。 */
     ZrParser_SemanticQueryScope_Module(&scope);
     if (ZrParser_SemanticQuery_ImplementationsOf(
                 query.analyzer->semanticContext,

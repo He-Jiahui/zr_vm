@@ -6,6 +6,7 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_parser/semantic_query.h"
 
+/* 层级关系只适用于有可回查声明的命名类型，排除表达式中的临时类型。 */
 static TZrBool semantic_type_hierarchy_node_is_type(const SZrAstNode *node) {
     return node != ZR_NULL &&
            (node->type == ZR_AST_CLASS_DECLARATION ||
@@ -14,6 +15,7 @@ static TZrBool semantic_type_hierarchy_node_is_type(const SZrAstNode *node) {
             node->type == ZR_AST_ENUM_DECLARATION);
 }
 
+/* 将语义类型声明投影为编辑器的 class/struct/interface/enum 图标类别。 */
 static TZrInt32 semantic_type_hierarchy_node_kind(const SZrAstNode *node) {
     if (node == ZR_NULL) {
         return ZR_LSP_SYMBOL_KIND_CLASS;
@@ -52,6 +54,7 @@ static TZrBool semantic_type_hierarchy_has_item(
     return ZR_FALSE;
 }
 
+/* 每个关系目标只保留一个层级项目；项目记录源范围、语义身份与当前文档版本。 */
 static TZrBool semantic_type_hierarchy_append_item(
         SZrState *state,
         SZrLspContext *context,
@@ -120,6 +123,7 @@ static TZrBool semantic_type_hierarchy_append_item(
     return ZR_TRUE;
 }
 
+/* 客户端回传的类型项目必须仍对应当前 AST 声明；ID 或展示范围漂移时拒绝旧项目。 */
 static TZrBool semantic_type_hierarchy_resolve_item(
         SZrState *state,
         SZrLspContext *context,
@@ -198,6 +202,7 @@ static TZrBool semantic_type_hierarchy_resolve_item(
     return ZR_TRUE;
 }
 
+/* 以光标处的解析器符号为入口，只为能与声明事实相互印证的类型创建层级根。 */
 TZrBool ZrLanguageServer_LspSemanticTypeHierarchy_Prepare(
         SZrState *state,
         SZrLspContext *context,
@@ -269,6 +274,7 @@ TZrBool ZrLanguageServer_LspSemanticTypeHierarchy_Prepare(
     return ok;
 }
 
+/* 从同一语义快照查询直接基类/派生类，过滤无法绑定真实声明位置的关系事实。 */
 static TZrBool semantic_type_hierarchy_append_relations(
         SZrState *state,
         SZrLspContext *context,
@@ -378,6 +384,7 @@ static TZrBool semantic_type_hierarchy_append_relations(
     return ok;
 }
 
+/* 对外提供基类型方向；无关系时返回可用的空结果。 */
 TZrBool ZrLanguageServer_LspSemanticTypeHierarchy_AppendSupertypes(
         SZrState *state,
         SZrLspContext *context,
@@ -387,6 +394,7 @@ TZrBool ZrLanguageServer_LspSemanticTypeHierarchy_AppendSupertypes(
             state, context, item, ZR_FALSE, result);
 }
 
+/* 对外提供派生类型方向；与基类型查询共享快照校验。 */
 TZrBool ZrLanguageServer_LspSemanticTypeHierarchy_AppendSubtypes(
         SZrState *state,
         SZrLspContext *context,

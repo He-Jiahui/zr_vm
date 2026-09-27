@@ -12,8 +12,10 @@
 #include <stdarg.h>
 #include <stdio.h>
 
+/* 行列宽度估算使用的跨行权重；零偏移是否进入该分支见下方 TODO。 */
 #define ZR_LSP_LOCAL_QUERY_VISIBLE_RANGE_LINE_WIDTH ((TZrSize)100000)
 
+/* 独立局部 hover 的首段与事实附录共享容量边界；失败由请求入口放弃该 hover。 */
 static TZrBool local_query_append_format(TZrChar *buffer,
                                          TZrSize bufferSize,
                                          TZrSize *used,
@@ -39,6 +41,7 @@ static TZrBool local_query_append_format(TZrChar *buffer,
     return ZR_TRUE;
 }
 
+/* 多类事实同时命中时，优先选择 intrinsic 名称等最适合用户定位的范围。 */
 static SZrFileRange local_query_hover_range(const SZrLspLocalSemanticQueryResult *query) {
     if (query == ZR_NULL) {
         return ZrParser_FileRange_Create(ZrParser_FilePosition_Create(0, 1, 1),
@@ -71,6 +74,7 @@ static SZrFileRange local_query_hover_range(const SZrLspLocalSemanticQueryResult
     return query->queryRange;
 }
 
+/* 扫描载荷与候选事实时，双侧 URI 已知则先核对来源，再按偏移判定光标归属。 */
 static TZrBool local_query_range_contains_position(SZrFileRange range, SZrFileRange position) {
     TZrSize startOffset;
     TZrSize endOffset;
@@ -93,7 +97,10 @@ static TZrBool local_query_range_contains_position(SZrFileRange range, SZrFileRa
     return queryOffset >= startOffset && queryOffset <= endOffset;
 }
 
+/* 同一光标命中多个事实时以较窄范围优先，供数值/所有权事实回退选择。 */
 static TZrSize local_query_range_width(SZrFileRange range) {
+    /* TODO: 当事实仅有行列、start/end.offset 同为零时首个分支直接返回零，
+     * 后面的行列估算不可达。需核查 parser 是否仍会产出这类范围及悬停候选选择。 */
     if (range.end.offset >= range.start.offset) {
         return range.end.offset - range.start.offset;
     }
@@ -111,6 +118,7 @@ static TZrSize local_query_range_width(SZrFileRange range) {
     return 0;
 }
 
+/* 当前光标被 parser 诊断覆盖时，局部事实查询先报告遮挡，不展示旧 AST 的推断。 */
 static SZrDiagnostic *local_query_find_parser_diagnostic_at(SZrFileVersion *fileVersion,
                                                             SZrFileRange position) {
     if (fileVersion == ZR_NULL || !fileVersion->parserDiagnostics.isValid) {
@@ -130,6 +138,7 @@ static SZrDiagnostic *local_query_find_parser_diagnostic_at(SZrFileVersion *file
     return ZR_NULL;
 }
 
+/* 依当前文档内容把 LSP UTF-16 位置投影为 parser 字节位置，再查询语义快照。 */
 static SZrFileRange local_query_position_range(SZrLspContext *context,
                                                SZrString *uri,
                                                SZrLspPosition position) {
@@ -142,6 +151,9 @@ static SZrFileRange local_query_position_range(SZrLspContext *context,
         filePosition = ZrLanguageServer_LspPosition_ToFilePositionWithContent(position,
                                                                               snapshot.content,
                                                                               snapshot.contentLength);
+        /* TODO: 旧 AST 回退时仅将偏移清零，行列仍来自新内容；parser 的
+         * semantic_facts_range_contains_position 可退回行列比较。需用编辑后移位且
+         * 仍无当前位置诊断的文档验证是否会显示旧事实。 */
         if (snapshot.usesFallbackAst &&
             (!fileVersion->hasIncrementalInfo ||
              filePosition.offset >= fileVersion->lastChangeInfo.newRange.start.offset)) {
@@ -153,6 +165,7 @@ static SZrFileRange local_query_position_range(SZrLspContext *context,
     return ZrParser_FileRange_Create(filePosition, filePosition, uri);
 }
 
+/* 同一栈结果可复用；每次查询先丢弃旧借用指针并绑定新的文档位置。 */
 static void local_query_seed(SZrLspContext *context,
                              SZrString *uri,
                              SZrLspPosition position,
@@ -162,6 +175,7 @@ static void local_query_seed(SZrLspContext *context,
     result->queryRange = local_query_position_range(context, uri, position);
 }
 
+/* 查询执行成功不等于有事实；parser 错误遮挡通过独立状态交给 hover 决策。 */
 static TZrBool local_query_set_diagnostic_if_blocked(SZrFileVersion *fileVersion,
                                                      SZrLspLocalSemanticQueryResult *result) {
     SZrDiagnostic *diagnostic;
@@ -180,6 +194,7 @@ static TZrBool local_query_set_diagnostic_if_blocked(SZrFileVersion *fileVersion
     return ZR_TRUE;
 }
 
+/* 复合表达式节点应保留结构事实身份，避免用子表达式回退伪装整体结果。 */
 static TZrBool local_query_node_prefers_structural_fact(const SZrAstNode *node) {
     if (node == ZR_NULL) {
         return ZR_FALSE;
@@ -192,12 +207,14 @@ static TZrBool local_query_node_prefers_structural_fact(const SZrAstNode *node) 
            node->type == ZR_AST_CONDITIONAL_EXPRESSION;
 }
 
+/* 计算成员访问的 reference 可以找回其外层表达式载荷。 */
 static TZrBool local_query_reference_is_member_payload(const SZrSemanticReferenceFact *referenceFact) {
     return referenceFact != ZR_NULL &&
            (referenceFact->kind == ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS ||
             referenceFact->kind == ZR_SEMANTIC_REFERENCE_MEMBER_WRITE);
 }
 
+/* 用户悬停在调用目标或成员名时，优先展示覆盖该 token 的最窄表达式载荷。 */
 static const SZrSemanticExpressionFact *local_query_find_payload_expression_fact(
     SZrSemanticAnalyzer *analyzer,
     SZrFileRange queryRange) {
@@ -244,6 +261,7 @@ static const SZrSemanticExpressionFact *local_query_find_payload_expression_fact
     return best;
 }
 
+/* 计算成员 token 常先命中引用事实；按节点或最窄范围回连到成员表达式。 */
 static const SZrSemanticExpressionFact *local_query_find_reference_payload_expression_fact(
     SZrSemanticAnalyzer *analyzer,
     SZrFileRange queryRange,
@@ -290,6 +308,7 @@ static const SZrSemanticExpressionFact *local_query_find_reference_payload_expre
     return best;
 }
 
+/* 先尊重成员/调用载荷，再按 AST 结构和位置回退，供 hover 与 inline value 同用。 */
 static const SZrSemanticExpressionFact *local_query_find_expression_fact(SZrSemanticAnalyzer *analyzer,
                                                                          SZrFileRange queryRange,
                                                                          const SZrSemanticReferenceFact *referenceFact) {
@@ -322,6 +341,7 @@ static const SZrSemanticExpressionFact *local_query_find_expression_fact(SZrSema
     return ZrLanguageServer_SemanticAnalyzer_FindExpressionFactAtPosition(analyzer, queryRange);
 }
 
+/* 优先取同一 AST 节点的数值事实；没有节点配对时取覆盖光标的最窄事实。 */
 static const SZrSemanticNumericFact *local_query_find_numeric_fact(
     SZrSemanticAnalyzer *analyzer,
     SZrFileRange queryRange,
@@ -365,6 +385,7 @@ static const SZrSemanticNumericFact *local_query_find_numeric_fact(
     return best;
 }
 
+/* 不可达位置可借触发它的条件节点补回逻辑事实，让 hover 同时解释原因与结果。 */
 static const SZrSemanticLogicalFact *local_query_find_logical_fact(
     SZrSemanticAnalyzer *analyzer,
     SZrFileRange queryRange,
@@ -420,6 +441,7 @@ static const SZrSemanticLogicalFact *local_query_find_logical_fact(
     return ZR_NULL;
 }
 
+/* 光标未直接落在可达性事实内时，尝试从关联逻辑节点恢复控制流说明。 */
 static const SZrSemanticReachabilityFact *local_query_find_reachability_fact(
     SZrSemanticAnalyzer *analyzer,
     SZrFileRange queryRange,
@@ -446,6 +468,7 @@ static const SZrSemanticReachabilityFact *local_query_find_reachability_fact(
     return ZR_NULL;
 }
 
+/* 所有权违规可能在表达式内部子范围，回退时优先展示最窄的违规事实。 */
 static const SZrSemanticOwnershipFact *local_query_find_ownership_fact(
     SZrSemanticAnalyzer *analyzer,
     SZrFileRange queryRange,
@@ -509,6 +532,7 @@ static const SZrSemanticOwnershipFact *local_query_find_ownership_fact(
     return best;
 }
 
+/* 一次查询从同一 analyzer 快照收集各类事实，保证附录各段对应同一文档版本。 */
 static void local_query_collect_facts(SZrSemanticAnalyzer *analyzer,
                                       SZrLspLocalSemanticQueryResult *result) {
     if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || result == ZR_NULL) {
@@ -542,6 +566,7 @@ static void local_query_collect_facts(SZrSemanticAnalyzer *analyzer,
                 analyzer->semanticContext, result->queryRange);
 }
 
+/* 任何独立事实都可支撑局部 hover；UNKNOWN 表示查询成功但当前位置尚无可展示事实。 */
 static void local_query_set_fact_status_if_any(SZrLspLocalSemanticQueryResult *result) {
     if (result == ZR_NULL) {
         return;
@@ -558,6 +583,7 @@ static void local_query_set_fact_status_if_any(SZrLspLocalSemanticQueryResult *r
     }
 }
 
+/* 栈结果首次使用前建立空借用视图，不分配事实内存。 */
 void ZrLanguageServer_LspLocalSemanticQuery_Init(SZrLspLocalSemanticQueryResult *result) {
     if (result == ZR_NULL) {
         return;
@@ -566,6 +592,7 @@ void ZrLanguageServer_LspLocalSemanticQuery_Init(SZrLspLocalSemanticQueryResult 
     ZrLanguageServer_LspLocalSemanticQuery_Clear(result);
 }
 
+/* 清除是解除指针关系，不释放 analyzer 的事实或文件版本中的诊断。 */
 void ZrLanguageServer_LspLocalSemanticQuery_Clear(SZrLspLocalSemanticQueryResult *result) {
     if (result == ZR_NULL) {
         return;
@@ -585,6 +612,7 @@ void ZrLanguageServer_LspLocalSemanticQuery_Clear(SZrLspLocalSemanticQueryResult
     result->ownershipIntrinsicFact = ZR_NULL;
 }
 
+/* hover 与 stdio inline value 共用入口；parser 诊断遮挡优先于旧 AST/事实回退。 */
 TZrBool ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(
     SZrState *state,
     SZrLspContext *context,
@@ -615,6 +643,7 @@ TZrBool ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(
     return ZR_TRUE;
 }
 
+/* 导航侧只需要引用事实，跳过表达式事实的多轮候选选择。 */
 TZrBool ZrLanguageServer_LspLocalSemanticQuery_ReferenceAt(
     SZrState *state,
     SZrLspContext *context,
@@ -648,6 +677,7 @@ TZrBool ZrLanguageServer_LspLocalSemanticQuery_ReferenceAt(
     return ZR_TRUE;
 }
 
+/* 在请求生命周期内把借用事实物化成独立 hover；有文档时再附 canonical 类型。 */
 static TZrBool local_query_build_hover_with_document(
     SZrState *state,
     SZrLspContext *context,
@@ -733,6 +763,7 @@ static TZrBool local_query_build_hover_with_document(
     return ZR_TRUE;
 }
 
+/* 测试和无文档调用者保留纯事实悬停，类型不可查时显式显示 unknown。 */
 TZrBool ZrLanguageServer_LspLocalSemanticQuery_BuildHover(
     SZrState *state,
     const SZrLspLocalSemanticQueryResult *query,
@@ -740,6 +771,7 @@ TZrBool ZrLanguageServer_LspLocalSemanticQuery_BuildHover(
     return local_query_build_hover_with_document(state, ZR_NULL, ZR_NULL, query, result);
 }
 
+/* 交给 LSP 请求入口的版本使用当前文档将 canonical 类型和范围投影进 hover。 */
 TZrBool ZrLanguageServer_LspLocalSemanticQuery_BuildHoverForDocument(
     SZrState *state,
     SZrLspContext *context,
@@ -749,6 +781,7 @@ TZrBool ZrLanguageServer_LspLocalSemanticQuery_BuildHoverForDocument(
     return local_query_build_hover_with_document(state, context, uri, query, result);
 }
 
+/* 将局部事实附到已有的符号/签名 hover；请求入口仍负责释放最终 hover。 */
 void ZrLanguageServer_LspLocalSemanticQuery_AppendFactsToHover(
     SZrState *state,
     const SZrLspLocalSemanticQueryResult *query,

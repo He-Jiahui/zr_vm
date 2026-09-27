@@ -4,12 +4,14 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 外部 descriptor 的占位类型不得进入 hover 或签名帮助，否则用户会误以为签名已解析。 */
 static TZrBool external_callable_text_is_available(const TZrChar *text) {
     return text != ZR_NULL && text[0] != '\0' &&
            strcmp(text, "cannot infer exact type") != 0 &&
            strcmp(text, "unknown") != 0;
 }
 
+/* 方法签名只呈现当前 formatter 能完整表达的泛型；约束仍需更高层语义支持。 */
 static TZrBool external_callable_generic_parameters_are_supported(
         const ZrLibGenericParameterDescriptor *parameters,
         TZrSize parameterCount) {
@@ -28,6 +30,7 @@ static TZrBool external_callable_generic_parameters_are_supported(
     return ZR_TRUE;
 }
 
+/* 所有签名段落共享容量检查；失败时调用方必须丢弃整条候选签名。 */
 static TZrBool external_callable_append(TZrChar *buffer,
                                         TZrSize bufferSize,
                                         TZrSize *offset,
@@ -52,6 +55,7 @@ static TZrBool external_callable_append(TZrChar *buffer,
     return ZR_TRUE;
 }
 
+/* 参数标签沿用 canonical 的借用与 escape 契约，避免 descriptor 丢失 scoped/ref 信息。 */
 static const TZrChar *external_callable_passing_prefix(
         const SZrCanonicalParameterContract *parameter) {
     if (parameter == ZR_NULL) {
@@ -73,6 +77,7 @@ static const TZrChar *external_callable_passing_prefix(
     }
 }
 
+/* 非值传递的 canonical 参数类型是引用包装；显示时需要呈现被引用的值类型。 */
 static TZrTypeId external_callable_parameter_value_type_id(
         const SZrLspExternalCallableContract *contract,
         const SZrCanonicalParameterContract *parameter) {
@@ -92,6 +97,7 @@ static TZrTypeId external_callable_parameter_value_type_id(
                    : ZR_SEMANTIC_ID_INVALID;
 }
 
+/* 普通外部函数由 descriptor 提供完整类型文本，视图仍借用元数据提供者存储。 */
 TZrBool ZrLanguageServer_LspExternalCallableContract_FromResolvedMember(
         const SZrLspResolvedMetadataMember *member,
         SZrLspExternalCallableContract *contract) {
@@ -124,6 +130,7 @@ TZrBool ZrLanguageServer_LspExternalCallableContract_FromResolvedMember(
             contract->genericParameters != ZR_NULL);
 }
 
+/* 方法要求 descriptor 与调用点 canonical 类型同时成立，避免在 hover 中展示过时的接收者契约。 */
 TZrBool ZrLanguageServer_LspExternalCallableContract_FromResolvedMethod(
         const SZrLspResolvedMetadataMember *member,
         const SZrSemanticContext *canonicalContext,
@@ -180,6 +187,7 @@ TZrBool ZrLanguageServer_LspExternalCallableContract_FromResolvedMethod(
     return external_callable_text_is_available(contract->name);
 }
 
+/* 签名帮助和完整签名共用参数格式，方法路径保留 canonical 的传参限制。 */
 TZrBool ZrLanguageServer_LspExternalCallableContract_FormatParameter(
         const SZrLspExternalCallableContract *contract,
         TZrSize index,
@@ -256,6 +264,7 @@ TZrBool ZrLanguageServer_LspExternalCallableContract_FormatParameter(
     return written >= 0 && (TZrSize)written < bufferSize;
 }
 
+/* 元数据 hover 与签名帮助共用此投影；任一段无法可靠格式化就拒绝整条签名。 */
 TZrBool ZrLanguageServer_LspExternalCallableContract_Format(
         const SZrLspExternalCallableContract *contract,
         TZrChar *buffer,

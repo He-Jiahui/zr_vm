@@ -6,6 +6,7 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_parser/semantic_query.h"
 
+/* 以编辑器最终看到的范围去重，避免不同语义事实生成同一位置。 */
 static TZrBool semantic_reference_query_ranges_equal(
         SZrLspRange left,
         SZrLspRange right) {
@@ -15,6 +16,7 @@ static TZrBool semantic_reference_query_ranges_equal(
            left.end.character == right.end.character;
 }
 
+/* 本快照和跨快照调用方可重复提交同一引用，结果应保持 URI 与范围唯一。 */
 static TZrBool semantic_reference_query_has_location(
         const SZrArray *result,
         SZrString *uri,
@@ -37,6 +39,7 @@ static TZrBool semantic_reference_query_has_location(
     return ZR_FALSE;
 }
 
+/* 将语义事实绑定其文档来源并追加 Location；跨快照收集器借此统一去重。 */
 TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendRange(
         SZrState *state,
         SZrLspContext *context,
@@ -80,6 +83,7 @@ TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendRange(
     return ZR_TRUE;
 }
 
+/* 解析器引用事实可没有可用来源，统一经 AppendRange 执行来源绑定。 */
 static TZrBool semantic_reference_query_append_location(
         SZrState *state,
         SZrLspContext *context,
@@ -91,6 +95,7 @@ static TZrBool semantic_reference_query_append_location(
                    state, context, analyzer, result, fact->range);
 }
 
+/* 声明和写入在编辑器中按写类型高亮，其余已解析引用按读类型展示。 */
 static TZrInt32 semantic_reference_query_highlight_kind(
         EZrSemanticReferenceKind kind) {
     return kind == ZR_SEMANTIC_REFERENCE_DECLARATION ||
@@ -100,6 +105,7 @@ static TZrInt32 semantic_reference_query_highlight_kind(
             : 2;
 }
 
+/* 本地引用必须沿用规范符号身份；AST 侧 ID 与规范 ID 冲突时不猜测目标。 */
 static TZrSymbolId semantic_reference_query_symbol_id(
         const SZrLspSemanticQuery *query) {
     if (query == ZR_NULL || !query->hasCanonicalSymbol ||
@@ -113,6 +119,7 @@ static TZrSymbolId semantic_reference_query_symbol_id(
     return query->canonicalSymbol.symbolId;
 }
 
+/* 同一范围可能同时带读写事实；复用高亮对象以保留最终写优先级。 */
 static SZrLspDocumentHighlight *semantic_reference_query_find_highlight(
         const SZrArray *result,
         SZrLspRange range) {
@@ -133,6 +140,7 @@ static SZrLspDocumentHighlight *semantic_reference_query_find_highlight(
     return ZR_NULL;
 }
 
+/* 文档高亮只接收当前 URI 的事实，并在同范围冲突时提升为写高亮。 */
 static TZrBool semantic_reference_query_append_highlight_range(
         SZrState *state,
         SZrLspContext *context,
@@ -184,6 +192,7 @@ static TZrBool semantic_reference_query_append_highlight_range(
     return ZR_TRUE;
 }
 
+/* 将一般引用事实送入仅当前文档的高亮投影。 */
 static TZrBool semantic_reference_query_append_highlight(
         SZrState *state,
         SZrLspContext *context,
@@ -196,6 +205,7 @@ static TZrBool semantic_reference_query_append_highlight(
                    state, context, analyzer, uri, result, fact->range, fact->kind);
 }
 
+/* 外部目标高亮依赖 provider 世代和完整身份，防止刷新后沿用旧目标的同名引用。 */
 static TZrBool semantic_reference_query_append_external_highlights(
         SZrState *state,
         SZrLspContext *context,
@@ -235,6 +245,7 @@ static TZrBool semantic_reference_query_append_external_highlights(
     return appended;
 }
 
+/* 收集本语义上下文内的声明及已解析使用点；跨快照关系由上层合并。 */
 static TZrBool semantic_reference_query_append_references_for_symbol_id(
         SZrState *state,
         SZrLspContext *context,
@@ -296,6 +307,7 @@ static TZrBool semantic_reference_query_append_references_for_symbol_id(
     return ZR_TRUE;
 }
 
+/* 本地或规范化导入符号走同一引用事实查询，避免 AST 局部符号和规范身份混用。 */
 TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendReferences(
         SZrState *state,
         SZrLspContext *context,
@@ -323,6 +335,7 @@ TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendReferences(
     return appended;
 }
 
+/* 高亮只返回请求文档中的引用；外部目标另按 provider 身份筛选。 */
 TZrBool ZrLanguageServer_LspSemanticReferenceQuery_AppendHighlights(
         SZrState *state,
         SZrLspContext *context,

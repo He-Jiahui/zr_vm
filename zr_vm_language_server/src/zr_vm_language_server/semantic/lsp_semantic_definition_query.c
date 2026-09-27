@@ -6,6 +6,7 @@
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_query.h"
 
+/* 将解析器事实的源位置转为 LSP Location，结果所有权交给上层导航结果数组。 */
 static TZrBool semantic_definition_query_append_location(SZrState *state,
                                                          SZrLspContext *context,
                                                          SZrArray *result,
@@ -32,6 +33,7 @@ static TZrBool semantic_definition_query_append_location(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 跳转定义优先使用光标处控制流可达的赋值，解析失败时保留声明导航。 */
 TZrBool ZrLanguageServer_LspSemanticDefinitionQuery_AppendReachingDefinition(
     SZrState *state,
     SZrLspContext *context,
@@ -65,8 +67,11 @@ TZrBool ZrLanguageServer_LspSemanticDefinitionQuery_AppendReachingDefinition(
         return ZR_FALSE;
     }
 
+    /* 先尝试补齐线性及 CFG 路径；DefinitionsOf 据此选择使用点可达的定义集合。 */
     ZrParser_SemanticFacts_ResolveLinearReachingDefinitions(query->analyzer->semanticContext);
     if (query->analyzer->ast != ZR_NULL) {
+        /* TODO: CFG 解析返回失败时这里仍继续查询；需构造解析失败的快照，
+         * 核对线性事实是否可能让跳转落到不可达赋值，或是否应回退到声明。 */
         (void)ZrParser_SemanticFacts_ResolveControlFlowReachingDefinitions(
                 query->analyzer->semanticContext,
                 query->analyzer->ast);

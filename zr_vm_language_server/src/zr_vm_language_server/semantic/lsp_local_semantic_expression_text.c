@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 各 fact 格式化器共用这一容量边界；失败即让上层放弃整个 hover，不发布半截 Markdown。 */
 static TZrBool expression_text_append_format(TZrChar *buffer,
                                              TZrSize bufferSize,
                                              TZrSize *used,
@@ -31,6 +32,7 @@ static TZrBool expression_text_append_format(TZrChar *buffer,
     return ZR_TRUE;
 }
 
+/* parser 的常量字符串借自语义快照；这里只取得短/长字符串统一视图，不转移所有权。 */
 static const TZrChar *expression_text_string_value(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -41,6 +43,7 @@ static const TZrChar *expression_text_string_value(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
+/* 常量以可读的源码式转义附于事实摘要，避免控制字节破坏编辑器中的 hover 布局。 */
 static TZrBool expression_text_append_escaped_string_constant(TZrChar *buffer,
                                                               TZrSize bufferSize,
                                                               TZrSize *used,
@@ -111,6 +114,7 @@ static TZrBool expression_text_append_escaped_string_constant(TZrChar *buffer,
     return expression_text_append_format(buffer, bufferSize, used, "\"");
 }
 
+/* 展示稳定的事实类别，供独立 hover 和已有符号 hover 的附录使用。 */
 static const TZrChar *expression_text_kind(EZrSemanticExpressionFactKind kind) {
     switch (kind) {
         case ZR_SEMANTIC_EXPRESSION_FACT_LITERAL:
@@ -147,6 +151,7 @@ static const TZrChar *expression_text_kind(EZrSemanticExpressionFactKind kind) {
     }
 }
 
+/* 将推断精度连同表达式类别呈现，防止近似结果被读作确定结论。 */
 static const TZrChar *expression_text_exactness(EZrSemanticFactExactness exactness) {
     switch (exactness) {
         case ZR_SEMANTIC_FACT_EXACT:
@@ -159,6 +164,7 @@ static const TZrChar *expression_text_exactness(EZrSemanticFactExactness exactne
     }
 }
 
+/* 仅将已知 intrinsic 操作映射到 UI 名称；未知枚举值不生成误导性说明。 */
 static const TZrChar *expression_text_ownership_intrinsic_operation(
         EZrOwnershipIntrinsicOperation operation) {
     switch (operation) {
@@ -177,6 +183,7 @@ static const TZrChar *expression_text_ownership_intrinsic_operation(
     }
 }
 
+/* 只有 parser 明示 hasConstant 时才展示值，不能把未知值当成可求值的常量。 */
 static TZrBool expression_text_append_constant(TZrChar *buffer,
                                                TZrSize bufferSize,
                                                TZrSize *used,
@@ -223,6 +230,7 @@ static TZrBool expression_text_append_constant(TZrChar *buffer,
     }
 }
 
+/* 局部查询的 expressionFact 由 analyzer 借出；本层只格式化，调用结束后不保存指针。 */
 TZrBool ZrLanguageServer_LspLocalSemanticExpressionText_AppendHover(
     TZrChar *buffer,
     TZrSize bufferSize,
@@ -244,6 +252,7 @@ TZrBool ZrLanguageServer_LspLocalSemanticExpressionText_AppendHover(
     return expression_text_append_constant(buffer, bufferSize, used, fact);
 }
 
+/* 在同一事实附录里显示所有权操作及 place，供调用点 hover 解释语义动作。 */
 TZrBool ZrLanguageServer_LspLocalSemanticExpressionText_AppendOwnershipIntrinsicHover(
         TZrChar *buffer,
         TZrSize bufferSize,

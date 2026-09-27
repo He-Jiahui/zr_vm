@@ -4,6 +4,7 @@
 
 #include "zr_vm_core/canonical_consumer.h"
 
+/* 编辑器只消费经核心 canonical consumer 核验的调度器契约，当前直接调用方为 ABI 契约测试。 */
 TZrBool ZrLanguageServer_LspSchedulerContract_ResolveArtifact(
         const SZrFunctionSchedulerSourceFact *sourceFact,
         const TZrByte *artifactBytes,
@@ -45,6 +46,10 @@ TZrBool ZrLanguageServer_LspSchedulerContract_ResolveArtifact(
         ZR_ARTIFACT_STATUS_OK) {
         return ZR_FALSE;
     }
+    /* BUG: sourceFact.schedulerProvider.metadataToken 或 scheduleSignatureHash
+     * 改为其他非零值时，此处未与 artifact 核对，后续校验仍可成功；可在配对
+     * 测试样本上单独改这两个字段复现错误接受。 */
+    /* 用源码事实覆盖部分产物身份；其余身份仍由 canonical consumer 校验产物内部一致性。 */
     expectedIdentity = artifact.identity;
     expectedIdentity.canonicalTypeId = sourceFact->schedulerTypeId;
     expectedIdentity.signatureToken = sourceFact->scheduleSignatureToken;
@@ -77,6 +82,7 @@ TZrBool ZrLanguageServer_LspSchedulerContract_ResolveArtifact(
         return ZR_FALSE;
     }
 
+    /* 再按调度策略核对 requirement flags，避免将 attached 与 isolated 的执行约束混用。 */
     expectation.schedulerTypeToken = schedulerReference.typeToken;
     expectation.taskTypeToken = schedulerContract.taskTypeToken;
     expectation.jobTypeToken = schedulerContract.jobTypeToken;

@@ -8,6 +8,7 @@
 
 #include "zr_vm_parser/semantic_query.h"
 
+/* 虚拟声明可能来自不同文件或同文件不同成员；URI 与完整范围共同构成回查键。 */
 static TZrBool cross_snapshot_references_same_declaration(
         const SZrFileRange *left,
         const SZrLspExternalMetadataIdentityDeclaration *right) {
@@ -20,6 +21,7 @@ static TZrBool cross_snapshot_references_same_declaration(
            left->end.column == right->range.end.column;
 }
 
+/* 本地声明的跨文件使用先由目标快照重新解析外部声明，再按声明位置合流。 */
 static TZrBool cross_snapshot_references_append_analyzer(
         SZrState *state,
         SZrLspContext *context,
@@ -83,6 +85,7 @@ static TZrBool cross_snapshot_references_append_analyzer(
     return ZR_TRUE;
 }
 
+/* 外部元数据引用用 parser 保存的稳定身份比较，避免只按名称合并重载项。 */
 static TZrBool cross_snapshot_references_append_external_analyzer(
         SZrState *state,
         SZrLspContext *context,
@@ -128,6 +131,7 @@ static TZrBool cross_snapshot_references_append_external_analyzer(
     return ZR_TRUE;
 }
 
+/* lsp_semantic_query 的本地 references 分支在当前文件查询后追加项目中其他快照的引用。 */
 TZrBool ZrLanguageServer_LspCrossSnapshotReferences_Append(
         SZrState *state,
         SZrLspContext *context,
@@ -150,6 +154,7 @@ TZrBool ZrLanguageServer_LspCrossSnapshotReferences_Append(
         return ZR_FALSE;
     }
 
+    /* 项目索引扫描与 analyzer 获取可能触发解析；每个文件独立失败时继续保留可用结果。 */
     for (index = 0U; index < query->projectIndex->files.length; index++) {
         SZrLspProjectFileRecord **record =
                 (SZrLspProjectFileRecord **)ZrCore_Array_Get(
@@ -179,6 +184,7 @@ TZrBool ZrLanguageServer_LspCrossSnapshotReferences_Append(
     return appended;
 }
 
+/* 导入成员的引用含当前 analyzer 与项目索引；provider 代数不一致时拒绝跨快照混合。 */
 TZrBool ZrLanguageServer_LspCrossSnapshotReferences_AppendExternal(
         SZrState *state,
         SZrLspContext *context,
@@ -241,6 +247,7 @@ TZrBool ZrLanguageServer_LspCrossSnapshotReferences_AppendExternal(
     return appended;
 }
 
+/* 虚拟 native 声明没有普通源码符号表；反查各源码快照并用解析出的虚拟范围定位使用点。 */
 TZrBool ZrLanguageServer_LspCrossSnapshotReferences_AppendNativeDeclaration(
         SZrState *state,
         SZrLspContext *context,

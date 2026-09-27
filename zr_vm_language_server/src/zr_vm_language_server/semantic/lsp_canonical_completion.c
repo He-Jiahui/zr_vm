@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 补全项的类别与 hover 的展示词汇保持同一套语义，而不暴露 parser 枚举。 */
 static const TZrChar *canonical_completion_kind_text(
         EZrSemanticSymbolKind kind) {
     switch (kind) {
@@ -26,6 +27,7 @@ static const TZrChar *canonical_completion_kind_text(
     }
 }
 
+/* 可见性查询可能带回非声明位置；这里只向编辑器推荐有稳定声明身份的候选。 */
 static TZrBool canonical_completion_symbol_is_exact(
         const SZrParserSemanticSymbolQuery *symbol) {
     return symbol != ZR_NULL &&
@@ -35,6 +37,7 @@ static TZrBool canonical_completion_symbol_is_exact(
            symbol->displayName != ZR_NULL;
 }
 
+/* 优先使用 parser 给出的完整签名；缺失时才从同一快照中的 canonical 类型补齐。 */
 static const TZrChar *canonical_completion_detail(
         const SZrSemanticContext *semanticContext,
         const SZrParserSemanticSymbolQuery *symbol,
@@ -54,6 +57,7 @@ static const TZrChar *canonical_completion_detail(
     return "cannot infer exact type";
 }
 
+/* 文档事实由 parser 的符号 ID 管理，返回值只在当前语义快照存活期间借用。 */
 static SZrString *canonical_completion_documentation(
         SZrState *state,
         const SZrSemanticContext *semanticContext,
@@ -72,6 +76,7 @@ static SZrString *canonical_completion_documentation(
     return documentation;
 }
 
+/* 类型使用位置与声明共用 ID 时，额外展示本次实例化的类型，避免误把声明类型当成使用类型。 */
 static const TZrChar *canonical_completion_type_use_detail(
         const SZrSemanticContext *semanticContext,
         const SZrParserSemanticSymbolQuery *symbol,
@@ -95,6 +100,7 @@ static const TZrChar *canonical_completion_type_use_detail(
     return length >= 0 && (TZrSize)length < bufferSize ? buffer : detail;
 }
 
+/* lsp_semantic_query 在结构化接收者补全无结果后调用此入口；失败与零候选都返回 false。 */
 TZrBool ZrLanguageServer_LspCanonicalCompletion_AppendVisibleSymbols(
         SZrState *state,
         const SZrSemanticContext *semanticContext,
@@ -127,6 +133,7 @@ TZrBool ZrLanguageServer_LspCanonicalCompletion_AppendVisibleSymbols(
         return ZR_FALSE;
     }
 
+    /* result 由上层持有；只判断本次是否增加候选，已有候选不算本函数成功。 */
     initialLength = result->length;
     for (TZrSize index = 0U; index < symbols.length; index++) {
         const SZrParserSemanticSymbolQuery *symbol =

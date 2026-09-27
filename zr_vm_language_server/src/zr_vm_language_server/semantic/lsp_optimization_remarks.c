@@ -5,20 +5,26 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 投影入口与 core 查询都采用“先清诊断，再返回状态”的约定，避免复用请求带出旧错误。 */
 static void lsp_remark_diag_clear(SZrOptimizationRemarkDiagnostic *diagnostic) {
     ZrCore_OptimizationRemarkDiagnostic_Clear(diagnostic);
 }
 
+/* Query 在复制 core 页之前先检查目标数组乘法，防止大页数量造成分配长度回绕。 */
 static TZrSize lsp_remark_max_count_for_item_size(TZrSize itemSize) {
     if (itemSize == 0u) return (TZrSize)-1;
     return ((TZrSize)-1) / itemSize;
 }
 
+/* BUG: 当 generation 达到 UINT64_MAX，同版本的下一次 Begin 不再换代；
+ * 旧请求携带相同版本与代数仍可通过 PublishGeneration，被误接纳为当前结果。
+ * 可由公开 cache 结构设置到上限后依次 Begin、Begin、PublishGeneration 验证。 */
 static void lsp_remark_cache_bump_generation(
         SZrLspOptimizationRemarkCache *cache) {
     if (cache->generation != UINT64_MAX) cache->generation++;
 }
 
+/* core 坐标是 UTF-8 字节偏移，LSP 消费方需要 UTF-16 行列；无文本时只能保留退化的首行偏移。 */
 static void lsp_remark_position(const TZrChar *content,
                                 TZrSize contentLength,
                                 TZrUInt32 offset,
@@ -92,6 +98,7 @@ static void lsp_remark_position(const TZrChar *content,
                           : (TZrInt32)utf16Column;
 }
 
+/* 请求固定数组来自跨层过滤条件，传给 core 前先拒绝无终止符的选择器。 */
 static TZrBool lsp_remark_fixed_string_is_terminated(
         const TZrChar *text, TZrSize capacity) {
     if (text == ZR_NULL) return ZR_FALSE;
@@ -131,6 +138,7 @@ EZrLspOptimizationRemarkResult ZrLanguageServer_LspOptimizationRemark_ProjectVer
     if (!ZrCore_OptimizationRemark_Validate(remark, diagnostic)) {
         return ZR_LSP_OPTIMIZATION_REMARK_INVALID;
     }
+    /* 源版本不匹配时不推算当前文档的行列，交由请求层报告 stale。 */
     if (hasDocumentVersion &&
         requestedDocumentVersion != remark->sourceVersion) {
         outRemark->stale = ZR_TRUE;
@@ -190,6 +198,7 @@ EZrLspOptimizationRemarkResult ZrLanguageServer_LspOptimizationRemark_Project(
             content, contentLength, outRemark, diagnostic);
 }
 
+/* LSP 显式 has* 位允许过滤合法零值，core 查询仍接受旧调用者的非零隐式选择。 */
 static void lsp_remark_fill_query(
         const SZrLspOptimizationRemarkRequest *request,
         TZrBool includeDocumentVersion,
@@ -236,6 +245,7 @@ EZrLspOptimizationRemarkResult ZrLanguageServer_LspOptimizationRemarks_Query(
     EZrLspOptimizationRemarkResult result = ZR_LSP_OPTIMIZATION_REMARK_OK;
 
     lsp_remark_diag_clear(diagnostic);
+    /* 与 core Page 约定一致：首次栈页可直接使用，已拥有 items 的页必须先释放。 */
     if (page != ZR_NULL) memset(page, 0, sizeof(*page));
     if (store == ZR_NULL || request == ZR_NULL || page == ZR_NULL) {
         if (diagnostic != ZR_NULL) {

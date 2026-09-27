@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 成员名仅在本次 prototype hover 格式化期间借用；缺席时显式展示不可用。 */
 static const TZrChar *stable_slot_member_name(const SZrTypeMemberInfo *member) {
     if (member == ZR_NULL || member->name == ZR_NULL) {
         return "<unavailable>";
@@ -14,6 +15,7 @@ static const TZrChar *stable_slot_member_name(const SZrTypeMemberInfo *member) {
                    : ZrCore_String_GetNativeString(member->name);
 }
 
+/* 分类先看协议与成员角色，再看 handle 三元身份；调用方不能只靠类型名推断安全属性。 */
 TZrBool ZrLanguageServer_LspStableSlotContract_Classify(
         const SZrTypePrototypeInfo *prototype,
         SZrLspStableSlotContract *outContract) {
@@ -65,6 +67,7 @@ TZrBool ZrLanguageServer_LspStableSlotContract_Classify(
         }
     }
 
+    /* source/ref 类需要显式协议，handle 则由 pool/slot/generation 三元身份识别。 */
     if ((prototype->protocolMask &
          ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_STABLE_SLOT_SOURCE)) != 0u &&
         outContract->acquireRead != ZR_NULL &&
@@ -88,6 +91,7 @@ TZrBool ZrLanguageServer_LspStableSlotContract_Classify(
     return ZR_FALSE;
 }
 
+/* 语义分析器向类型 hover 补充弱身份与 guard 限制；调用方应处理容量失败。 */
 TZrBool ZrLanguageServer_LspStableSlotContract_AppendPrototypeHover(
         const SZrTypePrototypeInfo *prototype,
         TZrChar *buffer,
@@ -104,6 +108,9 @@ TZrBool ZrLanguageServer_LspStableSlotContract_AppendPrototypeHover(
     if (used >= bufferSize) {
         return ZR_FALSE;
     }
+    /* BUG: 剩余容量不够时 snprintf 仍写入截断段落，再返回 false；
+     * semantic_append_stable_slot_hover 忽略返回值，用户会看到残缺契约。
+     * 可用接近满容量的 hover 缓冲区复现。 */
     switch (contract.kind) {
         case ZR_LSP_STABLE_SLOT_CONTRACT_HANDLE:
             written = snprintf(

@@ -4,10 +4,12 @@
 
 #include <stdlib.h>
 
+/* qsort 比较结果仅表达相对次序，不泄漏为协议值。 */
 #define ZR_LSP_SEMANTIC_TOKEN_COMPARE_LESS (-1)
 #define ZR_LSP_SEMANTIC_TOKEN_COMPARE_EQUAL 0
 #define ZR_LSP_SEMANTIC_TOKEN_COMPARE_GREATER 1
 
+/* 当声明事实与文本扫描落在同一跨度时，优先保留更具体的类别。 */
 static TZrUInt32 semantic_token_type_priority(TZrUInt32 typeIndex) {
     switch (typeIndex) {
         case ZR_LSP_SEMANTIC_TOKEN_VARIABLE:
@@ -46,6 +48,7 @@ void ZrLanguageServer_LspSemanticTokenEntries_Add(
         return;
     }
 
+    /* 先合并相同跨度，避免声明与扫描为客户端生成重复 token。 */
     for (TZrSize index = 0; index < entries->length; index++) {
         SZrLspSemanticTokenEntry *current =
             (SZrLspSemanticTokenEntry *)ZrCore_Array_Get(entries, index);
@@ -92,6 +95,7 @@ TZrBool ZrLanguageServer_LspSemanticTokenEntries_AddUtf16Span(
         return ZR_FALSE;
     }
 
+    /* LSP 的列和长度以 UTF-16 code unit 计数，原始字节差不可直接发送。 */
     startPosition = ZrLanguageServer_LspPositionCodec_ByteOffsetToUtf16Position(
             content, contentLength, startOffset);
     endPosition = ZrLanguageServer_LspPositionCodec_ByteOffsetToUtf16Position(
@@ -131,6 +135,7 @@ void ZrLanguageServer_LspSemanticTokenEntries_AddFileRange(
         return;
     }
 
+    /* parser 的范围属于源文件坐标域，由文档适配器统一转到客户端坐标域。 */
     lspRange = ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(
             context, uri, range);
     if (lspRange.start.line != lspRange.end.line) {
@@ -152,6 +157,7 @@ void ZrLanguageServer_LspSemanticTokenEntries_AddFileRange(
             modifiers);
 }
 
+/* LSP delta 编码要求按位置递增；其他字段保证同起点候选顺序确定。 */
 static int semantic_token_entry_compare(const void *leftPtr,
                                         const void *rightPtr) {
     const SZrLspSemanticTokenEntry *left =
@@ -182,6 +188,7 @@ static int semantic_token_entry_compare(const void *leftPtr,
     return ZR_LSP_SEMANTIC_TOKEN_COMPARE_EQUAL;
 }
 
+/* 编码前只允许同一行的 token 相互排斥，避免客户端收到重叠跨度。 */
 static TZrBool semantic_token_entries_overlap(
         const SZrLspSemanticTokenEntry *left,
         const SZrLspSemanticTokenEntry *right) {
@@ -190,6 +197,7 @@ static TZrBool semantic_token_entries_overlap(
            right->character < left->character + left->length;
 }
 
+/* 重叠时按类别优先级，再按较短的精确跨度选取候选。 */
 static TZrBool semantic_token_entry_is_preferred(
         const SZrLspSemanticTokenEntry *candidate,
         const SZrLspSemanticTokenEntry *current) {
@@ -226,6 +234,8 @@ void ZrLanguageServer_LspSemanticTokenEntries_AppendEncoded(
               semantic_token_entry_compare);
     }
 
+    /* TODO: 这里只与上一条保留项比较；需用可达的多重重叠输入核查替换较宽 token 后，
+     * 早先因宽 token 被抑制、却不与新 token 相交的候选是否会永久丢失。 */
     for (TZrSize index = 0; index < entries->length; index++) {
         SZrLspSemanticTokenEntry *entry =
             (SZrLspSemanticTokenEntry *)ZrCore_Array_Get(entries, index);

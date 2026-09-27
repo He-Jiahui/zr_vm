@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 将 parser 的访问等级稳定投影到源码 property hover，而非依赖旧符号表推断。 */
 static const TZrChar *lsp_property_access_text(EZrAccessModifier access) {
     switch (access) {
         case ZR_ACCESS_PUBLIC: return "public";
@@ -16,6 +17,7 @@ static const TZrChar *lsp_property_access_text(EZrAccessModifier access) {
     }
 }
 
+/* 接收者可变性属于 canonical property 契约，供签名展示与外部元数据保持一致。 */
 static const TZrChar *lsp_property_receiver_text(
         EZrCanonicalReceiverEffect effect) {
     switch (effect) {
@@ -26,6 +28,7 @@ static const TZrChar *lsp_property_receiver_text(
     }
 }
 
+/* 旧符号表仍承载导航和结构视图；注册时把 parser property ID 固定为两层之间的连接键。 */
 TZrBool ZrLanguageServer_LspPropertyContract_RegisterSourceSymbol(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -68,6 +71,7 @@ TZrBool ZrLanguageServer_LspPropertyContract_RegisterSourceSymbol(
         symbolType = &inferredType;
     }
 
+    /* 推断类型只用于创建旧符号，之后以同一快照的 canonical ID/范围覆盖展示与导航身份。 */
     ZrLanguageServer_SymbolTable_AddSymbolEx(
             state,
             analyzer->symbolTable,
@@ -101,6 +105,7 @@ TZrBool ZrLanguageServer_LspPropertyContract_RegisterSourceSymbol(
     return ZR_TRUE;
 }
 
+/* 源 property 与外部元数据共享展示语法；调用方须先确认 typeText 来自已解析类型。 */
 SZrString *ZrLanguageServer_LspPropertyContract_FormatQuery(
         SZrState *state,
         SZrString *name,
@@ -173,6 +178,7 @@ SZrString *ZrLanguageServer_LspPropertyContract_FormatQuery(
     return ZrCore_String_Create(state, signatureBuffer, (TZrSize)written);
 }
 
+/* hover 不能盲信旧符号表缓存的类型，必须按 symbol ID 从当前 parser 快照重新取契约。 */
 SZrString *ZrLanguageServer_LspPropertyContract_FormatSignature(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -205,6 +211,7 @@ SZrString *ZrLanguageServer_LspPropertyContract_FormatSignature(
             &query);
 }
 
+/* code action 与导航从 parser 位置解析出的 property ID 找回旧符号，返回值不转移所有权。 */
 SZrSymbol *ZrLanguageServer_LspPropertyContract_FindSourceSymbolAt(
         SZrSemanticAnalyzer *analyzer,
         SZrFileRange position) {

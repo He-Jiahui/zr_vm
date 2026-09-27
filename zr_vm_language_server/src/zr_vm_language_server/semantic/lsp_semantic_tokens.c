@@ -5,6 +5,7 @@
 #include <ctype.h>
 #include <string.h>
 
+/* 对外 legend 的顺序就是编码 typeIndex 的 ABI；必须同步 canonical.h 的枚举。 */
 static const TZrChar *const g_semanticTokenTypeNames[] = {
     "namespace",
     "class",
@@ -60,6 +61,7 @@ static void semantic_token_scan_source(SZrState *state,
                                        SZrArray *bindings,
                                        SZrArray *entries);
 
+/* 导入绑定名可能采用 VM 的短串或长串布局，比较前统一借用只读视图。 */
 static void semantic_token_get_string_view(SZrString *value, TZrNativeString *text, TZrSize *length) {
     if (text == ZR_NULL || length == ZR_NULL) {
         return;
@@ -80,6 +82,7 @@ static void semantic_token_get_string_view(SZrString *value, TZrNativeString *te
     }
 }
 
+/* 扫描器用原文切片查找 AST 导入绑定；此处仅比较，不转移字符串所有权。 */
 static TZrBool semantic_token_string_equals_native(SZrString *value, const TZrChar *text, TZrSize length) {
     TZrNativeString currentText;
     TZrSize currentLength;
@@ -92,14 +95,17 @@ static TZrBool semantic_token_string_equals_native(SZrString *value, const TZrCh
     return currentText != ZR_NULL && currentLength == length && memcmp(currentText, text, length) == 0;
 }
 
+/* 与下方轻量源码扫描共用的词边界；精确分类仍由 parser 语义查询负责。 */
 static TZrBool semantic_token_is_identifier_start(TZrChar value) {
     return isalpha((unsigned char)value) || value == '_';
 }
 
+/* 限定源码扫描的候选跨度，供 UTF-16 坐标转换与精确语义查询共用。 */
 static TZrBool semantic_token_is_identifier_char(TZrChar value) {
     return isalnum((unsigned char)value) || value == '_';
 }
 
+/* 无 modifier 的文本候选走与声明 token 相同的跨度校验入口。 */
 static TZrBool semantic_token_add_utf16_span(SZrState *state,
                                              SZrArray *entries,
                                              const TZrChar *content,
@@ -111,6 +117,7 @@ static TZrBool semantic_token_add_utf16_span(SZrState *state,
         state, entries, content, contentLength, startOffset, endOffset, typeIndex, 0U);
 }
 
+/* 保留 canonical 查询的 declaration 位，并交由 entries 层合并同跨度候选。 */
 static TZrBool semantic_token_add_utf16_span_with_modifiers(SZrState *state,
                                                             SZrArray *entries,
                                                             const TZrChar *content,
@@ -129,6 +136,7 @@ static TZrBool semantic_token_add_utf16_span_with_modifiers(SZrState *state,
                                                                   modifiers);
 }
 
+/* 声明事实以 parser 文件范围表示，由 entries 层转为文档 UTF-16 坐标。 */
 static void semantic_token_add_file_range_with_modifiers(SZrState *state,
                                                          SZrLspContext *context,
                                                          SZrArray *entries,
@@ -140,6 +148,7 @@ static void semantic_token_add_file_range_with_modifiers(SZrState *state,
         state, context, entries, uri, range, typeIndex, modifiers);
 }
 
+/* AST 导入绑定与文本扫描的别名桥接；返回值借用自本次请求的 bindings。 */
 static SZrLspImportBinding *semantic_token_find_import_binding(SZrArray *bindings,
                                                                const TZrChar *text,
                                                                TZrSize length) {
@@ -155,6 +164,7 @@ static SZrLspImportBinding *semantic_token_find_import_binding(SZrArray *binding
     return ZR_NULL;
 }
 
+/* AST 未收集到的简单导入声明可通过局部文本形态补足别名着色。 */
 static TZrBool semantic_token_identifier_is_import_alias_declaration(const TZrChar *content,
                                                                      TZrSize contentLength,
                                                                      TZrSize identifierEnd) {
@@ -190,6 +200,7 @@ static TZrBool semantic_token_identifier_is_import_alias_declaration(const TZrCh
             isspace((unsigned char)content[cursor + sizeof(importToken) - 1]));
 }
 
+/* 为缺失的 AST 导入别名补一条本次扫描可用的临时绑定，由请求末尾统一释放。 */
 static void semantic_token_append_import_alias_binding(SZrState *state,
                                                        SZrArray *bindings,
                                                        SZrString *uri,
@@ -231,6 +242,7 @@ static void semantic_token_append_import_alias_binding(SZrState *state,
     ZrCore_Array_Push(state, bindings, &binding);
 }
 
+/* 先投影已解析且属于当前文档的声明，避免源码扫描遗漏声明的精确类型和 modifier。 */
 static void semantic_token_add_symbol_tokens(SZrState *state,
                                              SZrLspContext *context,
                                              SZrSemanticAnalyzer *analyzer,
@@ -283,10 +295,12 @@ static void semantic_token_add_symbol_tokens(SZrState *state,
     ZrCore_Array_Free(state, &declarations);
 }
 
+/* 特殊 @ 名称由共享语言知识表认定，避免本地维护另一份关键字集合。 */
 static TZrBool semantic_token_is_meta_method(const TZrChar *text, TZrSize length) {
     return ZrLanguageServer_Lsp_IsKnownMetaMethodToken(text, length);
 }
 
+/* 语义查询不会为所有保留词建立符号；文本扫描只对这份词表提供关键词 token。 */
 static TZrBool semantic_token_is_keyword_word(const TZrChar *text, TZrSize length) {
     static const TZrChar *const keywordWords[] = {
         "let",       "var",       "fn",       "ref",       "in",       "out",
@@ -314,6 +328,7 @@ static TZrBool semantic_token_is_keyword_word(const TZrChar *text, TZrSize lengt
     return ZR_FALSE;
 }
 
+/* 在快照上补齐关键词、装饰器及标识符；普通标识符按精确语义事实分类，导入别名另有文本补充路径。 */
 static void semantic_token_scan_source(SZrState *state,
                                        SZrString *uri,
                                        const TZrChar *content,
@@ -394,6 +409,7 @@ static void semantic_token_scan_source(SZrState *state,
             }
             continue;
         }
+        /* 已移除的前缀语法不应把其后残留词片误认为当前语言标识符。 */
         if ((current == '%' || current == '$') &&
             offset + 1 < contentLength && semantic_token_is_identifier_start(content[offset + 1])) {
             /* Do not classify a current identifier embedded in invalid removed-prefix syntax. */
@@ -542,6 +558,8 @@ static void semantic_token_scan_source(SZrState *state,
                 continue;
             }
 
+            /* TODO: 这里按拼写匹配整份 AST 导入绑定而不核对当前作用域；
+             * 需用同名局部变量遮蔽导入别名的解析/着色测试确认是否误标 namespace。 */
             binding = semantic_token_find_import_binding(bindings, content + start, length);
             if (binding == ZR_NULL) {
                 TZrUInt32 tokenModifiers = 0U;
@@ -653,6 +671,7 @@ static void semantic_token_scan_source(SZrState *state,
     }
 }
 
+/* stdio 与 WASM 共用的 full-token 入口：锁定文档内容快照后汇合语义和文本候选。 */
 TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
                                                SZrLspContext *context,
                                                SZrString *uri,
@@ -689,6 +708,7 @@ TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
                       ZR_LSP_SEMANTIC_TOKEN_INITIAL_CAPACITY);
     ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
 
+    /* AST 不可用时仍发出可独立识别的文本候选；精确成员类型必须等语义分析成功。 */
     if (analyzer != ZR_NULL && analyzer->ast != ZR_NULL) {
         ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
         semantic_token_add_symbol_tokens(state, context, analyzer, uri, &entries);
@@ -709,10 +729,12 @@ TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
     return ZR_TRUE;
 }
 
+/* stdio 和测试通过此函数生成与编码序号一致的客户端 legend。 */
 TZrSize ZrLanguageServer_Lsp_SemanticTokenTypeCount(void) {
     return sizeof(g_semanticTokenTypeNames) / sizeof(g_semanticTokenTypeNames[0]);
 }
 
+/* 越界返回 NULL 供调用方验证 legend 边界；字符串为静态只读存储。 */
 const TZrChar *ZrLanguageServer_Lsp_SemanticTokenTypeName(TZrSize index) {
     return index < ZrLanguageServer_Lsp_SemanticTokenTypeCount() ? g_semanticTokenTypeNames[index] : ZR_NULL;
 }

@@ -6,6 +6,7 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_parser/semantic_query.h"
 
+/* 层级项目只接受有声明身份的可调用 AST；调用表达式自身不能作为下一次请求的根。 */
 static TZrBool semantic_call_hierarchy_node_is_callable(
         const SZrAstNode *node) {
     if (node == ZR_NULL) {
@@ -27,6 +28,7 @@ static TZrBool semantic_call_hierarchy_node_is_callable(
     }
 }
 
+/* 将解析器的声明类别映射到编辑器可展示的层级节点类别。 */
 static TZrInt32 semantic_call_hierarchy_node_kind(const SZrAstNode *node) {
     return node != ZR_NULL &&
                    (node->type == ZR_AST_CLASS_METHOD ||
@@ -36,6 +38,7 @@ static TZrInt32 semantic_call_hierarchy_node_kind(const SZrAstNode *node) {
                    : ZR_LSP_SYMBOL_KIND_FUNCTION;
 }
 
+/* prepare 从 SymbolAt 得到 AST 后，必须找回同一快照的语义记录才能保存稳定的 symbol/type ID。 */
 static const SZrSemanticSymbolRecord *
 semantic_call_hierarchy_find_semantic_symbol(
         SZrSemanticAnalyzer *analyzer,
@@ -64,6 +67,7 @@ semantic_call_hierarchy_find_semantic_symbol(
     return ZR_NULL;
 }
 
+/* 建立可往返的项目身份：声明/选中范围绑定同一文档，并携带版本供后续请求重新验证。 */
 static TZrBool semantic_call_hierarchy_create_item(
         SZrState *state,
         SZrLspContext *context,
@@ -132,6 +136,7 @@ static TZrBool semantic_call_hierarchy_ranges_equal(
            left.end.character == right.end.character;
 }
 
+/* 客户端可在编辑后回传旧项目；在使用保存的 ID 前重新核对版本、声明和两个展示范围。 */
 static TZrBool semantic_call_hierarchy_resolve_item(
         SZrState *state,
         SZrLspContext *context,
@@ -207,6 +212,7 @@ static TZrBool semantic_call_hierarchy_resolve_item(
     return ZR_TRUE;
 }
 
+/* 同一相关函数的多个语义调用边汇成一个 LSP 调用项，调用点另存于 fromRanges。 */
 static SZrLspHierarchyCall *semantic_call_hierarchy_find_call(
         SZrArray *result,
         TZrSymbolId semanticId) {
@@ -251,6 +257,7 @@ static TZrBool semantic_call_hierarchy_has_range(
     return ZR_FALSE;
 }
 
+/* 将已解析调用边投影为项目及调用点；结果数组拥有新分配的调用项和项目。 */
 static TZrBool semantic_call_hierarchy_append_call(
         SZrState *state,
         SZrLspContext *context,
@@ -276,6 +283,8 @@ static TZrBool semantic_call_hierarchy_append_call(
     if (call == ZR_NULL) {
         SZrLspHierarchyItem *item = ZR_NULL;
 
+        /* TODO: 此处要求被调项目与调用点同 URI。当前调用边仅来自当前语义上下文；
+         * 若解析器以后纳入跨文档目标，需核对 outgoing 的 fromRanges 与目标 URI 契约。 */
         if (!semantic_call_hierarchy_create_item(
                     state,
                     context,
@@ -319,6 +328,7 @@ static TZrBool semantic_call_hierarchy_append_call(
     return ZR_TRUE;
 }
 
+/* prepare 只接受光标能解析到声明事实的函数，避免靠同名文本拼出不可验证的层级项目。 */
 TZrBool ZrLanguageServer_LspSemanticCallHierarchy_Prepare(
         SZrState *state,
         SZrLspContext *context,
@@ -391,6 +401,7 @@ TZrBool ZrLanguageServer_LspSemanticCallHierarchy_Prepare(
     return ok;
 }
 
+/* 对回传项目先重验快照，再从解析器语义边查询直接关系；取消时停止并保留已产生结果供上层释放。 */
 static TZrBool semantic_call_hierarchy_append_edges(
         SZrState *state,
         SZrLspContext *context,
@@ -497,6 +508,7 @@ static TZrBool semantic_call_hierarchy_append_edges(
     return queried && ok;
 }
 
+/* 对外提供调用者方向；两种方向共用相同的过期检查和结果归并规则。 */
 TZrBool ZrLanguageServer_LspSemanticCallHierarchy_AppendIncoming(
         SZrState *state,
         SZrLspContext *context,
@@ -506,6 +518,7 @@ TZrBool ZrLanguageServer_LspSemanticCallHierarchy_AppendIncoming(
             state, context, item, ZR_TRUE, result);
 }
 
+/* 对外提供被调者方向；由 lsp_hierarchy 的对应请求入口调用。 */
 TZrBool ZrLanguageServer_LspSemanticCallHierarchy_AppendOutgoing(
         SZrState *state,
         SZrLspContext *context,

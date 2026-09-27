@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 事实附录写入同一个 Markdown 缓冲区；任何单段溢出都让整个附录失败。 */
 static TZrBool lsp_local_hover_text_append_format(TZrChar *buffer,
                                                   TZrSize bufferSize,
                                                   TZrSize *used,
@@ -34,6 +35,7 @@ static TZrBool lsp_local_hover_text_append_format(TZrChar *buffer,
     return ZR_TRUE;
 }
 
+/* 符号名和诊断消息仍归 parser/analyzer 快照持有；返回的字节视图只用于本次格式化。 */
 static const TZrChar *lsp_local_hover_text_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -44,6 +46,7 @@ static const TZrChar *lsp_local_hover_text_string_text(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
+/* 从数值事实抽取有用的区间和溢出提示，范围文本复用补全/签名的公共格式。 */
 static TZrBool lsp_local_hover_text_append_numeric(TZrChar *buffer,
                                                    TZrSize bufferSize,
                                                    TZrSize *used,
@@ -82,6 +85,7 @@ static TZrBool lsp_local_hover_text_append_numeric(TZrChar *buffer,
     return ZR_TRUE;
 }
 
+/* 把静态已知布尔值与短路控制流呈现给编辑器，不把未知条件解释为确定结果。 */
 static TZrBool lsp_local_hover_text_append_logical(TZrChar *buffer,
                                                    TZrSize bufferSize,
                                                    TZrSize *used,
@@ -110,6 +114,7 @@ static TZrBool lsp_local_hover_text_append_logical(TZrChar *buffer,
     return ZR_TRUE;
 }
 
+/* 仅不可达事实产生文字；具体原因来自 parser，不由 hover 再推断控制流。 */
 static TZrBool lsp_local_hover_text_append_reachability(
     TZrChar *buffer,
     TZrSize bufferSize,
@@ -166,6 +171,7 @@ static TZrBool lsp_local_hover_text_append_reachability(
     return lsp_local_hover_text_append_format(buffer, bufferSize, used, "\n\nReachability: unreachable");
 }
 
+/* 将引用类别映射为人可读标签，供局部表达式 hover 的引用附录使用。 */
 static const TZrChar *lsp_local_hover_text_reference_kind(EZrSemanticReferenceKind kind) {
     switch (kind) {
         case ZR_SEMANTIC_REFERENCE_DECLARATION:
@@ -186,6 +192,7 @@ static const TZrChar *lsp_local_hover_text_reference_kind(EZrSemanticReferenceKi
     }
 }
 
+/* 引用事实可独立于表达式事实存在；声明位置只在解析成功且范围非空时显示。 */
 static TZrBool lsp_local_hover_text_append_reference(
     TZrChar *buffer,
     TZrSize bufferSize,
@@ -226,6 +233,7 @@ static TZrBool lsp_local_hover_text_append_reference(
     return ZR_TRUE;
 }
 
+/* 只把违反约束的所有权事实呈现为警告，普通所有权状态不占据悬停空间。 */
 static TZrBool lsp_local_hover_text_append_ownership(
     TZrChar *buffer,
     TZrSize bufferSize,
@@ -253,6 +261,7 @@ static TZrBool lsp_local_hover_text_append_ownership(
     return ZR_TRUE;
 }
 
+/* 把调用目标和成员载荷补到表达式摘要，供传统 hover 与 rich hover 对齐。 */
 static TZrBool lsp_local_hover_text_append_expression_payload(
     TZrChar *buffer,
     TZrSize bufferSize,
@@ -295,6 +304,7 @@ static TZrBool lsp_local_hover_text_append_expression_payload(
     return ZR_TRUE;
 }
 
+/* 附录顺序是 UI 契约：先表达式/操作，再数值、逻辑、可达性、引用与所有权。 */
 TZrBool ZrLanguageServer_LspLocalSemanticHoverText_AppendFacts(
     TZrChar *buffer,
     TZrSize bufferSize,
@@ -321,6 +331,7 @@ TZrBool ZrLanguageServer_LspLocalSemanticHoverText_AppendFacts(
            lsp_local_hover_text_append_expression_payload(buffer, bufferSize, used, query->expressionFact);
 }
 
+/* 已有符号悬停复用本附录；空事实不生成多余段落，结果字符串由 state 管理。 */
 SZrString *ZrLanguageServer_LspLocalSemanticHoverText_BuildFactMarkdown(
     SZrState *state,
     const SZrLspLocalSemanticQueryResult *query) {
@@ -352,6 +363,7 @@ SZrString *ZrLanguageServer_LspLocalSemanticHoverText_BuildFactMarkdown(
     return ZrCore_String_Create(state, markdown, used);
 }
 
+/* 避免对同一事实反复追加；容量不足时保留原段，供调用方继续返回可用 hover。 */
 SZrString *ZrLanguageServer_LspLocalSemanticHoverText_AppendMarkdownSection(
     SZrState *state,
     SZrString *base,

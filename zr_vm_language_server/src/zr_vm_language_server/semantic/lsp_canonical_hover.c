@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 悬停保留 AST 中 struct/enum/interface 等声明类别，供用户区分同名类型。 */
 static const TZrChar *canonical_hover_kind_text(
         EZrSemanticSymbolKind kind,
         const SZrAstNode *declarationNode) {
@@ -42,6 +43,7 @@ static const TZrChar *canonical_hover_kind_text(
     }
 }
 
+/* parser 与 LSP 字符串可能采用短串或长串存储；后续拼接只借用其文本。 */
 static const TZrChar *canonical_hover_string_text(const SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -51,6 +53,7 @@ static const TZrChar *canonical_hover_string_text(const SZrString *value) {
                : ZrCore_String_GetNativeString((SZrString *)value);
 }
 
+/* 将额外事实并入已有 hover，同时避免重复段落与超出协议缓冲区。 */
 static SZrString *canonical_hover_append_section(
         SZrState *state,
         SZrString *base,
@@ -71,8 +74,10 @@ static SZrString *canonical_hover_append_section(
                      ? base->shortStringLength
                      : base->longStringLength;
     appendixLength = appendix->shortStringLength < ZR_VM_LONG_STRING_FLAG
-                         ? appendix->shortStringLength
-                         : appendix->longStringLength;
+                          ? appendix->shortStringLength
+                          : appendix->longStringLength;
+    /* BUG: 若文档全文只是符号名（如 foo），签名已含该子串，strstr 会把独立文档
+     * 误判为重复，hover 因而漏掉文档；可用名称和文档同为 foo 的符号复现。 */
     if (baseText == ZR_NULL || appendixText == ZR_NULL || appendixLength == 0U ||
         baseLength + appendixLength + 3U >= sizeof(buffer) ||
         strstr(baseText, appendixText) != ZR_NULL) {
@@ -87,6 +92,7 @@ static SZrString *canonical_hover_append_section(
             state, buffer, baseLength + appendixLength + 2U);
 }
 
+/* 显式 extern 关键字可能属于外层块；沿顶层包装节点寻找声明归属。 */
 static TZrBool canonical_hover_range_is_in_extern_block(
         SZrAstNode *node,
         SZrFileRange range) {
@@ -143,6 +149,7 @@ static TZrBool canonical_hover_range_is_in_extern_block(
     }
 }
 
+/* 只给真正处于 extern 声明区域的源符号添加 FFI 来源，避免同名普通函数误标。 */
 static TZrBool canonical_hover_symbol_is_ffi_extern(
         SZrAstNode *documentAst,
         const SZrSymbol *symbol) {
@@ -157,6 +164,7 @@ static TZrBool canonical_hover_symbol_is_ffi_extern(
             documentAst, symbol->astNode->location);
 }
 
+/* parser 符号身份匹配后，才读取当前文档版本的前导注释并附加旧符号表中的 FFI 元数据。 */
 static void canonical_hover_enrich_source_symbol(
         SZrState *state,
         SZrLspContext *context,
@@ -212,6 +220,7 @@ static void canonical_hover_enrich_source_symbol(
     ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
 }
 
+/* 把当前引用范围转换为文档坐标；hover 对象由上层释放，字符串由 GC 持有。 */
 static TZrBool canonical_hover_create(
         SZrState *state,
         SZrLspContext *context,
@@ -245,6 +254,7 @@ static TZrBool canonical_hover_create(
     return ZR_TRUE;
 }
 
+/* parser 文档事实和当前编辑文档的前导注释来源不同，先保留前者再按身份补充后者。 */
 static void canonical_hover_append_documentation_fact(
         SZrState *state,
         const SZrSemanticContext *semanticContext,
@@ -271,6 +281,7 @@ static void canonical_hover_append_documentation_fact(
     }
 }
 
+/* 查询入口传入同一快照的 canonical 身份；只在旧符号表 ID 一致时合并源侧附加事实。 */
 TZrBool ZrLanguageServer_LspCanonicalHover_BuildSymbol(
         SZrState *state,
         SZrLspContext *context,

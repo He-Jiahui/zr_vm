@@ -3,6 +3,7 @@
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/semantic_facts.h"
 
+/* 类型事实兜底只接受与当前词元同源且同字节范围的引用，不能把邻近表达式的类型染到标识符上。 */
 static TZrBool semantic_token_ranges_equal(SZrFileRange left,
                                            SZrFileRange right) {
     TZrBool sourcesEqual = left.source == right.source;
@@ -22,6 +23,7 @@ TZrInt32 ZrLanguageServer_LspSemanticToken_TypeFromCanonicalSymbol(
         return ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
     }
 
+    /* 外部插件成员必须先具备完整身份；否则退回本地声明/符号分类，不推断缺失元数据。 */
     if (symbol->hasExternalTarget && symbol->externalOwnerIdentity != ZR_NULL &&
         symbol->externalMetadataToken != 0U &&
         symbol->externalSignatureToken != 0U &&
@@ -115,6 +117,7 @@ TZrInt32 ZrLanguageServer_LspSemanticToken_ResolveCanonical(
         return ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
     }
 
+    /* 查询键使用词元原始字节偏移；line/character 来自扫描器的 UTF-16 位置。 */
     start = ZrParser_FilePosition_Create(startOffset, line, character);
     end = ZrParser_FilePosition_Create(
             startOffset + length, line, character + (TZrUInt32)length);
@@ -128,6 +131,7 @@ TZrInt32 ZrLanguageServer_LspSemanticToken_ResolveCanonical(
         return ZrLanguageServer_LspSemanticToken_TypeFromCanonicalSymbol(&symbol);
     }
 
+    /* SymbolAt 不命中时仅接受已解析、精确落在本词元上的 owner 类型事实。 */
     if (!ZrParser_SemanticQuery_CanonicalTypeAt(
                 analyzer->semanticContext, range, ZR_NULL, &typeQuery) ||
         typeQuery.typeId == ZR_SEMANTIC_ID_INVALID ||

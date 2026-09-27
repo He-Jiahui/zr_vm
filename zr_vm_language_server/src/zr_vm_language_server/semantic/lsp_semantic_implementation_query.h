@@ -3,6 +3,8 @@
 
 #include "semantic/lsp_semantic_query.h"
 
+/** @brief 为 implementation 请求投影当前模块语义关系中的实现和覆盖位置。
+ * @note 仅处理可解析为本地符号的光标目标；返回值表示是否找到可输出的位置。 */
 TZrBool ZrLanguageServer_LspSemanticImplementationQuery_Append(
         SZrState *state,
         SZrLspContext *context,

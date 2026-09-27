@@ -5,6 +5,7 @@
 
 #include <string.h>
 
+/* 导入来源必须与符号身份及类型完全对应，避免同名关系误导向别的模块。 */
 static TZrBool semantic_relation_query_is_import_origin(
         const SZrParserSemanticRelationQuery *relation,
         const SZrParserSemanticSymbolQuery *symbol) {
@@ -16,6 +17,7 @@ static TZrBool semantic_relation_query_is_import_origin(
            relation->targetTypeId == symbol->typeId;
 }
 
+/* metadata 提供目标地址，语义关系提供来源身份；二者一致后才允许跨 URI 导航。 */
 static EZrLspSemanticImportOriginResolution
 semantic_relation_query_resolve_metadata_target(
         SZrState *state,
@@ -83,6 +85,7 @@ semantic_relation_query_resolve_metadata_target(
     return ZR_LSP_SEMANTIC_IMPORT_ORIGIN_RESOLVED;
 }
 
+/* 符号入口要求唯一导入关系并校验外部身份；不一致时让上层停止此导航分支。 */
 EZrLspSemanticImportOriginResolution
 ZrLanguageServer_LspSemanticRelationQuery_ResolveImportOrigin(
         SZrState *state,
@@ -161,6 +164,7 @@ ZrLanguageServer_LspSemanticRelationQuery_ResolveImportOrigin(
     return resolution;
 }
 
+/* 字面量入口由解析器按精确来源范围判定，随后沿用 metadata 目标验证。 */
 EZrLspSemanticImportOriginResolution
 ZrLanguageServer_LspSemanticRelationQuery_ResolveImportOriginAt(
         SZrState *state,
