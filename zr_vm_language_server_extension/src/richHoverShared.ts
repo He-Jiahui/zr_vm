@@ -1,19 +1,23 @@
+/** 原生 stdio 与 WASM 共用的结构化 Hover 节；role 决定侧栏色彩和摘要字段。 */
 export type RichHoverSection = {
     role?: string;
     label?: string;
     value?: string;
 };
 
+/** 扩展请求的最小响应形状；range 由宿主层按 VS Code 类型单独转换。 */
 export type RichHoverPayload = {
     sections?: RichHoverSection[];
     range?: unknown;
 };
 
+/** 编辑器普通 Hover 的简版内容，与侧栏完整 sections 分开呈现。 */
 export type RichHoverSummary = {
     title: string;
     lines: string[];
 };
 
+/** 侧栏的宿主无关渲染模型；无目标时 sections 为空且 status 给出说明。 */
 export type RichHoverRenderModel = {
     title: string;
     subtitle?: string;
@@ -21,6 +25,7 @@ export type RichHoverRenderModel = {
     status?: string;
 };
 
+/** 选择本项目服务端约定的代表性 role，并压缩普通 Hover 的文档字段。 */
 export function summarizeRichHover(payload: RichHoverPayload | null | undefined): RichHoverSummary {
     const sections = normalizeRichHoverSections(payload?.sections ?? []);
     const nameSection = findSectionByRole(sections, 'name');
@@ -37,6 +42,7 @@ export function summarizeRichHover(payload: RichHoverPayload | null | undefined)
         'Rich Hover',
     );
 
+    // 名称优先作为标题；仅有 kind 的响应仍能向编辑器提供可读摘要。
     if (nameSection?.value) {
         lines.push(`**${nameSection.label || 'Symbol'}**: ${nameSection.value}`);
     } else if (kindSection?.value) {
@@ -60,6 +66,7 @@ export function summarizeRichHover(payload: RichHoverPayload | null | undefined)
         lines.push(`Source: \`${sourceSection.value}\``);
     }
 
+    // 侧栏保留完整 docs，编辑器提示将文档折叠成单行并截断，避免长文遮住代码。
     if (docsSection?.value) {
         lines.push(truncateSingleLine(docsSection.value, 160));
     }
@@ -70,9 +77,11 @@ export function summarizeRichHover(payload: RichHoverPayload | null | undefined)
     };
 }
 
+/** 为禁脚本 Webview 生成完整 HTML；所有服务端文本都在插入前转义。 */
 export function renderRichHoverHtml(model: RichHoverRenderModel): string {
     const title = escapeHtml(model.title || 'Rich Hover');
     const subtitle = model.subtitle ? `<div class="subtitle">${escapeHtml(model.subtitle)}</div>` : '';
+    // 有结构化节时呈现详情；否则保留宿主提供的无信息或初始空态。
     const body = model.sections.length > 0
         ? model.sections.map((section) => renderSection(section)).join('\n')
         : `<div class="empty">${escapeHtml(model.status || 'Move the caret onto a symbol to inspect it.')}</div>`;
@@ -201,6 +210,7 @@ export function renderRichHoverHtml(model: RichHoverRenderModel): string {
 </html>`;
 }
 
+/** 仅让有非空文本的节参与摘要和侧栏，兼容服务端返回可选字段。 */
 export function normalizeRichHoverSections(sections: RichHoverSection[]): RichHoverSection[] {
     return sections.filter((section) =>
         typeof section?.value === 'string' &&
@@ -208,10 +218,12 @@ export function normalizeRichHoverSections(sections: RichHoverSection[]): RichHo
     );
 }
 
+/** 摘要只取同 role 的第一节，保留协议顺序与原生序列化顺序。 */
 function findSectionByRole(sections: RichHoverSection[], role: string): RichHoverSection | undefined {
     return sections.find((section) => section.role === role);
 }
 
+/** 映射语义 role 到主题色，并在属性与正文位置分别插入已转义的文本。 */
 function renderSection(section: RichHoverSection): string {
     const role = escapeHtml(section.role || 'detail');
     const label = escapeHtml(section.label || 'Detail');
@@ -224,6 +236,7 @@ function renderSection(section: RichHoverSection): string {
 </section>`;
 }
 
+/** 将文档摘要压成一行并截断；完整文档仍由侧栏模型持有。 */
 function truncateSingleLine(value: string, limit: number): string {
     const singleLine = value.replace(/\s+/g, ' ').trim();
     if (singleLine.length <= limit) {
@@ -233,6 +246,7 @@ function truncateSingleLine(value: string, limit: number): string {
     return `${singleLine.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
 }
 
+/** 原生响应缺少 name 时选择 kind，再使用固定视图标题。 */
 function firstNonEmpty(...values: (string | undefined)[]): string {
     for (const value of values) {
         if (value && value.trim().length > 0) {
@@ -243,6 +257,7 @@ function firstNonEmpty(...values: (string | undefined)[]): string {
     return '';
 }
 
+/** 封闭 Webview HTML 的文本与属性边界，避免源码文档影响侧栏结构。 */
 function escapeHtml(value: string): string {
     return value
         .replace(/&/g, '&amp;')
