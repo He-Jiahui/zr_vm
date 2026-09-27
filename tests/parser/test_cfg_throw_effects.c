@@ -10,13 +10,18 @@
 #include "zr_vm_parser/semantic_facts.h"
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
 
+/* 同一套 CFG 事实查询覆盖 lambda 调用、catch 类型匹配与 receiver guard 抛出边。 */
 static SZrState *g_state;
 
+/* Unity 为每例创建独立运行时，避免语义事实跨例残留。 */
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
+/* 即使断言中止用例，Unity 仍调用此处销毁运行时。 */
+/* BUG: 下方独立 context 或编译器内 semanticContext 创建成功后若断言失败，
+ * 各自的显式 Free 被 Unity longjmp 跳过，运行时析构不回收原生分配。 */
 void tearDown(void) {
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
@@ -24,6 +29,7 @@ void tearDown(void) {
     }
 }
 
+/* 以具体语句位置查 CFG 输出的不可达事实；无事实表示可达。 */
 static const SZrSemanticReachabilityFact *reachability_fact_at(
         SZrSemanticContext *context,
         SZrAstNode *node) {
@@ -34,6 +40,7 @@ static const SZrSemanticReachabilityFact *reachability_fact_at(
             node->location);
 }
 
+/* 源名归运行时 GC 管理，返回的 AST 由用例或公共断言器释放。 */
 static SZrAstNode *parse_source(const char *source) {
     SZrString *sourceName;
 
@@ -46,6 +53,7 @@ static SZrAstNode *parse_source(const char *source) {
     return ZrParser_Parse(g_state, source, strlen(source), sourceName);
 }
 
+/* lambda 场景从脚本第一条语句取得 try 节点。 */
 static SZrAstNode *first_statement(SZrAstNode *script) {
     TEST_ASSERT_NOT_NULL(script);
     TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, script->type);
@@ -54,6 +62,7 @@ static SZrAstNode *first_statement(SZrAstNode *script) {
     return script->data.script.statements->nodes[0];
 }
 
+/* 验证 catch 结构并取其首条语句作为事实查询点。 */
 static SZrAstNode *first_catch_statement_at(SZrAstNode *tryNode, TZrSize index) {
     SZrAstNode *catchNode;
     SZrAstNode *catchBody;
@@ -76,10 +85,12 @@ static SZrAstNode *first_catch_statement_at(SZrAstNode *tryNode, TZrSize index) 
     return catchBody->data.block.body->nodes[0];
 }
 
+/* 单 catch 的 receiver guard 场景复用第零个 catch 提取逻辑。 */
 static SZrAstNode *first_catch_statement(SZrAstNode *tryNode) {
     return first_catch_statement_at(tryNode, 0);
 }
 
+/* 先编译填充 receiver guard 语义事实，再用同一 context 建函数 CFG。 */
 static void assert_guard_catch_reachability(
         const char *source,
         TZrBool expectedReachable) {
@@ -125,6 +136,7 @@ static void assert_guard_catch_reachability(
     compile_script(&compiler, script);
     TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
 
+    /* 无 semanticContext 的建图入口无法消费编译阶段的 guard 事实。 */
     ZrParser_Cfg_Init(g_state, &cfg);
     TEST_ASSERT_TRUE(ZrParser_Cfg_BuildWithSemanticContext(
             g_state, &cfg, functionNode, compiler.semanticContext));
@@ -146,6 +158,7 @@ static void assert_guard_catch_reachability(
     ZrParser_Ast_Free(g_state, script);
 }
 
+/* 无抛出的 lambda 立即调用不应向 catch 建可达边。 */
 static void test_cfg_marks_catch_unreachable_for_nonthrowing_lambda_iife(void) {
     const char *source =
             "try {\n"
@@ -176,6 +189,7 @@ static void test_cfg_marks_catch_unreachable_for_nonthrowing_lambda_iife(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* lambda 抛出 string 时，仅同类型 catch 可达，异型和后续兜底均不可达。 */
 static void test_cfg_uses_lambda_iife_throw_profile_for_typed_catch_matching(void) {
     const char *source =
             "try {\n"
@@ -219,6 +233,7 @@ static void test_cfg_uses_lambda_iife_throw_profile_for_typed_catch_matching(voi
     ZrParser_SemanticContext_Free(context);
 }
 
+/* weak 直接成员读取需要空引用 guard，其 catch 保持可达。 */
 static void test_cfg_marks_direct_weak_receiver_guard_as_throwing(void) {
     const char *source =
             "resource class Box { pub var value: int; }\n"
@@ -231,6 +246,7 @@ static void test_cfg_marks_direct_weak_receiver_guard_as_throwing(void) {
     assert_guard_catch_reachability(source, ZR_TRUE);
 }
 
+/* wake 后的可空接收者直接读取仍可能触发 guard 抛出。 */
 static void test_cfg_marks_direct_nullable_receiver_guard_as_throwing(void) {
     const char *source =
             "resource class Box { pub var value: int; }\n"
@@ -244,6 +260,7 @@ static void test_cfg_marks_direct_nullable_receiver_guard_as_throwing(void) {
     assert_guard_catch_reachability(source, ZR_TRUE);
 }
 
+/* 可选链读取绕开直接 guard，不应让空引用 catch 可达。 */
 static void test_cfg_keeps_optional_weak_guard_out_of_throw_profile(void) {
     const char *source =
             "resource class Box { pub var value: int; }\n"
@@ -256,6 +273,7 @@ static void test_cfg_keeps_optional_weak_guard_out_of_throw_profile(void) {
     assert_guard_catch_reachability(source, ZR_FALSE);
 }
 
+/* 单独 wake 不等于直接读取，不能把它误计为 guard 抛出源。 */
 static void test_cfg_keeps_explicit_wake_out_of_throw_profile(void) {
     const char *source =
             "resource class Box { pub var value: int; }\n"
@@ -268,6 +286,7 @@ static void test_cfg_keeps_explicit_wake_out_of_throw_profile(void) {
     assert_guard_catch_reachability(source, ZR_FALSE);
 }
 
+/* CMake 将本 Unity 目标追加到 language_pipeline core 的执行列表。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_cfg_marks_catch_unreachable_for_nonthrowing_lambda_iife);

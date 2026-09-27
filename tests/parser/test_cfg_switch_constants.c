@@ -12,13 +12,18 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
 
+/* 人工构造带位置的 AST，隔离验证 CFG 的 switch 常量比较与可达性事实。 */
 static SZrState *g_state;
 
+/* Unity 每例隔离运行时，AST 和事实对象只在本例有效。 */
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
+/* 断言提前退出时仍释放运行时；用例内显式 Free 只在正常路径执行。 */
+/* BUG: 四个用例的原生 semantic context 创建成功后若断言失败，Unity longjmp
+ * 会越过各自末尾的 SemanticContext_Free；运行时析构不会回收该分配。 */
 void tearDown(void) {
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
@@ -26,6 +31,7 @@ void tearDown(void) {
     }
 }
 
+/* 合成同一虚拟源中的位置，供 CFG 事实范围查询使用。 */
 static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
     SZrFileRange range;
 
@@ -39,6 +45,7 @@ static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
     return range;
 }
 
+/* 节点及子树由根脚本递归释放；位置中的源名由运行时 GC 持有。 */
 static SZrAstNode *test_node(EZrAstNodeType type, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *node = (SZrAstNode *)ZrCore_Memory_RawMallocWithType(
         g_state->global,
@@ -52,6 +59,7 @@ static SZrAstNode *test_node(EZrAstNodeType type, TZrSize startOffset, TZrSize e
     return node;
 }
 
+/* 把单条 switch 包装成 CFG 可遍历的脚本根。 */
 static SZrAstNode *script_with_statement(SZrAstNode *statement) {
     SZrAstNode *script = test_node(ZR_AST_SCRIPT, 0, 96);
 
@@ -61,6 +69,7 @@ static SZrAstNode *script_with_statement(SZrAstNode *statement) {
     return script;
 }
 
+/* 给 case/default 配一条有位置的语句，便于区分分支事实。 */
 static SZrAstNode *block_with_statement(SZrAstNode *statement,
                                         TZrSize startOffset,
                                         TZrSize endOffset) {
@@ -73,6 +82,7 @@ static SZrAstNode *block_with_statement(SZrAstNode *statement,
     return block;
 }
 
+/* 布尔字面量同时用于 selector 与 case 的折叠测试。 */
 static SZrAstNode *boolean_literal(TZrBool value, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *literal = test_node(ZR_AST_BOOLEAN_LITERAL, startOffset, endOffset);
 
@@ -80,6 +90,7 @@ static SZrAstNode *boolean_literal(TZrBool value, TZrSize startOffset, TZrSize e
     return literal;
 }
 
+/* 异种常量用例以整数 selector 对照字符串 case。 */
 static SZrAstNode *integer_literal(TZrInt64 value, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *literal = test_node(ZR_AST_INTEGER_LITERAL, startOffset, endOffset);
 
@@ -87,6 +98,7 @@ static SZrAstNode *integer_literal(TZrInt64 value, TZrSize startOffset, TZrSize 
     return literal;
 }
 
+/* 字符串由运行时 GC 持有，AST 节点只引用其值。 */
 static SZrAstNode *string_literal(const char *value,
                                   TZrSize valueLength,
                                   TZrSize startOffset,
@@ -101,6 +113,7 @@ static SZrAstNode *string_literal(const char *value,
     return literal;
 }
 
+/* 短路右侧故意保持为未知标识符，验证 false && unknown 仍可折叠。 */
 static SZrAstNode *identifier_node(const TZrChar *name, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *identifier = test_node(ZR_AST_IDENTIFIER_LITERAL, startOffset, endOffset);
 
@@ -109,6 +122,7 @@ static SZrAstNode *identifier_node(const TZrChar *name, TZrSize startOffset, TZr
     return identifier;
 }
 
+/* 测试一元取反能在 selector 或 case 侧参与常量比较。 */
 static SZrAstNode *unary_not_expression(SZrAstNode *argument,
                                         TZrSize startOffset,
                                         TZrSize endOffset) {
@@ -119,6 +133,7 @@ static SZrAstNode *unary_not_expression(SZrAstNode *argument,
     return expression;
 }
 
+/* 短路测试构造 false && flag，右侧不需要实际求值。 */
 static SZrAstNode *logical_expression(SZrAstNode *left,
                                       const TZrChar *op,
                                       SZrAstNode *right,
@@ -132,6 +147,7 @@ static SZrAstNode *logical_expression(SZrAstNode *left,
     return expression;
 }
 
+/* case 节点接管其值表达式和语句块，交由根 AST 释放。 */
 static SZrAstNode *switch_case_node(SZrAstNode *value, SZrAstNode *body) {
     SZrAstNode *caseNode = test_node(ZR_AST_SWITCH_CASE, 24, 72);
 
@@ -140,6 +156,7 @@ static SZrAstNode *switch_case_node(SZrAstNode *value, SZrAstNode *body) {
     return caseNode;
 }
 
+/* default 节点只负责承载兜底块的事实位置。 */
 static SZrAstNode *switch_default_node(SZrAstNode *body) {
     SZrAstNode *defaultNode = test_node(ZR_AST_SWITCH_DEFAULT, 76, 96);
 
@@ -147,6 +164,7 @@ static SZrAstNode *switch_default_node(SZrAstNode *body) {
     return defaultNode;
 }
 
+/* 一条 case 加 default 足以观测 CFG 在匹配与不匹配时保留哪条边。 */
 static SZrAstNode *switch_statement_with_case_and_default(SZrAstNode *expr,
                                                          SZrAstNode *caseNode,
                                                          SZrAstNode *defaultNode) {
@@ -161,6 +179,7 @@ static SZrAstNode *switch_statement_with_case_and_default(SZrAstNode *expr,
     return switchNode;
 }
 
+/* 查节点内部位置以命中 CFG 发给整条分支语句的不可达事实。 */
 static const SZrSemanticReachabilityFact *reachability_fact_at(SZrSemanticContext *context,
                                                                SZrAstNode *node) {
     return ZrParser_SemanticFacts_FindReachabilityAtPosition(
@@ -168,6 +187,7 @@ static const SZrSemanticReachabilityFact *reachability_fact_at(SZrSemanticContex
         test_range(node->location.start.offset + 1, node->location.start.offset + 1));
 }
 
+/* !false 命中 true case 时，default 必须被标为常量分支不可达。 */
 static void test_cfg_switch_matches_unary_not_selector(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -201,6 +221,7 @@ static void test_cfg_switch_matches_unary_not_selector(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* selector 为 true 时，!false case 也应提前匹配并裁剪 default。 */
 static void test_cfg_switch_matches_unary_not_case_value(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -234,6 +255,7 @@ static void test_cfg_switch_matches_unary_not_case_value(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* false && 未知值应排除 true case，同时保留 default。 */
 static void test_cfg_switch_prunes_short_circuit_false_selector_case(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -271,6 +293,7 @@ static void test_cfg_switch_prunes_short_circuit_false_selector_case(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* 不同种类的已知常量不能相等，字符串 case 被裁剪而 default 保留。 */
 static void test_cfg_switch_prunes_mismatched_constant_kind_case(void) {
     SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
     SZrParserCfg cfg;
@@ -309,6 +332,7 @@ static void test_cfg_switch_prunes_mismatched_constant_kind_case(void) {
     ZrParser_SemanticContext_Free(context);
 }
 
+/* CMake 的独立 Unity 目标经 language_pipeline core 执行四个场景。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_cfg_switch_matches_unary_not_selector);
