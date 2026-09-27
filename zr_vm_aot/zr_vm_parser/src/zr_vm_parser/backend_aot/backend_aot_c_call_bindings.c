@@ -16,6 +16,7 @@ static TZrBool call_binding_projection_fail(
     return ZR_FALSE;
 }
 
+/* 先用 artifact 编码器验证行，再解析重定位并比对目标签名。 */
 TZrBool backend_aot_c_project_call_binding(
         SZrState *state,
         const SZrAotFunctionTable *table,
@@ -123,6 +124,7 @@ TZrBool backend_aot_c_validate_call_bindings(
     return ZR_TRUE;
 }
 
+/* 两个数组必须按相同的函数/缓存顺序写入，loader 以行号配对。 */
 TZrBool backend_aot_c_write_call_bindings(
         FILE *file, SZrState *state, const SZrAotFunctionTable *table, TZrUInt32 count) {
     TZrUInt32 writtenCount = 0u;

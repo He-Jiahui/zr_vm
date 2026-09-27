@@ -1,6 +1,5 @@
-//
-// Shared AOT lowering helpers used by backend-specific emitters.
-//
+// C/LLVM 后端共用的指令资格、选项默认值和诊断规则；真正的运行时退路
+// 还要由各后端自己的闭包检查确认。
 
 #include "zr_vm_parser/writer.h"
 
@@ -44,6 +43,7 @@ const TZrChar *backend_aot_option_text(const SZrAotWriterOptions *options,
     return (candidate != ZR_NULL && candidate[0] != '\0') ? candidate : fallback;
 }
 
+/* 此白名单只判定后端可识别 opcode，不证明动态调用等指令满足 full-AOT 闭包。 */
 static TZrBool backend_aot_c_instruction_supported(const TZrInstruction *instruction) {
     TZrUInt16 opcode;
 
@@ -324,6 +324,7 @@ static const TZrChar *backend_aot_function_display_name(const SZrFunction *funct
     return ZrCore_String_GetNativeString(function->functionName);
 }
 
+/* 只报告第一处不可降低的字节码，供写出失败路径定位函数和指令。 */
 TZrBool backend_aot_report_first_unsupported_instruction(const TZrChar *backendName,
                                                          const TZrChar *moduleName,
                                                          const SZrAotFunctionTable *table) {
@@ -396,6 +397,7 @@ TZrBool backend_aot_option_strip_generated_symbols(const SZrAotWriterOptions *op
     return (TZrBool)(options != ZR_NULL && options->stripGeneratedSymbols);
 }
 
+/* 裁剪产物只保留运行所需元数据；未裁剪产物保留反射映射。 */
 TZrUInt8 backend_aot_option_reflection_metadata_level(const SZrAotWriterOptions *options) {
     return backend_aot_option_enable_code_stripping(options)
                    ? (TZrUInt8)ZR_AOT_REFLECTION_METADATA_NONE
@@ -461,6 +463,7 @@ static TZrBool backend_aot_instruction_const_div_mod_is_known_non_zero(const SZr
     }
 }
 
+/* 执行观察点使用此标志区分调用、控制流及可能抛错的步进边界。 */
 ZR_PARSER_API TZrUInt32 backend_aot_c_step_flags_for_instruction(const SZrFunction *function,
                                                                  const TZrInstruction *instruction) {
     TZrUInt32 opcode;

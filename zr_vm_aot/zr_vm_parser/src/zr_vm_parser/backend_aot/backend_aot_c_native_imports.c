@@ -87,6 +87,7 @@ static void backend_aot_c_write_ffi_callable(
             (unsigned long long)callable->contractHash);
 }
 
+/* 文本字段必须转义为 C 字面量；数值字段保留 FFI 合约的原始位宽。 */
 static void backend_aot_c_write_native_import(
         FILE *file,
         const SZrNativeImportContract *contract) {
@@ -235,6 +236,7 @@ static TZrBool backend_aot_c_native_import_validate_function(
     return ZR_TRUE;
 }
 
+/* 即使裁剪后部分子函数不可达，入口仍先验证原始函数树的导入形状。 */
 TZrBool backend_aot_c_native_import_validate_function_tree(
         const SZrFunction *function) {
     if (!backend_aot_c_native_import_validate_function(function) ||

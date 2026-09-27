@@ -63,6 +63,9 @@ static TZrBool backend_aot_c_branch_target_is_valid(const SZrFunction *function,
     return ZR_TRUE;
 }
 
+/* 常量只在紧邻的标量消费者可接续时跳过值槽物化；导出槽和异常函数保守退回。 */
+/* TODO: 当前证明检查相邻 opcode、槽位和分支目标范围，尚未检查消费者是否有
+ * 其他 CFG 前驱。需用可跳入 LOGICAL_NOT/JUMP_IF 的字节码夹具核对省略路径。 */
 TZrBool backend_aot_c_null_constant_consumed_by_local_logical_not(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 sourceSlot,
@@ -383,6 +386,7 @@ TZrBool backend_aot_c_string_constant_consumed_by_local_jump_if(
     return ZR_TRUE;
 }
 
+/* 三指令短链中的源槽和复制槽都不能被模块导出观察。 */
 static TZrBool backend_aot_c_null_constant_stack_copy_candidate(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 sourceSlot,
@@ -599,6 +603,7 @@ TZrBool backend_aot_c_null_constant_stack_copy_consumed_by_local_jump_if(
             stackCopyInstructionIndex - 1u);
 }
 
+/* 字符串只读取真假值，不把其对象指针移入生成函数的普通值帧。 */
 static TZrBool backend_aot_c_string_constant_stack_copy_candidate(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 sourceSlot,

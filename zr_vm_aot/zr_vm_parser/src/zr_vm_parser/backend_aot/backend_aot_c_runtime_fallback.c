@@ -148,6 +148,7 @@ static TZrBool backend_aot_c_instruction_is_reflection_runtime_contract(const TZ
     return (TZrBool)(instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(TYPEOF));
 }
 
+/* 退路分类同时驱动 full-AOT 拒绝、裁剪统计和生成文件诊断。 */
 typedef enum EZrAotRuntimeFallbackReason {
     ZR_AOT_RUNTIME_FALLBACK_REASON_NONE = 0,
     ZR_AOT_RUNTIME_FALLBACK_REASON_DYNAMIC_CALL = 1,
@@ -295,6 +296,7 @@ static void backend_aot_c_write_trim_warning_quoted_text(FILE *file, const TZrCh
     fputc('"', file);
 }
 
+/* 优先使用 SemIR 的动态语义，未覆盖时再按原字节码判定。 */
 static EZrAotRuntimeFallbackReason backend_aot_c_runtime_fallback_reason_for_instruction(
         SZrState *state,
         const SZrAotFunctionTable *functionTable,
@@ -364,6 +366,7 @@ static TZrBool backend_aot_c_full_aot_instruction_requires_runtime_fallback(
                      ZR_AOT_RUNTIME_FALLBACK_REASON_NONE);
 }
 
+/* 裁剪后的函数表是闭包边界；被裁掉的函数无需阻止 full-AOT 发布。 */
 TZrBool backend_aot_c_validate_full_aot_runtime_closure(SZrState *state,
                                                         const SZrAotFunctionTable *functionTable,
                                                         const SZrAotExecIrModule *module) {

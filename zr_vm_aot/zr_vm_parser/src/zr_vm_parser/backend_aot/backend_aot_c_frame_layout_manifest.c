@@ -29,6 +29,7 @@ static const TZrChar *backend_aot_c_frame_layout_slot_kind_name(
     }
 }
 
+/* 计数前校验 ExecIR 与函数表共享同一原始函数，避免报告错位布局。 */
 TZrBool backend_aot_c_frame_layout_count_slots(
         const SZrAotExecIrModule *module,
         const SZrAotFunctionTable *functionTable,

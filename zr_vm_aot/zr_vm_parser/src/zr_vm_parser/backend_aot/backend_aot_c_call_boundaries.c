@@ -2,6 +2,7 @@
 #include "backend_aot_c_scalar_locals.h"
 #include "backend_aot_internal.h"
 
+/* 通用调用写回值槽后，若该槽有标量镜像必须在同一 guard 中同步。 */
 static void backend_aot_write_c_core_function_call(FILE *file,
                                                    const SZrAotExecIrFunction *functionIr,
                                                    TZrUInt32 destinationSlot,
@@ -90,6 +91,7 @@ static void backend_aot_write_c_core_function_call(FILE *file,
                   "    }\n");
 }
 
+/* 静态目标仍经 runtime 准备/完成帧协议，异常恢复索引须回到本函数分派器。 */
 void backend_aot_write_c_static_direct_function_call(FILE *file,
                                                      const SZrAotExecIrFunction *functionIr,
                                                      TZrUInt32 destinationSlot,
@@ -263,6 +265,7 @@ void backend_aot_write_c_spread_function_call(
     fprintf(file, ");\n    }\n");
 }
 
+/* 成员缓存先解析接收者槽，再尝试 direct call，失败时走同一恢复协议。 */
 static void backend_aot_write_c_known_member_call(FILE *file,
                                                   const SZrAotExecIrFunction *functionIr,
                                                   TZrUInt32 destinationSlot,

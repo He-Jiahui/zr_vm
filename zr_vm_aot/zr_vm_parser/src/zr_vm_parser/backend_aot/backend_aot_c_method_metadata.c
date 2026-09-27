@@ -200,6 +200,7 @@ static void backend_aot_c_signature_init_f64_return_type(SZrFunctionTypedTypeRef
     backend_aot_c_signature_init_scalar_return_type(returnType, ZR_VALUE_TYPE_DOUBLE, ZR_STATIC_C_TYPE_F64);
 }
 
+/* 仅当所有显式 return 都满足同一标量证明时推断未声明的返回类型。 */
 static TZrBool backend_aot_c_signature_try_infer_scalar_return(
         const SZrAotExecIrFunction *functionIr,
         SZrFunctionTypedTypeRef *returnType,
@@ -435,6 +436,7 @@ static TZrBool backend_aot_c_gc_root_map_try_get_gc_offset(const SZrTypeLayout *
     return ZR_FALSE;
 }
 
+/* GC 字段必须完整落在类型布局字节范围内才可写入静态根图。 */
 static TZrBool backend_aot_c_gc_root_map_can_emit_field(const SZrTypeLayout *typeLayout,
                                                         TZrUInt32 gcFieldIndex,
                                                         TZrUInt32 *outFieldOffset) {
@@ -498,6 +500,7 @@ TZrUInt32 backend_aot_c_method_metadata_count_gc_roots(SZrState *state,
     return rootCount;
 }
 
+/* 根表记录的是 inline 帧中的字段字节偏移，不是普通值槽的对象指针。 */
 static void backend_aot_write_c_gc_root_map(FILE *file,
                                             SZrState *state,
                                             TZrUInt32 functionIndex,
@@ -609,6 +612,7 @@ unsigned long long backend_aot_write_c_method_infos(FILE *file,
     return methodMetadataBytesTotal;
 }
 
+/* 用与实际 MethodInfo 发射相同的路径计量，避免单独维护易漂移的结构大小估算。 */
 unsigned long long backend_aot_c_method_metadata_generated_bytes_referenced(
         SZrState *state,
         const SZrAotFunctionTable *table,

@@ -18,6 +18,7 @@ static const SZrAotFunctionEntry *backend_aot_c_debug_sidecar_find_function(
     return ZR_NULL;
 }
 
+/* 先校验函数表和 ExecIR 的同一函数身份，再计数源位置记录。 */
 TZrBool backend_aot_c_debug_sidecar_count_locations(
         const SZrAotExecIrModule *module,
         const SZrAotFunctionTable *functionTable,

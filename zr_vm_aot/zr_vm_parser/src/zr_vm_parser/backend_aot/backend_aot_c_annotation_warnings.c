@@ -179,6 +179,7 @@ static TZrBool backend_aot_c_annotation_instruction_is_call_candidate(const TZrI
     }
 }
 
+/* 只对能静态解析目标的调用检查注解；动态目标无法在此归属到具体函数。 */
 static TZrBool backend_aot_c_annotation_instruction_requires_warning(
         SZrState *state,
         const SZrAotFunctionTable *functionTable,
@@ -230,6 +231,7 @@ static TZrBool backend_aot_c_annotation_instruction_requires_warning(
     return ZR_TRUE;
 }
 
+/* 计数与实际输出复用同一次分类规则，避免摘要和逐条警告分歧。 */
 static TZrUInt32 backend_aot_c_scan_annotation_warnings(FILE *file,
                                                         SZrState *state,
                                                         const SZrAotFunctionTable *functionTable,

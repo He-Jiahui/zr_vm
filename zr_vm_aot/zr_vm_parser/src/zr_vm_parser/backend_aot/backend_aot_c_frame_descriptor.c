@@ -562,6 +562,7 @@ static TZrBool backend_aot_c_frame_descriptor_conversion_can_use_local_only(
     }
 }
 
+/* 与 function_body 的实际分派保持同步：任何会发射 frame. 的指令都要否决省略。 */
 static TZrBool backend_aot_c_frame_descriptor_instruction_can_use_local_only(
         const SZrAotExecIrModule *module,
         const SZrAotExecIrFunction *functionIr,
@@ -770,6 +771,7 @@ static TZrBool backend_aot_c_frame_descriptor_instruction_can_use_local_only(
     }
 }
 
+/* 只在每条指令都能独立证明局部标量路径时省略生成帧描述符。 */
 TZrBool backend_aot_c_function_body_needs_frame_descriptor(const SZrAotExecIrModule *module,
                                                            const SZrAotExecIrFunction *functionIr,
                                                            const SZrFunction *function,

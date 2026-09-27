@@ -1,5 +1,6 @@
 #include "backend_aot_c_frame_setup.h"
 
+/* 只有 inline struct 的字节布局要求扩展物理值帧；标量槽走独立局部变量。 */
 static TZrUInt32 backend_aot_c_frame_setup_register_frame_bytes(
         const SZrAotExecIrFrameLayout *frameLayout) {
     TZrUInt32 layoutIndex;
@@ -56,6 +57,7 @@ void backend_aot_write_c_frame_setup(FILE *file,
                 "    TZrBool zr_aot_has_gc_root_frame = ZR_FALSE;\n");
     }
 
+    /* 栈扩容可搬迁指针，必须先保存锚点并在扩容后恢复全部调用帧指针。 */
     fprintf(file,
             "    ZrAotGeneratedModuleContext zr_aot_context;\n"
             "    TZrStackValuePointer zr_aot_function_base;\n"

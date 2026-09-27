@@ -28,6 +28,7 @@ static const SZrTypeLayout *backend_aot_c_frame_cleanup_resolve_layout(
                                                            state);
 }
 
+/* 布局解析失败时保守保留 cleanup，避免在生成期误删运行期析构。 */
 static TZrBool backend_aot_c_frame_cleanup_layout_needs_drop_for_function(
         SZrState *state,
         const SZrAotExecIrFunction *functionIr,
@@ -98,6 +99,7 @@ void backend_aot_write_c_frame_cleanup(FILE *file,
         return;
     }
 
+    /* 构造失败时只有初始化位图知道哪些字段已建立所有权；普通退出再逆序清理。 */
     fprintf(file,
             "        TZrBool zr_aot_constructor_unwind_dropped = ZR_FALSE;\n"
             "        const TZrUInt64 *zr_aot_constructor_initialized_fields = ZR_NULL;\n"

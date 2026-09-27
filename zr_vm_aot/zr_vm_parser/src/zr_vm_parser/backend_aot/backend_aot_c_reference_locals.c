@@ -34,6 +34,7 @@ static TZrBool backend_aot_c_reference_locals_slot_declared_before(const SZrFunc
     return ZR_FALSE;
 }
 
+/* 声明和根表共用同一去重规则，保证字段偏移与根项一一对应。 */
 static TZrBool backend_aot_c_reference_locals_write_fields(FILE *file, const SZrFunction *function) {
     TZrUInt32 instructionIndex;
     TZrBool emittedAny = ZR_FALSE;
@@ -115,6 +116,7 @@ void backend_aot_write_c_reference_local_structs(FILE *file, const SZrAotFunctio
     }
 }
 
+/* LOCAL_ADDRESS 根指向生成 C 的结构字段，而不是解释器值帧中的槽。 */
 void backend_aot_write_c_reference_local_root_maps(FILE *file, const SZrAotFunctionTable *table) {
     TZrUInt32 entryIndex;
 

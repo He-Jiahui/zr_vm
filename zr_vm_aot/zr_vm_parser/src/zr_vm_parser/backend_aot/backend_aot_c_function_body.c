@@ -490,6 +490,7 @@ static TZrBool backend_aot_stack_copy_destination_has_upcoming_bool_value_operan
     return ZR_FALSE;
 }
 
+/* 单函数入口根据真实 lowering 所需资源保留帧、根与析构，然后逐字节码发射。 */
 void backend_aot_write_c_function_body(FILE *file,
                                        SZrState *state,
                                        const SZrAotFunctionTable *functionTable,
@@ -517,6 +518,7 @@ void backend_aot_write_c_function_body(FILE *file,
     if (module != ZR_NULL) {
         functionIr = backend_aot_exec_ir_find_function(module, entry->flatIndex);
     }
+    /* 帧描述符的省略证明与析构、GC 根、导出发布相互依赖，先完成这些判定。 */
     needsFrameCleanup = backend_aot_c_frame_cleanup_would_emit_for_function(state, functionIr);
     includeFrameDescriptor = backend_aot_c_function_body_needs_frame_descriptor(
             module, functionIr, entry->function, publishExports, needsFrameCleanup);
@@ -572,6 +574,7 @@ void backend_aot_write_c_function_body(FILE *file,
         TZrInt32 operandA2 = instruction->instruction.operand.operand2[0];
 
         fprintf(file, "zr_aot_fn_%u_ins_%u:\n", (unsigned)entry->flatIndex, (unsigned)instructionIndex);
+        /* 已链接的调用点必须先校验运行时目标契约，再让该指令走标量/通用 lowering。 */
         if (entry->function->callBindingInstructionMap != ZR_NULL) {
             fprintf(file, "    frame.currentInstructionIndex = %u;\n", (unsigned)instructionIndex);
         }
@@ -607,6 +610,7 @@ void backend_aot_write_c_function_body(FILE *file,
         }
 
         switch (instruction->instruction.operationCode) {
+            /* 常量先尝试稳定 callable；值槽省略只用于已证明的局部短链。 */
             case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
             {
                 TZrUInt32 callableFunctionIndex = ZR_AOT_INVALID_FUNCTION_INDEX;
@@ -836,6 +840,7 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              operandA1,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
+            /* 复制可能承载调用实参或所有权来源，相关边界必须保持值槽物化。 */
             case ZR_INSTRUCTION_ENUM(GET_STACK):
             case ZR_INSTRUCTION_ENUM(SET_STACK):
             {
@@ -2778,6 +2783,7 @@ void backend_aot_write_c_function_body(FILE *file,
         }
     }
 
+    /* 意外落到字节码末尾仍报错；正常 return/fail 经统一出口逆序弹根并析构。 */
     backend_aot_write_c_unsupported_instruction(file, entry->flatIndex, entry->function->instructionsLength, 0);
     fprintf(file, "zr_aot_function_exit:\n");
     if (needsFrameCleanup) {

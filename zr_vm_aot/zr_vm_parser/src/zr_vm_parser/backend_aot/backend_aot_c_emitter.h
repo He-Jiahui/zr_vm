@@ -8,11 +8,17 @@
 typedef struct SZrAotExecIrFrameLayout SZrAotExecIrFrameLayout;
 typedef struct SZrAotExecIrFunction SZrAotExecIrFunction;
 
+/** @brief 从函数常量表查询给定索引的值。
+ * @return 索引无效或函数不可用时返回空指针。
+ */
 const SZrTypeValue *backend_aot_c_get_constant_value(const SZrFunction *function, TZrInt32 constantIndex);
 TZrBool backend_aot_c_constant_requires_materialization(SZrState *state,
                                                         const SZrFunction *function,
                                                         TZrInt32 constantIndex);
 TZrBool backend_aot_c_constant_can_emit_immediate(const SZrFunction *function, TZrInt32 constantIndex);
+/** @brief 检查空常量到紧邻局部标量操作的消费短链，供值槽与帧省略决策使用。
+ * @note 其他 CFG 前驱尚待核对，见实现中的 TODO。
+ */
 TZrBool backend_aot_c_null_constant_consumed_by_local_logical_not(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 sourceSlot,
@@ -101,6 +107,7 @@ TZrBool backend_aot_c_reset_null_stack_copy_consumed_by_local_jump_if(
         const SZrAotExecIrFunction *functionIr,
         TZrUInt32 copiedSlot,
         TZrUInt32 stackCopyInstructionIndex);
+/** @brief 检查 typed thunk 的返回类型、参数个数及 state ABI 是否匹配。 */
 TZrBool backend_aot_c_can_emit_typed_i64_no_arg_thunk(const SZrFunction *function);
 TZrBool backend_aot_c_can_emit_typed_i64_one_arg_thunk(const SZrFunction *function);
 TZrBool backend_aot_c_can_emit_typed_i64_two_arg_thunk(const SZrFunction *function);
@@ -126,6 +133,7 @@ TZrBool backend_aot_c_can_emit_typed_u64_two_arg_thunk(const SZrFunction *functi
 TZrBool backend_aot_c_can_emit_typed_u64_two_arg_state_free_thunk(const SZrFunction *function);
 TZrBool backend_aot_c_can_emit_typed_u64_three_arg_thunk(const SZrFunction *function);
 TZrBool backend_aot_c_can_emit_typed_u64_three_arg_state_free_thunk(const SZrFunction *function);
+/** @brief 发射常量及栈槽物化路径；调用方先完成短链和布局证明。 */
 void backend_aot_write_c_direct_primitive_constant(FILE *file,
                                                    const SZrAotExecIrFunction *functionIr,
                                                    TZrUInt32 destinationSlot,
@@ -192,6 +200,7 @@ void backend_aot_write_c_reset_stack_null2_scalar_local_skip(FILE *file,
                                                              TZrUInt32 secondSlot);
 void backend_aot_write_c_get_closure_value(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 closureIndex);
 void backend_aot_write_c_set_closure_value(FILE *file, TZrUInt32 sourceSlot, TZrUInt32 closureIndex);
+/** @brief 发射数值运算；对应 lowering 实现负责除零、类型与溢出边界。 */
 void backend_aot_write_c_direct_add_int(FILE *file,
                                         TZrUInt32 destinationSlot,
                                         TZrUInt32 leftSlot,
@@ -360,6 +369,7 @@ void backend_aot_write_c_direct_to_struct(FILE *file,
                                           TZrUInt32 destinationSlot,
                                           TZrUInt32 sourceSlot,
                                           TZrUInt32 typeNameConstantIndex);
+/** @brief 在回边和可能分配的操作后插入 GC 观察点。 */
 void backend_aot_write_c_gc_safepoint(FILE *file, const char *indent, const char *marker);
 void backend_aot_write_c_direct_jump(FILE *file,
                                      TZrUInt32 functionIndex,
@@ -904,6 +914,7 @@ void backend_aot_write_c_unsupported_instruction_expr(FILE *file,
                                                       TZrUInt32 functionFlatIndex,
                                                       const char *instructionIndexExpression,
                                                       const char *opcodeExpression);
+/** @brief 发射带调用帧准备和恢复的静态目标调用；结果局部镜像须随后同步。 */
 void backend_aot_write_c_static_direct_function_call(FILE *file,
                                                      const SZrAotExecIrFunction *functionIr,
                                                      TZrUInt32 destinationSlot,
@@ -1042,6 +1053,7 @@ void backend_aot_write_c_static_direct_f64_three_arg_function_call(FILE *file,
                                                                    TZrUInt32 thirdArgumentSlot,
                                                                    TZrBool syncStackSlot,
                                                                    TZrBool passStateToThunk);
+/** @brief 发射不能静态绑定的通用调用和 spread/member/dynamic 退路。 */
 void backend_aot_write_c_direct_function_call(FILE *file,
                                               const SZrAotExecIrFunction *functionIr,
                                               TZrUInt32 destinationSlot,
@@ -1069,6 +1081,7 @@ void backend_aot_write_c_dynamic_function_call(FILE *file,
                                                TZrUInt32 functionSlot,
                                                TZrUInt32 argumentCount,
                                                TZrUInt32 deoptId);
+/** @brief 发射恢复分派及异常控制流；目标索引必须属于当前函数。 */
 void backend_aot_write_c_dispatch_loop(FILE *file, TZrUInt32 functionFlatIndex, TZrUInt32 instructionCount);
 void backend_aot_write_c_try(FILE *file, TZrUInt32 handlerIndex);
 void backend_aot_write_c_end_try(FILE *file, TZrUInt32 handlerIndex);

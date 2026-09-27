@@ -41,6 +41,7 @@ static TZrBool backend_aot_string_equals_native(const SZrString *string, const T
     return (TZrBool)(text != ZR_NULL && strcmp(text, native) == 0);
 }
 
+/* 导出选择器与代码生成共用同一 flat-index 建表规则。 */
 ZR_PARSER_API TZrBool ZrParser_Writer_ResolveTopLevelCallableFlatIndex(SZrState *state,
                                                                        SZrFunction *function,
                                                                        const TZrChar *callableName,
@@ -128,6 +129,9 @@ static void backend_aot_write_c_contracts(FILE *file, TZrUInt32 runtimeContracts
     }
 }
 
+/* BUG: writer 选项中的 generic root 目标和参数原样进入生成 C 的注释行；
+ * 若文本含注释终止序列或换行，生成源码会被截断或注入额外文本。
+ * 用含这些字符的 manifestPreserveGenericRoots 调用 writer 并编译产物。 */
 static void backend_aot_write_manifest_generic_roots(FILE *file, const SZrAotWriterOptions *options) {
     TZrUInt32 rootCount = options != ZR_NULL ? options->manifestPreserveGenericRootCount : 0u;
 
@@ -217,6 +221,8 @@ static const TZrChar *backend_aot_manifest_export_kind_name(EZrAotManifestExport
     }
 }
 
+/* BUG: 入口选项只要求 export target 非空，原样写入注释会被终止序列或换行截断。
+ * 用含异常字符的 manifestExportDeclarations 调用 writer 并编译生成 C。 */
 static void backend_aot_write_manifest_export_declarations(FILE *file, const SZrAotWriterOptions *options) {
     TZrUInt32 exportCount = options != ZR_NULL ? options->manifestExportDeclarationCount : 0u;
 
@@ -306,6 +312,8 @@ static void backend_aot_write_c_string_literal(FILE *file, const TZrChar *text) 
     fputc('"', file);
 }
 
+/* BUG: 元数据导出行沿用未经注释文本转义的 declaration target；令牌校验不校验字符。
+ * 用相同异常 target 经过元数据发布路径核对生成 C 注释。 */
 static void backend_aot_write_manifest_export_table_markers(FILE *file,
                                                             const SZrAotCEmbeddedZrpMetadata *metadata) {
     TZrUInt32 count;
@@ -580,6 +588,7 @@ static void backend_aot_release_annotation_roots(SZrState *state,
                                   ZR_MEMORY_NATIVE_TYPE_FUNCTION);
 }
 
+/* 先从显式保留根及静态调用边求存活集，再原地过滤函数表。 */
 static TZrBool backend_aot_apply_code_stripping(FILE *file,
                                                 SZrState *state,
                                                 SZrAotFunctionTable *functionTable,
@@ -715,6 +724,7 @@ static TZrBool backend_aot_apply_code_stripping(FILE *file,
     return success;
 }
 
+/* 生成入口先完成建表、裁剪及闭包验证，再发射与加载器 ABI 对应的静态表。 */
 ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
                                                                SZrFunction *function,
                                                                const TZrChar *filename,
@@ -1238,6 +1248,9 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
         }
     }
 
+    /* BUG: moduleName/inputHash 可由 writer 选项传入，此处未经注释文本转义。
+     * 含注释终止序列或换行会截断描述行并改变生成 C；CLI 的模块名也走此入口。
+     * 用带引号、换行及注释终止序列的模块名做生成/编译回归。 */
     fprintf(file, "/* ZR AOT C Backend */\n");
     fprintf(file, "/* SemIR overlay + generated exec thunks. */\n");
     fprintf(file, "/* descriptor.moduleName = %s */\n", moduleName);
@@ -1563,6 +1576,9 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     backend_aot_c_write_call_binding_registration(file, callBindingRowCount);
     fprintf(file, "    .abiVersion = ZR_VM_AOT_ABI_VERSION,\n");
     fprintf(file, "    .backendKind = ZR_AOT_BACKEND_KIND_C,\n");
+    /* BUG: 与上方描述行同源，原始引号或反斜杠会破坏 C 字符串；本文件的
+     * backend_aot_write_c_string_literal 已有转义逻辑，却未用于这两个字段。
+     * 如 moduleName 为 a\"b，生成 C 的模块初始化器无法编译。 */
     fprintf(file, "    .moduleName = \"%s\",\n", moduleName);
     fprintf(file, "    .inputKind = %u,\n", (unsigned)inputKind);
     fprintf(file, "    .inputHash = \"%s\",\n", inputHash);
