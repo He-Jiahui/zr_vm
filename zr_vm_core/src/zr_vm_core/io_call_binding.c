@@ -4,6 +4,7 @@
 
 #include "artifact_schema_internal.h"
 
+/* .zro 读取只恢复编译期契约；目标见证由 io_runtime_populate_function 后的链接阶段重建。 */
 TZrBool ZrCore_Io_ReadCallBindings(SZrIo *io, SZrIoFunction *function) {
     TZrByte header[16];
     TZrUInt32 count;
@@ -15,6 +16,7 @@ TZrBool ZrCore_Io_ReadCallBindings(SZrIo *io, SZrIoFunction *function) {
         zr_artifact_read_u32(header + 8u) != ZR_CALL_BINDING_SECTION_ROW_SIZE ||
         count > function->callSiteCacheLength ||
         (function->callSiteCacheLength != 0u && function->callSiteCaches == ZR_NULL)) return ZR_FALSE;
+    /* 同一缓存表先清空，防止无对应磁盘行的入口继承旧的绑定事实。 */
     for (TZrSize index = 0u; index < function->callSiteCacheLength; ++index) {
         memset(&function->callSiteCaches[index].bindingContract, 0, sizeof(SZrCallBindingContract));
         memset(&function->callSiteCaches[index].bindingLocation, 0, sizeof(SZrCallBindingLocation));

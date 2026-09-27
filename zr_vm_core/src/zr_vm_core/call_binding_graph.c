@@ -5,6 +5,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
 
+/* 收集函数身份而非名称；常量池和子函数可能共享同一函数或形成回边。 */
 static TZrBool graph_append(SZrFunction ***functions, TZrSize *count,
                             TZrSize *capacity, SZrFunction *function) {
     SZrFunction **resized;
@@ -25,6 +26,7 @@ static TZrBool graph_append(SZrFunction ***functions, TZrSize *count,
     return ZR_TRUE;
 }
 
+/* 先完成去重收集，再执行带副作用的链接/失效回调，避免遍历中重复修改共享节点。 */
 TZrBool ZrCore_CallBinding_VisitFunctions(SZrFunction *root,
         FZrCallBindingFunctionVisitor visitor, void *context) {
     SZrFunction **functions = ZR_NULL;
@@ -32,8 +34,7 @@ TZrBool ZrCore_CallBinding_VisitFunctions(SZrFunction *root,
     TZrBool result = ZR_FALSE;
     if (root == ZR_NULL || visitor == ZR_NULL ||
         !graph_append(&functions, &count, &capacity, root)) goto cleanup;
-    /* Materialize the graph first. Constant method bodies are not necessarily
-     * inline children, and shared constants can point back to an earlier body. */
+    /* 常量方法体不一定是内联子函数；这里同时覆盖两种持有路径。 */
     for (TZrSize index = 0u; index < count; ++index) {
         SZrFunction *function = functions[index];
         if ((function->childFunctionLength != 0u && function->childFunctionList == ZR_NULL) ||

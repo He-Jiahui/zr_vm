@@ -9,6 +9,7 @@
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/state.h"
 
+/* 将运行期失配转为可定位的绑定错误，并丢弃不再可靠的目标见证。 */
 static TZrBool member_fail(SZrFunctionCallSiteCacheEntry *entry,
                            SZrCallBindingDiagnostic *diagnostic, EZrCallBindingStatus status) {
     ZrCore_CallBinding_Invalidate(&entry->binding);
@@ -20,6 +21,7 @@ static TZrBool member_fail(SZrFunctionCallSiteCacheEntry *entry,
     return ZR_FALSE;
 }
 
+/* 执行器和 AOT 共享的成员调用准备：先验证静态契约，再根据当前接收者选择目标。 */
 TZrBool ZrCore_CallBinding_PrepareMember(SZrState *state, SZrFunction *function, TZrUInt32 cacheIndex,
         const SZrTypeValue *receiver, SZrTypeValue *callable, SZrCallBindingDiagnostic *diagnostic) {
     SZrFunctionCallSiteCacheEntry *entry;
@@ -48,8 +50,7 @@ TZrBool ZrCore_CallBinding_PrepareMember(SZrState *state, SZrFunction *function,
     if (entry->binding.contract.ownerTypeToken != 0u) {
         guard = &entry->picSlots[0];
         owner = guard->cachedOwnerPrototype;
-        /* Reflection attachment and static field writes change memberVersion.
-         * Callable descriptor and inheritance changes use layoutGeneration. */
+        /* 反射附加和静态字段写入改变 memberVersion；可调用描述符及继承关系改变 layoutGeneration。 */
         if (owner == ZR_NULL || owner->shapeId != guard->cachedOwnerShapeId ||
             (entry->binding.target.ownerLayoutGeneration != 0u &&
              owner->layoutGeneration != entry->binding.target.ownerLayoutGeneration)) {
@@ -67,6 +68,7 @@ TZrBool ZrCore_CallBinding_PrepareMember(SZrState *state, SZrFunction *function,
             while (prototype != ZR_NULL && prototype != owner) prototype = prototype->superPrototype;
             if (prototype != owner) return member_fail(entry, diagnostic, ZR_CALL_BINDING_LAYOUT_MISMATCH);
         }
+        /* 多态契约固定声明时槽位，具体函数必须在当前接收者的继承/接口表中选择。 */
         if (entry->binding.contract.bindingKind == ZR_CALL_BINDING_VIRTUAL ||
             entry->binding.contract.bindingKind == ZR_CALL_BINDING_INTERFACE) {
             target = ZR_NULL;
@@ -125,6 +127,7 @@ TZrBool ZrCore_CallBinding_PrepareMember(SZrState *state, SZrFunction *function,
     return ZR_TRUE;
 }
 
+/* 已知调用指令先按链接映射找到缓存；无静态绑定时让原解释器调用路径继续运行。 */
 TZrBool ZrCore_CallBinding_TryPrepareKnownCall(SZrState *state, SZrFunction *function,
         TZrUInt32 instructionIndex, SZrTypeValue *callable, SZrCallBindingDiagnostic *diagnostic) {
     TZrUInt32 mapEntry;
@@ -172,6 +175,7 @@ TZrBool ZrCore_CallBinding_TryPrepareKnownCall(SZrState *state, SZrFunction *fun
     }
 }
 
+/* 解释器包装层将布尔失败转成带 token 和指令坐标的运行异常。 */
 void ZrCore_CallBinding_PrepareKnownCall(SZrState *state, SZrFunction *function,
                                         TZrUInt32 instructionIndex, SZrTypeValue *callable) {
     if (!ZrCore_CallBinding_TryPrepareKnownCall(state, function, instructionIndex, callable,

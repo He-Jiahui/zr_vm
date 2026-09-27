@@ -6,6 +6,7 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/state.h"
 
+/* 类型化函数值的失败也保留静态签名，只撤销上一次运行时可调用值见证。 */
 static TZrBool typed_fail(SZrFunctionCallSiteCacheEntry *entry,
                          SZrCallBindingDiagnostic *diagnostic, EZrCallBindingStatus status,
                          TZrUInt64 expected, TZrUInt64 actual) {
@@ -20,6 +21,7 @@ static TZrBool typed_fail(SZrFunctionCallSiteCacheEntry *entry,
     return ZR_FALSE;
 }
 
+/* typed site 的签名 token 由编译器单独发布；链接时拒绝固定目标和专用 VM/native opcode。 */
 TZrBool ZrCore_CallBinding_LinkTypedSignature(SZrFunction *function,
         SZrFunctionCallSiteCacheEntry *entry, SZrCallBindingDiagnostic *diagnostic) {
     const SZrMetadataTokenRecord *signature = ZR_NULL;
@@ -60,6 +62,7 @@ TZrBool ZrCore_CallBinding_LinkTypedSignature(SZrFunction *function,
     return ZR_TRUE;
 }
 
+/* 每次调用检查现场值的签名；缓存目标只作 GC 可见的元数据见证，不替换闭包本身。 */
 TZrBool ZrCore_CallBinding_PrepareTypedCall(SZrState *state, SZrFunction *function,
         SZrFunctionCallSiteCacheEntry *entry, const SZrTypeValue *callable,
         SZrCallBindingDiagnostic *diagnostic) {
@@ -108,8 +111,7 @@ TZrBool ZrCore_CallBinding_PrepareTypedCall(SZrState *state, SZrFunction *functi
         return typed_fail(entry, diagnostic, ZR_CALL_BINDING_STALE_GENERATION,
                 previous.targetGeneration, target.targetGeneration);
     target.callableObject = callable->value.object;
-    /* This is a metadata witness. The live value remains the invocation target,
-     * so repeated calls can use distinct closures with the same signature. */
+    /* 相同签名允许不同闭包轮流出现，调用目标仍是执行器手中的原值。 */
     entry->binding.target = target;
     ZrCore_RawObject_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(function), target.callableObject);
     if (metadata != ZR_NULL)

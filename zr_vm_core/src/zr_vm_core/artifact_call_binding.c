@@ -4,6 +4,7 @@
 
 #include "artifact_schema_internal.h"
 
+/* 公共行约束供单行 API 和完整 artifact 校验共用，防止写入与读取接受不同契约。 */
 static EZrArtifactStatus artifact_binding_validate_row(
         const SZrArtifactCallBindingRow *row,
         TZrUInt32 rowIndex,
@@ -43,6 +44,7 @@ static EZrArtifactStatus artifact_binding_validate_row(
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* AOT 投影与通用 artifact writer 只写固定宽度的契约和重定位坐标。 */
 EZrArtifactStatus ZrCore_Artifact_WriteCallBindingRow(
         const SZrArtifactCallBindingRow *row,
         TZrByte *buffer,
@@ -73,6 +75,7 @@ EZrArtifactStatus ZrCore_Artifact_WriteCallBindingRow(
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* metadata loader 和 artifact reader 共用此入口，失败时不向调用者发布部分行。 */
 EZrArtifactStatus ZrCore_Artifact_ReadCallBindingRow(
         const SZrArtifactSectionView *section,
         TZrUInt32 rowIndex,
@@ -107,6 +110,9 @@ EZrArtifactStatus ZrCore_Artifact_ReadCallBindingRow(
     }
     if (!ZrCore_CallBinding_DecodeContract(bytes + 16u,
             ZR_CALL_BINDING_CONTRACT_ENCODED_SIZE, &row.contract)) {
+        /* BUG: DecodeContract 失败会清零 row.contract；再次检查只会得到 MISSING_CONTRACT。
+         * 将合法行的 signatureToken 字节替换成 targetMetadataToken 后，读取端返回
+         * INVALID_SECTION 而非写入端给出的 ILLEGAL_TOKEN。后续需保留原始解码字段来分类。 */
         EZrCallBindingStatus bindingStatus = ZrCore_CallBinding_CheckContract(&row.contract, ZR_NULL);
         return zr_artifact_fail(diagnostic,
                 bindingStatus == ZR_CALL_BINDING_INVALID_TOKEN
@@ -123,12 +129,14 @@ EZrArtifactStatus ZrCore_Artifact_ReadCallBindingRow(
     return status;
 }
 
+/* section 中按函数和缓存下标严格递增，重复调用点不得覆盖前一行。 */
 static TZrBool artifact_binding_row_follows(
         const SZrArtifactCallBindingRow *previous, const SZrArtifactCallBindingRow *row) {
     return (TZrBool)(previous->functionIndex < row->functionIndex ||
             (previous->functionIndex == row->functionIndex && previous->cacheIndex < row->cacheIndex));
 }
 
+/* 通用 artifact writer 在编码前检查所有绑定行及顺序。 */
 EZrArtifactStatus zr_artifact_call_binding_validate_input(
         const SZrArtifactSectionInput *section,
         SZrArtifactDiagnostic *diagnostic) {
@@ -144,6 +152,7 @@ EZrArtifactStatus zr_artifact_call_binding_validate_input(
     return ZR_ARTIFACT_STATUS_OK;
 }
 
+/* 通用 artifact reader 在目录和字节边界通过后复核逐行内容。 */
 EZrArtifactStatus zr_artifact_call_binding_validate_decoded(
         const SZrArtifactView *view,
         SZrArtifactDiagnostic *diagnostic) {

@@ -5,11 +5,13 @@
 #include "zr_vm_core/hash.h"
 #include "zr_vm_core/string.h"
 
+/* 名义类型和元素类型使用稳定字节哈希，避免进程内字符串地址进入契约。 */
 static TZrUInt64 signature_string_hash(struct SZrString *string) {
     return string == ZR_NULL ? 0u : ZrCore_Hash_CreateStable64(
             (const TZrByte *)ZrCore_String_GetNativeString(string), ZrCore_String_GetByteLength(string));
 }
 
+/* 类型引用的结构化字段与参数角色共同参与调用兼容性判断。 */
 static TZrUInt64 signature_type_hash(const SZrFunctionTypedTypeRef *type) {
     TZrByte bytes[48] = {0};
     zr_artifact_write_u32(bytes, (TZrUInt32)type->baseType);
@@ -25,6 +27,7 @@ static TZrUInt64 signature_type_hash(const SZrFunctionTypedTypeRef *type) {
     return ZrCore_Hash_CreateStable64(bytes, sizeof(bytes));
 }
 
+/* 编译器、导入 provider 和运行时类型化调用共用此哈希，缺少返回/参数结构时不能猜测。 */
 TZrUInt64 ZrCore_CallBinding_FunctionSignatureHash(const struct SZrFunction *function) {
     static const TZrByte prefix[] = {'Z', 'R', 'C', 'A', 'L', 'L', 1u};
     TZrByte bytes[32] = {0};

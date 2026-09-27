@@ -6,6 +6,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/hash.h"
 
+/* 方法体可能不保存原型 blob；链接器沿上下文和词法所有者定位布局的真实持有人。 */
 struct SZrFunction *ZrCore_CallBinding_PrototypeOwner(struct SZrFunction *function) {
     if (function == ZR_NULL) return ZR_NULL;
     if (function->prototypeData != ZR_NULL) return function;
@@ -18,6 +19,7 @@ struct SZrFunction *ZrCore_CallBinding_PrototypeOwner(struct SZrFunction *functi
     return ZR_NULL;
 }
 
+/* 对指定原型的序列化片段取哈希，让编译期记录与 provider 导入检查同一布局事实。 */
 TZrUInt64 ZrCore_CallBinding_PrototypeLayoutHash(const struct SZrFunction *function,
                                                TZrUInt32 prototypeIndex) {
     TZrUInt32 count;

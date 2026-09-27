@@ -11,6 +11,7 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/state.h"
 
+/* 链接失败撤销当前目标并标记指令，避免执行器继续信任半解析缓存。 */
 static TZrBool link_fail(SZrCallBindingDiagnostic *diagnostic, SZrFunctionCallSiteCacheEntry *entry,
                          EZrCallBindingStatus status) {
     ZrCore_CallBinding_Invalidate(&entry->binding);
@@ -22,6 +23,7 @@ static TZrBool link_fail(SZrCallBindingDiagnostic *diagnostic, SZrFunctionCallSi
     return ZR_FALSE;
 }
 
+/* 将成员拥有者 token 绑定到真实原型和描述符，供执行时校验接收者形状。 */
 static TZrBool link_owner(SZrState *state, SZrFunction *function,
                           SZrFunctionCallSiteCacheEntry *entry, SZrCallBindingDiagnostic *diagnostic) {
     const SZrMetadataTokenRecord *definition = ZR_NULL;
@@ -53,6 +55,7 @@ static TZrBool link_owner(SZrState *state, SZrFunction *function,
         ZrCore_CallBinding_PrototypeLayoutHash(owner, definition->ownerIndex) != definition->signatureHash) {
         return link_fail(diagnostic, entry, ZR_CALL_BINDING_LAYOUT_MISMATCH);
     }
+    /* 反序列化函数可能尚未实例化原型；布局哈希通过后才允许创建运行时见证。 */
     if (owner->prototypeInstances == ZR_NULL || member->prototypeIndex >= owner->prototypeInstancesLength ||
         owner->prototypeInstances[member->prototypeIndex] == ZR_NULL) {
         ZrCore_Module_CreatePrototypesFromData(state, ZR_NULL, owner);
@@ -81,16 +84,19 @@ static TZrBool link_owner(SZrState *state, SZrFunction *function,
     return ZR_TRUE;
 }
 
+/* 图访问回调共享状态和最近错误；不将临时链接上下文持久化到函数。 */
 typedef struct SZrCallBindingLinkContext {
     SZrState *state;
     SZrCallBindingDiagnostic *diagnostic;
 } SZrCallBindingLinkContext;
 
+/* 为每个函数重新建立指令映射，再按重定位种类分别链接固定或延迟目标。 */
 static TZrBool link_function(SZrFunction *function, void *data) {
     SZrCallBindingLinkContext *context = data;
     SZrState *state = context->state;
     SZrCallBindingDiagnostic *diagnostic = context->diagnostic;
     if (function->callBindingGeneration == 0u) function->callBindingGeneration = 1u;
+    /* 编译器和 IO 都可能再次触发链接；旧映射与已变动的指令列表不能混用。 */
     if (function->callBindingInstructionMap != ZR_NULL) {
         ZrCore_Memory_RawFreeWithType(state->global, function->callBindingInstructionMap,
                 sizeof(TZrUInt32) * function->callBindingInstructionMapLength, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
@@ -118,6 +124,9 @@ static TZrBool link_function(SZrFunction *function, void *data) {
             TZrSize bytes = sizeof(TZrUInt32) * function->instructionsLength;
             function->callBindingInstructionMap = ZrCore_Memory_RawMallocWithType(state->global,
                     bytes, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            /* BUG: 分配失败直接返回 false，而入口已清零 diagnostic；metadata 注册入口
+             * 原样传播失败，AOT 加载器最终报告 status=ok，掩盖实际的内存分配失败。
+             * 修复时需用 OOM 注入检查错误分类及半链接目标失效。 */
             if (function->callBindingInstructionMap == ZR_NULL) return ZR_FALSE;
             memset(function->callBindingInstructionMap, 0, bytes);
             function->callBindingInstructionMapLength = function->instructionsLength;
@@ -127,6 +136,7 @@ static TZrBool link_function(SZrFunction *function, void *data) {
         }
         function->callBindingInstructionMap[entry->instructionIndex] = index + 1u;
 
+        /* 导入 provider 尚未到位，只检查静态事实并留待模块加载后按 token 补目标。 */
         if (entry->bindingLocation.kind == ZR_CALL_BINDING_RELOCATION_VM_MODULE) {
             if (entry->bindingLocation.targetIndex != 0u ||
                 ZrCore_CallBinding_CheckContract(&entry->binding.contract, diagnostic) != ZR_CALL_BINDING_OK)
@@ -141,9 +151,7 @@ static TZrBool link_function(SZrFunction *function, void *data) {
             continue;
         }
 
-        /* Provider-backed native bindings are relocated by the registry. The
-         * core linker deliberately does not inspect provider names or invent a
-         * local metadata record for them. */
+        /* native provider 的目标由注册表重定位；core 不按名称查找或伪造本地 token。 */
         if (entry->bindingLocation.kind == ZR_CALL_BINDING_RELOCATION_MODULE &&
             entry->binding.contract.bindingKind == ZR_CALL_BINDING_DIRECT &&
             state->global->callBindingModuleResolver != ZR_NULL) {
@@ -221,6 +229,7 @@ static TZrBool link_function(SZrFunction *function, void *data) {
     return ZR_TRUE;
 }
 
+/* 编译结束、二进制载入和 AOT metadata 安装均使用完整函数图的同一链接入口。 */
 TZrBool ZrCore_CallBinding_LinkFunction(SZrState *state, SZrFunction *function,
                                        SZrCallBindingDiagnostic *diagnostic) {
     SZrCallBindingLinkContext context = {state, diagnostic};

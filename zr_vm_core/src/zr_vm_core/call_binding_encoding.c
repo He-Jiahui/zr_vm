@@ -4,6 +4,7 @@
 
 #include "artifact_schema_internal.h"
 
+/* writer 和 artifact 行共用这条逐字段编码路径，避免 C 结构体布局进入磁盘格式。 */
 TZrBool ZrCore_CallBinding_EncodeContract(const SZrCallBindingContract *contract,
                                          TZrByte *bytes, TZrSize length) {
     if (bytes == ZR_NULL || length != ZR_CALL_BINDING_CONTRACT_ENCODED_SIZE ||
@@ -25,6 +26,7 @@ TZrBool ZrCore_CallBinding_EncodeContract(const SZrCallBindingContract *contract
     return ZR_TRUE;
 }
 
+/* 拒绝未知 token 或保留字段，同时在失败后给调用方确定的空输出。 */
 TZrBool ZrCore_CallBinding_DecodeContract(const TZrByte *bytes, TZrSize length,
                                          SZrCallBindingContract *contract) {
     SZrCallBindingContract decoded = {0};

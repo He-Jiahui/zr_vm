@@ -1,5 +1,6 @@
 #include "call_binding_site.h"
 
+/* 编译器成员描述符中的访问器角色，与调用契约的 GET/SET 分开记录。 */
 enum {
     CALL_BINDING_ACCESSOR_NONE = 0u,
     CALL_BINDING_ACCESSOR_GET = 1u,
@@ -7,6 +8,7 @@ enum {
     CALL_BINDING_ACCESSOR_INIT = 3u
 };
 
+/* writer 和 IO 保存缓存坐标；链接器在发布目标前重新确认实际指令仍消费该坐标。 */
 TZrBool zr_call_binding_site_matches(const SZrFunction *function, TZrUInt32 cacheIndex) {
     const SZrFunctionCallSiteCacheEntry *entry;
     const SZrInstruction *instruction;
@@ -97,6 +99,7 @@ TZrBool zr_call_binding_site_matches(const SZrFunction *function, TZrUInt32 cach
     return ZR_TRUE;
 }
 
+/* 类型方法重定位必须匹配静态性、访问器角色和槽位，避免同函数名指向错误描述符。 */
 TZrBool zr_call_binding_descriptor_matches(const SZrFunction *function,
         const SZrFunctionCallSiteCacheEntry *entry, const SZrMemberDescriptor *descriptor) {
     TZrBool isStatic;

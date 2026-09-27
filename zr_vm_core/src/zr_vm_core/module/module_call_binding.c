@@ -7,6 +7,7 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/function_identity.h"
 
+/* 导入原型 blob 的访问器和虚方法标记，须与编译器记录的成员元数据一致。 */
 enum {
     MODULE_BINDING_GETTER = 1u,
     MODULE_BINDING_SETTER = 2u,
@@ -14,6 +15,7 @@ enum {
     MODULE_BINDING_VIRTUAL_MODIFIERS = (1u << 0u) | (1u << 1u) | (1u << 2u)
 };
 
+/* metadata runtime 直接提供入口；普通模块从隐藏反射导出取得同一函数图。 */
 SZrFunction *ZrCore_CallBinding_GetModuleFunction(SZrState *state, SZrObjectModule *module) {
     SZrTypeValue key;
     SZrString *name;
@@ -26,6 +28,7 @@ SZrFunction *ZrCore_CallBinding_GetModuleFunction(SZrState *state, SZrObjectModu
             ZrCore_Object_GetValue(state, &module->super, &key));
 }
 
+/* 导入类型推断从 provider 的 token 和原型成员恢复与运行时重定位相同的契约。 */
 static TZrBool constant_contract(const SZrFunction *provider, const SZrMetadataTokenRecord *record,
                                  SZrCallBindingContract *contract) {
     TZrSize offset = sizeof(TZrUInt32);
@@ -69,6 +72,8 @@ static TZrBool constant_contract(const SZrFunction *provider, const SZrMetadataT
                 contract->bindingKind = ZR_CALL_BINDING_VIRTUAL;
                 contract->dispatchSlot = item->virtualSlotIndex;
             }
+            /* TODO: 同一常量索引若对应多个不同角色的成员，此处仅返回首个契约；
+             * 当前编译器逐成员创建函数，需检查载入或程序构造的 provider 是否能共享索引。 */
             return ZR_TRUE;
         }
         offset += (TZrSize)bytes;
@@ -76,6 +81,7 @@ static TZrBool constant_contract(const SZrFunction *provider, const SZrMetadataT
     return ZR_FALSE;
 }
 
+/* 只接受与常量索引唯一对应的 provider 成员定义，避免同名方法被误绑定。 */
 TZrBool ZrCore_CallBinding_ModuleConstantContract(const SZrFunction *provider,
         TZrUInt32 constantIndex, SZrCallBindingContract *contract) {
     const SZrMetadataTokenRecord *selected = ZR_NULL;
@@ -93,6 +99,7 @@ TZrBool ZrCore_CallBinding_ModuleConstantContract(const SZrFunction *provider,
     return ZrCore_CallBinding_CheckContract(contract, ZR_NULL) == ZR_CALL_BINDING_OK;
 }
 
+/* 导入一次所需的 provider、consumer 状态和最近失败位置，仅活于函数图遍历期间。 */
 typedef struct SZrImportedBindingContext {
     SZrState *state;
     SZrObjectModule *module;
@@ -100,6 +107,7 @@ typedef struct SZrImportedBindingContext {
     SZrCallBindingDiagnostic *diagnostic;
 } SZrImportedBindingContext;
 
+/* 导入失败撤销现场目标；保留编译期契约供错误报告和未来重载重新定位。 */
 static TZrBool imported_fail(SZrImportedBindingContext *context, SZrFunctionCallSiteCacheEntry *entry,
                             EZrCallBindingStatus status) {
     ZrCore_CallBinding_Invalidate(&entry->binding);
@@ -111,6 +119,7 @@ static TZrBool imported_fail(SZrImportedBindingContext *context, SZrFunctionCall
     return ZR_FALSE;
 }
 
+/* 验证 provider 类型原型的布局和成员描述符，再缓存供运行时接收者检查的原型。 */
 static TZrBool imported_owner(SZrImportedBindingContext *context, SZrFunction *consumer,
         SZrFunctionCallSiteCacheEntry *entry, SZrCallBindingCandidate *candidate) {
     const SZrMetadataTokenRecord *owner = ZR_NULL;
@@ -145,6 +154,8 @@ static TZrBool imported_owner(SZrImportedBindingContext *context, SZrFunction *c
     for (TZrUInt32 index = 0u; index < prototype->memberDescriptorCount; ++index) {
         const SZrMemberDescriptor *descriptor = &prototype->memberDescriptors[index];
         if (descriptor->methodFunction != candidate->target.vm.function) continue;
+        /* TODO: 同一函数体若由多个成员描述符共享，首个身份不匹配就拒绝会错过后续匹配；
+         * 当前编译器对调用目标拒绝重复描述符，需检查载入或程序构造的 provider 可达性。 */
         if (!zr_call_binding_descriptor_matches(consumer, entry, descriptor))
             return imported_fail(context, entry, ZR_CALL_BINDING_INVALID_RELOCATION);
         if (guard->cachedDescriptorIndex != ZR_CALL_BINDING_SLOT_NONE)
@@ -165,6 +176,7 @@ static TZrBool imported_owner(SZrImportedBindingContext *context, SZrFunction *c
     return ZR_TRUE;
 }
 
+/* AOT provider 通过函数图定义身份映射到注册表行，不借用名称或旧地址。 */
 static TZrBool imported_aot_target(SZrImportedBindingContext *context,
         SZrFunctionCallSiteCacheEntry *entry, SZrCallBindingCandidate *candidate) {
     const SZrAotCodeRegistration *registration = context->module->metadataRuntime.codeRegistration;
@@ -189,6 +201,7 @@ static TZrBool imported_aot_target(SZrImportedBindingContext *context,
     return ZR_TRUE;
 }
 
+/* 导入后扫描 consumer 图，只处理模块签名属于当前 provider 的 VM_MODULE 调用点。 */
 static TZrBool link_imported_function(SZrFunction *consumer, void *data) {
     SZrImportedBindingContext *context = data;
     for (TZrUInt32 index = 0u; index < consumer->callSiteCacheLength; ++index) {
@@ -204,11 +217,7 @@ static TZrBool link_imported_function(SZrFunction *consumer, void *data) {
             EZrCallBindingStatus status = ZrCore_CallBinding_Validate(&entry->binding,
                     consumer->callBindingGeneration, context->diagnostic);
             if (status == ZR_CALL_BINDING_OK) continue;
-            /* A provider can be removed and loaded again under the same
-             * module contract.  The old target generation is then stale, so
-             * clear only the process-local target and resolve the new
-             * provider entry below.  Structural contract failures remain
-             * link errors and never fall back to name lookup. */
+            /* 同契约 provider 重载时只清进程内旧目标；结构性失配仍是链接错误。 */
             if (status != ZR_CALL_BINDING_STALE_GENERATION) return ZR_FALSE;
             ZrCore_CallBinding_Invalidate(&entry->binding);
         }
@@ -235,8 +244,7 @@ static TZrBool link_imported_function(SZrFunction *consumer, void *data) {
                 symbol = item;
             }
             if (symbol == ZR_NULL) return imported_fail(context, entry, ZR_CALL_BINDING_TARGET_NOT_FOUND);
-            /* Export installation owns the closure. Resolve that value once,
-             * after module initialization has closed its captured locals. */
+            /* 模块初始化后的导出闭包保存捕获状态，必须从已安装导出取得现场值。 */
             callable = ZrCore_Module_GetPubExport(context->state, context->module, symbol->name);
             candidate.contract.bindingKind = ZR_CALL_BINDING_DIRECT;
             candidate.contract.targetMetadataToken = symbol->metadataToken;
@@ -273,6 +281,7 @@ static TZrBool link_imported_function(SZrFunction *consumer, void *data) {
     return ZR_TRUE;
 }
 
+/* 模块导入入口：沿 consumer 根图按稳定 token 重定位，供下一次调用直接使用。 */
 TZrBool ZrCore_CallBinding_LinkImportedModule(SZrState *state, SZrFunction *consumer,
         SZrObjectModule *module, SZrCallBindingDiagnostic *diagnostic) {
     SZrImportedBindingContext context = {state, module, ZR_NULL, diagnostic};

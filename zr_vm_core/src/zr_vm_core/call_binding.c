@@ -5,6 +5,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/closure.h"
 
+/* 各级校验统一保留 status 和字段差异，供执行错误和产物诊断复用。 */
 static EZrCallBindingStatus binding_fail(SZrCallBindingDiagnostic *diagnostic,
         EZrCallBindingStatus status, TZrUInt64 expected, TZrUInt64 actual) {
     if (diagnostic != ZR_NULL) {
@@ -15,6 +16,7 @@ static EZrCallBindingStatus binding_fail(SZrCallBindingDiagnostic *diagnostic,
     return status;
 }
 
+/* 比较候选前清掉上次失败的位置，避免调用方读取过期的 token。 */
 static void binding_diagnostic_init(SZrCallBindingDiagnostic *diagnostic,
                                     const SZrCallBindingContract *contract) {
     if (diagnostic != ZR_NULL) {
@@ -23,6 +25,7 @@ static void binding_diagnostic_init(SZrCallBindingDiagnostic *diagnostic,
     }
 }
 
+/* RID 为零不是可链接定义，即使高位表号看起来正确。 */
 static TZrBool binding_token_is(TZrMetadataToken token, TZrUInt32 table) {
     return ZR_METADATA_TOKEN_TABLE(token) == table && ZR_METADATA_TOKEN_RID(token) != 0u;
 }
@@ -52,6 +55,7 @@ EZrCallBindingStatus ZrCore_CallBinding_CheckContract(const SZrCallBindingContra
         contract->reserved1 != 0u) {
         return binding_fail(diagnostic, ZR_CALL_BINDING_INVALID_ARGUMENT, 0u, 0u);
     }
+    /* 拥有者身份和布局版本必须成组出现，不能接受半个可重定位类型契约。 */
     if ((contract->ownerTypeToken == 0u && (contract->layoutVersion != 0u || contract->layoutHash != 0u)) ||
         (contract->ownerTypeToken != 0u && (contract->layoutVersion == 0u || contract->layoutHash == 0u))) {
         return binding_fail(diagnostic, ZR_CALL_BINDING_MISSING_CONTRACT, 0u, 0u);
@@ -72,6 +76,7 @@ EZrCallBindingStatus ZrCore_CallBinding_CompareContracts(const SZrCallBindingCon
     if (status != ZR_CALL_BINDING_OK) return status;
     status = ZrCore_CallBinding_CheckContract(actual, diagnostic);
     if (status != ZR_CALL_BINDING_OK) return status;
+    /* 差异分类供导入、AOT 注册及用户错误共享，不在目标不匹配时退回名称解析。 */
 #define MATCH(FIELD, STATUS) \
     if (expected->FIELD != actual->FIELD) \
         return binding_fail(diagnostic, STATUS, expected->FIELD, actual->FIELD)
@@ -96,6 +101,7 @@ void ZrCore_CallBinding_Invalidate(SZrCallBinding *binding) {
     }
 }
 
+/* 模块卸载沿完整函数图撤销目标；零代际保留为“未链接”哨兵。 */
 static TZrBool call_binding_advance_generation(SZrFunction *function, void *context) {
     ZR_UNUSED_PARAMETER(context);
     if (function->callBindingGeneration == UINT64_MAX) {
@@ -118,6 +124,7 @@ TZrBool ZrCore_CallBinding_AdvanceGeneration(struct SZrFunction *function) {
     return ZrCore_CallBinding_VisitFunctions(function, call_binding_advance_generation, ZR_NULL);
 }
 
+/* 目标见证与持久化契约分开验证：typed 和多态调用点允许链接时尚无具体目标。 */
 static EZrCallBindingStatus binding_validate_target(const SZrCallBinding *binding,
                                                      SZrCallBindingDiagnostic *diagnostic) {
     const SZrCallBindingTarget *target = &binding->target;
@@ -186,6 +193,7 @@ EZrCallBindingStatus ZrCore_CallBinding_Validate(SZrCallBinding *binding,
         status = binding_fail(diagnostic, ZR_CALL_BINDING_STALE_GENERATION, binding->generation, generation);
     }
     if (status == ZR_CALL_BINDING_OK) status = binding_validate_target(binding, diagnostic);
+    /* 失效保留契约，导入模块重载和下一次链接仍可按 token 重新定位。 */
     if (status != ZR_CALL_BINDING_OK) ZrCore_CallBinding_Invalidate(binding);
     return status;
 }
@@ -200,6 +208,7 @@ EZrCallBindingStatus ZrCore_CallBinding_Resolve(const SZrCallBindingContract *ex
         ZrCore_CallBinding_Invalidate(binding);
         return binding_fail(diagnostic, ZR_CALL_BINDING_INVALID_ARGUMENT, 0u, 0u);
     }
+    /* expected 允许指向 binding->contract；必须先复制，再清除旧目标。 */
     contractCopy = *expected;
     ZrCore_CallBinding_Invalidate(binding);
     binding->contract = contractCopy;
@@ -219,6 +228,7 @@ EZrCallBindingStatus ZrCore_CallBinding_Resolve(const SZrCallBindingContract *ex
     return ZrCore_CallBinding_Validate(binding, generation, diagnostic);
 }
 
+/* 面向运行错误的有限状态名；未知数值保持独立的兜底名称。 */
 const char *ZrCore_CallBinding_StatusName(EZrCallBindingStatus status) {
     switch (status) {
         case ZR_CALL_BINDING_OK: return "ok";
