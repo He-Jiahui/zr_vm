@@ -96,6 +96,9 @@ void test_aotir_owns_state_map(void) {
     TEST_ASSERT_TRUE(ZrParser_ExecIr_LowerAotWithConstantsAndLayouts(
             &function, constants, 1u, layouts, 1u, &aot, &diagnostic));
     TEST_ASSERT_FALSE(aot.runnable);
+    TEST_ASSERT_EQUAL_UINT32(ZR_AOT_IR_CALLABLE_ABI_UNKNOWN,
+                             aot.callableAbi.kind);
+    TEST_ASSERT_EQUAL_UINT32(0u, aot.callableAbi.returnTypeToken);
     TEST_ASSERT_TRUE(aot.stateMapPresent);
     TEST_ASSERT_EQUAL_UINT32(function.stateMap->entryCount, aot.stateMap.entryCount);
     TEST_ASSERT_EQUAL_UINT32(function.stateMap->rootCount, aot.stateMap.rootCount);

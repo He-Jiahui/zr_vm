@@ -57,6 +57,9 @@ TZrBool ZrParser_ExecIr_LowerAotWithConstantsAndLayouts(
     candidate.signatureHash = function->signatureHash;
     candidate.functionToken = function->functionToken;
     candidate.contract = function->contract;
+    /* ExecIR currently has no trusted primitive return ABI producer. */
+    candidate.callableAbi.kind = ZR_AOT_IR_CALLABLE_ABI_UNKNOWN;
+    candidate.callableAbi.returnTypeToken = 0u;
     /* This record is an AOTIR seam, not executable native code yet. */
     candidate.runnable = ZR_FALSE;
     candidate.ownershipTag = ZR_EXEC_IR_PROJECTION_TAG;

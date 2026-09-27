@@ -15,7 +15,7 @@
 #include "zr_vm_core/exec_ir.h"
 #include "zr_vm_core/exec_ir_state_map.h"
 
-#define ZR_AOT_IR_SCHEMA_VERSION ((TZrUInt32)6u)
+#define ZR_AOT_IR_SCHEMA_VERSION ((TZrUInt32)7u)
 #define ZR_AOT_IR_TARGET_ABI_VERSION ((TZrUInt32)1u)
 #define ZR_AOT_IR_ID_INVALID ((TZrUInt32)0u)
 
@@ -125,11 +125,25 @@ typedef struct SZrAotIrPhiIncoming {
     TZrUInt32 valueId;
 } SZrAotIrPhiIncoming;
 
+/* Explicit callable ABI fact. UNKNOWN is valid for descriptor-only modules;
+ * it never authorizes artifact emission. A type token identifies the declared
+ * return type but is not itself evidence that the type is i64. */
+typedef enum EZrAotIrCallableAbiKind {
+    ZR_AOT_IR_CALLABLE_ABI_UNKNOWN = 0,
+    ZR_AOT_IR_CALLABLE_ABI_NOARGS_I64 = 1
+} EZrAotIrCallableAbiKind;
+
+typedef struct SZrAotIrCallableAbi {
+    EZrAotIrCallableAbiKind kind;
+    TZrExecIrTypeToken returnTypeToken;
+} SZrAotIrCallableAbi;
+
 typedef struct SZrAotIrFunction {
     TZrUInt32 id;
     TZrMetadataToken functionToken;
     SZrExecutionContract contract;
     TZrUInt64 signatureHash;
+    SZrAotIrCallableAbi callableAbi;
     SZrAotIrFrameLayout frameLayout;
     const SZrAotIrFrameSlot *frameSlots;
     TZrUInt32 frameSlotCount;
@@ -195,6 +209,11 @@ ZR_CORE_API TZrUInt64 ZrCore_AotIr_HashModule(
 ZR_CORE_API TZrBool ZrCore_AotIr_IsRelocationFree(
         const SZrAotIrModule *module,
         SZrAotIrDiagnostic *diagnostic);
+/* Requires an explicitly declared ABI and a typed SSA return definition.
+ * UNKNOWN remains valid AOTIR but returns UNSUPPORTED here. */
+ZR_CORE_API EZrAotIrStatus ZrCore_AotIr_RequireExecutableAbi(
+        const SZrAotIrModule *module, TZrUInt32 functionId,
+        SZrAotIrCallableAbi *outAbi, SZrAotIrDiagnostic *diagnostic);
 ZR_CORE_API const TZrChar *ZrCore_AotIr_StatusName(EZrAotIrStatus status);
 
 #endif /* ZR_VM_CORE_AOT_IR_H */

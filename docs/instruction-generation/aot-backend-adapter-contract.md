@@ -24,6 +24,7 @@ plan_sources:
   - "user: 2026-09-14 implement the missing AOT adapter files with explicit unsupported/fallback behavior"
 tests:
   - tests/parser/test_ssa_aot_backend_adapters.c
+  - tests/parser/test_ssa_aot_callable_abi.c
 doc_type: module-detail
 status: implemented-subset
 ---
@@ -48,6 +49,12 @@ are pointer-free in content.  The C and LLVM wrappers call the existing
 `ZrParser_AotIr_EmitC`/`ZrParser_AotIr_EmitLlvm` facade and normalize bridge
 counts against the complete semantic-site denominator, avoiding compatibility
 double counting in the older facade result.
+`backend_aot_ir_adapter_require_executable_abi` forwards the core callable ABI
+qualification and diagnostic without deriving a signature. It accepts only an
+explicit `NOARGS_I64` declaration whose RETURN shape, type token and unique
+earlier SSA value definition pass the core checks. Current source projections
+still declare `UNKNOWN`; this adapter
+does not make the descriptor-only C/LLVM wrappers artifact-capable.
 
 ## Coverage and fallback
 

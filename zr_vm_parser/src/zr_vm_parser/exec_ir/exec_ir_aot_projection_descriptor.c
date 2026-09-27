@@ -54,6 +54,7 @@ TZrBool ZrParser_AotIrProjection_BuildDescriptor(
     candidate.function.functionToken = projection->functionToken;
     candidate.function.contract = projection->contract;
     candidate.function.signatureHash = projection->signatureHash;
+    candidate.function.callableAbi = projection->callableAbi;
     candidate.function.frameLayout.logicalSlotCount = projection->logicalSlotCount;
     candidate.function.frameLayout.storageSlotCount = projection->storageSlotCount;
     candidate.function.frameLayout.parameterPrefixBytes = projection->parameterPrefixBytes;

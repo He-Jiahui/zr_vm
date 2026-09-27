@@ -64,6 +64,12 @@ ZR_PARSER_API EZrBackendAotIrStatus backend_aot_ir_adapter_validate(
         const SZrAotIrModule *module,
         SZrBackendAotIrDiagnostic *diagnostic);
 
+/** @brief 验证单函数显式 ABI 并原样传给未来产物 emitter；UNKNOWN 返回 unsupported。 */
+ZR_PARSER_API EZrBackendAotIrStatus backend_aot_ir_adapter_require_executable_abi(
+        const SZrAotIrModule *module, TZrUInt32 functionId,
+        SZrAotIrCallableAbi *outAbi,
+        SZrBackendAotIrDiagnostic *diagnostic);
+
 /** @brief 统计全模块指令数，拒绝 UINT32 容量溢出。 */
 ZR_PARSER_API TZrBool backend_aot_ir_adapter_count_instructions(
         const SZrAotIrModule *module,

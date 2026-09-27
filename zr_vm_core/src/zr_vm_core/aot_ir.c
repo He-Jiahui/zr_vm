@@ -416,6 +416,40 @@ static TZrUInt64 aot_ir_hash_logical_map(TZrUInt64 hash,
     return hash;
 }
 
+static EZrAotIrStatus aot_ir_validate_callable_abi(
+        const SZrAotIrFunction *function, SZrAotIrDiagnostic *diagnostic) {
+    const SZrAotIrCallableAbi *abi = &function->callableAbi;
+    if (abi->kind == ZR_AOT_IR_CALLABLE_ABI_UNKNOWN) {
+        if (abi->returnTypeToken == 0u) return ZR_AOT_IR_OK;
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_SIGNATURE,
+                           function->id, 0u, 0u, 0u, 0u,
+                           abi->returnTypeToken);
+    }
+    if (abi->kind != ZR_AOT_IR_CALLABLE_ABI_NOARGS_I64 ||
+        abi->returnTypeToken == 0u) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_SIGNATURE,
+                           function->id, 0u, 0u, 0u,
+                           ZR_AOT_IR_CALLABLE_ABI_NOARGS_I64,
+                           abi->kind != ZR_AOT_IR_CALLABLE_ABI_NOARGS_I64
+                                   ? (TZrUInt64)abi->kind : 0u);
+    }
+    for (TZrUInt32 i = 0u; i < function->instructionCount; ++i) {
+        const SZrAotIrInstruction *instruction = &function->instructions[i];
+        if (instruction->opcode == ZR_EXEC_IR_OPCODE_RETURN &&
+            (instruction->operands.count != 1u ||
+             instruction->typeToken != abi->returnTypeToken)) {
+            const SZrAotIrBlock *block = aot_ir_block_for_instruction(function, i);
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_SIGNATURE,
+                               function->id, block != ZR_NULL ? block->id : 0u,
+                               instruction->id, i, abi->returnTypeToken,
+                               instruction->operands.count != 1u
+                                       ? instruction->operands.count
+                                       : instruction->typeToken);
+        }
+    }
+    return ZR_AOT_IR_OK;
+}
+
 static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                                                const SZrAotIrFunction *function,
                                                TZrUInt32 functionIndex,
@@ -913,6 +947,10 @@ static EZrAotIrStatus aot_ir_validate_function(const SZrAotIrModule *module,
                                0u, 0u, i, 1u, function->memoryTokenPool[i]);
         }
     }
+    {
+        EZrAotIrStatus abiStatus = aot_ir_validate_callable_abi(function, diagnostic);
+        if (abiStatus != ZR_AOT_IR_OK) return abiStatus;
+    }
     return aot_ir_validate_logical_map(function, diagnostic);
 }
 
@@ -1065,6 +1103,83 @@ TZrBool ZrCore_AotIr_IsRelocationFree(const SZrAotIrModule *module,
     return ZR_TRUE;
 }
 
+EZrAotIrStatus ZrCore_AotIr_RequireExecutableAbi(
+        const SZrAotIrModule *module, TZrUInt32 functionId,
+        SZrAotIrCallableAbi *outAbi, SZrAotIrDiagnostic *diagnostic) {
+    EZrAotIrStatus status;
+    const SZrAotIrFunction *function = ZR_NULL;
+    if (outAbi != ZR_NULL) memset(outAbi, 0, sizeof(*outAbi));
+    if (outAbi == ZR_NULL || functionId == ZR_AOT_IR_ID_INVALID) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ARGUMENT,
+                           functionId, 0u, 0u, 0u, 1u, functionId);
+    }
+    status = ZrCore_AotIr_ValidateModule(module, diagnostic);
+    if (status != ZR_AOT_IR_OK) return status;
+    if (!ZrCore_AotIr_IsRelocationFree(module, diagnostic)) {
+        return ZR_AOT_IR_RELOCATION;
+    }
+    for (TZrUInt32 f = 0u; f < module->functionCount; ++f) {
+        if (module->functions[f].id == functionId) {
+            function = &module->functions[f];
+            break;
+        }
+    }
+    if (function == ZR_NULL) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_ID,
+                           functionId, 0u, 0u, 0u, 1u, 0u);
+    }
+    if (function->callableAbi.kind == ZR_AOT_IR_CALLABLE_ABI_UNKNOWN) {
+        return aot_ir_fail(diagnostic, ZR_AOT_IR_UNSUPPORTED,
+                           functionId, 0u, 0u, 0u,
+                           ZR_AOT_IR_CALLABLE_ABI_NOARGS_I64,
+                           function->callableAbi.kind);
+    }
+    {
+        TZrUInt32 returnCount = 0u;
+        for (TZrUInt32 i = 0u; i < function->instructionCount; ++i) {
+            const SZrAotIrInstruction *instruction = &function->instructions[i];
+            TZrUInt32 definitionCount = 0u;
+            TZrUInt32 definitionIndex = UINT32_MAX;
+            TZrUInt32 valueId;
+            if (instruction->opcode != ZR_EXEC_IR_OPCODE_RETURN) continue;
+            ++returnCount;
+            valueId = function->operandPool[instruction->operands.offset];
+            for (TZrUInt32 d = 0u; d < function->instructionCount; ++d) {
+                const SZrAotIrInstruction *definition = &function->instructions[d];
+                for (TZrUInt32 r = 0u; r < definition->results.count; ++r) {
+                    if (function->resultPool[definition->results.offset + r] != valueId)
+                        continue;
+                    if (definition->typeToken !=
+                        function->callableAbi.returnTypeToken) {
+                        return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_SIGNATURE,
+                                           functionId, 0u, instruction->id, i,
+                                           function->callableAbi.returnTypeToken,
+                                           definition->typeToken);
+                    }
+                    ++definitionCount;
+                    definitionIndex = d;
+                }
+            }
+            if (definitionCount != 1u) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_SIGNATURE,
+                                   functionId, 0u, instruction->id, i,
+                                   1u, definitionCount);
+            }
+            if (definitionIndex >= i) {
+                return aot_ir_fail(diagnostic, ZR_AOT_IR_INVALID_SIGNATURE,
+                                   functionId, 0u, instruction->id, i,
+                                   i, definitionIndex);
+            }
+        }
+        if (returnCount == 0u) {
+            return aot_ir_fail(diagnostic, ZR_AOT_IR_UNSUPPORTED,
+                               functionId, 0u, 0u, 0u, 1u, 0u);
+        }
+    }
+    *outAbi = function->callableAbi;
+    return ZR_AOT_IR_OK;
+}
+
 TZrUInt64 ZrCore_AotIr_HashModule(const SZrAotIrModule *module) {
     TZrUInt64 hash = UINT64_C(1469598103934665603);
     if (ZrCore_AotIr_ValidateModule(module, ZR_NULL) != ZR_AOT_IR_OK) {
@@ -1101,6 +1216,8 @@ TZrUInt64 ZrCore_AotIr_HashModule(const SZrAotIrModule *module) {
         hash = aot_ir_hash_u32(hash, function->functionToken);
         hash = aot_ir_hash_contract(hash, &function->contract);
         hash = aot_ir_hash_u64(hash, function->signatureHash);
+        hash = aot_ir_hash_u32(hash, (TZrUInt32)function->callableAbi.kind);
+        hash = aot_ir_hash_u32(hash, function->callableAbi.returnTypeToken);
         hash = aot_ir_hash_u32(hash, function->frameLayout.logicalSlotCount);
         hash = aot_ir_hash_u32(hash, function->frameLayout.storageSlotCount);
         hash = aot_ir_hash_u32(hash, function->frameLayout.parameterPrefixBytes);

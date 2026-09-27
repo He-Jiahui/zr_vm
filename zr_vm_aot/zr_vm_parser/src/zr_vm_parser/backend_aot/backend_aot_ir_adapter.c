@@ -146,6 +146,24 @@ EZrBackendAotIrStatus backend_aot_ir_adapter_validate(
     return ZR_BACKEND_AOT_IR_OK;
 }
 
+EZrBackendAotIrStatus backend_aot_ir_adapter_require_executable_abi(
+        const SZrAotIrModule *module, TZrUInt32 functionId,
+        SZrAotIrCallableAbi *outAbi,
+        SZrBackendAotIrDiagnostic *diagnostic) {
+    SZrAotIrDiagnostic sourceDiagnostic;
+    EZrAotIrStatus sourceStatus;
+    backend_aot_ir_adapter_clear_diagnostic(diagnostic);
+    if (outAbi != ZR_NULL) (void)memset(outAbi, 0, sizeof(*outAbi));
+    (void)memset(&sourceDiagnostic, 0, sizeof(sourceDiagnostic));
+    sourceStatus = ZrCore_AotIr_RequireExecutableAbi(
+            module, functionId, outAbi, &sourceDiagnostic);
+    if (sourceStatus != ZR_AOT_IR_OK) {
+        backend_aot_ir_adapter_copy_diagnostic(diagnostic, sourceStatus,
+                                                &sourceDiagnostic);
+    }
+    return backend_aot_ir_adapter_map_status(sourceStatus);
+}
+
 TZrBool backend_aot_ir_adapter_count_instructions(
         const SZrAotIrModule *module,
         TZrUInt32 *outCount,

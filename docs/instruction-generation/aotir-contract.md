@@ -4,14 +4,20 @@ related_code:
   - zr_vm_core/src/zr_vm_core/aot_ir.c
   - zr_vm_core/include/zr_vm_core/exec_ir_state_map.h
   - zr_vm_parser/include/zr_vm_parser/exec_ir_projections.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_projection_descriptor.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/aot_ir.h
   - zr_vm_core/src/zr_vm_core/aot_ir.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_projection_descriptor.c
 plan_sources:
   - docs/plans/ssa/07-aot-backends/01-aotir-contract.md
 tests:
   - tests/parser/test_ssa_aotir_contract.c
+  - tests/parser/test_ssa_aot_callable_abi.c
   - tests/acceptance/ssa-aotir-logical-map-schema.md
+  - tests/acceptance/ssa-aotir-explicit-callable-abi.md
 doc_type: module-detail
 status: implemented-subset
 ---
@@ -50,6 +56,33 @@ borrowed memory-token pool. TYPE_TEST must carry a nonzero match type token;
 other instructions must carry zero. Memory ranges and every pool token are
 validated before hashing, so C/LLVM consumers cannot silently lose memory
 ordering or type-test semantics.
+
+Schema version 7 adds `SZrAotIrFunction.callableAbi`. `UNKNOWN` (zero) is the
+default for existing descriptor-only producers. The first fixed declaration,
+`NOARGS_I64`, says that a trusted callable-signature producer has established
+zero parameters and an i64 return; it also names the nonzero AOTIR type token
+for that i64 result. The owned `SZrAotIrProjection` and descriptor builder
+copy this declaration unchanged, and the backend adapter exposes the same
+qualification result. The current source `ZrParser_ExecIr_LowerAot` has no
+trusted primitive return-signature producer and explicitly leaves this field
+`UNKNOWN`. Neither `typeToken`, opaque `signatureHash`, constant bits, legacy
+ExecBC, nor `frameLayout.parameterPrefixBytes` establishes parameter count or
+the i64 ABI. ExecIR's `frameLayout.parameterCount` is not carried by this
+AOTIR record and does not establish the primitive return kind. Thus no current
+source-to-AOTIR path claims an executable ABI.
+
+`ZrCore_AotIr_ValidateModule` rejects unknown ABI enum values, a nonzero
+return token on `UNKNOWN`, a zero return token on `NOARGS_I64`, and RETURN
+instructions whose arity or type token disagrees with the declaration.
+`ZrCore_AotIr_RequireExecutableAbi` additionally requires a validated,
+relocation-free module, a known declaration, and a RETURN value with exactly
+one matching typed definition across the whole function, earlier in instruction
+order than that RETURN. It returns `UNSUPPORTED` for `UNKNOWN` or a missing
+RETURN and clears its output on failure. This qualifies ABI/SSA shape; it does
+not prove CFG dominance, authenticate a source-signature producer, or show that
+an emitter can produce an artifact. The C/LLVM artifact entry points remain
+unavailable. The canonical module hash includes ABI kind and return type token,
+so descriptor identity changes when this declaration changes.
 
 Frame legalization is represented by borrowed frame-slot records and a
 logical-value-to-physical-slot pool. Source spans are borrowed as numeric
@@ -114,3 +147,8 @@ relocation rejection.  CMake registers it as `ssa_aotir_contract`; run it with:
 ctest --test-dir build/ssa-gcc-debug -R '^ssa_aotir_contract$' \
   --output-on-failure --no-tests=error
 ```
+
+`tests/parser/test_ssa_aot_callable_abi.c` exercises the explicit declaration,
+unknown and mismatched fail-closed cases, hash sensitivity, owned projection
+transfer, and backend adapter qualification. CMake registers it as
+`ssa_aot_callable_abi`.

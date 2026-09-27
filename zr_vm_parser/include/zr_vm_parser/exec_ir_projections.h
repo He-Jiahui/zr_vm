@@ -1,6 +1,7 @@
 #ifndef ZR_VM_PARSER_EXEC_IR_PROJECTIONS_H
 #define ZR_VM_PARSER_EXEC_IR_PROJECTIONS_H
 
+#include "zr_vm_core/aot_ir.h"
 #include "zr_vm_core/exec_ir.h"
 #include "zr_vm_core/exec_ir_state_map.h"
 #include "zr_vm_parser/conf.h"
@@ -136,6 +137,7 @@ typedef struct SZrAotIrProjection {
     TZrExecIrFunctionId functionId;
     TZrMetadataToken functionToken;
     TZrUInt64 signatureHash;
+    SZrAotIrCallableAbi callableAbi;
     TZrExecIrBlockId entryBlockId;
     TZrUInt64 frameLayoutHash;
     TZrUInt32 logicalSlotCount;
