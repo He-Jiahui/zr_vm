@@ -239,6 +239,8 @@ TZrBool compiler_semantic_cfg_expression_is_linear(
         const SZrAstNode *node);
 TZrBool compiler_semantic_cfg_short_circuit_is_supported(
         const SZrAstNode *node);
+TZrBool compiler_semantic_cfg_while_condition_is_supported(
+        const SZrAstNode *node);
 TZrBool compiler_semantic_cfg_arm_falls_through(
         const SZrAstNode *node);
 TZrBool compiler_semantic_cfg_loop_body_analyze(

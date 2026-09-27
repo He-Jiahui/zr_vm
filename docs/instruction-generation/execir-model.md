@@ -480,6 +480,15 @@ one merged expression value. The temporary remains explicit memory rather
 than being marked as a promotable source local. Unsupported operand families
 abandon any partial source CFG and retain the legacy two-block path.
 
+A statement-form `while` may use that same top-level short-circuit condition
+when both operands pass the linear-expression preflight. The condition entry
+branches to the RHS or logical join; the logical join then branches to the
+loop body or exit. The body backedge (and an unvalued `continue`) returns to
+the condition entry, so the RHS is reevaluated only on paths that require it.
+This does not admit nested logical operands or an unmodeled RHS: those loops
+retain the analysis-only CFG. The source-backed Oracle regression checks both
+the executed RHS store count and the returned boolean across `&&` and `||`.
+
 A resolved, non-spread source function call can also establish the source CFG
 when no earlier branch has done so. The existing straight-line facts become the
 entry block, which jumps to a dedicated call block. A typed `CALL_TYPED` or

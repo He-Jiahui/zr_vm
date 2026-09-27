@@ -1,5 +1,11 @@
 #include "compiler_internal.h"
 
+TZrBool compiler_semantic_cfg_while_condition_is_supported(
+        const SZrAstNode *node) {
+    return (TZrBool)(compiler_semantic_cfg_expression_is_linear(node) ||
+                     compiler_semantic_cfg_short_circuit_is_supported(node));
+}
+
 TZrBool compiler_semantic_cfg_loop_body_analyze(
         const SZrAstNode *node,
         TZrBool allowBreak,

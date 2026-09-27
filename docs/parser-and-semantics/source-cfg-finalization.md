@@ -4,6 +4,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/type_environment_bindings.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_loop.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
@@ -22,9 +23,11 @@ tests:
   - tests/parser/ssa_source_cfg_faults.c
   - tests/parser/gdb_ssa_source_straight_line_cfg.gdb
   - tests/parser/test_ssa_source_straight_line_cfg.c
+  - tests/parser/test_ssa_source_while_short_circuit.c
   - tests/parser/test_ssa_source_value_facts.c
   - tests/parser/test_pre_semantic_ir.c
   - tests/acceptance/ssa-source-straight-line-cfg.md
+  - tests/acceptance/ssa-source-while-short-circuit.md
   - tests/acceptance/ssa-source-cfg-promotion-recovery.md
 doc_type: module-detail
 ---
@@ -96,6 +99,12 @@ control-flow producers retain their own preflight checks; this stage does not
 prove that every source expression supported by the legacy compiler has a
 canonical producer. Broader producer completeness is still required before
 the normal compiler pipeline can rely exclusively on ExecIR.
+
+The active `while` producer also accepts the already-supported top-level
+short-circuit expression shape for its condition: both operands must be
+linear. The logical join owns the loop body/exit branch and the body returns
+to the original condition entry. Unsupported RHS operations keep the
+analysis-only fallback and cannot be treated as executable ExecIR.
 
 Typed numeric `+`, `-`, and `*` are now a supported producer subset. When type
 inference selects a signed, unsigned, or floating-point operation and both
