@@ -7,6 +7,9 @@ const { spawnSync } = require('node:child_process');
 
 const { createArtifactLayout } = require('../scripts/artifact-layout.js');
 
+// 验证 package.json 同步脚本将布局声明的两项 WASM 资产复制到 VSIX 目录。
+// TODO: 本例直接改写共享 out/web 后再恢复；并行构建/打包可观察到测试桩，
+// 需把扩展布局注入临时根目录或串行化此类测试。
 test('sync-wasm-server copies the required wasm assets into the extension bundle', () => {
     const extensionRoot = path.resolve(__dirname, '..');
     const repositoryRoot = path.resolve(extensionRoot, '..');
@@ -17,6 +20,7 @@ test('sync-wasm-server copies the required wasm assets into the extension bundle
     const sourceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-wasm-sync-source-'));
     const previousFiles = new Map();
 
+    // 保存既有文件以减小单次测试对开发工作树的影响；正常退出时完整还原。
     try {
         for (const fileName of layout.wasm.requiredFiles) {
             fs.writeFileSync(path.join(sourceDir, fileName), `test-${fileName}`);
@@ -27,6 +31,7 @@ test('sync-wasm-server copies the required wasm assets into the extension bundle
             }
         }
 
+        // 用真实子进程覆盖命令行入口、布局解析和复制，不只模拟文件 API。
         const result = spawnSync(process.execPath, [
             path.join(extensionRoot, 'scripts', 'sync-wasm-server.js'),
             sourceDir,

@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createArtifactLayout } = require('./artifact-layout');
 
+// package.json 的 build:wasm 与 VSIX 预发布路径共用此布局，编译目录独立于桌面构建。
 const layout = createArtifactLayout({
     repositoryRoot: path.resolve(__dirname, '..', '..'),
     extensionRoot: path.resolve(__dirname, '..'),
@@ -14,11 +15,16 @@ const jobs = process.env.ZR_WASM_BUILD_JOBS || process.env.ZR_BUILD_JOBS || '8';
 const wasmBuildType = process.env.ZR_WASM_BUILD_TYPE || 'Release';
 const wslEmsdkEnvPath = process.env.ZR_WASM_EMSDK_ENV_WSL || '/mnt/e/Git/emsdk/emsdk_env.sh';
 
+// 先保证 Emscripten 专用 CMake cache 可用，再构建扩展需要的单个目标。
 ensureWasmBuildDirectory();
 
 let result;
 if (process.platform === 'win32') {
+    // BUG: 工作区或 EMSDK 路径含单引号时，下方 Bash 命令的引号失配；
+    // WSL bash -n 已复现退出 2，正常 build:wasm/package 因而无法配置或构建。
     const repositoryRootWsl = toWslPath(repositoryRoot);
+    // BUG: ZR_WASM_BUILD_DIR 指向其他盘符时相对路径经分隔符替换成为 D:/... 而非 /mnt/d/...；
+    // package-vsix.ps1 的 -WasmBuildDir 可触发错误的 WSL CMake 构建路径。
     const relativeBuildDirWsl = path.relative(repositoryRoot, buildDir).replace(/\\/g, '/');
     const buildPathInCommand = relativeBuildDirWsl.length > 0 ? relativeBuildDirWsl : '.';
     result = spawnSync('wsl', [
@@ -47,10 +53,12 @@ if (process.platform === 'win32') {
     });
 }
 
+// 构建失败必须传回 npm/VSIX 打包流程，不能继续同步可能过期的产物。
 if (result.status !== 0) {
     process.exit(result.status ?? 1);
 }
 
+// 不复用生成器不符或缺少 BUILD_WASM 配置键的 cache；重配使选定类型生效。
 function ensureWasmBuildDirectory() {
     ensureWasmToolchainAvailable();
 
@@ -58,6 +66,7 @@ function ensureWasmBuildDirectory() {
     if (fs.existsSync(cachePath)) {
         const cacheText = fs.readFileSync(cachePath, 'utf8');
         if (!cacheText.includes('CMAKE_GENERATOR:INTERNAL=Ninja') || !cacheText.includes('BUILD_WASM')) {
+            // TODO: ZR_WASM_BUILD_DIR 可指向仓外；需确认清除不兼容 cache 时可递归删除整个自定义目录。
             fs.rmSync(buildDir, { recursive: true, force: true });
         }
     }
@@ -107,6 +116,7 @@ function ensureWasmBuildDirectory() {
     }
 }
 
+// 在配置和构建前确认 emcmake 可用，以便报出可操作的缺失工具链原因。
 function ensureWasmToolchainAvailable() {
     if (process.platform === 'win32') {
         const result = spawnSync('wsl', [
@@ -145,10 +155,12 @@ function ensureWasmToolchainAvailable() {
     process.exit(1);
 }
 
+// 仅 Windows→WSL 路径使用：优先沿用已激活环境，必要时加载可配置 emsdk_env。
 function sourceWslEmsdkEnvironmentCommand() {
     return `export EMSDK_QUIET=1; if ! command -v emcmake >/dev/null 2>&1 && [ -f '${wslEmsdkEnvPath}' ]; then . '${wslEmsdkEnvPath}' >/dev/null; fi`;
 }
 
+// 将 Windows 盘符目录映射成当前构建约定的 WSL /mnt/<drive>/ 路径。
 function toWslPath(nativePath) {
     const normalized = path.resolve(nativePath).replace(/\\/g, '/');
     const driveMatch = /^([A-Za-z]):\/(.*)$/.exec(normalized);
