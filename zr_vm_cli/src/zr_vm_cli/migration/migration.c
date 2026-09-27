@@ -63,6 +63,7 @@ static void zr_cli_migration_write_json_string(FILE *output, const TZrChar *text
     fputc('"', output);
 }
 
+/* 路径分隔符统一输出为 /，让报告中的文件标识跨平台稳定。 */
 static void zr_cli_migration_write_json_path(FILE *output, const TZrChar *path) {
     const TZrChar *cursor = path != ZR_NULL ? path : "";
 
@@ -75,6 +76,8 @@ static void zr_cli_migration_write_json_path(FILE *output, const TZrChar *path) 
         } else if (value == '"') {
             fputs("\\\"", output);
         } else {
+            /* BUG: 文件名含换行、制表符等控制字符时会原样进入 JSON 字符串；
+             * POSIX 允许这类路径，默认 JSON 报告将无法被解析。 */
             fputc(value, output);
         }
     }
@@ -128,6 +131,7 @@ static void zr_cli_migration_write_json_item(
     fputc('}', output);
 }
 
+/* 输出迁移计划而非仅输出成功状态，供 --check 审核和外部工具消费。 */
 static void zr_cli_migration_write_report(
         FILE *output,
         const SZrCliCommand *command,
@@ -168,6 +172,7 @@ static void zr_cli_migration_write_report(
     fputs("]}\n", output);
 }
 
+/* --write 先写进同目录临时文件并验证刷新，再替换原文件，避免半写源码。 */
 static TZrBool zr_cli_migration_write_file_atomically(
         const TZrChar *path,
         const TZrChar *text,
@@ -246,6 +251,7 @@ static TZrBool zr_cli_migration_has_machine_edits(const SZrLegacyMigrationPlan *
     return ZR_FALSE;
 }
 
+/* 迁移结果须通过当前语法解析及编译才可覆盖源文件。 */
 static TZrBool zr_cli_migration_validate_current_source(
         SZrState *state,
         const TZrChar *source,
@@ -284,6 +290,8 @@ static TZrBool zr_cli_migration_path_has_suffix(const TZrChar *path, const TZrCh
 }
 
 static TZrBool zr_cli_migration_path_is_excluded(const TZrChar *path) {
+    /* TODO: 排除规则只匹配中间路径片段；核对相对根路径 `bin/a.zr`
+     * 是否也应视为生成产物，并加入相应 CLI 样例。 */
     return path != ZR_NULL &&
            (strstr(path, "/bin/") != ZR_NULL || strstr(path, "\\bin\\") != ZR_NULL ||
             strstr(path, "/golden/") != ZR_NULL || strstr(path, "\\golden\\") != ZR_NULL ||
@@ -291,6 +299,7 @@ static TZrBool zr_cli_migration_path_is_excluded(const TZrChar *path) {
             strstr(path, "/.codex/") != ZR_NULL || strstr(path, "\\.codex\\") != ZR_NULL);
 }
 
+/* 单文件事务：按原文生成计划，写前复读并只提交可机器应用且可编译的结果。 */
 static TZrBool zr_cli_migration_run_one(
         const SZrCliCommand *command,
         SZrState *state,
@@ -325,6 +334,8 @@ static TZrBool zr_cli_migration_run_one(
         goto cleanup;
     }
     if (command->migrationWrite && zr_cli_migration_has_machine_edits(&plan)) {
+        /* TODO: 复读与原子替换之间仍有并发修改窗口；检查同一路径被其他
+         * 进程编辑时是否需要文件身份/版本校验，避免覆盖后来写入的内容。 */
         if (!ZrCli_Project_ReadTextFile(path, &revalidated, &revalidatedLength) ||
             revalidatedLength != sourceLength || memcmp(revalidated, source, sourceLength) != 0) {
             fprintf(errorOutput, "migration source changed before write: %s\n", path);
@@ -379,6 +390,7 @@ int ZrCli_Migration_Run(const SZrCliCommand *command, FILE *output, FILE *errorO
     }
     state = global->mainThreadState;
     existence = ZrLibrary_File_Exist((TZrNativeString)command->migrationPath);
+    /* 单文件与目录入口共用 run_one；目录先枚举再顺序写入，失败即停止。 */
     if (existence == ZR_LIBRARY_FILE_IS_FILE) {
         if (!zr_cli_migration_path_has_suffix(command->migrationPath, ".zr") ||
             (!command->migrationIncludeGenerated &&

@@ -21,14 +21,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 父进程只用此环境变量指定子进程的精确用例，防止 worker 再次创建 worker。 */
 #define ZR_CLI_TEST_WORKER_CASE_ENV "ZR_VM_TEST_CASE_ID"
 
+/* 为参数化用例生成临时调用源码；buffer 使用 malloc 家族所有权。 */
 typedef struct SZrCliTestTextBuilder {
     TZrChar *data;
     TZrSize length;
     TZrSize capacity;
 } SZrCliTestTextBuilder;
 
+/* 发现期 global 必须保留至 manifest 释放；manifest 的节点引用该隔离环境。 */
 typedef struct SZrCliTestSourceRecord {
     SZrGlobalState *discoveryGlobal;
     TZrChar sourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
@@ -37,6 +40,7 @@ typedef struct SZrCliTestSourceRecord {
     SZrParserTestManifest manifest;
 } SZrCliTestSourceRecord;
 
+/* 一次 test 命令的资源所有者；manifests 仅是 sources 内 manifest 的浅拷贝。 */
 typedef struct SZrCliTestCommandContext {
     const SZrCliCommand *command;
     const TZrChar *executablePath;
@@ -49,6 +53,7 @@ typedef struct SZrCliTestCommandContext {
     TZrBool projectTarget;
 } SZrCliTestCommandContext;
 
+/* 异常边界回调与执行器间传递 callable、返回值和正常返回状态。 */
 typedef struct SZrCliTestExecutionRequest {
     SZrState *state;
     SZrTypeValue callable;
@@ -78,6 +83,7 @@ static TZrBool test_command_register_testing(SZrGlobalState *global, TZrPtr user
     return ZrVmLibTesting_Register(global);
 }
 
+/* 发现与执行都注册 testing 提供者，并以测试 phase 隔离普通运行提供者。 */
 static SZrGlobalState *test_command_create_global(
         const SZrCliTestCommandContext *context) {
     SZrGlobalState *global;
@@ -254,6 +260,8 @@ static TZrBool test_command_builder_append_constant(
     }
 }
 
+/* 把一条 TestManifest 用例投影成附加调用源码；async 用例还需等待 task.result()。
+ * 返回新分配的字符串，调用方在解析/执行完毕后释放。 */
 static TZrChar *test_command_build_case_source(
         const SZrCliTestSourceRecord *source,
         const SZrCliTestCaseReference *reference,
@@ -311,6 +319,7 @@ static int test_command_compare_file_entries(const void *left, const void *right
     return strcmp(a->path, b->path);
 }
 
+/* 仅编译以取得 TestManifest，保留发现隔离环境使清单引用在整个调度期有效。 */
 static TZrBool test_command_append_source(
         SZrCliTestCommandContext *context,
         const TZrChar *sourcePath) {
@@ -403,6 +412,7 @@ static TZrBool test_command_append_source(
     return ZR_TRUE;
 }
 
+/* 项目测试按文件名稳定排序后发现；单模块路径沿用同一记录格式。 */
 static TZrBool test_command_discover(SZrCliTestCommandContext *context) {
     SZrGlobalState *projectGlobal = ZR_NULL;
     SZrCliProjectContext project;
@@ -493,6 +503,7 @@ static void test_command_execute_body(SZrState *state, TZrPtr userData) {
             &request->returnValue);
 }
 
+/* 只在已隔离的 worker 内执行精确用例；每条用例仍创建新的 VM 全局态。 */
 static TZrBool test_command_execute_in_process(
         const SZrCliTestCaseReference *reference,
         TZrUInt64 timeoutMilliseconds,
@@ -535,6 +546,7 @@ static TZrBool test_command_execute_in_process(
     request.callable.type = ZR_VALUE_TYPE_FUNCTION;
     request.callable.isGarbageCollectable = ZR_TRUE;
     request.callable.isNative = ZR_FALSE;
+    /* worker 不复用此 state，但外部 GC 根泄漏仍是测试失败，不能被进程隔离掩盖。 */
     rootsBefore = ZrCore_GcDomain_GetRootCount(state);
     ZrVmLibTesting_ClearLastFailure();
     executionStatus = ZrCore_Exception_TryRun(
@@ -589,6 +601,7 @@ cleanup:
     return success;
 }
 
+/* 父进程通过 test_process 重启当前 CLI，超时和异常退出由运行器统一计入结果。 */
 static TZrBool test_command_execute_isolated(
         const SZrCliTestCaseReference *reference,
         TZrUInt64 timeoutMilliseconds,
@@ -641,6 +654,7 @@ static TZrBool test_command_execute_isolated(
     return ZR_FALSE;
 }
 
+/* 先释放每个 manifest，再释放其所属 global；最后丢弃浅拷贝数组。 */
 static void test_command_cleanup(SZrCliTestCommandContext *context) {
     if (context == ZR_NULL) return;
     for (TZrSize index = 0U; index < context->sourceCount; index++) {
@@ -735,6 +749,7 @@ int ZrCli_TestCommand_Run(
     context.errorOutput = errorOutput;
     if (!test_command_discover(&context)) goto cleanup;
 
+    /* worker 使用环境中的精确 ID 走进程内执行；普通 CLI 走独立子进程。 */
     exactCaseId = getenv(ZR_CLI_TEST_WORKER_CASE_ENV);
     if (exactCaseId != ZR_NULL && exactCaseId[0] == '\0') exactCaseId = ZR_NULL;
     memset(&options, 0, sizeof(options));

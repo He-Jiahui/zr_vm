@@ -131,6 +131,7 @@ typedef enum EZrCliExplainMaskKind {
     ZR_CLI_EXPLAIN_MASK_EVIDENCE
 } EZrCliExplainMaskKind;
 
+/* CLI 可组合枚举名最终投影为核心 Query 的位掩码；尾逗号拒绝以防放宽过滤。 */
 static TZrBool zr_cli_explain_parse_mask(const TZrChar *text,
                                          EZrCliExplainMaskKind kind,
                                          TZrUInt32 *mask) {
@@ -403,6 +404,7 @@ TZrBool ZrCli_ExplainOptimizeOptions_Parse(
     return ZR_TRUE;
 }
 
+/* 严格按 has* 位复制零值过滤器，避免零值被误当作未指定。 */
 static void zr_cli_explain_copy_query(
         const SZrCliExplainOptimizeOptions *options,
         SZrOptimizationRemarkQuery *query) {
@@ -435,6 +437,7 @@ static void zr_cli_explain_copy_query(
     }
 }
 
+/* 核心 JSON writer 先测长度再写入；页及结果流仍归 RunStore/调用方管理。 */
 static int zr_cli_explain_write_json(const SZrOptimizationRemarkPage *page,
                                      FILE *output,
                                      FILE *errorOutput) {

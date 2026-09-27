@@ -9,6 +9,7 @@
 #include "zr_vm_core/log.h"
 #include "commands/explain_optimize_command.h"
 
+/* 解析期哨兵：先判断主模式是否互斥，完成全部修饰符校验后才映射公开 mode。 */
 typedef enum EZrCliPrimaryMode {
     ZR_CLI_PRIMARY_MODE_NONE = 0,
     ZR_CLI_PRIMARY_MODE_HELP = 1,
@@ -38,6 +39,7 @@ static void zr_cli_write_error(TZrChar *buffer, TZrSize bufferSize, const TZrCha
     buffer[bufferSize - 1] = '\0';
 }
 
+/* 所有路径共享同一输出对象；完整重置可避免上一条命令的修饰符泄漏到本次分派。 */
 static void zr_cli_command_init(SZrCliCommand *command) {
     if (command == ZR_NULL) {
         return;
@@ -131,6 +133,8 @@ static TZrBool zr_cli_command_parse_duration_milliseconds(
     if (text == ZR_NULL || text[0] == '\0' || outMilliseconds == ZR_NULL || text[0] == '-') {
         return ZR_FALSE;
     }
+    /* BUG: 未检查 ERANGE；超出 ULLONG_MAX 的 `--timeout ...ms` 被 strtoull
+     * 饱和成 UINT64_MAX 后仍可通过校验，实际执行与输入值不符。 */
     value = strtoull(text, &end, 10);
     if (end == text || value == 0ULL) {
         return ZR_FALSE;
@@ -151,6 +155,7 @@ static TZrBool zr_cli_command_parse_duration_milliseconds(
     return ZR_TRUE;
 }
 
+/* 将 help/version/项目/工具子命令保持互斥，避免 app 收到含混的混合命令。 */
 static TZrBool zr_cli_command_set_primary_mode(EZrCliPrimaryMode *currentMode,
                                                EZrCliPrimaryMode nextMode,
                                                const TZrChar *optionLabel,
@@ -425,6 +430,7 @@ TZrBool ZrCli_Command_Parse(int argc,
     for (index = 1; index < argc; index++) {
         const TZrChar *argument = argv[index];
 
+        /* 分隔符后的借用 argv 原样交给运行时参数注入，不再解释为 CLI 选项。 */
         if (strcmp(argument, "--") == 0) {
             outCommand->programArgs = (const TZrChar *const *)(argv + index + 1);
             outCommand->programArgCount = (TZrSize)(argc - index - 1);
@@ -1185,6 +1191,8 @@ TZrBool ZrCli_Command_Parse(int argc,
                                    "--interactive cannot be combined with help, version, or compile-only paths");
                 return ZR_FALSE;
             }
+            /* BUG: 这里无法区分默认 interp 与用户显式指定的
+             * `--execution-mode interp`，后者也被静默改成 binary。 */
             if (outCommand->runAfterCompile && outCommand->executionMode == ZR_CLI_EXECUTION_MODE_INTERP) {
                 outCommand->executionMode = ZR_CLI_EXECUTION_MODE_BINARY;
             }

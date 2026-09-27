@@ -18,6 +18,7 @@
 #include "zr_vm_parser/generic_instantiation.h"
 #include "zr_vm_parser/writer.h"
 
+/* AOT C 嵌入刚生成的 .zro，而不是再次从源码推导可执行输入。 */
 static TZrBool zr_cli_read_binary_file(const TZrChar *path, TZrByte **outBytes, TZrSize *outLength) {
     FILE *file;
     long fileLength;
@@ -110,6 +111,7 @@ void ZrCli_Compiler_AotPreserveRoots_Free(SZrCliAotPreserveRoots *roots) {
     ZrCli_Compiler_AotPreserveRoots_Init(roots);
 }
 
+/* 重用根容器前清除上一次泛型绑定，避免 writer 借到旧元数据 token。 */
 static void zr_cli_aot_preserve_roots_clear_generic_roots(SZrCliAotPreserveRoots *roots) {
     if (roots == ZR_NULL || roots->genericRoots == ZR_NULL) {
         return;
@@ -272,6 +274,7 @@ static TZrBool zr_cli_aot_metadata_string_find_index(const SZrFunction *function
     return ZR_FALSE;
 }
 
+/* 合成闭包 TypeSpec 前确保实参文本在 function 的元数据字符串堆中可寻址。 */
 static TZrBool zr_cli_aot_metadata_string_heap_ensure(SZrState *state,
                                                       SZrFunction *function,
                                                       const TZrChar *text,
@@ -845,6 +848,9 @@ static TZrBool zr_cli_aot_append_type_spec_record(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 当配置要求的闭包 TypeSpec 尚不存在时，仅在内存 function 上补齐绑定。
+ * TODO: .zro 在本调用前已写出，而 writer 的 compacted metadata 读取原始 blob；
+ * 核对合成 token 是否会被运行时或 sidecar 消费，补一条泛型保留根端到端样例。 */
 static TZrBool zr_cli_aot_preserve_synthesize_generic_root_type_spec(SZrState *state,
                                                                      SZrFunction *function,
                                                                      SZrAotManifestGenericRoot *root) {
@@ -938,6 +944,8 @@ static void zr_cli_aot_preserve_bind_generic_root_type_spec(SZrState *state,
         return;
     }
 
+    /* TODO: 合成失败在此被当作无绑定继续；核对 full AOT 与 hybrid 对未知类型、
+     * 内存分配失败的诊断要求，避免静默丢失泛型保留根。 */
     (void)zr_cli_aot_preserve_synthesize_generic_root_type_spec(state, function, root);
 }
 
@@ -1272,6 +1280,7 @@ cleanup:
     return success;
 }
 
+/* 泛型保留规则复制实参指针数组并按目标去重；文本仍借用项目配置。 */
 static TZrBool zr_cli_aot_preserve_roots_append_generic(SZrCliAotPreserveRoots *roots,
                                                         SZrState *state,
                                                         SZrGenericInstantiationTable *genericInstantiationTable,
@@ -1469,6 +1478,8 @@ static TZrBool zr_cli_aot_preserve_apply_method_target(SZrState *state,
         return resolvedModuleLocal;
     }
 
+    /* TODO: dotted 且未解析的 target 被视作外模块规则；核对本模块
+     * `Widget.typo` 与真实跨模块 target 的区分及错误诊断。 */
     if (strchr(target, '.') == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -1553,6 +1564,7 @@ static TZrBool zr_cli_aot_preserve_apply_type_target(SZrState *state,
     if (resolvedAny) {
         return ZR_TRUE;
     }
+    /* TODO: 未解析的其他 dotted 类型也被视作外模块；补同模块拼写错误的规则测试。 */
     if (strchr(target, '.') == ZR_NULL || zr_cli_aot_preserve_target_has_module_prefix(target, moduleName)) {
         return ZR_FALSE;
     }
@@ -1598,6 +1610,8 @@ static TZrBool zr_cli_aot_preserve_apply_generic_target(const SZrLibrary_Project
         return ZR_FALSE;
     }
 
+    /* TODO: 泛型 target 原样匹配元数据名称，未采用方法/类型规则的模块前缀
+     * 归一化；核对项目语法是否允许 `main.List` 指向本模块的 `List`。 */
     return zr_cli_aot_preserve_roots_append_generic(roots,
                                                     state,
                                                     genericInstantiationTable,
@@ -1675,6 +1689,7 @@ TZrBool ZrCli_Compiler_ApplyProjectAotPreserveRules(const SZrCliProjectContext *
         goto cleanup;
     }
 
+    /* 这三组数组只借给同步 writer；项目配置、function 与 roots 必须一起存活。 */
     options->manifestPreserveFunctionFlatIndices = roots->count > 0u ? roots->indices : ZR_NULL;
     options->manifestPreserveFunctionFlatIndexCount = roots->count;
     options->manifestPreserveGenericRoots = roots->genericRootCount > 0u ? roots->genericRoots : ZR_NULL;
@@ -1727,6 +1742,7 @@ TZrBool ZrCli_Compiler_WriteAotCFileForModule(const SZrCliProjectContext *projec
     options.embeddedModuleBlobLength = embeddedBlobLength;
     options.requireExecutableLowering = ZR_TRUE;
 
+    /* 先固化项目规则，再决定 sidecar 可发布性；旧 sidecar 在不可发布时必须删除。 */
     if (ZrCli_Compiler_ApplyProjectAotWriterOptions(project, &options) &&
         ZrCli_Compiler_ApplyProjectAotPreserveRules(project, state, function, moduleName, &options, &preserveRoots)) {
         hasCompactedMetadataPath = ZrCli_Project_ResolveAotCompactedMetadataPathFromAotCPath(aotCPath,

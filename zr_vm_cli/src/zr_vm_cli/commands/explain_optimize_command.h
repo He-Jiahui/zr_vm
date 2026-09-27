@@ -10,6 +10,7 @@
 extern "C" {
 #endif
 
+/** @brief 优化记录查询的 CLI 值对象；has* 区分未指定与数值为零的过滤条件。 */
 typedef struct SZrCliExplainOptimizeOptions {
     TZrUInt64 moduleHash;
     TZrUInt64 irHash;
@@ -35,12 +36,13 @@ typedef struct SZrCliExplainOptimizeOptions {
     char module[ZR_OPTIMIZATION_REMARK_MODULE_NAME_MAX];
 } SZrCliExplainOptimizeOptions;
 
+/** @brief 初始化查询默认分页大小；解析器也会先调用此函数。 */
 ZR_CLI_API void ZrCli_ExplainOptimizeOptions_Init(
         SZrCliExplainOptimizeOptions *options);
 
-/* Parse the arguments after the `explain optimize` command.  The parser is
- * deliberately independent from project/artifact loading: callers provide a
- * remark store to RunStore once compilation has produced one. */
+/** @brief 解析 explain optimize 后的过滤参数，与项目或产物装载无关。
+ * @note 成功的 options 是可按值传递的查询；记录库由后续 RunStore 调用方提供。
+ */
 ZR_CLI_API TZrBool ZrCli_ExplainOptimizeOptions_Parse(
         int argc,
         const TZrChar *const *argv,
@@ -48,14 +50,16 @@ ZR_CLI_API TZrBool ZrCli_ExplainOptimizeOptions_Parse(
         TZrChar *errorBuffer,
         TZrSize errorBufferSize);
 
-/* Project canonical remarks to the CLI text or stable JSON representation. */
+/** @brief 将借用的规范优化记录库查询并投影成文本或 JSON。
+ * @pre store/options/output 在调用期间有效；函数释放查询页，不接管 store 或流。
+ */
 ZR_CLI_API int ZrCli_ExplainOptimize_RunStore(
         const SZrOptimizationRemarkStore *store,
         const SZrCliExplainOptimizeOptions *options,
         FILE *output,
         FILE *errorOutput);
 
-/* Alias used by command dispatchers that already have a parsed query. */
+/* 兼容已解析查询的命令分派名称，不创建第二套执行或解析逻辑。 */
 #define ZrCli_ExplainOptimize_Run ZrCli_ExplainOptimize_RunStore
 #define ZrCli_ExplainOptimize_Parse ZrCli_ExplainOptimizeOptions_Parse
 

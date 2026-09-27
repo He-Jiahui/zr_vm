@@ -28,6 +28,7 @@
 #include "zr_vm_parser/project_imports.h"
 #include "zr_vm_parser/writer.h"
 
+/* 单次依赖图扫描的模块状态：输入哈希用于脏标记，产物路径用于写入及清理。 */
 typedef struct SZrCliModuleRecord {
     TZrChar moduleName[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar sourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
@@ -42,12 +43,14 @@ typedef struct SZrCliModuleRecord {
     TZrBool dirty;
 } SZrCliModuleRecord;
 
+/* 拥有本轮发现的模块及各条目的 imports；仅在编译调用期有效。 */
 typedef struct SZrCliModuleCollection {
     SZrCliModuleRecord *records;
     TZrSize count;
     TZrSize capacity;
 } SZrCliModuleCollection;
 
+/* 缓存不存在视为空命中；损坏/不可读由编译入口决定降级，不应阻断正常编译。 */
 static TZrBool zr_cli_comptime_cache_read(
         const TZrChar *path,
         TZrByte **outBytes,
@@ -91,6 +94,7 @@ static TZrBool zr_cli_comptime_cache_read(
     return ZR_TRUE;
 }
 
+/* 编译时快照先写临时文件再替换，避免下次读取到半写入的缓存。 */
 static TZrBool zr_cli_comptime_cache_write_atomically(
         const TZrChar *path,
         const TZrByte *bytes,
@@ -219,6 +223,8 @@ static SZrCliModuleRecord *zr_cli_append_module(SZrCliModuleCollection *collecti
     if (collection->count == collection->capacity) {
         newCapacity = collection->capacity == 0 ? ZR_CLI_COLLECTION_INITIAL_CAPACITY
                                                 : collection->capacity * ZR_CLI_COLLECTION_GROWTH_FACTOR;
+        /* BUG: 此处扩容会使 collect_module_recursive 的祖先栈帧所持
+         * recordSlot 悬空；拥有者在递归返回后仍访问该指针。 */
         newRecords = (SZrCliModuleRecord *) realloc(collection->records, newCapacity * sizeof(*newRecords));
         if (newRecords == ZR_NULL) {
             return ZR_NULL;
@@ -278,6 +284,8 @@ static TZrBool zr_cli_hash_file(const TZrChar *path, TZrChar *buffer, TZrSize bu
         }
     }
 
+    /* BUG: fread 若因 I/O 错误提前返回 0，这里仍将已读前缀当作完整文件
+     * 的哈希，可能让增量清单与 .zrm 输入记录错误的内容身份。 */
     fclose(file);
     ZrCli_Project_HashToHex(hash, buffer, bufferSize);
     return ZR_TRUE;
@@ -326,6 +334,7 @@ static TZrBool zr_cli_compiler_resolve_project_resource_path(const SZrCliProject
     return joinedPath[0] != '\0' && ZrLibrary_File_NormalizePath(joinedPath, buffer, bufferSize);
 }
 
+/* 消费本轮可达模块的 .zro 及项目资源，向打包器传递短期借用的路径与哈希。 */
 static TZrBool zr_cli_pack_zrm_assembly(const SZrCliProjectContext *project,
                                         const SZrCliModuleCollection *modules,
                                         SZrCliCompileSummary *summary) {
@@ -484,6 +493,8 @@ static TZrBool zr_cli_collect_imports_from_array(SZrAstNodeArray *nodes, SZrCliS
     return ZR_TRUE;
 }
 
+/* 在 canonicalize 之后收集字面量 import，用于计算增量依赖闭包。动态 import
+ * 没有静态模块键，不能据此判断其依赖已被扫描。 */
 static TZrBool zr_cli_collect_imports_from_ast(SZrAstNode *node, SZrCliStringList *imports) {
     TZrChar normalizedModule[ZR_LIBRARY_MAX_PATH_LENGTH];
 
@@ -623,6 +634,8 @@ static TZrBool zr_cli_collect_imports_from_ast(SZrAstNode *node, SZrCliStringLis
         case ZR_AST_SWITCH_DEFAULT:
             return zr_cli_collect_imports_from_ast(node->data.switchDefault.block, imports);
 
+        /* TODO: 这里只下探参数，成员表达式也只下探计算属性。须用嵌套在
+         * callee/object 的字面量 import 样例核对是否遗漏增量依赖边。 */
         case ZR_AST_FUNCTION_CALL:
             return zr_cli_collect_imports_from_array(node->data.functionCall.args, imports);
 
@@ -688,6 +701,7 @@ static TZrBool zr_cli_collect_imports_from_ast(SZrAstNode *node, SZrCliStringLis
     }
 }
 
+/* 从入口建立一次性模块闭包；先登记节点以终止循环导入，再解析静态依赖。 */
 static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *project,
                                                SZrState *state,
                                                SZrCliModuleCollection *collection,
@@ -793,6 +807,8 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
 
         ZrParser_Ast_Free(state, ast);
 
+        /* BUG: 递归追加模块可能使 collection->records 在第 9 个节点扩容；
+         * 本层 recordSlot 随之悬空，下次循环条件仍解引用它。 */
         for (TZrSize index = 0; index < recordSlot->imports.count; index++) {
             TZrChar resolvedSourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
             TZrChar resolvedBinaryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
@@ -831,6 +847,8 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
     return ZR_TRUE;
 }
 
+/* 每个脏模块使用独立项目全局态编译，避免模块间的编译期状态相互污染；
+ * .zro、可选 .zri/AOT C 和 cache 快照必须作为同一模块结果核对。 */
 static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
                                          SZrCliModuleRecord *record,
                                          TZrBool emitIntermediate,
@@ -990,6 +1008,7 @@ static TZrBool zr_cli_compile_one_module(const SZrCliProjectContext *project,
     return success;
 }
 
+/* 增量阶段向引用者传播脏标记；调用方迭代到不再变化以处理任意图顺序。 */
 static TZrBool zr_cli_module_depends_on_dirty(const SZrCliModuleCollection *collection, const SZrCliModuleRecord *record) {
     if (collection == ZR_NULL || record == ZR_NULL) {
         return ZR_FALSE;
@@ -1070,6 +1089,7 @@ static TZrBool zr_cli_reconcile_optional_aot_c_output(const SZrCliModuleRecord *
            zr_cli_remove_aot_metadata_sidecar_for_c_path(record->aotCPath);
 }
 
+/* 即使本轮跳过编译，也删除当前参数未请求的旧可选产物，防止被后续流程误用。 */
 static TZrBool zr_cli_reconcile_optional_outputs(SZrState *state,
                                                  const SZrCliModuleRecord *record,
                                                  TZrBool emitIntermediate,
@@ -1228,6 +1248,7 @@ TZrBool ZrCli_Compiler_CompileProjectWithSummaryAndBootstrap(const SZrCliCommand
         }
     }
 
+    /* 先传播依赖脏标记，再进行写入；源文件不变但其依赖变化也必须重编。 */
     if (command->incremental) {
         TZrBool changed;
         do {
@@ -1291,6 +1312,8 @@ TZrBool ZrCli_Compiler_CompileProjectWithSummaryAndBootstrap(const SZrCliCommand
                 continue;
             }
 
+            /* BUG: 删除结果被丢弃却仍计入 removedCount；旧 .zro/.zri/AOT C
+             * 被权限或占用阻止删除时，本次编译可成功并留下误导性的过期产物。 */
             ZrCli_Project_RemoveFileIfExists(entry->zroPath);
             ZrCli_Project_RemoveFileIfExists(entry->zriPath);
             ZrCli_Project_RemoveFileIfExists(entry->aotCPath);

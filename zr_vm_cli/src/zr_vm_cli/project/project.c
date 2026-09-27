@@ -34,6 +34,7 @@
 
 #define ZR_CLI_MANIFEST_FORMAT_VERSION 3U
 
+/* 无项目隔离环境交给核心全局态的分配回调；低地址哨兵不属于堆所有权。 */
 static TZrPtr zr_cli_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     TZrBool canReleasePointer;
 
@@ -182,6 +183,7 @@ static TZrBool zr_cli_module_name_to_relative_path(const TZrChar *moduleName,
                                                    TZrChar *buffer,
                                                    TZrSize bufferSize);
 
+/* 模块键先归一化再拼接固定后缀，确保编译扫描与磁盘产物采用相同位置。 */
 static TZrBool zr_cli_resolve_output_path(const TZrChar *rootPath,
                                           const TZrChar *moduleName,
                                           const TZrChar *extension,
@@ -221,6 +223,7 @@ static TZrBool zr_cli_path_is_separator(TZrChar value) {
     return (TZrBool)(value == '/' || value == '\\');
 }
 
+/* 依赖选择器只在需要回推依赖包内 AOT 目录时剥离；其余产物保留完整键。 */
 static TZrBool zr_cli_module_name_to_relative_path(const TZrChar *moduleName,
                                                    TZrBool stripDependencySelector,
                                                    TZrChar *buffer,
@@ -395,6 +398,7 @@ TZrBool ZrCli_ProjectContext_FromGlobal(SZrCliProjectContext *context,
     }
 
     memset(context, 0, sizeof(*context));
+    /* 路径写入 context，项目配置仍借用 global；AOT 规则读取前不能销毁 global。 */
     context->libraryProject = project;
     snprintf(context->projectPath, sizeof(context->projectPath), "%s", projectPath);
     snprintf(context->projectRoot, sizeof(context->projectRoot), "%s", ZrCore_String_GetNativeString(project->directory));
@@ -549,6 +553,8 @@ TZrBool ZrCli_Project_ResolveAotCompactedMetadataPath(const SZrCliProjectContext
                                                       TZrSize bufferSize) {
     TZrChar aotCPath[ZR_LIBRARY_MAX_PATH_LENGTH];
 
+    /* TODO: 当前全仓仅有本定义与头文件声明；核对是否仍需公开模块键到
+     * sidecar 的便捷入口，或由现有 AotCPath 转换链完全覆盖。 */
     if (!ZrCli_Project_ResolveAotCPath(context, moduleName, aotCPath, sizeof(aotCPath))) {
         return ZR_FALSE;
     }
@@ -595,6 +601,8 @@ TZrBool ZrCli_Project_EnsureParentDirectory(const TZrChar *filePath) {
         return ZR_TRUE;
     }
 
+    /* BUG: Windows UNC 路径如 \\server\share\out.zro 会从 /server 开始逐级 mkdir，
+     * 不能正确保留共享根；项目位于网络共享时编译产物目录创建失败。 */
     if (length >= 3 && working[1] == ':' && working[2] == '/') {
         startIndex = 3;
     } else if (working[0] == '/') {
@@ -829,6 +837,7 @@ TZrBool ZrCli_Project_LoadManifest(const SZrCliProjectContext *context, SZrCliIn
         return ZR_FALSE;
     }
 
+    /* 首次增量构建无旧清单是正常情况；存在却损坏的清单则交由编译入口报错。 */
     ZrCli_Project_Manifest_Init(manifest);
     if (ZrLibrary_File_Exist((TZrNativeString)context->manifestPath) != ZR_LIBRARY_FILE_IS_FILE) {
         return ZR_TRUE;
@@ -922,6 +931,8 @@ TZrBool ZrCli_Project_SaveManifest(const SZrCliProjectContext *context, const SZ
         return ZR_FALSE;
     }
 
+    /* BUG: 直接以 wb 截断旧清单且不核对 fprintf/fclose 的结果；磁盘写满时
+     * 编译入口仍可能报告成功，下次 --incremental 会在 LoadManifest 处失败。 */
     file = fopen(context->manifestPath, "wb");
     if (file == ZR_NULL) {
         return ZR_FALSE;
@@ -949,6 +960,7 @@ TZrBool ZrCli_Project_SaveManifest(const SZrCliProjectContext *context, const SZ
 }
 
 SZrCliManifestEntry *ZrCli_Project_FindManifestEntry(SZrCliIncrementalManifest *manifest, const TZrChar *moduleName) {
+    /* TODO: 当前增量编译只调用只读版本；核对可写查找是否仍有实际调用方。 */
     if (manifest == ZR_NULL || moduleName == ZR_NULL) {
         return ZR_NULL;
     }

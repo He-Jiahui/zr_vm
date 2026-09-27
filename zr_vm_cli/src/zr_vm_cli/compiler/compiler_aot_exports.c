@@ -60,6 +60,7 @@ static TZrBool zr_cli_aot_export_type_token_is_valid(TZrMetadataToken token) {
                      ZR_METADATA_TOKEN_RID(token) != 0u);
 }
 
+/* 允许清单写本模块限定名或局部名，但绑定必须落在当前函数的导出元数据。 */
 static TZrBool zr_cli_aot_export_target_matches(const TZrChar *symbolName,
                                                 const TZrChar *target,
                                                 const TZrChar *moduleName) {
@@ -101,6 +102,7 @@ static TZrBool zr_cli_aot_export_declaration_member_symbol_kind(
     }
 }
 
+/* TypeDef 绑定须同时核对签名形状与字符串堆，不能只凭配置名称猜 token。 */
 static TZrBool zr_cli_aot_export_type_def_record_matches_target(const SZrFunction *function,
                                                                 const SZrMetadataTokenRecord *record,
                                                                 const TZrChar *target,
@@ -279,6 +281,7 @@ TZrBool ZrCli_Compiler_ApplyProjectAotExportDeclarations(const SZrCliProjectCont
         return ZR_FALSE;
     }
 
+    /* target 文本借自项目配置，仅数组由 roots 持有并在 writer 返回后释放。 */
     roots->exportDeclarations = (SZrAotManifestExportDeclaration *)malloc(
             sizeof(*roots->exportDeclarations) * declarationCount);
     if (roots->exportDeclarations == ZR_NULL) {
