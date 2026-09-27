@@ -1,7 +1,9 @@
 const { StdioProtocolClient, encodeFrame } = require('./stdio_protocol_client');
 
+/** 响应等待与静默观察分别计时；后者只用于确认通知不产生意外输出。 */
 const RESPONSE_TIMEOUT_MS = 3000;
 const NO_RESPONSE_TIMEOUT_MS = 150;
+/** initialize 能力矩阵的精确契约；新增能力需同步审阅客户端协商。 */
 const EXPECTED_CAPABILITY_KEYS = [
     'callHierarchyProvider', 'codeActionProvider', 'codeLensProvider',
     'completionProvider', 'definitionProvider', 'diagnosticProvider',
@@ -15,12 +17,14 @@ const EXPECTED_CAPABILITY_KEYS = [
     'workspaceSymbolProvider',
 ].sort();
 
+/** 统一把协议断言失败变成单场景失败，供用例入口汇总。 */
 function assert(condition, message) {
     if (!condition) {
         throw new Error(message);
     }
 }
 
+/** 核对响应只含版本、原样 id 与指定结果分支，防止语义正确但信封损坏。 */
 function assertResponseEnvelope(response, id, member, label) {
     assert(response && typeof response === 'object' && !Array.isArray(response),
            `${label}: response envelope must be an object`);
@@ -32,10 +36,12 @@ function assertResponseEnvelope(response, id, member, label) {
            `${label}: response envelope must contain only jsonrpc, id and ${member}`);
 }
 
+/** 成功响应共用严格信封约束，供生命周期和功能用例复用。 */
 function assertSuccessEnvelope(response, id, label) {
     assertResponseEnvelope(response, id, 'result', label);
 }
 
+/** 错误响应同时约束错误码与消息类型，区分不同协议失败。 */
 function assertErrorEnvelope(response, id, code, label) {
     assertResponseEnvelope(response, id, 'error', label);
     assert(response.error && typeof response.error === 'object' && !Array.isArray(response.error) &&
@@ -44,6 +50,7 @@ function assertErrorEnvelope(response, id, code, label) {
     assert(typeof response.error.message === 'string', `${label}: error message must be a string`);
 }
 
+/** 提供最小合法初始化请求，让后续变体只改变待测字段。 */
 function initializePayload(id) {
     return {
         jsonrpc: '2.0',
@@ -57,6 +64,7 @@ function initializePayload(id) {
     };
 }
 
+/** 保留原始 JSON 数字等精确字节，绕开 JSON.stringify 的数值归一化。 */
 function encodeRawJsonFrame(payload) {
     const body = Buffer.from(payload, 'utf8');
     return Buffer.concat([
@@ -65,6 +73,7 @@ function encodeRawJsonFrame(payload) {
     ]);
 }
 
+/** 建立合法生命周期前置条件，并核对 initialize 的响应信封。 */
 async function initialize(client, id = 'initialize') {
     const response = await client.requestEnvelope(initializePayload(id), RESPONSE_TIMEOUT_MS);
     assertSuccessEnvelope(response, id, 'initialize');
@@ -73,12 +82,14 @@ async function initialize(client, id = 'initialize') {
     return response.result;
 }
 
+/** 对信封级无效请求核对 Invalid Request 与响应 id。 */
 async function expectInvalidRequest(client, payload, id, label) {
     client.sendPayload(payload);
     const response = await client.nextMessage(RESPONSE_TIMEOUT_MS);
     assertErrorEnvelope(response, id, -32600, label);
 }
 
+/** 每个场景独占服务器进程，失败时也回收，避免状态污染。 */
 async function withClient(serverPath, run) {
     const client = new StdioProtocolClient(serverPath);
     try {
@@ -88,6 +99,7 @@ async function withClient(serverPath, run) {
     }
 }
 
+/** 固定 initialize 宣告的能力矩阵，防止客户端协商与实现漂移。 */
 async function testCapabilityMatrix(serverPath) {
     await withClient(serverPath, async (client) => {
         const result = await initialize(client, 'matrix');
@@ -99,6 +111,7 @@ async function testCapabilityMatrix(serverPath) {
     });
 }
 
+/** 验证初始化前的普通请求被生命周期门禁拒绝。 */
 async function testRequestBeforeInitialize(serverPath) {
     await withClient(serverPath, async (client) => {
         const response = await client.request('textDocument/hover', {
@@ -109,6 +122,7 @@ async function testRequestBeforeInitialize(serverPath) {
     });
 }
 
+/** 验证初始化前通知不能提前修改工作区索引。 */
 async function testNotificationBeforeInitializeIsIgnored(serverPath) {
     await withClient(serverPath, async (client) => {
         client.notify('textDocument/didOpen', {
@@ -131,6 +145,7 @@ async function testNotificationBeforeInitializeIsIgnored(serverPath) {
     });
 }
 
+/** 验证重复 initialize 不会重新建立会话。 */
 async function testRepeatedInitialize(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'first-initialize');
@@ -140,6 +155,7 @@ async function testRepeatedInitialize(serverPath) {
     });
 }
 
+/** 验证未 shutdown 的 exit 以失败状态结束。 */
 async function testExitBeforeShutdown(serverPath) {
     await withClient(serverPath, async (client) => {
         client.notify('exit', {});
@@ -148,6 +164,7 @@ async function testExitBeforeShutdown(serverPath) {
     });
 }
 
+/** 区分 shutdown 前后 exit 的进程状态契约。 */
 async function testShutdownExitOrdering(serverPath) {
     await withClient(serverPath, async (client) => {
         const beforeInitialize = await client.request('shutdown', undefined,
@@ -169,6 +186,7 @@ async function testShutdownExitOrdering(serverPath) {
     });
 }
 
+/** 验证 shutdown 后通知静默且请求仍有错误响应。 */
 async function testRequestAfterShutdown(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'shutdown-initialize');
@@ -190,6 +208,7 @@ async function testRequestAfterShutdown(serverPath) {
     });
 }
 
+/** 验证缺少 jsonrpc 版本的请求在分派前被拒绝。 */
 async function testMissingJsonRpc(serverPath) {
     await withClient(serverPath, async (client) => {
         const response = await client.requestEnvelope({
@@ -201,6 +220,7 @@ async function testMissingJsonRpc(serverPath) {
     });
 }
 
+/** 验证错误 jsonrpc 版本不能进入初始化处理。 */
 async function testWrongJsonRpc(serverPath) {
     await withClient(serverPath, async (client) => {
         const response = await client.requestEnvelope({
@@ -213,6 +233,7 @@ async function testWrongJsonRpc(serverPath) {
     });
 }
 
+/** 防止布尔 id 被宽松数值转换误收为请求身份。 */
 async function testInvalidBooleanId(serverPath) {
     await withClient(serverPath, async (client) => {
         await expectInvalidRequest(client, {
@@ -224,6 +245,7 @@ async function testInvalidBooleanId(serverPath) {
     });
 }
 
+/** 验证对象和数组 id 被拒绝且错误响应使用 null id。 */
 async function testInvalidStructuredIds(serverPath) {
     const invalidIds = [
         ['object request id', {}],
@@ -242,6 +264,7 @@ async function testInvalidStructuredIds(serverPath) {
     }
 }
 
+/** 防止小数 id 被截断后误收为整数身份。 */
 async function testInvalidFractionalRequestId(serverPath) {
     await withClient(serverPath, async (client) => {
         await expectInvalidRequest(client, {
@@ -253,6 +276,7 @@ async function testInvalidFractionalRequestId(serverPath) {
     });
 }
 
+/** 验证 JSON 顶层必须是请求对象。 */
 async function testInvalidTopLevelMessages(serverPath) {
     await withClient(serverPath, async (client) => {
         await expectInvalidRequest(client, [], null, 'array top-level message');
@@ -260,6 +284,7 @@ async function testInvalidTopLevelMessages(serverPath) {
     });
 }
 
+/** 验证 initialize 参数缺失、null 与伪对象都触发参数错误。 */
 async function testInvalidParams(serverPath) {
     const invalidParams = [
         ['missing params', undefined],
@@ -281,6 +306,7 @@ async function testInvalidParams(serverPath) {
     }
 }
 
+/** 验证位置为有界非负整数且范围方向正确。 */
 async function testInvalidPositionAndRangeNumbers(serverPath) {
     await withClient(serverPath, async (client) => {
         const uri = 'file:///invalid-position.zr';
@@ -312,6 +338,7 @@ async function testInvalidPositionAndRangeNumbers(serverPath) {
     });
 }
 
+/** 验证调用和类型层次入口要求结构化 item 与位置。 */
 async function testInvalidHierarchyParams(serverPath) {
     const cases = [
         ['call hierarchy prepare', 'textDocument/prepareCallHierarchy', {}],
@@ -332,6 +359,7 @@ async function testInvalidHierarchyParams(serverPath) {
     });
 }
 
+/** 验证多个编辑器查询入口不会接受空文档请求。 */
 async function testInvalidEditorFeatureParams(serverPath) {
     const cases = [
         ['implementation', 'textDocument/implementation'],
@@ -351,6 +379,7 @@ async function testInvalidEditorFeatureParams(serverPath) {
     });
 }
 
+/** 验证格式化和代码动作入口要求完整参数。 */
 async function testInvalidEditingParams(serverPath) {
     const cases = [
         ['formatting', 'textDocument/formatting'],
@@ -368,6 +397,7 @@ async function testInvalidEditingParams(serverPath) {
     });
 }
 
+/** 在真实打开文档上单独验证 codeAction 范围门禁。 */
 async function testInvalidCodeActionRange(serverPath) {
     const uri = 'file:///invalid-code-action-range.zr';
     const cases = [
@@ -405,6 +435,7 @@ async function testInvalidCodeActionRange(serverPath) {
     });
 }
 
+/** 用合法文档与范围隔离检查 codeAction.context 形状。 */
 async function testInvalidCodeActionContext(serverPath) {
     const uri = 'file:///invalid-code-action-context.zr';
     const contexts = [
@@ -450,6 +481,7 @@ async function testInvalidCodeActionContext(serverPath) {
     });
 }
 
+/** 协商多范围格式化后验证逐项范围，并保留合法空结果。 */
 async function testInvalidRangesFormattingParams(serverPath) {
     const uri = 'file:///invalid-ranges-formatting.zr';
     const cases = [
@@ -516,6 +548,7 @@ async function testInvalidRangesFormattingParams(serverPath) {
     });
 }
 
+/** 验证 codeAction/resolve 不接受缺少可解析身份的数据。 */
 async function testInvalidCodeActionResolveParams(serverPath) {
     const cases = [
         ['missing params', undefined],
@@ -538,6 +571,7 @@ async function testInvalidCodeActionResolveParams(serverPath) {
     });
 }
 
+/** 验证 completionItem/resolve 不会把空项当成有效补全。 */
 async function testInvalidCompletionResolveParams(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'invalid-completion-resolve-initialize');
@@ -548,6 +582,7 @@ async function testInvalidCompletionResolveParams(serverPath) {
     });
 }
 
+/** 覆盖 inlineValue、moniker 与 linkedEditingRange 的参数门禁。 */
 async function testInvalidAdditionalEditorParams(serverPath) {
     const cases = [
         ['inline value', 'textDocument/inlineValue'],
@@ -565,6 +600,7 @@ async function testInvalidAdditionalEditorParams(serverPath) {
     });
 }
 
+/** 覆盖语义 token 全量、增量和范围入口的文档参数门禁。 */
 async function testInvalidSemanticTokenParams(serverPath) {
     const cases = [
         ['semantic tokens full', 'textDocument/semanticTokens/full'],
@@ -582,6 +618,7 @@ async function testInvalidSemanticTokenParams(serverPath) {
     });
 }
 
+/** 验证 workspace/symbol 必须携带 query。 */
 async function testInvalidWorkspaceSymbolParams(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'invalid-workspace-symbol-initialize');
@@ -592,6 +629,7 @@ async function testInvalidWorkspaceSymbolParams(serverPath) {
     });
 }
 
+/** 验证 workspace/diagnostic 顶层参数必须是对象。 */
 async function testInvalidWorkspaceDiagnosticParams(serverPath) {
     const cases = [
         ['missing params', undefined],
@@ -610,6 +648,7 @@ async function testInvalidWorkspaceDiagnosticParams(serverPath) {
     }
 }
 
+/** 验证文件重命名请求的 files 列表与元素形状。 */
 async function testInvalidWorkspaceWillRenameParams(serverPath) {
     const cases = [
         ['missing params', undefined],
@@ -632,6 +671,7 @@ async function testInvalidWorkspaceWillRenameParams(serverPath) {
     }
 }
 
+/** 验证诊断请求的可选 id 与标识符也执行类型检查。 */
 async function testInvalidDiagnosticOptionalParams(serverPath) {
     const cases = [
         ['text document previous result id', 'textDocument/diagnostic', {
@@ -659,6 +699,7 @@ async function testInvalidDiagnosticOptionalParams(serverPath) {
     });
 }
 
+/** 验证语义 token 增量查询要求合法 previousResultId。 */
 async function testInvalidSemanticTokenDeltaResultId(serverPath) {
     const cases = [
         ['missing result id', undefined],
@@ -682,6 +723,7 @@ async function testInvalidSemanticTokenDeltaResultId(serverPath) {
     });
 }
 
+/** 验证引用查询 context 与 includeDeclaration 的布尔约束。 */
 async function testInvalidReferencesContext(serverPath) {
     const cases = [
         ['missing context', undefined],
@@ -708,6 +750,7 @@ async function testInvalidReferencesContext(serverPath) {
     });
 }
 
+/** 先协商 inlineCompletion，再检查请求参数错误，避免被能力门禁掩盖。 */
 async function testInvalidInlineCompletionParams(serverPath) {
     const cases = [
         ['missing params', undefined],
@@ -734,6 +777,7 @@ async function testInvalidInlineCompletionParams(serverPath) {
     });
 }
 
+/** 验证未知请求映射为 Method Not Found。 */
 async function testUnknownMethod(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'unknown-method-initialize');
@@ -742,6 +786,7 @@ async function testUnknownMethod(serverPath) {
     });
 }
 
+/** 验证未知通知不会产生 JSON-RPC 响应。 */
 async function testNotificationHasNoResponse(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'notification-initialize');
@@ -750,6 +795,7 @@ async function testNotificationHasNoResponse(serverPath) {
     });
 }
 
+/** 验证参数损坏的通知仍不得生成响应。 */
 async function testMalformedNotificationHasNoResponse(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'malformed-notification-initialize');
@@ -758,6 +804,7 @@ async function testMalformedNotificationHasNoResponse(serverPath) {
     });
 }
 
+/** 验证完整帧内的坏 JSON 返回 null id 的 Parse Error。 */
 async function testMalformedJson(serverPath) {
     await withClient(serverPath, async (client) => {
         client.sendRawFrame(Buffer.from('Content-Length: 1\r\n\r\n{', 'ascii'));
@@ -766,6 +813,7 @@ async function testMalformedJson(serverPath) {
     });
 }
 
+/** 同 id 并发请求要求原请求成功、冲突请求失败。 */
 async function testDuplicateRequestId(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'duplicate-initialize');
@@ -801,6 +849,7 @@ async function testDuplicateRequestId(serverPath) {
     });
 }
 
+/** 验证数字 1 与字符串 1 可作为两个独立请求 id。 */
 async function testDistinctTypedRequestIds(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'typed-id-initialize');
@@ -828,6 +877,7 @@ async function testDistinctTypedRequestIds(serverPath) {
     });
 }
 
+/** 用原始帧验证安全整数保真及越界 id 拒绝。 */
 async function testNumericRequestIdPrecision(serverPath) {
     const safeIdText = '9007199254740991';
     const safeId = Number(safeIdText);
@@ -857,6 +907,7 @@ async function testNumericRequestIdPrecision(serverPath) {
     });
 }
 
+/** 未知请求的取消只是静默控制通知。 */
 async function testCancelUnknownIdHasNoResponse(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'cancel-initialize');
@@ -865,6 +916,7 @@ async function testCancelUnknownIdHasNoResponse(serverPath) {
     });
 }
 
+/** 在昂贵文档建立后排队已知请求和取消，验证取消错误与文档版本。 */
 async function testCancelKnownRequestId(serverPath) {
     await withClient(serverPath, async (client) => {
         const uri = 'file:///cancel-known-request.zr';
@@ -884,7 +936,7 @@ async function testCancelKnownRequestId(serverPath) {
             },
         });
 
-        // Keep the request and cancellation queued behind the expensive didOpen setup.
+        // 文档解析先占据处理队列，使请求和取消相邻到达注册表；诊断版本证明准备阶段已完成。
         client.sendPayload({
             jsonrpc: '2.0',
             id: 'cancel-known-request',
@@ -901,12 +953,13 @@ async function testCancelKnownRequestId(serverPath) {
         assert(diagnostics && diagnostics.uri === uri && diagnostics.version === version,
                `cancel known request setup must publish the exact document/version, actual=${JSON.stringify(diagnostics)}`);
 
-        // This response deadline excludes setup; active-query cancellation latency is a separate gate.
+        // 响应期限从文档准备完成后开始；此处只检查请求取消的协议结果。
         const response = await client.nextMessage(RESPONSE_TIMEOUT_MS);
         assertErrorEnvelope(response, 'cancel-known-request', -32800, 'cancel known request id');
     });
 }
 
+/** 验证 trace 只写 stderr，不污染 stdout 的 LSP 响应帧。 */
 async function testSetTraceWritesOnlyStderr(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'trace-initialize');
@@ -939,6 +992,7 @@ async function testSetTraceWritesOnlyStderr(serverPath) {
     });
 }
 
+/** 验证生命周期外的控制通知不能改变 trace 状态。 */
 async function testControlNotificationsOutsideLifecycleAreIgnored(serverPath) {
     await withClient(serverPath, async (client) => {
         client.notify('$/setTrace', { value: 'messages' });
@@ -962,6 +1016,7 @@ async function testControlNotificationsOutsideLifecycleAreIgnored(serverPath) {
     });
 }
 
+/** 验证 workDoneToken 类型、边界及 begin/end，同时保留常规响应。 */
 async function testRequestWorkDoneProgress(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'work-done-initialize');
@@ -1050,6 +1105,7 @@ async function testRequestWorkDoneProgress(serverPath) {
     });
 }
 
+/** 用跨越 64 项批次边界的符号集验证部分结果契约。 */
 async function testWorkspaceSymbolPartialResults(serverPath) {
     await withClient(serverPath, async (client) => {
         await initialize(client, 'partial-symbol-initialize');
@@ -1086,6 +1142,7 @@ async function testWorkspaceSymbolPartialResults(serverPath) {
     });
 }
 
+/** 首批部分结果之后取消流式查询，验证 RequestCancelled。 */
 async function testCancelDuringPartialResults(serverPath) {
     await withClient(serverPath, async (client) => {
         const uri = 'file:///cancel-during-partial.zr';
@@ -1115,6 +1172,7 @@ async function testCancelDuringPartialResults(serverPath) {
             query: 'CancellationPartialSymbol',
             partialResultToken: 'cancel-during-partial-progress',
         }, requestId, responseTimeoutMs);
+        // TODO: 首批 progress 到达客户端不保证服务器仍在处理后续批次；复核不同调度下取消是否可能到达过晚。
         const cancellation = client.waitForNotification('$/progress', responseTimeoutMs).then((firstPartial) => {
             assert(firstPartial && firstPartial.token === 'cancel-during-partial-progress' &&
                    Array.isArray(firstPartial.value) && firstPartial.value.length === 64,
@@ -1127,6 +1185,7 @@ async function testCancelDuringPartialResults(serverPath) {
     });
 }
 
+/** 验证引用位置经 progress 送达，最终响应保留合法空结果。 */
 async function testReferencesPartialResults(serverPath) {
     await withClient(serverPath, async (client) => {
         const uri = 'file:///partial-progress-references.zr';
@@ -1165,6 +1224,7 @@ async function testReferencesPartialResults(serverPath) {
     });
 }
 
+/** 验证 incomingCalls 部分结果对应 prepare 得到的项。 */
 async function testCallHierarchyPartialResults(serverPath) {
     await withClient(serverPath, async (client) => {
         const uri = 'file:///partial-progress-call-hierarchy.zr';
@@ -1209,6 +1269,7 @@ async function testCallHierarchyPartialResults(serverPath) {
     });
 }
 
+/** 分别验证 supertypes 与 subtypes 的部分结果身份。 */
 async function testTypeHierarchyPartialResults(serverPath) {
     await withClient(serverPath, async (client) => {
         const uri = 'file:///partial-progress-type-hierarchy.zr';
@@ -1273,6 +1334,7 @@ async function testTypeHierarchyPartialResults(serverPath) {
     });
 }
 
+/** 验证诊断报告在 progress 中承载，最终响应只含剩余集合。 */
 async function testWorkspaceDiagnosticPartialResults(serverPath) {
     await withClient(serverPath, async (client) => {
         const uri = 'file:///partial-progress-workspace-diagnostic.zr';
@@ -1303,6 +1365,7 @@ async function testWorkspaceDiagnosticPartialResults(serverPath) {
     });
 }
 
+/** 以超限 Content-Length 验证帧大小门禁及失败退出。 */
 async function testOversizeFrameClosesWithFailure(serverPath) {
     await withClient(serverPath, async (client) => {
         client.sendRawFrame(Buffer.from('Content-Length: 16777217\r\n\r\n', 'ascii'));
@@ -1314,6 +1377,7 @@ async function testOversizeFrameClosesWithFailure(serverPath) {
     });
 }
 
+/** 验证损坏帧分类为确定状态并非零退出。 */
 async function testMalformedFramesCloseWithFailure(serverPath) {
     const cases = [
         ['missing content length', 'MALFORMED_HEADER', 'Content-Type: application/vscode-jsonrpc\r\n\r\n'],
@@ -1347,6 +1411,7 @@ async function testMalformedFramesCloseWithFailure(serverPath) {
     }
 }
 
+/** 供 CTest 与信封变异测试共用用例表，避免两套预期分叉。 */
 function protocolCases() {
     return [
         ['LSP 3.17 capability matrix', testCapabilityMatrix],
@@ -1404,6 +1469,7 @@ function protocolCases() {
     ];
 }
 
+/** 逐个执行并汇总失败，避免单个异常遮蔽后续回归信号。 */
 async function main() {
     const serverPath = process.argv[2];
     const cases = protocolCases();
@@ -1427,6 +1493,7 @@ async function main() {
 
 module.exports = { protocolCases };
 
+/** 作为 CTest 脚本时执行全表；被变异测试 require 时只暴露用例而不启动服务器。 */
 if (require.main === module) {
     main().catch((error) => {
         console.error(`stdio protocol conformance failed: ${error.stack || error.message}`);
