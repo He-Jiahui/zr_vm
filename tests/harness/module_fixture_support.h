@@ -14,6 +14,7 @@
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/writer.h"
 
+/** @brief 将测试持有的源码或二进制缓冲区映射到模块导入路径；缓冲区必须活到读取结束。 */
 typedef struct ZrTestsFixtureSource {
     const TZrChar *path;
     const TZrChar *source;
@@ -31,6 +32,7 @@ typedef struct ZrTestsFixtureSource {
             ZR_FALSE,                                        \
     }
 
+/** @brief 一次性 Io 读取游标；bytes 始终借用，reader 可由调用方置于栈或堆。 */
 typedef struct ZrTestsFixtureReader {
     const TZrByte *bytes;
     TZrSize length;
@@ -63,6 +65,7 @@ static inline const SZrTypeValue *ZrTests_Fixture_GetObjectFieldValue(SZrState *
         return ZR_NULL;
     }
 
+    /* 对象字段键使用 VM 字符串；返回值仍由 object 持有，调用方不得释放。 */
     ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldNameString));
     key.type = ZR_VALUE_TYPE_STRING;
     return ZrCore_Object_GetValue(state, object, &key);
@@ -104,6 +107,7 @@ static inline const SZrTypeValue *ZrTests_Fixture_GetArrayEntryValue(SZrState *s
     return ZrCore_Object_GetValue(state, array, &key);
 }
 
+/** @brief 向 Io 一次性交付借用的 fixture 字节，后续读取返回 EOF。 */
 static inline TZrBytePtr ZrTests_Fixture_ReaderRead(SZrState *state, TZrPtr customData, TZrSize *size) {
     ZrTestsFixtureReader *reader = (ZrTestsFixtureReader *)customData;
 
@@ -121,6 +125,7 @@ static inline TZrBytePtr ZrTests_Fixture_ReaderRead(SZrState *state, TZrPtr cust
     return (TZrBytePtr)reader->bytes;
 }
 
+/** @brief 仅释放堆分配的 reader，不释放借用的字节；栈上 reader 不可传入。 */
 static inline void ZrTests_Fixture_ReaderClose(SZrState *state, TZrPtr customData) {
     ZR_UNUSED_PARAMETER(state);
 
@@ -129,6 +134,7 @@ static inline void ZrTests_Fixture_ReaderClose(SZrState *state, TZrPtr customDat
     }
 }
 
+/** @brief 读取二进制 fixture；成功时返回需由调用方 free 的字节缓冲区。 */
 static inline TZrByte *ZrTests_Fixture_ReadFileBytes(const TZrChar *path, TZrSize *outLength) {
     FILE *file;
     long fileSize;
@@ -180,6 +186,7 @@ static inline TZrSize ZrTests_Fixture_SkipWhitespace(const TZrChar *text, TZrSiz
     return index;
 }
 
+/** @brief 为编译器构造模块源名，缺少可识别声明时退回测试给定路径。 */
 static inline SZrString *ZrTests_Fixture_CreateSourceNameForModule(SZrState *state,
                                                                    const TZrChar *moduleSource,
                                                                    const TZrChar *fallbackPath) {
@@ -190,6 +197,8 @@ static inline SZrString *ZrTests_Fixture_CreateSourceNameForModule(SZrState *sta
         return ZR_NULL;
     }
 
+    /* TODO: 此处按文本查找 module，注释或字符串中的同名片段可能抢先命中。
+     * 现有调用见 test_module_system.c 的二进制 fixture；需用含前置注释的模块核对源名。 */
     moduleMarker = moduleSource != ZR_NULL ? strstr(moduleSource, moduleKeyword) : ZR_NULL;
     if (moduleMarker != ZR_NULL) {
         TZrSize index = (TZrSize)(moduleMarker - moduleSource) + strlen(moduleKeyword);
@@ -233,6 +242,7 @@ static inline SZrString *ZrTests_Fixture_CreateSourceNameForModule(SZrState *sta
     return ZrCore_String_Create(state, (TZrNativeString)fallbackPath, strlen(fallbackPath));
 }
 
+/** @brief 暂时切换编译支持位生成二进制 fixture，恢复配置后返回调用方持有的文件字节。 */
 static inline TZrByte *ZrTests_Fixture_BuildBinaryFile(SZrState *state,
                                                        const TZrChar *moduleSource,
                                                        const TZrChar *binaryPath,
@@ -252,6 +262,7 @@ static inline TZrByte *ZrTests_Fixture_BuildBinaryFile(SZrState *state,
         return ZR_NULL;
     }
 
+    /* 此标志只影响这一次编译，失败路径也必须在返回前恢复。 */
     if (state->global != ZR_NULL) {
         oldEmitCompileTimeRuntimeSupport = state->global->emitCompileTimeRuntimeSupport;
         state->global->emitCompileTimeRuntimeSupport = emitCompileTimeRuntimeSupport;
@@ -273,6 +284,7 @@ static inline TZrByte *ZrTests_Fixture_BuildBinaryFile(SZrState *state,
     return bytes;
 }
 
+/** @brief 按导入路径将数组 fixture 注册为 Io；成功后 Io 消费方负责调用 reader close。 */
 static inline TZrBool ZrTests_Fixture_SourceLoaderFromArray(SZrState *state,
                                                             TZrNativeString sourcePath,
                                                             TZrNativeString md5,

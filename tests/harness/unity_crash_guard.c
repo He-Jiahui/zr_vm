@@ -10,6 +10,7 @@
 
 #define ZR_TESTS_THREAD_LOCAL ZR_THREAD_LOCAL
 
+/* 最近诊断供后续 Unity 用例读取；信号与保护帧状态独立按线程保存。 */
 static ZrTestsUnityCrashInfo g_zr_tests_unity_last_crash_info = {0};
 static int g_zr_tests_unity_handlers_installed = 0;
 static ZR_TESTS_THREAD_LOCAL volatile sig_atomic_t g_zr_tests_unity_abort_frame_active = 0;
@@ -43,6 +44,7 @@ static void zr_tests_unity_reset_pending_signal_state(void) {
 
 static void zr_tests_unity_interrupt_current_test(int signalNumber) {
     g_zr_tests_unity_pending_signal = signalNumber;
+    /* 只跳到当前 Unity AbortFrame；无保护帧时交回默认信号处理。 */
     if (g_zr_tests_unity_abort_frame_active) {
         longjmp(Unity.AbortFrame, 1);
     }
@@ -55,6 +57,8 @@ static void zr_tests_unity_reraise_default(int signalNumber) {
 }
 
 static void zr_tests_unity_signal_handler(int signalNumber) {
+    /* TODO: Begin 先标记保护帧活跃，runner 随后才 setjmp；此间的异步信号可能跳向未建帧。
+     * 现有用例只经 VM panic hook 恢复，需真实信号用例核查该窗口及库调用中断恢复。 */
     zr_tests_unity_interrupt_current_test(signalNumber);
     if (g_zr_tests_unity_abort_frame_active) {
         return;
@@ -72,6 +76,8 @@ static void zr_tests_unity_install_handlers_once(void) {
         return;
     }
 
+    /* TODO: 安装标记及进程级 signal handler 未同步；目前调用入口为
+     * 单线程测试 runner，需在线程并发启动保护帧时核对注册竞态。 */
     ZrTests_Runtime_SetFatalCrashHook(zr_tests_unity_vm_panic_hook);
     signal(SIGABRT, zr_tests_unity_signal_handler);
     signal(SIGILL, zr_tests_unity_signal_handler);
@@ -105,6 +111,7 @@ static void zr_tests_unity_capture_recovered_crash(int signalNumber) {
         fflush(stderr);
     }
 
+    /* longjmp 绕过执行函数的 scope End，这里统一丢弃悬空 VM 指针。 */
     ZrTests_Runtime_ClearCrashState();
     Unity.CurrentTestFailed = expectedCrash ? 0 : 1;
     Unity.CurrentTestIgnored = 0;
@@ -132,6 +139,7 @@ void ZrTests_Unity_TestProtect_End(void) {
 
     zr_tests_unity_capture_recovered_crash((int)g_zr_tests_unity_pending_signal);
     zr_tests_unity_reset_pending_signal_state();
+    /* runner 的下一次 Begin 返回 0，跳过本次 tearDown 及其保护；崩溃状态已由 ClearCrashState 清理。 */
     g_zr_tests_unity_skip_next_protect = 1;
 }
 

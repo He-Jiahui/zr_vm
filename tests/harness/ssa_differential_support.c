@@ -98,6 +98,7 @@ TZrBool ZrTests_Ssa_Compare(const SZrSsaObservation *expected,
                                 0u,
                                 0u);
     }
+    /* backend 身份和覆盖率另由 CoverageRecord 验证，语义比较只看结果与轨迹。 */
     if (expected->completed != actual->completed ||
         expected->resultType != actual->resultType ||
         expected->resultBits != actual->resultBits ||
@@ -221,8 +222,7 @@ void ZrTests_Ssa_CoverageRecord(SZrSsaCoverage *coverage,
     }
     bit = (TZrUInt32)1u << backend;
     coverage->executedBackends |= bit;
-    /* Semantic equality can succeed under fallback; only the requested
-     * backend actually executing without fallback satisfies its gate. */
+    /* 语义相同仍可能走 fallback；门禁要求所请求 backend 亲自执行。 */
     if (semanticMatches == ZR_FALSE ||
         !zr_ssa_observation_is_valid(observation) ||
         observation->backend != backend || observation->fallbackVisible) {

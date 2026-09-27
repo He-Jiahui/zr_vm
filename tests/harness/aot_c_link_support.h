@@ -3,6 +3,7 @@
 
 #include "zr_vm_common/zr_common_conf.h"
 
+/* AOT C 冒烟测试直接调用宿主链接器；库顺序和平台依赖须与 CMake 构建保持一致。 */
 #if defined(ZR_PLATFORM_UNIX)
 #if defined(__APPLE__)
 #define ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS                                                        \

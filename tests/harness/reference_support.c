@@ -10,6 +10,7 @@ static TZrBool zr_tests_reference_match_here(const TZrChar *pattern, const TZrCh
 static const TZrChar *zr_tests_reference_skip_json_spacing(const TZrChar *cursor);
 
 static TZrBool zr_tests_reference_match_star(TZrChar token, const TZrChar *pattern, const TZrChar *text) {
+    /* 测试用简化模式回溯所有重复长度，直到后续片段匹配。 */
     do {
         if (zr_tests_reference_match_here(pattern, text)) {
             return ZR_TRUE;
@@ -99,6 +100,8 @@ TZrSize ZrTests_Reference_CountJsonStringFieldValueOccurrences(const TZrChar *te
         return 0;
     }
 
+    /* BUG: fieldName 长度至少 126 字节时 snprintf 截断字段模式，却只检查负值；
+     * 完整合法 JSON 字段会被误计为 0。可用 126 字节字段名构造回归用例。 */
     if (snprintf(fieldPattern, sizeof(fieldPattern), "\"%s\"", fieldName) < 0) {
         return 0;
     }
@@ -169,6 +172,7 @@ TZrBool ZrTests_Reference_TextContainsInOrder(const TZrChar *text,
 }
 
 TZrBool ZrTests_Reference_TextMatchesRegex(const TZrChar *text, const TZrChar *pattern) {
+    /* 此匹配器故意只覆盖文档断言所需的少量元字符。 */
     if (text == ZR_NULL || pattern == ZR_NULL) {
         return ZR_FALSE;
     }

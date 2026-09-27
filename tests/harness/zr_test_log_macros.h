@@ -6,11 +6,13 @@
 
 #include "unity.h"
 
+/** @brief 使用 C 进程 CPU 时钟记录测试片段耗时。 */
 typedef struct SZrTestTimer {
     clock_t startTime;
     clock_t endTime;
 } SZrTestTimer;
 
+/* 日志宏刷新 stdout，使异常退出前的测试上下文仍可见。 */
 #define ZR_TEST_START(summary)                                                                                       \
     do {                                                                                                               \
         printf("Unit Test - %s\n", summary);                                                                           \
@@ -30,6 +32,7 @@ typedef struct SZrTestTimer {
         fflush(stdout);                                                                                                \
     } while (0)
 
+/* 只标记 Unity 失败，不触发 Unity 的 longjmp，调用方可继续清理资源。 */
 #define ZR_TEST_FAIL(timer, summary, reason)                                                                           \
     do {                                                                                                               \
         double zrTestElapsed = ((double) ((timer).endTime - (timer).startTime) / CLOCKS_PER_SEC) * 1000.0;           \

@@ -47,6 +47,7 @@ static TZrBool zr_tests_format_path(TZrChar *outPath, TZrSize maxLen, const TZrC
     written = vsnprintf(outPath, maxLen, format, args);
     va_end(args);
 
+    /* 失败时清空输出，避免调用方误用被截断的生成工件路径。 */
     if (written < 0 || (TZrSize) written >= maxLen) {
         if (maxLen > 0) {
             outPath[0] = '\0';
@@ -93,12 +94,15 @@ TZrBool ZrTests_Path_EnsureParentDirectory(const TZrChar *filePath) {
         return ZR_TRUE;
     }
 
+    /* 跳过盘符或根斜杠，只创建实际父目录分量。 */
     if (length >= 3 && working[1] == ':' && working[2] == '/') {
         startIndex = 3;
     } else if (working[0] == '/') {
         startIndex = 1;
     }
 
+    /* TODO: UNC 路径前缀 //server/share 未单独处理；Windows 调用方目前
+     * 使用本地构建目录，需用 UNC 输出路径验证是否误建网络共享根。 */
     for (index = startIndex; working[index] != '\0'; index++) {
         if (working[index] != '/') {
             continue;
@@ -192,6 +196,7 @@ TZrBool ZrTests_Path_GetGeneratedArtifact(const TZrChar *suiteName,
         return ZR_FALSE;
     }
 
+    /* 构造和目录创建是同一个成功条件，调用方随后直接写文件。 */
     return ZrTests_Path_EnsureParentDirectory(outPath);
 }
 
@@ -252,6 +257,7 @@ TZrBool ZrTests_ReadFileBytes(const TZrChar *path, TZrBytePtr *outBuffer, TZrSiz
         return ZR_FALSE;
     }
 
+    /* 多分配一个字节供文本调用方使用；outLength 始终是原始文件长度。 */
     buffer = (TZrBytePtr) malloc((TZrSize) fileSize + 1);
     if (buffer == ZR_NULL) {
         fclose(file);

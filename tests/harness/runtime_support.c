@@ -18,12 +18,14 @@ typedef struct ZrTestsRuntimeExecuteRequest {
     TZrBool callCompleted;
 } ZrTestsRuntimeExecuteRequest;
 
+/* panic 回调挂在 global 上，注册表保留测试传入的 handler 以便统一分发。 */
 typedef struct ZrTestsRuntimePanicHandlerRegistration {
     SZrGlobalState *global;
     FZrPanicHandlingFunction userHandler;
     struct ZrTestsRuntimePanicHandlerRegistration *next;
 } ZrTestsRuntimePanicHandlerRegistration;
 
+/* 注册表和 hook 为进程级，scope 与最近 panic VM 为线程级。 */
 static ZrTestsRuntimePanicHandlerRegistration *g_zr_tests_runtime_panic_handlers = ZR_NULL;
 static ZR_TESTS_THREAD_LOCAL SZrState *g_zr_tests_runtime_crash_scope_stack[ZR_TESTS_CRASH_SCOPE_STACK_CAPACITY];
 static ZR_TESTS_THREAD_LOCAL TZrUInt32 g_zr_tests_runtime_crash_scope_depth = 0;
@@ -115,6 +117,7 @@ static void zr_tests_runtime_panic_handler_dispatch(SZrState *state) {
         }
     }
 
+    /* 先把原测试回调交还调用方，再由 crash guard 截断 fatal 路径。 */
     if (userHandler != ZR_NULL) {
         userHandler(state);
     }
@@ -133,6 +136,8 @@ void ZrTests_Runtime_CrashScope_Begin(SZrState *state) {
         return;
     }
 
+    /* TODO: 深度达到 16 后覆盖栈顶，嵌套 End 可能找不到先前登记。
+     * 当前执行路径每次只压入一个 state；需用深度超过 16 的测试核对。 */
     if (g_zr_tests_runtime_crash_scope_depth < ZR_TESTS_CRASH_SCOPE_STACK_CAPACITY) {
         g_zr_tests_runtime_crash_scope_stack[g_zr_tests_runtime_crash_scope_depth++] = state;
     } else {
@@ -256,6 +261,7 @@ static TZrBool zr_tests_runtime_handle_unhandled_exception(SZrState *state, SZrT
         return ZR_FALSE;
     }
 
+    /* 宿主注册的 handler 可消费异常；否则保留诊断并重设线程状态。 */
     zr_tests_runtime_try_invoke_unhandled_handler(state, &handlerHandled);
     if (handlerHandled) {
         ZrCore_State_ResetThread(state, ZR_THREAD_STATUS_FINE);
@@ -296,6 +302,7 @@ static TZrBool zr_tests_runtime_capture_failure(SZrState *state, EZrThreadStatus
         preservedExceptionStatus = state->currentExceptionStatus;
     }
 
+    /* 重设执行栈后恢复标准化异常，供负向测试检查失败原因。 */
     ZrCore_State_ResetThread(state, ZR_THREAD_STATUS_FINE);
     if (preservedHasException) {
         state->currentException = preservedException;
@@ -317,6 +324,7 @@ static void zr_tests_runtime_execute_body(SZrState *state, TZrPtr arguments) {
         return;
     }
 
+    /* 压入 closure 前函数只由测试的 C 指针持有，暂时加入 GC 忽略集。 */
     ignoredFunction = ZrCore_GarbageCollector_IgnoreObject(state,
                                                            ZR_CAST_RAW_OBJECT_AS_SUPER(request->function));
     base = state->stackTop.valuePointer;
@@ -354,6 +362,8 @@ TZrPtr ZrTests_Runtime_Allocator_Default(TZrPtr userData,
     ZR_UNUSED_PARAMETER(originalSize);
     ZR_UNUSED_PARAMETER(flag);
 
+    /* TODO: 低于 0x1000 的非空指针被当作无效地址跳过 free/realloc。
+     * 需核查 VM 分配器是否可能合法返回此范围，以及跨平台指针比较语义。 */
     if (newSize == 0) {
         if (pointer != ZR_NULL && (TZrPtr) pointer >= (TZrPtr) 0x1000) {
             free(pointer);
@@ -382,6 +392,7 @@ SZrState *ZrTests_Runtime_State_Create(FZrPanicHandlingFunction panicHandler) {
     SZrState *mainState = global->mainThreadState;
     if (mainState != ZR_NULL) {
         ZrCore_GlobalState_InitRegistry(mainState, global);
+        /* 保留测试回调并统一安装分发器，crash guard 可在其后挂 fatal hook。 */
         zr_tests_runtime_register_panic_handler(global, panicHandler);
         global->panicHandlingFunction = zr_tests_runtime_panic_handler_dispatch;
     }
@@ -419,6 +430,7 @@ TZrBool ZrTests_Runtime_Function_ExecuteCaptureFailure(SZrState *state, SZrFunct
     request.function = function;
     request.resultBase = ZR_NULL;
     request.callCompleted = ZR_FALSE;
+    /* TryRun 期间登记 VM；正常返回移除，fatal longjmp 由 Unity guard 清空。 */
     ZrTests_Runtime_CrashScope_Begin(state);
     status = ZrCore_Exception_TryRun(state, zr_tests_runtime_execute_body, &request);
     ZrTests_Runtime_CrashScope_End(state);

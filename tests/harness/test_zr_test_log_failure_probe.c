@@ -4,6 +4,7 @@
 #include "unity.h"
 #include "zr_test_log_macros.h"
 
+/* 进程退出码和本标记共同验证 ZR_TEST_FAIL 不跳过后续清理。 */
 static int g_cleanupReached = 0;
 
 void setUp(void) {
@@ -17,6 +18,7 @@ static void test_failure_marks_unity_without_skipping_cleanup(void) {
 
     timer.startTime = clock();
     timer.endTime = timer.startTime;
+    /* 故意令 Unity 失败；CMake 验证脚本检查退出码与清理标记。 */
     ZR_TEST_FAIL(timer, "Intentional failure probe", "expected failure");
     g_cleanupReached = 1;
 }
