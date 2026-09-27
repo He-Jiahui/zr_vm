@@ -6,6 +6,7 @@
 #include "zr_vm_core/reflection.h"
 #include "zr_vm_common/zr_ast_constants.h"
 
+/* 域前缀把原生导出签名与其他稳定哈希隔离，格式变动必须另起版本。 */
 static const TZrByte CZrNativeRuntimeMetadataSignatureHashV1Prefix[] = {
         'z',
         'r',
@@ -29,12 +30,15 @@ static const TZrByte CZrNativeRuntimeMetadataSignatureHashV1Prefix[] = {
         '\0',
 };
 
+/* 可变或无声明参数的原生入口不能伪装成固定参数签名。 */
 #define ZR_NATIVE_RUNTIME_METADATA_MEMBER_PARAMETER_COUNT_UNKNOWN ((TZrUInt32)-1)
 
+/* 可选名称在签名中以空字符串编码，避免散列过程解引用空指针。 */
 static TZrSize native_runtime_metadata_string_length(const TZrChar *value) {
     return value != ZR_NULL ? strlen(value) : 0;
 }
 
+/* 固定小端编码使签名哈希不受宿主机字节序影响。 */
 static void native_runtime_metadata_write_u32(TZrByte *buffer, TZrSize *offset, TZrUInt32 value) {
     buffer[*offset + 0] = (TZrByte)(value & 0xFFu);
     buffer[*offset + 1] = (TZrByte)((value >> 8) & 0xFFu);
@@ -43,6 +47,7 @@ static void native_runtime_metadata_write_u32(TZrByte *buffer, TZrSize *offset, 
     *offset += 4u;
 }
 
+/* 所有字符串长度带前缀，供 member_signature_hash 消除字段拼接歧义。 */
 static void native_runtime_metadata_write_string(TZrByte *buffer, TZrSize *offset, const TZrChar *value) {
     TZrSize length = native_runtime_metadata_string_length(value);
 
@@ -55,6 +60,7 @@ static void native_runtime_metadata_write_string(TZrByte *buffer, TZrSize *offse
     *offset += length;
 }
 
+/* 大小计算须与写入函数保持同一字段顺序，才能安全分配签名缓冲区。 */
 static TZrSize native_runtime_metadata_parameter_type_signature_size(
         const ZrLibParameterDescriptor *parameters,
         TZrSize parameterCount) {
@@ -70,6 +76,7 @@ static TZrSize native_runtime_metadata_parameter_type_signature_size(
     return size;
 }
 
+/* 参数类型按描述符声明顺序进入签名；未知参数列表编码为空列表。 */
 static void native_runtime_metadata_write_parameter_type_signature(
         TZrByte *buffer,
         TZrSize *offset,
@@ -83,6 +90,7 @@ static void native_runtime_metadata_write_parameter_type_signature(
     }
 }
 
+/* 字段与方法共用基础签名，方法再加入实参与最小参数数目。 */
 static TZrSize native_runtime_metadata_member_signature_size(
         EZrMetadataSignatureNode signatureNode,
         TZrUInt32 memberType,
@@ -107,6 +115,7 @@ static TZrSize native_runtime_metadata_member_signature_size(
     return size;
 }
 
+/* 为反射查找创建版本化稳定签名；0 表示构造失败而非有效哈希。 */
 static TZrUInt64 native_runtime_metadata_member_signature_hash(
         SZrState *state,
         EZrMetadataSignatureNode signatureNode,
@@ -170,6 +179,7 @@ static TZrUInt64 native_runtime_metadata_member_signature_hash(
     return signatureHash;
 }
 
+/* 仅将内建标量别名落到 VM 值类别；其余名称保留为具名对象类型。 */
 static TZrBool native_runtime_metadata_primitive_type(const TZrChar *typeName, EZrValueType *outType) {
     TZrSize length;
 
@@ -247,6 +257,9 @@ static TZrBool native_runtime_metadata_primitive_type(const TZrChar *typeName, E
     return ZR_FALSE;
 }
 
+/* 生成反射层的类型引用；非标量类型以名字延迟解析。 */
+/* BUG: 具名类型的 VM 字符串创建失败未传给 add_*_symbol；符号名称成功时
+ * 元数据仍可附着，反射把该返回值或字段类型退化为 object。 */
 static void native_runtime_metadata_set_type_ref(SZrState *state,
                                                  SZrFunctionTypedTypeRef *outType,
                                                  const TZrChar *typeName) {
@@ -266,6 +279,7 @@ static void native_runtime_metadata_set_type_ref(SZrState *state,
     outType->typeName = native_binding_create_string(state, typeName);
 }
 
+/* 仅在描述符给出参数列表或固定元数时公开精确数量。 */
 static TZrUInt32 native_runtime_metadata_function_parameter_count(const ZrLibFunctionDescriptor *descriptor) {
     if (descriptor == ZR_NULL) {
         return ZR_NATIVE_RUNTIME_METADATA_MEMBER_PARAMETER_COUNT_UNKNOWN;
@@ -280,6 +294,7 @@ static TZrUInt32 native_runtime_metadata_function_parameter_count(const ZrLibFun
     return ZR_NATIVE_RUNTIME_METADATA_MEMBER_PARAMETER_COUNT_UNKNOWN;
 }
 
+/* 将描述符投影为编译模块也使用的 typed export 记录，供反射统一读取。 */
 static void native_runtime_metadata_init_symbol(SZrState *state,
                                                 SZrFunctionTypedExportSymbol *symbol,
                                                 const TZrChar *name,
@@ -309,6 +324,7 @@ static void native_runtime_metadata_init_symbol(SZrState *state,
     symbol->signatureHash = signatureHash;
 }
 
+/* 函数导出按模块内顺序取得 member/signature token，匹配后续反射检索。 */
 static TZrBool native_runtime_metadata_add_function_symbol(SZrState *state,
                                                            SZrFunctionTypedExportSymbol *symbol,
                                                            const ZrLibModuleDescriptor *moduleDescriptor,
@@ -364,6 +380,7 @@ static TZrBool native_runtime_metadata_add_function_symbol(SZrState *state,
     return symbol->name != ZR_NULL ? ZR_TRUE : ZR_FALSE;
 }
 
+/* 常量、模块链接和类型导出在统一表内作为字段记录，保留各自 exportKind。 */
 static TZrBool native_runtime_metadata_add_field_symbol(SZrState *state,
                                                         SZrFunctionTypedExportSymbol *symbol,
                                                         const TZrChar *moduleName,
@@ -411,6 +428,7 @@ static TZrBool native_runtime_metadata_add_field_symbol(SZrState *state,
     return symbol->name != ZR_NULL ? ZR_TRUE : ZR_FALSE;
 }
 
+/* 模块物化前把所有原生导出挂到入口函数，反射随后按此表关联真实导出值。 */
 TZrBool native_runtime_metadata_attach_module(SZrState *state,
                                               SZrObjectModule *module,
                                               const ZrLibModuleDescriptor *descriptor) {
@@ -425,10 +443,14 @@ TZrBool native_runtime_metadata_attach_module(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* TODO: 需核对外部插件描述符的数量上限；此处求和、乘法和 UInt32 截断
+     * 尚未防溢出，极大计数可能令分配大小与后续写入数量不一致。 */
     symbolCount = descriptor->functionCount +
                   descriptor->constantCount +
                   descriptor->moduleLinkCount +
                   descriptor->typeCount;
+    /* TODO: 新函数仅存于 C 局部，直到 Attach 前还会分配字符串和元数据；
+     * 需核对 GC 是否扫描该局部或构造器是否临时保活，并用 GC 压力测试确认。 */
     metadataFunction = ZrCore_Function_New(state);
     if (metadataFunction == ZR_NULL) {
         return ZR_FALSE;
@@ -510,6 +532,8 @@ TZrBool native_runtime_metadata_attach_module(SZrState *state,
         }
     }
 
+    /* TODO: Attach 接口不报告对象字段写入失败；需以故障注入确认入口函数
+     * 是否可能未挂接而这里仍返回成功，使反射退回不完整的模块信息。 */
     ZrCore_Reflection_AttachModuleRuntimeMetadata(state, module, metadataFunction);
     return ZR_TRUE;
 }

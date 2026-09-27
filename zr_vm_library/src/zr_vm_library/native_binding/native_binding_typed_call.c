@@ -1,5 +1,6 @@
 #include "native_binding_internal.h"
 
+/* typed call 只把可精确映射到 VM 标量的 descriptor 类型作为签名证据。 */
 static TZrBool typed_native_type(const TZrChar *name, SZrFunctionTypedTypeRef *type) {
     static const struct { const TZrChar *name; EZrValueType type; } primitives[] = {
         {"null", ZR_VALUE_TYPE_NULL}, {"bool", ZR_VALUE_TYPE_BOOL}, {"i8", ZR_VALUE_TYPE_INT8},
@@ -21,6 +22,8 @@ static TZrBool typed_native_type(const TZrChar *name, SZrFunctionTypedTypeRef *t
     return ZR_FALSE;
 }
 
+/* core typed-call resolver 在 callable 缺少 VM metadata 时调用；本 registry 只证明自身函数 closure 的签名，
+ * 非本 registry 的 callable 交还原宿主 resolver，方法与 meta-method 不走这个函数签名入口。 */
 TZrBool native_registry_resolve_typed_call_binding(SZrState *state,
         const SZrTypeValue *callable, SZrCallBindingTarget *target,
         TZrUInt64 *signatureHash, TZrPtr userData) {

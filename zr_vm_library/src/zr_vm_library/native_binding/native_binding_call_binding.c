@@ -1,4 +1,4 @@
-/* Stable native provider identity and call-binding resolution. */
+/* 将原生描述符映射为编译器可持久化的调用身份，并在运行时链接回当前 provider。 */
 
 #include "native_binding_internal.h"
 #include "zr_vm_library/native_binding_call_binding.h"
@@ -11,18 +11,22 @@
 #include <string.h>
 
 #ifndef ZR_MEMBER_PARAMETER_COUNT_UNKNOWN
+/* 与 parser 的未知形参数哨兵一致，保留变长描述符的身份语义。 */
 #define ZR_MEMBER_PARAMETER_COUNT_UNKNOWN ((TZrUInt32)-1)
 #endif
 
+/* 签名域与模块契约 hash 域隔离，避免不同用途的相同字节串被误认为同一身份。 */
 static const TZrByte CZrNativeCallBindingSignaturePrefix[] = {
         'z', 'r', '.', 'm', 'd', '.', 'n', 'a', 't', 'i', 'v', 'e',
         '.', 's', 'i', 'g', '.', 'v', '1', '\0'
 };
 
+/* 描述符允许可选文本为空；签名编码将空指针按空串处理。 */
 static TZrSize native_cb_string_length(const TZrChar *value) {
     return value != ZR_NULL ? strlen(value) : 0u;
 }
 
+/* 为完整签名预留空间时拒绝尺寸溢出，失败最终表现为不可链接的零 hash。 */
 static TZrBool native_cb_size_add(TZrSize *size, TZrSize increment) {
     if (size == ZR_NULL || increment > ZR_MAX_SIZE - *size) {
         return ZR_FALSE;
@@ -31,6 +35,7 @@ static TZrBool native_cb_size_add(TZrSize *size, TZrSize increment) {
     return ZR_TRUE;
 }
 
+/* 与 parser 的长度前缀字符串编码保持同一输入边界。 */
 static TZrBool native_cb_size_string(TZrSize *size, const TZrChar *value) {
     TZrSize length = native_cb_string_length(value);
     if (length > (TZrSize)UINT32_MAX ||
@@ -41,6 +46,7 @@ static TZrBool native_cb_size_string(TZrSize *size, const TZrChar *value) {
     return ZR_TRUE;
 }
 
+/* 签名格式采用固定小端字节序，不能随宿主 ABI 改变。 */
 static void native_cb_write_u32(TZrByte *buffer, TZrSize *offset, TZrUInt32 value) {
     buffer[(*offset)++] = (TZrByte)(value & 0xffu);
     buffer[(*offset)++] = (TZrByte)((value >> 8u) & 0xffu);
@@ -48,6 +54,7 @@ static void native_cb_write_u32(TZrByte *buffer, TZrSize *offset, TZrUInt32 valu
     buffer[(*offset)++] = (TZrByte)((value >> 24u) & 0xffu);
 }
 
+/* 与 native_module_info_member_signature_hash 的字符串字段顺序保持一致。 */
 static void native_cb_write_string(TZrByte *buffer, TZrSize *offset, const TZrChar *value) {
     TZrSize length = native_cb_string_length(value);
     native_cb_write_u32(buffer, offset, (TZrUInt32)length);
@@ -57,6 +64,7 @@ static void native_cb_write_string(TZrByte *buffer, TZrSize *offset, const TZrCh
     }
 }
 
+/* 为 registry 与 parser 构造同一 member signature；参数名属于模块契约而非此签名。 */
 static TZrUInt64 native_cb_signature_hash(const TZrChar *ownerName,
                                           const TZrChar *memberName,
                                           const TZrChar *returnTypeName,
@@ -113,6 +121,7 @@ static TZrUInt64 native_cb_signature_hash(const TZrChar *ownerName,
     return hash;
 }
 
+/* 缺少参数描述时，只有固定 arity 才能给 method 签名一个确定形参数。 */
 static TZrUInt32 native_cb_method_parameter_count(const ZrLibMethodDescriptor *descriptor) {
     if (descriptor == ZR_NULL) {
         return ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
@@ -126,6 +135,7 @@ static TZrUInt32 native_cb_method_parameter_count(const ZrLibMethodDescriptor *d
                    : ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
 }
 
+/* 模块函数也遵循 parser 的未知 arity 哨兵，避免范围形参伪装为固定数量。 */
 static TZrUInt32 native_cb_function_parameter_count(const ZrLibFunctionDescriptor *descriptor) {
     if (descriptor == ZR_NULL) {
         return ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
@@ -139,6 +149,7 @@ static TZrUInt32 native_cb_function_parameter_count(const ZrLibFunctionDescripto
                    : ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
 }
 
+/* meta method 的身份使用同一形参数规则，供构造器和运算符调用契约复用。 */
 static TZrUInt32 native_cb_meta_parameter_count(const ZrLibMetaMethodDescriptor *descriptor) {
     if (descriptor == ZR_NULL) return ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
     if (descriptor->parameters != ZR_NULL ||
@@ -148,6 +159,7 @@ static TZrUInt32 native_cb_meta_parameter_count(const ZrLibMetaMethodDescriptor 
                    ? descriptor->minArgumentCount : ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
 }
 
+/* RID 是持久化 token 的有限空间；超界时整个描述符身份不可发布。 */
 static TZrBool native_cb_advance_rid(TZrUInt32 *rid, TZrSize count) {
     if (count > (TZrSize)ZR_METADATA_TOKEN_RID_MASK ||
         *rid > ZR_METADATA_TOKEN_RID_MASK - count) return ZR_FALSE;
@@ -155,6 +167,7 @@ static TZrBool native_cb_advance_rid(TZrUInt32 *rid, TZrSize count) {
     return ZR_TRUE;
 }
 
+/* 根据 registry entry 的类别恢复其原始描述符，供运行时重新核对契约。 */
 static const void *native_cb_entry_descriptor(const ZrLibBindingEntry *entry) {
     if (entry == ZR_NULL) return ZR_NULL;
     switch (entry->bindingKind) {
@@ -165,6 +178,7 @@ static const void *native_cb_entry_descriptor(const ZrLibBindingEntry *entry) {
     }
 }
 
+/* 重放 parser 的成员顺序以分配稳定 token；descriptor 必须指向 module 内的原始元素。 */
 static void native_cb_assign_identity(const ZrLibModuleDescriptor *module,
                                       const ZrLibTypeDescriptor *type,
                                       EZrLibResolvedBindingKind kind,
@@ -284,6 +298,7 @@ static void native_cb_assign_identity(const ZrLibModuleDescriptor *module,
     }
 }
 
+/* closure 注册时缓存标量身份，后续解析无需依赖导出名。 */
 TZrBool native_registry_assign_call_binding_identity(const ZrLibModuleDescriptor *moduleDescriptor,
         const ZrLibTypeDescriptor *typeDescriptor,
         EZrLibResolvedBindingKind bindingKind,
@@ -296,10 +311,13 @@ TZrBool native_registry_assign_call_binding_identity(const ZrLibModuleDescriptor
     entry->moduleSignatureHash = ZrLibrary_NativeRegistry_ComputeModuleSignatureHash(moduleDescriptor);
     native_cb_assign_identity(moduleDescriptor, typeDescriptor, bindingKind, descriptor,
                               &entry->metadataToken, &entry->signatureToken, &entry->signatureHash);
+    /* BUG: native_binding_make_callable_value 忽略此 false；签名分配失败时仍发布零身份 closure，
+     * 使直接调用可用而编译后 call binding 无法链接。 */
     return entry->metadataToken != 0u && entry->signatureToken != 0u &&
            entry->signatureHash != 0u && entry->moduleSignatureHash != 0u;
 }
 
+/* 供 parser 和公开 API 从描述符生成可落盘契约；type 必须是 module 内的所属类型。 */
 TZrBool ZrLibrary_NativeCallBinding_GetDescriptorContract(
         const ZrLibModuleDescriptor *module,
         const ZrLibTypeDescriptor *type,
@@ -368,6 +386,7 @@ TZrBool ZrLibrary_NativeCallBinding_GetDescriptorContract(
     return ZR_TRUE;
 }
 
+/* 从当前 registry 恢复契约目标；模块 hash 先触发 materialize，再按 token 与签名确认 closure。 */
 EZrCallBindingStatus ZrLibrary_NativeRegistry_ResolveCallBinding(
         SZrState *state,
         const SZrCallBindingContract *contract,
@@ -383,6 +402,8 @@ EZrCallBindingStatus ZrLibrary_NativeRegistry_ResolveCallBinding(
     if (state == ZR_NULL || state->global == ZR_NULL || contract == ZR_NULL || outTarget == ZR_NULL) {
         return ZR_CALL_BINDING_INVALID_ARGUMENT;
     }
+    /* BUG: diagnostic 为 NULL 时 INVALID_TOKEN、INVALID_SLOT 等真实状态被折叠为
+     * MISSING_CONTRACT；CheckContract 本身已返回精确状态。 */
     if (ZrCore_CallBinding_CheckContract(contract, diagnostic) != ZR_CALL_BINDING_OK) {
         return diagnostic != ZR_NULL ? diagnostic->status : ZR_CALL_BINDING_MISSING_CONTRACT;
     }
@@ -450,6 +471,8 @@ EZrCallBindingStatus ZrLibrary_NativeRegistry_ResolveCallBinding(
         }
         return status;
     }
+    /* BUG: RemoveFromCache 后同一描述符再次导入会追加同身份 entry，旧 entry 未移除；
+     * 此处使可重载模块变为 AMBIGUOUS_TARGET，且没有填充 diagnostic.status。 */
     if (matches != 1u) return ZR_CALL_BINDING_AMBIGUOUS_TARGET;
     {
         SZrCallBindingContract actual;
@@ -477,6 +500,7 @@ EZrCallBindingStatus ZrLibrary_NativeRegistry_ResolveCallBinding(
     return ZR_CALL_BINDING_OK;
 }
 
+/* 挂到 core 的模块解析回调：成功后写入目标和 GC/PIC 守卫；解析失败时失效旧目标。 */
 TZrBool native_registry_link_call_binding(SZrState *state, SZrFunction *function,
         TZrUInt32 cacheIndex, SZrCallBindingDiagnostic *diagnostic, TZrPtr userData) {
     ZrLibrary_NativeRegistryState *registry = (ZrLibrary_NativeRegistryState *)userData;
@@ -534,6 +558,7 @@ TZrBool native_registry_link_call_binding(SZrState *state, SZrFunction *function
     return ZR_TRUE;
 }
 
+/* 从 registry 管理的 closure 反查契约；普通 native closure 不具有这类持久身份。 */
 TZrBool ZrLibrary_NativeRegistry_GetCallBindingIdentity(
         SZrGlobalState *global,
         struct SZrClosureNative *closure,

@@ -2,11 +2,13 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/reflection.h"
 
+/* 构造反射对象期间的临时 GC 根；只撤销本层新增的忽略标记。 */
 typedef struct ZrNativeMetadataPin {
     SZrRawObject *object;
     TZrBool addedByCaller;
 } ZrNativeMetadataPin;
 
+/* 保护尚未挂到父对象的新对象，避免后续字段或子数组分配触发回收。 */
 static TZrBool native_metadata_pin_raw_object(SZrState *state,
                                               SZrRawObject *object,
                                               ZrNativeMetadataPin *pin) {
@@ -26,6 +28,7 @@ static TZrBool native_metadata_pin_raw_object(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 以普通对象形式进入临时根协议，供所有元数据构造器共用。 */
 static TZrBool native_metadata_pin_object(SZrState *state, SZrObject *object, ZrNativeMetadataPin *pin) {
     if (object == ZR_NULL || pin == ZR_NULL) {
         return ZR_FALSE;
@@ -34,6 +37,7 @@ static TZrBool native_metadata_pin_object(SZrState *state, SZrObject *object, Zr
     return native_metadata_pin_raw_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), pin);
 }
 
+/* 保留调用方原先的根状态，构造器只清理自己取得的保护。 */
 static void native_metadata_unpin_object(SZrGlobalState *global, ZrNativeMetadataPin *pin) {
     if (global == ZR_NULL || pin == ZR_NULL || pin->object == ZR_NULL) {
         return;
@@ -47,6 +51,9 @@ static void native_metadata_unpin_object(SZrGlobalState *global, ZrNativeMetadat
     pin->addedByCaller = ZR_FALSE;
 }
 
+/* 为 ModuleInfo 及子条目统一写入动态字段；调用方目前无法观察写入结果。 */
+/* BUG: 字段写入因固定对象或键创建失败可静默返回；make_module_info 仍导出
+ * 缺字段对象，反射读取该字段时会得到空值。见 dispatch.c 的 SetFieldCString。 */
 void native_metadata_set_value_field(SZrState *state,
                                             SZrObject *object,
                                             const TZrChar *fieldName,
@@ -57,6 +64,9 @@ void native_metadata_set_value_field(SZrState *state,
     ZrLib_Object_SetFieldCString(state, object, fieldName, value);
 }
 
+/* 字符串创建会分配 VM 对象，因此先固定目标对象，再交给通用字段写入器。 */
+/* BUG: SetString 分配失败会保持 fieldValue 未初始化，随后仍送入 SetFieldCString；
+ * 反射字段写入可读取未定义值。 */
 void native_metadata_set_string_field(SZrState *state,
                                              SZrObject *object,
                                              const TZrChar *fieldName,
@@ -81,6 +91,7 @@ void native_metadata_set_string_field(SZrState *state,
     native_metadata_unpin_object(state->global, &objectPin);
 }
 
+/* 未声明的 FFI 扩展字段保持缺席，供反射消费者区分默认值与显式值。 */
 static void native_metadata_set_optional_string_field(SZrState *state,
                                                       SZrObject *object,
                                                       const TZrChar *fieldName,
@@ -92,6 +103,7 @@ static void native_metadata_set_optional_string_field(SZrState *state,
     native_metadata_set_string_field(state, object, fieldName, value);
 }
 
+/* 整数描述符字段经通用 VM 值接口公开给 ModuleInfo 消费者。 */
 void native_metadata_set_int_field(SZrState *state,
                                           SZrObject *object,
                                           const TZrChar *fieldName,
@@ -101,6 +113,7 @@ void native_metadata_set_int_field(SZrState *state,
     native_metadata_set_value_field(state, object, fieldName, &fieldValue);
 }
 
+/* 浮点常量元数据保留数值类别，避免字符串化后改变反射结果。 */
 void native_metadata_set_float_field(SZrState *state,
                                             SZrObject *object,
                                             const TZrChar *fieldName,
@@ -110,6 +123,7 @@ void native_metadata_set_float_field(SZrState *state,
     native_metadata_set_value_field(state, object, fieldName, &fieldValue);
 }
 
+/* 布尔契约字段保留 VM 布尔类型，供反射消费者直接判断。 */
 void native_metadata_set_bool_field(SZrState *state,
                                            SZrObject *object,
                                            const TZrChar *fieldName,
@@ -119,6 +133,7 @@ void native_metadata_set_bool_field(SZrState *state,
     native_metadata_set_value_field(state, object, fieldName, &fieldValue);
 }
 
+/* 常量未声明类型名时按种类推导，运行时签名与 ModuleInfo 须复用同一映射。 */
 const TZrChar *native_metadata_constant_type_name(const ZrLibConstantDescriptor *descriptor) {
     if (descriptor == ZR_NULL) {
         return "value";
@@ -146,6 +161,7 @@ const TZrChar *native_metadata_constant_type_name(const ZrLibConstantDescriptor 
     }
 }
 
+/* 构造许可取描述符权威位，供可见元数据和原型隐藏字段共用。 */
 TZrBool native_descriptor_allows_value_construction(const ZrLibTypeDescriptor *descriptor) {
     if (descriptor == ZR_NULL) {
         return ZR_FALSE;
@@ -153,6 +169,7 @@ TZrBool native_descriptor_allows_value_construction(const ZrLibTypeDescriptor *d
     return descriptor->allowValueConstruction;
 }
 
+/* 装箱构造许可与值构造许可独立，不能从原型类别推测。 */
 TZrBool native_descriptor_allows_boxed_construction(const ZrLibTypeDescriptor *descriptor) {
     if (descriptor == ZR_NULL) {
         return ZR_FALSE;
@@ -160,6 +177,7 @@ TZrBool native_descriptor_allows_boxed_construction(const ZrLibTypeDescriptor *d
     return descriptor->allowBoxedConstruction;
 }
 
+/* 常量和枚举成员共用值投影；只公开与 kind 对应的载荷字段。 */
 void native_metadata_set_constant_value_fields(SZrState *state,
                                                       SZrObject *object,
                                                       EZrLibConstantKind kind,
@@ -190,6 +208,9 @@ void native_metadata_set_constant_value_fields(SZrState *state,
     }
 }
 
+/* 把描述符字符串提升为 VM 数组元素，返回值表示追加是否成功。 */
+/* BUG: SetString 失败时 entryValue 未初始化，PushValue 可能读取未定义值；
+ * 返回布尔值不能覆盖这条字符串构造失败路径。 */
 TZrBool native_metadata_push_string_value(SZrState *state, SZrObject *array, const TZrChar *value) {
     SZrTypeValue entryValue;
 
@@ -201,6 +222,9 @@ TZrBool native_metadata_push_string_value(SZrState *state, SZrObject *array, con
     return ZrLib_Array_PushValue(state, array, &entryValue);
 }
 
+/* 将可选描述符字符串序列交给 ModuleInfo；空项不出现在结果中。 */
+/* BUG: PushValue 失败时仍返回数组；例如固定元素失败后，implements/constraints
+ * 等反射序列会短于描述符，调用方无法从返回值识别截断。 */
 SZrObject *native_metadata_make_string_array(SZrState *state,
                                                     const TZrChar *const *values,
                                                     TZrSize valueCount) {
@@ -226,6 +250,7 @@ SZrObject *native_metadata_make_string_array(SZrState *state,
     return array;
 }
 
+/* 字段条目同时承载类型名、契约角色和可写性，供反射构造成员视图。 */
 SZrObject *native_metadata_make_field_entry(SZrState *state, const ZrLibFieldDescriptor *descriptor) {
     SZrObject *object;
 
@@ -246,6 +271,7 @@ SZrObject *native_metadata_make_field_entry(SZrState *state, const ZrLibFieldDes
     return object;
 }
 
+/* 参数条目保留 passingMode，避免反射把 ref/out 误认为普通值参数。 */
 static SZrObject *native_metadata_make_parameter_entry(SZrState *state, const ZrLibParameterDescriptor *descriptor) {
     SZrObject *object;
 
@@ -265,6 +291,8 @@ static SZrObject *native_metadata_make_parameter_entry(SZrState *state, const Zr
     return object;
 }
 
+/* 参数顺序来自声明；供方法与函数元数据使用同一反射布局。 */
+/* BUG: 条目创建或追加失败后继续循环并返回短数组，外层仍公布原 parameterCount。 */
 static SZrObject *native_metadata_make_parameter_array(SZrState *state,
                                                        const ZrLibParameterDescriptor *parameters,
                                                        TZrSize parameterCount) {
@@ -293,6 +321,7 @@ static SZrObject *native_metadata_make_parameter_array(SZrState *state,
     return array;
 }
 
+/* 泛型参数及其约束作为独立对象，构造期间须固定两个尚未链接的对象。 */
 static SZrObject *native_metadata_make_generic_parameter_entry(SZrState *state,
                                                                const ZrLibGenericParameterDescriptor *descriptor) {
     SZrObject *object;
@@ -327,6 +356,8 @@ static SZrObject *native_metadata_make_generic_parameter_entry(SZrState *state,
     return object;
 }
 
+/* 泛型参数数组供类型、方法和函数的 ModuleInfo 条目共用。 */
+/* BUG: 子条目或 PushValue 失败时仍返回不完整数组；反射签名遗漏约束。 */
 static SZrObject *native_metadata_make_generic_parameter_array(SZrState *state,
                                                                const ZrLibGenericParameterDescriptor *parameters,
                                                                TZrSize parameterCount) {
@@ -355,6 +386,7 @@ static SZrObject *native_metadata_make_generic_parameter_array(SZrState *state,
     return array;
 }
 
+/* 类型提示独立于实际导出，供工具显示补充签名和说明。 */
 static SZrObject *native_metadata_make_type_hint_entry(SZrState *state, const ZrLibTypeHintDescriptor *descriptor) {
     SZrObject *object;
     ZrNativeMetadataPin objectPin = {0};
@@ -376,6 +408,8 @@ static SZrObject *native_metadata_make_type_hint_entry(SZrState *state, const Zr
     return object;
 }
 
+/* 按描述符顺序保留工具侧提示，与公共契约的 symbolName 对齐。 */
+/* BUG: 条目或数组追加失败时仍返回成功，ModuleInfo.typeHints 会静默丢项。 */
 static SZrObject *native_metadata_make_type_hint_array(SZrState *state,
                                                        const ZrLibTypeHintDescriptor *descriptors,
                                                        TZrSize descriptorCount) {
@@ -404,6 +438,7 @@ static SZrObject *native_metadata_make_type_hint_array(SZrState *state,
     return array;
 }
 
+/* 方法条目把调用元数、接收者约束、属性桥接和泛型形参投影到 ModuleInfo。 */
 SZrObject *native_metadata_make_method_entry(SZrState *state, const ZrLibMethodDescriptor *descriptor) {
     SZrObject *object;
     SZrObject *parametersArray;
@@ -424,6 +459,7 @@ SZrObject *native_metadata_make_method_entry(SZrState *state, const ZrLibMethodD
         return ZR_NULL;
     }
 
+    /* 没有显式参数描述符且元数非零时，保留“参数信息未知”而非空签名。 */
     hasParameterMetadata = descriptor->parameters != ZR_NULL ||
                            (descriptor->minArgumentCount == 0 && descriptor->maxArgumentCount == 0);
     parametersArray = hasParameterMetadata
@@ -480,6 +516,7 @@ SZrObject *native_metadata_make_method_entry(SZrState *state, const ZrLibMethodD
     return object;
 }
 
+/* 元方法借用与普通方法相同的参数模型，名称由 VM metaType 表决定。 */
 SZrObject *native_metadata_make_meta_method_entry(SZrState *state,
                                                           const ZrLibMetaMethodDescriptor *descriptor) {
     SZrObject *object;
@@ -543,6 +580,7 @@ SZrObject *native_metadata_make_meta_method_entry(SZrState *state,
     return object;
 }
 
+/* 模块函数导出的反射条目；未知参数详情时仍保留可调用元数边界。 */
 SZrObject *native_metadata_make_function_entry(SZrState *state, const ZrLibFunctionDescriptor *descriptor) {
     SZrObject *object;
     SZrObject *parametersArray;
@@ -598,6 +636,7 @@ SZrObject *native_metadata_make_function_entry(SZrState *state, const ZrLibFunct
     return object;
 }
 
+/* 常量条目与真实导出共享类型推导，供反射按名称与值类别配对。 */
 SZrObject *native_metadata_make_constant_entry(SZrState *state, const ZrLibConstantDescriptor *descriptor) {
     SZrObject *object;
 
@@ -622,6 +661,7 @@ SZrObject *native_metadata_make_constant_entry(SZrState *state, const ZrLibConst
     return object;
 }
 
+/* 枚举成员的反射视图保存声明值与说明，不持有运行时枚举实例。 */
 SZrObject *native_metadata_make_enum_member_entry(SZrState *state, const ZrLibEnumMemberDescriptor *descriptor) {
     SZrObject *object;
 
@@ -646,6 +686,7 @@ SZrObject *native_metadata_make_enum_member_entry(SZrState *state, const ZrLibEn
     return object;
 }
 
+/* 模块链接的名字与目标模块名均留给反射，物化时另行解析实际模块对象。 */
 SZrObject *native_metadata_make_module_link_entry(SZrState *state, const ZrLibModuleLinkDescriptor *descriptor) {
     SZrObject *object;
 
@@ -664,6 +705,9 @@ SZrObject *native_metadata_make_module_link_entry(SZrState *state, const ZrLibMo
     return object;
 }
 
+/* 类型反射条目聚合成员、协议、枚举和 FFI 扩展契约；各数组在挂接前固定。 */
+/* BUG: 子条目创建或 PushValue 失败后仍返回对象，ModuleInfo.types 可暴露
+ * 缺成员的类型描述；反射按该数组构造声明视图。 */
 SZrObject *native_metadata_make_type_entry(SZrState *state, const ZrLibTypeDescriptor *descriptor) {
     SZrObject *object;
     SZrObject *fieldsArray;
@@ -820,6 +864,9 @@ SZrObject *native_metadata_make_type_entry(SZrState *state, const ZrLibTypeDescr
     return object;
 }
 
+/* 生成原生模块的公开契约快照；物化器将其作为 moduleInfo 导出供反射读取。 */
+/* BUG: functions/constants/types/modules 任一子条目或追加失败后仍返回对象，
+ * 反射消费者会看到少于已注册导出的条目。 */
 ZR_LIBRARY_API SZrObject *native_metadata_make_module_info(SZrState *state,
                                                            const ZrLibModuleDescriptor *descriptor,
                                                            const ZrLibRegisteredModuleRecord *record) {
@@ -887,6 +934,7 @@ ZR_LIBRARY_API SZrObject *native_metadata_make_module_info(SZrState *state,
         return ZR_NULL;
     }
 
+    /* 版本与来源字段约定了工具和反射对这份对象的解释方式。 */
     native_metadata_set_int_field(state, object, "version", ZR_NATIVE_MODULE_INFO_VERSION);
     native_metadata_set_string_field(state, object, "moduleName", descriptor->moduleName);
     native_metadata_set_string_field(state, object, "typeHintsJson", descriptor->typeHintsJson);
@@ -968,6 +1016,10 @@ ZR_LIBRARY_API SZrObject *native_metadata_make_module_info(SZrState *state,
     return object;
 }
 
+/* 在模块物化阶段把常量描述符转成真实导出值，与 ModuleInfo 的常量条目对应。 */
+/* BUG: AddPubExport 在导出表扩容失败时静默返回，本函数仍报告成功；
+ * 物化后的模块可能缺常量，而 ModuleInfo 已列出该常量。字符串常量创建
+ * 失败时 SetString 还会留下未初始化的 value，随后被送入 AddPubExport。 */
 TZrBool native_registry_add_constant(SZrState *state,
                                             SZrObjectModule *module,
                                             const ZrLibConstantDescriptor *descriptor) {
@@ -1016,6 +1068,8 @@ TZrBool native_registry_add_constant(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 先生成原生回调绑定，再将 VM 函数作为模块的公开导出。 */
+/* BUG: AddPubExport 无成功状态；导出表扩容失败后仍返回成功，函数不可见。 */
 TZrBool native_registry_add_function(SZrState *state,
                                             ZrLibrary_NativeRegistryState *registry,
                                             SZrObjectModule *module,
@@ -1070,6 +1124,8 @@ TZrBool native_registry_add_function(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 链接只指向已装载模块；解析失败应阻止当前模块物化。 */
+/* BUG: AddPubExport 静默失败时模块仍物化，但链接名不能从导出表解析。 */
 TZrBool native_registry_add_module_link(SZrState *state,
                                                ZrLibrary_NativeRegistryState *registry,
                                                SZrObjectModule *module,
@@ -1098,6 +1154,7 @@ TZrBool native_registry_add_module_link(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 把声明的协议位落实到原型，使运行时协议查询与描述符一致。 */
 static void native_registry_add_protocol_mask(SZrObjectPrototype *prototype, TZrUInt64 protocolMask) {
     if (prototype == ZR_NULL || protocolMask == 0) {
         return;
@@ -1112,6 +1169,7 @@ static void native_registry_add_protocol_mask(SZrObjectPrototype *prototype, TZr
     }
 }
 
+/* 类型注册仅接受描述符显式声明的协议，避免由方法名称推断语义。 */
 static void native_registry_add_declared_protocols(SZrObjectPrototype *prototype,
                                                    const ZrLibTypeDescriptor *typeDescriptor) {
     if (prototype == ZR_NULL || typeDescriptor == ZR_NULL) {
@@ -1120,6 +1178,7 @@ static void native_registry_add_declared_protocols(SZrObjectPrototype *prototype
     native_registry_add_protocol_mask(prototype, typeDescriptor->protocolMask);
 }
 
+/* 系统异常类型复用全局预建原型，保持 Error/StackFrame 的 VM 身份稳定。 */
 static SZrObjectPrototype *native_registry_find_builtin_exception_prototype(
         SZrState *state,
         const ZrLibModuleDescriptor *moduleDescriptor,
@@ -1149,6 +1208,9 @@ static SZrObjectPrototype *native_registry_find_builtin_exception_prototype(
     return ZR_NULL;
 }
 
+/* 字段契约写入原型成员表，迭代器 current 字段同时绑定标准协议槽位。 */
+/* BUG: 创建字段名或 AddMemberDescriptor 分配失败时跳过字段；add_type
+ * 仍成功并导出缺成员描述的类型，运行时成员访问可能与声明不一致。 */
 static void native_registry_add_field_descriptors(SZrState *state,
                                                   SZrObjectPrototype *prototype,
                                                   const ZrLibTypeDescriptor *typeDescriptor) {
@@ -1184,6 +1246,7 @@ static void native_registry_add_field_descriptors(SZrState *state,
     }
 }
 
+/* 把显式角色方法挂到 iterable/iterator 快速槽位，不依赖字符串方法名。 */
 static void native_registry_bind_standard_method_contract(SZrObjectPrototype *prototype,
                                                           const ZrLibMethodDescriptor *methodDescriptor,
                                                           SZrFunction *function) {
@@ -1206,6 +1269,9 @@ static void native_registry_bind_standard_method_contract(SZrObjectPrototype *pr
     }
 }
 
+/* 注册原型方法和元方法，并同步成员描述、属性访问和标准协议槽位。 */
+/* BUG: AddMemberDescriptor 的失败返回值和 AddMeta 的分配失败都未传播；
+ * 模块可发布有调用值但缺成员描述或元方法槽位的原型。 */
 TZrBool native_registry_add_methods(SZrState *state,
                                            ZrLibrary_NativeRegistryState *registry,
                                            const ZrLibModuleDescriptor *moduleDescriptor,
@@ -1260,6 +1326,7 @@ TZrBool native_registry_add_methods(SZrState *state,
             return ZR_FALSE;
         }
 
+        /* 成员描述用于反射与访问控制，运行时调用值另入原型字典。 */
         {
             SZrMemberDescriptor descriptor;
             ZrCore_Memory_RawSet(&descriptor, 0, sizeof(descriptor));
@@ -1273,6 +1340,7 @@ TZrBool native_registry_add_methods(SZrState *state,
             ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor);
         }
 
+        /* 属性 getter 与普通方法共用回调，但公开为独立成员契约。 */
         if (methodDescriptor->propertyName != ZR_NULL &&
             methodDescriptor->propertyReferenceAccess !=
                     ZR_LIB_REFERENCE_ACCESS_NONE) {
@@ -1377,6 +1445,8 @@ TZrBool native_registry_add_methods(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 原型隐藏字段保留 FFI 降级与枚举信息，供运行时反射/interop 查询。 */
+/* BUG: SetString 失败后 fieldValue 未初始化，仍被传给 SetFieldCString。 */
 void native_registry_set_hidden_string_metadata(SZrState *state,
                                                        SZrObject *object,
                                                        const TZrChar *fieldName,
@@ -1391,6 +1461,7 @@ void native_registry_set_hidden_string_metadata(SZrState *state,
     ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue);
 }
 
+/* 原型隐藏布尔位与可见 ModuleInfo 使用相同描述符来源。 */
 void native_registry_set_hidden_bool_metadata(SZrState *state,
                                                      SZrObject *object,
                                                      const TZrChar *fieldName,
@@ -1405,6 +1476,9 @@ void native_registry_set_hidden_bool_metadata(SZrState *state,
     ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue);
 }
 
+/* 枚举声明值先规范为 VM 标量，再包装为带原型身份的成员实例。 */
+/* BUG: 字符串成员创建失败时 SetString 不写 value，本函数仍返回成功；
+ * 后续 make_enum_instance 将未初始化底层值写入枚举对象。 */
 TZrBool native_registry_init_enum_member_scalar(SZrState *state,
                                                        const ZrLibEnumMemberDescriptor *descriptor,
                                                        SZrTypeValue *value) {
@@ -1433,6 +1507,10 @@ TZrBool native_registry_init_enum_member_scalar(SZrState *state,
     }
 }
 
+/* 运行时枚举成员携带底层值和声明名，原型决定其类型身份。 */
+/* BUG: memberName 的 SetString 失败会留下未初始化 nameValue，随后写入对象。 */
+/* TODO: enumObject 在创建后未显式固定；需结合 GC 栈根扫描与故障注入
+ * 验证连续 SetFieldCString 分配期间该对象的存活性。 */
 SZrObject *native_registry_make_enum_instance(SZrState *state,
                                                      SZrObjectPrototype *prototype,
                                                      const SZrTypeValue *underlyingValue,
@@ -1459,6 +1537,7 @@ SZrObject *native_registry_make_enum_instance(SZrState *state,
     return enumObject;
 }
 
+/* 将构造、FFI 与枚举契约复制到真实原型，供不经 ModuleInfo 的运行时路径查询。 */
 void native_registry_attach_type_runtime_metadata(SZrState *state,
                                                          const ZrLibTypeDescriptor *typeDescriptor,
                                                          SZrObjectPrototype *prototype) {
@@ -1513,6 +1592,8 @@ void native_registry_attach_type_runtime_metadata(SZrState *state,
     }
 }
 
+/* 枚举成员以同一原型的对象导出，普通类型无需执行此路径。 */
+/* BUG: SetFieldCString 可能静默失败，本函数仍返回成功，枚举成员缺席。 */
 TZrBool native_registry_add_enum_members(SZrState *state,
                                                 SZrObjectPrototype *prototype,
                                                 const ZrLibTypeDescriptor *typeDescriptor) {
@@ -1549,6 +1630,9 @@ TZrBool native_registry_add_enum_members(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 优先复用同模块或预建异常原型，再补齐元数据、方法与模块导出。 */
+/* BUG: AddPubExport 可能静默失败，本函数仍返回成功；后续同模块父类
+ * 查找也会因类型不在公开导出表而失败。 */
 TZrBool native_registry_add_type(SZrState *state,
                                         ZrLibrary_NativeRegistryState *registry,
                                         SZrObjectModule *module,
@@ -1616,6 +1700,7 @@ TZrBool native_registry_add_type(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* 结构体字段索引属于其专用原型；普通类型改由 ObjectPrototype 承载。 */
     if (prototype == ZR_NULL && typeDescriptor->prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
         prototype = (SZrObjectPrototype *)ZrCore_StructPrototype_New(state, typeName);
         native_binding_trace_import(state,
@@ -1625,6 +1710,8 @@ TZrBool native_registry_add_type(SZrState *state,
                                     (void *)prototype);
         if (prototype != ZR_NULL) {
             SZrStructPrototype *structPrototype = (SZrStructPrototype *)prototype;
+            /* BUG: 字段名创建或 AddField 内部分配失败会静默跳过映射，
+             * 物化仍继续，struct 的 keyOffsetMap 可少于描述符字段表。 */
             for (index = 0; index < typeDescriptor->fieldCount; index++) {
                 const ZrLibFieldDescriptor *fieldDescriptor = &typeDescriptor->fields[index];
                 if (fieldDescriptor->name != ZR_NULL) {
@@ -1708,6 +1795,7 @@ TZrBool native_registry_add_type(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 只从当前模块的公开导出取原型，防止同名全局类型混入本模块关系解析。 */
 SZrObjectPrototype *native_registry_get_module_prototype(SZrState *state,
                                                                 SZrObjectModule *module,
                                                                 const TZrChar *typeName) {
@@ -1737,6 +1825,7 @@ SZrObjectPrototype *native_registry_get_module_prototype(SZrState *state,
     return (SZrObjectPrototype *)object;
 }
 
+/* 同模块限定名需还原为本地导出名，泛型实参不参与原型导出键。 */
 static SZrObjectPrototype *native_registry_find_same_module_qualified_prototype(SZrState *state,
                                                                                 SZrObjectModule *module,
                                                                                 const TZrChar *moduleName,
@@ -1774,6 +1863,7 @@ static SZrObjectPrototype *native_registry_find_same_module_qualified_prototype(
     return native_registry_get_module_prototype(state, module, exportNameBuffer);
 }
 
+/* 全部类型导出后再连继承边；前向声明的同模块父类此时才可查找。 */
 void native_registry_resolve_type_relationships(SZrState *state,
                                                        SZrObjectModule *module,
                                                        const ZrLibModuleDescriptor *descriptor) {
@@ -1806,6 +1896,8 @@ void native_registry_resolve_type_relationships(SZrState *state,
         if (superPrototype == ZR_NULL && typeDescriptor->extendsTypeName != ZR_NULL) {
             superPrototype = ZrLib_Type_FindPrototype(state, typeDescriptor->extendsTypeName);
         }
+        /* BUG: class 显式声明的 extendsTypeName 无法解析时（zr.builtin.Object 自身除外），
+         * 仍尝试回退到 Object 并继续物化；回退成功后实际父类与 ModuleInfo 声明不一致。 */
         if (superPrototype == ZR_NULL &&
             typeDescriptor->prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_CLASS &&
             !(descriptor->moduleName != ZR_NULL &&
@@ -1826,7 +1918,9 @@ void native_registry_resolve_type_relationships(SZrState *state,
         ZrCore_ObjectPrototype_SetSuper(state, prototype, superPrototype);
     }
 
-    /*
+    /* BUG: 修复路径的回调创建失败被忽略，AddMeta 的分配失败也无返回值；
+     * 模块可在声明元方法缺席时完成物化。
+     *
      * 继承链在 SetSuper 之后才能完整解析。若某类本应注册的元方法（例如 zr.ffi.SymbolHandle 的 @call）
      * 未出现在本类 metaTable 中，GetMeta 会沿 superPrototype 落到 zr.builtin.Object 的默认 @call，
      * 表现为 “object meta method is not implemented”。在关系解析完成后补注册缺失的元方法槽位。

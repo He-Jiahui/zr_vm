@@ -2,15 +2,18 @@
 
 #include "zr_vm_core/hash.h"
 
+/* 模块及类型身份共用版本化 hash 域；其结果进入可持久化的 call-binding contract。 */
 static const TZrByte CZrNativeContractHashPrefix[] = {
         'z', 'r', '.', 'n', 'a', 't', 'i', 'v', 'e', '.', 'c', 'o', 'n', 't', 'r', 'a', 'c', 't', '.', 'v', '1', '\0'
 };
 
+/* valid 在子描述符不完整或长度越界后持续为 false，禁止发布部分契约 hash。 */
 typedef struct SZrNativeContractHash {
     TZrUInt64 value;
     TZrBool valid;
 } SZrNativeContractHash;
 
+/* 每个字段都吸收前一状态和长度，避免相邻字符串边界不同却得到同一字节序列。 */
 static void native_contract_hash_bytes(SZrNativeContractHash *hash,
                                        const void *bytes, TZrSize length) {
     TZrByte prefix[sizeof(CZrNativeContractHashPrefix) + sizeof(TZrUInt64) * 2u];
@@ -27,16 +30,19 @@ static void native_contract_hash_bytes(SZrNativeContractHash *hash,
     hash->value = ZrCore_Hash_CreateStable64WithPrefix(prefix, sizeof(prefix), bytes, length);
 }
 
+/* 数值用固定字节序写入稳定身份，不能依赖宿主机器的内存布局。 */
 static void native_contract_hash_u64(SZrNativeContractHash *hash, TZrUInt64 value) {
     TZrByte bytes[8];
     for (TZrUInt32 index = 0u; index < 8u; ++index) bytes[index] = (TZrByte)(value >> (index * 8u));
     native_contract_hash_bytes(hash, bytes, sizeof(bytes));
 }
 
+/* 可选文本的 NULL 与空串在当前契约格式中视为同一值。 */
 static void native_contract_hash_string(SZrNativeContractHash *hash, const TZrChar *value) {
     native_contract_hash_bytes(hash, value, value != ZR_NULL ? strlen(value) : 0u);
 }
 
+/* 数组长度与内容共同定义契约；拒绝无法安全遍历的描述符。 */
 static TZrBool native_contract_hash_array(SZrNativeContractHash *hash,
                                          const void *array, TZrSize count,
                                          TZrSize elementSize) {
@@ -49,6 +55,7 @@ static TZrBool native_contract_hash_array(SZrNativeContractHash *hash,
     return ZR_TRUE;
 }
 
+/* 参数名、类型与传递方式均会影响 provider 对外声明。 */
 static void native_contract_hash_parameters(SZrNativeContractHash *hash,
                                             const ZrLibParameterDescriptor *parameters,
                                             TZrSize count) {
@@ -60,6 +67,7 @@ static void native_contract_hash_parameters(SZrNativeContractHash *hash,
     }
 }
 
+/* 泛型约束属于编译期可见契约，顺序变化也会改变身份。 */
 static void native_contract_hash_generics(SZrNativeContractHash *hash,
                                           const ZrLibGenericParameterDescriptor *parameters,
                                           TZrSize count) {
@@ -74,6 +82,7 @@ static void native_contract_hash_generics(SZrNativeContractHash *hash,
     }
 }
 
+/* callback 地址是实现细节；函数的公开 arity、类型及派发标志才参与模块身份。 */
 static void native_contract_hash_function(SZrNativeContractHash *hash,
                                           const ZrLibFunctionDescriptor *function) {
     native_contract_hash_string(hash, function->name);
@@ -86,6 +95,7 @@ static void native_contract_hash_function(SZrNativeContractHash *hash,
     native_contract_hash_u64(hash, function->dispatchFlags);
 }
 
+/* 方法身份额外纳入静态性和属性引用契约，供成员调用链接判定兼容性。 */
 static void native_contract_hash_method(SZrNativeContractHash *hash,
                                         const ZrLibMethodDescriptor *method) {
     native_contract_hash_string(hash, method->name);
@@ -102,6 +112,7 @@ static void native_contract_hash_method(SZrNativeContractHash *hash,
     native_contract_hash_u64(hash, method->propertyExportsWritableRef);
 }
 
+/* meta 类别与参数签名约束编译后的运算符、构造器等调用。 */
 static void native_contract_hash_meta(SZrNativeContractHash *hash,
                                       const ZrLibMetaMethodDescriptor *method) {
     native_contract_hash_u64(hash, method->metaType);
@@ -114,6 +125,7 @@ static void native_contract_hash_meta(SZrNativeContractHash *hash,
     native_contract_hash_u64(hash, method->dispatchFlags);
 }
 
+/* 类型 hash 同时承担 owner layout 守卫；字段、方法、继承与 FFI 约定均参与。 */
 static void native_contract_hash_type(SZrNativeContractHash *hash,
                                       const ZrLibTypeDescriptor *type) {
     native_contract_hash_string(hash, type->name);
@@ -163,6 +175,7 @@ static void native_contract_hash_type(SZrNativeContractHash *hash,
     }
 }
 
+/* 为 method contract 生成独立于模块其余成员的 owner layout hash。 */
 TZrUInt64 native_registry_call_binding_type_hash(const ZrLibTypeDescriptor *type) {
     SZrNativeContractHash hash = {0u, ZR_TRUE};
     if (type == ZR_NULL) return 0u;
@@ -171,6 +184,7 @@ TZrUInt64 native_registry_call_binding_type_hash(const ZrLibTypeDescriptor *type
     return hash.valid ? hash.value : 0u;
 }
 
+/* 生成 provider 的完整声明身份，供 parser 落盘及 registry 重载时比对。 */
 TZrUInt64 ZrLibrary_NativeRegistry_ComputeModuleSignatureHash(const ZrLibModuleDescriptor *module) {
     SZrNativeContractHash hash = {0u, ZR_TRUE};
     if (module == ZR_NULL || module->moduleName == ZR_NULL) return 0u;
@@ -188,6 +202,8 @@ TZrUInt64 ZrLibrary_NativeRegistry_ComputeModuleSignatureHash(const ZrLibModuleD
     for (TZrSize index = 0u; index < module->functionCount; ++index)
         native_contract_hash_function(&hash, &module->functions[index]);
     if (!native_contract_hash_array(&hash, module->constants, module->constantCount, sizeof(*module->constants))) return 0u;
+    /* TODO: 当前仅记录常量 name/type/kind，运行时导出还读取 int/float/string/bool 值。
+     * 需用同名 provider 改常量值的重载测试确定这些值是否应参与模块契约。 */
     for (TZrSize index = 0u; index < module->constantCount; ++index) {
         native_contract_hash_string(&hash, module->constants[index].name);
         native_contract_hash_string(&hash, module->constants[index].typeName);

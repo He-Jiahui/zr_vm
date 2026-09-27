@@ -1,5 +1,6 @@
 #include "native_binding_internal.h"
 
+/* 注册层的官方模块权威清单：名称决定保留身份，阶段和角色须与描述符一致。 */
 static const ZrLibOfficialModuleInventoryEntry k_official_modules[] = {
         {"zr.builtin", ZR_LIB_OFFICIAL_MODULE_TIER_N0, ZR_LIBRARY_PROVIDER_PHASE_RUNTIME,
          ZR_PROVIDER_CONTRACT_ROLE_BUILTIN_TYPE_SURFACE},
@@ -30,10 +31,12 @@ static const ZrLibOfficialModuleInventoryEntry k_official_modules[] = {
         {"zr.testing", ZR_LIB_OFFICIAL_MODULE_TIER_N3, ZR_LIBRARY_PROVIDER_PHASE_TEST, ZR_PROVIDER_CONTRACT_ROLE_NONE},
 };
 
+/* 测试和外部工具可按稳定顺序枚举官方模块，不能据此推断模块已装载。 */
 TZrSize ZrLibrary_OfficialModuleInventory_GetCount(void) {
     return ZR_ARRAY_COUNT(k_official_modules);
 }
 
+/* 返回静态清单项的借用指针；越界时返回空值。 */
 const ZrLibOfficialModuleInventoryEntry *ZrLibrary_OfficialModuleInventory_GetAt(
         TZrSize index) {
     return index < ZR_ARRAY_COUNT(k_official_modules)
@@ -41,6 +44,7 @@ const ZrLibOfficialModuleInventoryEntry *ZrLibrary_OfficialModuleInventory_GetAt
                    : ZR_NULL;
 }
 
+/* 按完整规范名识别保留模块，供注册门禁与清单一致性检查共用。 */
 const ZrLibOfficialModuleInventoryEntry *ZrLibrary_OfficialModuleInventory_Find(
         const TZrChar *moduleName) {
     TZrSize index;
@@ -56,6 +60,7 @@ const ZrLibOfficialModuleInventoryEntry *ZrLibrary_OfficialModuleInventory_Find(
     return ZR_NULL;
 }
 
+/* 在注册记录写入前校验官方身份，防止第三方借用保留角色或错误阶段。 */
 TZrBool native_registry_validate_official_descriptor(
         ZrLibrary_NativeRegistryState *registry,
         const ZrLibModuleDescriptor *descriptor) {
@@ -101,6 +106,7 @@ TZrBool native_registry_validate_official_descriptor(
     return ZR_TRUE;
 }
 
+/* 官方模块不能由不同描述符覆盖；普通模块仍由注册器处理替换语义。 */
 TZrBool native_registry_validate_official_duplicate(
         ZrLibrary_NativeRegistryState *registry,
         const ZrLibModuleDescriptor *current,

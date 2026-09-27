@@ -1,5 +1,6 @@
 #include "native_binding/native_binding_internal.h"
 
+/* 影子副本只写入已有缓存目录；目录创建失败交由加载器回退原始插件路径。 */
 static TZrBool native_registry_ensure_directory_exists(const TZrChar *path) {
     if (path == ZR_NULL || path[0] == '\0') {
         return ZR_FALSE;
@@ -16,6 +17,7 @@ static TZrBool native_registry_ensure_directory_exists(const TZrChar *path) {
 #endif
 }
 
+/* 每个进程共用临时缓存目录；实际副本名称另含进程号和递增序号。 */
 static TZrBool native_registry_get_plugin_shadow_cache_directory(TZrChar *buffer, TZrSize bufferSize) {
     TZrChar rootPath[ZR_LIBRARY_MAX_PATH_LENGTH];
 
@@ -45,6 +47,7 @@ static TZrBool native_registry_get_plugin_shadow_cache_directory(TZrChar *buffer
     return native_registry_ensure_directory_exists(buffer);
 }
 
+/* 插件热重载先复制可加载映像；中途读写失败不留下可误装载的半成品。 */
 static TZrBool native_registry_copy_binary_file(const TZrChar *sourcePath, const TZrChar *targetPath) {
     FILE *source;
     FILE *target;
@@ -79,6 +82,8 @@ static TZrBool native_registry_copy_binary_file(const TZrChar *sourcePath, const
     }
 
     fclose(source);
+    /* BUG: 最后一次缓冲落盘可在 fclose 才失败；此处忽略结果会把不完整影子副本
+     * 当成成功复制，可能使随后装载失败或使用不完整映像。以延迟写入失败夹具核验。 */
     fclose(target);
 
     if (!success) {
@@ -87,6 +92,7 @@ static TZrBool native_registry_copy_binary_file(const TZrChar *sourcePath, const
     return success;
 }
 
+/* 影子路径使旧版本仍被进程持有时可同时装入新版本；成功后由 handle record 负责删除。 */
 static TZrBool native_registry_prepare_shadow_plugin_path(const TZrChar *moduleName,
                                                           const TZrChar *sourcePath,
                                                           TZrChar *buffer,
@@ -113,6 +119,7 @@ static TZrBool native_registry_prepare_shadow_plugin_path(const TZrChar *moduleN
         baseNameLength = 96;
     }
     extension = native_registry_dynamic_library_extension();
+    /* TODO: 序号是进程级静态状态而非原子值；核实多线程并发插件装载是否受外层串行化约束。 */
     counter = ++shadowCounter;
 #if defined(ZR_PLATFORM_WIN)
     processId = (unsigned long)GetCurrentProcessId();
@@ -132,6 +139,7 @@ static TZrBool native_registry_prepare_shadow_plugin_path(const TZrChar *moduleN
     return native_registry_copy_binary_file(sourcePath, buffer);
 }
 
+/* descriptor/回调来自动态库；调用者负责保证无活跃 owner，并同步清理注册记录。 */
 void native_registry_release_plugin_handle_record(SZrGlobalState *global, ZrLibPluginHandleRecord *handleRecord) {
     if (global == ZR_NULL || handleRecord == ZR_NULL) {
         return;
@@ -171,6 +179,7 @@ void native_registry_release_plugin_handle_record(SZrGlobalState *global, ZrLibP
     }
 }
 
+/* 系统加载入口仅取得句柄；ABI、导出名和模块身份由上层加载事务检查。 */
 void *native_registry_open_library(const TZrChar *path) {
     if (path == ZR_NULL) {
         return ZR_NULL;
@@ -182,6 +191,7 @@ void *native_registry_open_library(const TZrChar *path) {
 #endif
 }
 
+/* 与 open_library 成对，由插件记录或失败清理路径调用。 */
 void native_registry_close_library(void *handle) {
     if (handle == ZR_NULL) {
         return;
@@ -193,6 +203,7 @@ void native_registry_close_library(void *handle) {
 #endif
 }
 
+/* 仅查找裸导出地址；宿主在调用前须把它绑定到对应插件句柄的生存期。 */
 TZrPtr native_registry_find_symbol(void *handle, const TZrChar *symbolName) {
     if (handle == ZR_NULL || symbolName == ZR_NULL) {
         return ZR_NULL;
@@ -204,6 +215,7 @@ TZrPtr native_registry_find_symbol(void *handle, const TZrChar *symbolName) {
 #endif
 }
 
+/* 项目 native 目录及环境搜索路径均使用与当前平台匹配的插件后缀。 */
 const TZrChar *native_registry_dynamic_library_extension(void) {
 #if defined(ZR_PLATFORM_WIN)
     return ".dll";
@@ -214,6 +226,7 @@ const TZrChar *native_registry_dynamic_library_extension(void) {
 #endif
 }
 
+/* 导出入口按插件 ABI 视为函数指针，最终版本检查在加载事务中完成。 */
 static FZrVmGetNativeModuleV1 native_registry_cast_module_symbol(TZrPtr symbolPointer) {
     FZrVmGetNativeModuleV1 symbol = ZR_NULL;
     if (symbolPointer != ZR_NULL) {
@@ -222,6 +235,7 @@ static FZrVmGetNativeModuleV1 native_registry_cast_module_symbol(TZrPtr symbolPo
     return symbol;
 }
 
+/* 替换模块代际时释放同名旧映像；调用方先检查活跃 owner，避免卸载仍被调用的代码。 */
 static void native_registry_remove_plugin_handles_for_module(SZrState *state,
                                                              ZrLibrary_NativeRegistryState *registry,
                                                              const TZrChar *moduleName) {
@@ -250,6 +264,7 @@ static void native_registry_remove_plugin_handles_for_module(SZrState *state,
     }
 }
 
+/* 缺少项目本地插件时，从运行中宿主程序附近的 native 目录继续发现 provider。 */
 TZrBool native_registry_get_executable_directory(TZrChar *buffer, TZrSize bufferSize) {
     if (buffer == ZR_NULL || bufferSize == 0) {
         return ZR_FALSE;
@@ -294,6 +309,7 @@ TZrBool native_registry_get_executable_directory(TZrChar *buffer, TZrSize buffer
     return ZR_FALSE;
 }
 
+/* 将脚本模块名映射到可移植文件名；装载后仍会用 descriptor 的原名防止串模块。 */
 void native_registry_sanitize_module_name(const TZrChar *moduleName,
                                                  TZrChar *buffer,
                                                  TZrSize bufferSize) {
@@ -316,6 +332,7 @@ void native_registry_sanitize_module_name(const TZrChar *moduleName,
     buffer[cursor] = '\0';
 }
 
+/* 装载后验证导出 ABI/模块名并登记 descriptor；返回指针只在相应动态库仍装载时有效。 */
 const ZrLibModuleDescriptor *native_registry_load_plugin_descriptor(SZrState *state,
                                                                            ZrLibrary_NativeRegistryState *registry,
                                                                            const TZrChar *candidatePath,
@@ -341,6 +358,8 @@ const ZrLibModuleDescriptor *native_registry_load_plugin_descriptor(SZrState *st
 
     handle = native_registry_open_library(loadPath);
     if (handle == ZR_NULL) {
+        /* BUG: 影子复制成功但 dlopen/LoadLibrary 失败时直接返回，临时副本无人登记也不删除；
+         * 对同一无效插件重复 import 会持续积累副本。由失败插件夹具和缓存目录快照核对。 */
         native_registry_set_error(registry,
                                   ZR_LIB_NATIVE_REGISTRY_ERROR_LOAD,
                                   "failed to load native plugin '%s'",
@@ -416,6 +435,9 @@ const ZrLibModuleDescriptor *native_registry_load_plugin_descriptor(SZrState *st
         }
     }
 
+    /* BUG: 注册记录在下方 handle record 分配之前发布；若之后任一字符串分配失败，
+     * 清理路径卸载此库并返回，但 FindModule 仍可取到库内 descriptor 的悬垂指针。
+     * 需把登记与句柄记录做成共同提交/回滚事务，分配失败注入可验证。 */
     if (!native_registry_validate_descriptor_compatibility(registry, descriptor) ||
         !native_registry_register_module_record(state->global,
                                                descriptor,
@@ -443,12 +465,15 @@ const ZrLibModuleDescriptor *native_registry_load_plugin_descriptor(SZrState *st
             native_registry_release_plugin_handle_record(state->global, &handleRecord);
             return ZR_NULL;
         }
+        /* BUG: pluginHandles 扩容时若宿主 allocator 返回 NULL，Array_Push 直接用空 head
+         * 复制记录而崩溃；初始容量耗尽后以分配失败注入复现。 */
         ZrCore_Array_Push(state, &registry->pluginHandles, &handleRecord);
     }
     native_registry_clear_error(registry);
     return descriptor;
 }
 
+/* 将一个搜索目录里的标准插件文件名映射为 descriptor；真实模块名仍由导出表校验。 */
 const ZrLibModuleDescriptor *native_registry_try_plugin_directory(SZrState *state,
                                                                          ZrLibrary_NativeRegistryState *registry,
                                                                          const TZrChar *directory,
@@ -488,6 +513,7 @@ const ZrLibModuleDescriptor *native_registry_try_plugin_directory(SZrState *stat
     return native_registry_load_plugin_descriptor(state, registry, candidatePath, moduleName);
 }
 
+/* 项目插件热更新用路径身份比较；Windows 路径大小写与两种分隔符按同一文件处理。 */
 static TZrBool native_registry_paths_equal(const TZrChar *left, const TZrChar *right) {
     TZrSize index = 0;
 
@@ -518,6 +544,7 @@ static TZrBool native_registry_paths_equal(const TZrChar *left, const TZrChar *r
     return left[index] == '\0' && right[index] == '\0';
 }
 
+/* 项目明确指定的 provider 位于 project/native，不走全局环境目录。 */
 static TZrBool native_registry_build_project_plugin_path(const TZrChar *projectDirectory,
                                                          const TZrChar *moduleName,
                                                          TZrChar *buffer,
@@ -554,6 +581,7 @@ static TZrBool native_registry_build_project_plugin_path(const TZrChar *projectD
     return buffer[0] != '\0';
 }
 
+/* LSP/项目刷新先确认同名 provider 来源，再装入新代际并移除旧模块缓存。 */
 TZrBool ZrLibrary_NativeRegistry_EnsureProjectDescriptorPlugin(SZrState *state,
                                                                const TZrChar *projectDirectory,
                                                                const TZrChar *moduleName) {
@@ -599,6 +627,7 @@ TZrBool ZrLibrary_NativeRegistry_EnsureProjectDescriptorPlugin(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 常规 import 依次搜项目 native、宿主 executable/native、环境路径；首次命中优先。 */
 const ZrLibModuleDescriptor *native_registry_try_plugin_paths(SZrState *state,
                                                                      ZrLibrary_NativeRegistryState *registry,
                                                                      const TZrChar *moduleName) {
@@ -671,6 +700,7 @@ const ZrLibModuleDescriptor *native_registry_try_plugin_paths(SZrState *state,
     return ZR_NULL;
 }
 
+/* 已注册 provider 优先，避免同名文件覆盖宿主显式注册的模块。 */
 const ZrLibModuleDescriptor *native_registry_find_descriptor_or_plugin(SZrState *state,
                                                                               ZrLibrary_NativeRegistryState *registry,
                                                                               const TZrChar *moduleName) {
@@ -688,6 +718,7 @@ const ZrLibModuleDescriptor *native_registry_find_descriptor_or_plugin(SZrState 
     return descriptor;
 }
 
+/* 模块链接使用同一 descriptor 发现和 provider-phase 检查，并复用 VM 模块缓存。 */
 SZrObjectModule *native_registry_resolve_loaded_module(SZrState *state,
                                                               ZrLibrary_NativeRegistryState *registry,
                                                               const TZrChar *moduleName) {
@@ -733,6 +764,7 @@ SZrObjectModule *native_registry_resolve_loaded_module(SZrState *state,
     return module;
 }
 
+/* 每个 descriptor 成员对应一个永久 native closure；registry entry 保留回调、owner 与静态绑定身份。 */
 TZrBool native_binding_make_callable_value(SZrState *state,
                                                   ZrLibrary_NativeRegistryState *registry,
                                                   EZrLibResolvedBindingKind bindingKind,
@@ -766,6 +798,8 @@ TZrBool native_binding_make_callable_value(SZrState *state,
     }
 
     closure->nativeFunction = native_binding_dispatcher;
+    /* BUG: closure 立即成为 GC 永久根；后续导出名或其他模块成员构造失败时
+     * 直接返回，且没有撤销永久状态。重复失败导入会累积常驻 closure。 */
     ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     bindingIndex = registry->bindingEntries.length;
 
@@ -790,13 +824,18 @@ TZrBool native_binding_make_callable_value(SZrState *state,
 
     /* Publish the same metadata/signature identity consumed by static call
      * sites. The registry remains the sole owner of the runtime closure; the
-     * artifact only carries these scalar identities. */
+     * artifact only carries these scalar identities.
+     * BUG: 此处忽略身份生成失败。签名哈希分配失败时 closure 仍被注册并可直接调用，
+     * 但静态 call binding 查不到有效 token/hash；用分配失败注入核对两条调用路径。
+     */
     (void)native_registry_assign_call_binding_identity(moduleDescriptor,
                                                        typeDescriptor,
                                                        bindingKind,
                                                        descriptor,
                                                        &entry);
 
+    /* BUG: bindingEntries 扩容失败时 Array_Push 用空 head 复制并崩溃；
+     * 此处没有可观察的失败返回，需以容量耗尽后的 allocator 故障注入验证。 */
     ZrCore_Array_Push(state, &registry->bindingEntries, &entry);
     native_binding_closure_store_cached_binding(closure,
                                                 bindingIndex,
@@ -818,6 +857,7 @@ TZrBool native_binding_make_callable_value(SZrState *state,
     return ZR_TRUE;
 }
 
+/* native dispatcher 的临时槽不能覆盖当前函数帧仍在使用的栈区。 */
 TZrStackValuePointer native_binding_resolve_call_scratch_base(TZrStackValuePointer stackTop,
                                                                      const SZrCallInfo *callInfo) {
     TZrStackValuePointer base = stackTop;
@@ -829,6 +869,7 @@ TZrStackValuePointer native_binding_resolve_call_scratch_base(TZrStackValuePoint
     return base;
 }
 
+/* FFI/容器等 provider 实例统一按注册原型创建，让方法分派与反射看到同一类型身份。 */
 SZrObject *native_binding_new_instance_with_prototype(SZrState *state, SZrObjectPrototype *prototype) {
     SZrObject *object;
     EZrObjectInternalType internalType;
@@ -850,6 +891,8 @@ SZrObject *native_binding_new_instance_with_prototype(SZrState *state, SZrObject
     return object;
 }
 
+/* descriptor 依次成为 VM 类型、常量、函数、模块链接和反射元数据；最后才运行 provider hook。
+ * 加载者只能在完整实体化成功后把模块写入缓存。 */
 SZrObjectModule *native_registry_materialize_module(SZrState *state,
                                                            ZrLibrary_NativeRegistryState *registry,
                                                            const ZrLibModuleDescriptor *descriptor) {
@@ -880,6 +923,8 @@ SZrObjectModule *native_registry_materialize_module(SZrState *state,
                                     descriptor->moduleName);
         return ZR_NULL;
     }
+    /* BUG: 这里先将模块设为永久 GC 根，后续名称、元数据或成员构造失败直接返回 NULL，
+     * 没有撤销永久状态；重复导入失败会留下不可回收的部分模块。用故障注入核对常驻数量。 */
     ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(module));
 
     moduleName = native_binding_create_string(state, descriptor->moduleName);
@@ -949,6 +994,8 @@ SZrObjectModule *native_registry_materialize_module(SZrState *state,
     native_binding_trace_import(state,
                                 "[zr_native_import] materialize module_info begin module=%s\n",
                                 descriptor->moduleName);
+    /* TODO: moduleInfo 返回时已解除 pin，随后创建导出名可能触发 GC；
+     * 需确认 C 局部或构造结果受根保护，并以压力测试覆盖此窗口。 */
     moduleInfo = native_metadata_make_module_info(state,
                                                   descriptor,
                                                   native_registry_find_record_by_descriptor(registry, descriptor));
@@ -963,6 +1010,8 @@ SZrObjectModule *native_registry_materialize_module(SZrState *state,
     native_binding_trace_import(state,
                                 "[zr_native_import] materialize module_info export module=%s\n",
                                 descriptor->moduleName);
+    /* BUG: AddPubExport 是 void，Object_SetValue 可在扩容失败时静默返回；
+     * 当前模块仍继续 hook/缓存，公开 moduleInfo 导出缺席，原生元数据反射失真。 */
     ZrCore_Module_AddPubExport(state, module, moduleInfoName, &moduleInfoValue);
     native_binding_trace_import(state,
                                 "[zr_native_import] materialize module_info success module=%s\n",
@@ -982,6 +1031,7 @@ SZrObjectModule *native_registry_materialize_module(SZrState *state,
     return module;
 }
 
+/* 全局 module loader 回调：native provider 未命中时委托原宿主 loader，保持已有模块来源可达。 */
 struct SZrObjectModule *native_registry_loader(SZrState *state, SZrString *moduleName, TZrPtr userData) {
     ZrLibrary_NativeRegistryState *registry = (ZrLibrary_NativeRegistryState *)userData;
     const TZrChar *nativeModuleName;

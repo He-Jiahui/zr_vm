@@ -1,5 +1,6 @@
 #include "native_binding/native_binding_internal.h"
 
+/* core 按稳定提供者角色查模块名时先使用本注册表，再退回宿主原有解析器。 */
 const TZrChar *native_registry_resolve_provider_module_name(
         TZrUInt32 providerRole,
         TZrPtr userData) {
@@ -26,6 +27,7 @@ const TZrChar *native_registry_resolve_provider_module_name(
                    : ZR_NULL;
 }
 
+/* 模块对象的强引用计数是插件卸载门禁；同时保留宿主已有观察行为。 */
 static void native_registry_observe_owner_strong_ref(SZrState *state,
                                                      SZrRawObject *object,
                                                      TZrInt32 delta,
@@ -70,6 +72,7 @@ static void native_registry_observe_owner_strong_ref(SZrState *state,
     }
 }
 
+/* core 全局销毁回调只释放仍由本注册表持有的状态，避免重复清理。 */
 static void native_registry_cleanup_global_state(
         SZrGlobalState *global,
         TZrPtr state) {
@@ -78,6 +81,7 @@ static void native_registry_cleanup_global_state(
     }
 }
 
+/* 注册表以 global 为生命周期边界，将 core 的解析、加载和强引用钩子接到统一提供者。 */
 TZrBool ZrLibrary_NativeRegistry_Attach(SZrGlobalState *global) {
     ZrLibrary_NativeRegistryState *registry;
     SZrState *state;
@@ -102,6 +106,9 @@ TZrBool ZrLibrary_NativeRegistry_Attach(SZrGlobalState *global) {
     }
 
     memset(registry, 0, sizeof(*registry));
+    /* 三类记录在发布钩子前建立，基础模块注册失败时统一交给 Free 清理。
+     * BUG: Array_Init 分配 moduleRecords.head 失败仍将 isValid 设为 true；
+     * Attach 继续注册基础模块，后续 Array_Push 断言/解引用空 head。 */
     ZrCore_Array_Construct(&registry->moduleRecords);
     ZrCore_Array_Construct(&registry->bindingEntries);
     ZrCore_Array_Construct(&registry->pluginHandles);
@@ -135,6 +142,7 @@ TZrBool ZrLibrary_NativeRegistry_Attach(SZrGlobalState *global) {
     registry->hostOwnershipStrongRefObserverUserData =
             global->ownershipStrongRefObserverUserData;
 
+    /* 保存宿主原钩子并完成替换后，基础模块注册才会走同一校验路径。 */
     global->nativeRegistryState = registry;
     global->nativeRegistryStateCleanup = native_registry_cleanup_global_state;
     global->callBindingModuleResolver = native_registry_link_call_binding;
@@ -159,6 +167,7 @@ TZrBool ZrLibrary_NativeRegistry_Attach(SZrGlobalState *global) {
     return ZR_TRUE;
 }
 
+/* 清理插件和记录，并在释放 registry 前恢复仍指向它的宿主钩子。 */
 void ZrLibrary_NativeRegistry_Free(SZrGlobalState *global) {
     ZrLibrary_NativeRegistryState *registry;
     SZrState *state;
@@ -256,6 +265,7 @@ void ZrLibrary_NativeRegistry_Free(SZrGlobalState *global) {
                       ZR_MEMORY_NATIVE_TYPE_GLOBAL);
 }
 
+/* 静态模块与插件共用底层注册规则；此入口只声明提供者不可由插件卸载。 */
 TZrBool ZrLibrary_NativeRegistry_RegisterModule(SZrGlobalState *global, const ZrLibModuleDescriptor *descriptor) {
     return native_registry_register_module_record(global,
                                                   descriptor,
@@ -264,6 +274,7 @@ TZrBool ZrLibrary_NativeRegistry_RegisterModule(SZrGlobalState *global, const Zr
                                                   ZR_FALSE);
 }
 
+/* 编译器及导入器查已注册描述符；结果借用，注册表重载后必须重查。 */
 const ZrLibModuleDescriptor *ZrLibrary_NativeRegistry_FindModule(SZrGlobalState *global, const TZrChar *moduleName) {
     ZrLibrary_NativeRegistryState *registry;
     const ZrLibRegisteredModuleRecord *record;
@@ -281,6 +292,7 @@ const ZrLibModuleDescriptor *ZrLibrary_NativeRegistry_FindModule(SZrGlobalState 
     return record != ZR_NULL ? record->descriptor : ZR_NULL;
 }
 
+/* 类型角色入口先确定唯一提供者，避免调用者依赖可变化的模块别名。 */
 const ZrLibModuleDescriptor *ZrLibrary_NativeRegistry_FindModuleByProviderRole(
         SZrGlobalState *global,
         EZrProviderContractRole providerRole) {
@@ -302,6 +314,7 @@ const ZrLibModuleDescriptor *ZrLibrary_NativeRegistry_FindModuleByProviderRole(
     return ZR_NULL;
 }
 
+/* 按稳定角色返回提供者和类型表中的借用指针，失败时输出保持清空。 */
 TZrBool ZrLibrary_NativeRegistry_FindCanonicalTypeRole(
         SZrGlobalState *global,
         EZrCanonicalTypeRole role,
@@ -341,6 +354,7 @@ TZrBool ZrLibrary_NativeRegistry_FindCanonicalTypeRole(
     return ZR_FALSE;
 }
 
+/* 按规范名支持反射和类型推断的静态类型身份查询。 */
 TZrBool ZrLibrary_NativeRegistry_FindCanonicalTypeRoleByName(
         SZrGlobalState *global,
         const TZrChar *canonicalName,
@@ -382,6 +396,7 @@ TZrBool ZrLibrary_NativeRegistry_FindCanonicalTypeRoleByName(
     return ZR_FALSE;
 }
 
+/* 特定提供者的投影必须唯一，歧义不能静默选择第一个候选。 */
 TZrBool ZrLibrary_NativeRegistry_FindCanonicalTypeRoleByProjection(
         SZrGlobalState *global,
         EZrProviderContractRole providerRole,
@@ -423,6 +438,7 @@ TZrBool ZrLibrary_NativeRegistry_FindCanonicalTypeRoleByProjection(
     return ZR_TRUE;
 }
 
+/* 供插件加载与测试预检描述符，不将其放入当前注册表。 */
 TZrBool ZrLibrary_NativeRegistry_ValidateModuleDescriptor(
         SZrGlobalState *global,
         const ZrLibModuleDescriptor *descriptor) {
@@ -437,6 +453,7 @@ TZrBool ZrLibrary_NativeRegistry_ValidateModuleDescriptor(
            native_registry_validate_descriptor_compatibility(registry, descriptor);
 }
 
+/* 查询当前注册记录的借用快照，供工具与生命周期检查。 */
 TZrBool ZrLibrary_NativeRegistry_GetModuleInfo(SZrGlobalState *global,
                                                const TZrChar *moduleName,
                                                ZrLibRegisteredModuleInfo *outInfo) {
@@ -467,6 +484,7 @@ TZrBool ZrLibrary_NativeRegistry_GetModuleInfo(SZrGlobalState *global,
     return ZR_TRUE;
 }
 
+/* LSP 按当前数量枚举模块；枚举期间注册表不可异步失效。 */
 TZrSize ZrLibrary_NativeRegistry_GetModuleCount(SZrGlobalState *global) {
     ZrLibrary_NativeRegistryState *registry;
 
@@ -482,6 +500,7 @@ TZrSize ZrLibrary_NativeRegistry_GetModuleCount(SZrGlobalState *global) {
     return registry->moduleRecords.length;
 }
 
+/* 公开模块所有权计数，供插件卸载约束和回归测试核对。 */
 TZrUInt32 ZrLibrary_NativeRegistry_GetModuleRefCount(SZrGlobalState *global, const TZrChar *moduleName) {
     ZrLibrary_NativeRegistryState *registry;
     const ZrLibRegisteredModuleRecord *record;
@@ -495,6 +514,7 @@ TZrUInt32 ZrLibrary_NativeRegistry_GetModuleRefCount(SZrGlobalState *global, con
     return record != ZR_NULL ? record->ownerRefCount : 0u;
 }
 
+/* 与 GetModuleCount 配合枚举；索引及返回指针只对当前注册表世代有效。 */
 TZrBool ZrLibrary_NativeRegistry_GetModuleInfoAt(SZrGlobalState *global,
                                                  TZrSize index,
                                                  ZrLibRegisteredModuleInfo *outInfo) {
@@ -529,6 +549,7 @@ TZrBool ZrLibrary_NativeRegistry_GetModuleInfoAt(SZrGlobalState *global,
     return ZR_TRUE;
 }
 
+/* 插件测试按来源路径确认记录，路径比较遵循平台大小写与斜杠规则。 */
 TZrBool ZrLibrary_NativeRegistry_GetModuleInfoBySourcePath(SZrGlobalState *global,
                                                            const TZrChar *sourcePath,
                                                            ZrLibRegisteredModuleInfo *outInfo) {
@@ -569,6 +590,7 @@ TZrBool ZrLibrary_NativeRegistry_GetModuleInfoBySourcePath(SZrGlobalState *globa
     return ZR_FALSE;
 }
 
+/* 失效前先确认不存在被强引用的插件模块；之后撤销缓存、句柄和描述符借用。 */
 TZrBool ZrLibrary_NativeRegistry_InvalidateDescriptorPluginSource(SZrGlobalState *global,
                                                                  const TZrChar *sourcePath) {
     ZrLibrary_NativeRegistryState *registry;
@@ -596,6 +618,8 @@ TZrBool ZrLibrary_NativeRegistry_InvalidateDescriptorPluginSource(SZrGlobalState
         }
     }
 
+    /* TODO: 即使 sourcePath 未命中，任一插件也会使此调用继续清空全部插件；
+     * 多插件热重载场景需核对失效范围与缓存依赖是否要求如此。 */
     if (!matched) {
         for (TZrSize index = 0; index < registry->moduleRecords.length; index++) {
             const ZrLibRegisteredModuleRecord *record =
@@ -620,6 +644,7 @@ TZrBool ZrLibrary_NativeRegistry_InvalidateDescriptorPluginSource(SZrGlobalState
         }
     }
 
+    /* 先撤销模块缓存里的对象，再释放提供其回调/描述符的动态句柄。 */
     if (state != ZR_NULL) {
         for (TZrSize index = 0; index < registry->moduleRecords.length; index++) {
             const ZrLibRegisteredModuleRecord *record =
@@ -687,24 +712,29 @@ TZrBool ZrLibrary_NativeRegistry_InvalidateDescriptorPluginSource(SZrGlobalState
     return ZR_TRUE;
 }
 
+/* 最近错误只属于当前注册表操作周期，不跨下一次成功注册保持。 */
 EZrLibNativeRegistryErrorCode ZrLibrary_NativeRegistry_GetLastErrorCode(SZrGlobalState *global) {
     ZrLibrary_NativeRegistryState *registry = native_registry_get(global);
     return registry != ZR_NULL ? registry->lastErrorCode : ZR_LIB_NATIVE_REGISTRY_ERROR_NONE;
 }
 
+/* 返回注册表内部消息缓冲区，后续注册/加载会覆盖该借用字符串。 */
 const TZrChar *ZrLibrary_NativeRegistry_GetLastErrorMessage(SZrGlobalState *global) {
     ZrLibrary_NativeRegistryState *registry = native_registry_get(global);
     return registry != ZR_NULL ? registry->lastErrorMessage : ZR_NULL;
 }
 
+/* 提示侧车的协议版本与 public header 常量保持一致。 */
 const TZrChar *ZrLibrary_NativeHints_GetSchemaId(void) {
     return ZR_VM_NATIVE_HINTS_SCHEMA_ID;
 }
 
+/* 提示 JSON 随描述符生命周期存在；本入口不复制或解析。 */
 const TZrChar *ZrLibrary_NativeHints_GetModuleJson(const ZrLibModuleDescriptor *descriptor) {
     return descriptor != ZR_NULL ? descriptor->typeHintsJson : ZR_NULL;
 }
 
+/* 将提供者生成的 JSON 原样写入侧车，供不执行 VM 的工具读取。 */
 TZrBool ZrLibrary_NativeHints_WriteSidecar(const ZrLibModuleDescriptor *descriptor, const TZrChar *outputPath) {
     FILE *file;
 
@@ -717,6 +747,7 @@ TZrBool ZrLibrary_NativeHints_WriteSidecar(const ZrLibModuleDescriptor *descript
         return ZR_FALSE;
     }
 
+    /* BUG: 未检查短写及 fclose 错误；例如目标文件系统写满时仍报告成功。 */
     fwrite(descriptor->typeHintsJson, 1, strlen(descriptor->typeHintsJson), file);
     fclose(file);
     return ZR_TRUE;

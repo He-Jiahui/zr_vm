@@ -1,5 +1,6 @@
 #include "native_binding_internal.h"
 
+/* 每个 canonical type role 只能由对应 provider 契约发布，防止跨模块抢占反射/内建类型身份。 */
 static EZrProviderContractRole native_registry_provider_role_for_canonical_type_role(
         EZrCanonicalTypeRole role) {
     if (role >= ZR_CANONICAL_TYPE_ROLE_BUILTIN_METADATA_ROOT &&
@@ -13,6 +14,7 @@ static EZrProviderContractRole native_registry_provider_role_for_canonical_type_
     return ZR_PROVIDER_CONTRACT_ROLE_NONE;
 }
 
+/* parentRole 仅能引用同一 descriptor 内的角色，不能依赖另一个尚未加载的 provider。 */
 static const ZrLibCanonicalTypeRoleDescriptor *native_registry_find_local_type_role(
         const ZrLibModuleDescriptor *descriptor,
         EZrCanonicalTypeRole role) {
@@ -27,6 +29,7 @@ static const ZrLibCanonicalTypeRoleDescriptor *native_registry_find_local_type_r
     return ZR_NULL;
 }
 
+/* 注册前验证 provider 的 canonical 投影集合与父级图；后续注册/反射按此表建立稳定类型身份。 */
 TZrBool native_registry_validate_canonical_type_roles(
         ZrLibrary_NativeRegistryState *registry,
         const ZrLibModuleDescriptor *descriptor) {
@@ -129,6 +132,7 @@ TZrBool native_registry_validate_canonical_type_roles(
             }
         }
 
+        /* 父级链必须在本模块闭合且无环，否则投影与类型查询无法终止。 */
         {
             EZrCanonicalTypeRole parentRole = typeRole->parentRole;
             TZrSize parentDepth = 0u;
@@ -161,6 +165,7 @@ TZrBool native_registry_validate_canonical_type_roles(
             }
         }
     }
+    /* 反射 provider 必须一次提供各投影，避免消费者只看到部分类型层级。 */
     if (descriptor->providerContractRole == ZR_PROVIDER_CONTRACT_ROLE_REFLECTION) {
         for (TZrUInt32 projection = ZR_CANONICAL_TYPE_PROJECTION_CLASS;
              projection <= ZR_CANONICAL_TYPE_PROJECTION_ENUM;

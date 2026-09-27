@@ -13,6 +13,7 @@
 #define ZrCore_Value_Copy ZrCore_Value_CopyNoProfile
 #define ZrCore_Value_ResetAsNull ZrCore_Value_ResetAsNullNoProfile
 
+/* 缓存 thunk 仍以函数基址锚点提交结果，容许回调期间扩栈。 */
 static ZR_FORCE_INLINE void native_binding_cached_dispatch_finish_result(
         SZrState *state,
         const SZrFunctionStackAnchor *functionBaseAnchor,
@@ -34,6 +35,7 @@ static ZR_FORCE_INLINE void native_binding_cached_dispatch_finish_result(
     }
 }
 
+/* 固定参数 thunk 只处理闭包缓存与当前栈布局完全匹配的调用。 */
 static ZR_FORCE_INLINE TZrBool native_binding_prepare_cached_stack_root_dispatch(
         SZrState *state,
         TZrSize expectedArgumentCount,
@@ -86,6 +88,7 @@ static ZR_FORCE_INLINE TZrBool native_binding_prepare_cached_stack_root_dispatch
     return ZR_TRUE;
 }
 
+/* 缓存条件失效时退回总入口，以免旧元数据绕过参数或绑定检查。 */
 static ZR_FORCE_INLINE TZrInt64 native_binding_dispatch_cached_stack_root_fixed_argument_count(
         SZrState *state,
         TZrSize expectedArgumentCount) {
@@ -117,10 +120,12 @@ static ZR_FORCE_INLINE TZrInt64 native_binding_dispatch_cached_stack_root_fixed_
     return 1;
 }
 
+/* 单参数闭包的 VM nativeFunction 热入口。 */
 TZrInt64 native_binding_dispatch_cached_stack_root_one_argument(SZrState *state) {
     return native_binding_dispatch_cached_stack_root_fixed_argument_count(state, 1u);
 }
 
+/* 双参数闭包的 VM nativeFunction 热入口。 */
 TZrInt64 native_binding_dispatch_cached_stack_root_two_arguments(SZrState *state) {
     return native_binding_dispatch_cached_stack_root_fixed_argument_count(state, 2u);
 }

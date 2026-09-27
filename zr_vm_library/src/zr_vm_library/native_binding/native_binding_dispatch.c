@@ -30,6 +30,7 @@
 
 #define ZR_LIB_THREAD_LOCAL ZR_THREAD_LOCAL
 
+/* 由通用分派入口消费描述符的参数范围；回调只接收通过声明约束的调用。 */
 TZrBool native_binding_auto_check_arity(const ZrLibCallContext *context) {
     if (context == ZR_NULL) {
         return ZR_FALSE;
@@ -56,6 +57,7 @@ TZrBool native_binding_auto_check_arity(const ZrLibCallContext *context) {
     return ZR_TRUE;
 }
 
+/* 临时根优先借用现有 VM 栈空间，只有仍属于当前栈的指针才可直接使用。 */
 static ZR_FORCE_INLINE TZrBool native_binding_stack_pointer_in_current_range(const SZrState *state,
                                                                              TZrStackValuePointer pointer) {
     return state != ZR_NULL && pointer != ZR_NULL && state->stackBase.valuePointer != ZR_NULL &&
@@ -63,6 +65,7 @@ static ZR_FORCE_INLINE TZrBool native_binding_stack_pointer_in_current_range(con
            pointer <= state->stackTail.valuePointer;
 }
 
+/* 调用信息可能暂时持有比 state->stackTop 更可靠的栈顶，供临时根恢复。 */
 static ZR_FORCE_INLINE TZrStackValuePointer native_binding_resolve_temp_root_stack_top(
         const SZrState *state,
         const SZrCallInfo *callInfo) {
@@ -85,6 +88,7 @@ static ZR_FORCE_INLINE TZrStackValuePointer native_binding_resolve_temp_root_sta
     return ZR_NULL;
 }
 
+/* 热路径在剩余栈槽足够时直接建立 GC 可见的临时根，并保存回退位置。 */
 static ZR_FORCE_INLINE SZrTypeValue *native_binding_temp_root_try_begin_direct_slot(SZrState *state,
                                                                                      ZrLibTempValueRoot *root) {
     TZrStackValuePointer savedStackTop;
@@ -136,15 +140,18 @@ static ZR_FORCE_INLINE SZrTypeValue *native_binding_temp_root_try_begin_direct_s
     return slotValue;
 }
 
+/* Begin 仅在直接栈槽无法使用时进入会扩栈的通用路径。 */
 static ZR_FORCE_INLINE TZrBool native_binding_temp_root_try_begin_direct(SZrState *state, ZrLibTempValueRoot *root) {
     return native_binding_temp_root_try_begin_direct_slot(state, root) != ZR_NULL;
 }
 
+/* 扩栈后原始地址失效，End/Value 必须回退到偏移锚点。 */
 static ZR_FORCE_INLINE TZrBool native_binding_temp_root_direct_pointers_valid(const ZrLibTempValueRoot *root) {
     return root != ZR_NULL && root->active && root->state != ZR_NULL && root->usesDirectPointers &&
            root->stackBasePointer != ZR_NULL && root->state->stackBase.valuePointer == root->stackBasePointer;
 }
 
+/* 扩栈完成后重新记录快路径指针，避免每次读取临时根都恢复锚点。 */
 static ZR_FORCE_INLINE void native_binding_temp_root_capture_direct_pointers(ZrLibTempValueRoot *root,
                                                                              TZrStackValuePointer savedStackTop,
                                                                              TZrStackValuePointer slot) {
@@ -168,6 +175,7 @@ static ZR_FORCE_INLINE void native_binding_temp_root_capture_direct_pointers(ZrL
     root->usesDirectPointers = ZR_TRUE;
 }
 
+/* 回调只在根处于活动期时可获取值槽；栈移动时统一从锚点重建地址。 */
 static ZR_FORCE_INLINE SZrTypeValue *native_binding_temp_root_value_slot(ZrLibTempValueRoot *root) {
     TZrStackValuePointer slot;
 
@@ -184,6 +192,7 @@ static ZR_FORCE_INLINE SZrTypeValue *native_binding_temp_root_value_slot(ZrLibTe
     return slot != ZR_NULL ? ZrCore_Stack_GetValue(slot) : ZR_NULL;
 }
 
+/* 字段/数组辅助函数跨分配边界保活裸对象，addedByCaller 决定谁负责解除忽略。 */
 static ZR_FORCE_INLINE TZrBool native_binding_pin_raw_object(SZrState *state,
                                                              SZrRawObject *object,
                                                              TZrBool *addedByCaller) {
@@ -201,6 +210,7 @@ static ZR_FORCE_INLINE TZrBool native_binding_pin_raw_object(SZrState *state,
     return ZrCore_GarbageCollector_IgnoreObjectIfNeededFast(state->global, state, object, addedByCaller);
 }
 
+/* 只撤销本调用新增的 GC 忽略，避免破坏宿主已持有的固定状态。 */
 static ZR_FORCE_INLINE void native_binding_unpin_raw_object(SZrGlobalState *global,
                                                             SZrRawObject *object,
                                                             TZrBool addedByCaller) {
@@ -211,6 +221,7 @@ static ZR_FORCE_INLINE void native_binding_unpin_raw_object(SZrGlobalState *glob
     ZrCore_GarbageCollector_UnignoreObject(global, object);
 }
 
+/* 构造回调优先保持派生实例的实际原型，避免继承调用退回描述符的基类。 */
 static ZR_FORCE_INLINE SZrObjectPrototype *native_binding_context_resolve_construct_target_prototype(
         ZrLibCallContext *context) {
     SZrObject *selfObject;
@@ -234,6 +245,7 @@ static ZR_FORCE_INLINE SZrObjectPrototype *native_binding_context_resolve_constr
     return context->constructTargetPrototype;
 }
 
+/* 回调可能触发扩栈，返回值必须通过函数基址锚点写回闭包槽。 */
 static ZR_FORCE_INLINE void native_binding_dispatch_finish_result(SZrState *state,
                                                                   const SZrFunctionStackAnchor *functionBaseAnchor,
                                                                   const SZrTypeValue *result) {
@@ -254,6 +266,7 @@ static ZR_FORCE_INLINE void native_binding_dispatch_finish_result(SZrState *stat
     }
 }
 
+/* VM 调用闭包的总入口：优先使用栈根/标量快路，再退到有稳定副本的通用路径。 */
 TZrInt64 native_binding_dispatcher(SZrState *state) {
     ZrLibrary_NativeRegistryState *registry;
     TZrStackValuePointer functionBase;
@@ -427,6 +440,8 @@ TZrInt64 native_binding_dispatcher(SZrState *state) {
         }
         hasCopiedSelf = ZR_TRUE;
     }
+    /* BUG: 实例调用已复制带所有权的 self 后，超过内联容量的参数缓冲区分配失败会直接返回，
+     * 未释放 stableSelfCopy 增加的强引用；见 Value_CopySlow -> Ownership_AssignValue。 */
     if (context.argumentCount > 0) {
         if (context.argumentCount > ZR_LIBRARY_NATIVE_INLINE_ARGUMENT_CAPACITY) {
             stableArgumentCopyBytes = context.argumentCount * sizeof(SZrTypeValue);
@@ -534,8 +549,11 @@ TZrInt64 native_binding_dispatcher(SZrState *state) {
         }
     }
 
+    /* 栈临时槽使稳定副本对 GC 可见；扩栈前后的调用帧指针均须由锚点恢复。 */
     if (stableSlotCount > 0) {
         enteredStableScratchLayout = ZR_TRUE;
+        /* BUG: 这里保存原始栈地址，后续 CheckStackAndAnchor 可调用 Stack_GrowTo 移动栈；
+         * 回调报错后 cleanup 用旧地址恢复 stackTop，留下悬空栈指针。 */
         stackTopBeforeStableScratchLayout = state->stackTop.valuePointer;
         ZrCore_Function_StackAnchorInit(state, stableBase, &stableBaseAnchor);
         if (state->callInfoList->functionBase.valuePointer != ZR_NULL) {
@@ -597,6 +615,7 @@ TZrInt64 native_binding_dispatcher(SZrState *state) {
     success = native_binding_invoke_entry_callback_inline(
             state, entryView, &context, &result);
 
+    /* false 且无线程错误表示回调选择返回 null；有错误时保持异常并走清理路径。 */
     if (!success) {
         if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
             goto cleanup_after_native_callback;
@@ -656,6 +675,7 @@ cleanup_after_native_callback:
     return 1;
 }
 
+/* 返回活动临时根的 VM 栈槽；调用方不得在 End 后继续保存此地址。 */
 TZrStackValuePointer native_binding_temp_root_slot(ZrLibTempValueRoot *root) {
     if (root == ZR_NULL || !root->active || root->state == ZR_NULL) {
         return ZR_NULL;
@@ -669,10 +689,12 @@ TZrStackValuePointer native_binding_temp_root_slot(ZrLibTempValueRoot *root) {
     return ZrCore_Function_StackAnchorRestore(root->state, &root->slotAnchor);
 }
 
+/* 描述符参数数目不含实例 receiver，供绑定回调选择业务参数。 */
 TZrSize ZrLib_CallContext_ArgumentCount(const ZrLibCallContext *context) {
     return context != ZR_NULL ? context->argumentCount : 0;
 }
 
+/* inline struct 参数存于专门帧布局；普通 SZrTypeValue 视图不能代表其存储。 */
 static TZrBool native_binding_context_argument_is_inline_struct_parameter(ZrLibCallContext *context,
                                                                           TZrSize index) {
     const SZrFunctionFrameSlotLayout *slotLayout;
@@ -692,12 +714,14 @@ static TZrBool native_binding_context_argument_is_inline_struct_parameter(ZrLibC
            slotLayout->isParameter;
 }
 
+/* 回调访问 receiver 前刷新栈地址，支持回调期间的扩栈。 */
 SZrTypeValue *ZrLib_CallContext_Self(const ZrLibCallContext *context) {
     ZrLibCallContext *mutableContext = (ZrLibCallContext *)context;
     native_binding_context_refresh_stack_layout_inline(mutableContext);
     return mutableContext != ZR_NULL ? mutableContext->selfValue : ZR_NULL;
 }
 
+/* 按 lane 选择稳定副本或 VM 栈槽；inline struct 参数须改用 InlineArgumentSpan。 */
 SZrTypeValue *ZrLib_CallContext_Argument(const ZrLibCallContext *context, TZrSize index) {
     ZrLibCallContext *mutableContext = (ZrLibCallContext *)context;
 
@@ -718,6 +742,7 @@ SZrTypeValue *ZrLib_CallContext_Argument(const ZrLibCallContext *context, TZrSiz
     return ZrCore_Stack_GetValueNoProfile(mutableContext->argumentBase + index);
 }
 
+/* FFI ref/out 回写优先遵守属性引用语义，其他参数同步到原调用栈槽。 */
 TZrBool ZrLib_CallContext_WriteBackArgument(ZrLibCallContext *context,
                                             TZrSize index,
                                             const SZrTypeValue *value) {
@@ -739,6 +764,9 @@ TZrBool ZrLib_CallContext_WriteBackArgument(ZrLibCallContext *context,
         return ZrCore_PropertyReference_Store(
                 context->state, callbackArgument, value);
     }
+    /* TODO: Value_Copy 是 void，下面两次复制后均未核查线程状态；
+     * FFI ref/out 调用者只看本函数的 bool。注入结构体克隆或所有权复制失败，
+     * 核实是否会把空值/部分写回误报为成功。 */
     if (callbackArgument != value) {
         ZrCore_Value_Copy(context->state, callbackArgument, value);
     }
@@ -760,6 +788,7 @@ TZrBool ZrLib_CallContext_WriteBackArgument(ZrLibCallContext *context,
     return ZR_TRUE;
 }
 
+/* 借用当前调用帧内的 inline struct 字节区；地址只在帧和当前栈布局有效。 */
 TZrBool ZrLib_CallContext_InlineArgumentSpan(const ZrLibCallContext *context,
                                              TZrSize index,
                                              ZrLibInlineSpan *outSpan) {
@@ -803,14 +832,17 @@ TZrBool ZrLib_CallContext_InlineArgumentSpan(const ZrLibCallContext *context,
     return ZR_TRUE;
 }
 
+/* 返回注册该原生成员的声明原型，供描述符驱动的构造/反射回调使用。 */
 SZrObjectPrototype *ZrLib_CallContext_OwnerPrototype(const ZrLibCallContext *context) {
     return context != ZR_NULL ? context->ownerPrototype : ZR_NULL;
 }
 
+/* 构造回调拿到实际目标原型，保留派生类型的实例身份。 */
 SZrObjectPrototype *ZrLib_CallContext_GetConstructTargetPrototype(const ZrLibCallContext *context) {
     return native_binding_context_resolve_construct_target_prototype((ZrLibCallContext *)context);
 }
 
+/* 描述符和回调共用同一参数计数约定；上界 UINT16_MAX 表示不设上限。 */
 TZrBool ZrLib_CallContext_CheckArity(const ZrLibCallContext *context,
                                      TZrSize minArgumentCount,
                                      TZrSize maxArgumentCount) {
@@ -826,6 +858,7 @@ TZrBool ZrLib_CallContext_CheckArity(const ZrLibCallContext *context,
     return ZR_TRUE;
 }
 
+/* 原生回调统一通过 VM 异常入口上报类型不匹配，要求 context->state 有效。 */
 ZR_NO_RETURN void ZrLib_CallContext_RaiseTypeError(const ZrLibCallContext *context,
                                                    TZrSize index,
                                                    const TZrChar *expectedType) {
@@ -840,6 +873,7 @@ ZR_NO_RETURN void ZrLib_CallContext_RaiseTypeError(const ZrLibCallContext *conte
                           actualType != ZR_NULL ? actualType : "value");
 }
 
+/* 参数范围错误携带描述符调用名，避免各模块重复拼接错误上下文。 */
 ZR_NO_RETURN void ZrLib_CallContext_RaiseArityError(const ZrLibCallContext *context,
                                                     TZrSize minArgumentCount,
                                                     TZrSize maxArgumentCount) {
@@ -866,6 +900,7 @@ ZR_NO_RETURN void ZrLib_CallContext_RaiseArityError(const ZrLibCallContext *cont
     }
 }
 
+/* 为 native helper 暂存跨分配使用的 VM 值；成功后必须成对 End。 */
 TZrBool ZrLib_TempValueRoot_Begin(SZrState *state, ZrLibTempValueRoot *root) {
     TZrStackValuePointer savedStackTop;
     TZrStackValuePointer slot;
@@ -941,6 +976,7 @@ TZrBool ZrLib_TempValueRoot_Begin(SZrState *state, ZrLibTempValueRoot *root) {
     return ZR_TRUE;
 }
 
+/* 从回调上下文建立临时 GC 根，继承正在执行的 state 与调用帧。 */
 TZrBool ZrLib_CallContext_BeginTempValueRoot(const ZrLibCallContext *context,
                                              ZrLibTempValueRoot *root) {
     if (context == ZR_NULL) {
@@ -950,10 +986,12 @@ TZrBool ZrLib_CallContext_BeginTempValueRoot(const ZrLibCallContext *context,
     return ZrLib_TempValueRoot_Begin(context->state, root);
 }
 
+/* 取得可写根值槽；每次访问重新解析，不能跨扩栈缓存返回指针。 */
 SZrTypeValue *ZrLib_TempValueRoot_Value(ZrLibTempValueRoot *root) {
     return native_binding_temp_root_value_slot(root);
 }
 
+/* 无所有权值保持对象身份；带所有权值走栈赋值语义以维护引用计数。 */
 TZrBool ZrLib_TempValueRoot_SetValue(ZrLibTempValueRoot *root, const SZrTypeValue *value) {
     TZrStackValuePointer slot;
     SZrTypeValue *slotValue;
@@ -989,6 +1027,7 @@ TZrBool ZrLib_TempValueRoot_SetValue(ZrLibTempValueRoot *root, const SZrTypeValu
     return ZR_TRUE;
 }
 
+/* 将新建对象直接放入活动根，供后续可能触发 GC 的构造过程使用。 */
 TZrBool ZrLib_TempValueRoot_SetObject(ZrLibTempValueRoot *root,
                                       SZrObject *object,
                                       EZrValueType type) {
@@ -1007,6 +1046,7 @@ TZrBool ZrLib_TempValueRoot_SetObject(ZrLibTempValueRoot *root,
     return ZR_TRUE;
 }
 
+/* 提前解除根槽的对象引用，End 之前也可让其参与回收。 */
 void ZrLib_TempValueRoot_SetNull(ZrLibTempValueRoot *root) {
     SZrTypeValue *slotValue = native_binding_temp_root_value_slot(root);
     if (slotValue != ZR_NULL) {
@@ -1014,6 +1054,7 @@ void ZrLib_TempValueRoot_SetNull(ZrLibTempValueRoot *root) {
     }
 }
 
+/* 恢复进入时的栈与调用信息；Begin 成功后即使回调失败也需执行。 */
 void ZrLib_TempValueRoot_End(ZrLibTempValueRoot *root) {
     SZrState *state;
     SZrCallInfo *callInfo;
@@ -1070,6 +1111,7 @@ void ZrLib_TempValueRoot_End(ZrLibTempValueRoot *root) {
     root->usesDirectPointers = ZR_FALSE;
 }
 
+/* 原生模块复用此入口读取整数类参数；目前也接受浮点并执行窄化。 */
 TZrBool ZrLib_CallContext_ReadInt(const ZrLibCallContext *context, TZrSize index, TZrInt64 *outValue) {
     SZrTypeValue *value = ZrLib_CallContext_Argument(context, index);
     if (value == ZR_NULL) {
@@ -1093,6 +1135,8 @@ TZrBool ZrLib_CallContext_ReadInt(const ZrLibCallContext *context, TZrSize index
                 *outValue = (TZrInt64)value->value.nativeObject.nativeUInt64;
             }
             return ZR_TRUE;
+        /* BUG: 浮点参数为 NaN、无穷或超出 int64 范围时，C 转换行为未定义；
+         * FFI Buffer/Pointer 等公开回调可直接传入此类值。 */
         case ZR_VALUE_TYPE_FLOAT:
         case ZR_VALUE_TYPE_DOUBLE:
             if (outValue != ZR_NULL) {
@@ -1104,6 +1148,7 @@ TZrBool ZrLib_CallContext_ReadInt(const ZrLibCallContext *context, TZrSize index
     }
 }
 
+/* 将 VM 数值扩展为回调需要的 double；大整数调用方须自行考虑精度。 */
 TZrBool ZrLib_CallContext_ReadFloat(const ZrLibCallContext *context, TZrSize index, TZrFloat64 *outValue) {
     SZrTypeValue *value = ZrLib_CallContext_Argument(context, index);
     if (value == ZR_NULL) {
@@ -1138,6 +1183,7 @@ TZrBool ZrLib_CallContext_ReadFloat(const ZrLibCallContext *context, TZrSize ind
     }
 }
 
+/* 布尔读取保留严格类型约束，供原生描述符避免隐式真值转换。 */
 TZrBool ZrLib_CallContext_ReadBool(const ZrLibCallContext *context, TZrSize index, TZrBool *outValue) {
     SZrTypeValue *value = ZrLib_CallContext_Argument(context, index);
     if (value == ZR_NULL) {
@@ -1154,6 +1200,7 @@ TZrBool ZrLib_CallContext_ReadBool(const ZrLibCallContext *context, TZrSize inde
     return ZR_TRUE;
 }
 
+/* 返回当前调用期有效的 VM 字符串对象，回调不可在无根条件下跨 GC 保存。 */
 TZrBool ZrLib_CallContext_ReadString(const ZrLibCallContext *context, TZrSize index, SZrString **outValue) {
     SZrTypeValue *value = ZrLib_CallContext_Argument(context, index);
     if (value == ZR_NULL) {
@@ -1170,6 +1217,7 @@ TZrBool ZrLib_CallContext_ReadString(const ZrLibCallContext *context, TZrSize in
     return ZR_TRUE;
 }
 
+/* 对象读取同时容纳数组值，供共用对象存储接口的原生模块使用。 */
 TZrBool ZrLib_CallContext_ReadObject(const ZrLibCallContext *context, TZrSize index, SZrObject **outValue) {
     SZrTypeValue *value = ZrLib_CallContext_Argument(context, index);
     if (value == ZR_NULL) {
@@ -1186,6 +1234,7 @@ TZrBool ZrLib_CallContext_ReadObject(const ZrLibCallContext *context, TZrSize in
     return ZR_TRUE;
 }
 
+/* 仅接受数组值，避免调用方把普通对象误当连续下标容器。 */
 TZrBool ZrLib_CallContext_ReadArray(const ZrLibCallContext *context, TZrSize index, SZrObject **outValue) {
     SZrTypeValue *value = ZrLib_CallContext_Argument(context, index);
     if (value == ZR_NULL) {
@@ -1202,6 +1251,7 @@ TZrBool ZrLib_CallContext_ReadArray(const ZrLibCallContext *context, TZrSize ind
     return ZR_TRUE;
 }
 
+/* FFI 回调接口允许 VM 可调用值及原生函数指针，返回视图只在调用期有效。 */
 TZrBool ZrLib_CallContext_ReadFunction(const ZrLibCallContext *context, TZrSize index, SZrTypeValue **outValue) {
     SZrTypeValue *value = ZrLib_CallContext_Argument(context, index);
     if (value == ZR_NULL) {
@@ -1220,12 +1270,14 @@ TZrBool ZrLib_CallContext_ReadFunction(const ZrLibCallContext *context, TZrSize 
     return ZR_TRUE;
 }
 
+/* 原生回调构造返回值前的通用空值初始化入口。 */
 void ZrLib_Value_SetNull(SZrTypeValue *value) {
     if (value != ZR_NULL) {
         ZrCore_Value_ResetAsNull(value);
     }
 }
 
+/* 把 C 布尔结果封装为 VM 标量，不产生额外 GC 所有权。 */
 void ZrLib_Value_SetBool(SZrState *state, SZrTypeValue *value, TZrBool boolValue) {
     ZR_UNUSED_PARAMETER(state);
     if (value != ZR_NULL) {
@@ -1233,18 +1285,21 @@ void ZrLib_Value_SetBool(SZrState *state, SZrTypeValue *value, TZrBool boolValue
     }
 }
 
+/* 将原生模块整数结果交给 VM 值初始化规则。 */
 void ZrLib_Value_SetInt(SZrState *state, SZrTypeValue *value, TZrInt64 intValue) {
     if (value != ZR_NULL) {
         ZrCore_Value_InitAsInt(state, value, intValue);
     }
 }
 
+/* 将原生浮点结果交给 VM 值初始化规则。 */
 void ZrLib_Value_SetFloat(SZrState *state, SZrTypeValue *value, TZrFloat64 floatValue) {
     if (value != ZR_NULL) {
         ZrCore_Value_InitAsFloat(state, value, floatValue);
     }
 }
 
+/* 为回调结果创建受 VM 管理的字符串；分配可能触发 GC。 */
 void ZrLib_Value_SetString(SZrState *state, SZrTypeValue *value, const TZrChar *stringValue) {
     if (state == ZR_NULL || value == ZR_NULL) {
         return;
@@ -1252,6 +1307,7 @@ void ZrLib_Value_SetString(SZrState *state, SZrTypeValue *value, const TZrChar *
     ZrLib_Value_SetStringObject(state, value, native_binding_create_string(state, stringValue != ZR_NULL ? stringValue : ""));
 }
 
+/* 将已有 VM 字符串交给结果槽；调用方须保证对象在此处仍有效。 */
 void ZrLib_Value_SetStringObject(SZrState *state, SZrTypeValue *value, SZrString *stringObject) {
     if (state == ZR_NULL || value == ZR_NULL || stringObject == ZR_NULL) {
         return;
@@ -1260,6 +1316,7 @@ void ZrLib_Value_SetStringObject(SZrState *state, SZrTypeValue *value, SZrString
     value->type = ZR_VALUE_TYPE_STRING;
 }
 
+/* 为新建对象/数组赋予 VM 值类型，后续由调用栈或临时根负责可达性。 */
 void ZrLib_Value_SetObject(SZrState *state, SZrTypeValue *value, SZrObject *object, EZrValueType type) {
     if (state == ZR_NULL || value == ZR_NULL || object == ZR_NULL) {
         return;
@@ -1268,6 +1325,7 @@ void ZrLib_Value_SetObject(SZrState *state, SZrTypeValue *value, SZrObject *obje
     value->type = type;
 }
 
+/* 封装外部地址；本接口本身不管理地址指向内存的生命周期。 */
 void ZrLib_Value_SetNativePointer(SZrState *state, SZrTypeValue *value, TZrPtr pointerValue) {
     if (state == ZR_NULL || value == ZR_NULL) {
         return;
@@ -1275,11 +1333,13 @@ void ZrLib_Value_SetNativePointer(SZrState *state, SZrTypeValue *value, TZrPtr p
     ZrCore_Value_InitAsNativePointer(state, value, pointerValue);
 }
 
+/* 数组与普通对象共享底层对象指针，固定 GC 根时保留其值标签。 */
 static EZrValueType native_binding_value_type_for_object(SZrObject *object) {
     return object != ZR_NULL && object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY ? ZR_VALUE_TYPE_ARRAY
                                                                                        : ZR_VALUE_TYPE_OBJECT;
 }
 
+/* 原生模块创建普通 VM 对象；返回裸指针后须在后续分配前建立根。 */
 SZrObject *ZrLib_Object_New(SZrState *state) {
     SZrObject *object;
     if (state == ZR_NULL) {
@@ -1292,6 +1352,7 @@ SZrObject *ZrLib_Object_New(SZrState *state) {
     return object;
 }
 
+/* 创建使用 VM 数组内部类型的对象，供 FFI 和反射回调组装结果。 */
 SZrObject *ZrLib_Array_New(SZrState *state) {
     SZrObject *array;
     if (state == ZR_NULL) {
@@ -1304,6 +1365,7 @@ SZrObject *ZrLib_Array_New(SZrState *state) {
     return array;
 }
 
+/* 用临时字符串键设置对象字段；内部临时固定键、值和宿主对象。 */
 void ZrLib_Object_SetFieldCString(SZrState *state,
                                   SZrObject *object,
                                   const TZrChar *fieldName,
@@ -1318,6 +1380,8 @@ void ZrLib_Object_SetFieldCString(SZrState *state,
         return;
     }
 
+    /* BUG: 此 void API 在固定对象/值或创建键失败时静默返回；FFI handle 的
+     * 隐藏 owner 字段及结构体结果字段调用者无法得知写入失败，仍会发布不完整对象。 */
     if (!native_binding_pin_raw_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &objectPinAdded)) {
         return;
     }
@@ -1348,6 +1412,7 @@ void ZrLib_Object_SetFieldCString(SZrState *state,
     native_binding_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinAdded);
 }
 
+/* 借用对象字段值；返回后目标对象必须仍有根，调用方不可跨修改长期保存指针。 */
 const SZrTypeValue *ZrLib_Object_GetFieldCString(SZrState *state,
                                                  SZrObject *object,
                                                  const TZrChar *fieldName) {
@@ -1385,6 +1450,7 @@ const SZrTypeValue *ZrLib_Object_GetFieldCString(SZrState *state,
     return result;
 }
 
+/* 数组为顺序整数键时直接使用预留 pair pool，避免通常的通用哈希写入开销。 */
 static TZrBool native_binding_array_try_push_dense_pair_pool_pinned(SZrState *state,
                                                                     SZrObject *array,
                                                                     const SZrTypeValue *value) {
@@ -1419,6 +1485,8 @@ static TZrBool native_binding_array_try_push_dense_pair_pool_pinned(SZrState *st
     pair->next = ZR_NULL;
     ZR_VALUE_FAST_SET(&pair->key, nativeInt64, (TZrInt64)index, ZR_VALUE_TYPE_INT64);
     ZrCore_Value_ResetAsNull(&pair->value);
+    /* BUG: Copy 可在克隆对象或取得所有权引用时失败并设置线程错误，
+     * 此处仍插入 pair 并增加数组长度；PushValue 随后返回 false，却留下部分写入。 */
     ZrCore_Value_Copy(state, &pair->value, value);
     nodeMap->buckets[index] = pair;
     nodeMap->elementCount++;
@@ -1431,6 +1499,7 @@ static TZrBool native_binding_array_try_push_dense_pair_pool_pinned(SZrState *st
     return ZR_TRUE;
 }
 
+/* 组装返回数组时固定容器和值；快路不适用则回落到 VM 对象写入语义。 */
 TZrBool ZrLib_Array_PushValue(SZrState *state, SZrObject *array, const SZrTypeValue *value) {
     SZrTypeValue arrayValue;
     TZrBool arrayPinAdded = ZR_FALSE;
@@ -1464,10 +1533,12 @@ TZrBool ZrLib_Array_PushValue(SZrState *state, SZrObject *array, const SZrTypeVa
     return success;
 }
 
+/* 与 VM 超级数组的当前存储模式共享长度定义。 */
 TZrSize ZrLib_Array_Length(SZrObject *array) {
     return ZrCore_Object_SuperArrayLength(array);
 }
 
+/* 借用数组元素值；后续修改数组或 GC 前由调用方负责可达性。 */
 const SZrTypeValue *ZrLib_Array_Get(SZrState *state, SZrObject *array, TZrSize index) {
     SZrTypeValue key;
     if (state == ZR_NULL || array == ZR_NULL || array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
@@ -1477,6 +1548,7 @@ const SZrTypeValue *ZrLib_Array_Get(SZrState *state, SZrObject *array, TZrSize i
     return ZrCore_Object_GetValue(state, array, &key);
 }
 
+/* 类型查询先尝试完整名，再允许开放泛型落回全局基类原型。 */
 static SZrString *native_binding_extract_open_generic_base_name(SZrState *state, const TZrChar *typeName) {
     const TZrChar *genericStart;
 
@@ -1492,6 +1564,7 @@ static SZrString *native_binding_extract_open_generic_base_name(SZrState *state,
     return ZrCore_String_Create(state, (TZrNativeString)typeName, (TZrSize)(genericStart - typeName));
 }
 
+/* 模块导出与全局作用域使用相同的对象值表示，集中验证原型对象。 */
 static SZrObjectPrototype *native_binding_value_as_object_prototype(SZrState *state, const SZrTypeValue *value) {
     SZrObject *object;
 
@@ -1507,6 +1580,7 @@ static SZrObjectPrototype *native_binding_value_as_object_prototype(SZrState *st
     return (SZrObjectPrototype *)object;
 }
 
+/* 以模块限定名解析类型时可按需导入提供模块，再检查其公开导出。 */
 static SZrObjectPrototype *native_binding_find_qualified_module_export_prototype(SZrState *state, const TZrChar *typeName) {
     const TZrChar *genericStart;
     const TZrChar *lastDot;
@@ -1555,6 +1629,7 @@ static SZrObjectPrototype *native_binding_find_qualified_module_export_prototype
     return native_binding_value_as_object_prototype(state, exportedValue);
 }
 
+/* 原生模块按名称找类型：优先模块限定导出，其次全局原型与开放泛型基类。 */
 SZrObjectPrototype *ZrLib_Type_FindPrototype(SZrState *state, const TZrChar *typeName) {
     SZrTypeValue key;
     SZrString *typeString;
@@ -1595,14 +1670,17 @@ SZrObjectPrototype *ZrLib_Type_FindPrototype(SZrState *state, const TZrChar *typ
     return qualifiedPrototype;
 }
 
+/* 按名称构造声明类型的实例；原型解析失败时由底层构造器返回空。 */
 SZrObject *ZrLib_Type_NewInstance(SZrState *state, const TZrChar *typeName) {
     return native_binding_new_instance_with_prototype(state, ZrLib_Type_FindPrototype(state, typeName));
 }
 
+/* 已有目标原型的回调绕过名称查询，以保留继承链上的实际构造目标。 */
 SZrObject *ZrLib_Type_NewInstanceWithPrototype(SZrState *state, SZrObjectPrototype *prototype) {
     return native_binding_new_instance_with_prototype(state, prototype);
 }
 
+/* 只查询 VM 模块缓存，不触发插件加载或模块执行。 */
 SZrObjectModule *ZrLib_Module_GetLoaded(SZrState *state, const TZrChar *moduleName) {
     SZrString *moduleString;
     if (state == ZR_NULL || moduleName == ZR_NULL) {
@@ -1615,6 +1693,7 @@ SZrObjectModule *ZrLib_Module_GetLoaded(SZrState *state, const TZrChar *moduleNa
     return ZrCore_Module_GetFromCache(state, moduleString);
 }
 
+/* 模块导出解析可按需触发原生模块导入；结果借用自模块对象。 */
 const SZrTypeValue *ZrLib_Module_GetExport(SZrState *state,
                                            const TZrChar *moduleName,
                                            const TZrChar *exportName) {
@@ -1641,6 +1720,7 @@ const SZrTypeValue *ZrLib_Module_GetExport(SZrState *state,
     return ZrCore_Module_GetPubExport(state, module, exportString);
 }
 
+/* 宿主调用模块导出时的线程局部 panic 边界，支持同线程嵌套恢复。 */
 typedef struct ZrLibPanicRecoverContext {
     jmp_buf jumpBuffer;
     FZrPanicHandlingFunction previousHandler;
@@ -1650,8 +1730,10 @@ typedef struct ZrLibPanicRecoverContext {
     TZrBool triggered;
 } ZrLibPanicRecoverContext;
 
+/* 仅当前线程可见；恢复时必须连同 global 的 handler 一起还原。 */
 static ZR_LIB_THREAD_LOCAL ZrLibPanicRecoverContext *g_zr_lib_panic_recover_context = ZR_NULL;
 
+/* 宿主 API 将无异常的失败转换成规范化 VM 错误，避免只返回 false 丢失诊断。 */
 static EZrThreadStatus native_binding_call_normalize_failure(SZrState *state, EZrThreadStatus status) {
     EZrThreadStatus effectiveStatus;
 
@@ -1674,6 +1756,7 @@ static EZrThreadStatus native_binding_call_normalize_failure(SZrState *state, EZ
     return effectiveStatus;
 }
 
+/* 只截获属于当前 state 的未处理 panic；其他状态转交原宿主 handler。 */
 static void native_binding_call_panic_handler(SZrState *state) {
     ZrLibPanicRecoverContext *context = g_zr_lib_panic_recover_context;
 
@@ -1694,6 +1777,7 @@ static void native_binding_call_panic_handler(SZrState *state) {
     longjmp(context->jumpBuffer, 1);
 }
 
+/* 从 C 回调同步调用任意 VM 可调用值；借用参数先搬入受 VM 扫描的 scratch 栈。 */
 TZrBool ZrLib_CallValue(SZrState *state,
                         const SZrTypeValue *callable,
                         const SZrTypeValue *receiver,
@@ -1869,6 +1953,9 @@ TZrBool ZrLib_CallValue(SZrState *state,
     return ZR_FALSE;
 }
 
+/* 宿主按模块/导出调用 VM；临时 panic 边界将未处理异常转为 false 与状态。 */
+/* TODO: panic handler 用 longjmp 穿过可能仍活动的 native GC 域和临时 pin；
+ * 核查 VM 未处理异常的展开路径是否已在进入 handler 前释放这些资源。 */
 TZrBool ZrLib_CallModuleExport(SZrState *state,
                                const TZrChar *moduleName,
                                const TZrChar *exportName,

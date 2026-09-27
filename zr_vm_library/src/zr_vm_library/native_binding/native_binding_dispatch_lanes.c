@@ -16,12 +16,14 @@
 #define ZrCore_Value_Copy ZrCore_Value_CopyNoProfile
 #define ZrCore_Value_ResetAsNull ZrCore_Value_ResetAsNullNoProfile
 
+/* 保留可调用的稳定副本入口供外部验证；分派文件中的同名调用由宏映射到 inline 版本。 */
 TZrBool native_binding_prepare_stable_value(SZrState *state,
                                             ZrLibStableValueCopy *copy,
                                             const SZrTypeValue *source) {
     return native_binding_prepare_stable_value_inline(state, copy, source);
 }
 
+/* 与 prepare 成对，回调不得在释放后继续持有副本里的对象引用。 */
 void native_binding_release_stable_value(SZrState *state, ZrLibStableValueCopy *copy) {
     native_binding_release_stable_value_inline(state, copy);
 }
@@ -42,6 +44,7 @@ void native_binding_release_stable_value(SZrState *state, ZrLibStableValueCopy *
 #define native_binding_context_adopt_inline_frame_anchor native_binding_context_adopt_inline_frame_anchor_inline
 #define native_binding_sync_self_to_stack_slot native_binding_sync_self_to_stack_slot_inline
 
+/* 栈根回调保留原 VM 参数槽，让回调按 safepoint 模式访问并在扩栈后重绑 self。 */
 static TZrBool native_binding_dispatch_stack_root_callback_lane_with_flags(
         SZrState *state,
         FZrLibBoundCallback callback,
@@ -73,6 +76,7 @@ static TZrBool native_binding_dispatch_stack_root_callback_lane_with_flags(
     return state->threadStatus == ZR_THREAD_STATUS_FINE && success;
 }
 
+/* 供不带描述符的直接回调调用，采用默认 GC-aware 模式。 */
 TZrBool native_binding_dispatch_stack_root_callback_lane(
         SZrState *state,
         FZrLibBoundCallback callback,
@@ -88,6 +92,7 @@ TZrBool native_binding_dispatch_stack_root_callback_lane(
             result);
 }
 
+/* 描述符回调在栈根 lane 中沿用其声明的 GC 域策略。 */
 TZrBool native_binding_dispatch_stack_root_lane(SZrState *state,
                                                 const ZrLibBindingEntry *entry,
                                                 ZrLibCallContext *context,
@@ -112,6 +117,7 @@ TZrBool native_binding_dispatch_stack_root_lane(SZrState *state,
             result);
 }
 
+/* 参数经准入检查后可浅复制到 C 栈；self 的改变仍须同步回 VM 栈。 */
 TZrBool native_binding_dispatch_fast_lane(SZrState *state,
                                           const ZrLibBindingEntry *entry,
                                           ZrLibCallContext *context,
@@ -157,6 +163,7 @@ TZrBool native_binding_dispatch_fast_lane(SZrState *state,
     return success;
 }
 
+/* 有 self 且单参数的常见调用，成对管理语义复制和 GC pin。 */
 static TZrBool native_binding_dispatch_inline_pinned_lane_one_argument(
         SZrState *state,
         const ZrLibBindingEntry *entry,
@@ -232,6 +239,7 @@ cleanup:
     return state->threadStatus == ZR_THREAD_STATUS_FINE && success;
 }
 
+/* 双参数特化保留逐个失败回滚，避免引入动态临时数组。 */
 static TZrBool native_binding_dispatch_inline_pinned_lane_two_arguments(
         SZrState *state,
         const ZrLibBindingEntry *entry,
@@ -317,6 +325,7 @@ cleanup:
     return state->threadStatus == ZR_THREAD_STATUS_FINE && success;
 }
 
+/* 零参数或其他少量参数按统一逆序清理协议执行。 */
 static TZrBool native_binding_dispatch_inline_pinned_lane_generic(SZrState *state,
                                                                   const ZrLibBindingEntry *entry,
                                                                   ZrLibCallContext *context,
@@ -420,6 +429,7 @@ cleanup:
     return state->threadStatus == ZR_THREAD_STATUS_FINE && success;
 }
 
+/* 依据 self/参数个数选择特化，所有分支共享相同回调与 pin 契约。 */
 TZrBool native_binding_dispatch_inline_pinned_lane(SZrState *state,
                                                    const ZrLibBindingEntry *entry,
                                                    ZrLibCallContext *context,

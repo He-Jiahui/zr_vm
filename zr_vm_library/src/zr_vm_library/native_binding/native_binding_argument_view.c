@@ -4,6 +4,7 @@
 
 #include <string.h>
 
+/* 内联帧可由包装函数执行，但布局注册在其原型上下文函数上。 */
 static const SZrFunction *native_binding_select_metadata_registration_function(
         const SZrFunction *function) {
     if (function != ZR_NULL && function->metadataCodeRegistration == ZR_NULL &&
@@ -13,6 +14,7 @@ static const SZrFunction *native_binding_select_metadata_registration_function(
     return function;
 }
 
+/* 为池化等零复制调用方同时提供帧内借用地址与同一函数的权威布局表。 */
 TZrBool ZrLib_CallContext_InlineArgumentView(
         const ZrLibCallContext *context,
         TZrSize index,
@@ -32,6 +34,7 @@ TZrBool ZrLib_CallContext_InlineArgumentView(
 
     registrationFunction = native_binding_select_metadata_registration_function(
             context->inlineFrameFunction);
+    /* 元数据产物与解释/原型帧有不同的布局来源，不能仅凭 slotLayout 的 ID 解释内存。 */
     if (registrationFunction != ZR_NULL &&
         registrationFunction->metadataCodeRegistration != ZR_NULL) {
         if (!ZrCore_MetadataRuntime_GetFunctionTypeLayoutRegistry(
@@ -55,6 +58,7 @@ TZrBool ZrLib_CallContext_InlineArgumentView(
         view.span.typeLayoutId >= view.registry.count) {
         return ZR_FALSE;
     }
+    /* 两侧布局 ID、尺寸和对齐必须一致，才可把借用字节暴露给 Native 消费者。 */
     if (typeLayout == ZR_NULL ||
         view.registry.layouts[view.span.typeLayoutId] != typeLayout ||
         !ZrCore_TypeLayout_Validate(typeLayout) ||

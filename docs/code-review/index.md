@@ -62,5 +62,6 @@ doc_type: category-index
 | 项目 fixture：network、语法参考与 using | [140 项](coverage/tests_fixtures_projects_late.tsv) | 53 文件独立复核，21 个 `.zr` 仅增注释；现有 MSVC CLI 七个项目入口及 testing reference 脚本通过。network loopback 在旧二进制失败待新构建定位，失效的 VS Code 调试路径已标 BUG；WSL 语法参考 C 测试未完成。 |
 | 项目 fixture：导入、GC 与 Native 流程 | [108 项](coverage/tests_fixtures_projects_middle.tsv) | 53 文件独立复核，18 个 `.zr` 仅增注释，17 个 JSON 配置可解析；12 个入口及一次 `zr test` 运行通过。现有 CLI 下四个入口的 Semantic IR 失败在去注释副本复现，GC 校验和注释已按真实断言收紧。 |
 | reference、parser 与语法迁移 fixture | [168 项](coverage/tests_fixtures_reference_parser.tsv) | 73 文件独立复核，6 个 `.zr` 仅增 7 行注释；迁移输入与 golden 未改。JS smoke 复现旧 `%module` golden 偏差并标 BUG；Python 迁移测试本轮 9/11，另两项分别因 Wiki 旧语法及并行工作树两次扫描不一致失败。 |
+| Native binding 注册、分派与元数据 | [664 项](coverage/zr_vm_library_native.tsv) | 23 文件独立复核，非注释 token 不变；GCC、Clang 对 16 个 C 文件语法检查通过，未运行时测试。插件描述符生存期、分配失败路径和公开 API 限制已逐项记录，三个 GC 保活窗口保留 TODO。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。

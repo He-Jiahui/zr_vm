@@ -4,6 +4,7 @@
 
 #include <string.h>
 
+/* 执行期再次限制计划的能力位，防止序列化计划绕过 Prepare 的验证。 */
 static TZrBool native_call_plan_capabilities_supported(
         const SZrNativeCallPlan *plan,
         SZrNativeCallDiagnostic *diagnostic) {
@@ -31,6 +32,7 @@ static TZrBool native_call_plan_capabilities_supported(
     return ZR_FALSE;
 }
 
+/* 在 core 生成持久化计划前，先按库运行时能力集合拒绝不可执行契约。 */
 TZrBool ZrLibrary_NativeCall_Prepare(
         const SZrNativeCallRequest *request,
         SZrNativeCallPlan *plan,
@@ -56,6 +58,7 @@ TZrBool ZrLibrary_NativeCall_Prepare(
     return ZrCore_NativeCall_Prepare(request, plan, diagnostic);
 }
 
+/* 计划不携带进程内地址；此入口只返回需显式解析的诊断。 */
 TZrBool ZrLibrary_NativeCall_Invoke(
         const SZrNativeCallPlan *plan,
         SZrState *state,
@@ -83,6 +86,7 @@ TZrBool ZrLibrary_NativeCall_Invoke(
     return ZR_FALSE;
 }
 
+/* 调用点注入当前进程解析器，core 才能把稳定计划绑定到可执行目标。 */
 TZrBool ZrLibrary_NativeCall_InvokeResolved(
         const SZrNativeCallPlan *plan,
         SZrState *state,

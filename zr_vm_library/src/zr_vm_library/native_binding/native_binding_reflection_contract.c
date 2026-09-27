@@ -1,5 +1,6 @@
 #include "native_binding_internal.h"
 
+/* 类型角色是反射消费者识别 Type/TypeOf 家族的契约，不要求此处实例化运行时类型。 */
 static const ZrLibCanonicalTypeRoleDescriptor k_reflection_canonical_type_roles[] = {
         {"zr.reflection.Type",
          ZR_CANONICAL_TYPE_ROLE_REFLECTION_TYPE,
@@ -58,6 +59,7 @@ static const ZrLibCanonicalTypeRoleDescriptor k_reflection_canonical_type_roles[
          ZR_CANONICAL_TYPE_PROJECTION_ENUM},
 };
 
+/* 启动时先注册契约占位，再由运行时反射服务提供实际能力。 */
 static const ZrLibModuleDescriptor k_reflection_contract_descriptor = {
         .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
         .moduleName = "zr.reflection",
@@ -72,6 +74,7 @@ static const ZrLibModuleDescriptor k_reflection_contract_descriptor = {
         .isContractOnly = ZR_TRUE,
 };
 
+/* 返回进程静态描述符，调用方只能借用，不得释放或修改。 */
 const ZrLibModuleDescriptor *ZrLibrary_ReflectionContract_GetDescriptor(void) {
     return &k_reflection_contract_descriptor;
 }

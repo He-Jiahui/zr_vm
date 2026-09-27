@@ -53,12 +53,14 @@
 #include <unistd.h>
 #endif
 
+/* 闭包绑定与描述符联合体共享的判别标签。 */
 typedef enum EZrLibResolvedBindingKind {
     ZR_LIB_RESOLVED_BINDING_FUNCTION = 0,
     ZR_LIB_RESOLVED_BINDING_METHOD = 1,
     ZR_LIB_RESOLVED_BINDING_META_METHOD = 2
 } EZrLibResolvedBindingKind;
 
+/* 注册器和 dispatcher 共享的解析结果；descriptor 的有效成员由 bindingKind 决定。 */
 typedef struct ZrLibBindingEntry {
     SZrClosureNative *closure;
     EZrLibResolvedBindingKind bindingKind;
@@ -78,11 +80,13 @@ typedef struct ZrLibBindingEntry {
     TZrUInt64 moduleSignatureHash;
 } ZrLibBindingEntry;
 
+/* 回调期的稳定值视图；needsRelease 表示复制取得了需归还的所有权。 */
 typedef struct ZrLibStableValueCopy {
     SZrTypeValue value;
     TZrBool needsRelease;
 } ZrLibStableValueCopy;
 
+/* 模块描述符来源与宿主引用计数决定插件是否可卸载。 */
 typedef struct ZrLibRegisteredModuleRecord {
     const ZrLibModuleDescriptor *descriptor;
     TZrChar *moduleName;
@@ -92,6 +96,7 @@ typedef struct ZrLibRegisteredModuleRecord {
     TZrUInt32 ownerRefCount;
 } ZrLibRegisteredModuleRecord;
 
+/* 动态库句柄与原始/实际加载路径成组保存，用于解析与最终释放。 */
 typedef struct ZrLibPluginHandleRecord {
     void *handle;
     TZrChar *moduleName;
@@ -99,9 +104,11 @@ typedef struct ZrLibPluginHandleRecord {
     TZrChar *loadedPath;
 } ZrLibPluginHandleRecord;
 
+/* 热绑定索引只是加速提示，INVALID_INDEX 迫使注册器重新验证闭包身份。 */
 #define ZR_LIBRARY_NATIVE_BINDING_LOOKUP_CACHE_CAPACITY 2u
 #define ZR_LIBRARY_NATIVE_BINDING_LOOKUP_CACHE_INVALID_INDEX ZR_MAX_SIZE
 
+/* 全局注册状态同时维护描述符、绑定与插件句柄；宿主 hook 属于同一实例。 */
 typedef struct ZrLibrary_NativeRegistryState {
     SZrArray moduleRecords;
     SZrArray bindingEntries;
@@ -121,8 +128,11 @@ typedef struct ZrLibrary_NativeRegistryState {
     TZrPtr hostOwnershipStrongRefObserverUserData;
 } ZrLibrary_NativeRegistryState;
 
+/** @brief VM 原生闭包的通用调用入口；从闭包恢复描述符并选择安全的 lane。 */
 ZR_LIBRARY_API TZrInt64 native_binding_dispatcher(SZrState *state);
+/** @brief 固定单参数栈根闭包的缓存入口；不匹配时回退到通用入口。 */
 ZR_LIBRARY_API TZrInt64 native_binding_dispatch_cached_stack_root_one_argument(SZrState *state);
+/** @brief 固定双参数栈根闭包的缓存入口；不匹配时回退到通用入口。 */
 ZR_LIBRARY_API TZrInt64 native_binding_dispatch_cached_stack_root_two_arguments(SZrState *state);
 const ZrLibModuleDescriptor *ZrLibrary_ReflectionContract_GetDescriptor(void);
 const TZrChar *native_registry_resolve_provider_module_name(
@@ -135,6 +145,7 @@ TZrBool native_registry_resolve_typed_call_binding(SZrState *state,
         const SZrTypeValue *callable, SZrCallBindingTarget *target,
         TZrUInt64 *signatureHash, TZrPtr userData);
 
+/* 按判别标签读取描述符调度策略，供闭包缓存和 lane 选择共用。 */
 static ZR_FORCE_INLINE TZrUInt32 native_binding_descriptor_dispatch_flags(EZrLibResolvedBindingKind bindingKind,
                                                                           const void *descriptor) {
     switch (bindingKind) {
@@ -155,6 +166,7 @@ static ZR_FORCE_INLINE TZrUInt32 native_binding_descriptor_dispatch_flags(EZrLib
     }
 }
 
+/* 只有 min/max 相同的描述符才可选用固定参数缓存入口。 */
 static ZR_FORCE_INLINE TZrBool native_binding_descriptor_fixed_argument_count(EZrLibResolvedBindingKind bindingKind,
                                                                               const void *descriptor,
                                                                               TZrSize *outCount) {
@@ -204,6 +216,7 @@ static ZR_FORCE_INLINE TZrBool native_binding_descriptor_fixed_argument_count(EZ
     *outCount = (TZrSize)minArgumentCount;
     return ZR_TRUE;
 }
+/* receiver 是否占用原始栈首参数由绑定种类及 static 声明共同决定。 */
 static ZR_FORCE_INLINE TZrBool native_binding_descriptor_uses_receiver(EZrLibResolvedBindingKind bindingKind,
                                                                        const void *descriptor) {
     switch (bindingKind) {
@@ -220,6 +233,7 @@ static ZR_FORCE_INLINE TZrBool native_binding_descriptor_uses_receiver(EZrLibRes
     }
 }
 
+/* 缓存条目和直连闭包从同一描述符来源取得实际回调。 */
 static ZR_FORCE_INLINE FZrLibBoundCallback native_binding_descriptor_callback(EZrLibResolvedBindingKind bindingKind,
                                                                               const void *descriptor) {
     switch (bindingKind) {
@@ -240,6 +254,7 @@ static ZR_FORCE_INLINE FZrLibBoundCallback native_binding_descriptor_callback(EZ
     }
 }
 
+/* 栈根且固定一/二参数时安装专用 nativeFunction，其余仍用通用 dispatcher。 */
 static ZR_FORCE_INLINE FZrNativeFunction native_binding_closure_dispatcher_for_cached_binding(
         const SZrClosureNative *closure) {
     EZrLibResolvedBindingKind bindingKind;
@@ -267,6 +282,7 @@ static ZR_FORCE_INLINE FZrNativeFunction native_binding_closure_dispatcher_for_c
     return native_binding_dispatcher;
 }
 
+/* 把稳定描述符投影为 core 可直接调用的缓存；只有带 receiver 的栈根绑定适用。 */
 static ZR_FORCE_INLINE void native_binding_closure_refresh_direct_dispatch_cache(SZrClosureNative *closure) {
     EZrLibResolvedBindingKind bindingKind;
     const void *descriptor;
@@ -347,6 +363,7 @@ static ZR_FORCE_INLINE void native_binding_closure_refresh_direct_dispatch_cache
     }
 }
 
+/* 注册成功后在闭包保存描述符及策略，减少每次执行的全局条目查询。 */
 static ZR_FORCE_INLINE void native_binding_closure_store_cached_binding(SZrClosureNative *closure,
                                                                         TZrSize index,
                                                                         EZrLibResolvedBindingKind bindingKind,
@@ -369,6 +386,7 @@ static ZR_FORCE_INLINE void native_binding_closure_store_cached_binding(SZrClosu
     closure->nativeFunction = native_binding_closure_dispatcher_for_cached_binding(closure);
 }
 
+/* 注册表索引失效时只清除索引提示，描述符直连缓存仍由注册记录生命周期约束。 */
 static ZR_FORCE_INLINE void native_binding_closure_invalidate_cached_lookup(SZrClosureNative *closure) {
     if (closure == ZR_NULL) {
         return;
@@ -377,6 +395,7 @@ static ZR_FORCE_INLINE void native_binding_closure_invalidate_cached_lookup(SZrC
     closure->nativeBindingLookupIndex = ZR_MAX_SIZE;
 }
 
+/* 从闭包的已缓存描述符重建临时绑定视图，供 dispatcher 绕过线性查找。 */
 static ZR_FORCE_INLINE TZrBool native_binding_closure_try_build_cached_entry(SZrClosureNative *closure,
                                                                              ZrLibBindingEntry *entry) {
     if (closure == ZR_NULL || entry == ZR_NULL || closure->nativeBindingDescriptor == ZR_NULL ||
@@ -407,6 +426,7 @@ static ZR_FORCE_INLINE TZrBool native_binding_closure_try_build_cached_entry(SZr
     }
 }
 
+/* 测试通过此入口核对闭包缓存能按绑定种类还原回调；目前无生产直接调用点。 */
 static ZR_FORCE_INLINE TZrBool native_binding_closure_try_get_cached_callback(const SZrClosureNative *closure,
                                                                               FZrLibBoundCallback *outCallback) {
     if (outCallback != ZR_NULL) {
@@ -422,6 +442,7 @@ static ZR_FORCE_INLINE TZrBool native_binding_closure_try_get_cached_callback(co
     return *outCallback != ZR_NULL;
 }
 
+/* 编译器帧布局让原生回调定位 inline struct 参数，而非把它当普通值槽。 */
 static ZR_FORCE_INLINE void native_binding_attach_inline_frame_context(ZrLibCallContext *context,
                                                                        SZrState *state,
                                                                        TZrStackValuePointer functionBase) {
@@ -447,6 +468,7 @@ static ZR_FORCE_INLINE void native_binding_attach_inline_frame_context(ZrLibCall
     context->inlineFrameBase = callInfo->functionBase.valuePointer + 1;
 }
 
+/* 函数/方法/meta 方法共享 receiver 剥离规则；缓存入口不再重复推断栈布局。 */
 static ZR_FORCE_INLINE void native_binding_init_call_context_layout_cached(ZrLibCallContext *context,
                                                                            SZrState *state,
                                                                            TZrStackValuePointer functionBase,
@@ -481,6 +503,7 @@ static ZR_FORCE_INLINE void native_binding_init_call_context_layout_cached(ZrLib
     context->argumentCount = rawArgumentCount > 0 ? rawArgumentCount - 1 : 0;
 }
 
+/* 测试按已解析条目构造栈根上下文；生产固定参数 thunk 使用闭包专用版本。 */
 static ZR_FORCE_INLINE void native_binding_init_cached_stack_root_context(ZrLibCallContext *context,
                                                                           SZrState *state,
                                                                           const ZrLibBindingEntry *entry,
@@ -507,6 +530,7 @@ static ZR_FORCE_INLINE void native_binding_init_cached_stack_root_context(ZrLibC
     native_binding_init_call_context_layout_cached(context, state, functionBase, rawArgumentCount, usesReceiver);
 }
 
+/* 固定参数 thunk 直接使用闭包缓存构造上下文，免去条目转存。 */
 static ZR_FORCE_INLINE void native_binding_init_cached_stack_root_context_from_closure(
         ZrLibCallContext *context,
         SZrState *state,
@@ -539,6 +563,7 @@ static ZR_FORCE_INLINE void native_binding_init_cached_stack_root_context_from_c
     native_binding_init_call_context_layout_cached(context, state, functionBase, rawArgumentCount, usesReceiver);
 }
 
+/* 隐藏元数据键由注册阶段写入，并在类型/FFI lowering 查询阶段消费。 */
 #define kNativeEnumValueFieldName "__zr_enumValue"
 #define kNativeEnumNameFieldName "__zr_enumName"
 #define kNativeEnumValueTypeFieldName "__zr_enumValueTypeName"
