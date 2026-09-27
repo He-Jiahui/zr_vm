@@ -25,6 +25,8 @@ typedef _Atomic int ZrTestAtomic;
 #endif
 
 typedef struct ZrConcurrentMutatorContext {
+    /* worker 的 state/对象输入由测试栈持有；主线程通过 release/acquire
+     * 原子开关发布，停机后必须 join 再 detach。 */
     SZrState state;
     ZrTestAtomic ready;
     ZrTestAtomic stop;
@@ -156,6 +158,8 @@ static void concurrent_mutator_start(
          ++attempt) {
         test_sleep_ms(1u);
     }
+    /* BUG: ready/failed 断言在已启动线程的 join 之前，失败时 Unity
+     * longjmp 会丢失 thread 及栈上 context，tearDown 仍销毁其 global。 */
     TEST_ASSERT_TRUE(test_atomic_load(&context->ready));
     TEST_ASSERT_FALSE(test_atomic_load(&context->failed));
 }
@@ -166,6 +170,8 @@ static void concurrent_mutator_stop(
     test_atomic_store(&context->stop, 1);
     ZrCore_GcDomain_WakeMutators(&context->state);
     test_thread_join(thread);
+    /* BUG: 这里的失败断言会跳过 MutatorDetach，domain 注册表继续
+     * 保存测试栈上的 state 地址。 */
     TEST_ASSERT_FALSE(test_atomic_load(&context->failed));
     ZrCore_GcDomain_MutatorDetach(&context->state);
 }
@@ -225,6 +231,8 @@ static void test_concurrent_major_mark_slices_finish_one_collection(void) {
 }
 
 static void test_concurrent_mark_slice_does_not_pause_same_domain_mutator(void) {
+    /* concurrent slice 期间同域 worker 应继续推进；仅 remark 可要求
+     * safepoint，故先读取 epoch 再执行一个 slice 作比较。 */
     ZrConcurrentMutatorContext mutator;
     ZrTestThread thread;
     SZrGarbageCollectorStatsSnapshot snapshot;
@@ -252,6 +260,8 @@ static void test_concurrent_mark_slice_does_not_pause_same_domain_mutator(void) 
             g_state->global, &snapshot);
     ZrCore_GcDomain_GetMutatorSnapshot(g_state, &afterSlice);
 
+    /* BUG: 下列断言先于 concurrent_mutator_stop；一旦回归触发失败，
+     * worker 仍运行并借用栈上 context，tearDown 会释放其 global。 */
     TEST_ASSERT_EQUAL_INT(
             ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_MARK_CONCURRENT,
             snapshot.collectionPhase);
@@ -290,6 +300,8 @@ static void finish_concurrent_major(void) {
 }
 
 static void test_concurrent_barrier_keeps_target_written_from_black_owner(void) {
+    /* owner 已被 major 标黑后才写入 target；若并发写屏障漏标，
+     * 完成收集时 target 会从 gcObjectList 消失。 */
     SZrObject *owner = ZrCore_Object_New(g_state, ZR_NULL);
     SZrObject *target = ZrCore_Object_New(g_state, ZR_NULL);
     SZrRawObject *targetRaw;
@@ -365,6 +377,8 @@ static void test_concurrent_marker_and_mutator_serialize_object_storage(void) {
          ++attempt) {
         test_sleep_ms(1u);
     }
+    /* BUG: 回归导致 worker 无进度时，这个断言在 stop/join 之前跳转，
+     * worker 仍会读取测试栈上的 context 和后续被释放的 global。 */
     TEST_ASSERT_TRUE(test_atomic_load(&mutator.mutationCount) > 0);
 
     finish_concurrent_major();
@@ -469,6 +483,8 @@ static void test_remark_pause_is_domain_local(void) {
     ZrCore_GarbageCollector_ScheduleCollection(
             g_state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR);
     ZrCore_GarbageCollector_GcStep(g_state);
+    /* BUG: markDrained 若始终不成立，该循环没有上限，且其它 domain
+     * worker 仍运行；测试套件无法以断言失败方式退出。 */
     while (!g_state->global->garbageCollector->concurrentMajorMarkDrained) {
         ZrCore_GarbageCollector_GcStep(g_state);
     }
@@ -538,6 +554,8 @@ static void test_heap_pressure_upgrades_active_major_to_full_compaction(void) {
     TEST_ASSERT_TRUE(snapshot.compactPauseCount > 0u);
 }
 
+/* TODO: CMake 当前只构建此目标，仓库内未见 CTest/suite 引用；
+ * 核查 CI 是否单独执行，若无则接入常规测试入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_major_step_enters_concurrent_mark_without_finishing_cycle);

@@ -2,6 +2,8 @@
 #define ZR_VM_TEST_RESOURCE_CROSS_DOMAIN_TRANSFER_REVIEW_CASES_H
 
 typedef struct ZrTransferRootObservationContext {
+    /* 临时 allocator 观测 decode 分配前目标 domain 已发布的 root；
+     * context 借用测试 state，必须在状态销毁前撤销 allocator 覆盖。 */
     SZrState *state;
     TZrSize allocationCount;
     TZrSize maximumObservedRootCount;
@@ -29,6 +31,8 @@ static TZrPtr transfer_observe_roots_allocator(
 }
 
 static void test_provider_descriptor_is_snapshotted_by_the_envelope(void) {
+    /* Prepare 返回后修改调用方 provider 函数指针，Commit 仍应使用
+     * envelope 内的快照；userData 对应 context 在 Commit 前仍有效。 */
     ZrTransferProviderContext context;
     SZrDomainTransferProvider provider;
     SZrDomainTransferContract contract;
@@ -68,6 +72,8 @@ static void test_provider_descriptor_is_snapshotted_by_the_envelope(void) {
 }
 
 static void test_provider_commit_failure_releases_partial_target_once(void) {
+    /* provider 返回失败时先释放部分 target，再由显式 Abort 清理 token；
+     * 两条责任链不得重复调用 resource destructor。 */
     ZrTransferProviderContext context;
     SZrDomainTransferProvider provider;
     SZrDomainTransferContract contract;
@@ -111,6 +117,8 @@ static void test_provider_commit_failure_releases_partial_target_once(void) {
 }
 
 static void test_provider_commit_can_query_envelope_without_lock_reentry_deadlock(void) {
+    /* provider callback 回查自身 envelope 快照，检验 core 调用回调时
+     * 不持有会阻断 GetSnapshot 的同一把状态锁。 */
     ZrTransferProviderContext context;
     SZrDomainTransferProvider provider;
     SZrDomainTransferContract contract;
@@ -191,6 +199,8 @@ static void test_structured_clone_decode_roots_exist_before_next_allocation(void
     allocatorContext.state = g_target_state;
     originalAllocator = g_target_state->global->allocator;
     originalAllocatorUserData = g_target_state->global->userAllocationArguments;
+    /* 覆盖 allocator 的窗口仅包住 Commit；先恢复原指针和 userData
+     * 再执行 Unity 断言，避免断言 longjmp 遗留栈上 context。 */
     g_target_state->global->allocator = transfer_observe_roots_allocator;
     g_target_state->global->userAllocationArguments = &allocatorContext;
     ZrCore_Value_ResetAsNull(&target);

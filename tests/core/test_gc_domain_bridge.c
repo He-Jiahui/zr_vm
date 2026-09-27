@@ -9,6 +9,7 @@
 
 static SZrState *g_state;
 
+/* Unity 为每个场景创建独立主 domain；测试另建的 domain 由场景自行销毁。 */
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
@@ -60,6 +61,8 @@ static TZrBool collector_contains_object(
 }
 
 static void test_domain_identity_is_stable_and_rejects_cross_domain_edges(void) {
+    /* BUG: other 创建失败时，后续对象/identity 初始化已在非空断言之前
+     * 解引用 other；低内存路径会崩溃，而不是得到可诊断的 Unity 失败。 */
     SZrState *other = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *localObject = create_object(g_state, "LocalDocument", ZR_FALSE);
     SZrObject *localTarget = create_object(g_state, "LocalTarget", ZR_FALSE);
@@ -143,6 +146,8 @@ static void test_domain_identity_is_stable_and_rejects_cross_domain_edges(void) 
     TEST_ASSERT_FALSE(ZrCore_GcDomain_IdentityIsCurrent(
             g_state, staleIdentity));
 
+    /* BUG: 入口若误分配，Unity 断言失败会跳过 domain 恢复和 other 释放；
+     * tearDown 随后以空 domain 销毁 g_state。临时摘除仅用于验证拒绝分配。 */
     attachedDomain = g_state->gcDomain;
     g_state->gcDomain = ZR_NULL;
     TEST_ASSERT_NULL(ZrCore_Object_NewCustomized(
@@ -153,6 +158,8 @@ static void test_domain_identity_is_stable_and_rejects_cross_domain_edges(void) 
 }
 
 static void test_gc_root_handle_copy_update_drop_and_stale_generation(void) {
+    /* clone 共享旧目标引用，但 update 应给第二目标独立 root；错误的
+     * domain 或 slotGeneration 不能复用仍有效的句柄。 */
     SZrObject *first = create_object(g_state, "FirstDocument", ZR_FALSE);
     SZrObject *second = create_object(g_state, "SecondDocument", ZR_FALSE);
     SZrGcRootHandle firstHandle;
@@ -208,6 +215,8 @@ static void test_gc_root_handle_copy_update_drop_and_stale_generation(void) {
 }
 
 static void test_resource_unique_uses_explicit_domain_root_not_ignore_registry(void) {
+    /* resource unique 的存活由 ownership root 管理，不占用 GC ignore 表；
+     * 释放所有权后根计数必须归零。 */
     SZrObject *resource = create_object(g_state, "DomainResource", ZR_TRUE);
     SZrTypeValue owner;
 
@@ -267,6 +276,7 @@ static void test_gc_root_handle_survives_minor_major_and_compact_target_rewrites
 }
 
 static void test_major_collection_scans_permanent_parent_children(void) {
+    /* 永久对象不搬迁，但其普通子对象仍需经字段边参与 major 标记。 */
     SZrObject *parent = create_object(g_state, "PermanentParent", ZR_FALSE);
     SZrObject *child = create_object(g_state, "PermanentChild", ZR_FALSE);
     SZrString *keyString = ZrCore_String_CreateFromNative(g_state, "child");
@@ -285,6 +295,9 @@ static void test_major_collection_scans_permanent_parent_children(void) {
 
     ZrCore_GarbageCollector_GcFull(g_state, ZR_TRUE);
 
+    /* TODO: key 是未登记为 root 的 C 局部值，full GC 后再次用于查询。
+     * 当前短串驻留可能让此路径可用；需核查长键或关闭驻留时移动后的
+     * key 指针是否仍有效，再决定是否需要测试显式 root handle。 */
     storedValue = ZrCore_Object_GetValue(g_state, parent, &key);
     TEST_ASSERT_NOT_NULL(storedValue);
     TEST_ASSERT_TRUE(storedValue->isGarbageCollectable);
@@ -292,6 +305,8 @@ static void test_major_collection_scans_permanent_parent_children(void) {
             g_state->global->garbageCollector, storedValue->value.object));
 }
 
+/* TODO: CMake 当前只构建此目标，仓库内未见 CTest/suite 引用；
+ * 核查 CI 是否单独执行，若无则接入常规测试入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_domain_identity_is_stable_and_rejects_cross_domain_edges);

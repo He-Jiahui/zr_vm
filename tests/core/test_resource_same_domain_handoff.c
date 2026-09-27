@@ -25,6 +25,8 @@ typedef _Atomic int ZrTransferTestAtomic;
 #endif
 
 typedef struct ZrOwnershipTransferRaceContext {
+    /* 两个 worker 借用同一 envelope/start；主用例必须先发布 start，
+     * 再 join 两线程，最后才能释放 envelope 和栈上上下文。 */
     SZrOwnershipTransferEnvelope *envelope;
     SZrState *state;
     SZrTypeValue *target;
@@ -103,6 +105,8 @@ static void *transfer_race_entry(void *argument) {
 static ZrTransferTestThread transfer_thread_start(
         ZrOwnershipTransferRaceContext *context) {
     ZrTransferTestThread thread;
+    /* BUG: 第二次 pthread_create 若失败，Unity 断言直接跳出用例；
+     * 第一线程仍等待 start，随后栈上 context 失效且无法 join。 */
     TEST_ASSERT_EQUAL_INT(
             0, pthread_create(&thread, ZR_NULL, transfer_race_entry, context));
     return thread;
@@ -120,6 +124,8 @@ static TZrInt64 count_drop(SZrState *state) {
 }
 
 static void init_resource_unique(SZrTypeValue *outOwner) {
+    /* 为转移状态机构造带计数析构的 unique resource；Release/Abort/
+     * Commit 谁取得最终所有权，可由 g_drop_count 验证恰好一次释放。 */
     SZrString *name = ZrCore_String_CreateFromNative(g_state, "HandoffResource");
     SZrObjectPrototype *prototype = ZrCore_ObjectPrototype_New(
             g_state, name, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
@@ -152,6 +158,8 @@ void setUp(void) {
 }
 
 void tearDown(void) {
+    /* BUG: 断言若在 PrepareSameDomain 后、显式 Free 前失败，
+     * teardown 只销毁 VM，不持有 envelope 指针以释放原生分配。 */
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
         g_state = ZR_NULL;
@@ -159,6 +167,8 @@ void tearDown(void) {
 }
 
 static void test_same_domain_prepare_publish_claim_commit_moves_one_owner(void) {
+    /* Prepare 消耗 source 的唯一所有权，Commit 将同一对象/control
+     * 交给 target；Free envelope 不得再调用资源析构。 */
     SZrTypeValue source;
     SZrTypeValue target;
     SZrOwnershipTransferEnvelope *envelope;
@@ -199,6 +209,8 @@ static void test_same_domain_prepare_publish_claim_commit_moves_one_owner(void) 
 }
 
 static void test_queued_and_claimed_envelope_keeps_exact_ownership_root(void) {
+    /* queued/claimed 阶段没有用户值持有资源，envelope 的 ownership root
+     * 必须跨越 full GC 保持对象，Abort 后才移除。 */
     SZrTypeValue source;
     SZrOwnershipTransferEnvelope *envelope;
     SZrRawObject *resourceObject;
@@ -297,6 +309,7 @@ static void test_cross_domain_claim_is_rejected_without_losing_payload(void) {
 }
 
 static void test_queue_close_race_aborts_payload_once(void) {
+    /* 两个同时 Abort 竞争同一终态；所有权根和析构必须只被消费一次。 */
     SZrTypeValue source;
     SZrOwnershipTransferEnvelope *envelope;
     ZrTransferTestAtomic start = 0;
@@ -328,6 +341,8 @@ static void test_queue_close_race_aborts_payload_once(void) {
 }
 
 static void test_worker_exit_and_commit_race_has_one_terminal_owner(void) {
+    /* Commit 与 worker-exit Abort 使用相同 worker/epoch 竞争，胜方
+     * 唯一决定 payload 是交给 target 还是由 envelope 释放。 */
     SZrTypeValue source;
     SZrTypeValue target;
     SZrOwnershipTransferEnvelope *envelope;
@@ -378,6 +393,8 @@ static void test_worker_exit_and_commit_race_has_one_terminal_owner(void) {
     TEST_ASSERT_EQUAL_UINT32(1u, g_drop_count);
 }
 
+/* TODO: CMake 当前只构建此目标，仓库内未见 CTest/suite 引用；
+ * 核查 CI 是否单独执行，若无则接入常规测试入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_same_domain_prepare_publish_claim_commit_moves_one_owner);

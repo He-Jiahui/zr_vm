@@ -8,6 +8,8 @@ typedef struct SZrHashPairTestAllocation {
     TZrSize size;
 } SZrHashPairTestAllocation;
 
+/* 自定义 allocator 只观察 HASH_PAIR，核对独立 pair 和池内 pair 的
+ * 释放责任；其他 flag 仍委托测试运行时原 allocator。 */
 static SZrState *g_removalState;
 static FZrAllocator g_removalAllocator;
 static SZrHashPairTestAllocation g_pairAllocations[8];
@@ -46,6 +48,8 @@ static TZrPtr hash_pair_test_allocator(TZrPtr userData, TZrPtr pointer,
 
 void setUp(void) {}
 
+/* removal 用例将 allocator 临时替换在 global 上，先恢复原指针再销毁 VM；
+ * Unity 断言失败时也通过此入口收回测试状态。 */
 void tearDown(void) {
     if (g_removalState != ZR_NULL) {
         g_removalState->global->allocator = g_removalAllocator;
@@ -59,7 +63,7 @@ static void assert_hash_set_removal_allocation_contract(TZrUInt32 standaloneCoun
     const TZrInt64 keys[] = {0, 8, 16};
     const TZrUInt32 removalOrder[] = {1u, 0u, 2u};
     TZrUInt32 standaloneFrees = 0u;
-
+    /* BUG: 栈上 set 持有 Init/Add/EnsurePairPool 的原生分配；断言失败跳过 Deconstruct，tearDown 拿不到 set 而泄漏。 */
     g_removalState = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_removalState);
     g_removalAllocator = g_removalState->global->allocator;
@@ -76,6 +80,7 @@ static void assert_hash_set_removal_allocation_contract(TZrUInt32 standaloneCoun
         SZrTypeValue key;
         SZrHashKeyValuePair *pair;
         ZrCore_Value_InitAsInt(g_removalState, &key, keys[index]);
+        /* 直接 Add 产生独立 pair，池路径模拟保留容量供增长复用。 */
         if (index < standaloneCount) {
             pair = ZrCore_HashSet_Add(g_removalState, &set, &key);
         } else {
@@ -126,6 +131,8 @@ static void test_hash_set_remove_handles_mixed_pool_and_standalone_pairs(void) {
 }
 
 static void test_hash_set_dense_growth_uses_full_bucket_capacity_as_append_threshold(void) {
+    /* BUG: 本用例使用局部 state 而非 g_removalState；一旦断言失败，
+     * tearDown 不会销毁该 VM，也不会 Deconstruct 局部 hash set。 */
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrHashSet set;
 
@@ -145,6 +152,8 @@ static void test_hash_set_dense_growth_uses_full_bucket_capacity_as_append_thres
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* TODO: CMake 当前只构建此目标，仓库内未见 CTest/suite 引用；
+ * 核查 CI 是否单独执行，若无则接入常规测试入口。 */
 int main(void) {
     UNITY_BEGIN();
 

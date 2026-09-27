@@ -9,10 +9,15 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/value.h"
 
+/* 这些用例从 Unity main 进入核心 GC API，模拟 AOT 生成代码登记
+ * 非 VM 栈根的生命周期；map 和 frame 都由调用栈持有，必须先 pop 再退出。 */
 void setUp(void) {}
 
+/* BUG: 各用例在本地创建 state，Unity 断言中断会跳过函数尾的 Destroy，
+ * 空 tearDown 没有兜底，失败用例会泄漏整个 VM。 */
 void tearDown(void) {}
 
+/* map 借用 slot 地址，调用者须保持 slot 活到对应 root frame 弹出。 */
 static SZrAotGcRootMap make_single_slot_root_map(SZrAotGcRootSlot *slot) {
     SZrAotGcRootMap map;
 
@@ -113,6 +118,8 @@ static void test_aot_root_frame_keeps_young_value_above_stack_top_live(void) {
         TEST_ASSERT_TRUE(frameBase < state->stackTail.valuePointer);
         TEST_ASSERT_TRUE(frameBase >= state->stackTop.valuePointer);
 
+        /* 模拟生成代码的临时 frame slot：它在常规 VM stackTop 之外，
+         * 若 AOT root map 未参与扫描，minor GC 会失去这条引用。 */
         collector->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
         ZrCore_Value_InitAsRawObject(state, rootValue, oldObject);
         TEST_ASSERT_TRUE(ZrCore_Gc_AotRootFramePush(state, &rootFrame, frameBase, &map));
@@ -156,6 +163,8 @@ static void test_aot_root_frame_local_address_keeps_young_raw_object_live(void) 
         TEST_ASSERT_NOT_NULL(object);
         TEST_ASSERT_NOT_NULL(localRoot);
 
+        /* LOCAL_ADDRESS 指向 C 局部指针而非 SZrTypeValue；收集器需改写
+         * 该地址中的移动后对象指针。 */
         collector->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
         TEST_ASSERT_TRUE(ZrCore_Gc_AotRootFramePush(state, &rootFrame, rootBase, &map));
 
@@ -232,6 +241,7 @@ static void test_gc_write_barrier_records_old_to_young_value(void) {
     TEST_ASSERT_EQUAL_UINT32(0u, collector->rememberedObjectCount);
     TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, parentRaw));
 
+    /* 用人为设定的代际标记验证写屏障的跨代记忆集契约。 */
     ZrCore_Gc_WriteBarrier(state, parentRaw, &childValue);
 
     TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, parentRaw));
@@ -285,6 +295,8 @@ static void test_gc_native_call_pin_value_marks_and_releases_temporary_pin(void)
     TEST_ASSERT_FALSE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, rawObject));
     TEST_ASSERT_TRUE((rawObject->garbageCollectMark.pinFlags & ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE) == 0u);
 
+    /* 原先已由调用方忽略的对象，unpin 只能撤销本次加的 pin，
+     * 不能替外层调用方撤销原有的 ignore 所有权。 */
     alreadyIgnoredObject = ZrCore_Object_New(state, ZR_NULL);
     TEST_ASSERT_NOT_NULL(alreadyIgnoredObject);
     alreadyIgnoredRawObject = ZR_CAST_RAW_OBJECT_AS_SUPER(alreadyIgnoredObject);

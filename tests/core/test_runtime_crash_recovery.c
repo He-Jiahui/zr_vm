@@ -10,6 +10,8 @@
 
 static volatile int g_survivor_test_ran = 0;
 
+/* 本目标直接模拟 Unity runner 的保护帧，使一次 VM fatal panic
+ * 可以被记为当前用例失败，并让后续用例继续观察诊断。 */
 static void run_crash_guarded_test(UnityTestFunction func, const char *funcName, int funcLineNum) {
     Unity.CurrentTestName = funcName;
     Unity.CurrentTestLineNumber = (UNITY_LINE_TYPE) funcLineNum;
@@ -60,6 +62,9 @@ static void seed_current_exception(SZrState *state) {
 static void test_runtime_crash_recovery_interrupts_current_test(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
 
+    /* BUG: 预期的 panic 从此用例 longjmp 回 runner，跳过下方 State_Destroy；
+     * crash guard 只清除诊断指针，第二个用例运行时该 VM 及 global 仍泄漏。
+     * 证据：unity_crash_guard.c 的 interrupt/capture 与本函数末尾的释放调用。 */
     ZrTests_Unity_ResetLastCrashInfo();
     ZrTests_Unity_ExpectRecoveredCrash();
     TEST_ASSERT_NOT_NULL(state);

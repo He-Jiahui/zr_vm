@@ -2,12 +2,16 @@
 #define ZR_VM_TEST_RESOURCE_CROSS_DOMAIN_TRANSFER_VALUE_COPY_CASES_H
 
 typedef struct ZrInlineValueCopyFixture {
+    /* 显式布局/模式哈希描述此 inline 值；测试必须保持字节表示稳定，
+     * 以区分 schema 漂移和源缓冲区被复用这两类失效。 */
     TZrUInt32 tag;
     TZrUInt64 payload;
     TZrByte suffix[7];
 } ZrInlineValueCopyFixture;
 
 static void test_inline_value_copy_uses_canonical_layout_snapshot(void) {
+    /* Prepare 固化 layout/schema 和源字节，后续源缓冲区清零不应影响
+     * Commit；错误 schema 的一次 Commit 失败后还可用原 layout 重试。 */
     SZrTypeLayout layout;
     SZrTypeLayout driftedLayout;
     SZrDomainTransferContract contract;
@@ -94,6 +98,8 @@ static void test_inline_value_copy_uses_canonical_layout_snapshot(void) {
 }
 
 static void test_inline_value_copy_reports_stale_target_generation(void) {
+    /* 目标状态关闭后，即使另建状态可用，旧 envelope 的目标 generation
+     * 也不能被替代；源 domain 负责最后 Abort。 */
     SZrTypeLayout layout;
     SZrDomainTransferContract contract;
     SZrDomainTransferDiagnostic diagnostic;

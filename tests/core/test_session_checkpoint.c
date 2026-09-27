@@ -8,8 +8,11 @@
 #include "zr_vm_core/value.h"
 
 void setUp(void) {}
+/* BUG: checkpoint_test_state 创建的 global 和 checkpoint 都由用例局部变量
+ * 持有，任何 Unity 断言提前退出都会跳过 Free；空 teardown 无法回收。 */
 void tearDown(void) {}
 
+/* checkpoint API 要求空闲的主线程状态，并依赖已初始化的模块注册表。 */
 static SZrState *checkpoint_test_state(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global = ZrCore_GlobalState_New(
@@ -57,6 +60,8 @@ static void test_checkpoint_restores_cycles_aliases_and_loaded_module_registry(v
     ZrCore_Object_SetValue(state, retained, &selfKey, &retainedValue);
     ZrCore_Object_SetValue(state, retained, &counterKey, &counterValue);
 
+    /* 快照保留对象身份及环/别名，随后同一 registry 的新增项应在 rollback
+     * 后消失；这里直接复用原对象指针以检验原位恢复契约。 */
     TEST_ASSERT_TRUE(ZrCore_SessionCheckpoint_Create(state, &checkpoint));
     TEST_ASSERT_NOT_NULL(checkpoint);
 

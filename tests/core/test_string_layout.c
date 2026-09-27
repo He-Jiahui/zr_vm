@@ -11,8 +11,11 @@
 
 void setUp(void) {}
 
+/* BUG: 三个用例在局部创建 VM，断言提前退出会跳过末尾的 Destroy；
+ * 空 tearDown 无法回收其 global、字符串或模块分配。 */
 void tearDown(void) {}
 
+/* 选择超过短串阈值的输入，验证暴露给 native 调用者的长串指针 ABI 对齐。 */
 static void test_long_string_storage_is_native_pointer_aligned(void) {
     static TZrChar longText[] =
             "this string is deliberately longer than the complete short-string inline payload "
@@ -78,6 +81,8 @@ static void test_module_object_deconstructs_private_exports_and_descriptors(void
     descriptor.isReady = ZR_FALSE;
     TEST_ASSERT_TRUE(ZrCore_Module_RegisterExportDescriptor(state, module, &descriptor));
 
+    /* 模块显式析构要释放私有导出映射和描述符；随后 global shutdown
+     * 仍负责其余 VM 对象，不能重复持有这些 native 缓冲区。 */
     ZrCore_Object_Deconstruct(state, &module->super);
     TEST_ASSERT_FALSE(module->proNodeMap.isValid);
     TEST_ASSERT_NULL(module->exportDescriptors);
@@ -86,6 +91,8 @@ static void test_module_object_deconstructs_private_exports_and_descriptors(void
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* TODO: CMake 当前只构建此目标，仓库内未见 CTest/suite 引用；
+ * 核查 CI 是否单独执行，若无则接入常规测试入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_long_string_storage_is_native_pointer_aligned);

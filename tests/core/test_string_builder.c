@@ -9,8 +9,11 @@
 
 void setUp(void) {}
 
+/* BUG: 用例各自持有 state/builder，断言跳转会跳过 Dispose/Destroy；
+ * 空 tearDown 不会释放 native builder 缓冲区或 VM。 */
 void tearDown(void) {}
 
+/* 字节长度而非 C 字符串结束符决定 Freeze 输出，覆盖嵌入 NUL/UTF-8。 */
 static void test_builder_appends_binary_fragments_and_freezes_exact_bytes(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrStringBuilder builder;
@@ -98,6 +101,7 @@ static void test_builder_append_string_copies_before_gc_move(void) {
     TEST_ASSERT_NOT_NULL(source);
     TEST_ASSERT_TRUE(ZrCore_StringBuilder_Init(state, &builder, 0u));
     TEST_ASSERT_TRUE(ZrCore_StringBuilder_AppendString(&builder, source));
+    /* AppendString 应先将源字节复制到 native builder；源对象随后可移动。 */
     ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
     result = ZrCore_StringBuilder_Freeze(&builder);
     TEST_ASSERT_NOT_NULL(result);

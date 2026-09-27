@@ -27,6 +27,7 @@ typedef _Atomic int ZrTestAtomic;
 #endif
 
 typedef struct ZrMutatorWorkerContext {
+    /* state 借用 ownerState->global；线程退出并 detach 前 ownerState 不可销毁。 */
     SZrState state;
     ZrTestAtomic ready;
     ZrTestAtomic failed;
@@ -95,6 +96,8 @@ static void test_sleep_ms(TZrUInt32 milliseconds) {
 }
 
 static void test_wait_ready(ZrMutatorWorkerContext *context) {
+    /* BUG: ready 超时直接 Unity longjmp，调用者已启动的线程仍引用栈上
+     * context；随后 tearDown 销毁 global 会使该线程访问悬空状态。 */
     TZrUInt32 attempts = 0u;
     while (!test_atomic_load(&context->ready) && attempts < 2000u) {
         test_sleep_ms(1u);
@@ -104,6 +107,8 @@ static void test_wait_ready(ZrMutatorWorkerContext *context) {
 }
 
 static void mutator_worker_run(ZrMutatorWorkerContext *context) {
+    /* 工作线程先登记为 domain mutator，再按 native mode 报告是否可停顿；
+     * stop 后必须 Leave，主线程才可 join、detach 并销毁 global。 */
     if (!ZrCore_GcDomain_MutatorEnter(&context->state)) {
         test_atomic_store(&context->failed, 1);
         test_atomic_store(&context->ready, 1);
@@ -193,6 +198,8 @@ static void worker_context_stop(
     test_atomic_store(&context->stop, 1);
     ZrCore_GcDomain_WakeMutators(&context->state);
     test_thread_join(thread);
+    /* BUG: failed 断言中断时跳过下方 MutatorDetach，注册表仍指向本函数
+     * 调用者的栈上 state；Unity tearDown 随后会销毁对应 global。 */
     TEST_ASSERT_FALSE(test_atomic_load(&context->failed));
     ZrCore_GcDomain_MutatorDetach(&context->state);
 }
@@ -232,6 +239,8 @@ void tearDown(void) {
 }
 
 static void test_domain_local_pause_parks_only_current_domain_mutators(void) {
+    /* 两个独立 global 分别拥有一个 worker；暂停只应改变本 domain 的
+     * safepoint 状态，另一 domain 的进度继续前进。 */
     SZrState *otherState = ZrTests_Runtime_State_Create(ZR_NULL);
     ZrMutatorWorkerContext localWorker;
     ZrMutatorWorkerContext otherWorker;
@@ -252,6 +261,8 @@ static void test_domain_local_pause_parks_only_current_domain_mutators(void) {
 
     memset(&diagnostic, 0, sizeof(diagnostic));
     TEST_ASSERT_TRUE(ZrCore_GcDomain_StopTheWorldBegin(g_state, 1000u, &diagnostic));
+    /* BUG: 暂停成功后到 StopTheWorldEnd 之前的断言若 longjmp，两个
+     * worker 仍借用栈上 context，当前 domain 也保持 pauseRequested。 */
     TEST_ASSERT_FALSE(diagnostic.timedOut);
     ZrCore_GcDomain_GetMutatorSnapshot(g_state, &snapshot);
     TEST_ASSERT_TRUE(snapshot.pauseRequested);
@@ -305,6 +316,8 @@ static void test_blocking_detached_native_does_not_block_domain_pause(void) {
     memset(&diagnostic, 0, sizeof(diagnostic));
     TEST_ASSERT_TRUE(ZrCore_GcDomain_StopTheWorldBegin(g_state, 100u, &diagnostic));
     ZrCore_GcDomain_GetMutatorSnapshot(g_state, &snapshot);
+    /* BUG: 此处失败会跳过 StopTheWorldEnd 和 worker_context_stop，
+     * 测试线程可能在 global 销毁后继续使用借来的 state。 */
     TEST_ASSERT_EQUAL_UINT32(1u, snapshot.blockingDetachedMutatorCount);
     TEST_ASSERT_EQUAL_UINT32(0u, snapshot.parkedMutatorCount);
     ZrCore_GcDomain_StopTheWorldEnd(g_state);
@@ -327,6 +340,8 @@ static void test_mutator_registry_tracks_attach_detach_and_pause_epoch(void) {
 
     TEST_ASSERT_TRUE(ZrCore_GcDomain_StopTheWorldBegin(g_state, 1000u, ZR_NULL));
     ZrCore_GcDomain_GetMutatorSnapshot(g_state, &paused);
+    /* BUG: 断言位于 StopTheWorldEnd 与 worker join 前，失败时该
+     * domain 暂停及线程登记都不会被撤销。 */
     TEST_ASSERT_TRUE(paused.safepointEpoch > before.safepointEpoch);
     TEST_ASSERT_EQUAL_UINT32(1u, paused.parkedMutatorCount);
     ZrCore_GcDomain_StopTheWorldEnd(g_state);
@@ -338,6 +353,8 @@ static void test_mutator_registry_tracks_attach_detach_and_pause_epoch(void) {
 }
 
 static void test_registered_mutator_publishes_vm_and_aot_roots(void) {
+    /* 手工构造的次 mutator 同时持有异常槽和 AOT frame 槽，覆盖
+     * domain collector 扫描登记线程时的两类 root 发布入口。 */
     ZrMutatorWorkerContext mutator;
     SZrGarbageCollector *collector = g_state->global->garbageCollector;
     SZrObject *vmObject = create_plain_object();
@@ -492,6 +509,8 @@ static void test_nested_vm_enter_parks_at_active_pause_boundary(void) {
         ZrCore_GcDomain_GetMutatorSnapshot(g_state, &paused);
         ZrCore_GcDomain_StopTheWorldEnd(g_state);
     }
+    /* BUG: 若 StopTheWorldBegin 失败或 nested enter 没有报告 progress，
+     * 此循环无上限且位于 stop/join 之前，CTest 会一直卡住。 */
     while (test_atomic_load(&worker.progress) == 0) {
         test_sleep_ms(1u);
     }
@@ -507,6 +526,8 @@ static void test_native_critical_scope_cannot_collect_its_own_domain(void) {
     TEST_ASSERT_TRUE(ZrCore_GcDomain_NativeEnter(
             g_state, ZR_GC_NATIVE_SAFEPOINT_MODE_NO_SAFEPOINT_CRITICAL));
     memset(&diagnostic, 0, sizeof(diagnostic));
+    /* BUG: 以下断言若失败会跳过 NativeLeave，tearDown 会在主线程
+     * 仍登记为 no-safepoint 临界状态时销毁本次用例的 global。 */
     TEST_ASSERT_FALSE(ZrCore_GcDomain_StopTheWorldBegin(
             g_state, 20u, &diagnostic));
     TEST_ASSERT_TRUE(diagnostic.timedOut);
@@ -519,6 +540,8 @@ static void test_native_critical_scope_cannot_collect_its_own_domain(void) {
 }
 
 static void test_native_unwind_resets_abandoned_vm_and_native_scopes(void) {
+    /* TryRun 的异常跨过匹配的 Leave，运行时 unwind 必须清除两层
+     * mutator/native 状态，否则后续 safepoint 会把主线程当作阻塞者。 */
     ZrMutatorUnwindContext context;
     SZrGcDomainMutatorSnapshot afterUnwind;
     EZrThreadStatus status;
@@ -537,6 +560,8 @@ static void test_native_unwind_resets_abandoned_vm_and_native_scopes(void) {
     ZrCore_GcDomain_MutatorLeave(g_state);
 }
 
+/* TODO: CMake 当前只构建此目标，仓库内未见 CTest/suite 引用；
+ * 核查 CI 是否单独执行，若无则接入常规测试入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_domain_local_pause_parks_only_current_domain_mutators);

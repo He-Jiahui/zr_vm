@@ -13,6 +13,8 @@
 #include "zr_vm_core/string.h"
 
 typedef struct ZrTransferProviderContext {
+    /* provider 回调通过 userData 借用此栈上配置；envelope 只快照
+     * provider 描述符，不延长 userData 的生命周期。 */
     TZrUInt32 prepareCount;
     TZrUInt32 commitCount;
     TZrUInt32 abortCount;
@@ -89,6 +91,8 @@ static EZrDomainTransferStatus transfer_provider_prepare(
     }
     memset(outToken, 0, sizeof(*outToken));
     outToken->words[0] = UINT64_C(0xc0decafe);
+    /* resource move 的成功 prepare 消耗源 unique 值；immutable handle
+     * 分支保留 source，供多目标读取。 */
     if (context->consumeSource) {
         ZrCore_Ownership_ReleaseValue(sourceState, source);
     }
@@ -110,6 +114,8 @@ static EZrDomainTransferStatus transfer_provider_commit(
         context->snapshotDuringCommitCount++;
         context->snapshotDuringCommitState = snapshot.state;
     }
+    /* 故意允许回调先生成 target 再报错，验证 core 的失败路径会清理
+     * 半成品对象，并让 envelope 后续 Abort 处理 provider token。 */
     if (context->constructTargetBeforeFailure) {
         init_resource_unique(targetState, target, ZR_TRUE);
     }
@@ -171,6 +177,8 @@ static SZrDomainTransferContract make_contract(
     contract.kind = kind;
     contract.schemaVersion = 1u;
     contract.schemaHash = UINT64_C(0x1122334455667788);
+    /* 所有场景均要求失败时清理转移 payload；quota 限制供 clone
+     * 负向测试单独收紧，不是 provider 回调本身的限制。 */
     contract.flags = ZR_DOMAIN_TRANSFER_FLAG_DROP_ON_FAILURE;
     contract.quota.maxObjects = 16u;
     contract.quota.maxBytes = 4096u;
@@ -237,6 +245,8 @@ static const SZrTypeValue *object_get_member(
 }
 
 void setUp(void) {
+    /* 每个用例使用两个独立 GC domain，避免把同域所有权转交误当作
+     * 跨域序列化；目标先销毁、源后销毁。 */
     g_source_state = ZrTests_Runtime_State_Create(ZR_NULL);
     g_target_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_source_state);
@@ -245,6 +255,8 @@ void setUp(void) {
 }
 
 void tearDown(void) {
+    /* BUG: 用例在 Prepare 后的任一断言若跳转到这里，envelope 的原生
+     * 分配未被记录到 fixture，销毁两个 VM 也不会执行其显式 Free。 */
     if (g_target_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_target_state);
         g_target_state = ZR_NULL;
@@ -317,6 +329,8 @@ static void test_forbidden_and_gc_value_copy_are_rejected_before_publish(void) {
 }
 
 static void test_structured_clone_preserves_alias_and_cycle_without_source_edges(void) {
+    /* graph prepare 后 envelope 不应保留源对象 GC 边；decode 重建
+     * 新 domain 内的别名与回环，而不是复用源地址。 */
     SZrDomainTransferContract contract = make_contract(
             ZR_DOMAIN_TRANSFER_KIND_STRUCTURED_CLONE, ZR_NULL);
     SZrDomainTransferDiagnostic diagnostic;
@@ -441,6 +455,8 @@ static void assert_resource_move_commit_failure_aborts_exactly_once(
     TEST_ASSERT_TRUE(ZrCore_OwnershipTransfer_Claim(
             envelope, g_target_state, 17u, 19u));
     ZrCore_Value_ResetAsNull(&target);
+    /* Commit 的失败不直接终结 claimed envelope；调用方仍必须 Abort，
+     * provider token 的 abort 回调只应执行一次。 */
     TEST_ASSERT_FALSE(ZrCore_OwnershipTransfer_CommitCrossDomain(
             envelope, g_target_state, 17u, 19u, &target, &diagnostic));
     TEST_ASSERT_EQUAL_INT(expectedStatus, diagnostic.status);
@@ -750,6 +766,8 @@ static void test_structured_clone_decode_failure_is_abortable_without_target(voi
 }
 
 static void test_target_domain_shutdown_aborts_resource_token_from_source(void) {
+    /* 目标 domain 消失后同 id 之外的新状态不得 Claim；未认领 token
+     * 仍由源侧调用 Abort 完成清理。 */
     ZrTransferProviderContext context;
     SZrDomainTransferProvider provider;
     SZrDomainTransferContract contract;
@@ -786,6 +804,8 @@ static void test_target_domain_shutdown_aborts_resource_token_from_source(void) 
 }
 
 static void test_claimed_domain_shutdown_aborts_resource_token_from_target(void) {
+    /* 已 Claim 的 token 要在销毁目标状态前用原 worker/epoch 从目标侧
+     * Abort；Free envelope 不能再次运行 provider abort。 */
     ZrTransferProviderContext context;
     SZrDomainTransferProvider provider;
     SZrDomainTransferContract contract;
@@ -899,6 +919,8 @@ static void test_transfer_telemetry_is_attributed_to_source_and_target_domains(v
 #include "test_resource_cross_domain_transfer_value_copy_cases.h"
 #include "test_resource_cross_domain_transfer_review_cases.h"
 
+/* TODO: CMake 当前只构建此目标，仓库内未见 CTest/suite 引用；
+ * 核查 CI 是否单独执行，若无则接入常规测试入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_value_copy_cross_domain_roundtrips_without_moving_source);

@@ -41,6 +41,8 @@ typedef enum EZrCrossTransferRaceOperation {
 } EZrCrossTransferRaceOperation;
 
 typedef struct ZrCrossTransferRaceContext {
+    /* 各 worker 仅借用 envelope、domain state 和主线程原子开关；
+     * 结果在 join 后读取，envelope 必须最后 Free。 */
     SZrOwnershipTransferEnvelope *envelope;
     SZrState *state;
     SZrTypeValue *target;
@@ -260,6 +262,8 @@ static void cross_transfer_test_yield(void) {
 }
 
 static void cross_transfer_race_run(ZrCrossTransferRaceContext *context) {
+    /* 统一入口把 publish/claim/commit/abort 放在同一 release/acquire
+     * 起跑线，用终态与 provider 计数检验线性化边界。 */
     SZrDomainTransferDiagnostic diagnostic;
 
     while (!cross_transfer_test_atomic_load(context->start)) {
@@ -328,6 +332,8 @@ static ZrCrossTransferTestThread cross_transfer_thread_start(
         ZrCrossTransferRaceContext *context) {
     ZrCrossTransferTestThread thread;
 
+    /* BUG: 第二次 pthread_create 若失败，断言中断发生在 start 发布前；
+     * 已启动的第一线程持续读取栈上 start/context，且没有 join 入口。 */
     TEST_ASSERT_EQUAL_INT(
             0,
             pthread_create(
@@ -349,6 +355,8 @@ void setUp(void) {
 }
 
 void tearDown(void) {
+    /* BUG: worker join 后、envelope Free 前的断言若中断，只销毁
+     * 两个 VM，已分配的 envelope 没有兜底释放路径。 */
     if (g_target_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_target_state);
         g_target_state = ZR_NULL;
@@ -450,6 +458,8 @@ static void test_queued_claim_and_abort_have_one_winner(void) {
 }
 
 static void test_claimed_commit_and_abort_have_one_terminal_owner(void) {
+    /* 对同一 claimed resource 同时执行 Commit/Abort，胜方唯一取得
+     * payload；Commit 成功后由 target 负责 Release。 */
     ZrRaceProviderContext providerContext = {0};
     SZrDomainTransferProvider provider = make_provider(&providerContext);
     SZrDomainTransferContract contract = make_resource_contract(&provider);
@@ -509,6 +519,8 @@ static void test_claimed_commit_and_abort_have_one_terminal_owner(void) {
 }
 
 static void test_immutable_handle_commits_concurrently_without_consuming_source(void) {
+    /* 两个独立目标共用同一 immutable provider 描述，但各自持有 envelope；
+     * 并发 Commit 只能消费各自 token，不能清空源值。 */
     SZrState *secondTargetState = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrDomainTransferProvider provider;
     SZrDomainTransferContract contract = make_immutable_contract(&provider);
@@ -586,6 +598,8 @@ static void test_immutable_handle_commits_concurrently_without_consuming_source(
 }
 
 static void test_release_publish_acquire_claim_litmus_never_observes_partial_value(void) {
+    /* 发布线程与 Claim 线程循环竞争，验证 release/acquire 交接后
+     * payload 和状态同时可见；有界重试避免负向回归无限等待。 */
     SZrDomainTransferContract contract = make_value_copy_contract();
     SZrDomainTransferDiagnostic diagnostic;
 
@@ -639,6 +653,8 @@ static void test_release_publish_acquire_claim_litmus_never_observes_partial_val
     }
 }
 
+/* TODO: CMake 当前只构建此目标，仓库内未见 CTest/suite 引用；
+ * 核查 CI 是否单独执行，若无则接入常规测试入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_prepared_publish_and_abort_are_linearized);
