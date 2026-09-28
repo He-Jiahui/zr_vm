@@ -1,16 +1,22 @@
 ---
 related_code:
+  - zr_vm_core/include/zr_vm_core/closure.h
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_core/include/zr_vm_core/ownership.h
   - zr_vm_core/src/zr_vm_core/closure.c
+  - zr_vm_core/src/zr_vm_core/closure_close_proxy_token.c
+  - zr_vm_core/src/zr_vm_core/closure_close_proxy_token.h
   - zr_vm_core/src/zr_vm_core/execution/execution_control.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/ownership_shared.c
   - zr_vm_library/include/zr_vm_library/aot_runtime.h
   - zr_vm_library/src/zr_vm_library/aot_runtime.c
 implementation_files:
+  - zr_vm_core/include/zr_vm_core/closure.h
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_core/src/zr_vm_core/closure.c
+  - zr_vm_core/src/zr_vm_core/closure_close_proxy_token.c
+  - zr_vm_core/src/zr_vm_core/closure_close_proxy_token.h
   - zr_vm_core/src/zr_vm_core/execution/execution_control.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/ownership_shared.c
@@ -19,6 +25,8 @@ plan_sources:
   - user: 2026-07-19 按 docs/plans/syntax 严格执行并逐里程碑提交
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
 tests:
+  - tests/core/test_close_proxy.c
+  - tests/cmake/close-proxy-tests.cmake
   - tests/parser/test_buffer_pool_ffi.c
   - tests/parser/test_resource_shared_weak.c
   - tests/core/test_type_layout_inline_copy.c
@@ -98,6 +106,42 @@ ordinary objects, resources, loans, Shared/Weak controls, overwritten physical
 slots, and pre-close stack relocation all converge on one release without a
 stale alias or duplicate Drop.
 
+## Close proxies for an existing local
+
+An inner `using(existingLocal)` must add a cleanup registration above the current
+to-be-closed marker, even when the local already has an outer registration. The
+core API `ZrCore_Closure_MarkCloseProxy(state, proxySlot, sourceSlot)` registers
+an empty, rooted high stack slot while retaining the original dense local as the
+source. It fails without changing the close chain if the proxy slot is occupied,
+is below the source or current marker, or lies outside the active stack. The
+source may have an outer marker or no marker. A body-free `using existingLocal;`
+in a nested lexical scope has the same need for a high registration.
+
+The proxy slot contains a private, GC-scanned NativeData token with byte offsets
+for the source and proxy slots relative to the stack base. Offsets survive stack
+relocation. A file-private address identifies the token only inside the live
+process; neither that address nor the NativeData representation is part of the
+bytecode or artifact ABI. A token copied to another stack slot fails its slot
+identity check. The private token functions live in `closure_close_proxy_token.c`
+so `closure.c` retains ownership of the close chain and callback protocol.
+
+At close, the VM moves the source value into the rooted high slot, clears the
+source and any distinct VM frame-layout physical mirror, and then invokes its
+close meta or ownership release. A callback that grows the stack or throws
+therefore sees the original local as null. The close receiver is copied into
+scratch before the high slot is reset, so it remains rooted for the callback.
+When dense and physical cells both retain an ownership control, the redundant
+mirror reference is released once; a direct owner alias is only tombstoned to
+avoid duplicate Drop. Ordinary legacy close registrations retain their existing
+physical-mirror lookup behavior; only proxy lookup requires an active VM frame
+to avoid interpreting an inactive native call-info layout.
+
+The proxy occupies one node in the existing marker chain. Normal scope exit
+consumes that node through `CLOSE_SCOPE(1)`; exception unwind closes it above the
+handler checkpoint before catch. Older markers remain linked, and their source
+is already null when later popped. Nested proxies see a null source after the
+first close and are inert.
+
 ## Generated-call exception transfer
 
 AOT C and LLVM calls complete through resume-aware runtime boundaries. A normal
@@ -109,6 +153,15 @@ This keeps nested direct/meta-call cleanup on the same exception-scope contract
 as interpreter execution.
 
 ## Verification
+
+`zr_vm_close_proxy_core_test` exercises 12 focused cases: one close with an older
+marker, an unmarked source, exceptional close and handler boundary, nested
+proxies, distinct dense/physical mirrors, full GC with an active token and during
+the close callback, registration order rejection, AOT-like physical marker
+ordering, a stale native-frame layout, copied-token rejection, and both retained
+control and direct-owner mirror aliases. `zr_vm_type_layout_inline_copy_test`
+protects the legacy physical-mirror path; `zr_vm_native_closure_value_test`
+protects native closure metadata handling.
 
 `zr_vm_buffer_pool_ffi_test` throws from inside `using(lease)`, catches outside,
 then rents the same size again. The expected generation and return/reuse counters

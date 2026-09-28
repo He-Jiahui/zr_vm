@@ -113,6 +113,14 @@ ZR_CORE_API TZrBool ZrCore_Closure_HasOpenStackValueInRange(const struct SZrStat
 /** @brief 将具备所有权清理或 CLOSE 元方法的栈槽登记为待关闭值。 */
 ZR_CORE_API void ZrCore_Closure_ToBeClosedValueClosureNew(struct SZrState *state, TZrStackValuePointer stackPointer);
 
+/** @brief Register a higher cleanup proxy for an existing local without copying its resource.
+ * @pre proxySlot is an empty rooted frame slot above both sourceSlot and the current close marker.
+ * @note sourceSlot is the dense logical local; frame-layout physical mirrors are resolved at close time.
+ * @return false when the slots are invalid or proxy allocation fails; the close chain is then unchanged. */
+ZR_CORE_API TZrBool ZrCore_Closure_MarkCloseProxy(struct SZrState *state,
+                                                 TZrStackValuePointer proxySlot,
+                                                 TZrStackValuePointer sourceSlot);
+
 /** @brief 从开放捕获链表摘除单元；调用方随后必须完成值的关闭转移。 */
 ZR_CORE_API void ZrCore_Closure_UnlinkValue(SZrClosureValue *closureValue);
 

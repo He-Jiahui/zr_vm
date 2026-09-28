@@ -3,6 +3,8 @@
 //
 #include "zr_vm_core/closure.h"
 
+#include "closure_close_proxy_token.h"
+
 #include "zr_vm_core/conversion.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
@@ -123,7 +125,8 @@ static TZrStackValuePointer closure_value_pointer_for_frame_slot(SZrState *state
 /* 定位待关闭登记槽对应的物理 owner，避免镜像值与物理值重复释放。 */
 static SZrTypeValue *closure_registered_mirror_frame_value(
         SZrState *state,
-        TZrStackValuePointer registeredPointer) {
+        TZrStackValuePointer registeredPointer,
+        TZrBool vmFramesOnly) {
     SZrCallInfo *callInfo;
 
     if (state == ZR_NULL || registeredPointer == ZR_NULL) {
@@ -136,7 +139,8 @@ static SZrTypeValue *closure_registered_mirror_frame_value(
         TZrStackValuePointer physicalPointer;
         TZrSize stackSlot;
 
-        if (callInfo->functionBase.valuePointer == ZR_NULL) {
+        if (callInfo->functionBase.valuePointer == ZR_NULL ||
+            (vmFramesOnly && !ZR_CALL_INFO_IS_VM(callInfo))) {
             continue;
         }
         function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
@@ -460,6 +464,11 @@ void ZrCore_Closure_PropagateEscapeFromObject(SZrState *state,
 /* 待关闭登记接受所有权值，其他值需要具备 CLOSE 元方法。 */
 static TZrBool closure_value_check_close_meta(struct SZrState *state, TZrStackValuePointer stackPointer) {
     SZrTypeValue *stackValue = ZrCore_Stack_GetValue(stackPointer);
+    TZrMemoryOffset ignoredSourceOffset;
+
+    if (ZrCore_ClosureProxyToken_GetSourceOffset(state, stackPointer, &ignoredSourceOffset)) {
+        return ZR_TRUE;
+    }
     if (stackValue != ZR_NULL &&
         (stackValue->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_UNIQUE ||
          stackValue->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_SHARED ||
@@ -476,14 +485,17 @@ static TZrBool closure_value_check_close_meta(struct SZrState *state, TZrStackVa
 static void closure_value_call_close_meta(SZrState *state,
                                           TZrStackPointer stackPointer,
                                           EZrThreadStatus errorStatus,
-                                          TZrBool isYield) {
+                                          TZrBool isYield,
+                                          TZrBool consumeStagedReceiver) {
     TZrStackPointer top = state->stackTop;
     SZrCallInfo *callInfo = state->callInfoList;
     TZrMemoryOffset valueOffset = ZrCore_Stack_SavePointerAsOffset(
             state, stackPointer.valuePointer);
     SZrTypeValue *registeredValue = &stackPointer.valuePointer->value;
-    SZrTypeValue *physicalValue = closure_registered_mirror_frame_value(
-            state, stackPointer.valuePointer);
+    SZrTypeValue *physicalValue = consumeStagedReceiver
+                                          ? ZR_NULL
+                                          : closure_registered_mirror_frame_value(
+                                                    state, stackPointer.valuePointer, ZR_FALSE);
     TZrBool hasDistinctPhysicalValue =
             (TZrBool)(physicalValue != ZR_NULL &&
                       physicalValue != registeredValue &&
@@ -514,8 +526,14 @@ static void closure_value_call_close_meta(SZrState *state,
         ZrCore_Ownership_ReleaseValue(state, registeredValue);
         return;
     }
+    if (ZR_VALUE_IS_TYPE_NULL(value->type)) {
+        return;
+    }
     const SZrMeta *meta = ZrCore_Value_GetMeta(state, value, ZR_META_CLOSE);
     if (meta == ZR_NULL || meta->function == ZR_NULL) {
+        if (consumeStagedReceiver) {
+            ZrCore_Value_ResetAsNullNoProfile(value);
+        }
         return;
     }
     top.valuePointer = ZrCore_Function_ReserveScratchSlots(state, 3, top.valuePointer);
@@ -523,6 +541,10 @@ static void closure_value_call_close_meta(SZrState *state,
     value = ZrCore_Stack_GetValue(stackPointer.valuePointer);
     ZrCore_Stack_SetRawObjectValue(state, top.valuePointer, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
     ZrCore_Stack_CopyValue(state, top.valuePointer + 1, value);
+    if (consumeStagedReceiver) {
+        stackPointer.valuePointer = ZrCore_Stack_LoadOffsetToPointer(state, valueOffset);
+        ZrCore_Value_ResetAsNullNoProfile(ZrCore_Stack_GetValueNoProfile(stackPointer.valuePointer));
+    }
     if (errorStatus == ZR_THREAD_STATUS_INVALID) {
         ZrCore_Stack_CopyValue(state, top.valuePointer + 2, &state->global->nullValue);
     } else {
@@ -540,9 +562,56 @@ static void closure_value_call_close_meta(SZrState *state,
 }
 
 /* 待关闭链表只需转发到统一的元方法与所有权清理路径。 */
+/* Consume the logical local and physical mirror before any close callback can re-enter. */
+static void closure_value_close_proxy(SZrState *state,
+                                      TZrStackPointer proxyPointer,
+                                      TZrMemoryOffset sourceOffset,
+                                      EZrThreadStatus errorStatus,
+                                      TZrBool isYield) {
+    TZrMemoryOffset proxyOffset = ZrCore_Stack_SavePointerAsOffset(state, proxyPointer.valuePointer);
+    TZrStackValuePointer sourcePointer = ZrCore_Stack_LoadOffsetToPointer(state, sourceOffset);
+    SZrTypeValue *source = ZrCore_Stack_GetValueNoProfile(sourcePointer);
+    SZrTypeValue *mirror = closure_registered_mirror_frame_value(state, sourcePointer, ZR_TRUE);
+    TZrBool distinctMirror = (TZrBool)(mirror != ZR_NULL && mirror != source &&
+                                      !ZrCore_Value_SlotsOverlapNoProfile(mirror, source));
+    SZrTypeValue *chosen = source;
+    SZrTypeValue *other;
+    SZrTypeValue *staged = ZrCore_Stack_GetValueNoProfile(proxyPointer.valuePointer);
+
+    if (ZR_VALUE_IS_TYPE_NULL(source->type) && distinctMirror &&
+        !ZR_VALUE_IS_TYPE_NULL(mirror->type)) {
+        chosen = mirror;
+    }
+    if (ZR_VALUE_IS_TYPE_NULL(chosen->type)) {
+        ZrCore_Value_ResetAsNullNoProfile(staged);
+        return;
+    }
+    *staged = *chosen;
+    ZrCore_Value_ResetAsNullNoProfile(chosen);
+    other = distinctMirror ? (chosen == source ? mirror : source) : ZR_NULL;
+    if (other != ZR_NULL && !ZR_VALUE_IS_TYPE_NULL(other->type)) {
+        if (closure_value_is_ownership_cleanup_value(other) &&
+            !(closure_value_is_direct_owner_alias(other) &&
+              closure_value_is_direct_owner_alias(staged) &&
+              other->value.object == staged->value.object)) {
+            ZrCore_Ownership_ReleaseValue(state, other);
+        } else {
+            ZrCore_Value_ResetAsNullNoProfile(other);
+        }
+    }
+    proxyPointer.valuePointer = ZrCore_Stack_LoadOffsetToPointer(state, proxyOffset);
+    closure_value_call_close_meta(state, proxyPointer, errorStatus, isYield, ZR_TRUE);
+}
+
 static void closure_value_pre_call_close_meta(SZrState *state, TZrStackPointer stackPointer, EZrThreadStatus errorStatus,
-                                           TZrBool isYield) {
-    closure_value_call_close_meta(state, stackPointer, errorStatus, isYield);
+                                            TZrBool isYield) {
+    TZrMemoryOffset sourceOffset;
+
+    if (ZrCore_ClosureProxyToken_GetSourceOffset(state, stackPointer.valuePointer, &sourceOffset)) {
+        closure_value_close_proxy(state, stackPointer, sourceOffset, errorStatus, isYield);
+        return;
+    }
+    closure_value_call_close_meta(state, stackPointer, errorStatus, isYield, ZR_FALSE);
 }
 
 
@@ -563,6 +632,36 @@ void ZrCore_Closure_ToBeClosedValueClosureNew(struct SZrState *state, TZrStackVa
     }
     stackPointer->toBeClosedValueOffset = ZR_CAST(TZrUInt32, stackPointer - state->toBeClosedValueList.valuePointer);
     state->toBeClosedValueList.valuePointer = stackPointer;
+}
+
+TZrBool ZrCore_Closure_MarkCloseProxy(struct SZrState *state,
+                                     TZrStackValuePointer proxySlot,
+                                     TZrStackValuePointer sourceSlot) {
+    TZrMemoryOffset proxyOffset;
+
+    if (state == ZR_NULL || state->stackBase.valuePointer == ZR_NULL ||
+        state->toBeClosedValueList.valuePointer == ZR_NULL ||
+        sourceSlot == ZR_NULL || proxySlot == ZR_NULL ||
+        sourceSlot < state->stackBase.valuePointer ||
+        sourceSlot >= state->stackTop.valuePointer ||
+        proxySlot <= sourceSlot ||
+        proxySlot <= state->toBeClosedValueList.valuePointer ||
+        proxySlot >= state->stackTop.valuePointer ||
+        !ZR_VALUE_IS_TYPE_NULL(ZrCore_Stack_GetValueNoProfile(proxySlot)->type)) {
+        return ZR_FALSE;
+    }
+
+    proxyOffset = ZrCore_Stack_SavePointerAsOffset(state, proxySlot);
+    if (!ZrCore_ClosureProxyToken_Install(state, proxySlot, sourceSlot)) {
+        return ZR_FALSE;
+    }
+    proxySlot = ZrCore_Stack_LoadOffsetToPointer(state, proxyOffset);
+    ZrCore_Closure_ToBeClosedValueClosureNew(state, proxySlot);
+    if (state->toBeClosedValueList.valuePointer != proxySlot) {
+        ZrCore_Value_ResetAsNullNoProfile(ZrCore_Stack_GetValueNoProfile(proxySlot));
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
 }
 
 /* 摘链前单元仍指向活栈槽；调用方负责将其转为闭合值。 */
