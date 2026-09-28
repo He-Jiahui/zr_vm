@@ -10,8 +10,10 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server/lsp_uri.h"
 
+/* 单进程累计所有断言失败，由 main 转成 CTest 可观察的退出码。 */
 static int g_failures = 0;
 
+/* 为本文件的 VM 夹具提供原生堆分配；释放仍由全局状态销毁路径驱动。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -28,6 +30,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return pointer == ZR_NULL ? malloc(newSize) : realloc(pointer, newSize);
 }
 
+/* 汇总所有 URI 边界断言，使一个失败不会遮蔽后续独立场景。 */
 static void check(TZrBool condition, const TZrChar *message) {
     if (!condition) {
         printf("FAIL: %s\n", message);
@@ -37,10 +40,12 @@ static void check(TZrBool condition, const TZrChar *message) {
     }
 }
 
+/* 测试字面量以 NUL 终止；这里的 strlen 不构造带原始内嵌 NUL 的 VM 字符串。 */
 static SZrString *test_string(SZrState *state, const TZrChar *text) {
     return text == ZR_NULL ? ZR_NULL : ZrCore_String_Create(state, (TZrNativeString)text, strlen(text));
 }
 
+/* 借用短串或长串的字节视图，仅在当前比较期间使用，不接管 VM 字符串所有权。 */
 static TZrBool string_equals(SZrString *value, const TZrChar *expected) {
     const TZrNativeString text = value == ZR_NULL
                                      ? ZR_NULL
@@ -51,6 +56,7 @@ static TZrBool string_equals(SZrString *value, const TZrChar *expected) {
     return text != ZR_NULL && expected != ZR_NULL && strcmp(text, expected) == 0;
 }
 
+/* 本机绝对路径经字节级百分号编码后仍能回到原路径，覆盖空格、保留字节和 UTF-8。 */
 static void test_file_uri_round_trip(SZrState *state) {
 #ifdef ZR_VM_PLATFORM_IS_WIN
     const TZrChar *path = "C:\\Temp\\space # percent%caf\xC3\xA9.zr";
@@ -68,6 +74,7 @@ static void test_file_uri_round_trip(SZrState *state) {
           "encoded file URI round-trips to the original native path");
 }
 
+/* 磁盘访问边界拒绝虚拟方案、歧义转义和会改变路径分段的 URI 语法。 */
 static void test_file_uri_rejections(SZrState *state) {
     TZrChar nativePath[64];
     SZrString *virtualUri = test_string(state, "vscode-test-web:/workspace/file.zr");
@@ -87,6 +94,9 @@ static void test_file_uri_rejections(SZrState *state) {
           "decompiled URI is never sent to native file access");
     check(!ZrLanguageServer_LspUri_FileToNativePath(badEscape, nativePath, sizeof(nativePath)),
           "invalid percent escape is rejected");
+    /* 以下清零断言只锁定当前实现的失败路径；公开 API 不承诺失败后可读取 buffer。
+     * BUG: 显式长度构造的 file URI 含原始 NUL 时，FileToNativePath 的 strlen 会忽略后缀，
+     * 让合法前缀作为文件路径通过；本组仅覆盖 %00，需补原始 NUL 的直调回归。 */
     check(!ZrLanguageServer_LspUri_FileToNativePath(encodedNul, nativePath, sizeof(nativePath)) &&
                   nativePath[0] == '\0',
           "percent-encoded NUL is rejected and clears the native path");
@@ -105,6 +115,7 @@ static void test_file_uri_rejections(SZrState *state) {
           "bare native path is rejected at the URI boundary");
 }
 
+/* 已编码 URI 的大小写方案与 localhost authority 被接受，解码一次后与规范 URI 同身份。 */
 static void test_preencoded_file_uri(SZrState *state) {
     TZrChar nativePath[256];
 #ifdef ZR_VM_PLATFORM_IS_WIN
@@ -124,8 +135,12 @@ static void test_preencoded_file_uri(SZrState *state) {
           "localhost and canonical file URI normalize to the same native path");
 }
 
+/* 本组 NUL 终止用例检查文件 URI 的词法身份，以及虚拟 URI 的原样比较。 */
 static void test_uri_equivalence(SZrState *state) {
 #ifdef ZR_VM_PLATFORM_IS_WIN
+    /* TODO: 当前只测 ASCII 盘符大小写；需用非 ASCII 文件名核对字节级 tolower 与宿主文件系统的等价关系。 */
+    /* BUG: 当前只测目录内的 ..；file:///C:/../x 与 file:///C:/x 在盘符根同址，
+     * 现有归一化会误删驱动器冒号并把两者判为不同，需补根级上行回归。 */
     SZrString *left = test_string(state, "file:///C:/Temp/dir/../File%20Name.zr");
     SZrString *right = test_string(state, "file:///c:/Temp/File%20Name.zr");
     SZrString *unc = test_string(state, "file://server/share/folder/file.zr");
@@ -137,6 +152,8 @@ static void test_uri_equivalence(SZrState *state) {
     SZrString *virtualA = test_string(state, "vscode-test-web:/workspace/file.zr");
     SZrString *virtualB = test_string(state, "vscode-test-web:/workspace/file.zr");
     SZrString *virtualOther = test_string(state, "zr-decompiled:/workspace/file.zr");
+    /* BUG: Equivalent 用 strcmp 比较 VM 字符串；显式长度构造的虚拟 URI 若 NUL 前缀相同、
+     * 后缀不同，仍会被误判为同一文档；本组 NUL 终止字面量尚未覆盖该缺陷。 */
 
     check(ZrLanguageServer_LspUri_Equivalent(left, right),
           "equivalent file URIs normalize separators and dot segments");
@@ -145,6 +162,7 @@ static void test_uri_equivalence(SZrState *state) {
     check(!ZrLanguageServer_LspUri_Equivalent(virtualA, virtualOther),
           "different virtual URI schemes do not alias");
 #ifdef ZR_VM_PLATFORM_IS_WIN
+    /* UNC 往返另测主机和共享路径，避免普通盘符路径通过而网络文件身份退化。 */
     check(ZrLanguageServer_LspUri_FileToNativePath(unc, nativePath, sizeof(nativePath)) &&
                   strcmp(nativePath, "\\\\server\\share\\folder\\file.zr") == 0,
           "Windows UNC file URI maps to a native UNC path");
@@ -155,6 +173,7 @@ static void test_uri_equivalence(SZrState *state) {
 #endif
 }
 
+/* 目标缓冲区不足时转换须失败；清零检查只验证当前实现，不扩大公开 API 的失败契约。 */
 static void test_native_path_overflow(SZrState *state) {
     SZrString *uri = test_string(state, "file:///tmp/too-long.zr");
     TZrChar tiny[4];
@@ -163,6 +182,7 @@ static void test_native_path_overflow(SZrState *state) {
           "native path conversion rejects a too-small destination buffer");
 }
 
+/* 根 CMake 将本目标纳入 language_server CTest 套件；一次性 VM 夹具承载全部 URI 场景。 */
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 0, &callbacks);
