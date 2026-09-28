@@ -33,6 +33,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_try.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/type_environment_bindings.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_optional.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
@@ -41,6 +42,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c
   - zr_vm_parser/src/zr_vm_parser/type_environment_bindings.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/include/zr_vm_parser/semantic_value_facts.h
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_value_facts.c
   - zr_vm_parser/include/zr_vm_parser/ast.h
@@ -90,6 +92,9 @@ tests:
   - tests/parser/test_ssa_source_value_facts.c
   - tests/acceptance/ssa-value-facts.md
   - tests/parser/test_pre_semantic_ir.c
+  - tests/parser/test_type_inference.c
+  - tests/parser/test_type_inference_dynamic_return.inc
+  - tests/acceptance/dynamic-object-return-inference.md
   - tests/acceptance/ssa-semantic-definition-identity.md
   - tests/parser/test_pre_semantic_ir_foreach_cfg.inc
   - tests/parser/test_pre_semantic_ir_optional_value.inc
@@ -267,6 +272,12 @@ canonical TypeId of its initializer temporary while the source symbol remains
 unresolved. Without a canonical initializer type, no SemanticIR local is
 emitted; the legacy binding survives and source-CFG preflight refuses to
 promote a declaration lacking a matching INITIALIZE.
+Type inference can still resolve a read of that source symbol to its dynamic
+OBJECT value and continue inferring the containing expression, including a
+return expression. The reference fact retains the source SymbolId and an
+invalid TypeId; a successful dynamic inference does not certify a canonical
+SemanticIR load. Active source CFGs still reject loads without the required
+canonical producer.
 Declared callable bodies remain isolated on the legacy execution path. If an
 open generic parameter has a source binding but no closed canonical TypeId,
 its local read retains GET_STACK without inventing a typed SemanticIR place;

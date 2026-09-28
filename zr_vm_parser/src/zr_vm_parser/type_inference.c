@@ -1281,13 +1281,8 @@ TZrBool ZrParser_IdentifierType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
             }
             ZrParser_InferredType_Free(cs->state, &normalizedType);
             type_inference_record_identifier_reference_fact(cs, node, binding);
-            if (cs->semanticContext != ZR_NULL && binding != ZR_NULL &&
-                binding->symbolId != ZR_SEMANTIC_ID_INVALID &&
-                binding->typeId == ZR_SEMANTIC_ID_INVALID &&
-                result->baseType == ZR_VALUE_TYPE_OBJECT &&
-                result->typeName == ZR_NULL && result->elementTypes.length == 0U) {
-                return ZR_FALSE;
-            }
+            /* An unannotated source local may have a runtime value without a
+             * canonical TypeId. Keep its reference fact unresolved. */
             return ZR_TRUE;
         }
 

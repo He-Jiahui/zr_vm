@@ -8648,6 +8648,8 @@ static void test_type_inference_cyclic_import_local_import_outside_entry_path_pa
 }
 
 // 主测试函数
+#include "test_type_inference_dynamic_return.inc"
+
 int main(void) {
     printf("\n");
     TEST_MODULE_DIVIDER();
@@ -8790,6 +8792,7 @@ int main(void) {
     printf("==========\n");
     RUN_TEST(test_type_inference_records_binary_expression_and_numeric_facts);
     RUN_TEST(test_type_inference_binary_expression);
+    RUN_TEST(test_dynamic_object_local_return_expression_keeps_unknown_type_identity);
 
     printf("\n");
     TEST_MODULE_DIVIDER();
