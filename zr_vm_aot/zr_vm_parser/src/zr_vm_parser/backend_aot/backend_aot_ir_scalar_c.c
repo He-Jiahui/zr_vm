@@ -30,10 +30,21 @@ EZrAotIrStatus backend_aot_ir_c_emit_const_i64(
                 diagnostic, ZR_AOT_IR_INVALID_RANGE, functionId, 0u,
                 sizeof(literal), count < 0 ? 0u : (TZrUInt64)count + 1u);
     }
-    count = snprintf(output, capacity,
-                     "#include <stdint.h>\n"
-                     "int64_t zr_aot_scalar_fn_%u(void) {\n"
-                     "    return %s;\n}\n", plan.functionId, literal);
+    if (plan.branchTargetBlockId == 0u) {
+        count = snprintf(output, capacity,
+                         "#include <stdint.h>\n"
+                         "int64_t zr_aot_scalar_fn_%u(void) {\n"
+                         "    return %s;\n}\n", plan.functionId, literal);
+    } else {
+        count = snprintf(output, capacity,
+                         "#include <stdint.h>\n"
+                         "int64_t zr_aot_scalar_fn_%u(void) {\n"
+                         "    goto zr_aot_block_%u;\n"
+                         "zr_aot_block_%u:\n"
+                         "    return %s;\n}\n", plan.functionId,
+                         plan.branchTargetBlockId,
+                         plan.branchTargetBlockId, literal);
+    }
     if (count < 0 || (size_t)count >= capacity) {
         output[0] = '\0';
         return backend_aot_ir_scalar_text_fail(

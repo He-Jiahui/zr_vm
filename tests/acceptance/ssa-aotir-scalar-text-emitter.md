@@ -127,3 +127,114 @@ The standalone constant-i64 emitter slice is accepted. Current source
 its text as an artifact. The 07.02 milestone remains open for control/call,
 exception/GC/ownership, loader, four-backend differential, and artifact
 registration requirements.
+
+## Direct branch extension: RED and fixture
+
+The next independent 07.02 slice extends the same standalone emitter to one
+exact two-block control-flow shape: an entry block with only unconditional
+`BRANCH`, followed by a block with `CONSTANT → RETURN`. The entry successor and
+branch target name the second block; its sole predecessor names the entry
+block. This has no conditional choice, loop, call, side effect, or hidden state.
+The fixture still supplies the hand-made opaque token `17u` and an explicit
+trusted `NOARGS_I64` declaration. The gate does not authenticate that producer
+or prove general CFG dominance; the accepted two-block shape fixes the only
+path to the definition before the return. Production `LowerAot` still declares
+`UNKNOWN`, and the artifact-required adapter remains unavailable.
+
+The test was written before changing the emitter. In
+`D:\tmp\zr_vm\ssa-aot-branch-red-gcc`, direct GCC `-std=c11 -Wall -Wextra
+-Werror` compilation of the fixture, three scalar emitter sources, `aot_ir.c`
+and `exec_ir_state_map_storage.c` succeeded. Running the executable then
+reached the new two-block positive assertion at
+`tests/parser/test_ssa_aot_scalar_text.c:146` and exited 1: the unextended C
+emitter returned a failure instead of `ZR_AOT_IR_OK`. The preceding
+`ZrCore_AotIr_ValidateModule` and `ZrCore_AotIr_RequireExecutableAbi`
+assertions passed. Thus the RED is the missing emission shape, not an invalid
+fixture or failed callable ABI gate.
+
+The new fixture also checks both backends' text and output length for `42` and
+`INT64_MIN`, explicit `UNKNOWN` rejection, too-small output buffers, malformed
+or extra edges, a missing terminator, effects, and an extra NOP. On each
+rejection with a provided buffer and length pointer, it asserts output
+clearing. It writes `branch_42.c`, `branch_min.c`, `branch_42.ll`, and
+`branch_min.ll` only when given a fixture directory, alongside the existing
+`runner.c`. The latter calls `zr_aot_scalar_fn_1()` and checks the returned
+`int64_t`; the generated functions must be compiled and invoked for acceptance.
+
+## Direct branch extension: GCC GREEN and generated calls
+
+After adding the exact two-block shape check and C `goto` / LLVM `br label`
+rendering, direct GCC compilation and fixture execution under
+`D:\tmp\zr_vm\ssa-aot-branch-green-gcc` both exited 0. The command used the
+same six direct source files and four include directories as the prior scalar
+batch, with `-std=c11 -Wall -Wextra -Werror`:
+
+```text
+wsl.exe --exec bash -lc 'cd /mnt/e/Git/zr_vm && gcc -std=c11 -Wall -Wextra -Werror -Izr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot -Izr_vm_parser/include -Izr_vm_core/include -Izr_vm_common/include tests/parser/test_ssa_aot_scalar_text.c zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_text.c zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_c.c zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_llvm.c zr_vm_core/src/zr_vm_core/aot_ir.c zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c -o /mnt/d/tmp/zr_vm/ssa-aot-branch-green-gcc/test_ssa_aot_scalar_text && /mnt/d/tmp/zr_vm/ssa-aot-branch-green-gcc/test_ssa_aot_scalar_text /mnt/d/tmp/zr_vm/ssa-aot-branch-green-gcc'
+```
+
+This GREEN includes all two-block negative assertions and the original
+one-block fixture. The generated functions were then compiled and invoked,
+using the fixture's `runner.c` to compare the actual returned value:
+
+```text
+cd /mnt/d/tmp/zr_vm/ssa-aot-branch-green-gcc
+gcc -std=c11 -Wall -Wextra -Werror branch_42.c runner.c -DEXPECTED=42 -o run_c_42 && ./run_c_42
+gcc -std=c11 -Wall -Wextra -Werror branch_min.c runner.c -DEXPECTED=INT64_MIN -o run_c_min && ./run_c_min
+clang -Wno-override-module -x ir branch_42.ll -x c runner.c -DEXPECTED=42 -o run_llvm_42 && ./run_llvm_42
+clang -Wno-override-module -x ir branch_min.ll -x c runner.c -DEXPECTED=INT64_MIN -o run_llvm_min && ./run_llvm_min
+```
+
+All four generated-code builds and calls exited 0. This is standalone native
+function execution, subject to the trusted ABI declaration and host-target
+limits above; it does not establish a production source or artifact path. The
+root task independently reran the strict GCC fixture executable and all four
+generated call executables; each exited 0.
+
+## Direct branch extension: Clang, MSVC, and formal CTest
+
+The same six-source fixture was directly compiled and run in
+`D:\tmp\zr_vm\ssa-aot-branch-clang` with Clang
+`-std=c11 -Wall -Wextra -Werror`, and in
+`D:\tmp\zr_vm\ssa-aot-branch-msvc` with MSVC x64
+`/std:c11 /utf-8 /W4 /WX /MDd /D_CRT_SECURE_NO_WARNINGS`. Both compilation
+and fixture execution exited 0. These runs exercised the new two-block
+positive and negative assertions plus the existing single-block regression.
+The Clang-generated `branch_42.ll` and `branch_min.ll` were compiled with
+`runner.c` and called, returning the expected 42 and `INT64_MIN`; both calls
+exited 0. The MSVC-generated `branch_42.c` and `branch_min.c` were likewise
+compiled with `runner.c`, called, and exited 0.
+
+```text
+wsl.exe --exec bash -lc 'cd /mnt/e/Git/zr_vm && clang -std=c11 -Wall -Wextra -Werror -Izr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot -Izr_vm_parser/include -Izr_vm_core/include -Izr_vm_common/include tests/parser/test_ssa_aot_scalar_text.c zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_text.c zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_c.c zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_llvm.c zr_vm_core/src/zr_vm_core/aot_ir.c zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c -o /mnt/d/tmp/zr_vm/ssa-aot-branch-clang/test_ssa_aot_scalar_text && /mnt/d/tmp/zr_vm/ssa-aot-branch-clang/test_ssa_aot_scalar_text /mnt/d/tmp/zr_vm/ssa-aot-branch-clang'
+cd /mnt/d/tmp/zr_vm/ssa-aot-branch-clang
+clang -Wno-override-module -x ir branch_42.ll -x c runner.c -DEXPECTED=42 -o run_llvm_42 && ./run_llvm_42
+clang -Wno-override-module -x ir branch_min.ll -x c runner.c -DEXPECTED=INT64_MIN -o run_llvm_min && ./run_llvm_min
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1 cl /nologo /std:c11 /utf-8 /W4 /WX /MDd /D_CRT_SECURE_NO_WARNINGS /Izr_vm_aot\zr_vm_parser\src\zr_vm_parser\backend_aot /Izr_vm_parser\include /Izr_vm_core\include /Izr_vm_common\include tests\parser\test_ssa_aot_scalar_text.c zr_vm_aot\zr_vm_parser\src\zr_vm_parser\backend_aot\backend_aot_ir_scalar_text.c zr_vm_aot\zr_vm_parser\src\zr_vm_parser\backend_aot\backend_aot_ir_scalar_c.c zr_vm_aot\zr_vm_parser\src\zr_vm_parser\backend_aot\backend_aot_ir_scalar_llvm.c zr_vm_core\src\zr_vm_core\aot_ir.c zr_vm_core\src\zr_vm_core\exec_ir\exec_ir_state_map_storage.c /FoD:\tmp\zr_vm\ssa-aot-branch-msvc\ /FeD:\tmp\zr_vm\ssa-aot-branch-msvc\test_ssa_aot_scalar_text.exe
+D:\tmp\zr_vm\ssa-aot-branch-msvc\test_ssa_aot_scalar_text.exe D:\tmp\zr_vm\ssa-aot-branch-msvc
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1 cl /nologo /std:c11 /utf-8 /W4 /WX /MDd /D_CRT_SECURE_NO_WARNINGS /DEXPECTED=42 D:\tmp\zr_vm\ssa-aot-branch-msvc\branch_42.c D:\tmp\zr_vm\ssa-aot-branch-msvc\runner.c /FoD:\tmp\zr_vm\ssa-aot-branch-msvc\ /FeD:\tmp\zr_vm\ssa-aot-branch-msvc\run_c_42.exe
+D:\tmp\zr_vm\ssa-aot-branch-msvc\run_c_42.exe
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1 cl /nologo /std:c11 /utf-8 /W4 /WX /MDd /D_CRT_SECURE_NO_WARNINGS /DEXPECTED=INT64_MIN D:\tmp\zr_vm\ssa-aot-branch-msvc\branch_min.c D:\tmp\zr_vm\ssa-aot-branch-msvc\runner.c /FoD:\tmp\zr_vm\ssa-aot-branch-msvc\ /FeD:\tmp\zr_vm\ssa-aot-branch-msvc\run_c_min.exe
+D:\tmp\zr_vm\ssa-aot-branch-msvc\run_c_min.exe
+```
+
+The existing `zr_vm_ssa_aot_scalar_text_test` CMake target was reused without
+editing shared CMake files. Windows native CMake configured a dedicated Ninja
+Debug cache at `D:\tmp\zr_vm\ssa-aot-branch-cmake-msvc`; its focused target
+build completed all eight edges. Direct CTest then passed `ssa_aot_scalar_text`
+1/1 (test #245). The root task independently reran this final focused MSVC
+CTest and observed 1/1 pass with exit 0:
+
+```text
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1 cmake -S E:\Git\zr_vm -B D:\tmp\zr_vm\ssa-aot-branch-cmake-msvc -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON -DBUILD_LANGUAGE_SERVER_EXTENSION=OFF
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1 cmake --build D:\tmp\zr_vm\ssa-aot-branch-cmake-msvc --target zr_vm_ssa_aot_scalar_text_test --parallel 2
+ctest --test-dir D:\tmp\zr_vm\ssa-aot-branch-cmake-msvc -C Debug -R '^ssa_aot_scalar_text$' --output-on-failure --no-tests=error
+```
+
+CMake emitted path-length warnings for unrelated numeric-loop and LSP
+targets, and the focused build reported the repository `/W3` being overridden
+by this target's `/W4`. Neither affected this target. The branch extension is
+accepted as a standalone text-emission slice. Production source lowering and
+artifact registration remain unavailable as described above; 07.02 remains
+open for conditional control, calls, exceptional effects, runtime integration,
+and the broader differential requirements.

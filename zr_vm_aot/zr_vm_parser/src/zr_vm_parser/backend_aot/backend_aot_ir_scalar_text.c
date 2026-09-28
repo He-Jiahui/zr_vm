@@ -29,6 +29,18 @@ EZrAotIrStatus backend_aot_ir_scalar_text_check_output(
     return ZR_AOT_IR_OK;
 }
 
+static TZrBool scalar_text_instruction_plain(
+        const SZrAotIrInstruction *instruction) {
+    return (TZrBool)(instruction->flags == 0u &&
+                    instruction->effectIn == 0u &&
+                    instruction->effectOut == 0u &&
+                    instruction->phiIncoming.count == 0u &&
+                    instruction->memoryIn.count == 0u &&
+                    instruction->memoryOut.count == 0u &&
+                    instruction->bindingRow == 0u &&
+                    instruction->deoptId == 0u);
+}
+
 EZrAotIrStatus backend_aot_ir_scalar_text_prepare(
         const SZrAotIrModule *module, TZrUInt32 functionId,
         SZrBackendAotIrScalarTextPlan *plan,
@@ -58,7 +70,7 @@ EZrAotIrStatus backend_aot_ir_scalar_text_prepare(
     function = &module->functions[0];
     if (function->id != functionId ||
         abi.kind != ZR_AOT_IR_CALLABLE_ABI_NOARGS_I64 ||
-        function->blockCount != 1u || function->instructionCount != 2u ||
+        (function->blockCount != 1u && function->blockCount != 2u) ||
         function->operandCount != 1u || function->resultCount != 1u ||
         module->constantCount != 1u || module->layoutCount != 0u ||
         module->flags != 0u || module->target.requiredCapabilities != 0u ||
@@ -67,7 +79,7 @@ EZrAotIrStatus backend_aot_ir_scalar_text_prepare(
         function->contract.requiredCapabilities != 0u ||
         function->contract.declaredEffects != 0u ||
         function->frameSlotCount != 0u || function->valueSlotCount != 0u ||
-        function->phiIncomingCount != 0u || function->successorCount != 0u ||
+        function->phiIncomingCount != 0u ||
         function->memoryTokenCount != 0u || function->gcMap != ZR_NULL ||
         function->gcRootCount != 0u || function->deoptStateCount != 0u ||
         function->deoptValueCount != 0u ||
@@ -77,37 +89,73 @@ EZrAotIrStatus backend_aot_ir_scalar_text_prepare(
         return backend_aot_ir_scalar_text_fail(
                 diagnostic, ZR_AOT_IR_UNSUPPORTED, functionId, 0u, 0u, 1u);
     }
-    block = &function->blocks[0];
-    constantInstruction = &function->instructions[0];
-    returnInstruction = &function->instructions[1];
-    if (block->flags != ZR_EXEC_IR_BLOCK_FLAG_ENTRY ||
-        block->terminatorInstructionId != returnInstruction->id ||
-        block->instructions.offset != 0u ||
-        block->instructions.count != 2u ||
-        block->predecessors.count != 0u || block->successors.count != 0u ||
-        constantInstruction->opcode != ZR_EXEC_IR_OPCODE_CONSTANT ||
+    if (function->blockCount == 1u) {
+        if (function->instructionCount != 2u || function->successorCount != 0u) {
+            return backend_aot_ir_scalar_text_fail(
+                    diagnostic, ZR_AOT_IR_UNSUPPORTED, functionId, 0u, 0u, 1u);
+        }
+        block = &function->blocks[0];
+        constantInstruction = &function->instructions[0];
+        returnInstruction = &function->instructions[1];
+        if (block->flags != ZR_EXEC_IR_BLOCK_FLAG_ENTRY ||
+            block->terminatorInstructionId != returnInstruction->id ||
+            block->instructions.offset != 0u ||
+            block->instructions.count != 2u ||
+            block->predecessors.count != 0u ||
+            block->successors.count != 0u ||
+            !scalar_text_instruction_plain(constantInstruction) ||
+            !scalar_text_instruction_plain(returnInstruction)) {
+            return backend_aot_ir_scalar_text_fail(
+                    diagnostic, ZR_AOT_IR_UNSUPPORTED, functionId,
+                    constantInstruction->id, 0u, 1u);
+        }
+    } else {
+        const SZrAotIrBlock *entry = &function->blocks[0];
+        const SZrAotIrBlock *exit = &function->blocks[1];
+        const SZrAotIrInstruction *branch = &function->instructions[0];
+        if (function->instructionCount != 3u || function->successorCount != 2u) {
+            return backend_aot_ir_scalar_text_fail(
+                    diagnostic, ZR_AOT_IR_UNSUPPORTED, functionId, 0u, 0u, 1u);
+        }
+        constantInstruction = &function->instructions[1];
+        returnInstruction = &function->instructions[2];
+        if (entry->flags != ZR_EXEC_IR_BLOCK_FLAG_ENTRY || exit->flags != 0u ||
+            entry->instructions.offset != 0u ||
+            entry->instructions.count != 1u ||
+            exit->instructions.offset != 1u ||
+            exit->instructions.count != 2u ||
+            entry->terminatorInstructionId != branch->id ||
+            exit->terminatorInstructionId != returnInstruction->id ||
+            entry->predecessors.count != 0u ||
+            entry->successors.offset != 0u ||
+            entry->successors.count != 1u ||
+            exit->predecessors.offset != 1u ||
+            exit->predecessors.count != 1u ||
+            exit->successors.count != 0u ||
+            function->successorPool[0] != exit->id ||
+            function->successorPool[1] != entry->id ||
+            branch->opcode != ZR_EXEC_IR_OPCODE_BRANCH ||
+            branch->results.count != 0u || branch->operands.count != 0u ||
+            branch->successors.offset != 0u ||
+            branch->successors.count != 1u ||
+            branch->layoutId != 0u || branch->typeToken != 0u ||
+            !scalar_text_instruction_plain(branch) ||
+            !scalar_text_instruction_plain(constantInstruction) ||
+            !scalar_text_instruction_plain(returnInstruction)) {
+            return backend_aot_ir_scalar_text_fail(
+                    diagnostic, ZR_AOT_IR_UNSUPPORTED, functionId,
+                    branch->id, 0u, 1u);
+        }
+        plan->branchTargetBlockId = exit->id;
+    }
+    if (constantInstruction->opcode != ZR_EXEC_IR_OPCODE_CONSTANT ||
         returnInstruction->opcode != ZR_EXEC_IR_OPCODE_RETURN ||
-        constantInstruction->flags != 0u || returnInstruction->flags != 0u ||
-        constantInstruction->effectIn != 0u ||
-        constantInstruction->effectOut != 0u ||
-        returnInstruction->effectIn != 0u ||
-        returnInstruction->effectOut != 0u ||
         constantInstruction->results.count != 1u ||
         constantInstruction->operands.count != 0u ||
         returnInstruction->results.count != 0u ||
         returnInstruction->operands.count != 1u ||
         constantInstruction->successors.count != 0u ||
         returnInstruction->successors.count != 0u ||
-        constantInstruction->phiIncoming.count != 0u ||
-        returnInstruction->phiIncoming.count != 0u ||
-        constantInstruction->memoryIn.count != 0u ||
-        constantInstruction->memoryOut.count != 0u ||
-        returnInstruction->memoryIn.count != 0u ||
-        returnInstruction->memoryOut.count != 0u ||
-        constantInstruction->bindingRow != 0u ||
-        returnInstruction->bindingRow != 0u ||
-        constantInstruction->deoptId != 0u ||
-        returnInstruction->deoptId != 0u ||
         constantInstruction->layoutId != 0u ||
         returnInstruction->layoutId != 0u ||
         function->resultPool[constantInstruction->results.offset] !=

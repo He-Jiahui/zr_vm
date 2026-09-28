@@ -6,6 +6,7 @@
 typedef struct SZrBackendAotIrScalarTextPlan {
     TZrUInt32 functionId;
     TZrUInt64 bits;
+    TZrUInt32 branchTargetBlockId; /* zero means the single-block form */
 } SZrBackendAotIrScalarTextPlan;
 
 EZrAotIrStatus backend_aot_ir_scalar_text_prepare(
