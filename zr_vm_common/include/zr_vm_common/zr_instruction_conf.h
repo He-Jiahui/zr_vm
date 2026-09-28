@@ -266,7 +266,8 @@
     Z(PROPERTY_REF_CREATE_INDEX)                                                                                       \
     Z(FUNCTION_CALL_SPREAD)                                                                                            \
     Z(PROPERTY_REF_CREATE_LOCAL)                                                                                       \
-    Z(REQUIRE_NON_NULL)
+    Z(REQUIRE_NON_NULL)                                                                                                \
+    Z(MARK_CLOSE_PROXY)
 
 
 #define ZR_INSTRUCTION_OPCODE(INSTRUCTION) (INSTRUCTION.instruction.operationCode)

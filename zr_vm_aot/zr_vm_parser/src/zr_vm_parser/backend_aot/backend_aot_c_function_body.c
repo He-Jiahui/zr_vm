@@ -2747,6 +2747,9 @@ void backend_aot_write_c_function_body(FILE *file,
             case ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED):
                 backend_aot_write_c_direct_mark_to_be_closed(file, destinationSlot);
                 break;
+            case ZR_INSTRUCTION_ENUM(MARK_CLOSE_PROXY):
+                backend_aot_write_c_direct_mark_close_proxy(file, destinationSlot, operandA1);
+                break;
             case ZR_INSTRUCTION_ENUM(CLOSE_SCOPE):
                 backend_aot_write_c_direct_close_scope(file, destinationSlot);
                 break;

@@ -758,6 +758,10 @@ static TZrUInt32 function_scan_generated_frame_slot_count(
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
                 function_note_generated_frame_slot(operandA1, &slotCount);
                 break;
+            case ZR_INSTRUCTION_ENUM(MARK_CLOSE_PROXY):
+                function_note_generated_frame_slot(destinationSlot, &slotCount);
+                function_note_generated_frame_slot(operandA1, &slotCount);
+                break;
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
                 function_note_generated_frame_slot(instruction->instruction.operand.operand0[0], &slotCount);

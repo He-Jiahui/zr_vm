@@ -1367,6 +1367,12 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_MarkToBeClosed(struct SZrState *stat
                                                            ZrAotGeneratedFrame *frame,
                                                            TZrUInt32 slotIndex);
 
+/** @brief Register a high physical proxy for an existing dense local. */
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_MarkCloseProxy(struct SZrState *state,
+                                                           ZrAotGeneratedFrame *frame,
+                                                           TZrUInt32 proxySlot,
+                                                           TZrUInt32 sourceSlot);
+
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CloseScope(struct SZrState *state,
                                                        ZrAotGeneratedFrame *frame,
                                                        TZrUInt32 cleanupCount);

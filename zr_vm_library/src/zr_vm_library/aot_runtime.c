@@ -9480,6 +9480,36 @@ TZrBool ZrLibrary_AotRuntime_MarkToBeClosed(SZrState *state, ZrAotGeneratedFrame
     return ZR_TRUE;
 }
 
+TZrBool ZrLibrary_AotRuntime_MarkCloseProxy(SZrState *state,
+                                           ZrAotGeneratedFrame *frame,
+                                           TZrUInt32 proxySlot,
+                                           TZrUInt32 sourceSlot) {
+    SZrLibraryAotRuntimeState *runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL
+                    ? aot_runtime_get_state_from_global(state->global)
+                    : ZR_NULL;
+    TZrStackValuePointer denseProxy = aot_runtime_frame_slot(frame, proxySlot);
+    TZrStackValuePointer denseSource = aot_runtime_frame_slot(frame, sourceSlot);
+    TZrStackValuePointer physicalProxy = ZR_NULL;
+
+    if (state == ZR_NULL || denseProxy == ZR_NULL || denseSource == ZR_NULL ||
+        proxySlot <= sourceSlot) {
+        aot_runtime_fail(state, runtimeState, "MARK_CLOSE_PROXY: invalid logical slots");
+        return ZR_FALSE;
+    }
+    if (!aot_runtime_cleanup_registration_prepare(state, frame, proxySlot,
+                                                   &physicalProxy) ||
+        physicalProxy == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "MARK_CLOSE_PROXY: invalid physical proxy slot");
+        return ZR_FALSE;
+    }
+    if (!ZrCore_Closure_MarkCloseProxy(state, physicalProxy, denseSource)) {
+        aot_runtime_fail(state, runtimeState, "MARK_CLOSE_PROXY: registration failed");
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 TZrBool ZrLibrary_AotRuntime_CloseScope(SZrState *state, ZrAotGeneratedFrame *frame, TZrUInt32 cleanupCount) {
     ZR_UNUSED_PARAMETER(frame);
 

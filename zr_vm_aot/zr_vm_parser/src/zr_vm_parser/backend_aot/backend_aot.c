@@ -200,6 +200,7 @@ static TZrBool backend_aot_c_instruction_supported(const TZrInstruction *instruc
         case ZR_INSTRUCTION_ENUM(OWN_WAKE):
         case ZR_INSTRUCTION_ENUM(OWN_DROP):
         case ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED):
+        case ZR_INSTRUCTION_ENUM(MARK_CLOSE_PROXY):
         case ZR_INSTRUCTION_ENUM(CLOSE_SCOPE):
         case ZR_INSTRUCTION_ENUM(TRY):
         case ZR_INSTRUCTION_ENUM(END_TRY):
@@ -684,6 +685,8 @@ ZR_PARSER_API TZrUInt32 backend_aot_c_step_flags_for_instruction(const SZrFuncti
         case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_UNSIGNED):
         case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_FLOAT):
         case ZR_INSTRUCTION_ENUM(TO_INT):
+        case ZR_INSTRUCTION_ENUM(MARK_CLOSE_PROXY):
+            return ZR_AOT_EMITTER_STEP_FLAG_MAY_THROW;
         case ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED):
         case ZR_INSTRUCTION_ENUM(CLOSE_SCOPE):
             return ZR_AOT_EMITTER_STEP_FLAG_NONE;

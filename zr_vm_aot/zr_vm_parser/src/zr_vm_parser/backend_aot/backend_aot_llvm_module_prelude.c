@@ -300,6 +300,7 @@ void backend_aot_write_llvm_runtime_helper_decls(FILE *file) {
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_SetPendingBreak(ptr, ptr, i32, ptr)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_SetPendingContinue(ptr, ptr, i32, ptr)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_MarkToBeClosed(ptr, ptr, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_MarkCloseProxy(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_CloseScope(ptr, ptr, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_ToInt(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i64 @ZrLibrary_AotRuntime_Return(ptr, ptr, i32, i1)\n");

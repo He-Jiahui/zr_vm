@@ -79,6 +79,20 @@ rejected with `UNSUPPORTED_VERSION` and diagnostic expected/actual versions.
 The separate historical `01ZR` `.zro` binary path remains handled by
 `ZrCore_Module_ImportByPath`; this API rejects its magic.
 
+## Legacy ExecBC patch 44
+
+The historical `01ZR` `.zro` writer now emits patch 44 after appending
+`MARK_CLOSE_PROXY` at ExecBC opcode 245. Its reader rejects patches above its
+compiled maximum before loading instruction arrays; this prevents a patch 43
+runtime from dispatching the unknown opcode. Patch 44 adds no fields, so the
+new reader continues to accept a patch 43 payload, while it rejects patch 45.
+The legacy writer has no safe opcode scan, so it writes patch 44 even for an
+opcode-free function; such newly written files require a patch 44 reader.
+Existing opcode numbers through 244 are unchanged. ZRAF schema 6, EIS2, and
+AOT ABI 17 stay unchanged because their serialized payloads do not carry
+ExecBC opcode numbers. A generated AOT module using the proxy still requires
+the newly exported runtime helper when linked.
+
 This remains a partial vertical slice of plan 08.01. It does not provide general CFG,
 maps, binding, relocation resolution, ExecBC, package copy, AOT projection,
 or `ImportByPath` migration. The legacy ERI1 raw section codec and relocation

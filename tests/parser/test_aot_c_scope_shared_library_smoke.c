@@ -51,6 +51,13 @@ static TZrInstruction create_scope_instruction(EZrInstructionCode opcode, TZrUIn
     return instruction;
 }
 
+static TZrInstruction create_close_proxy_instruction(TZrUInt16 proxySlot, TZrUInt16 sourceSlot) {
+    TZrInstruction instruction = create_scope_instruction(
+            ZR_INSTRUCTION_ENUM(MARK_CLOSE_PROXY), proxySlot);
+    instruction.instruction.operand.operand1[0] = sourceSlot;
+    return instruction;
+}
+
 static TZrInstruction create_return_instruction(TZrUInt16 returnCount, TZrUInt16 sourceSlot) {
     TZrInstruction instruction;
 
@@ -71,14 +78,16 @@ static SZrFunction *create_scope_function(SZrState *state) {
 
     function->instructionsList = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
             state->global,
-            sizeof(TZrInstruction) * 3u,
+            sizeof(TZrInstruction) * 5u,
             ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     TEST_ASSERT_NOT_NULL(function->instructionsList);
     function->instructionsList[0] = create_scope_instruction(ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED), 1u);
-    function->instructionsList[1] = create_scope_instruction(ZR_INSTRUCTION_ENUM(CLOSE_SCOPE), 1u);
-    function->instructionsList[2] = create_return_instruction(1u, 0u);
-    function->instructionsLength = 3u;
-    function->stackSize = 2u;
+    function->instructionsList[1] = create_close_proxy_instruction(2u, 1u);
+    function->instructionsList[2] = create_scope_instruction(ZR_INSTRUCTION_ENUM(CLOSE_SCOPE), 1u);
+    function->instructionsList[3] = create_scope_instruction(ZR_INSTRUCTION_ENUM(CLOSE_SCOPE), 1u);
+    function->instructionsList[4] = create_return_instruction(1u, 0u);
+    function->instructionsLength = 5u;
+    function->stackSize = 3u;
     function->parameterCount = 0u;
     function->hasVariableArguments = ZR_FALSE;
     function->closureValueLength = 0u;
@@ -152,6 +161,7 @@ static void test_aot_c_generated_shared_library_compiles_scope_boundary_helper_l
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scope_mark_to_be_closed"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scope_close_scope"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_MarkToBeClosed(state, &frame, 1)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_MarkCloseProxy(state, &frame, 2, 1)"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CloseScope(state, &frame, 1)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Closure_ToBeClosedValueClosureNew(state,"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Closure_CloseStackValue(state,"));
@@ -180,6 +190,21 @@ static void test_aot_c_generated_shared_library_compiles_scope_boundary_helper_l
              ZR_VM_TESTS_BUILD_LIB_DIR,
              sharedLibraryPath);
     TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("aot_c_scope_shared_library",
+                                                       "src",
+                                                       "aot_close_proxy_smoke",
+                                                       ".ll",
+                                                       generatedCPath,
+                                                       sizeof(generatedCPath)));
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotLlvmFileWithOptions(
+            state, function, generatedCPath, &options));
+    generatedCText = read_text_file_owned_or_fail(generatedCPath);
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "declare i1 @ZrLibrary_AotRuntime_MarkCloseProxy(ptr, ptr, i32, i32)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "call i1 @ZrLibrary_AotRuntime_MarkCloseProxy(ptr %state, ptr %frame, i32 2, i32 1)"));
+    free(generatedCText);
 
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);

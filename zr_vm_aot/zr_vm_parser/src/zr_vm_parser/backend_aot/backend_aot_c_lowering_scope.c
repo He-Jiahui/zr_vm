@@ -14,6 +14,21 @@ void backend_aot_write_c_direct_mark_to_be_closed(FILE *file, TZrUInt32 slotInde
             (unsigned)slotIndex);
 }
 
+void backend_aot_write_c_direct_mark_close_proxy(FILE *file,
+                                                TZrUInt32 proxySlot,
+                                                TZrUInt32 sourceSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+    fprintf(file,
+            "    {\n"
+            "        /* zr_aot_scope_mark_close_proxy */\n"
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_MarkCloseProxy(state, &frame, %u, %u));\n"
+            "    }\n",
+            (unsigned)proxySlot,
+            (unsigned)sourceSlot);
+}
+
 /* CLOSE_SCOPE 使用字节码记录的清理数，实际关闭过程仍由 runtime 管理异常与所有权。 */
 void backend_aot_write_c_direct_close_scope(FILE *file, TZrUInt32 cleanupCount) {
     if (file == ZR_NULL) {

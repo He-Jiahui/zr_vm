@@ -146,6 +146,16 @@ handler checkpoint before catch. Older markers remain linked, and their source
 is already null when later popped. Nested proxies for a closable value see a
 null source after the first close and are inert.
 
+`MARK_CLOSE_PROXY` is appended at opcode 245. Its E operand names the new high
+proxy slot, and A1 names the existing dense source slot. The interpreter and
+frame-slot scan recognize both operands. AOT C and LLVM lower it to
+`ZrLibrary_AotRuntime_MarkCloseProxy(state, frame, E, A1)`. The AOT helper uses
+the ordinary cleanup registration preparation to select the high physical
+VALUE slot, then passes the dense source to the core API so cleanup clears its
+physical mirror as well. Invalid or out-of-order slots fail before registration.
+The generated helper symbol is required when linking a module that contains
+this opcode against the runtime; an older runtime cannot execute such a module.
+
 ## Generated-call exception transfer
 
 AOT C and LLVM calls complete through resume-aware runtime boundaries. A normal

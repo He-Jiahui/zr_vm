@@ -9691,6 +9691,16 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
                 ZrCore_Closure_ToBeClosedValueClosureNew(state, closePointer);
             }
             DONE(1);
+            ZR_INSTRUCTION_LABEL(MARK_CLOSE_PROXY) {
+                SAVE_STATE(state, callInfo);
+                if (!ZrCore_Closure_MarkCloseProxy(
+                            state, BASE(E(instruction)), BASE(A1(instruction)))) {
+                    ZrCore_Debug_RunError(state, "MARK_CLOSE_PROXY: invalid registration");
+                }
+                UPDATE_BASE(callInfo);
+                UPDATE_TRAP(callInfo);
+            }
+            DONE(1);
             ZR_INSTRUCTION_LABEL(CLOSE_SCOPE) {
                 callInfo->context.context.programCounter = programCounter + 1;
                 close_scope_cleanup_registrations(state, E(instruction));
