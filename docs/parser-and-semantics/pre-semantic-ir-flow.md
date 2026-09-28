@@ -310,6 +310,14 @@ nested expression has its own RHS and join; the parent branches on its result
 after that join. A nested unsupported leaf disables source CFG for the whole
 loop without making the analysis-only graph eligible for ExecIR construction.
 
+An `if` condition must also have a SemanticIR ValueId with a defining
+instruction before the compiler starts or extends its source CFG. Some
+expressions still use legacy ExecBC lowering and leave an analysis-only slot
+value without a definition. In that case, the compiler keeps the CFG inactive,
+or abandons an active partial CFG, and compiles the conditional on
+the legacy path. It does not publish blocks whose branch operand has no
+semantic definition.
+
 A source-owned `while` may now end its direct body with `break;` or
 `continue;`. The active loop label carries semantic block targets alongside
 the existing ExecBC label IDs. `break` closes the current body block with one

@@ -718,6 +718,36 @@ static void test_unmodeled_short_circuit_rhs_keeps_legacy_cfg(void) {
     ZrParser_Ast_Free(g_state, ast);
 }
 
+static void test_source_if_undefined_semantic_condition_falls_back(void) {
+    SZrCompilerState compiler;
+    SZrAstNode node;
+    TZrValueId conditionValueId;
+    TZrUInt32 thenBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    TZrUInt32 elseBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+    TZrUInt32 joinBlock = ZR_PARSER_CFG_INVALID_BLOCK_ID;
+
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    memset(&node, 0, sizeof(node));
+    node.type = ZR_AST_IF_EXPRESSION;
+    node.data.ifExpression.isStatement = ZR_TRUE;
+    conditionValueId = ZrParser_SemanticIr_AddValue(
+            &compiler.preSemanticIr, 1U, empty_range());
+    TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, conditionValueId);
+    TEST_ASSERT_TRUE(compiler_semantic_ir_bind_result_value(
+            &compiler, 0U, 1U, conditionValueId, empty_range()));
+    TEST_ASSERT_EQUAL_UINT32(
+            ZR_SEMANTIC_INSTRUCTION_ID_INVALID,
+            ZrParser_SemanticIr_Value(
+                    &compiler.preSemanticIr, conditionValueId)
+                    ->definitionInstructionId);
+
+    TEST_ASSERT_FALSE(compiler_semantic_cfg_begin_if(
+            &compiler, 0U, &node, &thenBlock, &elseBlock, &joinBlock));
+    TEST_ASSERT_FALSE(compiler.preSemanticIrCfgActive);
+
+    ZrParser_CompilerState_Free(&compiler);
+}
+
 static void test_source_optional_call_skips_argument_semantic_effects(void) {
     static const TZrChar source[] =
             "resource class Service {\n"

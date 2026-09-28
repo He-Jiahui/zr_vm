@@ -370,6 +370,7 @@ TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
                                       TZrUInt32 *joinBlock) {
     SZrParserCfg *cfg;
     TZrValueId condition;
+    const SZrSemanticIrValue *conditionValue;
     EZrCompilerSemanticCfgArmFlow thenFlow;
     EZrCompilerSemanticCfgArmFlow elseFlow;
     TZrBool bothTerminate;
@@ -417,7 +418,10 @@ TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
             thenFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES &&
             elseFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES);
     condition = compiler_semantic_ir_slot_value(cs, conditionSlot);
-    if (condition == ZR_VALUE_ID_INVALID) {
+    conditionValue = ZrParser_SemanticIr_Value(&cs->preSemanticIr, condition);
+    if (conditionValue == ZR_NULL ||
+        conditionValue->definitionInstructionId ==
+                ZR_SEMANTIC_INSTRUCTION_ID_INVALID) {
         if (cs->preSemanticIrCfgActive && !compiler_semantic_cfg_abandon(cs)) {
             return ZR_FALSE;
         }

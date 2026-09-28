@@ -1476,6 +1476,7 @@ int main(void) {
     RUN_TEST(test_source_short_circuit_or_skips_rhs_on_true_edge);
     RUN_TEST(test_source_if_arm_composes_short_circuit_cfg);
     RUN_TEST(test_unmodeled_short_circuit_rhs_keeps_legacy_cfg);
+    RUN_TEST(test_source_if_undefined_semantic_condition_falls_back);
     RUN_TEST(test_source_optional_call_skips_argument_semantic_effects);
     RUN_TEST(test_source_optional_call_skips_nested_argument_invoke);
     RUN_TEST(test_source_optional_value_merges_present_and_absent_paths);
