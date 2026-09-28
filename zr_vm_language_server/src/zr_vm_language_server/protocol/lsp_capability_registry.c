@@ -6,23 +6,30 @@
 
 #include "zr_vm_language_server/lsp_capability_registry.h"
 
+/* 注册表用运行时位掩码描述基础能力覆盖；native 与 Web 的实际发布仍由各自初始化入口决定。 */
 #define ZR_LSP_CAPABILITY_RUNTIME_ALL \
     (ZR_LSP_RUNTIME_NATIVE | ZR_LSP_RUNTIME_WASM)
 
+/* 核心能力同时记录协议方法、入口、测试与 resolve 覆盖，供一致性探针和 native 协商复用。 */
 #define ZR_LSP_CORE_CAPABILITY_WITH_RESOLVE_RUNTIMES(key, methodName, clientPath, coreEntry, nativeEntry, wasmEntry, testName, runtimes, resolve, resolveRuntimes) \
     { key, methodName, clientPath, coreEntry, nativeEntry, wasmEntry, testName, \
       runtimes, 3U, 17U, (resolve) != ZR_LSP_CAPABILITY_RESOLVE_NONE, ZR_FALSE, \
       resolve, resolveRuntimes, ZR_LSP_CAPABILITY_IMPLEMENTATION_CORE }
 
+/* 不支持后续 resolve 的核心能力以空 resolve 掩码登记，避免基础能力被误当作延迟补全能力。 */
 #define ZR_LSP_CORE_CAPABILITY(key, methodName, clientPath, coreEntry, nativeEntry, wasmEntry, testName, runtimes) \
     ZR_LSP_CORE_CAPABILITY_WITH_RESOLVE_RUNTIMES(key, methodName, clientPath, coreEntry, nativeEntry, \
                                               wasmEntry, testName, runtimes, ZR_LSP_CAPABILITY_RESOLVE_NONE, 0U)
 
+/* 仅由 stdio 适配层实现的能力不得声称核心入口或 Web 导出。 */
 #define ZR_LSP_NATIVE_ADAPTER_CAPABILITY(key, methodName, clientPath, nativeEntry, testName, minor, experimental) \
     { key, methodName, clientPath, ZR_NULL, nativeEntry, ZR_NULL, testName, \
       ZR_LSP_RUNTIME_NATIVE, 3U, minor, ZR_FALSE, experimental, \
       ZR_LSP_CAPABILITY_RESOLVE_NONE, 0U, ZR_LSP_CAPABILITY_IMPLEMENTATION_NATIVE_ADAPTER }
 
+/* 进程生命周期内借用的能力契约：测试和探针枚举全表，native initialize 只查询 resolve 子集。
+ * TODO: 基础 provider 的 native/Web 发布分别手工构造；需以两个 initialize 响应逐项核对本表，
+ * 现有调用路径并不会用 runtimeMask 自动阻止发布漂移。 */
 static const SZrLspCapabilityDescriptor g_capabilities[] = {
         ZR_LSP_CORE_CAPABILITY("textDocumentSync",
                           "textDocument/didChange",
@@ -260,14 +267,17 @@ static const SZrLspCapabilityDescriptor g_capabilities[] = {
 #undef ZR_LSP_CORE_CAPABILITY_WITH_RESOLVE_RUNTIMES
 #undef ZR_LSP_NATIVE_ADAPTER_CAPABILITY
 
+/* 元数据验证把缺席和空串统一视为未实现，防止空入口名称通过静态契约。 */
 static TZrBool string_is_present(const TZrChar *value) {
     return value != ZR_NULL && value[0] != '\0';
 }
 
+/** @brief 供能力清单探针按静态顺序枚举，返回值在进程内不变化。 */
 TZrSize ZrLanguageServer_LspCapabilityRegistry_Count(void) {
     return sizeof(g_capabilities) / sizeof(g_capabilities[0]);
 }
 
+/** @brief 返回借用的静态描述符，越界返回空指针；调用方不得释放或修改。 */
 const SZrLspCapabilityDescriptor *ZrLanguageServer_LspCapabilityRegistry_At(TZrSize index) {
     if (index >= ZrLanguageServer_LspCapabilityRegistry_Count()) {
         return ZR_NULL;
@@ -275,6 +285,7 @@ const SZrLspCapabilityDescriptor *ZrLanguageServer_LspCapabilityRegistry_At(TZrS
     return &g_capabilities[index];
 }
 
+/** @brief 按协议能力键查找静态契约，供 native 协商与一致性测试复用。 */
 const SZrLspCapabilityDescriptor *
 ZrLanguageServer_LspCapabilityRegistry_Find(const TZrChar *capabilityKey) {
     TZrSize index;
@@ -290,6 +301,7 @@ ZrLanguageServer_LspCapabilityRegistry_Find(const TZrChar *capabilityKey) {
     return ZR_NULL;
 }
 
+/** @brief 校验入口归属、运行时导出和 resolve 掩码是否自洽；不证明入口实际可调用。 */
 TZrBool ZrLanguageServer_LspCapabilityRegistry_HasRequiredMetadata(
         const SZrLspCapabilityDescriptor *descriptor) {
     const TZrUInt32 validRuntimeMask = ZR_LSP_RUNTIME_NATIVE | ZR_LSP_RUNTIME_WASM;
@@ -340,6 +352,7 @@ TZrBool ZrLanguageServer_LspCapabilityRegistry_HasRequiredMetadata(
            descriptor->resolveBehavior == ZR_LSP_CAPABILITY_RESOLVE_NONE;
 }
 
+/** @brief 在元数据自洽后施加发布策略，拒绝仅原样返回的 resolve 和未标实验性的 3.18 能力。 */
 TZrBool ZrLanguageServer_LspCapabilityRegistry_IsDescriptorPublishable(
         const SZrLspCapabilityDescriptor *descriptor) {
     if (!ZrLanguageServer_LspCapabilityRegistry_HasRequiredMetadata(descriptor)) {
@@ -357,6 +370,7 @@ TZrBool ZrLanguageServer_LspCapabilityRegistry_IsDescriptorPublishable(
     return ZR_TRUE;
 }
 
+/** @brief native initialize 按后端判定能否宣告 resolve，避免把基础 provider 的 Web 覆盖误读成 resolve 覆盖。 */
 TZrBool ZrLanguageServer_LspCapabilityRegistry_HasResolveForRuntime(
         const TZrChar *capabilityKey, EZrLspRuntimeMask runtime) {
     const SZrLspCapabilityDescriptor *descriptor;
