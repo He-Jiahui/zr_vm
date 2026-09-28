@@ -1,6 +1,8 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "stdio_handler_result.h"
 
+/* follow-up 请求回传 prepare 的 item；把显示字段、URI 和数据身份恢复为本次查询可用的临时视图。
+ * URI 由服务端缓存持有，name/detail 由 VM 状态持有；栈上 item 不接管这些对象。 */
 static int parse_hierarchy_item(SZrStdioServer *server, const cJSON *params, SZrLspHierarchyItem *outItem) {
     const cJSON *itemJson;
     const cJSON *nameJson;
@@ -54,7 +56,12 @@ static int parse_hierarchy_item(SZrStdioServer *server, const cJSON *params, SZr
                                                  (TZrNativeString)detailJson->valuestring,
                                                  strlen(detailJson->valuestring))
                           : ZR_NULL;
+    /* BUG: kind 只验证为 JSON 数字，超出 int32 范围仍转为 TZrInt32；
+     * 畸形 item 可触发未定义的浮点到整数转换。应先检查有限整数和范围。 */
     outItem->kind = (TZrInt32)kindJson->valuedouble;
+    /* 身份三元组须完整且可无损收窄；缺失或不匹配当前语义目标时，后续查询拒绝 item。
+     * TODO: 版本号仍经 cJSON double 解析，超过 2^53 时可能先舍入；见 stdio_lsp_parse.c，
+     * 核查文档版本上界，并以原始请求验证旧 item 的拒绝行为。 */
     if (parse_size_value_strict(symbolIdJson, &symbolIdValue) &&
         parse_size_value_strict(typeIdJson, &typeIdValue) &&
         parse_size_value_strict(versionJson, &versionValue) &&
@@ -74,6 +81,7 @@ static int parse_hierarchy_item(SZrStdioServer *server, const cJSON *params, SZr
     return outItem->name != ZR_NULL && outItem->uri != ZR_NULL;
 }
 
+/* call/type prepare 共用位置解析和结果所有权边界；返回的 item 携带后续查询所需身份。 */
 static SZrLspHandlerResult handle_prepare_hierarchy_request(SZrStdioServer *server,
                                                const cJSON *params,
                                                TZrBool typeHierarchy) {
@@ -111,10 +119,12 @@ static SZrLspHandlerResult handle_prepare_hierarchy_request(SZrStdioServer *serv
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/** @brief 为调用层级生成可回传的函数 item；调用方之后可查询入边和出边。 */
 SZrLspHandlerResult handle_prepare_call_hierarchy_request(SZrStdioServer *server, const cJSON *params) {
     return handle_prepare_hierarchy_request(server, params, ZR_FALSE);
 }
 
+/** @brief 按 prepare item 的语义身份查找调用者，失效身份得到空数组。 */
 SZrLspHandlerResult handle_call_hierarchy_incoming_calls_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray calls = {0};
     SZrLspHierarchyItem item;
@@ -128,11 +138,13 @@ SZrLspHandlerResult handle_call_hierarchy_incoming_calls_request(SZrStdioServer 
         ZrLanguageServer_Lsp_FreeHierarchyCalls(server->state, &calls);
         return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
+    /* fromRanges 属于调用者，JSON 的 from 键须与 outgoing 的 to 键区分。 */
     result = serialize_hierarchy_calls_array(&calls, ZR_FALSE);
     ZrLanguageServer_Lsp_FreeHierarchyCalls(server->state, &calls);
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/** @brief 按 prepare item 的语义身份查找被调用者，保持调用边方向。 */
 SZrLspHandlerResult handle_call_hierarchy_outgoing_calls_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray calls = {0};
     SZrLspHierarchyItem item;
@@ -151,10 +163,12 @@ SZrLspHandlerResult handle_call_hierarchy_outgoing_calls_request(SZrStdioServer 
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/** @brief 为类型层级生成带版本身份的类型 item，供后续查询直接回传。 */
 SZrLspHandlerResult handle_prepare_type_hierarchy_request(SZrStdioServer *server, const cJSON *params) {
     return handle_prepare_hierarchy_request(server, params, ZR_TRUE);
 }
 
+/** @brief 从同版本的类型身份枚举父类型；旧版本 item 由语义层拒绝。 */
 SZrLspHandlerResult handle_type_hierarchy_supertypes_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray items = {0};
     SZrLspHierarchyItem item;
@@ -173,6 +187,7 @@ SZrLspHandlerResult handle_type_hierarchy_supertypes_request(SZrStdioServer *ser
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/** @brief 从同版本的类型身份枚举子类型，避免仅凭展示名称匹配。 */
 SZrLspHandlerResult handle_type_hierarchy_subtypes_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray items = {0};
     SZrLspHierarchyItem item;

@@ -1,6 +1,8 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "stdio_handler_result.h"
 
+/** @brief 将源码位置上的普通悬停查询投影为 LSP 响应，查询无目标时返回 null。
+ * @note 参数位置须先按协商编码解析；JSON 建立后即可归还查询结果。 */
 SZrLspHandlerResult handle_hover_request(SZrStdioServer *server, const cJSON *params) {
     SZrLspPosition position;
     const char *uriText;
@@ -24,6 +26,7 @@ SZrLspHandlerResult handle_hover_request(SZrStdioServer *server, const cJSON *pa
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/** @brief 为扩展专用请求提供分段悬停，保持与普通 hover 不同的响应和释放契约。 */
 SZrLspHandlerResult handle_rich_hover_request(SZrStdioServer *server, const cJSON *params) {
     SZrLspPosition position;
     const char *uriText;
@@ -46,6 +49,7 @@ SZrLspHandlerResult handle_rich_hover_request(SZrStdioServer *server, const cJSO
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/** @brief 将调用点的语义签名与参数文档发给编辑器，缺少可用签名时返回 null。 */
 SZrLspHandlerResult handle_signature_help_request(SZrStdioServer *server, const cJSON *params) {
     SZrLspPosition position;
     const char *uriText;
@@ -68,6 +72,8 @@ SZrLspHandlerResult handle_signature_help_request(SZrStdioServer *server, const 
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/** @brief 在客户端指定范围内发布从规范声明事实得到的类型提示。
+ * @note 范围按文档 URI 转成内部坐标；序列化后归还原生提示数组。 */
 SZrLspHandlerResult handle_inlay_hint_request(SZrStdioServer *server, const cJSON *params) {
     const cJSON *rangeJson;
     const char *uriText;
@@ -95,6 +101,7 @@ SZrLspHandlerResult handle_inlay_hint_request(SZrStdioServer *server, const cJSO
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/** @brief 用语义定义位置支持源码和原生虚拟声明页的跳转；无目标时给空数组。 */
 SZrLspHandlerResult handle_definition_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray locations = {0};
     SZrLspPosition position;
@@ -116,6 +123,8 @@ SZrLspHandlerResult handle_definition_request(SZrStdioServer *server, const cJSO
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/** @brief 响应扩展对只读原生声明 URI 的取文请求；普通文件仍由文档同步管理。
+ * @note 文本归 VM 状态持有，只释放临时 C 字符串副本。 */
 SZrLspHandlerResult handle_native_declaration_document_request(SZrStdioServer *server, const cJSON *params) {
     const cJSON *uriJson;
     const char *uriText;
@@ -153,6 +162,8 @@ SZrLspHandlerResult handle_native_declaration_document_request(SZrStdioServer *s
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/** @brief 依客户端 includeDeclaration 选项返回语义身份对应的跨文件引用。
+ * @note 位置数组先复制进 JSON 再释放；请求层可能把该数组作为 partial result 发出。 */
 SZrLspHandlerResult handle_references_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray locations = {0};
     SZrLspPosition position;
@@ -167,6 +178,7 @@ SZrLspHandlerResult handle_references_request(SZrStdioServer *server, const cJSO
         return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
+    /* includeDeclaration 必须来自合法的 references context；不能把缺字段当作 false。 */
     contextJson = get_object_item(params, ZR_LSP_FIELD_CONTEXT);
     if (!cJSON_IsObject((cJSON *)contextJson)) {
         return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
@@ -193,6 +205,7 @@ SZrLspHandlerResult handle_references_request(SZrStdioServer *server, const cJSO
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/** @brief 生成当前文档大纲；未取消的查询失败返回空数组，取消由结果封装层传播。 */
 SZrLspHandlerResult handle_document_symbols_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray symbols = {0};
     const char *uriText;
@@ -213,6 +226,7 @@ SZrLspHandlerResult handle_document_symbols_request(SZrStdioServer *server, cons
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/** @brief 将工作区查询文本交给项目索引及打开文档的合并搜索，再发布符号数组。 */
 SZrLspHandlerResult handle_workspace_symbols_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray symbols = {0};
     const cJSON *queryJson;
@@ -233,6 +247,7 @@ SZrLspHandlerResult handle_workspace_symbols_request(SZrStdioServer *server, con
         return stdio_handler_error(ZR_LSP_HANDLER_INVALID_PARAMS);
     }
 
+    /* 搜索词是请求 JSON 的暂借字节；语义查询需要 VM 字符串跨过参数解析边界。 */
     query = ZrCore_String_Create(server->state, (TZrNativeString)queryText, (TZrSize)strlen(queryText));
     if (query == ZR_NULL) {
         return stdio_handler_error(ZR_LSP_HANDLER_INTERNAL_ERROR);
@@ -248,6 +263,7 @@ SZrLspHandlerResult handle_workspace_symbols_request(SZrStdioServer *server, con
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/** @brief 为当前文档的同一语义目标返回高亮位置，供编辑器局部标记引用。 */
 SZrLspHandlerResult handle_document_highlights_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray highlights = {0};
     SZrLspPosition position;

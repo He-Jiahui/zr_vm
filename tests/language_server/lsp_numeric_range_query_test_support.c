@@ -8,6 +8,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+/* GlobalState_New 将此回调交给 VM 内存层；它只服务规模有限的 LSP 范围用例。 */
 TZrPtr ZrVmTest_LspNumericRangeQueryAllocator(TZrPtr userData,
                                               TZrPtr pointer,
                                               TZrSize originalSize,
@@ -29,6 +30,9 @@ TZrPtr ZrVmTest_LspNumericRangeQueryAllocator(TZrPtr userData,
     if (pointer == ZR_NULL) {
         return malloc(newSize);
     }
+    /* TODO: 原指针地址及大小阈值不能证明分配归属；超过 1 GiB 的合法旧块会走到
+     * 新 malloc 分支，丢失旧内容与旧块。核查测试分配器是否仍需兼容异常旧指针，
+     * 再决定能否按 VM 内存层的指针/大小契约直接 realloc。 */
     if ((TZrPtr)pointer >= (TZrPtr)0x1000 &&
         originalSize > 0 &&
         originalSize < 1024 * 1024 * 1024) {
@@ -37,6 +41,8 @@ TZrPtr ZrVmTest_LspNumericRangeQueryAllocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* 范围用例把首个匹配文本映射为 ExpressionAt 光标；调用方须保证首次匹配
+ * 位于目标表达式。此处按字节计列，当前输入都是 ASCII。 */
 static TZrBool find_position_for_substring_offset(const TZrChar *content,
                                                   const TZrChar *needle,
                                                   TZrSize offset,
@@ -56,6 +62,8 @@ static TZrBool find_position_for_substring_offset(const TZrChar *content,
         return ZR_FALSE;
     }
 
+    /* TODO: ExpressionAt 将 LSP UTF-16 列转换为 parser 字节位置；若样例引入
+     * 非 ASCII 文本，这里的字节列会偏移。届时复用相同的位置编码规则。 */
     while (cursor < match) {
         if (*cursor == '\n') {
             line++;
@@ -81,6 +89,8 @@ static TZrBool find_position_for_substring_offset(const TZrChar *content,
     return remainingOffset == 0;
 }
 
+/* 各数值测试共享这一最小 LSP 会话，以二元表达式事实核对范围分析，而不依赖
+ * hover 文案；每个调用都应提供互不混淆的 URI 和目标子串。 */
 TZrBool ZrVmTest_LspRunAssignmentRangeCaseAt(SZrState *state,
                                              const TZrChar *label,
                                              const TZrChar *uriText,
@@ -96,6 +106,7 @@ TZrBool ZrVmTest_LspRunAssignmentRangeCaseAt(SZrState *state,
     TZrBool expectUnsignedRange;
     TZrBool passed;
 
+    /* 上述头文件契约要求非空文本；这里在访问长度前没有进行运行时检查。 */
     context = ZrLanguageServer_LspContext_New(state);
     uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
     if (context == ZR_NULL ||
@@ -116,6 +127,7 @@ TZrBool ZrVmTest_LspRunAssignmentRangeCaseAt(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* 范围事实来自 context 持有的分析快照，只在释放会话前读取。 */
     expectUnsignedRange = expectedMin >= 0 && expectedMax >= 0;
     passed = query.status == ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT &&
              query.expressionFact != ZR_NULL &&

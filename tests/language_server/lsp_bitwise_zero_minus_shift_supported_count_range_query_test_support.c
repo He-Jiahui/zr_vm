@@ -5,6 +5,8 @@
 
 #include "lsp_numeric_range_query_test_support.h"
 
+/* bitwise 测试入口只给表达式和期望范围；这里补齐相同的局部变量环境，
+ * 再把顶层 `|` 的位置交给通用 ExpressionAt 夹具。 */
 TZrBool ZrVmTest_LspRunBitwiseZeroMinusShiftSupportedCountRangeQuery(
         SZrState *state,
         const TZrChar *caseName,
@@ -16,6 +18,8 @@ TZrBool ZrVmTest_LspRunBitwiseZeroMinusShiftSupportedCountRangeQuery(
     TZrChar uri[256];
     int written;
 
+    /* expression 受源码缓冲区长度限制；caseName 同时进入标签与 URI，
+     * 须不含 URI 分隔符并分别适合两个缓冲区。格式化失败即测试失败。 */
     written = snprintf(
             content,
             sizeof(content),
@@ -54,6 +58,7 @@ TZrBool ZrVmTest_LspRunBitwiseZeroMinusShiftSupportedCountRangeQuery(
         return ZR_FALSE;
     }
 
+    /* 当前直接及包装后的调用样例均以顶层位或表达式为目标，首个 `|` 即查询点。 */
     return ZrVmTest_LspRunAssignmentRangeCaseAt(
             state,
             label,
