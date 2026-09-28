@@ -41,8 +41,8 @@ struct ZR_STRUCT_ALIGN SZrCallInfoContext {
 
 typedef struct SZrCallInfoContext SZrCallInfoContext;
 
-/* TODO: continuationFunction 仅在入口初始化时清空，其他 native 续体字段仅在测试中赋值；
- * 核查旧续体协议或外部 ABI 消费者后决定保留、接线或移除。 */
+/* TODO: 入口初始化置空 continuationFunction；复用 native 帧时整个 context 联合体会清零。
+ * 未见生产非零读写；核查旧续体协议或外部 ABI 消费者后决定保留、接线或移除。 */
 /** @brief native 帧的续体元数据，与 VM 的 programCounter 等字段共用联合体存储。 */
 struct ZR_STRUCT_ALIGN SZrCallInfoNativeContext {
     FZrContinuationNativeFunction continuationFunction;
@@ -60,7 +60,7 @@ union TZrCallInfoContext {
 
 typedef union TZrCallInfoContext TZrCallInfoContext;
 
-/* TODO: functionIndex、yieldValueCount 未见生产读写，returnValueCount 仅被重置；对照生成代码和 ABI 消费者
+/* TODO: functionIndex、yieldValueCount 未见生产读写，returnValueCount 在生产路径仅重置（测试验证复用）；对照生成代码和 ABI 消费者
  * 核查其是否为预留字段，避免把重叠的联合体视图当作并存状态。 */
 /** @brief 复用的 yield/返回/调试转移字段；当前生产读写以 transferStart/transferCount 为主。 */
 union TZrCallInfoYieldContext {
