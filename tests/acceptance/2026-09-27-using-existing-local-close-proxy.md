@@ -84,3 +84,28 @@ is still used. After that support fix, the new top-level proxy fixture compiles 
 The opcode tests validate AOT C/LLVM emitted calls, C shared-library linkage, and the direct
 AOT helper. Executing a generated AOT entry containing this source pattern remains a separate
 gate for the broader AOT plan.
+
+## Type-inference cleanup-plan fixture scope (2026-09-28)
+
+The direct statement-compilation fixtures for `using` cleanup metadata now enter a lexical
+scope before compilation and exit it afterward, with stack-depth assertions on both sides.
+This matches the production compiler entry path: cleanup proxy registration requires an active
+scope. The original cleanup ownership and generic-kind assertions remain unchanged.
+
+- Baseline recorded before the fixture correction: `zr_vm_type_inference_test` had 125 tests and
+  4 failures; these two fixtures failed with `Failed to register using cleanup proxy`, alongside
+  two unrelated generic-member inference failures.
+- Current-source focused build in
+  `/mnt/d/tmp/zr_vm/close-proxy-core-red`: `cmake --build
+  /mnt/d/tmp/zr_vm/close-proxy-core-red --target zr_vm_type_inference_test -- -j4` completed
+  successfully (448/448 Ninja edges).
+- Current `/mnt/d/tmp/zr_vm/close-proxy-core-red/bin/zr_vm_type_inference_test`: 125 tests,
+  2 failures. Both corrected `using` cleanup metadata fixtures pass; the remaining failures are
+  `test_type_inference_source_generic_class_member_substitutes_closed_field_type` and
+  `test_type_inference_source_generic_inheritance_substitutes_closed_base_member_type`.
+- Adjacent using cleanup runtime gate:
+  `/mnt/d/tmp/zr_vm/close-proxy-core-red/bin/zr_vm_buffer_pool_ffi_test --lease-cleanup`:
+  10/10 pass. The default `zr_vm_buffer_pool_ffi_test` suite also passes 23/23.
+
+Acceptance is limited to the test harness scope correction and its cleanup assertions. The two
+generic-member inference failures remain outside this fixture-only change.

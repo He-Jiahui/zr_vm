@@ -3065,6 +3065,9 @@ static void test_using_statement_compilation_records_cleanup_plan(void) {
 
         cs->currentFunction = ZrCore_Function_New(state);
         TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        TEST_ASSERT_EQUAL_INT(0, (int)cs->scopeStack.length);
+        enter_scope(cs);
+        TEST_ASSERT_EQUAL_INT(1, (int)cs->scopeStack.length);
 
         ZrParser_Statement_Compile(cs, resourceDecl);
         TEST_ASSERT_FALSE(cs->hasError);
@@ -3095,6 +3098,8 @@ static void test_using_statement_compilation_records_cleanup_plan(void) {
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_UNIQUE, ownedStep->ownershipQualifier);
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_DROP, ownedStep->ownershipBuiltinKind);
 
+        exit_scope(cs);
+        TEST_ASSERT_EQUAL_INT(0, (int)cs->scopeStack.length);
         ZrCore_Function_Free(state, cs->currentFunction);
         cs->currentFunction = ZR_NULL;
         ZrParser_Ast_Free(state, ast);
@@ -3155,6 +3160,9 @@ static void test_using_statement_cleanup_plan_records_ownership_generic_kind(voi
 
         cs->currentFunction = ZrCore_Function_New(state);
         TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        TEST_ASSERT_EQUAL_INT(0, (int)cs->scopeStack.length);
+        enter_scope(cs);
+        TEST_ASSERT_EQUAL_INT(1, (int)cs->scopeStack.length);
 
         ZrParser_Statement_Compile(cs, resourceDecl);
         TEST_ASSERT_FALSE(cs->hasError);
@@ -3170,6 +3178,8 @@ static void test_using_statement_cleanup_plan_records_ownership_generic_kind(voi
         TEST_ASSERT_TRUE(step->callsClose);
         TEST_ASSERT_TRUE(step->callsDestructor);
 
+        exit_scope(cs);
+        TEST_ASSERT_EQUAL_INT(0, (int)cs->scopeStack.length);
         ZrCore_Function_Free(state, cs->currentFunction);
         cs->currentFunction = ZR_NULL;
         ZrParser_Ast_Free(state, ast);
