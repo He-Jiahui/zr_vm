@@ -5,6 +5,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 位运算恒等式改变 observer 的偏移写法；三点查询检验简化后范围仍沿
+ * target、observer、mirror 的赋值链传播。 */
 static TZrBool test_local_expression_query_keeps_target_reading_positive_bitwise_xor_identity_zero_range_offset_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -165,6 +167,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_positive_bitwise
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* x ^ x 的偏移为零，用于检验依赖源文本的表达式仍可得到精确范围。 */
 static TZrBool test_local_expression_query_keeps_target_reading_bitwise_xor_idempotent_exact_zero_offset_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -819,6 +822,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_nested_commuted_
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 最深的模与加法仍位于 0 | rhs 下，回归点是跨嵌套层传播有界偏移。 */
 static TZrBool test_local_expression_query_keeps_target_reading_nested_commuted_bitwise_identity_zero_over_modulo_plus_range_offset_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -891,6 +895,7 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    /* TODO: && 串联变体时首个失败会跳过后续场景；完整矩阵诊断需逐例执行并汇总。 */
     passed =
             test_local_expression_query_keeps_target_reading_positive_bitwise_xor_identity_zero_range_offset_conditional_delta_range(
                     state) &&

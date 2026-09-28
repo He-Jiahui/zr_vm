@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_DIAGNOSTIC_SAFE_FIX_CASES_H
 #define ZR_VM_TEST_LSP_DIAGNOSTIC_SAFE_FIX_CASES_H
 
+/* 此头由 advanced_editor_features.c 包含，借用其文档夹具与断言宏；find_code 借出的诊断指针只在 diagnostics 存活时有效。 */
 static const SZrLspDiagnostic *diagnostic_safe_fix_find_code(
         SZrArray *diagnostics,
         const TZrChar *code) {
@@ -20,6 +21,9 @@ static const SZrLspDiagnostic *diagnostic_safe_fix_find_code(
     return ZR_NULL;
 }
 
+/* safe-fix 案例检查诊断给出的修复是否被 code action 呈现为相同标题和插入文本。
+ * TODO: 这里只看首个 edit，尚未排除同名 action 携带额外或错误范围编辑；需补充多 edit 反例。
+ */
 static TZrBool diagnostic_safe_fix_action_matches(
         SZrArray *actions,
         const TZrChar *title,
@@ -45,6 +49,9 @@ static TZrBool diagnostic_safe_fix_action_matches(
     return ZR_FALSE;
 }
 
+/* 共用样例先核对诊断上的 machine-applicable 修复及其 code action，再提交已修正的文档确认原诊断消失。
+ * 这是 parser 修复建议到编辑器操作的端到端契约，不把任意提示都视为可自动修复。
+ */
 static void test_lsp_code_action_inserts_header_token(
         SZrState *state,
         int *failures,
@@ -1535,6 +1542,7 @@ static void test_lsp_code_action_inserts_missing_array_element_separator(
     }
 }
 
+/* 赋值表达式不能靠补逗号修复；即使 parser 产生诊断，也不得把语义改变包装成机器可用的动作。 */
 static void test_lsp_code_action_skips_array_element_assignment_fix(
         SZrState *state,
         int *failures) {
@@ -1892,6 +1900,7 @@ static void test_lsp_code_action_inserts_missing_conditional_colon(
     }
 }
 
+/* 缺失表达式由用户决定；三种条件分支缺口都不得导出只补标点的自动修复。 */
 static void test_lsp_code_action_skips_conditional_branch_expression_fixes(
         SZrState *state,
         int *failures) {
@@ -2044,6 +2053,7 @@ static void test_lsp_code_action_inserts_missing_using_object_pattern_close(
     }
 }
 
+/* 语义诊断可以保留占位建议供人阅读，但 code action 不应提交包含 <value> 的未完成编辑。 */
 static void test_lsp_code_action_skips_placeholder_diagnostic_fix(
         SZrState *state,
         int *failures) {
@@ -2117,6 +2127,7 @@ static void test_lsp_code_action_skips_placeholder_diagnostic_fix(
     }
 }
 
+/* 已移除的所有权成员调用必须经迁移建议变为合法语法；测试同时检查动作和替换后诊断清除。 */
 static void test_lsp_code_action_migrates_removed_ownership_member_call(
         SZrState *state,
         int *failures) {

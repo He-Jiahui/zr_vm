@@ -6,6 +6,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 双重按位取反的计数树在范围分析中应恢复受支持计数；左右移与两种
+ * 右侧符号成对运行，验证最外层位或查询仍得到同一窄范围。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

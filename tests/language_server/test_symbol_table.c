@@ -15,15 +15,16 @@
 #include "zr_vm_parser/location.h"
 #include "zr_vm_common/zr_common_conf.h"
 
-// 测试时间测量结构
+/** 仅记录单个场景的 clock() 起止值用于日志；耗时不参与通过条件。 */
 typedef struct {
     clock_t startTime;
     clock_t endTime;
 } SZrTestTimer;
 
+/** TEST_FAIL 写入，main 最终将累计值折算为 CTest 退出状态。 */
 static int g_failures = 0;
 
-// 测试日志宏（符合测试规范）
+/** 每个测试函数自带 timer；这些局部宏统一日志和失败计数。 */
 #define TEST_START(summary) do { \
     timer.startTime = clock(); \
     printf("Unit Test - %s\n", summary); \
@@ -60,7 +61,7 @@ static int g_failures = 0;
     fflush(stdout); \
 } while(0)
 
-// 简单的测试分配器
+/** 独立符号表测试用此回调建立 VM 全局状态；测试对象都通过同一分配器生命周期管理。 */
 static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(flag);
@@ -93,7 +94,7 @@ static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSi
     }
 }
 
-// 测试符号表创建和释放
+/** 由 CTest 入口检查构造后全局作用域存在，以及符号表无需额外场景即可安全释放。 */
 static void test_symbol_table_create_and_free(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Symbol Table Creation and Free");
@@ -116,7 +117,7 @@ static void test_symbol_table_create_and_free(SZrState *state) {
     TEST_PASS(timer, "Symbol Table Creation and Free");
 }
 
-// 测试添加和查找符号
+/** 登记变量后按名称查找并检查种类，覆盖语义分析器建立符号索引所依赖的基础路径。 */
 static void test_symbol_table_add_and_lookup(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Symbol Table Add and Lookup");
@@ -172,7 +173,7 @@ static void test_symbol_table_add_and_lookup(SZrState *state) {
     TEST_PASS(timer, "Symbol Table Add and Lookup");
 }
 
-// 测试作用域管理
+/** 进入局部作用域再退出，验证当前作用域回到全局节点，防止后续符号解析遗留在子作用域。 */
 static void test_symbol_table_scope_management(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Symbol Table Scope Management");
@@ -216,7 +217,7 @@ static void test_symbol_table_scope_management(SZrState *state) {
     TEST_PASS(timer, "Symbol Table Scope Management");
 }
 
-// 测试符号引用计数
+/** 通过符号表取得符号并登记引用，验证位置范围保留在符号自身的引用数组中供导航使用。 */
 static void test_symbol_reference_storage(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Symbol Reference Storage");
@@ -270,7 +271,7 @@ static void test_symbol_reference_storage(SZrState *state) {
     TEST_PASS(timer, "Symbol Reference Storage");
 }
 
-// 主测试函数
+/** CTest 启动此独立目标；建立 VM 状态，顺序执行符号表生命周期、查找、作用域与引用场景。 */
 int main(void) {
     printf("==========\n");
     printf("Language Server - Symbol Table Tests\n");

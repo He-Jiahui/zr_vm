@@ -1,6 +1,7 @@
 //
 // Focused LSP semantic query diagnostic publication tests.
 //
+// 测试从文档更新进入 parser 语义事实，再检查 LSP 诊断的严重程度、来源区间、相关位置和修复建议。
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -50,6 +51,7 @@ static TZrPtr test_allocator(TZrPtr userData,
                              TZrSize originalSize,
                              TZrSize newSize,
                              TZrInt64 flag) {
+    /* TODO: 地址阈值及 originalSize 上限决定是否释放/重分配旧块；需核对 VM 回调对合法块传 0 原长等边界，避免遗失旧块。 */
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(flag);
 
@@ -150,6 +152,9 @@ static const SZrLspDiagnostic *diagnostic_array_find_code(SZrArray *diagnostics,
     return ZR_NULL;
 }
 
+/* 确定赋值事实应把未初始化读取关联到变量声明；该案例验证展示层不丢失关联位置与占位修复性质。
+ * BUG: 本文件及下方两个使用 LSP 诊断查询的案例头只调用 Array_Free；GetDiagnostics 创建的原生项和附属数组应由 FreeDiagnostics 释放。
+ */
 static void test_lsp_diagnostics_publish_definite_assignment_related_information(SZrState *state) {
     const TZrChar *summary = "LSP Diagnostics Publish Definite Assignment Related Information";
     const TZrChar *uriText = "file:///semantic_query_definite_assignment_related.zr";
@@ -259,6 +264,7 @@ static void test_lsp_diagnostics_publish_definite_assignment_related_information
     TEST_PASS(timer, summary);
 }
 
+/* BUG: 此例各出口仅 Array_Free 诊断指针数组，GetDiagnostics 的原生项与附属数组泄漏。 */
 static void test_lsp_diagnostics_publish_semantic_query_unreachable_branch(SZrState *state) {
     const TZrChar *summary = "LSP Diagnostics Publish Semantic Query Unreachable Branch";
     const TZrChar *uriText = "file:///semantic_query_unreachable_branch.zr";
@@ -310,6 +316,8 @@ static void test_lsp_diagnostics_publish_semantic_query_unreachable_branch(SZrSt
     TEST_PASS(timer, summary);
 }
 
+/* 区间传播与逻辑条件联用时，分支不可达事实仍应成为单条 LSP 诊断，避免只覆盖常量条件。 */
+/* BUG: 此例各出口仅 Array_Free 诊断指针数组，GetDiagnostics 的原生项与附属数组泄漏。 */
 static void test_lsp_diagnostics_publish_interval_logical_unreachable_branch(SZrState *state) {
     const TZrChar *summary = "LSP Diagnostics Publish Interval Logical Unreachable Branch";
     const TZrChar *uriText = "file:///semantic_query_interval_logical_branch.zr";
@@ -365,6 +373,7 @@ static void test_lsp_diagnostics_publish_interval_logical_unreachable_branch(SZr
     TEST_PASS(timer, summary);
 }
 
+/* BUG: 此例各出口仅 Array_Free 诊断指针数组，GetDiagnostics 的原生项与附属数组泄漏。 */
 static void test_lsp_diagnostics_publish_numeric_overflow(SZrState *state) {
     const TZrChar *summary = "LSP Diagnostics Publish Numeric Overflow";
     const TZrChar *uriText = "file:///semantic_query_numeric_overflow.zr";
@@ -430,6 +439,7 @@ static void test_lsp_diagnostics_publish_numeric_overflow(SZrState *state) {
     TEST_PASS(timer, summary);
 }
 
+/* BUG: 此例各出口仅 Array_Free 诊断指针数组，GetDiagnostics 的原生项与附属数组泄漏。 */
 static void test_lsp_diagnostics_publish_array_bounds(SZrState *state) {
     const TZrChar *summary = "LSP Diagnostics Publish Array Bounds";
     const TZrChar *uriText = "file:///semantic_query_array_bounds.zr";
@@ -482,6 +492,7 @@ static void test_lsp_diagnostics_publish_array_bounds(SZrState *state) {
     TEST_PASS(timer, summary);
 }
 
+/* BUG: 此例各出口仅 Array_Free 诊断指针数组，GetDiagnostics 的原生项与附属数组泄漏。 */
 static void test_lsp_diagnostics_publish_interval_array_bounds(SZrState *state) {
     const TZrChar *summary = "LSP Diagnostics Publish Interval Array Bounds";
     const TZrChar *uriText = "file:///semantic_query_interval_array_bounds.zr";
@@ -535,6 +546,8 @@ static void test_lsp_diagnostics_publish_interval_array_bounds(SZrState *state) 
     TEST_PASS(timer, summary);
 }
 
+/* 对仅可能越界的索引保留较弱诊断，不得与确定越界混同；此案例保护严重程度及查询事实映射。 */
+/* BUG: 此例各出口仅 Array_Free 诊断指针数组，GetDiagnostics 的原生项与附属数组泄漏。 */
 static void test_lsp_diagnostics_publish_possible_interval_array_bounds(SZrState *state) {
     const TZrChar *summary = "LSP Diagnostics Publish Possible Interval Array Bounds";
     const TZrChar *uriText = "file:///semantic_query_possible_interval_array_bounds.zr";
@@ -603,6 +616,7 @@ static void test_lsp_diagnostics_publish_possible_interval_array_bounds(SZrState
     TEST_PASS(timer, summary);
 }
 
+/* BUG: 此例各出口仅 Array_Free 诊断指针数组，GetDiagnostics 的原生项与附属数组泄漏。 */
 static void test_lsp_diagnostics_publish_primitive_integer_array_bounds(SZrState *state) {
     const TZrChar *summary = "LSP Diagnostics Publish Primitive Integer Array Bounds";
     const TZrChar *uriText = "file:///semantic_query_primitive_integer_array_bounds.zr";
@@ -671,6 +685,7 @@ static void test_lsp_diagnostics_publish_primitive_integer_array_bounds(SZrState
     TEST_PASS(timer, summary);
 }
 
+/* BUG: 此例各出口仅 Array_Free 诊断指针数组，GetDiagnostics 的原生项与附属数组泄漏。 */
 static void test_lsp_diagnostics_publish_array_min_max_bounds(SZrState *state) {
     const TZrChar *summary = "LSP Diagnostics Publish Array Min Max Bounds";
     const TZrChar *uriText = "file:///semantic_query_array_min_max_bounds.zr";
@@ -750,6 +765,7 @@ static void test_lsp_diagnostics_publish_array_min_max_bounds(SZrState *state) {
     TEST_PASS(timer, summary);
 }
 
+/* BUG: 此例各出口仅 Array_Free 诊断指针数组，GetDiagnostics 的原生项与附属数组泄漏。 */
 static void test_lsp_diagnostics_publish_min_only_array_negative_interval(SZrState *state) {
     const TZrChar *summary = "LSP Diagnostics Publish Min Only Array Negative Interval";
     const TZrChar *uriText = "file:///semantic_query_min_only_array_negative_interval.zr";
@@ -830,6 +846,7 @@ static void test_lsp_diagnostics_publish_min_only_array_negative_interval(SZrSta
     TEST_PASS(timer, summary);
 }
 
+/* BUG: 此例各出口仅 Array_Free 诊断指针数组，GetDiagnostics 的原生项与附属数组泄漏。 */
 static void test_lsp_diagnostics_publish_non_integer_array_index(SZrState *state) {
     const TZrChar *summary = "LSP Diagnostics Publish Non Integer Array Index";
     const TZrChar *uriText = "file:///semantic_query_array_index_type_mismatch.zr";
@@ -899,10 +916,12 @@ static void test_lsp_diagnostics_publish_non_integer_array_index(SZrState *state
     TEST_PASS(timer, summary);
 }
 
+/* 案例头依赖本文件的诊断查找器、测试宏和失败计数，只在这个 CTest 可执行入口编译。 */
 #include "test_lsp_duplicate_definition_diagnostic_cases.h"
 #include "test_lsp_semantic_query_diagnostic_replacement_cases.h"
 #include "test_lsp_type_mismatch_diagnostic_cases.h"
 
+/* CTest 入口共享 VM state 运行语义事实和内嵌案例，并将任一失败传递给测试进程。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

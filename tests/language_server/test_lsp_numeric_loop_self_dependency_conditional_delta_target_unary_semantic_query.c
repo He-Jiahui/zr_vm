@@ -5,6 +5,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 一元正号及多种零恒等式包住 target 读取路径；等价改写不应阻断
+ * 有界 observer 偏移及循环条件增量的事实传播。 */
 static TZrBool test_local_expression_query_keeps_target_reading_target_side_unary_plus_range_offset_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -616,6 +618,7 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    /* TODO: && 串联变体时首个失败会跳过后续场景；完整矩阵诊断需逐例执行并汇总。 */
     passed =
             test_local_expression_query_keeps_target_reading_target_side_unary_plus_range_offset_conditional_delta_range(
                     state);

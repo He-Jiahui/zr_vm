@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 故障扫描的计数仅由本宿主进程持有，main 逐轮设置序号并汇总断言结果。 */
 static int failures;
 static size_t allocationOrdinal;
 static size_t failureOrdinal;
@@ -17,11 +18,13 @@ static void expect_true(int condition, const char *message) {
     }
 }
 
+/* 给 cJSON 钩子按分配序号注入失败，以枚举导出 JSON 封装的各个分配点。 */
 static void *fault_malloc(size_t size) {
     allocationOrdinal++;
     return allocationOrdinal == failureOrdinal ? NULL : malloc(size);
 }
 
+/* 宿主测试接管 WASM 导出返回的 JSON 文本并在解析后释放；解析结果由调用方删除。 */
 static cJSON *take_response(const char *text) {
     cJSON *json;
     expect_true(text != NULL, "non-faulted export must return JSON");
@@ -31,6 +34,7 @@ static cJSON *take_response(const char *text) {
     return json;
 }
 
+/* 语法错误文本仍是已提交版本；旧版本重放不能覆盖修复后的快照。 */
 static void test_document_update_snapshot_contract(void *context) {
     static const char uri[] = "file:///wasm-update-snapshot.zr";
     static const char broken[] = "\"unterminated";
@@ -61,6 +65,7 @@ static void test_document_update_snapshot_contract(void *context) {
     cJSON_Delete(json);
 }
 
+/* 宿主 CTest 检查实际 VM 导出和统一 JSON 响应，逐个分配故障点验证不会返回部分成功。 */
 int main(void) {
     static const char uri[] = "file:///wasm-response-empty.zr";
     void *context = wasm_ZrLspContextNew();

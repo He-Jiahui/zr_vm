@@ -5,6 +5,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 同标识符差、模或异或构造精确零，再乘跨符号 span 作为循环 offset；
+ * 对目标、观察值和镜像三个位置各建独立查询会话，验证更新方向的范围。 */
 static TZrBool run_unary_same_identifier_difference_product_query_case(
         SZrState *state,
         const char *label,
@@ -111,6 +113,7 @@ static TZrBool run_unary_same_identifier_difference_product_query_case(
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 向上分支固定正增量与三个查询点的期望，供所有零乘积外形共用。 */
 static TZrBool run_upward_query_case(
         SZrState *state,
         const char *label,
@@ -130,6 +133,7 @@ static TZrBool run_upward_query_case(
             ZR_TYPE_RANGE_INT64_MAX);
 }
 
+/* 向下分支固定负增量边界；与向上分支成对排除单侧范围推断特例。 */
 static TZrBool run_downward_query_case(
         SZrState *state,
         const char *label,
@@ -149,6 +153,8 @@ static TZrBool run_downward_query_case(
             5);
 }
 
+/* CMake 单独执行自依赖循环矩阵；一元正号、零加减、差/模/异或及乘法
+ * 交换律都应把 offset 识别为精确零，而非放宽循环后的三处范围。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
@@ -165,6 +171,8 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    /* TODO: 连续 && 会在首个失败后跳过余下独立 offset 形状；先核对
+     * CTest 对多故障定位的需求，再考虑逐例累积而保留同一失败退出码。 */
     passed = run_upward_query_case(
                      state,
                      "while self-dependent target-reading subtract zero-minus sign-crossing unary-left same-identifier difference product offset conditional positive delta",

@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TESTS_LANGUAGE_SERVER_LSP_SOURCE_CONTRACT_RETURN_TYPE_CASES_H
 #define ZR_VM_TESTS_LANGUAGE_SERVER_LSP_SOURCE_CONTRACT_RETURN_TYPE_CASES_H
 
+/* 返回类型推断由 parser compiler 处理，LSP 使用诊断投影保持结果一致。 */
 static void test_return_type_inference_uses_parser_diagnostic_projection(void) {
     char *symbols = read_repo_text_file_owned(
             "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c");

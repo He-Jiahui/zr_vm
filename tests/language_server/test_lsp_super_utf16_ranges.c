@@ -99,6 +99,8 @@ static void describe_first_highlight(SZrArray *highlights) {
     }
 }
 
+/* λ 注释将源码字节列与 LSP 列错开；super 构造调用的定义和高亮
+ * 都应返回基类构造与调用点的 UTF-16 范围。 */
 static TZrBool test_super_constructor_after_utf8_prefix_uses_utf16_columns(SZrState *state) {
     const TZrChar *content =
         "class BaseHero {\n"
@@ -137,6 +139,8 @@ static TZrBool test_super_constructor_after_utf8_prefix_uses_utf16_columns(SZrSt
         printf("\n");
         passed = ZR_FALSE;
     }
+    /* BUG: 定义、引用与高亮各返回独立 RawMalloc 的指针项；本函数三处
+     * Array_Free 只回收外层数组，非空结果逐次泄漏项。 */
     ZrCore_Array_Free(state, &definitions);
 
     ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 4);
@@ -170,6 +174,7 @@ static TZrBool test_super_constructor_after_utf8_prefix_uses_utf16_columns(SZrSt
     return passed;
 }
 
+/* 独立 CMake 目标在一次 VM 会话内完成 super 导航位置回归。 */
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global;

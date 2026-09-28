@@ -15,6 +15,7 @@
 
 #include "../../zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h"
 
+/* CMake 测试入口将此回调交给 VM state，所有 CodeLens 会话都在该状态内释放。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -46,6 +47,7 @@ static const TZrChar *test_string_text(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
+/* 同时核对 lens 显示范围和命令位置参数，避免只修 UI 标记却仍向命令发送字节列。 */
 static TZrBool test_lens_matches(SZrArray *lenses,
                                  const TZrChar *title,
                                  TZrInt32 line,
@@ -106,6 +108,7 @@ static void describe_first_lens(SZrArray *lenses) {
     }
 }
 
+/* 非 ASCII 注释位于声明前，引用计数 lens 的 range 与命令位置均须使用 UTF-16 列。 */
 static TZrBool test_code_lens_reference_count_after_utf8_prefix_uses_utf16_columns(SZrState *state) {
     const TZrChar *content =
         "/* \xCE\xBB */ fn helper(value: int): int {\n"
@@ -151,6 +154,8 @@ static TZrBool test_code_lens_reference_count_after_utf8_prefix_uses_utf16_colum
     return passed;
 }
 
+/* 临时移除可枚举符号表，验证 CodeLens 仍以语义声明事实为身份来源；
+ * 查询后立即恢复指针，避免污染后续快照释放。 */
 static TZrBool test_code_lens_enumerates_canonical_declarations_without_symbol_table(
         SZrState *state) {
     const TZrChar *content =
@@ -220,6 +225,7 @@ static TZrBool test_code_lens_enumerates_canonical_declarations_without_symbol_t
     return passed;
 }
 
+/* 同一 URI 从两个引用更新为一个引用后，lens 必须绑定当前分析快照。 */
 static TZrBool test_code_lens_rebinds_to_current_semantic_snapshot(
         SZrState *state) {
     const TZrChar *contentV1 =
@@ -283,6 +289,7 @@ static TZrBool test_code_lens_rebinds_to_current_semantic_snapshot(
     return passed;
 }
 
+/* 人工撤销声明解析事实，确认 CodeLens 不会按同名文本猜测引用身份。 */
 static TZrBool test_code_lens_fails_closed_for_unresolved_declaration(
         SZrState *state) {
     const TZrChar *content =
@@ -352,6 +359,8 @@ static TZrBool test_code_lens_fails_closed_for_unresolved_declaration(
     return passed;
 }
 
+/* 独立 CMake 目标汇总 UTF-16、声明身份及快照失效场景；各用例左置于
+ * && passed，先前失败不会阻止剩余用例执行。 */
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global;

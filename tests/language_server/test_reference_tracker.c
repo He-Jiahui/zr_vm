@@ -14,15 +14,16 @@
 #include "zr_vm_parser/location.h"
 #include "zr_vm_common/zr_common_conf.h"
 
-// 测试时间测量结构
+/** 仅记录单个场景的 clock() 起止值用于失败日志；耗时不参与通过条件。 */
 typedef struct {
     clock_t startTime;
     clock_t endTime;
 } SZrTestTimer;
 
+/** TEST_FAIL 写入，main 最终将累计值折算为 CTest 退出状态。 */
 static int g_failures = 0;
 
-// 测试日志宏
+/** 每个测试函数自带 timer；这些局部宏统一日志和失败计数，避免场景误报成功。 */
 #define TEST_START(summary) do { \
     timer.startTime = clock(); \
     printf("Unit Test - %s\n", summary); \
@@ -59,7 +60,7 @@ static int g_failures = 0;
     fflush(stdout); \
 } while(0)
 
-// 简单的测试分配器
+/** 独立引用追踪测试以此分配器建立 VM 全局状态；仅供本进程中的测试对象按同一回调分配和回收。 */
 static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(flag);
@@ -92,7 +93,7 @@ static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSi
     }
 }
 
-// 测试引用追踪器创建和释放
+/** 由 CTest 入口验证 tracker 借用已建符号表且可先于符号表释放，覆盖基础所有权顺序。 */
 static void test_reference_tracker_create_and_free(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Reference Tracker Creation and Free");
@@ -117,7 +118,7 @@ static void test_reference_tracker_create_and_free(SZrState *state) {
     TEST_PASS(timer, "Reference Tracker Creation and Free");
 }
 
-// 测试添加和查找引用
+/** 将读引用登记到 tracker 后在相同 URI 和位置查询，确认命中项保留符号、SymbolId 与引用角色。 */
 static void test_reference_tracker_add_and_find(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Reference Tracker Add and Find");
@@ -195,6 +196,7 @@ static void test_reference_tracker_add_and_find(SZrState *state) {
     TEST_PASS(timer, "Reference Tracker Add and Find");
 }
 
+/** 在同一文件登记多个位置并逐一查询，防止位置索引只返回首个或最近一次引用。 */
 static void test_reference_tracker_finds_each_exact_location(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Reference Tracker Finds Each Exact Location");
@@ -263,6 +265,8 @@ static void test_reference_tracker_finds_each_exact_location(SZrState *state) {
     TEST_PASS(timer, "Reference Tracker Finds Each Exact Location");
 }
 
+/** 分别测试缺失 URI 不匹配与相同 URI 文本的不同字符串对象可匹配；跨文件同坐标需另设对照样例。 */
+/* TODO: 增加两个不同的非空 URI 与相同坐标，直接验证跨文件查询不会误命中。 */
 static void test_reference_tracker_requires_exact_source_identity(
         SZrState *state) {
     SZrTestTimer timer;
@@ -400,6 +404,7 @@ static void test_reference_tracker_requires_exact_source_identity(
     TEST_PASS(timer, "Reference Tracker Exact Source Identity");
 }
 
+/** 对同名不同 SymbolId 的符号登记引用，验证精确位置查询不会把文本同名误当规范身份相同。 */
 static void test_reference_tracker_preserves_canonical_symbol_identity(
         SZrState *state) {
     SZrTestTimer timer;
@@ -512,7 +517,7 @@ static void test_reference_tracker_preserves_canonical_symbol_identity(
     TEST_PASS(timer, "Reference Tracker Canonical Symbol Identity");
 }
 
-// 主测试函数
+/** CTest 启动此独立目标；建立 VM 状态，顺序运行引用位置与身份场景，并以累计失败数返回退出状态。 */
 int main(void) {
     printf("==========\n");
     printf("Language Server - Reference Tracker Tests\n");

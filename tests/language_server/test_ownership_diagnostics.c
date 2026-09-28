@@ -1,6 +1,4 @@
-//
-// Focused ownership diagnostic regression tests.
-//
+// 从 CTest 的独立入口覆盖所有权事实、诊断以及 LSP 投影；案例头文件共享本文件的夹具与断言辅助函数。
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,24 +19,29 @@
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_system/module.h"
 
+/* 各案例独立计时；失败数由同一可执行文件的 main 汇总为退出状态。 */
 typedef struct SZrTestTimer {
     clock_t startTime;
     clock_t endTime;
 } SZrTestTimer;
 
+/* TEST_FAIL 跨主文件和被包含案例累加，供 CTest 识别任一断言失败。 */
 static int test_failures = 0;
 
+/* 案例日志和计时由 main 的逐项调用驱动，不能将这些宏用于缺少 timer 的作用域。 */
 #define TEST_START(summary) do { \
     timer.startTime = clock(); \
     printf("Unit Test - %s\n", summary); \
     fflush(stdout); \
 } while (0)
 
+/* 说明测试要守住的契约，使诊断失败时可区分场景。 */
 #define TEST_INFO(summary, details) do { \
     printf("Testing %s:\n %s\n", summary, details); \
     fflush(stdout); \
 } while (0)
 
+/* 成功与失败都刷新输出，便于 CTest 截取最后一个执行的案例。 */
 #define TEST_PASS(timerValue, summary) do { \
     (timerValue).endTime = clock(); \
     double elapsed = ((double)((timerValue).endTime - (timerValue).startTime) / CLOCKS_PER_SEC) * 1000.0; \
@@ -46,6 +49,7 @@ static int test_failures = 0;
     fflush(stdout); \
 } while (0)
 
+/* 每次失败累计一次，main 统一转成非零退出码。 */
 #define TEST_FAIL(timerValue, summary, reason) do { \
     (timerValue).endTime = clock(); \
     double elapsed = ((double)((timerValue).endTime - (timerValue).startTime) / CLOCKS_PER_SEC) * 1000.0; \
@@ -54,11 +58,13 @@ static int test_failures = 0;
     fflush(stdout); \
 } while (0)
 
+/* 将 main 中相邻的所有权场景日志隔开。 */
 #define TEST_DIVIDER() do { \
     printf("----------\n"); \
     fflush(stdout); \
 } while (0)
 
+/* Core 全局状态创建时登记的回调；这套夹具只在单线程同步测试里使用。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -88,6 +94,8 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* 把内嵌 Zr 源码中的第 N 个词面位置交给 ownership-fact 查询；仅适合这里的 ASCII 测试源码。 */
+/* TODO: needle 缺失时当前返回源首位置；需在调用夹具变更后核对是否会掩盖事实定位退化。 */
 static SZrFileRange file_range_for_nth_substring(const TZrChar *content,
                                                  const TZrChar *needle,
                                                  TZrSize occurrence) {
@@ -123,6 +131,7 @@ static SZrFileRange file_range_for_nth_substring(const TZrChar *content,
     return ZrParser_FileRange_Create(position, position, ZR_NULL);
 }
 
+/* 消息和建议允许追加上下文，断言仅要求关键诊断含义仍可读。 */
 static TZrBool diagnostic_string_contains(SZrString *value, const TZrChar *fragment) {
     const TZrChar *text;
 
@@ -134,19 +143,23 @@ static TZrBool diagnostic_string_contains(SZrString *value, const TZrChar *fragm
     return text != ZR_NULL && strstr(text, fragment) != ZR_NULL;
 }
 
+/* 下游精确比较借用 VM 字符串的原生视图，不取得字符缓冲区所有权。 */
 static const TZrChar *test_string_text(SZrString *value) {
     return value != ZR_NULL ? ZrCore_String_GetNativeString(value) : ZR_NULL;
 }
 
+/* 对诊断 code 和 related message 使用精确契约，避免只匹配同类诊断。 */
 static TZrBool test_string_equals(SZrString *value, const TZrChar *expected) {
     const TZrChar *text = test_string_text(value);
     return text != ZR_NULL && expected != ZR_NULL && strcmp(text, expected) == 0;
 }
 
+/* 查询结果为 analyzer 语义上下文借用的事实；仅在释放 analyzer 前使用。 */
 static TZrBool ownership_fact_message_contains(const SZrSemanticOwnershipFact *fact, const TZrChar *fragment) {
     return fact != ZR_NULL && diagnostic_string_contains(fact->diagnosticMessage, fragment);
 }
 
+/* 各案例按内部一基行号缩小诊断范围，再检查责任位置和所有权事实。 */
 static SZrDiagnostic *find_diagnostic_by_code_and_line(SZrSemanticAnalyzer *analyzer,
                                                        const TZrChar *code,
                                                        TZrInt32 line) {
@@ -171,6 +184,7 @@ static SZrDiagnostic *find_diagnostic_by_code_and_line(SZrSemanticAnalyzer *anal
     return ZR_NULL;
 }
 
+/* 逃逸场景要求单次发报，防止多个分析阶段重复发布同一错误。 */
 static TZrSize count_diagnostics_by_code_and_line(
         SZrSemanticAnalyzer *analyzer,
         const TZrChar *code,
@@ -193,6 +207,7 @@ static TZrSize count_diagnostics_by_code_and_line(
     return count;
 }
 
+/* LSP 边界案例先按 code 取项，再验证零基范围与相关位置。 */
 static const SZrLspDiagnostic *find_lsp_diagnostic_by_code(SZrArray *diagnostics,
                                                            const TZrChar *code) {
     TZrSize index;
@@ -215,6 +230,7 @@ static const SZrLspDiagnostic *find_lsp_diagnostic_by_code(SZrArray *diagnostics
     return ZR_NULL;
 }
 
+/* 借用自函数内 Unique 形参的 ref 不能逃逸；诊断、双相关位置和 ownership fact 应指向同一源。 */
 static void test_semantic_analyzer_reports_loaned_return_escape(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Reports Loaned Return Escape");
@@ -230,6 +246,7 @@ static void test_semantic_analyzer_reports_loaned_return_escape(SZrState *state)
             "    return ref resource;\n"
             "}\n";
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        /* BUG: 字面量为 38 字节，传入 37 会截断诊断所携带的来源名最后一个字符。 */
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_loaned_return_escape_test.zr", 37);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
         SZrDiagnostic *diagnostic;
@@ -336,6 +353,7 @@ static void test_semantic_analyzer_reports_loaned_return_escape(SZrState *state)
     TEST_PASS(timer, "Semantic Analyzer Reports Loaned Return Escape");
 }
 
+/* readonly 借用返回值也不能越过 Unique 形参寿命；与 loaned 情况分别锁定诊断码和来源链。 */
 static void test_semantic_analyzer_reports_borrowed_return_escape(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Reports Borrowed Return Escape";
     const TZrChar *testCode =
@@ -413,6 +431,7 @@ static void test_semantic_analyzer_reports_borrowed_return_escape(SZrState *stat
     TEST_PASS(timer, summary);
 }
 
+/* 从文档更新走到 LSP 诊断查询，核对内部一基来源位置被投影为协议零基坐标。 */
 static void test_lsp_translates_loan_escape_related_information(SZrState *state) {
     const TZrChar *summary = "LSP Translates Loan Escape Related Information";
     const TZrChar *uriText = "file:///ownership_loan_escape_related.zr";
@@ -445,6 +464,7 @@ static void test_lsp_translates_loan_escape_related_information(SZrState *state)
         return;
     }
 
+    /* BUG: 后续分支仅 Array_Free 外层数组；GetDiagnostics 所分配的诊断项与子数组需由 Lsp_FreeDiagnostics 回收。 */
     ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
     if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics)) {
         ZrCore_Array_Free(state, &diagnostics);
@@ -491,6 +511,7 @@ static void test_lsp_translates_loan_escape_related_information(SZrState *state)
     TEST_PASS(timer, summary);
 }
 
+/* 按值传入 Unique 后，后续读取须报 use_after_move，且事实与 related location 指向相同移动点。 */
 static void test_semantic_analyzer_reports_use_after_unique_move(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Reports Use After Unique Move";
     const TZrChar *testCode =
@@ -586,6 +607,7 @@ static void test_semantic_analyzer_reports_use_after_unique_move(SZrState *state
     TEST_PASS(timer, summary);
 }
 
+/* 条件分支的移动路径必须跨控制流合并保留，并在 LSP 结果中带上分支内移动位置。 */
 static void test_lsp_reports_possible_path_use_after_move(SZrState *state) {
     const TZrChar *summary = "LSP Reports Possible-Path Use After Move";
     const TZrChar *uriText = "file:///ownership_possible_path_use_after_move.zr";
@@ -620,6 +642,7 @@ static void test_lsp_reports_possible_path_use_after_move(SZrState *state) {
         return;
     }
 
+    /* BUG: 仅释放查询结果外层数组会泄漏 LSP 诊断项；所有早退路径也应使用 Lsp_FreeDiagnostics。 */
     ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
     if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics)) {
         ZrCore_Array_Free(state, &diagnostics);
@@ -661,6 +684,7 @@ static void test_lsp_reports_possible_path_use_after_move(SZrState *state) {
     TEST_PASS(timer, summary);
 }
 
+/* Unique 初始化赋值也转移所有权；相关位置应落在赋值来源而非声明目标。 */
 static void test_semantic_analyzer_reports_use_after_unique_assignment_move(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Reports Use After Unique Assignment Move";
     const TZrChar *testCode =
@@ -727,6 +751,7 @@ static void test_semantic_analyzer_reports_use_after_unique_assignment_move(SZrS
     TEST_PASS(timer, summary);
 }
 
+/* ref 形参只借用 Unique 实参，后续读取不得被当作按值调用后的移动。 */
 static void test_semantic_analyzer_does_not_move_unique_ref_argument(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Does Not Move Unique Ref Argument";
     const TZrChar *testCode =
@@ -783,6 +808,7 @@ static void test_semantic_analyzer_does_not_move_unique_ref_argument(SZrState *s
     TEST_PASS(timer, summary);
 }
 
+/* 调用方传入的 ref 可原样返回；此场景与局部 owner 借用逃逸分开审查。 */
 static void test_semantic_analyzer_allows_caller_reference_passthrough(
         SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Allows Caller Reference Passthrough";
@@ -837,11 +863,13 @@ static void test_semantic_analyzer_allows_caller_reference_passthrough(
     TEST_PASS(timer, summary);
 }
 
+/* 案例头文件依赖上面的夹具辅助函数，由本可执行文件统一调用与汇总。 */
 #include "test_ownership_diagnostics_region_cases.h"
 #include "test_ownership_diagnostics_owner_set_cases.h"
 #include "test_ownership_diagnostics_using_body_cases.h"
 #include "test_ownership_diagnostics_weak_receiver_cases.h"
 
+/* CTest 入口：创建运行时与标准模块注册表，再顺序覆盖内部事实和 LSP 发布边界。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

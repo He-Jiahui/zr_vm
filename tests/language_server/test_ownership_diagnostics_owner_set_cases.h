@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TESTS_LANGUAGE_SERVER_OWNERSHIP_DIAGNOSTICS_OWNER_SET_CASES_H
 #define ZR_VM_TESTS_LANGUAGE_SERVER_OWNERSHIP_DIAGNOSTICS_OWNER_SET_CASES_H
 
+/* 四种 alias 夹具的共同断言：分析后以错误码与行号取诊断，并核对相关位置属于候选 owner 集合。 */
 static void test_possible_owner_release_case(
         SZrState *state,
         const TZrChar *summary,
@@ -71,6 +72,7 @@ static void test_possible_owner_release_case(
     TEST_PASS(timer, summary);
 }
 
+/* 条件重绑定后仍须保留初始 Shared owner；无论分支取值如何，后续释放都可能影响借用。 */
 static void test_semantic_analyzer_joins_borrowed_alias_owner_set(SZrState *state) {
     const TZrChar *testCode =
         "resource class Resource {\n"
@@ -98,6 +100,7 @@ static void test_semantic_analyzer_joins_borrowed_alias_owner_set(SZrState *stat
             ZR_TRUE);
 }
 
+/* Unique loan 的条件替换 owner 须参与合并，错误应指向仅在分支内采用的 second。 */
 static void test_semantic_analyzer_joins_loaned_alias_owner_set(SZrState *state) {
     const TZrChar *testCode =
         "resource class Resource {\n"
@@ -124,6 +127,7 @@ static void test_semantic_analyzer_joins_loaned_alias_owner_set(SZrState *state)
             ZR_TRUE);
 }
 
+/* degrade 后的 weak alias 在条件赋值中保留候选 owner，直接借用时应关联可能的释放点。 */
 static void test_semantic_analyzer_joins_weak_alias_owner_set(SZrState *state) {
     const TZrChar *testCode =
         "resource class Resource {\n"
@@ -151,6 +155,7 @@ static void test_semantic_analyzer_joins_weak_alias_owner_set(SZrState *state) {
             ZR_TRUE);
 }
 
+/* 无关 Shared 值不属于合并后的 owner 集合，释放它不能令 alias 产生虚假的 borrow_escape。 */
 static void test_semantic_analyzer_ignores_release_outside_alias_owner_set(
         SZrState *state) {
     const TZrChar *testCode =

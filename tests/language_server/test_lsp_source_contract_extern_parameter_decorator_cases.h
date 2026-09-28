@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_SOURCE_CONTRACT_EXTERN_PARAMETER_DECORATOR_CASES_H
 #define ZR_VM_TEST_LSP_SOURCE_CONTRACT_EXTERN_PARAMETER_DECORATOR_CASES_H
 
+/* extern 参数装饰器规则只保留 parser 一份，LSP 不重做参数验证。 */
 static void test_extern_parameter_decorators_use_parser_diagnostic_projection(void) {
     char *typecheck = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");

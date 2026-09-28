@@ -1,6 +1,8 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "zr_vm_language_server/lsp_capability_registry.h"
 
+/* 探针只在单次 CLI 执行中使用这些观测槽；生产分派器的 strcmp 和处理器替身
+ * 共享它们来记录候选方法、参数透传和调用次数，不能并发调用探针分派。 */
 static cJSON *inventoryComparisons;
 static int inventoryComparisonAllocationFailed;
 static SZrStdioServer *inventoryExpectedServer;
@@ -8,12 +10,14 @@ static const cJSON *inventoryExpectedParams;
 static size_t inventoryHandlerCalls;
 static int inventoryHandlerArgumentsFailed;
 
+/* CLI 层统一把清单构建失败转为非零退出，供 stdio_protocol_inventory.js 拒绝比对。 */
 static int inventory_error(const char *message, const char *subject) {
     fprintf(stderr, "lsp capability inventory: %s%s%s\n", message,
             subject != NULL ? ": " : "", subject != NULL ? subject : "");
     return 0;
 }
 
+/* JSON 容器接管成功插入的节点；失败时本层回收，避免清单探针泄漏半成品。 */
 static int inventory_append_owned(cJSON *array, cJSON *item) {
     if (item == NULL || !cJSON_AddItemToArray(array, item)) {
         cJSON_Delete(item);
@@ -22,6 +26,7 @@ static int inventory_append_owned(cJSON *array, cJSON *item) {
     return 1;
 }
 
+/* 未知方法遍历生产分派链时截获每次比较，推导真实路由集合，避免另维护测试清单。 */
 static int inventory_method_compare(const char *method, const char *candidate) {
     const int comparison = strcmp(method, candidate);
 
@@ -39,6 +44,7 @@ static int inventory_method_compare(const char *method, const char *candidate) {
     return comparison;
 }
 
+/* 处理器替身只记录被选目标及原始实参；它不执行业务逻辑，调用者据此核对分派契约。 */
 static cJSON *inventory_handler_result(const char *handler,
                                        SZrStdioServer *server,
                                        const cJSON *params) {
@@ -49,7 +55,8 @@ static cJSON *inventory_handler_result(const char *handler,
     return cJSON_CreateString(handler);
 }
 
-/* Only handler bodies are replaced; method selection remains production code. */
+/* 每个生产处理器都由同签名替身覆盖；方法选择仍来自下面直接包含的生产分派实现。
+ * 宏展开的处理器只在此独立测试目标中链接，返回的 JSON 归探针分派调用者所有。 */
 #define INVENTORY_HANDLER(name) \
     SZrLspHandlerResult name(SZrStdioServer *server, const cJSON *params) { \
         SZrLspHandlerResult response = {ZR_LSP_HANDLER_OK, inventory_handler_result(#name, server, params)}; \
@@ -101,11 +108,13 @@ INVENTORY_HANDLER(handle_project_modules_request)
 
 #undef INVENTORY_HANDLER
 
-/* The guarded internal header is already loaded before strcmp is intercepted. */
+/* 头文件须在替换 strcmp 前载入，保证仅生产分派链被观测，探针自身的比较不受影响。 */
 #define strcmp inventory_method_compare
 #include "../../zr_vm_language_server/stdio/stdio_request_dispatch.c"
 #undef strcmp
 
+/* 对一次生产分派同时核对状态、返回节点和唯一替身命中；返回值保留 0/1/-1 三态。
+ * outResult 非空时转交 JSON 所有权，否则在本层销毁。 */
 static int inventory_probe_dispatch(SZrStdioServer *server,
                                      const char *method,
                                      const cJSON *params,
@@ -152,6 +161,7 @@ static int inventory_probe_dispatch(SZrStdioServer *server,
     return handled;
 }
 
+/* 未知方法探测应完整经过每个候选且没有重复，才可把比较轨迹当作路由清单。 */
 static int inventory_validate_comparisons(const cJSON *comparisons) {
     const cJSON *entry;
 
@@ -179,6 +189,8 @@ static int inventory_validate_comparisons(const cJSON *comparisons) {
     return 1;
 }
 
+/* 对已发现方法枚举两项可选能力的四种组合，导出处理器及协商门控给 JS 契约比对。
+ * server 的能力位由此函数暂改，下一轮路由开始时会重置。 */
 static int inventory_add_route(cJSON *routes,
                                SZrStdioServer *server,
                                const cJSON *params,
@@ -240,6 +252,8 @@ cleanup:
     return succeeded;
 }
 
+/* 未知方法先穷举生产分派链的比较候选，再逐项验证可达处理器和能力门控。
+ * 退出时清空指针槽，计数/标记在下一次使用前重置；发现依赖 strcmp 比较静态方法名。 */
 static int inventory_add_native_routes(cJSON *routes) {
     static const char unknownMethod[] = "$/zrCapabilityInventoryUnknownMethod";
     SZrStdioServer server = {0};
@@ -295,6 +309,7 @@ cleanup:
     return succeeded;
 }
 
+/* 描述符缺项以 JSON null 保留键，使 JS 消费者能够区分未声明与序列化遗漏。 */
 static cJSON *inventory_add_nullable_string(cJSON *object,
                                              const char *key,
                                              const char *value) {
@@ -302,6 +317,7 @@ static cJSON *inventory_add_nullable_string(cJSON *object,
                          : cJSON_AddNullToObject(object, key);
 }
 
+/* 把注册表的可发布描述符投影为 JS 所需清单；边界与描述符有效期先行核对。 */
 static int inventory_add_capabilities(cJSON *capabilities) {
     const TZrSize count = ZrLanguageServer_LspCapabilityRegistry_Count();
     TZrSize index;
@@ -346,6 +362,7 @@ static int inventory_add_capabilities(cJSON *capabilities) {
     return 1;
 }
 
+/* 将 LSP 公共 token 图例按原索引导出，供协议层核对 initialize 发布的顺序。 */
 static int inventory_add_semantic_token_types(cJSON *types) {
     const TZrSize count = ZrLanguageServer_Lsp_SemanticTokenTypeCount();
     TZrSize index;
@@ -365,6 +382,8 @@ static int inventory_add_semantic_token_types(cJSON *types) {
     return 1;
 }
 
+/* CTest 通过 stdio_protocol_inventory.js 启动此探针；标准输出只承载一份 JSON，
+ * 错误写到 stderr 且以非零退出中止 native/WASM/CTest 三方契约比较。 */
 int main(void) {
     cJSON *inventory = cJSON_CreateObject();
     cJSON *capabilities;

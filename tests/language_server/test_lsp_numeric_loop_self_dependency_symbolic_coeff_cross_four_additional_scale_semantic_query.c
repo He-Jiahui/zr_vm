@@ -5,6 +5,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 四层额外乘积的符号/零区间与正残差组合，覆盖深层零因子、交换乘法
+ * 和自抵消因子；乘积归零后剩余的正增量仍需触发循环扩张。 */
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_four_additional_level_positive_singleton_scale_product_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
@@ -516,6 +518,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper
     return narrowedPassed && otherPassed;
 }
 
+/* 交换次序的两项乘积抵消后仍有 step，防止代数简化把同次赋值误判为无变化。 */
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_four_additional_level_commuted_product_self_canceling_factor_scale_product_coefficient_same_assignment_positive_residual(
         SZrState *state) {
     const TZrChar *content =
@@ -577,6 +580,7 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    /* TODO: && 串联变体时首个失败会跳过后续场景；完整矩阵诊断需逐例执行并汇总。 */
     passed =
         test_local_expression_query_widens_target_reading_symbolic_deeper_four_additional_level_positive_singleton_scale_product_coefficient_residual(
                 state);

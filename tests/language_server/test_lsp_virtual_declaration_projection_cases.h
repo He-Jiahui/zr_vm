@@ -5,6 +5,7 @@
 #include "../../zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_native_declaration_projection.h"
 
+/* definition 返回的虚拟目标必须落在实际渲染的声明区间，不能只凭原生 descriptor 猜测文本位置。 */
 static void test_native_virtual_definition_selects_rendered_declaration(
         SZrState *state, TZrSize caseIndex) {
     const TZrChar *summaries[] = {
@@ -98,6 +99,7 @@ cleanup:
     }
 }
 
+/* 虚拟声明投影的范围与 descriptor 身份应可逆，供定义跳转和后续元数据查找一致使用。 */
 static void test_native_declaration_projection_preserves_descriptor_identity(SZrState *state) {
     static const ZrLibFunctionDescriptor functions[] = {
         {.name = "\xF0\x9D\x92\x9C" "overload", .returnTypeName = "int"},

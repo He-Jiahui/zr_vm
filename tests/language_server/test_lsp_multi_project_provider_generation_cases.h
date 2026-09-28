@@ -4,6 +4,7 @@
 #include "zr_vm_language_server/lsp_semantic_snapshot.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h"
 
+/* 查询 API 将 Location 对象交给调用方；矩阵测试在每轮释放它们，以免缓存预算检查掺入测试自身的残留。 */
 static void provider_matrix_free_locations(SZrState *state, SZrArray *locations) {
     if (!locations->isValid) {
         return;
@@ -17,6 +18,8 @@ static void provider_matrix_free_locations(SZrState *state, SZrArray *locations)
     ZrCore_Array_Free(state, locations);
 }
 
+/* 在同一个 context 中验证指定导入者的事实归属。acquisitionMode 刻意切换快照、局部查询和成员查询入口，
+ * 确保 provider 更新后不同首次请求都能得到本项目的当前代事实；failure 供外层矩阵报告阶段。 */
 static TZrBool provider_matrix_check_project(
         SZrState *state,
         SZrLspContext *context,
@@ -152,6 +155,8 @@ cleanup:
     return valid;
 }
 
+/* 从主测试入口分别覆盖二进制元数据和原生描述符：只替换第一个项目的 provider，
+ * 第二个项目的类型及引用必须保持不变，旧快照必须失效且零缓存预算仍能按需重建。 */
 static void test_lsp_multi_project_provider_generation(SZrState *state, TZrBool native) {
     const TZrChar *summary = native
             ? "LSP Native Provider Reload Preserves Other Project Facts"

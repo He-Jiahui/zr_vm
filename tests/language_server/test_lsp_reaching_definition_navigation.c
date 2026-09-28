@@ -15,19 +15,23 @@
 #include "zr_vm_language_server.h"
 #include "semantic/lsp_semantic_query.h"
 
+/* 导航测试按场景计时；时间不参与目标范围断言。 */
 typedef struct SZrTestTimer {
     clock_t startTime;
     clock_t endTime;
 } SZrTestTimer;
 
+/* 三类定义跳转场景共享失败数，main 映射为退出码。 */
 static int g_failures = 0;
 
+/* 开始一次独立导航场景的测试日志。 */
 #define TEST_START(summary) do { \
     timer.startTime = clock(); \
     printf("Unit Test - %s\n", summary); \
     fflush(stdout); \
 } while (0)
 
+/* 报告目标范围正确的场景耗时。 */
 #define TEST_PASS(timerValue, summary) do { \
     (timerValue).endTime = clock(); \
     double elapsed = ((double)((timerValue).endTime - (timerValue).startTime) / CLOCKS_PER_SEC) * 1000.0; \
@@ -35,6 +39,7 @@ static int g_failures = 0;
     fflush(stdout); \
 } while (0)
 
+/* 记录失败并继续执行其余定义导航场景。 */
 #define TEST_FAIL(timerValue, summary, reason) do { \
     (timerValue).endTime = clock(); \
     double elapsed = ((double)((timerValue).endTime - (timerValue).startTime) / CLOCKS_PER_SEC) * 1000.0; \
@@ -43,6 +48,7 @@ static int g_failures = 0;
     g_failures++; \
 } while (0)
 
+/* 为定义跳转集成用例建立可独立销毁的 VM 测试状态。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -72,6 +78,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* 在 ASCII 控制流源码中定位读取位置及定义范围的期望坐标。 */
 static TZrBool lsp_find_position_for_substring(const TZrChar *content,
                                                const TZrChar *needle,
                                                TZrSize occurrence,
@@ -112,6 +119,7 @@ static TZrBool lsp_find_position_for_substring(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* 比较导航结果的协议范围，防止只检查符号名而忽略实际写入点。 */
 static TZrBool lsp_range_equals(SZrLspRange range,
                                 TZrInt32 startLine,
                                 TZrInt32 startCharacter,
@@ -123,6 +131,7 @@ static TZrBool lsp_range_equals(SZrLspRange range,
            range.end.character == endCharacter;
 }
 
+/* 在多目标定义结果中查找指定写入范围，用于分支合流场景。 */
 static TZrBool location_array_contains_range(SZrArray *locations,
                                              TZrInt32 startLine,
                                              TZrInt32 startCharacter,
@@ -139,6 +148,7 @@ static TZrBool location_array_contains_range(SZrArray *locations,
     return ZR_FALSE;
 }
 
+/* 读取点的定义跳转优先指向实际到达的写入，不退回初始声明。 */
 static void test_lsp_definition_prefers_reaching_write_for_read(SZrState *state) {
     const TZrChar *summary = "LSP Definition Prefers Reaching Write For Read";
     const TZrChar *uriText = "file:///reaching_definition_navigation.zr";
@@ -171,6 +181,7 @@ static void test_lsp_definition_prefers_reaching_write_for_read(SZrState *state)
     }
 
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 1);
+    /* BUG: GetDefinition 命中位置逐项 RawMalloc；本案只 Array_Free 外层数组，导航目标泄漏，后续须逐项 RawFree。 */
     if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, readPosition, &definitions) ||
         !location_array_contains_range(&definitions, 2, 4, 2, 8) ||
         location_array_contains_range(&definitions, 1, 8, 1, 12)) {
@@ -189,6 +200,7 @@ static void test_lsp_definition_prefers_reaching_write_for_read(SZrState *state)
     TEST_PASS(timer, summary);
 }
 
+/* 分支汇合后的读取可由多个写入到达，定义结果必须保留两个目标。 */
 static void test_lsp_definition_returns_branch_writes_for_divergent_branch_writes(SZrState *state) {
     const TZrChar *summary = "LSP Definition Returns Branch Writes For Divergent Branch Writes";
     const TZrChar *uriText = "file:///reaching_definition_branch_join.zr";
@@ -225,6 +237,7 @@ static void test_lsp_definition_returns_branch_writes_for_divergent_branch_write
     }
 
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 1);
+    /* BUG: GetDefinition 的两个命中位置只随外层 Array_Free 丢弃，原生目标泄漏，后续须逐项 RawFree。 */
     if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, readPosition, &definitions) ||
         definitions.length != 2 ||
         location_array_contains_range(&definitions, 1, 8, 1, 12) ||
@@ -245,6 +258,7 @@ static void test_lsp_definition_returns_branch_writes_for_divergent_branch_write
     TEST_PASS(timer, summary);
 }
 
+/* 缺少绑定快照源时定义查询须失败关闭，不能伪造当前 URI 的跳转。 */
 static void test_lsp_definition_fails_closed_without_snapshot_source(SZrState *state) {
     const TZrChar *summary = "LSP Definition Fails Closed Without Snapshot Source";
     const TZrChar *uriText = "file:///reaching_definition_missing_source.zr";
@@ -283,6 +297,7 @@ static void test_lsp_definition_fails_closed_without_snapshot_source(SZrState *s
         goto cleanup;
     }
 
+    /* 清空同一 SymbolId 的所有候选来源，防止其他引用范围意外补出定义 URI。 */
     for (TZrSize index = 0U;
          index < query.analyzer->semanticContext->referenceFacts.length;
          index++) {
@@ -312,6 +327,7 @@ static void test_lsp_definition_fails_closed_without_snapshot_source(SZrState *s
         goto cleanup;
     }
 
+    /* 再断开 analyzer AST，迫使定义消费者按已绑定快照失败关闭；清理前恢复该借用指针。 */
     snapshotAst = query.analyzer->ast;
     query.analyzer->ast = ZR_NULL;
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 1);
@@ -341,6 +357,8 @@ cleanup:
     }
 }
 
+/* 建立 VM 状态并运行三类导航用例。BUG: CMake 仅创建目标，未将其加入套件或单独 add_test；
+ * CTest 不会执行这些用例，后续须登记目标。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

@@ -6,6 +6,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 双层零减法及精确零叶改变计数的语法树却不应丢失可推导范围；
+ * 使用共享局部表达式查询分别核对左右移和两种右侧符号。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

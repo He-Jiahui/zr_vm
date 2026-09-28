@@ -1,6 +1,8 @@
 #ifndef ZR_VM_TEST_LSP_PROJECT_PUBLIC_CONTRACT_CASES_H
 #define ZR_VM_TEST_LSP_PROJECT_PUBLIC_CONTRACT_CASES_H
 
+/* 用导入者的分析计数和项目记录的哈希验证反向依赖失效策略：
+ * 私有类型变化保留导入者，公开参数/签名变化重分析，无法编码的公开类型保守失效。 */
 static void test_lsp_source_module_refresh_uses_canonical_public_contract_hash(
         SZrState *state) {
     static const TZrChar *initialModuleContent =

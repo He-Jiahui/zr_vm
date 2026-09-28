@@ -5,6 +5,7 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 以零包含负偏移的观察者读取和条件增量并置，验证目标与转存值的区间关系；正负增量成对约束方向，防止把含零偏移误判为严格负值。 */
 static TZrBool test_local_expression_query_keeps_subtract_zero_minus_zero_inclusive_negative_binding_offset_conditional_positive_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -59,6 +60,7 @@ static TZrBool test_local_expression_query_keeps_subtract_zero_minus_zero_inclus
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 以零包含负偏移的观察者读取和条件增量并置，验证目标与转存值的区间关系；正负增量成对约束方向，防止把含零偏移误判为严格负值。 */
 static TZrBool test_local_expression_query_keeps_subtract_zero_minus_zero_inclusive_negative_binding_offset_conditional_negative_delta_guarded(
         SZrState *state) {
     const TZrChar *content =
@@ -113,6 +115,7 @@ static TZrBool test_local_expression_query_keeps_subtract_zero_minus_zero_inclus
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 此可执行文件由 CTest 的 language_server 套件调用，汇总零包含负偏移与条件增量用例；创建 VM state 后调用本文件场景，并在退出前释放全局状态。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
@@ -129,6 +132,8 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    /* TODO: 用 && 串接场景会在首个失败后跳过其余变体；核查是否应逐项
+     * 执行并汇总结果，使一次回归能显示完整失败范围。 */
     passed = test_local_expression_query_keeps_subtract_zero_minus_zero_inclusive_negative_binding_offset_conditional_positive_delta_range(state) &&
              test_local_expression_query_keeps_subtract_zero_minus_zero_inclusive_negative_binding_offset_conditional_negative_delta_guarded(state);
     printf(

@@ -5,7 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 故障注入只覆盖响应封装的有限分配序列；满表视为夹具失效。 */
 enum { MAX_TRACKED_ALLOCATIONS = 512 };
+/* cJSON 钩子跨调用共享这些账本；单进程串行跑完每个分配序号后归零。 */
 static void *allocations[MAX_TRACKED_ALLOCATIONS];
 static size_t allocationOrdinal;
 static size_t failureOrdinal;
@@ -13,6 +15,7 @@ static size_t injectedFailures;
 static int failRemaining;
 static int failures;
 
+/* 故障注入场景继续累计失败，最终由 main 映射为 CTest 退出码。 */
 static void expect_true(int condition, const char *message) {
     if (!condition) {
         fprintf(stderr, "Fail - %s\n", message);
@@ -20,6 +23,7 @@ static void expect_true(int condition, const char *message) {
     }
 }
 
+/* cJSON 全局分配钩子：按序号制造单次或持续 OOM，并追踪成功分配的归属。 */
 static void *tracked_malloc(size_t size) {
     void *pointer;
     size_t index;
@@ -42,6 +46,7 @@ static void *tracked_malloc(size_t size) {
     abort();
 }
 
+/* 只允许释放本钩子登记的对象，借此发现响应封装误释放或重复释放。 */
 static void tracked_free(void *pointer) {
     size_t index;
     if (pointer == NULL) {
@@ -58,6 +63,7 @@ static void tracked_free(void *pointer) {
     abort();
 }
 
+/* 每个故障场景都应消费输入并清空响应对象；清场后下一场景才可复用账本。 */
 static void check_and_release_leaks(void) {
     size_t index;
     size_t leaked = 0;
@@ -71,6 +77,7 @@ static void check_and_release_leaks(void) {
     expect_true(leaked == 0, "response must consume input and release every allocation");
 }
 
+/* 对同一输入轮流故障注入，再验证成功/错误封装的 JSON 契约和分配归还。 */
 static size_t run_response(const char *input, int code, size_t failAt, int persistent) {
     cJSON *data;
     cJSON *expected;
@@ -78,6 +85,7 @@ static size_t run_response(const char *input, int code, size_t failAt, int persi
     const cJSON *value;
     const char *text;
     size_t ordinals;
+    /* 输入解析先于目标响应分配计数；只让被测封装承担 failAt。 */
     failureOrdinal = 0;
     data = input == NULL ? NULL : cJSON_Parse(input);
     expect_true(input == NULL || data != NULL, "fixture data must parse");
@@ -129,6 +137,7 @@ static size_t run_response(const char *input, int code, size_t failAt, int persi
     return ordinals;
 }
 
+/* 独立 CTest：先测无故障基线，再扫每个响应分配序号的单次及持续失败。 */
 int main(void) {
     const int codes[] = {ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE,
                          ZR_LSP_JSON_RPC_REQUEST_CANCELLED_CODE, ZR_LSP_JSON_RPC_CONTENT_MODIFIED_CODE};
@@ -139,6 +148,7 @@ int main(void) {
     size_t count;
     size_t scenarios = 0;
     int persistent;
+    /* 钩子属于进程全局状态，全部场景结束后恢复默认分配器。 */
     cJSON_InitHooks(&hooks);
     for (index = 0; index < sizeof(codes) / sizeof(codes[0]); index++) {
         count = run_response(NULL, codes[index], 0, 0);

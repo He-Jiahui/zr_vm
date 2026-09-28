@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_DECLARED_PRIMITIVE_TYPE_IDENTITY_CASES_H
 #define ZR_VM_TEST_LSP_DECLARED_PRIMITIVE_TYPE_IDENTITY_CASES_H
 
+/* 参数与两类 const 泛型约束中的 int 应共享 TypeId，并有可解析类型引用。 */
 static void test_declared_primitive_types_publish_canonical_identity(
         SZrState *state) {
     static const TZrChar *content =

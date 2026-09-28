@@ -12,6 +12,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+/* VM 测试主线程经此分配器管理独立 LSP 会话。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -33,6 +34,8 @@ static TZrPtr test_allocator(TZrPtr userData,
     return realloc(pointer, newSize);
 }
 
+/* λ 注释使源码字节列与 UTF-16 列不同；查询构造方法 hover 时必须按
+ * 客户端 UTF-16 位置取元数据，并核对返回范围。 */
 static TZrBool test_meta_method_hover_after_utf8_prefix_uses_utf16_columns(SZrState *state) {
     const TZrChar *content =
         "class Box {\n"
@@ -74,10 +77,13 @@ static TZrBool test_meta_method_hover_after_utf8_prefix_uses_utf16_columns(SZrSt
                hover->range.end.character);
     }
 
+    /* BUG: 成功取得的 hover 包含独立 contents 数组和 RawMalloc 外层；
+     * 仅释放 context 不会回收它们，固定非空 fixture 每次泄漏。 */
     ZrLanguageServer_LspContext_Free(state, context);
     return passed;
 }
 
+/* CMake 单独注册的 token 元数据位置回归，统一创建/释放 VM state。 */
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global;

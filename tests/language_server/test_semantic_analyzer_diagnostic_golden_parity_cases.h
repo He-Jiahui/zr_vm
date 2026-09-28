@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_SEMANTIC_ANALYZER_DIAGNOSTIC_GOLDEN_PARITY_CASES_H
 #define ZR_VM_TEST_SEMANTIC_ANALYZER_DIAGNOSTIC_GOLDEN_PARITY_CASES_H
 
+/** 黄金对照允许双方字符串同为空，其余按内容比较，避免独立分配的 parser/LSP 文本对象造成伪差异。 */
 static TZrBool diagnostic_strings_equal(SZrString *left, SZrString *right) {
     if (left == ZR_NULL || right == ZR_NULL) {
         return left == right;
@@ -9,6 +10,7 @@ static TZrBool diagnostic_strings_equal(SZrString *left, SZrString *right) {
     return ZrCore_String_Equal(left, right);
 }
 
+/** 黄金对照同时比 source 与起止 offset、行列，确保诊断没有在投影时漂移到相邻 token。 */
 static TZrBool diagnostic_ranges_equal(
         const SZrFileRange *left,
         const SZrFileRange *right) {
@@ -25,6 +27,7 @@ static TZrBool diagnostic_ranges_equal(
            left->end.column == right->end.column;
 }
 
+/** 把 parser 严重度映射到 LSP 诊断枚举后比较，防止仅消息相同却降低或提升告警级别。 */
 static EZrDiagnosticSeverity diagnostic_severity_from_structured(
         EZrStructuredDiagnosticSeverity severity) {
     switch (severity) {
@@ -40,10 +43,12 @@ static EZrDiagnosticSeverity diagnostic_severity_from_structured(
     }
 }
 
+/** 黄金对照把未初始化附属数组视为空，供相关信息与修复列表数量检查使用。 */
 static TZrSize diagnostic_array_length(const SZrArray *array) {
     return array != ZR_NULL && array->isValid ? array->length : 0U;
 }
 
+/** 按诊断代码和完整源范围配对 parser 事实与 LSP 输出，避免相同代码的多处错误错配。 */
 static const SZrDiagnostic *find_projected_query_diagnostic(
         SZrSemanticAnalyzer *analyzer,
         const SZrStructuredDiagnostic *structured) {
@@ -69,6 +74,7 @@ static const SZrDiagnostic *find_projected_query_diagnostic(
     return ZR_NULL;
 }
 
+/** 比较主消息、原因、建议、描述符、帮助链接、关联信息和修复项，验证 LSP 只投影规范 parser 事实。 */
 static TZrBool diagnostic_projection_matches_query(
         const SZrDiagnostic *projected,
         const SZrStructuredDiagnostic *structured) {
@@ -148,6 +154,7 @@ static TZrBool diagnostic_projection_matches_query(
     return ZR_TRUE;
 }
 
+/** 对声明、赋值和返回三种所有权失配检查 parser 诊断与 LSP 输出一一对应且字段完整。 */
 static void test_semantic_analyzer_preserves_query_diagnostic_golden_parity(
         SZrState *state) {
     const TZrChar *summary =
@@ -243,6 +250,7 @@ static void test_semantic_analyzer_preserves_query_diagnostic_golden_parity(
     TEST_PASS(timer, summary);
 }
 
+/** 以方法实参类型不匹配验证 parser 的 type_mismatch 事实在 LSP 投影后保留描述符、范围与修复处置。 */
 static void test_semantic_analyzer_preserves_method_call_mismatch_golden_parity(
         SZrState *state) {
     const TZrChar *summary =
@@ -342,6 +350,7 @@ static void test_semantic_analyzer_preserves_method_call_mismatch_golden_parity(
     TEST_PASS(timer, summary);
 }
 
+/** 重复定义同名类型时核对唯一 parser 事实及其 LSP 诊断，防止编辑器自行重新判定重复类型。 */
 static void test_semantic_analyzer_preserves_duplicate_type_golden_parity(
         SZrState *state) {
     const TZrChar *summary =
@@ -430,6 +439,7 @@ static void test_semantic_analyzer_preserves_duplicate_type_golden_parity(
     TEST_PASS(timer, summary);
 }
 
+/** 无初值无类型注解的声明用于核对 parser 报错与 LSP 显示完全一致。 */
 static void test_semantic_analyzer_preserves_initializer_annotation_golden_parity(
         SZrState *state) {
     const TZrChar *summary =
@@ -521,6 +531,7 @@ static void test_semantic_analyzer_preserves_initializer_annotation_golden_parit
     TEST_PASS(timer, summary);
 }
 
+/** 冲突返回分支的诊断用于核对不可证明返回类型的描述符及需用户决定的无修复原因。 */
 static void test_semantic_analyzer_preserves_return_type_not_provable_golden_parity(
         SZrState *state) {
     const TZrChar *summary =
@@ -618,6 +629,7 @@ static void test_semantic_analyzer_preserves_return_type_not_provable_golden_par
     TEST_PASS(timer, summary);
 }
 
+/** 错误 extern callable 装饰器用于核对非法装饰器诊断保留精确装饰范围和无自动修复结论。 */
 static void test_semantic_analyzer_preserves_invalid_callable_decorator_golden_parity(
         SZrState *state) {
     const TZrChar *summary =

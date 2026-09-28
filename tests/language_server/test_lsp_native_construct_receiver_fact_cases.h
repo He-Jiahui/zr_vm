@@ -1,3 +1,4 @@
+/* 删除构造表达式的精确事实后，成员解析不得从 AST/类型文本恢复 Vector3。 */
 static void test_lsp_native_construct_receiver_fails_closed_without_expression_fact(
         SZrState *state) {
     SZrTestTimer timer;
@@ -72,6 +73,7 @@ static void test_lsp_native_construct_receiver_fails_closed_without_expression_f
         return;
     }
 
+    /* 只篡改当前测试文档快照；换版后重新取得事实再测无效 TypeId。 */
     receiverFact->exactness = ZR_SEMANTIC_FACT_UNKNOWN;
 
     if (ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(
@@ -141,6 +143,7 @@ static void test_lsp_native_construct_receiver_fails_closed_without_expression_f
     TEST_PASS(timer, "LSP Native Construct Receiver Fails Closed Without Expression Fact");
 }
 
+/* 链式成员读取的接收者若缺精确事实，解析不得借前一成员文本推断类型。 */
 static void test_lsp_native_construct_member_chain_fails_closed_without_expression_fact(
         SZrState *state) {
     SZrTestTimer timer;
@@ -232,6 +235,7 @@ static void test_lsp_native_construct_member_chain_fails_closed_without_expressi
     TEST_PASS(timer, "LSP Native Construct Member Chain Fails Closed Without Expression Fact");
 }
 
+/* 同一 fallback AST 中先确认原生成员补全，再撤销事实并要求补全闭合。 */
 static void test_lsp_native_construct_completion_fails_closed_without_expression_fact(
         SZrState *state) {
     SZrTestTimer timer;
@@ -318,6 +322,8 @@ static void test_lsp_native_construct_completion_fails_closed_without_expression
                   "Native construct completion must project descriptor fields while its exact receiver expression fact is available");
         return;
     }
+    /* BUG: 正例补全已追加 x/y/z 等原生 CompletionItem；Array_Free 只释放
+     * 指针缓冲区，元素未逐项 CompletionItem_Free，成功运行也会泄漏。 */
     ZrCore_Array_Free(state, &completions);
     ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
 
@@ -338,6 +344,7 @@ static void test_lsp_native_construct_completion_fails_closed_without_expression
     TEST_PASS(timer, "LSP Native Construct Completion Fails Closed Without Expression Fact");
 }
 
+/* 构造签名须由精确表达式事实提供；缺事实、无效 TypeId 和无节点均应闭合。 */
 static void test_lsp_native_construct_signature_fails_closed_without_expression_fact(
         SZrState *state) {
     SZrTestTimer timer;
@@ -409,6 +416,8 @@ static void test_lsp_native_construct_signature_fails_closed_without_expression_
         help == ZR_NULL || !signature_help_contains_text(help, "x: float") ||
         !signature_help_contains_text(help, "y: float") ||
         !signature_help_contains_text(help, "z: float")) {
+        /* TODO: label 是 VM 字符串，释放 help 不会立即 RawFree；随后释放
+         * context 才用于日志。需核对 GC 根有效期，必要时先复制诊断文本。 */
         const TZrChar *label = signature_help_first_label(help);
         if (help != ZR_NULL) {
             ZrLanguageServer_LspSignatureHelp_Free(state, help);

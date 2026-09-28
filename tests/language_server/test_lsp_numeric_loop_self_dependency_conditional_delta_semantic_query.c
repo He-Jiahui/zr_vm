@@ -5,6 +5,7 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 将 other = narrowed + 0; 与目标的条件增量置于同一循环，核对观察者在递归范围扩张后的边界仍按偏移转换。 */
 static TZrBool test_local_expression_query_keeps_target_reading_identity_expression_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -57,6 +58,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_identity_express
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 将 other = narrowed + zero; 与目标的条件增量置于同一循环，核对观察者在递归范围扩张后的边界仍按偏移转换。 */
 static TZrBool test_local_expression_query_keeps_target_reading_zero_binding_identity_expression_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -110,6 +112,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_zero_binding_ide
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 将 other = narrowed - 1; 与目标的条件增量置于同一循环，核对观察者在递归范围扩张后的边界仍按偏移转换。 */
 static TZrBool test_local_expression_query_keeps_target_reading_constant_offset_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -162,6 +165,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_constant_offset_
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 将 other = (narrowed - 1) + 0; 与目标的条件增量置于同一循环，核对观察者在递归范围扩张后的边界仍按偏移转换。 */
 static TZrBool test_local_expression_query_keeps_target_reading_constant_offset_identity_wrapper_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -214,6 +218,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_constant_offset_
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 将 other = narrowed - unit; 与目标的条件增量置于同一循环，核对观察者在递归范围扩张后的边界仍按偏移转换。 */
 static TZrBool test_local_expression_query_keeps_target_reading_singleton_offset_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -267,6 +272,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_singleton_offset
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 将 other = narrowed - unit; 与目标的条件增量置于同一循环，核对观察者在递归范围扩张后的边界仍按偏移转换。 */
 static TZrBool test_local_expression_query_keeps_target_reading_positive_range_offset_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -320,6 +326,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_positive_range_o
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 将 other = narrowed - (unit + pad); 与目标的条件增量置于同一循环，核对观察者在递归范围扩张后的边界仍按偏移转换。 */
 static TZrBool test_local_expression_query_keeps_target_reading_positive_additive_range_offset_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -374,6 +381,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_positive_additiv
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 将 other = narrowed - (unit - pad); 与目标的条件增量置于同一循环，核对观察者在递归范围扩张后的边界仍按偏移转换。 */
 static TZrBool test_local_expression_query_keeps_target_reading_positive_subtractive_range_offset_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -428,6 +436,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_positive_subtrac
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 将 other = narrowed - (unit * factor); 与目标的条件增量置于同一循环，核对观察者在递归范围扩张后的边界仍按偏移转换。 */
 static TZrBool test_local_expression_query_keeps_target_reading_positive_multiplicative_range_offset_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -482,6 +491,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_positive_multipl
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 将 other = narrowed - (unit / factor); 与目标的条件增量置于同一循环，核对观察者在递归范围扩张后的边界仍按偏移转换。 */
 static TZrBool test_local_expression_query_keeps_target_reading_positive_divided_range_offset_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -536,6 +546,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_positive_divided
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 将 other = narrowed - (unit % factor); 与目标的条件增量置于同一循环，核对观察者在递归范围扩张后的边界仍按偏移转换。 */
 static TZrBool test_local_expression_query_keeps_target_reading_zero_inclusive_modulo_range_offset_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -590,6 +601,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_zero_inclusive_m
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 将 other = narrowed - (unit << shift); 与目标的条件增量置于同一循环，核对观察者在递归范围扩张后的边界仍按偏移转换。 */
 static TZrBool test_local_expression_query_keeps_target_reading_positive_left_shift_range_offset_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -644,6 +656,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_positive_left_sh
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 将 other = narrowed - (unit >> shift); 与目标的条件增量置于同一循环，核对观察者在递归范围扩张后的边界仍按偏移转换。 */
 static TZrBool test_local_expression_query_keeps_target_reading_positive_right_shift_range_offset_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -698,6 +711,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_positive_right_s
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 将 other = narrowed - (unit & mask); 与目标的条件增量置于同一循环，核对观察者在递归范围扩张后的边界仍按偏移转换。 */
 static TZrBool test_local_expression_query_keeps_target_reading_positive_bitwise_and_identity_mask_range_offset_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -752,6 +766,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_positive_bitwise
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 将 other = narrowed - (unit | zero); 与目标的条件增量置于同一循环，核对观察者在递归范围扩张后的边界仍按偏移转换。 */
 static TZrBool test_local_expression_query_keeps_target_reading_positive_bitwise_or_identity_zero_range_offset_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -806,6 +821,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_positive_bitwise
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 将 other = narrowed - unit; 与目标的条件增量置于同一循环，核对观察者在递归范围扩张后的边界仍按偏移转换。 */
 static TZrBool test_local_expression_query_keeps_target_reading_zero_inclusive_positive_range_offset_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -859,6 +875,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_zero_inclusive_p
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 将 other = narrowed - unit; 与目标的条件增量置于同一循环，核对观察者在递归范围扩张后的边界仍按偏移转换。 */
 static TZrBool test_local_expression_query_keeps_target_reading_zero_only_offset_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -912,6 +929,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_zero_only_offset
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 将 other = narrowed - (unit + 0); 与目标的条件增量置于同一循环，核对观察者在递归范围扩张后的边界仍按偏移转换。 */
 static TZrBool test_local_expression_query_keeps_target_reading_singleton_offset_identity_wrapper_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -965,6 +983,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_singleton_offset
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 此可执行文件由 CTest 的 language_server 套件调用，汇总循环目标读取、观察者偏移与条件增量用例；创建 VM state 后调用本文件场景，并在退出前释放全局状态。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
@@ -981,6 +1000,8 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    /* TODO: 用 && 串接场景会在首个失败后跳过其余变体；核查是否应逐项
+     * 执行并汇总结果，使一次回归能显示完整失败范围。 */
     passed = test_local_expression_query_keeps_target_reading_identity_expression_conditional_delta_range(state) &&
              test_local_expression_query_keeps_target_reading_zero_binding_identity_expression_conditional_delta_range(state) &&
              test_local_expression_query_keeps_target_reading_constant_offset_conditional_delta_range(state) &&

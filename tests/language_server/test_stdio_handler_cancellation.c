@@ -1,6 +1,7 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "unity.h"
 
+/* 将原生 provider 查询和对应 stdio handler 配对，校准同一批结果的取消回收行为。 */
 typedef enum EHandlerQuery {
     QUERY_WORKSPACE_SYMBOLS,
     QUERY_DOCUMENT_SYMBOLS,
@@ -10,6 +11,7 @@ typedef enum EHandlerQuery {
     QUERY_LINKED_EDITING,
 } EHandlerQuery;
 
+/* 多引用与继承夹具让各 handler 能先产出结果，再覆盖取消后的部分结果回收。 */
 static const char g_source[] =
         "fn cancellationTarget(value: int): int { return value; }\n"
         "fn cancellationCallerA(): int { return cancellationTarget(1); }\n"
@@ -17,6 +19,7 @@ static const char g_source[] =
         "class CancellationBase {}\n"
         "class CancellationChild : CancellationBase {}\n";
 
+/* 这些请求参数和响应属于当前 Unity 案例；setUp 建立，tearDown 统一释放。 */
 static SZrStdioServer *g_server;
 static SZrString *g_uri;
 static SZrString *g_query;
@@ -28,14 +31,17 @@ static cJSON *g_typeParams;
 static cJSON *g_completionParams;
 static cJSON *g_actionParams;
 static cJSON *g_response;
+/* 查询种类与返回状态跨原生探测和 stdio 分发共享，只在本例内有效。 */
 static EHandlerQuery g_kind;
 static EZrLspHandlerStatus g_handlerStatus;
+/* 分配与取消计数使每例能验证故障点、部分结果回收和最终零存活块。 */
 static size_t g_liveBlocks;
 static size_t g_jsonAllocationAttempts;
 static size_t g_checkCount;
 static size_t g_cancelAtCheck;
 static TZrBool g_cancelObserved;
 
+/* 统一覆盖已接入的请求 handler 的 JSON 分配失败、取消、无效参数和成功响应路径。 */
 static const char *g_handlerMethods[] = {
         ZR_LSP_METHOD_TEXT_DOCUMENT_HOVER,
         ZR_LSP_METHOD_ZR_RICH_HOVER,
@@ -95,6 +101,7 @@ static void *fail_third_json_allocation(size_t size) {
     return g_jsonAllocationAttempts++ == 2 ? ZR_NULL : malloc(size);
 }
 
+/* VM 分配回调记录仍存活的原生块，让取消路径的资源回收能在 tearDown 中被验证。 */
 static TZrPtr tracking_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize,
                                 TZrSize newSize, TZrInt64 flag) {
     TZrPtr result;
@@ -118,6 +125,7 @@ static TZrPtr tracking_allocator(TZrPtr userData, TZrPtr pointer, TZrSize origin
     return realloc(pointer, newSize);
 }
 
+/* 先观察 provider 产出首个结果时的取消检查次数，避免依赖实现中的固定检查序号。 */
 static TZrBool calibrate_cancellation(void *userData) {
     const SZrArray *result = (const SZrArray *)userData;
     g_checkCount++;
@@ -128,6 +136,7 @@ static TZrBool calibrate_cancellation(void *userData) {
     return ZR_FALSE;
 }
 
+/* stdio handler 在同一检查点取消时必须放弃部分 JSON，并释放原生 provider 结果。 */
 static TZrBool cancel_at_calibrated_check(void *userData) {
     ZR_UNUSED_PARAMETER(userData);
     g_checkCount++;
@@ -137,6 +146,7 @@ static TZrBool cancel_at_calibrated_check(void *userData) {
     return g_cancelObserved;
 }
 
+/* 原生探测结果的元素所有权依查询族而异；linked editing 与 references 共用位置项释放路径。 */
 static void free_probe(void) {
     if (g_kind == QUERY_WORKSPACE_SYMBOLS || g_kind == QUERY_DOCUMENT_SYMBOLS) {
         free_symbols_array(g_server->state, &g_probe);
@@ -148,6 +158,7 @@ static void free_probe(void) {
     memset(&g_probe, 0, sizeof(g_probe));
 }
 
+/* 层级查询的后续请求依赖 prepare 阶段返回的 item；测试夹具沿真实 handler 链建立参数。 */
 static void prepare_hierarchy_params(cJSON **outParams, const char *method, int line, int character) {
     EZrLspHandlerStatus status;
     cJSON *position;
@@ -165,6 +176,7 @@ static void prepare_hierarchy_params(cJSON **outParams, const char *method, int 
     g_response = ZR_NULL;
 }
 
+/* 故障矩阵必须沿 prepare/resolve 的真实参数链分发；返回值借自 setUp 夹具，不转移 JSON 所有权。 */
 static const cJSON *params_for_method(const char *method) {
     if (strcmp(method, ZR_LSP_METHOD_COMPLETION_ITEM_RESOLVE) == 0) {
         return g_completionParams;
@@ -184,6 +196,7 @@ static const cJSON *params_for_method(const char *method) {
     return g_params;
 }
 
+/* resolve 请求使用本次 completion/code action 产出的 data，防止伪造输入掩盖 handler 的快照契约。 */
 static void prepare_resolve_params(void) {
     EZrLspHandlerStatus status;
     SZrLspWorkspaceEditDocumentSnapshot snapshot = {0};
@@ -214,6 +227,7 @@ static void prepare_resolve_params(void) {
     g_response = ZR_NULL;
 }
 
+/* Unity 每个案例重新建立 VM、文档和各方法参数；共享全局夹具不得泄漏到下一例。 */
 void setUp(void) {
     SZrCallbackGlobal callbacks = {0};
     g_liveBlocks = 0;
@@ -264,6 +278,7 @@ void setUp(void) {
     prepare_resolve_params();
 }
 
+/* 每例结束后关闭取消钩子、JSON 和 server，并用原生分配计数检查所有回收路径。 */
 void tearDown(void) {
     cJSON_Delete(g_response);
     cJSON_Delete(g_params);
@@ -282,6 +297,7 @@ void tearDown(void) {
     TEST_ASSERT_EQUAL_UINT64_MESSAGE(0, g_liveBlocks, "cancelled handler must release every runtime allocation");
 }
 
+/* 先用对应原生查询建立多结果基线；linked editing 也经引用查询，以校准相同的取消检查点。 */
 static TZrBool run_provider(void) {
     SZrLspPosition position = {0, 3};
     switch (g_kind) {
@@ -305,6 +321,7 @@ static TZrBool run_provider(void) {
     return ZR_FALSE;
 }
 
+/* 与 run_provider 的枚举一一对应，跨 stdio 序列化边界观察同一请求的状态及 JSON 所有权。 */
 static cJSON *run_handler(void) {
     static const char *methods[] = {
             ZR_LSP_METHOD_WORKSPACE_SYMBOL,
@@ -320,6 +337,7 @@ static cJSON *run_handler(void) {
     return result;
 }
 
+/* 先测原生结果的首个可见项，再在 handler 达到该检查点时取消，确保不会发布部分结果。 */
 static void expect_cancelled_handler_cleanup(EHandlerQuery kind) {
     g_kind = kind;
     TEST_ASSERT_TRUE(run_provider());
@@ -384,6 +402,7 @@ static void test_ordinary_handlers_release_results(void) {
     }
 }
 
+/* 对方法矩阵注入 cJSON 分配失败，统一要求已处理请求返回 InternalError 且不留下响应。 */
 static void expect_handler_allocation_failure(void *(*allocator)(size_t)) {
     cJSON_Hooks hooks = {allocator, free};
     for (size_t index = 0; index < sizeof(g_handlerMethods) / sizeof(g_handlerMethods[0]); index++) {
@@ -393,6 +412,7 @@ static void expect_handler_allocation_failure(void *(*allocator)(size_t)) {
         cJSON_InitHooks(&hooks);
         handled = dispatch_request_method(g_server, g_handlerMethods[index],
                                           params_for_method(g_handlerMethods[index]), &g_response, &status);
+        /* cJSON hook 是进程全局状态；须先恢复再做可能中止的 Unity 断言，免得下一例继承故障分配器。 */
         cJSON_InitHooks(ZR_NULL);
         TEST_ASSERT_TRUE(handled);
         TEST_ASSERT_EQUAL_INT_MESSAGE(ZR_LSP_HANDLER_INTERNAL_ERROR, status, g_handlerMethods[index]);
@@ -408,6 +428,7 @@ static void test_handler_first_json_allocation_failure_is_internal(void) {
     expect_handler_allocation_failure(fail_first_json_allocation);
 }
 
+/* 取消应具有独立状态；不能被通用 InternalError 或成功空响应吞并。 */
 static void test_handler_cancelled_status_is_explicit(void) {
     ZrLanguageServer_LspContext_SetRequestCancellationCheck(
             g_server->context, cancel_at_calibrated_check, ZR_NULL);
@@ -422,6 +443,7 @@ static void test_handler_cancelled_status_is_explicit(void) {
     TEST_ASSERT_TRUE(g_cancelObserved);
 }
 
+/* 参数验证必须先于业务和序列化错误，错误码不得随 handler 族漂移。 */
 static void test_handler_invalid_params_remain_invalid(void) {
     for (size_t index = 0; index < sizeof(g_handlerMethods) / sizeof(g_handlerMethods[0]); index++) {
         EZrLspHandlerStatus status = ZR_LSP_HANDLER_OK;
@@ -445,6 +467,7 @@ static void test_handler_valid_results_remain_successful(void) {
     }
 }
 
+/* 过期动作通常返回 disabled；若在该路径的 JSON 分配失败，仍应返回 InternalError 而非半成品动作。 */
 static void test_stale_code_action_allocation_failure_is_internal(void) {
     cJSON_Hooks hooks = {fail_first_json_allocation, free};
     cJSON *data = cJSON_GetObjectItemCaseSensitive(g_actionParams, ZR_LSP_FIELD_DATA);
@@ -469,6 +492,7 @@ static void test_stale_code_action_allocation_failure_is_internal(void) {
     TEST_ASSERT_NULL(g_response);
 }
 
+/* workspace report 构造到文档项时失败，不能把部分结果包装为成功响应。 */
 static void test_workspace_report_allocation_failure_is_internal(void) {
     cJSON_Hooks hooks = {fail_third_json_allocation, free};
     EZrLspHandlerStatus status;
@@ -489,6 +513,7 @@ static void test_workspace_report_allocation_failure_is_internal(void) {
     TEST_ASSERT_NULL(g_response);
 }
 
+/* CTest/Unity 入口逐例重建夹具，并汇总分配、取消和状态语义的失败。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_handler_json_allocation_failure_is_internal);

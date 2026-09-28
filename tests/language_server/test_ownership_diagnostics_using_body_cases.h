@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TESTS_LANGUAGE_SERVER_OWNERSHIP_DIAGNOSTICS_USING_BODY_CASES_H
 #define ZR_VM_TESTS_LANGUAGE_SERVER_OWNERSHIP_DIAGNOSTICS_USING_BODY_CASES_H
 
+/* using 主体内对借用别名重新绑定后，退出作用域释放旧 owner 不应覆盖新 owner 的依赖。 */
 static void test_semantic_analyzer_tracks_borrow_rebind_in_using_body(
         SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Tracks Borrow Rebind In Using Body";
@@ -66,6 +67,7 @@ static void test_semantic_analyzer_tracks_borrow_rebind_in_using_body(
     TEST_PASS(timer, summary);
 }
 
+/* using 主体既有资源清理也有按值调用；主体内移动必须在下一次读取前生效。 */
 static void test_semantic_analyzer_tracks_unique_move_in_using_body(
         SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Tracks Unique Move In Using Body";

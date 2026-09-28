@@ -1,7 +1,9 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
+/* 两个测试界限分别约束 hook 活跃块容量与六个可选能力相关分配（节点及键字符串）。 */
 enum { MAX_TRACKED_ALLOCATIONS = 512, OPTIONAL_ALLOCATION_POINTS = 6 };
 
+/* cJSON hooks 的活跃指针及分配序号，用于跨成功和失败路径核对所有权。 */
 typedef struct TrackedAllocation {
     void *pointer;
     size_t ordinal;
@@ -14,6 +16,7 @@ static size_t injectedFailures;
 static int failRemaining;
 static int failures;
 
+/* 独立故障注入目标不依赖 Unity；累计失败以便所有分配点都跑完。 */
 static void expect_true(int condition, const char *message) {
     if (!condition) {
         printf("Fail - %s\n", message);
@@ -21,6 +24,7 @@ static void expect_true(int condition, const char *message) {
     }
 }
 
+/* 替换 cJSON 的全局 malloc hook：按控制轮序号对指定分配注入一次或持续失败。 */
 static void *tracked_malloc(size_t size) {
     size_t index;
     void *pointer;
@@ -48,6 +52,7 @@ static void *tracked_malloc(size_t size) {
     exit(2);
 }
 
+/* cJSON 析构只能释放本 hook 登记过的块；未知指针说明所有权契约已破坏。 */
 static void tracked_free(void *pointer) {
     size_t index;
 
@@ -65,6 +70,7 @@ static void tracked_free(void *pointer) {
     exit(2);
 }
 
+/* 从成功响应树反查可选能力节点的分配点，避免依赖先前 provider 的分配次数。 */
 static size_t ordinal_of(const void *pointer) {
     size_t index;
 
@@ -77,6 +83,7 @@ static size_t ordinal_of(const void *pointer) {
     return 0;
 }
 
+/* 每一轮先报告未回收的 cJSON 块，再释放它们以隔离后续故障点。 */
 static void check_and_release_leaks(void) {
     size_t index;
     size_t leaked = 0;
@@ -91,6 +98,7 @@ static void check_and_release_leaks(void) {
     expect_true(leaked == 0, "capability publication must release every cJSON allocation");
 }
 
+/* 对能力构造跑成功控制与相关分配故障：仅完整构造发布分派开关，失败的部分 JSON 可安全回收。 */
 static void run_publication(size_t failAt, int persistent, size_t *controlOrdinals) {
     SZrStdioServer server = {0};
     cJSON *params;
@@ -128,7 +136,7 @@ static void run_publication(size_t failAt, int persistent, size_t *controlOrdina
                     "control must advertise both optional providers");
         expect_true(server.supportsRangesFormatting && server.supportsInlineCompletion,
                     "control must publish both optional capabilities");
-        /* Locate allocation sites from owned output, independent of earlier providers. */
+        /* 控制轮只从最终拥有的节点反查目标分配，不依赖前面能力的临时分配顺序。 */
         if (rangeProvider != NULL && rangesSupport != NULL && inlineProvider != NULL) {
             controlOrdinals[0] = ordinal_of(rangeProvider);
             controlOrdinals[1] = ordinal_of(rangesSupport);
@@ -152,6 +160,7 @@ static void run_publication(size_t failAt, int persistent, size_t *controlOrdina
     check_and_release_leaks();
 }
 
+/* 全局 hook 只在本独立进程内有效；六个相关分配各验证瞬时及持续 OOM。 */
 int main(void) {
     cJSON_Hooks hooks = {tracked_malloc, tracked_free};
     size_t controlOrdinals[OPTIONAL_ALLOCATION_POINTS] = {0};

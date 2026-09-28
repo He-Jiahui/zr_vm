@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_SEMANTIC_ANALYZER_EXACT_TYPE_DIAGNOSTIC_CASES_H
 #define ZR_VM_TEST_SEMANTIC_ANALYZER_EXACT_TYPE_DIAGNOSTIC_CASES_H
 
+/** 以缺失形参类型的样例比较 parser 诊断和 LSP 投影，要求目标 token 范围、描述符及不可修复处置一致。 */
 static void test_semantic_analyzer_preserves_cannot_infer_exact_type_golden_parity(
         SZrState *state) {
     const TZrChar *summary =

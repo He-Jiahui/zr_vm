@@ -11,6 +11,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+/* 为本测试进程的 VM GlobalState 提供内存回调；调用者是 VM 内存层，生命周期由 main 释放全局状态结束。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -32,6 +33,8 @@ static TZrPtr test_allocator(TZrPtr userData,
     if (pointer == ZR_NULL) {
         return malloc(newSize);
     }
+    /* TODO: 地址与 originalSize 阈值不能证明归属；合法大块释放时可能跳过 free，
+     * 扩容时可能回退 malloc 并丢失旧内容。核查 VM 回调的尺寸与指针契约。 */
     if ((TZrPtr)pointer >= (TZrPtr)0x1000 &&
         originalSize > 0 &&
         originalSize < 1024 * 1024 * 1024) {
@@ -40,6 +43,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* 把当前 ASCII fixture 的匹配文本换算成 ExpressionAt 光标；调用方须选中目标表达式，不能直接用于非 ASCII 的 UTF-16 坐标。 */
 static TZrBool find_position_for_substring(const TZrChar *content,
                                            const TZrChar *needle,
                                            TZrSize occurrence,
@@ -78,6 +82,7 @@ static TZrBool find_position_for_substring(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* 为多个场景独立建立 LSP 文档并用 ExpressionAt 核对数值事实；输入须是 ASCII fixture，返回前释放 context。 */
 static TZrBool run_assignment_range_case(SZrState *state,
                                          const TZrChar *label,
                                          const TZrChar *uriText,
@@ -152,6 +157,7 @@ static TZrBool run_assignment_range_case(SZrState *state,
     return passed;
 }
 
+/* 为分支用例建立临时 LSP 文档并查询表达式的分段区间；用完整段集阻止路径合并时抹掉空隙，结果仅在 context 存活时读取。 */
 static TZrBool run_assignment_segment_range_case(SZrState *state,
                                                  const TZrChar *label,
                                                  const TZrChar *uriText,
@@ -268,6 +274,7 @@ static TZrBool run_assignment_segment_range_case(SZrState *state,
     return passed;
 }
 
+/* 用 if (flag) 场景验证条件赋值后的出口要合并可达路径，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_joins_if_else_assignment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(flag: bool): int {\n"
@@ -289,6 +296,7 @@ static TZrBool test_local_expression_query_joins_if_else_assignment_range(SZrSta
                                      11);
 }
 
+/* 分别查询 if/else 两条赋值路径形成的离散区间，防止只保留包络上下界而丢失区间空隙。 */
 static TZrBool test_local_expression_query_preserves_if_else_assignment_segments(SZrState *state) {
     const TZrChar *content =
         "fn calc(flag: bool): int {\n"
@@ -315,6 +323,7 @@ static TZrBool test_local_expression_query_preserves_if_else_assignment_segments
         11);
 }
 
+/* 用 if (flag) 场景验证条件赋值后的出口要合并可达路径，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_joins_if_else_multi_statement_assignment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(flag: bool): int {\n"
@@ -338,6 +347,7 @@ static TZrBool test_local_expression_query_joins_if_else_multi_statement_assignm
                                      11);
 }
 
+/* 用 if (flag) 场景验证分支中的非终结赋值仍须参与出口汇合，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_joins_if_else_nonterminal_assignment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(flag: bool): int {\n"
@@ -361,6 +371,7 @@ static TZrBool test_local_expression_query_joins_if_else_nonterminal_assignment_
                                      11);
 }
 
+/* 用 if (flag) 场景验证右值依赖旧值时不能只按赋值字面量汇合，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_joins_if_else_rhs_dependent_assignment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(flag: bool): int {\n"
@@ -384,6 +395,7 @@ static TZrBool test_local_expression_query_joins_if_else_rhs_dependent_assignmen
                                      12);
 }
 
+/* 用 if (flag) 场景验证多个赋值目标的范围应分别汇合，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_joins_if_else_multi_target_assignment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(flag: bool): int {\n"
@@ -408,6 +420,7 @@ static TZrBool test_local_expression_query_joins_if_else_multi_target_assignment
                                      30);
 }
 
+/* 用 if (flag) 场景验证嵌套分支的路径事实应传到外层出口，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_joins_nested_if_else_assignment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(flag: bool, inner: bool): int {\n"
@@ -437,6 +450,7 @@ static TZrBool test_local_expression_query_joins_nested_if_else_assignment_range
                                      21);
 }
 
+/* 用 while (flag) 场景验证循环出口要合并零次与执行后路径，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_joins_while_assignment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(flag: bool): int {\n"
@@ -456,6 +470,7 @@ static TZrBool test_local_expression_query_joins_while_assignment_range(SZrState
                                      11);
 }
 
+/* 用 while (flag) 场景验证循环出口要合并零次与执行后路径，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_joins_while_multi_statement_assignment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(flag: bool): int {\n"
@@ -477,6 +492,7 @@ static TZrBool test_local_expression_query_joins_while_multi_statement_assignmen
                                      11);
 }
 
+/* 用 if (inner) 场景验证嵌套分支的路径事实应传到外层出口，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_joins_while_nested_if_assignment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(flag: bool, inner: bool): int {\n"
@@ -500,6 +516,7 @@ static TZrBool test_local_expression_query_joins_while_nested_if_assignment_rang
                                      11);
 }
 
+/* 用 while (flag) 场景验证多个赋值目标的范围应分别汇合，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_joins_while_multi_target_assignment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(flag: bool): int {\n"
@@ -521,6 +538,7 @@ static TZrBool test_local_expression_query_joins_while_multi_target_assignment_r
                                      25);
 }
 
+/* 用 while (flag) 场景验证循环自依赖增量应沿可达迭代拓宽，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_widens_while_self_dependent_increment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(flag: bool): int {\n"
@@ -541,6 +559,7 @@ static TZrBool test_local_expression_query_widens_while_self_dependent_increment
             ZR_TYPE_RANGE_INT64_MAX);
 }
 
+/* 用 while (flag) 场景验证循环自依赖增量应沿可达迭代拓宽，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_widens_while_self_dependent_singleton_delta_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(flag: bool): int {\n"
@@ -562,6 +581,7 @@ static TZrBool test_local_expression_query_widens_while_self_dependent_singleton
             ZR_TYPE_RANGE_INT64_MAX);
 }
 
+/* 用 while (flag) 场景验证循环自依赖增量应沿可达迭代拓宽，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_widens_while_self_dependent_positive_range_delta(
         SZrState *state) {
     const TZrChar *content =
@@ -584,6 +604,7 @@ static TZrBool test_local_expression_query_widens_while_self_dependent_positive_
             ZR_TYPE_RANGE_INT64_MAX);
 }
 
+/* 用 while (flag) 场景验证循环自依赖增量应沿可达迭代拓宽，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_widens_while_self_dependent_decrement_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(flag: bool): int {\n"
@@ -604,6 +625,7 @@ static TZrBool test_local_expression_query_widens_while_self_dependent_decrement
             5);
 }
 
+/* 用 for (; flag; ) 场景验证循环出口要合并零次与执行后路径，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_joins_for_assignment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(flag: bool): int {\n"
@@ -623,6 +645,7 @@ static TZrBool test_local_expression_query_joins_for_assignment_range(SZrState *
                                      11);
 }
 
+/* 用 for (narrowed = 1; flag; ) 场景验证循环出口要合并零次与执行后路径，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_joins_for_init_assignment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(flag: bool): int {\n"
@@ -642,6 +665,7 @@ static TZrBool test_local_expression_query_joins_for_init_assignment_range(SZrSt
                                      11);
 }
 
+/* 用 for (narrowed = 1; false; ) 场景验证即使循环体不可达，header 初始化仍须影响出口，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_applies_for_false_condition_init_assignment_range(
         SZrState *state) {
     const TZrChar *content =
@@ -663,6 +687,7 @@ static TZrBool test_local_expression_query_applies_for_false_condition_init_assi
             2);
 }
 
+/* 用 for (; flag; narrowed = 10) 场景验证循环出口要合并零次与执行后路径，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_joins_for_step_assignment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(flag: bool): int {\n"
@@ -682,6 +707,7 @@ static TZrBool test_local_expression_query_joins_for_step_assignment_range(SZrSt
                                      11);
 }
 
+/* 用 for (; flag; flag) 场景验证循环出口要合并零次与执行后路径，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_joins_for_non_assignment_step_range(
         SZrState *state) {
     const TZrChar *content =
@@ -703,6 +729,7 @@ static TZrBool test_local_expression_query_joins_for_non_assignment_step_range(
             11);
 }
 
+/* 用 for (var step: int = 10; flag; ) 场景验证循环出口要合并零次与执行后路径，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_joins_for_var_init_assignment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(flag: bool): int {\n"
@@ -722,6 +749,7 @@ static TZrBool test_local_expression_query_joins_for_var_init_assignment_range(S
                                      11);
 }
 
+/* 用 for (var item in items) 场景验证集合可能为空时应保留零次迭代路径，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_joins_foreach_assignment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(items: int[]): int {\n"
@@ -741,6 +769,7 @@ static TZrBool test_local_expression_query_joins_foreach_assignment_range(SZrSta
                                      11);
 }
 
+/* 用 for (var item in items) 场景验证迭代元素范围须与零次路径共同汇合，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_joins_foreach_item_assignment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(items: u8[]): int {\n"
@@ -760,6 +789,7 @@ static TZrBool test_local_expression_query_joins_foreach_item_assignment_range(S
                                      256);
 }
 
+/* 用 if (flag) 场景验证条件赋值后的出口要合并可达路径，防止 ExpressionAt 在汇合点给出过窄数值区间。 */
 static TZrBool test_local_expression_query_joins_if_then_assignment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(flag: bool): int {\n"
@@ -779,6 +809,7 @@ static TZrBool test_local_expression_query_joins_if_then_assignment_range(SZrSta
                                      11);
 }
 
+/* 仅 else 路径写入目标；查询出口时必须保留真路径初值和假路径赋值后的区间。 */
 static TZrBool test_local_expression_query_joins_if_else_only_assignment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(flag: bool): int {\n"
@@ -800,6 +831,7 @@ static TZrBool test_local_expression_query_joins_if_else_only_assignment_range(S
                                      11);
 }
 
+/* 此可执行文件由 CTest 的 language_server 套件调用，汇总条件分支与循环赋值汇合后的数值事实用例；创建 VM state 后调用本文件场景，并在退出前释放全局状态。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

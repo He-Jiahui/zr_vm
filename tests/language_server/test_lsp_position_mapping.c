@@ -13,6 +13,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+/* 各独立编码和编辑器请求断言累计到 CTest 退出码。 */
 static int g_failures = 0;
 
 static TZrPtr test_allocator(TZrPtr userData,
@@ -36,6 +37,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return realloc(pointer, newSize);
 }
 
+/* 每个真实 LSP 范围案例在隔离 context 中打开固定源码；调用方释放 context。 */
 static SZrLspContext *test_open_document(SZrState *state,
                                          const TZrChar *uriText,
                                          const TZrChar *content,
@@ -65,6 +67,7 @@ static SZrLspContext *test_open_document(SZrState *state,
     return context;
 }
 
+/* Hover 的返回对象由查询方释放，内部 contents 先于外层对象销毁。 */
 static void test_hover_free(SZrState *state, SZrLspHover *hover) {
     if (state == ZR_NULL || hover == ZR_NULL) {
         return;
@@ -82,6 +85,7 @@ static const TZrChar *test_string_ptr(SZrString *value) {
     return ZrCore_String_GetNativeString(value);
 }
 
+/* 比较公开协议的 0 基 UTF-16 起止位置，供多种请求结果筛选共用。 */
 static TZrBool test_lsp_range_equals(SZrLspRange range,
                                      TZrInt32 startLine,
                                      TZrInt32 startCharacter,
@@ -263,6 +267,7 @@ static TZrBool test_semantic_tokens_contain(SZrArray *data,
     return ZR_FALSE;
 }
 
+/* 先用零宽 LSP range 检查 UTF-16 行列到源码字节偏移的转换。 */
 static void check_offset(const TZrChar *summary,
                          const TZrChar *content,
                          TZrInt32 line,
@@ -292,6 +297,7 @@ static void check_offset(const TZrChar *summary,
     printf("PASS: %s\n", summary);
 }
 
+/* 兼查 parser 的 1 基字节列，避免只校验偏移时漏掉行列约定漂移。 */
 static void check_file_position(const TZrChar *summary,
                                 const TZrChar *content,
                                 TZrInt32 line,
@@ -326,6 +332,7 @@ static void check_file_position(const TZrChar *summary,
     printf("PASS: %s\n", summary);
 }
 
+/* 同一完整码点边界须在 Position、Range 与反向字节偏移三条路径一致。 */
 static void check_roundtrip(const TZrChar *summary,
                             const TZrChar *content,
                             TZrSize offset,
@@ -503,6 +510,8 @@ static void test_lsp_position_beyond_file_clamps_to_eof_position(void) {
                         1);
 }
 
+/* 以下真实编辑器请求在非 ASCII 前缀之后检查公开范围；
+ * 与上面的纯位置编解码案例共同防止协议边界遗漏转换。 */
 static void test_definition_range_after_utf8_prefix_uses_utf16_columns(void) {
     const TZrChar *content = "/* \xCE\xBB */ var target = 1;\nvar use = target;\n";
     SZrCallbackGlobal callbacks = {0};
@@ -560,6 +569,8 @@ static void test_definition_range_after_utf8_prefix_uses_utf16_columns(void) {
         printf("PASS: Definition range after UTF-8 prefix uses UTF-16 columns\n");
     }
 
+    /* BUG: GetDefinition 的位置项独立 RawMalloc；这里只释放指针数组，
+     * 非空 definitions 的每个元素都会泄漏。 */
     ZrCore_Array_Free(state, &definitions);
     ZrLanguageServer_LspContext_Free(state, context);
     ZrCore_GlobalState_Free(global);
@@ -674,6 +685,7 @@ static void test_document_highlight_range_after_utf8_prefix_uses_utf16_columns(v
         printf("PASS: Document highlight range after UTF-8 prefix uses UTF-16 columns\n");
     }
 
+    /* BUG: 高亮项独立 RawMalloc；只 Array_Free 指针数组会泄漏非空结果。 */
     ZrCore_Array_Free(state, &highlights);
     ZrLanguageServer_LspContext_Free(state, context);
     ZrCore_GlobalState_Free(global);
@@ -788,6 +800,8 @@ static void test_rename_locations_after_utf8_prefix_use_utf16_columns(void) {
         printf("PASS: Rename locations after UTF-8 prefix use UTF-16 columns\n");
     }
 
+    /* BUG: rename 返回的位置项独立 RawMalloc；此处只释放外层数组，
+     * 非空 locations 的元素会泄漏。 */
     ZrCore_Array_Free(state, &locations);
     ZrLanguageServer_LspContext_Free(state, context);
     ZrCore_GlobalState_Free(global);
@@ -842,6 +856,8 @@ static void test_diagnostic_range_after_utf8_prefix_uses_utf16_columns(void) {
         printf("PASS: Diagnostic range after UTF-8 prefix uses UTF-16 columns\n");
     }
 
+    /* BUG: GetDiagnostics 的元素及内嵌数组应由 FreeDiagnostics 回收；
+     * 此处只释放数组缓冲区，非空 diagnostics 会泄漏。 */
     ZrCore_Array_Free(state, &diagnostics);
     ZrLanguageServer_LspContext_Free(state, context);
     ZrCore_GlobalState_Free(global);
@@ -920,6 +936,8 @@ static void test_symbol_ranges_after_utf8_prefix_use_utf16_columns(void) {
         printf("PASS: Symbol ranges after UTF-8 prefix use UTF-16 columns\n");
     }
 
+    /* BUG: 文档/工作区符号项均独立 RawMalloc；以下两次 Array_Free
+     * 只释放指针数组，非空结果的元素都会泄漏。 */
     ZrCore_Array_Free(state, &documentSymbols);
     ZrCore_Array_Free(state, &workspaceSymbols);
     ZrLanguageServer_LspContext_Free(state, context);
@@ -1122,6 +1140,8 @@ static void test_semantic_tokens_classify_ownership_intrinsics_as_keywords(void)
     ZrCore_GlobalState_Free(global);
 }
 
+/* CMake 独立目标先测位置编解码及越界夹取，再测定义、hover、rename、
+ * 诊断、符号、inlay 与语义 token 等客户端可见范围。 */
 int main(void) {
     printf("==========\n");
     printf("Language Server - LSP Position Mapping Tests\n");

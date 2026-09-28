@@ -6,6 +6,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 一元负号包裹零减法计数，与相反嵌套顺序分目标验证；
+ * 同时覆盖左右移和右侧符号以防零减法链丢失计数事实。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

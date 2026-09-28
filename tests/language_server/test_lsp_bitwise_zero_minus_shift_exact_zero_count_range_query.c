@@ -5,6 +5,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 用 seed 派生的相同标识符差值构造精确零移位计数；共享夹具应在顶层
+ * 位或处验证结果范围，而非把查询落在用于构造计数的内层运算符。 */
 static TZrBool run_shift_exact_zero_count_range_query(SZrState *state,
                                                       const TZrChar *caseName,
                                                       const TZrChar *expression,
@@ -61,6 +63,7 @@ static TZrBool run_shift_exact_zero_count_range_query(SZrState *state,
             expectedMax);
 }
 
+/* 左移、右移及右操作数取反成对验证零移位不会放宽范围。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

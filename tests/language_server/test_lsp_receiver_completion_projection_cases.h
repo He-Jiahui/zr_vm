@@ -1,3 +1,4 @@
+/* 先确认已发布的 Vector3 字段，再撤去接收者语义投影，阻止从初始化式重推补全。 */
 static void test_lsp_receiver_completion_does_not_reinfer_initializer(SZrState *state) {
     SZrTestTimer timer;
     const TZrChar *summary = "LSP Receiver Completion Does Not Reinfer Initializer";
@@ -60,6 +61,7 @@ static void test_lsp_receiver_completion_does_not_reinfer_initializer(SZrState *
     }
     ZrCore_Array_Empty(&completions);
 
+    /* 只在第二次查询窗口暂时断开事实；离开前必须恢复 analyzer 与 symbol。 */
     savedSemanticContext = analyzer->semanticContext;
     savedSymbolType = receiverSymbol->typeInfo;
     analyzer->semanticContext = ZR_NULL;

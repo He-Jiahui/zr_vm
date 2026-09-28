@@ -20,6 +20,7 @@ typedef struct {
     clock_t endTime;
 } SZrTestTimer;
 
+/* TEST_FAIL 在各案例间累积失败，最终由 main 转成 CTest 退出码。 */
 static int g_failures = 0;
 
 // 测试日志宏
@@ -54,12 +55,14 @@ static int g_failures = 0;
     fflush(stdout); \
 } while(0)
 
+/* TODO: 当前测试入口没有调用模块级分隔宏；确认日志格式无外部消费者后清理。 */
 #define TEST_MODULE_DIVIDER() do { \
     printf("==========\n"); \
     fflush(stdout); \
 } while(0)
 
 // 简单的测试分配器
+/* VM 测试状态使用的分配回调；只应接收该状态分配的指针与真实旧大小。 */
 static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(flag);
@@ -83,6 +86,8 @@ static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSi
     } else {
         // 重新分配内存
         // 检查指针是否在合理范围内（避免realloc无效指针）
+        /* TODO: 地址和 1 GiB 阈值不能证明分配归属；合法大旧块会走到新分配
+         * 路径并遗失内容与旧块。核对 VM 回调的指针/大小契约后再改。 */
         if ((TZrPtr)pointer >= (TZrPtr)0x1000 && originalSize > 0 && originalSize < 1024 * 1024 * 1024) {
             return realloc(pointer, newSize);
         } else {
@@ -156,6 +161,7 @@ static void test_incremental_parser_update_and_parse(SZrState *state) {
 }
 
 // 测试增量更新（相同内容不重新解析）
+/* 同内容且版本递增时，应复用可用的解析结果供后续编辑器查询。 */
 static void test_incremental_parser_same_content(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Incremental Parser Same Content");
@@ -182,7 +188,9 @@ static void test_incremental_parser_same_content(SZrState *state) {
     ZrLanguageServer_IncrementalParser_Parse(state, parser, uri);
     SZrAstNode *ast2 = ZrLanguageServer_IncrementalParser_GetAST(parser, uri);
     
-    // 如果启用内容哈希，AST 应该相同（或至少不为 NULL）
+    // 当前断言只核对结果可用，不能证明同内容更新复用了 AST。
+    /* BUG: 若第二次同内容更新重新构造 AST，只要两个 AST 非空仍会 PASS，
+     * 无法检测“不重新解析”的退化；后续需比较 AST/代际复用并加反例。 */
     if (ast1 == ZR_NULL || ast2 == ZR_NULL) {
         ZrLanguageServer_IncrementalParser_Free(state, parser);
         TEST_FAIL(timer, "Incremental Parser Same Content", "AST is NULL");
@@ -370,6 +378,7 @@ static void test_file_version_content_snapshot_survives_parser_free(SZrState *st
     TEST_PASS(timer, "File Version Content Snapshot Survives Parser Free");
 }
 
+/* 同版本及旧版本必须在修改 text block、AST 或 dirty 标志前拒绝。 */
 static void test_incremental_parser_rejects_non_monotonic_versions(SZrState *state) {
     SZrTestTimer timer;
     SZrIncrementalParser *parser;
@@ -444,6 +453,7 @@ static void test_incremental_parser_rejects_non_monotonic_versions(SZrState *sta
     TEST_PASS(timer, "Incremental Parser Rejects Non-Monotonic Versions");
 }
 
+/* 等长声明内编辑应保留稳定边界之外的声明，历史 AST 快照仍独立存活。 */
 static void test_incremental_parser_honors_declaration_retention_boundary(
         SZrState *state) {
     const TZrChar *summary = "Incremental Parser Honors Declaration Retention Boundary";
@@ -568,6 +578,7 @@ static void test_incremental_parser_honors_declaration_retention_boundary(
     TEST_PASS(timer, summary);
 }
 
+/* 编辑改变声明范围时应完整重建，避免复用节点携带过期源码偏移。 */
 static void test_incremental_parser_falls_back_for_unstable_declaration_range(
         SZrState *state) {
     const TZrChar *summary = "Incremental Parser Falls Back For Unstable Declaration Range";
@@ -640,6 +651,8 @@ static void test_incremental_parser_falls_back_for_unstable_declaration_range(
     TEST_PASS(timer, summary);
 }
 
+/* 磁盘合成版本 0 与客户端 didOpen 版本 0 同号但来源不同；
+ * LSP 更新须替换磁盘快照，同时保留以后版本的单调门禁。 */
 static void test_lsp_update_promotes_synthetic_version_zero_to_open_document(
         SZrState *state) {
     SZrTestTimer timer;
@@ -709,6 +722,7 @@ static void test_lsp_update_promotes_synthetic_version_zero_to_open_document(
     TEST_PASS(timer, "LSP Update Promotes Synthetic Version Zero To Open Document");
 }
 
+/* 文件仅保留最近两个历史块；已获取的快照应跨滚动更新独立有效。 */
 static void test_file_version_retains_two_historical_content_snapshots(
         SZrState *state) {
     const TZrChar *summary = "File Version Retains Two Historical Content Snapshots";
@@ -849,6 +863,7 @@ static void test_file_version_retains_two_historical_content_snapshots(
 }
 
 // 主测试函数
+/* CMake 独立目标先验证生命周期，再验证版本、声明边界和历史持有契约。 */
 int main(void) {
     printf("==========\n");
     printf("Language Server - Incremental Parser Tests\n");

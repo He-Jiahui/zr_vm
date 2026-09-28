@@ -21,8 +21,10 @@
 #define RANDOM_EDIT_ITERATIONS 10000U
 #define RANDOM_SOURCE_CAPACITY 256U
 
+/* 差分断言独立累计，两个解析路径都检查完才向 CTest 报结果。 */
 static int g_failures = 0;
 
+/* 固定容量的公共 LSP 投影缓冲区；溢出时 isValid 使差分判为失败。 */
 typedef struct SZrTestJsonBuffer {
     TZrChar content[TEST_JSON_CAPACITY];
     TZrSize length;
@@ -87,6 +89,7 @@ static TZrBool identifiers_equal(const SZrIdentifier *left, const SZrIdentifier 
 static TZrBool ast_nodes_equal(const SZrAstNode *left, const SZrAstNode *right,
                                TZrSize depth);
 
+/* 为 AST 差分比较类型树的结构及来源；深度上限避免异常循环关系无限递归。 */
 static TZrBool types_equal(const SZrType *left, const SZrType *right, TZrSize depth) {
     if (left == ZR_NULL || right == ZR_NULL) {
         return left == right;
@@ -127,6 +130,7 @@ static TZrBool ast_node_arrays_equal(const SZrAstNodeArray *left,
     return ZR_TRUE;
 }
 
+/* 固定测试语法子集的 AST 结构比较，供“增量 vs 全量”而非地址身份断言。 */
 static TZrBool ast_nodes_equal(const SZrAstNode *left, const SZrAstNode *right,
                                TZrSize depth) {
     if (left == ZR_NULL || right == ZR_NULL) {
@@ -220,6 +224,7 @@ static void json_buffer_init(SZrTestJsonBuffer *buffer) {
     buffer->isValid = ZR_TRUE;
 }
 
+/* 将公开协议投影写入有界缓冲区；任何截断都使比较失败。 */
 static void json_append_format(SZrTestJsonBuffer *buffer, const TZrChar *format, ...) {
     va_list args;
     int written;
@@ -285,6 +290,8 @@ static void json_append_range(SZrTestJsonBuffer *buffer, SZrLspRange range) {
                        range.end.character);
 }
 
+/* 只序列化诊断、文档符号和语义 token 的稳定字段，比较两个上下文
+ * 对客户端可见的同一投影，避免 VM 内部指针差异混入结果。 */
 static TZrBool capture_lsp_json(SZrState *state,
                                 SZrLspContext *context,
                                 SZrString *uri,
@@ -303,6 +310,8 @@ static TZrBool capture_lsp_json(SZrState *state,
               ZrLanguageServer_Lsp_GetSemanticTokens(state, context, uri, &tokens);
     if (!success) {
         ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+        /* BUG: GetDocumentSymbols 的指针项由 RawMalloc 创建；此失败路径和
+         * 下方成功路径只 Array_Free 外层，非空 symbols 逐次泄漏。 */
         ZrCore_Array_Free(state, &symbols);
         ZrCore_Array_Free(state, &tokens);
         return ZR_FALSE;
@@ -386,6 +395,7 @@ static int compare_ticks(const void *left, const void *right) {
     return leftTicks < rightTicks ? -1 : (leftTicks > rightTicks ? 1 : 0);
 }
 
+/* 分别获取两个上下文持有的语义快照，确认内容代际与当前编辑文本一致。 */
 static TZrBool snapshots_match_current_content(SZrState *state,
                                                SZrLspContext *incrementalContext,
                                                SZrString *incrementalUri,
@@ -418,6 +428,7 @@ static TZrBool snapshots_match_current_content(SZrState *state,
     return matches;
 }
 
+/* 仅在给定完整码点起点检查 UTF-8 字节偏移与 LSP UTF-16 光标往返。 */
 static TZrBool utf16_roundtrip_at_offset(const TZrChar *content,
                                          TZrSize contentLength,
                                          TZrSize offset) {
@@ -433,6 +444,8 @@ static TZrBool utf16_roundtrip_at_offset(const TZrChar *content,
     return roundTrip.offset == offset;
 }
 
+/* 固定种子交替改 ASCII、汉字与非 BMP 字符，每步比较增量和强制全量 AST、
+ * 快照内容及位置往返；末尾再比较公开 LSP JSON，耗时仅作遥测。 */
 static void test_random_utf8_utf16_incremental_differential(SZrState *state) {
     static const TZrChar *initialContent =
             "fn alpha(): int {\n"
@@ -585,6 +598,7 @@ static void test_random_utf8_utf16_incremental_differential(SZrState *state) {
     ZrLanguageServer_LspContext_Free(state, cleanContext);
 }
 
+/* 声明体等长修改后与干净全量解析对照，核对 AST、符号和公开协议投影。 */
 static void test_incremental_parse_matches_clean_full_parse(SZrState *state) {
     static const TZrChar *before =
             "fn alpha(): int { return 1; }\n"
@@ -689,6 +703,7 @@ static void test_incremental_parse_matches_clean_full_parse(SZrState *state) {
     ZrLanguageServer_LspContext_Free(state, cleanContext);
 }
 
+/* CMake 独立目标先跑确定性声明案例，再跑固定序列的 UTF 编辑差分。 */
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 0, &callbacks);

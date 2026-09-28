@@ -6,6 +6,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 双重一元负号包裹移位计数时应保留原计数范围；矩阵同时覆盖左右移、
+ * 内层精确零和零减右操作数，防止分析只识别未包裹的计数。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

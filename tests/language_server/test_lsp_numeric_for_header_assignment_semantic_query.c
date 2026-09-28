@@ -11,6 +11,9 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+/* 独立目标核对 for 初始化与步进赋值在循环出口的合流；查询 return 表达式，
+ * 避免把循环体内某一次写入误当作最终范围。 */
+/* GlobalState_New 仅在本目标内借用此回调；旧指针及大小须来自 VM 内存层。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -32,6 +35,8 @@ static TZrPtr test_allocator(TZrPtr userData,
     if (pointer == ZR_NULL) {
         return malloc(newSize);
     }
+    /* TODO: 地址与旧大小阈值无法证明分配归属；合法大块重分配可能丢失旧内容。
+     * 核对 VM 分配回调契约后再统一此测试分配器。 */
     if ((TZrPtr)pointer >= (TZrPtr)0x1000 &&
         originalSize > 0 &&
         originalSize < 1024 * 1024 * 1024) {
@@ -40,6 +45,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* 调用方使用首次匹配的 ASCII 子串定位 return 中的加法表达式。 */
 static TZrBool find_position_for_substring(const TZrChar *content,
                                            const TZrChar *needle,
                                            SZrLspPosition *outPosition) {
@@ -57,6 +63,7 @@ static TZrBool find_position_for_substring(const TZrChar *content,
         return ZR_FALSE;
     }
 
+    /* TODO: LSP 列按 UTF-16 计数；若夹具引入非 ASCII，字节列会选错位置。 */
     while (cursor < match) {
         if (*cursor == '\n') {
             line++;
@@ -72,6 +79,7 @@ static TZrBool find_position_for_substring(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* 零次迭代和进入循环的路径需共同决定 [2,11]，不能只取初始化赋值。 */
 static TZrBool test_local_expression_query_joins_for_init_and_step_assignment_range(
         SZrState *state) {
     const TZrChar *content =

@@ -15,19 +15,23 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+/* 每个可达性场景独立计时，结果仍由事实和诊断断言决定。 */
 typedef struct SZrTestTimer {
     clock_t startTime;
     clock_t endTime;
 } SZrTestTimer;
 
+/* 分支、switch 与循环用例共用失败计数，入口最终读取它。 */
 static int g_failures = 0;
 
+/* 标记当前可达性场景的起点，供成功或失败报告使用。 */
 #define TEST_START(summary) do { \
     timer.startTime = clock(); \
     printf("Unit Test - %s\n", summary); \
     fflush(stdout); \
 } while (0)
 
+/* 报告通过的场景，不提前终止其他控制流检查。 */
 #define TEST_PASS(timerValue, summary) do { \
     (timerValue).endTime = clock(); \
     double elapsed = ((double)((timerValue).endTime - (timerValue).startTime) / CLOCKS_PER_SEC) * 1000.0; \
@@ -35,6 +39,7 @@ static int g_failures = 0;
     fflush(stdout); \
 } while (0)
 
+/* 聚合失败以便所有控制流场景均能跑完。 */
 #define TEST_FAIL(timerValue, summary, reason) do { \
     (timerValue).endTime = clock(); \
     double elapsed = ((double)((timerValue).endTime - (timerValue).startTime) / CLOCKS_PER_SEC) * 1000.0; \
@@ -43,6 +48,7 @@ static int g_failures = 0;
     g_failures++; \
 } while (0)
 
+/* 为独立可达性查询目标配置 VM 分配生命周期。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -72,6 +78,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* 把诊断代码的 VM 字符串当作借用文本与期望代码比较。 */
 static const TZrChar *lsp_test_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -81,6 +88,7 @@ static const TZrChar *lsp_test_string_text(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
+/* 在公开诊断集合中核对指定代码，用于区分事实查询和诊断发布。 */
 static TZrBool lsp_diagnostics_contain_code(SZrArray *diagnostics, const TZrChar *expectedCode) {
     for (TZrSize index = 0; diagnostics != ZR_NULL && index < diagnostics->length; index++) {
         SZrLspDiagnostic **diagnosticPtr = (SZrLspDiagnostic **)ZrCore_Array_Get(diagnostics, index);
@@ -94,6 +102,7 @@ static TZrBool lsp_diagnostics_contain_code(SZrArray *diagnostics, const TZrChar
     return ZR_FALSE;
 }
 
+/* 在 ASCII 控制流 fixture 中定位指定表达式的 LSP 请求位置。 */
 static TZrBool lsp_find_position_for_substring(const TZrChar *content,
                                                const TZrChar *needle,
                                                TZrSize occurrence,
@@ -132,6 +141,7 @@ static TZrBool lsp_find_position_for_substring(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* 穷尽分支后的表达式须携带不可达事实，供局部查询展示。 */
 static void test_local_query_returns_exhaustive_branch_reachability_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Query Returns Exhaustive Branch Reachability Fact";
     const TZrChar *uriText = "file:///local_exhaustive_branch_reachability.zr";
@@ -198,6 +208,7 @@ static void test_local_query_returns_exhaustive_branch_reachability_fact(SZrStat
     TEST_PASS(timer, summary);
 }
 
+/* 常量条件分支应产生可达性事实，避免 LSP 单独猜测控制流。 */
 static void test_local_query_returns_constant_conditional_branch_reachability_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Query Returns Constant Conditional Branch Reachability Fact";
     const TZrChar *uriText = "file:///local_constant_conditional_reachability.zr";
@@ -267,6 +278,7 @@ static void test_local_query_returns_constant_conditional_branch_reachability_fa
     TEST_PASS(timer, summary);
 }
 
+/* 穷尽 switch 的后继位置应由 parser 可达性事实判定。 */
 static void test_local_query_returns_exhaustive_switch_reachability_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Query Returns Exhaustive Switch Reachability Fact";
     const TZrChar *uriText = "file:///local_exhaustive_switch_reachability.zr";
@@ -339,6 +351,7 @@ static void test_local_query_returns_exhaustive_switch_reachability_fact(SZrStat
     TEST_PASS(timer, summary);
 }
 
+/* union switch 已覆盖全部变体时默认分支应不可达。 */
 static void test_local_query_marks_exhaustive_union_switch_default_unreachable(SZrState *state) {
     const TZrChar *summary = "LSP Local Query Marks Exhaustive Union Switch Default Unreachable";
     const TZrChar *uriText = "file:///local_exhaustive_union_switch_default_reachability.zr";
@@ -381,6 +394,8 @@ static void test_local_query_marks_exhaustive_union_switch_default_unreachable(S
     }
 
     ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    /* BUG: GetDiagnostics 为每项另行分配对象；两条路径只 Array_Free 指针数组，
+     * 非空诊断对象及可能存在的附属数组泄漏。应按 FreeDiagnostics 契约逐项释放。 */
     if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics) ||
         !lsp_diagnostics_contain_code(&diagnostics, "unreachable_code") ||
         lsp_diagnostics_contain_code(&diagnostics, "unreachable_union_switch_default")) {
@@ -422,6 +437,7 @@ static void test_local_query_marks_exhaustive_union_switch_default_unreachable(S
     TEST_PASS(timer, summary);
 }
 
+/* 变体未覆盖完全时默认分支仍可达，防止过度报告。 */
 static void test_local_query_keeps_non_exhaustive_union_switch_default_reachable(SZrState *state) {
     const TZrChar *summary = "LSP Local Query Keeps Non-Exhaustive Union Switch Default Reachable";
     const TZrChar *uriText = "file:///local_non_exhaustive_union_switch_default_reachability.zr";
@@ -484,6 +500,7 @@ static void test_local_query_keeps_non_exhaustive_union_switch_default_reachable
     TEST_PASS(timer, summary);
 }
 
+/* 常真循环且无 break 时出口不可达，由局部查询返回该事实。 */
 static void test_local_query_returns_constant_true_loop_exit_reachability_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Query Returns Constant True Loop Exit Reachability Fact";
     const TZrChar *uriText = "file:///local_constant_true_loop_exit_reachability.zr";
@@ -556,6 +573,7 @@ static void test_local_query_returns_constant_true_loop_exit_reachability_fact(S
     TEST_PASS(timer, summary);
 }
 
+/* 无限 for 循环的出口应标为不可达，保持循环语义一致。 */
 static void test_local_query_returns_infinite_for_loop_exit_reachability_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Query Returns Infinite For Loop Exit Reachability Fact";
     const TZrChar *uriText = "file:///local_infinite_for_loop_exit_reachability.zr";
@@ -620,6 +638,7 @@ static void test_local_query_returns_infinite_for_loop_exit_reachability_fact(SZ
     TEST_PASS(timer, summary);
 }
 
+/* break 提供实际出口时不能沿常真条件误标循环后语句。 */
 static void test_local_query_keeps_constant_true_loop_with_break_reachable(SZrState *state) {
     const TZrChar *summary = "LSP Local Query Keeps Constant True Loop With Break Reachable";
     const TZrChar *uriText = "file:///local_constant_true_loop_break_reachable.zr";
@@ -680,6 +699,7 @@ static void test_local_query_keeps_constant_true_loop_with_break_reachable(SZrSt
     TEST_PASS(timer, summary);
 }
 
+/* 含 break 的无限 for 必须保留退出可达性。 */
 static void test_local_query_keeps_infinite_for_loop_with_break_reachable(SZrState *state) {
     const TZrChar *summary = "LSP Local Query Keeps Infinite For Loop With Break Reachable";
     const TZrChar *uriText = "file:///local_infinite_for_loop_break_reachable.zr";
@@ -740,6 +760,7 @@ static void test_local_query_keeps_infinite_for_loop_with_break_reachable(SZrSta
     TEST_PASS(timer, summary);
 }
 
+/* 嵌套循环的出口事实须按对应循环边界归属。 */
 static void test_local_query_returns_nested_loop_exit_reachability_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Query Returns Nested Loop Exit Reachability Fact";
     const TZrChar *uriText = "file:///local_nested_loop_exit_reachability.zr";
@@ -814,6 +835,7 @@ static void test_local_query_returns_nested_loop_exit_reachability_fact(SZrState
     TEST_PASS(timer, summary);
 }
 
+/* 嵌套 break 路径应使后继可达，防止外层循环关系串线。 */
 static void test_local_query_keeps_nested_breaking_loop_reachable(SZrState *state) {
     const TZrChar *summary = "LSP Local Query Keeps Nested Breaking Loop Reachable";
     const TZrChar *uriText = "file:///local_nested_breaking_loop_reachable.zr";
@@ -877,6 +899,7 @@ static void test_local_query_keeps_nested_breaking_loop_reachable(SZrState *stat
     TEST_PASS(timer, summary);
 }
 
+/* 依次跑分支、switch 与循环的正反可达性用例，聚合失败交给 CTest。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

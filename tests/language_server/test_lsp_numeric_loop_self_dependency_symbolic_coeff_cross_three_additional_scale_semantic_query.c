@@ -5,6 +5,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 三层额外乘积固定表达式形状，只改变系数符号与零可达性；
+ * 同组零乘积无操作例是正残差扩张例的边界对照。 */
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_three_additional_level_positive_singleton_scale_product_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
@@ -251,6 +253,7 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    /* TODO: && 串联变体时首个失败会跳过后续场景；完整矩阵诊断需逐例执行并汇总。 */
     passed =
         test_local_expression_query_widens_target_reading_symbolic_deeper_three_additional_level_positive_singleton_scale_product_coefficient_residual(
                 state) &&

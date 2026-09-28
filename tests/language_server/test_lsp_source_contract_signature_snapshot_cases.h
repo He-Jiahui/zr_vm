@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_SOURCE_CONTRACT_SIGNATURE_SNAPSHOT_CASES_H
 #define ZR_VM_TEST_LSP_SOURCE_CONTRACT_SIGNATURE_SNAPSHOT_CASES_H
 
+/* 签名帮助先从 parser 快照事实解析调用，再在允许的场景使用旧构造器回退。 */
 static void test_signature_semantic_facts_are_snapshot_read_only(void) {
     char *source = read_repo_text_file_owned(
             "zr_vm_language_server/src/zr_vm_language_server/interface/"
@@ -47,6 +48,7 @@ static void test_signature_semantic_facts_are_snapshot_read_only(void) {
         g_failures++;
     }
 
+    /* TODO: 此处按整段空白布局匹配源码；应改用语法或行为证据，避免纯格式调整误报。 */
     canonicalConstructResolve = strstr(
             dispatcher,
             "callContext.kind == ZR_LSP_CALL_CONTEXT_CONSTRUCT_CALL &&\n"

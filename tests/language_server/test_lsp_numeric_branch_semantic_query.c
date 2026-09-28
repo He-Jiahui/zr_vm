@@ -10,6 +10,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+/* 为本测试进程的 VM GlobalState 提供内存回调；调用者是 VM 内存层，生命周期由 main 释放全局状态结束。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -31,6 +32,8 @@ static TZrPtr test_allocator(TZrPtr userData,
     if (pointer == ZR_NULL) {
         return malloc(newSize);
     }
+    /* TODO: 地址与 originalSize 阈值不能证明归属；合法大块释放时可能跳过 free，
+     * 扩容时可能回退 malloc 并丢失旧内容。核查 VM 回调的尺寸与指针契约。 */
     if ((TZrPtr)pointer >= (TZrPtr)0x1000 &&
         originalSize > 0 &&
         originalSize < 1024 * 1024 * 1024) {
@@ -39,6 +42,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* 把当前 ASCII fixture 的匹配文本换算成 ExpressionAt 光标；调用方须选中目标表达式，不能直接用于非 ASCII 的 UTF-16 坐标。 */
 static TZrBool find_position_for_substring(const TZrChar *content,
                                            const TZrChar *needle,
                                            TZrSize occurrence,
@@ -77,6 +81,7 @@ static TZrBool find_position_for_substring(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* 为多个场景独立建立 LSP 文档并用 ExpressionAt 核对数值事实；输入须是 ASCII fixture，返回前释放 context。 */
 static TZrBool run_branch_range_case(SZrState *state,
                                      const TZrChar *label,
                                      const TZrChar *uriText,
@@ -148,6 +153,7 @@ static TZrBool run_branch_range_case(SZrState *state,
     return passed;
 }
 
+/* 为分支用例建立临时 LSP 文档并查询表达式的分段区间；用完整段集阻止路径合并时抹掉空隙，结果仅在 context 存活时读取。 */
 static TZrBool run_branch_segment_set_case(SZrState *state,
                                            const TZrChar *label,
                                            const TZrChar *uriText,
@@ -256,6 +262,7 @@ static TZrBool run_branch_segment_set_case(SZrState *state,
     return passed;
 }
 
+/* 为分支用例建立临时 LSP 文档并查询表达式的分段区间；用完整段集阻止路径合并时抹掉空隙，结果仅在 context 存活时读取。 */
 static TZrBool run_branch_segment_range_case(SZrState *state,
                                              const TZrChar *label,
                                              const TZrChar *uriText,
@@ -283,6 +290,7 @@ static TZrBool run_branch_segment_range_case(SZrState *state,
                                        2);
 }
 
+/* 在真路径查询 if (seed < 10) 对整数域的细化，防止将另一分支的不可能取值或分段间隙并入当前表达式事实。 */
 static TZrBool test_local_expression_query_refines_true_branch_less_than_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(seed: u8): uint {\n"
@@ -301,6 +309,7 @@ static TZrBool test_local_expression_query_refines_true_branch_less_than_range(S
                                  10);
 }
 
+/* 在真路径查询 if (seed == 10) 对整数域的细化，防止将另一分支的不可能取值或分段间隙并入当前表达式事实。 */
 static TZrBool test_local_expression_query_refines_true_branch_equal_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(seed: u8): uint {\n"
@@ -319,6 +328,7 @@ static TZrBool test_local_expression_query_refines_true_branch_equal_range(SZrSt
                                  11);
 }
 
+/* 在真路径查询 if (seed != 0) 对整数域的细化，防止将另一分支的不可能取值或分段间隙并入当前表达式事实。 */
 static TZrBool test_local_expression_query_refines_true_branch_edge_not_equal_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(seed: u8): uint {\n"
@@ -337,6 +347,7 @@ static TZrBool test_local_expression_query_refines_true_branch_edge_not_equal_ra
                                  256);
 }
 
+/* 在真路径查询 if (seed > 2 && seed < 10) 对整数域的细化，防止将另一分支的不可能取值或分段间隙并入当前表达式事实。 */
 static TZrBool test_local_expression_query_refines_true_branch_logical_and_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(seed: u8): uint {\n"
@@ -355,6 +366,7 @@ static TZrBool test_local_expression_query_refines_true_branch_logical_and_range
                                  10);
 }
 
+/* 在真路径查询 if (seed < 10 || seed < 20) 对整数域的细化，防止将另一分支的不可能取值或分段间隙并入当前表达式事实。 */
 static TZrBool test_local_expression_query_refines_true_branch_logical_or_same_direction_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(seed: u8): uint {\n"
@@ -373,6 +385,7 @@ static TZrBool test_local_expression_query_refines_true_branch_logical_or_same_d
                                  20);
 }
 
+/* 在真路径查询 if (seed < 10 || seed > 20) 对整数域的细化，防止将另一分支的不可能取值或分段间隙并入当前表达式事实。 */
 static TZrBool test_local_expression_query_refines_true_branch_logical_or_disjoint_segment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(seed: u8): uint {\n"
@@ -396,6 +409,7 @@ static TZrBool test_local_expression_query_refines_true_branch_logical_or_disjoi
         256);
 }
 
+/* 在真路径查询 if ((seed > 2 && seed < 10) || seed == 20) 对整数域的细化，防止将另一分支的不可能取值或分段间隙并入当前表达式事实。 */
 static TZrBool test_local_expression_query_refines_true_branch_logical_or_nested_and_segment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(seed: u8): uint {\n"
@@ -419,6 +433,7 @@ static TZrBool test_local_expression_query_refines_true_branch_logical_or_nested
         21);
 }
 
+/* 在真路径查询 if (seed < 5 || seed == 10 || seed > 20) 对整数域的细化，防止将另一分支的不可能取值或分段间隙并入当前表达式事实。 */
 static TZrBool test_local_expression_query_refines_true_branch_logical_or_three_segment_range(SZrState *state) {
     const SZrNumericRangeSegment expectedSegments[] = {
         {1, 5},
@@ -445,6 +460,7 @@ static TZrBool test_local_expression_query_refines_true_branch_logical_or_three_
         3);
 }
 
+/* 在真路径查询 if (!(seed < 10)) 对整数域的细化，防止将另一分支的不可能取值或分段间隙并入当前表达式事实。 */
 static TZrBool test_local_expression_query_refines_true_branch_unary_not_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(seed: u8): uint {\n"
@@ -463,6 +479,7 @@ static TZrBool test_local_expression_query_refines_true_branch_unary_not_range(S
                                  256);
 }
 
+/* 先排除外层已返回路径，再查询 else-if 的真分支；验证链式条件只用当前可达值域作细化。 */
 static TZrBool test_local_expression_query_refines_else_if_inner_true_branch_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(seed: u8): uint {\n"
@@ -484,6 +501,7 @@ static TZrBool test_local_expression_query_refines_else_if_inner_true_branch_ran
                                  20);
 }
 
+/* 在假路径查询 if (seed < 10) 对整数域的细化，防止将另一分支的不可能取值或分段间隙并入当前表达式事实。 */
 static TZrBool test_local_expression_query_refines_false_branch_less_than_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(seed: u8): uint {\n"
@@ -503,6 +521,7 @@ static TZrBool test_local_expression_query_refines_false_branch_less_than_range(
                                  256);
 }
 
+/* 在假路径查询 if (seed == 0) 对整数域的细化，防止将另一分支的不可能取值或分段间隙并入当前表达式事实。 */
 static TZrBool test_local_expression_query_refines_false_branch_edge_equal_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(seed: u8): uint {\n"
@@ -522,6 +541,7 @@ static TZrBool test_local_expression_query_refines_false_branch_edge_equal_range
                                  256);
 }
 
+/* 在假路径查询 if (seed != 10) 对整数域的细化，防止将另一分支的不可能取值或分段间隙并入当前表达式事实。 */
 static TZrBool test_local_expression_query_refines_false_branch_not_equal_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(seed: u8): uint {\n"
@@ -541,6 +561,7 @@ static TZrBool test_local_expression_query_refines_false_branch_not_equal_range(
                                  11);
 }
 
+/* 在假路径查询 if (seed <= 2 || seed >= 10) 对整数域的细化，防止将另一分支的不可能取值或分段间隙并入当前表达式事实。 */
 static TZrBool test_local_expression_query_refines_false_branch_logical_or_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(seed: u8): uint {\n"
@@ -560,6 +581,7 @@ static TZrBool test_local_expression_query_refines_false_branch_logical_or_range
                                  10);
 }
 
+/* 在假路径查询 if (seed < 10 && seed < 20) 对整数域的细化，防止将另一分支的不可能取值或分段间隙并入当前表达式事实。 */
 static TZrBool test_local_expression_query_refines_false_branch_logical_and_same_direction_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(seed: u8): uint {\n"
@@ -579,6 +601,7 @@ static TZrBool test_local_expression_query_refines_false_branch_logical_and_same
                                  256);
 }
 
+/* 在假路径查询 if (seed > 10 && seed < 20) 对整数域的细化，防止将另一分支的不可能取值或分段间隙并入当前表达式事实。 */
 static TZrBool test_local_expression_query_refines_false_branch_logical_and_disjoint_segment_range(SZrState *state) {
     const TZrChar *content =
         "fn calc(seed: u8): uint {\n"
@@ -603,6 +626,7 @@ static TZrBool test_local_expression_query_refines_false_branch_logical_and_disj
         256);
 }
 
+/* 此可执行文件由 CTest 的 language_server 套件调用，汇总布尔条件分支细化后的区间与分段事实用例；创建 VM state 后调用本文件场景，并在退出前释放全局状态。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

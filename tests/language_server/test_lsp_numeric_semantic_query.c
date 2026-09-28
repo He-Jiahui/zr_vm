@@ -10,6 +10,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+/* 为本测试进程的 VM GlobalState 提供内存回调；调用者是 VM 内存层，生命周期由 main 释放全局状态结束。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -31,6 +32,8 @@ static TZrPtr test_allocator(TZrPtr userData,
     if (pointer == ZR_NULL) {
         return malloc(newSize);
     }
+    /* TODO: 地址与 originalSize 阈值不能证明归属；合法大块释放时可能跳过 free，
+     * 扩容时可能回退 malloc 并丢失旧内容。核查 VM 回调的尺寸与指针契约。 */
     if ((TZrPtr)pointer >= (TZrPtr)0x1000 &&
         originalSize > 0 &&
         originalSize < 1024 * 1024 * 1024) {
@@ -39,6 +42,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* 把当前 ASCII fixture 的匹配文本换算成 ExpressionAt 光标；调用方须选中目标表达式，不能直接用于非 ASCII 的 UTF-16 坐标。 */
 static TZrBool find_position_for_substring(const TZrChar *content,
                                            const TZrChar *needle,
                                            TZrSize occurrence,
@@ -77,6 +81,7 @@ static TZrBool find_position_for_substring(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* 以无符号范围的局部表达式查询锁定推断类型、上下界与溢出标记，供更复杂的分支和循环用例作为基线。 */
 static TZrBool test_local_expression_query_returns_unsigned_range_fact(SZrState *state) {
     const TZrChar *uriText = "file:///local_unsigned_numeric_range_fact.zr";
     const TZrChar *content =
@@ -140,6 +145,7 @@ static TZrBool test_local_expression_query_returns_unsigned_range_fact(SZrState 
     return passed;
 }
 
+/* 以区间加法的局部表达式查询锁定推断类型、上下界与溢出标记，供更复杂的分支和循环用例作为基线。 */
 static TZrBool test_local_expression_query_returns_interval_addition_range_fact(SZrState *state) {
     const TZrChar *uriText = "file:///local_interval_addition_numeric_range_fact.zr";
     const TZrChar *content =
@@ -209,6 +215,7 @@ static TZrBool test_local_expression_query_returns_interval_addition_range_fact(
     return passed;
 }
 
+/* 以区间除法的局部表达式查询锁定推断类型、上下界与溢出标记，供更复杂的分支和循环用例作为基线。 */
 static TZrBool test_local_expression_query_returns_interval_division_range_fact(SZrState *state) {
     const TZrChar *uriText = "file:///local_interval_division_numeric_range_fact.zr";
     const TZrChar *content =
@@ -278,6 +285,7 @@ static TZrBool test_local_expression_query_returns_interval_division_range_fact(
     return passed;
 }
 
+/* 以区间取模的局部表达式查询锁定推断类型、上下界与溢出标记，供更复杂的分支和循环用例作为基线。 */
 static TZrBool test_local_expression_query_returns_interval_modulo_range_fact(SZrState *state) {
     const TZrChar *uriText = "file:///local_interval_modulo_numeric_range_fact.zr";
     const TZrChar *content =
@@ -347,6 +355,7 @@ static TZrBool test_local_expression_query_returns_interval_modulo_range_fact(SZ
     return passed;
 }
 
+/* 此可执行文件由 CTest 的 language_server 套件调用，汇总基础无符号范围及算术提升用例；创建 VM state 后调用本文件场景，并在退出前释放全局状态。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

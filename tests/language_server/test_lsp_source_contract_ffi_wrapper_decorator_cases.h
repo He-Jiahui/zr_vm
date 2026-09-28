@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_SOURCE_CONTRACT_FFI_WRAPPER_DECORATOR_CASES_H
 #define ZR_VM_TEST_LSP_SOURCE_CONTRACT_FFI_WRAPPER_DECORATOR_CASES_H
 
+/* FFI wrapper 装饰器的合法性由 parser 维护，LSP 仅映射诊断。 */
 static void test_ffi_wrapper_decorators_use_parser_diagnostic_projection(void) {
     char *typecheck = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");

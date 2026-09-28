@@ -19,6 +19,7 @@ extern SZrSemanticAnalyzer *ZrLanguageServer_Lsp_FindAnalyzer(
         SZrLspContext *context,
         SZrString *uri);
 
+/* 为悬停集成测试创建的 VM 全局状态提供分配和释放回调。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -48,6 +49,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* 从短串或长串对象取得借用文本，统一后续协议结果比对。 */
 static const TZrChar *string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -58,6 +60,7 @@ static const TZrChar *string_text(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
+/* 在 fixture 中寻找指定出现次序的请求位置；当前按源字节扫描列号。 */
 static TZrBool find_position_for_substring(const TZrChar *content,
                                            const TZrChar *needle,
                                            TZrSize occurrence,
@@ -81,6 +84,8 @@ static TZrBool find_position_for_substring(const TZrChar *content,
         return ZR_FALSE;
     }
 
+    /* BUG: 这里按 UTF-8 字节累加 LSP 列号；下方 λ 用例请求 + 时得到 22，实际 UTF-16 列应为 21，
+     * 因而测试没有在预期的协议位置发起悬停。后续应使用文档位置转换生成请求坐标。 */
     while (cursor < match) {
         if (*cursor == '\n') {
             line++;
@@ -96,6 +101,7 @@ static TZrBool find_position_for_substring(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* 跨悬停内容片段检查语义说明是否进入公开响应。 */
 static TZrBool hover_contains_text(SZrLspHover *hover, const TZrChar *needle) {
     if (hover == ZR_NULL || needle == ZR_NULL) {
         return ZR_FALSE;
@@ -113,6 +119,7 @@ static TZrBool hover_contains_text(SZrLspHover *hover, const TZrChar *needle) {
     return ZR_FALSE;
 }
 
+/* 仅为失败诊断读取首段悬停内容，不转移字符串所有权。 */
 static const TZrChar *hover_first_text(SZrLspHover *hover) {
     if (hover == ZR_NULL) {
         return ZR_NULL;
@@ -128,6 +135,7 @@ static const TZrChar *hover_first_text(SZrLspHover *hover) {
     return ZR_NULL;
 }
 
+/* 检查反射补全的候选集是否包含指定可见成员。 */
 static TZrBool completion_contains_label(SZrArray *completions, const TZrChar *label) {
     if (completions == ZR_NULL || label == ZR_NULL) {
         return ZR_FALSE;
@@ -144,6 +152,7 @@ static TZrBool completion_contains_label(SZrArray *completions, const TZrChar *l
     return ZR_FALSE;
 }
 
+/* 按标签取补全项以核查文档内容，返回值由补全数组持有。 */
 static SZrLspCompletionItem *completion_find_item(SZrArray *completions,
                                                   const TZrChar *label) {
     if (completions == ZR_NULL || label == ZR_NULL) {
@@ -163,6 +172,7 @@ static SZrLspCompletionItem *completion_find_item(SZrArray *completions,
     return ZR_NULL;
 }
 
+/* 主动撤销某声明事实，验证补全文档在 canonical 身份缺失时失败关闭。 */
 static TZrBool invalidate_declaration_fact_for_name(SZrSemanticAnalyzer *analyzer,
                                                      const TZrChar *name) {
     if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || name == ZR_NULL) {
@@ -190,6 +200,7 @@ static TZrBool invalidate_declaration_fact_for_name(SZrSemanticAnalyzer *analyze
     return ZR_FALSE;
 }
 
+/* 先比较字节长度再比较文本，防止含转义或 NUL 的常量被截断。 */
 static TZrBool string_constant_equals(SZrString *value, const TZrChar *expected, TZrSize expectedLength) {
     const TZrChar *text = string_text(value);
 
@@ -198,6 +209,7 @@ static TZrBool string_constant_equals(SZrString *value, const TZrChar *expected,
            memcmp(text, expected, expectedLength) == 0;
 }
 
+/* 按语义角色核查富悬停章节，避免普通文本命中掩盖错位章节。 */
 static TZrBool rich_hover_section_contains_text(SZrLspRichHover *hover,
                                                 const TZrChar *role,
                                                 const TZrChar *needle) {
@@ -224,6 +236,7 @@ static TZrBool rich_hover_section_contains_text(SZrLspRichHover *hover,
     return ZR_FALSE;
 }
 
+/* 释放本测试持有的普通悬停响应，使用方不得再读取其中的内容。 */
 static void hover_free(SZrState *state, SZrLspHover *hover) {
     if (state == ZR_NULL || hover == ZR_NULL) {
         return;
@@ -233,6 +246,7 @@ static void hover_free(SZrState *state, SZrLspHover *hover) {
     ZrCore_Memory_RawFree(state->global, hover, sizeof(SZrLspHover));
 }
 
+/* 核查公开悬停区间的起止坐标，特别用于 UTF-16 投影回归。 */
 static TZrBool lsp_range_equals(SZrLspRange range,
                                 TZrInt32 startLine,
                                 TZrInt32 startCharacter,
@@ -244,6 +258,7 @@ static TZrBool lsp_range_equals(SZrLspRange range,
            range.end.character == endCharacter;
 }
 
+/* 同一 binary 表达式事实应贯穿局部、公开与富悬停三个投影。 */
 static TZrBool test_lsp_hover_surfaces_expression_fact_kind_and_constant(SZrState *state) {
     const TZrChar *uriText = "file:///expression_fact_hover.zr";
     const TZrChar *content =
@@ -328,6 +343,7 @@ static TZrBool test_lsp_hover_surfaces_expression_fact_kind_and_constant(SZrStat
     return passed;
 }
 
+/* 非 ASCII 前缀后的悬停响应须返回 UTF-16 列，不能直接输出 UTF-8 字节偏移。 */
 static TZrBool test_lsp_hover_range_after_utf8_prefix_uses_utf16_columns(SZrState *state) {
     const TZrChar *uriText = "file:///expression_fact_utf16_hover.zr";
     const TZrChar *content =
@@ -377,6 +393,7 @@ static TZrBool test_lsp_hover_range_after_utf8_prefix_uses_utf16_columns(SZrStat
     return passed;
 }
 
+/* 分段数值范围事实应进入三种悬停表示，保留区间结构。 */
 static TZrBool test_lsp_hover_surfaces_segmented_numeric_range(SZrState *state) {
     const TZrChar *uriText = "file:///expression_fact_segment_range_hover.zr";
     const TZrChar *content =
@@ -474,6 +491,7 @@ static TZrBool test_lsp_hover_surfaces_segmented_numeric_range(SZrState *state) 
     return passed;
 }
 
+/* 大段数值范围须摘要展示，避免悬停输出无界膨胀。 */
 static TZrBool test_lsp_hover_compacts_large_segmented_numeric_range(SZrState *state) {
     const TZrChar *uriText = "file:///expression_fact_large_segment_range_hover.zr";
     const TZrChar *content =
@@ -560,6 +578,7 @@ static TZrBool test_lsp_hover_compacts_large_segmented_numeric_range(SZrState *s
     return passed;
 }
 
+/* 字符串常量中的特殊字符经悬停格式化后仍应安全且忠实展示。 */
 static TZrBool test_lsp_hover_escapes_string_constant_payload(SZrState *state) {
     const TZrChar *uriText = "file:///expression_fact_string_hover.zr";
     const TZrChar *content =
@@ -647,6 +666,7 @@ static TZrBool test_lsp_hover_escapes_string_constant_payload(SZrState *state) {
     return passed;
 }
 
+/* 引用类型由 canonical TypeId 格式化，避免仅凭声明文本重建。 */
 static TZrBool test_lsp_hover_formats_reference_type_from_type_id(SZrState *state) {
     const TZrChar *uriText = "file:///canonical_type_hover.zr";
     const TZrChar *content =
@@ -719,6 +739,7 @@ static TZrBool test_lsp_hover_formats_reference_type_from_type_id(SZrState *stat
     return passed;
 }
 
+/* 反射查询的静态与运行时类型应分别投影，不合并为粗略通用类型。 */
 static TZrBool test_lsp_hover_surfaces_precise_reflection_query_types(SZrState *state) {
     const TZrChar *uriText = "file:///reflection_query_type_hover.zr";
     const TZrChar *content =
@@ -820,6 +841,7 @@ static TZrBool test_lsp_hover_surfaces_precise_reflection_query_types(SZrState *
     return passed;
 }
 
+/* 反射描述符补全只公开层级允许的成员，避免通用表面泄漏。 */
 static TZrBool test_lsp_completion_respects_reflection_descriptor_hierarchy(SZrState *state) {
     const TZrChar *uriText = "file:///reflection_query_completion.zr";
     const TZrChar *content =
@@ -848,6 +870,7 @@ static TZrBool test_lsp_completion_respects_reflection_descriptor_hierarchy(SZrS
     }
     completionPosition.character += (TZrInt32)strlen("runtimeType.");
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16u);
+    /* BUG: GetCompletion 命中项逐项 RawMalloc；本案只 Array_Free 外层数组，原生项泄漏，后续须逐项 RawFree。 */
     passed = ZrLanguageServer_Lsp_GetCompletion(
                      state, context, uri, completionPosition, &completions) &&
              completion_contains_label(&completions, "id") &&
@@ -881,6 +904,7 @@ static TZrBool test_lsp_completion_respects_reflection_descriptor_hierarchy(SZrS
     return passed;
 }
 
+/* 撤销声明事实后补全项不能沿旧 symbol table 拼接过期文档。 */
 static TZrBool test_completion_documentation_fails_closed_without_declaration_fact(
         SZrState *state) {
     const TZrChar *uriText = "file:///completion_documentation_canonical_type.zr";
@@ -914,6 +938,7 @@ static TZrBool test_completion_documentation_fails_closed_without_declaration_fa
     analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
     completionPosition.character += 3;
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16u);
+    /* BUG: 两轮 GetCompletion 的命中项均只随外层 Array_Free 丢弃；原生项泄漏，后续须逐项 RawFree。 */
     passed = ZrLanguageServer_Lsp_GetCompletion(
             state, context, uri, completionPosition, &completions);
     exactItem = passed ? completion_find_item(&completions, "exact") : ZR_NULL;
@@ -953,6 +978,7 @@ static TZrBool test_completion_documentation_fails_closed_without_declaration_fa
     return passed;
 }
 
+/* 所有权内建操作的悬停说明取自 canonical 事实，不从 AST 形态猜测。 */
 static TZrBool test_ownership_intrinsic_hover_uses_canonical_fact(SZrState *state) {
     const TZrChar *uriText = "file:///ownership_intrinsic_fact_hover.zr";
     const TZrChar *content =
@@ -1011,6 +1037,7 @@ static TZrBool test_ownership_intrinsic_hover_uses_canonical_fact(SZrState *stat
     return passed;
 }
 
+/* owner 成员补全排除已移除的操作，防止编辑器建议无效 API。 */
 static TZrBool test_owner_member_completion_omits_removed_operations(SZrState *state) {
     const TZrChar *uriText = "file:///ownership_member_completion_cutover.zr";
     const TZrChar *content =
@@ -1039,6 +1066,7 @@ static TZrBool test_owner_member_completion_omits_removed_operations(SZrState *s
 
     position.character += (TZrInt32)strlen("owner.");
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16u);
+    /* BUG: GetCompletion 命中项逐项 RawMalloc；本案只 Array_Free 外层数组，原生项泄漏，后续须逐项 RawFree。 */
     passed = ZrLanguageServer_Lsp_GetCompletion(
                      state, context, uri, position, &completions) &&
              !completion_contains_label(&completions, "share") &&
@@ -1061,6 +1089,7 @@ static TZrBool test_owner_member_completion_omits_removed_operations(SZrState *s
     return passed;
 }
 
+/* 独立运行各类表达式事实悬停与补全回归，并汇总所有布尔结果为退出码。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

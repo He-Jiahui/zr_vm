@@ -5,6 +5,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* while 自依赖更新中的 offset 用等价位运算包裹 unit；对同一份源码分别
+ * 查询目标、循环内观察值和复制后的 mirror，检查范围传播及复制值的范围。 */
 static TZrBool run_positive_bitwise_idempotent_wrapper_offset_query(
         SZrState *state,
         const TZrChar *caseName,
@@ -118,6 +120,8 @@ static TZrBool run_positive_bitwise_idempotent_wrapper_offset_query(
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* CMake 独立执行 AND/OR、零加减包裹及左右操作数对称的 offset 矩阵；
+ * 这些不同语法形状必须给出相同的循环后数值范围。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
@@ -134,6 +138,8 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    /* TODO: 此处的连续 && 在首例失败后跳过其余独立变体；失败状态仍正确，
+     * 但无法同时定位多个退化。核对测试日志需求后改为逐例累积结果。 */
     passed =
             run_positive_bitwise_idempotent_wrapper_offset_query(
                     state,

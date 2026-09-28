@@ -1,6 +1,7 @@
 #ifndef ZR_TEST_LSP_SEMANTIC_CALL_HIERARCHY_CASES_H
 #define ZR_TEST_LSP_SEMANTIC_CALL_HIERARCHY_CASES_H
 
+/* 同名方法需按语义 ID 分组调用边；篡改显示名与旧表后结果仍应稳定。 */
 static void test_local_method_call_hierarchy_uses_canonical_edges(
         SZrState *state) {
     static const TZrChar *content =
@@ -105,6 +106,7 @@ static void test_local_method_call_hierarchy_uses_canonical_edges(
         goto cleanup;
     }
 
+    /* 只改变展示文本，不改变身份；下方 outgoing/incoming 应按规范边投影。 */
     runItem->name = tamperedRunName;
     leftReadItem->name = tamperedMethodName;
     if (!ZrLanguageServer_Lsp_GetCallHierarchyOutgoingCalls(
@@ -170,6 +172,7 @@ cleanup:
     }
 }
 
+/* lambda 的来向/去向调用边须可互相重解析；错误声明范围应失败闭合。 */
 static void test_local_lambda_call_hierarchy_uses_canonical_edges(
         SZrState *state) {
     static const TZrChar *content =
@@ -249,6 +252,7 @@ static void test_local_lambda_call_hierarchy_uses_canonical_edges(
         failure = "lambda outgoing canonical target";
         goto cleanup;
     }
+    /* 故意污染返回项的声明范围，检查调用层不按相似名称猜测目标。 */
     incomingCall->item->selectionRange.start.character++;
     (void)ZrLanguageServer_Lsp_GetCallHierarchyOutgoingCalls(
             state, context, incomingCall->item, &invalidRangeOutgoing);

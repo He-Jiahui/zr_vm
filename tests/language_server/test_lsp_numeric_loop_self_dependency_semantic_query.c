@@ -11,6 +11,9 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+/* 循环自依赖范围的基础矩阵：正负及零可达增量、同轮多次写入、净零抵消、
+ * 夹在写入之间的读取均通过真实 ExpressionAt 查询。 */
+/* GlobalState_New 注册此临时堆回调；旧指针归属与大小由 VM 内存层保证。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -32,6 +35,8 @@ static TZrPtr test_allocator(TZrPtr userData,
     if (pointer == ZR_NULL) {
         return malloc(newSize);
     }
+    /* TODO: 地址与旧大小阈值无法证明分配归属；合法大块重分配可能丢失内容。
+     * 核对 VM 分配回调契约后再统一此测试分配器。 */
     if ((TZrPtr)pointer >= (TZrPtr)0x1000 &&
         originalSize > 0 &&
         originalSize < 1024 * 1024 * 1024) {
@@ -40,6 +45,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* 局部查询 helper 只选首次出现的 ASCII 标记，offset 决定表达式内光标。 */
 static TZrBool find_position_for_substring_offset(const TZrChar *content,
                                                   const TZrChar *needle,
                                                   TZrSize offset,
@@ -59,6 +65,7 @@ static TZrBool find_position_for_substring_offset(const TZrChar *content,
         return ZR_FALSE;
     }
 
+    /* TODO: LSP 列是 UTF-16，而这里按字节前进；非 ASCII 夹具需重新映射。 */
     while (cursor < match) {
         if (*cursor == '\n') {
             line++;
@@ -84,6 +91,8 @@ static TZrBool find_position_for_substring_offset(const TZrChar *content,
     return remainingOffset == 0;
 }
 
+/* 每次建立独立文档，并在释放 context 前读取快照事实；needle 的首次匹配
+ * 加 offset 必须落在目标二元表达式。 */
 static TZrBool run_assignment_range_case_at(SZrState *state,
                                             const TZrChar *label,
                                             const TZrChar *uriText,
@@ -166,6 +175,7 @@ static TZrBool run_assignment_range_case_at(SZrState *state,
     return passed;
 }
 
+/* 多数变体读循环出口的 return；中途 observer 用 _at 指定另一光标。 */
 static TZrBool run_assignment_range_case(SZrState *state,
                                          const TZrChar *label,
                                          const TZrChar *uriText,

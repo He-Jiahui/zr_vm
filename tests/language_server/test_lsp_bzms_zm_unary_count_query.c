@@ -6,6 +6,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 零减法包裹一元负号计数，与一元负号包裹零减法的入口互补；
+ * 共享夹具在顶层位或处验证受支持移位计数形成的结果范围。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

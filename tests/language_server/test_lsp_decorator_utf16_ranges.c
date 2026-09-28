@@ -12,6 +12,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+/* CMake 独立目标的断言累计值。 */
 static TZrInt32 g_failures = 0;
 
 static TZrPtr test_allocator(TZrPtr userData,
@@ -35,6 +36,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return realloc(pointer, newSize);
 }
 
+/* 仅对本文件固定的有效 UTF-8 源码求码点宽度，供测试定位 helper 计算 UTF-16 列。 */
 static TZrUInt32 test_utf8_codepoint(const TZrChar *text, TZrSize length, TZrSize *index) {
     TZrUInt8 byte;
     TZrUInt32 codepoint;
@@ -77,6 +79,7 @@ static TZrUInt32 test_utf8_codepoint(const TZrChar *text, TZrSize length, TZrSiz
     return byte;
 }
 
+/* 将测试样例中的字节偏移换成客户端光标；BMP 占一单位，非 BMP 占两单位。 */
 static TZrBool test_lsp_position_for_byte_offset(const TZrChar *content,
                                                  TZrSize byteOffset,
                                                  SZrLspPosition *outPosition) {
@@ -115,6 +118,7 @@ static TZrBool test_lsp_position_for_byte_offset(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* 用首次命中的源码片段定位装饰器调用点；调用方保证 needle 唯一且为代码。 */
 static TZrBool test_lsp_position_for_substring(const TZrChar *content,
                                                const TZrChar *substring,
                                                TZrSize extraByteOffset,
@@ -167,6 +171,7 @@ static void test_describe_first_location(SZrArray *locations) {
     }
 }
 
+/* 在 λ 注释之后分别导航类和方法装饰器，验证请求及返回范围都按 UTF-16。 */
 static void test_lsp_decorator_navigation_after_utf8_prefix_uses_utf16_columns(SZrState *state) {
     const TZrChar *content =
         "/* \xCE\xBB */ #singleton#\n"
@@ -227,6 +232,8 @@ static void test_lsp_decorator_navigation_after_utf8_prefix_uses_utf16_columns(S
         printf("\n");
         passed = ZR_FALSE;
     }
+    /* BUG: 两次 GetDefinition 的位置元素独立 RawMalloc；本函数两处
+     * Array_Free 只释放指针数组，任一非空结果都会泄漏元素。 */
     ZrCore_Array_Free(state, &definitions);
 
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 2);
@@ -266,6 +273,8 @@ static void test_lsp_decorator_navigation_after_utf8_prefix_uses_utf16_columns(S
         passed = ZR_FALSE;
     }
 
+    /* BUG: GetHover 成功返回的 hover 及 contents 由调用方另行释放；
+     * 此处只释放 context，固定非空结果每次都会泄漏原生对象。 */
     ZrLanguageServer_LspContext_Free(state, context);
 
     if (!passed) {
@@ -276,6 +285,7 @@ static void test_lsp_decorator_navigation_after_utf8_prefix_uses_utf16_columns(S
     printf("PASS: Decorator navigation after UTF-8 prefix uses UTF-16 columns\n");
 }
 
+/* CMake 单独运行装饰器位置回归，在唯一 VM state 上执行后释放会话。 */
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global;

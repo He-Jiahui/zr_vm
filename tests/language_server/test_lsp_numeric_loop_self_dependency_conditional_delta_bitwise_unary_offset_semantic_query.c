@@ -5,6 +5,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 一元正号包住位运算偏移时仍需保持范围；同时查询循环后的 target、
+ * 循环内 observer 与复制的 mirror，覆盖间接读取路径。 */
 static TZrBool test_local_expression_query_keeps_target_reading_nested_commuted_bitwise_identity_zero_over_unary_plus_range_offset_conditional_delta_range(
         SZrState *state) {
     const TZrChar *content =

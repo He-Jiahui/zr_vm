@@ -1,6 +1,7 @@
 //
 // Focused LSP class-member parser diagnostic regression tests.
 //
+// 此可执行测试从文档更新入口观察 class 成员语法错误的发布结果，覆盖 setter 与元方法参数表的错误恢复。
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -98,6 +99,10 @@ static TZrBool diagnostic_array_contains_message(SZrArray *diagnostics, const TZ
     return ZR_FALSE;
 }
 
+/* 每个样例独立建立文档版本，防止上一个错误恢复状态影响成员诊断。
+ * TODO: code、问题文本与建议分别在整个数组中查找，需增加混合诊断样例核实字段错配的假阳性。
+ * BUG: 各出口仅用 Array_Free 释放 GetDiagnostics 的外层指针数组，原生诊断及附属数组泄漏；应改用 FreeDiagnostics。
+ */
 static TZrBool run_class_member_diagnostic_case(SZrState *state,
                                                 SZrTestTimer *timer,
                                                 const TZrChar *summary,
@@ -198,6 +203,7 @@ static void test_lsp_missing_class_meta_parameter_list_close_parser_diagnostic(S
     TEST_PASS(timer, summary);
 }
 
+/* CTest 入口按成员种类复用同一 VM state，最后将样例失败数转换为进程退出码。 */
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global;

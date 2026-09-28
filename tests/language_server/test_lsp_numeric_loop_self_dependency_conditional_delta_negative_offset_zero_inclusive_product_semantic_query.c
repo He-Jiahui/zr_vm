@@ -5,6 +5,7 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 由 main 的多个变体共用：构造目标、观察者及转存者查询，比较条件增量在零包含偏移下传播的三个区间；每次调用使用独立 URI。 */
 static TZrBool run_zero_inclusive_product_query_case(
         SZrState *state,
         const char *label,
@@ -115,6 +116,7 @@ static TZrBool run_zero_inclusive_product_query_case(
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 此可执行文件由 CTest 的 language_server 套件调用，汇总零包含负偏移的乘积表达式与条件增量用例；创建 VM state 后调用本文件场景，并在退出前释放全局状态。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
@@ -131,6 +133,8 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    /* TODO: 这里用 && 汇总多组乘积变体，首个失败会跳过其余组合。
+     * 核查是否应逐项记录结果，以便一次回归暴露全部失配。 */
     passed = run_zero_inclusive_product_query_case(
                      state,
                      "while self-dependent target-reading subtract zero-minus zero-inclusive negative product offset conditional positive delta",

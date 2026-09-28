@@ -20,25 +20,30 @@
 #include "../../zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.h"
 
+/* 对照场景独立计时；时长不影响查询身份比较。 */
 typedef struct SZrParityTimer {
     clock_t startTime;
     clock_t endTime;
 } SZrParityTimer;
 
+/* 同一生成工程的项目、源码和二进制路径必须配套传给导入查询。 */
 typedef struct SZrParityBinaryFixture {
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
     TZrChar mainPath[ZR_TESTS_PATH_MAX];
     TZrChar binaryPath[ZR_TESTS_PATH_MAX];
 } SZrParityBinaryFixture;
 
+/* 本文件和 include 片段共用失败计数，main 最后交给 CTest。 */
 static int g_failures = 0;
 
+/* 开始一次语义查询对照场景的计时与日志。 */
 #define TEST_START(summary) do { \
     timer.startTime = clock(); \
     printf("Unit Test - %s\n", summary); \
     fflush(stdout); \
 } while (0)
 
+/* 报告成功场景，不修改聚合状态。 */
 #define TEST_PASS(timerValue, summary) do { \
     (timerValue).endTime = clock(); \
     printf("Pass - Cost Time:%.3fms - %s\n", \
@@ -47,6 +52,7 @@ static int g_failures = 0;
     fflush(stdout); \
 } while (0)
 
+/* 计入失败但允许其余来源与查询路径继续验证。 */
 #define TEST_FAIL(timerValue, summary, reason) do { \
     (timerValue).endTime = clock(); \
     printf("Fail - Cost Time:%.3fms - %s:\n %s\n", \
@@ -56,6 +62,7 @@ static int g_failures = 0;
     g_failures++; \
 } while (0)
 
+/* 为来源、二进制与原生语义查询对照场景构造 VM 全局状态。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -81,6 +88,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* 在 ASCII fixture 里按出现次序选择解析点，偏移参数用于落到目标 token 内。 */
 static TZrBool find_position(const TZrChar *content,
                              const TZrChar *needle,
                              TZrSize occurrence,
@@ -116,6 +124,7 @@ static TZrBool find_position(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* 将测试生成的物理路径转为 LSP URI，交由项目索引加载二进制来源。 */
 static SZrString *create_file_uri(SZrState *state, const TZrChar *path) {
     TZrChar buffer[ZR_TESTS_PATH_MAX * 2];
     TZrSize pathLength;
@@ -135,6 +144,7 @@ static SZrString *create_file_uri(SZrState *state, const TZrChar *path) {
     memcpy(buffer, "file://", 7);
     writeIndex = 7;
 #endif
+    /* TODO: 当前只规范化分隔符；生成路径若含 # 或 ?，需核对 URI 解析是否仍指向同一文件并补 fixture。 */
     for (TZrSize index = 0; index < pathLength; index++) {
         buffer[writeIndex++] = path[index] == '\\' ? '/' : path[index];
     }
@@ -142,6 +152,7 @@ static SZrString *create_file_uri(SZrState *state, const TZrChar *path) {
     return ZrCore_String_Create(state, buffer, writeIndex);
 }
 
+/* 写入由测试路径助手分配的生成物，用于创建工程与源码 fixture。 */
 static TZrBool write_text_file(const TZrChar *path,
                                const TZrChar *content,
                                TZrSize length) {
@@ -161,6 +172,7 @@ static TZrBool write_text_file(const TZrChar *path,
     return written == (size_t)length;
 }
 
+/* 生成项目文件、主源码和二进制提供者，使同一查询经过真实编译/读取边界。 */
 static TZrBool prepare_binary_fixture(SZrState *state,
                                       SZrParityBinaryFixture *fixture) {
     static const TZrChar *projectContent =
@@ -241,6 +253,7 @@ static TZrBool prepare_binary_fixture(SZrState *state,
     return success;
 }
 
+/* 在同一 analyzer 快照上重复类型、调用、属性、引用和诊断查询，比较身份与结果稳定性。 */
 static TZrBool query_snapshot_is_stable(SZrState *state,
                                         SZrLspContext *lsp,
                                         SZrString *uri,
@@ -305,6 +318,7 @@ static TZrBool query_snapshot_is_stable(SZrState *state,
     propertyRange = ZrParser_FileRange_Create(
             propertyFilePosition, propertyFilePosition, uri);
 
+    /* 同一快照反复调用应返回相同身份与借用视图，查询本身不能重新物化出不同事实。 */
     if (!ZrParser_SemanticQuery_TypeAt(
                 analyzer->semanticContext, localRange, ZR_NULL, &firstType) ||
         !ZrParser_SemanticQuery_TypeAt(
@@ -454,6 +468,7 @@ cleanup:
     return valid;
 }
 
+/* 源文件多次查询应复用已发布事实，避免查询本身改变快照。 */
 static void test_source_semantic_query_snapshot_parity(SZrState *state) {
     static const TZrChar *content =
             "class Meter {\n"
@@ -501,6 +516,7 @@ static void test_source_semantic_query_snapshot_parity(SZrState *state) {
     }
 }
 
+/* 定义、引用和高亮消费者应共享 canonical 身份，编辑后重新绑定新快照。 */
 static void test_local_reference_consumers_use_canonical_facts(
         SZrState *state) {
     static const TZrChar *content =
@@ -739,6 +755,7 @@ cleanup:
     }
 }
 
+/* 缺少 canonical 引用事实时本地查询应失败关闭，不退回同名符号。 */
 static void test_local_query_rejects_missing_canonical_reference(
         SZrState *state) {
     static const TZrChar *content =
@@ -824,6 +841,7 @@ cleanup:
     }
 }
 
+/* 实现导航应消费 parser 关系边，避免按成员名推断目标。 */
 static void test_local_implementation_consumer_uses_canonical_relations(
         SZrState *state) {
     static const TZrChar *content =
@@ -946,6 +964,7 @@ cleanup:
     }
 }
 
+/* 从层次响应读取借用名称，以核对关系查询给出的具体目标。 */
 static TZrBool hierarchy_item_name_equals(
         const SZrLspHierarchyItem *item,
         const TZrChar *expected) {
@@ -953,6 +972,7 @@ static TZrBool hierarchy_item_name_equals(
            strcmp(ZrCore_String_GetNativeString(item->name), expected) == 0;
 }
 
+/* 类型父子层次在版本更新前后由 canonical 关系与语义 ID 约束。 */
 static void test_local_type_hierarchy_uses_canonical_relations(
         SZrState *state) {
     static const TZrChar *content =
@@ -1004,6 +1024,7 @@ static void test_local_type_hierarchy_uses_canonical_relations(
         goto cleanup;
     }
     detachedSymbolTable = analyzer->symbolTable;
+    /* 暂时移除旧 symbol table，验证类型层次仍从已发布的 canonical 关系构建。 */
     analyzer->symbolTable = ZR_NULL;
     if (!ZrLanguageServer_Lsp_PrepareTypeHierarchy(
                 state, context, uri, derivedPosition, &derivedItems) ||
@@ -1108,6 +1129,7 @@ cleanup:
     }
 }
 
+/* 调用层次沿 parser call edge 与语义 ID 投影，避免文本扫描误连。 */
 static void test_local_call_hierarchy_uses_canonical_edges(
         SZrState *state) {
     static const TZrChar *content =
@@ -1276,6 +1298,7 @@ cleanup:
     }
 }
 
+/* 导入编译二进制后重复查询应保持类型、调用和属性事实一致。 */
 static void test_binary_semantic_query_snapshot_parity(SZrState *state) {
     SZrParityTimer timer;
     SZrParityBinaryFixture fixture = {0};
@@ -1320,6 +1343,7 @@ static void test_binary_semantic_query_snapshot_parity(SZrState *state) {
     }
 }
 
+/* 原生描述符来源应与源码/二进制遵守相同查询稳定性契约。 */
 static void test_native_semantic_query_snapshot_parity(SZrState *state) {
     static const TZrChar *content =
             "var {LinkedList} = import(\"zr.container\");\n"
@@ -1365,6 +1389,7 @@ static void test_native_semantic_query_snapshot_parity(SZrState *state) {
     }
 }
 
+/* 移除 analyzer 的旧表、tracker 与 AST 后，源码悬停仍应显示 canonical 身份和文档。 */
 static void test_source_hover_consumes_canonical_symbol_fact_without_analyzer_state(
         SZrState *state) {
     static const TZrChar *content =
@@ -1464,6 +1489,7 @@ static void test_source_hover_consumes_canonical_symbol_fact_without_analyzer_st
         goto cleanup;
     }
     ZrCore_Array_Free(state, &visibleSymbols);
+    /* 仅在请求窗口断开三份旧状态；响应建立后需先恢复，供上下文析构使用。 */
     analyzer->symbolTable = ZR_NULL;
     analyzer->referenceTracker = ZR_NULL;
     analyzer->ast = ZR_NULL;
@@ -1540,6 +1566,7 @@ cleanup:
 #include "test_lsp_virtual_module_link_target_cases.h"
 #include "test_lsp_virtual_document_identity_cases.h"
 
+/* 运行本文件及 11 个静态片段的语义查询对照用例，聚合失败交给 language_server CTest。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

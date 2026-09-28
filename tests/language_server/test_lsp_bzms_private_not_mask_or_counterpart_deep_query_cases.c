@@ -2,6 +2,8 @@
 
 #include "lsp_bitwise_zero_minus_shift_supported_count_range_query_test_support.h"
 
+/* 从主测试入口接收同一 VM state，延长对应叶中的零减法/一元运算链；
+ * 成对的左右移与右侧符号用例检验嵌套深度增长后顶层范围仍稳定。 */
 TZrBool ZrVmTest_LspRunBzmsPrivateNotMaskOrCounterpartDeepQueries(SZrState *state) {
     TZrBool passed;
 

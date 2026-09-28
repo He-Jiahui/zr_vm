@@ -16,19 +16,23 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+/* 场景计时仅用于回归输出，不影响逻辑事实断言。 */
 typedef struct SZrTestTimer {
     clock_t startTime;
     clock_t endTime;
 } SZrTestTimer;
 
+/* 逻辑事实用例持续运行并累积失败，由 main 转成进程状态。 */
 static int g_failures = 0;
 
+/* 以当前局部 timer 记录一次用例的开始时刻。 */
 #define TEST_START(summary) do { \
     timer.startTime = clock(); \
     printf("Unit Test - %s\n", summary); \
     fflush(stdout); \
 } while (0)
 
+/* 报告成功用例的耗时，不改变失败计数。 */
 #define TEST_PASS(timerValue, summary) do { \
     (timerValue).endTime = clock(); \
     double elapsed = ((double)((timerValue).endTime - (timerValue).startTime) / CLOCKS_PER_SEC) * 1000.0; \
@@ -36,6 +40,7 @@ static int g_failures = 0;
     fflush(stdout); \
 } while (0)
 
+/* 记录失败并保留后续场景继续执行，以便一次运行暴露全部退化。 */
 #define TEST_FAIL(timerValue, summary, reason) do { \
     (timerValue).endTime = clock(); \
     double elapsed = ((double)((timerValue).endTime - (timerValue).startTime) / CLOCKS_PER_SEC) * 1000.0; \
@@ -44,11 +49,13 @@ static int g_failures = 0;
     g_failures++; \
 } while (0)
 
+/* 在三类逻辑事实场景间分隔日志，失败汇总仍由 TEST_FAIL 负责。 */
 #define TEST_DIVIDER() do { \
     printf("----------\n"); \
     fflush(stdout); \
 } while (0)
 
+/* 为该独立查询目标提供 VM 生命周期所需的分配回调。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -78,6 +85,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* 在 ASCII fixture 中选择逻辑表达式的指定出现点，供局部事实查询。 */
 static TZrBool lsp_find_position_for_substring(const TZrChar *content,
                                                const TZrChar *needle,
                                                TZrSize occurrence,
@@ -118,6 +126,7 @@ static TZrBool lsp_find_position_for_substring(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* 常量比较应发布可判定真值的逻辑事实，供 LSP 局部查询复用。 */
 static void test_local_expression_query_returns_constant_comparison_logical_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Returns Constant Comparison Logical Fact";
     const TZrChar *uriText = "file:///local_constant_comparison_logical_fact.zr";
@@ -191,6 +200,7 @@ static void test_local_expression_query_returns_constant_comparison_logical_fact
     TEST_PASS(timer, summary);
 }
 
+/* 组合比较的逻辑事实须沿表达式结构保持正确，而非只读取单一常量。 */
 static void test_local_expression_query_returns_composed_comparison_logical_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Returns Composed Comparison Logical Fact";
     const TZrChar *uriText = "file:///local_composed_comparison_logical_fact.zr";
@@ -264,6 +274,7 @@ static void test_local_expression_query_returns_composed_comparison_logical_fact
     TEST_PASS(timer, summary);
 }
 
+/* 区间条件的逻辑真值由 parser 事实投影，避免 LSP 再次推断。 */
 static void test_local_expression_query_returns_interval_comparison_logical_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Returns Interval Comparison Logical Fact";
     const TZrChar *uriText = "file:///local_interval_comparison_logical_fact.zr";
@@ -331,6 +342,7 @@ static void test_local_expression_query_returns_interval_comparison_logical_fact
     TEST_PASS(timer, summary);
 }
 
+/* 建立 VM 状态并运行三类逻辑事实用例，由聚合失败计数给 CTest 结果。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

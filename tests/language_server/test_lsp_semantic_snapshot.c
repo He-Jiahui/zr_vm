@@ -12,8 +12,10 @@
 #include "zr_vm_language_server/lsp_semantic_snapshot.h"
 #include "zr_vm_language_server/lsp_uri.h"
 
+/* 各场景共享失败计数；main 将它映射为 CTest 可见的退出码。 */
 static int g_failures = 0;
 
+/* GlobalState_New 借用此回调管理整个测试 VM 的堆对象。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -30,6 +32,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return pointer == ZR_NULL ? malloc(newSize) : realloc(pointer, newSize);
 }
 
+/* 保留同一场景内后续断言，避免首次失败掩盖依赖栅栏的其他行为。 */
 static void check(TZrBool condition, const TZrChar *message) {
     if (!condition) {
         printf("FAIL: %s\n", message);
@@ -43,6 +46,7 @@ static SZrString *test_string(SZrState *state, const TZrChar *text) {
     return ZrCore_String_Create(state, (TZrNativeString)text, strlen(text));
 }
 
+/* 拼接 CMake 注入的测试源码根；调用方必须处理路径过长的失败结果。 */
 static TZrBool build_fixture_native_path(const TZrChar *relativePath,
                                          TZrChar *buffer,
                                          TZrSize bufferSize) {
@@ -59,6 +63,7 @@ static TZrBool build_fixture_native_path(const TZrChar *relativePath,
     return written >= 0 && (TZrSize)written < bufferSize;
 }
 
+/* 通过真实文档更新入口改变 generation，再由调用者检验快照栅栏。 */
 static void update_document(SZrState *state,
                             SZrLspContext *context,
                             SZrString *uri,
@@ -69,6 +74,7 @@ static void update_document(SZrState *state,
           "test document update must succeed");
 }
 
+/* 主文档内容、身份和请求期 active 指针应固定；无关文档编辑不能冲掉快照。 */
 static void test_snapshot_pins_current_content_and_ignores_unrelated_changes(
         SZrState *state) {
     SZrLspContext *context = ZrLanguageServer_LspContext_New(state);
@@ -109,6 +115,7 @@ static void test_snapshot_pins_current_content_and_ignores_unrelated_changes(
           "snapshot must retain the acquired content block");
     check(ZrLanguageServer_LspSemanticSnapshot_Validate(state, context, snapshot),
           "fresh snapshot fence must validate");
+    /* active 指针只在快照存活的请求窗口内有效，释放前必须先清除。 */
     ZrLanguageServer_LspSemanticSnapshot_SetActive(context, snapshot);
     check(ZrLanguageServer_LspSemanticSnapshot_GetActive(context) == snapshot,
           "active request scope must expose the acquired snapshot to cross-document consumers");
@@ -131,6 +138,7 @@ static void test_snapshot_pins_current_content_and_ignores_unrelated_changes(
     ZrLanguageServer_LspContext_Free(state, context);
 }
 
+/* 先通过跨文档语义读取登记依赖，再比较无关编辑、依赖编辑和 provider 换代。 */
 static void test_snapshot_rejects_direct_dependency_and_provider_changes(
         SZrState *state) {
     SZrLspContext *context = ZrLanguageServer_LspContext_New(state);
@@ -164,6 +172,7 @@ static void test_snapshot_rejects_direct_dependency_and_provider_changes(
 
     fingerprintBeforeDependency =
             ZrLanguageServer_LspSemanticSnapshot_GetIdentity(snapshot)->dependencyFingerprint;
+    /* 依赖指纹由 active 请求中的语义读取建立；仅打开文档不足以覆盖这条路径。 */
     ZrLanguageServer_LspSemanticSnapshot_SetActive(context, snapshot);
     ZrCore_Array_Init(state, &tokens, sizeof(TZrUInt32), 8U);
     check(ZrLanguageServer_Lsp_GetSemanticTokens(state, context, dependencyUri, &tokens),
@@ -205,6 +214,7 @@ static void test_snapshot_rejects_direct_dependency_and_provider_changes(
     ZrLanguageServer_LspContext_Free(state, context);
 }
 
+/* 在真实项目导入图中验证二级依赖变化也会使主文档快照失效。 */
 static void test_snapshot_rejects_transitive_import_changes(SZrState *state) {
     static const TZrChar *projectContent =
               "{\n"
@@ -228,6 +238,8 @@ static void test_snapshot_rejects_transitive_import_changes(SZrState *state) {
     SZrString *transitiveUri = ZR_NULL;
     SZrLspSemanticSnapshot *snapshot = ZR_NULL;
 
+    /* BUG: 若源码根路径过长，首个路径构造失败会短路后续初始化；check 只计数，
+     * 下方仍把未初始化路径传给 FromNativePath。需在失败时立即结束该场景。 */
     check(build_fixture_native_path(
                   "fixtures/projects/lsp_snapshot_transitive/lsp_snapshot_transitive.zrp",
                   projectPath,
@@ -286,6 +298,7 @@ static void test_snapshot_rejects_transitive_import_changes(SZrState *state) {
     ZrLanguageServer_LspContext_Free(state, context);
 }
 
+/* CTest 独立入口：每个场景借用同一 VM，最终以累计失败数报告契约回归。 */
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 0, &callbacks);

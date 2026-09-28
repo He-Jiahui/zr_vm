@@ -1,7 +1,9 @@
 #ifndef ZR_TEST_SEMANTIC_ANALYZER_LOCAL_BINDING_IDENTITY_CASES_H
 #define ZR_TEST_SEMANTIC_ANALYZER_LOCAL_BINDING_IDENTITY_CASES_H
 
+/** 以遮蔽和显式/推断返回类型的样例检查局部声明与读取共享规范 SymbolId，且同名不同作用域仍相互独立。 */
 static void test_semantic_analyzer_preserves_local_binding_identity(SZrState *state) {
+    /* 同名 result 的第 N 次声明与读取位置必须成对维护；这些索引绑定下方固定源码样例。 */
     static const struct {
         const char *source;
         TZrSize declarationOccurrences[2];
@@ -131,6 +133,8 @@ static void test_semantic_analyzer_preserves_local_binding_identity(SZrState *st
     TEST_PASS(timer, summary);
 }
 
+/** 当局部类型缺失、初值未解析或注解无效时，仍要求声明与使用共享身份，不能借用同名全局变量的类型。 */
+// BUG: 每个成功夹具的 hover 对象未调用 HoverInfo_Free；三种未知类型场景各泄漏一个原生对象。
 static void test_semantic_analyzer_unknown_local_preserves_identity(SZrState *state) {
     const char *summary = "Semantic Analyzer Unknown Local Preserves Identity";
     const char *sources[] = {
@@ -203,6 +207,8 @@ static void test_semantic_analyzer_unknown_local_preserves_identity(SZrState *st
     TEST_PASS(timer, summary);
 }
 
+/** 当形参类型无法解析时检查其身份不回退到同名全局绑定，函数返回签名也不得伪称可精确推断。 */
+// BUG: 每个成功夹具的 hover 对象未调用 HoverInfo_Free；两种未知形参场景各泄漏一个原生对象。
 static void test_semantic_analyzer_unknown_parameter_preserves_identity(SZrState *state) {
     const char *summary = "Semantic Analyzer Unknown Parameter Preserves Identity";
     const char *sources[] = {

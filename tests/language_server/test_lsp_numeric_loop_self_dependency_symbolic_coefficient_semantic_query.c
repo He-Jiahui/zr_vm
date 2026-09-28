@@ -11,6 +11,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+/* 为本测试进程的 VM GlobalState 提供内存回调；调用者是 VM 内存层，生命周期由 main 释放全局状态结束。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -32,6 +33,8 @@ static TZrPtr test_allocator(TZrPtr userData,
     if (pointer == ZR_NULL) {
         return malloc(newSize);
     }
+    /* TODO: 地址与 originalSize 阈值不能证明归属；合法大块释放时可能跳过 free，
+     * 扩容时可能回退 malloc 并丢失旧内容。核查 VM 回调的尺寸与指针契约。 */
     if ((TZrPtr)pointer >= (TZrPtr)0x1000 &&
         originalSize > 0 &&
         originalSize < 1024 * 1024 * 1024) {
@@ -40,6 +43,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* 把当前 ASCII fixture 的匹配文本换算成 ExpressionAt 光标；调用方须选中目标表达式，不能直接用于非 ASCII 的 UTF-16 坐标。 */
 static TZrBool find_position_for_substring_offset(const TZrChar *content,
                                                   const TZrChar *needle,
                                                   TZrSize offset,
@@ -84,6 +88,7 @@ static TZrBool find_position_for_substring_offset(const TZrChar *content,
     return remainingOffset == 0;
 }
 
+/* 为多个场景独立建立 LSP 文档并用 ExpressionAt 核对数值事实；输入须是 ASCII fixture，返回前释放 context。 */
 static TZrBool run_assignment_range_case_at(SZrState *state,
                                             const TZrChar *label,
                                             const TZrChar *uriText,
@@ -162,6 +167,7 @@ static TZrBool run_assignment_range_case_at(SZrState *state,
     return passed;
 }
 
+/* 以常量除法系数构造等价更新，验证循环后的目标范围按精确抵消保留。 */
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_divided_coefficient_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
@@ -201,6 +207,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_divided
     return narrowedPassed && otherPassed;
 }
 
+/* 以常量取模系数构造等价更新，验证循环后的目标范围按精确抵消保留。 */
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_modulo_coefficient_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
@@ -240,6 +247,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_modulo_
     return narrowedPassed && otherPassed;
 }
 
+/* 以左移系数构造等价更新，验证循环后的目标范围按精确抵消保留。 */
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_shifted_coefficient_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
@@ -279,6 +287,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_shifted
     return narrowedPassed && otherPassed;
 }
 
+/* 以右移系数构造等价更新，验证循环后的目标范围按精确抵消保留。 */
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_right_shifted_coefficient_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
@@ -318,6 +327,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_right_s
     return narrowedPassed && otherPassed;
 }
 
+/* 以按位与系数构造等价更新，验证循环后的目标范围按精确抵消保留。 */
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_bitwise_and_coefficient_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
@@ -357,6 +367,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_bitwise
     return narrowedPassed && otherPassed;
 }
 
+/* 以按位或系数构造等价更新，验证循环后的目标范围按精确抵消保留。 */
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_bitwise_or_coefficient_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
@@ -396,6 +407,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_bitwise
     return narrowedPassed && otherPassed;
 }
 
+/* 以按位异或系数构造等价更新，验证循环后的目标范围按精确抵消保留。 */
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_bitwise_xor_coefficient_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
@@ -435,6 +447,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_bitwise
     return narrowedPassed && otherPassed;
 }
 
+/* 以单点系数构造等价更新，验证循环后的目标范围按精确抵消保留。 */
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_singleton_coefficient_net_zero_delta(
         SZrState *state) {
     const TZrChar *content =
@@ -475,6 +488,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_singlet
     return narrowedPassed && otherPassed;
 }
 
+/* 以循环内改写系数打破循环中的精确相消，验证目标范围必须拓宽，防止复用已失效的系数事实。 */
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_singleton_coefficient_invalidated_by_loop_write(
         SZrState *state) {
     const TZrChar *content =
@@ -516,6 +530,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_single
     return narrowedPassed && otherPassed;
 }
 
+/* 以嵌套条件改写系数打破循环中的精确相消，验证目标范围必须拓宽，防止复用已失效的系数事实。 */
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_singleton_coefficient_invalidated_by_nested_if_write(
         SZrState *state) {
     const TZrChar *content =
@@ -561,6 +576,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_single
     return narrowedPassed && otherPassed;
 }
 
+/* 以正区间系数残差打破循环中的精确相消，验证目标范围必须拓宽，防止复用已失效的系数事实。 */
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_positive_range_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
@@ -589,6 +605,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_positi
             ZR_TYPE_RANGE_INT64_MAX);
 }
 
+/* 交换乘法项次序后保留正区间系数残差，验证循环范围仍须拓宽，防止规范化遗漏残差。 */
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_commuted_positive_range_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
@@ -617,6 +634,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_commut
             ZR_TYPE_RANGE_INT64_MAX);
 }
 
+/* 以交换乘法项后的区间精确抵消构造等价更新，验证循环后的目标范围按精确抵消保留。 */
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_commuted_range_coefficient_residual_exact_cancel(
         SZrState *state) {
     const TZrChar *content =
@@ -657,6 +675,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_commute
     return narrowedPassed && otherPassed;
 }
 
+/* 以交换乘法项后的跨零乘积抵消构造等价更新，验证循环后的目标范围按精确抵消保留。 */
 static TZrBool test_local_expression_query_keeps_target_reading_symbolic_commuted_sign_crossing_product_exact_cancel(
         SZrState *state) {
     const TZrChar *content =
@@ -697,6 +716,7 @@ static TZrBool test_local_expression_query_keeps_target_reading_symbolic_commute
     return narrowedPassed && otherPassed;
 }
 
+/* 以负区间系数残差打破循环中的精确相消，验证目标范围必须拓宽，防止复用已失效的系数事实。 */
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_negative_range_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
@@ -725,6 +745,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_negati
             5);
 }
 
+/* 此可执行文件由 CTest 的 language_server 套件调用，汇总符号系数抵消、残差与写入失效用例；创建 VM state 后调用本文件场景，并在退出前释放全局状态。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

@@ -13,6 +13,7 @@ static TZrBool run_bitwise_zero_wrapper_range_query_at(SZrState *state,
                                                        TZrInt64 expectedMin,
                                                        TZrInt64 expectedMax);
 
+/* 首次匹配恰是目标运算符的样例走默认位置；其余嵌套案例由 _at 精确定位。 */
 static TZrBool run_bitwise_zero_wrapper_range_query(SZrState *state,
                                                     const TZrChar *caseName,
                                                     const TZrChar *expression,
@@ -29,6 +30,8 @@ static TZrBool run_bitwise_zero_wrapper_range_query(SZrState *state,
             expectedMax);
 }
 
+/* 在同一数值环境中嵌入零的等价包裹，并要求调用方准确选中目标二元节点。
+ * operatorNeedle 的首次匹配与字节 offset 仅对本组 ASCII 源码成立。 */
 static TZrBool run_bitwise_zero_wrapper_range_query_at(SZrState *state,
                                                        const TZrChar *caseName,
                                                        const TZrChar *expression,
@@ -88,6 +91,8 @@ static TZrBool run_bitwise_zero_wrapper_range_query_at(SZrState *state,
             expectedMax);
 }
 
+/* 以独立 CMake 测试矩阵覆盖零、全一位掩码及位运算的吸收和恒等律；
+ * 部分嵌套案例用 _at 指向外层运算符，避免只验证内部恰好相同的运算符。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

@@ -5,6 +5,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 将严格负偏移加零、零加偏移、减零改写为等价式；每一对增量方向
+ * 均检查同一 observer 链，防止恒等式改变范围保护边界。 */
 static TZrBool test_local_expression_query_keeps_subtract_negative_binding_plus_zero_offset_conditional_negative_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -345,6 +347,7 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    /* TODO: && 串联变体时首个失败会跳过后续场景；完整矩阵诊断需逐例执行并汇总。 */
     passed =
             test_local_expression_query_keeps_subtract_negative_binding_plus_zero_offset_conditional_negative_delta_range(
                     state) &&

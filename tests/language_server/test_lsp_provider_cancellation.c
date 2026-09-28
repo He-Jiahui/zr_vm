@@ -6,6 +6,7 @@
 
 #include <string.h>
 
+/* 同一取消时机矩阵覆盖符号、引用、rename、调用层级及子类型 provider。 */
 typedef enum EQueryKind {
     QUERY_WORKSPACE_SYMBOLS,
     QUERY_DOCUMENT_SYMBOLS,
@@ -16,6 +17,7 @@ typedef enum EQueryKind {
     QUERY_SUBTYPES,
 } EQueryKind;
 
+/* 每类查询至少产出两个结果，才能区分“循环中止”与进入查询前就取消。 */
 static const char g_source[] =
         "class CancellationBase {}\n"
         "class CancellationChildA : CancellationBase {}\n"
@@ -25,6 +27,7 @@ static const char g_source[] =
         "fn cancellationCallerA(): int { return cancellationTarget(1) + cancellationOther(2); }\n"
         "fn cancellationCallerB(): int { return cancellationTarget(3); }\n";
 
+/* Unity 用例共享签名一致的查询夹具，但状态、结果数组和取消回调逐例重置。 */
 static SZrState *g_state;
 static SZrLspContext *g_context;
 static SZrString *g_uri;
@@ -35,6 +38,7 @@ static SZrArray g_prepared;
 static EQueryKind g_kind;
 static TZrBool g_cancelObserved;
 
+/* 生产查询循环通过 context 回调观察首个已写结果，随后应停止追加第二项。 */
 static TZrBool cancel_after_first_result(void *userData) {
     const SZrArray *result = (const SZrArray *)userData;
     if (result->length > 0) {
@@ -43,6 +47,7 @@ static TZrBool cancel_after_first_result(void *userData) {
     return g_cancelObserved;
 }
 
+/* 不同 provider 的结果元素由不同释放契约持有，下一轮普通查询前必须完全清空。 */
 static void free_result(void) {
     if (!g_result.isValid) {
         return;
@@ -65,6 +70,7 @@ static void free_result(void) {
     memset(&g_result, 0, sizeof(g_result));
 }
 
+/* 每个用例建立独立的语义文档和 context，避免上轮取消探针污染下一查询。 */
 void setUp(void) {
     g_context = ZR_NULL;
     g_uri = ZR_NULL;
@@ -88,6 +94,7 @@ void setUp(void) {
             g_state, g_context, g_uri, g_source, strlen(g_source), 1));
 }
 
+/* 先撤回借用 g_result 的回调，再回收 query/hierarchy 结果和语义上下文。 */
 void tearDown(void) {
     ZrLanguageServer_LspContext_SetRequestCancellationCheck(g_context, ZR_NULL, ZR_NULL);
     if (g_state != ZR_NULL) {
@@ -98,6 +105,7 @@ void tearDown(void) {
     }
 }
 
+/* 将各 provider 投影为相同的成功/取消断言；层级查询使用预备阶段生成的 item。 */
 static TZrBool run_query(void) {
     SZrLspPosition target = {3, 3};
     const SZrLspHierarchyItem *item = g_prepared.length > 0
@@ -124,6 +132,7 @@ static TZrBool run_query(void) {
     return ZR_FALSE;
 }
 
+/* 基线先证明多结果，再在首结果之后注入取消，最后清回调验证查询可重入。 */
 static void expect_mid_query_cancellation(EQueryKind kind) {
     TZrSize fullCount;
     g_kind = kind;
@@ -156,34 +165,42 @@ static void expect_mid_query_cancellation(EQueryKind kind) {
     TEST_ASSERT_EQUAL_UINT64(fullCount, g_result.length);
 }
 
+/* 工作区符号枚举应在第一个结果后观察请求取消。 */
 static void test_workspace_symbols_cancel_inside_loop(void) {
     expect_mid_query_cancellation(QUERY_WORKSPACE_SYMBOLS);
 }
 
+/* 文档符号枚举应在第一个结果后观察请求取消。 */
 static void test_document_symbols_cancel_inside_loop(void) {
     expect_mid_query_cancellation(QUERY_DOCUMENT_SYMBOLS);
 }
 
+/* 引用收集应在第一个结果后观察请求取消。 */
 static void test_references_cancel_inside_loop(void) {
     expect_mid_query_cancellation(QUERY_REFERENCES);
 }
 
+/* rename 编辑位置收集应在第一个结果后观察请求取消。 */
 static void test_rename_cancel_inside_loop(void) {
     expect_mid_query_cancellation(QUERY_RENAME);
 }
 
+/* incoming call 结果收集应在第一个结果后观察请求取消。 */
 static void test_incoming_calls_cancel_inside_loop(void) {
     expect_mid_query_cancellation(QUERY_INCOMING_CALLS);
 }
 
+/* outgoing call 结果收集应在第一个结果后观察请求取消。 */
 static void test_outgoing_calls_cancel_inside_loop(void) {
     expect_mid_query_cancellation(QUERY_OUTGOING_CALLS);
 }
 
+/* 子类型枚举应在第一个结果后观察请求取消。 */
 static void test_subtypes_cancel_inside_loop(void) {
     expect_mid_query_cancellation(QUERY_SUBTYPES);
 }
 
+/* CMake 单独注册此 provider 取消矩阵，避免其他测试改变回调时序。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_workspace_symbols_cancel_inside_loop);

@@ -15,19 +15,23 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+/* 各回归用例单独计时；时长只用于报告，不参与语义结果判定。 */
 typedef struct SZrTestTimer {
     clock_t startTime;
     clock_t endTime;
 } SZrTestTimer;
 
+/* 各片段共用失败计数，main 在运行完全部场景后给 CTest 退出状态。 */
 static int g_failures = 0;
 
+/* 启动当前场景的时间和日志；调用点需提供 timer 与 summary。 */
 #define TEST_START(summary) do { \
     timer.startTime = clock(); \
     printf("Unit Test - %s\n", summary); \
     fflush(stdout); \
 } while (0)
 
+/* 仅报告成功及耗时，不改聚合失败状态。 */
 #define TEST_PASS(timerValue, summary) do { \
     (timerValue).endTime = clock(); \
     double elapsed = ((double)((timerValue).endTime - (timerValue).startTime) / CLOCKS_PER_SEC) * 1000.0; \
@@ -35,6 +39,7 @@ static int g_failures = 0;
     fflush(stdout); \
 } while (0)
 
+/* 把场景失败计入聚合结果，使后续场景仍能继续运行。 */
 #define TEST_FAIL(timerValue, summary, reason) do { \
     (timerValue).endTime = clock(); \
     double elapsed = ((double)((timerValue).endTime - (timerValue).startTime) / CLOCKS_PER_SEC) * 1000.0; \
@@ -43,6 +48,7 @@ static int g_failures = 0;
     g_failures++; \
 } while (0)
 
+/* 为 inlay、补全及签名的共用 VM 状态提供测试分配回调。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -72,6 +78,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* 把可选 VM 字符串借给断言读取，不改变结果对象所有权。 */
 static const TZrChar *test_string_ptr(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -81,6 +88,7 @@ static const TZrChar *test_string_ptr(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
+/* 按同一提示标签的两个片段比对复合类型，避免两个不同提示分别满足断言。 */
 static TZrBool inlay_hint_array_contains_label_fragments(SZrArray *hints,
                                                          const TZrChar *firstFragment,
                                                          const TZrChar *secondFragment) {
@@ -105,6 +113,7 @@ static TZrBool inlay_hint_array_contains_label_fragments(SZrArray *hints,
     return ZR_FALSE;
 }
 
+/* 人为撤销声明身份事实，验证 inlay 不转用旧符号表作回退。 */
 static TZrBool invalidate_declaration_fact_for_name(SZrSemanticAnalyzer *analyzer,
                                                      const TZrChar *name) {
     if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || name == ZR_NULL) {
@@ -131,6 +140,7 @@ static TZrBool invalidate_declaration_fact_for_name(SZrSemanticAnalyzer *analyze
     return ZR_FALSE;
 }
 
+/* 按标签找到需检查 detail 的补全项，结果由补全数组持有。 */
 static SZrLspCompletionItem *completion_item_find_by_label(SZrArray *items, const TZrChar *label) {
     if (items == ZR_NULL || label == ZR_NULL) {
         return ZR_NULL;
@@ -151,6 +161,7 @@ static SZrLspCompletionItem *completion_item_find_by_label(SZrArray *items, cons
     return ZR_NULL;
 }
 
+/* 读取首签名指定参数的文档，检验实参事实是否传递到提示。 */
 static const TZrChar *signature_parameter_documentation(SZrLspSignatureHelp *help, TZrSize parameterIndex) {
     SZrLspSignatureInformation **signaturePtr;
     SZrLspParameterInformation **parameterPtr;
@@ -175,6 +186,7 @@ static const TZrChar *signature_parameter_documentation(SZrLspSignatureHelp *hel
     return test_string_ptr((*parameterPtr)->documentation);
 }
 
+/* 在 ASCII fixture 中按出现次序定位请求点，并允许落在匹配片段内部。 */
 static TZrBool find_position_for_substring(const TZrChar *content,
                                            const TZrChar *needle,
                                            TZrSize occurrence,
@@ -214,6 +226,7 @@ static TZrBool find_position_for_substring(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* 变量初始值的数值事实应决定 inlay 类型标签。 */
 static void test_inlay_hint_uses_initializer_numeric_fact(SZrState *state) {
     const TZrChar *summary = "LSP Inlay Hint Uses Initializer Numeric Fact";
     const TZrChar *uriText = "file:///inlay_initializer_numeric_fact.zr";
@@ -264,6 +277,7 @@ static void test_inlay_hint_uses_initializer_numeric_fact(SZrState *state) {
     TEST_PASS(timer, summary);
 }
 
+/* 声明身份被撤销时 inlay 应失败关闭，而非按名字猜测类型。 */
 static void test_inlay_hint_fails_closed_without_resolved_declaration_fact(SZrState *state) {
     const TZrChar *summary = "LSP Inlay Hint Fails Closed Without Resolved Declaration Fact";
     const TZrChar *uriText = "file:///inlay_canonical_type_fail_closed.zr";
@@ -327,6 +341,7 @@ static void test_inlay_hint_fails_closed_without_resolved_declaration_fact(SZrSt
     TEST_PASS(timer, summary);
 }
 
+/* 补全 detail 应复用初始化数值范围事实。 */
 static void test_completion_detail_uses_initializer_numeric_fact(SZrState *state) {
     const TZrChar *summary = "LSP Completion Detail Uses Initializer Numeric Fact";
     const TZrChar *uriText = "file:///completion_initializer_numeric_fact.zr";
@@ -361,6 +376,7 @@ static void test_completion_detail_uses_initializer_numeric_fact(SZrState *state
     }
 
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    /* BUG: GetCompletion 命中项逐项 RawMalloc；本案只 Array_Free 外层数组，原生项泄漏，后续须逐项 RawFree。 */
     if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, position, &completions)) {
         ZrCore_Array_Free(state, &completions);
         ZrLanguageServer_LspContext_Free(state, context);
@@ -391,6 +407,7 @@ static void test_completion_detail_uses_initializer_numeric_fact(SZrState *state
     TEST_PASS(timer, summary);
 }
 
+/* 同一分段数值事实须贯穿 inlay、补全和签名文档。 */
 static void test_lsp_surfaces_segmented_numeric_range_in_inlay_completion_and_signature(SZrState *state) {
     const TZrChar *summary = "LSP Surfaces Segmented Numeric Range In Inlay Completion And Signature";
     const TZrChar *expectedRange =
@@ -481,6 +498,7 @@ static void test_lsp_surfaces_segmented_numeric_range_in_inlay_completion_and_si
     ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
 
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    /* BUG: GetCompletion 命中项逐项 RawMalloc；本案只 Array_Free 外层数组，原生项泄漏，后续须逐项 RawFree。 */
     if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, completionPosition, &completions)) {
         ZrCore_Array_Free(state, &completions);
         ZrLanguageServer_LspContext_Free(state, context);
@@ -553,6 +571,7 @@ static void test_lsp_surfaces_segmented_numeric_range_in_inlay_completion_and_si
     TEST_PASS(timer, summary);
 }
 
+/* 补全 detail 应显示初始表达式的类型与精确性事实。 */
 static void test_completion_detail_uses_initializer_expression_fact(SZrState *state) {
     const TZrChar *summary = "LSP Completion Detail Uses Initializer Expression Fact";
     SZrTestTimer timer;
@@ -588,6 +607,7 @@ static void test_completion_detail_uses_initializer_expression_fact(SZrState *st
     }
 
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    /* BUG: GetCompletion 命中项逐项 RawMalloc；本案只 Array_Free 外层数组，原生项泄漏，后续须逐项 RawFree。 */
     if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, position, &completions)) {
         ZrCore_Array_Free(state, &completions);
         ZrLanguageServer_LspContext_Free(state, context);
@@ -621,6 +641,7 @@ static void test_completion_detail_uses_initializer_expression_fact(SZrState *st
     TEST_PASS(timer, summary);
 }
 
+/* 字符串初始值在补全 detail 中必须保留并转义。 */
 static void test_completion_detail_escapes_initializer_string_expression_fact(SZrState *state) {
     const TZrChar *summary = "LSP Completion Detail Escapes Initializer String Expression Fact";
     SZrTestTimer timer;
@@ -657,6 +678,7 @@ static void test_completion_detail_escapes_initializer_string_expression_fact(SZ
     }
 
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    /* BUG: GetCompletion 命中项逐项 RawMalloc；本案只 Array_Free 外层数组，原生项泄漏，后续须逐项 RawFree。 */
     if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, position, &completions)) {
         ZrCore_Array_Free(state, &completions);
         ZrLanguageServer_LspContext_Free(state, context);
@@ -690,6 +712,7 @@ static void test_completion_detail_escapes_initializer_string_expression_fact(SZ
     TEST_PASS(timer, summary);
 }
 
+/* 布尔初始化事实应进入补全说明，不借类型名替代。 */
 static void test_completion_detail_uses_initializer_logical_fact(SZrState *state) {
     const TZrChar *summary = "LSP Completion Detail Uses Initializer Logical Fact";
     const TZrChar *uriText = "file:///completion_initializer_logical_fact.zr";
@@ -724,6 +747,7 @@ static void test_completion_detail_uses_initializer_logical_fact(SZrState *state
     }
 
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    /* BUG: GetCompletion 命中项逐项 RawMalloc；本案只 Array_Free 外层数组，原生项泄漏，后续须逐项 RawFree。 */
     if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, position, &completions)) {
         ZrCore_Array_Free(state, &completions);
         ZrLanguageServer_LspContext_Free(state, context);
@@ -755,6 +779,7 @@ static void test_completion_detail_uses_initializer_logical_fact(SZrState *state
     TEST_PASS(timer, summary);
 }
 
+/* 所有权初始化事实应进入补全说明，保持资源语义可见。 */
 static void test_completion_detail_uses_initializer_ownership_fact(SZrState *state) {
     const TZrChar *summary = "LSP Completion Detail Uses Initializer Ownership Fact";
     const TZrChar *uriText = "file:///completion_initializer_ownership_fact.zr";
@@ -789,6 +814,7 @@ static void test_completion_detail_uses_initializer_ownership_fact(SZrState *sta
     }
 
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    /* BUG: GetCompletion 命中项逐项 RawMalloc；本案只 Array_Free 外层数组，原生项泄漏，后续须逐项 RawFree。 */
     if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, position, &completions)) {
         ZrCore_Array_Free(state, &completions);
         ZrLanguageServer_LspContext_Free(state, context);
@@ -820,6 +846,7 @@ static void test_completion_detail_uses_initializer_ownership_fact(SZrState *sta
     TEST_PASS(timer, summary);
 }
 
+/* 签名参数文档应利用调用实参的语义事实，而非仅显示声明类型。 */
 static void test_signature_help_parameter_docs_use_argument_semantic_facts(SZrState *state) {
     const TZrChar *summary = "LSP Signature Help Parameter Docs Use Argument Semantic Facts";
     const TZrChar *uriText = "file:///signature_argument_semantic_facts.zr";
@@ -897,6 +924,7 @@ static void test_signature_help_parameter_docs_use_argument_semantic_facts(SZrSt
     TEST_PASS(timer, summary);
 }
 
+/* 补全与签名共同消费所有权内建操作事实，避免两种提示分歧。 */
 static void test_completion_and_signature_use_ownership_intrinsic_fact(SZrState *state) {
     const TZrChar *summary = "LSP Completion And Signature Use Ownership Intrinsic Fact";
     const TZrChar *uriText = "file:///ownership_intrinsic_tooling_facts.zr";
@@ -936,6 +964,7 @@ static void test_completion_and_signature_use_ownership_intrinsic_fact(SZrState 
     }
 
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16u);
+    /* BUG: GetCompletion 命中项逐项 RawMalloc；本案只 Array_Free 外层数组，原生项泄漏，后续须逐项 RawFree。 */
     if (!ZrLanguageServer_Lsp_GetCompletion(
                 state, context, uri, completionPosition, &completions) ||
         !ZrLanguageServer_Lsp_GetSignatureHelp(
@@ -979,6 +1008,7 @@ static void test_completion_and_signature_use_ownership_intrinsic_fact(SZrState 
 #include "test_lsp_completion_snapshot_fact_cases.h"
 #include "test_lsp_signature_snapshot_fact_cases.h"
 
+/* 运行本文件与三个 include 片段的 inlay、补全和签名用例，聚合失败交给 CTest。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

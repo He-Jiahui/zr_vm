@@ -13,6 +13,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+/* TEST_START/PASS/FAIL 只报告单例用时；失败计数由各测试函数写回 main。 */
 typedef struct {
     clock_t startTime;
     clock_t endTime;
@@ -72,6 +73,8 @@ static const TZrChar *test_string_text(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
+/* 用首个 needle 匹配定位请求光标；本文件的定位样例均为 ASCII，
+ * 因而字节列与 UTF-16 列相同，非 ASCII 位置由专门的 UTF-16 测试覆盖。 */
 static TZrBool test_find_position(const TZrChar *content,
                                   const TZrChar *needle,
                                   TZrInt32 extraCharacterOffset,
@@ -103,6 +106,8 @@ static TZrBool test_find_position(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* 每例创建隔离的 LSP 上下文和 URI；成功后由调用方释放 context，
+ * URI 随 VM 状态存活，不能在释放 state 后使用。 */
 static SZrLspContext *test_open_document(SZrState *state,
                                          const TZrChar *uriText,
                                          const TZrChar *content,
@@ -132,6 +137,7 @@ static SZrLspContext *test_open_document(SZrState *state,
     return context;
 }
 
+/* CodeAction/格式化用例只关心候选编辑是否包含预期文本，不依赖列表顺序。 */
 static TZrBool text_edit_contains(SZrArray *edits, const TZrChar *needle) {
     for (TZrSize index = 0; edits != ZR_NULL && index < edits->length; index++) {
         SZrLspTextEdit **editPtr = (SZrLspTextEdit **)ZrCore_Array_Get(edits, index);
@@ -572,6 +578,8 @@ static void test_lsp_document_links_resolve_zrp_paths(SZrState *state, int *fail
     }
 }
 
+/* 先取得父模块的虚拟声明文档，再由文档链接 API 查询子模块；
+ * 仅核对链接 target 是约定的虚拟声明 URI。 */
 static void test_lsp_document_links_resolve_virtual_module_links(SZrState *state, int *failures) {
     SZrTestTimer timer;
     const TZrChar *summary = "LSP document links resolve virtual native module links";
@@ -888,6 +896,7 @@ static void test_lsp_code_action_skips_organized_imports(SZrState *state, int *f
     }
 }
 
+/* 同时放置已使用的 math 和未使用的 system：清理动作只能删除后者。 */
 static void test_lsp_code_action_removes_unused_alias_imports(SZrState *state, int *failures) {
     SZrTestTimer timer;
     const TZrChar *summary = "LSP code action removes unused alias imports";
@@ -1208,6 +1217,7 @@ static void test_lsp_code_action_inserts_missing_native_import(SZrState *state, 
     }
 }
 
+/* 同一文档有多个候选诊断时，CodeAction 应只响应客户端请求范围。 */
 static void test_lsp_code_action_uses_requested_range_for_missing_import(SZrState *state, int *failures) {
     SZrTestTimer timer;
     const TZrChar *summary = "LSP code action uses requested range for missing import";
@@ -1502,6 +1512,7 @@ static void test_lsp_code_lens_ignores_unbound_test_like_attribute(
     }
 }
 
+/* 已绑定 test 标记仍须检查可调用签名，不能仅凭属性文本发出运行命令。 */
 static void test_lsp_code_lens_rejects_invalid_bound_test_signature(
         SZrState *state,
         int *failures) {
@@ -1800,6 +1811,7 @@ static void test_lsp_call_hierarchy_incoming_returns_direct_callers(SZrState *st
     }
 }
 
+/* 注释和字符串中的同名调用不能成为 incoming/outgoing 语义边。 */
 static void test_lsp_call_hierarchy_ignores_non_code_call_mentions(SZrState *state, int *failures) {
     SZrTestTimer timer;
     const TZrChar *summary = "LSP call hierarchy ignores call-looking text in comments and strings";
@@ -2057,6 +2069,8 @@ static void test_lsp_definition_ignores_non_code_receiver_member_text(SZrState *
         }
     }
 
+    /* BUG: GetDefinition 的位置项独立 RawMalloc；以下三组只 Array_Free
+     * 外层数组，真实定义非空时必泄漏，异常非代码结果也会泄漏。 */
     ZrCore_Array_Free(state, &commentDefinitions);
     ZrCore_Array_Free(state, &stringDefinitions);
     ZrCore_Array_Free(state, &realDefinitions);
@@ -2126,6 +2140,7 @@ static void test_lsp_advanced_editor_features_return_empty_for_empty_document(SZ
     }
 }
 
+/* 未打开 URI 的各编辑器请求应安全返回空集合，避免借用其他文档的缓存。 */
 static void test_lsp_advanced_editor_features_return_empty_for_unopened_documents(SZrState *state, int *failures) {
     SZrTestTimer timer;
     const TZrChar *summary = "LSP advanced editor features return empty results for unopened documents";
@@ -2196,6 +2211,8 @@ static void test_lsp_advanced_editor_features_return_empty_for_unopened_document
 #include "test_lsp_diagnostic_safe_fix_cases.h"
 #include "test_lsp_current_syntax_formatting_cases.h"
 
+/* CMake 独立目标在同一 VM state 上运行格式化、折叠、链接、CodeAction、
+ * CodeLens 与层级查询；内联头文件补充当前语法及安全修复的案例。 */
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global;

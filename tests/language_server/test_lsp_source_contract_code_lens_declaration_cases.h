@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_SOURCE_CONTRACT_CODE_LENS_DECLARATION_CASES_H
 #define ZR_VM_TEST_LSP_SOURCE_CONTRACT_CODE_LENS_DECLARATION_CASES_H
 
+/* CodeLens 的声明与引用数量由 parser 身份查询给出，拒绝旧作用域或名称扫描。 */
 static void test_code_lens_uses_canonical_declaration_and_reference_queries(void) {
     char *codeLensSource = read_repo_text_file_owned(
             "zr_vm_language_server/src/zr_vm_language_server/lsp_code_lens.c");

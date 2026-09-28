@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TESTS_LANGUAGE_SERVER_OWNERSHIP_DIAGNOSTICS_REGION_CASES_H
 #define ZR_VM_TESTS_LANGUAGE_SERVER_OWNERSHIP_DIAGNOSTICS_REGION_CASES_H
 
+/* Shared 借用与 Unique loan 都应连接 alias 区域和不同的 owner 区域，以供后续逃逸诊断定位。 */
 static void test_semantic_analyzer_records_borrow_and_loan_regions(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Records Borrow And Loan Regions";
     const TZrChar *testCode =
@@ -73,6 +74,7 @@ static void test_semantic_analyzer_records_borrow_and_loan_regions(SZrState *sta
     TEST_PASS(timer, summary);
 }
 
+/* 显式 drop 后再读 borrowed alias，应同时保留错误事实中的区域 ID 与 release 位置。 */
 static void test_semantic_analyzer_reports_borrow_after_owner_release(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Reports Borrow After Owner Release";
     const TZrChar *testCode =
@@ -152,6 +154,7 @@ static void test_semantic_analyzer_reports_borrow_after_owner_release(SZrState *
     TEST_PASS(timer, summary);
 }
 
+/* 条件分支释放 owner 后的读取可能越界；LSP 层须保留合并路径和零基 release 位置。 */
 static void test_lsp_reports_possible_path_borrow_after_owner_release(SZrState *state) {
     const TZrChar *summary = "LSP Reports Possible-Path Borrow After Owner Release";
     const TZrChar *uriText = "file:///ownership_possible_path_borrow_after_release.zr";
@@ -186,6 +189,7 @@ static void test_lsp_reports_possible_path_borrow_after_owner_release(SZrState *
         return;
     }
 
+    /* BUG: 查询投影出的原生诊断及嵌套信息由调用方持有；各出口仅 Array_Free 外层指针数组会泄漏。 */
     ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
     if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics)) {
         ZrCore_Array_Free(state, &diagnostics);
@@ -224,6 +228,7 @@ static void test_lsp_reports_possible_path_borrow_after_owner_release(SZrState *
     TEST_PASS(timer, summary);
 }
 
+/* using 的 Shared owner 在主体内仍可用，主体退出后借用别名失效并关联隐式释放点。 */
 static void test_semantic_analyzer_releases_using_owner_at_scope_exit(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Releases Using Owner At Scope Exit";
     const TZrChar *testCode =
@@ -306,6 +311,7 @@ static void test_semantic_analyzer_releases_using_owner_at_scope_exit(SZrState *
     TEST_PASS(timer, summary);
 }
 
+/* using 若绑定的是借用别名，仅该别名在退出后失效；主体内读取不应提前报错。 */
 static void test_semantic_analyzer_releases_using_borrow_at_scope_exit(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Releases Using Borrow At Scope Exit";
     const TZrChar *testCode =
@@ -373,6 +379,7 @@ static void test_semantic_analyzer_releases_using_borrow_at_scope_exit(SZrState 
     TEST_PASS(timer, summary);
 }
 
+/* weak 借用在可能释放的分支后应带 release 证据，显式 wake 与 null 检查则保持合法。 */
 static void test_semantic_analyzer_links_weak_use_to_possible_owner_release(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Links Weak Use To Possible Owner Release";
     const TZrChar *testCode =
@@ -468,6 +475,7 @@ static void test_semantic_analyzer_links_weak_use_to_possible_owner_release(SZrS
     TEST_PASS(timer, summary);
 }
 
+/* 顺序重绑定必须替换 borrowed alias 的 owner 区域，旧 owner 释放后不应误报。 */
 static void test_semantic_analyzer_rebinds_borrowed_alias_owner(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Rebinds Borrowed Alias Owner";
     const TZrChar *testCode =
@@ -551,6 +559,7 @@ static void test_semantic_analyzer_rebinds_borrowed_alias_owner(SZrState *state)
     TEST_PASS(timer, summary);
 }
 
+/* 顺序重绑定 loan 后，诊断只应关联新 Unique owner 的释放，alias 区域本身保持稳定。 */
 static void test_semantic_analyzer_rebinds_loaned_alias_owner(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Rebinds Loaned Alias Owner";
     const TZrChar *testCode =
@@ -634,6 +643,7 @@ static void test_semantic_analyzer_rebinds_loaned_alias_owner(SZrState *state) {
     TEST_PASS(timer, summary);
 }
 
+/* weak alias 的顺序替换需改变 owner 区域；前后直接借用的相关释放信息必须区分。 */
 static void test_semantic_analyzer_rebinds_weak_alias_owner(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Rebinds Weak Alias Owner";
     const TZrChar *testCode =

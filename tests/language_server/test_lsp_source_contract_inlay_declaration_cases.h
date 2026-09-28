@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_SOURCE_CONTRACT_INLAY_DECLARATION_CASES_H
 #define ZR_VM_TEST_LSP_SOURCE_CONTRACT_INLAY_DECLARATION_CASES_H
 
+/* inlay 声明类型沿 parser declaration ID 查询，防止同名符号给出错误提示。 */
 static void test_inlay_uses_canonical_declaration_query(void) {
     char *inlaySource = read_repo_text_file_owned(
             "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_inlay_hints.c");

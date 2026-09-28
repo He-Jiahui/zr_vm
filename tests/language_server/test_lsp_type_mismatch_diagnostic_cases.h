@@ -1,6 +1,9 @@
 #ifndef ZR_VM_TESTS_LANGUAGE_SERVER_LSP_TYPE_MISMATCH_DIAGNOSTIC_CASES_H
 #define ZR_VM_TESTS_LANGUAGE_SERVER_LSP_TYPE_MISMATCH_DIAGNOSTIC_CASES_H
 
+/* 由 semantic_query_diagnostics.c 包含，验证类型错误从 parser 事实投影后保有主位置、声明关联和占位修复。
+ * BUG: 这些案例的查询结果各出口仅调用 Array_Free，GetDiagnostics 原生诊断及附属数组应由 FreeDiagnostics 释放。
+ */
 static void test_lsp_diagnostics_publish_detailed_initializer_type_mismatch(
         SZrState *state) {
     const TZrChar *summary = "LSP Diagnostics Publish Detailed Initializer Type Mismatch";
@@ -129,6 +132,7 @@ static const SZrLspDiagnostic *type_mismatch_diagnostic_find_at_line(
     return ZR_NULL;
 }
 
+/* 多个赋值/调用场景共用同一诊断契约：错误位置在实际参数或表达式，关联位置指向预期类型声明。 */
 static TZrBool type_mismatch_diagnostic_has_expected_relation_and_fix(
         const SZrLspDiagnostic *diagnostic,
         TZrInt32 primaryStart,
@@ -173,6 +177,7 @@ static TZrBool type_mismatch_diagnostic_has_expected_relation_and_fix(
            fix->applicability == ZR_DIAGNOSTIC_FIX_HAS_PLACEHOLDERS;
 }
 
+/* BUG: 此例各出口仅 Array_Free 诊断指针数组，GetDiagnostics 的原生项与附属数组泄漏。 */
 static void test_lsp_diagnostics_publish_detailed_assignment_and_return_type_mismatch(
         SZrState *state) {
     const TZrChar *summary = "LSP Diagnostics Publish Detailed Assignment And Return Type Mismatch";
@@ -265,6 +270,7 @@ static void test_lsp_diagnostics_publish_detailed_assignment_and_return_type_mis
     TEST_PASS(timer, summary);
 }
 
+/* BUG: 此例各出口仅 Array_Free 诊断指针数组，GetDiagnostics 的原生项与附属数组泄漏。 */
 static void test_lsp_diagnostics_publish_detailed_function_call_argument_type_mismatch(
         SZrState *state) {
     const TZrChar *summary = "LSP Diagnostics Publish Detailed Function Call Argument Type Mismatch";
@@ -353,6 +359,7 @@ static void test_lsp_diagnostics_publish_detailed_function_call_argument_type_mi
     TEST_PASS(timer, summary);
 }
 
+/* BUG: 此例各出口仅 Array_Free 诊断指针数组，GetDiagnostics 的原生项与附属数组泄漏。 */
 static void test_lsp_diagnostics_publish_detailed_method_call_argument_type_mismatch(
         SZrState *state) {
     const TZrChar *summary = "LSP Diagnostics Publish Detailed Method Call Argument Type Mismatch";

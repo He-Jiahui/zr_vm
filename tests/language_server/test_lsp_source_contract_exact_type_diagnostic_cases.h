@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_SOURCE_CONTRACT_EXACT_TYPE_DIAGNOSTIC_CASES_H
 #define ZR_VM_TEST_LSP_SOURCE_CONTRACT_EXACT_TYPE_DIAGNOSTIC_CASES_H
 
+/* 无法推断精确类型的报错由 parser 产出，再由 LSP 查询诊断统一投影。 */
 static void test_cannot_infer_exact_type_uses_parser_diagnostic_projection(void) {
     const char *lspPaths[] = {
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c",

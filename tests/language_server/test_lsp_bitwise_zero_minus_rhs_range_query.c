@@ -13,6 +13,7 @@ static TZrBool run_bitwise_zero_minus_rhs_range_query_at(SZrState *state,
                                                          TZrInt64 expectedMin,
                                                          TZrInt64 expectedMax);
 
+/* 本组调用方统一以首次命中的位运算符为查询点，固定 offset 为零。 */
 static TZrBool run_bitwise_zero_minus_rhs_range_query(SZrState *state,
                                                       const TZrChar *caseName,
                                                       const TZrChar *expression,
@@ -29,6 +30,8 @@ static TZrBool run_bitwise_zero_minus_rhs_range_query(SZrState *state,
             expectedMax);
 }
 
+/* 为每个表达式建立独立的源码和 URI，让共享 ExpressionAt 夹具核对二元表达式范围。
+ * operatorNeedle 必须首次命中目标运算符；offset 按当前全 ASCII 样例的字节列计。 */
 static TZrBool run_bitwise_zero_minus_rhs_range_query_at(SZrState *state,
                                                          const TZrChar *caseName,
                                                          const TZrChar *expression,
@@ -88,6 +91,8 @@ static TZrBool run_bitwise_zero_minus_rhs_range_query_at(SZrState *state,
             expectedMax);
 }
 
+/* CMake 将此入口作为单独的 LSP 数值查询目标；用零减右操作数与位运算组合
+ * 覆盖正负范围、恒零分支和等价包裹，防止局部表达式查询丢失范围事实。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
@@ -108,6 +113,7 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    /* 将本例结果放在 && 左侧，即使早先用例失败也继续执行余下案例。 */
     passed = ZR_TRUE;
     passed = run_bitwise_zero_minus_rhs_range_query(
                      state,

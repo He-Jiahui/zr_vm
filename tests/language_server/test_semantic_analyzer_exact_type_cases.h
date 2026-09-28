@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_SEMANTIC_ANALYZER_EXACT_TYPE_CASES_H
 #define ZR_VM_TEST_SEMANTIC_ANALYZER_EXACT_TYPE_CASES_H
 
+/** 从固定函数样例的指定变量声明取初值 AST，供事实查询按节点身份而非源码拼写验证类型；仅适用于该样例结构。 */
 static SZrAstNode *semantic_analyzer_exact_type_initializer_at(
         SZrAstNode *functionNode,
         TZrSize statementIndex) {
@@ -23,6 +24,7 @@ static SZrAstNode *semantic_analyzer_exact_type_initializer_at(
                : ZR_NULL;
 }
 
+/** 由主测试入口验证 int 算术与浮点提升的表达式事实分别标记精确类型，避免 hover 依赖全局粗略推断。 */
 static void test_semantic_analyzer_expression_metadata_records_exact_types(
         SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Expression Facts Record Exact Types";
@@ -99,6 +101,7 @@ static void test_semantic_analyzer_expression_metadata_records_exact_types(
     TEST_PASS(timer, summary);
 }
 
+/** 人为降级 parser 表达式事实并暂时解绑语义上下文，验证 LSP 类型查询不会用 AST 猜测复活未证实类型。 */
 static void test_semantic_analyzer_type_resolution_rejects_approximate_expression_fact(
         SZrState *state) {
     const TZrChar *summary =
@@ -155,6 +158,7 @@ static void test_semantic_analyzer_type_resolution_rejects_approximate_expressio
     }
     ZrParser_InferredType_Free(state, &resolvedType);
 
+    /* 先以规范事实建立成功基线，再把同一事实降级；请求路径不能偷偷以 AST 推测补全。 */
     savedExactness = fact->exactness;
     fact->exactness = ZR_SEMANTIC_FACT_APPROXIMATE;
     ZrParser_InferredType_Init(state, &resolvedType, ZR_VALUE_TYPE_OBJECT);
@@ -178,6 +182,7 @@ static void test_semantic_analyzer_type_resolution_rejects_approximate_expressio
     ZrParser_InferredType_Free(state, &resolvedType);
 
 cleanup:
+    /* 恢复借给 analyzer 的规范上下文后再释放 AST 和分析器，避免测试注入状态影响清理。 */
     if (semanticContextDetached && analyzer != ZR_NULL) {
         analyzer->semanticContext = savedSemanticContext;
     }

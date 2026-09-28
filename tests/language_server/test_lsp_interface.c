@@ -33,15 +33,17 @@
 
 #include <errno.h>
 
-// 测试时间测量结构
+/* 单个用例的日志计时边界；各测试在进入与通过/失败时交给日志宏更新。 */
 typedef struct {
     clock_t startTime;
     clock_t endTime;
 } SZrTestTimer;
 
+/* 所有本地及末尾包含的用例共用失败累计，main 据此决定 CTest 退出码。 */
 static TZrSize g_failed_test_count = 0U;
 
-// 测试日志宏
+/* 本文件的轻量测试协议：每个用例自报场景、耗时和失败，main 汇总退出码。
+ * 宏要求调用点持有名为 timer 的 SZrTestTimer 局部变量。 */
 #define TEST_START(summary) do { \
     timer.startTime = clock(); \
     printf("Unit Test - %s\n", summary); \
@@ -73,12 +75,15 @@ static TZrSize g_failed_test_count = 0U;
     fflush(stdout); \
 } while(0)
 
+/* TODO: 当前仓内只见该宏定义，未找到调用；确认是否为旧日志分组遗留后再删除。 */
 #define TEST_MODULE_DIVIDER() do { \
     printf("==========\n"); \
     fflush(stdout); \
 } while(0)
 
-// 简单的测试分配器
+/* VM 全局状态的测试分配回调；沿用内存层传入的原大小协议来释放/扩容。
+ * TODO: 当前以指针数值和大小阈值代替分配记录验证；需核查所有回调路径是否会
+ * 传入合法但不符合阈值的指针，否则泄漏或掩盖非法释放会使测试结果失真。 */
 static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(flag);
@@ -143,7 +148,7 @@ static TZrChar *read_fixture_text_file(const TZrChar *path, TZrSize *outLength);
 static SZrString *create_file_uri_from_native_path(SZrState *state, const TZrChar *path);
 static SZrString *create_percent_encoded_file_uri_from_native_path(SZrState *state, const TZrChar *path);
 
-// 测试 LSP 上下文创建和释放
+/* main 的基础生命周期入口，保证新 context 的 parser 与两张 URI 映射从空池开始。 */
 static void test_lsp_context_create_and_free(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("LSP Context Creation and Free");
@@ -181,10 +186,12 @@ static void test_lsp_context_create_and_free(SZrState *state) {
     TEST_PASS(timer, "LSP Context Creation and Free");
 }
 
+/* 注入请求取消探针；userData 指向当前用例栈上的布尔值，仅在同步查询期有效。 */
 static TZrBool test_lsp_request_cancellation_check(void *userData) {
     return userData != ZR_NULL && *(TZrBool *)userData;
 }
 
+/* 验证 workspace/symbol 在取消回调有效时停工，清除回调后同一 context 恢复查询。 */
 static void test_lsp_request_cancellation_callback(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -233,7 +240,7 @@ static void test_lsp_request_cancellation_callback(SZrState *state) {
     TEST_PASS(timer, "LSP Request Cancellation Callback");
 }
 
-// 测试更新文档
+/* 从 main 走最小 open/update 路径，确认 context 可接收一份版本化源码。 */
 static void test_lsp_update_document(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("LSP Update Document");
@@ -261,7 +268,7 @@ static void test_lsp_update_document(SZrState *state) {
     TEST_PASS(timer, "LSP Update Document");
 }
 
-// 测试获取诊断
+/* 诊断 API 的空结果冒烟用例：只验证同步查询不崩溃，不验证诊断内容或返回状态。 */
 static void test_lsp_get_diagnostics(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("LSP Get Diagnostics");
@@ -292,6 +299,7 @@ static void test_lsp_get_diagnostics(SZrState *state) {
     TEST_PASS(timer, "LSP Get Diagnostics");
 }
 
+/* parser 错误须通过 LSP 诊断携带结构化 code、建议与 UTF-16 范围。 */
 static void test_lsp_get_parser_diagnostics(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -347,6 +355,7 @@ static void test_lsp_get_parser_diagnostics(SZrState *state) {
     TEST_PASS(timer, "LSP Get Parser Diagnostics");
 }
 
+/* 已移除的百分号所有权语法必须报告错误级迁移诊断，不能被新语法静默接受。 */
 static void test_lsp_removed_percent_ownership_is_rejected(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -397,6 +406,7 @@ static void test_lsp_removed_percent_ownership_is_rejected(SZrState *state) {
     TEST_PASS(timer, "LSP Removed Percent Ownership Is Rejected");
 }
 
+/* 编辑器收到缺失右操作数的专属提示和修复建议，避免退回泛化 token 错误。 */
 static void test_lsp_get_missing_right_operand_parser_diagnostic(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -452,6 +462,7 @@ static void test_lsp_get_missing_right_operand_parser_diagnostic(SZrState *state
     TEST_PASS(timer, "LSP Missing Right Operand Parser Diagnostic");
 }
 
+/* 数组元素误写赋值时，LSP 保留面向该语境的错误码与移出赋值的建议。 */
 static void test_lsp_get_array_assignment_parser_diagnostic(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -509,6 +520,7 @@ static void test_lsp_get_array_assignment_parser_diagnostic(SZrState *state) {
     TEST_PASS(timer, "LSP Array Assignment Parser Diagnostic");
 }
 
+/* 点访问缺失成员名时，诊断应指出成员访问问题而非只给通用期望 token。 */
 static void test_lsp_get_missing_member_name_parser_diagnostic(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -566,6 +578,7 @@ static void test_lsp_get_missing_member_name_parser_diagnostic(SZrState *state) 
     TEST_PASS(timer, "LSP Missing Member Name Parser Diagnostic");
 }
 
+/* 多种控制流头部缺失条件表达式时，分别保留可定位的 parser 诊断。 */
 static void test_lsp_get_missing_condition_parser_diagnostics(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -705,6 +718,8 @@ static void test_lsp_get_missing_condition_parser_diagnostics(SZrState *state) {
     TEST_PASS(timer, "LSP Missing Condition Parser Diagnostics");
 }
 
+/* 中途删除右花括号后，诊断应出现，但未改动声明的 hover 与符号查询仍取上一份
+ * 有效语义快照；防止编辑中的不完整源码清空编辑器可用语义。 */
 static void test_lsp_incomplete_edit_preserves_prior_semantic_snapshot(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
@@ -798,7 +813,7 @@ static void test_lsp_incomplete_edit_preserves_prior_semantic_snapshot(SZrState 
     TEST_PASS(timer, "LSP Incomplete Edit Preserves Prior Semantic Snapshot");
 }
 
-// 测试获取补全
+/* 补全 API 的空结果冒烟用例：只验证同步查询路径不崩溃，不约束候选内容。 */
 static void test_lsp_get_completion(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("LSP Get Completion");
@@ -833,7 +848,7 @@ static void test_lsp_get_completion(SZrState *state) {
     TEST_PASS(timer, "LSP Get Completion");
 }
 
-// 测试获取定义位置
+/* 定义 API 的最小冒烟用例；更严格的导航位置由后续项目与语义用例负责。 */
 static void test_lsp_get_definition(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("LSP Get Definition");
@@ -868,7 +883,7 @@ static void test_lsp_get_definition(SZrState *state) {
     TEST_PASS(timer, "LSP Get Definition");
 }
 
-// 测试查找引用
+/* 引用 API 的最小冒烟用例；跨文件与精确位置由后续专项用例验证。 */
 static void test_lsp_find_references(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("LSP Find References");
@@ -903,7 +918,8 @@ static void test_lsp_find_references(SZrState *state) {
     TEST_PASS(timer, "LSP Find References");
 }
 
-// 测试重命名
+/* rename 计划从版本 0 的打开文档生成；捕获来源快照后，版本推进必须使旧计划
+ * 失效，防止编辑器把基于过期内容的范围用于新文本。 */
 static void test_lsp_rename(SZrState *state) {
     SZrTestTimer timer;
     SZrArray locations = {0};
@@ -933,6 +949,7 @@ static void test_lsp_rename(SZrState *state) {
         return;
     }
 
+    /* 版本 0 也必须有来源令牌；后续版本前进用同一令牌验证旧 rename 计划已失效。 */
     if (!ZrLanguageServer_LspWorkspaceEdit_CaptureDocumentSnapshot(
                 state, context, uri, &directDocumentSnapshot) ||
         !directDocumentSnapshot.isOpenDocument ||
@@ -1007,6 +1024,7 @@ cleanup:
     }
 }
 
+/* 测试断言与失败日志共用的字符串视图；短串和长串取值后均只借用源对象内存。 */
 static const char *test_string_ptr(SZrString *value) {
     if (value == ZR_NULL) {
         return "<null>";
@@ -1019,6 +1037,7 @@ static const char *test_string_ptr(SZrString *value) {
     return ZrCore_String_GetNativeString(value);
 }
 
+/* 失败诊断辅助输出 parser 范围；仅供本测试进程排查，不参与通过条件。 */
 static void print_file_range(const char *label, SZrFileRange range) {
     printf("  %s: [%d:%d-%d:%d] offsets[%zu-%zu] uri=%s\n",
            label,
@@ -1031,6 +1050,7 @@ static void print_file_range(const char *label, SZrFileRange range) {
            test_string_ptr(range.source));
 }
 
+/* 同一份类/属性源码驱动成员导航、补全、继承和函数范围测试，位置断言依赖此文本稳定。 */
 static const TZrChar *g_classes_full_fixture =
     "module classes_full;\n"
     "\n"
@@ -1082,6 +1102,7 @@ static const TZrChar *g_classes_full_fixture =
     "    return boss.total() + ScoreBoard.bonus;\n"
     "}\n";
 
+/* 独立的属性文档 fixture，用于确认前导注释进入 hover 与 completion 文档。 */
 static const TZrChar *g_documentation_fixture =
     "module documentation;\n"
     "\n"
@@ -1100,6 +1121,7 @@ static const TZrChar *g_documentation_fixture =
     "    return ScoreBoard.bonus;\n"
     "}\n";
 
+/* 原生回调与模块导出源码 fixture；只供 LSP 解析/定位测试，不由本测试直接执行。 */
 static const TZrChar *g_callbacks_fixture =
     "var math = import(\"zr.math\");\n"
     "var system = import(\"zr.system\");\n"
@@ -1139,6 +1161,7 @@ static const TZrChar *g_callbacks_fixture =
     "pub var summarizeCallback = summarizeCallbackImpl;\n"
     "pub var runCallbacks = runCallbacksImpl;\n";
 
+/* 按 ASCII fixture 的字节列查找测试光标；含非 ASCII 的场景应改用 UTF-16 转换助手。 */
 static TZrBool lsp_find_position_for_substring(const TZrChar *content,
                                                const TZrChar *needle,
                                                TZrSize occurrence,
@@ -1179,6 +1202,7 @@ static TZrBool lsp_find_position_for_substring(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* 将 fixture 中的字节偏移经文档内容转换为协议 UTF-16 光标，供跨编码导航断言使用。 */
 static TZrBool lsp_find_utf16_position_for_substring(const TZrChar *content,
                                                      const TZrChar *needle,
                                                      TZrSize occurrence,
@@ -1219,6 +1243,7 @@ static TZrBool lsp_find_utf16_position_for_substring(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* 多个位置断言共用的精确范围比较；调用方提供零基 UTF-16 端点。 */
 static TZrBool lsp_range_equals(SZrLspRange range,
                                 TZrInt32 startLine,
                                 TZrInt32 startCharacter,
@@ -1230,6 +1255,7 @@ static TZrBool lsp_range_equals(SZrLspRange range,
            range.end.character == endCharacter;
 }
 
+/* 跨文件 definition/reference 用例同时约束目标 URI 和范围，防止命中同坐标的错误文件。 */
 static TZrBool location_array_contains_uri_and_range(SZrArray *locations,
                                                      const TZrChar *uri,
                                                      TZrInt32 startLine,
@@ -1248,6 +1274,7 @@ static TZrBool location_array_contains_uri_and_range(SZrArray *locations,
     return ZR_FALSE;
 }
 
+/* 单文档导航断言只检查精确范围，URI 约束由相应调用场景另行建立。 */
 static TZrBool location_array_contains_range(SZrArray *locations,
                                              TZrInt32 startLine,
                                              TZrInt32 startCharacter,
@@ -1264,6 +1291,8 @@ static TZrBool location_array_contains_range(SZrArray *locations,
     return ZR_FALSE;
 }
 
+/* 多类导航测试用此助手确认目标覆盖标识符内部的测试光标。
+ * TODO: 当前也把 range.end 当作命中；需加入恰在半开终点的负例，核对是否掩盖范围越界。 */
 static TZrBool location_array_contains_position(SZrArray *locations,
                                                 TZrInt32 line,
                                                 TZrInt32 character) {
@@ -1284,6 +1313,7 @@ static TZrBool location_array_contains_position(SZrArray *locations,
     return ZR_FALSE;
 }
 
+/* 虚拟声明与跨模块测试只关心是否返回指定 URI，不要求命中范围相同。 */
 static TZrBool location_array_contains_uri_text(SZrArray *locations, const TZrChar *uriText) {
     if (locations == ZR_NULL || uriText == ZR_NULL) {
         return ZR_FALSE;
@@ -1306,6 +1336,8 @@ static TZrBool location_array_contains_uri_text(SZrArray *locations, const TZrCh
     return ZR_FALSE;
 }
 
+/* 文档高亮测试确认声明与使用位置分别被覆盖；传入位置应落在标识符内部。
+ * TODO: 与位置匹配助手一样使用包含式 end 比较，需以半开边界负例核实断言有效性。 */
 static TZrBool highlight_array_contains_position(SZrArray *highlights,
                                                  TZrInt32 line,
                                                  TZrInt32 character) {
@@ -1327,6 +1359,7 @@ static TZrBool highlight_array_contains_position(SZrArray *highlights,
     return ZR_FALSE;
 }
 
+/* 补全测试仅判断候选存在；候选顺序及附加信息由更严格的用例检查。 */
 static TZrBool completion_array_contains_label(SZrArray *completions, const TZrChar *label) {
     for (TZrSize index = 0; completions != ZR_NULL && index < completions->length; index++) {
         SZrLspCompletionItem **itemPtr =
@@ -1340,6 +1373,7 @@ static TZrBool completion_array_contains_label(SZrArray *completions, const TZrC
     return ZR_FALSE;
 }
 
+/* 通过服务端公开图例把语义 token 名称映射为 delta 数据中的类型索引。 */
 static TZrInt32 semantic_token_type_index(const TZrChar *typeName) {
     if (typeName == ZR_NULL) {
         return -1;
@@ -1355,6 +1389,7 @@ static TZrInt32 semantic_token_type_index(const TZrChar *typeName) {
     return -1;
 }
 
+/* 解码 LSP 五元组增量位置，验证某个 token 的 UTF-16 坐标、长度与图例类型。 */
 static TZrBool semantic_tokens_contain(SZrArray *data,
                                        TZrInt32 line,
                                        TZrInt32 character,
@@ -1396,6 +1431,7 @@ static TZrBool semantic_tokens_contain(SZrArray *data,
     return ZR_FALSE;
 }
 
+/* 语义 token 断言额外要求修饰位齐全，用于检查 canonical 所有权类型等标记。 */
 static TZrBool semantic_tokens_contain_modifier(SZrArray *data,
                                                 TZrInt32 line,
                                                 TZrInt32 character,
@@ -1441,6 +1477,7 @@ static TZrBool semantic_tokens_contain_modifier(SZrArray *data,
     return ZR_FALSE;
 }
 
+/* 借用补全数组内的候选，供测试继续核对 detail 与文档；调用方不单独释放。 */
 static SZrLspCompletionItem *find_completion_item_by_label(SZrArray *completions, const TZrChar *label) {
     for (TZrSize index = 0; completions != ZR_NULL && index < completions->length; index++) {
         SZrLspCompletionItem **itemPtr =
@@ -1454,6 +1491,7 @@ static SZrLspCompletionItem *find_completion_item_by_label(SZrArray *completions
     return ZR_NULL;
 }
 
+/* 各语义用例用内容片段断言 hover 提供必要事实，不依赖整段渲染顺序。 */
 static TZrBool hover_contains_text(SZrLspHover *hover, const TZrChar *needle) {
     if (hover == ZR_NULL || needle == ZR_NULL) {
         return ZR_FALSE;
@@ -1470,6 +1508,7 @@ static TZrBool hover_contains_text(SZrLspHover *hover, const TZrChar *needle) {
     return ZR_FALSE;
 }
 
+/* 读取首个 hover 文本的借用指针，用于需比较精确首条内容的测试。 */
 static const TZrChar *hover_first_text(SZrLspHover *hover) {
     if (hover == ZR_NULL) {
         return ZR_NULL;
@@ -1485,6 +1524,7 @@ static const TZrChar *hover_first_text(SZrLspHover *hover) {
     return ZR_NULL;
 }
 
+/* 富 hover 测试按 section 角色查文本，避免把不同语义区块误当成同一内容。 */
 static TZrBool rich_hover_section_contains_text(SZrLspRichHover *hover,
                                                 const TZrChar *role,
                                                 const TZrChar *needle) {
@@ -1509,6 +1549,7 @@ static TZrBool rich_hover_section_contains_text(SZrLspRichHover *hover,
     return ZR_FALSE;
 }
 
+/* 推断类型测试查找预期 hint 标签，输入数组由调用者按 LSP 所有权规则清理。 */
 static TZrBool inlay_hint_array_contains_label(SZrArray *hints, const TZrChar *label) {
     for (TZrSize index = 0; hints != ZR_NULL && label != ZR_NULL && index < hints->length; index++) {
         SZrLspInlayHint **hintPtr = (SZrLspInlayHint **)ZrCore_Array_Get(hints, index);
@@ -1521,6 +1562,7 @@ static TZrBool inlay_hint_array_contains_label(SZrArray *hints, const TZrChar *l
     return ZR_FALSE;
 }
 
+/* 读取第一签名的借用标签，供显示文本测试验证泛型闭合与 callable 类型。 */
 static const TZrChar *signature_help_first_label(SZrLspSignatureHelp *help) {
     if (help == ZR_NULL || help->signatures.length == 0) {
         return ZR_NULL;
@@ -1537,11 +1579,13 @@ static const TZrChar *signature_help_first_label(SZrLspSignatureHelp *help) {
     }
 }
 
+/* 签名帮助测试只需验证首个候选包含目标语义片段，避免绑定完整格式。 */
 static TZrBool signature_help_contains_text(SZrLspSignatureHelp *help, const TZrChar *needle) {
     const TZrChar *label = signature_help_first_label(help);
     return label != ZR_NULL && needle != ZR_NULL && strstr(label, needle) != ZR_NULL;
 }
 
+/* parser 诊断用例按精确协议范围确认错误锚点，防止只匹配到无关错误。 */
 static TZrBool diagnostic_array_contains_range(SZrArray *diagnostics,
                                                TZrInt32 startLine,
                                                TZrInt32 startCharacter,
@@ -1558,6 +1602,7 @@ static TZrBool diagnostic_array_contains_range(SZrArray *diagnostics,
     return ZR_FALSE;
 }
 
+/* parser 与迁移用例按结构化 code 识别错误类别，避免依赖单一文案。 */
 static TZrBool diagnostic_array_contains_code(SZrArray *diagnostics, const TZrChar *expectedCode) {
     for (TZrSize index = 0; diagnostics != ZR_NULL && index < diagnostics->length; index++) {
         SZrLspDiagnostic **diagnosticPtr = (SZrLspDiagnostic **)ZrCore_Array_Get(diagnostics, index);
@@ -1571,6 +1616,7 @@ static TZrBool diagnostic_array_contains_code(SZrArray *diagnostics, const TZrCh
     return ZR_FALSE;
 }
 
+/* 移除语法用例同时锁定错误码和严重级别，确保迁移问题未降为提示。 */
 static TZrBool diagnostic_array_contains_code_with_severity(SZrArray *diagnostics,
                                                             const TZrChar *expectedCode,
                                                             TZrInt32 expectedSeverity) {
@@ -1587,6 +1633,7 @@ static TZrBool diagnostic_array_contains_code_with_severity(SZrArray *diagnostic
     return ZR_FALSE;
 }
 
+/* 诊断用例再检查问题与建议的片段，允许外围文案扩展而保留用户可见要点。 */
 static TZrBool diagnostic_array_contains_message(SZrArray *diagnostics, const TZrChar *needle) {
     for (TZrSize index = 0; diagnostics != ZR_NULL && index < diagnostics->length; index++) {
         SZrLspDiagnostic **diagnosticPtr = (SZrLspDiagnostic **)ZrCore_Array_Get(diagnostics, index);
@@ -1599,6 +1646,7 @@ static TZrBool diagnostic_array_contains_message(SZrArray *diagnostics, const TZ
     return ZR_FALSE;
 }
 
+/* 从源码根构造跨平台 fixture 绝对路径；失败时调用者不得打开未终止的路径缓冲。 */
 static TZrBool build_fixture_native_path(const TZrChar *relativePath,
                                          TZrChar *buffer,
                                          TZrSize bufferSize) {
@@ -1612,6 +1660,7 @@ static TZrBool build_fixture_native_path(const TZrChar *relativePath,
     return written > 0 && (TZrSize)written < bufferSize;
 }
 
+/* 读取源码 fixture 的堆缓冲，返回值由调用者 free；供复制及二进制模块重生成。 */
 static TZrChar *read_fixture_text_file(const TZrChar *path, TZrSize *outLength) {
     FILE *file;
     TZrChar *buffer = ZR_NULL;
@@ -1657,12 +1706,14 @@ static TZrChar *read_fixture_text_file(const TZrChar *path, TZrSize *outLength) 
     return buffer;
 }
 
+/* 生成型项目 fixture 的三条稳定路径，连接项目入口、源码和编译出的二进制模块。 */
 typedef struct SZrGeneratedBinaryMetadataFixture {
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
     TZrChar mainPath[ZR_TESTS_PATH_MAX];
     TZrChar binaryPath[ZR_TESTS_PATH_MAX];
 } SZrGeneratedBinaryMetadataFixture;
 
+/* 生成路径可能来自 Windows 或 POSIX，取最后一个分隔符以限定将要重置的目录。 */
 static TZrChar *find_last_path_separator(TZrChar *path) {
     TZrChar *forwardSlash;
     TZrChar *backSlash;
@@ -1683,6 +1734,7 @@ static TZrChar *find_last_path_separator(TZrChar *path) {
     return forwardSlash > backSlash ? forwardSlash : backSlash;
 }
 
+/* 将 fixture 写入生成目录；仅在父目录存在且完整写出时向调用者报告成功。 */
 static TZrBool write_text_file(const TZrChar *path, const TZrChar *content, TZrSize length) {
     FILE *file;
     size_t written;
@@ -1705,6 +1757,7 @@ static TZrBool write_text_file(const TZrChar *path, const TZrChar *content, TZrS
     return written == (size_t)length;
 }
 
+/* 复制已跟踪项目 fixture 到独立生成目录，避免测试修改仓库内的原始样例。 */
 static TZrBool copy_fixture_file(const TZrChar *sourcePath, const TZrChar *targetPath) {
     TZrSize contentLength = 0;
     TZrChar *content = read_fixture_text_file(sourcePath, &contentLength);
@@ -1719,9 +1772,12 @@ static TZrBool copy_fixture_file(const TZrChar *sourcePath, const TZrChar *targe
     return success;
 }
 
+/* 只清理带指定 tests_generated/language_server 与 artifactName 的生成目录；调用者须传入由生成路径拆出的根。 */
 static TZrBool reset_generated_fixture_root(const TZrChar *rootPath, const TZrChar *artifactName) {
     EZrLibrary_File_Exist existence;
 
+    /* 递归删除前只接受本测试生成根；调用者不得传任意用户目录。
+     * TODO: 当前仍是子串验证，需核查生成路径是否可能携带 .. 或别名绕过目录边界。 */
     if (rootPath == ZR_NULL || artifactName == ZR_NULL ||
         strstr(rootPath, "tests_generated/language_server/") == ZR_NULL ||
         strstr(rootPath, artifactName) == ZR_NULL) {
@@ -1739,6 +1795,7 @@ static TZrBool reset_generated_fixture_root(const TZrChar *rootPath, const TZrCh
     return ZrLibrary_File_Delete((TZrNativeString)rootPath, ZR_TRUE);
 }
 
+/* 以当前编译器和 writer 重建 .zro 元数据，避免测试依赖过期二进制快照。 */
 static TZrBool regenerate_binary_metadata_fixture_artifacts(SZrState *state,
                                                             const TZrChar *binaryPath,
                                                             const TZrChar *moduleSource) {
@@ -1790,6 +1847,7 @@ static TZrBool regenerate_binary_metadata_fixture_artifacts(SZrState *state,
     return success;
 }
 
+/* 为跨模块查询构造隔离项目：重置生成根、复制源码、重编译二进制模块。 */
 static TZrBool prepare_generated_binary_metadata_fixture(SZrState *state,
                                                          const TZrChar *artifactName,
                                                          SZrGeneratedBinaryMetadataFixture *fixture) {
@@ -1843,6 +1901,7 @@ static TZrBool prepare_generated_binary_metadata_fixture(SZrState *state,
         return ZR_FALSE;
     }
     *lastSeparator = '\0';
+    /* 先移除旧生成根，再复制源码并重编译二进制模块，避免旧 .zro 元数据污染查询。 */
     if (!reset_generated_fixture_root(rootPath, artifactName)) {
         return ZR_FALSE;
     }
@@ -1873,6 +1932,7 @@ static TZrBool prepare_generated_binary_metadata_fixture(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 把本地 fixture 路径转为未编码 file URI，供 LSP 更新文档和项目解析；返回 VM 字符串。 */
 static SZrString *create_file_uri_from_native_path(SZrState *state, const TZrChar *path) {
     TZrChar uriBuffer[2048];
     TZrSize pathLength;
@@ -1903,6 +1963,8 @@ static SZrString *create_file_uri_from_native_path(SZrState *state, const TZrCha
     return ZrCore_String_Create(state, uriBuffer, writeIndex);
 }
 
+/* 构造仅对 Windows 盘符编码的 file URI，以覆盖项目刷新时等价路径的规范化。
+ * TODO: POSIX 分支没有实际百分号编码；需补含空格等字符的跨平台 URI fixture。 */
 static SZrString *create_percent_encoded_file_uri_from_native_path(SZrState *state, const TZrChar *path) {
     TZrChar uriBuffer[2048];
     TZrSize writeIndex = 0;
@@ -1947,6 +2009,7 @@ static SZrString *create_percent_encoded_file_uri_from_native_path(SZrState *sta
     return ZrCore_String_Create(state, uriBuffer, writeIndex);
 }
 
+/* 在文档/工作区符号结果中借用命名条目，供后续断言成员种类与范围。 */
 static SZrLspSymbolInformation *find_symbol_information_by_name(SZrArray *symbols, const TZrChar *name) {
     for (TZrSize index = 0; symbols != ZR_NULL && index < symbols->length; index++) {
         SZrLspSymbolInformation **symbolPtr =
@@ -1960,6 +2023,7 @@ static SZrLspSymbolInformation *find_symbol_information_by_name(SZrArray *symbol
     return ZR_NULL;
 }
 
+/* 测试专用地窥视 context 的 URI→analyzer 缓存；返回对象仍由 context 持有。 */
 static SZrSemanticAnalyzer *find_test_analyzer(SZrState *state, SZrLspContext *context, SZrString *uri) {
     SZrTypeValue key;
     SZrHashKeyValuePair *pair;
@@ -1977,6 +2041,7 @@ static SZrSemanticAnalyzer *find_test_analyzer(SZrState *state, SZrLspContext *c
     return (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer;
 }
 
+/* 仅在失败路径打印 analyzer、符号表及关联状态，帮助定位缓存/索引退化。 */
 static void dump_analyzer_state(SZrState *state, SZrLspContext *context, SZrString *uri) {
     SZrSemanticAnalyzer *analyzer = find_test_analyzer(state, context, uri);
 
@@ -2048,6 +2113,7 @@ static void dump_analyzer_state(SZrState *state, SZrLspContext *context, SZrStri
 }
 
 // 测试获取文档符号
+/* 单文档符号查询在打开源码后必须给出非空结果，确保基础文档索引进入公开 API。 */
 static void test_lsp_get_document_symbols(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("LSP Get Document Symbols");
@@ -2092,6 +2158,7 @@ static void test_lsp_get_document_symbols(SZrState *state) {
 }
 
 // 测试获取工作区符号
+/* 打开两个文档后查询 workspace/symbol，核对跨文档索引能返回候选。 */
 static void test_lsp_get_workspace_symbols(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("LSP Get Workspace Symbols");
@@ -2138,6 +2205,7 @@ static void test_lsp_get_workspace_symbols(SZrState *state) {
     TEST_PASS(timer, "LSP Get Workspace Symbols");
 }
 
+/* 项目文件引入公开函数后，从主文件使用处跳转到被导入源码而非停在 import。 */
 static void test_lsp_project_definition_resolves_imported_function(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
@@ -2264,6 +2332,7 @@ static void test_lsp_project_definition_resolves_imported_function(SZrState *sta
     TEST_PASS(timer, "LSP Project Definition Resolves Imported Function");
 }
 
+/* 项目加载后，定义与使用应共享语义身份，使 references 跨导入文件聚合。 */
 static void test_lsp_project_references_include_imported_function_usage(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
@@ -2482,6 +2551,7 @@ static void test_lsp_project_references_include_imported_function_usage(SZrState
     TEST_PASS(timer, "LSP Project References Include Imported Function Usage");
 }
 
+/* 通过 .zrp 加载的依赖导出须进入 workspace/symbol，不依赖目标源码被显式打开。 */
 static void test_lsp_project_workspace_symbols_include_imported_exports(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
@@ -2574,6 +2644,7 @@ static void test_lsp_project_workspace_symbols_include_imported_exports(SZrState
     TEST_PASS(timer, "LSP Project Workspace Symbols Include Imported Exports");
 }
 
+/* 项目 file URI 刷新内建导入时，诊断与 hover 应保持可用；盘符编码仅在 Windows 路径覆盖。 */
 static void test_lsp_project_encoded_uri_builtin_import_refresh_does_not_crash(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
@@ -2660,6 +2731,7 @@ static void test_lsp_project_encoded_uri_builtin_import_refresh_does_not_crash(S
 }
 
 // 测试获取文档高亮
+/* 打开文档后请求高亮，确认同文档符号命中非空集合。 */
 static void test_lsp_get_document_highlights(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("LSP Get Document Highlights");
@@ -2708,6 +2780,7 @@ static void test_lsp_get_document_highlights(SZrState *state) {
 }
 
 // 测试预检查重命名
+/* rename 前置查询须返回标识符范围与占位名，为编辑器确认可改名位置。 */
 static void test_lsp_prepare_rename(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("LSP Prepare Rename");
@@ -2752,6 +2825,7 @@ static void test_lsp_prepare_rename(SZrState *state) {
     TEST_PASS(timer, "LSP Prepare Rename");
 }
 
+/* 同一类 fixture 联合验证属性/继承成员的 hover、定义、引用、符号与读写补全。 */
 static void test_lsp_class_member_navigation_and_completion(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -2955,6 +3029,7 @@ static void test_lsp_class_member_navigation_and_completion(SZrState *state) {
     TEST_PASS(timer, "LSP Class Member Navigation And Completion");
 }
 
+/* 属性前导文档注释须同时出现在 hover 与补全项文档中。 */
 static void test_lsp_hover_and_completion_include_comments(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -3028,6 +3103,7 @@ static void test_lsp_hover_and_completion_include_comments(SZrState *state) {
     TEST_PASS(timer, "LSP Hover And Completion Include Comments");
 }
 
+/* 函数符号范围应停在本函数尾部，不能吞并下一条声明。 */
 static void test_lsp_function_symbol_range_trimmed_to_body(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -3108,6 +3184,7 @@ static void test_lsp_function_symbol_range_trimmed_to_body(SZrState *state) {
     TEST_PASS(timer, "LSP Function Symbol Range Trimmed To Body");
 }
 
+/* 函数声明的 prepareRename 只选中名称，不覆盖签名或整个声明。 */
 static void test_lsp_function_prepare_rename_uses_name_range(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -3175,6 +3252,7 @@ static void test_lsp_function_prepare_rename_uses_name_range(SZrState *state) {
     TEST_PASS(timer, "LSP Function Prepare Rename Uses Name Range");
 }
 
+/* 赋给变量的 callable 应保留精确签名及参数作用域，供签名帮助、hover 和重命名共用。 */
 static void test_lsp_callable_assignment_surfaces_exact_signature_and_parameter_scope(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -3327,6 +3405,7 @@ static void test_lsp_callable_assignment_surfaces_exact_signature_and_parameter_
     TEST_PASS(timer, "LSP Callable Assignment Surfaces Exact Signature And Parameter Scope");
 }
 
+/* 闭合泛型类型在 hover、补全 detail 与定义跳转中须保持同一实例化身份。 */
 static void test_lsp_closed_generic_type_display_and_definition(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -3422,6 +3501,7 @@ static void test_lsp_closed_generic_type_display_and_definition(SZrState *state)
     TEST_PASS(timer, "LSP Closed Generic Type Display And Definition");
 }
 
+/* 方法调用处的签名帮助须使用接收者及 const 泛型的闭合类型。 */
 static void test_lsp_signature_help_displays_closed_generic_instantiation(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -3519,6 +3599,7 @@ static void test_lsp_signature_help_displays_closed_generic_instantiation(SZrSta
     TEST_PASS(timer, "LSP Signature Help Displays Closed Generic Instantiation");
 }
 
+/* 推断类型的精确信息须投影为内联提示，而不降级成宽泛基础类型。 */
 static void test_lsp_inlay_hints_surface_exact_inferred_types(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -3582,6 +3663,7 @@ static void test_lsp_inlay_hints_surface_exact_inferred_types(SZrState *state) {
     TEST_PASS(timer, "LSP Inlay Hints Surface Exact Inferred Types");
 }
 
+/* 强类型推断失败应在诊断、hover 与补全 detail 中显式呈现，避免错误地显示已解析类型。 */
 static void test_lsp_hover_and_completion_surface_explicit_exact_type_failures(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -3674,6 +3756,7 @@ static void test_lsp_hover_and_completion_surface_explicit_exact_type_failures(S
     TEST_PASS(timer, "LSP Hover And Completion Surface Explicit Exact Type Failures");
 }
 
+/* 未显式标注返回类型的函数经语义推断后，hover、补全与签名帮助应一致。 */
 static void test_lsp_signature_help_and_completion_surface_exact_unannotated_return_type(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -3768,6 +3851,7 @@ static void test_lsp_signature_help_and_completion_surface_exact_unannotated_ret
     TEST_PASS(timer, "LSP Signature Help And Completion Surface Exact Unannotated Return Type");
 }
 
+/* super(...) 调用处签名帮助应指向父类构造器参数，而非普通方法候选。 */
 static void test_lsp_signature_help_resolves_super_constructor(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -3835,6 +3919,7 @@ static void test_lsp_signature_help_resolves_super_constructor(SZrState *state) 
     TEST_PASS(timer, "LSP Signature Help Resolves Super Constructor");
 }
 
+/* 参数列表内注释文本不应触发签名帮助；移到真实参数位置后仍能解析。 */
 static void test_lsp_signature_help_ignores_comments_inside_call_arguments(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -3904,6 +3989,7 @@ static void test_lsp_signature_help_ignores_comments_inside_call_arguments(SZrSt
     TEST_PASS(timer, "LSP Signature Help Ignores Comments Inside Call Arguments");
 }
 
+/* super 关键字上的定义跳转应落在父类构造器声明。 */
 static void test_lsp_definition_resolves_super_constructor(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -3982,6 +4068,7 @@ static void test_lsp_definition_resolves_super_constructor(SZrState *state) {
     TEST_PASS(timer, "LSP Definition Resolves Super Constructor");
 }
 
+/* 父类构造器声明与 super 调用须归为同一引用集合。 */
 static void test_lsp_references_resolve_super_constructor(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -4047,6 +4134,7 @@ static void test_lsp_references_resolve_super_constructor(SZrState *state) {
     TEST_PASS(timer, "LSP References Resolve Super Constructor");
 }
 
+/* super 调用与父类构造器声明须在同文档高亮中相互对应。 */
 static void test_lsp_document_highlights_resolve_super_constructor(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -4112,6 +4200,7 @@ static void test_lsp_document_highlights_resolve_super_constructor(SZrState *sta
     TEST_PASS(timer, "LSP Document Highlights Resolve Super Constructor");
 }
 
+/* 注释与字符串里的 super 字样不可产生构造器定义、引用或高亮。 */
 static void test_lsp_super_constructor_navigation_ignores_non_code_tokens(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -4249,6 +4338,7 @@ static void test_lsp_super_constructor_navigation_ignores_non_code_tokens(SZrSta
     TEST_PASS(timer, "LSP Super Constructor Navigation Ignores Non-Code Tokens");
 }
 
+/* 类和方法上的装饰器名称应跳转到装饰器定义，而非被装饰声明。 */
 static void test_lsp_definition_resolves_decorator_target(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -4337,6 +4427,7 @@ static void test_lsp_definition_resolves_decorator_target(SZrState *state) {
     TEST_PASS(timer, "LSP Definition Resolves Decorator Target");
 }
 
+/* 装饰器名称上的 hover 应揭示目标符号信息。 */
 static void test_lsp_hover_describes_decorator_target(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -4394,6 +4485,7 @@ static void test_lsp_hover_describes_decorator_target(SZrState *state) {
     TEST_PASS(timer, "LSP Hover Describes Decorator Target");
 }
 
+/* @constructor 等元方法 hover 应标明其语言类别。 */
 static void test_lsp_hover_describes_meta_method_category(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -4451,6 +4543,7 @@ static void test_lsp_hover_describes_meta_method_category(SZrState *state) {
     TEST_PASS(timer, "LSP Hover Describes Meta Method Category");
 }
 
+/* 注释、字符串等非代码文本内的 @ 元方法片段不可误触发 hover。 */
 static void test_lsp_hover_ignores_meta_methods_in_non_code_text(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -4520,6 +4613,7 @@ static void test_lsp_hover_ignores_meta_methods_in_non_code_text(SZrState *state
     TEST_PASS(timer, "LSP Hover Ignores Meta Methods In Non Code Text");
 }
 
+/* 富 hover 应把元方法信息放入对应角色 section，供客户端结构化渲染。 */
 static void test_lsp_rich_hover_structures_meta_sections(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -4572,6 +4666,7 @@ static void test_lsp_rich_hover_structures_meta_sections(SZrState *state) {
     TEST_PASS(timer, "LSP Rich Hover Structures Meta Sections");
 }
 
+/* extern 函数经语义分析后，定义、引用、高亮、签名与补全应共享外部声明身份。 */
 static void test_lsp_extern_function_navigation_and_signature_help(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -4862,6 +4957,7 @@ static void test_lsp_extern_function_navigation_and_signature_help(SZrState *sta
     TEST_PASS(timer, "LSP Extern Function Navigation And Signature Help");
 }
 
+/* extern 类型及其成员在 hover、定义、引用与补全中应维持声明身份。 */
 static void test_lsp_extern_type_symbols_surface_hover_and_definition(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -5025,6 +5121,7 @@ static void test_lsp_extern_type_symbols_surface_hover_and_definition(SZrState *
     TEST_PASS(timer, "LSP Extern Type Symbols Surface Hover And Definition");
 }
 
+/* extern 布局字段的 hover 与导航须携带 FFI 元数据，避免只展示表面类型。 */
 static void test_lsp_extern_layout_hover_surfaces_ffi_metadata(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -5169,6 +5266,7 @@ static void test_lsp_extern_layout_hover_surfaces_ffi_metadata(SZrState *state) 
     TEST_PASS(timer, "LSP Extern Layout Hover Surfaces FFI Metadata");
 }
 
+/* FFI 指针辅助调用产生的外部包装类型应传播到 hover、补全与导航。 */
 static void test_lsp_ffi_pointer_helpers_surface_extern_wrapper_types(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -5315,6 +5413,7 @@ static void test_lsp_ffi_pointer_helpers_surface_extern_wrapper_types(SZrState *
     TEST_PASS(timer, "LSP FFI Pointer Helpers Surface Extern Wrapper Types");
 }
 
+/* 补全候选须反映当前语言关键字、装饰器和元方法集合。 */
 static void test_lsp_completion_lists_current_keywords_and_meta_methods(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -5388,6 +5487,7 @@ static void test_lsp_completion_lists_current_keywords_and_meta_methods(SZrState
     TEST_PASS(timer, "LSP Completion Lists Current Keywords And Meta Methods");
 }
 
+/* 非代码区域中的关键字或元方法前缀不可生成代码补全。 */
 static void test_lsp_completion_ignores_token_prefixes_in_non_code_text(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -5449,6 +5549,7 @@ static void test_lsp_completion_ignores_token_prefixes_in_non_code_text(SZrState
     TEST_PASS(timer, "LSP Completion Ignores Token Prefixes In Non Code Text");
 }
 
+/* 局部符号的统一语义查询结果应驱动 hover、定义和引用，避免各消费者重复猜测身份。 */
 static void test_lsp_semantic_query_unifies_local_symbol_navigation_and_hover(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -5584,6 +5685,7 @@ static void test_lsp_semantic_query_unifies_local_symbol_navigation_and_hover(SZ
     TEST_PASS(timer, "LSP Semantic Query Unifies Local Symbol Navigation And Hover");
 }
 
+/* 局部引用 hover 应携带 query fact 提供的语义信息，而非只回退到词面文本。 */
 static void test_lsp_hover_includes_local_reference_fact_payload(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -5643,6 +5745,7 @@ static void test_lsp_hover_includes_local_reference_fact_payload(SZrState *state
     TEST_PASS(timer, "LSP Hover Includes Local Reference Fact Payload");
 }
 
+/* 局部表达式查询须返回可解析的类型/符号 fact，供编辑器特性复用。 */
 static void test_lsp_local_semantic_query_returns_expression_fact(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -5726,6 +5829,7 @@ static void test_lsp_local_semantic_query_returns_expression_fact(SZrState *stat
     TEST_PASS(timer, "LSP Local Semantic Query Returns Expression Fact");
 }
 
+/* 不完整表达式的局部查询须返回诊断失败状态，不能伪造成功事实。 */
 static void test_lsp_local_semantic_query_reports_diagnostic_failure_for_incomplete_expression(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -5787,6 +5891,7 @@ static void test_lsp_local_semantic_query_reports_diagnostic_failure_for_incompl
     TEST_PASS(timer, "LSP Local Semantic Query Reports Diagnostic Failure For Incomplete Expression");
 }
 
+/* 非 file 的 Web URI 仍可参与内存中文档的局部符号导航与高亮。 */
 static void test_lsp_web_uri_local_symbol_navigation(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -5922,6 +6027,7 @@ static void test_lsp_web_uri_local_symbol_navigation(SZrState *state) {
     TEST_PASS(timer, "LSP Web URI Local Symbol Navigation");
 }
 
+/* Web URI 不应被误解释为本机路径；该转换只服务 file URI 调用链。 */
 static void test_lsp_file_uri_to_native_path_rejects_non_file_web_uri(SZrState *state) {
     SZrTestTimer timer;
     SZrString *webUri;
@@ -5951,6 +6057,7 @@ static void test_lsp_file_uri_to_native_path_rejects_non_file_web_uri(SZrState *
     TEST_PASS(timer, "LSP FileUriToNativePath Rejects Non-File Web Uri");
 }
 
+/* 原生 import 成员的语义来源种类应在结构化 query 中保留。 */
 static void test_lsp_semantic_query_resolves_native_import_member_source_kind(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -6003,6 +6110,7 @@ static void test_lsp_semantic_query_resolves_native_import_member_source_kind(SZ
     TEST_PASS(timer, "LSP Semantic Query Resolves Native Import Member Source Kind");
 }
 
+/* 模块链接链上的成员即使缺少 AST，也应通过 canonical 身份关联虚拟声明与导航。 */
 static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -6063,6 +6171,7 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
         return;
     }
 
+    /* 临时移除 AST 只验证 canonical 关系的独立可用性；查询后立即恢复 analyzer 状态。 */
     savedAst = analyzer->ast;
     analyzer->ast = ZR_NULL;
     ZrLanguageServer_LspSemanticQuery_Init(&query);
@@ -6236,6 +6345,7 @@ static void test_lsp_semantic_query_resolves_module_link_chain_member_navigation
     TEST_PASS(timer, "LSP Semantic Query Resolves Module-Link Chain Member Navigation");
 }
 
+/* 模块链接 hop 在 AST 缺失后仍应由 canonical 事实解析，并拒绝身份失配的候选。 */
 static void test_lsp_semantic_query_resolves_module_link_hop_without_ast(
         SZrState *state) {
     SZrTestTimer timer;
@@ -6294,6 +6404,7 @@ static void test_lsp_semantic_query_resolves_module_link_hop_without_ast(
         return;
     }
 
+    /* 使模块 hop 仅依赖 canonical fact；恢复 AST 后再验证失配身份被拒绝。 */
     savedAst = analyzer->ast;
     analyzer->ast = ZR_NULL;
     ZrLanguageServer_LspSemanticQuery_Init(&query);
@@ -6363,6 +6474,7 @@ static void test_lsp_semantic_query_resolves_module_link_hop_without_ast(
     TEST_PASS(timer, "LSP Semantic Query Resolves Module-Link Hop Without AST");
 }
 
+/* import 字面量、绑定及使用的导航和 hover 须走同一结构化来源身份。 */
 static void test_lsp_semantic_query_unifies_import_target_navigation(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -6539,6 +6651,7 @@ static void test_lsp_semantic_query_unifies_import_target_navigation(SZrState *s
     TEST_PASS(timer, "LSP Semantic Query Unifies Import Target Navigation");
 }
 
+/* 原生声明 URI 应渲染可导航的虚拟 ZR 源码，供编辑器打开。 */
 static void test_lsp_native_declaration_document_renders_virtual_zr_source(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -6589,6 +6702,7 @@ static void test_lsp_native_declaration_document_renders_virtual_zr_source(SZrSt
     TEST_PASS(timer, "LSP Native Declaration Document Renders Virtual ZR Source");
 }
 
+/* console 虚拟声明优先使用描述符签名，避免宽泛回退文本覆盖已知接口。 */
 static void test_lsp_native_console_virtual_document_prefers_descriptor_signatures(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -6639,6 +6753,7 @@ static void test_lsp_native_console_virtual_document_prefers_descriptor_signatur
     TEST_PASS(timer, "LSP Native Console Virtual Document Prefers Descriptor Signatures");
 }
 
+/* 虚拟声明中的非 ASCII 前缀后，定义命中仍须按 UTF-16 列计算且不越界。 */
 static void test_lsp_virtual_declaration_position_uses_utf16_columns(SZrState *state) {
     static const ZrLibModuleLinkDescriptor links[] = {
             {"\xCE\xBBlink", "zr.system", "UTF-8-prefixed link"}
@@ -6719,6 +6834,7 @@ static void test_lsp_virtual_declaration_position_uses_utf16_columns(SZrState *s
     TEST_PASS(timer, "LSP Virtual Declaration Position Uses UTF-16 Columns");
 }
 
+/* 原生 import 的定义跳转目标应是虚拟声明 URI，供客户端继续请求文档。 */
 static void test_lsp_native_import_definition_uses_virtual_declaration_uri(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -6770,6 +6886,7 @@ static void test_lsp_native_import_definition_uses_virtual_declaration_uri(SZrSt
     TEST_PASS(timer, "LSP Native Import Definition Uses Virtual Declaration URI");
 }
 
+/* 构造一次完整 query 生命周期来断言某光标不可解析，供别名来源负例复用。 */
 static TZrBool lsp_semantic_query_rejects_position(
         SZrState *state,
         SZrLspContext *context,
@@ -6785,6 +6902,7 @@ static TZrBool lsp_semantic_query_rejects_position(
     return rejected;
 }
 
+/* 原生 import 别名的定义跳转应取 canonical 来源，即使 AST 缺席也拒绝缺失/冲突元数据。 */
 static void test_lsp_native_import_alias_definition_uses_canonical_origin_without_ast(
         SZrState *state) {
     SZrTestTimer timer;
@@ -6851,6 +6969,7 @@ static void test_lsp_native_import_alias_definition_uses_canonical_origin_withou
         return;
     }
 
+    /* 将语法树排除出成功路径，验证别名目标确由 canonical import 来源提供。 */
     savedAst = analyzer->ast;
     analyzer->ast = ZR_NULL;
     ZrLanguageServer_LspSemanticQuery_Init(&query);
@@ -6971,6 +7090,7 @@ static void test_lsp_native_import_alias_definition_uses_canonical_origin_withou
     TEST_PASS(timer, "LSP Native Import Alias Definition Uses Canonical Origin Without AST");
 }
 
+/* zr.network.tcp 叶模块既可渲染虚拟声明，也应成为源文件 import 的定义目标。 */
 static void test_lsp_native_network_tcp_leaf_virtual_declaration_renders_and_import_targets_uri(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -7050,6 +7170,7 @@ static void test_lsp_native_network_tcp_leaf_virtual_declaration_renders_and_imp
     TEST_PASS(timer, "LSP Native Network TCP Leaf Virtual Declaration Renders And Import Targets URI");
 }
 
+/* 已链接的原生库无需手工预注册，导入后应能提供 hover、定义与虚拟声明。 */
 static void test_lsp_auto_registers_linked_native_libraries_for_import_metadata(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -7182,6 +7303,7 @@ static void test_lsp_auto_registers_linked_native_libraries_for_import_metadata(
     TEST_PASS(timer, "LSP Auto Registers Linked Native Libraries For Import Metadata");
 }
 
+/* 调度器调用由编译器 canonical artifact 投影，验证类型/目标身份及拒绝失配产物。 */
 static void test_lsp_scheduler_contract_resolves_source_call_from_canonical_artifact(SZrState *state) {
     SZrTestTimer timer;
     const TZrChar *artifactSource =
@@ -7287,6 +7409,7 @@ static void test_lsp_scheduler_contract_resolves_source_call_from_canonical_arti
 
     inconsistentFact = *sourceFact;
     inconsistentFact.schedulerProvider.moduleSignatureHash ^= 1u;
+    /* 正例契约已建立后逐项替换来源 fact，要求 reader 拒绝不匹配的 artifact。 */
     if (ZrLanguageServer_LspSchedulerContract_ResolveArtifact(
                 &inconsistentFact, artifactBytes, artifactLength, &contract, &diagnostic) ||
         diagnostic.status != ZR_ARTIFACT_STATUS_MODULE_HASH_MISMATCH) {
@@ -7333,6 +7456,7 @@ static void test_lsp_scheduler_contract_resolves_source_call_from_canonical_arti
     TEST_PASS(timer, "LSP Scheduler Contract Resolves Source Call From Canonical Artifact");
 }
 
+/* 项目模块摘要须同时列出项目、原生与二进制模块，供客户端项目视图使用。 */
 static void test_lsp_project_modules_summarize_project_native_and_binary_modules(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -7420,6 +7544,7 @@ static void test_lsp_project_modules_summarize_project_native_and_binary_modules
     TEST_PASS(timer, "LSP Project Modules Summarize Project Native And Binary Modules");
 }
 
+/* 仅打开项目源码时也须建立 workspace 符号和项目模块索引。 */
 static void test_lsp_project_source_bootstrap_indexes_open_file_symbols_and_modules(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
@@ -7575,6 +7700,7 @@ static void test_lsp_project_source_bootstrap_indexes_open_file_symbols_and_modu
     TEST_PASS(timer, "LSP Project Source Bootstrap Indexes Open File Symbols And Modules");
 }
 
+/* 语法错误后的 fallback AST 仍应借 canonical 接收者事实收集成员补全。 */
 static void test_lsp_semantic_query_collects_receiver_completion_items(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -7826,6 +7952,7 @@ static void test_lsp_semantic_query_collects_receiver_completion_items(SZrState 
     TEST_PASS(timer, "LSP Semantic Query Collects Receiver Completion Items");
 }
 
+/* import 模块名位置的结构化补全应从模块元数据提供候选。 */
 static void test_lsp_semantic_query_collects_import_module_completion_items(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -7881,6 +8008,7 @@ static void test_lsp_semantic_query_collects_import_module_completion_items(SZrS
     TEST_PASS(timer, "LSP Semantic Query Collects Import Module Completion Items");
 }
 
+/* 多段 import 链中的后续段应沿模块来源继续补全，不回退到无关全局候选。 */
 static void test_lsp_semantic_query_collects_import_chain_completion_items(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -7936,6 +8064,7 @@ static void test_lsp_semantic_query_collects_import_chain_completion_items(SZrSt
     TEST_PASS(timer, "LSP Semantic Query Collects Import Chain Completion Items");
 }
 
+/* import 链成员的语义 token 应与结构化解析的符号类别一致。 */
 static void test_lsp_semantic_tokens_cover_import_chain_members(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -8017,6 +8146,7 @@ static void test_lsp_semantic_tokens_cover_import_chain_members(SZrState *state)
     TEST_PASS(timer, "LSP Semantic Tokens Cover Import Chain Members");
 }
 
+/* 所有权类型 token 应根据 canonical 语义身份区分同名局部变量与类型。 */
 static void test_lsp_semantic_tokens_use_canonical_ownership_type_identity(
         SZrState *state) {
     SZrTestTimer timer;
@@ -8163,6 +8293,7 @@ static void test_lsp_semantic_tokens_use_canonical_ownership_type_identity(
     TEST_PASS(timer, "LSP Semantic Tokens Use Canonical Ownership Type Identity");
 }
 
+/* 成员无法解析时不应仅凭点号词面猜测语义 token 类别。 */
 static void test_lsp_semantic_tokens_do_not_guess_unresolved_members(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -8303,6 +8434,7 @@ static void test_lsp_semantic_tokens_do_not_guess_unresolved_members(SZrState *s
     TEST_PASS(timer, "LSP Semantic Tokens Do Not Guess Unresolved Members");
 }
 
+/* 模板字符串内看似代码的词素不得输出语义 token，实际代码 token 仍应保留。 */
 static void test_lsp_semantic_tokens_ignore_template_string_tokens(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -8398,6 +8530,7 @@ static void test_lsp_semantic_tokens_ignore_template_string_tokens(SZrState *sta
     TEST_PASS(timer, "LSP Semantic Tokens Ignore Template String Tokens");
 }
 
+/* 原生接收者成员 hover 由结构化 query 构建，保留模块元数据中的目标事实。 */
 static void test_lsp_semantic_query_builds_native_receiver_member_hover(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -8456,6 +8589,7 @@ static void test_lsp_semantic_query_builds_native_receiver_member_hover(SZrState
     TEST_PASS(timer, "LSP Semantic Query Builds Native Receiver Member Hover");
 }
 
+/* 生成的二进制模块元数据应让 query 定位外部声明目标。 */
 static void test_lsp_semantic_query_resolves_external_metadata_declaration_targets(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -8525,6 +8659,7 @@ static void test_lsp_semantic_query_resolves_external_metadata_declaration_targe
     TEST_PASS(timer, "LSP Semantic Query Resolves External Metadata Declaration Targets");
 }
 
+/* 二进制模块来源身份应贯穿引用与高亮，不只支持定义跳转。 */
 static void test_lsp_semantic_query_external_metadata_references_and_highlights(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -8607,6 +8742,7 @@ static void test_lsp_semantic_query_external_metadata_references_and_highlights(
     TEST_PASS(timer, "LSP Semantic Query External Metadata References And Highlights");
 }
 
+/* 顶层脚本 return 的诊断与 hover 应与编译器语义一致，避免 LSP 独立推断。 */
 static void test_lsp_top_level_script_return_semantics_match_compiler(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
@@ -8702,6 +8838,7 @@ static void test_lsp_top_level_script_return_semantics_match_compiler(SZrState *
     TEST_PASS(timer, "LSP Top Level Script Return Semantics Match Compiler");
 }
 
+/* 嵌套 foreach 复用变量名时 hover 应选最近词法绑定。 */
 static void test_lsp_hover_prefers_nearest_shadowed_foreach_binding(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
@@ -8785,6 +8922,7 @@ static void test_lsp_hover_prefers_nearest_shadowed_foreach_binding(SZrState *st
     TEST_PASS(timer, "LSP Hover Prefers Nearest Shadowed Foreach Binding");
 }
 
+/* 项目级容器下标与 foreach 的泛型元素类型应在 hover 中准确闭合。 */
 static void test_lsp_container_matrix_project_infers_bucket_and_foreach_types(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
@@ -8923,6 +9061,8 @@ static void test_lsp_container_matrix_project_infers_bucket_and_foreach_types(SZ
     TEST_PASS(timer, "LSP Container Matrix Project Infers Bucket And Foreach Types");
 }
 
+/* 专题用例以源码包含进入同一可执行目标：共享上方 fixture/断言助手与 VM 入口，
+ * 不另建链接接口；main 直接调度这些头文件中定义的静态测试。 */
 #include "test_lsp_snapshot_cache_cases.h"
 #include "test_lsp_field_reference_cases.h"
 #include "test_lsp_reference_callable_consumer_cases.h"
@@ -8935,7 +9075,8 @@ static void test_lsp_container_matrix_project_infers_bucket_and_foreach_types(SZ
 #include "test_lsp_receiver_completion_projection_cases.h"
 #include "test_lsp_project_module_summary_range_cases.h"
 
-// 主测试函数
+/* 本测试目标的唯一 CTest 入口；先建 VM 与原生注册表，再按主题运行本文件及末尾
+ * 包含的用例，最后以共享失败计数决定退出状态。 */
 int main(void) {
     printf("==========\n");
     printf("Language Server - LSP Interface Tests\n");

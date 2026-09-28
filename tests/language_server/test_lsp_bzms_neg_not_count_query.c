@@ -6,6 +6,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 计数外层一元负号、内层按位取反的顺序是本矩阵的区别点；
+ * 左右移及右侧符号的交叉用例防止单一运算顺序的特殊处理漏掉事实。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

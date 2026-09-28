@@ -1,6 +1,8 @@
 #ifndef ZR_VM_TEST_LSP_CURRENT_SYNTAX_FORMATTING_CASES_H
 #define ZR_VM_TEST_LSP_CURRENT_SYNTAX_FORMATTING_CASES_H
 
+/* 由 advanced_editor_features.c 的 main 内联调用：旧语法输入不可被格式化器
+ * 静默改写为貌似有效的新文档；整篇与范围格式化都应返回空编辑。 */
 static void test_lsp_formatting_does_not_emit_removed_syntax(
         SZrState *state,
         int *failures) {
@@ -49,6 +51,8 @@ static void test_lsp_formatting_does_not_emit_removed_syntax(
     }
 }
 
+/* 当前 CompileTool 注解与关键字保持规范表面；格式化只改变允许的缩进，
+ * 不重新引入已移除的百分号语法。 */
 static void test_lsp_formatting_preserves_current_compile_tool_syntax(
         SZrState *state,
         int *failures) {

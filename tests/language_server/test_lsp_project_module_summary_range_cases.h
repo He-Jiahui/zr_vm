@@ -1,6 +1,8 @@
 #ifndef ZR_VM_TEST_LSP_PROJECT_MODULE_SUMMARY_RANGE_CASES_H
 #define ZR_VM_TEST_LSP_PROJECT_MODULE_SUMMARY_RANGE_CASES_H
 
+/* 由接口测试入口调用，验证 projectModules 给源码模块的跳转目标是显式 module 名词元，
+ * 而不是文件起点或描述符占位范围。 */
 static void test_lsp_project_modules_publish_exact_source_declaration_range(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;

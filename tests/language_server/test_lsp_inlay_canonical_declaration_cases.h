@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_INLAY_CANONICAL_DECLARATION_CASES_H
 #define ZR_VM_TEST_LSP_INLAY_CANONICAL_DECLARATION_CASES_H
 
+/* 暂时断开旧 symbol table，证明 inlay 枚举仍来自 parser canonical 声明。 */
 static void test_inlay_hint_enumerates_canonical_declarations_without_symbol_table(
         SZrState *state) {
     const TZrChar *summary =
@@ -52,6 +53,7 @@ static void test_inlay_hint_enumerates_canonical_declarations_without_symbol_tab
     ZrCore_Array_Init(state, &hints, sizeof(SZrLspInlayHint *), 4);
 
     savedSymbolTable = analyzer->symbolTable;
+    /* 查询窗口内主动断开旧表；随后恢复以便上下文销毁仍遵守原所有权。 */
     analyzer->symbolTable = ZR_NULL;
     querySucceeded = ZrLanguageServer_Lsp_GetInlayHints(
             state, context, uri, range, &hints);
@@ -84,6 +86,7 @@ static void test_inlay_hint_enumerates_canonical_declarations_without_symbol_tab
     TEST_PASS(timer, summary);
 }
 
+/* 共用两种泛型返回 fixture，验证推断标签在旧 symbol table 缺席时仍可生成。 */
 static void check_inlay_hint_generic_inferred_return(
         SZrState *state, TZrSize index, const TZrChar *summary) {
     const TZrChar *uriText = "file:///inlay_generic_inferred_returns.zr";
@@ -92,6 +95,7 @@ static void check_inlay_hint_generic_inferred_return(
             "class Box<T> { }\n"
             "fn identity<T>(value: Box<Box<T>>) { return value; }\n"
     };
+    /* TODO: 此处只比较返回类型标签；若要锁定源参数名绑定，应补同型多参数或改名场景。 */
     const TZrChar *expectedLabels[] = { ": T", ": Box<Box<T>>" };
     SZrTestTimer timer;
 
@@ -158,12 +162,14 @@ static void check_inlay_hint_generic_inferred_return(
     TEST_PASS(timer, summary);
 }
 
+/* 用简单泛型返回场景检查 inlay 标签含预期类型参数文本。 */
 static void test_inlay_hint_generic_inferred_return_uses_source_parameter_name(
         SZrState *state) {
     check_inlay_hint_generic_inferred_return(state, 0U,
             "LSP Inlay Hint Generic Inferred Return Uses Source Parameter Name");
 }
 
+/* 用嵌套泛型返回场景检查 inlay 标签含预期层级类型参数文本。 */
 static void test_inlay_hint_nested_generic_inferred_return_uses_source_parameter_name(
         SZrState *state) {
     check_inlay_hint_generic_inferred_return(state, 1U,

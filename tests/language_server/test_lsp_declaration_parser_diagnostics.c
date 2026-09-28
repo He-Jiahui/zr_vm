@@ -1,6 +1,7 @@
 //
 // Focused LSP declaration parser diagnostic regression tests.
 //
+// 此可执行测试从 LSP 文档入口检查声明体与 extern 语法错误的结构化诊断，避免 parser 恢复后只留下通用报错。
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -98,6 +99,10 @@ static TZrBool diagnostic_array_contains_message(SZrArray *diagnostics, const TZ
     return ZR_FALSE;
 }
 
+/* 每个声明样例使用独立文档；调用方通过错误码、问题与修复建议判断 parser 诊断是否完整投影到 LSP。
+ * TODO: 三类字段目前可来自不同诊断；需用同一码但混合文本的样例验证是否存在假阳性。
+ * BUG: 所有出口只释放 GetDiagnostics 的外层数组，原生诊断及附属数组泄漏；应调用 FreeDiagnostics。
+ */
 static TZrBool run_declaration_diagnostic_case(SZrState *state,
                                                SZrTestTimer *timer,
                                                const TZrChar *summary,
@@ -313,6 +318,7 @@ static void test_lsp_missing_declaration_body_close_parser_diagnostics(SZrState 
     TEST_PASS(timer, summary);
 }
 
+/* CTest 入口共享全局状态运行声明类样例，以失败计数反馈整个诊断族。 */
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global;

@@ -1,6 +1,7 @@
 #ifndef ZR_TESTS_LSP_VIRTUAL_MODULE_LINK_TARGET_CASES_H
 #define ZR_TESTS_LSP_VIRTUAL_MODULE_LINK_TARGET_CASES_H
 
+/* 已注册模块链接应跳到渲染的目标模块标识符；未注册链接不得伪造目标 URI。 */
 static void test_virtual_module_link_requires_exact_target(SZrState *state, TZrBool missing) {
     static const ZrLibModuleLinkDescriptor links[] = {
         {.name = "math", .moduleName = "zr.math"},

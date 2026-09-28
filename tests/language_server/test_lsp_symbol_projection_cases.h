@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_SYMBOL_PROJECTION_CASES_H
 #define ZR_VM_TEST_LSP_SYMBOL_PROJECTION_CASES_H
 
+/* canonical 符号身份不可用时不应拼造导航目标；查询层应显式拒绝投影。 */
 static void test_symbol_projection_rejects_unavailable_canonical_identity(
         SZrState *state,
         TZrBool detachSemanticContext) {

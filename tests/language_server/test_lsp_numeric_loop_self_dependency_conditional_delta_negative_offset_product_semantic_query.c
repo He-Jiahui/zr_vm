@@ -6,6 +6,8 @@
 #include "zr_vm_core/global.h"
 #include "zr_vm_common/zr_type_conf.h"
 
+/* main 以乘法的符号和零因子变体调用此夹具；三个独立 URI 让同一程序的
+ * target、observer、mirror 分别经过真实 LSP 文档查询。 */
 static TZrBool run_negative_product_offset_query_case(
         SZrState *state,
         const char *label,
@@ -132,6 +134,7 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    /* TODO: && 串联变体时首个失败会跳过后续场景；完整矩阵诊断需逐例执行并汇总。 */
     passed = run_negative_product_offset_query_case(
                      state,
                      "while self-dependent target-reading subtract negative product offset conditional negative delta",

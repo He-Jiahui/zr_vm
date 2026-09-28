@@ -5,6 +5,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 与四层乘积矩阵配对，但另查循环内复制到 other 的读者范围；
+ * target 扩张时读者仍需沿赋值链取得有效范围。 */
 static TZrBool test_local_expression_query_propagates_reader_for_target_reading_symbolic_deeper_four_additional_level_sign_crossing_scale_product_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =

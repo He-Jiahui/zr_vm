@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_SNAPSHOT_CACHE_CASES_H
 #define ZR_VM_TEST_LSP_SNAPSHOT_CACHE_CASES_H
 
+/* 文本未变时即使文档版本递增也复用语义快照，避免重复分析但仍遵守版本序。 */
 static void test_lsp_identical_content_update_reuses_snapshot_and_semantic_cache(
         SZrState *state) {
     const TZrChar *summary = "LSP Identical Content Update Reuses Snapshot And Semantic Cache";
@@ -105,6 +106,7 @@ static void test_lsp_identical_content_update_reuses_snapshot_and_semantic_cache
     TEST_PASS(timer, summary);
 }
 
+/* 内容发生语义变化时必须使旧快照及查询缓存失效，防止跨版本返回过时事实。 */
 static void test_lsp_changed_content_invalidates_snapshot_and_semantic_cache(
         SZrState *state) {
     const TZrChar *summary = "LSP Changed Content Invalidates Snapshot And Semantic Cache";
@@ -210,6 +212,7 @@ static void test_lsp_changed_content_invalidates_snapshot_and_semantic_cache(
     TEST_PASS(timer, summary);
 }
 
+/* 只改注释且 token 身份和位置保持等价时允许复用语义快照，以验证增量判定的窄化条件。 */
 static void test_lsp_token_equivalent_comment_edit_reuses_semantic_snapshot(
         SZrState *state) {
     const TZrChar *summary = "LSP Token Equivalent Comment Edit Reuses Semantic Snapshot";
@@ -312,6 +315,7 @@ static void test_lsp_token_equivalent_comment_edit_reuses_semantic_snapshot(
     TEST_PASS(timer, summary);
 }
 
+/* token 文本相同但坐标移动时必须重建范围相关事实；不能仅按 token 值判定复用。 */
 static void test_lsp_token_coordinate_change_invalidates_semantic_snapshot(
         SZrState *state) {
     const TZrChar *summary = "LSP Token Coordinate Change Invalidates Semantic Snapshot";
@@ -375,6 +379,7 @@ static void test_lsp_token_coordinate_change_invalidates_semantic_snapshot(
     TEST_PASS(timer, summary);
 }
 
+/* token 值变化即使声明轮廓相近也应使语义快照失效。 */
 static void test_lsp_token_value_change_invalidates_semantic_snapshot(
         SZrState *state) {
     const TZrChar *summary = "LSP Token Value Change Invalidates Semantic Snapshot";
@@ -438,6 +443,7 @@ static void test_lsp_token_value_change_invalidates_semantic_snapshot(
     TEST_PASS(timer, summary);
 }
 
+/* 函数体内修改应定位最小编辑范围与所属声明，供局部语义重分析选根。 */
 static void test_lsp_body_edit_records_minimal_change_and_declaration_scope(
         SZrState *state) {
     const TZrChar *summary = "LSP Body Edit Records Minimal Change And Declaration Scope";
@@ -554,6 +560,7 @@ static void test_lsp_body_edit_records_minimal_change_and_declaration_scope(
     TEST_PASS(timer, summary);
 }
 
+/* 签名改动影响声明契约；最小编辑虽局部，重分析根必须覆盖整个声明。 */
 static void test_lsp_signature_edit_records_minimal_change_and_declaration_scope(
         SZrState *state) {
     const TZrChar *summary = "LSP Signature Edit Records Minimal Change And Declaration Scope";
@@ -657,6 +664,7 @@ static void test_lsp_signature_edit_records_minimal_change_and_declaration_scope
     TEST_PASS(timer, summary);
 }
 
+/* 顶层插入改变模块可见声明集合，不能沿用原声明级变更范围。 */
 static void test_lsp_top_level_insertion_records_module_change(
         SZrState *state) {
     const TZrChar *summary = "LSP Top Level Insertion Records Module Change";
@@ -746,6 +754,7 @@ static void test_lsp_top_level_insertion_records_module_change(
     TEST_PASS(timer, summary);
 }
 
+/* 解析回退 AST 缺少可靠局部边界时将变化提升至模块级，防止错误的局部缓存复用。 */
 static void test_lsp_fallback_ast_change_remains_module_scoped(
         SZrState *state) {
     const TZrChar *summary = "LSP Fallback AST Change Remains Module Scoped";
@@ -809,6 +818,7 @@ static void test_lsp_fallback_ast_change_remains_module_scoped(
     TEST_PASS(timer, summary);
 }
 
+/* 非递增文档版本必须在语义工作开始前拒绝，避免旧请求覆盖新快照或消耗缓存预算。 */
 static void test_lsp_non_monotonic_versions_are_rejected_before_semantic_work(
         SZrState *state) {
     const TZrChar *summary = "LSP Non-Monotonic Versions Are Rejected Before Semantic Work";
@@ -885,6 +895,7 @@ static void test_lsp_non_monotonic_versions_are_rejected_before_semantic_work(
     TEST_PASS(timer, summary);
 }
 
+/* 当前版本前的两个历史快照必须可查询，供跨请求结果身份和增量比对使用。 */
 static void test_lsp_retains_two_historical_semantic_snapshots(
         SZrState *state) {
     const TZrChar *summary = "LSP Retains Two Historical Semantic Snapshots";
@@ -1015,6 +1026,7 @@ static void test_lsp_retains_two_historical_semantic_snapshots(
     TEST_PASS(timer, summary);
 }
 
+/* workspace 预算只回收最久未用的缓存存储，并保留 analyzer 与语义上下文供随后重新填充。 */
 static void test_lsp_workspace_semantic_cache_lru_evicts_oldest_storage(
         SZrState *state) {
     const TZrChar *summary = "LSP Workspace Semantic Cache LRU Evicts Oldest Storage";
@@ -1106,6 +1118,7 @@ static void test_lsp_workspace_semantic_cache_lru_evicts_oldest_storage(
     TEST_PASS(timer, summary);
 }
 
+/* 历史版本也计入 workspace 缓存预算；驱逐后不能留下可观察的陈旧存储占用。 */
 static void test_lsp_workspace_semantic_cache_lru_releases_history_storage(
         SZrState *state) {
     const TZrChar *summary = "LSP Workspace Semantic Cache LRU Releases History Storage";

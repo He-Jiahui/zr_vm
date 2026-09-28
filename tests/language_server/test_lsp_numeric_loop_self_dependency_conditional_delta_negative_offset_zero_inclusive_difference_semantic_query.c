@@ -5,6 +5,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 用零可达的差值构造 observer 偏移，再以三点查询区分可扩张与保持边界
+ * 的增量方向；main 传入不同初值和偏移式。 */
 static TZrBool run_zero_inclusive_difference_query_case(
         SZrState *state,
         const char *label,
@@ -129,6 +131,7 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    /* TODO: && 串联变体时首个失败会跳过后续场景；完整矩阵诊断需逐例执行并汇总。 */
     passed = run_zero_inclusive_difference_query_case(
                      state,
                      "while self-dependent target-reading subtract zero-minus zero-inclusive difference offset conditional positive delta",

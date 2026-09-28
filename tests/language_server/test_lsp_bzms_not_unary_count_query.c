@@ -6,6 +6,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 外层按位取反、内层一元负号的计数形状与反向嵌套独立测试；成对检查移位方向
+ * 和右侧零减法符号，要求最外层位或仍返回精确的数值范围。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

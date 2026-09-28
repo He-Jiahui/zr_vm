@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_SOURCE_CONTRACT_COMPLETION_SNAPSHOT_CASES_H
 #define ZR_VM_TEST_LSP_SOURCE_CONTRACT_COMPLETION_SNAPSHOT_CASES_H
 
+/* 补全语义事实只读当前解析快照，不能为候选项单独运行表达式推断。 */
 static void test_completion_semantic_facts_are_snapshot_read_only(void) {
     char *source = read_repo_text_file_owned(
             "zr_vm_language_server/src/zr_vm_language_server/interface/"

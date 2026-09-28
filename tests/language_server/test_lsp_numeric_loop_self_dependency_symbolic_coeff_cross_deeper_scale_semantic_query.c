@@ -5,6 +5,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 逐层增加系数乘积深度，并跨正、负、零可达与跨零区间取值；
+ * 循环内读取及后续正残差用于区别完全抵消与需要扩张的更新。 */
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_positive_singleton_scale_product_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
@@ -258,6 +260,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper
             ZR_TYPE_RANGE_INT64_MAX);
 }
 
+/* 零乘积且无残差应保留原边界，与下方正残差变体形成对照。 */
 static TZrBool test_local_expression_query_preserves_target_reading_symbolic_deeper_two_additional_level_zero_only_scale_product_coefficient_noop(
         SZrState *state) {
     const TZrChar *content =
@@ -880,6 +883,7 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    /* TODO: && 串联变体时首个失败会跳过后续场景；完整矩阵诊断需逐例执行并汇总。 */
     passed =
         test_local_expression_query_widens_target_reading_symbolic_deeper_positive_singleton_scale_product_coefficient_residual(
                 state) &&

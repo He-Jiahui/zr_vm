@@ -1,6 +1,9 @@
 #ifndef ZR_VM_TESTS_LANGUAGE_SERVER_LSP_DUPLICATE_DEFINITION_DIAGNOSTIC_CASES_H
 #define ZR_VM_TESTS_LANGUAGE_SERVER_LSP_DUPLICATE_DEFINITION_DIAGNOSTIC_CASES_H
 
+/* 由 semantic_query_diagnostics.c 包含；重复定义应只发布一条规范诊断，并把首次声明保留为 relatedInformation。
+ * BUG: 此案例的查询结果各出口仅调用 Array_Free，GetDiagnostics 原生诊断及附属数组应由 FreeDiagnostics 释放。
+ */
 static void test_lsp_diagnostics_publish_duplicate_type_related_information(
         SZrState *state) {
     const TZrChar *summary = "LSP Diagnostics Publish Duplicate Type Related Information";

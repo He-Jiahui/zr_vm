@@ -10,13 +10,17 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser/location.h"
 
+/* 每个矩阵场景独立计时，供失败日志定位慢查询和回归场景。 */
 typedef struct SZrTestTimer {
     clock_t startTime;
     clock_t endTime;
 } SZrTestTimer;
 
+/* 场景失败累积到进程退出码，供 language_server 测试聚合器读取。 */
 static int g_failures = 0;
 
+/* 场景使用同一报告格式；TEST_START 隐式要求调用作用域有名为 timer 的
+ * SZrTestTimer 局部变量，FAIL 同时登记退出码所需的失败计数。 */
 #define TEST_START(summary) do { \
     timer.startTime = clock(); \
     printf("Unit Test - %s\n", summary); \
@@ -51,6 +55,7 @@ static int g_failures = 0;
     fflush(stdout); \
 } while (0)
 
+/* main 将此回调交给 VM 全局状态；调用来自 VM 内存层而非各断言。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -73,6 +78,8 @@ static TZrPtr test_allocator(TZrPtr userData,
         return malloc(newSize);
     }
 
+    /* TODO: 地址/旧大小阈值无法证明分配归属；合法大块重分配会退到 malloc
+     * 并丢失旧内容。需核对 VM 分配回调契约再统一测试分配器。 */
     if ((TZrPtr)pointer >= (TZrPtr)0x1000 &&
         originalSize > 0 &&
         originalSize < 1024 * 1024 * 1024) {
@@ -82,6 +89,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* 比较 LSP 返回的 VM 字符串时兼容短串和长串表示，返回值只在状态存活期借用。 */
 static const TZrChar *test_string_ptr(SZrString *value) {
     if (value == ZR_NULL) {
         return "<null>";
@@ -94,6 +102,7 @@ static const TZrChar *test_string_ptr(SZrString *value) {
     return ZrCore_String_GetNativeString(value);
 }
 
+/* 从 CMake 注入的源码根定位项目 fixture；失败时调用方停止场景。 */
 static TZrBool build_fixture_native_path(const TZrChar *relativePath,
                                          TZrChar *buffer,
                                          TZrSize bufferSize) {
@@ -107,6 +116,7 @@ static TZrBool build_fixture_native_path(const TZrChar *relativePath,
     return written > 0 && (TZrSize)written < bufferSize;
 }
 
+/* 读取完整原始字节作为 UpdateDocument 的内容；成功缓冲区由场景 free。 */
 static TZrChar *read_fixture_text_file(const TZrChar *path, TZrSize *outLength) {
     FILE *file;
     TZrChar *buffer = ZR_NULL;
@@ -152,6 +162,7 @@ static TZrChar *read_fixture_text_file(const TZrChar *path, TZrSize *outLength) 
     return buffer;
 }
 
+/* 项目场景把磁盘路径映射到 LSP 文档 URI，供打开文档和跨文件导航共用。 */
 static SZrString *create_file_uri_from_native_path(SZrState *state, const TZrChar *path) {
     TZrChar uriBuffer[2048];
     TZrSize pathLength;
@@ -161,6 +172,8 @@ static SZrString *create_file_uri_from_native_path(SZrState *state, const TZrCha
         return ZR_NULL;
     }
 
+    /* TODO: 此处仅替换路径分隔符，未转义空格、# 等 URI 特殊字符；
+     * 仓库移至此类路径时需改用规范 FromNativePath 并验证导航。 */
     pathLength = strlen(path);
     if (pathLength + 16 >= sizeof(uriBuffer)) {
         return ZR_NULL;
@@ -182,6 +195,7 @@ static SZrString *create_file_uri_from_native_path(SZrState *state, const TZrCha
     return ZrCore_String_Create(state, uriBuffer, writeIndex);
 }
 
+/* 调用场景指定第几个文本命中及光标偏移，避免在 fixture 中硬编码行号。 */
 static TZrBool lsp_find_position_for_substring(const TZrChar *content,
                                                const TZrChar *needle,
                                                TZrSize occurrence,
@@ -207,6 +221,8 @@ static TZrBool lsp_find_position_for_substring(const TZrChar *content,
         return ZR_FALSE;
     }
 
+    /* TODO: 列按 UTF-8 字节累加，而 LSP 查询使用 UTF-16 列；现有 fixture 为
+     * ASCII，若加入非 ASCII 文本，需按同版内容做坐标投影。 */
     while (cursor < match) {
         if (*cursor == '\n') {
             line++;
@@ -222,6 +238,7 @@ static TZrBool lsp_find_position_for_substring(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* 跨文件定义测试同时约束 URI 与范围，避免同位置的错误目标蒙混通过。 */
 static TZrBool location_array_contains_uri_and_range(SZrArray *locations,
                                                      SZrString *uri,
                                                      TZrInt32 startLine,
@@ -254,6 +271,7 @@ static TZrBool location_array_contains_uri_and_range(SZrArray *locations,
     return ZR_FALSE;
 }
 
+/* 同文档字段/枚举导航比较起点；跨文件调用还应检查 URI。 */
 static TZrBool location_array_contains_position(SZrArray *locations,
                                                 TZrInt32 line,
                                                 TZrInt32 character) {
@@ -323,6 +341,7 @@ static TZrBool diagnostic_array_contains_message(SZrArray *diagnostics, const TZ
     return ZR_FALSE;
 }
 
+/* 报错分支汇总实际诊断，便于区分解析失败与缺少预期消息。 */
 static void describe_diagnostic_messages(SZrArray *diagnostics, TZrChar *buffer, TZrSize bufferSize) {
     TZrSize writeIndex = 0;
 
@@ -378,6 +397,7 @@ static TZrBool symbol_array_contains_name(SZrArray *symbols, const TZrChar *need
     return ZR_FALSE;
 }
 
+/* 返回当前符号结果中借用的项，调用方不得在数组释放后使用。 */
 static SZrLspSymbolInformation *find_symbol_information_by_name(SZrArray *symbols, const TZrChar *needle) {
     if (symbols == ZR_NULL || needle == ZR_NULL) {
         return ZR_NULL;
@@ -395,6 +415,7 @@ static SZrLspSymbolInformation *find_symbol_information_by_name(SZrArray *symbol
     return ZR_NULL;
 }
 
+/* 借用第一候选的 VM 字符串，用于构造器失败报告；原生 help 另须释放。 */
 static const TZrChar *signature_help_first_label(SZrLspSignatureHelp *help) {
     SZrLspSignatureInformation **signaturePtr;
 
@@ -410,6 +431,7 @@ static const TZrChar *signature_help_first_label(SZrLspSignatureHelp *help) {
     return test_string_ptr((*signaturePtr)->label);
 }
 
+/* 当前场景只约束首选签名，其他候选不参与构造器断言。 */
 static TZrBool signature_help_contains_text(SZrLspSignatureHelp *help, const TZrChar *needle) {
     const TZrChar *label = signature_help_first_label(help);
 
@@ -420,6 +442,7 @@ static TZrBool signature_help_contains_text(SZrLspSignatureHelp *help, const TZr
     return strstr(label, needle) != ZR_NULL;
 }
 
+/* 失败时列出实际补全标签，定位项目索引或导入绑定丢失的路径。 */
 static void describe_completion_labels(SZrArray *completions, TZrChar *buffer, TZrSize bufferSize) {
     TZrSize writeIndex = 0;
 
@@ -455,6 +478,7 @@ static void describe_completion_labels(SZrArray *completions, TZrChar *buffer, T
     }
 }
 
+/* 导航断言失败时保留首个 URI/范围，区分无结果和跳到错误声明。 */
 static void describe_first_location(SZrArray *locations, TZrChar *buffer, TZrSize bufferSize) {
     SZrLspLocation **locationPtr;
     SZrLspLocation *location;
@@ -486,6 +510,7 @@ static void describe_first_location(SZrArray *locations, TZrChar *buffer, TZrSiz
              (int)location->range.end.character);
 }
 
+/* 用真实工程中的方法调用与声明文件，守住跨模块 goto definition 的精确 URI/范围。 */
 static void test_lsp_matrix_project_definition_resolves_member_method(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
@@ -558,6 +583,8 @@ static void test_lsp_matrix_project_definition_resolves_member_method(SZrState *
         return;
     }
 
+    /* BUG: GetDefinition 返回的每个 Location 是原生对象；下方仅 Array_Free
+     * 释放指针容器，成功及失败路径均遗留对象。需逐项释放后再清理数组。 */
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
     if (!ZrLanguageServer_Lsp_GetDefinition(state, context, mainUri, methodUsePosition, &definitions) ||
         !location_array_contains_uri_and_range(&definitions,
@@ -572,6 +599,8 @@ static void test_lsp_matrix_project_definition_resolves_member_method(SZrState *
         TZrBool hasHover = ZR_FALSE;
 
         describe_first_location(&definitions, locationSummary, sizeof(locationSummary));
+        /* BUG: 定义断言失败时，若回退 hover 成功返回对象，此分支仅释放
+         * context；hover 外壳与 contents 未按 GetHover 契约归还。 */
         if (ZrLanguageServer_Lsp_GetHover(state, context, mainUri, methodUsePosition, &hover) &&
             hover != ZR_NULL &&
             hover->contents.length > 0) {
@@ -603,6 +632,7 @@ static void test_lsp_matrix_project_definition_resolves_member_method(SZrState *
     TEST_PASS(timer, "LSP Matrix Project Definition Resolves Member Method");
 }
 
+/* 原生 builtin import 的 hover 与网络分支补全须同时经公开 LSP API 出现。 */
 static void test_lsp_matrix_builtin_import_hover_and_completion(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
@@ -664,6 +694,8 @@ static void test_lsp_matrix_builtin_import_hover_and_completion(SZrState *state)
         return;
     }
 
+    /* BUG: GetHover 成功时返回的外壳及 contents 数组须由调用方释放；
+     * 该场景在两条退出路径都只释放 context，会遗留原生块。 */
     if (!ZrLanguageServer_Lsp_GetHover(state, context, asyncUri, importPosition, &hover) ||
         hover == ZR_NULL ||
         !hover_contains_text(hover, "module <zr.system>") ||
@@ -677,6 +709,8 @@ static void test_lsp_matrix_builtin_import_hover_and_completion(SZrState *state)
         return;
     }
 
+    /* BUG: GetCompletion 追加原生 CompletionItem；两条退出路径只释放数组
+     * 缓冲区，未逐项归还查询结果。 */
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
     if (!ZrLanguageServer_Lsp_GetCompletion(state, context, asyncUri, networkCompletionPosition, &completions) ||
         !completion_array_contains_label(&completions, "tcp") ||
@@ -698,6 +732,7 @@ static void test_lsp_matrix_builtin_import_hover_and_completion(SZrState *state)
     TEST_PASS(timer, "LSP Matrix Builtin Import Hover And Completion");
 }
 
+/* 对照限定模块名与解构导入，验证诊断、字段补全和悬停共享正确的类型绑定。 */
 static void test_lsp_matrix_imported_type_bindings_surface_qualified_and_destructured_paths(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
@@ -741,6 +776,8 @@ static void test_lsp_matrix_imported_type_bindings_surface_qualified_and_destruc
         return;
     }
 
+    /* BUG: 合法导入预期零诊断；若失败时返回非空诊断，本分支只
+     * Array_Free 而未 FreeDiagnostics，会遗留已追加的诊断对象。 */
     ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
     gotDiagnostics = ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics);
     if (!gotDiagnostics || diagnostics.length != 0) {
@@ -762,6 +799,8 @@ static void test_lsp_matrix_imported_type_bindings_surface_qualified_and_destruc
     ZrCore_Array_Free(state, &diagnostics);
 
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    /* BUG: 限定模块和解构实例两次补全都要求非空原生项；各自仅
+     * Array_Free 指针缓冲区，成功及失败分支均未逐项释放。 */
     if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, moduleCompletionPosition, &completions) ||
         !completion_array_contains_label(&completions, "Pair")) {
         describe_completion_labels(&completions, labels, sizeof(labels));
@@ -792,6 +831,8 @@ static void test_lsp_matrix_imported_type_bindings_surface_qualified_and_destruc
     }
     ZrCore_Array_Free(state, &completions);
 
+    /* BUG: pair2 hover 正例取得原生外壳及 contents，随后只释放
+     * context；两种退出路径均未按 GetHover 契约清理。 */
     if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, pairHoverPosition, &hover) ||
         hover == ZR_NULL ||
         !hover_contains_text(hover, "pair2") ||
@@ -807,6 +848,7 @@ static void test_lsp_matrix_imported_type_bindings_surface_qualified_and_destruc
     TEST_PASS(timer, "LSP Matrix Imported Type Bindings Surface Qualified And Destructured Paths");
 }
 
+/* 反例阻止裸 Pair 名称意外穿透模块边界，必须经限定名或解构导入绑定。 */
 static void test_lsp_matrix_unqualified_imported_type_requires_explicit_binding_diagnostic(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
@@ -834,6 +876,8 @@ static void test_lsp_matrix_unqualified_imported_type_requires_explicit_binding_
     }
 
     ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    /* BUG: 此反例需要返回带消息的诊断才会通过，但两条退出路径
+     * 仅 Array_Free，未调用 FreeDiagnostics 归还原生项。 */
     if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics) ||
         !diagnostic_array_contains_message(&diagnostics,
                                            "requires an explicit module qualifier or destructuring import")) {
@@ -850,6 +894,7 @@ static void test_lsp_matrix_unqualified_imported_type_requires_explicit_binding_
     TEST_PASS(timer, "LSP Matrix Unqualified Imported Type Requires Explicit Binding Diagnostic");
 }
 
+/* 与可用的解构 Pair 正例配对，守住同名类型声明的诊断边界。 */
 static void test_lsp_matrix_destructured_imported_type_rejects_duplicate_pair_declaration(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
@@ -880,6 +925,8 @@ static void test_lsp_matrix_destructured_imported_type_rejects_duplicate_pair_de
     }
 
     ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    /* BUG: 重名反例通过时必有原生诊断对象；两条退出路径仅
+     * Array_Free，未调用 FreeDiagnostics 释放结果。 */
     if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics) ||
         !diagnostic_array_contains_message(&diagnostics, "Pair") ||
         !diagnostic_array_contains_message(&diagnostics, "already declared in this context")) {
@@ -896,6 +943,7 @@ static void test_lsp_matrix_destructured_imported_type_rejects_duplicate_pair_de
     TEST_PASS(timer, "LSP Matrix Destructured Imported Type Rejects Duplicate Pair Declaration");
 }
 
+/* 打开工程后以工作区符号及模块成员补全检查跨文件索引已被接入。 */
 static void test_lsp_matrix_project_workspace_symbols_and_import_completion(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
@@ -956,6 +1004,8 @@ static void test_lsp_matrix_project_workspace_symbols_and_import_completion(SZrS
     }
 
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    /* BUG: 工程 import 补全成功时含原生项；此场景只 Array_Free
+     * 指针容器，未逐项释放 CompletionItem。 */
     if (!ZrLanguageServer_Lsp_GetCompletion(state, context, mainUri, metaCompletionPosition, &completions) ||
         !completion_array_contains_label(&completions, "SignalBox") ||
         !completion_array_contains_label(&completions, "combineVectors")) {
@@ -971,6 +1021,8 @@ static void test_lsp_matrix_project_workspace_symbols_and_import_completion(SZrS
     ZrCore_Array_Free(state, &completions);
 
     ZrCore_Array_Init(state, &workspaceSymbols, sizeof(SZrLspSymbolInformation *), 8);
+    /* BUG: WorkspaceSymbols 返回需逐项释放的 SymbolInformation；
+     * 此场景仅 Array_Free 指针容器，正常查询会遗留原生对象。 */
     if (!ZrLanguageServer_Lsp_GetWorkspaceSymbols(state,
                                                   context,
                                                   ZrCore_String_Create(state, "Score", 5),
@@ -994,6 +1046,7 @@ static void test_lsp_matrix_project_workspace_symbols_and_import_completion(SZrS
     TEST_PASS(timer, "LSP Matrix Project Workspace Symbols And Import Completion");
 }
 
+/* 项目内类构造、实例成员、文档大纲与跨文件定义须共同指向 meta 声明。 */
 static void test_lsp_matrix_meta_surface_constructor_completion_and_symbols(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
@@ -1075,6 +1128,10 @@ static void test_lsp_matrix_meta_surface_constructor_completion_and_symbols(SZrS
     }
 
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    /* TODO: 此处只比较定义起点，错误 URI 若恰好同坐标也会通过；
+     * 应与上方方法导航一样校验 metaUri 与范围。 */
+    /* BUG: 此跨文件定义正例返回原生 Location；失败与成功路径仅
+     * Array_Free 指针缓冲区，未逐项归还位置对象。 */
     if (!ZrLanguageServer_Lsp_GetDefinition(state, context, mainUri, classUsePosition, &definitions) ||
         !location_array_contains_position(&definitions, classDefinitionPosition.line, classDefinitionPosition.character)) {
         ZrCore_Array_Free(state, &definitions);
@@ -1089,9 +1146,13 @@ static void test_lsp_matrix_meta_surface_constructor_completion_and_symbols(SZrS
     }
     ZrCore_Array_Free(state, &definitions);
 
+    /* BUG: GetSignatureHelp 成功时交出需 SignatureHelp_Free 的原生结果；
+     * 两条退出路径都未归还，构造器签名查询会泄漏。 */
     if (!ZrLanguageServer_Lsp_GetSignatureHelp(state, context, mainUri, constructorSignaturePosition, &signatureHelp) ||
         signatureHelp == ZR_NULL ||
         !signature_help_contains_text(signatureHelp, "start: int")) {
+        /* TODO: 失败日志借用签名中的 VM 字符串；context 先释放后才输出 label。
+         * 需核实 GC 根和 context 生命周期，必要时在释放前复制诊断文本。 */
         signatureLabel = signature_help_first_label(signatureHelp);
         free(projectContent);
         free(mainContent);
@@ -1106,6 +1167,8 @@ static void test_lsp_matrix_meta_surface_constructor_completion_and_symbols(SZrS
     }
 
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    /* BUG: 实例成员补全要求 value/bump 原生项；两条退出路径
+     * 仅 Array_Free，未逐项释放 CompletionItem。 */
     if (!ZrLanguageServer_Lsp_GetCompletion(state, context, mainUri, instanceCompletionPosition, &completions) ||
         !completion_array_contains_label(&completions, "value") ||
         !completion_array_contains_label(&completions, "bump")) {
@@ -1125,6 +1188,8 @@ static void test_lsp_matrix_meta_surface_constructor_completion_and_symbols(SZrS
     ZrCore_Array_Free(state, &completions);
 
     ZrCore_Array_Init(state, &symbols, sizeof(SZrLspSymbolInformation *), 8);
+    /* BUG: 文档大纲要求多个原生 SymbolInformation；两条退出路径
+     * 仅 Array_Free，未逐项归还这些符号对象。 */
     if (!ZrLanguageServer_Lsp_GetDocumentSymbols(state, context, metaUri, &symbols) ||
         find_symbol_information_by_name(&symbols, "SignalBox") == ZR_NULL ||
         find_symbol_information_by_name(&symbols, "value") == ZR_NULL ||
@@ -1151,6 +1216,7 @@ static void test_lsp_matrix_meta_surface_constructor_completion_and_symbols(SZrS
     TEST_PASS(timer, "LSP Matrix Meta Surface Constructor Completion And Symbols");
 }
 
+/* 同一工程文件内串接字段/枚举导航、成员补全和符号大纲，守住核心语义表面。 */
 static void test_lsp_matrix_core_semantics_field_enum_and_symbols(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
@@ -1220,6 +1286,8 @@ static void test_lsp_matrix_core_semantics_field_enum_and_symbols(SZrState *stat
     }
 
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    /* BUG: 字段与枚举两次定义查询各要求非空 Location；各自只
+     * Array_Free 指针缓冲区，未逐项归还原生位置对象。 */
     if (!ZrLanguageServer_Lsp_GetDefinition(state, context, coreUri, fieldUsePosition, &definitions) ||
         !location_array_contains_position(&definitions, fieldDeclPosition.line, fieldDeclPosition.character)) {
         TZrChar locationSummary[512];
@@ -1254,6 +1322,8 @@ static void test_lsp_matrix_core_semantics_field_enum_and_symbols(SZrState *stat
     ZrCore_Array_Free(state, &definitions);
 
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    /* BUG: Pair 成员补全正例取得原生项后只 Array_Free
+     * 指针缓冲区，失败及成功路径均缺逐项清理。 */
     if (!ZrLanguageServer_Lsp_GetCompletion(state, context, coreUri, pairCompletionPosition, &completions) ||
         !completion_array_contains_label(&completions, "left") ||
         !completion_array_contains_label(&completions, "right")) {
@@ -1272,6 +1342,8 @@ static void test_lsp_matrix_core_semantics_field_enum_and_symbols(SZrState *stat
     ZrCore_Array_Free(state, &completions);
 
     ZrCore_Array_Init(state, &symbols, sizeof(SZrLspSymbolInformation *), 8);
+    /* BUG: core 大纲正例取得多个原生符号项后只 Array_Free
+     * 指针缓冲区，失败及成功路径均缺逐项清理。 */
     if (!ZrLanguageServer_Lsp_GetDocumentSymbols(state, context, coreUri, &symbols) ||
         find_symbol_information_by_name(&symbols, "ScoreReadable") == ZR_NULL ||
         find_symbol_information_by_name(&symbols, "Counter") == ZR_NULL ||
@@ -1296,6 +1368,7 @@ static void test_lsp_matrix_core_semantics_field_enum_and_symbols(SZrState *stat
     TEST_PASS(timer, "LSP Matrix Core Semantics Field Enum And Symbols");
 }
 
+/* CMake 的 language_server 套件执行此矩阵；各场景继续运行并汇总失败。 */
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global;

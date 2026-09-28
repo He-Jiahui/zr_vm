@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_SOURCE_CONTRACT_EXTERN_ENUM_DECORATOR_CASES_H
 #define ZR_VM_TEST_LSP_SOURCE_CONTRACT_EXTERN_ENUM_DECORATOR_CASES_H
 
+/* extern enum 装饰器验证归 parser，LSP 只消费结构化 compiler 诊断。 */
 static void test_extern_enum_decorators_use_parser_diagnostic_projection(void) {
     char *typecheck = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");

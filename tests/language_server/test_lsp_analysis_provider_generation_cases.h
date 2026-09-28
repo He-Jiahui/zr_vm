@@ -1,5 +1,6 @@
 #include "zr_vm_language_server/lsp_semantic_snapshot.h"
 
+/* 以外部引用事实及语义上下文的 generation 双重校验 provider 切换后的缓存内容。 */
 static TZrBool analysis_external_references_have_generation(
         SZrState *state,
         const SZrSemanticAnalyzer *analyzer,
@@ -27,6 +28,7 @@ static TZrBool analysis_external_references_have_generation(
     return valid;
 }
 
+/* 同一 AST 在 provider generation 变化后必须重建查询缓存；否则外部引用会沿用旧 provider 的事实。 */
 static void test_analysis_provider_generation_invalidates_same_ast_cache(
         SZrState *state) {
     const TZrChar *summary = "LSP Provider Generation Invalidates Same AST Caches";

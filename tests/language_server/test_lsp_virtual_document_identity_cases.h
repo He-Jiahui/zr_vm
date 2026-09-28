@@ -6,6 +6,7 @@
 #include "../../zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_internal.h"
 #include <stdint.h>
 
+/* 合法虚拟 URI 的 provider、模块和声明身份经编码/解析后必须不变。 */
 static void test_virtual_document_identity_round_trip(SZrState *state) {
     const TZrChar *summary = "LSP Virtual Identity Preserves Reserved Bytes And Uint64 Generation";
     SZrParityTimer timer;
@@ -29,6 +30,7 @@ static void test_virtual_document_identity_round_trip(SZrState *state) {
     else TEST_FAIL(timer, summary, "URI encoding must preserve every identity byte and all 64 generation bits");
 }
 
+/* 不完整或畸形的虚拟 URI 不应落入宽松解析分支，以免跨 provider 读取错误声明。 */
 static void test_virtual_document_identity_rejects_malformed(SZrState *state) {
     const TZrChar *summary = "LSP Virtual Identity Rejects Malformed Or Incomplete Scope";
     static TZrChar *invalid[] = {
@@ -63,6 +65,7 @@ static void test_virtual_document_identity_rejects_malformed(SZrState *state) {
     else TEST_FAIL(timer, summary, "malformed scopes must fail with every output cleared");
 }
 
+/* 二进制模块的虚拟身份须受当前项目边界约束；相同模块名在另一项目不能被误解析。 */
 static void test_binary_virtual_document_identity_is_project_scoped(SZrState *state) {
     const TZrChar *summary = "LSP Binary Virtual Identity Is Project Scoped And Generation Bound";
     SZrParityTimer timer;

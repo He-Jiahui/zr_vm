@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_SEMANTIC_ANALYZER_EXTERN_STRUCT_DECORATOR_CASES_H
 #define ZR_VM_TEST_SEMANTIC_ANALYZER_EXTERN_STRUCT_DECORATOR_CASES_H
 
+/** 共享 extern struct 断言要求一个 parser 非法装饰器事实匹配一个 LSP 诊断及精确范围。 */
 static void assert_extern_struct_decorator_golden_parity(
         SZrState *state,
         const TZrChar *summary,
@@ -95,6 +96,7 @@ static void assert_extern_struct_decorator_golden_parity(
     TEST_PASS(timer, summary);
 }
 
+/** 以无效 pack 值覆盖 extern 结构体声明的 FFI 布局装饰器校验。 */
 static void test_semantic_analyzer_preserves_invalid_extern_struct_decorator_golden_parity(
         SZrState *state) {
     const TZrChar *testCode =
@@ -113,6 +115,7 @@ static void test_semantic_analyzer_preserves_invalid_extern_struct_decorator_gol
             25);
 }
 
+/** 以无效 offset 值覆盖 extern 结构体字段的 FFI 布局装饰器校验。 */
 static void test_semantic_analyzer_preserves_invalid_extern_field_decorator_golden_parity(
         SZrState *state) {
     const TZrChar *testCode =

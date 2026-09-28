@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_SOURCE_CONTRACT_CANONICAL_COMPLETION_CASES_H
 #define ZR_VM_TEST_LSP_SOURCE_CONTRACT_CANONICAL_COMPLETION_CASES_H
 
+/* 词法补全只读 parser 可见符号查询，拒绝旧 symbol table 自行计算作用域。 */
 static void test_lexical_completion_uses_parser_visible_symbol_query(void) {
     char *projector = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_canonical_completion.c");
@@ -67,6 +68,7 @@ static void test_lexical_completion_uses_parser_visible_symbol_query(void) {
     free(symbolTableSource);
 }
 
+/* 补全消费者不为一次请求重新构造分析器，避免快照与缓存状态分叉。 */
 static void test_completion_consumer_does_not_materialize_scoped_analyzer(void) {
     char *consumer = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
@@ -121,6 +123,7 @@ static void test_completion_consumer_does_not_materialize_scoped_analyzer(void) 
     free(consumer);
 }
 
+/* 源码悬停沿 canonical 符号与类型格式化查询，不使用旧 analyzer 悬停。 */
 static void test_source_hover_uses_parser_symbol_query(void) {
     char *projector = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_canonical_hover.c");
@@ -149,6 +152,7 @@ static void test_source_hover_uses_parser_symbol_query(void) {
     free(consumer);
 }
 
+/* 公共悬停入口应把请求交给 canonical 查询，不能直接恢复旧实现。 */
 static void test_public_hover_consumer_does_not_use_analyzer_hover(void) {
     char *interfaceSource = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c");
@@ -181,6 +185,7 @@ static void test_public_hover_consumer_does_not_use_analyzer_hover(void) {
     free(interfaceSource);
 }
 
+/* 导入成员悬停使用元数据提供器的符号文档，不借本地 analyzer 猜测。 */
 static void test_metadata_hover_consumer_does_not_use_analyzer_hover(void) {
     char *metadataSource = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c");
@@ -214,6 +219,7 @@ static void test_metadata_hover_consumer_does_not_use_analyzer_hover(void) {
     free(metadataSource);
 }
 
+/* 成员补全从引用事实取接收者类型，避免 AST 再推断与 parser 结论相冲突。 */
 static void test_receiver_completion_does_not_reinfer_ast_type(void) {
     char *supportSource = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c");

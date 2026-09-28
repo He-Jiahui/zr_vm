@@ -4,6 +4,7 @@
 #define ZR_LSP_PROPERTY_STRESS_COUNT 64U
 #define ZR_LSP_PROPERTY_STRESS_CAPACITY 32768U
 
+/* 构造多属性文档的三个版本，隔离函数体变化与 p032 类型契约变化；返回缓冲区由测试释放。 */
 static TZrChar *property_incremental_build_source(
         TZrUInt32 bodyRevision,
         TZrBool stringContract) {
@@ -59,6 +60,7 @@ static TZrChar *property_incremental_build_source(
     return source;
 }
 
+/* 经 LSP 文档坐标查 parser 属性事实，使三个版本的身份比较走真实查询链。 */
 static TZrBool property_incremental_query(
         SZrState *state,
         SZrLspContext *context,
@@ -95,6 +97,7 @@ static TZrBool property_incremental_query(
             outQuery);
 }
 
+/* 在大文档中区分 getter 函数体编辑与 p032 类型契约编辑：稳定属性身份复用，目标属性类型按版本失效。 */
 static void test_lsp_property_incremental_contract_boundaries(
         SZrState *state) {
     const TZrChar *summary =
@@ -215,6 +218,8 @@ static void test_lsp_property_incremental_contract_boundaries(
     valid = ZR_TRUE;
 
 cleanup:
+    /* BUG: 成功的 GetHover 返回需由调用方释放的 hover.contents 与原生 hover；
+     * 本例只释放文档 context，p032 正例每次执行都会泄漏悬停结果。 */
     if (!valid) {
         TEST_FAIL(
                 timer,

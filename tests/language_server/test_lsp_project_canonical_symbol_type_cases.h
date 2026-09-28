@@ -1,3 +1,5 @@
+/* 为 canonical 类型测试创建有显式类型声明的模块及导入者；后续会故意撤掉引用事实，
+ * 因此这里固定源文件与项目路径，避免元数据提供者从偶然的测试环境恢复类型。 */
 static TZrBool prepare_generated_project_canonical_symbol_type_fixture(
         const TZrChar *artifactName,
         SZrGeneratedSourceMemberRefreshFixture *fixture) {
@@ -47,6 +49,8 @@ static TZrBool prepare_generated_project_canonical_symbol_type_fixture(
            write_text_file(fixture->modulePath, moduleContent, strlen(moduleContent));
 }
 
+/* 测试专用破坏入口：移除目标符号的声明引用事实，以验证成员类型只能来自规范声明身份。
+ * 仅在该测试拥有 analyzer 且已记录语义 ID 后调用，不可用于正常 LSP 更新路径。 */
 static TZrBool invalidate_project_symbol_declaration_fact(
         SZrSemanticAnalyzer *analyzer,
         SZrSymbol *symbol) {
@@ -74,6 +78,9 @@ static TZrBool invalidate_project_symbol_declaration_fact(
     return ZR_FALSE;
 }
 
+/* 从项目主入口查询 completion、hover 与导入成员；删除引用事实后仍要求三者取同一规范声明类型，
+ * 从而阻止根据同名文本或临时推断补出错误类型。
+ * BUG: 查询得到非空补全项、普通 hover，API 独立分配对象；本用例退出前未回收这些结果对象，重复运行会泄漏。 */
 static void test_lsp_project_source_symbol_type_uses_canonical_declaration(
         SZrState *state) {
     static const TZrChar *mainContent =

@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_SEMANTIC_ANALYZER_FFI_WRAPPER_DECORATOR_CASES_H
 #define ZR_VM_TEST_SEMANTIC_ANALYZER_FFI_WRAPPER_DECORATOR_CASES_H
 
+/** 共享 wrapper 断言比较 parser 规范错误与 LSP 投影，防止显示层改写描述符、范围或修复属性。 */
 static void assert_ffi_wrapper_decorator_golden_parity(
         SZrState *state,
         const TZrChar *summary,
@@ -95,6 +96,7 @@ static void assert_ffi_wrapper_decorator_golden_parity(
     TEST_PASS(timer, summary);
 }
 
+/** 以无效 lowering 模式验证类级 FFI wrapper 装饰器的错误投影。 */
 static void test_semantic_analyzer_preserves_invalid_ffi_wrapper_lowering_golden_parity(
         SZrState *state) {
     const TZrChar *testCode =
@@ -111,6 +113,7 @@ static void test_semantic_analyzer_preserves_invalid_ffi_wrapper_lowering_golden
             25);
 }
 
+/** 以未声明为 source extern struct 的视图类型验证 viewType 限制在 LSP 诊断中保留 parser 的判定。 */
 static void test_semantic_analyzer_preserves_invalid_ffi_wrapper_view_type_golden_parity(
         SZrState *state) {
     const TZrChar *testCode =

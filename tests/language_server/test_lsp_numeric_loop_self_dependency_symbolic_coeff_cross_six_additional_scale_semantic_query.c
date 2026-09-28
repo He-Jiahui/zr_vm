@@ -5,6 +5,7 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 以额外六层乘积的正单点因子留下循环残差，验证目标的范围沿可达迭代拓宽。 */
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_six_additional_level_positive_singleton_scale_product_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
@@ -41,6 +42,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper
             ZR_TYPE_RANGE_INT64_MAX);
 }
 
+/* 以额外六层乘积的正非单点因子留下循环残差，验证目标的范围沿可达迭代拓宽。 */
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_six_additional_level_positive_non_singleton_scale_product_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
@@ -77,6 +79,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper
             ZR_TYPE_RANGE_INT64_MAX);
 }
 
+/* 以额外六层乘积的含零正因子留下循环残差，验证目标的范围沿可达迭代拓宽。 */
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_six_additional_level_zero_inclusive_positive_scale_product_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
@@ -113,6 +116,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper
             ZR_TYPE_RANGE_INT64_MAX);
 }
 
+/* 以额外六层乘积的含零负因子留下循环残差，验证目标的范围沿可达迭代拓宽。 */
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_six_additional_level_zero_inclusive_negative_scale_product_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
@@ -149,6 +153,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper
             ZR_TYPE_RANGE_INT64_MAX);
 }
 
+/* 以额外六层乘积的负非单点因子留下循环残差，验证目标的范围沿可达迭代拓宽。 */
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_six_additional_level_negative_non_singleton_scale_product_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
@@ -185,6 +190,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper
             ZR_TYPE_RANGE_INT64_MAX);
 }
 
+/* 以额外六层乘积的跨零因子留下循环残差，验证目标的范围沿可达迭代拓宽。 */
 static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper_six_additional_level_sign_crossing_scale_product_coefficient_residual(
         SZrState *state) {
     const TZrChar *content =
@@ -221,6 +227,7 @@ static TZrBool test_local_expression_query_widens_target_reading_symbolic_deeper
             ZR_TYPE_RANGE_INT64_MAX);
 }
 
+/* 以额外六层乘积的纯零因子形成无效更新，验证目标初始区间不会因表达式深度被误拓宽。 */
 static TZrBool test_local_expression_query_preserves_target_reading_symbolic_deeper_six_additional_level_zero_only_scale_product_coefficient_noop(
         SZrState *state) {
     const TZrChar *content =
@@ -256,6 +263,7 @@ static TZrBool test_local_expression_query_preserves_target_reading_symbolic_dee
             5);
 }
 
+/* 此可执行文件由 CTest 的 language_server 套件调用，汇总额外六级乘积系数的自依赖循环用例；创建 VM state 后运行场景并释放全局状态。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
@@ -272,6 +280,8 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    /* TODO: 用 && 串接场景会在首个失败后跳过其余变体；核查是否应逐项
+     * 执行并汇总结果，使一次回归能显示完整失败范围。 */
     passed =
         test_local_expression_query_widens_target_reading_symbolic_deeper_six_additional_level_positive_singleton_scale_product_coefficient_residual(
                 state) &&

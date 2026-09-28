@@ -2,9 +2,12 @@
 
 #include "lsp_bitwise_zero_minus_shift_supported_count_range_query_test_support.h"
 
+/* 主测试入口在基础掩码案例之后调用本矩阵；每个案例单独生成 URI 和
+ * 源码，交给共享夹具检查对应叶变化后顶层位或的范围仍可恢复。 */
 TZrBool ZrVmTest_LspRunBzmsPrivateNotMaskOrCounterpartQueries(SZrState *state) {
     TZrBool passed;
 
+    /* 本例放在 && 左侧，前一例失败后仍收集后续变体的失败位置。 */
     passed = ZR_TRUE;
     passed = ZrVmTest_LspRunBitwiseZeroMinusShiftSupportedCountRangeQuery(
                      state,

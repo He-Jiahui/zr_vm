@@ -11,6 +11,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+/* 为本测试进程的 VM GlobalState 提供内存回调；调用者是 VM 内存层，生命周期由 main 释放全局状态结束。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -32,6 +33,8 @@ static TZrPtr test_allocator(TZrPtr userData,
     if (pointer == ZR_NULL) {
         return malloc(newSize);
     }
+    /* TODO: 地址与 originalSize 阈值不能证明归属；合法大块释放时可能跳过 free，
+     * 扩容时可能回退 malloc 并丢失旧内容。核查 VM 回调的尺寸与指针契约。 */
     if ((TZrPtr)pointer >= (TZrPtr)0x1000 &&
         originalSize > 0 &&
         originalSize < 1024 * 1024 * 1024) {
@@ -40,6 +43,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* 把当前 ASCII fixture 的匹配文本换算成 ExpressionAt 光标；调用方须选中目标表达式，不能直接用于非 ASCII 的 UTF-16 坐标。 */
 static TZrBool find_position_for_substring(const TZrChar *content,
                                            const TZrChar *needle,
                                            SZrLspPosition *outPosition) {
@@ -72,6 +76,7 @@ static TZrBool find_position_for_substring(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* 恒假条件阻止循环体执行，但 header 赋值仍会发生；查询出口范围以锁定这一时序。 */
 static TZrBool test_local_expression_query_applies_for_constant_false_init_assignment(
         SZrState *state) {
     const TZrChar *content =
@@ -150,6 +155,7 @@ static TZrBool test_local_expression_query_applies_for_constant_false_init_assig
     return passed;
 }
 
+/* 让 for header 的局部变量落在恒假循环中，核对其范围不泄漏至循环外的同名读取。 */
 static TZrBool test_local_expression_query_for_false_var_init_does_not_leak(
         SZrState *state) {
     const TZrChar *content =
@@ -210,6 +216,7 @@ static TZrBool test_local_expression_query_for_false_var_init_does_not_leak(
     return passed;
 }
 
+/* 复用单次循环体赋值后立即 break 的事实检查；调用者区分常量真与省略条件、初始化及 step，确保 step 不污染出口。 */
 static TZrBool expect_local_for_body_assignment_before_break_range_equals(
         SZrState *state,
         const TZrChar *content,
@@ -283,6 +290,7 @@ static TZrBool expect_local_for_body_assignment_before_break_range_equals(
     return passed;
 }
 
+/* 复用单次循环体赋值后立即 break 的事实检查；调用者区分常量真与省略条件、初始化及 step，确保 step 不污染出口。 */
 static TZrBool expect_local_for_body_assignment_before_break_range(
         SZrState *state,
         const TZrChar *content,
@@ -297,6 +305,7 @@ static TZrBool expect_local_for_body_assignment_before_break_range(
             11);
 }
 
+/* 用 for (; true; ) 中的 break 路径核对出口事实；循环体已执行而 step 不可达，避免把未执行写入并入区间。 */
 static TZrBool test_local_expression_query_for_true_condition_body_assignment_before_break(
         SZrState *state) {
     const TZrChar *content =
@@ -316,6 +325,7 @@ static TZrBool test_local_expression_query_for_true_condition_body_assignment_be
             "for true condition body assignment before break");
 }
 
+/* 用 for (;;) 中的 break 路径核对出口事实；循环体已执行而 step 不可达，避免把未执行写入并入区间。 */
 static TZrBool test_local_expression_query_for_omitted_condition_body_assignment_before_break(
         SZrState *state) {
     const TZrChar *content =
@@ -335,6 +345,7 @@ static TZrBool test_local_expression_query_for_omitted_condition_body_assignment
             "for omitted condition body assignment before break");
 }
 
+/* 用 for (; true; narrowed = 20) 中的 break 路径核对出口事实；循环体已执行而 step 不可达，避免把未执行写入并入区间。 */
 static TZrBool
 test_local_expression_query_for_true_condition_step_assignment_body_assignment_before_break(
         SZrState *state) {
@@ -355,6 +366,7 @@ test_local_expression_query_for_true_condition_step_assignment_body_assignment_b
             "for true condition step assignment body assignment before break");
 }
 
+/* 用 for (;; narrowed = 20) 中的 break 路径核对出口事实；循环体已执行而 step 不可达，避免把未执行写入并入区间。 */
 static TZrBool
 test_local_expression_query_for_omitted_condition_step_assignment_body_assignment_before_break(
         SZrState *state) {
@@ -375,6 +387,7 @@ test_local_expression_query_for_omitted_condition_step_assignment_body_assignmen
             "for omitted condition step assignment body assignment before break");
 }
 
+/* 用 for (narrowed = 1; true; ) 中的 break 路径核对出口事实；循环体已执行而 step 不可达，避免把未执行写入并入区间。 */
 static TZrBool
 test_local_expression_query_for_true_condition_assignment_init_body_assignment_before_break(
         SZrState *state) {
@@ -395,6 +408,7 @@ test_local_expression_query_for_true_condition_assignment_init_body_assignment_b
             "for true condition assignment init body assignment before break");
 }
 
+/* 用 for (narrowed = 1;;) 中的 break 路径核对出口事实；循环体已执行而 step 不可达，避免把未执行写入并入区间。 */
 static TZrBool
 test_local_expression_query_for_omitted_condition_assignment_init_body_assignment_before_break(
         SZrState *state) {
@@ -415,6 +429,7 @@ test_local_expression_query_for_omitted_condition_assignment_init_body_assignmen
             "for omitted condition assignment init body assignment before break");
 }
 
+/* 用 for (var step: int = 10; true; ) 中的 break 路径核对出口事实；循环体已执行而 step 不可达，避免把未执行写入并入区间。 */
 static TZrBool
 test_local_expression_query_for_true_condition_var_init_body_assignment_before_break(
         SZrState *state) {
@@ -435,6 +450,7 @@ test_local_expression_query_for_true_condition_var_init_body_assignment_before_b
             "for true condition var init body assignment before break");
 }
 
+/* 用 for (var step: int = 10;;) 中的 break 路径核对出口事实；循环体已执行而 step 不可达，避免把未执行写入并入区间。 */
 static TZrBool
 test_local_expression_query_for_omitted_condition_var_init_body_assignment_before_break(
         SZrState *state) {
@@ -455,6 +471,7 @@ test_local_expression_query_for_omitted_condition_var_init_body_assignment_befor
             "for omitted condition var init body assignment before break");
 }
 
+/* 用 for (narrowed = 1; true; narrowed = 20) 中的 break 路径核对出口事实；循环体已执行而 step 不可达，避免把未执行写入并入区间。 */
 static TZrBool
 test_local_expression_query_for_true_condition_assignment_init_step_assignment_body_assignment_before_break(
         SZrState *state) {
@@ -475,6 +492,7 @@ test_local_expression_query_for_true_condition_assignment_init_step_assignment_b
             "for true condition assignment init step assignment body assignment before break");
 }
 
+/* 用 for (narrowed = 1;; narrowed = 20) 中的 break 路径核对出口事实；循环体已执行而 step 不可达，避免把未执行写入并入区间。 */
 static TZrBool
 test_local_expression_query_for_omitted_condition_assignment_init_step_assignment_body_assignment_before_break(
         SZrState *state) {
@@ -495,6 +513,7 @@ test_local_expression_query_for_omitted_condition_assignment_init_step_assignmen
             "for omitted condition assignment init step assignment body assignment before break");
 }
 
+/* 用 for (var step: int = 10; true; narrowed = 20) 中的 break 路径核对出口事实；循环体已执行而 step 不可达，避免把未执行写入并入区间。 */
 static TZrBool
 test_local_expression_query_for_true_condition_var_init_step_assignment_body_assignment_before_break(
         SZrState *state) {
@@ -515,6 +534,7 @@ test_local_expression_query_for_true_condition_var_init_step_assignment_body_ass
             "for true condition var init step assignment body assignment before break");
 }
 
+/* 用 for (var step: int = 10;; narrowed = 20) 中的 break 路径核对出口事实；循环体已执行而 step 不可达，避免把未执行写入并入区间。 */
 static TZrBool
 test_local_expression_query_for_omitted_condition_var_init_step_assignment_body_assignment_before_break(
         SZrState *state) {
@@ -535,6 +555,7 @@ test_local_expression_query_for_omitted_condition_var_init_step_assignment_body_
             "for omitted condition var init step assignment body assignment before break");
 }
 
+/* 用 for (; true; narrowed = 20) 中的 break 路径核对出口事实；循环体已执行而 step 不可达，避免把未执行写入并入区间。 */
 static TZrBool
 test_local_expression_query_for_true_condition_step_assignment_nested_if_break_branches(
         SZrState *state) {
@@ -562,6 +583,7 @@ test_local_expression_query_for_true_condition_step_assignment_nested_if_break_b
             13);
 }
 
+/* 用 for (; true; narrowed = 20) 中的 break 路径核对出口事实；循环体已执行而 step 不可达，避免把未执行写入并入区间。 */
 static TZrBool
 test_local_expression_query_for_true_condition_step_assignment_known_true_if_break_branch(
         SZrState *state) {
@@ -584,6 +606,7 @@ test_local_expression_query_for_true_condition_step_assignment_known_true_if_bre
             "for true condition step assignment known true if break branch");
 }
 
+/* 此可执行文件由 CTest 的 language_server 套件调用，汇总常量循环条件、break 与 header 执行顺序用例；创建 VM state 后调用本文件场景，并在退出前释放全局状态。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

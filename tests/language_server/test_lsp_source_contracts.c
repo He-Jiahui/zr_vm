@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 源码契约用例通过磁盘上的当前实现核对跨模块调用边界；调用方负责释放返回的文本。 */
 static char *read_text_file_owned(const char *path) {
     FILE *file;
     long fileSize;
@@ -44,6 +45,7 @@ static char *read_text_file_owned(const char *path) {
     return buffer;
 }
 
+/* 优先依据 __FILE__ 拼仓根；无法识别源路径时才从运行目录解析相对路径。 */
 static char *read_repo_text_file_owned(const char *relativePath) {
     const char *sourceFile = __FILE__;
     const char *marker;
@@ -74,8 +76,10 @@ static char *read_repo_text_file_owned(const char *relativePath) {
     return read_text_file_owned(path);
 }
 
+/* 各片段用例共享失败计数，main 在全部契约探针完成后统一给构建系统退出状态。 */
 static int g_failures = 0;
 
+/* TODO: 全文件字符串命中也可能来自注释或字面量；需用语法定位或行为测试补证关键契约。 */
 static void assert_text_contains(const char *text, const char *needle) {
     if (strstr(text, needle) == NULL) {
         printf("Missing source contract text: %s\n", needle);
@@ -83,6 +87,7 @@ static void assert_text_contains(const char *text, const char *needle) {
     }
 }
 
+/* 防止旧实现入口重新出现；调用者已确认文件读取成功。 */
 static void assert_text_contains_none(const char *text, const char *needle) {
     if (strstr(text, needle) != NULL) {
         printf("Unexpected source contract text: %s\n", needle);
@@ -90,6 +95,7 @@ static void assert_text_contains_none(const char *text, const char *needle) {
     }
 }
 
+/* 把探针限定到调用者选定的源码区间，避免别的函数满足同名契约。end 是区间末端。 */
 static int text_range_contains(const char *start, const char *end, const char *needle) {
     size_t needleLength;
 
@@ -110,6 +116,7 @@ static int text_range_contains(const char *start, const char *end, const char *n
     return 0;
 }
 
+/* 标识符扫描和 rename 用例借第二次命中跳过静态前向声明，定位实现区间。 */
 static const char *find_next_text(const char *text, const char *needle) {
     const char *first;
 
@@ -124,6 +131,7 @@ static const char *find_next_text(const char *text, const char *needle) {
     return strstr(first + strlen(needle), needle);
 }
 
+/* 对局部消费者做正向约束，并把缺失边界也算作测试失败。 */
 static void assert_text_section_contains(const char *sectionName,
                                          const char *start,
                                          const char *end,
@@ -139,6 +147,7 @@ static void assert_text_section_contains(const char *sectionName,
     }
 }
 
+/* 对同一局部区间排除旧路径，防止重构后旁路重新参与请求处理。 */
 static void assert_text_section_contains_none(const char *sectionName,
                                               const char *start,
                                               const char *end,
@@ -154,6 +163,7 @@ static void assert_text_section_contains_none(const char *sectionName,
     }
 }
 
+/* 导入链位置转换应以版本化内容为准，避免静态追加状态跨请求污染。 */
 static void test_import_chain_location_conversion_does_not_use_static_append_state(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_import_chain.c");
@@ -175,6 +185,7 @@ static void test_import_chain_location_conversion_does_not_use_static_append_sta
     free(source);
 }
 
+/* 虚拟文档构造器只暴露实际调用的查询路径，避免遗留 API 与当前投影分叉。 */
 static void test_virtual_document_builder_has_no_dead_query_surface(void) {
     char *source = read_repo_text_file_owned(
             "zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.c");
@@ -207,6 +218,7 @@ static void test_virtual_document_builder_has_no_dead_query_surface(void) {
     free(header);
 }
 
+/* 语义查询的文件范围必须经共享文档转换，保持编辑器坐标与文档版本一致。 */
 static void test_semantic_query_location_conversion_uses_shared_document_helper(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
@@ -225,6 +237,7 @@ static void test_semantic_query_location_conversion_uses_shared_document_helper(
     free(source);
 }
 
+/* 二进制元数据的源范围不等同当前打开的文本，投影入口须显式选取坐标语境。 */
 static void test_binary_metadata_coordinate_projection_is_explicitly_scoped(void) {
     char *coordinateSource = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_binary_metadata_coordinates.c");
@@ -257,6 +270,7 @@ static void test_binary_metadata_coordinate_projection_is_explicitly_scoped(void
     free(projectNavigationSource);
 }
 
+/* 描述符元数据坐标与本地文档坐标分属不同来源，检查调用方显式选路。 */
 static void test_descriptor_metadata_coordinate_projection_is_explicitly_scoped(void) {
     char *coordinateSource = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_descriptor_metadata_coordinates.c");
@@ -290,6 +304,7 @@ static void test_descriptor_metadata_coordinate_projection_is_explicitly_scoped(
     free(projectNavigationSource);
 }
 
+/* 公共 LSP 接口将文件范围投影为协议范围时复用文档内容感知的转换。 */
 static void test_lsp_interface_range_conversion_uses_shared_document_helper(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c");
@@ -308,6 +323,7 @@ static void test_lsp_interface_range_conversion_uses_shared_document_helper(void
     free(source);
 }
 
+/* 共享转换助手不得退回无内容的旧路径，以免 UTF-16 范围失去当前版本依据。 */
 static void test_lsp_shared_document_helpers_do_not_use_legacy_fallbacks(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c");
@@ -351,6 +367,7 @@ static void test_lsp_shared_document_helpers_do_not_use_legacy_fallbacks(void) {
     free(source);
 }
 
+/* 文档位置映射应遵从内容快照，防止按旧字节偏移解释客户端位置。 */
 static void test_lsp_document_file_position_has_no_legacy_fallback(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c");
@@ -384,6 +401,7 @@ static void test_lsp_document_file_position_has_no_legacy_fallback(void) {
     free(source);
 }
 
+/* 公共声明和实现均不应再提供缺少文档内容的坐标转换捷径。 */
 static void test_lsp_no_content_position_range_apis_are_removed(void) {
     char *headerSource = read_repo_text_file_owned(
         "zr_vm_language_server/include/zr_vm_language_server/lsp_interface.h");
@@ -411,6 +429,7 @@ static void test_lsp_no_content_position_range_apis_are_removed(void) {
     free(positionSource);
 }
 
+/* 标识符扫描依赖请求所绑定的快照，防止编辑期间扫描另一版本内容。 */
 static void test_lsp_interface_identifier_scan_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c");
@@ -454,6 +473,7 @@ static void test_lsp_interface_identifier_scan_uses_content_snapshot(void) {
     free(source);
 }
 
+/* 补全词段范围须与调用时的文档快照配对，避免替换区间漂移。 */
 static void test_lsp_interface_completion_code_span_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c");
@@ -483,6 +503,7 @@ static void test_lsp_interface_completion_code_span_uses_content_snapshot(void) 
     free(source);
 }
 
+/* 悬停文档取词与范围应来自同一快照，以免展示已失效符号说明。 */
 static void test_lsp_interface_hover_documentation_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c");
@@ -512,6 +533,7 @@ static void test_lsp_interface_hover_documentation_uses_content_snapshot(void) {
     free(source);
 }
 
+/* inlay hint 的语义范围进入协议层时使用共享的版本感知坐标投影。 */
 static void test_lsp_inlay_position_conversion_uses_shared_document_helper(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_inlay_hints.c");
@@ -529,6 +551,7 @@ static void test_lsp_inlay_position_conversion_uses_shared_document_helper(void)
     free(source);
 }
 
+/* 项目导航不应自行恢复无内容坐标换算，以免跨文件定位口径不一致。 */
 static void test_project_navigation_has_no_legacy_position_conversion(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c");
@@ -544,6 +567,7 @@ static void test_project_navigation_has_no_legacy_position_conversion(void) {
     free(source);
 }
 
+/* 项目级导航消费每个文件版本的内容快照，而非直接读可变文本。 */
 static void test_project_navigation_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c");
@@ -560,6 +584,7 @@ static void test_project_navigation_uses_content_snapshot(void) {
     free(source);
 }
 
+/* 项目刷新沿版本化内容更新索引，避免边刷新边读取被替换的文档缓冲区。 */
 static void test_project_refresh_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned("zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c");
 
@@ -575,6 +600,7 @@ static void test_project_refresh_uses_content_snapshot(void) {
     free(source);
 }
 
+/* 元数据提供器查询源码范围时持有快照，维持导入目标与位置的一致视图。 */
 static void test_metadata_provider_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.c");
@@ -591,6 +617,7 @@ static void test_metadata_provider_uses_content_snapshot(void) {
     free(source);
 }
 
+/* 语义查询在请求期间固定源文本版本，使符号事实与坐标指向同一内容。 */
 static void test_semantic_query_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
@@ -607,6 +634,7 @@ static void test_semantic_query_uses_content_snapshot(void) {
     free(source);
 }
 
+/* 增量解析使用已获取的版本快照，避免解析期间编辑替换底层缓冲。 */
 static void test_incremental_parser_parse_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c");
@@ -640,6 +668,7 @@ static void test_incremental_parser_parse_uses_content_snapshot(void) {
     free(source);
 }
 
+/* 版本块的引用计数契约保护解析与读请求重叠时的文本生命周期。 */
 static void test_incremental_parser_content_uses_versioned_refcounted_block(void) {
     char *headerSource = read_repo_text_file_owned(
         "zr_vm_language_server/include/zr_vm_language_server/incremental_parser.h");
@@ -668,6 +697,7 @@ static void test_incremental_parser_content_uses_versioned_refcounted_block(void
     free(source);
 }
 
+/* 编辑器特性读取同一版本内容，保证返回范围与已发布语义事实相配。 */
 static void test_editor_features_use_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/lsp_editor_features.c");
@@ -684,6 +714,7 @@ static void test_editor_features_use_content_snapshot(void) {
     free(source);
 }
 
+/* token 元数据悬停必须对快照取词，防止元数据 token 与现行文本错位。 */
 static void test_token_metadata_hover_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/lsp_token_metadata.c");
@@ -711,6 +742,7 @@ static void test_token_metadata_hover_uses_content_snapshot(void) {
     free(source);
 }
 
+/* 语义 token 扫描固定文档版本，便于增量编辑期间输出稳定协议范围。 */
 static void test_semantic_tokens_source_scan_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c");
@@ -740,6 +772,7 @@ static void test_semantic_tokens_source_scan_uses_content_snapshot(void) {
     free(source);
 }
 
+/* token 的符号类别应由 parser 语义身份决定，避免独立扫描重新推断名称。 */
 static void test_semantic_tokens_use_canonical_symbol_queries(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c");
@@ -820,6 +853,7 @@ static void test_semantic_tokens_use_canonical_symbol_queries(void) {
     free(canonicalSource);
 }
 
+/* 折叠范围在请求时绑定版本化文本，以免行边界随编辑移动。 */
 static void test_folding_ranges_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/lsp_folding_ranges.c");
@@ -847,6 +881,7 @@ static void test_folding_ranges_uses_content_snapshot(void) {
     free(source);
 }
 
+/* 打开文档的链接扫描读快照，避免链接文字与返回范围跨版本。 */
 static void test_document_links_uses_content_snapshot_for_open_documents(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/lsp_document_links.c");
@@ -874,6 +909,7 @@ static void test_document_links_uses_content_snapshot_for_open_documents(void) {
     free(source);
 }
 
+/* 签名帮助使用请求快照识别调用词段，使参数位次和范围同源。 */
 static void test_signature_help_code_span_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/lsp_signature_help.c");
@@ -901,6 +937,7 @@ static void test_signature_help_code_span_uses_content_snapshot(void) {
     free(source);
 }
 
+/* 自动导入修复的插入位置根据快照选择，避免旧文档补丁覆盖当前编辑。 */
 static void test_code_action_imports_use_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/lsp_code_action_imports.c");
@@ -917,6 +954,7 @@ static void test_code_action_imports_use_content_snapshot(void) {
     free(source);
 }
 
+/* super 跳转从快照解析接收者上下文，防止跨版本选择错误父类。 */
 static void test_super_navigation_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/lsp_super_navigation.c");
@@ -933,6 +971,7 @@ static void test_super_navigation_uses_content_snapshot(void) {
     free(source);
 }
 
+/* code action 依据生成诊断的文档快照生成编辑，保持修复范围可应用。 */
 static void test_code_actions_use_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/lsp_code_actions.c");
@@ -957,6 +996,7 @@ static void test_code_actions_use_content_snapshot(void) {
     free(source);
 }
 
+/* 层次查询经文档版本访问源码，不直接读取可变内容缓冲区。 */
 static void test_hierarchy_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/lsp_hierarchy.c");
@@ -987,6 +1027,7 @@ static void test_hierarchy_uses_content_snapshot(void) {
     free(typeHierarchy);
 }
 
+/* stdio 补全在请求生命周期内从快照提取文本，避免后续编辑改变候选范围。 */
 static void test_stdio_completion_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/stdio/stdio_completion.c");
@@ -1003,6 +1044,7 @@ static void test_stdio_completion_uses_content_snapshot(void) {
     free(source);
 }
 
+/* stdio moniker 的符号位置应绑定快照，维持外部身份与请求文本一致。 */
 static void test_stdio_moniker_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/stdio/stdio_moniker.c");
@@ -1019,6 +1061,7 @@ static void test_stdio_moniker_uses_content_snapshot(void) {
     free(source);
 }
 
+/* 内联补全取用快照，避免建议文本基于不同版本的前缀。 */
 static void test_stdio_inline_completion_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/stdio/stdio_inline_completion.c");
@@ -1035,6 +1078,7 @@ static void test_stdio_inline_completion_uses_content_snapshot(void) {
     free(source);
 }
 
+/* 关联编辑范围需要固定当前文档版本，防止成对替换位置漂移。 */
 static void test_stdio_linked_editing_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/stdio/stdio_linked_editing.c");
@@ -1051,6 +1095,7 @@ static void test_stdio_linked_editing_uses_content_snapshot(void) {
     free(source);
 }
 
+/* stdio 诊断通过共享存储读取 analyzer 结果，不再单独构造不一致的诊断集合。 */
 static void test_stdio_diagnostics_uses_shared_diagnostic_store(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/stdio/stdio_diagnostics.c");
@@ -1072,6 +1117,7 @@ static void test_stdio_diagnostics_uses_shared_diagnostic_store(void) {
     free(source);
 }
 
+/* 文档同步处理在版本边界取快照，避免发布跨版本的文本与语义状态。 */
 static void test_stdio_documents_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/stdio/stdio_documents.c");
@@ -1088,6 +1134,7 @@ static void test_stdio_documents_uses_content_snapshot(void) {
     free(source);
 }
 
+/* inline value 的位置与取值都应由同一内容版本导出。 */
 static void test_stdio_inline_value_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/stdio/stdio_inline_value.c");
@@ -1104,6 +1151,7 @@ static void test_stdio_inline_value_uses_content_snapshot(void) {
     free(source);
 }
 
+/* stdio 坐标编码转换依赖文档快照，防止把 UTF-16 位置解释为旧版字节。 */
 static void test_stdio_position_encoding_uses_content_snapshot(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/stdio/stdio_position_encoding.c");
@@ -1120,6 +1168,7 @@ static void test_stdio_position_encoding_uses_content_snapshot(void) {
     free(source);
 }
 
+/* WASM 导出须复用协议诊断序列化器，避免浏览器接口与 stdio 字段语义分叉。 */
 static void test_wasm_diagnostics_use_canonical_projection(void) {
     char *cmake = read_repo_text_file_owned(
         "zr_vm_language_server/CMakeLists.txt");
@@ -1154,6 +1203,7 @@ static void test_wasm_diagnostics_use_canonical_projection(void) {
     free(projection);
 }
 
+/* 类型不匹配由 compiler 兼容性判断产出，LSP 只消费结构化诊断投影。 */
 static void test_type_mismatch_diagnostics_use_compiler_query_projection(void) {
     char *typecheck = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
@@ -1223,6 +1273,7 @@ static void test_type_mismatch_diagnostics_use_compiler_query_projection(void) {
     free(support);
 }
 
+/* 不可达事实先进入 parser 语义事实，客户端诊断再由统一查询物化。 */
 static void test_reachability_diagnostics_use_semantic_query_projection(void) {
     char *typecheck = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
@@ -1254,6 +1305,7 @@ static void test_reachability_diagnostics_use_semantic_query_projection(void) {
     free(unionPatterns);
 }
 
+/* const 赋值违规保留 parser 的规则所有权，LSP 不另行编码判定。 */
 static void test_const_assignment_diagnostics_use_semantic_query_projection(void) {
     char *typecheck = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
@@ -1289,6 +1341,7 @@ static void test_const_assignment_diagnostics_use_semantic_query_projection(void
     free(typecheck);
 }
 
+/* 接口方差校验由 parser 发布诊断，避免 analyzer 重复维护类型规则。 */
 static void test_variance_diagnostics_use_parser_query_projection(void) {
     char *typecheck = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
@@ -1325,6 +1378,7 @@ static void test_variance_diagnostics_use_parser_query_projection(void) {
     free(typecheck);
 }
 
+/* 接口 const 字段约束由 parser 构造诊断，符号收集仅消费该结果。 */
 static void test_interface_const_field_diagnostics_use_parser_query_projection(void) {
     char *symbols = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c");
@@ -1355,6 +1409,7 @@ static void test_interface_const_field_diagnostics_use_parser_query_projection(v
     free(symbols);
 }
 
+/* 未解析引用由 parser 结合符号事实物化，LSP 只把结构化诊断投影到协议。 */
 static void test_unresolved_reference_diagnostics_use_parser_query_projection(void) {
     char *materializer = read_repo_text_file_owned(
         "zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_unresolved_diagnostics.c");
@@ -1396,6 +1451,7 @@ static void test_unresolved_reference_diagnostics_use_parser_query_projection(vo
     free(typecheck);
 }
 
+/* 命名调用的兼容性以 parser 推断为准，防止 LSP 重做一套重载匹配。 */
 static void test_named_call_compatibility_uses_parser_inference_projection(void) {
     char *typecheck = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
@@ -1417,6 +1473,7 @@ static void test_named_call_compatibility_uses_parser_inference_projection(void)
     free(typecheck);
 }
 
+/* 赋值所有权错误来自 compiler 诊断；表达式推断不应绕过该统一入口。 */
 static void test_assignment_ownership_uses_parser_diagnostic_projection(void) {
     char *typecheck = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
@@ -1448,6 +1505,7 @@ static void test_assignment_ownership_uses_parser_diagnostic_projection(void) {
     free(typecheck);
 }
 
+/* 引用记录绑定语义 ID 与快照源，避免按名称合并不同作用域或版本的符号。 */
 static void test_reference_tracker_uses_canonical_identity_and_snapshot_source(void) {
     char *tracker = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c");
@@ -1494,6 +1552,7 @@ static void test_reference_tracker_uses_canonical_identity_and_snapshot_source(v
     free(querySource);
 }
 
+/* 本地引用与高亮消费 parser 关系查询，不能退回名称或独立 tracker 扫描。 */
 static void test_local_reference_consumers_use_parser_relation_queries(void) {
     char *referenceQuery = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_reference_query.c");
@@ -1551,6 +1610,7 @@ static void test_local_reference_consumers_use_parser_relation_queries(void) {
     free(semanticQuery);
 }
 
+/* 跨快照引用必须比较 provider 代次与外部目标 token，防止同名对象串线。 */
 static void test_cross_snapshot_references_use_external_identity_queries(void) {
     char *crossSnapshot = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_cross_snapshot_references.c");
@@ -1595,6 +1655,7 @@ static void test_cross_snapshot_references_use_external_identity_queries(void) {
     free(externalIdentity);
 }
 
+/* import 链末端成员先按外部身份命中，再装载元数据；无本地 AST 时仍可解析。 */
 static void test_import_chain_terminal_member_uses_external_identity(void) {
     char *semanticQuery = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
@@ -1641,6 +1702,7 @@ static void test_import_chain_terminal_member_uses_external_identity(void) {
         resolverEnd,
         "analyzer->ast");
 
+    /* 此顺序是无 AST 的外部成员仍可定位的前提，不能仅验证两个调用各自存在。 */
     resolveAtPosition = strstr(
         semanticQuery,
         "ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(");
@@ -1657,6 +1719,7 @@ static void test_import_chain_terminal_member_uses_external_identity(void) {
         g_failures++;
     }
 
+    /* 先按身份筛选再 hydration，防止同名 metadata 候选被错误装载。 */
     identitySelection = strstr(
         externalMetadata,
         "if (!external_metadata_identity_matches(analyzer, identity, candidate))");
@@ -1674,6 +1737,7 @@ static void test_import_chain_terminal_member_uses_external_identity(void) {
     free(externalMetadata);
 }
 
+/* import 原点跳转沿 parser 发布的关系与元数据 URI，避免重新按别名搜索。 */
 static void test_import_origin_definition_consumer_uses_parser_relations(void) {
     char *relationQuery = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_relation_query.c");
@@ -1738,6 +1802,7 @@ static void test_import_origin_definition_consumer_uses_parser_relations(void) {
     assert_text_contains_none(parserImportQuery, "strcmp");
     assert_text_contains_none(parserImportQuery, "strstr");
 
+    /* 字面量原点解析须先于 AST 回退，缺失 canonical 关系时按契约失败关闭。 */
     resolveStart = strstr(
         semanticQuery,
         "ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(");
@@ -1776,6 +1841,7 @@ static void test_import_origin_definition_consumer_uses_parser_relations(void) {
     free(analyzerAnalysis);
 }
 
+/* 导入成员的引用与高亮必须先有 canonical 身份，再拼本地和跨快照结果。 */
 static void test_imported_reference_consumers_require_canonical_identity(void) {
     char *semanticQuery = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
@@ -1880,6 +1946,7 @@ static void test_imported_reference_consumers_require_canonical_identity(void) {
     free(semanticQuery);
 }
 
+/* 项目层不保留按名称的旁路导航，以 parser 关系查询作为唯一语义来源。 */
 static void test_dead_project_semantic_fallbacks_are_removed(void) {
     char *projectSource = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c");
@@ -1936,6 +2003,7 @@ static void test_dead_project_semantic_fallbacks_are_removed(void) {
     free(interfaceInternal);
 }
 
+/* rename 的位置与占位词须来自 canonical 符号，避免同名但异 ID 的编辑。 */
 static void test_local_rename_consumers_require_canonical_symbol_identity(void) {
     char *interfaceSource = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c");
@@ -2006,6 +2074,7 @@ static void test_local_rename_consumers_require_canonical_symbol_identity(void) 
     free(referenceQuery);
 }
 
+/* 本地定义目标取 parser 关系和绑定的快照源，而非查询时拼接 URI 回退。 */
 static void test_local_definition_consumer_uses_snapshot_source(void) {
     char *definitionQuery = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_definition_query.c");
@@ -2040,6 +2109,7 @@ static void test_local_definition_consumer_uses_snapshot_source(void) {
     free(semanticQuery);
 }
 
+/* 实现跳转连接 parser 发布的编译契约与实现关系，防止名称猜测歧义。 */
 static void test_local_implementation_consumer_uses_parser_relations(void) {
     char *implementationQuery = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_implementation_query.c");
@@ -2078,6 +2148,7 @@ static void test_local_implementation_consumer_uses_parser_relations(void) {
     free(analysis);
 }
 
+/* 类型层次以语义 ID 和 parser 父子关系贯穿查询、stdio 解析与响应编码。 */
 static void test_local_type_hierarchy_uses_parser_relations(void) {
     char *hierarchyQuery = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_type_hierarchy.c");
@@ -2146,6 +2217,7 @@ static void test_local_type_hierarchy_uses_parser_relations(void) {
     free(stdioJson);
 }
 
+/* 调用层次以 parser 调用边和语义 ID 为准，包含 lambda，避免扫描名称推断边。 */
 static void test_local_call_hierarchy_uses_parser_edges(void) {
     char *hierarchyQuery = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_call_hierarchy.c");
@@ -2204,6 +2276,7 @@ static void test_local_call_hierarchy_uses_parser_edges(void) {
     free(hierarchy);
 }
 
+/* extern callable 装饰器由 parser 校验，LSP 仅投影 compiler 报错。 */
 static void test_extern_callable_decorators_use_parser_diagnostic_projection(void) {
     char *typecheck = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
@@ -2228,6 +2301,7 @@ static void test_extern_callable_decorators_use_parser_diagnostic_projection(voi
     free(typecheck);
 }
 
+/* 声明类型显示先用 parser 的类型身份与名称接口，避免 LSP 自造同名映射。 */
 static void test_declared_type_builder_uses_parser_type_identity(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic_type_prototypes.c");
@@ -2287,6 +2361,7 @@ static void test_declared_type_builder_uses_parser_type_identity(void) {
     free(source);
 }
 
+/* 光标类型查询使用 parser canonical 类型事实，不回退 AST 节点猜测。 */
 static void test_semantic_analyzer_type_resolution_uses_canonical_query(void) {
     char *source = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c");
@@ -2351,6 +2426,7 @@ static void test_semantic_analyzer_type_resolution_uses_canonical_query(void) {
     free(source);
 }
 
+/* 下列 .h 是本翻译单元的静态案例片段；main 统一调度，不能单独编译运行。 */
 #include "test_lsp_source_contract_duplicate_diagnostic_cases.h"
 #include "test_lsp_source_contract_extern_enum_decorator_cases.h"
 #include "test_lsp_source_contract_extern_struct_decorator_cases.h"
@@ -2368,6 +2444,7 @@ static void test_semantic_analyzer_type_resolution_uses_canonical_query(void) {
 #include "test_lsp_source_contract_local_query_snapshot_cases.h"
 #include "test_lsp_source_contract_code_lens_declaration_cases.h"
 
+/* CMake 注册的源契约入口：跑完全部片段后用聚合计数给构建流水线返回状态。 */
 int main(void) {
     printf("==========\n");
     printf("Language Server - LSP Source Contract Tests\n");

@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_PROPERTY_REFACTOR_CASES_H
 #define ZR_VM_TEST_LSP_PROPERTY_REFACTOR_CASES_H
 
+/* 从本次 CodeAction 结果借用指定标题的动作，调用方负责统一释放动作数组。 */
 static SZrLspCodeAction *property_refactor_find_action(
         SZrArray *actions,
         const TZrChar *title) {
@@ -18,6 +19,7 @@ static SZrLspCodeAction *property_refactor_find_action(
     return ZR_NULL;
 }
 
+/* ASCII 夹具的编辑范围投影为字节偏移，供下方在测试内重放单个修改。 */
 static TZrSize property_refactor_position_offset(
         const TZrChar *content,
         SZrLspPosition position) {
@@ -30,11 +32,14 @@ static TZrSize property_refactor_position_offset(
             line++;
         }
     }
+    /* TODO: LSP character 按 UTF-16，而此处直接加到字节偏移；若 fixture
+     * 引入非 ASCII，需用同版文档内容换算后再重放编辑。 */
     return offset + (position.character > 0
                              ? (TZrSize)position.character
                              : 0U);
 }
 
+/* 将唯一文本编辑重放到 ASCII 夹具，交由调用场景重新分析字段身份。 */
 static TZrChar *property_refactor_apply_single_edit(
         const TZrChar *content,
         const SZrLspCodeAction *action) {
@@ -82,6 +87,7 @@ static TZrChar *property_refactor_apply_single_edit(
     return updated;
 }
 
+/* 从更新后 analyzer 的符号表借用具名字段或属性，供身份对比；不可跨 context 释放。 */
 static SZrSymbol *property_refactor_find_symbol(
         SZrSemanticAnalyzer *analyzer,
         EZrSymbolType type,
@@ -114,6 +120,7 @@ static SZrSymbol *property_refactor_find_symbol(
     return ZR_NULL;
 }
 
+/* 以规范 PropertyQuery 生成缺失访问器和 backing field，再重放编辑核对独立 SymbolId。 */
 static void test_lsp_property_refactor_uses_canonical_query(
         SZrState *state) {
     const TZrChar *summary =
@@ -263,6 +270,7 @@ cleanup:
     }
 }
 
+/* 模糊接口要求、ref 返回及不完整文档均不得生成会改写存储的危险动作。 */
 static void test_lsp_property_refactor_rejects_ambiguous_and_ref_contracts(
         SZrState *state) {
     const TZrChar *summary =

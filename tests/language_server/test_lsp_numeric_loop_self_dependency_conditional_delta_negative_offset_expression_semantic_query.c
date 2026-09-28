@@ -5,6 +5,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 此矩阵让偏移及其符号翻转经过交换加法、嵌套减法和变量绑定，再交换
+ * 循环增量方向；查询退出后的 target 与中途读取者，检验边界和保护分支。 */
 static TZrBool test_local_expression_query_keeps_commuted_zero_minus_positive_offset_conditional_positive_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -757,6 +759,7 @@ static TZrBool test_local_expression_query_keeps_positive_delta_subtract_negativ
     return narrowedPassed && otherPassed && mirrorPassed;
 }
 
+/* 负绑定再被 zero 减去会转成正偏移，防止按表面减号选错范围方向。 */
 static TZrBool test_local_expression_query_keeps_subtract_zero_minus_negative_binding_offset_conditional_positive_delta_range(
         SZrState *state) {
     const TZrChar *content =
@@ -881,6 +884,7 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    /* TODO: && 串联变体时首个失败会跳过后续场景；完整矩阵诊断需逐例执行并汇总。 */
     passed =
             test_local_expression_query_keeps_commuted_zero_minus_positive_offset_conditional_positive_delta_range(
                     state) &&

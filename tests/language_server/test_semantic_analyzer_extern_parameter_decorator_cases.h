@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_SEMANTIC_ANALYZER_EXTERN_PARAMETER_DECORATOR_CASES_H
 #define ZR_VM_TEST_SEMANTIC_ANALYZER_EXTERN_PARAMETER_DECORATOR_CASES_H
 
+/** 共享形参装饰器断言要求 parser 查询事实、LSP 诊断和精确形参装饰器范围一致。 */
 static void assert_extern_parameter_decorator_golden_parity(
         SZrState *state,
         const TZrChar *summary,
@@ -92,6 +93,7 @@ static void assert_extern_parameter_decorator_golden_parity(
     TEST_PASS(timer, summary);
 }
 
+/** 以 extern delegate 的 utf8 charset 验证合法 FFI 形参装饰器不会产生非法装饰器诊断。 */
 static void test_semantic_analyzer_accepts_valid_extern_parameter_charset(
         SZrState *state) {
     const TZrChar *summary =
@@ -127,6 +129,7 @@ static void test_semantic_analyzer_accepts_valid_extern_parameter_charset(
     TEST_PASS(timer, summary);
 }
 
+/** 以普通函数的 trace 形参装饰器验证 extern 专用校验不会越过声明上下文。 */
 static void test_semantic_analyzer_ignores_non_extern_parameter_decorators(
         SZrState *state) {
     const TZrChar *summary =
@@ -162,6 +165,7 @@ static void test_semantic_analyzer_ignores_non_extern_parameter_decorators(
     TEST_PASS(timer, summary);
 }
 
+/** 以不支持的 utf32 charset 验证形参装饰器诊断完整投影。 */
 static void test_semantic_analyzer_preserves_invalid_extern_parameter_charset_golden_parity(
         SZrState *state) {
     const TZrChar *testCode =
@@ -179,6 +183,7 @@ static void test_semantic_analyzer_preserves_invalid_extern_parameter_charset_go
             44);
 }
 
+/** 以同时标记 in 与 out 的形参验证冲突方向在目标装饰器范围报错。 */
 static void test_semantic_analyzer_preserves_conflicting_extern_parameter_direction_golden_parity(
         SZrState *state) {
     const TZrChar *testCode =

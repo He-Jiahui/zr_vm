@@ -6,6 +6,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 按位取反包裹零减法计数时，内部精确零与非零叶都应传递到外层范围；
+ * 本目标用共享查询夹具隔离这条计数归约路径。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

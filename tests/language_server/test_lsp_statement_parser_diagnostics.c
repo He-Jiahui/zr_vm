@@ -1,6 +1,7 @@
 //
 // Focused LSP statement parser diagnostic regression tests.
 //
+// 此可执行测试从 LSP 更新文档入口检查控制流语句、导入与 using 错误的专属诊断。
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -98,6 +99,10 @@ static TZrBool diagnostic_array_contains_message(SZrArray *diagnostics, const TZ
     return ZR_FALSE;
 }
 
+/* 逐 URI 隔离语句错误，检查 parser 恢复后的诊断码与给用户的修复提示。
+ * TODO: code、问题文本与建议目前分别匹配数组成员；需要反例确认多条诊断不会掩盖错配。
+ * BUG: 所有出口只用 Array_Free 释放外层指针数组，未按 GetDiagnostics 契约释放原生诊断及附属数组。
+ */
 static TZrBool run_statement_diagnostic_case(SZrState *state,
                                              SZrTestTimer *timer,
                                              const TZrChar *summary,
@@ -557,6 +562,7 @@ static void test_lsp_missing_switch_body_close_parser_diagnostic(SZrState *state
     TEST_PASS(timer, summary);
 }
 
+/* CTest 入口共享同一 VM state 串行执行语句恢复样例，并以失败计数返回结果。 */
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global;

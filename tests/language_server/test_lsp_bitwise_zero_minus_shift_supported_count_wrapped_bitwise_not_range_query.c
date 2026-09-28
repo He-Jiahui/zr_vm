@@ -6,6 +6,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 在共享 zero-minus/shift 夹具上交叉覆盖计数的取反包裹、移位方向与
+ * 右侧零减法符号，防止复杂计数树使顶层位或的范围事实消失。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

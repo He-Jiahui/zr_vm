@@ -3,6 +3,7 @@
 
 #include "../../zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.h"
 
+/* 虚拟声明 URI 的 provider 身份必须随定义与引用查询保留，避免不同 provider 同名声明串线。 */
 static void test_lsp_native_virtual_documents_preserve_provider_scope(SZrState *state) {
     const TZrChar *summary = "LSP Native Virtual Documents Preserve Project And Generation";
     const TZrChar *content = "var provider = import(\"zr.pluginprobe\");\nreturn provider.answer();\n";
@@ -192,6 +193,7 @@ cleanup:
     }
 }
 
+/* URI 声称的 provider 未归当前上下文所有时拒绝解析，不能把外部身份误接到本地注册表。 */
 static void test_lsp_native_virtual_documents_reject_unowned_provider(SZrState *state) {
     const TZrChar *summary = "LSP Native Virtual Documents Reject Another Projects Unowned Provider";
     const TZrChar *content = "return 0;\n";

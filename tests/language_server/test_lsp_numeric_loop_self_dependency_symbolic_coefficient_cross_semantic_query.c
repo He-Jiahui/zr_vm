@@ -11,6 +11,9 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+/* 符号系数矩阵的浅层基线：步长乘以跨零因子或额外比例后，
+ * 循环自身读取和 observer 读取需结合正残差判断是否扩张。 */
+/* GlobalState_New 为该独立测试目标注册此堆回调，状态释放时仍会调用它。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -32,6 +35,8 @@ static TZrPtr test_allocator(TZrPtr userData,
     if (pointer == ZR_NULL) {
         return malloc(newSize);
     }
+    /* TODO: 地址和旧大小阈值无法证明分配归属；大块旧内存可能走新 malloc
+     * 而丢失内容。核对 VM 分配契约后统一处理。 */
     if ((TZrPtr)pointer >= (TZrPtr)0x1000 &&
         originalSize > 0 &&
         originalSize < 1024 * 1024 * 1024) {
@@ -40,6 +45,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* 调用方须使首次匹配加 offset 落在目标加法中；当前夹具仅含 ASCII。 */
 static TZrBool find_position_for_substring_offset(const TZrChar *content,
                                                   const TZrChar *needle,
                                                   TZrSize offset,
@@ -59,6 +65,7 @@ static TZrBool find_position_for_substring_offset(const TZrChar *content,
         return ZR_FALSE;
     }
 
+    /* TODO: 字节列不能直接服务非 ASCII 夹具，届时需改用 LSP UTF-16 列。 */
     while (cursor < match) {
         if (*cursor == '\n') {
             line++;
@@ -84,6 +91,8 @@ static TZrBool find_position_for_substring_offset(const TZrChar *content,
     return remainingOffset == 0;
 }
 
+/* 每次创建临时 LSP 文档并在 context 释放前核对快照范围，避免不同系数
+ * 用例共用状态而混淆 URI、分析缓存或事实生命周期。 */
 static TZrBool run_assignment_range_case_at(SZrState *state,
                                             const TZrChar *label,
                                             const TZrChar *uriText,
@@ -409,6 +418,7 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    /* TODO: && 串联变体时首个失败会跳过后续场景；完整矩阵诊断需逐例执行并汇总。 */
     passed =
         test_local_expression_query_widens_target_reading_symbolic_sign_crossing_coefficient_residual(
                 state) &&

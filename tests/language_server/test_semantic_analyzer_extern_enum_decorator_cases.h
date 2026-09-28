@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_SEMANTIC_ANALYZER_EXTERN_ENUM_DECORATOR_CASES_H
 #define ZR_VM_TEST_SEMANTIC_ANALYZER_EXTERN_ENUM_DECORATOR_CASES_H
 
+/** 共享 extern enum 断言把 parser 查询事实与 LSP 诊断逐字段配对，并要求错误落在指定装饰器范围。 */
 static void assert_extern_enum_decorator_golden_parity(
         SZrState *state,
         const TZrChar *summary,
@@ -95,6 +96,7 @@ static void assert_extern_enum_decorator_golden_parity(
     TEST_PASS(timer, summary);
 }
 
+/** 以无效 underlying 值验证 enum 声明级装饰器的诊断位置和规范投影。 */
 static void test_semantic_analyzer_preserves_invalid_extern_enum_decorator_golden_parity(
         SZrState *state) {
     const TZrChar *testCode =
@@ -113,6 +115,7 @@ static void test_semantic_analyzer_preserves_invalid_extern_enum_decorator_golde
             34);
 }
 
+/** 以无效 value 值验证枚举成员级装饰器也被 parser 校验并由 LSP 原样投影。 */
 static void test_semantic_analyzer_preserves_invalid_extern_enum_member_decorator_golden_parity(
         SZrState *state) {
     const TZrChar *testCode =

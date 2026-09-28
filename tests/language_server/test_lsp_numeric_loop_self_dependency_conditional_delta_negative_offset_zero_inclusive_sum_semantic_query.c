@@ -5,6 +5,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 两个零可达/负区间求和后嵌入双重减法，比较正负增量对三点范围的
+ * 传播，防止零边界被当成严格负数。 */
 static TZrBool run_zero_inclusive_sum_query_case(
         SZrState *state,
         const char *label,
@@ -127,6 +129,7 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    /* TODO: && 串联变体时首个失败会跳过后续场景；完整矩阵诊断需逐例执行并汇总。 */
     passed = run_zero_inclusive_sum_query_case(
                      state,
                      "while self-dependent target-reading subtract zero-minus zero-inclusive negative sum offset conditional positive delta",

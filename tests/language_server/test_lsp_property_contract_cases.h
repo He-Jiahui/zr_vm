@@ -3,6 +3,7 @@
 
 #include "semantic/lsp_property_contract.h"
 
+/* 统计同名补全项以约束属性只有一个公开候选；隐藏 accessor 不能额外暴露。 */
 static TZrSize property_contract_completion_count(
         SZrArray *completions,
         const TZrChar *label) {
@@ -22,6 +23,7 @@ static TZrSize property_contract_completion_count(
     return count;
 }
 
+/* 仅识别属性契约引出的重构动作，供源模块与二进制模块案例共用断言。 */
 static TZrBool property_contract_has_refactor_action(SZrArray *actions) {
     static const TZrChar *titles[] = {
         "Implement required set accessor",
@@ -49,6 +51,7 @@ static TZrBool property_contract_has_refactor_action(SZrArray *actions) {
     return ZR_FALSE;
 }
 
+/* setter 参数必须保留语义符号和类型身份，不能在属性投影时生成临时替代符号。 */
 static TZrBool property_contract_has_parameter_identity(
         SZrSemanticAnalyzer *analyzer,
         const TZrChar *name,
@@ -88,6 +91,7 @@ static TZrBool property_contract_has_parameter_identity(
     return ZR_FALSE;
 }
 
+/* 属性的 hover、completion、definition 与重构应引用同一 canonical property 契约，而非各自产生不一致身份。 */
 static void test_lsp_unified_property_uses_one_canonical_contract(
         SZrState *state) {
     const TZrChar *summary =
@@ -362,6 +366,8 @@ cleanup:
     } else {
         TEST_PASS(timer, summary);
     }
+    /* BUG: hover 对象及 contents 数组、completion/definition 的原生项未按接口契约释放；
+     * 正例会产生这些结果，下面两个结果数组只释放外层容器，因而每轮测试泄漏原生分配。 */
     ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
     ZrCore_Array_Free(state, &definitions);
     ZrCore_Array_Free(state, &completions);
@@ -371,6 +377,7 @@ cleanup:
     }
 }
 
+/* 二进制导入的属性仍应遵守源模块的 canonical 声明身份；跨模块投影不得改变可见的 getter/setter 契约。 */
 static void test_lsp_binary_property_preserves_canonical_contract(
         SZrState *state) {
     const TZrChar *summary =
@@ -677,6 +684,8 @@ cleanup:
     } else {
         TEST_PASS(timer, summary);
     }
+    /* BUG: 此处只释放 completion/definition 外层数组且未释放 hover 对象；
+     * shared 属性正例生成这些原生结果，需先逐项回收并归还 hover.contents。 */
     ZrCore_Array_Free(state, &completions);
     ZrCore_Array_Free(state, &definitions);
     ZrLanguageServer_Lsp_FreeCodeActions(state, &codeActions);

@@ -5,6 +5,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 固定双层减法偏移，只让 main 切换循环增量符号；三点查询分别核对
+ * target、observer、mirror 在各自读取时点应保留或扩张的范围。 */
 static TZrBool run_zero_inclusive_subtractive_query_case(
         SZrState *state,
         const char *label,
@@ -124,6 +126,7 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    /* TODO: && 串联变体时首个失败会跳过后续场景；完整矩阵诊断需逐例执行并汇总。 */
     passed = run_zero_inclusive_subtractive_query_case(
                      state,
                      "while self-dependent target-reading subtract zero-minus zero-inclusive subtractive negative offset conditional positive delta",

@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_SIGNATURE_SNAPSHOT_FACT_CASES_H
 #define ZR_VM_TEST_LSP_SIGNATURE_SNAPSHOT_FACT_CASES_H
 
+/* 撤掉参数表达式的节点锚后查询签名，确保只消费既有快照而不补建事实。 */
 static void test_signature_does_not_materialize_missing_snapshot_facts(
         SZrState *state) {
     const TZrChar *summary =
@@ -58,6 +59,7 @@ static void test_signature_does_not_materialize_missing_snapshot_facts(
 
     factCountBefore = analyzer->semanticContext->expressionFacts.length;
     savedFactNode = expressionFact->node;
+    /* 查询前后比较事实数量，并在任何结果判断前恢复临时借出的节点。 */
     expressionFact->node = ZR_NULL;
     requestSucceeded = ZrLanguageServer_Lsp_GetSignatureHelp(
             state, context, uri, position, &help);

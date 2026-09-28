@@ -1,6 +1,7 @@
 //
 // Focused LSP parser diagnostic regression tests.
 //
+// 此可执行测试覆盖表达式、字面量、条件与分号错误经增量文档入口到 LSP 诊断的回归路径。
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -103,6 +104,10 @@ static TZrBool diagnostic_array_contains_message(SZrArray *diagnostics, const TZ
     return ZR_FALSE;
 }
 
+/* 每个错误用独立 URI/文档版本触发解析，确保样例只评估当前语法错误的发布结果。
+ * TODO: code、问题文本与建议分开搜索整个数组，需验证多个同时诊断不会让错配字段组合为假通过。
+ * BUG: 此 helper 所有出口均只释放 GetDiagnostics 外层指针数组，未用 FreeDiagnostics 回收原生诊断及附属数组。
+ */
 static TZrBool run_parser_diagnostic_case(SZrState *state,
                                           SZrTestTimer *timer,
                                           const TZrChar *summary,
@@ -864,6 +869,7 @@ static void test_lsp_missing_statement_semicolon_parser_diagnostics(SZrState *st
     TEST_PASS(timer, summary);
 }
 
+/* CTest 入口集中运行各语法族；失败计数使单个样例退化可见于测试进程状态。 */
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global;

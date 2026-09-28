@@ -1,3 +1,4 @@
+/* 手工构造同偏移的来源位置，专门隔离诊断去重的 source 身份判定，不依赖 parser 建树。 */
 static SZrFileRange diagnostic_replacement_range(
         SZrState *state,
         TZrSize startOffset,
@@ -18,6 +19,7 @@ static SZrFileRange diagnostic_replacement_range(
     return range;
 }
 
+/* 同源、同码、同位置的旧规则诊断应由语义事实的规范描述取代，保留 cause、suggestion、related 信息。 */
 static void test_semantic_query_replaces_stale_duplicate_diagnostic(
         SZrState *state) {
     const TZrChar *summary =
@@ -148,6 +150,7 @@ static void test_semantic_query_replaces_stale_duplicate_diagnostic(
     TEST_PASS(timer, summary);
 }
 
+/* 即使偏移和错误码相同，来源不同的诊断仍是两件事；去重不能误删另一文件的结果。 */
 static void test_semantic_query_preserves_distinct_source_diagnostic(
         SZrState *state) {
     const TZrChar *summary =
@@ -253,6 +256,7 @@ static void test_semantic_query_preserves_distinct_source_diagnostic(
     TEST_PASS(timer, summary);
 }
 
+/* 旧分析器报告多份同源重复项时，规范事实只应投影出一份诊断；防止 LSP 客户端显示重复错误。 */
 static void test_semantic_query_collapses_duplicate_stale_diagnostics(
         SZrState *state) {
     const TZrChar *summary =

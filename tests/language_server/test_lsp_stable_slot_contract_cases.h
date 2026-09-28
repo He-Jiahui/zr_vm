@@ -3,6 +3,7 @@
 
 #include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_stable_slot_contract.h"
 
+/* 仅靠协议位与成员角色识别池句柄/读写引用，不让重命名改变能力分类。 */
 static void test_lsp_stable_slot_contract_classification_is_name_independent(
         SZrState *state) {
     const TZrChar *summary =
@@ -72,6 +73,7 @@ cleanup:
     }
 }
 
+/* 通过公开补全与 hover 校验借用视图、弱句柄和稳定槽 guard 的编辑器提示。 */
 static void test_lsp_pooling_hover_completion_and_projection_expose_guard_contract(
         SZrState *state) {
     static const TZrChar *content =
@@ -136,6 +138,8 @@ static void test_lsp_pooling_hover_completion_and_projection_expose_guard_contra
     success = ZR_TRUE;
 
 cleanup:
+    /* BUG: GetCompletion 的原生项和四个 GetHover 的外壳/contents 均需
+     * 逐项归还；Array_Free 只释放指针缓冲区，正常场景也会泄漏。 */
     ZrCore_Array_Free(state, &completions);
     if (context != ZR_NULL) {
         ZrLanguageServer_LspContext_Free(state, context);

@@ -8,6 +8,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 私有按位取反掩码对受支持移位计数的影响跨三个用例源文件展开；
+ * 本入口持有唯一 VM state，并汇总基础、对应叶和深层嵌套查询。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

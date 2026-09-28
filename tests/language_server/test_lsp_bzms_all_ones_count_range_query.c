@@ -6,6 +6,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 全一掩码应保持受支持移位计数的范围；左右移及右侧零减法的两种符号
+ * 复用共享夹具，查询目标始终是返回表达式最外层的位或。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

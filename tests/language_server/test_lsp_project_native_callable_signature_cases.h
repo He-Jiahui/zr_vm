@@ -3,6 +3,7 @@
 
 #include "zr_vm_parser/semantic_query.h"
 
+/* 从首个签名参数读取标签，供跨 query/hover/signature 的契约比较；返回值依赖 help 的生命周期。 */
 static const TZrChar *native_callable_parameter_label(
         SZrLspSignatureHelp *help,
         TZrSize index) {
@@ -26,6 +27,7 @@ static const TZrChar *native_callable_parameter_label(
                : ZR_NULL;
 }
 
+/* 从首个签名参数读取描述，验证结构化 descriptor 的参数文档没有在签名投影中丢失。 */
 static const TZrChar *native_callable_parameter_documentation(
         SZrLspSignatureHelp *help,
         TZrSize index) {
@@ -49,6 +51,9 @@ static const TZrChar *native_callable_parameter_documentation(
                : ZR_NULL;
 }
 
+/* 同一 descriptor 成员在语义查询、hover 和签名帮助中必须共享规范身份与结构化参数；
+ * provider 重新加载后再次比较，且缺失描述符时不得猜测签名。
+ * BUG: 查询得到非空普通 hover，API 独立分配对象；本用例退出前未回收这些结果对象，重复运行会泄漏。 */
 static void test_lsp_descriptor_plugin_callable_query_hover_and_signature_share_contract(
         SZrState *state) {
     static const TZrChar *mainContent =
@@ -279,6 +284,8 @@ cleanup:
     }
 }
 
+/* 将原生描述符函数保存为局部 callable 后验证 parser call fact 驱动 hover/签名；
+ * 故意移除该事实时，查询不得按描述符名称重建一个看似有效的外部声明。 */
 static void test_lsp_descriptor_plugin_callable_value_requires_canonical_identity(
         SZrState *state) {
     static const TZrChar *mainContent =

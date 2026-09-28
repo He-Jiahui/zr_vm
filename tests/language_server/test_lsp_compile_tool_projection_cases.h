@@ -4,6 +4,7 @@
 #include "../../zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/module/lsp_compile_tool_projection.h"
 
+/* 在投影描述符中借用指定类型，供下方与 parser 规范契约比对。 */
 static const ZrLibTypeDescriptor *lsp_compile_tool_find_type(
         const ZrLibModuleDescriptor *module,
         const TZrChar *name) {
@@ -16,6 +17,7 @@ static const ZrLibTypeDescriptor *lsp_compile_tool_find_type(
     return ZR_NULL;
 }
 
+/* 只比较编译期公开字段的名称与规范类型，不依赖虚拟文档格式。 */
 static TZrBool lsp_compile_tool_has_field(
         const ZrLibTypeDescriptor *type,
         const TZrChar *name,
@@ -31,6 +33,7 @@ static TZrBool lsp_compile_tool_has_field(
     return ZR_FALSE;
 }
 
+/* parser CompileTool 契约、LSP 投影和虚拟声明页须保持同一身份与公开类型。 */
 static void test_lsp_compile_tool_projection_uses_canonical_contract(
         SZrState *state) {
     SZrTestTimer timer;

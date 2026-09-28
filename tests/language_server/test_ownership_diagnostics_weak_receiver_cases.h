@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TESTS_LANGUAGE_SERVER_OWNERSHIP_DIAGNOSTICS_WEAK_RECEIVER_CASES_H
 #define ZR_VM_TESTS_LANGUAGE_SERVER_OWNERSHIP_DIAGNOSTICS_WEAK_RECEIVER_CASES_H
 
+/* 直接 weak 成员调用通过 receiver guard 而非普通 weak 使用诊断保护；案例只统计该组合。 */
 static TZrSize count_direct_weak_receiver_guards(
         const SZrSemanticContext *context) {
     TZrSize count = 0;
@@ -23,6 +24,7 @@ static TZrSize count_direct_weak_receiver_guards(
     return count;
 }
 
+/* 同一 weak 接收者在 owner 释放前后都应留下 guard 事实，且不要求显式 wake。 */
 static void test_semantic_analyzer_guards_direct_weak_receiver_after_owner_release(
         SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Guards Direct Weak Receiver After Owner Release";
@@ -86,6 +88,7 @@ static void test_semantic_analyzer_guards_direct_weak_receiver_after_owner_relea
     TEST_PASS(timer, summary);
 }
 
+/* 条件重绑定并释放候选 owner 后，成员调用仍由直接 guard 表示，不误报普通 wake 诊断。 */
 static void test_semantic_analyzer_guards_rebound_direct_weak_receiver(
         SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Guards Rebound Direct Weak Receiver";

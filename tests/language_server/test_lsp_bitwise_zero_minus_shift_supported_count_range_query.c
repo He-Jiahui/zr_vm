@@ -6,6 +6,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 这层局部包装保留大矩阵的统一调用形状，实际源码生成和 LSP 查询由
+ * ZrVmTest_LspRunBitwiseZeroMinusShiftSupportedCountRangeQuery 负责。 */
 static TZrBool run_shift_supported_count_range_query(SZrState *state,
                                                      const TZrChar *caseName,
                                                      const TZrChar *expression,
@@ -19,6 +21,8 @@ static TZrBool run_shift_supported_count_range_query(SZrState *state,
             expectedMax);
 }
 
+/* CMake 独立运行移位计数矩阵：由算术恒等、位掩码与重复标识符推导的
+ * 受支持计数应在顶层位或查询中保持 [2,3] 或 [-3,-2] 的范围。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

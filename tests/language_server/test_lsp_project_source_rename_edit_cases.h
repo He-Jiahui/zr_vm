@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_PROJECT_SOURCE_RENAME_EDIT_CASES_H
 #define ZR_VM_TEST_LSP_PROJECT_SOURCE_RENAME_EDIT_CASES_H
 
+/* 收集重命名计划后清理独立分配的 Location；调用方随后可重新收集计划比较快照版本。 */
 static void test_free_source_rename_locations(SZrState *state,
                                               SZrArray *locations) {
     if (state == ZR_NULL || locations == ZR_NULL || !locations->isValid) {
@@ -18,6 +19,7 @@ static void test_free_source_rename_locations(SZrState *state,
     ZrCore_Array_Free(state, locations);
 }
 
+/* 释放计划所持的文档快照内容，避免第二次收集时误用前一轮打开/未打开文档状态。 */
 static void test_free_source_rename_document_snapshots(
         SZrState *state,
         SZrArray *documentSnapshots) {
@@ -27,6 +29,8 @@ static void test_free_source_rename_document_snapshots(
     }
 }
 
+/* 模拟 willRenameFiles：规范 AST 导入绑定应给声明、已打开和未打开文件各生成一次编辑；
+ * 快照内容或版本变化必须使旧计划失效，同 URI 请求不得产生工作区编辑。 */
 static void test_lsp_source_rename_collects_canonical_workspace_edits(
         SZrState *state) {
     static const TZrChar *projectContent =

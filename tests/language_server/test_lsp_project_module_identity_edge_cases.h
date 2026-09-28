@@ -3,6 +3,7 @@
 
 #include "zr_vm_parser/canonical_type.h"
 
+/* 在导入者局部表达式位置验证 parser 的规范类型 ID，供模块改名和 provider 代际矩阵共同检查缓存事实。 */
 static TZrBool module_identity_has_canonical_primitive(
         SZrLspContext *context,
         SZrSemanticAnalyzer *analyzer,
@@ -23,6 +24,9 @@ static TZrBool module_identity_has_canonical_primitive(
            type->data.primitive.valueType == expectedType;
 }
 
+/* 模块文件改名并切换显式 module 名时，旧身份的导入者与新身份的导入者都必须恰好重新分析一次；
+ * 新边还要发布新的规范类型，旧边不能保留陈旧事实。
+ * BUG: 查询得到非空普通 hover，API 独立分配对象；本用例退出前未回收这些结果对象，重复运行会泄漏。 */
 static void test_lsp_source_module_identity_change_refreshes_old_and_new_importers(
         SZrState *state) {
     static const TZrChar *projectContent =

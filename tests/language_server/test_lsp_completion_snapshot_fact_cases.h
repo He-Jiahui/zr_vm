@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_COMPLETION_SNAPSHOT_FACT_CASES_H
 #define ZR_VM_TEST_LSP_COMPLETION_SNAPSHOT_FACT_CASES_H
 
+/* 从已发布的声明事实取得测试目标，避免通过补全接口准备被测快照。返回节点由 analyzer 持有。 */
 static SZrAstNode *completion_snapshot_declaration_for_name(
         SZrSemanticAnalyzer *analyzer,
         const TZrChar *name) {
@@ -28,6 +29,7 @@ static SZrAstNode *completion_snapshot_declaration_for_name(
     return ZR_NULL;
 }
 
+/* completion 只消费已提交的 snapshot 事实，不能因补全请求反向补造缺失的声明事实。 */
 static void test_completion_does_not_materialize_missing_snapshot_facts(
         SZrState *state) {
     const TZrChar *summary =
@@ -86,6 +88,7 @@ static void test_completion_does_not_materialize_missing_snapshot_facts(
         return;
     }
 
+    /* 暂时令已存在的初始化表达式事实不可定位，观察补全是否擅自重建事实；请求后立即恢复共享快照。 */
     factCountBefore = analyzer->semanticContext->expressionFacts.length;
     savedFactNode = expressionFact->node;
     expressionFact->node = ZR_NULL;
@@ -96,6 +99,8 @@ static void test_completion_does_not_materialize_missing_snapshot_facts(
     expressionFact->node = savedFactNode;
     sumItem = completion_item_find_by_label(&completions, "sum");
 
+    /* BUG: GetCompletion 的原生候选项由 RawMalloc 分配；下面两条退出路径只释放外层数组，
+     * 成功找到 sumItem 时必泄漏候选项。须逐项 RawFree 后再释放容器。 */
     if (!requestSucceeded || sumItem == ZR_NULL || factCountAfter != factCountBefore) {
         snprintf(reason,
                  sizeof(reason),

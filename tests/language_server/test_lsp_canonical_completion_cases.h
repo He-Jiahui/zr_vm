@@ -3,6 +3,7 @@
 
 #include "zr_vm_parser/semantic_display.h"
 
+/* 从本次补全结果借用目标项；结果只在 completions 逐项释放前有效。 */
 static SZrCompletionItem *canonical_completion_find_label(
         SZrArray *items,
         const TZrChar *expectedLabel) {
@@ -23,6 +24,7 @@ static SZrCompletionItem *canonical_completion_find_label(
     return ZR_NULL;
 }
 
+/* 人为移开旧 symbolTable/AST 后仍查询补全，证明名称与文档来自规范可见符号事实。 */
 static void test_canonical_visible_symbol_completion_survives_symbol_table_detachment(
         SZrState *state) {
     static const TZrChar *content =
@@ -76,6 +78,7 @@ static void test_canonical_visible_symbol_completion_survives_symbol_table_detac
                 "Completion analyzer did not expose a semantic snapshot");
         goto cleanup;
     }
+    /* 只在此查询窗口断开旧表；cleanup 必须先恢复所有借出的分析器状态。 */
     detachedSymbolTable = analyzer->symbolTable;
     ZrCore_Array_Construct(&visibleSymbols);
     if (!ZrParser_SemanticQuery_VisibleSymbols(

@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_SOURCE_CONTRACT_NO_LOCAL_DIAGNOSTIC_API_CASES_H
 #define ZR_VM_TEST_LSP_SOURCE_CONTRACT_NO_LOCAL_DIAGNOSTIC_API_CASES_H
 
+/* analyzer 的非结构化诊断出口应被封闭，规则只能交给 parser 查询投影。 */
 static void test_semantic_analyzer_has_no_unstructured_diagnostic_escape_hatch(void) {
     char *header = read_repo_text_file_owned(
             "zr_vm_language_server/include/zr_vm_language_server/semantic_analyzer.h");
@@ -47,6 +48,7 @@ static void test_semantic_analyzer_has_no_unstructured_diagnostic_escape_hatch(v
     free(typecheckSource);
 }
 
+/* 逐个规则源排除临时诊断构造，保留查询物化到协议对象的唯一通道。 */
 static void test_semantic_analyzer_rules_only_publish_structured_query_diagnostics(void) {
     static const char *ruleSourcePaths[] = {
             "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_analysis.c",

@@ -4,6 +4,9 @@
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/semantic_query.h"
 
+/* 内建容器方法的外部成员身份必须与 parser 的闭合 callable 类型合并，
+ * 使查询、hover 和签名帮助对实例接收者展示相同的参数契约。
+ * BUG: 查询得到非空普通 hover，API 独立分配对象；本用例退出前未回收这些结果对象，重复运行会泄漏。 */
 static void test_lsp_native_receiver_callable_query_hover_and_signature_share_closed_contract(
         SZrState *state) {
     static const TZrChar *content =
@@ -175,6 +178,9 @@ cleanup:
     }
 }
 
+/* 在 descriptor provider 更新前后比较实例方法及泛型方法的规范类型与帮助信息；
+ * 约束尚无规范展示契约或描述符不完整时，拒绝从名称推断签名。
+ * BUG: 查询得到非空普通 hover，API 独立分配对象；本用例退出前未回收这些结果对象，重复运行会泄漏。 */
 static void test_lsp_descriptor_plugin_receiver_callable_tracks_provider_generation(
         SZrState *state) {
     static const TZrChar *content =

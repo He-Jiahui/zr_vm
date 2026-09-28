@@ -6,6 +6,8 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
 
+/* 此参数化夹具对零可达与严格负偏移的加法表达式做同一三点查询；
+ * main 更换前缀与增量，以观察循环保护边界的方向性。 */
 static TZrBool run_zero_inclusive_negative_additive_offset_query_case(
         SZrState *state,
         const char *label,
@@ -132,6 +134,7 @@ int main(void) {
     state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
 
+    /* TODO: && 串联变体时首个失败会跳过后续场景；完整矩阵诊断需逐例执行并汇总。 */
     passed = run_zero_inclusive_negative_additive_offset_query_case(
                      state,
                      "while self-dependent target-reading add zero-inclusive negative offset conditional positive delta",

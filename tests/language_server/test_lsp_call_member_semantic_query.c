@@ -10,6 +10,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+/* 为本目标的 VM 全局状态提供测试分配回调，跟随 main 创建和销毁。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -39,6 +40,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* 在 ASCII 源码片段中选择指定出现次序的查询点，供局部表达式及签名用例定位请求。 */
 static TZrBool find_position_for_substring(const TZrChar *content,
                                            const TZrChar *needle,
                                            TZrSize occurrence,
@@ -77,10 +79,12 @@ static TZrBool find_position_for_substring(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* 把查询返回的可选 VM 字符串作为借用文本比较，所有权仍留在上下文。 */
 static const TZrChar *string_text(SZrString *value) {
     return value != ZR_NULL ? ZrCore_String_GetNativeString(value) : ZR_NULL;
 }
 
+/* 只取首个候选签名的标签，测试调用目标在不完整编辑后是否仍可呈现。 */
 static const TZrChar *signature_help_first_label(SZrLspSignatureHelp *help) {
     SZrLspSignatureInformation **signaturePtr;
 
@@ -98,11 +102,13 @@ static const TZrChar *signature_help_first_label(SZrLspSignatureHelp *help) {
     return string_text((*signaturePtr)->label);
 }
 
+/* 复用首签名标签断言调用名称、参数及返回类型均可见。 */
 static TZrBool signature_help_contains_text(SZrLspSignatureHelp *help, const TZrChar *needle) {
     const TZrChar *label = signature_help_first_label(help);
     return label != ZR_NULL && needle != ZR_NULL && strstr(label, needle) != ZR_NULL;
 }
 
+/* 校验 parser 快照对普通调用发布目标、实参计数与返回类型事实。 */
 static TZrBool test_local_expression_query_returns_call_target_payload(SZrState *state) {
     const TZrChar *uriText = "file:///local_call_expression_payload.zr";
     const TZrChar *content =
@@ -174,6 +180,7 @@ static TZrBool test_local_expression_query_returns_call_target_payload(SZrState 
     return passed;
 }
 
+/* 在新版本尾部语法未闭合时核查已解析调用的 last-good 快照事实仍可查询。 */
 static TZrBool test_local_expression_query_preserves_call_payload_after_incomplete_edit(SZrState *state) {
     const TZrChar *uriText = "file:///local_call_payload_incomplete_edit.zr";
     const TZrChar *validContent =
@@ -211,6 +218,7 @@ static TZrBool test_local_expression_query_preserves_call_payload_after_incomple
         return ZR_FALSE;
     }
 
+    /* 保留前一版本的完整调用，同时让新版本尾部缺闭合以检验 last-good 查询。 */
     if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, brokenContent, strlen(brokenContent), 2)) {
         ZrLanguageServer_LspContext_Free(state, context);
         printf("FAIL: unable to apply incomplete edit to call payload fixture\n");
@@ -252,6 +260,7 @@ static TZrBool test_local_expression_query_preserves_call_payload_after_incomple
     return passed;
 }
 
+/* 通过公开签名帮助验证不完整编辑没有抹去已发布的调用事实。 */
 static TZrBool test_signature_help_preserves_call_payload_after_incomplete_edit(SZrState *state) {
     const TZrChar *uriText = "file:///signature_payload_incomplete_edit.zr";
     const TZrChar *validContent =
@@ -316,6 +325,7 @@ static TZrBool test_signature_help_preserves_call_payload_after_incomplete_edit(
     return passed;
 }
 
+/* 校验成员访问事实保留成员名和范围，且不会被误标为函数调用。 */
 static TZrBool test_local_expression_query_returns_member_payload(SZrState *state) {
     const TZrChar *uriText = "file:///local_member_expression_payload.zr";
     const TZrChar *content =
@@ -380,6 +390,7 @@ static TZrBool test_local_expression_query_returns_member_payload(SZrState *stat
     return passed;
 }
 
+/* 建立 VM 测试状态并按依赖顺序运行调用、编辑恢复、签名及成员用例；前案失败时跳过后案。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

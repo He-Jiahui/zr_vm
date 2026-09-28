@@ -7,8 +7,10 @@
 
 #include "zr_vm_language_server.h"
 
+/* 各独立位置用例累积失败数，供 main 的 CTest 退出码使用。 */
 static int g_failures = 0;
 
+/* 从 LSP UTF-16 行列回到 parser 字节偏移时，同时核对内部 1 基行列。 */
 static void check_file_position(const TZrChar *summary,
                                 const TZrChar *content,
                                 TZrSize contentLength,
@@ -44,6 +46,7 @@ static void check_file_position(const TZrChar *summary,
     printf("PASS: %s\n", summary);
 }
 
+/* 从源码字节边界返回 LSP 位置，验证反向转换不吞掉换行。 */
 static void check_lsp_position_from_offset(const TZrChar *summary,
                                            const TZrChar *content,
                                            TZrSize contentLength,
@@ -71,6 +74,7 @@ static void check_lsp_position_from_offset(const TZrChar *summary,
     printf("PASS: %s\n", summary);
 }
 
+/* 固定种子生成可复现序列，失败时可用相同字节流重新定位。 */
 static TZrUInt32 fuzz_next(TZrUInt32 *state) {
     TZrUInt32 value = *state;
 
@@ -81,6 +85,7 @@ static TZrUInt32 fuzz_next(TZrUInt32 *state) {
     return value;
 }
 
+/* 仅为 choose_valid_codepoint 的合法标量编码；调用方预留四字节空间。 */
 static TZrSize append_utf8_codepoint(TZrChar *buffer, TZrSize offset, TZrUInt32 codepoint) {
     if (codepoint <= 0x7Fu) {
         buffer[offset++] = (TZrChar)codepoint;
@@ -101,6 +106,7 @@ static TZrSize append_utf8_codepoint(TZrChar *buffer, TZrSize offset, TZrUInt32 
     return offset;
 }
 
+/* 混合 ASCII、换行、BMP 与非 BMP 字符，让编码边界在固定样本中都出现。 */
 static TZrUInt32 choose_valid_codepoint(TZrUInt32 *state) {
     TZrUInt32 value = fuzz_next(state);
 
@@ -120,6 +126,7 @@ static TZrUInt32 choose_valid_codepoint(TZrUInt32 *state) {
     }
 }
 
+/* 非法双字节前导之后的 LF 仍应成为下一行起点，正反方向都要保留。 */
 static void test_malformed_utf8_lead_byte_does_not_swallow_newline(void) {
     const TZrChar content[] = {
         'a',
@@ -146,6 +153,7 @@ static void test_malformed_utf8_lead_byte_does_not_swallow_newline(void) {
                                    0);
 }
 
+/* 截断四字节序列之后的 LF 不能被错误当作续字节吞掉。 */
 static void test_truncated_four_byte_sequence_does_not_swallow_newline(void) {
     const TZrChar content[] = {
         'x',
@@ -173,6 +181,7 @@ static void test_truncated_four_byte_sequence_does_not_swallow_newline(void) {
                                    0);
 }
 
+/* 只在完整码点边界要求 offset 往返恒等；UTF-16 代理对内部不是源码字节边界。 */
 static void test_deterministic_valid_utf8_roundtrip_fuzz(void) {
     TZrUInt32 seed = 0x5EED1234u;
     TZrChar content[512];
@@ -221,6 +230,7 @@ static void test_deterministic_valid_utf8_roundtrip_fuzz(void) {
     printf("PASS: Deterministic valid UTF-8 fuzz roundtrip\n");
 }
 
+/* 独立 CTest 目标先覆盖畸形序列，再覆盖固定有效 UTF-8 序列的所有边界。 */
 int main(void) {
     printf("==========\n");
     printf("Language Server - LSP Position Fuzz Tests\n");

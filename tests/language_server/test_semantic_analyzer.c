@@ -23,15 +23,16 @@
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_system/module.h"
 
-// 测试时间测量结构
+/** 仅记录单个场景的 clock() 起止值用于日志；耗时不参与通过条件。 */
 typedef struct {
     clock_t startTime;
     clock_t endTime;
 } SZrTestTimer;
 
+/** TEST_FAIL 写入，main 最终将累计值折算为 CTest 退出状态。 */
 static int test_failures = 0;
 
-// 测试日志宏
+/** 每个测试函数自带 timer；这些局部宏统一日志和失败计数。 */
 #define TEST_START(summary) do { \
     timer.startTime = clock(); \
     printf("Unit Test - %s\n", summary); \
@@ -68,7 +69,7 @@ static int test_failures = 0;
     fflush(stdout); \
 } while(0)
 
-// 简单的测试分配器
+/** 测试进程的全局状态通过此回调获得堆内存；它只服务本测试的单线程短生命周期，旧尺寸由核心分配器传入。 */
 static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(flag);
@@ -101,6 +102,7 @@ static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSi
     }
 }
 
+/** 测试按名称检查共享语义上下文中的重载集合，避免只凭 LSP 符号表存在就误判重载索引已建立。 */
 static const SZrSemanticOverloadSetRecord *find_overload_set_record(SZrSemanticContext *context,
                                                                   const char *name) {
     TZrSize i;
@@ -123,6 +125,7 @@ static const SZrSemanticOverloadSetRecord *find_overload_set_record(SZrSemanticC
     return ZR_NULL;
 }
 
+/** 测试从编译器类型原型图取成员元数据，用于验证泛型拥有者与成员签名在 LSP 分析后仍能关联。 */
 static const SZrTypeMemberInfo *find_type_prototype_member(const SZrSemanticAnalyzer *analyzer,
                                                            const char *ownerName,
                                                            const char *memberName) {
@@ -156,6 +159,7 @@ static const SZrTypeMemberInfo *find_type_prototype_member(const SZrSemanticAnal
     return ZR_NULL;
 }
 
+/** 测试根据规范化 SymbolId 反查确定性清理计划，确认资源清理归属实际绑定而非同名文本。 */
 static TZrBool cleanup_plan_targets_symbol(const SZrSemanticContext *context,
                                           TZrSymbolId symbolId) {
     TZrSize i;
@@ -175,6 +179,7 @@ static TZrBool cleanup_plan_targets_symbol(const SZrSemanticContext *context,
     return ZR_FALSE;
 }
 
+/** 测试跨所有已保存作用域查找指定种类的符号，用于核对离开词法作用域后仍保留的导航元数据；结果借用符号表。 */
 static SZrSymbol *lookup_symbol_any_scope_by_type(SZrState *state,
                                                   SZrSymbolTable *table,
                                                   SZrString *name,
@@ -205,6 +210,7 @@ static SZrSymbol *lookup_symbol_any_scope_by_type(SZrState *state,
     return ZR_NULL;
 }
 
+/** 测试只关心某类诊断是否出现时遍历分析器结果；调用前需完成分析，空诊断或空 code 均视为未命中。 */
 static TZrBool has_diagnostic_code(SZrSemanticAnalyzer *analyzer, const char *code) {
     TZrSize i;
 
@@ -226,6 +232,7 @@ static TZrBool has_diagnostic_code(SZrSemanticAnalyzer *analyzer, const char *co
     return ZR_FALSE;
 }
 
+/** 测试读取 hover 的借用文本视图；返回值依赖 hover 及其内容对象继续存活。 */
 static const char *hover_contents_string(SZrHoverInfo *info) {
     if (info == ZR_NULL || info->contents == ZR_NULL) {
         return ZR_NULL;
@@ -234,6 +241,8 @@ static const char *hover_contents_string(SZrHoverInfo *info) {
     return ZrCore_String_GetNativeString(info->contents);
 }
 
+// TODO: 当前找不到第 N 次子串时仍返回源文件原点；后续应让夹具构造失败显式中止查询，避免错误位置偶然命中。
+/** 将固定源码样例中第 N 次文本出现处转成位置查询；调用方必须保证样例确有该子串，否则默认原点可能掩盖失配。 */
 static SZrFileRange file_range_for_nth_substring(const char *content,
                                                  const char *needle,
                                                  TZrSize occurrence,
@@ -273,6 +282,7 @@ static SZrFileRange file_range_for_nth_substring(const char *content,
     return ZrParser_FileRange_Create(position, position, ZR_NULL);
 }
 
+/** 在已找到的样例文本内部定位成员或参数 token；extraOffset 只适用于当前单行 ASCII 测试片段。 */
 static SZrFileRange file_range_for_nth_substring_offset(const char *content,
                                                         const char *needle,
                                                         TZrSize occurrence,
@@ -285,6 +295,7 @@ static SZrFileRange file_range_for_nth_substring_offset(const char *content,
     return range;
 }
 
+/** 为样例位置附上当前解析使用的 source 身份，确保语义查询按文件匹配而非仅按坐标匹配。 */
 static SZrFileRange file_range_for_nth_substring_in_source(const char *content,
                                                            const char *needle,
                                                            TZrSize occurrence,
@@ -295,6 +306,7 @@ static SZrFileRange file_range_for_nth_substring_in_source(const char *content,
     return range;
 }
 
+/** 组合子串内偏移与 source 身份，用于所有权参数等精确语义事实查询。 */
 static SZrFileRange file_range_for_nth_substring_offset_in_source(const char *content,
                                                                   const char *needle,
                                                                   TZrSize occurrence,
@@ -306,6 +318,7 @@ static SZrFileRange file_range_for_nth_substring_offset_in_source(const char *co
     return range;
 }
 
+/** 只计数已标为 exact 且关联 AST 节点的布尔事实，防止近似推断被当成短路分支证据。 */
 static TZrSize count_logical_facts_with_known_value(const SZrSemanticContext *context,
                                                     EZrSemanticLogicalFactKind kind,
                                                     TZrBool knownValue) {
@@ -331,6 +344,7 @@ static TZrSize count_logical_facts_with_known_value(const SZrSemanticContext *co
     return count;
 }
 
+/** 测试核对某类诊断的精确数量，避免重复投影或遗漏被单一存在性断言掩盖。 */
 static TZrSize count_diagnostics_with_code(SZrSemanticAnalyzer *analyzer, const char *code) {
     TZrSize i;
     TZrSize count = 0;
@@ -353,6 +367,7 @@ static TZrSize count_diagnostics_with_code(SZrSemanticAnalyzer *analyzer, const 
     return count;
 }
 
+/** 在分析器输出中按代码与源行定位样例诊断，供范围、严重度和修复处置的进一步断言使用。 */
 static SZrDiagnostic *find_diagnostic_by_code_and_line(SZrSemanticAnalyzer *analyzer,
                                                        const char *code,
                                                        TZrInt32 line) {
@@ -385,6 +400,7 @@ static SZrDiagnostic *find_diagnostic_by_code_and_line(SZrSemanticAnalyzer *anal
 #include "test_semantic_analyzer_local_binding_identity_cases.h"
 #include "test_semantic_analyzer_source_metadata_cases.h"
 
+/** 测试在借用的诊断字符串中寻找稳定语义片段，避免完整措辞变化影响契约检查。 */
 static TZrBool diagnostic_string_contains(SZrString *value, const char *fragment) {
     const char *text;
 
@@ -396,22 +412,27 @@ static TZrBool diagnostic_string_contains(SZrString *value, const char *fragment
     return text != ZR_NULL && strstr(text, fragment) != ZR_NULL;
 }
 
+/** 测试限定检查用户可见的主诊断消息，而不混入原因或建议字段。 */
 static TZrBool diagnostic_message_contains(SZrDiagnostic *diagnostic, const char *fragment) {
     return diagnostic != ZR_NULL && diagnostic_string_contains(diagnostic->message, fragment);
 }
 
+/** 测试限定检查诊断原因字段，确认投影保留编译器给出的失败依据。 */
 static TZrBool diagnostic_cause_contains(SZrDiagnostic *diagnostic, const char *fragment) {
     return diagnostic != ZR_NULL && diagnostic_string_contains(diagnostic->cause, fragment);
 }
 
+/** 测试限定检查建议字段，确认诊断虽不可自动修复仍给出操作提示。 */
 static TZrBool diagnostic_suggestion_contains(SZrDiagnostic *diagnostic, const char *fragment) {
     return diagnostic != ZR_NULL && diagnostic_string_contains(diagnostic->suggestion, fragment);
 }
 
+/** 测试从 parser 共享所有权事实上检查诊断文字，防止 LSP 单独生成与源事实不一致的描述。 */
 static TZrBool ownership_fact_message_contains(const SZrSemanticOwnershipFact *fact, const char *fragment) {
     return fact != ZR_NULL && diagnostic_string_contains(fact->diagnosticMessage, fragment);
 }
 
+/** 测试失败时格式化候选符号的名称与种类，帮助区分作用域解析错误和符号缺失。 */
 static void describe_symbol(char *buffer, size_t bufferSize, SZrSymbol *symbol) {
     const char *name = ZR_NULL;
 
@@ -435,6 +456,7 @@ static void describe_symbol(char *buffer, size_t bufferSize, SZrSymbol *symbol) 
              (int)symbol->type);
 }
 
+/** 测试失败时格式化 offset 与行列范围，帮助定位语义索引错位的来源。 */
 static void describe_file_range(char *buffer, size_t bufferSize, SZrFileRange range) {
     if (buffer == ZR_NULL || bufferSize == 0) {
         return;
@@ -451,7 +473,7 @@ static void describe_file_range(char *buffer, size_t bufferSize, SZrFileRange ra
              range.end.column);
 }
 
-// 测试语义分析器创建和释放
+/** 由本测试入口验证分析器与其符号表、引用追踪器的生命周期；失败应在运行任何解析样例前被发现。 */
 static void test_semantic_analyzer_create_and_free(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Creation and Free");
@@ -485,7 +507,7 @@ static void test_semantic_analyzer_create_and_free(SZrState *state) {
     TEST_PASS(timer, "Semantic Analyzer Creation and Free");
 }
 
-// 测试语义分析
+/** 用最小变量声明贯通 parser AST 到 LSP 语义分析，确认基础分析入口接受有效树并可释放。 */
 static void test_semantic_analyzer_analyze(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Analyze");
@@ -534,7 +556,7 @@ static void test_semantic_analyzer_analyze(SZrState *state) {
     TEST_PASS(timer, "Semantic Analyzer Analyze");
 }
 
-// 测试 assignment + binary 表达式路径的类型检查
+/** 用赋值和二元表达式覆盖分析器的类型检查路径，防止基础表达式被解析成功却在语义阶段拒绝。 */
 static void test_semantic_analyzer_type_checking_assignment_path(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Type Checking Assignment Path");
@@ -568,6 +590,7 @@ static void test_semantic_analyzer_type_checking_assignment_path(SZrState *state
     TEST_PASS(timer, "Semantic Analyzer Type Checking Assignment Path");
 }
 
+/** 比较构造器初始化和普通方法改写 const 字段，验证分析器只投影 parser 判定的非法赋值及其上下文。 */
 static void test_semantic_analyzer_projects_const_field_assignment_context(
         SZrState *state) {
     SZrTestTimer timer;
@@ -643,6 +666,7 @@ static void test_semantic_analyzer_projects_const_field_assignment_context(
     TEST_PASS(timer, "Semantic Analyzer Projects Const Field Assignment Context");
 }
 
+/** 用 const 参数、局部量和静态字段验证同一规范诊断覆盖各赋值目标，且每处只投影一次。 */
 static void test_semantic_analyzer_projects_all_const_assignment_target_kinds(
         SZrState *state) {
     SZrTestTimer timer;
@@ -708,6 +732,7 @@ static void test_semantic_analyzer_projects_all_const_assignment_target_kinds(
     TEST_PASS(timer, "Semantic Analyzer Projects All Const Assignment Target Kinds");
 }
 
+/** 以真实 math 模块调用、浮点运算与字符串拼接验证分析器不会对编译器接受的二元表达式误报类型不匹配。 */
 static void test_semantic_analyzer_avoids_false_binary_type_mismatch_diagnostics(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Avoids False Binary Type Mismatch Diagnostics");
@@ -767,6 +792,7 @@ static void test_semantic_analyzer_avoids_false_binary_type_mismatch_diagnostics
     TEST_PASS(timer, "Semantic Analyzer Avoids False Binary Type Mismatch Diagnostics");
 }
 
+/** 以整型算术及向浮点变量赋初值验证允许的数值提升不会被 LSP 误报。 */
 static void test_semantic_analyzer_avoids_false_numeric_initializer_type_mismatch_diagnostics(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Avoids False Numeric Initializer Type Mismatch Diagnostics");
@@ -830,6 +856,7 @@ static void test_semantic_analyzer_avoids_false_numeric_initializer_type_mismatc
 #include "test_semantic_analyzer_exact_type_cases.h"
 #include "test_semantic_analyzer_exact_type_diagnostic_cases.h"
 
+/** 验证可推导返回的无显式注解函数把精确类型写入符号元数据，供后续调用与 hover 复用。 */
 static void test_semantic_analyzer_unannotated_function_records_exact_return_type(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Unannotated Function Records Exact Return Type");
@@ -906,6 +933,7 @@ static void test_semantic_analyzer_unannotated_function_records_exact_return_typ
     TEST_PASS(timer, "Semantic Analyzer Unannotated Function Records Exact Return Type");
 }
 
+/** 验证无初值也无类型注解的局部声明产生明确诊断，不用宽泛 object 类型掩盖缺失信息。 */
 static void test_semantic_analyzer_reports_initializer_requires_annotation(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Reports Initializer Requires Annotation");
@@ -972,6 +1000,7 @@ static void test_semantic_analyzer_reports_initializer_requires_annotation(SZrSt
     TEST_PASS(timer, "Semantic Analyzer Reports Initializer Requires Annotation");
 }
 
+/** 用冲突返回分支验证无法证明精确返回类型时发出 parser 拥有的诊断，而非合成弱类型。 */
 static void test_semantic_analyzer_reports_return_type_not_provable(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Reports Return Type Not Provable");
@@ -1050,6 +1079,7 @@ static void test_semantic_analyzer_reports_return_type_not_provable(SZrState *st
     TEST_PASS(timer, "Semantic Analyzer Reports Return Type Not Provable");
 }
 
+/** 用顺序 if-return 链覆盖全部路径，防止保守控制流检查误报返回类型不可证明。 */
 static void test_semantic_analyzer_accepts_all_path_return_chains(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Accepts All Path Return Chains");
@@ -1130,6 +1160,8 @@ static void test_semantic_analyzer_accepts_all_path_return_chains(SZrState *stat
     TEST_PASS(timer, "Semantic Analyzer Accepts All Path Return Chains");
 }
 
+/** 在缺少精确类型的局部引用处请求 hover，确认编辑器显示推断失败而非伪造 object 类型。 */
+// BUG: GetHoverInfo 成功分配的 SZrHoverInfo 未调用 HoverInfo_Free；此场景每次成功运行泄漏原生对象。
 static void test_semantic_analyzer_exact_type_failure_surfaces_explicit_hover(
     SZrState *state) {
     SZrTestTimer timer;
@@ -1214,6 +1246,8 @@ static void test_semantic_analyzer_exact_type_failure_surfaces_explicit_hover(
     TEST_PASS(timer, "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover");
 }
 
+/** 在调用点请求无注解函数 hover，确认签名采用已证明的返回类型而非 AST 缺省类型。 */
+// BUG: 成功获取的 hover 对象未调用 HoverInfo_Free；释放 analyzer 不会回收该原生对象。
 static void test_semantic_analyzer_unannotated_function_surfaces_exact_return_signature_detail(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Unannotated Function Surfaces Exact Return Signature Detail");
@@ -1301,6 +1335,7 @@ static void test_semantic_analyzer_unannotated_function_surfaces_exact_return_si
     TEST_PASS(timer, "Semantic Analyzer Unannotated Function Surfaces Exact Return Signature Detail");
 }
 
+/** 验证分析器一次运行后同时发布符号、类型、HIR 与重载集合，供编辑器查询共享同一语义上下文。 */
 static void test_semantic_analyzer_populates_semantic_context(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Populates Semantic Context");
@@ -1379,6 +1414,7 @@ static void test_semantic_analyzer_populates_semantic_context(SZrState *state) {
     TEST_PASS(timer, "Semantic Analyzer Populates Semantic Context");
 }
 
+/** 以声明和读取位置查询共享引用事实，验证 SymbolId、角色与 token 范围可供导航精确定位。 */
 static void test_semantic_analyzer_records_reference_facts_with_precise_ranges(SZrState *state) {
     SZrTestTimer timer;
     const char *summary = "Semantic Analyzer Records Reference Facts With Precise Ranges";
@@ -1479,6 +1515,7 @@ static void test_semantic_analyzer_records_reference_facts_with_precise_ranges(S
     TEST_PASS(timer, summary);
 }
 
+/** 同时覆盖 using 清理计划和模板插值段，防止只保留符号信息而丢失源级辅助元数据。 */
 static void test_semantic_analyzer_records_using_cleanup_and_template_segments(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Records Using Cleanup And Template Segments");
@@ -1576,6 +1613,7 @@ static void test_semantic_analyzer_records_using_cleanup_and_template_segments(S
     TEST_PASS(timer, "Semantic Analyzer Records Using Cleanup And Template Segments");
 }
 
+/** 检查 Unique/Shared 字段绑定与清理模式，区分值结构和实例字段的资源生命周期。 */
 static void test_semantic_analyzer_records_owned_field_cleanup_metadata(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Records Owned Field Cleanup Metadata");
@@ -1720,7 +1758,7 @@ static void test_semantic_analyzer_records_owned_field_cleanup_metadata(SZrState
     TEST_PASS(timer, "Semantic Analyzer Records Owned Field Cleanup Metadata");
 }
 
-// 测试获取诊断信息
+/** 手工构造一条 parser 结构化诊断并注入分析器，单独核对投影成功和 GetDiagnostics 返回非空；字段一致性另由黄金对照覆盖。 */
 static void test_semantic_analyzer_get_diagnostics(SZrState *state) {
     SZrTestTimer timer;
     SZrStructuredDiagnostic structured;
@@ -1787,6 +1825,7 @@ static void test_semantic_analyzer_get_diagnostics(SZrState *state) {
     TEST_PASS(timer, "Semantic Analyzer Get Diagnostics");
 }
 
+/** 在形参和局部变量的使用点查询符号，防止导航只命中全局定义或同名外层绑定。 */
 static void test_semantic_analyzer_get_symbol_at_resolves_local_references(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Get Symbol At Resolves Local References");
@@ -1921,6 +1960,8 @@ static void test_semantic_analyzer_get_symbol_at_resolves_local_references(SZrSt
     TEST_PASS(timer, "Semantic Analyzer Get Symbol At Resolves Local References");
 }
 
+/** 在局部变量使用点请求 hover，验证符号表和推断类型共同生成可读的局部信息。 */
+// BUG: 成功获取的 hover 对象未调用 HoverInfo_Free；重复测试会累积原生分配。
 static void test_semantic_analyzer_local_symbols_surface_rich_hover(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Local Symbols Surface Rich Hover");
@@ -1996,6 +2037,8 @@ static void test_semantic_analyzer_local_symbols_surface_rich_hover(SZrState *st
     TEST_PASS(timer, "Semantic Analyzer Local Symbols Surface Rich Hover");
 }
 
+/** 在泛型函数使用点检查 hover，确保类型参数及 ref 传参模式没有在符号展示中丢失。 */
+// BUG: 成功获取的 hover 对象未调用 HoverInfo_Free；重复测试会累积原生分配。
 static void test_semantic_analyzer_generic_function_symbols_surface_signature_detail(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Generic Function Symbols Surface Signature Detail");
@@ -2100,6 +2143,8 @@ static void test_semantic_analyzer_generic_function_symbols_surface_signature_de
     TEST_PASS(timer, "Semantic Analyzer Generic Function Symbols Surface Signature Detail");
 }
 
+/** 用 id(1) 验证调用点泛型闭合传播到局部绑定及 hover，无需显式提供类型实参。 */
+// BUG: 成功获取的 hover 对象未调用 HoverInfo_Free；重复测试会累积原生分配。
 static void test_semantic_analyzer_generic_call_infers_type_argument_without_explicit_close(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Generic Call Infers Type Argument Without Explicit Close");
@@ -2185,6 +2230,8 @@ static void test_semantic_analyzer_generic_call_infers_type_argument_without_exp
     TEST_PASS(timer, "Semantic Analyzer Generic Call Infers Type Argument Without Explicit Close");
 }
 
+/** 请求资源函数 hover，验证参数 Shared 与返回 Unique 限定从声明语义保留到编辑器签名。 */
+// BUG: 成功获取的 hover 对象未调用 HoverInfo_Free；重复测试会累积原生分配。
 static void test_semantic_analyzer_function_signatures_preserve_ownership_qualifiers(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Function Signatures Preserve Ownership Qualifiers");
@@ -2292,6 +2339,8 @@ static void test_semantic_analyzer_function_signatures_preserve_ownership_qualif
     TEST_PASS(timer, "Semantic Analyzer Function Signatures Preserve Ownership Qualifiers");
 }
 
+/** 以未解析 MissingType 检查 hover 失败关闭策略；缺少规范类型事实时不得把 AST 拼写展示为已确认类型。 */
+// BUG: 成功获取的 hover 对象未调用 HoverInfo_Free；重复测试会累积原生分配。
 static void test_semantic_analyzer_signature_type_display_fails_closed_without_canonical_fact(
         SZrState *state) {
     SZrTestTimer timer;
@@ -2369,6 +2418,8 @@ static void test_semantic_analyzer_signature_type_display_fails_closed_without_c
     TEST_PASS(timer, "Semantic Analyzer Signature Type Display Fails Closed Without Canonical Fact");
 }
 
+/** 在泛型类和接口使用点检查继承、常量泛型、变型和 where 条件仍可由符号 hover 展示。 */
+// BUG: 类和接口两次成功 hover 均未调用 HoverInfo_Free；每次运行泄漏两个原生对象。
 static void test_semantic_analyzer_generic_type_symbols_surface_signature_detail(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Generic Type Symbols Surface Signature Detail");
@@ -2487,6 +2538,7 @@ static void test_semantic_analyzer_generic_type_symbols_surface_signature_detail
     TEST_PASS(timer, "Semantic Analyzer Generic Type Symbols Surface Signature Detail");
 }
 
+/** 以 Box<int> 成员调用验证封闭泛型从本地类型原型解析，不应退回导入模块元数据。 */
 static void test_semantic_analyzer_closed_generic_receiver_calls_stay_local_to_type_metadata(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Closed Generic Receiver Calls Stay Local To Type Metadata");
@@ -2615,6 +2667,7 @@ static void test_semantic_analyzer_closed_generic_receiver_calls_stay_local_to_t
     TEST_PASS(timer, "Semantic Analyzer Closed Generic Receiver Calls Stay Local To Type Metadata");
 }
 
+/** 对方法参数、返回、字段、属性和嵌套泛型逐位置检查变型违规，防止诊断合并或遗漏。 */
 static void test_semantic_analyzer_reports_invalid_interface_variance_positions(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Reports Invalid Interface Variance Positions");
@@ -2735,6 +2788,7 @@ static void test_semantic_analyzer_reports_invalid_interface_variance_positions(
     TEST_PASS(timer, "Semantic Analyzer Reports Invalid Interface Variance Positions");
 }
 
+/** 检查实现类违反接口 const 字段契约时的规范诊断范围、严重度及不能自动修复原因。 */
 static void test_semantic_analyzer_projects_interface_const_field_contract(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Projects Interface Const Field Contract");
@@ -2812,6 +2866,8 @@ static void test_semantic_analyzer_projects_interface_const_field_contract(SZrSt
     TEST_PASS(timer, "Semantic Analyzer Projects Interface Const Field Contract");
 }
 
+/** 以所属类和方法同时带泛型的成员签名作为分析烟测，避免该语法组合直接产生编译诊断。 */
+// TODO: 当前只检查无 compiler_error，尚未读取成员签名事实；后续应对 Box<T>.shape<const N> 的 T/N 绑定做直接断言。
 static void test_semantic_analyzer_preserves_owner_generic_context_in_member_signatures(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Preserves Owner Generic Context In Member Signatures");
@@ -2878,6 +2934,7 @@ static void test_semantic_analyzer_preserves_owner_generic_context_in_member_sig
     TEST_PASS(timer, "Semantic Analyzer Preserves Owner Generic Context In Member Signatures");
 }
 
+/** 检查 return/throw 之后语句的共享可达性事实及原因，作为编辑器不可达提示的来源。 */
 static void test_semantic_analyzer_records_reachability_facts_for_unreachable_statements(SZrState *state) {
     SZrTestTimer timer;
     const char *summary = "Semantic Analyzer Records Reachability Facts For Unreachable Statements";
@@ -2963,6 +3020,7 @@ static void test_semantic_analyzer_records_reachability_facts_for_unreachable_st
     TEST_PASS(timer, summary);
 }
 
+/** 检查常量布尔短路结果和右支不可达事实，要求已知值为 exact 且关联原 AST。 */
 static void test_semantic_analyzer_records_short_circuit_logical_facts(SZrState *state) {
     SZrTestTimer timer;
     const char *summary = "Semantic Analyzer Records Short Circuit Logical Facts";
@@ -3047,6 +3105,7 @@ static void test_semantic_analyzer_records_short_circuit_logical_facts(SZrState 
     TEST_PASS(timer, summary);
 }
 
+/** 验证 return/throw 后不可达语句被投影为 warning，供编辑器提示而不改变编译结果。 */
 static void test_semantic_analyzer_warns_on_unreachable_statements_after_return_or_throw(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Warns On Unreachable Statements After Return Or Throw");
@@ -3116,6 +3175,7 @@ static void test_semantic_analyzer_warns_on_unreachable_statements_after_return_
     TEST_PASS(timer, "Semantic Analyzer Warns On Unreachable Statements After Return Or Throw");
 }
 
+/** 验证 if(true/false) 的死分支产生统一 unreachable_code 警告，避免重复的旧类别诊断。 */
 static void test_semantic_analyzer_warns_on_unreachable_if_branches(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Warns On Unreachable If Branches");
@@ -3190,6 +3250,7 @@ static void test_semantic_analyzer_warns_on_unreachable_if_branches(SZrState *st
     TEST_PASS(timer, "Semantic Analyzer Warns On Unreachable If Branches");
 }
 
+/** 验证确定性短路的右侧分支警告与共享可达性事实一致，避免额外旧类别诊断。 */
 static void test_semantic_analyzer_warns_on_deterministic_short_circuit_branches(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Warns On Deterministic Short Circuit Branches");
@@ -3256,6 +3317,7 @@ static void test_semantic_analyzer_warns_on_deterministic_short_circuit_branches
     TEST_PASS(timer, "Semantic Analyzer Warns On Deterministic Short Circuit Branches");
 }
 
+/** 对 Unique 变量接收 Shared 值检查 parser 所有权事实与 LSP 诊断同时出现。 */
 static void test_semantic_analyzer_reports_declared_ownership_initializer_mismatch(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Reports Declared Ownership Initializer Mismatch");
@@ -3342,6 +3404,7 @@ static void test_semantic_analyzer_reports_declared_ownership_initializer_mismat
     TEST_PASS(timer, "Semantic Analyzer Reports Declared Ownership Initializer Mismatch");
 }
 
+/** 对已有 Unique 目标被赋 Shared 值检查诊断、范围和共享所有权事实一致。 */
 static void test_semantic_analyzer_reports_assignment_ownership_mismatch(SZrState *state) {
     const TZrChar *summary =
             "Semantic Analyzer Reports Assignment Ownership Mismatch";
@@ -3413,6 +3476,7 @@ static void test_semantic_analyzer_reports_assignment_ownership_mismatch(SZrStat
     TEST_PASS(timer, summary);
 }
 
+/** 对 Unique 和 Shared 值进入普通 GC 声明检查两处 owner_to_plain_escape 事实和诊断。 */
 static void test_semantic_analyzer_reports_owner_to_plain_initializer_escape(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Reports Owner To Plain Initializer Escape");
@@ -3511,6 +3575,7 @@ static void test_semantic_analyzer_reports_owner_to_plain_initializer_escape(SZr
     TEST_PASS(timer, "Semantic Analyzer Reports Owner To Plain Initializer Escape");
 }
 
+/** 对承诺返回 Unique 却返回 Shared 的函数检查返回点的规范所有权诊断及事实。 */
 static void test_semantic_analyzer_reports_return_ownership_mismatch(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Reports Return Ownership Mismatch");
@@ -3596,6 +3661,7 @@ static void test_semantic_analyzer_reports_return_ownership_mismatch(SZrState *s
     TEST_PASS(timer, "Semantic Analyzer Reports Return Ownership Mismatch");
 }
 
+/** 用返回形参借用的场景检查 borrow_escape，防止借用活期越过函数边界。 */
 static void test_semantic_analyzer_reports_borrowed_return_escape(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Reports Borrowed Return Escape");
@@ -3697,6 +3763,7 @@ static void test_semantic_analyzer_reports_borrowed_return_escape(SZrState *stat
     TEST_PASS(timer, "Semantic Analyzer Reports Borrowed Return Escape");
 }
 
+/** 用普通函数调用检查 Shared 实参传给 Unique 形参时的诊断和事实。 */
 static void test_semantic_analyzer_reports_function_argument_ownership_mismatch(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Reports Function Argument Ownership Mismatch");
@@ -3779,6 +3846,7 @@ static void test_semantic_analyzer_reports_function_argument_ownership_mismatch(
     TEST_PASS(timer, "Semantic Analyzer Reports Function Argument Ownership Mismatch");
 }
 
+/** 用 Weak 值显式 ref 传参检查先唤醒约束及对应所有权事实。 */
 static void test_semantic_analyzer_reports_weak_argument_requires_wake(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Reports Weak Argument Requires Wake");
@@ -3875,6 +3943,7 @@ static void test_semantic_analyzer_reports_weak_argument_requires_wake(SZrState 
     TEST_PASS(timer, "Semantic Analyzer Reports Weak Argument Requires Wake");
 }
 
+/** 用实例方法调用覆盖与普通函数相同的 Unique 形参所有权限制。 */
 static void test_semantic_analyzer_reports_method_argument_ownership_mismatch(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Reports Method Argument Ownership Mismatch");
@@ -3960,6 +4029,7 @@ static void test_semantic_analyzer_reports_method_argument_ownership_mismatch(SZ
     TEST_PASS(timer, "Semantic Analyzer Reports Method Argument Ownership Mismatch");
 }
 
+/** 在不存在的成员 token 上比对共享引用事实与 member_not_found 诊断，验证错误查询仍保留源位置。 */
 static void test_semantic_analyzer_projects_unresolved_member_query_diagnostic(
         SZrState *state) {
     const TZrChar *summary =
@@ -4031,6 +4101,7 @@ static void test_semantic_analyzer_projects_unresolved_member_query_diagnostic(
     TEST_PASS(timer, summary);
 }
 
+/** 用匹配和不匹配的重载调用对照，防止只检查首个签名导致合法调用被误报。 */
 static void test_semantic_analyzer_resolves_overloads_for_call_compatibility(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Resolves Overloads For Call Compatibility");
@@ -4100,6 +4171,7 @@ static void test_semantic_analyzer_resolves_overloads_for_call_compatibility(SZr
     TEST_PASS(timer, "Semantic Analyzer Resolves Overloads For Call Compatibility");
 }
 
+/** 对多个无效 zr.ffi 装饰器同时分析，验证错误逐处投影且不会阻断后续条目。 */
 static void test_semantic_analyzer_reports_invalid_ffi_decorators(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Reports Invalid FFI Decorators");
@@ -4194,6 +4266,7 @@ static void test_semantic_analyzer_reports_invalid_ffi_decorators(SZrState *stat
     TEST_PASS(timer, "Semantic Analyzer Reports Invalid FFI Decorators");
 }
 
+/** 在继承类方法内查询 this 和局部变量，确认接收者作用域及类型信息到 hover 可见。 */
 static void test_semantic_analyzer_class_method_scope_surfaces_receiver_and_local_hover(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Class Method Scope Surfaces Receiver And Local Hover");
@@ -4305,6 +4378,8 @@ static void test_semantic_analyzer_class_method_scope_surfaces_receiver_and_loca
     TEST_PASS(timer, "Semantic Analyzer Class Method Scope Surfaces Receiver And Local Hover");
 }
 
+/** 对编译期函数常量与带类型 lambda 捕获分别请求 hover，验证两类词法作用域保存符号和类型。 */
+// TODO: 函数名和 TEST_INFO 承诺覆盖 test body，但样例只有 comptime 函数与普通函数；后续补独立 test 声明及断言。
 static void test_semantic_analyzer_compile_time_test_and_lambda_scopes_surface_symbols(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Compile Time Test And Lambda Scopes Surface Symbols");
@@ -4428,7 +4503,7 @@ static void test_semantic_analyzer_compile_time_test_and_lambda_scopes_surface_s
     TEST_PASS(timer, "Semantic Analyzer Compile Time Test And Lambda Scopes Surface Symbols");
 }
 
-// 测试缓存功能
+/** 验证缓存开关及 ClearCache 的状态契约；具体重复分析和结果一致性由其他场景覆盖。 */
 static void test_semantic_analyzer_cache(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Cache");
@@ -4470,6 +4545,7 @@ static void test_semantic_analyzer_cache(SZrState *state) {
     TEST_PASS(timer, "Semantic Analyzer Cache");
 }
 
+/** 验证 ReleaseCacheStorage 同时释放主分析器与作用域分析器的缓存容量，同时保留作用域实例供后续分析重建缓存。 */
 static void test_semantic_analyzer_releases_cache_storage(SZrState *state) {
     const TZrChar *summary = "Semantic Analyzer Releases Cache Storage";
     SZrTestTimer timer;
@@ -4534,7 +4610,7 @@ static void test_semantic_analyzer_releases_cache_storage(SZrState *state) {
     TEST_PASS(timer, summary);
 }
 
-// 主测试函数
+/** 单独测试目标由 CMake/CTest 启动；这里建立共享 VM 状态与库注册，顺序执行语义分析场景并用累计失败数作为进程退出码。 */
 int main(void) {
     printf("==========\n");
     printf("Language Server - Semantic Analyzer Tests\n");

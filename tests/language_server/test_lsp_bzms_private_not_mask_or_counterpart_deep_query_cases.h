@@ -5,6 +5,9 @@
 #include "zr_vm_common/zr_type_conf.h"
 #include "zr_vm_core/state.h"
 
+/** @brief 将更深的对应叶表达式矩阵加入私有取反掩码主测试。
+ *  @pre state 是已初始化的测试主线程状态；调用方负责其生存期。
+ *  @return 全部深层组合的局部范围查询均通过时返回真。 */
 TZrBool ZrVmTest_LspRunBzmsPrivateNotMaskOrCounterpartDeepQueries(SZrState *state);
 
 #endif

@@ -13,6 +13,7 @@ static TZrBool run_bitwise_zero_minus_unary_rhs_range_query_at(SZrState *state,
                                                                TZrInt64 expectedMin,
                                                                TZrInt64 expectedMax);
 
+/* 无额外定位需求的矩阵用例共用首个目标运算符的位置。 */
 static TZrBool run_bitwise_zero_minus_unary_rhs_range_query(SZrState *state,
                                                             const TZrChar *caseName,
                                                             const TZrChar *expression,
@@ -29,6 +30,8 @@ static TZrBool run_bitwise_zero_minus_unary_rhs_range_query(SZrState *state,
             expectedMax);
 }
 
+/* 用同一个有界变量环境生成源码，交由共享查询夹具验证一元右操作数参与
+ * 零减法时的位运算范围；caseName 还进入 URI，须适合缓冲区和 URI 路径。 */
 static TZrBool run_bitwise_zero_minus_unary_rhs_range_query_at(SZrState *state,
                                                                const TZrChar *caseName,
                                                                const TZrChar *expression,
@@ -88,6 +91,8 @@ static TZrBool run_bitwise_zero_minus_unary_rhs_range_query_at(SZrState *state,
             expectedMax);
 }
 
+/* CMake 独立运行此矩阵，比较一元负号、零减法、恒零叶及 AND/OR/XOR
+ * 的组合，防止查询在等价的右操作数外形下给出不同数值范围。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

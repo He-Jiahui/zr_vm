@@ -1,6 +1,7 @@
 #ifndef ZR_TEST_SEMANTIC_ANALYZER_SOURCE_METADATA_CASES_H
 #define ZR_TEST_SEMANTIC_ANALYZER_SOURCE_METADATA_CASES_H
 
+/** 针对固定 AST 布局逐项核对清理步骤的规范符号、词法区域与模板段；调用前需完成成功分析。 */
 static TZrBool source_metadata_matches_lexical_resources(
         SZrSemanticAnalyzer *analyzer, SZrAstNode *functionNode) {
     SZrSemanticContext *context = analyzer->semanticContext;
@@ -53,6 +54,7 @@ static TZrBool source_metadata_matches_lexical_resources(
     return ZR_TRUE;
 }
 
+/** 对同一 AST 连续执行缓存命中与强制分析，验证 using 清理顺序和模板元数据在重复分析后保持一致。 */
 static void test_semantic_analyzer_source_metadata_survives_cached_and_forced_analysis(SZrState *state) {
     static const char source[] =
             "resource class Resource { }\n"
@@ -68,6 +70,7 @@ static void test_semantic_analyzer_source_metadata_survives_cached_and_forced_an
     SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     TZrBool passed = analyzer != ZR_NULL && ast != ZR_NULL;
     TEST_START(summary);
+    /* 前两次允许缓存复用，末次关闭缓存；比较的是同一 AST 的源元数据稳定性。 */
     for (TZrSize pass = 0; passed && pass < 3; pass++) {
         ZrLanguageServer_SemanticAnalyzer_SetCacheEnabled(analyzer, pass != 2);
         passed = ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast) &&
@@ -84,6 +87,7 @@ static void test_semantic_analyzer_source_metadata_survives_cached_and_forced_an
     TEST_PASS(timer, summary);
 }
 
+/** 按固定样例索引取不同语法容器中的模板节点，供后续断言以 AST 身份验证插值；只接受该测试表中的形状。 */
 static SZrAstNode *source_metadata_nested_template_at(SZrAstNode *ast, TZrSize index) {
     SZrAstNode *node = ast->data.script.statements->nodes[index == 6 || index == 7 ? 1 : 0];
     switch (index) {
@@ -118,6 +122,7 @@ static SZrAstNode *source_metadata_nested_template_at(SZrAstNode *ast, TZrSize i
     }
 }
 
+/** 遍历数组、对象、字段、lambda、默认值及索引中的模板样例，比较缓存与强制分析的插值段和嵌套清理归属。 */
 static void test_semantic_analyzer_nested_source_metadata_is_complete(SZrState *state) {
     static const char *sources[] = {
             "var xs = [[`a ${1}`]];",

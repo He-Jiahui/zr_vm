@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TESTS_LANGUAGE_SERVER_LSP_SOURCE_CONTRACT_INITIALIZER_ANNOTATION_CASES_H
 #define ZR_VM_TESTS_LANGUAGE_SERVER_LSP_SOURCE_CONTRACT_INITIALIZER_ANNOTATION_CASES_H
 
+/* 初始化表达式是否需要类型注解由 compiler 同步判断，LSP 不自行重算。 */
 static void test_initializer_annotation_uses_parser_diagnostic_projection(void) {
     char *symbols = read_repo_text_file_owned(
             "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c");

@@ -18,6 +18,7 @@
 #include "interface/lsp_interface_internal.h"
 #include "semantic/lsp_semantic_query.h"
 
+/* 两个 UTF-16 回归场景共享独立 VM；此回调只服务测试进程的全局状态和临时语义对象。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -39,6 +40,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return realloc(pointer, newSize);
 }
 
+/* 把项目描述与源码写入隔离的生成目录，确保导航查询读取真实磁盘项目而非内存假对象。 */
 static TZrBool write_text_file(const TZrChar *path, const TZrChar *content) {
     FILE *file;
     TZrSize length;
@@ -59,6 +61,7 @@ static TZrBool write_text_file(const TZrChar *path, const TZrChar *content) {
     return written == length;
 }
 
+/* 生成路径可能来自 Windows 或 POSIX；调用方用返回的分隔符截取项目根。 */
 static TZrChar *find_last_path_separator(TZrChar *path) {
     TZrChar *forwardSlash;
     TZrChar *backSlash;
@@ -79,6 +82,7 @@ static TZrChar *find_last_path_separator(TZrChar *path) {
     return forwardSlash > backSlash ? forwardSlash : backSlash;
 }
 
+/* 将生成文件交给 LSP 接口时统一使用 file URI；输入须是本地路径且长度能装入固定缓冲区。 */
 static SZrString *create_file_uri_from_native_path(SZrState *state, const TZrChar *path) {
     TZrChar buffer[ZR_TESTS_PATH_MAX * 2];
     TZrSize pathLength;
@@ -109,6 +113,7 @@ static SZrString *create_file_uri_from_native_path(SZrState *state, const TZrCha
     return ZrCore_String_Create(state, buffer, writeIndex);
 }
 
+/* 为 URI 精确比较取得短/长字符串的只读视图；结果依附原 SZrString 的 VM 生命周期。 */
 static const TZrChar *test_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -119,6 +124,7 @@ static const TZrChar *test_string_text(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
+/* 对引用/定义结果同时核对目标 URI 与 UTF-16 行列，避免字节偏移正确却跳到别的模块。 */
 static TZrBool location_array_contains_uri_and_range(SZrArray *locations,
                                                      SZrString *uri,
                                                      TZrInt32 startLine,
@@ -146,6 +152,7 @@ static TZrBool location_array_contains_uri_and_range(SZrArray *locations,
     return ZR_FALSE;
 }
 
+/* 失败时输出第一个实际位置，帮助区分解析失败、URI 选择错误和 UTF-16 列偏移。 */
 static void describe_first_location(SZrArray *locations) {
     if (locations != ZR_NULL && locations->length > 0) {
         SZrLspLocation **locationPtr = (SZrLspLocation **)ZrCore_Array_Get(locations, 0);
@@ -160,6 +167,7 @@ static void describe_first_location(SZrArray *locations) {
     }
 }
 
+/* 在导入前插入多字节注释前缀，创建必须以 UTF-16 而非 UTF-8 字节数报告的跨文件引用。 */
 static TZrBool prepare_utf16_project(TZrChar *mainPath,
                                      TZrSize mainPathSize,
                                      TZrChar *modulePath,
@@ -209,6 +217,7 @@ static TZrBool prepare_utf16_project(TZrChar *mainPath,
            write_text_file(modulePath, moduleContent);
 }
 
+/* 编译并写出真实 .zro，使外部元数据声明经历与项目导入一致的 parser/writer 路径。 */
 static TZrBool write_binary_metadata_file(SZrState *state,
                                           const TZrChar *binaryPath,
                                           const TZrChar *moduleSource) {
@@ -258,6 +267,7 @@ static TZrBool write_binary_metadata_file(SZrState *state,
     return success;
 }
 
+/* 生成 source 导入者和带多字节前缀的二进制声明，供语义查询与定义位置作双重核对。 */
 static TZrBool prepare_binary_metadata_utf16_project(SZrState *state,
                                                      TZrChar *projectPath,
                                                      TZrSize projectPathSize,
@@ -310,6 +320,7 @@ static TZrBool prepare_binary_metadata_utf16_project(SZrState *state,
            write_binary_metadata_file(state, binaryPath, binarySource);
 }
 
+/* 从尚未打开的模块入口追到已打开导入者，覆盖模块声明、导入文字和成员使用的 UTF-16 列。 */
 static TZrBool test_module_entry_references_after_utf8_prefix_use_utf16_columns(SZrState *state) {
     static const TZrChar *mainContent =
         "/* \xCE\xBB */ var greetModule = import(\"greet\");\n"
@@ -355,17 +366,22 @@ static TZrBool test_module_entry_references_after_utf8_prefix_use_utf16_columns(
                (unsigned long long)references.length);
         describe_first_location(&references);
         printf("\n");
+        /* BUG: FindReferences 的 Location* 由调用方逐项释放；这里只释放数组存储。
+         * 有引用结果且断言失败时会泄漏每个 Location；核对接口契约及本测试成功路径。 */
         ZrCore_Array_Free(state, &references);
         ZrLanguageServer_LspContext_Free(state, context);
         return ZR_FALSE;
     }
 
+    /* BUG: 成功路径同样只释放数组存储，未释放 FindReferences 追加的 Location*；
+     * 每次运行该回归场景都会留下结果对象，后续应逐项 RawFree。 */
     ZrCore_Array_Free(state, &references);
     ZrLanguageServer_LspContext_Free(state, context);
     printf("PASS: Project UTF-16 module entry references use UTF-16 columns\n");
     return ZR_TRUE;
 }
 
+/* 将外部二进制声明的 parser 坐标与 LSP 定义范围并排校验，防止元数据多字节前缀被重复换算。 */
 static TZrBool test_binary_metadata_declaration_after_utf8_prefix_uses_utf16_columns(SZrState *state) {
     static const TZrChar *binarySource =
         "/* \xCE\xBB */ pub var binarySeed = fn() => {\n"
@@ -444,12 +460,15 @@ static TZrBool test_binary_metadata_declaration_after_utf8_prefix_uses_utf16_col
                (unsigned long long)definitions.length);
         describe_first_location(&definitions);
         printf("\n");
+        /* BUG: AppendDefinitions 也追加独立分配的 Location*；失败路径只释放数组缓冲，
+         * 在返回前遗留定义位置对象。 */
         ZrCore_Array_Free(state, &definitions);
         ZrLanguageServer_LspSemanticQuery_Free(state, &query);
         ZrLanguageServer_LspContext_Free(state, context);
         return ZR_FALSE;
     }
 
+    /* BUG: 成功路径同样未逐项释放定义 Location*；每次二进制声明回归运行都会泄漏。 */
     ZrCore_Array_Free(state, &definitions);
     ZrLanguageServer_LspSemanticQuery_Free(state, &query);
     ZrLanguageServer_LspContext_Free(state, context);
@@ -457,6 +476,7 @@ static TZrBool test_binary_metadata_declaration_after_utf8_prefix_uses_utf16_col
     return ZR_TRUE;
 }
 
+/* 直接约束描述符紧凑坐标的结构性转换：一基 parser 行列只减一，不读取源码文本猜字节位置。 */
 static TZrBool test_descriptor_metadata_compact_range_uses_structural_coordinates(void) {
     SZrFileRange range = ZrParser_FileRange_Create(ZrParser_FilePosition_Create(0, 2, 9),
                                                    ZrParser_FilePosition_Create(0, 2, 10),
@@ -478,6 +498,7 @@ static TZrBool test_descriptor_metadata_compact_range_uses_structural_coordinate
     return ZR_TRUE;
 }
 
+/* CTest 入口按引用、二进制声明和描述符三个场景运行；每个结果参与最终退出状态。 */
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global;

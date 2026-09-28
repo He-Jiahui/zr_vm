@@ -1,6 +1,7 @@
 //
 // Focused union pattern diagnostic regression tests.
 //
+// 直接经 parser 和语义分析器观察 union 模式绑定及诊断，避免 LSP 发布格式掩盖类型事实的退化。
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -61,6 +62,7 @@ static TZrPtr test_allocator(TZrPtr userData,
                              TZrSize originalSize,
                              TZrSize newSize,
                              TZrInt64 flag) {
+    /* TODO: 此回调以地址阈值和旧大小筛选释放/重分配；需确认 VM 是否可能给合法旧块传 0 大小，避免测试夹具泄漏。 */
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(flag);
 
@@ -182,6 +184,7 @@ static TZrBool symbol_has_type_name(SZrSymbol *symbol, const TZrChar *expectedTy
            strcmp(test_string_ptr(symbol->typeInfo->typeName), expectedTypeName) == 0;
 }
 
+/* 各样例复用此入口取得同一 AST 对应的分析器与符号表；成功后本测试各调用方负责释放两者。 */
 static TZrBool analyze_source(SZrState *state,
                               const TZrChar *source,
                               const TZrChar *sourceNameText,
@@ -220,6 +223,7 @@ static TZrBool analyze_source(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 变体构造器的类型参数应保留在结果符号上，供后续 using/switch 模式判定资源 union 身份。 */
 static void test_union_lsp_infers_generic_variant_constructor_symbol_type(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Union LSP Infers Generic Variant Constructor Symbol Type");
@@ -526,6 +530,7 @@ static void test_union_lsp_registers_checkout_result_switch_payload(SZrState *st
     TEST_PASS(timer, "Union LSP Registers Checkout Result Switch Payload");
 }
 
+/* tuple 变体不能采用对象解构；诊断要指出预期形状与可操作的模式提示。 */
 static void test_union_using_pattern_reports_tuple_variant_object_shape_mismatch(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Union Using Pattern Reports Tuple Variant Object Shape Mismatch");
@@ -776,6 +781,7 @@ static void test_union_using_pattern_reports_struct_variant_arity_mismatch(SZrSt
     TEST_PASS(timer, "Union Using Pattern Reports Struct Variant Arity Mismatch");
 }
 
+/* 注解来自另一 union 时，应报告资源类型不相容，而非默默接受同形状的变体。 */
 static void test_union_using_pattern_reports_variant_type_mismatch(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Union Using Pattern Reports Variant Type Mismatch");
@@ -828,6 +834,7 @@ static void test_union_using_pattern_reports_variant_type_mismatch(SZrState *sta
     TEST_PASS(timer, "Union Using Pattern Reports Variant Type Mismatch");
 }
 
+/* CTest 入口先注册内建模块再运行模式分析；所有案例共用 VM state，但各自创建并释放 AST/analyzer。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

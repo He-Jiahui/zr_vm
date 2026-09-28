@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_CANONICAL_RECEIVER_MEMBER_TYPE_CASES_H
 #define ZR_VM_TEST_LSP_CANONICAL_RECEIVER_MEMBER_TYPE_CASES_H
 
+/* 正例先取得规范成员类型，再撤销声明引用事实，确保缺事实时不猜测类型文本。 */
 static void test_lsp_receiver_member_type_fails_closed_without_declaration_fact(
         SZrState *state) {
     const TZrChar *summary =
@@ -77,6 +78,7 @@ static void test_lsp_receiver_member_type_fails_closed_without_declaration_fact(
         goto cleanup;
     }
     declarationSymbolId = declarationSymbol->semanticId;
+    /* 此夹具只修改当前临时 context 的引用事实，随后重查并释放整个 context。 */
     for (TZrSize referenceIndex = 0U;
          referenceIndex < analyzer->semanticContext->referenceFacts.length;
          referenceIndex++) {
