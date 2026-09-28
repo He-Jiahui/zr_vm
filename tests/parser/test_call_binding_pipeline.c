@@ -133,10 +133,17 @@ static void test_object_chain_preserves_field_reads_and_binds_final_call(void) {
 }
 
 /* 未声明成员必须在编译期被拒绝。 */
-static void test_unknown_static_member_is_a_compile_error(void) {
+static void test_unknown_instance_member_call_is_a_compile_error(void) {
     TEST_ASSERT_NULL(compile_source(
             "class Box { pub fn read(): int { return 1; } }\n"
             "var box = new Box(); return box.missing();\n"));
+}
+
+static void test_unknown_static_member_is_a_compile_error(void) {
+    assert_compile_diagnostic(
+            "class Box { pub static fn read(): int { return 1; } }\n"
+            "return Box.missing();\n",
+            "Unknown static member 'Box.missing'");
 }
 
 /* 返回类型不同但参数相同的重载无法唯一绑定，检查诊断文本。 */
@@ -314,6 +321,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_static_method_has_token_binding);
     RUN_TEST(test_object_chain_preserves_field_reads_and_binds_final_call);
+    RUN_TEST(test_unknown_instance_member_call_is_a_compile_error);
     RUN_TEST(test_unknown_static_member_is_a_compile_error);
     RUN_TEST(test_member_overload_ambiguity_is_a_compile_error);
     RUN_TEST(test_member_signature_mismatch_is_a_compile_error);

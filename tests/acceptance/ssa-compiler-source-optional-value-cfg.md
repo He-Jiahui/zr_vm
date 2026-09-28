@@ -2,6 +2,7 @@
 doc_type: acceptance-record
 plan: docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
 implementation:
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_receiver_guard.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
@@ -16,6 +17,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_optional_value.inc
   - tests/parser/test_pre_semantic_ir_callable_isolation.inc
   - tests/parser/test_ownership_intrinsic_member_separation.c
+  - tests/parser/test_call_binding_pipeline.c
 status: partial
 ---
 
@@ -208,6 +210,62 @@ cases observed `Expected 1 Was 0`; the missing-member and two named-dispatch
 failures matched GCC/Clang. The GC-pressure case passed. These are native runs
 against the static parser build, not a shared-library smoke. The MSVC logs are
 `D:/tmp/zr_vm/ssa-artifact-v6-msvc/callable-isolation-*.log`.
+
+## Direct Weak missing-member lookup follow-up (2026-09-27)
+
+After the separate weak owner-lifetime repair, the current-source GCC ownership
+executable had one remaining failure: `54 Tests 1 Failures`, with
+`test_live_weak_missing_member_is_not_null_reference_error` receiving a null
+compiled function. The compiler reported `Unknown static member
+'Service.missing'` for a direct instance read on a live Weak receiver.
+
+The ordinary instance negative in `test_call_binding_pipeline.c` uses
+`box.missing()` and still requires compilation to fail. A separate true static
+`Box.missing()` negative now requires the explicit unknown-static-member
+diagnostic. The runtime fallback is limited to a single direct noncomputed
+member read whose already validated receiver-guard fact is `WEAK_WAKE` in
+`DIRECT` mode. The live lookup can then raise the runtime missing-member error
+after the wake, while ordinary instance and static misses remain compile-time
+errors.
+
+The focused current-source GCC rebuild used the existing
+`D:/tmp/zr_vm/ssa-optional-member-gcc` cache and completed 39/39 edges for
+`zr_vm_ownership_intrinsic_member_separation_test` and
+`zr_vm_call_binding_pipeline_test`. The direct ownership Unity runner passed
+54/54, including the formerly failing live Weak missing-member case.
+`ctest -R ^call_binding_pipeline$ --output-on-failure` passed 1/1; its direct
+Unity runner passed 17/17, including both the ordinary instance and true
+static missing-member negatives.
+
+Two adjacent GCC binaries provided lightweight smoke after the parser rebuild:
+`zr_vm_pre_semantic_ir_test` passed 114/114 and
+`zr_vm_ssa_source_cleanup_cfg_test` passed 52/52. Their test objects were
+already built; these runs used the rebuilt parser shared library and do not
+replace a fresh rebuild of those targets.
+
+The retained Clang cache was explicitly reconfigured from current source;
+the regenerated Ninja graph retained both focused targets and CTest listed
+`call_binding_pipeline`. The focused build completed 100/100 edges. Direct
+ownership Unity passed 54/54, direct call-binding Unity passed 17/17, and
+`ctest -R ^call_binding_pipeline$ --output-on-failure` passed 1/1.
+
+The retained MSVC cache was also explicitly reconfigured from current source,
+with both targets and the CTest registration present, and the focused build
+completed 69/69 edges. Direct ownership Unity passed 54/54. The direct
+call-binding runner passed its first 16 cases, including the two missing-member
+negatives, then crashed in its final
+`test_bound_graph_survives_full_collection`; CTest reported `Exception:
+SegFault` for `call_binding_pipeline`. A GDB breakpoint set on the new
+`compiler_receiver_guard_allows_runtime_missing_member` helper after entry
+into that final case remained unhit until the crash. MSVC PDB symbolization
+located the fault at `ZrCore_Gc_ValueStaticAssertIsAlive` in
+`zr_vm_core/src/zr_vm_core/gc/gc_object.c:1251` during GC frame scanning.
+A temporary `--gc-only` runner mode then executed just that final test in a
+fresh process and reproduced the crash, excluding pollution from the earlier
+16 tests. The temporary mode was removed and the final test source rebuilt;
+the complete runner still passed its first 16 cases and crashed at full GC.
+This GC case remains a separate support-layer failure to investigate; the
+MSVC call-binding suite is not recorded as passing.
 
 ## Boundary
 

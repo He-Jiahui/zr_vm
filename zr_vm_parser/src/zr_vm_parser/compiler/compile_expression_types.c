@@ -3047,7 +3047,10 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                     isStaticMember = ZR_TRUE;
                 }
                 if (typeMember == ZR_NULL && !declaredFieldMatch &&
-                    find_type_declaration(cs, rootTypeName) != ZR_NULL) {
+                    find_type_declaration(cs, rootTypeName) != ZR_NULL &&
+                    !compiler_receiver_guard_allows_runtime_missing_member(
+                            cs, &receiverGuards, member, i,
+                            currentSegmentGuarded)) {
                     TZrChar diagnostic[ZR_PARSER_ERROR_BUFFER_LENGTH];
                     snprintf(diagnostic, sizeof(diagnostic), "Unknown static member '%s.%s'",
                              ZrCore_String_GetNativeString(rootTypeName),

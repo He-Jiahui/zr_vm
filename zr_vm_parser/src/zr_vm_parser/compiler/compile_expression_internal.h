@@ -340,6 +340,12 @@ TZrBool compiler_receiver_guard_begin_segment(
         SZrReceiverGuardLoweringContext *context,
         TZrBool *outChangedSlot,
         TZrBool *outGuarded);
+TZrBool compiler_receiver_guard_allows_runtime_missing_member(
+        SZrCompilerState *cs,
+        const SZrReceiverGuardLoweringContext *context,
+        SZrAstNode *member,
+        TZrSize segmentIndex,
+        TZrBool segmentGuarded);
 TZrBool compiler_receiver_guard_finish(
         SZrCompilerState *cs,
         TZrUInt32 *ioCurrentSlot,

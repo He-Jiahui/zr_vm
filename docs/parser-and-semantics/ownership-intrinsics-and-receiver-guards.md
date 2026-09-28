@@ -90,6 +90,7 @@ plan_sources:
   - docs/plans/syntax/2026-07-18-05-property-unified-ast-design.md
 tests:
   - tests/parser/test_ownership_intrinsic_member_separation.c
+  - tests/parser/test_call_binding_pipeline.c
   - tests/parser/test_semantic_query.c
   - tests/parser/test_ownership_optional_callable_cases.h
   - tests/parser/test_ownership_receiver_guard_contract_cases.h
@@ -316,6 +317,14 @@ The lowering frame stores the fact-owned exclusive chain end and result-lift
 mode. Finalization requires the compiler's reached chain end to match the fact,
 and the absent block explicitly selects nullable versus void-no-op merge
 behavior from that stored mode.
+
+For one direct `weak.member` read, a validated `WEAK_WAKE` receiver-guard fact
+allows an unresolved member name to reach ordinary runtime lookup. The wake
+and `REQUIRE_NON_NULL` still run first: an expired target raises
+`NullReferenceError`, while a live target with no such member raises the normal
+runtime missing-member error. The fallback requires a single noncomputed
+direct member segment. Unknown ordinary instance calls, static type members,
+optional access, and longer chains retain their compile-time checks.
 
 The pre-execution Semantic IR producer mirrors nullable optional call branches
 with either `VOID_NOOP` or `NULLABLE` lift and a single resolved nullable

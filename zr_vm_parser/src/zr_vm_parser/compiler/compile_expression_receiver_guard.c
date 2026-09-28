@@ -124,6 +124,32 @@ static SZrAstNode *receiver_guard_expected_receiver(
                    : context->segments->nodes[segmentIndex - 1u];
 }
 
+TZrBool compiler_receiver_guard_allows_runtime_missing_member(
+        SZrCompilerState *cs,
+        const SZrReceiverGuardLoweringContext *context,
+        SZrAstNode *member,
+        TZrSize segmentIndex,
+        TZrBool segmentGuarded) {
+    const SZrReceiverGuardFact *fact;
+
+    if (cs == ZR_NULL || context == ZR_NULL ||
+        context->segments == ZR_NULL || context->segments->count != 1U ||
+        !segmentGuarded || segmentIndex != 0U ||
+        context->segments->nodes[0] != member || member == ZR_NULL ||
+        member->type != ZR_AST_MEMBER_EXPRESSION ||
+        member->data.memberExpression.computed ||
+        member->data.memberExpression.accessMode != ZR_POSTFIX_ACCESS_DIRECT) {
+        return ZR_FALSE;
+    }
+    fact = ZrParser_SemanticFacts_FindReceiverGuardByNode(
+            cs->semanticContext, member);
+    return (TZrBool)(fact != ZR_NULL &&
+            fact->kind == ZR_RECEIVER_GUARD_WEAK_WAKE &&
+            fact->mode == ZR_RECEIVER_GUARD_DIRECT &&
+            fact->firstSegment == member && fact->node == member &&
+            fact->chainSegmentStart == 0U && fact->chainSegmentEnd == 1U);
+}
+
 void compiler_receiver_guard_lowering_init(
         SZrCompilerState *cs,
         SZrReceiverGuardLoweringContext *context,
