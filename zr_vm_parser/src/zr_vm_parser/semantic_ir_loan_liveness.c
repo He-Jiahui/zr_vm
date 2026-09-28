@@ -131,6 +131,19 @@ static TZrBool loan_opcode_propagates_input_to_result(
                      opcode == ZR_SEMANTIC_IR_PROPERTY_REF_GET);
 }
 
+static TZrBool loan_result_has_value_ownership(
+        const SSemanticLoanAnalysis *analysis,
+        TZrValueId resultValueId) {
+    const SZrSemanticIrValue *value = ZrParser_SemanticIr_Value(
+            analysis->function, resultValueId);
+
+    return (TZrBool)(value != ZR_NULL && value->facts.typeId != 0u &&
+                     ZrParser_SemanticValueFacts_Validate(
+                             &value->facts, value->typeId) &&
+                     value->facts.ownership ==
+                             ZR_SEMANTIC_VALUE_OWNERSHIP_VALUE);
+}
+
 static TZrBool loan_opcode_stores_value(EZrSemanticIrOpcode opcode) {
     return (TZrBool)(opcode == ZR_SEMANTIC_IR_STORE ||
                      opcode == ZR_SEMANTIC_IR_INITIALIZE ||
@@ -208,7 +221,9 @@ static TZrBool loan_seed_and_propagate_values(SSemanticLoanAnalysis *analysis) {
                         analysis->loanCount);
             }
             if (instruction->resultValueId != ZR_VALUE_ID_INVALID &&
-                instruction->resultValueId <= analysis->valueCount) {
+                instruction->resultValueId <= analysis->valueCount &&
+                !loan_result_has_value_ownership(
+                        analysis, instruction->resultValueId)) {
                 resultLoans = loan_row(
                         analysis->valueLoans,
                         (TZrSize)instruction->resultValueId - 1U,
@@ -599,7 +614,9 @@ static TZrBool loan_propagate_reaching_place_values(
                     }
                 }
                 if (instruction->resultValueId != ZR_VALUE_ID_INVALID &&
-                    instruction->resultValueId <= analysis->valueCount) {
+                    instruction->resultValueId <= analysis->valueCount &&
+                    !loan_result_has_value_ownership(
+                            analysis, instruction->resultValueId)) {
                     resultLoans = loan_row(
                             analysis->valueLoans,
                             (TZrSize)instruction->resultValueId - 1U,

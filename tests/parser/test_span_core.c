@@ -932,6 +932,8 @@ void tearDown(void) {}
 
 /* Unity 入口组合核心用例、GC 用例和语义 IR 用例。 */
 /* TODO: CMake 构建了该目标但未见 add_test；需确认是手动验收还是应纳入 CTest。 */
+#include "test_span_core_pinned_nll.inc"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_span_descriptors_publish_ref_like_contiguous_view_contracts);
@@ -950,5 +952,7 @@ int main(void) {
     RUN_TEST(test_span_constant_slice_index_elides_only_proven_bounds_checks);
     RUN_TEST(test_span_compiler_publishes_structured_view_and_bounds_facts);
     RUN_TEST(test_span_owner_move_and_native_drop_conflict_with_active_view);
+    RUN_TEST(test_pinned_span_scalar_last_use_allows_pin_close);
+    RUN_TEST(test_pinned_span_close_rejects_later_view_read);
     return UNITY_END();
 }

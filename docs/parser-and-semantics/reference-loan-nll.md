@@ -18,6 +18,8 @@ plan_sources:
   - docs/plans/syntax/2026-07-18-04-resource-ownership-drop-gc-bridge-design.md
 tests:
   - tests/parser/test_reference_loan_nll.c
+  - tests/parser/test_span_core.c
+  - tests/parser/test_span_core_pinned_nll.inc
   - tests/parser/test_pre_semantic_ir.c
   - tests/parser/test_resource_owner_borrow_receiver.c
   - tests/parser/test_property_ref_return.c
@@ -35,8 +37,12 @@ per loan. VM and AOT do not maintain a runtime borrow table.
 ## Reference-value propagation
 
 Each loan seeds the semantic value named by `createdByValueId`. Copy, move and
-conversion preserve its LoanId. A ref value stored in a Place and loaded later
-also preserves the LoanId.
+conversion preserve its LoanId when their result can carry a reference. A ref
+value stored in a Place and loaded later also preserves the LoanId. A result
+with a resolved, type-matching `VALUE` ownership fact is a scalar value and
+does not inherit input or Place loans. Unknown or ref-like results continue to
+carry them. The input still counts as a loan use at the conversion or read;
+the cutoff only prevents a later scalar use from extending the view's region.
 
 Place-backed ref values use a forward CFG reaching-value calculation. The
 analysis first discovers Places that can carry a loan, then runs exact kill/gen
