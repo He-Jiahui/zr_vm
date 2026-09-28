@@ -1,6 +1,11 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "stdio_handler_result.h"
 
+/** @brief 将补全请求的内部位置定位到文本快照中的字节偏移，供前缀替换使用。
+ *  BUG: parse_position_for_uri 交来的 character 是 UTF-16 列，而这里每个 UTF-8
+ *  字节都递增列号；非 ASCII 前缀后的补全会定位到错误字节，进而生成错误 textEdit。
+ *  同一解析路径也认可单独 CR 换行，本扫描只认 LF；CR 后第二行会退回零宽范围。
+ */
 static int completion_offset_from_position(const char *content,
                                            size_t contentLength,
                                            SZrLspPosition position,
@@ -34,6 +39,7 @@ static int completion_offset_from_position(const char *content,
     return 0;
 }
 
+/** @brief 限定补全替换前缀为 ASCII 标识符片段；不能把标点或空白并入编辑。 */
 static int completion_is_identifier_part(char ch) {
     return (ch >= 'a' && ch <= 'z') ||
            (ch >= 'A' && ch <= 'Z') ||
@@ -41,6 +47,9 @@ static int completion_is_identifier_part(char ch) {
            ch == '_';
 }
 
+/** @brief 从当前文档快照推导候选项的替换范围；快照不可用时退回零宽光标范围。
+ *  借入的快照只在本函数内读取并释放，返回范围供普通补全和 resolve 共用。
+ */
 static SZrLspRange completion_prefix_range(SZrStdioServer *server,
                                            SZrString *uri,
                                            SZrLspPosition position) {
@@ -81,6 +90,9 @@ static SZrLspRange completion_prefix_range(SZrStdioServer *server,
     return range;
 }
 
+/** @brief 取得候选项将插入的文本；缺少 insertText 时回退到 label。
+ *  返回值借自 JSON 项，调用方只能在项存活期间使用。
+ */
 static const char *completion_item_new_text(cJSON *item) {
     const cJSON *insertText = get_object_item(item, ZR_LSP_FIELD_INSERT_TEXT);
     const cJSON *label = get_object_item(item, ZR_LSP_FIELD_LABEL);
@@ -94,6 +106,9 @@ static const char *completion_item_new_text(cJSON *item) {
     return NULL;
 }
 
+/** @brief 为补全候选附加覆盖当前前缀的 textEdit，使选择项可替换已输入文字。
+ *  新 JSON 节点归 item 所有；无插入文本或分配失败时保留原项。
+ */
 static void add_completion_text_edit(cJSON *item, SZrLspRange range) {
     cJSON *textEdit;
     const char *newText;
@@ -117,6 +132,7 @@ static void add_completion_text_edit(cJSON *item, SZrLspRange range) {
     cJSON_AddItemToObject(item, ZR_LSP_FIELD_TEXT_EDIT, textEdit);
 }
 
+/** @brief resolve 时用显示标签寻找重新计算的候选，临时 C 字符串在比较后释放。 */
 static TZrBool completion_item_label_matches(SZrLspCompletionItem *item, const char *label) {
     char *itemLabel;
     TZrBool matches;
@@ -131,6 +147,7 @@ static TZrBool completion_item_label_matches(SZrLspCompletionItem *item, const c
     return matches;
 }
 
+/** @brief 将重新取得的原生候选投影为 resolve 响应，并保留初次响应的定位数据。 */
 static cJSON *serialize_resolved_completion_item(const cJSON *data,
                                                  SZrLspCompletionItem *item,
                                                  SZrLspRange range) {
@@ -147,6 +164,9 @@ static cJSON *serialize_resolved_completion_item(const cJSON *data,
     return resolved;
 }
 
+/** @brief 响应普通补全：查询语义候选，附上替换范围与 resolve 所需 URI/位置。
+ *  原生候选数组序列化后立即释放；JSON 结果所有权转交请求层。
+ */
 SZrLspHandlerResult handle_completion_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray completions = {0};
     SZrLspPosition position;
@@ -165,6 +185,7 @@ SZrLspHandlerResult handle_completion_request(SZrStdioServer *server, const cJSO
         return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
 
+    /* resolve 不保存原生候选，只凭此处写入的数据重新查询当前语义事实。 */
     result = serialize_completion_items_array(&completions);
     if (cJSON_IsArray(result)) {
         int count = cJSON_GetArraySize(result);
@@ -190,6 +211,9 @@ SZrLspHandlerResult handle_completion_request(SZrStdioServer *server, const cJSO
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/** @brief 从候选项携带的 URI/内部位置重算语义补全，并回填匹配项。
+ *  查找失败时原样复制客户端项；原生数组必须在响应前释放。
+ */
 SZrLspHandlerResult handle_completion_item_resolve_request(SZrStdioServer *server, const cJSON *params) {
     const cJSON *labelJson;
     const cJSON *data;
@@ -234,6 +258,9 @@ SZrLspHandlerResult handle_completion_item_resolve_request(SZrStdioServer *serve
         return stdio_handler_result_from_json(server->context, cJSON_Duplicate((cJSON *)params, 1));
     }
 
+    /* TODO: 当前只按 label 选第一项，未核对同名不同 kind/来源的候选是否可并存；
+     * 需用重载、同名导入和本地遮蔽场景确认 resolve 能否保持原候选身份。
+     */
     result = ZR_NULL;
     for (TZrSize index = 0; index < completions.length; index++) {
         SZrLspCompletionItem **itemPtr = (SZrLspCompletionItem **)ZrCore_Array_Get(&completions, index);

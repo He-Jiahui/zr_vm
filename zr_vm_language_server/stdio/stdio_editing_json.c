@@ -2,6 +2,11 @@
 
 #include <inttypes.h>
 
+/**
+ * @brief 将接口层 TextEdit 转为协议对象，供格式化和 WorkspaceEdit 共用。
+ * @details serialize_range 保留内部位置，最终响应由统一的位置编码转换路径处理；
+ *          返回的新 JSON 节点归调用方所有，不接管 edit 或其 newText。
+ */
 cJSON *serialize_text_edit(const SZrLspTextEdit *edit) {
     cJSON *json;
     char *text;
@@ -22,6 +27,11 @@ cJSON *serialize_text_edit(const SZrLspTextEdit *edit) {
     return json;
 }
 
+/**
+ * @brief 把接口层持有的 TextEdit 指针数组序列化为协议数组。
+ * @details 接口层仍拥有原数组，由调用方按来源用 FreeTextEdits 或 FreeCodeActions 释放；
+ *          JSON 数组交给响应或父节点管理。
+ */
 cJSON *serialize_text_edits_array(SZrArray *edits) {
     cJSON *json = cJSON_CreateArray();
 
@@ -39,6 +49,11 @@ cJSON *serialize_text_edits_array(SZrArray *edits) {
     return json;
 }
 
+/**
+ * @brief 为已打开文档构造带版本约束的 TextDocumentEdit。
+ * @details serialize_workspace_edit 选用 documentChanges 时调用；版本来自刚捕获的
+ *          文档快照，以便客户端拒绝把编辑应用到另一版本。
+ */
 static cJSON *serialize_versioned_document_change(const char *uriText,
                                                   TZrSize version,
                                                   SZrArray *edits) {
@@ -58,6 +73,11 @@ static cJSON *serialize_versioned_document_change(const char *uriText,
     return documentChange;
 }
 
+/**
+ * @brief 把 64 位快照指纹写为固定宽度十六进制字符串。
+ * @details CodeAction.data 后续由 parse_code_action_snapshot_hash 读回；
+ *          字符串表示避免 JSON 数字对高位指纹造成精度损失。
+ */
 static TZrBool serialize_snapshot_u64(
         cJSON *json,
         const char *fieldName,
@@ -71,6 +91,11 @@ static TZrBool serialize_snapshot_u64(
     return cJSON_AddStringToObject(json, fieldName, text) ? ZR_TRUE : ZR_FALSE;
 }
 
+/**
+ * @brief 将五项语义身份一并放入 CodeAction.data 的文档快照。
+ * @details 与 resolve 阶段 parse_code_action_semantic_identity 成对，字段必须全体成功；
+ *          JSON 节点成功附着后归父对象管理，失败时由此函数释放。
+ */
 static TZrBool serialize_snapshot_semantic_identity(
         cJSON *json,
         const SZrLspSemanticSnapshotIdentity *identity) {
@@ -109,6 +134,11 @@ static TZrBool serialize_snapshot_semantic_identity(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 为 CodeAction.data 编码可在 resolve 时复验的文档快照。
+ * @details 长度、版本和内容代数限制为 JSON 安全整数；内容及语义指纹使用
+ *          十六进制字符串。新建 JSON 归调用方管理，不接管输入快照。
+ */
 static cJSON *serialize_workspace_edit_document_snapshot(
         const SZrLspWorkspaceEditDocumentSnapshot *documentSnapshot) {
     cJSON *json;
@@ -155,6 +185,11 @@ static cJSON *serialize_workspace_edit_document_snapshot(
     return json;
 }
 
+/**
+ * @brief 依文档打开状态选择 WorkspaceEdit 的版本化或普通编辑形式。
+ * @details 打开的文档使用 documentChanges 携带版本；关闭的文档使用 URI 键控
+ *          changes。编辑数组只读取不接管，返回节点由 CodeAction 持有。
+ */
 static cJSON *serialize_workspace_edit(const char *uriText,
                                        SZrArray *edits,
                                        const SZrLspWorkspaceEditDocumentSnapshot *documentSnapshot) {
@@ -165,6 +200,7 @@ static cJSON *serialize_workspace_edit(const char *uriText,
         return NULL;
     }
 
+    /* 已打开文档需让客户端按快照版本校验；关闭文档无法提供协议版本。 */
     if (documentSnapshot != ZR_NULL && documentSnapshot->isOpenDocument) {
         cJSON *documentChanges = cJSON_CreateArray();
         cJSON *documentChange = serialize_versioned_document_change(
@@ -195,6 +231,11 @@ static cJSON *serialize_workspace_edit(const char *uriText,
     return json;
 }
 
+/**
+ * @brief 将接口层 CodeAction 封装为可应用、可在 resolve 时判断过期的协议操作。
+ * @details data 保存 URI、操作信息和快照，edit 按文档状态选择 WorkspaceEdit 形式；
+ *          新建 JSON 归数组或响应管理，接口层 action 仍由 FreeCodeActions 释放。
+ */
 static cJSON *serialize_code_action(const char *uriText,
                                     const SZrLspWorkspaceEditDocumentSnapshot *documentSnapshot,
                                     const SZrLspCodeAction *action) {
@@ -219,6 +260,7 @@ static cJSON *serialize_code_action(const char *uriText,
         cJSON_AddStringToObject(json, ZR_LSP_FIELD_KIND, kindText);
     }
     cJSON_AddBoolToObject(json, ZR_LSP_FIELD_IS_PREFERRED, action->isPreferred ? 1 : 0);
+    /* data 与首轮响应绑定；resolve 只据此校验，不依赖客户端再次传回内部指针。 */
     {
         cJSON *data = cJSON_CreateObject();
         if (data != NULL) {
@@ -261,6 +303,11 @@ static cJSON *serialize_code_action(const char *uriText,
     return json;
 }
 
+/**
+ * @brief 按代码操作 kind 的层级规则匹配 context.only。
+ * @details 请求父 kind 时接受相同 kind 或以“父 kind.”开头的子 kind，
+ *          避免把同字首但不属于该层级的 kind 误认为匹配。
+ */
 static int code_action_kind_matches_filter(const char *actionKind, const char *requestedKind) {
     size_t requestedLength;
 
@@ -276,6 +323,11 @@ static int code_action_kind_matches_filter(const char *actionKind, const char *r
            actionKind[requestedLength] == '.';
 }
 
+/**
+ * @brief 判断一个接口层操作是否满足本次请求的 context.only 过滤条件。
+ * @details 空缺或空数组沿用全部操作；非空数组按层级 kind 匹配，临时 kind 字符串
+ *          在函数返回前释放，输入 action 与 params 均不由此函数持有。
+ */
 static int code_action_allowed_by_context_only(const SZrLspCodeAction *action, const cJSON *params) {
     const cJSON *context;
     const cJSON *only;
@@ -301,6 +353,11 @@ static int code_action_allowed_by_context_only(const SZrLspCodeAction *action, c
     return allowed;
 }
 
+/**
+ * @brief 过滤并序列化代码操作列表，供 codeAction 请求处理器生成响应。
+ * @details 输入操作、快照和请求参数只借用；返回 JSON 数组由响应路径接管，
+ *          任一操作序列化失败时销毁已生成数组并返回空指针。
+ */
 cJSON *serialize_code_actions_array(const char *uriText,
                                     const SZrLspWorkspaceEditDocumentSnapshot *documentSnapshot,
                                     SZrArray *actions,

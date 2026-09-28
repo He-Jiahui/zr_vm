@@ -1,6 +1,7 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "zr_vm_core/utf8.h"
 
+/** 借用 parser 中当前 URI 的文件版本，供通知入口判断编辑是否真正提交。 */
 SZrFileVersion *get_file_version_for_uri(SZrStdioServer *server, SZrString *uri) {
     if (server == ZR_NULL || server->context == ZR_NULL || server->context->parser == ZR_NULL || uri == ZR_NULL) {
         return ZR_NULL;
@@ -8,6 +9,8 @@ SZrFileVersion *get_file_version_for_uri(SZrStdioServer *server, SZrString *uri)
     return ZrLanguageServer_IncrementalParser_GetFileVersion(server->context->parser, uri);
 }
 
+/** @brief 按客户端位置编码验证单次 LSP 编辑；成功返回 malloc 缓冲，失败不改原文。
+ * BUG: JSON 的 \\u0000 会被 cJSON 解码成 NUL，strlen 静默截断替换文本，客户端与服务端失同步。 */
 static char *apply_single_change(SZrStdioServer *server,
                                  SZrString *uri,
                                  const char *original,
@@ -89,6 +92,7 @@ static char *apply_single_change(SZrStdioServer *server,
     return updated;
 }
 
+/** 顺序应用一批 didChange 编辑；任一失败丢弃中间结果，由调用方标记失同步。 */
 char *apply_content_changes(SZrStdioServer *server,
                             SZrString *uri,
                             const char *original,
@@ -129,6 +133,7 @@ char *apply_content_changes(SZrStdioServer *server,
     return current;
 }
 
+/** 用版本与内容快照确认提交，避免语义分析失败掩盖已保存的语法错误文本。 */
 static int document_contents_were_committed(SZrStdioServer *server,
                                             SZrString *uri,
                                             const char *content,
@@ -151,6 +156,7 @@ static int document_contents_were_committed(SZrStdioServer *server,
     return isCommitted;
 }
 
+/** 将 UTF-8 文本交给 LSP 并验证提交；发布 parser 当前版本的诊断，失败由各调用方处置。 */
 int update_document_contents(SZrStdioServer *server,
                              SZrString *uri,
                              const char *content,
@@ -174,6 +180,10 @@ int update_document_contents(SZrStdioServer *server,
     return updateOk;
 }
 
+/** @brief 用磁盘内容重建关闭文档或文件事件的版本，成功后清除失同步状态。
+ * BUG: 合成版本递增后，同一连接再次 didOpen 的客户端版本可能更低，parser 因单调门禁拒绝新全文。
+ * TODO: 读取失败前已移除旧 parser/analyzer 状态；核对文件事件和 didSave 是否应保留旧状态。
+ * TODO: 手工清理未调用语义历史快照的 RemoveUri；核对关闭后旧快照是否仍应可查询。 */
 int update_document_contents_from_disk(SZrStdioServer *server, SZrString *uri) {
     char *sourceCode;
     size_t sourceLength;

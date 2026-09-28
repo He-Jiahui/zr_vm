@@ -2,21 +2,26 @@
 
 #include <string.h>
 
+/* 参数表与 parser 规范的 build.feature 签名保持一致，供 LSP 签名提示使用。 */
 static const ZrLibParameterDescriptor g_feature_parameters[] = {
         {.name = "name", .typeName = "string"},
 };
 
+/* 诊断目标是可选 SymbolId；投影仅展示编译期调用，不提供运行时 callback。 */
 static const ZrLibParameterDescriptor g_assert_parameters[] = {
         {.name = "condition", .typeName = "bool"},
         {.name = "message", .typeName = "string"},
         {.name = "target", .typeName = "SymbolId?"},
 };
 
+/* error/warning 共用面向编译诊断的参数契约。 */
 static const ZrLibParameterDescriptor g_diagnostic_parameters[] = {
         {.name = "message", .typeName = "string"},
         {.name = "target", .typeName = "SymbolId?"},
 };
 
+/* build.feature 的角色与 parser canonical callable 对齐，供发布前契约校验；
+ * 此表只作为编译期静态声明投影。 */
 static const ZrLibMethodDescriptor g_build_methods[] = {
         {
                 .name = "feature",
@@ -31,6 +36,8 @@ static const ZrLibMethodDescriptor g_build_methods[] = {
         },
 };
 
+/* assert/error/warning 是编译期诊断接口；contractRole 对应 canonical callable，
+ * callback 留空，因为这里提供的是静态声明投影。 */
 static const ZrLibFunctionDescriptor g_build_functions[] = {
         {
                 .name = "assert",
@@ -64,6 +71,7 @@ static const ZrLibFunctionDescriptor g_build_functions[] = {
         },
 };
 
+/* 不可变声明视图供虚拟文档展示符号身份与源码范围。 */
 static const ZrLibFieldDescriptor g_declaration_view_fields[] = {
         {.name = "symbolId", .typeName = "SymbolId"},
         {.name = "kind", .typeName = "DeclarationKind"},
@@ -74,6 +82,7 @@ static const ZrLibFieldDescriptor g_declaration_view_fields[] = {
         {.name = "attributes", .typeName = "AttributeData[]"},
 };
 
+/* 类型视图将成员及接口关系映射为可导航的编译期数据形状。 */
 static const ZrLibFieldDescriptor g_type_view_fields[] = {
         {.name = "symbolId", .typeName = "SymbolId"},
         {.name = "typeId", .typeName = "TypeId"},
@@ -84,6 +93,7 @@ static const ZrLibFieldDescriptor g_type_view_fields[] = {
         {.name = "interfaces", .typeName = "TypeId[]"},
 };
 
+/* Patch 是声明变换的封闭输出；这些字段只描述结果，不授权 LSP 执行变换。 */
 static const ZrLibFieldDescriptor g_patch_fields[] = {
         {.name = "target", .typeName = "SymbolId"},
         {.name = "additions", .typeName = "GeneratedDeclaration[]"},
@@ -92,6 +102,7 @@ static const ZrLibFieldDescriptor g_patch_fields[] = {
         {.name = "diagnostics", .typeName = "CompileDiagnostic[]"},
 };
 
+/* 与 canonical typed-constructor 契约对应，供生成字段的结构化签名和声明渲染。 */
 static const ZrLibFieldDescriptor g_generated_field_fields[] = {
         {.name = "name", .typeName = "string"},
         {.name = "type", .typeName = "TypeId"},
@@ -100,17 +111,20 @@ static const ZrLibFieldDescriptor g_generated_field_fields[] = {
         {.name = "initializer", .typeName = "ConstantValue?"},
 };
 
+/* 编译器产生的诊断视图在投影中保留目标 SymbolId。 */
 static const ZrLibFieldDescriptor g_compile_diagnostic_fields[] = {
         {.name = "isError", .typeName = "bool"},
         {.name = "message", .typeName = "string"},
         {.name = "target", .typeName = "SymbolId"},
 };
 
+/* 属性类型和常量字段值是声明变换读取的静态数据。 */
 static const ZrLibFieldDescriptor g_attribute_data_fields[] = {
         {.name = "typeId", .typeName = "TypeId"},
         {.name = "fieldValues", .typeName = "ConstantValue[]"},
 };
 
+/* 视图类型共享字段表，保证虚拟声明与元数据成员查询使用同一形状。 */
 #define ZR_COMPILE_TOOL_VIEW_TYPE(NAME, FIELDS) \
     {.name = (NAME), \
      .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, \
@@ -118,11 +132,13 @@ static const ZrLibFieldDescriptor g_attribute_data_fields[] = {
      .fieldCount = ZR_ARRAY_COUNT(FIELDS), \
      .documentation = "Immutable CompileTool declaration view."}
 
+/* 标识或封闭 union 不暴露字段，避免 LSP 捏造可访问成员。 */
 #define ZR_COMPILE_TOOL_OPAQUE_TYPE(NAME, DOCUMENTATION) \
     {.name = (NAME), \
      .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, \
      .documentation = (DOCUMENTATION)}
 
+/* build 类承载唯一的 feature 静态方法；函数级诊断接口另列于模块表。 */
 static const ZrLibTypeDescriptor g_build_types[] = {
         {
                 .name = "build",
@@ -133,6 +149,7 @@ static const ZrLibTypeDescriptor g_build_types[] = {
         },
 };
 
+/* 顺序与 parser canonical 类型表一致，MatchesCanonical 用名称和数量阻止明显漂移。 */
 static const ZrLibTypeDescriptor g_declaration_types[] = {
         ZR_COMPILE_TOOL_OPAQUE_TYPE("SymbolId", "Canonical declaration symbol identity."),
         ZR_COMPILE_TOOL_VIEW_TYPE("DeclarationView", g_declaration_view_fields),
@@ -151,6 +168,7 @@ static const ZrLibTypeDescriptor g_declaration_types[] = {
         ZR_COMPILE_TOOL_VIEW_TYPE("AttributeData", g_attribute_data_fields),
 };
 
+/* 静态描述符只为 LSP 与虚拟声明服务；providerPhase 和公开契约哈希归 parser 所有。 */
 static const ZrLibModuleDescriptor g_build_module = {
         .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
         .moduleName = ZR_PARSER_COMPILE_TOOL_MODULE_BUILD,
@@ -165,6 +183,7 @@ static const ZrLibModuleDescriptor g_build_module = {
         .publicContractHash = ZR_PARSER_COMPILE_TOOL_BUILD_PUBLIC_CONTRACT_HASH,
 };
 
+/* 声明视图模块与 build 模块共享 CompileTool 来源，但不暴露可调用函数。 */
 static const ZrLibModuleDescriptor g_declaration_module = {
         .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
         .moduleName = ZR_PARSER_COMPILE_TOOL_MODULE_DECLARATION,
@@ -177,6 +196,7 @@ static const ZrLibModuleDescriptor g_declaration_module = {
         .publicContractHash = ZR_PARSER_COMPILE_TOOL_DECLARATION_PUBLIC_CONTRACT_HASH,
 };
 
+/* canonical 的 callable role 可以落在模块函数或类型方法中；这里只验证是否可被投影找到。 */
 static TZrBool compile_tool_projection_role_is_present(
         const ZrLibModuleDescriptor *projection,
         EZrParserCompileToolRole role) {
@@ -196,6 +216,8 @@ static TZrBool compile_tool_projection_role_is_present(
     return ZR_FALSE;
 }
 
+/* parser 负责规范来源与哈希；本层在发布投影前拒绝不匹配的阶段、名称、
+ * 声明类型列表和 callable role。 */
 TZrBool ZrLanguageServer_LspCompileToolProjection_MatchesCanonical(
         const ZrLibModuleDescriptor *projection,
         const SZrParserCompileToolModuleDescriptor *canonical) {
@@ -212,6 +234,9 @@ TZrBool ZrLanguageServer_LspCompileToolProjection_MatchesCanonical(
                 ZrParser_CompileTool_ComputePublicContractHash(canonical)) {
         return ZR_FALSE;
     }
+    /* TODO: 当前仅核对类型名/数量及角色存在，不核对投影的形参、返回类型、
+     * 字段或角色唯一性。静态表漂移时仍可能通过；扩展 canonical 结构比对并
+     * 给签名/字段变更加入反例测试。 */
     if (strcmp(canonical->moduleName, ZR_PARSER_COMPILE_TOOL_MODULE_DECLARATION) == 0) {
         if (projection->typeCount != canonical->typeCount) {
             return ZR_FALSE;
@@ -233,6 +258,7 @@ TZrBool ZrLanguageServer_LspCompileToolProjection_MatchesCanonical(
     return ZR_TRUE;
 }
 
+/* 固定两份只读投影由 parser 规范名选择；失败时不向 LSP 发布过期声明。 */
 const ZrLibModuleDescriptor *ZrLanguageServer_LspCompileToolProjection_FindModule(
         const TZrChar *moduleName) {
     const SZrParserCompileToolModuleDescriptor *canonical =

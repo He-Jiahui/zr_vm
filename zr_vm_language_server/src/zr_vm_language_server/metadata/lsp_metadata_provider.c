@@ -15,12 +15,15 @@
 #include <ctype.h>
 #include <string.h>
 
+/* 本层把 parser 原型、项目源码、二进制元数据和原生 descriptor 合成 LSP 视图；
+ * provider 本身只借用请求上下文，缓存与对象生命期仍归各来源管理。 */
 static const TZrChar *metadata_provider_string_text(SZrString *value);
 static TZrBool metadata_provider_try_get_analyzer_for_uri(SZrState *state,
                                                           SZrLspContext *context,
                                                           SZrString *uri,
                                                           SZrSemanticAnalyzer **outAnalyzer);
 
+/* 类型不可精确推断时明确展示失败，避免 hover/补全把 object 误称为确切类型。 */
 static const TZrChar *metadata_provider_exact_type_failure_text(void) {
     return "cannot infer exact type";
 }
@@ -47,6 +50,7 @@ static const TZrChar *metadata_provider_string_text(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
+/* FFI 包装源码须在 hover 中保留其外部来源语义，而非伪装为普通项目源码。 */
 static const TZrChar *metadata_provider_hover_source_text(const SZrLspResolvedMetadataMember *resolvedMember,
                                                           const TZrChar *defaultText) {
     if (resolvedMember != ZR_NULL &&
@@ -63,6 +67,7 @@ static const TZrChar *metadata_provider_type_text_or_failure(const TZrChar *type
                : metadata_provider_exact_type_failure_text();
 }
 
+/* 将借来的原生类型文本复制成 GC 字符串；后续可释放临时二进制来源。 */
 static void metadata_provider_set_type_text(SZrState *state,
                                             SZrLspResolvedMetadataMember *outResolved,
                                             const TZrChar *typeText) {
@@ -106,6 +111,7 @@ static SZrString *metadata_provider_create_markdown_text(SZrState *state, const 
                : ZR_NULL;
 }
 
+/* AST 偏移与文档快照按字节对齐，LSP UTF-16 坐标在输出边界再转换。 */
 static SZrFilePosition metadata_provider_file_position_from_offset(const TZrChar *content,
                                                                    TZrSize contentLength,
                                                                    TZrSize offset) {
@@ -140,6 +146,7 @@ static TZrBool metadata_provider_identifier_boundary(const TZrChar *content, TZr
     return !(isalnum((unsigned char)content[offset]) || content[offset] == '_');
 }
 
+/* 仅在所借快照的声明行附近补找枚举成员名；回退前必须释放快照。 */
 static TZrBool metadata_provider_try_member_name_range(SZrLspMetadataProvider *provider,
                                                        SZrString *uri,
                                                        SZrAstNode *declarationNode,
@@ -215,6 +222,7 @@ cleanup:
     return found;
 }
 
+/* 不同 AST 成员的 nameLocation 布局不同；优先给编辑器准确名字范围。 */
 static SZrFileRange metadata_provider_type_member_declaration_range(SZrLspMetadataProvider *provider,
                                                                     SZrString *uri,
                                                                     SZrAstNode *declarationNode,
@@ -312,6 +320,7 @@ static SZrAstNode *metadata_provider_find_type_declaration_in_array(SZrAstNodeAr
     return ZR_NULL;
 }
 
+/* 只沿可声明类型的脚本/块/extern 容器递归，避免把任意表达式中的同名节点当定义。 */
 static SZrAstNode *metadata_provider_find_type_declaration_recursive(SZrAstNode *node, SZrString *typeName) {
     if (node == ZR_NULL || typeName == ZR_NULL) {
         return ZR_NULL;
@@ -344,6 +353,7 @@ static SZrAstNode *metadata_provider_find_type_declaration(SZrAstNode *ast, SZrS
     return metadata_provider_find_type_declaration_recursive(ast, typeName);
 }
 
+/* 源码类型成员导航按 AST 可见名字回查；此处不具备 parser 的重载身份。 */
 static SZrAstNode *metadata_provider_find_type_member_declaration(SZrAstNode *typeDeclaration,
                                                                   SZrString *memberName,
                                                                   EZrLspMetadataMemberKind *outKind) {
@@ -436,6 +446,7 @@ static SZrAstNode *metadata_provider_find_type_member_declaration(SZrAstNode *ty
     return ZR_NULL;
 }
 
+/* 将来源与额外文档去重后拼入 hover；缓冲不足时保留已有正文。 */
 static SZrString *metadata_provider_append_markdown_section(SZrState *state, SZrString *base, SZrString *appendix) {
     TZrNativeString baseText;
     TZrNativeString appendixText;
@@ -479,6 +490,7 @@ static SZrString *metadata_provider_append_markdown_section(SZrState *state, SZr
     return ZrCore_String_Create(state, buffer, used);
 }
 
+/* 统一把 GC 文本和源范围包装为 LSP hover，范围在这里才转换为客户端坐标。 */
 static TZrBool metadata_provider_create_hover(SZrLspMetadataProvider *provider,
                                               SZrString *content,
                                               SZrFileRange range,
@@ -505,6 +517,7 @@ static TZrBool metadata_provider_uri_to_native_path(SZrString *uri, TZrChar *buf
     return ZrLanguageServer_Lsp_FileUriToNativePath(uri, buffer, bufferSize);
 }
 
+/* TODO: 本文件内已无调用，旧范围匹配路径是否仍需保留待核；当前导航走虚拟文档记录。 */
 static TZrBool metadata_provider_file_range_contains_position(SZrFileRange range, SZrFileRange position) {
     if (!ZrLanguageServer_Lsp_StringsEqual(range.source, position.source) &&
         range.source != ZR_NULL && position.source != ZR_NULL) {
@@ -522,6 +535,7 @@ static TZrBool metadata_provider_file_range_contains_position(SZrFileRange range
             (position.end.line == range.end.line && position.end.column <= range.end.column));
 }
 
+/* TODO: 此按索引合成坐标的静态辅助函数无调用；核对旧兼容需求后考虑移除。 */
 static SZrFileRange metadata_provider_native_type_member_declaration_range(SZrString *uri,
                                                                            TZrSize typeIndex,
                                                                            TZrSize memberIndex,
@@ -537,6 +551,8 @@ static SZrFileRange metadata_provider_native_type_member_declaration_range(SZrSt
     return ZrParser_FileRange_Create(start, end, uri);
 }
 
+/* TODO: 以下三个按指针反查 descriptor 数组索引的辅助函数当前无调用；
+ * 核对旧导航入口是否已由 NativeDeclarationProjection_Find 全面替代。 */
 static TZrBool metadata_provider_try_get_native_type_index(const ZrLibModuleDescriptor *module,
                                                            const ZrLibTypeDescriptor *typeDescriptor,
                                                            TZrSize *outIndex) {
@@ -597,6 +613,8 @@ static TZrBool metadata_provider_try_get_native_method_index(const ZrLibTypeDesc
     return ZR_FALSE;
 }
 
+/* 源文件可能未在编辑器打开：先查现有 analyzer，再借快照或读磁盘触发项目文档更新。
+ * 返回真只表示更新路径未报错，调用方仍须检查 outAnalyzer 是否非空且 AST 可用。 */
 static TZrBool metadata_provider_try_get_analyzer_for_uri(SZrState *state,
                                                           SZrLspContext *context,
                                                           SZrString *uri,
@@ -625,6 +643,7 @@ static TZrBool metadata_provider_try_get_analyzer_for_uri(SZrState *state,
     }
 
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    /* 打开文档的快照优先于磁盘，避免未保存的编辑被旧文件覆盖。 */
     if (ZrLanguageServer_FileVersionContentSnapshot_Acquire(state, fileVersion, &snapshot)) {
         sourceBuffer = snapshot.content;
         sourceLength = snapshot.contentLength;
@@ -678,6 +697,7 @@ static TZrBool metadata_provider_try_get_analyzer_for_uri(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 源文件回查只接受公开全局符号，避免泄露同名私有定义到导入方。 */
 static SZrSymbol *metadata_provider_find_public_global_symbol(SZrSemanticAnalyzer *analyzer,
                                                               SZrString *memberName) {
     if (analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL || analyzer->symbolTable->globalScope == ZR_NULL ||
@@ -717,6 +737,7 @@ static const TZrChar *metadata_provider_symbol_kind_text(EZrSymbolType type) {
     }
 }
 
+/* 来源文件 analyzer 可用时，以公开符号为准覆写展示类别与精确类型。 */
 static void metadata_provider_resolve_symbol_descriptor(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -761,6 +782,7 @@ static void metadata_provider_attach_native_hint_metadata(const ZrLibModuleDescr
     }
 }
 
+/* 原生 descriptor 按模块链接、常量、函数、类型查名字；结果指针借用注册表。 */
 static void metadata_provider_find_native_member(SZrState *state,
                                                  const ZrLibModuleDescriptor *descriptor,
                                                  SZrString *memberName,
@@ -791,6 +813,9 @@ static void metadata_provider_find_native_member(SZrState *state,
         }
     }
 
+    /* BUG: 原生虚拟文档可分别渲染同名函数并保留 descriptor 身份，但这里仅按名字取首项；
+     * 点击第二重载时 semantic_query 会恢复精确声明范围，却显示首项的类型/文档。
+     * 见 test_lsp_virtual_declaration_projection_cases.h 的双函数 descriptor。 */
     for (TZrSize index = 0; index < descriptor->functionCount; index++) {
         const ZrLibFunctionDescriptor *functionDescriptor = &descriptor->functions[index];
         if (functionDescriptor->name != ZR_NULL && strcmp(functionDescriptor->name, memberText) == 0) {
@@ -819,6 +844,9 @@ static const SZrTypePrototypeInfo *metadata_provider_find_type_prototype(SZrSema
     return ZrLanguageServer_LspModuleMetadata_FindTypePrototype(analyzer, typeName);
 }
 
+/* BUG: 合法同名重载在模块原型中各有令牌，此按名字取首项的接口会丢失第二重载。
+ * ExternalMetadataIdentity_ResolveMember 精确命中第二项后会经此处回查并在复验时失败；
+ * parser/module_init_analysis.c 允许同名函数导出，test_project_import_canonicalization.c 有 pick(true) 场景。 */
 static const SZrTypeMemberInfo *metadata_provider_find_module_member(const SZrTypePrototypeInfo *modulePrototype,
                                                                      SZrString *memberName) {
     if (modulePrototype == ZR_NULL || memberName == ZR_NULL) {
@@ -839,6 +867,7 @@ static const SZrTypeMemberInfo *metadata_provider_find_module_member(const SZrTy
     return ZR_NULL;
 }
 
+/* parser 原型成员可能代表值、模块、类型或可调用项；转换为 LSP 展示类别。 */
 static const TZrChar *metadata_provider_module_member_kind_text(SZrSemanticAnalyzer *analyzer,
                                                                 const SZrTypeMemberInfo *member) {
     const SZrTypePrototypeInfo *prototype;
@@ -879,6 +908,7 @@ static const TZrChar *metadata_provider_module_member_kind_text(SZrSemanticAnaly
     }
 }
 
+/* 二进制类型引用借用读取器；只在本次调用栈中格式化，持久展示须再复制。 */
 static const TZrChar *metadata_provider_binary_type_ref_text(const SZrIoFunctionTypedTypeRef *typeRef,
                                                              TZrChar *buffer,
                                                              TZrSize bufferSize) {
@@ -978,6 +1008,7 @@ static TZrBool metadata_provider_binary_export_is_callable(const SZrIoFunctionTy
            symbol->valueType.baseType == ZR_VALUE_TYPE_CLOSURE;
 }
 
+/* 二进制导出只借用读取器到本次函数结束；输出仅复制展示用类型文本。 */
 static void metadata_provider_resolve_binary_member(SZrState *state,
                                                     SZrIoSource *binarySource,
                                                     SZrString *memberName,
@@ -1013,6 +1044,7 @@ static void metadata_provider_resolve_binary_member(SZrState *state,
     }
 }
 
+/* parser 原型补充目标类别和类型；名称查询不能提供重载的 token 精度。 */
 static void metadata_provider_resolve_module_prototype_member(SZrState *state,
                                                               SZrSemanticAnalyzer *analyzer,
                                                               const SZrTypePrototypeInfo *modulePrototype,
@@ -1106,6 +1138,7 @@ static TZrBool metadata_provider_completion_items_contain_label(SZrArray *items,
     return ZR_FALSE;
 }
 
+/* 没有既有来源时按原型顺序追加同名导出；已有二进制或原生补全时按 label 去重补缺。 */
 static void metadata_provider_append_module_prototype_completions(SZrState *state,
                                                                   SZrSemanticAnalyzer *analyzer,
                                                                   const SZrTypePrototypeInfo *modulePrototype,
@@ -1156,6 +1189,7 @@ static void metadata_provider_append_module_prototype_completions(SZrState *stat
     }
 }
 
+/* 把短命二进制读取器的导出复制成独立补全项，释放读取器后仍可展示。 */
 static void metadata_provider_append_binary_module_completions(SZrState *state,
                                                                const SZrIoFunction *entryFunction,
                                                                SZrArray *result) {
@@ -1225,6 +1259,7 @@ static void metadata_provider_append_binary_module_completions(SZrState *state,
     }
 }
 
+/* 原生 descriptor 的链接、常量、函数和类型共用本次补全请求的结果数组。 */
 static void metadata_provider_append_native_module_completions(SZrState *state,
                                                                const ZrLibModuleDescriptor *descriptor,
                                                                SZrArray *result) {
@@ -1327,6 +1362,7 @@ static void metadata_provider_append_native_module_completions(SZrState *state,
 
 }
 
+/* 请求内构造轻量 provider；这里不获取 context/state 的所有权。 */
 void ZrLanguageServer_LspMetadataProvider_Init(SZrLspMetadataProvider *provider,
                                                SZrState *state,
                                                SZrLspContext *context) {
@@ -1339,6 +1375,7 @@ void ZrLanguageServer_LspMetadataProvider_Init(SZrLspMetadataProvider *provider,
     provider->context = context;
 }
 
+/* 项目索引缺记录时先按模块名按需加载，再统一交给 module metadata 判定来源。 */
 TZrBool ZrLanguageServer_LspMetadataProvider_ResolveImportedModule(SZrLspMetadataProvider *provider,
                                                                    SZrSemanticAnalyzer *analyzer,
                                                                    SZrLspProjectIndex *projectIndex,
@@ -1366,6 +1403,8 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveImportedModule(SZrLspMetadat
                                                                     outResolved);
 }
 
+/* 模块入口按来源选导航坐标：源码用源码 URI，二进制用物理 .zro URI，原生模块可用虚拟声明 URI。
+ * 仅无源码的二进制关系另携带项目作用域虚拟身份，不改变导航坐标。 */
 TZrBool ZrLanguageServer_LspMetadataProvider_ResolveImportedModuleEntry(SZrLspMetadataProvider *provider,
                                                                         SZrSemanticAnalyzer *analyzer,
                                                                         SZrLspProjectIndex *projectIndex,
@@ -1395,9 +1434,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveImportedModuleEntry(SZrLspMe
                outResolved->declarationUri != ZR_NULL) {
         outResolved->declarationRange = metadata_provider_module_entry_range(outResolved->declarationUri);
         outResolved->hasDeclaration = ZR_TRUE;
-        /* Keep the historical physical .zro declaration URI for existing
-         * coordinate projections, while publishing a distinct project-scoped
-         * identity for parser relations that have no source declaration. */
+        /* 现有坐标投影仍指向物理 .zro；无源码声明的 parser 关系另携带项目作用域身份。 */
         (void)ZrLanguageServer_LspVirtualDocumentIdentity_ResolveBinaryUri(
                 provider->state,
                 provider->context,
@@ -1423,6 +1460,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveImportedModuleEntry(SZrLspMe
     return ZR_TRUE;
 }
 
+/* 二进制读取器由调用方释放；此 provider 只转发当前项目定位。 */
 TZrBool ZrLanguageServer_LspMetadataProvider_LoadBinaryModuleSource(SZrLspMetadataProvider *provider,
                                                                     SZrLspProjectIndex *projectIndex,
                                                                     SZrString *moduleName,
@@ -1451,6 +1489,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveBinaryModuleUri(SZrLspMetada
                                                                      outUri);
 }
 
+/* 精确导出范围优先；失败时外层成员/模块入口路径可回退到物理 .zro 首位。 */
 TZrBool ZrLanguageServer_LspMetadataProvider_ResolveBinaryExportDeclaration(
     SZrLspMetadataProvider *provider,
     SZrLspProjectIndex *projectIndex,
@@ -1482,6 +1521,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveNativeModuleUri(SZrLspMetada
             provider->state, provider->context, projectIndex, moduleName, outUri);
 }
 
+/* 原生字段/方法必须用 descriptor 指针定位，避免同名成员错跳；失败清除旧声明状态。 */
 TZrBool ZrLanguageServer_LspMetadataProvider_ResolveNativeTypeMemberDeclaration(
     SZrLspMetadataProvider *provider,
     SZrLspProjectIndex *projectIndex,
@@ -1523,6 +1563,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveNativeTypeMemberDeclaration(
     return ZR_TRUE;
 }
 
+/* 跨项目文件寻找当前 AST 中的类型成员；结果借用 analyzer 和项目记录，不可跨更新缓存。 */
 TZrBool ZrLanguageServer_LspMetadataProvider_ResolveProjectTypeMemberDeclaration(
     SZrLspMetadataProvider *provider,
     SZrLspProjectIndex *projectIndex,
@@ -1564,6 +1605,9 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveProjectTypeMemberDeclaration
             continue;
         }
 
+        /* TODO: 此路径按 ownerTypeName/memberName 遍历项目文件并取首项；跨模块同名类型和
+         * 同名方法重载均缺来源/签名身份。需核对上层是否可把已选目标导向这里，再按
+         * canonical module/type/member identity 约束候选。 */
         memberDeclaration = metadata_provider_find_type_member_declaration(typeDeclaration, memberName, &memberKind);
         if (memberDeclaration == ZR_NULL || memberKind == ZR_LSP_METADATA_MEMBER_NONE) {
             continue;
@@ -1597,6 +1641,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveProjectTypeMemberDeclaration
     return ZR_FALSE;
 }
 
+/* 二进制属性用 PropertySymbol 身份防止按名字误认；缺嵌套坐标时定位模块入口。 */
 TZrBool ZrLanguageServer_LspMetadataProvider_ResolveBinaryTypeMemberDeclaration(
     SZrLspMetadataProvider *provider,
     SZrLspProjectIndex *projectIndex,
@@ -1620,18 +1665,15 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveBinaryTypeMemberDeclaration(
         return ZR_FALSE;
     }
 
-    /*
-     * Executable v34 prototype metadata has exact property/accessor identities but
-     * no nested source coordinate table.  The declaration target is therefore the
-     * owning binary module entry; identity selection above remains PropertySymbol
-     * driven and never falls back to the property or hidden-accessor spelling.
-     */
+    /* executable v34 元数据有精确属性/访问器身份，却没有嵌套源码坐标表；
+     * 因此声明落到所属二进制模块入口，身份选择仍只依据 PropertySymbol。 */
     resolvedMember->declarationRange =
         metadata_provider_module_entry_range(resolvedMember->declarationUri);
     resolvedMember->hasDeclaration = ZR_TRUE;
     return ZR_TRUE;
 }
 
+/* 虚拟文档反向导航直接使用渲染记录的指针身份，再回填借用的 descriptor。 */
 TZrBool ZrLanguageServer_LspMetadataProvider_FindNativeTypeMemberDeclaration(
     SZrLspMetadataProvider *provider,
     SZrLspProjectIndex *projectIndex,
@@ -1713,6 +1755,9 @@ TZrBool ZrLanguageServer_LspMetadataProvider_FindNativeTypeMemberDeclaration(
     outResolved->declarationUri = uri;
     outResolved->declarationRange = match.range;
 
+    /* BUG: 虚拟投影把 enumMembers 也记成 FIELD，identity 指向 enumMember；这里只查 fields，
+     * 因此原生虚拟文档中的合法枚举成员无法反向导航。见 lsp_native_declaration_projection.c
+     * 的 enumMembers 投影及 tests/module/test_module_system.c 的枚举 descriptor。 */
     if (match.kind == ZR_LSP_VIRTUAL_DECLARATION_FIELD) {
         outResolved->memberKind = ZR_LSP_METADATA_MEMBER_FIELD;
         for (TZrSize fieldIndex = 0; fieldIndex < ownerTypeDescriptor->fieldCount; fieldIndex++) {
@@ -1744,6 +1789,7 @@ const TZrChar *ZrLanguageServer_LspMetadataProvider_SourceKindLabel(EZrLspImport
     return ZrLanguageServer_LspModuleMetadata_SourceKindLabel(sourceKind);
 }
 
+/* 依次汇集 parser 原型、原生 descriptor、项目源码及二进制导出；成功可能只意味着模块解析成功。 */
 TZrBool ZrLanguageServer_LspMetadataProvider_ResolveImportedMember(SZrLspMetadataProvider *provider,
                                                                    SZrSemanticAnalyzer *analyzer,
                                                                    SZrLspProjectIndex *projectIndex,
@@ -1783,6 +1829,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveImportedMember(SZrLspMetadat
                                              outResolved);
     }
 
+    /* 源码 analyzer 可重建并覆盖原型展示；借出的 symbol 与 AST 只在项目缓存有效期内可用。 */
     if (outResolved->module.sourceRecord != ZR_NULL && outResolved->module.sourceRecord->uri != ZR_NULL &&
         provider->context != ZR_NULL) {
         metadata_provider_try_get_analyzer_for_uri(provider->state,
@@ -1814,6 +1861,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveImportedMember(SZrLspMetadat
         metadata_provider_resolve_binary_member(provider->state, binarySource, memberName, outResolved);
     }
 
+    /* 读取器释放前必须把任何返回给调用方的类型文本转成 GC 字符串。 */
     if (binarySource != ZR_NULL) {
         ZrLanguageServer_LspModuleMetadata_FreeBinaryModuleSource(provider->state->global, binarySource);
     }
@@ -1852,6 +1900,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveImportedMember(SZrLspMetadat
     return ZR_TRUE;
 }
 
+/* 模块 hover 只说明名称与来源；具体成员文档由成员入口补充。 */
 TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedModuleHover(SZrLspMetadataProvider *provider,
                                                                        const SZrLspResolvedImportedModule *resolvedModule,
                                                                        SZrFileRange range,
@@ -1877,6 +1926,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedModuleHover(SZrLspMet
                                           result);
 }
 
+/* hover 优先使用来源文件的文档快照和符号说明；外部元数据再按类别给保底信息。 */
 TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMetadataProvider *provider,
                                                                        SZrSemanticAnalyzer *analyzer,
                                                                        const SZrLspResolvedMetadataMember *resolvedMember,
@@ -1920,6 +1970,8 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
         hoverUri != ZR_NULL &&
         provider->context != ZR_NULL) {
         fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(provider->context, hoverUri);
+        /* TODO: 此分支可能重建 analyzer；当前调用者通常成对保存 declarationAnalyzer 和
+         * declarationSymbol，需在缓存失效/并发更新场景验证旧 symbol 是否仍覆盖后续文档读取。 */
         if (!ZrLanguageServer_FileVersionContentSnapshot_Acquire(provider->state, fileVersion, &snapshot)) {
             metadata_provider_try_get_analyzer_for_uri(provider->state, provider->context, hoverUri, &targetAnalyzer);
             fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(provider->context, hoverUri);
@@ -2233,6 +2285,8 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
                                           result);
 }
 
+/* 源码 analyzer、二进制读取器、原生 descriptor、parser 原型按来源可用性投影；
+ * 二进制读取器在函数退出前释放，结果项应持有自己的文本。 */
 TZrBool ZrLanguageServer_LspMetadataProvider_AppendImportedModuleCompletions(
     SZrLspMetadataProvider *provider,
     SZrSemanticAnalyzer *analyzer,

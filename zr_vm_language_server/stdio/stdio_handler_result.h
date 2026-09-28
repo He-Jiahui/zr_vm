@@ -4,12 +4,14 @@
 #include "stdio_json_rpc.h"
 #include "zr_vm_language_server/lsp_interface.h"
 
+/* 参数校验等失败路径只移交状态，避免上层误以为仍有待发送的 JSON 树。 */
 static inline SZrLspHandlerResult stdio_handler_error(EZrLspHandlerStatus status) {
     SZrLspHandlerResult response = {status, ZR_NULL};
     return response;
 }
 
-/* Takes ownership of result; errors never expose an owned JSON value to the caller. */
+/* 处理器在返回前检查输入线程记录的取消意图，并将 result 所有权移交分发层。
+ * 取消时本层释放结果；构造失败的 NULL 归类为内部错误，不能代替协议 JSON null。 */
 static inline SZrLspHandlerResult stdio_handler_result_from_json(
         const SZrLspContext *context, cJSON *result) {
     SZrLspHandlerResult response;

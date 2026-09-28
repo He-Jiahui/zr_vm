@@ -1,5 +1,6 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
+/* 处理器统一返回状态和 JSON 所有权；请求编排层据此决定发送成功或协议错误。 */
 static int dispatch_handler_result(SZrLspHandlerResult response,
                                   cJSON **outResult,
                                   EZrLspHandlerStatus *outStatus) {
@@ -8,6 +9,8 @@ static int dispatch_handler_result(SZrLspHandlerResult response,
     return 1;
 }
 
+/* 请求方法到处理器的唯一映射点。可选能力未协商时视作未提供方法，
+ * 由上层统一回复 Method not found；本层不发送响应，也不保留结果树。 */
 int dispatch_request_method(SZrStdioServer *server,
                             const char *method,
                             const cJSON *params,

@@ -1,5 +1,6 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
+/** @brief 为 initialize 与每个候选提供同一套编辑器提交字符。返回新建 JSON 数组。 */
 cJSON *create_completion_commit_characters_array(void) {
     const char *characters[] = {
             ZR_LSP_COMPLETION_COMMIT_CHARACTER_SEMICOLON,
@@ -10,6 +11,10 @@ cJSON *create_completion_commit_characters_array(void) {
     return cJSON_CreateStringArray(characters, (int)(sizeof(characters) / sizeof(characters[0])));
 }
 
+/** @brief 将 VM 管理的补全项字段复制为可独立持有的 LSP JSON 候选。
+ *  label、detail、documentation 与 insertText 的临时 C 字符串由本函数释放；
+ *  新建 JSON 节点交调用方管理，null 原生项映射为 JSON null。
+ */
 cJSON *serialize_completion_item(const SZrLspCompletionItem *item) {
     cJSON *json;
     char *text;
@@ -71,6 +76,7 @@ cJSON *serialize_completion_item(const SZrLspCompletionItem *item) {
         }
     }
 
+    /* 协议只认数字格式；语义层的 snippet 标记在此转换，其余按 plain text。 */
     if (item->insertTextFormat != ZR_NULL) {
         text = zr_string_to_c_string(item->insertTextFormat);
         if (text != NULL) {
@@ -85,6 +91,7 @@ cJSON *serialize_completion_item(const SZrLspCompletionItem *item) {
     return json;
 }
 
+/** @brief 将语义查询的原生指针数组序列化为补全响应；原数组仍归调用方释放。 */
 cJSON *serialize_completion_items_array(SZrArray *items) {
     cJSON *json = cJSON_CreateArray();
     TZrSize index;

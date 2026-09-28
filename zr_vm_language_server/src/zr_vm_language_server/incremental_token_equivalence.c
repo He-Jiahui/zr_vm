@@ -4,6 +4,7 @@
 
 #include <string.h>
 
+/** @brief 按 SZrString 的实际长度暴露 token 文本，避免短串与长串表示差异。 */
 static void incremental_token_string_view(
         SZrString *value,
         const TZrChar **text,
@@ -23,6 +24,7 @@ static void incremental_token_string_view(
     *length = value->longStringLength;
 }
 
+/** @brief 比较 token 文本值；仅同指针可直接复用，其他情况须比较长度与字节。 */
 static TZrBool incremental_token_strings_equal(
         SZrString *left,
         SZrString *right) {
@@ -31,6 +33,8 @@ static TZrBool incremental_token_strings_equal(
     TZrSize leftLength;
     TZrSize rightLength;
 
+    /* TODO: 两个 NULL 也会被视作相等；核对 lexer 在 String_Create 失败时是否总会
+     *       标出词法错误，避免分配失败让不同标识符走 AST 复用。 */
     if (left == right) {
         return ZR_TRUE;
     }
@@ -41,6 +45,7 @@ static TZrBool incremental_token_strings_equal(
            memcmp(leftText, rightText, leftLength) == 0;
 }
 
+/** @brief 判断 lexer 产生的 token 语义值是否一致，词法错误禁止快速复用。 */
 static TZrBool incremental_token_values_equal(
         const SZrToken *left,
         const SZrToken *right) {
@@ -78,6 +83,7 @@ static TZrBool incremental_token_values_equal(
     }
 }
 
+/** @brief 位置也必须一致，保留旧 AST 时引用、诊断和编辑器范围才能继续有效。 */
 static TZrBool incremental_token_positions_equal(
         const SZrLexState *left,
         const SZrLexState *right) {
@@ -91,6 +97,12 @@ static TZrBool incremental_token_positions_equal(
            left->currentLineStartOffset == right->currentLineStartOffset;
 }
 
+/**
+ * @brief 对等长编辑重新词法化两份文本，决定能否保留已有 AST 与诊断。
+ * @note 由 update_file 在存在非回退 AST 时调用；任何不等或词法错误都让解析器走重解析。
+ * BUG: State_Init 预读 token 时 lexer 可将未终止字符串错误直接写入 stdout；
+ *      stdio didChange 可到达本路径，污染 JSON-RPC 输出。
+ */
 TZrBool ZrLanguageServer_IncrementalTokenStreams_AreEquivalent(
         SZrState *state,
         SZrString *uri,
@@ -145,6 +157,7 @@ TZrBool ZrLanguageServer_IncrementalTokenStreams_AreEquivalent(
     }
 
 cleanup:
+    /* 两个 lexer 无论词法失败还是提前发现差异，都在同一出口归还状态。 */
     ZrParser_State_Free(&newParser);
     ZrParser_State_Free(&oldParser);
     return equivalent;

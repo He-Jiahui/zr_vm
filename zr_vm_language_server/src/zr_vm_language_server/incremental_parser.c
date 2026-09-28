@@ -1,6 +1,4 @@
-//
-// Created by Auto on 2025/01/XX.
-//
+/* 文件版本是 LSP 文档更新与语义查询之间的边界：文本快照独立持有字节，AST 按解析结果复用或回退。 */
 
 #include "zr_vm_language_server/incremental_parser.h"
 #include "incremental_change.h"
@@ -19,12 +17,14 @@
 #include <string.h>
 #include <stdio.h>
 
+/** 同一次完整解析的两种诊断回调共享状态，避免结构化错误被旧回调重复上报。 */
 typedef struct SZrParserDiagnosticCollector {
     SZrState *state;
     SZrFileVersion *fileVersion;
     TZrBool suppressNextLegacyDiagnostic;
 } SZrParserDiagnosticCollector;
 
+/** @brief 内容真正变化时释放旧语法诊断，防止下一次发布混入旧版本位置。 */
 static void clear_parser_diagnostics(SZrState *state, SZrFileVersion *fileVersion) {
     if (state == ZR_NULL || fileVersion == ZR_NULL || !fileVersion->parserDiagnostics.isValid) {
         return;
@@ -40,6 +40,7 @@ static void clear_parser_diagnostics(SZrState *state, SZrFileVersion *fileVersio
     fileVersion->parserDiagnostics.length = 0;
 }
 
+/** @brief 完整解析据此决定采用新 AST，还是保留供编辑器查询的最后有效 AST。 */
 static TZrBool parser_diagnostics_have_errors(SZrFileVersion *fileVersion) {
     if (fileVersion == ZR_NULL || !fileVersion->parserDiagnostics.isValid) {
         return ZR_FALSE;
@@ -55,6 +56,7 @@ static TZrBool parser_diagnostics_have_errors(SZrFileVersion *fileVersion) {
     return ZR_FALSE;
 }
 
+/** @brief 接收 parser 旧式错误回调；结构化错误已入库时跳过其紧随的重复事件。 */
 static void collect_parser_diagnostic(TZrPtr userData,
                                       const SZrFileRange *location,
                                       const TZrChar *message,
@@ -84,6 +86,7 @@ static void collect_parser_diagnostic(TZrPtr userData,
     }
 }
 
+/** @brief 将 parser 的结构化诊断转成 LSP 诊断，并协调随后旧式回调的去重。 */
 static void collect_structured_parser_diagnostic(TZrPtr userData,
                                                  const SZrStructuredDiagnostic *structured,
                                                  EZrToken token) {
@@ -104,6 +107,7 @@ static void collect_structured_parser_diagnostic(TZrPtr userData,
     }
 }
 
+/** @brief 为文档版本创建自有文本块；快照和历史版本依赖它独立于更新存活。 */
 static SZrFileVersionContentBlock *content_block_new(SZrState *state,
                                                      const TZrChar *content,
                                                      TZrSize contentLength,
@@ -135,6 +139,7 @@ static SZrFileVersionContentBlock *content_block_new(SZrState *state,
     return block;
 }
 
+/** @brief 借出当前或历史快照时增加文本块引用；调用方须配对释放快照。 */
 static void content_block_retain(SZrFileVersionContentBlock *block) {
     if (block == ZR_NULL) {
         return;
@@ -143,6 +148,7 @@ static void content_block_retain(SZrFileVersionContentBlock *block) {
     block->refCount++;
 }
 
+/** @brief 版本槽或快照不再持有文本时归还引用，最后一个引用负责回收字节。 */
 static void content_block_release(SZrState *state, SZrFileVersionContentBlock *block) {
     if (state == ZR_NULL || block == ZR_NULL) {
         return;
@@ -162,6 +168,7 @@ static void content_block_release(SZrState *state, SZrFileVersionContentBlock *b
     ZrCore_Memory_RawFree(state->global, block, sizeof(SZrFileVersionContentBlock));
 }
 
+/** @brief 销毁文件版本时归还历史内容，已借出的快照仍由引用计数保活。 */
 static void file_version_clear_historical_content(
         SZrState *state,
         SZrFileVersion *fileVersion) {
@@ -180,6 +187,7 @@ static void file_version_clear_historical_content(
     fileVersion->historicalContentCount = 0;
 }
 
+/** @brief 更新前将当前文本放入最近历史槽，供局部重解析和语义快照对照。 */
 static void file_version_retain_current_content(
         SZrState *state,
         SZrFileVersion *fileVersion) {
@@ -198,6 +206,7 @@ static void file_version_retain_current_content(
     retained.isOpenDocument = fileVersion->isOpenDocument;
     retained.usesFallbackAst = fileVersion->usesFallbackAst;
     retainedCount = fileVersion->historicalContentCount;
+    /* 历史仅保留最近两版；更早文本如被外部快照借用，引用计数继续保活。 */
     if (retainedCount == ZR_LSP_FILE_VERSION_HISTORICAL_CONTENT_CAPACITY) {
         content_block_release(
                 state,
@@ -213,6 +222,7 @@ static void file_version_retain_current_content(
     fileVersion->historicalContentCount = retainedCount + 1U;
 }
 
+/** @brief 比较文本以便调用者仅推进版本号，并保留 AST、诊断和文本快照。 */
 static TZrBool file_version_content_equals(
         const SZrFileVersion *fileVersion,
         const TZrChar *content,
@@ -226,7 +236,10 @@ static TZrBool file_version_content_equals(
            memcmp(fileVersion->textBlock->content, content, contentLength) == 0;
 }
 
-// 创建文件版本
+/**
+ * @brief 为新 URI 建立未解析的文件状态；由解析器 URI 映射接管该对象。
+ * @note 文本块由版本持有，URI 是借用对象，调用方负责维持其生命周期。
+ */
 SZrFileVersion *ZrLanguageServer_FileVersion_New(SZrState *state,
                                   SZrString *uri,
                                   const TZrChar *content,
@@ -271,11 +284,13 @@ SZrFileVersion *ZrLanguageServer_FileVersion_New(SZrState *state,
                       &fileVersion->parserDiagnostics,
                       sizeof(SZrDiagnostic *),
                       ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    /* BUG: Array_Init 分配失败仍可能留下 isValid=true、head=NULL；诊断回调 Push
+     * 随后断言 head 非空。需在数组构造边界和此处一起验证 OOM 语义。 */
 
     return fileVersion;
 }
 
-// 释放文件版本
+/** @brief 由解析器移除或析构路径回收文本、AST、诊断及历史引用；不释放借用 URI。 */
 void ZrLanguageServer_FileVersion_Free(SZrState *state, SZrFileVersion *fileVersion) {
     if (state == ZR_NULL || fileVersion == ZR_NULL) {
         return;
@@ -299,6 +314,10 @@ void ZrLanguageServer_FileVersion_Free(SZrState *state, SZrFileVersion *fileVers
     ZrCore_Memory_RawFree(state->global, fileVersion, sizeof(SZrFileVersion));
 }
 
+/**
+ * @brief 借用当前版本的稳定字节供 LSP 查询使用，跨文档更新仍可读取同一文本。
+ * @note 返回后须调用 Snapshot_Free；URI 仍借用文件对象，不随文本块延寿。
+ */
 TZrBool ZrLanguageServer_FileVersionContentSnapshot_Acquire(
     SZrState *state,
     SZrFileVersion *fileVersion,
@@ -325,6 +344,7 @@ TZrBool ZrLanguageServer_FileVersionContentSnapshot_Acquire(
     return ZR_TRUE;
 }
 
+/** @brief 归还一次内容快照并清空句柄，供查询的所有早退路径配对调用。 */
 void ZrLanguageServer_FileVersionContentSnapshot_Free(SZrState *state,
                                                       SZrFileVersionContentSnapshot *snapshot) {
     if (state == ZR_NULL || snapshot == ZR_NULL) {
@@ -336,6 +356,7 @@ void ZrLanguageServer_FileVersionContentSnapshot_Free(SZrState *state,
     memset(snapshot, 0, sizeof(SZrFileVersionContentSnapshot));
 }
 
+/** @brief 暴露可供增量解析和语义缓存对照的最近历史版本数量。 */
 TZrSize ZrLanguageServer_FileVersionHistoricalContentSnapshot_Count(
         const SZrFileVersion *fileVersion) {
     if (fileVersion == ZR_NULL) {
@@ -345,6 +366,7 @@ TZrSize ZrLanguageServer_FileVersionHistoricalContentSnapshot_Count(
     return fileVersion->historicalContentCount;
 }
 
+/** @brief 借用指定历史文本；顺序从最新到更旧，调用者须释放返回的快照。 */
 TZrBool ZrLanguageServer_FileVersionHistoricalContentSnapshot_Acquire(
         SZrState *state,
         SZrFileVersion *fileVersion,
@@ -379,7 +401,10 @@ TZrBool ZrLanguageServer_FileVersionHistoricalContentSnapshot_Acquire(
     return ZR_TRUE;
 }
 
-// 更新文件版本内容
+/**
+ * @brief 将一次已接受的文档更新提交为新文本块，同时保留上一版供局部解析。
+ * @note 分配失败不推进版本；token 等价时 AST 与旧诊断仍被视为可复用。
+ */
 TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
                                  SZrFileVersion *fileVersion,
                                  const TZrChar *content,
@@ -405,6 +430,7 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
     file_version_retain_current_content(state, fileVersion);
     fileVersion->textBlock = newBlock;
     fileVersion->version = version;
+    /* isDirty、变更信息和解析模式共同决定 AST 是否重算及下游缓存失效范围。 */
     fileVersion->isDirty = !changeInfo->isTokenEquivalent;
     fileVersion->lastChangeInfo = *changeInfo;
     fileVersion->lastChangeRange = changeInfo->newRange;
@@ -424,7 +450,10 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
     return ZR_TRUE;
 }
 
-// 创建增量解析器
+/**
+ * @brief 为 LSP context 创建 URI 到文件版本的状态表，默认启用 token 与声明级复用。
+ * BUG: HashSet_Init 失败仅写 isValid，构造仍返回 parser；后续新文件插入会失败。
+ */
 SZrIncrementalParser *ZrLanguageServer_IncrementalParser_New(SZrState *state) {
     if (state == ZR_NULL) {
         return ZR_NULL;
@@ -438,7 +467,7 @@ SZrIncrementalParser *ZrLanguageServer_IncrementalParser_New(SZrState *state) {
     parser->state = state;
     ZrCore_HashSet_Construct(&parser->uriToFileMap);
     ZrCore_HashSet_Init(state, &parser->uriToFileMap, ZR_LSP_HASH_TABLE_INITIAL_SIZE_LOG2);
-    parser->parserState = ZR_NULL; // 延迟初始化
+    parser->parserState = ZR_NULL; // TODO: 仓内仅在此赋空及析构，核对该字段是否仍由外部 ABI 使用。
     parser->enableIncrementalParse = ZR_TRUE; // 默认启用增量解析
     parser->enableContentHash = ZR_TRUE; // 默认启用内容哈希
     parser->retainedPreviousAstOutput = ZR_NULL;
@@ -446,7 +475,7 @@ SZrIncrementalParser *ZrLanguageServer_IncrementalParser_New(SZrState *state) {
     return parser;
 }
 
-// 释放增量解析器
+/** @brief context 析构时释放 URI 表内的文件版本，再释放哈希表和解析器。 */
 void ZrLanguageServer_IncrementalParser_Free(SZrState *state, SZrIncrementalParser *parser) {
     if (state == ZR_NULL || parser == ZR_NULL) {
         return;
@@ -483,6 +512,10 @@ void ZrLanguageServer_IncrementalParser_Free(SZrState *state, SZrIncrementalPars
     ZrCore_Memory_RawFree(state->global, parser, sizeof(SZrIncrementalParser));
 }
 
+/**
+ * @brief 汇合磁盘缓存和打开文档更新，先验证版本序，再选择相同文本、token 复用或重解析。
+ * @note 打开文档可接管同版本的磁盘合成快照；其他同版或倒退版本均被拒绝。
+ */
 static TZrBool incremental_parser_update_file(
         SZrState *state,
         SZrIncrementalParser *parser,
@@ -504,6 +537,7 @@ static TZrBool incremental_parser_update_file(
         if (!isOpeningSyntheticSnapshot && version <= fileVersion->version) {
             return ZR_FALSE;
         }
+        /* 同内容接管或推进版本不改变 AST；无差异意味着没有局部失效范围。 */
         if (file_version_content_equals(fileVersion, content, contentLength)) {
             fileVersion->version = version;
             fileVersion->isOpenDocument = isOpenDocument;
@@ -512,7 +546,7 @@ static TZrBool incremental_parser_update_file(
             fileVersion->hasIncrementalInfo = ZR_FALSE;
             return ZR_TRUE;
         }
-        // 更新现有文件
+        /* 仅有非回退 AST 才允许 token 等价快速路径，避免延续已知过时语法树。 */
         SZrFileChangeInfo changeInfo;
         ZrLanguageServer_IncrementalChange_Compute(
                 uri,
@@ -549,7 +583,8 @@ static TZrBool incremental_parser_update_file(
         }
         fileVersion->isOpenDocument = isOpenDocument;
 
-        // 添加到哈希表
+        /* BUG: Add 可因初始化、扩容或分配失败返回 NULL；仍返回成功且泄漏 fileVersion，
+         * 后续 GetFileVersion 找不到此 URI，上层误以为文档更新成功。 */
         SZrTypeValue key;
         ZrCore_Value_InitAsRawObject(state, &key, &uri->super);
 
@@ -566,7 +601,7 @@ static TZrBool incremental_parser_update_file(
     return ZR_TRUE;
 }
 
-// 更新 workspace 或 provider cache 中的文件内容。
+/** @brief 接收 workspace/provider 的磁盘文本，供项目索引按版本更新并解析。 */
 TZrBool ZrLanguageServer_IncrementalParser_UpdateFile(SZrState *state,
                                       SZrIncrementalParser *parser,
                                       SZrString *uri,
@@ -583,6 +618,7 @@ TZrBool ZrLanguageServer_IncrementalParser_UpdateFile(SZrState *state,
             ZR_FALSE);
 }
 
+/** @brief 接收 LSP 打开文档的内存文本，其版本可在首次打开时接管同版磁盘快照。 */
 TZrBool ZrLanguageServer_IncrementalParser_UpdateOpenDocument(
         SZrState *state,
         SZrIncrementalParser *parser,
@@ -600,14 +636,14 @@ TZrBool ZrLanguageServer_IncrementalParser_UpdateOpenDocument(
             ZR_TRUE);
 }
 
-// 辅助函数：计算内容哈希（简化实现）
+/** @brief 为干净 AST 的重复读取保存内容指纹；调用方拥有返回的分配内存。 */
 static void compute_content_hash(SZrState *state, const TZrChar *content, TZrSize length,
                                   TZrChar **hash, TZrSize *hashLength) {
     if (state == ZR_NULL || content == ZR_NULL || hash == ZR_NULL || hashLength == ZR_NULL) {
         return;
     }
 
-    // TODO: 简化实现：使用简单的哈希算法
+    /* 仅作已有内容快速判断，哈希冲突不能证明文本真正相同。 */
     TZrUInt64 hashValue = 0;
     for (TZrSize i = 0; i < length; i++) {
         hashValue = hashValue * ZR_LSP_HASH_MULTIPLIER + (TZrUInt8)content[i];
@@ -626,7 +662,7 @@ static void compute_content_hash(SZrState *state, const TZrChar *content, TZrSiz
     }
 }
 
-// 辅助函数：比较内容哈希
+/** @brief 比较缓存指纹，供无需重解析的快速读取分支使用。 */
 static TZrBool compare_content_hash(const TZrChar *hash1, TZrSize len1,
                                    const TZrChar *hash2, TZrSize len2) {
     if (hash1 == ZR_NULL || hash2 == ZR_NULL) {
@@ -638,7 +674,12 @@ static TZrBool compare_content_hash(const TZrChar *hash1, TZrSize len1,
     return memcmp(hash1, hash2, len1) == 0;
 }
 
-// 解析文件（增量）
+/**
+ * @brief 为指定 URI 更新解析结果：优先 token 复用，再尝试单声明替换，最后完整解析。
+ * @note 语法错误可保留上一棵有效 AST，并以 usesFallbackAst 告知编辑器查询不能当成当前结果。
+ * BUG: 完整解析在 State_Init 预读后才设置 suppressErrorOutput；未终止字符串可直接写 stdout，
+ *      stdio 文档更新因此可能破坏 JSON-RPC 帧流。
+ */
 TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
                                  SZrIncrementalParser *parser,
                                  SZrString *uri) {
@@ -656,6 +697,7 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* token 与位置均等价时继续借用旧 AST；内容代际仍须更新供语义快照识别。 */
     if (!fileVersion->isDirty &&
         fileVersion->ast != ZR_NULL &&
         fileVersion->hasIncrementalInfo &&
@@ -679,10 +721,10 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
         return ZR_TRUE;
     }
 
-    // 如果不需要重新解析，检查内容哈希（如果启用）
+    /* 未标脏的 AST 仅在缓存指纹仍匹配时继续使用；此处不是内容正确性的独立证明。 */
     if (!fileVersion->isDirty && fileVersion->ast != ZR_NULL) {
         if (parser->enableContentHash && fileVersion->lastContentHash != ZR_NULL) {
-            // 计算当前内容哈希
+            /* 重读当前快照以守护干净 AST 的快捷返回。 */
             TZrChar *currentHash = ZR_NULL;
             TZrSize currentHashLength = 0;
             compute_content_hash(state, snapshot.content, snapshot.contentLength,
@@ -708,8 +750,9 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
         }
     }
 
-    // Reuse the script and untouched top-level declarations only after a
-    // declaration-local parse proves that every retained source range is stable.
+    /* 只有声明级重解析证明未触及节点位置稳定，才能原位替换并保留其余 AST。
+     * BUG: 此门槛未排除 usesFallbackAst；V1 有效、V2 等长语法错保留 V1 AST、V3
+     *      等长改另一声明时，局部成功可把 V1 当成 V3 并清除 V2 的错误诊断。 */
     if (parser->enableIncrementalParse && parser->retainedPreviousAstOutput == ZR_NULL &&
         fileVersion->ast != ZR_NULL &&
         fileVersion->hasIncrementalInfo) {
@@ -752,7 +795,7 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
         }
     }
 
-    // 完全重新解析
+    /* 完整解析负责收集当前语法诊断；保留旧 AST 时须明确标记回退供下游避用。 */
     {
         SZrParserState parserState;
         SZrParserDiagnosticCollector collector;
@@ -778,6 +821,7 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
         parsedAst = ZrParser_ParseWithState(&parserState);
         ZrParser_State_Free(&parserState);
 
+        /* 交出旧 AST 仅用于调用方的语义快照迁移，否则由本层释放。 */
         if (parsedAst != ZR_NULL) {
             if (!parser_diagnostics_have_errors(fileVersion) || previousAst == ZR_NULL) {
                 if (previousAst != ZR_NULL && previousAst != parsedAst) {
@@ -830,6 +874,7 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
     return ZR_FALSE;
 }
 
+/** @brief 为语义缓存迁移临时接收上一棵 AST；非重入，调用方接管输出节点。 */
 TZrBool ZrLanguageServer_IncrementalParser_ParseRetainingPreviousAst(
         SZrState *state,
         SZrIncrementalParser *parser,
@@ -850,7 +895,11 @@ TZrBool ZrLanguageServer_IncrementalParser_ParseRetainingPreviousAst(
     return result;
 }
 
-// 获取 AST
+/**
+ * @brief 按需解析当前 URI；已失败且有诊断的版本不反复解析，成功时借出 AST。
+ * TODO: 项目依赖扫描直接读取返回 AST，尚未确认语法错误的 fallback AST 是否会被当成
+ *       当前导入图；核对项目 refresh 入口对 usesFallbackAst 的隔离。
+ */
 SZrAstNode *ZrLanguageServer_IncrementalParser_GetAST(SZrIncrementalParser *parser,
                                        SZrString *uri) {
     if (parser == ZR_NULL || uri == ZR_NULL) {
@@ -876,7 +925,7 @@ SZrAstNode *ZrLanguageServer_IncrementalParser_GetAST(SZrIncrementalParser *pars
     return fileVersion->ast;
 }
 
-// 移除文件
+/** @brief 文档关闭或项目移除时按 URI 等价规则删除版本；调用方不得再持有 AST 指针。 */
 void ZrLanguageServer_IncrementalParser_RemoveFile(SZrState *state,
                                     SZrIncrementalParser *parser,
                                     SZrString *uri) {
@@ -901,7 +950,7 @@ void ZrLanguageServer_IncrementalParser_RemoveFile(SZrState *state,
     }
 }
 
-// 获取文件版本
+/** @brief 查询 URI 对应的借用文件状态；兼容等价但拼写不同的 file URI。 */
 SZrFileVersion *ZrLanguageServer_IncrementalParser_GetFileVersion(SZrIncrementalParser *parser,
                                                   SZrString *uri) {
     if (parser == ZR_NULL || uri == ZR_NULL) {

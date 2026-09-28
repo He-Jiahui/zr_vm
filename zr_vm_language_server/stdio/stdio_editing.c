@@ -4,9 +4,15 @@
 #include <errno.h>
 #include <stdint.h>
 
+/** @brief resolve 阶段确认快照过期时给禁用代码操作使用的稳定说明。 */
 #define ZR_LSP_CODE_ACTION_STALE_REASON \
     "Document changed since this code action was computed"
 
+/**
+ * @brief 读取代码操作 data 中的非负精确整数，供文档快照的长度、版本与代数校验使用。
+ * @details 值来自先前 serialize_workspace_edit_document_snapshot 的 JSON 数字；
+ *          限制在 JSON 安全整数及本机 TZrSize 范围内，避免 resolve 时比较失真。
+ */
 static TZrBool parse_code_action_snapshot_size(
         const cJSON *json,
         TZrSize *outValue) {
@@ -26,6 +32,12 @@ static TZrBool parse_code_action_snapshot_size(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 还原代码操作 data 中以固定宽度字符串保存的 64 位指纹。
+ * @details 与 serialize_snapshot_u64 成对使用，避免把完整指纹写成会丢精度的 JSON 数字。
+ * TODO: 当前仅检查 16 字符长度和 strtoull 完整消费；后者仍接受前导空白或符号。
+ *       核对 resolve 对非规范客户端 data 的约束，并为此类输入补协议测试。
+ */
 static TZrBool parse_code_action_snapshot_hash(
         const cJSON *json,
         TZrUInt64 *outValue) {
@@ -46,6 +58,10 @@ static TZrBool parse_code_action_snapshot_hash(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 还原文档、项目、提供者、语义和依赖五项身份，供过期代码操作判定。
+ * @details 任一字段缺失即拒绝整组身份；调用方只在 data 包含 semanticIdentity 时调用。
+ */
 static TZrBool parse_code_action_semantic_identity(
         const cJSON *json,
         SZrLspSemanticSnapshotIdentity *outIdentity) {
@@ -69,6 +85,12 @@ static TZrBool parse_code_action_semantic_identity(
                    &outIdentity->dependencyFingerprint);
 }
 
+/**
+ * @brief 从服务端先前签发的 CodeAction.data 中恢复用于 resolve 的文档快照。
+ * @details URI 经 server_get_cached_uri 对接当前缓存；随后由
+ *          ValidateDocumentSnapshot 判定原操作是否仍对应当前文档和语义状态。
+ *          data 缺失、字段越界或身份不完整均视为无效请求。
+ */
 static TZrBool parse_code_action_document_snapshot(
         SZrStdioServer *server,
         const cJSON *params,
@@ -126,6 +148,10 @@ static TZrBool parse_code_action_document_snapshot(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 将已过期的代码操作转为带 disabled.reason 的响应，防止客户端应用旧 edit。
+ * @details resolve 收到失效快照时调用；返回新建 JSON，由响应路径接管并释放。
+ */
 static cJSON *disable_stale_code_action(const cJSON *params) {
     cJSON *result;
     cJSON *disabled;
@@ -151,6 +177,11 @@ static cJSON *disable_stale_code_action(const cJSON *params) {
     return result;
 }
 
+/**
+ * @brief 处理 textDocument/formatting，将接口层编辑结果交给统一响应编码路径。
+ * @details 请求分发器取得活动语义快照后调用；接口层拥有 edits，序列化完成后统一释放。
+ *          接口层无结果时返回空数组，协议参数错误则交由分发器形成错误响应。
+ */
 SZrLspHandlerResult handle_formatting_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray edits = {0};
     const char *uriText;
@@ -173,6 +204,10 @@ SZrLspHandlerResult handle_formatting_request(SZrStdioServer *server, const cJSO
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/**
+ * @brief 处理单一区间格式化，先按 URI 将客户端 range 转成接口层内部位置。
+ * @details 与全文格式化共用文本编辑序列化和释放路径；只接受可解析的文档 URI 与 range。
+ */
 SZrLspHandlerResult handle_range_formatting_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray edits = {0};
     SZrLspRange range;
@@ -199,6 +234,11 @@ SZrLspHandlerResult handle_range_formatting_request(SZrStdioServer *server, cons
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/**
+ * @brief 处理多区间格式化，对每个请求区间调用单区间接口并汇总 TextEdit 数组。
+ * @details 仅在客户端声明 rangesFormatting 能力时由分发器路由；每轮接口层 edits
+ *          在进入下一轮前释放，最终 JSON 数组交由响应路径接管。
+ */
 SZrLspHandlerResult handle_ranges_formatting_request(SZrStdioServer *server, const cJSON *params) {
     const cJSON *rangesJson;
     const cJSON *rangeJson;
@@ -219,6 +259,10 @@ SZrLspHandlerResult handle_ranges_formatting_request(SZrStdioServer *server, con
         return stdio_handler_result_from_json(server->context, ZR_NULL);
     }
 
+    /* 每个区间独立转换位置并释放结果；输出仍是一个协议 TextEdit 数组。
+     * BUG: 相同或重叠的非空输入区间可生成重叠的整行替换编辑；这里不去重，
+     * 客户端收到违反 TextEdit[] 非重叠约束的数组，无法可靠一次性应用。
+     */
     cJSON_ArrayForEach(rangeJson, rangesJson) {
         SZrArray edits = {0};
         SZrLspRange range;
@@ -244,6 +288,10 @@ SZrLspHandlerResult handle_ranges_formatting_request(SZrStdioServer *server, con
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/**
+ * @brief 处理文档输入触发的格式化，仅对 initialize 声明的 `}` 和 `;` 请求格式化当前行前缀。
+ * @details 客户端位置先转内部编码；触发字符超出服务端声明范围时按无效参数返回。
+ */
 SZrLspHandlerResult handle_on_type_formatting_request(SZrStdioServer *server, const cJSON *params) {
     const cJSON *chJson;
     SZrArray edits = {0};
@@ -277,6 +325,11 @@ SZrLspHandlerResult handle_on_type_formatting_request(SZrStdioServer *server, co
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/**
+ * @brief 处理 textDocument/codeAction，并给每个操作携带可供 resolve 校验的文档快照。
+ * @details 先核对 context，再捕获快照、取得接口层操作并复验快照；序列化阶段
+ *          根据 context.only 筛选操作。接口层 actions 在成功和失败路径均释放。
+ */
 SZrLspHandlerResult handle_code_action_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray actions = {0};
     SZrLspRange range = {{0, 0}, {0, 0}};
@@ -333,6 +386,7 @@ SZrLspHandlerResult handle_code_action_request(SZrStdioServer *server, const cJS
         return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
     }
 
+    /* 计算操作期间文档或语义身份若变化，不签发可能落到旧状态的编辑。 */
     if (!ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshot(
                 server->state,
                 server->context,
@@ -346,6 +400,11 @@ SZrLspHandlerResult handle_code_action_request(SZrStdioServer *server, const cJS
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/**
+ * @brief 处理 codeAction/resolve，依据 data 中的快照决定保留操作还是禁用旧编辑。
+ * @details 当前操作在首轮响应即含 edit；resolve 只复验有效期，不重新计算操作。
+ *          返回的是输入的深拷贝或去掉 edit 的禁用深拷贝，均由响应路径释放。
+ */
 SZrLspHandlerResult handle_code_action_resolve_request(SZrStdioServer *server, const cJSON *params) {
     SZrLspWorkspaceEditDocumentSnapshot documentSnapshot = {0};
 

@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 生成源码修复时沿用 Zr 的访问修饰词；未知修饰值不构造重构动作。 */
 static const TZrChar *lsp_property_action_access_text(
         EZrAccessModifier access) {
     switch (access) {
@@ -18,6 +19,7 @@ static const TZrChar *lsp_property_action_access_text(
     }
 }
 
+/* 统一为 property 重构附加单编辑动作；失败仅清理尚未加入结果数组的原生壳。 */
 static TZrBool lsp_property_action_append(
         SZrState *state,
         SZrArray *result,
@@ -66,6 +68,7 @@ static TZrBool lsp_property_action_append(
     return ZR_TRUE;
 }
 
+/* 从编译器原型中把查询事实还原到唯一源码 property；导入 native、接口和模块不做改写。 */
 static TZrBool lsp_property_action_find_owner(
         SZrSemanticAnalyzer *analyzer,
         SZrSymbol *propertySymbol,
@@ -128,6 +131,7 @@ static TZrBool lsp_property_action_find_owner(
     return ZR_TRUE;
 }
 
+/* 仅接受从行首到声明位置的纯空白前缀，避免生成编辑破坏同一行已有源码。 */
 static TZrBool lsp_property_action_line_indent(
         const TZrChar *content,
         TZrSize contentLength,
@@ -160,6 +164,7 @@ static TZrBool lsp_property_action_line_indent(
     return ZR_TRUE;
 }
 
+/* 插入缺失访问器前定位声明自己的可执行右花括号，拒绝过期或越界语义范围。 */
 static TZrBool lsp_property_action_find_close_brace(
         const TZrChar *content,
         TZrSize contentLength,
@@ -188,6 +193,7 @@ static TZrBool lsp_property_action_find_close_brace(
     return ZR_FALSE;
 }
 
+/* 仅当唯一接口契约明确缺少 set 或 init 时追加实现建议；其余歧义静默跳过。 */
 static TZrBool lsp_property_action_append_missing_accessor(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -262,6 +268,7 @@ static TZrBool lsp_property_action_append_missing_accessor(
             editText);
 }
 
+/* 显式 backing field 必须避开当前类型已声明的同名字段。 */
 static TZrBool lsp_property_action_has_field_collision(
         const SZrTypePrototypeInfo *owner,
         const TZrChar *fieldName) {
@@ -297,6 +304,7 @@ static const TZrChar *lsp_property_action_accessor_prefix(
     return lsp_property_action_access_text(accessorAccess);
 }
 
+/* 将安全的 property 声明替换为私有字段及访问器；装饰器、引用导出和修饰组合不自动改写。 */
 static TZrBool lsp_property_action_append_explicit_field(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -421,6 +429,7 @@ static TZrBool lsp_property_action_append_explicit_field(
         editWritten <= 0 || (TZrSize)editWritten >= sizeof(editText)) {
         return ZR_FALSE;
     }
+    /* BUG: 同行内联访问器含非 ASCII 文本时，共享 helper 按字节生成终列，替换范围可能越界。 */
     return lsp_property_action_append(
             state,
             result,
@@ -433,6 +442,9 @@ static TZrBool lsp_property_action_append_explicit_field(
             editText);
 }
 
+/* 从请求位置获取当前语义事实，并在唯一 owner/成员匹配时投影 property 重构动作。
+ * 该函数不创建分析器；没有可用快照或安全候选时返回成功空增量。
+ */
 TZrBool ZrLanguageServer_LspPropertyCodeActions_Append(
         SZrState *state,
         SZrLspContext *context,

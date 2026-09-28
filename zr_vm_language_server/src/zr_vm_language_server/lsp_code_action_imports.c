@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 组织导入时暂存首个别名对应的裁剪后导入行；文本由本模块分配并在编辑生成后释放。 */
 typedef struct SZrLspImportLine {
     TZrChar *text;
     TZrSize length;
@@ -23,6 +24,7 @@ static int import_action_compare_import_lines(const void *left, const void *righ
     return strcmp(leftLine->text, rightLine->text);
 }
 
+/* 成功与分配失败均走同一释放边界；count 只包含已拥有 text 的条目。 */
 static void import_action_free_import_lines(SZrLspImportLine *lines, TZrSize count) {
     if (lines == ZR_NULL) {
         return;
@@ -55,6 +57,7 @@ static TZrBool import_action_is_import_call(const TZrChar *line, TZrSize length,
            memcmp(line + cursor, "import(", strlen("import(")) == 0;
 }
 
+/* 识别顶部 import 声明供整理与缺失导入插入点共用；输入须已去除行首缩进。 */
 TZrBool lsp_code_action_trimmed_line_is_import_declaration(const TZrChar *line, TZrSize length) {
     TZrSize cursor = 0;
 
@@ -87,6 +90,7 @@ TZrBool lsp_code_action_trimmed_line_is_import_declaration(const TZrChar *line, 
     return import_action_is_import_call(line, length, cursor);
 }
 
+/* 别名输出借用输入行的切片；整理/清理动作只能在原内容仍有效时比较它。 */
 static TZrBool import_action_try_get_import_alias(const TZrChar *line,
                                                   TZrSize length,
                                                   const TZrChar **alias,
@@ -115,6 +119,7 @@ static TZrBool import_action_try_get_import_alias(const TZrChar *line,
     return *aliasLength > 0;
 }
 
+/* 同一别名只保留最先出现的导入，即使后续行指向别的模块；对应既有去重回归。 */
 static TZrBool import_action_line_identity_exists(SZrLspImportLine *lines,
                                                   TZrSize count,
                                                   const TZrChar *text,
@@ -195,6 +200,10 @@ static TZrBool import_action_identifier_at(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* remove-unused 只扫描导入块外的代码标识符，避免字符串或注释中的文字阻止清理。
+ * BUG: 反引号模板中的 ${alias.member} 是可执行表达式，整段却被跳过；
+ * 别名只在插值里使用时会被当作未使用，删除仍必需的导入。
+ */
 static TZrBool import_action_content_uses_alias_outside_range(const TZrChar *content,
                                                               TZrSize contentLength,
                                                               const TZrChar *alias,
@@ -245,6 +254,7 @@ static TZrBool import_action_content_uses_alias_outside_range(const TZrChar *con
     return ZR_FALSE;
 }
 
+/* source 动作仅修改文件顶部、可选 module 声明后的连续导入块；正文导入不参与本动作。 */
 static TZrBool import_action_find_import_block(const TZrChar *content,
                                                TZrSize contentLength,
                                                TZrSize *outStart,
@@ -310,6 +320,9 @@ static TZrBool import_action_find_import_block(const TZrChar *content,
     return foundImport;
 }
 
+/* 给 source.organizeImports 收集单个替换编辑；空差异为成功且 edits 不变。
+ * 编辑追加到调用方持有的 edits；内部快照、临时导入行和 builder 均在返回前释放。
+ */
 TZrBool lsp_code_action_collect_import_organize_edit(SZrState *state,
                                                      SZrFileVersion *fileVersion,
                                                      SZrArray *edits) {
@@ -401,6 +414,7 @@ TZrBool lsp_code_action_collect_import_organize_edit(SZrState *state,
         return ZR_TRUE;
     }
 
+    /* 排序仅改变顶部导入块，保留首个同名别名的语义选择。 */
     qsort(imports, importCount, sizeof(SZrLspImportLine), import_action_compare_import_lines);
     for (TZrSize index = 0; index < importCount; index++) {
         if (!lsp_text_builder_append_range(&builder, imports[index].text, imports[index].length) ||
@@ -420,6 +434,7 @@ TZrBool lsp_code_action_collect_import_organize_edit(SZrState *state,
         return ZR_TRUE;
     }
 
+    /* BUG: 无终止换行的非 ASCII 导入行使共享 helper 按字节数生成末列，替换范围可能越界。 */
     editRange = lsp_editor_range_from_offsets(content, contentLength, importBlockStart, importBlockEnd);
     if (!lsp_editor_append_text_edit(state, edits, editRange, builder.data, builder.length)) {
         import_action_free_import_lines(imports, importCount);
@@ -434,6 +449,9 @@ TZrBool lsp_code_action_collect_import_organize_edit(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 给 source.removeUnused 逐行收集删除编辑；别名在正文代码中出现即保留导入。
+ * 失败时调用方负责释放已追加到 edits 的部分结果。
+ */
 TZrBool lsp_code_action_collect_unused_import_cleanup_edit(SZrState *state,
                                                            SZrFileVersion *fileVersion,
                                                            SZrArray *edits) {
@@ -490,6 +508,7 @@ TZrBool lsp_code_action_collect_unused_import_cleanup_edit(SZrState *state,
                                                             aliasLength,
                                                             importBlockStart,
                                                             importBlockEnd)) {
+            /* BUG: 无终止换行的非 ASCII 导入行同样产生按字节计数的删除末列。 */
             SZrLspRange deleteRange = lsp_editor_range_from_offsets(content, contentLength, lineStart, deleteEnd);
             if (!lsp_editor_append_text_edit(state, edits, deleteRange, "", 0)) {
                 ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);

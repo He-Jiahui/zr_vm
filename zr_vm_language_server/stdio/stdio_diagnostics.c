@@ -4,12 +4,14 @@
 #include "zr_vm_language_server/lsp_diagnostic_store.h"
 #include "project/lsp_project_internal.h"
 
+/** 统一 push、文档 pull 和工作区 pull 的结果 ID 生成入口。 */
 static TZrBool build_diagnostic_result_id(SZrStdioServer *server,
                                           SZrString *uri,
                                           const SZrArray *diagnostics,
                                           char *buffer,
                                           size_t bufferSize);
 
+/** 按原样 URI 文本查找本连接最近一次成功发出的诊断快照；返回服务器借用指针。 */
 static SZrDiagnosticPushSnapshot *find_diagnostic_push_snapshot(SZrStdioServer *server, const char *uriText) {
     if (server == ZR_NULL || uriText == NULL) {
         return ZR_NULL;
@@ -23,6 +25,7 @@ static SZrDiagnosticPushSnapshot *find_diagnostic_push_snapshot(SZrStdioServer *
     return ZR_NULL;
 }
 
+/** 比较结果 ID 与打开文档版本，抑制对客户端无增量价值的重复 push。 */
 static TZrBool diagnostic_push_is_current(SZrStdioServer *server,
                                           const char *uriText,
                                           const char *resultId,
@@ -37,6 +40,7 @@ static TZrBool diagnostic_push_is_current(SZrStdioServer *server,
     return snapshot->hasDocumentVersion && snapshot->documentVersion == fileVersion->version;
 }
 
+/** 仅在发送成功后保存 push 快照；URI 文本在缓存内独立持有。 */
 static TZrBool diagnostic_push_cache_store(SZrStdioServer *server,
                                            const char *uriText,
                                            const char *resultId,
@@ -76,6 +80,9 @@ static TZrBool diagnostic_push_cache_store(SZrStdioServer *server,
     return ZR_TRUE;
 }
 
+/** @brief 文档更新尝试后按 parser 当前诊断与版本发送 publishDiagnostics，并缓存已发送快照。
+ * BUG: URI 文本转换失败时仍以空 URI 发出诊断，客户端会把结果归到错误文档。
+ * BUG: Array_Init 分配失败仍标记有效，后续 GetDiagnostics 可向空缓冲 Push。 */
 void publish_diagnostics(SZrStdioServer *server, SZrString *uri) {
     SZrArray diagnostics;
     cJSON *params;
@@ -84,10 +91,7 @@ void publish_diagnostics(SZrStdioServer *server, SZrString *uri) {
     SZrFileVersion *fileVersion;
     char resultId[ZR_LSP_DIAGNOSTIC_RESULT_ID_MAX];
 
-    /*
-     * Diagnostics ranges use LSP UTF-16 code units; ZrLanguageServer_Lsp_GetDiagnostics must agree with
-     * the same fileVersion->version that the client last sent on didChange/didOpen.
-     */
+    /* 内部诊断范围以 UTF-16 为基准，输出前按客户端协商编码转换；版本来自 parser 当前快照。 */
     if (server == ZR_NULL || uri == ZR_NULL) {
         return;
     }
@@ -117,6 +121,7 @@ void publish_diagnostics(SZrStdioServer *server, SZrString *uri) {
     }
     diagnosticsJson = serialize_diagnostics_array_for_uri(&diagnostics, uriText);
     apply_position_encoding_to_json_for_uri(server, uriText, diagnosticsJson);
+    /* 发帧成功后才推进去重基线；失败时下一次更新仍可重试。 */
     if (params == ZR_NULL || diagnosticsJson == ZR_NULL ||
         cJSON_AddStringToObject(params, ZR_LSP_FIELD_URI,
                                 uriText != NULL ? uriText : "") == ZR_NULL ||
@@ -136,6 +141,8 @@ void publish_diagnostics(SZrStdioServer *server, SZrString *uri) {
     free_diagnostics_array(server->state, &diagnostics);
 }
 
+/** @brief 关闭或移除文档时推送空诊断，使客户端清除先前发布的结果。
+ * BUG: URI 文本转换失败时仍以空 URI 发送清理通知，原 URI 的旧诊断得不到清除。 */
 void publish_empty_diagnostics(SZrStdioServer *server, SZrString *uri) {
     cJSON *params;
     cJSON *diagnostics;
@@ -171,6 +178,7 @@ void publish_empty_diagnostics(SZrStdioServer *server, SZrString *uri) {
     free(uriText);
 }
 
+/** 由共享诊断存储层生成稳定 ID，保持 push 与两种 pull 的快照判等一致。 */
 static TZrBool build_diagnostic_result_id(SZrStdioServer *server,
                                           SZrString *uri,
                                           const SZrArray *diagnostics,
@@ -180,6 +188,7 @@ static TZrBool build_diagnostic_result_id(SZrStdioServer *server,
             server->state, server->context, uri, diagnostics, buffer, (TZrSize)bufferSize);
 }
 
+/** 按工作区请求提供的 URI 与值对判断某文件可返回 unchanged 报告。 */
 static TZrBool workspace_previous_result_id_matches(const cJSON *previousResultIds,
                                                     const char *uriText,
                                                     const char *resultId) {
@@ -201,6 +210,7 @@ static TZrBool workspace_previous_result_id_matches(const cJSON *previousResultI
     return ZR_FALSE;
 }
 
+/** 校验可选字符串字段，避免把无效诊断协议参数当成空值。 */
 static TZrBool optional_string_field_is_valid(const cJSON *params, const char *field) {
     const cJSON *value = get_object_item(params, field);
 
@@ -209,6 +219,7 @@ static TZrBool optional_string_field_is_valid(const cJSON *params, const char *f
             cJSON_GetStringValue((cJSON *)value) != ZR_NULL);
 }
 
+/** 校验工作区增量请求的 previousResultIds 形状，保证逐 URI 比对可用。 */
 static TZrBool workspace_previous_result_ids_are_valid(const cJSON *previousResultIds) {
     const cJSON *entry;
 
@@ -239,6 +250,9 @@ static TZrBool workspace_previous_result_ids_are_valid(const cJSON *previousResu
     return ZR_TRUE;
 }
 
+/** @brief 响应单文档诊断 pull；客户端 ID 匹配时返回 unchanged，否则返回完整诊断。
+ * 结果 JSON 交给 handler result，诊断数组在本函数返回前释放。
+ * BUG: Array_Init 分配失败仍标记有效，后续 GetDiagnostics 可向空缓冲 Push。 */
 SZrLspHandlerResult handle_text_document_diagnostic_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray diagnostics = {0};
     const char *uriText;
@@ -282,6 +296,8 @@ SZrLspHandlerResult handle_text_document_diagnostic_request(SZrStdioServer *serv
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/** @brief 为工作区中的单个 URI 构造 full/unchanged 报告，失败时释放其诊断及 JSON。
+ * BUG: Array_Init 分配失败仍标记有效，后续 GetDiagnostics 可向空缓冲 Push。 */
 static cJSON *serialize_workspace_diagnostic_report_for_uri(SZrStdioServer *server,
                                                             SZrString *uri,
                                                             const cJSON *previousResultIds) {
@@ -338,6 +354,9 @@ failed:
     return NULL;
 }
 
+/** @brief 收集项目与打开文档 URI，逐文件返回工作区诊断，并在枚举中响应取消。
+ * TODO: 失同步 overlay 仍可进入此列表并返回旧版本报告；核对协议期望是否应跳过。
+ * BUG: Array_Init 分配失败仍标记有效，CollectDiagnosticDocumentUris 可向空缓冲 Push。 */
 SZrLspHandlerResult handle_workspace_diagnostic_request(SZrStdioServer *server, const cJSON *params) {
     cJSON *result;
     cJSON *items;
@@ -360,6 +379,7 @@ SZrLspHandlerResult handle_workspace_diagnostic_request(SZrStdioServer *server, 
         return stdio_handler_result_from_json(server->context, ZR_NULL);
     }
 
+    /* URI 集合覆盖工程记录与打开叠层，逐项检查取消以限制大型工作区开销。 */
     if (server != ZR_NULL && server->context != ZR_NULL) {
         ZrCore_Array_Init(server->state, &uris, sizeof(SZrString *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
         if (!ZrLanguageServer_LspProject_CollectDiagnosticDocumentUris(

@@ -1,6 +1,8 @@
-//
-// Created by Auto on 2025/01/XX.
-//
+/**
+ * @file
+ * @brief 语言服务的聚合入口，供嵌入者和测试同时取得 URI、增量解析、语义与 LSP 契约。
+ * @note 按需包含子头文件可以缩小依赖；此头文件本身不建立或持有会话状态。
+ */
 
 #ifndef ZR_VM_LANGUAGE_SERVER_H
 #define ZR_VM_LANGUAGE_SERVER_H

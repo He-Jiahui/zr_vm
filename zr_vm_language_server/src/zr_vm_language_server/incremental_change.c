@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+/** @brief 把字节偏移包装为变更区间；精确行列由后续位置映射阶段处理。 */
 static SZrFileRange incremental_change_range(
         SZrString *uri,
         TZrSize startOffset,
@@ -12,6 +13,7 @@ static SZrFileRange incremental_change_range(
             uri);
 }
 
+/** @brief 清空上次变更及影响级别，供同内容更新和新文件初始化。 */
 void ZrLanguageServer_IncrementalChange_Reset(
         SZrString *uri,
         SZrFileChangeInfo *outChangeInfo) {
@@ -26,6 +28,10 @@ void ZrLanguageServer_IncrementalChange_Reset(
     outChangeInfo->impact = ZR_FILE_CHANGE_IMPACT_NONE;
 }
 
+/**
+ * @brief 将旧新文本的共同前后缀排除，交给 token 比较及语义分类器继续细分影响。
+ * @note 本层仅输出最小字节范围与保守的 MODULE 影响，不推断声明归属。
+ */
 void ZrLanguageServer_IncrementalChange_Compute(
         SZrString *uri,
         const TZrChar *oldContent,

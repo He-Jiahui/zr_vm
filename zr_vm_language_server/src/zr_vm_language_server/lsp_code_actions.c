@@ -8,8 +8,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 自动补导入先保存短别名，再从原生模块或项目索引解析实际模块名。 */
 #define ZR_LSP_IMPORT_ALIAS_BUFFER_LENGTH 128U
 
+/* 快速修复先保留源码别名，再将 native 或项目模块名写入同一栈对象。 */
 typedef struct SZrLspMissingImportCandidate {
     TZrChar alias[ZR_LSP_IMPORT_ALIAS_BUFFER_LENGTH];
     TZrChar moduleName[ZR_LIBRARY_MAX_PATH_LENGTH];
@@ -34,6 +36,7 @@ static TZrBool lsp_editor_line_contains_text(const TZrChar *line,
     return ZR_FALSE;
 }
 
+/* 借出 VM 字符串的原生文本供同步动作构造；结果不转移所有权。 */
 static const TZrChar *lsp_editor_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -65,6 +68,7 @@ static TZrBool lsp_editor_is_keyword_identifier(const TZrChar *text, TZrSize len
     return ZR_FALSE;
 }
 
+/* 为整文件导入去重扫描识别 let/var 形式；这里只判断单行形状，不识别词法作用域。 */
 static TZrBool lsp_editor_line_declares_import_alias(const TZrChar *line,
                                                      TZrSize length,
                                                      const TZrChar *alias,
@@ -96,6 +100,7 @@ static TZrBool lsp_editor_line_declares_import_alias(const TZrChar *line,
     return lsp_editor_line_contains_text(line + cursor, length - cursor, "import(");
 }
 
+/* 候选搜索跳过行内注释及引号内容；跨行注释再由 offset_is_code 复核。 */
 static TZrSize lsp_editor_skip_non_code_span_on_line(const TZrChar *content,
                                                      TZrSize cursor,
                                                      TZrSize lineEnd) {
@@ -141,6 +146,7 @@ static TZrSize lsp_editor_skip_non_code_span_on_line(const TZrChar *content,
     return cursor;
 }
 
+/* BUG: 全文件扫描不区分局部作用域；别处函数的局部同名 import 会压掉当前缺失导入建议。 */
 static TZrBool lsp_editor_has_import_alias(const TZrChar *content,
                                            TZrSize contentLength,
                                            const TZrChar *alias,
@@ -183,6 +189,7 @@ static TZrBool lsp_editor_module_last_segment_matches(SZrString *moduleName,
     return strlen(segment) == aliasLength && memcmp(segment, alias, aliasLength) == 0;
 }
 
+/* 索引无匹配时退回项目 sourceRoot 下的同名 .zr 文件，供刚创建的文件立即修复。 */
 static TZrBool lsp_editor_resolve_project_source_file_candidate(SZrLspProjectIndex *projectIndex,
                                                                 const TZrChar *alias,
                                                                 TZrSize aliasLength,
@@ -215,6 +222,9 @@ static TZrBool lsp_editor_resolve_project_source_file_candidate(SZrLspProjectInd
     return ZR_TRUE;
 }
 
+/* 项目索引先给出完整模块名，随后才检查 sourceRoot 中尚未入索引的文件。
+ * TODO: 多个项目模块末段同名时当前取索引中的首个；需用双路径项目夹具核对是否应消歧。
+ */
 static TZrBool lsp_editor_resolve_project_import_candidate(SZrState *state,
                                                            SZrLspContext *context,
                                                            SZrString *uri,
@@ -260,6 +270,7 @@ static TZrBool lsp_editor_resolve_project_import_candidate(SZrState *state,
     return ZR_FALSE;
 }
 
+/* native zr.<alias> 优先于项目候选；返回的模块名写入请求栈上的固定缓冲区。 */
 static TZrBool lsp_editor_resolve_missing_import_candidate(SZrState *state,
                                                            SZrLspContext *context,
                                                            SZrString *uri,
@@ -295,6 +306,10 @@ static TZrBool lsp_editor_resolve_missing_import_candidate(SZrState *state,
     return ZR_FALSE;
 }
 
+/* 把请求范围限制到当前行的 alias.member；stdio 与 WASM 均传入内部 UTF-16 列。
+ * BUG: 下方将 UTF-16 列直接加在 UTF-8 字节行首，与别名的字节偏移比较；
+ * 同行非 ASCII 文本位于别名前时，两条入口都可能漏掉缺失导入动作。
+ */
 static TZrBool lsp_editor_requested_range_intersects_line_span(SZrLspRange range,
                                                               TZrSize lineStart,
                                                               TZrSize lineEnd,
@@ -335,6 +350,7 @@ static TZrBool lsp_editor_requested_range_intersects_line_span(SZrLspRange range
     return absoluteStart < spanEnd && absoluteEnd > spanStart;
 }
 
+/* 仅扫描请求起始行的可执行 alias.member，并用请求范围筛出一个可解析候选。 */
 static TZrBool lsp_editor_find_missing_import_candidate_on_line(SZrState *state,
                                                                 SZrLspContext *context,
                                                                 SZrString *uri,
@@ -407,6 +423,7 @@ static TZrBool lsp_editor_find_missing_import_candidate_on_line(SZrState *state,
     return ZR_FALSE;
 }
 
+/* 自动补导入插在 module/顶部导入段之后，保持正文首行不被拆开。 */
 static TZrSize lsp_editor_missing_import_insert_offset(const TZrChar *content, TZrSize contentLength) {
     TZrSize cursor = 0;
     TZrSize insertOffset = 0;
@@ -452,6 +469,7 @@ static TZrSize lsp_editor_missing_import_insert_offset(const TZrChar *content, T
     return insertOffset;
 }
 
+/* 解析成功才构造 quickfix；标题、插入文本只在此调用期间由 malloc 持有。 */
 static TZrBool lsp_editor_append_missing_import_action(SZrState *state,
                                                        SZrLspContext *context,
                                                        SZrString *uri,
@@ -497,6 +515,7 @@ static TZrBool lsp_editor_append_missing_import_action(SZrState *state,
         free(editText);
         return ZR_FALSE;
     }
+    /* BUG: 字符串创建失败未检查；后续编辑若成功，客户端会收到空标题或缺失 kind 的动作。 */
     action->title = lsp_editor_create_string(state, title, strlen(title));
     action->kind = lsp_editor_create_string(state,
                                             ZR_LSP_CODE_ACTION_KIND_QUICK_FIX,
@@ -540,6 +559,7 @@ static TZrBool lsp_code_action_ranges_intersect(
            lsp_code_action_compare_position(right.start, left.end) <= 0;
 }
 
+/* 诊断修复接受精确重叠，也接受与诊断同行的请求以兼容编辑器光标触发。 */
 static TZrBool lsp_code_action_range_selects(
         SZrLspRange requested,
         SZrLspRange candidate) {
@@ -548,6 +568,9 @@ static TZrBool lsp_code_action_range_selects(
             candidate.start.line <= requested.end.line);
 }
 
+/* 从当前诊断重新挑出机器可应用修复；不信任客户端随请求携带的旧诊断副本。
+ * 中途失败保留已追加动作，由 GetCodeActions 调用方统一释放。
+ */
 static TZrBool lsp_editor_append_diagnostic_fix_actions(
         SZrState *state,
         SZrLspContext *context,
@@ -651,6 +674,7 @@ static TZrBool lsp_editor_append_diagnostic_fix_actions(
     return ok;
 }
 
+/* 只有实际删除编辑才暴露 source.removeUnused；无差异时释放空动作。 */
 static TZrBool lsp_editor_append_unused_import_cleanup_action(SZrState *state,
                                                               SZrFileVersion *fileVersion,
                                                               SZrArray *result) {
@@ -665,6 +689,7 @@ static TZrBool lsp_editor_append_unused_import_cleanup_action(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* BUG: 标题或 kind 创建失败仍可能追加含编辑的动作；序列化会产生空标题或缺失 kind。 */
     action->title = lsp_editor_create_string(state,
                                              "Remove unused Zr imports",
                                              strlen("Remove unused Zr imports"));
@@ -689,6 +714,9 @@ static TZrBool lsp_editor_append_unused_import_cleanup_action(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 汇合 organize/removeUnused、缺失导入、当前诊断修复与 property 重构；stdio/worker 再按 context.only 筛选。
+ * 调用方必须 FreeCodeActions；任一阶段失败返回假，已有部分结果仍由调用方释放。
+ */
 TZrBool ZrLanguageServer_Lsp_GetCodeActions(SZrState *state,
                                             SZrLspContext *context,
                                             SZrString *uri,
@@ -720,6 +748,7 @@ TZrBool ZrLanguageServer_Lsp_GetCodeActions(SZrState *state,
         ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
+    /* BUG: organize 标题或 kind 创建失败未检查；若编辑存在仍可向客户端返回无效动作。 */
     action->title = lsp_editor_create_string(state, "Organize Zr imports", strlen("Organize Zr imports"));
     action->kind = lsp_editor_create_string(state,
                                             ZR_LSP_CODE_ACTION_KIND_SOURCE_ORGANIZE_IMPORTS,
@@ -734,6 +763,7 @@ TZrBool ZrLanguageServer_Lsp_GetCodeActions(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* source.organizeImports 不产生空编辑动作，但其余四类动作仍需继续收集。 */
     if (action->edits.length == 0) {
         ZrLanguageServer_Lsp_FreeTextEdits(state, &action->edits);
         ZrCore_Memory_RawFree(state->global, action, sizeof(SZrLspCodeAction));

@@ -4,6 +4,7 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 
+/** @brief 判断等长的新旧内容是否保留所有 token 值和源位置，供 AST 快速复用。 */
 TZrBool ZrLanguageServer_IncrementalTokenStreams_AreEquivalent(
     SZrState *state,
     SZrString *uri,

@@ -3,6 +3,7 @@
 #include "incremental/incremental_declaration_index.h"
 #include "zr_vm_parser/parser.h"
 
+/** @brief 替换节点前确认新旧顶层语句占据完全相同的源偏移。 */
 static TZrBool range_offsets_equal(
         const SZrFileRange *left,
         const SZrFileRange *right) {
@@ -11,6 +12,10 @@ static TZrBool range_offsets_equal(
            left->end.offset == right->end.offset;
 }
 
+/**
+ * @brief 拒绝会移动后续 AST 位置的编辑，仅允许等长且换行布局一致的局部修改。
+ * @pre 调用方已核实两份完整文本等长，changeInfo 的范围来自同一对文本。
+ */
 static TZrBool changed_layout_is_stable(
         const TZrChar *oldContent,
         const TZrChar *newContent,
@@ -47,6 +52,12 @@ static TZrBool changed_layout_is_stable(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 尝试仅重建一个顶层语句，供 Parse 的增量路径复用其他 AST 节点。
+ * @return 失败时保留旧 AST，调用方必须退回完整重解析；成功时旧候选被释放。
+ * BUG: State_Init 会预读首 token，若它是未终止字符串，lexer 直接写 stdout；
+ *      此处随后设置的 suppressErrorOutput 无法保护 stdio JSON-RPC 输出。
+ */
 TZrBool ZrLanguageServer_IncrementalSyntaxReparse_TryDeclaration(
         SZrState *state,
         SZrString *uri,
@@ -87,6 +98,7 @@ TZrBool ZrLanguageServer_IncrementalSyntaxReparse_TryDeclaration(
         return ZR_FALSE;
     }
 
+    /* 仅在类型与源范围均吻合后转移所有权，保持未触及语句的 AST 节点与源位置可用。 */
     root->data.script.statements->nodes[selection.statementIndex] = replacement;
     ZrParser_Ast_Free(state, selection.statement);
     ZrParser_State_Free(&parserState);

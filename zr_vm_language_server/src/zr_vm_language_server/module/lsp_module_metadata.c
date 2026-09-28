@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <string.h>
 
+/* 项目名与编译器原型名保存在 VM 字符串中；这里借用其文本用于注册表键和路径映射。 */
 static const TZrChar *module_metadata_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -21,6 +22,7 @@ static const TZrChar *module_metadata_string_text(SZrString *value) {
     return ZrCore_String_GetNativeString(value);
 }
 
+/* 将逻辑模块键化为 binary 目录下的相对路径；导入来源只在此去掉源码/对象后缀。 */
 static TZrBool module_metadata_normalize_module_key(const TZrChar *modulePath,
                                                     TZrChar *buffer,
                                                     TZrSize bufferSize) {
@@ -60,6 +62,7 @@ static TZrBool module_metadata_normalize_module_key(const TZrChar *modulePath,
     return writeIndex > 0;
 }
 
+/* 把规范化模块键映射到项目 binary 根下的指定格式文件，供存在性检查和导航共用。 */
 static TZrBool module_metadata_resolve_module_file_path(const TZrChar *rootText,
                                                         const TZrChar *moduleName,
                                                         const TZrChar *extension,
@@ -87,6 +90,7 @@ static TZrBool module_metadata_resolve_module_file_path(const TZrChar *rootText,
     return buffer[0] != '\0';
 }
 
+/* 项目索引的 directory 与 binary 配置决定元数据查找根，避免按工作目录猜测。 */
 static TZrBool module_metadata_project_binary_root(SZrLspProjectIndex *projectIndex,
                                                    TZrChar *buffer,
                                                    TZrSize bufferSize) {
@@ -112,6 +116,7 @@ static TZrBool module_metadata_project_binary_root(SZrLspProjectIndex *projectIn
     return buffer[0] != '\0';
 }
 
+/* 导入决议只将真实存在的 .zro 文件算作二进制来源；返回本机路径供后续读取。 */
 static TZrBool module_metadata_resolve_existing_project_binary_path(SZrLspProjectIndex *projectIndex,
                                                                     const TZrChar *moduleName,
                                                                     const TZrChar *extension,
@@ -132,6 +137,7 @@ static TZrBool module_metadata_resolve_existing_project_binary_path(SZrLspProjec
     return ZrLibrary_File_Exist(buffer) == ZR_LIBRARY_FILE_IS_FILE;
 }
 
+/* 把本机文件路径投影为 LSP 导航 URI；字符串由 VM GC 持有。 */
 static SZrString *module_metadata_create_file_uri_from_native_path(SZrState *state, const TZrChar *path) {
     TZrChar buffer[ZR_LIBRARY_MAX_PATH_LENGTH * 2];
     TZrSize pathLength;
@@ -154,6 +160,9 @@ static SZrString *module_metadata_create_file_uri_from_native_path(SZrState *sta
     writeIndex = 7;
 #endif
 
+    /* BUG: 这里只替换路径分隔符，未对 #、?、% 等路径字节百分号编码。
+     * 合法项目路径含 # 时生成的 file URI 会被 LspUri_FileToNativePath 拒绝，
+     * 使二进制定义与插件文件导航失效；应复用 LspUri_FromNativePath。 */
     for (TZrSize index = 0; index < pathLength && writeIndex + 1 < sizeof(buffer); index++) {
         TZrChar ch = path[index] == '\\' ? '/' : path[index];
 
@@ -170,12 +179,14 @@ static SZrString *module_metadata_create_file_uri_from_native_path(SZrState *sta
     return ZrCore_String_Create(state, buffer, writeIndex);
 }
 
+/* 原生描述符解析需要项目索引才能优先装载本项目插件；公开无项目入口只查全局来源。 */
 static const ZrLibModuleDescriptor *module_metadata_resolve_native_module_descriptor_internal(
     SZrState *state,
     SZrLspProjectIndex *projectIndex,
     const TZrChar *moduleName,
     EZrLspImportedModuleSourceKind *outSourceKind);
 
+/* 已注册插件的 sourcePath 是物理导航目标；先按项目刷新注册表再读其来源。 */
 static TZrBool module_metadata_resolve_descriptor_plugin_file_uri(SZrState *state,
                                                                   SZrLspProjectIndex *projectIndex,
                                                                   const TZrChar *moduleName,
@@ -208,6 +219,7 @@ static TZrBool module_metadata_resolve_descriptor_plugin_file_uri(SZrState *stat
     return *outUri != ZR_NULL;
 }
 
+/* 类型查询剥离限定模块名与泛型/数组后缀，再与描述符中的基本类型名对齐。 */
 static const ZrLibTypeDescriptor *module_metadata_find_type_descriptor_in_module(const ZrLibModuleDescriptor *module,
                                                                                  const TZrChar *typeName) {
     const TZrChar *start;
@@ -253,6 +265,7 @@ static const ZrLibTypeDescriptor *module_metadata_find_type_descriptor_in_module
     return ZR_NULL;
 }
 
+/* 注册表承担已加载模块的缓存和生命周期；返回描述符不转移所有权。 */
 static const ZrLibModuleDescriptor *module_metadata_find_registered_native_module(SZrState *state,
                                                                                   const TZrChar *moduleName,
                                                                                   EZrLspImportedModuleSourceKind *outSourceKind) {
@@ -285,6 +298,7 @@ static const ZrLibModuleDescriptor *module_metadata_find_registered_native_modul
     return descriptor;
 }
 
+/* 导入发生在具体项目时，先尝试将 native 目录的同名插件装入注册表。 */
 static TZrBool module_metadata_try_load_project_native_plugin(SZrState *state,
                                                               SZrLspProjectIndex *projectIndex,
                                                               const TZrChar *moduleName) {
@@ -302,6 +316,7 @@ static TZrBool module_metadata_try_load_project_native_plugin(SZrState *state,
     return ZrLibrary_NativeRegistry_EnsureProjectDescriptorPlugin(state, projectDirectory, moduleName);
 }
 
+/* 链式导入按父模块的 link 表解析子名；上层可据此导航 plugin.console 等链接。 */
 static const ZrLibModuleDescriptor *module_metadata_try_resolve_via_parent_module_links(
     SZrState *state,
     SZrLspProjectIndex *projectIndex,
@@ -365,6 +380,7 @@ static const ZrLibModuleDescriptor *module_metadata_try_resolve_via_parent_modul
     return ZR_NULL;
 }
 
+/* CompileTool 静态投影优先，其后才加载项目插件并检索注册表或父模块链接。 */
 static const ZrLibModuleDescriptor *module_metadata_resolve_native_module_descriptor_internal(
     SZrState *state,
     SZrLspProjectIndex *projectIndex,
@@ -397,6 +413,7 @@ static const ZrLibModuleDescriptor *module_metadata_resolve_native_module_descri
     return ZR_NULL;
 }
 
+/* 编译器类型原型来自当前 analyzer 快照；LSP 只借用，供模块与成员补全查询。 */
 const SZrTypePrototypeInfo *ZrLanguageServer_LspModuleMetadata_FindTypePrototype(SZrSemanticAnalyzer *analyzer,
                                                                                  const TZrChar *typeName) {
     if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL || typeName == ZR_NULL) {
@@ -421,12 +438,14 @@ const SZrTypePrototypeInfo *ZrLanguageServer_LspModuleMetadata_FindTypePrototype
     return ZR_NULL;
 }
 
+/* 模块名也作为编译器原型名使用；导入成员优先读取已有类型事实。 */
 const SZrTypePrototypeInfo *ZrLanguageServer_LspModuleMetadata_FindModulePrototype(SZrSemanticAnalyzer *analyzer,
                                                                                    SZrString *moduleName) {
     return ZrLanguageServer_LspModuleMetadata_FindTypePrototype(analyzer,
                                                                 module_metadata_string_text(moduleName));
 }
 
+/* 只以磁盘上现存的项目 .zro 判定二进制来源；调用方可选择取得本机路径。 */
 TZrBool ZrLanguageServer_LspModuleMetadata_ProjectHasBinaryModule(SZrLspProjectIndex *projectIndex,
                                                                   const TZrChar *moduleName,
                                                                   TZrChar *buffer,
@@ -455,6 +474,8 @@ TZrBool ZrLanguageServer_LspModuleMetadata_ProjectHasBinaryModule(SZrLspProjectI
     return ZR_FALSE;
 }
 
+/* 导入判定先记录项目源码/FFI 包装，再查二进制文件和原生描述符；
+ * 多种事实可并存，sourceKind 表示供导航显示的优先来源。 */
 TZrBool ZrLanguageServer_LspModuleMetadata_ResolveImportedModule(SZrState *state,
                                                                  SZrSemanticAnalyzer *analyzer,
                                                                  SZrLspProjectIndex *projectIndex,
@@ -487,6 +508,9 @@ TZrBool ZrLanguageServer_LspModuleMetadata_ResolveImportedModule(SZrState *state
         outResolved->sourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA;
     }
 
+    /* TODO: 即使 sourceKind 已选项目源码或二进制，仍会从全局注册表填充
+     * nativeDescriptor；MetadataProvider 随后无条件查原生成员。需用同名源码与
+     * 已注册插件的缺失成员反例，确认是否可能混入原生签名。 */
     if (moduleText != ZR_NULL) {
         EZrLspImportedModuleSourceKind nativeSourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED;
         outResolved->nativeDescriptor =
@@ -509,12 +533,14 @@ TZrBool ZrLanguageServer_LspModuleMetadata_ResolveImportedModule(SZrState *state
            outResolved->sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA;
 }
 
+/* 无项目上下文的查询用于内建模块和已注册描述符；结果由静态表或注册表持有。 */
 const ZrLibModuleDescriptor *ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleDescriptor(SZrState *state,
                                                                                                const TZrChar *moduleName,
                                                                                                EZrLspImportedModuleSourceKind *outSourceKind) {
     return module_metadata_resolve_native_module_descriptor_internal(state, ZR_NULL, moduleName, outSourceKind);
 }
 
+/* 限定类型优先找指定模块；无命中时扫描注册表供缺少导入上下文的查询回退。 */
 const ZrLibTypeDescriptor *ZrLanguageServer_LspModuleMetadata_FindNativeTypeDescriptor(SZrState *state,
                                                                                        const TZrChar *typeName,
                                                                                        const ZrLibModuleDescriptor **outModule) {
@@ -530,6 +556,9 @@ const ZrLibTypeDescriptor *ZrLanguageServer_LspModuleMetadata_FindNativeTypeDesc
         return ZR_NULL;
     }
 
+    /* TODO: 若上层传入 pkg.Box<other.Arg> 这类类型文本，最后一个点落在泛型实参内，
+     * 限定模块名会解析错误并退回全局同名类型。核实调用方输入格式，并用两个模块
+     * 含同名 Box 的用例检查是否会返回错误模块。 */
     lastDot = strrchr(typeName, '.');
     if (lastDot != ZR_NULL && lastDot != typeName) {
         TZrSize moduleLength = (TZrSize)(lastDot - typeName);
@@ -568,6 +597,8 @@ const ZrLibTypeDescriptor *ZrLanguageServer_LspModuleMetadata_FindNativeTypeDesc
     return ZR_NULL;
 }
 
+/* 每次读取独立打开项目 .zro，解析成功后的 SZrIoSource 由调用方释放；
+ * 文件 reader 在返回前关闭，与元数据树的生命周期分离。 */
 TZrBool ZrLanguageServer_LspModuleMetadata_LoadBinaryModuleSource(SZrState *state,
                                                                   SZrLspProjectIndex *projectIndex,
                                                                   SZrString *moduleName,
@@ -581,6 +612,8 @@ TZrBool ZrLanguageServer_LspModuleMetadata_LoadBinaryModuleSource(SZrState *stat
         *outSource = ZR_NULL;
     }
 
+    /* TODO: ProjectHasBinaryModule 当前总按 .zro 扩展名构造路径，下面的 .zri
+     * 拒绝分支在正常路径不可达。核查是否仍有外部生成路径或旧调用需防护。 */
     if (state == ZR_NULL || projectIndex == ZR_NULL || moduleName == ZR_NULL || outSource == ZR_NULL ||
         !ZrLanguageServer_LspModuleMetadata_ProjectHasBinaryModule(projectIndex,
                                                                   module_metadata_string_text(moduleName),
@@ -606,10 +639,12 @@ TZrBool ZrLanguageServer_LspModuleMetadata_LoadBinaryModuleSource(SZrState *stat
     return loaded;
 }
 
+/* 与 parser 的二进制读取入口配对，避免把元数据树误交给 VM GC 处理。 */
 void ZrLanguageServer_LspModuleMetadata_FreeBinaryModuleSource(SZrGlobalState *global, SZrIoSource *source) {
     ZrParser_ModuleInitAnalysis_FreeBinaryMetadataSource(global, source);
 }
 
+/* 从 .zro 的 typed export 表按成员名定位定义事实；结果借用临时源树。 */
 static const SZrIoFunctionTypedExportSymbol *module_metadata_find_binary_export_symbol(
     const SZrIoFunction *entryFunction,
     SZrString *memberName) {
@@ -627,6 +662,7 @@ static const SZrIoFunctionTypedExportSymbol *module_metadata_find_binary_export_
     return ZR_NULL;
 }
 
+/* typed export 若只有列号而没有行号，定义范围至少映射到首行。 */
 static TZrInt32 module_metadata_binary_export_normalize_line(TZrUInt32 line, TZrUInt32 column) {
     if (line > 0) {
         return (TZrInt32)line;
@@ -635,6 +671,7 @@ static TZrInt32 module_metadata_binary_export_normalize_line(TZrUInt32 line, TZr
     return column > 0 ? 1 : 0;
 }
 
+/* 在导航前把 typed export 的一基源码坐标验证并绑定物理二进制 URI。 */
 static TZrBool module_metadata_binary_export_symbol_try_range(SZrString *uri,
                                                               const SZrIoFunctionTypedExportSymbol *symbol,
                                                               SZrFileRange *outRange) {
@@ -668,6 +705,7 @@ static TZrBool module_metadata_binary_export_symbol_try_range(SZrString *uri,
     return ZR_TRUE;
 }
 
+/* 模块入口导航保留物理 .zro URI；声明身份若需虚拟 URI 由上层另行生成。 */
 TZrBool ZrLanguageServer_LspModuleMetadata_ResolveBinaryModuleUri(SZrState *state,
                                                                   SZrLspProjectIndex *projectIndex,
                                                                   SZrString *moduleName,
@@ -691,6 +729,8 @@ TZrBool ZrLanguageServer_LspModuleMetadata_ResolveBinaryModuleUri(SZrState *stat
     return *outUri != ZR_NULL;
 }
 
+/* 成员定义先取物理模块 URI，再从临时 .zro 树提取 typed export 范围；
+ * 无论命中与否都须在返回前释放临时源树。 */
 TZrBool ZrLanguageServer_LspModuleMetadata_ResolveBinaryExportDeclaration(SZrState *state,
                                                                           SZrLspProjectIndex *projectIndex,
                                                                           SZrString *moduleName,
@@ -731,6 +771,8 @@ TZrBool ZrLanguageServer_LspModuleMetadata_ResolveBinaryExportDeclaration(SZrSta
     return resolved;
 }
 
+/* 插件优先返回注册表来源文件，来源不可用时退回虚拟声明；
+ * 内建模块使用虚拟声明，CompileTool 另由虚拟文档入口处理。 */
 TZrBool ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleUri(SZrState *state,
                                                                   SZrLspProjectIndex *projectIndex,
                                                                   SZrString *moduleName,
@@ -765,6 +807,7 @@ TZrBool ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleUri(SZrState *stat
     *outUri = ZrLanguageServer_LspVirtualDocuments_CreateDeclarationUri(state, moduleText);
     return *outUri != ZR_NULL;
 }
+/* 悬停和项目摘要统一使用这些来源标签，避免各调用者重新解释枚举。 */
 const TZrChar *ZrLanguageServer_LspModuleMetadata_SourceKindLabel(EZrLspImportedModuleSourceKind sourceKind) {
     switch (sourceKind) {
         case ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE:
@@ -777,6 +820,8 @@ const TZrChar *ZrLanguageServer_LspModuleMetadata_SourceKindLabel(EZrLspImported
             return "native builtin";
         case ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN:
             return "native descriptor plugin";
+        /* BUG: CompileTool 解析会产生 COMPILE_TOOL 来源，但这里没有对应标签；
+         * 模块悬停因此把该来源显示为 external/unresolved。 */
         default:
             return "external/unresolved";
     }

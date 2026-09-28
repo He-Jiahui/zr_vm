@@ -1,16 +1,24 @@
-//
-// Created by Auto on 2025/01/XX.
-//
+/**
+ * @file
+ * @brief 共享核心、stdio 和 WASM 对 LSP 协议字面量与资源上限的约定。
+ * @note 协议字段与方法名同时用于响应序列化和请求分派；修改时须核对两端及客户端扩展。
+ */
 
 #ifndef ZR_VM_LANGUAGE_SERVER_CONF_H
 #define ZR_VM_LANGUAGE_SERVER_CONF_H
 
 #include "zr_vm_common.h"
 
+/** @brief 对外声明沿用仓库统一导出修饰符，供核心库及适配层共享头文件。 */
 #define ZR_LANGUAGE_SERVER_API ZR_API
 
+/** @brief stdio 侧 URI、诊断和语义 token 缓存扩容时共用的倍率。 */
 #define ZR_LSP_DYNAMIC_CAPACITY_GROWTH_FACTOR 2U
 
+/**
+ * @brief 项目索引和查询容器的初始容量；SMALL 宏还限制联动编辑固定数组的结果数。
+ * @note 历史文档与历史语义快照共用代际窗口。TODO: SMALL 一值两用，需核对是否拆出独立上限，避免调优初始容量时改变响应数量。
+ */
 #define ZR_LSP_PROJECT_INDEX_INITIAL_CAPACITY 2U
 #define ZR_LSP_ARRAY_INITIAL_CAPACITY 8U
 #define ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY 4U
@@ -18,22 +26,40 @@
 #define ZR_LSP_FILE_VERSION_HISTORICAL_CONTENT_CAPACITY 2U
 #define ZR_LSP_HISTORICAL_SEMANTIC_SNAPSHOT_CAPACITY \
     ZR_LSP_FILE_VERSION_HISTORICAL_CONTENT_CAPACITY
+/** @brief LRU 语义缓存的默认内存预算；实际驱逐由快照缓存层执行。 */
 #define ZR_LSP_SEMANTIC_CACHE_DEFAULT_LIMIT_BYTES \
     (256ULL * 1024ULL * 1024ULL)
 #define ZR_LSP_GLOBAL_SCOPE_SYMBOL_INITIAL_CAPACITY ZR_LSP_LARGE_ARRAY_INITIAL_CAPACITY
 
+/** @brief URI 索引及内容／AST 指纹共用的哈希配置；改变后需复核增量缓存失效路径。 */
 #define ZR_LSP_HASH_TABLE_INITIAL_SIZE_LOG2 4U
 #define ZR_LSP_HASH_MULTIPLIER 31ULL
 
+/**
+ * @brief 从 native 声明投影泛型参数时的本地缓冲上限。
+ * @note 超额参数或文本由解析调用点截断，不能将该常量理解为语言语法上限。
+ */
 #define ZR_LSP_NATIVE_GENERIC_ARGUMENT_MAX 8U
 #define ZR_LSP_NATIVE_GENERIC_TEXT_MAX 128U
 
+/** @brief hover 与导航文案使用的栈上 Markdown 缓冲区容量。 */
 #define ZR_LSP_MARKDOWN_BUFFER_SIZE ZR_VM_PATH_LENGTH_MAX
+/**
+ * @brief 当源码偏移不可用时，将行列范围转为候选长度评分的行权重。
+ * @note 供 signature help 和引用选择比较候选范围，并非真实字符数或协议位置编码。
+ * TODO: 超过 4095 列的行可能破坏回退评分的长度顺序；需针对长行调用与引用匹配补测试，
+ *       再决定是否统一改用源码偏移或无溢出的行列比较。
+ */
 #define ZR_LSP_SIGNATURE_RANGE_PACK_BASE 4096U
 
+/** @brief 类型成员展开与 AST 遍历的递归／栈深保护；到达上限时相应功能会停止深入。 */
 #define ZR_LSP_MEMBER_RECURSION_MAX_DEPTH 8U
 #define ZR_LSP_AST_RECURSION_MAX_DEPTH 32U
 
+/**
+ * @brief 编辑器文案及元数据投影使用的固定栈缓冲容量。
+ * @note 容量按用途分级，不代表协议文本的最大合法长度；调用点决定截断或失败语义。
+ */
 #define ZR_LSP_SHORT_TEXT_BUFFER_LENGTH 32U
 #define ZR_LSP_INTEGER_BUFFER_LENGTH 64U
 #define ZR_LSP_TYPE_BUFFER_LENGTH 128U
@@ -41,19 +67,26 @@
 #define ZR_LSP_TEXT_BUFFER_LENGTH 256U
 #define ZR_LSP_LONG_TEXT_BUFFER_LENGTH 512U
 #define ZR_LSP_HOVER_BUFFER_LENGTH 1024U
+/** @brief stdio Content-Length 帧读取的头部数量、头部字节及消息体上限。 */
 #define ZR_LSP_MAX_HEADER_BYTES (8U * 1024U)
 #define ZR_LSP_MAX_HEADER_COUNT 32U
 #define ZR_LSP_MAX_MESSAGE_BYTES (16U * 1024U * 1024U)
+/** @brief 文档、声明投影及编辑文案的本地缓冲容量，与 stdio 帧大小限制无关。 */
 #define ZR_LSP_DOCUMENTATION_BUFFER_LENGTH 2048U
 
+/** @brief 注释关联扫描的回溯窗口和文档缓冲，与全文件语义分析范围不同。 */
 #define ZR_LSP_COMMENT_SCAN_LINE_LIMIT 32U
 #define ZR_LSP_COMMENT_BUFFER_LENGTH ZR_LSP_HOVER_BUFFER_LENGTH
+/** @brief 语义 token 结果数组的首次分配容量，不限制实际 token 数。 */
 #define ZR_LSP_SEMANTIC_TOKEN_INITIAL_CAPACITY 32U
+/** @brief 数值范围展示时最多拼接的区间数，避免 hover 文案过长。 */
 #define ZR_LSP_NUMERIC_RANGE_SEGMENT_DISPLAY_LIMIT 4U
 
+/** @brief stdio 帧头解析使用的协议前缀；JSON 安全整数界限约束版本和请求数字。 */
 #define ZR_LSP_STDIO_CONTENT_LENGTH_HEADER_PREFIX "Content-Length:"
 #define ZR_LSP_JSON_SAFE_INTEGER_MAX 9007199254740991.0
 
+/** @brief JSON-RPC 2.0 请求、通知及响应的字段键和版本字面量；各字段按消息形状使用。 */
 #define ZR_LSP_JSON_RPC_FIELD_JSONRPC "jsonrpc"
 #define ZR_LSP_JSON_RPC_VERSION "2.0"
 #define ZR_LSP_JSON_RPC_FIELD_ID "id"
@@ -64,6 +97,10 @@
 #define ZR_LSP_JSON_RPC_FIELD_CODE "code"
 #define ZR_LSP_JSON_RPC_FIELD_MESSAGE "message"
 
+/**
+ * @brief LSP 位置、诊断与通用对象的 JSON 字段键。
+ * @note 部分字段由 stdio 和 WASM 共用；输入解析与输出组包按各自消息形状使用字段。
+ */
 #define ZR_LSP_FIELD_LINE "line"
 #define ZR_LSP_FIELD_CHARACTER "character"
 #define ZR_LSP_FIELD_START "start"
@@ -111,6 +148,7 @@
 #define ZR_LSP_FIELD_TEXT_DOCUMENT "textDocument"
 #define ZR_LSP_FIELD_TEXT "text"
 #define ZR_LSP_FIELD_VERSION "version"
+/** @brief 文档代际和快照身份字段供编辑请求在应用前验证旧状态。 */
 #define ZR_LSP_FIELD_CONTENT_HASH "contentHash"
 #define ZR_LSP_FIELD_CONTENT_LENGTH "contentLength"
 #define ZR_LSP_FIELD_CONTENT_GENERATION "contentGeneration"
@@ -123,7 +161,9 @@
 #define ZR_LSP_FIELD_SEMANTIC_GENERATION "semanticGeneration"
 #define ZR_LSP_FIELD_DEPENDENCY_FINGERPRINT "dependencyFingerprint"
 #define ZR_LSP_FIELD_IS_OPEN_DOCUMENT "isOpenDocument"
+/** @brief 推送诊断通知及编辑上下文中的诊断列表字段，并非快照代际标识。 */
 #define ZR_LSP_FIELD_DIAGNOSTICS "diagnostics"
+/** @brief 文档编辑、请求上下文及语义 token 的通用协议字段。 */
 #define ZR_LSP_FIELD_POSITION "position"
 #define ZR_LSP_FIELD_NEW_TEXT "newText"
 #define ZR_LSP_FIELD_CHANGES "changes"
@@ -141,6 +181,7 @@
 #define ZR_LSP_FIELD_REASON "reason"
 #define ZR_LSP_FIELD_PLACEHOLDER "placeholder"
 #define ZR_LSP_FIELD_NEW_NAME "newName"
+/** @brief initialize 的客户端参数及服务端能力响应共用字段区；输出能力须与请求分派和后端支持一致。 */
 #define ZR_LSP_FIELD_OPEN_CLOSE "openClose"
 #define ZR_LSP_FIELD_CHANGE "change"
 #define ZR_LSP_FIELD_SAVE "save"
@@ -175,6 +216,7 @@
 #define ZR_LSP_FIELD_WORKSPACE "workspace"
 #define ZR_LSP_FIELD_ROOT_URI "rootUri"
 #define ZR_LSP_FIELD_ROOT_PATH "rootPath"
+/** @brief 工作区变更输入、文件操作能力、诊断及编辑器结果共用的对象字段。 */
 #define ZR_LSP_FIELD_EVENT "event"
 #define ZR_LSP_FIELD_ADDED "added"
 #define ZR_LSP_FIELD_REMOVED "removed"
@@ -253,6 +295,7 @@
 #define ZR_LSP_FIELD_TO "to"
 #define ZR_LSP_FIELD_FROM_RANGES "fromRanges"
 
+/** @brief LSP 富文本、内部插入格式标签、诊断源和协商位置编码的字面量；插入格式的线上值另用数值宏。 */
 #define ZR_LSP_MARKUP_KIND_MARKDOWN "markdown"
 #define ZR_LSP_INSERT_TEXT_FORMAT_KIND_PLAINTEXT "plaintext"
 #define ZR_LSP_INSERT_TEXT_FORMAT_KIND_SNIPPET "snippet"
@@ -260,16 +303,22 @@
 #define ZR_LSP_POSITION_ENCODING_UTF8 "utf-8"
 #define ZR_LSP_POSITION_ENCODING_UTF16 "utf-16"
 
+/** @brief completion 输出时可提示客户端接受候选项的提交字符。 */
 #define ZR_LSP_COMPLETION_COMMIT_CHARACTER_SEMICOLON ";"
 #define ZR_LSP_COMPLETION_COMMIT_CHARACTER_COMMA ","
 #define ZR_LSP_COMPLETION_COMMIT_CHARACTER_DOT "."
 #define ZR_LSP_COMPLETION_COMMIT_CHARACTER_OPEN_PAREN "("
 
+/** @brief initialize 向客户端协商的 completion 与 signature help 触发字符。 */
 #define ZR_LSP_COMPLETION_TRIGGER_CHARACTER_MEMBER_ACCESS "."
 #define ZR_LSP_COMPLETION_TRIGGER_CHARACTER_NAMESPACE_ACCESS ":"
 #define ZR_LSP_SIGNATURE_TRIGGER_CHARACTER_OPEN_PAREN "("
 #define ZR_LSP_SIGNATURE_TRIGGER_CHARACTER_ARGUMENT_SEPARATOR ","
 
+/**
+ * @brief JSON-RPC/LSP 方法名由 stdio 请求分派、通知发送及一致性测试共用。
+ * @note 方法存在常量不表示该后端一定宣告或实现该能力；以能力表及适配层分派为准。
+ */
 #define ZR_LSP_METHOD_INITIALIZE "initialize"
 #define ZR_LSP_METHOD_SHUTDOWN "shutdown"
 #define ZR_LSP_METHOD_INITIALIZED "initialized"
@@ -332,16 +381,20 @@
 #define ZR_LSP_METHOD_ZR_RICH_HOVER "zr/richHover"
 #define ZR_LSP_METHOD_ZR_SELECTED_PROJECT "zr/selectedProject"
 
+/** @brief initialize 选定工程的扩展参数，与后续工程切换请求共同维护工作区上下文。 */
 #define ZR_LSP_FIELD_INITIALIZATION_OPTIONS "initializationOptions"
 #define ZR_LSP_INITIALIZATION_OPTION_SELECTED_PROJECT_URI "zrSelectedProjectUri"
 
+/** @brief stdio initialize 的 serverInfo 标识和版本。 */
 #define ZR_LSP_SERVER_NAME "zr_vm_language_server_stdio"
 #define ZR_LSP_SERVER_VERSION "0.0.1"
 
+/** @brief initialize 协商与 completion 序列化使用的 LSP 枚举数值。 */
 #define ZR_LSP_TEXT_DOCUMENT_SYNC_KIND_INCREMENTAL 2
 #define ZR_LSP_INSERT_TEXT_FORMAT_PLAIN_TEXT 1
 #define ZR_LSP_INSERT_TEXT_FORMAT_SNIPPET 2
 
+/** @brief code action、code lens、折叠范围与拉取诊断报告的协议类别。 */
 #define ZR_LSP_CODE_ACTION_KIND_QUICK_FIX "quickfix"
 #define ZR_LSP_CODE_ACTION_KIND_REFACTOR_REWRITE "refactor.rewrite"
 #define ZR_LSP_CODE_ACTION_KIND_SOURCE_ORGANIZE_IMPORTS "source.organizeImports"
@@ -353,6 +406,7 @@
 #define ZR_LSP_DOCUMENT_DIAGNOSTIC_REPORT_KIND_FULL "full"
 #define ZR_LSP_DOCUMENT_DIAGNOSTIC_REPORT_KIND_UNCHANGED "unchanged"
 
+/** @brief 核心 completion 项到 LSP 协议 kind 数值的映射范围。 */
 typedef enum EZrLspCompletionItemKind {
     ZR_LSP_COMPLETION_ITEM_KIND_TEXT = 1,
     ZR_LSP_COMPLETION_ITEM_KIND_METHOD = 2,
@@ -368,6 +422,7 @@ typedef enum EZrLspCompletionItemKind {
     ZR_LSP_COMPLETION_ITEM_KIND_STRUCT = 22,
 } EZrLspCompletionItemKind;
 
+/** @brief 符号表条目到文档／工作区符号及层级项目的 LSP kind 映射。 */
 typedef enum EZrLspSymbolKind {
     ZR_LSP_SYMBOL_KIND_MODULE = 2,
     ZR_LSP_SYMBOL_KIND_CLASS = 5,
@@ -382,11 +437,13 @@ typedef enum EZrLspSymbolKind {
     ZR_LSP_SYMBOL_KIND_STRUCT = 23,
 } EZrLspSymbolKind;
 
+/** @brief inlay hint 序列化到客户端时使用的 LSP kind 值。 */
 typedef enum EZrLspInlayHintKind {
     ZR_LSP_INLAY_HINT_KIND_TYPE = 1,
     ZR_LSP_INLAY_HINT_KIND_PARAMETER = 2,
 } EZrLspInlayHintKind;
 
+/** @brief 请求解析、分派及取消路径共用的 JSON-RPC/LSP 错误码。 */
 #define ZR_LSP_JSON_RPC_PARSE_ERROR_CODE (-32700)
 #define ZR_LSP_JSON_RPC_INVALID_REQUEST_CODE (-32600)
 #define ZR_LSP_JSON_RPC_METHOD_NOT_FOUND_CODE (-32601)
@@ -396,6 +453,11 @@ typedef enum EZrLspInlayHintKind {
 #define ZR_LSP_JSON_RPC_CONTENT_MODIFIED_CODE (-32801)
 
 #endif //ZR_VM_LANGUAGE_SERVER_CONF_H
+/**
+ * @brief stdio 长请求通过 $/progress 发布工作进度和分批结果时使用的协议常量。
+ * TODO: 这些定义位于头文件保护宏之外；需核对多次包含及外部覆盖场景，
+ *       再确认这是否为刻意保留的布局。
+ */
 #define ZR_LSP_PROGRESS_KIND_BEGIN "begin"
 #define ZR_LSP_PROGRESS_KIND_END "end"
 #define ZR_LSP_METHOD_PROGRESS "$/progress"

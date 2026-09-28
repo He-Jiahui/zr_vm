@@ -1,5 +1,6 @@
 #include "incremental/incremental_declaration_index.h"
 
+/** @brief 仅以偏移判断一次修改是否完全留在某个顶层语句内，供局部重解析选择候选。 */
 static TZrBool range_contains(
         const SZrFileRange *container,
         const SZrFileRange *contained) {
@@ -8,6 +9,10 @@ static TZrBool range_contains(
            container->end.offset >= contained->end.offset;
 }
 
+/**
+ * @brief 为局部重解析找唯一的顶层语句；跨语句或空范围交给完整重解析处理。
+ * @note 返回的语句借用 root 所有权，调用方须在替换前保存其下标和原范围。
+ */
 TZrBool ZrLanguageServer_IncrementalDeclarationIndex_FindContainingTopLevel(
         SZrAstNode *root,
         const SZrFileRange *changedRange,
@@ -39,6 +44,7 @@ TZrBool ZrLanguageServer_IncrementalDeclarationIndex_FindContainingTopLevel(
         }
     }
 
+    /* 多候选意味着修改跨越顶层边界，不能安全沿用其余声明 AST。 */
     if (selectedCount != 1U) {
         return ZR_FALSE;
     }

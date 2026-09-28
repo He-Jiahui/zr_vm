@@ -1,6 +1,7 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "stdio_json_builder.h"
 
+/** 将内部字符串复制进 JSON，避免结果持有已释放的诊断字符串。 */
 static TZrBool diagnostic_json_add_string(cJSON *json, const char *field, SZrString *value) {
     char *text = zr_string_to_c_string(value);
     cJSON *item;
@@ -13,6 +14,7 @@ static TZrBool diagnostic_json_add_string(cJSON *json, const char *field, SZrStr
     return item != NULL;
 }
 
+/** 将关联位置和消息转为客户端可见项；新 JSON 的所有权交给上层数组。 */
 static cJSON *serialize_diagnostic_related_information(
     const SZrLspDiagnosticRelatedInformation *relatedInformation) {
     cJSON *json;
@@ -33,6 +35,8 @@ static cJSON *serialize_diagnostic_related_information(
     return json;
 }
 
+/** @brief 把诊断修复建议转为带编辑范围的附加数据，供客户端代码操作使用。
+ * TODO: data.fixes 的范围仍是内部 UTF-16；核对协商 UTF-8 时客户端消费者的坐标契约。 */
 static cJSON *serialize_diagnostic_fix(const SZrLspDiagnosticFix *fix) {
     cJSON *json;
     cJSON *edit;
@@ -54,6 +58,9 @@ static cJSON *serialize_diagnostic_fix(const SZrLspDiagnosticFix *fix) {
     return json;
 }
 
+/** @brief 为诊断附加 URI、描述符和可用修复，供后续客户端操作识别原始问题。
+ * 仅在调用方提供 URI 时生成；成功返回独立 JSON，失败清理已创建字段。
+ * TODO: data.range 同样保留内部 UTF-16；核对 UTF-8 协商下读取此字段的客户端坐标契约。 */
 static cJSON *serialize_diagnostic_data(const SZrLspDiagnostic *diagnostic, const char *uriText) {
     cJSON *data;
     cJSON *fixes;
@@ -100,6 +107,7 @@ allocation_failed:
     return NULL;
 }
 
+/** 生成单条标准诊断；有 URI 时带扩展 data，并保留关联信息。 */
 static cJSON *serialize_diagnostic_for_uri(const SZrLspDiagnostic *diagnostic, const char *uriText) {
     cJSON *json;
     cJSON *relatedArray;
@@ -158,10 +166,13 @@ allocation_failed:
     return NULL;
 }
 
+/** 不带 URI 上下文的单条序列化入口，主要供直接 JSON 调用者使用。 */
 cJSON *serialize_diagnostic(const SZrLspDiagnostic *diagnostic) {
     return serialize_diagnostic_for_uri(diagnostic, NULL);
 }
 
+/** @brief 将某 URI 的诊断数组转为独立 JSON，供 push 与两种 pull 报告复用。
+ * 调用方持有返回 JSON；任一元素序列化失败则整体失败，输入诊断仍归调用方。 */
 cJSON *serialize_diagnostics_array_for_uri(SZrArray *diagnostics, const char *uriText) {
     cJSON *json = cJSON_CreateArray();
     TZrSize index;
@@ -182,6 +193,7 @@ cJSON *serialize_diagnostics_array_for_uri(SZrArray *diagnostics, const char *ur
     return json;
 }
 
+/** 无 URI 上下文的数组包装入口，复用单 URI 序列化的内存失败处理。 */
 cJSON *serialize_diagnostics_array(SZrArray *diagnostics) {
     return serialize_diagnostics_array_for_uri(diagnostics, NULL);
 }

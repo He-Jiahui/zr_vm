@@ -1,11 +1,13 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "stdio_handler_result.h"
 
+/** @brief 固定关键字候选的显示前缀与插入文本配对，供轻量行内补全筛选。 */
 typedef struct SZrInlineCompletionKeyword {
     const char *keyword;
     const char *insertText;
 } SZrInlineCompletionKeyword;
 
+/* 该表只提供固定关键字模板；并不承诺当前语法上下文允许每个候选。 */
 static const SZrInlineCompletionKeyword ZR_INLINE_COMPLETION_KEYWORDS[] = {
     {"return", "return "},
     {"fn", "fn "},
@@ -16,6 +18,11 @@ static const SZrInlineCompletionKeyword ZR_INLINE_COMPLETION_KEYWORDS[] = {
     {"var", "var "},
 };
 
+/** @brief 把内部光标位置定位到内容快照字节偏移，供行内关键字前缀读取。
+ *  BUG: parse_position_for_uri 返回 UTF-16 列，本函数却按 UTF-8 字节递增列号；
+ *  非 ASCII 文本后的请求会错取前缀，可能返回错误候选或错误替换范围。
+ *  解析器认可单独 CR 换行而本扫描只认 LF；CR 后第二行的请求会返回空候选。
+ */
 static int inline_completion_offset_from_position(const char *content,
                                                   size_t contentLength,
                                                   SZrLspPosition position,
@@ -48,10 +55,14 @@ static int inline_completion_offset_from_position(const char *content,
     return 0;
 }
 
+/** @brief 把行内候选限制在 ASCII 关键字前缀，不跨标点或空白向左搜索。 */
 static int inline_completion_is_identifier_part(char ch) {
     return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_';
 }
 
+/** @brief 在文本快照中排除注释和引号内的光标前缀，防止把模板插入非代码区域。
+ *  这是局部词法门禁；完整语法与作用域仍由未来的语义上下文决定。
+ */
 static int inline_completion_offset_is_in_code(const char *content,
                                                size_t contentLength,
                                                size_t targetOffset) {
@@ -137,6 +148,7 @@ static int inline_completion_offset_is_in_code(const char *content,
     return 0;
 }
 
+/** @brief 将匹配的固定关键字包装为编辑器可应用的行内补全项。返回新建 JSON 节点。 */
 static cJSON *inline_completion_create_item(SZrLspPosition position,
                                             TZrInt32 prefixLength,
                                             const char *filterText,
@@ -162,6 +174,9 @@ static cJSON *inline_completion_create_item(SZrLspPosition position,
     return item;
 }
 
+/** @brief 在同步后的文档快照中寻找代码区关键字前缀并返回行内候选数组。
+ *  仅在 initialize 宣告支持且请求分发允许时进入；获取成功的文本快照在返回前释放。
+ */
 SZrLspHandlerResult handle_inline_completion_request(SZrStdioServer *server, const cJSON *params) {
     SZrLspPosition position;
     const char *uriText;
@@ -212,6 +227,7 @@ SZrLspHandlerResult handle_inline_completion_request(SZrStdioServer *server, con
         return stdio_handler_result_from_json(server->context, ZR_NULL);
     }
 
+    /* 固定候选按表顺序择首个匹配；当前不使用 AST、触发上下文或语义事实。 */
     for (size_t index = 0;
          index < sizeof(ZR_INLINE_COMPLETION_KEYWORDS) / sizeof(ZR_INLINE_COMPLETION_KEYWORDS[0]);
          index++) {

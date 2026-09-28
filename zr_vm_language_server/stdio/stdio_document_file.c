@@ -1,5 +1,7 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
+/** @brief 从本地文件取完整字节快照，供关闭文档和磁盘事件重新建立 parser 版本。
+ * @return 成功时返回由调用方 free 的 NUL 结尾缓冲；失败时不提供部分内容。 */
 static char *stdio_read_all_text(const TZrChar *nativePath, size_t *outLength) {
     FILE *file;
     long rawSize;
@@ -45,6 +47,8 @@ static char *stdio_read_all_text(const TZrChar *nativePath, size_t *outLength) {
     return buffer;
 }
 
+/** @brief 将文件 URI 转成本机路径并读取文本，隔离通知层与路径平台差异。
+ * 仅接受可转换的 file URI；返回的字节缓冲由调用方 free。 */
 char *read_document_text_from_uri(SZrString *uri, size_t *outLength) {
     TZrChar nativePath[ZR_VM_PATH_LENGTH_MAX];
 
