@@ -38,8 +38,8 @@ schemes to native file APIs.
 URI. It treats the scheme case-insensitively, recognizes an empty or
 `localhost` authority as local, decodes strict percent escapes once, and rejects raw query,
 fragment, backslash, control characters, embedded NUL, encoded path separators,
-relative paths, and invalid output buffers. On failure it leaves a supplied
-buffer as an empty string.
+relative paths, and invalid output buffers. Callers may read the output buffer
+only after a successful return; its contents on failure are unspecified.
 
 `ZrLanguageServer_LspUri_FromNativePath` accepts only an absolute native path
 and percent-encodes UTF-8 bytes. It emits `file:///` drive paths on Windows,

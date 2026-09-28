@@ -333,8 +333,8 @@ TZrBool ZrLanguageServer_LspUri_FileToNativePath(SZrString *uri,
         memmove(buffer, buffer + 1, writeLength);
     }
 #endif
-    /* BUG: Windows 的 file:///tmp/a.zr 会解码成单前导反斜杠路径并返回假，
-     * 但这里未清空 buffer，违反公开文档记录的失败输出约定。 */
+    /* TODO: Windows 的 file:///tmp/a.zr 解析为无盘符路径并被拒；是否映射当前盘符待核对。
+     * 失败输出未承诺可读，调用方只可在返回真时使用 buffer。 */
     return lsp_uri_native_path_is_absolute(buffer);
 }
 
