@@ -4,12 +4,14 @@ const os = require('os');
 const path = require('path');
 const { pathToFileURL } = require('url');
 
+/** 让层级语义断言失败传到 CTest 的进程退出路径。 */
 function assert(condition, message) {
     if (!condition) {
         throw new Error(message);
     }
 }
 
+/** 以 UTF-8 字节长度封装发往 stdio 服务的 JSON-RPC 消息。 */
 function createMessage(payload) {
     const body = Buffer.from(JSON.stringify(payload), 'utf8');
     return Buffer.concat([
@@ -18,6 +20,7 @@ function createMessage(payload) {
     ]);
 }
 
+/** 从测试夹具文本取得声明或调用点的位置，避免手工列号偏离源码。 */
 function findPosition(text, substring, occurrence = 0, offset = 0) {
     let fromIndex = 0;
     let index = -1;
@@ -38,7 +41,9 @@ function findPosition(text, substring, occurrence = 0, offset = 0) {
     };
 }
 
+/** 为本用例维护请求响应和诊断通知的独立队列。 */
 class LspClient {
+    /** 启动 CTest 提供的服务端，后续请求与通知共用同一 stdio 会话。 */
     constructor(serverPath) {
         this.nextId = 1;
         this.pending = new Map();
@@ -51,14 +56,18 @@ class LspClient {
             windowsHide: true,
         });
 
+        /** stdout 按字节增量解析，不依赖 Node chunk 对应一条完整消息。 */
         this.process.stdout.on('data', (chunk) => this.handleData(chunk));
+        /** stderr 只供失败和退出断言，不进入协议队列。 */
         this.process.stderr.on('data', (chunk) => this.stderrChunks.push(chunk));
     }
 
+    /** 汇总服务端诊断以解释失败的退出码。 */
     stderr() {
         return Buffer.concat(this.stderrChunks).toString('utf8');
     }
 
+    /** 用请求 id 关联层级查询与响应，超时使测试失败。 */
     request(method, params) {
         const id = this.nextId++;
         const payload = {
@@ -71,6 +80,9 @@ class LspClient {
         this.process.stdin.write(createMessage(payload));
         return new Promise((resolve, reject) => {
             this.pending.set(id, { resolve, reject });
+            /** 响应等待存在 10 秒边界，防止服务端无响应时一直阻塞。
+             * BUG: 正常响应只删除 pending id，未清除此定时器；每次成功请求的 10 秒计时
+             * 仍保持 Node 事件循环，CTest 在服务端已退出后才结束。 */
             setTimeout(() => {
                 if (this.pending.has(id)) {
                     this.pending.delete(id);
@@ -80,6 +92,7 @@ class LspClient {
         });
     }
 
+    /** 发送无响应的初始化和文档变更通知。 */
     notify(method, params) {
         this.process.stdin.write(createMessage({
             jsonrpc: '2.0',
@@ -88,7 +101,13 @@ class LspClient {
         }));
     }
 
+    /**
+     * 等待某类通知作为索引完成的同步点；早到的通知保存在队列中。
+     * BUG: 服务端保持运行但不发布诊断时，本等待没有超时，只能依赖外部测试超时配置或进程终止；
+     * 若服务端先退出，也没有 close 拒绝路径，主流程无法将缺失诊断报告为断言失败。
+     */
     waitForNotification(method) {
+        /** 先消费已经到达的目标通知，避免错过 didOpen 后的快速诊断。 */
         const index = this.notifications.findIndex((notification) => notification.method === method);
         if (index >= 0) {
             const [notification] = this.notifications.splice(index, 1);
@@ -100,6 +119,7 @@ class LspClient {
         });
     }
 
+    /** 把任意 stdout 分块重组为完整 LSP 帧后再分派。 */
     handleData(chunk) {
         this.buffer = Buffer.concat([this.buffer, chunk]);
         while (true) {
@@ -127,6 +147,7 @@ class LspClient {
         }
     }
 
+    /** 有 id 的消息交还请求者，其他消息按通知方法唤醒等待者。 */
     handleMessage(message) {
         if (Object.prototype.hasOwnProperty.call(message, 'id')) {
             const pending = this.pending.get(message.id);
@@ -141,6 +162,7 @@ class LspClient {
             return;
         }
 
+        /** 同一方法的最早等待者接收本次通知。 */
         const waitingIndex = this.waitingNotifications.findIndex((entry) => entry.method === message.method);
         if (waitingIndex >= 0) {
             const [entry] = this.waitingNotifications.splice(waitingIndex, 1);
@@ -150,13 +172,16 @@ class LspClient {
         this.notifications.push({ method: message.method, params: message.params });
     }
 
+    /** shutdown/exit 后等待服务端退出，供调用者断言进程状态。 */
     waitForExit() {
         return new Promise((resolve) => {
+            /** 退出事件是该用例唯一的进程完成同步点。 */
             this.process.on('exit', (code) => resolve(code));
         });
     }
 }
 
+/** 供 main 的 finally 回收本测试创建的临时文档根目录。 */
 function removePathSync(targetPath) {
     if (typeof fs.rmSync === 'function') {
         fs.rmSync(targetPath, { recursive: true, force: true });
@@ -167,6 +192,7 @@ function removePathSync(targetPath) {
     }
 }
 
+/** 用磁盘文档快照验证类型和调用层级的规范身份、调用边及版本失效。 */
 async function main() {
     const serverPath = process.argv[2];
     assert(serverPath, 'Usage: node stdio_type_hierarchy_smoke.js <serverPath>');
@@ -224,6 +250,7 @@ async function main() {
         });
         await client.waitForNotification('textDocument/publishDiagnostics');
 
+        // 修改返回 item 的展示名称，验证后续查询依赖规范身份而非客户端文本。
         const derivedPosition = findPosition(text, 'Derived', 0, 1);
         const basePosition = findPosition(text, 'Base', 0, 1);
         const derivedItems = await client.request('textDocument/prepareTypeHierarchy', {
@@ -262,6 +289,7 @@ async function main() {
         assert(Array.isArray(subtypes) && subtypes.some((item) => item && item.name === 'Derived'),
             'typeHierarchy/subtypes must use semantic identity instead of the display name');
 
+        // 同一调用者的两处 helper 调用应合并为一条带两个范围的规范边。
         const runPosition = findPosition(text, 'fn run', 0, 3);
         const helperPosition = findPosition(text, 'fn helper', 0, 3);
         const runItems = await client.request('textDocument/prepareCallHierarchy', {
@@ -305,6 +333,7 @@ async function main() {
             Array.isArray(incoming[0].fromRanges) && incoming[0].fromRanges.length === 2,
             'incoming calls must group canonical run edges and ignore the item display name');
 
+        // Lambda 调用者由编译器生成，返回的 item 仍须可用于反向查询。
         const lambdaCalleePosition = findPosition(text, 'fn lambdaCallee', 0, 3);
         const lambdaCalleeItems = await client.request('textDocument/prepareCallHierarchy', {
             textDocument: { uri: documentUri },
@@ -335,6 +364,7 @@ async function main() {
             lambdaOutgoing[0].fromRanges.length === 1,
             'returned lambda hierarchy item must re-resolve by canonical identity');
 
+        // 内容即使未变，版本增加也必须阻止旧 item 跨快照查询。
         client.notify('textDocument/didChange', {
             textDocument: { uri: documentUri, version: 2 },
             contentChanges: [{ text }],
@@ -357,6 +387,7 @@ async function main() {
     }
 }
 
+/** 将协议或层级语义错误转换为 CTest 非零状态。 */
 main().catch((error) => {
     console.error(error.stack || String(error));
     process.exit(1);

@@ -14,6 +14,7 @@ const EDIT = {
     newText: FORMATTED,
 };
 
+/** 为磁盘重新读取分支建立真实 file URI，异常时回收临时文件。 */
 async function withDiskDocument(run) {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-lsp-save-'));
     const filePath = path.join(directory, 'saved.zr');
@@ -26,6 +27,7 @@ async function withDiskDocument(run) {
     }
 }
 
+/** 每项能力断言独占初始化会话，保证前一项的文档和通知不影响后一项。 */
 async function withClient(serverPath, capabilities, run) {
     const client = new StdioProtocolClient(serverPath);
     let cleanExit = false;
@@ -50,6 +52,7 @@ async function withClient(serverPath, capabilities, run) {
     }
 }
 
+/** CTest 对比默认客户端与声明 save 能力的客户端，验证服务端同一保存契约。 */
 async function main() {
     const serverPath = process.argv[2];
     assert.ok(serverPath, 'usage: node stdio_save_capabilities_smoke.js <stdio-server>');
@@ -59,6 +62,7 @@ async function main() {
     ];
     let failures = 0;
     let checks = 0;
+    /** 收集全部保存场景的失败，再统一使 CTest 失败。 */
     const check = async (name, run) => {
         checks++;
         try {
@@ -70,13 +74,17 @@ async function main() {
         }
     };
     for (const [name, capabilities] of profiles) {
+        /** 初始化响应必须向两种客户端声明相同的同步与保存能力。 */
         await check(`${name} save notification publication`, () => withClient(serverPath, capabilities,
+            /** 已协商能力直接作为客户端后续发送保存请求的依据。 */
             async (_client, advertised) => {
                 assert.deepEqual(advertised.textDocumentSync, {
                     openClose: true, change: 2, willSaveWaitUntil: true, save: { includeText: false },
                 });
             }));
+        /** 打开文档在 willSaveWaitUntil 返回编辑后应继续提供当前快照，而非重新读盘。 */
         await check(`${name} retained save formatting`, () => withClient(serverPath, capabilities,
+            /** 同一文档依次经历打开、格式化变更、保存和定义查询。 */
             async (client) => {
                 client.notify('textDocument/didOpen', {
                     textDocument: { uri: URI, languageId: 'zr', version: 1, text: SOURCE },
@@ -107,8 +115,11 @@ async function main() {
                     } }],
                 });
             }));
+        /** 未打开的磁盘文档应由 didSave 刷新到下一代快照。 */
         await check(`${name} disk save refresh`, () => withDiskDocument(async (filePath, diskUri) => {
+            /** 在一个服务端会话中比较两次磁盘保存前后的声明定位。 */
             await withClient(serverPath, capabilities, async (client) => {
+                /** 用声明范围检查定义查询确实来自预期的磁盘版本。 */
                 const definition = async (id, end) => {
                     assert.deepEqual(await client.request('textDocument/definition', {
                         textDocument: { uri: diskUri }, position: { line: 0, character: 8 },
@@ -118,6 +129,7 @@ async function main() {
                         } }],
                     });
                 };
+                /** didSave 的诊断通知作为磁盘重新分析完成的同步点。 */
                 const save = async () => {
                     client.notify('textDocument/didSave', { textDocument: { uri: diskUri } });
                     const published = await client.waitForNotification('textDocument/publishDiagnostics', TIMEOUT_MS);
@@ -139,6 +151,7 @@ async function main() {
     console.log(`Pass - ${checks}/${checks} save capability checks`);
 }
 
+/** 汇总断言和进程失败，返回 CTest 可识别的非零状态。 */
 main().catch((error) => {
     console.error(error.stack || String(error));
     process.exitCode = 1;
