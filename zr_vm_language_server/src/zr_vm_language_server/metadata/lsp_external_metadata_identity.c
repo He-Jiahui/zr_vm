@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+/* parser 的目标类别与导入原型的具体表示并非一一对应；本门禁只判定可参与身份匹配的类别。 */
 static TZrBool external_metadata_identity_kind_matches(
         SZrSemanticAnalyzer *analyzer,
         EZrSemanticExternalTargetKind targetKind,
@@ -42,6 +43,7 @@ static TZrBool external_metadata_identity_kind_matches(
     }
 }
 
+/* 同名成员可能具有不同签名；跨快照消费者只能信任完整的所有者与元数据身份。 */
 static TZrBool external_metadata_identity_matches(
         SZrSemanticAnalyzer *analyzer,
         const SZrParserSemanticExternalReferenceQuery *identity,
@@ -57,6 +59,7 @@ static TZrBool external_metadata_identity_matches(
            identity->externalSignatureHash == candidate->signatureHash;
 }
 
+/* 供语义查询在 AST 不可用时恢复外部成员；先按 parser 保存的身份唯一化，再交给 provider 补齐展示信息。 */
 TZrBool ZrLanguageServer_LspExternalMetadataIdentity_ResolveMember(
         SZrLspMetadataProvider *provider,
         SZrSemanticAnalyzer *analyzer,
@@ -96,6 +99,7 @@ TZrBool ZrLanguageServer_LspExternalMetadataIdentity_ResolveMember(
         return ZR_FALSE;
     }
 
+    /* 代次和模块名只限定候选集合；签名令牌才能隔离当前模块内的重载与同名导出。 */
     for (index = 0U; index < resolved.modulePrototype->members.length; index++) {
         const SZrTypeMemberInfo *candidate =
                 (const SZrTypeMemberInfo *)ZrCore_Array_Get(
@@ -109,6 +113,10 @@ TZrBool ZrLanguageServer_LspExternalMetadataIdentity_ResolveMember(
         }
         match = candidate;
     }
+    /* BUG: 合法的同名重载可保留不同令牌；若命中第二个重载，provider 按名字取首项，
+     * 此处身份复验随即失败，定义与跨快照引用漏掉该目标。生产路径见
+     * module_init_analysis.c 的同名函数导出及 type_inference_import_metadata.c 的逐项投影；
+     * 用 tests/parser/test_project_import_canonicalization.c 的 pick(true) 第二重载场景扩展 LSP 回归。 */
     if (match == ZR_NULL || match->name == ZR_NULL ||
         !ZrLanguageServer_LspMetadataProvider_ResolveImportedMember(
                 provider,
@@ -126,6 +134,7 @@ TZrBool ZrLanguageServer_LspExternalMetadataIdentity_ResolveMember(
     return ZR_TRUE;
 }
 
+/* 跨快照引用需要文件位置而不是展示用成员对象；范围来自元数据，URI 由当前 provider 的来源记录指定。 */
 TZrBool ZrLanguageServer_LspExternalMetadataIdentity_ResolveDeclaration(
         SZrLspMetadataProvider *provider,
         SZrSemanticAnalyzer *analyzer,
@@ -167,6 +176,7 @@ TZrBool ZrLanguageServer_LspExternalMetadataIdentity_ResolveDeclaration(
         return ZR_FALSE;
     }
 
+    /* 不按名称回查声明，以免把同名导出的引用聚合到另一元数据令牌。 */
     for (index = 0U; index < resolved.modulePrototype->members.length; index++) {
         const SZrTypeMemberInfo *candidate =
                 (const SZrTypeMemberInfo *)ZrCore_Array_Get(

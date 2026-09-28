@@ -7,6 +7,7 @@
 #define ZR_LSP_VIRTUAL_TEXT_INITIAL_CAPACITY 2048U
 #define ZR_LSP_VIRTUAL_RECORD_INITIAL_CAPACITY 32U
 
+/* 文本与名字记录必须由同一个游标产生：range 使用字节偏移，LSP 边界再按文档转 UTF-16。 */
 typedef struct SZrLspVirtualBuilder {
     SZrState *state;
     SZrString *uri;
@@ -17,6 +18,7 @@ typedef struct SZrLspVirtualBuilder {
     TZrInt32 column;
 } SZrLspVirtualBuilder;
 
+/* 缺少精确类型时保留显式占位符，避免投影凭空承诺某个具体类型。 */
 static const TZrChar *virtual_documents_missing_exact_type_identifier(void) {
     return "ZrMissingExactType";
 }
@@ -34,6 +36,7 @@ static const TZrChar *virtual_documents_type_text_or_placeholder(const TZrChar *
                : virtual_documents_missing_exact_type_identifier();
 }
 
+/* descriptor 的原型类别决定虚拟声明语法；未知类别退回 class 展示。 */
 static const TZrChar *virtual_documents_type_keyword(EZrObjectPrototypeType prototypeType) {
     switch (prototypeType) {
         case ZR_OBJECT_PROTOTYPE_TYPE_STRUCT:
@@ -50,6 +53,7 @@ static const TZrChar *virtual_documents_type_keyword(EZrObjectPrototypeType prot
     }
 }
 
+/* 元方法没有普通名字字段；统一转为虚拟声明中可导航的保留名。 */
 static const TZrChar *virtual_documents_meta_method_name(EZrMetaType metaType) {
     switch (metaType) {
         case ZR_META_CONSTRUCTOR:
@@ -111,6 +115,7 @@ static const TZrChar *virtual_documents_meta_method_name(EZrMetaType metaType) {
     }
 }
 
+/* 新建一次投影的临时数组；调用者在导出文本与记录后释放未转交的缓冲。 */
 static void virtual_builder_init(SZrState *state, SZrString *uri, SZrLspVirtualBuilder *builder) {
     memset(builder, 0, sizeof(*builder));
     builder->state = state;
@@ -121,6 +126,7 @@ static void virtual_builder_init(SZrState *state, SZrString *uri, SZrLspVirtualB
     ZrCore_Array_Init(state, &builder->records, sizeof(SZrLspVirtualRecord), ZR_LSP_VIRTUAL_RECORD_INITIAL_CAPACITY);
 }
 
+/* 所有文本写入都经过此游标，保证后续 descriptor 身份记录指向实际渲染字节。 */
 static void virtual_builder_append_char(SZrLspVirtualBuilder *builder, TZrChar value) {
     if (builder == ZR_NULL || builder->state == ZR_NULL) {
         return;
@@ -154,6 +160,7 @@ static SZrFilePosition virtual_builder_position(const SZrLspVirtualBuilder *buil
     return ZrParser_FilePosition_Create(builder->offset, builder->line, builder->column);
 }
 
+/* 记录 descriptor 的指针身份而非名字；同名声明及重载因此仍有独立目标。 */
 static void virtual_builder_record_name(SZrLspVirtualBuilder *builder,
                                         EZrLspVirtualDeclarationKind kind,
                                         const void *declarationIdentity,
@@ -195,6 +202,7 @@ static void virtual_builder_append_identifier_line(SZrLspVirtualBuilder *builder
     virtual_builder_append_text(builder, suffix);
 }
 
+/* 泛型信息只影响展示文本，不能更改可导航名字的记录边界。 */
 static void virtual_documents_format_generic_parameters(const ZrLibGenericParameterDescriptor *parameters,
                                                         TZrSize count,
                                                         TZrChar *buffer,
@@ -223,6 +231,7 @@ static void virtual_documents_format_generic_parameters(const ZrLibGenericParame
     }
 }
 
+/* 参数名称与类型优先取 descriptor；缺失类型以相同的显式占位符呈现。 */
 static void virtual_documents_format_parameters(const ZrLibParameterDescriptor *parameters,
                                                 TZrSize count,
                                                 TZrChar *buffer,
@@ -244,6 +253,7 @@ static void virtual_documents_format_parameters(const ZrLibParameterDescriptor *
     }
 }
 
+/* descriptor 未提供参数表时，以同名符号的类型提示补足可读签名。 */
 static const TZrChar *virtual_documents_find_type_hint_signature(const ZrLibModuleDescriptor *descriptor,
                                                                  const TZrChar *symbolName,
                                                                  const TZrChar *symbolKind) {
@@ -268,6 +278,7 @@ static const TZrChar *virtual_documents_find_type_hint_signature(const ZrLibModu
     return ZR_NULL;
 }
 
+/* 只截取平衡括号内的参数区；格式不确定时让调用方退回 arity 提示。 */
 static TZrBool virtual_documents_try_extract_parameters_from_signature(const TZrChar *signatureText,
                                                                        TZrChar *buffer,
                                                                        TZrSize bufferSize) {
@@ -314,6 +325,7 @@ static TZrBool virtual_documents_try_extract_parameters_from_signature(const TZr
     return ZR_FALSE;
 }
 
+/* 先用结构化参数，其次类型提示，最后只报告参数个数，避免捏造签名。 */
 static void virtual_documents_format_parameters_with_arity(const ZrLibParameterDescriptor *parameters,
                                                            TZrSize parameterCount,
                                                            TZrUInt16 minArgumentCount,
@@ -352,6 +364,7 @@ static void virtual_documents_format_parameters_with_arity(const ZrLibParameterD
     }
 }
 
+/* 继承关系仅供虚拟文档展示；声明身份仍由 typeDescriptor 指针确定。 */
 static void virtual_documents_format_type_tail(const ZrLibTypeDescriptor *typeDescriptor,
                                                TZrChar *buffer,
                                                TZrSize bufferSize) {
@@ -388,6 +401,7 @@ static void virtual_documents_format_type_tail(const ZrLibTypeDescriptor *typeDe
     }
 }
 
+/* 模块头也登记 descriptor 身份，供模块级定义跳转定位到虚拟文档。 */
 static void virtual_documents_append_module_header(SZrLspVirtualBuilder *builder,
                                                    const ZrLibModuleDescriptor *descriptor) {
     if (builder == ZR_NULL || descriptor == ZR_NULL || descriptor->moduleName == ZR_NULL) {
@@ -404,6 +418,7 @@ static void virtual_documents_append_module_header(SZrLspVirtualBuilder *builder
     virtual_builder_append_text(builder, "\") {\n");
 }
 
+/* 链接别名与目标模块名分开保留，文档链接查询从记录中读取后者。 */
 static void virtual_documents_append_module_links(SZrLspVirtualBuilder *builder,
                                                   const ZrLibModuleDescriptor *descriptor) {
     for (TZrSize index = 0; descriptor != ZR_NULL && index < descriptor->moduleLinkCount; index++) {
@@ -446,6 +461,7 @@ static void virtual_documents_append_constants(SZrLspVirtualBuilder *builder,
     }
 }
 
+/* 每个函数 descriptor 各自生成位置；同名函数不合并为单条导航目标。 */
 static void virtual_documents_append_functions(SZrLspVirtualBuilder *builder,
                                                const ZrLibModuleDescriptor *descriptor) {
     TZrChar parameters[ZR_LSP_DOCUMENTATION_BUFFER_LENGTH];
@@ -568,6 +584,7 @@ static void virtual_documents_append_type_meta_methods(SZrLspVirtualBuilder *bui
     }
 }
 
+/* 类型及子成员连续投影，ownerTypeDescriptor 保持成员查询所需的父类型边界。 */
 static void virtual_documents_append_type_declaration(SZrLspVirtualBuilder *builder,
                                                       const ZrLibTypeDescriptor *typeDescriptor) {
     TZrChar genericParameters[ZR_LSP_TEXT_BUFFER_LENGTH];
@@ -613,6 +630,7 @@ static void virtual_documents_append_type_declaration(SZrLspVirtualBuilder *buil
     virtual_builder_append_text(builder, "    }\n");
 }
 
+/* 文本服务与声明定位共用此投影，避免展示内容和范围计算各自维护一份模板。 */
 TZrBool ZrLanguageServer_LspNativeDeclarationProjection_Build(SZrState *state,
                                        const ZrLibModuleDescriptor *descriptor,
                                        SZrString *uri,
@@ -628,6 +646,8 @@ TZrBool ZrLanguageServer_LspNativeDeclarationProjection_Build(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* TODO: 固定长度 suffix/参数缓冲使用 snprintf 后未检验截断；若插件提交超长类型名，
+     * 虚拟声明可能不完整。需用超长 descriptor 验证文档文本与导航范围的行为。 */
     virtual_builder_init(state, uri, &builder);
     virtual_documents_append_module_header(&builder, descriptor);
     virtual_documents_append_module_links(&builder, descriptor);
@@ -656,6 +676,7 @@ TZrBool ZrLanguageServer_LspNativeDeclarationProjection_Build(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 仅精确的类别和当前 descriptor 树中的指针可命中；歧义结果不交给定义导航。 */
 TZrBool ZrLanguageServer_LspNativeDeclarationProjection_Find(
         SZrState *state,
         const ZrLibModuleDescriptor *descriptor,
@@ -698,6 +719,7 @@ cleanup:
     return found;
 }
 
+/* provider 已确定成员种类后，使用相同虚拟文档投影回填声明范围。 */
 TZrBool ZrLanguageServer_LspNativeDeclarationProjection_ResolveMember(
         SZrState *state,
         SZrLspResolvedMetadataMember *resolvedMember) {

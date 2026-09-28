@@ -13,6 +13,7 @@
 #define ZR_LSP_SCOPED_VIRTUAL_URI_INITIAL_CAPACITY 256U
 #define ZR_LSP_UINT64_DECIMAL_CAPACITY 21U
 
+/* URI 路径与查询都按字节转义，避免模块名和 JSON 身份改变 URI 的分段边界。 */
 static TZrBool identity_append_encoded(SZrStringBuilder *builder, const TZrChar *text) {
     static const TZrChar hex[] = "0123456789ABCDEF";
     for (const unsigned char *cursor = (const unsigned char *)text; *cursor != 0U; cursor++) {
@@ -30,6 +31,7 @@ static TZrBool identity_append_encoded(SZrStringBuilder *builder, const TZrChar 
     return ZR_TRUE;
 }
 
+/* Parse 所用的十六进制门禁；大小写均接收，身份有效性仍由后续解析决定。 */
 static int identity_hex_digit(TZrChar value) {
     if (value >= '0' && value <= '9') {
         return value - '0';
@@ -43,6 +45,7 @@ static int identity_hex_digit(TZrChar value) {
     return -1;
 }
 
+/* 反解单个 URI 分量；拒绝片段分隔符和 NUL，结果由 VM GC 持有。 */
 static SZrString *identity_decode(SZrState *state, const TZrChar *text, TZrSize length) {
     SZrStringBuilder builder;
     SZrString *result = ZR_NULL;
@@ -73,11 +76,13 @@ cleanup:
     return result;
 }
 
+/* 分流旧声明 URI 与作用域 URI 的廉价检查；调用方不可把它当作完整授权校验。 */
 TZrBool ZrLanguageServer_LspVirtualDocumentIdentity_IsScoped(SZrString *uri) {
     return ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(uri) &&
            strchr(ZrCore_String_GetNativeString(uri), '?') != ZR_NULL;
 }
 
+/* 项目 URI、物理来源与代数共同构成虚拟文档身份，供扩展文档请求及导航重新定位。 */
 SZrString *ZrLanguageServer_LspVirtualDocumentIdentity_Create(
         SZrState *state, const SZrLspVirtualDocumentIdentity *identity) {
     SZrStringBuilder builder;
@@ -117,6 +122,7 @@ cleanup:
     return result;
 }
 
+/* 只还原 URI 携带的声明身份；项目是否还存在、代数是否仍有效由消费者另行判定。 */
 TZrBool ZrLanguageServer_LspVirtualDocumentIdentity_Parse(
         SZrState *state, SZrString *uri, SZrLspVirtualDocumentIdentity *outIdentity) {
     const TZrChar *moduleText;
@@ -167,7 +173,7 @@ TZrBool ZrLanguageServer_LspVirtualDocumentIdentity_Parse(
     if (errno == ERANGE || end == ZR_NULL || *end != '\0' || value == 0U) {
         goto cleanup;
     }
-    /* Canonical JSON also rejects embedded NUL and lossy string decoding. */
+    /* 规范 JSON 复核也排除含 NUL 或解码后不再保真的查询，避免 JSON 层的身份别名。 */
     canonical = cJSON_PrintUnformatted(json);
     if (canonical == ZR_NULL || strcmp(canonical, ZrCore_String_GetNativeString(decoded)) != 0) {
         goto cleanup;
@@ -186,6 +192,7 @@ cleanup:
     return parsed;
 }
 
+/* 插件 descriptor 是项目相对的；读取虚拟文档前需在当前项目目录确保注册。此调用可改变注册表。 */
 static TZrBool identity_ensure_project_provider(
         SZrState *state, SZrLspProjectIndex *projectIndex, SZrString *moduleName) {
     return state != ZR_NULL && projectIndex != ZR_NULL && projectIndex->project != ZR_NULL &&
@@ -195,6 +202,7 @@ static TZrBool identity_ensure_project_provider(
                    ZrCore_String_GetNativeString(moduleName));
 }
 
+/* 为导航和文档链接取得原生模块 URI；内建模块沿用旧 URI，项目插件绑定当前代数与物理来源。 */
 TZrBool ZrLanguageServer_LspVirtualDocumentIdentity_ResolveNativeUri(
         SZrState *state, SZrLspContext *context, SZrLspProjectIndex *projectIndex,
         SZrString *moduleName, SZrString **outUri) {
@@ -207,6 +215,7 @@ TZrBool ZrLanguageServer_LspVirtualDocumentIdentity_ResolveNativeUri(
                 state, projectIndex, moduleName, &origin)) {
         return ZR_FALSE;
     }
+    /* 内建 descriptor 无项目插件来源；旧 URI 的分支必须先核实来源种类。 */
     if (ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(origin)) {
         EZrLspImportedModuleSourceKind sourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED;
         if (ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleDescriptor(
@@ -228,6 +237,7 @@ TZrBool ZrLanguageServer_LspVirtualDocumentIdentity_ResolveNativeUri(
     return *outUri != ZR_NULL;
 }
 
+/* 二进制模块把物理 .zro 来源纳入身份，供 parser origin 关系区分项目与 provider 代数。 */
 TZrBool ZrLanguageServer_LspVirtualDocumentIdentity_ResolveBinaryUri(
         SZrState *state, SZrLspContext *context, SZrLspProjectIndex *projectIndex,
         SZrString *moduleName, SZrString **outUri) {
@@ -256,6 +266,7 @@ TZrBool ZrLanguageServer_LspVirtualDocumentIdentity_ResolveBinaryUri(
     return *outUri != ZR_NULL;
 }
 
+/* 项目导航由虚拟 URI 回到当前项目索引；过期代数不得落到同名的新项目。 */
 SZrLspProjectIndex *ZrLanguageServer_LspVirtualDocumentIdentity_FindProject(
         SZrLspContext *context, SZrString *uri) {
     SZrLspVirtualDocumentIdentity identity;
@@ -267,6 +278,7 @@ SZrLspProjectIndex *ZrLanguageServer_LspVirtualDocumentIdentity_FindProject(
     return ZrLanguageServer_LspProject_FindProjectByProjectUri(context, identity.projectUri, ZR_NULL);
 }
 
+/* 扩展请求渲染虚拟文档时重新绑定插件；仅借出当前项目、当前代数和相同来源的 descriptor。 */
 TZrBool ZrLanguageServer_LspVirtualDocumentIdentity_ResolveNativeDescriptor(
         SZrState *state, SZrLspContext *context, SZrString *uri,
         SZrLspVirtualDocumentIdentity *outIdentity, SZrLspProjectIndex **outProject,
