@@ -5,9 +5,12 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { StdioProtocolClient } = require('./stdio_protocol_client');
 
+// CTest 入口构造真实三文件循环导入项目，验证诊断、符号和 token 查询仍能完成。
+// 项目只存在于临时目录，退出路径必须同时回收服务端和磁盘样例。
 async function main() {
     const serverPath = process.argv[2];
     assert(serverPath, 'Expected stdio server path');
+    // 三个模块形成 main→helper→cycle→helper 的回边；源文件中的箭头属于被测语言样例。
     const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-lsp-cyclic-import-'));
     const sourceRoot = path.join(projectRoot, 'src');
     fs.mkdirSync(sourceRoot);
@@ -33,13 +36,17 @@ async function main() {
         '',
     ].join('\n'));
 
+    // BUG: serverPath 不存在时，共享客户端的 spawn 发出未监听的 error；该异步事件不进入下方
+    // async try/finally，已创建的 projectRoot 因而遗留。共享客户端已记录 ENOENT 触发路径。
     const client = new StdioProtocolClient(serverPath);
+    // 测试只消费 JSON-RPC result；保留请求超时和协议错误由共享客户端传播。
     const request = async (method, params) =>
         client.requestWithId(method, params, 10000).promise;
     try {
         const projectUri = pathToFileURL(path.join(projectRoot, 'cyclic.zrp')).toString();
         const rootUri = pathToFileURL(projectRoot).toString();
         const documentUri = pathToFileURL(path.join(sourceRoot, 'main.zr')).toString();
+        // 选中真实项目根，确保导入环从项目索引进入，而非仅测试打开文档的文本解析。
         const initialized = await request('initialize', {
             processId: null,
             rootUri,
@@ -54,6 +61,7 @@ async function main() {
             text: fs.readFileSync(path.join(sourceRoot, 'main.zr'), 'utf8'),
         } });
 
+        // 同一轮打开文档后依次查询三个语义视图，验证导入环不使服务端卡死或丢失声明。
         const diagnostics = await request('textDocument/diagnostic', {
             textDocument: { uri: documentUri },
         });
@@ -71,9 +79,11 @@ async function main() {
         assert(!client.closed, 'Language server must survive cyclic imports');
         console.log('Cyclic import stdio smoke passed');
     } finally {
+        // TODO: kill 后立即删除目录，尚未等待 close；需在 Windows 检查子进程仍持有项目文件时的回收竞态。
         client.child.kill();
         fs.rmSync(projectRoot, { recursive: true, force: true });
     }
 }
 
+// 可进入 Promise 拒绝路径的异常交由 CTest 的非零退出码报告。
 main().catch((error) => { console.error(error); process.exitCode = 1; });

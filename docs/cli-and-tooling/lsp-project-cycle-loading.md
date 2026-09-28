@@ -23,5 +23,5 @@ its guard on success and on every failure path.
 
 This keeps diagnostics, document symbols and semantic tokens responsive for
 cyclic imports and prevents native stack overflow. The stdio smoke test opens a
-three-document import cycle and requests all three feature families plus a
-workspace diagnostic report.
+three-document import cycle and requests document diagnostics, document symbols,
+and full semantic tokens for the open document.
