@@ -1,13 +1,18 @@
 const assert = require('assert').strict;
 const { StdioProtocolClient } = require('./stdio_protocol_client');
 
+// 共享客户端为每次请求设定有限等待，避免协议失配让 CTest 无限挂起。
 const REQUEST_TIMEOUT_MS = 10000;
 
+// 从真实 stdio initialize 到导航请求验证能力边界：保留 definition/implementation，
+// 撤回尚无独立语义适配的 declaration/typeDefinition 别名。
 async function main() {
     const serverPath = process.argv[2];
     assert.ok(serverPath, 'usage: node stdio_navigation_capabilities_smoke.js <stdio-server>');
     const client = new StdioProtocolClient(serverPath);
+    // 固定字符串 ID 便于把请求结果和确切 JSON-RPC 错误信封配对。
     const request = (method, params, id) => client.request(method, params, id, REQUEST_TIMEOUT_MS);
+    // 两个类实现 Readable；同名 Other.read 用来排除仅靠名称猜测的实现关系。
     const implementationUri = 'file:///stdio-navigation-implementation.zr';
     const implementationText = [
         'interface Readable { fn read(): int; }',
@@ -44,6 +49,7 @@ async function main() {
         assert.equal(diagnostics.uri, implementationUri);
         assert.deepEqual(diagnostics.diagnostics, [], 'navigation fixture must have no diagnostics');
 
+        // definition 必须定位到 Device 自身的规范声明范围，而非回退到同名成员。
         const definitionParams = {
             textDocument: { uri: implementationUri },
             position: { line: 1, character: 7 },
@@ -57,6 +63,7 @@ async function main() {
             },
         }], 'definition must retain the exact Device declaration target');
 
+        // 实现列表无序，按起始行排序后核对完整的 Device/Sensor 类范围；Other 是阴性目标。
         const implementation = await request('textDocument/implementation', {
             textDocument: { uri: implementationUri },
             position: { line: 0, character: 11 },
@@ -87,6 +94,7 @@ async function main() {
                          'unrelated type with a same-name read method has no implementations');
         console.log('Pass - exact definition and implementation target set/ranges');
 
+        // 能力未发布的旧别名还须在请求入口返回 MethodNotFound，防止客户端误用静默降级。
         assert.equal(initialize.result.capabilities.declarationProvider, undefined,
                      'declarationProvider must be withdrawn');
         assert.equal(initialize.result.capabilities.typeDefinitionProvider, undefined,
@@ -101,6 +109,7 @@ async function main() {
             }, `${method} must return the exact MethodNotFound envelope`);
         }
 
+        // 正常 shutdown/exit 及 stderr 共同验证整个协议会话干净结束。
         console.log('Pass - navigation capabilities withdraw aliases and retain definition/implementation');
         const shutdown = await request('shutdown', undefined, 'shutdown');
         assert.equal(shutdown.result, null);
@@ -116,6 +125,7 @@ async function main() {
     }
 }
 
+// 异步入口把协议断言或清理失败映射为 Node 非零退出码。
 main().catch((error) => {
     console.error(error.stack || String(error));
     process.exitCode = 1;

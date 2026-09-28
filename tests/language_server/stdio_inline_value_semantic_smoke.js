@@ -1,11 +1,13 @@
 const { spawn } = require('child_process');
 
+// CTest 以服务端可执行文件路径调用本脚本；断言失败须让整个进程以非零状态结束。
 function assert(condition, message) {
     if (!condition) {
         throw new Error(message);
     }
 }
 
+// 发送端按 UTF-8 字节数写 LSP 帧，保证含非 ASCII 文本时与服务端的 Content-Length 契约一致。
 function createMessage(payload) {
     const body = Buffer.from(JSON.stringify(payload), 'utf8');
     return Buffer.concat([
@@ -14,8 +16,10 @@ function createMessage(payload) {
     ]);
 }
 
+// 单次测试复用一个 stdio 会话：按请求 id 匹配响应，并按方法缓存可能先于等待者到达的诊断通知。
 class LspClient {
     constructor(serverPath) {
+        // 两组 pending 表分别跟踪请求和通知；关闭时必须让所有等待者收到服务端退出原因。
         this.nextId = 1;
         this.pendingResponses = new Map();
         this.pendingNotifications = new Map();
@@ -31,6 +35,7 @@ class LspClient {
             windowsHide: true,
         });
 
+        // stdout 可能任意分片或合并多个帧；解析交给 handleData，stderr 只保留作失败诊断。
         this.child.stdout.on('data', (chunk) => this.handleData(chunk));
         this.child.stderr.on('data', (chunk) => {
             this.stderrChunks.push(Buffer.from(chunk));
@@ -39,6 +44,7 @@ class LspClient {
             this.exitCode = code;
             this.exitSignal = signal;
         });
+        // close 晚于流关闭，是解除响应与通知等待的统一终点；避免测试一直等超时。
         this.child.on('close', (code, signal) => {
             this.closed = true;
             if (this.exitCode === null) {
@@ -68,10 +74,12 @@ class LspClient {
         });
     }
 
+    // 请求失败时附带服务端 stderr，便于区分协议断言失败与服务端启动/运行失败。
     stderr() {
         return Buffer.concat(this.stderrChunks).toString('utf8');
     }
 
+    // 仅用于 initialized、didOpen 和 exit 等无需响应的 LSP 通知；调用方负责时序。
     notify(method, params) {
         this.child.stdin.write(createMessage({
             jsonrpc: '2.0',
@@ -80,6 +88,7 @@ class LspClient {
         }));
     }
 
+    // 以递增 id 关联响应；超时只撤销本次等待，不假定服务端已停止处理该请求。
     request(method, params, timeoutMs = 10000) {
         const id = this.nextId++;
         const payload = {
@@ -105,6 +114,7 @@ class LspClient {
         });
     }
 
+    // didOpen 后诊断可能已进入积压队列，也可能稍后到达；两种次序都返回同一方法的下一条通知。
     waitForNotification(method, timeoutMs = 10000) {
         const backlog = this.notificationBacklog.get(method);
         if (backlog && backlog.length > 0) {
@@ -132,6 +142,7 @@ class LspClient {
         });
     }
 
+    // LSP 的长度按字节计算；保留未完成帧，直到 stdout 提供完整消息后才交给响应路由。
     handleData(chunk) {
         this.buffer = Buffer.concat([this.buffer, chunk]);
 
@@ -160,6 +171,7 @@ class LspClient {
         }
     }
 
+    // 响应按 id 唤醒对应请求；无 id 的服务端通知按方法交给等待者或积压队列。
     handleMessage(message) {
         if (Object.prototype.hasOwnProperty.call(message, 'id')) {
             const pending = this.pendingResponses.get(message.id);
@@ -194,6 +206,7 @@ class LspClient {
         this.notificationBacklog.set(message.method, backlog);
     }
 
+    // shutdown 的响应不代表进程已退出；exit 通知后还要等 stdio 真正关闭。
     waitForExit(timeoutMs = 10000) {
         return new Promise((resolve, reject) => {
             if (this.closed) {
@@ -212,10 +225,12 @@ class LspClient {
     }
 }
 
+// CTest 注入服务端路径；同一会话逐个打开独立文档，观察语义事实经 stdio 协议投影为 inlineValue。
 async function main() {
     const serverPath = process.argv[2];
     assert(serverPath, 'Expected stdio server executable path');
 
+    // 使用带编码盘符与加号的 file URI，避免测试依赖本机真实工作区路径。
     const uri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-inline-identifier-expression.zr';
     const multilineUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-inline-multiline-return.zr';
     const returnNextLineUri =
@@ -238,6 +253,7 @@ async function main() {
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-inline-block-comment.zr';
     const stringInlineValueUri =
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-inline-string-literals.zr';
+    // 正向样例分别覆盖标识符、跨行表达式、一元运算、调用/成员访问及聚合表达式的事实锚点。
     const text = [
         'fn main(): void {',
         '    var seed = 2;',
@@ -317,6 +333,7 @@ async function main() {
         '}',
         '',
     ].join('\n');
+    // 阴性样例中的“变量”只存在于注释或字符串，用来防止扫描器把词法文本误认作运行时变量。
     const blockCommentInlineValueText = [
         'fn main(): void {',
         '    /*',
@@ -338,6 +355,7 @@ async function main() {
     const client = new LspClient(serverPath);
 
     try {
+        // initialize/initialized 建立标准 LSP 会话；每次 didOpen 后先等诊断，确认服务端已接收文档。
         await client.request('initialize', {
             processId: null,
             rootUri: null,
@@ -357,6 +375,7 @@ async function main() {
         assert(diagnostics.uri === uri, 'inline identifier expression diagnostics uri mismatch');
         assert(Array.isArray(diagnostics.diagnostics), 'diagnostics must be an array');
 
+        // 当前函数声明本身没有可展示的求值事实；相邻的表达式语句才应产生数值事实。
         const declarationValues = await client.request('textDocument/inlineValue', {
             textDocument: { uri },
             range: {
@@ -402,6 +421,7 @@ async function main() {
         `textDocument/inlineValue must expose semantic numeric facts for identifier expression statements; values=${
             JSON.stringify(values)}`);
 
+        // 跨行 return 的事实应覆盖完整表达式，而非只落在第一行的运算符附近。
         client.notify('textDocument/didOpen', {
             textDocument: {
                 uri: multilineUri,
@@ -443,6 +463,7 @@ async function main() {
         `textDocument/inlineValue must expose semantic facts for multi-line return expressions; values=${
             JSON.stringify(multilineValues)}`);
 
+        // return 与表达式分处两行时只返回一次事实，并锚在实际表达式范围。
         client.notify('textDocument/didOpen', {
             textDocument: {
                 uri: returnNextLineUri,
@@ -491,6 +512,7 @@ async function main() {
         `textDocument/inlineValue must anchor return-next-line facts to the expression range; values=${
             JSON.stringify(returnNextLineValues)}`);
 
+        // 跨行初始化需要同时保留变量运行时查找和语义事实；仅请求续行也应找回声明名锚点。
         client.notify('textDocument/didOpen', {
             textDocument: {
                 uri: multilineInitializerUri,
@@ -555,6 +577,7 @@ async function main() {
         `textDocument/inlineValue must not duplicate multi-line initializer facts on the continuation expression; values=${
             JSON.stringify(multilineInitializerValues)}`);
 
+        // 仅请求续行仍应找到上一行的声明名；这是跨行扫描回溯的独立回归边界。
         const multilineInitializerContinuationOnlyValues =
             await client.request('textDocument/inlineValue', {
                 textDocument: { uri: multilineInitializerUri },
@@ -585,6 +608,7 @@ async function main() {
         `textDocument/inlineValue must recover multi-line initializer facts when only the continuation line is requested; values=${
             JSON.stringify(multilineInitializerContinuationOnlyValues)}`);
 
+        // 一元表达式语句分别锁住逻辑值与带符号数值事实，避免只支持二元表达式。
         client.notify('textDocument/didOpen', {
             textDocument: {
                 uri: unaryExpressionUri,
@@ -641,6 +665,7 @@ async function main() {
         `textDocument/inlineValue must expose numeric facts for unary expression statements; values=${
             JSON.stringify(unaryExpressionValues)}`);
 
+        // 调用和成员访问从语义查询取得 payload；测试完整调用/访问范围与事实文本。
         client.notify('textDocument/didOpen', {
             textDocument: {
                 uri: callMemberExpressionUri,
@@ -697,6 +722,9 @@ async function main() {
         `textDocument/inlineValue must expose member payload facts for member expression statements; values=${
             JSON.stringify(callMemberExpressionValues)}`);
 
+        // 下标成员访问还必须携带引用事实；此场景区别于点号成员访问。
+        // TODO: 2026-08-11 的 L8 验收记录称旧验证二进制在此 payload 断言失败；
+        // 需用当前源码构建的服务端重跑本 CTest，确认该历史缺口是否仍存在。
         client.notify('textDocument/didOpen', {
             textDocument: {
                 uri: computedMemberExpressionUri,
@@ -743,6 +771,7 @@ async function main() {
         `textDocument/inlineValue must expose computed-member payload and reference facts for expression statements; values=${
             JSON.stringify(computedMemberExpressionValues)}`);
 
+        // 数组表达式语句要把嵌套算术与短路逻辑事实投影到外层展示范围。
         client.notify('textDocument/didOpen', {
             textDocument: {
                 uri: aggregateExpressionUri,
@@ -798,6 +827,7 @@ async function main() {
         `textDocument/inlineValue must expose nested logical facts for aggregate expression statements; values=${
             JSON.stringify(aggregateExpressionValues)}`);
 
+        // 对象聚合覆盖计算键、跨行普通键和同一行普通键，防止行首扫描或跨行终点截断事实。
         client.notify('textDocument/didOpen', {
             textDocument: {
                 uri: objectAggregateExpressionUri,
@@ -865,6 +895,7 @@ async function main() {
         `textDocument/inlineValue must expose nested value facts for same-line object expression statements; values=${
             JSON.stringify(objectAggregateExpressionValues)}`);
 
+        // 请求从表达式续行开始时，服务端仍应回溯到表达式起始处取得同一语义事实。
         client.notify('textDocument/didOpen', {
             textDocument: {
                 uri: continuationExpressionUri,
@@ -910,6 +941,7 @@ async function main() {
         `textDocument/inlineValue must expose semantic facts when the request starts on a continuation line; values=${
             JSON.stringify(continuationExpressionValues)}`);
 
+        // 多行、行内与顶层块注释分别锁住状态延续、同一行过滤和零列起始过滤。
         client.notify('textDocument/didOpen', {
             textDocument: {
                 uri: blockCommentInlineValueUri,
@@ -947,6 +979,7 @@ async function main() {
             `textDocument/inlineValue must ignore variable-looking text inside block comments; values=${
                 JSON.stringify(blockCommentValues)}`);
 
+        // 同一行起止的块注释不应因扫描状态未跨行而漏过过滤。
         const singleLineBlockCommentValues = await client.request('textDocument/inlineValue', {
             textDocument: { uri: blockCommentInlineValueUri },
             range: {
@@ -967,6 +1000,7 @@ async function main() {
             `textDocument/inlineValue must ignore single-line block-comment variables; values=${
                 JSON.stringify(singleLineBlockCommentValues)}`);
 
+        // 顶层零列注释单独检查，避免行缩进假设掩盖伪声明。
         const topLevelBlockCommentValues = await client.request('textDocument/inlineValue', {
             textDocument: { uri: blockCommentInlineValueUri },
             range: {
@@ -987,6 +1021,7 @@ async function main() {
             `textDocument/inlineValue must ignore zero-column block-comment variables; values=${
                 JSON.stringify(topLevelBlockCommentValues)}`);
 
+        // 三种字符串定界符都不能让形似变量声明的文本泄漏为 inlineValue。
         client.notify('textDocument/didOpen', {
             textDocument: {
                 uri: stringInlineValueUri,
@@ -1023,6 +1058,7 @@ async function main() {
             `textDocument/inlineValue must ignore variable-looking text inside double-quoted strings; values=${
                 JSON.stringify(stringLineValues)}`);
 
+        // 单引号字面量复用同一过滤契约，防止只识别双引号。
         const singleStringLineValues = await client.request('textDocument/inlineValue', {
             textDocument: { uri: stringInlineValueUri },
             range: {
@@ -1043,6 +1079,7 @@ async function main() {
             `textDocument/inlineValue must ignore variable-looking text inside single-quoted strings; values=${
                 JSON.stringify(singleStringLineValues)}`);
 
+        // 模板字符串也应保持为非代码区，即使内容看似变量声明。
         const templateStringLineValues = await client.request('textDocument/inlineValue', {
             textDocument: { uri: stringInlineValueUri },
             range: {
@@ -1063,6 +1100,10 @@ async function main() {
             `textDocument/inlineValue must ignore variable-looking text inside template strings; values=${
                 JSON.stringify(templateStringLineValues)}`);
 
+        // 按 LSP 顺序请求 shutdown、发送 exit，再观察子进程退出；异常时终止该会话。
+        // BUG: waitForExit 对非零退出码仍兑现 Promise，此处丢弃返回值；
+        // 若前面的 inlineValue 断言已通过，而服务端随后在 shutdown/exit 阶段失败，CTest 仍会报告通过。
+        // 后续应断言零退出码，并明确 stderr 是否必须为空。
         await client.request('shutdown', {});
         client.notify('exit', {});
         await client.waitForExit();
@@ -1072,6 +1113,7 @@ async function main() {
     }
 }
 
+// 把异步会话中的断言或协议错误传递为 CTest 可观察的退出码。
 main().catch((error) => {
     console.error(error && error.stack ? error.stack : String(error));
     process.exit(1);
