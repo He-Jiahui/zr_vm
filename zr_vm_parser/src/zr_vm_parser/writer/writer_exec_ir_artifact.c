@@ -92,7 +92,7 @@ static TZrBool exec_ir_writer_metadata_is_supported(
 EZrArtifactStatus ZrParser_ExecIr_WriteCanonicalZroFile(
         const SZrArtifactDocument *metadata, const SZrExecIrModule *module,
         const char *filename, SZrArtifactDiagnostic *diagnostic) {
-    TZrByte payload[ZR_ARTIFACT_EXEC_IR_BRANCH_ENCODED_SIZE];
+    TZrByte payload[ZR_ARTIFACT_EXEC_IR_CFG_ENCODED_SIZE];
     SZrArtifactExecIrSectionInput nestedSection;
     SZrArtifactExecIrDocument nestedDocument;
     SZrArtifactExecIrDiagnostic nestedDiagnostic;

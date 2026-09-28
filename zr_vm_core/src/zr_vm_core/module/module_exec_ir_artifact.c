@@ -184,7 +184,9 @@ EZrArtifactStatus ZrCore_Module_OpenExecIrArtifact(
         (nested.sections[0].byteLength !=
                  ZR_ARTIFACT_EXEC_IR_SCALAR_ENCODED_SIZE &&
          nested.sections[0].byteLength !=
-                 ZR_ARTIFACT_EXEC_IR_BRANCH_ENCODED_SIZE))
+                 ZR_ARTIFACT_EXEC_IR_BRANCH_ENCODED_SIZE &&
+         nested.sections[0].byteLength !=
+                 ZR_ARTIFACT_EXEC_IR_CFG_ENCODED_SIZE))
         return exec_ir_artifact_fail(diagnostic,
                 ZR_ARTIFACT_STATUS_INVALID_SECTION,
                 ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE,

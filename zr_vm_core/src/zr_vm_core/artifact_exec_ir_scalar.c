@@ -1,4 +1,5 @@
 #include "zr_vm_core/artifact_exec_ir_scalar.h"
+#include "artifact_exec_ir_scalar_eis3.h"
 #include "zr_vm_common/zr_type_conf.h"
 
 #include <string.h>
@@ -484,7 +485,8 @@ EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_GetEncodedSize(
     else if (scalar_branch_shape_is(module))
         size = ZR_ARTIFACT_EXEC_IR_BRANCH_ENCODED_SIZE;
     else
-        return scalar_fail(diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION, 0u);
+        return ZrCore_ArtifactExecIrScalarEis3_GetEncodedSize(
+                module, outSize, diagnostic);
     *outSize = size;
     return scalar_fail(diagnostic, ZR_ARTIFACT_EXEC_IR_OK, 0u);
 }
@@ -492,7 +494,7 @@ EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_GetEncodedSize(
 EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_Write(
         const SZrExecIrModule *module, TZrByte *bytes, TZrUInt32 capacity,
         SZrArtifactExecIrDiagnostic *diagnostic) {
-    TZrByte temporary[ZR_ARTIFACT_EXEC_IR_BRANCH_ENCODED_SIZE];
+    TZrByte temporary[ZR_ARTIFACT_EXEC_IR_CFG_ENCODED_SIZE];
     SScalarCursor cursor = {temporary, 0u};
     TZrUInt32 size;
     EZrArtifactExecIrStatus status;
@@ -505,8 +507,11 @@ EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_Write(
         return scalar_fail(diagnostic, ZR_ARTIFACT_EXEC_IR_TRUNCATED, 0u);
     if (size == ZR_ARTIFACT_EXEC_IR_SCALAR_ENCODED_SIZE)
         scalar_write_record(&cursor, module);
-    else
+    else if (size == ZR_ARTIFACT_EXEC_IR_BRANCH_ENCODED_SIZE)
         scalar_write_branch_record(&cursor, module);
+    else
+        return ZrCore_ArtifactExecIrScalarEis3_Write(
+                module, bytes, capacity, diagnostic);
     if (cursor.offset != size)
         return scalar_fail(diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
                            cursor.offset);
@@ -632,6 +637,9 @@ EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_Read(
     cursor.bytes = (TZrByte *)bytes;
     cursor.offset = 0u;
     magic = scalar_get32(&cursor);
+    if (magic == ZR_ARTIFACT_EXEC_IR_CFG_MAGIC)
+        return ZrCore_ArtifactExecIrScalarEis3_Read(
+                bytes, length, outModule, diagnostic);
     if (magic == ZR_ARTIFACT_EXEC_IR_BRANCH_MAGIC)
         return scalar_read_branch(bytes, length, outModule, diagnostic);
     if (magic != ZR_ARTIFACT_EXEC_IR_SCALAR_MAGIC)

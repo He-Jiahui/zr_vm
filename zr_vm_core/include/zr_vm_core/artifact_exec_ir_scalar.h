@@ -19,13 +19,19 @@
 #define ZR_ARTIFACT_EXEC_IR_BRANCH_ENCODED_SIZE ((TZrUInt32)564u)
 #define ZR_ARTIFACT_EXEC_IR_BRANCH_SUCCESSOR_ID_OFFSET ((TZrUInt32)556u)
 
+/* EIS3 adds one counted, three-block conditional CFG payload. EIS1/EIS2
+ * remain byte-for-byte stable and keep their original header widths. */
+#define ZR_ARTIFACT_EXEC_IR_CFG_MAGIC ((TZrUInt32)0x33534945u)
+#define ZR_ARTIFACT_EXEC_IR_CFG_VERSION ((TZrUInt16)3u)
+#define ZR_ARTIFACT_EXEC_IR_CFG_ENCODED_SIZE ((TZrUInt32)996u)
+
 /* Reports the exact payload size only for one of the supported, verified
  * graph shapes. No output size is published on failure. */
 ZR_CORE_API EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_GetEncodedSize(
         const SZrExecIrModule *module, TZrUInt32 *outSize,
         SZrArtifactExecIrDiagnostic *diagnostic);
 
-/* Rejects every graph field or side table outside EIS1/EIS2. On failure the
+/* Rejects every graph field or side table outside EIS1/EIS2/EIS3. On failure the
  * destination bytes are unchanged. */
 ZR_CORE_API EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_Write(
         const SZrExecIrModule *module, TZrByte *bytes, TZrUInt32 capacity,
