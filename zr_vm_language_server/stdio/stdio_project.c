@@ -1,6 +1,8 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "stdio_handler_result.h"
 
+/* 把项目层的借用摘要转成扩展树视图消费的 JSON；临时 C 字符串只活到 cJSON 复制字段为止。
+ * TODO: cJSON 字段添加失败目前未检查；需用分配失败注入核对是否会返回缺字段的树节点。 */
 static cJSON *serialize_project_module_summary(const SZrLspProjectModuleSummary *summary) {
     cJSON *json;
     char *moduleNameText;
@@ -46,6 +48,8 @@ static cJSON *serialize_project_module_summary(const SZrLspProjectModuleSummary 
     return json;
 }
 
+/* GetProjectModules 的摘要数组由调用方继续持有，这里只建立独立的协议结果树。
+ * TODO: 数组追加结果未检查；需确认分配失败时是否会静默遗漏后续模块。 */
 static cJSON *serialize_project_modules_array(SZrArray *modules) {
     cJSON *json = cJSON_CreateArray();
 
@@ -64,6 +68,7 @@ static cJSON *serialize_project_modules_array(SZrArray *modules) {
     return json;
 }
 
+/* zr/projectModules 为项目浏览器按指定 .zrp 懒扫描源图；失败给空树，摘要无论成败均由本层归还。 */
 SZrLspHandlerResult handle_project_modules_request(SZrStdioServer *server, const cJSON *params) {
     const cJSON *uriJson;
     const char *uriText;
@@ -101,6 +106,8 @@ SZrLspHandlerResult handle_project_modules_request(SZrStdioServer *server, const
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/* 编辑器在初始化后改变项目选择时更新多工程消歧提示；null/空 URI 表示撤销，缺失字段不覆盖旧选择。
+ * TODO: 非空但非法的 URI 会先清除旧选择再被 setter 拒绝；核对客户端误发时是否应保留原提示。 */
 void handle_zr_selected_project_notification(SZrStdioServer *server, const cJSON *params) {
     const cJSON *uriJson;
     const char *uriText;

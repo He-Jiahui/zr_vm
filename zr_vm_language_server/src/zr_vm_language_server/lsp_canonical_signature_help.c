@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 参数标签与 parser 的 canonical 传参约束保持一致；scoped 只在引用不能越过当前函数时显示。 */
 static const TZrChar *canonical_signature_help_passing_prefix(
         const SZrCanonicalParameterContract *contract) {
     if (contract == ZR_NULL) {
@@ -26,6 +27,7 @@ static const TZrChar *canonical_signature_help_passing_prefix(
     }
 }
 
+/* 非值参数的 typeId 是引用包装，标签中展示被引用值类型以免与传参前缀重复。 */
 static TZrTypeId canonical_signature_help_parameter_value_type_id(
         const SZrSemanticContext *context,
         const SZrCanonicalParameterContract *contract) {
@@ -43,6 +45,8 @@ static TZrTypeId canonical_signature_help_parameter_value_type_id(
                    : ZR_SEMANTIC_ID_INVALID;
 }
 
+/* 外层签名已由 PopulateFromLabel 建好；此处只从同一语义快照补齐参数契约和实参事实。
+ * 中途失败由 Resolve 统一释放已附加的参数，避免把半成品签名交给客户端。 */
 static TZrBool canonical_signature_help_append_parameters(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -130,6 +134,7 @@ static TZrBool canonical_signature_help_append_parameters(
     return ZR_TRUE;
 }
 
+/* 源码调用和构造调用共用 parser 的 CallAt/FormatCall；拒绝从 AST 名称重建缺失的规范事实。 */
 TZrBool ZrLanguageServer_LspCanonicalSignatureHelp_Resolve(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -175,6 +180,7 @@ TZrBool ZrLanguageServer_LspCanonicalSignatureHelp_Resolve(
     return ZR_TRUE;
 }
 
+/* hover 的命中范围取已解析的调用引用，而非光标点；失败时保留调用方原范围。 */
 TZrBool ZrLanguageServer_LspCanonicalSignatureHelp_TryGetResolvedCallReferenceRange(
         SZrSemanticAnalyzer *analyzer,
         SZrFileRange position,
@@ -193,6 +199,7 @@ TZrBool ZrLanguageServer_LspCanonicalSignatureHelp_TryGetResolvedCallReferenceRa
     return ZR_TRUE;
 }
 
+/* 已知可调用值的 hover 路径先行；此处阻止剩余未解析非成员调用进入弱来源兜底。 */
 TZrBool ZrLanguageServer_LspCanonicalSignatureHelp_HasUnavailableLocalCall(
         SZrSemanticAnalyzer *analyzer,
         SZrFileRange position) {
@@ -226,6 +233,7 @@ TZrBool ZrLanguageServer_LspCanonicalSignatureHelp_HasUnavailableLocalCall(
     return ZR_FALSE;
 }
 
+/* 已解析的接收者调用优先沿 parser 的引用和函数契约生成 hover，与签名帮助共享标签来源。 */
 TZrBool ZrLanguageServer_LspCanonicalSignatureHelp_ResolveReceiverHover(
         SZrState *state,
         SZrLspContext *context,
@@ -287,6 +295,7 @@ TZrBool ZrLanguageServer_LspCanonicalSignatureHelp_ResolveReceiverHover(
     return ZR_TRUE;
 }
 
+/* 可调用值可能没有外部声明身份；只借用 parser 已记录的调用类型与标签展示 hover。 */
 TZrBool ZrLanguageServer_LspCanonicalSignatureHelp_ResolveExternalCallableHover(
         SZrState *state,
         SZrLspContext *context,
@@ -315,6 +324,9 @@ TZrBool ZrLanguageServer_LspCanonicalSignatureHelp_ResolveExternalCallableHover(
                 analyzer->semanticContext, &query, label, sizeof(label))) {
         return ZR_FALSE;
     }
+    /* TODO: 这里只凭“未解析、非成员调用、函数类型”识别可调用值；
+     * 需核对 parser 是否也会为未解析的本地直接调用给出同形事实，
+     * 并在 GetHover 中先于 HasUnavailableLocalCall 的路径补充区分测试。 */
     functionType = ZrParser_CanonicalType_Find(
             analyzer->semanticContext,
             query.callableTypeId);

@@ -1,6 +1,8 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "stdio_handler_result.h"
 
+/** 将语义层的单个重命名位置包装成 TextEdit，预期由统一响应出口转换客户端坐标。
+ * 跨文档范围的现存转换错误记录在 apply_encoding_to_json_node。 */
 static cJSON *create_rename_text_edit(SZrLspRange range, const char *newNameText) {
     cJSON *textEdit = cJSON_CreateObject();
 
@@ -13,6 +15,7 @@ static cJSON *create_rename_text_edit(SZrLspRange range, const char *newNameText
     return textEdit;
 }
 
+/** 复用相同 URI 的 TextDocumentEdit，避免一个文件因多处引用产生多个版本声明。 */
 static cJSON *find_document_change_edits(cJSON *documentChanges, const char *uriText) {
     cJSON *documentChange;
 
@@ -33,6 +36,8 @@ static cJSON *find_document_change_edits(cJSON *documentChanges, const char *uri
     return NULL;
 }
 
+/** 为一个被编辑文档绑定捕获时的 URI 与版本；打开文件的客户端可据版本拒绝旧计划。
+ * 关闭文件的版本为 null，只能依赖服务端发送前快照复验；返回对象由调用方数组接管。 */
 static cJSON *create_document_change(SZrStdioServer *server,
                                      const SZrLspLocation *location,
                                      const char *uriText,
@@ -81,6 +86,7 @@ static cJSON *create_document_change(SZrStdioServer *server,
     return documentChange;
 }
 
+/** 在已有文档改动上追加同 URI 编辑；首次出现时建立版本化容器。 */
 static cJSON *ensure_document_change_edits(SZrStdioServer *server,
                                            cJSON *documentChanges,
                                            const SZrLspLocation *location,
@@ -105,6 +111,8 @@ static cJSON *ensure_document_change_edits(SZrStdioServer *server,
     return edits;
 }
 
+/** 将语义重命名或文件移动计划追加到 WorkspaceEdit；调用方持有位置数组和文档快照。
+ * 失败时 edit 可能已有局部内容，调用方必须丢弃整个 JSON，不可向客户端发送半成品。 */
 TZrBool append_workspace_edit_locations(SZrStdioServer *server,
                                         cJSON *edit,
                                         SZrArray *locations,
@@ -174,6 +182,7 @@ TZrBool append_workspace_edit_locations(SZrStdioServer *server,
     return ZR_TRUE;
 }
 
+/** 一次性构造 WorkspaceEdit 并转交调用方；重命名及 willRenameFiles 共用相同位置封装。 */
 cJSON *create_workspace_edit_for_locations(SZrStdioServer *server,
                                            SZrArray *locations,
                                            SZrString *newName,
@@ -196,6 +205,7 @@ cJSON *create_workspace_edit_for_locations(SZrStdioServer *server,
     return edit;
 }
 
+/** 在真正重命名前确认光标可解析，并把可编辑范围及占位符交给客户端预览。 */
 SZrLspHandlerResult handle_prepare_rename_request(SZrStdioServer *server, const cJSON *params) {
     SZrLspPosition position;
     const char *uriText;
@@ -231,6 +241,8 @@ SZrLspHandlerResult handle_prepare_rename_request(SZrStdioServer *server, const 
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/** textDocument/rename 先收集语义位置，再捕获并复验各文档版本才发布跨文件编辑。
+ * 请求处理器消费并释放位置数组与快照；最终 JSON 由统一响应路径发送和释放。 */
 SZrLspHandlerResult handle_rename_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray locations = {0};
     SZrArray documentSnapshots = {0};

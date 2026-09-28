@@ -6,6 +6,7 @@
 
 #include <string.h>
 
+/* 请求实际读取或 import 图可达的文档身份；uri 借用 context/项目记录，其他字段是捕获值。 */
 typedef struct SZrLspSemanticSnapshotDependency {
     SZrString *uri;
     TZrUInt64 documentGeneration;
@@ -14,6 +15,8 @@ typedef struct SZrLspSemanticSnapshotDependency {
     TZrBool isOpenDocument;
 } SZrLspSemanticSnapshotDependency;
 
+/* 文本块由快照持有引用，AST、分析器和 context 只在请求有效期内借用；
+ * identity 与 dependencies 用于响应发布前的失效栅栏。 */
 struct SZrLspSemanticSnapshot {
     SZrLspContext *context;
     SZrString *uri;
@@ -24,6 +27,7 @@ struct SZrLspSemanticSnapshot {
     SZrArray dependencies;
 };
 
+/* 将固定长度的身份片段并入结果指纹；调用方决定片段边界。 */
 static TZrUInt64 snapshot_hash_bytes(
         TZrUInt64 hash,
         const TZrChar *bytes,
@@ -40,6 +44,7 @@ static TZrUInt64 snapshot_hash_bytes(
     return hash;
 }
 
+/* 项目、文档和 provider 代际共用稳定的整数哈希表示。 */
 static TZrUInt64 snapshot_hash_u64(TZrUInt64 hash, TZrUInt64 value) {
     for (TZrSize index = 0U; index < sizeof(value); index++) {
         hash ^= (value >> (index * 8U)) & 0xffU;
@@ -48,6 +53,7 @@ static TZrUInt64 snapshot_hash_u64(TZrUInt64 hash, TZrUInt64 value) {
     return hash;
 }
 
+/* 快照身份可能引用短串或长串；只借出原生文本，不延长 GC 字符串寿命。 */
 static const TZrChar *snapshot_string_text(const SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -57,16 +63,20 @@ static const TZrChar *snapshot_string_text(const SZrString *value) {
                    : ZrCore_String_GetNativeString((SZrString *)value);
 }
 
+/* 项目、成员和依赖 URI 进入结果身份前先带长度混合，避免不同分段拼接出同一字节流。 */
 static TZrUInt64 snapshot_hash_string(TZrUInt64 hash, const SZrString *value) {
     const TZrChar *text = snapshot_string_text(value);
 
     if (text == ZR_NULL) {
         return snapshot_hash_u64(hash, 0U);
     }
+    /* TODO: SZrString 自带字节长度，此处却用 strlen；若虚拟 URI 允许内嵌 NUL，
+     * 不同的项目成员可能得到相同指纹。需核对 URI 接收边界并补长度编码用例。 */
     hash = snapshot_hash_u64(hash, strlen(text));
     return snapshot_hash_bytes(hash, text, strlen(text));
 }
 
+/* 统一扩散项目与依赖身份，供结果 ID 和编辑/诊断缓存作相等性栅栏。 */
 static TZrUInt64 snapshot_mix(TZrUInt64 value) {
     value ^= value >> 30U;
     value *= 0xbf58476d1ce4e5b9ULL;
@@ -75,6 +85,7 @@ static TZrUInt64 snapshot_mix(TZrUInt64 value) {
     return value ^ (value >> 31U);
 }
 
+/* 只把所属项目和成员视图纳入代际；项目内语义变化由 provider/文档/依赖栅栏承担。 */
 static TZrUInt64 snapshot_project_generation(
         SZrLspContext *context,
         SZrString *uri) {
@@ -110,6 +121,7 @@ static TZrUInt64 snapshot_project_generation(
     return snapshot_mix(hash);
 }
 
+/* 语义重建后缓存 AST 哈希优先；无缓存时用当前 AST 指纹防止旧分析投影复用。 */
 static TZrUInt64 snapshot_semantic_generation(
         SZrSemanticAnalyzer *analyzer,
         SZrAstNode *ast) {
@@ -124,6 +136,8 @@ static TZrUInt64 snapshot_semantic_generation(
     return generation == 0U ? 1U : generation;
 }
 
+/* 以 FileVersionContentSnapshot 的短暂引用读取代际/版本，随后归还文本引用；
+ * TrackDependency 登记及主文档/依赖的发布前验证走此路径。 */
 static TZrBool snapshot_capture_document_generation(
         SZrState *state,
         SZrLspContext *context,
@@ -175,6 +189,7 @@ static TZrBool snapshot_capture_document_generation(
     return ZR_TRUE;
 }
 
+/* 依赖加入后重算统一结果身份；异或依赖摘要使 import 发现顺序不影响指纹。 */
 static void snapshot_refresh_fingerprint(SZrLspSemanticSnapshot *snapshot) {
     TZrUInt64 hash = 1469598103934665603ULL;
     TZrUInt64 dependencyMix = 0U;
@@ -209,6 +224,7 @@ static void snapshot_refresh_fingerprint(SZrLspSemanticSnapshot *snapshot) {
     snapshot->identity.dependencyFingerprint = snapshot_mix(hash);
 }
 
+/* 发布前逐项重取已登记文档的版本，防止跨文件读取后继续使用旧事实。 */
 static TZrBool snapshot_dependency_matches_current(
         SZrState *state,
         SZrLspContext *context,
@@ -235,6 +251,7 @@ static TZrBool snapshot_dependency_matches_current(
            isOpenDocument == dependency->isOpenDocument;
 }
 
+/* import 递归去重时将主文档也视为已登记，避免环依赖无限回访。 */
 static TZrBool snapshot_tracks_uri(
         const SZrLspSemanticSnapshot *snapshot,
         SZrString *uri) {
@@ -257,6 +274,7 @@ static TZrBool snapshot_tracks_uri(
     return ZR_FALSE;
 }
 
+/* 获取快照时沿项目 import 图预登记直接与传递依赖；实际跨文档读取还可追加依赖。 */
 static void snapshot_track_import_dependencies(
         SZrState *state,
         SZrLspContext *context,
@@ -287,6 +305,8 @@ static void snapshot_track_import_dependencies(
         }
         record = ZrLanguageServer_LspProject_FindRecordByModuleName(
                 projectIndex, (*bindingPtr)->moduleName);
+        /* TODO: TrackDependency 捕获失败时仅跳过该分支，Acquire 仍可成功；
+         * 需核对缺少 FileVersion 的项目记录是否还能贡献语义事实，并补失败注入测试。 */
         if (record != ZR_NULL && record->uri != ZR_NULL &&
             !snapshot_tracks_uri(snapshot, record->uri) &&
             ZrLanguageServer_LspSemanticSnapshot_TrackDependency(
@@ -302,6 +322,8 @@ static void snapshot_track_import_dependencies(
     ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
 }
 
+/* stdio 文档请求和独立诊断/编辑投影共用入口：先完成项目视图，再固定文本与多层身份；
+ * stdio 响应由请求层在发布前 Validate，独立身份消费者按各自的失效检查使用。 */
 SZrLspSemanticSnapshot *ZrLanguageServer_LspSemanticSnapshot_Acquire(
         SZrState *state,
         SZrLspContext *context,
@@ -314,7 +336,7 @@ SZrLspSemanticSnapshot *ZrLanguageServer_LspSemanticSnapshot_Acquire(
         uri == ZR_NULL) {
         return ZR_NULL;
     }
-    /* Request handlers lazily complete this project transition before semantic reads. */
+    /* 项目懒加载先于分析器查询，否则 import 与 provider 身份会来自不同视图。 */
     (void)ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
     if (!ZrLanguageServer_LspSemanticQuery_TryGetAnalyzerForUri(
                 state, context, uri, &analyzer)) {
@@ -361,6 +383,7 @@ SZrLspSemanticSnapshot *ZrLanguageServer_LspSemanticSnapshot_Acquire(
     return snapshot;
 }
 
+/* 请求出口归还文本块和依赖容器；若此快照曾绑定 active 槽，调用方须先清空。 */
 void ZrLanguageServer_LspSemanticSnapshot_Release(
         SZrState *state,
         SZrLspSemanticSnapshot *snapshot) {
@@ -372,22 +395,26 @@ void ZrLanguageServer_LspSemanticSnapshot_Release(
     ZrCore_Memory_RawFree(state->global, snapshot, sizeof(*snapshot));
 }
 
+/* 诊断与 workspace edit 借用此身份；追加依赖后指纹会变，调用方需及时复制。 */
 const SZrLspSemanticSnapshotIdentity *
 ZrLanguageServer_LspSemanticSnapshot_GetIdentity(
         const SZrLspSemanticSnapshot *snapshot) {
     return snapshot == ZR_NULL ? ZR_NULL : &snapshot->identity;
 }
 
+/* 增量等价性检查读取请求固定文本；返回的原始指针随 Release 失效。 */
 const TZrChar *ZrLanguageServer_LspSemanticSnapshot_Content(
         const SZrLspSemanticSnapshot *snapshot) {
     return snapshot == ZR_NULL ? ZR_NULL : snapshot->content.content;
 }
 
+/* 文本长度是字节数，必须与 Content 一起使用，不能据此推断 UTF-16 光标列。 */
 TZrSize ZrLanguageServer_LspSemanticSnapshot_ContentLength(
         const SZrLspSemanticSnapshot *snapshot) {
     return snapshot == ZR_NULL ? 0U : snapshot->content.contentLength;
 }
 
+/* semantic token 全量和 delta 以同一依赖指纹及结果长度生成可复用身份。 */
 void ZrLanguageServer_LspSemanticSnapshot_FormatResultId(
         const SZrLspSemanticSnapshot *snapshot,
         TZrSize payloadLength,
@@ -399,6 +426,8 @@ void ZrLanguageServer_LspSemanticSnapshot_FormatResultId(
     if (buffer == ZR_NULL || bufferLength == 0U) {
         return;
     }
+    /* BUG: stdio 的 full/delta 处理器在 AST 缺失时仍可得到文本 token，却向这里传入
+     * 空快照；零指纹只加 payload 长度会复用不同内容的旧 resultId，delta 随后返回空编辑。 */
     (void)snprintf(buffer,
                    (size_t)bufferLength,
                    "zr-snapshot:%llx:%zu",
@@ -406,6 +435,7 @@ void ZrLanguageServer_LspSemanticSnapshot_FormatResultId(
                    (size_t)payloadLength);
 }
 
+/* 获取时预登记 import，active 请求跨文档读取时追加；同一 URI 只登记一次并统一重验。 */
 TZrBool ZrLanguageServer_LspSemanticSnapshot_TrackDependency(
         SZrState *state,
         SZrLspContext *context,
@@ -448,6 +478,8 @@ TZrBool ZrLanguageServer_LspSemanticSnapshot_TrackDependency(
     return ZR_TRUE;
 }
 
+/* 响应写出前核对源文档、所属项目、provider、分析器和实际依赖；
+ * stdio 失败时丢弃结果并返回 Content modified，而不是发布过期范围。 */
 TZrBool ZrLanguageServer_LspSemanticSnapshot_Validate(
         SZrState *state,
         SZrLspContext *context,
@@ -497,6 +529,7 @@ TZrBool ZrLanguageServer_LspSemanticSnapshot_Validate(
     return ZR_TRUE;
 }
 
+/* context 只保存借用指针；stdio 单请求分发先绑定，所有出口在 Release 前清空。 */
 void ZrLanguageServer_LspSemanticSnapshot_SetActive(
         SZrLspContext *context,
         SZrLspSemanticSnapshot *snapshot) {
@@ -506,11 +539,13 @@ void ZrLanguageServer_LspSemanticSnapshot_SetActive(
     context->activeSemanticSnapshot = snapshot;
 }
 
+/* semantic token 处理器读取当前请求绑定的快照；取得者不接管快照。 */
 SZrLspSemanticSnapshot *ZrLanguageServer_LspSemanticSnapshot_GetActive(
         const SZrLspContext *context) {
     return context == ZR_NULL ? ZR_NULL : context->activeSemanticSnapshot;
 }
 
+/* 项目刷新推进 provider 代际，阻止旧请求身份在内容未变时继续通过验证。 */
 void ZrLanguageServer_LspSemanticSnapshot_ProviderChanged(SZrLspContext *context) {
     if (context == ZR_NULL) {
         return;

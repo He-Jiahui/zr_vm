@@ -1,12 +1,14 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "stdio_handler_result.h"
 
+/* 将实现位置查询接入与定义、引用一致的 stdio Location 序列化和释放路径。 */
 typedef TZrBool (*TZrLspLocationProvider)(SZrState *state,
                                           SZrLspContext *context,
                                           SZrString *uri,
                                           SZrLspPosition position,
                                           SZrArray *result);
 
+/* provider 的原生数组只在本次请求有效；响应 JSON 在统一发送层完成坐标编码。 */
 static SZrLspHandlerResult handle_location_request(SZrStdioServer *server,
                                       const cJSON *params,
                                       TZrLspLocationProvider provider) {
@@ -23,6 +25,7 @@ static SZrLspHandlerResult handle_location_request(SZrStdioServer *server,
 
     ZR_UNUSED_PARAMETER(uriText);
     ZrCore_Array_Init(server->state, &locations, sizeof(SZrLspLocation *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    /* TODO: provider 的 false 与无匹配位置在响应中都变成 []；核对内存失败等内部错误是否应保留独立状态。 */
     if (!provider(server->state, server->context, uri, position, &locations)) {
         free_locations_array(server->state, &locations);
         return stdio_handler_result_from_json(server->context, cJSON_CreateArray());
@@ -33,6 +36,7 @@ static SZrLspHandlerResult handle_location_request(SZrStdioServer *server,
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/* 请求分发器选择折叠能力后调用；失败按当前协议适配约定返回空数组。 */
 SZrLspHandlerResult handle_folding_range_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray ranges = {0};
     const char *uriText;
@@ -55,6 +59,7 @@ SZrLspHandlerResult handle_folding_range_request(SZrStdioServer *server, const c
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/* 逐个按文档 URI 解码客户端位置，保持输入顺序，再移交 selectionRange JSON 树。 */
 SZrLspHandlerResult handle_selection_range_request(SZrStdioServer *server, const cJSON *params) {
     const cJSON *positionsJson;
     SZrLspPosition *positions;
@@ -111,6 +116,7 @@ SZrLspHandlerResult handle_selection_range_request(SZrStdioServer *server, const
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/* documentLink 的普通和虚拟目标共用此响应入口，原生链接在序列化后立即释放。 */
 SZrLspHandlerResult handle_document_link_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray links = {0};
     const char *uriText;
@@ -133,10 +139,12 @@ SZrLspHandlerResult handle_document_link_request(SZrStdioServer *server, const c
     return stdio_handler_result_from_json(server->context, result);
 }
 
+/* implementation 与其他导航请求共享输入解析，但结果来自独立语义关系查询器。 */
 SZrLspHandlerResult handle_implementation_request(SZrStdioServer *server, const cJSON *params) {
     return handle_location_request(server, params, ZrLanguageServer_Lsp_GetImplementation);
 }
 
+/* CodeLens 查询生成可执行命令；返回前复制成 JSON，避免暴露原生项的生命周期。 */
 SZrLspHandlerResult handle_code_lens_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray lenses = {0};
     const char *uriText;

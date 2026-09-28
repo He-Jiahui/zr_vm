@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <string.h>
 
+/* AST 来源和当前请求 URI 可能分别缺少 source；位置比较优先采用 parser 字节偏移。 */
 static TZrBool super_navigation_file_range_contains_position(SZrFileRange range, SZrFileRange position) {
     if (!ZrLanguageServer_Lsp_StringsEqual(range.source, position.source) &&
         range.source != ZR_NULL &&
@@ -24,6 +25,7 @@ static TZrBool super_navigation_file_range_contains_position(SZrFileRange range,
              position.end.column <= range.end.column));
 }
 
+/* 只把 class/struct 的 @constructor 当作导航目标，普通元函数不参与 super 关系。 */
 static TZrBool super_navigation_meta_function_is_constructor(SZrAstNode *metaFunctionNode) {
     SZrString *metaName = ZR_NULL;
 
@@ -44,10 +46,12 @@ static TZrBool super_navigation_meta_function_is_constructor(SZrAstNode *metaFun
            strcmp(ZrCore_String_GetNativeStringShort(metaName), "constructor") == 0;
 }
 
+/* 原文扫描中的标识符边界门控；是否处于可执行代码由 code-span helper 再判断。 */
 static TZrBool super_navigation_is_identifier_char(TZrChar value) {
     return isalnum((unsigned char)value) || value == '_';
 }
 
+/* raw token 的字节位置需还原为 parser 的一基行列，随后才能走统一的 UTF-16 输出转换。 */
 static SZrFilePosition super_navigation_file_position_from_offset(const TZrChar *content,
                                                                   TZrSize contentLength,
                                                                   TZrSize targetOffset) {
@@ -72,6 +76,7 @@ static SZrFilePosition super_navigation_file_position_from_offset(const TZrChar 
     return position;
 }
 
+/* 光标来自文档位置转换；只有无有效 offset 时才按当前快照文本重建扫描起点。 */
 static TZrSize super_navigation_offset_from_file_position(const TZrChar *content,
                                                           TZrSize contentLength,
                                                           SZrFilePosition targetPosition) {
@@ -102,6 +107,8 @@ static TZrSize super_navigation_offset_from_file_position(const TZrChar *content
     return contentLength - 1;
 }
 
+/* 给定义、引用和高亮共用的 super 命中范围；仅把代码 span 中的完整 token 发布为位置。 */
+/* TODO: parser 已保存 classMetaFunction.superCallRange；核对能否直接采用该事实，避免在构造器头部重新猜测 token。 */
 static TZrBool super_navigation_find_super_token_range(const TZrChar *content,
                                                        TZrSize contentLength,
                                                        SZrFileRange scope,
@@ -141,6 +148,7 @@ static TZrBool super_navigation_find_super_token_range(const TZrChar *content,
     return ZR_FALSE;
 }
 
+/* 声明上下文覆盖整个构造器，故只有光标确在代码 token super 上才应改为基类目标。 */
 static TZrBool super_navigation_position_is_super_token(const TZrChar *content,
                                                         TZrSize contentLength,
                                                         TZrSize offset) {
@@ -179,6 +187,8 @@ static TZrBool super_navigation_position_is_super_token(const TZrChar *content,
     return end - start == 5 && memcmp(content + start, "super", 5) == 0;
 }
 
+/* token 扫描失败时仍给调用者一个构造器头部回退范围，供 super 引用展示路径使用。 */
+/* TODO: 回退范围从首个实参向前推六字节；空格或换行会改变其含义，需与 parser.superCallRange 对照。 */
 static SZrFileRange super_navigation_super_call_context_range(SZrAstNode *metaFunctionNode) {
     SZrFileRange range;
 
@@ -212,6 +222,7 @@ static SZrFileRange super_navigation_super_call_context_range(SZrAstNode *metaFu
     return range;
 }
 
+/* 在 constructor body 之前定位显式 super 调用，避免正文内的同名文本充当引用锚点。 */
 static SZrFileRange super_navigation_super_call_token_range(SZrAstNode *metaFunctionNode,
                                                             const TZrChar *content,
                                                             TZrSize contentLength,
@@ -234,6 +245,7 @@ static SZrFileRange super_navigation_super_call_token_range(SZrAstNode *metaFunc
     return super_navigation_super_call_context_range(metaFunctionNode);
 }
 
+/* 仅对声明过 super(...) 的构造器尝试特殊导航，其他位置应让通用语义查询处理。 */
 static TZrBool super_navigation_super_call_matches_position(SZrAstNode *metaFunctionNode,
                                                             SZrFileRange position,
                                                             const TZrChar *content,
@@ -256,6 +268,8 @@ static TZrBool super_navigation_super_call_matches_position(SZrAstNode *metaFunc
         return ZR_TRUE;
     }
 
+    /* BUG: 光标位于 super(seed) 的 seed 实参时，此分支也拦截定义、引用和高亮请求，
+     * 并把 seed 误投影到基类构造器；GetDefinition 的优先分派在 interface/lsp_interface.c 中可达。 */
     if (metaFunction->superArgs != ZR_NULL) {
         for (TZrSize index = 0; index < metaFunction->superArgs->count; index++) {
             SZrAstNode *argNode = metaFunction->superArgs->nodes[index];
@@ -268,6 +282,7 @@ static TZrBool super_navigation_super_call_matches_position(SZrAstNode *metaFunc
     return ZR_FALSE;
 }
 
+/* 从当前 AST 找到显式 super 调用所属类型；只沿脚本、块和类成员的导航作用域下降。 */
 static TZrBool super_navigation_find_super_constructor_context(SZrAstNode *node,
                                                                SZrFileRange position,
                                                                const TZrChar *content,
@@ -362,6 +377,8 @@ static TZrBool super_navigation_find_super_constructor_context(SZrAstNode *node,
     return ZR_FALSE;
 }
 
+/* 从构造器声明自身发起 references/highlights 时，用所属类型反查显式 super 调用。 */
+/* BUG: memberNode->location 覆盖整个方法体；正文任意代码 token 也会被当作构造器声明上下文。 */
 static TZrBool super_navigation_find_constructor_declaration_context(SZrAstNode *node,
                                                                      SZrFileRange position,
                                                                      SZrAstNode **ownerTypeNode,
@@ -465,6 +482,8 @@ static TZrBool super_navigation_find_constructor_declaration_context(SZrAstNode 
     return ZR_FALSE;
 }
 
+/* 显式 super 只指向第一个直接继承项；结果借用 AST 名称，由当前 analyzer 持有。 */
+/* TODO: 这里使用原始类型名；核查别名、同名作用域与跨文件基类是否需要 canonical type identity。 */
 static SZrString *super_navigation_get_direct_base_declaration_name(SZrAstNode *ownerTypeNode) {
     SZrAstNode *inheritNode;
 
@@ -492,6 +511,7 @@ static SZrString *super_navigation_get_direct_base_declaration_name(SZrAstNode *
     return ZR_NULL;
 }
 
+/* 声明端的 references/highlights 需要同一 AST 内可比较的类型名；不创建新字符串。 */
 static SZrString *super_navigation_get_declared_type_name(SZrAstNode *typeDeclarationNode) {
     if (typeDeclarationNode == ZR_NULL) {
         return ZR_NULL;
@@ -510,6 +530,8 @@ static SZrString *super_navigation_get_declared_type_name(SZrAstNode *typeDeclar
     return ZR_NULL;
 }
 
+/* 当前导航限定于同一语法树中的命名类型；返回的节点仍属于 analyzer，不由调用方释放。 */
+/* TODO: 同名类型取遍历遇到的首项，需以局部作用域和导入类型用例核查是否会选错声明。 */
 static SZrAstNode *super_navigation_find_type_declaration_recursive(SZrAstNode *node, SZrString *typeName) {
     if (node == ZR_NULL || typeName == ZR_NULL) {
         return ZR_NULL;
@@ -565,6 +587,7 @@ static SZrAstNode *super_navigation_find_type_declaration_recursive(SZrAstNode *
     return ZR_NULL;
 }
 
+/* 基类必须有显式 @constructor 才能返回具体定义；类型名命中并不保证存在目标。 */
 static SZrAstNode *super_navigation_find_constructor_declaration_in_type(SZrAstNode *typeDeclarationNode) {
     SZrAstNodeArray *members = ZR_NULL;
 
@@ -592,6 +615,7 @@ static SZrAstNode *super_navigation_find_constructor_declaration_in_type(SZrAstN
     return ZR_NULL;
 }
 
+/* 将光标命中的 super 调用或构造器声明转为同文件目标，供三种导航入口复用。 */
 static TZrBool super_navigation_resolve_target(SZrSemanticAnalyzer *analyzer,
                                                SZrFileRange position,
                                                const TZrChar *content,
@@ -660,6 +684,8 @@ static TZrBool super_navigation_resolve_target(SZrSemanticAnalyzer *analyzer,
             return ZR_FALSE;
         }
 
+        /* BUG: 声明上下文已把整个方法体纳入，正文变量等代码 token 会使导航提前返回
+         * 当前构造器，覆盖 interface/lsp_interface.c 后续的普通符号定义、引用和高亮。 */
         *targetBaseTypeName = super_navigation_get_declared_type_name(ownerTypeNode);
         *targetConstructorDeclaration = metaFunctionNode;
         return *targetBaseTypeName != ZR_NULL;
@@ -668,6 +694,8 @@ static TZrBool super_navigation_resolve_target(SZrSemanticAnalyzer *analyzer,
     return ZR_FALSE;
 }
 
+/* 以基类名称收集当前语法树中派生构造器的显式 super 调用，结果是暂存的 FileRange 值。 */
+/* TODO: 原始名称相等未验证继承边的语义身份；同名基类或别名可能合并不相关引用。 */
 static void super_navigation_collect_reference_ranges_recursive(SZrState *state,
                                                                 SZrAstNode *node,
                                                                 SZrString *targetBaseTypeName,
@@ -735,6 +763,7 @@ static void super_navigation_collect_reference_ranges_recursive(SZrState *state,
     }
 }
 
+/* 把借用的 AST 范围投影为调用方负责释放的 Location；位置统一按文档内容转换。 */
 static TZrBool super_navigation_append_location(SZrState *state,
                                                 SZrLspContext *context,
                                                 SZrArray *result,
@@ -757,6 +786,7 @@ static TZrBool super_navigation_append_location(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 调用方先筛选当前 URI 的范围；此处只负责位置投影，kind 由声明与读取引用区分。 */
 static TZrBool super_navigation_append_highlight(SZrState *state,
                                                  SZrLspContext *context,
                                                  SZrArray *result,
@@ -780,6 +810,7 @@ static TZrBool super_navigation_append_highlight(SZrState *state,
     return ZR_TRUE;
 }
 
+/* GetDefinition 在通用语义查询前调用本入口，仅显式 super 与构造器目标应被此处截获。 */
 TZrBool ZrLanguageServer_Lsp_TryGetSuperConstructorDefinition(SZrState *state,
                                                               SZrLspContext *context,
                                                               SZrString *uri,
@@ -832,6 +863,8 @@ TZrBool ZrLanguageServer_Lsp_TryGetSuperConstructorDefinition(SZrState *state,
     return ZR_TRUE;
 }
 
+/* FindReferences 的优先路径：可选声明项，加上同一 AST 内的显式 super 调用位置。 */
+/* TODO: 目前返回 true 代表目标已解析，范围收集仅查当前文档；核查跨文件派生类的引用需求。 */
 TZrBool ZrLanguageServer_Lsp_TryFindSuperConstructorReferences(SZrState *state,
                                                                SZrLspContext *context,
                                                                SZrString *uri,
@@ -878,6 +911,8 @@ TZrBool ZrLanguageServer_Lsp_TryFindSuperConstructorReferences(SZrState *state,
         ZrCore_Array_Init(state, result, sizeof(SZrLspLocation *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     }
 
+    /* BUG: append_location 分配失败会返回 false，但声明项和下面循环均忽略该结果；
+     * 此入口最后仍返回 true，客户端可能收到不完整的引用集。 */
     if (includeDeclaration) {
         super_navigation_append_location(state, context, result, uri, baseConstructorDeclaration->location);
     }
@@ -901,6 +936,7 @@ TZrBool ZrLanguageServer_Lsp_TryFindSuperConstructorReferences(SZrState *state,
     return ZR_TRUE;
 }
 
+/* GetDocumentHighlights 复用同一目标解析，但只发布当前文档中的声明与调用范围。 */
 TZrBool ZrLanguageServer_Lsp_TryGetSuperConstructorDocumentHighlights(SZrState *state,
                                                                       SZrLspContext *context,
                                                                       SZrString *uri,
@@ -946,6 +982,8 @@ TZrBool ZrLanguageServer_Lsp_TryGetSuperConstructorDocumentHighlights(SZrState *
         ZrCore_Array_Init(state, result, sizeof(SZrLspDocumentHighlight *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     }
 
+    /* BUG: append_highlight 分配失败会返回 false，声明项与引用项都忽略失败；
+     * 此入口仍返回 true，客户端可能收到不完整的高亮集。 */
     if (baseConstructorDeclaration->location.source == ZR_NULL ||
         ZrLanguageServer_Lsp_StringsEqual(baseConstructorDeclaration->location.source, uri)) {
         super_navigation_append_highlight(state, context, result, uri, baseConstructorDeclaration->location, 3);

@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 统一装配服务端完整 CodeLens：stdio 与 WASM 的首次响应携带完整命令供客户端点击，
+ * URI、标题和命令字符串由请求上下文/GC 持有，结果数组只持有 lens 原生结构。 */
 static TZrBool lsp_code_lens_append(SZrState *state,
                                     SZrArray *result,
                                     SZrLspRange range,
@@ -43,6 +45,7 @@ static TZrBool lsp_code_lens_append(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 引用数量只展示在有稳定声明身份且用户可导航的类型/可调用声明上。 */
 static TZrBool lsp_code_lens_is_supported_declaration(
         const SZrParserSemanticSymbolQuery *declaration) {
     if (declaration == ZR_NULL || declaration->declarationNode == ZR_NULL ||
@@ -65,6 +68,7 @@ static TZrBool lsp_code_lens_is_supported_declaration(
     }
 }
 
+/* 语义查询可能为同一源码位置产生不同 SZrString 实例；去重按源内容和字节范围。 */
 static TZrBool lsp_code_lens_ranges_equal(SZrFileRange left,
                                           SZrFileRange right) {
     TZrBool sameSource = left.source == right.source;
@@ -76,6 +80,7 @@ static TZrBool lsp_code_lens_ranges_equal(SZrFileRange left,
            left.end.offset == right.end.offset;
 }
 
+/* ReferencesOf 可返回多条同位置事实；CodeLens 的数字应对应可见引用位置。 */
 static TZrBool lsp_code_lens_reference_was_counted(
         const SZrArray *references,
         TZrSize currentIndex,
@@ -97,6 +102,7 @@ static TZrBool lsp_code_lens_reference_was_counted(
     return ZR_FALSE;
 }
 
+/* 同一 AST 声明可经多个语义查询项出现，避免给一个声明叠加相同透镜。 */
 static TZrBool lsp_code_lens_declaration_was_projected(
         const SZrArray *declarations,
         TZrSize currentIndex,
@@ -117,6 +123,8 @@ static TZrBool lsp_code_lens_declaration_was_projected(
     return ZR_FALSE;
 }
 
+/* 使用 parser 的规范化符号事实，在当前文档 AST 范围内计算已解析、非声明引用；
+ * 查询失败时调用者把零视作无透镜，不能把零解释为全工作区没有引用。 */
 static TZrSize lsp_code_lens_count_references(
         SZrState *state,
         const SZrSemanticContext *semanticContext,
@@ -147,6 +155,8 @@ static TZrSize lsp_code_lens_count_references(
     return count;
 }
 
+/* 只为当前文档 AST 对应的声明生成可点击引用计数；点击后扩展重新请求引用，
+ * 因而透镜标题不是永久缓存，也不直接承诺全项目引用总数。 */
 static TZrBool lsp_code_lens_append_reference_counts(SZrState *state,
                                                      SZrLspContext *context,
                                                      SZrString *uri,
@@ -166,6 +176,7 @@ static TZrBool lsp_code_lens_append_reference_counts(SZrState *state,
     if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL ||
         analyzer->ast == ZR_NULL || fileVersion == ZR_NULL ||
         fileVersion->ast == ZR_NULL || analyzer->ast != fileVersion->ast) {
+        /* 编辑后语义分析器可能仍指向旧 AST；此时宁可不显示旧引用数字。 */
         return ZR_TRUE;
     }
 
@@ -246,6 +257,8 @@ static TZrBool lsp_code_lens_append_reference_counts(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 候选标记通过独立 CompileTest 与 TestManifest 绑定后才展示测试透镜，
+ * 不能仅凭词法属性或普通 AST 把无效签名当成可运行测试。 */
 static TZrBool lsp_code_lens_append_test_roles(SZrState *state,
                                                const TZrChar *content,
                                                TZrSize contentLength,
@@ -327,6 +340,9 @@ static TZrBool lsp_code_lens_append_test_roles(SZrState *state,
         for (TZrUInt32 caseIndex = 0U; caseIndex < entry->caseCount;
              caseIndex++) {
             TZrChar title[ZR_LSP_SHORT_TEXT_BUFFER_LENGTH];
+            /* BUG: 每个 Run case 透镜只传同一 URI/位置和 runCurrentProject 命令，
+             * 未传 case ordinal；扩展 projectActions.ts 的命令忽略参数并运行所选项目。
+             * 点击任何一个 Run case 都不能只运行标题所示用例；需贯通用例身份到执行入口。 */
             snprintf(
                     title, sizeof(title), "Run case %u", entry->cases[caseIndex].ordinal);
             if (!lsp_code_lens_append(
@@ -350,6 +366,7 @@ static TZrBool lsp_code_lens_append_test_roles(SZrState *state,
     return success;
 }
 
+/* 词法预筛减少每次请求的测试编译成本；真正的角色仍由 manifest 决定。 */
 static TZrBool lsp_code_lens_has_test_attribute_candidate(
         const TZrChar *content,
         TZrSize contentLength) {
@@ -369,6 +386,9 @@ static TZrBool lsp_code_lens_has_test_attribute_candidate(
     return ZR_FALSE;
 }
 
+/* stdio/WASM 的 textDocument/codeLens 入口：快照锁住本次请求的文本，
+ * 引用透镜依赖当前语义 AST，测试透镜仅在非回退 AST 上重新编译并投影。
+ * 调用者无论成功与否都须用 FreeCodeLens 归还可能已追加的结果。 */
 TZrBool ZrLanguageServer_Lsp_GetCodeLens(SZrState *state,
                                          SZrLspContext *context,
                                          SZrString *uri,
@@ -417,6 +437,7 @@ TZrBool ZrLanguageServer_Lsp_GetCodeLens(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 与 GetCodeLens 配对；数组和原生透镜由这里释放，嵌套 GC 字符串不归此函数单独释放。 */
 void ZrLanguageServer_Lsp_FreeCodeLens(SZrState *state, SZrArray *result) {
     if (state == ZR_NULL || result == ZR_NULL) {
         return;

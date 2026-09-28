@@ -15,10 +15,12 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 位置比较只服务名称位置和作用域优先级，不能替代 parser 的 canonical SymbolAt 身份。 */
 #define ZR_LSP_SYMBOL_POSITION_COMPARE_LESS (-1)
 #define ZR_LSP_SYMBOL_POSITION_COMPARE_EQUAL 0
 #define ZR_LSP_SYMBOL_POSITION_COMPARE_GREATER 1
 
+/* 声明与请求可能持有不同的字符串对象；按完整字节比较源身份，避免跨文件同名误配。 */
 static TZrBool source_uri_equals(SZrString *left, SZrString *right) {
     TZrNativeString leftText;
     TZrNativeString rightText;
@@ -54,8 +56,10 @@ static TZrBool source_uri_equals(SZrString *left, SZrString *right) {
            memcmp(leftText, rightText, leftLength) == 0;
 }
 
-// 辅助函数：检查位置是否在范围内
+/* 导航按声明或作用域范围筛选候选；零 offset 时仍需兼容 parser 的行列位置。 */
 static TZrBool is_position_in_range(SZrFileRange position, SZrFileRange symbolRange) {
+    /* TODO: 两侧任一 source 缺失会跳过文件身份校验；需核对虚拟声明和跨文件导航
+     * 是否总在入表前补齐 source，并加入同名跨文件回归。 */
     // 首先检查源文件是否相同
     if (!source_uri_equals(position.source, symbolRange.source) &&
         position.source != ZR_NULL && symbolRange.source != ZR_NULL) {
@@ -80,6 +84,7 @@ static TZrBool is_position_in_range(SZrFileRange position, SZrFileRange symbolRa
     return startMatch && endMatch;
 }
 
+/* 名称位置与作用域排序共用同一比较规则，混合 offset/行列输入时退回行列。 */
 static int compare_file_position(SZrFilePosition left, SZrFilePosition right) {
     if (left.offset > 0 && right.offset > 0) {
         if (left.offset < right.offset) {
@@ -106,6 +111,7 @@ static int compare_file_position(SZrFilePosition left, SZrFilePosition right) {
     return ZR_LSP_SYMBOL_POSITION_COMPARE_EQUAL;
 }
 
+/* 优先用名称选区匹配光标；无名称范围的投影才退回完整声明范围。 */
 static SZrFileRange get_symbol_match_range(SZrSymbol *symbol) {
     if (symbol == ZR_NULL) {
         return ZrParser_FileRange_Create(
@@ -129,6 +135,7 @@ static SZrFileRange get_symbol_match_range(SZrSymbol *symbol) {
 
 static TZrBool scope_contains_position(SZrSymbolScope *scope, SZrFileRange position);
 
+/* 供按位置查找挑选当前作用域内、已经出现的声明，限制前向同名误配。 */
 static TZrBool symbol_matches_lookup_position(SZrSymbol *symbol, SZrFileRange position) {
     SZrFileRange symbolRange;
 
@@ -137,6 +144,8 @@ static TZrBool symbol_matches_lookup_position(SZrSymbol *symbol, SZrFileRange po
     }
 
     symbolRange = get_symbol_match_range(symbol);
+    /* TODO: 与 is_position_in_range 相同，任一 source 缺失就跳过文件身份校验；
+     * 需核对 LookupAtPosition 的跨文件同名回退，并补虚拟声明缺源用例。 */
     if (!source_uri_equals(position.source, symbolRange.source) &&
         position.source != ZR_NULL && symbolRange.source != ZR_NULL) {
         return ZR_FALSE;
@@ -149,6 +158,7 @@ static TZrBool symbol_matches_lookup_position(SZrSymbol *symbol, SZrFileRange po
     return compare_file_position(symbolRange.start, position.start) <= 0;
 }
 
+/* 多个候选匹配同一光标时，以更靠近光标的声明位置作展示层择优。 */
 static TZrBool symbol_is_better_lookup_candidate(SZrSymbol *candidate,
                                                  SZrSymbol *best) {
     SZrFileRange candidateRange;
@@ -177,6 +187,7 @@ static TZrBool symbol_is_better_lookup_candidate(SZrSymbol *candidate,
     return candidate != best;
 }
 
+/* 全局作用域始终可见；其余作用域只在源位置落入词法范围时参与查找。 */
 static TZrBool scope_contains_position(SZrSymbolScope *scope, SZrFileRange position) {
     if (scope == ZR_NULL) {
         return ZR_FALSE;
@@ -189,6 +200,7 @@ static TZrBool scope_contains_position(SZrSymbolScope *scope, SZrFileRange posit
     return is_position_in_range(position, scope->range);
 }
 
+/* 按范围包围关系近似选择更内层声明，供旧的名称位置查找回退使用。 */
 static TZrBool scope_is_deeper_candidate(SZrSymbolScope *candidate,
                                          SZrSymbolScope *best) {
     int comparison;
@@ -219,6 +231,7 @@ static TZrBool scope_is_deeper_candidate(SZrSymbolScope *candidate,
     return candidate != best;
 }
 
+/* FFI 装饰器投影只接受字面标识符，避免把可求值表达式误作静态元数据。 */
 static const TZrChar *symbol_table_identifier_node_text(SZrAstNode *node) {
     if (node == ZR_NULL || node->type != ZR_AST_IDENTIFIER_LITERAL || node->data.identifier.name == ZR_NULL) {
         return ZR_NULL;
@@ -227,6 +240,7 @@ static const TZrChar *symbol_table_identifier_node_text(SZrAstNode *node) {
     return ZrCore_String_GetNativeString(node->data.identifier.name);
 }
 
+/* 仅点成员可作为 @zr.ffi 的静态路径；计算属性无法在符号创建期求值。 */
 static const TZrChar *symbol_table_member_property_text(SZrAstNode *node) {
     if (node == ZR_NULL || node->type != ZR_AST_MEMBER_EXPRESSION || node->data.memberExpression.computed) {
         return ZR_NULL;
@@ -235,10 +249,12 @@ static const TZrChar *symbol_table_member_property_text(SZrAstNode *node) {
     return symbol_table_identifier_node_text(node->data.memberExpression.property);
 }
 
+/* 装饰器路径名与已知 FFI 标签比较；这里只消费 parser 的静态文本。 */
 static TZrBool symbol_table_text_equals(const TZrChar *value, const TZrChar *expected) {
     return value != ZR_NULL && expected != ZR_NULL && strcmp(value, expected) == 0;
 }
 
+/* 各声明 AST 的装饰器字段不同；符号创建期统一取出以生成 hover 补充信息。 */
 static SZrAstNodeArray *symbol_table_get_decorator_array_for_node(SZrAstNode *node) {
     if (node == ZR_NULL) {
         return ZR_NULL;
@@ -262,6 +278,7 @@ static SZrAstNodeArray *symbol_table_get_decorator_array_for_node(SZrAstNode *no
     }
 }
 
+/* 只识别 @zr.ffi.<tag>(...) 的 AST 形状，不触发装饰器求值或运行时代码。 */
 static TZrBool symbol_table_extract_ffi_decorator(SZrAstNode *decoratorNode,
                                                   const TZrChar **outLeafName,
                                                   TZrBool *outHasCall,
@@ -325,6 +342,7 @@ static TZrBool symbol_table_extract_ffi_decorator(SZrAstNode *decoratorNode,
     return ZR_TRUE;
 }
 
+/* pack/align/offset/value 展示仅取单个整数字面量，动态参数留给正式语义层。 */
 static TZrBool symbol_table_call_read_single_integer_arg(SZrFunctionCall *call, TZrInt64 *outValue) {
     SZrAstNode *arg;
 
@@ -346,6 +364,7 @@ static TZrBool symbol_table_call_read_single_integer_arg(SZrFunctionCall *call, 
     return ZR_TRUE;
 }
 
+/* enum underlying hover 只读取单个字符串字面量；返回 AST/GC 字符串的借用文本。 */
 static TZrBool symbol_table_call_read_single_string_arg(SZrFunctionCall *call, const TZrChar **outValue) {
     SZrAstNode *arg;
 
@@ -367,6 +386,8 @@ static TZrBool symbol_table_call_read_single_string_arg(SZrFunctionCall *call, c
     return ZR_TRUE;
 }
 
+/* 声明符号创建时缓存可静态识别的 FFI 布局提示，供 hover 直接展示；
+ * 它是展示投影，不参与 parser 的 canonical decorator 校验或 ABI 计算。 */
 static SZrString *build_symbol_ffi_hover_metadata_string(SZrState *state, SZrAstNode *astNode) {
     SZrAstNodeArray *decorators;
     TZrChar metadataBuffer[ZR_LSP_COMMENT_BUFFER_LENGTH];
@@ -444,6 +465,8 @@ static SZrString *build_symbol_ffi_hover_metadata_string(SZrState *state, SZrAst
                 break;
         }
 
+        /* TODO: 单行与总缓冲区都会静默截断长 underlying 文本或多条提示；
+         * 需结合 decorator 校验和 hover 用例确认是否可达，再决定拒绝还是显式标注截断。 */
         if (metadataLine[0] != '\0') {
             TZrSize metadataLength = strlen(metadataLine);
             TZrSize available = sizeof(metadataBuffer) - 1 - used;
@@ -461,6 +484,7 @@ static SZrString *build_symbol_ffi_hover_metadata_string(SZrState *state, SZrAst
     return used > 0 ? ZrCore_String_Create(state, metadataBuffer, used) : ZR_NULL;
 }
 
+/* 为导航与文档符号优先提供名称范围；无专门 nameLocation 的声明保留调用方范围。 */
 static SZrFileRange get_symbol_selection_range_from_ast(SZrAstNode *astNode, SZrFileRange fallback) {
     if (astNode == ZR_NULL) {
         return fallback;
@@ -515,7 +539,7 @@ static SZrFileRange get_symbol_selection_range_from_ast(SZrAstNode *astNode, SZr
     return fallback;
 }
 
-// 创建符号表
+/* 分析器每次重建投影时新建表；作用域实体和双名称索引只在该表的生命周期内有效。 */
 SZrSymbolTable *ZrLanguageServer_SymbolTable_New(SZrState *state) {
     if (state == ZR_NULL) {
         return ZR_NULL;
@@ -546,6 +570,8 @@ SZrSymbolTable *ZrLanguageServer_SymbolTable_New(SZrState *state) {
     
     // 创建全局作用域
     table->globalScope = (SZrSymbolScope *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrSymbolScope));
+    /* BUG: 若此处分配失败，已分配的 scopeStack、allScopes 和哈希桶没有析构；
+     * New 返回 NULL 后分析器无表可释放，低内存请求会泄漏这些原生资源。 */
     if (table->globalScope == ZR_NULL) {
         ZrCore_Memory_RawFree(state->global, table, sizeof(SZrSymbolTable));
         return ZR_NULL;
@@ -572,7 +598,7 @@ SZrSymbolTable *ZrLanguageServer_SymbolTable_New(SZrState *state) {
     return table;
 }
 
-// 释放符号表
+/* 分析器销毁或清缓存时回收全部作用域和符号，再卸载两套仅持有借用符号的索引。 */
 void ZrLanguageServer_SymbolTable_Free(SZrState *state, SZrSymbolTable *table) {
     if (state == ZR_NULL || table == ZR_NULL) {
         return;
@@ -659,7 +685,7 @@ void ZrLanguageServer_SymbolTable_Free(SZrState *state, SZrSymbolTable *table) {
     ZrCore_Memory_RawFree(state->global, table, sizeof(SZrSymbolTable));
 }
 
-// 创建符号
+/* Symbol_New 复制语义收集器传入的推断类型，避免释放表时析构调用方仍持有的原件。 */
 static SZrInferredType *copy_symbol_type_info(SZrState *state, const SZrInferredType *typeInfo) {
     SZrInferredType *copy;
 
@@ -677,6 +703,7 @@ static SZrInferredType *copy_symbol_type_info(SZrState *state, const SZrInferred
     return copy;
 }
 
+/* 为声明建立 LSP 展示投影：类型与引用列表归符号所有，AST 和名称沿分析期借用。 */
 SZrSymbol *ZrLanguageServer_Symbol_New(SZrState *state, EZrSymbolType type, 
                         SZrString *name, SZrFileRange location,
                         SZrInferredType *typeInfo,
@@ -733,7 +760,7 @@ SZrSymbol *ZrLanguageServer_Symbol_New(SZrState *state, EZrSymbolType type,
     return symbol;
 }
 
-// 释放符号
+/* 表和独立测试都会调用；只释放本体拥有的资源，不释放借用的 AST 与 GC 字符串。 */
 void ZrLanguageServer_Symbol_Free(SZrState *state, SZrSymbol *symbol) {
     if (state == ZR_NULL || symbol == ZR_NULL) {
         return;
@@ -748,7 +775,7 @@ void ZrLanguageServer_Symbol_Free(SZrState *state, SZrSymbol *symbol) {
     ZrCore_Memory_RawFree(state->global, symbol, sizeof(SZrSymbol));
 }
 
-// 添加引用到符号
+/* ReferenceTracker 将声明或属性账本命中的位置写入展示层引用列表。 */
 TZrBool ZrLanguageServer_Symbol_AddReference(SZrState *state, SZrSymbol *symbol, SZrFileRange location) {
     if (state == ZR_NULL || symbol == ZR_NULL) {
         return ZR_FALSE;
@@ -759,7 +786,7 @@ TZrBool ZrLanguageServer_Symbol_AddReference(SZrState *state, SZrSymbol *symbol,
     return ZR_TRUE;
 }
 
-// 辅助函数：在作用域中查找符号
+/* 线性回退按名称字节找单个声明；它不能枚举同层重载。 */
 static SZrSymbol *lookup_symbol_in_scope(SZrSymbolScope *scope, SZrString *name) {
     if (scope == ZR_NULL || name == ZR_NULL) {
         return ZR_NULL;
@@ -802,7 +829,8 @@ static SZrSymbol *lookup_symbol_in_scope(SZrSymbolScope *scope, SZrString *name)
     return ZR_NULL;
 }
 
-// 添加符号定义
+/* 语义收集器先按词法作用域安放声明，再为按名和按位置查询建立辅助索引；
+ * 作用域拥有符号，两个名称索引仅保存借用指针。 */
 TZrBool ZrLanguageServer_SymbolTable_AddSymbolEx(SZrState *state, SZrSymbolTable *table,
                                EZrSymbolType type, SZrString *name,
                                SZrFileRange location,
@@ -835,7 +863,7 @@ TZrBool ZrLanguageServer_SymbolTable_AddSymbolEx(SZrState *state, SZrSymbolTable
     // 添加到当前作用域
     ZrCore_Array_Push(state, &currentScope->symbols, &symbol);
     
-    // 实现 Object 映射用于快速查找
+    /* 相同名称的多个投影共享数组；索引失败仍可由 allScopes 做线性查找。 */
     if (table->nameToSymbolsMap != ZR_NULL) {
         SZrTypeValue key;
         ZrCore_Value_InitAsRawObject(state, &key, &name->super);
@@ -871,7 +899,8 @@ TZrBool ZrLanguageServer_SymbolTable_AddSymbolEx(SZrState *state, SZrSymbolTable
         }
     }
     
-    // 同时添加到哈希表（作为备选）
+    /* TODO: 此备选哈希表在查询函数中未被读取，却与 Object 映射重复分配；
+     * 需核对性能与失败回退契约，再决定保留或移除。 */
     if (table->nameToSymbolsHashSet.isValid) {
         SZrTypeValue key;
         ZrCore_Value_InitAsRawObject(state, &key, &name->super);
@@ -909,7 +938,7 @@ TZrBool ZrLanguageServer_SymbolTable_AddSymbolEx(SZrState *state, SZrSymbolTable
     return ZR_TRUE;
 }
 
-// 查找符号（返回第一个匹配的符号）
+/* 收集期和展示层解析沿词法父链找首个同名投影；重载候选走 LookupAll。 */
 SZrSymbol *ZrLanguageServer_SymbolTable_Lookup(SZrSymbolTable *table, SZrString *name, SZrSymbolScope *scope) {
     if (table == ZR_NULL || name == ZR_NULL) {
         return ZR_NULL;
@@ -932,6 +961,7 @@ SZrSymbol *ZrLanguageServer_SymbolTable_Lookup(SZrSymbolTable *table, SZrString 
     return ZR_NULL;
 }
 
+/* 旧位置查询服务类型提示和兼容展示；canonical SymbolAt 仍由 parser 的 SymbolId 决定。 */
 SZrSymbol *ZrLanguageServer_SymbolTable_LookupAtPosition(SZrSymbolTable *table,
                                                          SZrString *name,
                                                          SZrFileRange position) {
@@ -980,7 +1010,7 @@ SZrSymbol *ZrLanguageServer_SymbolTable_LookupAtPosition(SZrSymbolTable *table,
         return bestSymbol;
     }
 
-    /* AST identifier strings are not guaranteed to share the declaration's object key. */
+    /* 索引未命中时仍用完整名称字节比较；AST 名称不保证与声明共用索引键对象。 */
     for (TZrSize scopeIndex = 0; scopeIndex < table->allScopes.length; scopeIndex++) {
         SZrSymbolScope **scopePtr =
             (SZrSymbolScope **)ZrCore_Array_Get(&table->allScopes, scopeIndex);
@@ -1008,7 +1038,7 @@ SZrSymbol *ZrLanguageServer_SymbolTable_LookupAtPosition(SZrSymbolTable *table,
     return ZrLanguageServer_SymbolTable_Lookup(table, name, ZR_NULL);
 }
 
-// 查找所有匹配的符号（用于函数重载）
+/* 属性访问器合并需要同名完整候选；调用方持有 result 容器，元素只在表存活时有效。 */
 TZrBool ZrLanguageServer_SymbolTable_LookupAll(SZrState *state, SZrSymbolTable *table, 
                               SZrString *name, SZrSymbolScope *scope,
                               SZrArray *result) {
@@ -1071,7 +1101,8 @@ TZrBool ZrLanguageServer_SymbolTable_LookupAll(SZrState *state, SZrSymbolTable *
         }
     }
     
-    // 回退到线性查找
+    /* BUG: 若 New 的 Object 映射创建失败或键未命中，回退每层只取首个同名符号；
+     * 同层 getter/setter 或重载被截断，semantic_analyzer_symbols 的属性合并会漏候选。 */
     SZrSymbolScope *currentScope = scope;
     if (currentScope == ZR_NULL) {
         currentScope = ZrLanguageServer_SymbolTable_GetCurrentScope(table);
@@ -1138,7 +1169,7 @@ TZrBool ZrLanguageServer_SymbolTable_LookupAll(SZrState *state, SZrSymbolTable *
     */
 }
 
-// 查找定义位置
+/* 公开的旧范围查询目前仓内无直接调用；保留给展示层，返回表持有的符号。 */
 SZrSymbol *ZrLanguageServer_SymbolTable_FindDefinition(SZrSymbolTable *table, SZrFileRange position) {
     SZrSymbol *bestSymbol = ZR_NULL;
 
@@ -1168,6 +1199,7 @@ SZrSymbol *ZrLanguageServer_SymbolTable_FindDefinition(SZrSymbolTable *table, SZ
     return bestSymbol;
 }
 
+/* 按 parser 规范 SymbolId 查找 LSP 符号投影；导航不得用同名范围猜测身份。 */
 SZrSymbol *ZrLanguageServer_SymbolTable_FindBySemanticId(SZrSymbolTable *table,
                                                          TZrSymbolId semanticId) {
     if (table == ZR_NULL || semanticId == ZR_SEMANTIC_ID_INVALID) {
@@ -1196,7 +1228,7 @@ SZrSymbol *ZrLanguageServer_SymbolTable_FindBySemanticId(SZrSymbolTable *table,
     return ZR_NULL;
 }
 
-// 进入作用域
+/* 收集器进入块、函数或类型成员前压栈；范围和 parent 供后续按位置查询。 */
 void ZrLanguageServer_SymbolTable_EnterScope(SZrState *state, SZrSymbolTable *table, 
                               SZrFileRange range, TZrBool isFunctionScope,
                               TZrBool isClassScope, TZrBool isStructScope) {
@@ -1220,7 +1252,7 @@ void ZrLanguageServer_SymbolTable_EnterScope(SZrState *state, SZrSymbolTable *ta
     ZrCore_Array_Push(state, &table->allScopes, &newScope);
 }
 
-// 退出作用域
+/* 收集器与 EnterScope 配对，只改当前路径；历史作用域仍归 allScopes 持有。 */
 void ZrLanguageServer_SymbolTable_ExitScope(SZrSymbolTable *table) {
     if (table == ZR_NULL || table->scopeStack.length <= 1) {
         return;
@@ -1229,7 +1261,7 @@ void ZrLanguageServer_SymbolTable_ExitScope(SZrSymbolTable *table) {
     ZR_UNUSED_PARAMETER(ZrCore_Array_Pop(&table->scopeStack));
 }
 
-// 获取当前作用域
+/* 声明收集与名称回退共用当前词法路径；无有效栈顶时回到全局作用域。 */
 SZrSymbolScope *ZrLanguageServer_SymbolTable_GetCurrentScope(SZrSymbolTable *table) {
     if (table == ZR_NULL || table->scopeStack.length == 0) {
         return table != ZR_NULL ? table->globalScope : ZR_NULL;

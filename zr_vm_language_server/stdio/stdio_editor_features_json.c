@@ -1,5 +1,6 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
+/* 折叠段沿用接口层 LSP 坐标，最终由发送层按协商编码转换。 */
 static cJSON *serialize_folding_range(const SZrLspFoldingRange *range) {
     cJSON *json;
     char *kindText;
@@ -25,6 +26,7 @@ static cJSON *serialize_folding_range(const SZrLspFoldingRange *range) {
     return json;
 }
 
+/* stdio 请求处理器复制折叠段后即可释放原生数组；NULL 输入按空结果处理。 */
 cJSON *serialize_folding_ranges_array(SZrArray *ranges) {
     cJSON *json = cJSON_CreateArray();
 
@@ -42,6 +44,7 @@ cJSON *serialize_folding_ranges_array(SZrArray *ranges) {
     return json;
 }
 
+/* 按标志位输出 parent 链；本层不校验接口层生成的范围包含关系。 */
 static cJSON *serialize_selection_range(const SZrLspSelectionRange *range) {
     cJSON *json;
 
@@ -74,6 +77,7 @@ static cJSON *serialize_selection_range(const SZrLspSelectionRange *range) {
     return json;
 }
 
+/* 保持请求中多个光标的顺序；原生范围在 JSON 构建结束后由处理器清理。 */
 cJSON *serialize_selection_ranges_array(SZrArray *ranges) {
     cJSON *json = cJSON_CreateArray();
 
@@ -91,6 +95,7 @@ cJSON *serialize_selection_ranges_array(SZrArray *ranges) {
     return json;
 }
 
+/* 初次响应直接给出可点击 target；当前服务端未启用 documentLink/resolve。 */
 static cJSON *serialize_document_link(const SZrLspDocumentLink *link) {
     cJSON *json;
     char *targetText;
@@ -112,6 +117,7 @@ static cJSON *serialize_document_link(const SZrLspDocumentLink *link) {
         cJSON *data = cJSON_CreateObject();
 
         cJSON_AddStringToObject(json, ZR_LSP_FIELD_TARGET, targetText);
+        /* TODO: resolve 已撤回且 UTF-8 协商只转换顶层 range，data.range 仍保留内部 UTF-16；需核对客户端是否消费镜像。 */
         if (data != NULL) {
             cJSON_AddStringToObject(data, ZR_LSP_FIELD_TARGET, targetText);
             cJSON_AddItemToObject(data, ZR_LSP_FIELD_RANGE, serialize_range(link->range));
@@ -130,6 +136,7 @@ static cJSON *serialize_document_link(const SZrLspDocumentLink *link) {
     return json;
 }
 
+/* 链接结果以独立 JSON 树交给发送层，不保留 VM 字符串的原生指针。 */
 cJSON *serialize_document_links_array(SZrArray *links) {
     cJSON *json = cJSON_CreateArray();
 
@@ -147,6 +154,7 @@ cJSON *serialize_document_links_array(SZrArray *links) {
     return json;
 }
 
+/* 初次响应直接给出可运行 command；当前服务端未启用 codeLens/resolve。 */
 static cJSON *serialize_code_lens(const SZrLspCodeLens *lens) {
     cJSON *json;
     cJSON *command;
@@ -187,6 +195,7 @@ static cJSON *serialize_code_lens(const SZrLspCodeLens *lens) {
             cJSON_AddItemToArray(arguments, position);
         }
     }
+    /* TODO: resolve 已撤回且 UTF-8 协商跳过 data 中的位置，可能与顶层 range/command 坐标不同；需核对客户端是否消费镜像。 */
     {
         cJSON *data = cJSON_CreateObject();
         if (data != NULL) {
@@ -210,6 +219,7 @@ static cJSON *serialize_code_lens(const SZrLspCodeLens *lens) {
     return json;
 }
 
+/* 转换 CodeLens 后请求层即可释放原生标记；响应节点归 cJSON 所有。 */
 cJSON *serialize_code_lens_array(SZrArray *lenses) {
     cJSON *json = cJSON_CreateArray();
 
@@ -227,6 +237,7 @@ cJSON *serialize_code_lens_array(SZrArray *lenses) {
     return json;
 }
 
+/* prepare 阶段同时输出导航信息和语义身份，后续 incoming/outgoing 请求从 data 恢复快照目标。 */
 static cJSON *serialize_hierarchy_item(const SZrLspHierarchyItem *item) {
     cJSON *json;
     cJSON *data;
@@ -254,6 +265,7 @@ static cJSON *serialize_hierarchy_item(const SZrLspHierarchyItem *item) {
     if (detailText != NULL) {
         cJSON_AddStringToObject(json, ZR_LSP_FIELD_DETAIL, detailText);
     }
+    /* TODO: cJSON 数值经 double 存储；semanticVersion 超过安全整数时会失真，需核对文档版本上界与客户端往返。 */
     if (item->hasSemanticIdentity) {
         data = cJSON_CreateObject();
         if (data != NULL) {
@@ -273,6 +285,7 @@ static cJSON *serialize_hierarchy_item(const SZrLspHierarchyItem *item) {
     return json;
 }
 
+/* hierarchy prepare 的节点数组独立序列化，避免传递请求期的原生所有权。 */
 cJSON *serialize_hierarchy_items_array(SZrArray *items) {
     cJSON *json = cJSON_CreateArray();
 
@@ -290,6 +303,7 @@ cJSON *serialize_hierarchy_items_array(SZrArray *items) {
     return json;
 }
 
+/* 调用边保留所有源端范围，供客户端定位一次调用的多处引用。 */
 static cJSON *serialize_ranges_array(SZrArray *ranges) {
     cJSON *json = cJSON_CreateArray();
 
@@ -307,6 +321,7 @@ static cJSON *serialize_ranges_array(SZrArray *ranges) {
     return json;
 }
 
+/* incoming 用 from，outgoing 用 to；两者共享 fromRanges 和嵌套节点契约。 */
 static cJSON *serialize_hierarchy_call(const SZrLspHierarchyCall *call, TZrBool outgoing) {
     cJSON *json;
 
@@ -326,6 +341,7 @@ static cJSON *serialize_hierarchy_call(const SZrLspHierarchyCall *call, TZrBool 
     return json;
 }
 
+/* 层级查询成功后把边及方向投影为 JSON，随后由 FreeHierarchyCalls 清理。 */
 cJSON *serialize_hierarchy_calls_array(SZrArray *calls, TZrBool outgoing) {
     cJSON *json = cJSON_CreateArray();
 

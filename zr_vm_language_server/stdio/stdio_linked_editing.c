@@ -1,6 +1,7 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "stdio_handler_result.h"
 
+/** 语义引用可能跨文件，联动编辑只接受当前文档的范围。 */
 static int linked_editing_location_matches_uri(const SZrLspLocation *location, const char *uriText) {
     char *locationUriText;
     int matches;
@@ -15,11 +16,13 @@ static int linked_editing_location_matches_uri(const SZrLspLocation *location, c
     return matches;
 }
 
+/** 排除无法提供可编辑文本的零长度语义引用。 */
 static int linked_editing_range_is_non_empty(SZrLspRange range) {
     return range.start.line < range.end.line ||
            (range.start.line == range.end.line && range.start.character < range.end.character);
 }
 
+/** 同一绑定的声明和引用列表可能重复，去重须同时比较起止坐标。 */
 static int linked_editing_range_equals(SZrLspRange left, SZrLspRange right) {
     return left.start.line == right.start.line &&
            left.start.character == right.start.character &&
@@ -27,6 +30,7 @@ static int linked_editing_range_equals(SZrLspRange left, SZrLspRange right) {
            left.end.character == right.end.character;
 }
 
+/** 仅查询已装入固定语义范围数组的前缀，供响应去重。 */
 static int linked_editing_ranges_contains(SZrLspRange *ranges, int rangeCount, SZrLspRange range) {
     for (int index = 0; index < rangeCount; index++) {
         if (linked_editing_range_equals(ranges[index], range)) {
@@ -37,14 +41,18 @@ static int linked_editing_ranges_contains(SZrLspRange *ranges, int rangeCount, S
     return 0;
 }
 
+/** 文本兜底使用与响应 wordPattern 一致的 ASCII 标识符起始集合。 */
 static int linked_editing_is_identifier_start(char ch) {
     return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '_';
 }
 
+/** 文本兜底按 ASCII 词边界筛候选；语义入口可覆盖更丰富的语言规则。 */
 static int linked_editing_is_identifier_part(char ch) {
     return linked_editing_is_identifier_start(ch) || (ch >= '0' && ch <= '9');
 }
 
+/** 文本兜底阻止注释和双引号字符串里的同名文本成为编辑范围。
+ * BUG: lexer 支持单引号字符和反引号文本，但本扫描未识别；语义引用不足两个时会把其中同名内容当代码编辑。 */
 static int linked_editing_offset_is_in_code(const char *content,
                                             size_t contentLength,
                                             size_t targetOffset) {
@@ -130,6 +138,9 @@ static int linked_editing_offset_is_in_code(const char *content,
     return 0;
 }
 
+/** 文本兜底把语义位置投向快照字节索引，以便寻找光标所在 ASCII 词。
+ * BUG: get_uri_and_position 返回内部 UTF-16 列，这里按 UTF-8 字节递增且只认 LF；
+ * 非 ASCII 前缀后光标落到错误字节，CR-only 第二行也无法正确定位。 */
 static int linked_editing_offset_from_position(const char *content,
                                                size_t contentLength,
                                                SZrLspPosition position,
@@ -162,6 +173,9 @@ static int linked_editing_offset_from_position(const char *content,
     return 0;
 }
 
+/** 把文本匹配偏移构成待发送的 LSP 范围；结果经通用响应编码器处理。
+ * BUG: 此处把 UTF-8 字节数当内部 UTF-16 列且只认 LF；非 ASCII 前缀或 CR-only
+ * 第二行的范围，再经响应编码会继续错位。 */
 static SZrLspPosition linked_editing_position_from_offset(const char *content,
                                                           size_t contentLength,
                                                           size_t targetOffset) {
@@ -185,6 +199,8 @@ static SZrLspPosition linked_editing_position_from_offset(const char *content,
     return position;
 }
 
+/** 语义引用不足时扫描当前版本的文本快照，避免因磁盘内容落后于编辑器而错配。
+ * TODO: 设计文档允许文档级 token 兜底；不同作用域的同名绑定会一起进入范围，需核对客户端体验。 */
 static cJSON *linked_editing_ranges_from_document(SZrStdioServer *server,
                                                   SZrString *uri,
                                                   SZrLspPosition position,
@@ -247,6 +263,7 @@ static cJSON *linked_editing_ranges_from_document(SZrStdioServer *server,
         return NULL;
     }
 
+    /* TODO: 每个候选从文件起点重扫代码状态，需用大文档基准核查请求延迟。 */
     for (size_t cursor = 0; cursor + wordLength <= contentLength; cursor++) {
         int beforeOk = cursor == 0 || !linked_editing_is_identifier_part(content[cursor - 1]);
         int afterOk = cursor + wordLength >= contentLength ||
@@ -269,6 +286,8 @@ static cJSON *linked_editing_ranges_from_document(SZrStdioServer *server,
     return ranges;
 }
 
+/** LSP 联动编辑优先取同一 URI 的语义引用；少于两处才用当前文本兜底，失败返回 null。
+ * BUG: 语义范围数组上限由 SMALL_ARRAY_INITIAL_CAPACITY（当前为 4）控制；同一符号超过四处时只返回前四处。 */
 SZrLspHandlerResult handle_linked_editing_range_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray locations = {0};
     SZrLspPosition position;
@@ -318,6 +337,7 @@ SZrLspHandlerResult handle_linked_editing_range_request(SZrStdioServer *server, 
         }
     }
 
+    /* TODO: 文本兜底循环中无取消采样，虽返回前再检查取消，仍需评估长文档响应时限。 */
     if (rangeCount < 2) {
         cJSON_Delete(ranges);
         ranges = linked_editing_ranges_from_document(server, uri, position, &rangeCount);

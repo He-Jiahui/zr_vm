@@ -4,8 +4,10 @@
 #include <stdarg.h>
 #include <stdlib.h>
 
+/* parser 的查找可能实例化闭合泛型并扩容 typePrototypes；调用方不得跨此调用保留数组元素地址。 */
 SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
 
+/* 仅在推断声明类型的短暂窗口借存 parser 的当前类型/函数上下文，不拥有其中任何指针。 */
 typedef struct SZrSemanticPrototypeContextSnapshot {
     SZrTypePrototypeInfo *typePrototype;
     SZrAstNode *typeNode;
@@ -13,6 +15,7 @@ typedef struct SZrSemanticPrototypeContextSnapshot {
     SZrAstNode *functionNode;
 } SZrSemanticPrototypeContextSnapshot;
 
+/* 外壳登记和详情填充依赖本地精确名字，避免查找时额外实例化泛型类型。返回值只在 typePrototypes 未扩容前有效。 */
 static SZrTypePrototypeInfo *semantic_type_prototypes_find_exact(SZrCompilerState *compilerState,
                                                                  SZrString *typeName) {
     if (compilerState == ZR_NULL || typeName == ZR_NULL) {
@@ -32,6 +35,7 @@ static SZrTypePrototypeInfo *semantic_type_prototypes_find_exact(SZrCompilerStat
     return ZR_NULL;
 }
 
+/* 把声明 AST 的名字映射到原型登记键；返回 AST 借用的字符串，供两遍扫描复用。 */
 static SZrString *semantic_type_prototypes_owner_name(SZrAstNode *ownerTypeNode) {
     if (ownerTypeNode == ZR_NULL) {
         return ZR_NULL;
@@ -63,6 +67,7 @@ static SZrString *semantic_type_prototypes_owner_name(SZrAstNode *ownerTypeNode)
     }
 }
 
+/* parser 的类型转换仍读取 currentType/currentFunction；调用者必须在所有成功与失败出口配对恢复。 */
 static void semantic_type_prototypes_push_context(SZrSemanticAnalyzer *analyzer,
                                                   SZrAstNode *ownerTypeNode,
                                                   SZrAstNode *functionNode,
@@ -96,6 +101,7 @@ static void semantic_type_prototypes_push_context(SZrSemanticAnalyzer *analyzer,
     }
 }
 
+/* 恢复进入声明推断前的 parser 上下文，防止相邻成员的泛型或属性绑定互相污染。 */
 static void semantic_type_prototypes_pop_context(SZrSemanticAnalyzer *analyzer,
                                                  const SZrSemanticPrototypeContextSnapshot *snapshot) {
     SZrCompilerState *compilerState;
@@ -105,12 +111,15 @@ static void semantic_type_prototypes_pop_context(SZrSemanticAnalyzer *analyzer,
     }
 
     compilerState = analyzer->compilerState;
+    /* BUG: 嵌套声明推断可实例化闭合泛型并扩容 typePrototypes；snapshot 借存的元素地址
+     * 随扩容失效。此处恢复旧地址后，parser 的 const 泛型查找会解引用悬空原型。 */
     compilerState->currentTypePrototypeInfo = snapshot->typePrototype;
     compilerState->currentTypeNode = snapshot->typeNode;
     compilerState->currentTypeName = snapshot->typeName;
     compilerState->currentFunctionNode = snapshot->functionNode;
 }
 
+/* 统一属性声明交由 parser 的绑定器处理，保证访问器身份和普通成员走同一契约。 */
 static TZrBool semantic_type_prototypes_bind_property(
         SZrSemanticAnalyzer *analyzer,
         SZrAstNode *ownerTypeNode,
@@ -138,6 +147,7 @@ static TZrBool semantic_type_prototypes_bind_property(
     return bound;
 }
 
+/* 为 LSP 的临时声明外壳建立与 parser 相同的数组/构造许可默认值，嵌套数组由 CompilerState_Free 释放。 */
 static void semantic_type_prototypes_init_prototype(SZrState *state,
                                                     SZrTypePrototypeInfo *info,
                                                     SZrString *name,
@@ -169,6 +179,7 @@ static void semantic_type_prototypes_init_prototype(SZrState *state,
     ZrCore_Array_Init(state, &info->members, sizeof(SZrTypeMemberInfo), ZR_PARSER_INITIAL_CAPACITY_SMALL);
 }
 
+/* 成员事实进入原型数组前统一设置未知槽位哨兵；最终数组复制的是结构值及其嵌套数组所有权。 */
 static void semantic_type_prototypes_init_member_defaults(SZrTypeMemberInfo *memberInfo) {
     if (memberInfo == ZR_NULL) {
         return;
@@ -190,6 +201,7 @@ static void semantic_type_prototypes_init_member_defaults(SZrTypeMemberInfo *mem
     ZrCore_Value_ResetAsNull(&memberInfo->decoratorMetadataValue);
 }
 
+/* 属性的公开名保持原样，覆写/槽位链使用 parser 约定的隐藏访问器名定位具体 getter/setter。 */
 static SZrString *semantic_type_prototypes_create_hidden_property_accessor_name(SZrState *state,
                                                                                 SZrString *propertyName,
                                                                                 TZrBool isSetter) {
@@ -215,6 +227,7 @@ static SZrString *semantic_type_prototypes_create_hidden_property_accessor_name(
     return ZrCore_String_Create(state, buffer, (TZrSize)written);
 }
 
+/* 类型名渲染必须完整落入固定缓冲区；失败让调用方放弃该事实，不能发布截断的类型标识。 */
 static TZrBool semantic_type_prototypes_append_text(TZrChar *buffer,
                                                     TZrSize bufferSize,
                                                     TZrSize *offset,
@@ -236,6 +249,7 @@ static TZrBool semantic_type_prototypes_append_text(TZrChar *buffer,
     return ZR_TRUE;
 }
 
+/* 对数组约束追加格式化片段时沿用同一原子失败约定，避免半个名称进入原型索引。 */
 static TZrBool semantic_type_prototypes_append_format(TZrChar *buffer,
                                                       TZrSize bufferSize,
                                                       TZrSize *offset,
@@ -262,6 +276,7 @@ static TZrBool semantic_type_prototypes_append_format(TZrChar *buffer,
 static SZrString *semantic_type_prototypes_render_generic_argument(SZrSemanticAnalyzer *analyzer,
                                                                    SZrAstNode *node);
 
+/* 为泛型和元组的声明投影生成稳定文本键，供原型查找与签名展示共用；新字符串归 state/GC 管理。 */
 static SZrString *semantic_type_prototypes_render_type_name_node(SZrSemanticAnalyzer *analyzer,
                                                                  SZrAstNode *typeNameNode) {
     TZrChar buffer[ZR_PARSER_DECLARATION_BUFFER_LENGTH];
@@ -348,6 +363,7 @@ static SZrString *semantic_type_prototypes_render_type_name_node(SZrSemanticAnal
     return ZR_NULL;
 }
 
+/* 保留限定名和最外层数组大小约束的声明拼写，以便 LSP 查找闭合泛型和显示源码类型。 */
 static SZrString *semantic_type_prototypes_render_type(SZrSemanticAnalyzer *analyzer,
                                                        const SZrType *typeNode) {
     TZrChar buffer[ZR_PARSER_DECLARATION_BUFFER_LENGTH];
@@ -442,6 +458,7 @@ static SZrString *semantic_type_prototypes_render_type(SZrSemanticAnalyzer *anal
     return ZrCore_String_Create(analyzer->compilerState->state, buffer, offset);
 }
 
+/* 泛型实参优先按声明引用表示，表达式只在可求值时折叠为整数文本；失败不应阻断后续声明扫描。 */
 static SZrString *semantic_type_prototypes_render_generic_argument(SZrSemanticAnalyzer *analyzer,
                                                                    SZrAstNode *node) {
     SZrTypeValue evaluatedValue;
@@ -486,10 +503,12 @@ static SZrString *semantic_type_prototypes_render_generic_argument(SZrSemanticAn
         }
     }
 
+    /* TODO: 求值失败只清除 hasError，未恢复 errorMessage/结构化错误等字段；核对失败诊断是否会被后续节点误消费。 */
     analyzer->compilerState->hasError = ZR_FALSE;
     return ZR_NULL;
 }
 
+/* 简单标识符先借用 parser 的权威类型转换；临时屏蔽语义发布以免同一类型引用出现重复事实。 */
 static TZrBool semantic_type_prototypes_try_parser_conversion(
         SZrSemanticAnalyzer *analyzer,
         const SZrType *typeNode,
@@ -522,7 +541,7 @@ static TZrBool semantic_type_prototypes_try_parser_conversion(
     savedHasFatalError = compilerState->hasFatalError;
     savedHasCompileTimeError = compilerState->hasCompileTimeError;
 
-    /* Probe the parser converter without publishing a duplicate LSP fact. */
+    /* 只探测 parser 权威转换，语义引用由本文件在确认解析度后发布一次。 */
     compilerState->semanticContext = ZR_NULL;
     converted = ZrParser_AstTypeToInferredType_Convert(compilerState, typeNode, outType);
     compilerState->semanticContext = savedSemanticContext;
@@ -541,6 +560,7 @@ static TZrBool semantic_type_prototypes_try_parser_conversion(
     return converted;
 }
 
+/* 设计意图是给手工投影的整数内建类型补值域，以供后续诊断使用。 */
 static void semantic_type_prototypes_apply_primitive_numeric_range(SZrInferredType *type) {
     if (type == ZR_NULL || !ZR_VALUE_IS_TYPE_INT(type->baseType)) {
         return;
@@ -586,6 +606,7 @@ static void semantic_type_prototypes_apply_primitive_numeric_range(SZrInferredTy
     type->hasRangeConstraint = ZR_TRUE;
 }
 
+/* 将可折叠的数组长度写入结构化推断事实；调用方只应把非负且 TZrSize 可表示的整数视为固定大小。 */
 static TZrBool semantic_type_prototypes_parse_size_text(SZrString *sizeText, TZrSize *outSize) {
     const TZrChar *text;
     TZrChar *endPtr = ZR_NULL;
@@ -600,6 +621,8 @@ static TZrBool semantic_type_prototypes_parse_size_text(SZrString *sizeText, TZr
         return ZR_FALSE;
     }
 
+    /* BUG: `[-1]` 会由 parser 的表达式回退进入此处；strtoull 接受负号并转成巨大无符号值，
+     * LSP 的 arrayFixedSize 随后错误地成为 SIZE_MAX。见 parser_types.c 的表达式回退与下方固定大小赋值。 */
     parsed = strtoull(text, &endPtr, 10);
     if (endPtr == text || endPtr == ZR_NULL || *endPtr != '\0') {
         return ZR_FALSE;
@@ -616,6 +639,7 @@ static TZrBool semantic_type_prototypes_build_generic_argument_inferred_type(
         SZrAstNode *argumentNode,
         SZrInferredType *outType);
 
+/* 取函数/方法自己的泛型作用域，供实参分类先于宿主类型作用域查询。 */
 static SZrGenericDeclaration *semantic_type_prototypes_generic_declaration_for_callable(
         SZrAstNode *node) {
     if (node == ZR_NULL) {
@@ -634,6 +658,7 @@ static SZrGenericDeclaration *semantic_type_prototypes_generic_declaration_for_c
     }
 }
 
+/* 取宿主类型的泛型作用域，使成员签名能保留类/结构/接口级的占位参数。 */
 static SZrGenericDeclaration *semantic_type_prototypes_generic_declaration_for_owner(
         SZrAstNode *node) {
     if (node == ZR_NULL) {
@@ -654,6 +679,7 @@ static SZrGenericDeclaration *semantic_type_prototypes_generic_declaration_for_o
     }
 }
 
+/* 仅 const-int 占位符允许作为数组长度或值实参；避免把同名类型参数误当常量。 */
 static TZrBool semantic_type_prototypes_generic_declaration_has_const_parameter(
         SZrGenericDeclaration *genericDeclaration,
         SZrString *name) {
@@ -681,6 +707,7 @@ static TZrBool semantic_type_prototypes_generic_declaration_has_const_parameter(
     return ZR_FALSE;
 }
 
+/* 声明解析度检查借此识别合法的类型占位符，避免将开放泛型标为缺失类型。 */
 static TZrBool semantic_type_prototypes_generic_declaration_has_type_parameter(
         SZrGenericDeclaration *genericDeclaration,
         SZrString *name) {
@@ -707,10 +734,13 @@ static TZrBool semantic_type_prototypes_generic_declaration_has_type_parameter(
     return ZR_FALSE;
 }
 
+/* 联合方法与宿主作用域识别 const 参数，供实参投影保留占位语义。 */
 static TZrBool semantic_type_prototypes_is_const_generic_parameter_reference(
         SZrAstNode *ownerTypeNode,
         SZrAstNode *functionNode,
         SZrString *name) {
+    /* TODO: 若方法类型参数与宿主 const 参数同名，当前布尔并集会把方法实参错认作 const；
+     * 核对解析器是否禁止跨作用域同名，再决定是否按最近作用域短路。 */
     return semantic_type_prototypes_generic_declaration_has_const_parameter(
                    semantic_type_prototypes_generic_declaration_for_callable(functionNode),
                    name) ||
@@ -719,6 +749,7 @@ static TZrBool semantic_type_prototypes_is_const_generic_parameter_reference(
                    name);
 }
 
+/* 开放泛型声明的类型参数可解析为有效引用，不要求已有闭合原型。 */
 static TZrBool semantic_type_prototypes_is_type_generic_parameter_reference(
         SZrAstNode *ownerTypeNode,
         SZrAstNode *functionNode,
@@ -731,6 +762,7 @@ static TZrBool semantic_type_prototypes_is_type_generic_parameter_reference(
                    name);
 }
 
+/* 解析度检查只查根类型定义，泛型实参另行递归核对。 */
 static SZrString *semantic_type_prototypes_root_type_name(const SZrType *typeNode) {
     if (typeNode == ZR_NULL || typeNode->name == ZR_NULL) {
         return ZR_NULL;
@@ -748,6 +780,8 @@ static SZrString *semantic_type_prototypes_root_type_name(const SZrType *typeNod
     return ZR_NULL;
 }
 
+/* 声明类型投影优先复用 parser 结果，其余泛型/元组/数组保留结构供签名与类型引用消费。
+ * outType 须由调用方初始化，内部嵌套数组由其最终所有者释放。 */
 static TZrBool semantic_type_prototypes_build_inferred_type(SZrSemanticAnalyzer *analyzer,
                                                             SZrAstNode *ownerTypeNode,
                                                             SZrAstNode *functionNode,
@@ -861,6 +895,8 @@ static TZrBool semantic_type_prototypes_build_inferred_type(SZrSemanticAnalyzer 
                                    ZR_FALSE,
                                    renderedTypeName);
     outType->ownershipQualifier = typeNode->ownershipQualifier;
+    /* TODO: 此分支刚把 baseType 固定成 OBJECT，numeric range 辅助函数的整数分支不可达；
+     * 核对是否应改用 parser 的内建类型分类，或删除这段无效的补值域意图。 */
     semantic_type_prototypes_apply_primitive_numeric_range(outType);
 
     if (typeNode->name->type == ZR_AST_GENERIC_TYPE) {
@@ -906,6 +942,7 @@ static TZrBool semantic_type_prototypes_build_inferred_type(SZrSemanticAnalyzer 
     return ZR_TRUE;
 }
 
+/* 泛型类型实参、const 整数和 const 占位符必须保持不同种类，供闭合原型实例化验证。 */
 static TZrBool semantic_type_prototypes_build_generic_argument_inferred_type(
         SZrSemanticAnalyzer *analyzer,
         SZrAstNode *ownerTypeNode,
@@ -973,6 +1010,7 @@ static TZrBool semantic_type_prototypes_build_generic_argument_inferred_type(
     return ZR_TRUE;
 }
 
+/* 泛型约束仅从类型 AST 提取声明名；非类型约束留给上层诊断，不制造假的类型边。 */
 static SZrString *semantic_type_prototypes_extract_constraint_name(SZrSemanticAnalyzer *analyzer,
                                                                    SZrAstNode *typeNode) {
     return analyzer != ZR_NULL && typeNode != ZR_NULL && typeNode->type == ZR_AST_TYPE
@@ -980,6 +1018,7 @@ static SZrString *semantic_type_prototypes_extract_constraint_name(SZrSemanticAn
                : ZR_NULL;
 }
 
+/* 将声明的 variance/const/where 约束复制到原型，用于补全和闭合泛型校验；嵌套数组随原型生命周期释放。 */
 static void semantic_type_prototypes_collect_generic_parameters(SZrSemanticAnalyzer *analyzer,
                                                                 SZrAstNode *ownerTypeNode,
                                                                 SZrAstNode *functionNode,
@@ -1056,6 +1095,7 @@ static void semantic_type_prototypes_collect_generic_parameters(SZrSemanticAnaly
     }
 }
 
+/* 字段、返回值与继承关系共享该类型名投影；借出的字符串由 state/GC 持有，推断临时数组立即释放。 */
 static SZrString *semantic_type_prototypes_type_name_from_type_node(SZrSemanticAnalyzer *analyzer,
                                                                      SZrAstNode *ownerTypeNode,
                                                                      SZrAstNode *functionNode,
@@ -1092,6 +1132,7 @@ static SZrString *semantic_type_prototypes_type_name_from_type_node(SZrSemanticA
     return typeName;
 }
 
+/* 方法返回值除展示名外还保留嵌套推断结构，供泛型调用与签名求解；原型析构负责释放。 */
 static void semantic_type_prototypes_capture_structured_return_type(SZrSemanticAnalyzer *analyzer,
                                                                      SZrAstNode *ownerTypeNode,
                                                                      SZrAstNode *functionNode,
@@ -1118,6 +1159,7 @@ static void semantic_type_prototypes_capture_structured_return_type(SZrSemanticA
     memberInfo->hasStructuredReturnType = ZR_TRUE;
 }
 
+/* 成员参数的名称、类型和传递模式按声明位置并行保存，供签名帮助按索引还原调用约束。 */
 static void semantic_type_prototypes_collect_parameter_signature(SZrSemanticAnalyzer *analyzer,
                                                                  SZrAstNode *ownerTypeNode,
                                                                  SZrAstNode *functionNode,
@@ -1174,6 +1216,9 @@ static void semantic_type_prototypes_collect_parameter_signature(SZrSemanticAnal
         }
 
         ZrParser_InferredType_Init(compilerState->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+        /* BUG: parser 允许无类型参数及错误恢复的空 typeInfo；此处分支省略该位置的
+         * parameterTypes 元素，却仍计入 parameterCount。泛型成员调用按声明索引读取该数组，
+         * `fn m(a, b: int)` 的首个形参会误取 b 的类型；普通成员评分还会因数组短于形参而拒绝。 */
         if (parameter->typeInfo != ZR_NULL &&
             semantic_type_prototypes_build_inferred_type(analyzer,
                                                          ownerTypeNode,
@@ -1198,6 +1243,7 @@ static void semantic_type_prototypes_collect_parameter_signature(SZrSemanticAnal
     semantic_type_prototypes_pop_context(analyzer, &snapshot);
 }
 
+/* 类成员投影保留声明顺序、属性隐藏名及方法签名，使后续补全/hover 与 parser 成员图一致。 */
 static void semantic_type_prototypes_append_class_member(SZrState *state,
                                                          SZrSemanticAnalyzer *analyzer,
                                                          SZrAstNode *ownerTypeNode,
@@ -1213,6 +1259,8 @@ static void semantic_type_prototypes_append_class_member(SZrState *state,
     }
 
     if (memberNode->type == ZR_AST_PROPERTY_DECLARATION) {
+        /* TODO: 属性绑定失败被忽略，BootstrapTypePrototypes 末尾又清 hasError；核对错误恢复 AST 中
+         * 该失败是否应成为诊断而不是静默缺失的成员。 */
         (void)semantic_type_prototypes_bind_property(
                 analyzer,
                 ownerTypeNode,
@@ -1373,6 +1421,7 @@ static void semantic_type_prototypes_append_class_member(SZrState *state,
     }
 }
 
+/* 结构体沿用类的字段/方法签名事实，但仅登记结构体允许的成员种类。 */
 static void semantic_type_prototypes_append_struct_member(SZrState *state,
                                                           SZrSemanticAnalyzer *analyzer,
                                                           SZrAstNode *ownerTypeNode,
@@ -1464,6 +1513,7 @@ static void semantic_type_prototypes_append_struct_member(SZrState *state,
     }
 }
 
+/* 接口签名映射为可查询的抽象字段/方法事实，供实现检查与 LSP 导航统一消费。 */
 static void semantic_type_prototypes_append_interface_member(SZrState *state,
                                                              SZrSemanticAnalyzer *analyzer,
                                                              SZrAstNode *ownerTypeNode,
@@ -1551,6 +1601,7 @@ static void semantic_type_prototypes_append_interface_member(SZrState *state,
     }
 }
 
+/* 在所有本地外壳可见后再分类继承边，并补默认 Object；成员推断因此可引用后声明的类型。 */
 static void semantic_type_prototypes_populate_class(SZrState *state,
                                                     SZrSemanticAnalyzer *analyzer,
                                                     SZrAstNode *node,
@@ -1613,6 +1664,7 @@ static void semantic_type_prototypes_populate_class(SZrState *state,
     }
 }
 
+/* 结构体继承边与成员事实投影给类型查询；第一条继承边仍作为单一 extends 入口。 */
 static void semantic_type_prototypes_populate_struct(SZrState *state,
                                                      SZrSemanticAnalyzer *analyzer,
                                                      SZrAstNode *node,
@@ -1659,6 +1711,7 @@ static void semantic_type_prototypes_populate_struct(SZrState *state,
     }
 }
 
+/* 接口只作为抽象契约类型；继承列表与成员签名用于实现关系和成员查询。 */
 static void semantic_type_prototypes_populate_interface(SZrState *state,
                                                         SZrSemanticAnalyzer *analyzer,
                                                         SZrAstNode *node,
@@ -1709,6 +1762,7 @@ static void semantic_type_prototypes_populate_interface(SZrState *state,
     }
 }
 
+/* 枚举底层值类型进入原型，供 hover 与类型约束使用同一声明事实。 */
 static void semantic_type_prototypes_populate_enum(SZrSemanticAnalyzer *analyzer,
                                                    SZrAstNode *node,
                                                    SZrTypePrototypeInfo *prototype) {
@@ -1720,6 +1774,7 @@ static void semantic_type_prototypes_populate_enum(SZrSemanticAnalyzer *analyzer
         semantic_type_prototypes_type_name_from_type_node(analyzer, node, ZR_NULL, node->data.enumDeclaration.baseType);
 }
 
+/* 第一遍只注册本地声明外壳及泛型形参，让后续细节扫描能解析前向引用。 */
 static TZrBool semantic_type_prototypes_register_shell(SZrState *state,
                                                        SZrSemanticAnalyzer *analyzer,
                                                        SZrAstNode *node) {
@@ -1808,6 +1863,7 @@ static TZrBool semantic_type_prototypes_register_shell(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 仅穿透脚本、extern 和 compile-time 包装；其余局部表达式声明不成为模块级类型。 */
 static TZrBool semantic_type_prototypes_walk_shells(SZrState *state,
                                                     SZrSemanticAnalyzer *analyzer,
                                                     SZrAstNode *node) {
@@ -1853,6 +1909,7 @@ static TZrBool semantic_type_prototypes_walk_shells(SZrState *state,
     }
 }
 
+/* 第二遍填充既有外壳，避免依赖源码声明先后；已有导入或已填充原型不被重复覆盖。 */
 static TZrBool semantic_type_prototypes_walk_details(SZrState *state,
                                                      SZrSemanticAnalyzer *analyzer,
                                                      SZrAstNode *node) {
@@ -1894,6 +1951,9 @@ static TZrBool semantic_type_prototypes_walk_details(SZrState *state,
         case ZR_AST_INTERFACE_DECLARATION:
         case ZR_AST_ENUM_DECLARATION:
         case ZR_AST_UNION_DECLARATION:
+            /* BUG: populate_* 期间成员的闭合泛型查询会向 typePrototypes Push；当外壳数已达容量，
+             * 扩容使这里借到的 prototype 元素地址失效，随后写 members/inherits 会落到旧缓冲。
+             * 查 type_inference_core.c 的 ensure_generic_instance_type_prototype_internal 与 array.h 的 Push。 */
             prototype = semantic_type_prototypes_find_exact(analyzer->compilerState,
                                                             semantic_type_prototypes_owner_name(node));
             if (prototype == ZR_NULL || prototype->members.length > 0 || prototype->inherits.length > 0 ||
@@ -1925,6 +1985,7 @@ static TZrBool semantic_type_prototypes_walk_details(SZrState *state,
     }
 }
 
+/* 分析器重建 compiler state 后执行两遍扫描，为 LSP 先建立可查询声明图，再由普通语义分析补事实。 */
 TZrBool ZrLanguageServer_SemanticAnalyzer_BootstrapTypePrototypes(SZrState *state,
                                                                   SZrSemanticAnalyzer *analyzer,
                                                                   SZrAstNode *ast) {
@@ -1944,6 +2005,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_BootstrapTypePrototypes(SZrState *stat
     return ZR_TRUE;
 }
 
+/* 对声明引用逐层核验真实存在的根类型与泛型实参，区别可展示的推断类型和可导航的解析事实。 */
 static TZrBool semantic_type_prototypes_declared_type_is_resolved(
         SZrSemanticAnalyzer *analyzer,
         SZrAstNode *ownerTypeNode,
@@ -2040,6 +2102,7 @@ static TZrBool semantic_type_prototypes_declared_type_is_resolved(
     return ZR_TRUE;
 }
 
+/* 只在 semanticContext 可用时发布类型使用关系，供定义跳转等查询按同一 canonical type 身份索引。 */
 static void semantic_type_prototypes_publish_declared_type_reference(
         SZrSemanticAnalyzer *analyzer,
         SZrAstNode *ownerTypeNode,
@@ -2068,6 +2131,8 @@ static void semantic_type_prototypes_publish_declared_type_reference(
                     analyzer, ownerTypeNode, functionNode, typeNode));
 }
 
+/* 对符号分析、签名帮助与补全提供统一的声明类型推断，并在成功后发布解析状态。
+ * 返回 false 表示类型未能确认解析；outType 可能已有可展示的部分投影，仍由调用方释放。 */
 TZrBool ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(
         SZrSemanticAnalyzer *analyzer,
         SZrAstNode *ownerTypeNode,

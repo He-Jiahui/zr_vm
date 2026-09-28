@@ -270,7 +270,7 @@ doc_type: module-detail
 - `incremental_parser.c` 的 `ZrLanguageServer_IncrementalParser_Parse` 现在在 content hash、增量阈值、parser state 初始化和成功后 hash 存储前 acquire owned snapshot，并统一读取 snapshot content/length。文件内容创建、更新、释放和 snapshot-copy 本身仍是 `SZrFileVersion` 的 ownership 边界，后续版本化/引用计数式并发设计会继续处理这些边界。
 - Shared document range/position helper 在 snapshot 不可用时不再调用旧 no-content 转换，而是返回 0:0 空 range/position；`ZrLanguageServer_Lsp_GetDocumentFilePosition` 无 snapshot 时返回 `ZrParser_FilePosition_Create(0, 0, 0)`。旧 no-content public `ZrLanguageServer_LspRange_FromFileRange`、`ZrLanguageServer_LspRange_ToFileRange`、`ZrLanguageServer_LspPosition_FromFilePosition` 和 `ZrLanguageServer_LspPosition_ToFilePosition` 声明/实现已删除。Binary与descriptor metadata的provider-specific转换不改变这一普通文档契约，source-contract suite现锁定38项。
 - LSP 源码 live content residual 复扫确认，除 `incremental_parser.c` 的内容创建、更新、释放和 snapshot-copy ownership 边界外，生产 LSP 文件不再直接读取 `fileVersion->content` / `fileVersion->contentLength`；旧 no-content public API 在生产声明和调用点也已清空。
-- `stdio_position_encoding.c` 是 stdio 协议边界的 position codec adapter。核心 C API 继续以 UTF-16 LSP position/range 为内部模型；stdio `initialize` 默认声明 `utf-16`，当客户端在 `capabilities.general.positionEncodings` 中声明 `utf-8` 时回传 `capabilities.positionEncoding = "utf-8"`。之后所有常规请求 position/range 会按打开文档内容从 UTF-8 byte column 转回内部 UTF-16，响应、pull/publish diagnostics 和 text edit JSON 再转回客户端协商的编码；这些 URI/request/response 转换边界会先 acquire owned snapshot，再读取 snapshot content/length 做换算；`completionItem/resolve` 等携带服务器内部 `data.position` 的 resolve 请求不会被二次转换。
+- `stdio_position_encoding.c` 是 stdio 协议边界的 position codec adapter。核心 C API 继续以 UTF-16 LSP position/range 为内部模型；stdio `initialize` 默认声明 `utf-16`，当客户端在 `capabilities.general.positionEncodings` 中声明 `utf-8` 时回传 `capabilities.positionEncoding = "utf-8"`。有文档快照的单点请求会严格核对 UTF-8/UTF-16 字符边界，再把客户端列转为内部 UTF-16；范围请求只做宽松转换，尚未同样验证行和码点边界。最终响应与诊断按 URI 快照转换普通位置节点，`codeAction/resolve` 直接返回客户端已编码的操作，避免二次转换。当前 UTF-8 跨文档 `documentChanges[].edits` 的 URI 只在兄弟 `textDocument.uri` 中，响应遍历器不会将它传给 edits：普通 rename 可误用请求文档快照，`willRenameFiles` 无默认 URI 时不转换范围。独立 CR 换行在严格输入校验中计行，但宽松请求/响应转换及核心 codec 只按 LF 增行，CR-only 文档第二行的位置可错位；这些是当前已知缺口，不属于正确转换保证。
 
 `stdio_editor_features.c` 是协议层 glue：
 
@@ -278,9 +278,9 @@ doc_type: module-detail
 - 处理新增 request，并在失败或空结果时返回符合 LSP 习惯的空数组/空 report。
 - 保持 stdio request 分发文件只做 capability 广告和 method routing。
 
-`stdio_linked_editing.c` 为同文档 identifier 编辑返回 linked ranges。它优先使用语义引用；当语义引用不足以形成至少两个范围时，才退回轻量文档扫描。fallback 扫描现在会先 acquire owned snapshot，再跳过 line comment、block comment 和 string literal，避免把注释或字面量里的普通单词加入 linked-editing rename 范围。
+`stdio_linked_editing.c` 为同文档 identifier 编辑返回 linked ranges。它优先使用语义引用；当语义引用不足以形成至少两个范围时，才退回轻量文档扫描。fallback 扫描先 acquire owned snapshot，并排除行注释、块注释和双引号字符串；单引号字符及反引号文本尚未被识别，可让其中的同名内容进入 linked ranges。语义范围目前由容量为 4 的固定数组截断，同一标识符超过四处时其余引用不会返回。fallback 的位置扫描按 UTF-8 字节计列，却接收内部 UTF-16 位置；非 ASCII 前缀后的请求和结果范围也可能错位。
 
-`stdio_moniker.c` 在 stdio 层为源码 identifier 返回 document-scoped moniker。它仍然是轻量 token 级能力，不做跨文件符号索引；在生成 moniker 前会跳过 line comment、block comment 和 string literal 中的候选词，避免把注释或字面量里的普通单词暴露成可索引符号。
+`stdio_moniker.c` 在 stdio 层为文档内形似标识符的 ASCII 词生成 document-scoped moniker，不做 parser token 分类或跨文件符号索引。轻量扫描只跳过行注释、块注释和双引号字符串；单引号字符或反引号模板字符串中的词仍可能得到 moniker。请求位置按 UTF-8 字节递增，却接收内部 UTF-16 列，非 ASCII 前缀之后也可能定位错误或返回空数组。
 
 `stdio_inline_completion.c` 为 `textDocument/inlineCompletion` 提供轻量 keyword prefix 补全。它现在会先确认已输入 prefix 位于 code span，再生成 `return` / `func` / `class` 等 inline completion item；line comment、block comment、double/single quoted string 或 backtick/template string 中的同样 prefix 都返回空数组，避免编辑器在非代码文本中插入源码 keyword。
 
@@ -399,7 +399,7 @@ VS Code desktop/native stdio 模式会自动消费这些 standard providers；ex
 - stdio 的 work-done/partial-result 编排由 `stdio_request_progress.c` 管理；request cancellation callback 持续到 partial 发布与最终状态判定结束。批次发送前后观测到精确请求 ID 的取消时停止发送并返回 `-32800`，成功数组、workspace diagnostic `{items}` 与 token identity 保持。
 - `textDocument/references` 要求 object `context` 和 boolean `includeDeclaration`；缺失或畸形字段返回 `-32602 InvalidParams`，合法 references/partial-result 语义不变。
 - linked editing 仍优先依赖语义 references；fallback 是文档级 token 扫描，只用于语义 references 不足时的保守体验，不声明声明解析或跨文件 rename。
-- moniker 目前只提供文档内稳定 identity，不声明跨文档解析或 workspace symbol 绑定；comment/string 过滤来自 stdio 层轻量 scanner，不替代 parser token stream。
+- moniker 目前只按文档 URI 与 ASCII 词形成文档内 identity，不声明跨文档解析、parser token 分类或 workspace symbol 绑定；stdio 轻量 scanner 只过滤行注释、块注释和双引号字符串，单引号字符、反引号模板字符串及非 ASCII 前缀位置仍有上述缺口。
 - CodeLens 的 run command 由 parser AST 上绑定的 `ZR_PARSER_ATTRIBUTE_ROLE_TEST` 驱动；它不把未绑定 attribute 或 comment/string 文本提升为测试入口。
 - `documentHighlight` 仍由 shared semantic query/reference graph 驱动；新增 lexical span helper 只约束 raw identifier fallback，避免把 comment/string 中的普通文本提升为 symbol target，不替代 parser token stream 或 import-literal AST navigation。
 - receiver/member navigation 仍走 shared semantic query 和 existing member resolver；code-span guard 只阻止 comment/string 中的 `box.value` 这类 raw text 触发 definition/hover/references，不替代 parser token stream，不改变真实 `return box.value;` 的 member definition 解析。
@@ -453,8 +453,8 @@ VS Code desktop/native stdio 模式会自动消费这些 standard providers；ex
   - pull diagnostics full report
   - `publishDiagnostics` parser diagnostic code/message/suggestion, including `missing_condition` for empty `if ()`
   - `textDocument/documentHighlight` returns code-token highlights and ignores raw fallback identifiers inside line comments, block comments, and string literals
-  - `textDocument/linkedEditingRange` returns code-token edit ranges and does not use comment/string matches to synthesize fallback ranges
-  - `textDocument/moniker` returns code-token identity and ignores identifiers inside line comments, block comments, and string literals
+  - `textDocument/linkedEditingRange` 的兜底扫描会排除行注释、块注释和双引号字符串；单引号字符与反引号文本仍可能被误收录，见上述已知缺口
+  - `textDocument/moniker` 为文档内形似标识符的 ASCII 词生成文档内 identity；排除行注释、块注释和双引号字符串，单引号字符、反引号模板字符串与非 ASCII 前缀位置仍可能误判
   - `textDocument/inlineCompletion` expands real code keyword prefixes and ignores the same prefixes inside line comments, block comments, and string literals
   - `textDocument/documentColor` and `colorPresentation` return MethodNotFound; ordinary hex string literals retain exact string hover and symbol navigation
   - inline value variable lookup 和 semantic fact-backed inline text
@@ -585,7 +585,7 @@ wsl bash -lc "cd /mnt/e/Git/zr_vm && cmake --build build/codex-semantic-wsl-clan
 . "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Import-VsDevCmdEnvironment.ps1"; where.exe cl; cmake --build build\codex-semantic-msvc-debug --config Debug --target zr_vm_language_server_stdio --parallel 6; node tests\language_server\stdio_smoke.js build\codex-semantic-msvc-debug\bin\Debug\zr_vm_language_server_stdio.exe
 ```
 
-RED：新增 comment/string/block-comment 位置的 `textDocument/moniker` 断言后，旧 server 会为注释或字面量里的普通单词返回 `zr` moniker。GREEN：`stdio_moniker.c` 在生成 document-scoped identity 前用轻量 scanner 跳过 line comment、block comment 和 string literal，保留真实 code token 的 moniker。WSL gcc、WSL clang 和 Windows MSVC focused stdio smoke 均通过；本轮不声明全仓库 ctest 绿色。
+RED：新增行注释、块注释和双引号字符串位置的 `textDocument/moniker` 断言后，旧 server 会为其中的普通单词返回 `zr` moniker。GREEN：`stdio_moniker.c` 在生成 document-scoped identity 前用轻量 scanner 排除这些位置，保留代码区形似标识符的词；该回归不覆盖单引号字符、反引号模板字符串、parser token 分类或非 ASCII 前缀坐标。历史记录中的 WSL gcc、WSL clang 和 Windows MSVC focused stdio smoke 均通过；本轮不声明全仓库 ctest 绿色。
 
 2026-06-05 linked-editing fallback non-code token 过滤聚焦验证：
 

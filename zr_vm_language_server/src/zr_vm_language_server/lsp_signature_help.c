@@ -11,9 +11,12 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 泛型绑定查询必须区分第零个参数与未命中，供接收者和实参两条专化路径共用。 */
 #define ZR_LSP_SIGNATURE_BINDING_INDEX_NONE ((TZrInt32)-1)
+/* 本文件的构造路径与规范、外部 callable 路径共用同一结果所有权边界。 */
 #define signature_populate_help_from_label ZrLanguageServer_LspSignatureHelp_PopulateFromLabel
 
+/* 光标匹配阶段只分类调用形态；具体签名来源在顶层入口按形态决定。 */
 typedef enum EZrLspCallContextKind {
     ZR_LSP_CALL_CONTEXT_NONE = 0,
     ZR_LSP_CALL_CONTEXT_FUNCTION_CALL,
@@ -21,6 +24,7 @@ typedef enum EZrLspCallContextKind {
     ZR_LSP_CALL_CONTEXT_SUPER_CONSTRUCTOR_CALL
 } EZrLspCallContextKind;
 
+/* 保存 AST 中最内层的调用候选；所有节点均借用当前 analyzer 的 AST。span 只用于候选排序。 */
 typedef struct SZrLspCallContext {
     EZrLspCallContextKind kind;
     SZrAstNode *ownerTypeNode;
@@ -32,12 +36,14 @@ typedef struct SZrLspCallContext {
     TZrSize span;
 } SZrLspCallContext;
 
+/* 本地泛型求解的临时槽；parameterInfo 借用成员元数据，inferredType 由槽独占并统一释放。 */
 typedef struct SZrLspGenericBinding {
     const SZrTypeGenericParameterInfo *parameterInfo;
     TZrBool isBound;
     SZrInferredType inferredType;
 } SZrLspGenericBinding;
 
+/* 只把普通成员名交给外部 callable 元数据查询；计算属性没有稳定的声明名范围。 */
 static TZrBool signature_external_callable_callee_range(
         const SZrLspCallContext *context,
         SZrFileRange *range) {
@@ -83,6 +89,7 @@ static const TZrChar *signature_exact_type_failure_text(void) {
     return "cannot infer exact type";
 }
 
+/* 标签投影拒绝没有类型名和元素信息的宽泛 object，避免把未知值展示成已解析类型。 */
 static TZrBool signature_inferred_type_is_precise(const SZrInferredType *typeInfo) {
     return typeInfo != ZR_NULL &&
            !(typeInfo->baseType == ZR_VALUE_TYPE_OBJECT &&
@@ -90,6 +97,7 @@ static TZrBool signature_inferred_type_is_precise(const SZrInferredType *typeInf
              (!typeInfo->elementTypes.isValid || typeInfo->elementTypes.length == 0));
 }
 
+/* AST 与客户端光标只在双方 source 已知且不同时拒绝；四端偏移均有效才用偏移，否则用行列。 */
 static TZrBool signature_range_contains_position(SZrFileRange range, SZrFileRange position) {
     if (!ZrLanguageServer_Lsp_StringsEqual(range.source, position.source) &&
         range.source != ZR_NULL &&
@@ -111,6 +119,7 @@ static TZrBool signature_range_contains_position(SZrFileRange range, SZrFileRang
              position.end.column <= range.end.column));
 }
 
+/* 语义引用与调用目标的已知 source 不同时拒绝；任一端有偏移便比较偏移，否则比较行列。 */
 static TZrBool signature_ranges_equal(SZrFileRange left, SZrFileRange right) {
     if (!ZrLanguageServer_Lsp_StringsEqual(left.source, right.source) &&
         left.source != ZR_NULL && right.source != ZR_NULL) {
@@ -127,6 +136,7 @@ static TZrBool signature_ranges_equal(SZrFileRange left, SZrFileRange right) {
            left.end.column == right.end.column;
 }
 
+/* 为嵌套调用选择构造可比较的范围；参数和泛型实参可能比调用节点的位置更可信。 */
 static SZrFileRange signature_call_context_range(SZrAstNode *callNode) {
     SZrFunctionCall *call;
     SZrFileRange range;
@@ -153,6 +163,8 @@ static SZrFileRange signature_call_context_range(SZrAstNode *callNode) {
     return range;
 }
 
+/* 同位置重叠候选按跨度选最内层；无偏移时行列打包只是排序分数。 */
+/* TODO: 打包基数小于可出现的长行列号时，跨行候选排序可能失真；与 reference_tracker 的回退算法一同核查。 */
 static TZrSize signature_range_span(SZrFileRange range) {
     if (range.end.offset > range.start.offset) {
         return range.end.offset - range.start.offset;
@@ -166,6 +178,7 @@ static TZrSize signature_call_context_span(SZrAstNode *callNode) {
     return signature_range_span(signature_call_context_range(callNode));
 }
 
+/* 同时接受调用整体或实参内部的光标，使嵌套调用仍可抢占外层候选。 */
 static TZrBool signature_call_matches_position(SZrAstNode *callNode, SZrFileRange position) {
     SZrFunctionCall *call;
 
@@ -199,6 +212,8 @@ static TZrBool signature_call_matches_position(SZrAstNode *callNode, SZrFileRang
     return ZR_FALSE;
 }
 
+/* 多个标签投影函数共用固定缓冲；offset 表示当前有效前缀而非要求的总长度。 */
+/* TODO: 截断后调用方仍会把标签当作成功结果；核查超长标识符、类型名的协议输出并决定是否传递溢出状态。 */
 static void signature_buffer_append(TZrChar *buffer,
                                     TZrSize bufferSize,
                                     TZrSize *offset,
@@ -227,6 +242,7 @@ static void signature_buffer_append(TZrChar *buffer,
     *offset += (TZrSize)written;
 }
 
+/* AST/元数据借用 VM 字符串；此处只借出临时原生视图供同步格式化，不转移所有权。 */
 static const TZrChar *signature_string_native(SZrString *value) {
     if (value == ZR_NULL) {
         return "";
@@ -250,6 +266,7 @@ static const TZrChar *signature_parameter_passing_mode_text(EZrParameterPassingM
     }
 }
 
+/* 元数据不含已解析类型时，仍由声明 AST 给出可识别的参数与泛型约束文本。 */
 static void signature_append_ast_type(SZrType *typeInfo,
                                       TZrChar *buffer,
                                       TZrSize bufferSize,
@@ -328,6 +345,7 @@ static void signature_append_ast_type(SZrType *typeInfo,
     }
 }
 
+/* 专化结果优先于声明文本；不可精确推断时明确显示未知而不伪造 object。 */
 static void signature_format_type(SZrState *state,
                                   const SZrInferredType *typeInfo,
                                   TZrChar *buffer,
@@ -350,6 +368,7 @@ static void signature_format_type(SZrState *state,
     }
 }
 
+/* 泛型声明标签保留 const 整数参数和方差，供构造器签名与语言声明对齐。 */
 static void signature_append_generic_parameter_decl(SZrState *state,
                                                     SZrParameter *parameter,
                                                     TZrChar *buffer,
@@ -389,6 +408,7 @@ static void signature_append_generic_parameter_decl(SZrState *state,
                             signature_string_native(parameter->name->name));
 }
 
+/* 仅在声明 AST 仍可用时投影泛型参数，元数据签名不凭空补造声明。 */
 static void signature_append_generic_declaration(SZrState *state,
                                                  SZrGenericDeclaration *generic,
                                                  TZrChar *buffer,
@@ -415,6 +435,7 @@ static void signature_append_generic_declaration(SZrState *state,
     signature_buffer_append(buffer, bufferSize, offset, ">");
 }
 
+/* 构造器签名末尾携带声明中的泛型约束，以免标签只展示参数而掩盖调用限制。 */
 static void signature_append_where_clauses(SZrState *state,
                                            SZrGenericDeclaration *generic,
                                            TZrChar *buffer,
@@ -496,6 +517,7 @@ static void signature_append_where_clauses(SZrState *state,
     }
 }
 
+/* AST 参数允许用已求得的类型覆盖原始类型；模式与名称仍来自声明。 */
 static void signature_append_parameter_label(SZrState *state,
                                              SZrAstNode *paramNode,
                                              const SZrInferredType *resolvedType,
@@ -533,6 +555,7 @@ static void signature_append_parameter_label(SZrState *state,
                             typeBuffer[0] != '\0' ? typeBuffer : signature_exact_type_failure_text());
 }
 
+/* 无声明 AST 的类型成员仍可用成员表中的名称、模式和类型生成参数标签。 */
 static void signature_append_parameter_label_from_metadata(SZrState *state,
                                                            const SZrTypeMemberInfo *memberInfo,
                                                            TZrSize index,
@@ -596,6 +619,7 @@ static SZrGenericDeclaration *signature_method_generic_declaration(SZrAstNode *d
     }
 }
 
+/* 普通方法和元函数共用构造器标签路径，参数节点均借用声明 AST。 */
 static SZrAstNodeArray *signature_method_parameter_nodes(SZrAstNode *declarationNode) {
     if (declarationNode == ZR_NULL) {
         return ZR_NULL;
@@ -619,6 +643,7 @@ static SZrAstNodeArray *signature_method_parameter_nodes(SZrAstNode *declaration
     }
 }
 
+/* 本地构造器求解完成后才投影标签；声明 AST 与成员元数据两种来源共享输出格式。 */
 static TZrBool signature_build_label_from_method(SZrState *state,
                                                  SZrTypeMemberInfo *memberInfo,
                                                  const SZrResolvedCallSignature *resolvedSignature,
@@ -725,6 +750,8 @@ static TZrBool signature_build_label_from_method(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 普通函数调用把光标映射到当前实参，结果传给规范与外部 callable 投影。 */
+/* TODO: 光标越过最后一个完整实参时这里保留该索引，而构造器路径会前移一位；核查逗号后的签名高亮语义。 */
 static TZrInt32 signature_active_parameter_index(SZrFunctionCall *call, SZrFilePosition position) {
     TZrInt32 activeIndex = 0;
 
@@ -751,6 +778,7 @@ static TZrInt32 signature_active_parameter_index(SZrFunctionCall *call, SZrFileP
     return activeIndex;
 }
 
+/* 构造器和 super 调用在已结束实参之后预选下一参数；空列表默认首参数。 */
 static TZrInt32 signature_active_parameter_index_for_arguments(SZrAstNodeArray *args, SZrFilePosition position) {
     TZrInt32 activeIndex = 0;
 
@@ -777,6 +805,7 @@ static TZrInt32 signature_active_parameter_index_for_arguments(SZrAstNodeArray *
     return activeIndex;
 }
 
+/* AST 遍历发现多个重叠调用时只保留最窄候选，避免外层实参吞掉内层签名。 */
 static void signature_update_best_context(SZrLspCallContext *best,
                                           SZrAstNode *primaryNode,
                                           SZrAstNode *callNode,
@@ -800,6 +829,7 @@ static void signature_update_best_context(SZrLspCallContext *best,
     }
 }
 
+/* 根据 primary 链中的调用序号定位真实被调用表达式，供语义事实核对声明身份。 */
 static const SZrAstNode *signature_context_call_callee(
         const SZrLspCallContext *context) {
     const SZrAstNode *memberNode;
@@ -825,6 +855,7 @@ static const SZrAstNode *signature_context_call_callee(
                    : ZR_NULL;
 }
 
+/* 源码声明由 parser 的规范调用事实解析；本地元数据求解不能替代它的身份和类型规则。 */
 static TZrBool signature_declaration_requires_canonical_source_call(
         const SZrAstNode *node) {
     return node != ZR_NULL &&
@@ -837,6 +868,7 @@ static TZrBool signature_declaration_requires_canonical_source_call(
             node->type == ZR_AST_STRUCT_META_FUNCTION);
 }
 
+/* 在构造器回退前检查调用引用和声明节点，避免失败的规范查询退化成近似元数据签名。 */
 static TZrBool signature_context_requires_canonical_source_call(
         SZrSemanticAnalyzer *analyzer,
         const SZrLspCallContext *context) {
@@ -889,6 +921,7 @@ static TZrBool signature_context_requires_canonical_source_call(
             declaration->node);
 }
 
+/* 已有本文件可解析的非成员调用事实时优先返回规范结果，不再尝试外部元数据解释。 */
 static TZrBool signature_context_has_local_canonical_call(
         SZrSemanticAnalyzer *analyzer,
         const SZrLspCallContext *context) {
@@ -950,6 +983,7 @@ static SZrArray *signature_construct_node_argument_markers(SZrAstNode *node) {
                    : ZR_NULL;
 }
 
+/* struct 初始化只信任精确语义事实；其类型身份不能靠旧式构造表达式推断。 */
 static TZrBool signature_copy_exact_construct_type(SZrState *state,
                                                    SZrSemanticAnalyzer *analyzer,
                                                    SZrAstNode *constructNode,
@@ -970,6 +1004,7 @@ static TZrBool signature_copy_exact_construct_type(SZrState *state,
     return outType->typeName != ZR_NULL;
 }
 
+/* 两种构造 AST 共享光标范围规则，末实参位置可修正节点末尾的不完整范围。 */
 static SZrFileRange signature_construct_call_context_range(SZrAstNode *constructNode) {
     SZrAstNodeArray *arguments;
     SZrFileRange range;
@@ -991,6 +1026,7 @@ static SZrFileRange signature_construct_call_context_range(SZrAstNode *construct
     return range;
 }
 
+/* 允许光标落在构造整体或实参节点中，供统一最内层调用筛选。 */
 static TZrBool signature_construct_call_matches_position(SZrAstNode *constructNode, SZrFileRange position) {
     SZrAstNodeArray *arguments;
     SZrFileRange constructRange;
@@ -1017,6 +1053,7 @@ static TZrBool signature_construct_call_matches_position(SZrAstNode *constructNo
     return ZR_FALSE;
 }
 
+/* struct 初始化与旧式 construct 都归为构造器候选，但后续签名来源仍由入口判断。 */
 static void signature_update_best_construct_context(SZrLspCallContext *best, SZrAstNode *constructNode) {
     TZrSize span;
     SZrAstNode *primaryNode = ZR_NULL;
@@ -1055,6 +1092,7 @@ static SZrFileRange signature_super_call_context_range(SZrAstNode *metaFunctionN
     return metaFunctionNode->data.classMetaFunction.superCallRange;
 }
 
+/* 只有声明中确有 super 调用且光标命中调用或其参数，才生成父类构造器候选。 */
 static TZrBool signature_super_call_matches_position(SZrAstNode *metaFunctionNode, SZrFileRange position) {
     SZrClassMetaFunction *metaFunction;
     SZrFileRange superRange;
@@ -1085,6 +1123,7 @@ static TZrBool signature_super_call_matches_position(SZrAstNode *metaFunctionNod
     return ZR_FALSE;
 }
 
+/* super 候选保留所属 class 与元函数，规范查询需要两者对应的语义事实。 */
 static void signature_update_best_super_context(SZrLspCallContext *best,
                                                 SZrAstNode *ownerTypeNode,
                                                 SZrAstNode *metaFunctionNode) {
@@ -1111,6 +1150,7 @@ static void signature_find_call_context_in_node(SZrAstNode *node,
                                                 SZrFileRange position,
                                                 SZrLspCallContext *best);
 
+/* 统一递归入口扫描表达式数组；元素和结果节点都只在当前 analyzer 的 AST 内有效。 */
 static void signature_find_call_context_in_array(SZrAstNodeArray *nodes,
                                                  SZrFileRange position,
                                                  SZrLspCallContext *best) {
@@ -1123,6 +1163,7 @@ static void signature_find_call_context_in_array(SZrAstNodeArray *nodes,
     }
 }
 
+/* primary 链中的每个调用成员独立参与候选比较，成员序号随后用于定位 callee。 */
 static void signature_find_call_context_in_primary(SZrAstNode *node,
                                                    SZrFileRange position,
                                                    SZrLspCallContext *best) {
@@ -1152,6 +1193,9 @@ static void signature_find_call_context_in_primary(SZrAstNode *node,
     }
 }
 
+/* 从文档 AST 追到调用、构造与 super 子树，并按跨度保留光标处最内层候选。 */
+/* BUG: parser 会生成 FOR/FOREACH 节点，但本 switch 未下钻其条件、迭代式或循环体；其中的调用会失去签名帮助。 */
+/* TODO: 同样核查 using、try/catch 等其余未覆盖的 AST 节点，以及恢复遍历后的嵌套候选优先级。 */
 static void signature_find_call_context_in_node(SZrAstNode *node,
                                                 SZrFileRange position,
                                                 SZrLspCallContext *best) {
@@ -1338,6 +1382,8 @@ static SZrString *signature_extract_identifier_name(SZrAstNode *node) {
     return ZR_NULL;
 }
 
+/* 仅在普通表达式推断缺少类型名时，沿声明 AST 寻找光标前同名值的候选类型。 */
+/* TODO: 目前只按声明偏移选最近同名值，没有核对词法作用域；用跨函数同名局部变量测试回退是否误绑定。 */
 static void signature_find_named_value_type_recursive(SZrCompilerState *compilerState,
                                                       SZrAstNode *node,
                                                       const TZrChar *nameText,
@@ -1452,6 +1498,7 @@ static void signature_find_named_value_type_recursive(SZrCompilerState *compiler
     }
 }
 
+/* 本地求解结果保留成员声明的传参模式，标签投影才能与调用契约一致。 */
 static TZrBool signature_copy_parameter_passing_modes(SZrState *state,
                                                       SZrArray *dest,
                                                       const SZrArray *src) {
@@ -1477,6 +1524,7 @@ static TZrBool signature_copy_parameter_passing_modes(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 仅释放从导入 AST 合成的成员信息所拥有的数组；name、declarationNode 等仍借用 AST。 */
 static void signature_free_temporary_member_info(SZrState *state, SZrTypeMemberInfo *memberInfo) {
     if (state == ZR_NULL || memberInfo == ZR_NULL) {
         return;
@@ -1519,6 +1567,7 @@ static TZrInt32 signature_find_generic_binding_index(const SZrArray *genericPara
     return ZR_LSP_SIGNATURE_BINDING_INDEX_NONE;
 }
 
+/* 把构造接收者的泛型实参代入参数和返回类型，保留数组约束、所有权等类型附加信息。 */
 static TZrBool signature_substitute_receiver_generic_type(SZrState *state,
                                                           const SZrArray *genericParameters,
                                                           const SZrArray *bindingTypes,
@@ -1601,6 +1650,7 @@ static TZrBool signature_substitute_receiver_generic_type(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 将构造目标名中的泛型实参转成可递归代入的推断类型，失败时不留下半成品。 */
 static TZrBool signature_build_receiver_binding_types(SZrCompilerState *compilerState,
                                                       const SZrArray *argumentTypeNames,
                                                       SZrArray *bindingTypes) {
@@ -1637,6 +1687,7 @@ static TZrBool signature_build_receiver_binding_types(SZrCompilerState *compiler
     return ZR_TRUE;
 }
 
+/* 本地泛型求解后把成员返回类型改写成具体类型名，供调用标签和返回类型投影。 */
 static TZrBool signature_build_specialized_type_name(SZrCompilerState *compilerState,
                                                      SZrString *sourceTypeName,
                                                      const SZrArray *genericParameters,
@@ -1680,12 +1731,14 @@ static TZrBool signature_build_specialized_type_name(SZrCompilerState *compilerS
     return *outTypeName != ZR_NULL;
 }
 
+/* AST 类型转换暂借编译器的类型/函数上下文，保证导入声明里的相对类型名按原声明解析。 */
 struct SZrSignatureTypeResolutionContext {
     SZrTypePrototypeInfo *typePrototype;
     SZrAstNode *typeNode;
     SZrAstNode *functionNode;
 };
 
+/* push/pop 之间必须成对恢复编译器当前上下文，避免查询污染后续语义分析。 */
 typedef struct SZrSignatureCompilerContextSnapshot {
     SZrTypePrototypeInfo *typePrototype;
     SZrAstNode *typeNode;
@@ -1693,6 +1746,7 @@ typedef struct SZrSignatureCompilerContextSnapshot {
     SZrString *typeName;
 } SZrSignatureCompilerContextSnapshot;
 
+/* 只在同步类型转换期间切换编译器上下文；snapshot 属于本次调用栈。 */
 static void signature_push_type_resolution_context(
         SZrCompilerState *compilerState,
         const SZrSignatureTypeResolutionContext *context,
@@ -1722,6 +1776,7 @@ static void signature_push_type_resolution_context(
     }
 }
 
+/* 无论 AST 转换成功与否，都恢复调用方原有的编译器上下文。 */
 static void signature_pop_type_resolution_context(
         SZrCompilerState *compilerState,
         const SZrSignatureCompilerContextSnapshot *snapshot) {
@@ -1735,6 +1790,7 @@ static void signature_pop_type_resolution_context(
     compilerState->currentTypeName = snapshot->typeName;
 }
 
+/* 复用 analyzer 的声明类型构造规则，并在返回前归还编译器上下文。 */
 static TZrBool signature_convert_ast_type_with_context(
         SZrCompilerState *compilerState,
         SZrType *sourceType,
@@ -1763,6 +1819,7 @@ static TZrBool signature_convert_ast_type_with_context(
     return success;
 }
 
+/* 导入模块只有 AST 声明时，先按声明上下文解析返回类型，再代入接收者泛型。 */
 static TZrBool signature_build_specialized_type_name_from_ast_type(SZrCompilerState *compilerState,
                                                                    SZrType *sourceType,
                                                                    const SZrArray *genericParameters,
@@ -1820,6 +1877,7 @@ static TZrBool signature_string_matches_text(SZrString *value,
     return valueText != ZR_NULL && strlen(valueText) == textLength && memcmp(valueText, text, textLength) == 0;
 }
 
+/* 把类型声明的泛型槽映射成成员求解器可消费的临时信息；名称借用 AST。 */
 static TZrBool signature_collect_generic_parameter_infos_from_ast(SZrState *state,
                                                                   SZrArray *dest,
                                                                   SZrGenericDeclaration *genericDeclaration) {
@@ -1857,6 +1915,7 @@ static TZrBool signature_collect_generic_parameter_infos_from_ast(SZrState *stat
     return ZR_TRUE;
 }
 
+/* 与 AST 泛型信息收集配对释放每个约束数组，不释放借用的 VM 字符串。 */
 static void signature_free_generic_parameter_infos(SZrState *state, SZrArray *genericParameters) {
     if (state == ZR_NULL || genericParameters == ZR_NULL ||
         !genericParameters->isValid || genericParameters->head == ZR_NULL ||
@@ -1879,6 +1938,7 @@ static void signature_free_generic_parameter_infos(SZrState *state, SZrArray *ge
     ZrCore_Array_Free(state, genericParameters);
 }
 
+/* 导入构造器缺成员元数据时从声明 AST 构造参数类型，失败清理已收集的类型。 */
 static TZrBool signature_collect_parameter_types_from_ast(SZrCompilerState *compilerState,
                                                           SZrAstNodeArray *params,
                                                           const SZrSignatureTypeResolutionContext *context,
@@ -1917,6 +1977,7 @@ static TZrBool signature_collect_parameter_types_from_ast(SZrCompilerState *comp
     return ZR_TRUE;
 }
 
+/* 与 AST 参数类型收集保持相同顺序，供专化签名显示 ref/out 等传参约束。 */
 static TZrBool signature_collect_parameter_passing_modes_from_ast(SZrState *state,
                                                                   SZrAstNodeArray *params,
                                                                   SZrArray *dest) {
@@ -1944,6 +2005,8 @@ static TZrBool signature_collect_parameter_passing_modes_from_ast(SZrState *stat
     return ZR_TRUE;
 }
 
+/* 在当前或导入模块 AST 内找构造目标的类/结构声明，返回值只在该 AST 生命周期内有效。 */
+/* TODO: 当前按短名取第一个声明；用嵌套作用域及导入同名类型核查是否会选错构造器。 */
 static SZrAstNode *signature_find_type_declaration_recursive(SZrAstNode *node,
                                                              const TZrChar *typeNameText,
                                                              TZrSize typeNameLength) {
@@ -2001,6 +2064,7 @@ static SZrAstNode *signature_find_type_declaration_recursive(SZrAstNode *node,
     return ZR_NULL;
 }
 
+/* 从目标类型自身的 meta 成员取得 constructor 声明，供缺元数据时合成临时成员。 */
 static SZrAstNode *signature_find_constructor_declaration_in_type(SZrAstNode *typeDeclarationNode) {
     SZrAstNodeArray *members = ZR_NULL;
 
@@ -2041,6 +2105,8 @@ static SZrAstNode *signature_find_constructor_declaration_in_type(SZrAstNode *ty
     return ZR_NULL;
 }
 
+/* 项目索引或当前文档只有源码 AST 时，临时重建构造器成员并代入接收者泛型。 */
+/* 成功时 resolvedMemberInfo 指向调用方提供的 temporaryMemberInfo；调用方须在结果投影后释放其中数组。 */
 static TZrBool signature_prepare_ast_specialized_receiver_constructor(SZrState *state,
                                                                       SZrCompilerState *compilerState,
                                                                       SZrAstNode *rootNode,
@@ -2206,6 +2272,7 @@ static TZrInt32 signature_find_binding_index(const SZrArray *bindings, SZrString
     return ZR_LSP_SIGNATURE_BINDING_INDEX_NONE;
 }
 
+/* 从成员泛型参数建独占求解槽，后续显式泛型和实参推断都写入这些槽。 */
 static TZrBool signature_initialize_bindings(SZrState *state,
                                              const SZrArray *genericParameters,
                                              SZrArray *bindings) {
@@ -2238,6 +2305,7 @@ static TZrBool signature_initialize_bindings(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 与槽初始化配对释放推断类型；parameterInfo 属于借用的成员元数据。 */
 static void signature_free_bindings(SZrState *state, SZrArray *bindings) {
     if (state == ZR_NULL || bindings == ZR_NULL ||
         !bindings->isValid || bindings->head == ZR_NULL ||
@@ -2255,6 +2323,7 @@ static void signature_free_bindings(SZrState *state, SZrArray *bindings) {
     ZrCore_Array_Free(state, bindings);
 }
 
+/* 当推断只给出编码类型名时展开泛型元素，使后续结构化绑定可逐层统一。 */
 static TZrBool signature_normalize_inferred_type(SZrCompilerState *compilerState, SZrInferredType *typeInfo) {
     SZrInferredType normalizedType;
 
@@ -2275,6 +2344,7 @@ static TZrBool signature_normalize_inferred_type(SZrCompilerState *compilerState
     return ZR_TRUE;
 }
 
+/* 实参主推断缺类型名时，才尝试从同名声明补全以支持本地泛型绑定。 */
 static TZrBool signature_infer_argument_type_with_fallback(SZrSemanticAnalyzer *analyzer,
                                                            SZrCompilerState *compilerState,
                                                            SZrAstNode *argNode,
@@ -2314,6 +2384,7 @@ static TZrBool signature_infer_argument_type_with_fallback(SZrSemanticAnalyzer *
     return ZR_TRUE;
 }
 
+/* 显式或隐式泛型绑定必须与每个实参一致；嵌套泛型递归比较，冲突直接拒绝近似签名。 */
 static TZrBool signature_unify_binding_from_types(SZrState *state,
                                                   SZrArray *bindings,
                                                   const SZrInferredType *expectedType,
@@ -2386,6 +2457,7 @@ static TZrBool signature_unify_binding_from_types(SZrState *state,
     return expectedType->elementTypes.length > 0 || ZrParser_InferredType_Equal(expectedType, actualType);
 }
 
+/* 显式类型参数和 const 整数参数走不同解析路径，输出同一绑定槽可用的推断表示。 */
 static TZrBool signature_bind_explicit_generic_argument(SZrCompilerState *compilerState,
                                                         const SZrTypeGenericParameterInfo *parameterInfo,
                                                         SZrAstNode *argumentNode,
@@ -2431,6 +2503,8 @@ static TZrBool signature_bind_explicit_generic_argument(SZrCompilerState *compil
     return signature_convert_ast_type_with_context(compilerState, &argumentNode->data.type, ZR_NULL, result);
 }
 
+/* parser 详细求解不能处理某些 AST 合成成员时，按显式泛型和实参类型做有限本地求解。 */
+/* 只在全部泛型槽已绑定且参数一致时交付结果；临时数组在成功和失败路径都由本函数释放。 */
 static TZrBool signature_resolve_member_call_signature_locally(SZrState *state,
                                                                SZrSemanticAnalyzer *analyzer,
                                                                SZrCompilerState *compilerState,
@@ -2594,6 +2668,8 @@ static TZrBool signature_resolve_member_call_signature_locally(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 规范、外部 callable 与本地构造器共用的结果工厂；成功结果由 SignatureHelp_Free 释放。 */
+/* 参数 label 从 AST 和专化类型生成，语义文档由实参事实补充；无 AST 参数时仅创建外壳供调用方追加参数。 */
 TZrBool signature_populate_help_from_label(SZrState *state,
                                                   SZrSemanticAnalyzer *analyzer,
                                                   const TZrChar *labelText,
@@ -2661,6 +2737,7 @@ TZrBool signature_populate_help_from_label(SZrState *state,
             parameterInfo =
                 (SZrLspParameterInformation *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspParameterInformation));
             if (parameterInfo == ZR_NULL) {
+                /* BUG: 单个参数分配失败仍返回成功；序列化会缺参数，activeParameter 可能指向错误项。 */
                 continue;
             }
 
@@ -2681,6 +2758,7 @@ TZrBool signature_populate_help_from_label(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 在类型和祖先原型中查找 meta 成员；深度预算防止继承环导致查询无限递归。 */
 static const SZrTypeMemberInfo *signature_find_type_meta_member_recursive(SZrCompilerState *compilerState,
                                                                           SZrTypePrototypeInfo *prototype,
                                                                           EZrMetaType metaType,
@@ -2730,6 +2808,7 @@ static const SZrTypeMemberInfo *signature_find_type_meta_member_recursive(SZrCom
     return ZR_NULL;
 }
 
+/* 泛型实例可能尚未物化原型；先确保可查询，再借出 constructor 等 meta 成员。 */
 static const SZrTypeMemberInfo *signature_find_type_meta_member(SZrCompilerState *compilerState,
                                                                 SZrString *typeName,
                                                                 EZrMetaType metaType) {
@@ -2748,6 +2827,8 @@ static const SZrTypeMemberInfo *signature_find_type_meta_member(SZrCompilerState
     return signature_find_type_meta_member_recursive(compilerState, prototype, metaType, 0);
 }
 
+/* 只承接无法由规范语义调用事实解析的构造调用；项目索引可补充导入模块中的构造器 AST。 */
+/* resolvedSignature、临时成员与 constructedType 均在交付可独立释放的 LSP 结果后清理。 */
 static TZrBool signature_resolve_construct_help(SZrState *state,
                                                 SZrLspContext *lspContext,
                                                 SZrString *uri,
@@ -2915,6 +2996,8 @@ static TZrBool signature_resolve_construct_help(SZrState *state,
     return ZR_TRUE;
 }
 
+/* LSP/悬停入口：按当前文档快照定位最内层调用，优先规范语义事实，再查外部 callable，最后处理构造器。 */
+/* 成功且 result 非空时由调用方用 SignatureHelp_Free 释放；非代码光标可成功返回空结果。 */
 TZrBool ZrLanguageServer_Lsp_GetSignatureHelp(SZrState *state,
                                               SZrLspContext *context,
                                               SZrString *uri,
@@ -2955,6 +3038,7 @@ TZrBool ZrLanguageServer_Lsp_GetSignatureHelp(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* 本地已确认的规范调用不允许被外部元数据遮盖；外部目标不可用时也不回退成同名源码签名。 */
     if (callContext.kind == ZR_LSP_CALL_CONTEXT_FUNCTION_CALL &&
         callContext.callNode != ZR_NULL &&
         callContext.callNode->type == ZR_AST_FUNCTION_CALL) {
@@ -3038,6 +3122,7 @@ TZrBool ZrLanguageServer_Lsp_GetSignatureHelp(SZrState *state,
         return *result != ZR_NULL;
     }
 
+    /* 已解析到源码声明却缺规范签名时宁可不返回，不能把旧元数据解释冒充精确答案。 */
     if (signature_context_requires_canonical_source_call(analyzer, &callContext)) {
         return ZR_FALSE;
     }
@@ -3061,6 +3146,7 @@ TZrBool ZrLanguageServer_Lsp_GetSignatureHelp(SZrState *state,
     return ZR_FALSE;
 }
 
+/* 对称释放结果外壳、签名与参数对象；label/documentation 是 VM 字符串，不在此单独 RawFree。 */
 void ZrLanguageServer_LspSignatureHelp_Free(SZrState *state, SZrLspSignatureHelp *help) {
     if (state == ZR_NULL || help == ZR_NULL) {
         return;

@@ -1,14 +1,18 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "zr_vm_core/utf8.h"
 
+/** 将协商状态集中解释给请求解码与响应编码两条路径；空 server 沿用协议默认 UTF-16。 */
 static TZrBool position_encoding_is_utf8(const SZrStdioServer *server) {
     return server != ZR_NULL && server->positionEncoding == ZR_STDIO_POSITION_ENCODING_UTF8;
 }
 
+/** initialize 响应复用与实际转换相同的状态，避免向客户端宣告另一种坐标编码。 */
 const char *position_encoding_name(const SZrStdioServer *server) {
     return position_encoding_is_utf8(server) ? ZR_LSP_POSITION_ENCODING_UTF8 : ZR_LSP_POSITION_ENCODING_UTF16;
 }
 
+/** 请求与响应的宽松映射按快照向前扫描；无法识别的前导字节退化为一步。
+ * TODO: 已识别的前导只检查剩余长度，未验续字节或过长编码；需核对非法磁盘文本的坐标约定。 */
 static TZrSize utf8_codepoint_length(const char *content, size_t contentLength, size_t offset) {
     unsigned char first;
 
@@ -33,6 +37,7 @@ static TZrSize utf8_codepoint_length(const char *content, size_t contentLength, 
     return 1;
 }
 
+/** 将内部 UTF-16 列与客户端 UTF-8 字节列对应，补充平面字符需要两个 UTF-16 单元。 */
 static TZrInt32 utf16_units_for_utf8_codepoint(const char *content,
                                                size_t contentLength,
                                                size_t offset,
@@ -56,6 +61,9 @@ static TZrInt32 utf16_units_for_utf8_codepoint(const char *content,
     return 1;
 }
 
+/** 为请求和响应的宽松转换定位 LF 行；不可定位时调用方保留原坐标。
+ * BUG: strict_find_line_bounds 接受独立 CR 为换行，本路径与核心 codec 只按 LF 增行；CR-only 第二行
+ * 的客户端位置虽通过严格校验，进入语义查询或返回客户端时仍按错误行与列解释。 */
 static TZrBool find_line_bounds(const char *content,
                                 size_t contentLength,
                                 TZrInt32 targetLine,
@@ -96,6 +104,7 @@ static TZrBool find_line_bounds(const char *content,
     return ZR_FALSE;
 }
 
+/** 对 didChange 和位置请求拒绝不存在的行，同时把 CRLF 视为单次换行。 */
 static TZrBool strict_find_line_bounds(const char *content,
                                        size_t contentLength,
                                        TZrInt32 targetLine,
@@ -131,6 +140,7 @@ static TZrBool strict_find_line_bounds(const char *content,
     return ZR_TRUE;
 }
 
+/** 客户端位置进入内容修改或语义查询前校验 UTF-8 文本及字符边界；拒绝代理对或字节序列中间的位置。 */
 static TZrBool strict_client_position_to_byte_offset(
         SZrStdioServer *server,
         const char *content,
@@ -206,6 +216,7 @@ static TZrBool strict_client_position_to_byte_offset(
     return ZR_TRUE;
 }
 
+/** 计算被替换区间在已协商编码中的长度，供 didChange 的 rangeLength 交叉校验。 */
 static TZrBool strict_content_client_length(SZrStdioServer *server,
                                             const char *content,
                                             TZrSize startOffset,
@@ -238,6 +249,8 @@ static TZrBool strict_content_client_length(SZrStdioServer *server,
     return ZR_TRUE;
 }
 
+/** didChange 在修改原文前统一把客户端区间解析为字节边界，并返回原区间的客户端长度。
+ * 只有返回真时三个输出才可供 apply_single_change 使用；失败时调用方放弃整批编辑。 */
 TZrBool content_change_range_to_byte_offsets(SZrStdioServer *server,
                                              const char *content,
                                              size_t contentLength,
@@ -260,6 +273,7 @@ TZrBool content_change_range_to_byte_offsets(SZrStdioServer *server,
             server, content, *outStartOffset, *outEndOffset, outClientLength);
 }
 
+/** 将已解析的 UTF-8 客户端列投影成语义接口使用的 UTF-16 列；越过行尾则收敛至行尾。 */
 static SZrLspPosition utf8_position_to_utf16_position(const char *content,
                                                       size_t contentLength,
                                                       SZrLspPosition position) {
@@ -296,6 +310,7 @@ static SZrLspPosition utf8_position_to_utf16_position(const char *content,
     return converted;
 }
 
+/** 将语义层 UTF-16 范围投影回协商的 UTF-8 字节列，供 JSON 响应序列化。 */
 static SZrLspPosition utf16_position_to_utf8_position(const char *content,
                                                       size_t contentLength,
                                                       SZrLspPosition position) {
@@ -332,6 +347,7 @@ static SZrLspPosition utf16_position_to_utf8_position(const char *content,
     return converted;
 }
 
+/** 从 parser 当前文件版本获取稳定文本；调用方必须释放成功取得的快照。 */
 static TZrBool content_snapshot_for_uri(SZrStdioServer *server,
                                         SZrString *uri,
                                         SZrFileVersionContentSnapshot *outSnapshot) {
@@ -345,6 +361,7 @@ static TZrBool content_snapshot_for_uri(SZrStdioServer *server,
     return ZrLanguageServer_FileVersionContentSnapshot_Acquire(server->state, fileVersion, outSnapshot);
 }
 
+/** 响应 JSON 持有 URI 文本时先借用缓存 URI，再复用文件版本快照路径。 */
 static TZrBool content_snapshot_for_uri_text(SZrStdioServer *server,
                                              const char *uriText,
                                              SZrFileVersionContentSnapshot *outSnapshot) {
@@ -358,6 +375,7 @@ static TZrBool content_snapshot_for_uri_text(SZrStdioServer *server,
     return content_snapshot_for_uri(server, uri, outSnapshot);
 }
 
+/** 仅 UTF-8 协商需要在进入语义接口前改列数；无快照时只能保留原值。 */
 static SZrLspPosition client_position_to_internal(SZrStdioServer *server,
                                                   const char *content,
                                                   size_t contentLength,
@@ -369,6 +387,7 @@ static SZrLspPosition client_position_to_internal(SZrStdioServer *server,
     return utf8_position_to_utf16_position(content, contentLength, position);
 }
 
+/** 与请求入口配对，把内部 UTF-16 列转换成客户端列；调用方提供对应 URI 的文本。 */
 static SZrLspPosition internal_position_to_client(SZrStdioServer *server,
                                                   const char *content,
                                                   size_t contentLength,
@@ -380,6 +399,7 @@ static SZrLspPosition internal_position_to_client(SZrStdioServer *server,
     return utf16_position_to_utf8_position(content, contentLength, position);
 }
 
+/** 让格式化、导航及编辑请求的范围两端使用相同的文档快照和编码约定。 */
 static SZrLspRange client_range_to_internal(SZrStdioServer *server,
                                             const char *content,
                                             size_t contentLength,
@@ -389,6 +409,8 @@ static SZrLspRange client_range_to_internal(SZrStdioServer *server,
     return range;
 }
 
+/** get_uri_and_position 等入口先解析协议位置；取得文档快照后严格检查边界再转成内部列。
+ * TODO: 文件版本快照不可用时仍返回成功并保留客户端列，需核对未打开 URI 的语义查询是否会误用该值。 */
 int parse_position_for_uri(SZrStdioServer *server,
                            SZrString *uri,
                            const cJSON *json,
@@ -418,6 +440,8 @@ int parse_position_for_uri(SZrStdioServer *server,
     return 1;
 }
 
+/** 为范围格式化等请求按 URI 快照转换编码；快照不可用时调用方获得原始范围。
+ * TODO: 与 parse_position_for_uri 不同，这里未验证行及码点边界；需核对下游如何处理非法范围。 */
 int parse_range_for_uri(SZrStdioServer *server,
                         SZrString *uri,
                         const cJSON *json,
@@ -438,6 +462,8 @@ int parse_range_for_uri(SZrStdioServer *server,
     return 1;
 }
 
+/** 已由调用方持有文本时避免再次查询文件版本，范围仍按协商编码进入内部接口。
+ * TODO: 仓内仅见内部头声明和本定义，需核对是否仍有实际调用或可删除此闲置入口。 */
 int parse_range_for_content(SZrStdioServer *server,
                             const char *content,
                             size_t contentLength,
@@ -451,6 +477,7 @@ int parse_range_for_content(SZrStdioServer *server,
     return 1;
 }
 
+/** initialize 选择本服务端支持的 UTF-8 或默认 UTF-16，并让后续请求与响应共享该状态。 */
 void negotiate_position_encoding(SZrStdioServer *server, const cJSON *params) {
     const cJSON *capabilities;
     const cJSON *general;
@@ -479,6 +506,7 @@ void negotiate_position_encoding(SZrStdioServer *server, const cJSON *params) {
     }
 }
 
+/** 从文档请求或顶层 URI 获取响应默认文档；多文档结果仍需每项自带 URI。 */
 static const char *uri_text_from_params(const cJSON *params) {
     const cJSON *textDocument;
     const cJSON *uriJson;
@@ -501,6 +529,7 @@ static const char *uri_text_from_params(const cJSON *params) {
     return NULL;
 }
 
+/** 只改已有 character 数值，保留语义处理器构造的 JSON 其他字段。 */
 static void set_position_character(cJSON *positionJson, SZrLspPosition position) {
     cJSON *characterJson;
 
@@ -514,6 +543,7 @@ static void set_position_character(cJSON *positionJson, SZrLspPosition position)
     }
 }
 
+/** 在递归响应树中识别位置对象；非完整位置对象交给其他 JSON 节点处理。 */
 static TZrBool read_position_object(cJSON *positionJson, SZrLspPosition *outPosition) {
     cJSON *lineJson;
     cJSON *characterJson;
@@ -533,6 +563,7 @@ static TZrBool read_position_object(cJSON *positionJson, SZrLspPosition *outPosi
     return ZR_TRUE;
 }
 
+/** 同一快照内转换单个位置，供位置与范围节点共用，避免范围两端取到不同版本。 */
 static void encode_position_object_for_content(SZrStdioServer *server,
                                                cJSON *positionJson,
                                                const char *content,
@@ -547,6 +578,7 @@ static void encode_position_object_for_content(SZrStdioServer *server,
     set_position_character(positionJson, position);
 }
 
+/** 独立位置节点按其 URI 获取快照；未找到文本时保留原值，不虚构客户端列。 */
 static void encode_position_object(SZrStdioServer *server, cJSON *positionJson, const char *uriText) {
     SZrFileVersionContentSnapshot snapshot = {0};
 
@@ -559,12 +591,14 @@ static void encode_position_object(SZrStdioServer *server, cJSON *positionJson, 
     }
 }
 
+/** 响应遍历只把同时含 start/end 位置对象的节点视作可编码 Range。 */
 static TZrBool object_is_range(cJSON *json) {
     return cJSON_IsObject(json) &&
            cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(json, ZR_LSP_FIELD_START)) &&
            cJSON_IsObject(cJSON_GetObjectItemCaseSensitive(json, ZR_LSP_FIELD_END));
 }
 
+/** 用同一 URI 快照重写 Range 两端，供 hover、TextEdit、Location 等结果共享。 */
 static void encode_range_object(SZrStdioServer *server, cJSON *rangeJson, const char *uriText) {
     cJSON *startJson;
     cJSON *endJson;
@@ -584,6 +618,7 @@ static void encode_range_object(SZrStdioServer *server, cJSON *rangeJson, const 
     ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
 }
 
+/** foldingRange 的扁平字段不符合普通 Range 形状，因此单独映射其列号。 */
 static void encode_folding_range_fields(SZrStdioServer *server, cJSON *json, const char *uriText) {
     cJSON *startLineJson;
     cJSON *startCharacterJson;
@@ -619,6 +654,9 @@ static void encode_folding_range_fields(SZrStdioServer *server, cJSON *json, con
     ZrLanguageServer_FileVersionContentSnapshot_Free(server->state, &snapshot);
 }
 
+/** 在最终响应 JSON 中按 URI 上下文遍历内部坐标；data 视为不透明协议负载而跳过。
+ * BUG: rename 的 documentChanges 项把 URI 放在 textDocument 子对象，edits 是兄弟节点；
+ * UTF-8 协商时这些跨文件 edits 继承请求 URI，willRenameFiles 没有默认 URI 时甚至不转换，客户端得到错误列。 */
 static void apply_encoding_to_json_node(SZrStdioServer *server, cJSON *json, const char *currentUriText) {
     cJSON *child;
     const cJSON *uriJson;
@@ -659,6 +697,8 @@ static void apply_encoding_to_json_node(SZrStdioServer *server, cJSON *json, con
 
     encode_folding_range_fields(server, json, localUriText);
     cJSON_ArrayForEach(child, json) {
+        /* TODO: data 同时承载服务端内部续查位置与客户端可见载荷；
+         * 需逐方法核对跳过坐标重编码的契约。 */
         if (child->string != NULL &&
             (strcmp(child->string, ZR_LSP_FIELD_DATA) == 0 ||
              strcmp(child->string, ZR_LSP_FIELD_RANGE) == 0 ||
@@ -675,11 +715,13 @@ static void apply_encoding_to_json_node(SZrStdioServer *server, cJSON *json, con
     }
 }
 
+/** codeAction/resolve 仅深拷贝客户端已编码的操作，避免最终响应再转换一次范围。 */
 static TZrBool result_method_uses_client_owned_positions(const char *method) {
     return method != NULL &&
            strcmp(method, ZR_LSP_METHOD_CODE_ACTION_RESOLVE) == 0;
 }
 
+/** 所有同步请求在 JSON-RPC 发送前统一转换结果位置；入口负责传入请求方法和参数。 */
 void apply_position_encoding_to_response(SZrStdioServer *server,
                                          const char *method,
                                          const cJSON *requestParams,
@@ -691,6 +733,7 @@ void apply_position_encoding_to_response(SZrStdioServer *server,
     apply_encoding_to_json_node(server, response, uri_text_from_params(requestParams));
 }
 
+/** diagnostics 等服务端通知没有请求参数，发送者直接提供其文档 URI 做响应坐标映射。 */
 void apply_position_encoding_to_json_for_uri(SZrStdioServer *server,
                                              const char *uriText,
                                              cJSON *json) {

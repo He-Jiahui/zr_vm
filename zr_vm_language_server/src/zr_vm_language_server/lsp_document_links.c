@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 
+/* GetDefinition 的位置数组只借用其中 URI；本层释放位置外壳，GC 字符串继续由请求状态持有。 */
 static void lsp_document_links_free_locations(SZrState *state, SZrArray *locations) {
     if (state == ZR_NULL || locations == ZR_NULL) {
         return;
@@ -19,6 +20,7 @@ static void lsp_document_links_free_locations(SZrState *state, SZrArray *locatio
     ZrCore_Array_Free(state, locations);
 }
 
+/* 将短/长 VM 字符串统一交给 URI 与 .zrp 文本扫描；返回值不转移所有权。 */
 static const TZrChar *lsp_document_links_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -28,6 +30,8 @@ static const TZrChar *lsp_document_links_string_text(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
+/* 字面导入链接的轻量候选门：先排除标识符成员和非调用形式，
+ * 后续仍必须用 offset_is_code 核实不处于注释或字符串。 */
 static TZrBool lsp_document_links_import_call_at(const TZrChar *content,
                                                  TZrSize contentLength,
                                                  TZrSize offset) {
@@ -52,6 +56,8 @@ static TZrBool lsp_document_links_import_call_at(const TZrChar *content,
     return scan < contentLength && content[scan] == '(';
 }
 
+/* 为 stdio/WASM 的初次 documentLink 响应构造完整目标；
+ * 释放函数只回收 link 外壳和数组，target/tooltip 为请求期间的 GC 字符串。 */
 static TZrBool lsp_document_links_append(SZrState *state,
                                          SZrArray *result,
                                          SZrLspRange range,
@@ -76,6 +82,7 @@ static TZrBool lsp_document_links_append(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 仅对 zr.* 导入尝试原生虚拟声明回退；普通导入须靠语义定义查询。 */
 static TZrBool lsp_document_links_import_is_native(const TZrChar *content,
                                                    TZrSize valueStart,
                                                    TZrSize valueEnd) {
@@ -84,6 +91,8 @@ static TZrBool lsp_document_links_import_is_native(const TZrChar *content,
            memcmp(content + valueStart, "zr.", strlen("zr.")) == 0;
 }
 
+/* 语义定义不可用时，按当前 URI 的项目作用域把 zr.* 模块映射到声明 URI；
+ * 未解析的导入不产出不可点击的占位链接。 */
 static TZrBool lsp_document_links_append_native_import(SZrState *state,
                                                        SZrLspContext *context,
                                                        SZrString *uri,
@@ -110,6 +119,7 @@ static TZrBool lsp_document_links_append_native_import(SZrState *state,
     return lsp_document_links_append(state, result, range, target);
 }
 
+/* .zrp 的路径字段仅在项目描述文件中解释，普通 Zr 源文件不走该投影。 */
 static TZrBool lsp_document_links_uri_ends_with(const TZrChar *uriText, const TZrChar *suffix) {
     TZrSize uriLength;
     TZrSize suffixLength;
@@ -124,6 +134,10 @@ static TZrBool lsp_document_links_uri_ends_with(const TZrChar *uriText, const TZ
            memcmp(uriText + uriLength - suffixLength, suffix, suffixLength) == 0;
 }
 
+/* 保留原文值的字节区间，使编辑器高亮与打开的 .zrp 文本一致。
+ * BUG: 此扫描不判断 JSON 对象层级；根对象前的嵌套同名字段会先命中。
+ * 例如 metadata.source=shadow、根 source=src 时返回 shadow 的链接；
+ * 项目加载器 project.c 只读根字段，需解析根键并保留原文范围。 */
 static TZrBool lsp_document_links_find_json_string_value(const TZrChar *content,
                                                         TZrSize contentLength,
                                                         const TZrChar *key,
@@ -188,6 +202,8 @@ static TZrBool lsp_document_links_find_json_string_value(const TZrChar *content,
     return ZR_FALSE;
 }
 
+/* 路径文本并入 file URI 前做 URL 转义；此处输入目前是 JSON 原文字节，
+ * 并非 cJSON 解码后的路径，相关 JSON 转义失配在 append_zrp_links 中标出。 */
 static TZrBool lsp_document_links_uri_append_escaped(TZrChar *buffer,
                                                      TZrSize bufferSize,
                                                      TZrSize *offset,
@@ -224,6 +240,8 @@ static TZrBool lsp_document_links_uri_append_escaped(TZrChar *buffer,
     return ZR_TRUE;
 }
 
+/* 相对 .zrp 路径以描述文件目录为根，已给出的 file URI 直接沿用；
+ * 原生绝对路径与项目加载器的差异在下方标出。 */
 static TZrBool lsp_document_links_build_relative_uri(TZrChar *buffer,
                                                      TZrSize bufferSize,
                                                      const TZrChar *baseUri,
@@ -246,6 +264,9 @@ static TZrBool lsp_document_links_build_relative_uri(TZrChar *buffer,
         return ZR_TRUE;
     }
 
+    /* BUG: File_PathJoin 对绝对 source 路径会忽略项目目录；此处只认 file://。
+     * /tmp/src 会被拼成 file:///项目目录//tmp/src，source/entry 链接指向错误位置；
+     * 需按项目加载器的原生路径规则解析后再生成 URI。 */
     baseLength = strlen(baseUri);
     for (TZrSize index = 0; index < baseLength; index++) {
         if (baseUri[index] == '/') {
@@ -261,6 +282,7 @@ static TZrBool lsp_document_links_build_relative_uri(TZrChar *buffer,
     return lsp_document_links_uri_append_escaped(buffer, bufferSize, &offset, pathText, pathLength);
 }
 
+/* 把项目字段的原文范围与目标 URI 成对加入结果；过长路径按无链接处理。 */
 static TZrBool lsp_document_links_append_zrp_path(SZrState *state,
                                                   SZrArray *result,
                                                   const TZrChar *content,
@@ -287,6 +309,8 @@ static TZrBool lsp_document_links_append_zrp_path(SZrState *state,
     return lsp_document_links_append(state, result, range, target);
 }
 
+/* .zrp 的 source/binary/dependency/local/entry 字段直接服务编辑器路径跳转；
+ * 相对 entry 文本以 source 为根并补 .zr，不经项目加载器规范化。 */
 static TZrBool lsp_document_links_append_zrp_links(SZrState *state,
                                                    SZrArray *result,
                                                    SZrString *uri,
@@ -310,6 +334,9 @@ static TZrBool lsp_document_links_append_zrp_links(SZrState *state,
         return ZR_TRUE;
     }
 
+    /* BUG: 项目加载器 project.c 用 cJSON 解码字段，此处却直接使用 JSON 原文字节。
+     * 合法值如 "src\u0020dir" 会被投影为 src/u0020dir 而非 src%20dir，
+     * 点击 source 或 entry 会打开错误 URI；需解码值并保留原文高亮范围。 */
     hasSource =
         lsp_document_links_find_json_string_value(content, contentLength, "source", &sourceStart, &sourceEnd);
     if (hasSource &&
@@ -411,6 +438,8 @@ static TZrBool lsp_document_links_append_zrp_links(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 原生虚拟声明文档的 pub module 行与 GetDefinition 共享投影；
+ * 链接目标从定义查询取得，以维持项目专属 URI 身份。 */
 static TZrBool lsp_document_links_append_virtual_module_links(SZrState *state,
                                                               SZrLspContext *context,
                                                               SZrArray *result,
@@ -475,6 +504,8 @@ static TZrBool lsp_document_links_append_virtual_module_links(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 无可用快照的普通 file URI 可从磁盘取文本；返回的原生缓冲区由 GetDocumentLinks
+ * 在处理完成后按 contentLength+1 释放，不与打开文档的快照混用。 */
 static TZrChar *lsp_document_links_read_uri_from_disk(SZrState *state,
                                                       SZrString *uri,
                                                       TZrSize *outLength) {
@@ -522,6 +553,9 @@ static TZrChar *lsp_document_links_read_uri_from_disk(SZrState *state,
     return buffer;
 }
 
+/* stdio/WASM 的 documentLink 入口：优先使用打开文档的稳定快照，
+ * 虚拟声明从投影生成文本，无可用快照的普通 file URI 才从磁盘读取。
+ * 调用者无论成功与否都须释放可能部分追加的结果。 */
 TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
                                               SZrLspContext *context,
                                               SZrString *uri,
@@ -603,6 +637,9 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
             cursor = matchOffset + strlen("import");
             continue;
         }
+        /* BUG: 这里只找 import 后任意后续双引号，不限定为调用的首个字面参数。
+         * `import(x); let name="zr.math";` 可把 name 字符串误投影成原生导入链接；
+         * 应由解析后的调用参数范围而非跨语句文本搜索决定候选。 */
         quoteOffset = matchOffset;
         while (quoteOffset < contentLength && content[quoteOffset] != '"') {
             quoteOffset++;

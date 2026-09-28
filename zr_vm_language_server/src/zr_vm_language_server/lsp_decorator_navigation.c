@@ -1,16 +1,19 @@
 #include "interface/lsp_interface_internal.h"
 
+/* 一次装饰器命中同时保留表达式与受修饰声明：hover 标示前者，definition 指向后者；节点借用分析器 AST。 */
 typedef struct SZrLspDecoratorHit {
     SZrAstNode *decoratorNode;
     SZrAstNode *ownerNode;
 } SZrLspDecoratorHit;
 
+/* 将各类声明的名称、选择范围和展示类别统一交给导航及 hover；name/range.source 不转移所有权。 */
 typedef struct SZrLspDecoratorTarget {
     SZrFileRange range;
     SZrString *name;
     const TZrChar *kind;
 } SZrLspDecoratorTarget;
 
+/* hover 文案消费原生字符指针，先兼容短字符串与普通字符串的存储形式；结果依附原 SZrString。 */
 static TZrNativeString decorator_navigation_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -23,6 +26,7 @@ static TZrNativeString decorator_navigation_string_text(SZrString *value) {
     return ZrCore_String_GetNativeString(value);
 }
 
+/* 只接受同源装饰器范围中的光标；解析器起始列与查询列的边界差异在此统一处理。 */
 static TZrBool decorator_navigation_file_range_contains_position(SZrFileRange range, SZrFileRange position) {
     TZrInt32 startColumn;
 
@@ -42,6 +46,7 @@ static TZrBool decorator_navigation_file_range_contains_position(SZrFileRange ra
              position.end.column <= range.end.column));
 }
 
+/* 声明名称范围缺失时让调用方退回整个声明，避免把空范围当作可跳转目标。 */
 static TZrBool decorator_navigation_range_is_valid(SZrFileRange range) {
     return range.source != ZR_NULL ||
            range.start.offset > 0 ||
@@ -52,6 +57,7 @@ static TZrBool decorator_navigation_range_is_valid(SZrFileRange range) {
            range.end.column != 0;
 }
 
+/* 装饰器展示文本是定长摘要；容量不足时保留已写前缀，调用方不应据此推断完整表达式。 */
 static void decorator_navigation_append_text(TZrChar *buffer,
                                              TZrSize bufferSize,
                                              TZrSize *used,
@@ -72,6 +78,7 @@ static void decorator_navigation_append_text(TZrChar *buffer,
     buffer[*used] = '\0';
 }
 
+/* 统一把 AST 字符串接入摘要缓冲，仍受 append_text 的截断约束。 */
 static void decorator_navigation_append_string(TZrChar *buffer,
                                                TZrSize bufferSize,
                                                TZrSize *used,
@@ -79,6 +86,7 @@ static void decorator_navigation_append_string(TZrChar *buffer,
     decorator_navigation_append_text(buffer, bufferSize, used, decorator_navigation_string_text(value));
 }
 
+/* 只投影装饰器表达式中对用户有意义的名称、成员链和调用形状，供 hover 标题及类别判断。 */
 static void decorator_navigation_build_expr_text(SZrAstNode *node,
                                                  TZrChar *buffer,
                                                  TZrSize bufferSize,
@@ -130,6 +138,7 @@ static void decorator_navigation_build_expr_text(SZrAstNode *node,
     }
 }
 
+/* 命中声明所拥有的装饰器后同时返回表达式与声明，让两类导航请求共用同一次 AST 匹配。 */
 static TZrBool decorator_navigation_match_decorator_array(SZrAstNodeArray *decorators,
                                                           SZrFileRange position,
                                                           SZrAstNode *ownerNode,
@@ -155,6 +164,7 @@ static TZrBool decorator_navigation_match_decorator_array(SZrAstNodeArray *decor
     return ZR_FALSE;
 }
 
+/* 沿可含装饰器的声明树寻找光标；先查外层声明装饰器，再查其成员。 */
 static TZrBool decorator_navigation_find_hit_recursive(SZrAstNode *node,
                                                        SZrFileRange position,
                                                        SZrLspDecoratorHit *outHit) {
@@ -193,6 +203,7 @@ static TZrBool decorator_navigation_find_hit_recursive(SZrAstNode *node,
                                                            outHit);
 
         case ZR_AST_FUNCTION_DECLARATION:
+            /* BUG: 块内可合法声明装饰器函数，但这里未下降到 body，内层装饰器的专用导航不可达。 */
             return decorator_navigation_match_decorator_array(node->data.functionDeclaration.decorators,
                                                               position,
                                                               node,
@@ -310,12 +321,14 @@ static TZrBool decorator_navigation_find_hit_recursive(SZrAstNode *node,
                                                               outHit);
 
         default:
+            /* BUG: parser 已为 union、union variant 和正式 property 保存 decorators，这里无分支会跳过其导航。 */
             break;
     }
 
     return ZR_FALSE;
 }
 
+/* 属性装饰器属于属性声明，但跳转目标优先选 getter/setter 名称；缺失时退回修饰节点。 */
 static SZrFileRange decorator_navigation_resolve_property_range(SZrAstNode *propertyNode, SZrString **outName) {
     SZrFileRange emptyRange;
 
@@ -346,6 +359,7 @@ static SZrFileRange decorator_navigation_resolve_property_range(SZrAstNode *prop
     return propertyNode->location;
 }
 
+/* 将不同 AST 声明投影为统一目标，供装饰器 definition 的位置和 hover 的 Target 文案复用。 */
 static TZrBool decorator_navigation_resolve_target(SZrAstNode *ownerNode, SZrLspDecoratorTarget *outTarget) {
     if (ownerNode == ZR_NULL || outTarget == ZR_NULL) {
         return ZR_FALSE;
@@ -399,6 +413,7 @@ static TZrBool decorator_navigation_resolve_target(SZrAstNode *ownerNode, SZrLsp
             return ZR_TRUE;
 
         case ZR_AST_STRUCT_DECLARATION:
+            /* BUG: struct 目标缺少名称范围，只保留从装饰器起始的整声明范围；definition 会跳回装饰器。 */
             outTarget->name = ownerNode->data.structDeclaration.name != ZR_NULL
                                   ? ownerNode->data.structDeclaration.name->name
                                   : ZR_NULL;
@@ -416,6 +431,7 @@ static TZrBool decorator_navigation_resolve_target(SZrAstNode *ownerNode, SZrLsp
             return ZR_TRUE;
 
         case ZR_AST_ENUM_DECLARATION:
+            /* BUG: enum 及其成员的整节点范围从装饰器起始，definition 会返回光标所在装饰器而非名称。 */
             outTarget->name = ownerNode->data.enumDeclaration.name != ZR_NULL
                                   ? ownerNode->data.enumDeclaration.name->name
                                   : ZR_NULL;
@@ -453,6 +469,7 @@ static TZrBool decorator_navigation_resolve_target(SZrAstNode *ownerNode, SZrLsp
     }
 }
 
+/* 两个尝试入口共享上下文分析器 AST；语法错误时它可能仍是上一有效版本的树。 */
 static TZrBool decorator_navigation_find_hit(SZrSemanticAnalyzer *analyzer,
                                              SZrFileRange position,
                                              SZrLspDecoratorHit *outHit) {
@@ -467,6 +484,7 @@ static TZrBool decorator_navigation_find_hit(SZrSemanticAnalyzer *analyzer,
     return decorator_navigation_find_hit_recursive(analyzer->ast, position, outHit);
 }
 
+/* 把受修饰声明投影为 LSP 位置；结果数组持有新建 location，URI 借用 AST 或请求。 */
 static TZrBool decorator_navigation_append_definition(SZrState *state,
                                                       SZrLspContext *context,
                                                       SZrArray *result,
@@ -489,6 +507,7 @@ static TZrBool decorator_navigation_append_definition(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 为装饰器表达式制作摘要 hover，范围仍覆盖表达式；外层 hover 入口接管结果容器。 */
 static TZrBool decorator_navigation_create_hover(SZrState *state,
                                                  SZrLspContext *context,
                                                  SZrString *uri,
@@ -536,6 +555,7 @@ static TZrBool decorator_navigation_create_hover(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 普通 definition 在语义查询前调用：仅光标落在装饰器上时把跳转目标指向受修饰声明。 */
 TZrBool ZrLanguageServer_Lsp_TryGetDecoratorDefinition(SZrState *state,
                                                        SZrLspContext *context,
                                                        SZrString *uri,
@@ -556,6 +576,7 @@ TZrBool ZrLanguageServer_Lsp_TryGetDecoratorDefinition(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* BUG: 语法错后的 fallback AST 仍可命中当前光标，definition 会返回上一版本的目标。 */
     filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
     fileRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
     if (!decorator_navigation_find_hit(analyzer, fileRange, &hit) ||
@@ -570,6 +591,7 @@ TZrBool ZrLanguageServer_Lsp_TryGetDecoratorDefinition(SZrState *state,
     return decorator_navigation_append_definition(state, context, result, uri, target.range);
 }
 
+/* 普通 hover 优先调用：装饰器命中时展示表达式类别和受修饰目标，否则允许后续语义分支继续。 */
 TZrBool ZrLanguageServer_Lsp_TryGetDecoratorHover(SZrState *state,
                                                   SZrLspContext *context,
                                                   SZrString *uri,
@@ -593,6 +615,7 @@ TZrBool ZrLanguageServer_Lsp_TryGetDecoratorHover(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* BUG: fallback AST 可把当前装饰器光标映射到上一版本的表达式，hover 因而显示过时文案。 */
     filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
     fileRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
     if (!decorator_navigation_find_hit(analyzer, fileRange, &hit) ||
@@ -612,5 +635,6 @@ TZrBool ZrLanguageServer_Lsp_TryGetDecoratorHover(SZrState *state,
     }
 
     category = strncmp(decoratorBuffer, "zr.ffi.", strlen("zr.ffi.")) == 0 ? "ffi decorator" : "decorator";
+    /* TODO: 构造 hover 失败也以 false 返回；需核对外层语义回退是否允许掩盖分配失败。 */
     return decorator_navigation_create_hover(state, context, uri, hit.decoratorNode, decoratorBuffer, category, target, result);
 }

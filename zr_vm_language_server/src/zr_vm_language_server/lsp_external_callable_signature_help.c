@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 读取实参事实文档时适配 VM 短串与长串布局；字节仍归当前 VM 状态所有。 */
 static const TZrChar *external_signature_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -16,6 +17,7 @@ static const TZrChar *external_signature_string_text(SZrString *value) {
                    : ZrCore_String_GetNativeString(value);
 }
 
+/* 外部参数说明由 descriptor 和当前调用事实共同组成；任一来源缺失时保留另一来源。 */
 static SZrString *external_signature_parameter_documentation(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -63,6 +65,7 @@ static SZrString *external_signature_parameter_documentation(
     return result;
 }
 
+/* Resolve 只构造一个候选签名；后续参数投影必须追加到该候选而非创建第二个视图。 */
 static SZrLspSignatureInformation *external_signature_first(
         SZrLspSignatureHelp *help) {
     SZrLspSignatureInformation **signaturePtr;
@@ -75,6 +78,7 @@ static SZrLspSignatureInformation *external_signature_first(
     return signaturePtr != ZR_NULL ? *signaturePtr : ZR_NULL;
 }
 
+/* 参数标签复用 hover 使用的闭合 contract；失败由 Resolve 销毁整条签名。 */
 static TZrBool external_signature_append_parameters(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -121,6 +125,8 @@ static TZrBool external_signature_append_parameters(
     return ZR_TRUE;
 }
 
+/* 外部签名视图只接受原生 builtin / descriptor plugin 的确定元数据身份。
+ * UNAVAILABLE 阻止上层回退到 AST 或名称猜测；NOT_EXTERNAL 才允许尝试其他来源。 */
 EZrLspExternalCallableSignatureStatus
 ZrLanguageServer_LspExternalCallableSignatureHelp_Resolve(
         SZrState *state,
@@ -162,6 +168,7 @@ ZrLanguageServer_LspExternalCallableSignatureHelp_Resolve(
     }
 
     status = ZR_LSP_EXTERNAL_CALLABLE_SIGNATURE_UNAVAILABLE;
+    /* 方法还需 parser 的调用类型证实接收者契约；静态方法交回上层现有路径。 */
     if (query.resolvedMember.memberKind == ZR_LSP_METADATA_MEMBER_FUNCTION) {
         if (!ZrLanguageServer_LspExternalCallableContract_FromResolvedMember(
                     &query.resolvedMember, &contract)) {

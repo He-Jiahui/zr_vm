@@ -1,14 +1,19 @@
 #include "zr_vm_language_server_stdio_internal.h"
 #include "stdio_handler_result.h"
 
+/* 轻量 moniker 仅在形似标识符的代码区词上生成文档内身份；词法范围不代表语义绑定。 */
 static int moniker_is_identifier_start(char ch) {
     return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '_';
 }
 
+/* 与 moniker_is_identifier_start 共同决定词的范围，不尝试推断跨文件符号。 */
 static int moniker_is_identifier_part(char ch) {
     return moniker_is_identifier_start(ch) || (ch >= '0' && ch <= '9');
 }
 
+/* 避免把注释和双引号字符串中的普通词当成符号身份；调用前快照必须保持有效。
+ * BUG: ZR 的单引号字符和反引号模板字符串未被视为非代码，定位到 'x' 或 `abc` 内会返回 moniker；
+ * lexer.c 接受这两种字面量，而 stdio_smoke 目前只覆盖注释与双引号。 */
 static int moniker_offset_is_in_code(const char *content, size_t contentLength, size_t targetOffset) {
     int inLineComment = 0;
     int inBlockComment = 0;
@@ -92,6 +97,9 @@ static int moniker_offset_is_in_code(const char *content, size_t contentLength, 
     return 0;
 }
 
+/* 把请求坐标定位到当前不可变文本快照，再交给词法过滤和 moniker 构造。
+ * BUG: get_uri_and_position 给出内部 UTF-16 列，而这里逐 UTF-8 字节递增列；
+ * 同一行若标识符前有非 ASCII 字符，合法请求可命中错误字节或返回空数组。 */
 static int moniker_offset_from_position(const char *content,
                                         size_t contentLength,
                                         SZrLspPosition position,
@@ -124,6 +132,8 @@ static int moniker_offset_from_position(const char *content,
     return 0;
 }
 
+/* 用 URI 和词文本构造 document-scoped 身份，cJSON 接管复制后的字段。
+ * TODO: 四次字段添加失败未检查，需以分配失败注入核对是否会发布缺少身份字段的对象。 */
 static cJSON *moniker_create_for_word(const char *uriText,
                                       const char *wordStart,
                                       size_t wordLength) {
@@ -157,6 +167,8 @@ static cJSON *moniker_create_for_word(const char *uriText,
     return moniker;
 }
 
+/* textDocument/moniker 读取 parser 版本快照，只为形似标识符的代码区词返回轻量本地身份；
+ * 不查询跨文件符号，任何分支退出前都必须释放已取得的快照。 */
 SZrLspHandlerResult handle_moniker_request(SZrStdioServer *server, const cJSON *params) {
     SZrLspPosition position;
     const char *uriText;

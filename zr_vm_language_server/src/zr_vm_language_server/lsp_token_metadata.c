@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <string.h>
 
+/* 补全、meta method hover 和语义 token 共同消费的展示词条；所有文本都借用静态字面量。 */
 typedef struct SZrLspTokenMetadataDescriptor {
     const TZrChar *label;
     const TZrChar *kind;
@@ -11,6 +12,7 @@ typedef struct SZrLspTokenMetadataDescriptor {
     const TZrChar *applicableTo;
 } SZrLspTokenMetadataDescriptor;
 
+/* 这是补全提示子集；其词表不等同于 lexer 接受的全部关键字。 */
 static const SZrLspTokenMetadataDescriptor g_lspKeywordTokens[] = {
     {"let", "keyword", "immutable binding", "declaration", "local and module bindings"},
     {"var", "keyword", "mutable binding", "declaration", "local and module bindings"},
@@ -36,6 +38,7 @@ static const SZrLspTokenMetadataDescriptor g_lspKeywordTokens[] = {
     {"yield", "keyword", "generator yield expression", "async", "function bodies"}
 };
 
+/* meta method 的补全、hover 和语义高亮共享这一表，避免同一名称在三处解释不一。 */
 static const SZrLspTokenMetadataDescriptor g_lspMetaMethodTokens[] = {
     {"@constructor", "method", "lifecycle meta method", "lifecycle", "class/struct meta function"},
     {"@destructor", "method", "lifecycle meta method", "lifecycle", "class/struct meta function"},
@@ -66,14 +69,17 @@ static const SZrLspTokenMetadataDescriptor g_lspMetaMethodTokens[] = {
     {"@setItem", "method", "call/access meta method", "call/access", "class/struct meta function"}
 };
 
+/* @ 前缀扫描只接受 ASCII 标识符起始字符；真实词法合法性仍归 parser 判定。 */
 static TZrBool token_metadata_is_identifier_start(TZrChar value) {
     return isalpha((unsigned char)value) || value == '_';
 }
 
+/* 光标附近的轻量扫描需要与上面的起始规则成对使用，不能代替 lexer。 */
 static TZrBool token_metadata_is_identifier_char(TZrChar value) {
     return isalnum((unsigned char)value) || value == '_';
 }
 
+/* 返回静态表中的借用项；hover 必须先匹配完整 token，再生成客户端展示内容。 */
 static const SZrLspTokenMetadataDescriptor *token_metadata_find_descriptor(
     const SZrLspTokenMetadataDescriptor *descriptors,
     TZrSize descriptorCount,
@@ -100,6 +106,7 @@ static const SZrLspTokenMetadataDescriptor *token_metadata_find_descriptor(
     return ZR_NULL;
 }
 
+/* 供语义 token 判别和 hover 共用完全一致的 meta method 集合。 */
 static const SZrLspTokenMetadataDescriptor *token_metadata_find_meta_method_descriptor(const TZrChar *text,
                                                                                         TZrSize length) {
     return token_metadata_find_descriptor(g_lspMetaMethodTokens,
@@ -108,6 +115,7 @@ static const SZrLspTokenMetadataDescriptor *token_metadata_find_meta_method_desc
                                           length);
 }
 
+/* 将静态词条物化为补全项；所有权转给调用方结果数组，后续由补全结果释放路径处理。 */
 static void token_metadata_append_completion_descriptors(SZrState *state,
                                                          SZrArray *result,
                                                          const SZrLspTokenMetadataDescriptor *descriptors,
@@ -136,6 +144,7 @@ static void token_metadata_append_completion_descriptors(SZrState *state,
     }
 }
 
+/* 关键字补全仅用于普通词首；上层若得到候选便优先于泛用可见符号补全。 */
 static void token_metadata_append_keyword_prefix_completions(SZrState *state,
                                                              SZrArray *result,
                                                              const TZrChar *prefix,
@@ -160,6 +169,7 @@ static void token_metadata_append_keyword_prefix_completions(SZrState *state,
     }
 }
 
+/* hover 先按当前快照确定字节偏移，范围再由文档位置编解码器转成客户端 UTF-16 坐标。 */
 static SZrFilePosition token_metadata_file_position_from_offset(const TZrChar *content,
                                                                 TZrSize contentLength,
                                                                 TZrSize offset) {
@@ -186,6 +196,7 @@ static SZrFilePosition token_metadata_file_position_from_offset(const TZrChar *c
     return ZrParser_FilePosition_Create(offset, line, column);
 }
 
+/* 在光标附近提取单个 @ 名称；调用方还需做代码区域过滤和静态表精确匹配。 */
 static TZrBool token_metadata_find_prefixed_identifier_at_offset(const TZrChar *content,
                                                                  TZrSize contentLength,
                                                                  TZrSize cursorOffset,
@@ -232,10 +243,12 @@ static TZrBool token_metadata_find_prefixed_identifier_at_offset(const TZrChar *
     return *outEnd > *outStart + 1;
 }
 
+/* 语义 token 的名称识别复用 hover 词表；这里只认名称，不保证该位置是合法声明。 */
 TZrBool ZrLanguageServer_Lsp_IsKnownMetaMethodToken(const TZrChar *text, TZrSize length) {
     return token_metadata_find_meta_method_descriptor(text, length) != ZR_NULL;
 }
 
+/* 作为补全管线的结构化优先分支，结果写入调用方已经初始化的数组。 */
 TZrBool ZrLanguageServer_Lsp_TryCollectTokenPrefixCompletions(SZrState *state,
                                                               const TZrChar *content,
                                                               TZrSize contentLength,
@@ -249,6 +262,8 @@ TZrBool ZrLanguageServer_Lsp_TryCollectTokenPrefixCompletions(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* 协议补全入口先过滤注释与字符串；这个低层词首收集器只负责词表。
+     * TODO: 公开的语义收集接口也可被直接调用，未做相同预筛选；需核对其非代码区域契约。 */
     prefixChar = content[cursorOffset - 1];
     if (prefixChar == '%') {
         return ZR_FALSE;
@@ -276,6 +291,7 @@ TZrBool ZrLanguageServer_Lsp_TryCollectTokenPrefixCompletions(SZrState *state,
     return result->length > 0;
 }
 
+/* 在通用符号 hover 前处理特殊 @ 名称；同一文档快照用于词提取、过滤和范围转换。 */
 TZrBool ZrLanguageServer_Lsp_TryGetMetaMethodHover(SZrState *state,
                                                    SZrLspContext *context,
                                                    SZrString *uri,
