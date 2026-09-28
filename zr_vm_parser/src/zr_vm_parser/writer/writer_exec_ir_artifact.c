@@ -92,7 +92,7 @@ static TZrBool exec_ir_writer_metadata_is_supported(
 EZrArtifactStatus ZrParser_ExecIr_WriteCanonicalZroFile(
         const SZrArtifactDocument *metadata, const SZrExecIrModule *module,
         const char *filename, SZrArtifactDiagnostic *diagnostic) {
-    TZrByte payload[ZR_ARTIFACT_EXEC_IR_SCALAR_ENCODED_SIZE];
+    TZrByte payload[ZR_ARTIFACT_EXEC_IR_BRANCH_ENCODED_SIZE];
     SZrArtifactExecIrSectionInput nestedSection;
     SZrArtifactExecIrDocument nestedDocument;
     SZrArtifactExecIrDiagnostic nestedDiagnostic;
@@ -102,6 +102,7 @@ EZrArtifactStatus ZrParser_ExecIr_WriteCanonicalZroFile(
     TZrByte *outerBytes = ZR_NULL;
     TZrUInt32 nestedSize = 0u;
     TZrUInt32 nestedWritten = 0u;
+    TZrUInt32 payloadSize = 0u;
     TZrSize outerSize = 0u;
     TZrSize outerWritten = 0u;
     EZrArtifactStatus status;
@@ -113,6 +114,12 @@ EZrArtifactStatus ZrParser_ExecIr_WriteCanonicalZroFile(
         filename[0] == '\0')
         return exec_ir_writer_fail(diagnostic,
                 ZR_ARTIFACT_STATUS_INVALID_ARGUMENT, 0u);
+    if (ZrCore_ArtifactExecIrScalar_GetEncodedSize(
+                module, &payloadSize, &nestedDiagnostic) !=
+        ZR_ARTIFACT_EXEC_IR_OK)
+        return exec_ir_writer_fail(diagnostic,
+                ZR_ARTIFACT_STATUS_INVALID_SECTION,
+                ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE);
     if (ZrCore_ArtifactExecIrScalar_Write(module, payload, sizeof(payload),
                                            &nestedDiagnostic) !=
         ZR_ARTIFACT_EXEC_IR_OK)
@@ -124,15 +131,15 @@ EZrArtifactStatus ZrParser_ExecIr_WriteCanonicalZroFile(
                 ZR_ARTIFACT_STATUS_INVALID_SECTION, 0u);
     memset(&nestedSection, 0, sizeof(nestedSection));
     nestedSection.kind = ZR_ARTIFACT_EXEC_IR_SECTION_EXEC_IR;
-    nestedSection.elementCount = sizeof(payload);
+    nestedSection.elementCount = payloadSize;
     nestedSection.elementSize = 1u;
     nestedSection.data = payload;
-    nestedSection.byteLength = sizeof(payload);
+    nestedSection.byteLength = payloadSize;
     memset(&nestedDocument, 0, sizeof(nestedDocument));
     nestedDocument.abiVersion = ZR_VM_AOT_ABI_VERSION;
     nestedDocument.moduleHash = module->moduleHash;
     nestedDocument.execIrHash = ZrCore_ArtifactExecIr_HashBytes(
-            payload, sizeof(payload));
+            payload, payloadSize);
     nestedDocument.sectionCount = 1u;
     nestedDocument.sections = &nestedSection;
     if (ZrCore_ArtifactExecIr_GetEncodedSize(&nestedDocument, &nestedSize,

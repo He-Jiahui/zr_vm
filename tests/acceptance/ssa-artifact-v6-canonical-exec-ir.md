@@ -114,3 +114,93 @@ in the shared source checkout by this slice.
 GCC, Clang, and native MSVC focused artifact proofs are green. The adjacent
 AOT source-contract mismatch remains open outside this slice.
 Full 08.01 remains open after this slice.
+
+## EIS2 two-block follow-up
+
+This follow-up keeps ZRAF v6, AOT ABI 17, and ERI1 v1. It adds a distinct
+EIS2 v2 payload for one no argument i64 function with an unconditional entry
+BRANCH to a CONSTANT then RETURN block. The test fixes the committed EIS1
+payload as an exact 412 byte golden and writes the EIS2 artifact to a sibling
+`-branch.zro` path under the same D build tree. The separate `--read` process
+must reconstruct the actual two-block graph, verify its edge and run Oracle
+to return 42. A malformed successor with its nested hash recomputed must
+report the exact payload byte offset and leave the output graph empty; a
+wrong EIS2 version must return `UNSUPPORTED_VERSION` with no graph.
+The same file mutation without a hash update must be rejected by ERI1 hash
+validation before graph decoding.
+Direct codec checks also require exact EIS1 and EIS2 sizes, a byte-for-byte
+EIS1 v1 golden, and unchanged size/output destinations on rejected EIS2
+graphs.
+
+Test-first GCC RED was captured in the retained
+`D:\tmp\zr_vm\ssa-artifact-v6-gcc` cache: the focused test target built
+2/2, then `ssa_exec_ir_artifact_v6_write` failed 1/1 with
+`branch writer status: invalid-section (10)` and
+`FAIL: write verified two-block branch artifact`. The old EIS1 golden and
+source graph verifier passed before this assertion. This is the expected
+failure of the existing one-block writer.
+
+## EIS2 tooling and results
+
+GCC 11.4 Debug/Ninja in `D:\tmp\zr_vm\ssa-artifact-v6-gcc` rebuilt the
+focused artifact, schema, and relocation targets (695/695 Ninja edges, exit
+0). The final EIS2 test source and file writer were compiled in that build.
+The following registered CTests passed 4/4, exit 0:
+
+```bash
+cmake --build /mnt/d/tmp/zr_vm/ssa-artifact-v6-gcc \
+  --target zr_vm_ssa_exec_ir_artifact_v6_test \
+           zr_vm_ssa_schema_relocation_test zr_vm_artifact_schema_test -j 4
+ctest --test-dir /mnt/d/tmp/zr_vm/ssa-artifact-v6-gcc \
+  -R '^(ssa_exec_ir_artifact_v6_(write|roundtrip)|ssa_schema_relocation|artifact_schema)$' \
+  --output-on-failure --no-tests=error
+```
+
+Clang 14 Debug/Ninja in `D:\tmp\zr_vm\ssa-artifact-v6-clang` rebuilt the
+artifact test target (623/623, exit 0), including the final test source and
+file writer, then passed the registered write/roundtrip CTests 2/2:
+
+```bash
+cmake --build /mnt/d/tmp/zr_vm/ssa-artifact-v6-clang \
+  --target zr_vm_ssa_exec_ir_artifact_v6_test -j 4
+ctest --test-dir /mnt/d/tmp/zr_vm/ssa-artifact-v6-clang \
+  -R '^ssa_exec_ir_artifact_v6_(write|roundtrip)$' \
+  --output-on-failure --no-tests=error
+```
+
+MSVC 19.44 Debug/Ninja in `D:\tmp\zr_vm\ssa-artifact-v6-msvc` rebuilt the
+artifact test target, including its final test and writer objects, and linked
+the executable with exit 0. Native Windows `ctest.exe` passed the registered
+write/roundtrip CTests 2/2, exit 0:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+  'C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Invoke-VsDevCommand.ps1' `
+  'D:\Tools\development\cmake\bin\cmake.exe' --build `
+  'D:\tmp\zr_vm\ssa-artifact-v6-msvc' `
+  --target zr_vm_ssa_exec_ir_artifact_v6_test --parallel 4
+& 'D:\Tools\development\cmake\bin\ctest.exe' `
+  --test-dir 'D:\tmp\zr_vm\ssa-artifact-v6-msvc' `
+  -R '^ssa_exec_ir_artifact_v6_(write|roundtrip)$' `
+  --output-on-failure --no-tests=error
+```
+
+The MSVC build used `Invoke-VsDevCommand.ps1` through Windows PowerShell with
+`-ExecutionPolicy Bypass` to import the Visual Studio environment. The
+current default PowerShell blocked direct script execution before compilation;
+this was a launcher issue, and the verified native build and tests followed.
+The wiki source validator passed: 116 Markdown files, 115 manifest pages,
+646 local links. The nine-file scoped diff passed `git diff --check`.
+
+All three platform runs exercised the exact EIS1 v1 golden, EIS2 direct
+encode/decode and Oracle=42, distinct EIS2 payload selection, two-process
+file roundtrip, unchanged outputs on rejected writes and reads, wrong
+payload version, payload mutation rejected by its stored hash, and the same
+mutation with recomputed hash rejected at successor byte offset 556.
+
+## EIS2 acceptance decision
+
+This fixed two-block artifact slice is accepted by the focused matrix above.
+The EIS2 implementation does not add general CFG, maps, binding, relocation
+resolution, ExecBC, native AOT calling, package copy, or ImportByPath
+migration. Full 08.01 remains open.

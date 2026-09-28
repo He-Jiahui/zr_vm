@@ -63,8 +63,19 @@ projection 或 `ImportByPath` 迁移，以下任务和退出门禁继续有效�
 `codeOffset` 只允许落在 `EXEC_IR` 节内，所有行先验证再触发 resolver；
 失败保留行与目标 token，结果数组不部分发布。见
 [独立验收记录](../../../../tests/acceptance/ssa-artifact-v6-eri1-relocation-boundary.md)。
-这只加固底层封套与解析接口；ZRAF EIS1 opener 继续拒绝 binding、
+这只加固底层封套与解析接口；ZRAF canonical opener 继续拒绝 binding、
 relocation、maps 和 ExecBC，不能据此勾选真正跨进程目标解析门禁。
+
+**双块 CFG 持久子切片：** 现有 ZRAF v6/ABI 17/ERI1 v1 保持不变，
+`EXEC_IR` payload 新增独立 EIS2 v2 逐字段线格式，保存一个无参数 i64
+函数的 ENTRY BRANCH→第二块 CONSTANT→RETURN，以及显式双向边、支配块、
+指令和结果/操作数池。原 EIS1 v1 的 412 字节 golden 不变；EIS2 为固定
+564 字节。writer 仅在全图 Verify 且属于两种精确形状时选版；loader
+临时解码并 Verify 后发布，错误边及错误版本拒绝且不发布图。独立跨进程
+Oracle=42 验收见
+[canonical ExecIR 验收记录](../../../../tests/acceptance/ssa-artifact-v6-canonical-exec-ir.md)。
+此扩展只覆盖一条无条件 CFG 边，不实现通用 CFG、binding、relocation、
+maps、ExecBC 或 native AOT 调用，完整 08.01 的退出门禁仍未满足。
 
 ## 依赖与交付范围
 

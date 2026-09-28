@@ -12,8 +12,21 @@
 #define ZR_ARTIFACT_EXEC_IR_SCALAR_ENCODED_SIZE ((TZrUInt32)412u)
 #define ZR_ARTIFACT_EXEC_IR_SCALAR_CONSTANT_OPCODE_OFFSET ((TZrUInt32)236u)
 
-/* Rejects every graph field or side table outside the scalar subset. On
- * failure the destination bytes are unchanged. */
+/* EIS2 adds one explicit BRANCH edge to a second CONSTANT/RETURN block.
+ * ERI1 and EIS1 remain unchanged; these are independent payload versions. */
+#define ZR_ARTIFACT_EXEC_IR_BRANCH_MAGIC ((TZrUInt32)0x32534945u)
+#define ZR_ARTIFACT_EXEC_IR_BRANCH_VERSION ((TZrUInt16)2u)
+#define ZR_ARTIFACT_EXEC_IR_BRANCH_ENCODED_SIZE ((TZrUInt32)564u)
+#define ZR_ARTIFACT_EXEC_IR_BRANCH_SUCCESSOR_ID_OFFSET ((TZrUInt32)556u)
+
+/* Reports the exact payload size only for one of the supported, verified
+ * graph shapes. No output size is published on failure. */
+ZR_CORE_API EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_GetEncodedSize(
+        const SZrExecIrModule *module, TZrUInt32 *outSize,
+        SZrArtifactExecIrDiagnostic *diagnostic);
+
+/* Rejects every graph field or side table outside EIS1/EIS2. On failure the
+ * destination bytes are unchanged. */
 ZR_CORE_API EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_Write(
         const SZrExecIrModule *module, TZrByte *bytes, TZrUInt32 capacity,
         SZrArtifactExecIrDiagnostic *diagnostic);

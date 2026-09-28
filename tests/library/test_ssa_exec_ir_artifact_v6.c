@@ -7,6 +7,7 @@
 #include "zr_vm_common/zr_type_conf.h"
 
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -23,6 +24,37 @@
 #define TEST_LAYOUT_HASH UINT64_C(0x4444555566667777)
 #define TEST_CONTRACT_HASH UINT64_C(0x5555666677778888)
 #define TEST_MODULE_HASH UINT64_C(0x6666777788889999)
+#define TEST_EIS2_ENCODED_SIZE 564u
+#define TEST_EIS2_SUCCESSOR_ID_OFFSET 556u
+
+/* Full 412-byte EIS1 payload from the committed v1 scalar writer. */
+static const char eis1GoldenPayload[] =
+    "\x45\x49\x53\x31\x01\x00\x9c\x01\x01\x00\x00\x00\x01\x00\x00\x01"
+    "\x99\x99\x88\x88\x77\x77\x66\x66\x06\x00\x00\x00\x11\x00\x00\x00"
+    "\x01\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00"
+    "\x01\x00\x00\x01\x00\x00\x00\x00\x66\x66\x55\x55\x44\x44\x33\x33"
+    "\x77\x77\x66\x66\x55\x55\x44\x44\x99\x99\x88\x88\x77\x77\x66\x66"
+    "\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x03\x00\x00\x03"
+    "\x66\x66\x55\x55\x44\x44\x33\x33\x01\x00\x00\x00\x00\x00\x00\x00"
+    "\x06\x00\x00\x00\x11\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00"
+    "\x01\x00\x00\x00\x00\x00\x00\x00\x03\x00\x00\x03\x00\x00\x00\x00"
+    "\x66\x66\x55\x55\x44\x44\x33\x33\x77\x77\x66\x66\x55\x55\x44\x44"
+    "\x99\x99\x88\x88\x77\x77\x66\x66\x00\x00\x00\x00\x00\x00\x00\x00"
+    "\x05\x00\x00\x00\x00\x00\x00\x00\x2a\x00\x00\x00\x00\x00\x00\x00"
+    "\x01\x00\x00\x00\x01\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00"
+    "\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x01\x00\x00\x00"
+    "\x00\x00\x00\x00\x02\x00\x00\x00\x02\x00\x00\x00\x02\x00\x00\x00"
+    "\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    "\x00\x00\x00\x00\x65\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    "\x1b\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    "\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    "\x00\x00\x00\x00\x00\x00\x00\x00\x66\x00\x00\x00\x00\x00\x00\x00"
+    "\x00\x00\x00\x00\x01\x00\x00\x00\x01\x00\x00\x00";
 
 #ifdef ZR_ARTIFACT_TEST_IO_FAILURE
 void ZrParser_ExecIrArtifact_TestInjectWriteFailure(TZrBool enabled);
@@ -141,7 +173,7 @@ static void init_fixture(SFixture *fixture) {
     identity->moduleHash = TEST_MODULE_HASH;
 }
 
-static void build_graph(SZrExecIrModule *module) {
+static void build_graph(SZrExecIrModule *module, TZrBool branched) {
     SZrExecIrFunction *function;
     SZrExecIrBlock *block;
     SZrExecIrConstant constant = {ZR_VALUE_TYPE_INT64, 0u, 42u};
@@ -150,6 +182,9 @@ static void build_graph(SZrExecIrModule *module) {
     TZrExecIrFunctionId functionId;
     TZrExecIrValueId valueId;
     TZrExecIrInstructionId instructionId;
+    TZrExecIrBlockId entryBlockId = 1u;
+    TZrExecIrBlockId returnBlockId = 2u;
+    SZrExecIrRange successorRange;
     SZrExecIrDiagnostic diagnostic;
 
     ZrCore_ExecIr_ModuleInit(module);
@@ -178,6 +213,9 @@ static void build_graph(SZrExecIrModule *module) {
     require_true(ZrCore_ExecIr_FunctionAddBlock(function,
                                                ZR_EXEC_IR_BLOCK_FLAG_ENTRY) == 1u,
                  "add entry block");
+    if (branched)
+        require_true(ZrCore_ExecIr_FunctionAddBlock(function, 0u) == 2u,
+                     "add return block");
     valueId = ZrCore_ExecIr_FunctionAddValue(function, ZR_VALUE_TYPE_INT64,
                                             ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
                                             ZR_EXEC_IR_NULLABILITY_UNKNOWN);
@@ -186,25 +224,51 @@ static void build_graph(SZrExecIrModule *module) {
                                                     &resultRange), "append result");
     require_true(ZrCore_ExecIr_FunctionAppendOperands(function, &valueId, 1u,
                                                      &returnRange), "append operand");
+    if (branched) {
+        require_true(ZrCore_ExecIr_FunctionAppendSuccessors(
+                     function, &returnBlockId, 1u, &successorRange),
+                     "append branch successor");
+        function->blocks[0].successors = successorRange;
+        require_true(ZrCore_ExecIr_FunctionAppendPredecessors(
+                     function, &entryBlockId, 1u,
+                     &function->blocks[1].predecessors),
+                     "append return predecessor");
+        memset(&instruction, 0, sizeof(instruction));
+        instruction.opcode = ZR_EXEC_IR_OPCODE_BRANCH;
+        instruction.successorRange = successorRange;
+        instruction.sourceId = 100u;
+        require_true(ZrCore_ExecIr_FunctionAppendInstruction(
+                     function, &instruction, &instructionId) &&
+                     instructionId == 1u, "append BRANCH");
+    }
     memset(&instruction, 0, sizeof(instruction));
     instruction.opcode = ZR_EXEC_IR_OPCODE_CONSTANT;
     instruction.results = resultRange;
     instruction.layoutId = constantRange.start;
     instruction.sourceId = 101u;
     require_true(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction,
-                                                         &instructionId) && instructionId == 1u,
+                                                         &instructionId) &&
+                 instructionId == (branched ? 2u : 1u),
                  "append CONSTANT");
     memset(&instruction, 0, sizeof(instruction));
     instruction.opcode = ZR_EXEC_IR_OPCODE_RETURN;
     instruction.operands = returnRange;
     instruction.sourceId = 102u;
     require_true(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction,
-                                                         &instructionId) && instructionId == 2u,
+                                                         &instructionId) &&
+                 instructionId == (branched ? 3u : 2u),
                  "append RETURN");
     block = ZrCore_ExecIr_FunctionBlockAt(function, 1u);
     block->instructions.start = 0u;
-    block->instructions.count = 2u;
-    block->terminatorInstructionId = 2u;
+    block->instructions.count = branched ? 1u : 2u;
+    block->terminatorInstructionId = branched ? 1u : 2u;
+    if (branched) {
+        block = ZrCore_ExecIr_FunctionBlockAt(function, 2u);
+        block->instructions.start = 1u;
+        block->instructions.count = 2u;
+        block->immediateDominator = 1u;
+        block->terminatorInstructionId = 3u;
+    }
     require_true(ZrCore_ExecIr_VerifyModule(module, &diagnostic), "verify source graph");
 }
 
@@ -240,7 +304,9 @@ static SZrArtifactDiagnostic require_rejected(const TZrByte *bytes,
                                              &output, &diagnostic);
     require_true(actual == expected, "malformed artifact status");
     require_true(output.functionCount == 0u && output.functions == ZR_NULL &&
-                 output.constantCount == 0u && output.constants == ZR_NULL,
+                 output.constantCount == 0u && output.constants == ZR_NULL &&
+                 output.layoutCount == 0u && output.layouts == ZR_NULL &&
+                 output.sourceMapCount == 0u && output.sourceMaps == ZR_NULL,
                  "failed load published graph");
     return diagnostic;
 }
@@ -270,14 +336,21 @@ static void run_oracle(const SZrExecIrModule *module) {
 static void test_scalar_codec(SZrExecIrModule *module) {
     TZrByte encoded[ZR_ARTIFACT_EXEC_IR_SCALAR_ENCODED_SIZE];
     TZrByte unchanged[ZR_ARTIFACT_EXEC_IR_SCALAR_ENCODED_SIZE];
+    TZrUInt32 encodedSize = 0u;
     SZrExecIrModule decoded;
     SZrArtifactExecIrDiagnostic diagnostic;
+    require_true(ZrCore_ArtifactExecIrScalar_GetEncodedSize(
+                 module, &encodedSize, &diagnostic) == ZR_ARTIFACT_EXEC_IR_OK &&
+                 encodedSize == sizeof(encoded), "EIS1 exact payload size");
     memset(encoded, 0xa5, sizeof(encoded));
     require_true(ZrCore_ArtifactExecIrScalar_Write(module, encoded,
                  sizeof(encoded), &diagnostic) == ZR_ARTIFACT_EXEC_IR_OK,
                  "encode canonical graph fields");
     require_true(encoded[0] == 'E' && encoded[1] == 'I' &&
                  encoded[2] == 'S' && encoded[3] == '1', "EIS1 payload magic");
+    require_true(sizeof(eis1GoldenPayload) == sizeof(encoded) + 1u &&
+                 memcmp(encoded, eis1GoldenPayload, sizeof(encoded)) == 0,
+                 "EIS1 v1 payload remains byte-for-byte stable");
     ZrCore_ExecIr_ModuleInit(&decoded);
     require_true(ZrCore_ArtifactExecIrScalar_Read(encoded, sizeof(encoded),
                  &decoded, &diagnostic) == ZR_ARTIFACT_EXEC_IR_OK,
@@ -311,6 +384,68 @@ static void test_scalar_codec(SZrExecIrModule *module) {
                  "rejected codec published graph");
 }
 
+static void test_branch_codec(SZrExecIrModule *module) {
+    TZrByte encoded[ZR_ARTIFACT_EXEC_IR_BRANCH_ENCODED_SIZE];
+    TZrByte unchanged[ZR_ARTIFACT_EXEC_IR_BRANCH_ENCODED_SIZE];
+    TZrUInt32 encodedSize = 0u;
+    SZrExecIrModule decoded;
+    SZrArtifactExecIrDiagnostic diagnostic;
+    require_true(ZrCore_ArtifactExecIrScalar_GetEncodedSize(
+                 module, &encodedSize, &diagnostic) == ZR_ARTIFACT_EXEC_IR_OK &&
+                 encodedSize == sizeof(encoded), "EIS2 exact payload size");
+    memset(encoded, 0xa5, sizeof(encoded));
+    require_true(ZrCore_ArtifactExecIrScalar_Write(module, encoded,
+                 sizeof(encoded), &diagnostic) == ZR_ARTIFACT_EXEC_IR_OK,
+                 "encode two-block graph");
+    require_true(memcmp(encoded, "EIS2", 4u) == 0 &&
+                 encoded[4] == 2u, "EIS2 distinct magic and version");
+    ZrCore_ExecIr_ModuleInit(&decoded);
+    require_true(ZrCore_ArtifactExecIrScalar_Read(encoded, sizeof(encoded),
+                 &decoded, &diagnostic) == ZR_ARTIFACT_EXEC_IR_OK,
+                 "decode two-block graph");
+    require_true(decoded.functions[0].blockCount == 2u &&
+                 decoded.functions[0].instructionCount == 3u &&
+                 decoded.functions[0].successors[0] == 2u &&
+                 decoded.functions[0].predecessors[0] == 1u,
+                 "EIS2 decoded full CFG edge");
+    run_oracle(&decoded);
+    ZrCore_ExecIr_FreeModule(&decoded);
+    memcpy(unchanged, encoded, sizeof(encoded));
+    module->functions[0].instructions[0].bindingRow = 1u;
+    encodedSize = 777u;
+    require_true(ZrCore_ArtifactExecIrScalar_GetEncodedSize(
+                 module, &encodedSize, &diagnostic) ==
+                 ZR_ARTIFACT_EXEC_IR_INVALID_SECTION && encodedSize == 777u,
+                 "rejected EIS2 size query left output unchanged");
+    require_true(ZrCore_ArtifactExecIrScalar_Write(module, encoded,
+                 sizeof(encoded), &diagnostic) ==
+                 ZR_ARTIFACT_EXEC_IR_INVALID_SECTION &&
+                 memcmp(encoded, unchanged, sizeof(encoded)) == 0,
+                 "rejected EIS2 encode left destination unchanged");
+    module->functions[0].instructions[0].bindingRow = 0u;
+    put32(encoded + ZR_ARTIFACT_EXEC_IR_BRANCH_SUCCESSOR_ID_OFFSET, 3u);
+    ZrCore_ExecIr_ModuleInit(&decoded);
+    require_true(ZrCore_ArtifactExecIrScalar_Read(encoded, sizeof(encoded),
+                 &decoded, &diagnostic) ==
+                 ZR_ARTIFACT_EXEC_IR_INVALID_SECTION &&
+                 diagnostic.byteOffset ==
+                         ZR_ARTIFACT_EXEC_IR_BRANCH_SUCCESSOR_ID_OFFSET &&
+                 decoded.functionCount == 0u && decoded.functions == ZR_NULL,
+                 "malformed EIS2 edge rejected before graph publication");
+}
+
+static char *branch_artifact_path(const char *path) {
+    size_t length = strlen(path);
+    char *branchPath;
+    require_true(length >= 4u && strcmp(path + length - 4u, ".zro") == 0 &&
+                 length <= SIZE_MAX - 8u, "bounded ZRO test path");
+    branchPath = (char *)malloc(length + 8u);
+    require_true(branchPath != NULL, "allocate branch artifact path");
+    memcpy(branchPath, path, length - 4u);
+    memcpy(branchPath + length - 4u, "-branch.zro", 12u);
+    return branchPath;
+}
+
 static void write_phase(const char *path) {
     SFixture fixture;
     SZrExecIrModule module;
@@ -322,7 +457,7 @@ static void write_phase(const char *path) {
     TZrSize originalLength;
     TZrSize retainedLength;
     init_fixture(&fixture);
-    build_graph(&module);
+    build_graph(&module, ZR_FALSE);
     test_scalar_codec(&module);
     module.functions[0].instructions[0].bindingRow = 1u;
     require_true(ZrParser_ExecIr_WriteCanonicalZroFile(&fixture.metadata, &module,
@@ -377,6 +512,110 @@ static void write_phase(const char *path) {
     free(retainedBytes);
     free(originalBytes);
     ZrCore_ExecIr_FreeModule(&module);
+    {
+        char *branchPath = branch_artifact_path(path);
+        TZrSize branchLength;
+        TZrSize retainedBranchLength;
+        TZrByte *branchBytes;
+        TZrByte *retainedBranchBytes;
+        EZrArtifactStatus branchStatus;
+        build_graph(&module, ZR_TRUE);
+        test_branch_codec(&module);
+        branchStatus = ZrParser_ExecIr_WriteCanonicalZroFile(
+                &fixture.metadata, &module, branchPath, &diagnostic);
+        if (branchStatus != ZR_ARTIFACT_STATUS_OK)
+            fprintf(stderr, "branch writer status: %s (%u)\n",
+                    ZrCore_Artifact_StatusName(branchStatus),
+                    (unsigned)branchStatus);
+        require_true(branchStatus == ZR_ARTIFACT_STATUS_OK,
+                     "write verified two-block branch artifact");
+        branchBytes = read_file(branchPath, &branchLength);
+        module.functions[0].instructions[0].bindingRow = 1u;
+        require_true(ZrParser_ExecIr_WriteCanonicalZroFile(
+                     &fixture.metadata, &module, branchPath, &diagnostic) ==
+                     ZR_ARTIFACT_STATUS_INVALID_SECTION,
+                     "reject branch graph with unresolved binding");
+        module.functions[0].instructions[0].bindingRow = 0u;
+        retainedBranchBytes = read_file(branchPath, &retainedBranchLength);
+        require_true(branchLength == retainedBranchLength &&
+                     memcmp(branchBytes, retainedBranchBytes, branchLength) == 0,
+                     "rejected branch rewrite preserved existing bytes");
+        free(retainedBranchBytes);
+        free(branchBytes);
+        ZrCore_ExecIr_FreeModule(&module);
+        free(branchPath);
+    }
+}
+
+static void read_branch_phase(const char *path) {
+    SFixture fixture;
+    TZrSize length;
+    TZrByte *bytes = read_file(path, &length);
+    TZrByte *mutated = (TZrByte *)malloc(length);
+    SZrExecIrModule module;
+    SZrArtifactDiagnostic diagnostic;
+    SZrArtifactView outer;
+    SZrArtifactSectionView bundle;
+    SZrArtifactExecIrView nested;
+    const SZrArtifactExecIrSectionView *payload;
+    TZrSize bundleOffset;
+    TZrSize payloadOffset;
+    require_true(mutated != NULL, "allocate branch mutation bytes");
+    init_fixture(&fixture);
+    ZrCore_ExecIr_ModuleInit(&module);
+    require_true(ZrCore_Module_OpenExecIrArtifact(
+                 bytes, length, &fixture.metadata.identity, &module,
+                 &diagnostic) == ZR_ARTIFACT_STATUS_OK,
+                 "open two-block branch artifact in separate process");
+    require_true(module.functionCount == 1u && module.constantCount == 1u &&
+                 module.constants[0].bits == 42u &&
+                 module.functions[0].blockCount == 2u &&
+                 module.functions[0].instructionCount == 3u &&
+                 module.functions[0].successorCount == 1u &&
+                 module.functions[0].successors[0] == 2u &&
+                 module.functions[0].instructions[0].opcode ==
+                         ZR_EXEC_IR_OPCODE_BRANCH,
+                 "decoded canonical branch edge and graph");
+    run_oracle(&module);
+    ZrCore_ExecIr_FreeModule(&module);
+    require_true(ZrCore_Artifact_Read(bytes, length, &outer, &diagnostic) ==
+                 ZR_ARTIFACT_STATUS_OK, "read branch ZRAF envelope");
+    require_true(ZrCore_Artifact_FindSection(
+                 &outer, ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE, &bundle,
+                 &diagnostic) == ZR_ARTIFACT_STATUS_OK,
+                 "find branch ERI1 bundle");
+    require_true(ZrCore_ArtifactExecIr_Read(bundle.data, bundle.byteLength,
+                 &nested, NULL) == ZR_ARTIFACT_EXEC_IR_OK,
+                 "read branch ERI1 directory");
+    require_true(ZrCore_ArtifactExecIr_FindSection(
+                 &nested, ZR_ARTIFACT_EXEC_IR_SECTION_EXEC_IR, &payload,
+                 NULL) == ZR_ARTIFACT_EXEC_IR_OK &&
+                 payload->byteLength == TEST_EIS2_ENCODED_SIZE &&
+                 memcmp(payload->data, "EIS2", 4u) == 0,
+                 "explicit EIS2 branch payload");
+    bundleOffset = (TZrSize)(bundle.data - bytes);
+    payloadOffset = (TZrSize)(payload->data - bytes);
+    memcpy(mutated, bytes, length);
+    put32(mutated + payloadOffset + TEST_EIS2_SUCCESSOR_ID_OFFSET, 3u);
+    require_rejected(mutated, length, ZR_ARTIFACT_STATUS_INVALID_SECTION);
+    put64(mutated + bundleOffset + 20u,
+          ZrCore_ArtifactExecIr_HashBytes(mutated + payloadOffset,
+                                          payload->byteLength));
+    diagnostic = require_rejected(mutated, length,
+                                  ZR_ARTIFACT_STATUS_INVALID_SECTION);
+    require_true(diagnostic.sectionKind ==
+                         ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE &&
+                 diagnostic.byteOffset ==
+                         payloadOffset + TEST_EIS2_SUCCESSOR_ID_OFFSET,
+                 "invalid branch successor reports its byte offset");
+    memcpy(mutated, bytes, length);
+    put16(mutated + payloadOffset + 4u, 1u);
+    put64(mutated + bundleOffset + 20u,
+          ZrCore_ArtifactExecIr_HashBytes(mutated + payloadOffset,
+                                          payload->byteLength));
+    require_rejected(mutated, length, ZR_ARTIFACT_STATUS_UNSUPPORTED_VERSION);
+    free(mutated);
+    free(bytes);
 }
 
 static void read_phase(const char *path) {
@@ -489,6 +728,11 @@ static void read_phase(const char *path) {
     free(mutated);
     free(withTrailing);
     free(bytes);
+    {
+        char *branchPath = branch_artifact_path(path);
+        read_branch_phase(branchPath);
+        free(branchPath);
+    }
 }
 
 int main(int argc, char **argv) {

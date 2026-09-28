@@ -35,11 +35,27 @@ layout did not change. EIS1 is the first graph payload version and has a fixed
 412 byte little endian layout. It encodes IDs, metadata tokens, contracts,
 source IDs, a scalar constant, a value, a block, and complete CONSTANT and
 RETURN instructions. Runtime pointers and C struct padding are never written.
+EIS2 is a separate 564 byte payload version in the same ERI1 envelope. It
+encodes exactly two blocks: an entry BRANCH to a CONSTANT then RETURN block.
+Its block records include predecessor and successor ranges, dominators, and
+terminator IDs; its edge IDs and instruction fields are explicit little
+endian integers. The existing EIS1 byte sequence stays unchanged.
+
+| EIS2 byte offsets | Encoded fields |
+| --- | --- |
+| 0–7 | `EIS2` magic, payload version 2, total length 564 |
+| 8–215 | module/function identity and contracts, constant, value |
+| 216–295 | two 40 byte block records |
+| 296–547 | three 84 byte instructions |
+| 548–563 | result ID, operand ID, successor ID, predecessor ID |
+
+The successor ID starts at byte 556 and the predecessor ID at byte 560.
 
 `ZrParser_ExecIr_WriteCanonicalZroFile` accepts a validated ZRO metadata
 document with seven identity sections and an `SZrExecIrModule`. It supports
-exactly one no argument i64 function with one entry block and CONSTANT then
-RETURN. Every unsupported graph side table, map, binding, relocation,
+exactly one no argument i64 function with either the EIS1 one block shape or
+the EIS2 two block unconditional BRANCH shape. Every unsupported graph side
+table, map, binding, relocation,
 additional function, or opcode is rejected. Encoding and validation finish
 before a file is opened. The writer creates an exclusive temporary file in
 the target directory, closes it, and publishes it by same directory rename;
@@ -55,12 +71,15 @@ the caller's expected public identity, validates the outer ZRO and each
 required section, checks the nested ABI and hashes, decodes EIS1 into a
 temporary model, runs `ZrCore_ExecIr_VerifyModule`, compares the decoded
 module/function contract with the outer metadata, then publishes the graph.
+EIS2's successor and reciprocal predecessor must name the two serialized
+blocks exactly; an invalid edge is rejected with its payload byte offset and
+without publishing a graph.
 All failed reads leave the caller's empty graph empty. A schema 5 ZRAF is
 rejected with `UNSUPPORTED_VERSION` and diagnostic expected/actual versions.
 The separate historical `01ZR` `.zro` binary path remains handled by
 `ZrCore_Module_ImportByPath`; this API rejects its magic.
 
-This is one vertical slice of plan 08.01. It does not provide general CFG,
+This remains a partial vertical slice of plan 08.01. It does not provide general CFG,
 maps, binding, relocation resolution, ExecBC, package copy, AOT projection,
 or `ImportByPath` migration. The legacy ERI1 raw section codec and relocation
 unit test remain available for their existing callers; accepting raw bytes
