@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
+/** 在单条 InlineValueText 的固定容量内追加片段；容量耗尽会令整条事实被丢弃。 */
 static int inline_value_append_text(char *buffer,
                                     size_t bufferSize,
                                     size_t *used,
@@ -27,6 +28,7 @@ static int inline_value_append_text(char *buffer,
     return 1;
 }
 
+/** 只在已有事实时加入分隔符，使多类语义事实成为同一条可读文本。 */
 static int inline_value_append_separator(char *buffer, size_t bufferSize, size_t *used) {
     if (used != NULL && *used > 0) {
         return inline_value_append_text(buffer, bufferSize, used, ", ");
@@ -35,6 +37,7 @@ static int inline_value_append_separator(char *buffer, size_t bufferSize, size_t
     return 1;
 }
 
+/** 把局部语义查询给出的数值范围和溢出风险投影为编辑器可见摘要。 */
 static int inline_value_append_numeric_fact(char *buffer,
                                             size_t bufferSize,
                                             size_t *used,
@@ -94,6 +97,7 @@ static int inline_value_append_numeric_fact(char *buffer,
     return 1;
 }
 
+/** 把确定的布尔值和短路性质加入同一语义摘要。 */
 static int inline_value_append_logical_fact(char *buffer,
                                             size_t bufferSize,
                                             size_t *used,
@@ -122,6 +126,7 @@ static int inline_value_append_logical_fact(char *buffer,
     return 1;
 }
 
+/** 借用语义事实中的字符串内容；仅在查询快照有效时使用返回指针。 */
 static const char *inline_value_string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return "";
@@ -132,6 +137,7 @@ static const char *inline_value_string_text(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
+/** 将调用与成员事实压缩为编辑器提示，避免在 stdio 层重新解释语法。 */
 static int inline_value_append_expression_payload(char *buffer,
                                                   size_t bufferSize,
                                                   size_t *used,
@@ -144,6 +150,7 @@ static int inline_value_append_expression_payload(char *buffer,
         return 1;
     }
 
+    /* TODO: 调用名加参数摘要超过 255 字节时 snprintf 会截断文本；需核对标识符长度约束及显示策略。 */
     if (fact->hasCallInfo) {
         callName = inline_value_string_text(fact->callTargetName);
         if (!inline_value_append_separator(buffer, bufferSize, used)) {
@@ -178,6 +185,7 @@ static int inline_value_append_expression_payload(char *buffer,
     return 1;
 }
 
+/** 将语义引用分类映射为稳定的 inlineValue 文本词汇。 */
 static const char *inline_value_reference_kind_text(EZrSemanticReferenceKind kind) {
     switch (kind) {
         case ZR_SEMANTIC_REFERENCE_DECLARATION:
@@ -198,6 +206,7 @@ static const char *inline_value_reference_kind_text(EZrSemanticReferenceKind kin
     }
 }
 
+/** 追加引用身份，让下标成员等表达式展示语义用途而非只展示名称。 */
 static int inline_value_append_reference_fact(char *buffer,
                                               size_t bufferSize,
                                               size_t *used,
@@ -219,6 +228,7 @@ static int inline_value_append_reference_fact(char *buffer,
     return inline_value_append_text(buffer, bufferSize, used, segment);
 }
 
+/** 空范围不能作为 InlineValueText 的锚点；调用方据此跳过无意义响应。 */
 static int inline_value_range_is_non_empty(SZrLspRange range) {
     if (range.end.line > range.start.line) {
         return 1;
@@ -228,6 +238,7 @@ static int inline_value_range_is_non_empty(SZrLspRange range) {
            range.end.character > range.start.character;
 }
 
+/** 将同一文档快照中的局部语义事实打包为单条 InlineValueText；无事实时不添加结果。 */
 cJSON *ZrStdioInlineValue_CreateSemanticTextForLspRange(SZrStdioServer *server,
                                                         SZrString *uri,
                                                         SZrLspRange range,

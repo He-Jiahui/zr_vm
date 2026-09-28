@@ -2,14 +2,17 @@
 
 #include <string.h>
 
+/** inlineValue 只把 ASCII 标识符纳入轻量词法候选，实际语义仍交给分析器。 */
 int ZrStdioInlineValue_IsIdentifierStart(char ch) {
     return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '_';
 }
 
+/** 与首字符规则保持一致，避免关键字前后缀被误判为独立 token。 */
 int ZrStdioInlineValue_IsIdentifierPart(char ch) {
     return ZrStdioInlineValue_IsIdentifierStart(ch) || (ch >= '0' && ch <= '9');
 }
 
+/** 在行范围内识别完整关键字，供 var/return 与表达式语句筛选共用。 */
 int ZrStdioInlineValue_IsKeywordAt(const char *content,
                                    size_t lineStart,
                                    size_t lineEnd,
@@ -38,6 +41,7 @@ int ZrStdioInlineValue_IsKeywordAt(const char *content,
     return 1;
 }
 
+/** 只把含非空白字符的片段交给后续 inlineValue 候选扫描。 */
 static int inline_value_range_has_nonspace(const char *content, size_t start, size_t end) {
     if (content == NULL || end <= start) {
         return 0;
@@ -52,6 +56,7 @@ static int inline_value_range_has_nonspace(const char *content, size_t start, si
     return 0;
 }
 
+/** 跨过同一行的引号内容，防止形似声明的字符串文本进入候选扫描。 */
 static size_t inline_value_skip_string_literal(const char *content, size_t quoteOffset, size_t lineEnd) {
     char quote;
     size_t cursor;
@@ -81,6 +86,13 @@ static size_t inline_value_skip_string_literal(const char *content, size_t quote
     return cursor;
 }
 
+/**
+ * 返回本行第一段代码，同时把块注释状态交给下一行；调用方只调用一次。
+ * BUG: 同一行两条 var 声明之间夹块注释时，首段代码被返回后，后段声明
+ * 不再送入扫描，覆盖整行的 inlineValue 请求缺少后段变量的查找项。
+ * BUG: 同行代码后的闭合块注释若再跟一个未闭合块注释，提前返回还会漏掉
+ * 第二个开头，下一行可能把注释正文误判为变量声明。
+ */
 int ZrStdioInlineValue_FindCodeSpanOnLine(const char *content,
                                           size_t lineStart,
                                           size_t lineEnd,
@@ -170,6 +182,7 @@ int ZrStdioInlineValue_FindCodeSpanOnLine(const char *content,
     return 0;
 }
 
+/** 为表达式语句找跨行终点，忽略单/双引号和注释内的分号以维持范围归属。 */
 size_t ZrStdioInlineValue_FindExpressionStatementEnd(const char *content,
                                                      size_t start,
                                                      size_t limit) {
@@ -273,6 +286,7 @@ size_t ZrStdioInlineValue_FindExpressionStatementEnd(const char *content,
     return limit;
 }
 
+/** 优先查询逻辑运算符，使短路事实能投影到表达式的 inlineValue。 */
 static size_t inline_value_find_logical_operator(const char *content,
                                                  size_t start,
                                                  size_t end) {
@@ -290,6 +304,7 @@ static size_t inline_value_find_logical_operator(const char *content,
     return end;
 }
 
+/** 在缺少逻辑运算时选择算术运算符，供数值区间事实查询。 */
 static size_t inline_value_find_arithmetic_operator(const char *content,
                                                     size_t start,
                                                     size_t end) {
@@ -310,6 +325,7 @@ static size_t inline_value_find_arithmetic_operator(const char *content,
     return end;
 }
 
+/** 在表达式尾端查找点号成员，保证查询位置落在成员标识符上。 */
 static size_t inline_value_find_last_member_operator(const char *content,
                                                      size_t start,
                                                      size_t end) {
@@ -332,6 +348,7 @@ static size_t inline_value_find_last_member_operator(const char *content,
     return end;
 }
 
+/** 将最外层下标访问作为候选，避免数组字面量与嵌套键干扰成员事实。 */
 static size_t inline_value_find_last_computed_member_operator(const char *content,
                                                               size_t start,
                                                               size_t end) {
@@ -389,6 +406,11 @@ static size_t inline_value_find_last_computed_member_operator(const char *conten
     return lastOperator;
 }
 
+/**
+ * 按逻辑、算术、成员、首 token 的优先级选择局部语义查询位置。
+ * BUG: 逻辑/算术候选直接扫描原始字节；return 字面量后的块注释若含加号，
+ * 查询位置会指向注释起始的斜杠，从而丢掉本应查询的字面量事实。
+ */
 size_t ZrStdioInlineValue_FindSemanticQueryOffset(const char *content,
                                                   size_t start,
                                                   size_t end) {
@@ -421,6 +443,7 @@ size_t ZrStdioInlineValue_FindSemanticQueryOffset(const char *content,
     return start;
 }
 
+/** 对象字面量探测允许键与冒号跨行，空白跳过必须受文档长度约束。 */
 static size_t inline_value_skip_object_literal_space(const char *content, size_t offset, size_t limit) {
     while (content != NULL &&
            offset < limit &&
@@ -433,6 +456,7 @@ static size_t inline_value_skip_object_literal_space(const char *content, size_t
     return offset;
 }
 
+/** 探测对象键时忽略引号内的分隔符，避免误认冒号位置。 */
 static size_t inline_value_skip_quoted_key(const char *content, size_t offset, size_t limit) {
     char quote;
     int escaped = 0;
@@ -460,6 +484,7 @@ static size_t inline_value_skip_quoted_key(const char *content, size_t offset, s
     return offset;
 }
 
+/** 探测计算键时越过嵌套下标及引号，使外层冒号决定对象字面量身份。 */
 static size_t inline_value_skip_computed_key(const char *content, size_t offset, size_t limit) {
     int depth = 0;
     int inSingleQuote = 0;
@@ -513,6 +538,7 @@ static size_t inline_value_skip_computed_key(const char *content, size_t offset,
     return offset;
 }
 
+/** 区分对象字面量和普通块起始，以免把控制块当表达式查询。 */
 static int inline_value_is_object_literal_start(const char *content,
                                                 size_t lineEnd,
                                                 size_t contentLength,
@@ -546,6 +572,7 @@ static int inline_value_is_object_literal_start(const char *content,
     return offset < contentLength && content[offset] == ':';
 }
 
+/** 以轻量词法排除声明/控制语句，再让正式语义查询决定是否有可展示事实。 */
 int ZrStdioInlineValue_IsExpressionStatementStart(const char *content,
                                                   size_t lineStart,
                                                   size_t lineEnd,

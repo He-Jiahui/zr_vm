@@ -6,6 +6,7 @@
 
 #include <string.h>
 
+/** 按请求范围筛选候选 token；该范围已由入口转换为内部位置编码。 */
 static int inline_value_position_in_range(SZrLspRange range, TZrInt32 line, TZrInt32 character) {
     if (line < range.start.line || line > range.end.line) {
         return 0;
@@ -19,6 +20,7 @@ static int inline_value_position_in_range(SZrLspRange range, TZrInt32 line, TZrI
     return 1;
 }
 
+/** 对局部变量声明输出运行时名称查找，与静态语义事实的文本项并存。 */
 static cJSON *inline_value_create_variable_lookup(TZrInt32 line,
                                                   TZrInt32 startCharacter,
                                                   const char *nameStart,
@@ -51,6 +53,11 @@ static cJSON *inline_value_create_variable_lookup(TZrInt32 line,
     return json;
 }
 
+/**
+ * 为跨行 return/初始化器寻找语句边界，以便把事实绑定到完整表达式。
+ * BUG: 此处未区分注释和字符串；return 表达式后的块注释若含分号，
+ * InlineValueText 范围会在注释内截断，尽管表达式语句的另一终点扫描器会避开注释。
+ */
 static size_t inline_value_find_multiline_statement_end(const char *content,
                                                         size_t start,
                                                         size_t limit) {
@@ -67,6 +74,7 @@ static size_t inline_value_find_multiline_statement_end(const char *content,
     return end;
 }
 
+/** 跨过声明或 return 后的换行空白，让续行表达式参与语义查询。 */
 static size_t inline_value_skip_multiline_whitespace(const char *content,
                                                      size_t offset,
                                                      size_t limit) {
@@ -85,6 +93,7 @@ static size_t inline_value_skip_multiline_whitespace(const char *content,
     return offset;
 }
 
+/** 去掉表达式尾部空白，避免 inlineValue 范围吞入下一行布局。 */
 static size_t inline_value_trim_expression_end(const char *content,
                                                size_t start,
                                                size_t end) {
@@ -103,6 +112,11 @@ static size_t inline_value_trim_expression_end(const char *content,
     return end;
 }
 
+/**
+ * 从快照字节偏移构造 LSP 位置，供范围和语义查询共用。
+ * BUG: 当前 character 直接取 UTF-8 字节差；非 ASCII 字符位于 token 前时，
+ * 内部语义查询所需的 UTF-16 列和返回范围均偏移，响应编码转换也无法还原正确列。
+ */
 static SZrLspPosition inline_value_position_from_offset(const char *content,
                                                         size_t lineStart,
                                                         TZrInt32 line,
@@ -129,6 +143,7 @@ static SZrLspPosition inline_value_position_from_offset(const char *content,
     return position;
 }
 
+/** 将扫描器的字节范围转为位置，再委托局部语义查询产生 InlineValueText。 */
 static cJSON *inline_value_create_semantic_text_for_offsets(SZrStdioServer *server,
                                                             SZrString *uri,
                                                             const char *content,
@@ -150,6 +165,7 @@ static cJSON *inline_value_create_semantic_text_for_offsets(SZrStdioServer *serv
     return ZrStdioInlineValue_CreateSemanticTextForLspRange(server, uri, range, queryPosition);
 }
 
+/** 识别续行之前的 return，允许下一行的表达式归属上一行语句。 */
 static int inline_value_previous_token_is_keyword(const char *content,
                                                   size_t lineStart,
                                                   const char *keyword) {
@@ -185,6 +201,7 @@ static int inline_value_previous_token_is_keyword(const char *content,
            strncmp(content + tokenStart, keyword, keywordLength) == 0;
 }
 
+/** 用前一 token 的未闭合运算/分隔符判断当前行是否延续表达式。 */
 static int inline_value_line_is_continuation(const char *content, size_t lineStart) {
     size_t offset;
 
@@ -220,6 +237,7 @@ static int inline_value_line_is_continuation(const char *content, size_t lineSta
     return 0;
 }
 
+/** 表达式语句候选必须位于行首缩进后，防止中途 token 被重复查询。 */
 static int inline_value_has_only_whitespace_before(const char *content,
                                                    size_t start,
                                                    size_t end) {
@@ -238,6 +256,7 @@ static int inline_value_has_only_whitespace_before(const char *content,
     return 1;
 }
 
+/** 回溯表达式续行的起始行，供仅请求续行的编辑器取得完整事实。 */
 static int inline_value_find_continuation_expression_owner(const char *content,
                                                           size_t lineStart,
                                                           TZrInt32 line,
@@ -301,6 +320,7 @@ static int inline_value_find_continuation_expression_owner(const char *content,
     return currentLine > 0 || currentLineStart == 0;
 }
 
+/** 回溯 var 初始化器的声明行，使续行请求仍以变量名锚定语义事实。 */
 static int inline_value_find_continuation_initializer_owner(const char *content,
                                                            size_t lineStart,
                                                            TZrInt32 line,
@@ -364,6 +384,7 @@ static int inline_value_find_continuation_initializer_owner(const char *content,
     return currentLine > 0 || currentLineStart == 0;
 }
 
+/** 仅在请求从初始化器续行开始时补发声明名上的语义事实，避免正常范围重复。 */
 static void inline_value_emit_continuation_initializer(const char *content,
                                                        size_t lineStart,
                                                        size_t lineEnd,
@@ -494,6 +515,7 @@ static void inline_value_emit_continuation_initializer(const char *content,
     }
 }
 
+/** 仅在请求从表达式续行开始时补发完整表达式事实。 */
 static void inline_value_emit_continuation_expression_statement(const char *content,
                                                                size_t lineStart,
                                                                size_t lineEnd,
@@ -575,6 +597,7 @@ static void inline_value_emit_continuation_expression_statement(const char *cont
     }
 }
 
+/** 在单行代码片段中区分 return、表达式语句和变量声明三种 inlineValue 锚点。 */
 static void inline_value_scan_line(const char *content,
                                    size_t lineStart,
                                    size_t lineEnd,
@@ -599,6 +622,8 @@ static void inline_value_scan_line(const char *content,
         return;
     }
     offset = codeStart;
+    /* BUG: codeStart 是 UTF-8 字节偏移，requestRange 却是内部 UTF-16 列；
+     * 同行候选前有非 ASCII 字符时，范围筛选及变量名查找坐标都会偏移。 */
     character = (TZrInt32)(codeStart - lineStart);
 
     inline_value_emit_continuation_expression_statement(content,
@@ -797,6 +822,10 @@ static void inline_value_scan_line(const char *content,
     }
 }
 
+/**
+ * textDocument/inlineValue 的 stdio 入口：参数错误交给 JSON-RPC 状态映射，
+ * 有效请求持有内容快照完成逐行扫描，无快照或无事实时返回合法空数组。
+ */
 SZrLspHandlerResult handle_inline_value_request(SZrStdioServer *server, const cJSON *params) {
     const char *uriText;
     SZrString *uri;
@@ -829,6 +858,7 @@ SZrLspHandlerResult handle_inline_value_request(SZrStdioServer *server, const cJ
 
     content = snapshot.content;
     contentLength = snapshot.contentLength;
+    /* 请求前的行仍推进块注释状态，否则范围起点会把注释正文误当代码。 */
     for (size_t offset = 0; offset <= contentLength; offset++) {
         if (offset == contentLength || content[offset] == '\n') {
             if (line >= requestRange.start.line && line <= requestRange.end.line) {
