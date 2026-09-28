@@ -799,6 +799,22 @@ if (NOT TARGET zr_vm_ssa_aot_callable_abi_test)
     set_tests_properties(ssa_aot_callable_abi PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_aot_canonical_abi_test)
+    zr_vm_add_support_target(
+            zr_vm_ssa_aot_canonical_abi_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_aot_canonical_abi.c
+    )
+    target_include_directories(zr_vm_ssa_aot_canonical_abi_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_ssa_aot_canonical_abi_test)
+    add_test(NAME ssa_aot_canonical_abi
+            COMMAND zr_vm_ssa_aot_canonical_abi_test)
+    set_tests_properties(ssa_aot_canonical_abi PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_aot_scalar_text_test)
     add_executable(zr_vm_ssa_aot_scalar_text_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_aot_scalar_text.c

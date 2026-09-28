@@ -4,6 +4,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/aot_ir.c
   - zr_vm_core/include/zr_vm_core/exec_ir_state_map.h
   - zr_vm_parser/include/zr_vm_parser/exec_ir_projections.h
+  - zr_vm_parser/include/zr_vm_parser/canonical_type.h
+  - zr_vm_parser/include/zr_vm_parser/semantic.h
   - zr_vm_parser/include/zr_vm_parser/aot_ir_projection_descriptor.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_projection_descriptor.c
@@ -12,14 +14,18 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/aot_ir.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_projection_descriptor.c
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_projections.h
 plan_sources:
   - docs/plans/ssa/07-aot-backends/01-aotir-contract.md
+  - docs/plans/ssa/07-aot-backends/02-c-llvm-lowering.md
 tests:
   - tests/parser/test_ssa_aotir_contract.c
   - tests/parser/test_ssa_aot_callable_abi.c
+  - tests/parser/test_ssa_aot_canonical_abi.c
   - tests/parser/test_ssa_aot_projection_branch_descriptor.c
   - tests/acceptance/ssa-aotir-logical-map-schema.md
   - tests/acceptance/ssa-aotir-explicit-callable-abi.md
+  - tests/acceptance/ssa-aotir-canonical-callable-abi.md
   - tests/acceptance/ssa-aotir-branch-descriptor.md
 doc_type: module-detail
 status: implemented-subset
@@ -71,8 +77,27 @@ trusted primitive return-signature producer and explicitly leaves this field
 `UNKNOWN`. Neither `typeToken`, opaque `signatureHash`, constant bits, legacy
 ExecBC, nor `frameLayout.parameterPrefixBytes` establishes parameter count or
 the i64 ABI. ExecIR's `frameLayout.parameterCount` is not carried by this
-AOTIR record and does not establish the primitive return kind. Thus no current
-source-to-AOTIR path claims an executable ABI.
+AOTIR record and does not establish the primitive return kind. The explicit
+opt-in `ZrParser_ExecIr_LowerAotWithCanonicalCallable` path below is the only
+source-to-AOTIR producer that currently qualifies this narrow ABI.
+
+`ZrParser_ExecIr_LowerAotWithCanonicalCallable` accepts a semantic context and
+canonical callable type ID, then requires the canonical function node's
+structural hash to match both the ExecIR signature and execution-contract
+signature. It currently accepts only an effect-free function with no receiver,
+no parameters, and canonical primitive i64 return type; its frame must also
+have zero parameter counts, and every ExecIR RETURN value must carry that same
+return type token. It first lowers into a private candidate and publishes
+`NOARGS_I64` only after the existing ExecIR/AOT projection checks and these
+canonical checks succeed. Rejected calls preserve the caller's existing output.
+The legacy lowering APIs continue to publish `UNKNOWN`.
+
+The canonical node's `structuralHash` is used only to bind this producer to the
+canonical function node in the supplied context. Its current implementation
+mixes child `TZrTypeId` values, so this bridge does not claim cross-context or
+persistent signature-hash stability. Qualifying the ABI also leaves
+`runnable` false: this is an AOTIR projection seam, not an executable native
+artifact or a claim that a C/LLVM emitter is available.
 
 `ZrCore_AotIr_ValidateModule` rejects unknown ABI enum values, a nonzero
 return token on `UNKNOWN`, a zero return token on `NOARGS_I64`, and RETURN
@@ -165,6 +190,14 @@ ctest --test-dir build/ssa-gcc-debug -R '^ssa_aotir_contract$' \
 unknown and mismatched fail-closed cases, hash sensitivity, owned projection
 transfer, and backend adapter qualification. CMake registers it as
 `ssa_aot_callable_abi`.
+
+`tests/parser/test_ssa_aot_canonical_abi.c` checks the opt-in same-context
+canonical callable producer, its accepted noargs-i64 shape, legacy `UNKNOWN`
+behavior, and transactional rejection for invalid/mismatched type, effect,
+receiver, parameter, return, and ExecIR inputs. Its scope does not include
+cross-context hash identity or runnable native code. See
+`tests/acceptance/ssa-aotir-canonical-callable-abi.md` for the recorded RED,
+GREEN, and adjacent CTest results.
 
 `tests/parser/test_ssa_aot_projection_branch_descriptor.c` builds verified
 two-block ExecIR, lowers it with the legacy `UNKNOWN` ABI, and checks the

@@ -4,6 +4,7 @@
 #include "zr_vm_core/aot_ir.h"
 #include "zr_vm_core/exec_ir.h"
 #include "zr_vm_core/exec_ir_state_map.h"
+#include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/conf.h"
 
 /* Fixed-width, pointer-free instruction representation used by both initial
@@ -228,6 +229,12 @@ ZR_PARSER_API TZrBool ZrParser_ExecIr_LowerAotWithConstantsAndLayouts(
         const SZrExecIrFunction *function,
         const SZrExecIrConstant *constants, TZrUInt32 constantCount,
         const SZrExecIrLayout *layouts, TZrUInt32 layoutCount,
+        SZrAotIrProjection *output, SZrExecIrDiagnostic *diagnostic);
+ZR_PARSER_API TZrBool ZrParser_ExecIr_LowerAotWithCanonicalCallable(
+        const SZrExecIrFunction *function,
+        const SZrExecIrConstant *constants, TZrUInt32 constantCount,
+        const SZrExecIrLayout *layouts, TZrUInt32 layoutCount,
+        const struct SZrSemanticContext *context, TZrTypeId callableTypeId,
         SZrAotIrProjection *output, SZrExecIrDiagnostic *diagnostic);
 ZR_PARSER_API TZrBool ZrParser_ExecIr_LowerAot(
         const SZrExecIrFunction *function, SZrAotIrProjection *output,
