@@ -5,6 +5,7 @@
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_query.h"
 
+/** 用声明事实重新核验符号和类型身份，避免 inlay hint 展示失效语义快照的类型。 */
 TZrBool ZrLanguageServer_Lsp_FormatCanonicalDeclarationType(
         SZrSemanticAnalyzer *analyzer,
         const SZrParserSemanticSymbolQuery *declaration,
@@ -34,6 +35,7 @@ TZrBool ZrLanguageServer_Lsp_FormatCanonicalDeclarationType(
                    bufferSize);
 }
 
+/** 汇合符号表身份与声明事实；供补全和元数据展示拒绝不可靠类型文本。 */
 TZrBool ZrLanguageServer_Lsp_FormatSymbolCanonicalDeclarationType(
         SZrSemanticAnalyzer *analyzer,
         SZrSymbol *symbol,
@@ -59,6 +61,7 @@ TZrBool ZrLanguageServer_Lsp_FormatSymbolCanonicalDeclarationType(
                    analyzer->semanticContext, declaration->typeId, buffer, bufferSize);
 }
 
+/** 接收者类型提示只接受当前语义上下文中的 exact 表达式事实。 */
 TZrBool ZrLanguageServer_Lsp_FormatExactExpressionType(
         SZrSemanticAnalyzer *analyzer,
         const SZrAstNode *expression,

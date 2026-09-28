@@ -3,6 +3,7 @@
 #include "interface/lsp_interface_internal.h"
 #include "interface/lsp_semantic_snapshot_cache.h"
 
+/* 只统计可丢弃的分析缓存；AST 与语义上下文由分析器另行持有，不属于此预算。 */
 struct SZrLspSemanticCacheLru {
     TZrSize limitBytes;
     TZrSize peakStorageBytes;
@@ -11,12 +12,14 @@ struct SZrLspSemanticCacheLru {
     TZrSize nextAccessOrder;
 };
 
+/* 一次扫描同时给预算检查和状态查询提供占用量与最久未使用候选。 */
 typedef struct SZrLspSemanticCacheLruScan {
     TZrSize storageBytes;
     SZrSemanticAnalyzer *oldestAnalyzer;
     TZrSize oldestAccessOrder;
 } SZrLspSemanticCacheLruScan;
 
+/* 总量与累计释放量采用饱和记账，防止规模溢出变成较小的预算值。 */
 static TZrSize lsp_semantic_cache_lru_add_clamped(
         TZrSize total,
         TZrSize value) {
@@ -26,6 +29,7 @@ static TZrSize lsp_semantic_cache_lru_add_clamped(
     return total + value;
 }
 
+/* 当前及历史分析器由不同容器持有，但都参与同一逐出顺序。 */
 static void lsp_semantic_cache_lru_consider_analyzer(
         SZrSemanticAnalyzer *analyzer,
         void *userData) {
@@ -51,6 +55,7 @@ static void lsp_semantic_cache_lru_consider_analyzer(
     }
 }
 
+/* 主分析器按 URI 保存在上下文哈希表，遍历时只借用其中的原生指针。 */
 static void lsp_semantic_cache_lru_visit_primary_analyzers(
         const SZrLspContext *context,
         TZrLspSemanticSnapshotAnalyzerVisitor visitor,
@@ -75,6 +80,7 @@ static void lsp_semantic_cache_lru_visit_primary_analyzers(
     }
 }
 
+/* 将当前分析器与历史快照合并扫描，避免历史版本绕过工作区统一预算。 */
 static SZrLspSemanticCacheLruScan lsp_semantic_cache_lru_scan(
         const SZrLspContext *context) {
     SZrLspSemanticCacheLruScan scan;
@@ -93,6 +99,7 @@ static SZrLspSemanticCacheLruScan lsp_semantic_cache_lru_scan(
     return scan;
 }
 
+/* 访问序号耗尽时清除旧序号；随后第一次 Touch 重新建立顺序起点。 */
 static void lsp_semantic_cache_lru_clear_access_order(
         SZrSemanticAnalyzer *analyzer,
         void *userData) {
@@ -102,6 +109,7 @@ static void lsp_semantic_cache_lru_clear_access_order(
     }
 }
 
+/* 重置必须同时覆盖主表和历史快照，避免不同容器的序号失去可比性。 */
 static void lsp_semantic_cache_lru_reset_access_orders(
         SZrLspContext *context) {
     lsp_semantic_cache_lru_visit_primary_analyzers(
@@ -180,6 +188,7 @@ void ZrLanguageServer_LspSemanticCacheLru_Enforce(
         return;
     }
     lru = context->semanticCacheLru;
+    /* 每次释放后重算占用量；一个分析器可能同时持有普通与作用域查询缓存。 */
     for (;;) {
         TZrSize releasedBytes;
 

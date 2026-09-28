@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+/** 保留诊断修复的适用级别与原始文本，使后续 code action 不必反推源代码。 */
 void ZrLanguageServer_Lsp_CopyDiagnosticFixes(SZrState *state,
                                               SZrLspContext *context,
                                               SZrString *uri,

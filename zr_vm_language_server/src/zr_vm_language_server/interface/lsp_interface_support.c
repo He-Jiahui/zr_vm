@@ -33,11 +33,13 @@ static TZrBool extract_base_type_name(const TZrChar *typeName,
                                       TZrChar *buffer,
                                       TZrSize bufferSize);
 
+/* 递归枚举继承成员时识别直接回边；调用方仍以深度上限兜底更长的类型环。 */
 static TZrBool type_prototype_matches_name(const SZrTypePrototypeInfo *prototype, SZrString *typeName) {
     return prototype != ZR_NULL && prototype->name != ZR_NULL && typeName != ZR_NULL &&
            ZrCore_String_Equal(prototype->name, typeName);
 }
 
+/* 本文件的名称匹配、Markdown 拼接共用此视图；返回的指针借用原 SZrString，不能独立释放。 */
 static void get_string_view(SZrString *value, TZrNativeString *text, TZrSize *length) {
     if (text == ZR_NULL || length == ZR_NULL) {
         return;
@@ -58,6 +60,7 @@ static void get_string_view(SZrString *value, TZrNativeString *text, TZrSize *le
     }
 }
 
+/* 接收者补全仅接受足以约束成员集合的类型文本，避免把 object/unknown 当作精确类型。 */
 static TZrBool receiver_type_text_is_specific(const TZrChar *text) {
     return text != ZR_NULL && text[0] != '\0' &&
            strcmp(text, "cannot infer exact type") != 0 &&
@@ -65,6 +68,7 @@ static TZrBool receiver_type_text_is_specific(const TZrChar *text) {
            strcmp(text, "unknown") != 0;
 }
 
+/* 补全和导航以声明符号区分类型名的静态成员与实例成员，不能仅凭名称猜测。 */
 static TZrBool receiver_symbol_is_type_declaration(const SZrSymbol *symbol) {
     if (symbol == ZR_NULL) {
         return ZR_FALSE;
@@ -76,6 +80,7 @@ static TZrBool receiver_symbol_is_type_declaration(const SZrSymbol *symbol) {
            symbol->type == ZR_SYMBOL_ENUM;
 }
 
+/* extern 声明归属判定优先用字节偏移，缺失偏移时才按行列比较；两端 source 需可比。 */
 static TZrBool lsp_interface_support_file_range_contains_range(SZrFileRange outer, SZrFileRange inner) {
     if (!ZrLanguageServer_Lsp_StringsEqual(outer.source, inner.source) &&
         outer.source != ZR_NULL &&
@@ -95,6 +100,7 @@ static TZrBool lsp_interface_support_file_range_contains_range(SZrFileRange oute
             (inner.end.line == outer.end.line && inner.end.column <= outer.end.column));
 }
 
+/* 为无项目文件记录的接收者声明追溯 extern 块，以免把 FFI 包装声明误报为普通项目源码。 */
 static TZrBool receiver_project_range_is_declared_in_extern_block(SZrAstNode *node, SZrFileRange range) {
     if (node == ZR_NULL) {
         return ZR_FALSE;
@@ -147,6 +153,7 @@ static TZrBool receiver_project_range_is_declared_in_extern_block(SZrAstNode *no
     }
 }
 
+/* 元数据来源分类的 AST 回退路径：直接 extern 声明和 extern 块内声明都属于 FFI 包装。 */
 static TZrBool receiver_project_declaration_is_ffi_wrapper(SZrSemanticAnalyzer *analyzer,
                                                            SZrAstNode *declarationNode,
                                                            SZrFileRange declarationRange) {
@@ -170,6 +177,7 @@ static TZrBool receiver_project_declaration_is_ffi_wrapper(SZrSemanticAnalyzer *
     return receiver_project_range_is_declared_in_extern_block(analyzer->ast, declarationRange);
 }
 
+/* 优先信任项目索引的文件来源，再从声明 AST 推断；后续悬停和导航按来源选择投影路径。 */
 static EZrLspImportedModuleSourceKind receiver_project_member_source_kind(
     SZrSemanticAnalyzer *analyzer,
     SZrLspProjectFileRecord *sourceRecord,
@@ -186,6 +194,7 @@ static EZrLspImportedModuleSourceKind receiver_project_member_source_kind(
                : ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE;
 }
 
+/* 接收者语义查询统一将当前文档的字节偏移转换为解析器坐标。 */
 static SZrFilePosition lsp_interface_support_file_position_from_offset(const TZrChar *content,
                                                                        TZrSize contentLength,
                                                                        TZrSize offset) {
@@ -196,6 +205,7 @@ static SZrFilePosition lsp_interface_support_file_position_from_offset(const TZr
     return ZrLanguageServer_LspPositionCodec_ByteOffsetToFilePosition(content, contentLength, offset);
 }
 
+/* 项目索引、快照与符号查询共用的值相等判定；两个空指针视为同一缺失值。 */
 TZrBool ZrLanguageServer_Lsp_StringsEqual(SZrString *left, SZrString *right) {
     TZrNativeString leftText;
     TZrNativeString rightText;
@@ -212,10 +222,12 @@ TZrBool ZrLanguageServer_Lsp_StringsEqual(SZrString *left, SZrString *right) {
     return leftLength == rightLength && memcmp(leftText, rightText, leftLength) == 0;
 }
 
+/* 编辑器 URI 别名比较交给 URI 层，供文档缓存和跨文件导航保持同一物理文件身份。 */
 TZrBool ZrLanguageServer_Lsp_UrisResolveToSameNativePath(SZrString *left, SZrString *right) {
     return ZrLanguageServer_LspUri_Equivalent(left, right);
 }
 
+/* 打开文档和增量解析器在哈希键不一致时仍需找到物理路径等价的现存条目；返回借用键值对。 */
 SZrHashKeyValuePair *ZrLanguageServer_Lsp_FindEquivalentUriKeyPair(SZrState *state,
                                                                    SZrHashSet *set,
                                                                    SZrString *uri) {
@@ -244,6 +256,7 @@ SZrHashKeyValuePair *ZrLanguageServer_Lsp_FindEquivalentUriKeyPair(SZrState *sta
     return ZR_NULL;
 }
 
+/* workspace/symbol 的宽松 ASCII 字节筛选；不提供 Unicode 大小写折叠语义。 */
 TZrBool ZrLanguageServer_Lsp_StringContainsCaseInsensitive(SZrString *haystack, SZrString *needle) {
     TZrNativeString haystackText;
     TZrNativeString needleText;
@@ -281,6 +294,7 @@ TZrBool ZrLanguageServer_Lsp_StringContainsCaseInsensitive(SZrString *haystack, 
     return ZR_FALSE;
 }
 
+/* 某些符号名称位置退化为零宽结束点时，尽量恢复可点击的标识符区间。 */
 static SZrFileRange lsp_symbol_normalize_name_range(SZrSymbol *symbol, SZrFileRange range) {
     TZrNativeString nameText;
     TZrSize nameLength;
@@ -306,6 +320,7 @@ static SZrFileRange lsp_symbol_normalize_name_range(SZrSymbol *symbol, SZrFileRa
     return range;
 }
 
+/* 定义、引用及元数据投影共用的符号选择区间；优先 AST 名称位置，再退回语义选择范围。 */
 SZrFileRange ZrLanguageServer_Lsp_GetSymbolLookupRange(SZrSymbol *symbol) {
     if (symbol == ZR_NULL) {
         return ZrParser_FileRange_Create(ZrParser_FilePosition_Create(0, 0, 0),
@@ -339,6 +354,7 @@ SZrFileRange ZrLanguageServer_Lsp_GetSymbolLookupRange(SZrSymbol *symbol) {
     return symbol->location;
 }
 
+/* 悬停与补全详情使用同一面向编辑器的符号类别名称。 */
 static const TZrChar *symbol_type_to_display_name(EZrSymbolType type) {
     switch (type) {
         case ZR_SYMBOL_MODULE: return "module";
@@ -357,6 +373,7 @@ static const TZrChar *symbol_type_to_display_name(EZrSymbolType type) {
     }
 }
 
+/* 注释提取优先信任解析器偏移，缺失时用行列从当前文档重建。 */
 static TZrSize resolve_file_offset(const TZrChar *content,
                                    TZrSize contentLength,
                                    SZrFilePosition position) {
@@ -370,6 +387,7 @@ static TZrSize resolve_file_offset(const TZrChar *content,
                                              (position.column > 0 ? position.column - 1 : 0));
 }
 
+/* 向前扫描相邻声明注释时定位当前行边界；调用方保证 offset 位于 content 内。 */
 static TZrSize find_line_start_offset(const TZrChar *content, TZrSize offset) {
     while (offset > 0 && content[offset - 1] != '\n' && content[offset - 1] != '\r') {
         offset--;
@@ -378,6 +396,7 @@ static TZrSize find_line_start_offset(const TZrChar *content, TZrSize offset) {
     return offset;
 }
 
+/* 悬停注释显示仅剔除行首空白，保留注释正文的原始内容。 */
 static TZrSize trim_line_start_offset(const TZrChar *content, TZrSize start, TZrSize end) {
     while (start < end && isspace((unsigned char)content[start])) {
         start++;
@@ -386,6 +405,7 @@ static TZrSize trim_line_start_offset(const TZrChar *content, TZrSize start, TZr
     return start;
 }
 
+/* 与行首裁剪配合，限制注释正文范围而不修改文档缓冲区。 */
 static TZrSize trim_line_end_offset(const TZrChar *content, TZrSize start, TZrSize end) {
     while (end > start && isspace((unsigned char)content[end - 1])) {
         end--;
@@ -394,6 +414,7 @@ static TZrSize trim_line_end_offset(const TZrChar *content, TZrSize start, TZrSi
     return end;
 }
 
+/* 处理 LF/CRLF 后退边界，确保只检查紧贴声明的上一行注释。 */
 static TZrSize skip_line_breaks_backward(const TZrChar *content, TZrSize offset) {
     while (offset > 0 && (content[offset - 1] == '\n' || content[offset - 1] == '\r')) {
         offset--;
@@ -402,6 +423,7 @@ static TZrSize skip_line_breaks_backward(const TZrChar *content, TZrSize offset)
     return offset;
 }
 
+/* 有界识别块注释界符，避免在未终止的文档切片上使用 C 字符串搜索。 */
 static TZrBool line_contains_literal(const TZrChar *content,
                                      TZrSize start,
                                      TZrSize end,
@@ -422,6 +444,7 @@ static TZrBool line_contains_literal(const TZrChar *content,
     return ZR_FALSE;
 }
 
+/* 各种悬停文本都走同一有界拼接契约；超出固定缓冲容量的尾部会被截断。 */
 static void append_buffer_slice(TZrChar *buffer,
                                 TZrSize bufferSize,
                                 TZrSize *used,
@@ -446,6 +469,7 @@ static void append_buffer_slice(TZrChar *buffer,
     buffer[*used] = '\0';
 }
 
+/* 仅供已终止的静态文本及类型文本使用，最终容量仍由 append_buffer_slice 控制。 */
 static void append_buffer_text(TZrChar *buffer,
                                TZrSize bufferSize,
                                TZrSize *used,
@@ -457,6 +481,7 @@ static void append_buffer_text(TZrChar *buffer,
     append_buffer_slice(buffer, bufferSize, used, text, strlen(text));
 }
 
+/* 把符号表承载的 FFI 来源说明纳入悬停正文，避免项目来源在展示层丢失。 */
 static void append_symbol_ffi_hover_metadata(SZrSymbol *symbol,
                                              TZrChar *buffer,
                                              TZrSize bufferSize,
@@ -476,6 +501,7 @@ static void append_symbol_ffi_hover_metadata(SZrSymbol *symbol,
     append_buffer_slice(buffer, bufferSize, used, metadataText, metadataLength);
 }
 
+/* 元数据提供者的补充入口；若基础 Markdown 已含相同 FFI 说明，则保留原对象。 */
 SZrString *ZrLanguageServer_Lsp_AppendSymbolFfiMetadataMarkdown(SZrState *state,
                                                                 SZrString *base,
                                                                 SZrSymbol *symbol) {
@@ -507,6 +533,7 @@ SZrString *ZrLanguageServer_Lsp_AppendSymbolFfiMetadataMarkdown(SZrState *state,
     return ZrCore_String_Create(state, combinedBuffer, strlen(combinedBuffer));
 }
 
+/* 悬停文档消费连续 // 行时去掉标记，并用换行保持原有段落顺序。 */
 static void append_cleaned_line_comment(const TZrChar *content,
                                         TZrSize lineStart,
                                         TZrSize lineEnd,
@@ -531,6 +558,7 @@ static void append_cleaned_line_comment(const TZrChar *content,
     append_buffer_slice(buffer, bufferSize, used, content + start, end - start);
 }
 
+/* 悬停文档消费块注释时去掉边界与星号，保留声明前原有说明。 */
 static void append_cleaned_block_comment_line(const TZrChar *content,
                                               TZrSize lineStart,
                                               TZrSize lineEnd,
@@ -589,6 +617,7 @@ static void append_cleaned_block_comment_line(const TZrChar *content,
     append_buffer_slice(buffer, bufferSize, used, content + start, end - start);
 }
 
+/* 只读取紧贴符号声明的有限行数，防止悬停吸入与声明无关的文件头或前一段代码。 */
 static TZrBool extract_leading_comment_text(const TZrChar *content,
                                             TZrSize contentLength,
                                             SZrFileRange range,
@@ -709,6 +738,7 @@ static TZrBool extract_leading_comment_text(const TZrChar *content,
     return ZR_FALSE;
 }
 
+/* 供本地和规范化悬停复用声明前注释；返回新建的 GC 字符串或空值。 */
 SZrString *ZrLanguageServer_Lsp_ExtractLeadingCommentMarkdown(SZrState *state,
                                                               SZrSymbol *symbol,
                                                               const TZrChar *content,
@@ -730,6 +760,7 @@ SZrString *ZrLanguageServer_Lsp_ExtractLeadingCommentMarkdown(SZrState *state,
     return ZrCore_String_Create(state, commentBuffer, strlen(commentBuffer));
 }
 
+/* 补全和悬停共用的声明展示：汇合属性签名、推断类型、FFI 来源及邻接注释。 */
 SZrString *ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(SZrState *state,
                                                                  SZrSemanticAnalyzer *analyzer,
                                                                  SZrSymbol *symbol,
@@ -794,6 +825,7 @@ SZrString *ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(SZrState *state
     return ZrCore_String_Create(state, markdownBuffer, strlen(markdownBuffer));
 }
 
+/* 补全详情在同名接收者上附加精确推断类型，重复请求时避免重复写入该事实。 */
 static SZrString *append_resolved_type_to_detail(SZrState *state,
                                                  SZrString *detail,
                                                  SZrString *resolvedTypeText) {
@@ -835,6 +867,7 @@ static SZrString *append_resolved_type_to_detail(SZrState *state,
     return ZrCore_String_Create(state, buffer, strlen(buffer));
 }
 
+/* 语义补全结果统一补入符号详情、文档和语义事实；已有文档由上游决定，不能覆盖。 */
 void ZrLanguageServer_Lsp_EnrichCompletionItemMetadata(SZrState *state,
                                             SZrSemanticAnalyzer *analyzer,
                                             SZrCompletionItem *item,
@@ -869,6 +902,7 @@ void ZrLanguageServer_Lsp_EnrichCompletionItemMetadata(SZrState *state,
     }
 }
 
+/* 仅屏蔽 parser 已明确标识的旧模块语法提示，避免兼容文本干扰编辑器诊断。 */
 static TZrBool should_suppress_parser_diagnostic(SZrDiagnostic *diag) {
     TZrNativeString codeText;
     TZrSize codeLength;
@@ -900,6 +934,7 @@ static TZrBool should_suppress_parser_diagnostic(SZrDiagnostic *diag) {
     return ZR_FALSE;
 }
 
+/* 将原因和建议并入 LSP 消息；原始诊断仍归解析器/分析器所有，返回 GC 字符串。 */
 static SZrString *lsp_diagnostic_message_with_context(SZrState *state, SZrDiagnostic *diag) {
     TZrNativeString messageText;
     TZrNativeString causeText = ZR_NULL;
@@ -969,6 +1004,7 @@ static SZrString *lsp_diagnostic_message_with_context(SZrState *state, SZrDiagno
     return result != ZR_NULL ? result : diag->message;
 }
 
+/* 各导航/诊断提供者的 UTF-16 投影入口；读取目标 URI 的内容快照，失败时返回零范围。 */
 SZrLspRange ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(SZrLspContext *context,
                                                                SZrString *uri,
                                                                SZrFileRange range) {
@@ -1006,6 +1042,7 @@ SZrLspRange ZrLanguageServer_Lsp_RangeFromFileRangeForDocument(SZrLspContext *co
     return lspRange;
 }
 
+/* inlay hint 等单点位置沿用目标文档快照，保证协议列号与编辑器 UTF-16 模型一致。 */
 SZrLspPosition ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(SZrLspContext *context,
                                                                         SZrString *uri,
                                                                         SZrFilePosition position) {
@@ -1029,6 +1066,7 @@ SZrLspPosition ZrLanguageServer_Lsp_PositionFromFilePositionForDocument(SZrLspCo
     return lspPosition;
 }
 
+/* 诊断发布共同入口：先投影范围，再关联原因、补充位置和修复建议；结果项由调用方释放。 */
 static void lsp_append_diagnostic_internal(SZrState *state,
                                            SZrLspContext *context,
                                            SZrString *uri,
@@ -1076,10 +1114,12 @@ static void lsp_append_diagnostic_internal(SZrState *state,
     ZrCore_Array_Push(state, result, &lspDiag);
 }
 
+/* 无文档上下文的诊断投影接口；仓内未发现调用，保留给直接使用 LSP C API 的消费者。 */
 void ZrLanguageServer_Lsp_AppendDiagnostic(SZrState *state, SZrArray *result, SZrDiagnostic *diag) {
     lsp_append_diagnostic_internal(state, ZR_NULL, ZR_NULL, result, diag);
 }
 
+/* GetDiagnostics 将解析器、语义和导入诊断汇入此入口，以当前文档内容投影 UTF-16 范围。 */
 void ZrLanguageServer_Lsp_AppendDiagnosticForDocument(SZrState *state,
                                                       SZrLspContext *context,
                                                       SZrString *uri,
@@ -1088,6 +1128,7 @@ void ZrLanguageServer_Lsp_AppendDiagnosticForDocument(SZrState *state,
     lsp_append_diagnostic_internal(state, context, uri, result, diag);
 }
 
+/* 文档符号及工作区符号共享的类别投影；未知内部类型退回变量类别。 */
 static TZrInt32 symbol_type_to_lsp_kind(EZrSymbolType type) {
     switch (type) {
         case ZR_SYMBOL_MODULE: return ZR_LSP_SYMBOL_KIND_MODULE;
@@ -1106,6 +1147,7 @@ static TZrInt32 symbol_type_to_lsp_kind(EZrSymbolType type) {
     }
 }
 
+/* 对外符号结果借用符号名称和 URI，范围投影依赖当前文档或原生声明虚拟文档。 */
 static SZrLspSymbolInformation *lsp_create_symbol_information_internal(SZrState *state,
                                                                        SZrLspContext *context,
                                                                        SZrString *uri,
@@ -1130,10 +1172,13 @@ static SZrLspSymbolInformation *lsp_create_symbol_information_internal(SZrState 
     return info;
 }
 
+/* BUG: 项目工作区符号在 lsp_project.c 的调用没有 context，范围转换必定得到 0:0-0:0；
+ * 应核对现有 workspace/symbol UTF-16 用例并将目标文件内容传给投影入口。 */
 SZrLspSymbolInformation *ZrLanguageServer_Lsp_CreateSymbolInformation(SZrState *state, SZrSymbol *symbol) {
     return lsp_create_symbol_information_internal(state, ZR_NULL, ZR_NULL, symbol);
 }
 
+/* 打开文档的 document/workspace symbol 路径携带 URI 与上下文，以便按实际内容计算选择范围。 */
 SZrLspSymbolInformation *ZrLanguageServer_Lsp_CreateSymbolInformationForDocument(
     SZrState *state,
     SZrLspContext *context,
@@ -1142,6 +1187,7 @@ SZrLspSymbolInformation *ZrLanguageServer_Lsp_CreateSymbolInformationForDocument
     return lsp_create_symbol_information_internal(state, context, uri, symbol);
 }
 
+/* 变量原型回退仅能按简单标识符关联声明；复杂解构由语义事实路径负责。 */
 static SZrString *extract_identifier_name_from_node(SZrAstNode *node) {
     if (node != ZR_NULL && node->type == ZR_AST_IDENTIFIER_LITERAL) {
         return node->data.identifier.name;
@@ -1150,6 +1196,7 @@ static SZrString *extract_identifier_name_from_node(SZrAstNode *node) {
     return ZR_NULL;
 }
 
+/* 在构造表达式缺少可用推断事实时，从目标 AST 提取供原型查询使用的类型名。 */
 static SZrString *extract_construct_target_type_name_from_node(SZrAstNode *node) {
     if (node == ZR_NULL) {
         return ZR_NULL;
@@ -1198,6 +1245,7 @@ static SZrString *extract_construct_target_type_name_from_node(SZrAstNode *node)
     }
 }
 
+/* 构造变量补全借用编译器的目标推断；优先精确原型，声明类型名只是回退线索。 */
 static const SZrTypePrototypeInfo *resolve_construct_target_prototype_from_node(
         SZrSemanticAnalyzer *analyzer,
         SZrAstNode *node,
@@ -1241,6 +1289,7 @@ static const SZrTypePrototypeInfo *resolve_construct_target_prototype_from_node(
     return find_type_prototype_by_text(analyzer, ZrCore_String_GetNativeString(resolvedTypeName));
 }
 
+/* AST 类成员补全要展示属性名，而非生成的 getter/setter 符号名。 */
 static SZrString *get_class_property_name(SZrAstNode *memberNode) {
     if (memberNode == ZR_NULL || memberNode->type != ZR_AST_CLASS_PROPERTY ||
         memberNode->data.classProperty.modifier == ZR_NULL) {
@@ -1260,6 +1309,7 @@ static SZrString *get_class_property_name(SZrAstNode *memberNode) {
     return ZR_NULL;
 }
 
+/* 多来源成员补全以显示标签去重，防止继承链重复建议同名成员。 */
 static TZrBool completion_items_contains_label(SZrArray *items, SZrString *label) {
     TZrSize index;
 
@@ -1277,6 +1327,7 @@ static TZrBool completion_items_contains_label(SZrArray *items, SZrString *label
     return ZR_FALSE;
 }
 
+/* 补全元数据允许属性展示名匹配编译器生成的访问器名；普通符号仍按全名匹配。 */
 static TZrBool symbol_name_matches(SZrSymbol *symbol, SZrString *name) {
     TZrNativeString symbolText;
     TZrNativeString nameText;
@@ -1306,6 +1357,7 @@ static TZrBool symbol_name_matches(SZrSymbol *symbol, SZrString *name) {
             memcmp(symbolText + accessorPrefixLength, nameText, nameLength) == 0);
 }
 
+/* 同一展示名存在属性、访问器和字段时，文档应以用户可见属性契约优先。 */
 static TZrInt32 completion_metadata_symbol_priority(SZrSymbol *symbol) {
     if (symbol == ZR_NULL) {
         return -1;
@@ -1323,6 +1375,7 @@ static TZrInt32 completion_metadata_symbol_priority(SZrSymbol *symbol) {
     }
 }
 
+/* 全作用域搜寻同名候选时只替换更适合展示的符号，维持稳定的元数据来源。 */
 static TZrBool completion_metadata_symbol_is_better(SZrSymbol *candidate, SZrSymbol *best) {
     if (candidate == ZR_NULL) {
         return ZR_FALSE;
@@ -1334,6 +1387,7 @@ static TZrBool completion_metadata_symbol_is_better(SZrSymbol *candidate, SZrSym
     return completion_metadata_symbol_priority(candidate) > completion_metadata_symbol_priority(best);
 }
 
+/* 补全标签缺少符号指针时再回查作用域；优先直接可见符号，再考虑属性访问器别名。 */
 static SZrSymbol *find_symbol_for_completion_metadata(SZrSymbolTable *table, SZrString *name) {
     SZrSymbol *best = ZR_NULL;
 
@@ -1367,6 +1421,7 @@ static SZrSymbol *find_symbol_for_completion_metadata(SZrSymbolTable *table, SZr
     return best;
 }
 
+/* AST/原型/原生描述符的成员枚举统一创建展示项；result 须为已初始化的指针数组。 */
 static void append_completion_item_for_symbol_name(SZrState *state,
                                                    SZrArray *result,
                                                    SZrString *name,
@@ -1391,6 +1446,7 @@ static void append_completion_item_for_symbol_name(SZrState *state,
     }
 }
 
+/* 原生描述符以 C 字符串存储名称，此入口将其转为 VM 字符串后沿用成员去重规则。 */
 static void append_completion_item_for_native_name(SZrState *state,
                                                    SZrArray *result,
                                                    const TZrChar *name,
@@ -1407,6 +1463,7 @@ static void append_completion_item_for_native_name(SZrState *state,
     }
 }
 
+/* 编译器原型中的属性访问器投影为属性补全，并跳过已有 propertySymbolId 的访问器副本。 */
 static SZrString *completion_type_member_display_name(SZrState *state,
                                                       const SZrTypeMemberInfo *member,
                                                       const TZrChar **outKind) {
@@ -1456,6 +1513,7 @@ static SZrString *completion_type_member_display_name(SZrState *state,
     return member->name;
 }
 
+/* 原型信息不足时从类 AST 恢复本类和基类成员；静态/实例筛选与深度上限由调用方传入。 */
 static void append_class_member_completions_recursive(SZrState *state,
                                                       SZrSemanticAnalyzer *analyzer,
                                                       SZrSymbol *classSymbol,
@@ -1535,6 +1593,7 @@ static void append_class_member_completions_recursive(SZrState *state,
     }
 }
 
+/* 结构体补全的 AST 回退路径，供显式类型及构造变量接收者共享。 */
 static void append_struct_member_completions_recursive(SZrState *state,
                                                        SZrSemanticAnalyzer *analyzer,
                                                        SZrSymbol *structSymbol,
@@ -1608,6 +1667,7 @@ static void append_struct_member_completions_recursive(SZrState *state,
     }
 }
 
+/* 将推断出的泛型或限定类型文本定位到源码类型符号，作为原型与原生描述符之间的回退。 */
 static TZrBool append_type_symbol_member_completions_by_name(SZrState *state,
                                                              SZrSemanticAnalyzer *analyzer,
                                                              const TZrChar *typeText,
@@ -1645,6 +1705,7 @@ static TZrBool append_type_symbol_member_completions_by_name(SZrState *state,
     return result->length > 0;
 }
 
+/* 接收者成员查询复用编译器原型；同名时优先当前源码定义，仍可回退导入的原生原型。 */
 static const SZrTypePrototypeInfo *find_type_prototype_by_text(SZrSemanticAnalyzer *analyzer,
                                                                const TZrChar *typeName) {
     SZrCompilerState *compilerState;
@@ -1734,6 +1795,7 @@ static const SZrTypePrototypeInfo *find_type_prototype_by_text(SZrSemanticAnalyz
     return bestMatch;
 }
 
+/* 符号表与原生描述符以基础类型名索引；在泛型/数组修饰与模块前缀后提取该键。 */
 static TZrBool extract_base_type_name(const TZrChar *typeName,
                                       TZrChar *buffer,
                                       TZrSize bufferSize) {
@@ -1772,6 +1834,7 @@ static TZrBool extract_base_type_name(const TZrChar *typeName,
     return ZR_TRUE;
 }
 
+/* 模块限定查找只返回其直接声明的类型描述符，链接模块由上层图搜索处理。 */
 static const ZrLibTypeDescriptor *find_native_type_descriptor_in_module(const ZrLibModuleDescriptor *module,
                                                                         const TZrChar *typeName) {
     TZrChar baseName[ZR_LSP_TYPE_BUFFER_LENGTH];
@@ -1790,6 +1853,7 @@ static const ZrLibTypeDescriptor *find_native_type_descriptor_in_module(const Zr
     return ZR_NULL;
 }
 
+/* 对某个导入模块及其链接模块查类型，避免直接退到全局同名类型造成来源混淆。 */
 static const ZrLibTypeDescriptor *find_native_type_descriptor_in_module_graph(
     SZrState *state,
     const ZrLibModuleDescriptor *module,
@@ -1843,6 +1907,7 @@ static const ZrLibTypeDescriptor *find_native_type_descriptor_in_module_graph(
     return ZR_NULL;
 }
 
+/* 接收者原生类型解析按当前文件导入来源优先，最后才查已注册模块的全局描述符。 */
 static const ZrLibTypeDescriptor *find_native_type_descriptor_across_modules(SZrState *state,
                                                                              SZrLspProjectIndex *projectIndex,
                                                                              SZrSemanticAnalyzer *analyzer,
@@ -1894,6 +1959,7 @@ static const ZrLibTypeDescriptor *find_native_type_descriptor_across_modules(SZr
     return ZrLanguageServer_LspModuleMetadata_FindNativeTypeDescriptor(state, typeName, outModule);
 }
 
+/* 原生方法/字段补全追踪 extends 与 implements 描述符；返回项使用显示名去重。 */
 static void append_native_type_descriptor_member_completions(SZrState *state,
                                                              const ZrLibModuleDescriptor *module,
                                                              const ZrLibTypeDescriptor *typeDescriptor,
@@ -1954,6 +2020,7 @@ static void append_native_type_descriptor_member_completions(SZrState *state,
     }
 }
 
+/* 仅在已解析到具体原生类型描述符时填充接收者成员，供静态与实例补全共用。 */
 static TZrBool append_receiver_native_type_completions(SZrState *state,
                                                        SZrLspProjectIndex *projectIndex,
                                                        SZrSemanticAnalyzer *analyzer,
@@ -1993,6 +2060,7 @@ static void find_receiver_variable_prototype_recursive(SZrState *state,
                                                        TZrSize bestTypeNameSize,
                                                        TZrSize *bestOffset);
 
+/* 精确符号查找成功后，从符号类型信息提取接收者类型；写入调用方提供的定长缓冲区。 */
 static TZrBool copy_type_text_from_symbol(SZrState *state,
                                           SZrSymbol *symbol,
                                           TZrChar *buffer,
@@ -2014,6 +2082,7 @@ static TZrBool copy_type_text_from_symbol(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 符号类型缺失时使用编译器变量环境；临时 SZrInferredType 由本函数释放。 */
 static TZrBool copy_type_text_from_type_env(SZrState *state,
                                             SZrSemanticAnalyzer *analyzer,
                                             SZrString *receiverName,
@@ -2048,6 +2117,7 @@ static TZrBool copy_type_text_from_type_env(SZrState *state,
     return typeText != ZR_NULL && typeText[0] != '\0';
 }
 
+/* 语义引用事实优于名称级推断，可避免局部遮蔽时取到同名变量的错误类型。 */
 static TZrBool copy_type_text_from_reference_fact(
         SZrSemanticAnalyzer *analyzer,
         SZrString *uri,
@@ -2086,6 +2156,7 @@ static TZrBool copy_receiver_type_text_from_expression_fact(
         TZrSize bufferSize,
         TZrBool *outRequiresExactFact);
 
+/* 裸类型名补全需查编译器的类型绑定，防止把同名普通变量当作静态接收者。 */
 static TZrBool receiver_name_is_explicit_type_binding(SZrSemanticAnalyzer *analyzer, SZrString *receiverName) {
     if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL ||
         analyzer->compilerState->typeEnv == ZR_NULL || receiverName == ZR_NULL) {
@@ -2095,6 +2166,7 @@ static TZrBool receiver_name_is_explicit_type_binding(SZrSemanticAnalyzer *analy
     return ZrParser_TypeEnvironment_LookupType(analyzer->compilerState->typeEnv, receiverName);
 }
 
+/* 当接收者是显式类型绑定时依次尝试原型、源码符号与原生描述符的静态成员。 */
 static TZrBool append_receiver_explicit_type_binding_completions(SZrState *state,
                                                                  SZrLspProjectIndex *projectIndex,
                                                                  SZrSemanticAnalyzer *analyzer,
@@ -2135,6 +2207,7 @@ static TZrBool append_receiver_explicit_type_binding_completions(SZrState *state
                                                    result);
 }
 
+/* 跨编译器原型读取数组前验证元素布局，以免将不同版本的成员数组误解释为当前类型。 */
 static TZrBool prototype_array_layout_matches(const SZrArray *array, TZrSize elementSize) {
     if (array == ZR_NULL || !array->isValid || array->elementSize != elementSize) {
         return ZR_FALSE;
@@ -2147,6 +2220,7 @@ static TZrBool prototype_array_layout_matches(const SZrArray *array, TZrSize ele
     return array->head != ZR_NULL && array->capacity >= array->length;
 }
 
+/* 用接收者使用位置而非全局名称定位变量；只在缺少位置上下文时退回普通查找。 */
 static SZrSymbol *lookup_receiver_symbol_at_offset(SZrSemanticAnalyzer *analyzer,
                                                    SZrString *uri,
                                                    const TZrChar *content,
@@ -2168,6 +2242,7 @@ static SZrSymbol *lookup_receiver_symbol_at_offset(SZrSemanticAnalyzer *analyzer
     return ZrLanguageServer_SymbolTable_LookupAtPosition(analyzer->symbolTable, receiverName, fileRange);
 }
 
+/* 普通标识符接收者的事实优先链：引用事实、符号/类型环境、声明 AST 构造回退。 */
 static TZrBool resolve_receiver_type_text(SZrState *state,
                                           SZrSemanticAnalyzer *analyzer,
                                           SZrString *uri,
@@ -2236,6 +2311,7 @@ static TZrBool resolve_receiver_type_text(SZrState *state,
     return ZR_FALSE;
 }
 
+/* 项目成员解析优先导航到名称 token，避免把整条声明范围当成可点击标识符。 */
 static SZrFileRange receiver_project_member_lookup_range(SZrAstNode *declarationNode) {
     if (declarationNode == ZR_NULL) {
         return ZrParser_FileRange_Create(ZrParser_FilePosition_Create(0, 0, 0),
@@ -2272,6 +2348,7 @@ static SZrFileRange receiver_project_member_lookup_range(SZrAstNode *declaration
     return declarationNode->location;
 }
 
+/* 源码文本回退查找需确认完整标识符边界，避免命中较长名称的子串。 */
 static TZrBool receiver_project_identifier_boundary(const TZrChar *content,
                                                     TZrSize contentLength,
                                                     TZrSize offset) {
@@ -2282,6 +2359,7 @@ static TZrBool receiver_project_identifier_boundary(const TZrChar *content,
     return !(isalnum((unsigned char)content[offset]) || content[offset] == '_');
 }
 
+/* 某些 AST 成员没有名称专属位置，限定在声明行内恢复导航区间。 */
 static TZrBool receiver_project_try_member_name_range(const TZrChar *content,
                                                       TZrSize contentLength,
                                                       SZrString *uri,
@@ -2337,6 +2415,7 @@ static TZrBool receiver_project_try_member_name_range(const TZrChar *content,
     return ZR_FALSE;
 }
 
+/* 项目成员悬停/导航统一选择声明名称范围；对缺失 AST 位置的 struct/enum 用文本回退。 */
 static SZrFileRange receiver_project_member_declaration_range(SZrString *uri,
                                                               const TZrChar *content,
                                                               TZrSize contentLength,
@@ -2423,6 +2502,7 @@ static SZrFileRange receiver_project_member_declaration_range(SZrString *uri,
     return range;
 }
 
+/* 接收者类型名与当前文件 AST 声明核对，避免直接以同名外部原型替换本地类型。 */
 static TZrBool receiver_project_node_declares_type(SZrAstNode *node, SZrString *typeName) {
     if (node == ZR_NULL || typeName == ZR_NULL) {
         return ZR_FALSE;
@@ -2451,6 +2531,7 @@ static TZrBool receiver_project_node_declares_type(SZrAstNode *node, SZrString *
 
 static SZrAstNode *receiver_project_find_type_declaration_recursive(SZrAstNode *node, SZrString *typeName);
 
+/* AST 子列表查询复用类型声明递归搜索，并保留首个命中的声明身份。 */
 static SZrAstNode *receiver_project_find_type_declaration_in_array(SZrAstNodeArray *nodes, SZrString *typeName) {
     if (nodes == ZR_NULL || nodes->nodes == ZR_NULL || typeName == ZR_NULL) {
         return ZR_NULL;
@@ -2466,6 +2547,7 @@ static SZrAstNode *receiver_project_find_type_declaration_in_array(SZrAstNodeArr
     return ZR_NULL;
 }
 
+/* 当前文档类型声明搜索覆盖脚本、块与编译期包装；项目跨文件来源由元数据提供者补齐。 */
 static SZrAstNode *receiver_project_find_type_declaration_recursive(SZrAstNode *node, SZrString *typeName) {
     if (node == ZR_NULL || typeName == ZR_NULL) {
         return ZR_NULL;
@@ -2494,6 +2576,7 @@ static SZrAstNode *receiver_project_find_type_declaration_recursive(SZrAstNode *
     }
 }
 
+/* 类型 AST 成员反查服务于源码定义位置；只有与查询名称一致的成员可向外宣称 hasDeclaration。 */
 static SZrAstNode *receiver_project_find_type_member_declaration(SZrAstNode *typeDeclaration,
                                                                  SZrString *memberName,
                                                                  EZrLspMetadataMemberKind *outKind) {
@@ -2584,6 +2667,7 @@ static SZrAstNode *receiver_project_find_type_member_declaration(SZrAstNode *typ
     return ZR_NULL;
 }
 
+/* 编译器原型成员类别投影到元数据提供者的悬停/导航类别。 */
 static EZrLspMetadataMemberKind receiver_project_member_kind(const SZrTypeMemberInfo *memberInfo) {
     if (memberInfo == ZR_NULL) {
         return ZR_LSP_METADATA_MEMBER_NONE;
@@ -2606,6 +2690,7 @@ static EZrLspMetadataMemberKind receiver_project_member_kind(const SZrTypeMember
     }
 }
 
+/* 在源码原型及继承链中找同名成员，供 AST 位置缺失时仍可建立类型与成员身份。 */
 static const SZrTypeMemberInfo *find_receiver_project_member_recursive(SZrCompilerState *compilerState,
                                                                        SZrTypePrototypeInfo *prototype,
                                                                        SZrString *memberName,
@@ -2681,6 +2766,7 @@ static const SZrTypeMemberInfo *find_receiver_project_member_recursive(SZrCompil
     return ZR_NULL;
 }
 
+/* 导入原生属性必须按语义 propertySymbolId 而非拼写匹配，防止同名成员串线。 */
 static const SZrTypeMemberInfo *find_receiver_project_property_by_symbol_id_recursive(
         SZrCompilerState *compilerState,
         SZrTypePrototypeInfo *prototype,
@@ -2759,6 +2845,7 @@ static const SZrTypeMemberInfo *find_receiver_project_property_by_symbol_id_recu
     return ZR_NULL;
 }
 
+/* 从导入链事实还原接收者的模块身份，供二进制元数据和跨项目源码声明解析。 */
 static TZrBool resolve_receiver_imported_type_at_offset(
         SZrState *state,
         SZrLspContext *context,
@@ -2810,6 +2897,7 @@ static TZrBool resolve_receiver_imported_type_at_offset(
     return resolved;
 }
 
+/* 成员原型已识别后填充展示类型，不能把该类型文本代替声明来源证据。 */
 static void receiver_project_member_set_type_text(SZrState *state,
                                                   const SZrTypeMemberInfo *memberInfo,
                                                   SZrLspResolvedMetadataMember *outResolved) {
@@ -2840,6 +2928,7 @@ static void receiver_project_member_set_type_text(SZrState *state,
     }
 }
 
+/* 取得本地声明符号后补充精确类型文本，供悬停与签名消费者显示。 */
 static void receiver_project_set_type_text_from_symbol(
         SZrState *state,
         SZrSemanticAnalyzer *analyzer,
@@ -2865,6 +2954,7 @@ static void receiver_project_set_type_text_from_symbol(
     }
 }
 
+/* 原生成员的返回/字段类型特化需要从接收者类型文本提取实参；数量受固定上限约束。 */
 static TZrBool type_text_parse_generic_arguments(const TZrChar *typeText,
                                                  TZrChar arguments[ZR_LSP_NATIVE_GENERIC_ARGUMENT_MAX]
                                                                   [ZR_LSP_NATIVE_GENERIC_TEXT_MAX],
@@ -2952,10 +3042,12 @@ static TZrBool type_text_parse_generic_arguments(const TZrChar *typeText,
     return ZR_FALSE;
 }
 
+/* 悬停光标两侧的成员名扫描使用与接收者补全相同的 ASCII 标识符边界。 */
 static TZrBool native_hover_is_identifier_char(TZrChar ch) {
     return (TZrBool)(isalnum((unsigned char)ch) || ch == '_');
 }
 
+/* 原生泛型描述符的展示类型按接收者实参特化，仅改变悬停文本，不改变类型系统事实。 */
 static void specialize_native_type_text(const TZrChar *templateText,
                                         const ZrLibGenericParameterDescriptor *genericParameters,
                                         TZrSize genericParameterCount,
@@ -3020,6 +3112,7 @@ static void specialize_native_type_text(const TZrChar *templateText,
     }
 }
 
+/* 原生字段查询沿 extends/implements 关系追溯，以便悬停定位继承的成员描述符。 */
 static const ZrLibFieldDescriptor *find_native_field_descriptor_recursive(const ZrLibModuleDescriptor *module,
                                                                           const ZrLibTypeDescriptor *typeDescriptor,
                                                                           const TZrChar *memberName,
@@ -3059,6 +3152,7 @@ static const ZrLibFieldDescriptor *find_native_field_descriptor_recursive(const 
     return ZR_NULL;
 }
 
+/* 原生方法查询与字段查询保持相同的继承搜索边界和递归深度约束。 */
 static const ZrLibMethodDescriptor *find_native_method_descriptor_recursive(const ZrLibModuleDescriptor *module,
                                                                            const ZrLibTypeDescriptor *typeDescriptor,
                                                                            const TZrChar *memberName,
@@ -3098,6 +3192,7 @@ static const ZrLibMethodDescriptor *find_native_method_descriptor_recursive(cons
     return ZR_NULL;
 }
 
+/* AST 接收者链只在光标处于成员 token 范围内时作为精确事实查询入口。 */
 static TZrBool receiver_range_contains_offset(SZrFileRange range, TZrSize offset) {
     if (range.start.offset > 0 && range.end.offset > 0) {
         return range.start.offset <= offset && offset <= range.end.offset;
@@ -3106,6 +3201,7 @@ static TZrBool receiver_range_contains_offset(SZrFileRange range, TZrSize offset
     return ZR_FALSE;
 }
 
+/* 临时 AST 只借用原节点及其成员数组前缀，让类型推断看到成员访问前的接收者。 */
 static TZrBool receiver_build_primary_prefix(SZrAstNode *primaryNode,
                                              TZrSize prefixMemberCount,
                                              SZrAstNode *tempNode,
@@ -3143,6 +3239,7 @@ static TZrBool receiver_build_primary_prefix(SZrAstNode *primaryNode,
     return ZR_TRUE;
 }
 
+/* 在 AST 中定位光标所指成员及前缀位置；精确表达式类型查询依赖这一上下文。 */
 static TZrBool find_receiver_member_context_recursive(SZrAstNode *node,
                                                       TZrSize cursorOffset,
                                                       SZrAstNode **outPrimaryNode,
@@ -3417,6 +3514,7 @@ static TZrBool find_receiver_member_context_recursive(SZrAstNode *node,
     }
 }
 
+/* 成员链或非标识符接收者要求精确表达式事实；调用者收到该要求后应关闭猜测性回退。 */
 static TZrBool copy_receiver_type_text_from_expression_fact(
         SZrSemanticAnalyzer *analyzer,
         SZrAstNode *ast,
@@ -3465,6 +3563,7 @@ static TZrBool copy_receiver_type_text_from_expression_fact(
                    receiver_type_text_is_specific(buffer);
 }
 
+/* 点号前不是简单标识符且无精确事实时，阻止全局补全混入无关成员。 */
 TZrBool ZrLanguageServer_Lsp_ShouldFailClosedReceiverCompletion(
         SZrSemanticAnalyzer *analyzer,
         SZrAstNode *ast,
@@ -3507,6 +3606,7 @@ TZrBool ZrLanguageServer_Lsp_ShouldFailClosedReceiverCompletion(
                                                           ZR_NULL);
 }
 
+/* 项目成员解析在精确事实缺失后可借临时 AST 推断接收者前缀；临时节点与推断结果本地释放。 */
 static TZrBool try_infer_receiver_type_text_from_ast(SZrState *state,
                                                      SZrSemanticAnalyzer *analyzer,
                                                      SZrAstNode *ast,
@@ -3557,6 +3657,7 @@ static TZrBool try_infer_receiver_type_text_from_ast(SZrState *state,
     return buffer[0] != '\0';
 }
 
+/* 语义查询的原生成员回退：由接收者精确类型锁定模块描述符，并返回带声明来源的成员身份。 */
 TZrBool ZrLanguageServer_Lsp_TryResolveReceiverNativeMember(SZrState *state,
                                                             SZrLspContext *context,
                                                             SZrLspProjectIndex *projectIndex,
@@ -3724,6 +3825,7 @@ TZrBool ZrLanguageServer_Lsp_TryResolveReceiverNativeMember(SZrState *state,
     return ZR_FALSE;
 }
 
+/* 语义查询优先解析源码项目成员；只有成员类别可确定时才交付悬停/导航消费者。 */
 TZrBool ZrLanguageServer_Lsp_TryResolveReceiverProjectMember(SZrState *state,
                                                              SZrLspContext *context,
                                                              SZrLspProjectIndex *projectIndex,
@@ -4124,6 +4226,7 @@ TZrBool ZrLanguageServer_Lsp_TryResolveReceiverProjectMember(SZrState *state,
            outResolved->memberKind != ZR_LSP_METADATA_MEMBER_NONE;
 }
 
+/* 从编译器原型统一输出静态/实例成员，并沿继承链补齐；成员数组布局需先验校验。 */
 static void append_type_prototype_member_completions(SZrState *state,
                                                      SZrSemanticAnalyzer *analyzer,
                                                      const SZrTypePrototypeInfo *prototype,
@@ -4218,6 +4321,7 @@ static void append_type_prototype_member_completions(SZrState *state,
     }
 }
 
+/* 接收者符号携带类型时先查源码/导入原型，再查 AST 和原生描述符。 */
 static TZrBool append_receiver_symbol_type_completions(SZrState *state,
                                                        SZrLspProjectIndex *projectIndex,
                                                        SZrSemanticAnalyzer *analyzer,
@@ -4260,6 +4364,7 @@ static TZrBool append_receiver_symbol_type_completions(SZrState *state,
                                                    result);
 }
 
+/* 符号没有可用类型时，从编译器变量环境取推断类型，并共享相同的成员来源优先级。 */
 static TZrBool append_receiver_name_type_env_completions(SZrState *state,
                                                          SZrLspProjectIndex *projectIndex,
                                                          SZrSemanticAnalyzer *analyzer,
@@ -4319,6 +4424,7 @@ static TZrBool append_receiver_name_type_env_completions(SZrState *state,
     return result->length > 0;
 }
 
+/* 导入链区分二进制类型与跨文件源码类型，再向各自声明分析器请求静态成员。 */
 static TZrBool append_imported_type_receiver_completions(SZrState *state,
                                                          SZrLspContext *context,
                                                          SZrLspProjectIndex *projectIndex,
@@ -4435,6 +4541,8 @@ static TZrBool append_imported_type_receiver_completions(SZrState *state,
     return appended;
 }
 
+/* 无语义事实时按光标之前最近的同名变量声明回退；只用于恢复补全，不可当作精确绑定。
+ * TODO: 此回退未核对词法作用域；需以跨函数同名变量的成员补全用例验证是否选错声明。 */
 static void find_receiver_variable_prototype_recursive(SZrState *state,
                                                        SZrSemanticAnalyzer *analyzer,
                                                        SZrAstNode *node,
@@ -4751,6 +4859,7 @@ static void find_receiver_variable_prototype_recursive(SZrState *state,
     }
 }
 
+/* 旧式构造赋值回退：从最近的同名变量声明寻找类符号，供最终 AST 成员枚举使用。 */
 static void find_construct_initialized_class_symbol_recursive(SZrState *state,
                                                               SZrSemanticAnalyzer *analyzer,
                                                               SZrAstNode *node,
@@ -4838,6 +4947,7 @@ static void find_construct_initialized_class_symbol_recursive(SZrState *state,
     }
 }
 
+/* Completion 请求的接收者分流：导入链、精确事实、符号/类型环境和声明 AST 顺序回退。 */
 TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
                                                            SZrLspContext *context,
                                                            SZrLspProjectIndex *projectIndex,
@@ -5093,6 +5203,7 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
     }
 }
 
+/* 悬停/导航先尊重属性契约的源码符号，再查普通语义定义，避免 getter/setter 吞掉属性身份。 */
 SZrSymbol *ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(SZrSemanticAnalyzer *analyzer, SZrFileRange position) {
     if (analyzer == ZR_NULL) {
         return ZR_NULL;

@@ -5,6 +5,7 @@
 
 #include <string.h>
 
+/* 编辑令牌除文本外还绑定依赖与提供者代数，防止同文重算后沿用旧位置。 */
 static void workspace_edit_capture_semantic_identity(
         SZrState *state,
         SZrLspContext *context,
@@ -18,6 +19,8 @@ static void workspace_edit_capture_semantic_identity(
     }
     semanticSnapshot = ZrLanguageServer_LspSemanticSnapshot_Acquire(state, context, uri);
     if (semanticSnapshot == ZR_NULL) {
+        /* TODO: 确认语义快照暂时不可用时是否允许继续发布工作区编辑；
+         * 当前捕获与验证都可能只比较文本，需沿 code action/rename 调用链验证依赖变化场景。 */
         return;
     }
     identity = ZrLanguageServer_LspSemanticSnapshot_GetIdentity(semanticSnapshot);
@@ -28,6 +31,7 @@ static void workspace_edit_capture_semantic_identity(
     ZrLanguageServer_LspSemanticSnapshot_Release(state, semanticSnapshot);
 }
 
+/* 与语义快照身份字段保持同步，用于重命名和 code action 的失效判断。 */
 static TZrBool workspace_edit_semantic_identities_equal(
         const SZrLspSemanticSnapshotIdentity *left,
         const SZrLspSemanticSnapshotIdentity *right) {
@@ -39,6 +43,7 @@ static TZrBool workspace_edit_semantic_identities_equal(
            left->dependencyFingerprint == right->dependencyFingerprint;
 }
 
+/* 关闭文档以磁盘内容为准；若解析器还缓存旧内容则拒绝生成编辑。 */
 static TZrBool workspace_edit_capture_disk_snapshot(
         SZrState *state,
         SZrLspContext *context,
@@ -63,6 +68,8 @@ static TZrBool workspace_edit_capture_disk_snapshot(
     if (content == ZR_NULL) {
         return ZR_FALSE;
     }
+    /* BUG: ReadAll 可返回带内嵌 NUL 的文件；strlen 只覆盖前缀。若 NUL 后内容变化，
+     * ValidateDocumentSnapshot 的长度与哈希仍相同，旧的跨文件编辑可被放行。 */
     contentLength = strlen(content);
     contentHash = ZrCore_Hash_CreateStable64(
             (const TZrByte *)content, contentLength);
@@ -83,6 +90,7 @@ static TZrBool workspace_edit_capture_disk_snapshot(
         }
     }
 
+    /* 只有磁盘与关闭文档缓存一致时，语义身份才对应这份磁盘内容。 */
     if (cacheMatches) {
         memset(outSnapshot, 0, sizeof(*outSnapshot));
         outSnapshot->uri = uri;
@@ -94,6 +102,8 @@ static TZrBool workspace_edit_capture_disk_snapshot(
     ZrCore_Memory_RawFreeWithType(
             state->global,
             content,
+            /* BUG: ReadAll 按磁盘字节数分配，Windows 文本模式可折叠 CRLF，
+             * contentLength + 1 小于原申请尺寸，违背带类型释放接口的尺寸契约。 */
             contentLength + 1U,
             ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
     return cacheMatches;
@@ -113,6 +123,7 @@ TZrBool ZrLanguageServer_LspWorkspaceEdit_CaptureDocumentSnapshot(
     }
 
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    /* 打开的编辑器缓冲区优先于磁盘；关闭文档必须重新读取磁盘并核对缓存。 */
     if (fileVersion == ZR_NULL || !fileVersion->isOpenDocument) {
         return workspace_edit_capture_disk_snapshot(
                 state, context, uri, outSnapshot);
@@ -151,6 +162,7 @@ TZrBool ZrLanguageServer_LspWorkspaceEdit_ValidateDocumentSnapshot(
                 state, context, documentSnapshot->uri, &current)) {
         return ZR_FALSE;
     }
+    /* 文本、编辑器版本与语义身份三者均稳定时才允许发送先前生成的编辑。 */
     return current.isOpenDocument == documentSnapshot->isOpenDocument &&
             current.contentHash == documentSnapshot->contentHash &&
             current.contentLength == documentSnapshot->contentLength &&
@@ -193,6 +205,8 @@ TZrBool ZrLanguageServer_LspWorkspaceEdit_CaptureDocumentSnapshots(
         return ZR_FALSE;
     }
     if (!outDocumentSnapshots->isValid) {
+        /* BUG: Array_Init 分配失败仍标记为有效；后续 Array_Push 可向空指针复制，
+         * 多文档重命名遇到内存不足时不能按返回值安全失败。 */
         ZrCore_Array_Init(
                 state,
                 outDocumentSnapshots,
@@ -200,6 +214,7 @@ TZrBool ZrLanguageServer_LspWorkspaceEdit_CaptureDocumentSnapshots(
                 ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     }
 
+    /* 重命名的位置列表可重复引用一个文档，工作区编辑仅需每个 URI 一个令牌。 */
     for (TZrSize index = 0U; index < locations->length; index++) {
         SZrLspLocation **locationPtr =
                 (SZrLspLocation **)ZrCore_Array_Get(

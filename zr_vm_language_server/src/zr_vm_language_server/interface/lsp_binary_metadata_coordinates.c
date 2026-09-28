@@ -3,6 +3,7 @@
 #include <limits.h>
 #include <string.h>
 
+/** 在找到源文本时，将二进制元数据的一基字节列还原为可供 UTF-16 投影的偏移。 */
 static TZrBool binary_metadata_position_to_byte_offset(const TZrChar *content,
                                                         TZrSize contentLength,
                                                         SZrFilePosition position,
@@ -41,6 +42,12 @@ static TZrBool binary_metadata_position_to_byte_offset(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/**
+ * @brief 为项目导航及语义查询投影二进制元数据中的声明范围。
+ * @note 元数据保存一基字节列；有相应源文本时必须经字节偏移转换为 LSP UTF-16 列。
+ * TODO: 缺少源文本时只能沿用元数据列值；需核对二进制产物是否保证此时的列已是 UTF-16，
+ * 否则含非 ASCII 前缀的外部声明会在编辑器中偏移。
+ */
 TZrBool ZrLanguageServer_Lsp_TryRangeFromBinaryMetadataCoordinates(SZrLspContext *context,
                                                                    SZrString *uri,
                                                                    SZrFileRange range,
@@ -95,6 +102,11 @@ TZrBool ZrLanguageServer_Lsp_TryRangeFromBinaryMetadataCoordinates(SZrLspContext
     return ZR_TRUE;
 }
 
+/**
+ * @brief 将二进制模块虚拟文档上的 LSP 光标还原为元数据查询使用的一基文件坐标。
+ * @note 有文档快照时走 UTF-16 到字节偏移的转换；没有快照时保留元数据结构坐标。
+ * TODO: 核对无快照的虚拟文档是否可能含非 ASCII 前缀，以及此回退能否精确定位导出符号。
+ */
 TZrBool ZrLanguageServer_Lsp_TryFilePositionFromBinaryMetadataCoordinates(SZrLspContext *context,
                                                                           SZrString *uri,
                                                                           SZrLspPosition position,

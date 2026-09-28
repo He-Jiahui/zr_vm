@@ -2,6 +2,7 @@
 
 #include "semantic/lsp_optimization_remarks.h"
 
+/** 将无修复原因作为稳定诊断数据送往 stdio JSON；未指定原因不生成字段。 */
 const TZrChar *ZrLanguageServer_Lsp_DiagnosticNoFixReasonName(
         EZrDiagnosticNoFixReason reason) {
     switch (reason) {
@@ -19,6 +20,7 @@ const TZrChar *ZrLanguageServer_Lsp_DiagnosticNoFixReasonName(
     }
 }
 
+/** 将优化 remark 的规范字节范围交给语义适配器投影，避免接口层重新分析源码。 */
 TZrBool ZrLanguageServer_Lsp_ProjectOptimizationRemarkRange(
         const struct SZrOptimizationRemark *remark,
         const TZrChar *content,

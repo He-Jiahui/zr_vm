@@ -4,6 +4,7 @@
 
 #include <string.h>
 
+/* 历史语义版本与文件内容历史并行；analyzer 独占旧 AST，uri 指针由调用方保证存活。 */
 typedef struct SZrLspSemanticSnapshotEntry {
     SZrString *uri;
     TZrSize version;
@@ -12,11 +13,13 @@ typedef struct SZrLspSemanticSnapshotEntry {
     SZrSemanticAnalyzer *analyzer;
 } SZrLspSemanticSnapshotEntry;
 
+/* entries 为跨 URI 共用数组，每个 URI 通过 insertionOrder 独立选择最旧版本。 */
 struct SZrLspSemanticSnapshotCache {
     SZrArray entries;
     TZrSize nextInsertionOrder;
 };
 
+/* 等价 URI 可能由不同字符串对象进入上下文，因此用文本身份匹配历史项。 */
 static TZrBool snapshot_entry_matches_uri(
         const SZrLspSemanticSnapshotEntry *entry,
         const SZrString *uri) {
@@ -24,6 +27,7 @@ static TZrBool snapshot_entry_matches_uri(
            ZrLanguageServer_Lsp_StringsEqual(entry->uri, (SZrString *)uri);
 }
 
+/* 回收旧 AST 前先使仍借用它的当前作用域查询分析器失效。 */
 static void snapshot_cache_release_entry(
         SZrState *state,
         SZrLspContext *context,
@@ -49,6 +53,7 @@ static void snapshot_cache_release_entry(
     memset(entry, 0, sizeof(*entry));
 }
 
+/* 删除采用尾元素补位；版本顺序另由 insertionOrder 维护。 */
 static void snapshot_cache_remove_entry_at(
         SZrState *state,
         SZrLspContext *context,
@@ -79,6 +84,7 @@ static void snapshot_cache_remove_entry_at(
     (void)ZrCore_Array_Pop(&cache->entries);
 }
 
+/* 容量按 URI 单独限制，而非跨整个工作区共用两个历史槽。 */
 static TZrSize snapshot_cache_count_uri(
         const SZrLspSemanticSnapshotCache *cache,
         const SZrString *uri) {
@@ -99,6 +105,7 @@ static TZrSize snapshot_cache_count_uri(
     return count;
 }
 
+/* 为版本滚动寻找此 URI 最早捕获的语义状态。 */
 static TZrSize snapshot_cache_oldest_uri_index(
         const SZrLspSemanticSnapshotCache *cache,
         const SZrString *uri) {
@@ -135,6 +142,8 @@ SZrLspSemanticSnapshotCache *ZrLanguageServer_LspSemanticSnapshotCache_New(
     if (cache == ZR_NULL) {
         return ZR_NULL;
     }
+    /* BUG: Array_Init 分配失败时仍把 entries 标为有效；此构造函数会返回
+     * 非空缓存，首次 Capture 的 Array_Push 随即向空缓冲区复制。 */
     ZrCore_Array_Init(
             state,
             &cache->entries,
@@ -231,12 +240,15 @@ TZrBool ZrLanguageServer_LspSemanticSnapshotCache_Capture(
         snapshot_cache_remove_entry_at(state, context, oldestIndex);
     }
 
+    /* 记录的是解析器刚保留的前一版内容；调用方随后在原分析器上分析新 AST。 */
     memset(&entry, 0, sizeof(entry));
     entry.uri = uri;
     entry.version = previousContent->version;
     entry.contentGeneration = previousContent->contentBlock->contentGeneration;
     entry.insertionOrder = ++cache->nextInsertionOrder;
     entry.analyzer = snapshotAnalyzer;
+    /* BUG: 第三个跨 URI 快照等触发 entries 扩容时，Array_Push 的分配失败路径
+     * 会覆盖数组缓冲区指针并继续复制，导致崩溃；这里也无法接收失败状态。 */
     ZrCore_Array_Push(state, &cache->entries, &entry);
     return ZR_TRUE;
 }
@@ -252,6 +264,7 @@ void ZrLanguageServer_LspSemanticSnapshotCache_VisitAnalyzers(
         return;
     }
     cache = context->semanticSnapshotCache;
+    /* LRU 访问者只在遍历期间借用指针，不转移快照所有权。 */
     for (TZrSize index = 0U; index < cache->entries.length; index++) {
         const SZrLspSemanticSnapshotEntry *entry =
                 (const SZrLspSemanticSnapshotEntry *)ZrCore_Array_Get(
@@ -263,6 +276,7 @@ void ZrLanguageServer_LspSemanticSnapshotCache_VisitAnalyzers(
     }
 }
 
+/* 对外只借出分析器和版本身份；索引与文件内容历史一致，0 为最近一次更新前的版本。 */
 TZrBool ZrLanguageServer_Lsp_GetHistoricalSemanticSnapshot(
         const SZrLspContext *context,
         const SZrString *uri,

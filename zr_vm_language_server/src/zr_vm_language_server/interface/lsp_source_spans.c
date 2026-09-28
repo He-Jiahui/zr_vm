@@ -1,9 +1,11 @@
 #include "interface/lsp_interface_internal.h"
 
+/** 语义查询的轻量文本门控所识别的三类字符串界符。 */
 static TZrBool lsp_source_span_is_quote(TZrChar value) {
     return value == '"' || value == '\'' || value == '`';
 }
 
+/** 避免把普通字符串内容误判为标识符；此扫描器不是完整的语言 lexer。 */
 static TZrSize lsp_source_span_skip_string(const TZrChar *content,
                                            TZrSize contentLength,
                                            TZrSize cursor) {
@@ -33,6 +35,12 @@ static TZrSize lsp_source_span_skip_string(const TZrChar *content,
     return cursor;
 }
 
+/**
+ * @brief 在 hover、定义等语义查询前屏蔽注释与普通字符串内的光标。
+ * @note 这是轻量文本门控；调用方仍需语义查询确认标识符身份。
+ * BUG: 反引号模板字符串内的 `${expr}` 会被整体当成字符串跳过，
+ * 而 parser_literals.c 的模板解析将该片段作为表达式；插值中的语义查询和补全会被错误屏蔽。
+ */
 TZrBool ZrLanguageServer_Lsp_IsOffsetInCodeSpan(const TZrChar *content,
                                                 TZrSize contentLength,
                                                 TZrSize offset) {
@@ -87,6 +95,7 @@ TZrBool ZrLanguageServer_Lsp_IsOffsetInCodeSpan(const TZrChar *content,
     return ZR_FALSE;
 }
 
+/** 补全和签名帮助容许光标位于代码片段末端，故同时检查光标前一个字节。 */
 TZrBool ZrLanguageServer_Lsp_IsCursorOffsetInCodeSpan(const TZrChar *content,
                                                       TZrSize contentLength,
                                                       TZrSize offset) {

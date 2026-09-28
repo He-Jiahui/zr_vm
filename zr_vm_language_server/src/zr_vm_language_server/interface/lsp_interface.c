@@ -101,6 +101,10 @@ static TZrBool lsp_refresh_local_hover_query(SZrState *state,
                                              SZrLspPosition position,
                                              SZrLspLocalSemanticQueryResult *localQuery);
 
+/**
+ * @brief 为一个 LSP 上下文预备内建模块描述符，使导入、补全和虚拟声明页共用注册表。
+ * @details 由 LspContext_New 调用；调用方须提供可用的 VM 全局状态，编译开关决定可见的可选库。
+ */
 static void lsp_register_builtin_native_libraries(SZrState *state) {
     if (state == ZR_NULL || state->global == ZR_NULL) {
         return;
@@ -124,6 +128,7 @@ static void lsp_register_builtin_native_libraries(SZrState *state) {
 }
 static const TZrChar *lsp_signature_label_text(SZrLspSignatureHelp *help);
 
+/** @brief 在文档更新入口辨认工程文件后缀；这里只按字节比较，不承担 URI 规范化。 */
 static TZrBool lsp_string_ends_with_native(SZrString *value, const TZrChar *suffix) {
     TZrNativeString text;
     TZrSize length;
@@ -150,6 +155,7 @@ static TZrBool lsp_string_ends_with_native(SZrString *value, const TZrChar *suff
            memcmp(text + length - suffixLength, suffix, suffixLength) == 0;
 }
 
+/** @brief 把 VM 字符串借给签名与富悬停适配器；返回值的生命周期仍由 VM 管理。 */
 static const TZrChar *lsp_string_text_native(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -160,6 +166,7 @@ static const TZrChar *lsp_string_text_native(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
+/** @brief 将模块摘要或富悬停中的固定标签交给 VM 字符串管理。 */
 static SZrString *lsp_create_const_string(SZrState *state, const TZrChar *text) {
     if (state == ZR_NULL || text == ZR_NULL) {
         return ZR_NULL;
@@ -168,6 +175,10 @@ static SZrString *lsp_create_const_string(SZrState *state, const TZrChar *text) 
     return ZrCore_String_Create(state, (TZrNativeString)text, strlen(text));
 }
 
+/**
+ * @brief 为虚拟模块链接的定义跳转提供与普通语义查询一致的位置结果。
+ * @details 调用方负责按位置数组的约定释放结构体；URI 仍是 VM 管理的字符串。
+ */
 static TZrBool lsp_append_location_result(SZrState *state, SZrArray *result, SZrString *uri, SZrLspRange range) {
     SZrLspLocation *location;
 
@@ -190,6 +201,10 @@ static TZrBool lsp_append_location_result(SZrState *state, SZrArray *result, SZr
     return ZR_TRUE;
 }
 
+/**
+ * @brief 将虚拟声明 URI 还原为工程可见的原生模块描述符。
+ * @details 定义跳转和虚拟文档读取均先尝试各工程索引，最后尝试全局注册表；不可将任意 URI 当作原生声明页。
+ */
 static TZrBool lsp_resolve_virtual_descriptor(SZrState *state,
                                               SZrLspContext *context,
                                               SZrString *uri,
@@ -241,6 +256,10 @@ static TZrBool lsp_resolve_virtual_descriptor(SZrState *state,
            *outDescriptor != ZR_NULL;
 }
 
+/**
+ * @brief 合并同来源类别、同模块名的工程浏览条目，并保留可导航的首个入口。
+ * @details GetProjectModules 将源文件和导入模块都送入此处；摘要结构体由 FreeProjectModules 释放。
+ */
 static TZrBool lsp_project_modules_append_summary(SZrState *state,
                                                   SZrArray *result,
                                                   TZrInt32 sourceKind,
@@ -298,6 +317,7 @@ static TZrBool lsp_project_modules_append_summary(SZrState *state,
     return ZR_TRUE;
 }
 
+/** @brief 把项目索引中的源模块入口映射为客户端可导航的文档坐标。 */
 static SZrLspRange lsp_project_modules_source_entry_range(
         SZrLspContext *context,
         const SZrLspProjectFileRecord *record) {
@@ -310,6 +330,10 @@ static SZrLspRange lsp_project_modules_source_entry_range(
             range);
 }
 
+/**
+ * @brief 限制文档大纲为本文件声明及其成员，避免把局部变量、参数和导入符号混入大纲。
+ * @details GetDocumentSymbols 扫描所有作用域时使用；同一路径的 URI 别名按原生路径归并。
+ */
 static TZrBool lsp_should_include_document_symbol(SZrSymbolTable *table,
                                                   SZrSymbolScope *scope,
                                                   SZrSymbol *symbol,
@@ -338,6 +362,7 @@ static TZrBool lsp_should_include_document_symbol(SZrSymbolTable *table,
     }
 }
 
+/** @brief 工作区符号查询用此判断文件是否已由项目索引提供，避免叠加缓存分析器造成重复。 */
 static TZrBool lsp_project_has_indexed_record_for_uri(SZrLspContext *context, SZrString *uri) {
     if (context == ZR_NULL || uri == ZR_NULL) {
         return ZR_FALSE;
@@ -356,6 +381,7 @@ static TZrBool lsp_project_has_indexed_record_for_uri(SZrLspContext *context, SZ
     return ZR_FALSE;
 }
 
+/** @brief 工作区符号仅从未入项目索引的已打开缓冲区补充临时符号。 */
 static TZrBool lsp_document_is_open_overlay(SZrLspContext *context, SZrString *uri) {
     SZrFileVersion *fileVersion;
 
@@ -367,10 +393,15 @@ static TZrBool lsp_document_is_open_overlay(SZrLspContext *context, SZrString *u
     return fileVersion != ZR_NULL && fileVersion->isOpenDocument;
 }
 
+/** @brief 重命名范围与局部悬停共用的字节级标识符判定。 */
 static TZrBool lsp_is_identifier_char(TZrChar value) {
     return isalnum((unsigned char)value) || value == '_';
 }
 
+/**
+ * @brief 悬停在标识符内时优先给出符号说明，避免局部表达式事实遮盖声明信息。
+ * @details 使用当前文档快照进行 LSP 坐标转换；回退 AST 的位置不可视为当前文本的可靠语义位置。
+ */
 static TZrBool lsp_position_is_identifier_char(SZrLspContext *context,
                                                SZrString *uri,
                                                SZrLspPosition position) {
@@ -410,6 +441,7 @@ static TZrBool lsp_position_is_identifier_char(SZrLspContext *context,
     return isIdentifier;
 }
 
+/** @brief 将重命名识别出的字节边界还原为解析器内部的行列坐标。 */
 static SZrFilePosition lsp_file_position_from_offset(const TZrChar *content,
                                                      TZrSize contentLength,
                                                      TZrSize offset) {
@@ -435,6 +467,10 @@ static SZrFilePosition lsp_file_position_from_offset(const TZrChar *content,
     return ZrParser_FilePosition_Create(offset, line, column);
 }
 
+/**
+ * @brief 为 prepareRename 和最终编辑范围定位当前快照中的完整标识符。
+ * @details 允许光标落在标识符紧邻的右侧边界；调用方再将内部范围转换为客户端编码坐标。
+ */
 static TZrBool lsp_try_get_identifier_range_at_position(SZrLspContext *context,
                                                         SZrString *uri,
                                                         SZrLspPosition position,
@@ -500,6 +536,10 @@ static TZrBool lsp_try_get_identifier_range_at_position(SZrLspContext *context,
     return ZR_TRUE;
 }
 
+/**
+ * @brief 将语义引用返回的位置统一收敛到实际标识符，供 WorkspaceEdit 生成精确替换范围。
+ * @details Rename 在此后再次检查取消状态；部分规范化结果不得作为成功响应发送。
+ */
 static void lsp_normalize_rename_location_ranges(SZrLspContext *context, SZrArray *locations) {
     if (context == ZR_NULL || locations == ZR_NULL || !locations->isValid) {
         return;
@@ -527,6 +567,7 @@ static void lsp_normalize_rename_location_ranges(SZrLspContext *context, SZrArra
     }
 }
 
+/** @brief 仅允许有源声明的工程成员参与跨文件重命名，排除无法编辑的原生和二进制元数据。 */
 static TZrBool lsp_semantic_query_is_project_member_rename_target(SZrLspSemanticQuery *query) {
     EZrLspImportedModuleSourceKind sourceKind;
 
@@ -541,6 +582,7 @@ static TZrBool lsp_semantic_query_is_project_member_rename_target(SZrLspSemantic
            sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_FFI_SOURCE_WRAPPER;
 }
 
+/** @brief 将局部符号或工程成员的语义身份转成可编辑引用集合。 */
 static TZrBool lsp_semantic_query_append_rename_locations(SZrState *state,
                                                           SZrLspContext *context,
                                                           SZrLspSemanticQuery *query,
@@ -563,6 +605,7 @@ static TZrBool lsp_semantic_query_append_rename_locations(SZrState *state,
     return ZR_FALSE;
 }
 
+/** @brief prepareRename 只对可由最终 Rename 收集引用的目标给出占位名称。 */
 static SZrString *lsp_semantic_query_rename_placeholder(SZrLspSemanticQuery *query) {
     if (query == ZR_NULL) {
         return ZR_NULL;
@@ -581,6 +624,10 @@ static SZrString *lsp_semantic_query_rename_placeholder(SZrLspSemanticQuery *que
     return ZR_NULL;
 }
 
+/**
+ * @brief 给调用悬停追加源码注释，同时避免明显重复的 Markdown 段落。
+ * @details 仅在固定缓冲区容得下内容时合并；溢出时保持原悬停，调用方不应把返回原值理解为无注释。
+ */
 static SZrString *lsp_append_markdown_section(SZrState *state, SZrString *base, SZrString *appendix) {
     TZrNativeString baseText;
     TZrNativeString appendixText;
@@ -632,6 +679,7 @@ static SZrString *lsp_append_markdown_section(SZrState *state, SZrString *base, 
     return ZrCore_String_Create(state, buffer, used);
 }
 
+/** @brief 富悬停适配器消费普通悬停后释放其容器；内容字符串继续由 VM 管理。 */
 static void lsp_hover_free_internal(SZrState *state, SZrLspHover *hover) {
     if (state == ZR_NULL || hover == ZR_NULL) {
         return;
@@ -641,6 +689,7 @@ static void lsp_hover_free_internal(SZrState *state, SZrLspHover *hover) {
     ZrCore_Memory_RawFree(state->global, hover, sizeof(SZrLspHover));
 }
 
+/** @brief 将现有 Markdown 字段映射到扩展端使用的富悬停语义角色。 */
 static const TZrChar *lsp_rich_hover_role_for_label(const TZrChar *label) {
     if (label == ZR_NULL || label[0] == '\0') {
         return "detail";
@@ -712,6 +761,7 @@ static const TZrChar *lsp_rich_hover_role_for_label(const TZrChar *label) {
     return "detail";
 }
 
+/** @brief 为富悬停构造一个独立字段；调用方通过 FreeRichHover 回收字段容器。 */
 static TZrBool lsp_rich_hover_append_section(SZrState *state,
                                              SZrLspRichHover *hover,
                                              const TZrChar *role,
@@ -741,6 +791,7 @@ static TZrBool lsp_rich_hover_append_section(SZrState *state,
     return ZR_TRUE;
 }
 
+/** @brief 在遇到结构化字段前收束普通文档文字，保持扩展端展示顺序。 */
 static TZrBool lsp_rich_hover_flush_docs(SZrState *state,
                                          SZrLspRichHover *hover,
                                          TZrChar *docsBuffer,
@@ -758,6 +809,11 @@ static TZrBool lsp_rich_hover_flush_docs(SZrState *state,
     return appended;
 }
 
+/**
+ * @brief 将普通悬停 Markdown 投影为供扩展端分别渲染的角色字段。
+ * @details GetRichHover 复用 GetHover 的语义决策；转换受固定长度缓冲区限制，调用方必须使用 FreeRichHover 释放。
+ * TODO: 当前把所有含冒号的非标题行当成字段；若普通说明行含冒号且冒号后为空，转换会失败，需确认客户端期望的容错策略。
+ */
 static TZrBool lsp_build_rich_hover_from_markdown(SZrState *state,
                                                   const TZrChar *markdown,
                                                   SZrLspRange range,
@@ -920,6 +976,7 @@ static TZrBool lsp_build_rich_hover_from_markdown(SZrState *state,
     return ZR_TRUE;
 }
 
+/** @brief 在其他悬停分支完成后重取局部表达式事实，以最新语义快照补充悬停。 */
 static TZrBool lsp_refresh_local_hover_query(SZrState *state,
                                              SZrLspContext *context,
                                              SZrString *uri,
@@ -933,6 +990,11 @@ static TZrBool lsp_refresh_local_hover_query(SZrState *state,
     return ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state, context, uri, position, localQuery);
 }
 
+/**
+ * @brief 为 stdio_server 等客户端建立解析器、项目索引和语义缓存共用的会话状态。
+ * @details 先注册编译与内建库，再延迟创建各文档分析器；必须与 LspContext_Free 配对。
+ * BUG: parser 或 workspace 初始化失败时直接释放 context，但已构造的 parser、哈希表和项目索引数组未按正常销毁路径回收。
+ */
 SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
     if (state == ZR_NULL) {
         return ZR_NULL;
@@ -949,7 +1011,8 @@ SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
     
     context->state = state;
     context->parser = ZrLanguageServer_IncrementalParser_New(state);
-    context->analyzer = ZR_NULL; // 延迟创建，每个文件一个分析器
+    /* TODO: 旧单分析器槽位目前只在此初始化和销毁路径读取；确认公开结构体的 ABI 约束后再判断是否保留。 */
+    context->analyzer = ZR_NULL;
     context->semanticSnapshotCache = ZR_NULL;
     context->semanticCacheLru = ZR_NULL;
     ZrCore_HashSet_Construct(&context->uriToAnalyzerMap);
@@ -986,6 +1049,10 @@ SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
     return context;
 }
 
+/**
+ * @brief 把 stdio 当前请求的取消探针暂借给同步语义查询。
+ * @details stdio_requests 在请求结束后清除回调；userData 的生命周期必须覆盖该请求执行期。
+ */
 void ZrLanguageServer_LspContext_SetRequestCancellationCheck(
         SZrLspContext *context,
         FZrLspRequestCancellationCheck check,
@@ -997,6 +1064,7 @@ void ZrLanguageServer_LspContext_SetRequestCancellationCheck(
     context->requestCancellationUserData = check != ZR_NULL ? userData : ZR_NULL;
 }
 
+/** @brief 长时间遍历的引用、符号和重命名查询用此读取当前请求的取消状态。 */
 TZrBool ZrLanguageServer_LspContext_IsRequestCancellationRequested(
         const SZrLspContext *context) {
     return context != ZR_NULL &&
@@ -1004,7 +1072,10 @@ TZrBool ZrLanguageServer_LspContext_IsRequestCancellationRequested(
            context->requestCancellationCheck(context->requestCancellationUserData);
 }
 
-// 释放 LSP 上下文
+/**
+ * @brief 结束会话时按缓存、分析器、解析器、工程和工作区的所有权链释放状态。
+ * @details stdio_server 在停止时调用；分析器由 URI 映射持有，项目索引和快照在销毁前不得继续使用。
+ */
 void ZrLanguageServer_LspContext_Free(SZrState *state, SZrLspContext *context) {
     if (state == ZR_NULL || context == ZR_NULL) {
         return;
@@ -1059,6 +1130,10 @@ void ZrLanguageServer_LspContext_Free(SZrState *state, SZrLspContext *context) {
     ZrCore_Memory_RawFree(state->global, context, sizeof(SZrLspContext));
 }
 
+/**
+ * @brief 记录 IDE 当前选中的工程文件，供多工程目录下的项目发现消除歧义。
+ * @details initialize 与项目请求可更新此选择；传空 URI 清除，仅接受能转为原生 .zrp 路径的 URI。
+ */
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_LspContext_SetClientSelectedZrpUri(SZrState *state,
                                                                               SZrLspContext *context,
                                                                               SZrString *zrpFileUri) {
@@ -1109,7 +1184,11 @@ ZR_LANGUAGE_SERVER_API void ZrLanguageServer_LspContext_SetClientSelectedZrpUri(
     context->clientSelectedZrpNativePath = copy;
 }
 
-// 获取或创建分析器
+/**
+ * @brief 在会话 URI 映射中复用或创建语义分析器，供编辑查询和项目重分析共享。
+ * @details 支持解析到同一原生路径的 URI 别名；返回对象预期由映射统一管理，并同步快照代次及 LRU 热度。
+ * BUG: 哈希表新增节点失败时仍返回新分析器，调用方会继续使用一个未登记、无法由上下文统一回收的对象。
+ */
 SZrSemanticAnalyzer *ZrLanguageServer_Lsp_GetOrCreateAnalyzer(SZrState *state, SZrLspContext *context, SZrString *uri) {
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
         return ZR_NULL;
@@ -1156,6 +1235,10 @@ SZrSemanticAnalyzer *ZrLanguageServer_Lsp_GetOrCreateAnalyzer(SZrState *state, S
     return analyzer;
 }
 
+/**
+ * @brief 只查找现有文档分析器，并在活动语义快照中登记依赖。
+ * @details 诊断、悬停及快照提供者用此避免无意新建分析器；别名 URI 仍按原生路径匹配。
+ */
 SZrSemanticAnalyzer *ZrLanguageServer_Lsp_FindAnalyzer(SZrState *state, SZrLspContext *context, SZrString *uri) {
     SZrTypeValue key;
     SZrHashKeyValuePair *pair;
@@ -1187,6 +1270,7 @@ SZrSemanticAnalyzer *ZrLanguageServer_Lsp_FindAnalyzer(SZrState *state, SZrLspCo
     return ZR_NULL;
 }
 
+/** @brief 文档分析失败或关闭后同步移除快照缓存和 URI 映射，避免后续查询读取旧语义。 */
 void ZrLanguageServer_Lsp_RemoveAnalyzer(SZrState *state, SZrLspContext *context, SZrString *uri) {
     SZrSemanticAnalyzer *analyzer;
     SZrTypeValue key;
@@ -1212,6 +1296,7 @@ void ZrLanguageServer_Lsp_RemoveAnalyzer(SZrState *state, SZrLspContext *context
     ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
 }
 
+/** @brief 从增量解析器读取指定 URI 的当前版本，供坐标转换、诊断与编辑快照共用。 */
 SZrFileVersion *ZrLanguageServer_Lsp_GetDocumentFileVersion(SZrLspContext *context, SZrString *uri) {
     if (context == ZR_NULL || context->parser == ZR_NULL || uri == ZR_NULL) {
         return ZR_NULL;
@@ -1220,6 +1305,10 @@ SZrFileVersion *ZrLanguageServer_Lsp_GetDocumentFileVersion(SZrLspContext *conte
     return ZrLanguageServer_IncrementalParser_GetFileVersion(context->parser, uri);
 }
 
+/**
+ * @brief 将客户端位置按当前内容转换为解析器位置，导航和语义查询不得直接混用两套坐标。
+ * @details 无内容快照时返回零位置；回退 AST 只保留行列，偏移置零以免误用旧 AST 的字节位置。
+ */
 SZrFilePosition ZrLanguageServer_Lsp_GetDocumentFilePosition(SZrLspContext *context,
                                                   SZrString *uri,
                                                   SZrLspPosition position) {
@@ -1242,6 +1331,11 @@ SZrFilePosition ZrLanguageServer_Lsp_GetDocumentFilePosition(SZrLspContext *cont
     return ZrParser_FilePosition_Create(0, 0, 0);
 }
 
+/**
+ * @brief 统一处理编辑器缓冲区与项目磁盘文件的解析、索引和语义缓存更新。
+ * @details stdio 的 UpdateDocument 允许刷新项目并标记打开文档；项目扫描、元数据和跨文件查询以
+ * allowProjectRefresh=false 载入依赖，避免递归触发项目刷新。失败时调用方不得继续信任旧分析器。
+ */
 TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
                                                 SZrLspContext *context,
                                                 SZrString *uri,
@@ -1264,6 +1358,7 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
         return ZR_TRUE;
     }
 
+    /* 工程清单属于项目发现输入，不交给普通源码的语义分析器。 */
     if (lsp_string_ends_with_native(uri, ".zrp")) {
         if (!(allowProjectRefresh
                       ? ZrLanguageServer_IncrementalParser_UpdateOpenDocument(
@@ -1341,7 +1436,7 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
         }
     }
     
-    // 重新解析
+    /* 解析器需要保留上一棵 AST 时，先交出其所有权；后续历史快照或失败路径必须接管并释放。 */
     if (!((retainCurrentAst || retainPreviousSemanticAst)
                   ? ZrLanguageServer_IncrementalParser_ParseRetainingPreviousAst(
                         state,
@@ -1381,6 +1476,7 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
             return ZR_FALSE;
         }
 
+        /* 语法错误时保留旧 AST 与分析器供恢复，但诊断入口只发布当前解析错误。 */
         if (fileVersion->parserDiagnostics.length > 0 && fileVersion->usesFallbackAst && existingAnalyzer != ZR_NULL) {
             return ZR_TRUE;
         }
@@ -1431,6 +1527,7 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
             return ZR_FALSE;
         }
 
+        /* 编辑器修改会重建所属工程；依赖文件载入只沿用已有工程，避免索引刷新递归。 */
         projectIndex = allowProjectRefresh
                            ? ZrLanguageServer_LspProject_GetOrCreateForUri(state, context, uri)
                            : ZrLanguageServer_LspProject_FindProjectForUri(context, uri);
@@ -1469,6 +1566,7 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
     }
 }
 
+/** @brief stdio 文档变更入口；与内部依赖载入不同，此入口会刷新所属工程。 */
 TZrBool ZrLanguageServer_Lsp_UpdateDocument(SZrState *state,
                           SZrLspContext *context,
                           SZrString *uri,
@@ -1478,6 +1576,7 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocument(SZrState *state,
     return ZrLanguageServer_Lsp_UpdateDocumentCore(state, context, uri, content, contentLength, version, ZR_TRUE);
 }
 
+/** @brief 为历史语义快照设置会话级存储上限，由缓存管理器负责逐出。 */
 TZrBool ZrLanguageServer_Lsp_SetSemanticCacheStorageLimit(
         SZrState *state,
         SZrLspContext *context,
@@ -1488,13 +1587,18 @@ TZrBool ZrLanguageServer_Lsp_SetSemanticCacheStorageLimit(
             limitBytes);
 }
 
+/** @brief 将语义快照缓存的当前占用和逐出统计提供给诊断或测试调用方。 */
 TZrBool ZrLanguageServer_Lsp_GetSemanticCacheStorageInfo(
         const SZrLspContext *context,
         SZrLspSemanticCacheStorageInfo *outInfo) {
     return ZrLanguageServer_LspSemanticCacheLru_GetInfo(context, outInfo);
 }
 
-// 获取诊断
+/**
+ * @brief 汇总当前文档的解析、语义与导入诊断供发布器和代码动作消费。
+ * @details 虚拟声明页无诊断；回退 AST 时只发布当前解析错误，避免把旧语义问题投影到新文本。
+ * TODO: 语义和导入诊断收集失败时仍返回成功及已有部分结果，需核对 stdio 发布器是否应感知降级。
+ */
 TZrBool ZrLanguageServer_Lsp_GetDiagnostics(SZrState *state,
                           SZrLspContext *context,
                           SZrString *uri,
@@ -1609,6 +1713,7 @@ TZrBool ZrLanguageServer_Lsp_GetDiagnostics(SZrState *state,
     return ZR_TRUE;
 }
 
+/** @brief 普通悬停的最后兜底分支借用首个签名文本；借用只在 SignatureHelp 释放前有效。 */
 static const TZrChar *lsp_signature_label_text(SZrLspSignatureHelp *help) {
     SZrLspSignatureInformation **signaturePtr;
 
@@ -1624,7 +1729,11 @@ static const TZrChar *lsp_signature_label_text(SZrLspSignatureHelp *help) {
     return lsp_string_text_native((*signaturePtr)->label);
 }
 
-// 获取补全
+/**
+ * @brief 将语义补全转换为协议补全，供 stdio_completion 的标准和完成项请求共用。
+ * @details 在字符串、注释等非代码区域直接返回空列表；语义分析失败时 stdio_completion 也返回空列表。
+ * 返回数组中的结构体由 stdio 层释放，字符串仍由 VM 管理。
+ */
 TZrBool ZrLanguageServer_Lsp_GetCompletion(SZrState *state,
                          SZrLspContext *context,
                          SZrString *uri,
@@ -1738,7 +1847,11 @@ TZrBool ZrLanguageServer_Lsp_GetCompletion(SZrState *state,
     return ZR_TRUE;
 }
 
-// 获取悬停信息
+/**
+ * @brief 按装饰器、元方法、属性、调用签名、语义目标和局部表达式的顺序生成普通悬停。
+ * @details stdio_navigation 直接发布普通悬停，GetRichHover 又复用此入口；局部事实用于补充而非替换已解析的符号说明。
+ * 回退 AST 的文本快照需由各分支释放，返回悬停容器由调用方释放。
+ */
 TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
                     SZrLspContext *context,
                     SZrString *uri,
@@ -2039,6 +2152,10 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
     return ZR_TRUE;
 }
 
+/**
+ * @brief 为扩展的富悬停协议复用普通悬停决策，再按语义角色拆分 Markdown。
+ * @details stdio_navigation 的扩展请求调用此函数；结果需交给 FreeRichHover，而非普通悬停释放器。
+ */
 TZrBool ZrLanguageServer_Lsp_GetRichHover(SZrState *state,
                                           SZrLspContext *context,
                                           SZrString *uri,
@@ -2080,7 +2197,11 @@ TZrBool ZrLanguageServer_Lsp_GetRichHover(SZrState *state,
     return ZR_TRUE;
 }
 
-// 获取定义位置
+/**
+ * @brief 为普通源码和原生虚拟声明页提供统一的定义位置。
+ * @details 虚拟模块链接先用描述符解析，装饰器与 super 构造调用有专用路径，其余目标交给语义查询。
+ * stdio_navigation 消费位置数组；解析失败表示没有可导航的定义。
+ */
 TZrBool ZrLanguageServer_Lsp_GetDefinition(SZrState *state,
                          SZrLspContext *context,
                          SZrString *uri,
@@ -2154,7 +2275,10 @@ TZrBool ZrLanguageServer_Lsp_GetDefinition(SZrState *state,
     return ZR_FALSE;
 }
 
-// 查找引用
+/**
+ * @brief 按语义身份收集跨文件引用，并允许客户端选择是否包含声明位置。
+ * @details stdio_navigation 和 linked_editing 共用；遍历前后均检查取消，不能发布部分结果。
+ */
 TZrBool ZrLanguageServer_Lsp_FindReferences(SZrState *state,
                           SZrLspContext *context,
                           SZrString *uri,
@@ -2195,7 +2319,11 @@ TZrBool ZrLanguageServer_Lsp_FindReferences(SZrState *state,
     return ZR_FALSE;
 }
 
-// 重命名符号
+/**
+ * @brief 为 stdio_rename 收集可编辑的语义引用范围，再交由其生成带版本校验的 WorkspaceEdit。
+ * @details newName 在此只用于接口校验，实际文本替换由 stdio_rename 完成；仅支持稳定身份的本地符号及有源声明的工程成员。
+ * TODO: 此层未验证新名称是否为合法标识符或与现有声明冲突；需明确验证职责属于协议层还是语言语义层。
+ */
 TZrBool ZrLanguageServer_Lsp_Rename(SZrState *state,
                   SZrLspContext *context,
                   SZrString *uri,
@@ -2240,6 +2368,10 @@ TZrBool ZrLanguageServer_Lsp_Rename(SZrState *state,
     return result->length > 0;
 }
 
+/**
+ * @brief 从当前分析器的作用域树生成文档大纲，供 stdio_navigation 发布。
+ * @details 只包含当前 URI 对应文件的顶级声明和类型成员；取消时返回失败，调用方应丢弃部分数组。
+ */
 TZrBool ZrLanguageServer_Lsp_GetDocumentSymbols(SZrState *state,
                               SZrLspContext *context,
                               SZrString *uri,
@@ -2295,6 +2427,10 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentSymbols(SZrState *state,
     return ZR_TRUE;
 }
 
+/**
+ * @brief 合并项目索引符号与未索引的打开文档符号，供全工作区搜索。
+ * @details 项目索引负责持久文件，分析器映射只补充打开的游离缓冲区；取消后不得发布部分结果。
+ */
 TZrBool ZrLanguageServer_Lsp_GetWorkspaceSymbols(SZrState *state,
                                SZrLspContext *context,
                                SZrString *query,
@@ -2312,6 +2448,7 @@ TZrBool ZrLanguageServer_Lsp_GetWorkspaceSymbols(SZrState *state,
         ZrCore_Array_Init(state, result, sizeof(SZrLspSymbolInformation *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     }
 
+    /* 已索引项目是工作区搜索的主数据源；后面的 URI 映射仅提供打开文件的补集。 */
     ZrLanguageServer_Lsp_ProjectAppendWorkspaceSymbols(state, context, query, result);
     if (ZrLanguageServer_LspContext_IsRequestCancellationRequested(context)) {
         return ZR_FALSE;
@@ -2373,6 +2510,7 @@ TZrBool ZrLanguageServer_Lsp_GetWorkspaceSymbols(SZrState *state,
     return ZR_TRUE;
 }
 
+/** @brief 为同文档高亮查询复用 super 构造调用特例及通用语义引用身份。 */
 TZrBool ZrLanguageServer_Lsp_GetDocumentHighlights(SZrState *state,
                                   SZrLspContext *context,
                                   SZrString *uri,
@@ -2402,6 +2540,10 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentHighlights(SZrState *state,
     return ZR_FALSE;
 }
 
+/**
+ * @brief 在编辑前确认目标可由 Rename 处理，并返回当前标识符范围与展示占位名。
+ * @details stdio_rename 以此响应客户端预检；实际编辑仍需重新解析目标并捕获文档快照。
+ */
 TZrBool ZrLanguageServer_Lsp_PrepareRename(SZrState *state,
                          SZrLspContext *context,
                          SZrString *uri,
@@ -2443,6 +2585,10 @@ TZrBool ZrLanguageServer_Lsp_PrepareRename(SZrState *state,
     return ZR_TRUE;
 }
 
+/**
+ * @brief 将原生模块描述符投影为只读虚拟声明文本，供 stdio_navigation 的虚拟文档请求。
+ * @details 仅接受已识别的声明 URI；普通文件由文档同步与项目索引管理。
+ */
 TZrBool ZrLanguageServer_Lsp_GetNativeDeclarationDocument(SZrState *state,
                                                           SZrLspContext *context,
                                                           SZrString *uri,
@@ -2470,6 +2616,10 @@ TZrBool ZrLanguageServer_Lsp_GetNativeDeclarationDocument(SZrState *state,
            *outText != ZR_NULL;
 }
 
+/**
+ * @brief 为项目模块浏览视图汇总源模块、FFI 包装、二进制和原生导入模块。
+ * @details stdio_project 使用导航 URI 与范围构造客户端树；需先确保源图扫描完成，并用 FreeProjectModules 释放摘要。
+ */
 TZrBool ZrLanguageServer_Lsp_GetProjectModules(SZrState *state,
                                                SZrLspContext *context,
                                                SZrString *projectUri,
@@ -2627,6 +2777,7 @@ TZrBool ZrLanguageServer_Lsp_GetProjectModules(SZrState *state,
     return ZR_TRUE;
 }
 
+/** @brief 释放 GetProjectModules 返回的摘要容器；内部 VM 字符串由 GC 管理。 */
 void ZrLanguageServer_Lsp_FreeProjectModules(SZrState *state, SZrArray *result) {
     if (state == ZR_NULL || result == ZR_NULL) {
         return;
@@ -2643,6 +2794,7 @@ void ZrLanguageServer_Lsp_FreeProjectModules(SZrState *state, SZrArray *result) 
     ZrCore_Array_Free(state, result);
 }
 
+/** @brief 释放 GetRichHover 的角色字段及结果容器；字段字符串由 VM 管理。 */
 void ZrLanguageServer_Lsp_FreeRichHover(SZrState *state, SZrLspRichHover *result) {
     if (state == ZR_NULL || result == ZR_NULL) {
         return;

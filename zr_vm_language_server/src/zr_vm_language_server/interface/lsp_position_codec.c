@@ -1,5 +1,6 @@
 #include "interface/lsp_position_codec.h"
 
+/** 保持畸形 UTF-8 的扫描边界局限于单字节，避免误吞随后换行或光标目标。 */
 static TZrSize lsp_position_codec_utf8_codepoint_length(const TZrChar *content,
                                                         TZrSize contentLength,
                                                         TZrSize offset) {
@@ -10,6 +11,8 @@ static TZrSize lsp_position_codec_utf8_codepoint_length(const TZrChar *content,
     }
 
     first = (unsigned char)content[offset];
+    /* TODO: 这里只检查 continuation 形状，未拒绝 overlong、代理码点和超出 Unicode 上限的序列；
+     * 需与文档 UTF-8 验证边界及客户端对畸形文本的 UTF-16 计数约定对齐。 */
     if (first < 0x80u) {
         return 1;
     }
@@ -35,6 +38,7 @@ static TZrSize lsp_position_codec_utf8_codepoint_length(const TZrChar *content,
     return 1;
 }
 
+/** 将四字节码点计作两个 UTF-16 单元，使 emoji 后的编辑器列保持一致。 */
 static TZrInt32 lsp_position_codec_utf16_units_for_utf8_codepoint(const TZrChar *content,
                                                                   TZrSize contentLength,
                                                                   TZrSize offset,
@@ -58,6 +62,7 @@ static TZrInt32 lsp_position_codec_utf16_units_for_utf8_codepoint(const TZrChar 
     return 1;
 }
 
+/** 请求入口使用的统一位置转换；在不完整代理对或行尾将光标收敛到可表示的字节边界。 */
 TZrSize ZrLanguageServer_LspPositionCodec_Utf16PositionToByteOffset(const TZrChar *content,
                                                                     TZrSize contentLength,
                                                                     SZrLspPosition position) {
@@ -111,6 +116,7 @@ TZrSize ZrLanguageServer_LspPositionCodec_Utf16PositionToByteOffset(const TZrCha
     return offset;
 }
 
+/** 响应出口使用的逆向转换；CRLF 作为单次换行边界，列数按 UTF-16 单元计算。 */
 SZrLspPosition ZrLanguageServer_LspPositionCodec_ByteOffsetToUtf16Position(const TZrChar *content,
                                                                            TZrSize contentLength,
                                                                            TZrSize offset) {
@@ -158,6 +164,7 @@ SZrLspPosition ZrLanguageServer_LspPositionCodec_ByteOffsetToUtf16Position(const
     return position;
 }
 
+/** 供语义分析器按字节列定位，同时保留 LSP 转换后的最终偏移。 */
 SZrFilePosition ZrLanguageServer_LspPositionCodec_ByteOffsetToFilePosition(const TZrChar *content,
                                                                            TZrSize contentLength,
                                                                            TZrSize offset) {

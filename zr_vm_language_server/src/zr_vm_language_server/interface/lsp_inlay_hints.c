@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 提示位置与请求范围均已转换到 LSP 坐标；比较时必须先按行再按 UTF-16 列排序。 */
 static int lsp_inlay_compare_position(SZrLspPosition left, SZrLspPosition right) {
     if (left.line < right.line) {
         return -1;
@@ -23,11 +24,14 @@ static int lsp_inlay_compare_position(SZrLspPosition left, SZrLspPosition right)
     return 0;
 }
 
+/* BUG: LSP Range 的 end 是排他的，这里把等于 end 的提示也纳入结果。
+ * stdio 和 Wasm 均原样传入客户端范围，因此分页相邻范围可重复返回边界提示。 */
 static TZrBool lsp_inlay_position_in_range(SZrLspPosition position, SZrLspRange range) {
     return lsp_inlay_compare_position(position, range.start) >= 0 &&
            lsp_inlay_compare_position(position, range.end) <= 0;
 }
 
+/* 标签和事实均使用有界缓冲区；失败向上传递，避免把截断类型展示为完整类型。 */
 static TZrBool lsp_inlay_append_format(TZrChar *buffer,
                                        TZrSize bufferSize,
                                        TZrSize *used,
@@ -53,6 +57,7 @@ static TZrBool lsp_inlay_append_format(TZrChar *buffer,
     return ZR_TRUE;
 }
 
+/* 仅从已解析的 canonical declaration 取类型；函数提示展示返回类型而非 callable 全型。 */
 static TZrBool lsp_inlay_declaration_has_exact_canonical_type_text(
         SZrSemanticAnalyzer *analyzer,
         const SZrParserSemanticSymbolQuery *declaration,
@@ -93,6 +98,7 @@ static TZrBool lsp_inlay_declaration_has_exact_canonical_type_text(
     return buffer[0] != '\0';
 }
 
+/* 成功加入结果的提示持有原生结构体和 VM 字符串；清理函数只释放原生部分。 */
 static TZrBool lsp_inlay_append_hint(SZrState *state,
                                      SZrArray *result,
                                      SZrLspPosition position,
@@ -135,6 +141,7 @@ static TZrBool lsp_inlay_append_hint(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 初始化式的数值事实附在已确证类型后；区间展示复用 LSP 共享文案。 */
 static TZrBool lsp_inlay_append_numeric_fact_detail(TZrChar *buffer,
                                                     TZrSize bufferSize,
                                                     TZrSize *used,
@@ -173,6 +180,7 @@ static TZrBool lsp_inlay_append_numeric_fact_detail(TZrChar *buffer,
     return ZR_TRUE;
 }
 
+/* 逻辑值与短路性质来自同一初始化节点的 parser 事实，不扩散到整个声明。 */
 static TZrBool lsp_inlay_append_logical_fact_detail(TZrChar *buffer,
                                                     TZrSize bufferSize,
                                                     TZrSize *used,
@@ -198,6 +206,7 @@ static TZrBool lsp_inlay_append_logical_fact_detail(TZrChar *buffer,
     return ZR_TRUE;
 }
 
+/* 类型是提示的必要部分；初始化式事实可选，且只从变量声明绑定的 AST 节点取得。 */
 static TZrBool lsp_inlay_build_label_text(SZrState *state,
                                           SZrSemanticAnalyzer *analyzer,
                                           const SZrParserSemanticSymbolQuery *declaration,
@@ -237,6 +246,7 @@ static TZrBool lsp_inlay_build_label_text(SZrState *state,
            lsp_inlay_append_logical_fact_detail(buffer, bufferSize, &used, logicalFact);
 }
 
+/* 隐式类型的变量、字段及隐式返回类型才需要提示；显式标注处不重复呈现。 */
 static TZrBool lsp_inlay_try_append_declaration_hint(SZrState *state,
                                                 SZrLspContext *context,
                                                 SZrString *uri,
@@ -262,6 +272,9 @@ static TZrBool lsp_inlay_try_append_declaration_hint(SZrState *state,
         return ZR_TRUE;
     }
 
+    /* 提示位置贴近声明或函数体入口；位置转换使用当前文档内容以保留 UTF-16 列。 */
+    /* TODO: PositionFromFilePositionForDocument 在快照获取失败时返回 0:0；
+     * 核查缓存分析器仍可用而定位快照失败的请求，避免把异处提示误放到文档开头。 */
     switch (astNode->type) {
         case ZR_AST_VARIABLE_DECLARATION:
             if (astNode->data.variableDeclaration.typeInfo != ZR_NULL ||
@@ -350,6 +363,9 @@ static TZrBool lsp_inlay_try_append_declaration_hint(SZrState *state,
     return lsp_inlay_append_hint(state, result, position, ZR_LSP_INLAY_HINT_KIND_TYPE, labelBuffer);
 }
 
+/** @brief 从当前文档的规范声明查询中生成指定范围内的类型提示。
+ *  @pre uri 已在 context 中可分析，result 为未初始化或由同一 state 持有的提示指针数组；调用后用 FreeInlayHints 清理。
+ *  @note 按声明源 URI 过滤项目级查询，再投影为文档位置；中途失败会清掉已加入的提示。 */
 TZrBool ZrLanguageServer_Lsp_GetInlayHints(SZrState *state,
                                            SZrLspContext *context,
                                            SZrString *uri,
@@ -372,6 +388,7 @@ TZrBool ZrLanguageServer_Lsp_GetInlayHints(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* 项目级分析可能包含其他文件声明；先查询当前 AST 范围，再以下面的 source 校验收口。 */
     memset(&scope, 0, sizeof(scope));
     scope.kind = ZR_PARSER_SEMANTIC_QUERY_SCOPE_NODE;
     scope.root = analyzer->ast;
@@ -382,6 +399,7 @@ TZrBool ZrLanguageServer_Lsp_GetInlayHints(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* 查询可能汇入项目内其他源文件；同一路径的不同 URI 写法也视为当前文档。 */
     for (TZrSize index = 0U; index < declarations.length; index++) {
         const SZrParserSemanticSymbolQuery *declaration =
                 (const SZrParserSemanticSymbolQuery *)ZrCore_Array_Get(
@@ -393,6 +411,7 @@ TZrBool ZrLanguageServer_Lsp_GetInlayHints(SZrState *state,
             continue;
         }
 
+        /* 失败时不能把部分结果交给 stdio/Wasm；回收原生项后由上层返回空集合。 */
         if (!lsp_inlay_try_append_declaration_hint(
                     state, context, uri, analyzer, declaration, range, result)) {
             ZrCore_Array_Free(state, &declarations);
@@ -405,6 +424,8 @@ TZrBool ZrLanguageServer_Lsp_GetInlayHints(SZrState *state,
     return ZR_TRUE;
 }
 
+/** @brief 释放 GetInlayHints 的原生提示项和数组缓冲区。
+ *  @pre state 与创建提示时使用同一全局分配器；label 为 VM 字符串，由 GC 管理。 */
 void ZrLanguageServer_Lsp_FreeInlayHints(SZrState *state, SZrArray *result) {
     if (state == ZR_NULL || result == ZR_NULL) {
         return;

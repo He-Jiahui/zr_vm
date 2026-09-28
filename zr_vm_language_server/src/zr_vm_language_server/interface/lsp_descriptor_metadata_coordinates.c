@@ -2,6 +2,10 @@
 
 #include <string.h>
 
+/**
+ * @brief 将插件描述符的结构坐标用于定义、引用和高亮位置。
+ * @note 描述符没有可供字节偏移重算的源文本；调用方必须仅传一基且顺序有效的范围。
+ */
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_TryRangeFromDescriptorMetadataCoordinates(
         SZrFileRange range,
         SZrLspRange *outRange) {
