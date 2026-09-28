@@ -11,8 +11,8 @@
 
 #define ZR_CLI_ERROR_BUFFER_LENGTH 512U
 #define ZR_CLI_SOURCE_HASH_HEX_LENGTH ZR_STABLE_HASH_HEX_BUFFER_LENGTH
-/* TODO: fgets 遇到达到 1023 字节的物理行时可能分段读取，repl.c 每次读取又追加换行；
- * 用达到 1023 字节及以上的单行表达式核查 REPL 是否因此改变语句边界。 */
+/* BUG: 物理行超过 1023 字节时，fgets 分段而 REPL 每段都追加换行，改写单行表达式；
+ * 恰满 1023 字节时，后续行结束符会被当成空行触发提交；现有 E2E 只覆盖短行。 */
 #define ZR_CLI_REPL_LINE_BUFFER_LENGTH 1024U
 #define ZR_CLI_REPL_BUFFER_INITIAL_CAPACITY 256U
 #define ZR_CLI_COLLECTION_INITIAL_CAPACITY 8U
