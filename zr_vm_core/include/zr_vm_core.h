@@ -5,16 +5,9 @@
 #ifndef ZR_VM_CORE_H
 #define ZR_VM_CORE_H
 /**
- * conf
- * raw_object value conversion log debug hash math meta execution
- * stack(value) io(value) native(value)
- * call_info(stack) exception(stack) function(stack)
- * callback(exception) closure(stack)
- * global(callback) state(closure)
- * memory(global) gc(global)
- * hash_set(memory) array(memory)
- * string(hash_set) object(hash_set)
- * module(object)
+ * @brief Core 公开接口聚合入口；各子头仍可单独包含。
+ * TODO: 核查聚合范围与独立公共头的边界；本头未纳入同目录的 bridge.h 等接口，需确认新增接口是
+ *       统一由本头导出，还是继续要求调用方按需包含具体子头。
  */
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/aot_ir.h"
@@ -74,6 +67,7 @@
 #include "zr_vm_core/type.h"
 #include "zr_vm_core/value.h"
 
+/** @brief 以元日志向默认输出写入当前编译版本及模块名。 */
 ZR_CORE_API void Hello(void);
 
 
