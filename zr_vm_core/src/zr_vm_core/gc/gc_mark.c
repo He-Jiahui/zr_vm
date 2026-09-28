@@ -625,7 +625,9 @@ static const SZrTypeLayout *garbage_collector_resolve_metadata_frame_type_layout
 
 static SZrFunction *garbage_collector_call_info_metadata_function(SZrState *threadState,
                                                                   const SZrCallInfo *callInfo) {
-    if (threadState == ZR_NULL || callInfo == ZR_NULL || callInfo->functionBase.valuePointer == ZR_NULL) {
+    /* A native frame can hold a function root at functionBase without executing its layout. */
+    if (threadState == ZR_NULL || callInfo == ZR_NULL ||
+        !ZR_CALL_INFO_IS_VM(callInfo) || callInfo->functionBase.valuePointer == ZR_NULL) {
         return ZR_NULL;
     }
 

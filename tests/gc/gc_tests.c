@@ -4688,6 +4688,8 @@ static void test_gc_string_table_minor_bucket_flags_rebuild_after_rehash(void) {
     TEST_DIVIDER();
 }
 
+#include "gc_native_base_frame_tests.inc"
+
 // 主测试函数
 int main(void) {
     printf("\n");
@@ -4762,6 +4764,8 @@ int main(void) {
     RUN_TEST(test_gc_minor_collection_reassigns_root_function_and_stamps_minor_scan_epoch);
     RUN_TEST(test_gc_minor_collection_rewrites_generated_frame_slot_above_stack_top);
     RUN_TEST(test_gc_minor_collection_rewrites_inline_frame_value_with_layout_visitor);
+    RUN_TEST(test_gc_native_base_function_root_skips_inactive_frame_on_full_collection);
+    RUN_TEST(test_gc_native_base_function_root_skips_inactive_frame_on_minor_rewrite);
     RUN_TEST(test_gc_minor_collection_preserves_young_descendant_through_old_stack_root_chain);
     RUN_TEST(test_gc_minor_collection_preserves_closed_callable_captures);
     RUN_TEST(test_gc_minor_collection_rewrites_old_reference_to_forwarded_child);

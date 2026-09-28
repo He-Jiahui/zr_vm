@@ -1512,7 +1512,10 @@ static TZrSize garbage_collector_rewrite_thread_frame_slots(SZrState *threadStat
             TZrStackValuePointer frameBase = functionBase + 1;
             TZrStackValuePointer funcBase = functionBase;
             TZrStackValuePointer funcTop = youngerFrameBase;
-            SZrFunction *metadataFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(threadState, callInfo);
+            /* Native call-info stack roots have no active VM frame layout to rewrite. */
+            SZrFunction *metadataFunction = ZR_CALL_INFO_IS_VM(callInfo)
+                                                   ? ZrCore_Closure_GetMetadataFunctionFromCallInfo(threadState, callInfo)
+                                                   : ZR_NULL;
             TZrBool inlineFrameRewritten =
                     garbage_collector_rewrite_resolved_inline_frame_values(threadState,
                                                                            metadataFunction,

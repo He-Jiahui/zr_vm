@@ -264,8 +264,36 @@ A temporary `--gc-only` runner mode then executed just that final test in a
 fresh process and reproduced the crash, excluding pollution from the earlier
 16 tests. The temporary mode was removed and the final test source rebuilt;
 the complete runner still passed its first 16 cases and crashed at full GC.
-This GC case remains a separate support-layer failure to investigate; the
-MSVC call-binding suite is not recorded as passing.
+At that acceptance point, this GC case remained a separate support-layer
+failure and the MSVC call-binding suite was not recorded as passing.
+
+### Native base call-info GC support follow-up
+
+The later GC support investigation found that `baseCallInfo` was a native call
+record with `metadataFunction == NULL`, while its `functionBase` pointed at the
+stack slot used to root the compiled function. Mark and forwarding rewrite
+looked up that rooted function as though it were an executing VM frame and
+visited its VALUE layout slots beyond the live native stack range. At the MSVC
+fault, the false frame visitor read slot 1 at byte offset 232, whose stale
+object pointer was `0x12`. The same Clang function had four direct VALUE rows,
+with slot 1 at ABI byte offset 320; that inactive value happened to be null.
+
+A focused GC fixture now roots a function in the native base call-info and
+places a poisoned VALUE layout slot at `stackBase + 9`, beyond the live
+`stackTop`. With the old mark/rewrite predicates temporarily restored, the
+full and minor cases independently exited with Windows access violation
+`0xC0000005` when each was ordered first among the two new cases. The existing
+active VM frame GC test passed immediately before them. This RED isolates
+native frame classification from incidental contents at `stackBase + 2`.
+
+The corrected predicates permit frame-layout visits only for VM call-info
+entries; native call-info entries still scan their live stack roots. The
+current-source MSVC `zr_vm_gc_test` passed 69/69, including both new cases,
+and `zr_vm_call_binding_pipeline_test` passed 17/17, including the formerly
+crashing full-GC case. Its registered `call_binding_pipeline` CTest passed
+1/1. The focused GCC GC target built 10/10 edges and passed 69/69; the Clang
+GC target built 12/12 edges and passed 69/69. The GC Unity binary was run
+directly because this top-level CTest configuration does not register it.
 
 ## Boundary
 

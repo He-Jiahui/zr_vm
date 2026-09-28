@@ -93,6 +93,7 @@ related_code:
   - tests/core/test_native_inline_span_dispatch.c
   - tests/core/test_aot_gc_root_frame.c
   - tests/gc/gc_tests.c
+  - tests/gc/gc_native_base_frame_tests.inc
   - tests/module/test_metadata_runtime_type_layout.c
   - tests/parser/test_compiler_features.c
   - tests/parser/test_struct_value_init.c
@@ -326,6 +327,8 @@ The fields are serialized into `function->prototypeData`, imported back into par
 `ZrCore_Function_ResolvePrototypeFrameTypeLayout` is the current runtime bridge from `SZrFunctionFrameSlotLayout.typeLayoutId` to `SZrTypeLayout`. In this increment the id is still a checked prototype index, not a standalone serialized type-layout table id. The resolver reads the owning entry function's `prototypeData`, validates the encoded prototype count and byte bounds, and builds a per-function cache of layouts.
 
 For AOT-loaded functions that have an attached code registration, GC inline-frame mark/rewrite now resolves the same `typeLayoutId` through `ZrCore_MetadataRuntime_ResolveFunctionTypeLayout`. That path reads the code-registration layout registry attached to the function or its prototype-context entry function, so AOT GC consumers use the same metadata runtime layout table as generic dictionary and GC descriptor lookup. When an AOT registry is present but a registry layout is missing, GC does not fall back to the prototype layout cache. When no AOT registry is attached, ordinary VM/interpreter inline-frame GC keeps using `ZrCore_Function_ResolvePrototypeFrameTypeLayout`.
+
+GC mark and forwarding rewrite use frame slot layouts only for VM call-info entries. The native base call-info can hold a function value at its `functionBase` as an ordinary live stack root while that function is not executing. Interpreting the rooted function's layout as an active frame would visit bytes beyond `stackTop` as managed values. Both GC passes still scan the native entry's live stack range and retain callable objects reachable from it; they skip only the inactive frame-layout visit. The focused GC regression poisons an inactive VALUE slot above `stackTop` and covers both full collection and minor forwarding, while the existing active VM frame tests continue to cover layout-backed roots above `stackTop`.
 
 `ZrCore_Function_GetPrototypeFrameTypeLayoutRegistry` exposes the ordinary
 interpreter side of that contract as a stable borrowed registry. It resolves the
