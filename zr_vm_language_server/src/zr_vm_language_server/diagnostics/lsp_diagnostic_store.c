@@ -12,6 +12,7 @@
 #define ZR_LSP_DIAGNOSTIC_HASH_OFFSET ((TZrUInt64)14695981039346656037ULL)
 #define ZR_LSP_DIAGNOSTIC_HASH_PRIME ((TZrUInt64)1099511628211ULL)
 
+/** 将固定宽度标量并入诊断指纹，供两个传输入口比较 pull 结果身份。 */
 static void diagnostic_hash_word(TZrUInt64 *hash, TZrUInt64 value) {
     for (TZrUInt32 shift = 0U; shift < 64U; shift += 8U) {
         *hash ^= (value >> shift) & 0xffU;
@@ -19,6 +20,7 @@ static void diagnostic_hash_word(TZrUInt64 *hash, TZrUInt64 value) {
     }
 }
 
+/** 可空字符串的长度与字节内容共同参与身份，避免文本变化仍复用旧结果。 */
 static void diagnostic_hash_string(TZrUInt64 *hash, const SZrString *value) {
     const TZrChar *text = value != ZR_NULL ? ZrCore_String_GetNativeString(value) : ZR_NULL;
     TZrSize length = value != ZR_NULL ? ZrCore_String_GetByteLength(value) : 0U;
@@ -30,6 +32,7 @@ static void diagnostic_hash_string(TZrUInt64 *hash, const SZrString *value) {
     }
 }
 
+/** 使用 LSP 范围坐标计算身份；位置单位由上游诊断转换契约决定。 */
 static void diagnostic_hash_range(TZrUInt64 *hash, SZrLspRange range) {
     diagnostic_hash_word(hash, (TZrUInt64)(TZrUInt32)range.start.line);
     diagnostic_hash_word(hash, (TZrUInt64)(TZrUInt32)range.start.character);
@@ -37,8 +40,10 @@ static void diagnostic_hash_range(TZrUInt64 *hash, SZrLspRange range) {
     diagnostic_hash_word(hash, (TZrUInt64)(TZrUInt32)range.end.character);
 }
 
+/** 子项只在哈希计算期间借用，不转移相关信息或修复建议的所有权。 */
 typedef TZrUInt64 (*FZrLspDiagnosticChildHash)(const void *value);
 
+/** 相关信息的 URI、范围和消息变化均会改变诊断结果身份。 */
 static TZrUInt64 diagnostic_related_information_hash(const void *value) {
     const SZrLspDiagnosticRelatedInformation *relatedInformation =
             (const SZrLspDiagnosticRelatedInformation *)value;
@@ -53,6 +58,7 @@ static TZrUInt64 diagnostic_related_information_hash(const void *value) {
     return hash;
 }
 
+/** 修复建议变化也应失效 pull 结果，避免客户端沿用旧编辑。 */
 static TZrUInt64 diagnostic_fix_hash(const void *value) {
     const SZrLspDiagnosticFix *fix = (const SZrLspDiagnosticFix *)value;
     TZrUInt64 hash = ZR_LSP_DIAGNOSTIC_HASH_OFFSET;
@@ -67,12 +73,14 @@ static TZrUInt64 diagnostic_fix_hash(const void *value) {
     return hash;
 }
 
+/** 对临时指纹排序，使列表排列顺序不影响内容身份。 */
 static int diagnostic_hash_compare(const void *left, const void *right) {
     TZrUInt64 leftHash = *(const TZrUInt64 *)left;
     TZrUInt64 rightHash = *(const TZrUInt64 *)right;
     return leftHash < rightHash ? -1 : (leftHash > rightHash ? 1 : 0);
 }
 
+/** 子项按顺序无关的列表计入父诊断，重复项仍保留；临时数组由本函数释放，分配失败向上报告。 */
 static TZrBool diagnostic_hash_sorted_children(SZrState *state,
                                                const SZrArray *values,
                                                TZrSize expectedElementSize,
@@ -106,6 +114,7 @@ static TZrBool diagnostic_hash_sorted_children(SZrState *state,
     return ZR_TRUE;
 }
 
+/** 汇总单条诊断的可见字段及顺序无关的子项，供 stdio/WASM 使用同一身份算法。 */
 static TZrBool diagnostic_payload_hash(SZrState *state,
                                        const SZrLspDiagnostic *diagnostic,
                                        TZrUInt64 *outHash) {
@@ -141,6 +150,10 @@ static TZrBool diagnostic_payload_hash(SZrState *state,
     return ZR_TRUE;
 }
 
+/** @brief 为 stdio 与 WASM pull diagnostics 构造内容及语义快照绑定的结果 ID。
+ *  @pre state、context、uri、有效诊断指针数组及输出缓冲区在调用期间有效。
+ *  @return 成功时写入完整 NUL 结尾 ID；分配、身份或缓冲区失败时返回假。
+ *  @note 只借用诊断和快照；排序只作用于临时指纹数组，不重排原诊断。 */
 TZrBool ZrLanguageServer_LspDiagnosticStore_BuildResultId(
         SZrState *state,
         SZrLspContext *context,
@@ -187,6 +200,7 @@ TZrBool ZrLanguageServer_LspDiagnosticStore_BuildResultId(
         diagnostic_hash_word(&payloadHash, hashes[index]);
     }
 
+    // 快照身份优先于文档代际；最终释放快照前仍需保留身份的有效期。
     snapshot = ZrLanguageServer_LspSemanticSnapshot_Acquire(state, context, uri);
     identity = ZrLanguageServer_LspSemanticSnapshot_GetIdentity(snapshot);
     if (identity == ZR_NULL) {
@@ -198,6 +212,7 @@ TZrBool ZrLanguageServer_LspDiagnosticStore_BuildResultId(
             ZrLanguageServer_LspSemanticSnapshot_Release(state, snapshot);
             return ZR_FALSE;
         }
+        // 无快照时仍把当前文档和 provider 代际写入 ID，防止旧结果被继续复用。
         documentIdentity.documentGeneration = (TZrUInt64)fileVersion->textBlock->contentGeneration;
         documentIdentity.providerGeneration = context->semanticSnapshotProviderGeneration;
         identity = &documentIdentity;
