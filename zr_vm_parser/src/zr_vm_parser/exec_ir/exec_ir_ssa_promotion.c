@@ -431,6 +431,34 @@ static TZrBool promotion_frontier_has(const SZrPlacePromotion *promotion,
                       (TZrUInt8)(1u << (blockIndex % 8u))) != 0u);
 }
 
+static TZrBool promotion_block_has_unreachable_predecessor(
+        const SZrExecIrFunction *function,
+        const SZrExecIrBlock *block,
+        TZrBool *hasUnreachablePredecessor,
+        SZrExecIrDiagnostic *diagnostic) {
+    TZrUInt32 predecessorOffset;
+    *hasUnreachablePredecessor = ZR_FALSE;
+    for (predecessorOffset = 0u;
+         predecessorOffset < block->predecessorRange.count;
+         ++predecessorOffset) {
+        TZrExecIrBlockId predecessor = function->predecessors[
+                block->predecessorRange.start + predecessorOffset];
+        if (predecessor == ZR_EXEC_IR_BLOCK_ID_INVALID ||
+            predecessor > function->blockCount) {
+            return promotion_fail(
+                    function, diagnostic,
+                    ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK,
+                    block->terminatorInstructionId, block->id);
+        }
+        if (predecessor != function->entryBlockId &&
+            function->blocks[predecessor - 1u].immediateDominator ==
+                    ZR_EXEC_IR_BLOCK_ID_INVALID) {
+            *hasUnreachablePredecessor = ZR_TRUE;
+        }
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool promotion_compute_frontiers(
         const SZrExecIrFunction *function,
         SZrPlacePromotion *promotion,
@@ -450,6 +478,18 @@ static TZrBool promotion_compute_frontiers(
             TZrExecIrBlockId runner = function->predecessors[
                     block->predecessorRange.start + predecessorOffset];
             TZrUInt32 steps = 0u;
+            if (runner == ZR_EXEC_IR_BLOCK_ID_INVALID ||
+                runner > function->blockCount) {
+                return promotion_fail(
+                        function, diagnostic,
+                        ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK,
+                        block->terminatorInstructionId, block->id);
+            }
+            if (runner != function->entryBlockId &&
+                function->blocks[runner - 1u].immediateDominator ==
+                        ZR_EXEC_IR_BLOCK_ID_INVALID) {
+                continue;
+            }
             while (runner != stop) {
                 if (runner == ZR_EXEC_IR_BLOCK_ID_INVALID ||
                     runner > function->blockCount ||
@@ -504,6 +544,40 @@ static void promotion_place_phis(SZrPlacePromotion *promotion) {
             }
         }
     } while (changed);
+}
+
+static TZrBool promotion_preserve_places_with_unreachable_phi_inputs(
+        const SZrExecIrFunction *function,
+        SZrPlacePromotion *promotion,
+        SZrExecIrDiagnostic *diagnostic) {
+    TZrUInt32 placeIndex;
+    for (placeIndex = 0u; placeIndex < promotion->placeCount; ++placeIndex) {
+        TZrUInt32 blockIndex;
+        TZrBool requiresMemoryForm = ZR_FALSE;
+        TZrSize rowStart = (TZrSize)placeIndex * promotion->blockCount;
+        if (promotion->active[placeIndex] == 0u) continue;
+        for (blockIndex = 0u; blockIndex < promotion->blockCount;
+             ++blockIndex) {
+            if (promotion->hasPhi[rowStart + blockIndex] != 0u) {
+                TZrBool hasUnreachablePredecessor;
+                if (!promotion_block_has_unreachable_predecessor(
+                            function, &function->blocks[blockIndex],
+                            &hasUnreachablePredecessor, diagnostic)) {
+                    return ZR_FALSE;
+                }
+                if (hasUnreachablePredecessor) {
+                    requiresMemoryForm = ZR_TRUE;
+                    break;
+                }
+            }
+        }
+        if (requiresMemoryForm) {
+            promotion->active[placeIndex] = 0u;
+            memset(&promotion->hasPhi[rowStart], 0,
+                   promotion->blockCount * sizeof(*promotion->hasPhi));
+        }
+    }
+    return ZR_TRUE;
 }
 
 static TZrBool promotion_append_phis(SZrExecIrFunction *function,
@@ -795,6 +869,10 @@ static TZrBool promotion_transform(SZrExecIrFunction *function,
         goto cleanup;
     }
     promotion_place_phis(&promotion);
+    if (!promotion_preserve_places_with_unreachable_phi_inputs(
+                function, &promotion, diagnostic)) {
+        goto cleanup;
+    }
     if (!promotion_append_phis(function, &promotion, diagnostic) ||
         !promotion_rename(function, &promotion, diagnostic)) {
         goto cleanup;

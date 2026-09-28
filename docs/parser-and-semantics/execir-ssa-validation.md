@@ -1,6 +1,7 @@
 ---
 related_code:
   - zr_vm_parser/include/zr_vm_parser/exec_ir_builder.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa_promotion.c
   - zr_vm_core/include/zr_vm_core/exec_ir.h
   - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def
 implementation_files:
@@ -25,6 +26,7 @@ tests:
   - tests/acceptance/ssa-external-entry-values.md
   - tests/acceptance/ssa-place-promotion.md
   - tests/acceptance/ssa-construction-builder-phi.md
+  - tests/acceptance/ssa-construction-dead-predecessors.md
 doc_type: module-detail
 ---
 
@@ -47,6 +49,22 @@ instead reports `INVALID_VALUE` at the join and leaves previously published
 builder output intact. These assertions cover normal diamond control flow;
 they do not establish source-level optional, exception, cleanup, suspend, or
 loop parity required by the full 01.02 gate.
+
+Promotion uses the freshly computed dominator tree to distinguish unreachable
+predecessors from malformed reachable idom chains. A predecessor other than
+the entry block whose computed immediate dominator is invalid is excluded from
+frontier walking; invalid predecessor IDs and invalid idom links reached from
+a reachable predecessor still fail with `INVALID_BLOCK`. This leaves
+unreachable blocks and their source locations in the emitted CFG for later
+diagnostics.
+
+Phi construction still requires an incoming value for every CFG predecessor.
+If a Place needs a new phi at a reachable block that also has an unreachable
+predecessor, promotion is cancelled for that Place before phis are appended;
+its `LOAD` and `STORE` instructions remain in memory form. Other Places can
+still be promoted. A join with one reachable incoming path and a dead incoming
+edge does not need a phi and remains promotable. Both shapes retain all CFG
+edges and source maps and pass the structural and SSA verifier.
 
 Before this check, source-produced canonical Places are assigned separate
 ExecIR address values. Place results are ordinary instruction definitions;
