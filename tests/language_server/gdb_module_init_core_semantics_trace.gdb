@@ -1,3 +1,5 @@
+# BUG: 目标返回阶段断点的 finish 恢复执行，使本命令块后续 printf/continue 被忽略；预期阶段输出缺失。
+# TODO: 脚本绑定旧 WSL 构建目录，仓库内未找到自动调用点；复用前核对路径和断点符号。
 set pagination off
 set confirm off
 file /mnt/e/Git/zr_vm/build/codex-wsl-gcc-debug-current-make/bin/zr_vm_cli
@@ -7,6 +9,7 @@ set args /mnt/e/Git/zr_vm/tests/fixtures/projects/lsp_language_feature_matrix/ls
 start
 
 break module_init_prescan_source_summary
+# BUG: 原拟只打印目标模块的预扫描结果，但 finish 恢复执行后本命令块的 printf/continue 被忽略。
 commands
 silent
 set $name = summary && summary->moduleName ? (char *)summary->moduleName->stringDataExtend : 0
@@ -18,6 +21,7 @@ continue
 end
 
 break module_init_analyze_source_summary
+# BUG: 原拟比较分析后的摘要，但本块的 finish 恢复执行后，后续 printf/continue 被忽略。
 commands
 silent
 set $name = summary && summary->moduleName ? (char *)summary->moduleName->stringDataExtend : 0
@@ -29,6 +33,8 @@ continue
 end
 
 break module_init_validate_summary
+# BUG: 原拟观察校验结果，但本块的 finish 恢复执行后，后续 printf/continue 被忽略。
+# TODO: 这些函数返回 unsigned char；修复输出时还需按返回宽度取值并核对目标架构 ABI，不能直接信任整个 $rax。
 commands
 silent
 set $name = summary && summary->moduleName ? (char *)summary->moduleName->stringDataExtend : 0
@@ -40,6 +46,7 @@ continue
 end
 
 break module_init_summary_set_error
+# 错误路径在写入摘要时留局部调用栈，帮助关联上面三个阶段。
 commands
 silent
 if summary && summary->moduleName
