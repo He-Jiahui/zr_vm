@@ -1156,6 +1156,17 @@ void enter_type_scope(SZrCompilerState *cs) ;
 
 void exit_type_scope(SZrCompilerState *cs) ;
 
+typedef struct SZrCompilerCallableTypeScope {
+    SZrTypeEnvironment *parent;
+    SZrTypeEnvironment *child;
+    TZrSize stackDepth;
+} SZrCompilerCallableTypeScope;
+
+TZrBool compiler_callable_type_scope_begin(
+        SZrCompilerState *cs, SZrCompilerCallableTypeScope *scope);
+TZrBool compiler_callable_type_scope_end(
+        SZrCompilerState *cs, SZrCompilerCallableTypeScope *scope);
+
 TZrSize create_label(SZrCompilerState *cs) ;
 
 void resolve_label(SZrCompilerState *cs, TZrSize labelId) ;

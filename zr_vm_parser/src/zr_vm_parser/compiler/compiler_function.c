@@ -74,6 +74,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     SZrCompilerArraySnapshot savedParentChildFunctions = {0};
     SZrCompilerArraySnapshot savedParentChildFunctionNameMap = {0};
     SZrCompilerSemanticIrIsolation semanticIrIsolation = {0};
+    SZrCompilerCallableTypeScope callableTypeScope = {0};
     TZrBool hasSemanticIrIsolation = ZR_FALSE;
     TZrSize oldStackSlotTypeHintScopeStart = 0;
     TZrSize savedParentInstructionsSize = oldInstructionLength * sizeof(TZrInstruction);
@@ -249,12 +250,18 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     // 保存父编译器引用（如果有）
     SZrCompilerState *parentCompiler = (oldFunction != ZR_NULL) ? cs : ZR_NULL;
     enter_scope(cs);
+    if (!compiler_callable_type_scope_begin(cs, &callableTypeScope)) {
+        ZrParser_Compiler_Error(
+                cs, "Failed to isolate function parameter types", node->location);
+        goto function_type_scope_cleanup;
+    }
     if (!compiler_semantic_ir_isolation_begin(cs, &semanticIrIsolation)) {
         if (semanticIrIsolation.isActive) {
             compiler_semantic_ir_isolation_end(cs, &semanticIrIsolation);
         }
         ZrParser_Compiler_Error(
                 cs, "Failed to isolate function declaration Semantic IR", node->location);
+        goto function_type_scope_cleanup;
     } else {
         hasSemanticIrIsolation = ZR_TRUE;
     }
@@ -333,7 +340,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         parentCompilerSnapshot.closureVars.length = oldClosureVarLength;
         parentCompilerSnapshot.closureVars.capacity = oldClosureVarLength;
         parentCompilerSnapshot.closureVars.isValid = ZR_TRUE;
-        parentCompilerSnapshot.typeEnv = cs->typeEnv;
+        parentCompilerSnapshot.typeEnv = callableTypeScope.parent;
         // Captured parent slots must resolve against the saved parent sidecar.
         parentCompilerSnapshot.preSemanticIr = semanticIrIsolation.function;
         parentCompilerSnapshot.preSemanticIrSlots = semanticIrIsolation.slots;
@@ -432,6 +439,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     // 退出函数作用域
+function_type_scope_cleanup:
     exit_scope(cs);
     if (!cs->hasError) {
         TZrUInt32 typedLocalBindingCount = 0;
@@ -453,6 +461,11 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     }
     if (hasSemanticIrIsolation) {
         compiler_semantic_ir_isolation_end(cs, &semanticIrIsolation);
+    }
+    if (callableTypeScope.child != ZR_NULL &&
+        !compiler_callable_type_scope_end(cs, &callableTypeScope)) {
+        ZrParser_Compiler_Error(
+                cs, "Failed to restore function parameter type scope", node->location);
     }
     
     // 清空 const 变量跟踪（函数编译完成）

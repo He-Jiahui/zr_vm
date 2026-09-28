@@ -11,6 +11,7 @@
 #include "zr_vm_parser/exec_ir_builder.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic_ir.h"
+#include "zr_vm_parser/type_system.h"
 
 ZR_PARSER_API void ZrParser_Compiler_PredeclareFunctionBindings(
         SZrCompilerState *cs, SZrAstNodeArray *statements);
@@ -53,8 +54,12 @@ static SZrAstNode *compile_source(SZrCompilerState *compiler,
          !compiler->hasError &&
          index < ast->data.script.statements->count;
          index++) {
-        ZrParser_Statement_Compile(
-                compiler, ast->data.script.statements->nodes[index]);
+        SZrAstNode *statement = ast->data.script.statements->nodes[index];
+        if (statement->type == ZR_AST_CLASS_DECLARATION) {
+            ZrParser_Compiler_CompileClassDeclaration(compiler, statement);
+        } else {
+            ZrParser_Statement_Compile(compiler, statement);
+        }
     }
     return ast;
 }
@@ -859,6 +864,7 @@ static void test_repeated_throw_try_finally_dispatches_pending_state(void) {
 #include "test_ssa_source_cleanup_cfg_exceptional.inc"
 #include "test_ssa_source_cleanup_cfg_interrupted_assignment.inc"
 #include "test_ssa_source_cleanup_cfg_loop.inc"
+#include "test_ssa_source_cleanup_cfg_catch_binding.inc"
 
 int main(void) {
     UNITY_BEGIN();
@@ -898,6 +904,16 @@ int main(void) {
     RUN_TEST(test_conditional_invoke_and_int_throw_try_finally_stays_on_legacy_path);
     RUN_TEST(test_repeated_conditional_invokes_and_object_throws_share_cleanup);
     RUN_TEST(test_try_catch_finally_stays_on_legacy_path);
+    RUN_TEST(test_top_level_catch_if_reads_payload_without_using);
+    RUN_TEST(test_class_member_parameter_does_not_escape_type_scope);
+    RUN_TEST(test_function_parameter_does_not_escape_type_scope);
+    RUN_TEST(test_class_member_parameter_scope_restores_after_error);
+    RUN_TEST(test_function_parameter_scope_restores_after_error);
+    RUN_TEST(test_function_parameter_preserves_outer_binding);
+    RUN_TEST(test_function_parameter_scope_restores_after_foreach_error);
+    RUN_TEST(test_top_level_catch_if_shadows_prior_close_parameter);
+    RUN_TEST(test_top_level_using_catch_with_distinct_name_compiles);
+    RUN_TEST(test_top_level_using_throw_catch_if_reads_payload);
     RUN_TEST(test_terminal_break_try_finally_routes_to_loop_join);
     RUN_TEST(test_conditional_break_try_finally_dispatches_to_loop_join);
     RUN_TEST(test_terminal_continue_try_finally_routes_to_condition);

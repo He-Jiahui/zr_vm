@@ -402,6 +402,7 @@ static SZrFunction *compile_type_member_function(
     SZrTypeValue *savedParentConstants = ZR_NULL;
     SZrFunctionClosureVariable *savedParentClosureVars = ZR_NULL;
     SZrCompilerSemanticIrIsolation semanticIrIsolation = {0};
+    SZrCompilerCallableTypeScope callableTypeScope = {0};
     TZrBool hasSemanticIrIsolation = ZR_FALSE;
     TZrSize oldStackSlotTypeHintScopeStart = 0;
     TZrSize savedParentInstructionsSize = oldInstructionLength * sizeof(TZrInstruction);
@@ -518,18 +519,24 @@ static SZrFunction *compile_type_member_function(
     cs->cachedNullConstantIndex = 0;
     cs->hasCachedNullConstantIndex = ZR_FALSE;
 
+    TZrUInt32 parameterCount = 0;
     enter_scope(cs);
+    if (!compiler_callable_type_scope_begin(cs, &callableTypeScope)) {
+        ZrParser_Compiler_Error(
+                cs, "Failed to isolate class member parameter types", node->location);
+        goto class_member_type_scope_cleanup;
+    }
     if (!compiler_semantic_ir_isolation_begin(cs, &semanticIrIsolation)) {
         if (semanticIrIsolation.isActive) {
             compiler_semantic_ir_isolation_end(cs, &semanticIrIsolation);
         }
         ZrParser_Compiler_Error(
                 cs, "Failed to isolate class member Semantic IR", node->location);
+        goto class_member_type_scope_cleanup;
     } else {
         hasSemanticIrIsolation = ZR_TRUE;
     }
 
-    TZrUInt32 parameterCount = 0;
     if (injectThis) {
         EZrOwnershipQualifier thisOwnershipQualifier =
                 get_implicit_this_ownership_qualifier(get_member_receiver_qualifier(node));
@@ -721,6 +728,7 @@ static SZrFunction *compile_type_member_function(
         }
     }
 
+class_member_type_scope_cleanup:
     exit_scope(cs);
     if (!cs->hasError) {
         if (!compiler_build_callable_return_type_metadata(cs,
@@ -751,6 +759,11 @@ static SZrFunction *compile_type_member_function(
     }
     if (hasSemanticIrIsolation) {
         compiler_semantic_ir_isolation_end(cs, &semanticIrIsolation);
+    }
+    if (callableTypeScope.child != ZR_NULL &&
+        !compiler_callable_type_scope_end(cs, &callableTypeScope)) {
+        ZrParser_Compiler_Error(
+                cs, "Failed to restore class member parameter type scope", node->location);
     }
 
     if (cs->hasError) {

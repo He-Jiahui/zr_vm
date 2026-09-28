@@ -370,6 +370,75 @@ void exit_type_scope(SZrCompilerState *cs) {
     }
 }
 
+/* Callable parameters and locals must not be published in the enclosing type
+ * environment. Unlike the legacy foreach scope, this scope has an explicit
+ * owner and can be restored even after compilation sets hasError. */
+TZrBool compiler_callable_type_scope_begin(
+        SZrCompilerState *cs, SZrCompilerCallableTypeScope *scope) {
+    SZrTypeEnvironment *child;
+
+    if (cs == ZR_NULL || scope == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    scope->parent = cs->typeEnv;
+    scope->child = ZR_NULL;
+    scope->stackDepth = cs->typeEnvStack.length;
+    child = ZrParser_TypeEnvironment_New(cs->state);
+    if (child == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    child->parent = scope->parent;
+    child->semanticContext = scope->parent != ZR_NULL
+                                     ? scope->parent->semanticContext
+                                     : cs->semanticContext;
+    scope->child = child;
+    cs->typeEnv = child;
+    return ZR_TRUE;
+}
+
+TZrBool compiler_callable_type_scope_end(
+        SZrCompilerState *cs, SZrCompilerCallableTypeScope *scope) {
+    SZrTypeEnvironment *current;
+
+    if (cs == ZR_NULL || scope == ZR_NULL || scope->child == ZR_NULL ||
+        cs->typeEnvStack.length < scope->stackDepth) {
+        return ZR_FALSE;
+    }
+
+    /* A failed foreach body may leave its child scope on the stack because
+     * exit_type_scope skips cleanup when hasError is set. Validate the whole
+     * parent chain before freeing any environment. */
+    current = cs->typeEnv;
+    for (TZrSize index = cs->typeEnvStack.length;
+         index > scope->stackDepth; index--) {
+        SZrTypeEnvironment **parentPtr =
+                (SZrTypeEnvironment **)ZrCore_Array_Get(
+                        &cs->typeEnvStack, index - 1U);
+        if (current == ZR_NULL || current == scope->child ||
+            parentPtr == ZR_NULL || *parentPtr != current->parent) {
+            return ZR_FALSE;
+        }
+        current = *parentPtr;
+    }
+    if (current != scope->child || scope->child->parent != scope->parent) {
+        return ZR_FALSE;
+    }
+
+    while (cs->typeEnvStack.length > scope->stackDepth) {
+        SZrTypeEnvironment *nested = cs->typeEnv;
+        SZrTypeEnvironment **parentPtr =
+                (SZrTypeEnvironment **)ZrCore_Array_Pop(&cs->typeEnvStack);
+        cs->typeEnv = *parentPtr;
+        ZrParser_TypeEnvironment_Free(cs->state, nested);
+    }
+    cs->typeEnv = scope->parent;
+    ZrParser_TypeEnvironment_Free(cs->state, scope->child);
+    scope->child = ZR_NULL;
+    return ZR_TRUE;
+}
+
 // 创建标签
 TZrSize create_label(SZrCompilerState *cs) {
     if (cs == ZR_NULL || cs->hasError) {

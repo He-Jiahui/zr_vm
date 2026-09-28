@@ -105,6 +105,7 @@ tests:
   - tests/parser/test_pre_semantic_ir_exception_fallback.inc
   - tests/parser/test_pre_semantic_ir_catch_assignment.inc
   - tests/parser/test_ssa_source_cleanup_cfg_interrupted_assignment.inc
+  - tests/parser/test_ssa_source_cleanup_cfg_catch_binding.inc
   - tests/parser/test_pre_semantic_ir_typed_catch.inc
   - tests/parser/test_pre_semantic_ir_multi_catch.inc
   - tests/parser/test_pre_semantic_ir_catch_abrupt.inc
@@ -522,6 +523,20 @@ machinery authoritative until general catch-body control/effect flow, general
 argument effects, arbitrary handled-throw routing, and cleanup edges are
 modeled. TYPE_TEST-bearing graphs
 also remain non-executable until backend subtype projection is implemented.
+
+Ordinary function and class member compilation give parameter type bindings a
+child `TypeEnvironment` for the callable body and its typed metadata. The
+enclosing environment remains the parent for type lookup and closure capture
+analysis. After SemanticIR isolation and typed metadata are finished, the
+compiler restores that exact parent even when body compilation fails; it first
+unwinds any nested foreach type environments left by an error. A callable
+parameter therefore cannot overwrite an outer binding with the same name or
+remain visible to a later top-level catch. This also covers class meta members
+compiled by the class member path. The separate lambda compiler still has its
+older parameter-scope behavior and needs its own regression and repair. This
+scope correction does not promote an unsupported `using`/`catch` body into a
+source CFG: its legacy catch lowering remains isolated and the entry graph
+stays inactive.
 
 A bounded no-catch `try/finally` also routes resolved direct calls through one
 exception landing and a shared cleanup block. When the call is the right side
