@@ -8,6 +8,7 @@
 #include "zr_vm_core/ownership.h"
 #include "zr_vm_core/state.h"
 
+/** @brief 私有的池化 continuation 存储，其 layout 借用自所属 task。 */
 typedef struct SZrCoreTaskFrame {
     struct SZrCoreTaskFrame *next;
     TZrUInt32 slotCapacity;
@@ -18,10 +19,12 @@ typedef struct SZrCoreTaskFrame {
     SZrGcRootHandle *roots;
 } SZrCoreTaskFrame;
 
+/** @brief 识别清理时需要释放所有权包装的值。 */
 static TZrBool task_frame_has_owned_value(const SZrTypeValue *value) {
     return value != ZR_NULL && value->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE;
 }
 
+/** @brief 释放一次拥有所有权的值，再将其 slot 置为空值以便复用。 */
 static void task_frame_release_value(SZrState *state, SZrTypeValue *value) {
     if (value == ZR_NULL) {
         return;
@@ -32,12 +35,14 @@ static void task_frame_release_value(SZrState *state, SZrTypeValue *value) {
     ZrCore_Value_ResetAsNull(value);
 }
 
+/** @brief 所属 task 或 slot 结束使用时，释放其 GC root handle。 */
 static void task_frame_release_root(SZrState *state, SZrGcRootHandle *root) {
     if (root != ZR_NULL) {
         ZrCore_GcRootHandle_Release(state, root);
     }
 }
 
+/** @brief 为非空 GC 对象建立 root；标量和空值不需要 handle。 */
 static TZrBool task_frame_root_value(SZrState *state,
                                      const SZrTypeValue *value,
                                      SZrGcRootHandle *root) {
@@ -50,6 +55,10 @@ static TZrBool task_frame_root_value(SZrState *state,
     return ZrCore_GcRootHandle_Create(state, value->value.object, root);
 }
 
+/**
+ * @brief 运行已配置的 drop 回调，再释放一个已初始化 slot 的值及 root。
+ * @note 用户 drop 回调运行时，slot 值仍然有效。
+ */
 static void task_frame_cleanup_slot(SZrState *state,
                                     SZrCoreTaskFrame *frame,
                                     TZrUInt32 slotIndex) {
@@ -70,6 +79,7 @@ static void task_frame_cleanup_slot(SZrState *state,
     frame->initialized[slotIndex] = ZR_FALSE;
 }
 
+/** @brief 归还或销毁 frame 前，逐个清理 slot。 */
 static void task_frame_cleanup_slots(SZrState *state, SZrCoreTaskFrame *frame) {
     TZrUInt32 index;
 
@@ -81,6 +91,7 @@ static void task_frame_cleanup_slots(SZrState *state, SZrCoreTaskFrame *frame) {
     }
 }
 
+/** @brief 清理剩余存活的 slot，再释放 frame 的所有分配。 */
 static void task_frame_destroy(SZrState *state, SZrCoreTaskFrame *frame) {
     if (frame == ZR_NULL) {
         return;
@@ -92,6 +103,10 @@ static void task_frame_destroy(SZrState *state, SZrCoreTaskFrame *frame) {
     free(frame);
 }
 
+/**
+ * @brief 复用 slot 容量匹配的 frame，或为指定 layout 分配新 frame。
+ * @return layout 无效或分配失败时返回空值；成功时借出一个 frame。
+ */
 static SZrCoreTaskFrame *task_frame_pool_take(SZrState *state,
                                                SZrCoreTaskFramePool *pool,
                                                const SZrCoreTaskFrameLayout *layout) {
@@ -140,6 +155,7 @@ static SZrCoreTaskFrame *task_frame_pool_take(SZrState *state,
     return frame;
 }
 
+/** @brief 清理借出的 frame，并将其放回仍有效的 pool 空闲链表。 */
 static void task_frame_pool_return(SZrState *state,
                                    SZrCoreTaskFramePool *pool,
                                    SZrCoreTaskFrame *frame) {
@@ -157,6 +173,7 @@ static void task_frame_pool_return(SZrState *state,
     pool->pooledFrameCount++;
 }
 
+/** @brief 归还 task 的 continuation frame，并清空 task 中借用的 frame 指针。 */
 static void task_frame_task_release_frame(SZrState *state, SZrCoreTaskFrameTask *task) {
     if (task == ZR_NULL || task->frame == ZR_NULL) {
         return;
@@ -165,6 +182,7 @@ static void task_frame_task_release_frame(SZrState *state, SZrCoreTaskFrameTask 
     task->frame = ZR_NULL;
 }
 
+/** @brief 释放存活 frame 的 slot 前，调用一次 layout 清理回调。 */
 static void task_frame_task_run_finally(SZrState *state, SZrCoreTaskFrameTask *task) {
     if (task == ZR_NULL || task->finallyRan || task->layout == ZR_NULL) {
         return;
@@ -175,6 +193,10 @@ static void task_frame_task_run_finally(SZrState *state, SZrCoreTaskFrameTask *t
     }
 }
 
+/**
+ * @brief 保留并 root 最终值，运行 finally，再将 frame 归还 pool。
+ * @return 无法保留或建立 materialized result 的 root 时返回 false。
+ */
 static TZrBool task_frame_task_complete(SZrState *state,
                                         SZrCoreTaskFrameTask *task,
                                         SZrTypeValue *result) {
@@ -185,6 +207,7 @@ static TZrBool task_frame_task_complete(SZrState *state,
     ZrCore_Value_AssignMaterializedStackValue(state, &task->result, result);
     if (!task_frame_root_value(state, &task->result, &task->resultRoot)) {
         task_frame_release_value(state, &task->result);
+        /* TODO: 请明确此处失败后是否应设置故障状态或释放资源；调用方仍需 Free 该 task。 */
         return ZR_FALSE;
     }
     task_frame_task_run_finally(state, task);
@@ -194,6 +217,10 @@ static TZrBool task_frame_task_complete(SZrState *state,
     return ZR_TRUE;
 }
 
+/**
+ * @brief 运行一次 poll，并将结果转换为挂起或终态。
+ * @note 返回 SUSPEND 却未保留 frame 时，会将 task 置为故障。
+ */
 static TZrBool task_frame_task_run(SZrState *state, SZrCoreTaskFrameTask *task) {
     SZrTypeValue result;
     EZrCoreTaskFramePollOutcome outcome;
@@ -357,7 +384,7 @@ TZrBool ZrCore_TaskFrameTask_StoreSlot(SZrState *state,
                                     frame->slots[slotIndex].value.object,
                                     &frame->roots[slotIndex])) {
         task_frame_release_value(state, &frame->slots[slotIndex]);
-        frame->initialized[slotIndex] = ZR_FALSE;
+        frame->initialized[slotIndex] = ZR_FALSE; /* BUG: 已注册 drop 的 GC slot 若在建根时失败，此处清标志后会永久跳过清理回调。 */
         return ZR_FALSE;
     }
     return ZR_TRUE;
@@ -412,6 +439,7 @@ TZrBool ZrCore_TaskFrameTask_FaultWithDebugProvenance(
         ZrCore_Value_Copy(state, &task->error, error);
         if (!task_frame_root_value(state, &task->error, &task->errorRoot)) {
             task_frame_release_value(state, &task->error);
+            /* TODO: 请明确保留 fault error 失败时 task 状态的契约。 */
             return ZR_FALSE;
         }
     } else {
