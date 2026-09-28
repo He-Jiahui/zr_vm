@@ -94,9 +94,11 @@ tests:
   - tests/parser/test_ssa_source_value_facts.c
   - tests/acceptance/ssa-value-facts.md
   - tests/parser/test_pre_semantic_ir.c
+  - tests/parser/test_pre_semantic_ir_dynamic_object_local.inc
   - tests/parser/test_type_inference.c
   - tests/parser/test_type_inference_dynamic_return.inc
   - tests/acceptance/dynamic-object-return-inference.md
+  - tests/acceptance/pre-semantic-ir-dynamic-object-local.md
   - tests/acceptance/ssa-semantic-definition-identity.md
   - tests/parser/test_pre_semantic_ir_foreach_cfg.inc
   - tests/parser/test_pre_semantic_ir_optional_value.inc
@@ -205,7 +207,18 @@ partial facts.
 
 ## Compiler Bridge
 
-Every compiler state owns an independent pre-execution semantic function and a private stack-slot bridge. A declared local is registered with the canonical `TypeId` and `SymbolId` already assigned by the semantic context. Parameters, foreach bindings, and compiler-generated locals are materialized on first semantic use so existing compilation paths do not lose Place identity.
+Every compiler state owns an independent pre-execution semantic function and a private stack-slot bridge. A declared local with a canonical type is registered with the `TypeId` and `SymbolId` already assigned by the semantic context. Parameters, foreach bindings, and compiler-generated locals are materialized on first semantic use so existing compilation paths do not lose Place identity.
+
+A top-level local can retain its source `SymbolId` while lacking a canonical
+`TypeId`, for example when an unannotated declaration receives a dynamic
+OBJECT result. Such a local has no valid SemanticIR Place type, so the bridge
+does not invent a type identity or materialize a partial local. While the
+source CFG is inactive, a read uses legacy `GET_STACK`; the reference fact
+keeps the original symbol and invalid type identity, and the startup barrier
+keeps the analysis-only CFG from claiming complete lowering. Once a source CFG
+is active, this fallback is unavailable: an untyped read cannot be appended as
+if it were a complete SemanticIR load. Explicitly typed locals continue through
+the normal Place and `LOAD` path.
 
 For the current lowering surface, local initialization, identifier load, local store, and ownership operations emit semantic instructions first. The bridge then selects `GET_STACK`, `SET_STACK`, or the exact `OWN_*` ExecBC opcode from that emitted semantic instruction; AST callers no longer make a second load/store/move/borrow decision. A readonly view is declared as `var view: ref readonly T = ref owner`, a mutable view as `var view: ref T = ref owner`, GC return as `intoGc(owner)`, and deterministic release as `drop(owner)`. The other ownership transitions are `share(owner)`, `degrade(shared)`, and `wake(weak)`. Percent directives and removed ownership member-call forms stop before this bridge and only produce migration errors. Internal shared/mutable loan facts and region opcodes remain semantic implementation details, not source spellings. Unsupported ownership kinds fail instead of falling through to construction. Script compilation validates the complete pre-execution function before final function assembly, optimization sidecars, and quickening.
 
@@ -674,7 +687,7 @@ This graph remains compilation-session data. Canonical public contracts and hash
 
 ## Verification
 
-`test_pre_semantic_ir.c` fixes the complete opcode-family golden, destination-bearing `VALUE_CONSTRUCT`, field-projected `FIELD_INITIALIZE`, parent cleanup bitmap behavior, source-level local initialize/load/store provenance, explicit ownership-operation and shared-loan lowering, source `if`/`while`/`&&`/`||` CFGs, structural validation before execution-sidecar construction, CFG join negatives for definite assignment, move availability, loan conflicts, and caller escape, plus store-after-move and NLL replacement of compatibility borrow states. `test_ssa_callable_type_scope.c` covers lambda parameter isolation, preservation of an outer same-name binding identity and declaration range, restoration of the exact parent `TypeEnvironment` and `typeEnvStack` after a foreach-body error, and nested lambda capture of a parent local. `test_struct_value_init.c` covers contextual parsing, qualified/generic TypeRef targets, named/default binding, constructor isolation, destination-first local/field/array lowering, runtime constructor aliases, and partial unwind. `test_reference_loan_nll.c` covers last-use release, shared/mutable conflicts, ref-slot overwrite, branch/loop liveness, dynamic-index unknown overlap, nested reborrow, and move/drop rejection. The compiler integration and ownership suites protect existing ExecBC behavior while the new semantic source is introduced.
+`test_pre_semantic_ir.c` fixes the complete opcode-family golden, destination-bearing `VALUE_CONSTRUCT`, field-projected `FIELD_INITIALIZE`, parent cleanup bitmap behavior, source-level local initialize/load/store provenance, explicit ownership-operation and shared-loan lowering, source `if`/`while`/`&&`/`||` CFGs, structural validation before execution-sidecar construction, CFG join negatives for definite assignment, move availability, loan conflicts, and caller escape, plus store-after-move and NLL replacement of compatibility borrow states. `test_pre_semantic_ir_dynamic_object_local.inc` checks the unknown-type top-level legacy-read boundary against an explicitly typed local: it preserves symbol identity, avoids a fabricated SemanticIR load or return, retains the startup barrier, and validates the analysis-only CFG. `test_ssa_callable_type_scope.c` covers lambda parameter isolation, preservation of an outer same-name binding identity and declaration range, restoration of the exact parent `TypeEnvironment` and `typeEnvStack` after a foreach-body error, and nested lambda capture of a parent local. `test_struct_value_init.c` covers contextual parsing, qualified/generic TypeRef targets, named/default binding, constructor isolation, destination-first local/field/array lowering, runtime constructor aliases, and partial unwind. `test_reference_loan_nll.c` covers last-use release, shared/mutable conflicts, ref-slot overwrite, branch/loop liveness, dynamic-index unknown overlap, nested reborrow, and move/drop rejection. The compiler integration and ownership suites protect existing ExecBC behavior while the new semantic source is introduced.
 
 The ownership compiler fixture sends its top-level resource class through the
 class-declaration entry and borrows twice from a shared owner. A direct

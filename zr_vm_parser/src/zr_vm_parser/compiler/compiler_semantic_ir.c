@@ -1938,10 +1938,12 @@ static TZrBool compiler_semantic_ir_emit_ownership(
     return compiler_semantic_ir_emit(cs, &spec);
 }
 
-static TZrBool compiler_semantic_ir_has_untyped_callable_local(
+static TZrBool compiler_semantic_ir_has_untyped_local_legacy_fallback(
         const SZrCompilerState *cs, TZrUInt32 stackSlot) {
     TZrSize index;
-    if (cs == ZR_NULL || cs->currentFunctionNode == ZR_NULL ||
+    if (cs == ZR_NULL ||
+        (cs->currentFunctionNode == ZR_NULL &&
+         (cs->scriptAst == ZR_NULL || cs->scriptAst->type != ZR_AST_SCRIPT)) ||
         cs->preSemanticIrCfgActive || cs->typeEnv == ZR_NULL ||
         !cs->localVars.isValid) return ZR_FALSE;
     for (index = cs->localVars.length; index > 0U; --index) {
@@ -1977,8 +1979,8 @@ TZrBool compiler_semantic_ir_lower_load(SZrCompilerState *cs,
         return ZR_TRUE;
     }
     if (compiler_semantic_ir_find_slot(cs, stackSlot) == ZR_NULL &&
-        compiler_semantic_ir_has_untyped_callable_local(cs, stackSlot)) {
-        /* Open generic callable parameters have no closed SemanticIR TypeId. */
+        compiler_semantic_ir_has_untyped_local_legacy_fallback(cs, stackSlot)) {
+        /* No canonical type means no SemanticIR slot; retain the legacy read. */
         emit_instruction(
                 cs,
                 create_instruction_1(

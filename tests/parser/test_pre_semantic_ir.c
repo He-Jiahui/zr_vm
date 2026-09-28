@@ -1428,6 +1428,7 @@ static void test_into_gc_semantic_operation_preserves_source_place_identity(void
 #include "test_pre_semantic_ir_throw_cfg.inc"
 #include "test_pre_semantic_ir_return_cfg.inc"
 #include "test_pre_semantic_ir_branch_exit_cfg.inc"
+#include "test_pre_semantic_ir_dynamic_object_local.inc"
 
 int main(void) {
     UNITY_BEGIN();
@@ -1477,6 +1478,8 @@ int main(void) {
     RUN_TEST(test_source_if_arm_composes_short_circuit_cfg);
     RUN_TEST(test_unmodeled_short_circuit_rhs_keeps_legacy_cfg);
     RUN_TEST(test_source_if_undefined_semantic_condition_falls_back);
+    RUN_TEST(test_explicit_scalar_local_keeps_source_cfg_load);
+    RUN_TEST(test_unannotated_dynamic_object_local_read_keeps_legacy_cfg);
     RUN_TEST(test_source_optional_call_skips_argument_semantic_effects);
     RUN_TEST(test_source_optional_call_skips_nested_argument_invoke);
     RUN_TEST(test_source_optional_value_merges_present_and_absent_paths);
