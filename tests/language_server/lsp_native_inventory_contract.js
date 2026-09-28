@@ -7,6 +7,7 @@ const MATERIAL_RESOLVE = 1;
 const CORE_IMPLEMENTATION = 1;
 const ADAPTER_IMPLEMENTATION = 2;
 
+// 编译后的注册表与 initialize 返回值必须共同证明控制面和功能路由的归属。
 const CONTROL_METHODS = new Map([
     ['initialize', ['positionEncoding', 'handle_initialize_request']],
     ['textDocument/didChange', ['textDocumentSync', 'handle_did_change']],
@@ -35,19 +36,23 @@ const EXTENSION_ROUTES = [
     ['zr/projectModules', 'handle_project_modules_request'],
 ];
 
+/** 注册表中的方法名、入口名与测试 ID 必须是可定位的非空标识。 */
 function present(value) {
     return typeof value === 'string' && value.length > 0;
 }
 
+/** 将协议中的嵌套能力选项与注册表记录的点分路径对应。 */
 function nested(object, dottedPath) {
     return dottedPath.split('.').reduce((value, key) =>
         value !== null && typeof value === 'object' ? value[key] : undefined, object);
 }
 
+/** 布尔与对象形能力都视为已公开；具体布尔子选项由调用方另行精确比较。 */
 function enabled(value) {
     return value === true || (value !== null && typeof value === 'object' && !Array.isArray(value));
 }
 
+/** 把清单转换成可比较的唯一键集合；重复记录会破坏后续一对一映射。 */
 function uniqueMap(rows, key, name) {
     assert.ok(Array.isArray(rows) && rows.length > 0, name + ' must be a nonempty array');
     const result = new Map();
@@ -59,6 +64,7 @@ function uniqueMap(rows, key, name) {
     return result;
 }
 
+/** 核对每项编译注册事实的协议版本、运行时覆盖、实现归属和 resolve 证据。 */
 function validateMetadata(descriptor, registeredTests) {
     const key = descriptor.capabilityKey;
     assert.ok(present(descriptor.method) && present(descriptor.clientCapabilityPath), key + ' is missing protocol metadata');
@@ -92,6 +98,7 @@ function validateMetadata(descriptor, registeredTests) {
     }
 }
 
+/** 将同一注册表的 WASM 位映射到实跑 Worker 路由、初始化能力和导出名。 */
 function validateWasmRegistryMapping(descriptors, inventory, wasm) {
     assert.ok(wasm && wasm.schemaVersion === 2, 'WASM adapter evidence is required');
     const worker = wasm.worker;
@@ -120,6 +127,10 @@ function validateWasmRegistryMapping(descriptors, inventory, wasm) {
     return expectedKeys.length;
 }
 
+/**
+ * 供 stdio_protocol_inventory 和变异验证共用：必须同时对上编译注册表、
+ * 当前 initialize 协商结果、原生路由、CTest 测试 ID 与 WASM 适配器证据。
+ */
 function validateNativeInventory(inventory, capabilities, registeredTests, negotiation, wasm) {
     assert.equal(inventory.schemaVersion, 1, 'unsupported compiled inventory schema');
     const descriptors = uniqueMap(inventory.capabilities, 'capabilityKey', 'registry');
@@ -129,6 +140,7 @@ function validateNativeInventory(inventory, capabilities, registeredTests, negot
     for (const key of declared) {
         assert.ok(descriptors.has(key), 'initialize declares unregistered capability ' + key);
     }
+    /** 每条公开原生路由只能由一个注册或扩展合同认领。 */
     function assign(method, handler) {
         assert.equal(assigned.has(method), false, 'native route is assigned twice: ' + method);
         const route = routes.get(method);

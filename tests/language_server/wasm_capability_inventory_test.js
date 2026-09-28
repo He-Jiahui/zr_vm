@@ -17,11 +17,13 @@ const inputs = [
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-wasm-inventory-'));
 const sources = new Map(inputs.map(file => [file, fs.readFileSync(path.join(repository, file), 'utf8')]));
 
+/** 只交换现有源码片段，确保拒绝来自能力接线漂移而非缺失测试目标。 */
 function swap(source, first, second) {
     assert.ok(source.includes(first) && source.includes(second), 'mutation targets must exist');
     return source.replace(first, '__inventory_swap__').replace(second, first).replace('__inventory_swap__', second);
 }
 
+// 同一份生产输入逐例变异，覆盖响应契约、路由、导出、legend 与能力广告。
 const cases = [
     ['accepts the production adapter wiring', null, null],
     ['rejects errors converted to empty success', response, source =>
@@ -42,6 +44,7 @@ const cases = [
         source.replace('hoverProvider: true,', 'hoverProvider: true, signatureHelpProvider: {},')],
 ];
 
+// 每轮写入独立临时副本，真实库存 CLI 不接触仓库构建目录。
 let failures = 0;
 try {
     for (const [name, mutatedFile, mutate] of cases) {

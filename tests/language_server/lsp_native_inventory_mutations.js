@@ -1,7 +1,12 @@
 const assert = require('assert').strict;
 const { validateNativeInventory } = require('./lsp_native_inventory_contract');
 
+/**
+ * 在不修改真实注册表的前提下扰动每一种合同边界，并要求共享验证器拒绝。
+ * 调用方先提供已通过验证的基线，否则变异失败无法归因到本用例。
+ */
 function checkInventoryMutations(inventory, capabilities, registeredTests, negotiation, wasm) {
+    // 路由、初始化声明、版本门控、测试 ID、WASM 映射和 resolve 行为分别扰动。
     const cases = [
         ['missing primary handler', data => data.inventory.nativeFeatureRoutes.splice(0, 1), /missing native feature route/],
         ['orphan handler', data => data.inventory.nativeFeatureRoutes.push({
@@ -61,6 +66,7 @@ function checkInventoryMutations(inventory, capabilities, registeredTests, negot
     if (negotiation.rangesFormatting) cases.push([
         'object ranges flag', data => { data.capabilities.documentRangeFormattingProvider.rangesSupport = {}; }, /capability option/,
     ]);
+    // 每例从同一基线深拷贝，防止上一个缺陷污染后续错误归因。
     for (const [name, mutate, error] of cases) {
         const data = JSON.parse(JSON.stringify({ inventory, capabilities, wasm }));
         mutate(data);

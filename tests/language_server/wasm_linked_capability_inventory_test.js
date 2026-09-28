@@ -11,6 +11,7 @@ const publicNames = JSON.parse(cmake.match(/set\(EXPORTED_FUNCTIONS_JSON\s+"(\[[
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-wasm-linked-'));
 const jsFile = path.join(directory, 'module.js');
 const wasmFile = path.join(directory, 'module.wasm');
+// 用最小 LEB128 编码构造真正可实例化的 WASM，避免只验证 JS 文本匹配。
 const leb = value => {
     const bytes = [];
     do { bytes.push((value & 127) | (value > 127 ? 128 : 0)); value >>>= 7; } while (value);
@@ -19,7 +20,7 @@ const leb = value => {
 const vector = bytes => [...leb(bytes.length), ...bytes];
 const section = (id, bytes) => [id, ...vector(bytes)];
 
-// Tiny real WASM module: one callable context stub, exported under every ABI name.
+/** 生成共享函数 stub 的最小模块，必要时把首个导出改成非函数以测试类型拒绝。 */
 function binary(names, nonFunction = false) {
     const exports = names.flatMap((name, index) => [
         ...vector([...Buffer.from(name)]), nonFunction && index === 0 ? 2 : 0, 0,
@@ -34,6 +35,7 @@ function binary(names, nonFunction = false) {
     ]);
 }
 
+/** 模拟 Release 直连与 Debug wrapper 两种生成胶水的公开导出形态。 */
 function javascript(targets, wrapper = false) {
     const assignments = publicNames.map((name, index) =>
         `Module[${JSON.stringify(name)}] = ${wrapper
@@ -54,6 +56,7 @@ function javascript(targets, wrapper = false) {
 
 const minified = publicNames.map((_, index) => 'f' + index);
 const plain = publicNames.map(name => name.slice(1));
+// 正例证明多种链接形态可接受，反例证明缺失、覆写和 JS/WASM 错配都会被拒绝。
 const cases = [
     ['minified Release exports', true, javascript(minified), binary(minified)],
     ['unminified Release exports', true, javascript(plain), binary(plain)],
@@ -69,6 +72,7 @@ const cases = [
     ['runtime public binding overwritten', false, javascript(minified).replace('return Module;',
         `delete Module[${JSON.stringify(publicNames[0])}]; return Module;`), binary(minified)],
 ];
+// 产物仅位于 mkdtemp 目录；每轮复用文件名，退出时清理临时目录。
 let failures = 0;
 try {
     for (const [name, valid, js, wasm] of cases) {

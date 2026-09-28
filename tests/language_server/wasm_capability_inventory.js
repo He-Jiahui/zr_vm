@@ -4,16 +4,19 @@ const path = require('path');
 const vm = require('vm');
 const { probeWorker } = require('./lsp_wasm_worker_probe');
 
+/** 源码清单与可选链接产物都应显式存在；缺失输入不能被当作空能力清单。 */
 function read(filePath) {
     assert.ok(fs.existsSync(filePath), `missing inventory input: ${filePath}`);
     return fs.readFileSync(filePath, 'utf8');
 }
 
+/** 同时拒绝遗漏、额外项与重复导出，顺序由各层自己的协议再核对。 */
 function assertSetEqual(actual, expected, label) {
     assert.equal(new Set(actual).size, actual.length, `${label} has duplicates`);
     assert.deepEqual([...actual].sort(), [...expected].sort(), `${label} mismatch`);
 }
 
+/** 从生成的 JS 胶水中恢复公开符号到实际 WASM 导出的绑定，供链接态验收。 */
 function linkedPublicBindings(javaScript, exportedFunctions) {
     const bindings = [];
     const assignment = /Module\[(["'])(_[A-Za-z0-9_]+)\1\]\s*=\s*(?:wasmExports\[(["'])([^"']+)\3\]|createExportWrapper\((["'])([^"']+)\5(?:\s*,\s*\d+)?\))/g;
@@ -27,6 +30,10 @@ function linkedPublicBindings(javaScript, exportedFunctions) {
     return bindings;
 }
 
+/**
+ * 仅在调用方同时给出 JS 与 WASM 产物时执行真实实例化，核对公开函数和运行时 helper。
+ * 静态模式不提供这层链接证据，报告中的 linkedAssetChecked 必须保持 false。
+ */
 async function assertLinkedAssets(javaScript, binary, exportedFunctions) {
     const bindings = linkedPublicBindings(javaScript, exportedFunctions);
     const wasmModule = new WebAssembly.Module(binary);
@@ -73,6 +80,7 @@ async function assertLinkedAssets(javaScript, binary, exportedFunctions) {
     module.ccall('wasm_ZrLspContextFree', null, ['number'], [pointer]);
 }
 
+/** CTest 与 stdio_protocol_inventory 共用的 CLI：先核对源码层，再按需核对链接产物。 */
 async function main() {
     assert.ok(Number(process.versions.node.split('.')[0]) >= 18,
         'WASM worker wiring probe requires Node 18+; configure ZR_VM_NODE_EXECUTABLE with a compatible runtime');
@@ -97,6 +105,7 @@ async function main() {
     assertSetEqual(declarations, runtimeExports, 'C++ declarations and CMake exports');
     assertSetEqual(bridgeCalls, runtimeExports.filter(name => !['wasm_malloc', 'wasm_free'].includes(name)),
         'bridge ccall names and runtime exports');
+    // Worker 真实路由由隔离执行探针验证；它明确使用假 WASM，不能冒充产物验收。
     const workerReport = await probeWorker(worker, bridge, runtimeExports,
         path.join(root, 'zr_vm_language_server_extension', 'src', 'browser', 'worker'));
 

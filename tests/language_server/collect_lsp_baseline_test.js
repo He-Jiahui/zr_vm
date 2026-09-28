@@ -10,6 +10,7 @@ const output = '/baseline/output';
 const summaryPath = `${output}/summary.json`;
 const sourceCommit = '0123456789abcdef0123456789abcdef01234567';
 
+/** 在隔离的 VM 内运行真实采集脚本，把 CTest、构建、进程与文件写入映射到内存。 */
 function collect(processResults, existingFiles = [], options = {}) {
     const platform = options.platform || 'linux';
     const paths = platform === 'win32' ? path.win32 : path.posix;
@@ -79,7 +80,7 @@ function collect(processResults, existingFiles = [], options = {}) {
             },
         },
     };
-    // Run the real CLI with isolated process/filesystem effects; no binaries or logs are created.
+    // 复用真实 CLI 主流程，但所有副作用留在内存，以验证拒绝分支先于文件写入。
     vm.runInNewContext(collectorSource, {
         require: (name) => {
             assert.ok(dependencies[name], `unexpected dependency: ${name}`);
@@ -97,6 +98,7 @@ function collect(processResults, existingFiles = [], options = {}) {
 }
 
 const cases = [];
+// 进程成功退出仍可能在 stdout/stderr 中报告测试失败，基线不能只看退出码。
 for (const stream of ['stdout', 'stderr']) {
     cases.push([`exit-zero printed failure on ${stream}`, () => {
         const block = 'FAIL: named fixture\nexpected canonical fact; actual null';
@@ -110,6 +112,7 @@ for (const stream of ['stdout', 'stderr']) {
     }]);
 }
 
+// 一个失败样例不应阻断后续二进制的证据采集。
 cases.push(['collection continues after a failed executable', () => {
     const run = collect([{ stdout: 'FAIL: first fixture\n' }, {}, {}]);
     assert.strictEqual(run.exitCode, 1);
@@ -122,6 +125,7 @@ cases.push(['collection continues after a failed executable', () => {
     assert.ok(run.files.has(`${output}/test_2.log`));
 }]);
 
+// 超时和非零退出的原始信号与部分输出仍属于可审计的失败证据。
 cases.push(['timeout and nonzero exits retain failure evidence', () => {
     const run = collect([
         { status: null, signal: 'SIGTERM', error: new Error('spawnSync ETIMEDOUT'), stdout: 'partial output' },
@@ -141,6 +145,7 @@ cases.push(['timeout and nonzero exits retain failure evidence', () => {
     assert.strictEqual(run.executions.length, 3);
 }]);
 
+// spawn 的 error 优先于 status，防止异常路径被误记为通过。
 cases.push(['timeout error fails even when spawn status is zero', () => {
     const run = collect([{
         status: 0, signal: null, error: new Error('spawnSync ETIMEDOUT'),
@@ -154,6 +159,7 @@ cases.push(['timeout error fails even when spawn status is zero', () => {
     assert.strictEqual(run.summary.results[0].error, 'spawnSync ETIMEDOUT');
 }]);
 
+// 多配置构建与动态库搜索路径在 Linux/Windows 上均须指向同一配置。
 for (const platform of ['linux', 'win32']) {
     cases.push([`configured ${platform} collection selects inventory, build, and libraries`, () => {
         const paths = platform === 'win32' ? path.win32 : path.posix;
@@ -193,6 +199,7 @@ for (const platform of ['linux', 'win32']) {
     }]);
 }
 
+// 无效配置不能进入 CTest 枚举，更不能创建或覆盖基线目录。
 cases.push(['invalid configurations fail before inventory or filesystem mutation', () => {
     for (const config of ['', '../Debug']) {
         const run = collect([{}], [], { config });
@@ -203,6 +210,7 @@ cases.push(['invalid configurations fail before inventory or filesystem mutation
     }
 }]);
 
+// CTest 缺少可执行清单时要给出配置提示，而非猜测目标路径。
 cases.push(['missing multi-config command gives configuration guidance', () => {
     const run = collect([{}], [], { missingCommand: true });
     assert.strictEqual(run.exitCode, 1);
@@ -211,6 +219,7 @@ cases.push(['missing multi-config command gives configuration guidance', () => {
     assert.ok(run.errors.some((message) => /inventory is missing.*--config/.test(message)));
 }]);
 
+// 完整摘要存在时不得重用输出目录；这里只覆盖已有 summary 的情形。
 cases.push(['existing summaries and logs are preserved without running children', () => {
     const original = '{"capturedAt":"historical evidence"}\n';
     const run = collect([{}], [
@@ -225,6 +234,7 @@ cases.push(['existing summaries and logs are preserved without running children'
     assert.ok(run.errors.some((message) => /baseline already exists/.test(message)));
 }]);
 
+// 正常采集须在摘要中保留调用方提交标签与执行环境，供后续比较使用。
 cases.push(['successful inventory records caller provenance and exits zero', () => {
     const run = collect([{ stdout: 'PASS: fixture\n' }]);
     assert.strictEqual(run.exitCode, 0);

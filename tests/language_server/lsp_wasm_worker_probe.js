@@ -4,6 +4,7 @@ const fs = require('fs');
 const vm = require('vm');
 const { TextEncoder } = require('util');
 
+// 公开方法、initialize 能力字段与 C ABI 名称必须在同一次 Worker 执行中对应。
 const REQUESTS = [
     ['textDocument/completion', 'completionProvider', 'wasm_ZrLspGetCompletion'],
     ['textDocument/hover', 'hoverProvider', 'wasm_ZrLspGetHover'],
@@ -42,8 +43,12 @@ const DOCUMENTS = ['textDocument/didOpen', 'textDocument/didChange', 'textDocume
 const TOKEN_TYPES = ['namespace', 'class', 'struct', 'interface', 'enum', 'function', 'method',
     'property', 'variable', 'parameter', 'keyword', 'decorator', 'metaMethod'];
 
+/**
+ * 用真实 TypeScript Worker/bridge 源码验证路由和错误封装；浏览器连接与 WASM ABI 是替身。
+ * 调用方需提供相互匹配的源码和 CMake 导出名；结果明确声明没有加载真实 Worker 资产。
+ */
 async function probeWorker(workerSource, bridgeSource, runtimeExports, workerDirectory) {
-    // Execute production adapters; only the browser connection and WASM ABI are test doubles.
+    // 生产适配器在隔离 VM 中执行，注册表比较因此能发现源码中的真实路由漂移。
     const ts = require(path.join(__dirname, '..', '..', 'zr_vm_language_server_extension', 'node_modules', 'typescript'));
     const { ResponseError, ErrorCodes, LSPErrorCodes } = require(path.join(__dirname, '..', '..',
         'zr_vm_language_server_extension', 'node_modules', 'vscode-languageserver', 'browser'));
@@ -54,6 +59,7 @@ async function probeWorker(workerSource, bridgeSource, runtimeExports, workerDir
     let nextPointer = 1;
     let closed = false;
     let responseFixture;
+    /** 让同一协议方法只能占一个 Worker 路由槽。 */
     const register = (method, handler) => {
         assert.equal(typeof method, 'string', 'worker route must have a protocol method');
         assert.equal(handlers.has(method), false, 'duplicate worker route ' + method);
@@ -64,6 +70,7 @@ async function probeWorker(workerSource, bridgeSource, runtimeExports, workerDir
         console: { warn: message => logs.push(message) },
     };
     for (const [event, method] of Object.entries(EVENTS)) connection[event] = handler => register(method, handler);
+    // ABI 替身追踪每次调用和响应指针，错误解码后仍须释放对应内存。
     const mockModule = {
         ccall(name) {
             assert.ok(runtimeExports.includes(name), 'worker calls unexported WASM function ' + name);
@@ -90,6 +97,7 @@ async function probeWorker(workerSource, bridgeSource, runtimeExports, workerDir
         addEventListener() {}, close() { closed = true; },
         importScripts() { this.createZrLanguageServerModule = async () => mockModule; },
     };
+    /** 以真实源码转译结果构建受限模块，避免凭正则推断 Worker 的运行路由。 */
     function execute(source, filename, requireModule) {
         const compiled = ts.transpileModule(source, {
             compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2018 },
@@ -108,6 +116,7 @@ async function probeWorker(workerSource, bridgeSource, runtimeExports, workerDir
         return { ResponseError, ErrorCodes };
     });
     const workerModules = new Map();
+    /** 只许可生产 Worker 实际依赖的模块边界，意外新增依赖会使探针失败。 */
     function requireWorkerModule(name) {
         if (name === './wasm-bridge') return bridge;
         if (name === 'vscode-jsonrpc') {
@@ -130,6 +139,7 @@ async function probeWorker(workerSource, bridgeSource, runtimeExports, workerDir
     execute(workerSource, 'server-worker.ts', requireWorkerModule);
     assert.deepEqual([...handlers.keys()].sort(),
         REQUESTS.map(row => row[0]).concat(CONTROLS, DOCUMENTS).sort(), 'worker route set mismatch');
+    /** 调用已注册方法并同时核对 WASM 导出路径和指针归还。 */
     async function invoke(method, params, expectedExports) {
         const start = calls.length;
         const result = await handlers.get(method)(params);
@@ -185,6 +195,7 @@ async function probeWorker(workerSource, bridgeSource, runtimeExports, workerDir
         ['zr.showReferences'],
         'Web CodeLens must omit project commands without a browser handler');
     responseFixture = undefined;
+    // 响应错误码、缺字段、损坏 JSON 和空指针均不得变成成功的协议结果。
     const errorFixtures = [-32602, -32603, -32800, -32801].map(code => ({
         label: 'structured error ' + code, code, message: 'same message for every code',
         data: { reason: 'fixture', generation: 7 },
