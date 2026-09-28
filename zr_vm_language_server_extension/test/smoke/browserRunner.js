@@ -1,5 +1,8 @@
 const vscode = require('vscode');
 
+/** Web 版重启探针验证排队重启不会丢掉内存中的未保存文本和旧符号索引。
+ * @note 与桌面 restartProbe 保持同一契约；调用方负责传入已打开文档及原始符号位置。
+ */
 async function verifyRestartResynchronization(document, position, withRetry) {
     const originalText = document.getText();
     const symbol = `restartUnsavedProbe${Date.now()}`;
@@ -9,6 +12,7 @@ async function verifyRestartResynchronization(document, position, withRetry) {
     if (!await vscode.workspace.applyEdit(edit) || !document.isDirty) {
         throw new Error('Restart probe requires an unsaved document edit');
     }
+    // 同时提交两次用户重启命令，观察客户端重建队列对文档同步的影响。
     try {
         const unsavedPosition = document.positionAt(document.getText().indexOf(symbol) + 1);
         await Promise.all([
@@ -32,6 +36,7 @@ async function verifyRestartResynchronization(document, position, withRetry) {
             15000,
             'original hover after queued restarts',
         );
+    // 无论重启或 hover 是否成功，后续场景都应看到进入探针前的文本。
     } finally {
         const restore = new vscode.WorkspaceEdit();
         restore.replace(document.uri,
@@ -43,6 +48,7 @@ async function verifyRestartResynchronization(document, position, withRetry) {
     }
 }
 
+// Web 类语言功能共用同一段源文本，声明和使用位置共同约束跳转、补全、hover 与诊断。
 const CLASSES_FULL_SMOKE_SOURCE = [
     'module classes_full;',
     '',
@@ -98,6 +104,7 @@ const CLASSES_FULL_SMOKE_SOURCE = [
     '',
 ].join('\n');
 
+// 结构视图的三文件依赖图包含工作区导入、原生导入与循环边，用来验证树节点的导航边界。
 const STRUCTURE_SMOKE_MAIN_SOURCE = [
     'let helper = import("structure_helper");',
     'let system = import("zr.system");',
@@ -117,6 +124,7 @@ const STRUCTURE_SMOKE_MAIN_SOURCE = [
     '',
 ].join('\n');
 
+// main 的工作区导入目标，供结构树和定义跳转测试使用。
 const STRUCTURE_SMOKE_HELPER_SOURCE = [
     'let cycle = import("structure_cycle");',
     '',
@@ -126,6 +134,7 @@ const STRUCTURE_SMOKE_HELPER_SOURCE = [
     '',
 ].join('\n');
 
+// 反向导入故意形成循环，以约束视图构造不得无限递归。
 const STRUCTURE_SMOKE_CYCLE_SOURCE = [
     'let helper = import("structure_helper");',
     '',
@@ -135,22 +144,28 @@ const STRUCTURE_SMOKE_CYCLE_SOURCE = [
     '',
 ].join('\n');
 
+/** 让宿主 smoke 的契约失败以异常传播到 test-web，而不是只记录日志。 */
 function assert(condition, message) {
     if (!condition) {
         throw new Error(message);
     }
 }
 
+/** 供异步语言服务状态轮询退避，避免连续查询淹没 Worker。 */
 async function sleep(milliseconds) {
     await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+/** 为单次 VS Code 命令设置等待上限，防止 Promise 永不结算而阻塞整组 smoke。
+ * @note 超时只停止等待，不取消底层命令；后续探针必须容忍迟到响应。
+ */
 async function withActionTimeout(promise, timeoutMs, label) {
     let timeoutHandle;
 
     try {
         return await Promise.race([
             promise,
+            // 超时只终止本次等待；finally 必须撤销计时器，迟到的宿主命令仍可能完成。
             new Promise((_, reject) => {
                 timeoutHandle = setTimeout(() => {
                     reject(new Error(`Timed out executing ${label}`));
@@ -164,6 +179,11 @@ async function withActionTimeout(promise, timeoutMs, label) {
     }
 }
 
+/** 允许 Worker 启动、文档同步和提供者注册在短时间内收敛，再判定 smoke 失败。
+ * @note action 应可重复调用且无破坏性；单次动作超时不会取消其执行。
+ * BUG: 总期限检查只发生在每次动作之前；若临近期限才启动一次不结算的命令，15 秒预算可延长近一倍。
+ *      run 的调用链会因此晚于标称期限报错；应把剩余时间传给单次等待。
+ */
 async function withRetry(action, predicate, timeoutMs, label) {
     const deadline = Date.now() + timeoutMs;
     let lastError;
@@ -191,6 +211,7 @@ async function withRetry(action, predicate, timeoutMs, label) {
     throw new Error(`Timed out waiting for ${label}${summarizeRetryValue(lastValue)}`);
 }
 
+/** 把最后一次未满足断言的响应形状带入失败信息，方便区分空结果与未注册提供者。 */
 function summarizeRetryValue(value) {
     if (value === undefined) {
         return '';
@@ -212,6 +233,9 @@ function summarizeRetryValue(value) {
     return ` (last value: ${String(value)})`;
 }
 
+/** 根据测试源码中稳定的文本片段定位光标，供定义、补全及结构导航断言共用。
+ * @note 调用方须保证片段存在且 occurrence 与 offset 精确指向目标标识符。
+ */
 function findPositionBySubstring(document, substring, occurrence = 0, offset = 0) {
     const text = document.getText();
     let fromIndex = 0;
@@ -228,12 +252,17 @@ function findPositionBySubstring(document, substring, occurrence = 0, offset = 0
     return document.positionAt(index + offset);
 }
 
+/** 将临时源码显示为活动编辑器，使依赖 activeTextEditor 的扩展命令走真实用户入口。 */
 async function openDocument(filePath) {
     const document = await vscode.workspace.openTextDocument(filePath);
     await vscode.window.showTextDocument(document);
     return document;
 }
 
+/** 在完成场景后退出临时编辑器并清理桌面文件；Web 宿主保留临时文件以规避退出期文件事件噪声。
+ * @note fallbackUri 默认指向 fixture 的 src/main.zr，调用方必须提供含该文件的工作区。
+ * TODO: Web 分支依赖测试工作区隔离；需核对重复运行或共享 test-web 数据目录时残留同名文件的影响。
+ */
 async function deleteDocumentFile(uri, fallbackUri) {
     const workspaceFolder = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
     const fallbackTarget = fallbackUri ?? vscode.Uri.joinPath(workspaceFolder.uri, 'src', 'main.zr');
@@ -258,6 +287,7 @@ async function deleteDocumentFile(uri, fallbackUri) {
     await vscode.workspace.fs.delete(uri, { useTrash: false });
 }
 
+/** 从语法错误到保存修复检查 Web 诊断清除；修复文本包含 CRLF 和 emoji。 */
 async function verifyDiagnostics(workspaceRoot) {
     console.log('[zr-web-smoke] verifyDiagnostics:start');
     const diagnosticUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'diagnostics_smoke.zr');
@@ -292,6 +322,9 @@ async function verifyDiagnostics(workspaceRoot) {
     console.log('[zr-web-smoke] verifyDiagnostics:done');
 }
 
+/** 从实际 Web 编辑器请求基础 LSP 功能，再在同一未保存文档上执行排队重启探针。
+ * @note 清理由本场景末尾执行；中途异常可能留下临时文件供后续排查。
+ */
 async function verifyLanguageFeatures(workspaceRoot) {
     console.log('[zr-web-smoke] verifyLanguageFeatures:start');
     const smokeUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'lsp_smoke.zr');
@@ -327,6 +360,7 @@ async function verifyLanguageFeatures(workspaceRoot) {
     );
     assert(hover.length > 0, 'Expected hover results');
 
+    // BUG: 空列表也满足 length >= 0；补全提供者完全失效时本场景仍会通过，需改为检查预期条目。
     const completions = await withRetry(
         async () => executeCompletionItems(mainDocument.uri, new vscode.Position(0, 0)),
         (items) => completionEntries(items).length >= 0,
@@ -383,6 +417,10 @@ async function verifyLanguageFeatures(workspaceRoot) {
     console.log('[zr-web-smoke] verifyLanguageFeatures:done');
 }
 
+/** 用真实 Web 扩展宿主验证格式化、折叠、代码动作、导入命令和拉取诊断等编辑器契约。
+ * @note 所有文件写到提供的 fixture 工作区；命令依赖刚打开且仍为活动编辑器的 Zr 文档。
+ * TODO: finally 吞掉所有删除异常；若清理失败，需在独立 Web smoke 中确认残留是否影响后续运行。
+ */
 async function verifyAdvancedEditorProviders(workspaceRoot) {
     console.log('[zr-web-smoke] verifyAdvancedEditorProviders:start');
     const advancedUri = vscode.Uri.joinPath(workspaceRoot, 'src', `advanced_editor_smoke_${Date.now()}.zr`);
@@ -617,6 +655,7 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
     console.log('[zr-web-smoke] verifyAdvancedEditorProviders:done');
 }
 
+/** 兼容 VS Code 和 LSP 两种补全响应形状，供成员补全断言读取候选项。 */
 function completionEntries(items) {
     if (!items) {
         return [];
@@ -625,6 +664,9 @@ function completionEntries(items) {
     return Array.isArray(items) ? items : items.items;
 }
 
+/** 通过扩展内部命令读取 Worker 原始 LSP 结果，以补充 VS Code 提供者的外层观察。
+ * @note 失败被折叠为 undefined，只适用于会在调用方另行断言结果的探针。
+ */
 async function sendRawLanguageServerRequest(method, params) {
     try {
         return await vscode.commands.executeCommand('zr.__sendLanguageServerRequest', method, params);
@@ -633,6 +675,10 @@ async function sendRawLanguageServerRequest(method, params) {
     }
 }
 
+/** 同时观察编辑器补全提供者和 Worker 原始响应，避免单一宿主转换层掩盖后端候选项。
+ * @note 混合列表用于 smoke 的存在性断言；它不是用户实际看到的去重排序结果。
+ * TODO: 当仅原始请求有条目时成员补全断言仍通过；需确认此套件是否还要求证明 VS Code 提供者实际可用。
+ */
 async function executeCompletionItems(uri, position, triggerCharacter = undefined, itemResolveCount = 100) {
     const primary = await vscode.commands.executeCommand(
         'vscode.executeCompletionItemProvider',
@@ -662,6 +708,9 @@ async function executeCompletionItems(uri, position, triggerCharacter = undefine
     return direct ?? primary;
 }
 
+/** 优先检查 VS Code 文档符号呈现；宿主暂时返回空列表时用原始请求辅助定位后端状态。
+ * TODO: 若原始请求有符号而编辑器提供者持续为空，本回退仍令 smoke 通过；需单独验证宿主呈现层。
+ */
 async function executeDocumentSymbols(uri) {
     const primary = await vscode.commands.executeCommand(
         'vscode.executeDocumentSymbolProvider',
@@ -677,6 +726,7 @@ async function executeDocumentSymbols(uri) {
     return Array.isArray(direct) ? direct : primary;
 }
 
+/** 将 VS Code hover 与补全文档的多种 Markdown 包装统一为可断言文本。 */
 function markdownLikeToString(value) {
     if (!value) {
         return '';
@@ -697,6 +747,7 @@ function markdownLikeToString(value) {
     return String(value);
 }
 
+/** 聚合 hover 内容，用于验证源码注释和符号信息被传到 Web 编辑器。 */
 function hoverText(items) {
     if (!Array.isArray(items)) {
         return '';
@@ -705,10 +756,12 @@ function hoverText(items) {
     return items.map((item) => markdownLikeToString(item.contents)).join('\n');
 }
 
+/** 提取补全项文档，用于检查属性前导注释没有在 Worker 桥接时丢失。 */
 function completionDocumentationText(item) {
     return markdownLikeToString(item?.documentation);
 }
 
+/** 统一 Location 与 LocationLink 的目标 URI，供定义和引用断言复用。 */
 function locationUri(entry) {
     if (!entry) {
         return undefined;
@@ -717,6 +770,7 @@ function locationUri(entry) {
     return entry.uri ?? entry.targetUri;
 }
 
+/** 统一定义结果的命中范围，优先使用跳转目标选择区而非整个目标定义。 */
 function locationRange(entry) {
     if (!entry) {
         return undefined;
@@ -725,16 +779,19 @@ function locationRange(entry) {
     return entry.range ?? entry.targetSelectionRange ?? entry.targetRange;
 }
 
+/** 验证导航位置精确落在标识符起点，避免只检查同一文件产生假阳性。 */
 function positionEquals(position, line, character) {
     return Boolean(position) && position.line === line && position.character === character;
 }
 
+/** 约束定义结果的标识符跨度，而非仅验证文件 URI。 */
 function rangeEquals(range, startLine, startCharacter, endLine, endCharacter) {
     return Boolean(range) &&
         positionEquals(range.start, startLine, startCharacter) &&
         positionEquals(range.end, endLine, endCharacter);
 }
 
+/** 在层级符号树中查找预期声明；类成员可能嵌套在父符号之下。 */
 function hasDocumentSymbol(items, name) {
     if (!Array.isArray(items)) {
         return false;
@@ -745,14 +802,17 @@ function hasDocumentSymbol(items, name) {
         (item.name === name || hasDocumentSymbol(item.children, name)));
 }
 
+/** 读取结构视图快照的子节点；叶节点可没有 children 字段。 */
 function structureChildren(node) {
     return Array.isArray(node?.children) ? node.children : [];
 }
 
+/** 只在当前层查找结构节点，用于固定根节点或分组归属。 */
 function findImmediateStructureNode(items, predicate) {
     return Array.isArray(items) ? items.find((item) => item && predicate(item)) : undefined;
 }
 
+/** 在结构树内递归查找声明或导入节点，验证它们可从预期分组到达。 */
 function findStructureNode(items, predicate) {
     if (!Array.isArray(items)) {
         return undefined;
@@ -775,10 +835,12 @@ function findStructureNode(items, predicate) {
     return undefined;
 }
 
+/** 将视图快照的可选命令参数传给真实 VS Code 命令执行入口。 */
 function commandArguments(node) {
     return Array.isArray(node?.commandArguments) ? node.commandArguments : [];
 }
 
+/** 限定 Imports 与 Declarations 必须作为文件节点的直接分组。 */
 function findImmediateGroupNode(node, label) {
     return findImmediateStructureNode(
         structureChildren(node),
@@ -786,6 +848,9 @@ function findImmediateGroupNode(node, label) {
     );
 }
 
+/** 等待结构导航改变活动编辑器与选区，供视图节点命令断言使用。
+ * TODO: 当前 Web 场景未调用；核查桌面共用断言是否应提取，或此辅助函数是否应移除。
+ */
 async function verifyActiveSelection(uriSuffix, line, character, label) {
     await withRetry(
         async () => vscode.window.activeTextEditor,
@@ -802,6 +867,7 @@ async function verifyActiveSelection(uriSuffix, line, character, label) {
     );
 }
 
+/** 以继承、构造、属性及静态成员样例覆盖 Web 类语义服务的导航、补全和诊断。 */
 async function verifyClassLanguageFeatures(workspaceRoot) {
     console.log('[zr-web-smoke] verifyClassLanguageFeatures:start');
     const smokeUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'classes_full_smoke.zr');
@@ -987,11 +1053,16 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
     console.log('[zr-web-smoke] verifyClassLanguageFeatures:done');
 }
 
+/** 用三文件循环导入图验证 Web 结构树、工作区导入导航及原生声明虚拟文档。
+ * @note Web 项目视图必须明确展示索引不可用，不能让空项目列表伪装为已索引。
+ */
 async function verifyStructureViews(workspaceRoot) {
     console.log('[zr-web-smoke] verifyStructureViews:start');
     const mainUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'structure_smoke_main.zr');
     const helperUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'structure_helper.zr');
     const cycleUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'structure_cycle.zr');
+    // TODO: 三文件写入位于 try/finally 外；第二或第三次写入失败会跳过后续回退与视图刷新。
+    // Web 清理例程本就保留临时文件，需核查此失败路径对重复运行的影响。
     await vscode.workspace.fs.writeFile(mainUri, new TextEncoder().encode(STRUCTURE_SMOKE_MAIN_SOURCE));
     await vscode.workspace.fs.writeFile(helperUri, new TextEncoder().encode(STRUCTURE_SMOKE_HELPER_SOURCE));
     await vscode.workspace.fs.writeFile(cycleUri, new TextEncoder().encode(STRUCTURE_SMOKE_CYCLE_SOURCE));
@@ -1168,6 +1239,9 @@ async function verifyStructureViews(workspaceRoot) {
     console.log('[zr-web-smoke] verifyStructureViews:done');
 }
 
+/** @vscode/test-web 加载的导出入口：激活扩展后按焦点运行用户可见的 Web 语言功能场景。
+ * @note run-web-smoke.js 提供含 src/main.zr 的工作区；ZR_TEST_SMOKE_FOCUS 默认 all。
+ */
 async function run() {
     const workspaceFolder = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
     const focus = typeof process !== 'undefined' && process?.env?.ZR_TEST_SMOKE_FOCUS
@@ -1182,6 +1256,7 @@ async function run() {
     assert(extension.isActive, 'Expected Zr extension to remain active after activation');
     console.log('[zr-web-smoke] extension:activated');
 
+    // BUG: 非 all/lsp/structure 的非空焦点跳过所有验证并成功返回；环境变量拼写错误会产生假阳性。
     if (focus === 'all' || focus === 'lsp') {
         await verifyLanguageFeatures(workspaceFolder.uri);
         await verifyAdvancedEditorProviders(workspaceFolder.uri);
@@ -1194,6 +1269,7 @@ async function run() {
     console.log('[zr-web-smoke] run:done');
 }
 
+/** 将 Location URI 归一为路径文本，用于检查目标属于本次临时测试文件。 */
 function uriPath(uri) {
     return typeof uri?.path === 'string' ? uri.path : uri?.toString() ?? '';
 }
