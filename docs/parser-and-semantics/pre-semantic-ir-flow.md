@@ -20,6 +20,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_member.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_lambda.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_for.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_foreach.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
@@ -63,6 +64,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_member.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_lambda.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_for.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_foreach.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
@@ -106,6 +108,8 @@ tests:
   - tests/parser/test_pre_semantic_ir_catch_assignment.inc
   - tests/parser/test_ssa_source_cleanup_cfg_interrupted_assignment.inc
   - tests/parser/test_ssa_source_cleanup_cfg_catch_binding.inc
+  - tests/parser/test_ssa_callable_type_scope.c
+  - tests/cmake/ssa-callable-scope-tests.cmake
   - tests/parser/test_pre_semantic_ir_typed_catch.inc
   - tests/parser/test_pre_semantic_ir_multi_catch.inc
   - tests/parser/test_pre_semantic_ir_catch_abrupt.inc
@@ -524,19 +528,19 @@ argument effects, arbitrary handled-throw routing, and cleanup edges are
 modeled. TYPE_TEST-bearing graphs
 also remain non-executable until backend subtype projection is implemented.
 
-Ordinary function and class member compilation give parameter type bindings a
-child `TypeEnvironment` for the callable body and its typed metadata. The
-enclosing environment remains the parent for type lookup and closure capture
-analysis. After SemanticIR isolation and typed metadata are finished, the
-compiler restores that exact parent even when body compilation fails; it first
+Ordinary function, class member, and lambda compilation give parameter type
+bindings a child `TypeEnvironment` for the callable body and its typed metadata.
+The enclosing environment remains the parent for type lookup and closure
+capture analysis. Lambda external-variable analysis explicitly receives that
+saved parent environment, so lambda parameters cannot shadow captured parent
+bindings during capture resolution. After typed metadata is finished, each
+callable restores its exact parent even when body compilation fails; it first
 unwinds any nested foreach type environments left by an error. A callable
 parameter therefore cannot overwrite an outer binding with the same name or
-remain visible to a later top-level catch. This also covers class meta members
-compiled by the class member path. The separate lambda compiler still has its
-older parameter-scope behavior and needs its own regression and repair. This
-scope correction does not promote an unsupported `using`/`catch` body into a
-source CFG: its legacy catch lowering remains isolated and the entry graph
-stays inactive.
+remain visible to a later top-level declaration. This also covers class meta
+members compiled by the class member path. This scope correction does not
+promote an unsupported `using`/`catch` body into a source CFG: its legacy catch
+lowering remains isolated and the entry graph stays inactive.
 
 A bounded no-catch `try/finally` also routes resolved direct calls through one
 exception landing and a shared cleanup block. When the call is the right side
@@ -670,7 +674,7 @@ This graph remains compilation-session data. Canonical public contracts and hash
 
 ## Verification
 
-`test_pre_semantic_ir.c` fixes the complete opcode-family golden, destination-bearing `VALUE_CONSTRUCT`, field-projected `FIELD_INITIALIZE`, parent cleanup bitmap behavior, source-level local initialize/load/store provenance, explicit ownership-operation and shared-loan lowering, source `if`/`while`/`&&`/`||` CFGs, structural validation before execution-sidecar construction, CFG join negatives for definite assignment, move availability, loan conflicts, and caller escape, plus store-after-move and NLL replacement of compatibility borrow states. `test_struct_value_init.c` covers contextual parsing, qualified/generic TypeRef targets, named/default binding, constructor isolation, destination-first local/field/array lowering, runtime constructor aliases, and partial unwind. `test_reference_loan_nll.c` covers last-use release, shared/mutable conflicts, ref-slot overwrite, branch/loop liveness, dynamic-index unknown overlap, nested reborrow, and move/drop rejection. The compiler integration and ownership suites protect existing ExecBC behavior while the new semantic source is introduced.
+`test_pre_semantic_ir.c` fixes the complete opcode-family golden, destination-bearing `VALUE_CONSTRUCT`, field-projected `FIELD_INITIALIZE`, parent cleanup bitmap behavior, source-level local initialize/load/store provenance, explicit ownership-operation and shared-loan lowering, source `if`/`while`/`&&`/`||` CFGs, structural validation before execution-sidecar construction, CFG join negatives for definite assignment, move availability, loan conflicts, and caller escape, plus store-after-move and NLL replacement of compatibility borrow states. `test_ssa_callable_type_scope.c` covers lambda parameter isolation, preservation of an outer same-name binding identity and declaration range, restoration of the exact parent `TypeEnvironment` and `typeEnvStack` after a foreach-body error, and nested lambda capture of a parent local. `test_struct_value_init.c` covers contextual parsing, qualified/generic TypeRef targets, named/default binding, constructor isolation, destination-first local/field/array lowering, runtime constructor aliases, and partial unwind. `test_reference_loan_nll.c` covers last-use release, shared/mutable conflicts, ref-slot overwrite, branch/loop liveness, dynamic-index unknown overlap, nested reborrow, and move/drop rejection. The compiler integration and ownership suites protect existing ExecBC behavior while the new semantic source is introduced.
 
 The ownership compiler fixture sends its top-level resource class through the
 class-declaration entry and borrows twice from a shared owner. A direct

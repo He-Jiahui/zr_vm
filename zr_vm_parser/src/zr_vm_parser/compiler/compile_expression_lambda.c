@@ -14,8 +14,10 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
         ZrParser_Compiler_Error(cs, "Expected lambda expression", node->location);
         return;
     }
-    
+
     SZrLambdaExpression *lambda = &node->data.lambdaExpression;
+    TZrUInt32 parameterCount = 0;
+    TZrBool hasVariableArguments = (lambda->args != ZR_NULL);
     
     // Lambda 表达式类似于匿名函数，需要创建一个嵌套函数
     // 1. 创建一个临时的函数声明节点来复用函数编译逻辑
@@ -52,6 +54,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     SZrFunctionClosureVariable *savedParentClosureVars = ZR_NULL;
     SZrCompilerArraySnapshot savedParentChildFunctions = {0};
     SZrCompilerArraySnapshot savedParentChildFunctionNameMap = {0};
+    SZrCompilerCallableTypeScope callableTypeScope = {0};
     TZrSize oldStackSlotTypeHintScopeStart = 0;
     TZrSize savedParentInstructionsSize = oldInstructionLength * sizeof(TZrInstruction);
     TZrSize savedParentLocalVarsSize = oldLocalVarLength * sizeof(SZrFunctionLocalVariable);
@@ -227,6 +230,12 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     // 进入函数作用域（嵌套 lambda 需要继承父编译器引用以解析闭包）
     SZrCompilerState *parentCompiler = (oldFunction != ZR_NULL) ? cs : ZR_NULL;
     enter_scope(cs);
+    if (!compiler_callable_type_scope_begin(cs, &callableTypeScope)) {
+        exit_scope(cs);
+        ZrParser_Compiler_Error(
+                cs, "Failed to isolate lambda parameter types", node->location);
+        goto lambda_type_scope_cleanup;
+    }
     if (parentCompiler != ZR_NULL && cs->scopeStack.length > 0) {
         SZrScope *currentScope = (SZrScope *)ZrCore_Array_Get(&cs->scopeStack, cs->scopeStack.length - 1);
         if (currentScope != ZR_NULL) {
@@ -235,7 +244,6 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     }
     
     // 1. 编译参数列表
-    TZrUInt32 parameterCount = 0;
     if (lambda->params != ZR_NULL) {
         for (TZrSize i = 0; i < lambda->params->count; i++) {
             SZrAstNode *paramNode = lambda->params->nodes[i];
@@ -251,7 +259,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
                                 cs, parameterSlot, param->typeInfo);
                         compiler_register_readonly_parameter_name(cs, param, paramName);
 
-                        if (cs->typeEnv != ZR_NULL) {
+                        if (callableTypeScope.child != ZR_NULL) {
                             SZrInferredType paramType;
                             if (param->typeInfo != ZR_NULL &&
                                 ZrParser_AstTypeToInferredType_Convert(cs, param->typeInfo, &paramType)) {
@@ -295,7 +303,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
         parentCompilerSnapshot.closureVars.length = oldClosureVarLength;
         parentCompilerSnapshot.closureVars.capacity = oldClosureVarLength;
         parentCompilerSnapshot.closureVars.isValid = ZR_TRUE;
-        parentCompilerSnapshot.typeEnv = cs->typeEnv;
+        parentCompilerSnapshot.typeEnv = callableTypeScope.parent;
         parentCompilerSnapshot.preSemanticIr = cs->preSemanticIr;
         parentCompilerSnapshot.preSemanticIrSlots = cs->preSemanticIrSlots;
         parentCompilerSnapshot.preSemanticIrInitialized = cs->preSemanticIrInitialized;
@@ -303,8 +311,6 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     }
     
     // 检查是否有可变参数
-    TZrBool hasVariableArguments = (lambda->args != ZR_NULL);
-    
     // 2. 编译函数体（block）
     if (lambda->block != ZR_NULL) {
         ZrParser_Statement_Compile(cs, lambda->block);
@@ -360,6 +366,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
         ZrParser_Compiler_Error(cs, "Failed to build callable return metadata for lambda expression", node->location);
     }
 
+lambda_type_scope_cleanup:
     // 退出函数作用域
     exit_scope(cs);
     if (!cs->hasError) {
@@ -379,6 +386,12 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
         } else {
             cs->currentFunction->typedClosureBindingLength = typedClosureBindingCount;
         }
+    }
+
+    if (callableTypeScope.child != ZR_NULL &&
+        !compiler_callable_type_scope_end(cs, &callableTypeScope)) {
+        ZrParser_Compiler_Error(
+                cs, "Failed to restore lambda parameter type scope", node->location);
     }
 
     if (cs->hasError) {
