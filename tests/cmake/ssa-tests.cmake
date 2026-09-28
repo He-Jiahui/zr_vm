@@ -767,6 +767,19 @@ if (NOT TARGET zr_vm_ssa_aot_projection_descriptor_test)
     set_tests_properties(ssa_aot_projection_descriptor PROPERTIES LABELS "ssa")
 endif ()
 
+if (NOT TARGET zr_vm_ssa_aot_projection_branch_descriptor_test)
+    add_executable(zr_vm_ssa_aot_projection_branch_descriptor_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_aot_projection_branch_descriptor.c)
+    zr_vm_apply_common_test_settings(zr_vm_ssa_aot_projection_branch_descriptor_test)
+    target_include_directories(zr_vm_ssa_aot_projection_branch_descriptor_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include)
+    zr_vm_link_parser_core_plus_library(zr_vm_ssa_aot_projection_branch_descriptor_test)
+    add_test(NAME ssa_aot_projection_branch_descriptor
+            COMMAND zr_vm_ssa_aot_projection_branch_descriptor_test)
+    set_tests_properties(ssa_aot_projection_branch_descriptor PROPERTIES LABELS "ssa")
+endif ()
+
 if (NOT TARGET zr_vm_ssa_aot_callable_abi_test)
     add_executable(zr_vm_ssa_aot_callable_abi_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_aot_callable_abi.c

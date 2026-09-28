@@ -4,6 +4,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/aot_ir.c
   - zr_vm_core/include/zr_vm_core/exec_ir_state_map.h
   - zr_vm_parser/include/zr_vm_parser/exec_ir_projections.h
+  - zr_vm_parser/include/zr_vm_parser/aot_ir_projection_descriptor.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_projection_descriptor.c
 implementation_files:
@@ -16,8 +17,10 @@ plan_sources:
 tests:
   - tests/parser/test_ssa_aotir_contract.c
   - tests/parser/test_ssa_aot_callable_abi.c
+  - tests/parser/test_ssa_aot_projection_branch_descriptor.c
   - tests/acceptance/ssa-aotir-logical-map-schema.md
   - tests/acceptance/ssa-aotir-explicit-callable-abi.md
+  - tests/acceptance/ssa-aotir-branch-descriptor.md
 doc_type: module-detail
 status: implemented-subset
 ---
@@ -127,6 +130,16 @@ without treating the block count as an edge-capacity limit. Each source/target
 edge occurrence must have a matching predecessor occurrence in the target
 block.
 
+The owned ExecIR AOT projection keeps successors and predecessors in separate
+arrays. `ZrParser_AotIrProjection_BuildDescriptor` validates their original
+range bounds, then copies successors followed by predecessors into one
+descriptor-owned AOTIR edge pool. It leaves instruction and block successor
+ranges on the first segment and rebases nonempty block predecessor ranges onto
+the second segment. `ZrParser_AotIrProjection_FreeDescriptor` frees that pool
+through `function.successorPool`; no public descriptor or persisted schema
+field is added. Overflow, malformed source ranges, and invalid edge targets
+reject the candidate while an existing descriptor remains intact.
+
 `ZrCore_AotIr_IsRelocationFree` rejects module or function relocation rows.
 Unimplemented operation families should be reported by a lowering diagnostic;
 they must not silently fall back to semantic decoding of `SZrInstruction`.
@@ -152,3 +165,9 @@ ctest --test-dir build/ssa-gcc-debug -R '^ssa_aotir_contract$' \
 unknown and mismatched fail-closed cases, hash sensitivity, owned projection
 transfer, and backend adapter qualification. CMake registers it as
 `ssa_aot_callable_abi`.
+
+`tests/parser/test_ssa_aot_projection_branch_descriptor.c` builds verified
+two-block ExecIR, lowers it with the legacy `UNKNOWN` ABI, and checks the
+descriptor's owned edge pool, reversed predecessor range, module validation,
+malformed-edge rejection, and transactional replacement. CMake registers it as
+`ssa_aot_projection_branch_descriptor`.

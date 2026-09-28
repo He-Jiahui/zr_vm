@@ -1,5 +1,6 @@
 #include "zr_vm_parser/aot_ir_projection_descriptor.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -12,6 +13,7 @@ void ZrParser_AotIrProjection_FreeDescriptor(
     if (descriptor == ZR_NULL) return;
     free(descriptor->instructions);
     free(descriptor->blocks);
+    free((void *)descriptor->function.successorPool);
     free(descriptor->phiIncoming);
     free(descriptor->frameSlots);
     free(descriptor->sourceMaps);
@@ -27,6 +29,12 @@ static TZrBool descriptor_alloc(void **storage, TZrUInt32 count,
     return (TZrBool)(*storage != ZR_NULL);
 }
 
+static TZrBool descriptor_edge_range_valid(SZrExecIrRange range,
+                                           TZrUInt32 count) {
+    return (TZrBool)(range.start <= count &&
+                     range.count <= count - range.start);
+}
+
 TZrBool ZrParser_AotIrProjection_BuildDescriptor(
         const SZrAotIrProjection *projection,
         const SZrAotIrTargetContract *target,
@@ -34,7 +42,8 @@ TZrBool ZrParser_AotIrProjection_BuildDescriptor(
         SZrAotIrProjectionDescriptor *descriptor,
         SZrAotIrDiagnostic *diagnostic) {
     SZrAotIrProjectionDescriptor candidate;
-    TZrUInt32 i;
+    TZrUInt32 *edgePool = ZR_NULL;
+    TZrUInt32 i, edgeCount;
     descriptor_clear(diagnostic);
     if (descriptor == ZR_NULL || projection == ZR_NULL || target == ZR_NULL ||
         moduleContract == ZR_NULL || projection->ownershipTag != ZR_EXEC_IR_PROJECTION_TAG ||
@@ -48,6 +57,32 @@ TZrBool ZrParser_AotIrProjection_BuildDescriptor(
         if (diagnostic != ZR_NULL) diagnostic->status = ZR_AOT_IR_INVALID_ARGUMENT;
         return ZR_FALSE;
     }
+    if (projection->successorCount > UINT32_MAX - projection->predecessorCount ||
+        (projection->successorCount != 0u && projection->successors == ZR_NULL) ||
+        (projection->predecessorCount != 0u && projection->predecessors == ZR_NULL)) {
+        if (diagnostic != ZR_NULL) diagnostic->status = ZR_AOT_IR_INVALID_RANGE;
+        return ZR_FALSE;
+    }
+    for (i = 0u; i < projection->instructionCount; ++i) {
+        if (!descriptor_edge_range_valid(
+                projection->instructions[i].successorRange,
+                projection->successorCount)) {
+            if (diagnostic != ZR_NULL) diagnostic->status = ZR_AOT_IR_INVALID_RANGE;
+            return ZR_FALSE;
+        }
+    }
+    for (i = 0u; i < projection->blockCount; ++i) {
+        if (!descriptor_edge_range_valid(
+                projection->blocks[i].successors,
+                projection->successorCount) ||
+            !descriptor_edge_range_valid(
+                projection->blocks[i].predecessors,
+                projection->predecessorCount)) {
+            if (diagnostic != ZR_NULL) diagnostic->status = ZR_AOT_IR_INVALID_RANGE;
+            return ZR_FALSE;
+        }
+    }
+    edgeCount = projection->successorCount + projection->predecessorCount;
     memset(&candidate, 0, sizeof(candidate));
     candidate.owner = projection;
     candidate.function.id = projection->functionId;
@@ -68,8 +103,7 @@ TZrBool ZrParser_AotIrProjection_BuildDescriptor(
     candidate.function.operandCount = projection->operandCount;
     candidate.function.resultPool = projection->results;
     candidate.function.resultCount = projection->resultCount;
-    candidate.function.successorPool = projection->successors;
-    candidate.function.successorCount = projection->successorCount;
+    candidate.function.successorCount = edgeCount;
     candidate.function.memoryTokenPool = projection->memoryTokens;
     candidate.function.memoryTokenCount = projection->memoryTokenCount;
     candidate.function.valueSlotPool = projection->valueSlots;
@@ -79,6 +113,12 @@ TZrBool ZrParser_AotIrProjection_BuildDescriptor(
     candidate.function.gcMapHash = projection->gcMapCount;
     candidate.function.exceptionMapHash = projection->deoptStateCount;
     candidate.function.debugMapHash = projection->sourceMapCount;
+    if (!descriptor_alloc((void **)&edgePool, edgeCount, sizeof(*edgePool))) {
+        if (diagnostic != ZR_NULL) diagnostic->status = ZR_AOT_IR_INVALID_ARGUMENT;
+        return ZR_FALSE;
+    }
+    /* A built descriptor owns this in-memory AOTIR edge view. */
+    candidate.function.successorPool = edgePool;
     if (!descriptor_alloc((void **)&candidate.instructions,
                           projection->instructionCount,
                           sizeof(*candidate.instructions)) ||
@@ -102,6 +142,15 @@ TZrBool ZrParser_AotIrProjection_BuildDescriptor(
         ZrParser_AotIrProjection_FreeDescriptor(&candidate);
         if (diagnostic != ZR_NULL) diagnostic->status = ZR_AOT_IR_INVALID_ARGUMENT;
         return ZR_FALSE;
+    }
+    if (projection->successorCount != 0u) {
+        memcpy(edgePool, projection->successors,
+               (size_t)projection->successorCount * sizeof(*edgePool));
+    }
+    if (projection->predecessorCount != 0u) {
+        memcpy(edgePool + projection->successorCount,
+               projection->predecessors,
+               (size_t)projection->predecessorCount * sizeof(*edgePool));
     }
     for (i = 0u; i < projection->instructionCount; ++i) {
         const SZrExecBcInstruction *source = &projection->instructions[i];
@@ -137,7 +186,9 @@ TZrBool ZrParser_AotIrProjection_BuildDescriptor(
         destination->flags = source->flags;
         destination->instructions.offset = source->instructions.offset;
         destination->instructions.count = source->instructions.count;
-        destination->predecessors.offset = source->predecessors.offset;
+        destination->predecessors.offset = source->predecessors.count != 0u
+                ? projection->successorCount + source->predecessors.offset
+                : 0u;
         destination->predecessors.count = source->predecessors.count;
         destination->successors.offset = source->successors.offset;
         destination->successors.count = source->successors.count;
