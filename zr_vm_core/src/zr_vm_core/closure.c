@@ -4,6 +4,7 @@
 #include "zr_vm_core/closure.h"
 
 #include "closure_close_proxy_token.h"
+#include "closure_close_meta_guard.h"
 
 #include "zr_vm_core/conversion.h"
 #include "zr_vm_core/function.h"
@@ -551,28 +552,36 @@ static void closure_value_call_close_meta(SZrState *state,
         }
         return;
     }
-    top.valuePointer = ZrCore_Function_ReserveScratchSlots(state, 3, top.valuePointer);
+    TZrBool guardPendingException =
+            (TZrBool)(errorStatus != ZR_THREAD_STATUS_INVALID &&
+                      state->hasCurrentException);
+    top.valuePointer = ZrCore_Function_ReserveScratchSlots(
+            state, guardPendingException ? 4u : 3u, top.valuePointer);
+    TZrStackValuePointer callable = top.valuePointer + (guardPendingException ? 1u : 0u);
     stackPointer.valuePointer = ZrCore_Stack_LoadOffsetToPointer(state, valueOffset);
     value = ZrCore_Stack_GetValue(stackPointer.valuePointer);
-    ZrCore_Stack_SetRawObjectValue(state, top.valuePointer, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-    ZrCore_Stack_CopyValue(state, top.valuePointer + 1, value);
+    ZrCore_Stack_SetRawObjectValue(state, callable, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
+    ZrCore_Stack_CopyValue(state, callable + 1u, value);
     if (consumeStagedReceiver) {
         stackPointer.valuePointer = ZrCore_Stack_LoadOffsetToPointer(state, valueOffset);
         ZrCore_Value_ResetAsNullNoProfile(ZrCore_Stack_GetValueNoProfile(stackPointer.valuePointer));
     }
     if (errorStatus == ZR_THREAD_STATUS_INVALID) {
-        ZrCore_Stack_CopyValue(state, top.valuePointer + 2, &state->global->nullValue);
+        ZrCore_Stack_CopyValue(state, callable + 2u, &state->global->nullValue);
     } else {
-        ZrCore_Exception_MarkError(state, errorStatus, top.valuePointer + 2);
+        ZrCore_Exception_MarkError(state, errorStatus, callable + 2u);
     }
-    state->stackTop.valuePointer = top.valuePointer + 3;
+    state->stackTop.valuePointer = callable + 3u;
     if (callInfo != ZR_NULL && callInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
         callInfo->functionTop.valuePointer = state->stackTop.valuePointer;
     }
-    if (isYield) {
-        ZrCore_Function_Call(state, top.valuePointer, 0);
+    if (guardPendingException) {
+        ZrCore_ClosureCloseMetaGuard_Invoke(
+                state, ZrCore_Stack_SavePointerAsOffset(state, top.valuePointer), isYield);
+    } else if (isYield) {
+        ZrCore_Function_Call(state, callable, 0);
     } else {
-        ZrCore_Function_CallWithoutYield(state, top.valuePointer, 0);
+        ZrCore_Function_CallWithoutYield(state, callable, 0);
     }
 }
 

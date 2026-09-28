@@ -4,10 +4,15 @@ related_code:
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_core/include/zr_vm_core/ownership.h
   - zr_vm_core/src/zr_vm_core/closure.c
+  - zr_vm_core/src/zr_vm_core/closure_close_meta_guard.c
+  - zr_vm_core/src/zr_vm_core/closure_close_meta_guard.h
   - zr_vm_core/src/zr_vm_core/closure_close_proxy_token.c
   - zr_vm_core/src/zr_vm_core/closure_close_proxy_token.h
   - zr_vm_core/src/zr_vm_core/execution/execution_control.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_budget.c
+  - zr_vm_core/src/zr_vm_core/exception.c
+  - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/ownership_shared.c
   - zr_vm_library/include/zr_vm_library/aot_runtime.h
   - zr_vm_library/src/zr_vm_library/aot_runtime.c
@@ -15,6 +20,8 @@ implementation_files:
   - zr_vm_core/include/zr_vm_core/closure.h
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_core/src/zr_vm_core/closure.c
+  - zr_vm_core/src/zr_vm_core/closure_close_meta_guard.c
+  - zr_vm_core/src/zr_vm_core/closure_close_meta_guard.h
   - zr_vm_core/src/zr_vm_core/closure_close_proxy_token.c
   - zr_vm_core/src/zr_vm_core/closure_close_proxy_token.h
   - zr_vm_core/src/zr_vm_core/execution/execution_control.c
@@ -23,9 +30,13 @@ implementation_files:
   - zr_vm_library/src/zr_vm_library/aot_runtime.c
 plan_sources:
   - user: 2026-07-19 按 docs/plans/syntax 严格执行并逐里程碑提交
+  - user: 2026-09-27 继续 docs/plans/ssa、完成验证并逐子任务提交
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
+  - docs/plans/ssa/03-interpreter-binding/01-dispatch-boundaries.md
+  - docs/plans/ssa/04-frame-native/04-roots-observation.md
 tests:
   - tests/core/test_close_proxy.c
+  - tests/core/test_close_meta_exception.c
   - tests/cmake/close-proxy-tests.cmake
   - tests/parser/test_buffer_pool_ffi.c
   - tests/parser/test_resource_shared_weak.c
@@ -75,6 +86,48 @@ The close function runs without yield during exception unwind. A normal close
 receives null; exceptional close receives the current exception status projected
 as an error value. The existing close-registration pop remains the single source
 of truth, so the same registration cannot be invoked twice by one unwind.
+
+## Pending-error close callbacks
+
+When an exceptional close calls script `@close`, the outer Error must stay
+available to the callback as its error argument without remaining the VM's
+active exception during that nested call. Otherwise `RESUME_AFTER_NATIVE_CALL`
+can resume exception dispatch into the outer catch from inside `@close` and
+clear the Error before the original unwind reaches it. The same failure occurs
+for an ordinary `using(new Resource())` registration and for a close proxy.
+
+`closure_value_call_close_meta` reserves one additional scratch slot only
+when an Error is pending. `closure_close_meta_guard.c` initializes a real native
+call-info frame in that slot. Exception dispatch stops at this frame, while a
+nested `TryRun` captures a new error raised by the callback. The guard saves the
+original exception value and status and roots its Error object through an AOT
+root frame before clearing the ambient exception. If `@close` returns normally,
+the guard restores the original Error and its thread status. If `@close` throws,
+the new Error remains active and takes precedence. The callback argument is a
+separate rooted stack value throughout the call. A status without an active
+Error continues through the existing callback path: nested exception dispatch
+and `CATCH` only act when `hasCurrentException` is set.
+
+The guard restores the outer call-info node, native-call yield count,
+execution-budget native-frame marker, and logical stack top after the callback.
+It trims callback handlers to the entry depth and rejects a handler underflow.
+The logical top is reconstructed from the scratch-slot byte
+offset; `outer->functionTop` remains a frame high-water boundary and cannot be
+used as the logical top because repeated cleanup would advance it every time.
+Stack offsets survive stack growth. A nested AOT root frame may be left on the
+state chain when a native callback longjumps past its own Pop. Immediately after
+`TryRun`, the guard cuts that chain back to its still-live root frame without
+following pointers into returned C stack frames, then pops its own root. A
+normal-return callback that leaves extra roots is rejected as an error.
+
+A direct native `@close` throw can also bypass the callback's ordinary
+`PostCall`. The guard discards exactly one directly linked native child frame
+when it has the expected callback slot, no return destination, no inline frame
+metadata, and no open upvalues or close registrations. The reusable `next`
+chain remains linked. Other residual frame shapes, handler underflow, and
+unexpected pending control are diagnosed rather than silently skipped; these
+paths require a separate cleanup protocol before they can safely resume the
+outer catch.
 
 ## Ownership handles
 
@@ -168,15 +221,22 @@ as interpreter execution.
 
 ## Verification
 
-`zr_vm_close_proxy_core_test` exercises 15 focused cases: one close with an older
+`zr_vm_close_proxy_core_test` exercises 18 focused cases: one close with an older
 marker, an unmarked source, plain source and distinct mirror preservation,
 borrowed view reset without `@close`, exceptional close and handler boundary,
 nested proxies, distinct dense/physical mirrors, full GC with an active token
-and during the close callback, registration order rejection, AOT-like physical
+and during the close callback, original Error survival across full GC, native
+replacement Error and repeated call-info reuse, an AOT root frame abandoned by
+a throwing native callback, registration order rejection, AOT-like physical
 marker ordering, a stale native-frame layout, copied-token rejection, and both
 retained control and direct-owner mirror aliases. `zr_vm_type_layout_inline_copy_test`
 protects the legacy physical-mirror path; `zr_vm_native_closure_value_test`
 protects native closure metadata handling.
+
+`zr_vm_close_meta_exception_test` covers four script-level paths: a plain
+throw/catch control, repeated cleanup and call-info chain reachability, the
+original Error reaching its catch after script `@close`, and a callback's new
+Error replacing the original one.
 
 `zr_vm_buffer_pool_ffi_test` throws from inside `using(lease)`, catches outside,
 then rents the same size again. The expected generation and return/reuse counters

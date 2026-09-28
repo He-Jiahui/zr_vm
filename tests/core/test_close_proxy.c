@@ -3,7 +3,10 @@
 #include "unity.h"
 
 #include "tests/harness/runtime_support.h"
+#include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_core/closure.h"
+#include "zr_vm_core/exception.h"
+#include "zr_vm_core/execution_budget.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/object.h"
@@ -26,9 +29,18 @@ typedef struct SZrCloseProxyProbe {
     TZrBool receiverSurvivedFullGc;
     TZrBool growStackInCallback;
     TZrBool collectInCallback;
+    TZrBool throwReplacementInCallback;
+    TZrBool pushAotRootBeforeThrow;
 } SZrCloseProxyProbe;
 
 static SZrCloseProxyProbe *gProbe;
+
+static const SZrAotGcRootSlot close_proxy_throw_root_slot = {
+    0u, 0u, 0u, 0u, ZR_AOT_GC_ROOT_LOCATION_LOCAL_ADDRESS, 0u, 0u
+};
+static const SZrAotGcRootMap close_proxy_throw_root_map = {
+    1u, &close_proxy_throw_root_slot
+};
 
 typedef struct SZrCloseProxyDropProbe {
     TZrMemoryOffset sourceOffset;
@@ -103,6 +115,33 @@ static TZrInt64 close_proxy_probe_callback(SZrState *state) {
                     receiver->type == ZR_VALUE_TYPE_OBJECT &&
                     ZrCore_Value_GetMeta(state, receiver, ZR_META_CLOSE) != ZR_NULL;
         }
+        if (gProbe->throwReplacementInCallback) {
+            SZrAotGcRootFrame callbackRootFrame;
+            SZrRawObject *callbackRoot = object;
+            SZrString *message = ZrCore_String_CreateFromNative(state, "replacement");
+            SZrTypeValue payload;
+            if (gProbe->pushAotRootBeforeThrow &&
+                !ZrCore_Gc_AotRootFramePush(
+                        state, &callbackRootFrame,
+                        (TZrStackValuePointer)&callbackRoot,
+                        &close_proxy_throw_root_map)) {
+                ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+            }
+            if (message == ZR_NULL) {
+                ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+            }
+            ZrCore_Value_InitAsRawObject(
+                    state, &payload, ZR_CAST_RAW_OBJECT_AS_SUPER(message));
+            payload.type = ZR_VALUE_TYPE_STRING;
+            payload.isGarbageCollectable = ZR_TRUE;
+            payload.isNative = ZR_FALSE;
+            if (!ZrCore_Exception_NormalizeThrownValue(
+                        state, &payload, state->callInfoList,
+                        ZR_THREAD_STATUS_RUNTIME_ERROR)) {
+                ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_EXCEPTION_ERROR);
+            }
+            ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+        }
     }
     return 0;
 }
@@ -157,6 +196,43 @@ static void close_proxy_put_object(SZrState *state,
                                  ZrCore_Stack_GetValue(slot),
                                  ZR_CAST_RAW_OBJECT_AS_SUPER(object));
     ZrCore_Stack_GetValue(slot)->type = ZR_VALUE_TYPE_OBJECT;
+}
+
+static void close_proxy_seed_current_error(SZrState *state, const TZrChar *messageText) {
+    SZrString *message = ZrCore_String_CreateFromNative(
+            state, (TZrNativeString)messageText);
+    SZrTypeValue payload;
+
+    TEST_ASSERT_NOT_NULL(message);
+    ZrCore_Value_InitAsRawObject(state, &payload, ZR_CAST_RAW_OBJECT_AS_SUPER(message));
+    payload.type = ZR_VALUE_TYPE_STRING;
+    payload.isGarbageCollectable = ZR_TRUE;
+    payload.isNative = ZR_FALSE;
+    TEST_ASSERT_TRUE(ZrCore_Exception_NormalizeThrownValue(
+            state, &payload, state->callInfoList, ZR_THREAD_STATUS_RUNTIME_ERROR));
+}
+
+static const TZrChar *close_proxy_current_error_message(SZrState *state) {
+    SZrString *fieldName;
+    SZrTypeValue key;
+    const SZrTypeValue *field;
+
+    if (!state->hasCurrentException ||
+        state->currentException.type != ZR_VALUE_TYPE_OBJECT) {
+        return ZR_NULL;
+    }
+    fieldName = ZrCore_String_CreateFromNative(state, "message");
+    if (fieldName == ZR_NULL) {
+        return ZR_NULL;
+    }
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldName));
+    key.type = ZR_VALUE_TYPE_STRING;
+    field = ZrCore_Object_GetValue(
+            state, ZR_CAST_OBJECT(state, state->currentException.value.object), &key);
+    return field != ZR_NULL && field->type == ZR_VALUE_TYPE_STRING
+                   ? ZrCore_String_GetNativeString(
+                             ZR_CAST_STRING(state, field->value.object))
+                   : ZR_NULL;
 }
 
 static void test_proxy_closes_source_once_and_preserves_older_markers(void) {
@@ -444,6 +520,121 @@ static void test_proxy_and_receiver_survive_full_gc(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_original_error_is_rooted_across_full_gc_in_close_callback(void) {
+    SZrCloseProxyProbe probe = {0};
+    TZrStackValuePointer frame;
+    SZrState *state = close_proxy_new_state(&frame);
+    SZrObjectPrototype *prototype = close_proxy_new_prototype(state);
+    SZrObject *source = close_proxy_new_object(state, prototype);
+
+    gProbe = &probe;
+    probe.sourceObject = ZR_CAST_RAW_OBJECT_AS_SUPER(source);
+    probe.sourceOffset = ZrCore_Stack_SavePointerAsOffset(state, frame + 1u);
+    probe.collectInCallback = ZR_TRUE;
+    close_proxy_put_object(state, frame + 1u, source);
+    TEST_ASSERT_TRUE(ZrCore_Closure_MarkCloseProxy(state, frame + 3u, frame + 1u));
+    close_proxy_seed_current_error(state, "original");
+
+    TEST_ASSERT_EQUAL_UINT64(1u, ZrCore_Closure_CloseRegisteredValues(
+            state, 1u, ZR_THREAD_STATUS_RUNTIME_ERROR, ZR_FALSE));
+    TEST_ASSERT_EQUAL_UINT32(1u, probe.sourceCalls);
+    TEST_ASSERT_TRUE(probe.receiverSurvivedFullGc);
+    TEST_ASSERT_EQUAL_STRING("original", close_proxy_current_error_message(state));
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+typedef struct SZrCloseProxyCloseResult {
+    TZrSize closedCount;
+} SZrCloseProxyCloseResult;
+
+static void close_proxy_close_with_error_in_try(SZrState *state, TZrPtr argument) {
+    SZrCloseProxyCloseResult *result = (SZrCloseProxyCloseResult *)argument;
+    result->closedCount = ZrCore_Closure_CloseRegisteredValues(
+            state, 1u, ZR_THREAD_STATUS_RUNTIME_ERROR, ZR_FALSE);
+}
+
+static void test_native_close_error_replaces_original_without_leaking_frame(void) {
+    SZrCloseProxyProbe probe = {0};
+    SZrCloseProxyCloseResult result = {0};
+    SZrExecutionBudget budget = {0};
+    TZrStackValuePointer frame;
+    SZrState *state = close_proxy_new_state(&frame);
+    SZrObjectPrototype *prototype = close_proxy_new_prototype(state);
+    TZrMemoryOffset initialStackTopOffset =
+            ZrCore_Stack_SavePointerAsOffset(state, state->stackTop.valuePointer);
+
+    gProbe = &probe;
+    state->executionBudget = &budget;
+    probe.sourceOffset = ZrCore_Stack_SavePointerAsOffset(state, frame + 1u);
+    probe.throwReplacementInCallback = ZR_TRUE;
+    for (TZrUInt32 attempt = 0u; attempt < 3u; ++attempt) {
+        SZrObject *source;
+        SZrCallInfo *cursor;
+        TZrUInt32 reachableCallInfos = 0u;
+        EZrThreadStatus status;
+
+        ZrCore_Exception_ClearCurrent(state);
+        state->threadStatus = ZR_THREAD_STATUS_FINE;
+        source = close_proxy_new_object(state, prototype);
+        probe.sourceObject = ZR_CAST_RAW_OBJECT_AS_SUPER(source);
+        close_proxy_put_object(state, frame + 1u, source);
+        TEST_ASSERT_TRUE(ZrCore_Closure_MarkCloseProxy(state, frame + 3u, frame + 1u));
+        close_proxy_seed_current_error(state, "original");
+        result.closedCount = 0u;
+
+        status = ZrCore_Exception_TryRun(state, close_proxy_close_with_error_in_try, &result);
+        TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, status);
+        TEST_ASSERT_EQUAL_UINT64(1u, result.closedCount);
+        TEST_ASSERT_EQUAL_UINT32(attempt + 1u, probe.sourceCalls);
+        TEST_ASSERT_EQUAL_STRING("replacement", close_proxy_current_error_message(state));
+        TEST_ASSERT_EQUAL_PTR(&state->baseCallInfo, state->callInfoList);
+        TEST_ASSERT_EQUAL_PTR(state->stackBase.valuePointer,
+                              state->toBeClosedValueList.valuePointer);
+        TEST_ASSERT_EQUAL_UINT32(0u, state->exceptionHandlerStackLength);
+        TEST_ASSERT_EQUAL_UINT32(0u, state->nestedNativeCallYieldFlag);
+        TEST_ASSERT_NULL(budget.countedNativeFrame);
+        TEST_ASSERT_EQUAL_UINT64(initialStackTopOffset,
+                ZrCore_Stack_SavePointerAsOffset(state, state->stackTop.valuePointer));
+        for (cursor = state->baseCallInfo.next; cursor != ZR_NULL;
+             cursor = cursor->next) {
+            TEST_ASSERT_LESS_OR_EQUAL_UINT32(state->callInfoListLength,
+                                             reachableCallInfos + 1u);
+            ++reachableCallInfos;
+        }
+        TEST_ASSERT_EQUAL_UINT32(state->callInfoListLength, reachableCallInfos);
+    }
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_native_close_throw_discards_unwound_aot_root_frame(void) {
+    SZrCloseProxyProbe probe = {0};
+    SZrCloseProxyCloseResult result = {0};
+    TZrStackValuePointer frame;
+    SZrState *state = close_proxy_new_state(&frame);
+    SZrObjectPrototype *prototype = close_proxy_new_prototype(state);
+    SZrObject *source = close_proxy_new_object(state, prototype);
+    EZrThreadStatus status;
+
+    gProbe = &probe;
+    probe.sourceObject = ZR_CAST_RAW_OBJECT_AS_SUPER(source);
+    probe.sourceOffset = ZrCore_Stack_SavePointerAsOffset(state, frame + 1u);
+    probe.throwReplacementInCallback = ZR_TRUE;
+    probe.pushAotRootBeforeThrow = ZR_TRUE;
+    close_proxy_put_object(state, frame + 1u, source);
+    TEST_ASSERT_TRUE(ZrCore_Closure_MarkCloseProxy(state, frame + 3u, frame + 1u));
+    close_proxy_seed_current_error(state, "original");
+
+    status = ZrCore_Exception_TryRun(state, close_proxy_close_with_error_in_try, &result);
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, status);
+    TEST_ASSERT_EQUAL_UINT64(1u, result.closedCount);
+    TEST_ASSERT_EQUAL_STRING("replacement", close_proxy_current_error_message(state));
+    TEST_ASSERT_NULL(state->aotGcRootFrameStack);
+    TEST_ASSERT_EQUAL_UINT32(0u, state->aotGcRootFrameDepth);
+    ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+    TEST_ASSERT_EQUAL_STRING("replacement", close_proxy_current_error_message(state));
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_proxy_rejects_slot_below_current_marker_without_changing_chain(void) {
     SZrCloseProxyProbe probe = {0};
     TZrStackValuePointer frame;
@@ -705,6 +896,9 @@ int main(void) {
     RUN_TEST(test_nested_proxies_tombstone_once);
     RUN_TEST(test_proxy_clears_distinct_physical_value_before_callback);
     RUN_TEST(test_proxy_and_receiver_survive_full_gc);
+    RUN_TEST(test_original_error_is_rooted_across_full_gc_in_close_callback);
+    RUN_TEST(test_native_close_error_replaces_original_without_leaking_frame);
+    RUN_TEST(test_native_close_throw_discards_unwound_aot_root_frame);
     RUN_TEST(test_proxy_rejects_slot_below_current_marker_without_changing_chain);
     RUN_TEST(test_physical_proxy_follows_physical_source_marker);
     RUN_TEST(test_native_frame_does_not_clear_an_inactive_physical_layout);
