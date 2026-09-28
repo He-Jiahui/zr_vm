@@ -1,5 +1,6 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
+/** @brief 供 JSON 编码和缓存复制共用的 token 数值读取入口；越界视为空值。 */
 TZrUInt32 semantic_tokens_value_at(SZrArray *tokens, TZrSize index) {
     TZrUInt32 *valuePtr;
 
@@ -11,6 +12,7 @@ TZrUInt32 semantic_tokens_value_at(SZrArray *tokens, TZrSize index) {
     return valuePtr != ZR_NULL ? *valuePtr : 0;
 }
 
+/** @brief 查找同 URI 最近一次完整 token 结果；返回指针只在缓存下一次增删前有效。 */
 SZrSemanticTokenSnapshot *find_semantic_token_snapshot(SZrStdioServer *server, const char *uriText) {
     if (server == ZR_NULL || uriText == NULL) {
         return NULL;
@@ -26,6 +28,7 @@ SZrSemanticTokenSnapshot *find_semantic_token_snapshot(SZrStdioServer *server, c
     return NULL;
 }
 
+/** @brief 释放缓存条目持有的 URI 与 token 数据，供关闭文档时回收。 */
 static void clear_semantic_token_snapshot(SZrSemanticTokenSnapshot *snapshot) {
     if (snapshot == NULL) {
         return;
@@ -36,6 +39,10 @@ static void clear_semantic_token_snapshot(SZrSemanticTokenSnapshot *snapshot) {
     memset(snapshot, 0, sizeof(*snapshot));
 }
 
+/** @brief didClose 时丢弃该 URI 的 delta 基线，避免关闭后的文档沿用旧结果。
+ *  didChange 保留旧基线供后续 delta 比对；下一次 full 或 delta 会替换它，
+ *  最后由服务端销毁路径清空全表。
+ */
 void remove_semantic_token_cache_for_uri(SZrStdioServer *server, const char *uriText) {
     SZrSemanticTokenSnapshot *snapshot;
     size_t index;
@@ -50,6 +57,7 @@ void remove_semantic_token_cache_for_uri(SZrStdioServer *server, const char *uri
     }
 
     index = (size_t)(snapshot - server->semanticTokenCache.items);
+    /* 搬迁后尾槽不再拥有数据；清零可避免后续复用时出现悬空别名。 */
     clear_semantic_token_snapshot(snapshot);
     if (index + 1 < server->semanticTokenCache.count) {
         memmove(&server->semanticTokenCache.items[index],
@@ -64,6 +72,9 @@ void remove_semantic_token_cache_for_uri(SZrStdioServer *server, const char *uri
     }
 }
 
+/** @brief 复制准备响应给客户端的完整 token 流，保留同 URI 最新 resultId 供 delta 比较。
+ *  缓存自行拥有 URI 和 data；分配失败保持原条目有效，并向调用方返回 false。
+ */
 TZrBool upsert_semantic_token_snapshot(SZrStdioServer *server,
                                        const char *uriText,
                                        const char *resultId,
