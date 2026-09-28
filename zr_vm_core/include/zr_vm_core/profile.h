@@ -1,5 +1,5 @@
 //
-// Runtime profiling for benchmark/report generation.
+// Runtime profiling for benchmark/report generation; counters are optional and per global state.
 //
 
 #ifndef ZR_VM_CORE_PROFILE_H
@@ -14,9 +14,9 @@
 
 struct SZrGlobalState;
 struct SZrState;
-
+/** @brief 统一 profile 指针的线程局部存储修饰符。 */
 #define ZR_PROFILE_THREAD_LOCAL ZR_THREAD_LOCAL
-
+/** @brief helperCounts 下标；新增计数项须保留已有数值和报告名称。 */
 typedef enum EZrProfileHelperKind {
     ZR_PROFILE_HELPER_VALUE_COPY = 0,
     ZR_PROFILE_HELPER_VALUE_RESET_NULL,
@@ -40,7 +40,7 @@ typedef enum EZrProfileHelperKind {
     ZR_PROFILE_HELPER_FRAME_VALUE_COPY_PROBE,
     ZR_PROFILE_HELPER_ENUM_MAX
 } EZrProfileHelperKind;
-
+/** @brief slowPathCounts 下标；新增计数项须保留已有数值和报告名称。 */
 typedef enum EZrProfileSlowPathKind {
     ZR_PROFILE_SLOWPATH_META_FALLBACK = 0,
     ZR_PROFILE_SLOWPATH_CALLSITE_CACHE_LOOKUP,
@@ -51,13 +51,13 @@ typedef enum EZrProfileSlowPathKind {
     ZR_PROFILE_SLOWPATH_META_CALL_PREPARE,
     ZR_PROFILE_SLOWPATH_ENUM_MAX
 } EZrProfileSlowPathKind;
-
+/** @brief quickeningProbeCounts 下标；当前随 recordInstructions 采样，无独立开关。 */
 typedef enum EZrProfileQuickeningProbeKind {
     ZR_PROFILE_QUICKENING_PROBE_GET_STACK_TYPED_ARITHMETIC = 0,
     ZR_PROFILE_QUICKENING_PROBE_GET_CONSTANT_TYPED_ARITHMETIC,
     ZR_PROFILE_QUICKENING_PROBE_ENUM_MAX
 } EZrProfileQuickeningProbeKind;
-
+/** @brief memoryMetricCounts 下标；写入受 recordMemory 开关控制。 */
 typedef enum EZrProfileMemoryMetricKind {
     ZR_PROFILE_MEMORY_ALLOCATION_COUNT = 0,
     ZR_PROFILE_MEMORY_ALLOCATION_BYTES,
@@ -81,9 +81,9 @@ typedef enum EZrProfileMemoryMetricKind {
     ZR_PROFILE_MEMORY_MEMBER_CACHE_META_FALLBACK_COUNT,
     ZR_PROFILE_MEMORY_ENUM_MAX
 } EZrProfileMemoryMetricKind;
-
+/** @brief 暂停时长样本环容量；样本满后覆盖最旧项。 */
 #define ZR_PROFILE_PAUSE_SAMPLE_CAPACITY ((TZrUInt32)256u)
-
+/** @brief 单个 GlobalState 的 profile 计数、开关、身份文本副本和有界暂停样本环。 */
 typedef struct SZrProfileRuntime {
     TZrBool recordInstructions;
     TZrBool recordSlowPaths;
@@ -107,24 +107,24 @@ typedef struct SZrProfileRuntime {
     TZrChar *caseName;
     TZrChar *modeName;
 } SZrProfileRuntime;
-
+/** @brief 当前 OS 线程所绑定的 profileRuntime 借用指针；由 SetCurrentState 维护。 */
 #if defined(_MSC_VER)
 extern ZR_PROFILE_THREAD_LOCAL SZrProfileRuntime *g_zr_profile_current;
 #else
 ZR_CORE_API ZR_PROFILE_THREAD_LOCAL SZrProfileRuntime *g_zr_profile_current;
 #endif
 
-ZR_CORE_API void ZrCore_Profile_GlobalInit(struct SZrGlobalState *global);
-ZR_CORE_API void ZrCore_Profile_GlobalShutdown(struct SZrGlobalState *global);
-ZR_CORE_API void ZrCore_Profile_SetCurrentState(struct SZrState *state);
-ZR_CORE_API SZrProfileRuntime *ZrCore_Profile_Current(void);
-ZR_CORE_API SZrProfileRuntime *ZrCore_Profile_FromState(struct SZrState *state);
-ZR_CORE_API const TZrChar *ZrCore_Profile_HelperKindName(EZrProfileHelperKind kind);
-ZR_CORE_API const TZrChar *ZrCore_Profile_SlowPathKindName(EZrProfileSlowPathKind kind);
-ZR_CORE_API const TZrChar *ZrCore_Profile_QuickeningProbeKindName(EZrProfileQuickeningProbeKind kind);
-ZR_CORE_API const TZrChar *ZrCore_Profile_MemoryMetricKindName(EZrProfileMemoryMetricKind kind);
-ZR_CORE_API const TZrChar *ZrCore_Profile_InstructionName(EZrInstructionCode opcode);
-
+ZR_CORE_API void ZrCore_Profile_GlobalInit(struct SZrGlobalState *global); /**< @brief 按环境开关创建可选的 global profile；对一个 global 只初始化一次。 */
+ZR_CORE_API void ZrCore_Profile_GlobalShutdown(struct SZrGlobalState *global); /**< @brief 写出可选报告并释放 profile；调用前须停止该 global 的执行线程。 */
+ZR_CORE_API void ZrCore_Profile_SetCurrentState(struct SZrState *state); /**< @brief 将调用线程绑定到 state 所属 profile；空 state/global 会清除绑定。 */
+ZR_CORE_API SZrProfileRuntime *ZrCore_Profile_Current(void); /**< @brief 返回当前线程绑定的借用 profileRuntime；未启用时为空。 */
+ZR_CORE_API SZrProfileRuntime *ZrCore_Profile_FromState(struct SZrState *state); /**< @brief 按 state 查找借用 profileRuntime，不读写 TLS 绑定。 */
+ZR_CORE_API const TZrChar *ZrCore_Profile_HelperKindName(EZrProfileHelperKind kind); /**< @brief 返回稳定 helper 报告名；非法值返回 "unknown"。 */
+ZR_CORE_API const TZrChar *ZrCore_Profile_SlowPathKindName(EZrProfileSlowPathKind kind); /**< @brief 返回稳定 slow-path 报告名；非法值返回 "unknown"。 */
+ZR_CORE_API const TZrChar *ZrCore_Profile_QuickeningProbeKindName(EZrProfileQuickeningProbeKind kind); /**< @brief 返回稳定 quickening 报告名；非法值返回 "unknown"。 */
+ZR_CORE_API const TZrChar *ZrCore_Profile_MemoryMetricKindName(EZrProfileMemoryMetricKind kind); /**< @brief 返回稳定内存指标报告名；非法值返回 "unknown"。 */
+ZR_CORE_API const TZrChar *ZrCore_Profile_InstructionName(EZrInstructionCode opcode); /**< @brief 返回指令枚举对应报告名；非法值返回 "unknown"。 */
+/* 热路径仅在对应开关打开且 enum 下标有效时累加；AtomicAdd 只更新目标计数，不发布其他数据。 BUG: 同一 global 可附着多个 mutator；启用 helper profile 后，并发对象写入经 object_record_helper 对共享 helperCounts 普通自增，产生数据竞争和丢计数。 TODO: 逐项核对 instruction/quickening/slow-path 与 pause 字段的并发写入；另核对未见调用点的 RecordInstructionFromState、RecordSlowPathFromState、MemoryEnabledFromState 是否刻意保留。 */
 static ZR_FORCE_INLINE void ZrCore_Profile_AtomicAdd(TZrUInt64 *value, TZrUInt64 amount) {
 #if defined(_MSC_VER)
     (void)_InterlockedExchangeAdd64((volatile long long *)value, (long long)amount);
@@ -231,7 +231,7 @@ static ZR_FORCE_INLINE void ZrCore_Profile_RecordValueCopyFromState(struct SZrSt
         }
     }
 }
-
+/* recordMemory 开启时由 GC 周期协调路径记录微秒值；累计量保留全部事件，样本环只保留最近的固定容量窗口。 */
 static ZR_FORCE_INLINE void ZrCore_Profile_RecordPauseFromState(struct SZrState *state,
                                                                 TZrUInt64 durationUs) {
     SZrProfileRuntime *runtime = ZrCore_Profile_FromState(state);

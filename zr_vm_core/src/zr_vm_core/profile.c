@@ -11,9 +11,9 @@
 
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/state.h"
-
+/* 每个线程只缓存当前 global 的借用 profile 指针；实际记录存储由 global 持有。 */
 ZR_PROFILE_THREAD_LOCAL SZrProfileRuntime *g_zr_profile_current = ZR_NULL;
-
+/* 以下名称表供计数数组索引和 JSON 报告共用；各表顺序须与 profile.h 的对应 enum 一致。 */
 static const TZrChar *const CZrProfileHelperNames[ZR_PROFILE_HELPER_ENUM_MAX] = {
         "value_copy",
         "value_reset_null",
@@ -80,7 +80,7 @@ static const TZrChar *const CZrProfileInstructionNames[ZR_INSTRUCTION_ENUM(ENUM_
         ZR_INSTRUCTION_DECLARE(ZR_PROFILE_INSTRUCTION_NAME_DECLARE)
 };
 #undef ZR_PROFILE_INSTRUCTION_NAME_DECLARE
-
+/* 未设置或空值关闭；只有 0、false、FALSE 关闭，其余非空环境值都开启。 */
 static TZrBool profile_env_enabled(const TZrChar *value) {
     if (value == ZR_NULL || value[0] == '\0') {
         return ZR_FALSE;
@@ -88,7 +88,7 @@ static TZrBool profile_env_enabled(const TZrChar *value) {
 
     return !(strcmp(value, "0") == 0 || strcmp(value, "false") == 0 || strcmp(value, "FALSE") == 0);
 }
-
+/* 环境字符串复制到 profileRuntime 自有存储，避免报告依赖后续 getenv 缓冲区状态。 */
 static TZrChar *profile_dup_env(const TZrChar *name) {
     const TZrChar *value = getenv(name);
     TZrSize length;
@@ -106,7 +106,7 @@ static TZrChar *profile_dup_env(const TZrChar *name) {
     memcpy(copy, value, length + 1u);
     return copy;
 }
-
+/* 按 enum 索引输出非零计数；稳定名称由对应 Getter 提供。 */
 static void profile_write_counts(FILE *file,
                                  const TZrChar *sectionName,
                                  TZrUInt64 count,
@@ -154,7 +154,7 @@ static const TZrChar *profile_memory_metric_name_getter(TZrUInt32 index) {
 static const TZrChar *profile_instruction_name_getter(TZrUInt32 index) {
     return ZrCore_Profile_InstructionName((EZrInstructionCode)index);
 }
-
+/* 环形样本满时从下一写入位置开始输出，恢复 oldest-to-newest 顺序。 */
 static void profile_write_pause_samples(FILE *file, const SZrProfileRuntime *runtime) {
     TZrUInt32 startIndex = runtime->pauseSampleCount == ZR_PROFILE_PAUSE_SAMPLE_CAPACITY
                                    ? runtime->pauseSampleNext
@@ -171,7 +171,7 @@ static void profile_write_pause_samples(FILE *file, const SZrProfileRuntime *run
     }
     fputs("]\n  }", file);
 }
-
+/* BUG: CASE/MODE 来自环境变量却直接插入 JSON 字符串；引号、反斜杠或控制字符会破坏报告。 TODO: 输出路径复制或 fopen/写入失败目前静默丢弃报告；确认 profile 被请求时 benchmark 是否必须失败。 */
 static void profile_write_report(const SZrProfileRuntime *runtime) {
     FILE *file;
 
