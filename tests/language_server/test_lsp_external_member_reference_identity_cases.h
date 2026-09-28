@@ -1,3 +1,4 @@
+/* 导入成员名相同仍不足以合并引用；声明精确范围改变时外部引用投影应失败关闭。 */
 static void test_external_member_references_reject_mismatched_declaration_identity(
         SZrState *state) {
     static const TZrChar *content =
@@ -61,6 +62,7 @@ static void test_external_member_references_reject_mismatched_declaration_identi
     }
 
     free_local_reference_projection_results(state, &locations, ZR_NULL);
+    /* 只扰动查询目标的声明身份，保持原始文档和引用事实不变以隔离匹配条件。 */
     originalDeclarationRange = query.resolvedMember.declarationRange;
     query.resolvedMember.declarationRange.start.line++;
     query.resolvedMember.declarationRange.start.offset++;
@@ -78,6 +80,7 @@ static void test_external_member_references_reject_mismatched_declaration_identi
     valid = ZR_TRUE;
 
 cleanup:
+    /* 引用结果逐项原生分配，须在释放语义查询及其 context 前清理。 */
     free_local_reference_projection_results(state, &locations, ZR_NULL);
     ZrLanguageServer_LspSemanticQuery_Free(state, &query);
     if (context != ZR_NULL) {
@@ -96,6 +99,7 @@ cleanup:
     }
 }
 
+/* 同一 URI 更新版本后，旧查询不能继续生成悬停、定义、引用或高亮。 */
 static void test_external_member_query_rejects_stale_document_snapshot(
         SZrState *state) {
     static const TZrChar *content =
@@ -157,6 +161,7 @@ static void test_external_member_query_rejects_stale_document_snapshot(
         goto cleanup;
     }
 
+    /* 查询捕获的是旧语义版本；四类消费入口均必须先校验快照而拒绝陈旧投影。 */
     failure = "stale query consumers must fail closed";
     hoverBuilt = ZrLanguageServer_LspSemanticQuery_BuildHover(
             state, context, &query, &hover);
@@ -211,6 +216,7 @@ cleanup:
     }
 }
 
+/* 去除外部声明身份后，引用与文档高亮不能仅凭名称或局部相似性继续发布。 */
 static void test_external_member_query_rejects_missing_declaration_identity(
         SZrState *state) {
     static const TZrChar *content =
@@ -246,6 +252,7 @@ static void test_external_member_query_rejects_missing_declaration_identity(
         goto cleanup;
     }
 
+    /* 仅改写已解析查询，验证消费层对欠定身份的防护，不依赖重新解析的行为。 */
     query.resolvedMember.hasDeclaration = ZR_FALSE;
     query.resolvedMember.declarationUri = ZR_NULL;
     ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 4U);

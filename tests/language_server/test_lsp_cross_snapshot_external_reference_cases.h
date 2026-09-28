@@ -1,3 +1,4 @@
+/* 跨快照引用投影必须精确落在当前主文档与兄弟文档的成员名上；拒绝混入同名诱饵。 */
 static TZrBool external_reference_locations_match(
         const SZrArray *locations,
         SZrString *mainUri,
@@ -44,6 +45,7 @@ static TZrBool external_reference_locations_match(
     return foundMain && (!includeSibling || foundSibling);
 }
 
+/* 高亮只属于被查询文档，范围与读写角色均需沿用该文档发布的引用事实。 */
 static TZrBool external_reference_highlight_matches(
         const SZrArray *highlights,
         SZrLspPosition position,
@@ -64,6 +66,7 @@ static TZrBool external_reference_highlight_matches(
                    position.character + (TZrInt32)memberLength;
 }
 
+/* 分别以原生和二进制提供者验证外部身份跨文档传播；由 parity 宿主 main 各调用一次。 */
 static void test_cross_snapshot_imported_references_use_external_identity(
         SZrState *state,
         TZrBool native) {
@@ -157,6 +160,7 @@ static void test_cross_snapshot_imported_references_use_external_identity(
         !write_text_file(decoyPath, decoyContent, strlen(decoyContent))) {
         goto cleanup;
     }
+    /* 二进制分支自行生成提供者模块，确保查询依赖当前工程载入的真实元数据。 */
     if (!native) {
         SZrString *sourceName = ZrCore_String_CreateFromNative(state, binaryPath);
         SZrFunction *function = ZrParser_Source_Compile(
@@ -229,6 +233,7 @@ static void test_cross_snapshot_imported_references_use_external_identity(
         failure = "canonical sibling external reference";
         goto cleanup;
     }
+    /* 后续故意改写兄弟快照的事实；保留全量副本和旧分析器指针以便在销毁上下文前还原。 */
     savedReferenceCount = siblingQuery.analyzer->semanticContext->referenceFacts.length;
     savedReferences = (SZrSemanticReferenceFact *)malloc(
             savedReferenceCount * sizeof(*savedReferences));
@@ -243,6 +248,7 @@ static void test_cross_snapshot_imported_references_use_external_identity(
     savedAst = siblingQuery.analyzer->ast;
     savedSymbolTable = siblingQuery.analyzer->symbolTable;
     savedReferenceTracker = siblingQuery.analyzer->referenceTracker;
+    /* 隔离旧 AST、符号表与引用跟踪器，证明跨快照结果来自规范外部身份而非旧分析器回退。 */
     siblingQuery.analyzer->ast = ZR_NULL;
     siblingQuery.analyzer->symbolTable = ZR_NULL;
     siblingQuery.analyzer->referenceTracker = ZR_NULL;
@@ -271,6 +277,7 @@ static void test_cross_snapshot_imported_references_use_external_identity(
     }
     free_local_reference_projection_results(state, ZR_NULL, &highlights);
 
+    /* 每次只破坏一维身份或有效性；主文档结果仍可保留，兄弟快照不得错误合并或高亮。 */
     for (index = 0U; index < 10U; index++) {
         memcpy(siblingQuery.analyzer->semanticContext->referenceFacts.head,
                savedReferences, savedReferenceCount * sizeof(*savedReferences));
@@ -332,6 +339,7 @@ static void test_cross_snapshot_imported_references_use_external_identity(
     }
     memcpy(siblingQuery.analyzer->semanticContext->referenceFacts.head,
            savedReferences, savedReferenceCount * sizeof(*savedReferences));
+    /* 单独翻转读写角色，核对身份匹配后仍使用事实原有的高亮类别。 */
     for (index = 0U; index < savedReferenceCount; index++) {
         SZrSemanticReferenceFact *reference =
                 (SZrSemanticReferenceFact *)ZrCore_Array_Get(
@@ -353,6 +361,7 @@ static void test_cross_snapshot_imported_references_use_external_identity(
     free_local_reference_projection_results(state, ZR_NULL, &highlights);
     memcpy(siblingQuery.analyzer->semanticContext->referenceFacts.head,
            savedReferences, savedReferenceCount * sizeof(*savedReferences));
+    /* 再从查询目标侧破坏完整性与提供者代际，防止发布过期或欠定的外部引用。 */
     query.canonicalSymbol.externalMetadataToken = 0U;
     failure = "incomplete target identity must reject declaration and references";
     if (ZrLanguageServer_LspSemanticQuery_AppendReferences(
@@ -378,6 +387,7 @@ static void test_cross_snapshot_imported_references_use_external_identity(
     valid = ZR_TRUE;
 
 cleanup:
+    /* 被借用的 analyzer 仍归 context；先恢复其事实和指针，再销毁查询和上下文。 */
     if (savedReferences != ZR_NULL) {
         memcpy(siblingQuery.analyzer->semanticContext->referenceFacts.head,
                savedReferences, savedReferenceCount * sizeof(*savedReferences));

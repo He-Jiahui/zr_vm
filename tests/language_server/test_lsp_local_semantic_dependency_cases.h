@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_LOCAL_SEMANTIC_DEPENDENCY_CASES_H
 #define ZR_VM_TEST_LSP_LOCAL_SEMANTIC_DEPENDENCY_CASES_H
 
+/* 依赖边以完整文件坐标认定同一声明，避免只比较名称而误连重名函数。 */
 static TZrBool local_dependency_ranges_equal(const SZrFileRange *left,
                                               const SZrFileRange *right) {
     return left != ZR_NULL && right != ZR_NULL &&
@@ -12,6 +13,7 @@ static TZrBool local_dependency_ranges_equal(const SZrFileRange *left,
            left->end.column == right->end.column;
 }
 
+/* 从已发布引用事实确认调用方确实指向被修改声明；只有该边成立才可断言直接依赖失效。 */
 static TZrBool local_dependency_has_resolved_call(
         const SZrSemanticContext *semanticContext,
         const SZrFileRange *declarationRange) {
@@ -37,6 +39,7 @@ static TZrBool local_dependency_has_resolved_call(
     return ZR_FALSE;
 }
 
+/* 函数值场景先证明局部事实中存在闭包标识符，避免把普通调用误当值引用依赖。 */
 static TZrBool local_dependency_has_closure_identifier(
         const SZrSemanticContext *semanticContext) {
     TZrSize index;
@@ -59,6 +62,8 @@ static TZrBool local_dependency_has_closure_identifier(
     return ZR_FALSE;
 }
 
+/* 与闭包标识符检查配合确认引用指向被改声明；此 helper 只核对目标，不区分引用种类。
+ * TODO: 两次扫描未绑定同一 AST 节点；若 fixture 增加其他闭包或调用，可能误证值依赖，需关联引用类别与范围。 */
 static TZrBool local_dependency_has_resolved_reference(
         const SZrSemanticContext *semanticContext,
         const SZrFileRange *declarationRange) {
@@ -83,6 +88,7 @@ static TZrBool local_dependency_has_resolved_reference(
     return ZR_FALSE;
 }
 
+/* 泛型签名变化先保留无关作用域，再撤销直接调用者和被改声明的缓存；事实边与指标共同证明选择性失效。 */
 static void test_generic_signature_edit_invalidates_only_changed_and_direct_caller_scopes(
         SZrState *state) {
     const TZrChar *summary =
@@ -335,6 +341,7 @@ static void test_generic_signature_edit_invalidates_only_changed_and_direct_call
     TEST_PASS(timer, summary);
 }
 
+/* 无显式返回类型的函数改动体内返回值会改变可观察签名，直接调用者缓存须失效，无关作用域仍可复用。 */
 static void test_inferred_signature_body_edit_invalidates_direct_caller_scope(
         SZrState *state) {
     const TZrChar *summary =
@@ -519,6 +526,7 @@ static void test_inferred_signature_body_edit_invalidates_direct_caller_scope(
     TEST_PASS(timer, summary);
 }
 
+/* 显式返回类型稳定时仅函数体变化不改变调用方依赖契约，应保留已分析的直接调用者。 */
 static void test_explicit_signature_body_edit_preserves_direct_caller_scope(
         SZrState *state) {
     const TZrChar *summary =
@@ -644,6 +652,7 @@ static void test_explicit_signature_body_edit_preserves_direct_caller_scope(
     TEST_PASS(timer, summary);
 }
 
+/* 函数作为返回值而非调用出现时，已解析值引用仍是签名依赖，改声明应直接撤销 holder 缓存。 */
 static void test_resolved_function_value_dependency_invalidates_directly(
         SZrState *state) {
     const TZrChar *summary =
@@ -763,6 +772,7 @@ static void test_resolved_function_value_dependency_invalidates_directly(
     TEST_PASS(timer, summary);
 }
 
+/* 引用事实或诊断不足以证明无依赖时，签名编辑必须保守撤销被污染的作用域缓存。 */
 static void test_poisoned_scope_invalidates_conservatively_on_signature_edit(
         SZrState *state) {
     const TZrChar *summary =

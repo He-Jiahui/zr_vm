@@ -17,19 +17,23 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+/* 查询组按用例打印耗时；计时器只服务 TEST_START/PASS/FAIL，不参与语义缓存指标。 */
 typedef struct SZrTestTimer {
     clock_t startTime;
     clock_t endTime;
 } SZrTestTimer;
 
+/* 各 void 用例经 TEST_FAIL 汇总到 main 的 CTest 退出状态。 */
 static int g_failures = 0;
 
+/* 用例进入时统一启动计时，后续失败分支可直接回报所属场景。 */
 #define TEST_START(summary) do { \
     timer.startTime = clock(); \
     printf("Unit Test - %s\n", summary); \
     fflush(stdout); \
 } while (0)
 
+/* 成功报告沿用入口计时器；调用方应先完成结果和 context 清理。 */
 #define TEST_PASS(timerValue, summary) do { \
     (timerValue).endTime = clock(); \
     double elapsed = ((double)((timerValue).endTime - (timerValue).startTime) / CLOCKS_PER_SEC) * 1000.0; \
@@ -37,6 +41,7 @@ static int g_failures = 0;
     fflush(stdout); \
 } while (0)
 
+/* 失败分支既输出诊断也递增进程级失败数，不能只打印后返回。 */
 #define TEST_FAIL(timerValue, summary, reason) do { \
     (timerValue).endTime = clock(); \
     double elapsed = ((double)((timerValue).endTime - (timerValue).startTime) / CLOCKS_PER_SEC) * 1000.0; \
@@ -45,11 +50,14 @@ static int g_failures = 0;
     g_failures++; \
 } while (0)
 
+/* main 在连续场景之间输出分隔符，方便定位缓存回归的首个失败。 */
 #define TEST_DIVIDER() do { \
     printf("----------\n"); \
     fflush(stdout); \
 } while (0)
 
+/* VM 全局状态把测试堆分配交给此回调，所有局部查询及缓存对象最终经同一分配域回收。
+ * TODO: 非空指针若带 1 GiB 以上 originalSize 会转入新 malloc 而不复制旧内容；需核对 VM 是否可能传入该组合。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -79,6 +87,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* 将 ASCII 测试源码中的目标片段定位为 LSP 光标；调用者用 occurrence/偏移区分同名使用位置。 */
 static TZrBool lsp_find_position_for_substring(const TZrChar *content,
                                                const TZrChar *needle,
                                                TZrSize occurrence,
@@ -119,6 +128,7 @@ static TZrBool lsp_find_position_for_substring(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* 为事实和诊断的文本断言取得借用视图；其寿命由 VM 字符串及 state 决定。 */
 static const TZrChar *test_string_ptr(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -128,6 +138,7 @@ static const TZrChar *test_string_ptr(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
+/* 先按公开诊断代码验证语义错误，再比较局部查询事实；返回值不接管诊断数组。 */
 static TZrBool lsp_diagnostic_array_contains_code(SZrArray *diagnostics,
                                                   const TZrChar *expectedCode) {
     if (diagnostics == ZR_NULL || expectedCode == ZR_NULL) {
@@ -148,6 +159,7 @@ static TZrBool lsp_diagnostic_array_contains_code(SZrArray *diagnostics,
     return ZR_FALSE;
 }
 
+/* 基础加法探针要求局部表达式查询复用 parser 发布的精确数值范围与无溢出事实。 */
 static void test_local_expression_query_returns_numeric_range_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Returns Numeric Range Fact";
     const TZrChar *uriText = "file:///local_numeric_range_fact.zr";
@@ -224,6 +236,7 @@ static void test_local_expression_query_returns_numeric_range_fact(SZrState *sta
     TEST_PASS(timer, summary);
 }
 
+/* 从局部变量初始化式读范围，防止查询只覆盖 return 表达式而丢失声明内部事实。 */
 static void test_local_expression_query_propagates_variable_numeric_range_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Propagates Variable Numeric Range Fact";
     const TZrChar *uriText = "file:///local_variable_numeric_range_fact.zr";
@@ -293,6 +306,7 @@ static void test_local_expression_query_propagates_variable_numeric_range_fact(S
     TEST_PASS(timer, summary);
 }
 
+/* 独立表达式语句也应产生可按光标查询的数值范围，不能依赖赋值或返回值承载。 */
 static void test_local_expression_query_propagates_expression_statement_numeric_range_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Propagates Expression Statement Numeric Range Fact";
     const TZrChar *uriText = "file:///local_expression_statement_numeric_range_fact.zr";
@@ -362,6 +376,7 @@ static void test_local_expression_query_propagates_expression_statement_numeric_
     TEST_PASS(timer, summary);
 }
 
+/* 对象计算键中的运算是嵌套表达式，局部查询须穿透键语法并保留数值事实。 */
 static void test_local_expression_query_propagates_object_computed_key_numeric_range_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Propagates Object Computed Key Numeric Range Fact";
     const TZrChar *uriText = "file:///local_object_computed_key_numeric_range_fact.zr";
@@ -447,6 +462,7 @@ static void test_local_expression_query_propagates_object_computed_key_numeric_r
     TEST_PASS(timer, summary);
 }
 
+/* 跨负值和正值的区间须经局部查询完整传播，避免只保留单点或截断符号边界。 */
 static void test_local_expression_query_propagates_integer_interval_range_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Propagates Integer Interval Range Fact";
     const TZrChar *uriText = "file:///local_integer_interval_range_fact.zr";
@@ -515,6 +531,7 @@ static void test_local_expression_query_propagates_integer_interval_range_fact(S
     TEST_PASS(timer, summary);
 }
 
+/* 无符号算术同时保留 signed/unsigned 范围视图，供编辑器消费方判断精度与溢出。 */
 static void test_local_expression_query_keeps_unsigned_numeric_range_payload(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Keeps Unsigned Numeric Range Payload";
     const TZrChar *uriText = "file:///local_unsigned_numeric_range_fact.zr";
@@ -593,6 +610,7 @@ static void test_local_expression_query_keeps_unsigned_numeric_range_payload(SZr
     TEST_PASS(timer, summary);
 }
 
+/* 超界运算必须报告可能溢出且不伪造有效区间，防止 hover 将危险结果显示为精确值。 */
 static void test_local_expression_query_returns_numeric_overflow_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Returns Numeric Overflow Fact";
     const TZrChar *uriText = "file:///local_numeric_overflow_fact.zr";
@@ -667,6 +685,7 @@ static void test_local_expression_query_returns_numeric_overflow_fact(SZrState *
     TEST_PASS(timer, summary);
 }
 
+/* 浮点表达式的范围与推断类型须一致，避免整数专用数值投影吞掉 double 事实。 */
 static void test_local_expression_query_returns_float_numeric_range_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Returns Float Numeric Range Fact";
     const TZrChar *uriText = "file:///local_float_numeric_range_fact.zr";
@@ -736,6 +755,7 @@ static void test_local_expression_query_returns_float_numeric_range_fact(SZrStat
     TEST_PASS(timer, summary);
 }
 
+/* 已知左操作数决定短路时，局部查询应同时返回布尔值与右操作数不可执行的原因。 */
 static void test_local_expression_query_returns_logical_short_circuit_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Returns Logical Short Circuit Fact";
     const TZrChar *uriText = "file:///local_logical_short_circuit_fact.zr";
@@ -805,6 +825,7 @@ static void test_local_expression_query_returns_logical_short_circuit_fact(SZrSt
     TEST_PASS(timer, summary);
 }
 
+/* 条件表达式应联合保留选中分支的数值范围和条件真值，供局部 hover 解释结果来源。 */
 static void test_local_expression_query_returns_conditional_branch_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Returns Conditional Branch Fact";
     const TZrChar *uriText = "file:///local_conditional_branch_fact.zr";
@@ -884,6 +905,7 @@ static void test_local_expression_query_returns_conditional_branch_fact(SZrState
     TEST_PASS(timer, summary);
 }
 
+/* 一元否定从已知布尔输入推导稳定假值，避免仅有类型信息而没有逻辑事实。 */
 static void test_local_expression_query_returns_unary_logical_not_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Returns Unary Logical Not Fact";
     const TZrChar *uriText = "file:///local_unary_logical_not_fact.zr";
@@ -959,6 +981,7 @@ static void test_local_expression_query_returns_unary_logical_not_fact(SZrState 
     TEST_PASS(timer, summary);
 }
 
+/* 赋值左侧引用须区分写入和读取，并保留可导航的声明范围。 */
 static void test_local_reference_query_returns_write_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Reference Query Returns Write Fact";
     const TZrChar *uriText = "file:///local_reference_write_fact.zr";
@@ -1030,6 +1053,7 @@ static void test_local_reference_query_returns_write_fact(SZrState *state) {
     TEST_PASS(timer, summary);
 }
 
+/* 成员赋值左侧即使无法解析到声明，也须发布有名称与范围的成员写事实。 */
 static void test_local_reference_query_returns_member_write_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Reference Query Returns Member Write Fact";
     const TZrChar *uriText = "file:///local_reference_member_write_fact.zr";
@@ -1100,6 +1124,7 @@ static void test_local_reference_query_returns_member_write_fact(SZrState *state
     TEST_PASS(timer, summary);
 }
 
+/* 普通成员读取与写入使用不同引用类别；未解析成员仍供局部查询说明访问意图。 */
 static void test_local_reference_query_returns_member_access_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Reference Query Returns Member Access Fact";
     const TZrChar *uriText = "file:///local_reference_member_access_fact.zr";
@@ -1169,6 +1194,7 @@ static void test_local_reference_query_returns_member_access_fact(SZrState *stat
     TEST_PASS(timer, summary);
 }
 
+/* 计算成员的括号目标与索引表达式分别是成员访问和已解析变量读取，不能合并为一个引用。 */
 static void test_local_reference_query_returns_computed_member_access_and_index_read_facts(SZrState *state) {
     const TZrChar *summary = "LSP Local Reference Query Returns Computed Member Access And Index Read Facts";
     const TZrChar *uriText = "file:///local_reference_computed_member_access_fact.zr";
@@ -1283,6 +1309,7 @@ static void test_local_reference_query_returns_computed_member_access_and_index_
     TEST_PASS(timer, summary);
 }
 
+/* 函数调用位置须给出已解析 call 引用及声明范围，为导航和直接依赖判断共享依据。 */
 static void test_local_reference_query_returns_call_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Reference Query Returns Call Fact";
     const TZrChar *uriText = "file:///local_reference_call_fact.zr";
@@ -1356,6 +1383,7 @@ static void test_local_reference_query_returns_call_fact(SZrState *state) {
     TEST_PASS(timer, summary);
 }
 
+/* 表达式查询也应附带同位置的引用事实，避免 hover 消费方再发一次专用引用查询。 */
 static void test_local_expression_query_includes_reference_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Includes Reference Fact";
     const TZrChar *uriText = "file:///local_expression_reference_fact.zr";
@@ -1428,6 +1456,7 @@ static void test_local_expression_query_includes_reference_fact(SZrState *state)
     TEST_PASS(timer, summary);
 }
 
+/* typeof 的变量和复合表达式操作数都须可单独定位事实，不能只把事实挂到外层类型查询。 */
 static void test_local_expression_query_reaches_type_query_operands(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Reaches Type Query Operands";
     const TZrChar *uriText = "file:///local_type_query_operand_facts.zr";
@@ -1525,6 +1554,8 @@ static void test_local_expression_query_reaches_type_query_operands(SZrState *st
     TEST_PASS(timer, summary);
 }
 
+/* 同一借用逃逸场景先要求公开诊断，再核对局部查询仍能返回带消息的所有权事实。
+ * BUG: 预期非空的诊断结果只调用 Array_Free，未按 GetDiagnostics 契约逐项归还；成功运行即泄漏。 */
 static void test_local_expression_query_returns_ownership_violation_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Returns Ownership Violation Fact";
     const TZrChar *uriText = "file:///local_ownership_violation_fact.zr";
@@ -1631,11 +1662,13 @@ static void test_local_expression_query_returns_ownership_violation_fact(SZrStat
     TEST_PASS(timer, summary);
 }
 
+/* 以下测试片段依赖本翻译单元的计时宏、fixture helper 和 main，由同一 CTest 入口调用。 */
 #include "test_lsp_local_semantic_scope_cases.h"
 #include "test_lsp_local_semantic_dependency_cases.h"
 #include "test_lsp_local_semantic_receiver_dependency_cases.h"
 #include "test_lsp_local_semantic_snapshot_cases.h"
 
+/* CTest 入口按事实、缓存、依赖和快照边界运行；任一 void 用例失败均反映到退出码。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

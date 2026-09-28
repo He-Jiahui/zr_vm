@@ -3,6 +3,7 @@
 
 #include "zr_vm_parser/semantic_query.h"
 
+/* 签名用例只借读首个参数标签，以对比 parser 格式化事实与 LSP 投影的限定符。 */
 static const TZrChar *reference_callable_first_parameter_label(
         SZrLspSignatureHelp *help) {
     SZrLspSignatureInformation **signaturePtr;
@@ -25,6 +26,7 @@ static const TZrChar *reference_callable_first_parameter_label(
                : ZR_NULL;
 }
 
+/* 模块语义诊断与 LSP 诊断先按代码及信息片段对齐，避免把本地展示规则当成事实源。 */
 static TZrBool reference_callable_query_diagnostics_contain(
         const SZrParserSemanticQueryDiagnostics *diagnostics,
         const TZrChar *code,
@@ -51,6 +53,7 @@ static TZrBool reference_callable_query_diagnostics_contain(
     return ZR_FALSE;
 }
 
+/* ref/readonly/scoped 参数的调用悬停与签名必须复用 CallAt/FormatCall 的规范文本及范围。 */
 static void test_lsp_reference_callable_hover_and_signature_use_canonical_contract(
         SZrState *state) {
     const TZrChar *summary =
@@ -180,10 +183,13 @@ static void test_lsp_reference_callable_hover_and_signature_use_canonical_contra
     }
 
     ZrLanguageServer_LspSignatureHelp_Free(state, help);
+    /* BUG: GetHover 返回需调用方释放的 RawMalloc 容器；成功路径及上方悬停失败路径
+     * 都只释放 context，故取得 hover 后每次运行都会遗漏容器及 contents 缓冲区。 */
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, summary);
 }
 
+/* readonly 接收者调用应保留精确方法身份与 const 效果，并驱动签名及悬停的同一目标。 */
 static void test_lsp_receiver_call_consumers_use_resolved_canonical_target(
         SZrState *state) {
     const TZrChar *summary =
@@ -240,6 +246,7 @@ static void test_lsp_receiver_call_consumers_use_resolved_canonical_target(
                         analyzer->ast->data.script.statements->count > 0U
                     ? analyzer->ast->data.script.statements->nodes[0]
                     : ZR_NULL;
+    /* 用声明 AST 仅作测试参照，消费层仍须从 CallAt 的已解析目标取身份与声明范围。 */
     methodNode = classNode != ZR_NULL &&
                          classNode->type == ZR_AST_CLASS_DECLARATION &&
                          classNode->data.classDeclaration.members != ZR_NULL &&
@@ -321,10 +328,12 @@ static void test_lsp_receiver_call_consumers_use_resolved_canonical_target(
     }
 
     ZrLanguageServer_LspSignatureHelp_Free(state, help);
+    /* BUG: GetHover 的结果独立于 context 分配；取得 hover 后，成功路径及后续断言失败出口均未释放。 */
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, summary);
 }
 
+/* 缺少 ref 实参标记的错误应先存在于模块查询事实，再由 LSP 原样投影为单条诊断。 */
 static void test_lsp_reference_call_diagnostic_is_published_from_query_facts(
         SZrState *state) {
     const TZrChar *summary =
@@ -431,11 +440,14 @@ static void test_lsp_reference_call_diagnostic_is_published_from_query_facts(
         return;
     }
 
+    /* BUG: GetDiagnostics 的成功结果含 RawMalloc 的诊断条目；这里只释放数组缓冲区，
+     * 上方错误报告出口同样遗漏条目及 relatedInformation 内部缓冲区。 */
     ZrCore_Array_Free(state, &diagnostics);
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, summary);
 }
 
+/* 直接调用和源码构造器先证实规范签名可用，再撤去调用事实以禁止本地 AST 回退。 */
 static void test_lsp_direct_call_signature_fails_closed_without_canonical_call_fact(
         SZrState *state) {
     const TZrChar *summary =
@@ -550,6 +562,7 @@ static void test_lsp_direct_call_signature_fails_closed_without_canonical_call_f
         return;
     }
 
+    /* 暂时移除旧编译器及符号表通道，正向结果仍须由规范调用事实独立提供。 */
     detachedCompilerState = analyzer->compilerState;
     detachedSymbolTable = analyzer->symbolTable;
     analyzer->compilerState = ZR_NULL;
@@ -592,6 +605,7 @@ static void test_lsp_direct_call_signature_fails_closed_without_canonical_call_f
     ZrLanguageServer_LspSignatureHelp_Free(state, help);
     help = ZR_NULL;
 
+    /* 分别撤去构造器和普通函数的 callInfo，确认两类签名在事实缺失时都失败关闭。 */
     constructorCallFact =
             (SZrSemanticExpressionFact *)constructorQuery.expression;
     constructorCallFact->hasCallInfo = ZR_FALSE;
@@ -637,6 +651,7 @@ static void test_lsp_direct_call_signature_fails_closed_without_canonical_call_f
     TEST_PASS(timer, summary);
 }
 
+/* Lambda 值的调用、悬停、签名与定义须共同指向声明的 SymbolId、TypeId 和范围。 */
 static void test_lsp_lambda_callable_value_consumers_use_canonical_identity(
         SZrState *state) {
     const TZrChar *summary =
@@ -696,6 +711,7 @@ static void test_lsp_lambda_callable_value_consumers_use_canonical_identity(
                            analyzer->ast->data.script.statements->count > 0U
                    ? analyzer->ast->data.script.statements->nodes[0]
                    : ZR_NULL;
+    /* 声明节点仅用于交叉核验规范身份，不允许消费入口从 AST 重建目标。 */
     lambdaNode = variableNode != ZR_NULL &&
                          variableNode->type == ZR_AST_VARIABLE_DECLARATION
                  ? variableNode->data.variableDeclaration.value
@@ -774,8 +790,11 @@ static void test_lsp_lambda_callable_value_consumers_use_canonical_identity(
         TEST_FAIL(timer, summary, "Lambda definition did not use the canonical target range");
         return;
     }
+    /* BUG: GetDefinition 返回的 location 是逐项 RawMalloc；这里仅释放数组缓冲区，
+     * 成功及上方定义断言失败路径都会遗漏结果对象。 */
     ZrCore_Array_Free(state, &definitions);
 
+    /* 有效身份保留，单独撤去 callInfo，验证签名不能借声明或 AST 猜测参数。 */
     callFact = (SZrSemanticExpressionFact *)query.expression;
     callFact->hasCallInfo = ZR_FALSE;
     if (ZrLanguageServer_Lsp_GetSignatureHelp(
@@ -791,10 +810,12 @@ static void test_lsp_lambda_callable_value_consumers_use_canonical_identity(
         return;
     }
 
+    /* BUG: GetHover 的 RawMalloc 结果在成功及后续失败出口均未释放；context 不拥有该容器。 */
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, summary);
 }
 
+/* 别名保存的可调用值一旦失去规范 callInfo，不可从局部变量或同名函数补出签名。 */
 static void test_lsp_callable_value_signature_fails_closed_without_canonical_call_fact(
         SZrState *state) {
     const TZrChar *summary =
@@ -893,6 +914,7 @@ static void test_lsp_callable_value_signature_fails_closed_without_canonical_cal
     ZrLanguageServer_LspSignatureHelp_Free(state, help);
     help = ZR_NULL;
 
+    /* 正向签名已与 FormatCall 对齐；现在只移除事实，隔离消费层的回退行为。 */
     callFact = (SZrSemanticExpressionFact *)query.expression;
     callFact->hasCallInfo = ZR_FALSE;
     if (ZrLanguageServer_Lsp_GetSignatureHelp(
@@ -912,6 +934,7 @@ static void test_lsp_callable_value_signature_fails_closed_without_canonical_cal
     TEST_PASS(timer, summary);
 }
 
+/* 接收者方法失去规范调用事实时不能借成员名或本地方法声明继续展示签名。 */
 static void test_lsp_receiver_call_signature_fails_closed_without_canonical_call_fact(
         SZrState *state) {
     const TZrChar *summary =
@@ -1008,6 +1031,7 @@ static void test_lsp_receiver_call_signature_fails_closed_without_canonical_call
     TEST_PASS(timer, summary);
 }
 
+/* 泛型接收者的闭合实参签名只能消费已解析事实，不能在事实缺失时由 AST 再特化。 */
 static void test_lsp_generic_receiver_signature_fails_closed_without_canonical_call_fact(
         SZrState *state) {
     const TZrChar *summary =

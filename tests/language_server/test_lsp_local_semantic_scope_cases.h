@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_LOCAL_SEMANTIC_SCOPE_CASES_H
 #define ZR_VM_TEST_LSP_LOCAL_SEMANTIC_SCOPE_CASES_H
 
+/* 从文档 AST 按序取得顶层节点，供缓存测试绑定作用域；调用者须另核对函数类型，指针由文件版本持有。 */
 static SZrAstNode *local_scope_test_function_at(SZrAstNode *ast, TZrSize index) {
     if (ast == ZR_NULL || ast->type != ZR_AST_SCRIPT ||
         ast->data.script.statements == ZR_NULL ||
@@ -11,6 +12,7 @@ static SZrAstNode *local_scope_test_function_at(SZrAstNode *ast, TZrSize index) 
     return ast->data.script.statements->nodes[index];
 }
 
+/* 只取 fixture 函数首个 return 的表达式节点，供事实范围与作用域边界比较。 */
 static SZrAstNode *local_scope_test_return_expression(SZrAstNode *functionNode) {
     SZrAstNode *body;
     SZrAstNode *statement;
@@ -31,6 +33,7 @@ static SZrAstNode *local_scope_test_return_expression(SZrAstNode *functionNode) 
                : ZR_NULL;
 }
 
+/* 按 AST 节点身份检查符号是否属于当前分析快照，避免只靠同名文本误判缓存复用。 */
 static TZrBool local_scope_test_has_symbol_for_node(const SZrSemanticContext *context,
                                                     const SZrAstNode *node) {
     TZrSize index;
@@ -50,6 +53,7 @@ static TZrBool local_scope_test_has_symbol_for_node(const SZrSemanticContext *co
     return ZR_FALSE;
 }
 
+/* 非 callable 的 property/编译期包装不能成为局部重算根，防止把容器误当独立执行作用域。 */
 static void test_analysis_root_resolver_rejects_non_callable_wrappers(
         SZrState *state) {
     const TZrChar *summary = "Analysis Root Resolver Rejects Non Callable Wrappers";
@@ -92,6 +96,7 @@ static void test_analysis_root_resolver_rejects_non_callable_wrappers(
     TEST_PASS(timer, summary);
 }
 
+/* 分析一个函数体时应保留全局声明却只产出该函数的局部事实；重复请求命中同一作用域缓存。 */
 static void test_scoped_semantic_analysis_limits_body_facts_and_reuses_scope_cache(
         SZrState *state) {
     const TZrChar *summary = "Scoped Semantic Analysis Limits Body Facts And Reuses Scope Cache";
@@ -251,6 +256,7 @@ static void test_scoped_semantic_analysis_limits_body_facts_and_reuses_scope_cac
     TEST_PASS(timer, summary);
 }
 
+/* token 等价更新保留作用域快照，真实编辑必须失效；指标区分请求、执行和缓存命中。 */
 static void test_scoped_query_analyzer_cache_reuses_scope_and_invalidates_on_edit(
         SZrState *state) {
     const TZrChar *summary =
@@ -431,6 +437,7 @@ static void test_scoped_query_analyzer_cache_reuses_scope_and_invalidates_on_edi
     TEST_PASS(timer, summary);
 }
 
+/* 相邻函数体的等长修改不应丢弃无关作用域，坐标偏移改变时则必须使旧事实失效。 */
 static void test_body_edit_preserves_unaffected_scoped_query_cache(
         SZrState *state) {
     const TZrChar *summary =
@@ -687,6 +694,8 @@ static void test_body_edit_preserves_unaffected_scoped_query_cache(
     TEST_PASS(timer, summary);
 }
 
+/* 隔离主符号表后连续发起空文档补全，验证回退分析器只执行一次并复用局部缓存。
+ * TODO: 测试未断言补全数组为空；若回退返回原生项，当前仅 Array_Free 会遗漏项对象，需核对该 fixture 的结果数量。 */
 static void test_completion_fallback_reuses_scoped_query_analyzer_cache(
         SZrState *state) {
     const TZrChar *summary =
@@ -736,6 +745,7 @@ static void test_completion_fallback_reuses_scoped_query_analyzer_cache(
         TEST_FAIL(timer, summary, "Failed to isolate the primary completion provider");
         return;
     }
+    /* 暂借空符号表强制进入局部回退；每条退出路径先恢复 owner 指针，再释放替身。 */
     originalSymbolTable = owner->symbolTable;
     owner->symbolTable = emptySymbolTable;
 

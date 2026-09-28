@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_LOCAL_SEMANTIC_SNAPSHOT_CASES_H
 #define ZR_VM_TEST_LSP_LOCAL_SEMANTIC_SNAPSHOT_CASES_H
 
+/* 故意破坏已有表达式事实后再查询，确认局部查询只消费快照而不重新写入或扩增 fact 数组。 */
 static void test_local_expression_query_does_not_materialize_snapshot_facts(
         SZrState *state) {
     const TZrChar *summary =
@@ -57,6 +58,7 @@ static void test_local_expression_query_does_not_materialize_snapshot_facts(
     factCountBefore = analyzer->semanticContext->expressionFacts.length;
     savedNode = expressionFact->node;
     savedRange = expressionFact->range;
+    /* 临时扰动借用的 parser fact；查询结束立即还原，避免后续 context 销毁读到伪造节点。 */
     expressionFact->node = ZR_NULL;
     expressionFact->range.start.offset += 100000U;
     expressionFact->range.end.offset += 100000U;

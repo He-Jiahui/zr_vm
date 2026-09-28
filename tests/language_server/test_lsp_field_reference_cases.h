@@ -1,6 +1,7 @@
 #ifndef ZR_TEST_LSP_FIELD_REFERENCE_CASES_H
 #define ZR_TEST_LSP_FIELD_REFERENCE_CASES_H
 
+/* 字段用例以同一文档版本把文本光标映射到 parser 的符号事实；结果借用 analyzer 生命周期。 */
 static TZrBool lsp_field_query_at(SZrState *state, SZrLspContext *context, SZrString *uri,
                                   const char *source, const char *needle, TZrSize offset,
                                   SZrParserSemanticSymbolQuery *query,
@@ -17,6 +18,7 @@ static TZrBool lsp_field_query_at(SZrState *state, SZrLspContext *context, SZrSt
     return ZrParser_SemanticQuery_SymbolAt(analyzer->semanticContext, range, ZR_NULL, query);
 }
 
+/* 逐个覆盖继承、访问修饰符、静态成员及链式访问的读写事实与定义跳转身份。 */
 static void test_lsp_field_references_preserve_access_and_identity(SZrState *state) {
     static const char source[] =
             "class Base {\n"
@@ -35,6 +37,7 @@ static void test_lsp_field_references_preserve_access_and_identity(SZrState *sta
             "class Wrapper { pub var child: Derived; }\n"
             "fn use(item: Derived): int { item.value = 7; Base.total += 1; return item.value + Derived.total; }\n"
             "fn nested(box: Wrapper): int { box.child.value = 9; return box.child.value; }";
+    /* 每行把声明和用法绑定到同一符号身份，并规定应发布的读写角色与声明跨度。 */
     static const struct {
         const char *declaration;
         TZrSize declarationOffset;
@@ -88,6 +91,8 @@ static void test_lsp_field_references_preserve_access_and_identity(SZrState *sta
                 location_array_contains_range(&definitions, declarationPosition.line,
                         declarationPosition.character, declarationPosition.line,
                         declarationPosition.character + (TZrUInt32)cases[index].nameLength);
+        /* BUG: GetDefinition 成功时数组元素是逐项 RawMalloc 的 location；这里只释放数组缓冲区，
+         * 每个成功用例都会泄漏结果对象。证据见 lsp_append_location_result 与 Array_Free 契约。 */
         ZrCore_Array_Free(state, &definitions);
     }
     if (!passed && context != ZR_NULL) {
@@ -102,7 +107,9 @@ static void test_lsp_field_references_preserve_access_and_identity(SZrState *sta
     TEST_PASS(timer, summary);
 }
 
+/* 不可见或不存在的字段应给出诊断，且绝不能留下已解析的成员引用事实。 */
 static void test_lsp_inaccessible_and_missing_fields_keep_diagnostics(SZrState *state) {
+    /* 每种非法访问同时覆盖读取和写入，含继承作用域及 super 链式访问边界。 */
     static const char *sources[] = {
             "class Box { pri var hidden: int; } fn use(item: Box): int { return item.hidden; }",
             "class Box { pri var hidden: int; } fn use(item: Box) { item.hidden = 1; }",
@@ -148,6 +155,8 @@ static void test_lsp_inaccessible_and_missing_fields_keep_diagnostics(SZrState *
                     (unsigned)index, (unsigned)diagnostics.length);
             dump_analyzer_state(state, context, uri);
         }
+        /* BUG: 此测试要求 diagnostics.length > 0；GetDiagnostics 的每个条目是 RawMalloc 对象，
+         * Array_Free 只释放指针缓冲区，产生诊断时会遗漏对象及其内部数组。 */
         ZrCore_Array_Free(state, &diagnostics);
         ZrLanguageServer_LspContext_Free(state, context);
         if (!passed) {

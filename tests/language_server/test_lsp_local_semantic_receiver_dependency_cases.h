@@ -1,6 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_LOCAL_SEMANTIC_RECEIVER_DEPENDENCY_CASES_H
 #define ZR_VM_TEST_LSP_LOCAL_SEMANTIC_RECEIVER_DEPENDENCY_CASES_H
 
+/* receiver 方法签名变化时，未引用该方法的顶层函数仍应保留缓存；指标检验没有多余失效。 */
 static void test_receiver_signature_edit_preserves_unrelated_scope_with_target_fact(
         SZrState *state) {
     const TZrChar *summary =
@@ -104,6 +105,7 @@ static void test_receiver_signature_edit_preserves_unrelated_scope_with_target_f
     TEST_PASS(timer, summary);
 }
 
+/* 推断返回类型的方法修改体内行为后，未引用该方法的作用域仍可复用原有缓存。 */
 static void test_inferred_method_body_edit_preserves_unrelated_scope(
         SZrState *state) {
     const TZrChar *summary =
@@ -207,6 +209,7 @@ static void test_inferred_method_body_edit_preserves_unrelated_scope(
     TEST_PASS(timer, summary);
 }
 
+/* 同一次推断方法改动若有已解析直接调用者，则该调用者必须失效而不能读旧返回事实。 */
 static void test_inferred_method_body_edit_invalidates_resolved_direct_caller(
         SZrState *state) {
     const TZrChar *summary =

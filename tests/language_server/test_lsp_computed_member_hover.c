@@ -14,6 +14,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+/* 独立测试进程通过全局状态回调供给 VM 原生内存；此约定覆盖本文件的 LSP 上下文和查询对象。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -22,6 +23,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(flag);
 
+    /* TODO: 这里用地址和旧大小猜测是否可交给 CRT。若回调可能接收合法的 >=1 GiB 块，释放路径会跳过 free，扩容回退 malloc 又不保留旧内容；需核对 GlobalState 的 allocator 合约。 */
     if (newSize == 0) {
         if (pointer != ZR_NULL &&
             (TZrPtr)pointer >= (TZrPtr)0x1000 &&
@@ -43,6 +45,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* 两类悬停断言共用字符串视图；返回值借用 VM 字符串，必须在状态仍有效时使用。 */
 static const TZrChar *string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -53,6 +56,7 @@ static const TZrChar *string_text(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
+/* 把固定 ASCII 测试源码中的第 N 个片段映射为 LSP 光标，供括号处的三种查询复用。 */
 static TZrBool find_position_for_substring(const TZrChar *content,
                                            const TZrChar *needle,
                                            TZrSize occurrence,
@@ -91,6 +95,7 @@ static TZrBool find_position_for_substring(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* 只检查普通悬停任一内容片段是否携带指定语义事实，不依赖展示片段顺序。 */
 static TZrBool hover_contains_text(SZrLspHover *hover, const TZrChar *needle) {
     if (hover == ZR_NULL || needle == ZR_NULL) {
         return ZR_FALSE;
@@ -108,6 +113,7 @@ static TZrBool hover_contains_text(SZrLspHover *hover, const TZrChar *needle) {
     return ZR_FALSE;
 }
 
+/* 失败报告借用第一条普通悬停文本；调用方须在释放 hover 前完成输出。 */
 static const TZrChar *hover_first_text(SZrLspHover *hover) {
     if (hover == ZR_NULL) {
         return ZR_NULL;
@@ -123,6 +129,7 @@ static const TZrChar *hover_first_text(SZrLspHover *hover) {
     return ZR_NULL;
 }
 
+/* 丰富悬停以角色区分引用、符号与成员事实，避免仅靠展示顺序判断回归。 */
 static TZrBool rich_hover_section_contains_text(SZrLspRichHover *hover,
                                                 const TZrChar *role,
                                                 const TZrChar *needle) {
@@ -149,6 +156,7 @@ static TZrBool rich_hover_section_contains_text(SZrLspRichHover *hover,
     return ZR_FALSE;
 }
 
+/* 普通悬停容器由 GetHover 交给调用方；字符串本身仍由 VM 管理。 */
 static void hover_free(SZrState *state, SZrLspHover *hover) {
     if (state == ZR_NULL || hover == ZR_NULL) {
         return;
@@ -158,6 +166,7 @@ static void hover_free(SZrState *state, SZrLspHover *hover) {
     ZrCore_Memory_RawFree(state->global, hover, sizeof(SZrLspHover));
 }
 
+/* 用未解析的 seed[index] 验证括号处仍发布成员访问事实，普通与丰富悬停均消费同一局部查询。 */
 static TZrBool test_lsp_hover_surfaces_computed_member_access_at_bracket(SZrState *state) {
     const TZrChar *uriText = "file:///computed_member_hover.zr";
     const TZrChar *content =
@@ -189,6 +198,7 @@ static TZrBool test_lsp_hover_surfaces_computed_member_access_at_bracket(SZrStat
     }
 
     ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
+    /* 查询事实是悬停预期的来源；后续短路断言只有在事实有效时才继续检查投影。 */
     passed = ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state,
                                                                  context,
                                                                  uri,
@@ -232,6 +242,7 @@ static TZrBool test_lsp_hover_surfaces_computed_member_access_at_bracket(SZrStat
     return passed;
 }
 
+/* CMake 的 computed_member_hover 测试目标入口：单次构建全局状态并把该回归结果交给 CTest。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;

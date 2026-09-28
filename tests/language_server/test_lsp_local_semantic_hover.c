@@ -14,6 +14,8 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 
+/* 独立 hover CTest 的 VM 分配回调；构造的查询事实和悬停结果处于同一全局分配域。
+ * TODO: 非空指针若带 1 GiB 以上 originalSize 会重新 malloc 且不复制旧数据，需确认 VM 回调是否可走此路径。 */
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
                              TZrSize originalSize,
@@ -43,6 +45,7 @@ static TZrPtr test_allocator(TZrPtr userData,
     return malloc(newSize);
 }
 
+/* ASCII fixture 用子串选择精确光标，避免 hover 断言偶然落在同名声明而非目标用法。 */
 static TZrBool find_position_for_substring(const TZrChar *content,
                                            const TZrChar *needle,
                                            TZrSize occurrence,
@@ -81,6 +84,7 @@ static TZrBool find_position_for_substring(const TZrChar *content,
     return ZR_TRUE;
 }
 
+/* 借用 VM 字符串的原生视图供断言使用，不转移内容所有权。 */
 static const TZrChar *string_text(SZrString *value) {
     if (value == ZR_NULL) {
         return ZR_NULL;
@@ -91,6 +95,7 @@ static const TZrChar *string_text(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
+/* 普通 hover 可有多段内容；扫描所有段来验证事实文案，而非假定第一段顺序。 */
 static TZrBool hover_contains_text(SZrLspHover *hover, const TZrChar *needle) {
     if (hover == ZR_NULL || needle == ZR_NULL) {
         return ZR_FALSE;
@@ -108,6 +113,7 @@ static TZrBool hover_contains_text(SZrLspHover *hover, const TZrChar *needle) {
     return ZR_FALSE;
 }
 
+/* rich hover 以 role 分节，测试必须同时匹配角色与文案以证明事实投影位置正确。 */
 static TZrBool rich_hover_section_contains_text(SZrLspRichHover *hover,
                                                 const TZrChar *role,
                                                 const TZrChar *needle) {
@@ -134,6 +140,7 @@ static TZrBool rich_hover_section_contains_text(SZrLspRichHover *hover,
     return ZR_FALSE;
 }
 
+/* 失败报告只借第一段内容做诊断；返回指针必须在 hover 清理前消费。 */
 static const TZrChar *hover_first_text(SZrLspHover *hover) {
     if (hover == ZR_NULL) {
         return ZR_NULL;
@@ -149,6 +156,7 @@ static const TZrChar *hover_first_text(SZrLspHover *hover) {
     return ZR_NULL;
 }
 
+/* BuildHover 的调用方拥有 contents 容器和 hover 原生对象；字符串仍归 VM，测试在释放 context 前清理。 */
 static void hover_free(SZrState *state, SZrLspHover *hover) {
     if (state == ZR_NULL || hover == ZR_NULL) {
         return;
@@ -158,6 +166,7 @@ static void hover_free(SZrState *state, SZrLspHover *hover) {
     ZrCore_Memory_RawFree(state->global, hover, sizeof(SZrLspHover));
 }
 
+/* 表达式位置的读引用应同时出现在普通 hover 的类别、符号名和声明位置中。 */
 static TZrBool test_local_expression_hover_surfaces_reference_fact(SZrState *state) {
     const TZrChar *uriText = "file:///local_expression_reference_hover.zr";
     const TZrChar *content =
@@ -210,6 +219,7 @@ static TZrBool test_local_expression_hover_surfaces_reference_fact(SZrState *sta
     return passed;
 }
 
+/* 赋值左侧的已解析写事实须被 hover 显示为 write，不能误标为普通 read。 */
 static TZrBool test_local_expression_hover_surfaces_assignment_write_reference_fact(SZrState *state) {
     const TZrChar *uriText = "file:///local_assignment_write_reference_hover.zr";
     const TZrChar *content =
@@ -273,6 +283,7 @@ static TZrBool test_local_expression_hover_surfaces_assignment_write_reference_f
     return passed;
 }
 
+/* 尚未解析声明的成员写仍有可显示的名称和用途，hover 不得因缺少目标而丢弃事实。 */
 static TZrBool test_local_expression_hover_surfaces_member_write_reference_fact(SZrState *state) {
     const TZrChar *uriText = "file:///local_member_write_reference_hover.zr";
     const TZrChar *content =
@@ -336,6 +347,7 @@ static TZrBool test_local_expression_hover_surfaces_member_write_reference_fact(
     return passed;
 }
 
+/* 公共 rich hover 接口需把数值、逻辑与引用事实放入稳定 role 分节，供结构化客户端复用。 */
 static TZrBool test_local_rich_hover_structures_shared_fact_sections(SZrState *state) {
     const TZrChar *uriText = "file:///local_rich_hover_fact_sections.zr";
     const TZrChar *content =
@@ -397,6 +409,7 @@ static TZrBool test_local_rich_hover_structures_shared_fact_sections(SZrState *s
     return passed;
 }
 
+/* 调用和成员访问的专属 payload 应同时进入普通与 rich hover，防止两种呈现路径分叉。 */
 static TZrBool test_local_hover_surfaces_call_member_payloads(SZrState *state) {
     const TZrChar *uriText = "file:///local_call_member_payload_hover.zr";
     const TZrChar *content =
@@ -493,6 +506,7 @@ static TZrBool test_local_hover_surfaces_call_member_payloads(SZrState *state) {
     return passed;
 }
 
+/* return 之后的死代码事实须说明不可达原因，而非仅给出笼统的 unreachable 标志。 */
 static TZrBool test_local_hover_surfaces_reachability_cause(SZrState *state) {
     const TZrChar *uriText = "file:///local_reachability_hover.zr";
     const TZrChar *content =
@@ -551,6 +565,7 @@ static TZrBool test_local_hover_surfaces_reachability_cause(SZrState *state) {
     return passed;
 }
 
+/* 常量假分支的逻辑值与不可达原因须协同展示，帮助用户理解被裁剪的分支。 */
 static TZrBool test_local_hover_surfaces_constant_boolean_branch_cause(SZrState *state) {
     const TZrChar *uriText = "file:///local_constant_boolean_branch_hover.zr";
     const TZrChar *content =
@@ -621,6 +636,7 @@ static TZrBool test_local_hover_surfaces_constant_boolean_branch_cause(SZrState 
     return passed;
 }
 
+/* 常量假循环体与一般条件分支的原因不同，hover 需明确说明循环体从未进入。 */
 static TZrBool test_local_hover_surfaces_constant_false_loop_body_cause(SZrState *state) {
     const TZrChar *uriText = "file:///local_constant_false_loop_hover.zr";
     const TZrChar *content =
@@ -690,6 +706,7 @@ static TZrBool test_local_hover_surfaces_constant_false_loop_body_cause(SZrState
     return passed;
 }
 
+/* 穷尽的恒真分支后续不可达，hover 须保留控制流原因及已知布尔值。 */
 static TZrBool test_local_hover_surfaces_constant_true_branch_exit_cause(SZrState *state) {
     const TZrChar *uriText = "file:///local_constant_true_branch_exit_hover.zr";
     const TZrChar *content =
@@ -759,6 +776,7 @@ static TZrBool test_local_hover_surfaces_constant_true_branch_exit_cause(SZrStat
     return passed;
 }
 
+/* continue 与 break 后的不可达位置使用不同原因；同一 fixture 对照防止原因串线。 */
 static TZrBool test_local_hover_surfaces_loop_jump_exit_causes(SZrState *state) {
     const TZrChar *uriText = "file:///local_loop_jump_exit_hover.zr";
     const TZrChar *content =
@@ -850,6 +868,7 @@ static TZrBool test_local_hover_surfaces_loop_jump_exit_causes(SZrState *state) 
     return passed;
 }
 
+/* 不会自然退出的恒真循环使后续代码不可达，hover 应指出非落空循环而非普通分支。 */
 static TZrBool test_local_hover_surfaces_constant_true_loop_exit_cause(SZrState *state) {
     const TZrChar *uriText = "file:///local_constant_true_loop_exit_hover.zr";
     const TZrChar *content =
@@ -909,6 +928,7 @@ static TZrBool test_local_hover_surfaces_constant_true_loop_exit_cause(SZrState 
     return passed;
 }
 
+/* 借用值逃逸的语义错误仍须作为普通与 rich hover 的所有权段显示诊断消息。 */
 static TZrBool test_local_hover_surfaces_ownership_violation_message(SZrState *state) {
     const TZrChar *uriText = "file:///local_ownership_violation_hover.zr";
     const TZrChar *content =
@@ -970,6 +990,7 @@ static TZrBool test_local_hover_surfaces_ownership_violation_message(SZrState *s
     return passed;
 }
 
+/* 独立 CTest 入口复用一个 VM，逐项汇总普通与 rich hover 结果并用退出码暴露回归。 */
 int main(void) {
     SZrCallbackGlobal callbacks;
     SZrGlobalState *global;
