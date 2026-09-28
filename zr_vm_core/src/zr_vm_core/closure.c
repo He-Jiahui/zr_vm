@@ -190,6 +190,21 @@ static ZR_FORCE_INLINE TZrBool closure_value_is_ownership_cleanup_value(
                       value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_LOANED));
 }
 
+static TZrBool closure_value_needs_proxy_cleanup(SZrState *state,
+                                                 SZrTypeValue *value) {
+    const SZrMeta *meta;
+
+    if (value == ZR_NULL || ZR_VALUE_IS_TYPE_NULL(value->type)) {
+        return ZR_FALSE;
+    }
+    if (value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_BORROWED ||
+        closure_value_is_ownership_cleanup_value(value)) {
+        return ZR_TRUE;
+    }
+    meta = ZrCore_Value_GetMeta(state, value, ZR_META_CLOSE);
+    return (TZrBool)(meta != ZR_NULL && meta->function != ZR_NULL);
+}
+
 /* 无控制块的 UNIQUE/LOANED 镜像可通过对象地址判定直接别名。 */
 static ZR_FORCE_INLINE TZrBool closure_value_is_direct_owner_alias(
         const SZrTypeValue *value) {
@@ -586,9 +601,24 @@ static void closure_value_close_proxy(SZrState *state,
         ZrCore_Value_ResetAsNullNoProfile(staged);
         return;
     }
+    other = distinctMirror ? (chosen == source ? mirror : source) : ZR_NULL;
+    if (chosen->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_BORROWED) {
+        /* OWN_DROP on a borrowed local clears its view without calling @close. */
+        ZrCore_Ownership_ReleaseValue(state, chosen);
+        if (other != ZR_NULL && !ZR_VALUE_IS_TYPE_NULL(other->type)) {
+            ZrCore_Ownership_ReleaseValue(state, other);
+        }
+        ZrCore_Value_ResetAsNullNoProfile(staged);
+        return;
+    }
+    if (!closure_value_needs_proxy_cleanup(state, chosen) &&
+        !closure_value_needs_proxy_cleanup(state, other)) {
+        /* A plain using value has no cleanup and stays readable after the scope. */
+        ZrCore_Value_ResetAsNullNoProfile(staged);
+        return;
+    }
     *staged = *chosen;
     ZrCore_Value_ResetAsNullNoProfile(chosen);
-    other = distinctMirror ? (chosen == source ? mirror : source) : ZR_NULL;
     if (other != ZR_NULL && !ZR_VALUE_IS_TYPE_NULL(other->type)) {
         if (closure_value_is_ownership_cleanup_value(other) &&
             !(closure_value_is_direct_owner_alias(other) &&

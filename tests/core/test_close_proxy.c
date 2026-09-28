@@ -225,6 +225,99 @@ static void test_proxy_closes_unmarked_source_without_a_using_body(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_proxy_preserves_plain_local_without_close_meta(void) {
+    TZrStackValuePointer frame;
+    SZrState *state = close_proxy_new_state(&frame);
+
+    ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(frame), 73);
+    TEST_ASSERT_TRUE(ZrCore_Closure_MarkCloseProxy(state, frame + 2u, frame));
+    TEST_ASSERT_EQUAL_UINT64(1u, ZrCore_Closure_CloseRegisteredValues(
+            state, 1u, ZR_THREAD_STATUS_INVALID, ZR_FALSE));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(ZrCore_Stack_GetValue(frame)->type));
+    TEST_ASSERT_EQUAL_INT64(73, ZrCore_Stack_GetValue(frame)->value.nativeObject.nativeInt64);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_proxy_preserves_plain_local_and_distinct_physical_mirror(void) {
+    SZrFunction function = {0};
+    SZrFunctionFrameSlotLayout layout = {0};
+    TZrStackValuePointer frame;
+    SZrState *state = close_proxy_new_state(&frame);
+    const TZrUInt32 physicalByteOffset = (TZrUInt32)(16u * sizeof(SZrTypeValueOnStack));
+    SZrTypeValue *physical = (SZrTypeValue *)((TZrByte *)frame + physicalByteOffset);
+
+    layout.stackSlot = 0u;
+    layout.byteOffset = physicalByteOffset;
+    layout.byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+    layout.byteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
+    layout.typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+    layout.slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+    function.stackSize = 1u;
+    function.frameSlotLayouts = &layout;
+    function.frameSlotLayoutLength = 1u;
+    function.frameByteSize = physicalByteOffset + (TZrUInt32)sizeof(SZrTypeValue);
+    function.frameByteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
+    state->baseCallInfo.callStatus = ZR_CALL_STATUS_NONE;
+    state->baseCallInfo.metadataFunction = &function;
+    ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(frame), 73);
+    ZrCore_Value_InitAsInt(state, physical, 73);
+
+    TEST_ASSERT_TRUE(ZrCore_Closure_MarkCloseProxy(state, frame + 2u, frame));
+    TEST_ASSERT_EQUAL_UINT64(1u, ZrCore_Closure_CloseRegisteredValues(
+            state, 1u, ZR_THREAD_STATUS_INVALID, ZR_FALSE));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(ZrCore_Stack_GetValue(frame)->type));
+    TEST_ASSERT_EQUAL_INT64(73, ZrCore_Stack_GetValue(frame)->value.nativeObject.nativeInt64);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(physical->type));
+    TEST_ASSERT_EQUAL_INT64(73, physical->value.nativeObject.nativeInt64);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_proxy_resets_borrowed_local_without_calling_close_meta(void) {
+    SZrCloseProxyProbe probe = {0};
+    SZrFunction function = {0};
+    SZrFunctionFrameSlotLayout layout = {0};
+    TZrStackValuePointer frame;
+    SZrState *state = close_proxy_new_state(&frame);
+    SZrObjectPrototype *prototype = close_proxy_new_prototype(state);
+    SZrObject *object = close_proxy_new_object(state, prototype);
+    const TZrUInt32 physicalByteOffset =
+            (TZrUInt32)(16u * sizeof(SZrTypeValueOnStack));
+    SZrTypeValue *owner = ZrCore_Stack_GetValue(frame);
+    SZrTypeValue *borrowed = ZrCore_Stack_GetValue(frame + 1u);
+    SZrTypeValue *physical = (SZrTypeValue *)((TZrByte *)frame + physicalByteOffset);
+
+    layout.stackSlot = 1u;
+    layout.byteOffset = physicalByteOffset;
+    layout.byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+    layout.byteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
+    layout.typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+    layout.slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+    function.stackSize = 2u;
+    function.frameSlotLayouts = &layout;
+    function.frameSlotLayoutLength = 1u;
+    function.frameByteSize = physicalByteOffset + (TZrUInt32)sizeof(SZrTypeValue);
+    function.frameByteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
+    state->baseCallInfo.callStatus = ZR_CALL_STATUS_NONE;
+    state->baseCallInfo.metadataFunction = &function;
+    TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(
+            state, owner, ZR_CAST_RAW_OBJECT_AS_SUPER(object)));
+    TEST_ASSERT_TRUE(ZrCore_Ownership_BorrowValue(state, borrowed, owner));
+    *physical = *borrowed;
+    probe.sourceObject = ZR_CAST_RAW_OBJECT_AS_SUPER(object);
+    probe.sourceOffset = ZrCore_Stack_SavePointerAsOffset(state, frame + 1u);
+    gProbe = &probe;
+
+    TEST_ASSERT_TRUE(ZrCore_Closure_MarkCloseProxy(state, frame + 3u, frame + 1u));
+    TEST_ASSERT_EQUAL_UINT64(1u, ZrCore_Closure_CloseRegisteredValues(
+            state, 1u, ZR_THREAD_STATUS_INVALID, ZR_FALSE));
+    TEST_ASSERT_EQUAL_UINT32(0u, probe.sourceCalls);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(borrowed->type));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(physical->type));
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_UNIQUE, owner->ownershipKind);
+    ZrCore_Ownership_ReleaseValue(state, owner);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_exception_boundary_closes_proxy_before_older_source_marker(void) {
     SZrCloseProxyProbe probe = {0};
     TZrStackValuePointer frame;
@@ -605,6 +698,9 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_proxy_closes_source_once_and_preserves_older_markers);
     RUN_TEST(test_proxy_closes_unmarked_source_without_a_using_body);
+    RUN_TEST(test_proxy_preserves_plain_local_without_close_meta);
+    RUN_TEST(test_proxy_preserves_plain_local_and_distinct_physical_mirror);
+    RUN_TEST(test_proxy_resets_borrowed_local_without_calling_close_meta);
     RUN_TEST(test_exception_boundary_closes_proxy_before_older_source_marker);
     RUN_TEST(test_nested_proxies_tombstone_once);
     RUN_TEST(test_proxy_clears_distinct_physical_value_before_callback);

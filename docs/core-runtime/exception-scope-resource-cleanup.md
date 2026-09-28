@@ -125,11 +125,15 @@ bytecode or artifact ABI. A token copied to another stack slot fails its slot
 identity check. The private token functions live in `closure_close_proxy_token.c`
 so `closure.c` retains ownership of the close chain and callback protocol.
 
-At close, the VM moves the source value into the rooted high slot, clears the
-source and any distinct VM frame-layout physical mirror, and then invokes its
-close meta or ownership release. A callback that grows the stack or throws
-therefore sees the original local as null. The close receiver is copied into
-scratch before the high slot is reset, so it remains rooted for the callback.
+At close, a plain value without ownership cleanup or a callable `@close`
+leaves the logical source and its physical mirror readable. A borrowed view is
+cleared in both locations, following `OWN_DROP` without invoking the object's
+`@close` or releasing its owner. For values that require cleanup, the VM moves
+the source into the rooted high slot, clears the source and any distinct VM
+frame-layout physical mirror, then invokes its close meta or ownership release.
+A callback that grows the stack or throws therefore sees the original local as
+null. The close receiver is copied into scratch before the high slot is reset,
+so it remains rooted for the callback.
 When dense and physical cells both retain an ownership control, the redundant
 mirror reference is released once; a direct owner alias is only tombstoned to
 avoid duplicate Drop. Ordinary legacy close registrations retain their existing
@@ -139,8 +143,8 @@ to avoid interpreting an inactive native call-info layout.
 The proxy occupies one node in the existing marker chain. Normal scope exit
 consumes that node through `CLOSE_SCOPE(1)`; exception unwind closes it above the
 handler checkpoint before catch. Older markers remain linked, and their source
-is already null when later popped. Nested proxies see a null source after the
-first close and are inert.
+is already null when later popped. Nested proxies for a closable value see a
+null source after the first close and are inert.
 
 ## Generated-call exception transfer
 
@@ -154,12 +158,13 @@ as interpreter execution.
 
 ## Verification
 
-`zr_vm_close_proxy_core_test` exercises 12 focused cases: one close with an older
-marker, an unmarked source, exceptional close and handler boundary, nested
-proxies, distinct dense/physical mirrors, full GC with an active token and during
-the close callback, registration order rejection, AOT-like physical marker
-ordering, a stale native-frame layout, copied-token rejection, and both retained
-control and direct-owner mirror aliases. `zr_vm_type_layout_inline_copy_test`
+`zr_vm_close_proxy_core_test` exercises 15 focused cases: one close with an older
+marker, an unmarked source, plain source and distinct mirror preservation,
+borrowed view reset without `@close`, exceptional close and handler boundary,
+nested proxies, distinct dense/physical mirrors, full GC with an active token
+and during the close callback, registration order rejection, AOT-like physical
+marker ordering, a stale native-frame layout, copied-token rejection, and both
+retained control and direct-owner mirror aliases. `zr_vm_type_layout_inline_copy_test`
 protects the legacy physical-mirror path; `zr_vm_native_closure_value_test`
 protects native closure metadata handling.
 
