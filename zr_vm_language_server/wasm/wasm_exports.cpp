@@ -1,6 +1,5 @@
 //
-// Created by Auto on 2025/01/XX.
-// WASM 导出函数实现（使用 EMSCRIPTEN_BINDINGS）
+// C ABI 导出由此文件实现，浏览器 worker 经 Emscripten ccall 调用。
 //
 
 #include "wasm_diagnostic_json.h"
@@ -46,12 +45,11 @@ extern "C" {
 #include <emscripten.h>
 #endif
 
-// 全局状态（WASM 中需要全局状态）
+/* 单个 WASM 模块实例的 VM 状态；多个 LSP context 共用它，worker 退出时由模块寿命回收。 */
 static SZrGlobalState *g_wasm_global = ZR_NULL;
 static SZrState *g_wasm_state = ZR_NULL;
 
-// WASM 内存分配器（使用标准 malloc/free）
-// 注意：FZrAllocator 的最后一个参数是 TZrInt64，不是 EZrMemoryNativeType
+/* VM 原生分配回调衔接线性内存；wasm_malloc 与 VM 内部申请都通过它落到 libc。 */
 static TZrPtr wasm_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(originalSize);
@@ -74,7 +72,7 @@ static TZrPtr wasm_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSi
     }
 }
 
-// 初始化全局状态（在第一次调用时初始化）
+/* context 创建及显式申请的惰性入口；首次初始化同时取得主线程 state。 */
 static void init_wasm_state(void) {
     if (g_wasm_global == ZR_NULL) {
         // 使用 WASM 分配器和回调创建全局状态
@@ -90,9 +88,7 @@ static void init_wasm_state(void) {
     }
 }
 
-// JSON 序列化辅助函数
-
-// 序列化 LSP 位置
+/* 各 LSP 响应共享标准零基位置投影，坐标语义由 native 查询决定。 */
 static cJSON* serialize_lsp_position(SZrLspPosition pos) {
     cJSON *json = cJSON_CreateObject();
     if (json != ZR_NULL) {
@@ -102,7 +98,9 @@ static cJSON* serialize_lsp_position(SZrLspPosition pos) {
     return json;
 }
 
-// 序列化 LSP 范围
+/* 位置对组成范围，供导航、诊断、编辑和悬停共用。
+ * BUG: 子节点或 cJSON_AddItemToObject 失败时仍返回部分 range；
+ * 定义、编辑等公开导出会经 SuccessResponse 把缺字段对象报告为成功。 */
 static cJSON* serialize_lsp_range(SZrLspRange range) {
     cJSON *json = cJSON_CreateObject();
     if (json != ZR_NULL) {
@@ -114,7 +112,7 @@ static cJSON* serialize_lsp_range(SZrLspRange range) {
     return json;
 }
 
-// 序列化字符串（从 SZrString 到 C 字符串）
+/* 将 GC 字符串暂时复制给 cJSON，调用者须用 free_cstr 释放，不能保存跨请求指针。 */
 static const char* string_to_cstr(SZrState *state, SZrString *str) {
     if (str == ZR_NULL || state == ZR_NULL) {
         return ZR_NULL;
@@ -139,6 +137,8 @@ static const char* string_to_cstr(SZrState *state, SZrString *str) {
     return cstr;
 }
 
+/* TODO: 当前依据 strlen 推回原分配大小；若可传入内嵌 NUL 的 VM 字符串，
+ * 需核对宿主分配器是否依赖 exact originalSize，并改为保存显式长度。 */
 static void free_cstr(SZrState *state, const char *cstr) {
     TZrSize length;
     if (state == ZR_NULL || cstr == ZR_NULL) {
@@ -149,7 +149,9 @@ static void free_cstr(SZrState *state, const char *cstr) {
     ZrCore_Memory_RawFree(state->global, (void*)cstr, length);
 }
 
-// 从 C 字符串创建 SZrString
+/* ccall 的临时 UTF-8 输入在返回后失效，故先交 VM 建立自持有字符串。
+ * BUG: ABI 未拒绝负长度，强转为 TZrSize 后使 hash/string 构造越界读取调用方缓冲区；
+ * 所有公开导出均从这个入口接收显式长度，C 调用者可传入 -1。 */
 static SZrString* cstr_to_string(SZrState *state, const char *cstr, int len) {
     if (state == ZR_NULL || cstr == ZR_NULL) {
         return ZR_NULL;
@@ -157,7 +159,7 @@ static SZrString* cstr_to_string(SZrState *state, const char *cstr, int len) {
     return ZrCore_String_Create(state, (TZrNativeString)cstr, (TZrSize)len);
 }
 
-// 序列化补全项数组
+/* 将语义补全包装成浏览器 LSP 项；源数组及元素由导出在返回前释放。 */
 static cJSON* serialize_completions(SZrState *state, SZrArray *completions) {
     cJSON *json = cJSON_CreateArray();
     if (json == ZR_NULL || state == ZR_NULL || completions == ZR_NULL) {
@@ -223,7 +225,7 @@ static cJSON* serialize_completions(SZrState *state, SZrArray *completions) {
     return json;
 }
 
-// 序列化位置数组
+/* 定义、引用及重命名共用 location 投影，以保留 URI 与 range 的配对。 */
 static cJSON* serialize_locations(SZrState *state, SZrArray *locations) {
     cJSON *json = cJSON_CreateArray();
     if (json == ZR_NULL || state == ZR_NULL || locations == ZR_NULL) {
@@ -255,6 +257,7 @@ static cJSON* serialize_locations(SZrState *state, SZrArray *locations) {
     return json;
 }
 
+/* 原生诊断带嵌套数组；共享释放入口避免投影后只释放外层缓冲区。 */
 static void free_lsp_diagnostic_array(SZrState *state, SZrArray *diagnostics) {
     if (state == ZR_NULL || diagnostics == ZR_NULL) {
         return;
@@ -262,6 +265,7 @@ static void free_lsp_diagnostic_array(SZrState *state, SZrArray *diagnostics) {
     ZrLanguageServer_Lsp_FreeDiagnostics(state, diagnostics);
 }
 
+/* native 的 delta 编码整数流原样传给 LSP，不在桥层重建 token 语义。 */
 static cJSON* serialize_semantic_tokens(SZrArray *tokens) {
     cJSON *json = cJSON_CreateObject();
     cJSON *data = cJSON_CreateArray();
@@ -283,7 +287,7 @@ static cJSON* serialize_semantic_tokens(SZrArray *tokens) {
     return json;
 }
 
-// 序列化悬停信息
+/* 将普通 hover 的首个 Markdown 内容投影给标准 LSP 客户端。 */
 static cJSON* serialize_hover(SZrState *state, SZrLspHover *hover) {
     cJSON *json = cJSON_CreateObject();
     const char *contentStr = ZR_NULL;
@@ -313,6 +317,7 @@ static cJSON* serialize_hover(SZrState *state, SZrLspHover *hover) {
     return json;
 }
 
+/* 文档与工作区符号共用 SymbolInformation 协议字段。 */
 static cJSON* serialize_symbol_information(SZrState *state, SZrLspSymbolInformation *symbol) {
     cJSON *json = cJSON_CreateObject();
     cJSON *locationJson;
@@ -353,6 +358,7 @@ static cJSON* serialize_symbol_information(SZrState *state, SZrLspSymbolInformat
     return json;
 }
 
+/* 查询结果的 native 指针数组由导出管理，此处只生成 JSON 快照。 */
 static cJSON* serialize_symbol_array(SZrState *state, SZrArray *symbols) {
     cJSON *json = cJSON_CreateArray();
     if (json == ZR_NULL || state == ZR_NULL || symbols == ZR_NULL) {
@@ -369,6 +375,7 @@ static cJSON* serialize_symbol_array(SZrState *state, SZrArray *symbols) {
     return json;
 }
 
+/* zr/richHover 保留 section role、label、value，供扩展结构化面板消费。 */
 static cJSON* serialize_rich_hover(SZrState *state, SZrLspRichHover *hover) {
     cJSON *json = cJSON_CreateObject();
     cJSON *sections = cJSON_CreateArray();
@@ -428,6 +435,7 @@ static cJSON* serialize_rich_hover(SZrState *state, SZrLspRichHover *hover) {
     return json;
 }
 
+/* 单个内联提示的文案、位置和留白标志应属于同一 native 快照。 */
 static cJSON* serialize_inlay_hint(SZrState *state, SZrLspInlayHint *hint) {
     cJSON *json = cJSON_CreateObject();
     const char *label = ZR_NULL;
@@ -446,6 +454,7 @@ static cJSON* serialize_inlay_hint(SZrState *state, SZrLspInlayHint *hint) {
     return json;
 }
 
+/* 按 native 顺序投影范围查询得到的内联提示。 */
 static cJSON* serialize_inlay_hints(SZrState *state, SZrArray *hints) {
     cJSON *json = cJSON_CreateArray();
 
@@ -463,6 +472,7 @@ static cJSON* serialize_inlay_hints(SZrState *state, SZrArray *hints) {
     return json;
 }
 
+/* 项目视图同时需要显示文案、来源类别与导航目标。 */
 static cJSON* serialize_project_module_summary(SZrState *state, SZrLspProjectModuleSummary *summary) {
     cJSON *json = cJSON_CreateObject();
     const char *moduleName = ZR_NULL;
@@ -494,6 +504,7 @@ static cJSON* serialize_project_module_summary(SZrState *state, SZrLspProjectMod
     return json;
 }
 
+/* 项目模块列表在释放原生摘要之前变成独立 JSON 数据。 */
 static cJSON* serialize_project_modules(SZrState *state, SZrArray *modules) {
     cJSON *json = cJSON_CreateArray();
 
@@ -512,6 +523,7 @@ static cJSON* serialize_project_modules(SZrState *state, SZrArray *modules) {
     return json;
 }
 
+/* 同符号高亮保留 range 与读写类型，供编辑器着色。 */
 static cJSON* serialize_document_highlight(SZrLspDocumentHighlight *highlight) {
     cJSON *json = cJSON_CreateObject();
     if (json == ZR_NULL || highlight == ZR_NULL) {
@@ -523,6 +535,7 @@ static cJSON* serialize_document_highlight(SZrLspDocumentHighlight *highlight) {
     return json;
 }
 
+/* 未命中时返回空数组，与普通文档高亮 LSP 查询一致。 */
 static cJSON* serialize_highlights(SZrArray *highlights) {
     cJSON *json = cJSON_CreateArray();
     if (json == ZR_NULL || highlights == ZR_NULL) {
@@ -540,6 +553,7 @@ static cJSON* serialize_highlights(SZrArray *highlights) {
     return json;
 }
 
+/* 格式化及 CodeAction 共用编辑项投影；文本在 JSON 接管后释放临时副本。 */
 static cJSON *serialize_text_edit(SZrState *state, const SZrLspTextEdit *edit) {
     cJSON *json;
     const char *newText;
@@ -562,6 +576,7 @@ static cJSON *serialize_text_edit(SZrState *state, const SZrLspTextEdit *edit) {
     return json;
 }
 
+/* 原生编辑集合只借用，调用导出继续负责嵌套结果释放。 */
 static cJSON *serialize_text_edits(SZrState *state, SZrArray *edits) {
     cJSON *json = cJSON_CreateArray();
 
@@ -579,6 +594,7 @@ static cJSON *serialize_text_edits(SZrState *state, SZrArray *edits) {
     return json;
 }
 
+/* 将当前文档的编辑放入 WorkspaceEdit.changes，以匹配浏览器 CodeAction 消费格式。 */
 static cJSON *serialize_workspace_edit(SZrState *state, const char *uri, SZrArray *edits) {
     cJSON *json = cJSON_CreateObject();
     cJSON *changes = cJSON_CreateObject();
@@ -594,6 +610,7 @@ static cJSON *serialize_workspace_edit(SZrState *state, const char *uri, SZrArra
     return json;
 }
 
+/* action 文案与同 URI 的 WorkspaceEdit 一起投影，避免脱离触发文档。 */
 static cJSON *serialize_code_action(SZrState *state, const char *uri, const SZrLspCodeAction *action) {
     cJSON *json;
     const char *titleText;
@@ -628,6 +645,7 @@ static cJSON *serialize_code_action(SZrState *state, const char *uri, const SZrL
     return json;
 }
 
+/* 所有 action 借用 native 结果，完成序列化后由 FreeCodeActions 回收。 */
 static cJSON *serialize_code_actions(SZrState *state, const char *uri, SZrArray *actions) {
     cJSON *json = cJSON_CreateArray();
 
@@ -645,6 +663,7 @@ static cJSON *serialize_code_actions(SZrState *state, const char *uri, SZrArray 
     return json;
 }
 
+/* 折叠范围可含分类；只将有值的类别发给 LSP 客户端。 */
 static cJSON *serialize_folding_range(SZrState *state, const SZrLspFoldingRange *range) {
     cJSON *json;
     const char *kindText;
@@ -670,6 +689,7 @@ static cJSON *serialize_folding_range(SZrState *state, const SZrLspFoldingRange 
     return json;
 }
 
+/* 保留 native 返回顺序，编辑器自行决定可见折叠状态。 */
 static cJSON *serialize_folding_ranges(SZrState *state, SZrArray *ranges) {
     cJSON *json = cJSON_CreateArray();
 
@@ -687,6 +707,7 @@ static cJSON *serialize_folding_ranges(SZrState *state, SZrArray *ranges) {
     return json;
 }
 
+/* 单位置的父范围链用于编辑器逐级扩大选择，不借用结果之外的父指针。 */
 static cJSON *serialize_selection_range(const SZrLspSelectionRange *range) {
     cJSON *json;
 
@@ -719,6 +740,7 @@ static cJSON *serialize_selection_range(const SZrLspSelectionRange *range) {
     return json;
 }
 
+/* 即使只查询一个位置，也维持 LSP SelectionRange[] 的外层数组协议。 */
 static cJSON *serialize_selection_ranges(SZrArray *ranges) {
     cJSON *json = cJSON_CreateArray();
 
@@ -736,6 +758,7 @@ static cJSON *serialize_selection_ranges(SZrArray *ranges) {
     return json;
 }
 
+/* 链接目标与提示从 GC 字符串复制，返回后不再依赖 native link。 */
 static cJSON *serialize_document_link(SZrState *state, const SZrLspDocumentLink *link) {
     cJSON *json;
     const char *targetText;
@@ -768,6 +791,7 @@ static cJSON *serialize_document_link(SZrState *state, const SZrLspDocumentLink 
     return json;
 }
 
+/* 文档链接数组的所有权仍由 GetDocumentLinks 导出持有。 */
 static cJSON *serialize_document_links(SZrState *state, SZrArray *links) {
     cJSON *json = cJSON_CreateArray();
 
@@ -785,6 +809,7 @@ static cJSON *serialize_document_links(SZrState *state, SZrArray *links) {
     return json;
 }
 
+/* 命令标题、标识及可选位置参数配成单个 CodeLens，供扩展命令路由。 */
 static cJSON *serialize_code_lens(SZrState *state, const SZrLspCodeLens *lens) {
     cJSON *json;
     cJSON *command;
@@ -834,6 +859,7 @@ static cJSON *serialize_code_lens(SZrState *state, const SZrLspCodeLens *lens) {
     return json;
 }
 
+/* 将 native lens 集合投影成独立 JSON 数组后再释放结果。 */
 static cJSON *serialize_code_lenses(SZrState *state, SZrArray *lenses) {
     cJSON *json = cJSON_CreateArray();
 
@@ -851,6 +877,9 @@ static cJSON *serialize_code_lenses(SZrState *state, SZrArray *lenses) {
     return json;
 }
 
+/* didClose 意图撤掉 parser 缓存和 URI 对应 analyzer，避免之后查询旧文档快照。
+ * BUG: parser RemoveFile 会回退匹配等价 URI，但这里的 analyzer map 只做直接查找；
+ * 同一路径的 URI 别名关闭时，旧 analyzer 未移除，且未像 Lsp_RemoveAnalyzer 一样清理语义快照缓存。 */
 static void remove_document_state(SZrLspContext *context, SZrString *uri) {
     SZrTypeValue key;
     SZrHashKeyValuePair *pair;
@@ -875,11 +904,11 @@ static void remove_document_state(SZrLspContext *context, SZrString *uri) {
     ZrCore_HashSet_Remove(g_wasm_state, &context->uriToAnalyzerMap, &key);
 }
 
-// WASM 导出函数实现（使用 extern "C" 包装以保持 C 兼容性）
+/* C ABI 链接名与 CMake EXPORTED_FUNCTIONS_JSON 一致，由 worker 的 ccall 按名调用。 */
 
 extern "C" {
 
-// 内存管理函数
+/* 显式分配入口与 VM 共用 allocator，调用方随后通过 wasm_free 归还线性内存。 */
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
@@ -896,6 +925,7 @@ void* wasm_malloc(size_t size) {
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* ABI 调用方可用此入口归还响应；当前 bridge 在解码后用 Emscripten _free，同属 libc 堆。 */
 void wasm_free(void* ptr) {
     if (ptr != ZR_NULL) {
         free(ptr);
@@ -905,6 +935,7 @@ void wasm_free(void* ptr) {
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* worker initialize 建立上下文；失败以零指针告知桥层。 */
 void* wasm_ZrLspContextNew(void) {
     init_wasm_state();
     if (g_wasm_state == ZR_NULL) {
@@ -917,6 +948,7 @@ void* wasm_ZrLspContextNew(void) {
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* worker shutdown 后不可再使用该 context，模块级 VM 状态仍由 WASM 实例持有。 */
 void wasm_ZrLspContextFree(void* context) {
     if (g_wasm_state != ZR_NULL && context != ZR_NULL) {
         ZrLanguageServer_LspContext_Free(g_wasm_state, (SZrLspContext*)context);
@@ -926,6 +958,9 @@ void wasm_ZrLspContextFree(void* context) {
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* document-sync 排队后的完整快照进入 native，只有接受版本后才报告 updated。
+ * BUG: contentLen 未检查非负值，强转为 TZrSize 后负值可令 native 越界读取。
+ * TODO: version 的负值也被转为无符号，需确认文档版本比较的失败语义。 */
 const char* wasm_ZrLspUpdateDocument(void* context, const char* uri, int uriLen, 
                                 const char* content, int contentLen, int version) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || content == ZR_NULL) {
@@ -938,8 +973,8 @@ const char* wasm_ZrLspUpdateDocument(void* context, const char* uri, int uriLen,
     }
     
     TZrBool result = ZrLanguageServer_Lsp_UpdateDocument(g_wasm_state, (SZrLspContext*)context, 
-                                       uriStr, content, (TZrSize)contentLen, (TZrSize)version);
-    
+                                        uriStr, content, (TZrSize)contentLen, (TZrSize)version);
+    /* BUG: updated 字段添加失败未检查，SuccessResponse 可返回缺字段的成功封装。 */
     if (result) {
         cJSON *json = cJSON_CreateObject();
         cJSON_AddBoolToObject(json, "updated", cJSON_True);
@@ -952,6 +987,7 @@ const char* wasm_ZrLspUpdateDocument(void* context, const char* uri, int uriLen,
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* didClose 对同 URI 的请求排队后执行，移除 parser 与语义分析状态。 */
 const char* wasm_ZrLspCloseDocument(void* context, const char* uri, int uriLen) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
         return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
@@ -963,7 +999,7 @@ const char* wasm_ZrLspCloseDocument(void* context, const char* uri, int uriLen) 
     }
 
     remove_document_state((SZrLspContext*)context, uriStr);
-
+    /* BUG: closed 字段添加失败未检查，SuccessResponse 可返回缺字段的成功封装。 */
     cJSON *json = cJSON_CreateObject();
     cJSON_AddBoolToObject(json, "closed", cJSON_True);
     return ZrLanguageServer_Wasm_SuccessResponse(json);
@@ -972,6 +1008,7 @@ const char* wasm_ZrLspCloseDocument(void* context, const char* uri, int uriLen) 
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 保留原始诊断数组供直接消费；常规 worker 使用带 resultId 的报告。 */
 const char* wasm_ZrLspGetDiagnostics(void* context, const char* uri, int uriLen) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
         return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
@@ -1005,6 +1042,7 @@ const char* wasm_ZrLspGetDiagnostics(void* context, const char* uri, int uriLen)
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 将光标语义查询投影成补全项，并在形成 JSON 后回收 native 数组。 */
 const char* wasm_ZrLspGetCompletion(void* context, const char* uri, int uriLen,
                                int line, int character) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
@@ -1049,6 +1087,7 @@ const char* wasm_ZrLspGetCompletion(void* context, const char* uri, int uriLen,
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 无悬停内容是成功 null；只有有效对象才进入 Markdown 投影。 */
 const char* wasm_ZrLspGetHover(void* context, const char* uri, int uriLen,
                           int line, int character) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
@@ -1086,6 +1125,7 @@ const char* wasm_ZrLspGetHover(void* context, const char* uri, int uriLen,
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 无定义的光标返回成功空数组，与 stdio 导航处理器对齐。 */
 const char* wasm_ZrLspGetDefinition(void* context, const char* uri, int uriLen,
                                int line, int character) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
@@ -1132,6 +1172,7 @@ const char* wasm_ZrLspGetDefinition(void* context, const char* uri, int uriLen,
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 引用查询把是否计入声明透传给 native，结果位置需在退出前复制到 JSON。 */
 const char* wasm_ZrLspFindReferences(void* context, const char* uri, int uriLen,
                                int line, int character, int includeDeclaration) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
@@ -1176,6 +1217,7 @@ const char* wasm_ZrLspFindReferences(void* context, const char* uri, int uriLen,
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 重命名请求的两个 UTF-8 输入都交由 VM 建立持久字符串后执行语义查询。 */
 const char* wasm_ZrLspRename(void* context, const char* uri, int uriLen,
                         int line, int character, const char* newName, int newNameLen) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || newName == ZR_NULL) {
@@ -1222,6 +1264,7 @@ const char* wasm_ZrLspRename(void* context, const char* uri, int uriLen,
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 文档符号结果使用 SymbolInformation 形状以兼容 worker 注册能力。 */
 const char* wasm_ZrLspGetDocumentSymbols(void* context, const char* uri, int uriLen) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
         return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
@@ -1257,6 +1300,7 @@ const char* wasm_ZrLspGetDocumentSymbols(void* context, const char* uri, int uri
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 诊断报告的 resultId 与 native store 共源；未收录文档按空报告而非 RPC 失败处理。 */
 const char* wasm_ZrLspGetDiagnosticReport(void* context, const char* uri, int uriLen) {
     SZrString *uriStr;
     SZrArray diagnostics;
@@ -1300,7 +1344,7 @@ const char* wasm_ZrLspGetDiagnosticReport(void* context, const char* uri, int ur
         return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INTERNAL_ERROR_CODE, "Failed to get diagnostic report");
     }
     report = cJSON_CreateObject();
-    if (report != ZR_NULL) {
+    if (report != ZR_NULL) { /* BUG: resultId/items 添加失败仍会包装成缺字段成功响应。 */
         cJSON_AddStringToObject(report, "resultId", resultId);
         cJSON_AddItemToObject(
                 report,
@@ -1317,6 +1361,7 @@ const char* wasm_ZrLspGetDiagnosticReport(void* context, const char* uri, int ur
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 工作区诊断枚举每个文档的同一 store，并在失败时拒绝返回部分成功数组。 */
 const char* wasm_ZrLspGetWorkspaceDiagnosticReports(void* context) {
     SZrArray uris = {0};
     cJSON *result;
@@ -1416,6 +1461,7 @@ const char* wasm_ZrLspGetWorkspaceDiagnosticReports(void* context) {
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 查询可见范围内的提示后投影为 LSP 数组；空结果仍为成功。 */
 const char* wasm_ZrLspGetInlayHints(void* context,
                                     const char* uri,
                                     int uriLen,
@@ -1460,6 +1506,7 @@ const char* wasm_ZrLspGetInlayHints(void* context,
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 工作区搜索词由 bridge 编码为 UTF-8，结果借用 native 符号直到 JSON 完成。 */
 const char* wasm_ZrLspGetWorkspaceSymbols(void* context, const char* query, int queryLen) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || query == ZR_NULL) {
         return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
@@ -1495,6 +1542,7 @@ const char* wasm_ZrLspGetWorkspaceSymbols(void* context, const char* query, int 
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* native 虚拟声明由扩展文档提供器读取，序列化前先复制 GC 字符串。 */
 const char* wasm_ZrLspGetNativeDeclarationDocument(void* context, const char* uri, int uriLen) {
     SZrString *uriStr;
     SZrString *documentText = ZR_NULL;
@@ -1533,6 +1581,7 @@ const char* wasm_ZrLspGetNativeDeclarationDocument(void* context, const char* ur
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 扩展专用悬停保留 section 元数据，无内容时沿用成功 null。 */
 const char* wasm_ZrLspGetRichHover(void* context, const char* uri, int uriLen,
                               int line, int character) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
@@ -1567,6 +1616,7 @@ const char* wasm_ZrLspGetRichHover(void* context, const char* uri, int uriLen,
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 项目视图请求按选定项目 URI 获取摘要，JSON 返回后释放原生列表。 */
 const char* wasm_ZrLspGetProjectModules(void* context, const char* projectUri, int projectUriLen) {
     SZrString *projectUriStr;
     SZrArray modules;
@@ -1598,6 +1648,7 @@ const char* wasm_ZrLspGetProjectModules(void* context, const char* projectUri, i
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 文档高亮未命中时返回成功空数组，保持客户端查询可继续进行。 */
 const char* wasm_ZrLspGetDocumentHighlights(void* context, const char* uri, int uriLen,
                                       int line, int character) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
@@ -1643,6 +1694,7 @@ const char* wasm_ZrLspGetDocumentHighlights(void* context, const char* uri, int 
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 输出 native 已编码的完整 token 流，浏览器侧不会重新编号 legend。 */
 const char* wasm_ZrLspGetSemanticTokens(void* context, const char* uri, int uriLen) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
         return ZrLanguageServer_Wasm_ErrorResponse(ZR_LSP_JSON_RPC_INVALID_PARAMS_CODE, "Invalid parameters");
@@ -1670,6 +1722,7 @@ const char* wasm_ZrLspGetSemanticTokens(void* context, const char* uri, int uriL
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 预检查只返回范围及占位符；实际重命名仍需单独调用 Rename。 */
 const char* wasm_ZrLspPrepareRename(void* context, const char* uri, int uriLen,
                                int line, int character) {
     if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
@@ -1711,6 +1764,7 @@ const char* wasm_ZrLspPrepareRename(void* context, const char* uri, int uriLen,
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 全文格式化结果转成文本编辑数组，并在退出前调用专门的释放函数。 */
 const char* wasm_ZrLspGetFormatting(void* context, const char* uri, int uriLen) {
     SZrString *uriStr;
     SZrArray edits;
@@ -1739,6 +1793,7 @@ const char* wasm_ZrLspGetFormatting(void* context, const char* uri, int uriLen) 
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 范围格式化保留 worker 传入的 UTF-16 行列边界，编辑数组由 native 持有。 */
 const char* wasm_ZrLspGetRangeFormatting(void* context,
                                     const char* uri,
                                     int uriLen,
@@ -1783,6 +1838,7 @@ const char* wasm_ZrLspGetRangeFormatting(void* context,
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* CodeAction 将修复编辑与 URI 绑定；无建议时返回成功空数组。 */
 const char* wasm_ZrLspGetCodeActions(void* context,
                                 const char* uri,
                                 int uriLen,
@@ -1827,6 +1883,7 @@ const char* wasm_ZrLspGetCodeActions(void* context,
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 折叠能力的结果在释放 native range 集合前序列化。 */
 const char* wasm_ZrLspGetFoldingRanges(void* context, const char* uri, int uriLen) {
     SZrString *uriStr;
     SZrArray ranges;
@@ -1855,6 +1912,7 @@ const char* wasm_ZrLspGetFoldingRanges(void* context, const char* uri, int uriLe
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 单位置选择也按数组返回，供 LSP 客户端按位置顺序配对。 */
 const char* wasm_ZrLspGetSelectionRange(void* context,
                                    const char* uri,
                                    int uriLen,
@@ -1896,6 +1954,7 @@ const char* wasm_ZrLspGetSelectionRange(void* context,
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 文档链接保留目标 URI 与提示，返回后释放 native 链接集合。 */
 const char* wasm_ZrLspGetDocumentLinks(void* context, const char* uri, int uriLen) {
     SZrString *uriStr;
     SZrArray links;
@@ -1924,6 +1983,7 @@ const char* wasm_ZrLspGetDocumentLinks(void* context, const char* uri, int uriLe
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE
 #endif
+/* 将镜头位置和扩展命令参数打包为 LSP CodeLens 数组。 */
 const char* wasm_ZrLspGetCodeLens(void* context, const char* uri, int uriLen) {
     SZrString *uriStr;
     SZrArray lenses;

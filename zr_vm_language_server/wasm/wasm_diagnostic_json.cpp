@@ -20,6 +20,7 @@ extern "C" {
 
 #include <cstring>
 
+/* 诊断字段来自 GC 字符串；JSON 层只借用复制出的临时 UTF-8 文本。 */
 static char *wasm_diagnostic_copy_string(SZrState *state, const SZrString *value) {
     TZrNativeString nativeText;
     TZrSize length;
@@ -49,6 +50,8 @@ static char *wasm_diagnostic_copy_string(SZrState *state, const SZrString *value
     return text;
 }
 
+/* TODO: 此处按 strlen 推回分配长度，若源 SZrString 含内嵌 NUL，大小将失配；
+ * 核查诊断字符串是否允许 NUL，及非默认分配器是否依赖 originalSize。 */
 static void wasm_diagnostic_free_string(SZrState *state, char *text) {
     if (state == ZR_NULL || text == ZR_NULL) {
         return;
@@ -59,6 +62,7 @@ static void wasm_diagnostic_free_string(SZrState *state, char *text) {
             (std::strlen(text) + 1U) * sizeof(TZrChar));
 }
 
+/* 为各层投影复用字符串桥，JSON 成功接纳字段后即可释放临时缓冲区。 */
 static void wasm_diagnostic_add_string(
         SZrState *state,
         cJSON *object,
@@ -76,6 +80,7 @@ static void wasm_diagnostic_add_string(
     wasm_diagnostic_free_string(state, text);
 }
 
+/* 位置和范围由各诊断、修复及相关位置共用，保持零基 LSP 坐标形状。 */
 static cJSON *wasm_diagnostic_serialize_position(SZrLspPosition position) {
     cJSON *json = cJSON_CreateObject();
 
@@ -86,6 +91,8 @@ static cJSON *wasm_diagnostic_serialize_position(SZrLspPosition position) {
     return json;
 }
 
+/* BUG: 任一子节点分配失败时仍返回部分 range；随后成功封装可向编辑器发出缺字段的诊断。
+ * 从 SerializeDiagnostics 经 serialize_one 到此均未传播 cJSON_AddItemToObject 失败。 */
 static cJSON *wasm_diagnostic_serialize_range(SZrLspRange range) {
     cJSON *json = cJSON_CreateObject();
 
@@ -102,6 +109,7 @@ static cJSON *wasm_diagnostic_serialize_range(SZrLspRange range) {
     return json;
 }
 
+/* 修复提示供 code action 消费；edit 与适用性必须与标题属于同一次诊断。 */
 static cJSON *wasm_diagnostic_serialize_fix(
         SZrState *state,
         const SZrLspDiagnosticFix *fix) {
@@ -133,6 +141,7 @@ static cJSON *wasm_diagnostic_serialize_fix(
     return json;
 }
 
+/* 将 native 诊断扩展信息放在 LSP data，保留描述符身份和快速修复列表。 */
 static cJSON *wasm_diagnostic_serialize_data(
         SZrState *state,
         const SZrLspDiagnostic *diagnostic,
@@ -187,6 +196,7 @@ static cJSON *wasm_diagnostic_serialize_data(
     return data;
 }
 
+/* 相关信息把跨文件位置与消息成对投影，供编辑器呈现诊断链。 */
 static cJSON *wasm_diagnostic_serialize_related(
         SZrState *state,
         const SZrLspDiagnosticRelatedInformation *related) {
@@ -222,6 +232,7 @@ static cJSON *wasm_diagnostic_serialize_related(
     return json;
 }
 
+/* 标准诊断字段与 zr 扩展 data 共用同一原生诊断对象。 */
 static cJSON *wasm_diagnostic_serialize_one(
         SZrState *state,
         const SZrLspDiagnostic *diagnostic,
@@ -300,6 +311,7 @@ static cJSON *wasm_diagnostic_serialize_one(
     return json;
 }
 
+/* GetDiagnostics、GetDiagnosticReport 与工作区报告在释放原生诊断前调用。 */
 cJSON *ZrLanguageServer_Wasm_SerializeDiagnostics(
         SZrState *state,
         SZrArray *diagnostics,
