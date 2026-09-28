@@ -7,8 +7,10 @@
 
 #include "zr_vm_language_server/lsp_capability_registry.h"
 
+/* 全部契约断言共享一个失败计数，main 将其转换为 CTest 可见的退出状态。 */
 static int g_failures = 0;
 
+/* 继续执行同一批的其他契约断言，使单项漂移不会掩盖其余能力的差异。 */
 static void expect_true(TZrBool condition, const TZrChar *message) {
     if (!condition) {
         printf("Fail - %s\n", message);
@@ -16,6 +18,7 @@ static void expect_true(TZrBool condition, const TZrChar *message) {
     }
 }
 
+/* 对静态描述符的可选入口字段同时比较缺席状态和文本，避免空串冒充不存在的实现。 */
 static void expect_metadata_string(const TZrChar *actual,
                                    const TZrChar *expected,
                                    const TZrChar *capabilityKey,
@@ -30,7 +33,11 @@ static void expect_metadata_string(const TZrChar *actual,
     }
 }
 
+/* 把注册表公开的能力清单与人工核对的核心、native 和 Web 入口逐项对齐。
+ * 本测试只检查静态描述符；stdio 协议清单探针另核对真实 initialize 响应与路由，
+ * Web 链接产物的可调用性只在提供 JS/WASM 产物时由独立探针验证。 */
 static void test_registry_metadata_matches_current_implementations(void) {
+    /* 每行绑定能力键、入口、Web 导出和协议测试名；它是静态契约样本，不负责执行这些入口。 */
     static const struct {
         const TZrChar *capabilityKey;
         const TZrChar *coreEntryPoint;
@@ -103,6 +110,7 @@ static void test_registry_metadata_matches_current_implementations(void) {
 
     expect_true(sizeof(expected) / sizeof(expected[0]) == ZrLanguageServer_LspCapabilityRegistry_Count(),
                 "implementation metadata expectations must cover every registered capability");
+    /* 数量一致之后还逐键验证，防止重新排序或替换某一能力时只靠总数漏检。 */
     for (index = 0; index < sizeof(expected) / sizeof(expected[0]); index++) {
         const SZrLspCapabilityDescriptor *descriptor =
                 ZrLanguageServer_LspCapabilityRegistry_Find(expected[index].capabilityKey);
@@ -134,6 +142,7 @@ static void test_registry_metadata_matches_current_implementations(void) {
     }
 }
 
+/* 3.17 默认协商不得把仅在 3.18 实验路径出现的 inline completion 宣称为稳定能力。 */
 static void test_registry_inline_completion_requires_experimental_318(void) {
     const SZrLspCapabilityDescriptor *descriptor =
             ZrLanguageServer_LspCapabilityRegistry_Find("inlineCompletionProvider");
@@ -148,11 +157,13 @@ static void test_registry_inline_completion_requires_experimental_318(void) {
                 "inline completion must be marked experimental in the LSP 3.17 baseline");
 }
 
+/* 没有类型化实现的 color provider 不应因文本扫描能力而进入公开能力清单。 */
 static void test_registry_excludes_untyped_color_provider(void) {
     expect_true(ZrLanguageServer_LspCapabilityRegistry_Find("colorProvider") == ZR_NULL,
                 "untyped color scanning must not be registered as a language capability");
 }
 
+/* 枚举所有注册项并检查元数据与发布策略，随后锁定曾撤销的别名和未知键的查询边界。 */
 static void test_registry_descriptors_are_complete(void) {
     TZrSize index;
 
@@ -213,6 +224,7 @@ static void test_registry_descriptors_are_complete(void) {
                 "unknown capability keys must fail closed");
 }
 
+/* 合成一个描述符依次破坏 resolve、Web 导出和版本实验标记，验证静态发布判定的拒绝策略。 */
 static void test_registry_rejects_invalid_contracts(void) {
     SZrLspCapabilityDescriptor descriptor = {
             "syntheticProvider",
@@ -256,6 +268,7 @@ static void test_registry_rejects_invalid_contracts(void) {
                 "public capability declarations require a protocol test id");
 }
 
+/* 在现有 hover 契约的副本上切换运行时位，核对每个启用后端都有对应适配入口。 */
 static void test_registry_metadata_requirements_follow_runtime(void) {
     const SZrLspCapabilityDescriptor *hover = ZrLanguageServer_LspCapabilityRegistry_Find("hoverProvider");
     SZrLspCapabilityDescriptor descriptor;
@@ -313,6 +326,7 @@ static void test_registry_metadata_requirements_follow_runtime(void) {
                 "an empty WASM export does not satisfy WASM metadata");
 }
 
+/* 核心实现和仅 native 适配实现必须互斥，不能借另一层入口伪造发布资格。 */
 static void test_registry_metadata_requirements_follow_ownership(void) {
     const SZrLspCapabilityDescriptor *hover = ZrLanguageServer_LspCapabilityRegistry_Find("hoverProvider");
     SZrLspCapabilityDescriptor descriptor;
@@ -362,6 +376,8 @@ static void test_registry_metadata_requirements_follow_ownership(void) {
                 "native adapter ownership cannot claim WASM coverage");
 }
 
+/* 初始响应已经完整的 provider 不应宣告 identity resolve；code action 的 resolve 复验快照，
+ * 失效时移除旧 edit 并禁用操作，有效时返回原操作的深拷贝。 */
 static void test_registry_resolve_contracts_match_implemented_behavior(void) {
     const TZrChar *completeProviders[] = {
             "workspaceSymbolProvider",
@@ -404,6 +420,7 @@ static void test_registry_resolve_contracts_match_implemented_behavior(void) {
     }
 }
 
+/* 补全与 code action 的基础能力可在 native/Web 提供，但 material resolve 目前只由 native 实现。 */
 static void test_registry_material_resolve_is_native_only(void) {
     const TZrChar *providers[] = {"completionProvider", "codeActionProvider"};
     TZrSize index;
@@ -436,6 +453,7 @@ static void test_registry_material_resolve_is_native_only(void) {
                 "invalid runtime queries must fail closed");
 }
 
+/* resolve 的运行时掩码必须属于基础能力，并且只有 material 行为可以作为公开 resolve。 */
 static void test_registry_rejects_invalid_resolve_runtime_contracts(void) {
     const SZrLspCapabilityDescriptor *completion =
             ZrLanguageServer_LspCapabilityRegistry_Find("completionProvider");
@@ -468,6 +486,7 @@ static void test_registry_rejects_invalid_resolve_runtime_contracts(void) {
                 "only material resolve behavior may be published");
 }
 
+/* CMake 只在 LSP、parser、core 目标齐备时注册本可执行文件，退出码汇总整个静态契约矩阵。 */
 int main(void) {
     test_registry_metadata_matches_current_implementations();
     test_registry_inline_completion_requires_experimental_318();
