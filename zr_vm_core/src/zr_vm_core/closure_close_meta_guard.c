@@ -182,7 +182,8 @@ void ZrCore_ClosureCloseMetaGuard_Invoke(SZrState *state,
     state->stackTop.valuePointer = ZrCore_Stack_LoadOffsetToPointer(
             state, boundarySlotOffset);
 
-    if (callbackStatus == ZR_THREAD_STATUS_FINE && !state->hasCurrentException) {
+    if (callbackStatus == ZR_THREAD_STATUS_FINE &&
+        state->threadStatus == ZR_THREAD_STATUS_FINE && !state->hasCurrentException) {
         state->currentException = savedException;
         if (savedExceptionRoot != ZR_NULL) {
             state->currentException.value.object = savedExceptionRoot;

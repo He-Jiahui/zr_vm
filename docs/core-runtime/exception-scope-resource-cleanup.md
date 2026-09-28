@@ -102,11 +102,15 @@ call-info frame in that slot. Exception dispatch stops at this frame, while a
 nested `TryRun` captures a new error raised by the callback. The guard saves the
 original exception value and status and roots its Error object through an AOT
 root frame before clearing the ambient exception. If `@close` returns normally,
-the guard restores the original Error and its thread status. If `@close` throws,
-the new Error remains active and takes precedence. The callback argument is a
-separate rooted stack value throughout the call. A status without an active
-Error continues through the existing callback path: nested exception dispatch
-and `CATCH` only act when `hasCurrentException` is set.
+the guard restores the original Error and its thread status only when `TryRun`
+returns `FINE`, the thread status is still `FINE`, and no exception is active.
+If a budget poll terminates the callback call, the guard preserves the
+execution-terminated state and does not restore the saved Error after the poll
+clears `hasCurrentException`. If `@close` throws, the new Error remains active and
+takes precedence. The callback argument is a separate rooted stack value
+throughout the call. A status without an active Error continues through the
+existing callback path: nested exception dispatch and `CATCH` only act when
+`hasCurrentException` is set.
 
 The guard restores the outer call-info node, native-call yield count,
 execution-budget native-frame marker, and logical stack top after the callback.
@@ -221,15 +225,16 @@ as interpreter execution.
 
 ## Verification
 
-`zr_vm_close_proxy_core_test` exercises 18 focused cases: one close with an older
+`zr_vm_close_proxy_core_test` exercises 19 focused cases: one close with an older
 marker, an unmarked source, plain source and distinct mirror preservation,
 borrowed view reset without `@close`, exceptional close and handler boundary,
 nested proxies, distinct dense/physical mirrors, full GC with an active token
 and during the close callback, original Error survival across full GC, native
 replacement Error and repeated call-info reuse, an AOT root frame abandoned by
-a throwing native callback, registration order rejection, AOT-like physical
-marker ordering, a stale native-frame layout, copied-token rejection, and both
-retained control and direct-owner mirror aliases. `zr_vm_type_layout_inline_copy_test`
+a throwing native callback, cancelled budget preservation without callback
+invocation, registration order rejection, AOT-like physical marker ordering,
+a stale native-frame layout, copied-token rejection, and both retained control
+and direct-owner mirror aliases. `zr_vm_type_layout_inline_copy_test`
 protects the legacy physical-mirror path; `zr_vm_native_closure_value_test`
 protects native closure metadata handling.
 

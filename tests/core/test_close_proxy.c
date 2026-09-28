@@ -635,6 +635,48 @@ static void test_native_close_throw_discards_unwound_aot_root_frame(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_pending_error_close_preserves_budget_termination(void) {
+    SZrCloseProxyProbe probe = {0};
+    SZrCloseProxyCloseResult result = {0};
+    SZrExecutionBudget budget = {0};
+    SZrExecutionCancelToken *cancelToken = ZrCore_ExecutionCancelToken_New();
+    TZrStackValuePointer frame;
+    SZrState *state = close_proxy_new_state(&frame);
+    SZrObjectPrototype *prototype = close_proxy_new_prototype(state);
+    SZrObject *source = close_proxy_new_object(state, prototype);
+    EZrThreadStatus tryStatus;
+    EZrThreadStatus threadStatus;
+    EZrExecutionTermination termination;
+    TZrBool hasCurrentException;
+
+    TEST_ASSERT_NOT_NULL(cancelToken);
+    gProbe = &probe;
+    probe.sourceObject = ZR_CAST_RAW_OBJECT_AS_SUPER(source);
+    probe.sourceOffset = ZrCore_Stack_SavePointerAsOffset(state, frame + 1u);
+    close_proxy_put_object(state, frame + 1u, source);
+    TEST_ASSERT_TRUE(ZrCore_Closure_MarkCloseProxy(state, frame + 3u, frame + 1u));
+    close_proxy_seed_current_error(state, "original");
+    budget.cancelToken = cancelToken;
+    state->executionBudget = &budget;
+    ZrCore_ExecutionCancelToken_Cancel(cancelToken);
+
+    tryStatus = ZrCore_Exception_TryRun(
+            state, close_proxy_close_with_error_in_try, &result);
+    threadStatus = state->threadStatus;
+    termination = budget.termination;
+    hasCurrentException = state->hasCurrentException;
+    state->executionBudget = ZR_NULL;
+    ZrCore_ExecutionCancelToken_Free(cancelToken);
+    ZrTests_Runtime_State_Destroy(state);
+
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, tryStatus);
+    TEST_ASSERT_EQUAL_UINT64(1u, result.closedCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, probe.sourceCalls);
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_TERMINATION_CANCELLED, termination);
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_EXECUTION_TERMINATED, threadStatus);
+    TEST_ASSERT_FALSE(hasCurrentException);
+}
+
 static void test_proxy_rejects_slot_below_current_marker_without_changing_chain(void) {
     SZrCloseProxyProbe probe = {0};
     TZrStackValuePointer frame;
@@ -899,6 +941,7 @@ int main(void) {
     RUN_TEST(test_original_error_is_rooted_across_full_gc_in_close_callback);
     RUN_TEST(test_native_close_error_replaces_original_without_leaking_frame);
     RUN_TEST(test_native_close_throw_discards_unwound_aot_root_frame);
+    RUN_TEST(test_pending_error_close_preserves_budget_termination);
     RUN_TEST(test_proxy_rejects_slot_below_current_marker_without_changing_chain);
     RUN_TEST(test_physical_proxy_follows_physical_source_marker);
     RUN_TEST(test_native_frame_does_not_clear_an_inactive_physical_layout);
