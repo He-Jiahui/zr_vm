@@ -87,6 +87,7 @@ unknownNativeCall.effects = ALL_OBSERVABLE_REGIONS
 | --- | --- |
 | 重复 ValueId、不支配 use、phi 缺边 | 具体 IR diagnostic |
 | store 后 load 错用旧 memory token | 验证拒绝 |
+| tagged memory token range 缺少 opcode schema 声明的 region | 按输入/输出方向拒绝并保留 function/block/instruction/source 定位；全 untagged legacy range 继续兼容 |
 | 移动 drop/throw/await 越过外部写入 | 效果链或异常区域验证失败 |
 | 伪造 readonly native 与未声明 GC | 不接受不可信摘要，调用契约验证拒绝 |
 

@@ -457,46 +457,82 @@ static void test_tagged_memory_tokens_are_region_local(void) {
     SZrExecIrFunction *function = new_function(&module, &id);
     SZrExecIrDiagnostic diagnostic;
     SZrExecIrInstruction instruction;
-    TZrExecIrMemoryTokenId heapIn = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
-            ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 1u);
     TZrExecIrMemoryTokenId heapOut = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
-            ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 2u);
-    TZrExecIrMemoryTokenId nativeIn = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
-            ZR_EXEC_IR_MEMORY_NATIVE_FFI, 1u);
-    TZrExecIrMemoryTokenId nativeOut = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
-            ZR_EXEC_IR_MEMORY_NATIVE_FFI, 2u);
+            ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 1u);
+    TZrExecIrMemoryTokenId ownershipIn = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+            ZR_EXEC_IR_MEMORY_OWNERSHIP, 1u);
+    TZrExecIrMemoryTokenId ownershipOut = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+            ZR_EXEC_IR_MEMORY_OWNERSHIP, 2u);
+
+    append_tagged_store(function, heapOut, 1u, 2u);
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_DROP;
+    instruction.effectIn = 2u;
+    instruction.effectOut = 3u;
+    ok(ZrCore_ExecIr_FunctionAppendMemoryTokens(function, &ownershipIn, 1u,
+                                                 &instruction.memoryIn),
+       "append tagged ownership input");
+    ok(ZrCore_ExecIr_FunctionAppendMemoryTokens(function, &ownershipOut, 1u,
+                                                 &instruction.memoryOut),
+       "append tagged ownership output");
+    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
+       "append tagged drop");
+    function->blocks[0].instructions.count = function->instructionCount;
+
+    ok(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "independent tagged memory regions imposed a false order");
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
+static void test_tagged_call_requires_all_declared_memory_regions(void) {
+    SZrExecIrModule module;
+    TZrExecIrFunctionId id;
+    SZrExecIrFunction *function = new_function(&module, &id);
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrInstruction instruction;
+    TZrExecIrMemoryTokenId memoryIn[2] = {
+        ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 1u),
+        ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_NATIVE_FFI, 1u)};
+    TZrExecIrMemoryTokenId memoryOut[2] = {
+        ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 2u),
+        ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_NATIVE_FFI, 2u)};
 
     memset(&instruction, 0, sizeof(instruction));
     instruction.opcode = ZR_EXEC_IR_OPCODE_CALL;
     instruction.flags = ZR_EXEC_IR_FLAG_MAY_ALLOCATE | ZR_EXEC_IR_FLAG_MAY_THROW;
     instruction.effectIn = 1u;
     instruction.effectOut = 2u;
-    ok(ZrCore_ExecIr_FunctionAppendMemoryTokens(function, &heapIn, 1u,
+    instruction.sourceId = 481u;
+    ok(ZrCore_ExecIr_FunctionAppendMemoryTokens(function, memoryIn, 2u,
                                                  &instruction.memoryIn),
-       "append tagged heap input");
-    ok(ZrCore_ExecIr_FunctionAppendMemoryTokens(function, &heapOut, 1u,
+       "append tagged call inputs");
+    ok(ZrCore_ExecIr_FunctionAppendMemoryTokens(function, memoryOut, 2u,
                                                  &instruction.memoryOut),
-       "append tagged heap output");
+       "append tagged call outputs");
     ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
-       "append tagged heap call");
-
-    memset(&instruction, 0, sizeof(instruction));
-    instruction.opcode = ZR_EXEC_IR_OPCODE_CALL;
-    instruction.flags = ZR_EXEC_IR_FLAG_MAY_ALLOCATE | ZR_EXEC_IR_FLAG_MAY_THROW;
-    instruction.effectIn = 2u;
-    instruction.effectOut = 3u;
-    ok(ZrCore_ExecIr_FunctionAppendMemoryTokens(function, &nativeIn, 1u,
-                                                 &instruction.memoryIn),
-       "append tagged native input");
-    ok(ZrCore_ExecIr_FunctionAppendMemoryTokens(function, &nativeOut, 1u,
-                                                 &instruction.memoryOut),
-       "append tagged native output");
-    ok(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, NULL),
-       "append tagged native call");
+       "append complete tagged call");
     function->blocks[0].instructions.count = function->instructionCount;
 
     ok(ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
-       "independent tagged memory regions imposed a false order");
+       "complete tagged call rejected");
+
+    function->instructions[0].memoryIn.count = 1u;
+    ok(!ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "tagged call missing a declared memory input region accepted");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN &&
+           diagnostic.functionToken == 1u && diagnostic.blockId == 1u &&
+           diagnostic.instructionId == 1u && diagnostic.sourceId == 481u,
+       "missing call input region diagnostic lost location");
+
+    function->instructions[0].memoryIn.count = 2u;
+    function->instructions[0].memoryOut.count = 1u;
+    ok(!ZrCore_ExecIr_VerifyEffects(function, &diagnostic),
+       "tagged call missing a declared memory output region accepted");
+    ok(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN &&
+           diagnostic.functionToken == 1u && diagnostic.blockId == 1u &&
+           diagnostic.instructionId == 1u && diagnostic.sourceId == 481u,
+       "missing call output region diagnostic lost location");
+
     ZrCore_ExecIr_FreeModule(&module);
 }
 
@@ -1460,6 +1496,7 @@ int main(void) {
     test_malformed_memory_range_is_rejected();
     test_memory_inputs_must_advance_across_instructions();
     test_tagged_memory_tokens_are_region_local();
+    test_tagged_call_requires_all_declared_memory_regions();
     test_tagged_memory_token_region_must_match_schema();
     test_tagged_store_and_load_share_region_version();
     test_phi_incoming_order_matches_predecessors();

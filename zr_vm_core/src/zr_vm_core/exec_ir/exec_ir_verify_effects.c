@@ -862,6 +862,10 @@ TZrBool ZrCore_ExecIr_VerifyEffects(const SZrExecIrFunction *function,
         TZrExecIrBlockId blockId = zr_exec_ir_containing_block(function, index);
         TZrUInt16 required;
         TZrUInt32 tokenIndex;
+        TZrUInt32 taggedMemoryInRegions = 0u;
+        TZrUInt32 taggedMemoryOutRegions = 0u;
+        TZrBool allMemoryInTagged = ZR_TRUE;
+        TZrBool allMemoryOutTagged = ZR_TRUE;
         TZrBool observable;
         if (info == ZR_NULL) {
             zr_exec_ir_effect_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_UNKNOWN_OPCODE,
@@ -924,6 +928,7 @@ TZrBool ZrCore_ExecIr_VerifyEffects(const SZrExecIrFunction *function,
             if (ZR_EXEC_IR_MEMORY_TOKEN_IS_TAGGED(token)) {
                 EZrExecIrMemoryClass region = ZR_EXEC_IR_MEMORY_TOKEN_REGION(token);
                 TZrExecIrMemoryTokenId version = ZR_EXEC_IR_MEMORY_TOKEN_VERSION(token);
+                taggedMemoryInRegions |= (TZrUInt32)1u << region;
                 if (latestMemoryByRegion[region] != 0u &&
                     version != latestMemoryByRegion[region]) {
                     zr_exec_ir_effect_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN,
@@ -934,6 +939,7 @@ TZrBool ZrCore_ExecIr_VerifyEffects(const SZrExecIrFunction *function,
                 if (version > latestMemoryByRegion[region])
                     latestMemoryByRegion[region] = version;
             } else {
+                allMemoryInTagged = ZR_FALSE;
                 if (latestMemory != ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID &&
                     token < latestMemory) {
                     zr_exec_ir_effect_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN,
@@ -942,6 +948,13 @@ TZrBool ZrCore_ExecIr_VerifyEffects(const SZrExecIrFunction *function,
                 }
                 latestMemory = token;
             }
+        }
+        if (allMemoryInTagged &&
+            (taggedMemoryInRegions & info->memoryReads) != info->memoryReads) {
+            zr_exec_ir_effect_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN,
+                                   function, blockId, index + 1u,
+                                   info->memoryReads, taggedMemoryInRegions);
+            return ZR_FALSE;
         }
         for (tokenIndex = instruction->memoryOut.start;
              tokenIndex < instruction->memoryOut.start + instruction->memoryOut.count;
@@ -958,6 +971,7 @@ TZrBool ZrCore_ExecIr_VerifyEffects(const SZrExecIrFunction *function,
             if (ZR_EXEC_IR_MEMORY_TOKEN_IS_TAGGED(token)) {
                 EZrExecIrMemoryClass region = ZR_EXEC_IR_MEMORY_TOKEN_REGION(token);
                 TZrExecIrMemoryTokenId version = ZR_EXEC_IR_MEMORY_TOKEN_VERSION(token);
+                taggedMemoryOutRegions |= (TZrUInt32)1u << region;
                 if (version <= latestMemoryByRegion[region]) {
                     zr_exec_ir_effect_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN,
                                            function, blockId, index + 1u,
@@ -966,6 +980,7 @@ TZrBool ZrCore_ExecIr_VerifyEffects(const SZrExecIrFunction *function,
                 }
                 latestMemoryByRegion[region] = version;
             } else {
+                allMemoryOutTagged = ZR_FALSE;
                 if (latestMemory != ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID &&
                     token <= latestMemory) {
                     zr_exec_ir_effect_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN,
@@ -976,6 +991,13 @@ TZrBool ZrCore_ExecIr_VerifyEffects(const SZrExecIrFunction *function,
                 }
                 latestMemory = token;
             }
+        }
+        if (allMemoryOutTagged &&
+            (taggedMemoryOutRegions & info->memoryWrites) != info->memoryWrites) {
+            zr_exec_ir_effect_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_MEMORY_TOKEN,
+                                   function, blockId, index + 1u,
+                                   info->memoryWrites, taggedMemoryOutRegions);
+            return ZR_FALSE;
         }
         observable = (TZrBool)(info->memoryWrites != 0u || required != 0u ||
                                (info->effects & ZR_EXEC_IR_EFFECT_DROP) != 0u);

@@ -32,6 +32,7 @@ tests:
   - tests/acceptance/ssa-cfg-edge-symmetry.md
   - tests/acceptance/ssa-cfg-parallel-edge-reciprocity.md
   - tests/acceptance/ssa-exception-payload.md
+  - tests/acceptance/execir-tagged-memory-required-regions.md
   - tests/parser/test_ssa_loops_specialization.c
   - tests/parser/test_ssa_pass_manager_scalar.c
   - tests/acceptance/ssa-pass-failure-snapshot.md
@@ -110,8 +111,11 @@ their region, and the first touch remains subject to CFG entry and phi checks.
 The verifier rejects a tagged token whose region is not
 covered by the opcode's declared read/write mask, rejects zero versions, and
 continues to apply the legacy function-wide monotonic rule to untagged tokens
-so old artifacts remain readable during the migration. A join may publish one
-tagged `memoryPhiResult` and edge-ordered `memoryPhiIncomings` range per
+so old artifacts remain readable during the migration. For each direction,
+an all-tagged range must cover every region in the opcode's schema mask; a
+repeated region cannot replace a missing one. A direction containing an
+untagged token retains its compatibility path. A join may publish one tagged
+`memoryPhiResult` and edge-ordered `memoryPhiIncomings` range per
 region. Each incoming must match the predecessor's terminal version and
 region, the result must advance beyond forward incoming versions, and the first
 tagged memory consumer must consume the result. Distinct region versions
@@ -217,7 +221,10 @@ cross-block effect-token joins, missing/stale effect-phi inputs, loop-carried
 effect/memory phis with stale backedge negatives, and the existing
 effect-token negatives. A tagged read that skips ahead of the current
 same-block memory version reports its source, block, instruction, expected
-and actual versions. A skipped effect
+and actual versions. The tagged CALL fixture accepts its full managed-heap and
+native-FFI token sets, then independently removes one input and one output
+region and checks `MEMORY_TOKEN` diagnostics with function, block, instruction,
+and source identity. Legacy untagged token cases remain covered. A skipped effect
 version between two same-block calls yields the second call's source-identified
 diagnostic; replacing it with the immediate predecessor token is accepted.
 The standalone SSA consumer targets compile the split verifier source through
