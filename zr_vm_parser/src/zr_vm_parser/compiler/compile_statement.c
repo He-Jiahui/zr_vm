@@ -3636,6 +3636,7 @@ static void compile_block_statement(SZrCompilerState *cs, SZrAstNode *node) {
 static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node) {
     SZrUsingStatement *stmt;
     TZrUInt32 resourceSlot = 0;
+    TZrUInt32 proxySlot;
     EZrOwnershipQualifier cleanupOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     EZrOwnershipBuiltinKind cleanupBuiltinKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
 
@@ -3692,8 +3693,27 @@ static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node) {
         if (!compile_using_resource_slot(cs, stmt->resource, ZR_NULL, &resourceSlot)) {
             return;
         }
-        compiler_register_scope_cleanup_slot(
-                cs, resourceSlot, cleanupBuiltinKind, ZR_PARSER_SLOT_NONE);
+        if (stmt->resource->type == ZR_AST_IDENTIFIER_LITERAL &&
+            stmt->resource->data.identifier.name != ZR_NULL &&
+            find_local_var(cs, stmt->resource->data.identifier.name) == resourceSlot) {
+            if (stmt->body != ZR_NULL ||
+                !compiler_current_scope_has_cleanup_for_source(cs, resourceSlot)) {
+                SZrString *proxyName = create_hidden_using_local_name(cs);
+                if (proxyName == ZR_NULL) {
+                    ZrParser_Compiler_Error(cs, "Failed to create using cleanup proxy", node->location);
+                    return;
+                }
+                compiler_advance_stack_to_fresh_slot(cs);
+                proxySlot = allocate_local_var(cs, proxyName);
+                if (!compiler_register_scope_close_proxy(cs, proxySlot, resourceSlot)) {
+                    ZrParser_Compiler_Error(cs, "Failed to register using cleanup proxy", node->location);
+                    return;
+                }
+            }
+        } else {
+            compiler_register_scope_cleanup_slot(
+                    cs, resourceSlot, cleanupBuiltinKind, ZR_PARSER_SLOT_NONE);
+        }
     }
 
     if (stmt->body != ZR_NULL) {

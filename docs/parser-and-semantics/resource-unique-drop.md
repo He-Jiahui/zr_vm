@@ -11,6 +11,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_optimize.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_query_diagnostics.c
   - zr_vm_core/include/zr_vm_core/raw_object.h
@@ -31,6 +33,8 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_optimize.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_query_diagnostics.c
   - zr_vm_core/src/zr_vm_core/ownership.c
@@ -50,6 +54,8 @@ tests:
   - tests/parser/test_dataflow_engine.c
   - tests/parser/test_resource_owner_borrow_receiver.c
   - tests/parser/test_pre_semantic_ir.c
+  - tests/parser/test_buffer_pool_ffi.c
+  - tests/parser/test_using_existing_local_cleanup_cases.inc
   - tests/parser/test_closure_capture_runtime.c
   - tests/exceptions/test_exceptions.c
   - tests/parser/test_aot_c_ownership_contracts.c
@@ -116,9 +122,18 @@ For a fully constructed resource, normal scope exit, early return, throw, break,
 explicit `drop` all converge on `OWN_RELEASE` exactly once.
 
 Scope cleanup registration is idempotent for an exact `(slot, source slot, ownership action)`
-match. In particular, an inferred `@close` registration followed by `using` on the same local
-emits one `MARK_TO_BE_CLOSED` and one close action; distinct ownership actions remain ordered
-independent registrations.
+match. A body-free `using local;` in the same scope reuses an existing registration for that
+source. `using (local) { ... }`, or body-free `using local;` in a nested scope, instead allocates
+a fresh high, empty local and emits `MARK_CLOSE_PROXY(proxy, local)` without copying the resource.
+That scope registers one proxy cleanup and closes it with `CLOSE_SCOPE(1)`. The original outer
+marker remains ordered below the proxy; after proxy cleanup consumes a closable or owned source,
+the outer marker later pops an empty slot. A plain value with no close or ownership action stays
+readable through either form of `using`.
+The top-level `using` plus catch-condition regression also runs through the same proxy path.
+Callable parameter type scopes are restored before the later catch binding is compiled, so an
+earlier `@close(error)` parameter cannot mask `catch(error)`; see
+`tests/acceptance/2026-09-27-using-existing-local-close-proxy.md` for the source and runtime
+checks.
 
 Resource custom Drop bodies must be non-throwing. The compiler uses CFG exception edges to reject
 a resource destructor that may enter a catch/throw path; ordinary GC class destructor behavior is
@@ -149,12 +164,17 @@ Resource syntax lowers through the existing stable ownership instruction family:
 - `OWN_UNIQUE`
 - `OWN_RELEASE`
 - `MARK_TO_BE_CLOSED`
+- `MARK_CLOSE_PROXY`
 - `CLOSE_SCOPE`
 
 Semantic IR retains the ownership transitions. AOT C and LLVM emit the corresponding ownership
 and scope helper calls rather than an unsupported fallback. The focused pipeline executes the VM
 fixture and inspects the generated C/LLVM sources; the observed explicit/scope Drop log is `21`
 on all three supported toolchains.
+The close proxy opcode passes its high proxy slot and logical source slot to the VM or AOT runtime
+helper. The AOT helper resolves a physical VALUE proxy slot before registration; the logical
+source remains the cleanup target. The focused opcode tests verify generated C/LLVM calls and
+link the generated C shared library. Generated entry execution is a separate pending gate.
 
 ## M1-M4 Boundary
 

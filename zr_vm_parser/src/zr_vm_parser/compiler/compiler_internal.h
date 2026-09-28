@@ -1139,6 +1139,13 @@ void compiler_register_scope_cleanup_slot(SZrCompilerState *cs,
                                           EZrOwnershipBuiltinKind ownershipBuiltinKind,
                                           TZrUInt32 sourceSlot) ;
 
+TZrBool compiler_current_scope_has_cleanup_for_source(SZrCompilerState *cs,
+                                                       TZrUInt32 sourceSlot) ;
+
+TZrBool compiler_register_scope_close_proxy(SZrCompilerState *cs,
+                                             TZrUInt32 proxySlot,
+                                             TZrUInt32 sourceSlot) ;
+
 void compiler_register_owner_cleanup_slot(SZrCompilerState *cs,
                                           TZrUInt32 slot,
                                           EZrOwnershipQualifier ownershipQualifier) ;

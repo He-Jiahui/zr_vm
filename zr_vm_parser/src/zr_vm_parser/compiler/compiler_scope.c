@@ -54,6 +54,83 @@ void compiler_register_scope_cleanup_slot(
     scope->cleanupRegistrationCount++;
 }
 
+TZrBool compiler_current_scope_has_cleanup_for_source(
+        SZrCompilerState *cs,
+        TZrUInt32 sourceSlot) {
+    SZrScope *scope;
+
+    if (cs == ZR_NULL || cs->scopeStack.length == 0u) {
+        return ZR_FALSE;
+    }
+    scope = (SZrScope *)ZrCore_Array_Get(
+            &cs->scopeStack, cs->scopeStack.length - 1u);
+    if (scope == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0u; index < scope->cleanupRegistrations.length; index++) {
+        const SZrScopeCleanupRegistration *registration =
+                (const SZrScopeCleanupRegistration *)ZrCore_Array_Get(
+                        &scope->cleanupRegistrations, index);
+        if (registration != ZR_NULL &&
+            (registration->ownershipBuiltinKind == ZR_OWNERSHIP_BUILTIN_KIND_NONE ||
+             registration->ownershipBuiltinKind == ZR_OWNERSHIP_BUILTIN_KIND_DROP) &&
+            (registration->slot == sourceSlot ||
+             registration->sourceSlot == sourceSlot)) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
+TZrBool compiler_register_scope_close_proxy(
+        SZrCompilerState *cs,
+        TZrUInt32 proxySlot,
+        TZrUInt32 sourceSlot) {
+    SZrScope *scope;
+    SZrScopeCleanupRegistration registration;
+    TZrUInt32 nullConstantIndex;
+
+    if (cs == ZR_NULL || cs->hasError ||
+        cs->scopeStack.length == 0u ||
+        sourceSlot == ZR_PARSER_SLOT_NONE ||
+        proxySlot == ZR_PARSER_SLOT_NONE ||
+        sourceSlot >= proxySlot ||
+        proxySlot > UINT16_MAX) {
+        return ZR_FALSE;
+    }
+    scope = (SZrScope *)ZrCore_Array_Get(
+            &cs->scopeStack, cs->scopeStack.length - 1u);
+    if (scope == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    nullConstantIndex = compiler_get_cached_null_constant_index(cs);
+    if (cs->hasError || nullConstantIndex == ZR_PARSER_INDEX_NONE) {
+        return ZR_FALSE;
+    }
+
+    /* The runtime proxy requires a high, empty VALUE slot; it does not copy source. */
+    emit_instruction(cs,
+                     create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT),
+                                          (TZrUInt16)proxySlot,
+                                          (TZrInt32)nullConstantIndex));
+    emit_instruction(cs,
+                     create_instruction_2(ZR_INSTRUCTION_ENUM(MARK_CLOSE_PROXY),
+                                          (TZrUInt16)proxySlot,
+                                          (TZrUInt16)sourceSlot,
+                                          0u));
+    if (cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    /* One proxy marker is popped by the ordinary NONE cleanup's CLOSE_SCOPE(1). */
+    registration.slot = proxySlot;
+    registration.sourceSlot = sourceSlot;
+    registration.ownershipBuiltinKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
+    ZrCore_Array_Push(cs->state, &scope->cleanupRegistrations, &registration);
+    scope->cleanupRegistrationCount++;
+    return !cs->hasError;
+}
+
 void compiler_register_owner_cleanup_slot(
         SZrCompilerState *cs,
         TZrUInt32 slot,

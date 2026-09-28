@@ -2993,6 +2993,7 @@ static TZrBool compiler_quickening_is_control_only_opcode(EZrInstructionCode opc
         case ZR_INSTRUCTION_ENUM(CATCH):
         case ZR_INSTRUCTION_ENUM(END_FINALLY):
         case ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED):
+        case ZR_INSTRUCTION_ENUM(MARK_CLOSE_PROXY):
         case ZR_INSTRUCTION_ENUM(CLOSE_SCOPE):
         case ZR_INSTRUCTION_ENUM(SET_PENDING_RETURN):
         case ZR_INSTRUCTION_ENUM(SET_PENDING_BREAK):

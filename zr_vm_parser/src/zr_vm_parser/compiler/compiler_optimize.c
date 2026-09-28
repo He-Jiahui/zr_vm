@@ -202,6 +202,13 @@ static void optimizer_classify_instruction(const SZrFunction *function,
         case ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED):
             optimizer_info_add_read(info, instruction->instruction.operandExtra);
             return;
+        case ZR_INSTRUCTION_ENUM(MARK_CLOSE_PROXY):
+            /* E must stay null until the marker installs its token; A1 stays live for close. */
+            optimizer_info_add_read(info, instruction->instruction.operandExtra);
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[0]);
+            optimizer_info_add_write(info, instruction->instruction.operandExtra);
+            info->allowSlotReuse = ZR_FALSE;
+            return;
         case ZR_INSTRUCTION_ENUM(TO_BOOL):
         case ZR_INSTRUCTION_ENUM(TO_INT):
         case ZR_INSTRUCTION_ENUM(TO_UINT):
@@ -1361,6 +1368,11 @@ static void optimizer_remap_instruction_slots(TZrInstruction *instruction,
         case ZR_INSTRUCTION_ENUM(SETUPVAL):
         case ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED):
             optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
+            return;
+        case ZR_INSTRUCTION_ENUM(MARK_CLOSE_PROXY):
+            optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
+            optimizer_remap_slot_value(
+                    &instruction->instruction.operand.operand1[0], slotMap, slotCount);
             return;
         case ZR_INSTRUCTION_ENUM(BIND_INLINE_ARRAY_ELEMENT_PLACE):
             optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);

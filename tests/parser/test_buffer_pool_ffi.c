@@ -575,6 +575,8 @@ static void test_pool_lease_using_cleanup_returns_backing_on_throw(void) {
     ZrContainerTests_DestroyState(state);
 }
 
+#include "test_using_existing_local_cleanup_cases.inc"
+
 /* pin 持有的 span 在 owner 关闭和完整 GC 后仍可读写，重复 close 不重复释放。 */
 static void test_explicit_pinned_pointer_span_stays_valid_across_gc_and_owner_close(void) {
     static const char kSource[] =
@@ -699,11 +701,48 @@ void tearDown(void) {}
 
 /* TODO: 该目标由 tests/CMakeLists 构建，但当前未见 CTest suite 注册；需核实是否只要求手工验收。 */
 int main(int argc, char **argv) {
-    if (argc > 1 && (argc != 2 || strcmp(argv[1], "--closed-owner") != 0)) {
-        fprintf(stderr, "usage: %s [--closed-owner]\n", argv[0]);
+    if (argc > 1 &&
+        (argc != 2 ||
+         (strcmp(argv[1], "--closed-owner") != 0 &&
+          strcmp(argv[1], "--lease-cleanup") != 0 &&
+          strcmp(argv[1], "--lease-cleanup-throw") != 0 &&
+          strcmp(argv[1], "--lease-cleanup-bare") != 0 &&
+          strcmp(argv[1], "--lease-cleanup-plain") != 0))) {
+        fprintf(stderr,
+                "usage: %s [--closed-owner|--lease-cleanup|--lease-cleanup-throw|--lease-cleanup-bare|--lease-cleanup-plain]\n",
+                argv[0]);
         return EXIT_FAILURE;
     }
     UNITY_BEGIN();
+    if (argc == 2 && strcmp(argv[1], "--lease-cleanup-throw") == 0) {
+        RUN_TEST(test_inferred_non_idempotent_close_meta_runs_once_without_using);
+        RUN_TEST(test_using_existing_non_idempotent_close_meta_closes_once_on_throw);
+        RUN_TEST(test_using_existing_close_meta_replaces_pending_throw);
+        RUN_TEST(test_top_level_using_existing_close_meta_replaces_pending_throw);
+        return UNITY_END();
+    }
+    if (argc == 2 && strcmp(argv[1], "--lease-cleanup-bare") == 0) {
+        RUN_TEST(test_bare_using_outer_lease_closes_at_inner_scope_exit);
+        return UNITY_END();
+    }
+    if (argc == 2 && strcmp(argv[1], "--lease-cleanup-plain") == 0) {
+        RUN_TEST(test_using_plain_existing_local_keeps_value_readable);
+        RUN_TEST(test_bare_using_plain_existing_local_keeps_value_readable);
+        return UNITY_END();
+    }
+    if (argc == 2 && strcmp(argv[1], "--lease-cleanup") == 0) {
+        RUN_TEST(test_inferred_non_idempotent_close_meta_runs_once_without_using);
+        RUN_TEST(test_bare_using_same_scope_reuses_inferred_close_mark);
+        RUN_TEST(test_using_existing_non_idempotent_close_meta_closes_once);
+        RUN_TEST(test_using_existing_non_idempotent_close_meta_closes_once_on_throw);
+        RUN_TEST(test_using_existing_close_meta_replaces_pending_throw);
+        RUN_TEST(test_top_level_using_existing_close_meta_replaces_pending_throw);
+        RUN_TEST(test_nested_using_same_non_idempotent_close_meta_closes_once);
+        RUN_TEST(test_using_inner_lease_keeps_older_outer_lease_open);
+        RUN_TEST(test_using_existing_lease_closes_once_at_inner_scope_exit);
+        RUN_TEST(test_bare_using_outer_lease_closes_at_inner_scope_exit);
+        return UNITY_END();
+    }
     if (argc == 2) {
         RUN_TEST(test_pinned_pointer_close_is_rejected_while_view_remains_live);
         RUN_TEST(test_closed_buffer_with_live_pin_rejects_owner_read);
@@ -717,6 +756,18 @@ int main(int argc, char **argv) {
     RUN_TEST(test_pool_lease_close_is_rejected_while_view_remains_live);
     RUN_TEST(test_pool_lease_reuse_survives_full_gc_stress);
     RUN_TEST(test_pool_lease_using_cleanup_returns_backing_on_throw);
+    RUN_TEST(test_inferred_non_idempotent_close_meta_runs_once_without_using);
+    RUN_TEST(test_bare_using_same_scope_reuses_inferred_close_mark);
+    RUN_TEST(test_using_existing_non_idempotent_close_meta_closes_once);
+    RUN_TEST(test_using_existing_non_idempotent_close_meta_closes_once_on_throw);
+    RUN_TEST(test_using_existing_close_meta_replaces_pending_throw);
+    RUN_TEST(test_top_level_using_existing_close_meta_replaces_pending_throw);
+    RUN_TEST(test_nested_using_same_non_idempotent_close_meta_closes_once);
+    RUN_TEST(test_using_inner_lease_keeps_older_outer_lease_open);
+    RUN_TEST(test_using_existing_lease_closes_once_at_inner_scope_exit);
+    RUN_TEST(test_bare_using_outer_lease_closes_at_inner_scope_exit);
+    RUN_TEST(test_using_plain_existing_local_keeps_value_readable);
+    RUN_TEST(test_bare_using_plain_existing_local_keeps_value_readable);
     RUN_TEST(test_explicit_pinned_pointer_span_stays_valid_across_gc_and_owner_close);
     RUN_TEST(test_pinned_pointer_close_is_rejected_while_view_remains_live);
     RUN_TEST(test_closed_buffer_with_live_pin_rejects_owner_read);
