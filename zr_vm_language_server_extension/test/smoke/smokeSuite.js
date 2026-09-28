@@ -4,6 +4,7 @@ const { spawn } = require('node:child_process');
 const vscode = require('vscode');
 const { verifyRestartResynchronization } = require('./restartProbe');
 
+// 由调试集成场景生成独立项目，固定入口和参数值以核对 DAP 栈帧、作用域与求值。
 const RICH_DEBUG_SOURCE = [
     'fn total(delta: int): int {',
     '    return delta + 31;',
@@ -11,6 +12,7 @@ const RICH_DEBUG_SOURCE = [
     'return total(7);',
 ].join('\n');
 
+// 同时覆盖继承、实例/静态属性、文档注释和方法引用；类名会在调用方附加时间戳以避开缓存。
 const CLASSES_FULL_SMOKE_SOURCE = [
     'class BaseHero {',
     '    pri var _hp: int = 0;',
@@ -64,6 +66,7 @@ const CLASSES_FULL_SMOKE_SOURCE = [
     '',
 ].join('\n');
 
+// 用项目导入及所有权类型检验 Hover 来源说明和语义 token 分类。
 const PROJECT_INFERENCE_SMOKE_SOURCE = [
     'let greetModule = import("greet");',
     '',
@@ -82,6 +85,7 @@ const PROJECT_INFERENCE_SMOKE_SOURCE = [
     '',
 ].join('\n');
 
+// 结构视图场景的入口模块；与下面两个模块构成工作区导入和循环导入。
 const STRUCTURE_SMOKE_MAIN_SOURCE = [
     'let helper = import("structure_helper");',
     'let system = import("zr.system");',
@@ -101,6 +105,7 @@ const STRUCTURE_SMOKE_MAIN_SOURCE = [
     '',
 ].join('\n');
 
+// 作为结构树中可导航的工作区导入，同时指向 cycle 以检验循环关系的展示。
 const STRUCTURE_SMOKE_HELPER_SOURCE = [
     'let cycle = import("structure_cycle");',
     '',
@@ -110,6 +115,7 @@ const STRUCTURE_SMOKE_HELPER_SOURCE = [
     '',
 ].join('\n');
 
+// 回指 helper，要求结构树遍历在循环导入下仍能稳定提供节点。
 const STRUCTURE_SMOKE_CYCLE_SOURCE = [
     'let helper = import("structure_helper");',
     '',
@@ -119,16 +125,22 @@ const STRUCTURE_SMOKE_CYCLE_SOURCE = [
     '',
 ].join('\n');
 
+// smoke 断言统一抛出错误，让宿主 runner 将失败传播到进程退出状态。
 function assert(condition, message) {
     if (!condition) {
         throw new Error(message);
     }
 }
 
+// 仅供轮询间隔使用；测试必须等待异步扩展激活、LSP 发布及 DAP 事件。
 async function sleep(milliseconds) {
     await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+// 对最终一致的 VS Code/LSP 状态重复读取；action 应可重复执行，predicate 只判定可观察结果。
+// 超时后保留最后的请求错误，便于区分宿主调用失败和结果尚未就绪。
+// TODO: deadline 只在 action() 前检查；VS Code 命令若不结算，会超过 timeoutMs 一直等待。
+// 需在独立宿主探针中注入不结算请求，确认是否应对单次动作设置可取消的等待上限。
 async function withRetry(action, predicate, timeoutMs, label) {
     const deadline = Date.now() + timeoutMs;
     let lastError;
@@ -155,6 +167,7 @@ async function withRetry(action, predicate, timeoutMs, label) {
     throw new Error(`Timed out waiting for ${label}${summarizeRetryValue(lastValue)}`);
 }
 
+// 只输出失败等待时的结果形状，避免把大型服务端响应塞进测试错误。
 function summarizeRetryValue(value) {
     if (value === undefined) {
         return '';
@@ -176,6 +189,7 @@ function summarizeRetryValue(value) {
     return ` (last value: ${String(value)})`;
 }
 
+// 让测试基于样例文本定位符号；调用方须保证目标片段及偏移落在预期 token 内。
 function findPositionBySubstring(document, substring, occurrence = 0, offset = 0) {
     const text = document.getText();
     let fromIndex = 0;
@@ -192,12 +206,15 @@ function findPositionBySubstring(document, substring, occurrence = 0, offset = 0
     return document.positionAt(index + offset);
 }
 
+// 显示文档以触发依赖活动编辑器的项目选择、结构视图和语言服务入口。
 async function openDocument(filePath) {
     const document = await vscode.workspace.openTextDocument(filePath);
     await vscode.window.showTextDocument(document);
     return document;
 }
 
+// 收尾统一适配本地磁盘和 VS Code 虚拟文件系统，并容忍 Windows 文件句柄的短暂占用。
+// BUG: ignoreBusy=true 时持续 EBUSY/EPERM/ENOTEMPTY 会被当成清理成功；调试场景可能留下固定名称的项目目录。
 async function deleteWorkspaceEntry(uri, options = {}) {
     const recursive = Boolean(options.recursive);
     const ignoreBusy = Boolean(options.ignoreBusy);
@@ -237,6 +254,7 @@ async function deleteWorkspaceEntry(uri, options = {}) {
     );
 }
 
+// 删除活动文档前先切换编辑器，避免宿主继续持有文件句柄；需要已打开的工作区及可用回退文档。
 async function deleteDocumentFile(uri, fallbackUri) {
     const workspaceFolder = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
     const fallbackTarget = fallbackUri ?? vscode.Uri.joinPath(workspaceFolder.uri, 'src', 'main.zr');
@@ -249,6 +267,7 @@ async function deleteDocumentFile(uri, fallbackUri) {
     await deleteWorkspaceEntry(uri);
 }
 
+// 用确定的语法错误验证扩展激活后诊断会发布到新建 .zr 文档。
 async function verifyDiagnostics(workspaceRoot) {
     const diagnosticUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'diagnostics_smoke.zr');
     await vscode.workspace.fs.writeFile(
@@ -270,6 +289,8 @@ async function verifyDiagnostics(workspaceRoot) {
     await deleteDocumentFile(diagnosticUri);
 }
 
+// 从 VS Code 命令入口检查基础 LSP 能力，并通过重启探针覆盖未保存文档的重新同步。
+// 该场景假设 import_basic 项目及 src/main.zr 已由 smoke 工作区准备好。
 async function verifyLanguageFeatures(workspaceRoot) {
     const smokeUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'lsp_smoke.zr');
     await vscode.workspace.fs.writeFile(
@@ -318,6 +339,7 @@ async function verifyLanguageFeatures(workspaceRoot) {
         'completion provider',
     );
     const completionItems = Array.isArray(completions) ? completions : completions.items;
+    // BUG: 这里只验证返回形态；即使补全候选项为空，也会报告基础补全 smoke 成功。
     assert(Array.isArray(completionItems), 'Expected completion list array');
 
     const references = await withRetry(
@@ -374,6 +396,7 @@ async function verifyLanguageFeatures(workspaceRoot) {
     await deleteDocumentFile(smokeUri);
 }
 
+// 核对编辑器提供器与导入整理命令的用户可见效果，而非仅检查命令是否已注册。
 async function verifyAdvancedEditorProviders(workspaceRoot) {
     const advancedUri = vscode.Uri.joinPath(workspaceRoot, 'src', `advanced_editor_smoke_${Date.now()}.zr`);
     const actionUri = vscode.Uri.joinPath(workspaceRoot, 'src', `advanced_editor_action_${Date.now()}.zr`);
@@ -555,6 +578,7 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
         assert(codeLens.some((item) => item.command?.command === 'zr.runCurrentProject'),
             'Expected code lens to expose the Zr test run command');
     } finally {
+        // BUG: 删除失败被空 catch 吞掉，所有断言通过时 smoke 仍可能成功退出并遗留测试文档。
         try {
             await deleteDocumentFile(advancedUri);
         } catch {
@@ -574,6 +598,7 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
     }
 }
 
+// 兼容 VS Code CompletionList 与裸数组，供补全场景使用同一套断言。
 function completionEntries(items) {
     if (!items) {
         return [];
@@ -582,6 +607,8 @@ function completionEntries(items) {
     return Array.isArray(items) ? items : items.items;
 }
 
+// 绕过 VS Code provider 直接询问扩展客户端，用于诊断协议能力与宿主适配的差异。
+// 请求失败被折叠为 undefined；调用方不能据此区分不支持与传输错误。
 async function sendRawLanguageServerRequest(method, params) {
     try {
         return await vscode.commands.executeCommand('zr.__sendLanguageServerRequest', method, params);
@@ -590,6 +617,8 @@ async function sendRawLanguageServerRequest(method, params) {
     }
 }
 
+// 同时收集宿主 provider 和原始 LSP 响应，以便类成员场景看到两种形态的候选项。
+// BUG: 原始响应可单独满足补全断言；若 VS Code provider 未注册或返回空，相关 smoke 仍可能通过。
 async function executeCompletionItems(uri, position, triggerCharacter = undefined, itemResolveCount = 100) {
     const primary = await vscode.commands.executeCommand(
         'vscode.executeCompletionItemProvider',
@@ -619,6 +648,8 @@ async function executeCompletionItems(uri, position, triggerCharacter = undefine
     return direct ?? primary;
 }
 
+// 文档符号场景优先看 VS Code 结果，再以原始 LSP 响应补足宿主序列化差异。
+// BUG: 宿主 provider 返回空时，原始响应可使文档符号断言通过，未覆盖实际编辑器入口。
 async function executeDocumentSymbols(uri) {
     const primary = await vscode.commands.executeCommand(
         'vscode.executeDocumentSymbolProvider',
@@ -634,6 +665,8 @@ async function executeDocumentSymbols(uri) {
     return Array.isArray(direct) ? direct : primary;
 }
 
+// 类定义场景汇合 VS Code 与原始 LSP Location，容纳两条请求路径的不同响应形态。
+// BUG: 仅原始响应含定义时仍判场景通过，无法发现 VS Code 转接路径缺失。
 async function executeDefinitions(uri, position) {
     const primary = await vscode.commands.executeCommand(
         'vscode.executeDefinitionProvider',
@@ -655,6 +688,7 @@ async function executeDefinitions(uri, position) {
     return primaryEntries.length > 0 ? primaryEntries : primary;
 }
 
+// 为方法调用中的不同 token 偏移寻找可解析点，避免测试样例的标点位置主导断言。
 async function executeDefinitionsAtAnyPosition(uri, positions) {
     for (const position of positions) {
         const definitions = await executeDefinitions(uri, position);
@@ -665,6 +699,7 @@ async function executeDefinitionsAtAnyPosition(uri, positions) {
     return [];
 }
 
+// 把 VS Code WorkspaceEdit 与 LSP WorkspaceEdit 归一为 URI/编辑列表，供重命名断言共用。
 function workspaceEditEntries(edit) {
     if (!edit) {
         return [];
@@ -687,6 +722,7 @@ function workspaceEditEntries(edit) {
     return entries;
 }
 
+// 要求声明和使用处都被重命名，防止只收到一个局部编辑仍被视为完整重命名。
 function workspaceEditHasRenameEdits(edit, pathSuffix, newText) {
     return workspaceEditEntries(edit).some(([uri, edits]) =>
         uriPath(uri).endsWith(pathSuffix) &&
@@ -694,6 +730,8 @@ function workspaceEditHasRenameEdits(edit, pathSuffix, newText) {
         edits.filter((item) => item?.newText === newText).length >= 2);
 }
 
+// 优先检查编辑器重命名结果；不足时查询原始协议响应以定位服务端是否已有编辑。
+// BUG: 原始响应可使断言通过，即便 VS Code 的重命名 provider 没有交付完整编辑。
 async function executeRenameEdit(uri, position, newName, pathSuffix) {
     const primary = await vscode.commands.executeCommand(
         'vscode.executeDocumentRenameProvider',
@@ -713,6 +751,7 @@ async function executeRenameEdit(uri, position, newName, pathSuffix) {
     return direct ?? primary;
 }
 
+// 将 Hover/补全文档的多种 VS Code 与 LSP 表示转为可断言文本。
 function markdownLikeToString(value) {
     if (!value) {
         return '';
@@ -733,6 +772,7 @@ function markdownLikeToString(value) {
     return String(value);
 }
 
+// 聚合多个 Hover 区块，测试只关心用户最终可见的语义文本。
 function hoverText(items) {
     if (!Array.isArray(items)) {
         return '';
@@ -741,18 +781,23 @@ function hoverText(items) {
     return items.map((item) => markdownLikeToString(item.contents)).join('\n');
 }
 
+// 兼容 MarkdownString 与普通字符串，用于验证源码注释进入补全文档。
 function completionDocumentationText(item) {
     return markdownLikeToString(item?.documentation);
 }
 
+// 检查特定样例注释是否经补全链路保留。
 function completionHasDocumentation(item, expectedText) {
     return completionDocumentationText(item).includes(expectedText);
 }
 
+// TODO: 此辅助函数当前没有调用方；核查是否曾用于补全详情断言，再决定恢复断言或删除。
+// 从两种补全标签布局读取详情，预留给不同宿主版本的断言。
 function detailText(item) {
     return item?.detail ?? item?.label?.detail ?? '';
 }
 
+// 兼容 Location、LocationLink 与嵌套位置，保留定义/引用目标的 URI。
 function locationUri(entry) {
     if (!entry) {
         return undefined;
@@ -761,6 +806,7 @@ function locationUri(entry) {
     return entry.uri ?? entry.targetUri ?? entry.location?.uri;
 }
 
+// 定义目标优先选择精确选中范围，以核对标识符跨度而非整段声明。
 function locationRange(entry) {
     if (!entry) {
         return undefined;
@@ -769,22 +815,26 @@ function locationRange(entry) {
     return entry.range ?? entry.targetSelectionRange ?? entry.targetRange ?? entry.location?.range;
 }
 
+// LSP 坐标为零基；供目标范围断言比较源码中的预期位置。
 function positionEquals(position, line, character) {
     return Boolean(position) && position.line === line && position.character === character;
 }
 
+// 检查定义位置的完整跨度，避免仅落在相同行上造成假阳性。
 function rangeEquals(range, startLine, startCharacter, endLine, endCharacter) {
     return Boolean(range) &&
         positionEquals(range.start, startLine, startCharacter) &&
         positionEquals(range.end, endLine, endCharacter);
 }
 
+// 在混合 Location 结果中找到本次临时样例的精确标识符范围。
 function hasLocationRange(items, pathSuffix, startLine, startCharacter, endLine, endCharacter) {
     return Array.isArray(items) && items.some((item) =>
         uriPath(locationUri(item)).endsWith(pathSuffix) &&
         rangeEquals(locationRange(item), startLine, startCharacter, endLine, endCharacter));
 }
 
+// 文档符号允许层级结构；递归查询可覆盖类成员的嵌套呈现。
 function hasDocumentSymbol(items, name) {
     if (!Array.isArray(items)) {
         return false;
@@ -795,14 +845,17 @@ function hasDocumentSymbol(items, name) {
         (item.name === name || hasDocumentSymbol(item.children, name)));
 }
 
+// 结构视图快照中的缺失 children 代表叶节点，供树遍历统一处理。
 function structureChildren(node) {
     return Array.isArray(node?.children) ? node.children : [];
 }
 
+// 限定直接子级查询，避免错误层级中的同名节点满足结构视图断言。
 function findImmediateStructureNode(items, predicate) {
     return Array.isArray(items) ? items.find((item) => item && predicate(item)) : undefined;
 }
 
+// 递归查询结构视图快照中的声明或模块；仅用于需要允许嵌套的断言。
 function findStructureNode(items, predicate) {
     if (!Array.isArray(items)) {
         return undefined;
@@ -825,10 +878,12 @@ function findStructureNode(items, predicate) {
     return undefined;
 }
 
+// 结构节点导航命令允许没有参数，供命令调用保持统一形态。
 function commandArguments(node) {
     return Array.isArray(node?.commandArguments) ? node.commandArguments : [];
 }
 
+// 要求分组直接属于目标项目/文件节点，防止跨层级误匹配。
 function findImmediateGroupNode(node, label) {
     return findImmediateStructureNode(
         structureChildren(node),
@@ -836,6 +891,8 @@ function findImmediateGroupNode(node, label) {
     );
 }
 
+// TODO: 当前结构视图场景直接内嵌同类等待逻辑，未调用本函数；复审时确认是否要合并。
+// 等待导航命令更新活动编辑器与光标位置，原拟用于结构视图的用户操作验收。
 async function verifyActiveSelection(uriSuffix, line, character, label) {
     await withRetry(
         async () => vscode.window.activeTextEditor,
@@ -852,6 +909,7 @@ async function verifyActiveSelection(uriSuffix, line, character, label) {
     );
 }
 
+// VS Code 可能返回数组或类数组 token 数据；统一为可解码的数字序列。
 function semanticTokenData(tokens) {
     if (!tokens || !tokens.data) {
         return [];
@@ -868,6 +926,7 @@ function semanticTokenData(tokens) {
     return [];
 }
 
+// 按 LSP 增量坐标恢复 token 和源码文本，测试检查语义分类而非仅检查非空结果。
 function decodeSemanticTokens(document, legend, tokens) {
     const data = semanticTokenData(tokens);
     const tokenTypes = Array.isArray(legend?.tokenTypes) ? legend.tokenTypes : [];
@@ -895,11 +954,13 @@ function decodeSemanticTokens(document, legend, tokens) {
     return decoded;
 }
 
+// 同时匹配语义类型与文本，防止同名类别中的其他 token 掩盖错误分类。
 function hasSemanticToken(decodedTokens, expectedType, expectedText) {
     return decodedTokens.some((token) =>
         token.type === expectedType && token.text === expectedText);
 }
 
+// 调试 source 请求只需多模块源码；替换网络样例中的运行期 Record 调用以稳定暂停点。
 function sanitizeNetworkLoopbackDebugSource(text) {
     return text.replace(
         'var r = new lib.Record(3, 4);\nvar sum = r();',
@@ -907,6 +968,7 @@ function sanitizeNetworkLoopbackDebugSource(text) {
     );
 }
 
+// 分别从已有项目和临时所有权样例验证导入来源 Hover 与语义 token 的跨层结果。
 async function verifyProjectInferenceAndSemanticTokens(workspaceRoot) {
     const projectMainUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'main.zr');
     const smokeUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'project_inference_smoke.zr');
@@ -995,6 +1057,8 @@ async function verifyProjectInferenceAndSemanticTokens(workspaceRoot) {
     await deleteDocumentFile(smokeUri);
 }
 
+// 检查活动文件树、选中项目树及节点导航；通过临时项目验证显式选择跨刷新保留。
+// 该场景依赖 import_basic 初始选择及两个调试用内部检查命令。
 async function verifyStructureViews(workspaceRoot) {
     const mainUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'structure_smoke_main.zr');
     const helperUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'structure_helper.zr');
@@ -1290,6 +1354,8 @@ async function verifyStructureViews(workspaceRoot) {
     }
 }
 
+// 用独立类样例覆盖诊断、继承成员补全、文档、定义跨度、引用及重命名。
+// 时间戳类名避开前次会话缓存，但要求所有查询针对同一临时文档版本。
 async function verifyClassLanguageFeatures(workspaceRoot) {
     const uniqueId = Date.now();
     const baseHeroName = `BaseHeroSmoke${uniqueId}`;
@@ -1389,6 +1455,7 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
     assert(bossCompletionLabels.includes('heal'), `boss. completion should include method heal: ${bossCompletionLabels.join(', ')}`);
     assert(bossCompletionLabels.includes('total'), `boss. completion should include method total: ${bossCompletionLabels.join(', ')}`);
 
+    // 同一静态属性在点号前后两个光标位置都可能被宿主接收；汇总后验证属性候选。
     const scoreBoardCompletions = await withRetry(
         async () => {
             const primary = await executeCompletionItems(document.uri, scoreBoardCompletionPosition, '.');
@@ -1484,15 +1551,20 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
     await deleteDocumentFile(smokeUri);
 }
 
+// 在启动会话前注册 DAP tracker，避免丢失刚启动时的 breakpoint/stopped 事件。
+// BUG: 启动调用抛错时，已创建的 Promise 无取消路径，超时拒绝可能成为未处理的异步错误。
 async function waitForDebugEvent(eventName, timeoutMs, expectedSessionId, label, predicate) {
     return new Promise((resolve, reject) => {
         const trackerDisposable = vscode.debug.registerDebugAdapterTrackerFactory('zr', {
+            // 每次调试会话建立时由 VS Code 调用；提供 ID 时仅订阅目标会话。
             createDebugAdapterTracker(debugSession) {
+                // BUG: 当前所有调用方均传 undefined；并行 ZR 会话的同名事件也可提前解除等待。
                 if (expectedSessionId && debugSession.id !== expectedSessionId) {
                     return undefined;
                 }
 
                 return {
+                    // DAP 事件到达后才判定测试已进入预期暂停或断点解析阶段。
                     onDidSendMessage(message) {
                         if (message && message.type === 'event' && message.event === eventName) {
                             if (predicate && !predicate(message)) {
@@ -1513,6 +1585,7 @@ async function waitForDebugEvent(eventName, timeoutMs, expectedSessionId, label,
     });
 }
 
+// 仅对当前活动的目标会话订阅终止；已结束的会话无需等待历史事件。
 async function waitForDebugSessionEnd(session, timeoutMs, label) {
     if (!session) {
         return undefined;
@@ -1524,6 +1597,7 @@ async function waitForDebugSessionEnd(session, timeoutMs, label) {
     }
 
     return new Promise((resolve, reject) => {
+        // 仅目标会话的结束可解除等待，其他并行会话不会提前通过。
         const disposable = vscode.debug.onDidTerminateDebugSession((terminatedSession) => {
             if (terminatedSession.id !== session.id) {
                 return;
@@ -1532,6 +1606,7 @@ async function waitForDebugSessionEnd(session, timeoutMs, label) {
             disposable.dispose();
             resolve(terminatedSession);
         });
+        // 到期时解除事件订阅；调用方只应把目标会话的终止视作成功。
         const timeoutHandle = setTimeout(() => {
             disposable.dispose();
             reject(new Error(`Timed out waiting for debug session to end${label ? ` (${label})` : ''}`));
@@ -1539,6 +1614,8 @@ async function waitForDebugSessionEnd(session, timeoutMs, label) {
     });
 }
 
+// 为 attach 测试启动独立 CLI，使用回环动态端口并从标准输出获取可连接端点。
+// 成功获得端点后，调用方必须终止仍在等待调试器的子进程。
 async function startExternalDebugTarget(cliPath, workspaceRoot) {
     const projectPath = path.join(workspaceRoot.fsPath, 'import_basic.zrp');
     const child = spawn(cliPath, [
@@ -1557,6 +1634,7 @@ async function startExternalDebugTarget(cliPath, workspaceRoot) {
         let stdoutBuffer = '';
         let stderrBuffer = '';
         let resolved = false;
+        // 动态端点未发布时杀掉等待调试器的 CLI，避免失败测试留下外部目标。
         const timeoutHandle = setTimeout(() => {
             if (!resolved) {
                 child.kill();
@@ -1564,6 +1642,7 @@ async function startExternalDebugTarget(cliPath, workspaceRoot) {
             }
         }, 15000);
 
+        // 将端点、提前退出和启动错误汇合成一次建立连接的结果。
         function finish(error, value) {
             clearTimeout(timeoutHandle);
             if (error) {
@@ -1573,6 +1652,7 @@ async function startExternalDebugTarget(cliPath, workspaceRoot) {
             resolve(value);
         }
 
+        // CLI 输出端点即交付子进程所有权，后续关闭由 attach 场景负责。
         child.stdout.on('data', (chunk) => {
             stdoutBuffer += chunk.toString();
             const match = stdoutBuffer.match(/debug_endpoint=([^\r\n]+)/);
@@ -1584,14 +1664,17 @@ async function startExternalDebugTarget(cliPath, workspaceRoot) {
                 });
             }
         });
+        // 把失败前的服务端日志保留在异常上下文，供 smoke 失败定位。
         child.stderr.on('data', (chunk) => {
             stderrBuffer += chunk.toString();
         });
+        // 若 CLI 尚未发布端点就退出，attach 测试没有可连接目标，应立即失败。
         child.on('exit', (code) => {
             if (!resolved) {
                 finish(new Error(`External debug target exited before endpoint became available (code=${code}).\nstdout:\n${stdoutBuffer}\nstderr:\n${stderrBuffer}`));
             }
         });
+        // spawn 错误属于目标创建失败；与提前退出共用同一拒绝路径。
         child.on('error', (error) => {
             if (!resolved) {
                 finish(error);
@@ -1600,6 +1683,7 @@ async function startExternalDebugTarget(cliPath, workspaceRoot) {
     });
 }
 
+// 在断点暂停后核对 DAP 栈、源映射与基础作用域，证明调试适配器可供编辑器检查状态。
 async function verifyDebugStateInspection(session, expectedSourcePath) {
     const stackTrace = await session.customRequest('stackTrace', { threadId: 1 });
     const stackFrames = Array.isArray(stackTrace?.stackFrames) ? stackTrace.stackFrames : [];
@@ -1633,10 +1717,12 @@ async function verifyDebugStateInspection(session, expectedSourcePath) {
     throw new Error('Expected variables request to expose greetModule in at least one scope');
 }
 
+// 对 DAP variables 响应按名称取值，供富调试场景断言稳定字段。
 function debugVariableByName(variables, name) {
     return Array.isArray(variables) ? variables.find((item) => item?.name === name) : undefined;
 }
 
+// 展开 DAP 变量引用；没有变量列表视为空集合，使断言承担错误报告。
 async function readDebugVariables(session, variablesReference) {
     const variablesResult = await session.customRequest('variables', {
         variablesReference,
@@ -1644,6 +1730,7 @@ async function readDebugVariables(session, variablesReference) {
     return Array.isArray(variablesResult?.variables) ? variablesResult.variables : [];
 }
 
+// 要求指定栈帧中的作用域可展开，再读取其变量供语义级断言使用。
 async function readDebugScopeVariables(session, frameId, scopeName) {
     const scopesResult = await session.customRequest('scopes', { frameId });
     const scopes = Array.isArray(scopesResult?.scopes) ? scopesResult.scopes : [];
@@ -1654,6 +1741,7 @@ async function readDebugScopeVariables(session, frameId, scopeName) {
     return readDebugVariables(session, scope.variablesReference);
 }
 
+// 验证富调试项目中参数、全局对象、模块展开和暂停态求值在 DAP 上均可见。
 async function verifyRichDebugInspection(session, expectedSourcePath) {
     const stackTrace = await session.customRequest('stackTrace', { threadId: 1 });
     const stackFrames = Array.isArray(stackTrace?.stackFrames) ? stackTrace.stackFrames : [];
@@ -1701,6 +1789,7 @@ async function verifyRichDebugInspection(session, expectedSourcePath) {
         'Expected loadedModules expansion to expose at least one loaded module');
 }
 
+// 测试中替换 VS Code 交互入口，确定性地选择项目或输入端点；操作后必须恢复原方法。
 async function withPatchedWindowMethod(methodName, replacement, action) {
     const original = vscode.window[methodName];
     let restored = false;
@@ -1718,6 +1807,7 @@ async function withPatchedWindowMethod(methodName, replacement, action) {
     }
 }
 
+// 将交互式项目选择固定到指定标签，供各 LSP/视图场景使用同一已知项目上下文。
 async function selectProjectByLabel(label) {
     await withPatchedWindowMethod('showQuickPick', async (items) =>
         items.find((item) => item.label === label), async () => {
@@ -1725,6 +1815,7 @@ async function selectProjectByLabel(label) {
     });
 }
 
+// 临时拦截任务执行以检验构造出的命令参数，同时避免 smoke 真正运行项目任务。
 async function withPatchedObjectMethod(target, methodName, replacement, action) {
     const original = target[methodName];
     let restored = false;
@@ -1742,6 +1833,8 @@ async function withPatchedObjectMethod(target, methodName, replacement, action) 
     }
 }
 
+// 在 .zrp 与 .zr 活动编辑器之间核对项目动作的目标、CLI 设置和调试入口。
+// 工作区设置、断点和会话属于宿主共享状态，必须在场景完成后恢复。
 async function verifyProjectActions(workspaceRoot, bundledCliPath, debugProjectUri) {
     const zrConfig = vscode.workspace.getConfiguration('zr');
     const legacyDebugConfig = vscode.workspace.getConfiguration('zr.debug');
@@ -1757,6 +1850,8 @@ async function verifyProjectActions(workspaceRoot, bundledCliPath, debugProjectU
     let capturedTask;
     let debugSession;
 
+    // BUG: 此时活动编辑器已被上面的 openDocument(debugSourceUri) 切到 .zr，
+    // 名为「zrp editor」的检查实际没有覆盖 .zrp 为活动编辑器的情况。
     await withRetry(
         async () => vscode.commands.executeCommand('zr.__inspectProjectActions'),
         (value) => value?.isVisible === true && String(value?.projectPath ?? '').endsWith('import_basic.zrp'),
@@ -1789,6 +1884,7 @@ async function verifyProjectActions(workspaceRoot, bundledCliPath, debugProjectU
         assert(configuredState?.cliPath === bundledCliPath,
             'Expected project actions to resolve the configured zr.executablePath');
 
+        // 截获当前项目任务，核对 CLI 与 .zrp 参数，同时避免在 smoke 中真正执行程序。
         await withPatchedObjectMethod(vscode.tasks, 'executeTask', async (task) => {
             capturedTask = task;
             return {
@@ -1805,6 +1901,7 @@ async function verifyProjectActions(workspaceRoot, bundledCliPath, debugProjectU
             'Expected zr.runCurrentProject to launch the selected .zrp project');
 
         capturedTask = undefined;
+        // 另走显式选中项目命令，确认它仍把同一项目交给 VS Code 任务系统。
         await withPatchedObjectMethod(vscode.tasks, 'executeTask', async (task) => {
             capturedTask = task;
             return {
@@ -1859,6 +1956,7 @@ async function verifyProjectActions(workspaceRoot, bundledCliPath, debugProjectU
     }
 }
 
+// 先确认打包 CLI 和命令贡献可用，再运行项目动作的用户路径测试。
 async function verifyProjectActionIntegration(workspaceRoot) {
     const extension = vscode.extensions.all.find((item) => item.packageJSON?.name === 'zr-vm-language-server');
     const bundledFolder = `${process.platform}-${process.arch}`;
@@ -1880,6 +1978,8 @@ async function verifyProjectActionIntegration(workspaceRoot) {
     await verifyProjectActions(workspaceRoot, bundledCliPath, debugProjectUri);
 }
 
+// 复用 launch 场景的事件顺序检查：先订阅、再启动、暂停检查、继续或主动断开。
+// onInitialStopped/onStopped 回调供富调试与 source 请求注入特定 DAP 断言。
 async function verifyLaunchDebugSession({
     workspaceRoot,
     debugDocument,
@@ -1901,6 +2001,7 @@ async function verifyLaunchDebugSession({
         : undefined;
     const launchStopped = waitForDebugEvent('stopped', 15000, undefined, `${expectedSessionStartLabel}:initial-stop`);
     let stoppedEventCount = 0;
+    // 入口暂停与源码断点都发 stopped；过滤首个事件后再核对第二次暂停的原因。
     const postEntryStopped = continueFromEntryToBreakpoint
         ? waitForDebugEvent(
             'stopped',
@@ -1968,6 +2069,7 @@ async function verifyLaunchDebugSession({
     }
 }
 
+// 从外部 CLI 端点 attach，核对入口暂停以及继续/断开两种生命周期。
 async function verifyAttachDebugSession({
     expectedSessionStartLabel,
     startSession,
@@ -2010,6 +2112,7 @@ async function verifyAttachDebugSession({
     }
 }
 
+// 检查非回环端点在启动前被扩展拒绝，并向用户显示明确配置错误。
 async function verifyInvalidAttachEndpointRejected(workspaceRoot) {
     let errorMessage = '';
     const invalidEndpoint = '192.168.10.8:9000';
@@ -2031,6 +2134,8 @@ async function verifyInvalidAttachEndpointRejected(workspaceRoot) {
         'Expected invalid attach configuration to surface a loopback validation error');
 }
 
+// 打通打包 CLI、launch、DAP 检查、source 请求、attach 和命令入口的桌面宿主链路。
+// 场景从 smoke 工作区的 import_basic 与相邻 network_loopback 样例构造临时项目。
 async function verifyDebugIntegration(workspaceRoot) {
     const extension = vscode.extensions.all.find((item) => item.packageJSON?.name === 'zr-vm-language-server');
     const contributedDebuggers = extension?.packageJSON?.contributes?.debuggers ?? [];
@@ -2147,6 +2252,7 @@ async function verifyDebugIntegration(workspaceRoot) {
                 inspectBreakpointState: false,
                 disconnectAfterStop: true,
                 expectBreakpointResolved: false,
+                // 入口暂停后用运行期源路径设置断点，再让通用流程继续到方法体检查。
                 onInitialStopped: async (session) => {
                     const stackTrace = await session.customRequest('stackTrace', { threadId: 1 });
                     const stackFrames = Array.isArray(stackTrace?.stackFrames) ? stackTrace.stackFrames : [];
@@ -2190,6 +2296,7 @@ async function verifyDebugIntegration(workspaceRoot) {
             expectedFirstStopReason: 'entry',
             inspectBreakpointState: false,
             disconnectAfterStop: true,
+            // 命令入口返回 void；通用 launch 探针另行等待真正的活动会话。
             startSession: async () => {
                 await vscode.commands.executeCommand('zr.debugCurrentProject');
                 return true;
@@ -2204,6 +2311,7 @@ async function verifyDebugIntegration(workspaceRoot) {
             inspectBreakpointState: false,
             disconnectAfterStop: true,
             expectBreakpointResolved: false,
+            // 在真正暂停的会话上请求依赖模块源码，验证 DAP source 与项目模块映射。
             onStopped: async (session) => {
                 const sourceResponse = await session.customRequest('source', {
                     source: {
@@ -2257,6 +2365,7 @@ async function verifyDebugIntegration(workspaceRoot) {
         await verifyAttachDebugSession({
             expectedSessionStartLabel: 'ZR attach debug endpoint command session start',
             disconnectAfterStop: true,
+            // 模拟用户输入已启动 CLI 的回环端点，之后由 attach 探针核对实际会话。
             startSession: async () => withPatchedWindowMethod('showInputBox', async () => commandAttachTarget.endpoint, async () => {
                 await vscode.commands.executeCommand('zr.attachDebugEndpoint');
                 return true;
@@ -2269,6 +2378,10 @@ async function verifyDebugIntegration(workspaceRoot) {
     }
 }
 
+/**
+ * 桌面扩展宿主的 smoke 总入口；electronRunner 从环境变量传入期望模式和测试范围。
+ * 需要已准备的工作区、打包扩展与原生 CLI；各场景会临时写入工作区并改动宿主状态。
+ */
 async function runSmokeSuite({ expectedMode, focus = 'all' }) {
     const workspaceFolder = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
     assert(workspaceFolder, 'Expected a workspace folder for smoke test');
@@ -2277,9 +2390,11 @@ async function runSmokeSuite({ expectedMode, focus = 'all' }) {
 
     await extension.activate();
     assert(extension.isActive, 'Expected Zr extension to remain active after activation');
+    // BUG: 此处仅检查参数属于枚举，未核对已激活扩展的实际服务端模式；错误模式仍可能通过。
     assert(expectedMode === 'native' || expectedMode === 'web',
         `Unexpected smoke mode: ${expectedMode}`);
 
+    // BUG: 未知 focus 不匹配任何分支时，所有场景被跳过且 runSmokeSuite 正常返回。
     if (focus === 'all' || focus === 'lsp') {
         await verifyLanguageFeatures(workspaceFolder.uri);
         await verifyAdvancedEditorProviders(workspaceFolder.uri);
@@ -2300,10 +2415,13 @@ async function runSmokeSuite({ expectedMode, focus = 'all' }) {
     }
 }
 
+// 统一 URI 与字符串形式以比较临时文件后缀；调用方应传入有效位置对象。
 function uriPath(uri) {
     return typeof uri.path === 'string' ? uri.path : uri.toString();
 }
 
+// 消除平台路径分隔符差异以核对 DAP 源映射。
+// BUG: 无条件转小写会在区分大小写的文件系统上把错误大小写路径误判为相同。
 function normalizePath(value) {
     return typeof value === 'string' ? value.replace(/[\\/]+/g, '/').toLowerCase() : '';
 }
