@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 与仓库稳定哈希参数保持一致；改变它们会改变规范化策略的缓存身份。 */
 #define ZR_COMPILE_PROFILE_HASH_OFFSET UINT64_C(1469598103934665603)
 #define ZR_COMPILE_PROFILE_HASH_PRIME UINT64_C(1099511628211)
 
@@ -20,6 +21,7 @@ static TZrBool compile_profile_diagnostic_set(
         TZrUInt32 field,
         TZrUInt64 expected,
         TZrUInt64 actual) {
+    /* 诊断输出可选；统一以失败值结束，供各校验分支直接早退。 */
     if (diagnostic != ZR_NULL) {
         diagnostic->code = code;
         diagnostic->field = field;
@@ -59,6 +61,11 @@ static TZrBool compile_profile_preset_valid(EZrCompileOptimizationPreset value) 
                      value < ZR_COMPILE_PRESET_COUNT);
 }
 
+/**
+ * @brief 初始化为开发模式、严格数值策略和解释器后端的默认配置。
+ * @param profile 接收默认配置；为空时不执行任何操作。
+ * @note 先清零整份结构，再写入当前 schema 和基础标量优化通道。
+ */
 void ZrParser_CompileOptimizationProfile_Init(
         SZrCompileOptimizationProfile *profile) {
     if (profile == ZR_NULL) {
@@ -74,6 +81,7 @@ void ZrParser_CompileOptimizationProfile_Init(
     profile->passMask = ZR_COMPILE_PASS_BASIC | ZR_COMPILE_PASS_SCALAR;
 }
 
+/* 每个预设先重置共享维度；schema、预设来源和目标/ABI 哈希由调用方保留。 */
 static void compile_profile_set_common(
         SZrCompileOptimizationProfile *profile,
         EZrCompileBuildMode buildMode,
@@ -92,6 +100,14 @@ static void compile_profile_set_common(
     profile->enablePgo = ZR_FALSE;
 }
 
+/**
+ * @brief 将一个预设展开为可继续编辑的独立配置维度。
+ * @param profile 待更新配置；为空时失败。
+ * @param preset 需要展开的预设值。
+ * @param diagnostic 可选诊断输出；失败时记录参数错误。
+ * @return 配置成功更新时返回 ZR_TRUE，否则返回 ZR_FALSE。
+ * @note 仅把零 schema 升级为当前版本；非零版本由 Normalize 校验。
+ */
 TZrBool ZrParser_CompileOptimizationProfile_ApplyPreset(
         SZrCompileOptimizationProfile *profile,
         EZrCompileOptimizationPreset preset,
@@ -208,6 +224,7 @@ TZrBool ZrParser_CompileOptimizationProfile_ApplyPreset(
     return ZR_TRUE;
 }
 
+/* 按低位字节优先追加固定宽度整数，避免依赖主机整数的内存表示。 */
 static void compile_profile_hash_u32(TZrUInt64 *hash, TZrUInt32 value) {
     TZrUInt32 index;
     for (index = 0U; index < 4U; ++index) {
@@ -224,6 +241,12 @@ static void compile_profile_hash_u64(TZrUInt64 *hash, TZrUInt64 value) {
     }
 }
 
+/**
+ * @brief 按固定字段顺序计算有效策略的稳定哈希。
+ * @param effective 有效策略；为空时返回零。
+ * @return 不含预设来源和既有 profileHash 的策略标识。
+ * @note 字段逐一序列化，不依赖结构体填充、进程地址或主机字节序。
+ */
 TZrUInt64 ZrParser_CompileOptimizationProfile_Hash(
         const SZrCompileEffectivePolicy *effective) {
     TZrUInt64 hash = ZR_COMPILE_PROFILE_HASH_OFFSET;
@@ -231,8 +254,7 @@ TZrUInt64 ZrParser_CompileOptimizationProfile_Hash(
         return 0U;
     }
     compile_profile_hash_u32(&hash, effective->schemaVersion);
-    /* The preset is provenance, not a semantic dimension.  Two presets that
-     * expand to the same effective settings must share cache entries. */
+    /* 预设只记录来源，不是有效语义维度；相同展开结果应得到相同哈希。 */
     compile_profile_hash_u32(&hash, (TZrUInt32)effective->buildMode);
     compile_profile_hash_u32(&hash, (TZrUInt32)effective->numericPermission);
     compile_profile_hash_u32(&hash, (TZrUInt32)effective->target);
@@ -248,6 +270,21 @@ TZrUInt64 ZrParser_CompileOptimizationProfile_Hash(
     return hash;
 }
 
+/**
+ * @brief 校验配置并生成供上层读取的有效策略。
+ * @param profile 待校验配置；为空时报告无效参数。
+ * @param effective 必需的输出对象；成功时写入规范化维度和 profileHash。
+ * @param diagnostic 可选诊断输出；失败时记录按校验顺序遇到的首个问题。
+ * @return 校验通过并生成有效策略时返回 ZR_TRUE。
+ * @note 参数检查通过后先清零 effective；之后的字段校验失败会留下全零输出。
+ */
+/* TODO: 当前源码唯一可见的跨模块 profile 使用点是在缓存构键前校验 profileHash 并纳入键值
+ * (zr_vm_parser/src/zr_vm_parser/compiler/compile_ir_cache.c:91;
+ *  zr_vm_parser/src/zr_vm_parser/compiler/compile_ir_cache.c:170;
+ *  zr_vm_parser/src/zr_vm_parser/compiler/compile_ir_cache.c:189;
+ *  zr_vm_parser/src/zr_vm_parser/compiler/compile_ir_cache.c:209)，
+ * 尚未找到按 backend/passMask/buildMode 驱动生产编译或 pass 选择的调用。沿 parser
+ * compile entry 与 pass manager 核实维度覆盖优先级，并验证策略变化的缓存失效路径。 */
 TZrBool ZrParser_CompileOptimizationProfile_Normalize(
         const SZrCompileOptimizationProfile *profile,
         SZrCompileEffectivePolicy *effective,
@@ -262,6 +299,12 @@ TZrBool ZrParser_CompileOptimizationProfile_Normalize(
                 0U);
     }
     (void)memset(effective, 0, sizeof(*effective));
+    /* TODO: field 目前以 0..15 裸值写入；公开结构只暴露整数域
+     * (zr_vm_parser/include/zr_vm_parser/compile_optimization_profile.h:125)，
+     * 当前测试只检查 code (tests/parser/test_ssa_build_profiles.c:35 和
+     * tests/parser/test_ssa_build_profiles.c:42)。确认 field 数值是否属于外部稳定契约，
+     * 再决定公开字段枚举或明确为内部细节并补映射验证。 */
+    /* 下列条件按此顺序短路，诊断只报告第一个不满足的约束。 */
     if (profile->schemaVersion !=
             ZR_COMPILE_OPTIMIZATION_PROFILE_SCHEMA_VERSION) {
         return compile_profile_diagnostic_set(
@@ -450,6 +493,16 @@ static const TZrChar *compile_profile_backend_name(EZrCompileBackend backend) {
     }
 }
 
+/**
+ * @brief 将有效策略格式化为便于检查的单行描述。
+ * @param effective 待显示策略；为空时失败。
+ * @param buffer 接收以零结尾的描述文本。
+ * @param bufferSize buffer 的可写字节数，包含结尾零字节的空间。
+ * @return 参数有效且完整文本可写入时返回 ZR_TRUE；截断或参数无效时返回 ZR_FALSE。
+ */
+/* TODO: 文档定义此函数为 CLI dry-run 展示接口（docs/cli-and-tooling/optimization-build-profiles.md:18, docs/cli-and-tooling/optimization-build-profiles.md:19），
+ * 目前只找到测试调用（tests/parser/test_ssa_build_profiles.c:20）；沿 CLI 命令入口核实接线，
+ * 并在入口测试中覆盖字段展示、参数错误和缓冲区不足的处理。 */
 TZrBool ZrParser_CompileOptimizationProfile_Describe(
         const SZrCompileEffectivePolicy *effective,
         TZrChar *buffer,

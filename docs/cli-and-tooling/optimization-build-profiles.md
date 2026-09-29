@@ -15,8 +15,8 @@ policy.  Invalid combinations are reported with a typed diagnostic, for
 example host JIT on a mobile target, fast-math requested under strict numeric
 permission, or LTO/PGO requested for a non-LLVM backend.  The normalized
 policy hash is stable and contains no pointers or runtime generation values,
-so it can be included in an artifact or cache key.  `Describe` is the dry-run
-surface used by a CLI to show the effective build settings and hash.
+so it can be included in an artifact or cache key.  `Describe` formats a dry-run
+summary of the effective settings and hash; production CLI wiring is still pending.
 
 The cache contract in `zr_vm_parser/compile_ir_cache.h` builds a portable
 SHA-256 key from source/dependency bytes, contract and compiler ABI hashes,
