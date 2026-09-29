@@ -7,6 +7,7 @@ static TZrBool compiler_class_ownership_is_field(const SZrTypeMemberInfo *member
             memberInfo->memberType == ZR_AST_CLASS_FIELD);
 }
 
+/* 仅把 Shared 的非静态 struct/class 字段视为资源实例间的强边，并按字段的底层类型名匹配目标。 */
 static TZrBool compiler_class_ownership_has_shared_field_to(
         SZrTypePrototypeInfo *info,
         SZrString *targetTypeName) {
@@ -29,6 +30,7 @@ static TZrBool compiler_class_ownership_has_shared_field_to(
     return ZR_FALSE;
 }
 
+/* 将告警封装为语义查询可消费的诊断事实。 */
 static void compiler_class_ownership_publish_cycle_warning(
         SZrCompilerState *cs,
         const SZrTypeMemberInfo *memberInfo) {
@@ -62,10 +64,19 @@ static void compiler_class_ownership_publish_cycle_warning(
     memset(&fact, 0, sizeof(fact));
     fact.node = memberInfo->declarationNode;
     fact.diagnostic = diagnostic;
+    /* 成功追加会复制诊断值，因此之后可以释放本地构建器数据。 */
+    /*
+     * TODO: 复制失败时告警不会进入 semanticContext，后续
+     * ZrParser_SemanticQuery_MaterializeDiagnostics 无法发布它。确认该失败策略，并补分配失败验证。
+     */
     (void)ZrParser_SemanticFacts_AppendDiagnostic(cs->semanticContext, &fact);
     ZrParser_StructuredDiagnostic_Free(cs->state, &diagnostic);
 }
 
+/*
+ * 检查已解析的本地 resource class 字段，只发布 Shared<Self> 或两个资源类型间互指的告警事实。
+ * 该 lint 不遍历更长的环，也不改写 prototype、运行时所有权或 GC 根状态。
+ */
 void compiler_class_lint_process_local_shared_cycles(
         SZrCompilerState *cs,
         SZrTypePrototypeInfo *info) {
@@ -91,6 +102,7 @@ void compiler_class_lint_process_local_shared_cycles(
             continue;
         }
 
+        /* Self 边已在上方处理；这里查目标类型是否有一条 Shared 边回指当前类型。 */
         targetInfo = find_compiler_type_prototype(cs, memberInfo->fieldTypeName);
         if (targetInfo != ZR_NULL && !targetInfo->isImportedNative &&
             (targetInfo->modifierFlags & ZR_DECLARATION_MODIFIER_RESOURCE) != 0u &&
