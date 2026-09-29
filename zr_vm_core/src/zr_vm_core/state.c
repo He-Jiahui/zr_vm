@@ -24,29 +24,27 @@
 static TZrBool state_trace_enabled(void);
 static void state_trace(const TZrChar *format, ...);
 
-/*
- * ===== State Stack Functions =====
- */
+/* 线程私有栈与入口调用帧的初始化。 */
 static void state_stack_init(SZrState *state, SZrState *mainThreadState) {
-    /*TZrPtr stackEndExtra = */
+    /* 依赖 Stack_Construct 填入有效基址后再建立边界；分配失败风险已在 stack.c:125 单独登记。 */
     ZrCore_Stack_Construct(mainThreadState, &state->stackBase, ZR_THREAD_STACK_SIZE_BASIC + ZR_THREAD_STACK_SIZE_EXTRA);
     state->toBeClosedValueList.valuePointer = state->stackBase.valuePointer;
     state->stackTail.valuePointer = state->stackBase.valuePointer + ZR_THREAD_STACK_SIZE_BASIC;
     state->stackTop.valuePointer = state->stackBase.valuePointer;
-    // reset stack
+    // 只清理逻辑栈容量；allocator extra slots 不进入 stackTail 表示的可用范围。
     for (TZrStackValuePointer pointer = state->stackBase.valuePointer; pointer < state->stackTail.valuePointer;
          pointer++) {
         ZrCore_Value_ResetAsNull(&pointer->value);
         pointer->toBeClosedValueOffset = 0u;
     }
-    // init call info
+    // 入口帧内嵌在 state 中，启动时无需申请扩展 callinfo。
     SZrCallInfo *callInfo = &state->baseCallInfo;
-    // assume an empty call info as start entry
-    // init call info list
-    // 0|-- base -- NULL(functionBase)
-    // 1|-- top1 -- Native Call Stack Empty Space
+    // functionBase 指向 stackBase；base+1 是原生调用保留区起点。
+    // 建立空的线程入口帧链：
+    // 0 | 基础栈基址 / functionBase
+    // 1 | 原生调用保留槽起点
     // ...
-    // STACK_SIZE_MIN|-- top2 -- (functionTop) —
+    // ZR_THREAD_STACK_SIZE_MIN | 初始 functionTop
     TZrStackPointer nextTop = state->stackTop;
     nextTop.valuePointer++;
     TZrStackPointer nativeCallInfoTop = nextTop;
@@ -56,16 +54,12 @@ static void state_stack_init(SZrState *state, SZrState *mainThreadState) {
     // when native call is finished
     state->stackTop = nextTop;
 }
-
-
-/*
- * ===== State Functions =====
- */
+/* State 对象生命周期与线程状态复用入口。 */
 
 ZR_FORCE_INLINE void ZrStateResetDebugHookCount(SZrState *state) { state->debugHookCount = state->baseDebugHookCount; }
 
 SZrState *ZrCore_State_New(SZrGlobalState *global) {
-    // FZrAllocator allocator = global->allocator;
+    // 先清零所有可选字段，再构造 RawObject 头并设置线程默认状态。
     SZrState *newState = ZrCore_Memory_Allocate(global, NULL, 0, sizeof(SZrState), ZR_MEMORY_NATIVE_TYPE_STATE);
     if (newState == ZR_NULL) {
         return ZR_NULL;
@@ -77,23 +71,23 @@ SZrState *ZrCore_State_New(SZrGlobalState *global) {
 }
 
 void ZrCore_State_Init(SZrState *state, SZrGlobalState *global) {
-    // global
+    // 次 state 可直接加入已存在的 GC 域；主 state 在 GlobalState 创建域后另行附着。
     state->global = global;
     state->gcDomain = ZR_NULL;
     state->executionBudget = ZR_NULL;
     if (global != ZR_NULL && global->gcDomain != ZR_NULL) {
         ZrCore_GcDomain_AttachState(global->gcDomain, state);
     }
-    // stack
+    // 栈在 launch 阶段分配；刚初始化的 state 尚无可访问的栈槽。
     state->stackBase.valuePointer = ZR_NULL;
     state->aotGcRootFrameStack = ZR_NULL;
     state->aotGcRootFrameDepth = 0u;
-    // call info
+    // 尚无入口栈帧或扩展帧；native 调用计数从空闲状态开始。
     state->callInfoList = ZR_NULL;
     state->callInfoListLength = 0;
     state->nestedNativeCalls = 0;
     state->nestedNativeCallYieldFlag = 0;
-    // exception
+    // 异常恢复点、handler 与暂挂控制从空状态开始。
     state->exceptionRecoverPoint = ZR_NULL;
     state->exceptionHandlingFunctionOffset = 0;
     ZrCore_Value_ResetAsNull(&state->currentException);
@@ -108,7 +102,7 @@ void ZrCore_State_Init(SZrState *state, SZrGlobalState *global) {
     state->pendingControl.valueSlot = 0;
     ZrCore_Value_ResetAsNull(&state->pendingControl.value);
     state->pendingControl.hasValue = ZR_FALSE;
-    // debug
+    // 每个线程独立保存 hook、观察策略和调用帧 generation。
     state->baseDebugHookCount = 0;
     state->debugFrameGenerationNext = 0u;
     state->debugHook = ZR_NULL;
@@ -128,11 +122,10 @@ void ZrCore_State_Init(SZrState *state, SZrGlobalState *global) {
     state->enableRuntimeTypeCheck = ZR_ENABLE_RUNTIME_TYPE_CHECK;
     state->enableRuntimeRangeCheck = ZR_ENABLE_RUNTIME_RANGE_CHECK;
     
-    // closures
+    // 闭包链表为空；自身指针作为“尚未加入全局链”的哨兵。
     state->stackClosureValueList = ZR_NULL;
-    // link to self as thread with stack closures
     state->threadWithStackClosures = state;
-    // thread
+    // 新 state 在第一次派发前处于可运行状态。
     state->threadStatus = ZR_THREAD_STATUS_FINE;
     state->previousProgramCounter = 0;
     ZrCore_Profile_SetCurrentState(state);
@@ -147,27 +140,27 @@ void ZrCore_State_MainThreadLaunch(SZrState *state, TZrPtr arguments) {
                 (void *)state->stackBase.valuePointer,
                 (void *)state->stackTop.valuePointer,
                 (void *)state->stackTail.valuePointer);
-    // string table init (必须在 ZrCore_GlobalState_InitRegistry 之前，因为后者会创建字符串)
+    // 注册表初始化会创建字符串，因此必须先准备字符串表。
     ZrCore_StringTable_Init(state);
     state_trace("main thread after string table init stringTable=%p memoryError=%p",
                 global != ZR_NULL ? (void *)global->stringTable : ZR_NULL,
                 global != ZR_NULL ? (void *)global->memoryErrorMessage : ZR_NULL);
-    // global registry module init
+    // 注册全局对象与模块；依赖上面已经初始化的字符串表。
     ZrCore_GlobalState_InitRegistry(state, global);
     state_trace("main thread after registry init zrObjectType=%d",
                 global != ZR_NULL ? (int)global->zrObject.type : -1);
-    // meta name init
+    // 再建立元数据静态项，供注册对象使用。
     ZrCore_Meta_GlobalStaticsInit(state);
     state_trace("main thread after meta init");
-    // maybe we can create a lexer
+    // TODO: lexer 的创建时机尚未确定；当前主线程引导不创建 lexer。
 
-    // allow gc to run
+    // 字符串、注册表和元数据根均已就绪后，才恢复 GC 调度。
     global->garbageCollector->stopGcFlag = ZR_FALSE;
 
-    // we finish the global state initialization, mark it as valid
+    // 后续初始化回调观察到的是已完成引导的 global。
     global->isValid = ZR_TRUE;
 
-    // callback after global state initialization
+    // 宿主回调在主线程状态已完整初始化后运行；回调错误继续走 state 异常路径。
     if (global->callbacks.afterStateInitialized != ZR_NULL) {
         EZrThreadStatus result;
         ZR_CALLBACK_CALL_NO_PARAM(state, FZrAfterStateInitialized, global->callbacks.afterStateInitialized, result)
@@ -183,6 +176,7 @@ TZrBool ZrCore_State_MutatorLaunch(SZrState *state) {
         return ZR_FALSE;
     }
 
+    // 先建立次线程栈与基础帧，再登记为正在运行的 mutator。
     state_stack_init(state, state->global->mainThreadState);
     if (!ZrCore_GcDomain_MutatorEnter(state)) {
         ZrCore_Stack_Deconstruct(state,
@@ -206,10 +200,10 @@ void ZrCore_State_MutatorExit(SZrState *state) {
 
 void ZrCore_State_Exit(SZrState *state) {
     ZR_UNUSED_PARAMETER(state);
-    // SZrGlobalState *global = state->global;
-    // todo
+    // TODO: 当前唯一调用方在主线程启动失败后立即执行 GlobalState_Free；需确认此钩子是否仍需独立清理职责。
 }
 
+/* 回收嵌入基础帧之后缓存的扩展帧；callInfoListLength 统计的正是这条分配链。 */
 static void state_call_info_chain_free(SZrGlobalState *global, SZrState *state) {
     SZrCallInfo *callInfo = state->baseCallInfo.next;
 
@@ -230,28 +224,31 @@ static void state_call_info_chain_free(SZrGlobalState *global, SZrState *state) 
 
 
 void ZrCore_State_Free(SZrGlobalState *global, SZrState *state) {
-    // 检查参数有效性
+    // 参数必须仍属于同一 live GlobalState；空参数保持幂等返回。
     if (state == ZR_NULL || global == ZR_NULL) {
         return;
     }
     
-    // 检查state指针是否在合理范围内（避免访问无效内存）
+    // 低地址保护只能过滤哨兵值，不能验证普通指针的实际归属。
     if ((TZrPtr)state < (TZrPtr)ZR_RUNTIME_INVALID_POINTER_GUARD_LOW_BOUND) {
         return;  // 无效指针，不释放
     }
 
+    // 先退出 GC 域登记，之后才释放该线程持有的运行时缓冲区。
     if (state->gcDomain != ZR_NULL) {
         ZrCore_GcDomain_DetachState(state->gcDomain, state);
     }
 
     state_call_info_chain_free(global, state);
     
-    // 检查stackBase是否有效（在访问之前）
+    /* BUG: 此处检查的是字段地址而非 stackBase.valuePointer；runtime_workers.c:187/197 在线程创建失败后
+     * 回收尚未 launch 的 worker 时仍进入此分支，对空边界求差并释放未分配的栈。 */
     if ((TZrPtr)&state->stackBase >= (TZrPtr)ZR_RUNTIME_INVALID_POINTER_GUARD_LOW_BOUND) {
         ZrCore_Stack_Deconstruct(state, &state->stackBase, ZrCore_State_StackGetSize(state) + ZR_THREAD_STACK_SIZE_EXTRA);
         state->stackBase.valuePointer = ZR_NULL;
     }
 
+    // handler 数组是独立 raw allocation；其长度是有效项数，释放尺寸须用容量。
     if (state->exceptionHandlerStack != ZR_NULL && state->exceptionHandlerStackCapacity > 0) {
         ZrCore_Memory_RawFreeWithType(global,
                                 state->exceptionHandlerStack,
@@ -262,10 +259,11 @@ void ZrCore_State_Free(SZrGlobalState *global, SZrState *state) {
         state->exceptionHandlerStackCapacity = 0;
     }
     
-    // 释放state本身
+    // 最后释放由 GlobalState allocator 分配的线程对象。
     ZrCore_Memory_Allocate(global, state, sizeof(SZrState), 0, ZR_MEMORY_NATIVE_TYPE_STATE);
 }
 
+/* 通过 TryRun 包住 pending 值清理，避免其关闭回调越过 ResetThread 的状态恢复。 */
 static void state_clear_pending_control(SZrState *state, TZrPtr argument) {
     ZR_UNUSED_PARAMETER(argument);
     execution_clear_pending_control(state);
@@ -280,10 +278,9 @@ TZrInt32 ZrCore_State_ResetThread(SZrState *state, EZrThreadStatus status) {
     } else if (pendingStatus != ZR_THREAD_STATUS_FINE) {
         status = pendingStatus;
     }
-    // 重置线程状态
-    // 调用栈回到创建时基础调用栈
+    // 复用线程时恢复内嵌 Native 入口帧，避免上一轮脚本调用帧继续可达。
     SZrCallInfo *callInfo = state->callInfoList = &state->baseCallInfo;
-    // 重置栈到基础栈
+    // 清除入口槽；随后按返回状态重建错误槽或空闲栈顶。
     ZrCore_Value_ResetAsNull(&state->stackBase.valuePointer->value);
     callInfo->functionBase.valuePointer = state->stackBase.valuePointer;
     callInfo->callStatus = ZR_CALL_STATUS_NATIVE_CALL;
@@ -293,6 +290,7 @@ TZrInt32 ZrCore_State_ResetThread(SZrState *state, EZrThreadStatus status) {
     }
     state->threadStatus = ZR_THREAD_STATUS_FINE;
     state->exceptionRecoverPoint = ZR_NULL;
+    /* BUG: 主线程有恢复点时，exception.c:590-595 会在 ResetThread 后复制 worker 异常；这里先清空三字段使其丢失。 */
     ZrCore_Value_ResetAsNull(&state->currentException);
     state->currentExceptionStatus = ZR_THREAD_STATUS_FINE;
     state->hasCurrentException = ZR_FALSE;
@@ -308,23 +306,24 @@ TZrInt32 ZrCore_State_ResetThread(SZrState *state, EZrThreadStatus status) {
     }
     callInfo->functionTop.valuePointer = state->stackTop.valuePointer + ZR_STACK_NATIVE_CALL_RESERVED_MIN;
 
-    // todo:
+    // TODO: 对照 CLI/REPL、task 与 Rust 重用入口，确认 provider/debug/AOT 配置哪些应跨轮保留或清除。
 
     return status;
 }
 
 EZrThreadStatus ZrCore_State_DoRun(SZrState *state, TZrNativeString entry) {
-    // todo: use loaded module is currently not supported
+    // TODO: 仓内尚无从已加载模块继续执行的调用路径。
 
     SZrIoSource *source = ZrCore_Io_LoadSource(state, entry, ZR_NULL);
     if (source == ZR_NULL) {
         return ZR_THREAD_STATUS_RUNTIME_ERROR;
     }
-    // todo: convert source to object
+    // TODO: 当前仅加载 source 后返回成功；源码转换与执行链尚未接入，也没有仓内调用者。
 
     return ZR_THREAD_STATUS_FINE;
 }
 
+/* 启动追踪开关按进程首次读取 getenv 的结果缓存，之后修改环境变量不会生效。 */
 static TZrBool state_trace_enabled(void) {
     static TZrBool initialized = ZR_FALSE;
     static TZrBool enabled = ZR_FALSE;
@@ -338,6 +337,7 @@ static TZrBool state_trace_enabled(void) {
     return enabled;
 }
 
+/* 仅在显式启用时向 stderr 输出 bootstrap 诊断，不改变 state 状态。 */
 static void state_trace(const TZrChar *format, ...) {
     va_list arguments;
 
