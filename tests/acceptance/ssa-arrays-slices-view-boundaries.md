@@ -47,6 +47,9 @@ The updated `tests/core/test_ssa_arrays_slices.c` checks:
   index zero as `BOUNDS`;
 - a one-element parent ending at `SIZE_MAX` creates a zero-length child at
   offset `SIZE_MAX`, and that child passes `Validate` with its generation;
+- descriptor creation reports `OVERFLOW` when either stride multiplication or
+  the final element extent exceeds `SIZE_MAX`, preserves the caller's prior
+  descriptor on failure, and continues to report zero stride as `INVALID`;
 - multiplication and addition overflow at a legal tail start report
   `OVERFLOW` and preserve the prior child descriptor;
 - a positive index equal to `length` reports `BOUNDS` without changing the
@@ -107,6 +110,34 @@ source and exited zero without warnings. The MSVC binary was built after the
 last test-source edit and exited zero on a final rerun. The 05.02 plan names
 the registered GCC `ssa_arrays_slices` test as this slice's focused gate;
 the direct Clang and MSVC builds provide additional compiler coverage.
+
+## Follow-up: descriptor extent overflow diagnostics
+
+This follow-up separates arithmetic extent failures from malformed descriptor
+fields. Before the implementation change, `ZrCore_View_Validate` folded checked
+multiply/add failures into `ZR_VIEW_DIAGNOSTIC_INVALID`. The updated test first
+uses a valid descriptor as the output sentinel, then checks both a final-element
+addition overflow (`length=2`, `stride=SIZE_MAX`) and a stride multiplication
+overflow (`length=3`, `stride=SIZE_MAX/2+1`, `elementSize=1`). Both must report
+`ZR_VIEW_DIAGNOSTIC_OVERFLOW` without replacing the sentinel. A zero stride
+control remains `ZR_VIEW_DIAGNOSTIC_INVALID`.
+
+The current-source RED build succeeded (Ninja 4/4). Direct execution then exited
+134 at the addition-overflow assertion in
+`test_basic_view_boundaries` (line 128): the expected `OVERFLOW` diagnostic was
+actually `INVALID`. Registered CTest `ssa_arrays_slices` also failed 1/1 with
+exit 8 at that same assertion. The process aborts at its first failed `assert`,
+so the multiplication and zero-stride assertions were not independently
+observed failing in that RED run.
+
+The implementation now keeps descriptor shape checks classified as `INVALID`
+and reports checked extent multiply/add failure as `OVERFLOW`. `Create` still
+validates a local candidate before publishing it, preserving the prior output
+on failure. Using WSL GCC 11.4.0, CMake 3.22.1, and the existing D-only Ninja
+cache `/mnt/d/tmp/zr_vm/close-proxy-core-red`, the incremental target build
+completed 2/2 steps. The direct Unity binary exited 0, and the registered
+`ssa_arrays_slices` CTest passed 1/1 (exit 0). No build products were written
+outside the D cache.
 
 ## Remaining boundary
 

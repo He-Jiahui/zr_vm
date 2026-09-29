@@ -35,12 +35,15 @@ TZrBool ZrCore_View_Validate(const SZrContiguousView *view,
     /* TODO: 接入真实容器/FFI 前需确认谁校验 GC root、布局哈希和只读能力；当前只检查描述符字段。 */
     if (view == ZR_NULL || view->stride == 0u || view->elementSize == 0u ||
         (view->flags & ~(ZR_VIEW_FLAG_READ_ONLY | ZR_VIEW_FLAG_PINNED | ZR_VIEW_FLAG_INLINE_STORAGE)) != 0u ||
-        (view->length != 0u && view->ownerRoot == ZR_NULL) ||
-        (view->length != 0u &&
-         (!checked_mul(view->length - 1u, view->stride, &span) ||
-          !checked_add(view->byteOffset, span, &span) ||
-          !checked_add(span, view->elementSize, &span)))) {
+        (view->length != 0u && view->ownerRoot == ZR_NULL)) {
         view_diag(diagnostic, ZR_VIEW_DIAGNOSTIC_INVALID, 0u, 0u); return ZR_FALSE;
+    }
+    if (view->length != 0u &&
+        (!checked_mul(view->length - 1u, view->stride, &span) ||
+         !checked_add(view->byteOffset, span, &span) ||
+         !checked_add(span, view->elementSize, &span))) {
+        view_diag(diagnostic, ZR_VIEW_DIAGNOSTIC_OVERFLOW, 0u, 0u);
+        return ZR_FALSE;
     }
     if (currentGeneration != 0u && view->storageGeneration != currentGeneration) {
         view_diag(diagnostic, ZR_VIEW_DIAGNOSTIC_GENERATION, currentGeneration, view->storageGeneration); return ZR_FALSE;

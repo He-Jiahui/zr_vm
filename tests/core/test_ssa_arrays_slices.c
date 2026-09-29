@@ -2,6 +2,20 @@
 #include <assert.h>
 #include <stdint.h>
 
+static void assert_view_equal(
+        const SZrContiguousView *actual,
+        const SZrContiguousView *expected) {
+    assert(actual->ownerRoot == expected->ownerRoot);
+    assert(actual->byteOffset == expected->byteOffset);
+    assert(actual->length == expected->length);
+    assert(actual->stride == expected->stride);
+    assert(actual->elementSize == expected->elementSize);
+    assert(actual->elementLayoutHash == expected->elementLayoutHash);
+    assert(actual->storageGeneration == expected->storageGeneration);
+    assert(actual->lifetimeRegion == expected->lifetimeRegion);
+    assert(actual->flags == expected->flags);
+}
+
 static void test_empty_tail_slice_remains_valid(void) {
     SZrContiguousViewRequest request = {
             (TZrPtr)(uintptr_t)1u, SIZE_MAX - 4u, 1u, 4u, 4u,
@@ -86,6 +100,7 @@ static void test_basic_view_boundaries(void) {
             (TZrPtr)(uintptr_t)1u, 8u, 4u, 4u, 4u,
             0x55u, 3u, 7u, 0u};
     SZrContiguousView view, slice;
+    SZrContiguousView originalView;
     SZrViewDiagnostic diagnostic;
     TZrSize offset;
 
@@ -104,9 +119,28 @@ static void test_basic_view_boundaries(void) {
     assert(ZrCore_View_Validate(&slice, 3u, &diagnostic));
     assert(!ZrParser_ExecIr_LowerArrayIndex(&slice, 0, &offset, &diagnostic));
     assert(diagnostic.code == ZR_VIEW_DIAGNOSTIC_BOUNDS);
-    request.stride = SIZE_MAX; request.length = 2u;
+    originalView = view;
+
+    /* The last-element endpoint overflows when elementSize is added. */
+    request.stride = SIZE_MAX;
+    request.length = 2u;
+    assert(!ZrCore_View_Create(&request, &view, &diagnostic));
+    assert(diagnostic.code == ZR_VIEW_DIAGNOSTIC_OVERFLOW);
+    assert_view_equal(&view, &originalView);
+
+    /* Two strides exceed SIZE_MAX before the element extent is added. */
+    request.byteOffset = 0u;
+    request.length = 3u;
+    request.stride = SIZE_MAX / 2u + 1u;
+    request.elementSize = 1u;
+    assert(!ZrCore_View_Create(&request, &view, &diagnostic));
+    assert(diagnostic.code == ZR_VIEW_DIAGNOSTIC_OVERFLOW);
+    assert_view_equal(&view, &originalView);
+
+    request.stride = 0u;
     assert(!ZrCore_View_Create(&request, &view, &diagnostic));
     assert(diagnostic.code == ZR_VIEW_DIAGNOSTIC_INVALID);
+    assert_view_equal(&view, &originalView);
 }
 
 int main(void) {
