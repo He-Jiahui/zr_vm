@@ -2,10 +2,14 @@
 #include "compiler_metadata_signature.h"
 #include "compiler_metadata_type_def.h"
 
+/* Module 签名固定由节点标记及两个 string-heap 索引组成；plan 与 emit 共用该尺寸，
+ * 使调用方能先累计容量，再在统一缓冲区中顺序写入。 */
 static TZrSize metadata_module_record_signature_size(void) {
     return 1u + sizeof(TZrUInt32) + sizeof(TZrUInt32);
 }
 
+/* 按 Module 签名格式写入模块名和版本的 string-heap 索引；缺失字符串由共享索引
+ * 规则编码为 0，因此收集阶段必须先把可用名称加入最终排序后的字符串表。 */
 static void metadata_module_record_write_signature(TZrByte *buffer,
                                                    TZrSize *offset,
                                                    const SZrFunction *function,
@@ -24,6 +28,8 @@ static void metadata_module_record_write_signature(TZrByte *buffer,
                                     stringHeapEntryCount);
 }
 
+/* 参与 metadata token 构建前的统一字符串收集，使 emit 使用稳定的 string heap 索引；
+ * collector 失败即中止整个构建，function 为空则表示本次没有 Module 数据。 */
 TZrBool compiler_metadata_module_record_collect_strings(SZrCompilerState *cs,
                                                         const SZrFunction *function,
                                                         TZrMetadataTypeDefStringCollector collector,
@@ -40,6 +46,8 @@ TZrBool compiler_metadata_module_record_collect_strings(SZrCompilerState *cs,
     return collector(cs, function->moduleVersion, userData);
 }
 
+/* 供 token 构建器预留一条 Module 记录及其签名字节；plan 仅是该次同步构建的
+ * 临时容量描述，不持有资源，必须与同一 function 的 emit 配对使用。 */
 TZrBool compiler_metadata_module_record_plan(SZrCompilerState *cs,
                                              const SZrFunction *function,
                                              SZrMetadataModuleRecordPlan *outPlan) {
@@ -59,6 +67,9 @@ TZrBool compiler_metadata_module_record_plan(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+/* 将唯一的 Module 行与其 Signature 行写成互相引用的一对记录。调用方须先依据
+ * plan 预留两条记录和签名堆空间，并提供最终 string heap；失败时 heap offset 可能已推进，
+ * 因此输出数组、heap 与游标只应视为本次构建的暂存状态并整体丢弃。 */
 TZrBool compiler_metadata_module_record_emit(SZrCompilerState *cs,
                                              const SZrFunction *function,
                                              SZrMetadataTokenRecord *records,
@@ -85,6 +96,8 @@ TZrBool compiler_metadata_module_record_emit(SZrCompilerState *cs,
     }
 
     expectedLength = metadata_module_record_signature_size();
+    /* 记录以成对形式写入，且 signature blob offset 是 32 位字段；上层 plan
+     * 聚合器负责确保总长度可表示，局部检查防止越过实际分配容量。 */
     if (*ioHeapOffset > heapLength || expectedLength > heapLength - *ioHeapOffset ||
         *ioRecordIndex + 1u >= recordCount) {
         return ZR_FALSE;
@@ -106,6 +119,8 @@ TZrBool compiler_metadata_module_record_emit(SZrCompilerState *cs,
     }
 
     moduleToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MODULE, 1u);
+    /* 此格式每个函数仅有一个 Module（RID 固定为 1）；Signature RID 与其它
+     * 元数据签名共用游标，双向关联使通用 token 查询能从任一侧定位签名。 */
     signatureToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, (*ioSignatureRidCursor)++);
     recordIndex = *ioRecordIndex;
     records[recordIndex].token = moduleToken;
