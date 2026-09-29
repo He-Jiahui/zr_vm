@@ -22,6 +22,8 @@
 
 static void eis5_bool_predicate_write_phase(const char *basePath);
 static void eis5_bool_predicate_read_phase(const char *basePath);
+static void eis5_compare_write_phase(const char *basePath);
+static void eis5_compare_read_phase(const char *basePath);
 
 static TZrUInt32 eis5_get32(const TZrByte *bytes) {
     return (TZrUInt32)bytes[0] |
@@ -582,6 +584,7 @@ static void eis5_write_phase(const char *basePath) {
     }
 
     eis5_bool_predicate_write_phase(basePath);
+    eis5_compare_write_phase(basePath);
 }
 
 static void eis5_collision_read_phase(const char *basePath) {
@@ -849,4 +852,5 @@ static void eis5_read_phase(const char *basePath) {
     }
     eis5_collision_read_phase(basePath);
     eis5_bool_predicate_read_phase(basePath);
+    eis5_compare_read_phase(basePath);
 }

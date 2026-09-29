@@ -41,6 +41,7 @@ plan_sources:
   - "user: 2026-09-28 EIS4 fixed scalar ADD payload"
   - "user: 2026-09-29 EIS5 dynamic counted scalar CFG payload"
   - "user: 2026-09-29 EIS5 BOOL predicate extension"
+  - "user: 2026-09-29 EIS5 LT Compare extension"
 tests:
   - tests/library/test_ssa_schema_relocation.c
   - tests/parser/test_artifact_schema_source_roundtrip.c
@@ -48,11 +49,15 @@ tests:
   - tests/library/test_zrm_container.c
   - tests/library/test_ssa_exec_ir_artifact_v6.c
   - tests/library/test_ssa_exec_ir_artifact_v6_eis5.inc
+  - tests/library/test_ssa_exec_ir_artifact_v6_eis5_bool.inc
+  - tests/library/test_ssa_exec_ir_artifact_v6_eis5_compare.inc
   - tests/library/test_ssa_exec_ir_artifact_v6_add.inc
   - tests/acceptance/ssa-artifact-v6-canonical-exec-ir.md
   - tests/acceptance/ssa-artifact-v6-eis3-counted-cfg.md
   - tests/acceptance/ssa-artifact-v6-eis4-scalar-add.md
   - tests/acceptance/ssa-artifact-v6-eis5-counted-cfg.md
+  - tests/acceptance/ssa-artifact-v6-eis5-bool-predicate.md
+  - tests/acceptance/ssa-artifact-v6-eis5-compare-lt.md
   - tests/acceptance/ssa-artifact-v6-eri1-relocation-boundary.md
 doc_type: milestone-detail
 status: planned
@@ -124,6 +129,17 @@ ADD 与 RETURN 仍限 i64。跨进程 true=42/false=7、非规范 BOOL bits、�
 错配及 EIS1–E4 相邻回归见
 [独立验收记录](../../../../tests/acceptance/ssa-artifact-v6-eis5-bool-predicate.md)。
 旧 EIS5 v5 reader 会拒绝 BOOL token；完整 08.01 的剩余门禁仍未满足。
+
+**EIS5 LT Compare 补充：** EIS5 v5 在原指令记录中复用 `typeToken` 保存
+COMPARE 模式，仅接受 LT（值 1）；两个操作数必须为 i64，结果必须为
+BOOL，随后由条件分支选择 i64 42 或 7。payload 版本、字段顺序与记录宽度
+不变。直接 codec 及 canonical artifact 跨进程测试覆盖两种比较结果，并
+对非 LT 模式、非 i64 输入和非 BOOL 结果做重哈希拒绝及无部分发布检查；
+EIS1–EIS4 golden/拒绝路径及此前 EIS5 i64、BOOL predicate 和同计数图回归继续通过。
+旧 EIS5 v5 reader 不认识 COMPARE，会在指令记录处以 `INVALID_SECTION`
+拒绝；新 opcode 不具备旧 reader 前向兼容性。实现和 Clang/MSVC 四门证据
+见[EIS5 LT Compare 验收记录](../../../../tests/acceptance/ssa-artifact-v6-eis5-compare-lt.md)。
+完整 08.01 仍未完成，binding、relocation、ExecBC、AOT 等退出门禁继续有效。
 
 ## 依赖与交付范围
 

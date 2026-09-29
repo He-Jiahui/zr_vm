@@ -125,6 +125,17 @@ static EZrArtifactExecIrStatus eis5_validate_wire(
                 expectedOperands = 2u;
                 expectedSuccessors = 0u;
                 break;
+            case ZR_EXEC_IR_OPCODE_COMPARE:
+                expectedResults = 1u;
+                expectedOperands = 2u;
+                expectedSuccessors = 0u;
+                if (instruction->typeToken !=
+                    ZR_ARTIFACT_EXEC_IR_EIS5_COMPARE_MODE_LT)
+                    return ZrCore_ArtifactExecIrScalarEis5_Fail(
+                            diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
+                            recordOffset +
+                                    ZR_ARTIFACT_EXEC_IR_EIS5_INSTRUCTION_TYPE_TOKEN_OFFSET);
+                break;
             case ZR_EXEC_IR_OPCODE_BRANCH:
                 expectedResults = 0u;
                 expectedOperands = 0u;
@@ -156,7 +167,8 @@ static EZrArtifactExecIrStatus eis5_validate_wire(
             !eis5_range_fits(instruction->phiRange, 0u) ||
             !eis5_range_fits(instruction->successorRange,
                              layout->counts.successors) ||
-            instruction->typeToken != 0u ||
+            (instruction->opcode != ZR_EXEC_IR_OPCODE_COMPARE &&
+             instruction->typeToken != 0u) ||
             instruction->matchTypeToken != 0u ||
             (instruction->opcode != ZR_EXEC_IR_OPCODE_CONSTANT &&
              instruction->layoutId != 0u) ||
@@ -180,10 +192,13 @@ static EZrArtifactExecIrStatus eis5_validate_wire(
                         diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
                         layout->resultsOffset + item *
                                 ZR_ARTIFACT_EXEC_IR_EIS5_POOL_ID_SIZE);
-            expectedType = instruction->opcode == ZR_EXEC_IR_OPCODE_CONSTANT
-                                   ? wire->constants[instruction->layoutId]
-                                             .typeToken
-                                   : (TZrExecIrTypeToken)ZR_VALUE_TYPE_INT64;
+            if (instruction->opcode == ZR_EXEC_IR_OPCODE_CONSTANT)
+                expectedType = wire->constants[instruction->layoutId]
+                                       .typeToken;
+            else if (instruction->opcode == ZR_EXEC_IR_OPCODE_COMPARE)
+                expectedType = (TZrExecIrTypeToken)ZR_VALUE_TYPE_BOOL;
+            else
+                expectedType = (TZrExecIrTypeToken)ZR_VALUE_TYPE_INT64;
             if (wire->values[valueId - 1u].typeToken != expectedType)
                 return ZrCore_ArtifactExecIrScalarEis5_Fail(
                         diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,

@@ -29,17 +29,22 @@ plan_sources:
   - user: 2026-09-28 EIS4 fixed scalar ADD payload
   - user: 2026-09-29 EIS5 dynamic counted scalar CFG payload
   - user: 2026-09-29 EIS5 BOOL predicate extension
+  - user: 2026-09-29 EIS5 LT Compare extension
 tests:
   - tests/library/test_ssa_exec_ir_artifact_v6.c
   - tests/library/test_ssa_exec_ir_artifact_v6_cfg.inc
   - tests/library/test_ssa_exec_ir_artifact_v6_add.inc
   - tests/library/test_ssa_exec_ir_artifact_v6_eis5.inc
+  - tests/library/test_ssa_exec_ir_artifact_v6_eis5_bool.inc
+  - tests/library/test_ssa_exec_ir_artifact_v6_eis5_compare.inc
   - tests/library/test_ssa_schema_relocation.c
   - tests/parser/test_artifact_schema.c
   - tests/acceptance/ssa-artifact-v6-canonical-exec-ir.md
   - tests/acceptance/ssa-artifact-v6-eis3-counted-cfg.md
   - tests/acceptance/ssa-artifact-v6-eis4-scalar-add.md
   - tests/acceptance/ssa-artifact-v6-eis5-counted-cfg.md
+  - tests/acceptance/ssa-artifact-v6-eis5-bool-predicate.md
+  - tests/acceptance/ssa-artifact-v6-eis5-compare-lt.md
 doc_type: module-detail
 status: partial
 ---
@@ -122,11 +127,12 @@ four ID pools are serialized in that order. The current five-block fixture is
 1260 bytes; this is one fixture size, not a format-wide fixed size. Checked
 64-bit sizing caps blocks at 256, the combined constant/value/instruction
 count at 4096, the combined four-pool count at 16384, and the encoded payload
-at 16 MiB. Its
-allowlist is one no-argument i64 function using CONSTANT, ADD, BRANCH,
-CONDITIONAL_BRANCH, and RETURN, with no unsupported maps or side tables. The
-reader checks caps and exact computed length before allocating bounded decode
-arrays, verifies a temporary module, and publishes only after verification.
+at 16 MiB. Its allowlist is one no-argument i64 function using CONSTANT, ADD,
+BRANCH, CONDITIONAL_BRANCH, and RETURN, with no unsupported maps or side
+tables. A bounded extension also accepts COMPARE mode LT (mode 1), with two
+i64 operands and one BOOL result. The reader checks caps and exact computed
+length before allocating bounded decode arrays, verifies a temporary module,
+and publishes only after verification.
 
 EIS5 constant and value records already carry a `typeToken` and 64-bit value
 bits. The BOOL predicate extension keeps the v5 layout and accepts i64 and
@@ -135,25 +141,28 @@ CONSTANT result must keep the constant's type. CONDITIONAL_BRANCH accepts
 either BOOL or the existing i64 predicate; ADD operands/results and RETURN
 operands remain i64. EIS1–E4 routing and payload bytes do not change. An older
 EIS5 reader rejects BOOL tokens as `INVALID_SECTION`, so this token-set
-extension is not forward-readable by older v5 implementations.
+extension is not forward-readable by older v5 implementations. The LT Compare
+extension reuses the instruction `typeToken` as the mode field; an older v5
+reader rejects the new opcode as `INVALID_SECTION` at its instruction record.
+The EIS5 version and record layout remain unchanged, so artifacts containing
+the new opcode require a reader with this extension.
 
 `ZrParser_ExecIr_WriteCanonicalZroFile` accepts a validated ZRO metadata
 document with seven identity sections and an `SZrExecIrModule`. It supports
 exactly one no argument i64 function with the EIS1 one block shape, the EIS2
 two block unconditional BRANCH shape, the EIS3 three block conditional fork
 shape, the EIS4 fixed scalar ADD shape, or a graph accepted by the bounded EIS5
-counted schema, including the BOOL-predicate extension. Fixed EIS1–E4
+counted schema, including BOOL predicates and LT Compare. Fixed EIS1–E4
 candidates retain their original codec priority;
 a graph matching a fixed-format count tuple, per-block instruction ranges, and
-opcode sequence stays routed to its fixed validator. This preserves rejection of
-malformed legacy literals and bindings while allowing valid same-count EIS5
-graphs with different instruction layouts. Every unsupported graph side table,
-map, binding,
-relocation, additional function, or opcode is rejected. Encoding and
-validation finish before a file is opened. The writer stages the counted
-payload in a bounded heap buffer, creates an exclusive temporary file in the
-target directory, closes it, and publishes it by same directory rename; a
-failed write leaves the previous target bytes intact.
+opcode sequence stays routed to its fixed validator. This preserves rejection
+of malformed legacy literals and bindings while allowing valid same-count EIS5
+graphs with different instruction layouts. Every unsupported graph side
+table, map, binding, relocation, additional function, or opcode is rejected.
+Encoding and validation finish before a file is opened. The writer stages the
+counted payload in a bounded heap buffer, creates an exclusive temporary file
+in the target directory, closes it, and publishes it by same directory rename;
+a failed write leaves the previous target bytes intact.
 
 The zero parameter count is an explicit contract row field, and the i64
 return is checked in the decoded graph. Neither the signature token nor its
@@ -168,9 +177,11 @@ model, runs `ZrCore_ExecIr_VerifyModule`, compares the decoded module/function
 contract with the outer metadata, then publishes the graph. EIS5 validates
 its magic, version, counts, reserved field, and exact computed length before
 allocation. The focused write and cross-process tests preserve the EIS1
-golden, the fixed EIS2–EIS4 payloads, the EIS5 i64-predicate graph, and the EIS5
-BOOL-predicate graph. Direct and rehashed outer-payload tests reject BOOL bits
-outside zero/one and mismatched constant/result types at their payload offsets.
+golden, fixed EIS2–EIS4 payloads, the EIS5 i64-predicate and BOOL-predicate
+graphs, and LT Compare branches. Direct and rehashed outer-payload tests reject
+BOOL bits outside zero/one and mismatched constant/result types. Compare tests
+reject unsupported modes, non-i64 inputs, and non-BOOL results through direct
+codec reads and the canonical opener.
 EIS2's successor and reciprocal predecessor must name the two serialized
 blocks exactly. EIS3's ordered successors and reciprocal predecessors must
 match all three blocks; invalid counts or edges are rejected with their
@@ -179,8 +190,10 @@ bits, the ADD opcode and operand/result ranges, and the empty edge ranges;
 rehash mutations are rejected at their payload offset.
 EIS5's ordered edge pools and reciprocal predecessor references are checked;
 rehashing an invalid or nonreciprocal edge still fails without publishing a
-graph. All failed reads leave the caller's empty graph empty. A schema 5 ZRAF
-is rejected with `UNSUPPORTED_VERSION` and diagnostic expected/actual versions.
+graph. Compare uses mode 1 for LT, requires two i64 operands and one BOOL
+result, and keeps the existing v5 instruction record. All failed reads leave
+the caller's empty graph empty. A schema 5 ZRAF is rejected with
+`UNSUPPORTED_VERSION` and diagnostic expected/actual versions.
 The separate historical `01ZR` `.zro` binary path remains handled by
 `ZrCore_Module_ImportByPath`; this API rejects its magic.
 
@@ -193,12 +206,12 @@ runtime from dispatching the unknown opcode. Patch 44 adds no fields, so the
 new reader continues to accept a patch 43 payload, while it rejects patch 45.
 The legacy writer has no safe opcode scan, so it writes patch 44 even for an
 opcode-free function; such newly written files require a patch 44 reader.
-Existing opcode numbers through 244 are unchanged. ZRAF schema 6, existing
-EIS1–EIS4 payloads, ERI1 v1, and AOT ABI 17 stay unchanged; EIS5 adds a distinct
-counted ExecIR payload version. The BOOL predicate uses the existing EIS5 v5
-typed fields without changing its length or header; older v5 readers reject
-the BOOL type token. Its bounded verification is recorded in the
-[EIS5 BOOL predicate acceptance](../../tests/acceptance/ssa-artifact-v6-eis5-bool-predicate.md).
+Existing opcode numbers through 244 are unchanged. ZRAF schema 6, EIS1–EIS4
+payloads, ERI1 v1, and AOT ABI 17 stay unchanged; EIS5 adds a counted ExecIR
+payload version. BOOL predicates and LT Compare reuse EIS5 v5 typed fields
+without changing payload length or header. Older v5 readers reject the BOOL
+type token and the new COMPARE opcode. See the bounded
+[EIS5 Compare acceptance](../../tests/acceptance/ssa-artifact-v6-eis5-compare-lt.md).
 These serialized payloads do not carry ExecBC opcode numbers. A generated AOT
 module using the proxy still requires the newly exported runtime helper when
 linked.
