@@ -21,7 +21,8 @@ typedef enum EZrExecutionBoundaryStatus {
     ZR_EXECUTION_BOUNDARY_INVALID_FUNCTION,
     ZR_EXECUTION_BOUNDARY_INVALID_PROGRAM_COUNTER,
     ZR_EXECUTION_BOUNDARY_INVALID_STACK,
-    ZR_EXECUTION_BOUNDARY_TERMINATED
+    ZR_EXECUTION_BOUNDARY_TERMINATED,
+    ZR_EXECUTION_BOUNDARY_RELOADED
 } EZrExecutionBoundaryStatus;
 
 typedef struct SZrExecutionContext {
@@ -58,7 +59,7 @@ ZR_CORE_API EZrExecutionBoundaryStatus ZrCore_Execution_ReloadBoundary(
 ZR_CORE_API const TZrChar *ZrCore_Execution_BoundaryStatusName(
         EZrExecutionBoundaryStatus status);
 
-/* Poll the mutator and reload only after a pause/collection boundary. */
+/* Poll the mutator; RELOADED means a pause completed and the roots were reloaded. */
 ZR_CORE_API EZrExecutionBoundaryStatus ZrCore_Execution_SafepointPoll(
         SZrExecutionContext *context,
         SZrState *state,

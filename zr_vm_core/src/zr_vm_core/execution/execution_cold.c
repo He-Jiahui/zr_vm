@@ -9,6 +9,7 @@ const TZrChar *ZrCore_Execution_BoundaryStatusName(EZrExecutionBoundaryStatus st
         case ZR_EXECUTION_BOUNDARY_INVALID_PROGRAM_COUNTER: return "invalid-program-counter";
         case ZR_EXECUTION_BOUNDARY_INVALID_STACK: return "invalid-stack";
         case ZR_EXECUTION_BOUNDARY_TERMINATED: return "terminated";
+        case ZR_EXECUTION_BOUNDARY_RELOADED: return "reloaded";
         default: return "unknown";
     }
 }

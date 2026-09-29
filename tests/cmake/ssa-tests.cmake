@@ -636,6 +636,7 @@ endif ()
 if (NOT TARGET zr_vm_ssa_dispatch_boundaries_test)
     add_executable(zr_vm_ssa_dispatch_boundaries_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_dispatch_boundaries.c
+            ${CMAKE_SOURCE_DIR}/tests/harness/runtime_support.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution/execution_safepoint.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution/execution_cold.c)
     zr_vm_apply_common_test_settings(zr_vm_ssa_dispatch_boundaries_test)

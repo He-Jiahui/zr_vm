@@ -1,8 +1,16 @@
 #include "unity.h"
 
+#include "harness/runtime_support.h"
+#include "zr_vm_core/call_info.h"
+#include "zr_vm_core/closure.h"
+#include "zr_vm_core/execution.h"
 #include "zr_vm_core/execution_context.h"
+#include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
+#include "zr_vm_core/memory.h"
 #include "zr_vm_core/profile.h"
+#include "zr_vm_core/stack.h"
+#include "zr_vm_core/value.h"
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -150,11 +158,92 @@ static void test_reload_rebuilds_context_from_replaced_frame_roots(void) {
     TEST_ASSERT_EQUAL_PTR(resumedGlobal.profileRuntime, context.profileRuntime);
 }
 
+static void test_dispatch_publishes_the_saved_pc_at_its_256_instruction_poll(void) {
+    const TZrSize instructionCount = 257u;
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrCallInfo *callInfo;
+    SZrTypeValue callableValue;
+    SZrTypeValue *functionBaseValue;
+    TZrStackValuePointer functionBase;
+    TZrInstruction *instructions;
+    TZrSize index;
+    TZrMemoryOffset resumeOffset;
+    TZrUInt32 previousProgramCounter;
+    EZrThreadStatus threadStatus;
+    TZrBool callInfoIsActive;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+    instructions = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(TZrInstruction) * instructionCount,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(instructions);
+    for (index = 0u; index < instructionCount; ++index) {
+        ZrCore_Memory_RawSet(&instructions[index], 0, sizeof(instructions[index]));
+        instructions[index].instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(NOP);
+    }
+    function->instructionsList = instructions;
+    function->instructionsLength = instructionCount;
+    function->constantValueList = ZR_NULL;
+    function->constantValueLength = 0u;
+    function->stackSize = 0u;
+    function->parameterCount = 0u;
+    function->hasVariableArguments = ZR_FALSE;
+    function->closureValueLength = 0u;
+
+    ZrCore_Value_ResetAsNull(&callableValue);
+    ZrCore_Value_InitAsRawObject(state,
+                                 &callableValue,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+    callableValue.type = ZR_VALUE_TYPE_FUNCTION;
+    callableValue.isGarbageCollectable = ZR_TRUE;
+    callableValue.isNative = ZR_FALSE;
+
+    functionBase = ZrCore_Function_CheckStackAndGc(
+            state,
+            (TZrSize)(1u + function->stackSize),
+            state->stackTop.valuePointer);
+    TEST_ASSERT_NOT_NULL(functionBase);
+    functionBaseValue = ZrCore_Stack_GetValue(functionBase);
+    TEST_ASSERT_NOT_NULL(functionBaseValue);
+    ZrCore_Value_Copy(state, functionBaseValue, &callableValue);
+    state->stackTop.valuePointer = functionBase + 1 + function->stackSize;
+
+    callInfo = ZrCore_CallInfo_Extend(state);
+    TEST_ASSERT_NOT_NULL(callInfo);
+    ZrCore_CallInfo_EntryNativeInit(
+            state, callInfo, state->stackBase, state->stackTop, state->callInfoList);
+    callInfo->functionBase.valuePointer = functionBase;
+    callInfo->functionTop.valuePointer = functionBase + 1 + function->stackSize;
+    callInfo->context.context.programCounter = function->instructionsList;
+    callInfo->callStatus = ZR_CALL_STATUS_CREATE_FRAME;
+    callInfo->expectedReturnCount = 1u;
+    state->callInfoList = callInfo;
+    state->threadStatus = ZR_THREAD_STATUS_FINE;
+
+    ZrCore_Execute(state, callInfo);
+
+    threadStatus = state->threadStatus;
+    callInfoIsActive = (TZrBool)(callInfo == state->callInfoList);
+    resumeOffset = callInfo->context.context.programCounter - function->instructionsList;
+    previousProgramCounter = state->previousProgramCounter;
+    ZrTests_Runtime_State_Destroy(state);
+
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, threadStatus);
+    TEST_ASSERT_TRUE(callInfoIsActive);
+    TEST_ASSERT_TRUE(resumeOffset > 0);
+    TEST_ASSERT_EQUAL_UINT32((TZrUInt32)resumeOffset, previousProgramCounter);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_publish_rejects_null_and_invalid_pc);
     RUN_TEST(test_reload_rejects_missing_frame);
     RUN_TEST(test_publish_and_reload_rebuilds_frame_state);
     RUN_TEST(test_reload_rebuilds_context_from_replaced_frame_roots);
+    RUN_TEST(test_dispatch_publishes_the_saved_pc_at_its_256_instruction_poll);
     return UNITY_END();
 }

@@ -12,6 +12,7 @@
 
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/execution_budget.h"
+#include "zr_vm_core/execution_context.h"
 #include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/property_reference.h"
 #include "zr_vm_core/profile.h"
@@ -2351,6 +2352,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     SZrTypeValue *opA;
     SZrTypeValue *opB;
     TZrUInt32 mutatorPollBudget = 0u;
+    SZrExecutionContext executionContext;
+    EZrExecutionBoundaryStatus executionBoundaryStatus;
     /*
      * registers macros
      */
@@ -2361,6 +2364,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     if (!ZrCore_GcDomain_MutatorEnter(state)) {
         return;
     }
+    ZrCore_ExecutionContext_Init(&executionContext);
 
     ZR_INSTRUCTION_DISPATCH_TABLE
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
@@ -5893,10 +5897,22 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     do {                                                                                                               \
         if (ZR_UNLIKELY(++mutatorPollBudget >= ZR_EXECUTION_SAFEPOINT_POLL_INSTRUCTION_BUDGET)) {                     \
             mutatorPollBudget = 0u;                                                                                    \
+            ZR_ASSERT(callInfo == state->callInfoList);                                                                \
             (callInfo)->context.context.programCounter = programCounter + (N);                                        \
             (state)->stackTop.valuePointer = (callInfo)->functionTop.valuePointer;                                    \
-            if (ZrCore_GcDomain_MutatorPoll(state)) {                                                                  \
+            executionBoundaryStatus = ZrCore_Execution_SafepointPoll(                                                 \
+                    &executionContext, state, programCounter + (N));                                                   \
+            if (executionBoundaryStatus == ZR_EXECUTION_BOUNDARY_RELOADED) {                                         \
+                callInfo = executionContext.callInfo;                                                                  \
                 goto LZrReturning;                                                                                     \
+            }                                                                                                          \
+            if (ZR_UNLIKELY(executionBoundaryStatus != ZR_EXECUTION_BOUNDARY_OK)) {                                   \
+                callInfo = state->callInfoList;                                                                        \
+                if (callInfo == ZR_NULL) {                                                                             \
+                    ZR_ABORT();                                                                                         \
+                }                                                                                                      \
+                ZrCore_Debug_RunError(state, "execution safepoint poll failed: %s",                                  \
+                                      ZrCore_Execution_BoundaryStatusName(executionBoundaryStatus));                  \
             }                                                                                                          \
         }                                                                                                              \
         if (ZR_UNLIKELY(state->executionBudget != ZR_NULL) &&                                                         \

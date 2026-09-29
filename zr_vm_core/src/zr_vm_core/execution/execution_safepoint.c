@@ -160,7 +160,10 @@ EZrExecutionBoundaryStatus ZrCore_Execution_SafepointPoll(
         return status;
     }
     if (state->gcDomain != ZR_NULL && ZrCore_GcDomain_MutatorPoll(state)) {
-        return ZrCore_Execution_ReloadBoundary(context, state);
+        status = ZrCore_Execution_ReloadBoundary(context, state);
+        return status == ZR_EXECUTION_BOUNDARY_OK
+                     ? ZR_EXECUTION_BOUNDARY_RELOADED
+                     : status;
     }
     return ZR_EXECUTION_BOUNDARY_OK;
 }
