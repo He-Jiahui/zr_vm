@@ -6,8 +6,10 @@
 // SHA-256 core adapted to zr_vm types and warning policy from Brad Conte's
 // public-domain crypto-algorithms implementation of FIPS 180-4 SHA-256.
 
+/* 固定 SHA-256 压缩轮数；改变算法参数会改变 artifact 与缓存身份。 */
 #define ZR_SHA256_ROUND_COUNT 64U
 
+/* FIPS 180-4 的轮常量属于编译工具 artifact 与 cache key 的稳定 SHA-256 合同。 */
 static const TZrUInt32 g_compileToolSha256RoundConstants[ZR_SHA256_ROUND_COUNT] = {
     UINT32_C(0x428a2f98), UINT32_C(0x71374491), UINT32_C(0xb5c0fbcf), UINT32_C(0xe9b5dba5),
     UINT32_C(0x3956c25b), UINT32_C(0x59f111f1), UINT32_C(0x923f82a4), UINT32_C(0xab1c5ed5),
@@ -27,10 +29,12 @@ static const TZrUInt32 g_compileToolSha256RoundConstants[ZR_SHA256_ROUND_COUNT] 
     UINT32_C(0x90befffa), UINT32_C(0xa4506ceb), UINT32_C(0xbef9a3f7), UINT32_C(0xc67178f2)
 };
 
+/** @brief SHA-256 压缩阶段共享的轮内原语；调用方只传入 1..31 的固定旋转量。 */
 static TZrUInt32 compile_tool_sha256_rotate_right(TZrUInt32 value, TZrUInt32 count) {
     return (value >> count) | (value << (UINT32_C(32) - count));
 }
 
+/** @brief 实现 SHA-256 轮函数的选择项，供压缩阶段组合状态字。 */
 static TZrUInt32 compile_tool_sha256_choose(
         TZrUInt32 x,
         TZrUInt32 y,
@@ -38,6 +42,7 @@ static TZrUInt32 compile_tool_sha256_choose(
     return (x & y) ^ (~x & z);
 }
 
+/** @brief 实现 SHA-256 轮函数的多数项，供压缩阶段组合状态字。 */
 static TZrUInt32 compile_tool_sha256_majority(
         TZrUInt32 x,
         TZrUInt32 y,
@@ -45,30 +50,35 @@ static TZrUInt32 compile_tool_sha256_majority(
     return (x & y) ^ (x & z) ^ (y & z);
 }
 
+/** @brief 计算 SHA-256 消息扩展的 sigma0，用于生成 64 轮输入词。 */
 static TZrUInt32 compile_tool_sha256_schedule0(TZrUInt32 value) {
     return compile_tool_sha256_rotate_right(value, UINT32_C(7)) ^
            compile_tool_sha256_rotate_right(value, UINT32_C(18)) ^
            (value >> UINT32_C(3));
 }
 
+/** @brief 计算 SHA-256 消息扩展的 sigma1，用于生成 64 轮输入词。 */
 static TZrUInt32 compile_tool_sha256_schedule1(TZrUInt32 value) {
     return compile_tool_sha256_rotate_right(value, UINT32_C(17)) ^
            compile_tool_sha256_rotate_right(value, UINT32_C(19)) ^
            (value >> UINT32_C(10));
 }
 
+/** @brief 计算 SHA-256 压缩轮的大写 sigma0。 */
 static TZrUInt32 compile_tool_sha256_sum0(TZrUInt32 value) {
     return compile_tool_sha256_rotate_right(value, UINT32_C(2)) ^
            compile_tool_sha256_rotate_right(value, UINT32_C(13)) ^
            compile_tool_sha256_rotate_right(value, UINT32_C(22));
 }
 
+/** @brief 计算 SHA-256 压缩轮的大写 sigma1。 */
 static TZrUInt32 compile_tool_sha256_sum1(TZrUInt32 value) {
     return compile_tool_sha256_rotate_right(value, UINT32_C(6)) ^
            compile_tool_sha256_rotate_right(value, UINT32_C(11)) ^
            compile_tool_sha256_rotate_right(value, UINT32_C(25));
 }
 
+/** @brief 消费一个完整 SHA-256 block 并推进 context；Update/Final 是其唯一状态机调用链。 */
 static void compile_tool_sha256_transform(
         SZrParserSha256Context *context,
         const TZrByte block[ZR_PARSER_SHA256_BLOCK_BYTE_COUNT]) {
@@ -114,6 +124,7 @@ static void compile_tool_sha256_transform(
     }
 }
 
+/** @brief 初始化流式 SHA-256 context，供 artifact、IR cache 和 compile-time cache 共用。 */
 void ZrParser_Sha256_Init(SZrParserSha256Context *context) {
     if (context == ZR_NULL) {
         return;
@@ -129,6 +140,11 @@ void ZrParser_Sha256_Init(SZrParserSha256Context *context) {
     context->state[7] = UINT32_C(0x5be0cd19);
 }
 
+/**
+ * @brief 向增量摘要追加字节，累计长度限制为 SHA-256 64 位 bit count 可表示的范围。
+ * @pre context 已由 Init 初始化；bytes 可空仅当 byteCount 为零。
+ * @return 长度溢出或输入无效时 false；失败不追加该段内容。
+ */
 TZrBool ZrParser_Sha256_Update(
         SZrParserSha256Context *context,
         const TZrByte *bytes,
@@ -149,6 +165,10 @@ TZrBool ZrParser_Sha256_Update(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 完成流式摘要并输出固定 32 字节结果；调用者负责确保 context 和 digest 有效。
+ * @note Final 消费当前上下文；同一 context 不支持再次 Final 或继续 Update。
+ */
 void ZrParser_Sha256_Final(
         SZrParserSha256Context *context,
         TZrByte digest[ZR_PARSER_SHA256_DIGEST_BYTE_COUNT]) {
@@ -184,6 +204,10 @@ void ZrParser_Sha256_Final(
     }
 }
 
+/**
+ * @brief 将摘要格式化为 sha256: 前缀加无 padding base64url，匹配 compile-tool manifest 格式。
+ * @pre digest 指向完整摘要；输出至少有 ZR_COMPILE_TOOL_CONTENT_HASH_BUFFER_LENGTH 字节。
+ */
 TZrBool ZrParser_Sha256_FormatDigest(
         const TZrByte digest[ZR_PARSER_SHA256_DIGEST_BYTE_COUNT],
         TZrChar *outHash,
@@ -218,6 +242,11 @@ TZrBool ZrParser_Sha256_FormatDigest(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 对完整 artifact 内容生成可存入锁文件的 SHA-256 文本身份。
+ * @pre bytes 可空仅当 byteCount 为零；outHash 必须提供规定的完整输出容量。
+ * @return 无效输入、长度不可编码或输出容量不足时 false。
+ */
 TZrBool ZrParser_CompileToolContentHash_Bytes(
         const TZrByte *bytes,
         TZrSize byteCount,
