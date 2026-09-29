@@ -49,6 +49,9 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
+  - tests/CMakeLists.txt
+  - tests/parser/test_span_core.c
+  - tests/parser/test_span_core_inline_receiver.inc
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_locals.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
@@ -408,7 +411,12 @@ plan_sources:
   - user: 2026-07-18 按 AOT 07~12 计划持续优化代码生成并逐阶段记录状态与产出
   - docs/superpowers/plans/2026-08-10-ownership-object-member-separation-implementation.md
   - user: 2026-08-27 clean stale tests and repair lower shared regressions found by full acceptance
+  - docs/plans/ssa/05-data-layout/02-arrays-slices.md
 tests:
+  - tests/parser/test_span_core.c
+  - tests/parser/test_span_core_inline_receiver.inc
+  - tests/CMakeLists.txt
+  - tests/acceptance/ssa-span-inline-receiver.md
   - tests/parser/test_semir_pipeline.c
   - tests/parser/test_aot_c_source_contracts.c
   - tests/parser/test_aot_c_generic_call_typed.c
@@ -3028,6 +3036,26 @@ exact provider prototype (or its open generic base). This metadata is emitted
 only for imported struct/union types carrying a contiguous-view protocol, so
 other ref-like native guards such as `PoolRef<T>` retain their scoped object
 semantics. VM and generated-C Span fixtures assert equivalent execution.
+
+Focused 2026-09-28 Span inline receiver lowering keeps an inline `Span<T>`
+receiver intact across computed-member reads, indexed writes, and slices.
+Structural index-get lowering uses a distinct scalar result slot so the
+plain-value destination required by `GET_BY_INDEX` cannot erase the receiver's
+inline TypeLayout before `GET_MEMBER_SLOT` loads the view fields. When a scalar
+computed-member expression starts from an inline local, the compiler stages
+that local through the SemIR-aware load path, preserving both its layout hint
+and contiguous-view/loan facts. For a one-member computed assignment rooted in
+an inline local, the assignment prefix keeps that local as the receiver instead
+of copying it into an untyped value temporary. Ordinary non-inline roots and
+noncomputed field paths keep their existing lowering.
+
+The scoped source matrix covers inferred and explicit `container.Span<int>`
+index writes, an explicit typed direct index read, and inferred and explicit
+slice receivers. `tests/acceptance/ssa-span-inline-receiver.md` records the
+initial GET_MEMBER_SLOT RED trace, the current-source commands, and the final
+focused selector 5/0, CTest 1/1, and full Span suite 23/0 results. This slice
+does not claim generic inline-element result typing or closure of the complete
+05.02 arrays/slices milestone.
 
 Focused 2026-08-25 AOT 07-A7.2P projects source-declared inline aggregate `in`,
 `ref readonly`, and `scoped ref readonly` parameters into the existing borrowed

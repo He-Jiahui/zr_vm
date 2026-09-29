@@ -931,11 +931,20 @@ void setUp(void) {}
 void tearDown(void) {}
 
 /* Unity 入口组合核心用例、GC 用例和语义 IR 用例。 */
-/* TODO: CMake 构建了该目标但未见 add_test；需确认是手动验收还是应纳入 CTest。 */
+/* 完整 Span 套件仍由直接执行覆盖；inline receiver 子集已注册到 CTest。 */
 #include "test_span_core_pinned_nll.inc"
+#include "test_span_core_inline_receiver.inc"
 
-int main(void) {
+int main(int argc, char **argv) {
     UNITY_BEGIN();
+    if (argc == 2 && strcmp(argv[1], "--inline-receiver") == 0) {
+        RUN_TEST(test_inferred_span_receiver_supports_index_write);
+        RUN_TEST(test_explicit_span_receiver_supports_index_write);
+        RUN_TEST(test_explicit_span_receiver_supports_index_read);
+        RUN_TEST(test_inferred_span_receiver_supports_slice);
+        RUN_TEST(test_explicit_span_receiver_supports_slice);
+        return UNITY_END();
+    }
     RUN_TEST(test_span_descriptors_publish_ref_like_contiguous_view_contracts);
     RUN_TEST(test_span_runtime_prototypes_preserve_contiguous_view_protocols);
     RUN_TEST(test_span_compiler_prototypes_project_ref_like_member_contracts);
@@ -954,5 +963,10 @@ int main(void) {
     RUN_TEST(test_span_owner_move_and_native_drop_conflict_with_active_view);
     RUN_TEST(test_pinned_span_scalar_last_use_allows_pin_close);
     RUN_TEST(test_pinned_span_close_rejects_later_view_read);
+    RUN_TEST(test_inferred_span_receiver_supports_index_write);
+    RUN_TEST(test_explicit_span_receiver_supports_index_write);
+    RUN_TEST(test_explicit_span_receiver_supports_index_read);
+    RUN_TEST(test_inferred_span_receiver_supports_slice);
+    RUN_TEST(test_explicit_span_receiver_supports_slice);
     return UNITY_END();
 }

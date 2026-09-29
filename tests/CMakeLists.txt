@@ -4674,6 +4674,10 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/tests/parser/test_span_semantic_ir_cases.c
             ${CMAKE_SOURCE_DIR}/tests/container/container_test_common.c
     )
+    add_test(
+            NAME parser_span_inline_receiver
+            COMMAND $<TARGET_FILE:zr_vm_span_core_test> --inline-receiver
+    )
     zr_vm_add_unity_test_target(
             zr_vm_buffer_pool_ffi_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_buffer_pool_ffi.c

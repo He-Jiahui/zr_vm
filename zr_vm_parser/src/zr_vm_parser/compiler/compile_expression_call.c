@@ -774,9 +774,38 @@ static TZrUInt32 compile_primary_expression_result_slot(SZrCompilerState *cs,
                 return ZR_PARSER_SLOT_NONE;
             }
             if (!rootResolvedFromDirectOwnershipReceiver) {
-                compile_expression_non_tail(cs, primary->property);
-                if (cs->hasError) {
-                    return ZR_PARSER_SLOT_NONE;
+                TZrBool hasInlineRoot = ZR_FALSE;
+                TZrBool startsWithComputedMember =
+                        primary->members != ZR_NULL &&
+                        primary->members->count > 0u &&
+                        primary->members->nodes[0] != ZR_NULL &&
+                        primary->members->nodes[0]->type == ZR_AST_MEMBER_EXPRESSION &&
+                        primary->members->nodes[0]->data.memberExpression.computed;
+                if (startsWithComputedMember) {
+                    SZrInferredType propertyType;
+                    ZrParser_InferredType_Init(cs->state, &propertyType, ZR_VALUE_TYPE_OBJECT);
+                    if (ZrParser_ExpressionType_Infer(cs, primary->property, &propertyType)) {
+                        hasInlineRoot = compiler_find_inline_type_layout_for_inferred(
+                                cs, &propertyType, ZR_NULL, ZR_NULL, ZR_NULL);
+                    }
+                    ZrParser_InferredType_Free(cs->state, &propertyType);
+                    if (cs->hasError) {
+                        return ZR_PARSER_SLOT_NONE;
+                    }
+                }
+                if (hasInlineRoot) {
+                    currentSlot = allocate_fresh_stack_slot_after(cs, cs->lastExpressionSlot);
+                    if (currentSlot == ZR_PARSER_SLOT_NONE ||
+                        compile_inline_receiver_property_into_slot(
+                                cs, primary->property, currentSlot) == ZR_PARSER_SLOT_NONE ||
+                        cs->hasError) {
+                        return ZR_PARSER_SLOT_NONE;
+                    }
+                } else {
+                    compile_expression_non_tail(cs, primary->property);
+                    if (cs->hasError) {
+                        return ZR_PARSER_SLOT_NONE;
+                    }
                 }
             }
         }
@@ -984,7 +1013,6 @@ static TZrUInt32 compile_inline_receiver_property_into_slot(SZrCompilerState *cs
                                                             TZrUInt32 targetSlot) {
     SZrInferredType propertyType;
     TZrUInt32 localSlot;
-    TZrInstruction copyInst;
 
     if (cs == ZR_NULL || property == ZR_NULL || cs->hasError) {
         return ZR_PARSER_SLOT_NONE;
@@ -1007,8 +1035,23 @@ static TZrUInt32 compile_inline_receiver_property_into_slot(SZrCompilerState *cs
     }
     ZrParser_InferredType_Free(cs->state, &propertyType);
 
-    copyInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)targetSlot, (TZrInt32)localSlot);
-    emit_instruction(cs, copyInst);
+    if (cs->preSemanticIrInitialized) {
+        if (!compiler_semantic_ir_lower_load(
+                    cs, localSlot, targetSlot, property->location)) {
+            ZrParser_Compiler_Error(
+                    cs,
+                    "Failed to load inline receiver through pre-execution Semantic IR",
+                    property->location);
+            return ZR_PARSER_SLOT_NONE;
+        }
+    } else {
+        emit_instruction(
+                cs,
+                create_instruction_1(
+                        ZR_INSTRUCTION_ENUM(GET_STACK),
+                        (TZrUInt16)targetSlot,
+                        (TZrInt32)localSlot));
+    }
     collapse_stack_to_slot(cs, targetSlot);
     return targetSlot;
 }

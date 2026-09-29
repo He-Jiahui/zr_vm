@@ -905,12 +905,27 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
     } else {
         TZrUInt32 directLocalCandidate =
                 assignment_target_direct_local_slot(cs, primary->property);
+        TZrBool directLocalSingleComputedMember =
+                primary->members != ZR_NULL && primary->members->count == 1U &&
+                primary->members->nodes[0] != ZR_NULL &&
+                primary->members->nodes[0]->type == ZR_AST_MEMBER_EXPRESSION &&
+                primary->members->nodes[0]->data.memberExpression.computed;
+        if (directLocalCandidate != ZR_PARSER_SLOT_NONE &&
+            directLocalSingleComputedMember) {
+            resolve_expression_root_type(
+                    cs, primary->property, &rootTypeName, &rootIsTypeReference);
+            if (cs->hasError) {
+                return ZR_FALSE;
+            }
+        }
         TZrBool directLocalCandidateIsInlineStruct =
                 directLocalCandidate != ZR_PARSER_SLOT_NONE &&
                 assignment_field_type_is_inline_struct(cs, rootTypeName);
         TZrUInt32 directLocalSlot =
                 (primary->members != ZR_NULL && primary->members->count > 1u) ||
-                                (captureRootValue && directLocalCandidateIsInlineStruct)
+                                (captureRootValue && directLocalCandidateIsInlineStruct) ||
+                                (directLocalSingleComputedMember &&
+                                 directLocalCandidateIsInlineStruct)
                         ? directLocalCandidate
                         : ZR_PARSER_SLOT_NONE;
         EZrOwnershipQualifier directLocalOwnershipQualifier =

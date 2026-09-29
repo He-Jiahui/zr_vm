@@ -3584,6 +3584,10 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                         }
 
                         if (!computedInlineArrayElement) {
+                            TZrUInt32 resultSlot = allocate_stack_slot(cs);
+                            if (resultSlot == ZR_PARSER_SLOT_NONE) {
+                                goto cleanup;
+                            }
                             EZrCompilerContiguousViewLoweringResult loweringResult =
                                     compiler_contiguous_view_lower_index_get(
                                             cs,
@@ -3591,7 +3595,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                             currentSlot,
                                             keySlot,
                                             memberExpr->property,
-                                            currentSlot,
+                                            resultSlot,
                                             member->location);
                             if (loweringResult ==
                                     ZR_COMPILER_CONTIGUOUS_VIEW_ERROR) {
@@ -3605,6 +3609,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                             }
                             if (loweringResult ==
                                     ZR_COMPILER_CONTIGUOUS_VIEW_NOT_APPLICABLE) {
+                                ZrParser_Compiler_TrimStackBy(cs, 1u);
                                 emit_instruction(
                                         cs,
                                         create_instruction_2(
@@ -3612,6 +3617,16 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                                 (TZrUInt16)currentSlot,
                                                 (TZrUInt16)currentSlot,
                                                 (TZrUInt16)keySlot));
+                            } else {
+                                currentSlot = resultSlot;
+                                if (currentSemanticPlace != ZR_PLACE_ID_INVALID) {
+                                    currentSemanticPlace =
+                                            compiler_semantic_ir_project_index(
+                                                    cs,
+                                                    currentSemanticPlace,
+                                                    keySlot,
+                                                    member->location);
+                                }
                             }
                             if (pendingReceiverSlot == ZR_PARSER_SLOT_NONE) {
                                 collapse_stack_to_slot(cs, currentSlot);
