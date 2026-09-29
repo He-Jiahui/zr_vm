@@ -10,13 +10,19 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 此模块消费 reflection.c 构造的成员元数据，完成授权筛选、继承遍历和结果缓存；
+ * descriptor native 层再把这些枚举/唯一解析能力暴露给反射调用者。 */
+/* 反射描述对象把成员数组、稳定顺序和原型引用保存在这些内部字段中；
+ * 查询流程依赖它们与 reflection.c 的描述符构造格式一致。 */
 static const TZrChar *kQueryMembersField = "members";
 static const TZrChar *kQueryOrderField = "__zr_reflection_order";
 static const TZrChar *kQueryPrototypeField = "__zr_reflection_prototype";
 static const TZrChar *kQueryCacheFieldPrefix = "__zr_reflection_query_";
 
+/* 仅供调试接口观察查询缓存命中；不是同步或跨线程统计接口。 */
 static SZrReflectionMemberCacheStats gMemberCacheStats;
 
+/* 预先构造成员筛选常用的字段名，避免对每个候选成员重复分配字符串。 */
 typedef enum EZrReflectionMemberFieldKey {
     ZR_REFLECTION_MEMBER_FIELD_KIND = 0,
     ZR_REFLECTION_MEMBER_FIELD_ACCESS,
@@ -26,20 +32,24 @@ typedef enum EZrReflectionMemberFieldKey {
     ZR_REFLECTION_MEMBER_FIELD_KEY_COUNT,
 } EZrReflectionMemberFieldKey;
 
+/* values 持有查询期间的字段键，pinned 记录哪些键由本次查询暂时加入 GC 根。 */
 typedef struct SZrReflectionMemberFieldKeys {
     SZrTypeValue values[ZR_REFLECTION_MEMBER_FIELD_KEY_COUNT];
     TZrBool pinned[ZR_REFLECTION_MEMBER_FIELD_KEY_COUNT];
 } SZrReflectionMemberFieldKeys;
 
+/* 每轮缓存专项验证前清零全局计数；调用者需串行使用并自行界定统计窗口。 */
 void ZrCore_Reflection_DebugResetMemberCacheStats(void) {
     memset(&gMemberCacheStats, 0, sizeof(gMemberCacheStats));
 }
 
+/* 返回当前进程内的累计快照，供测试区分冷查询与命中查询。 */
 SZrReflectionMemberCacheStats
 ZrCore_Reflection_DebugGetMemberCacheStats(void) {
     return gMemberCacheStats;
 }
 
+/* 统一处理可选状态输出，避免错误路径遗漏公共状态码。 */
 static void query_set_status(EZrReflectionQueryStatus *outStatus,
                              EZrReflectionQueryStatus status) {
     if (outStatus != ZR_NULL) {
@@ -47,6 +57,7 @@ static void query_set_status(EZrReflectionQueryStatus *outStatus,
     }
 }
 
+/* 用运行时字符串键读取反射元数据；返回值借用对象存储，不能跨写操作留存。 */
 static const SZrTypeValue *query_get_field(SZrState *state,
                                            SZrObject *object,
                                            const TZrChar *name) {
@@ -66,6 +77,8 @@ static const SZrTypeValue *query_get_field(SZrState *state,
     return ZrCore_Object_GetValue(state, object, &key);
 }
 
+/* TODO: 缓存写入经过 void Object_SetValue；threadStatus 只能发现部分错误，
+ * 不能证明 HashSet_Add 等内部写入已经落盘，需确认缓存写失败的契约。 */
 static TZrBool query_set_object_field(SZrState *state,
                                       SZrObject *object,
                                       const TZrChar *name,
@@ -92,6 +105,7 @@ static TZrBool query_set_object_field(SZrState *state,
     return state->threadStatus == ZR_THREAD_STATUS_FINE;
 }
 
+/* 将查询的全部筛选维度编码进描述符私有字段，防止不同查询共享结果。 */
 static TZrBool query_cache_key(
         EZrReflectionMemberKind kind,
         const SZrReflectionMemberQuery *query,
@@ -117,6 +131,7 @@ static TZrBool query_cache_key(
     return (TZrBool)(length > 0 && (TZrSize)length < bufferSize);
 }
 
+/* 只接受指定运行时类型的对象字段，格式不符时按元数据缺失处理。 */
 static SZrObject *query_get_object_field(SZrState *state,
                                          SZrObject *object,
                                          const TZrChar *name,
@@ -130,6 +145,7 @@ static SZrObject *query_get_object_field(SZrState *state,
     return ZR_CAST_OBJECT(state, value->value.object);
 }
 
+/* 读取未预缓存的字符串元数据；缺失或错型回退到调用方指定的哨兵。 */
 static const TZrChar *query_get_string_field(SZrState *state,
                                              SZrObject *object,
                                              const TZrChar *name,
@@ -144,6 +160,7 @@ static const TZrChar *query_get_string_field(SZrState *state,
             ZR_CAST_STRING(state, value->value.object));
 }
 
+/* 按兼容默认值读取整数型反射元数据。 */
 static TZrInt64 query_get_int_field(SZrState *state,
                                     SZrObject *object,
                                     const TZrChar *name,
@@ -155,6 +172,7 @@ static TZrInt64 query_get_int_field(SZrState *state,
                    : fallback;
 }
 
+/* TODO: 仓内没有直接调用点；确认是否为待用字段读取契约，或应在后续清理移除。 */
 static TZrBool query_get_bool_field(SZrState *state,
                                     SZrObject *object,
                                     const TZrChar *name,
@@ -166,6 +184,7 @@ static TZrBool query_get_bool_field(SZrState *state,
                    : fallback;
 }
 
+/* 与 prepare 配对，撤销本次筛选独占增加的 GC 根。 */
 static void query_release_member_field_keys(
         SZrState *state,
         SZrReflectionMemberFieldKeys *keys) {
@@ -183,6 +202,7 @@ static void query_release_member_field_keys(
     }
 }
 
+/* 为候选遍历预建并保护常用字段键；任一分配或 pin 失败即整体中止。 */
 static TZrBool query_prepare_member_field_keys(
         SZrState *state,
         SZrReflectionMemberFieldKeys *keys) {
@@ -221,6 +241,7 @@ static TZrBool query_prepare_member_field_keys(
     return ZR_TRUE;
 }
 
+/* 通过已保护的键读取候选成员字段，供热路径筛选器复用。 */
 static const SZrTypeValue *query_get_prepared_field(
         SZrState *state,
         SZrObject *object,
@@ -233,6 +254,7 @@ static const SZrTypeValue *query_get_prepared_field(
     return ZrCore_Object_GetValue(state, object, &keys->values[key]);
 }
 
+/* 对预准备字段键做字符串读取并应用字段缺省值。 */
 static const TZrChar *query_get_prepared_string_field(
         SZrState *state,
         SZrObject *object,
@@ -250,6 +272,7 @@ static const TZrChar *query_get_prepared_string_field(
             ZR_CAST_STRING(state, value->value.object));
 }
 
+/* 对预准备字段键做整数读取并应用字段缺省值。 */
 static TZrInt64 query_get_prepared_int_field(
         SZrState *state,
         SZrObject *object,
@@ -264,6 +287,7 @@ static TZrInt64 query_get_prepared_int_field(
                    : fallback;
 }
 
+/* 对预准备字段键做布尔读取并应用字段缺省值。 */
 static TZrBool query_get_prepared_bool_field(
         SZrState *state,
         SZrObject *object,
@@ -280,6 +304,7 @@ static TZrBool query_get_prepared_bool_field(
                    : fallback;
 }
 
+/* 以整数索引访问已物化的反射数组；元素指针仍由数组拥有。 */
 static const SZrTypeValue *query_array_get(SZrState *state,
                                            SZrObject *array,
                                            TZrUInt32 index) {
@@ -293,6 +318,8 @@ static const SZrTypeValue *query_array_get(SZrState *state,
     return ZrCore_Object_GetValue(state, array, &key);
 }
 
+/* BUG: Object_SetValue 是 void；候选成员对象的临时 pin 若因 ignored-root 表扩容失败，
+ * setter 只记录日志就返回，不写入数组；这里仍报成功，上游可能缓存并发布缺项结果。 */
 static TZrBool query_array_push_object(SZrState *state,
                                        SZrObject *array,
                                        SZrObject *object) {
@@ -315,6 +342,7 @@ static TZrBool query_array_push_object(SZrState *state,
     return ZR_TRUE;
 }
 
+/* 创建查询期间受保护的临时结果容器，发布或失败清理前由 QueryMembers 持有。 */
 static SZrObject *query_new_pinned_array(SZrState *state,
                                          TZrBool *outPinned) {
     SZrObject *array;
@@ -341,6 +369,7 @@ static SZrObject *query_new_pinned_array(SZrState *state,
     return array;
 }
 
+/* 把反射记录的 kind/meta 标记映射到公开成员类别筛选。 */
 static TZrBool query_kind_matches(SZrState *state,
                                   SZrObject *member,
                                   EZrReflectionMemberKind kind,
@@ -379,6 +408,7 @@ static TZrBool query_kind_matches(SZrState *state,
     }
 }
 
+/* 按访问级别筛选；非公开访问能力已由公共入口先行授权。 */
 static TZrBool query_access_matches(SZrState *state,
                                     SZrObject *member,
                                     EZrReflectionMemberAccess access,
@@ -409,6 +439,7 @@ static TZrBool query_access_matches(SZrState *state,
     }
 }
 
+/* 以 isStatic 区分静态与实例成员，缺失标记沿用实例成员缺省。 */
 static TZrBool query_storage_matches(SZrState *state,
                                      SZrObject *member,
                                      EZrReflectionMemberStorage storage,
@@ -429,6 +460,7 @@ static TZrBool query_storage_matches(SZrState *state,
            (storage == ZR_REFLECTION_MEMBER_STORAGE_INSTANCE && !isStatic);
 }
 
+/* 合并类别、访问、存储和内部名称规则，作为声明成员的唯一筛选门。 */
 static TZrBool query_member_matches(SZrState *state,
                                     SZrObject *member,
                                     EZrReflectionMemberKind kind,
@@ -463,6 +495,7 @@ static TZrBool query_member_matches(SZrState *state,
     return strncmp(name, "__", 2u) != 0;
 }
 
+/* 按描述符记录的声明顺序遍历重载桶并筛选；结果顺序因此稳定。 */
 static TZrBool query_append_declared_members(
         SZrState *state,
         SZrObject *descriptor,
@@ -543,6 +576,7 @@ static TZrBool query_append_declared_members(
     return ZR_TRUE;
 }
 
+/* 从反射描述符取回其运行时原型，拒绝类型不符的私有元数据。 */
 static SZrObjectPrototype *query_descriptor_prototype(
         SZrState *state,
         SZrObject *descriptor) {
@@ -556,6 +590,7 @@ static SZrObjectPrototype *query_descriptor_prototype(
                    : ZR_NULL;
 }
 
+/* 从直接父原型向上逐层读取各自描述符，保持继承查询的层级顺序。 */
 static TZrBool query_append_inherited_members(
         SZrState *state,
         SZrObject *descriptor,
@@ -595,6 +630,7 @@ static TZrBool query_append_inherited_members(
     return ZR_TRUE;
 }
 
+/* 初始化公开查询约定：所有作用域、所有存储，但默认仅公开且隐藏内部成员。 */
 void ZrCore_Reflection_MemberQueryInitDefault(
         SZrReflectionMemberQuery *query) {
     if (query == ZR_NULL) {
@@ -608,6 +644,7 @@ void ZrCore_Reflection_MemberQueryInitDefault(
     query->hasNonPublicAccessCapability = ZR_FALSE;
 }
 
+/* 反射枚举入口：授权后优先复用描述符缓存，否则按声明/继承链构造并缓存结果。 */
 TZrBool ZrCore_Reflection_QueryMembers(
         SZrState *state,
         SZrObject *typeDescriptor,
@@ -634,6 +671,8 @@ TZrBool ZrCore_Reflection_QueryMembers(
         !ZrCore_Reflection_IsReflectionObject(state, typeDescriptor)) {
         return ZR_FALSE;
     }
+    /* TODO: 验证 kind/scope/access/storage 的完整枚举域（含 kind 下界）；未知 scope
+     * 会跳过两种收集，而 access/storage 的未知值会被筛选器当成无匹配。 */
     if (effectiveQuery == ZR_NULL) {
         ZrCore_Reflection_MemberQueryInitDefault(&defaultQuery);
         effectiveQuery = &defaultQuery;
@@ -645,6 +684,7 @@ TZrBool ZrCore_Reflection_QueryMembers(
         query_set_status(outStatus, ZR_REFLECTION_QUERY_STATUS_ACCESS_DENIED);
         return ZR_FALSE;
     }
+    /* 只有授权后的查询结果能进入缓存；key 包含 capability 位，避免授权形态串用。 */
     if (query_cache_key(
                 kind, effectiveQuery, cacheKey, sizeof(cacheKey))) {
         cached = query_get_object_field(
@@ -660,6 +700,7 @@ TZrBool ZrCore_Reflection_QueryMembers(
     }
     gMemberCacheStats.missCount++;
 
+    /* 未缓存路径在遍历期间固定结果和字段键；所有出口在发布前释放临时根。 */
     result = query_new_pinned_array(state, &resultPinned);
     if (result == ZR_NULL) {
         return ZR_FALSE;
@@ -693,6 +734,7 @@ TZrBool ZrCore_Reflection_QueryMembers(
                 result);
     }
     query_release_member_field_keys(state, &memberFieldKeys);
+    /* 缓存只是复用优化：无可用键时仍可成功返回；写入失败能否被观察由 setter 契约决定。 */
     if (success && cacheKey[0] != '\0' &&
         !query_set_object_field(
                 state, typeDescriptor, cacheKey, result)) {
@@ -712,6 +754,7 @@ TZrBool ZrCore_Reflection_QueryMembers(
     return ZR_TRUE;
 }
 
+/* 以元数据参数数目和 TypeId 名称过滤方法重载；调用仅发生于方法类别。 */
 static TZrBool query_parameter_types_match(
         SZrState *state,
         SZrObject *member,
@@ -757,6 +800,8 @@ static TZrBool query_parameter_types_match(
         parameterTypeName = query_get_string_field(
                 state, parameter, "typeName", ZR_NULL);
         if (parameterTypeName == ZR_NULL || identityName == ZR_NULL ||
+            /* TODO: 已解码的 canonical ID、generation 等 identity 未参与比较；确认
+             * typeName 是否跨模块和元数据代际唯一，或这里应比较完整 TypeId。 */
             strcmp(parameterTypeName,
                    ZrCore_String_GetNativeString(identityName)) != 0) {
             return ZR_FALSE;
@@ -765,6 +810,7 @@ static TZrBool query_parameter_types_match(
     return ZR_TRUE;
 }
 
+/* 在筛选后的成员集内按名称与可选方法签名解析唯一项，零项/多项分别报告。 */
 TZrBool ZrCore_Reflection_GetMember(
         SZrState *state,
         SZrObject *typeDescriptor,
@@ -838,6 +884,7 @@ TZrBool ZrCore_Reflection_GetMember(
         matchCount++;
     }
 
+    /* 只允许唯一匹配；名称重载未给精确签名时按歧义失败。 */
     if (matchCount == 0u) {
         if (membersPinned) {
             ZrCore_GarbageCollector_UnignoreObject(
