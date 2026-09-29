@@ -5,6 +5,7 @@
 
 #include <stdio.h>
 
+/* 把 AttributeData 的输入契约错误转成编译期诊断；调用者据 false 中止当前准备步骤。 */
 static TZrBool patch_attribute_error(
         SZrCompilerState *cs,
         const TZrChar *message,
@@ -14,6 +15,7 @@ static TZrBool patch_attribute_error(
     return ZR_FALSE;
 }
 
+/* 以短期构造的字符串键读取对象字段；返回值仍借用对象存储，不转移字段所有权。 */
 static const SZrTypeValue *patch_attribute_object_field(
         SZrCompilerState *cs,
         SZrObject *object,
@@ -35,6 +37,7 @@ static const SZrTypeValue *patch_attribute_object_field(
     return ZrCore_Object_GetValue(cs->state, object, &key);
 }
 
+/* 写字段后立即回读确认插入成功；键对象在写入期间由临时 VM 栈槽保活。 */
 static TZrBool patch_attribute_set_object_field(
         SZrCompilerState *cs,
         SZrObject *object,
@@ -69,6 +72,7 @@ cleanup:
     return result;
 }
 
+/* 按数组下标读取泛型数组元素；这里只借用元素值，数组的物化由调用方负责。 */
 static const SZrTypeValue *patch_attribute_array_at(
         SZrCompilerState *cs,
         const SZrTypeValue *arrayValue,
@@ -89,6 +93,7 @@ static const SZrTypeValue *patch_attribute_array_at(
     return ZrCore_Object_GetValue(cs->state, array, &key);
 }
 
+/* 将非负有符号整数和无符号整数统一解码为 uint64，拒绝其他类型及负值。 */
 static TZrBool patch_attribute_read_nonnegative_integer(
         const SZrTypeValue *value,
         TZrUInt64 *result) {
@@ -107,6 +112,7 @@ static TZrBool patch_attribute_read_nonnegative_integer(
     return ZR_TRUE;
 }
 
+/* schema 以 canonical TypeId 注册；线性查找结果借用编译器状态中的绑定。 */
 static const SZrCompilerAttributeSchemaBinding *patch_attribute_find_schema(
         SZrCompilerState *cs,
         TZrTypeId typeId) {
@@ -125,6 +131,7 @@ static const SZrCompilerAttributeSchemaBinding *patch_attribute_find_schema(
     return ZR_NULL;
 }
 
+/* metadata 用 attributeId 加连续序号保存重复项；首个缺失键即为当前项数。 */
 static TZrSize patch_attribute_metadata_count(
         SZrCompilerState *cs,
         SZrObject *metadataObject,
@@ -146,6 +153,7 @@ static TZrSize patch_attribute_metadata_count(
     }
 }
 
+/* 只在目标已有对象型 decorator metadata 时统计同一 attributeId 的既有项。 */
 static TZrSize patch_attribute_existing_count(
         SZrCompilerState *cs,
         const SZrTypePrototypeInfo *targetInfo,
@@ -163,6 +171,7 @@ static TZrSize patch_attribute_existing_count(
     return patch_attribute_metadata_count(cs, metadataObject, attributeId);
 }
 
+/* 将 schema 允许的常量同时规范化为契约常量和后续 metadata 写入用 TypeValue。 */
 static TZrBool patch_attribute_normalize_constant(
         SZrCompilerState *cs,
         const SZrTypeValue *value,
@@ -178,6 +187,7 @@ static TZrBool patch_attribute_normalize_constant(
     ZrCore_Memory_RawSet(constant, 0, sizeof(*constant));
     *normalized = *value;
     constant->kind = expectedKind;
+    /* 固定每种 schema kind 的输入表示；TypeId 先验证反射身份，再落为 canonical ID。 */
     switch (expectedKind) {
         case ZR_PARSER_ATTRIBUTE_VALUE_BOOL:
             if (value->type != ZR_VALUE_TYPE_BOOL) return ZR_FALSE;
@@ -238,6 +248,8 @@ static TZrBool patch_attribute_normalize_constant(
     }
 }
 
+/* 验证单个 typed AttributeData，绑定可应用到类型的 schema，并按字段声明顺序准备值。
+ * fieldValues 的原生缓冲区归 aggregate 所有；schema 指针和输入 TypeValue 均为借用值。 */
 static TZrBool patch_attribute_prepare_entry(
         SZrCompilerState *cs,
         const SZrTypePrototypeInfo *targetInfo,
@@ -332,6 +344,7 @@ static TZrBool patch_attribute_prepare_entry(
                 "declaration_transform.attribute_add: fieldValues must match the attribute schema",
                 location);
     }
+    /* non-repeatable 同时检查目标既有 metadata 和当前批次内先前出现的同一 schema。 */
     for (TZrSize index = 0; index < preparedCount; index++) {
         if (prepared->entries[index].schema == entry->schema) {
             pendingSameSchema++;
@@ -350,6 +363,7 @@ static TZrBool patch_attribute_prepare_entry(
     entry->data.typeId = entry->schema->typeId;
     entry->data.role = ZR_PARSER_ATTRIBUTE_ROLE_NONE;
     entry->data.retention = entry->schema->usage.retention;
+    /* 保留 transform 调用范围的列信息，仅用 AttributeData 构造点覆盖来源行号。 */
     entry->data.sourceRange = location;
     entry->data.sourceRange.start.line = (TZrUInt32)sourceLineStart;
     entry->data.sourceRange.end.line = (TZrUInt32)sourceLineEnd;
@@ -369,6 +383,7 @@ static TZrBool patch_attribute_prepare_entry(
     if (entry->data.fieldValues == ZR_NULL || entry->values == ZR_NULL) {
         return ZR_FALSE;
     }
+    /* schema.fields 与输入数组按同一索引配对；类型不符时由外层释放整批暂存。 */
     for (TZrSize index = 0; index < entry->data.fieldValueCount; index++) {
         const SZrCompilerAttributeFieldBinding *field =
                 (const SZrCompilerAttributeFieldBinding *)ZrCore_Array_Get(
@@ -391,6 +406,11 @@ static TZrBool patch_attribute_prepare_entry(
     return ZR_TRUE;
 }
 
+/* 解码 Patch.attributeAdds 为事务暂存；有效参数先清空 result，输入错误不接管，部分缓冲由 Free 回收。
+ * BUG: 有效非空批次任一暂存 RawMallocWithType 失败只清理并返回 false、不设错误标志；
+ * class/struct/普通 enum 消费方会在发布 prototype 前返回；无错误标志时顶层继续，声明可能静默缺失；union 会补诊断。
+ * BUG: 至少两个 declarationTransform、前序 Patch 含 attributeAdds 且无独立 VM/全局根时，返回值仅存于原生 patchValues，执行帧随即释放；
+ * 后续 typed-init 首次原生分配失败并完成同步 Full GC（默认增量模式、stopGcFlag=false、STW 成功）会回收该 Patch；若分配重试成功并继续反序应用，就会解引用悬空 Patch 或 AttributeData。 */
 TZrBool ZrParser_CompileTime_PreparePatchAttributeAdds(
         SZrCompilerState *cs,
         const SZrTypePrototypeInfo *targetInfo,
@@ -459,6 +479,7 @@ TZrBool ZrParser_CompileTime_PreparePatchAttributeAdds(
     return ZR_TRUE;
 }
 
+/* 复制既有 metadata 的全部键值，使 overlay 保留此前 decorator 写入的属性项。 */
 static TZrBool patch_attribute_copy_metadata_fields(
         SZrCompilerState *cs,
         SZrObject *target,
@@ -485,6 +506,8 @@ static TZrBool patch_attribute_copy_metadata_fields(
     return ZR_TRUE;
 }
 
+/* 在独立对象中构造 metadata overlay：先复制旧映射，再按每个 attributeId 的连续序号
+ * 追加新项；调用方负责在返回后把成功值接入事务根并只在提交成功时发布。 */
 TZrBool ZrParser_CompileTime_BuildPatchAttributeMetadata(
         SZrCompilerState *cs,
         const SZrTypePrototypeInfo *targetInfo,
@@ -505,6 +528,7 @@ TZrBool ZrParser_CompileTime_BuildPatchAttributeMetadata(
     if (attributeAdds->count == 0U) {
         return ZR_TRUE;
     }
+    /* 旧映射和新 metadata 对象跨 GC 分配存活；只有构造完成的输出由调用方接入事务根。 */
     if (!extern_compiler_temp_root_begin(cs, &existingMetadataRoot) ||
         !extern_compiler_temp_root_begin(cs, &metadataRoot)) {
         goto cleanup;
@@ -537,6 +561,7 @@ TZrBool ZrParser_CompileTime_BuildPatchAttributeMetadata(
         goto cleanup;
     }
 
+    /* 同一批次按输入顺序追加；现有键值已复制，因此 repeatable 项不会覆盖旧序号。 */
     for (TZrSize index = 0; index < attributeAdds->count; index++) {
         const SZrParserCompileTimePatchAttributeAdd *addition =
                 &attributeAdds->entries[index];
@@ -552,6 +577,7 @@ TZrBool ZrParser_CompileTime_BuildPatchAttributeMetadata(
             !extern_compiler_temp_root_begin(cs, &entryRoot)) {
             goto cleanup;
         }
+        /* 每个新条目在填字段和插入 metadata 映射期间单独保根，失败时先撤销局部根。 */
         entry = extern_compiler_new_object_constant(cs);
         if (entry == ZR_NULL ||
             !extern_compiler_temp_root_set_object(
@@ -624,6 +650,8 @@ cleanup:
     return result;
 }
 
+/* 释放 Prepare 生成的原生暂存及字段缓冲；contractData 的 fieldValues 是别名，
+ * 必须与 entries 一起由原 compiler state 回收，随后把 aggregate 归零以支持重复清理。 */
 void ZrParser_CompileTime_FreePatchAttributeAdds(
         SZrCompilerState *cs,
         SZrParserCompileTimePatchAttributeAdds *attributeAdds) {
