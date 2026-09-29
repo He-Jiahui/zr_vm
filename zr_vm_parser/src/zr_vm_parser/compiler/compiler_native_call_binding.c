@@ -3,6 +3,7 @@
 #include <string.h>
 #include "zr_vm_parser/ast.h"
 
+/** @brief 按 provider 的持久化 token 与模块哈希识别需跨模块重定位的 native 调用身份。 */
 TZrBool compiler_native_call_binding_is_provider_contract(
         const SZrCallBindingContract *contract) {
     if (contract == ZR_NULL || contract->bindingKind != ZR_CALL_BINDING_DIRECT ||
@@ -14,6 +15,8 @@ TZrBool compiler_native_call_binding_is_provider_contract(
            ZR_METADATA_TOKEN_TABLE(contract->signatureToken) == ZR_METADATA_TABLE_SIGNATURE;
 }
 
+/** @brief 为已识别的 provider 成员建立模块重定位缓存，保留原有签名及来源哈希。
+ *  @note targetIndex 记录调用点的成员定位值；native registry 按契约 token 与哈希选择 provider，不读取该索引。 */
 TZrBool compiler_native_call_binding_prepare_cache(
         SZrFunctionCallSiteCacheEntry *entry,
         const SZrCallBindingContract *contract,
@@ -30,6 +33,8 @@ TZrBool compiler_native_call_binding_prepare_cache(
     return ZR_TRUE;
 }
 
+/** @brief 预留完整契约校验入口，失败时把当前 AST 位置作为编译诊断位置。
+ *  TODO: 当前无生产调用方；链接阶段已执行契约校验，需确认是否还需要接入此编译期诊断入口。 */
 TZrBool compiler_finalize_native_call_binding(
         SZrCompilerState *compiler, SZrFunctionCallSiteCacheEntry *entry) {
     SZrCallBindingDiagnostic diagnostic;
