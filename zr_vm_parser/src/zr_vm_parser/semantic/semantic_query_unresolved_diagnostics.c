@@ -4,6 +4,10 @@
 
 #include <stdio.h>
 
+/**
+ * @brief 判断两个 fact 的来源是否指向同一份源文本。
+ * @note unresolved fact 可能来自不同字符串对象；位置去重必须按内容识别文件名。
+ */
 static TZrBool semantic_query_unresolved_same_source(SZrString *left,
                                                       SZrString *right) {
     if (left == ZR_NULL || right == ZR_NULL) {
@@ -12,11 +16,19 @@ static TZrBool semantic_query_unresolved_same_source(SZrString *left,
     return left == right || ZrCore_String_Equal(left, right);
 }
 
+/**
+ * @brief 判断位置是否携带可用于跨版本比较的偏移坐标。
+ * @note 旧式位置仅有行列号，调用方会在其缺失时回退到行列比较。
+ */
 static TZrBool semantic_query_unresolved_has_offset(
         const SZrFilePosition *position) {
     return position != ZR_NULL && position->offset > 0U;
 }
 
+/**
+ * @brief 比较两个引用范围，用于压制同一语法位置的未解析投影。
+ * @note 有偏移时以偏移为准；旧位置以行列为准，来源也必须相同。
+ */
 static TZrBool semantic_query_unresolved_ranges_equal(
         const SZrFileRange *left,
         const SZrFileRange *right) {
@@ -37,6 +49,10 @@ static TZrBool semantic_query_unresolved_ranges_equal(
            left->end.column == right->end.column;
 }
 
+/**
+ * @brief 按名称内容判断两个引用是否相同。
+ * @note NULL 名称不参与抑制，避免缺失名称把无关 fact 合并。
+ */
 static TZrBool semantic_query_unresolved_names_equal(
         SZrString *left,
         SZrString *right) {
@@ -44,6 +60,10 @@ static TZrBool semantic_query_unresolved_names_equal(
            (left == right || ZrCore_String_Equal(left, right));
 }
 
+/**
+ * @brief 限定可转换为用户可见“未解析引用”的 fact 种类。
+ * @note 声明、合成 payload 等不是查询失败，不能由此产生重复错误。
+ */
 static TZrBool semantic_query_unresolved_kind_is_reportable(
         EZrSemanticReferenceKind kind) {
     return kind == ZR_SEMANTIC_REFERENCE_READ ||
@@ -54,12 +74,19 @@ static TZrBool semantic_query_unresolved_kind_is_reportable(
            kind == ZR_SEMANTIC_REFERENCE_TYPE;
 }
 
+/**
+ * @brief 判断引用失败属于成员查找，以选择成员专用诊断文案和 code。
+ */
 static TZrBool semantic_query_unresolved_kind_is_member(
         EZrSemanticReferenceKind kind) {
     return kind == ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS ||
            kind == ZR_SEMANTIC_REFERENCE_MEMBER_WRITE;
 }
 
+/**
+ * @brief 识别虽标记未解析、但已经带有 canonical 绑定结果的引用 fact。
+ * @note 这些 fact 表示外部/类型系统已提供目标信息，不应被投影成缺失符号。
+ */
 static TZrBool semantic_query_unresolved_has_canonical_target(
         const SZrSemanticReferenceFact *fact) {
     return fact != ZR_NULL &&
@@ -69,6 +96,10 @@ static TZrBool semantic_query_unresolved_has_canonical_target(
             fact->contractRole != 0U);
 }
 
+/**
+ * @brief 决定引用 fact 是否仍代表一个应显示的 unresolved 结果。
+ * @note 同名同范围的 resolved fact 优先；该规则兼容分析阶段留下的旧 unresolved 记录。
+ */
 static TZrBool semantic_query_unresolved_is_effective(
         const SZrSemanticContext *context,
         const SZrSemanticReferenceFact *fact) {
@@ -97,6 +128,11 @@ static TZrBool semantic_query_unresolved_is_effective(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 将有效的 unresolved reference fact 转为结构化查询诊断。
+ * @note 仅接受 materializer 选出的有效 reference fact；诊断需要用户决策，故不猜测自动修复。
+ * @return 成功追加到 queryDiagnostics 时返回 true；构建或 no-fix 元数据失败时清理临时诊断。
+ */
 TZrBool ZrParser_SemanticQueryUnresolved_AppendDiagnostic(
         SZrSemanticContext *context,
         const SZrSemanticReferenceFact *fact) {

@@ -924,7 +924,7 @@ TZrBool ZrParser_SemanticQuery_MaterializeDiagnostics(
     }
 
     semantic_query_reset_diagnostics(context);
-
+    /* TODO: AppendDiagnostic 的 false 兼有“不适用”和构建失败；当前忽略失败仍标记物化成功，需区分结果并核实编译器/LSP 可见诊断。 */
     if (context->diagnosticFacts.isValid) {
         for (i = 0U; i < context->diagnosticFacts.length; i++) {
             const SZrSemanticDiagnosticFact *fact =
