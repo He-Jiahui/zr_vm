@@ -272,3 +272,24 @@ are recorded in
 
 This verifies the original operations and parser-side projection only; no fused
 runtime handler was executed. The broader 03.04 plan remains open.
+
+### Scoped Progress — 2026-09-29 — INDEX_LOAD_STORE address role
+
+The STORE variant now requires the projected PLACE_PROJECT result to be
+STORE operand 0, the address. The same-result and single-use constraints still
+prove a direct dependency used only once, but a use only at STORE operand 1 is
+the assigned value and remains as the original PLACE_PROJECT plus STORE with
+a RESULT_MISMATCH fallback.
+
+The regression fixture passes ExecIR Verify and the Oracle before checking
+fusion. Its place provider returns 0xA0, while the STORE targets an independent
+0xB0 address; the Oracle records address 0xB0, value 0xA0, and returns 0xB0.
+Before the matcher guard, the focused test failed its expected-unfused
+assertion after both semantic checks passed. With the guard, the focused GCC
+target and direct test passed, registered ssa_generated_fusion CTest passed
+1/1, and the pattern generator --check passed in the existing D cache.
+Exact commands and limits are recorded in
+[2026-09-29-ssa-index-store-address-role.md](../../../../tests/acceptance/2026-09-29-ssa-index-store-address-role.md).
+
+This validates parser-side projection and STORE operand roles only; no fused
+runtime handler was executed. The broader 03.04 plan remains open.

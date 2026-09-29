@@ -34,10 +34,12 @@ tests:
   - tests/parser/test_ssa_generated_fusion.c
   - tests/parser/test_ssa_generated_fusion_compare_branch.inc
   - tests/parser/test_ssa_generated_fusion_increment_branch.inc
+  - tests/parser/test_ssa_generated_fusion_index_store.inc
   - tests/cmake/ssa-tests.cmake
   - tests/acceptance/ssa-generated-fusion.md
   - tests/acceptance/2026-09-29-ssa-compare-branch-mode.md
   - tests/acceptance/2026-09-29-ssa-increment-loop-branch-types.md
+  - tests/acceptance/2026-09-29-ssa-index-store-address-role.md
 doc_type: module-detail
 status: implemented
 ---
@@ -133,6 +135,12 @@ rule declares that exact boundary and carries `PRESERVE_BOUNDARY`; its mask is
 retained in the side entry for the eventual handler.  An unrepresented
 boundary causes a structured fallback.
 
+For the INDEX_LOAD_STORE STORE variant, the projected PLACE_PROJECT result
+must be the store's address operand (STORE.operand[0]). A generic same-result
+use in STORE.operand[1] is only the assigned value and does not authorize
+the indexed-store fusion. That shape stays unfused with a result-mismatch
+fallback; the LOAD variant keeps its existing direct-use rule.
+
 No native/getter/member name lookup is performed by fusion.  Binding rules
 consume the already-resolved binding row produced by static-binding facts.
 When a facts table is supplied through `SZrExecBcPatternOptions`, it is
@@ -183,6 +191,12 @@ empty-function/partial-lifecycle case.  The focused fixture is
 compiled against the core ExecIR model and can be run independently of the
 large legacy test graph.
 
+The STORE-variant fixture verifies a real ExecIR function and runs it through
+the Oracle with distinct projected value and store address tokens. It confirms
+that the projected result is stored as operand 1 while the separate operand 0
+is the actual target, and requires the fusion matcher to keep the pair
+unfused.
+
 The increment-branch fixture additionally verifies the two i64 Oracle branch
 outcomes, the signed-i64 pattern constraint, stable plan hashes, fallback for
 Verify-accepted object types, and rejection of an empty operand/result pool
@@ -194,7 +208,10 @@ the 1,100-line matcher because Compare and signed-i64 branch checks share the
 same bounded operand/result accessors.  The remaining matcher still coordinates
 window constraints with several file-local CFG and projection helpers; its next
 small extraction boundary is the complete candidate-constraint evaluator with
-an explicit matcher context, rather than moving isolated predicates.
+an explicit matcher context, rather than moving isolated predicates.  The
+STORE address-role check stays in that evaluator because it uses the already
+validated head result and tail operand range; extracting only this predicate
+would widen or duplicate the local matcher context.
 
 ## Out of scope
 

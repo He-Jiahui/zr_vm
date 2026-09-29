@@ -503,6 +503,15 @@ static EZrExecBcFusionFallbackReason zr_fusion_match_constraints(
             return ZR_EXEC_BC_FUSION_FALLBACK_RESULT_MISMATCH;
         }
     }
+    if (info->pattern == ZR_EXEC_BC_FUSION_PATTERN_INDEX_LOAD_STORE &&
+        (EZrExecIrOpcode)tail->opcode == ZR_EXEC_IR_OPCODE_STORE) {
+        TZrExecIrValueId storeAddress;
+        if (tail->operands.count != 2u ||
+            !zr_fusion_operand_at(function, tail, 0u, &storeAddress) ||
+            storeAddress != headResult) {
+            return ZR_EXEC_BC_FUSION_FALLBACK_RESULT_MISMATCH;
+        }
+    }
     if ((info->constraints &
          ZR_EXEC_BC_FUSION_CONSTRAINT_RESULT_SINGLE_USE) != 0u &&
         (headResult == ZR_EXEC_IR_VALUE_ID_INVALID ||

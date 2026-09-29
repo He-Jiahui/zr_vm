@@ -166,6 +166,7 @@ static void make_six_pattern_function(SZrExecIrFunction *function) {
 #include "test_ssa_generated_fusion_compare_branch.inc"
 #include "test_ssa_generated_fusion_increment_branch.inc"
 #include "test_ssa_generated_fusion_load_add.inc"
+#include "test_ssa_generated_fusion_index_store.inc"
 
 static void test_six_patterns_emit_fixed_width_words_and_side_maps(void) {
     SZrExecIrFunction function;
@@ -965,6 +966,7 @@ int main(void) {
     test_branch_target_is_remapped_after_a_later_fused_window();
     test_long_branch_target_uses_u32_side_table_pc();
     test_index_store_variant_preserves_exception_boundary();
+    test_index_store_variant_requires_projected_address_operand();
     test_unresolved_binding_keeps_call_windows_unfused();
     test_static_binding_facts_authorize_zero_row();
     test_side_table_retains_wide_ids_and_budget_falls_back();
