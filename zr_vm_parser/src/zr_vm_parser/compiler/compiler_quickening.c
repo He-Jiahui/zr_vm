@@ -5853,8 +5853,10 @@ static TZrBool compiler_quickening_instruction_may_read_slot(const TZrInstructio
         case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
             return instruction->instruction.operand.operand1[0] == slot;
+        /* operand1[1] is member/cache metadata, not a frame slot. */
         case ZR_INSTRUCTION_ENUM(GET_MEMBER):
         case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT):
+            return instruction->instruction.operand.operand1[0] == slot;
         case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS):
@@ -6103,8 +6105,6 @@ static TZrBool compiler_quickening_instruction_writes_slot(const TZrInstruction 
         case ZR_INSTRUCTION_ENUM(GET_GLOBAL):
         case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION):
         case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
-        case ZR_INSTRUCTION_ENUM(GET_MEMBER):
-        case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT):
         case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_BIND_ITEMS):
@@ -6130,6 +6130,9 @@ static TZrBool compiler_quickening_instruction_writes_slot(const TZrInstruction 
             return instruction->instruction.operandExtra == slot ||
                    instruction->instruction.operand.operand0[1] == slot ||
                    instruction->instruction.operand.operand0[2] == slot;
+        case ZR_INSTRUCTION_ENUM(GET_MEMBER):
+        case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT):
+            return instruction->instruction.operandExtra == slot;
         case ZR_INSTRUCTION_ENUM(SET_MEMBER):
         case ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT):
         case ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT_NULL):

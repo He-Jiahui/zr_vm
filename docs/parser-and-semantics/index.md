@@ -1,6 +1,8 @@
 ---
 related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_contiguous_view.c
   - scripts/syntax_migration_inventory.py
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/cfg.h
@@ -131,6 +133,8 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_query_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function_assembly.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_contiguous_view.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_statements.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_internal.h
@@ -162,6 +166,8 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c
 plan_sources:
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
+  - docs/plans/ssa/05-data-layout/02-arrays-slices.md
+  - docs/plans/ssa/03-interpreter-binding/04-generated-fusion.md
   - docs/plans/syntax/2026-07-18-06-percent-migration-lsp-fixtures-design.md
   - docs/plans/syntax/06-percent-migration-lsp-fixtures/m1-migration-inventory-implementation-plan.md
   - user: 2026-03-28 实现“ZR 全目标回归强化与 Field-Scoped using 语义计划”
@@ -180,6 +186,9 @@ plan_sources:
 tests:
   - tests/parser/test_ssa_dominator_cfg.c
   - tests/acceptance/ssa-dominator-cfg.md
+  - tests/parser/test_span_core.c
+  - tests/parser/test_compiler_w2_performance_quickening.c
+  - tests/acceptance/ssa-quickening-member-slot-effects.md
   - tests/scripts/test_syntax_migration_inventory.py
   - tests/parser/test_cfg_reachability.c
   - tests/parser/test_pre_semantic_ir.c
@@ -247,6 +256,11 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
 
 ## 当前主题
 
+- `quickening-slot-effects.md`
+  - frame-slot classifiers keep `GET_MEMBER` receiver/result effects separate
+    from member/cache indices in overlapping operand bytes
+  - a no-growth Span regression verifies that forwarding preserves the receiver
+    through the final inline `length` field load
 - `semantic-query-api-foundation.md`
   - imported members without source ranges retain parser-owned external target identity
   - LSP navigation and semantic tokens require exact metadata token/hash/kind agreement

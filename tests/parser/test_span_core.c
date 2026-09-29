@@ -434,6 +434,32 @@ static void test_span_array_runtime_mutation_slice_and_readonly_view_share_stora
     ZrContainerTests_DestroyState(state);
 }
 
+/* 算术读取 Span.length 后，后续索引仍必须读取原 view。 */
+static void test_span_length_arithmetic_preserves_following_index_receiver(void) {
+    static const char kSource[] =
+            "var container = import(\"zr.container\");\n"
+            "var xs = new container.Array<int>();\n"
+            "xs.add(10);\n"
+            "xs.add(20);\n"
+            "xs.add(30);\n"
+            "xs.add(40);\n"
+            "var view = xs.span();\n"
+            "return view.length * 10000000 + view[0] * 100000;\n";
+    SZrState *state = ZrContainerTests_CreateState();
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_source(state, "span_compound_view_read.zr", kSource);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(
+            ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(41000000, result);
+
+    ZrCore_Function_Free(state, function);
+    ZrContainerTests_DestroyState(state);
+}
+
 /* 默认空 Span 与 ReadOnlySpan 可切出零长视图且长度仍为零。 */
 static void test_span_default_and_empty_slice_are_legal(void) {
     static const char kSource[] =
@@ -949,6 +975,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_span_runtime_prototypes_preserve_contiguous_view_protocols);
     RUN_TEST(test_span_compiler_prototypes_project_ref_like_member_contracts);
     RUN_TEST(test_span_array_runtime_mutation_slice_and_readonly_view_share_storage);
+    RUN_TEST(test_span_length_arithmetic_preserves_following_index_receiver);
     RUN_TEST(test_span_array_source_survives_gc_compaction_while_view_is_live);
     RUN_TEST(test_span_default_and_empty_slice_are_legal);
     RUN_TEST(test_span_index_and_slice_reject_out_of_range_access);
