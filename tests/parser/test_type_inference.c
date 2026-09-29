@@ -4921,11 +4921,14 @@ static void test_type_inference_source_generic_class_member_substitutes_closed_f
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "class Box<T> { var value: T; }\n"
+                "class Box<T> { pub var value: T; }\n"
+                "var box = new Box<int>();\n"
+                "box.value;\n"
                 "new Box<int>().value;";
         SZrString *sourceName = ZrCore_String_Create(state, "source_generic_box_field_type_test.zr", 37);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
-        SZrAstNode *expr = ZR_NULL;
+        SZrAstNode *variableExpr = ZR_NULL;
+        SZrAstNode *temporaryExpr = ZR_NULL;
         SZrInferredType result;
 
         TEST_ASSERT_NOT_NULL(state);
@@ -4933,7 +4936,7 @@ static void test_type_inference_source_generic_class_member_substitutes_closed_f
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+        TEST_ASSERT_EQUAL_INT(4, (int)ast->data.script.statements->count);
 
         cs->scriptAst = ast;
         cs->currentFunction = ZrCore_Function_New(state);
@@ -4941,12 +4944,21 @@ static void test_type_inference_source_generic_class_member_substitutes_closed_f
 
         compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
         TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
 
-        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
-        TEST_ASSERT_NOT_NULL(expr);
+        variableExpr = ast->data.script.statements->nodes[2]->data.expressionStatement.expr;
+        temporaryExpr = ast->data.script.statements->nodes[3]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(variableExpr);
+        TEST_ASSERT_NOT_NULL(temporaryExpr);
 
         ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
-        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, variableExpr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, temporaryExpr, &result));
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
 
         ZrParser_InferredType_Free(state, &result);
@@ -6152,13 +6164,16 @@ static void test_type_inference_source_generic_inheritance_substitutes_closed_ba
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "class Base<T> { var value: T; }\n"
+                "class Base<T> { pub var value: T; }\n"
                 "class Derived<T> : Base<T> { }\n"
+                "var derived = new Derived<int>();\n"
+                "derived.value;\n"
                 "new Derived<int>().value;";
         SZrString *sourceName = ZrCore_String_Create(state, "source_generic_inheritance_type_test.zr", 40);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         const SZrTypePrototypeInfo *closedPrototype;
-        SZrAstNode *expr = ZR_NULL;
+        SZrAstNode *variableExpr = ZR_NULL;
+        SZrAstNode *temporaryExpr = ZR_NULL;
         SZrInferredType result;
 
         TEST_ASSERT_NOT_NULL(state);
@@ -6166,7 +6181,7 @@ static void test_type_inference_source_generic_inheritance_substitutes_closed_ba
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_EQUAL_INT(3, (int)ast->data.script.statements->count);
+        TEST_ASSERT_EQUAL_INT(5, (int)ast->data.script.statements->count);
 
         cs->scriptAst = ast;
         cs->currentFunction = ZrCore_Function_New(state);
@@ -6176,12 +6191,21 @@ static void test_type_inference_source_generic_inheritance_substitutes_closed_ba
         TEST_ASSERT_FALSE(cs->hasError);
         compile_test_top_level_statement(cs, ast->data.script.statements->nodes[1]);
         TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[2]);
+        TEST_ASSERT_FALSE(cs->hasError);
 
-        expr = ast->data.script.statements->nodes[2]->data.expressionStatement.expr;
-        TEST_ASSERT_NOT_NULL(expr);
+        variableExpr = ast->data.script.statements->nodes[3]->data.expressionStatement.expr;
+        temporaryExpr = ast->data.script.statements->nodes[4]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(variableExpr);
+        TEST_ASSERT_NOT_NULL(temporaryExpr);
 
         ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
-        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, variableExpr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, temporaryExpr, &result));
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
 
         closedPrototype = find_test_type_prototype(cs, "Derived<int>");

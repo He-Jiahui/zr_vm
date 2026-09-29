@@ -4674,7 +4674,10 @@ ZR_PARSER_API TZrBool resolve_prototype_target_inference(SZrCompilerState *cs,
 
     if (prototype == ZR_NULL &&
         targetNode->type != ZR_AST_IDENTIFIER_LITERAL &&
-        targetNode->type != ZR_AST_PRIMARY_EXPRESSION) {
+        targetNode->type != ZR_AST_PRIMARY_EXPRESSION &&
+        targetNode->type != ZR_AST_CONSTRUCT_EXPRESSION) {
+        /* A constructed object is a value receiver, even when its closed
+         * inferred type name resolves to a registered prototype. */
         ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
         if (!ZrParser_ExpressionType_Infer(cs, targetNode, &inferredType)) {
             ZrParser_InferredType_Free(cs->state, &inferredType);

@@ -17,6 +17,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_member_resolution.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_member_facts.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_receiver_effect.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
@@ -44,6 +46,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_member_resolution.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_receiver_effect.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
@@ -60,6 +63,7 @@ plan_sources:
   - docs/plans/syntax/05-property-unified-ast/m3-access-lowering-receiver-effect-implementation-plan.md
   - docs/plans/syntax/05-property-unified-ast/m4-ref-return-place-region-implementation-plan.md
   - docs/plans/syntax/05-property-unified-ast/m5-property-consumers-reflection-migration-implementation-plan.md
+  - docs/plans/ssa/03-interpreter-binding/02-static-binding-facts.md
 tests:
   - tests/parser/test_property_unified_ast.c
   - tests/parser/test_property_explicit_field_init.c
@@ -70,7 +74,9 @@ tests:
   - tests/parser/test_semantic_query.c
   - tests/parser/test_property_consumer_contracts.c
   - tests/parser/test_property_consumer_runtime_bootstrap_cases.h
+  - tests/parser/test_type_inference.c
   - tests/acceptance/2026-08-01-syntax-05-m5-task4-property-import-bootstrap.md
+  - tests/acceptance/2026-09-29-source-generic-instance-member-inference.md
   - tests/language_server/test_lsp_interface.c
 doc_type: module-detail
 ---
@@ -280,3 +286,18 @@ the same PropertySymbolId and TypeId, whereas a value-type edit changes the affe
 invalidating an unrelated property's identity. The stress gate binds 128 visible properties and 256
 accessors and checks every linked identity; the LSP gate repeats the same invariant across a
 64-property document and a contract-changing reparse.
+
+## Constructed Instance Member Inference
+
+Generic member lookup must keep a constructed expression as an instance receiver. Its inferred type
+name, such as `Box<int>`, identifies the instance layout and generic arguments; it does not turn the
+value into a prototype reference. `resolve_prototype_target_inference` therefore does not infer
+prototype identity from a `ZR_AST_CONSTRUCT_EXPRESSION`. Instance field lookup can then substitute
+the closed type argument, including a field declared on a generic base such as `Base<int>` inherited
+by `Derived<int>`. Type-root expressions such as `Mode.On` continue through prototype-member lookup,
+so enum members retain their declared enum type.
+
+The type-inference regression fixtures cover both a named `Box<int>` / `Derived<int>` instance read
+and a direct `new` expression read. They assert `int64` for the closed `T` field in both cases;
+separate enum-member tests cover prototype receivers. The source and inherited-member cases are
+listed in the acceptance record.
