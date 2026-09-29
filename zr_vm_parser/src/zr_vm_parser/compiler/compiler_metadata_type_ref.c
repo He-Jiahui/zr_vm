@@ -5,6 +5,7 @@
 
 #include <string.h>
 
+/* 单个外部 TypeRef 的待发射快照；名称借用 state/summary 字符串，临时条目数组由 plan/emit 释放。 */
 typedef struct SZrMetadataExternalTypeRefEntry {
     SZrString *moduleName;
     SZrString *baseName;
@@ -18,10 +19,17 @@ typedef struct SZrMetadataExternalTypeRefEntry {
     TZrSize signatureLength;
 } SZrMetadataExternalTypeRefEntry;
 
+/* TypeRef 签名固定包含节点字节、u32 基础类型和 u32 字符串索引。 */
 static TZrSize metadata_type_ref_raw_signature_size(void) {
     return 1u + sizeof(TZrUInt32) + sizeof(TZrUInt32);
 }
 
+/* 签名只编码基础名，模块和 provider 身份写入记录字段。
+ * TODO: 核对上层解析能否区分跨模块同名 TypeRef；reader 首匹配见
+ * zr_vm_core/src/zr_vm_core/metadata_runtime_type_node_binding.c:57-60，
+ * TYPE_REF 分支见 zr_vm_core/src/zr_vm_core/metadata_runtime_type_node_binding.c:88-94；
+ * 上层解析入口见 zr_vm_core/src/zr_vm_core/metadata_runtime.c:509、:556、:664。
+ */
 static void metadata_type_ref_write_raw_signature(TZrByte *buffer,
                                                   TZrSize *offset,
                                                   SZrString *baseName,
@@ -32,6 +40,7 @@ static void metadata_type_ref_write_raw_signature(TZrByte *buffer,
     metadata_token_write_string_ref(buffer, offset, baseName, stringHeapEntries, stringHeapEntryCount);
 }
 
+/* 在有效的 summary typeDefs 中按基础类型名查找 provider TypeDef。 */
 static const SZrModuleInitTypeDefInfo *metadata_type_ref_find_summary_type_def(
         const SZrParserModuleInitSummary *summary,
         SZrString *baseName) {
@@ -52,6 +61,7 @@ static const SZrModuleInitTypeDefInfo *metadata_type_ref_find_summary_type_def(
     return ZR_NULL;
 }
 
+/* 去重键是 provider TypeDef/signature token、签名 hash 与模块 hash，不能只按名称合并。 */
 static TZrBool metadata_type_ref_entry_seen(const SZrMetadataExternalTypeRefEntry *entries,
                                             TZrUInt32 entryCount,
                                             const SZrModuleInitTypeDefInfo *typeDef,
@@ -72,6 +82,7 @@ static TZrBool metadata_type_ref_entry_seen(const SZrMetadataExternalTypeRefEntr
     return ZR_FALSE;
 }
 
+/* 容量相加在 metadata RID 上限饱和，避免预估数回绕后小于实际收集数。 */
 static TZrUInt32 metadata_type_ref_add_capacity(TZrUInt32 left, TZrUInt32 right) {
     if (left >= ZR_METADATA_TOKEN_RID_MASK || right >= ZR_METADATA_TOKEN_RID_MASK ||
         right > ZR_METADATA_TOKEN_RID_MASK - left) {
@@ -81,6 +92,7 @@ static TZrUInt32 metadata_type_ref_add_capacity(TZrUInt32 left, TZrUInt32 right)
     return left + right;
 }
 
+/* 递归估算数组元素与泛型实参可能产生的外部 TypeRef 条目上界。 */
 static TZrUInt32 metadata_type_ref_type_capacity(SZrCompilerState *cs, const SZrFunctionTypedTypeRef *typeRef) {
     TZrUInt32 capacity = 0u;
 
@@ -126,6 +138,7 @@ static TZrUInt32 metadata_type_ref_type_capacity(SZrCompilerState *cs, const SZr
     return capacity;
 }
 
+/* 只返回泛型尖括号深度为零时的最后一个点，避免拆开实参里的模块名。 */
 static TZrNativeString metadata_type_ref_find_top_level_last_dot(SZrString *typeName) {
     TZrNativeString text;
     TZrNativeString lastDot = ZR_NULL;
@@ -155,6 +168,7 @@ static TZrNativeString metadata_type_ref_find_top_level_last_dot(SZrString *type
     return lastDot;
 }
 
+/* 输出先清零；分隔符必须位于顶层且左右两侧都非空，失败时调用者忽略输出。 */
 TZrBool compiler_metadata_type_ref_split_module_qualified_type(SZrCompilerState *cs,
                                                                SZrString *typeName,
                                                                SZrString **outModuleName,
@@ -192,6 +206,7 @@ TZrBool compiler_metadata_type_ref_split_module_qualified_type(SZrCompilerState 
     return *outModuleName != ZR_NULL && *outMemberTypeName != ZR_NULL;
 }
 
+/* 只返回名称匹配且确实改写为另一类型名的 value alias，跳过自指绑定。 */
 static SZrTypeBinding *metadata_type_ref_find_type_alias(SZrCompilerState *cs, SZrString *aliasName) {
     if (cs == ZR_NULL || aliasName == ZR_NULL || !cs->typeValueAliases.isValid) {
         return ZR_NULL;
@@ -211,6 +226,7 @@ static SZrTypeBinding *metadata_type_ref_find_type_alias(SZrCompilerState *cs, S
     return ZR_NULL;
 }
 
+/* 将原泛型实参附到别名目标基名；state 字符串创建后立即释放临时 native buffer。 */
 static SZrString *metadata_type_ref_build_generic_alias_member_name(SZrCompilerState *cs,
                                                                     SZrString *resolvedBaseName,
                                                                     SZrArray *argumentTypeNames) {
@@ -278,6 +294,7 @@ static SZrString *metadata_type_ref_build_generic_alias_member_name(SZrCompilerS
     return result;
 }
 
+/* 仅解析无顶层模块限定的别名，并把输入的泛型实参保留到目标成员名。 */
 TZrBool compiler_metadata_type_ref_resolve_unqualified_alias(SZrCompilerState *cs,
                                                              SZrString *typeName,
                                                              SZrString **outModuleName,
@@ -337,6 +354,7 @@ TZrBool compiler_metadata_type_ref_resolve_unqualified_alias(SZrCompilerState *c
     return result;
 }
 
+/* 递归展开数组/泛型实参；仅 summary 中具备完整 provider 身份的 TypeDef 生成条目。 */
 static TZrBool metadata_type_ref_append_for_module_type(SZrCompilerState *cs,
                                                         SZrString *moduleName,
                                                         const SZrFunctionTypedTypeRef *typeRef,
@@ -430,6 +448,7 @@ static TZrBool metadata_type_ref_append_for_module_type(SZrCompilerState *cs,
     summary = ZrParser_ModuleInitAnalysis_FindSummary(cs->state->global, activeModuleName);
     if (summary == ZR_NULL) {
         if (!ZrParser_ModuleInitAnalysis_EnsureSummary(cs, activeModuleName)) {
+            /* 无法得到 provider identity 时不伪造 TypeRef；其他可识别类型仍可继续收集。 */
             if (hasGenericArguments) {
                 ZrCore_Array_Free(cs->state, &argumentTypeNames);
             }
@@ -438,6 +457,7 @@ static TZrBool metadata_type_ref_append_for_module_type(SZrCompilerState *cs,
         summary = ZrParser_ModuleInitAnalysis_FindSummary(cs->state->global, activeModuleName);
     }
     if (summary == ZR_NULL || summary->state == ZR_PARSER_MODULE_INIT_SUMMARY_FAILED) {
+        /* 失败摘要同样不产生引用；失败摘要不是本轮 TypeRef 发射的致命错误。 */
         if (hasGenericArguments) {
             ZrCore_Array_Free(cs->state, &argumentTypeNames);
         }
@@ -495,6 +515,7 @@ static TZrBool metadata_type_ref_append_for_module_type(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+/* import effect 为未限定类型名提供默认模块；typed local 没有该作用域时传空模块。 */
 static TZrBool metadata_type_ref_append_for_type(SZrCompilerState *cs,
                                                  const SZrFunctionModuleEffect *effect,
                                                  const SZrFunctionTypedTypeRef *typeRef,
@@ -513,6 +534,7 @@ static TZrBool metadata_type_ref_append_for_type(SZrCompilerState *cs,
                                                     ioEntryCount);
 }
 
+/* 按每个可解析 target 的返回值和参数类型估算容量；输入须与后续收集保持稳定。 */
 static TZrUInt32 metadata_type_ref_target_type_capacity(SZrCompilerState *cs,
                                                         const SZrFunction *function,
                                                         TZrUInt32 totalEffectCount,
@@ -547,6 +569,7 @@ static TZrUInt32 metadata_type_ref_target_type_capacity(SZrCompilerState *cs,
     return capacity;
 }
 
+/* typedLocalBindings 也会引入显式外部类型，按其类型树预留条目容量。 */
 static TZrUInt32 metadata_type_ref_explicit_type_capacity(SZrCompilerState *cs,
                                                           const SZrFunction *function) {
     TZrUInt32 capacity = 0u;
@@ -564,6 +587,7 @@ static TZrUInt32 metadata_type_ref_explicit_type_capacity(SZrCompilerState *cs,
     return capacity;
 }
 
+/* 按 import effect 中模块首次出现的顺序分配一基 AssemblyRef RID；未找到返回 0。 */
 static TZrUInt32 metadata_type_ref_get_assembly_ref_rid(const SZrFunction *function,
                                                         TZrUInt32 totalEffectCount,
                                                         TZrMetadataTypeRefEffectByFlatIndex effectAt,
@@ -603,6 +627,7 @@ static TZrUInt32 metadata_type_ref_get_assembly_ref_rid(const SZrFunction *funct
     return 0u;
 }
 
+/* 确定性收集导入 target 的返回/参数类型及 typed locals；无签名 target 不产生条目。 */
 static TZrBool metadata_type_ref_collect_entries(SZrCompilerState *cs,
                                                  const SZrFunction *function,
                                                  TZrUInt32 totalEffectCount,
@@ -667,6 +692,7 @@ static TZrBool metadata_type_ref_collect_entries(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+/* 规划只统计条目数和签名堆字节数；emit 按相同输入重收条目，临时数组在返回前释放。 */
 TZrBool compiler_metadata_type_ref_plan(SZrCompilerState *cs,
                                         const SZrFunction *function,
                                         TZrUInt32 totalEffectCount,
@@ -746,6 +772,7 @@ TZrBool compiler_metadata_type_ref_plan(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+/* TypeRef owner 指向 AssemblyRef，目标字段保留 provider 身份；成对记录 relatedToken 互指，Signature ownerToken 指回 TypeRef。 */
 static TZrBool metadata_type_ref_write_record_pair(SZrMetadataTokenRecord *records,
                                                    TZrUInt32 recordCount,
                                                    TZrUInt32 *ioRecordIndex,
@@ -787,6 +814,7 @@ static TZrBool metadata_type_ref_write_record_pair(SZrMetadataTokenRecord *recor
     return ZR_TRUE;
 }
 
+/* 按 plan 重收条目并写签名与成对记录；失败由上层丢弃整份临时 metadata。 */
 TZrBool compiler_metadata_type_ref_emit(SZrCompilerState *cs,
                                         const SZrFunction *function,
                                         TZrUInt32 totalEffectCount,
@@ -850,6 +878,7 @@ TZrBool compiler_metadata_type_ref_emit(SZrCompilerState *cs,
         }
     }
 
+    /* RID cursor 在范围检查前递增；任一步失败都不回滚，调用方须整体丢弃输出。 */
     for (TZrUInt32 index = 0; index < entryCount; index++) {
         TZrSize signatureStart = *ioHeapOffset;
         TZrMetadataToken typeToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_REF, (*ioTypeRefRidCursor)++);
@@ -899,6 +928,7 @@ TZrBool compiler_metadata_type_ref_emit(SZrCompilerState *cs,
             return ZR_FALSE;
         }
 
+        /* signatureHash 校验本地 TypeRef 签名字节；target* hash 保留 provider 身份，二者用途不同。 */
         signatureHash = metadata_signature_hash_v1(heap + signatureStart, entries[index].signatureLength);
         if (signatureHash == 0u ||
             !metadata_type_ref_write_record_pair(records,
