@@ -4,6 +4,7 @@ related_code:
   - zr_vm_core/include/zr_vm_core/artifact_exec_ir.h
   - zr_vm_core/include/zr_vm_core/artifact_exec_ir_scalar.h
   - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar_eis3.h
+  - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar_eis4.h
   - zr_vm_core/include/zr_vm_core/module.h
   - zr_vm_parser/include/zr_vm_parser/artifact_exec_ir.h
 implementation_files:
@@ -13,19 +14,23 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/artifact_exec_ir.c
   - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar.c
   - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar_eis3.c
+  - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar_eis4.c
   - zr_vm_core/src/zr_vm_core/module/module_exec_ir_artifact.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_exec_ir_artifact.c
 plan_sources:
   - docs/plans/ssa/08-artifact-hotpatch/01-schema-relocation.md
   - user: 2026-09-27 first persistent canonical ExecIR slice
   - user: 2026-09-28 EIS3 counted conditional CFG payload
+  - user: 2026-09-28 EIS4 fixed scalar ADD payload
 tests:
   - tests/library/test_ssa_exec_ir_artifact_v6.c
   - tests/library/test_ssa_exec_ir_artifact_v6_cfg.inc
+  - tests/library/test_ssa_exec_ir_artifact_v6_add.inc
   - tests/library/test_ssa_schema_relocation.c
   - tests/parser/test_artifact_schema.c
   - tests/acceptance/ssa-artifact-v6-canonical-exec-ir.md
   - tests/acceptance/ssa-artifact-v6-eis3-counted-cfg.md
+  - tests/acceptance/ssa-artifact-v6-eis4-scalar-add.md
 doc_type: module-detail
 status: partial
 ---
@@ -48,8 +53,12 @@ endian integers. EIS3 is a separate 996 byte payload with a 12 byte header,
 an explicit 32 bit total length, eight graph counts, three constants, three
 values, three block records, six instructions, and counted result, operand,
 successor, and predecessor ID pools. It encodes one fixed three-block
-conditional fork whose two arms each contain CONSTANT then RETURN. The EIS1
-and EIS2 byte sequences stay unchanged.
+conditional fork whose two arms each contain CONSTANT then RETURN. The EIS1,
+EIS2, and EIS3 byte sequences stay unchanged. EIS4 is a separate 716 byte payload for
+exactly two i64 constants (20 and 22), three values, one block, and four
+instructions: CONSTANT, CONSTANT, ADD, RETURN. Its result and operand pools
+each contain three IDs; predecessor and successor counts are zero. EIS4 is a
+fixed scalar ADD shape, not a general instruction or CFG format.
 
 | EIS2 byte offsets | Encoded fields |
 | --- | --- |
@@ -79,11 +88,27 @@ at 988. The reader checks fixed count limits before graph allocation, validates
 the exact length/version/reserved fields and all edges, then verifies a
 temporary graph before publishing it.
 
+| EIS4 byte offsets | Encoded fields |
+| --- | --- |
+| 0–11 | `EIS4` magic, version 4, zero reserved field, 32 bit total length 716 |
+| 12–91 | module identity and execution contract |
+| 92–179 | function identity, entry/sealed state, execution contract |
+| 180–211 | counts for constants, values, blocks, instructions, result/operand/successor/predecessor IDs |
+| 212–243 | two 16 byte constants, fixed to i64 20 and 22 |
+| 244–315 | three 24 byte values |
+| 316–355 | one 40 byte block record |
+| 356–691 | four 84 byte instruction records |
+| 692–715 | three result IDs and three operand IDs |
+
+The EIS4 reader checks fixed counts, literal values, instruction ranges, and
+the complete one-block shape before publishing a verified temporary graph.
+
 `ZrParser_ExecIr_WriteCanonicalZroFile` accepts a validated ZRO metadata
 document with seven identity sections and an `SZrExecIrModule`. It supports
 exactly one no argument i64 function with the EIS1 one block shape, the EIS2
-two block unconditional BRANCH shape, or the EIS3 three block conditional
-fork shape. EIS3 is a fixed shape, not general CFG serialization. Every unsupported graph side
+two block unconditional BRANCH shape, the EIS3 three block conditional fork
+shape, or the EIS4 fixed scalar ADD shape. EIS3 and EIS4 are fixed shapes, not
+general CFG serialization. Every unsupported graph side
 table, map, binding, relocation,
 additional function, or opcode is rejected. Encoding and validation finish
 before a file is opened. The writer creates an exclusive temporary file in
@@ -97,13 +122,15 @@ through the ExecIR Oracle; native callable ABI lowering belongs to 07.02.
 
 `ZrCore_Module_OpenExecIrArtifact` is the dedicated ZRAF entry. It requires
 the caller's expected public identity, validates the outer ZRO and each
-required section, checks the nested ABI and hashes, decodes EIS1, EIS2, or
-EIS3 into a temporary model, runs `ZrCore_ExecIr_VerifyModule`, compares the decoded
+required section, checks the nested ABI and hashes, decodes EIS1 through EIS4
+into a temporary model, runs `ZrCore_ExecIr_VerifyModule`, compares the decoded
 module/function contract with the outer metadata, then publishes the graph.
 EIS2's successor and reciprocal predecessor must name the two serialized
 blocks exactly. EIS3's ordered successors and reciprocal predecessors must
 match all three blocks; invalid counts or edges are rejected with their
-payload byte offsets and without publishing a graph.
+payload byte offsets and without publishing a graph. EIS4 pins both literal
+bits, the ADD opcode and operand/result ranges, and the empty edge ranges;
+rehash mutations are rejected at their payload offset.
 All failed reads leave the caller's empty graph empty. A schema 5 ZRAF is
 rejected with `UNSUPPORTED_VERSION` and diagnostic expected/actual versions.
 The separate historical `01ZR` `.zro` binary path remains handled by
@@ -118,10 +145,11 @@ runtime from dispatching the unknown opcode. Patch 44 adds no fields, so the
 new reader continues to accept a patch 43 payload, while it rejects patch 45.
 The legacy writer has no safe opcode scan, so it writes patch 44 even for an
 opcode-free function; such newly written files require a patch 44 reader.
-Existing opcode numbers through 244 are unchanged. ZRAF schema 6, EIS1, EIS2,
-EIS3, and AOT ABI 17 stay unchanged because their serialized payloads do not carry
-ExecBC opcode numbers. A generated AOT module using the proxy still requires
-the newly exported runtime helper when linked.
+Existing opcode numbers through 244 are unchanged. ZRAF schema 6, EIS1–EIS3,
+and AOT ABI 17 stay unchanged; EIS4 adds a distinct ExecIR payload version.
+These serialized payloads do not carry ExecBC opcode numbers. A generated AOT
+module using the proxy still requires the newly exported runtime helper when
+linked.
 
 This remains a partial vertical slice of plan 08.01. It does not provide general CFG,
 maps, binding, relocation resolution, ExecBC, package copy, AOT projection,

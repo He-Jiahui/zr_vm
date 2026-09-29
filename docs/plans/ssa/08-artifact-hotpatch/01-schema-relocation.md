@@ -8,6 +8,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/metadata_runtime_method_binding.c
   - zr_vm_core/include/zr_vm_core/artifact_exec_ir_scalar.h
   - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar.c
+  - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar_eis4.h
+  - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar_eis4.c
   - zr_vm_core/src/zr_vm_core/module/module_exec_ir_artifact.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_exec_ir_artifact.c
 implementation_files:
@@ -28,13 +30,17 @@ implementation_files:
 plan_sources:
   - docs/plans/ssa/index.md
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
+  - "user: 2026-09-28 EIS4 fixed scalar ADD payload"
 tests:
   - tests/library/test_ssa_schema_relocation.c
   - tests/parser/test_artifact_schema_source_roundtrip.c
   - tests/parser/test_call_binding_artifact.c
   - tests/library/test_zrm_container.c
   - tests/library/test_ssa_exec_ir_artifact_v6.c
+  - tests/library/test_ssa_exec_ir_artifact_v6_add.inc
   - tests/acceptance/ssa-artifact-v6-canonical-exec-ir.md
+  - tests/acceptance/ssa-artifact-v6-eis3-counted-cfg.md
+  - tests/acceptance/ssa-artifact-v6-eis4-scalar-add.md
   - tests/acceptance/ssa-artifact-v6-eri1-relocation-boundary.md
 doc_type: milestone-detail
 status: planned
@@ -76,6 +82,15 @@ Oracle=42 验收见
 [canonical ExecIR 验收记录](../../../../tests/acceptance/ssa-artifact-v6-canonical-exec-ir.md)。
 此扩展只覆盖一条无条件 CFG 边，不实现通用 CFG、binding、relocation、
 maps、ExecBC 或 native AOT 调用，完整 08.01 的退出门禁仍未满足。
+
+**固定标量 ADD 持久子切片：** 在既有 EIS1、EIS2、EIS3 payload 之外增加
+独立 EIS4 v4，固定为 i64 常量 20、22 后执行 ADD 并返回，包含三个值、
+一个基本块及显式结果/操作数池，精确长度为 716 字节。writer 与 reader
+只接受这一完整图形；reader 校验固定 counts、字面量、操作数/结果范围和
+空边范围后才发布 verified graph。EIS1/EIS2 golden 与 EIS3 线格式保持不变，
+ZRAF v6、AOT ABI 17、ERI1 v1 不变。跨进程 Oracle=42 及畸形字段、重哈希
+拒绝见[独立验收记录](../../../../tests/acceptance/ssa-artifact-v6-eis4-scalar-add.md)。
+这不是通用算术或 CFG 编码；完整 08.01 的退出门禁仍未满足。
 
 ## 依赖与交付范围
 

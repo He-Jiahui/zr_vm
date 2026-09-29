@@ -312,6 +312,7 @@ static SZrArtifactDiagnostic require_rejected(const TZrByte *bytes,
 }
 
 #include "test_ssa_exec_ir_artifact_v6_cfg.inc"
+#include "test_ssa_exec_ir_artifact_v6_add.inc"
 
 static void run_oracle(const SZrExecIrModule *module) {
     SZrExecIrOracleValue constant;
@@ -548,6 +549,7 @@ static void write_phase(const char *path) {
         free(branchPath);
     }
     cfg_write_phase(path);
+    add_write_phase(path);
 }
 
 static void read_branch_phase(const char *path) {
@@ -737,6 +739,7 @@ static void read_phase(const char *path) {
         free(branchPath);
     }
     cfg_read_phase(path);
+    add_read_phase(path);
 }
 
 int main(int argc, char **argv) {

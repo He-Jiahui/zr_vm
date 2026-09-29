@@ -25,14 +25,20 @@
 #define ZR_ARTIFACT_EXEC_IR_CFG_VERSION ((TZrUInt16)3u)
 #define ZR_ARTIFACT_EXEC_IR_CFG_ENCODED_SIZE ((TZrUInt32)996u)
 
+/* EIS4 adds one fixed scalar ADD graph. EIS1/EIS2/EIS3 retain their wire
+ * bytes and continue to use their original payload widths. */
+#define ZR_ARTIFACT_EXEC_IR_ADD_MAGIC ((TZrUInt32)0x34534945u)
+#define ZR_ARTIFACT_EXEC_IR_ADD_VERSION ((TZrUInt16)4u)
+#define ZR_ARTIFACT_EXEC_IR_ADD_ENCODED_SIZE ((TZrUInt32)716u)
+
 /* Reports the exact payload size only for one of the supported, verified
  * graph shapes. No output size is published on failure. */
 ZR_CORE_API EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_GetEncodedSize(
         const SZrExecIrModule *module, TZrUInt32 *outSize,
         SZrArtifactExecIrDiagnostic *diagnostic);
 
-/* Rejects every graph field or side table outside EIS1/EIS2/EIS3. On failure the
- * destination bytes are unchanged. */
+/* Rejects every graph field or side table outside EIS1/EIS2/EIS3/EIS4. On
+ * failure the destination bytes are unchanged. */
 ZR_CORE_API EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_Write(
         const SZrExecIrModule *module, TZrByte *bytes, TZrUInt32 capacity,
         SZrArtifactExecIrDiagnostic *diagnostic);
