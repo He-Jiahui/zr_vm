@@ -14,6 +14,10 @@
 
 static TZrUInt32 binding_next_rid(const SZrFunction *function, TZrUInt32 table);
 
+/** @brief 把已解析的 typed-call 签名投影为 core linker 复用的结构哈希。
+ *  @pre compiler 的 state/global 可供临时分配；signature 的类型与传参方式数组必须同长且可读，参数数量受元数据 16 位计数限制。
+ *  @note 参数与 typed-local 数组仅为哈希临时构造，函数在所有出口释放它们；0 表示当前无法形成有效哈希。
+ */
 TZrUInt64 compiler_typed_call_signature_hash(
         SZrCompilerState *compiler,
         const SZrResolvedCallSignature *signature) {
@@ -32,6 +36,7 @@ TZrUInt64 compiler_typed_call_signature_hash(
     locals = count == 0u ? ZR_NULL : ZrCore_Memory_RawMallocWithType(compiler->state->global,
             sizeof(*locals) * count, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     if (count != 0u && (parameters == ZR_NULL || locals == ZR_NULL)) {
+        /* TODO: OOM 与结构无效目前都折叠为 0，调用方使用同一诊断；仓内未见区分契约，后续可在此两次申请处注入失败并核定错误分类。 */
         hash = 0u;
         goto cleanup;
     }
@@ -75,6 +80,10 @@ cleanup:
     return hash;
 }
 
+/** @brief 为 typed-call cache 发布可由后续运行时校验的签名 token。
+ *  @pre entry 已包含非零 signatureHash；function 的 token 记录由函数图持有。
+ *  @note 先复制并扩展记录数组，再替换旧数组；分配或 RID 越界时返回 false，旧数组仍由 function 持有。
+ */
 static TZrBool binding_publish_typed_signature(SZrCompilerState *compiler,
                                                SZrFunction *function,
                                                SZrFunctionCallSiteCacheEntry *entry) {
@@ -103,6 +112,10 @@ static TZrBool binding_publish_typed_signature(SZrCompilerState *compiler,
     return ZR_TRUE;
 }
 
+/** @brief 将已解析的 callable 值调用记录为待 finalize 的结构签名约束。
+ *  @pre 当前编译上下文须有函数及完整解析签名，argumentCount 必须等于形参数。
+ *  @note 此阶段不选择目标或发布 metadata token；失败会让表达式编译清理并中止。
+ */
 TZrBool compiler_record_typed_call_binding(SZrCompilerState *compiler,
                                            const SZrResolvedCallSignature *signature,
                                            TZrUInt32 argumentCount,
@@ -131,12 +144,17 @@ TZrBool compiler_record_typed_call_binding(SZrCompilerState *compiler,
     return ZR_TRUE;
 }
 
+/** @brief 从成员解析结果构造或复制一个调用点的 dispatch fact。
+ *  @pre fact 必须指向可写输出；member 可为空。
+ *  @note VM-module/native provider 自带的身份优先原样保留；普通成员则按 interface、virtual 与静态直接调用规则补齐 operation。
+ */
 void compiler_get_member_call_binding_fact(SZrCompilerState *compiler,
         const SZrTypeMemberInfo *member, SZrCallBindingContract *fact) {
     ZR_UNUSED_PARAMETER(compiler);
     if (member != ZR_NULL &&
         (member->callBindingLocationKind == ZR_CALL_BINDING_RELOCATION_VM_MODULE ||
          compiler_native_call_binding_is_provider_contract(&member->callBindingFact))) {
+        /* Provider 的 token/hash 属于导入身份；保留它们供后续 registry 或 module linker 重定位。 */
         *fact = member->callBindingFact;
         return;
     }
@@ -163,6 +181,10 @@ void compiler_get_member_call_binding_fact(SZrCompilerState *compiler,
         fact->operation = ZR_CALL_BINDING_OPERATION_SET;
 }
 
+/** @brief 在指定 metadata token 表中选择当前记录集之后的 RID。
+ *  @pre function 及其 token 记录数组处于有效状态。
+ *  @note 只取表内最大 RID 加一，不填补历史空洞；实际 token 上限由发布方检查。
+ */
 static TZrUInt32 binding_next_rid(const SZrFunction *function, TZrUInt32 table) {
     TZrUInt32 maximum = 0u;
     for (TZrUInt32 index = 0u; index < function->metadataTokenRecordLength; ++index) {
@@ -173,6 +195,10 @@ static TZrUInt32 binding_next_rid(const SZrFunction *function, TZrUInt32 table) 
     return maximum + 1u;
 }
 
+/** @brief 为静态常量或模块 dispatch 发布成对的成员定义与签名记录。
+ *  @pre entry 已有非零签名哈希及目标 owner index；新数组成功后由 function 接管。
+ *  @note 同一 marker/owner 已有记录时复用 token，并拒绝签名漂移；RID 或分配失败不替换旧记录。
+ */
 static TZrBool binding_publish_definition(SZrCompilerState *compiler, SZrFunction *function,
                                           SZrFunctionCallSiteCacheEntry *entry,
                                           TZrUInt32 marker) {
@@ -215,6 +241,10 @@ static TZrBool binding_publish_definition(SZrCompilerState *compiler, SZrFunctio
     return ZR_TRUE;
 }
 
+/** @brief 将绑定成员定位到函数图 prototype descriptor 并附加布局 owner guard。
+ *  @pre entry 的 memberEntryIndex 指向函数拥有的成员缓存；prototype blob 必须可供 core 解析。
+ *  @note interface contract 可先保留其已知 descriptor index；具体 target 则必须唯一匹配 descriptor，发布数组由 function 接管。
+ */
 static TZrBool binding_publish_owner(SZrCompilerState *compiler, SZrFunction *function,
                                      SZrFunctionCallSiteCacheEntry *entry, SZrFunction *target) {
     SZrFunctionMemberEntry *member;
@@ -237,6 +267,7 @@ static TZrBool binding_publish_owner(SZrCompilerState *compiler, SZrFunction *fu
     if (owner->prototypeInstances == ZR_NULL || member->prototypeIndex >= owner->prototypeInstancesLength ||
         (prototype = owner->prototypeInstances[member->prototypeIndex]) == ZR_NULL) return ZR_FALSE;
     if (target == ZR_NULL && entry->binding.contract.bindingKind == ZR_CALL_BINDING_INTERFACE) {
+        /* Interface contract 只知道 descriptor 槽，不要求编译期存在具体实现函数。 */
         if (member->descriptorIndex >= prototype->memberDescriptorCount) return ZR_FALSE;
     } else {
         member->descriptorIndex = (TZrUInt32)-1;
@@ -282,11 +313,16 @@ static TZrBool binding_publish_owner(SZrCompilerState *compiler, SZrFunction *fu
     return ZR_TRUE;
 }
 
+/** @brief VisitFunctions 回调共享的编译期状态与当前模块签名身份。 */
 typedef struct SZrCompilerCallBindingContext {
     SZrCompilerState *compiler;
     TZrUInt64 moduleSignatureHash;
 } SZrCompilerCallBindingContext;
 
+/** @brief 为函数图中的一个函数补全所有静态调用契约及其本地 metadata。
+ *  @pre 由 VisitFunctions 对图中每个函数调用；context 指向本次 finalize 的栈上上下文。
+ *  @note provider 身份不在此解析目标；typed/static 两类本地契约失败即向外返回 false，由编译入口释放整张函数图。
+ */
 static TZrBool binding_finalize_function(SZrFunction *function, void *data) {
     SZrCompilerCallBindingContext *context = data;
     SZrCompilerState *compiler = context->compiler;
@@ -298,6 +334,7 @@ static TZrBool binding_finalize_function(SZrFunction *function, void *data) {
         TZrUInt32 marker;
         if (entry->binding.contract.bindingKind == ZR_CALL_BINDING_NONE) continue;
         if (entry->binding.contract.bindingKind == ZR_CALL_BINDING_TYPED_FUNCTION) {
+            /* 运行时按结构签名动态验证 typed callable，不能固化当前编译期目标。 */
             compiler_typed_call_use_generic_dispatch(function, entry->instructionIndex);
             if (function->moduleSignatureHash == 0u) {
                 function->moduleSignatureHash = ZrCore_Hash_CreateStable64(
@@ -325,6 +362,7 @@ static TZrBool binding_finalize_function(SZrFunction *function, void *data) {
             entry->binding.generation = function->callBindingGeneration;
             continue;
         }
+        /* 本地常量目标与本地 interface/virtual 模块槽需要 token、签名及 owner 布局记录。 */
         if (entry->bindingLocation.kind == ZR_CALL_BINDING_RELOCATION_CONSTANT) {
             if (entry->bindingLocation.targetIndex >= function->constantValueLength) return ZR_FALSE;
             target = ZrCore_Closure_GetMetadataFunctionFromValue(compiler->state,
@@ -355,12 +393,17 @@ static TZrBool binding_finalize_function(SZrFunction *function, void *data) {
     return ZR_TRUE;
 }
 
+/** @brief 按图遍历、provider 发布、core 链接的顺序完成本地调用绑定。
+ *  @pre quickening 与当前 source module 定稿已完成；function 是本轮编译拥有的完整函数图。
+ *  @note 编译入口只调用一次；任一步失败都会丢弃整张函数图，因此部分修改状态不会作为可重试结果返回。
+ */
 TZrBool compiler_finalize_call_bindings(SZrCompilerState *compiler, SZrFunction *function) {
     SZrCompilerCallBindingContext context;
     if (compiler == ZR_NULL || function == ZR_NULL) return ZR_FALSE;
     context.compiler = compiler;
     context.moduleSignatureHash = function->moduleSignatureHash != 0u ? function->moduleSignatureHash :
             ZrCore_Hash_CreateStable64(function->prototypeData, function->prototypeDataLength);
+    /* 先定稿图内调用及本地记录，再扩充跨模块身份，最后交 core 建立可执行的链接目标。 */
     return ZrCore_CallBinding_VisitFunctions(function, binding_finalize_function, &context) &&
             compiler_publish_module_call_bindings(compiler, function) &&
             ZrCore_CallBinding_LinkFunction(compiler->state, function, &compiler->state->lastCallBindingError);
