@@ -5,7 +5,7 @@
 
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
-
+/** @brief 校验 ValueCopy 布局和 schema。BUG: 父布局可掩盖嵌套 MOVE_ONLY，随后被原样 memcpy。 */
 static TZrBool ownership_transfer_value_copy_layout_matches(
         const SZrDomainTransferContract *contract,
         const SZrTypeLayout *layout) {
@@ -18,7 +18,7 @@ static TZrBool ownership_transfer_value_copy_layout_matches(
            layout->domainTransferSchemaVersion == contract->schemaVersion &&
            layout->domainTransferSchemaHash == contract->schemaHash;
 }
-
+/** @brief 快照跨域 VALUE_COPY 内联布局。@pre sourceStorage 调用期间稳定可读并覆盖 byteSize 字节。@return 成功返回 PREPARED envelope，否则返回空。 */
 SZrOwnershipTransferEnvelope *
 ZrCore_OwnershipTransfer_PrepareCrossDomainValueCopy(
         SZrState *sourceState,
@@ -54,9 +54,9 @@ ZrCore_OwnershipTransfer_PrepareCrossDomainValueCopy(
                 0u);
         return ZR_NULL;
     }
-
+    /* targetDomain 只是待验证的身份快照，目标 state 在 Commit 时再次核对。 */
     envelope = ZrCore_OwnershipTransfer_InternalNew(
-            sourceState, sourceDomain, targetDomain);
+            sourceState, sourceDomain, targetDomain); /* TODO: 公共契约需明确源 global 保活至 terminal Free；envelope/payload 均由其分配。 */
     if (envelope == ZR_NULL) {
         ZrCore_OwnershipTransfer_InternalDiagnosticSet(
                 diagnostic,
@@ -104,7 +104,7 @@ ZrCore_OwnershipTransfer_PrepareCrossDomainValueCopy(
             0u);
     return envelope;
 }
-
+/** @brief 校验目标域、schema 与 claim 后写入 targetStorage 并消费快照。@pre 目标存储覆盖 byteSize 且可写。@return 仅成功提交时返回 TRUE。 */
 TZrBool ZrCore_OwnershipTransfer_CommitCrossDomainValueCopy(
         SZrOwnershipTransferEnvelope *envelope,
         SZrState *targetState,
@@ -122,7 +122,7 @@ TZrBool ZrCore_OwnershipTransfer_CommitCrossDomainValueCopy(
             ZR_DOMAIN_TRANSFER_STATUS_INVALID_ARGUMENT,
             0u,
             0u,
-            0u);
+            0u); /* TODO: 明确 NULL 输入与尺寸错配的 INVALID_ARGUMENT/DECODE_FAILED/STATE_CONFLICT 归类。 */
     if (envelope != ZR_NULL && envelope->isCrossDomain &&
         targetState != ZR_NULL &&
         !ZrCore_OwnershipTransfer_InternalTargetMatches(
@@ -154,7 +154,7 @@ TZrBool ZrCore_OwnershipTransfer_CommitCrossDomainValueCopy(
                 0u);
         return ZR_FALSE;
     }
-
+    /* 预检在锁外完成，claim 身份和状态在锁内再次确认，避免重复消费。 */
     ZrCore_OwnershipTransfer_InternalLock(envelope);
     if (!envelope->hasPayload || envelope->valueBytes == ZR_NULL ||
         envelope->valueByteCount != targetLayout->byteSize ||
@@ -180,7 +180,7 @@ TZrBool ZrCore_OwnershipTransfer_CommitCrossDomainValueCopy(
     envelope->hasPayload = ZR_FALSE;
     ZrCore_OwnershipTransfer_InternalStateStore(
             envelope, ZR_OWNERSHIP_TRANSFER_STATE_COMMITTED);
-    ZrCore_OwnershipTransfer_InternalUnlock(envelope);
+    ZrCore_OwnershipTransfer_InternalUnlock(envelope); /* terminal 状态发布后再释放源域字节；Free 仍须遵守 envelope 外部静默前提。 */
     ZrCore_Memory_RawFreeWithType(
             ownerGlobal,
             bytesToFree,
