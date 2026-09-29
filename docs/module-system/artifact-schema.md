@@ -32,6 +32,7 @@ plan_sources:
   - user: 2026-09-29 EIS5 LT Compare extension
   - user: 2026-09-29 EIS5 six Compare modes extension
   - user: 2026-09-29 EIS5 scalar SUB extension
+  - user: 2026-09-29 EIS5 scalar MUL extension
 tests:
   - tests/library/test_ssa_exec_ir_artifact_v6.c
   - tests/library/test_ssa_exec_ir_artifact_v6_cfg.inc
@@ -40,6 +41,7 @@ tests:
   - tests/library/test_ssa_exec_ir_artifact_v6_eis5_bool.inc
   - tests/library/test_ssa_exec_ir_artifact_v6_eis5_compare.inc
   - tests/library/test_ssa_exec_ir_artifact_v6_eis5_sub.inc
+  - tests/library/test_ssa_exec_ir_artifact_v6_eis5_mul.inc
   - tests/library/test_ssa_schema_relocation.c
   - tests/parser/test_artifact_schema.c
   - tests/acceptance/ssa-artifact-v6-canonical-exec-ir.md
@@ -50,6 +52,7 @@ tests:
   - tests/acceptance/ssa-artifact-v6-eis5-compare-lt.md
   - tests/acceptance/ssa-artifact-v6-eis5-compare-modes.md
   - tests/acceptance/ssa-artifact-v6-eis5-sub.md
+  - tests/acceptance/ssa-artifact-v6-eis5-mul.md
 doc_type: module-detail
 status: partial
 ---
@@ -133,8 +136,8 @@ four ID pools are serialized in that order. The current five-block fixture is
 64-bit sizing caps blocks at 256, the combined constant/value/instruction
 count at 4096, the combined four-pool count at 16384, and the encoded payload
 at 16 MiB. Its allowlist is one no-argument i64 function using CONSTANT, ADD,
-SUB, BRANCH, CONDITIONAL_BRANCH, and RETURN, with no unsupported maps or side
-tables. A bounded EIS5 extension also accepts COMPARE with six canonical modes
+SUB, MUL, BRANCH, CONDITIONAL_BRANCH, and RETURN, with no unsupported maps or
+side tables. A bounded EIS5 extension also accepts COMPARE with six canonical modes
 stored in `typeToken`: EQ=0, LT=1, LE=2, GT=3, GE=4, and NE=5. Each mode takes
 two i64 operands and produces one BOOL result. The reader checks caps and exact
 computed length before allocating bounded decode arrays, verifies a temporary
@@ -144,8 +147,8 @@ EIS5 constant and value records already carry a `typeToken` and 64-bit value
 bits. The BOOL predicate extension keeps the v5 layout and accepts i64 and
 BOOL constants/values. BOOL constant bits must be exactly zero or one, and a
 CONSTANT result must keep the constant's type. CONDITIONAL_BRANCH accepts
-either BOOL or the existing i64 predicate; ADD and SUB operands/results and
-RETURN operands remain i64. EIS1–E4 routing and payload bytes do not change.
+either BOOL or the existing i64 predicate; ADD, SUB, and MUL operands/results
+and RETURN operands remain i64. EIS1–E4 routing and payload bytes do not change.
 An older EIS5 reader rejects BOOL tokens as `INVALID_SECTION`, so this token-set
 extension is not forward-readable by older v5 implementations. COMPARE reuses
 the instruction `typeToken` for its six canonical modes. Readers predating
@@ -159,7 +162,7 @@ document with seven identity sections and an `SZrExecIrModule`. It supports
 exactly one no argument i64 function with the EIS1 one block shape, the EIS2
 two block unconditional BRANCH shape, the EIS3 three block conditional fork
 shape, the EIS4 fixed scalar ADD shape, or a graph accepted by the bounded EIS5
-counted schema, including BOOL predicates, ADD, SUB, and all six Compare
+counted schema, including BOOL predicates, ADD, SUB, MUL, and all six Compare
 modes. Fixed
 EIS1–EIS4 candidates retain their original codec priority;
 a graph matching a fixed-format count tuple, per-block instruction ranges, and
@@ -186,13 +189,14 @@ contract with the outer metadata, then publishes the graph. EIS5 validates
 its magic, version, counts, reserved field, and exact computed length before
 allocation. The focused write and cross-process tests preserve the EIS1
 golden, fixed EIS2–EIS4 payloads, the EIS5 i64-predicate and BOOL-predicate
-graphs, the SUB result, and true/false branches for all six Compare modes.
+graphs, the SUB and MUL results, and true/false branches for all six Compare
+modes.
 Direct and rehashed outer-payload tests reject BOOL bits outside zero/one and
-mismatched constant/result types. SUB tests reject non-i64 inputs/results and
-an unsupported opcode through direct codec reads and the canonical opener,
-with no partial graph publication. Compare tests reject mode 6, non-i64 inputs,
-and non-BOOL results through direct codec reads and the canonical opener, with
-no partial graph publication.
+mismatched constant/result types. SUB and MUL tests reject non-i64
+inputs/results. Both also reject DIV as an unsupported opcode through direct
+codec reads and the canonical opener, with no partial graph publication.
+Compare tests reject mode 6, non-i64 inputs, and non-BOOL results through direct codec reads and the
+canonical opener, with no partial graph publication.
 EIS2's successor and reciprocal predecessor must name the two serialized
 blocks exactly. EIS3's ordered successors and reciprocal predecessors must
 match all three blocks; invalid counts or edges are rejected with their
@@ -212,6 +216,10 @@ one i64 result. Its 716-byte payload shares EIS4's fixed length but retains
 EIS5 magic and dynamic-schema routing; see
 [the EIS5 SUB acceptance](../../tests/acceptance/ssa-artifact-v6-eis5-sub.md).
 Readers predating SUB reject the opcode at the instruction record.
+MUL uses the same counted v5 instruction record and i64 operand/result guard;
+its 716-byte payload also shares EIS4's fixed length and retains EIS5 magic.
+The MUL acceptance records its signed `6 * -7 = -42` result and DIV rejection.
+Readers predating MUL reject its opcode at the instruction record.
 A schema 5 ZRAF is rejected with
 `UNSUPPORTED_VERSION` and diagnostic expected/actual versions.
 The separate historical `01ZR` `.zro` binary path remains handled by
