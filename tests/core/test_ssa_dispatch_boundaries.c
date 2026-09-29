@@ -219,6 +219,8 @@ static TZrBool dispatch_pause_worker_join(ZrDispatchTestThread thread) {
 #endif
 }
 
+#include "test_ssa_dispatch_vm_call_minor_gc.inc"
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -821,5 +823,6 @@ int main(void) {
     RUN_TEST(test_dispatch_publishes_the_saved_pc_at_its_256_instruction_poll);
     RUN_TEST(test_dispatch_resumes_after_full_gc_parks_running_mutator);
     RUN_TEST(test_native_callback_growth_and_minor_gc_reloads_frame_and_pc);
+    RUN_TEST(test_vm_call_stack_growth_and_minor_gc_reload_caller_frame);
     return UNITY_END();
 }

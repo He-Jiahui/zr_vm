@@ -3,6 +3,9 @@ related_code:
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/execution/execution_internal.h
   - zr_vm_core/src/zr_vm_core/execution/execution_budget.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_safepoint.c
+  - zr_vm_core/src/zr_vm_core/gc/gc.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c
   - zr_vm_common/include/zr_vm_common/zr_instruction_conf.h
 implementation_files:
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
@@ -17,8 +20,10 @@ plan_sources:
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
 tests:
   - tests/core/test_ssa_dispatch_boundaries.c
+  - tests/core/test_ssa_dispatch_vm_call_minor_gc.inc
   - tests/core/test_execution_dispatch_callable_metadata.c
   - tests/core/test_precall_frame_slot_reset.c
+  - tests/acceptance/ssa-dispatch-vm-call-minor-gc.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -166,3 +171,23 @@ assert boundary contract violation detected with reason code BOUNDARY_LEAF_ALLOC
 
 本任务的 acceptance 至少附上：上述断言对应的测试名称、实际执行后端/平台、失败注入位置、verifier 输入/输出摘要，以及涉及所有权时的分配/释放或 lease 平衡。新增入口的 OOM、取消、重复调用和部分初始化退出应有明确处理；不适用的状态写明原因。
 
+### 局部验证证据：VM-to-VM 栈扩容与 minor GC（2026-09-29）
+
+`test_vm_call_stack_growth_and_minor_gc_reload_caller_frame` 使用真实解释器
+`FUNCTION_CALL` 进入大栈帧 callee，callee 返回后 caller 执行 `GET_STACK` 与
+`FUNCTION_RETURN`。同域测试 collector 线程在 STW pause 中确认 callee/caller
+CallInfo 链后才调用 `ZrCore_GarbageCollector_GcStep`；这准确覆盖外部 collector
+触发 minor、解释器在 safepoint 发布/停靠/恢复的路径，不表示 interpreter poll
+会自行启动 GC。
+
+GCC/GDB 观测到 callee PC offset 254、caller continuation offset 1；栈基址和
+caller frame 基址在扩容后变化，保存的 frame offset 仍解析到当前 frame。minor
+计数从 0 到 1，root 从 EDEN 晋升到 SURVIVOR，callee 参数及 caller 中的 root
+仍指向同一对象。恢复后 `GET_STACK` 返回该对象；最终 PC offset 2 对应
+`FUNCTION_RETURN` 执行时的当前位置。collector 目前原址晋升普通对象，本证据
+不覆盖物理对象搬迁或 suspension。
+
+详见 [VM-to-VM 栈扩容与 minor GC acceptance](../../../../tests/acceptance/ssa-dispatch-vm-call-minor-gc.md)。
+现有 GCC direct Unity 9/9 连续通过 5 次，注册 CTest `ssa_dispatch_boundaries`
+通过 1/1；相邻 callable-metadata 与 precall-frame-reset direct suite 均 18/18。
+本局部证据不改变本 milestone 的 `planned` 状态或其未完成项。

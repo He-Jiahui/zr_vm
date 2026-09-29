@@ -13,6 +13,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/stack.c
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
+  - zr_vm_core/src/zr_vm_core/gc/gc.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c
   - zr_vm_core/src/zr_vm_core/debug.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/execution_context.h
@@ -22,12 +24,16 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/stack.c
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
+  - zr_vm_core/src/zr_vm_core/gc/gc.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c
 tests:
   - tests/core/test_ssa_dispatch_boundaries.c
   - tests/core/test_ssa_dispatch_native_callback.inc
+  - tests/core/test_ssa_dispatch_vm_call_minor_gc.inc
   - tests/acceptance/2026-09-28-ssa-dispatch-safepoint-poll.md
   - tests/acceptance/2026-09-29-ssa-dispatch-throw-debug-pc.md
   - tests/acceptance/2026-09-29-ssa-dispatch-native-stack-growth-minor-gc.md
+  - tests/acceptance/ssa-dispatch-vm-call-minor-gc.md
 plan_sources:
   - docs/plans/ssa/03-interpreter-binding/01-dispatch-boundaries.md
 doc_type: module-detail
@@ -93,6 +99,25 @@ asserts the collection kind, generation/storage transition, and continued
 frame-root value; it does not claim that the object address moves. Physical
 object relocation/compaction is a separate GC contract.
 
+The VM-to-VM fixture covers a real `FUNCTION_CALL` into a callee with a larger
+frame, followed by `GET_STACK` and `FUNCTION_RETURN` in the caller. A separate
+thread attaches a collector state to the same GC domain and requests a minor
+collection while the callee is active. The interpreter poll publishes the
+callee PC, call chain, and stack top, parks the mutator, then reloads the frame
+after the collector resumes it. The collector is initiated externally through
+`ZrCore_GarbageCollector_GcStep`; the interpreter safepoint poll does not start
+a collection from allocation debt on its own.
+
+The worker inspects the call chain only while stop-the-world is active. If an
+early pause lands before `FUNCTION_CALL` installs the callee frame, it releases
+the pause and retries. The test verifies that the parked callee PC is inside
+the callee, the caller PC is at the instruction after `FUNCTION_CALL`, stack
+growth preserves the caller frame's saved offset, and the minor collection
+promotes the rooted object from EDEN to SURVIVOR. It then verifies the caller's
+next `GET_STACK` and return still produce that object. As with the native
+callback fixture, this checks generational collection and root survival without
+claiming physical object movement.
+
 This first boundary layer intentionally does not bind ExecIR layouts or active
 call-binding generations. Those invariants are introduced by the later binding
 guard stages. Bytecode dispatch continues to use the single instruction list
@@ -109,4 +134,5 @@ independently of hook traps. A separate integration test covers full GC while
 the dispatcher is parked. The native-callback test covers stack growth and a
 minor collection between a call instruction and its next frame load. The trace
 test does not cover debugger hook signaling or suspension at the throwing
-instruction; VM-call variants and suspension remain open in 03.01.
+instruction. This VM-to-VM call fixture covers one ordinary call frame; other
+call-boundary variants and suspension remain open in 03.01.
