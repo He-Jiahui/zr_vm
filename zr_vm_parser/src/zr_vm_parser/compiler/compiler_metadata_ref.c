@@ -39,8 +39,9 @@ static TZrBool metadata_ref_record_is_import_entity(const SZrMetadataTokenRecord
  * @brief 以签名字节补足哈希比较，避免碰撞或堆偏移差异影响导入实体去重。
  */
 static TZrBool metadata_ref_records_have_same_signature_blob(const SZrFunction *function,
-                                                             const SZrMetadataTokenRecord *left,
-                                                             const SZrMetadataTokenRecord *right) {
+                                                              const SZrMetadataTokenRecord *left,
+                                                              const SZrMetadataTokenRecord *right) {
+    /* TODO: 零长签名若以 heap 末尾为合法 offset，当前严格边界会判为不同；需核对上游是否能生成。 */
     if (function == ZR_NULL || left == ZR_NULL || right == ZR_NULL ||
         left->signatureBlobLength != right->signatureBlobLength ||
         left->signatureBlobOffset >= function->signatureBlobHeapLength ||
@@ -82,6 +83,7 @@ static TZrBool metadata_ref_entity_seen(const SZrFunction *function,
             selected->targetSignatureToken == record->targetSignatureToken &&
             selected->targetSignatureHash == record->targetSignatureHash &&
             selected->targetModuleSignatureHash == record->targetModuleSignatureHash &&
+            /* TODO: 同文异对象的长版本字符串会绕过去重；需核实生产构造链是否能送来不同指针。 */
             selected->requestedModuleVersion == record->requestedModuleVersion &&
             selected->minModuleVersionInclusive == record->minModuleVersionInclusive &&
             selected->maxModuleVersionExclusive == record->maxModuleVersionExclusive &&
@@ -113,6 +115,7 @@ static void metadata_ref_clear_module_table(SZrCompilerState *cs, SZrFunction *f
 
 /**
  * @brief 从主 metadata 表聚合导入实体及签名，供 artifact 写出和运行时快速查询；关联缺失或分配失败即失败。
+ * @note 通过参数校验并开始重建后先释放旧快照；此后的失败留下空表，唯一调用方随即清除本轮函数 metadata。
  */
 TZrBool compiler_build_module_metadata_ref_table(SZrCompilerState *cs, SZrFunction *function) {
     TZrUInt32 *selectedIndexes;
@@ -137,6 +140,7 @@ TZrBool compiler_build_module_metadata_ref_table(SZrCompilerState *cs, SZrFuncti
         return ZR_FALSE;
     }
 
+    /* 仅挑选能找到 SIGNATURE 配对的模块导入实体；缺失时让上层放弃整轮函数 metadata。 */
     for (TZrUInt32 index = 0; index < function->metadataTokenRecordLength; index++) {
         const SZrMetadataTokenRecord *record = &function->metadataTokenRecords[index];
         const SZrMetadataTokenRecord *signatureRecord;
@@ -196,6 +200,7 @@ TZrBool compiler_build_module_metadata_ref_table(SZrCompilerState *cs, SZrFuncti
                                   selectedIndexes,
                                   sizeof(TZrUInt32) * function->metadataTokenRecordLength,
                                   ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    /* 将实体与 SIGNATURE 配对快照交给函数对象；writer 序列化，跨模块查询读取，函数析构负责回收。 */
     function->moduleMetadataTokenRecords = records;
     function->moduleMetadataTokenRecordLength = outputIndex;
     return ZR_TRUE;

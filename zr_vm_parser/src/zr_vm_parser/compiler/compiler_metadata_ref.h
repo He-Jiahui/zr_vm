@@ -7,6 +7,7 @@
  * @brief 从函数 metadata 聚合模块级导入引用快照，供 artifact 写出及运行时查询。
  * @pre cs、其全局状态及 function 必须有效；关联实体必须有对应 SIGNATURE 记录。
  * @return 无记录时成功生成空表；输入无效、分配失败或关联签名缺失时返回 false。
+ * @note 重建会先释放旧模块级表；失败后调用方须放弃本轮函数 metadata。
  */
 TZrBool compiler_build_module_metadata_ref_table(SZrCompilerState *cs, SZrFunction *function);
 
