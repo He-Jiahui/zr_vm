@@ -1279,7 +1279,7 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
             semantic_typecheck_pop_compiler_context(analyzer, &contextSnapshot);
             break;
         }
-
+        /* BUG: extern 函数和下方 delegate 仅遍历 params；parser 将 variadic 参数另存于 args，LSP 因而漏掉其非法装饰器诊断。 */
         case ZR_AST_EXTERN_FUNCTION_DECLARATION: {
             SZrExternFunctionDeclaration *funcDecl = &node->data.externFunctionDeclaration;
             SZrSemanticTypecheckContextSnapshot contextSnapshot;
