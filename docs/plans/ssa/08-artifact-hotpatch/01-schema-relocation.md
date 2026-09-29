@@ -43,6 +43,7 @@ plan_sources:
   - "user: 2026-09-29 EIS5 BOOL predicate extension"
   - "user: 2026-09-29 EIS5 LT Compare extension"
   - "user: 2026-09-29 EIS5 six Compare modes extension"
+  - "user: 2026-09-29 EIS5 scalar SUB extension"
 tests:
   - tests/library/test_ssa_schema_relocation.c
   - tests/parser/test_artifact_schema_source_roundtrip.c
@@ -52,6 +53,7 @@ tests:
   - tests/library/test_ssa_exec_ir_artifact_v6_eis5.inc
   - tests/library/test_ssa_exec_ir_artifact_v6_eis5_bool.inc
   - tests/library/test_ssa_exec_ir_artifact_v6_eis5_compare.inc
+  - tests/library/test_ssa_exec_ir_artifact_v6_eis5_sub.inc
   - tests/library/test_ssa_exec_ir_artifact_v6_add.inc
   - tests/acceptance/ssa-artifact-v6-canonical-exec-ir.md
   - tests/acceptance/ssa-artifact-v6-eis3-counted-cfg.md
@@ -60,6 +62,7 @@ tests:
   - tests/acceptance/ssa-artifact-v6-eis5-bool-predicate.md
   - tests/acceptance/ssa-artifact-v6-eis5-compare-lt.md
   - tests/acceptance/ssa-artifact-v6-eis5-compare-modes.md
+  - tests/acceptance/ssa-artifact-v6-eis5-sub.md
   - tests/acceptance/ssa-artifact-v6-eri1-relocation-boundary.md
 doc_type: milestone-detail
 status: planned
@@ -151,6 +154,20 @@ COMPARE opcode，会在指令记录处以 `INVALID_SECTION` 拒绝；此前仅�
 具备对旧 reader 的前向兼容性。完整 08.01 的 binding、relocation、ExecBC、
 AOT 等退出门禁仍未满足。实现范围与验证记录见
 [六模式验收](../../../../tests/acceptance/ssa-artifact-v6-eis5-compare-modes.md)。
+
+**EIS5 i64 SUB 标量子切片：** 在 counted v5 CFG 中增加单一 i64
+`SUB` opcode，要求两个 i64 操作数、一个 i64 结果，不改变 header、记录
+宽度或 payload 版本。`-11 - 4` 的 Oracle 结果为 `-15`（对应 ADD 会得到
+`-7`），避免只靠 opcode 编号证明算术语义。两常量、三值、单块、四指令
+fixture 长 716 字节，与 EIS4 固定 ADD 形状长度碰撞；EIS5 仍通过 magic 与
+完整 legacy 结构识别路由。直接 codec 与 canonical writer/opener 覆盖
+roundtrip；BOOL 输入/结果及不支持的 MUL 在 writer、reader 和 opener
+边界拒绝，reader 不发布部分图。现有 EIS1–E4 goldens、EIS5 i64/BOOL
+predicate、COMPARE 和计数碰撞回归保持通过。Clang 与独立 MSVC 的四项门禁
+均为 4/4 通过。较早的 EIS5 v5 reader 不识别 SUB，会在指令记录处
+拒绝；full 08.01 的其余 schema/relocation 退出门禁仍未满足。实现边界和
+RED/GREEN 证据见
+[EIS5 SUB 验收记录](../../../../tests/acceptance/ssa-artifact-v6-eis5-sub.md)。
 
 ## 依赖与交付范围
 

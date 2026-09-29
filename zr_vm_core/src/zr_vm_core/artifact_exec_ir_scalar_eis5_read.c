@@ -121,6 +121,7 @@ static EZrArtifactExecIrStatus eis5_validate_wire(
                             recordOffset + 44u);
                 break;
             case ZR_EXEC_IR_OPCODE_ADD:
+            case ZR_EXEC_IR_OPCODE_SUB:
                 expectedResults = 1u;
                 expectedOperands = 2u;
                 expectedSuccessors = 0u;

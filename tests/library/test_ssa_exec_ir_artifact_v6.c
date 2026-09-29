@@ -314,6 +314,7 @@ static SZrArtifactDiagnostic require_rejected(const TZrByte *bytes,
 #include "test_ssa_exec_ir_artifact_v6_cfg.inc"
 #include "test_ssa_exec_ir_artifact_v6_add.inc"
 #include "test_ssa_exec_ir_artifact_v6_eis5.inc"
+#include "test_ssa_exec_ir_artifact_v6_eis5_sub.inc"
 #include "test_ssa_exec_ir_artifact_v6_eis5_bool.inc"
 #include "test_ssa_exec_ir_artifact_v6_eis5_compare.inc"
 
@@ -554,6 +555,7 @@ static void write_phase(const char *path) {
     cfg_write_phase(path);
     add_write_phase(path);
     eis5_write_phase(path);
+    eis5_sub_write_phase(path);
 }
 
 static void read_branch_phase(const char *path) {
@@ -745,6 +747,7 @@ static void read_phase(const char *path) {
     cfg_read_phase(path);
     add_read_phase(path);
     eis5_read_phase(path);
+    eis5_sub_read_phase(path);
 }
 
 int main(int argc, char **argv) {
