@@ -29,7 +29,9 @@ plan_sources:
   - "user: 2026-09-13 implement 03.04 generated fusion contract"
 tests:
   - tests/parser/test_ssa_generated_fusion.c
+  - tests/parser/test_ssa_generated_fusion_compare_branch.inc
   - tests/acceptance/ssa-generated-fusion.md
+  - tests/acceptance/2026-09-29-ssa-compare-branch-mode.md
 doc_type: module-detail
 status: implemented
 ---
@@ -77,6 +79,14 @@ mirror edge zero.  If a window needs more operands or exceeds side-table or
 code budgets, it remains in the original sequence and a structured fallback
 reason is recorded; no value is truncated.
 
+Fusion-plan schema version 2 also records `comparisonMode` for
+`COMPARE_BRANCH_INT`.  ExecIR Compare uses `typeToken` as a canonical selector
+(0=EQ, 1=LT, 2=LE, 3=GT, 4=GE, 5=NE), while its result value is BOOL.  The
+matcher therefore checks two signed i64 operands and a BOOL result, then
+projects the selector independently.  Non-Compare side entries retain zero in
+this field.  The mode participates in the generated plan hash and validity
+checks; non-canonical selectors are left unfused.
+
 The source map emits two records per fused window, preserving original source
 and resume identity (deopt/state-map resume IDs are preferred, with the
 instruction ID as a stable fallback).  Branch block IDs are resolved only
@@ -87,9 +97,10 @@ at the pair's output PC.
 
 The matcher scans each function once with a non-recursive two-instruction
 window.  A candidate must have matching opcodes, one block, adjacent IDs,
-compatible type tokens, a directly connected effect chain, a single use of the
-intermediate result, and any rule-specific layout/binding/branch proof.  A
-debug, safepoint, exception, or reentrant boundary is accepted only when the
+compatible type tokens (with Compare checked against its result and operands
+rather than its mode token), a directly connected effect chain, a single use
+of the intermediate result, and any rule-specific layout/binding/branch
+proof.  A debug, safepoint, exception, or reentrant boundary is accepted only when the
 rule declares that exact boundary and carries `PRESERVE_BOUNDARY`; its mask is
 retained in the side entry for the eventual handler.  An unrepresented
 boundary causes a structured fallback.
@@ -136,7 +147,9 @@ unchanged.
 debug/type/effect/layout/binding failures, explicit static-binding authorization
 of zero-based row zero, wide side operands, long branch targets, budget
 fallback, fixed-width size, source/resume mapping, branch remapping,
-deterministic hash and bytes, output-wrapper selection, generation
+all six canonical `COMPARE_BRANCH_INT` modes, BOOL/i64 type guards, retained
+comparison-mode hashing and validation, deterministic hash and bytes,
+output-wrapper selection, generation
 invalidation, contract mismatch, transactional output preservation, and the
 empty-function/partial-lifecycle case.  The focused fixture is
 compiled against the core ExecIR model and can be run independently of the

@@ -1,6 +1,7 @@
 #include "zr_vm_parser/exec_ir_fusion.h"
 #include "zr_vm_parser/exec_ir_binding_facts.h"
 #include "zr_vm_core/exec_ir_state_map.h"
+#include "zr_vm_common/zr_type_conf.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -138,7 +139,16 @@ static void make_six_pattern_function(SZrExecIrFunction *function) {
     function->instructions[3].successorRange.count = 2u;
     function->instructions[9].successorRange.start = 2u;
     function->instructions[9].successorRange.count = 2u;
+    /* Keep the comparison fixture faithful to ExecIR: typeToken carries its
+     * mode, while the result value and branch condition have BOOL type. */
+    function->values[2].typeToken = ZR_VALUE_TYPE_INT64;
+    function->values[3].typeToken = ZR_VALUE_TYPE_INT64;
+    function->values[14].typeToken = ZR_VALUE_TYPE_BOOL;
+    function->instructions[2].typeToken = 2u;
+    function->instructions[3].typeToken = ZR_VALUE_TYPE_BOOL;
 }
+
+#include "test_ssa_generated_fusion_compare_branch.inc"
 
 static void test_six_patterns_emit_fixed_width_words_and_side_maps(void) {
     SZrExecIrFunction function;
@@ -179,7 +189,7 @@ static void test_boundary_and_type_failures_keep_original_sequence(void) {
 
     make_six_pattern_function(&function);
     function.instructions[2].flags = ZR_EXEC_IR_FLAG_DEBUG_POLL;
-    function.instructions[2].typeToken = 77u;
+    function.values[14].typeToken = 77u;
     ZrParser_ExecBcPatternOptions_Init(&options);
     ZrParser_ExecBcFusionPlan_Init(&plan);
     assert(ZrParser_ExecIr_BuildExecBcFusion(&function, &options, &plan,
@@ -302,6 +312,10 @@ static void test_branch_target_is_remapped_after_a_later_fused_window(void) {
     function.operands[6] = 3u;
     function.instructions[0].effectOut = 1u;
     function.instructions[1].effectIn = 1u;
+    function.values[0].typeToken = ZR_VALUE_TYPE_BOOL;
+    function.values[7].typeToken = ZR_VALUE_TYPE_INT64;
+    function.instructions[0].typeToken = 2u;
+    function.instructions[1].typeToken = ZR_VALUE_TYPE_BOOL;
     function.instructions[2].effectOut = 3u;
     function.instructions[3].effectIn = 3u;
     function.successors = (TZrExecIrBlockId *)calloc(
@@ -378,14 +392,17 @@ static void test_long_branch_target_uses_u32_side_table_pc(void) {
         function.values[index].id = index + 1u;
         function.values[index].typeToken = 9u;
     }
+    function.values[0].typeToken = ZR_VALUE_TYPE_BOOL;
+    function.values[1].typeToken = ZR_VALUE_TYPE_INT64;
+    function.values[2].typeToken = ZR_VALUE_TYPE_INT64;
     for (index = 0u; index < instructionCount; ++index) {
         function.instructions[index].opcode = ZR_EXEC_IR_OPCODE_NOP;
     }
     set_instruction(&function, 0u, ZR_EXEC_IR_OPCODE_COMPARE, 0u, 2u, 1u);
     set_instruction(&function, 1u, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH,
                     2u, 1u, 0u);
-    function.instructions[0].typeToken = 9u;
-    function.instructions[1].typeToken = 9u;
+    function.instructions[0].typeToken = 2u;
+    function.instructions[1].typeToken = ZR_VALUE_TYPE_BOOL;
     function.instructions[0].effectOut = 1u;
     function.instructions[1].effectIn = 1u;
     function.operands[0] = 2u;
@@ -912,6 +929,8 @@ static void test_empty_function_projection_is_valid(void) {
 }
 
 int main(void) {
+    test_compare_branch_int_preserves_modes_and_plan_hash();
+    test_compare_branch_int_rejects_noncanonical_inputs();
     test_six_patterns_emit_fixed_width_words_and_side_maps();
     test_boundary_and_type_failures_keep_original_sequence();
     test_only_declared_boundaries_are_preserved();

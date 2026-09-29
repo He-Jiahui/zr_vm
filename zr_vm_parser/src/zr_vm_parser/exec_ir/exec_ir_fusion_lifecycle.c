@@ -137,6 +137,18 @@ TZrBool ZrParser_ExecBcFusion_Validate(
                                ZR_NULL, entry->headInstructionId, 0u, 1u, 0u);
             return ZR_FALSE;
         }
+        if ((entry->pattern ==
+                     ZR_EXEC_BC_FUSION_PATTERN_COMPARE_BRANCH_INT &&
+             entry->comparisonMode > 5u) ||
+            (entry->pattern !=
+                     ZR_EXEC_BC_FUSION_PATTERN_COMPARE_BRANCH_INT &&
+             entry->comparisonMode != 0u)) {
+            zr_fusion_diag_set(diagnostic,
+                               ZR_EXEC_IR_DIAGNOSTIC_INVALID_PROJECTION,
+                               ZR_NULL, entry->headInstructionId, 0u, 5u,
+                               entry->comparisonMode);
+            return ZR_FALSE;
+        }
         if (ZrCore_ExecIr_OpcodeInfo(entry->headOpcode) == ZR_NULL ||
             ZrCore_ExecIr_OpcodeInfo(entry->tailOpcode) == ZR_NULL ||
             entry->headOpcode != info->headOpcode ||

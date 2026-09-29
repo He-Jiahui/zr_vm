@@ -749,6 +749,7 @@ static TZrUInt64 zr_fusion_hash_plan_records(const SZrExecBcFusionPlan *plan) {
         hash = zr_fusion_hash_u32(hash, (TZrUInt32)entry->pattern);
         hash = zr_fusion_hash_u32(hash, (TZrUInt32)entry->headOpcode);
         hash = zr_fusion_hash_u32(hash, (TZrUInt32)entry->tailOpcode);
+        hash = zr_fusion_hash_u32(hash, entry->comparisonMode);
         hash = zr_fusion_hash_u32(hash, entry->headInstructionId);
         hash = zr_fusion_hash_u32(hash, entry->tailInstructionId);
         hash = zr_fusion_hash_u32(hash, entry->headSourceId);

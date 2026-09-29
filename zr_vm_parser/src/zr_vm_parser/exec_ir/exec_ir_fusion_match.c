@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "zr_vm_parser/exec_ir_binding_facts.h"
+#include "zr_vm_common/zr_type_conf.h"
 
 const SZrExecIrInstruction *zr_fusion_instruction(
         const SZrExecIrFunction *function, TZrUInt32 instructionId) {
@@ -285,6 +286,38 @@ static TZrBool zr_fusion_typed_instruction_is_compatible(
         (instruction->operands.count == 0u &&
          instruction->results.count == 0u)) {
         return ZR_FALSE;
+    }
+    /* Compare's typeToken is an operation selector (for example, 2 means
+     * <=), not its result type.  The integer branch fusion is intentionally
+     * limited to signed i64 inputs and a BOOL result; the selector is copied
+     * to the side entry separately for future execution. */
+    if ((EZrExecIrOpcode)instruction->opcode == ZR_EXEC_IR_OPCODE_COMPARE) {
+        TZrExecIrValueId left;
+        TZrExecIrValueId right;
+        TZrExecIrValueId result;
+        /* The canonical selectors are 0 (EQ) and 1..5 (LT, LE, GT, GE,
+         * NE).  Oracle's default branch currently treats other values as EQ,
+         * but that is not a declared mode that a future fused handler can
+         * safely assume. */
+        if (instruction->typeToken > 5u ||
+            instruction->operands.count != 2u ||
+            instruction->results.count != 1u ||
+            !zr_fusion_operand_at(function, instruction, 0u, &left) ||
+            !zr_fusion_operand_at(function, instruction, 1u, &right) ||
+            !zr_fusion_result_at(function, instruction, 0u, &result) ||
+            left == ZR_EXEC_IR_VALUE_ID_INVALID ||
+            right == ZR_EXEC_IR_VALUE_ID_INVALID ||
+            result == ZR_EXEC_IR_VALUE_ID_INVALID ||
+            left > function->valueCount || right > function->valueCount ||
+            result > function->valueCount) {
+            return ZR_FALSE;
+        }
+        return (TZrBool)(function->values[left - 1u].typeToken ==
+                                 ZR_VALUE_TYPE_INT64 &&
+                         function->values[right - 1u].typeToken ==
+                                 ZR_VALUE_TYPE_INT64 &&
+                         function->values[result - 1u].typeToken ==
+                                 ZR_VALUE_TYPE_BOOL);
     }
     /* ExecIR operation type tokens describe the produced value when there is
      * one.  A place projection and its receiver/index operands are expected
@@ -1009,6 +1042,9 @@ TZrBool zr_fusion_fill_side_entry(
     entry->pattern = pattern;
     entry->headOpcode = (EZrExecIrOpcode)head->opcode;
     entry->tailOpcode = (EZrExecIrOpcode)tail->opcode;
+    if (pattern == ZR_EXEC_BC_FUSION_PATTERN_COMPARE_BRANCH_INT) {
+        entry->comparisonMode = head->typeToken;
+    }
     entry->headInstructionId = headId;
     entry->tailInstructionId = tailId;
     entry->headSourceId = head->sourceId;

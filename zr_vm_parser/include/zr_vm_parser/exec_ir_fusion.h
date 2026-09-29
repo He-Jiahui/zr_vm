@@ -24,7 +24,7 @@
  * producer-only declarations through the fusion ABI. */
 typedef struct SZrExecIrBindingFacts SZrExecIrBindingFacts;
 
-#define ZR_EXEC_BC_FUSION_SCHEMA_VERSION ((TZrUInt32)1u)
+#define ZR_EXEC_BC_FUSION_SCHEMA_VERSION ((TZrUInt32)2u)
 #define ZR_EXEC_BC_FUSION_STORAGE_TAG ((TZrUInt32)0x46555331u)
 #define ZR_EXEC_BC_FUSION_INVALID_INDEX ((TZrUInt32)UINT32_MAX)
 #define ZR_EXEC_BC_FUSION_MAX_OPERANDS ((TZrUInt32)8u)
@@ -236,6 +236,9 @@ typedef struct SZrExecBcFusionSideEntry {
     EZrExecBcFusionPattern pattern;
     EZrExecIrOpcode headOpcode;
     EZrExecIrOpcode tailOpcode;
+    /* COMPARE stores its predicate selector in typeToken.  Retain that raw
+     * mode independently because the Compare result itself is BOOL. */
+    TZrUInt32 comparisonMode;
     TZrUInt32 headInstructionId;
     TZrUInt32 tailInstructionId;
     TZrUInt32 headSourceId;

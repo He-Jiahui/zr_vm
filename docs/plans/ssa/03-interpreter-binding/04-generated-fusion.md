@@ -3,6 +3,9 @@ related_code:
   - zr_vm_common/include/zr_vm_common/zr_instruction_conf.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_fusion.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_match.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_contract.c
 implementation_files:
   - zr_vm_common/include/zr_vm_common/zr_instruction_conf.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
@@ -10,15 +13,21 @@ implementation_files:
   - scripts/codegen/generate_execbc_patterns.py
   - zr_vm_parser/src/zr_vm_parser/exec_ir/execbc_patterns.def
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion.c
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_fusion.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_match.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_contract.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_lifecycle.c
 plan_sources:
   - docs/plans/ssa/index.md
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
 tests:
   - tests/parser/test_ssa_generated_fusion.c
+  - tests/parser/test_ssa_generated_fusion_compare_branch.inc
   - tests/parser/test_semir_typed_opcode_guardrails.c
   - tests/parser/test_compiler_w2_performance_quickening.c
   - tests/parser/test_compiler_w2_quickening_array_add.inc
   - tests/acceptance/ssa-quickening-array-int-add.md
+  - tests/acceptance/2026-09-29-ssa-compare-branch-mode.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -176,8 +185,32 @@ quickening suite and call-binding pipeline/artifact tests with MSVC. See
 for the exact build commands and observed results.
 
 The repository already has a separate six-pattern ExecIR fusion projection and
-generated metadata. This slice does not change that projection or prove its
-execution through the runtime dispatch path. Remaining gates include executable
+generated metadata. The `Array<int>.add` slice did not change that projection or
+prove its execution through the runtime dispatch path. Remaining gates include executable
 dispatch integration, end-to-end source/resume behavior, code-size/profile
 budget evidence, and the plan-wide boundary and failure matrix. This entry
 records one verified subtask; the plan status remains `planned`.
+
+### Scoped Progress — 2026-09-29 — Compare branch mode projection
+
+The `COMPARE_BRANCH_INT` projection now treats Compare `typeToken` as its
+canonical selector (0=EQ, 1=LT, 2=LE, 3=GT, 4=GE, 5=NE), verifies signed i64
+inputs and a BOOL result, and stores the selector in the plan side entry. The
+selector participates in the deterministic generated hash and plan validation;
+non-canonical modes and mismatched scalar types retain the original window.
+The plan schema is version 2. The focused fixture lives in
+`test_ssa_generated_fusion_compare_branch.inc`; the existing branch-remap
+fixtures now use the same i64-to-BOOL contract while retaining their target
+and source-map assertions.
+
+The regression was first observed with mode 2 (LE): the D GCC target built,
+then the direct test reported `fused=5` and failed its expected six-window
+assertion. After the projection change, the focused direct test exited 0,
+registered `ssa_generated_fusion` CTest passed 1/1, the generator `--check`
+passed, and scoped `git diff --check` reported no whitespace errors. Exact
+commands are in
+[`2026-09-29-ssa-compare-branch-mode.md`](../../../../tests/acceptance/2026-09-29-ssa-compare-branch-mode.md).
+
+This verifies parser-side plan projection only. Runtime handler dispatch,
+execution of the generated fused word, and the plan-wide performance and
+boundary matrix remain open; the 03.04 plan stays `planned`.
