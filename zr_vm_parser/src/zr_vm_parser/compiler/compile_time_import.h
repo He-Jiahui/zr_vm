@@ -5,10 +5,11 @@
 
 /** @brief 将来源模块的编译期声明接入当前编译器，供后续导入别名和函数解析复用。
  *  @pre cs、cs->state、cs->state->global 与 moduleName 有效；sourceBytes 在本次调用期间可读且 sourceByteCount 非零。
- *  @note 普通源码导入传入 canonicalizeImports=true；已解析的项目构建依赖传入 false。同名模块在当前编译器内复用，返回的模块由编译器持有；moduleName 须存活至该模块被恢复或编译器释放，输入字节只需存活至本次调用结束。
+ *  @note 普通源码导入传入 canonicalizeImports=true；已解析的项目构建依赖传入 false。同名模块在当前编译器内复用，返回的模块由编译器持有；首次加载时的 moduleName 须存活至该模块被恢复或编译器释放，输入字节只需存活至本次调用结束。
  *  @return 成功时返回编译器持有的模块；解析、构建事实或声明收集失败时返回 NULL，诊断可能写入 cs。
  *  BUG: 模块数组初始化和发布依赖不能报告分配失败的 ZrCore_Array_Init/Push；内存不足时无法按本接口约定返回 NULL，可能在数组写入处崩溃。
- *  TODO: 当前缓存只比较 moduleName；若同一编译器允许同名但不同来源的字节流，需核对来源身份或收紧调用契约。 */
+ *  TODO: 当前缓存只比较 moduleName；若同一编译器允许同名但不同来源的字节流，需核对来源身份或收紧调用契约。
+ *  TODO: 项目提供者新建的 moduleName 直接借给原生模块结构；需核对长字符串在模块存活期间是否有 GC 根保活。 */
 ZR_PARSER_API SZrImportedCompileTimeModule *
 ZrParser_CompileTimeImport_LoadSourceModule(
         SZrCompilerState *cs,
