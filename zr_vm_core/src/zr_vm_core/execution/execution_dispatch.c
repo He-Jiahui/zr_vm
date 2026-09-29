@@ -2552,7 +2552,10 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 #define UPDATE_FAST_DISPATCH_MODE()                                                                                     \
     do {                                                                                                               \
-        fastDispatchMode = (trap == ZR_DEBUG_SIGNAL_NONE && !recordInstructions) ? ZR_TRUE : ZR_FALSE;                \
+        fastDispatchMode = (trap == ZR_DEBUG_SIGNAL_NONE && !recordInstructions &&                                    \
+                            state->debugTraceObserver == ZR_NULL)                                                     \
+                                   ? ZR_TRUE                                                                          \
+                                   : ZR_FALSE;                                                                         \
     } while (0)
 #else
 /*
@@ -2614,6 +2617,11 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             } else {                                                                                                   \
                 instruction = *(programCounter += (N));                                                                \
             }                                                                                                          \
+        } else if (ZR_UNLIKELY(state->debugTraceObserver != ZR_NULL)) {                                                \
+            /* Per-instruction observers are independent of pending hook traps. */                                     \
+            trap = ZrCore_Debug_TraceExecution(state, programCounter);                                                  \
+            UPDATE_STACK(callInfo);                                                                                    \
+            instruction = *(programCounter += (N));                                                                    \
         } else {                                                                                                       \
             ZR_INSTRUCTION_FETCH(instruction,                                                                          \
                                  programCounter,                                                                       \

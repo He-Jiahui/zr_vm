@@ -4,10 +4,12 @@ related_code:
   - zr_vm_core/include/zr_vm_core/call_info.h
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_core/include/zr_vm_core/function.h
+  - zr_vm_core/include/zr_vm_core/debug.h
   - zr_vm_core/include/zr_vm_core/gc_domain.h
   - zr_vm_core/src/zr_vm_core/execution/execution_safepoint.c
   - zr_vm_core/src/zr_vm_core/execution/execution_cold.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/debug.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/execution_context.h
   - zr_vm_core/src/zr_vm_core/execution/execution_safepoint.c
@@ -16,6 +18,7 @@ implementation_files:
 tests:
   - tests/core/test_ssa_dispatch_boundaries.c
   - tests/acceptance/2026-09-28-ssa-dispatch-safepoint-poll.md
+  - tests/acceptance/2026-09-29-ssa-dispatch-throw-debug-pc.md
 plan_sources:
   - docs/plans/ssa/03-interpreter-binding/01-dispatch-boundaries.md
 doc_type: module-detail
@@ -65,6 +68,11 @@ from `zr_instruction_conf.h` for both computed-goto and switch builds.
 The focused dispatch test runs a 257-NOP function and checks that the saved
 resume PC matches `state->previousProgramCounter` at the 256-fetch poll. Direct
 reload coverage also simulates replaced call-frame, instruction, stack, domain,
-and profile roots. The current integration coverage does not run a concurrent
-collector through a parked dispatcher; 03.01 remains open for that boundary and
-the other call, native, debug, and suspend paths.
+and profile roots. A separate observer-only trace test runs a real `THROW` and
+checks that the callback sees that opcode's PC and mapped source line before it
+executes, even when no debug hook trap is pending. Registering a trace observer
+keeps dispatch on the traced path, and shared fetch invokes the observer
+independently of hook traps. A separate integration test covers full GC while
+the dispatcher is parked. This trace test does not cover debugger hook signaling
+or suspension at the throwing instruction; 03.01 remains open for the other
+call, native, and suspend paths.

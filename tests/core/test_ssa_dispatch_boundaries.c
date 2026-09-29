@@ -7,9 +7,11 @@
 #include "harness/runtime_support.h"
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/closure.h"
+#include "zr_vm_core/debug.h"
 #include "zr_vm_core/execution.h"
 #include "zr_vm_core/execution_budget.h"
 #include "zr_vm_core/execution_context.h"
+#include "zr_vm_core/exception.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/gc_domain.h"
@@ -217,6 +219,168 @@ static TZrBool dispatch_pause_worker_join(ZrDispatchTestThread thread) {
 
 void setUp(void) {}
 void tearDown(void) {}
+
+typedef struct ZrDispatchThrowTraceCapture {
+    SZrFunction *expectedFunction;
+    TZrUInt32 expectedInstructionOffset;
+    TZrUInt32 observedCallbackCount;
+    TZrUInt32 observedInstructionOffset;
+    TZrUInt32 observedSourceLine;
+    TZrBool observedThrow;
+    TZrBool callInfoPointedAtObservedInstruction;
+    TZrBool previousProgramCounterMatched;
+} ZrDispatchThrowTraceCapture;
+
+static TZrDebugSignal dispatch_test_capture_throw_instruction(
+        SZrState *state,
+        SZrFunction *function,
+        const TZrInstruction *programCounter,
+        TZrUInt32 instructionOffset,
+        TZrUInt32 sourceLine,
+        TZrPtr userData) {
+    ZrDispatchThrowTraceCapture *capture = (ZrDispatchThrowTraceCapture *)userData;
+
+    if (capture != ZR_NULL && function == capture->expectedFunction) {
+        ++capture->observedCallbackCount;
+        if (instructionOffset == capture->expectedInstructionOffset) {
+            SZrCallInfo *callInfo = state != ZR_NULL ? state->callInfoList : ZR_NULL;
+
+            capture->observedThrow = (TZrBool)(
+                    programCounter == function->instructionsList + instructionOffset &&
+                    ZR_INSTRUCTION_OPCODE(function->instructionsList[instructionOffset]) ==
+                            ZR_INSTRUCTION_ENUM(THROW));
+            capture->observedInstructionOffset = instructionOffset;
+            capture->observedSourceLine = sourceLine;
+            capture->callInfoPointedAtObservedInstruction = (TZrBool)(
+                    callInfo != ZR_NULL &&
+                    callInfo->context.context.programCounter == programCounter);
+            capture->previousProgramCounterMatched = (TZrBool)(
+                    state != ZR_NULL && state->previousProgramCounter == instructionOffset);
+        }
+    }
+    return ZR_DEBUG_SIGNAL_NONE;
+}
+
+static void dispatch_test_execute_call_info(SZrState *state, TZrPtr arguments) {
+    ZrCore_Execute(state, *(SZrCallInfo **)arguments);
+}
+
+static void test_observer_only_debug_reports_throw_instruction_pc_and_line(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function = ZR_NULL;
+    TZrInstruction *instructions = ZR_NULL;
+    SZrFunctionExecutionLocationInfo *sourceLocations = ZR_NULL;
+    SZrTypeValue callableValue;
+    TZrStackValuePointer functionBase = ZR_NULL;
+    SZrTypeValue *functionBaseValue = ZR_NULL;
+    SZrCallInfo *callInfo = ZR_NULL;
+    ZrDispatchThrowTraceCapture capture;
+    EZrThreadStatus status = ZR_THREAD_STATUS_FINE;
+    TZrBool callInfoSavedThrowPc = ZR_FALSE;
+    TZrMemoryOffset savedPreviousProgramCounter = (TZrMemoryOffset)-1;
+
+    ZrCore_Memory_RawSet(&capture, 0, sizeof(capture));
+    if (state != ZR_NULL) {
+        function = ZrCore_Function_New(state);
+    }
+    if (function != ZR_NULL) {
+        instructions = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(TZrInstruction) * 2u,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        sourceLocations = (SZrFunctionExecutionLocationInfo *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionExecutionLocationInfo) * 2u,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        function->instructionsList = instructions;
+        function->instructionsLength = 2u;
+        function->executionLocationInfoList = sourceLocations;
+        function->executionLocationInfoLength = 2u;
+    }
+    if (function != ZR_NULL && instructions != ZR_NULL && sourceLocations != ZR_NULL) {
+        ZrCore_Memory_RawSet(instructions, 0, sizeof(TZrInstruction) * 2u);
+        ZrCore_Memory_RawSet(
+                sourceLocations,
+                0,
+                sizeof(SZrFunctionExecutionLocationInfo) * 2u);
+        instructions[0].instruction.operationCode =
+                (TZrUInt16)ZR_INSTRUCTION_ENUM(NOP);
+        instructions[1].instruction.operationCode =
+                (TZrUInt16)ZR_INSTRUCTION_ENUM(THROW);
+        function->constantValueList = ZR_NULL;
+        function->constantValueLength = 0u;
+        function->stackSize = 1u;
+        function->parameterCount = 0u;
+        function->hasVariableArguments = ZR_FALSE;
+        function->closureValueLength = 0u;
+        sourceLocations[0].currentInstructionOffset = 0u;
+        sourceLocations[0].lineInSource = 11u;
+        sourceLocations[1].currentInstructionOffset = 1u;
+        sourceLocations[1].lineInSource = 47u;
+
+        ZrCore_Value_ResetAsNull(&callableValue);
+        ZrCore_Value_InitAsRawObject(
+                state, &callableValue, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+        callableValue.type = ZR_VALUE_TYPE_FUNCTION;
+        callableValue.isGarbageCollectable = ZR_TRUE;
+        callableValue.isNative = ZR_FALSE;
+        functionBase = ZrCore_Function_CheckStackAndGc(
+                state,
+                (TZrSize)(1u + function->stackSize),
+                state->stackTop.valuePointer);
+    }
+    if (functionBase != ZR_NULL) {
+        functionBaseValue = ZrCore_Stack_GetValue(functionBase);
+    }
+    if (functionBaseValue != ZR_NULL) {
+        ZrCore_Value_Copy(state, functionBaseValue, &callableValue);
+        ZrCore_Value_InitAsInt(
+                state, ZrCore_Stack_GetValue(functionBase + 1), 123);
+        state->stackTop.valuePointer = functionBase + 1 + function->stackSize;
+        callInfo = ZrCore_CallInfo_Extend(state);
+    }
+    if (callInfo != ZR_NULL) {
+        ZrCore_CallInfo_EntryNativeInit(
+                state, callInfo, state->stackBase, state->stackTop, state->callInfoList);
+        callInfo->functionBase.valuePointer = functionBase;
+        callInfo->functionTop.valuePointer = functionBase + 1 + function->stackSize;
+        callInfo->context.context.programCounter = function->instructionsList;
+        callInfo->callStatus = ZR_CALL_STATUS_CREATE_FRAME;
+        callInfo->expectedReturnCount = 1u;
+        state->callInfoList = callInfo;
+        state->threadStatus = ZR_THREAD_STATUS_FINE;
+        capture.expectedFunction = function;
+        capture.expectedInstructionOffset = 1u;
+
+        /* An observer alone must disable the no-debug fast path. */
+        ZrCore_Debug_SetTraceObserver(
+                state, dispatch_test_capture_throw_instruction, &capture);
+        status = ZrCore_Exception_TryRun(
+                state, dispatch_test_execute_call_info, &callInfo);
+        callInfoSavedThrowPc = (TZrBool)(
+                callInfo->context.context.programCounter == function->instructionsList + 1u);
+        savedPreviousProgramCounter = state->previousProgramCounter;
+        ZrCore_Debug_SetTraceObserver(state, ZR_NULL, ZR_NULL);
+    }
+
+    if (state != ZR_NULL) {
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_NOT_NULL(instructions);
+    TEST_ASSERT_NOT_NULL(callInfo);
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_RUNTIME_ERROR, status);
+    TEST_ASSERT_EQUAL_UINT32(2u, capture.observedCallbackCount);
+    TEST_ASSERT_TRUE(capture.observedThrow);
+    TEST_ASSERT_EQUAL_UINT32(1u, capture.observedInstructionOffset);
+    TEST_ASSERT_EQUAL_UINT32(47u, capture.observedSourceLine);
+    TEST_ASSERT_TRUE(capture.callInfoPointedAtObservedInstruction);
+    TEST_ASSERT_TRUE(capture.previousProgramCounterMatched);
+    TEST_ASSERT_TRUE(callInfoSavedThrowPc);
+    TEST_ASSERT_EQUAL_INT64(1, savedPreviousProgramCounter);
+}
 
 static void test_publish_rejects_null_and_invalid_pc(void) {
     SZrExecutionContext context;
@@ -647,6 +811,7 @@ static void test_dispatch_resumes_after_full_gc_parks_running_mutator(void) {
 
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_observer_only_debug_reports_throw_instruction_pc_and_line);
     RUN_TEST(test_publish_rejects_null_and_invalid_pc);
     RUN_TEST(test_reload_rejects_missing_frame);
     RUN_TEST(test_publish_and_reload_rebuilds_frame_state);
