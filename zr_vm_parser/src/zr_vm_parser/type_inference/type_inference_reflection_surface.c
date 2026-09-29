@@ -60,6 +60,7 @@ static TZrBool reflection_compile_surface_projection_for_category(
     }
 }
 
+/* ERASED 分类查找稳定 REFLECTION_TYPE role；其他类别只接受反射 provider 声明的具体 projection。 */
 const TZrChar *ZrParser_ReflectionCompileSurface_DescriptorName(
         SZrGlobalState *global,
         EZrReflectionTypeCategory category) {
