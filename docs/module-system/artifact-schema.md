@@ -1,6 +1,10 @@
 ---
 related_code:
   - zr_vm_core/include/zr_vm_core/artifact_schema.h
+  - zr_vm_core/include/zr_vm_core/call_binding.h
+  - zr_vm_core/src/zr_vm_core/artifact_schema_internal.h
+  - zr_vm_core/src/zr_vm_core/artifact_call_binding.c
+  - zr_vm_core/src/zr_vm_core/call_binding_encoding.c
   - zr_vm_core/include/zr_vm_core/artifact_exec_ir.h
   - zr_vm_core/include/zr_vm_core/artifact_exec_ir_scalar.h
   - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar_eis3.h
@@ -11,6 +15,8 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/artifact_exec_ir.h
 implementation_files:
   - zr_vm_core/src/zr_vm_core/artifact_encoding.c
+  - zr_vm_core/src/zr_vm_core/artifact_call_binding.c
+  - zr_vm_core/src/zr_vm_core/call_binding_encoding.c
   - zr_vm_core/src/zr_vm_core/artifact_identity.c
   - zr_vm_core/src/zr_vm_core/artifact_schema.c
   - zr_vm_core/src/zr_vm_core/artifact_exec_ir.c
@@ -36,6 +42,7 @@ plan_sources:
   - user: 2026-09-29 EIS5 scalar DIV extension
   - user: 2026-09-29 EIS5 two-DIV effect-chain extension
 tests:
+  - tests/parser/test_call_binding_artifact.c
   - tests/library/test_ssa_exec_ir_artifact_v6.c
   - tests/library/test_ssa_exec_ir_artifact_v6_cfg.inc
   - tests/library/test_ssa_exec_ir_artifact_v6_add.inc
@@ -59,6 +66,7 @@ tests:
   - tests/acceptance/ssa-artifact-v6-eis5-mul.md
   - tests/acceptance/ssa-artifact-v6-eis5-div.md
   - tests/acceptance/ssa-artifact-v6-eis5-div-chain.md
+  - tests/acceptance/ssa-artifact-v6-call-binding-decode.md
 doc_type: module-detail
 status: partial
 ---
@@ -257,6 +265,27 @@ A schema 5 ZRAF is rejected with
 `UNSUPPORTED_VERSION` and diagnostic expected/actual versions.
 The separate historical `01ZR` `.zro` binary path remains handled by
 `ZrCore_Module_ImportByPath`; this API rejects its magic.
+
+## Call-binding artifact row decode
+
+Canonical call-binding rows are 96 bytes; the 64-byte contract starts at row
+offset 16. `ZrCore_CallBinding_DecodeContract` keeps its public boolean result
+and clears its output contract on failure. Artifact row decoding uses a private
+status-returning helper to retain `ZrCore_CallBinding_CheckContract`'s exact
+failure class after decoding. An invalid metadata token therefore maps to
+`ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN`, matching the writer; other invalid
+contracts remain `ZR_ARTIFACT_STATUS_INVALID_SECTION`. The row reader continues
+to clear its output row and reports the section, row, and contract byte offset.
+
+The artifact test replaces a valid signature token with the row's member token
+and checks the token status, location, and zeroed row. A zero binding kind
+checks the non-token error class. Public decoder controls check valid decoding
+and zeroed output after token and non-token failures. The test-only MSVC RED
+returned `INVALID_SECTION` where the test expected `ILLEGAL_TOKEN`; after the
+fix the direct target passed all 8 tests and CTest passed 1/1 in 0.56 seconds
+(0.73 seconds total). The exact commands and outputs are in the
+[call-binding decode acceptance](../../tests/acceptance/ssa-artifact-v6-call-binding-decode.md).
+GCC and Clang were not run for this bounded slice.
 
 ## Legacy ExecBC patch 44
 

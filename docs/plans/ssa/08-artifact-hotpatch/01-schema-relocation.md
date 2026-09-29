@@ -1,6 +1,10 @@
 ---
 related_code:
   - zr_vm_core/include/zr_vm_core/artifact_schema.h
+  - zr_vm_core/include/zr_vm_core/call_binding.h
+  - zr_vm_core/src/zr_vm_core/artifact_schema_internal.h
+  - zr_vm_core/src/zr_vm_core/artifact_call_binding.c
+  - zr_vm_core/src/zr_vm_core/call_binding_encoding.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_binary.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_call_binding.c
   - zr_vm_parser/src/zr_vm_parser/artifact_call_binding_projection.c
@@ -19,6 +23,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/writer/writer_exec_ir_artifact.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/artifact_schema.h
+  - zr_vm_core/src/zr_vm_core/artifact_call_binding.c
+  - zr_vm_core/src/zr_vm_core/call_binding_encoding.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_binary.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_call_binding.c
   - zr_vm_parser/src/zr_vm_parser/artifact_call_binding_projection.c
@@ -72,6 +78,7 @@ tests:
   - tests/acceptance/ssa-artifact-v6-eis5-mul.md
   - tests/acceptance/ssa-artifact-v6-eis5-div.md
   - tests/acceptance/ssa-artifact-v6-eis5-div-chain.md
+  - tests/acceptance/ssa-artifact-v6-call-binding-decode.md
   - tests/acceptance/ssa-artifact-v6-eri1-relocation-boundary.md
 doc_type: milestone-detail
 status: planned
@@ -223,6 +230,20 @@ reader 则在 opcode 处拒绝 DIV。
 本叶不扩展跨 block 或任意长度 effect chain，也不关闭完整 08.01。
 范围与当前 RED 见
 [EIS5 双 DIV 验收](../../../../tests/acceptance/ssa-artifact-v6-eis5-div-chain.md)。
+
+**CallBinding decode-status bounded 子切片（已验证）：** 96 字节 artifact
+行的 64 字节 contract 从 offset 16 开始。私有 decoder helper 返回
+`ZrCore_CallBinding_CheckContract` 的精确状态，使 reader 将非法 metadata
+token 分类为 `ILLEGAL_TOKEN`，其它契约损坏仍为 `INVALID_SECTION`；公开
+`ZrCore_CallBinding_DecodeContract` 维持 bool API 和失败清零输出。RED 在旧
+reader 上复现为 expected `ILLEGAL_TOKEN`、actual `INVALID_SECTION`。修复后的
+MSVC target build 为 19/19；direct `zr_vm_call_binding_artifact_test` 为 8/8，
+CTest `call_binding_artifact` 为 1/1（测试 0.56s、总计 0.73s）。具体命令、
+定位断言和控制用例见
+[CallBinding decode 验收记录](../../../../tests/acceptance/ssa-artifact-v6-call-binding-decode.md)。
+本子切片未运行 GCC 或 Clang；它只完成行级错误分类，不满足完整 08.01 的
+跨进程 relocation、ExecBC、状态映射、copy、AOT projection 或 ImportByPath
+退出门禁。full 08.01 仍未完成。
 
 ## 依赖与交付范围
 
