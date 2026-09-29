@@ -1,5 +1,9 @@
 #include "compiler_internal.h"
 
+/**
+ * @brief 对 return 表达式做尽力类型推断，为候选合并提供类型证据。
+ * @note 探测失败会恢复它临时产生的编译错误状态；无法推断的候选由调用方转为未知类型。
+ */
 static TZrBool compiler_try_infer_expression_type_soft(
         SZrCompilerState *cs,
         SZrAstNode *expr,
@@ -26,6 +30,8 @@ static TZrBool compiler_try_infer_expression_type_soft(
     cs->hadRecoverableError = ZR_FALSE;
     cs->hasFatalError = ZR_FALSE;
 
+    // TODO: 成功路径直接返回且不恢复进入时暂存的错误状态；确认调用点都以干净状态进入，或恢复原状态。
+    // Callable-value 注册入口目前未检查 hasError。
     if (ZrParser_ExpressionType_Infer(cs, expr, result)) {
         return ZR_TRUE;
     }
@@ -47,6 +53,7 @@ static TZrBool compiler_callable_return_type_is_exact(
              (!type->elementTypes.isValid || type->elementTypes.length == 0U));
 }
 
+/** @brief 为返回类型诊断优先定位具名 callable 的声明名，否则回退到节点范围或冲突表达式。 */
 static SZrFileRange compiler_callable_diagnostic_range(
         const SZrCompilerState *cs,
         SZrFileRange fallback) {
@@ -65,6 +72,10 @@ static SZrFileRange compiler_callable_diagnostic_range(
     }
 }
 
+/**
+ * @brief 将无法合并的返回候选发布为结构化诊断，并保留首个与冲突位置。
+ * @note 构建失败时清理部分诊断并退回普通编译错误；成功发布后诊断由 compiler state 持有。
+ */
 static void compiler_report_return_type_not_provable(
         SZrCompilerState *cs,
         SZrFileRange firstReturnRange,
@@ -108,6 +119,10 @@ static void compiler_report_return_type_not_provable(
     ZrParser_Compiler_StructuredError(cs, &diagnostic);
 }
 
+/**
+ * @brief 合并 callable 的 return 候选；只保留精确公共类型，未知候选降级，冲突精确类型触发诊断。
+ * @note firstReturnRange 记录首个候选来源，供后续冲突诊断提供相关位置。
+ */
 static void compiler_merge_callable_return_type(
         SZrCompilerState *cs,
         const SZrInferredType *candidateType,
@@ -167,6 +182,10 @@ static void compiler_callable_type_ref_init_unknown(
     typeRef->elementBaseType = ZR_VALUE_TYPE_OBJECT;
 }
 
+/**
+ * @brief 将完整推断类型投影到 callable 元数据的有限摘要字段。
+ * @note 数组元数据只记录首个元素的基础类型与名称；GC 管理的名称引用不由该浅层摘要释放。
+ */
 static void compiler_callable_type_ref_from_inferred(
         SZrFunctionTypedTypeRef *dest,
         const SZrInferredType *src) {
@@ -197,6 +216,10 @@ static void compiler_callable_type_ref_from_inferred(
     }
 }
 
+/**
+ * @brief 把 callable 体内解构绑定登记到临时类型环境，避免后续 return 表达式误用外层同名变量。
+ * @note 对象简写模式绑定 key；计算 key 与普通属性值不是绑定位置。
+ */
 static void compiler_register_function_like_pattern_bindings(
         SZrCompilerState *cs,
         SZrAstNode *pattern) {
@@ -243,6 +266,7 @@ static void compiler_register_function_like_pattern_bindings(
     }
 }
 
+/** @brief 按显式类型、可推断 initializer、未知类型的顺序登记局部名，供后续 return 表达式解析。 */
 static void compiler_register_function_like_local_variable_type(
         SZrCompilerState *cs,
         SZrAstNode *node) {
@@ -295,6 +319,10 @@ static void compiler_register_function_like_local_variable_type(
     ZrParser_InferredType_Free(cs->state, &bindingType);
 }
 
+/**
+ * @brief 遍历 callable 体内受支持的控制结构并按词法块收集 return 类型候选。
+ * @note 嵌套 callable 不属于当前 callable 的返回集合；块级临时环境在递归返回后恢复并释放。
+ */
 static void compiler_collect_function_like_return_type(
         SZrCompilerState *cs,
         SZrAstNode *node,
@@ -316,6 +344,8 @@ static void compiler_collect_function_like_return_type(
             }
             blockEnv = ZrParser_TypeEnvironment_New(cs->state);
             if (blockEnv == ZR_NULL) {
+                // TODO: 环境分配失败目前不设置 compiler error，builder 会把未扫描的 body 当作默认 Null。
+                // 明确 OOM 查询契约并补失败路径验证。
                 return;
             }
             blockEnv->parent = savedEnv;
@@ -469,10 +499,16 @@ static void compiler_collect_function_like_return_type(
             return;
 
         default:
+            // BUG: switch 的 case/default block 未被遍历；仅在 switch 内 return 的无注解函数会被 builder
+            // 误当作无 return 并发布精确 Null。
             return;
     }
 }
 
+/**
+ * @brief 优先转换声明返回类型，否则收集 body 返回候选并生成 callable 元数据及可选完整推断结果。
+ * @note 有效 outType/outHasType 会先重置；临时类型由本函数释放，outInferredType 只在成功建成时写入。
+ */
 TZrBool compiler_build_callable_return_type_metadata_with_inferred(
         SZrCompilerState *cs,
         SZrType *declaredReturnType,
@@ -524,11 +560,14 @@ TZrBool compiler_build_callable_return_type_metadata_with_inferred(
                 &firstReturnRange);
         if (cs->hasError) {
             ZrParser_InferredType_Free(cs->state, &inferredType);
+            // BUG: structured-error 路径返回 true 却不写 outInferredType；如顶层 let alias = bad; 先于含冲突 return 的
+            // function bad 声明，别名注册可先分析后方 body，随后在无候选分支释放未初始化的输出。
             return cs->hasStructuredError;
         }
     }
 
     if (!hasReturnType) {
+        // 没有收集到显式 return 时以 Null 表示隐式返回；collector 必须先覆盖 body 的可返回分支。
         ZrParser_InferredType_Free(cs->state, &inferredType);
         ZrParser_InferredType_Init(
                 cs->state, &inferredType, ZR_VALUE_TYPE_NULL);
@@ -559,6 +598,12 @@ TZrBool compiler_build_callable_return_type_metadata(
             ZR_NULL);
 }
 
+/**
+ * @brief 查询 callable 的精确返回类型，并仅在成功后替换调用方结果。
+ * @pre result 已由 ZrParser_InferredType_Init 初始化。
+ * @return 得到精确类型且编译状态无错误时返回 true；失败时结果保持不变。
+ * TODO: 将 result 初始化前提同步到公开 compiler.h 声明；仓内唯一直接调用方先初始化，成功路径会先释放该结果。
+ */
 TZrBool ZrParser_Compiler_InferCallableReturnType(
         SZrCompilerState *cs,
         const SZrAstNode *declaration,
