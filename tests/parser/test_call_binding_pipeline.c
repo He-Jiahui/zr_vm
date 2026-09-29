@@ -6,6 +6,7 @@
 #include "zr_vm_core/call_binding.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/stack.h"
+#include "zr_vm_core/string.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
@@ -114,6 +115,175 @@ static void assert_bound_result(const char *source, TZrInt64 expected) {
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
     TEST_ASSERT_EQUAL_INT64(expected, result);
     TEST_ASSERT_GREATER_THAN_UINT64(0u, entry->runtimeHitCount);
+}
+
+static const SZrFunction *find_child_function_by_name(const SZrFunction *function,
+                                                       const char *name) {
+    if (function == ZR_NULL || name == ZR_NULL) return ZR_NULL;
+    for (TZrUInt32 index = 0u; index < function->childFunctionLength; ++index) {
+        const SZrFunction *child = &function->childFunctionList[index];
+        const char *childName = child->functionName != ZR_NULL
+                                        ? ZrCore_String_GetNativeString(child->functionName)
+                                        : ZR_NULL;
+        const SZrFunction *nested;
+        if (childName != ZR_NULL && strcmp(childName, name) == 0) return child;
+        nested = find_child_function_by_name(child, name);
+        if (nested != ZR_NULL) return nested;
+    }
+    return ZR_NULL;
+}
+
+static const SZrFunction *find_meta_function_from_prototype_data(const SZrFunction *function,
+                                                                  EZrMetaType metaType) {
+    const TZrByte *data;
+    TZrUInt32 prototypeCount;
+    TZrSize offset = sizeof(prototypeCount);
+
+    if (function == ZR_NULL || function->prototypeData == ZR_NULL ||
+        function->prototypeDataLength < sizeof(prototypeCount) ||
+        function->constantValueList == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    data = function->prototypeData;
+    memcpy(&prototypeCount, data, sizeof(prototypeCount));
+    for (TZrUInt32 prototypeIndex = 0u; prototypeIndex < prototypeCount; ++prototypeIndex) {
+        SZrCompiledPrototypeInfo prototype;
+        TZrSize inheritBytes;
+        TZrSize decoratorBytes;
+        TZrSize memberBytes;
+
+        if (offset > function->prototypeDataLength ||
+            function->prototypeDataLength - offset < sizeof(prototype)) {
+            return ZR_NULL;
+        }
+        memcpy(&prototype, data + offset, sizeof(prototype));
+        offset += sizeof(prototype);
+        inheritBytes = (TZrSize)prototype.inheritsCount * sizeof(TZrUInt32);
+        decoratorBytes = (TZrSize)prototype.decoratorsCount * sizeof(TZrUInt32);
+        memberBytes = (TZrSize)prototype.membersCount * sizeof(SZrCompiledMemberInfo);
+        if (inheritBytes > function->prototypeDataLength - offset) return ZR_NULL;
+        offset += inheritBytes;
+        if (decoratorBytes > function->prototypeDataLength - offset) return ZR_NULL;
+        offset += decoratorBytes;
+        if (memberBytes > function->prototypeDataLength - offset) return ZR_NULL;
+
+        for (TZrUInt32 memberIndex = 0u; memberIndex < prototype.membersCount; ++memberIndex) {
+            SZrCompiledMemberInfo member;
+            const SZrTypeValue *constant;
+            memcpy(&member, data + offset + (TZrSize)memberIndex * sizeof(member), sizeof(member));
+            if (member.isMetaMethod == 0u || member.metaType != (TZrUInt32)metaType ||
+                member.functionConstantIndex >= function->constantValueLength) {
+                continue;
+            }
+            constant = &function->constantValueList[member.functionConstantIndex];
+            if (constant->type == ZR_VALUE_TYPE_FUNCTION && constant->value.object != ZR_NULL &&
+                constant->value.object->type == ZR_RAW_OBJECT_TYPE_FUNCTION) {
+                return ZR_CAST(const SZrFunction *, constant->value.object);
+            }
+        }
+        offset += memberBytes;
+    }
+    return ZR_NULL;
+}
+
+static TZrUInt32 count_inline_struct_parameter_slots(const SZrFunction *function) {
+    TZrUInt32 count = 0u;
+    if (function == ZR_NULL || function->frameSlotLayouts == ZR_NULL) return 0u;
+    for (TZrUInt32 index = 0u; index < function->frameSlotLayoutLength; ++index) {
+        const SZrFunctionFrameSlotLayout *layout = &function->frameSlotLayouts[index];
+        if (layout->isParameter != 0u &&
+            layout->slotKind == ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+static TZrUInt32 count_direct_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
+    TZrUInt32 count = 0u;
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL) return 0u;
+    for (TZrUInt32 index = 0u; index < function->instructionsLength; ++index) {
+        if ((EZrInstructionCode)function->instructionsList[index].instruction.operationCode == opcode) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+static TZrUInt32 count_dynamic_tail_call_opcodes(const SZrFunction *function) {
+    return count_direct_opcode(function, ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL)) +
+           count_direct_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED)) +
+           count_direct_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_NO_ARGS));
+}
+
+static TZrUInt32 count_dynamic_call_opcodes(const SZrFunction *function) {
+    return count_direct_opcode(function, ZR_INSTRUCTION_ENUM(DYN_CALL)) +
+           count_direct_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED)) +
+           count_direct_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_NO_ARGS));
+}
+
+/* Ordinary PreCall prepends the @call target before the original object and arguments.
+ * The dynamic tail path must preserve the same receiver-plus-arguments window when
+ * an inline-struct @call parameter declines frame reuse. */
+static void test_dynamic_tail_meta_call_preserves_last_argument_after_reuse_declines(void) {
+    static const char *ordinarySource =
+            "struct Payload { pub var value: int; "
+            "pub @constructor(value: int) { this.value = value; } } "
+            "class Callable { pri var bias: int; "
+            "pub @constructor() { this.bias = 3; } "
+            "pub @call(payload: Payload, sentinel: int): int { "
+            "return (this.bias * 100) + (payload.value * 10) + sentinel; } } "
+            "fn relayOrdinary(target: object, payload: Payload, sentinel: int): object { "
+            "var result: object = target(payload, sentinel); return result; } "
+            "var target: object = new Callable(); "
+            "var payload: Payload = init Payload(4); "
+            "return <int> relayOrdinary(target, payload, 7);";
+    static const char *tailSource =
+            "struct Payload { pub var value: int; "
+            "pub @constructor(value: int) { this.value = value; } } "
+            "class Callable { pri var bias: int; "
+            "pub @constructor() { this.bias = 3; } "
+            "pub @call(payload: Payload, sentinel: int): int { "
+            "return (this.bias * 100) + (payload.value * 10) + sentinel; } } "
+            "fn relayTail(target: object, payload: Payload, sentinel: int): object { "
+            "return target(payload, sentinel); } "
+            "var target: object = new Callable(); "
+            "var payload: Payload = init Payload(4); "
+            "return <int> relayTail(target, payload, 7);";
+    SZrFunction *ordinaryFunction;
+    SZrFunction *tailFunction;
+    const SZrFunction *callFunction;
+    const SZrFunction *tailRelay;
+    const SZrFunction *ordinaryRelay;
+    TZrInt64 result = 0;
+
+    ordinaryFunction = compile_source(ordinarySource);
+    TEST_ASSERT_NOT_NULL(ordinaryFunction);
+    callFunction = find_meta_function_from_prototype_data(ordinaryFunction, ZR_META_CALL);
+    ordinaryRelay = find_child_function_by_name(ordinaryFunction, "relayOrdinary");
+    TEST_ASSERT_NOT_NULL_MESSAGE(callFunction, "the inline @call body must remain a compiled child function");
+    TEST_ASSERT_NOT_NULL_MESSAGE(ordinaryRelay, "the ordinary-call control must remain a compiled child function");
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(1u, count_inline_struct_parameter_slots(callFunction));
+    TEST_ASSERT_TRUE_MESSAGE(count_dynamic_call_opcodes(ordinaryRelay) > 0u,
+                             "relayOrdinary must retain an ordinary dynamic call");
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, ordinaryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64_MESSAGE(347,
+                                    result,
+                                    "ordinary dynamic-call control must pass before the tail-call case");
+
+    tailFunction = compile_source(tailSource);
+    TEST_ASSERT_NOT_NULL(tailFunction);
+    callFunction = find_meta_function_from_prototype_data(tailFunction, ZR_META_CALL);
+    tailRelay = find_child_function_by_name(tailFunction, "relayTail");
+    TEST_ASSERT_NOT_NULL_MESSAGE(callFunction, "the inline @call body must remain in prototype metadata");
+    TEST_ASSERT_NOT_NULL_MESSAGE(tailRelay, "the dynamic tail relay must remain a compiled child function");
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(1u, count_inline_struct_parameter_slots(callFunction));
+    TEST_ASSERT_TRUE_MESSAGE(count_dynamic_tail_call_opcodes(tailRelay) > 0u,
+                             "relayTail must use the DYN_TAIL_CALL opcode family");
+    result = 0;
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, tailFunction, &result));
+    TEST_ASSERT_EQUAL_INT64_MESSAGE(347, result, "dynamic tail call must preserve receiver and final argument");
 }
 
 /* 静态方法编译应产生可执行的带 token 调用。 */
@@ -332,6 +502,7 @@ int main(void) {
     RUN_TEST(test_virtual_parameter_dispatches_multiple_receiver_types);
     RUN_TEST(test_two_interfaces_with_equal_slots_remain_distinct);
     RUN_TEST(test_meta_call_consumes_bound_target_with_and_without_arguments);
+    RUN_TEST(test_dynamic_tail_meta_call_preserves_last_argument_after_reuse_declines);
     RUN_TEST(test_meta_call_rejects_stale_binding_generation);
     RUN_TEST(test_nested_method_body_is_linked_and_invalidated);
     RUN_TEST(test_interface_implementation_layout_change_is_rejected);

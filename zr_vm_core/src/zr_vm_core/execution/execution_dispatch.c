@@ -1080,17 +1080,20 @@ static ZR_FORCE_INLINE TZrStackValuePointer execution_prepare_tail_call_fallback
         SZrState *state,
         SZrCallInfo *callInfo,
         TZrStackValuePointer *ioFrameBase,
-        TZrStackValuePointer sourceWindow,
-        TZrSize valueCount) {
+        TZrStackValuePointer sourceWindow) {
     SZrFunctionStackAnchor frameBaseAnchor;
     SZrFunctionStackAnchor sourceWindowAnchor;
     TZrStackValuePointer callWindowBase;
     TZrStackValuePointer callWindow;
+    TZrSize valueCount;
 
     if (state == ZR_NULL || callInfo == ZR_NULL || ioFrameBase == ZR_NULL ||
-        *ioFrameBase == ZR_NULL || sourceWindow == ZR_NULL || valueCount == 0u) {
+        *ioFrameBase == ZR_NULL || sourceWindow == ZR_NULL ||
+        sourceWindow >= state->stackTop.valuePointer) {
         return ZR_NULL;
     }
+
+    valueCount = ZR_CAST_INT64(state->stackTop.valuePointer - sourceWindow);
 
     ZrCore_Function_StackAnchorInit(state, *ioFrameBase, &frameBaseAnchor);
     ZrCore_Function_StackAnchorInit(state, sourceWindow, &sourceWindowAnchor);
@@ -4061,7 +4064,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             goto LZrStart;                                                                                             \
         }                                                                                                              \
         callWindow__ = execution_prepare_tail_call_fallback_window(                                                    \
-                state, callInfo, &base, functionPointer__, parametersCount__ + 1u);                                   \
+                state, callInfo, &base, functionPointer__);                                                           \
         if (callWindow__ == ZR_NULL) {                                                                                 \
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             ZrCore_Debug_RunError(state, "FUNCTION_TAIL_CALL: failed to prepare fallback call frame");               \
@@ -4147,7 +4150,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             goto LZrStart;                                                                                             \
         }                                                                                                              \
         callWindow__ = execution_prepare_tail_call_fallback_window(                                                    \
-                state, callInfo, &base, functionPointer__, parametersCount__ + 1u);                                   \
+                state, callInfo, &base, functionPointer__);                                                           \
         if (callWindow__ == ZR_NULL) {                                                                                 \
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             ZrCore_Debug_RunError(state, "KNOWN_NATIVE_TAIL_CALL: failed to prepare fallback call frame");           \
@@ -4187,7 +4190,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             goto LZrStart;                                                                                             \
         }                                                                                                              \
-        callWindow__ = execution_prepare_tail_call_fallback_window(state, callInfo, &base, functionPointer__, 1u);     \
+        callWindow__ = execution_prepare_tail_call_fallback_window(state, callInfo, &base, functionPointer__);         \
         if (callWindow__ == ZR_NULL) {                                                                                 \
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             ZrCore_Debug_RunError(state, "SUPER_FUNCTION_TAIL_CALL_NO_ARGS: failed to prepare fallback call frame"); \
@@ -4227,7 +4230,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             goto LZrStart;                                                                                             \
         }                                                                                                              \
-        callWindow__ = execution_prepare_tail_call_fallback_window(state, callInfo, &base, functionPointer__, 1u);     \
+        callWindow__ = execution_prepare_tail_call_fallback_window(state, callInfo, &base, functionPointer__);         \
         if (callWindow__ == ZR_NULL) {                                                                                 \
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             ZrCore_Debug_RunError(state, "SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS: failed to prepare fallback call frame"); \
@@ -4273,7 +4276,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             goto LZrStart;                                                                                             \
         }                                                                                                              \
-        callWindow__ = execution_prepare_tail_call_fallback_window(state, callInfo, &base, functionPointer__, 1u);     \
+        callWindow__ = execution_prepare_tail_call_fallback_window(state, callInfo, &base, functionPointer__);         \
         if (callWindow__ == ZR_NULL) {                                                                                 \
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             ZrCore_Debug_RunError(state, "SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS: failed to prepare fallback call frame"); \
@@ -4360,7 +4363,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             goto LZrStart;                                                                                             \
         }                                                                                                              \
         callWindow__ = execution_prepare_tail_call_fallback_window(                                                    \
-                state, callInfo, &base, functionPointer__, cacheEntry__->argumentCount + 1u);                         \
+                state, callInfo, &base, functionPointer__);                                                           \
         if (callWindow__ == ZR_NULL) {                                                                                 \
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             ZrCore_Debug_RunError(state, "SUPER_DYN_TAIL_CALL_CACHED: failed to prepare fallback call frame");       \
@@ -4400,7 +4403,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             goto LZrStart;                                                                                             \
         }                                                                                                              \
         callWindow__ = execution_prepare_tail_call_fallback_window(                                                    \
-                state, callInfo, &base, functionPointer__, parametersCount__ + 1u);                                   \
+                state, callInfo, &base, functionPointer__);                                                           \
         if (callWindow__ == ZR_NULL) {                                                                                 \
             callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
             ZrCore_Debug_RunError(state, "DYN_TAIL_CALL: failed to prepare fallback call frame");                    \

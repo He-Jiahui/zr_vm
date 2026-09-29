@@ -17,8 +17,9 @@ tests:
   - tests/core/test_ssa_call_return_tail.c
   - tests/core/test_tail_reuse_callinfo_reset.c
   - tests/core/test_vm_closure_precall.c
+  - tests/parser/test_call_binding_pipeline.c
 doc_type: milestone-detail
-status: planned
+status: in-progress
 ---
 
 # 04.02 调用返回、结果转发与尾调用复用
@@ -161,3 +162,28 @@ assert caller visible destination follows original commit rule
 
 本任务的 acceptance 至少附上：上述断言对应的测试名称、实际执行后端/平台、失败注入位置、verifier 输入/输出摘要，以及涉及所有权时的分配/释放或 lease 平衡。新增入口的 OOM、取消、重复调用和部分初始化退出应有明确处理；不适用的状态写明原因。
 
+## Scoped progress: dynamic meta-tail fallback window (2026-09-29)
+
+The tail-call fallback now copies the active outgoing window using the span
+from its current callable slot to `state->stackTop`. This matters when dynamic
+dispatch has replaced a callable object with its `@call` function and inserted
+the original object as its receiver before frame reuse declines. The original
+tail opcode or cache argument count no longer describes that expanded window.
+
+The regression is in `tests/parser/test_call_binding_pipeline.c`. It checks the
+ordinary dynamic-call result first, then runs a separate `DYN_TAIL_CALL` graph
+whose inline-struct `@call` parameter forces the fallback path. The final
+sentinel argument is part of the asserted result. This closes only that
+fallback-window defect; the 04.02 transfer-plan, return-buffer, cleanup, and
+other tail-reuse work remains open.
+
+The edit keeps the existing fallback-window helper in the dispatcher because
+it owns the slot-staging copy and stack-anchor restoration; only its input count
+source changed. A future extraction should move the cohesive tail-call
+preparation/fallback family, rather than splitting out this small calculation.
+
+The focused MSVC build completed 708/708 edges in
+`D:/tmp/zr_vm/ssa-artifact-v6-msvc`. The call-binding pipeline direct test
+passed 18/18; the adjacent tail-reuse call-info direct test passed 4/4; and the
+registered `call_binding_pipeline` plus `ssa_call_return_tail` CTest gates
+passed 2/2. Full 04.02 acceptance remains open.
