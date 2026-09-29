@@ -1,3 +1,9 @@
+/**
+ * @file
+ * @brief 实现绑定 MetadataRuntime 的 `zr.reflection.resolve` native-call adapter。
+ *
+ * 入口从当前 native frame 读取 TypeId 对象，验证 closure 捕获的运行时仍有效，并把 descriptor 或 null 写入结果槽。
+ */
 #include "reflection_type_resolve_native_internal.h"
 
 #include "zr_vm_core/call_info.h"
@@ -9,6 +15,7 @@
 
 #include "reflection_bound_runtime_native_internal.h"
 
+/* 对可写的 native frame 返回单个 null；没有可写结果槽时才报告零个结果。 */
 static TZrInt64 reflection_resolve_type_id_return_null(
         SZrState *state,
         TZrStackValuePointer functionBase) {
@@ -45,6 +52,7 @@ TZrInt64 ZrCore_Reflection_ResolveTypeIdNativeEntryInternal(SZrState *state) {
         typeIdValue->value.object->type != ZR_RAW_OBJECT_TYPE_OBJECT) {
         return reflection_resolve_type_id_return_null(state, functionBase);
     }
+    /* TODO: 确认 TypeId 是否必须来自 closure 捕获的 runtime；当前只校验 closure 的 runtime 非空，解析走 state 级 identity cache。 */
     descriptor = ZrCore_Reflection_ResolveTypeIdObject(
             state, (SZrObject *)typeIdValue->value.object);
     if (descriptor == ZR_NULL) {
