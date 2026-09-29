@@ -2,6 +2,7 @@
 
 #include "compile_tool_binding.h"
 
+/** @brief 提取类型路径末段，供声明工具 provider 查找类型描述符；路径归属由上层校验。 */
 static SZrString *transform_type_segment_name(const SZrType *type) {
     const SZrType *segment = type;
 
@@ -14,6 +15,7 @@ static SZrString *transform_type_segment_name(const SZrType *type) {
     if (segment->name->type == ZR_AST_IDENTIFIER_LITERAL) {
         return segment->name->data.identifier.name;
     }
+    /* TODO: generic leaf 只按基础名称查内建描述符；需确认 Patch<T>/View<T> 应拒绝还是另有泛型契约。 */
     if (segment->name->type == ZR_AST_GENERIC_TYPE &&
         segment->name->data.genericType.name != ZR_NULL) {
         return segment->name->data.genericType.name->name;
@@ -21,6 +23,11 @@ static SZrString *transform_type_segment_name(const SZrType *type) {
     return ZR_NULL;
 }
 
+/**
+ * @brief 从当前编译作用域解析 `alias.Type` 的声明工具类型，而非相信源码中的别名拼写。
+ * @pre cs 持有已登记的 compile-tool binding；type 为待验证的参数或返回类型 AST。
+ * @return 仅单层限定路径且根别名实际绑定到声明 provider 时返回借用的类型描述符，否则返回 NULL。
+ */
 static const SZrParserCompileToolTypeDescriptor *transform_type_descriptor(
         SZrCompilerState *cs,
         const SZrType *type) {
@@ -49,6 +56,11 @@ static const SZrParserCompileToolTypeDescriptor *transform_type_descriptor(
                    : ZR_NULL;
 }
 
+/**
+ * @brief 校验 declarationTransform 函数只能接收不可变声明视图并返回 Patch，作为静态声明改写入口。
+ * @pre 调用方已确认 functionNode 具有 declarationTransform 属性，编译状态保留当前 comptime 上下文及导入绑定。
+ * @return 合法签名返回 true；非法签名发布 compiler error 并返回 false，空状态或非函数 AST 直接返回 false。
+ */
 TZrBool ZrParser_DeclarationTransform_ValidateSignature(
         SZrCompilerState *cs,
         SZrAstNode *functionNode) {
@@ -62,6 +74,7 @@ TZrBool ZrParser_DeclarationTransform_ValidateSignature(
         return ZR_FALSE;
     }
     declaration = &functionNode->data.functionDeclaration;
+    /* 变换器在声明扩展阶段同步运行；async、泛型、接收者或多参数都无法维持确定的目标视图契约。 */
     if (!cs->isInCompileTimeContext || declaration->isAsync ||
         declaration->generic != ZR_NULL || declaration->args != ZR_NULL ||
         declaration->params == ZR_NULL || declaration->params->count != 1U ||
@@ -78,6 +91,7 @@ TZrBool ZrParser_DeclarationTransform_ValidateSignature(
     targetParameter = &declaration->params->nodes[0]->data.parameter;
     targetType = transform_type_descriptor(cs, targetParameter->typeInfo);
     returnType = transform_type_descriptor(cs, declaration->returnType);
+    /* 形状校验还需落到真实 provider 描述符：参数只借用 immutable view，结果必须是可提交的 Patch。 */
     if (targetParameter->defaultValue != ZR_NULL || targetParameter->isConst ||
         targetParameter->passingMode != ZR_PARAMETER_PASSING_MODE_VALUE ||
         targetType == ZR_NULL || !targetType->immutableView ||
