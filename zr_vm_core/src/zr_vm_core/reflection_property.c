@@ -7,8 +7,10 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 编译成员表中的无属性身份哨兵；规范 carrier 与关联 accessor 均不得使用它。 */
 #define ZR_REFLECTION_PROPERTY_IDENTITY_NONE ((TZrUInt32)0xffffffffu)
 
+/* 编译元数据的 accessorRole 固定为 1=getter、2=setter、3=initializer；下方映射反射名和字段。 */
 static const TZrChar *reflection_property_accessor_name(TZrUInt32 role) {
     switch (role) {
         case 1u:
@@ -57,7 +59,7 @@ TZrBool ZrCore_ReflectionProperty_IsCanonicalCarrier(
             member->accessorRole == 0u &&
             member->propertyIdentity != ZR_REFLECTION_PROPERTY_IDENTITY_NONE);
 }
-
+/* 只有成员表含规范承载项时，专用属性路径才接管该身份的访问器；无承载项记录留给通用路径。 */
 static TZrBool reflection_property_has_carrier(
         const SZrCompiledMemberInfo *members,
         TZrUInt32 memberCount,
@@ -87,7 +89,7 @@ TZrBool ZrCore_ReflectionProperty_ShouldSkipCanonicalMember(
             reflection_property_has_carrier(
                     members, memberCount, member->propertyIdentity));
 }
-
+/* 访问器自身提供函数和权限数据，carrier 提供属性级类型与引用能力。 */
 static SZrObject *reflection_property_build_accessor(
         SZrState *state,
         SZrObject *typeReflection,
@@ -137,6 +139,10 @@ static SZrObject *reflection_property_build_accessor(
             accessorReflection,
             entryFunction,
             member);
+    /*
+     * BUG: accessorReflection 接入所属 property 前只由 C 局部变量持有；此回调先分配字符串、后 pin 接收对象。
+     *      分配失败引发完整 GC 时对象可被回收，随后字段写入继续使用失效指针。
+     */
     host->setFieldString(
             state,
             accessorReflection,
@@ -293,6 +299,10 @@ void ZrCore_ReflectionProperty_PopulateCurrent(
                 entryFunction,
                 carrier->fieldTypeNameStringIndex,
                 "any");
+        /*
+         * BUG: propertyReflection 加入 members 前只由 C 局部变量持有；此回调先分配字符串、后 pin 接收对象。
+         *      分配失败引发完整 GC 时对象可被回收，随后字段写入继续使用失效指针。
+         */
         host->setFieldString(
                 state,
                 propertyReflection,
@@ -360,7 +370,7 @@ void ZrCore_ReflectionProperty_PopulateCurrent(
                 propertyReflection,
                 "initializerAccess",
                 ZR_MEMBER_ACCESS_MODIFIER_UNAVAILABLE);
-
+        /* 缺失访问器保持 unavailable；只把同一 propertyIdentity 的可识别角色挂到规范属性。 */
         for (TZrUInt32 memberIndex = 0u;
              memberIndex < memberCount;
              memberIndex++) {
@@ -407,7 +417,7 @@ void ZrCore_ReflectionProperty_PopulateCurrent(
                     accessFieldName,
                     accessor->accessModifier);
         }
-
+        /* 装饰器属于规范属性记录；所有访问器链接完成后再把属性发布为一个 named entry。 */
         host->populateDecoratorMetadata(
                 state,
                 propertyReflection,
