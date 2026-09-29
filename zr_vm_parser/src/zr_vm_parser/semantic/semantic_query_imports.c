@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+/* URI/源码字符串可能分别分配，先允许指针快路径，再比较内容。 */
 static TZrBool semantic_query_imports_same_string(
         SZrString *left,
         SZrString *right) {
@@ -10,6 +11,7 @@ static TZrBool semantic_query_imports_same_string(
             ZrCore_String_Equal(left, right));
 }
 
+/* 来源范围身份按 source 与字节偏移判断；行列坐标不是关系匹配键。 */
 static TZrBool semantic_query_imports_same_range(
         const SZrFileRange *left,
         const SZrFileRange *right) {
@@ -19,6 +21,7 @@ static TZrBool semantic_query_imports_same_range(
            left->end.offset == right->end.offset;
 }
 
+/* 查询范围按光标位置解释，只使用 position.start；来源末端按当前实现包含在命中范围内。 */
 static TZrBool semantic_query_imports_range_contains(
         const SZrFileRange *range,
         const SZrFileRange *position) {
@@ -28,6 +31,7 @@ static TZrBool semantic_query_imports_range_contains(
            range->end.offset >= position->start.offset;
 }
 
+/* module scope 不收窄查询；node scope 要求光标及完整导入来源范围都落在根节点内。 */
 static TZrBool semantic_query_imports_scope_allows(
         const SZrParserSemanticQueryScope *scope,
         const SZrFileRange *range) {
@@ -41,6 +45,7 @@ static TZrBool semantic_query_imports_scope_allows(
            scope->root->location.end.offset >= range->end.offset;
 }
 
+/* 只接受可见导入符号与其唯一外部来源关系在符号身份和 TypeId 上一致的配对。 */
 static const SZrSemanticRelationFact *semantic_query_imports_find_relation(
         const SZrSemanticContext *context,
         const SZrSemanticVisibleSymbolFact *visible,
@@ -72,6 +77,10 @@ static const SZrSemanticRelationFact *semantic_query_imports_find_relation(
     return match;
 }
 
+/** @brief 按源码光标位置查找 import 字面量的外部来源关系。
+ * @return context/out 缺失、事实数组未初始化、未命中或 scope 不匹配返回 NOT_APPLICABLE；命中后事实缺项、冲突或歧义返回 INVALID；唯一一致关系返回 RESOLVED。
+ * @note 输出在查询前清零；成功时 range.source 与 URI 借用 context fact，virtualDeclarationUri 可为空，context reset/free 后失效。
+ */
 EZrParserSemanticImportOriginResolution
 ZrParser_SemanticQuery_ImportOriginAt(
         const SZrSemanticContext *context,
@@ -92,6 +101,7 @@ ZrParser_SemanticQuery_ImportOriginAt(
         return ZR_PARSER_SEMANTIC_IMPORT_ORIGIN_NOT_APPLICABLE;
     }
 
+    /* 连接可见导入来源、符号和关系事实；任一不一致都清空输出，避免下游消费半条目标。 */
     for (index = 0U; index < context->visibleSymbolFacts.length; index++) {
         const SZrSemanticVisibleSymbolFact *visible =
                 (const SZrSemanticVisibleSymbolFact *)ZrCore_Array_Get(

@@ -7,6 +7,7 @@
 #include <limits.h>
 #include <string.h>
 
+/* 将类型 AST 转为引用查询使用的范围与名称；泛型只圈定基类型名，不把参数算入名称范围。 */
 static TZrBool type_use_reference_range(
         const SZrType *typeUse,
         SZrFileRange *range,
@@ -41,6 +42,7 @@ static TZrBool type_use_reference_range(
            range->end.offset > range->start.offset;
 }
 
+/* 把闭合泛型实例折回声明 TypeId，并仅在语义符号中能唯一对应声明时返回借用记录。 */
 static const SZrSemanticSymbolRecord *type_use_declaration(
         const SZrSemanticContext *context,
         TZrTypeId typeId) {
@@ -48,6 +50,7 @@ static const SZrSemanticSymbolRecord *type_use_declaration(
     const SZrSemanticSymbolRecord *result = ZR_NULL;
 
     if (type != ZR_NULL && type->kind == ZR_CANONICAL_TYPE_GENERIC_INSTANCE) {
+        /* 查询导航应落到泛型定义，而闭合实参身份仍由 reference fact 的原 TypeId 保留。 */
         typeId = type->data.genericInstance.definitionTypeId;
         type = ZrParser_CanonicalType_Find(context, typeId);
     }
@@ -72,6 +75,7 @@ static const SZrSemanticSymbolRecord *type_use_declaration(
     return result;
 }
 
+/* 仅为已解析的根类型引用补声明身份；缺失或歧义声明不阻断类型 fact 发布。 */
 static void type_use_bind_declaration(
         const SZrSemanticContext *context,
         const SZrType *typeUse,
@@ -102,6 +106,7 @@ static void type_use_bind_declaration(
     fact->hasDefinitionRange = ZR_TRUE;
 }
 
+/* 仅对已解析的泛型实例按 AST 实参与 canonical 实参的同序位置递归发布类型参数。 */
 static void type_use_publish_arguments(
         SZrSemanticContext *context,
         const SZrType *typeUse,
@@ -126,12 +131,18 @@ static void type_use_publish_arguments(
                         (SZrArray *)&type->data.genericInstance.arguments, index);
         if (argumentNode != ZR_NULL && argumentNode->type == ZR_AST_TYPE &&
             argument != ZR_NULL && argument->kind == ZR_CANONICAL_GENERIC_ARGUMENT_TYPE) {
+            /* TODO: 核实子类型 fact 发布失败是否应改变父项结果；当前丢弃递归 bool，既有 identity 用例只核父项身份与幂等。下一步在现有 type-use identity 用例中令外层范围有效、内层泛型类型范围无效，确认顶层成功是否为既定契约。 */
             (void)ZrParser_SemanticTypeUse_Publish(
                     context, &argumentNode->data.type, argument->data.typeId, isResolved);
         }
     }
 }
 
+/** @brief 把源码类型引用投影为语义 reference fact，供类型与声明导航查询消费。
+ * @pre context、AST、canonical TypeId 属于同一次分析；AST 节点仍由其调用方持有。
+ * @return 无效输入/范围、同节点类型身份冲突或追加失败时返回 ZR_FALSE；同节点同类型会原位更新。
+ * @note 仅保证根引用 fact 可发布；AST 节点借用自输入，TypeId 属于 context，reset/free 后不得继续查询。
+ */
 TZrBool ZrParser_SemanticTypeUse_Publish(
         SZrSemanticContext *context,
         const SZrType *typeUse,
@@ -152,6 +163,7 @@ TZrBool ZrParser_SemanticTypeUse_Publish(
         return ZR_FALSE;
     }
     type_use_bind_declaration(context, typeUse, &fact);
+    /* AST 节点和 TYPE 角色共同构成幂等键；相同 TypeId 更新解析状态，冲突 TypeId 拒绝覆盖。 */
     for (TZrSize index = 0U; index < context->referenceFacts.length; index++) {
         SZrSemanticReferenceFact *existing = (SZrSemanticReferenceFact *)ZrCore_Array_Get(
                 &context->referenceFacts, index);
