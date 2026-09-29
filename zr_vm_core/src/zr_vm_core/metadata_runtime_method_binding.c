@@ -7,12 +7,14 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
 
+/* 供公开读取入口统一建立失败输出状态；空指针允许调用方直接进入失败路径。 */
 static void metadata_runtime_clear_method_binding_view(SZrMetadataRuntimeMethodBindingView *outView) {
     if (outView != ZR_NULL) {
         ZrCore_Memory_RawSet(outView, 0, sizeof(*outView));
     }
 }
 
+/* 解释器 MethodSpec 解析失败时不留下上一次成功解析的函数图借用指针。 */
 static void metadata_runtime_clear_interpreter_method_binding_view(
         SZrMetadataRuntimeInterpreterMethodBindingView *outView) {
     if (outView != ZR_NULL) {
@@ -20,6 +22,7 @@ static void metadata_runtime_clear_interpreter_method_binding_view(
     }
 }
 
+/* 注册表行是加载器投影；在解码前先核对行大小、计数及空表指针约定。 */
 static TZrBool metadata_runtime_call_binding_tables_ready(const SZrMetadataRuntime *runtime) {
     const SZrAotCodeRegistration *registration;
 
@@ -41,6 +44,7 @@ static TZrBool metadata_runtime_call_binding_tables_ready(const SZrMetadataRunti
            registration->callBindingTargetFunctionIndices != ZR_NULL;
 }
 
+/* 解释器入口需从本地 MethodDef 节定位函数图索引；重复 token 视为不可信元数据。 */
 static const SZrZrpMetadataMethodDefRow *metadata_runtime_find_method_def_row(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken methodToken) {
@@ -67,10 +71,12 @@ static const SZrZrpMetadataMethodDefRow *metadata_runtime_find_method_def_row(
     return matchedRow;
 }
 
+/* 这两类方法视图只接受当前元数据运行时拥有的 MEMBER_DEF token。 */
 static TZrBool metadata_runtime_is_local_method_token(TZrMetadataToken methodToken) {
     return methodToken != 0u && ZR_METADATA_TOKEN_TABLE(methodToken) == ZR_METADATA_TABLE_MEMBER_DEF;
 }
 
+/* AOT 方法表按同一函数索引并列；数量不一致时不能安全投影 token 到入口。 */
 static TZrBool metadata_runtime_method_binding_tables_ready(const SZrMetadataRuntime *runtime) {
     const SZrAotCodeRegistration *registration;
 
@@ -92,6 +98,12 @@ static TZrBool metadata_runtime_method_binding_tables_ready(const SZrMetadataRun
            runtime->methodTokenCount <= runtime->functionCount;
 }
 
+/**
+ * @brief 将本地 MethodDef token 解析为已注册的 AOT 入口视图，供反射解析接入生成代码。
+ * @pre runtime 中的方法 token、MethodInfo 与 thunk 表按函数索引对齐；outView 可空，失败时非空输出清零。
+ * @return 仅在 token 唯一且 MethodInfo 索引、invoker 与函数入口均有效时返回 true。
+ * @note 返回指针借用 code registration 的存储；调用方不得跨注册表销毁或替换继续使用。
+ */
 ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadMethodBindingView(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken methodToken,
@@ -145,6 +157,12 @@ ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadMethodBindingView(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 解码一行 AOT call-binding 投影，供加载校验、链接安装及诊断测试读取。
+ * @pre rowIndex 必须落在已附加注册表的行范围；模块延迟槽可合法地没有 AOT 目标指针。
+ * @return 成功时给出调用点契约、重定位位置及可立即安装的目标视图；失败时清理输出。
+ * @note 视图中的方法信息和 thunk 借用注册表，生命周期不超过该注册表。
+ */
 ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadCallBindingView(
         SZrMetadataRuntime *runtime,
         TZrUInt32 rowIndex,
@@ -210,6 +228,7 @@ ZR_CORE_API TZrBool ZrCore_MetadataRuntime_ReadCallBindingView(
     return ZR_TRUE;
 }
 
+/* 统一保留首个失败行的定位字段，使加载器能把结构校验错误交给上层报告。 */
 static TZrBool metadata_runtime_call_binding_fail(
         SZrState *state, EZrCallBindingStatus status,
         const SZrMetadataRuntimeCallBindingView *view, TZrUInt32 rowIndex,
@@ -224,6 +243,7 @@ static TZrBool metadata_runtime_call_binding_fail(
     return ZR_FALSE;
 }
 
+/* 加载/校验任一环节失败时整体撤销图内缓存，避免旧代际目标在后续执行中残留。 */
 static void metadata_runtime_invalidate_call_bindings(SZrState *state, SZrMetadataRuntime *runtime) {
     for (TZrUInt32 index = 0u; index < runtime->functionCount; ++index) {
         SZrFunction *function = ZrCore_Function_ResolveGraphFunctionByFlatIndex(
@@ -235,6 +255,7 @@ static void metadata_runtime_invalidate_call_bindings(SZrState *state, SZrMetada
     }
 }
 
+/* 先把注册表投影与刚由元数据重建的调用点逐项对照，再允许安装 AOT 目标。 */
 static TZrBool metadata_runtime_validate_call_binding_rows(SZrState *state, SZrMetadataRuntime *runtime) {
     const SZrAotCodeRegistration *registration = runtime->codeRegistration;
     TZrUInt32 previousFunctionIndex = 0u;
@@ -333,6 +354,12 @@ static TZrBool metadata_runtime_validate_call_binding_rows(SZrState *state, SZrM
     return ZR_TRUE;
 }
 
+/**
+ * @brief 在 AOT 元数据挂接后重建并校验调用点，再安装可静态确定的生成代码目标。
+ * @pre 函数图已全部 AttachFunction，注册表与函数图来自同一份 AOT 产物；模块槽保留到接收者运行时解析。
+ * @return false 时记录首个诊断并使函数图缓存失效；没有 code registration 的解释器运行时视为无需链接。
+ * @note 由库装载路径在函数注册后调用；不是逐次调用分派入口。
+ */
 ZR_CORE_API TZrBool ZrCore_MetadataRuntime_LinkCallBindings(
         struct SZrState *state,
         SZrMetadataRuntime *runtime) {
@@ -347,7 +374,7 @@ ZR_CORE_API TZrBool ZrCore_MetadataRuntime_LinkCallBindings(
                 ZR_NULL, 0u, 0u, 0u);
     }
 
-    /* Rebuild from loaded metadata before trusting any registration row or index. */
+    /* 先从已加载函数图重建契约，再信任产物行的索引与目标。 */
     if (!ZrCore_CallBinding_LinkFunction(state, runtime->metadataFunction, &state->lastCallBindingError) ||
         !metadata_runtime_validate_call_binding_rows(state, runtime)) {
         metadata_runtime_invalidate_call_bindings(state, runtime);
@@ -365,8 +392,10 @@ ZR_CORE_API TZrBool ZrCore_MetadataRuntime_LinkCallBindings(
         }
         function = ZrCore_Function_ResolveGraphFunctionByFlatIndex(
                 state, runtime->metadataFunction, view.functionIndex);
+        /* BUG: 索引大于零时本次图遍历还可能因暂存分配失败返回 NULL；此前校验成功
+         * 不保证此处第二次遍历成功，当前直接解引用会让加载失败变成崩溃。 */
         entry = &function->callSiteCaches[view.cacheIndex];
-        /* Slot contracts remain deferred until a receiver chooses its implementation. */
+        /* 虚/接口及 typed-function 槽须等接收者或调用现场确定实现，不能预装静态目标。 */
         if (view.location.kind == ZR_CALL_BINDING_RELOCATION_MODULE ||
             view.location.kind == ZR_CALL_BINDING_RELOCATION_VM_MODULE ||
             view.contract.bindingKind == ZR_CALL_BINDING_TYPED_FUNCTION) continue;
@@ -390,6 +419,12 @@ ZR_CORE_API TZrBool ZrCore_MetadataRuntime_LinkCallBindings(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 把本地 MethodDef token 映射到当前解释器函数图节点，供 MethodSpec 调用构造上下文。
+ * @pre token 必须唯一对应 ZRP MethodDef 行，且其索引解析为非 native、带指令的函数。
+ * @return 成功时输出元数据记录、定义行及函数节点；失败时非空输出保持清零。
+ * @note 输出均借用 runtime/函数图；只能在该次元数据运行时与图节点存活期间使用。
+ */
 TZrBool ZrCore_MetadataRuntime_ReadInterpreterMethodBindingView(
         struct SZrState *state,
         SZrMetadataRuntime *runtime,
