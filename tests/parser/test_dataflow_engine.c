@@ -12,29 +12,37 @@
 #include "zr_vm_parser/cfg.h"
 #include "zr_vm_parser/parser.h"
 
+/** @brief 通用转移回调把实际访问的语句写入此日志，供方向与可达性用例复用。 */
 typedef struct SDataflowVisitLog {
     SZrAstNode *nodes[8];
     TZrSize count;
 } SDataflowVisitLog;
 
+/** @brief 将单个 AST 赋值节点映射到状态向量槽位，供通用分析回调共享。 */
 typedef struct SDefiniteAssignmentHarness {
     SZrAstNode *assignmentStatement;
     TZrSize symbolCount;
     TZrSize symbolIndex;
 } SDefiniteAssignmentHarness;
 
+/** @brief 仅供预算边界用例驱动非收敛 join；不是业务分析的格运算。 */
 typedef struct SDataflowOscillationHarness {
     TZrSize joinCalls;
     TZrSize changeLimit;
 } SDataflowOscillationHarness;
 
+/** @brief 隔离每个 Unity 用例的运行时 state；局部 raw AST、CFG 与结果仍由对应 Free 显式收束。 */
 static SZrState *g_state;
 
+/** @brief UnityDefaultTestRun 在每个用例前创建隔离状态，避免数据流 fixture 串扰。 */
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
+/** @brief Unity 断言 longjmp 后仍进入此钩子以销毁运行时 state。
+ * BUG: Run 返回后若后续断言 longjmp，会跳过局部 raw AST、CFG、result 的 Free；global shim 不登记 raw 块所有权，失败路径块留到测试进程退出。
+ */
 void tearDown(void) {
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
@@ -42,6 +50,7 @@ void tearDown(void) {
     }
 }
 
+/** @brief 为合成 AST 提供一致的单行源码范围，source 字符串与本用例 state 同寿命。 */
 static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
     SZrFileRange range;
 
@@ -55,6 +64,7 @@ static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
     return range;
 }
 
+/** @brief 统一通过当前 state 的分配器创建 AST 节点，调用方最终显式调用 AST Free。 */
 static SZrAstNode *test_node(EZrAstNodeType type, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *node = (SZrAstNode *)ZrCore_Memory_RawMallocWithType(
         g_state->global,
@@ -68,6 +78,7 @@ static SZrAstNode *test_node(EZrAstNodeType type, TZrSize startOffset, TZrSize e
     return node;
 }
 
+/** @brief 双语句脚本用于验证终止语句之后的 CFG 位置不会被正向传播误访。 */
 static SZrAstNode *script_with_statements(SZrAstNode *first, SZrAstNode *second) {
     SZrAstNode *script = test_node(ZR_AST_SCRIPT, 0, 24);
 
@@ -78,6 +89,7 @@ static SZrAstNode *script_with_statements(SZrAstNode *first, SZrAstNode *second)
     return script;
 }
 
+/** @brief 单语句脚本承载赋值与分支场景，使 CFG 由生产构造器生成。 */
 static SZrAstNode *script_with_statement(SZrAstNode *statement) {
     SZrAstNode *script = test_node(ZR_AST_SCRIPT, 0, 64);
 
@@ -87,6 +99,7 @@ static SZrAstNode *script_with_statement(SZrAstNode *statement) {
     return script;
 }
 
+/** @brief 分支体保留独立 block 边界，便于检查两条路径汇合时的状态合并。 */
 static SZrAstNode *block_with_statement(SZrAstNode *statement, TZrSize startOffset, TZrSize endOffset) {
     SZrAstNode *block = test_node(ZR_AST_BLOCK, startOffset, endOffset);
 
@@ -96,6 +109,7 @@ static SZrAstNode *block_with_statement(SZrAstNode *statement, TZrSize startOffs
     return block;
 }
 
+/** @brief 统一生成语句形式的 if 节点，调用方可有意省略一侧分支。 */
 static SZrAstNode *if_statement(SZrAstNode *condition, SZrAstNode *thenBlock, SZrAstNode *elseBlock) {
     SZrAstNode *ifNode = test_node(ZR_AST_IF_EXPRESSION, 0, 64);
 
@@ -106,11 +120,13 @@ static SZrAstNode *if_statement(SZrAstNode *condition, SZrAstNode *thenBlock, SZ
     return ifNode;
 }
 
+/** @brief 通用位集分析以零状态初始化边界块，供正向入口与反向出口求解共用。 */
 static void dataflow_init_zero(void *state, void *userData) {
     ZR_UNUSED_PARAMETER(userData);
     *((TZrUInt32 *)state) = 0;
 }
 
+/** @brief 位集合并用单调 OR 汇合路径事实，并准确反馈 worklist 是否需要重排。 */
 static TZrBool dataflow_join_or(void *dst, const void *src, void *userData) {
     TZrUInt32 *dstValue = (TZrUInt32 *)dst;
     TZrUInt32 srcValue = *((const TZrUInt32 *)src);
@@ -121,6 +137,7 @@ static TZrBool dataflow_join_or(void *dst, const void *src, void *userData) {
     return *dstValue != previous;
 }
 
+/** @brief 故意制造状态变化以触发求解预算；达到哨兵后停止，避免 fixture 无限运行。 */
 static TZrBool dataflow_join_bounded_oscillation(void *dst, const void *src, void *userData) {
     SDataflowOscillationHarness *harness = (SDataflowOscillationHarness *)userData;
 
@@ -134,9 +151,11 @@ static TZrBool dataflow_join_bounded_oscillation(void *dst, const void *src, voi
     return ZR_TRUE;
 }
 
+/** @brief 手工搭建带自环且可达 exit 的最小图，隔离检查迭代上限与部分结果契约。 */
 static void dataflow_build_cyclic_cfg(SZrParserCfg *cfg) {
     SZrParserCfgBlock block;
 
+    /* 自环迫使状态反复回访，旁路出口则保留完整的入图/出图结构。 */
     ZrParser_Cfg_Init(g_state, cfg);
 
     memset(&block, 0, sizeof(block));
@@ -165,6 +184,7 @@ static void dataflow_build_cyclic_cfg(SZrParserCfg *cfg) {
     cfg->exitBlockId = 2;
 }
 
+/** @brief 把转移执行记录成可观察事实，使测试能区分“块可达”和“回调已运行”。 */
 static void dataflow_record_statement(SZrAstNode *statement, void *state, void *userData) {
     SDataflowVisitLog *log = (SDataflowVisitLog *)userData;
 
@@ -173,6 +193,7 @@ static void dataflow_record_statement(SZrAstNode *statement, void *state, void *
     log->nodes[log->count++] = statement;
 }
 
+/** @brief 适配器把通用入口初始化委托给生产 definite-assignment 状态表示。 */
 static void definite_assignment_init_uninit(void *state, void *userData) {
     SDefiniteAssignmentHarness *harness = (SDefiniteAssignmentHarness *)userData;
 
@@ -182,12 +203,14 @@ static void definite_assignment_init_uninit(void *state, void *userData) {
         ZR_PARSER_DEFINITE_ASSIGNMENT_UNINIT);
 }
 
+/** @brief 适配器保留生产格合并语义，让引擎只负责 worklist 与 CFG 顺序。 */
 static TZrBool definite_assignment_join(void *dst, const void *src, void *userData) {
     SDefiniteAssignmentHarness *harness = (SDefiniteAssignmentHarness *)userData;
 
     return ZrParser_DefiniteAssignment_Join(dst, src, harness->symbolCount);
 }
 
+/** @brief 只把目标赋值节点写入 INIT，隔离检验引擎与 definite-assignment 的接缝。 */
 static void definite_assignment_transfer_assignment(SZrAstNode *statement,
                                                     void *state,
                                                     void *userData) {
@@ -202,6 +225,7 @@ static void definite_assignment_transfer_assignment(SZrAstNode *statement,
     }
 }
 
+/** @brief 锁定正向传播在 return 后截断：不可达块应保持不可达且不执行转移。 */
 static void test_forward_dataflow_skips_unreachable_statement_after_return(void) {
     SZrParserCfg cfg;
     SZrParserDataflowResult result;
@@ -238,6 +262,7 @@ static void test_forward_dataflow_skips_unreachable_statement_after_return(void)
     ZrParser_Ast_Free(g_state, script);
 }
 
+/** @brief 锁定反向求解从 exit 沿 CFG 前驱抵达 return，而不把其后的语句误作可达。 */
 static void test_backward_dataflow_reaches_return_through_exit_edge(void) {
     SZrParserCfg cfg;
     SZrParserDataflowResult result;
@@ -278,6 +303,7 @@ static void test_backward_dataflow_reaches_return_through_exit_edge(void) {
     ZrParser_Ast_Free(g_state, script);
 }
 
+/** @brief 验证单一路径上的赋值事实能从入口经转移传播到 CFG 出口。 */
 static void test_definite_assignment_single_assignment_reaches_exit_as_init(void) {
     SZrParserCfg cfg;
     SZrParserDataflowResult result;
@@ -317,11 +343,13 @@ static void test_definite_assignment_single_assignment_reaches_exit_as_init(void
     ZrParser_Ast_Free(g_state, script);
 }
 
+/** @brief 验证仅一侧分支写入时，汇合结果保持生产格定义的 MAYBE_INIT。 */
 static void test_definite_assignment_join_marks_one_branch_assignment_as_maybe_init(void) {
     SZrParserCfg cfg;
     SZrParserDataflowResult result;
     SZrParserDataflowAnalysis analysis;
     SDefiniteAssignmentHarness harness;
+    /* 只让 then 路径写入；省略 else 形成未赋值路径，交给生产 CFG 汇合。 */
     SZrAstNode *condition = test_node(ZR_AST_IDENTIFIER_LITERAL, 4, 8);
     SZrAstNode *assignmentStmt = test_node(ZR_AST_EXPRESSION_STATEMENT, 16, 24);
     SZrAstNode *thenBlock = block_with_statement(assignmentStmt, 12, 28);
@@ -359,6 +387,7 @@ static void test_definite_assignment_join_marks_one_branch_assignment_as_maybe_i
     ZrParser_Ast_Free(g_state, script);
 }
 
+/** @brief 共享断言场景检查 cleanup block 在两种方向中都参与语句转移。 */
 static void assert_dataflow_transfers_cleanup_block(
         EZrParserDataflowDirection direction) {
     SZrParserCfg cfg;
@@ -373,6 +402,7 @@ static void assert_dataflow_transfers_cleanup_block(
     ZrParser_Cfg_Init(g_state, &cfg);
     ZrParser_DataflowResult_Init(&result);
 
+    /* 显式标出清理边与后续普通边，避免 AST 构造掩盖 cleanup 块语义。 */
     cfg.entryBlockId = ZrParser_Cfg_AppendBlock(
             g_state,
             &cfg,
@@ -420,14 +450,17 @@ static void assert_dataflow_transfers_cleanup_block(
     ZrParser_Ast_Free(g_state, cleanupStatement);
 }
 
+/** @brief 正向用例把 cleanup 处理纳入入口至出口的转移契约。 */
 static void test_forward_dataflow_transfers_cleanup_block_statement(void) {
     assert_dataflow_transfers_cleanup_block(ZR_PARSER_DATAFLOW_FORWARD);
 }
 
+/** @brief 反向用例与正向镜像配对，防止 cleanup 只在一个遍历方向生效。 */
 static void test_backward_dataflow_transfers_cleanup_block_statement(void) {
     assert_dataflow_transfers_cleanup_block(ZR_PARSER_DATAFLOW_BACKWARD);
 }
 
+/** @brief 非收敛回调触及求解预算时应失败返回，但保留可查询、可释放的部分结果。 */
 static void test_dataflow_iteration_budget_degrades_with_partial_result(void) {
     SZrParserCfg cfg;
     SZrParserDataflowResult result;
@@ -455,6 +488,7 @@ static void test_dataflow_iteration_budget_degrades_with_partial_result(void) {
     ZrParser_Cfg_Free(g_state, &cfg);
 }
 
+/** @brief 缺少必需 join 回调时在准备结果前拒绝分析，保护调用方传入的空结果对象。 */
 static void test_dataflow_invalid_analysis_degrades_without_allocating_result(void) {
     SZrParserCfg cfg;
     SZrParserDataflowResult result;
@@ -462,6 +496,7 @@ static void test_dataflow_invalid_analysis_degrades_without_allocating_result(vo
 
     dataflow_build_cyclic_cfg(&cfg);
     ZrParser_DataflowResult_Init(&result);
+    /* 该用例只缺少必需 join；其余字段有效，以隔离分析描述符校验分支。 */
     memset(&analysis, 0, sizeof(analysis));
     analysis.direction = ZR_PARSER_DATAFLOW_FORWARD;
     analysis.stateSize = sizeof(TZrUInt32);
@@ -474,11 +509,13 @@ static void test_dataflow_invalid_analysis_degrades_without_allocating_result(vo
     ZrParser_Cfg_Free(g_state, &cfg);
 }
 
+/** @brief 超过块数上限时必须先拒绝；fixture 故意不提供对应 blocks 存储以守住边界。 */
 static void test_dataflow_oversized_cfg_degrades_without_allocating_result(void) {
     SZrParserCfg cfg;
     SZrParserDataflowResult result;
     SZrParserDataflowAnalysis analysis;
 
+    /* 只声明有效容器和超限长度，不分配 backing array；Run 必须在读取块前退出。 */
     memset(&cfg, 0, sizeof(cfg));
     cfg.blocks.isValid = ZR_TRUE;
     cfg.blocks.length = ZR_PARSER_DATAFLOW_MAX_BLOCK_COUNT + 1U;
@@ -498,6 +535,7 @@ static void test_dataflow_oversized_cfg_degrades_without_allocating_result(void)
     ZrParser_DataflowResult_Free(g_state, &result);
 }
 
+/** @brief 单独可执行入口注册引擎、状态格、cleanup 与失败退化四组回归场景。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_forward_dataflow_skips_unreachable_statement_after_return);
