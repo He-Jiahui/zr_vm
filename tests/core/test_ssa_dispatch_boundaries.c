@@ -23,6 +23,8 @@
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/value.h"
 
+#include "test_ssa_dispatch_native_callback.inc"
+
 #if defined(ZR_PLATFORM_WIN)
 #include <windows.h>
 typedef HANDLE ZrDispatchTestThread;
@@ -818,5 +820,6 @@ int main(void) {
     RUN_TEST(test_reload_rebuilds_context_from_replaced_frame_roots);
     RUN_TEST(test_dispatch_publishes_the_saved_pc_at_its_256_instruction_poll);
     RUN_TEST(test_dispatch_resumes_after_full_gc_parks_running_mutator);
+    RUN_TEST(test_native_callback_growth_and_minor_gc_reloads_frame_and_pc);
     return UNITY_END();
 }

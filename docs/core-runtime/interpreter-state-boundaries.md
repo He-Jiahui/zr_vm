@@ -4,21 +4,30 @@ related_code:
   - zr_vm_core/include/zr_vm_core/call_info.h
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_core/include/zr_vm_core/function.h
+  - zr_vm_core/include/zr_vm_core/stack.h
   - zr_vm_core/include/zr_vm_core/debug.h
   - zr_vm_core/include/zr_vm_core/gc_domain.h
   - zr_vm_core/src/zr_vm_core/execution/execution_safepoint.c
   - zr_vm_core/src/zr_vm_core/execution/execution_cold.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/function.c
+  - zr_vm_core/src/zr_vm_core/stack.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
   - zr_vm_core/src/zr_vm_core/debug.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/execution_context.h
   - zr_vm_core/src/zr_vm_core/execution/execution_safepoint.c
   - zr_vm_core/src/zr_vm_core/execution/execution_cold.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/function.c
+  - zr_vm_core/src/zr_vm_core/stack.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
 tests:
   - tests/core/test_ssa_dispatch_boundaries.c
+  - tests/core/test_ssa_dispatch_native_callback.inc
   - tests/acceptance/2026-09-28-ssa-dispatch-safepoint-poll.md
   - tests/acceptance/2026-09-29-ssa-dispatch-throw-debug-pc.md
+  - tests/acceptance/2026-09-29-ssa-dispatch-native-stack-growth-minor-gc.md
 plan_sources:
   - docs/plans/ssa/03-interpreter-binding/01-dispatch-boundaries.md
 doc_type: module-detail
@@ -60,6 +69,30 @@ Any operation that can grow or move the VM stack must use the existing
 operation. Exception or budget unwinding may replace or remove the call frame,
 so a reload must not dereference the old `SZrCallInfo` after unwinding.
 
+The native-call boundary also has to survive stack relocation inside the
+callback. `KNOWN_NATIVE_CALL` publishes its continuation at the instruction
+after the call before preparing the native frame. The native call-info links
+back to the VM caller, and function-call setup anchors its stack window and
+return destination. A callback may grow the stack and run a collection; after
+each operation it must resolve the caller frame from the current stack base and
+the saved offset, then return to dispatch with the published PC intact.
+
+The native callback fixture exercises this path with a real `KNOWN_NATIVE_CALL`,
+`GET_STACK`, and `FUNCTION_RETURN`. Its callback doubles the logical stack
+capacity, records the caller frame and PC, and runs a generational minor
+collection. The test checks the frame base against its reloaded stack offset,
+checks that the caller remains at PC 1 through the collection, and verifies the
+next load and return still produce the rooted object. The observed GCC run
+relocated the stack allocation from 64 to 128 slots. If an allocator grows in
+place, the test still checks the capacity and frame-offset invariants without
+requiring a pointer change.
+
+The collector currently promotes ordinary individually allocated objects from
+EDEN to SURVIVOR in place during minor collection. This boundary therefore
+asserts the collection kind, generation/storage transition, and continued
+frame-root value; it does not claim that the object address moves. Physical
+object relocation/compaction is a separate GC contract.
+
 This first boundary layer intentionally does not bind ExecIR layouts or active
 call-binding generations. Those invariants are introduced by the later binding
 guard stages. Bytecode dispatch continues to use the single instruction list
@@ -73,6 +106,7 @@ checks that the callback sees that opcode's PC and mapped source line before it
 executes, even when no debug hook trap is pending. Registering a trace observer
 keeps dispatch on the traced path, and shared fetch invokes the observer
 independently of hook traps. A separate integration test covers full GC while
-the dispatcher is parked. This trace test does not cover debugger hook signaling
-or suspension at the throwing instruction; 03.01 remains open for the other
-call, native, and suspend paths.
+the dispatcher is parked. The native-callback test covers stack growth and a
+minor collection between a call instruction and its next frame load. The trace
+test does not cover debugger hook signaling or suspension at the throwing
+instruction; VM-call variants and suspension remain open in 03.01.
