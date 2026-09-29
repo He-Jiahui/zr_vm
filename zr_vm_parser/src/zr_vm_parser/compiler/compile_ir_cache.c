@@ -6,6 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 本模块把可复现的编译输入键与经摘要校验的内存载荷绑定，并通过显式事务发布。 */
+
+/* 缓存键记录可复现构建事实；缓存项拥有载荷副本，命中结果则借用该副本。 */
 struct SZrCompileIrCacheEntry {
     SZrCompileIrCacheKey key;
     TZrByte *payload;
@@ -14,12 +17,14 @@ struct SZrCompileIrCacheEntry {
     TZrBool accepted;
 };
 
+/* 清空可选诊断输出，避免成功或空诊断路径遗留上次调用的错误。 */
 static void cache_diagnostic_clear(SZrCompileIrCacheDiagnostic *diagnostic) {
     if (diagnostic != ZR_NULL) {
         (void)memset(diagnostic, 0, sizeof(*diagnostic));
     }
 }
 
+/* 各拒绝路径共用 bool 失败和可选诊断，让调用方区分输入、分配、未命中与损坏等原因。 */
 static TZrBool cache_diagnostic_set(
         SZrCompileIrCacheDiagnostic *diagnostic,
         EZrCompileIrCacheDiagnosticCode code,
@@ -33,11 +38,13 @@ static TZrBool cache_diagnostic_set(
     return ZR_FALSE;
 }
 
+/* 只接受显式有效且匹配当前 schema 的键，供查找入口共用。 */
 static TZrBool cache_key_valid(const SZrCompileIrCacheKey *key) {
     return (TZrBool)(key != ZR_NULL && key->valid &&
                      key->schemaVersion == ZR_COMPILE_IR_CACHE_SCHEMA_VERSION);
 }
 
+/* 固定宽度值按小端序进入摘要，避免缓存键依赖宿主字节序。 */
 static TZrBool cache_hash_u64(SZrParserSha256Context *context,
                               TZrUInt64 value) {
     TZrByte bytes[8];
@@ -48,6 +55,7 @@ static TZrBool cache_hash_u64(SZrParserSha256Context *context,
     return ZrParser_Sha256_Update(context, bytes, sizeof(bytes));
 }
 
+/* 长度前缀保留变长字段边界；空字段允许用空指针和零长度表示。 */
 static TZrBool cache_hash_bytes(SZrParserSha256Context *context,
                                 const TZrByte *bytes,
                                 TZrSize size) {
@@ -58,6 +66,7 @@ static TZrBool cache_hash_bytes(SZrParserSha256Context *context,
            ZrParser_Sha256_Update(context, bytes, size);
 }
 
+/* 发布前为调用方借出的载荷生成指纹，命中时用同一规约核验缓存持有的副本。 */
 static TZrBool cache_payload_digest(const TZrByte *payload,
                                     TZrSize payloadSize,
                                     TZrByte digest[ZR_COMPILE_IR_CACHE_DIGEST_SIZE]) {
@@ -73,6 +82,7 @@ static TZrBool cache_payload_digest(const TZrByte *payload,
     return ZR_TRUE;
 }
 
+/* 仅接受当前策略 schema 且其声明 hash 与策略字段重算结果一致。 */
 static TZrBool cache_profile_valid(const SZrCompileEffectivePolicy *profile) {
     return (TZrBool)(profile != ZR_NULL &&
                      profile->schemaVersion ==
@@ -81,6 +91,7 @@ static TZrBool cache_profile_valid(const SZrCompileEffectivePolicy *profile) {
                              ZrParser_CompileOptimizationProfile_Hash(profile));
 }
 
+/* 发布与显式剔除共用键匹配规约，使替换和删除针对同一缓存身份。 */
 static SZrCompileIrCacheEntry *cache_find(
         SZrCompileIrCache *cache,
         const SZrCompileIrCacheKey *key) {
@@ -96,6 +107,7 @@ static SZrCompileIrCacheEntry *cache_find(
     return ZR_NULL;
 }
 
+/* 命中读取借用条目而不剔除损坏项，由调用方通过 MarkCorrupt 明确决定缓存变更。 */
 static const SZrCompileIrCacheEntry *cache_find_const(
         const SZrCompileIrCache *cache,
         const SZrCompileIrCacheKey *key) {
@@ -111,6 +123,7 @@ static const SZrCompileIrCacheEntry *cache_find_const(
     return ZR_NULL;
 }
 
+/* 扩容先检查字节数上界；realloc 失败时旧数组仍由 cache 持有。 */
 static TZrBool cache_reserve(SZrCompileIrCache *cache, TZrSize required) {
     SZrCompileIrCacheEntry *entries;
     TZrSize capacity;
@@ -138,6 +151,13 @@ static TZrBool cache_reserve(SZrCompileIrCache *cache, TZrSize required) {
     return ZR_TRUE;
 }
 
+/* TODO: 核查旧 schema 是否应使用专用 SCHEMA 诊断码；当前失配统一归为 INVALID_KEY。 */
+/**
+ * @brief 用规范化策略和不可变构建输入生成跨主机稳定的 IR 缓存键。
+ * @pre profile 属于当前策略 schema；空 source/dependency 可用空指针和零长度表示。
+ * @return 成功时 key 可用于缓存查找；失败时通过 diagnostic 报告，调用者不得使用 key。
+ * @note 摘要覆盖源与依赖字节、策略 hash、编译 ABI、pass、target、numeric/layout 和 imported profile。
+ */
 TZrBool ZrParser_CompileIrCache_BuildKey(
         const SZrCompileEffectivePolicy *profile,
         const SZrCompileIrCacheInputs *inputs,
@@ -205,6 +225,10 @@ TZrBool ZrParser_CompileIrCache_BuildKey(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 比较两个缓存键的 schema、所有构建字段和内容摘要。
+ * @return 只有两个键都有效且当前 schema 一致时才可能返回 true。
+ */
 TZrBool ZrParser_CompileIrCache_KeyEquals(
         const SZrCompileIrCacheKey *left,
         const SZrCompileIrCacheKey *right) {
@@ -224,6 +248,10 @@ TZrBool ZrParser_CompileIrCache_KeyEquals(
                             ZR_COMPILE_IR_CACHE_DIGEST_SIZE) == 0);
 }
 
+/**
+ * @brief 初始化空缓存并从非零值开始分配 writer token。
+ * @pre cache 尚未持有需要释放的条目，或已先调用 Free。
+ */
 void ZrParser_CompileIrCache_Init(SZrCompileIrCache *cache) {
     if (cache == ZR_NULL) {
         return;
@@ -232,6 +260,10 @@ void ZrParser_CompileIrCache_Init(SZrCompileIrCache *cache) {
     cache->nextWriterToken = 1U;
 }
 
+/**
+ * @brief 释放缓存拥有的载荷副本和条目数组，并将缓存状态清零。
+ * @pre cache 为 null 或已初始化且没有仍需完成的写事务。
+ */
 void ZrParser_CompileIrCache_Free(SZrCompileIrCache *cache) {
     TZrSize index;
     if (cache == ZR_NULL) {
@@ -244,6 +276,10 @@ void ZrParser_CompileIrCache_Free(SZrCompileIrCache *cache) {
     (void)memset(cache, 0, sizeof(*cache));
 }
 
+/**
+ * @brief 清空写事务，使其可供 BeginWrite 使用。
+ * @pre transaction 为 null 或当前不处于 active 状态；先取消已有事务再重置。
+ */
 void ZrParser_CompileIrCache_TransactionInit(
         SZrCompileIrCacheTransaction *transaction) {
     if (transaction != ZR_NULL) {
@@ -251,6 +287,13 @@ void ZrParser_CompileIrCache_TransactionInit(
     }
 }
 
+/* TODO: 核查写事务是否允许按值复制；writerToken 当前不参与发布或取消时的身份验证。 */
+/**
+ * @brief 为有效键开启一个可发布或取消的写事务。
+ * @pre cache 已初始化，transaction 已初始化且未激活，key 使用当前 schema。
+ * @return 成功时复制 key 并增加 activeWriters；失败时 diagnostic 描述拒绝原因。
+ * @note 此对象不提供并发互斥；调用方须串行化同一 cache 的访问。
+ */
 TZrBool ZrParser_CompileIrCache_BeginWrite(
         SZrCompileIrCache *cache,
         const SZrCompileIrCacheKey *key,
@@ -299,6 +342,12 @@ TZrBool ZrParser_CompileIrCache_BeginWrite(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 校验并复制完整非空载荷，再新增或替换该键的已发布项。
+ * @pre transaction active 且属于 cache；complete 仅在调用方已验证载荷完整时为 true。
+ * @return 成功时结束事务；失败时保留事务供重试或 CancelWrite，并保持原已发布项不变。
+ * @note 本函数只校验完整标志、长度和载荷摘要，不解析 IR 格式；同一 cache 的访问须串行化。
+ */
 TZrBool ZrParser_CompileIrCache_Publish(
         SZrCompileIrCache *cache,
         SZrCompileIrCacheTransaction *transaction,
@@ -370,6 +419,11 @@ TZrBool ZrParser_CompileIrCache_Publish(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 取消属于 cache 的 active 写事务并撤销其活动计数。
+ * @pre transaction active 且 transaction->cache 指向 cache。
+ * @return 成功时清空事务关联；失败时不改变已发布条目。
+ */
 TZrBool ZrParser_CompileIrCache_CancelWrite(
         SZrCompileIrCache *cache,
         SZrCompileIrCacheTransaction *transaction,
@@ -391,6 +445,11 @@ TZrBool ZrParser_CompileIrCache_CancelWrite(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 按键查找已发布载荷，并在返回前复算摘要以发现载荷损坏。
+ * @return 成功时填充 accepted hit；未找到、无效或损坏时清空 hit 并报告诊断。
+ * @note hit->payload 借用缓存内存，在缓存后续变更或释放前有效；损坏项需显式 MarkCorrupt。
+ */
 TZrBool ZrParser_CompileIrCache_Lookup(
         const SZrCompileIrCache *cache,
         const SZrCompileIrCacheKey *key,
@@ -445,6 +504,11 @@ TZrBool ZrParser_CompileIrCache_Lookup(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 显式移除一个已知损坏的键及其载荷，不清空其他缓存项。
+ * @return 成功表示找到并删除该键；缺失或无效键通过 diagnostic 返回。
+ * @note 删除使用末项补位，会改变条目次序并使相关借用命中失效。
+ */
 TZrBool ZrParser_CompileIrCache_MarkCorrupt(
         SZrCompileIrCache *cache,
         const SZrCompileIrCacheKey *key,
@@ -478,6 +542,10 @@ TZrBool ZrParser_CompileIrCache_MarkCorrupt(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 返回已发布条目数；空缓存指针按零项处理。
+ * @return 当前条目数，不包含未完成写事务。
+ */
 TZrSize ZrParser_CompileIrCache_Count(const SZrCompileIrCache *cache) {
     return cache == ZR_NULL ? 0U : cache->count;
 }
