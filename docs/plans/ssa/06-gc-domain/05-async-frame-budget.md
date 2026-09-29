@@ -20,6 +20,7 @@ tests:
   - tests/task/test_task_job_scheduler.c
   - tests/task/test_task_frame_runtime.c
   - tests/acceptance/2026-09-29-ssa-async-frame-gc-root-drop.md
+  - tests/acceptance/2026-09-29-ssa-async-frame-budget-ndebug-tests.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -93,6 +94,7 @@ frameThread never waits synchronously for compile completion
 | 编译期间 module reload | 过期结果丢弃 |
 | 长 hot loop、不可中断 native | loop 可让出；native 记录超预算来源 |
 | async frame GC-root 表扩容失败 | 已复制的 slot 仍运行已注册 drop；后续 task/pool cleanup 不重复 drop |
+| focused test 编译时定义 `NDEBUG` | frame/wait/queue 操作和检查仍执行；仅清理已初始化且无活动 handle/worker lease 的对象 |
 
 复用回归入口：`tests/task/test_task_runtime.c`、`tests/task/test_task_job_scheduler.c`。历史计数只作为核对线索，实施时重跑并记录实际总数。
 
@@ -118,6 +120,31 @@ RED 与 MSVC 验收记录见
 [`2026-09-29-ssa-async-frame-gc-root-drop.md`](../../../../tests/acceptance/2026-09-29-ssa-async-frame-gc-root-drop.md)。
 最终源的 MSVC Debug direct run 为 7/7；CTest 查询未发现对应注册项，且
 没有执行 `NDEBUG` 构建。具体命令和验证边界记录在上述 acceptance 中。
+
+### Focused frame-budget harness checks under `NDEBUG`
+
+`tests/task/test_ssa_async_frame_budget.c` no longer uses the standard C
+`assert` macro for either state transitions or expectations. Its `TEST_CHECK`
+always evaluates its condition, records failures, and jumps to the owning test's
+cleanup. Wait-registry and compile-queue initialization calls run before their
+results are checked; initialized flags guard `Deinit`, handle flags guard
+`Release`, and the compile worker lease remains tracked until `Complete`
+acknowledges it. Cleanup skips deinitialization while any tracked handle or
+worker still owns state.
+
+A safe pre-change canary guarded its cleanup with an initialization flag:
+Debug printed `init_calls=1 initialized=1 deinit_calls=1`, whereas `-DNDEBUG`
+printed `init_calls=0 initialized=0 deinit_calls=0`. It did not call `Deinit`
+on an uninitialized object. After the test-only fix, strict GCC 4.8.3
+standalone Debug and `-DNDEBUG` builds both pass the focused executable; this
+does not claim a full CMake Release configuration. Temporary `NDEBUG` probes
+also verified the failed-init and active-worker cleanup branches. Exact
+commands and the root-owned MSVC evidence are recorded in
+[`2026-09-29-ssa-async-frame-budget-ndebug-tests.md`](../../../../tests/acceptance/2026-09-29-ssa-async-frame-budget-ndebug-tests.md).
+The final MSVC Debug target build and direct executable both passed; the direct
+run invokes 11 source-level test functions. The registered
+`ssa_async_frame_budget` CTest passed 1/1. These focused checks do not complete
+the broader async frame-budget milestone, whose status remains `planned`.
 
 **退出门禁：** p95/p99 与最长不可中断段可见；取消/超时/race 无泄漏或死锁，不能以仅更换 worker 线程声称帧预算已满足。
 

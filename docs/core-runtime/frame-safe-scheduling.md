@@ -6,6 +6,7 @@ related_code:
   - zr_vm_core/include/zr_vm_core/task_frame_runtime.h
   - zr_vm_core/include/zr_vm_core/execution_budget.h
   - zr_vm_library/include/zr_vm_library/task_runtime.h
+  - tests/task/test_ssa_async_frame_budget.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/async_frame_budget.h
   - zr_vm_core/src/zr_vm_core/execution/execution_async_wait.c
@@ -17,6 +18,7 @@ plan_sources:
 tests:
   - tests/task/test_ssa_async_frame_budget.c
   - tests/acceptance/ssa-async-frame-budget.md
+  - tests/acceptance/2026-09-29-ssa-async-frame-budget-ndebug-tests.md
 doc_type: module-detail
 ---
 
@@ -136,6 +138,19 @@ between registration and recheck, cancel/timeout winner races, exactly-once
 resume, immutable snapshot copying, stale-generation disposal, warm-up tagging,
 and malformed snapshot rejection.  Exact commands and tool versions are
 recorded in `tests/acceptance/ssa-async-frame-budget.md`.
+
+The harness uses an always-evaluated `TEST_CHECK` instead of the C `assert`
+macro, so state-changing expressions remain active when `NDEBUG` is defined.
+Wait-registry and compile-queue initialization results are recorded before
+checks; active handles and the claimed worker snapshot lease are tracked. Each
+cleanup path releases a live handle and only deinitializes an initialized,
+quiescent registry or queue. A strict standalone GCC run with `-DNDEBUG`
+exercises the same 11 test functions; its canary and build evidence are in
+`tests/acceptance/2026-09-29-ssa-async-frame-budget-ndebug-tests.md`. This is
+focused harness evidence, not a full CMake Release configuration. The final
+MSVC Debug executable also passed its 11 source-level test functions, and the
+registered `ssa_async_frame_budget` CTest passed 1/1; the acceptance record
+contains the exact commands and platform boundaries.
 
 ## Out of scope
 
