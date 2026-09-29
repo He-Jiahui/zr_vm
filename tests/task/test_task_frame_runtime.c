@@ -1,6 +1,8 @@
 #include "unity.h"
 #include "test_support.h"
 
+#include <string.h>
+
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/object.h"
@@ -12,13 +14,44 @@
 /* Unity 每例重建 VM 状态；poll 与 drop/finally 回调在该状态存活期间执行。 */
 static SZrState *g_state;
 
+/* 在根表扩容期间按需拒绝一次 ARRAY 分配；上下文保持到 Unity tearDown。 */
+typedef struct SZrTaskFrameAllocatorFailureContext {
+    FZrAllocator upstreamAllocator;
+    TZrPtr upstreamAllocationArguments;
+    TZrBool rejectNextArrayAllocation;
+    TZrUInt32 rejectedArrayAllocationCount;
+} SZrTaskFrameAllocatorFailureContext;
+
+static SZrTaskFrameAllocatorFailureContext g_taskFrameAllocatorFailure;
+
+/* 只拒绝 GC 根表使用的 ARRAY 分配，其他宿主分配仍走原分配器。 */
+static TZrPtr task_frame_fail_next_array_allocation(TZrPtr userData,
+                                                    TZrPtr pointer,
+                                                    TZrSize originalSize,
+                                                    TZrSize newSize,
+                                                    TZrInt64 flag) {
+    SZrTaskFrameAllocatorFailureContext *context =
+            (SZrTaskFrameAllocatorFailureContext *)userData;
+
+    if (context != ZR_NULL && context->rejectNextArrayAllocation &&
+        pointer == ZR_NULL && newSize != 0U && flag == ZR_MEMORY_NATIVE_TYPE_ARRAY) {
+        context->rejectNextArrayAllocation = ZR_FALSE;
+        context->rejectedArrayAllocationCount++;
+        return ZR_NULL;
+    }
+    return context->upstreamAllocator(
+            context->upstreamAllocationArguments, pointer, originalSize, newSize, flag);
+}
+
 void setUp(void) {
+    memset(&g_taskFrameAllocatorFailure, 0, sizeof(g_taskFrameAllocatorFailure));
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
 void tearDown(void) {
     if (g_state != ZR_NULL) {
+        g_taskFrameAllocatorFailure.rejectNextArrayAllocation = ZR_FALSE;
         ZrTests_Runtime_State_Destroy(g_state);
         g_state = ZR_NULL;
     }
@@ -175,6 +208,13 @@ typedef struct SZrTaskFrameGcContext {
     TZrUInt32 invocationCount;
 } SZrTaskFrameGcContext;
 
+/* 根注册失败时，drop 仍需收到 StoreSlot 已复制的值，且只调用一次。 */
+typedef struct SZrTaskFrameRootFailureContext {
+    SZrObject *object;
+    TZrUInt32 dropCount;
+    TZrBool dropObservedCopiedObject;
+} SZrTaskFrameRootFailureContext;
+
 /* 把对象写入有 root 标记的 slot，随后由测试触发 compact GC。 */
 static EZrCoreTaskFramePollOutcome task_frame_suspend_gc_value(
         SZrState *state,
@@ -198,6 +238,42 @@ static EZrCoreTaskFramePollOutcome task_frame_suspend_gc_value(
 
     ZrCore_Value_InitAsInt(state, outResult, 1);
     return ZR_CORE_TASK_FRAME_POLL_COMPLETE;
+}
+
+/* 填满域根表后，保存 GC slot 的 root 注册会被测试分配器拒绝。 */
+static EZrCoreTaskFramePollOutcome task_frame_store_gc_value_after_root_table_full(
+        SZrState *state,
+        SZrCoreTaskFrameTask *task,
+        TZrPtr userData,
+        SZrTypeValue *outResult) {
+    SZrTaskFrameRootFailureContext *context =
+            (SZrTaskFrameRootFailureContext *)userData;
+    SZrTypeValue value;
+
+    ZR_UNUSED_PARAMETER(outResult);
+    if (context == ZR_NULL || context->object == ZR_NULL ||
+        !ZrCore_TaskFrameTask_Suspend(state, task, 1U)) {
+        return ZR_CORE_TASK_FRAME_POLL_FAULT;
+    }
+    ZrCore_Value_InitAsRawObject(state, &value, ZR_CAST_RAW_OBJECT_AS_SUPER(context->object));
+    return ZrCore_TaskFrameTask_StoreSlot(state, task, 0U, &value)
+                   ? ZR_CORE_TASK_FRAME_POLL_SUSPEND
+                   : ZR_CORE_TASK_FRAME_POLL_FAULT;
+}
+
+/* 记录失败 StoreSlot 的 drop 是否仍能观察到该 slot 的原始对象。 */
+static void task_frame_count_root_failure_drop(
+        SZrState *state, SZrTypeValue *value, TZrPtr userData) {
+    SZrTaskFrameRootFailureContext *context =
+            (SZrTaskFrameRootFailureContext *)userData;
+
+    ZR_UNUSED_PARAMETER(state);
+    if (context != ZR_NULL) {
+        context->dropCount++;
+        context->dropObservedCopiedObject =
+                value != ZR_NULL && value->isGarbageCollectable &&
+                value->value.object == ZR_CAST_RAW_OBJECT_AS_SUPER(context->object);
+    }
 }
 
 /* unique 结果的原始资源由 task header 接管，Await 后转移给调用方。 */
@@ -381,6 +457,73 @@ static void test_gc_map_roots_suspended_values_and_reuses_frame_pool(void) {
     ZrCore_TaskFramePool_Free(g_state, &pool);
 }
 
+/* 根表扩容失败后必须回滚 slot 并恰好调用一次其已注册的 drop。 */
+static void test_gc_root_registration_failure_drops_copied_slot_once(void) {
+    enum { TASK_FRAME_ROOT_FILLER_CAPACITY = 4096 };
+    static SZrGcRootHandle fillerRoots[TASK_FRAME_ROOT_FILLER_CAPACITY];
+    SZrTaskFrameRootFailureContext context = {
+            task_frame_create_object("FrameRootFailure", ZR_FALSE), 0U, ZR_FALSE};
+    SZrCoreTaskFrameSlotLayout slotLayout = {
+            ZR_TRUE, ZR_TRUE, task_frame_count_root_failure_drop, &context};
+    SZrCoreTaskFrameLayout layout = {2U, 1U, &slotLayout};
+    SZrCoreTaskFramePool pool;
+    SZrCoreTaskFrameTask task;
+    TZrUInt32 fillerCount = 0U;
+    TZrUInt32 rootCountBefore = (TZrUInt32)ZrCore_GcDomain_GetRootCount(g_state);
+
+    TEST_ASSERT_NOT_NULL(context.object);
+    g_taskFrameAllocatorFailure.upstreamAllocator = g_state->global->upstreamAllocator;
+    g_taskFrameAllocatorFailure.upstreamAllocationArguments =
+            g_state->global->upstreamAllocationArguments;
+    g_state->global->upstreamAllocator = task_frame_fail_next_array_allocation;
+    g_state->global->upstreamAllocationArguments = &g_taskFrameAllocatorFailure;
+
+    /* 第一次拒绝发生于 Create 的根表扩容，故失败后所有现存槽正好填满。 */
+    g_taskFrameAllocatorFailure.rejectNextArrayAllocation = ZR_TRUE;
+    while (fillerCount < TASK_FRAME_ROOT_FILLER_CAPACITY &&
+           ZrCore_GcRootHandle_Create(
+                   g_state, ZR_CAST_RAW_OBJECT_AS_SUPER(context.object),
+                   &fillerRoots[fillerCount])) {
+        fillerCount++;
+    }
+    TEST_ASSERT_TRUE(fillerCount < TASK_FRAME_ROOT_FILLER_CAPACITY);
+    TEST_ASSERT_EQUAL_UINT32(1U,
+                             g_taskFrameAllocatorFailure.rejectedArrayAllocationCount);
+    TEST_ASSERT_EQUAL_UINT32(rootCountBefore + fillerCount,
+                             (TZrUInt32)ZrCore_GcDomain_GetRootCount(g_state));
+
+    /* 下一次 ARRAY 分配只能来自刚填满的域根表扩容。 */
+    ZrCore_TaskFramePool_Init(&pool);
+    ZrCore_TaskFrameTask_Init(&task);
+    g_taskFrameAllocatorFailure.rejectNextArrayAllocation = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrCore_TaskFrameTask_Start(
+            g_state, &task, &pool, &layout,
+            task_frame_store_gc_value_after_root_table_full, &context));
+    TEST_ASSERT_EQUAL_UINT32(2U,
+                             g_taskFrameAllocatorFailure.rejectedArrayAllocationCount);
+    TEST_ASSERT_EQUAL_INT(ZR_CORE_TASK_FRAME_STATUS_FAULTED,
+                          ZrCore_TaskFrameTask_Status(&task));
+    TEST_ASSERT_EQUAL_UINT32(1U, context.dropCount);
+    TEST_ASSERT_TRUE(context.dropObservedCopiedObject);
+
+    /* Fault、重复 Free 和池销毁都不能再次运行已经完成的 drop。 */
+    ZrCore_TaskFrameTask_Free(g_state, &task);
+    TEST_ASSERT_EQUAL_UINT32(1U, context.dropCount);
+    ZrCore_TaskFrameTask_Free(g_state, &task);
+    ZrCore_TaskFramePool_Free(g_state, &pool);
+    TEST_ASSERT_EQUAL_UINT32(1U, context.dropCount);
+    ZrCore_TaskFramePool_Free(g_state, &pool);
+    TEST_ASSERT_EQUAL_UINT32(1U, context.dropCount);
+
+    g_taskFrameAllocatorFailure.rejectNextArrayAllocation = ZR_FALSE;
+    while (fillerCount > 0U) {
+        fillerCount--;
+        ZrCore_GcRootHandle_Release(g_state, &fillerRoots[fillerCount]);
+    }
+    TEST_ASSERT_EQUAL_UINT32(rootCountBefore,
+                             (TZrUInt32)ZrCore_GcDomain_GetRootCount(g_state));
+}
+
 /* unique 结果第一次 Await 转移所有权，第二次须报告已消费。 */
 static void test_non_copy_result_transfers_once(void) {
     SZrTaskFrameOwnerContext context = {task_frame_create_object("FrameUnique", ZR_TRUE)};
@@ -439,6 +582,7 @@ int main(void) {
     RUN_TEST(test_pending_task_promotes_once_and_resumes_multiple_states);
     RUN_TEST(test_fault_cleans_only_initialized_drop_slots);
     RUN_TEST(test_gc_map_roots_suspended_values_and_reuses_frame_pool);
+    RUN_TEST(test_gc_root_registration_failure_drops_copied_slot_once);
     RUN_TEST(test_non_copy_result_transfers_once);
     RUN_TEST(test_completed_task_header_roots_gc_result_until_await);
     return UNITY_END();

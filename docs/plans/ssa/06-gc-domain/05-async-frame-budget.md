@@ -18,6 +18,8 @@ tests:
   - tests/task/test_ssa_async_frame_budget.c
   - tests/task/test_task_runtime.c
   - tests/task/test_task_job_scheduler.c
+  - tests/task/test_task_frame_runtime.c
+  - tests/acceptance/2026-09-29-ssa-async-frame-gc-root-drop.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -90,6 +92,7 @@ frameThread never waits synchronously for compile completion
 | 持 ref-like/锁 guard 到 await | 编译拒绝或明确不挂起 |
 | 编译期间 module reload | 过期结果丢弃 |
 | 长 hot loop、不可中断 native | loop 可让出；native 记录超预算来源 |
+| async frame GC-root 表扩容失败 | 已复制的 slot 仍运行已注册 drop；后续 task/pool cleanup 不重复 drop |
 
 复用回归入口：`tests/task/test_task_runtime.c`、`tests/task/test_task_job_scheduler.c`。历史计数只作为核对线索，实施时重跑并记录实际总数。
 
@@ -101,6 +104,20 @@ ctest --test-dir build/ssa-gcc-debug -R '^ssa_async_frame_budget$' --output-on-f
 ```
 
 预期：目标构建成功，至少一个匹配测试执行，全部断言通过、退出码 0。构建目录初始化、Clang/MSVC 和 sanitizer 扩展命令见 00.03；不得把“未找到测试”当作通过。
+
+### 已有 Task Frame slot 的根注册失败回滚
+
+`tests/task/test_task_frame_runtime.c` 另行覆盖现有 frame runtime 的一个
+资源失败边界：先注入一次根表 `ARRAY` 扩容失败填满域根表，再在真实
+挂起 task 的 `StoreSlot` 中拒绝下一次扩容。StoreSlot 已复制带 drop 的
+GC 值但尚未取得 root handle 时，失败路径必须调用常规 slot cleanup，
+让 drop 先观察该值，再释放其所有权并清除 initialized 状态。之后重复
+`Task_Free`/`Pool_Free` 不应重复调用 drop。该回归补充现有 frame cleanup
+契约，不表示本计划的 waiter、预算或后台编译里程碑已完成；对应的
+RED 与 MSVC 验收记录见
+[`2026-09-29-ssa-async-frame-gc-root-drop.md`](../../../../tests/acceptance/2026-09-29-ssa-async-frame-gc-root-drop.md)。
+最终源的 MSVC Debug direct run 为 7/7；CTest 查询未发现对应注册项，且
+没有执行 `NDEBUG` 构建。具体命令和验证边界记录在上述 acceptance 中。
 
 **退出门禁：** p95/p99 与最长不可中断段可见；取消/超时/race 无泄漏或死锁，不能以仅更换 worker 线程声称帧预算已满足。
 
@@ -160,4 +177,3 @@ assert result disposed without entry publication
 同步锁变 await 只能发生在已声明异步协议中，不能作为透明优化改变用户 API。编译 pending 与执行预算挂起使用不同状态码。
 
 本任务的 acceptance 至少附上：上述断言对应的测试名称、实际执行后端/平台、失败注入位置、verifier 输入/输出摘要，以及涉及所有权时的分配/释放或 lease 平衡。新增入口的 OOM、取消、重复调用和部分初始化退出应有明确处理；不适用的状态写明原因。
-

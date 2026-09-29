@@ -383,8 +383,8 @@ TZrBool ZrCore_TaskFrameTask_StoreSlot(SZrState *state,
         !ZrCore_GcRootHandle_Create(state,
                                     frame->slots[slotIndex].value.object,
                                     &frame->roots[slotIndex])) {
-        task_frame_release_value(state, &frame->slots[slotIndex]);
-        frame->initialized[slotIndex] = ZR_FALSE; /* BUG: 已注册 drop 的 GC slot 若在建根时失败，此处清标志后会永久跳过清理回调。 */
+        /* Root registration failed after the copy; roll back through the regular drop path. */
+        task_frame_cleanup_slot(state, frame, slotIndex);
         return ZR_FALSE;
     }
     return ZR_TRUE;

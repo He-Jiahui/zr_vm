@@ -11,9 +11,11 @@ plan_sources:
   - user: 2026-07-25 execute Syntax 12 milestones and record each result
   - docs/plans/syntax/2026-07-20-12-async-task-job-scheduler-design.md
   - docs/plans/syntax/12-async-task-job-scheduler/m2-task-frame-runtime-implementation-plan.md
+  - docs/plans/ssa/06-gc-domain/05-async-frame-budget.md
 tests:
   - tests/task/test_task_frame_runtime.c
   - tests/acceptance/2026-07-25-syntax-12-m2-task-frame-runtime.md
+  - tests/acceptance/2026-09-29-ssa-async-frame-gc-root-drop.md
 doc_type: module-detail
 ---
 
@@ -49,6 +51,12 @@ per hoisted slot. Each descriptor records whether the slot is a GC root and
 whether it requires a drop callback. Storing a slot replaces any prior
 initialized value through one cleanup path, so overwrite, fault, terminal
 free, and pool reuse cannot skip a registered drop.
+
+If registering the GC root for a newly copied slot fails, the runtime rolls
+that initialized slot back through the same cleanup path. Its registered drop
+therefore observes the copied value before ownership is released, and the
+cleared initialized bit prevents later task or pool cleanup from running the
+drop again.
 
 GC-rooted slots receive a `SZrGcRootHandle`. A load resolves that handle before
 copying the value, which preserves a compacted object identity without
@@ -89,4 +97,8 @@ old dynamic `TaskRunner` model has become the canonical `Task<T>` runtime.
 multiple pending/resume states, one-shot finally-before-cleanup on fault,
 initialized-only fault cleanup including slot overwrite, GC survival for
 suspended slots and completed header results, typed pool reuse, and
-exactly-once transfer of a non-Copy result.
+exactly-once transfer of a non-Copy result. An injected root-table growth
+failure also checks that the copied GC slot receives one drop and that repeated
+task/pool cleanup does not call it again. The final-source MSVC Debug direct
+run passed all seven tests; the linked acceptance record describes the
+unregistered CTest target and the fact that no `NDEBUG` build was run.
