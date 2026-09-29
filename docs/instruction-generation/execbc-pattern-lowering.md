@@ -7,9 +7,11 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_contract.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_match.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_match_types.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_lifecycle.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_internal.h
   - scripts/codegen/generate_execbc_patterns.py
+  - tests/cmake/ssa-tests.cmake
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/exec_ir_fusion.h
   - zr_vm_parser/include/zr_vm_parser/exec_ir_binding_facts.h
@@ -18,6 +20,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_contract.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_match.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_match_types.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_lifecycle.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_internal.h
   - scripts/codegen/generate_execbc_patterns.py
@@ -30,8 +33,11 @@ plan_sources:
 tests:
   - tests/parser/test_ssa_generated_fusion.c
   - tests/parser/test_ssa_generated_fusion_compare_branch.inc
+  - tests/parser/test_ssa_generated_fusion_increment_branch.inc
+  - tests/cmake/ssa-tests.cmake
   - tests/acceptance/ssa-generated-fusion.md
   - tests/acceptance/2026-09-29-ssa-compare-branch-mode.md
+  - tests/acceptance/2026-09-29-ssa-increment-loop-branch-types.md
 doc_type: module-detail
 status: implemented
 ---
@@ -92,6 +98,18 @@ and resume identity (deopt/state-map resume IDs are preferred, with the
 instruction ID as a stable fallback).  Branch block IDs are resolved only
 after the complete window scan, so a target that lands in a fused pair points
 at the pair's output PC.
+
+`INCREMENT_LOOP_BRANCH` accepts only an `ADD` with two signed i64 inputs and an
+i64 result consumed directly as the conditional branch condition.  The core
+ExecIR Oracle exercises both a nonzero sum and a zero sum to verify that i64
+values follow the branch's truthy and falsey edges.  The generated pattern row
+names this narrower contract with
+`SIGNED_I64_CONDITION`; object, unsigned, mixed, or otherwise unproved types
+stay as the original operations with a type-mismatch fallback.  The side entry
+retains the pattern identity and the plan retains the pattern-schema hash, so
+the exact type contract is covered by generated-plan hashing and validation
+without adding a redundant per-entry type field.  This is a projection test;
+the generated fused word still has no executable runtime handler.
 
 ## Matching and safety boundaries
 
@@ -154,6 +172,19 @@ invalidation, contract mismatch, transactional output preservation, and the
 empty-function/partial-lifecycle case.  The focused fixture is
 compiled against the core ExecIR model and can be run independently of the
 large legacy test graph.
+
+The increment-branch fixture additionally verifies the two i64 Oracle branch
+outcomes, the signed-i64 pattern constraint, stable plan hashes, fallback for
+Verify-accepted object types, and rejection of an empty operand/result pool
+suffix by the extracted typed-access helpers.
+
+The typed pool lookup and instruction compatibility checks live in
+`exec_ir_fusion_match_types.c`.  They were extracted as one cohesive group from
+the 1,100-line matcher because Compare and signed-i64 branch checks share the
+same bounded operand/result accessors.  The remaining matcher still coordinates
+window constraints with several file-local CFG and projection helpers; its next
+small extraction boundary is the complete candidate-constraint evaluator with
+an explicit matcher context, rather than moving isolated predicates.
 
 ## Out of scope
 

@@ -39,6 +39,21 @@ TZrBool zr_fusion_state_map_is_valid(const SZrExecIrFunction *function);
 
 const SZrExecIrInstruction *zr_fusion_instruction(
         const SZrExecIrFunction *function, TZrUInt32 instructionId);
+TZrBool zr_fusion_operand_at(const SZrExecIrFunction *function,
+                             const SZrExecIrInstruction *instruction,
+                             TZrUInt32 index,
+                             TZrExecIrValueId *value);
+TZrBool zr_fusion_result_at(const SZrExecIrFunction *function,
+                            const SZrExecIrInstruction *instruction,
+                            TZrUInt32 index,
+                            TZrExecIrValueId *value);
+TZrBool zr_fusion_typed_instruction_is_compatible(
+        const SZrExecIrFunction *function,
+        const SZrExecIrInstruction *instruction);
+TZrBool zr_fusion_increment_loop_branch_types_are_compatible(
+        const SZrExecIrFunction *function,
+        const SZrExecIrInstruction *head,
+        const SZrExecIrInstruction *tail);
 EZrExecBcFusionFallbackReason zr_fusion_reason_for_pair(
         const SZrExecIrFunction *function,
         TZrUInt32 headId,

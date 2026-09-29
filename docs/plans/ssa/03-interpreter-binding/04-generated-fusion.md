@@ -5,6 +5,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_parser/include/zr_vm_parser/exec_ir_fusion.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_match.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_match_types.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_contract.c
 implementation_files:
   - zr_vm_common/include/zr_vm_common/zr_instruction_conf.h
@@ -12,9 +13,11 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - scripts/codegen/generate_execbc_patterns.py
   - zr_vm_parser/src/zr_vm_parser/exec_ir/execbc_patterns.def
+  - zr_vm_parser/include/zr_vm_parser/execbc_fusion_patterns_generated.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion.c
   - zr_vm_parser/include/zr_vm_parser/exec_ir_fusion.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_match.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_match_types.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_contract.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_lifecycle.c
 plan_sources:
@@ -23,11 +26,14 @@ plan_sources:
 tests:
   - tests/parser/test_ssa_generated_fusion.c
   - tests/parser/test_ssa_generated_fusion_compare_branch.inc
+  - tests/parser/test_ssa_generated_fusion_increment_branch.inc
+  - tests/cmake/ssa-tests.cmake
   - tests/parser/test_semir_typed_opcode_guardrails.c
   - tests/parser/test_compiler_w2_performance_quickening.c
   - tests/parser/test_compiler_w2_quickening_array_add.inc
   - tests/acceptance/ssa-quickening-array-int-add.md
   - tests/acceptance/2026-09-29-ssa-compare-branch-mode.md
+  - tests/acceptance/2026-09-29-ssa-increment-loop-branch-types.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -214,3 +220,35 @@ commands are in
 This verifies parser-side plan projection only. Runtime handler dispatch,
 execution of the generated fused word, and the plan-wide performance and
 boundary matrix remain open; the 03.04 plan stays `planned`.
+
+### Scoped Progress — 2026-09-29 — Increment loop branch type contract
+
+The `INCREMENT_LOOP_BRANCH` candidate is semantically supported for a signed
+i64 `ADD`: ExecIR verification accepts the fixture, and the core Oracle sends
+4+1 to the truthy successor and 5+(-5) to the false successor. The matcher now
+requires two signed i64 inputs, an i64 ADD result, and that result as the sole
+conditional-branch input. A Verify-accepted object-typed version remains
+unfused with `TYPE_MISMATCH`. The generated pattern row records
+`SIGNED_I64_CONDITION`; the side entry retains that pattern identity and the
+plan hashes the generated pattern schema, avoiding a redundant per-entry type
+field or plan-layout version change.
+
+The initial D GCC RED reached the intended type boundary: the Oracle paths and
+Verify passed, then the direct test failed because the matcher fused the
+object-typed window. A second focused RED caught an empty-pool-suffix off-by-one
+in the operand/result helpers during their extraction from the 1,100-line
+matcher; both helpers now reject that range before reading. The typed accessors
+and compatibility checks are in `exec_ir_fusion_match_types.c`; the rest of
+the matcher remains intact because its candidate evaluator shares several
+file-local CFG, effect, and projection helpers. A future extraction should
+move that evaluator as a complete unit with an explicit context.
+
+In `/mnt/d/tmp/zr_vm/ssa-artifact-v6-gcc`, the focused target built, the direct
+Unity suite passed, registered `ssa_generated_fusion` CTest passed 1/1, and the
+pattern generator `--check` passed. The exact commands and observed counts are
+in
+[`2026-09-29-ssa-increment-loop-branch-types.md`](../../../../tests/acceptance/2026-09-29-ssa-increment-loop-branch-types.md).
+This validates parser-side projection and Oracle semantics only; no fused
+runtime handler was executed. Dispatcher integration, end-to-end source/resume
+behavior, performance budgets, and the full boundary matrix remain open, so
+the 03.04 plan stays `planned`.

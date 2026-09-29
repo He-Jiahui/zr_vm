@@ -1,7 +1,9 @@
 #include "zr_vm_parser/exec_ir_fusion.h"
 #include "zr_vm_parser/exec_ir_binding_facts.h"
+#include "zr_vm_core/exec_ir_interpreter.h"
 #include "zr_vm_core/exec_ir_state_map.h"
 #include "zr_vm_common/zr_type_conf.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_internal.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -146,9 +148,16 @@ static void make_six_pattern_function(SZrExecIrFunction *function) {
     function->values[14].typeToken = ZR_VALUE_TYPE_BOOL;
     function->instructions[2].typeToken = 2u;
     function->instructions[3].typeToken = ZR_VALUE_TYPE_BOOL;
+    /* The increment/branch row requires a signed i64 ADD result and inputs. */
+    function->values[9].typeToken = ZR_VALUE_TYPE_INT64;
+    function->values[10].typeToken = ZR_VALUE_TYPE_INT64;
+    function->values[19].typeToken = ZR_VALUE_TYPE_INT64;
+    function->instructions[8].typeToken = ZR_VALUE_TYPE_INT64;
+    function->instructions[9].typeToken = ZR_VALUE_TYPE_INT64;
 }
 
 #include "test_ssa_generated_fusion_compare_branch.inc"
+#include "test_ssa_generated_fusion_increment_branch.inc"
 
 static void test_six_patterns_emit_fixed_width_words_and_side_maps(void) {
     SZrExecIrFunction function;
@@ -931,6 +940,8 @@ static void test_empty_function_projection_is_valid(void) {
 int main(void) {
     test_compare_branch_int_preserves_modes_and_plan_hash();
     test_compare_branch_int_rejects_noncanonical_inputs();
+    test_increment_loop_branch_requires_signed_i64_add_types();
+    test_fusion_typed_pool_access_rejects_empty_suffix();
     test_six_patterns_emit_fixed_width_words_and_side_maps();
     test_boundary_and_type_failures_keep_original_sequence();
     test_only_declared_boundaries_are_preserved();
