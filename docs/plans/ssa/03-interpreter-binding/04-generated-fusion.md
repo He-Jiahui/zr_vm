@@ -293,3 +293,18 @@ Exact commands and limits are recorded in
 
 This validates parser-side projection and STORE operand roles only; no fused
 runtime handler was executed. The broader 03.04 plan remains open.
+
+### Scoped Progress — 2026-09-29 — BINDING_CALL callee role
+
+`BINDING_CALL` requires its `PLACE_PROJECT` result in CALL operand 0, the
+canonical callee slot. The generic same-result check alone also accepts a
+projection used only in an ordinary explicit argument, which must not be
+reinterpreted as the call target. A Verify-accepted fixture runs through the
+ExecIR Oracle with an independent callee (0xC0) and projected argument (0xA0),
+then requires the original pair and a `RESULT_MISMATCH` fallback. The initial
+GCC RED passed Verify and Oracle and failed only at the expected zero-fusion
+assertion. The final matcher and validation evidence are recorded in
+[`2026-09-29-ssa-binding-call-callee-role.md`](../../../../tests/acceptance/2026-09-29-ssa-binding-call-callee-role.md).
+
+This validates parser-side call-role projection only. No generated runtime
+handler is executed, and the broader 03.04 plan remains open.

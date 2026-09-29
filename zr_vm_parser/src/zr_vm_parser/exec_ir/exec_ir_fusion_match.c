@@ -512,6 +512,15 @@ static EZrExecBcFusionFallbackReason zr_fusion_match_constraints(
             return ZR_EXEC_BC_FUSION_FALLBACK_RESULT_MISMATCH;
         }
     }
+    if (info->pattern == ZR_EXEC_BC_FUSION_PATTERN_BINDING_CALL) {
+        TZrExecIrValueId callTarget;
+        /* CALL operand zero is its callee; later operands are arguments. */
+        if ((EZrExecIrOpcode)tail->opcode != ZR_EXEC_IR_OPCODE_CALL ||
+            !zr_fusion_operand_at(function, tail, 0u, &callTarget) ||
+            callTarget != headResult) {
+            return ZR_EXEC_BC_FUSION_FALLBACK_RESULT_MISMATCH;
+        }
+    }
     if ((info->constraints &
          ZR_EXEC_BC_FUSION_CONSTRAINT_RESULT_SINGLE_USE) != 0u &&
         (headResult == ZR_EXEC_IR_VALUE_ID_INVALID ||

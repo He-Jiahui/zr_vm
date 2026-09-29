@@ -35,11 +35,13 @@ tests:
   - tests/parser/test_ssa_generated_fusion_compare_branch.inc
   - tests/parser/test_ssa_generated_fusion_increment_branch.inc
   - tests/parser/test_ssa_generated_fusion_index_store.inc
+  - tests/parser/test_ssa_generated_fusion_binding_call.inc
   - tests/cmake/ssa-tests.cmake
   - tests/acceptance/ssa-generated-fusion.md
   - tests/acceptance/2026-09-29-ssa-compare-branch-mode.md
   - tests/acceptance/2026-09-29-ssa-increment-loop-branch-types.md
   - tests/acceptance/2026-09-29-ssa-index-store-address-role.md
+  - tests/acceptance/2026-09-29-ssa-binding-call-callee-role.md
 doc_type: module-detail
 status: implemented
 ---
@@ -140,6 +142,12 @@ must be the store's address operand (STORE.operand[0]). A generic same-result
 use in STORE.operand[1] is only the assigned value and does not authorize
 the indexed-store fusion. That shape stays unfused with a result-mismatch
 fallback; the LOAD variant keeps its existing direct-use rule.
+
+For BINDING_CALL, the projected PLACE_PROJECT result must be CALL operand 0,
+the canonical callee. A generic same-result use in a later explicit argument
+slot is not a callee binding and stays as the original PLACE_PROJECT and CALL
+with a result-mismatch fallback. This preserves the call ABI's operand roles
+without inferring a receiver from source syntax.
 
 No native/getter/member name lookup is performed by fusion.  Binding rules
 consume the already-resolved binding row produced by static-binding facts.
