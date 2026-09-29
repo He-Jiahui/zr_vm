@@ -589,10 +589,10 @@ ZR_PARSER_API void ZrParser_Compiler_CompileExternBlock(SZrCompilerState *cs, SZ
 ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateExternCallableDecorators(
         SZrCompilerState *cs,
         SZrAstNode *declaration);
-ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateExternStructDecorators(
+/** @brief 校验 extern struct 声明与字段的规范 zr.ffi 装饰器；编译器和 LSP 共用。 */ ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateExternStructDecorators(
         SZrCompilerState *cs,
         SZrAstNode *declaration);
-ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateExternEnumDecorators(
+/** @brief 供编译器与 LSP 校验 extern enum 及成员装饰器，并发布首个非法指令的结构化诊断。 */ ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateExternEnumDecorators(
         SZrCompilerState *cs,
         SZrAstNode *declaration);
 /** @brief 供编译器与 LSP 校验单个 extern 参数的规范装饰器；parameter 必须是参数 AST。 */ ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateExternParameterDecorators(

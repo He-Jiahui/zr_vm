@@ -1,14 +1,17 @@
 #include "compiler_internal.h"
 #include "compiler_extern_decorator_diagnostics.h"
 
+/* 同一规则遍历器区分声明和成员上下文，避免两条诊断链各自维护合法指令集。 */
 typedef enum EZrExternEnumDecoratorTarget {
     ZR_EXTERN_ENUM_DECORATOR_DECLARATION = 0,
     ZR_EXTERN_ENUM_DECORATOR_MEMBER = 1
 } EZrExternEnumDecoratorTarget;
 
+/* 与 extern 枚举的固定宽度整数 ABI 约定保持一致，不接受宿主相关的 int 名称。 */
 static const TZrChar *const kExternEnumUnderlyingValues[] = {
         "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64"};
 
+/* 只校验源级 underlying 指令的合法名字；实际类型选择由 extern enum 编译路径处理。 */
 static TZrBool compiler_extern_enum_underlying_is_supported(
         SZrString *value) {
     const TZrChar *text;
@@ -30,11 +33,13 @@ static TZrBool compiler_extern_enum_underlying_is_supported(
     return ZR_FALSE;
 }
 
+/* 成员 value 与声明 underlying 使用不同的字面量契约，供编译器和 LSP 共享拒绝语义。 */
 static TZrBool compiler_extern_enum_arguments_valid(
         EZrExternEnumDecoratorTarget target,
         SZrFunctionCall *call) {
     if (target == ZR_EXTERN_ENUM_DECORATOR_MEMBER) {
         TZrInt64 value = 0;
+        /* BUG: INT64_MAX 字面量会通过此处校验；后续枚举成员初始化无界执行 value + 1，触发 C 有符号溢出。 */
         return extern_compiler_extract_int_argument(call, &value);
     }
 
@@ -43,6 +48,7 @@ static TZrBool compiler_extern_enum_arguments_valid(
            compiler_extern_enum_underlying_is_supported(underlying);
 }
 
+/* 对单个目标的全部装饰器执行 fail-closed 校验，失败发布供语义查询复用的诊断。 */
 static TZrBool compiler_extern_validate_enum_decorator_array(
         SZrCompilerState *cs,
         SZrAstNodeArray *decorators,
@@ -67,6 +73,8 @@ static TZrBool compiler_extern_validate_enum_decorator_array(
     if (decorators == ZR_NULL) {
         return ZR_TRUE;
     }
+    /* TODO: 当前逐项验证却未限制重复 underlying/value；核实应拒绝冲突项还是明确首项优先。 */
+    /* TODO: baseType 或成员显式 value 存在时，下游忽略对应装饰器；需明确冲突优先级或报告诊断。 */
     for (TZrSize index = 0U; index < decorators->count; index++) {
         SZrAstNode *decoratorNode = decorators->nodes[index];
         SZrFunctionCall *call = ZR_NULL;
@@ -100,6 +108,7 @@ static TZrBool compiler_extern_validate_enum_decorator_array(
     return ZR_TRUE;
 }
 
+/* 编译与 LSP 共用的入口：先检声明，再检成员，让首个非法装饰器决定稳定诊断范围。 */
 TZrBool ZrParser_Compiler_ValidateExternEnumDecorators(
         SZrCompilerState *cs,
         SZrAstNode *declaration) {
