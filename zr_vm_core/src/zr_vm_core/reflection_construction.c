@@ -14,30 +14,41 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 反射 TypeDescriptor 到运行时 prototype 的私有连接；由 TypeOfValue/元数据物化时写入，
+ * 构造入口只借此回到真实 prototype，不把 descriptor 当作对象布局的权威副本。 */
 static const TZrChar *kConstructionPrototypeField =
         "__zr_reflection_prototype";
+/* entry function 持有 prototype/member 常量表；构造器选择从编译元数据回溯方法常量。 */
 static const TZrChar *kConstructionEntryFunctionField =
         "__zr_reflection_entry_function";
+/* 每个 descriptor 按参数数量及类型签名缓存选择结果，含失败结果以免反复扫描元数据。 */
 static const TZrChar *kConstructionCacheFieldPrefix =
         "__zr_reflection_constructor_arity_";
 
+/* 缓存中的整数编码：只有无显式构造器的零参数隐式构造可用 IMPLICIT。 */
 enum {
     ZR_REFLECTION_CONSTRUCTION_CACHE_IMPLICIT = 0,
     ZR_REFLECTION_CONSTRUCTION_CACHE_NOT_FOUND = 1,
     ZR_REFLECTION_CONSTRUCTION_CACHE_AMBIGUOUS = 2,
 };
 
+/* TODO: 计数器是进程级且未同步；当前测试串行使用，需确认调试 API 是否承诺并发安全。 */
 static SZrReflectionConstructionCacheStats gConstructionCacheStats;
 
+/* TryRun 的上下文把可移动 VM 状态之外的构造目标和参数保持在调用者帧中；result 故意丢弃。 */
 typedef struct SZrReflectionConstructorInvokeRequest {
+    /* binder 已选出的 metadata function；不经再次动态重载查找。 */
     SZrFunction *constructor;
+    /* 新实例 receiver 在调用期间由 NativeCallPin 保活。 */
     SZrTypeValue *receiver;
+    /* 借用调用方参数数组，只在同步 TryRun 生命周期内有效。 */
     const SZrTypeValue *arguments;
     TZrSize argumentCount;
     SZrTypeValue *result;
     TZrBool invoked;
 } SZrReflectionConstructorInvokeRequest;
 
+/* 把 constructor 调用放进 TryRun 的可捕获边界；异常转换由外层 CreateInstance 统一收尾。 */
 static void construction_invoke_body(SZrState *state, TZrPtr arguments) {
     SZrReflectionConstructorInvokeRequest *request =
             (SZrReflectionConstructorInvokeRequest *)arguments;
@@ -55,6 +66,7 @@ static void construction_invoke_body(SZrState *state, TZrPtr arguments) {
             request->result);
 }
 
+/* 构造器异常已转成 status 后清掉同一执行状态的异常与 pending-control，避免泄漏给调用者。 */
 static void construction_clear_caught_exception(SZrState *state) {
     if (state == ZR_NULL) {
         return;
@@ -69,15 +81,18 @@ static void construction_clear_caught_exception(SZrState *state) {
     state->pendingControl.hasValue = ZR_FALSE;
 }
 
+/* 测试在限定的一组 binder 请求前重置计数；并发请求时不能把计数解释为 runtime 局部值。 */
 void ZrCore_Reflection_DebugResetConstructionCacheStats(void) {
     memset(&gConstructionCacheStats, 0, sizeof(gConstructionCacheStats));
 }
 
+/* 与 reset 配对，供缓存命中/未命中用例检查 descriptor 缓存是否隔离。 */
 SZrReflectionConstructionCacheStats
 ZrCore_Reflection_DebugGetConstructionCacheStats(void) {
     return gConstructionCacheStats;
 }
 
+/* 允许内部失败路径统一填写可选 status，避免每个公共入口重复处理 NULL 输出槽。 */
 static void construction_set_status(
         EZrReflectionConstructionStatus *outStatus,
         EZrReflectionConstructionStatus status) {
@@ -86,6 +101,7 @@ static void construction_set_status(
     }
 }
 
+/* 只用于读取反射对象上的内部字符串键；返回对象存储中的借用值，不转移所有权。 */
 static const SZrTypeValue *construction_get_field(
         SZrState *state,
         SZrObject *object,
@@ -107,6 +123,7 @@ static const SZrTypeValue *construction_get_field(
     return ZrCore_Object_GetValue(state, object, &key);
 }
 
+/* 写 descriptor 私有字段供 binder 缓存复用；失败通过 VM threadStatus 暴露给当前调用。 */
 static TZrBool construction_set_field(
         SZrState *state,
         SZrObject *object,
@@ -131,6 +148,7 @@ static TZrBool construction_set_field(
     return state->threadStatus == ZR_THREAD_STATUS_FINE;
 }
 
+/* 将签名压成 descriptor 字段名；固定缓冲区不足时放弃缓存，构造语义仍由慢路径决定。 */
 static TZrBool construction_cache_key(
         TZrSize argumentCount,
         TZrUInt64 argumentSignature,
@@ -151,6 +169,7 @@ static TZrBool construction_cache_key(
     return (TZrBool)(length > 0 && (TZrSize)length < bufferSize);
 }
 
+/* binder 签名的逐字节累积器；调用者负责提供有效、稳定的内存区间。 */
 static TZrUInt64 construction_hash_bytes(
         TZrUInt64 hash,
         const void *bytes,
@@ -164,6 +183,8 @@ static TZrUInt64 construction_hash_bytes(
     return hash;
 }
 
+/* TODO: 计划键只保存 64 位摘要，命中后没有原始形状复核；确认是否接受摘要碰撞风险。
+ * 对象身份按 prototype 名折叠，array 元素类型也不入键，需与重载兼容契约一并确认。 */
 static TZrUInt64 construction_argument_signature(
         SZrState *state,
         const SZrTypeValue *arguments,
@@ -200,6 +221,7 @@ static TZrUInt64 construction_argument_signature(
     return hash;
 }
 
+/* TODO: 用户类型目前按 metadata 短名称比较；确认跨模块同名类型是否应具备 nominal 区分。 */
 static TZrBool construction_type_name_is(
         const SZrFunctionTypedTypeRef *type,
         const TZrChar *expected) {
@@ -212,6 +234,8 @@ static TZrBool construction_type_name_is(
     return name != ZR_NULL && strcmp(name, expected) == 0;
 }
 
+/* TODO: array 参数只按外层 ARRAY 匹配，数值族分数只选候选而不转换实参；核对 binder 契约。
+ * 其余评分表达精确/近祖先优先于数值族，再优先于 object 通配。 */
 static TZrInt32 construction_argument_match_score(
         SZrState *state,
         const SZrTypeValue *argument,
@@ -273,6 +297,7 @@ static TZrInt32 construction_argument_match_score(
     return -1;
 }
 
+/* 缺少参数签名记录时，非零实参候选以弱分数保留作 fallback；需确认这符合重载约定。 */
 static TZrInt32 construction_signature_match_score(
         SZrState *state,
         SZrFunction *function,
@@ -304,6 +329,7 @@ static TZrInt32 construction_signature_match_score(
     return totalScore;
 }
 
+/* 从 descriptor 私有连接取出并校验内部 prototype；结果是 GC 管理对象的借用指针。 */
 static SZrObjectPrototype *construction_get_prototype(
         SZrState *state,
         SZrObject *descriptor) {
@@ -323,6 +349,7 @@ static SZrObjectPrototype *construction_get_prototype(
                    : ZR_NULL;
 }
 
+/* 取得编译此 prototype 所在模块的 metadata function，后续用于读取成员表和常量池。 */
 static SZrFunction *construction_get_entry_function(
         SZrState *state,
         SZrObjectPrototype *prototype) {
@@ -336,6 +363,7 @@ static SZrFunction *construction_get_entry_function(
     return ZrCore_Closure_GetMetadataFunctionFromValue(state, value);
 }
 
+/* 在 entry function 的紧凑 prototype 元数据中定位当前 prototype；坏长度或映射缺项即失败。 */
 static const SZrCompiledPrototypeInfo *construction_get_compiled_info(
         SZrFunction *entryFunction,
         SZrObjectPrototype *prototype) {
@@ -377,6 +405,7 @@ static const SZrCompiledPrototypeInfo *construction_get_compiled_info(
     return ZR_NULL;
 }
 
+/* 只挑当前 prototype 上 public、显式声明且 arity 相同的 constructor；同分候选留给 binder 报歧义。 */
 static SZrFunction *construction_select_constructor(
         SZrState *state,
         SZrObjectPrototype *prototype,
@@ -456,6 +485,7 @@ static SZrFunction *construction_select_constructor(
     return match;
 }
 
+/* 读取成功、隐式构造、无匹配或歧义计划；命中时不重新解析 descriptor 的成员表。 */
 static TZrBool construction_read_cached_plan(
         SZrState *state,
         SZrObject *descriptor,
@@ -517,6 +547,7 @@ static TZrBool construction_read_cached_plan(
     return ZR_TRUE;
 }
 
+/* 将成功/负计划存回 descriptor；键隔离参数形状，descriptor 身份隔离不同模块代际。 */
 static void construction_store_cached_plan(
         SZrState *state,
         SZrObject *descriptor,
@@ -553,6 +584,7 @@ static void construction_store_cached_plan(
     construction_set_field(state, descriptor, key, &cached);
 }
 
+/* 统一 cache-first 的构造器绑定；无显式 ctor 仅对零实参回退为隐式构造。 */
 static SZrFunction *construction_bind_constructor(
         SZrState *state,
         SZrObject *descriptor,
@@ -607,6 +639,7 @@ static SZrFunction *construction_bind_constructor(
     return constructor;
 }
 
+/* 通过受校验的 TypeId 读取类别，拒绝仅凭 descriptor 外形伪造的构造资格。 */
 static TZrBool construction_read_category(
         SZrState *state,
         SZrObject *descriptor,
@@ -633,6 +666,7 @@ static TZrBool construction_read_category(
     return ZR_TRUE;
 }
 
+/* descriptor native 的前置门：类别与实际 prototype 必须同时支持构造，供脚本快速探测。 */
 TZrBool ZrCore_Reflection_RequireConstructible(
         SZrState *state,
         SZrObject *typeDescriptor,
@@ -669,6 +703,8 @@ TZrBool ZrCore_Reflection_RequireConstructible(
     return ZR_TRUE;
 }
 
+/* 反射专用实例化入口：先绑定 public constructor，再隔离 VM 调用状态并返回新对象；
+ * ordinary new/init 不经过此 binder。arguments 只借用至本次同步调用结束。 */
 TZrBool ZrCore_Reflection_CreateInstance(
         SZrState *state,
         SZrObject *typeDescriptor,
@@ -720,6 +756,7 @@ TZrBool ZrCore_Reflection_CreateInstance(
         return ZR_FALSE;
     }
 
+    /* 从这里到结果交付，实例必须跨构造器分配/GC 保活；所有失败出口都需解除 pin。 */
     instance = ZrCore_Object_New(state, prototype);
     if (instance == ZR_NULL) {
         return ZR_FALSE;
@@ -750,6 +787,8 @@ TZrBool ZrCore_Reflection_CreateInstance(
     request.argumentCount = argumentCount;
     request.result = &ignoredResult;
     request.invoked = ZR_FALSE;
+    /* 构造器可扩展 VM 栈、压入 handler 或 AOT roots；恢复锚点而非保存裸栈地址，
+     * 让反射调用作为嵌套调用返回到原调用者的 frame/handler/root 深度。 */
     savedCallInfo = state->callInfoList;
     savedExceptionHandlerStackLength = state->exceptionHandlerStackLength;
     savedRootFrame = state->aotGcRootFrameStack;
@@ -813,6 +852,7 @@ TZrBool ZrCore_Reflection_CreateInstance(
                             state, &savedCallInfoReturnAnchor);
         }
     }
+    /* 构造器失败不向反射 caller 泄漏半初始化实例；异常被清理并映射为统一 status。 */
     if (invokeStatus != ZR_THREAD_STATUS_FINE || !request.invoked ||
         state->threadStatus != ZR_THREAD_STATUS_FINE) {
         construction_clear_caught_exception(state);
