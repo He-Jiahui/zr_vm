@@ -6,6 +6,10 @@
  * conservative capability preflight for previously inactive entry bodies,
  * not an AST-to-CFG reconstruction. Existing active CFG producers retain
  * their own control-flow preflights. */
+/**
+ * @brief 为入口脚本的直线能力预检保存待访 AST 节点及顺序消费游标。
+ * @note place 初始化位图只从更早的 SemanticIR 写操作推导；failed 表示预检资源不足，不能把不完整扫描误认成受支持。
+ */
 typedef struct SZrSemanticCfgSourceWorklist {
     const SZrAstNode **nodes;
     TZrBool *initializedPlaces;
@@ -16,6 +20,11 @@ typedef struct SZrSemanticCfgSourceWorklist {
     TZrBool failed;
 } SZrSemanticCfgSourceWorklist;
 
+/**
+ * @brief 将 AST 节点加入显式 worklist，避免按用户表达式深度递归遍历。
+ * @pre pending 为当前预检私有状态；节点可为空，空节点不参与扫描。
+ * @note 分配失败只标记预检失败，由外层终止并释放 scratch，不转成分析成功。
+ */
 static void compiler_semantic_cfg_queue_node(
         SZrCompilerState *cs, SZrSemanticCfgSourceWorklist *pending,
         const SZrAstNode *node) {
@@ -41,10 +50,17 @@ static void compiler_semantic_cfg_queue_node(
     pending->nodes[pending->length++] = node;
 }
 
+/** @brief 判断可选 AST 子节点表是否没有成员，供直线语法白名单筛选复合节点。
+ * @return 空指针或零成员代表此可选列表不产生额外运行时工作。
+ */
 static TZrBool compiler_semantic_cfg_empty_nodes(const SZrAstNodeArray *nodes) {
     return (TZrBool)(nodes == ZR_NULL || nodes->count == 0U);
 }
 
+/**
+ * @brief 判断 SemanticIR 指令源范围是否对应当前 AST 节点，用于将已有产物关联回源语法。
+ * @pre instruction 与 node 均为非空有效对象，源位置来自同一次编译。
+ */
 static TZrBool compiler_semantic_cfg_same_source(
         const SZrSemanticIrInstruction *instruction, const SZrAstNode *node) {
     return (TZrBool)(instruction->sourceRange.source == node->location.source &&
@@ -52,6 +68,10 @@ static TZrBool compiler_semantic_cfg_same_source(
             instruction->sourceRange.end.offset == node->location.end.offset);
 }
 
+/**
+ * @brief 从顺序游标之后查找指定节点对应的初始化/写入产物，并推进游标。
+ * @note 游标按 worklist 保持的源码顺序消费，避免后续节点的写操作替前面的 AST 节点背书。
+ */
 static TZrBool compiler_semantic_cfg_has_source_write(
         const SZrCompilerState *cs, const SZrAstNode *node,
         EZrSemanticIrOpcode opcode,
@@ -70,6 +90,10 @@ static TZrBool compiler_semantic_cfg_has_source_write(
     return ZR_FALSE;
 }
 
+/**
+ * @brief 预检转换和存储输入是否具备后续执行 IR lowering 可消费的值与规范类型。
+ * @return 发现缺失值、类型 token 不一致或非支持的跨类型转换时返回 false，使入口图留在分析用途。
+ */
 static TZrBool compiler_semantic_cfg_has_complete_value_types(
         const SZrCompilerState *cs) {
     TZrSize index;
@@ -120,6 +144,11 @@ static TZrBool compiler_semantic_cfg_has_complete_value_types(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 判断给定 LOAD 之前，目标 place 是否已有同一前缀中的初始化或存储。
+ * @pre placeId 是 SemanticIR place 图的一基有效编号；pending 在本次预检中复用。
+ * @return 返回之前指令前缀内的初始化事实；scratch 分配失败同时设置 failed 以区分资源错误。
+ */
 static TZrBool compiler_semantic_cfg_place_initialized(
         const SZrCompilerState *cs, SZrSemanticCfgSourceWorklist *pending,
         TZrSize beforeInstruction, TZrPlaceId placeId) {
@@ -151,6 +180,10 @@ static TZrBool compiler_semantic_cfg_place_initialized(
     return pending->initializedPlaces[placeId - 1U];
 }
 
+/**
+ * @brief 为入口 AST 标识符读取寻找同源 LOAD，并要求该 LOAD 所读 place 已先初始化。
+ * @note 仅证明有语义产物且局部位置可读；全局、闭包和子函数读取没有该路径的 producer 时由外层回退。
+ */
 static TZrBool compiler_semantic_cfg_has_source_load(
         const SZrCompilerState *cs, const SZrAstNode *node,
         TZrSize *nextInstruction, SZrSemanticCfgSourceWorklist *pending) {
@@ -171,6 +204,10 @@ static TZrBool compiler_semantic_cfg_has_source_load(
     return ZR_FALSE;
 }
 
+/**
+ * @brief 将直线预检明确支持的二元运算符映射到其 SemanticIR opcode。
+ * @return 只接受加、减、乘；未知/空节点返回 INVALID，让调用方拒绝提升而不猜测语义。
+ */
 static EZrSemanticIrOpcode compiler_semantic_cfg_binary_opcode(
         const SZrAstNode *node) {
     const TZrChar *op;
@@ -185,6 +222,10 @@ static EZrSemanticIrOpcode compiler_semantic_cfg_binary_opcode(
     return ZR_SEMANTIC_IR_INVALID;
 }
 
+/**
+ * @brief 确认 AST 二元表达式已有同源且形态完整的 SemanticIR 结果指令。
+ * @note 此处只核对 opcode、双操作数和结果编号；可执行类型约束由 complete-value preflight 继续核对。
+ */
 static TZrBool compiler_semantic_cfg_has_source_binary(
         const SZrCompilerState *cs, const SZrAstNode *node) {
     EZrSemanticIrOpcode opcode = compiler_semantic_cfg_binary_opcode(node);
@@ -202,6 +243,12 @@ static TZrBool compiler_semantic_cfg_has_source_binary(
     return ZR_FALSE;
 }
 
+/**
+ * @brief 预检无活动 CFG 的顶层脚本是否能安全提升为可执行的直线 CFG。
+ * @pre 调用者仅在 CFG inactive、startup 未阻止/抑制且尚未终止时考虑提升。
+ * @return supported=false 表示保守转为分析图；worklist scratch 失败返回 false 并使验证停止。
+ * @note 这是 producer 能力检查，不重建 AST 控制流，也不读取 ExecBC 来替缺失的 SemanticIR 产物背书。
+ */
 static TZrBool compiler_semantic_cfg_straight_line_is_supported(
         SZrCompilerState *cs, TZrBool *outSupported) {
     SZrSemanticCfgSourceWorklist pending = {0};
@@ -215,9 +262,11 @@ static TZrBool compiler_semantic_cfg_straight_line_is_supported(
     if (!compiler_semantic_cfg_has_complete_value_types(cs)) return ZR_TRUE;
     /* An explicit worklist avoids introducing another recursive walk over
      * user-controlled expression depth. No ExecBC instruction is consulted. */
+    /* 反向压入 script 子项，使 LIFO worklist 仍按源码顺序核对写入与读取。 */
     compiler_semantic_cfg_queue_node(cs, &pending, cs->currentAst);
     while (supported && !pending.failed && pending.length != 0U) {
         const SZrAstNode *node = pending.nodes[--pending.length];
+        /* 仅列出已能由 SemanticIR producer 完整表达的表面语法；默认拒绝提升。 */
         switch (node->type) {
             case ZR_AST_SCRIPT: {
                 const SZrAstNodeArray *statements = node->data.script.statements;
@@ -329,8 +378,12 @@ static TZrBool compiler_semantic_cfg_straight_line_is_supported(
     return (TZrBool)!pending.failed;
 }
 
-/* This fallback is deliberately analysis-only. Its synthetic RETURN edge is
- * not an executable terminator; the strict ExecIR builder must reject it. */
+/**
+ * @brief 为未提升或不支持的入口脚本构造仅供语义分析消费的保守总图。
+ * @pre 当前不存在活动源 CFG；现存语义指令会放入单个 entry 范围。
+ * @return CFG 块、边或范围绑定失败时返回 false。
+ * @note 合成 RETURN/EXIT 边只让分析有完整入口/出口；它不是执行终结符，严格 ExecIR builder 必须拒绝。
+ */
 static TZrBool compiler_semantic_cfg_build_analysis_graph(SZrCompilerState *cs) {
     SZrSemanticIrFunction *function = &cs->preSemanticIr;
     TZrUInt32 entryBlock, exitBlock;
@@ -359,6 +412,12 @@ static TZrBool compiler_semantic_cfg_build_analysis_graph(SZrCompilerState *cs) 
                 ZR_PARSER_CFG_TERMINATOR_EXIT));
 }
 
+/**
+ * @brief 将已通过能力预检的顶层直线指令前缀事务式提升为活动入口 CFG。
+ * @pre CFG 尚未激活，预检已证明每个运行时相关 AST 单元有可执行 SemanticIR producer。
+ * @return 重新绑定分块或补隐式出口失败时恢复原图及 append-only 序列长度，并返回 false。
+ * @note 成功后丢弃旧 CFG 容器；SemanticIR 指令不重编译，只补块范围及隐式函数出口。
+ */
 static TZrBool compiler_semantic_cfg_promote_straight_line(SZrCompilerState *cs) {
     SZrSemanticIrFunction *function = &cs->preSemanticIr;
     SZrParserCfg previousCfg = function->cfg;
@@ -369,6 +428,7 @@ static TZrBool compiler_semantic_cfg_promote_straight_line(SZrCompilerState *cs)
     TZrUInt32 previousStart = cs->preSemanticIrCfgStart;
     TZrBool previousValidated = cs->preSemanticIrValidated;
 
+    /* 新图构造失败时下面的 rollback 恢复旧分析图和所有已追加序列边界。 */
     ZrParser_Cfg_Init(cs->state, &function->cfg);
     if (!compiler_semantic_cfg_ensure_active(cs) ||
         !compiler_semantic_cfg_finish(cs)) {
@@ -387,9 +447,19 @@ static TZrBool compiler_semantic_cfg_promote_straight_line(SZrCompilerState *cs)
     return ZR_TRUE;
 }
 
+/**
+ * @brief 在 SemanticIR 验证前收束源 CFG，或为入口脚本选择可执行提升/分析专用总图。
+ * @pre 由 ValidatePreSemanticIr 在初始化后的编译器状态上调用；源编译器已写出本阶段可见的 SemanticIR。
+ * @return 活动 CFG 的出口绑定、能力预检、CFG 构造或提升失败时返回 false，调用者不得继续标记 IR 已验证。
+ * @note active 路径保留可选/调用/异常边并只补函数出口；inactive 且能力不足或启动被阻止时绝不伪造可执行 CFG。
+ */
 TZrBool compiler_semantic_cfg_finalize(SZrCompilerState *cs) {
     TZrBool supported = ZR_FALSE;
     if (cs == ZR_NULL || !cs->preSemanticIrInitialized) return ZR_FALSE;
+    /*
+     * optional、invoke 与异常边由各自的控制流 lowering 先行落图；此处只
+     * 关闭当前延续并补函数出口，不能重建或覆盖上游已绑定的分支关系。
+     */
     if (cs->preSemanticIrCfgActive) return compiler_semantic_cfg_finish(cs);
     if (!cs->preSemanticIrCfgStartupBlocked &&
         !cs->preSemanticIrCfgStartupSuppressed &&
