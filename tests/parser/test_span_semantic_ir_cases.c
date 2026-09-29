@@ -8,6 +8,7 @@
 #include "zr_vm_parser/cfg.h"
 #include "zr_vm_parser/semantic_ir.h"
 
+/* 用无位置信息的范围填充手工构造的 IR，避免测试夹具依赖虚构源码坐标。 */
 static SZrFileRange span_empty_range(void) {
     SZrFileRange range;
 
@@ -15,6 +16,7 @@ static SZrFileRange span_empty_range(void) {
     return range;
 }
 
+/* 将测试需要的最小字段集中映射到 Emit 契约，统一使用无效目标块。 */
 static TZrSemanticInstructionId span_emit_semantic_instruction(
         SZrSemanticIrFunction *function,
         EZrSemanticIrOpcode opcode,
@@ -39,6 +41,7 @@ static TZrSemanticInstructionId span_emit_semantic_instruction(
     return ZrParser_SemanticIr_Emit(function, &spec);
 }
 
+/* 用最小的 place/value/CFG 图复现来源借用有效时的生命周期冲突。 */
 static void assert_contiguous_source_lifecycle_conflict(
         EZrSemanticContiguousSourceKind sourceKind,
         EZrSemanticLoanAccess loanAccess,
@@ -106,6 +109,7 @@ static void assert_contiguous_source_lifecycle_conflict(
             &function, sourceTypeId, span_empty_range());
     viewLoadValueId = ZrParser_SemanticIr_AddValue(
             &function, viewTypeId, span_empty_range());
+    /* MOVE 有结果值而 DROP 没有，避免两条生命周期路径共用错误的 IR 形状。 */
     if (lifecycleOpcode == ZR_SEMANTIC_IR_MOVE) {
         lifecycleValueId = ZrParser_SemanticIr_AddValue(
                 &function, sourceTypeId, span_empty_range());
@@ -128,6 +132,7 @@ static void assert_contiguous_source_lifecycle_conflict(
     viewFact.hasKnownLength = ZR_TRUE;
     viewFact.knownLength = 4;
     viewFact.sourceRange = span_empty_range();
+    /* 这两类视图不能脱离来源 loan；首次拒收后再补入真实 loan 形成有效事实。 */
     TEST_ASSERT_EQUAL_UINT32(
             ZR_SEMANTIC_CONTIGUOUS_VIEW_FACT_ID_INVALID,
             ZrParser_SemanticIr_AddContiguousViewFact(&function, &viewFact));
@@ -221,6 +226,7 @@ static void assert_contiguous_source_lifecycle_conflict(
                     ZR_SEMANTIC_LOAN_ID_INVALID,
                     ZR_SEMANTIC_REGION_ID_INVALID));
 
+    /* 把完整的六条 IR 排入唯一可达 return 块，保留末尾视图读取的借用活性。 */
     entryBlockId = ZrParser_Cfg_AppendBlock(
             state, &function.cfg, ZR_PARSER_CFG_BLOCK_ENTRY, ZR_NULL);
     exitBlockId = ZrParser_Cfg_AppendBlock(
@@ -257,11 +263,16 @@ static void assert_contiguous_source_lifecycle_conflict(
             ZR_SEMANTIC_FLOW_LOAN_CONFLICT,
             sourcePlaceId));
 
+    /* BUG: state/function/result 建立后的断言失败会由 Unity longjmp 中止本 helper，
+     * 跳过下方释放；test_span_core.c 的空 tearDown 无法取得这些局部句柄，
+     * 因此失败运行会泄漏其资源。该路径由 main 中的 RUN_TEST 可达。 */
     ZrParser_SemanticFlowResult_Free(state, &flowResult);
     ZrParser_SemanticIrFunction_Free(state, &function);
     ZrContainerTests_DestroyState(state);
 }
 
+/* 先验证 owner/native-pinned 视图缺少来源 loan 时被拒，再挂接真实借用；
+ * 后续 view load/return 使该借用跨过 MOVE 或 DROP，覆盖冲突诊断。 */
 void test_span_owner_move_and_native_drop_conflict_with_active_view(void) {
     assert_contiguous_source_lifecycle_conflict(
             ZR_SEMANTIC_CONTIGUOUS_SOURCE_OWNER,
