@@ -47,7 +47,7 @@ typedef struct SZrHotPatchGenerationManager {
 } SZrHotPatchGenerationManager;
 
 /** @brief Prepare 返回未租用句柄；Acquire 返回租用句柄，后者必须 Release。
- * BUG: 跨 manager 句柄传给 Publish/Resolve/Release，归属检查会先做跨数组指针关系比较。 */
+ * 句柄绑定创建它的 manager；其他 manager 会在读取记录前拒绝该句柄。 */
 typedef struct SZrHotPatchGenerationHandle {
     SZrHotPatchVersionRecord *record;
     TZrUInt64 generation;
@@ -92,7 +92,8 @@ ZR_CORE_API EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Prepare(
         SZrHotPatchGenerationHandle *outHandle,
         SZrHotPatchGenerationDiagnostic *diagnostic);
 /** @brief 原子切换新调用使用的 active；已有租约继续保留旧版本。
- * @pre prepared 来自同一 manager 的 Prepare/Rollback，且尚未发布或租用。 */
+ * @pre prepared 来自同一 manager 的 Prepare/Rollback，且尚未发布或租用。
+ * @note 外 manager 句柄返回 NOT_PREPARED，actualGeneration 为零。 */
 ZR_CORE_API EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Publish(
         SZrHotPatchGenerationManager *manager,
         SZrHotPatchGenerationHandle *prepared,
@@ -116,13 +117,15 @@ ZR_CORE_API EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Acquire(
         SZrHotPatchGenerationHandle *outHandle,
         SZrHotPatchGenerationDiagnostic *diagnostic);
 /** @brief 在有效租约内取得版本快照；返回视图不拥有记录。
+ * @note 外 manager 句柄返回 STALE_LINK，actualGeneration 为零。
  * BUG: 与 Publish 并发时会无锁读取其修改的非原子 state。 */
 ZR_CORE_API EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Resolve(
         const SZrHotPatchGenerationManager *manager,
         const SZrHotPatchGenerationHandle *handle,
         SZrHotPatchVersionView *outView,
         SZrHotPatchGenerationDiagnostic *diagnostic);
-/** @brief 结束 Acquire 的一次租约；最后一位持有者释放后旧版本才可回收。 */
+/** @brief 结束 Acquire 的一次租约；最后一位持有者释放后旧版本才可回收。
+ * @note 外 manager 句柄返回 STALE_LINK，且不改变句柄或租约计数。 */
 ZR_CORE_API EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Release(
         SZrHotPatchGenerationManager *manager,
         SZrHotPatchGenerationHandle *handle,

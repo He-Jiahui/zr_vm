@@ -15,9 +15,16 @@ static EZrHotPatchGenerationStatus gen_fail(SZrHotPatchGenerationDiagnostic *d,
 /* 记录槽位、状态与 lease 的复合更新在同一 manager 锁下串行化。 */
 static void gen_lock(SZrHotPatchGenerationManager *m) { while (atomic_flag_test_and_set_explicit(&m->lock,memory_order_acquire)) {} }
 static void gen_unlock(SZrHotPatchGenerationManager *m) { atomic_flag_clear_explicit(&m->lock,memory_order_release); }
-/* BUG: 外部句柄的 record 可属于另一 manager；跨数组关系比较在 C 中未定义，
- * Publish/Resolve/Release 的拒绝分支反而先触发该比较。 */
-static TZrBool gen_belongs(const SZrHotPatchGenerationManager *m,const SZrHotPatchVersionRecord *r) { return (TZrBool)(m && r && m->records && r>=m->records && r<m->records+m->capacity); }
+/* Pointer equality is defined for records from different manager arrays;
+ * relational comparisons across those arrays are not. */
+static TZrBool gen_belongs(const SZrHotPatchGenerationManager *m,
+                           const SZrHotPatchVersionRecord *r) {
+    if (!m || !r || !m->records) return ZR_FALSE;
+    for (TZrUInt32 i = 0u; i < m->capacity; ++i) {
+        if (&m->records[i] == r) return ZR_TRUE;
+    }
+    return ZR_FALSE;
+}
 /* 代际号在同一 manager 生命周期内单调递增，不复用已回收槽位的旧编号。 */
 static TZrUInt64 gen_next(SZrHotPatchGenerationManager *m) {
     TZrUInt64 previous = atomic_load_explicit(&m->nextGeneration,
@@ -70,7 +77,18 @@ EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Publish(SZrHotPatchGenera
         return gen_fail(d,ZR_HOT_PATCH_GENERATION_INVALID_ARGUMENT,0,0,0);
     }
     gen_lock(m);
-    if(!gen_belongs(m,h->record)||h->record->generation!=h->generation||h->record->state!=ZR_HOT_PATCH_VERSION_PREPARED){gen_unlock(m);return gen_fail(d,ZR_HOT_PATCH_GENERATION_NOT_PREPARED,h->generation,h->record? h->record->generation:0u,0);}
+    if (!gen_belongs(m, h->record)) {
+        gen_unlock(m);
+        return gen_fail(d, ZR_HOT_PATCH_GENERATION_NOT_PREPARED,
+                        h->generation, 0u, 0u);
+    }
+    if (h->record->generation != h->generation ||
+        h->record->state != ZR_HOT_PATCH_VERSION_PREPARED) {
+        TZrUInt64 actualGeneration = h->record->generation;
+        gen_unlock(m);
+        return gen_fail(d, ZR_HOT_PATCH_GENERATION_NOT_PREPARED,
+                        h->generation, actualGeneration, 0u);
+    }
     SZrHotPatchVersionRecord *old=atomic_load_explicit(&m->active,memory_order_relaxed); if(old&&old!=h->record&&old->state==ZR_HOT_PATCH_VERSION_ACTIVE) old->state=ZR_HOT_PATCH_VERSION_RETIRED;
     h->record->state=ZR_HOT_PATCH_VERSION_ACTIVE; atomic_store_explicit(&m->active,h->record,memory_order_release); gen_unlock(m); return gen_fail(d,ZR_HOT_PATCH_GENERATION_OK,0,h->generation,0);
 }
@@ -136,7 +154,34 @@ EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Acquire(SZrHotPatchGenera
 
 /* BUG: Publish 在锁内修改旧记录的 state，而此处无锁读取该非原子字段；
  * 持有旧 lease 的线程并发 Resolve 时会与发布线程发生数据竞争。 */
-EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Resolve(const SZrHotPatchGenerationManager *m,const SZrHotPatchGenerationHandle *h,SZrHotPatchVersionView *out,SZrHotPatchGenerationDiagnostic *d) { if(!m||!h||!out||!h->record||!h->leased)return gen_fail(d,ZR_HOT_PATCH_GENERATION_INVALID_ARGUMENT,0,0,0); if(!gen_belongs(m,h->record)||h->record->generation!=h->generation||h->record->state==ZR_HOT_PATCH_VERSION_FREE)return gen_fail(d,ZR_HOT_PATCH_GENERATION_STALE_LINK,h->generation,h->record->generation,0); out->generation=h->record->generation;out->moduleHash=h->record->moduleHash;out->contentHash=h->record->contentHash;out->publicContractHash=h->record->publicContractHash;out->targetProfile=h->record->targetProfile;out->state=(EZrHotPatchVersionState)h->record->state;out->leaseCount=atomic_load_explicit(&h->record->leaseCount,memory_order_acquire); return gen_fail(d,ZR_HOT_PATCH_GENERATION_OK,0,h->generation,out->leaseCount); }
+EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Resolve(
+        const SZrHotPatchGenerationManager *m,
+        const SZrHotPatchGenerationHandle *h,
+        SZrHotPatchVersionView *out,
+        SZrHotPatchGenerationDiagnostic *d) {
+    if (!m || !h || !out || !h->record || !h->leased)
+        return gen_fail(d, ZR_HOT_PATCH_GENERATION_INVALID_ARGUMENT,
+                        0u, 0u, 0u);
+    if (!gen_belongs(m, h->record))
+        return gen_fail(d, ZR_HOT_PATCH_GENERATION_STALE_LINK,
+                        h->generation, 0u, 0u);
+    if (h->record->generation != h->generation ||
+        h->record->state == ZR_HOT_PATCH_VERSION_FREE) {
+        TZrUInt64 actualGeneration = h->record->generation;
+        return gen_fail(d, ZR_HOT_PATCH_GENERATION_STALE_LINK,
+                        h->generation, actualGeneration, 0u);
+    }
+    out->generation = h->record->generation;
+    out->moduleHash = h->record->moduleHash;
+    out->contentHash = h->record->contentHash;
+    out->publicContractHash = h->record->publicContractHash;
+    out->targetProfile = h->record->targetProfile;
+    out->state = (EZrHotPatchVersionState)h->record->state;
+    out->leaseCount = atomic_load_explicit(&h->record->leaseCount,
+                                           memory_order_acquire);
+    return gen_fail(d, ZR_HOT_PATCH_GENERATION_OK, 0u, h->generation,
+                    out->leaseCount);
+}
 
 /* Release 结束一次代际租约；只有最后一个租约结束后 RetireCollect 才可回收。 */
 EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Release(SZrHotPatchGenerationManager *m,SZrHotPatchGenerationHandle *h,SZrHotPatchGenerationDiagnostic *d) { if(!m||!h||!h->record||!h->leased)return gen_fail(d,ZR_HOT_PATCH_GENERATION_INVALID_ARGUMENT,0,0,0); gen_lock(m); if(!gen_belongs(m,h->record)||h->record->generation!=h->generation){gen_unlock(m);return gen_fail(d,ZR_HOT_PATCH_GENERATION_STALE_LINK,h->generation,0,0);} TZrUInt32 n=atomic_load_explicit(&h->record->leaseCount,memory_order_relaxed); if(n==0u){gen_unlock(m);return gen_fail(d,ZR_HOT_PATCH_GENERATION_INVALID_STATE,h->generation,h->generation,0);} n=atomic_fetch_sub_explicit(&h->record->leaseCount,1u,memory_order_release)-1u; h->leased=ZR_FALSE; h->record=ZR_NULL; gen_unlock(m); return gen_fail(d,ZR_HOT_PATCH_GENERATION_OK,0,h->generation,n); }

@@ -3,6 +3,7 @@
 #include "zr_vm_core/hotpatch_retire.h"
 
 #include <assert.h>
+#include <stdio.h>
 #include <string.h>
 
 static void make_validated(SZrValidatedHotPatch *v, SZrArtifactExecIrView *a,
@@ -19,6 +20,132 @@ static void make_validated(SZrValidatedHotPatch *v, SZrArtifactExecIrView *a,
     v->immutableContent = ZR_TRUE;
 }
 
+static int test_cross_manager_handles_are_rejected(void) {
+    SZrHotPatchGenerationManager ownerManager, otherManager;
+    SZrHotPatchVersionRecord ownerRecords[2], otherRecords[2];
+    SZrHotPatchGenerationDiagnostic diagnostic;
+    SZrValidatedHotPatch ownerValidated, otherValidated;
+    SZrArtifactExecIrView ownerArtifact, otherArtifact;
+    SZrHotPatchCapabilityManifest ownerManifest, otherManifest;
+    SZrHotPatchGenerationHandle ownerPrepared, otherPrepared, ownerLease;
+    SZrHotPatchVersionView view;
+    EZrHotPatchGenerationStatus status;
+    int failures = 0;
+
+#define CHECK_HANDLE(condition) \
+    do { \
+        if (!(condition)) { \
+            fprintf(stderr, "cross-manager handle check failed at line %d: %s\n", \
+                    __LINE__, #condition); \
+            ++failures; \
+        } \
+    } while (0)
+
+    if (ZrCore_HotPatch_GenerationManager_Init(
+                &ownerManager, ownerRecords, 2u, &diagnostic) !=
+            ZR_HOT_PATCH_GENERATION_OK ||
+        ZrCore_HotPatch_GenerationManager_Init(
+                &otherManager, otherRecords, 2u, &diagnostic) !=
+            ZR_HOT_PATCH_GENERATION_OK) {
+        return 1;
+    }
+
+    make_validated(&ownerValidated, &ownerArtifact, &ownerManifest, 101u, 7u);
+    make_validated(&otherValidated, &otherArtifact, &otherManifest, 202u, 7u);
+    if (ZrCore_HotPatch_Generation_Prepare(
+                &ownerManager, &ownerValidated, 7u, &ownerPrepared,
+                &diagnostic) != ZR_HOT_PATCH_GENERATION_OK ||
+        ZrCore_HotPatch_Generation_Prepare(
+                &otherManager, &otherValidated, 7u, &otherPrepared,
+                &diagnostic) != ZR_HOT_PATCH_GENERATION_OK ||
+        ZrCore_HotPatch_Generation_Publish(
+                &otherManager, &otherPrepared, &diagnostic) !=
+            ZR_HOT_PATCH_GENERATION_OK) {
+        return 1;
+    }
+
+    /* Both managers use generation 1, so ownership must be checked before
+     * interpreting a record's fields or changing either manager. */
+    status = ZrCore_HotPatch_Generation_Publish(
+            &otherManager, &ownerPrepared, &diagnostic);
+    CHECK_HANDLE(status == ZR_HOT_PATCH_GENERATION_NOT_PREPARED);
+    CHECK_HANDLE(diagnostic.status == ZR_HOT_PATCH_GENERATION_NOT_PREPARED);
+    CHECK_HANDLE(diagnostic.expectedGeneration == ownerPrepared.generation);
+    CHECK_HANDLE(diagnostic.actualGeneration == 0u);
+    CHECK_HANDLE(ownerPrepared.record == &ownerRecords[0]);
+    CHECK_HANDLE(ownerPrepared.leased == ZR_FALSE);
+    CHECK_HANDLE(ownerManager.count == 1u);
+    CHECK_HANDLE(ownerRecords[0].state == ZR_HOT_PATCH_VERSION_PREPARED);
+    CHECK_HANDLE(atomic_load_explicit(&ownerManager.active,
+                                      memory_order_acquire) == ZR_NULL);
+    CHECK_HANDLE(otherRecords[0].state == ZR_HOT_PATCH_VERSION_ACTIVE);
+    CHECK_HANDLE(otherManager.count == 1u);
+    CHECK_HANDLE(atomic_load_explicit(&otherManager.active,
+                                      memory_order_acquire) == &otherRecords[0]);
+
+    if (ZrCore_HotPatch_Generation_Publish(
+                &ownerManager, &ownerPrepared, &diagnostic) !=
+            ZR_HOT_PATCH_GENERATION_OK ||
+        ZrCore_HotPatch_Generation_AcquireActive(
+                &ownerManager, &ownerLease, &diagnostic) !=
+            ZR_HOT_PATCH_GENERATION_OK) {
+        return failures + 1;
+    }
+    CHECK_HANDLE(ownerRecords[0].state == ZR_HOT_PATCH_VERSION_ACTIVE);
+    CHECK_HANDLE(atomic_load_explicit(&ownerManager.active,
+                                      memory_order_acquire) == &ownerRecords[0]);
+
+    memset(&view, 0, sizeof(view));
+    status = ZrCore_HotPatch_Generation_Resolve(
+            &otherManager, &ownerLease, &view, &diagnostic);
+    CHECK_HANDLE(status == ZR_HOT_PATCH_GENERATION_STALE_LINK);
+    CHECK_HANDLE(diagnostic.status == ZR_HOT_PATCH_GENERATION_STALE_LINK);
+    CHECK_HANDLE(diagnostic.expectedGeneration == ownerLease.generation);
+    CHECK_HANDLE(diagnostic.actualGeneration == 0u);
+    CHECK_HANDLE(atomic_load_explicit(&ownerRecords[0].leaseCount,
+                                     memory_order_acquire) == 1u);
+    CHECK_HANDLE(ownerRecords[0].state == ZR_HOT_PATCH_VERSION_ACTIVE);
+    CHECK_HANDLE(atomic_load_explicit(&ownerManager.active,
+                                      memory_order_acquire) == &ownerRecords[0]);
+    CHECK_HANDLE(ownerManager.count == 1u);
+    CHECK_HANDLE(atomic_load_explicit(&otherRecords[0].leaseCount,
+                                     memory_order_acquire) == 0u);
+    CHECK_HANDLE(otherRecords[0].state == ZR_HOT_PATCH_VERSION_ACTIVE);
+    CHECK_HANDLE(otherManager.count == 1u);
+
+    status = ZrCore_HotPatch_Generation_Release(
+            &otherManager, &ownerLease, &diagnostic);
+    CHECK_HANDLE(status == ZR_HOT_PATCH_GENERATION_STALE_LINK);
+    CHECK_HANDLE(diagnostic.status == ZR_HOT_PATCH_GENERATION_STALE_LINK);
+    CHECK_HANDLE(diagnostic.expectedGeneration == ownerLease.generation);
+    CHECK_HANDLE(diagnostic.actualGeneration == 0u);
+    CHECK_HANDLE(ownerLease.leased == ZR_TRUE);
+    CHECK_HANDLE(ownerLease.record == &ownerRecords[0]);
+    CHECK_HANDLE(atomic_load_explicit(&ownerRecords[0].leaseCount,
+                                     memory_order_acquire) == 1u);
+    CHECK_HANDLE(ownerRecords[0].state == ZR_HOT_PATCH_VERSION_ACTIVE);
+    CHECK_HANDLE(atomic_load_explicit(&ownerManager.active,
+                                      memory_order_acquire) == &ownerRecords[0]);
+    CHECK_HANDLE(otherRecords[0].state == ZR_HOT_PATCH_VERSION_ACTIVE);
+    CHECK_HANDLE(ownerManager.count == 1u);
+    CHECK_HANDLE(otherManager.count == 1u);
+
+    status = ZrCore_HotPatch_Generation_Resolve(
+            &ownerManager, &ownerLease, &view, &diagnostic);
+    CHECK_HANDLE(status == ZR_HOT_PATCH_GENERATION_OK);
+    CHECK_HANDLE(view.contentHash == 101u);
+    status = ZrCore_HotPatch_Generation_Release(
+            &ownerManager, &ownerLease, &diagnostic);
+    CHECK_HANDLE(status == ZR_HOT_PATCH_GENERATION_OK);
+    CHECK_HANDLE(atomic_load_explicit(&ownerRecords[0].leaseCount,
+                                     memory_order_acquire) == 0u);
+
+    ZrCore_HotPatch_GenerationManager_Deinit(&otherManager);
+    ZrCore_HotPatch_GenerationManager_Deinit(&ownerManager);
+#undef CHECK_HANDLE
+    return failures;
+}
+
 int main(void) {
     SZrHotPatchGenerationManager manager;
     SZrHotPatchVersionRecord records[3];
@@ -29,6 +156,8 @@ int main(void) {
     SZrHotPatchGenerationHandle p1, p2, oldFrame, newCall;
     SZrHotPatchVersionView view;
     TZrUInt32 collected;
+
+    if (test_cross_manager_handles_are_rejected() != 0) return 1;
 
     assert(ZrCore_HotPatch_GenerationManager_Init(&manager, records, 3u, &d) == ZR_HOT_PATCH_GENERATION_OK);
     make_validated(&v1, &a1, &m1, 101u, 7u);

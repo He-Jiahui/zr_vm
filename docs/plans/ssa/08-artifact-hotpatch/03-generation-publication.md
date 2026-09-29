@@ -18,6 +18,7 @@ plan_sources:
 tests:
   - tests/core/test_ssa_generation_publication.c
   - tests/core/test_call_binding_runtime.c
+  - tests/acceptance/ssa-hotpatch-generation-handle-ownership.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -53,6 +54,14 @@ CallBinding 已有 AdvanceGeneration 和 invalidate；该机制必须扩展为�
 | 计划新增 | `zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_publish.c` | 单事务发布 |
 | 计划新增 | `zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_retire.c` | retired 版本等待与回收 |
 | 计划新增测试 | `tests/core/test_ssa_generation_publication.c` | 下述正向、失败与状态转换断言；复用既有 harness。 |
+
+当前已验证一个 manager 所有权边界：`GenerationHandle` 只能用于创建它的
+manager。跨 manager 的 Publish、Resolve、Release 返回结构化错误且不读外部
+record、不改变记录或 lease；回滚按 manager 内 generation 编号查找，不接收
+handle。实现与复杂度、测试证据见
+[generation handle ownership acceptance](../../../../tests/acceptance/ssa-hotpatch-generation-handle-ownership.md)。
+这只完成 manager 归属检查，不完成 frame 集成、并发 Resolve/Publish 安全或
+本文件的发布与回收门禁。
 
 新增文件登记到所属模块 CMake；测试登记到计划新增的 `tests/cmake/ssa-tests.cmake`，由 `tests/CMakeLists.txt` 单点 include。先迁移职责并保持行为，再接入新 contract；不要把新分析或慢路径追加到巨型 dispatch/quickening 文件。
 
@@ -93,6 +102,7 @@ generation 不复用，防 ABA；回滚也创建新的发布 epoch。仅递增�
 | 旧 frame 长循环期间替换方法 | 旧 frame 规则明确，新入口执行新版本 |
 | 并发 host calls 和原子 bundle 发布 | 不出现混合表 |
 | callback/delegate 仍引用旧版本 | 不提前释放 |
+| 另一个 manager 的 prepared 或 leased handle | 拒绝且不读取外部 record、不改变任一 manager 的槽位或 lease |
 | 重复失效/epoch 溢出/卸载竞争 | 确定错误或等待策略，无悬空 target |
 
 复用回归入口：`tests/core/test_call_binding_runtime.c`。历史计数只作为核对线索，实施时重跑并记录实际总数。
