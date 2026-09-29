@@ -3,6 +3,10 @@
 
 #include <string.h>
 
+/**
+ * @brief 在同一导出类型遍历中承载 plan 计数态或 emit 写入态。
+ * @note emitHeap 为空表示只累计上界；非空时记录游标、RID 游标与堆偏移均由外层共享。
+ */
 typedef struct SZrMetadataTypeSpecScanContext {
     SZrCompilerState *compiler;
     TZrUInt32 count;
@@ -22,6 +26,10 @@ typedef struct SZrMetadataTypeSpecScanContext {
     TZrUInt32 stringHeapEntryCount;
 } SZrMetadataTypeSpecScanContext;
 
+/**
+ * @brief plan 第二遍的签名去重索引；偏移和长度引用临时 scratch heap。
+ * @note 索引仅在单次 plan 调用内有效，不能随 metadata 产物保留。
+ */
 typedef struct SZrMetadataTypeSpecUniqueEntry {
     TZrUInt32 signatureBlobOffset;
     TZrUInt32 signatureBlobLength;
@@ -30,6 +38,7 @@ typedef struct SZrMetadataTypeSpecUniqueEntry {
 static TZrBool metadata_type_spec_requires_record(const SZrFunctionTypedTypeRef *typeRef) {
     TZrNativeString typeNameText;
 
+    /* 基础非泛型类型由已有类型身份表达；只有额外类型构造才需独立 TypeSpec。 */
     if (typeRef == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -53,6 +62,7 @@ static TZrBool metadata_type_spec_write_record_pair(SZrMetadataTypeSpecScanConte
     TZrMetadataToken typeSpecToken;
     TZrMetadataToken signatureToken;
 
+    /* 两行共享签名窗口与哈希，互相引用；调用者必须先为整对记录留出容量。 */
     if (context == ZR_NULL ||
         context->records == ZR_NULL ||
         context->recordIndex == ZR_NULL ||
@@ -91,6 +101,7 @@ static TZrBool metadata_type_spec_write_record_pair(SZrMetadataTypeSpecScanConte
 static TZrBool metadata_type_spec_signature_seen_before(const SZrMetadataTypeSpecScanContext *context,
                                                         const TZrByte *signature,
                                                         TZrSize signatureLength) {
+    /* 用完整编码字节判等，哈希只作消费端身份字段，避免哈希碰撞合并类型。 */
     if (context == ZR_NULL ||
         context->emitHeap == ZR_NULL ||
         signature == ZR_NULL ||
@@ -140,6 +151,7 @@ static TZrBool metadata_type_spec_signature_seen_before(const SZrMetadataTypeSpe
 static TZrBool metadata_type_spec_remember_signature(SZrMetadataTypeSpecScanContext *context,
                                                      TZrSize signatureStart,
                                                      TZrSize signatureLength) {
+    /* plan 的第二遍才维护紧凑索引；正式 emit 直接从刚写入的 TypeSpec 记录查重。 */
     if (context == ZR_NULL || context->uniqueEntries == ZR_NULL) {
         return ZR_TRUE;
     }
@@ -160,6 +172,7 @@ static TZrBool metadata_type_spec_visit_type(SZrMetadataTypeSpecScanContext *con
                                              TZrUInt32 ownerIndex) {
     TZrSize signatureLength;
 
+    /* 同一 visitor 支持无副作用计数与真实写入，保证预留和发射使用同一筛选顺序。 */
     if (context == ZR_NULL || context->compiler == ZR_NULL || typeRef == ZR_NULL) {
         return ZR_TRUE;
     }
@@ -231,6 +244,7 @@ static TZrBool metadata_type_spec_visit_type(SZrMetadataTypeSpecScanContext *con
             ZrCore_Memory_RawFreeWithType(global, candidate, signatureLength, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
             return ZR_FALSE;
         }
+        /* 只有全新签名才占堆和 RID；配对记录先写，游标最后推进供外层继续追加。 */
         if (context->records != ZR_NULL &&
             !metadata_type_spec_write_record_pair(context,
                                                   ownerIndex,
@@ -255,6 +269,7 @@ static TZrBool metadata_type_spec_visit_type(SZrMetadataTypeSpecScanContext *con
 static TZrBool metadata_type_spec_visit_export(SZrMetadataTypeSpecScanContext *context,
                                                const SZrFunctionTypedExportSymbol *symbol,
                                                TZrUInt32 ownerIndex) {
+    /* TypeSpec 来源限定为导出符号的值类型及参数类型，不扫描函数体局部类型。 */
     if (symbol == ZR_NULL) {
         return ZR_TRUE;
     }
@@ -275,6 +290,7 @@ static TZrBool metadata_type_spec_visit_export(SZrMetadataTypeSpecScanContext *c
 
 static TZrBool metadata_type_spec_scan(SZrMetadataTypeSpecScanContext *context,
                                        const SZrFunction *function) {
+    /* ownerIndex 与 typedExportedSymbols 下标一致，供后续布局/绑定消费定位所属导出项。 */
     if (context == ZR_NULL || function == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -305,6 +321,7 @@ TZrBool compiler_metadata_type_spec_plan(SZrCompilerState *cs,
     TZrSize maxSignatureHeapLength;
     SZrGlobalState *global;
 
+    /* 两遍计划先取最坏上界，再以真实签名字节去重得到可供外层精确分配的计划。 */
     if (outPlan == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -401,6 +418,7 @@ TZrBool compiler_metadata_type_spec_emit(SZrCompilerState *cs,
                                          TZrUInt32 stringHeapEntryCount) {
     SZrMetadataTypeSpecScanContext context;
 
+    /* emit 复用统一遍历；recordIndex 起点同时界定本批签名记录的去重范围。 */
     if (cs == ZR_NULL ||
         function == ZR_NULL ||
         records == ZR_NULL ||
