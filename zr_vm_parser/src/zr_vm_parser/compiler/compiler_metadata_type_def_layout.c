@@ -9,6 +9,7 @@
 
 SZrTypePrototypeInfo *find_compiler_type_prototype(SZrCompilerState *cs, SZrString *typeName);
 
+/** @brief 选择能编码全部变体的最小规范 tag 宽度，参与跨平台布局身份。 */
 static TZrUInt32 metadata_type_def_select_union_tag_size(TZrUInt32 variantCount) {
     if (variantCount <= 0xffu) {
         return 1u;
@@ -19,6 +20,7 @@ static TZrUInt32 metadata_type_def_select_union_tag_size(TZrUInt32 variantCount)
     return 4u;
 }
 
+/** @brief 统一识别字段所有权限定符，供 GC/drop 布局标记使用。 */
 static TZrUInt32 metadata_type_def_payload_field_ownership_qualifier(const SZrType *typeInfo) {
     EZrOwnershipQualifier ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     const SZrType *ownershipInnerType = ZR_NULL;
@@ -35,6 +37,7 @@ static TZrUInt32 metadata_type_def_payload_field_ownership_qualifier(const SZrTy
     return (TZrUInt32)typeInfo->ownershipQualifier;
 }
 
+/** @brief 判断类型名是否为当前 union 泛型参数，避免将未知实例尺寸视作标量尺寸。 */
 static TZrBool metadata_type_def_generic_parameter_name_matches(SZrGenericDeclaration *generic,
                                                                 SZrString *typeName) {
     if (generic == ZR_NULL || generic->params == ZR_NULL || typeName == ZR_NULL) {
@@ -55,6 +58,7 @@ static TZrBool metadata_type_def_generic_parameter_name_matches(SZrGenericDeclar
     return ZR_FALSE;
 }
 
+/** @brief 递归识别复合类型中的泛型依赖，决定 payload 是否使用统一值槽。 */
 static TZrBool metadata_type_def_type_references_generic_parameter(SZrGenericDeclaration *generic,
                                                                    const SZrType *typeInfo) {
     EZrOwnershipQualifier ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
@@ -117,6 +121,7 @@ static TZrBool metadata_type_def_type_references_generic_parameter(SZrGenericDec
     return ZR_FALSE;
 }
 
+/** @brief 将拥有语义或依赖泛型的 payload 映射为统一引用槽，隔离实例化差异。 */
 static TZrBool metadata_type_def_payload_uses_value_slot(const SZrAstNode *unionDeclaration,
                                                          const SZrType *typeInfo,
                                                          TZrUInt32 ownershipQualifier) {
@@ -130,6 +135,7 @@ static TZrBool metadata_type_def_payload_uses_value_slot(const SZrAstNode *union
                      metadata_type_def_type_references_generic_parameter(generic, typeInfo));
 }
 
+/** @brief 原型缺少对齐信息时选择 metadata schema 规定的标量对齐回退值。 */
 static TZrUInt32 metadata_type_def_canonical_align_for_size(TZrUInt32 size) {
     if (size <= 1u) {
         return 1u;
@@ -143,6 +149,7 @@ static TZrUInt32 metadata_type_def_canonical_align_for_size(TZrUInt32 size) {
     return ZR_METADATA_TYPE_DEF_LAYOUT_MAX_SCALAR_ALIGN;
 }
 
+/** @brief 读取已知类型原型的字节对齐；未找到时由调用者使用规范回退值。 */
 static TZrBool metadata_type_def_try_get_prototype_align(SZrCompilerState *cs,
                                                          const SZrType *typeInfo,
                                                          TZrUInt32 *outAlign) {
@@ -170,6 +177,7 @@ static TZrBool metadata_type_def_try_get_prototype_align(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+/** @brief 将语义字段投影为 ABI union payload 大小与对齐，供变体布局累计。 */
 static void metadata_type_def_select_payload_field_layout(SZrCompilerState *cs,
                                                           const SZrAstNode *unionDeclaration,
                                                           const SZrType *typeInfo,
@@ -204,6 +212,7 @@ static void metadata_type_def_select_payload_field_layout(SZrCompilerState *cs,
     }
 }
 
+/** @brief 统计有效 AST 变体并确保数量可由 metadata token RID 表示。 */
 static TZrBool metadata_type_def_union_variant_count(const SZrAstNode *unionDeclaration,
                                                      TZrUInt32 *outCount) {
     TZrUInt32 count = 0;
@@ -235,6 +244,7 @@ static TZrBool metadata_type_def_union_variant_count(const SZrAstNode *unionDecl
     return ZR_TRUE;
 }
 
+/** @brief 在生成身份前验证布局满足 core union、tag 及 GC/ownership 字段约定。 */
 static TZrBool metadata_type_def_validate_canonical_union_layout(
         const SZrTypeLayout *layout,
         TZrUInt32 variantCount) {
@@ -284,6 +294,7 @@ static TZrBool metadata_type_def_validate_canonical_union_layout(
                      layout->refFieldCount == 0u);
 }
 
+/** @brief TypeDef 生成阶段计算可跨模块比较的规范 union 布局身份，不替代运行时布局对象。 */
 TZrBool compiler_metadata_type_def_compute_union_layout_identity(SZrCompilerState *cs,
                                                                  const SZrAstNode *unionDeclaration,
                                                                  TZrUInt32 *outLayoutVersion,

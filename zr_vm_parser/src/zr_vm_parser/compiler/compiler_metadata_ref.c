@@ -1,5 +1,8 @@
 #include "compiler_metadata_ref.h"
 
+/**
+ * @brief 在函数级 token 记录中按 token 找到关联项；导入聚合用它取回实体对应的 SIGNATURE。
+ */
 static const SZrMetadataTokenRecord *metadata_ref_find_record(const SZrMetadataTokenRecord *records,
                                                               TZrUInt32 recordCount,
                                                               TZrMetadataToken token) {
@@ -16,6 +19,9 @@ static const SZrMetadataTokenRecord *metadata_ref_find_record(const SZrMetadataT
     return ZR_NULL;
 }
 
+/**
+ * @brief 限定模块级导入表的实体种类，避免把本地定义重复复制到跨模块引用快照。
+ */
 static TZrBool metadata_ref_record_is_import_entity(const SZrMetadataTokenRecord *record) {
     TZrUInt32 table;
 
@@ -29,6 +35,9 @@ static TZrBool metadata_ref_record_is_import_entity(const SZrMetadataTokenRecord
            table == ZR_METADATA_TABLE_MEMBER_REF;
 }
 
+/**
+ * @brief 以签名字节补足哈希比较，避免碰撞或堆偏移差异影响导入实体去重。
+ */
 static TZrBool metadata_ref_records_have_same_signature_blob(const SZrFunction *function,
                                                              const SZrMetadataTokenRecord *left,
                                                              const SZrMetadataTokenRecord *right) {
@@ -49,6 +58,9 @@ static TZrBool metadata_ref_records_have_same_signature_blob(const SZrFunction *
                    : ZR_FALSE;
 }
 
+/**
+ * @brief 按目标身份和签名字节判断实体是否已选，使模块侧快照只保留一份等价导入。
+ */
 static TZrBool metadata_ref_entity_seen(const SZrFunction *function,
                                         const TZrUInt32 *selectedIndexes,
                                         TZrUInt32 selectedCount,
@@ -81,6 +93,9 @@ static TZrBool metadata_ref_entity_seen(const SZrFunction *function,
     return ZR_FALSE;
 }
 
+/**
+ * @brief 重建前释放旧模块侧导入快照，维持序列化表与当前函数级 metadata 的一致性。
+ */
 static void metadata_ref_clear_module_table(SZrCompilerState *cs, SZrFunction *function) {
     if (cs == ZR_NULL || cs->state == ZR_NULL || cs->state->global == ZR_NULL || function == ZR_NULL) {
         return;
@@ -96,6 +111,9 @@ static void metadata_ref_clear_module_table(SZrCompilerState *cs, SZrFunction *f
     function->moduleMetadataTokenRecordLength = 0;
 }
 
+/**
+ * @brief 从主 metadata 表聚合导入实体及签名，供 artifact 写出和运行时快速查询；关联缺失或分配失败即失败。
+ */
 TZrBool compiler_build_module_metadata_ref_table(SZrCompilerState *cs, SZrFunction *function) {
     TZrUInt32 *selectedIndexes;
     TZrUInt32 selectedCount = 0;

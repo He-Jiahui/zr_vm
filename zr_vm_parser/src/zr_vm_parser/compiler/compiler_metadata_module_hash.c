@@ -21,6 +21,7 @@ static const TZrByte CZrMetadataModuleSignatureHashV2Prefix[] = {
         '\0',
 };
 
+/** @brief 以固定小端字节序编码 ABI 输入，避免主机字节序改变模块身份。 */
 static void metadata_module_hash_write_u64(TZrByte *buffer, TZrSize *offset, TZrUInt64 value) {
     buffer[*offset + 0] = (TZrByte)(value & 0xFFu);
     buffer[*offset + 1] = (TZrByte)((value >> 8) & 0xFFu);
@@ -33,6 +34,7 @@ static void metadata_module_hash_write_u64(TZrByte *buffer, TZrSize *offset, TZr
     *offset += 8;
 }
 
+/** @brief 仅公开类型定义和实例实体参与提供方 ABI 摘要。 */
 static TZrBool metadata_module_hash_record_participates(const SZrMetadataTokenRecord *record) {
     TZrUInt32 table;
 
@@ -45,6 +47,7 @@ static TZrBool metadata_module_hash_record_participates(const SZrMetadataTokenRe
            table == ZR_METADATA_TABLE_TYPE_SPEC;
 }
 
+/** @brief 为规范排序提供与平台无关的无符号数顺序。 */
 static int metadata_module_hash_compare_u64(TZrUInt64 left, TZrUInt64 right) {
     if (left < right) {
         return -1;
@@ -55,6 +58,7 @@ static int metadata_module_hash_compare_u64(TZrUInt64 left, TZrUInt64 right) {
     return 0;
 }
 
+/** @brief 按导出符号名排序，使源码声明顺序不影响 ABI 摘要。 */
 static int metadata_module_hash_compare_export_symbol_names(const SZrFunction *function,
                                                             TZrUInt32 leftIndex,
                                                             TZrUInt32 rightIndex) {
@@ -82,6 +86,7 @@ static int metadata_module_hash_compare_export_symbol_names(const SZrFunction *f
     return strcmp(leftName, rightName);
 }
 
+/** @brief 仅排序索引，不重排供运行时和写入端共享的导出数组。 */
 static void metadata_module_hash_sort_export_indices(const SZrFunction *function, TZrUInt32 *indices) {
     if (function == ZR_NULL || indices == ZR_NULL) {
         return;
@@ -104,6 +109,7 @@ static void metadata_module_hash_sort_export_indices(const SZrFunction *function
     }
 }
 
+/** @brief 预先计数参与 ABI 的类型实体，以分配精确的排序索引空间。 */
 static TZrUInt32 metadata_module_hash_count_identity_records(const SZrFunction *function) {
     TZrUInt32 count = 0;
 
@@ -119,6 +125,7 @@ static TZrUInt32 metadata_module_hash_count_identity_records(const SZrFunction *
     return count;
 }
 
+/** @brief 按表、签名字节及布局身份排列类型实体，令摘要不受记录插入顺序影响。 */
 static int metadata_module_hash_compare_identity_records(const SZrFunction *function,
                                                          TZrUInt32 leftIndex,
                                                          TZrUInt32 rightIndex) {
@@ -179,6 +186,7 @@ static int metadata_module_hash_compare_identity_records(const SZrFunction *func
     return left->token < right->token ? -1 : (left->token > right->token ? 1 : 0);
 }
 
+/** @brief 对参与类型身份的索引执行规范排序，同时保留原 metadata 表布局。 */
 static void metadata_module_hash_sort_identity_indices(const SZrFunction *function,
                                                        TZrUInt32 *indices,
                                                        TZrUInt32 identityRecordCount) {
@@ -207,6 +215,7 @@ static void metadata_module_hash_sort_identity_indices(const SZrFunction *functi
     }
 }
 
+/** @brief 计算版本、导出和类型身份的编码空间，供写入端校验最终偏移。 */
 static TZrSize metadata_module_hash_buffer_size(const SZrFunction *function) {
     TZrSize size = sizeof(TZrUInt32) +
                    sizeof(TZrUInt32) +
@@ -245,6 +254,7 @@ static TZrSize metadata_module_hash_buffer_size(const SZrFunction *function) {
     return size;
 }
 
+/** @brief 将已排序的公开导出合同编码进 ABI 输入，并校验签名字节区间。 */
 static TZrBool metadata_module_hash_write_export_symbols(const SZrFunction *function,
                                                          TZrByte *buffer,
                                                          TZrSize bufferSize,
@@ -288,6 +298,7 @@ static TZrBool metadata_module_hash_write_export_symbols(const SZrFunction *func
     return ZR_TRUE;
 }
 
+/** @brief 将 TYPE_DEF/TYPE_SPEC 的签名和物理布局身份编码进 ABI 输入。 */
 static TZrBool metadata_module_hash_write_identity_records(const SZrFunction *function,
                                                            TZrByte *buffer,
                                                            TZrSize bufferSize,
@@ -330,6 +341,7 @@ static TZrBool metadata_module_hash_write_identity_records(const SZrFunction *fu
     return ZR_TRUE;
 }
 
+/** @brief 按固定顺序构造模块摘要输入；任何子区间无效都会拒绝生成。 */
 static TZrBool metadata_module_hash_write_buffer(const SZrFunction *function,
                                                  TZrByte *buffer,
                                                  TZrSize bufferSize,
@@ -370,6 +382,7 @@ static TZrBool metadata_module_hash_write_buffer(const SZrFunction *function,
     return offset == bufferSize ? ZR_TRUE : ZR_FALSE;
 }
 
+/** @brief 编译 metadata 收尾生成提供方 ABI 身份；有导出时零值阻止产物完成，无导出时允许零值。 */
 TZrUInt64 metadata_token_compute_module_signature_hash(
         SZrCompilerState *cs,
         const SZrFunction *function,
