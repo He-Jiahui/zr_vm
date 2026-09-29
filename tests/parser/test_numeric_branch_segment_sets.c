@@ -13,13 +13,21 @@
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/type_inference.h"
 
+/** @brief 当前 Unity 用例共享的 VM 状态；由 setUp 创建并由 tearDown 结束生命周期。 */
 static SZrState *g_state;
 
+/** @brief 为每个分段范围用例创建独立 VM 状态，避免类型环境跨用例残留。 */
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
+/**
+ * @brief 在用例边界释放共享 VM 状态。
+ * BUG: Unity 断言失败会从测试函数跳回 runner 后仍调用本清理；若失败发生在
+ * CompilerState 创建之后、正常销毁之前，局部 cs 已不可达，而这里只销毁 g_state，
+ * 因此 create_compiler_state 分配的宿主堆块会泄漏。
+ */
 void tearDown(void) {
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
@@ -27,6 +35,7 @@ void tearDown(void) {
     }
 }
 
+/** @brief 为直接类型推断用例建立独立 CompilerState，并让其语义上下文与类型环境关联。 */
 static SZrCompilerState *create_compiler_state(void) {
     SZrCompilerState *cs = (SZrCompilerState *)malloc(sizeof(SZrCompilerState));
 
@@ -38,6 +47,10 @@ static SZrCompilerState *create_compiler_state(void) {
     return cs;
 }
 
+/**
+ * @brief 先释放编译器持有的语义事实与类型环境，再释放宿主堆上的状态壳。
+ * @pre cs 仍关联到尚未销毁的测试 VM 状态。
+ */
 static void destroy_compiler_state(SZrCompilerState *cs) {
     if (cs == ZR_NULL) {
         return;
@@ -47,6 +60,7 @@ static void destroy_compiler_state(SZrCompilerState *cs) {
     free(cs);
 }
 
+/** @brief 将带闭区间约束的 int64 种子写入类型环境，复制完成后释放临时推断类型。 */
 static void register_int64_range_variable(SZrCompilerState *cs,
                                            const char *name,
                                            TZrInt64 minValue,
@@ -94,6 +108,7 @@ static SZrAstNode *first_block_expression_statement_expression(SZrAstNode *block
     return statement->data.expressionStatement.expr;
 }
 
+/** @brief 逐段检查推断结果，防止只保留 min/max 包络而丢失集合中的间隔。 */
 static void assert_segmented_type(const SZrInferredType *type,
                                   TZrInt64 expectedMin,
                                   TZrInt64 expectedMax,
@@ -116,6 +131,10 @@ static void assert_segmented_type(const SZrInferredType *type,
     }
 }
 
+/**
+ * @brief 独立核对语义数值事实与推断类型中的分段集合。
+ * @note fact 由 CompilerState 的语义上下文持有，只能在该上下文销毁前读取。
+ */
 static void assert_segmented_numeric_fact(const SZrSemanticNumericFact *fact,
                                           TZrInt64 expectedMin,
                                           TZrInt64 expectedMax,
@@ -139,6 +158,10 @@ static void assert_segmented_numeric_fact(const SZrSemanticNumericFact *fact,
     TEST_ASSERT_FALSE(fact->mayOverflow);
 }
 
+/**
+ * @brief 验证 true 分支的不等比较挖去域内值后，后续加法仍保留两个不相连的整数段。
+ * @note 同时核对推断类型与语义事实，避免用连续包络掩盖条件排除的值。
+ */
 static void test_true_branch_not_equal_interior_refines_integer_hole_segments(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -190,6 +213,7 @@ static void test_true_branch_not_equal_interior_refines_integer_hole_segments(vo
     destroy_compiler_state(cs);
 }
 
+/** @brief 验证三个逻辑或分支的区间并集经过加法后仍保留三段结果及对应语义事实。 */
 static void test_true_branch_logical_or_builds_three_integer_segments(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -243,6 +267,7 @@ static void test_true_branch_logical_or_builds_three_integer_segments(void) {
     destroy_compiler_state(cs);
 }
 
+/** @brief 验证六个离散等值分支经过加法后仍逐段保留，防止多路并集退化为单一包络。 */
 static void test_true_branch_logical_or_preserves_six_integer_segments(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -299,6 +324,7 @@ static void test_true_branch_logical_or_preserves_six_integer_segments(void) {
     destroy_compiler_state(cs);
 }
 
+/** @brief 注册分段推断用例；CTest 的 language_pipeline 会启动该 Unity 可执行文件。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_true_branch_not_equal_interior_refines_integer_hole_segments);
