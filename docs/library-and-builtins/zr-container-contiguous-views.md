@@ -2,6 +2,8 @@
 related_code:
   - zr_vm_common/include/zr_vm_common/zr_contract_conf.h
   - zr_vm_core/include/zr_vm_core/object.h
+  - zr_vm_core/src/zr_vm_core/object/object_super_array.c
+  - zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h
   - zr_vm_lib_container/src/zr_vm_lib_container/module.c
   - zr_vm_lib_container/src/zr_vm_lib_container/pooling.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
@@ -27,6 +29,7 @@ implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_field_scalar_locals.c
 plan_sources:
+  - docs/plans/ssa/05-data-layout/02-arrays-slices.md
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
   - docs/plans/syntax/2026-07-19-10-native-ffi-module-package-design.md
   - user: 2026-08-05 完成 Syntax 10C official provider convergence
@@ -37,6 +40,7 @@ tests:
   - tests/parser/test_aot_c_value_type_shared_library_smoke.c
   - tests/library/test_official_provider_convergence.c
   - tests/acceptance/2026-08-05-syntax-10c-official-provider-convergence.md
+  - tests/acceptance/ssa-span-array-growth.md
 doc_type: module
 ---
 
@@ -98,6 +102,19 @@ signed length. Default construction is legal and produces an empty view. An empt
 view can be sliced at `(0, 0)` and converted to readonly, but it cannot be indexed.
 No heap wrapper or native callback is required for ordinary view creation, slice,
 conversion, index, or length access.
+
+An Array-backed Span captures its logical start and length when created, while
+each element read resolves through the source Array. The source-level growth
+characterization records `Array.capacity == 4` after four integer appends,
+creates the Span, then appends a fifth value and checks `Array.capacity == 8`.
+The existing view must still report length four and read the first four values;
+the Array must expose the fifth value at index four. In the current raw-int
+implementation, the fifth append requests capacity five from a four-item
+buffer, allocates capacity eight, and frees the previous backing buffer. The
+source-level test checks the public capacity field and values, not the raw buffer
+address. This describes current library runtime behavior. It does not establish
+that the core contiguous-view descriptor is produced from Array storage or that
+its generation field tracks backing reallocations.
 
 The runtime checks:
 
@@ -164,6 +181,10 @@ weakening, invalid strengthening, default/empty behavior, bounds failures,
 overload ranking, allocation-free lowering, proof-based check elimination,
 structured SemIR facts, owner/native lifecycle conflicts, and a full compact GC
 while an array-backed Span remains live followed by mutation through that view.
+`test_span_array_live_view_reads_prefix_after_backing_growth` also checks that
+the logical Array capacity is four before creating a view and eight after the
+fifth append, while the view still reads its original four-value window and the
+Array reads the new fifth value. The test does not inspect raw buffer identity.
 
 `zr_vm_aot_c_value_type_shared_library_smoke_test` covers binary artifact output,
 generated inline field lowering, shared-library loading, and VM/AOT result
