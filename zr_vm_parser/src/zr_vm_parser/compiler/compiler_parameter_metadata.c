@@ -1,5 +1,10 @@
 #include "compiler_parameter_metadata.h"
 
+/**
+ * @brief 将参数装饰器快照投影成编译期描述符，供接口签名与 union payload 共享。
+ * @pre cs/state 有效，descriptor 已由上层临时根保护；parameter 来自参数元数据构建器且名称数组与计数配对。
+ * @return 可检测的字段 helper、数组或 GC 临时根失败时返回 false；成功路径发布 position、名称及装饰器信息。
+ */
 TZrBool compiler_parameter_metadata_write_descriptor(
         SZrCompilerState *cs,
         SZrObject *descriptor,
@@ -41,6 +46,7 @@ TZrBool compiler_parameter_metadata_write_descriptor(
                 cs, descriptor, "name", parameter->name)) {
         goto cleanup;
     }
+    /* 成功的装饰器绑定会产出非空名称；异常空槽仍按已有容错路径跳过。 */
     for (TZrUInt32 index = 0U; index < parameter->decoratorCount; index++) {
         SZrString *decoratorName = parameter->decoratorNames[index];
         SZrTypeValue decoratorValue;
@@ -83,6 +89,11 @@ cleanup:
     return success;
 }
 
+/**
+ * @brief 为接口成员签名附加参数或变参描述符数组，保留同一成员已有的装饰器 metadata 对象。
+ * @pre cs/state、memberInfo、fieldName 有效；functionNode 是本批参数所属签名，params 由调用方提供。
+ * @note 构建参数快照时临时切换 currentFunctionNode，随后恢复；成功发布 metadata 后释放原生参数快照。
+ */
 TZrBool compiler_parameter_metadata_attach_member_array(
         SZrCompilerState *cs,
         SZrTypeMemberInfo *memberInfo,
@@ -115,6 +126,7 @@ TZrBool compiler_parameter_metadata_attach_member_array(
         !extern_compiler_temp_root_begin(cs, &parametersRoot)) {
         goto cleanup;
     }
+    /* 复用成员已有 metadata，或新建承载参数数组的对象；两种来源都须在后续分配前进入 GC 根。 */
     metadataObject = memberInfo->hasDecoratorMetadata &&
                              memberInfo->decoratorMetadataValue.type ==
                                      ZR_VALUE_TYPE_OBJECT &&
@@ -123,6 +135,7 @@ TZrBool compiler_parameter_metadata_attach_member_array(
                                        cs->state,
                                        memberInfo->decoratorMetadataValue.value.object)
                              : extern_compiler_new_object_constant(cs);
+    /* BUG: 新建 metadataObject 尚未放入 metadataRoot，就分配 parametersArray；后者 OOM 触发 GC 可回收前者。 */
     parametersArray = extern_compiler_new_array_constant(cs);
     if (metadataObject == ZR_NULL || parametersArray == ZR_NULL ||
         !extern_compiler_temp_root_set_object(
@@ -166,6 +179,7 @@ TZrBool compiler_parameter_metadata_attach_member_array(
             &parametersValue,
             ZR_CAST_RAW_OBJECT_AS_SUPER(parametersArray));
     parametersValue.type = ZR_VALUE_TYPE_ARRAY;
+    /* 只有数组完整构建后才向成员公开 parameters/variadicParameters；失败统一释放临时根和参数快照。 */
     if (!extern_compiler_set_object_field(
                 cs, metadataObject, fieldName, &parametersValue)) {
         goto cleanup;
