@@ -26,13 +26,17 @@ TZrBool ZrCore_CallBinding_EncodeContract(const SZrCallBindingContract *contract
     return ZR_TRUE;
 }
 
-/* 拒绝未知 token 或保留字段，同时在失败后给调用方确定的空输出。 */
-TZrBool ZrCore_CallBinding_DecodeContract(const TZrByte *bytes, TZrSize length,
-                                         SZrCallBindingContract *contract) {
+/* 保留完整检查状态供 artifact reader 分类，同时维持失败时输出清零。 */
+EZrCallBindingStatus zr_call_binding_decode_contract_status(
+        const TZrByte *bytes,
+        TZrSize length,
+        SZrCallBindingContract *contract) {
     SZrCallBindingContract decoded = {0};
-    if (contract == ZR_NULL) return ZR_FALSE;
+    EZrCallBindingStatus status;
+    if (contract == ZR_NULL) return ZR_CALL_BINDING_INVALID_ARGUMENT;
     memset(contract, 0, sizeof(*contract));
-    if (bytes == ZR_NULL || length != ZR_CALL_BINDING_CONTRACT_ENCODED_SIZE) return ZR_FALSE;
+    if (bytes == ZR_NULL || length != ZR_CALL_BINDING_CONTRACT_ENCODED_SIZE)
+        return ZR_CALL_BINDING_INVALID_ARGUMENT;
     decoded.bindingKind = zr_artifact_read_u32(bytes);
     decoded.targetMetadataToken = zr_artifact_read_u32(bytes + 4u);
     decoded.signatureToken = zr_artifact_read_u32(bytes + 8u);
@@ -45,7 +49,15 @@ TZrBool ZrCore_CallBinding_DecodeContract(const TZrByte *bytes, TZrSize length,
     decoded.operation = zr_artifact_read_u32(bytes + 48u);
     decoded.reserved0 = zr_artifact_read_u32(bytes + 52u);
     decoded.reserved1 = zr_artifact_read_u64(bytes + 56u);
-    if (ZrCore_CallBinding_CheckContract(&decoded, ZR_NULL) != ZR_CALL_BINDING_OK) return ZR_FALSE;
+    status = ZrCore_CallBinding_CheckContract(&decoded, ZR_NULL);
+    if (status != ZR_CALL_BINDING_OK) return status;
     *contract = decoded;
-    return ZR_TRUE;
+    return ZR_CALL_BINDING_OK;
+}
+
+/* 公开 bool API 维持原有语义；详细分类仅供 core 内部 artifact 路径使用。 */
+TZrBool ZrCore_CallBinding_DecodeContract(const TZrByte *bytes, TZrSize length,
+                                         SZrCallBindingContract *contract) {
+    return (TZrBool)(zr_call_binding_decode_contract_status(bytes, length, contract) ==
+            ZR_CALL_BINDING_OK);
 }

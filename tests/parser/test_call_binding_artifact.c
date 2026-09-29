@@ -88,6 +88,70 @@ static void test_binding_row_rejects_invalid_contract_relocation_and_version(voi
             ZrCore_Artifact_ReadCallBindingRow(&section, 0u, &decoded, &diagnostic));
 }
 
+// 行读取须把非法 token 与其它契约损坏分开分类，并在失败时清空输出行。
+static void test_binding_row_decode_preserves_illegal_token_classification(void) {
+    SZrArtifactCallBindingRow row = make_row(), decoded, zeroRow;
+    SZrArtifactDiagnostic diagnostic;
+    TZrByte bytes[ZR_ARTIFACT_CALL_BINDING_ROW_ENCODED_SIZE];
+    SZrArtifactSectionView section = row_section(bytes, 1u);
+
+    memset(&zeroRow, 0, sizeof(zeroRow));
+    section.byteOffset = 128u;
+    TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_OK,
+            ZrCore_Artifact_WriteCallBindingRow(&row, bytes, sizeof(bytes), &diagnostic));
+    // Row + contract + signatureToken offset; copy the valid member token into it.
+    memcpy(bytes + 24u, bytes + 20u, sizeof(row.contract.signatureToken));
+    decoded = row;
+    TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN,
+            ZrCore_Artifact_ReadCallBindingRow(&section, 0u, &decoded, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN, diagnostic.status);
+    TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_SECTION_CALL_BINDING_TABLE, diagnostic.sectionKind);
+    TEST_ASSERT_EQUAL_UINT32(0u, diagnostic.rowIndex);
+    TEST_ASSERT_EQUAL_UINT32(144u, diagnostic.byteOffset);
+    TEST_ASSERT_EQUAL_MEMORY(&zeroRow, &decoded, sizeof(decoded));
+
+    TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_OK,
+            ZrCore_Artifact_WriteCallBindingRow(&row, bytes, sizeof(bytes), &diagnostic));
+    memset(bytes + 16u, 0, sizeof(row.contract.bindingKind));
+    decoded = row;
+    TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_INVALID_SECTION,
+            ZrCore_Artifact_ReadCallBindingRow(&section, 0u, &decoded, &diagnostic));
+    TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_INVALID_SECTION, diagnostic.status);
+    TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_SECTION_CALL_BINDING_TABLE, diagnostic.sectionKind);
+    TEST_ASSERT_EQUAL_UINT32(0u, diagnostic.rowIndex);
+    TEST_ASSERT_EQUAL_UINT32(144u, diagnostic.byteOffset);
+    TEST_ASSERT_EQUAL_MEMORY(&zeroRow, &decoded, sizeof(decoded));
+}
+
+// 公开契约解码器保留 bool 结果，且成功发布完整契约、失败清空输出。
+static void test_contract_decode_bool_api_preserves_zero_output_on_failure(void) {
+    SZrArtifactCallBindingRow row = make_row();
+    SZrCallBindingContract decoded, zeroContract;
+    TZrByte bytes[ZR_ARTIFACT_CALL_BINDING_ROW_ENCODED_SIZE];
+
+    memset(&zeroContract, 0, sizeof(zeroContract));
+    TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_OK,
+            ZrCore_Artifact_WriteCallBindingRow(&row, bytes, sizeof(bytes), ZR_NULL));
+    memset(&decoded, 0xa5, sizeof(decoded));
+    TEST_ASSERT_TRUE(ZrCore_CallBinding_DecodeContract(bytes + 16u,
+            ZR_CALL_BINDING_CONTRACT_ENCODED_SIZE, &decoded));
+    TEST_ASSERT_EQUAL_MEMORY(&row.contract, &decoded, sizeof(decoded));
+
+    memcpy(bytes + 24u, bytes + 20u, sizeof(row.contract.signatureToken));
+    memset(&decoded, 0xa5, sizeof(decoded));
+    TEST_ASSERT_FALSE(ZrCore_CallBinding_DecodeContract(bytes + 16u,
+            ZR_CALL_BINDING_CONTRACT_ENCODED_SIZE, &decoded));
+    TEST_ASSERT_EQUAL_MEMORY(&zeroContract, &decoded, sizeof(decoded));
+
+    TEST_ASSERT_EQUAL_INT(ZR_ARTIFACT_STATUS_OK,
+            ZrCore_Artifact_WriteCallBindingRow(&row, bytes, sizeof(bytes), ZR_NULL));
+    memset(bytes + 16u, 0, sizeof(row.contract.bindingKind));
+    memset(&decoded, 0xa5, sizeof(decoded));
+    TEST_ASSERT_FALSE(ZrCore_CallBinding_DecodeContract(bytes + 16u,
+            ZR_CALL_BINDING_CONTRACT_ENCODED_SIZE, &decoded));
+    TEST_ASSERT_EQUAL_MEMORY(&zeroContract, &decoded, sizeof(decoded));
+}
+
 // 编码容量不足、节长度截断和节种类错误均不可读成有效绑定。
 static void test_binding_row_rejects_truncation_and_wrong_section(void) {
     SZrArtifactCallBindingRow row = make_row(), decoded;
@@ -260,6 +324,8 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_binding_row_roundtrip_is_fixed_width_and_pointer_free);
     RUN_TEST(test_binding_row_rejects_invalid_contract_relocation_and_version);
+    RUN_TEST(test_binding_row_decode_preserves_illegal_token_classification);
+    RUN_TEST(test_contract_decode_bool_api_preserves_zero_output_on_failure);
     RUN_TEST(test_binding_row_rejects_truncation_and_wrong_section);
     RUN_TEST(test_function_projection_copies_only_persistent_binding_fields);
     RUN_TEST(test_generic_artifact_roundtrip_and_consumer_keep_binding_section);

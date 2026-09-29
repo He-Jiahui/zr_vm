@@ -666,7 +666,7 @@ ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_WriteCallBindingRow(
         SZrArtifactDiagnostic *diagnostic);
 
 /** @brief 从匹配的节中读取并校验 call binding 行；失败时 outRow 清零。
- * BUG: 合同解码失败后的错误分类会丢失非法 token 细节。 */
+ * @note 非法 metadata token 返回 ILLEGAL_TOKEN，其它契约损坏返回 INVALID_SECTION。 */
 ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_ReadCallBindingRow(
         const SZrArtifactSectionView *section,
         TZrUInt32 rowIndex,

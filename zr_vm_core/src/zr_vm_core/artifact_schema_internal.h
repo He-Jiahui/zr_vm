@@ -27,6 +27,12 @@ void zr_artifact_write_u32(TZrByte *bytes, TZrUInt32 value);
 /** @brief 将哈希或身份字段写为八个小端字节；调用方保证容量。 */
 void zr_artifact_write_u64(TZrByte *bytes, TZrUInt64 value);
 
+/** @brief 解码并验证持久化调用契约，返回具体检查状态；失败时清零 contract。 */
+EZrCallBindingStatus zr_call_binding_decode_contract_status(
+        const TZrByte *bytes,
+        TZrSize length,
+        SZrCallBindingContract *contract);
+
 /** @brief 给文档 writer、reader 与文本投影共享当前 schema 接受的 ZRS/ZRI/ZRO 集合。 */
 TZrBool zr_artifact_kind_is_valid(EZrArtifactKind kind);
 /** @brief 区分本版本已知节与 reader 可跳过的未来可选节。 */

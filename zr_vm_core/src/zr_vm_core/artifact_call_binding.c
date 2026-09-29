@@ -85,6 +85,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadCallBindingRow(
     TZrUInt64 rowOffset = (TZrUInt64)rowIndex * ZR_ARTIFACT_CALL_BINDING_ROW_ENCODED_SIZE;
     SZrArtifactCallBindingRow row;
     EZrArtifactStatus status;
+    EZrCallBindingStatus bindingStatus;
     zr_artifact_diagnostic_clear(diagnostic);
     if (outRow != ZR_NULL) memset(outRow, 0, sizeof(*outRow));
     if (section == ZR_NULL || outRow == ZR_NULL || section->data == ZR_NULL ||
@@ -108,12 +109,9 @@ EZrArtifactStatus ZrCore_Artifact_ReadCallBindingRow(
         return artifact_binding_validate_row(&row, rowIndex,
                 section->byteOffset + (TZrUInt32)rowOffset, diagnostic);
     }
-    if (!ZrCore_CallBinding_DecodeContract(bytes + 16u,
-            ZR_CALL_BINDING_CONTRACT_ENCODED_SIZE, &row.contract)) {
-        /* BUG: DecodeContract 失败会清零 row.contract；再次检查只会得到 MISSING_CONTRACT。
-         * 将合法行的 signatureToken 字节替换成 targetMetadataToken 后，读取端返回
-         * INVALID_SECTION 而非写入端给出的 ILLEGAL_TOKEN。后续需保留原始解码字段来分类。 */
-        EZrCallBindingStatus bindingStatus = ZrCore_CallBinding_CheckContract(&row.contract, ZR_NULL);
+    bindingStatus = zr_call_binding_decode_contract_status(
+            bytes + 16u, ZR_CALL_BINDING_CONTRACT_ENCODED_SIZE, &row.contract);
+    if (bindingStatus != ZR_CALL_BINDING_OK) {
         return zr_artifact_fail(diagnostic,
                 bindingStatus == ZR_CALL_BINDING_INVALID_TOKEN
                         ? ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN : ZR_ARTIFACT_STATUS_INVALID_SECTION,

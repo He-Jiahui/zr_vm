@@ -2,6 +2,8 @@
 related_code:
   - zr_vm_core/include/zr_vm_core/call_binding.h
   - zr_vm_core/include/zr_vm_core/artifact_schema.h
+  - zr_vm_core/src/zr_vm_core/artifact_schema_internal.h
+  - zr_vm_core/src/zr_vm_core/call_binding_encoding.c
   - zr_vm_core/include/zr_vm_core/canonical_consumer.h
   - zr_vm_core/src/zr_vm_core/artifact_call_binding.c
   - zr_vm_core/src/zr_vm_core/artifact_encoding.c
@@ -21,6 +23,7 @@ related_code:
   - zr_vm_library/src/zr_vm_library/aot_runtime.c
 implementation_files:
   - zr_vm_core/src/zr_vm_core/artifact_call_binding.c
+  - zr_vm_core/src/zr_vm_core/call_binding_encoding.c
   - zr_vm_parser/src/zr_vm_parser/artifact_call_binding_projection.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_call_bindings.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_call_bindings.c
@@ -28,8 +31,10 @@ implementation_files:
   - zr_vm_library/src/zr_vm_library/aot_runtime.c
 plan_sources:
   - user: 2026-09-06 W2 / Call Binding M1 static call binding and relocatable target table
+  - docs/plans/ssa/08-artifact-hotpatch/01-schema-relocation.md
 tests:
   - tests/parser/test_call_binding_artifact.c
+  - tests/acceptance/ssa-artifact-v6-call-binding-decode.md
   - tests/parser/test_call_binding_aot_projection.c
   - tests/parser/test_aot_c_metadata_binding_loader.c
   - tests/module/test_metadata_runtime_method_binding.c
@@ -72,6 +77,12 @@ absent from the wire row.
 writing. `ZrCore_Artifact_ReadCallBindingRow` checks section kind, element size,
 row bounds, available bytes, schema version, token shape, contract completeness,
 reserved fields, and relocation kind. A failed read clears the destination row.
+The reader obtains the contract decoder's detailed `EZrCallBindingStatus`
+through a private core helper, so invalid metadata tokens map to
+`ZR_ARTIFACT_STATUS_ILLEGAL_TOKEN`; other malformed contracts continue to map
+to `ZR_ARTIFACT_STATUS_INVALID_SECTION`. This preserves the same validation
+priority as the writer even though the public `ZrCore_CallBinding_DecodeContract`
+API remains boolean and clears its output on failure.
 
 The whole-section validators require rows in ascending `(functionIndex,
 cacheIndex)` order. Duplicate or reordered callsites are errors in both source
@@ -133,13 +144,16 @@ the linking pass with a structured call-binding diagnostic.
 
 ## Coverage
 
-`call_binding_artifact` exercises fixed-width encoding, malformed tokens,
-reserved fields, unsupported versions, truncated views, source cache projection,
-copied buffers, duplicate callsites, forbidden artifact kinds, and the canonical
-consumer section view. `call_binding_aot_projection` exercises a compiled member
-call, preserved contracts and locations, missing retained targets, generated
-registration data, runtime pointer selection, interpreter callable preservation,
-and signature tampering rejection. `aot_c_metadata_binding_loader` validates
+`call_binding_artifact` exercises fixed-width encoding, malformed-token error
+classification, the public boolean decoder's success and failure output
+contract, reserved fields, unsupported versions, truncated views, source cache
+projection, copied buffers, duplicate callsites, forbidden artifact kinds, and
+the canonical consumer section view. The corresponding acceptance record tracks
+the observed regression and focused toolchain results.
+`call_binding_aot_projection` exercises a compiled member call, preserved
+contracts and locations, missing retained targets, generated registration data,
+runtime pointer selection, interpreter callable preservation, and signature
+tampering rejection. `aot_c_metadata_binding_loader` validates
 metadata compatibility failures and executes static calls, C/LLVM property
 accessors and meta-calls. Its provider cases execute imported C functions,
 static methods, and functions retaining module captures. Interface MODULE rows
