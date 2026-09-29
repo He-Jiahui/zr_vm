@@ -1,5 +1,11 @@
 #include "compiler_internal.h"
 
+/**
+ * @brief 将受 optional guard 保护的单字段读取接入语义 CFG。
+ * @pre 仅在 CFG 活跃且解析器已解析字段、接收者 place 和类型事实时调用。
+ * @return 不适用此窄化路径时放弃当前语义 CFG 以保留常规编译；已报告的语义错误或 IR 构造失败返回 false。
+ * @note 这里只接受非静态 class field、局部/参数接收者及 primitive present 类型；getter、链式投影等由上层保守回退。
+ */
 TZrBool compiler_semantic_ir_lower_optional_field_read(
         SZrCompilerState *cs,
         SZrAstNode *primaryNode,
@@ -62,6 +68,10 @@ TZrBool compiler_semantic_ir_lower_optional_field_read(
          receiverPlace->base.kind != ZR_PARSER_PLACE_BASE_PARAMETER)) {
         return compiler_semantic_cfg_abandon(cs);
     }
+    /*
+     * 只有语义引用、声明身份和 nullable 表达式事实三者吻合时才把
+     * optional 读取建模为 place 投影；其余形式交回常规编译路径。
+     */
     presentType = result->inferredType;
     presentType.isNullable = ZR_FALSE;
     if (!ZrParser_AstTypeToInferredType_Convert(
@@ -124,6 +134,11 @@ TZrBool compiler_semantic_ir_lower_optional_field_read(
                     memberNode->location));
 }
 
+/**
+ * @brief 为 weak optional receiver 建立可在 present/exception 路径配对结束的 wake 值。
+ * @pre sourceSlot 必须持有有效 place/value，调用方已选定 weak guard 且提供非空 guarded type。
+ * @return 类型注册、值创建、OWN_WAKE 发射或结果绑定失败时返回 false；成功后 wakeSlot 表示待清理所有权。
+ */
 TZrBool compiler_semantic_ir_wake_optional_receiver(
         SZrCompilerState *cs,
         TZrUInt32 sourceSlot,
@@ -172,6 +187,11 @@ TZrBool compiler_semantic_ir_wake_optional_receiver(
                     cs, wakeSlot, wakeTypeId, wakeValueId, sourceRange));
 }
 
+/**
+ * @brief 结束 weak receiver 的临时 wake 所有权，并防止同一 slot 被重复 drop。
+ * @pre wakeSlot 必须是此前成功建立且尚未清理的 receiver slot。
+ * @return 无有效 place/value 或 DROP 无法写入语义 IR 时返回 false。
+ */
 TZrBool compiler_semantic_ir_drop_optional_receiver(
         SZrCompilerState *cs,
         TZrUInt32 wakeSlot,
@@ -198,6 +218,11 @@ TZrBool compiler_semantic_ir_drop_optional_receiver(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 为 optional 表达式或 finally 的多出口结果建立共享临时 place。
+ * @pre CFG/语义 IR 已初始化，mergeSlot 尚未登记，resultType 是所有出口共同采用的结果类型。
+ * @return 类型、place 或 PLACE_BASE 构造失败时返回 false；调用者随后在各出口写入并于 join 读取。
+ */
 TZrBool compiler_semantic_ir_prepare_optional_merge(
         SZrCompilerState *cs,
         TZrUInt32 mergeSlot,
@@ -236,6 +261,7 @@ TZrBool compiler_semantic_ir_prepare_optional_merge(
     if (slot.placeId == ZR_PLACE_ID_INVALID) {
         return ZR_FALSE;
     }
+    /* BUG: 扩容分配失败时 Array_Push 会覆盖 head 并继续向空指针写入，调用方无法收到失败状态；见 zr_vm_core/include/zr_vm_core/array.h:76-89。 */
     ZrCore_Array_Push(cs->state, &cs->preSemanticIrSlots, &slot);
 
     memset(&spec, 0, sizeof(spec));
@@ -247,6 +273,11 @@ TZrBool compiler_semantic_ir_prepare_optional_merge(
     return compiler_semantic_ir_emit(cs, &spec);
 }
 
+/**
+ * @brief 将 present 分支的值转换到 merge 类型并写入合流 place。
+ * @pre mergeSlot 已由 prepare 建立，sourceSlot 在当前 present CFG 路径上有值。
+ * @return 转换值、CONVERT 或 STORE 构造失败时返回 false；仅 STORE 成功后更新编译期 slot 状态。
+ */
 TZrBool compiler_semantic_ir_store_optional_present(
         SZrCompilerState *cs,
         TZrUInt32 mergeSlot,
@@ -296,6 +327,11 @@ TZrBool compiler_semantic_ir_store_optional_present(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 将 absent 分支的 null 常量写入 nullable 合流 place。
+ * @pre mergeSlot 已准备且其类型可表示 optional 表达式的 absent 结果。
+ * @return null 常量不存在、值创建或 CONSTANT/STORE 发射失败时返回 false。
+ */
 TZrBool compiler_semantic_ir_store_optional_absent(
         SZrCompilerState *cs,
         TZrUInt32 mergeSlot,
@@ -345,6 +381,11 @@ TZrBool compiler_semantic_ir_store_optional_absent(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 在 optional/finally join 后重新读取各出口写入的统一结果。
+ * @pre mergeSlot 已建立，所有可达前驱均已按各自语义写入该临时 place。
+ * @return LOAD 构造失败时返回 false；成功后 merge slot 持有 join 后的新 SSA 值。
+ */
 TZrBool compiler_semantic_ir_load_optional_merge(
         SZrCompilerState *cs,
         TZrUInt32 mergeSlot,
