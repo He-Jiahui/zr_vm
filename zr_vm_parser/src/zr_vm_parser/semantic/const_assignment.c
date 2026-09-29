@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <string.h>
 
+/** @brief 判断目标源区间是否完整包围赋值区间。
+ * @note 优先比较同源文件偏移；偏移不可用时回退到有效行列，缺少位置证据则拒绝。
+ */
 static TZrBool const_assignment_range_contains(const SZrFileRange *outer,
                                                const SZrFileRange *inner) {
     if (outer == ZR_NULL || inner == ZR_NULL ||
@@ -52,6 +55,9 @@ static SZrAstNodeArray *const_assignment_owner_members(const SZrAstNode *owner) 
     return ZR_NULL;
 }
 
+/** @brief 在模块的顶层类或结构体成员中按 AST 节点身份定位字段所有者。
+ * @note 只扫描直接的 script 声明，不递归进入其他节点；构造函数例外依赖该所有者。
+ */
 static const SZrAstNode *const_assignment_find_field_owner(
         const SZrAstNode *moduleRoot,
         const SZrAstNode *targetDeclaration) {
@@ -113,6 +119,9 @@ static TZrBool const_assignment_is_constructor(const SZrAstNode *member) {
     return ZR_FALSE;
 }
 
+/** @brief 限定实例 const 字段的初始化例外位于声明类型自己的构造函数范围内。
+ * @note 此处只判 AST 源位置归属，不统计写入次数或分支上的初始化完备性。
+ */
 static TZrBool const_assignment_is_inside_owner_constructor(
         const SZrAstNode *owner,
         const SZrAstNode *assignment) {
@@ -131,6 +140,9 @@ static TZrBool const_assignment_is_inside_owner_constructor(
     return ZR_FALSE;
 }
 
+/** @brief 识别隐式字段名或 this.field 这两种当前实例左值形状。
+ * @note 只做语法接收者判断，不替代上游名称解析，也不接受其他对象的成员写入。
+ */
 static TZrBool const_assignment_targets_current_instance(
         const SZrAstNode *assignment) {
     const SZrAstNode *left;
@@ -222,6 +234,9 @@ static TZrBool const_assignment_target_range(
     return ZR_FALSE;
 }
 
+/** @brief 将 this 与当前类型名接收者分别归类为实例字段和静态字段访问。
+ * @note 该分类只供无已解析声明时的上下文兜底查找使用。
+ */
 static TZrBool const_assignment_context_receiver_kind(
         const SZrTypePrototypeInfo *prototype,
         const SZrAstNode *assignment,
@@ -259,6 +274,9 @@ static TZrBool const_assignment_context_receiver_kind(
     return ZR_FALSE;
 }
 
+/** @brief 在当前类型原型中用接收者种类、字段名和静态性消歧字段声明。
+ * @note 此兜底路径按字符串名扫描，遇到多个不同声明匹配时拒绝猜测；已解析 SymbolId 应优先提供 AST 节点。
+ */
 static const SZrAstNode *const_assignment_resolve_context_field(
         const SZrCompilerState *compilerState,
         const SZrAstNode *assignment) {
@@ -302,6 +320,11 @@ static const SZrAstNode *const_assignment_resolve_context_field(
     return resolvedDeclaration;
 }
 
+/**
+ * @brief 从声明 AST 提取 const 赋值检查所需的类别、名称和声明位置。
+ * @note targetName 借用声明 AST 的字符串；输出不接管 AST 或字符串所有权。
+ * @return false 表示输入无效或声明种类不受支持；true 表示结果已描述，不代表发生违规。
+ */
 TZrBool ZrParser_ConstAssignment_DescribeTarget(
         const SZrAstNode *targetDeclaration,
         SZrConstAssignmentResult *outResult) {
@@ -365,6 +388,11 @@ TZrBool ZrParser_ConstAssignment_DescribeTarget(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 判断赋值是否违反参数、局部变量或字段的 const 写入规则。
+ * @note 只有当前实例字段在其声明类或结构体的构造函数范围内可写；true 表示完成判定，违规由 isViolation 标出。
+ * @return false 表示赋值或目标声明无法判定；true 表示 outResult 已写入判定结果。
+ */
 TZrBool ZrParser_ConstAssignment_Evaluate(
         const SZrAstNode *moduleRoot,
         const SZrAstNode *assignment,
@@ -397,6 +425,10 @@ TZrBool ZrParser_ConstAssignment_Evaluate(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 以已解析声明优先、当前类型上下文兜底的方式执行 const 赋值判定。
+ * @note resolvedTargetDeclaration 非空时不按名称重新选择；为空时才使用原型字段查找，再复用统一规则。
+ */
 TZrBool ZrParser_ConstAssignment_EvaluateContext(
         const SZrCompilerState *compilerState,
         const SZrAstNode *moduleRoot,
@@ -413,6 +445,10 @@ TZrBool ZrParser_ConstAssignment_EvaluateContext(
             moduleRoot, assignment, targetDeclaration, outResult);
 }
 
+/**
+ * @brief 将已确认的 const 写入违规构造成带声明关联位置和无自动修复原因的结构化诊断。
+ * @note 本函数只构造诊断，不发布语义事实；输出诊断仍由调用者释放或转交事实容器。
+ */
 TZrBool ZrParser_ConstAssignment_BuildDiagnostic(
         SZrState *state,
         const SZrConstAssignmentResult *result,
@@ -502,6 +538,11 @@ TZrBool ZrParser_ConstAssignment_BuildDiagnostic(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 从赋值左值的语义引用取得规范符号 ID，生成并追加 const 写入诊断事实。
+ * @note 有引用时按 SymbolId 取回声明 AST；仅 SymbolAt 未命中时才退回当前类型的名称查找。AppendDiagnostic 复制事实后释放本地诊断。
+ * @return true 仅表示违规诊断事实已追加；无违规、引用记录不完整或发布失败均返回 false。
+ */
 TZrBool ZrParser_ConstAssignment_PublishDiagnostic(
         SZrCompilerState *compilerState,
         const SZrAstNode *moduleRoot,

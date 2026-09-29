@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include <string.h>
 
+/** @brief 按编译器保存的类型名称查找原型，并在列表未收录时检查当前原型。
+ * @note 继承类型在此以字符串名称定位，不使用类型或成员 SymbolId。
+ */
 static SZrTypePrototypeInfo *interface_contract_find_prototype(
         SZrCompilerState *compilerState,
         SZrString *typeName) {
@@ -29,6 +32,9 @@ static SZrTypePrototypeInfo *interface_contract_find_prototype(
     return ZR_NULL;
 }
 
+/** @brief 优先按类声明 AST 指针定位原型，缺少指针匹配时才退回类名查找。
+ * @note 指针匹配保持当前声明身份；名称回退依赖编译器原型表中的名称唯一性。
+ */
 static SZrTypePrototypeInfo *interface_contract_find_class(
         SZrCompilerState *compilerState,
         const SZrAstNode *classNode) {
@@ -58,6 +64,9 @@ static SZrTypePrototypeInfo *interface_contract_find_class(
     return interface_contract_find_prototype(compilerState, className);
 }
 
+/** @brief 在实现类成员表中按名称取第一个匹配项供 const 字段检查使用。
+ * @note 本辅助查找比较字符串名称，不以成员 SymbolId 选择候选。
+ */
 static SZrTypeMemberInfo *interface_contract_find_declared_member(
         SZrTypePrototypeInfo *classInfo,
         SZrString *memberName) {
@@ -114,6 +123,17 @@ static SZrFileRange interface_contract_required_member_range(
     return classNode != ZR_NULL ? classNode->location : (SZrFileRange){0};
 }
 
+/**
+ * @brief 按原型继承顺序枚举实现类缺少或丢失 const 的接口字段。
+ * @note 候选通过类型名和成员名查找；常规类编译入口会先做通用签名检查。本专项只比较字段存在性与 isConst，也不比较 accessModifier。
+ * BUG: 常规类签名校验会递归父接口但忽略 isConst；本专项只枚举类的直接接口和子接口自身成员，
+ *      而 compiler_interface 只登记接口自身成员、不展平父接口。
+ *      因此 Base{pub const id}、Child:Base、Impl:Child{pub var id} 可绕过祖先 const 检查并无诊断。
+ * TODO: 独立核对接口访问级别是否要求实现保留 pub：对照语言规范和访问校验路径，
+ *       再用 pub const 要求与 pri const 实现用例确定预期。
+ * @note outViolation 中的节点及字段名借用 AST/原型；位置范围按值复制。
+ * @return true 找到 violationIndex 指定的违规；false 也可能表示参数无效或原型不可用。
+ */
 TZrBool ZrParser_InterfaceContract_ConstFieldViolationAt(
         SZrCompilerState *compilerState,
         const SZrAstNode *classNode,
@@ -186,6 +206,10 @@ TZrBool ZrParser_InterfaceContract_ConstFieldViolationAt(
     return ZR_FALSE;
 }
 
+/**
+ * @brief 为缺失或丢失 const 的实现字段生成带接口声明关联位置的结构化诊断。
+ * @note 诊断代码固定为 const_interface_mismatch，自动修复交由用户决定；此处只构造，不追加语义事实。
+ */
 TZrBool ZrParser_InterfaceContract_BuildConstFieldDiagnostic(
         SZrState *state,
         const SZrInterfaceConstFieldViolation *violation,
@@ -238,6 +262,11 @@ TZrBool ZrParser_InterfaceContract_BuildConstFieldDiagnostic(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 顺序发布类所实现接口的全部 const 字段违规，供语义查询物化。
+ * @note 诊断事实由语义上下文持有；成功追加后释放本地诊断。若后续构造或追加失败会返回 false，先前已追加事实不在此回滚，也不改写编译错误状态。
+ * @return true 表示枚举结束并完成所有追加；false 表示上下文无效或构造、追加失败。
+ */
 TZrBool ZrParser_InterfaceContract_PublishConstFieldDiagnostics(
         SZrCompilerState *compilerState,
         const SZrAstNode *classNode) {
