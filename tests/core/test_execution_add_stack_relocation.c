@@ -31,6 +31,7 @@ typedef struct TestMovingAllocatorContext {
     TZrUInt32 moveCount;
     TZrUInt32 allocationCount;
     TZrUInt32 freeCount;
+    TZrBool failNextMove;
 } TestMovingAllocatorContext;
 
 /* 强制每次扩容换地址，使误用扩容前栈指针的路径在测试中可见。 */
@@ -63,6 +64,11 @@ static TZrPtr test_moving_allocator(TZrPtr userData,
             }
         }
         return freshPointer;
+    }
+
+    if (context != ZR_NULL && context->failNextMove) {
+        context->failNextMove = ZR_FALSE;
+        return ZR_NULL;
     }
 
     newPointer = malloc(newSize);
@@ -153,6 +159,8 @@ static void assert_stack_slot_is_reset(const SZrTypeValueOnStack *slot, const ch
     TEST_ASSERT_NULL_MESSAGE(slot->value.ownershipControl, message);
     TEST_ASSERT_NULL_MESSAGE(slot->value.ownershipWeakRef, message);
 }
+
+#include "tests/core/test_execution_add_stack_relocation_aot_roots.inc"
 
 /* 字符串与对象走通用拼接，需要临时栈；验证调用方保留的目标槽地址失效后仍写到新栈。 */
 static void test_execution_add_restores_stack_destination_after_generic_string_concat_growth(void) {
@@ -971,6 +979,9 @@ int main(void) {
     RUN_TEST(test_state_stack_init_clears_all_initial_logical_slots_and_metadata);
     RUN_TEST(test_stack_grow_initializes_every_new_logical_slot_when_growing_by_multiple_slots);
     RUN_TEST(test_stack_grow_preserves_existing_newly_exposed_slots_across_repeated_growth);
+    RUN_TEST(test_stack_relocation_preserves_active_aot_frame_byte_offset_root);
+    RUN_TEST(test_aot_root_frame_push_rejects_node_inside_vm_stack_allocation);
+    RUN_TEST(test_aot_root_frame_push_rejects_duplicate_active_node);
 
     return UNITY_END();
 }

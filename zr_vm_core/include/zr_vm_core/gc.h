@@ -453,8 +453,14 @@ ZR_CORE_API void ZrCore_GarbageCollector_ScheduleCollection(struct SZrGlobalStat
  * BUG: 遍历 regions 时不持同步锁；另一 mutator 扩容并释放旧数组会造成悬垂读取。 */
 ZR_CORE_API void ZrCore_GarbageCollector_GetStatsSnapshot(struct SZrGlobalState *global,
                                                           SZrGarbageCollectorStatsSnapshot *outSnapshot);
-/** @brief 将 AOT 栈根映射压入当前 state 的扫描链；帧与根存储必须活到 Pop。
- * BUG: 受保护 AOT 调用抛异常时生成函数跳过 Pop，TryRun 不恢复根帧链，后续扫描可读取悬垂栈帧。 */
+/** @brief 将 AOT 栈根映射压入当前 state 的扫描链；每个活动节点只可压入一次。
+ * BUG: 受保护 AOT 调用抛异常时生成函数跳过 Pop，TryRun 不恢复根帧链，后续扫描可读取悬垂栈帧。
+ * Reusing an active node is rejected so the linked chain stays acyclic.
+ * @pre frame, rootMap, and the descriptor entries in rootMap->roots remain
+ * address-stable until Pop. The frame node must use host-stable storage and must
+ * not overlap the movable VM stack allocation. Values selected by those
+ * descriptors, including FRAME_BYTE_OFFSET values, may reside in the VM stack;
+ * frameBase is rebased when that storage moves. */
 ZR_CORE_API TZrBool ZrCore_Gc_AotRootFramePush(struct SZrState *state,
                                                struct SZrAotGcRootFrame *frame,
                                                TZrStackValuePointer frameBase,

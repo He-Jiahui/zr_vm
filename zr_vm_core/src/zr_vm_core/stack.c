@@ -12,6 +12,8 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/type_layout.h"
 
+#include <stdint.h>
+
 /*
  * 栈扩容和槽间搬运属于 VM 热路径；本文件将访问器和 value 操作映射到
  * no-profile 版本，避免重复检查 TLS helper。
@@ -27,8 +29,37 @@ ZR_FORCE_INLINE TZrMemoryOffset ZrStackSaveAsOffset(SZrState *state, TZrStackVal
 ZR_FORCE_INLINE TZrStackValuePointer ZrStackLoadAsOffset(SZrState *state, TZrMemoryOffset offset) {
     return ZR_CAST_STACK_VALUE((TZrBytePtr) state->stackBase.valuePointer + offset);
 }
-/* 分配器可能搬移整段栈，须先保存栈内借用指针；BUG: 内层 AOT 入口扩栈时，活动外层 GC root frame 的 frameBase 未迁移，FRAME_BYTE_OFFSET 根会被新栈范围检查跳过。 */
-static void stack_mark_stack_as_relative(SZrState *state) {
+/* RootFrame.previous 的最低位临时记录本节点的 frameBase 是否编码为栈偏移。 */
+_Static_assert((_Alignof(SZrAotGcRootFrame) % 2u) == 0u,
+               "AOT root frame links must leave a low bit available for stack relocation");
+
+/* 只迁移指向当前 VM 栈分配的 frameBase；LOCAL_ADDRESS 通常指向宿主 C 栈，必须保持原址。
+ * 用整数地址范围比较可避免拿无关 C 对象间的指针做关系比较。 */
+static void stack_mark_aot_root_frame_bases_as_relative(SZrState *state, TZrSize stackByteSize) {
+    uintptr_t stackBaseAddress;
+    SZrAotGcRootFrame *rootFrame;
+
+    if (state == ZR_NULL || state->stackBase.valuePointer == ZR_NULL) {
+        return;
+    }
+
+    stackBaseAddress = (uintptr_t)(void *)state->stackBase.valuePointer;
+    for (rootFrame = state->aotGcRootFrameStack; rootFrame != ZR_NULL;) {
+        SZrAotGcRootFrame *previous = rootFrame->previous;
+        uintptr_t frameBaseAddress = (uintptr_t)(void *)rootFrame->frameBase;
+
+        if (rootFrame->frameBase != ZR_NULL && frameBaseAddress >= stackBaseAddress &&
+            frameBaseAddress - stackBaseAddress < (uintptr_t)stackByteSize) {
+            uintptr_t previousAddress = (uintptr_t)(void *)previous;
+            rootFrame->frameBase = ZR_CAST_STACK_VALUE((TZrPtr)(frameBaseAddress - stackBaseAddress));
+            rootFrame->previous = (SZrAotGcRootFrame *)(void *)(previousAddress | (uintptr_t)1u);
+        }
+        rootFrame = previous;
+    }
+}
+
+/* 分配器可能搬移整段栈，先将栈内借用指针改为相对偏移。 */
+static void stack_mark_stack_as_relative(SZrState *state, TZrSize stackByteSize) {
     state->stackTop.reusableValueOffset = ZrStackSaveAsOffset(state, state->stackTop.valuePointer);
     state->toBeClosedValueList.reusableValueOffset =
             ZrStackSaveAsOffset(state, state->toBeClosedValueList.valuePointer);
@@ -49,6 +80,7 @@ static void stack_mark_stack_as_relative(SZrState *state) {
                     ZrStackSaveAsOffset(state, callInfo->argumentSourceFrameBase.valuePointer);
         }
     }
+    stack_mark_aot_root_frame_bases_as_relative(state, stackByteSize);
 }
 /* 以新 stackBase 恢复相对化字段；VM 帧设 trap 以退出快速分派路径。 */
 static void stack_mark_stack_as_absolute(SZrState *state) {
@@ -77,25 +109,39 @@ static void stack_mark_stack_as_absolute(SZrState *state) {
             callInfo->context.context.trap = 1;
         }
     }
+    for (SZrAotGcRootFrame *rootFrame = state->aotGcRootFrameStack; rootFrame != ZR_NULL;) {
+        uintptr_t taggedPreviousAddress = (uintptr_t)(void *)rootFrame->previous;
+        TZrBool frameBaseIsStackRelative = (TZrBool)((taggedPreviousAddress & (uintptr_t)1u) != 0u);
+        SZrAotGcRootFrame *previous =
+                (SZrAotGcRootFrame *)(void *)(taggedPreviousAddress & ~(uintptr_t)1u);
+
+        if (frameBaseIsStackRelative) {
+            TZrMemoryOffset frameBaseOffset = (TZrMemoryOffset)(uintptr_t)(void *)rootFrame->frameBase;
+            rootFrame->frameBase = ZrStackLoadAsOffset(state, frameBaseOffset);
+        }
+        rootFrame->previous = previous;
+        rootFrame = previous;
+    }
 }
-/* 先保存所有栈内指针，再暂停 GC 跨过宿主 realloc，成功或失败都恢复栈状态。 */
+/* 暂停 GC 后保存/恢复栈内指针和 AOT 根帧基址，再跨过宿主 realloc。 */
 static TZrBool stack_realloc_internal(SZrState *state, TZrUInt64 newSize, TZrBool throwError) {
     SZrGlobalState *global = state->global;
     TZrSize previousStackSize = ZrCore_State_StackGetSize(state);
     TZrSize previousStackByteSize =
             sizeof(SZrTypeValueOnStack) * (previousStackSize + ZR_THREAD_STACK_SIZE_EXTRA);
     TZrSize newStackByteSize = sizeof(SZrTypeValueOnStack) * (newSize + ZR_THREAD_STACK_SIZE_EXTRA);
-    TZrBool previousStopGcFlag = state->global->garbageCollector->stopGcFlag;
+    SZrGarbageCollector *collector = global->garbageCollector;
+    TZrBool previousStopGcFlag = collector->stopGcFlag;
     ZR_ASSERT(newSize <= ZR_VM_MAX_STACK || newSize == ZR_VM_ERROR_STACK);
-    stack_mark_stack_as_relative(state);
-    state->global->garbageCollector->stopGcFlag = ZR_TRUE;
+    collector->stopGcFlag = ZR_TRUE;
+    stack_mark_stack_as_relative(state, previousStackByteSize);
     TZrStackValuePointer newStackPointer = ZR_CAST_STACK_VALUE(
             ZrCore_Memory_Allocate(global, state->stackBase.valuePointer, previousStackByteSize,
                              newStackByteSize, ZR_MEMORY_NATIVE_TYPE_STACK));
-    state->global->garbageCollector->stopGcFlag = previousStopGcFlag;
     if (ZR_UNLIKELY(newStackPointer == ZR_NULL)) {
         // TODO: 失败后会用旧 stackBase 恢复指针；FZrAllocator 的失败保留契约未统一，需核验所有当前宿主 allocator。
         stack_mark_stack_as_absolute(state);
+        collector->stopGcFlag = previousStopGcFlag;
         if (throwError) {
             ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
         }
@@ -114,6 +160,7 @@ static TZrBool stack_realloc_internal(SZrState *state, TZrUInt64 newSize, TZrBoo
         ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(slot));
         slot->toBeClosedValueOffset = 0u;
     }
+    collector->stopGcFlag = previousStopGcFlag;
     return ZR_TRUE;
 }
 /* 按 stackTop 所在槽计算所需容量，并保留当前逻辑容量以避免意外缩栈。 */

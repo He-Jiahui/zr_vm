@@ -2,19 +2,31 @@
 related_code:
   - zr_vm_core/src/zr_vm_core/debug_artifact.c
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
+  - zr_vm_core/src/zr_vm_core/gc/gc.c
+  - zr_vm_core/src/zr_vm_core/stack.c
+  - zr_vm_core/include/zr_vm_core/gc.h
+  - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_common/include/zr_vm_common/zr_aot_abi.h
 implementation_files:
   - zr_vm_core/src/zr_vm_core/debug_artifact.c
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
+  - zr_vm_core/src/zr_vm_core/gc/gc.c
+  - zr_vm_core/src/zr_vm_core/stack.c
+  - zr_vm_core/include/zr_vm_core/gc.h
+  - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_common/include/zr_vm_common/zr_aot_abi.h
   - zr_vm_core/src/zr_vm_core/execution/execution_frame_roots.c
   - zr_vm_core/src/zr_vm_core/execution/execution_frame_observation.c
 plan_sources:
   - docs/plans/ssa/index.md
+  - docs/plans/ssa/04-frame-native/04-roots-observation.md
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
 tests:
   - tests/core/test_ssa_roots_observation.c
   - tests/core/test_aot_gc_root_frame.c
+  - tests/core/test_execution_add_stack_relocation.c
+  - tests/core/test_execution_add_stack_relocation_aot_roots.inc
+  - tests/acceptance/ssa-stack-root-frame-relocation.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -57,6 +69,8 @@ status: planned
 
 - [ ] **2. 处理 derived pointer** 保存 base root+offset，GC 移动/stack 扩容后重算；native pin 保持地址的生命周期必须可见。
 
+- [ ] **2a. 重定位活动 AOT 根帧基址** VM 栈扩容时暂存并恢复栈内 `frameBase`，保持 `LOCAL_ADDRESS` 基址原址；拒绝位于可移动 VM 栈 allocation（包括 extra slots）的根帧链节点，并拒绝重复压入已活动节点以避免成环。失败分配须先恢复根帧/调用帧到旧栈，再恢复 GC stop 状态；测试强制移动 allocator 后直接检查多个 VM `frameBase` 与非空 `previous` 链恢复，另用只有 AOT 根帧可达的年轻普通对象验证 minor GC 存活和转入 survivor。当前 minor GC 对这些普通对象原址重分配，不要求指针改写。OOM 测试的 allocator 明确保留失败前的旧 block；此夹具不代表所有 allocator 均提供该保证。MSVC 专项验证已完成（focused target 增量构建 2/2 成功，direct 23 tests 全过）；旧 `stack.c` 单对象对照已验证为真实 RED：23 tests 中仅迁移断言失败，其余 22 通过，map 确认 `ZrCore_Stack_GrowTo` 来自旧对象且未抽取 fixed archive member。GCC/Clang focused runs 仍待执行。见 [独立 acceptance](../../../../tests/acceptance/ssa-stack-root-frame-relocation.md)。
+
 - [ ] **3. 保留调试语义** 局部优化消失时报告 optimized-out 或物化合法值；debug 写入使相关 mirror/guard 失效，不能修改已经不存在的存储。
 
 - [ ] **4. 统一压力测试** 在每类 safepoint 插强制 GC、栈扩容、异常、重入与 suspend；跟踪进入/退出 root frame 平衡。
@@ -88,6 +102,8 @@ safepoint map 完整性必须在 codegen 前验证，机器码后端还需实际
 | debug 修改局部后继续优化代码 | mirror/guard 失效，读到新值 |
 
 复用回归入口：`tests/core/test_aot_gc_root_frame.c`。历史计数只作为核对线索，实施时重跑并记录实际总数。
+
+活动 AOT 根帧迁移使用直接测试目标 `zr_vm_execution_add_stack_relocation_test`；该目标没有 CTest 注册。其历史 test-only 失败曾要求普通对象根槽在 minor GC 后发生指针改写，这不是有效 RED：当前 collector 对该对象类型原址重分配。现行 fixture 改为验证两个 VM `FRAME_BYTE_OFFSET` 根和一个 `LOCAL_ADDRESS` 根仍存活并晋升到 survivor，同时单独断言多个 VM `frameBase` 指向新栈槽。
 
 登记新 CTest 名 `ssa_roots_observation` 和可执行目标 `zr_vm_ssa_roots_observation_test` 后，在 WSL 仓库根运行：
 
@@ -156,4 +172,3 @@ assert resumed loop observes new value or deopts safely
 所有异常/挂起出口 root frame push/pop 平衡。生成 map 和实际 machine/frame location 的一致性需要后端测试，不能只验证逻辑 map 自洽。
 
 本任务的 acceptance 至少附上：上述断言对应的测试名称、实际执行后端/平台、失败注入位置、verifier 输入/输出摘要，以及涉及所有权时的分配/释放或 lease 平衡。新增入口的 OOM、取消、重复调用和部分初始化退出应有明确处理；不适用的状态写明原因。
-

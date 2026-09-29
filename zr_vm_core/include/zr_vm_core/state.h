@@ -59,6 +59,9 @@ typedef struct SZrVmExceptionHandlerState {
 } SZrVmExceptionHandlerState;
 
 /** AOT 根帧由调用方压入 state 链；描述表、登记节点与根存储须保持有效直到 Pop。 */
+/* The node, rootMap, and rootMap->roots descriptors stay host-stable until Pop.
+ * A node is linked at most once while active; frameBase may point to values in
+ * the movable VM stack and is rebased when that allocation moves. */
 typedef struct SZrAotGcRootFrame {
     const struct SZrAotGcRootMap *rootMap; /**< GC 用于解释根槽位置的布局。 */
     TZrStackValuePointer frameBase; /**< 根偏移的寻址基址，可指 C 局部地址或 VM 栈帧。 */

@@ -10,6 +10,8 @@
 #include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/execution_budget.h"
 
+#include <stdint.h>
+
 /* 暂停域等待上界，完整回收与步骤失败时均按此边界放弃本次尝试。 */
 #define ZR_GC_DOMAIN_PAUSE_TIMEOUT_MILLISECONDS ((TZrUInt32)1000u)
 
@@ -196,6 +198,60 @@ static void garbage_collector_record_step_telemetry(SZrGarbageCollector *collect
     garbage_collector_refresh_cumulative_snapshot(collector);
 }
 
+/* The linked node must not live in the movable VM stack allocation. Compare integer
+ * address differences so this check avoids cross-object pointer comparisons and
+ * end-address addition overflow. A malformed stack range is rejected conservatively. */
+static TZrBool gc_aot_root_frame_node_overlaps_stack_allocation(const SZrState *state,
+                                                                const SZrAotGcRootFrame *frame) {
+    uintptr_t stackBaseAddress;
+    uintptr_t stackTailAddress;
+    uintptr_t frameAddress;
+    uintptr_t logicalStackByteSize;
+    uintptr_t extraStackByteSize = (uintptr_t)ZR_THREAD_STACK_SIZE_EXTRA *
+                                   (uintptr_t)sizeof(SZrTypeValueOnStack);
+    uintptr_t stackAllocationByteSize;
+
+    if (state == ZR_NULL || frame == ZR_NULL || state->stackBase.valuePointer == ZR_NULL ||
+        state->stackTail.valuePointer == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    stackBaseAddress = (uintptr_t)(void *)state->stackBase.valuePointer;
+    stackTailAddress = (uintptr_t)(void *)state->stackTail.valuePointer;
+    if (stackTailAddress < stackBaseAddress) {
+        return ZR_TRUE;
+    }
+
+    logicalStackByteSize = stackTailAddress - stackBaseAddress;
+    if (logicalStackByteSize > UINTPTR_MAX - extraStackByteSize) {
+        return ZR_TRUE;
+    }
+    stackAllocationByteSize = logicalStackByteSize + extraStackByteSize;
+    frameAddress = (uintptr_t)(void *)frame;
+
+    if (frameAddress >= stackBaseAddress) {
+        return frameAddress - stackBaseAddress < stackAllocationByteSize;
+    }
+    return stackBaseAddress - frameAddress < (uintptr_t)sizeof(*frame);
+}
+
+static TZrBool gc_aot_root_frame_is_active(const SZrState *state, const SZrAotGcRootFrame *frame) {
+    const SZrAotGcRootFrame *activeFrame;
+
+    if (state == ZR_NULL || frame == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (activeFrame = state->aotGcRootFrameStack;
+         activeFrame != ZR_NULL;
+         activeFrame = activeFrame->previous) {
+        if (activeFrame == frame) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 /* AOT 帧链借用调用方栈内 frame、根槽和映射；扫描前须保持三者有效。
  * BUG: 生成函数在受保护调用中抛异常可跳过 Pop，TryRun 不清链；后续 GC
  * 遍历已失效的栈内 frame，可能读取悬垂根槽。 */
@@ -209,7 +265,9 @@ TZrBool ZrCore_Gc_AotRootFramePush(SZrState *state,
         rootMap == ZR_NULL ||
         rootMap->rootCount == 0u ||
         rootMap->roots == ZR_NULL ||
-        state->aotGcRootFrameDepth == UINT32_MAX) {
+        state->aotGcRootFrameDepth == UINT32_MAX ||
+        gc_aot_root_frame_is_active(state, frame) ||
+        gc_aot_root_frame_node_overlaps_stack_allocation(state, frame)) {
         return ZR_FALSE;
     }
 
