@@ -1,6 +1,10 @@
 #include "compiler_internal.h"
 #include "type_inference_internal.h"
 
+/**
+ * @brief 从 catch clause 取出唯一参数节点，供 try 能力预检核对绑定名与类型。
+ * @return 仅当 catch pattern 恰有一个节点时返回该节点；复杂 destructuring 由上层回退。
+ */
 static const SZrAstNode *compiler_semantic_cfg_catch_parameter(
         const SZrAstNode *catchClause) {
     if (catchClause == ZR_NULL ||
@@ -12,6 +16,10 @@ static const SZrAstNode *compiler_semantic_cfg_catch_parameter(
     return catchClause->data.catchClause.pattern->nodes[0];
 }
 
+/**
+ * @brief 识别没有运行时语句的 catch block，作为安全的空 handler 形态。
+ * @return 仅 AST_BLOCK 且 body 为空或无元素时返回 true。
+ */
 static TZrBool compiler_semantic_cfg_is_empty_block(
         const SZrAstNode *node) {
     return (TZrBool)(node != ZR_NULL && node->type == ZR_AST_BLOCK &&
@@ -19,6 +27,10 @@ static TZrBool compiler_semantic_cfg_is_empty_block(
                      node->data.block.body->count == 0U));
 }
 
+/**
+ * @brief 从标识符或不带 postfix member 的 primary 中取纯名称。
+ * @note 属性访问、调用和带成员链的 primary 不视为单一 catch/local 绑定读取。
+ */
 static SZrString *compiler_semantic_cfg_simple_identifier_name(
         const SZrAstNode *node) {
     const SZrAstNode *identifier = node;
@@ -38,6 +50,10 @@ static SZrString *compiler_semantic_cfg_simple_identifier_name(
     return identifier->data.identifier.name;
 }
 
+/**
+ * @brief 判断单条表达式语句是否只读取指定 catch 参数绑定。
+ * @pre bindingName 是当前 catch 参数名；不允许将成员访问或更大表达式缩减成绑定读取。
+ */
 static TZrBool compiler_semantic_cfg_is_catch_binding_read(
         const SZrAstNode *node,
         SZrString *bindingName) {
@@ -57,6 +73,10 @@ static TZrBool compiler_semantic_cfg_is_catch_binding_read(
                     ZrCore_String_Equal(identifierName, bindingName));
 }
 
+/**
+ * @brief 确认名称已映射到有 place 且当前有值的局部 SemanticIR slot。
+ * @note 供 prior-local/call-assignment 白名单排除未初始化或仅 legacy bytecode 的位置。
+ */
 static TZrBool compiler_semantic_cfg_has_initialized_local(
         SZrCompilerState *cs, SZrString *name) {
     TZrUInt32 stackSlot;
@@ -72,6 +92,10 @@ static TZrBool compiler_semantic_cfg_has_initialized_local(
                     slot->valueId != ZR_VALUE_ID_INVALID);
 }
 
+/**
+ * @brief 识别 catch block 中对已初始化、且不同于 catch 参数的单一局部读取。
+ * @return 仅有真实可读取 slot 的简单标识符表达式通过；其他 handler 结构由外层拒绝。
+ */
 static TZrBool compiler_semantic_cfg_is_prior_local_read(
         SZrCompilerState *cs, const SZrAstNode *node,
         SZrString *bindingName) {
@@ -87,6 +111,10 @@ static TZrBool compiler_semantic_cfg_is_prior_local_read(
                     compiler_semantic_cfg_has_initialized_local(cs, name));
 }
 
+/**
+ * @brief 限定可静态判定的 catch return 结果为 void、字面值或原 catch 绑定。
+ * @note 复杂表达式可能含额外控制流/调用副作用，不用作当前直接 abrupt handler 快捷路径。
+ */
 static TZrBool compiler_semantic_cfg_is_canonical_catch_return(
         const SZrAstNode *expression,
         SZrString *bindingName) {
@@ -113,6 +141,10 @@ static TZrBool compiler_semantic_cfg_is_canonical_catch_return(
                     ZrCore_String_Equal(identifierName, bindingName));
 }
 
+/**
+ * @brief 识别仅由一条 canonical return 组成的直接 catch handler。
+ * @pre node 是 catch block；嵌套或多语句控制流不属于此 abrupt 形态。
+ */
 static TZrBool compiler_semantic_cfg_is_direct_catch_return(
         const SZrAstNode *node,
         SZrString *bindingName) {
@@ -131,6 +163,10 @@ static TZrBool compiler_semantic_cfg_is_direct_catch_return(
                             bindingName));
 }
 
+/**
+ * @brief 识别单语句直接 catch return，或直接 throw 回 catch 参数的 handler。
+ * @note 该窄形态用于终止性预判；它不替代一般 catch body flow 分析。
+ */
 static TZrBool compiler_semantic_cfg_is_direct_catch_abrupt(
         const SZrAstNode *node,
         SZrString *bindingName) {
@@ -161,6 +197,10 @@ static TZrBool compiler_semantic_cfg_is_direct_catch_abrupt(
                     ZrCore_String_Equal(identifierName, bindingName));
 }
 
+/**
+ * @brief 确认名称未被运行时变量、普通/编译时函数或 compiler type prototype 占用。
+ * @note catch-local alias 预检据此区分其特殊绑定形态与已有外部名称解析。
+ */
 static TZrBool compiler_semantic_cfg_identifier_name_is_unbound(
         SZrCompilerState *cs,
         SZrString *name) {
@@ -183,6 +223,11 @@ static TZrBool compiler_semantic_cfg_identifier_name_is_unbound(
                     ZR_NULL);
 }
 
+/**
+ * @brief 识别受限的 catch 参数别名流程：声明一个简单局部，再单独读取它。
+ * @pre block 恰含两条语句；名称未与现存变量/函数/type prototype 冲突，initializer 直接来自 catch 绑定。
+ * @return 仅接受无显式类型、非 const、private 的局部声明及其随后读取。
+ */
 static TZrBool compiler_semantic_cfg_is_catch_local_flow(
         SZrCompilerState *cs,
         const SZrAstNode *node,
@@ -224,6 +269,10 @@ static TZrBool compiler_semantic_cfg_is_catch_local_flow(
                             node->data.block.body->nodes[1], localName));
 }
 
+/**
+ * @brief 以有限白名单判断 catch handler 是否能安全纳入当前语义 CFG lowering。
+ * @note 支持空块、简单绑定/先前局部读取、受限 alias 流程和可证明的直接 abrupt；abrupt 快捷路径要求无活动 ownership cleanup，函数体内还拒绝直接 return。
+ */
 static TZrBool compiler_semantic_cfg_is_supported_catch_block(
         SZrCompilerState *cs,
         const SZrAstNode *node,
@@ -252,6 +301,11 @@ static TZrBool compiler_semantic_cfg_is_supported_catch_block(
             cs, node, bindingName);
 }
 
+/**
+ * @brief 告诉 try compiler 某个 catch handler 是否以受支持的直接 return/throw 终止。
+ * @pre node 是 try/catch/finally AST，catchIndex 指向有唯一具名参数的 clause。
+ * @return 只识别单语句直接 abrupt handler；false 表示没有命中此专用终止预判，不代表语法错误或必然落出。
+ */
 TZrBool compiler_semantic_cfg_try_catch_handler_terminates(
         const SZrAstNode *node,
         TZrSize catchIndex) {
@@ -285,6 +339,10 @@ TZrBool compiler_semantic_cfg_try_catch_handler_terminates(
                             parameter->data.parameter.name->name));
 }
 
+/**
+ * @brief 检查参数是否为简单标识符或数值/布尔字面值，而无 postfix 求值链。
+ * @note 用于选择可证明的直接调用形态；完整类型与运行时 value producer 另由 exactness 检查核对。
+ */
 static TZrBool compiler_semantic_cfg_is_simple_value_argument(
         const SZrAstNode *node) {
     const SZrAstNode *value = node;
@@ -304,6 +362,10 @@ static TZrBool compiler_semantic_cfg_is_simple_value_argument(
              value->type == ZR_AST_FLOAT_LITERAL));
 }
 
+/**
+ * @brief 对直接调用的语法参数做粗粒度白名单筛选，排除 named/特殊 marker 和复杂表达式。
+ * @return 最多三个简单 value 参数且 marker 对齐并为普通参数时返回 true。
+ */
 static TZrBool compiler_semantic_cfg_call_has_supported_arguments(
         const SZrFunctionCall *call) {
     TZrSize index;
@@ -339,6 +401,11 @@ static TZrBool compiler_semantic_cfg_call_has_supported_arguments(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 返回可供异常边建模的直接 identifier(...) call 节点。
+ * @pre node 是 primary expression；只支持一个 direct call member、普通参数、非泛型且无 named args。
+ * @return 仅限调用形状通过语法预检时返回 call AST；成员/optional/链式调用返回 null。
+ */
 const SZrAstNode *compiler_semantic_cfg_supported_direct_call(
         const SZrAstNode *node) {
     const SZrAstNode *callNode;
@@ -367,6 +434,11 @@ const SZrAstNode *compiler_semantic_cfg_supported_direct_call(
     return callNode;
 }
 
+/**
+ * @brief 识别“已初始化局部 = 受支持直接调用”，供 try/finally 将调用结果与目标写入关联。
+ * @pre expression 为普通赋值且左侧已登记为可读局部；赋值右侧仍需通过 direct-call 白名单。
+ * @return 成功时返回右侧 call AST，其他赋值形式返回 null。
+ */
 const SZrAstNode *compiler_semantic_cfg_supported_local_assignment_call(
         SZrCompilerState *cs, const SZrAstNode *expression) {
     const SZrAstNode *left;
@@ -387,6 +459,12 @@ const SZrAstNode *compiler_semantic_cfg_supported_local_assignment_call(
             expression->data.assignmentExpression.right);
 }
 
+/**
+ * @brief 预检 try/catch 能否由当前 source CFG 路径完整表达，避免半建图后才发现 handler 不受支持。
+ * @pre 由 try compiler 在建立 catch CFG 前调用；函数只读 AST/type/local facts，不提交 CFG 状态。
+ * @return 仅接受无 finally、单条受支持 protected direct call/赋值调用及可解析 catch handler 的形态。
+ * @note catch-all 必须最后出现；失败让调用方放弃已有 CFG 并阻止启动提升，保留 legacy 编译路径。
+ */
 TZrBool compiler_semantic_cfg_try_catch_is_supported(
         SZrCompilerState *cs,
         const SZrAstNode *node) {
@@ -400,6 +478,8 @@ TZrBool compiler_semantic_cfg_try_catch_is_supported(
         return ZR_FALSE;
     }
     statement = &node->data.tryCatchFinallyStatement;
+    /* This source-CFG route models catches around one invoke; finally has its
+     * own lowering/preflight and mixed try/catch/finally falls back as a unit. */
     if (statement->finallyBlock != ZR_NULL ||
         statement->catchClauses == ZR_NULL ||
         statement->catchClauses->count == 0U ||
@@ -408,6 +488,8 @@ TZrBool compiler_semantic_cfg_try_catch_is_supported(
         statement->block->data.block.body->count != 1U) {
         return ZR_FALSE;
     }
+    /* Keeping the protected region to one call site gives invoke lowering a
+     * single owning exceptional edge and an unambiguous catch entry. */
     protectedStatement = statement->block->data.block.body->nodes[0];
     protectedCall = protectedStatement == ZR_NULL ||
                             protectedStatement->type !=
@@ -430,6 +512,7 @@ TZrBool compiler_semantic_cfg_try_catch_is_supported(
          protectedCall->data.functionCall.args->count > 1U)) {
         return ZR_FALSE;
     }
+    /* 每个 handler 都须先通过类型、绑定和 body 白名单，catch-all 只能终止 dispatch 列表。 */
     for (index = 0U; index < statement->catchClauses->count; index++) {
         const SZrAstNode *catchClause =
                 statement->catchClauses->nodes[index];
@@ -455,6 +538,12 @@ TZrBool compiler_semantic_cfg_try_catch_is_supported(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 在活动 catch invoke 建图时证明参数 IR values 与已解析 value-mode 签名逐项一致。
+ * @pre call arguments 已编译进 firstArgumentSlot 起始的连续 slots；resolvedSignature 对应同一 callee。
+ * @return catch 约束下仅接受非 nullable、无 ownership/bridge/reference qualifier 的数值/布尔值，且其 producer 为 LOAD/CONSTANT。
+ * @note 没有活动 catch block 时不增加限制；失败由 call lowering 放弃 source CFG，而不直接报告语言类型错误。
+ */
 TZrBool compiler_semantic_cfg_try_call_arguments_are_exact(
         SZrCompilerState *cs,
         const SZrFunctionCall *call,
@@ -479,6 +568,7 @@ TZrBool compiler_semantic_cfg_try_call_arguments_are_exact(
         firstArgumentSlot == ZR_PARSER_SLOT_NONE) {
         return ZR_FALSE;
     }
+    /* Invoke 分支要求 SSA 参数与解析签名精确匹配，且参数值来自可追踪的 load/constant。 */
     for (index = 0U; index < call->args->count; index++) {
         const SZrInferredType *expectedType =
                 (const SZrInferredType *)ZrCore_Array_Get(
