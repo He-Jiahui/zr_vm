@@ -1,3 +1,9 @@
+/**
+ * @file
+ * @brief 实现绑定 MetadataRuntime 的 MakeGenericMethod native 导出。
+ *
+ * 入口从 native frame 读取方法定义与泛型实参数组，验证 closure 捕获的 runtime，再委托反射对象层构造结果。
+ */
 #include "zr_vm_core/reflection.h"
 
 #include "zr_vm_core/call_info.h"
@@ -15,6 +21,7 @@
 #include "reflection_bound_runtime_native_internal.h"
 #include "reflection_generic_method_native_internal.h"
 
+/* 有可写的调用结果槽时用单个 null 表示失败；没有函数槽才返回零个结果。 */
 static TZrInt64 reflection_make_generic_method_native_return_null(
         SZrState *state,
         TZrStackValuePointer functionBase) {
@@ -27,6 +34,13 @@ static TZrInt64 reflection_make_generic_method_native_return_null(
     return 1;
 }
 
+/**
+ * @brief 用 native frame 中的方法定义和泛型实参数组构造闭合泛型方法对象。
+ * @pre 当前 call info 描述有效 native frame；槽位依次为 closure、方法定义对象、泛型实参数组。
+ * @param state 正在执行该 native closure 的 VM 线程状态。
+ * @return 结果槽可写时返回一个结果并返回 1，值为构造对象或 null；state、call info 或函数槽不可用时返回 0。
+ * @note 入口验证 closure 身份与 bound runtime；`MakeGenericMethodFromObjects` 校验定义/runtime/实参并清理输入 pin 与临时 arena，成功对象随后直接写入函数槽。
+ */
 TZrInt64 ZrCore_Reflection_MakeGenericMethodNativeEntry(SZrState *state) {
     TZrStackValuePointer functionBase;
     SZrTypeValue *definitionValue;
@@ -76,6 +90,14 @@ TZrInt64 ZrCore_Reflection_MakeGenericMethodNativeEntry(SZrState *state) {
     return 1;
 }
 
+/**
+ * @brief 创建可选 pin 目标 runtime module 的内部 MakeGenericMethod closure。
+ * @param state 创建 closure 时使用的 VM 线程状态。
+ * @param runtime closure 捕获的目标元数据运行时。
+ * @param pinRuntimeModule 是否请求保留 runtime module 的 native-handle pin。
+ * @return 创建成功时返回 closure；校验或分配失败时返回 null。
+ * @note closure 捕获和 module 有效性检查委托给共享 bound-runtime 工厂；成功返回后调用方须尽快将 closure 放入受追踪 root。
+ */
 SZrClosureNative *ZrCore_Reflection_CreateMakeGenericMethodNativeClosureInternal(
         SZrState *state,
         SZrMetadataRuntime *runtime,
@@ -87,6 +109,14 @@ SZrClosureNative *ZrCore_Reflection_CreateMakeGenericMethodNativeClosureInternal
             pinRuntimeModule);
 }
 
+/**
+ * @brief 创建会 pin 所属 runtime module 的公开 MakeGenericMethod native closure。
+ * @pre `state`、`runtime` 及其所属 module 必须有效。
+ * @param state 创建 closure 时使用的 VM 线程状态。
+ * @param runtime closure 捕获的目标元数据运行时。
+ * @return 创建成功时返回 closure；运行时模块无效或分配失败时返回 null。
+ * @note 成功时目标 module 取得 native-handle pin；调用方仍须在后续可能触发 GC 的操作前 root 返回的 closure。
+ */
 SZrClosureNative *ZrCore_Reflection_CreateMakeGenericMethodNativeClosure(
         SZrState *state,
         SZrMetadataRuntime *runtime) {
