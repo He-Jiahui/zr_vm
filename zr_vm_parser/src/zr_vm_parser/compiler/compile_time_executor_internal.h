@@ -73,6 +73,12 @@ TZrBool execute_compile_time_block(SZrCompilerState *cs,
                                    SZrCompileTimeFrame *frame,
                                    TZrBool *didReturn,
                                    SZrTypeValue *result);
+/**
+ * @brief 在布局和 typed metadata 完成后执行模块级编译期检查指令。
+ * @pre cs 是持有效 state 的已初始化编译器状态，ast 是 script，阶段为 LATE_CHECK；先完成 build facts 以选定分支和注册编译期函数。
+ * @return 输入或阶段无效、某条选中指令失败时返回假；遍历完成时返回真。
+ * @note 该入口可供独立测试显式设置阶段调用；正常编译由脚本收尾路径调用。
+ */
 ZR_PARSER_API TZrBool ZrParser_CompileTime_ExecuteLateChecksInCompilerState(
         SZrCompilerState *cs,
         SZrAstNode *ast);

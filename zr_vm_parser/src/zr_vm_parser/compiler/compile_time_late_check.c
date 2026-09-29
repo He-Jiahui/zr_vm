@@ -4,6 +4,7 @@ static TZrBool compile_time_execute_late_check_node(
         SZrCompilerState *cs,
         SZrAstNode *node);
 
+/* 脚本与块共用顺序遍历，第一条失败即停止，避免失败后仍执行后续编译期副作用。 */
 static TZrBool compile_time_execute_late_check_array(
         SZrCompilerState *cs,
         SZrAstNodeArray *nodes) {
@@ -15,6 +16,7 @@ static TZrBool compile_time_execute_late_check_array(
     return ZR_TRUE;
 }
 
+/* 只进入已选中的编译期声明；普通运行时代码和 build-facts 已登记的函数不在收尾阶段重执行。 */
 static TZrBool compile_time_execute_late_check_node(
         SZrCompilerState *cs,
         SZrAstNode *node) {
@@ -37,6 +39,7 @@ static TZrBool compile_time_execute_late_check_node(
     }
 
     declaration = &node->data.compileTimeDeclaration;
+    /* build facts 阶段已经判定条件并保存分支；这里不能重新求值纯值谓词。 */
     if (declaration->isConditionalPruning) {
         selectedBranch = declaration->selectedBranch;
         return selectedBranch == ZR_NULL ||
@@ -49,6 +52,7 @@ static TZrBool compile_time_execute_late_check_node(
            !cs->hasCompileTimeError && !cs->hasError && !cs->hasFatalError;
 }
 
+/* 编译器在布局完成后切换到 LATE_CHECK，再让诊断指令读取最终的类型与布局事实。 */
 TZrBool ZrParser_CompileTime_ExecuteLateChecksInCompilerState(
         SZrCompilerState *cs,
         SZrAstNode *ast) {
