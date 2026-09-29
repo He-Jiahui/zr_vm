@@ -79,7 +79,7 @@ static const SZrTypeLayout *reflection_field_value_resolve_nested_child_layout(
         field->byteSize == 0u) {
         return ZR_NULL;
     }
-    /* TODO: 终端及中间 union 字段未核对 activeTag；确认非活动成员读取与写入时拒绝或更新 tag 的 FieldInfo 契约。 */
+    /* TODO: 路径中间段若穿越 union 字段，此处未核对 activeTag；确认非活动成员能否继续展开。 */
     childLayout = ZrCore_MetadataRuntime_ResolveTypeLayout(runtime, field->typeLayoutIndex);
     if (childLayout == ZR_NULL ||
         childLayout->byteSize != field->byteSize ||
