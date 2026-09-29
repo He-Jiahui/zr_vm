@@ -10,6 +10,11 @@ related_code:
   - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar.c
   - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar_eis4.h
   - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar_eis4.c
+  - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar_eis5.h
+  - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar_eis5_internal.h
+  - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar_eis5.c
+  - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar_eis5_read.c
+  - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar_eis5_write.c
   - zr_vm_core/src/zr_vm_core/module/module_exec_ir_artifact.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_exec_ir_artifact.c
 implementation_files:
@@ -25,22 +30,28 @@ implementation_files:
   - zr_vm_core/include/zr_vm_core/artifact_exec_ir.h
   - zr_vm_core/include/zr_vm_core/artifact_exec_ir_scalar.h
   - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar.c
+  - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar_eis5.c
+  - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar_eis5_read.c
+  - zr_vm_core/src/zr_vm_core/artifact_exec_ir_scalar_eis5_write.c
   - zr_vm_core/src/zr_vm_core/module/module_exec_ir_artifact.c
   - zr_vm_parser/src/zr_vm_parser/writer/writer_exec_ir_artifact.c
 plan_sources:
   - docs/plans/ssa/index.md
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
   - "user: 2026-09-28 EIS4 fixed scalar ADD payload"
+  - "user: 2026-09-29 EIS5 dynamic counted scalar CFG payload"
 tests:
   - tests/library/test_ssa_schema_relocation.c
   - tests/parser/test_artifact_schema_source_roundtrip.c
   - tests/parser/test_call_binding_artifact.c
   - tests/library/test_zrm_container.c
   - tests/library/test_ssa_exec_ir_artifact_v6.c
+  - tests/library/test_ssa_exec_ir_artifact_v6_eis5.inc
   - tests/library/test_ssa_exec_ir_artifact_v6_add.inc
   - tests/acceptance/ssa-artifact-v6-canonical-exec-ir.md
   - tests/acceptance/ssa-artifact-v6-eis3-counted-cfg.md
   - tests/acceptance/ssa-artifact-v6-eis4-scalar-add.md
+  - tests/acceptance/ssa-artifact-v6-eis5-counted-cfg.md
   - tests/acceptance/ssa-artifact-v6-eri1-relocation-boundary.md
 doc_type: milestone-detail
 status: planned
@@ -91,6 +102,19 @@ maps、ExecBC 或 native AOT 调用，完整 08.01 的退出门禁仍未满足�
 ZRAF v6、AOT ABI 17、ERI1 v1 不变。跨进程 Oracle=42 及畸形字段、重哈希
 拒绝见[独立验收记录](../../../../tests/acceptance/ssa-artifact-v6-eis4-scalar-add.md)。
 这不是通用算术或 CFG 编码；完整 08.01 的退出门禁仍未满足。
+
+**动态计数 CFG 持久子切片：** EIS5 v5 使用变量长度、显式小端计数和
+checked 64-bit 长度计算，支持一个无参数 i64 函数中的 CONSTANT、ADD、
+BRANCH、CONDITIONAL_BRANCH、RETURN。块上限为 256，常量/值/指令总数上限
+4096，四个 ID 池总数上限 16384，payload 上限 16 MiB。writer 在固定
+EIS1–EIS4 形状后选择 EIS5，reader 在按上限和精确长度验证后才分配解码
+数组，并在全图 Verify 后发布。五块双分支 fixture 为 1260 字节（该长度
+不是格式固定宽度），跨进程 Oracle 分别得到 true=42、false=7。EIS1–EIS4
+既有线格式、ZRAF v6、ERI1 v1、AOT ABI 17 保持不变。验收及失败注入见
+[EIS5 counted CFG 记录](../../../../tests/acceptance/ssa-artifact-v6-eis5-counted-cfg.md)。
+这不完成 ExecBC、maps、binding、relocation、package copy、AOT projection
+或 `ImportByPath` 迁移；完整 08.01 的退出门禁仍未满足。
+兼容旧 EIS1–EIS4 时，按计数、各块指令范围和操作码序列识别固定格式结构；计数相同但布局不同的合法图仍可使用 EIS5。
 
 ## 依赖与交付范围
 

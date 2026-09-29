@@ -114,6 +114,9 @@ EZrArtifactStatus ZrCore_Module_OpenExecIrArtifact(
     SZrExecIrModule temporary;
     EZrArtifactStatus status;
     EZrArtifactExecIrStatus nestedStatus;
+    TZrUInt32 scalarPayloadLength;
+    TZrBool legacyScalarLength;
+    TZrBool boundedEis5Length;
     if (buffer == ZR_NULL || expectedIdentity == ZR_NULL ||
         outModule == ZR_NULL || outModule->functionCount != 0u ||
         outModule->functions != ZR_NULL || outModule->constantCount != 0u ||
@@ -177,18 +180,28 @@ EZrArtifactStatus ZrCore_Module_OpenExecIrArtifact(
                 ZR_ARTIFACT_STATUS_MODULE_HASH_MISMATCH,
                 outer.identity.moduleHash, nested.moduleHash);
     if (nested.flags != 0u || nested.execIrHash == 0u ||
-        nested.execBcHash != 0u || nested.sectionCount != 1u ||
-        nested.sections[0].kind != ZR_ARTIFACT_EXEC_IR_SECTION_EXEC_IR ||
+        nested.execBcHash != 0u || nested.sectionCount != 1u)
+        return exec_ir_artifact_fail(diagnostic,
+                ZR_ARTIFACT_STATUS_INVALID_SECTION,
+                ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE,
+                bundle.byteOffset);
+    if (nested.sections[0].kind != ZR_ARTIFACT_EXEC_IR_SECTION_EXEC_IR ||
         nested.sections[0].flags != 0u || nested.sections[0].elementSize != 1u ||
-        nested.sections[0].elementCount != nested.sections[0].byteLength ||
-        (nested.sections[0].byteLength !=
-                 ZR_ARTIFACT_EXEC_IR_SCALAR_ENCODED_SIZE &&
-         nested.sections[0].byteLength !=
-                 ZR_ARTIFACT_EXEC_IR_BRANCH_ENCODED_SIZE &&
-         nested.sections[0].byteLength !=
-                 ZR_ARTIFACT_EXEC_IR_ADD_ENCODED_SIZE &&
-         nested.sections[0].byteLength !=
-                 ZR_ARTIFACT_EXEC_IR_CFG_ENCODED_SIZE))
+        nested.sections[0].elementCount != nested.sections[0].byteLength)
+        return exec_ir_artifact_fail(diagnostic,
+                ZR_ARTIFACT_STATUS_INVALID_SECTION,
+                ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE,
+                bundle.byteOffset);
+    scalarPayloadLength = nested.sections[0].byteLength;
+    legacyScalarLength = (TZrBool)(scalarPayloadLength ==
+                    ZR_ARTIFACT_EXEC_IR_SCALAR_ENCODED_SIZE ||
+            scalarPayloadLength == ZR_ARTIFACT_EXEC_IR_BRANCH_ENCODED_SIZE ||
+            scalarPayloadLength == ZR_ARTIFACT_EXEC_IR_ADD_ENCODED_SIZE ||
+            scalarPayloadLength == ZR_ARTIFACT_EXEC_IR_CFG_ENCODED_SIZE);
+    boundedEis5Length = (TZrBool)(scalarPayloadLength >=
+                    ZR_ARTIFACT_EXEC_IR_EIS5_HEADER_SIZE &&
+            scalarPayloadLength <= ZR_ARTIFACT_EXEC_IR_EIS5_MAX_ENCODED_SIZE);
+    if (!legacyScalarLength && !boundedEis5Length)
         return exec_ir_artifact_fail(diagnostic,
                 ZR_ARTIFACT_STATUS_INVALID_SECTION,
                 ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE,

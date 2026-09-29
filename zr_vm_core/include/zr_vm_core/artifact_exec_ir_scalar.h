@@ -31,14 +31,22 @@
 #define ZR_ARTIFACT_EXEC_IR_ADD_VERSION ((TZrUInt16)4u)
 #define ZR_ARTIFACT_EXEC_IR_ADD_ENCODED_SIZE ((TZrUInt32)716u)
 
+/* EIS5 is a bounded counted scalar-CFG payload. Its size is determined by
+ * checked record and pool counts, up to the fixed maximum below. */
+#define ZR_ARTIFACT_EXEC_IR_EIS5_MAGIC ((TZrUInt32)0x35534945u)
+#define ZR_ARTIFACT_EXEC_IR_EIS5_VERSION ((TZrUInt16)5u)
+#define ZR_ARTIFACT_EXEC_IR_EIS5_HEADER_SIZE ((TZrUInt32)44u)
+#define ZR_ARTIFACT_EXEC_IR_EIS5_MAX_ENCODED_SIZE \
+        ((TZrUInt32)(16u * 1024u * 1024u))
+
 /* Reports the exact payload size only for one of the supported, verified
  * graph shapes. No output size is published on failure. */
 ZR_CORE_API EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_GetEncodedSize(
         const SZrExecIrModule *module, TZrUInt32 *outSize,
         SZrArtifactExecIrDiagnostic *diagnostic);
 
-/* Rejects every graph field or side table outside EIS1/EIS2/EIS3/EIS4. On
- * failure the destination bytes are unchanged. */
+/* Rejects every graph field or side table outside EIS1/EIS2/EIS3/EIS4/EIS5.
+ * On failure the destination bytes are unchanged. */
 ZR_CORE_API EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_Write(
         const SZrExecIrModule *module, TZrByte *bytes, TZrUInt32 capacity,
         SZrArtifactExecIrDiagnostic *diagnostic);

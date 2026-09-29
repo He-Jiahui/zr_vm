@@ -1,8 +1,10 @@
 #include "zr_vm_core/artifact_exec_ir_scalar.h"
 #include "artifact_exec_ir_scalar_eis3.h"
 #include "artifact_exec_ir_scalar_eis4.h"
+#include "artifact_exec_ir_scalar_eis5.h"
 #include "zr_vm_common/zr_type_conf.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct SScalarCursor {
@@ -475,26 +477,119 @@ static void scalar_read_branch_record(SScalarCursor *cursor,
     record->predecessorId = scalar_get32(cursor);
 }
 
+typedef enum EScalarWireFormat {
+    SCALAR_WIRE_INVALID,
+    SCALAR_WIRE_EIS1,
+    SCALAR_WIRE_EIS2,
+    SCALAR_WIRE_EIS3,
+    SCALAR_WIRE_EIS4,
+    SCALAR_WIRE_EIS5
+} EScalarWireFormat;
+
+/* Keep recognizable legacy instruction layouts on their original fixed
+ * validators. The counts alone are insufficient: a dynamic EIS5 graph may
+ * intentionally share a legacy tuple while placing instructions differently. */
+static EScalarWireFormat scalar_legacy_silhouette(
+        const SZrExecIrModule *module) {
+    const SZrExecIrFunction *function;
+    if (module == ZR_NULL || module->functionCount != 1u ||
+        module->functions == ZR_NULL) return SCALAR_WIRE_INVALID;
+    function = &module->functions[0];
+    if (function->blocks == ZR_NULL || function->instructions == ZR_NULL)
+        return SCALAR_WIRE_INVALID;
+    if (module->constantCount == 1u && function->valueCount == 1u &&
+        function->blockCount == 1u && function->instructionCount == 2u &&
+        function->resultCount == 1u && function->operandCount == 1u &&
+        function->successorCount == 0u && function->predecessorCount == 0u &&
+        scalar_range_is(function->blocks[0].instructions, 0u, 2u) &&
+        function->instructions[0].opcode == ZR_EXEC_IR_OPCODE_CONSTANT &&
+        function->instructions[1].opcode == ZR_EXEC_IR_OPCODE_RETURN)
+        return SCALAR_WIRE_EIS1;
+    if (module->constantCount == 1u && function->valueCount == 1u &&
+        function->blockCount == 2u && function->instructionCount == 3u &&
+        function->resultCount == 1u && function->operandCount == 1u &&
+        function->successorCount == 1u && function->predecessorCount == 1u &&
+        scalar_range_is(function->blocks[0].instructions, 0u, 1u) &&
+        scalar_range_is(function->blocks[1].instructions, 1u, 2u) &&
+        function->instructions[0].opcode == ZR_EXEC_IR_OPCODE_BRANCH &&
+        function->instructions[1].opcode == ZR_EXEC_IR_OPCODE_CONSTANT &&
+        function->instructions[2].opcode == ZR_EXEC_IR_OPCODE_RETURN)
+        return SCALAR_WIRE_EIS2;
+    if (module->constantCount == 3u && function->valueCount == 3u &&
+        function->blockCount == 3u && function->instructionCount == 6u &&
+        function->resultCount == 3u && function->operandCount == 3u &&
+        function->successorCount == 2u && function->predecessorCount == 2u &&
+        scalar_range_is(function->blocks[0].instructions, 0u, 2u) &&
+        scalar_range_is(function->blocks[1].instructions, 2u, 2u) &&
+        scalar_range_is(function->blocks[2].instructions, 4u, 2u) &&
+        function->instructions[0].opcode == ZR_EXEC_IR_OPCODE_CONSTANT &&
+        function->instructions[1].opcode ==
+                ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH &&
+        function->instructions[2].opcode == ZR_EXEC_IR_OPCODE_CONSTANT &&
+        function->instructions[3].opcode == ZR_EXEC_IR_OPCODE_RETURN &&
+        function->instructions[4].opcode == ZR_EXEC_IR_OPCODE_CONSTANT &&
+        function->instructions[5].opcode == ZR_EXEC_IR_OPCODE_RETURN)
+        return SCALAR_WIRE_EIS3;
+    if (module->constantCount == 2u && function->valueCount == 3u &&
+        function->blockCount == 1u && function->instructionCount == 4u &&
+        function->resultCount == 3u && function->operandCount == 3u &&
+        function->successorCount == 0u && function->predecessorCount == 0u &&
+        scalar_range_is(function->blocks[0].instructions, 0u, 4u) &&
+        function->instructions[0].opcode == ZR_EXEC_IR_OPCODE_CONSTANT &&
+        function->instructions[1].opcode == ZR_EXEC_IR_OPCODE_CONSTANT &&
+        function->instructions[2].opcode == ZR_EXEC_IR_OPCODE_ADD &&
+        function->instructions[3].opcode == ZR_EXEC_IR_OPCODE_RETURN)
+        return SCALAR_WIRE_EIS4;
+    return SCALAR_WIRE_INVALID;
+}
+
+static EZrArtifactExecIrStatus scalar_select_wire_format(
+        const SZrExecIrModule *module, EScalarWireFormat *outFormat,
+        TZrUInt32 *outSize, SZrArtifactExecIrDiagnostic *diagnostic) {
+    EScalarWireFormat legacySilhouette;
+    EZrArtifactExecIrStatus status;
+    if (module == ZR_NULL || outFormat == ZR_NULL || outSize == ZR_NULL)
+        return scalar_fail(diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_ARGUMENT, 0u);
+    if (scalar_shape_is(module)) {
+        *outFormat = SCALAR_WIRE_EIS1;
+        *outSize = ZR_ARTIFACT_EXEC_IR_SCALAR_ENCODED_SIZE;
+        return scalar_fail(diagnostic, ZR_ARTIFACT_EXEC_IR_OK, 0u);
+    }
+    if (scalar_branch_shape_is(module)) {
+        *outFormat = SCALAR_WIRE_EIS2;
+        *outSize = ZR_ARTIFACT_EXEC_IR_BRANCH_ENCODED_SIZE;
+        return scalar_fail(diagnostic, ZR_ARTIFACT_EXEC_IR_OK, 0u);
+    }
+    legacySilhouette = scalar_legacy_silhouette(module);
+    if (legacySilhouette == SCALAR_WIRE_EIS1 ||
+        legacySilhouette == SCALAR_WIRE_EIS2)
+        return scalar_fail(diagnostic,
+                           ZR_ARTIFACT_EXEC_IR_INVALID_SECTION, 0u);
+    status = ZrCore_ArtifactExecIrScalarEis3_GetEncodedSize(
+            module, outSize, diagnostic);
+    if (status == ZR_ARTIFACT_EXEC_IR_OK) {
+        *outFormat = SCALAR_WIRE_EIS3;
+        return status;
+    }
+    if (legacySilhouette == SCALAR_WIRE_EIS3) return status;
+    status = ZrCore_ArtifactExecIrScalarEis4_GetEncodedSize(
+            module, outSize, diagnostic);
+    if (status == ZR_ARTIFACT_EXEC_IR_OK) {
+        *outFormat = SCALAR_WIRE_EIS4;
+        return status;
+    }
+    if (legacySilhouette == SCALAR_WIRE_EIS4) return status;
+    status = ZrCore_ArtifactExecIrScalarEis5_GetEncodedSize(
+            module, outSize, diagnostic);
+    if (status == ZR_ARTIFACT_EXEC_IR_OK) *outFormat = SCALAR_WIRE_EIS5;
+    return status;
+}
+
 EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_GetEncodedSize(
         const SZrExecIrModule *module, TZrUInt32 *outSize,
         SZrArtifactExecIrDiagnostic *diagnostic) {
-    TZrUInt32 size;
-    if (module == ZR_NULL || outSize == ZR_NULL)
-        return scalar_fail(diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_ARGUMENT, 0u);
-    if (scalar_shape_is(module))
-        size = ZR_ARTIFACT_EXEC_IR_SCALAR_ENCODED_SIZE;
-    else if (scalar_branch_shape_is(module))
-        size = ZR_ARTIFACT_EXEC_IR_BRANCH_ENCODED_SIZE;
-    else {
-        EZrArtifactExecIrStatus status =
-                ZrCore_ArtifactExecIrScalarEis3_GetEncodedSize(
-                        module, outSize, diagnostic);
-        if (status == ZR_ARTIFACT_EXEC_IR_OK) return status;
-        return ZrCore_ArtifactExecIrScalarEis4_GetEncodedSize(
-                module, outSize, diagnostic);
-    }
-    *outSize = size;
-    return scalar_fail(diagnostic, ZR_ARTIFACT_EXEC_IR_OK, 0u);
+    EScalarWireFormat format;
+    return scalar_select_wire_format(module, &format, outSize, diagnostic);
 }
 
 EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_Write(
@@ -502,25 +597,37 @@ EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_Write(
         SZrArtifactExecIrDiagnostic *diagnostic) {
     TZrByte temporary[ZR_ARTIFACT_EXEC_IR_CFG_ENCODED_SIZE];
     SScalarCursor cursor = {temporary, 0u};
+    TZrByte *dynamicTemporary = ZR_NULL;
+    EScalarWireFormat format;
     TZrUInt32 size;
     EZrArtifactExecIrStatus status;
     if (bytes == ZR_NULL || module == ZR_NULL)
         return scalar_fail(diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_ARGUMENT, 0u);
-    status = ZrCore_ArtifactExecIrScalar_GetEncodedSize(module, &size,
-                                                        diagnostic);
+    status = scalar_select_wire_format(module, &format, &size, diagnostic);
     if (status != ZR_ARTIFACT_EXEC_IR_OK) return status;
     if (capacity < size)
         return scalar_fail(diagnostic, ZR_ARTIFACT_EXEC_IR_TRUNCATED, 0u);
-    if (size == ZR_ARTIFACT_EXEC_IR_SCALAR_ENCODED_SIZE)
-        scalar_write_record(&cursor, module);
-    else if (size == ZR_ARTIFACT_EXEC_IR_BRANCH_ENCODED_SIZE)
-        scalar_write_branch_record(&cursor, module);
-    else if (size == ZR_ARTIFACT_EXEC_IR_CFG_ENCODED_SIZE)
+    if (format == SCALAR_WIRE_EIS3)
         return ZrCore_ArtifactExecIrScalarEis3_Write(
                 module, bytes, capacity, diagnostic);
-    else
+    if (format == SCALAR_WIRE_EIS4)
         return ZrCore_ArtifactExecIrScalarEis4_Write(
                 module, bytes, capacity, diagnostic);
+    if (format == SCALAR_WIRE_EIS5) {
+        dynamicTemporary = (TZrByte *)malloc(size);
+        if (dynamicTemporary == ZR_NULL)
+            return scalar_fail(diagnostic, ZR_ARTIFACT_EXEC_IR_LIMIT, 0u);
+        status = ZrCore_ArtifactExecIrScalarEis5_Write(
+                module, dynamicTemporary, size, diagnostic);
+        if (status == ZR_ARTIFACT_EXEC_IR_OK)
+            memcpy(bytes, dynamicTemporary, size);
+        free(dynamicTemporary);
+        return status;
+    }
+    if (format == SCALAR_WIRE_EIS1)
+        scalar_write_record(&cursor, module);
+    else
+        scalar_write_branch_record(&cursor, module);
     if (cursor.offset != size)
         return scalar_fail(diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
                            cursor.offset);
@@ -651,6 +758,9 @@ EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_Read(
                 bytes, length, outModule, diagnostic);
     if (magic == ZR_ARTIFACT_EXEC_IR_ADD_MAGIC)
         return ZrCore_ArtifactExecIrScalarEis4_Read(
+                bytes, length, outModule, diagnostic);
+    if (magic == ZR_ARTIFACT_EXEC_IR_EIS5_MAGIC)
+        return ZrCore_ArtifactExecIrScalarEis5_Read(
                 bytes, length, outModule, diagnostic);
     if (magic == ZR_ARTIFACT_EXEC_IR_BRANCH_MAGIC)
         return scalar_read_branch(bytes, length, outModule, diagnostic);

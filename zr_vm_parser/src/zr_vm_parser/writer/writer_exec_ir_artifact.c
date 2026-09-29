@@ -92,12 +92,12 @@ static TZrBool exec_ir_writer_metadata_is_supported(
 EZrArtifactStatus ZrParser_ExecIr_WriteCanonicalZroFile(
         const SZrArtifactDocument *metadata, const SZrExecIrModule *module,
         const char *filename, SZrArtifactDiagnostic *diagnostic) {
-    TZrByte payload[ZR_ARTIFACT_EXEC_IR_CFG_ENCODED_SIZE];
     SZrArtifactExecIrSectionInput nestedSection;
     SZrArtifactExecIrDocument nestedDocument;
     SZrArtifactExecIrDiagnostic nestedDiagnostic;
     SZrArtifactSectionInput sections[8];
     SZrArtifactDocument document;
+    TZrByte *payload = ZR_NULL;
     TZrByte *nestedBytes = ZR_NULL;
     TZrByte *outerBytes = ZR_NULL;
     TZrUInt32 nestedSize = 0u;
@@ -120,15 +120,24 @@ EZrArtifactStatus ZrParser_ExecIr_WriteCanonicalZroFile(
         return exec_ir_writer_fail(diagnostic,
                 ZR_ARTIFACT_STATUS_INVALID_SECTION,
                 ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE);
-    if (ZrCore_ArtifactExecIrScalar_Write(module, payload, sizeof(payload),
-                                           &nestedDiagnostic) !=
-        ZR_ARTIFACT_EXEC_IR_OK)
+    payload = (TZrByte *)malloc((size_t)payloadSize);
+    if (payload == ZR_NULL)
         return exec_ir_writer_fail(diagnostic,
+                ZR_ARTIFACT_STATUS_BUFFER_TOO_SMALL,
+                ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE);
+    if (ZrCore_ArtifactExecIrScalar_Write(module, payload, payloadSize,
+                                           &nestedDiagnostic) !=
+        ZR_ARTIFACT_EXEC_IR_OK) {
+        status = exec_ir_writer_fail(diagnostic,
                 ZR_ARTIFACT_STATUS_INVALID_SECTION,
                 ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE);
-    if (!exec_ir_writer_metadata_is_supported(metadata, module))
-        return exec_ir_writer_fail(diagnostic,
+        goto done;
+    }
+    if (!exec_ir_writer_metadata_is_supported(metadata, module)) {
+        status = exec_ir_writer_fail(diagnostic,
                 ZR_ARTIFACT_STATUS_INVALID_SECTION, 0u);
+        goto done;
+    }
     memset(&nestedSection, 0, sizeof(nestedSection));
     nestedSection.kind = ZR_ARTIFACT_EXEC_IR_SECTION_EXEC_IR;
     nestedSection.elementCount = payloadSize;
@@ -144,15 +153,19 @@ EZrArtifactStatus ZrParser_ExecIr_WriteCanonicalZroFile(
     nestedDocument.sections = &nestedSection;
     if (ZrCore_ArtifactExecIr_GetEncodedSize(&nestedDocument, &nestedSize,
                                              &nestedDiagnostic) !=
-        ZR_ARTIFACT_EXEC_IR_OK || nestedSize == 0u)
-        return exec_ir_writer_fail(diagnostic,
+        ZR_ARTIFACT_EXEC_IR_OK || nestedSize == 0u) {
+        status = exec_ir_writer_fail(diagnostic,
                 ZR_ARTIFACT_STATUS_INVALID_SECTION,
                 ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE);
+        goto done;
+    }
     nestedBytes = (TZrByte *)malloc(nestedSize);
-    if (nestedBytes == ZR_NULL)
-        return exec_ir_writer_fail(diagnostic,
+    if (nestedBytes == ZR_NULL) {
+        status = exec_ir_writer_fail(diagnostic,
                 ZR_ARTIFACT_STATUS_BUFFER_TOO_SMALL,
                 ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE);
+        goto done;
+    }
     if (ZrCore_ArtifactExecIr_Write(&nestedDocument, nestedBytes, nestedSize,
                                     &nestedWritten, &nestedDiagnostic) !=
         ZR_ARTIFACT_EXEC_IR_OK || nestedWritten != nestedSize) {
@@ -239,5 +252,6 @@ done:
     free(temporaryFilename);
     free(outerBytes);
     free(nestedBytes);
+    free(payload);
     return status;
 }
