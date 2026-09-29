@@ -350,6 +350,11 @@ ZR_PARSER_API TZrTypeId ZrParser_CanonicalType_InternFunction(
         EZrCanonicalReceiverEffect receiverEffect,
         TZrUInt32 effectFlags);
 
+/**
+ * @brief 按 semantic type ID 查询已驻留的 canonical type 节点。
+ * @pre context 持有该类型对应的 canonical graph；无效 ID 或未驻留类型返回 NULL。
+ * @note 返回 context 所有的借用指针；后续 Intern 可能扩容 canonicalTypes，Reset/Free 会使其失效。
+ */
 ZR_PARSER_API const SZrCanonicalTypeNode *ZrParser_CanonicalType_Find(
         const struct SZrSemanticContext *context,
         TZrTypeId typeId);
@@ -498,15 +503,34 @@ ZR_PARSER_API void ZrParser_CanonicalType_Reset(struct SZrSemanticContext *conte
  * @pre context 是仍持有有效 state 的语义上下文；调用后不得再使用该池。
  */
 ZR_PARSER_API void ZrParser_CanonicalType_Free(struct SZrSemanticContext *context);
+/**
+ * @brief 初始化 canonical type 结构哈希索引；随 semantic context 一起创建。
+ * @pre context 的 state 已有效，canonicalTypes 数组已初始化。
+ * BUG: 桶数组构造使用不返回失败状态的 Array_Init/Push，分配失败可能导致 NULL 写入且调用方无从恢复。
+ */
 ZR_PARSER_API void ZrParser_CanonicalTypeIndex_Init(struct SZrSemanticContext *context);
+/**
+ * @brief 清空索引并保留桶容量，供 semantic context reset 后重新 interning。
+ * @pre canonicalTypes 中的节点已按 canonical type reset 的生命周期失效。
+ */
 ZR_PARSER_API void ZrParser_CanonicalTypeIndex_Reset(struct SZrSemanticContext *context);
+/** @brief 释放索引存储；由 canonical type free 在节点存储生命周期结束时调用。 */
 ZR_PARSER_API void ZrParser_CanonicalTypeIndex_Free(struct SZrSemanticContext *context);
+/**
+ * @brief 把一个刚加入 canonicalTypes 的节点挂入其 structuralHash 桶。
+ * @pre 每个 nodeIndex 只插入一次，且节点、桶和链数组均处于同一 context 生命周期。
+ * @note 返回 false 表示上下文、索引或节点索引无效；true 不代表 hash 相等的节点结构相等。
+ * TODO: 重复插入会形成自环；现有唯一调用路径保证单次插入，但该限制尚未由接口强制。
+ * BUG: 数组扩容失败无法通过 void Array_Push 反馈，插入和桶重建不能提供 OOM 回滚保证。
+ */
 ZR_PARSER_API TZrBool ZrParser_CanonicalTypeIndex_Insert(
         struct SZrSemanticContext *context,
         TZrSize nodeIndex);
+/** @brief 返回 structuralHash 桶的候选链头；空桶或索引不可用时返回 ZR_MAX_SIZE。 */
 ZR_PARSER_API TZrSize ZrParser_CanonicalTypeIndex_First(
         const struct SZrSemanticContext *context,
         TZrUInt64 structuralHash);
+/** @brief 沿 First 返回的候选链继续遍历；链尾以 ZR_MAX_SIZE 表示。 */
 ZR_PARSER_API TZrSize ZrParser_CanonicalTypeIndex_Next(
         const struct SZrSemanticContext *context,
         TZrSize nodeIndex);
