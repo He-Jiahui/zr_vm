@@ -129,8 +129,8 @@ static EZrArtifactExecIrStatus eis5_validate_wire(
                 expectedResults = 1u;
                 expectedOperands = 2u;
                 expectedSuccessors = 0u;
-                if (instruction->typeToken !=
-                    ZR_ARTIFACT_EXEC_IR_EIS5_COMPARE_MODE_LT)
+                if (instruction->typeToken >
+                    ZR_ARTIFACT_EXEC_IR_EIS5_COMPARE_MODE_NE)
                     return ZrCore_ArtifactExecIrScalarEis5_Fail(
                             diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
                             recordOffset +

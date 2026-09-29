@@ -1,6 +1,12 @@
 /* Compare-specific EIS5 tests; include after the shared EIS5 test helpers. */
 #define TEST_EIS5_COMPARE_ENCODED_SIZE 1508u
+#define TEST_EIS5_COMPARE_MODE_EQ 0u
 #define TEST_EIS5_COMPARE_MODE_LT 1u
+#define TEST_EIS5_COMPARE_MODE_LE 2u
+#define TEST_EIS5_COMPARE_MODE_GT 3u
+#define TEST_EIS5_COMPARE_MODE_GE 4u
+#define TEST_EIS5_COMPARE_MODE_NE 5u
+#define TEST_EIS5_COMPARE_MODE_COUNT 6u
 #define TEST_EIS5_COMPARE_CONSTANTS_OFFSET 212u
 #define TEST_EIS5_COMPARE_INPUT_VALUE_OFFSET 276u
 #define TEST_EIS5_COMPARE_INPUT_VALUE_TYPE_TOKEN_OFFSET 284u
@@ -8,21 +14,53 @@
 #define TEST_EIS5_COMPARE_RESULT_VALUE_OFFSET 324u
 #define TEST_EIS5_COMPARE_RESULT_TYPE_TOKEN_OFFSET 332u
 
+static const TZrUInt32 g_eis5_compare_modes[
+        TEST_EIS5_COMPARE_MODE_COUNT] = {
+    TEST_EIS5_COMPARE_MODE_EQ,
+    TEST_EIS5_COMPARE_MODE_LT,
+    TEST_EIS5_COMPARE_MODE_LE,
+    TEST_EIS5_COMPARE_MODE_GT,
+    TEST_EIS5_COMPARE_MODE_GE,
+    TEST_EIS5_COMPARE_MODE_NE
+};
+
+typedef struct {
+    TZrUInt64 trueLeft;
+    TZrUInt64 trueRight;
+    TZrUInt64 falseLeft;
+    TZrUInt64 falseRight;
+} SEis5CompareModeCase;
+
+static const SEis5CompareModeCase g_eis5_compare_mode_cases[
+        TEST_EIS5_COMPARE_MODE_COUNT] = {
+    {1u, 1u, 1u, 2u}, /* EQ */
+    {1u, 2u, 2u, 1u}, /* LT */
+    {1u, 2u, 3u, 2u}, /* LE */
+    {3u, 2u, 1u, 2u}, /* GT */
+    {2u, 2u, 1u, 2u}, /* GE */
+    {1u, 2u, 2u, 2u}  /* NE */
+};
+
 static char *eis5_compare_artifact_path(const char *basePath,
+                                       TZrUInt32 mode,
                                        TZrBool condition) {
-    TZrSize capacity = strlen(basePath) + 36u;
+    TZrSize capacity = strlen(basePath) + 48u;
     char *path = (char *)malloc(capacity);
     require_true(path != ZR_NULL, "allocate EIS5 Compare artifact path");
-    snprintf(path, capacity, "%s.eis5-compare.%s", basePath,
+    snprintf(path, capacity, "%s.eis5-compare-%u.%s", basePath, mode,
              condition ? "true" : "false");
     return path;
 }
 
 static void eis5_compare_build_graph(SZrExecIrModule *module,
-                                     TZrBool condition) {
+                                     TZrUInt32 mode, TZrBool condition) {
+    const SEis5CompareModeCase *modeCase =
+            &g_eis5_compare_mode_cases[mode];
     SZrExecIrConstant constants[4] = {
-        {ZR_VALUE_TYPE_INT64, 0u, condition ? 1u : 3u},
-        {ZR_VALUE_TYPE_INT64, 0u, 2u},
+        {ZR_VALUE_TYPE_INT64, 0u,
+         condition ? modeCase->trueLeft : modeCase->falseLeft},
+        {ZR_VALUE_TYPE_INT64, 0u,
+         condition ? modeCase->trueRight : modeCase->falseRight},
         {ZR_VALUE_TYPE_INT64, 0u, 42u},
         {ZR_VALUE_TYPE_INT64, 0u, 7u}
     };
@@ -133,7 +171,7 @@ static void eis5_compare_build_graph(SZrExecIrModule *module,
                             results[1], empty, empty, 1u, 2u);
     eis5_append_instruction(function, ZR_EXEC_IR_OPCODE_COMPARE,
                             results[2], compareOperands, empty, 0u, 3u);
-    function->instructions[2].typeToken = TEST_EIS5_COMPARE_MODE_LT;
+    function->instructions[2].typeToken = mode;
     eis5_append_instruction(function,
                             ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH,
                             empty, branchOperand,
@@ -176,12 +214,15 @@ static void eis5_compare_build_graph(SZrExecIrModule *module,
     function->blocks[4].immediateDominator = 4u;
     function->blocks[4].terminatorInstructionId = 10u;
     require_true(ZrCore_ExecIr_VerifyModule(module, &diagnostic),
-                 "VerifyModule accepts EIS5 i64 LT Compare CFG");
+                 "VerifyModule accepts EIS5 i64 Compare CFG");
 }
 
 static void eis5_compare_assert_graph_and_oracle(
-        const SZrExecIrModule *module, TZrBool condition) {
+        const SZrExecIrModule *module, TZrUInt32 mode,
+        TZrBool condition) {
     const SZrExecIrFunction *function;
+    const SEis5CompareModeCase *modeCase =
+            &g_eis5_compare_mode_cases[mode];
     SZrExecIrOracleValue constants[4];
     SZrExecIrOracleInput input;
     SZrExecIrOracleExecutionResult execution;
@@ -190,8 +231,10 @@ static void eis5_compare_assert_graph_and_oracle(
     require_true(ZrCore_ExecIr_VerifyModule(module, &diagnostic),
                  "Verify decoded EIS5 Compare graph");
     require_true(module->constantCount == 4u && module->functionCount == 1u &&
-                 module->constants[0].bits == (condition ? 1u : 3u) &&
-                 module->constants[1].bits == 2u &&
+                 module->constants[0].bits ==
+                         (condition ? modeCase->trueLeft : modeCase->falseLeft) &&
+                 module->constants[1].bits ==
+                         (condition ? modeCase->trueRight : modeCase->falseRight) &&
                  module->constants[2].bits == 42u &&
                  module->constants[3].bits == 7u,
                  "preserve EIS5 Compare constants");
@@ -201,15 +244,14 @@ static void eis5_compare_assert_graph_and_oracle(
                  function->resultCount == 5u && function->successorCount == 4u &&
                  function->predecessorCount == 4u &&
                  function->instructions[2].opcode == ZR_EXEC_IR_OPCODE_COMPARE &&
-                 function->instructions[2].typeToken ==
-                         TEST_EIS5_COMPARE_MODE_LT &&
+                 function->instructions[2].typeToken == mode &&
                  function->instructions[2].operands.count == 2u &&
                  function->values[0].typeToken == ZR_VALUE_TYPE_INT64 &&
                  function->values[1].typeToken == ZR_VALUE_TYPE_INT64 &&
                  function->values[2].typeToken == ZR_VALUE_TYPE_BOOL &&
                  function->instructions[3].opcode ==
                          ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH,
-                 "preserve EIS5 i64 LT Compare shape and BOOL result");
+                 "preserve EIS5 Compare shape and BOOL result");
     for (TZrUInt32 index = 0u; index < 4u; ++index) {
         memset(&constants[index], 0, sizeof(constants[index]));
         constants[index].kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
@@ -222,7 +264,7 @@ static void eis5_compare_assert_graph_and_oracle(
     input.constantCount = 4u;
     ZrCore_ExecIr_OracleResultInit(&execution);
     require_true(ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic),
-                 "run EIS5 i64 LT Compare CFG through Oracle");
+                 "run EIS5 Compare CFG through Oracle");
     require_true(execution.returned &&
                  execution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED &&
                  execution.returnValue.as.signedInteger ==
@@ -234,7 +276,22 @@ static void eis5_compare_assert_graph_and_oracle(
 static void eis5_compare_write_phase(const char *basePath) {
     SFixture fixture;
     init_fixture(&fixture);
-    for (TZrUInt32 selected = 0u; selected < 2u; ++selected) {
+    for (TZrUInt32 modeIndex = 0u;
+         modeIndex < TEST_EIS5_COMPARE_MODE_COUNT; ++modeIndex) {
+        TZrUInt32 mode = g_eis5_compare_modes[modeIndex];
+        for (TZrUInt32 selected = 0u; selected < 2u; ++selected) {
+            TZrBool condition = (TZrBool)selected;
+            SZrExecIrModule source;
+            eis5_compare_build_graph(&source, mode, condition);
+            eis5_compare_assert_graph_and_oracle(&source, mode, condition);
+            ZrCore_ExecIr_FreeModule(&source);
+        }
+    }
+
+    for (TZrUInt32 scenario = 0u;
+         scenario < TEST_EIS5_COMPARE_MODE_COUNT * 2u; ++scenario) {
+        TZrUInt32 mode = g_eis5_compare_modes[scenario / 2u];
+        TZrUInt32 selected = scenario % 2u;
         TZrBool condition = (TZrBool)selected;
         SZrExecIrModule source;
         SZrExecIrModule decoded;
@@ -243,30 +300,33 @@ static void eis5_compare_write_phase(const char *basePath) {
         SZrArtifactDiagnostic artifactDiagnostic;
         TZrByte *payload;
         TZrUInt32 encodedSize = UINT32_MAX;
+        char dynamicSizeLabel[96];
         char *path;
 
-        eis5_compare_build_graph(&source, condition);
-        eis5_compare_assert_graph_and_oracle(&source, condition);
+        eis5_compare_build_graph(&source, mode, condition);
+        eis5_compare_assert_graph_and_oracle(&source, mode, condition);
+        (void)snprintf(dynamicSizeLabel, sizeof(dynamicSizeLabel),
+                       "EIS5 Compare mode %u dynamic size query", mode);
         require_true(ZrCore_ArtifactExecIrScalar_GetEncodedSize(
                      &source, &encodedSize, &codecDiagnostic) ==
                      ZR_ARTIFACT_EXEC_IR_OK &&
                      encodedSize == TEST_EIS5_COMPARE_ENCODED_SIZE,
-                     "EIS5 i64 LT Compare dynamic size query");
+                     dynamicSizeLabel);
         payload = (TZrByte *)malloc(encodedSize);
         require_true(payload != ZR_NULL,
                      "allocate EIS5 Compare payload");
         require_true(ZrCore_ArtifactExecIrScalar_Write(
                      &source, payload, encodedSize, &codecDiagnostic) ==
                      ZR_ARTIFACT_EXEC_IR_OK,
-                     "write EIS5 i64 LT Compare payload");
+                     "write EIS5 Compare payload");
         ZrCore_ExecIr_ModuleInit(&decoded);
         require_true(ZrCore_ArtifactExecIrScalar_Read(
                      payload, encodedSize, &decoded, &codecDiagnostic) ==
                      ZR_ARTIFACT_EXEC_IR_OK,
-                     "read EIS5 i64 LT Compare payload directly");
-        eis5_compare_assert_graph_and_oracle(&decoded, condition);
+                     "read EIS5 Compare payload directly");
+        eis5_compare_assert_graph_and_oracle(&decoded, mode, condition);
         ZrCore_ExecIr_FreeModule(&decoded);
-        path = eis5_compare_artifact_path(basePath, condition);
+        path = eis5_compare_artifact_path(basePath, mode, condition);
         require_true(ZrParser_ExecIr_WriteCanonicalZroFile(
                      &fixture.metadata, &source, path, &artifactDiagnostic) ==
                      ZR_ARTIFACT_STATUS_OK,
@@ -274,7 +334,7 @@ static void eis5_compare_write_phase(const char *basePath) {
         free(path);
 
         function = &source.functions[0];
-        if (condition) {
+        if (mode == TEST_EIS5_COMPARE_MODE_EQ && condition) {
             source.constants[0].typeToken = ZR_VALUE_TYPE_BOOL;
             function->values[0].typeToken = ZR_VALUE_TYPE_BOOL;
             require_true(ZrCore_ArtifactExecIrScalar_GetEncodedSize(
@@ -287,31 +347,36 @@ static void eis5_compare_write_phase(const char *basePath) {
             function->values[0].typeToken = ZR_VALUE_TYPE_INT64;
         }
         function->instructions[2].typeToken =
-                TEST_EIS5_COMPARE_MODE_LT + 1u;
+                TEST_EIS5_COMPARE_MODE_NE + 1u;
         require_true(ZrCore_ArtifactExecIrScalar_GetEncodedSize(
                      &source, &encodedSize, &codecDiagnostic) ==
                      ZR_ARTIFACT_EXEC_IR_INVALID_SECTION &&
                      codecDiagnostic.byteOffset ==
                              TEST_EIS5_COMPARE_MODE_OFFSET,
                      "writer rejects unsupported EIS5 Compare mode");
-        function->instructions[2].typeToken = TEST_EIS5_COMPARE_MODE_LT;
-        function->values[2].typeToken = ZR_VALUE_TYPE_INT64;
-        require_true(ZrCore_ArtifactExecIrScalar_GetEncodedSize(
-                     &source, &encodedSize, &codecDiagnostic) ==
-                     ZR_ARTIFACT_EXEC_IR_INVALID_SECTION &&
-                     codecDiagnostic.byteOffset ==
-                             TEST_EIS5_COMPARE_RESULT_VALUE_OFFSET,
-                     "writer rejects non-BOOL EIS5 Compare result");
+        function->instructions[2].typeToken = mode;
+        if (mode == TEST_EIS5_COMPARE_MODE_EQ && condition) {
+            function->values[2].typeToken = ZR_VALUE_TYPE_INT64;
+            require_true(ZrCore_ArtifactExecIrScalar_GetEncodedSize(
+                         &source, &encodedSize, &codecDiagnostic) ==
+                         ZR_ARTIFACT_EXEC_IR_INVALID_SECTION &&
+                         codecDiagnostic.byteOffset ==
+                                 TEST_EIS5_COMPARE_RESULT_VALUE_OFFSET,
+                         "writer rejects non-BOOL EIS5 Compare result");
+        }
         free(payload);
         ZrCore_ExecIr_FreeModule(&source);
     }
 }
 
 static void eis5_compare_read_phase(const char *basePath) {
-    for (TZrUInt32 selected = 0u; selected < 2u; ++selected) {
+    for (TZrUInt32 scenario = 0u;
+         scenario < TEST_EIS5_COMPARE_MODE_COUNT * 2u; ++scenario) {
+        TZrUInt32 mode = g_eis5_compare_modes[scenario / 2u];
+        TZrUInt32 selected = scenario % 2u;
         TZrBool condition = (TZrBool)selected;
         SFixture fixture;
-        char *path = eis5_compare_artifact_path(basePath, condition);
+        char *path = eis5_compare_artifact_path(basePath, mode, condition);
         TZrSize length, bundleOffset, payloadOffset;
         TZrByte *bytes = read_file(path, &length);
         TZrByte *mutated = (TZrByte *)malloc(length);
@@ -330,7 +395,7 @@ static void eis5_compare_read_phase(const char *basePath) {
                      bytes, length, &fixture.metadata.identity, &module,
                      &diagnostic) == ZR_ARTIFACT_STATUS_OK,
                      "open EIS5 Compare artifact in a separate process");
-        eis5_compare_assert_graph_and_oracle(&module, condition);
+        eis5_compare_assert_graph_and_oracle(&module, mode, condition);
         ZrCore_ExecIr_FreeModule(&module);
         require_true(ZrCore_Artifact_Read(bytes, length, &outer, &diagnostic) ==
                      ZR_ARTIFACT_STATUS_OK &&
@@ -348,23 +413,26 @@ static void eis5_compare_read_phase(const char *basePath) {
         bundleOffset = (TZrSize)(bundle.data - bytes);
         payloadOffset = (TZrSize)(payload->data - bytes);
 
-        memcpy(mutated, bytes, length);
-        put32(mutated + payloadOffset + TEST_EIS5_COMPARE_MODE_OFFSET,
-              TEST_EIS5_COMPARE_MODE_LT + 1u);
-        eis5_rehash(mutated, bundleOffset, payloadOffset, payload->byteLength);
-        eis5_require_codec_rejected(
-                mutated + payloadOffset, payload->byteLength,
-                ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
-                TEST_EIS5_COMPARE_MODE_OFFSET, ZR_TRUE);
-        diagnostic = require_rejected(mutated, length,
-                                      ZR_ARTIFACT_STATUS_INVALID_SECTION);
-        require_true(diagnostic.sectionKind ==
-                         ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE &&
-                     diagnostic.byteOffset == payloadOffset +
-                             TEST_EIS5_COMPARE_MODE_OFFSET,
-                     "opener rejects rehashed unsupported Compare mode");
+        if (mode == TEST_EIS5_COMPARE_MODE_EQ && condition) {
+            memcpy(mutated, bytes, length);
+            put32(mutated + payloadOffset + TEST_EIS5_COMPARE_MODE_OFFSET,
+                  TEST_EIS5_COMPARE_MODE_NE + 1u);
+            eis5_rehash(mutated, bundleOffset, payloadOffset,
+                        payload->byteLength);
+            eis5_require_codec_rejected(
+                    mutated + payloadOffset, payload->byteLength,
+                    ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
+                    TEST_EIS5_COMPARE_MODE_OFFSET, ZR_TRUE);
+            diagnostic = require_rejected(mutated, length,
+                                          ZR_ARTIFACT_STATUS_INVALID_SECTION);
+            require_true(diagnostic.sectionKind ==
+                             ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE &&
+                         diagnostic.byteOffset == payloadOffset +
+                                 TEST_EIS5_COMPARE_MODE_OFFSET,
+                         "opener rejects rehashed unsupported Compare mode");
+        }
 
-        if (condition) {
+        if (mode == TEST_EIS5_COMPARE_MODE_EQ && condition) {
             memcpy(mutated, bytes, length);
             put32(mutated + payloadOffset +
                           TEST_EIS5_COMPARE_CONSTANTS_OFFSET,

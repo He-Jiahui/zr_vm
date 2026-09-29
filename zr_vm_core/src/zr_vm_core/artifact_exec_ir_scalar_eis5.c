@@ -547,8 +547,8 @@ EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalarEis5_ValidateModule(
                 expectedResults = 1u;
                 expectedOperands = 2u;
                 expectedSuccessors = 0u;
-                if (instruction->typeToken !=
-                    ZR_ARTIFACT_EXEC_IR_EIS5_COMPARE_MODE_LT)
+                if (instruction->typeToken >
+                    ZR_ARTIFACT_EXEC_IR_EIS5_COMPARE_MODE_NE)
                     return ZrCore_ArtifactExecIrScalarEis5_Fail(
                             diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
                             layout->instructionsOffset + index *

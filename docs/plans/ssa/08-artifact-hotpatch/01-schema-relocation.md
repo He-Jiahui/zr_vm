@@ -42,6 +42,7 @@ plan_sources:
   - "user: 2026-09-29 EIS5 dynamic counted scalar CFG payload"
   - "user: 2026-09-29 EIS5 BOOL predicate extension"
   - "user: 2026-09-29 EIS5 LT Compare extension"
+  - "user: 2026-09-29 EIS5 six Compare modes extension"
 tests:
   - tests/library/test_ssa_schema_relocation.c
   - tests/parser/test_artifact_schema_source_roundtrip.c
@@ -58,6 +59,7 @@ tests:
   - tests/acceptance/ssa-artifact-v6-eis5-counted-cfg.md
   - tests/acceptance/ssa-artifact-v6-eis5-bool-predicate.md
   - tests/acceptance/ssa-artifact-v6-eis5-compare-lt.md
+  - tests/acceptance/ssa-artifact-v6-eis5-compare-modes.md
   - tests/acceptance/ssa-artifact-v6-eri1-relocation-boundary.md
 doc_type: milestone-detail
 status: planned
@@ -130,16 +132,25 @@ ADD 与 RETURN 仍限 i64。跨进程 true=42/false=7、非规范 BOOL bits、�
 [独立验收记录](../../../../tests/acceptance/ssa-artifact-v6-eis5-bool-predicate.md)。
 旧 EIS5 v5 reader 会拒绝 BOOL token；完整 08.01 的剩余门禁仍未满足。
 
-**EIS5 LT Compare 补充：** EIS5 v5 在原指令记录中复用 `typeToken` 保存
-COMPARE 模式，仅接受 LT（值 1）；两个操作数必须为 i64，结果必须为
-BOOL，随后由条件分支选择 i64 42 或 7。payload 版本、字段顺序与记录宽度
-不变。直接 codec 及 canonical artifact 跨进程测试覆盖两种比较结果，并
-对非 LT 模式、非 i64 输入和非 BOOL 结果做重哈希拒绝及无部分发布检查；
-EIS1–EIS4 golden/拒绝路径及此前 EIS5 i64、BOOL predicate 和同计数图回归继续通过。
-旧 EIS5 v5 reader 不认识 COMPARE，会在指令记录处以 `INVALID_SECTION`
-拒绝；新 opcode 不具备旧 reader 前向兼容性。实现和 Clang/MSVC 四门证据
-见[EIS5 LT Compare 验收记录](../../../../tests/acceptance/ssa-artifact-v6-eis5-compare-lt.md)。
-完整 08.01 仍未完成，binding、relocation、ExecBC、AOT 等退出门禁继续有效。
+**EIS5 LT Compare 初始子切片：** 初始 Compare 子切片仅接受 LT（`typeToken`
+值 1）；两个操作数为 i64，结果为 BOOL。历史 RED/GREEN 记录见
+[LT Compare 验收记录](../../../../tests/acceptance/ssa-artifact-v6-eis5-compare-lt.md)。
+
+**EIS5 六种 Compare 模式扩展：** 现有 v5 指令记录中的 `typeToken` 接受
+六种 Oracle canonical 模式：EQ=0、LT=1、LE=2、GT=3、GE=4、NE=5。每种
+模式都用一组 true 输入和一组 false 输入构图，验证 i64 输入、BOOL 结果，
+再由条件分支选择 i64 42 或 7。payload 版本、字段顺序和记录宽度不变；
+mode 6、非 i64 输入与非 BOOL 结果会被 writer、直接 reader 和 canonical
+opener 拒绝，重哈希测试检查精确偏移及无部分发布。Clang 四项门禁为
+`artifact_schema`、`ssa_schema_relocation`、`ssa_exec_ir_artifact_v6_write`
+和 `ssa_exec_ir_artifact_v6_roundtrip`，Clang 与独立 MSVC 当前源码门禁均为
+4/4 通过。EIS1–EIS4 golden/拒绝路径及已有 EIS5 i64、BOOL predicate、count
+collision 和 COMPARE 回归保留。早于 Compare 的 EIS5 v5 reader 不识别
+COMPARE opcode，会在指令记录处以 `INVALID_SECTION` 拒绝；此前仅支持 LT
+的 v5 reader 则会在模式字段拒绝其他五种模式。版本未变，因此新模式不
+具备对旧 reader 的前向兼容性。完整 08.01 的 binding、relocation、ExecBC、
+AOT 等退出门禁仍未满足。实现范围与验证记录见
+[六模式验收](../../../../tests/acceptance/ssa-artifact-v6-eis5-compare-modes.md)。
 
 ## 依赖与交付范围
 
