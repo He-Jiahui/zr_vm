@@ -28,7 +28,7 @@ void ZrCore_GcMinorTransaction_Init(
     if (transaction != ZR_NULL) {
         memset(transaction, 0, sizeof(*transaction));
         transaction->phase = ZR_GC_MINOR_PHASE_IDLE;
-        transaction->consistentBoundary = ZR_TRUE;
+        transaction->consistentBoundary = ZR_TRUE; /* IDLE 的初始状态位，不代表堆或 roots 已完成扫描。 */
     }
 }
 
@@ -69,6 +69,9 @@ TZrBool ZrCore_GcMinorTransaction_Begin(
                                       (TZrUInt64)transaction->phase);
         return ZR_FALSE;
     }
+    /* 此状态机只接收调用方提供的停 mutator/root 可用标志，不执行 pause 或 root trace；
+     * 事务本体只在所有检查通过后清零。 */
+    /* TODO: workBudget 当前只拒绝 0，未限制区域或工作量；明确预算单位及其消费方后再落实。 */
     memset(transaction, 0, sizeof(*transaction));
     transaction->phase = ZR_GC_MINOR_PHASE_EVACUATE;
     transaction->regionCount = regionCount;
@@ -96,6 +99,7 @@ TZrBool ZrCore_GcMinorTransaction_EvacuateRegion(
                                           : 0u);
         return ZR_FALSE;
     }
+    /* TODO: 确认 regionCount 是否只统计非空 region；现有测试传入的 objectCount 均为 1。 */
     if (transaction->regionCursor >= transaction->regionCount || objectCount == 0u) {
         gc_young_set_diagnostic_minor(diagnostic,
                                       ZR_GC_YOUNG_DIAGNOSTIC_INVALID_REGION,
@@ -109,13 +113,15 @@ TZrBool ZrCore_GcMinorTransaction_EvacuateRegion(
                                       1u, transaction->toSpaceBytes -
                                               transaction->toSpaceUsedBytes,
                                       liveBytes);
-        /* No cursor or byte counter changes: the from-space region remains a
-         * complete, uncommitted unit and mutators stay stopped. */
+        /* 本分支只保持 regionCursor 与字节计数不变；调用方须保证该 region 未部分提交，
+         * 并保持 mutator 停止，不能绕过失败边界恢复执行。 */
         transaction->consistentBoundary = ZR_FALSE;
         return ZR_FALSE;
     }
+    /* 这里只累计调用方报告的 evacuation 结果，不执行对象分配或复制。 */
     transaction->toSpaceUsedBytes += liveBytes;
     transaction->evacuatedBytes += liveBytes;
+    /* TODO: 确认 objectCount 是否只统计晋升对象；真实 minor GC 也会把存活对象留在 Survivor。 */
     transaction->promotedObjects += (TZrUInt64)objectCount;
     transaction->regionCursor++;
     transaction->consistentBoundary = ZR_FALSE;
@@ -141,6 +147,7 @@ TZrBool ZrCore_GcMinorTransaction_RewriteReferences(
                                           : 0u);
         return ZR_FALSE;
     }
+    /* rewrittenReferences 是调用方完成重写后报告的数量；本函数不遍历或改写对象引用。 */
     transaction->rewrittenReferences = rewrittenReferences;
     transaction->phase = ZR_GC_MINOR_PHASE_VERIFY;
     transaction->consistentBoundary = ZR_FALSE;
@@ -163,6 +170,7 @@ TZrBool ZrCore_GcMinorTransaction_VerifyForwarding(
                                           : 0u);
         return ZR_FALSE;
     }
+    /* 未解转发数由调用方的对象扫描提供；这里只据此决定能否进入恢复边界。 */
     transaction->unresolvedForwarding = unresolvedForwarding;
     if (unresolvedForwarding != 0u) {
         gc_young_set_diagnostic_minor(diagnostic,
@@ -202,6 +210,7 @@ TZrBool ZrCore_GcMinorTransaction_ResumeMutators(
                                       (TZrUInt64)transaction->phase);
         return ZR_FALSE;
     }
+    /* 这里只推进事务记录；运行时调度器仍负责真正恢复 mutator。 */
     transaction->mutatorsStopped = ZR_FALSE;
     transaction->phase = ZR_GC_MINOR_PHASE_COMPLETE;
     transaction->consistentBoundary = ZR_TRUE;
@@ -223,8 +232,8 @@ TZrBool ZrCore_GcMinorTransaction_Abort(
                                           : 0u);
         return ZR_FALSE;
     }
-    /* Aborting is a safe terminal state only while mutators remain stopped;
-     * callers must restore roots or restart the transaction explicitly. */
+    /* TODO: Abort 只标记 ABORTED，不回滚对象或根；确认并约束调用方保持 mutator 停止，
+     * 直到自行恢复 roots 或从头重启事务。 */
     transaction->phase = ZR_GC_MINOR_PHASE_ABORTED;
     transaction->consistentBoundary = ZR_TRUE;
     return ZR_TRUE;
@@ -257,9 +266,9 @@ TZrBool ZrCore_Gc_RunMinorTransaction(
                 diagnostic)) {
         return ZR_FALSE;
     }
-    /* This façade deliberately does not invent object/card information.  It
-     * records the stop/trace boundary; a collector feeds each actual region
-     * through EvacuateRegion and then publishes the result. */
+    /* 该标量 façade 只校验请求并记录入口边界：不读取 state、不扫描 object/card，
+     * 也不驱动 evacuation、reference rewrite 或 mutator resume。成功只表示入口条件有效；
+     * 结果仍是 EVACUATE 起点，实际 minor GC 须由运行时自己的调用链完成。 */
     result->phase = transaction.phase;
     result->regionCursor = transaction.regionCursor;
     result->consistentBoundary = transaction.consistentBoundary;
