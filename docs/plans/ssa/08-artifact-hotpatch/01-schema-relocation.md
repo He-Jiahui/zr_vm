@@ -40,6 +40,7 @@ plan_sources:
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
   - "user: 2026-09-28 EIS4 fixed scalar ADD payload"
   - "user: 2026-09-29 EIS5 dynamic counted scalar CFG payload"
+  - "user: 2026-09-29 EIS5 BOOL predicate extension"
 tests:
   - tests/library/test_ssa_schema_relocation.c
   - tests/parser/test_artifact_schema_source_roundtrip.c
@@ -115,6 +116,14 @@ EIS1–EIS4 形状后选择 EIS5，reader 在按上限和精确长度验证后�
 这不完成 ExecBC、maps、binding、relocation、package copy、AOT projection
 或 `ImportByPath` 迁移；完整 08.01 的退出门禁仍未满足。
 兼容旧 EIS1–EIS4 时，按计数、各块指令范围和操作码序列识别固定格式结构；计数相同但布局不同的合法图仍可使用 EIS5。
+
+**EIS5 BOOL predicate 补充：** EIS5 v5 复用既有 `typeToken` 与 64 位
+`bits` 字段，不改变 wire layout 或版本。BOOL 常量只接受 0/1，常量结果
+必须保持常量类型一致；条件分支兼容既有 i64 predicate，也支持 BOOL，
+ADD 与 RETURN 仍限 i64。跨进程 true=42/false=7、非规范 BOOL bits、类型
+错配及 EIS1–E4 相邻回归见
+[独立验收记录](../../../../tests/acceptance/ssa-artifact-v6-eis5-bool-predicate.md)。
+旧 EIS5 v5 reader 会拒绝 BOOL token；完整 08.01 的剩余门禁仍未满足。
 
 ## 依赖与交付范围
 

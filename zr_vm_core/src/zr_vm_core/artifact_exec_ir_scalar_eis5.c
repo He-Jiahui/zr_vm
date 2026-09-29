@@ -478,17 +478,25 @@ EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalarEis5_ValidateModule(
 
     for (TZrUInt32 index = 0u; index < counts.constants; ++index) {
         const SZrExecIrConstant *constant = &module->constants[index];
-        if (constant->typeToken != ZR_VALUE_TYPE_INT64 || constant->flags != 0u)
+        if ((constant->typeToken != ZR_VALUE_TYPE_INT64 &&
+             constant->typeToken != ZR_VALUE_TYPE_BOOL) ||
+            constant->flags != 0u)
             return ZrCore_ArtifactExecIrScalarEis5_Fail(
                     diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
                     layout->constantsOffset + index *
                             ZR_ARTIFACT_EXEC_IR_EIS5_CONSTANT_SIZE);
+        if (constant->typeToken == ZR_VALUE_TYPE_BOOL && constant->bits > 1u)
+            return ZrCore_ArtifactExecIrScalarEis5_Fail(
+                    diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
+                    layout->constantsOffset + index *
+                            ZR_ARTIFACT_EXEC_IR_EIS5_CONSTANT_SIZE + 8u);
     }
     memset(definitions, 0, sizeof(definitionByValue));
     for (TZrUInt32 index = 0u; index < counts.values; ++index) {
         const SZrExecIrValue *value = &function->values[index];
         if (value->id != index + 1u ||
-            value->typeToken != ZR_VALUE_TYPE_INT64 ||
+            (value->typeToken != ZR_VALUE_TYPE_INT64 &&
+             value->typeToken != ZR_VALUE_TYPE_BOOL) ||
             value->ownership != ZR_EXEC_IR_OWNERSHIP_UNKNOWN ||
             value->nullability != ZR_EXEC_IR_NULLABILITY_UNKNOWN ||
             value->flags != 0u || value->definition == 0u ||
@@ -579,23 +587,46 @@ EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalarEis5_ValidateModule(
              item < instruction->results.start + instruction->results.count;
              ++item) {
             TZrExecIrValueId valueId = function->results[item];
+            TZrExecIrTypeToken expectedType;
             if (valueId == 0u || valueId > counts.values ||
                 definitions[valueId - 1u] != 0u)
                 return ZrCore_ArtifactExecIrScalarEis5_Fail(
                         diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
                         layout->resultsOffset + item *
                                 ZR_ARTIFACT_EXEC_IR_EIS5_POOL_ID_SIZE);
+            expectedType = instruction->opcode == ZR_EXEC_IR_OPCODE_CONSTANT
+                                   ? module->constants[instruction->layoutId]
+                                             .typeToken
+                                   : (TZrExecIrTypeToken)ZR_VALUE_TYPE_INT64;
+            if (function->values[valueId - 1u].typeToken != expectedType)
+                return ZrCore_ArtifactExecIrScalarEis5_Fail(
+                        diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
+                        layout->valuesOffset + (valueId - 1u) *
+                                ZR_ARTIFACT_EXEC_IR_EIS5_VALUE_SIZE);
             definitions[valueId - 1u] = index + 1u;
         }
         for (TZrUInt32 item = instruction->operands.start;
              item < instruction->operands.start + instruction->operands.count;
              ++item) {
             TZrExecIrValueId valueId = function->operands[item];
+            TZrExecIrTypeToken operandType;
             if (valueId == 0u || valueId > counts.values)
                 return ZrCore_ArtifactExecIrScalarEis5_Fail(
                         diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
                         layout->operandsOffset + item *
                                 ZR_ARTIFACT_EXEC_IR_EIS5_POOL_ID_SIZE);
+            operandType = function->values[valueId - 1u].typeToken;
+            if ((instruction->opcode ==
+                         ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH &&
+                 operandType != (TZrExecIrTypeToken)ZR_VALUE_TYPE_BOOL &&
+                 operandType != (TZrExecIrTypeToken)ZR_VALUE_TYPE_INT64) ||
+                (instruction->opcode !=
+                         ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH &&
+                 operandType != (TZrExecIrTypeToken)ZR_VALUE_TYPE_INT64))
+                return ZrCore_ArtifactExecIrScalarEis5_Fail(
+                        diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
+                        layout->valuesOffset + (valueId - 1u) *
+                                ZR_ARTIFACT_EXEC_IR_EIS5_VALUE_SIZE);
         }
     }
     for (TZrUInt32 index = 0u; index < counts.values; ++index) {

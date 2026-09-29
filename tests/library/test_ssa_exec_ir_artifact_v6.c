@@ -314,6 +314,7 @@ static SZrArtifactDiagnostic require_rejected(const TZrByte *bytes,
 #include "test_ssa_exec_ir_artifact_v6_cfg.inc"
 #include "test_ssa_exec_ir_artifact_v6_add.inc"
 #include "test_ssa_exec_ir_artifact_v6_eis5.inc"
+#include "test_ssa_exec_ir_artifact_v6_eis5_bool.inc"
 
 static void run_oracle(const SZrExecIrModule *module) {
     SZrExecIrOracleValue constant;

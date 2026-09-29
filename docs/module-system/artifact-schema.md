@@ -28,6 +28,7 @@ plan_sources:
   - user: 2026-09-28 EIS3 counted conditional CFG payload
   - user: 2026-09-28 EIS4 fixed scalar ADD payload
   - user: 2026-09-29 EIS5 dynamic counted scalar CFG payload
+  - user: 2026-09-29 EIS5 BOOL predicate extension
 tests:
   - tests/library/test_ssa_exec_ir_artifact_v6.c
   - tests/library/test_ssa_exec_ir_artifact_v6_cfg.inc
@@ -127,12 +128,22 @@ CONDITIONAL_BRANCH, and RETURN, with no unsupported maps or side tables. The
 reader checks caps and exact computed length before allocating bounded decode
 arrays, verifies a temporary module, and publishes only after verification.
 
+EIS5 constant and value records already carry a `typeToken` and 64-bit value
+bits. The BOOL predicate extension keeps the v5 layout and accepts i64 and
+BOOL constants/values. BOOL constant bits must be exactly zero or one, and a
+CONSTANT result must keep the constant's type. CONDITIONAL_BRANCH accepts
+either BOOL or the existing i64 predicate; ADD operands/results and RETURN
+operands remain i64. EIS1–E4 routing and payload bytes do not change. An older
+EIS5 reader rejects BOOL tokens as `INVALID_SECTION`, so this token-set
+extension is not forward-readable by older v5 implementations.
+
 `ZrParser_ExecIr_WriteCanonicalZroFile` accepts a validated ZRO metadata
 document with seven identity sections and an `SZrExecIrModule`. It supports
 exactly one no argument i64 function with the EIS1 one block shape, the EIS2
 two block unconditional BRANCH shape, the EIS3 three block conditional fork
 shape, the EIS4 fixed scalar ADD shape, or a graph accepted by the bounded EIS5
-counted schema. Fixed EIS1–E4 candidates retain their original codec priority;
+counted schema, including the BOOL-predicate extension. Fixed EIS1–E4
+candidates retain their original codec priority;
 a graph matching a fixed-format count tuple, per-block instruction ranges, and
 opcode sequence stays routed to its fixed validator. This preserves rejection of
 malformed legacy literals and bindings while allowing valid same-count EIS5
@@ -157,7 +168,9 @@ model, runs `ZrCore_ExecIr_VerifyModule`, compares the decoded module/function
 contract with the outer metadata, then publishes the graph. EIS5 validates
 its magic, version, counts, reserved field, and exact computed length before
 allocation. The focused write and cross-process tests preserve the EIS1
-golden, the fixed EIS2–EIS4 payloads, and the EIS5 conditional graph.
+golden, the fixed EIS2–EIS4 payloads, the EIS5 i64-predicate graph, and the EIS5
+BOOL-predicate graph. Direct and rehashed outer-payload tests reject BOOL bits
+outside zero/one and mismatched constant/result types at their payload offsets.
 EIS2's successor and reciprocal predecessor must name the two serialized
 blocks exactly. EIS3's ordered successors and reciprocal predecessors must
 match all three blocks; invalid counts or edges are rejected with their
@@ -182,7 +195,10 @@ The legacy writer has no safe opcode scan, so it writes patch 44 even for an
 opcode-free function; such newly written files require a patch 44 reader.
 Existing opcode numbers through 244 are unchanged. ZRAF schema 6, existing
 EIS1–EIS4 payloads, ERI1 v1, and AOT ABI 17 stay unchanged; EIS5 adds a distinct
-counted ExecIR payload version.
+counted ExecIR payload version. The BOOL predicate uses the existing EIS5 v5
+typed fields without changing its length or header; older v5 readers reject
+the BOOL type token. Its bounded verification is recorded in the
+[EIS5 BOOL predicate acceptance](../../tests/acceptance/ssa-artifact-v6-eis5-bool-predicate.md).
 These serialized payloads do not carry ExecBC opcode numbers. A generated AOT
 module using the proxy still requires the newly exported runtime helper when
 linked.

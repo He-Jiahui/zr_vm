@@ -1,6 +1,9 @@
 /* EIS5 test contract: a variable-length, little-endian scalar CFG payload. */
 #define TEST_EIS5_HEADER_SIZE 44u
 #define TEST_EIS5_FIVE_BLOCK_ENCODED_SIZE 1260u
+#define TEST_EIS5_FIRST_CONSTANT_BITS_OFFSET 220u
+#define TEST_EIS5_FIRST_VALUE_RECORD_OFFSET 260u
+#define TEST_EIS5_FIRST_VALUE_TYPE_TOKEN_OFFSET 268u
 #define TEST_EIS5_TOTAL_LENGTH_OFFSET 8u
 #define TEST_EIS5_CONSTANT_COUNT_OFFSET 12u
 #define TEST_EIS5_VALUE_COUNT_OFFSET 16u
@@ -16,6 +19,9 @@
 #define TEST_EIS5_MAX_SCALAR_NODE_COUNT 4096u
 #define TEST_EIS5_MAX_POOL_COUNT 16384u
 #define TEST_EIS5_MAX_ENCODED_SIZE (16u * 1024u * 1024u)
+
+static void eis5_bool_predicate_write_phase(const char *basePath);
+static void eis5_bool_predicate_read_phase(const char *basePath);
 
 static TZrUInt32 eis5_get32(const TZrByte *bytes) {
     return (TZrUInt32)bytes[0] |
@@ -64,9 +70,11 @@ static void eis5_append_instruction(SZrExecIrFunction *function,
                  actualId == expectedId, "append EIS5 CFG instruction");
 }
 
-static void eis5_build_graph(SZrExecIrModule *module, TZrBool condition) {
+static void eis5_build_graph(SZrExecIrModule *module, TZrBool condition,
+                             TZrBool boolPredicate) {
     SZrExecIrConstant constants[3] = {
-        {ZR_VALUE_TYPE_INT64, 0u, condition ? 1u : 0u},
+        {boolPredicate ? ZR_VALUE_TYPE_BOOL : ZR_VALUE_TYPE_INT64,
+         0u, condition ? 1u : 0u},
         {ZR_VALUE_TYPE_INT64, 0u, 42u},
         {ZR_VALUE_TYPE_INT64, 0u, 7u}
     };
@@ -75,9 +83,15 @@ static void eis5_build_graph(SZrExecIrModule *module, TZrBool condition) {
     TZrExecIrValueId values[3];
     TZrExecIrFunctionId functionId = 0u;
     SZrExecIrFunction *function;
-    SZrExecIrRange constantsRange, allSuccessors, allPredecessors;
-    SZrExecIrRange conditionResult, trueResult, falseResult;
-    SZrExecIrRange conditionOperand, trueReturnOperand, falseReturnOperand;
+    SZrExecIrRange constantsRange = {.start = 0u, .count = 0u};
+    SZrExecIrRange allSuccessors = {.start = 0u, .count = 0u};
+    SZrExecIrRange allPredecessors = {.start = 0u, .count = 0u};
+    SZrExecIrRange conditionResult = {.start = 0u, .count = 0u};
+    SZrExecIrRange trueResult = {.start = 0u, .count = 0u};
+    SZrExecIrRange falseResult = {.start = 0u, .count = 0u};
+    SZrExecIrRange conditionOperand = {.start = 0u, .count = 0u};
+    SZrExecIrRange trueReturnOperand = {.start = 0u, .count = 0u};
+    SZrExecIrRange falseReturnOperand = {.start = 0u, .count = 0u};
     SZrExecIrRange empty = {.start = 0u, .count = 0u};
     SZrExecIrDiagnostic diagnostic;
 
@@ -113,7 +127,9 @@ static void eis5_build_graph(SZrExecIrModule *module, TZrBool condition) {
                  "append five EIS5 CFG blocks");
     for (TZrUInt32 index = 0u; index < 3u; ++index) {
         values[index] = ZrCore_ExecIr_FunctionAddValue(
-                function, ZR_VALUE_TYPE_INT64,
+                function, boolPredicate && index == 0u
+                                  ? ZR_VALUE_TYPE_BOOL
+                                  : ZR_VALUE_TYPE_INT64,
                 ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
                 ZR_EXEC_IR_NULLABILITY_UNKNOWN);
         require_true(values[index] == index + 1u,
@@ -403,8 +419,12 @@ static void eis5_colliding_count_write_test(const char *basePath,
 }
 
 static void eis5_assert_graph_and_oracle(const SZrExecIrModule *module,
-                                         TZrBool condition) {
+                                         TZrBool condition,
+                                         TZrBool boolPredicate) {
     const SZrExecIrFunction *function;
+    const TZrExecIrTypeToken predicateType =
+            (TZrExecIrTypeToken)(boolPredicate ? ZR_VALUE_TYPE_BOOL
+                                               : ZR_VALUE_TYPE_INT64);
     SZrExecIrOracleValue constants[3];
     SZrExecIrOracleInput input;
     SZrExecIrOracleExecutionResult execution;
@@ -412,6 +432,7 @@ static void eis5_assert_graph_and_oracle(const SZrExecIrModule *module,
     require_true(ZrCore_ExecIr_VerifyModule(module, &diagnostic),
                  "verify EIS5 graph after decoding");
     require_true(module->functionCount == 1u && module->constantCount == 3u &&
+                 module->constants[0].typeToken == predicateType &&
                  module->constants[0].bits == (condition ? 1u : 0u) &&
                  module->constants[1].bits == 42u &&
                  module->constants[2].bits == 7u,
@@ -423,6 +444,11 @@ static void eis5_assert_graph_and_oracle(const SZrExecIrModule *module,
                  function->operandCount == 3u && function->resultCount == 3u &&
                  function->successorCount == 4u &&
                  function->predecessorCount == 4u &&
+                 function->values[0].typeToken == predicateType &&
+                 function->values[1].typeToken ==
+                         (TZrExecIrTypeToken)ZR_VALUE_TYPE_INT64 &&
+                 function->values[2].typeToken ==
+                         (TZrExecIrTypeToken)ZR_VALUE_TYPE_INT64 &&
                  function->successors[0] == 2u &&
                  function->successors[1] == 4u &&
                  function->successors[2] == 3u &&
@@ -445,9 +471,15 @@ static void eis5_assert_graph_and_oracle(const SZrExecIrModule *module,
                      "roundtrip preserves EIS5 instruction source IDs");
     memset(constants, 0, sizeof(constants));
     for (TZrUInt32 index = 0u; index < 3u; ++index) {
-        constants[index].kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
-        constants[index].as.signedInteger =
-                (TZrInt64)module->constants[index].bits;
+        if (boolPredicate && index == 0u) {
+            constants[index].kind = ZR_EXEC_IR_ORACLE_VALUE_BOOL;
+            constants[index].as.boolean =
+                    (TZrBool)module->constants[index].bits;
+        } else {
+            constants[index].kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+            constants[index].as.signedInteger =
+                    (TZrInt64)module->constants[index].bits;
+        }
     }
     memset(&input, 0, sizeof(input));
     input.function = function;
@@ -501,7 +533,7 @@ static void eis5_write_phase(const char *basePath) {
         char *path;
 
         init_fixture(&fixture);
-        eis5_build_graph(&source, condition);
+        eis5_build_graph(&source, condition, ZR_FALSE);
         require_true(ZrCore_ArtifactExecIrScalar_GetEncodedSize(
                      &source, &encodedSize, &codecDiagnostic) ==
                      ZR_ARTIFACT_EXEC_IR_OK &&
@@ -537,7 +569,7 @@ static void eis5_write_phase(const char *basePath) {
                      payload, encodedSize, &decoded, &codecDiagnostic) ==
                          ZR_ARTIFACT_EXEC_IR_OK,
                      "directly read variable-length EIS5 graph");
-        eis5_assert_graph_and_oracle(&decoded, condition);
+        eis5_assert_graph_and_oracle(&decoded, condition, ZR_FALSE);
         ZrCore_ExecIr_FreeModule(&decoded);
         path = eis5_artifact_path(basePath, condition);
         require_true(ZrParser_ExecIr_WriteCanonicalZroFile(
@@ -548,6 +580,8 @@ static void eis5_write_phase(const char *basePath) {
         free(payload);
         ZrCore_ExecIr_FreeModule(&source);
     }
+
+    eis5_bool_predicate_write_phase(basePath);
 }
 
 static void eis5_collision_read_phase(const char *basePath) {
@@ -560,9 +594,9 @@ static void eis5_collision_read_phase(const char *basePath) {
         SZrExecIrModule module;
         SZrArtifactDiagnostic diagnostic;
         SZrArtifactView outer;
-        SZrArtifactSectionView bundle;
+        SZrArtifactSectionView bundle = {0};
         SZrArtifactExecIrView nested;
-        const SZrArtifactExecIrSectionView *payload;
+        const SZrArtifactExecIrSectionView *payload = ZR_NULL;
         init_fixture(&fixture);
         ZrCore_ExecIr_ModuleInit(&module);
         require_true(ZrCore_Module_OpenExecIrArtifact(
@@ -614,7 +648,7 @@ static void eis5_read_phase(const char *basePath) {
         SZrArtifactView outer;
         SZrArtifactSectionView bundle;
         SZrArtifactExecIrView nested;
-        const SZrArtifactExecIrSectionView *payload;
+        const SZrArtifactExecIrSectionView *payload = ZR_NULL;
         require_true(mutated != ZR_NULL, "allocate EIS5 mutation buffer");
         init_fixture(&fixture);
         ZrCore_ExecIr_ModuleInit(&module);
@@ -622,7 +656,7 @@ static void eis5_read_phase(const char *basePath) {
                      bytes, length, &fixture.metadata.identity, &module,
                      &diagnostic) == ZR_ARTIFACT_STATUS_OK,
                      "open EIS5 artifact in a separate process");
-        eis5_assert_graph_and_oracle(&module, condition);
+        eis5_assert_graph_and_oracle(&module, condition, ZR_FALSE);
         ZrCore_ExecIr_FreeModule(&module);
         require_true(ZrCore_Artifact_Read(bytes, length, &outer,
                      &diagnostic) == ZR_ARTIFACT_STATUS_OK &&
@@ -814,4 +848,5 @@ static void eis5_read_phase(const char *basePath) {
         free(path);
     }
     eis5_collision_read_phase(basePath);
+    eis5_bool_predicate_read_phase(basePath);
 }
