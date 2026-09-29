@@ -3,6 +3,11 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
 
+/**
+ * @brief 在已挂载的 ZRP 定义表中按完整 token 定位 TypeDef 行。
+ * @note 供布局绑定视图读取器复用；表缺失、记录尺寸不符或 token 无匹配时统一失败，
+ *       不从运行时类型记录推造定义行。
+ */
 static const SZrZrpMetadataTypeDefRow *metadata_runtime_find_type_def_row(SZrMetadataRuntime *runtime,
                                                                           TZrMetadataToken typeDefToken) {
     SZrZrpMetadataSectionView view;
@@ -27,6 +32,10 @@ static const SZrZrpMetadataTypeDefRow *metadata_runtime_find_type_def_row(SZrMet
     return ZR_NULL;
 }
 
+/**
+ * @brief 按完整 TypeSpec token 读取 ZRP 行，作为签名与布局关联的可信行来源。
+ * @note 仅由 TypeSpec 布局视图调用；行不存在或 section ABI 尺寸不符时拒绝绑定。
+ */
 static const SZrZrpMetadataTypeSpecRow *metadata_runtime_find_type_spec_row(SZrMetadataRuntime *runtime,
                                                                             TZrMetadataToken typeSpecToken) {
     SZrZrpMetadataSectionView view;
@@ -51,6 +60,10 @@ static const SZrZrpMetadataTypeSpecRow *metadata_runtime_find_type_spec_row(SZrM
     return ZR_NULL;
 }
 
+/**
+ * @brief 定位 FieldDef 行并返回其在字段表中的位置，供 owner 区间校验使用。
+ * @note outRowIndex 可选；未命中时写入无效哨兵，避免调用者把缺失字段当作行零。
+ */
 static const SZrZrpMetadataFieldDefRow *metadata_runtime_find_field_def_row(SZrMetadataRuntime *runtime,
                                                                             TZrMetadataToken fieldDefToken,
                                                                             TZrUInt32 *outRowIndex) {
@@ -82,6 +95,10 @@ static const SZrZrpMetadataFieldDefRow *metadata_runtime_find_field_def_row(SZrM
     return ZR_NULL;
 }
 
+/**
+ * @brief 检查 FieldDef 行索引是否属于指定 TypeDef 声明的连续字段区间。
+ * @note 使用减法形式比较区间，避免 firstFieldIndex + fieldCount 溢出。
+ */
 static TZrBool metadata_runtime_type_def_contains_field_index(const SZrZrpMetadataTypeDefRow *typeDefRow,
                                                               TZrUInt32 fieldRowIndex) {
     TZrUInt32 firstFieldIndex;
@@ -97,6 +114,10 @@ static TZrBool metadata_runtime_type_def_contains_field_index(const SZrZrpMetada
            fieldRowIndex - firstFieldIndex < fieldCount;
 }
 
+/**
+ * @brief 查询本 runtime 最近成功建立的 token 到布局缓存项。
+ * @note 缓存只加速绑定视图已验证的结果；miss 必须回到元数据和注册表验证路径。
+ */
 static const SZrTypeLayout *metadata_runtime_find_type_layout_cache_by_token(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken typeToken,
@@ -118,6 +139,10 @@ static const SZrTypeLayout *metadata_runtime_find_type_layout_cache_by_token(
     return ZR_NULL;
 }
 
+/**
+ * @brief 以布局 ID 反查有界缓存中的元数据 token。
+ * @note 命中要求 token、布局指针和 ID 三者同属有效缓存项；缓存不是全量索引。
+ */
 static TZrMetadataToken metadata_runtime_find_type_layout_cache_by_id(
         SZrMetadataRuntime *runtime,
         TZrUInt32 typeLayoutId) {
@@ -136,6 +161,10 @@ static TZrMetadataToken metadata_runtime_find_type_layout_cache_by_id(
     return 0u;
 }
 
+/**
+ * @brief 保存已验证的双向 token/layout 关联，供后续反射查询复用。
+ * @note 缓存容量固定；满时轮换淘汰最旧槽位，因此 miss 仍须可通过注册表或 ZRP 行重建。
+ */
 static void metadata_runtime_store_type_layout_cache(SZrMetadataRuntime *runtime,
                                                      TZrMetadataToken typeToken,
                                                      TZrUInt32 typeLayoutId,
@@ -167,12 +196,20 @@ static void metadata_runtime_store_type_layout_cache(SZrMetadataRuntime *runtime
             (index + 1u) % ZR_METADATA_RUNTIME_TYPE_LAYOUT_CACHE_CAPACITY;
 }
 
+/**
+ * @brief 限定代码注册 token 表可发布的布局 token 种类。
+ * @note TypeRef 需要跨记录身份校验，不能作为注册表直接提供的独立 TypeDef/TypeSpec 项。
+ */
 static TZrBool metadata_runtime_is_layout_type_token(TZrMetadataToken typeToken) {
     TZrUInt32 table = ZR_METADATA_TOKEN_TABLE(typeToken);
     return (TZrBool)(table == ZR_METADATA_TABLE_TYPE_DEF ||
                      table == ZR_METADATA_TABLE_TYPE_SPEC);
 }
 
+/**
+ * @brief 验证 TypeRef 声明的目标及可选模块、签名和布局身份均指向当前 TypeDef 视图。
+ * @note 任一非零身份约束不匹配即拒绝绑定，避免仅凭目标 token 将外部引用误当成本地布局。
+ */
 static TZrBool metadata_runtime_type_ref_matches_type_def_layout(
         SZrMetadataRuntime *runtime,
         const SZrMetadataTokenRecord *typeRefRecord,
@@ -212,6 +249,10 @@ static TZrBool metadata_runtime_type_ref_matches_type_def_layout(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 将已解析的 TypeRef 逐项校验后转为目标 TypeDef 布局视图。
+ * @note 失败时清零输出，调用者不得使用部分填充的视图；target token 必须可在当前 runtime 解析。
+ */
 static TZrBool metadata_runtime_read_type_ref_target_type_def_layout(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken typeRefToken,
@@ -242,6 +283,10 @@ static TZrBool metadata_runtime_read_type_ref_target_type_def_layout(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 从 AOT 注册表的并行 token 表解析布局 ID，并缓存通过注册表解析的布局关系。
+ * @note token 表仅接受 TypeDef/TypeSpec，条目越界、类型不符或 layout 不可解析均视为缺失。
+ */
 static TZrMetadataToken metadata_runtime_resolve_registration_type_layout_token(
         SZrMetadataRuntime *runtime,
         TZrUInt32 typeLayoutId) {
@@ -270,6 +315,12 @@ static TZrMetadataToken metadata_runtime_resolve_registration_type_layout_token(
     return typeToken;
 }
 
+/**
+ * @brief 建立 TypeDef token、ZRP 行、代码注册布局及身份版本的一致视图。
+ * @pre runtime 已附加同一模块的 token 元数据、ZRP 定义表和 AOT layout registry。
+ * @return 全部来源存在且布局版本/哈希兼容时填充视图并返回 true；否则视图保持清零。
+ * @note 返回指针借用 runtime 所挂载的数据，不能跨卸载或更换注册表后继续使用。
+ */
 TZrBool ZrCore_MetadataRuntime_ReadTypeDefLayoutBindingView(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken typeDefToken,
@@ -314,6 +365,12 @@ TZrBool ZrCore_MetadataRuntime_ReadTypeDefLayoutBindingView(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 将 TypeSpec 行与 token/signature 身份、泛型基类型绑定及注册布局合并为只读视图。
+ * @pre runtime 的 ZRP TypeSpec、签名记录与 AOT layout registry 必须来自同一份模块产物。
+ * @return 任一关联身份不一致、泛型绑定无效或 layout 缺失时失败且不发布半成品视图。
+ * @note 返回的记录和布局借用 runtime 数据；该接口不负责实例化泛型布局。
+ */
 TZrBool ZrCore_MetadataRuntime_ReadTypeSpecLayoutBindingView(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken typeSpecToken,
@@ -369,6 +426,12 @@ TZrBool ZrCore_MetadataRuntime_ReadTypeSpecLayoutBindingView(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 将 FieldDef 的偏移/类型布局绑定到其声明的 TypeDef owner。
+ * @pre runtime 已挂载字段表、owner 类型行与注册布局；FieldDef 必须落在 owner 的字段区间内。
+ * @return 字段、owner 或任一布局无法一致解析时失败，调用方不应据此访问对象内存。
+ * @note 只提供经过结构归属校验的布局元数据，不验证某个具体对象的可读写权限。
+ */
 TZrBool ZrCore_MetadataRuntime_ReadFieldDefLayoutBindingView(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken fieldDefToken,
@@ -429,6 +492,13 @@ TZrBool ZrCore_MetadataRuntime_ReadFieldDefLayoutBindingView(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 为反射等运行时消费者解析 TypeDef、TypeSpec 或受约束 TypeRef 的布局。
+ * @pre runtime 的元数据与 AOT 注册布局属于同一模块装载实例。
+ * @return 成功返回借用的布局指针并可选写出 layout ID；失败返回 NULL 且 ID 为无效哨兵。
+ * @note 先查有界缓存，miss 时必须通过对应 binding view；不以 prototype frame 布局兜底。
+ * BUG: 成功重新调用 AttachZrpMetadata 会替换 ZRP 行但不清除此缓存；相同 token 的后续命中会绕过新行校验并返回旧布局。
+ */
 const SZrTypeLayout *ZrCore_MetadataRuntime_ResolveTypeTokenLayout(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken typeToken,
@@ -494,6 +564,10 @@ const SZrTypeLayout *ZrCore_MetadataRuntime_ResolveTypeTokenLayout(
     return typeLayout;
 }
 
+/**
+ * @brief 注册表 token 表未提供可用项时，在 TypeDef 行中重建指定布局 ID 的有效关联。
+ * @note 每个候选都重新走公开绑定视图；不接受只有行号相同但记录/布局已失配的结果。
+ */
 static TZrMetadataToken metadata_runtime_find_type_def_token_for_layout_id(
         SZrMetadataRuntime *runtime,
         TZrUInt32 typeLayoutId,
@@ -530,6 +604,10 @@ static TZrMetadataToken metadata_runtime_find_type_def_token_for_layout_id(
     return 0u;
 }
 
+/**
+ * @brief 反查 TypeSpec 行并通过完整 TypeSpec 绑定视图确认布局 ID。
+ * @note 这是无 token 表命中时的慢路径；它不会合成缺失的泛型实例布局。
+ */
 static TZrMetadataToken metadata_runtime_find_type_spec_token_for_layout_id(
         SZrMetadataRuntime *runtime,
         TZrUInt32 typeLayoutId,
@@ -566,6 +644,12 @@ static TZrMetadataToken metadata_runtime_find_type_spec_token_for_layout_id(
     return 0u;
 }
 
+/**
+ * @brief 将已注册布局 ID 反向解析为其 TypeDef/TypeSpec token。
+ * @pre layout ID 属于当前 runtime 的代码注册表，且 token 表或 ZRP 行提供可验证关联。
+ * @return 无效 ID、缺失布局或无可验证 token 时返回 0；返回 token 不转移任何数据所有权。
+ * @note 注册表 token carrier 优先，其次按 TypeDef、TypeSpec 行扫描；相同布局的缓存只保留有限命中。
+ */
 TZrMetadataToken ZrCore_MetadataRuntime_ResolveTypeLayoutToken(
         SZrMetadataRuntime *runtime,
         TZrUInt32 typeLayoutId) {
@@ -597,6 +681,12 @@ TZrMetadataToken ZrCore_MetadataRuntime_ResolveTypeLayoutToken(
     return typeToken;
 }
 
+/**
+ * @brief 以生成 C 使用的 cTypeId 名义反查元数据类型 token。
+ * @pre 当前 ABI 约定 cTypeId 与 typeLayoutId 同值；调用方不可将其解释为独立编号空间。
+ * @return 沿用布局 ID 反查语义，无法验证映射时返回 0。
+ * TODO: 若 ABI 允许 cTypeId 与 typeLayoutId 分离，需增加显式映射而非继续复用此别名。
+ */
 TZrMetadataToken ZrCore_MetadataRuntime_ResolveCTypeIdToken(
         SZrMetadataRuntime *runtime,
         TZrUInt32 cTypeId) {

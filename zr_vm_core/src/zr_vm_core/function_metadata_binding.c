@@ -4,6 +4,12 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 
+/**
+ * @brief 判断签名记录是否指向函数自有的有效 blob 区间。
+ *
+ * @note 跨模块匹配器只比较当前函数持有的元数据；此处先确认区间完整，避免
+ * 将损坏或缺失的签名数据当作可比较的身份依据。返回 false 表示调用者应拒绝匹配。
+ */
 static TZrBool metadata_record_blob_is_valid(const SZrFunction *function,
                                              const SZrMetadataTokenRecord *record) {
     return function != ZR_NULL &&
@@ -14,6 +20,12 @@ static TZrBool metadata_record_blob_is_valid(const SZrFunction *function,
            record->signatureBlobLength <= function->signatureBlobHeapLength - record->signatureBlobOffset;
 }
 
+/**
+ * @brief 比较两个元数据记录的规范签名字节。
+ *
+ * @note TypeSpec 与 TypeDef 绑定先用 hash 快速筛选，再用完整 blob 字节确认身份，
+ * 因而不能仅凭 hash 相等建立跨模块绑定。
+ */
 static TZrBool metadata_record_signature_blobs_equal(const SZrFunction *leftFunction,
                                                      const SZrMetadataTokenRecord *leftRecord,
                                                      const SZrFunction *rightFunction,
@@ -31,6 +43,7 @@ static TZrBool metadata_record_signature_blobs_equal(const SZrFunction *leftFunc
                    : ZR_FALSE;
 }
 
+/** @brief 在单个函数的主 token 记录流中按 token 查找实体；零 token 不表示实体。 */
 static const SZrMetadataTokenRecord *metadata_find_token_record(
         const SZrMetadataTokenRecord *records,
         TZrUInt32 recordLength,
@@ -48,6 +61,12 @@ static const SZrMetadataTokenRecord *metadata_find_token_record(
     return ZR_NULL;
 }
 
+/**
+ * @brief 查找实体对应的配对 SIGNATURE 记录。
+ *
+ * @note 仅接受实体 relatedToken 指向 SIGNATURE，且签名记录的 relatedToken 与 ownerToken
+ * 均回指实体的双向关系；绑定结果因此不会依赖仅同 hash 的旁路记录。
+ */
 static const SZrMetadataTokenRecord *metadata_find_signature_record(
         const SZrMetadataTokenRecord *records,
         TZrUInt32 recordLength,
@@ -78,6 +97,7 @@ static const SZrMetadataTokenRecord *metadata_find_signature_record(
     return ZR_NULL;
 }
 
+/** @brief 为一个 TypeSpec 实体取得本函数记录流中的配对签名记录。 */
 static const SZrMetadataTokenRecord *function_find_type_spec_signature_record(
         const SZrFunction *function,
         const SZrMetadataTokenRecord *typeSpecRecord) {
@@ -88,6 +108,12 @@ static const SZrMetadataTokenRecord *function_find_type_spec_signature_record(
                                                     typeSpecRecord->token);
 }
 
+/**
+ * @brief 在 provider 函数中寻找与 caller TypeSpec 规范签名相同的记录。
+ *
+ * @note 匹配受限于 TypeSpec table、签名 hash 和 blob 字节完全相同；此阶段不写 sidecar，
+ * 由上层状态机完成 union 定义与布局校验后再记录绑定。
+ */
 static const SZrMetadataTokenRecord *function_find_matching_type_spec_record(
         const SZrFunction *providerFunction,
         const SZrFunction *callerFunction,
@@ -117,6 +143,7 @@ static const SZrMetadataTokenRecord *function_find_matching_type_spec_record(
     return ZR_NULL;
 }
 
+/** @brief 按 string heap 索引取得函数持有的字符串对象；零索引及缺失项均失败。 */
 static SZrString *function_metadata_string_heap_lookup(const SZrFunction *function,
                                                        TZrUInt32 stringIndex) {
     if (function == ZR_NULL ||
@@ -134,6 +161,12 @@ static SZrString *function_metadata_string_heap_lookup(const SZrFunction *functi
     return ZR_NULL;
 }
 
+/**
+ * @brief 从签名 blob 读取 little-endian string heap 索引并解析为函数内字符串。
+ *
+ * @note 返回字符串是 metadata heap 中的借用对象，不转移所有权；调用方只在当前函数
+ * 元数据仍存活时使用它进行名字比较。
+ */
 static TZrBool function_metadata_read_string_ref(const SZrFunction *function,
                                                  const TZrByte *blob,
                                                  TZrSize blobLength,
@@ -158,6 +191,12 @@ static TZrBool function_metadata_read_string_ref(const SZrFunction *function,
     return *outString != ZR_NULL ? ZR_TRUE : ZR_FALSE;
 }
 
+/**
+ * @brief 从 union TypeSpec 的签名节点提取其底层命名类型。
+ *
+ * @note 该信息只用于把 union 的 TypeSpec 身份关联到同一 metadata stream 中的 TypeDef，
+ * 并不单独构成绑定依据；后续仍会比较定义签名和布局身份。
+ */
 static TZrBool function_type_spec_union_base_name(const SZrFunction *function,
                                                   const SZrMetadataTokenRecord *typeSpecRecord,
                                                   SZrString **outBaseName) {
@@ -187,6 +226,7 @@ static TZrBool function_type_spec_union_base_name(const SZrFunction *function,
                                              outBaseName);
 }
 
+/** @brief 检查 TypeDef 签名节点中的名字是否等于给定 heap 字符串。 */
 static TZrBool function_type_def_base_name_matches(const SZrFunction *function,
                                                    const SZrMetadataTokenRecord *typeDefRecord,
                                                    const SZrString *baseName) {
@@ -216,6 +256,12 @@ static TZrBool function_type_def_base_name_matches(const SZrFunction *function,
                    : ZR_FALSE;
 }
 
+/**
+ * @brief 通过 union 节点的底层类型名在函数记录流中定位 TypeDef。
+ *
+ * @note 若同名 TypeDef 有多个候选，此 helper 取首个；之后的签名和 layout 校验负责
+ * 判断候选能否作为跨模块对应定义。
+ */
 static const SZrMetadataTokenRecord *function_find_type_def_for_union_type_spec(
         const SZrFunction *function,
         const SZrMetadataTokenRecord *typeSpecRecord) {
@@ -239,6 +285,7 @@ static const SZrMetadataTokenRecord *function_find_type_def_for_union_type_spec(
     return ZR_NULL;
 }
 
+/** @brief 为一个 TypeDef 实体取得配对 SIGNATURE 记录。 */
 static const SZrMetadataTokenRecord *function_find_type_def_signature_record(
         const SZrFunction *function,
         const SZrMetadataTokenRecord *typeDefRecord) {
@@ -249,6 +296,7 @@ static const SZrMetadataTokenRecord *function_find_type_def_signature_record(
                                                     typeDefRecord->token);
 }
 
+/** @brief 为一个 TypeRef 实体取得配对 SIGNATURE 记录。 */
 static const SZrMetadataTokenRecord *function_find_type_ref_signature_record(
         const SZrFunction *function,
         const SZrMetadataTokenRecord *typeRefRecord) {
@@ -259,6 +307,13 @@ static const SZrMetadataTokenRecord *function_find_type_ref_signature_record(
                                                     typeRefRecord->token);
 }
 
+/**
+ * @brief 比较 caller TypeRef 的基本名与 provider TypeDef 的基本名。
+ *
+ * @note `TYPE_REF` 的稳定 target token/hash 等字段由外层先检查；本比较再防止同一目标
+ * 身份被不同声明名引用。TODO: TypeRef 名称字符串索引解析失败时当前路径按兼容策略放行，
+ * 需确认所有可加载 artifact 都保证该索引可解析，或改为 fail-closed。
+ */
 static TZrBool function_type_ref_base_name_matches_type_def(
         const SZrFunction *callerFunction,
         const SZrMetadataTokenRecord *callerTypeRefRecord,
@@ -292,6 +347,12 @@ static TZrBool function_type_ref_base_name_matches_type_def(
     return function_type_def_base_name_matches(providerFunction, providerTypeDefRecord, typeRefName);
 }
 
+/**
+ * @brief TypeRef 与 provider TypeDef 对照过程的结果分类。
+ *
+ * @note NONE 表示尚未分类或输入不适用；UNMATCHED 与定义/布局漂移分开计数，供
+ * WithStatus API 形成调用方可诊断的结果。
+ */
 typedef enum EZrMetadataTypeRefMatchResult {
     ZR_METADATA_TYPE_REF_MATCH_NONE = 0,
     ZR_METADATA_TYPE_REF_MATCH_OK,
@@ -300,6 +361,12 @@ typedef enum EZrMetadataTypeRefMatchResult {
     ZR_METADATA_TYPE_REF_MATCH_LAYOUT_MISMATCH
 } EZrMetadataTypeRefMatchResult;
 
+/**
+ * @brief 按 TypeRef 携带的稳定目标身份，在 provider 中验证对应 TypeDef。
+ *
+ * @note caller 的 target token 是检索键，签名 token/hash、module hash、layout 和基本名
+ * 是逐级约束；找到 token 但身份不同会返回具体 drift 类别，而不是退化成 unmatched。
+ */
 static const SZrMetadataTokenRecord *function_find_targeted_type_ref_provider_type_def(
         const SZrFunction *callerFunction,
         const SZrMetadataTokenRecord *callerTypeRefRecord,
@@ -380,6 +447,12 @@ static const SZrMetadataTokenRecord *function_find_targeted_type_ref_provider_ty
     return ZR_NULL;
 }
 
+/**
+ * @brief 将已完全匹配的 TypeSpec 与配对签名身份写入 caller sidecar。
+ *
+ * @note 由 TypeSpec 扫描器在签名和相关 union 定义/布局校验后调用；Upsert 失败时不写字段，
+ * 成功时记录 expected caller identity 与 resolved provider identity。
+ */
 static TZrBool function_record_type_spec_binding(SZrState *state,
                                                  SZrFunction *callerFunction,
                                                  const SZrMetadataTokenRecord *callerTypeSpecRecord,
@@ -422,6 +495,7 @@ static TZrBool function_record_type_spec_binding(SZrState *state,
     return ZR_TRUE;
 }
 
+/** @brief 记录 union TypeSpec 所依赖的 TypeDef 签名及布局身份。 */
 static TZrBool function_record_type_def_layout_binding(
         SZrState *state,
         SZrFunction *callerFunction,
@@ -465,6 +539,11 @@ static TZrBool function_record_type_def_layout_binding(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 记录已验证 TypeRef 到 provider TypeDef 的目标、签名、模块及布局身份。
+ *
+ * @note 该 helper 不负责发现候选或比较约束；只有完整匹配后才由 TypeRef 扫描器调用。
+ */
 static TZrBool function_record_type_ref_binding(
         SZrState *state,
         SZrFunction *callerFunction,
@@ -508,6 +587,13 @@ static TZrBool function_record_type_ref_binding(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 只读查询函数级 ref-to-def binding sidecar。
+ *
+ * @pre function 在查询期间仍有效；返回指针借用函数拥有的 sidecar 存储。
+ * @return 找到该 ref token 时返回 binding，否则返回 ZR_NULL。
+ * @note 运行期反射泛型解析与模块调用兼容性检查消费成功验证留下的结果；查询不触发解析。
+ */
 const SZrMetadataTokenBinding *ZrCore_Function_FindModuleMetadataBinding(const SZrFunction *function,
                                                                          TZrMetadataToken refToken) {
     if (function == ZR_NULL || refToken == 0u || function->moduleMetadataBindings == ZR_NULL) {
@@ -525,6 +611,14 @@ const SZrMetadataTokenBinding *ZrCore_Function_FindModuleMetadataBinding(const S
     return ZR_NULL;
 }
 
+/**
+ * @brief 按 caller ref token 复用或扩展函数拥有的 binding sidecar。
+ *
+ * @pre state、global、function 和非零 refToken 必须有效；返回指针只在后续扩容前稳定。
+ * @return 新建或已存在的可写记录；参数无效或分配失败时返回 ZR_NULL。
+ * @note import signature 验证先取得槽位，再填入 expected/resolved identity；重复 ref 更新
+ * 原槽位以维持每个 ref token 一个结果。
+ */
 SZrMetadataTokenBinding *ZrCore_Function_UpsertModuleMetadataBinding(SZrState *state,
                                                                      SZrFunction *function,
                                                                      TZrMetadataToken refToken) {
@@ -579,6 +673,12 @@ SZrMetadataTokenBinding *ZrCore_Function_UpsertModuleMetadataBinding(SZrState *s
     return &function->moduleMetadataBindings[function->moduleMetadataBindingLength++];
 }
 
+/**
+ * @brief 执行无状态输出的 TypeSpec best-effort 绑定入口。
+ *
+ * @note 单纯存在 unmatched TypeSpec 按历史契约可继续；需诊断差异的调用方使用 WithStatus。
+ * BUG: 先遇 unmatched、后续绑定写入失败时，仅凭 unmatched 计数会把失败误报为成功，留下不完整 sidecar。
+ */
 TZrBool ZrCore_Function_BindMatchingTypeSpecMetadata(SZrState *state,
                                                      SZrFunction *callerFunction,
                                                      const SZrFunction *providerFunction) {
@@ -597,6 +697,17 @@ TZrBool ZrCore_Function_BindMatchingTypeSpecMetadata(SZrState *state,
     return ZR_TRUE;
 }
 
+/**
+ * @brief 扫描 caller TypeSpec，并为 provider 中可验证的对应项写入 binding sidecar。
+ *
+ * @pre 两个函数及 state 有效且 caller/provider token record 数组存在；status 非空时在进入扫描
+ * 前清零并汇总 caller、匹配、未匹配及首个 drift 上下文。
+ * @return status 非空时，仅全部适用 TypeSpec 匹配且无漂移才返回 true；未匹配项仍可写入
+ * 其他匹配项。status 为空时失配按 best-effort 返回 true；输入、签名或写入硬失败仍返回 false。
+ * @note Union TypeSpec 还要求对应 TypeDef 签名 hash/blob 与布局身份一致，检查通过后才写入
+ * 两类 sidecar；helper 不是原子事务，后续分配失败可能保留此前成功写入的记录。status 为空时
+ * 不累计失配，最终按 best-effort 规则返回 true，即使存在 unmatched 或定义/布局漂移。
+ */
 TZrBool ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus(
         SZrState *state,
         SZrFunction *callerFunction,
@@ -637,6 +748,7 @@ TZrBool ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus(
                                                                  callerFunction,
                                                                  callerRecord);
         if (providerRecord == ZR_NULL) {
+            /* TypeSpec 没有 provider 对应项时保留 best-effort import 语义，并把缺口交给 status 诊断。 */
             if (status != ZR_NULL) {
                 status->unmatchedTypeSpecCount++;
                 if (status->firstUnmatchedTypeSpecToken == 0u) {
@@ -654,6 +766,7 @@ TZrBool ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus(
         }
         callerTypeDefRecord = function_find_type_def_for_union_type_spec(callerFunction, callerRecord);
         providerTypeDefRecord = function_find_type_def_for_union_type_spec(providerFunction, providerRecord);
+        /* Union 的定义身份和布局是 TypeSpec 绑定的组成部分；任一侧缺失或漂移都不能留下该绑定。 */
         if (callerTypeDefRecord != ZR_NULL || providerTypeDefRecord != ZR_NULL) {
             if (callerTypeDefRecord == ZR_NULL || providerTypeDefRecord == ZR_NULL) {
                 if (status != ZR_NULL) {
@@ -738,6 +851,11 @@ TZrBool ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus(
                    : ZR_FALSE;
 }
 
+/**
+ * @brief 兼容旧调用方的 TypeRef 绑定包装入口。
+ *
+ * @note 状态细节由 WithStatus 版本统一产生；此包装保持相同匹配规则并折叠为布尔结果。
+ */
 TZrBool ZrCore_Function_BindMatchingTypeRefMetadata(SZrState *state,
                                                     SZrFunction *callerFunction,
                                                     const SZrFunction *providerFunction) {
@@ -752,6 +870,17 @@ TZrBool ZrCore_Function_BindMatchingTypeRefMetadata(SZrState *state,
     return ZR_TRUE;
 }
 
+/**
+ * @brief 绑定携带稳定 provider TypeDef target identity 的 caller TypeRef。
+ *
+ * @pre state、caller/provider 函数和两侧 token record 数组有效；status 非空时在扫描前清零并
+ * 记录 caller、matched、unmatched 及定义/布局 drift 的首个上下文。
+ * @return status 非空时，无适用 TypeRef 或全部匹配才返回 true；失配会计入 status 并返回 false。
+ * status 为空时失配按 best-effort 返回 true；配对签名缺失或绑定写入失败仍返回 false。
+ * @note 仅处理 targetMetadataToken 指向 TypeDef table 的记录；status 为空时失配不影响 true
+ * 返回值。module import 在已经验证主导入后调用它补充跨模块类型身份 sidecar 与诊断，故其
+ * best-effort 结果不回滚已验证的 import。
+ */
 TZrBool ZrCore_Function_BindMatchingTypeRefMetadataWithStatus(
         SZrState *state,
         SZrFunction *callerFunction,
@@ -791,6 +920,7 @@ TZrBool ZrCore_Function_BindMatchingTypeRefMetadataWithStatus(
                                                                            callerRecord,
                                                                            providerFunction,
                                                                            &matchResult);
+        /* 目标查找已分类签名、模块、布局和名字身份；这里只汇总差异，不把失配项写入 sidecar。 */
         if (matchResult == ZR_METADATA_TYPE_REF_MATCH_UNMATCHED) {
             if (status != ZR_NULL) {
                 status->unmatchedTypeRefCount++;
