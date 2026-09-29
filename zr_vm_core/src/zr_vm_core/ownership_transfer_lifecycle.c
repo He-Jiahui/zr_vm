@@ -2,7 +2,7 @@
 
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
-
+/* 供域克隆包装器缓存终结前的标量状态；持锁保证复制的字段来自同一次 envelope 状态。 */
 void ZrCore_OwnershipTransfer_GetSnapshot(
         SZrOwnershipTransferEnvelope *envelope,
         SZrOwnershipTransferSnapshot *outSnapshot) {
@@ -29,7 +29,7 @@ void ZrCore_OwnershipTransfer_GetSnapshot(
     outSnapshot->hasSourceGcEdge = envelope->hasSourceGcEdge;
     ZrCore_OwnershipTransfer_InternalUnlock(envelope);
 }
-
+/* 仅由有源/目标域权限且已确保外部静止的调用方终结 envelope。 */
 void ZrCore_OwnershipTransfer_Free(
         SZrState *state,
         SZrOwnershipTransferEnvelope *envelope) {
@@ -42,6 +42,7 @@ void ZrCore_OwnershipTransfer_Free(
     if (state == ZR_NULL || envelope == ZR_NULL) {
         return;
     }
+    /* 跨域源方也有取消权限；同域信封必须由目标域状态完成清理。 */
     sourceMatches = ZrCore_GcDomain_IdentityIsCurrent(
             state, envelope->sourceDomain);
     targetMatches = ZrCore_OwnershipTransfer_InternalTargetMatches(
@@ -50,6 +51,7 @@ void ZrCore_OwnershipTransfer_Free(
         (envelope->isCrossDomain && !sourceMatches && !targetMatches)) {
         return;
     }
+    /* CLAIMED 状态撤销需精确 worker/epoch，以免错撤另一轮认领。 */
     ZrCore_OwnershipTransfer_InternalLock(envelope);
     transferState = (EZrOwnershipTransferState)
             ZrCore_OwnershipTransfer_InternalStateLoad(envelope);
@@ -58,6 +60,7 @@ void ZrCore_OwnershipTransfer_Free(
         claimEpoch = envelope->claimEpoch;
     }
     ZrCore_OwnershipTransfer_InternalUnlock(envelope);
+    /* 流转中的信封先经过状态机撤销；撤销失败不允许直接释放。 */
     if (transferState == ZR_OWNERSHIP_TRANSFER_STATE_PREPARED ||
         transferState == ZR_OWNERSHIP_TRANSFER_STATE_QUEUED ||
         transferState == ZR_OWNERSHIP_TRANSFER_STATE_CLAIMED) {
@@ -77,6 +80,7 @@ void ZrCore_OwnershipTransfer_Free(
             return;
         }
     }
+    /* 仅在 COMMITTED/ABORTED 终态归还源侧分配与关联资源。 */
     ZrCore_OwnershipTransfer_InternalLock(envelope);
     transferState = (EZrOwnershipTransferState)
             ZrCore_OwnershipTransfer_InternalStateLoad(envelope);
