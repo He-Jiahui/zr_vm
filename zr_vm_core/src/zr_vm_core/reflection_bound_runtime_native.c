@@ -1,5 +1,5 @@
 #include "reflection_bound_runtime_native_internal.h"
-
+/* 四个反射导出共用此边界：closure 捕获 module，由 module 反查并核验 MetadataRuntime。 */
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
@@ -11,7 +11,7 @@
 #include "zr_vm_core/state.h"
 
 #include "reflection_object_internal.h"
-
+/* 模块创建和缓存复用还核对预期 module；native 入口至少核对函数身份与捕获形状。 */
 TZrBool ZrCore_Reflection_BoundRuntimeNativeClosureIsValidInternal(
         SZrState *state,
         SZrClosureNative *closure,
@@ -56,7 +56,7 @@ TZrBool ZrCore_Reflection_BoundRuntimeNativeClosureIsValidInternal(
             runtime != ZR_NULL && runtime->module == runtimeModule &&
             (expectedRuntimeModule == ZR_NULL || runtimeModule == expectedRuntimeModule));
 }
-
+/* 从当前函数槽取得经身份校验的绑定；调用方在读取参数前先确认入口与捕获匹配。 */
 SZrMetadataRuntime *ZrCore_Reflection_GetBoundRuntimeFromCallInternal(
         SZrState *state,
         FZrNativeFunction expectedFunction) {
@@ -88,7 +88,7 @@ SZrMetadataRuntime *ZrCore_Reflection_GetBoundRuntimeFromCallInternal(
     runtimeValue = ZrCore_ClosureNative_GetCaptureValue(closure, 0u);
     return ZrCore_Module_GetMetadataRuntime((SZrObjectModule *)runtimeValue->value.object);
 }
-
+/* 工厂负责临时 root 与捕获闭合；调用方须在后续分配前接管返回 closure 的可达性。 */
 SZrClosureNative *ZrCore_Reflection_CreateBoundRuntimeNativeClosureInternal(
         SZrState *state,
         SZrMetadataRuntime *runtime,
@@ -117,7 +117,7 @@ SZrClosureNative *ZrCore_Reflection_CreateBoundRuntimeNativeClosureInternal(
                 state, ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeModule), &modulePinned)) {
         return ZR_NULL;
     }
-
+    /* BUG: modulePinned 为真且栈扩容 OOM 时，CheckStackAndGc 抛出会跳过末尾撤根，module 滞留全局 ignored 表。 */
     rootBase = state->stackTop.valuePointer;
     rootBase = ZrCore_Function_CheckStackAndGc(state, 2u, rootBase);
     closure = ZrCore_ClosureNative_New(state, 1u);
@@ -126,7 +126,7 @@ SZrClosureNative *ZrCore_Reflection_CreateBoundRuntimeNativeClosureInternal(
                 state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeModule), modulePinned);
         return ZR_NULL;
     }
-
+    /* 两个栈槽同时保护新 closure 和被捕获 module，直到捕获对象闭合。 */
     closure->nativeFunction = nativeFunction;
     closureRoot = ZrCore_Stack_GetValue(rootBase);
     ZrCore_Value_InitAsRawObject(state, closureRoot, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
@@ -134,7 +134,7 @@ SZrClosureNative *ZrCore_Reflection_CreateBoundRuntimeNativeClosureInternal(
     ZrCore_Value_InitAsRawObject(
             state, moduleRoot, ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeModule));
     state->stackTop.valuePointer = rootBase + 2;
-
+    /* 捕获通过 closure-value owner 持有 module，屏障把这条新 GC 边加入标记协议。 */
     captureOwner = ZrCore_Closure_FindOrCreateValue(state, rootBase + 1);
     if (captureOwner == ZR_NULL) {
         ZrCore_Reflection_ObjectUnpinRaw(
@@ -142,7 +142,7 @@ SZrClosureNative *ZrCore_Reflection_CreateBoundRuntimeNativeClosureInternal(
         state->stackTop.valuePointer = rootBase;
         return ZR_NULL;
     }
-
+    /* 下游分配可能触发 GC，最终返回值从受追踪槽重新取得。 */
     closure = ZR_CAST_NATIVE_CLOSURE(state, closureRoot->value.object);
     captureOwners = ZrCore_ClosureNative_GetCaptureOwners(closure);
     closure->closureValuesExtend[0] = ZR_NULL;
@@ -161,7 +161,7 @@ SZrClosureNative *ZrCore_Reflection_CreateBoundRuntimeNativeClosureInternal(
         state->stackTop.valuePointer = rootBase;
         return ZR_NULL;
     }
-
+    /* 公开工厂才额外请求 native-handle pin；模块内部导出只靠正常可达关系。 */
     closure = ZR_CAST_NATIVE_CLOSURE(state, closureRoot->value.object);
     if (pinRuntimeModule) {
         ZrCore_GarbageCollector_PinObject(
