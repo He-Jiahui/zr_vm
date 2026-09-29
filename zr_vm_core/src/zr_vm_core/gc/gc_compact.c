@@ -3,6 +3,7 @@
 #include <limits.h>
 #include <string.h>
 
+/* 将单个拒绝结果写入可选诊断；不持有请求或堆对象。 */
 static void gc_compact_diag(SZrGcCompactDiagnostic *diagnostic,
                             EZrGcCompactDiagnosticCode code,
                             TZrUInt32 index,
@@ -17,10 +18,12 @@ static void gc_compact_diag(SZrGcCompactDiagnostic *diagnostic,
     diagnostic->actual = actual;
 }
 
+/* 多个区段的统计量饱和累加，避免汇总值回绕成小数。 */
 static TZrUInt64 gc_compact_sat_add(TZrUInt64 left, TZrUInt64 right) {
     return right > UINT64_MAX - left ? UINT64_MAX : left + right;
 }
 
+/* 用整数 ceil(used * threshold / 100) 判定碎片率，used 为零不入选。 */
 static TZrBool gc_compact_threshold_met(TZrUInt64 reclaimable,
                                          TZrUInt64 used,
                                          TZrUInt32 thresholdPercent) {
@@ -46,6 +49,7 @@ static TZrBool gc_compact_threshold_met(TZrUInt64 reclaimable,
     return reclaimable >= required;
 }
 
+/* 清除上次诊断；空输出指针允许用于仅取布尔结果的调用。 */
 void ZrCore_GcCompact_DiagnosticClear(
         SZrGcCompactDiagnostic *diagnostic) {
     if (diagnostic != ZR_NULL) {
@@ -53,6 +57,7 @@ void ZrCore_GcCompact_DiagnosticClear(
     }
 }
 
+/* 将诊断枚举投影为日志文本；不识别的扩展值统一返回 unknown。 */
 const TZrChar *ZrCore_GcCompact_DiagnosticName(
         EZrGcCompactDiagnosticCode code) {
     switch (code) {
@@ -75,6 +80,7 @@ const TZrChar *ZrCore_GcCompact_DiagnosticName(
     }
 }
 
+/* 生成带当前契约标识的空计划，字段其余值为零。 */
 void ZrCore_GcCompact_Init(SZrGcCompactPlan *plan) {
     if (plan == ZR_NULL) {
         return;
@@ -85,6 +91,7 @@ void ZrCore_GcCompact_Init(SZrGcCompactPlan *plan) {
     plan->mode = ZR_GC_COMPACT_MODE_NON_MOVING;
 }
 
+/* 校验可交换的计划记录，不查看区段数组，也不执行 relocation。 */
 TZrBool ZrCore_GcCompact_Validate(
         const SZrGcCompactPlan *plan,
         SZrGcCompactDiagnostic *diagnostic) {
@@ -105,6 +112,7 @@ TZrBool ZrCore_GcCompact_Validate(
                         plan->schemaVersion);
         return ZR_FALSE;
     }
+    /* BUG: 仅检查上界；有符号 enum 实现下，mode=-1 会通过比较并被 Validate 接受。 */
     if (plan->mode >= ZR_GC_COMPACT_MODE_COUNT ||
         plan->candidateRegionCount > plan->regionCount ||
         plan->pinnedRegionCount > plan->regionCount ||
@@ -121,9 +129,12 @@ TZrBool ZrCore_GcCompact_Validate(
                         4u, 0u, plan->plannedBytes);
         return ZR_FALSE;
     }
+    /* BUG: Plan 将候选旧区与 pinned/large/permanent 排除区分开；外部计划若
+     * regionCount=2 且两种计数都为 2，会通过各自上界检查但不可能由 Plan 产生，Validate 仍接受。 */
     return ZR_TRUE;
 }
 
+/* 校验区域事实，统计达阈值旧区，并按整区 liveBytes 贪心接受预算内子集。 */
 TZrBool ZrCore_GcCompact_Plan(
         const SZrGcCompactRequest *request,
         SZrGcCompactPlan *plan,
@@ -236,6 +247,7 @@ TZrBool ZrCore_GcCompact_Plan(
     return ZR_TRUE;
 }
 
+/* TODO: 直接读取可变的 region 指针/长度；确认调用方必须持有停世界或快照。 */
 TZrBool ZrCore_GarbageCollector_PlanCompaction(
         struct SZrGlobalState *global,
         TZrUInt64 budgetBytes,
