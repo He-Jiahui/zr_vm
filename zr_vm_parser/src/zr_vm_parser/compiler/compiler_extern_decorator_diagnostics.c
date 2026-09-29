@@ -1,5 +1,10 @@
 #include "compiler_extern_decorator_diagnostics.h"
 
+/**
+ * @brief 集中处理 extern/FFI 装饰器校验器的失败出口，避免各规则产生不同诊断身份或范围。
+ * @note 规则调用方提供具体消息、原因与修正建议；此处统一选择 error、invalid_decorator 和用户决策型 no-fix。
+ * @return 无论结构化诊断发布还是普通错误回退，均返回 false 让调用链停止当前声明校验。
+ */
 TZrBool compiler_extern_report_invalid_decorator(
         SZrCompilerState *cs,
         SZrAstNode *decoratorNode,
@@ -13,6 +18,7 @@ TZrBool compiler_extern_report_invalid_decorator(
         return ZR_FALSE;
     }
     ZrParser_StructuredDiagnostic_Init(&diagnostic);
+    /* 结构化载荷分配失败时仍须拒绝声明；退回普通错误，避免资源压力使规则错误静默通过。 */
     if (!ZrParser_DiagnosticBuilder_Build(
                 cs->state,
                 &diagnostic,
@@ -29,6 +35,7 @@ TZrBool compiler_extern_report_invalid_decorator(
         ZrParser_Compiler_Error(cs, message, decoratorNode->location);
         return ZR_FALSE;
     }
+    /* StructuredError 将载荷浅拷贝进 compiler state；字符串所有权随交接保留在该状态中。 */
     ZrParser_Compiler_StructuredError(cs, &diagnostic);
     return ZR_FALSE;
 }
