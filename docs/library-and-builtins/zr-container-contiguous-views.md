@@ -37,10 +37,12 @@ tests:
   - tests/parser/test_span_core.c
   - tests/parser/test_span_semantic_ir_cases.c
   - tests/parser/test_buffer_pool_ffi.c
+  - tests/container/test_container_runtime.c
   - tests/parser/test_aot_c_value_type_shared_library_smoke.c
   - tests/library/test_official_provider_convergence.c
   - tests/acceptance/2026-08-05-syntax-10c-official-provider-convergence.md
   - tests/acceptance/ssa-span-array-growth.md
+  - tests/acceptance/ssa-array-capacity-invariant.md
 doc_type: module
 ---
 
@@ -115,6 +117,14 @@ source-level test checks the public capacity field and values, not the raw buffe
 address. This describes current library runtime behavior. It does not establish
 that the core contiguous-view descriptor is produced from Array storage or that
 its generation field tracks backing reallocations.
+
+`Array<T>.capacity` is a writable public integer. When an Array mutation needs
+capacity, the runtime normalizes any nonpositive field value to the initial
+capacity of four and stores that value before comparing it with the unsigned
+required length. This prevents a value such as `-1` from converting to a large
+`TZrSize` and bypassing normalization. The runtime test sets capacity to `-1`,
+appends `7`, and checks capacity `4`, length `1`, and item `7`. Positive-capacity
+doubling still needs an upper-bound check before signed multiplication.
 
 The runtime checks:
 

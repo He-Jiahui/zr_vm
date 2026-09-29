@@ -1128,6 +1128,39 @@ static void test_container_array_runtime_rejects_negative_capacity(void) {
     TEST_DIVIDER();
 }
 
+/* Runtime normalization must also handle a negative writable capacity field. */
+static void test_container_array_runtime_normalizes_negative_capacity_before_append(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Array Normalizes Negative Capacity Before Append";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+    const char *source =
+            "let container = import(\"zr.container\");\n"
+            "var xs = new container.Array<int>();\n"
+            "xs.capacity = -1;\n"
+            "xs.add(7);\n"
+            "return xs.capacity * 100 + xs.length * 10 + xs[0];\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_array_negative_public_capacity_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(417, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
 /* 越界及非法索引须走显式失败路径，防止损坏数组存储。 */
 static void test_container_array_runtime_rejects_invalid_indexes(void) {
     SZrTestTimer timer = {0};
@@ -2655,6 +2688,7 @@ int main(void) {
     RUN_TEST(test_container_array_runtime_set_item_preserves_object_payloads);
     RUN_TEST(test_container_array_runtime_accepts_unary_negation_in_constructor_arguments);
     RUN_TEST(test_container_array_runtime_rejects_negative_capacity);
+    RUN_TEST(test_container_array_runtime_normalizes_negative_capacity_before_append);
     RUN_TEST(test_container_array_runtime_rejects_invalid_indexes);
     RUN_TEST(test_container_map_runtime_supports_pair_keys_and_value_overwrite);
     RUN_TEST(test_container_map_runtime_computed_access_beats_prototype_method_names);

@@ -2573,16 +2573,18 @@ static TZrBool zr_container_array_ensure_capacity(SZrState *state, SZrObject *ar
     }
 
     capacity = zr_container_get_int_field(state, arrayObject, kContainerCapacityField, 0);
-    /* TODO: capacity 是可见字段，负值在此转换为 TZrSize 后可能直接通过比较；
-     * 倍增也缺少上界检查。需核对字段写权限并用边界值验证容量契约。
-     */
+    if (capacity <= 0) {
+        capacity = ZR_CONTAINER_SEQUENCE_INITIAL_CAPACITY;
+        if (!zr_container_set_int_field_fast(state, arrayObject, kContainerCapacityField, capacity)) {
+            return ZR_FALSE;
+        }
+    }
+
     if ((TZrSize)capacity >= requiredLength) {
         return ZR_TRUE;
     }
 
-    if (capacity <= 0) {
-        capacity = ZR_CONTAINER_SEQUENCE_INITIAL_CAPACITY;
-    }
+    /* TODO: 正值扩容倍增仍需检查 TZrInt64 上界，防止溢出。 */
     while ((TZrSize)capacity < requiredLength) {
         capacity *= ZR_CONTAINER_SEQUENCE_GROWTH_FACTOR;
     }
