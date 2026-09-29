@@ -2,6 +2,11 @@
 
 #include "zr_vm_core/memory.h"
 
+/**
+ * @brief 按完整 TypeDef token 查找泛型类型所属行。
+ * @pre runtime 已附着可读取的 ZRP metadata；返回指针借用该运行时中的表存储。
+ * @note 这里只接受 TypeDef 表 token，避免把同数值的其他 token 当成类型所有者。
+ */
 static const SZrZrpMetadataTypeDefRow *metadata_runtime_generic_find_type_def_row(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken typeDefToken) {
@@ -25,6 +30,11 @@ static const SZrZrpMetadataTypeDefRow *metadata_runtime_generic_find_type_def_ro
     return ZR_NULL;
 }
 
+/**
+ * @brief 按完整 MethodDef token 查找方法泛型参数所属行。
+ * @pre runtime 已附着可读取的 ZRP metadata；返回指针借用该运行时中的表存储。
+ * @note MEMBER_DEF 是方法 token 的表编码；解析器还会通过方法记录检查它确实是方法。
+ */
 static const SZrZrpMetadataMethodDefRow *metadata_runtime_generic_find_method_def_row(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken methodDefToken) {
@@ -48,6 +58,12 @@ static const SZrZrpMetadataMethodDefRow *metadata_runtime_generic_find_method_de
     return ZR_NULL;
 }
 
+/**
+ * @brief 建立供参数查询与反射构造共享的 TypeDef/MethodDef 泛型参数区间视图。
+ * @pre ownerToken 必须解析为当前 runtime 中有效的 TypeDef 或 MethodDef；输出在失败时清零。
+ * @return 成功时同时提供 owner record、定义行及该 owner 在 GenericParam 表中的起始索引和数量。
+ * TODO: ZRP 校验了 TypeDef 的 GenericParam 区间，未见 MethodDef 同等检查；确认 attach 是否应拒绝越界范围。
+ */
 TZrBool ZrCore_MetadataRuntime_ReadGenericOwnerView(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken ownerToken,
@@ -97,6 +113,10 @@ TZrBool ZrCore_MetadataRuntime_ReadGenericOwnerView(
     }
 }
 
+/**
+ * @brief 判断物理 GenericParam 行是否属于 owner 声明的连续区间。
+ * @note 先比较下界再做减法，避免无符号索引下溢；范围只表达存储归属，不代替行内 token 校验。
+ */
 static TZrBool metadata_runtime_generic_param_index_in_owner_range(
         const SZrMetadataRuntimeGenericOwnerView *range,
         TZrUInt32 genericParamIndex) {
@@ -107,6 +127,12 @@ static TZrBool metadata_runtime_generic_param_index_in_owner_range(
                      genericParamIndex - range->firstGenericParamIndex < range->genericParamCount);
 }
 
+/**
+ * @brief 在 owner 的物理区间中按逻辑参数序号定位 GenericParam 行。
+ * @pre ownerRange 来自 ReadGenericOwnerView；可选输出索引在查询开始时置为无效哨兵。
+ * @note 同时核对行的 ownerToken、parameterIndex 和物理归属，避免损坏或交错的表行被误认。
+ * TODO: GenericParam 行验证只检查 ownerToken 的表号/RID，未保证同一 owner 区间的 parameterIndex 唯一；此处返回首个匹配行，确认格式层是否应拒绝重复。
+ */
 static const SZrZrpMetadataGenericParamRow *metadata_runtime_find_generic_param_row(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken ownerToken,
@@ -140,6 +166,12 @@ static const SZrZrpMetadataGenericParamRow *metadata_runtime_find_generic_param_
     return ZR_NULL;
 }
 
+/**
+ * @brief 读取一个类型或方法泛型参数的完整运行时视图。
+ * @pre ownerToken 必须指向有效 TypeDef 或 MethodDef，parameterIndex 是该 owner 内的零基序号。
+ * @return 成功时提供定义行、物理索引、owner record 及名称/约束/标志字段；失败时输出清零。
+ * @note 反射解析器和开放泛型方法构造共用此入口，集中执行 owner 区间与参数行归属校验。
+ */
 TZrBool ZrCore_MetadataRuntime_ReadGenericParamView(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken ownerToken,
@@ -178,6 +210,11 @@ TZrBool ZrCore_MetadataRuntime_ReadGenericParamView(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 将约束行的可选签名 blob 转成经过格式验证的借用切片。
+ * @pre row 来自当前 runtime 的 GenericParamConstraint 表；零长度表示该约束没有附加签名。
+ * @note 非空切片必须位于签名池且通过签名格式验证；失败时清空输出，避免暴露部分解析结果。
+ */
 static TZrBool metadata_runtime_generic_get_constraint_blob(
         SZrMetadataRuntime *runtime,
         const SZrZrpMetadataGenericParamConstraintRow *row,
@@ -206,6 +243,12 @@ static TZrBool metadata_runtime_generic_get_constraint_blob(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 读取泛型参数的第 constraintIndex 个约束及其解析后的类型和签名视图。
+ * @pre ownerToken/parameterIndex 必须先能解析为泛型参数，constraintIndex 为该参数内的零基序号。
+ * @return 成功时同时返回约束行、类型记录和可选签名切片；任何索引、token 或 blob 校验失败均返回 false。
+ * @note 约束行以 GenericParam 的物理索引关联，而调用端使用 owner 内逻辑序号；这里负责连接两种编号。
+ */
 TZrBool ZrCore_MetadataRuntime_ReadGenericParamConstraintView(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken ownerToken,
