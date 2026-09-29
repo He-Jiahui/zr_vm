@@ -15,10 +15,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 限制脚本签名数组复制成本，避免把无界参数数目带入 native 临时分配与匹配循环。 */
 #define ZR_REFLECTION_DESCRIPTOR_MAX_PARAMETER_TYPES 1024u
 
+/* descriptor 原生方法共用 state-only ABI；descriptor 由闭包捕获并从当前调用帧取得。 */
 typedef TZrInt64 (*FZrReflectionDescriptorNativeEntry)(SZrState *state);
 
+/* 统一空值返回约定，确保失败路径只留下一个 null 结果并收回实参区。 */
 static TZrInt64 descriptor_native_return_null(
         SZrState *state,
         TZrStackValuePointer functionBase) {
@@ -30,6 +33,7 @@ static TZrInt64 descriptor_native_return_null(
     return 1;
 }
 
+/* 将已取得的托管结果交还当前 VM 结果槽；对象/数组标签由查询种类显式决定。 */
 static TZrInt64 descriptor_native_return_object(
         SZrState *state,
         TZrStackValuePointer functionBase,
@@ -47,6 +51,7 @@ static TZrInt64 descriptor_native_return_object(
     return 1;
 }
 
+/* 所有入口都以一个关闭的 descriptor 捕获作为 receiver；集中验证该闭包形状后再读参数槽。 */
 static TZrBool descriptor_native_call_frame(
         SZrState *state,
         TZrStackValuePointer *outFunctionBase,
@@ -102,10 +107,12 @@ static TZrBool descriptor_native_call_frame(
     return ZR_TRUE;
 }
 
+/* 脚本查询对象只覆盖受支持的筛选字段；枚举名与整数都映射到 C 查询协议。 */
 static TZrBool descriptor_native_decode_member_query(
         SZrState *state,
         const SZrTypeValue *value,
         SZrReflectionMemberQuery *query) {
+    /* 这些名字与对应枚举值按同一序排列，属于 descriptor 查询的脚本协议。 */
     static const TZrChar *kScopeNames[] = {"declared", "inherited", "all"};
     static const TZrChar *kAccessNames[] = {"public", "protected", "private", "all"};
     static const TZrChar *kStorageNames[] = {"instance", "static", "all"};
@@ -192,6 +199,7 @@ static TZrBool descriptor_native_decode_member_query(
     return ZR_TRUE;
 }
 
+/* method 重载筛选接收 TypeId 数组；复制出的 native 列表只在本次查询中借用并由 dispatcher 释放。 */
 static TZrBool descriptor_native_read_parameter_type_ids(
         SZrState *state,
         const SZrTypeValue *value,
@@ -245,6 +253,7 @@ static TZrBool descriptor_native_read_parameter_type_ids(
     return ZR_TRUE;
 }
 
+/* 六种成员入口共享同一参数/结果路径；method 的可选 TypeId 列表占据 query 之前的独立槽位。 */
 static TZrInt64 descriptor_native_query(
         SZrState *state,
         EZrReflectionMemberKind kind,
@@ -265,6 +274,7 @@ static TZrInt64 descriptor_native_query(
                 state, &functionBase, &descriptor, &argumentCount)) {
         return descriptor_native_return_null(state, functionBase);
     }
+    /* 单项形式要求 name，复数形式只收一个可选筛选对象；错位实参统一折叠为空结果。 */
     if (singular) {
         TZrSize maximumArguments =
                 kind == ZR_REFLECTION_MEMBER_KIND_METHOD ? 3u : 2u;
@@ -303,6 +313,9 @@ static TZrInt64 descriptor_native_query(
         free(parameterTypeIds);
         return descriptor_native_return_null(state, functionBase);
     }
+    /* BUG: GetMember 临时 pin，或 QueryMembers 缓存未命中新建结果数组时，会登记/撤销 ignored root；
+     * native callback 在 VM 解锁区运行，同一 global 的并发 state 可竞争无锁根表，
+     * 导致仍借用的结果过早失根或破坏登记索引。 */
     if (singular) {
         ZrCore_Reflection_GetMember(
                 state,
@@ -318,6 +331,8 @@ static TZrInt64 descriptor_native_query(
         ZrCore_Reflection_QueryMembers(
                 state, descriptor, kind, &query, &result, &status);
     }
+    /* BUG: 非空 getMethod TypeId 筛选先 malloc native 列表；缓存未命中后的 GC allocation OOM
+     * 可经 Exception_Throw 非局部跳出，跳过这里并泄漏该列表。 */
     free(parameterTypeIds);
     return descriptor_native_return_object(
             state,
@@ -326,6 +341,7 @@ static TZrInt64 descriptor_native_query(
             singular ? ZR_VALUE_TYPE_OBJECT : ZR_VALUE_TYPE_ARRAY);
 }
 
+/* 注册表用这些薄回调把脚本方法名映射到成员种类和单项/复数返回形态。 */
 static TZrInt64 descriptor_get_field_native(SZrState *state) {
     return descriptor_native_query(state, ZR_REFLECTION_MEMBER_KIND_FIELD, ZR_TRUE);
 }
@@ -350,6 +366,7 @@ static TZrInt64 descriptor_get_methods_native(SZrState *state) {
     return descriptor_native_query(state, ZR_REFLECTION_MEMBER_KIND_METHOD, ZR_FALSE);
 }
 
+/* metadata 只暴露 descriptor 中保存的命名对象；可选 query 槽当前未参与筛选。 */
 static TZrInt64 descriptor_get_meta_native(SZrState *state) {
     TZrStackValuePointer functionBase = ZR_NULL;
     SZrObject *descriptor = ZR_NULL;
@@ -358,6 +375,7 @@ static TZrInt64 descriptor_get_meta_native(SZrState *state) {
     const SZrTypeValue *metadataValue;
     const SZrTypeValue *entry;
 
+    /* TODO: 当前接受第二个参数却不解释；设计草案为 getMeta 声明 MetaQuery，需核对该槽的有效契约。 */
     if (!descriptor_native_call_frame(
                 state, &functionBase, &descriptor, &argumentCount) ||
         argumentCount < 1u || argumentCount > 2u) {
@@ -389,12 +407,14 @@ static TZrInt64 descriptor_get_meta_native(SZrState *state) {
            : descriptor_native_return_null(state, functionBase);
 }
 
+/* 批量 meta 入口返回既有 decorators 数组，不在此处复制或重建元数据。 */
 static TZrInt64 descriptor_get_metas_native(SZrState *state) {
     TZrStackValuePointer functionBase = ZR_NULL;
     SZrObject *descriptor = ZR_NULL;
     TZrSize argumentCount = 0u;
     const SZrTypeValue *decoratorsValue;
 
+    /* TODO: 当前接受一个筛选槽却原样忽略；设计草案为 getMetas 声明 MetaQuery，需核对兼容与筛选语义。 */
     if (!descriptor_native_call_frame(
                 state, &functionBase, &descriptor, &argumentCount) ||
         argumentCount > 1u) {
@@ -413,6 +433,7 @@ static TZrInt64 descriptor_get_metas_native(SZrState *state) {
            : descriptor_native_return_null(state, functionBase);
 }
 
+/* 把脚本构造委托给共享 constructor binder；调用失败保持语言层的 null 失败表示。 */
 static TZrInt64 descriptor_create_instance_native(SZrState *state) {
     TZrStackValuePointer functionBase = ZR_NULL;
     SZrObject *descriptor = ZR_NULL;
@@ -425,6 +446,9 @@ static TZrInt64 descriptor_create_instance_native(SZrState *state) {
         return descriptor_native_return_null(state, functionBase);
     }
     ZrCore_Value_ResetAsNull(&result);
+    /* BUG: 匹配的解释器构造器所需 scratch 槽越过栈尾时会扩容 VM 栈；扩容搬迁后，
+     * 构造 API 只修复 call-info anchor，本地 functionBase 仍指向旧栈。成功路径在下方写回结果，
+     * 异常失败路径则经 return_null 写 null；两者都可能解引用旧地址并把 stackTop 设回旧区。 */
     if (!ZrCore_Reflection_CreateInstance(
                 state,
                 descriptor,
