@@ -13,6 +13,7 @@ static void make_validated(SZrValidatedHotPatch *v, SZrArtifactExecIrView *a,
     m->publicContractHash = 55u;
     m->patchId = content;
     v->artifact = a; v->manifest = m; v->contentHash = content;
+    v->contentBytes = a->buffer; v->contentLength = a->bufferLength;
     v->patchId = m->patchId; v->publicContractHash = m->publicContractHash;
     v->targetProfile = 2u; v->signatureVerified = ZR_TRUE;
     v->immutableContent = ZR_TRUE;

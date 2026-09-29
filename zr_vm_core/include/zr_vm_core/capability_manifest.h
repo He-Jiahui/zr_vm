@@ -76,18 +76,21 @@ typedef TZrBool (*FZrHotPatchVerifySignature)(const TZrByte *content,
                                                TZrPtr userData);
 
 /** @brief 验证后交给 Prepare/Apply 的令牌。
- * artifact/manifest 指针仍由调用方持有；Apply/Prepare 使用验证时标量快照，
- * 不从 manifest 重读这些字段。此结构不复制或固定 artifact 字节。 */
+ * artifact/manifest 与 contentBytes 的存储仍由调用方持有；Apply/Prepare 使用验证时
+ * 捕获的标量、字节地址和长度快照。字节不复制或固定，调用方须保持其生命周期。 */
 typedef struct SZrValidatedHotPatch {
     const SZrArtifactExecIrView *artifact;
     const SZrHotPatchCapabilityManifest *manifest;
     TZrUInt64 contentHash;
+    const TZrByte *contentBytes;
+    TZrUInt32 contentLength;
     TZrUInt64 patchId;
     TZrUInt64 publicContractHash;
     TZrUInt64 requiredCapabilities;
     TZrUInt64 validationPolicyHash;
     TZrUInt32 targetProfile;
     TZrBool signatureVerified;
+    /* Apply rechecks the borrowed contentBytes range; this does not pin storage. */
     TZrBool immutableContent;
 } SZrValidatedHotPatch;
 
@@ -104,7 +107,8 @@ typedef struct SZrHotPatchDiagnostic {
  * @pre verifySignature 可调用；输入指针指向的存储在本次验证期间保持有效且稳定。
  * @return 成功才填充 validated；失败时清零输出并通过可选 diagnostic 报告原因。
  * @note requirementCount 不得超过 4096；超限会在
- * 调用签名回调和读取逐项需求前返回 ZR_HOT_PATCH_LIMIT，并填充 expected/actual。 */
+ * 调用签名回调和读取逐项需求前返回 ZR_HOT_PATCH_LIMIT，并填充 expected/actual。
+ * 成功 token 捕获原始字节地址与长度；调用方须保持字节存储到 Apply 完成。 */
 ZR_CORE_API EZrHotPatchCapabilityStatus ZrCore_HotPatch_Validate(
         const SZrHotPatchValidationInput *input,
         FZrHotPatchVerifySignature verifySignature,

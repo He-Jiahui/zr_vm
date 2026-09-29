@@ -8,6 +8,7 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/metadata_runtime_method_binding.c
   - zr_vm_core/src/zr_vm_core/module/module_loader.c
   - zr_vm_core/include/zr_vm_core/capability_manifest.h
+  - zr_vm_core/include/zr_vm_core/hotpatch_rollback.h
   - zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_validate.c
   - zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_capability.c
   - zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_generation.c
@@ -95,11 +96,12 @@ validatedPatch = immutableOwnedCopy(bytes, verificationResult)
 | 新增 native/FFI/reflection/domain 权限 | 执行前拒绝 |
 | 通过已允许 wrapper 间接访问禁能力 | 闭包或入口检查拒绝 |
 | 有效签名但 base/layout 不匹配 | 拒绝 |
-| 验证后修改 buffer/伪造摘要 | hash/不可变对象约束拦截 |
+| 验证后顺序修改仍存活的 artifact bytes | Apply 重算 Validate 捕获的原字节跨度；哈希失配时返回 `ZR_HOT_PATCH_APPLY_CONTENT_MISMATCH`，不准备 generation、不写 registry |
+| 验证签名回调成功但回调持续改写 artifact bytes | 后续 Apply 对同一捕获跨度重算并拒绝；并发改写不在此保证内 |
 | 4097 项 requirement、实际仅提供一个槽 | 签名 callback 与逐项扫描前返回 `ZR_HOT_PATCH_LIMIT`，expected=4096、actual=4097，validated 清零；完整 4096 项边界继续接受 |
 | 验证后改写 requirement row、manifest `patchId` 和 `publicContractHash` | Apply registry 与 generation 记录仍使用验证时的标量值；不覆盖字节缓冲区所有权 |
 
-当前已完成的窄切片统一主 `Validate` 与能力闭包的 requirement 数量上限，并让 Apply/Prepare 使用验证时捕获的 manifest 标量快照；证据见 [requirement limit acceptance](../../../../tests/acceptance/ssa-hotpatch-requirement-limit.md) 和 [validated manifest snapshot acceptance](../../../../tests/acceptance/ssa-hotpatch-validated-manifest-snapshot.md)。这只关闭发布元数据被后改写的问题。validated token 仍借用 artifact 字节，尚无 owned immutable byte copy；完整调用图能力分析和发布隔离门禁仍属于本计划未完成项。
+当前已完成的窄切片统一主 `Validate` 与能力闭包的 requirement 数量上限，让 Apply/Prepare 使用验证时捕获的 manifest 标量快照，并在 Apply 发布副作用前复核借用字节跨度；证据见 [requirement limit acceptance](../../../../tests/acceptance/ssa-hotpatch-requirement-limit.md)、[validated manifest snapshot acceptance](../../../../tests/acceptance/ssa-hotpatch-validated-manifest-snapshot.md) 和 [content mutation acceptance](../../../../tests/acceptance/ssa-hotpatch-content-mutation.md)。这检测顺序且持续存在的改写，不提供 owned immutable byte copy、并发改写原子性或 Apply 后的固定；完整调用图能力分析和发布隔离门禁仍属于本计划未完成项。
 
 本任务新增测试先独立运行，再进入完整 SSA 差分矩阵。
 
@@ -138,7 +140,7 @@ TZrBool ZrCore_HotPatch_Validate(const SZrHotPatchInput *input,
 | --- | --- | --- |
 | trust roots/allowlist | 宿主和已签 base manifest | patch 不能修改自己的授权上界 |
 | transitive required capability | verified IR/call graph | 间接调用未知上界不能忽略 |
-| validated immutable bytes | validation transaction | Apply 绑定内容身份防 TOCTOU |
+| validated content identity | Validate captures a borrowed address, length, and hash | Apply rehashes before publication; byte ownership remains with the caller |
 
 ### 建议实施批次
 

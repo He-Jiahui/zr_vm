@@ -8,6 +8,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_rollback.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/capability_manifest.h
+  - zr_vm_core/include/zr_vm_core/hotpatch_rollback.h
   - zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_validate.c
   - zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_generation.c
   - zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_rollback.c
@@ -50,16 +51,24 @@ execution.
 
 Validation snapshots the `patchId` and `publicContractHash` values consumed by
 Apply and generation preparation, alongside the existing content hash,
-capability mask, policy hash, and target profile. Mutating the caller-owned
-manifest or requirement rows after validation therefore cannot change the
-registry identity or generation contract recorded by these paths. The validated
-token still borrows its artifact and manifest pointers; it does not copy or pin
-artifact bytes. The current generation manager records identity metadata and
-does not install executable bytes, so callers must preserve byte immutability
-for any later artifact consumer.
+capability mask, policy hash, and target profile. It also captures the original
+borrowed byte address and length. Apply rehashes that span before registry
+lookup or generation preparation and reports `content-mismatch` if its contents
+changed since validation. This catches persistent changes made after Validate
+returns and by a successful signature callback.
+
+The validated token still borrows its artifact and manifest pointers and does
+not copy or pin artifact bytes. Callers must keep the captured byte span alive
+and prevent concurrent writes while Apply hashes it. This check does not make
+the bytes immutable or cover later writes. The current generation manager
+records identity metadata and does not install executable bytes, so any later
+artifact consumer must preserve and verify the same content identity.
 
 Focused CTest coverage is provided by ssa_capability_validation and
 ssa_rollback_restricted. The tests exercise a valid closure, escalation,
 unknown flags, signature/content failures, idempotent application, fresh
-generation rollback, and restricted-section rejection. Availability is
-explicit: an unsupported capability or backend is never reported as accepted.
+generation rollback, and restricted-section rejection. The
+[Apply-time content mutation acceptance](../../tests/acceptance/ssa-hotpatch-content-mutation.md)
+records that sequential byte changes are rejected before registry/generation
+publication. Availability is explicit: an unsupported capability or backend
+is never reported as accepted.

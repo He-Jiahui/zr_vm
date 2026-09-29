@@ -19,8 +19,11 @@ int main(void) {
     SZrValidatedHotPatch validated;
     SZrHotPatchApplyDiagnostic ad;
     SZrHotPatchRestrictedDiagnostic rd;
-    memset(&artifact, 0, sizeof(artifact)); artifact.buffer = bytes; artifact.bufferLength = sizeof(bytes);
-    validated.artifact = &artifact; validated.manifest = &manifest; validated.contentHash = 55u;
+    memset(&artifact, 0, sizeof(artifact)); artifact.buffer = bytes; artifact.bufferLength = (TZrUInt32)sizeof(bytes);
+    manifest.contentHash = ZrCore_ArtifactExecIr_HashBytes(bytes, (TZrUInt32)sizeof(bytes));
+    validated.artifact = &artifact; validated.manifest = &manifest;
+    validated.contentHash = manifest.contentHash;
+    validated.contentBytes = bytes; validated.contentLength = (TZrUInt32)sizeof(bytes);
     validated.patchId = manifest.patchId; validated.publicContractHash = manifest.publicContractHash;
     validated.signatureVerified = ZR_TRUE; validated.immutableContent = ZR_TRUE; validated.targetProfile = 1u;
     /* 已验证令牌的幂等、ID 碰撞及回滚代际均属于同一 manager 生命周期。 */
@@ -28,9 +31,13 @@ int main(void) {
     assert(ZrCore_HotPatch_ApplyValidated(&manager, &registry, &validated, 9u, &h1, &ad) == ZR_HOT_PATCH_APPLY_OK);
     assert(entries[0].generation == h1.generation);
     assert(ZrCore_HotPatch_ApplyValidated(&manager, &registry, &validated, 9u, &h2, &ad) == ZR_HOT_PATCH_APPLY_ALREADY_APPLIED);
-    manifest.contentHash = 56u; validated.contentHash = 56u;
+    bytes[0] ^= 0x01u;
+    manifest.contentHash = ZrCore_ArtifactExecIr_HashBytes(bytes, (TZrUInt32)sizeof(bytes));
+    validated.contentHash = manifest.contentHash;
     assert(ZrCore_HotPatch_ApplyValidated(&manager, &registry, &validated, 9u, &h2, &ad) == ZR_HOT_PATCH_APPLY_ID_COLLISION);
-    manifest.contentHash = 55u; validated.contentHash = 55u;
+    bytes[0] ^= 0x01u;
+    manifest.contentHash = ZrCore_ArtifactExecIr_HashBytes(bytes, (TZrUInt32)sizeof(bytes));
+    validated.contentHash = manifest.contentHash;
     assert(ZrCore_HotPatch_Rollback(&manager, h1.generation, &h2, &ad) == ZR_HOT_PATCH_APPLY_OK);
     assert(h2.generation != h1.generation);
     /* 受限解释器可接收无 relocation 的产物，新增该 section 后须拒绝。 */

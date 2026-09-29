@@ -18,9 +18,15 @@ EZrHotPatchApplyStatus ZrCore_HotPatch_ApplyValidated(
     if (outHandle) memset(outHandle, 0, sizeof(*outHandle));
     if (!manager || !registry || !validated || !validated->manifest || !validated->artifact ||
         !validated->patchId || !validated->publicContractHash ||
+        !validated->contentBytes || !validated->contentLength || !validated->contentHash ||
         !validated->signatureVerified || !validated->immutableContent || !registry->entries || !registry->capacity || !outHandle)
         return apply_fail(diagnostic, ZR_HOT_PATCH_APPLY_INVALID_ARGUMENT, 0u, 0u, 0u, 0u);
     TZrUInt64 id = validated->patchId, hash = validated->contentHash;
+    TZrUInt64 actualHash = ZrCore_ArtifactExecIr_HashBytes(
+            validated->contentBytes, validated->contentLength);
+    if (actualHash != hash)
+        return apply_fail(diagnostic, ZR_HOT_PATCH_APPLY_CONTENT_MISMATCH,
+                          id, hash, actualHash, 0u);
     SZrHotPatchRegistryEntry *freeEntry = ZR_NULL;
     for (TZrUInt32 i = 0u; i < registry->capacity; ++i) {
         SZrHotPatchRegistryEntry *e = &registry->entries[i];
@@ -63,5 +69,5 @@ EZrHotPatchApplyStatus ZrCore_HotPatch_Rollback(
 
 /* host 日志的文字映射，不用字符串反推恢复策略。 */
 const TZrChar *ZrCore_HotPatch_ApplyStatusName(EZrHotPatchApplyStatus s) {
-    switch (s) { case ZR_HOT_PATCH_APPLY_OK: return "ok"; case ZR_HOT_PATCH_APPLY_ALREADY_APPLIED: return "already-applied"; case ZR_HOT_PATCH_APPLY_ID_COLLISION: return "id-collision"; case ZR_HOT_PATCH_APPLY_ROLLBACK_NOT_FOUND: return "rollback-not-found"; default: return "apply-failed"; }
+    switch (s) { case ZR_HOT_PATCH_APPLY_OK: return "ok"; case ZR_HOT_PATCH_APPLY_ALREADY_APPLIED: return "already-applied"; case ZR_HOT_PATCH_APPLY_ID_COLLISION: return "id-collision"; case ZR_HOT_PATCH_APPLY_ROLLBACK_NOT_FOUND: return "rollback-not-found"; case ZR_HOT_PATCH_APPLY_CONTENT_MISMATCH: return "content-mismatch"; default: return "apply-failed"; }
 }

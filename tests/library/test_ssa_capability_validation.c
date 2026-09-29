@@ -29,6 +29,17 @@ static TZrBool verify(const TZrByte *content, TZrUInt32 length,
            signatureLength == 3u && signature[0] == 0xa5u;
 }
 
+static TZrBool verify_and_mutate(const TZrByte *content, TZrUInt32 length,
+                                 const TZrByte *signature,
+                                 TZrUInt32 signatureLength,
+                                 TZrPtr userData) {
+    TZrByte *mutableBytes = (TZrByte *)userData;
+    if (!verify(content, length, signature, signatureLength, ZR_NULL) ||
+        mutableBytes == ZR_NULL) return ZR_FALSE;
+    mutableBytes[1] ^= 0x80u;
+    return ZR_TRUE;
+}
+
 static TZrBool count_and_reject_signature(
         const TZrByte *content, TZrUInt32 length,
         const TZrByte *signature, TZrUInt32 signatureLength,
@@ -40,6 +51,115 @@ static TZrBool count_and_reject_signature(
     (void)signatureLength;
     if (callCount != ZR_NULL) ++*callCount;
     return ZR_FALSE;
+}
+
+static void expect_apply_rejects_sequential_content_mutation(
+        TZrBool mutateDuringVerification) {
+    TZrByte content[4] = {0x11u, 0x22u, 0x33u, 0x44u};
+    TZrByte signature[3] = {0xa5u, 0x5au, 0x01u};
+    SZrArtifactExecIrView artifact;
+    SZrHotPatchCapabilityRequirement requirement = {19u, UINT64_C(0x01), 5u, 0u};
+    SZrHotPatchCapabilityManifest manifest;
+    SZrHotPatchValidationInput input;
+    SZrValidatedHotPatch validated;
+    SZrHotPatchDiagnostic validationDiagnostic;
+    SZrHotPatchVersionRecord records[1];
+    SZrHotPatchGenerationManager manager;
+    SZrHotPatchGenerationDiagnostic generationDiagnostic;
+    SZrHotPatchRegistryEntry entries[1];
+    SZrHotPatchRegistry registry;
+    SZrHotPatchGenerationHandle appliedHandle;
+    SZrHotPatchApplyDiagnostic applyDiagnostic;
+    EZrHotPatchCapabilityStatus validationStatus;
+    EZrHotPatchGenerationStatus generationStatus;
+    EZrHotPatchApplyStatus applyStatus;
+    TZrUInt64 expectedHash;
+    TZrUInt64 actualHash;
+
+    memset(&artifact, 0, sizeof(artifact));
+    artifact.buffer = content;
+    artifact.bufferLength = (TZrUInt32)sizeof(content);
+    artifact.moduleHash = 99u;
+    artifact.abiVersion = 16u;
+
+    memset(&manifest, 0, sizeof(manifest));
+    manifest.schemaVersion = ZR_HOT_PATCH_CAPABILITY_SCHEMA_VERSION;
+    manifest.patchId = 41u;
+    manifest.contentHash = ZrCore_ArtifactExecIr_HashBytes(
+            content, (TZrUInt32)sizeof(content));
+    manifest.baseModuleHash = 99u;
+    manifest.publicContractHash = 123u;
+    manifest.targetAbiVersion = 16u;
+    manifest.targetProfile = 2u;
+    manifest.requirementCount = 1u;
+    manifest.requirements = &requirement;
+
+    memset(&input, 0, sizeof(input));
+    input.artifact = &artifact;
+    input.manifest = &manifest;
+    input.loadedBaseModuleHash = 99u;
+    input.loadedPublicContractHash = 123u;
+    input.hostAbiVersion = 16u;
+    input.hostProfile = 2u;
+    input.hostAllowedCapabilities = UINT64_C(0x01);
+    input.expectedPatchId = 41u;
+    input.expectedContentHash = manifest.contentHash;
+    input.signature = signature;
+    input.signatureLength = (TZrUInt32)sizeof(signature);
+
+    memset(&validated, 0, sizeof(validated));
+    validationStatus = ZrCore_HotPatch_Validate(
+            &input,
+            mutateDuringVerification ? verify_and_mutate : verify,
+            mutateDuringVerification ? (TZrPtr)content : ZR_NULL,
+            &validated, &validationDiagnostic);
+    TEST_CHECK(validationStatus == ZR_HOT_PATCH_OK);
+    if (validationStatus != ZR_HOT_PATCH_OK) return;
+
+    expectedHash = validated.contentHash;
+    TEST_CHECK(validated.contentBytes == content);
+    TEST_CHECK(validated.contentLength == (TZrUInt32)sizeof(content));
+    if (!mutateDuringVerification) content[1] ^= 0x80u;
+    actualHash = ZrCore_ArtifactExecIr_HashBytes(
+            content, (TZrUInt32)sizeof(content));
+    TEST_CHECK(actualHash != expectedHash);
+
+    /* A later descriptor edit must not change the range used for rehashing.
+     * The original byte array stays alive until this helper returns. */
+    artifact.buffer = ZR_NULL;
+    artifact.bufferLength = (TZrUInt32)~(TZrUInt32)0u;
+
+    memset(entries, 0, sizeof(entries));
+    registry.entries = entries;
+    registry.capacity = 1u;
+    registry.count = 0u;
+    memset(&appliedHandle, 0xa5, sizeof(appliedHandle));
+    memset(&applyDiagnostic, 0, sizeof(applyDiagnostic));
+    generationStatus = ZrCore_HotPatch_GenerationManager_Init(
+            &manager, records, 1u, &generationDiagnostic);
+    TEST_CHECK(generationStatus == ZR_HOT_PATCH_GENERATION_OK);
+    if (generationStatus != ZR_HOT_PATCH_GENERATION_OK) return;
+
+    applyStatus = ZrCore_HotPatch_ApplyValidated(
+            &manager, &registry, &validated, 99u, &appliedHandle,
+            &applyDiagnostic);
+    TEST_CHECK(applyStatus == ZR_HOT_PATCH_APPLY_CONTENT_MISMATCH);
+    TEST_CHECK(strcmp(ZrCore_HotPatch_ApplyStatusName(applyStatus),
+                      "content-mismatch") == 0);
+    TEST_CHECK(applyDiagnostic.status == ZR_HOT_PATCH_APPLY_CONTENT_MISMATCH);
+    TEST_CHECK(applyDiagnostic.patchId == 41u);
+    TEST_CHECK(applyDiagnostic.expectedHash == expectedHash);
+    TEST_CHECK(applyDiagnostic.actualHash == actualHash);
+    TEST_CHECK(applyDiagnostic.generation == 0u);
+    TEST_CHECK(registry.count == 0u);
+    TEST_CHECK(entries[0].patchId == 0u);
+    TEST_CHECK(manager.count == 0u);
+    TEST_CHECK(records[0].state == ZR_HOT_PATCH_VERSION_FREE);
+    TEST_CHECK(records[0].generation == 0u);
+    TEST_CHECK(appliedHandle.record == ZR_NULL);
+    TEST_CHECK(appliedHandle.generation == 0u);
+    TEST_CHECK(appliedHandle.leased == ZR_FALSE);
+    ZrCore_HotPatch_GenerationManager_Deinit(&manager);
 }
 
 int main(void) {
@@ -238,6 +358,9 @@ int main(void) {
             ZrCore_HotPatch_GenerationManager_Deinit(&manager);
         }
     }
+
+    expect_apply_rejects_sequential_content_mutation(ZR_FALSE);
+    expect_apply_rejects_sequential_content_mutation(ZR_TRUE);
 
     return g_testFailureCount == 0u ? 0 : 1;
 }

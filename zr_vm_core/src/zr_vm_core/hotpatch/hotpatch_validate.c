@@ -36,6 +36,8 @@ EZrHotPatchCapabilityStatus ZrCore_HotPatch_Validate(
         SZrValidatedHotPatch *validated,
         SZrHotPatchDiagnostic *diagnostic) {
     const SZrHotPatchCapabilityManifest *m;
+    const TZrByte *contentBytes = ZR_NULL;
+    TZrUInt32 contentLength = 0u;
     TZrUInt64 contentHash = 0u;
     TZrUInt64 required = 0u;
     SZrValidatedHotPatch candidate;
@@ -53,7 +55,10 @@ EZrHotPatchCapabilityStatus ZrCore_HotPatch_Validate(
         m->contentHash == 0u || m->baseModuleHash == 0u ||
         m->publicContractHash == 0u) return hp_fail(diagnostic,ZR_HOT_PATCH_INVALID_ARGUMENT,0,0,0,0);
     if (in->artifact->buffer == ZR_NULL || in->artifact->bufferLength == 0u) return hp_fail(diagnostic,ZR_HOT_PATCH_ARTIFACT_INVALID,0,0,0,0);
-    contentHash = ZrCore_ArtifactExecIr_HashBytes(in->artifact->buffer,in->artifact->bufferLength);
+    /* Capture the exact borrowed range before invoking the verifier callback. */
+    contentBytes = in->artifact->buffer;
+    contentLength = in->artifact->bufferLength;
+    contentHash = ZrCore_ArtifactExecIr_HashBytes(contentBytes,contentLength);
     if (contentHash != m->contentHash || (in->expectedContentHash && contentHash != in->expectedContentHash)) return hp_fail(diagnostic,ZR_HOT_PATCH_BASE_MISMATCH,0,0,m->contentHash,contentHash);
     if (m->baseModuleHash != in->loadedBaseModuleHash || in->artifact->moduleHash != in->loadedBaseModuleHash) return hp_fail(diagnostic,ZR_HOT_PATCH_BASE_MISMATCH,0,0,in->loadedBaseModuleHash,m->baseModuleHash);
     if (m->publicContractHash != in->loadedPublicContractHash || (m->flags & (ZR_HOT_PATCH_FLAG_CHANGES_PUBLIC_LAYOUT|ZR_HOT_PATCH_FLAG_CHANGES_PUBLIC_SIGNATURE))) return hp_fail(diagnostic,ZR_HOT_PATCH_PUBLIC_CONTRACT_CHANGE,0,0,in->loadedPublicContractHash,m->publicContractHash);
@@ -62,7 +67,7 @@ EZrHotPatchCapabilityStatus ZrCore_HotPatch_Validate(
     if (m->flags & ZR_HOT_PATCH_FLAG_HAS_MACHINE_CODE) return hp_fail(diagnostic,ZR_HOT_PATCH_MACHINE_CODE_FORBIDDEN,0,0,0,m->flags);
     if (m->flags & ZR_HOT_PATCH_FLAG_ADDS_NATIVE_IMPORT) return hp_fail(diagnostic,ZR_HOT_PATCH_IMPORT_FORBIDDEN,0,0,0,m->flags);
     if (in->expectedPatchId && in->expectedPatchId != m->patchId) return hp_fail(diagnostic,ZR_HOT_PATCH_BASE_MISMATCH,0,0,in->expectedPatchId,m->patchId);
-    if (!verifySignature || !verifySignature(in->artifact->buffer,in->artifact->bufferLength,in->signature,in->signatureLength,userData)) return hp_fail(diagnostic,ZR_HOT_PATCH_SIGNATURE_REJECTED,0,0,0,0);
+    if (!verifySignature || !verifySignature(contentBytes,contentLength,in->signature,in->signatureLength,userData)) return hp_fail(diagnostic,ZR_HOT_PATCH_SIGNATURE_REJECTED,0,0,0,0);
     for (TZrUInt32 i=0u;i<m->requirementCount;i++) {
         const SZrHotPatchCapabilityRequirement *r=&m->requirements[i];
         if (!r->token || r->reserved || !r->requiredBits) return hp_fail(diagnostic,ZR_HOT_PATCH_INVALID_ARGUMENT,r->token,r->sourceOffset,0,0);
@@ -72,6 +77,7 @@ EZrHotPatchCapabilityStatus ZrCore_HotPatch_Validate(
     if ((m->requiredCapabilities & ~in->hostAllowedCapabilities) != 0u) return hp_fail(diagnostic,ZR_HOT_PATCH_CAPABILITY_ESCALATION,0,0,in->hostAllowedCapabilities,m->requiredCapabilities);
     required |= m->requiredCapabilities;
     candidate.artifact=in->artifact; candidate.manifest=m; candidate.contentHash=contentHash;
+    candidate.contentBytes=contentBytes; candidate.contentLength=contentLength;
     candidate.patchId=m->patchId; candidate.publicContractHash=m->publicContractHash;
     candidate.requiredCapabilities=required; candidate.validationPolicyHash=ZrCore_HotPatch_ComputePolicyHash(in);
     candidate.targetProfile=m->targetProfile; candidate.signatureVerified=ZR_TRUE; candidate.immutableContent=ZR_TRUE;

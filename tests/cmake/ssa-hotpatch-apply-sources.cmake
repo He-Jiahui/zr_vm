@@ -4,3 +4,8 @@ if (TARGET zr_vm_ssa_capability_validation_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_generation.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_rollback.c)
 endif ()
+
+if (TARGET zr_vm_ssa_rollback_restricted_test)
+    target_sources(zr_vm_ssa_rollback_restricted_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/artifact_exec_ir.c)
+endif ()
