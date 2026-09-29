@@ -1,6 +1,23 @@
-//
-// Public reflection object materialization for constructed generic requests.
-//
+/**
+ * @file
+ * @brief 把已解析的泛型元数据或请求描述符组装成反射消费者使用的对象图。
+ *
+ * 方法定义、MethodSpec 上下文和构造泛型类型共用递归实参序列化与临时数组；
+ * Make 入口同步解析后再走同一类型对象构造路径。描述符树在调用期间借用，输出
+ * 对象图复制其数据，但其中的 metadataRuntime 字段只是 native 指针，不保活 runtime。
+ * 临时对象在组装期间 pin，公开函数返回前撤销这些 pin；调用方须在后续 GC 前建立根。
+ *
+ * TODO: 确认公开反射对象是否允许比其 metadataRuntime 活得更久；interpreter 消费者
+ * 会从对象字段取回并使用该指针（reflection_interpreter_generic_instance.c:234）。
+ *
+ * BUG: 字段 helper 的布尔值不证明 Object_SetValue 已写入；哈希扩容/插入失败可被
+ * 下层静默返回，而本模块仍返回对象（reflection_object_internal.c:105-111;
+ * object.c:1863-1870, 1886-1887）。数组追加也无提交结果，失败时仍报告成功，可能
+ * 使 children/genericArguments 的实际元素数与对象里声明的计数不一致。
+ * BUG: 组装过程经 ObjectPinRaw/ObjectUnpinRaw 使用全局 ignored registry；同域多个
+ * RUNNING mutator 并发构造可丢失临时 root 或破坏索引
+ * （gc.c:611; 616; 617; 618; 619; 640; 641; 648; 651; 653; 658）。
+ */
 
 #include "zr_vm_core/reflection.h"
 
@@ -16,8 +33,10 @@
 
 #include <string.h>
 
+/* 限制从元数据或请求树递归转成对象图时的 native 调用深度。 */
 #define ZR_REFLECTION_GENERIC_TYPE_OBJECT_MAX_RECURSION_DEPTH 64u
 
+/* 本文件复用 reflection 对象模块的临时 root、字符串和字段写入入口。 */
 #define generic_type_object_pin_raw ZrCore_Reflection_ObjectPinRaw
 #define generic_type_object_unpin_raw ZrCore_Reflection_ObjectUnpinRaw
 #define generic_type_object_pin_value ZrCore_Reflection_ObjectPinValue
@@ -28,6 +47,11 @@
 #define generic_type_object_set_bool ZrCore_Reflection_ObjectSetBool
 #define generic_type_object_set_object ZrCore_Reflection_ObjectSetObject
 
+/**
+ * @brief 将有符号整数包装成 TypeValue 并交给反射字段写入器。
+ * @pre state 与 object 在包装和写入期间有效，fieldName 可读取。
+ * @return 转交字段 helper 的布尔状态；该状态不证明字段已持久化，见本文件 BUG。
+ */
 static TZrBool generic_type_object_set_int(SZrState *state,
                                            SZrObject *object,
                                            const TZrChar *fieldName,
@@ -37,6 +61,11 @@ static TZrBool generic_type_object_set_int(SZrState *state,
     return generic_type_object_set_field_value(state, object, fieldName, &fieldValue);
 }
 
+/**
+ * @brief 将无符号整数包装成 TypeValue，保留签名哈希等字段的数值范围。
+ * @pre state 与 object 在包装和写入期间有效，fieldName 可读取。
+ * @return 转交字段 helper 的布尔状态；该状态不证明字段已持久化，见本文件 BUG。
+ */
 static TZrBool generic_type_object_set_uint(SZrState *state,
                                             SZrObject *object,
                                             const TZrChar *fieldName,
@@ -46,6 +75,11 @@ static TZrBool generic_type_object_set_uint(SZrState *state,
     return generic_type_object_set_field_value(state, object, fieldName, &fieldValue);
 }
 
+/**
+ * @brief 将 runtime 等 native 地址作为不拥有其目标的指针字段写入对象。
+ * @pre state 与 object 在包装和写入期间有效，fieldName 可读取。
+ * @return 转交字段 helper 的布尔状态；该状态不证明字段已持久化，见本文件 BUG。
+ */
 static TZrBool generic_type_object_set_native_pointer(SZrState *state,
                                                       SZrObject *object,
                                                       const TZrChar *fieldName,
@@ -55,6 +89,12 @@ static TZrBool generic_type_object_set_native_pointer(SZrState *state,
     return generic_type_object_set_field_value(state, object, fieldName, &fieldValue);
 }
 
+/**
+ * @brief 分配并初始化本模块对象图使用的通用数组。
+ * @pre state 在对象分配和 nodeMap 初始化期间有效。
+ * @return 分配成功时返回尚未 pin 的空数组；state 为空或对象分配失败时返回 NULL。
+ * @note 所有本地调用点随后 pin 数组，并只用对象字段追加值，因此其存储保持 nodeMap 形式。
+ */
 static SZrObject *generic_type_object_new_array(SZrState *state) {
     SZrObject *array;
 
@@ -68,6 +108,16 @@ static SZrObject *generic_type_object_new_array(SZrState *state) {
     return array;
 }
 
+/**
+ * @brief 将一个已构造的对象追加到本模块的 nodeMap 数组末尾。
+ * @pre array 是本模块刚初始化的数组且调用期间保持有效；object 与 array 来自 state 的 GC 域。
+ * @return 参数或临时 pin 失败时返回 false，其余路径返回 true。
+ * BUG: Object_SetValue 返回 void；遇到对象存储写入早退或 HashSet_Add 失败时这里仍返回
+ * true（object.c:1863-1870, 1886-1887），上层会继续使用未实际追加的数组元素。
+ * @note 所有调用点先 pin 宿主数组；刚生成的 object 在此 helper pin 前不会经过会触发 GC 的分配。
+ *       新数组不启用 raw-int storage，materialize 在该路径直接返回
+ *       （object_super_array_internal.h:200-204, 454-456, 515-520）。
+ */
 static TZrBool generic_type_object_array_push(SZrState *state,
                                               SZrObject *array,
                                               SZrObject *object) {
@@ -99,6 +149,11 @@ static TZrBool generic_type_object_array_push(SZrState *state,
     return ZR_TRUE;
 }
 
+/**
+ * @brief 用固定名字建立反射字面量对象，并在构造期间保活名字字符串。
+ * @pre state 与静态名字在本次构造期间有效。
+ * @return 成功时返回未由本 helper 持续 pin 的对象；分配或临时 pin 失败时返回 NULL。
+ */
 static SZrObject *generic_type_object_build_literal(SZrState *state, const TZrChar *name) {
     SZrString *nameString;
     SZrObject *result = ZR_NULL;
@@ -114,6 +169,12 @@ static SZrObject *generic_type_object_build_literal(SZrState *state, const TZrCh
     return result;
 }
 
+/**
+ * @brief 优先从当前 ZRP string heap 复制名称，缺少该字符串时使用调用方给出的类别名。
+ * @pre state 在分配期间有效；runtime 的元数据缓冲区在读取期间有效。
+ * @return 名称字面量对象；元数据名称无法复制且 fallback 构造失败时返回 NULL。
+ * @note 输出字符串拥有自己的字节，结果仍只是普通未 pin 的 GC 对象。
+ */
 static SZrObject *generic_type_object_build_metadata_literal(
         SZrState *state,
         SZrMetadataRuntime *runtime,
@@ -149,6 +210,7 @@ static SZrObject *generic_type_object_build_metadata_literal(
     return result;
 }
 
+/** @brief 将公开实参 kind 映射为对象 schema 中稳定的文本 discriminant。 */
 static const TZrChar *generic_type_object_argument_kind_name(EZrReflectionGenericTypeArgumentKind kind) {
     switch (kind) {
         case ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_PRIMITIVE:
@@ -171,6 +233,12 @@ static const TZrChar *generic_type_object_argument_kind_name(EZrReflectionGeneri
     }
 }
 
+/**
+ * @brief 建立单个实参节点的字面量对象和双重 kind 标识。
+ * @pre state 有效，argumentPinned 指向调用者可写的 pin 所有权标志。
+ * @return 成功时返回已临时 pin 的节点；失败时返回 NULL，并撤销本次成功新增的 pin。
+ * @note 成功调用者必须用返回的标志与对象匹配地撤销临时 pin。
+ */
 static SZrObject *generic_type_object_begin_argument(
         SZrState *state,
         EZrReflectionGenericTypeArgumentKind kind,
@@ -199,6 +267,12 @@ static SZrObject *generic_type_object_begin_argument(
     return argumentObject;
 }
 
+/**
+ * @brief 将已验证的请求实参树递归复制为 primitive/token/wrapper/tuple/union 对象节点。
+ * @pre argument 及其递归子树在同步复制期间可读；公开入口先由 resolver 校验结构与语义。
+ * @return 节点或任一子项构造失败、kind 无效、超过递归上限时返回 NULL。
+ * @note 子数组和当前节点仅在链接期间 pin；返回节点本身不再由本 helper 保活。
+ */
 static SZrObject *generic_type_object_build_argument(
         SZrState *state,
         const SZrReflectionGenericTypeArgument *argument,
@@ -312,6 +386,12 @@ static SZrObject *generic_type_object_build_argument(
     return success ? argumentObject : ZR_NULL;
 }
 
+/**
+ * @brief 把已解析的元数据签名节点转成与请求描述符相同的反射实参 schema。
+ * @pre runtime、blob 与 node 是同一元数据读取路径产生且在递归期间有效的视图。
+ * @return 支持的 primitive、token 或复合签名节点对象；损坏/不支持的节点和深度溢出返回 NULL。
+ * @note 复合子节点必须恰好消耗父节点给定的 blob 范围，避免把相邻签名尾部并入子项。
+ */
 static SZrObject *generic_type_object_build_metadata_node(
         SZrState *state,
         SZrMetadataRuntime *runtime,
@@ -464,6 +544,11 @@ static SZrObject *generic_type_object_build_metadata_node(
     return success ? argumentObject : ZR_NULL;
 }
 
+/**
+ * @brief 按 TypeSpec 的实参索引读取元数据视图，再委托统一签名节点构造器。
+ * @pre runtime 在视图读取和对象分配期间有效；typeSpecToken 与 argumentIndex 属于该 runtime。
+ * @return 读取或递归构造失败时返回 NULL，否则返回未 pin 的实参节点。
+ */
 static SZrObject *generic_type_object_build_metadata_argument(
         SZrState *state,
         SZrMetadataRuntime *runtime,
@@ -482,6 +567,12 @@ static SZrObject *generic_type_object_build_metadata_argument(
                                                    0u);
 }
 
+/**
+ * @brief 从 GenericParam 元数据视图复制一个方法泛型形参及其身份字段。
+ * @pre state、runtime 和 view 在本次复制期间有效，view 属于 runtime。
+ * @return 成功时返回普通未 pin 的参数对象；字段组装或 pin 失败时返回 NULL。
+ * @note metadataRuntime 字段仅保存 runtime 指针，不转移或延长其生命周期。
+ */
 static SZrObject *generic_type_object_build_method_parameter(
         SZrState *state,
         SZrMetadataRuntime *runtime,
@@ -530,6 +621,12 @@ static SZrObject *generic_type_object_build_method_parameter(
     return result;
 }
 
+/**
+ * @brief 从 GenericParam owner 视图构造方法定义反射对象和按索引排列的参数数组。
+ * @pre state 与 runtime 在元数据读取、对象组装和临时 root 使用期间有效。
+ * @return token 不是含泛型参数的方法、owner/参数视图不一致或组装失败时返回 NULL。
+ * @note 返回对象在退出前解除本函数临时 pin；调用方须在下一次可能 GC 前建立根。
+ */
 SZrObject *ZrCore_Reflection_BuildGenericMethodDefinitionObject(
         SZrState *state,
         SZrMetadataRuntime *runtime,
@@ -636,6 +733,12 @@ cleanup:
     return result;
 }
 
+/**
+ * @brief 从 MethodSpec 签名构造方法上下文对象及其有序泛型实参数组。
+ * @pre state 与 runtime 在元数据视图读取、递归复制和临时 root 使用期间有效。
+ * @return 无有效实参的 MethodSpec、元数据读取失败或对象组装失败时返回 NULL。
+ * @note 输出字段携带 runtime 的 native 指针但不拥有 runtime；返回对象须由调用方及时入根。
+ */
 SZrObject *ZrCore_Reflection_BuildMethodSpecGenericContextObject(
         SZrState *state,
         SZrMetadataRuntime *runtime,
@@ -727,6 +830,13 @@ cleanup:
     return result;
 }
 
+/**
+ * @brief 重验动态泛型实例载体，并输出路线、布局提示和完整实参对象图。
+ * @pre state/runtime 与 instance 及其借用的 requestedArguments 子树在同步复制期间有效。
+ * @return carrier 失效、重验失败或任一实参/对象构造失败时返回 NULL。
+ * @note requestedArguments 非空时复制请求树，否则从 TypeSpec 视图复制；AOT 与解释器回退
+ *       的路线标签来自重验结果。输出 root 未持续 pin，metadataRuntime 也只是借用指针。
+ */
 SZrObject *ZrCore_Reflection_BuildDynamicGenericTypeInstanceObject(
         SZrState *state,
         SZrMetadataRuntime *runtime,
@@ -828,6 +938,12 @@ SZrObject *ZrCore_Reflection_BuildDynamicGenericTypeInstanceObject(
     return result;
 }
 
+/**
+ * @brief 解析开放泛型基类型及请求实参，并复用动态实例对象构造器生成对象图。
+ * @pre state/runtime 与 arguments 的递归描述符存储在整个同步解析和复制期间有效。
+ * @return 解析或后续对象构造失败时返回 NULL；不会保留调用方描述符地址。
+ * @note 返回对象未由本函数 pin，调用方须在任何可能触发 GC 的操作前建立根。
+ */
 SZrObject *ZrCore_Reflection_MakeGenericTypeObject(
         SZrState *state,
         SZrMetadataRuntime *runtime,
