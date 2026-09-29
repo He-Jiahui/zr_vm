@@ -21,6 +21,7 @@ int main(void) {
     SZrHotPatchRestrictedDiagnostic rd;
     memset(&artifact, 0, sizeof(artifact)); artifact.buffer = bytes; artifact.bufferLength = sizeof(bytes);
     validated.artifact = &artifact; validated.manifest = &manifest; validated.contentHash = 55u;
+    validated.patchId = manifest.patchId; validated.publicContractHash = manifest.publicContractHash;
     validated.signatureVerified = ZR_TRUE; validated.immutableContent = ZR_TRUE; validated.targetProfile = 1u;
     /* 已验证令牌的幂等、ID 碰撞及回滚代际均属于同一 manager 生命周期。 */
     assert(ZrCore_HotPatch_GenerationManager_Init(&manager, records, 4u, &gd) == ZR_HOT_PATCH_GENERATION_OK);

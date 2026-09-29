@@ -10,12 +10,18 @@ implementation_files:
   - zr_vm_core/include/zr_vm_core/capability_manifest.h
   - zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_validate.c
   - zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_capability.c
+  - zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_generation.c
+  - zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_rollback.c
   - zr_vm_core/include/zr_vm_core/hotpatch.h
 plan_sources:
   - docs/plans/ssa/index.md
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
 tests:
+  - tests/CMakeLists.txt
+  - tests/cmake/ssa-hotpatch-apply-sources.cmake
   - tests/library/test_ssa_capability_validation.c
+  - tests/core/test_ssa_generation_publication.c
+  - tests/library/test_ssa_rollback_restricted.c
 doc_type: milestone-detail
 status: planned
 ---
@@ -91,8 +97,9 @@ validatedPatch = immutableOwnedCopy(bytes, verificationResult)
 | 有效签名但 base/layout 不匹配 | 拒绝 |
 | 验证后修改 buffer/伪造摘要 | hash/不可变对象约束拦截 |
 | 4097 项 requirement、实际仅提供一个槽 | 签名 callback 与逐项扫描前返回 `ZR_HOT_PATCH_LIMIT`，expected=4096、actual=4097，validated 清零；完整 4096 项边界继续接受 |
+| 验证后改写 requirement row、manifest `patchId` 和 `publicContractHash` | Apply registry 与 generation 记录仍使用验证时的标量值；不覆盖字节缓冲区所有权 |
 
-当前已完成的窄切片只统一主 `Validate` 与能力闭包的 requirement 数量上限，证据见 [requirement limit acceptance](../../../../tests/acceptance/ssa-hotpatch-requirement-limit.md)。其余签名内容不可变副本、TOCTOU 防护、完整调用图能力分析和发布隔离门禁仍属于本计划未完成项。
+当前已完成的窄切片统一主 `Validate` 与能力闭包的 requirement 数量上限，并让 Apply/Prepare 使用验证时捕获的 manifest 标量快照；证据见 [requirement limit acceptance](../../../../tests/acceptance/ssa-hotpatch-requirement-limit.md) 和 [validated manifest snapshot acceptance](../../../../tests/acceptance/ssa-hotpatch-validated-manifest-snapshot.md)。这只关闭发布元数据被后改写的问题。validated token 仍借用 artifact 字节，尚无 owned immutable byte copy；完整调用图能力分析和发布隔离门禁仍属于本计划未完成项。
 
 本任务新增测试先独立运行，再进入完整 SSA 差分矩阵。
 

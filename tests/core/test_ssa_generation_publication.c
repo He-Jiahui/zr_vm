@@ -11,7 +11,9 @@ static void make_validated(SZrValidatedHotPatch *v, SZrArtifactExecIrView *a,
     memset(v, 0, sizeof(*v)); memset(a, 0, sizeof(*a)); memset(m, 0, sizeof(*m));
     a->moduleHash = module; a->buffer = (const TZrByte *)"x"; a->bufferLength = 1u;
     m->publicContractHash = 55u;
+    m->patchId = content;
     v->artifact = a; v->manifest = m; v->contentHash = content;
+    v->patchId = m->patchId; v->publicContractHash = m->publicContractHash;
     v->targetProfile = 2u; v->signatureVerified = ZR_TRUE;
     v->immutableContent = ZR_TRUE;
 }

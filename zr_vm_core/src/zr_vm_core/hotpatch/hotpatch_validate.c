@@ -28,7 +28,7 @@ TZrUInt64 ZrCore_HotPatch_ComputePolicyHash(const SZrHotPatchValidationInput *in
 }
 
 /* 部署前核对内容、基模块、公开契约、ABI、profile 和 host 授权；
- * validated 借用 artifact/manifest，调用方须维持二者与字节内容不变。 */
+ * validated 仍借用 artifact/manifest，但发布路径使用本次验证捕获的标量身份。 */
 EZrHotPatchCapabilityStatus ZrCore_HotPatch_Validate(
         const SZrHotPatchValidationInput *in,
         FZrHotPatchVerifySignature verifySignature,
@@ -71,9 +71,10 @@ EZrHotPatchCapabilityStatus ZrCore_HotPatch_Validate(
     }
     if ((m->requiredCapabilities & ~in->hostAllowedCapabilities) != 0u) return hp_fail(diagnostic,ZR_HOT_PATCH_CAPABILITY_ESCALATION,0,0,in->hostAllowedCapabilities,m->requiredCapabilities);
     required |= m->requiredCapabilities;
-    /* TODO: 令牌只保存借用指针并声称内容不可变；核查上层在 ApplyValidated
-     * 前是否锁定原存储，及被改写的 manifest 是否会越过已验证契约。 */
-    candidate.artifact=in->artifact; candidate.manifest=m; candidate.contentHash=contentHash; candidate.requiredCapabilities=required; candidate.validationPolicyHash=ZrCore_HotPatch_ComputePolicyHash(in); candidate.targetProfile=m->targetProfile; candidate.signatureVerified=ZR_TRUE; candidate.immutableContent=ZR_TRUE;
+    candidate.artifact=in->artifact; candidate.manifest=m; candidate.contentHash=contentHash;
+    candidate.patchId=m->patchId; candidate.publicContractHash=m->publicContractHash;
+    candidate.requiredCapabilities=required; candidate.validationPolicyHash=ZrCore_HotPatch_ComputePolicyHash(in);
+    candidate.targetProfile=m->targetProfile; candidate.signatureVerified=ZR_TRUE; candidate.immutableContent=ZR_TRUE;
     *validated = candidate;
     return hp_fail(diagnostic,ZR_HOT_PATCH_OK,0,0,0,0);
 }

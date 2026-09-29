@@ -17,9 +17,10 @@ EZrHotPatchApplyStatus ZrCore_HotPatch_ApplyValidated(
         SZrHotPatchGenerationHandle *outHandle, SZrHotPatchApplyDiagnostic *diagnostic) {
     if (outHandle) memset(outHandle, 0, sizeof(*outHandle));
     if (!manager || !registry || !validated || !validated->manifest || !validated->artifact ||
+        !validated->patchId || !validated->publicContractHash ||
         !validated->signatureVerified || !validated->immutableContent || !registry->entries || !registry->capacity || !outHandle)
         return apply_fail(diagnostic, ZR_HOT_PATCH_APPLY_INVALID_ARGUMENT, 0u, 0u, 0u, 0u);
-    TZrUInt64 id = validated->manifest->patchId, hash = validated->contentHash;
+    TZrUInt64 id = validated->patchId, hash = validated->contentHash;
     SZrHotPatchRegistryEntry *freeEntry = ZR_NULL;
     for (TZrUInt32 i = 0u; i < registry->capacity; ++i) {
         SZrHotPatchRegistryEntry *e = &registry->entries[i];

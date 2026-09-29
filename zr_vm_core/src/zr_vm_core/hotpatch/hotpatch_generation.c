@@ -53,13 +53,14 @@ void ZrCore_HotPatch_GenerationManager_Deinit(SZrHotPatchGenerationManager *m) {
 /* 准备槽位只记录已验证候选的不可变身份，不改变新调用的 active 指针。 */
 EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Prepare(SZrHotPatchGenerationManager *m,const SZrValidatedHotPatch *v,TZrUInt64 moduleHash,SZrHotPatchGenerationHandle *out,SZrHotPatchGenerationDiagnostic *d) {
     if(!m||!v||!out||!v->manifest||!v->artifact||!v->signatureVerified||!v->immutableContent ||
-       v->contentHash == 0u || moduleHash == 0u) return gen_fail(d,ZR_HOT_PATCH_GENERATION_INVALID_ARGUMENT,0,0,0);
+       v->contentHash == 0u || v->patchId == 0u || v->publicContractHash == 0u || moduleHash == 0u)
+        return gen_fail(d,ZR_HOT_PATCH_GENERATION_INVALID_ARGUMENT,0,0,0);
     memset(out,0,sizeof(*out)); gen_lock(m);
     SZrHotPatchVersionRecord *slot=ZR_NULL;
     for(TZrUInt32 i=0u;i<m->capacity;i++) if(m->records[i].state==ZR_HOT_PATCH_VERSION_FREE){slot=&m->records[i];break;}
     if(!slot){gen_unlock(m);return gen_fail(d,ZR_HOT_PATCH_GENERATION_CAPACITY,0,0,0);}
     TZrUInt64 g=gen_next(m); if(!g){gen_unlock(m);return gen_fail(d,ZR_HOT_PATCH_GENERATION_OVERFLOW,0,0,0);}
-    slot->generation=g; slot->moduleHash=moduleHash; slot->contentHash=v->contentHash; slot->publicContractHash=v->manifest->publicContractHash; slot->targetProfile=v->targetProfile; atomic_store_explicit(&slot->leaseCount,0u,memory_order_relaxed); slot->state=ZR_HOT_PATCH_VERSION_PREPARED; if(m->count<m->capacity)m->count++;
+    slot->generation=g; slot->moduleHash=moduleHash; slot->contentHash=v->contentHash; slot->publicContractHash=v->publicContractHash; slot->targetProfile=v->targetProfile; atomic_store_explicit(&slot->leaseCount,0u,memory_order_relaxed); slot->state=ZR_HOT_PATCH_VERSION_PREPARED; if(m->count<m->capacity)m->count++;
     out->record=slot; out->generation=g; out->leased=ZR_FALSE; gen_unlock(m); return gen_fail(d,ZR_HOT_PATCH_GENERATION_OK,0,g,0);
 }
 

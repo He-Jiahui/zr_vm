@@ -75,12 +75,15 @@ typedef TZrBool (*FZrHotPatchVerifySignature)(const TZrByte *content,
                                                TZrUInt32 signatureLength,
                                                TZrPtr userData);
 
-/** @brief 验证后交给 Prepare/Apply 的借用令牌，不复制或冻结 artifact 与 manifest。
- * TODO: 核查 host 能否在发布前改写底层内容；immutableContent 当前只是声明。 */
+/** @brief 验证后交给 Prepare/Apply 的令牌。
+ * artifact/manifest 指针仍由调用方持有；Apply/Prepare 使用验证时标量快照，
+ * 不从 manifest 重读这些字段。此结构不复制或固定 artifact 字节。 */
 typedef struct SZrValidatedHotPatch {
     const SZrArtifactExecIrView *artifact;
     const SZrHotPatchCapabilityManifest *manifest;
     TZrUInt64 contentHash;
+    TZrUInt64 patchId;
+    TZrUInt64 publicContractHash;
     TZrUInt64 requiredCapabilities;
     TZrUInt64 validationPolicyHash;
     TZrUInt32 targetProfile;
@@ -98,7 +101,7 @@ typedef struct SZrHotPatchDiagnostic {
 } SZrHotPatchDiagnostic;
 
 /** @brief 部署前同时核对字节哈希、基模块、ABI/profile、授权集合与 host 验签。
- * @pre verifySignature 可调用；输入指向的内容在验证及后续使用令牌期间保持稳定。
+ * @pre verifySignature 可调用；输入指针指向的存储在本次验证期间保持有效且稳定。
  * @return 成功才填充 validated；失败时清零输出并通过可选 diagnostic 报告原因。
  * @note requirementCount 不得超过 4096；超限会在
  * 调用签名回调和读取逐项需求前返回 ZR_HOT_PATCH_LIMIT，并填充 expected/actual。 */

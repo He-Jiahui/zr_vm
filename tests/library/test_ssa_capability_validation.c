@@ -1,5 +1,6 @@
 #include "zr_vm_core/capability_manifest.h"
 #include "zr_vm_core/hotpatch_capability.h"
+#include "zr_vm_core/hotpatch_rollback.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -146,6 +147,8 @@ int main(void) {
     TEST_CHECK(validated.artifact == ZR_NULL);
     TEST_CHECK(validated.manifest == ZR_NULL);
     TEST_CHECK(validated.contentHash == 0u);
+    TEST_CHECK(validated.patchId == 0u);
+    TEST_CHECK(validated.publicContractHash == 0u);
     TEST_CHECK(validated.requiredCapabilities == 0u);
     TEST_CHECK(validated.validationPolicyHash == 0u);
     TEST_CHECK(validated.targetProfile == 0u);
@@ -168,6 +171,73 @@ int main(void) {
     TEST_CHECK(status == ZR_HOT_PATCH_OK);
     TEST_CHECK(validated.requiredCapabilities == UINT64_C(0x01));
     TEST_CHECK(diagnostic.status == ZR_HOT_PATCH_OK);
+
+    /* Apply must publish metadata captured by validation even if the caller
+     * later changes the manifest and requirement array. */
+    {
+        SZrHotPatchVersionRecord records[2];
+        SZrHotPatchGenerationManager manager;
+        SZrHotPatchGenerationDiagnostic generationDiagnostic;
+        SZrHotPatchRegistryEntry registryEntries[2] = {{0}};
+        SZrHotPatchRegistry registry = {registryEntries, 2u, 0u};
+        SZrHotPatchGenerationHandle appliedHandle;
+        SZrHotPatchGenerationHandle activeHandle;
+        SZrHotPatchVersionView activeView;
+        SZrHotPatchApplyDiagnostic applyDiagnostic;
+        EZrHotPatchApplyStatus applyStatus;
+        EZrHotPatchGenerationStatus generationStatus;
+        TZrUInt64 originalContentHash;
+
+        manifest.patchId = 1u;
+        manifest.publicContractHash = 123u;
+        manifest.requiredCapabilities = 0u;
+        manifest.requirementCount = 1u;
+        manifest.requirements = &requirement;
+        requirement.requiredBits = UINT64_C(0x03);
+        input.expectedPatchId = 1u;
+        input.expectedContentHash = manifest.contentHash;
+        status = ZrCore_HotPatch_Validate(&input, verify, ZR_NULL, &validated,
+                                         &diagnostic);
+        TEST_CHECK(status == ZR_HOT_PATCH_OK);
+        originalContentHash = validated.contentHash;
+
+        requirement.requiredBits = UINT64_C(0x01);
+        manifest.patchId = 9u;
+        manifest.publicContractHash = 456u;
+        manifest.requiredCapabilities = UINT64_C(0x01);
+        TEST_CHECK(validated.requiredCapabilities == UINT64_C(0x03));
+        TEST_CHECK(validated.contentHash == originalContentHash);
+
+        generationStatus = ZrCore_HotPatch_GenerationManager_Init(
+                &manager, records, 2u, &generationDiagnostic);
+        TEST_CHECK(generationStatus == ZR_HOT_PATCH_GENERATION_OK);
+        if (generationStatus == ZR_HOT_PATCH_GENERATION_OK) {
+            applyStatus = ZrCore_HotPatch_ApplyValidated(
+                    &manager, &registry, &validated, 99u, &appliedHandle,
+                    &applyDiagnostic);
+            TEST_CHECK(applyStatus == ZR_HOT_PATCH_APPLY_OK);
+            if (applyStatus == ZR_HOT_PATCH_APPLY_OK) {
+                TEST_CHECK(registryEntries[0].patchId == 1u);
+                TEST_CHECK(registryEntries[0].contentHash == originalContentHash);
+                generationStatus = ZrCore_HotPatch_Generation_AcquireActive(
+                        &manager, &activeHandle, &generationDiagnostic);
+                TEST_CHECK(generationStatus == ZR_HOT_PATCH_GENERATION_OK);
+                if (generationStatus == ZR_HOT_PATCH_GENERATION_OK) {
+                    generationStatus = ZrCore_HotPatch_Generation_Resolve(
+                            &manager, &activeHandle, &activeView,
+                            &generationDiagnostic);
+                    TEST_CHECK(generationStatus == ZR_HOT_PATCH_GENERATION_OK);
+                    if (generationStatus == ZR_HOT_PATCH_GENERATION_OK) {
+                        TEST_CHECK(activeView.contentHash == originalContentHash);
+                        TEST_CHECK(activeView.publicContractHash == 123u);
+                    }
+                    (void)ZrCore_HotPatch_Generation_Release(
+                            &manager, &activeHandle, &generationDiagnostic);
+                }
+            }
+            ZrCore_HotPatch_GenerationManager_Deinit(&manager);
+        }
+    }
 
     return g_testFailureCount == 0u ? 0 : 1;
 }
