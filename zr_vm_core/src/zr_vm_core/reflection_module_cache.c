@@ -19,7 +19,7 @@
 #include "reflection_construction_native_internal.h"
 #include "reflection_object_internal.h"
 #include "reflection_type_resolve_native_internal.h"
-
+/** @brief 按导出名核对 native closure 的类型、回调身份及所属 runtime module。 */
 static TZrBool reflection_cached_export_is_valid(
         SZrState *state,
         SZrObjectModule *serviceModule,
@@ -41,7 +41,7 @@ static TZrBool reflection_cached_export_is_valid(
     return ZrCore_Reflection_BoundRuntimeNativeClosureIsValidInternal(
             state, closure, expectedFunction, runtimeModule);
 }
-
+/* 缓存服务必须是当前 provider 的完整就绪 module，四个公开导出缺一不可。 */
 static TZrBool reflection_cached_module_is_valid(
         SZrState *state,
         SZrObjectModule *serviceModule,
@@ -111,7 +111,14 @@ static TZrBool reflection_cached_module_is_valid(
                     ZrCore_Reflection_CreateInstanceNativeEntryInternal,
                     runtimeModule));
 }
-
+/**
+ * @brief 按所属 MetadataRuntime 获取或创建并验证反射服务 module。
+ * @pre state、runtime 及 runtime->module 有效，module 与 runtime 互相归属，且 module 属于 state 的 GC domain。
+ * @return 命中或创建并发布的有效服务 module；正常失败返回 null，损坏缓存不覆盖；OOM 可非局部抛出。
+ * @note 服务存入目标 module 的 protected 表；正常退出时恢复六个临时 VM root，成功后目标 module 获得 NATIVE_HANDLE pin。
+ * BUG: 多个 RUNNING mutator 并发查询或创建同一 runtime 时，proNodeMap 与 ignored-root 登记无同步，可能破坏缓存或丢失 GC 根。
+ * BUG: 公开入口未核 runtime module 的真实 GC 域；传入外域 runtime 可将临时根登记到错误 collector，并跨域写入缓存和 pin 元数据。
+ */
 SZrObjectModule *ZrCore_Reflection_GetOrCreateModuleForRuntime(
         SZrState *state,
         SZrMetadataRuntime *runtime) {
@@ -132,11 +139,11 @@ SZrObjectModule *ZrCore_Reflection_GetOrCreateModuleForRuntime(
     SZrObjectModule *serviceModule;
     SZrObjectModule *result = ZR_NULL;
     TZrBool runtimeModulePinned = ZR_FALSE;
-
+    /* state、runtime 或所属 module 不完整时不建立缓存。 */
     if (state == ZR_NULL || runtime == ZR_NULL || runtime->module == ZR_NULL) {
         return ZR_NULL;
     }
-
+    /* module 必须与 runtime 反向归属；先临时保活目标再分配对象。 */
     runtimeModule = runtime->module;
     if (runtimeModule->super.super.type != ZR_RAW_OBJECT_TYPE_OBJECT ||
         runtimeModule->super.super.isNative ||
@@ -148,8 +155,9 @@ SZrObjectModule *ZrCore_Reflection_GetOrCreateModuleForRuntime(
                 &runtimeModulePinned)) {
         return ZR_NULL;
     }
-
+    /* 六个槽根住 cache key、四个导出名和 service；正常退出统一恢复栈顶。 */
     rootBase = state->stackTop.valuePointer;
+    /* BUG: 本次新增 ignored root 后若扩栈 OOM 非局部抛出，会绕过 cleanup 的唯一 unpin，令临时根滞留。 */
     rootBase = ZrCore_Function_CheckStackAndGc(state, 6u, rootBase);
     cacheName = ZrCore_String_CreateFromNative(
             state, ZR_REFLECTION_SERVICE_MODULE_CACHE_NAME);
@@ -160,7 +168,7 @@ SZrObjectModule *ZrCore_Reflection_GetOrCreateModuleForRuntime(
     ZrCore_Value_InitAsRawObject(
             state, cacheNameRoot, ZR_CAST_RAW_OBJECT_AS_SUPER(cacheName));
     state->stackTop.valuePointer = rootBase + 1;
-
+    /* 后续导出名各自入栈 root，避免分配时丢失尚未安装的名称。 */
     makeExportName = ZrCore_String_CreateFromNative(
             state, ZR_REFLECTION_MAKE_GENERIC_METHOD_EXPORT);
     if (makeExportName == ZR_NULL) {
@@ -204,7 +212,7 @@ SZrObjectModule *ZrCore_Reflection_GetOrCreateModuleForRuntime(
             createExportNameRoot,
             ZR_CAST_RAW_OBJECT_AS_SUPER(createExportName));
     state->stackTop.valuePointer = rootBase + 5;
-
+    /* cache key 仅在目标 module 的 protected 表；坏命中失败关闭且不覆盖。 */
     cachedValue = ZrCore_Module_GetProExport(state, runtimeModule, cacheName);
     if (cachedValue != ZR_NULL) {
         if (cachedValue->type != ZR_VALUE_TYPE_OBJECT || cachedValue->isNative ||
@@ -220,12 +228,12 @@ SZrObjectModule *ZrCore_Reflection_GetOrCreateModuleForRuntime(
             goto cleanup;
         }
     }
-
+    /* BUG: miss builder 可再次扩栈并搬移底层数组，旧 rootBase 在此处写第六槽时已可能失效。 */
     serviceRoot = ZrCore_Stack_GetValue(rootBase + 5);
     ZrCore_Value_InitAsRawObject(
             state, serviceRoot, ZR_CAST_RAW_OBJECT_AS_SUPER(serviceModule));
     state->stackTop.valuePointer = rootBase + 6;
-
+    /* 命中或新建的 service 本应由第六槽保护，再用于完整性校验和缓存发布。 */
     cacheNameRoot = ZrCore_Stack_GetValue(rootBase);
     makeExportNameRoot = ZrCore_Stack_GetValue(rootBase + 1);
     resolveExportNameRoot = ZrCore_Stack_GetValue(rootBase + 2);
@@ -249,6 +257,7 @@ SZrObjectModule *ZrCore_Reflection_GetOrCreateModuleForRuntime(
                     runtimeModule)) {
             goto cleanup;
         }
+        /* TODO: 强制 GcFull 落在 AddProExport 内时，核实 HashSet_Add 的表和根槽地址稳定。 */
         ZrCore_Module_AddProExport(state, runtimeModule, cacheName, serviceRoot);
         cacheNameRoot = ZrCore_Stack_GetValue(rootBase);
         makeExportNameRoot = ZrCore_Stack_GetValue(rootBase + 1);
@@ -269,7 +278,7 @@ SZrObjectModule *ZrCore_Reflection_GetOrCreateModuleForRuntime(
             goto cleanup;
         }
     }
-
+    /* 命中与 miss 发布共用最终完整性校验。 */
     if (!reflection_cached_module_is_valid(
                 state,
                 serviceModule,
@@ -280,12 +289,13 @@ SZrObjectModule *ZrCore_Reflection_GetOrCreateModuleForRuntime(
                 runtimeModule)) {
         goto cleanup;
     }
+    /* BUG: pinned-region 描述符扩容 OOM 无失败返回，零 region id 会漏计区段快照；本函数仍返回服务。 */
     ZrCore_GarbageCollector_PinObject(
             state,
             ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeModule),
             ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE);
     result = serviceModule;
-
+    /* 正常返回与 goto cleanup 恢复调用者 stackTop，并撤销本次新增的临时 ignored root。 */
 cleanup:
     state->stackTop.valuePointer = rootBase;
     ZrCore_Reflection_ObjectUnpinRaw(
