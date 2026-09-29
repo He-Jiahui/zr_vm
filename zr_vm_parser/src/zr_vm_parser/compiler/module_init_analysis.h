@@ -96,9 +96,14 @@ ZR_PARSER_API TZrBool ZrParser_ModuleInitAnalysis_FinalizeCurrentSourceModule(SZ
                                                                               SZrString *moduleName,
                                                                               SZrFunction *function);
 ZR_PARSER_API TZrBool ZrParser_ModuleInitAnalysis_EnsureSummary(SZrCompilerState *cs, SZrString *moduleName);
+/** @brief 将二进制 IO 流解析成供模块初始化摘要、导入类型元数据及 LSP 模块元数据分析的临时源树。
+ *  @pre state 与 state->global 有效，outSource 可写；io 应有有效 read 回调和完整游标状态。
+ *  @return 成功时把源树交给调用方并返回 true；失败时将 *outSource 置空并返回 false。
+ *  @note 不关闭 io；调用方在本函数后关闭流，并在分析结束后调用 FreeBinaryMetadataSource。 */
 ZR_PARSER_API TZrBool ZrParser_ModuleInitAnalysis_TryLoadBinaryMetadataSourceFromIo(SZrState *state,
                                                                                      const SZrIo *io,
                                                                                      SZrIoSource **outSource);
+/** @brief 回收 TryLoad 返回源树的原生数组，使用创建它的同一 global allocator。 */
 ZR_PARSER_API void ZrParser_ModuleInitAnalysis_FreeBinaryMetadataSource(SZrGlobalState *global, SZrIoSource *source);
 ZR_PARSER_API void ZrParser_ModuleInitAnalysis_GlobalCleanup(SZrGlobalState *global, TZrPtr opaqueState);
 
