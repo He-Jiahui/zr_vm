@@ -1,8 +1,8 @@
-// Host-driven concurrent major collection lifecycle.
+// 本文件把域内 major 回收拆成初始快照、并发标记切片和停世界收尾。
 
 #include "gc/gc_internal.h"
 #include "gc/gc_domain_internal.h"
-
+/* 时钟回退或粒度为零时仍返回非零耗时，供阶段遥测保持可判读。 */
 static TZrUInt64 concurrent_major_elapsed_us(TZrUInt64 startedUs) {
     TZrUInt64 finishedUs = garbage_collector_now_us();
     TZrUInt64 durationUs = finishedUs >= startedUs
@@ -10,7 +10,7 @@ static TZrUInt64 concurrent_major_elapsed_us(TZrUInt64 startedUs) {
                                    : 0u;
     return durationUs > 0u ? durationUs : 1u;
 }
-
+/* GcStep 在目标域停世界时调用；开启并发 major，让 mutator 随后在写屏障保护下恢复。 */
 TZrSize garbage_collector_concurrent_major_begin(SZrState *state,
                                                   TZrBool forceCompact) {
     SZrGarbageCollector *collector;
@@ -27,7 +27,7 @@ TZrSize garbage_collector_concurrent_major_begin(SZrState *state,
     if (collector->concurrentMajorActive) {
         return 0u;
     }
-
+    /* TODO: 初始暂停先全表重置标记；确认 pauseBudgetUs 是否也应限制这段 O(heap) preparation。 */
     startedUs = garbage_collector_now_us();
     work = garbage_collector_prepare_major_collection(state);
     collector->waitToScanObjectList = ZR_NULL;
@@ -38,15 +38,15 @@ TZrSize garbage_collector_concurrent_major_begin(SZrState *state,
     collector->concurrentMajorActive = ZR_TRUE;
     collector->concurrentMajorForceCompact = forceCompact;
     collector->concurrentMajorMarkDrained = ZR_FALSE;
-    collector->concurrentMajorCycleId++;
+    collector->concurrentMajorCycleId++; /* TODO: 当前仓内未见 cycle id 读取方，确认此字段用途。 */
     if (collector->concurrentMajorCycleId == 0u) {
         collector->concurrentMajorCycleId = 1u;
     }
-    collector->concurrentMajorWork = work;
+    collector->concurrentMajorWork = work; /* TODO: 当前仓内未见该累计器的读取方，确认是否仍需维护。 */
     collector->collectionPhase =
             ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_MARK_CONCURRENT;
     collector->statsSnapshot.collectionPhase = collector->collectionPhase;
-
+    /* 初始暂停内重启标记并扫描全部已登记 mutator 根；恢复后由屏障补入新边。 */
     ZrGarbageCollectorRestartCollection(state);
     work += garbage_collector_snapshot_concurrent_thread_roots(state);
     collector->concurrentMajorWork = work;
@@ -60,7 +60,7 @@ TZrSize garbage_collector_concurrent_major_begin(SZrState *state,
     collector->statsSnapshot.concurrentMajorActive = ZR_TRUE;
     return work > 0u ? work : 1u;
 }
-
+/* 每次至多弹出 objectBudget 个灰对象；对象字段与写屏障共用域 mutation lock。 */
 TZrSize garbage_collector_concurrent_major_mark_slice(
         SZrState *state,
         TZrSize objectBudget) {
@@ -68,7 +68,7 @@ TZrSize garbage_collector_concurrent_major_mark_slice(
     TZrSize work = 0u;
     TZrUInt64 startedUs;
     TZrUInt64 durationUs;
-
+    /* BUG: concurrentMajorMarkDrained 在锁内写、下方锁外读；同域并发 GcStep 可形成数据竞争。 */
     if (state == ZR_NULL || state->global == ZR_NULL ||
         state->global->garbageCollector == ZR_NULL) {
         return 0u;
@@ -81,7 +81,7 @@ TZrSize garbage_collector_concurrent_major_mark_slice(
     if (objectBudget == 0u) {
         objectBudget = 1u;
     }
-
+    /* objectBudget 限制队列弹出次数而非耗时；零值归一为一次，单个对象扫描仍可很重。 */
     startedUs = garbage_collector_now_us();
     ZrCore_GcDomain_MutationLock(state->gcDomain);
     while (objectBudget-- > 0u) {
@@ -98,7 +98,7 @@ TZrSize garbage_collector_concurrent_major_mark_slice(
         work += ZrGarbageCollectorPropagateMark(state);
     }
     ZrCore_GcDomain_MutationUnlock(state->gcDomain);
-
+    /* BUG: gc.c 允许多个 RUNNING mutator 同时进入此函数；锁外普通字段累加形成数据竞争。 */
     collector->concurrentMajorWork += work;
     durationUs = concurrent_major_elapsed_us(startedUs);
     collector->statsSnapshot.concurrentMajorMarkSliceCount++;
@@ -108,7 +108,7 @@ TZrSize garbage_collector_concurrent_major_mark_slice(
     }
     return work;
 }
-
+/* 仅在标记排空后由停世界路径调用，再交给既有 major remark/sweep/可选压缩流程。 */
 TZrSize garbage_collector_concurrent_major_finish(
         SZrState *state,
         TZrBool *outDidCompact) {
@@ -127,7 +127,7 @@ TZrSize garbage_collector_concurrent_major_finish(
         !collector->concurrentMajorMarkDrained) {
         return 0u;
     }
-
+    /* BUG: 这里同步完成 atomic/remark、sweep 与 finalizer；remarkBudgetUs 未限制这段停顿。 */
     work = garbage_collector_finish_generational_major_collection(
             state, collector->concurrentMajorForceCompact, outDidCompact);
     collector->concurrentMajorWork += work;
@@ -143,7 +143,7 @@ TZrSize garbage_collector_concurrent_major_finish(
     collector->gcStatus = ZR_GARBAGE_COLLECT_STATUS_STOP_BY_SELF;
     return work > 0u ? work : 1u;
 }
-
+/* ZrCore_GarbageCollector_GcFull 在停世界并持 mutation lock 后调用，以废弃半轮标记。 */
 void garbage_collector_concurrent_major_cancel(SZrState *state) {
     SZrGarbageCollector *collector;
 
@@ -151,7 +151,7 @@ void garbage_collector_concurrent_major_cancel(SZrState *state) {
         state->global->garbageCollector == ZR_NULL) {
         return;
     }
-
+    /* 完整回收路径另行清理 release 队列并复位最终 phase；此处丢弃并发标记队列。 */
     collector = state->global->garbageCollector;
     collector->concurrentMajorActive = ZR_FALSE;
     collector->concurrentMajorForceCompact = ZR_FALSE;
