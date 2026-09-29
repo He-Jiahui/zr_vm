@@ -487,7 +487,16 @@ ZrParser_CanonicalType_ResolveValueConstructorContract(
         TZrSymbolId *outConstructorSymbolId,
         TZrUInt32 *outParameterIndices);
 
+/**
+ * @brief 在语义上下文复用前清空规范类型池和对应的查找索引。
+ * @pre context 是已初始化且仍持有有效 state 的语义上下文。
+ * @note 旧规范类型 ID 随分析轮次失效；节点自己的容器被释放，池容量留给下一轮分析。
+ */
 ZR_PARSER_API void ZrParser_CanonicalType_Reset(struct SZrSemanticContext *context);
+/**
+ * @brief 在语义上下文销毁时释放规范类型池及查找索引。
+ * @pre context 是仍持有有效 state 的语义上下文；调用后不得再使用该池。
+ */
 ZR_PARSER_API void ZrParser_CanonicalType_Free(struct SZrSemanticContext *context);
 ZR_PARSER_API void ZrParser_CanonicalTypeIndex_Init(struct SZrSemanticContext *context);
 ZR_PARSER_API void ZrParser_CanonicalTypeIndex_Reset(struct SZrSemanticContext *context);

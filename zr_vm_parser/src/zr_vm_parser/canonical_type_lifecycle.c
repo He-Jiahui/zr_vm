@@ -3,6 +3,7 @@
 
 #include "zr_vm_core/array.h"
 
+/* SemanticContext_Reset 先清空类型定义，再在此释放节点自有容器；外层池仍可供下一轮分析复用。 */
 void ZrParser_CanonicalType_Reset(SZrSemanticContext *context) {
     TZrSize index;
 
@@ -27,10 +28,12 @@ void ZrParser_CanonicalType_Reset(SZrSemanticContext *context) {
             ZrCore_Array_Free(context->state, &node->data.function.parameterContracts);
         }
     }
+    /* 旧索引不能跨分析轮次保留，否则下一轮驻留可能命中已释放的节点内容。 */
     context->canonicalTypes.length = 0;
     ZrParser_CanonicalTypeIndex_Reset(context);
 }
 
+/* SemanticContext_Free 在清理类型定义后调用；复用清理完成才释放池和索引的存储。 */
 void ZrParser_CanonicalType_Free(SZrSemanticContext *context) {
     if (context == ZR_NULL) {
         return;
