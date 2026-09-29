@@ -409,6 +409,9 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             zr_vm_hash_set_dense_paths_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_hash_set_dense_paths.c
     )
+    add_test(NAME hash_set_dense_paths
+            COMMAND zr_vm_hash_set_dense_paths_test)
+    set_tests_properties(hash_set_dense_paths PROPERTIES LABELS "core")
     zr_vm_add_unity_test_target(
             zr_vm_execution_member_access_fast_paths_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_execution_member_access_fast_paths.c

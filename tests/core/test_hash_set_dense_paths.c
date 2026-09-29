@@ -152,8 +152,6 @@ static void test_hash_set_dense_growth_uses_full_bucket_capacity_as_append_thres
     ZrTests_Runtime_State_Destroy(state);
 }
 
-/* TODO: CMake 当前只构建此目标，仓库内未见 CTest/suite 引用；
- * 核查 CI 是否单独执行，若无则接入常规测试入口。 */
 int main(void) {
     UNITY_BEGIN();
 

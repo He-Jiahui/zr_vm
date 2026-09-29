@@ -55,3 +55,28 @@ from the recorded task snapshot revision. Direct execution reports hash-set
 0 Ignored, both exit0. The former GC-fragment abort is gone without suppressing
 or selecting away any compiler integration test. GCC/MSVC and final sanitizer
 results continue in the parent Astra acceptance record.
+
+## Current-source CTest registration
+
+On 2026-09-29, the existing `zr_vm_hash_set_dense_paths_test` target was
+present, but this CTest discovery query returned `Total Tests: 0`:
+
+```text
+wsl.exe --exec ctest --test-dir /mnt/d/tmp/zr_vm/close-proxy-core-red -N -R hash_set_dense_paths
+```
+
+The target is now registered as `hash_set_dense_paths`. It was rebuilt from
+current source in the same D-drive cache using CMake 3.22.1 and WSL GCC 11.4.0:
+
+```text
+wsl.exe --exec cmake --build /mnt/d/tmp/zr_vm/close-proxy-core-red --target zr_vm_hash_set_dense_paths_test -- -j4
+wsl.exe --exec /mnt/d/tmp/zr_vm/close-proxy-core-red/bin/zr_vm_hash_set_dense_paths_test
+wsl.exe --exec ctest --test-dir /mnt/d/tmp/zr_vm/close-proxy-core-red -N -R hash_set_dense_paths
+wsl.exe --exec ctest --test-dir /mnt/d/tmp/zr_vm/close-proxy-core-red -R hash_set_dense_paths --output-on-failure --no-tests=error
+```
+
+The build exited 0, the direct Unity executable reported 4 tests / 0 failures,
+CTest discovery listed one test, and CTest passed 1/1. The four existing cases
+cover dense growth threshold plus pooled, standalone, and mixed-pair removal.
+This registration closes the test-discovery gap only; it does not claim the
+broader map/string optimization gates in SSA plan 05.03 are complete.
