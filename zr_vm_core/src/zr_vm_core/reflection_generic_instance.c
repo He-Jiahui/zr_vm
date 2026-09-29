@@ -1,3 +1,4 @@
+/* 从元数据 TypeSpec 和借用的构造请求恢复泛型类型身份，供对象构造与解释器回退复用。 */
 #include "zr_vm_core/reflection.h"
 
 #include "reflection_generic_argument_internal.h"
@@ -6,8 +7,10 @@
 #include "zr_vm_core/metadata_runtime.h"
 #include "zr_vm_core/value.h"
 
+/* 与请求树校验和候选签名匹配共用的失效关闭深度上限。 */
 #define ZR_REFLECTION_GENERIC_ARGUMENT_MAX_RECURSION_DEPTH 64u
 
+/** @brief 为所有解析失败路径提供相同的空结果，避免调用方沿用旧的 route 或 layout。 */
 static void reflection_clear_dynamic_generic_type_instance(
         SZrReflectionDynamicGenericTypeInstance *instance) {
     if (instance == ZR_NULL) {
@@ -18,6 +21,12 @@ static void reflection_clear_dynamic_generic_type_instance(
     instance->typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
 }
 
+/**
+ * @brief 从现有 TypeSpec 恢复泛型实例身份，并按注册的静态布局选择 AOT 或解释器回退。
+ * @pre runtime 和 outInstance 有效；TypeSpec 属于该 runtime 的元数据。
+ * @return 元数据绑定有效时返回 true；未注册布局仍是成功的解释器回退，不伪造 layout。
+ * @note 失败时清空输出；返回的 record 和 layout 指针借用自 runtime。
+ */
 TZrBool ZrCore_Reflection_ResolveDynamicGenericTypeInstance(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken typeSpecToken,
@@ -49,6 +58,12 @@ TZrBool ZrCore_Reflection_ResolveDynamicGenericTypeInstance(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 把请求模块的 TypeSpec 绑定到不同提供者模块的同一泛型实例身份。
+ * @pre 两个 runtime 所属模块不同，绑定记录及元数据在调用期间保持有效。
+ * @return 仅在 token、版本、签名身份和完整签名字节均兼容时，从 provider 解析 route/layout。
+ * @note 失败时清空输出；仓内直接调用位于跨模块绑定测试。
+ */
 TZrBool ZrCore_Reflection_ResolveBoundGenericTypeInstanceFromProvider(
         SZrMetadataRuntime *requesterRuntime,
         TZrMetadataToken requesterTypeSpecToken,
@@ -82,6 +97,7 @@ TZrBool ZrCore_Reflection_ResolveBoundGenericTypeInstanceFromProvider(
             requesterRuntime, requesterTypeSpecToken);
     binding = ZrCore_Function_FindModuleMetadataBinding(
             requesterFunction, requesterTypeSpecToken);
+    /* 先核对 requester 预期身份与 provider 版本，再接受绑定后的 token；避免仅凭 RID 猜测跨模块类型。 */
     if (requesterRecord == ZR_NULL || requesterSignatureRecord == ZR_NULL || binding == ZR_NULL ||
         binding->refToken != requesterTypeSpecToken ||
         binding->refSignatureToken != requesterSignatureRecord->token ||
@@ -113,6 +129,7 @@ TZrBool ZrCore_Reflection_ResolveBoundGenericTypeInstanceFromProvider(
         providerSignatureRecord->signatureHash != binding->resolvedSignatureHash) {
         return ZR_FALSE;
     }
+    /* token/hash 相等仍不足以证明泛型实参相同；两侧完整规范签名字节也须一致。 */
     if (!ZrCore_MetadataRuntime_ReadTypeSpecSignatureView(
                 requesterRuntime, requesterTypeSpecToken, &requesterSignatureView) ||
         !ZrCore_MetadataRuntime_ReadTypeSpecSignatureView(
@@ -133,6 +150,11 @@ TZrBool ZrCore_Reflection_ResolveBoundGenericTypeInstanceFromProvider(
             providerRuntime, binding->resolvedMetadataToken, outInstance);
 }
 
+/**
+ * @brief 在 TypeSpec/MethodSpec 查询前验证借用的递归实参树与当前 runtime 元数据。
+ * @pre 各子节点在递归期间可读；含 token 的节点必须提供有效 runtime；外层从 depth=0 调用。
+ * @return 无效类别、缺失子节点、无效 token 或达到深度上限时返回 false。
+ */
 TZrBool ZrCore_Reflection_ValidateGenericTypeArgument(
         SZrMetadataRuntime *runtime,
         const SZrReflectionGenericTypeArgument *argument,
@@ -201,6 +223,10 @@ TZrBool ZrCore_Reflection_ValidateGenericTypeArgument(
                                                                           depth + 1u));
 
         case ZR_REFLECTION_GENERIC_TYPE_ARGUMENT_UNION:
+            /*
+             * TODO: 名称偏移目前只要求非零，匹配器也只比较数值；需确认公开请求是否必须使用
+             *       当前 runtime 的有效 string-heap 偏移，并确定在何处验证这一归属契约。
+             */
             if (argument->primitiveValueType != 0u || argument->typeToken != 0u ||
                 argument->unionValueType <= (TZrUInt32)ZR_VALUE_TYPE_NULL ||
                 argument->unionValueType >= (TZrUInt32)ZR_VALUE_TYPE_UNKNOWN ||
@@ -222,6 +248,7 @@ TZrBool ZrCore_Reflection_ValidateGenericTypeArgument(
     }
 }
 
+/** @brief 用完整、有界的编码跨度比较嵌套 TypeSpec，避免仅凭 token/hash 把不同结构合并。 */
 static TZrBool reflection_signature_node_spans_match(
         const SZrZrpMetadataPoolSliceView *leftBlob,
         const SZrMetadataRuntimeSignatureTypeNodeView *leftNode,
@@ -244,6 +271,7 @@ static TZrBool reflection_signature_node_spans_match(
                                               leftLength) == 0);
 }
 
+/** @brief 将请求的类型 token 展开为签名节点，并与没有直接 token 的复合子节点比较。 */
 static TZrBool reflection_signature_node_matches_type_token(
         SZrMetadataRuntime *runtime,
         const SZrZrpMetadataPoolSliceView *candidateBlob,
@@ -274,6 +302,7 @@ static TZrBool reflection_signature_node_matches_type_token(
                                                   &requestedNode);
 }
 
+/* 子列表比较需要递归回到主匹配器，先声明共享入口。 */
 TZrBool ZrCore_Reflection_GenericTypeArgumentMatchesSignatureNode(
         SZrMetadataRuntime *runtime,
         const SZrZrpMetadataPoolSliceView *candidateBlob,
@@ -282,6 +311,7 @@ TZrBool ZrCore_Reflection_GenericTypeArgumentMatchesSignatureNode(
         const SZrReflectionGenericTypeArgument *argument,
         TZrUInt32 depth);
 
+/** @brief 按元数据顺序逐项比较 tuple/union 子节点；任一读取或结构匹配失败即拒绝。 */
 static TZrBool reflection_generic_type_child_list_matches(
         SZrMetadataRuntime *runtime,
         const SZrZrpMetadataPoolSliceView *candidateBlob,
@@ -308,6 +338,11 @@ static TZrBool reflection_generic_type_child_list_matches(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 将已验证的请求实参树与候选元数据签名节点按类别递归比较。
+ * @pre candidateBlob、candidateNode、argument 有效；调用方先验证请求树；depth 受共同上限约束。
+ * @note 已解析的顶层类型 token 优先按 token 身份比较；复合子节点无独立 token 时才比较其签名。
+ */
 TZrBool ZrCore_Reflection_GenericTypeArgumentMatchesSignatureNode(
         SZrMetadataRuntime *runtime,
         const SZrZrpMetadataPoolSliceView *candidateBlob,
@@ -408,6 +443,7 @@ TZrBool ZrCore_Reflection_GenericTypeArgumentMatchesSignatureNode(
     }
 }
 
+/** @brief 将 TypeSpec 的位置索引适配到共享签名匹配器，使请求解析不直接依赖 blob 编码。 */
 static TZrBool reflection_generic_type_argument_matches(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken typeSpecToken,
@@ -429,6 +465,10 @@ static TZrBool reflection_generic_type_argument_matches(
             0u);
 }
 
+/**
+ * @brief 核对候选 TypeSpec 的开放基类型、元数及全部有序实参。
+ * @note outBaseMatches 即使在实参失配时仍标记已见过该基类型，供解释器回退判定使用。
+ */
 static TZrBool reflection_type_spec_matches_request(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken typeSpecToken,
@@ -457,6 +497,12 @@ static TZrBool reflection_type_spec_matches_request(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 为开放泛型类型和请求实参寻找现有 TypeSpec，或返回可解释执行的未物化组合。
+ * @pre arguments 中的树在本次调用及返回 carrier 的消费期间可读；runtime 属于目标元数据模块。
+ * @return 现有精确组合复用其 AOT/deopt route；仅当开放基类型已有绑定而组合缺失时返回无 token 的 deopt carrier。
+ * @note 精确命中和回退结果都借用 requestedArguments；对象构造方须在调用方释放该树前复制。
+ */
 TZrBool ZrCore_Reflection_ResolveConstructedGenericType(
         SZrMetadataRuntime *runtime,
         TZrMetadataToken genericBaseToken,
@@ -513,10 +559,16 @@ TZrBool ZrCore_Reflection_ResolveConstructedGenericType(
         }
     }
 
+    /* 仅对已证明存在泛型基类型绑定的请求开放解释器回退，避免凭任意 TypeDef 伪造组合。 */
+    /*
+     * BUG: TypeDef 的声明元数未与 argumentCount 比较；同 base 的 TypeSpec 即使元数失配，
+     *      仍会使 hasGenericBaseBinding 为真，错误地接受少实参请求为解释器回退实例。
+     */
     if (!hasGenericBaseBinding) {
         return ZR_FALSE;
     }
 
+    /* 未命中的请求没有元数据 TypeSpec；保留借用的请求树，交给后续构造器深拷贝。 */
     outInstance->route = ZR_REFLECTION_GENERIC_INSTANCE_ROUTE_INTERPRETER_DEOPT;
     outInstance->genericBaseToken = genericBaseToken;
     outInstance->genericBaseRecord = baseRecord;
@@ -525,6 +577,11 @@ TZrBool ZrCore_Reflection_ResolveConstructedGenericType(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 在创建反射对象或解释器实例前，按当前 runtime 重新解析并核对先前的 carrier。
+ * @pre 输入 carrier 与其借用的 requestedArguments 在本次调用内仍有效。
+ * @return 有效输入与输出下，route、token、签名、基类型和布局全部一致时输出新结果；重解析或比较失败时清空输出。
+ */
 TZrBool ZrCore_Reflection_RevalidateDynamicGenericTypeInstance(
         SZrMetadataRuntime *runtime,
         const SZrReflectionDynamicGenericTypeInstance *instance,
