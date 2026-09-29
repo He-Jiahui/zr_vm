@@ -22,6 +22,7 @@ TZrBool ZrParser_TypeInferenceLoopAssignment_StatementIsPlainBreak(SZrAstNode *s
 
 static TZrBool type_inference_loop_assignment_block_guarantees_plain_break(SZrAstNode *block);
 
+// 仅按受支持回放形状作 AST 结构启发式识别，不是通用控制流证明；结果仅作 step 优化线索；范围改进仍须待后续计划收集成功后才进入 join/提交。
 TZrBool ZrParser_TypeInferenceLoopAssignment_StatementGuaranteesPlainBreak(SZrAstNode *statement) {
     SZrAstNode *expression;
     SZrIfExpression *ifExpression;
@@ -53,6 +54,7 @@ TZrBool ZrParser_TypeInferenceLoopAssignment_StatementGuaranteesPlainBreak(SZrAs
                    ifExpression->elseExpr);
 }
 
+// TODO: 按块内顺序作结构启发式扫描，未知语句可能被略过；若计划收集器将来支持 return/throw 等终止语句，扩展识别并补终止语句后接 break 的回归。
 static TZrBool type_inference_loop_assignment_block_guarantees_plain_break(SZrAstNode *block) {
     SZrAstNodeArray *body;
     TZrSize index;
