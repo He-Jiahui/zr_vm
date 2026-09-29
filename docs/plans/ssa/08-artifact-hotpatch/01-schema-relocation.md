@@ -46,6 +46,7 @@ plan_sources:
   - "user: 2026-09-29 EIS5 scalar SUB extension"
   - "user: 2026-09-29 EIS5 scalar MUL extension"
   - "user: 2026-09-29 EIS5 scalar DIV extension"
+  - "user: 2026-09-29 EIS5 two-DIV effect-chain extension"
 tests:
   - tests/library/test_ssa_schema_relocation.c
   - tests/parser/test_artifact_schema_source_roundtrip.c
@@ -58,6 +59,7 @@ tests:
   - tests/library/test_ssa_exec_ir_artifact_v6_eis5_sub.inc
   - tests/library/test_ssa_exec_ir_artifact_v6_eis5_mul.inc
   - tests/library/test_ssa_exec_ir_artifact_v6_eis5_div.inc
+  - tests/library/test_ssa_exec_ir_artifact_v6_eis5_div_chain.inc
   - tests/library/test_ssa_exec_ir_artifact_v6_add.inc
   - tests/acceptance/ssa-artifact-v6-canonical-exec-ir.md
   - tests/acceptance/ssa-artifact-v6-eis3-counted-cfg.md
@@ -69,6 +71,7 @@ tests:
   - tests/acceptance/ssa-artifact-v6-eis5-sub.md
   - tests/acceptance/ssa-artifact-v6-eis5-mul.md
   - tests/acceptance/ssa-artifact-v6-eis5-div.md
+  - tests/acceptance/ssa-artifact-v6-eis5-div-chain.md
   - tests/acceptance/ssa-artifact-v6-eri1-relocation-boundary.md
 doc_type: milestone-detail
 status: planned
@@ -201,6 +204,25 @@ DIV dynamic size query；Clang 与 MSVC 当前源码的 `artifact_schema`、
 因 DIV 现已加入 allowlist，其仍不支持 opcode 回归改用 ARITHMETIC。完整
 08.01 的其他 binding、relocation、ExecBC、AOT 门禁仍未满足。实现范围见
 [EIS5 DIV 验收](../../../../tests/acceptance/ssa-artifact-v6-eis5-div.md)。
+
+**EIS5 双 DIV effect-chain 子切片（已验证）：** 允许一个函数在同一直线
+block 内依次执行最多两条 i64 `DIV`，分别使用 `MAY_THROW` 与 effect token
+1→2、2→3；EIS5 v5 header 和记录宽度保持不变，其他指令的 effect 字段仍
+必须为零。test-only RED 构图先通过 VerifyModule 和 Oracle，计算
+`(84 / -7) / 3 = -4`，随后旧 writer 在第二条 DIV 的 effectIn 偏移 820
+返回 `INVALID_SECTION`，命中原有固定 1→2 检查。独立 MSVC 目标构建及
+`artifact_schema`、`ssa_schema_relocation`、
+`ssa_exec_ir_artifact_v6_write`、`ssa_exec_ir_artifact_v6_roundtrip` 四项
+CTest 已通过。Clang 目标构建命令完成 359/359、退出码 0；原 CMake job
+经过 VerifyGlobs 和自动重新生成后自然继续完成，未使用备用 harness，空的
+scratch 目录已删除。Clang 当前源码四项 CTest 也全部通过；具体命令与耗时
+见 [EIS5 双 DIV 验收记录](../../../../tests/acceptance/ssa-artifact-v6-eis5-div-chain.md)。
+本子切片不表示完整 08.01 已完成。
+旧 reader 若只支持单 DIV 会拒绝第二条 DIV 的 effect pair，早期 EIS5
+reader 则在 opcode 处拒绝 DIV。
+本叶不扩展跨 block 或任意长度 effect chain，也不关闭完整 08.01。
+范围与当前 RED 见
+[EIS5 双 DIV 验收](../../../../tests/acceptance/ssa-artifact-v6-eis5-div-chain.md)。
 
 ## 依赖与交付范围
 

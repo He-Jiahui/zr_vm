@@ -51,10 +51,24 @@ static TZrBool eis5_range_fits(SZrExecIrRange range, TZrUInt32 count) {
     return (TZrBool)((TZrUInt64)range.start + range.count <= count);
 }
 
+static TZrUInt32 eis5_wire_instruction_block_id(
+        const SZrExecIrBlock *blocks, TZrUInt32 blockCount,
+        TZrUInt32 instructionIndex) {
+    for (TZrUInt32 index = 0u; index < blockCount; ++index) {
+        TZrUInt32 start = blocks[index].instructions.start;
+        if (instructionIndex >= start &&
+            instructionIndex - start < blocks[index].instructions.count)
+            return blocks[index].id;
+    }
+    return ZR_EXEC_IR_BLOCK_ID_INVALID;
+}
+
 static EZrArtifactExecIrStatus eis5_validate_wire(
         const SEis5WireData *wire, const SEis5Layout *layout,
         SZrArtifactExecIrDiagnostic *diagnostic) {
     TZrUInt32 definitions[ZR_ARTIFACT_EXEC_IR_EIS5_MAX_SCALAR_NODES];
+    TZrUInt32 divCount = 0u;
+    TZrExecIrBlockId divBlockId = ZR_EXEC_IR_BLOCK_ID_INVALID;
 
     for (TZrUInt32 index = 0u; index < layout->counts.constants; ++index) {
         const SZrExecIrConstant *constant = &wire->constants[index];
@@ -108,6 +122,7 @@ static EZrArtifactExecIrStatus eis5_validate_wire(
     for (TZrUInt32 index = 0u; index < layout->counts.instructions; ++index) {
         const SZrExecIrInstruction *instruction = &wire->instructions[index];
         TZrUInt32 expectedResults, expectedOperands, expectedSuccessors;
+        TZrExecIrBlockId instructionBlockId = ZR_EXEC_IR_BLOCK_ID_INVALID;
         TZrUInt16 expectedFlags = 0u;
         TZrUInt32 expectedEffectIn = 0u, expectedEffectOut = 0u;
         TZrUInt32 recordOffset = layout->instructionsOffset + index *
@@ -130,12 +145,25 @@ static EZrArtifactExecIrStatus eis5_validate_wire(
                 expectedSuccessors = 0u;
                 break;
             case ZR_EXEC_IR_OPCODE_DIV:
+                if (divCount >= 2u)
+                    return ZrCore_ArtifactExecIrScalarEis5_Fail(
+                            diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
+                            recordOffset);
+                instructionBlockId = eis5_wire_instruction_block_id(
+                        wire->blocks, layout->counts.blocks, index);
+                if (instructionBlockId == ZR_EXEC_IR_BLOCK_ID_INVALID ||
+                    (divCount != 0u && instructionBlockId != divBlockId))
+                    return ZrCore_ArtifactExecIrScalarEis5_Fail(
+                            diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
+                            recordOffset +
+                                    ZR_ARTIFACT_EXEC_IR_EIS5_INSTRUCTION_EFFECT_IN_OFFSET);
+                if (divCount == 0u) divBlockId = instructionBlockId;
                 expectedResults = 1u;
                 expectedOperands = 2u;
                 expectedSuccessors = 0u;
                 expectedFlags = (TZrUInt16)ZR_EXEC_IR_FLAG_MAY_THROW;
-                expectedEffectIn = 1u;
-                expectedEffectOut = 2u;
+                expectedEffectIn = divCount + 1u;
+                expectedEffectOut = divCount + 2u;
                 break;
             case ZR_EXEC_IR_OPCODE_COMPARE:
                 expectedResults = 1u;
@@ -184,6 +212,7 @@ static EZrArtifactExecIrStatus eis5_validate_wire(
                         diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
                         recordOffset +
                                 ZR_ARTIFACT_EXEC_IR_EIS5_INSTRUCTION_EFFECT_OUT_OFFSET);
+            ++divCount;
         } else if (instruction->flags != 0u ||
                    instruction->effectIn != 0u ||
                    instruction->effectOut != 0u) {

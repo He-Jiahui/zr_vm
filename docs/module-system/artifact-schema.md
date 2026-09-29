@@ -34,6 +34,7 @@ plan_sources:
   - user: 2026-09-29 EIS5 scalar SUB extension
   - user: 2026-09-29 EIS5 scalar MUL extension
   - user: 2026-09-29 EIS5 scalar DIV extension
+  - user: 2026-09-29 EIS5 two-DIV effect-chain extension
 tests:
   - tests/library/test_ssa_exec_ir_artifact_v6.c
   - tests/library/test_ssa_exec_ir_artifact_v6_cfg.inc
@@ -42,6 +43,7 @@ tests:
   - tests/library/test_ssa_exec_ir_artifact_v6_eis5_bool.inc
   - tests/library/test_ssa_exec_ir_artifact_v6_eis5_compare.inc
   - tests/library/test_ssa_exec_ir_artifact_v6_eis5_div.inc
+  - tests/library/test_ssa_exec_ir_artifact_v6_eis5_div_chain.inc
   - tests/library/test_ssa_exec_ir_artifact_v6_eis5_sub.inc
   - tests/library/test_ssa_exec_ir_artifact_v6_eis5_mul.inc
   - tests/library/test_ssa_schema_relocation.c
@@ -56,6 +58,7 @@ tests:
   - tests/acceptance/ssa-artifact-v6-eis5-sub.md
   - tests/acceptance/ssa-artifact-v6-eis5-mul.md
   - tests/acceptance/ssa-artifact-v6-eis5-div.md
+  - tests/acceptance/ssa-artifact-v6-eis5-div-chain.md
 doc_type: module-detail
 status: partial
 ---
@@ -145,10 +148,12 @@ canonical modes stored in `typeToken`: EQ=0, LT=1, LE=2, GT=3, GE=4, and
 NE=5. Each mode takes
 two i64 operands and produces one BOOL result. The reader checks caps and exact
 computed length before allocating bounded decode arrays, verifies a temporary
-module, and publishes only after verification. A single DIV requires the
-`MAY_THROW` flag and the canonical effect token pair 1→2; every other
-instruction must have zero flags and effect tokens. This leaf does not define
-general effect-token chains.
+module, and publishes only after verification. A single DIV retains the
+`MAY_THROW` flag and canonical effect token pair 1→2. The bounded two-DIV
+extension being verified accepts at most two DIV instructions only when both
+belong to the same straight-line block, with tokens chained 1→2→3. Every other
+instruction must have zero flags and effect tokens; this does not define
+general effect-chain serialization.
 
 EIS5 constant and value records already carry a `typeToken` and 64-bit value
 bits. The BOOL predicate extension keeps the v5 layout and accepts i64 and
@@ -237,6 +242,17 @@ DIV, reject non-i64 operands/results and malformed effect fields, and continue
 to reject ARITHMETIC. Earlier EIS5 v5 readers reject DIV at the instruction
 record. See the
 [EIS5 DIV acceptance](../../tests/acceptance/ssa-artifact-v6-eis5-div.md).
+The two-DIV follow-on keeps the same v5 record layout and limits the chain to
+one straight-line block. The independent MSVC and Clang target builds and the
+`artifact_schema`, `ssa_schema_relocation`,
+`ssa_exec_ir_artifact_v6_write`, and `ssa_exec_ir_artifact_v6_roundtrip` CTests
+pass. The Clang build completed 359/359 steps after VerifyGlobs and automatic
+CMake regeneration completed normally. No backup harness was used; its empty
+scratch directory was removed. The exact commands, test timings, and RED are
+recorded in [the EIS5 DIV-chain acceptance](../../tests/acceptance/ssa-artifact-v6-eis5-div-chain.md).
+Readers that predate DIV reject its opcode. Readers that support only the
+single 1→2 form reject the second DIV at its effect input field. This bounded
+follow-on does not accept a chain across blocks or more than two DIVs.
 A schema 5 ZRAF is rejected with
 `UNSUPPORTED_VERSION` and diagnostic expected/actual versions.
 The separate historical `01ZR` `.zro` binary path remains handled by
