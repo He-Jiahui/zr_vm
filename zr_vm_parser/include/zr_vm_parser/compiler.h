@@ -586,7 +586,7 @@ ZR_PARSER_API TZrBool ZrParser_Compiler_QueryPropertyRequirements(
 ZR_PARSER_API void ZrParser_Compiler_CompileUnionDeclaration(SZrCompilerState *cs, SZrAstNode *node);
 ZR_PARSER_API void ZrParser_Compiler_PredeclareExternBindings(SZrCompilerState *cs, SZrAstNodeArray *statements);
 ZR_PARSER_API void ZrParser_Compiler_CompileExternBlock(SZrCompilerState *cs, SZrAstNode *node);
-ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateExternCallableDecorators(
+/** @brief 为 parser 编译与 LSP 共用 extern function/delegate 的 zr.ffi 装饰器校验；declaration 必须是相应 extern AST，返回值表示校验是否通过。 */ ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateExternCallableDecorators(
         SZrCompilerState *cs,
         SZrAstNode *declaration);
 /** @brief 校验 extern struct 声明与字段的规范 zr.ffi 装饰器；编译器和 LSP 共用。 */ ZR_PARSER_API TZrBool ZrParser_Compiler_ValidateExternStructDecorators(
