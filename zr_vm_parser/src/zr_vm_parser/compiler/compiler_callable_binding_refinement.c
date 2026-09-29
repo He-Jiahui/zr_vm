@@ -2,6 +2,12 @@
 
 #include <string.h>
 
+/*
+ * 在 callable value 注册成功后，以精确的 lambda AST 补齐声明事实，使语义查询能回到
+ * lambda 声明及其完整范围，而不是仅指向绑定变量。
+ * @pre bindingIndex 是注册前保存的数组长度，且该位置已登记同一 lambda 与有效 canonical ID。
+ * @return 仅在条目校验通过且声明事实成功追加后返回 true。
+ */
 TZrBool compiler_publish_lambda_callable_binding_identity(
         SZrCompilerState *cs,
         SZrTypeEnvironment *env,
@@ -28,6 +34,7 @@ TZrBool compiler_publish_lambda_callable_binding_identity(
     functionInfo->declarationRange = lambdaNode->location;
     functionInfo->hasDeclarationRange = ZR_TRUE;
 
+    /* 声明、定义与引用范围都以同一 lambda 节点为准，保持 definition 查询的身份和范围一致。 */
     memset(&declarationFact, 0, sizeof(declarationFact));
     declarationFact.node = lambdaNode;
     declarationFact.range = lambdaNode->location;
@@ -43,6 +50,7 @@ TZrBool compiler_publish_lambda_callable_binding_identity(
             env->semanticContext, &declarationFact);
 }
 
+/* canonical symbol 类型更新成功后，同步该 symbol 的所有引用事实；位置和引用类别保持原样。 */
 static void compiler_rebind_reference_fact_types(SZrSemanticContext *semanticContext,
                                                   TZrSymbolId symbolId,
                                                   TZrTypeId typeId) {
@@ -63,6 +71,13 @@ static void compiler_rebind_reference_fact_types(SZrSemanticContext *semanticCon
     }
 }
 
+/*
+ * 将省略返回类型的函数体推断结果写回声明对应的 callable binding；按 declaration AST
+ * 在当前及祖先 type environment 中查找，以更新原有 canonical contract 和其语义事实。
+ * @pre declarationNode 对应已登记函数，returnType 是该函数体的推断返回类型。
+ * @return 找到并更新 binding 时为 true；输入无效、未找到或 canonical 重建/反绑失败时为 false。
+ * @note 缺少 semantic context 或 canonical type identity 时仅更新本地返回类型缓存，不同步 symbol 和引用事实。
+ */
 TZrBool compiler_refine_function_type_binding_return(
         SZrCompilerState *cs,
         SZrAstNode *declarationNode,
@@ -97,11 +112,13 @@ TZrBool compiler_refine_function_type_binding_return(
             semanticContext = env->semanticContext;
             if (semanticContext == ZR_NULL ||
                 functionInfo->typeId == ZR_SEMANTIC_ID_INVALID) {
+                /* 没有可用于 canonical 重建的上下文或类型身份，只保留本地推断返回类型。 */
                 ZrParser_InferredType_Free(cs->state, &functionInfo->returnType);
                 ZrParser_InferredType_Copy(cs->state, &functionInfo->returnType, returnType);
                 return ZR_TRUE;
             }
 
+            /* 把函数泛型形参映射到其 owner symbol 与序号，供推断结果复用开放泛型身份。 */
             ZrCore_Array_Construct(&genericBindings);
             if (functionInfo->genericParameters.length > 0U) {
                 ZrCore_Array_Init(cs->state,
@@ -155,6 +172,7 @@ TZrBool compiler_refine_function_type_binding_return(
                 templateType->kind != ZR_CANONICAL_TYPE_FUNCTION) {
                 return ZR_FALSE;
             }
+            /* 以原函数契约为模板，只替换返回 TypeId，保留参数、receiver effect 与 effect flags。 */
             refinedTypeId = ZrParser_CanonicalType_InternFunction(
                     semanticContext,
                     (const SZrCanonicalParameterContract *)
@@ -163,6 +181,7 @@ TZrBool compiler_refine_function_type_binding_return(
                     returnTypeId,
                     templateType->data.function.receiverEffect,
                     templateType->data.function.effectFlags);
+            /* 先让 symbol 接受新 canonical 类型，再改本地缓存并同步同 symbol 的引用事实。 */
             if (refinedTypeId == ZR_SEMANTIC_ID_INVALID ||
                 !ZrParser_Semantic_RebindSymbolType(semanticContext,
                                                     functionInfo->symbolId,
