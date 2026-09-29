@@ -2,6 +2,10 @@
 
 #include <stdio.h>
 
+/**
+ * @brief 按字符串身份或内容判断名称是否已进入扫描集合。
+ * @note 身份比较只作快速路径；不同字符串对象仍按内容匹配。
+ */
 TZrBool plugin_guard_name_array_contains(SZrArray *names, SZrString *name) {
     if (names == ZR_NULL || name == ZR_NULL) {
         return ZR_FALSE;
@@ -18,6 +22,12 @@ TZrBool plugin_guard_name_array_contains(SZrArray *names, SZrString *name) {
     return ZR_FALSE;
 }
 
+/**
+ * @brief 将尚未出现的名称指针加入扫描集合。
+ * @pre names 已由当前扫描初始化，scan->cs->state 在同步扫描期间有效。
+ * @note 数组只保存 AST 所有的借用名称指针；释放集合只释放数组缓冲区，不释放字符串。
+ * BUG: Array_Init/扩容分配失败会留下空 head，而下方无状态返回的 Array_Push 会断言或向空地址复制。
+ */
 void plugin_guard_push_name_unique(SZrPluginGuardEscapeScan *scan,
                                    SZrArray *names,
                                    SZrString *name) {
@@ -29,6 +39,10 @@ void plugin_guard_push_name_unique(SZrPluginGuardEscapeScan *scan,
     ZrCore_Array_Push(scan->cs->state, names, &name);
 }
 
+/**
+ * @brief 把越界类别写入普通编译错误，并让递归扫描立即失败。
+ * @note reason 来自扫描器的固定边界标签；空标签使用通用 guard 范围说明。
+ */
 TZrBool plugin_guard_report_escape(SZrPluginGuardEscapeScan *scan,
                                    SZrFileRange location,
                                    const TZrChar *reason) {
@@ -52,6 +66,11 @@ TZrBool plugin_guard_report_escape(SZrPluginGuardEscapeScan *scan,
     return ZR_FALSE;
 }
 
+/**
+ * @brief 从受支持的简单绑定表达式取名称，供扫描集合记录变量身份。
+ * @return 标识符或无成员 primary 的借用名称；其他表达式形状返回 ZR_NULL。
+ * @note 返回值仍由输入 AST 持有，调用方不得在 AST 生命周期外保留。
+ */
 SZrString *plugin_guard_bare_identifier_name(SZrAstNode *node) {
     if (node == ZR_NULL) {
         return ZR_NULL;
@@ -72,6 +91,11 @@ SZrString *plugin_guard_bare_identifier_name(SZrAstNode *node) {
     return ZR_NULL;
 }
 
+/**
+ * @brief 扫描 guard 正文，并在成功或诊断失败后统一释放三组临时名称数组。
+ * @pre scan->cs 与 state 有效；数组由入口完成初始化；AST 和其中的名称在本次同步遍历期间存活。
+ * @note 仅在 pluginNames 非空时遍历 body；elseBody 不在插件绑定的有效范围内。名称与 moduleName 均为借用值。
+ */
 static TZrBool plugin_guard_validate_scan(SZrPluginGuardEscapeScan *scan, SZrUsingStatement *stmt) {
     TZrBool ok = ZR_TRUE;
 
@@ -103,6 +127,7 @@ TZrBool ZrParser_Compiler_ValidateUsingPluginGuardEscape(SZrCompilerState *cs, S
     bindingName = stmt->pattern->data.identifier.name;
     scan.cs = cs;
     scan.moduleName = ZR_NULL;
+    /* 模块名只借用字面量 AST 值；编译入口随后仍负责验证 import 路径形状。 */
     if (stmt->resource != ZR_NULL && stmt->resource->type == ZR_AST_IMPORT_EXPRESSION) {
         modulePathNode = stmt->resource->data.importExpression.modulePath;
         if (modulePathNode != ZR_NULL &&
@@ -134,6 +159,7 @@ TZrBool ZrParser_Compiler_ValidateUsingPluginGuardEscapeBindings(SZrCompilerStat
     ZrCore_Array_Init(cs->state, &scan.localNames, sizeof(SZrString *), 4);
     ZrCore_Array_Init(cs->state, &scan.pluginNames, sizeof(SZrString *), 4);
     ZrCore_Array_Init(cs->state, &scan.shadowNames, sizeof(SZrString *), 4);
+    /* 调用方解析出的绑定节点仅按支持的裸名形状加入集合；复杂节点不作为名称来源。 */
     for (TZrSize index = 0; index < bindings->count; index++) {
         SZrString *bindingName = plugin_guard_bare_identifier_name(bindings->nodes[index]);
         if (bindingName != ZR_NULL) {
