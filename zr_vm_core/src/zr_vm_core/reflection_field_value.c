@@ -625,7 +625,7 @@ ZR_CORE_API TZrBool ZrCore_Reflection_ReadFieldInfoObjectNestedPathPrimitiveValu
 
 /** @brief 将 VM 值写到内联聚合路径的终端值槽；字段级替换的 copy/drop 交给 nested helper。
  * @pre runtime、可写 backing storage、路径数组和输入 value 在调用期间有效；目标 VALUE_SLOT 已初始化且满足对齐。
- * @return 空路径、不可解析字段或不兼容终端返回 false；多字段 copy 失败不保证先前复制的聚合前缀回滚。
+ * @return 空路径、不可解析字段或不兼容终端返回 false；成功时只按 VM Value_Copy 更新一个终端槽。
  * TODO: 中间及终端 union 字段未核对 activeTag；核查写入时拒绝或更新 tag 的规则。
  */
 ZR_CORE_API TZrBool ZrCore_Reflection_WriteFieldInfoTokenNestedPathValue(
@@ -669,7 +669,7 @@ ZR_CORE_API TZrBool ZrCore_Reflection_WriteFieldInfoTokenNestedPathValue(
 
 /** @brief 嵌套路径写入的 FieldInfo 适配器；从对象恢复身份后委托 token 版执行目标定位与值替换。
  * @pre FieldInfo 对象、其 runtime 指针目标、可写 backing storage、路径数组和输入 value 在调用期间有效；若终端为 VALUE_SLOT，该槽已初始化且满足对齐。
- * @return 身份、路径或目标字段不兼容时返回 false；布局 copy 失败不承诺整块回滚。
+ * @return 身份、路径或目标字段不兼容时返回 false；成功时只替换一个终端值槽。
  */
 ZR_CORE_API TZrBool ZrCore_Reflection_WriteFieldInfoObjectNestedPathValue(
         SZrState *state,
