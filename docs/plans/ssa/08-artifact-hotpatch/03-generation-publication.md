@@ -19,6 +19,8 @@ tests:
   - tests/core/test_ssa_generation_publication.c
   - tests/core/test_call_binding_runtime.c
   - tests/acceptance/ssa-hotpatch-generation-handle-ownership.md
+  - tests/library/test_ssa_capability_validation.c
+  - tests/acceptance/ssa-hotpatch-prepare-status-mapping.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -62,6 +64,15 @@ handle。实现与复杂度、测试证据见
 [generation handle ownership acceptance](../../../../tests/acceptance/ssa-hotpatch-generation-handle-ownership.md)。
 这只完成 manager 归属检查，不完成 frame 集成、并发 Resolve/Publish 安全或
 本文件的发布与回收门禁。
+
+`ApplyValidated` 现在保留 `Generation_Prepare` 当前可返回的失败类别：无效模块
+身份、manager 槽位耗尽和 generation 溢出都能由 host 区分。Apply overflow
+状态追加到旧枚举末尾，既有枚举值不变。focused capability-validation fixture
+验证三类状态、文字名称、结构化诊断以及 manager/registry/handle 无发布副作用；
+证据见
+[the Prepare status mapping acceptance](../../../../tests/acceptance/ssa-hotpatch-prepare-status-mapping.md).
+这只关闭 Prepare 到 Apply 的状态映射边界。Rollback 状态映射、并发发布、frame
+集成和 executable installation 仍是独立计划工作。
 
 新增文件登记到所属模块 CMake；测试登记到计划新增的 `tests/cmake/ssa-tests.cmake`，由 `tests/CMakeLists.txt` 单点 include。先迁移职责并保持行为，再接入新 contract；不要把新分析或慢路径追加到巨型 dispatch/quickening 文件。
 

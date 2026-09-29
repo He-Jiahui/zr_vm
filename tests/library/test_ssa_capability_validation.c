@@ -53,6 +53,173 @@ static TZrBool count_and_reject_signature(
     return ZR_FALSE;
 }
 
+typedef enum ETestPrepareFailure {
+    TEST_PREPARE_ZERO_MODULE_HASH = 0,
+    TEST_PREPARE_GENERATION_OVERFLOW,
+    TEST_PREPARE_MANAGER_CAPACITY
+} ETestPrepareFailure;
+
+static void expect_apply_preserves_prepare_failure(
+        ETestPrepareFailure failureCase,
+        EZrHotPatchApplyStatus expectedApplyStatus,
+        const TZrChar *expectedStatusName) {
+    TZrByte content[4] = {0x51u, 0x62u, 0x73u, 0x84u};
+    TZrByte signature[3] = {0xa5u, 0x5au, 0x01u};
+    SZrArtifactExecIrView artifact;
+    SZrHotPatchCapabilityRequirement requirement = {
+        23u, UINT64_C(0x01), 9u, 0u};
+    SZrHotPatchCapabilityManifest manifest;
+    SZrHotPatchValidationInput input;
+    SZrValidatedHotPatch validated;
+    SZrHotPatchDiagnostic validationDiagnostic;
+    SZrHotPatchVersionRecord records[1];
+    SZrHotPatchGenerationManager manager;
+    SZrHotPatchGenerationDiagnostic generationDiagnostic;
+    SZrHotPatchGenerationHandle existingPrepared;
+    SZrHotPatchRegistryEntry entries[1];
+    SZrHotPatchRegistry registry;
+    SZrHotPatchGenerationHandle appliedHandle;
+    SZrHotPatchApplyDiagnostic applyDiagnostic;
+    EZrHotPatchCapabilityStatus validationStatus;
+    EZrHotPatchGenerationStatus generationStatus;
+    EZrHotPatchApplyStatus applyStatus;
+    TZrUInt64 expectedHash;
+    TZrUInt64 moduleHash = 99u;
+    TZrUInt64 nextGenerationBefore;
+    TZrUInt32 countBefore;
+    EZrHotPatchVersionState recordStateBefore;
+    TZrUInt64 recordGenerationBefore;
+    TZrUInt64 recordModuleHashBefore;
+    TZrUInt64 recordContentHashBefore;
+    TZrUInt64 recordPublicContractHashBefore;
+    TZrUInt32 recordTargetProfileBefore;
+    TZrUInt32 recordLeaseCountBefore;
+    SZrHotPatchVersionRecord *activeBefore;
+
+    memset(&artifact, 0, sizeof(artifact));
+    artifact.buffer = content;
+    artifact.bufferLength = (TZrUInt32)sizeof(content);
+    artifact.moduleHash = 99u;
+    artifact.abiVersion = 16u;
+
+    memset(&manifest, 0, sizeof(manifest));
+    manifest.schemaVersion = ZR_HOT_PATCH_CAPABILITY_SCHEMA_VERSION;
+    manifest.patchId = 73u;
+    manifest.contentHash = ZrCore_ArtifactExecIr_HashBytes(
+            content, (TZrUInt32)sizeof(content));
+    manifest.baseModuleHash = 99u;
+    manifest.publicContractHash = 123u;
+    manifest.targetAbiVersion = 16u;
+    manifest.targetProfile = 2u;
+    manifest.requirementCount = 1u;
+    manifest.requirements = &requirement;
+
+    memset(&input, 0, sizeof(input));
+    input.artifact = &artifact;
+    input.manifest = &manifest;
+    input.loadedBaseModuleHash = 99u;
+    input.loadedPublicContractHash = 123u;
+    input.hostAbiVersion = 16u;
+    input.hostProfile = 2u;
+    input.hostAllowedCapabilities = UINT64_C(0x01);
+    input.expectedPatchId = 73u;
+    input.expectedContentHash = manifest.contentHash;
+    input.signature = signature;
+    input.signatureLength = (TZrUInt32)sizeof(signature);
+
+    memset(&validated, 0, sizeof(validated));
+    validationStatus = ZrCore_HotPatch_Validate(
+            &input, verify, ZR_NULL, &validated, &validationDiagnostic);
+    TEST_CHECK(validationStatus == ZR_HOT_PATCH_OK);
+    if (validationStatus != ZR_HOT_PATCH_OK) return;
+    expectedHash = validated.contentHash;
+    TEST_CHECK(expectedHash == manifest.contentHash);
+    TEST_CHECK(ZrCore_ArtifactExecIr_HashBytes(
+                       validated.contentBytes, validated.contentLength) ==
+               expectedHash);
+
+    memset(entries, 0, sizeof(entries));
+    registry.entries = entries;
+    registry.capacity = 1u;
+    registry.count = 0u;
+    memset(&appliedHandle, 0xa5, sizeof(appliedHandle));
+    memset(&applyDiagnostic, 0xa5, sizeof(applyDiagnostic));
+
+    generationStatus = ZrCore_HotPatch_GenerationManager_Init(
+            &manager, records, 1u, &generationDiagnostic);
+    TEST_CHECK(generationStatus == ZR_HOT_PATCH_GENERATION_OK);
+    if (generationStatus != ZR_HOT_PATCH_GENERATION_OK) return;
+
+    if (failureCase == TEST_PREPARE_ZERO_MODULE_HASH) {
+        moduleHash = 0u;
+    } else if (failureCase == TEST_PREPARE_GENERATION_OVERFLOW) {
+        atomic_store_explicit(&manager.nextGeneration, UINT64_MAX,
+                              memory_order_relaxed);
+    } else {
+        generationStatus = ZrCore_HotPatch_Generation_Prepare(
+                &manager, &validated, moduleHash, &existingPrepared,
+                &generationDiagnostic);
+        TEST_CHECK(generationStatus == ZR_HOT_PATCH_GENERATION_OK);
+        if (generationStatus != ZR_HOT_PATCH_GENERATION_OK) {
+            ZrCore_HotPatch_GenerationManager_Deinit(&manager);
+            return;
+        }
+    }
+
+    countBefore = manager.count;
+    nextGenerationBefore = atomic_load_explicit(
+            &manager.nextGeneration, memory_order_relaxed);
+    recordStateBefore = (EZrHotPatchVersionState)records[0].state;
+    recordGenerationBefore = records[0].generation;
+    recordModuleHashBefore = records[0].moduleHash;
+    recordContentHashBefore = records[0].contentHash;
+    recordPublicContractHashBefore = records[0].publicContractHash;
+    recordTargetProfileBefore = records[0].targetProfile;
+    recordLeaseCountBefore = atomic_load_explicit(
+            &records[0].leaseCount, memory_order_relaxed);
+    activeBefore = atomic_load_explicit(&manager.active, memory_order_acquire);
+
+    applyStatus = ZrCore_HotPatch_ApplyValidated(
+            &manager, &registry, &validated, moduleHash, &appliedHandle,
+            &applyDiagnostic);
+    TEST_CHECK(applyStatus == expectedApplyStatus);
+    if (expectedStatusName != ZR_NULL) {
+        TEST_CHECK(strcmp(ZrCore_HotPatch_ApplyStatusName(applyStatus),
+                          expectedStatusName) == 0);
+    }
+    TEST_CHECK(applyDiagnostic.status == expectedApplyStatus);
+    TEST_CHECK(applyDiagnostic.patchId == validated.patchId);
+    TEST_CHECK(applyDiagnostic.expectedHash == expectedHash);
+    TEST_CHECK(applyDiagnostic.actualHash == expectedHash);
+    TEST_CHECK(applyDiagnostic.generation == 0u);
+
+    TEST_CHECK(registry.count == 0u);
+    TEST_CHECK(entries[0].patchId == 0u);
+    TEST_CHECK(entries[0].contentHash == 0u);
+    TEST_CHECK(entries[0].generation == 0u);
+    TEST_CHECK(entries[0].state == ZR_HOT_PATCH_VERSION_FREE);
+    TEST_CHECK(manager.count == countBefore);
+    TEST_CHECK(atomic_load_explicit(&manager.nextGeneration,
+                                    memory_order_relaxed) ==
+               nextGenerationBefore);
+    TEST_CHECK((EZrHotPatchVersionState)records[0].state == recordStateBefore);
+    TEST_CHECK(records[0].generation == recordGenerationBefore);
+    TEST_CHECK(records[0].moduleHash == recordModuleHashBefore);
+    TEST_CHECK(records[0].contentHash == recordContentHashBefore);
+    TEST_CHECK(records[0].publicContractHash == recordPublicContractHashBefore);
+    TEST_CHECK(records[0].targetProfile == recordTargetProfileBefore);
+    TEST_CHECK(atomic_load_explicit(&records[0].leaseCount,
+                                    memory_order_relaxed) ==
+               recordLeaseCountBefore);
+    TEST_CHECK(atomic_load_explicit(&manager.active, memory_order_acquire) ==
+               activeBefore);
+    TEST_CHECK(appliedHandle.record == ZR_NULL);
+    TEST_CHECK(appliedHandle.generation == 0u);
+    TEST_CHECK(appliedHandle.leased == ZR_FALSE);
+
+    ZrCore_HotPatch_GenerationManager_Deinit(&manager);
+}
+
 static void expect_apply_rejects_sequential_content_mutation(
         TZrBool mutateDuringVerification) {
     TZrByte content[4] = {0x11u, 0x22u, 0x33u, 0x44u};
@@ -361,6 +528,18 @@ int main(void) {
 
     expect_apply_rejects_sequential_content_mutation(ZR_FALSE);
     expect_apply_rejects_sequential_content_mutation(ZR_TRUE);
+    expect_apply_preserves_prepare_failure(
+            TEST_PREPARE_ZERO_MODULE_HASH,
+            ZR_HOT_PATCH_APPLY_INVALID_ARGUMENT, "invalid-argument");
+    /* Before this status-mapping fix, Prepare overflow was reported as
+     * CAPACITY. */
+    expect_apply_preserves_prepare_failure(
+            TEST_PREPARE_GENERATION_OVERFLOW,
+            ZR_HOT_PATCH_APPLY_GENERATION_OVERFLOW,
+            "generation-overflow");
+    expect_apply_preserves_prepare_failure(
+            TEST_PREPARE_MANAGER_CAPACITY,
+            ZR_HOT_PATCH_APPLY_CAPACITY, "capacity");
 
     return g_testFailureCount == 0u ? 0 : 1;
 }

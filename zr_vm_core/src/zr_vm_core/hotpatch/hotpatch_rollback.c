@@ -40,9 +40,26 @@ EZrHotPatchApplyStatus ZrCore_HotPatch_ApplyValidated(
     SZrHotPatchGenerationHandle prepared;
     SZrHotPatchGenerationDiagnostic gd;
     EZrHotPatchGenerationStatus gs = ZrCore_HotPatch_Generation_Prepare(manager, validated, moduleHash, &prepared, &gd);
-    /* BUG: moduleHash=0 使 Prepare 返回 INVALID_ARGUMENT，代际溢出返回
-     * OVERFLOW；此处都报 CAPACITY，host 无法按实际原因处理失败。 */
-    if (gs != ZR_HOT_PATCH_GENERATION_OK) return apply_fail(diagnostic, ZR_HOT_PATCH_APPLY_CAPACITY, id, hash, hash, 0u);
+    if (gs != ZR_HOT_PATCH_GENERATION_OK) {
+        EZrHotPatchApplyStatus applyStatus;
+        switch (gs) {
+            case ZR_HOT_PATCH_GENERATION_INVALID_ARGUMENT:
+                applyStatus = ZR_HOT_PATCH_APPLY_INVALID_ARGUMENT;
+                break;
+            case ZR_HOT_PATCH_GENERATION_CAPACITY:
+                applyStatus = ZR_HOT_PATCH_APPLY_CAPACITY;
+                break;
+            case ZR_HOT_PATCH_GENERATION_OVERFLOW:
+                applyStatus = ZR_HOT_PATCH_APPLY_GENERATION_OVERFLOW;
+                break;
+            default:
+                /* Prepare 当前只返回以上三类失败；未知状态仍明确失败，
+                 * 但不伪报容量不足。 */
+                applyStatus = ZR_HOT_PATCH_APPLY_PUBLISH_FAILED;
+                break;
+        }
+        return apply_fail(diagnostic, applyStatus, id, hash, hash, 0u);
+    }
     gs = ZrCore_HotPatch_Generation_Publish(manager, &prepared, &gd);
     if (gs != ZR_HOT_PATCH_GENERATION_OK) return apply_fail(diagnostic, ZR_HOT_PATCH_APPLY_PUBLISH_FAILED, id, hash, hash, prepared.generation);
     freeEntry->patchId = id; freeEntry->contentHash = hash; freeEntry->generation = prepared.generation; freeEntry->state = ZR_HOT_PATCH_VERSION_ACTIVE;
@@ -69,5 +86,17 @@ EZrHotPatchApplyStatus ZrCore_HotPatch_Rollback(
 
 /* host 日志的文字映射，不用字符串反推恢复策略。 */
 const TZrChar *ZrCore_HotPatch_ApplyStatusName(EZrHotPatchApplyStatus s) {
-    switch (s) { case ZR_HOT_PATCH_APPLY_OK: return "ok"; case ZR_HOT_PATCH_APPLY_ALREADY_APPLIED: return "already-applied"; case ZR_HOT_PATCH_APPLY_ID_COLLISION: return "id-collision"; case ZR_HOT_PATCH_APPLY_ROLLBACK_NOT_FOUND: return "rollback-not-found"; case ZR_HOT_PATCH_APPLY_CONTENT_MISMATCH: return "content-mismatch"; default: return "apply-failed"; }
+    switch (s) {
+        case ZR_HOT_PATCH_APPLY_OK: return "ok";
+        case ZR_HOT_PATCH_APPLY_INVALID_ARGUMENT: return "invalid-argument";
+        case ZR_HOT_PATCH_APPLY_ALREADY_APPLIED: return "already-applied";
+        case ZR_HOT_PATCH_APPLY_ID_COLLISION: return "id-collision";
+        case ZR_HOT_PATCH_APPLY_CAPACITY: return "capacity";
+        case ZR_HOT_PATCH_APPLY_PUBLISH_FAILED: return "publish-failed";
+        case ZR_HOT_PATCH_APPLY_ROLLBACK_NOT_FOUND: return "rollback-not-found";
+        case ZR_HOT_PATCH_APPLY_ROLLBACK_FAILED: return "rollback-failed";
+        case ZR_HOT_PATCH_APPLY_CONTENT_MISMATCH: return "content-mismatch";
+        case ZR_HOT_PATCH_APPLY_GENERATION_OVERFLOW: return "generation-overflow";
+        default: return "apply-failed";
+    }
 }

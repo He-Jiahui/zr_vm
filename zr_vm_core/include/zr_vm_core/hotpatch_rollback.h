@@ -13,7 +13,8 @@ typedef enum EZrHotPatchApplyStatus {
     ZR_HOT_PATCH_APPLY_PUBLISH_FAILED,
     ZR_HOT_PATCH_APPLY_ROLLBACK_NOT_FOUND,
     ZR_HOT_PATCH_APPLY_ROLLBACK_FAILED,
-    ZR_HOT_PATCH_APPLY_CONTENT_MISMATCH
+    ZR_HOT_PATCH_APPLY_CONTENT_MISMATCH,
+    ZR_HOT_PATCH_APPLY_GENERATION_OVERFLOW
 } EZrHotPatchApplyStatus;
 
 /** @brief patch ID 与内容哈希绑定的发布记录；同 ID 不可指向不同内容。 */
@@ -44,7 +45,8 @@ typedef struct SZrHotPatchApplyDiagnostic {
 /** @brief 复核借用内容身份，再按 patch ID 判重、Prepare + Publish 并登记代际。
  * @pre 验证时捕获的 bytes 在调用期间仍有效，且调用期间不会被并发改写；registry 由 host 初始化并串行使用。
  * @note 顺序内容变更返回 CONTENT_MISMATCH，且不会准备 generation 或写 registry。
- * BUG: Prepare 的 INVALID_ARGUMENT/OVERFLOW 目前也会被映射为 CAPACITY。 */
+ * @note Prepare 的 INVALID_ARGUMENT、CAPACITY、OVERFLOW 分别映射为
+ *       APPLY_INVALID_ARGUMENT、APPLY_CAPACITY、APPLY_GENERATION_OVERFLOW。 */
 ZR_CORE_API EZrHotPatchApplyStatus ZrCore_HotPatch_ApplyValidated(
         SZrHotPatchGenerationManager *manager,
         SZrHotPatchRegistry *registry,
