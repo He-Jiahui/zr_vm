@@ -289,13 +289,13 @@ static void eis5_sub_write_phase(const char *basePath) {
     source.functions[0].values[2].typeToken = ZR_VALUE_TYPE_INT64;
 
     source.functions[0].instructions[2].opcode =
-            (TZrUInt16)ZR_EXEC_IR_OPCODE_DIV;
+            (TZrUInt16)ZR_EXEC_IR_OPCODE_ARITHMETIC;
     eis5_sub_require_writer_rejected(
             &source, payload, TEST_EIS5_SUB_OPCODE_OFFSET,
-            "writer rejects unsupported EIS5 DIV opcode");
+            "writer rejects unsupported EIS5 ARITHMETIC opcode");
     eis5_sub_require_canonical_write_rejected(
             &fixture, &source, path, original, originalLength,
-            "canonical writer rejects unsupported EIS5 DIV opcode");
+            "canonical writer rejects unsupported EIS5 ARITHMETIC opcode");
     source.functions[0].instructions[2].opcode =
             (TZrUInt16)ZR_EXEC_IR_OPCODE_SUB;
 
@@ -385,20 +385,20 @@ static void eis5_sub_read_phase(const char *basePath) {
 
     memcpy(mutated, bytes, length);
     put16(mutated + payloadOffset + TEST_EIS5_SUB_OPCODE_OFFSET,
-          (TZrUInt16)ZR_EXEC_IR_OPCODE_DIV);
+          (TZrUInt16)ZR_EXEC_IR_OPCODE_ARITHMETIC);
     eis5_rehash(mutated, bundleOffset, payloadOffset, payload->byteLength);
     eis5_sub_require_codec_rejected(
             mutated + payloadOffset, payload->byteLength,
             ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
             TEST_EIS5_SUB_OPCODE_OFFSET,
-            "reject malformed EIS5 SUB unsupported DIV opcode");
+            "reject malformed EIS5 SUB unsupported ARITHMETIC opcode");
     diagnostic = require_rejected(mutated, length,
                                   ZR_ARTIFACT_STATUS_INVALID_SECTION);
     require_true(diagnostic.sectionKind ==
                          ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE &&
                  diagnostic.byteOffset == payloadOffset +
                          TEST_EIS5_SUB_OPCODE_OFFSET,
-                 "opener rejects rehashed unsupported DIV at instruction offset");
+                 "opener rejects rehashed unsupported ARITHMETIC at instruction offset");
 
     free(mutated);
     free(bytes);

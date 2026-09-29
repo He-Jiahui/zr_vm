@@ -16,8 +16,8 @@ canonical artifact in separate process phases, proving that the opener
 dispatches by EIS5 magic when the payload length collides with EIS4.
 
 Writer, direct reader, and canonical opener reject BOOL operands or results
-for MUL. They also reject DIV as an unsupported counted EIS5 opcode at the
-instruction field. Rejected writes preserve the destination bytes, and failed
+for MUL. They also reject ARITHMETIC as an unsupported counted EIS5 opcode at
+the instruction field. Rejected writes preserve the destination bytes, and failed
 reads do not publish a partial graph. Rehashed reader mutations assert the
 payload-relative opcode/value offsets and the opener's corresponding absolute
 offsets in `EXEC_IR_BUNDLE`.
@@ -66,8 +66,10 @@ D cache; the build exited 0 and the same four registered CTests passed (4/4).
 EIS1–E4 payloads and rejection paths remain unchanged. MUL reuses the existing
 EIS5 v5 instruction record; artifacts containing MUL require a reader that
 supports this opcode. Earlier EIS5 v5 readers reject it at the instruction
-record. The previous SUB leaf's unsupported-opcode mutation now uses DIV,
-which remains outside this counted scalar allowlist.
+record. The previous SUB leaf's unsupported-opcode mutation now uses
+ARITHMETIC. A later bounded DIV leaf adds only the fixed `MAY_THROW` and
+effect-token 1→2 pair; see the separate
+[EIS5 DIV acceptance](ssa-artifact-v6-eis5-div.md).
 
 This leaf adds only counted EIS5 i64 MUL support. It does not add other
 arithmetic opcodes, alter the v5 wire schema, or complete the full 08.01

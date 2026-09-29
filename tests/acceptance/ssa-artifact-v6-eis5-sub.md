@@ -64,11 +64,11 @@ rejection cases, EIS5 i64 and BOOL predicates, six Compare modes, the 996-byte
 same-count CFG collision, and existing dynamic count/edge mutations. Earlier
 EIS5 v5 readers do not recognize SUB and reject it at the instruction record.
 When this slice was first verified, MUL was also outside the EIS5 allowlist,
-so its then-current unsupported-opcode mutation used MUL. The later independent
-MUL slice adds that opcode; the current SUB fixture now uses DIV for its
-unsupported-opcode regression. See the separate
-[EIS5 MUL acceptance](ssa-artifact-v6-eis5-mul.md) for the added opcode and
-remaining DIV rejection.
+so its then-current unsupported-opcode mutation used MUL. The independent MUL
+and DIV slices add those opcodes; the current SUB fixture uses
+ARITHMETIC for its unsupported-opcode regression. See the separate
+[EIS5 MUL acceptance](ssa-artifact-v6-eis5-mul.md) and
+[EIS5 DIV acceptance](ssa-artifact-v6-eis5-div.md) for those bounded leaves.
 
 ## Acceptance boundary
 

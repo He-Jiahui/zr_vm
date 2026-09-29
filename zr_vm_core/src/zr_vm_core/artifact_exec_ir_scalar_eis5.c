@@ -526,6 +526,8 @@ EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalarEis5_ValidateModule(
         const SZrExecIrInstruction *instruction =
                 &function->instructions[index];
         TZrUInt32 expectedResults, expectedOperands, expectedSuccessors;
+        TZrUInt16 expectedFlags = 0u;
+        TZrUInt32 expectedEffectIn = 0u, expectedEffectOut = 0u;
         switch ((EZrExecIrOpcode)instruction->opcode) {
             case ZR_EXEC_IR_OPCODE_CONSTANT:
                 expectedResults = 1u;
@@ -544,6 +546,14 @@ EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalarEis5_ValidateModule(
                 expectedResults = 1u;
                 expectedOperands = 2u;
                 expectedSuccessors = 0u;
+                break;
+            case ZR_EXEC_IR_OPCODE_DIV:
+                expectedResults = 1u;
+                expectedOperands = 2u;
+                expectedSuccessors = 0u;
+                expectedFlags = (TZrUInt16)ZR_EXEC_IR_FLAG_MAY_THROW;
+                expectedEffectIn = 1u;
+                expectedEffectOut = 2u;
                 break;
             case ZR_EXEC_IR_OPCODE_COMPARE:
                 expectedResults = 1u;
@@ -578,8 +588,34 @@ EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalarEis5_ValidateModule(
                         layout->instructionsOffset + index *
                                 ZR_ARTIFACT_EXEC_IR_EIS5_INSTRUCTION_SIZE);
         }
-        if (instruction->flags != 0u ||
-            instruction->results.count != expectedResults ||
+        if (instruction->opcode == ZR_EXEC_IR_OPCODE_DIV) {
+            if (instruction->flags != expectedFlags)
+                return ZrCore_ArtifactExecIrScalarEis5_Fail(
+                        diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
+                        layout->instructionsOffset + index *
+                                ZR_ARTIFACT_EXEC_IR_EIS5_INSTRUCTION_SIZE +
+                                ZR_ARTIFACT_EXEC_IR_EIS5_INSTRUCTION_FLAGS_OFFSET);
+            if (instruction->effectIn != expectedEffectIn)
+                return ZrCore_ArtifactExecIrScalarEis5_Fail(
+                        diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
+                        layout->instructionsOffset + index *
+                                ZR_ARTIFACT_EXEC_IR_EIS5_INSTRUCTION_SIZE +
+                                ZR_ARTIFACT_EXEC_IR_EIS5_INSTRUCTION_EFFECT_IN_OFFSET);
+            if (instruction->effectOut != expectedEffectOut)
+                return ZrCore_ArtifactExecIrScalarEis5_Fail(
+                        diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
+                        layout->instructionsOffset + index *
+                                ZR_ARTIFACT_EXEC_IR_EIS5_INSTRUCTION_SIZE +
+                                ZR_ARTIFACT_EXEC_IR_EIS5_INSTRUCTION_EFFECT_OUT_OFFSET);
+        } else if (instruction->flags != 0u ||
+                   instruction->effectIn != 0u ||
+                   instruction->effectOut != 0u) {
+            return ZrCore_ArtifactExecIrScalarEis5_Fail(
+                    diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
+                    layout->instructionsOffset + index *
+                            ZR_ARTIFACT_EXEC_IR_EIS5_INSTRUCTION_SIZE);
+        }
+        if (instruction->results.count != expectedResults ||
             instruction->operands.count != expectedOperands ||
             instruction->successorRange.count != expectedSuccessors ||
             !eis5_range_fits(instruction->results, counts.results) ||
@@ -593,7 +629,6 @@ EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalarEis5_ValidateModule(
              instruction->layoutId != 0u) ||
             !eis5_range_is(instruction->memoryIn, 0u, 0u) ||
             !eis5_range_is(instruction->memoryOut, 0u, 0u) ||
-            instruction->effectIn != 0u || instruction->effectOut != 0u ||
             instruction->deoptId != 0u || instruction->bindingRow != 0u)
             return ZrCore_ArtifactExecIrScalarEis5_Fail(
                     diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,

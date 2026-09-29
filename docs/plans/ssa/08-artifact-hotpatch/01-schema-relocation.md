@@ -45,6 +45,7 @@ plan_sources:
   - "user: 2026-09-29 EIS5 six Compare modes extension"
   - "user: 2026-09-29 EIS5 scalar SUB extension"
   - "user: 2026-09-29 EIS5 scalar MUL extension"
+  - "user: 2026-09-29 EIS5 scalar DIV extension"
 tests:
   - tests/library/test_ssa_schema_relocation.c
   - tests/parser/test_artifact_schema_source_roundtrip.c
@@ -56,6 +57,7 @@ tests:
   - tests/library/test_ssa_exec_ir_artifact_v6_eis5_compare.inc
   - tests/library/test_ssa_exec_ir_artifact_v6_eis5_sub.inc
   - tests/library/test_ssa_exec_ir_artifact_v6_eis5_mul.inc
+  - tests/library/test_ssa_exec_ir_artifact_v6_eis5_div.inc
   - tests/library/test_ssa_exec_ir_artifact_v6_add.inc
   - tests/acceptance/ssa-artifact-v6-canonical-exec-ir.md
   - tests/acceptance/ssa-artifact-v6-eis3-counted-cfg.md
@@ -66,6 +68,7 @@ tests:
   - tests/acceptance/ssa-artifact-v6-eis5-compare-modes.md
   - tests/acceptance/ssa-artifact-v6-eis5-sub.md
   - tests/acceptance/ssa-artifact-v6-eis5-mul.md
+  - tests/acceptance/ssa-artifact-v6-eis5-div.md
   - tests/acceptance/ssa-artifact-v6-eri1-relocation-boundary.md
 doc_type: milestone-detail
 status: planned
@@ -166,7 +169,7 @@ fixture 长 716 字节，与 EIS4 固定 ADD 形状长度碰撞；EIS5 仍通过
 完整 legacy 结构识别路由。直接 codec 与 canonical writer/opener 覆盖
 roundtrip；BOOL 输入/结果及当时尚不支持的 MUL 在 writer、reader 和 opener
 边界拒绝，reader 不发布部分图。MUL 后续已由独立子切片支持；当前此处的
-不支持 opcode 回归改为 DIV。现有 EIS1–E4 goldens、EIS5 i64/BOOL
+不支持 opcode 回归改为 ARITHMETIC。现有 EIS1–E4 goldens、EIS5 i64/BOOL
 predicate、COMPARE 和计数碰撞回归保持通过。Clang 与独立 MSVC 的四项门禁
 均为 4/4 通过。较早的 EIS5 v5 reader 不识别 SUB，会在指令记录处
 拒绝；full 08.01 的其余 schema/relocation 退出门禁仍未满足。实现边界和
@@ -177,11 +180,27 @@ RED/GREEN 证据见
 两个 i64 操作数产生一个 i64 结果，不改变版本或 wire layout。`6 * -7`
 经 VerifyModule 和 Oracle 得到 `-42`，与 ADD、SUB 均不同；单块四指令
 fixture 长 716 字节，与 EIS4 固定 ADD 形状长度碰撞。测试覆盖直接 codec
-和跨进程 canonical writer/opener roundtrip，以及非 i64 输入/结果和 DIV
-的 writer、reader、opener 拒绝；reader 失败不发布部分图。Clang 与独立
+和跨进程 canonical writer/opener roundtrip，以及非 i64 输入/结果和
+ARITHMETIC 的 writer、reader、opener 拒绝；reader 失败不发布部分图。Clang 与独立
 MSVC 的四项门禁均为 4/4 通过。较早的 EIS5 v5 reader 不识别 MUL，会在
 指令记录处拒绝；full 08.01 的退出门禁仍未满足。范围和验证记录见
 [EIS5 MUL 验收](../../../../tests/acceptance/ssa-artifact-v6-eis5-mul.md)。
+
+**EIS5 i64 DIV 标量子切片：** counted v5 CFG 增加一个 i64 `DIV` opcode，
+两个 i64 操作数产生一个 i64 结果，不改变 header、版本或记录宽度。
+VerifyModule 与 Oracle 接受 `84 / -7 = -12`；Oracle 在除数为零或
+`INT64_MIN / -1` 时会在 C 除法前拒绝。DIV 必须带 `MAY_THROW` 和固定
+effect token pair 1→2；范围只覆盖一个 DIV，不定义通用 effect chain。
+直接 codec、canonical writer/opener 和跨进程读取验证 716 字节 EIS4 长度
+碰撞；非 i64 输入/结果、缺失 flag、非规范 effect pair 及 ARITHMETIC 都
+被 writer、reader 和 opener 拒绝，失败读取不发布部分图。旧 EIS5 writer
+在 fixture 已由 VerifyModule/Oracle 接受后，test-only RED 精确失败于
+DIV dynamic size query；Clang 与 MSVC 当前源码的 `artifact_schema`、
+`ssa_schema_relocation`、write、roundtrip 四项均 4/4 通过。EIS1–EIS4
+字节与拒绝路径保持不变；旧 v5 reader 在 opcode 记录处拒绝 DIV。SUB/MUL
+因 DIV 现已加入 allowlist，其仍不支持 opcode 回归改用 ARITHMETIC。完整
+08.01 的其他 binding、relocation、ExecBC、AOT 门禁仍未满足。实现范围见
+[EIS5 DIV 验收](../../../../tests/acceptance/ssa-artifact-v6-eis5-div.md)。
 
 ## 依赖与交付范围
 

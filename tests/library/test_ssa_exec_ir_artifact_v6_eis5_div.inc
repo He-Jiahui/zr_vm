@@ -1,24 +1,27 @@
-/* EIS5 v5 counted CFG tests for the narrow scalar MUL extension. */
-#define TEST_EIS5_MUL_ENCODED_SIZE 716u
-#define TEST_EIS5_MUL_FIRST_CONSTANT_TYPE_OFFSET 212u
-#define TEST_EIS5_MUL_FIRST_CONSTANT_BITS_OFFSET 220u
-#define TEST_EIS5_MUL_FIRST_VALUE_RECORD_OFFSET 244u
-#define TEST_EIS5_MUL_FIRST_VALUE_TYPE_OFFSET 252u
-#define TEST_EIS5_MUL_RESULT_VALUE_RECORD_OFFSET 292u
-#define TEST_EIS5_MUL_RESULT_VALUE_TYPE_OFFSET 300u
-#define TEST_EIS5_MUL_OPCODE_OFFSET 524u
+/* EIS5 v5 counted CFG tests for the narrow scalar DIV extension. */
+#define TEST_EIS5_DIV_ENCODED_SIZE 716u
+#define TEST_EIS5_DIV_FIRST_CONSTANT_TYPE_OFFSET 212u
+#define TEST_EIS5_DIV_FIRST_CONSTANT_BITS_OFFSET 220u
+#define TEST_EIS5_DIV_FIRST_VALUE_RECORD_OFFSET 244u
+#define TEST_EIS5_DIV_FIRST_VALUE_TYPE_OFFSET 252u
+#define TEST_EIS5_DIV_RESULT_VALUE_RECORD_OFFSET 292u
+#define TEST_EIS5_DIV_RESULT_VALUE_TYPE_OFFSET 300u
+#define TEST_EIS5_DIV_OPCODE_OFFSET 524u
+#define TEST_EIS5_DIV_FLAGS_OFFSET 526u
+#define TEST_EIS5_DIV_EFFECT_IN_OFFSET 588u
+#define TEST_EIS5_DIV_EFFECT_OUT_OFFSET 592u
 
-static char *eis5_mul_artifact_path(const char *basePath) {
+static char *eis5_div_artifact_path(const char *basePath) {
     TZrSize capacity = strlen(basePath) + 32u;
     char *path = (char *)malloc(capacity);
-    require_true(path != ZR_NULL, "allocate EIS5 MUL artifact path");
-    snprintf(path, capacity, "%s.eis5-mul.zro", basePath);
+    require_true(path != ZR_NULL, "allocate EIS5 DIV artifact path");
+    snprintf(path, capacity, "%s.eis5-div.zro", basePath);
     return path;
 }
 
-static void eis5_mul_build_graph(SZrExecIrModule *module) {
+static void eis5_div_build_graph(SZrExecIrModule *module) {
     SZrExecIrConstant constants[2] = {
-        {ZR_VALUE_TYPE_INT64, 0u, 6u},
+        {ZR_VALUE_TYPE_INT64, 0u, 84u},
         {ZR_VALUE_TYPE_INT64, 0u, (TZrUInt64)-7}
     };
     TZrExecIrValueId values[3];
@@ -44,31 +47,31 @@ static void eis5_mul_build_graph(SZrExecIrModule *module) {
     require_true(ZrCore_ExecIr_ModuleAppendConstant(module, constants, 2u,
                                                     &range) &&
                  range.start == 0u && range.count == 2u,
-                 "append EIS5 MUL constants");
+                 "append EIS5 DIV constants");
     require_true(ZrCore_ExecIr_ModuleAddFunction(
                          module, TEST_MEMBER, TEST_SIGNATURE_HASH,
                          &functionId) && functionId == 1u,
-                 "add EIS5 MUL function");
+                 "add EIS5 DIV function");
     function = ZrCore_ExecIr_ModuleFunctionAt(module, functionId);
-    require_true(function != ZR_NULL, "lookup EIS5 MUL function");
+    require_true(function != ZR_NULL, "lookup EIS5 DIV function");
     function->contract.layoutHash = TEST_LAYOUT_HASH;
     function->contract.moduleHash = TEST_MODULE_HASH;
     require_true(ZrCore_ExecIr_FunctionAddBlock(
                          function, ZR_EXEC_IR_BLOCK_FLAG_ENTRY) == 1u,
-                 "add EIS5 MUL entry block");
+                 "add EIS5 DIV entry block");
     for (TZrUInt32 index = 0u; index < 3u; ++index) {
         values[index] = ZrCore_ExecIr_FunctionAddValue(
                 function, ZR_VALUE_TYPE_INT64,
                 ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
                 ZR_EXEC_IR_NULLABILITY_UNKNOWN);
         require_true(values[index] == index + 1u,
-                     "append EIS5 MUL value");
+                     "append EIS5 DIV value");
     }
     for (TZrUInt32 index = 0u; index < 2u; ++index) {
         require_true(ZrCore_ExecIr_FunctionAppendResults(
                              function, &values[index], 1u, &range) &&
                      range.start == index && range.count == 1u,
-                     "append EIS5 MUL constant result");
+                     "append EIS5 DIV constant result");
         eis5_append_instruction(function, ZR_EXEC_IR_OPCODE_CONSTANT,
                                 range, empty, empty, index, index + 1u);
     }
@@ -77,28 +80,38 @@ static void eis5_mul_build_graph(SZrExecIrModule *module) {
     require_true(ZrCore_ExecIr_FunctionAppendOperands(
                          function, operands, 2u, &range) &&
                  range.start == 0u && range.count == 2u,
-                 "append ordered EIS5 MUL operands");
+                 "append ordered EIS5 DIV operands");
     require_true(ZrCore_ExecIr_FunctionAppendResults(
                          function, &values[2], 1u, &range) &&
                  range.start == 2u && range.count == 1u,
-                 "append EIS5 MUL result");
-    eis5_append_instruction(function, ZR_EXEC_IR_OPCODE_MUL,
+                 "append EIS5 DIV result");
+    eis5_append_instruction(function, ZR_EXEC_IR_OPCODE_DIV,
                             range, (SZrExecIrRange){.start = 0u, .count = 2u},
                             empty, 0u, 3u);
+    function->instructions[2].flags = ZR_EXEC_IR_FLAG_MAY_THROW;
+    function->instructions[2].effectIn = 1u;
+    function->instructions[2].effectOut = 2u;
     require_true(ZrCore_ExecIr_FunctionAppendOperands(
                          function, &values[2], 1u, &range) &&
                  range.start == 2u && range.count == 1u,
-                 "append EIS5 MUL return operand");
+                 "append EIS5 DIV return operand");
     eis5_append_instruction(function, ZR_EXEC_IR_OPCODE_RETURN,
                             empty, range, empty, 0u, 4u);
     function->blocks[0].instructions =
             (SZrExecIrRange){.start = 0u, .count = 4u};
     function->blocks[0].terminatorInstructionId = 4u;
+    if (!ZrCore_ExecIr_VerifyModule(module, &diagnostic)) {
+        fprintf(stderr,
+                "EIS5 DIV fixture verifier: code=%u block=%u instruction=%u expected=%u actual=%u\n",
+                (unsigned)diagnostic.code, diagnostic.blockId,
+                diagnostic.instructionId, diagnostic.expectedVersion,
+                diagnostic.actualVersion);
+    }
     require_true(ZrCore_ExecIr_VerifyModule(module, &diagnostic),
-                 "VerifyModule accepts one-block i64 MUL graph");
+                 "VerifyModule accepts one-block i64 DIV graph");
 }
 
-static void eis5_mul_assert_graph_and_oracle(
+static void eis5_div_assert_graph_and_oracle(
         const SZrExecIrModule *module) {
     const SZrExecIrFunction *function;
     SZrExecIrOracleValue constants[2];
@@ -107,11 +120,11 @@ static void eis5_mul_assert_graph_and_oracle(
     SZrExecIrDiagnostic diagnostic;
 
     require_true(ZrCore_ExecIr_VerifyModule(module, &diagnostic),
-                 "Verify decoded EIS5 MUL graph");
+                 "Verify decoded EIS5 DIV graph");
     require_true(module->constantCount == 2u && module->functionCount == 1u &&
-                 module->constants[0].bits == 6u &&
+                 module->constants[0].bits == 84u &&
                  module->constants[1].bits == (TZrUInt64)-7,
-                 "preserve EIS5 MUL signed constants");
+                 "preserve EIS5 DIV signed constants");
     function = &module->functions[0];
     require_true(function->entryBlockId == 1u && function->blockCount == 1u &&
                  function->instructionCount == 4u && function->valueCount == 3u &&
@@ -121,7 +134,11 @@ static void eis5_mul_assert_graph_and_oracle(
                  function->values[0].typeToken == ZR_VALUE_TYPE_INT64 &&
                  function->values[1].typeToken == ZR_VALUE_TYPE_INT64 &&
                  function->values[2].typeToken == ZR_VALUE_TYPE_INT64 &&
-                 function->instructions[2].opcode == ZR_EXEC_IR_OPCODE_MUL &&
+                 function->instructions[2].opcode == ZR_EXEC_IR_OPCODE_DIV &&
+                 function->instructions[2].flags ==
+                         ZR_EXEC_IR_FLAG_MAY_THROW &&
+                 function->instructions[2].effectIn == 1u &&
+                 function->instructions[2].effectOut == 2u &&
                  function->instructions[2].results.start == 2u &&
                  function->instructions[2].results.count == 1u &&
                  function->instructions[2].operands.start == 0u &&
@@ -131,7 +148,7 @@ static void eis5_mul_assert_graph_and_oracle(
                  function->blocks[0].instructions.start == 0u &&
                  function->blocks[0].instructions.count == 4u &&
                  function->blocks[0].terminatorInstructionId == 4u,
-                 "preserve exact EIS5 MUL shape and i64 types");
+                 "preserve exact EIS5 DIV shape and i64 types");
     memset(constants, 0, sizeof(constants));
     for (TZrUInt32 index = 0u; index < 2u; ++index) {
         constants[index].kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
@@ -144,19 +161,32 @@ static void eis5_mul_assert_graph_and_oracle(
     input.constantCount = 2u;
     ZrCore_ExecIr_OracleResultInit(&execution);
     require_true(ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic),
-                 "run EIS5 MUL graph through Oracle");
+                 "run EIS5 DIV graph through Oracle");
     require_true(execution.returned &&
                  execution.returnValue.kind == ZR_EXEC_IR_ORACLE_VALUE_SIGNED &&
-                 execution.returnValue.as.signedInteger == -42,
-                 "EIS5 Oracle computes 6 times -7, distinct from ADD and SUB");
+                 execution.returnValue.as.signedInteger == -12,
+                 "EIS5 Oracle computes 84 divided by -7");
+    ZrCore_ExecIr_OracleResultFree(&execution);
+
+    constants[1].as.signedInteger = 0;
+    ZrCore_ExecIr_OracleResultInit(&execution);
+    require_true(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic),
+                 "Oracle rejects signed DIV by zero before C division");
+    ZrCore_ExecIr_OracleResultFree(&execution);
+
+    constants[0].as.signedInteger = INT64_MIN;
+    constants[1].as.signedInteger = -1;
+    ZrCore_ExecIr_OracleResultInit(&execution);
+    require_true(!ZrCore_ExecIr_RunOracleEx(&input, &execution, &diagnostic),
+                 "Oracle rejects INT64_MIN divided by -1 before C division");
     ZrCore_ExecIr_OracleResultFree(&execution);
 }
 
-static void eis5_mul_require_writer_rejected(
+static void eis5_div_require_writer_rejected(
         const SZrExecIrModule *module, TZrByte *payload, TZrUInt32 expectedOffset,
         const char *label) {
     TZrUInt32 encodedSize = UINT32_MAX;
-    TZrByte unchanged[TEST_EIS5_MUL_ENCODED_SIZE];
+    TZrByte unchanged[TEST_EIS5_DIV_ENCODED_SIZE];
     SZrArtifactExecIrDiagnostic diagnostic;
 
     memcpy(unchanged, payload, sizeof(unchanged));
@@ -166,14 +196,14 @@ static void eis5_mul_require_writer_rejected(
                  diagnostic.byteOffset == expectedOffset,
                  label);
     require_true(ZrCore_ArtifactExecIrScalar_Write(
-                         module, payload, TEST_EIS5_MUL_ENCODED_SIZE,
+                         module, payload, TEST_EIS5_DIV_ENCODED_SIZE,
                          &diagnostic) == ZR_ARTIFACT_EXEC_IR_INVALID_SECTION &&
                  diagnostic.byteOffset == expectedOffset &&
                  memcmp(payload, unchanged, sizeof(unchanged)) == 0,
-                 "rejected EIS5 MUL write preserves destination bytes");
+                 "rejected EIS5 DIV write preserves destination bytes");
 }
 
-static void eis5_mul_require_codec_rejected(
+static void eis5_div_require_codec_rejected(
         const TZrByte *bytes, TZrUInt32 length,
         EZrArtifactExecIrStatus expected, TZrUInt32 expectedOffset,
         const char *label) {
@@ -190,15 +220,15 @@ static void eis5_mul_require_codec_rejected(
                 (unsigned)diagnostic.byteOffset, (unsigned)expectedOffset);
     require_true(actual == expected, label);
     require_true(diagnostic.byteOffset == expectedOffset,
-                 "malformed EIS5 MUL codec byte offset");
+                 "malformed EIS5 DIV codec byte offset");
     require_true(output.functionCount == 0u && output.functions == ZR_NULL &&
                  output.constantCount == 0u && output.constants == ZR_NULL &&
                  output.layoutCount == 0u && output.layouts == ZR_NULL &&
                  output.sourceMapCount == 0u && output.sourceMaps == ZR_NULL,
-                 "rejected EIS5 MUL payload publishes no graph");
+                 "rejected EIS5 DIV payload publishes no graph");
 }
 
-static void eis5_mul_require_canonical_write_rejected(
+static void eis5_div_require_canonical_write_rejected(
         const SFixture *fixture, const SZrExecIrModule *module,
         const char *path, const TZrByte *original, TZrSize originalLength,
         const char *label) {
@@ -213,11 +243,11 @@ static void eis5_mul_require_canonical_write_rejected(
     retained = read_file(path, &retainedLength);
     require_true(retainedLength == originalLength &&
                  memcmp(retained, original, originalLength) == 0,
-                 "rejected EIS5 MUL canonical write preserves file");
+                 "rejected EIS5 DIV canonical write preserves file");
     free(retained);
 }
 
-static void eis5_mul_write_phase(const char *basePath) {
+static void eis5_div_write_phase(const char *basePath) {
     SFixture fixture;
     SZrExecIrModule source;
     SZrExecIrModule decoded;
@@ -230,15 +260,15 @@ static void eis5_mul_write_phase(const char *basePath) {
     char *path;
 
     init_fixture(&fixture);
-    eis5_mul_build_graph(&source);
-    eis5_mul_assert_graph_and_oracle(&source);
+    eis5_div_build_graph(&source);
+    eis5_div_assert_graph_and_oracle(&source);
     require_true(ZrCore_ArtifactExecIrScalar_GetEncodedSize(
                          &source, &encodedSize, &codecDiagnostic) ==
                          ZR_ARTIFACT_EXEC_IR_OK &&
-                 encodedSize == TEST_EIS5_MUL_ENCODED_SIZE,
-                 "EIS5 MUL dynamic size query shares the EIS4 716-byte tuple");
+                 encodedSize == TEST_EIS5_DIV_ENCODED_SIZE,
+                 "EIS5 DIV dynamic size query shares the EIS4 716-byte tuple");
     payload = (TZrByte *)malloc(encodedSize);
-    require_true(payload != ZR_NULL, "allocate EIS5 MUL payload");
+    require_true(payload != ZR_NULL, "allocate EIS5 DIV payload");
     memset(payload, 0xa5, encodedSize);
     require_true(ZrCore_ArtifactExecIrScalar_Write(
                          &source, payload, encodedSize, &codecDiagnostic) ==
@@ -246,53 +276,77 @@ static void eis5_mul_write_phase(const char *basePath) {
                  memcmp(payload, "EIS5", 4u) == 0 && payload[4] == 5u &&
                  payload[5] == 0u && payload[6] == 0u && payload[7] == 0u &&
                  eis5_get32(payload + TEST_EIS5_TOTAL_LENGTH_OFFSET) ==
-                         TEST_EIS5_MUL_ENCODED_SIZE,
-                 "write EIS5 v5 MUL payload despite EIS4 length collision");
+                         TEST_EIS5_DIV_ENCODED_SIZE &&
+                 (TZrUInt16)eis5_get32(
+                         payload + TEST_EIS5_DIV_FLAGS_OFFSET) ==
+                         ZR_EXEC_IR_FLAG_MAY_THROW &&
+                 eis5_get32(payload + TEST_EIS5_DIV_EFFECT_IN_OFFSET) == 1u &&
+                 eis5_get32(payload + TEST_EIS5_DIV_EFFECT_OUT_OFFSET) == 2u,
+                 "write EIS5 v5 DIV payload despite EIS4 length collision");
     ZrCore_ExecIr_ModuleInit(&decoded);
     require_true(ZrCore_ArtifactExecIrScalar_Read(
                          payload, encodedSize, &decoded, &codecDiagnostic) ==
                          ZR_ARTIFACT_EXEC_IR_OK,
-                 "directly read EIS5 MUL payload");
-    eis5_mul_assert_graph_and_oracle(&decoded);
+                 "directly read EIS5 DIV payload");
+    eis5_div_assert_graph_and_oracle(&decoded);
     ZrCore_ExecIr_FreeModule(&decoded);
 
-    path = eis5_mul_artifact_path(basePath);
+    path = eis5_div_artifact_path(basePath);
     require_true(ZrParser_ExecIr_WriteCanonicalZroFile(
                          &fixture.metadata, &source, path,
                          &artifactDiagnostic) == ZR_ARTIFACT_STATUS_OK,
-                 "write canonical EIS5 MUL artifact");
+                 "write canonical EIS5 DIV artifact");
     original = read_file(path, &originalLength);
+
+    source.functions[0].instructions[2].effectOut = 1u;
+    eis5_div_require_writer_rejected(
+            &source, payload, TEST_EIS5_DIV_EFFECT_OUT_OFFSET,
+            "writer rejects non-increasing DIV effect token");
+    eis5_div_require_canonical_write_rejected(
+            &fixture, &source, path, original, originalLength,
+            "canonical writer rejects non-increasing DIV effect token");
+    source.functions[0].instructions[2].effectOut = 2u;
+
+    source.functions[0].instructions[2].flags = 0u;
+    eis5_div_require_writer_rejected(
+            &source, payload, TEST_EIS5_DIV_FLAGS_OFFSET,
+            "writer rejects DIV without required MAY_THROW flag");
+    eis5_div_require_canonical_write_rejected(
+            &fixture, &source, path, original, originalLength,
+            "canonical writer rejects DIV without MAY_THROW flag");
+    source.functions[0].instructions[2].flags = ZR_EXEC_IR_FLAG_MAY_THROW;
 
     source.constants[0].typeToken = ZR_VALUE_TYPE_BOOL;
     source.constants[0].bits = 1u;
     source.functions[0].values[0].typeToken = ZR_VALUE_TYPE_BOOL;
-    eis5_mul_require_writer_rejected(
-            &source, payload, TEST_EIS5_MUL_FIRST_VALUE_RECORD_OFFSET,
-            "writer rejects non-i64 EIS5 MUL input at value record");
-    eis5_mul_require_canonical_write_rejected(
+    eis5_div_require_writer_rejected(
+            &source, payload, TEST_EIS5_DIV_FIRST_VALUE_RECORD_OFFSET,
+            "writer rejects non-i64 EIS5 DIV input at value record");
+    eis5_div_require_canonical_write_rejected(
             &fixture, &source, path, original, originalLength,
-            "canonical writer rejects non-i64 EIS5 MUL input");
+            "canonical writer rejects non-i64 EIS5 DIV input");
     source.constants[0].typeToken = ZR_VALUE_TYPE_INT64;
-    source.constants[0].bits = 6u;
+    source.constants[0].bits = 84u;
     source.functions[0].values[0].typeToken = ZR_VALUE_TYPE_INT64;
 
     source.functions[0].values[2].typeToken = ZR_VALUE_TYPE_BOOL;
-    eis5_mul_require_writer_rejected(
-            &source, payload, TEST_EIS5_MUL_RESULT_VALUE_RECORD_OFFSET,
-            "writer rejects non-i64 EIS5 MUL result at value record");
-    eis5_mul_require_canonical_write_rejected(
+    eis5_div_require_writer_rejected(
+            &source, payload, TEST_EIS5_DIV_RESULT_VALUE_RECORD_OFFSET,
+            "writer rejects non-i64 EIS5 DIV result at value record");
+    eis5_div_require_canonical_write_rejected(
             &fixture, &source, path, original, originalLength,
-            "canonical writer rejects non-i64 EIS5 MUL result");
+            "canonical writer rejects non-i64 EIS5 DIV result");
     source.functions[0].values[2].typeToken = ZR_VALUE_TYPE_INT64;
 
     source.functions[0].instructions[2].opcode =
             (TZrUInt16)ZR_EXEC_IR_OPCODE_ARITHMETIC;
-    eis5_mul_require_writer_rejected(
-            &source, payload, TEST_EIS5_MUL_OPCODE_OFFSET,
-            "writer rejects unsupported EIS5 ARITHMETIC opcode");
-    eis5_mul_require_canonical_write_rejected(
+    source.functions[0].instructions[2].flags = 0u;
+    eis5_div_require_writer_rejected(
+            &source, payload, TEST_EIS5_DIV_OPCODE_OFFSET,
+            "writer rejects unlisted EIS5 ARITHMETIC opcode");
+    eis5_div_require_canonical_write_rejected(
             &fixture, &source, path, original, originalLength,
-            "canonical writer rejects unsupported EIS5 ARITHMETIC opcode");
+            "canonical writer rejects unlisted EIS5 ARITHMETIC opcode");
 
     free(original);
     free(path);
@@ -300,9 +354,9 @@ static void eis5_mul_write_phase(const char *basePath) {
     ZrCore_ExecIr_FreeModule(&source);
 }
 
-static void eis5_mul_read_phase(const char *basePath) {
+static void eis5_div_read_phase(const char *basePath) {
     SFixture fixture;
-    char *path = eis5_mul_artifact_path(basePath);
+    char *path = eis5_div_artifact_path(basePath);
     TZrSize length;
     TZrSize bundleOffset, payloadOffset;
     TZrByte *bytes = read_file(path, &length);
@@ -314,14 +368,14 @@ static void eis5_mul_read_phase(const char *basePath) {
     SZrArtifactExecIrView nested = {0};
     const SZrArtifactExecIrSectionView *payload = ZR_NULL;
 
-    require_true(mutated != ZR_NULL, "allocate EIS5 MUL mutation buffer");
+    require_true(mutated != ZR_NULL, "allocate EIS5 DIV mutation buffer");
     init_fixture(&fixture);
     ZrCore_ExecIr_ModuleInit(&module);
     require_true(ZrCore_Module_OpenExecIrArtifact(
                          bytes, length, &fixture.metadata.identity, &module,
                          &diagnostic) == ZR_ARTIFACT_STATUS_OK,
-                 "open canonical EIS5 MUL artifact in separate process");
-    eis5_mul_assert_graph_and_oracle(&module);
+                 "open canonical EIS5 DIV artifact in separate process");
+    eis5_div_assert_graph_and_oracle(&module);
     ZrCore_ExecIr_FreeModule(&module);
     require_true(ZrCore_Artifact_Read(bytes, length, &outer, &diagnostic) ==
                          ZR_ARTIFACT_STATUS_OK &&
@@ -334,66 +388,98 @@ static void eis5_mul_read_phase(const char *basePath) {
                  ZrCore_ArtifactExecIr_FindSection(
                          &nested, ZR_ARTIFACT_EXEC_IR_SECTION_EXEC_IR,
                          &payload, NULL) == ZR_ARTIFACT_EXEC_IR_OK &&
-                 payload->byteLength == TEST_EIS5_MUL_ENCODED_SIZE &&
+                 payload->byteLength == TEST_EIS5_DIV_ENCODED_SIZE &&
                  memcmp(payload->data, "EIS5", 4u) == 0,
-                 "find EIS5 MUL payload with EIS4-colliding length");
+                 "find EIS5 DIV payload with EIS4-colliding length");
     bundleOffset = (TZrSize)(bundle.data - bytes);
     payloadOffset = (TZrSize)(payload->data - bytes);
 
     memcpy(mutated, bytes, length);
-    put32(mutated + payloadOffset + TEST_EIS5_MUL_FIRST_CONSTANT_TYPE_OFFSET,
+    put16(mutated + payloadOffset + TEST_EIS5_DIV_FLAGS_OFFSET, 0u);
+    eis5_rehash(mutated, bundleOffset, payloadOffset, payload->byteLength);
+    eis5_div_require_codec_rejected(
+            mutated + payloadOffset, payload->byteLength,
+            ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
+            TEST_EIS5_DIV_FLAGS_OFFSET,
+            "reject EIS5 DIV missing its MAY_THROW flag");
+    diagnostic = require_rejected(mutated, length,
+                                  ZR_ARTIFACT_STATUS_INVALID_SECTION);
+    require_true(diagnostic.sectionKind ==
+                         ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE &&
+                 diagnostic.byteOffset == payloadOffset +
+                         TEST_EIS5_DIV_FLAGS_OFFSET,
+                 "opener rejects rehashed DIV missing MAY_THROW flag");
+
+    memcpy(mutated, bytes, length);
+    put32(mutated + payloadOffset + TEST_EIS5_DIV_EFFECT_OUT_OFFSET, 1u);
+    eis5_rehash(mutated, bundleOffset, payloadOffset, payload->byteLength);
+    eis5_div_require_codec_rejected(
+            mutated + payloadOffset, payload->byteLength,
+            ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
+            TEST_EIS5_DIV_EFFECT_OUT_OFFSET,
+            "reject EIS5 DIV with non-increasing effect token");
+    diagnostic = require_rejected(mutated, length,
+                                  ZR_ARTIFACT_STATUS_INVALID_SECTION);
+    require_true(diagnostic.sectionKind ==
+                         ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE &&
+                 diagnostic.byteOffset == payloadOffset +
+                         TEST_EIS5_DIV_EFFECT_OUT_OFFSET,
+                 "opener rejects rehashed non-increasing DIV effect token");
+
+    memcpy(mutated, bytes, length);
+    put32(mutated + payloadOffset + TEST_EIS5_DIV_FIRST_CONSTANT_TYPE_OFFSET,
           (TZrUInt32)ZR_VALUE_TYPE_BOOL);
-    put64(mutated + payloadOffset + TEST_EIS5_MUL_FIRST_CONSTANT_BITS_OFFSET,
+    put64(mutated + payloadOffset + TEST_EIS5_DIV_FIRST_CONSTANT_BITS_OFFSET,
           1u);
-    put32(mutated + payloadOffset + TEST_EIS5_MUL_FIRST_VALUE_TYPE_OFFSET,
+    put32(mutated + payloadOffset + TEST_EIS5_DIV_FIRST_VALUE_TYPE_OFFSET,
           (TZrUInt32)ZR_VALUE_TYPE_BOOL);
     eis5_rehash(mutated, bundleOffset, payloadOffset, payload->byteLength);
-    eis5_mul_require_codec_rejected(
+    eis5_div_require_codec_rejected(
             mutated + payloadOffset, payload->byteLength,
             ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
-            TEST_EIS5_MUL_FIRST_VALUE_RECORD_OFFSET,
-            "reject malformed EIS5 MUL input type");
+            TEST_EIS5_DIV_FIRST_VALUE_RECORD_OFFSET,
+            "reject malformed EIS5 DIV input type");
     diagnostic = require_rejected(mutated, length,
                                   ZR_ARTIFACT_STATUS_INVALID_SECTION);
     require_true(diagnostic.sectionKind ==
                          ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE &&
                  diagnostic.byteOffset == payloadOffset +
-                         TEST_EIS5_MUL_FIRST_VALUE_RECORD_OFFSET,
-                 "opener rejects rehashed non-i64 MUL input at value offset");
+                         TEST_EIS5_DIV_FIRST_VALUE_RECORD_OFFSET,
+                 "opener rejects rehashed non-i64 DIV input at value offset");
 
     memcpy(mutated, bytes, length);
-    put32(mutated + payloadOffset + TEST_EIS5_MUL_RESULT_VALUE_TYPE_OFFSET,
+    put32(mutated + payloadOffset + TEST_EIS5_DIV_RESULT_VALUE_TYPE_OFFSET,
           (TZrUInt32)ZR_VALUE_TYPE_BOOL);
     eis5_rehash(mutated, bundleOffset, payloadOffset, payload->byteLength);
-    eis5_mul_require_codec_rejected(
+    eis5_div_require_codec_rejected(
             mutated + payloadOffset, payload->byteLength,
             ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
-            TEST_EIS5_MUL_RESULT_VALUE_RECORD_OFFSET,
-            "reject malformed EIS5 MUL result type");
+            TEST_EIS5_DIV_RESULT_VALUE_RECORD_OFFSET,
+            "reject malformed EIS5 DIV result type");
     diagnostic = require_rejected(mutated, length,
                                   ZR_ARTIFACT_STATUS_INVALID_SECTION);
     require_true(diagnostic.sectionKind ==
                          ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE &&
                  diagnostic.byteOffset == payloadOffset +
-                         TEST_EIS5_MUL_RESULT_VALUE_RECORD_OFFSET,
-                 "opener rejects rehashed non-i64 MUL result at value offset");
+                         TEST_EIS5_DIV_RESULT_VALUE_RECORD_OFFSET,
+                 "opener rejects rehashed non-i64 DIV result at value offset");
 
     memcpy(mutated, bytes, length);
-    put16(mutated + payloadOffset + TEST_EIS5_MUL_OPCODE_OFFSET,
+    put16(mutated + payloadOffset + TEST_EIS5_DIV_OPCODE_OFFSET,
           (TZrUInt16)ZR_EXEC_IR_OPCODE_ARITHMETIC);
     eis5_rehash(mutated, bundleOffset, payloadOffset, payload->byteLength);
-    eis5_mul_require_codec_rejected(
+    eis5_div_require_codec_rejected(
             mutated + payloadOffset, payload->byteLength,
             ZR_ARTIFACT_EXEC_IR_INVALID_SECTION,
-            TEST_EIS5_MUL_OPCODE_OFFSET,
-            "reject malformed EIS5 ARITHMETIC opcode");
+            TEST_EIS5_DIV_OPCODE_OFFSET,
+            "reject unlisted EIS5 ARITHMETIC opcode");
     diagnostic = require_rejected(mutated, length,
                                   ZR_ARTIFACT_STATUS_INVALID_SECTION);
     require_true(diagnostic.sectionKind ==
                          ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE &&
                  diagnostic.byteOffset == payloadOffset +
-                         TEST_EIS5_MUL_OPCODE_OFFSET,
-                 "opener rejects rehashed unsupported ARITHMETIC at opcode offset");
+                         TEST_EIS5_DIV_OPCODE_OFFSET,
+                 "opener rejects rehashed ARITHMETIC at opcode offset");
 
     free(mutated);
     free(bytes);
