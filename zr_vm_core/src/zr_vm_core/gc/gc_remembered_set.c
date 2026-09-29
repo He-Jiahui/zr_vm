@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 
+/* 统一填写可由调用方消费的字段诊断；诊断指针允许省略，因此失败状态仍以返回值为准。 */
 static void gc_young_set_diagnostic_local(
         SZrGcYoungDiagnostic *diagnostic,
         EZrGcYoungDiagnosticCode code,
@@ -17,6 +18,7 @@ static void gc_young_set_diagnostic_local(
     }
 }
 
+/* 写屏障入口先拒绝未知代号，避免把无效枚举误当成“不需要记卡”的合法组合。 */
 static TZrBool gc_young_generation_valid(
         EZrGarbageCollectHeapGenerationKind generation) {
     return generation == ZR_GARBAGE_COLLECT_HEAP_GENERATION_KIND_YOUNG ||
@@ -24,6 +26,7 @@ static TZrBool gc_young_generation_valid(
            generation == ZR_GARBAGE_COLLECT_HEAP_GENERATION_KIND_PERMANENT;
 }
 
+/* 把被写入的字节范围映射到卡索引；调用方仅在旧代到年轻代时使用结果标脏。 */
 static TZrBool gc_young_card_range_valid(
         const SZrGcCardTable *table,
         const TZrByte *address,
@@ -58,6 +61,12 @@ static TZrBool gc_young_card_range_valid(
     return *firstCard <= *lastCard && *lastCard < table->cardCount;
 }
 
+/**
+ * @brief 为外部提供的卡字节数组建立年轻代写屏障状态。
+ * @pre cards 至少有 cardCount 字节，且 heapBegin/heapBytes 描述可寻址的堆区间。
+ * @return 参数或容量不满足时返回 false；成功时所有卡均被重置为 clean。
+ * @note 初始化会覆盖卡数组和 table，不可用于仍需保留脏卡信息的表。
+ */
 TZrBool ZrCore_GcCardTable_Init(
         SZrGcCardTable *table,
         TZrByte *cards,
@@ -89,6 +98,11 @@ TZrBool ZrCore_GcCardTable_Init(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 检查卡表描述符能否安全参与后续记录或清理。
+ * @return 描述符有效返回 true；诊断可为 NULL，调用方仍须检查返回值。
+ * @note 校验容量关系，不扫描卡数组来重建 dirtyCount；数组需由本 API 族维护。
+ */
 TZrBool ZrCore_GcCardTable_Validate(
         const SZrGcCardTable *table,
         SZrGcYoungDiagnostic *diagnostic) {
@@ -119,6 +133,12 @@ TZrBool ZrCore_GcCardTable_Validate(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 记录一次堆内写入，并为旧代/永久代到年轻代的跨代引用标脏卡片。
+ * @pre table 已初始化；非零 size 时 address..address+size 必须完整落在其堆区间。
+ * @return 越界、无效代号或描述符错误返回 false；合法但无需记卡的写入返回 true。
+ * @note 零长度写入在校验表与代号后作为无操作成功，地址不参与范围检查。
+ */
 TZrBool ZrCore_GcCardTable_RecordStore(
         SZrGcCardTable *table,
         TZrByte *address,
@@ -155,6 +175,7 @@ TZrBool ZrCore_GcCardTable_RecordStore(
         valueGeneration != ZR_GARBAGE_COLLECT_HEAP_GENERATION_KIND_YOUNG) {
         return ZR_TRUE;
     }
+    /* 只记录老/永久到年轻的边；幼代内部写入由收集器正常遍历覆盖。 */
     for (card = firstCard; card <= lastCard; ++card) {
         if (table->cards[card] == ZR_GC_CARD_CLEAN) {
             table->cards[card] = ZR_GC_CARD_DIRTY;
@@ -174,6 +195,7 @@ TZrBool ZrCore_GcCardTable_RecordStore(
     return ZR_TRUE;
 }
 
+/** @brief 查询有效卡索引是否已标脏；空表或越界索引按 clean 处理。 */
 TZrBool ZrCore_GcCardTable_IsDirty(
         const SZrGcCardTable *table,
         TZrSize cardIndex) {
@@ -182,11 +204,17 @@ TZrBool ZrCore_GcCardTable_IsDirty(
                      table->cards[cardIndex] == ZR_GC_CARD_DIRTY);
 }
 
+/** @brief 读取写屏障维护的脏卡计数；空描述符返回零。 */
 TZrSize ZrCore_GcCardTable_DirtyCardCount(
         const SZrGcCardTable *table) {
     return table != ZR_NULL ? table->dirtyCount : 0u;
 }
 
+/**
+ * @brief 次级收集完成后清除整张卡表，为下一轮跨代写屏障重新计数。
+ * @return 描述符校验通过时返回 true，并将 dirtyCount 归零。
+ * @note 必须在本轮依赖这些卡的扫描完成后调用，否则会丢失未处理的跨代边。
+ */
 TZrBool ZrCore_GcCardTable_Clear(
         SZrGcCardTable *table,
         SZrGcYoungDiagnostic *diagnostic) {
@@ -199,6 +227,7 @@ TZrBool ZrCore_GcCardTable_Clear(
     return ZR_TRUE;
 }
 
+/* 同一种 token 的重复登记幂等；kind 隔离卡索引与对象稳定标识的数值空间。 */
 static TZrBool gc_young_remembered_root_equal(
         const SZrGcRememberedRoot *left,
         EZrGcRememberedRootKind kind,
@@ -206,12 +235,18 @@ static TZrBool gc_young_remembered_root_equal(
     return left != ZR_NULL && left->kind == kind && left->token == token;
 }
 
+/* 记录入口只接受这两类根；新增根类型时需同步更新记录与消费方。 */
 static TZrBool gc_young_remembered_root_valid_kind(
         EZrGcRememberedRootKind kind) {
     return kind == ZR_GC_REMEMBERED_ROOT_CARD ||
            kind == ZR_GC_REMEMBERED_ROOT_OBJECT;
 }
 
+/**
+ * @brief 初始化调用方提供的定长根集合，用于保存卡索引或稳定对象 token。
+ * @pre entries 至少有 capacity 个元素；成功后其内容被清零并由 set 引用。
+ * @note epoch 由调用方传入并保留为集合代际标签，本实现不解释或递增它。
+ */
 TZrBool ZrCore_GcRememberedRootSet_Init(
         SZrGcRememberedRootSet *set,
         SZrGcRememberedRoot *entries,
@@ -229,6 +264,7 @@ TZrBool ZrCore_GcRememberedRootSet_Init(
     return ZR_TRUE;
 }
 
+/* 两个公开 Record 入口共享去重和容量策略，满表时失败而不静默丢弃根。 */
 static TZrBool gc_young_remembered_root_record(
         SZrGcRememberedRootSet *set,
         EZrGcRememberedRootKind kind,
@@ -267,6 +303,7 @@ TZrBool ZrCore_GcRememberedRootSet_RecordCard(
         SZrGcRememberedRootSet *set,
         TZrSize cardIndex,
         SZrGcYoungDiagnostic *diagnostic) {
+    /* 卡 token 按表内索引解释；关联具体堆区间由消费该根的收集器负责。 */
     return gc_young_remembered_root_record(
             set, ZR_GC_REMEMBERED_ROOT_CARD, (TZrUInt64)cardIndex, diagnostic);
 }
@@ -275,6 +312,7 @@ TZrBool ZrCore_GcRememberedRootSet_RecordObject(
         SZrGcRememberedRootSet *set,
         TZrUInt64 objectToken,
         SZrGcYoungDiagnostic *diagnostic) {
+    /* 零保留为无效对象标识，避免把未初始化 token 当作可追踪对象。 */
     if (objectToken == 0u) {
         ZrCore_GcYoung_DiagnosticClear(diagnostic);
         gc_young_set_diagnostic_local(diagnostic,
@@ -286,6 +324,12 @@ TZrBool ZrCore_GcRememberedRootSet_RecordObject(
             set, ZR_GC_REMEMBERED_ROOT_OBJECT, objectToken, diagnostic);
 }
 
+/**
+ * @brief 以调用方游标顺序读取集合中的下一条根记录。
+ * @pre set 来自成功初始化且扫描期间不被并发修改；cursor 初值通常为零。
+ * @return 读到一条记录时递增 cursor 并返回 true；到达末尾时返回 false 并给出 END_OF_SCAN。
+ * BUG: 公开 set 的 count 若被改到超过 capacity，cursor < count 时会越界读 entries[cursor]；需在读取前校验计数。
+ */
 TZrBool ZrCore_GcRememberedRootSet_ScanNext(
         const SZrGcRememberedRootSet *set,
         TZrSize *cursor,
@@ -310,6 +354,11 @@ TZrBool ZrCore_GcRememberedRootSet_ScanNext(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 清空本轮记住的根记录，但保留 backing storage、容量和 epoch 供集合复用。
+ * @return 描述符有效时返回 true，集合变为空。
+ * @note 必须在根已消费后调用；提前清空会使调用方漏掉待扫描的跨代根。
+ */
 TZrBool ZrCore_GcRememberedRootSet_Clear(
         SZrGcRememberedRootSet *set,
         SZrGcYoungDiagnostic *diagnostic) {
