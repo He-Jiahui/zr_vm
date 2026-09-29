@@ -4,7 +4,7 @@
 #include "zr_vm_core/global.h"
 
 #include <string.h>
-
+/* BUG: ignored registry 的查询、插入和索引写入未跨 RUNNING mutator 同步。 */
 TZrBool ZrCore_Reflection_ObjectPinRaw(
         SZrState *state,
         SZrRawObject *object,
@@ -15,7 +15,7 @@ TZrBool ZrCore_Reflection_ObjectPinRaw(
             object,
             addedByCaller);
 }
-
+/* BUG: ignored registry 的 swap-delete 未同步；addedByCaller 不是引用计数。 */
 void ZrCore_Reflection_ObjectUnpinRaw(
         SZrGlobalState *global,
         SZrRawObject *object,
@@ -32,6 +32,7 @@ TZrBool ZrCore_Reflection_ObjectPinValue(
     if (addedByCaller != ZR_NULL) {
         *addedByCaller = ZR_FALSE;
     }
+    /* TODO: state 为空时 GC 值也会返回成功，但不会建立 root。 */
     if (state == ZR_NULL || value == ZR_NULL || !ZrCore_Value_IsGarbageCollectable(value)) {
         return ZR_TRUE;
     }
@@ -95,6 +96,12 @@ TZrBool ZrCore_Reflection_ObjectSetFieldValue(
     ZrCore_Value_InitAsRawObject(
             state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
     key.type = ZR_VALUE_TYPE_STRING;
+    /*
+     * BUG: Object_SetValue 没有成功返回值；domain 校验、对象初始化、rehash
+     * 或 HashSet_Add 失败都可不写入，而本包装器仍在下面返回 true。
+     * BUG: HashSet_Add 可经 GcMalloc/Exception_Throw 非局部跳转，绕过下面三次
+     * unpin，留下 ignored registry root。
+     */
     ZrCore_Object_SetValue(state, object, &key, value);
     ZrCore_Reflection_ObjectUnpinRaw(
             state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString), keyPinned);
@@ -109,6 +116,7 @@ TZrBool ZrCore_Reflection_ObjectSetString(
         SZrObject *object,
         const TZrChar *fieldName,
         const TZrChar *value) {
+    /* BUG: 先创建 value 字符串，委托 helper 才 pin receiver；未 root 的对象可能在重试 GC 中被回收。 */
     SZrString *stringValue = ZrCore_Reflection_ObjectMakeString(state, value);
     SZrTypeValue fieldValue;
 
@@ -162,6 +170,7 @@ const SZrTypeValue *ZrCore_Reflection_ObjectGetFieldValue(
     if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
         return ZR_NULL;
     }
+    /* TODO: 未 pin 的长字符串 key 若以后走 raw-array materialization，分配触发 GC 时可能失效。 */
     fieldString = ZrCore_Reflection_ObjectMakeString(state, fieldName);
     if (fieldString == ZR_NULL) {
         return ZR_NULL;
