@@ -19,6 +19,7 @@ tests:
   - tests/acceptance/ssa-hotpatch-prepare-status-mapping.md
   - tests/acceptance/ssa-hotpatch-rollback-status-mapping.md
   - tests/acceptance/ssa-hotpatch-rollback-test-ndebug.md
+  - tests/acceptance/ssa-hotpatch-generation-resolve-concurrency.md
 plan_sources:
   - docs/plans/ssa/08-artifact-hotpatch/03-generation-publication.md
   - docs/plans/ssa/08-artifact-hotpatch/04-rollback-restricted.md
@@ -62,8 +63,30 @@ interpreter frame entry/exit has not yet been connected to these APIs. If that
 changes, profile the ownership scan before treating it as a hot-path lookup.
 
 This ownership check does not solve the separate race between `Resolve` and a
-concurrent `Publish`, because the record state is non-atomic. Callers must
-serialize those operations until that boundary is implemented.
+concurrent `Publish`. `Resolve` first checks slot membership by pointer equality
+without dereferencing an untrusted foreign record, then takes the manager's
+internal synchronization lock and copies all record fields plus lease count as
+one view snapshot. The public API remains `const SZrHotPatchGenerationManager *`:
+the cast is limited to the manager's internal `atomic_flag`, a logical-const
+synchronization field. Record layout and status field types are unchanged. A
+lease prevents `CollectRetired` from reusing a record, while the manager lock
+serializes the view with `Publish` changing ACTIVE to RETIRED. The concurrency
+acceptance records a bounded lock-gate scheduling observation, the old-code
+RED observed in that run, concurrent publish/resolve stress, and toolchain
+evidence. The worker signals immediately before Resolve, leaving a possible
+preemption window; that check alone is not a mathematical proof of mutual
+exclusion. MSVC direct and registered CTest passed before the final test-only
+NDEBUG-safety refactor. The final-source MSVC target build, direct run, and
+registered CTest also passed: build 2/2, direct 9/9 in 2.03s, and CTest 1/1
+(1.10s test, 1.19s total). Standalone GCC Debug and NDEBUG runs pass, as does
+a 500-publication GCC run.
+ThreadSanitizer cannot start in the current WSL environment because its runtime
+rejects the process memory mapping, so that run gives no race verdict. This
+covers metadata snapshot consistency; it does not connect generation handles
+to interpreter frame entry/exit. The generation test main keeps setup calls and
+checks active under `NDEBUG`, and guards deinitialization with explicit
+initialization and lease flags; Debug and NDEBUG evidence is recorded in the
+same acceptance.
 
 `ApplyValidated` preserves the three failures currently returned by
 `Generation_Prepare`: invalid arguments map to `APPLY_INVALID_ARGUMENT`, a

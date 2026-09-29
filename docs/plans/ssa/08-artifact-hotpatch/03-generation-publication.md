@@ -21,6 +21,7 @@ tests:
   - tests/acceptance/ssa-hotpatch-generation-handle-ownership.md
   - tests/library/test_ssa_capability_validation.c
   - tests/acceptance/ssa-hotpatch-prepare-status-mapping.md
+  - tests/acceptance/ssa-hotpatch-generation-resolve-concurrency.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -62,8 +63,21 @@ manager。跨 manager 的 Publish、Resolve、Release 返回结构化错误且�
 record、不改变记录或 lease；回滚按 manager 内 generation 编号查找，不接收
 handle。实现与复杂度、测试证据见
 [generation handle ownership acceptance](../../../../tests/acceptance/ssa-hotpatch-generation-handle-ownership.md)。
-这只完成 manager 归属检查，不完成 frame 集成、并发 Resolve/Publish 安全或
-本文件的发布与回收门禁。
+这只完成 manager 归属检查。并发 Resolve/Publish 现由 Resolve 在通过外 manager
+record membership 检查后，于 manager 内部锁下复制完整 view 与 leaseCount，避免与
+Publish 状态写或 CollectRetired 槽位清理数据竞争；外 manager 检查仍先于 record
+解引用。该窄边界由
+[Resolve concurrency acceptance](../../../../tests/acceptance/ssa-hotpatch-generation-resolve-concurrency.md)
+记录有界锁门控调度观察、旧实现实际 RED、并发发布/解析压力与实际门禁。worker
+的 entered 标志在 Resolve 调用前设置，之后仍有被抢占窗口，因此锁门控检查本身
+不是确定性互斥证明；并发压力提供互补覆盖。本证明不覆盖 frame 集成、跨进程发布、
+可执行代码安装或计划中的完整发布/回收门禁。
+MSVC 最终源码 direct/CTest 与 500 轮普通 GCC 并发 harness 已通过；当前 GCC
+Debug/NDEBUG direct 均通过。本机 TSan runtime
+因 `unexpected memory mapping` 在进入测试前退出，因此不将普通压力结果表述为
+sanitizer race verdict。生成测试的初始化、状态操作和检查使用 always-active
+路径，并以 `NDEBUG` 运行验证；安全 canary 证明旧 assert setup 会被省略。各门禁、
+失败与调度观察限制详见 acceptance。
 
 `ApplyValidated` 现在保留 `Generation_Prepare` 当前可返回的失败类别：无效模块
 身份、manager 槽位耗尽和 generation 溢出都能由 host 区分。Apply overflow
@@ -71,8 +85,8 @@ handle。实现与复杂度、测试证据见
 验证三类状态、文字名称、结构化诊断以及 manager/registry/handle 无发布副作用；
 证据见
 [the Prepare status mapping acceptance](../../../../tests/acceptance/ssa-hotpatch-prepare-status-mapping.md).
-这只关闭 Prepare 到 Apply 的状态映射边界。Rollback 状态映射、并发发布、frame
-集成和 executable installation 仍是独立计划工作。
+这只关闭 Prepare 到 Apply 的状态映射边界。Rollback 状态映射、完整并发发布协议、
+frame 集成和 executable installation 仍是独立计划工作。
 
 新增文件登记到所属模块 CMake；测试登记到计划新增的 `tests/cmake/ssa-tests.cmake`，由 `tests/CMakeLists.txt` 单点 include。先迁移职责并保持行为，再接入新 contract；不要把新分析或慢路径追加到巨型 dispatch/quickening 文件。
 

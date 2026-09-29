@@ -12,9 +12,19 @@ static EZrHotPatchGenerationStatus gen_fail(SZrHotPatchGenerationDiagnostic *d,
     if (d) { d->status=s; d->expectedGeneration=expected; d->actualGeneration=actual; d->leaseCount=leases; }
     return s;
 }
-/* 记录槽位、状态与 lease 的复合更新在同一 manager 锁下串行化。 */
-static void gen_lock(SZrHotPatchGenerationManager *m) { while (atomic_flag_test_and_set_explicit(&m->lock,memory_order_acquire)) {} }
-static void gen_unlock(SZrHotPatchGenerationManager *m) { atomic_flag_clear_explicit(&m->lock,memory_order_release); }
+/* 记录槽位、状态与 lease 的复合更新在同一 manager 锁下串行化。
+ * Resolve 的 public manager 参数为 const；该锁只是逻辑 const API 的内部
+ * 同步状态，manager 本体仍由非 const Init 初始化和持有。 */
+static atomic_flag *gen_lock_state(const SZrHotPatchGenerationManager *m) {
+    return (atomic_flag *)&m->lock;
+}
+static void gen_lock(const SZrHotPatchGenerationManager *m) {
+    atomic_flag *lock = gen_lock_state(m);
+    while (atomic_flag_test_and_set_explicit(lock, memory_order_acquire)) {}
+}
+static void gen_unlock(const SZrHotPatchGenerationManager *m) {
+    atomic_flag_clear_explicit(gen_lock_state(m), memory_order_release);
+}
 /* Pointer equality is defined for records from different manager arrays;
  * relational comparisons across those arrays are not. */
 static TZrBool gen_belongs(const SZrHotPatchGenerationManager *m,
@@ -152,8 +162,8 @@ EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_AcquireActive(SZrHotPatch
 /* 按编号取得仍在槽位中的代际，包括尚未回收的退役版本。 */
 EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Acquire(SZrHotPatchGenerationManager *m,TZrUInt64 generation,SZrHotPatchGenerationHandle *out,SZrHotPatchGenerationDiagnostic *d) { if(!m||!out||!generation)return gen_fail(d,ZR_HOT_PATCH_GENERATION_INVALID_ARGUMENT,generation,0,0); memset(out,0,sizeof(*out)); gen_lock(m); SZrHotPatchVersionRecord *found=ZR_NULL; for(TZrUInt32 i=0u;i<m->capacity;i++)if(m->records[i].generation==generation){found=&m->records[i];break;} EZrHotPatchGenerationStatus s=gen_acquire_locked(m,found,out,d); gen_unlock(m); return s; }
 
-/* BUG: Publish 在锁内修改旧记录的 state，而此处无锁读取该非原子字段；
- * 持有旧 lease 的线程并发 Resolve 时会与发布线程发生数据竞争。 */
+/* 外 manager 检查只比较槽位地址，必须在任何记录解引用前完成。有效
+ * handle 的字段快照随后与 Publish/CollectRetired 一样由 manager 锁保护。 */
 EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Resolve(
         const SZrHotPatchGenerationManager *m,
         const SZrHotPatchGenerationHandle *h,
@@ -165,22 +175,27 @@ EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Resolve(
     if (!gen_belongs(m, h->record))
         return gen_fail(d, ZR_HOT_PATCH_GENERATION_STALE_LINK,
                         h->generation, 0u, 0u);
+    gen_lock(m);
     if (h->record->generation != h->generation ||
         h->record->state == ZR_HOT_PATCH_VERSION_FREE) {
         TZrUInt64 actualGeneration = h->record->generation;
+        gen_unlock(m);
         return gen_fail(d, ZR_HOT_PATCH_GENERATION_STALE_LINK,
                         h->generation, actualGeneration, 0u);
     }
-    out->generation = h->record->generation;
-    out->moduleHash = h->record->moduleHash;
-    out->contentHash = h->record->contentHash;
-    out->publicContractHash = h->record->publicContractHash;
-    out->targetProfile = h->record->targetProfile;
-    out->state = (EZrHotPatchVersionState)h->record->state;
-    out->leaseCount = atomic_load_explicit(&h->record->leaseCount,
-                                           memory_order_acquire);
+    SZrHotPatchVersionView snapshot;
+    snapshot.generation = h->record->generation;
+    snapshot.moduleHash = h->record->moduleHash;
+    snapshot.contentHash = h->record->contentHash;
+    snapshot.publicContractHash = h->record->publicContractHash;
+    snapshot.targetProfile = h->record->targetProfile;
+    snapshot.state = (EZrHotPatchVersionState)h->record->state;
+    snapshot.leaseCount = atomic_load_explicit(&h->record->leaseCount,
+                                               memory_order_acquire);
+    *out = snapshot;
+    gen_unlock(m);
     return gen_fail(d, ZR_HOT_PATCH_GENERATION_OK, 0u, h->generation,
-                    out->leaseCount);
+                    snapshot.leaseCount);
 }
 
 /* Release 结束一次代际租约；只有最后一个租约结束后 RetireCollect 才可回收。 */

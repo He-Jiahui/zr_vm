@@ -1023,8 +1023,9 @@ if (NOT TARGET zr_vm_ssa_generation_publication_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
     target_compile_definitions(zr_vm_ssa_generation_publication_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    target_link_libraries(zr_vm_ssa_generation_publication_test PRIVATE Threads::Threads)
     add_test(NAME ssa_generation_publication COMMAND zr_vm_ssa_generation_publication_test)
-    set_tests_properties(ssa_generation_publication PROPERTIES LABELS "ssa")
+    set_tests_properties(ssa_generation_publication PROPERTIES LABELS "ssa" TIMEOUT 15)
 endif ()
 
 if (NOT TARGET zr_vm_ssa_rollback_restricted_test)

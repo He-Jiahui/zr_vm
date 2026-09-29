@@ -118,7 +118,7 @@ ZR_CORE_API EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Acquire(
         SZrHotPatchGenerationDiagnostic *diagnostic);
 /** @brief 在有效租约内取得版本快照；返回视图不拥有记录。
  * @note 外 manager 句柄返回 STALE_LINK，actualGeneration 为零。
- * BUG: 与 Publish 并发时会无锁读取其修改的非原子 state。 */
+ * @note 复制快照时使用 manager 的内部同步锁；const 表示不改变逻辑注册表。 */
 ZR_CORE_API EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Resolve(
         const SZrHotPatchGenerationManager *manager,
         const SZrHotPatchGenerationHandle *handle,
