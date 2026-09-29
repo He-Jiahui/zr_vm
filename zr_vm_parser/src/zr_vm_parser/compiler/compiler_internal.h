@@ -257,29 +257,29 @@ TZrBool compiler_semantic_cfg_expression_is_linear(
         const SZrAstNode *node);
 TZrBool compiler_semantic_cfg_short_circuit_is_supported(
         const SZrAstNode *node);
-TZrBool compiler_semantic_cfg_loop_condition_is_supported(
+/** @brief 判断循环条件是否可在当前 CFG 条件分支路径中完整 lowering。 */ TZrBool compiler_semantic_cfg_loop_condition_is_supported(
         const SZrAstNode *node);
 TZrBool compiler_semantic_cfg_arm_falls_through(
         const SZrAstNode *node);
-TZrBool compiler_semantic_cfg_loop_body_analyze(
+/** @brief 在写入循环 CFG 前预检 body 控制转移，并报告尾部是否以 break 结束。 */ TZrBool compiler_semantic_cfg_loop_body_analyze(
         const SZrAstNode *node,
         TZrBool allowBreak,
         TZrBool allowContinue,
         TZrBool allowFinallyTransfer,
         TZrBool *endsWithBreak);
-TZrBool compiler_semantic_cfg_for_is_supported(
+/** @brief 准入 for 循环的条件及 body，并通过输出参数标明 body 尾部 break。 */ TZrBool compiler_semantic_cfg_for_is_supported(
         const SZrAstNode *node,
         TZrBool *bodyEndsWithBreak);
-TZrBool compiler_semantic_cfg_foreach_is_supported(
+/** @brief 在 iterator 指令写入前排除当前 CFG 无法安全表示的 foreach 形态。 */ TZrBool compiler_semantic_cfg_foreach_is_supported(
         SZrCompilerState *cs,
         const SZrAstNode *node);
-TZrBool compiler_semantic_cfg_branch_foreach(
+/** @brief 为已准入的 foreach 增加条件、body 和出口边；失败由调用方清理。 */ TZrBool compiler_semantic_cfg_branch_foreach(
         SZrCompilerState *cs,
         TZrUInt32 conditionSlot,
         SZrAstNode *node,
         TZrUInt32 *currentBlock,
         TZrUInt32 *joinBlock);
-TZrBool compiler_semantic_cfg_close_infinite_loop(
+/** @brief 将无条件 for 的已建 exitBlock 封为 CFG 出口，并标记活动 CFG 已终结。 */ TZrBool compiler_semantic_cfg_close_infinite_loop(
         SZrCompilerState *cs,
         TZrUInt32 exitBlock);
 TZrBool compiler_semantic_cfg_branch_while(SZrCompilerState *cs,

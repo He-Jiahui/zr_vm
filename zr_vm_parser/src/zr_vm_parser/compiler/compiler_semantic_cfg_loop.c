@@ -1,11 +1,14 @@
 #include "compiler_internal.h"
 
+/* CFG 只接管可按现有表达式/短路分支规则建模的循环条件；其余情况留给传统编译路径。 */
 TZrBool compiler_semantic_cfg_loop_condition_is_supported(
         const SZrAstNode *node) {
     return (TZrBool)(compiler_semantic_cfg_expression_is_linear(node) ||
                      compiler_semantic_cfg_short_circuit_is_supported(node));
 }
 
+/* 预检循环体中的 break/continue 形状，避免 CFG 已接管后才遇到无法表达的控制转移。
+ * endsWithBreak 专供 for 布局决策：末尾 break 时不应再建立可达 step 块。 */
 TZrBool compiler_semantic_cfg_loop_body_analyze(
         const SZrAstNode *node,
         TZrBool allowBreak,
@@ -47,6 +50,7 @@ TZrBool compiler_semantic_cfg_loop_body_analyze(
     if (node->data.block.body == ZR_NULL) {
         return ZR_TRUE;
     }
+    /* 仅把最后一个有效语句的 break/continue 作为循环体出口；后续非空语句意味着此简化 CFG 不适用。 */
     for (index = 0U; index < node->data.block.body->count; index++) {
         const SZrAstNode *statement = node->data.block.body->nodes[index];
         TZrSize trailingIndex;
@@ -77,6 +81,7 @@ TZrBool compiler_semantic_cfg_loop_body_analyze(
             const SZrTryCatchFinallyStatement *tryStatement =
                     &statement->data.tryCatchFinallyStatement;
 
+            /* try/finally 的完整 lowering 另有准入检查；此处只校验循环转移不会穿过 catch 分支。 */
             if (!allowFinallyTransfer ||
                 tryStatement->finallyBlock == ZR_NULL ||
                 (tryStatement->catchClauses != ZR_NULL &&
@@ -92,6 +97,7 @@ TZrBool compiler_semantic_cfg_loop_body_analyze(
     return ZR_TRUE;
 }
 
+/* for CFG 的准入检查同时约束 init/condition/step 和循环体；输出只描述末尾 break。 */
 TZrBool compiler_semantic_cfg_for_is_supported(
         const SZrAstNode *node,
         TZrBool *bodyEndsWithBreak) {
@@ -124,6 +130,7 @@ TZrBool compiler_semantic_cfg_for_is_supported(
     return ZR_TRUE;
 }
 
+/* 无法可靠转换类型时按“需要清理”处理，使 foreach 退回旧路径而非漏掉资源收尾。 */
 static TZrBool compiler_semantic_cfg_type_requires_cleanup(
         SZrCompilerState *cs,
         const SZrType *typeInfo) {
@@ -146,6 +153,7 @@ static TZrBool compiler_semantic_cfg_type_requires_cleanup(
     return requiresCleanup;
 }
 
+/* 只遍历此预检认识的局部声明、块、分支和 while；未知 AST 形态不据此判定需清理。 */
 static TZrBool compiler_semantic_cfg_body_requires_cleanup(
         SZrCompilerState *cs,
         const SZrAstNode *node) {
@@ -160,9 +168,8 @@ static TZrBool compiler_semantic_cfg_body_requires_cleanup(
                 return compiler_semantic_cfg_type_requires_cleanup(
                         cs, node->data.variableDeclaration.typeInfo);
             }
-            /* The foreach binding is not in the type environment during
-             * preflight. Keep inferred declarations on the legacy path so a
-             * late owner/close cleanup can never abandon emitted ITER ops. */
+            /* 预检时 foreach 绑定尚未进入类型环境；推断声明保留旧路径，
+             * 避免迭代指令已发射后才因 owner/close 清理要求放弃 CFG。 */
             return (TZrBool)(
                     node->data.variableDeclaration.value != ZR_NULL);
         case ZR_AST_BLOCK:
@@ -192,6 +199,7 @@ static TZrBool compiler_semantic_cfg_body_requires_cleanup(
     }
 }
 
+/* foreach 内嵌 if 的条件也须能拆成 CFG 分支；只接受语句式 if 并递归检查分支体。 */
 static TZrBool compiler_semantic_cfg_foreach_conditions_are_supported(
         const SZrAstNode *node) {
     TZrSize index;
@@ -234,6 +242,8 @@ static TZrBool compiler_semantic_cfg_foreach_conditions_are_supported(
     }
 }
 
+/* foreach 仅在绑定、迭代源、控制转移、嵌套条件和清理均可预检时启用语义 CFG。
+ * 这是保守准入门；失败后调用方放弃 CFG，并继续其传统迭代 lowering。 */
 TZrBool compiler_semantic_cfg_foreach_is_supported(
         SZrCompilerState *cs,
         const SZrAstNode *node) {
@@ -259,6 +269,8 @@ TZrBool compiler_semantic_cfg_foreach_is_supported(
                     cs, loop->block));
 }
 
+/* 在迭代器 move-next 条件已生成后接入 foreach 的 body/join CFG 边。
+ * 失败可发生在部分 block 已追加后，调用方必须走统一 CFG abandon 清理路径。 */
 TZrBool compiler_semantic_cfg_branch_foreach(
         SZrCompilerState *cs,
         TZrUInt32 conditionSlot,
@@ -296,6 +308,8 @@ TZrBool compiler_semantic_cfg_branch_foreach(
             *joinBlock);
 }
 
+/* 为无条件且可达的 for 循环封闭显式 CFG exit，避免把回边误当函数正常出口。
+ * 只接受活动 CFG 中有效的 exit block；成功后状态标记为 terminated。 */
 TZrBool compiler_semantic_cfg_close_infinite_loop(
         SZrCompilerState *cs,
         TZrUInt32 exitBlock) {
