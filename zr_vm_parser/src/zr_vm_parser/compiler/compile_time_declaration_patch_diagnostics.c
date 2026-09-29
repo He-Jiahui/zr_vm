@@ -4,6 +4,11 @@
 #include "comptime_runtime_contract.h"
 #include "zr_vm_parser/declaration_transform_contract.h"
 
+/**
+ * @brief 按字段名读取运行时诊断对象中的一个属性值。
+ *
+ * 仅供严格解码器查询已知的四个 schema 字段；返回值仍由原诊断对象持有。
+ */
 static const SZrTypeValue *patch_diagnostic_get_field(
         SZrCompilerState *cs,
         SZrObject *object,
@@ -24,6 +29,9 @@ static const SZrTypeValue *patch_diagnostic_get_field(
     return ZrCore_Object_GetValue(cs->state, object, &key);
 }
 
+/**
+ * @brief 把非负整数值规范化为无符号宽整数，供角色号和符号 ID 检查复用。
+ */
 static TZrBool patch_diagnostic_read_uint64(
         const SZrTypeValue *value,
         TZrUInt64 *result) {
@@ -39,6 +47,9 @@ static TZrBool patch_diagnostic_read_uint64(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 将诊断 target 限定为可表示的 32 位语义符号 ID。
+ */
 static TZrBool patch_diagnostic_read_symbol_id(
         const SZrTypeValue *value,
         TZrSymbolId *symbolId) {
@@ -55,6 +66,11 @@ static TZrBool patch_diagnostic_read_symbol_id(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 拒绝 typed CompileDiagnostic 中 schema 未声明的额外键。
+ *
+ * 该检查与后续字段类型验证共同保证运行时对象只能携带受支持的诊断数据。
+ */
 static TZrBool patch_diagnostic_field_is_allowed(
         SZrState *state,
         const SZrTypeValue *key) {
@@ -71,6 +87,11 @@ static TZrBool patch_diagnostic_field_is_allowed(
                      ct_string_equals(name, "__zrCompileToolTypeRole"));
 }
 
+/**
+ * @brief 将 role-marked 的运行时对象解码为供 declaration patch contract 验证的 C 记录。
+ *
+ * 本函数不发布错误/警告；所有字段和键先整体验证，调用方再统一验证 target 与消息。
+ */
 static TZrBool patch_diagnostic_decode(
         SZrCompilerState *cs,
         const SZrTypeValue *value,
@@ -88,6 +109,7 @@ static TZrBool patch_diagnostic_decode(
         return ZR_FALSE;
     }
     object = ZR_CAST_OBJECT(cs->state, value->value.object);
+    /* 固定字段数并检查每个键，阻止额外属性绕过 typed diagnostic schema。 */
     if (object == ZR_NULL || !object->nodeMap.isValid ||
         object->nodeMap.elementCount != 4U) {
         return ZR_FALSE;
@@ -102,6 +124,7 @@ static TZrBool patch_diagnostic_decode(
         }
     }
 
+    /* role 是内部类型身份标记；其余字段仍需逐项校验运行时值类型与范围。 */
     roleValue = patch_diagnostic_get_field(cs, object, "__zrCompileToolTypeRole");
     isErrorValue = patch_diagnostic_get_field(cs, object, "isError");
     messageValue = patch_diagnostic_get_field(cs, object, "message");
@@ -123,6 +146,9 @@ static TZrBool patch_diagnostic_decode(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 以脚本数组索引读取一项诊断，维持 VM 数组取值的通用对象路径。
+ */
 static const SZrTypeValue *patch_diagnostic_array_at(
         SZrCompilerState *cs,
         const SZrTypeValue *arrayValue,
@@ -143,6 +169,17 @@ static const SZrTypeValue *patch_diagnostic_array_at(
     return ZrCore_Object_GetValue(cs->state, array, &key);
 }
 
+/**
+ * @brief 验证并发布声明变换 patch 携带的编译期诊断。
+ *
+ * 唯一生产调用者在原子 patch commit 前运行本阶段：warning 保留并允许提交，
+ * error 同样发布给用户但通过 hasErrorDiagnostic 阻止调用者提交声明改动。
+ * 所有条目先完成解码和 patch contract 验证，再发出任一诊断，避免坏条目留下部分输出。
+ * @pre cs 已初始化，patchTargetSymbolId 是目标声明的有效 ID，输出标记可写。
+ * @return 输入全为有效 typed diagnostics 时返回真；hasErrorDiagnostic 独立表示是否有
+ *         error 严重级别，故返回真不代表调用者可以提交 patch。
+ * @note TODO: 数组物化或记录缓冲区分配失败会直接返回 false；需确认上层必定给出用户可见诊断。
+ */
 TZrBool ZrParser_CompileTime_ProcessPatchDiagnostics(
         SZrCompilerState *cs,
         const SZrTypeValue *diagnosticsValue,
@@ -156,6 +193,7 @@ TZrBool ZrParser_CompileTime_ProcessPatchDiagnostics(
     TZrSize diagnosticCount;
     TZrBool result = ZR_FALSE;
 
+    /* 不接受非数组、无效 target 或不可写输出；参数错误发生在输出标志初始化之前。 */
     if (cs == ZR_NULL || diagnosticsValue == ZR_NULL ||
         diagnosticsValue->type != ZR_VALUE_TYPE_ARRAY ||
         diagnosticsValue->value.object == ZR_NULL ||
@@ -169,10 +207,12 @@ TZrBool ZrParser_CompileTime_ProcessPatchDiagnostics(
         !ZrCore_Object_SuperArrayMaterializeGeneric(cs->state, array)) {
         return ZR_FALSE;
     }
+    /* 先具象化通用数组视图；空诊断列表是合法的无副作用结果。 */
     diagnosticCount = ZrCore_Object_SuperArrayLength(array);
     if (diagnosticCount == 0U) {
         return ZR_TRUE;
     }
+    /* 在乘法分配前检查尺寸，并在解码前消费有界诊断预算。 */
     if (diagnosticCount > (TZrSize)(SIZE_MAX / sizeof(*diagnostics))) {
         ZrParser_CompileTime_Error(
                 cs,
@@ -189,6 +229,7 @@ TZrBool ZrParser_CompileTime_ProcessPatchDiagnostics(
         return ZR_FALSE;
     }
 
+    /* 先暂存并验证整批记录；只有完整合法后才允许向编译器输出消息。 */
     diagnostics = (SZrParserCompileDiagnostic *)ZrCore_Memory_RawMallocWithType(
             cs->state->global,
             diagnosticCount * sizeof(*diagnostics),
@@ -197,6 +238,7 @@ TZrBool ZrParser_CompileTime_ProcessPatchDiagnostics(
         return ZR_FALSE;
     }
     ZrCore_Memory_RawSet(diagnostics, 0, diagnosticCount * sizeof(*diagnostics));
+    /* 把诊断 target 绑定到同一个 patch target，并复用统一 patch contract 校验消息。 */
     for (TZrSize index = 0; index < diagnosticCount; index++) {
         if (!patch_diagnostic_decode(
                     cs,
@@ -225,6 +267,7 @@ TZrBool ZrParser_CompileTime_ProcessPatchDiagnostics(
                 location);
         goto cleanup;
     }
+    /* 验证完成后才按输入顺序报告；Error 仍全部报告，但由上游据标志放弃事务提交。 */
     for (TZrSize index = 0; index < diagnosticCount; index++) {
         ZrParser_CompileTime_Error(
                 cs,
@@ -240,6 +283,7 @@ TZrBool ZrParser_CompileTime_ProcessPatchDiagnostics(
     result = ZR_TRUE;
 
 cleanup:
+    /* 本地数组只持有解码后的借用 message 指针，释放的是暂存记录而非脚本文本。 */
     ZrCore_Memory_RawFreeWithType(
             cs->state->global,
             diagnostics,
