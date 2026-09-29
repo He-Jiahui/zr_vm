@@ -16,6 +16,9 @@ plan_sources:
 tests:
   - tests/parser/test_ssa_generated_fusion.c
   - tests/parser/test_semir_typed_opcode_guardrails.c
+  - tests/parser/test_compiler_w2_performance_quickening.c
+  - tests/parser/test_compiler_w2_quickening_array_add.inc
+  - tests/acceptance/ssa-quickening-array-int-add.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -157,3 +160,24 @@ assert original load source and no later arithmetic effect
 
 本任务的 acceptance 至少附上：上述断言对应的测试名称、实际执行后端/平台、失败注入位置、verifier 输入/输出摘要，以及涉及所有权时的分配/释放或 lease 平衡。新增入口的 OOM、取消、重复调用和部分初始化退出应有明确处理；不适用的状态写明原因。
 
+## Scoped Progress — 2026-09-29
+
+The `Array<int>.add` late-matcher slice is complete. It recognizes the direct
+`KNOWN_NATIVE_MEMBER_CALL` form only when the same-site `MEMBER_GET` cache,
+validated native provider contract, module relocation, and typed receiver/value
+facts all agree. The rewrite retires the replaced callsite's binding contract
+and relocation before final callsite linking.
+
+The focused W2 quickening suite passed 20/20. GCC CTest passed
+`call_binding_pipeline`, `call_binding_artifact`, and
+`parser_span_inline_receiver` (3/3); the root agent also verified the direct
+quickening suite and call-binding pipeline/artifact tests with MSVC. See
+[`ssa-quickening-array-int-add.md`](../../../../tests/acceptance/ssa-quickening-array-int-add.md)
+for the exact build commands and observed results.
+
+The repository already has a separate six-pattern ExecIR fusion projection and
+generated metadata. This slice does not change that projection or prove its
+execution through the runtime dispatch path. Remaining gates include executable
+dispatch integration, end-to-end source/resume behavior, code-size/profile
+budget evidence, and the plan-wide boundary and failure matrix. This entry
+records one verified subtask; the plan status remains `planned`.

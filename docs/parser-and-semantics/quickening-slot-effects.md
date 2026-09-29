@@ -11,7 +11,9 @@ plan_sources:
 tests:
   - tests/parser/test_span_core.c
   - tests/parser/test_compiler_w2_performance_quickening.c
+  - tests/parser/test_compiler_w2_quickening_array_add.inc
   - tests/acceptance/ssa-quickening-member-slot-effects.md
+  - tests/acceptance/ssa-quickening-array-int-add.md
 doc_type: module-detail
 ---
 
@@ -81,14 +83,16 @@ the complete Span core suite.
 
 The adjacent quickening performance suite also checks member-slot forwarding
 and direct result stores. Against the original classifiers, that suite reported
-18/20: the existing member-slot direct-result-store test
-and the typed `Array<int>.add` specialization case failed. With the correction,
-19/20 pass and the member-slot test passes. The remaining
-`test_w2_super_array_add_variable_value_elides_dead_receiver_setup` failure is
-present with either classifier: both bytecode dumps retain
-`KNOWN_NATIVE_MEMBER_CALL` at instruction 44 and omit `SUPER_ARRAY_ADD_INT`.
-That separate specialization gap is recorded in the acceptance note and is not
-changed here.
+18/20: the member-slot direct-result-store test and typed
+`Array<int>.add` specialization case failed. With the classifier correction,
+19/20 passed; the remaining `Array<int>.add` case was an independent matcher
+gap. A follow-up 03.04 slice now recognizes the compiler's direct fused
+`KNOWN_NATIVE_MEMBER_CALL` form, checks the typed receiver/value and provider
+contract, then lowers it to `SUPER_ARRAY_ADD_INT`. The final quickening suite
+passes 20/20. The matcher guard, cache retirement, and separate acceptance
+gates are documented in
+[`quickening-array-int-add.md`](quickening-array-int-add.md) and
+[`ssa-quickening-array-int-add.md`](../../tests/acceptance/ssa-quickening-array-int-add.md).
 
 ## Plan Sources
 
@@ -101,5 +105,6 @@ it does not implement or complete either plan.
 ## Acceptance Record
 
 See [`ssa-quickening-member-slot-effects.md`](../../tests/acceptance/ssa-quickening-member-slot-effects.md)
-for the RED/GREEN commands, exact adjacent suite results, and the unregistered
-CTest status.
+for the classifier RED/GREEN evidence. The Array add follow-up has its own
+acceptance record because it changes the typed native-call matcher and binding
+lifecycle.

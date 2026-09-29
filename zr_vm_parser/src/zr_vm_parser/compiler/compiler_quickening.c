@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "compiler_internal.h"
+#include "compiler_native_call_binding.h"
 #include "zr_vm_core/function_identity.h"
 #include "zr_vm_library/native_binding.h"
 
@@ -9382,6 +9383,69 @@ static TZrBool compiler_quicken_array_int_index_accesses(SZrState *state, SZrFun
                                             ? ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT)
                                             : ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT));
                 opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+            }
+        }
+
+        if (opcode == ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL)) {
+            TZrUInt32 cacheIndex = instruction->instruction.operand.operand1[0];
+            TZrUInt32 argumentCount = instruction->instruction.operand.operand1[1];
+            TZrUInt32 resultSlot = instruction->instruction.operandExtra;
+            TZrUInt32 receiverSlot = resultSlot + 1u;
+            TZrUInt32 valueSlot = resultSlot + 2u;
+            TZrUInt32 memberEntryIndex = UINT32_MAX;
+            const TZrChar *memberName = ZR_NULL;
+            SZrFunctionCallSiteCacheEntry *cacheEntry = ZR_NULL;
+
+            if (argumentCount == 2 &&
+                function->callSiteCaches != ZR_NULL &&
+                cacheIndex < function->callSiteCacheLength) {
+                cacheEntry = &function->callSiteCaches[cacheIndex];
+                if (cacheEntry->kind == ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET) {
+                    memberEntryIndex = cacheEntry->memberEntryIndex;
+                    if (memberEntryIndex <= UINT16_MAX) {
+                        memberName = compiler_quickening_member_entry_symbol_text(
+                                function, (TZrUInt16)memberEntryIndex);
+                    }
+                }
+            }
+
+            if (memberName != ZR_NULL &&
+                strcmp(memberName, "add") == 0 &&
+                cacheEntry != ZR_NULL &&
+                cacheEntry->instructionIndex == index &&
+                compiler_native_call_binding_is_provider_contract(&cacheEntry->binding.contract) &&
+                cacheEntry->binding.contract.bindingKind == ZR_CALL_BINDING_DIRECT &&
+                cacheEntry->binding.contract.operation == ZR_CALL_BINDING_OPERATION_CALL &&
+                cacheEntry->bindingLocation.kind == ZR_CALL_BINDING_RELOCATION_MODULE &&
+                cacheEntry->bindingLocation.targetIndex == memberEntryIndex &&
+                receiverSlot < aliasCount &&
+                valueSlot < aliasCount &&
+                receiverSlot <= UINT16_MAX &&
+                valueSlot <= UINT16_MAX &&
+                compiler_quickening_slot_is_array_int(function,
+                                                      aliases,
+                                                      aliasCount,
+                                                      slotKinds,
+                                                      index,
+                                                      receiverSlot) &&
+                compiler_quickening_slot_is_int(function,
+                                                aliases,
+                                                aliasCount,
+                                                slotKinds,
+                                                blockStarts,
+                                                index,
+                                                valueSlot)) {
+                /* This opcode implements the native provider's statically
+                 * selected Array<int>.add operation directly. It no longer
+                 * consumes the member cache index, so retire that binding
+                 * before final callsite linking. Other contracts stay generic. */
+                memset(&cacheEntry->binding, 0, sizeof(cacheEntry->binding));
+                memset(&cacheEntry->bindingLocation, 0, sizeof(cacheEntry->bindingLocation));
+                instruction->instruction.operationCode =
+                        (TZrUInt16)ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT);
+                instruction->instruction.operand.operand1[0] = (TZrUInt16)receiverSlot;
+                instruction->instruction.operand.operand1[1] = (TZrUInt16)valueSlot;
+                opcode = ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT);
             }
         }
 

@@ -188,7 +188,9 @@ tests:
   - tests/acceptance/ssa-dominator-cfg.md
   - tests/parser/test_span_core.c
   - tests/parser/test_compiler_w2_performance_quickening.c
+  - tests/parser/test_compiler_w2_quickening_array_add.inc
   - tests/acceptance/ssa-quickening-member-slot-effects.md
+  - tests/acceptance/ssa-quickening-array-int-add.md
   - tests/scripts/test_syntax_migration_inventory.py
   - tests/parser/test_cfg_reachability.c
   - tests/parser/test_pre_semantic_ir.c
@@ -261,6 +263,9 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
     from member/cache indices in overlapping operand bytes
   - a no-growth Span regression verifies that forwarding preserves the receiver
     through the final inline `length` field load
+- `quickening-array-int-add.md`
+  - a guarded typed matcher lowers a statically selected `Array<int>.add` call
+    while retiring call-binding metadata owned by the replaced callsite
 - `semantic-query-api-foundation.md`
   - imported members without source ranges retain parser-owned external target identity
   - LSP navigation and semantic tokens require exact metadata token/hash/kind agreement
