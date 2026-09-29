@@ -1,6 +1,5 @@
-//
-// Primitive raw POD FieldInfo value marshaling helpers.
-//
+/* FieldInfo 的普通与嵌套字段共用此原始 POD 边界；地址范围由上层核验，
+ * 本层再拒绝需要 GC 或 ownership 协议的槽位并统一 VM 标量表示。 */
 
 #include "reflection_field_value_primitive.h"
 
@@ -11,6 +10,7 @@
 #include <stdint.h>
 #include <string.h>
 
+/* 只给可直接编码的标量类型提供存储宽度；复合值留给布局复制路径。 */
 static TZrBool reflection_field_value_primitive_byte_size(EZrValueType valueType, TZrUInt32 *outByteSize) {
     TZrUInt32 byteSize;
 
@@ -60,6 +60,7 @@ static TZrBool reflection_field_value_primitive_byte_size(EZrValueType valueType
     return ZR_TRUE;
 }
 
+/* FieldInfo 地址按元数据布局提供，按字节读取可避免借用未保证天然对齐的类型指针。 */
 static TZrBool reflection_field_value_load_signed_int(const TZrByte *address,
                                                       TZrUInt32 byteSize,
                                                       TZrInt64 *outValue) {
@@ -134,6 +135,7 @@ static TZrBool reflection_field_value_load_unsigned_int(const TZrByte *address,
     }
 }
 
+/* 原始字段的宽度决定写回范围；所有校验先于目标内存的修改。 */
 static TZrBool reflection_field_value_signed_range_for_byte_size(TZrUInt32 byteSize,
                                                                  TZrInt64 *outMin,
                                                                  TZrInt64 *outMax) {
@@ -198,6 +200,7 @@ static TZrBool reflection_field_value_unsigned_max_for_byte_size(TZrUInt32 byteS
     return ZR_TRUE;
 }
 
+/* 先判定可表示性，再允许 StorePrimitive 把无符号 VM 值转成有符号字段。 */
 static TZrBool reflection_field_value_signed_range_contains_unsigned(TZrUInt32 byteSize, TZrUInt64 value) {
     TZrInt64 minValue;
     TZrInt64 maxValue;
@@ -207,6 +210,7 @@ static TZrBool reflection_field_value_signed_range_contains_unsigned(TZrUInt32 b
            value <= (TZrUInt64)maxValue;
 }
 
+/* VM 浮点值以 double 承载；原始 float32 只接收有限且往返保持原值的输入。 */
 static TZrBool reflection_field_value_float32_can_store_losslessly(TZrDouble value) {
     TZrFloat32 storedValue;
 
@@ -220,6 +224,7 @@ static TZrBool reflection_field_value_float32_can_store_losslessly(TZrDouble val
     return (TZrDouble)storedValue == value;
 }
 
+/* 拒绝窄化越界后才写字段，保证失败时调用方的原始存储不变。 */
 static TZrBool reflection_field_value_store_signed_int(TZrByte *address,
                                                        TZrUInt32 byteSize,
                                                        TZrInt64 value) {
@@ -300,6 +305,7 @@ static TZrBool reflection_field_value_store_unsigned_int(TZrByte *address,
     }
 }
 
+/* 值槽、GC 槽和 owner 槽必须走各自复制/保活路径，不能只搬运原始字节。 */
 static TZrBool reflection_field_value_accepts_raw_primitive(const SZrTypeLayoutField *fieldLayout,
                                                             EZrValueType valueType) {
     TZrUInt32 expectedByteSize;
@@ -312,6 +318,7 @@ static TZrBool reflection_field_value_accepts_raw_primitive(const SZrTypeLayoutF
            fieldLayout->byteSize == expectedByteSize;
 }
 
+/* 上层已验证字段地址在内联布局内；这里将窄整数与 float32 规范化为 VM 值。 */
 TZrBool ZrCore_ReflectionFieldValue_LoadPrimitive(
         SZrState *state,
         const SZrTypeLayoutField *fieldLayout,
@@ -365,6 +372,7 @@ TZrBool ZrCore_ReflectionFieldValue_LoadPrimitive(
     }
 }
 
+/* 上层已验证地址边界；字段类型决定目标宽度，失败须保持原字段字节不变。 */
 TZrBool ZrCore_ReflectionFieldValue_StorePrimitive(
         const SZrTypeLayoutField *fieldLayout,
         EZrValueType valueType,
