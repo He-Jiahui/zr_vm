@@ -440,7 +440,7 @@ static TZrInt64 descriptor_create_instance_native(SZrState *state) {
     state->stackTop.valuePointer = functionBase + 1;
     return 1;
 }
-
+/* 已存在的方法须与目标 entry 和捕获的 descriptor 完全匹配；缺失时才新建 closure。 */
 static TZrBool descriptor_native_attach_method(
         SZrState *state,
         SZrObject *descriptor,
@@ -473,7 +473,7 @@ static TZrBool descriptor_native_attach_method(
         }
         return ZR_FALSE;
     }
-
+    /* BUG: 若本次新增 ignored 根，CheckStackAndGc 扩容 OOM 非局部抛出会跳过 Unignore，descriptor 滞留全局根表。 */
     if (!ZrCore_GarbageCollector_IgnoreObjectIfNeededFast(
                 state->global,
                 state,
@@ -527,7 +527,7 @@ static TZrBool descriptor_native_attach_method(
     }
     return success;
 }
-
+/* 所有 descriptor 共用查询方法；只有可实例化类别才附加 createInstance。 */
 TZrBool ZrCore_Reflection_AttachDescriptorNativeMethodsInternal(
         SZrState *state,
         SZrObject *descriptor,
