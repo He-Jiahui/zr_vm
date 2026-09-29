@@ -1,3 +1,4 @@
+/* 本模块将 decorator AST 绑定为内建角色或用户 schema，并生成声明 metadata。 */
 #include "compiler_attribute_binding.h"
 #include "compiler_declaration_transform.h"
 
@@ -8,6 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 解析结果借用 AST 节点；内建 role 与用户 schema 走不同字段，后续按用途分流。 */
 typedef struct SZrParsedMetadataAttribute {
     const SZrParserAttributeSchema *schema;
     const SZrCompilerAttributeSchemaBinding *boundSchema;
@@ -15,6 +17,8 @@ typedef struct SZrParsedMetadataAttribute {
     SZrFunctionCall *call;
 } SZrParsedMetadataAttribute;
 
+/* 名称比较采用精确的短 native string；空值不匹配。 */
+/* BUG: lexer 保存不设短串长度上限的 identifier/string literal，而本模块对名称和常量直接用 GetNativeStringShort；超阈值输入会在 ZR_DEBUG 断言，关闭断言时则按内联槽而非长串缓冲区读取，破坏比较、哈希或值解码。 */
 static TZrBool metadata_string_equals(const SZrString *value, const TZrChar *text) {
     TZrNativeString native;
 
@@ -25,6 +29,7 @@ static TZrBool metadata_string_equals(const SZrString *value, const TZrChar *tex
     return native != ZR_NULL && strcmp(native, text) == 0 ? ZR_TRUE : ZR_FALSE;
 }
 
+/* 只接受非 computed 的标识符成员，拒绝依赖运行时求值的属性表达式。 */
 static SZrString *metadata_member_name(SZrAstNode *member) {
     if (member == ZR_NULL || member->type != ZR_AST_MEMBER_EXPRESSION ||
         member->data.memberExpression.computed ||
@@ -35,6 +40,7 @@ static SZrString *metadata_member_name(SZrAstNode *member) {
     return member->data.memberExpression.property->data.identifier.name;
 }
 
+/* 从当前 compiler state 的 schema 表按 AST 名称查找；返回项借用数组存储，扩容或释放后失效。 */
 static const SZrCompilerAttributeSchemaBinding *metadata_find_bound_schema(
         SZrCompilerState *cs,
         SZrString *name) {
@@ -53,6 +59,7 @@ static const SZrCompilerAttributeSchemaBinding *metadata_find_bound_schema(
     return ZR_NULL;
 }
 
+/* 解析受限 decorator 路径，并区分内建角色、provider 角色与用户 schema 绑定。 */
 static TZrBool metadata_parse_attribute(
         SZrCompilerState *cs,
         SZrAstNode *decoratorNode,
@@ -161,6 +168,7 @@ static TZrBool metadata_parse_attribute(
     return parsed->schema != ZR_NULL ? ZR_TRUE : ZR_FALSE;
 }
 
+/* 从标识符或成员表达式取得末段名称，供 attributeUsage 枚举常量解码。 */
 static SZrString *metadata_path_leaf(SZrAstNode *node) {
     SZrPrimaryExpression *primary;
 
@@ -184,6 +192,7 @@ static SZrString *metadata_path_leaf(SZrAstNode *node) {
            : ZR_NULL;
 }
 
+/* BUG: AttributeUsage 查找不到匹配的命名参数时仍回退到 position；第四项写成 inheritedTypo: false 会按位置当作 inherited 并成功注册，静默吞掉拼写错误。 */
 static SZrAstNode *metadata_named_argument(
         SZrFunctionCall *call,
         const TZrChar *name,
@@ -206,6 +215,7 @@ static SZrAstNode *metadata_named_argument(
     return position < call->args->count ? call->args->nodes[position] : ZR_NULL;
 }
 
+/* 递归合并以 | 连接的 target 常量；未知成员令整项 usage 声明无效。 */
 static TZrBool metadata_parse_target_flags(SZrAstNode *node, TZrUInt32 *targets) {
     SZrString *leaf;
 
@@ -241,6 +251,7 @@ static TZrBool metadata_parse_target_flags(SZrAstNode *node, TZrUInt32 *targets)
     return ZR_TRUE;
 }
 
+/* 将 source、artifact、runtime 常量映射成 retention 枚举。 */
 static TZrBool metadata_parse_retention(
         SZrAstNode *node,
         EZrParserAttributeRetention *retention) {
@@ -261,6 +272,7 @@ static TZrBool metadata_parse_retention(
     return ZR_TRUE;
 }
 
+/* usage 开关只接受布尔字面量，不在注册阶段执行表达式。 */
 static TZrBool metadata_parse_bool(SZrAstNode *node, TZrBool *value) {
     if (node == ZR_NULL || value == ZR_NULL ||
         node->type != ZR_AST_BOOLEAN_LITERAL) {
@@ -270,6 +282,7 @@ static TZrBool metadata_parse_bool(SZrAstNode *node, TZrBool *value) {
     return ZR_TRUE;
 }
 
+/* schema 字段限于无引用、无所有权限定且无子类型或维度的标量常量。 */
 static EZrParserAttributeValueKind metadata_field_value_kind(SZrType *type) {
     SZrString *name;
 
@@ -307,6 +320,7 @@ static EZrParserAttributeValueKind metadata_field_value_kind(SZrType *type) {
     return ZR_PARSER_ATTRIBUTE_VALUE_INVALID;
 }
 
+/* 固定读取 targets、retention、repeatable、inherited 四项编译期 usage 契约。 */
 static TZrBool metadata_parse_usage(
         SZrCompilerState *cs,
         const SZrParsedMetadataAttribute *attribute,
@@ -339,6 +353,7 @@ static TZrBool metadata_parse_usage(
     return ZR_TRUE;
 }
 
+/* conditional 声明必须显式写出裸 void 返回类型。 */
 static TZrBool metadata_function_returns_explicit_void(
         const SZrFunctionDeclaration *declaration) {
     SZrType *returnType;
@@ -356,6 +371,7 @@ static TZrBool metadata_function_returns_explicit_void(
            : ZR_FALSE;
 }
 
+/* 仅接受同步、有函数体、非泛型、value 参数且显式返回 void 的 conditional 目标。 */
 static TZrBool metadata_conditional_signature_is_valid(
         const SZrFunctionDeclaration *declaration) {
     if (declaration == ZR_NULL || declaration->isAsync || declaration->args != ZR_NULL ||
@@ -376,6 +392,7 @@ static TZrBool metadata_conditional_signature_is_valid(
     return ZR_TRUE;
 }
 
+/* 校验 conditional 的唯一字符串 feature 参数并返回 AST 中借用的名称。 */
 static TZrBool metadata_conditional_feature(
         SZrCompilerState *cs,
         const SZrParsedMetadataAttribute *attribute,
@@ -414,6 +431,7 @@ static TZrBool metadata_conditional_feature(
     return ZR_TRUE;
 }
 
+/* 按项目 feature 名称精确查询；未声明项报告编译错误，不隐式视为关闭。 */
 static TZrBool metadata_project_feature_enabled(
         SZrCompilerState *cs,
         SZrString *featureName,
@@ -443,6 +461,8 @@ static TZrBool metadata_project_feature_enabled(
     return ZR_FALSE;
 }
 
+/* 查找函数上的唯一 conditional 属性并读出 feature 名。 */
+/* BUG: 用户 schema decorator 解析成功时只设置 boundSchema，schema 仍为 NULL；下方条件随后解引用 schema->role。编译带合法 function-target 用户属性的普通函数即可在 conditional 扫描中空指针解引用。 */
 static TZrBool metadata_find_conditional_attribute(
         SZrCompilerState *cs,
         SZrFunctionDeclaration *declaration,
@@ -610,6 +630,7 @@ TZrBool ZrParser_Metadata_RegisterAttributeSchema(
         ZrParser_Compiler_Error(cs, message, typeNode->location);
         goto failure;
     }
+    /* 注册表接管 binding.fields；临时校验视图在成功路径随后释放。 */
     ZrCore_Array_Push(cs->state, &cs->attributeSchemas, &binding);
     if (validationFields != ZR_NULL) {
         ZrCore_Memory_RawFreeWithType(
@@ -642,6 +663,7 @@ failure:
     return ZR_FALSE;
 }
 
+/* 将 AST 常量字面量投影为 schema 校验值和运行时 metadata 值。 */
 static TZrBool metadata_constant_from_ast(
         SZrCompilerState *cs,
         SZrAstNode *node,
@@ -696,6 +718,7 @@ static TZrBool metadata_constant_from_ast(
     }
 }
 
+/* 用新建字符串作为对象键写入已构造值；对象和值由调用方持有。 */
 static TZrBool metadata_set_object_field(
         SZrCompilerState *cs,
         SZrObject *object,
@@ -717,6 +740,7 @@ static TZrBool metadata_set_object_field(
     return ZR_TRUE;
 }
 
+/* 以字符串键读取 metadata 字段；返回的 value 指针仍归对象存储管理。 */
 static const SZrTypeValue *metadata_get_object_field(
         SZrCompilerState *cs,
         SZrObject *object,
@@ -736,6 +760,8 @@ static const SZrTypeValue *metadata_get_object_field(
     return ZrCore_Object_GetValue(cs->state, object, &key);
 }
 
+/* 检查目标与参数后逐项序列化属性；失败直接返回，调用方须丢弃此次编译结果。 */
+/* BUG: 默认增量 GC 下首次应用普通字段属性时，metadataObject 仅在 C 局部且 memberInfo 尚未加入 info.members；若 entry 的 Object_New 首次 RawMalloc 失败，且 stopGcFlag=false、STW 成功、FullGC run-until 未被 stopFlag 中断并完成、retry 成功，该对象会因不在扫描根中被 sweep，随后 :944 仍用它写入 entry。 */
 static TZrBool metadata_apply_bound_attributes(
         SZrCompilerState *cs,
         SZrAstNodeArray *decorators,
@@ -753,6 +779,7 @@ static TZrBool metadata_apply_bound_attributes(
         metadataValue->value.object != ZR_NULL) {
         metadataObject = ZR_CAST_OBJECT(cs->state, metadataValue->value.object);
     }
+    /* 已存在对象按 decorator 原地追加；后续验证失败不会撤销此前成功写入的条目。 */
     for (TZrSize decoratorIndex = 0U;
          decorators != ZR_NULL && decoratorIndex < decorators->count;
          decoratorIndex++) {
@@ -881,6 +908,7 @@ static TZrBool metadata_apply_bound_attributes(
             }
             ZrCore_Object_Init(cs->state, metadataObject);
         }
+        /* 每次应用以 attributeId 和出现序号为 key，entry 同时保留 retention、源码行和 schema 强类型字段。 */
         entry = ZrCore_Object_New(cs->state, ZR_NULL);
         if (entry == ZR_NULL) {
             goto application_failure;
@@ -1073,6 +1101,7 @@ TZrBool ZrParser_Metadata_TryElideConditionalCall(
         return ZR_TRUE;
     }
 
+    /* feature 关闭只跳过后续发射；先推导调用，仍报告函数名和实参的类型错误。 */
     ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
     if (!ZrParser_ExpressionType_Infer(cs, expression, &inferredType) || cs->hasError) {
         ZrParser_InferredType_Free(cs->state, &inferredType);
@@ -1189,6 +1218,7 @@ TZrBool ZrParser_Metadata_ApplyMemberAttributes(
             &memberInfo->decorators, location);
 }
 
+/* 成功分配合并后的原生名称数组后再释放旧数组，避免扩容失败丢失旧项。 */
 static TZrBool metadata_append_function_names(
         SZrCompilerState *cs,
         SZrArray *names,
