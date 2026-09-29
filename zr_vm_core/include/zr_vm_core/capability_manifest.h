@@ -100,7 +100,8 @@ typedef struct SZrHotPatchDiagnostic {
 /** @brief 部署前同时核对字节哈希、基模块、ABI/profile、授权集合与 host 验签。
  * @pre verifySignature 可调用；输入指向的内容在验证及后续使用令牌期间保持稳定。
  * @return 成功才填充 validated；失败时清零输出并通过可选 diagnostic 报告原因。
- * TODO: 此入口允许 1048576 项需求，独立闭包入口仅允许 4096；核对两条准入路径的上限意图。 */
+ * @note requirementCount 不得超过 4096；超限会在
+ * 调用签名回调和读取逐项需求前返回 ZR_HOT_PATCH_LIMIT，并填充 expected/actual。 */
 ZR_CORE_API EZrHotPatchCapabilityStatus ZrCore_HotPatch_Validate(
         const SZrHotPatchValidationInput *input,
         FZrHotPatchVerifySignature verifySignature,

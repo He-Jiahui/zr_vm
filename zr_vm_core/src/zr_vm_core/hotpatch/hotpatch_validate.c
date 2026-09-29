@@ -1,4 +1,5 @@
 #include "zr_vm_core/capability_manifest.h"
+#include "zr_vm_core/hotpatch_capability.h"
 
 #include <string.h>
 
@@ -41,11 +42,13 @@ EZrHotPatchCapabilityStatus ZrCore_HotPatch_Validate(
     if (validated) memset(validated, 0, sizeof(*validated));
     if (!in || !in->artifact || !in->manifest || !validated) return hp_fail(diagnostic,ZR_HOT_PATCH_INVALID_ARGUMENT,0,0,0,0);
     m = in->manifest;
-    /* TODO: 此入口容许百万级 requirement，而独立闭包入口上限为 4096；
-     * 核查二者是否应共用同一准入限制，避免两条验证路径结论不同。 */
+    if (m->requirementCount > ZR_HOT_PATCH_CAPABILITY_MAX_REQUIREMENTS) {
+        return hp_fail(diagnostic, ZR_HOT_PATCH_LIMIT, 0u, 0u,
+                       ZR_HOT_PATCH_CAPABILITY_MAX_REQUIREMENTS,
+                       m->requirementCount);
+    }
     if (m->schemaVersion != ZR_HOT_PATCH_CAPABILITY_SCHEMA_VERSION ||
         (m->flags & ~ZR_HOT_PATCH_FLAG_KNOWN_MASK) != 0u ||
-        m->requirementCount > 1048576u ||
         (m->requirementCount && !m->requirements) || m->patchId == 0u ||
         m->contentHash == 0u || m->baseModuleHash == 0u ||
         m->publicContractHash == 0u) return hp_fail(diagnostic,ZR_HOT_PATCH_INVALID_ARGUMENT,0,0,0,0);
@@ -76,4 +79,4 @@ EZrHotPatchCapabilityStatus ZrCore_HotPatch_Validate(
 }
 
 /* 供拒绝日志展示，机器判定继续使用状态枚举与结构化诊断。 */
-const TZrChar *ZrCore_HotPatch_StatusName(EZrHotPatchCapabilityStatus s) { switch(s){case ZR_HOT_PATCH_OK:return "ok";case ZR_HOT_PATCH_SIGNATURE_REJECTED:return "signature-rejected";case ZR_HOT_PATCH_BASE_MISMATCH:return "base-mismatch";case ZR_HOT_PATCH_CAPABILITY_ESCALATION:return "capability-escalation";case ZR_HOT_PATCH_PUBLIC_CONTRACT_CHANGE:return "public-contract-change";case ZR_HOT_PATCH_MACHINE_CODE_FORBIDDEN:return "machine-code-forbidden";case ZR_HOT_PATCH_IMPORT_FORBIDDEN:return "import-forbidden";default:return "invalid-hotpatch";} }
+const TZrChar *ZrCore_HotPatch_StatusName(EZrHotPatchCapabilityStatus s) { switch(s){case ZR_HOT_PATCH_OK:return "ok";case ZR_HOT_PATCH_SIGNATURE_REJECTED:return "signature-rejected";case ZR_HOT_PATCH_BASE_MISMATCH:return "base-mismatch";case ZR_HOT_PATCH_CAPABILITY_ESCALATION:return "capability-escalation";case ZR_HOT_PATCH_PUBLIC_CONTRACT_CHANGE:return "public-contract-change";case ZR_HOT_PATCH_MACHINE_CODE_FORBIDDEN:return "machine-code-forbidden";case ZR_HOT_PATCH_IMPORT_FORBIDDEN:return "import-forbidden";case ZR_HOT_PATCH_LIMIT:return "limit";default:return "invalid-hotpatch";} }

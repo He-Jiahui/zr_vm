@@ -90,6 +90,9 @@ validatedPatch = immutableOwnedCopy(bytes, verificationResult)
 | 通过已允许 wrapper 间接访问禁能力 | 闭包或入口检查拒绝 |
 | 有效签名但 base/layout 不匹配 | 拒绝 |
 | 验证后修改 buffer/伪造摘要 | hash/不可变对象约束拦截 |
+| 4097 项 requirement、实际仅提供一个槽 | 签名 callback 与逐项扫描前返回 `ZR_HOT_PATCH_LIMIT`，expected=4096、actual=4097，validated 清零；完整 4096 项边界继续接受 |
+
+当前已完成的窄切片只统一主 `Validate` 与能力闭包的 requirement 数量上限，证据见 [requirement limit acceptance](../../../../tests/acceptance/ssa-hotpatch-requirement-limit.md)。其余签名内容不可变副本、TOCTOU 防护、完整调用图能力分析和发布隔离门禁仍属于本计划未完成项。
 
 本任务新增测试先独立运行，再进入完整 SSA 差分矩阵。
 
