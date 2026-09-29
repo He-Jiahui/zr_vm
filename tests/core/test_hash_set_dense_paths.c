@@ -2,6 +2,9 @@
 
 #include "tests/harness/runtime_support.h"
 #include "zr_vm_core/hash_set.h"
+#include "zr_vm_core/object.h"
+#include "zr_vm_core/ownership.h"
+#include "zr_vm_core/string.h"
 
 typedef struct SZrHashPairTestAllocation {
     TZrPtr pointer;
@@ -16,6 +19,11 @@ static SZrHashPairTestAllocation g_pairAllocations[8];
 static TZrUInt32 g_pairAllocationCount;
 static TZrUInt32 g_pairFreeCount;
 static TZrUInt32 g_invalidPairFreeCount;
+static SZrHashSet g_ownedKeySet;
+static SZrTypeValue g_ownedKeyOwner;
+static SZrTypeValue g_ownedKeyRemoved;
+static TZrBool g_ownedKeySetConstructed;
+static TZrBool g_ownedKeyValuesInitialized;
 
 static TZrPtr hash_pair_test_allocator(TZrPtr userData, TZrPtr pointer,
                                       TZrSize originalSize, TZrSize newSize,
@@ -48,11 +56,35 @@ static TZrPtr hash_pair_test_allocator(TZrPtr userData, TZrPtr pointer,
 
 void setUp(void) {}
 
+static void release_hash_set_node_values(SZrState *state, SZrHashSet *set) {
+    if (state == ZR_NULL || set == ZR_NULL || set->buckets == ZR_NULL) {
+        return;
+    }
+    for (TZrSize bucketIndex = 0u; bucketIndex < set->capacity; ++bucketIndex) {
+        SZrHashKeyValuePair *pair = set->buckets[bucketIndex];
+        while (pair != ZR_NULL) {
+            ZrCore_Ownership_ReleaseValue(state, &pair->key);
+            ZrCore_Ownership_ReleaseValue(state, &pair->value);
+            pair = pair->next;
+        }
+    }
+}
+
 /* removal 用例将 allocator 临时替换在 global 上，先恢复原指针再销毁 VM；
  * Unity 断言失败时也通过此入口收回测试状态。 */
 void tearDown(void) {
     if (g_removalState != ZR_NULL) {
         g_removalState->global->allocator = g_removalAllocator;
+        if (g_ownedKeySetConstructed) {
+            release_hash_set_node_values(g_removalState, &g_ownedKeySet);
+            ZrCore_HashSet_Deconstruct(g_removalState, &g_ownedKeySet);
+            g_ownedKeySetConstructed = ZR_FALSE;
+        }
+        if (g_ownedKeyValuesInitialized) {
+            ZrCore_Ownership_ReleaseValue(g_removalState, &g_ownedKeyRemoved);
+            ZrCore_Ownership_ReleaseValue(g_removalState, &g_ownedKeyOwner);
+            g_ownedKeyValuesInitialized = ZR_FALSE;
+        }
         ZrTests_Runtime_State_Destroy(g_removalState);
         g_removalState = ZR_NULL;
     }
@@ -130,6 +162,89 @@ static void test_hash_set_remove_handles_mixed_pool_and_standalone_pairs(void) {
     assert_hash_set_removal_allocation_contract(1u);
 }
 
+static SZrObject *create_owned_hash_set_key_object(SZrState *state) {
+    SZrString *typeName = ZrCore_String_CreateFromNative(state, "HashSetOwnedKey");
+    SZrObjectPrototype *prototype;
+    SZrObject *object;
+
+    if (typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+    prototype = ZrCore_ObjectPrototype_New(
+            state, typeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+    if (prototype == ZR_NULL) {
+        return ZR_NULL;
+    }
+    object = ZrCore_Object_New(state, prototype);
+    if (object == ZR_NULL) {
+        return ZR_NULL;
+    }
+    ZrCore_Object_Init(state, object);
+    return object;
+}
+
+static void test_hash_set_remove_transfers_owned_key_reference(void) {
+    SZrObject *object;
+    SZrRawObject *rawObject;
+    SZrHashKeyValuePair *pair;
+
+    TEST_ASSERT_NULL(g_removalState);
+    g_removalState = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(g_removalState);
+    g_removalAllocator = g_removalState->global->allocator;
+    ZrCore_Value_ResetAsNull(&g_ownedKeyOwner);
+    ZrCore_Value_ResetAsNull(&g_ownedKeyRemoved);
+    g_ownedKeyValuesInitialized = ZR_TRUE;
+    ZrCore_HashSet_Construct(&g_ownedKeySet);
+    g_ownedKeySetConstructed = ZR_TRUE;
+    ZrCore_HashSet_Init(g_removalState, &g_ownedKeySet, 3u);
+    TEST_ASSERT_TRUE(g_ownedKeySet.isValid);
+
+    object = create_owned_hash_set_key_object(g_removalState);
+    TEST_ASSERT_NOT_NULL(object);
+    rawObject = ZR_CAST_RAW_OBJECT_AS_SUPER(object);
+    TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(
+            g_removalState, &g_ownedKeyOwner, rawObject));
+    TEST_ASSERT_EQUAL_INT(
+            ZR_OWNERSHIP_VALUE_KIND_UNIQUE, g_ownedKeyOwner.ownershipKind);
+    TEST_ASSERT_EQUAL_UINT32(
+            1u, ZrCore_Ownership_GetStrongRefCount(rawObject));
+
+    pair = ZrCore_HashSet_Add(
+            g_removalState, &g_ownedKeySet, &g_ownedKeyOwner);
+    TEST_ASSERT_NOT_NULL(pair);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_OWNERSHIP_VALUE_KIND_SHARED, pair->key.ownershipKind);
+    TEST_ASSERT_EQUAL_PTR(
+            g_ownedKeyOwner.ownershipControl, pair->key.ownershipControl);
+    TEST_ASSERT_EQUAL_UINT32(
+            2u, ZrCore_Ownership_GetStrongRefCount(rawObject));
+
+    g_ownedKeyRemoved = ZrCore_HashSet_Remove(
+            g_removalState, &g_ownedKeySet, &g_ownedKeyOwner);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_OWNERSHIP_VALUE_KIND_SHARED, g_ownedKeyRemoved.ownershipKind);
+    TEST_ASSERT_EQUAL_PTR(rawObject, g_ownedKeyRemoved.value.object);
+    TEST_ASSERT_EQUAL_PTR(
+            g_ownedKeyOwner.ownershipControl,
+            g_ownedKeyRemoved.ownershipControl);
+    TEST_ASSERT_EQUAL_UINT32(
+            2u, ZrCore_Ownership_GetStrongRefCount(rawObject));
+    TEST_ASSERT_EQUAL_UINT64(0u, g_ownedKeySet.elementCount);
+    TEST_ASSERT_NULL(ZrCore_HashSet_Find(
+            g_removalState, &g_ownedKeySet, &g_ownedKeyOwner));
+
+    /* Removing transfers the pair's retained reference to the result. */
+    ZrCore_Ownership_ReleaseValue(g_removalState, &g_ownedKeyOwner);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(g_ownedKeyOwner.type));
+    TEST_ASSERT_EQUAL_UINT32(
+            1u, ZrCore_Ownership_GetStrongRefCount(rawObject));
+    TEST_ASSERT_EQUAL_PTR(rawObject, g_ownedKeyRemoved.value.object);
+    ZrCore_Ownership_ReleaseValue(g_removalState, &g_ownedKeyRemoved);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(g_ownedKeyRemoved.type));
+    TEST_ASSERT_NULL(g_ownedKeyRemoved.ownershipControl);
+}
+
 static void test_hash_set_dense_growth_uses_full_bucket_capacity_as_append_threshold(void) {
     /* BUG: 本用例使用局部 state 而非 g_removalState；一旦断言失败，
      * tearDown 不会销毁该 VM，也不会 Deconstruct 局部 hash set。 */
@@ -159,6 +274,7 @@ int main(void) {
     RUN_TEST(test_hash_set_remove_keeps_pooled_pairs_until_deconstruction);
     RUN_TEST(test_hash_set_remove_frees_standalone_pairs_once);
     RUN_TEST(test_hash_set_remove_handles_mixed_pool_and_standalone_pairs);
+    RUN_TEST(test_hash_set_remove_transfers_owned_key_reference);
 
     return UNITY_END();
 }

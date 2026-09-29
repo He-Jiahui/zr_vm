@@ -557,9 +557,11 @@ ZR_FORCE_INLINE SZrHashKeyValuePair *ZrCore_HashSet_AddRawObject(struct SZrState
 }
 
 /** @brief 从桶链摘除首个相等键，独立 pair 即时释放，池内槽位留至析构。
- * @return 找到时浅拷贝节点原 key；未找到或参数无效时返回空值。
- * @note 调用方不得再使用该节点指针；这里不调用 Value_Copy。
- * @note TODO: owned key 的返回值归属未验证；需用带所有权的 key 测试删除及后续释放。
+ * @return 找到时按值返回节点原 key；未找到或参数无效时返回空值。
+ * @note 返回值是节点 key 槽位的浅拷贝；此处不 retain 或 release ownership。
+ *       对带引用计数 ownership 的 key，调用方接收该槽位的现有引用，并须在用完后
+ *       对返回值调用一次 ZrCore_Ownership_ReleaseValue。
+ * @note 调用方不得再使用已删除节点指针；普通值及借用值仍遵循各自已有的 ownership 语义。
  */
 ZR_FORCE_INLINE SZrTypeValue ZrCore_HashSet_Remove(struct SZrState *state, SZrHashSet *set, const SZrTypeValue *element) {
     if (state == ZR_NULL || set == ZR_NULL || element == ZR_NULL || !set->isValid || set->buckets == ZR_NULL ||

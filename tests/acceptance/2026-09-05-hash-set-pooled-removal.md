@@ -80,3 +80,27 @@ CTest discovery listed one test, and CTest passed 1/1. The four existing cases
 cover dense growth threshold plus pooled, standalone, and mixed-pair removal.
 This registration closes the test-discovery gap only; it does not claim the
 broader map/string optimization gates in SSA plan 05.03 are complete.
+
+## Managed-object owned-key transfer
+
+`test_hash_set_remove_transfers_owned_key_reference` covers an ordinary,
+non-resource managed object. `HashSet_Add` copies its unique input into a
+shared pair key and retains one strong reference. `HashSet_Remove` returns the
+pair's key slot without another retain or release. The test releases the
+original owner first and confirms the returned value still owns the last
+strong reference; releasing the result clears that slot. The current
+implementation passed this test without a production change, so this is
+contract coverage for the existing shallow transfer behavior.
+
+The test does not define direct-unique RESOURCE mirror-slot behavior or change
+the separate rule that `HashSet_Deconstruct` does not release stored key/value
+contents.
+
+```text
+wsl.exe --exec cmake --build /mnt/d/tmp/zr_vm/close-proxy-core-red --target zr_vm_hash_set_dense_paths_test -- -j4
+wsl.exe --exec /mnt/d/tmp/zr_vm/close-proxy-core-red/bin/zr_vm_hash_set_dense_paths_test
+wsl.exe --exec ctest --test-dir /mnt/d/tmp/zr_vm/close-proxy-core-red -R '^hash_set_dense_paths$' --output-on-failure --no-tests=error
+```
+
+The focused target rebuilt with WSL GCC 11.4.0. The direct Unity executable
+reported 5 tests / 0 failures, and the registered CTest passed 1/1.
