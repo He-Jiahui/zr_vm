@@ -13,6 +13,7 @@ plan_sources:
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
 tests:
   - tests/library/test_ssa_rollback_restricted.c
+  - tests/acceptance/ssa-hotpatch-rollback-status-mapping.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -46,6 +47,14 @@ status: planned
 | 计划新增 | `zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_profile.c` | iOS/WASM interpreter-only profile |
 | 计划新增 | `tests/library/ssa_hotpatch_fault_cases.h` | 签名/内容/发布/回收故障注入用例 |
 | 计划新增测试 | `tests/library/test_ssa_rollback_restricted.c` | 下述正向、失败与状态转换断言；复用既有 harness。 |
+
+当前 `ZrCore_HotPatch_Rollback` 已对可达的 generation 失败保持分类：目标缺失为
+`ROLLBACK_NOT_FOUND`，记录容量不足为 `APPLY_CAPACITY`，代际编号耗尽为
+`APPLY_GENERATION_OVERFLOW`；公开入口的零目标仍为 `APPLY_INVALID_ARGUMENT`。
+测试用两代真实 Prepare+Publish 记录构造 retained `RETIRED` 目标，并断言失败
+不改 records、active、count、next-generation 或输出 handle。详见
+[rollback status mapping acceptance](../../../../tests/acceptance/ssa-hotpatch-rollback-status-mapping.md)。
+这仅覆盖返回状态映射，不完成并发 rollback 或其它加载/回收故障矩阵。
 
 新增文件登记到所属模块 CMake；测试登记到计划新增的 `tests/cmake/ssa-tests.cmake`，由 `tests/CMakeLists.txt` 单点 include。先迁移职责并保持行为，再接入新 contract；不要把新分析或慢路径追加到巨型 dispatch/quickening 文件。
 

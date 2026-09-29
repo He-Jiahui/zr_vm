@@ -76,9 +76,28 @@ EZrHotPatchApplyStatus ZrCore_HotPatch_Rollback(
     if (!manager || !outHandle || !targetGeneration) return apply_fail(diagnostic, ZR_HOT_PATCH_APPLY_INVALID_ARGUMENT, 0u, 0u, 0u, 0u);
     SZrHotPatchGenerationDiagnostic gd;
     EZrHotPatchGenerationStatus gs = ZrCore_HotPatch_Generation_Rollback(manager, targetGeneration, outHandle, &gd);
-    /* BUG: 目标存在但无空槽时 Generation_Rollback 返回 CAPACITY；这里
-     * 统一报 NOT_FOUND，调用方会误判可回收后重试的情况。 */
-    if (gs != ZR_HOT_PATCH_GENERATION_OK) return apply_fail(diagnostic, ZR_HOT_PATCH_APPLY_ROLLBACK_NOT_FOUND, 0u, targetGeneration, gd.actualGeneration, 0u);
+    if (gs != ZR_HOT_PATCH_GENERATION_OK) {
+        EZrHotPatchApplyStatus applyStatus;
+        switch (gs) {
+            case ZR_HOT_PATCH_GENERATION_INVALID_ARGUMENT:
+                applyStatus = ZR_HOT_PATCH_APPLY_INVALID_ARGUMENT;
+                break;
+            case ZR_HOT_PATCH_GENERATION_STALE_LINK:
+                applyStatus = ZR_HOT_PATCH_APPLY_ROLLBACK_NOT_FOUND;
+                break;
+            case ZR_HOT_PATCH_GENERATION_CAPACITY:
+                applyStatus = ZR_HOT_PATCH_APPLY_CAPACITY;
+                break;
+            case ZR_HOT_PATCH_GENERATION_OVERFLOW:
+                applyStatus = ZR_HOT_PATCH_APPLY_GENERATION_OVERFLOW;
+                break;
+            default:
+                applyStatus = ZR_HOT_PATCH_APPLY_ROLLBACK_FAILED;
+                break;
+        }
+        return apply_fail(diagnostic, applyStatus, 0u, targetGeneration,
+                          gd.actualGeneration, 0u);
+    }
     gs = ZrCore_HotPatch_Generation_Publish(manager, outHandle, &gd);
     if (gs != ZR_HOT_PATCH_GENERATION_OK) return apply_fail(diagnostic, ZR_HOT_PATCH_APPLY_ROLLBACK_FAILED, 0u, targetGeneration, gd.actualGeneration, outHandle->generation);
     return apply_fail(diagnostic, ZR_HOT_PATCH_APPLY_OK, 0u, targetGeneration, targetGeneration, outHandle->generation);

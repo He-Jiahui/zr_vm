@@ -14,10 +14,13 @@ implementation_files:
 tests:
   - tests/core/test_ssa_generation_publication.c
   - tests/library/test_ssa_capability_validation.c
+  - tests/library/test_ssa_rollback_restricted.c
   - tests/acceptance/ssa-hotpatch-generation-handle-ownership.md
   - tests/acceptance/ssa-hotpatch-prepare-status-mapping.md
+  - tests/acceptance/ssa-hotpatch-rollback-status-mapping.md
 plan_sources:
   - docs/plans/ssa/08-artifact-hotpatch/03-generation-publication.md
+  - docs/plans/ssa/08-artifact-hotpatch/04-rollback-restricted.md
 doc_type: core-runtime-contract
 status: implemented
 ---
@@ -72,3 +75,12 @@ confirms the manager, registry, and output handle remain unchanged. The current
 Prepare implementation has no other failure return; an unexpected future
 status fails closed as `APPLY_PUBLISH_FAILED` rather than being reported as
 capacity.
+
+`Rollback` keeps an absent retained generation as `APPLY_ROLLBACK_NOT_FOUND`,
+maps a full records array to `APPLY_CAPACITY`, and maps generation exhaustion to
+`APPLY_GENERATION_OVERFLOW`. A zero target is rejected as
+`APPLY_INVALID_ARGUMENT` before the generation API is called. The regression
+fixture builds two real generations, leaving generation 1 retained as
+`RETIRED` and generation 2 active; it verifies each failure leaves all records,
+the active pointer, manager count and next-generation counter, and output handle
+unchanged. Other generation statuses fail closed as `APPLY_ROLLBACK_FAILED`.

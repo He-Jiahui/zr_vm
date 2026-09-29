@@ -56,7 +56,8 @@ ZR_CORE_API EZrHotPatchApplyStatus ZrCore_HotPatch_ApplyValidated(
         SZrHotPatchApplyDiagnostic *diagnostic);
 
 /** @brief 将目标旧身份复制到新代际并发布，不改动原租约所见版本。
- * BUG: 目标存在但无空槽时的 CAPACITY 目前会被映射为 NOT_FOUND。 */
+ * @note 目标不存在返回 ROLLBACK_NOT_FOUND；容量和代际溢出分别保留为
+ *       APPLY_CAPACITY 与 APPLY_GENERATION_OVERFLOW。 */
 ZR_CORE_API EZrHotPatchApplyStatus ZrCore_HotPatch_Rollback(
         SZrHotPatchGenerationManager *manager,
         TZrUInt64 targetGeneration,
