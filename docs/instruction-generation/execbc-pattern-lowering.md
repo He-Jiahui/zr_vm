@@ -111,6 +111,16 @@ the exact type contract is covered by generated-plan hashing and validation
 without adding a redundant per-entry type field.  This is a projection test;
 the generated fused word still has no executable runtime handler.
 
+`LOAD_ADD_INT` follows the same explicit type-contract rule. It accepts a
+managed-heap `LOAD` producing signed i64 followed by an `ADD` whose two inputs
+and result are signed i64. Double, int32, and uint64 windows remain as the
+original operations with a type-mismatch fallback. The generated pattern ID
+and schema constraint encode this contract; no arithmetic type field is added
+to the side entry. A Verify-accepted DOUBLE fixture runs through the Oracle
+(`40.5 + 1.25 = 41.75`) and confirms that parser-side fusion retains the
+unfused operations. The projected word remains parser metadata and has no
+executable runtime handler.
+
 ## Matching and safety boundaries
 
 The matcher scans each function once with a non-recursive two-instruction

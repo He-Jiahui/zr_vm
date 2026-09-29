@@ -154,10 +154,18 @@ static void make_six_pattern_function(SZrExecIrFunction *function) {
     function->values[19].typeToken = ZR_VALUE_TYPE_INT64;
     function->instructions[8].typeToken = ZR_VALUE_TYPE_INT64;
     function->instructions[9].typeToken = ZR_VALUE_TYPE_INT64;
+    /* LOAD_ADD_INT has a signed-i64 projection contract; keep this generated
+     * positive window explicit instead of inheriting the default UINT64 tag. */
+    function->values[1].typeToken = ZR_VALUE_TYPE_INT64;
+    function->values[12].typeToken = ZR_VALUE_TYPE_INT64;
+    function->values[13].typeToken = ZR_VALUE_TYPE_INT64;
+    function->instructions[0].typeToken = ZR_VALUE_TYPE_INT64;
+    function->instructions[1].typeToken = ZR_VALUE_TYPE_INT64;
 }
 
 #include "test_ssa_generated_fusion_compare_branch.inc"
 #include "test_ssa_generated_fusion_increment_branch.inc"
+#include "test_ssa_generated_fusion_load_add.inc"
 
 static void test_six_patterns_emit_fixed_width_words_and_side_maps(void) {
     SZrExecIrFunction function;
@@ -317,16 +325,23 @@ static void test_branch_target_is_remapped_after_a_later_fused_window(void) {
                     2u, 1u, 0u);
     set_instruction(&function, 2u, ZR_EXEC_IR_OPCODE_LOAD, 4u, 1u, 3u);
     set_instruction(&function, 3u, ZR_EXEC_IR_OPCODE_ADD, 6u, 2u, 4u);
+    function.operands[4] = 5u;
     function.operands[2] = 1u;
     function.operands[6] = 3u;
+    function.operands[7] = 8u;
     function.instructions[0].effectOut = 1u;
     function.instructions[1].effectIn = 1u;
     function.values[0].typeToken = ZR_VALUE_TYPE_BOOL;
+    function.values[2].typeToken = ZR_VALUE_TYPE_INT64;
+    function.values[3].typeToken = ZR_VALUE_TYPE_INT64;
+    function.values[4].typeToken = ZR_VALUE_TYPE_NATIVE_POINTER;
     function.values[7].typeToken = ZR_VALUE_TYPE_INT64;
     function.instructions[0].typeToken = 2u;
     function.instructions[1].typeToken = ZR_VALUE_TYPE_BOOL;
     function.instructions[2].effectOut = 3u;
     function.instructions[3].effectIn = 3u;
+    function.instructions[2].typeToken = ZR_VALUE_TYPE_INT64;
+    function.instructions[3].typeToken = ZR_VALUE_TYPE_INT64;
     function.successors = (TZrExecIrBlockId *)calloc(
             2u, sizeof(*function.successors));
     assert(function.successors != NULL);
@@ -941,6 +956,7 @@ int main(void) {
     test_compare_branch_int_preserves_modes_and_plan_hash();
     test_compare_branch_int_rejects_noncanonical_inputs();
     test_increment_loop_branch_requires_signed_i64_add_types();
+    test_load_add_int_requires_signed_i64_types();
     test_fusion_typed_pool_access_rejects_empty_suffix();
     test_six_patterns_emit_fixed_width_words_and_side_maps();
     test_boundary_and_type_failures_keep_original_sequence();

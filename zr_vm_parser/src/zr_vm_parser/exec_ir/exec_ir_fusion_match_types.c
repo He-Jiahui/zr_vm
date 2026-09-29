@@ -155,3 +155,47 @@ TZrBool zr_fusion_increment_loop_branch_types_are_compatible(
                      function->values[result - 1u].typeToken ==
                                  ZR_VALUE_TYPE_INT64);
 }
+
+TZrBool zr_fusion_load_add_int_types_are_compatible(
+        const SZrExecIrFunction *function,
+        const SZrExecIrInstruction *head,
+        const SZrExecIrInstruction *tail) {
+    TZrExecIrValueId address;
+    TZrExecIrValueId loaded;
+    TZrExecIrValueId left;
+    TZrExecIrValueId right;
+    TZrExecIrValueId result;
+
+    if (function == ZR_NULL || head == ZR_NULL || tail == ZR_NULL ||
+        (EZrExecIrOpcode)head->opcode != ZR_EXEC_IR_OPCODE_LOAD ||
+        (EZrExecIrOpcode)tail->opcode != ZR_EXEC_IR_OPCODE_ADD ||
+        head->typeToken != ZR_VALUE_TYPE_INT64 ||
+        tail->typeToken != ZR_VALUE_TYPE_INT64 ||
+        head->operands.count != 1u || head->results.count != 1u ||
+        tail->operands.count != 2u || tail->results.count != 1u ||
+        !zr_fusion_operand_at(function, head, 0u, &address) ||
+        !zr_fusion_result_at(function, head, 0u, &loaded) ||
+        !zr_fusion_operand_at(function, tail, 0u, &left) ||
+        !zr_fusion_operand_at(function, tail, 1u, &right) ||
+        !zr_fusion_result_at(function, tail, 0u, &result) ||
+        address == ZR_EXEC_IR_VALUE_ID_INVALID ||
+        loaded == ZR_EXEC_IR_VALUE_ID_INVALID ||
+        left == ZR_EXEC_IR_VALUE_ID_INVALID ||
+        right == ZR_EXEC_IR_VALUE_ID_INVALID ||
+        result == ZR_EXEC_IR_VALUE_ID_INVALID ||
+        address > function->valueCount || loaded > function->valueCount ||
+        left > function->valueCount || right > function->valueCount ||
+        result > function->valueCount ||
+        (left != loaded && right != loaded)) {
+        return ZR_FALSE;
+    }
+
+    return (TZrBool)(function->values[loaded - 1u].typeToken ==
+                                 ZR_VALUE_TYPE_INT64 &&
+                     function->values[left - 1u].typeToken ==
+                                 ZR_VALUE_TYPE_INT64 &&
+                     function->values[right - 1u].typeToken ==
+                                 ZR_VALUE_TYPE_INT64 &&
+                     function->values[result - 1u].typeToken ==
+                                 ZR_VALUE_TYPE_INT64);
+}

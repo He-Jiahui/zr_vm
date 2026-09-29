@@ -252,3 +252,23 @@ This validates parser-side projection and Oracle semantics only; no fused
 runtime handler was executed. Dispatcher integration, end-to-end source/resume
 behavior, performance budgets, and the full boundary matrix remain open, so
 the 03.04 plan stays `planned`.
+
+### Scoped Progress — 2026-09-29 — LOAD_ADD_INT type contract
+
+`LOAD_ADD_INT` now requires a signed i64 `LOAD` result and signed i64 `ADD`
+inputs/result. The generated `SIGNED_I64_LOAD_ADD` constraint is part of the
+pattern schema hash; side entries retain the pattern identity, so no extra
+type field or plan-layout version change is needed. Verify-accepted DOUBLE,
+int32, and uint64 cases stay unfused with a type-mismatch fallback. The DOUBLE
+case runs in the Oracle and returns 41.75 for a 40.5 load plus 1.25.
+
+The initial GCC RED passed Verify and Oracle, then failed at the expected
+unfused assertion: the generic typed matcher emitted one `LOAD_ADD_INT` fusion
+and one fallback. After the generated constraint and typed matcher guard, the
+direct `ssa_generated_fusion` test passed, registered CTest passed 1/1, and the
+pattern generator `--check` passed in the existing D-drive cache. Exact commands
+are recorded in
+[`2026-09-29-ssa-load-add-int-types.md`](../../../../tests/acceptance/2026-09-29-ssa-load-add-int-types.md).
+
+This verifies the original operations and parser-side projection only; no fused
+runtime handler was executed. The broader 03.04 plan remains open.

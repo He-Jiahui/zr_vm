@@ -480,6 +480,12 @@ static EZrExecBcFusionFallbackReason zr_fusion_match_constraints(
         return ZR_EXEC_BC_FUSION_FALLBACK_TYPE_MISMATCH;
     }
     if ((info->constraints &
+         ZR_EXEC_BC_FUSION_CONSTRAINT_SIGNED_I64_LOAD_ADD) != 0u &&
+        !zr_fusion_load_add_int_types_are_compatible(
+                function, head, tail)) {
+        return ZR_EXEC_BC_FUSION_FALLBACK_TYPE_MISMATCH;
+    }
+    if ((info->constraints &
          ZR_EXEC_BC_FUSION_CONSTRAINT_NO_INTERVENING_EFFECT) != 0u) {
         if ((head->effectOut != 0u || tail->effectIn != 0u) &&
             head->effectOut != tail->effectIn) {

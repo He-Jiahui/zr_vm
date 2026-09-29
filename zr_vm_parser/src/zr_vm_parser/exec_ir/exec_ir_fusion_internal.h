@@ -54,6 +54,10 @@ TZrBool zr_fusion_increment_loop_branch_types_are_compatible(
         const SZrExecIrFunction *function,
         const SZrExecIrInstruction *head,
         const SZrExecIrInstruction *tail);
+TZrBool zr_fusion_load_add_int_types_are_compatible(
+        const SZrExecIrFunction *function,
+        const SZrExecIrInstruction *head,
+        const SZrExecIrInstruction *tail);
 EZrExecBcFusionFallbackReason zr_fusion_reason_for_pair(
         const SZrExecIrFunction *function,
         TZrUInt32 headId,
