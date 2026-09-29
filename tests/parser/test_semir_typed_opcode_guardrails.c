@@ -15,6 +15,7 @@ static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSi
     ZR_UNUSED_PARAMETER(flag);
 
     if (newSize == 0) {
+        /* BUG: 将任意对象指针与整数构造的地址作关系比较没有可移植定义，释放/重分配分支依赖平台地址布局。 */
         if (pointer != ZR_NULL && (TZrPtr)pointer >= (TZrPtr)0x1000) {
             free(pointer);
         }
@@ -32,6 +33,7 @@ static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSi
     return malloc(newSize);
 }
 
+/* 按测试分配器创建全局状态并初始化 registry；成功后的 global 由调用方回收。 */
 static SZrState *create_test_state(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 0, &callbacks);
@@ -43,6 +45,7 @@ static SZrState *create_test_state(void) {
     return global->mainThreadState;
 }
 
+/* 通过 state 所属的 global 统一回收解析器和 fixture 使用的测试内存。 */
 static void destroy_test_state(SZrState *state) {
     if (state != ZR_NULL && state->global != ZR_NULL) {
         ZrCore_GlobalState_Free(state->global);
@@ -50,6 +53,7 @@ static void destroy_test_state(SZrState *state) {
 }
 
 static SZrFunction *compile_typed_scalar_fixture(SZrState *state) {
+    /* 同一份显式类型 fixture 覆盖整数算术、比较、位运算和移位，供 opcode 与类型表断言共用。 */
     const char *source =
             "var left: int = 21;\n"
             "var right: int = 5;\n"
@@ -109,6 +113,7 @@ static const SZrSemIrInstruction *function_find_semir_opcode(const SZrFunction *
 }
 
 static TZrBool function_has_generic_exec_arithmetic_opcode(const SZrFunction *function) {
+    /* 此集合对应 compiler_semir.c 的 generic dynamic arithmetic 映射入口。 */
     if (function == ZR_NULL || function->instructionsList == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -134,6 +139,8 @@ static TZrBool function_has_generic_exec_arithmetic_opcode(const SZrFunction *fu
 static void assert_semir_opcode_static_type(const SZrFunction *function,
                                             EZrSemIrOpcode opcode,
                                             EZrStaticCType expectedStaticType) {
+    /* 先确认指令及类型表索引有效，再读取该 SemIR 行的静态 C 类型。 */
+    /* TODO: 当前只检查首条同 opcode 指令；应遍历所有匹配行，尤其是 fixture 中重复出现的 ADD。 */
     const SZrSemIrInstruction *instruction = function_find_semir_opcode(function, opcode);
 
     TEST_ASSERT_NOT_NULL(instruction);
@@ -147,9 +154,12 @@ static void test_typed_numeric_function_emits_scalar_semir_without_generic_exec_
     SZrFunction *function;
 
     TEST_ASSERT_NOT_NULL(state);
+
+    /* BUG: state 已成功创建后，以下断言失败会 longjmp，跳过函数和 global 释放；state 检查失败本身没有已分配 state。 */
     function = compile_typed_scalar_fixture(state);
     TEST_ASSERT_NOT_NULL(function);
 
+    /* 约束这条 typed 路径生成标量 SemIR；generic ExecBC 算术 opcode 应缺席。 */
     TEST_ASSERT_FALSE(function_has_generic_exec_arithmetic_opcode(function));
     TEST_ASSERT_GREATER_THAN_UINT32(0u, function_count_semir_opcode(function, ZR_SEMIR_OPCODE_ADD));
     TEST_ASSERT_GREATER_THAN_UINT32(0u, function_count_semir_opcode(function, ZR_SEMIR_OPCODE_SUB));
@@ -164,6 +174,7 @@ static void test_typed_numeric_function_emits_scalar_semir_without_generic_exec_
     TEST_ASSERT_GREATER_THAN_UINT32(0u, function_count_semir_opcode(function, ZR_SEMIR_OPCODE_SHL));
     TEST_ASSERT_GREATER_THAN_UINT32(0u, function_count_semir_opcode(function, ZR_SEMIR_OPCODE_SHR));
 
+    /* 每个整数运算结果关联 I64，比较结果关联 BOOL，防止类型表退回动态类型。 */
     assert_semir_opcode_static_type(function, ZR_SEMIR_OPCODE_ADD, ZR_STATIC_C_TYPE_I64);
     assert_semir_opcode_static_type(function, ZR_SEMIR_OPCODE_SUB, ZR_STATIC_C_TYPE_I64);
     assert_semir_opcode_static_type(function, ZR_SEMIR_OPCODE_MUL, ZR_STATIC_C_TYPE_I64);
@@ -177,6 +188,7 @@ static void test_typed_numeric_function_emits_scalar_semir_without_generic_exec_
     assert_semir_opcode_static_type(function, ZR_SEMIR_OPCODE_SHL, ZR_STATIC_C_TYPE_I64);
     assert_semir_opcode_static_type(function, ZR_SEMIR_OPCODE_SHR, ZR_STATIC_C_TYPE_I64);
 
+    /* 先释放 state 拥有的函数，再销毁承载其分配器的 global。 */
     ZrCore_Function_Free(state, function);
     destroy_test_state(state);
 }
@@ -187,6 +199,7 @@ void tearDown(void) {}
 
 int main(void) {
     UNITY_BEGIN();
+    /* 独立 Unity 用例由 tests/CMakeLists.txt 注册到 semir_typed_opcode_guardrails suite。 */
     RUN_TEST(test_typed_numeric_function_emits_scalar_semir_without_generic_exec_arithmetic);
     return UNITY_END();
 }
