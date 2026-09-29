@@ -3,7 +3,10 @@
 #include <limits.h>
 #include <string.h>
 
-/* 将单个拒绝结果写入可选诊断；不持有请求或堆对象。 */
+/**
+ * @brief 将当前拒绝原因写入可选输出，供各入口返回可消费的失败分类。
+ * @note diagnostic 可为空；非空时须是可写且不与输入输出别名的记录。
+ */
 static void gc_compact_diag(SZrGcCompactDiagnostic *diagnostic,
                             EZrGcCompactDiagnosticCode code,
                             TZrUInt32 index,
@@ -18,12 +21,18 @@ static void gc_compact_diag(SZrGcCompactDiagnostic *diagnostic,
     diagnostic->actual = actual;
 }
 
-/* 多个区段的统计量饱和累加，避免汇总值回绕成小数。 */
+/**
+ * @brief 汇总跨区域计数时饱和而非回绕，避免大堆统计被误判为小值。
+ * @note 饱和值表示上限，不再保留精确总量。
+ */
 static TZrUInt64 gc_compact_sat_add(TZrUInt64 left, TZrUInt64 right) {
     return right > UINT64_MAX - left ? UINT64_MAX : left + right;
 }
 
-/* 用整数 ceil(used * threshold / 100) 判定碎片率，used 为零不入选。 */
+/**
+ * @brief 以整数上取整比较单个旧区的可回收比例，避免浮点边界差异。
+ * @note 空区不入选；零阈值也要求存在可回收字节，防止规划零收益区。
+ */
 static TZrBool gc_compact_threshold_met(TZrUInt64 reclaimable,
                                          TZrUInt64 used,
                                          TZrUInt32 thresholdPercent) {
@@ -49,7 +58,10 @@ static TZrBool gc_compact_threshold_met(TZrUInt64 reclaimable,
     return reclaimable >= required;
 }
 
-/* 清除上次诊断；空输出指针允许用于仅取布尔结果的调用。 */
+/**
+ * @brief 清除复用诊断输出中的旧状态，供多个拒绝入口共用。
+ * @note diagnostic 可为空。
+ */
 void ZrCore_GcCompact_DiagnosticClear(
         SZrGcCompactDiagnostic *diagnostic) {
     if (diagnostic != ZR_NULL) {
@@ -57,7 +69,10 @@ void ZrCore_GcCompact_DiagnosticClear(
     }
 }
 
-/* 将诊断枚举投影为日志文本；不识别的扩展值统一返回 unknown。 */
+/**
+ * @brief 把诊断码转换为宿主可展示的稳定文本。
+ * @return 静态字符串；未知扩展码统一回退为 "unknown"。
+ */
 const TZrChar *ZrCore_GcCompact_DiagnosticName(
         EZrGcCompactDiagnosticCode code) {
     switch (code) {
@@ -80,7 +95,10 @@ const TZrChar *ZrCore_GcCompact_DiagnosticName(
     }
 }
 
-/* 生成带当前契约标识的空计划，字段其余值为零。 */
+/**
+ * @brief 初始化带当前契约头的空计划，作为输出和失败时的安全基线。
+ * @note plan 可为空；初始化结果不代表计划已准入或对象已搬迁。
+ */
 void ZrCore_GcCompact_Init(SZrGcCompactPlan *plan) {
     if (plan == ZR_NULL) {
         return;
@@ -91,7 +109,10 @@ void ZrCore_GcCompact_Init(SZrGcCompactPlan *plan) {
     plan->mode = ZR_GC_COMPACT_MODE_NON_MOVING;
 }
 
-/* 校验可交换的计划记录，不查看区段数组，也不执行 relocation。 */
+/**
+ * @brief 校验可交换计划记录的头部和本函数覆盖的基础计数关系。
+ * @return plan 为空时拒绝；diagnostic 可为空。本校验不重读区域事实、不执行搬迁。
+ */
 TZrBool ZrCore_GcCompact_Validate(
         const SZrGcCompactPlan *plan,
         SZrGcCompactDiagnostic *diagnostic) {
@@ -112,7 +133,8 @@ TZrBool ZrCore_GcCompact_Validate(
                         plan->schemaVersion);
         return ZR_FALSE;
     }
-    /* BUG: 仅检查上界；有符号 enum 实现下，mode=-1 会通过比较并被 Validate 接受。 */
+    /* BUG: 有符号 enum 实现上，伪造的负 mode 不满足 >= COUNT，可能被误接受。 */
+    /* BUG: 单独检查两类计数不超过 regionCount，未验证互斥分区的计数和。 */
     if (plan->mode >= ZR_GC_COMPACT_MODE_COUNT ||
         plan->candidateRegionCount > plan->regionCount ||
         plan->pinnedRegionCount > plan->regionCount ||
@@ -129,12 +151,17 @@ TZrBool ZrCore_GcCompact_Validate(
                         4u, 0u, plan->plannedBytes);
         return ZR_FALSE;
     }
-    /* BUG: Plan 将候选旧区与 pinned/large/permanent 排除区分开；外部计划若
-     * regionCount=2 且两种计数都为 2，会通过各自上界检查但不可能由 Plan 产生，Validate 仍接受。 */
+    /* TODO: 确认 Validate 是否还应拒绝无法由 Plan 生成的 eligible/mode 组合。 */
     return ZR_TRUE;
 }
 
-/* 校验区域事实，统计达阈值旧区，并按整区 liveBytes 贪心接受预算内子集。 */
+/**
+ * @brief 从稳定的只读区域快照生成纯标量压缩准入计划。
+ * @pre request 和 regions 非空时，regions 至少覆盖 regionCount 个描述符且在调用期间保持稳定。
+ * @return request/plan 为空、regions 缺失或请求数据无效时返回 false；有效计划返回 true。
+ * @note 阈值筛选旧区；预算按输入顺序整区接纳 liveBytes，零预算表示不设上限。
+ *       该函数不搬迁对象、不改写登记表，也不重写对象引用。
+ */
 TZrBool ZrCore_GcCompact_Plan(
         const SZrGcCompactRequest *request,
         SZrGcCompactPlan *plan,
@@ -149,6 +176,7 @@ TZrBool ZrCore_GcCompact_Plan(
     if (plan != ZR_NULL) {
         ZrCore_GcCompact_Init(plan);
     }
+    /* 先验证借用输入的边界；拒绝时公开输出保持初始化基线而非半份候选。 */
     if (request == ZR_NULL || plan == ZR_NULL ||
         (request->regionCount != 0u && request->regions == ZR_NULL) ||
         request->fragmentationThresholdPercent > 100u) {
@@ -163,12 +191,14 @@ TZrBool ZrCore_GcCompact_Plan(
                         0u, UINT32_MAX, request->regionCount);
         return ZR_FALSE;
     }
+    /* 只有完整通过后才将局部累计值发布到调用方计划对象。 */
     ZrCore_GcCompact_Init(&candidate);
     candidate.regionCount = (TZrUInt32)request->regionCount;
     candidate.mode = request->allowMoving
                              ? ZR_GC_COMPACT_MODE_SELECTIVE_MOVING
                              : ZR_GC_COMPACT_MODE_NON_MOVING;
 
+    /* 先验证快照事实，再按可移动候选、固定排除区和其他代际分组统计。 */
     for (index = 0u; index < request->regionCount; ++index) {
         const SZrGarbageCollectRegionDescriptor *region =
                 &request->regions[index];
@@ -209,6 +239,7 @@ TZrBool ZrCore_GcCompact_Plan(
         candidate.estimatedWorkUnits = gc_compact_sat_add(
                 candidate.estimatedWorkUnits, region->liveBytes);
 
+        /* 候选统计涵盖所有过阈值旧区；许可与预算只决定整区是否进入计划量。 */
         if (!request->allowMoving) {
             continue;
         }
@@ -247,7 +278,13 @@ TZrBool ZrCore_GcCompact_Plan(
     return ZR_TRUE;
 }
 
-/* TODO: 直接读取可变的 region 指针/长度；确认调用方必须持有停世界或快照。 */
+/**
+ * @brief 从 global 当前登记表装配只读请求，再委托纯规划器。
+ * @pre global/collector 非空时，其 regions 指针、长度及数组在读取期间须保持稳定。
+ * @return global 或 collector 为空时返回 false，plan 保持原值；否则返回规划器结果。
+ * TODO: 仓内无调用点能证明安全点或快照保护，需明确登记表并发修改时的同步契约。
+ * TODO: 此包装器在 global 无效时不会像 Plan 一样初始化 plan，需明确失败输出是否须清空。
+ */
 TZrBool ZrCore_GarbageCollector_PlanCompaction(
         struct SZrGlobalState *global,
         TZrUInt64 budgetBytes,
