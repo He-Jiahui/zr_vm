@@ -1,5 +1,5 @@
+/* 按目标 MetadataRuntime 建立独立反射服务 module；缓存与特殊导入路由由相邻模块负责。 */
 #include "zr_vm_core/reflection.h"
-
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
@@ -19,6 +19,7 @@
 #include "reflection_object_internal.h"
 #include "reflection_type_resolve_native_internal.h"
 
+/** @brief 确认导出仍指向指定 closure，且其捕获绑定到预期 runtime module。 */
 static TZrBool reflection_module_export_is_installed(
         SZrState *state,
         SZrObjectModule *module,
@@ -36,6 +37,7 @@ static TZrBool reflection_module_export_is_installed(
                     state, closure, expectedFunction, runtimeModule));
 }
 
+/** @brief 按 provider 名称创建独立服务 module，并校验四个捕获目标 runtime 的导出。 */
 SZrObjectModule *ZrCore_Reflection_CreateModuleForRuntimeInternal(
         SZrState *state,
         SZrMetadataRuntime *runtime,
@@ -71,6 +73,7 @@ SZrObjectModule *ZrCore_Reflection_CreateModuleForRuntimeInternal(
         return ZR_NULL;
     }
 
+    /* 服务身份来自 global 注册的 reflection provider；导入路由仍由 module_reflection_import 处理。 */
     providerModuleName = ZrCore_GlobalState_ResolveProviderModuleName(
             state->global, ZR_PROVIDER_CONTRACT_ROLE_REFLECTION);
     if (providerModuleName == ZR_NULL || providerModuleName[0] == '\0') {
@@ -78,6 +81,12 @@ SZrObjectModule *ZrCore_Reflection_CreateModuleForRuntimeInternal(
     }
 
     runtimeModule = runtime->module;
+    /*
+     * TODO: 公开入口未核 state 与 runtime module 属于同一 GC domain；若宿主会传入外域 runtime，
+     *       需确定由调用方前置条件约束，还是在登记当前 global 的 ignored root 前显式拒绝。
+     * BUG: 多个 RUNNING mutator 可并发走到配对的 ObjectPinRaw/UnpinRaw；底层 ignored registry 无锁，
+     *      因而可能竞争索引，或由一个调用撤掉另一个仍在使用的临时根。
+     */
     if (runtimeModule->super.super.type != ZR_RAW_OBJECT_TYPE_OBJECT ||
         runtimeModule->super.super.isNative ||
         runtimeModule->super.internalType != ZR_OBJECT_INTERNAL_TYPE_MODULE ||
@@ -89,6 +98,11 @@ SZrObjectModule *ZrCore_Reflection_CreateModuleForRuntimeInternal(
         return ZR_NULL;
     }
 
+    /*
+     * BUG: 本次新增 ignored root 后，若此处栈扩容 OOM 并非局部抛出，控制流会跳过 cleanup 的撤根，
+     *      使 runtime module 持续留在全局 ignored-root 表中。
+     * 十个 VM 栈槽依次保护 service、模块名及四组导出名/closure，允许分配期间触发 GC。
+     */
     rootBase = state->stackTop.valuePointer;
     rootBase = ZrCore_Function_CheckStackAndGc(state, 10u, rootBase);
 
@@ -200,6 +214,7 @@ SZrObjectModule *ZrCore_Reflection_CreateModuleForRuntimeInternal(
             ZR_CAST_RAW_OBJECT_AS_SUPER(createClosure));
     state->stackTop.valuePointer = rootBase + 10;
 
+    /* 分配期间可能触发 GC；后续操作从受追踪槽重取对象，不依赖分配前的局部副本。 */
     moduleRoot = ZrCore_Stack_GetValue(rootBase);
     moduleNameRoot = ZrCore_Stack_GetValue(rootBase + 1);
     makeExportNameRoot = ZrCore_Stack_GetValue(rootBase + 2);
@@ -222,11 +237,16 @@ SZrObjectModule *ZrCore_Reflection_CreateModuleForRuntimeInternal(
             moduleName,
             ZrCore_Module_CalculatePathHash(state, moduleName),
             moduleName);
+    /*
+     * TODO: HashSet_Add 要求 set 与 element 地址在调用期间稳定；此处传入 module 内 proNodeMap 和局部 key，
+     *       GcMalloc 可触发 GcFull；需在导出插入时强制回收，验证地址重取及两表发布一致性。
+     */
     ZrCore_Module_AddPubExport(state, module, makeExportName, makeClosureRoot);
     ZrCore_Module_AddPubExport(state, module, resolveExportName, resolveClosureRoot);
     ZrCore_Module_AddPubExport(state, module, requireExportName, requireClosureRoot);
     ZrCore_Module_AddPubExport(state, module, createExportName, createClosureRoot);
 
+    /* AddPubExport 内部可分配并触发 GC；验证阶段重新从 VM 根槽取回受保护的对象。 */
     moduleRoot = ZrCore_Stack_GetValue(rootBase);
     makeExportNameRoot = ZrCore_Stack_GetValue(rootBase + 2);
     makeClosureRoot = ZrCore_Stack_GetValue(rootBase + 3);
@@ -245,6 +265,10 @@ SZrObjectModule *ZrCore_Reflection_CreateModuleForRuntimeInternal(
     requireClosure = ZR_CAST_NATIVE_CLOSURE(state, requireClosureRoot->value.object);
     createExportName = ZR_CAST_STRING(state, createExportNameRoot->value.object);
     createClosure = ZR_CAST_NATIVE_CLOSURE(state, createClosureRoot->value.object);
+    /*
+     * BUG: AddPubExport 先写公开 nodeMap，再写 protected proNodeMap；后者 HashSet_Add 失败会静默返回。
+     *      此处与缓存验证只查公开导出，因此缺少 protected 副本的 module 仍可能通过校验并被标为 READY。
+     */
     if (!reflection_module_export_is_installed(
                 state,
                 module,
@@ -278,6 +302,7 @@ SZrObjectModule *ZrCore_Reflection_CreateModuleForRuntimeInternal(
     ZrCore_Module_SetInitializationState(module, ZR_MODULE_INIT_STATE_READY);
     result = module;
 
+    /* 统一出口恢复调用者 stackTop；目标 runtime module 的临时根与持久 native pin 分别结算。 */
 cleanup:
     state->stackTop.valuePointer = rootBase;
     if (!ZrCore_GarbageCollector_IsObjectIgnoredFast(
@@ -287,11 +312,13 @@ cleanup:
         result = ZR_NULL;
     }
     if (result != ZR_NULL && pinRuntimeModule) {
+        /* 公开工厂让绑定 closure 可独立于本次调用存活，因此固定其 native runtime module。 */
         ZrCore_GarbageCollector_PinObject(
                 state,
                 ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeModule),
                 ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE);
     }
+    /* 只移除本次新增的临时 ignored root；调用前已存在的根及持久 pin 保持原状。 */
     ZrCore_Reflection_ObjectUnpinRaw(
             state->global,
             ZR_CAST_RAW_OBJECT_AS_SUPER(runtimeModule),
@@ -299,6 +326,12 @@ cleanup:
     return result;
 }
 
+/**
+ * @brief 创建新的未缓存反射服务 module。
+ * @pre state、runtime 及 runtime->module 有效，module 反向持有该 runtime，且双方位于同一 GC domain。
+ * @return 四个公开导出通过校验时返回 READY module，显式失败返回 null；OOM 可由 VM 异常非局部传播。
+ * @note 成功时为目标 runtime module 建立持久 native-handle pin；新 module 本身须由调用方在下次 GC 前 root。
+ */
 SZrObjectModule *ZrCore_Reflection_CreateModuleForRuntime(
         SZrState *state,
         SZrMetadataRuntime *runtime) {

@@ -613,6 +613,13 @@ ZR_CORE_API struct SZrClosureNative *ZrCore_Reflection_CreateMakeGenericMethodNa
         struct SZrState *state,
         struct SZrMetadataRuntime *runtime);
 
+/**
+ * @brief 为给定 MetadataRuntime 新建独立的反射服务 module。
+ * @pre state、runtime、runtime->module 非空且有效；state 与 runtime->module 同属一个 GC domain，module 反向持有 runtime。
+ * @return 四个导出校验通过时返回 READY module；普通失败返回空，OOM 可非局部抛出。
+ * @note 成功后会 pin runtime module；返回的服务 module 仍须由调用方在下次 GC 前建立 root。
+ * TODO: 公开入口只核 runtime 与 module 回指；需确认是否应在入口拒绝违反同域前置条件的调用。
+ */
 ZR_CORE_API struct SZrObjectModule *ZrCore_Reflection_CreateModuleForRuntime(
         struct SZrState *state,
         struct SZrMetadataRuntime *runtime);
