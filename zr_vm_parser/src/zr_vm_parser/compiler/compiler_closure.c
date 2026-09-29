@@ -4,11 +4,13 @@
 
 #include "compiler_internal.h"
 
+/* Borrow/Loan 是不能跨闭包边界逃逸的所有权类别；其余限定符不会在这里被拦截。 */
 static TZrBool compiler_ownership_qualifier_is_borrow_escape(EZrOwnershipQualifier qualifier) {
     return qualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED ||
            qualifier == ZR_OWNERSHIP_QUALIFIER_LOANED;
 }
 
+/* 递归检查推断类型及其 elementTypes，覆盖容器或泛型参数中的嵌套 Borrow/Loan。 */
 static TZrBool compiler_inferred_type_contains_borrow_escape_ownership(const SZrInferredType *type) {
     TZrSize index;
 
@@ -32,6 +34,7 @@ static TZrBool compiler_inferred_type_contains_borrow_escape_ownership(const SZr
     return ZR_FALSE;
 }
 
+/* 在真正写入 closureVars 前读取父级 typeEnv 检查 Borrow/Loan；typeEnv 缺失或查找失败会放行，语义待确认。 */
 static TZrBool compiler_validate_closure_capture_ownership_escape(SZrCompilerState *cs,
                                                                   SZrCompilerState *parentCompiler,
                                                                   SZrString *name,
@@ -44,6 +47,7 @@ static TZrBool compiler_validate_closure_capture_ownership_escape(SZrCompilerSta
     }
 
     if (parentCompiler->typeEnv == ZR_NULL) {
+        /* TODO: 缺少父级 typeEnv 时当前仍放行捕获；核实无类型环境入口是否可能承载 Borrow/Loan，并补上未知类型闭包场景。 */
         return ZR_TRUE;
     }
 
@@ -54,6 +58,7 @@ static TZrBool compiler_validate_closure_capture_ownership_escape(SZrCompilerSta
                                                       &capturedType);
     if (!hasType) {
         ZrParser_InferredType_Free(cs->state, &capturedType);
+        /* TODO: 父级槽位存在但 TypeEnvironment 查不到 binding 时也会放行；核实注册覆盖范围并补查找失败测试。 */
         return ZR_TRUE;
     }
 
@@ -69,6 +74,7 @@ static TZrBool compiler_validate_closure_capture_ownership_escape(SZrCompilerSta
     return ZR_TRUE;
 }
 
+/* 尽可能为捕获槽补充符号身份：优先使用父级 TypeEnvironment 声明范围，其次核对父级 Semantic IR 槽身份，最后沿父闭包记录回退。 */
 static void compiler_closure_capture_identity_from_parent(
         SZrFunctionClosureVariable *capture,
         const SZrCompilerState *parentCompiler,
@@ -138,12 +144,13 @@ static void compiler_closure_capture_identity_from_parent(
     }
 }
 
+/* TODO: 仓内只有 compiler_internal.h 的声明和本定义，没有调用入口；确认该兼容名单是否仍需维护，并在保留时核实字符串指针的生命周期与去重契约。 */
 void record_external_var_reference(SZrCompilerState *cs, SZrString *name) {
     if (cs == ZR_NULL || name == ZR_NULL || cs->hasError) {
         return;
     }
     
-    // 检查是否已存在
+    /* 该旧名单按 SZrString 对象指针去重，而非比较字符串内容。 */
     for (TZrSize i = 0; i < cs->referencedExternalVars.length; i++) {
         SZrString **varName = (SZrString **)ZrCore_Array_Get(&cs->referencedExternalVars, i);
         if (varName != ZR_NULL && *varName == name) {
@@ -151,12 +158,13 @@ void record_external_var_reference(SZrCompilerState *cs, SZrString *name) {
         }
     }
     
-    // 添加到列表
+    /* 只把 SZrString* 存进数组，不复制或单独释放字符串；compiler_state.c 释放的是数组缓冲区。 */
     ZrCore_Array_Push(cs->state, &cs->referencedExternalVars, &name);
 }
 
 void collect_identifiers_from_node(SZrCompilerState *cs, SZrAstNode *node, SZrArray *identifierNames);
 
+/* 遍历 AST 节点数组，把每个非空子树交给统一 visitor；数组只借用调用方存储。 */
 void collect_identifiers_from_array(SZrCompilerState *cs, SZrAstNodeArray *nodes, SZrArray *identifierNames) {
     if (cs == ZR_NULL || nodes == ZR_NULL || identifierNames == ZR_NULL) {
         return;
@@ -170,13 +178,13 @@ void collect_identifiers_from_array(SZrCompilerState *cs, SZrAstNodeArray *nodes
     }
 }
 
-// 递归遍历AST节点，查找所有标识符引用
+/* 递归遍历闭包体 AST，先按语法结构收集标识符，再由外层函数解析其作用域归属。 */
 void collect_identifiers_from_node(SZrCompilerState *cs, SZrAstNode *node, SZrArray *identifierNames) {
     if (cs == ZR_NULL || node == ZR_NULL || identifierNames == ZR_NULL) {
         return;
     }
     
-    // 如果是标识符节点，添加到集合中
+    /* 标识符节点是收集终点；用对象指针去重以复用解析阶段的字符串对象。 */
     if (node->type == ZR_AST_IDENTIFIER_LITERAL) {
         SZrString *name = node->data.identifier.name;
         if (name != ZR_NULL) {
@@ -196,8 +204,7 @@ void collect_identifiers_from_node(SZrCompilerState *cs, SZrAstNode *node, SZrAr
         return;
     }
     
-    // 递归遍历所有子节点
-    // 根据节点类型访问不同的子节点字段
+    /* 仅沿当前 AST 结构的表达式/语句子字段递归，不改写 AST 或编译器状态。 */
     switch (node->type) {
         case ZR_AST_BINARY_EXPRESSION: {
             SZrBinaryExpression *binExpr = &node->data.binaryExpression;
@@ -251,11 +258,13 @@ void collect_identifiers_from_node(SZrCompilerState *cs, SZrAstNode *node, SZrAr
         }
         case ZR_AST_FUNCTION_CALL: {
             SZrFunctionCall *funcCall = &node->data.functionCall;
+            /* 调用节点仅持有参数列表；可调用表达式本身位于外层 PrimaryExpression.property。 */
             collect_identifiers_from_array(cs, funcCall->args, identifierNames);
             break;
         }
         case ZR_AST_MEMBER_EXPRESSION: {
             SZrMemberExpression *memberExpr = &node->data.memberExpression;
+            /* 点号后的标识符是字段名而非变量引用；只有方括号计算属性才需扫描。接收者由 PrimaryExpression 负责。 */
             if (memberExpr->computed && memberExpr->property != ZR_NULL) {
                 collect_identifiers_from_node(cs, memberExpr->property, identifierNames);
             }
@@ -303,6 +312,7 @@ void collect_identifiers_from_node(SZrCompilerState *cs, SZrAstNode *node, SZrAr
         }
         case ZR_AST_KEY_VALUE_PAIR: {
             SZrKeyValuePair *kv = &node->data.keyValuePair;
+            /* 对象字面量的普通标识符/字符串键是静态名称；只遍历计算键表达式和值表达式。 */
             if (kv->key != ZR_NULL &&
                 kv->key->type != ZR_AST_IDENTIFIER_LITERAL &&
                 kv->key->type != ZR_AST_STRING_LITERAL) {
@@ -315,6 +325,7 @@ void collect_identifiers_from_node(SZrCompilerState *cs, SZrAstNode *node, SZrAr
         }
         case ZR_AST_LAMBDA_EXPRESSION: {
             SZrLambdaExpression *lambda = &node->data.lambdaExpression;
+            /* BUG: 外层扫描递归进入嵌套 lambda 的 block，却没有把 lambda->params 当作内层绑定屏蔽；当形参遮蔽父级同名 Borrow/Loan 局部变量时，外层会误记捕获并报“Borrowed and loaned owners cannot escape through closure capture”。触发路径：参数字段见 zr_vm_parser/include/zr_vm_parser/ast.h:456-459；lambda 在清空子级局部表后、编译 body 前执行分析见 zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_lambda.c:222-224,310。 */
             if (lambda->block != ZR_NULL) {
                 collect_identifiers_from_node(cs, lambda->block, identifierNames);
             }
@@ -477,23 +488,25 @@ void collect_identifiers_from_node(SZrCompilerState *cs, SZrAstNode *node, SZrAr
             break;
         }
         default:
-            // TODO: 其他节点类型暂时不处理，可以根据需要扩展
+            /* BUG: ZR_AST_TEMPLATE_STRING_LITERAL 及其 ZR_AST_INTERPOLATED_SEGMENT.expression 不会进入 visitor；lambda 只在插值中引用父级局部变量时不会登记捕获。lambda 先清空子级 localVars/closureVars 再调用本分析（zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_lambda.c:222-224,310），随后插值编译 identifier 时只查子级 local/closure 并报告未解析名字（zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_values.c:425,444,531；表达式入口见 zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_values.c:261-264）。AST 子字段和构造路径见 zr_vm_parser/include/zr_vm_parser/ast.h:403-409、zr_vm_parser/src/zr_vm_parser/parser/parser_literals.c:135,348。 */
+            /* TODO: 还需对照 ast.h 的完整表达式 AST/子字段表，补齐类型转换、await、spread、解包和生成器等当前未递归的包装节点，并逐类补捕获测试。 */
             break;
     }
 }
 
-// 分析AST节点中的外部变量引用（完整实现）
+/* 分析闭包体中未在当前编译器绑定的标识符，并把父级局部或闭包槽复制为子闭包捕获。 */
 void ZrParser_ExternalVariables_Analyze(SZrCompilerState *cs, SZrAstNode *node, SZrCompilerState *parentCompiler) {
     if (cs == ZR_NULL || node == ZR_NULL || parentCompiler == ZR_NULL || cs->hasError) {
         return;
     }
     
-    // 1. 收集所有标识符引用
+    /* 先建立临时名字数组；数组只存 SZrString*，清理时不释放字符串对象。 */
     SZrArray identifierNames;
+    /* BUG: Array_Init/Push 为无返回值 API；共享实现的 Init 分配失败会保留空 head，Push 仍断言/写入该缓冲区。闭包体含标识符且底层分配失败时，本分析不能转成编译诊断，会中止或空指针写入；closureVars 扩容也有同类路径。证据：zr_vm_core/include/zr_vm_core/array.h:29-38,73-88；下方初始化与追加见本函数。 */
     ZrCore_Array_Init(cs->state, &identifierNames, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_MEDIUM);
     collect_identifiers_from_node(cs, node, &identifierNames);
     
-    // 2. 检查每个标识符是否是外部变量
+    /* 只处理当前作用域未绑定、但父级存在局部槽或上值索引的名字。 */
     for (TZrSize i = 0; i < identifierNames.length; i++) {
         SZrString **namePtr = (SZrString **)ZrCore_Array_Get(&identifierNames, i);
         if (namePtr == ZR_NULL || *namePtr == ZR_NULL) {
@@ -501,22 +514,22 @@ void ZrParser_ExternalVariables_Analyze(SZrCompilerState *cs, SZrAstNode *node, 
         }
         SZrString *name = *namePtr;
         
-        // 在当前编译器中查找（局部变量和闭包变量）
+        /* 当前绑定优先，避免把自身局部变量误记为外部捕获。 */
         TZrUInt32 localIndex = find_local_var(cs, name);
         TZrUInt32 closureIndex = find_closure_var(cs, name);
         
         // 如果既不是局部变量也不是闭包变量，可能是外部变量
         if (localIndex == ZR_PARSER_SLOT_NONE && closureIndex == ZR_PARSER_INDEX_NONE) {
-            // 在父编译器中查找（外部作用域的变量）
+            /* 父级 local/closure 索引是后续 GETUPVAL/GET_CLOSURE 的来源。 */
             TZrUInt32 parentLocalIndex = find_local_var(parentCompiler, name);
             TZrUInt32 parentClosureIndex = find_closure_var(parentCompiler, name);
             if (parentLocalIndex != ZR_PARSER_SLOT_NONE || parentClosureIndex != ZR_PARSER_INDEX_NONE) {
-                // 这是外部变量，需要捕获到闭包中
-                // 注意：index 必须指向父作用域中的真实槽位/上值索引，而不是当前闭包数组长度。
+                /* 捕获只追加一次；index 必须保持父级真实槽位或上值索引，不能使用当前 closureVars 长度。 */
                 if (find_closure_var(cs, name) == ZR_PARSER_INDEX_NONE) {
                     SZrFunctionClosureVariable closureVar;
 
                     ZrCore_Memory_RawSet(&closureVar, 0, sizeof(closureVar));
+                    /* 所有权边界在写入 closureVars 前检查，失败时停止后续捕获。 */
                     if (!compiler_validate_closure_capture_ownership_escape(cs,
                                                                             parentCompiler,
                                                                             name,
@@ -527,6 +540,7 @@ void ZrParser_ExternalVariables_Analyze(SZrCompilerState *cs, SZrAstNode *node, 
                     closureVar.inStack = (parentLocalIndex != ZR_PARSER_SLOT_NONE) ? ZR_TRUE : ZR_FALSE;
                     closureVar.index = (parentLocalIndex != ZR_PARSER_SLOT_NONE) ? parentLocalIndex : parentClosureIndex;
                     closureVar.valueType = ZR_VALUE_TYPE_NULL;
+                    /* 作用域深度和逃逸标志写入 closureValueList 后供运行时闭包捕获元数据/GC 逃逸路径读取。 */
                     closureVar.scopeDepth = 0u;
                     if (cs->scopeStack.length > 0) {
                         SZrScope *scope = (SZrScope *)ZrCore_Array_Get(&cs->scopeStack, cs->scopeStack.length - 1);
@@ -534,6 +548,7 @@ void ZrParser_ExternalVariables_Analyze(SZrCompilerState *cs, SZrAstNode *node, 
                             closureVar.scopeDepth = scope->depth;
                         }
                     }
+                    /* 该标记随 capture 元数据传给后续函数/GC 逃逸分析。 */
                     closureVar.escapeFlags = ZR_GARBAGE_COLLECT_ESCAPE_KIND_CLOSURE_CAPTURE;
                     compiler_closure_capture_identity_from_parent(&closureVar,
                                                                    parentCompiler,
@@ -547,7 +562,7 @@ void ZrParser_ExternalVariables_Analyze(SZrCompilerState *cs, SZrAstNode *node, 
         }
     }
     
-    // 3. 清理临时数组
+    /* 临时名字数组不拥有字符串；分析结束后仅释放数组容器。 */
     ZrCore_Array_Free(cs->state, &identifierNames);
 }
 
