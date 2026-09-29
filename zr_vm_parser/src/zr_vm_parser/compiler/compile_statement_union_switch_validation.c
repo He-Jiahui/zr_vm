@@ -5,12 +5,14 @@
 
 #include "zr_vm_core/string.h"
 
+/* 仅裸标识符或 primary/member-path 形态可以在显式解析失败后借 switch subject 类型补足 union 上下文。 */
 static TZrBool switch_case_can_use_subject_union_type(SZrAstNode *caseValue) {
     return caseValue != ZR_NULL &&
            (caseValue->type == ZR_AST_IDENTIFIER_LITERAL ||
             caseValue->type == ZR_AST_PRIMARY_EXPRESSION);
 }
 
+/* 按 subject union 上下文解析 case，再把解析出的 variant 名与当前声明 variant 对照。 */
 static TZrBool switch_union_case_covers_variant(SZrCompilerState *cs,
                                                 SZrAstNode *caseValue,
                                                 SZrString *switchUnionTypeName,
@@ -38,6 +40,21 @@ static TZrBool switch_union_case_covers_variant(SZrCompilerState *cs,
                                                               ZR_NULL)) {
         return ZR_FALSE;
     }
+
+    /*
+     * TODO: for_type 会先接受显式 Other.Variant，再把解析出的 variantName 返回；此处只保留名称，无法区分
+     * subject union 与同名的外部 variant。lowering 当前比较 __zr_unionVariant 字符串并把解析出的 variant AST
+     * 交给 payload 类型注册。下一步：明确跨 union 限定模式的契约，为同名但 payload 类型不同的 union 加回归例，
+     * 并统一 resolver、覆盖校验、lowering 与 CFG 使用的 variant identity。
+     */
+    /*
+     * BUG: struct payload pattern 的解析器会创建并返回独立 AstNodeArray；本校验只比较名称却丢弃 bindings，
+     * 没有调用 ZrParser_AstNodeArray_Free。duplicate 与 exhaustiveness 两轮都会按声明 variant 重解析每个
+     * case，重复编译 struct-pattern switch 会累积未释放的 native arrays。触发样例为
+     * test_union_switch_binds_unqualified_struct_variant_pattern_from_subject_type；分配和显式释放路径见
+     * compile_expression_union.c:600-629 与 ast.c:50-60。
+     */
+    /* resolver 的 true 既可能表示 pattern 已识别，也可能表示已报告诊断；须同时检查 error 状态和输出名。 */
     if (cs->hasError || caseVariantName == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -62,6 +79,7 @@ void compile_switch_validate_union_duplicate_cases(SZrCompilerState *cs,
         return;
     }
 
+    /* 按声明 variant 逐一扫描 case；记录首个命中后，第二个命中就是应在 lowering 前拒绝的分支。 */
     for (TZrSize variantIndex = 0; variantIndex < variants->count; variantIndex++) {
         SZrAstNode *variantNode = variants->nodes[variantIndex];
         SZrString *variantName;
@@ -156,6 +174,7 @@ TZrBool compile_switch_validate_union_exhaustiveness(SZrCompilerState *cs,
             }
         }
 
+        /* default 只处理运行时未命中的值；它不补足 AST 的显式覆盖标记，CFG 仍需保留 default 可达性。 */
         if (!covered) {
             if (switchExpression->defaultCase == ZR_NULL) {
                 TZrChar message[ZR_PARSER_ERROR_BUFFER_LENGTH];
