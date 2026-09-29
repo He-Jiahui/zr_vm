@@ -1,12 +1,21 @@
 #include "zr_vm_core/hotpatch_rollback.h"
 #include "zr_vm_core/hotpatch_profile.h"
 
-#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 
-/* BUG: NDEBUG 删除初始化和 ApplyValidated 等 assert 表达式后仍 Deinit 未初始化 manager。
- * TODO: validated 在此由栈值直接伪造，尚未覆盖真正 Validate 到应用的信任链及故障矩阵。 */
+/* validated 仍由此文件的栈 fixture 构造；端到端 Validate 信任链属于另一测试切片。 */
+static int g_testFailureCount = 0;
+
+#define TEST_CHECK(condition) \
+    do { \
+        if (!(condition)) { \
+            fprintf(stderr, "rollback restricted check failed at line %d: %s\n", \
+                    __LINE__, #condition); \
+            ++g_testFailureCount; \
+        } \
+    } while (0)
+
 typedef enum ETestRollbackFailure {
     TEST_ROLLBACK_INVALID_TARGET = 0,
     TEST_ROLLBACK_MISSING_TARGET,
@@ -255,6 +264,9 @@ int main(void) {
     SZrValidatedHotPatch validated;
     SZrHotPatchApplyDiagnostic ad;
     SZrHotPatchRestrictedDiagnostic rd;
+    EZrHotPatchGenerationStatus generationStatus;
+    EZrHotPatchApplyStatus applyStatus;
+    EZrHotPatchRestrictedStatus restrictedStatus;
     int failureCount = test_rollback_failure_statuses();
     if (failureCount != 0) return 1;
     memset(&artifact, 0, sizeof(artifact)); artifact.buffer = bytes; artifact.bufferLength = (TZrUInt32)sizeof(bytes);
@@ -265,23 +277,46 @@ int main(void) {
     validated.patchId = manifest.patchId; validated.publicContractHash = manifest.publicContractHash;
     validated.signatureVerified = ZR_TRUE; validated.immutableContent = ZR_TRUE; validated.targetProfile = 1u;
     /* 已验证令牌的幂等、ID 碰撞及回滚代际均属于同一 manager 生命周期。 */
-    assert(ZrCore_HotPatch_GenerationManager_Init(&manager, records, 4u, &gd) == ZR_HOT_PATCH_GENERATION_OK);
-    assert(ZrCore_HotPatch_ApplyValidated(&manager, &registry, &validated, 9u, &h1, &ad) == ZR_HOT_PATCH_APPLY_OK);
-    assert(entries[0].generation == h1.generation);
-    assert(ZrCore_HotPatch_ApplyValidated(&manager, &registry, &validated, 9u, &h2, &ad) == ZR_HOT_PATCH_APPLY_ALREADY_APPLIED);
+    generationStatus = ZrCore_HotPatch_GenerationManager_Init(
+            &manager, records, 4u, &gd);
+    TEST_CHECK(generationStatus == ZR_HOT_PATCH_GENERATION_OK);
+    if (generationStatus != ZR_HOT_PATCH_GENERATION_OK) return 1;
+
+    applyStatus = ZrCore_HotPatch_ApplyValidated(
+            &manager, &registry, &validated, 9u, &h1, &ad);
+    TEST_CHECK(applyStatus == ZR_HOT_PATCH_APPLY_OK);
+    if (applyStatus != ZR_HOT_PATCH_APPLY_OK) {
+        ZrCore_HotPatch_GenerationManager_Deinit(&manager);
+        return 1;
+    }
+    TEST_CHECK(entries[0].generation == h1.generation);
+    applyStatus = ZrCore_HotPatch_ApplyValidated(
+            &manager, &registry, &validated, 9u, &h2, &ad);
+    TEST_CHECK(applyStatus == ZR_HOT_PATCH_APPLY_ALREADY_APPLIED);
     bytes[0] ^= 0x01u;
     manifest.contentHash = ZrCore_ArtifactExecIr_HashBytes(bytes, (TZrUInt32)sizeof(bytes));
     validated.contentHash = manifest.contentHash;
-    assert(ZrCore_HotPatch_ApplyValidated(&manager, &registry, &validated, 9u, &h2, &ad) == ZR_HOT_PATCH_APPLY_ID_COLLISION);
+    applyStatus = ZrCore_HotPatch_ApplyValidated(
+            &manager, &registry, &validated, 9u, &h2, &ad);
+    TEST_CHECK(applyStatus == ZR_HOT_PATCH_APPLY_ID_COLLISION);
     bytes[0] ^= 0x01u;
     manifest.contentHash = ZrCore_ArtifactExecIr_HashBytes(bytes, (TZrUInt32)sizeof(bytes));
     validated.contentHash = manifest.contentHash;
-    assert(ZrCore_HotPatch_Rollback(&manager, h1.generation, &h2, &ad) == ZR_HOT_PATCH_APPLY_OK);
-    assert(h2.generation != h1.generation);
+    applyStatus = ZrCore_HotPatch_Rollback(
+            &manager, h1.generation, &h2, &ad);
+    TEST_CHECK(applyStatus == ZR_HOT_PATCH_APPLY_OK);
+    if (applyStatus == ZR_HOT_PATCH_APPLY_OK) {
+        TEST_CHECK(h2.generation != h1.generation);
+    }
     /* 受限解释器可接收无 relocation 的产物，新增该 section 后须拒绝。 */
-    assert(ZrCore_HotPatch_ValidateRestrictedProfile(&artifact, ZR_HOT_PATCH_PROFILE_IOS_INTERPRETER, &rd) == ZR_HOT_PATCH_RESTRICTED_OK);
+    restrictedStatus = ZrCore_HotPatch_ValidateRestrictedProfile(
+            &artifact, ZR_HOT_PATCH_PROFILE_IOS_INTERPRETER, &rd);
+    TEST_CHECK(restrictedStatus == ZR_HOT_PATCH_RESTRICTED_OK);
     artifact.sectionCount = 1u; artifact.sections[0].kind = ZR_ARTIFACT_EXEC_IR_SECTION_RELOCATIONS;
-    assert(ZrCore_HotPatch_ValidateRestrictedProfile(&artifact, ZR_HOT_PATCH_PROFILE_WASM_INTERPRETER, &rd) == ZR_HOT_PATCH_RESTRICTED_SECTION_FORBIDDEN);
+    restrictedStatus = ZrCore_HotPatch_ValidateRestrictedProfile(
+            &artifact, ZR_HOT_PATCH_PROFILE_WASM_INTERPRETER, &rd);
+    TEST_CHECK(restrictedStatus ==
+               ZR_HOT_PATCH_RESTRICTED_SECTION_FORBIDDEN);
     ZrCore_HotPatch_GenerationManager_Deinit(&manager);
-    return 0;
+    return g_testFailureCount == 0 ? 0 : 1;
 }

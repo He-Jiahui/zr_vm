@@ -14,6 +14,7 @@ plan_sources:
 tests:
   - tests/library/test_ssa_rollback_restricted.c
   - tests/acceptance/ssa-hotpatch-rollback-status-mapping.md
+  - tests/acceptance/ssa-hotpatch-rollback-test-ndebug.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -55,6 +56,12 @@ status: planned
 不改 records、active、count、next-generation 或输出 handle。详见
 [rollback status mapping acceptance](../../../../tests/acceptance/ssa-hotpatch-rollback-status-mapping.md)。
 这仅覆盖返回状态映射，不完成并发 rollback 或其它加载/回收故障矩阵。
+
+`test_ssa_rollback_restricted.c` 的检查已不依赖 `assert`：API 操作显式执行，
+状态和结果由 `TEST_CHECK` 收集，所以 `NDEBUG` 下仍运行完整用例；初始化失败时
+会安全退出而不 Deinit 未初始化 manager。临时 canary 曾在 `-DNDEBUG` 下确定性
+失败，最终 Debug/NDEBUG 门禁及清理证据见
+[NDEBUG test reliability acceptance](../../../../tests/acceptance/ssa-hotpatch-rollback-test-ndebug.md)。
 
 新增文件登记到所属模块 CMake；测试登记到计划新增的 `tests/cmake/ssa-tests.cmake`，由 `tests/CMakeLists.txt` 单点 include。先迁移职责并保持行为，再接入新 contract；不要把新分析或慢路径追加到巨型 dispatch/quickening 文件。
 

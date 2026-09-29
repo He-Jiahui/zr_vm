@@ -18,6 +18,7 @@ tests:
   - tests/acceptance/ssa-hotpatch-generation-handle-ownership.md
   - tests/acceptance/ssa-hotpatch-prepare-status-mapping.md
   - tests/acceptance/ssa-hotpatch-rollback-status-mapping.md
+  - tests/acceptance/ssa-hotpatch-rollback-test-ndebug.md
 plan_sources:
   - docs/plans/ssa/08-artifact-hotpatch/03-generation-publication.md
   - docs/plans/ssa/08-artifact-hotpatch/04-rollback-restricted.md
@@ -84,3 +85,10 @@ fixture builds two real generations, leaving generation 1 retained as
 `RETIRED` and generation 2 active; it verifies each failure leaves all records,
 the active pointer, manager count and next-generation counter, and output handle
 unchanged. Other generation statuses fail closed as `APPLY_ROLLBACK_FAILED`.
+
+The rollback restricted test now executes initialization, apply, rollback, and
+profile-validation calls as ordinary statements, then checks their returned
+statuses with an always-active `TEST_CHECK`. `NDEBUG` therefore removes no test
+work, and failed initialization exits before manager deinitialization. The
+Debug and NDEBUG verification evidence is recorded in the test reliability
+[acceptance](../../tests/acceptance/ssa-hotpatch-rollback-test-ndebug.md).
