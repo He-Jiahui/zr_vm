@@ -45,6 +45,8 @@ typedef struct SZrGcDomainMutatorRecord {
     TZrUInt64 observedEpoch;
     TZrUInt32 executionDepth;
     TZrUInt32 nativeDepth;
+    /* Protected by coordinationLock; counts locked scopes while this state is registered. */
+    TZrUInt32 mutationDepth;
     EZrGcNativeSafepointMode nativeMode;
     EZrGcDomainMutatorStatus status;
     /* TODO: 该字段仅见写入及物化保存/恢复，未见行为判定读取；核查是否仍承担独立契约。 */

@@ -10,6 +10,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/gc/gc.c
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
+  - zr_vm_core/src/zr_vm_core/object/object.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/exception.c
   - zr_vm_core/src/zr_vm_core/ownership_transfer.c
@@ -24,6 +25,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/object/object_index_contract_direct_binding.c
 implementation_files:
   - zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_domain_internal.h
   - zr_vm_core/src/zr_vm_core/ownership_transfer.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/exception.c
@@ -32,7 +34,9 @@ plan_sources:
   - docs/plans/syntax/2026-07-18-04-resource-ownership-drop-gc-bridge-design.md
 tests:
   - tests/core/test_gc_domain_multimutator.c
+  - tests/core/test_gc_nested_mutation.c
   - tests/core/test_gc_concurrent_major.c
+  - tests/acceptance/2026-09-30-gc-nested-mutation-stw.md
   - tests/core/test_resource_same_domain_handoff.c
   - tests/core/test_resource_cross_domain_transfer.c
   - tests/core/test_resource_cross_domain_transfer_races.c
@@ -59,11 +63,36 @@ runtime-internal 的同域 `Unique<Resource>` handoff。它只定义 GC/owner �
 
 `ZrCore_GcDomain_MutatorEnter/Leave` 是可嵌套的。只有 outer execution leave 才把 state
 恢复为 inactive；native scope 有独立 depth，不能被 VM inner/outer scope 提前清零。若 nested
-VM/native entry 正好遇到 active pause，运行中的 `GcAware` mutator 会先发布当前 epoch 并进入
-`Parked`，再等待 collector 结束 pause，避免“保持 Running 等待 pause”形成自锁。
+VM/native entry 正好遇到 active pause，且没有仍打开的 mutation scope，运行中的 `GcAware`
+mutator 会先发布当前 epoch 并进入 `Parked`，再等待 collector 结束 pause，避免“保持 Running
+等待 pause”形成自锁。并发标记中的 mutation scope 遵守单独的延迟停靠规则，见下节。
 
 新 mutator 可以在 pause 期间注册，但只能保持 inactive；`MutatorEnter` 会等本 domain pause
 结束后再进入运行态。detach 会从 registry 移除 exact state identity 并唤醒 collector。
+
+### 并发标记期间的嵌套 mutation scope
+
+每条 mutator record 在 `coordinationLock` 下维护 `mutationDepth`。只有成功取得
+recursive `mutationLock` 的 `MutationBegin` 才增加深度；匹配的 `MutationEnd` 重新查找
+record 后递减并释放一层锁。mutation table 扩容和删除会整体复制 record，因此深度随记录
+一起搬移；Begin/End 不会跨协调锁释放保留旧 record 指针。
+
+当深度大于零时，nested `MutationBegin`、执行入口和原生入口不能把当前线程停在 pause
+等待上，因为它仍持有 mutation lock。`MutatorPoll` 也会在这个深度下延后停靠。最外层
+`MutationEnd` 先释放 mutation lock；若 domain pause 仍在请求，再通过正常 poll 发布当前
+epoch。这样 collector 不会把仍持锁的 mutator 当作已 parked。
+
+### 嵌套 mutation 回归验证
+
+当前 native static-core 与 Clang 构建的 direct fixture 和注册 CTest 均通过；fixture 日志确认
+真实 STW pause、mutator parked、existing-key 写入完成、线程 join、`GetValue` 校验和 major
+drain 完成。Clang 的 ten-target build 为 85/85，GC CTest group 为 8/8，major-depth suite
+为 14/14。首次诊断 CTest 曾有一次 41.91 秒 timeout，但未复现，原因尚未确定。可选的
+old-source D-only probe 因基础设施、parser、bootstrap 和 link 失败而放弃；只编译了一个旧源
+object，没有运行旧源码测试，不构成额外 RED。原始 GDB RED 仍有效；其他 SSA 06.02 验收
+门槛仍开放。GCC 的 107/107 构建和 13/13 定向 CTest 已通过；GCC 14 direct run 尚未验证，
+不作通过声明。精确日志记录在
+`tests/acceptance/2026-09-30-gc-nested-mutation-stw.md`。
 
 ## Domain-local STW handshake
 

@@ -143,6 +143,9 @@ static SZrGcDomainMutatorRecord *gc_domain_wait_for_entry_boundary_locked(
         SZrGcDomain *domain,
         SZrState *state,
         SZrGcDomainMutatorRecord *record) {
+    if (record != ZR_NULL && record->mutationDepth > 0u) {
+        return record;
+    }
     /* BUG: 前次 PARKED 尚未恢复时新 collector 可推进 epoch；旧代数的记录继续等待，
      * first_blocker 会把它视为阻塞者，直到新暂停超时。 */
     while (record != ZR_NULL && domain->pauseRequested &&
@@ -316,6 +319,7 @@ TZrBool ZrCore_GcDomain_MutationBegin(SZrState *state) {
     SZrGcDomain *domain;
     SZrGcDomainMutatorRecord *record;
     TZrBool concurrentMajorActive;
+    TZrBool beginSucceeded;
 
     if (state == ZR_NULL || state->gcDomain == ZR_NULL) {
         return ZR_FALSE;
@@ -323,8 +327,6 @@ TZrBool ZrCore_GcDomain_MutationBegin(SZrState *state) {
     domain = state->gcDomain;
     ZrCore_GcDomain_Lock(domain);
     record = gc_domain_find_mutator_locked(domain, state);
-    /* BUG: 写屏障可在持递归 mutationLock 的对象写入内重入；若此时另一线程请求暂停，
-     * 内层在这里 PARKED，而 collector 停靠成功后等待外层持有的 mutationLock，形成永久互等。 */
     record = gc_domain_wait_for_entry_boundary_locked(domain, state, record);
     /* TODO: false 同时表示无需锁和未登记；核查 Barrier/Object 写入调用方在登记失效时能否安全拒绝写入。 */
     if (record == ZR_NULL && domain->collectorState != state) {
@@ -334,19 +336,67 @@ TZrBool ZrCore_GcDomain_MutationBegin(SZrState *state) {
     concurrentMajorActive =
             domain->collector != ZR_NULL &&
             domain->collector->concurrentMajorActive;
-    ZrCore_GcDomain_Unlock(domain);
-    if (concurrentMajorActive) {
-        /* BUG: Object_SetValue 的 HashSet_Add 可在持锁期间因持续 OOM Throw；
-         * longjmp 越过 MutationEnd，遗留递归锁使其他 mutator/标记切片无法进入。 */
-        ZrCore_GcDomain_MutationLock(domain);
+    if (record != ZR_NULL &&
+        record->mutationDepth == ~(TZrUInt32)0u) {
+        ZrCore_GcDomain_Unlock(domain);
+        return ZR_FALSE;
     }
-    return concurrentMajorActive;
+    /* A nested begin already owns a recursive level even if a pause raced the
+     * concurrent-major phase transition. */
+    concurrentMajorActive =
+            (TZrBool)(concurrentMajorActive ||
+                      (record != ZR_NULL && record->mutationDepth > 0u));
+    ZrCore_GcDomain_Unlock(domain);
+    if (!concurrentMajorActive) {
+        return ZR_FALSE;
+    }
+
+    /* BUG: Object_SetValue 的 HashSet_Add 可在持锁期间因持续 OOM Throw；
+     * longjmp 越过 MutationEnd，遗留递归锁使其他 mutator/标记切片无法进入。 */
+    ZrCore_GcDomain_MutationLock(domain);
+    /* Registry storage can move or the state can be detached while the
+     * coordination lock is released. Never retain the earlier record pointer. */
+    ZrCore_GcDomain_Lock(domain);
+    record = gc_domain_find_mutator_locked(domain, state);
+    beginSucceeded = (TZrBool)(record != ZR_NULL ||
+                               domain->collectorState == state);
+    if (record != ZR_NULL) {
+        if (record->mutationDepth == ~(TZrUInt32)0u) {
+            beginSucceeded = ZR_FALSE;
+        } else {
+            record->mutationDepth++;
+        }
+    }
+    ZrCore_GcDomain_Unlock(domain);
+    if (!beginSucceeded) {
+        ZrCore_GcDomain_MutationUnlock(domain);
+    }
+    return beginSucceeded;
 }
 
 /* 只释放本次 Begin 确实取得的锁，使未开启并发 major 的写入无需额外同步。 */
 void ZrCore_GcDomain_MutationEnd(SZrState *state, TZrBool locked) {
-    if (locked && state != ZR_NULL && state->gcDomain != ZR_NULL) {
-        ZrCore_GcDomain_MutationUnlock(state->gcDomain);
+    SZrGcDomain *domain;
+    SZrGcDomainMutatorRecord *record;
+    TZrBool pollDeferred = ZR_FALSE;
+
+    if (!locked || state == ZR_NULL || state->gcDomain == ZR_NULL) {
+        return;
+    }
+    domain = state->gcDomain;
+    ZrCore_GcDomain_Lock(domain);
+    record = gc_domain_find_mutator_locked(domain, state);
+    if (record != ZR_NULL && record->mutationDepth > 0u) {
+        record->mutationDepth--;
+        if (record->mutationDepth == 0u) {
+            pollDeferred = (TZrBool)(
+                    (domain->pauseRequested && domain->collectorState != state));
+        }
+    }
+    ZrCore_GcDomain_Unlock(domain);
+    ZrCore_GcDomain_MutationUnlock(domain);
+    if (pollDeferred) {
+        (void)ZrCore_GcDomain_MutatorPoll(state);
     }
 }
 
@@ -534,6 +584,10 @@ TZrBool ZrCore_GcDomain_MutatorPoll(SZrState *state) {
         domain->collectorState == state ||
         record->status != ZR_GC_DOMAIN_MUTATOR_STATUS_RUNNING ||
         record->nativeMode != ZR_GC_NATIVE_SAFEPOINT_MODE_GC_AWARE) {
+        ZrCore_GcDomain_Unlock(domain);
+        return ZR_FALSE;
+    }
+    if (record->mutationDepth > 0u) {
         ZrCore_GcDomain_Unlock(domain);
         return ZR_FALSE;
     }
