@@ -1,5 +1,11 @@
 ---
 related_code:
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_execbc_vm.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_validate.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_phi_validate.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_internal.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_instruction.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h
@@ -10,15 +16,25 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_validate.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_phi_validate.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_internal.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
 plan_sources:
   - docs/plans/ssa/index.md
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
 tests:
+  - tests/parser/test_ssa_execbc_vm.c
+  - tests/parser/test_ssa_execbc_vm_fixtures.inc
+  - tests/parser/test_ssa_execbc_vm_trace.inc
+  - tests/parser/test_ssa_execbc_vm_cfg_mutations.inc
+  - tests/acceptance/ssa-execbc-vm-materialization.md
   - tests/parser/test_ssa_oracle_projections.c
   - tests/parser/test_semir_pipeline.c
   - tests/parser/test_aot_c_value_semir_contracts.c
 doc_type: milestone-detail
-status: planned
+status: in-progress
 ---
 
 # 01.05 直接解释 Oracle 与无优化后端投影
@@ -27,7 +43,7 @@ status: planned
 
 **Goal：** 建立 ExecIR 直接解释的语义 oracle，以及不依赖优化的 ExecBC/AOTIR 初始投影。
 
-**Architecture：** oracle 逐条执行正交 IR 并复用共享语义 helper；生产仍走 ExecBC。投影阶段只选表示与物理位置，AOTIR 模型在 07.01 完善，避免后端从 quickening 反推语义。
+**Architecture：** oracle 逐条执行正交 IR 并复用共享语义 helper。ExecBC projection 可独立进入真实 Core VM 函数 materializer；当前只支持显式列出的无调用标量/控制子集，默认编译路径尚未切换。投影阶段只选表示与物理位置，AOTIR 模型在 07.01 完善，避免后端从 quickening 反推语义。
 
 **Tech Stack：** C11、CMake、Unity/CTest；共享 ExecIR 与现有 ZR runtime。
 
@@ -50,7 +66,10 @@ status: planned
 | 计划新增 | `zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c` | 直接 IR oracle |
 | 计划新增 | `zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c` | 无优化映射与 phi parallel-copy |
 | 计划新增 | `zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c` | 保留 SSA/effect 的 AOTIR 投影入口 |
+| 新增，首个受限消费者实现待验证 | `zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm.c`、`exec_ir_execbc_vm_validate.c`、`exec_ir_execbc_vm_phi_validate.c` | 先验证 raw phi assignments 与每条 edge 的 scheduled moves 等价，再把无 CALL、无 packed frame 的 i64 scalar/control projection 发射为真实 `SZrFunction` 指令；不使用 oracle 或投影 runner 作为 VM |
+| 新增 API | `zr_vm_parser/include/zr_vm_parser/exec_ir_execbc_vm.h` | 暴露 Core function emission、PC map 与明确的 GC 根生命周期 |
 | 计划新增测试 | `tests/parser/test_ssa_oracle_projections.c` | 下述正向、失败与状态转换断言；复用既有 harness。 |
+| 新增测试 | `tests/parser/test_ssa_execbc_vm.c` | 在 Core VM 执行真实发射函数，并与 OracleEx 结果及 PC-map 控制流对照。 |
 
 新增文件登记到所属模块 CMake；测试登记到计划新增的 `tests/cmake/ssa-tests.cmake`，由 `tests/CMakeLists.txt` 单点 include。先迁移职责并保持行为，再接入新 contract；不要把新分析或慢路径追加到巨型 dispatch/quickening 文件。
 
@@ -63,6 +82,7 @@ status: planned
 - [ ] **3. 对齐后端接口** AOTIR 接缝保留 token/type/source/state map，adapter 由 07.01 接管；任何功能未落地时不假装 C/LLVM 可执行。
 
 - [ ] **4. 按函数切流** 新路径验证、差分与 codegen 完整后切换该函数；旧 compiler_semir 后投影的消费者逐一迁移，最终删除被替代路径。
+- [ ] **5. 建立真实 VM 函数 materializer** 只接受 i64 constant/ADD/SUB/compare、bool branch、phi edge copies 与 i64 return；Unsupported 和 malformed projection 在 Core function 分配前结构化失败，绝不隐式回到旧编译器。待 focused MSVC/GCC target 验证后记录此子集的实测结果。
 
 ## 核心算法与接口指导
 
@@ -91,8 +111,34 @@ oracle 不是第三套独立语言实现：数值、native、ownership、异常�
 | 标量、call、异常、drop 的同源执行 | 事件轨迹与结果一致 |
 | 未实现 opcode | 明确 unsupported，而不是 skip/no-op |
 | 关闭 quickening 后 AOTIR 构建 | 仍可从 ExecIR 完整投影 |
+| CFG successor 缺少对应 target predecessor occurrence | materializer 结构化拒绝，输出保持为空 |
 
 复用回归入口：`tests/parser/test_semir_pipeline.c`、`tests/parser/test_aot_c_value_semir_contracts.c`。历史计数只作为核对线索，实施时重跑并记录实际总数。
+
+新增真实 VM 对照入口 `ssa_exec_ir_execbc_vm` 先限定无参 i64 scalar/control 子集。每个成功 fixture 先运行 `ZrCore_ExecIr_RunOracleEx`，再 lower projection、materialize 为 `SZrFunction`，最后用 Core runtime harness 执行该 function；`RunOracleEx` 或 `ZrParser_ExecBcProjection_Run` 不能充当 VM。正向覆盖 slot zero、稀疏物理槽、compare 两条 phi 路径、critical edge、loop swap temporary、非首 entry block 的 parallel CFG edges，以及 pool 中的 i64/bool constants；CALL、非 i64 值和损坏 opcode 必须结构化拒绝且输出为空。
+
+Materializer validation also derives raw phi copies from the block phi incoming
+rows and checks each scheduled move sequence symbolically, including temporary
+slot cycles. Nonzero instruction deopt IDs are unsupported. Synthetic split
+blocks must remain empty and terminator-free because the emitter supplies their
+edge moves and jump. CFG validation checks reverse adjacency occurrence
+multiplicity in both directions, retaining legal parallel edges while rejecting
+a source successor omitted from the target predecessor row. Negative tests
+cover missing/wrong phi moves, a missing reverse CFG predecessor, and malformed
+synthetic instruction ownership; all failures leave the emission output empty.
+
+The focused MSVC evidence on 2026-09-30 is a 13/13-step incremental build and
+5/5 selected CTests; `ssa_exec_ir_execbc_vm` passed all 16 Unity cases. The
+non-first-entry parallel-edge trace includes synthetic block 3 (`{2, 3, 1}`),
+and `test_phi_rejects_cfg_edge_missing_from_target_predecessors` passes. Exact
+commands and logs are recorded in
+`tests/acceptance/ssa-execbc-vm-materialization.md`.
+
+This focused target uses directly constructed ExecIR fixtures. The separate
+source-to-VM path remains RED for broader source metadata/`PLACE_BASE` input;
+it is not covered by the focused passing CTest selection. The materializer
+slice therefore does not mark the source-to-VM route complete. Oracle, ExecBC,
+AOTIR, C and LLVM full-semantic parity still gates M1, which remains open.
 
 登记新 CTest 名 `ssa_oracle_projections` 和可执行目标 `zr_vm_ssa_oracle_projections_test` 后，在 WSL 仓库根运行：
 
@@ -158,9 +204,14 @@ arrange unknown opcode
 assert oracle returns UNSUPPORTED and no successful observation
 ```
 
+首个 materializer API 为 `ZrParser_ExecBcProjection_MaterializeVmFunction`，输出含 Core GC-managed function 和 native-owned PC map。成功返回后调用方必须在任何 GC 操作前立即根化 function；emission free 只释放 PC map，成功 function 由 state 销毁。Emitter 构造期间临时保活；失败时释放 partial function、撤销本次新增根并保持输出清零。Slot 0 映射为 VM `frameBase[0]`，frame 长度覆盖 sparse holes、projection temporary slots 和 `phiTemporarySlot + 1`；本子集不使用 packed frame。
+
+ExecBC projection 结构没有 binding-row schema 或 contract 字段。ExecIR-to-ExecBC 上游 builder 在产生 projection 前校验源函数 schema 为 legacy；materializer 依据 projection 实际具有的 `runnable`、`bindingRow`、packed-frame metadata、数组与 ranges 校验输入，不假设不存在的 schema 字段。手工构造的 projection 不应被当作绕过上游 schema 检查的入口。
+
+当 `temporarySlotCount` 为零时，`phiTemporarySlot` 不表示有效 slot，即使其零初始化值与物理 slot 0 相同；只有确有 phi cycle temporary 时才将该字段按临时 slot 验证。Focused VM fixture 覆盖普通 phi copy 从物理 slot 0 读取且无需临时 slot 的情况。
+
 ### 迁移结束检查
 
 Oracle 只作为测试/调试 reference mode 暴露，默认生产运行模式明确为 ExecBC/AOT。对外报告不得把“IR 可打印”或“AOTIR 已生成”写成四后端执行一致。
 
 本任务的 acceptance 至少附上：上述断言对应的测试名称、实际执行后端/平台、失败注入位置、verifier 输入/输出摘要，以及涉及所有权时的分配/释放或 lease 平衡。新增入口的 OOM、取消、重复调用和部分初始化退出应有明确处理；不适用的状态写明原因。
-

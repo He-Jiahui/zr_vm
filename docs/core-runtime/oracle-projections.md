@@ -13,12 +13,17 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/exec_ir_oracle.h
   - zr_vm_parser/include/zr_vm_parser/exec_ir_projections.h
   - zr_vm_parser/include/zr_vm_parser/exec_ir_execbc.h
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_execbc_vm.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_internal.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_oracle.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_phi.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_phi.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_consumer.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_validate.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_phi_validate.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c
 implementation_files:
@@ -34,6 +39,9 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_phi.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_consumer.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_validate.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_phi_validate.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c
 plan_sources:
@@ -50,6 +58,10 @@ tests:
   - tests/parser/ssa_oracle_resume_fault_allocator.h
   - tests/acceptance/ssa-oracle-resume.md
   - tests/parser/test_ssa_oracle_projections.c
+  - tests/parser/test_ssa_execbc_vm.c
+  - tests/parser/test_ssa_execbc_vm_fixtures.inc
+  - tests/parser/test_ssa_execbc_vm_trace.inc
+  - tests/parser/test_ssa_execbc_vm_cfg_mutations.inc
   - tests/parser/test_ssa_oracle_resume.c
   - tests/parser/test_ssa_oracle_memory_differential.c
   - tests/parser/test_ssa_oracle_call_differential.c
@@ -65,6 +77,7 @@ tests:
   - tests/acceptance/ssa-projection-parallel-edges.md
   - tests/acceptance/ssa-projection-phi-schedule.md
   - tests/acceptance/ssa-execbc-scalar-runner.md
+  - tests/acceptance/ssa-execbc-vm-materialization.md
   - tests/acceptance/ssa-oracle-execbc-parallel-differential.md
   - tests/acceptance/ssa-oracle-execbc-memory-differential.md
   - tests/acceptance/ssa-oracle-execbc-call-differential.md
@@ -352,6 +365,92 @@ direct differential currently covers scalar/control returns, pointer-free
 LOAD/STORE memory providers, provider-backed ordinary CALL, and ownership
 MOVE/DROP/conditional cleanup, BARRIER observations, terminal THROW, terminal
 SUSPEND, and provider-backed INVOKE with a pointer-free handler payload.
+
+## Initial ExecBC to Core VM materialization
+
+`ZrParser_ExecBcProjection_MaterializeVmFunction` is a separate backend
+consumer from `ZrParser_ExecBcProjection_Run`. It lowers the validated
+no-call, zero-parameter scalar/control subset into ordinary `SZrFunction`
+instructions so the existing Core VM dispatcher executes the result. The
+current subset accepts i64 constants, ADD/SUB, signed less/greater comparisons,
+boolean conditional branches, CFG edges, scheduled phi copies, and one-i64
+returns. It maps physical projection slot zero directly to VM frame slot zero;
+the frame length includes sparse holes and the reserved phi temporary slot.
+Packed frames, typed binding rows, runtime effects and unsupported value types
+return a structured diagnostic without publishing a function or selecting the
+legacy compiler path.
+
+Before emission, the validator derives expected phi assignments from each
+block's incoming rows and predecessor order, then checks the raw copy arrays
+against them. It symbolically executes each edge's scheduled slot moves to prove
+that every merge slot receives its parallel-copy source without clobbering an
+unrelated slot; a temporary read must follow a write on that edge. A PHI
+instruction is accepted only when its result, operands, and optional incoming
+range match a block phi. Synthetic split blocks must have no owned instruction
+body or explicit terminator, and any nonzero per-instruction deopt ID is
+unsupported. It also checks every successor and predecessor edge occurrence
+against the reverse CFG row; repeated IDs are matched by occurrence so legal
+parallel edges remain distinct.
+
+The ExecBC projection struct carries no binding-row schema or contract field.
+The upstream ExecIR-to-ExecBC builder checks the source function's binding-row
+schema and rejects non-legacy input before producing this projection. The VM
+materializer consumes that guarded projection and validates only fields the
+projection actually owns, including `runnable`, per-instruction `bindingRow`,
+packed-frame metadata, and array/range consistency; callers must not treat a
+hand-assembled projection as bypassing the producer's schema check.
+
+When a projection carries a constant pool, each `CONSTANT.layoutId` must be a
+valid pool index, each referenced entry must be an unflagged i64 or bool, and
+only referenced scalar constants are copied. With no pool, the existing
+projection/oracle inline-literal convention is preserved. Emission starts at
+`entryBlockId`, even when that block is not the lowest numbered block.
+Each generated VM PC has a native-owned PC-map row with its block, originating
+ExecIR instruction and source IDs. The Core-managed function remains owned by
+the state after success; the caller must add its own GC root before any
+collecting operation. Freeing the emission releases only the PC-map sidecar.
+Allocation failures free the partial function. If revoking its temporary GC
+root fails, it remains Core managed until state teardown so a possibly
+registered membership root cannot point at freed storage.
+The output record must be fresh and zero-cleared; call
+`ZrParser_ExecBcVmEmission_Free` before reusing a prior record.
+
+`ssa_exec_ir_execbc_vm` compares OracleEx results with actual VM execution for
+straight scalar arithmetic, both compare/phi paths, a no-temporary phi move
+reading physical slot zero, a critical edge, a loop swap requiring the phi
+temporary, sparse frame slots, a non-first entry block with parallel conditional
+edges to one lower-numbered return block, and i64/bool constants read from the
+constant pool on both branch paths. The non-first-entry fixture has two outgoing
+edge occurrences from block 2 to block 1 and two matching predecessor
+occurrences; projection splits both critical edges to synthetic blocks 3 and 4.
+The true branch takes occurrence 0, and the real VM PC map reports path
+`{2, 3, 1}`. These fixtures construct ExecIR directly; they do not verify the
+source parser/compiler metadata path.
+
+The target also checks that CALL, a non-i64 type, and an invalid opcode fail
+without publishing a function. It rejects nonzero instruction deopt metadata,
+missing/wrong phi moves, an edge missing from its target predecessor row, and
+an instruction body attached to a synthetic block. The CFG preflight now
+matches successor and predecessor occurrences in both directions. The missing
+predecessor regression proves that an actual source edge cannot be omitted from
+the destination's reverse row, while occurrence matching preserves legal
+parallel edges.
+
+On 2026-09-30, the six-target MSVC incremental build completed 13/13 steps in
+`D:/tmp/zr_vm/ssa-artifact-v6-msvc`; the selected CTest set completed 5/5, and
+`ssa_exec_ir_execbc_vm` passed all 16 Unity cases in 0.44 seconds. Evidence is
+in `D:/tmp/zr_vm/ssa-control/accessor-vm-gc-build.log` and
+`D:/tmp/zr_vm/ssa-control/accessor-vm-ctest.log`. The focused acceptance record
+is `tests/acceptance/ssa-execbc-vm-materialization.md`.
+
+This is evidence only for the manually constructed scalar/control VM slice. The
+separate source-to-VM fixture remains RED for its broader source metadata and
+`PLACE_BASE` shape; the latest recorded run fails both branch cases at
+materialization (`code=28`, `actualVersion=1`) in
+`D:/tmp/zr_vm/ssa-control/gc-providers-current-ctest.log`. That target was not
+part of the current five-test CTest selection. The source-to-VM route and the
+full 01.05 Oracle/ExecBC/AOTIR/C/LLVM matrix remain open, so this slice does not
+close M1.
 
 `TYPE_TEST` is also transported by both initial projections with its separate
 `matchTypeToken` side field. This preserves canonical subtype identity for a
