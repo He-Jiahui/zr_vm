@@ -409,8 +409,8 @@ static TZrBool patch_attribute_prepare_entry(
 /* 解码 Patch.attributeAdds 为事务暂存；有效参数先清空 result，输入错误不接管，部分缓冲由 Free 回收。
  * BUG: 有效非空批次任一暂存 RawMallocWithType 失败只清理并返回 false、不设错误标志；
  * class/struct/普通 enum 消费方会在发布 prototype 前返回；无错误标志时顶层继续，声明可能静默缺失；union 会补诊断。
- * BUG: 至少两个 declarationTransform、前序 Patch 含 attributeAdds 且无独立 VM/全局根时，返回值仅存于原生 patchValues，执行帧随即释放；
- * 后续 typed-init 首次原生分配失败并完成同步 Full GC（默认增量模式、stopGcFlag=false、STW 成功）会回收该 Patch；若分配重试成功并继续反序应用，就会解引用悬空 Patch 或 AttributeData。 */
+ * BUG: declarationTransform 返回的 Patch 若仅存于原生 patchValues、没有其他 GC 根（字段 Object_SetValue 的临时 ignored pin 已解除），
+ * 后续 declarationTransform 的 typed-init Object_New 首次 RawMalloc 失败进入 GcAndMalloc；仅当申请入口 gcMode==INCREMENTAL、isImmediateGcFlag==false、stopGcFlag==false，STW 成功且 full_inc 各阶段均未被 stop/迭代上限短路并完成至 sweep，分配重试成功且继续反序应用时，才会读到已回收 Patch/AttributeData；这是静态条件，未运行复现。 */
 TZrBool ZrParser_CompileTime_PreparePatchAttributeAdds(
         SZrCompilerState *cs,
         const SZrTypePrototypeInfo *targetInfo,
