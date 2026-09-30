@@ -4,6 +4,7 @@
 #include "exec_ir_verify_ssa.h"
 #include "exec_ir_deopt_aggregate.h"
 #include "exec_ir_edge_identity.h"
+#include "exec_ir_verify_constants.h"
 
 #include <string.h>
 
@@ -696,6 +697,10 @@ TZrBool ZrCore_ExecIr_VerifyModule(const SZrExecIrModule *module,
         if (!ZrCore_ExecIr_VerifyFunction(&module->functions[index],
                                           ZR_EXEC_IR_VERIFY_ALL,
                                           diagnostic)) {
+            return ZR_FALSE;
+        }
+        if (!zr_exec_ir_verify_owned_constants(
+                    module, &module->functions[index], diagnostic)) {
             return ZR_FALSE;
         }
     }

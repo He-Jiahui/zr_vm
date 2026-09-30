@@ -151,6 +151,8 @@ Core runtime documents cover VM stack storage, call-frame data movement, ownersh
   effect/allocation events, caller-owned memory/allocation providers,
   transactional no-optimization ExecBC/AOT projections, phi parallel copies,
   critical-edge splitting, and explicit backend limitations.
+- `exec-ir-module-constants.md`: owned module constant bounds, opaque type
+  identity checks and the external Oracle pool boundary.
 - `task-frame-runtime.md`: structured Task/frame state, synchronous no-allocation completion,
   suspension-only promotion, layout-declared GC/drop maps, result roots, non-Copy transfer,
   and typed frame pooling without a dynamic-object coroutine fallback.
