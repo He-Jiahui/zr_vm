@@ -5,12 +5,14 @@
 #include "semantic/semantic_scope_facts.h"
 #include "zr_vm_parser/semantic_query.h"
 
+/* 范围来源只按对象或非空字符串内容判等，不做 URI 归一化或 basename 匹配。 */
 static TZrBool semantic_calls_same_source(SZrString *left, SZrString *right) {
     return (TZrBool)(left == right ||
                      (left != ZR_NULL && right != ZR_NULL &&
                       ZrCore_String_Equal(left, right)));
 }
 
+/* 边范围相等先要求来源相同；有 offset 时比较 offset，否则比较行列。 */
 static TZrBool semantic_calls_same_range(
         const SZrFileRange *left,
         const SZrFileRange *right) {
@@ -29,6 +31,7 @@ static TZrBool semantic_calls_same_range(
                      left->end.column == right->end.column);
 }
 
+/* 范围包含复用来源身份及 offset/行列回退，供 caller、调用表达式和查询位置共用。 */
 static TZrBool semantic_calls_range_contains(
         const SZrFileRange *outer,
         const SZrFileRange *inner) {
@@ -50,6 +53,7 @@ static TZrBool semantic_calls_range_contains(
               inner->end.column <= outer->end.column)));
 }
 
+/* 只要来源或任一坐标存在就保留事实；零值范围且无来源才视为未知。 */
 static TZrBool semantic_calls_range_is_known(const SZrFileRange *range) {
     return (TZrBool)(range != ZR_NULL &&
                       (range->source != ZR_NULL || range->start.offset > 0U ||
@@ -58,6 +62,7 @@ static TZrBool semantic_calls_range_is_known(const SZrFileRange *range) {
                        range->end.column > 0));
 }
 
+/* 最窄候选按 offset 跨度比较；倒置或空指针范围返回最大值。 */
 static TZrSize semantic_calls_range_width(const SZrFileRange *range) {
     if (range == ZR_NULL || range->end.offset < range->start.offset) {
         return ZR_MAX_SIZE;
@@ -65,6 +70,7 @@ static TZrSize semantic_calls_range_width(const SZrFileRange *range) {
     return range->end.offset - range->start.offset;
 }
 
+/* caller 取包含调用点的最窄函数 scope；同宽异主或无有效函数 owner 时不猜测。 */
 static TZrSymbolId semantic_calls_find_caller(
         const SZrSemanticContext *context,
         const SZrFileRange *callSiteRange) {
@@ -108,6 +114,7 @@ static TZrSymbolId semantic_calls_find_caller(
     return ZR_SEMANTIC_ID_INVALID;
 }
 
+/* 以 CALL 引用落入 callTargetRange 关联表达式，再取最窄调用范围；exactness 由发布处检查。 */
 static const SZrSemanticExpressionFact *semantic_calls_find_expression(
         const SZrSemanticContext *context,
         const SZrSemanticReferenceFact *reference) {
@@ -138,6 +145,7 @@ static const SZrSemanticExpressionFact *semantic_calls_find_expression(
     return best;
 }
 
+/* 多条记录指向同一 AST 声明时取首个完整函数 symbol；无法证明时保留输入目标。 */
 static const SZrSemanticSymbolRecord *semantic_calls_canonical_function(
         const SZrSemanticContext *context,
         const SZrSemanticSymbolRecord *symbol) {
@@ -163,6 +171,7 @@ static const SZrSemanticSymbolRecord *semantic_calls_canonical_function(
     return symbol;
 }
 
+/* 此分数只决定同一调用边的事实更新优先级，不代表解析置信度。 */
 static TZrUInt32 semantic_calls_edge_completeness(
         const SZrSemanticCallEdgeFact *edge) {
     TZrUInt32 score = 0U;
@@ -188,6 +197,7 @@ static TZrUInt32 semantic_calls_edge_completeness(
     return score;
 }
 
+/* caller 与完整调用范围构成边身份；已解析到不同目标的同址事实分别保留。 */
 static TZrBool semantic_calls_merge_edge(
         SZrSemanticContext *context,
         const SZrSemanticCallEdgeFact *candidate) {
@@ -221,6 +231,11 @@ static TZrBool semantic_calls_merge_edge(
     return ZR_FALSE;
 }
 
+/* BUG: 新 context 的 callEdgeFacts 初次分配失败会被 Array_Init 伪装成有效；遇到可投影 CALL 引用时，Publish 会在首条 Array_Push 对空 head 断言或写入，不能通过返回值报告失败。 */
+/**
+ * @brief 初始化语义快照持有的调用边事实数组。
+ * @pre context/state 有效，且该数组尚未持有旧存储；由语义上下文初始化阶段调用。
+ */
 void ZrParser_SemanticCalls_Init(SZrSemanticContext *context) {
     if (context != ZR_NULL && context->state != ZR_NULL) {
         ZrCore_Array_Init(context->state,
@@ -230,12 +245,14 @@ void ZrParser_SemanticCalls_Init(SZrSemanticContext *context) {
     }
 }
 
+/** 清空调用边事实并保留数组容量，供同一上下文开始新快照时复用。 */
 void ZrParser_SemanticCalls_Reset(SZrSemanticContext *context) {
     if (context != ZR_NULL && context->callEdgeFacts.isValid) {
         context->callEdgeFacts.length = 0U;
     }
 }
 
+/** 释放调用边数组；语义上下文随后才释放其他事实数组。 */
 void ZrParser_SemanticCalls_Free(SZrSemanticContext *context) {
     if (context != ZR_NULL && context->state != ZR_NULL) {
         ZrParser_SemanticCalls_Reset(context);
@@ -243,6 +260,12 @@ void ZrParser_SemanticCalls_Free(SZrSemanticContext *context) {
     }
 }
 
+/**
+ * @brief 从已有 CALL 引用和词法 scope owner 投影稳定调用边，不按名称重新解析端点。
+ * @pre reference、scope、symbol 与 callEdgeFacts 属于同一语义快照，且调用边数组已初始化。
+ * @note 不清空已有边；同快照可继续合并补全事实，换快照前由上下文生命周期执行 Reset。
+ * @return 输入上下文/事实数组不可用时返回 false；未解析端点会以 unresolved edge 保留。
+ */
 TZrBool ZrParser_SemanticCalls_Publish(SZrSemanticContext *context) {
     TZrSize index;
 
@@ -308,6 +331,11 @@ TZrBool ZrParser_SemanticCalls_Publish(SZrSemanticContext *context) {
     return ZR_TRUE;
 }
 
+/**
+ * @brief 先从脚本 AST 发布词法 scope owner，再投影该上下文已有的 CALL 引用。
+ * @pre root 与语义事实属于同一快照；重复换源前调用方须先重建/重置上下文。
+ * @return scope 构建或边发布失败时返回 false；本函数不清空旧 scope/edge 数组。
+ */
 TZrBool ZrParser_SemanticCalls_PublishSource(
         SZrSemanticContext *context,
         SZrAstNode *root) {
@@ -318,6 +346,7 @@ TZrBool ZrParser_SemanticCalls_PublishSource(
     return ZrParser_SemanticCalls_Publish(context);
 }
 
+/* 空 scope 与模块 scope 覆盖整份快照；节点 scope 只允许调用范围完全落在 root 内。 */
 static TZrBool semantic_calls_scope_allows(
         const SZrParserSemanticQueryScope *scope,
         const SZrSemanticCallEdgeFact *edge) {
@@ -330,6 +359,8 @@ static TZrBool semantic_calls_scope_allows(
                              &scope->root->location, &edge->callSiteRange));
 }
 
+/* BUG: 首次查询 outEdges 分配失败仍被 Array_Init 标记有效；只有查询命中已发布边时，append_query 才对空 head Push 并断言或写入，接口无法正常返回失败。
+ * 证据链：CallEdgesAt/OutgoingCalls/IncomingCalls -> 此处 Array_Init -> semantic_calls_append_query -> ZrCore_Array_Push。 */
 static TZrBool semantic_calls_prepare_output(
         const SZrSemanticContext *context,
         SZrArray *outEdges) {
@@ -350,6 +381,7 @@ static TZrBool semantic_calls_prepare_output(
     return ZR_TRUE;
 }
 
+/* 输出排序按 source 的 NUL 原生文本字节序；空来源排在非空来源之前。 */
 static TZrInt32 semantic_calls_compare_sources(
         const SZrString *left,
         const SZrString *right) {
@@ -366,6 +398,7 @@ static TZrInt32 semantic_calls_compare_sources(
                   ZrCore_String_GetNativeString(right));
 }
 
+/* 范围排序先比较来源，再按存在的 offset 或行列坐标排序。 */
 static TZrInt32 semantic_calls_compare_ranges(
         const SZrFileRange *left,
         const SZrFileRange *right) {
@@ -400,6 +433,7 @@ static TZrInt32 semantic_calls_compare_ranges(
     return 0;
 }
 
+/* 排序键为调用范围、caller、target、resolution；完全同键时保持稳定输入顺序。 */
 static TZrBool semantic_calls_query_precedes(
         const SZrParserSemanticCallEdgeQuery *left,
         const SZrParserSemanticCallEdgeQuery *right) {
@@ -418,6 +452,7 @@ static TZrBool semantic_calls_query_precedes(
     return left->resolution <= right->resolution;
 }
 
+/* 对查询结果原地插入排序，避免为短调用列表另分配排序缓冲。 */
 static void semantic_calls_sort(SZrArray *edges) {
     TZrSize index;
 
@@ -445,6 +480,7 @@ static void semantic_calls_sort(SZrArray *edges) {
     }
 }
 
+/* 查询结果是值副本，但其中 FileRange.source 仍借用语义快照；不能脱离该快照保留。 */
 static void semantic_calls_append_query(
         const SZrSemanticContext *context,
         SZrArray *outEdges,
@@ -465,6 +501,11 @@ static void semantic_calls_append_query(
     ZrCore_Array_Push(context->state, outEdges, &query);
 }
 
+/**
+ * @brief 返回包含 position 的全部调用边，并按可选 module/node scope 过滤。
+ * @pre position、context 与 scope 属于同一快照；outEdges 已构造，或可复用且元素类型匹配、allocator 与 context->state 兼容。
+ * @note 返回的范围是值副本，source 指针仍借用快照；有效查询无命中时返回 true 和空数组。
+ */
 TZrBool ZrParser_SemanticQuery_CallEdgesAt(
         const SZrSemanticContext *context,
         SZrFileRange position,
@@ -491,6 +532,11 @@ TZrBool ZrParser_SemanticQuery_CallEdgesAt(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 按有效 caller symbol id 投影其直接调用边，保留未解析 target 记录。
+ * @pre callerSymbolId、context 与 scope 属于同一快照；outEdges 已构造或可复用且元素类型匹配、allocator 与 context->state 兼容。
+ * @return caller id 无效或输出数组不可用时返回 false；合法但无命中时返回 true 和空数组。
+ */
 TZrBool ZrParser_SemanticQuery_OutgoingCalls(
         const SZrSemanticContext *context,
         TZrSymbolId callerSymbolId,
@@ -515,6 +561,11 @@ TZrBool ZrParser_SemanticQuery_OutgoingCalls(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 按有效 target symbol id 投影直接调用边；target 未解析的边不匹配该查询。
+ * @pre targetSymbolId、context 与 scope 属于同一快照；outEdges 已构造或可复用且元素类型匹配、allocator 与 context->state 兼容。
+ * @return target id 无效或输出数组不可用时返回 false；合法但无命中时返回 true 和空数组。
+ */
 TZrBool ZrParser_SemanticQuery_IncomingCalls(
         const SZrSemanticContext *context,
         TZrSymbolId targetSymbolId,
@@ -539,6 +590,8 @@ TZrBool ZrParser_SemanticQuery_IncomingCalls(
     return ZR_TRUE;
 }
 
+/* BUG: 首次 outCandidates 分配失败仍被 Array_Init 标记有效；精确且已解析的调用进入候选追加时，Push 会对空 head 断言或写入。
+ * 证据链：CallCandidatesAt -> 此处 Array_Init -> semantic_calls_append_candidate -> ZrCore_Array_Push。 */
 static TZrBool semantic_calls_prepare_candidates(
         const SZrSemanticContext *context,
         SZrArray *outCandidates) {
@@ -559,6 +612,7 @@ static TZrBool semantic_calls_prepare_candidates(
     return ZR_TRUE;
 }
 
+/* 候选按 symbol id 去重，重复项保留首次副本。 */
 static TZrBool semantic_calls_has_candidate(
         const SZrArray *candidates,
         TZrSymbolId symbolId) {
@@ -578,6 +632,7 @@ static TZrBool semantic_calls_has_candidate(
     return ZR_FALSE;
 }
 
+/* TODO: 原样复制 symbol->typeId；方法 symbol 可能使用 owner TypeId。先补方法 overload 候选用例并确认真实 consumer，再定义 callableTypeId 的签名语义。 */
 static TZrBool semantic_calls_append_candidate(
         const SZrSemanticContext *context,
         SZrArray *outCandidates,
@@ -603,6 +658,7 @@ static TZrBool semantic_calls_append_candidate(
     return ZR_TRUE;
 }
 
+/* 候选输出按 symbol id 升序稳定排列；顺序不表示重载优先级。 */
 static void semantic_calls_sort_candidates(SZrArray *candidates) {
     TZrSize index;
 
@@ -632,6 +688,13 @@ static void semantic_calls_sort_candidates(SZrArray *candidates) {
     }
 }
 
+/**
+ * @brief 从精确调用查询取得已选函数及其 overload set 候选，并标记实际选中项。
+ * @pre position、context 与 scope 属于同一快照；outCandidates 已构造或可复用且元素类型匹配、allocator 与 context->state 兼容。
+ * @note 近似调用、未解析目标或不一致 overload set 失败关闭；此接口不负责名称可见性筛选。declarationRange.source 借用 context 快照。
+ * @note candidate callableTypeId 原样来自 symbol->typeId；方法成员的字段语义须由专门候选用例和真实 consumer 确认。
+ * @return 选中项必须出现在结果中；失败返回 false，成功结果按 symbol id 排序。
+ */
 TZrBool ZrParser_SemanticQuery_CallCandidatesAt(
         const SZrSemanticContext *context,
         SZrFileRange position,
