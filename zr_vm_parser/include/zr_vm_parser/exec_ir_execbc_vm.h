@@ -34,6 +34,17 @@ ZR_PARSER_API TZrBool ZrParser_ExecBcProjection_MaterializeVmFunction(
         SZrState *state, const SZrExecBcProjection *projection,
         SZrExecBcVmEmission *output, SZrExecIrDiagnostic *diagnostic);
 
+/* Source-built projections use canonical IDs for value, instruction and
+ * constant types. Resolve them against the owning semantic context before
+ * emitting the bool/i64 subset. The input projection is never modified.
+ * COMPARE's typeToken remains its comparison-kind tag, rather than a type ID.
+ * Unknown, qualified and other primitive types are unsupported. Output and
+ * successful-function rooting follow the contract above. */
+ZR_PARSER_API TZrBool ZrParser_ExecBcProjection_MaterializeVmFunctionWithCanonicalTypes(
+        SZrState *state, const SZrExecBcProjection *projection,
+        const struct SZrSemanticContext *context,
+        SZrExecBcVmEmission *output, SZrExecIrDiagnostic *diagnostic);
+
 ZR_PARSER_API void ZrParser_ExecBcVmEmission_Free(
         SZrState *state, SZrExecBcVmEmission *emission);
 

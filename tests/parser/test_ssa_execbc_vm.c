@@ -12,6 +12,8 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_parser/exec_ir_execbc_vm.h"
 #include "zr_vm_parser/exec_ir_projections.h"
+#include "zr_vm_parser/canonical_type.h"
+#include "zr_vm_parser/semantic.h"
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -89,6 +91,7 @@ typedef struct SZrTestExecBcReport {
 #include "test_ssa_execbc_vm_trace.inc"
 #include "test_ssa_execbc_vm_fixtures.inc"
 #include "test_ssa_execbc_vm_cfg_mutations.inc"
+#include "test_ssa_execbc_vm_canonical_types.inc"
 
 static TZrBool remap_to_sparse_slots(SZrExecBcProjection *projection) {
     TZrUInt32 index;
@@ -944,6 +947,8 @@ static void test_synthetic_block_cannot_own_an_instruction_body(void) {
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_zero_parameter_i64_add_sub_uses_frame_slot_zero);
+    RUN_TEST(test_canonical_scalar_types_and_compare_tags_run_without_mutation);
+    RUN_TEST(test_canonical_type_errors_do_not_publish_or_modify_projection);
     RUN_TEST(test_nonfirst_entry_and_parallel_cfg_edges_run_through_vm);
     RUN_TEST(test_i64_and_bool_constant_pool_entries_match_oracle);
     RUN_TEST(test_compare_phi_executes_true_and_false_vm_paths);

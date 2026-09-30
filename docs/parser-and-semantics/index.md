@@ -358,6 +358,9 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
   - idempotent finalization and explicit analysis-only fallback boundaries
 - `execir-ssa-validation.md`
   - conservative operand/value validation and precise SSA diagnostic locations
+- `execbc-vm-canonical-types.md`
+  - canonical primitive type resolution for scalar ExecBC VM materialization
+  - immutable projection views, compare tags and structured type rejection
 - `iterator-yield-suspension.md`
   - `yield expression;` as a normal `FunctionDefinition` statement
   - explicit canonical `zr.iteration.Iterator<T>` carrier and element contract
