@@ -8,11 +8,14 @@
 #include "zr_vm_parser/semantic_display.h"
 #include "type_inference_internal.h"
 
+/* 本模块把类型 AST 中的源码拼写记录为可选 use-site 展示事实；推导结果和 canonical identity 仍由类型转换路径决定。 */
+
 static SZrTypeBinding *type_inference_find_type_value_alias_binding(
         SZrCompilerState *cs,
         SZrString *name) {
     TZrSize index;
 
+    /* 表内 binding 借用当前 CompilerState 的生命周期，只在本次解析中读取。 */
     if (cs == ZR_NULL || name == ZR_NULL) {
         return ZR_NULL;
     }
@@ -47,6 +50,7 @@ TZrBool type_inference_resolve_type_value_alias(
 static TZrBool type_inference_type_use_name_range(
         const SZrAstNode *nameNode,
         SZrFileRange *outRange) {
+    /* 泛型 AST 的 node location 不覆盖全部参数，优先取 wholeRange；普通名称使用自身 location。 */
     if (nameNode == ZR_NULL || outRange == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -71,6 +75,7 @@ static TZrBool type_inference_alias_append_text(
         const TZrChar *text) {
     TZrSize length;
 
+    /* 共用有界追加，成功后始终维护累计 offset 和 NUL 结束，失败只跳过展示别名。 */
     if (buffer == ZR_NULL || offset == ZR_NULL || text == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -95,6 +100,11 @@ static TZrBool type_inference_alias_append_argument(
         TZrChar *buffer,
         TZrSize bufferSize,
         TZrSize *offset) {
+    /*
+     * BUG：二元表达式递归丢分组；合法 `Matrix<i64,4*(2+3)>` 会展示为 `Matrix<i64,4 * 2 + 3>`。
+     * parser_types.c:525-549 接受该 const 实参；parser_expression_primary.c:1213-1231 抹掉括号分组。
+     * TODO：继续对照 const evaluator 的其它 AST kind，并为合法格式形态补 fixture。
+     */
     if (node == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -173,6 +183,7 @@ static TZrBool type_inference_alias_append_type_name(
         TZrSize *offset) {
     TZrSize index;
 
+    /* 按名称 AST 形状写入分隔符，让泛型参数和 tuple 分组仍可读；这里不求值表达式。 */
     if (nameNode == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -245,6 +256,7 @@ static TZrBool type_inference_alias_append_type(
         TZrSize *offset) {
     TZrInt32 dimension;
 
+    /* 只序列化没有 ownership/reference/readonly 修饰的类型片段；不支持的片段不影响推导结果。 */
     if (type == ZR_NULL || type->name == ZR_NULL ||
         type->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE ||
         type->referenceAccess != ZR_REFERENCE_ACCESS_NONE ||
@@ -293,6 +305,7 @@ void type_inference_publish_explicit_type_display_alias(
     if (terminalType->name == ZR_NULL) {
         return;
     }
+    /* range 从外层源码名称开始到最内层名称结束；TypeId 则只从推导结果建立，不由 spelling 反推。 */
     if (!type_inference_type_use_name_range(typeUse->name, &useRange)) {
         return;
     }
@@ -308,6 +321,11 @@ void type_inference_publish_explicit_type_display_alias(
     if (typeId == ZR_SEMANTIC_ID_INVALID) {
         return;
     }
+    /*
+     * TODO: 当前仓内读取 TypeDisplayAliasAt 的调用只有 parser fixtures；
+     * 核对 LSP/semantic-display 的生产读取入口后，再断言用户可见效果。
+     * 下一核查入口是 ZrParser_SemanticQuery_TypeDisplayAliasAt。
+     */
     (void)ZrParser_SemanticTypeDisplayAlias_Publish(
             cs->semanticContext, typeId, &useRange, alias);
 }
@@ -325,6 +343,7 @@ void type_inference_publish_generic_type_display_alias(
         typeUse->name->type != ZR_AST_GENERIC_TYPE) {
         return;
     }
+    /* 类型转换已接受该 AST；固定窗口或 AST 形状无法格式化时，只省略展示事实。 */
     buffer[0] = '\0';
     if (!type_inference_alias_append_type(
                 typeUse, buffer, sizeof(buffer), &offset)) {
@@ -367,6 +386,7 @@ void type_inference_publish_primitive_type_display_alias(
                 aliasText, aliasLength, &primitiveType)) {
         return;
     }
+    /* 映射仅确认它是受支持的 primitive spelling；发布保留原名字，canonical type 仍取自 type。 */
     type_inference_publish_explicit_type_display_alias(
             cs, type, alias, typeUse);
 }
@@ -387,6 +407,7 @@ void type_inference_publish_type_value_display_alias(
     if (binding == ZR_NULL) {
         return;
     }
+    /* 将原 AST 暂存为局部视图并清除包装修饰，别名落到内层类型 use-site，不改调用方 AST。 */
     innerTypeUse = *typeUse;
     innerTypeUse.dimensions = 0;
     innerTypeUse.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
