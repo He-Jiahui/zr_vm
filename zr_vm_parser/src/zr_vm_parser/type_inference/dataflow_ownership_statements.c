@@ -9,6 +9,8 @@ static TZrBool ownership_statement_same_source(SZrString *left, SZrString *right
            ZrCore_String_Equal(left, right);
 }
 
+/* TODO: 核实 source 非空、坐标全零的占位范围是否会进入事实归属；位置类型允许空占位。
+ * 下一步追踪所有生产 READ/WRITE/DECLARATION 事实及 AST 合成范围来源，再决定是否增加有效坐标条件并补回归。 */
 static TZrBool ownership_statement_range_is_known(const SZrFileRange *range) {
     return range != ZR_NULL &&
            (range->source != ZR_NULL ||
@@ -20,6 +22,8 @@ static TZrBool ownership_statement_range_is_known(const SZrFileRange *range) {
             range->end.offset != 0);
 }
 
+/* 子表达式中的事实会以更窄范围映回所属节点；同源校验避免相同坐标跨文件串接，
+ * 缺少可用字节偏移时仍可用行列位置完成同源映射。 */
 static TZrBool ownership_statement_range_contains(const SZrFileRange *outer,
                                                    const SZrFileRange *inner) {
     if (outer == ZR_NULL || inner == ZR_NULL ||
@@ -41,6 +45,7 @@ static TZrBool ownership_statement_range_contains(const SZrFileRange *outer,
     return inner->end.line != outer->end.line || inner->end.column <= outer->end.column;
 }
 
+/* CFG 保存的表达式根可能包含更深层的事实节点；节点身份优先，范围用于接回子树关系。 */
 static TZrBool ownership_statement_node_contains_fact(
         SZrAstNode *node,
         const SZrSemanticReferenceFact *fact) {
@@ -56,6 +61,8 @@ TZrBool ZrParser_DataflowOwnership_FactInStatement(
         return ZR_FALSE;
     }
 
+    /* 复合语句只归属本 CFG 转移负责的条件、选择器、绑定或清理资源；
+     * 分支体、case/default 体和循环步骤由各自的 CFG 块处理。 */
     switch (statement->type) {
         case ZR_AST_VARIABLE_DECLARATION:
             return ownership_statement_node_contains_fact(
