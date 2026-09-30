@@ -7,11 +7,21 @@
 
 #include <stdint.h>
 
+/*
+ * 声明补丁先写入 detached arrays 与语义上下文副本；生成成员、接口列表、decorator
+ * 列表和属性 metadata 全部准备成功且 observer 放行后，才在函数尾部发布到目标。
+ * 事务根持有已纳入准备状态的 GC 值；借用的原生文本仍须由调用方保证跨分配有效。
+ * 失败清理释放未转移数组并结束根；
+ * 此边界保护目标声明状态，不回滚 observer 自身的外部副作用。
+ */
+
+/* 同步兼容包装器使用的回调适配器；实例只在包装器栈帧内有效。 */
 typedef struct SZrGeneratedCommitObserverAdapter {
     FZrParserDeclarationPatchCommitObserver observer;
     TZrPtr userData;
 } SZrGeneratedCommitObserverAdapter;
 
+/* 校验源数组与容量算术后复制到独立数组，预留本次追加空间且不触碰 source。 */
 static TZrBool patch_transaction_clone_array(
         SZrCompilerState *cs,
         const SZrArray *source,
@@ -56,6 +66,7 @@ static TZrBool patch_transaction_clone_array(
     return ZR_TRUE;
 }
 
+/* 提交尾段转移 detached 所有权并释放旧数组；调用前所有可失败准备必须完成。 */
 static void patch_transaction_publish_array(
         SZrState *state,
         SZrArray *target,
@@ -67,6 +78,7 @@ static void patch_transaction_publish_array(
     ZrCore_Array_Free(state, &previous);
 }
 
+/* 写 metadata 字段时临时根住新 key，并用读回确认对象接受了该键值。 */
 static TZrBool patch_transaction_set_object_field(
         SZrCompilerState *cs,
         SZrObject *object,
@@ -101,6 +113,7 @@ cleanup:
     return result;
 }
 
+/* 将 GC 值追加为 roots 的整数索引项，并确认索引可表达且写入已可读。 */
 static TZrBool patch_transaction_push_root_value(
         SZrCompilerState *cs,
         SZrObject *roots,
@@ -120,6 +133,7 @@ static TZrBool patch_transaction_push_root_value(
            ZrCore_Object_GetValue(cs->state, roots, &key) != ZR_NULL;
 }
 
+/* 在把借用字符串加入事务持久根数组期间，用栈根保护它免于 GC 回收。 */
 static TZrBool patch_transaction_hold_string(
         SZrCompilerState *cs,
         SZrObject *roots,
@@ -142,6 +156,8 @@ static TZrBool patch_transaction_hold_string(
     return result;
 }
 
+/* text 是借用的原生 C 字符串，调用方须保证其字节跨可触发 GC 的创建操作仍有效。 */
+/* 只有临时根到事务根的交接成功才写 result。 */
 static TZrBool patch_transaction_create_rooted_string(
         SZrCompilerState *cs,
         SZrObject *roots,
@@ -177,6 +193,7 @@ cleanup:
     return success;
 }
 
+/* primitive 字段按 canonical value kind 取本机大小，其他情况采用通用 TypeValue 大小。 */
 static TZrUInt32 patch_transaction_generated_field_size(
         SZrCompilerState *cs,
         TZrTypeId typeId) {
@@ -202,6 +219,7 @@ static TZrUInt32 patch_transaction_generated_field_size(
     }
 }
 
+/* 构造尚未发布的生成字段记录，并把成员名称及来源 metadata 纳入事务根。 */
 static TZrBool patch_transaction_prepare_generated_field(
         SZrCompilerState *cs,
         const SZrTypePrototypeInfo *targetInfo,
@@ -224,10 +242,25 @@ static TZrBool patch_transaction_prepare_generated_field(
         !patch_transaction_hold_string(cs, roots, canonicalTypeName)) {
         return ZR_FALSE;
     }
+    /* TODO: 此 helper 对非 struct 一律生成 class-field 记录，而 executor 也会给 union/enum
+     * 执行 type transform；核对 declaration.Patch 是否应限制类型种类，并追踪 union/enum 的
+     * members 消费路径，确认可接受种类后再加约束或按目标种类构造成员。 */
+    /* TODO: 核对 generated declaration 的 initializer/attributes 是否属于此提交接口的
+     * 支持面；当前 executor 解码器只填基本字段，先审实际 API 调用方与 member 消费者。 */
     ZrCore_Memory_RawSet(member, 0, sizeof(*member));
     member->memberType = targetInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT
                                  ? ZR_AST_STRUCT_FIELD
                                  : ZR_AST_CLASS_FIELD;
+     /* BUG: declarationTransform AST runner 把 Patch 结果只写入原生 patchValues（不被 GC 扫描），并在返回前释放 CompileTool frame；
+      * decoder 将 GeneratedField.name 借为 native bytes；该 Patch/name 未由 VM stack/call-frame、AOT、global/cache/string-table/ignored/domain root 保活。
+      * prepare helper 只把 canonicalTypeName 放入 roots；合法 ASCII 标识符没有长度上限，可超过 ZR_VM_SHORT_STRING_MAX。
+      * CreateFromNative 前 candidateRoot slot 仍为 null，新字符串返回后才写根，故输入 text bytes 尚未受保护。
+      * 只有长串对象首次 RawMalloc 失败并触发 GcAndMalloc，且 gcMode 为默认 INCREMENTAL、起始
+      * isImmediateGcFlag=false、stopGcFlag=false、STW 成功时，FullGC 才进入该收集路径；每个 full_inc
+      * target 还必须未被 stop 标志或迭代上限短路，完整 atomic/sweep 才会回收无根 Patch/name。
+      * 随后对象重试和 longString 缓冲分配均成功，string.c 会从已释放的 longString 源复制字节，可能产生错误字段名。
+      * CompileTool frame/patchValues 均是 native 临时存储，且此 AST runner 不走普通 comptime-call cache。
+      * 这是静态可达链的条件结论，未运行复现。 */
     if (!patch_transaction_create_rooted_string(
                 cs, roots, addition->name, &member->name)) {
         return ZR_FALSE;
@@ -317,6 +350,7 @@ cleanup:
     return success;
 }
 
+/* 兼容接口只观察 generated 阶段；其他阶段与缺省 callback 均继续事务。 */
 static TZrBool patch_transaction_generated_observer_adapter(
         EZrParserDeclarationPatchCommitStage stage,
         TZrSize committedCount,
@@ -331,6 +365,7 @@ static TZrBool patch_transaction_generated_observer_adapter(
     return adapter->observer(committedCount, adapter->userData);
 }
 
+/* 旧式 generated-only 入口：用空接口/属性批次调用统一事务，并适配单阶段 observer。 */
 TZrBool ZrParser_CompileTime_CommitGeneratedFieldsAtomic(
         SZrCompilerState *cs,
         SZrTypePrototypeInfo *targetInfo,
@@ -399,6 +434,7 @@ TZrBool ZrParser_CompileTime_CommitDeclarationPatchAtomic(
     SZrTypeValue preparedDecoratorMetadata;
     TZrBool result = ZR_FALSE;
 
+    /* 初始化 detached 状态后，检查参数、预算、目标数组与符号 ID 边界；空补丁不触碰目标即成功。 */
     ZrCore_Array_Construct(&detachedMembers);
     ZrCore_Array_Construct(&detachedSymbols);
     ZrCore_Array_Construct(&detachedInherits);
@@ -436,6 +472,7 @@ TZrBool ZrParser_CompileTime_CommitDeclarationPatchAtomic(
         return ZR_TRUE;
     }
 
+    /* 每类目标数组都先克隆，随后把 borrowed GC 字符串纳入 roots，避免准备时改写目标。 */
     if ((hasGenerated &&
          (!patch_transaction_clone_array(
                   cs, &targetInfo->members, additionCount, &detachedMembers) ||
@@ -489,6 +526,7 @@ TZrBool ZrParser_CompileTime_CommitDeclarationPatchAtomic(
         }
     }
 
+    /* 属性 overlay 单独构造并先接入临时根；target metadata 保持原值直到发布尾段。 */
     if (hasAttributes) {
         if (!extern_compiler_temp_root_begin(cs, &metadataRoot) ||
             !ZrParser_CompileTime_BuildPatchAttributeMetadata(
@@ -502,6 +540,7 @@ TZrBool ZrParser_CompileTime_CommitDeclarationPatchAtomic(
         }
     }
     if (hasGenerated) {
+        /* 语义上下文副本只替换 symbols 数组，逐项登记 symbol/member 到 detached 状态。 */
         detachedContext = *cs->semanticContext;
         detachedContext.symbols = detachedSymbols;
         for (TZrSize index = 0; index < additionCount; index++) {
@@ -546,6 +585,7 @@ TZrBool ZrParser_CompileTime_CommitDeclarationPatchAtomic(
         }
     }
     if (hasInterfaces) {
+        /* 两份接口列表成对追加；observer 检查时尚未对目标发布。 */
         for (TZrSize index = 0; index < interfaceAdds->count; index++) {
             SZrString *name = interfaceAdds->typeNames[index];
 
@@ -561,6 +601,7 @@ TZrBool ZrParser_CompileTime_CommitDeclarationPatchAtomic(
         }
     }
     if (hasAttributes) {
+        /* Attribute 名进入 detached decorator 列表；metadata overlay 仍由单独字段待发布。 */
         for (TZrSize index = 0; index < attributeAdds->count; index++) {
             SZrTypeDecoratorInfo decoratorInfo;
 
@@ -583,6 +624,7 @@ TZrBool ZrParser_CompileTime_CommitDeclarationPatchAtomic(
         ZrCore_Array_Push(cs->state, &detachedDecorators, &decoratorInfo);
     }
 
+    /* 所有准备与 observer 检查均已通过；以下发布操作不返回失败，之后只清理已转移资源。 */
     if (hasGenerated) {
         patch_transaction_publish_array(
                 cs->state, &targetInfo->members, &detachedMembers);
@@ -609,6 +651,7 @@ TZrBool ZrParser_CompileTime_CommitDeclarationPatchAtomic(
     result = ZR_TRUE;
 
 cleanup:
+    /* observer veto 或准备失败保留目标原状态；成功发布的数组已从 detached 中移走。 */
     extern_compiler_temp_root_end(&metadataRoot);
     extern_compiler_temp_root_end(&rootsRoot);
     ZrCore_Array_Free(cs->state, &detachedDecorators);
