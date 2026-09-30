@@ -56,11 +56,32 @@ static TZrBool function_mutable_and_well_formed(const SZrExecIrFunction *functio
                      (function->instructionCount == 0u || function->instructions != ZR_NULL));
 }
 
+static const SZrExecIrFunction *module_typed_binding_rows(
+        const SZrExecIrModule *module) {
+    TZrUInt32 i;
+    if (module == ZR_NULL || module->functions == ZR_NULL ||
+        module->functionCount > module->functionCapacity) return ZR_NULL;
+    for (i = 0u; i < module->functionCount; ++i) {
+        if (module->functions[i].bindingRowsSchemaVersion ==
+            ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED) return &module->functions[i];
+    }
+    return ZR_NULL;
+}
+
 TZrBool ZrParser_ExecIr_DevirtualizeCalls(
         SZrExecIrModule *module, const SZrExecIrCallGraph *graph,
         SZrExecIrDiagnostic *diagnostic) {
+    const SZrExecIrFunction *typedFunction;
     TZrUInt32 i;
     if (diagnostic != ZR_NULL) memset(diagnostic, 0, sizeof(*diagnostic));
+    typedFunction = module_typed_binding_rows(module);
+    if (typedFunction != ZR_NULL) {
+        devirt_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED,
+                    typedFunction, 0u,
+                    ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY,
+                    typedFunction->bindingRowsSchemaVersion);
+        return ZR_FALSE;
+    }
     if (module == ZR_NULL || graph == ZR_NULL ||
         !ZrParser_ExecIr_CallGraphValidate(graph, module, diagnostic)) return ZR_FALSE;
 

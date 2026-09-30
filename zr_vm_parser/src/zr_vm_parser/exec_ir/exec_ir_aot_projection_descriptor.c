@@ -46,7 +46,10 @@ TZrBool ZrParser_AotIrProjection_BuildDescriptor(
     TZrUInt32 i, edgeCount;
     descriptor_clear(diagnostic);
     if (descriptor == ZR_NULL || projection == ZR_NULL || target == ZR_NULL ||
-        moduleContract == ZR_NULL || projection->ownershipTag != ZR_EXEC_IR_PROJECTION_TAG ||
+        moduleContract == ZR_NULL ||
+        projection->bindingRowsSchemaVersion !=
+                ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY ||
+        projection->ownershipTag != ZR_EXEC_IR_PROJECTION_TAG ||
         projection->functionId == ZR_AOT_IR_ID_INVALID ||
         projection->instructions == ZR_NULL || projection->instructionCount == 0u ||
         projection->blocks == ZR_NULL || projection->blockCount == 0u ||

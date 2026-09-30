@@ -277,6 +277,68 @@ void test_oracle_execbc_call_differential(void) {
           projected.eventCount == 1u && projected.returned &&
           projected.returnValue.as.signedInteger == 15,
           "repeated call did not publish a fresh result");
+    {
+        const TZrUInt64 moduleHash = UINT64_C(0x99118822);
+        SZrExecIrBindingRow row;
+        SZrExecIrOracleEvent *priorEvents = direct.events;
+        SZrExecIrOracleValue *priorValues = direct.values;
+        TZrUInt32 priorEventCount = direct.eventCount;
+        TZrUInt32 priorValueCount = direct.valueCount;
+        TZrBool priorReturned = direct.returned;
+        function.contract.moduleHash = moduleHash;
+        memset(&row, 0, sizeof(row));
+        row.rowIndex = 0u;
+        row.instructionId = 6u;
+        row.segmentIndex = ZR_EXEC_IR_BINDING_SEGMENT_INDEX_NONE;
+        row.contract.bindingKind = ZR_CALL_BINDING_DIRECT;
+        row.contract.targetMetadataToken =
+                ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 818u);
+        row.contract.signatureToken =
+                ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 818u);
+        row.contract.signatureHash = UINT64_C(0x1818);
+        row.contract.moduleSignatureHash = moduleHash;
+        row.contract.dispatchSlot = ZR_CALL_BINDING_SLOT_NONE;
+        row.contract.operation = ZR_CALL_BINDING_OPERATION_CALL;
+        row.location.kind = ZR_CALL_BINDING_RELOCATION_NONE;
+        row.location.targetIndex = ZR_CALL_BINDING_SLOT_NONE;
+        row.sourceId = 606u;
+        calls[0].count = 0u;
+        check(ZrCore_ExecIr_FunctionSetBindingRows(&function, &row, 1u,
+                                                    &diagnostic),
+              "could not install typed oracle call row");
+        check(!ZrCore_ExecIr_RunOracleEx(&oracleInput, &direct, &diagnostic) &&
+              diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED &&
+              diagnostic.instructionId == 6u && diagnostic.sourceId == 606u &&
+              calls[0].count == 0u && direct.events == priorEvents &&
+              direct.values == priorValues &&
+              direct.eventCount == priorEventCount &&
+              direct.valueCount == priorValueCount &&
+              direct.returned == priorReturned,
+              "typed call row fell through to the generic oracle callback");
+        function.bindingRowsSchemaVersion = 2u;
+        calls[0].count = 0u;
+        check(!ZrCore_ExecIr_RunOracleEx(&oracleInput, &direct, &diagnostic) &&
+              diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_VERSION_MISMATCH &&
+              diagnostic.instructionId == 0u && calls[0].count == 0u &&
+              direct.events == priorEvents && direct.values == priorValues &&
+              direct.eventCount == priorEventCount &&
+              direct.valueCount == priorValueCount &&
+              direct.returned == priorReturned,
+              "unknown binding-row schema reached the generic oracle callback");
+
+        function.bindingRowsSchemaVersion = ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED;
+        function.instructions[5].bindingRow = ZR_EXEC_IR_BINDING_ROW_REF_NONE;
+        calls[0].count = 0u;
+        check(!ZrCore_ExecIr_RunOracleEx(&oracleInput, &direct, &diagnostic) &&
+              diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT &&
+              diagnostic.instructionId == 6u && calls[0].count == 0u &&
+              direct.events == priorEvents && direct.values == priorValues &&
+              direct.eventCount == priorEventCount &&
+              direct.valueCount == priorValueCount &&
+              direct.returned == priorReturned,
+              "broken typed row association reached the generic oracle callback");
+        function.instructions[5].bindingRow = 1u;
+    }
     ZrParser_ExecBcExecutionResult_Free(&projected);
     ZrCore_ExecIr_OracleResultFree(&direct);
     ZrParser_ExecBcProjection_Free(&projection);

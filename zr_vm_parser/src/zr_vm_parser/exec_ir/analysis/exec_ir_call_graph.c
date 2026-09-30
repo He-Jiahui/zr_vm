@@ -136,9 +136,14 @@ static TZrBool call_graph_storage_valid(const SZrExecIrCallGraph *graph) {
 static TZrUInt64 zr_function_body_hash(const SZrExecIrFunction *function) {
     TZrUInt64 hash = ZR_EXEC_IR_HASH_OFFSET;
     TZrUInt64 aggregateHash = ZrCore_ExecIr_DeoptAggregateHash(function);
+    TZrUInt64 bindingRowsHash = ZrCore_ExecIr_FunctionBindingRowsHash(function);
     TZrUInt32 i;
 
     if (aggregateHash == 0u ||
+        !ZrCore_ExecIr_FunctionValidateBindingRows(function, ZR_NULL) ||
+        (function->bindingRowsSchemaVersion !=
+                 ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY &&
+         bindingRowsHash == 0u) ||
         !count_valid(function->valueCount, function->valueCapacity,
                      function->values) ||
         !count_valid(function->instructionCount, function->instructionCapacity,
@@ -189,6 +194,10 @@ static TZrUInt64 zr_function_body_hash(const SZrExecIrFunction *function) {
     zr_hash_u32(&hash, function->sealed);
 
     zr_hash_u64(&hash, aggregateHash);
+    if (function->bindingRowsSchemaVersion ==
+        ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED) {
+        zr_hash_u64(&hash, bindingRowsHash);
+    }
     /* Frame layout is part of the ABI contract even though it is not an
      * instruction side table.  Omitting it would allow a stale summary to be
      * reused after a parameter/return-slot layout change. */
@@ -379,6 +388,7 @@ static TZrUInt64 zr_function_body_hash(const SZrExecIrFunction *function) {
 
 static TZrUInt64 zr_module_hash(const SZrExecIrModule *module) {
     TZrUInt64 hash = ZR_EXEC_IR_HASH_OFFSET;
+    TZrUInt64 bodyHash;
     TZrUInt32 i;
     if (module == ZR_NULL ||
         !count_valid(module->functionCount, module->functionCapacity,
@@ -430,7 +440,9 @@ static TZrUInt64 zr_module_hash(const SZrExecIrModule *module) {
     }
     zr_hash_u32(&hash, module->functionCount);
     for (i = 0u; i < module->functionCount; ++i) {
-        zr_hash_u64(&hash, zr_function_body_hash(&module->functions[i]));
+        bodyHash = zr_function_body_hash(&module->functions[i]);
+        if (bodyHash == 0u) return 0u;
+        zr_hash_u64(&hash, bodyHash);
     }
     return hash;
 }
@@ -1851,18 +1863,30 @@ TZrBool ZrParser_ExecIr_BuildCallGraph(
             SZrExecIrCallEdge edge;
             TZrExecIrFunctionId target;
             TZrBool layoutTargetProof;
+            TZrBool typedBindingSchema;
             if (instruction->opcode != ZR_EXEC_IR_OPCODE_CALL &&
                 instruction->opcode != ZR_EXEC_IR_OPCODE_INVOKE) continue;
             memset(&edge, 0, sizeof(edge));
             edge.callerId = function->id;
             edge.callInstructionId = j + 1u;
-            edge.targetToken = instruction->layoutId != 0u ? instruction->layoutId : instruction->typeToken;
+            typedBindingSchema = (TZrBool)(function->bindingRowsSchemaVersion ==
+                    ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED);
+            /* The typed schema owns complete rows.  Until this analyzer has a
+             * full target resolver, neither numeric legacy identities nor
+             * compact row hints can prove a callee (including typed-empty). */
+            edge.targetToken = typedBindingSchema
+                    ? 0u
+                    : (instruction->layoutId != 0u
+                           ? instruction->layoutId : instruction->typeToken);
             /* An unresolved edge has no trustworthy target signature.  Keep
              * the field zero rather than leaking the caller signature into a
              * target contract slot; resolved edges fill it from the callee. */
             edge.expectedSignatureHash = 0u;
-            target = resolve_instruction_target(module, instruction,
-                                                &layoutTargetProof);
+            layoutTargetProof = ZR_FALSE;
+            target = typedBindingSchema
+                    ? ZR_EXEC_IR_FUNCTION_ID_INVALID
+                    : resolve_instruction_target(module, instruction,
+                                                 &layoutTargetProof);
             if (target != ZR_EXEC_IR_FUNCTION_ID_INVALID) {
                 const SZrExecIrFunction *callee = &module->functions[target - 1u];
                 edge.calleeId = target;
@@ -1894,7 +1918,9 @@ TZrBool ZrParser_ExecIr_BuildCallGraph(
                                                layoutTargetProof);
                 edge.patchableTarget = (TZrBool)candidate.summaries[target - 1u].patchable;
             } else {
-                edge.kind = instruction->bindingRow == 0u ||
+                edge.kind = typedBindingSchema
+                    ? ZR_EXEC_IR_CALL_EDGE_UNKNOWN
+                    : (instruction->bindingRow == 0u ||
                             instruction->bindingRow == ZR_CALL_BINDING_SLOT_NONE
                                 ? ZR_EXEC_IR_CALL_EDGE_UNKNOWN
                                 : (!compact_binding_row_valid(instruction->bindingRow)
@@ -1904,11 +1930,11 @@ TZrBool ZrParser_ExecIr_BuildCallGraph(
                                            ZR_EXEC_IR_BINDING_HINT_INTERFACE |
                                            ZR_EXEC_IR_BINDING_HINT_TYPED)) != 0u
                                             ? edge_kind_from_binding_row(instruction->bindingRow)
-                                            : ZR_EXEC_IR_CALL_EDGE_NATIVE));
+                                            : ZR_EXEC_IR_CALL_EDGE_NATIVE)));
                 /* A native-shaped unresolved row is explicitly opaque; an
                  * unresolved slot/none row is merely indirect and should
                  * retain that distinction in the summary's unknownReason. */
-                edge.nativeEffectsUnknown = (TZrBool)(
+                edge.nativeEffectsUnknown = (TZrBool)(typedBindingSchema ||
                     edge.kind == ZR_EXEC_IR_CALL_EDGE_NATIVE);
             }
             if (!append_edge(&candidate, &edge)) {

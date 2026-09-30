@@ -137,6 +137,7 @@ static TZrBool zr_profile_module_storage_valid(const SZrExecIrModule *module) {
 
 static TZrUInt64 zr_profile_function_hash(const SZrExecIrFunction *function) {
     TZrUInt64 hash = ZR_PROFILE_FNV_OFFSET;
+    TZrUInt64 bindingRowsHash;
     TZrUInt32 index;
     if (function == ZR_NULL ||
         function->instructionCount > function->instructionCapacity ||
@@ -144,10 +145,19 @@ static TZrUInt64 zr_profile_function_hash(const SZrExecIrFunction *function) {
         function->blockCount > function->blockCapacity ||
         (function->instructionCount != 0u && function->instructions == ZR_NULL) ||
         (function->valueCount != 0u && function->values == ZR_NULL) ||
-        (function->blockCount != 0u && function->blocks == ZR_NULL)) return 0u;
+        (function->blockCount != 0u && function->blocks == ZR_NULL) ||
+        !ZrCore_ExecIr_FunctionValidateBindingRows(function, ZR_NULL)) return 0u;
+    bindingRowsHash = ZrCore_ExecIr_FunctionBindingRowsHash(function);
+    if (function->bindingRowsSchemaVersion !=
+                ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY &&
+        bindingRowsHash == 0u) return 0u;
     zr_profile_hash_u32(&hash, function->id);
     zr_profile_hash_u32(&hash, function->functionToken);
     zr_profile_hash_u64(&hash, function->signatureHash);
+    if (function->bindingRowsSchemaVersion ==
+        ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED) {
+        zr_profile_hash_u64(&hash, bindingRowsHash);
+    }
     zr_profile_hash_u64(&hash, function->contract.generation);
     zr_profile_hash_u64(&hash, function->contract.layoutHash);
     zr_profile_hash_u32(&hash, function->instructionCount);
@@ -205,6 +215,7 @@ static TZrUInt64 zr_profile_function_hash(const SZrExecIrFunction *function) {
 
 TZrUInt64 ZrParser_ExecIr_ProfileModuleHash(const SZrExecIrModule *module) {
     TZrUInt64 hash = ZR_PROFILE_FNV_OFFSET;
+    TZrUInt64 functionHash;
     TZrUInt32 index;
     if (!zr_profile_module_storage_valid(module)) return 0u;
     zr_profile_hash_u32(&hash, module->id);
@@ -230,8 +241,11 @@ TZrUInt64 ZrParser_ExecIr_ProfileModuleHash(const SZrExecIrModule *module) {
         zr_profile_hash_u64(&hash, module->layouts[index].layoutHash);
     }
     zr_profile_hash_u32(&hash, module->functionCount);
-    for (index = 0u; index < module->functionCount; ++index)
-        zr_profile_hash_u64(&hash, zr_profile_function_hash(&module->functions[index]));
+    for (index = 0u; index < module->functionCount; ++index) {
+        functionHash = zr_profile_function_hash(&module->functions[index]);
+        if (functionHash == 0u) return 0u;
+        zr_profile_hash_u64(&hash, functionHash);
+    }
     return hash == 0u ? 1u : hash;
 }
 

@@ -1,5 +1,6 @@
 #include "unity.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "zr_vm_parser/exec_ir_binding_facts.h"
@@ -115,6 +116,7 @@ static void test_static_binding_facts_project_final_direct_row(void) {
     SZrCallBindingContract contract = make_contract(
             ZR_CALL_BINDING_DIRECT, ZR_CALL_BINDING_OPERATION_CALL, 1u, moduleHash);
     SZrExecIrDiagnostic diagnostic;
+    TZrUInt32 projectedBindingRow;
 
     init_function_with_opcodes(&function, opcodes, 1u);
     fill_final_segment(&segment, 0u, 1u, 0u, contract.targetMetadataToken, 501u);
@@ -127,7 +129,7 @@ static void test_static_binding_facts_project_final_direct_row(void) {
                                                                &diagnostic));
     TEST_ASSERT_TRUE(ZrParser_ExecIr_ProjectBindingFacts(&facts, &function,
                                                          &diagnostic));
-    TEST_ASSERT_EQUAL(0u, function.instructions[0].bindingRow);
+    projectedBindingRow = function.instructions[0].bindingRow;
     TEST_ASSERT_EQUAL_STRING("ok", ZrParser_ExecIr_BindingFacts_StatusName(
                                       ZR_EXEC_IR_BINDING_FACTS_OK));
     TEST_ASSERT_EQUAL_PTR(&row, ZrParser_ExecIr_BindingFacts_RowAt(&facts, 0u));
@@ -136,6 +138,63 @@ static void test_static_binding_facts_project_final_direct_row(void) {
     TEST_ASSERT_NULL(ZrParser_ExecIr_BindingFacts_RowAt(&facts, 1u));
 
     ZrCore_ExecIr_FreeFunction(&function);
+    TEST_ASSERT_EQUAL(1u, projectedBindingRow);
+}
+
+static void test_static_binding_facts_validate_function_row_schema(void) {
+    const TZrUInt64 moduleHash = UINT64_C(0xfeed100a);
+    const EZrExecIrOpcode opcodes[] = {ZR_EXEC_IR_OPCODE_CALL};
+    SZrExecIrFunction function;
+    SZrExecIrBindingFacts facts;
+    SZrExecIrDiagnostic legacyDiagnostic;
+    SZrExecIrDiagnostic unknownSchemaDiagnostic;
+    SZrExecIrDiagnostic orphanTableDiagnostic;
+    EZrExecIrBindingFactsStatus legacyStatus;
+    EZrExecIrBindingFactsStatus unknownSchemaStatus;
+    EZrExecIrBindingFactsStatus orphanTableStatus;
+
+    init_function_with_opcodes(&function, opcodes, 1u);
+    init_facts(&facts, ZR_NULL, 0u, ZR_NULL, 0u, moduleHash);
+
+    /* Historical references are numeric hints and remain valid without an
+     * owned typed row table. */
+    function.instructions[0].bindingRow = 17u;
+    legacyStatus = ZrParser_ExecIr_BindingFacts_ValidateEx(
+            &facts, &function, &legacyDiagnostic);
+
+    function.bindingRowsSchemaVersion = 2u;
+    unknownSchemaStatus = ZrParser_ExecIr_BindingFacts_ValidateEx(
+            &facts, &function, &unknownSchemaDiagnostic);
+
+    function.bindingRowsSchemaVersion = ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY;
+    function.bindingRows = (SZrExecIrBindingRow *)calloc(
+            1u, sizeof(*function.bindingRows));
+    if (function.bindingRows == ZR_NULL) {
+        ZrCore_ExecIr_FreeFunction(&function);
+        TEST_FAIL_MESSAGE("could not allocate malformed owned-row fixture");
+        return;
+    }
+    function.bindingRowCount = 1u;
+    function.bindingRowCapacity = 1u;
+    orphanTableStatus = ZrParser_ExecIr_BindingFacts_ValidateEx(
+            &facts, &function, &orphanTableDiagnostic);
+
+    ZrCore_ExecIr_FreeFunction(&function);
+
+    TEST_ASSERT_EQUAL(ZR_EXEC_IR_BINDING_FACTS_OK, legacyStatus);
+    TEST_ASSERT_EQUAL(ZR_EXEC_IR_BINDING_FACTS_INVALID_ARGUMENT,
+                      unknownSchemaStatus);
+    TEST_ASSERT_EQUAL(ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
+                      unknownSchemaDiagnostic.code);
+    TEST_ASSERT_EQUAL(ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED,
+                      unknownSchemaDiagnostic.expectedVersion);
+    TEST_ASSERT_EQUAL(2u, unknownSchemaDiagnostic.actualVersion);
+    TEST_ASSERT_EQUAL(ZR_EXEC_IR_BINDING_FACTS_INVALID_ARGUMENT,
+                      orphanTableStatus);
+    TEST_ASSERT_EQUAL(ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
+                      orphanTableDiagnostic.code);
+    TEST_ASSERT_EQUAL(0u, orphanTableDiagnostic.expectedVersion);
+    TEST_ASSERT_EQUAL(1u, orphanTableDiagnostic.actualVersion);
 }
 
 static void test_static_binding_facts_preserve_field_chain_and_accessor_writeback(void) {
@@ -151,6 +210,8 @@ static void test_static_binding_facts_preserve_field_chain_and_accessor_writebac
     SZrCallBindingContract callContract = make_contract(
             ZR_CALL_BINDING_DIRECT, ZR_CALL_BINDING_OPERATION_CALL, 4u, moduleHash);
     SZrExecIrDiagnostic diagnostic;
+    TZrUInt32 projectedCallBindingRow;
+    TZrUInt32 projectedAccessorBindingRow;
 
     init_function_with_opcodes(&function, chainOpcodes, 4u);
     memset(segments, 0, sizeof(segments));
@@ -182,7 +243,7 @@ static void test_static_binding_facts_preserve_field_chain_and_accessor_writebac
     TEST_ASSERT_EQUAL(ZR_EXEC_IR_OPCODE_LOAD, function.instructions[1].opcode);
     TEST_ASSERT_EQUAL(ZR_EXEC_IR_OPCODE_LOAD, function.instructions[2].opcode);
     TEST_ASSERT_EQUAL(ZR_EXEC_IR_OPCODE_CALL, function.instructions[3].opcode);
-    TEST_ASSERT_EQUAL(0u, function.instructions[3].bindingRow);
+    projectedCallBindingRow = function.instructions[3].bindingRow;
 
     {
         const EZrExecIrOpcode accessorOpcodes[] = {
@@ -212,10 +273,12 @@ static void test_static_binding_facts_preserve_field_chain_and_accessor_writebac
         TEST_ASSERT_TRUE(ZrParser_ExecIr_ProjectBindingFacts(&accessorFacts,
                                                              &accessorFunction,
                                                              &diagnostic));
-        TEST_ASSERT_EQUAL(0u, accessorFunction.instructions[0].bindingRow);
+        projectedAccessorBindingRow = accessorFunction.instructions[0].bindingRow;
         ZrCore_ExecIr_FreeFunction(&accessorFunction);
     }
     ZrCore_ExecIr_FreeFunction(&function);
+    TEST_ASSERT_EQUAL(1u, projectedCallBindingRow);
+    TEST_ASSERT_EQUAL(1u, projectedAccessorBindingRow);
 }
 
 static void test_static_binding_facts_support_polymorphic_and_typed_contracts(void) {
@@ -391,6 +454,74 @@ static void test_static_binding_facts_projection_is_transactional_and_sealed_is_
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void test_static_binding_facts_projection_owns_rows_and_typed_empty_state(void) {
+    const TZrUInt64 moduleHash = UINT64_C(0xfeed2002);
+    const EZrExecIrOpcode opcodes[] = {ZR_EXEC_IR_OPCODE_CALL};
+    SZrExecIrFunction function;
+    SZrExecIrBindingFacts facts;
+    SZrExecIrBindingFacts invalidFacts;
+    SZrExecIrBindingFacts emptyFacts;
+    SZrExecIrBindingSegment segment;
+    SZrExecIrBindingSegment invalidSegment;
+    SZrExecIrBindingRow row;
+    SZrCallBindingContract contract = make_contract(
+            ZR_CALL_BINDING_DIRECT, ZR_CALL_BINDING_OPERATION_CALL, 21u, moduleHash);
+    const SZrExecIrBindingRow *ownedRows;
+    TZrUInt64 ownedHash;
+    SZrExecIrDiagnostic diagnostic;
+
+    init_function_with_opcodes(&function, opcodes, 1u);
+    fill_final_segment(&segment, 0u, 1u, 0u,
+                       contract.targetMetadataToken, 1501u);
+    fill_row(&row, 0u, 1u, 0u, &contract, 1501u);
+    init_facts(&facts, &segment, 1u, &row, 1u, moduleHash);
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_ProjectBindingFacts(&facts, &function,
+                                                         &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED,
+                      function.bindingRowsSchemaVersion);
+    TEST_ASSERT_EQUAL(moduleHash, function.contract.moduleHash);
+    TEST_ASSERT_EQUAL(1u, function.bindingRowCount);
+    TEST_ASSERT_EQUAL(1u, function.instructions[0].bindingRow);
+    TEST_ASSERT_EQUAL(0u, function.bindingRows[0].rowIndex);
+    TEST_ASSERT_EQUAL(1u, function.bindingRows[0].instructionId);
+    TEST_ASSERT_EQUAL_PTR(&function.bindingRows[0],
+                          ZrCore_ExecIr_FunctionBindingRowAt(&function, 1u));
+    TEST_ASSERT_NOT_EQUAL((uintptr_t)&row,
+                          (uintptr_t)function.bindingRows);
+    ownedRows = function.bindingRows;
+    ownedHash = ZrCore_ExecIr_FunctionBindingRowsHash(&function);
+
+    invalidSegment = segment;
+    invalidSegment.instructionId = 2u;
+    init_facts(&invalidFacts, &invalidSegment, 1u, &row, 1u, moduleHash);
+    TEST_ASSERT_FALSE(ZrParser_ExecIr_ProjectBindingFacts(&invalidFacts, &function,
+                                                          &diagnostic));
+    TEST_ASSERT_EQUAL_PTR(ownedRows, function.bindingRows);
+    TEST_ASSERT_EQUAL(1u, function.instructions[0].bindingRow);
+    TEST_ASSERT_EQUAL(ownedHash,
+                      ZrCore_ExecIr_FunctionBindingRowsHash(&function));
+
+    init_facts(&emptyFacts, ZR_NULL, 0u, ZR_NULL, 0u, moduleHash);
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_ProjectBindingFacts(&emptyFacts, &function,
+                                                         &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED,
+                      function.bindingRowsSchemaVersion);
+    TEST_ASSERT_NULL(function.bindingRows);
+    TEST_ASSERT_EQUAL(0u, function.bindingRowCount);
+    TEST_ASSERT_EQUAL(0u, function.bindingRowCapacity);
+    TEST_ASSERT_EQUAL(0u, function.instructions[0].bindingRow);
+    TEST_ASSERT_NOT_EQUAL(0u,
+                          ZrCore_ExecIr_FunctionBindingRowsHash(&function));
+    TEST_ASSERT_NOT_EQUAL(ownedHash,
+                          ZrCore_ExecIr_FunctionBindingRowsHash(&function));
+
+    TEST_ASSERT_TRUE(ZrParser_ExecIr_ProjectBindingFacts(&facts, &function,
+                                                         &diagnostic));
+    TEST_ASSERT_EQUAL(1u, function.instructions[0].bindingRow);
+    TEST_ASSERT_EQUAL(1u, function.bindingRowCount);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 static void test_static_binding_facts_accept_row_owned_segment_association(void) {
     const TZrUInt64 moduleHash = UINT64_C(0xfeed1007);
     const EZrExecIrOpcode opcodes[] = {ZR_EXEC_IR_OPCODE_CALL};
@@ -401,6 +532,7 @@ static void test_static_binding_facts_accept_row_owned_segment_association(void)
     SZrExecIrDiagnostic diagnostic;
     SZrCallBindingContract contract = make_contract(
             ZR_CALL_BINDING_DIRECT, ZR_CALL_BINDING_OPERATION_CALL, 7u, moduleHash);
+    TZrUInt32 projectedBindingRow;
 
     init_function_with_opcodes(&function, opcodes, 1u);
     fill_final_segment(&segment, 0u, 1u, ZR_EXEC_IR_BINDING_ROW_NONE,
@@ -409,8 +541,9 @@ static void test_static_binding_facts_accept_row_owned_segment_association(void)
     init_facts(&facts, &segment, 1u, &row, 1u, moduleHash);
     TEST_ASSERT_TRUE(ZrParser_ExecIr_ProjectBindingFacts(&facts, &function,
                                                          &diagnostic));
-    TEST_ASSERT_EQUAL(0u, function.instructions[0].bindingRow);
+    projectedBindingRow = function.instructions[0].bindingRow;
     ZrCore_ExecIr_FreeFunction(&function);
+    TEST_ASSERT_EQUAL(1u, projectedBindingRow);
 }
 
 static void test_static_binding_facts_require_field_layout_identity(void) {
@@ -452,6 +585,8 @@ static void test_static_binding_facts_accessor_getter_and_meta_operation(void) {
             ZR_CALL_BINDING_DIRECT, ZR_CALL_BINDING_OPERATION_GET, 9u, moduleHash);
     SZrCallBindingContract meta = make_contract(
             ZR_CALL_BINDING_DIRECT, ZR_CALL_BINDING_OPERATION_META, 10u, moduleHash);
+    TZrUInt32 projectedGetterBindingRow;
+    TZrUInt32 projectedMetaBindingRow;
 
     init_function_with_opcodes(&function, opcodes, 2u);
     memset(segments, 0, sizeof(segments));
@@ -479,19 +614,23 @@ static void test_static_binding_facts_accessor_getter_and_meta_operation(void) {
      * row is the only row marked final. */
     TEST_ASSERT_TRUE(ZrParser_ExecIr_ProjectBindingFacts(&facts, &function,
                                                          &diagnostic));
-    TEST_ASSERT_EQUAL(0u, function.instructions[0].bindingRow);
-    TEST_ASSERT_EQUAL(1u, function.instructions[1].bindingRow);
+    projectedGetterBindingRow = function.instructions[0].bindingRow;
+    projectedMetaBindingRow = function.instructions[1].bindingRow;
     ZrCore_ExecIr_FreeFunction(&function);
+    TEST_ASSERT_EQUAL(1u, projectedGetterBindingRow);
+    TEST_ASSERT_EQUAL(2u, projectedMetaBindingRow);
 }
 
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_static_binding_facts_project_final_direct_row);
+    RUN_TEST(test_static_binding_facts_validate_function_row_schema);
     RUN_TEST(test_static_binding_facts_preserve_field_chain_and_accessor_writeback);
     RUN_TEST(test_static_binding_facts_support_polymorphic_and_typed_contracts);
     RUN_TEST(test_static_binding_facts_reject_unknown_and_ambiguous_segments);
     RUN_TEST(test_static_binding_facts_reject_signature_layout_and_missing_contract);
     RUN_TEST(test_static_binding_facts_projection_is_transactional_and_sealed_is_reported);
+    RUN_TEST(test_static_binding_facts_projection_owns_rows_and_typed_empty_state);
     RUN_TEST(test_static_binding_facts_accept_row_owned_segment_association);
     RUN_TEST(test_static_binding_facts_require_field_layout_identity);
     RUN_TEST(test_static_binding_facts_accessor_getter_and_meta_operation);

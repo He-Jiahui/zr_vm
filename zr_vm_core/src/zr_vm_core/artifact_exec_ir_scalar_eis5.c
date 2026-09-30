@@ -469,6 +469,10 @@ EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalarEis5_ValidateModule(
     if (module->constants == ZR_NULL || function->values == ZR_NULL ||
         function->blocks == ZR_NULL || function->instructions == ZR_NULL ||
         function->operands == ZR_NULL || function->results == ZR_NULL ||
+        function->bindingRowsSchemaVersion !=
+                ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY ||
+        function->bindingRows != ZR_NULL || function->bindingRowCount != 0u ||
+        function->bindingRowCapacity != 0u ||
         (counts.successors != 0u && function->successors == ZR_NULL) ||
         (counts.predecessors != 0u && function->predecessors == ZR_NULL) ||
         !eis5_function_side_tables_are_empty(function) ||

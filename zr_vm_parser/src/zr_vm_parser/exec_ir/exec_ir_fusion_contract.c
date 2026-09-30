@@ -333,6 +333,7 @@ TZrBool zr_fusion_state_map_is_valid(const SZrExecIrFunction *function) {
 TZrBool zr_fusion_function_storage_is_valid(const SZrExecIrFunction *function) {
     TZrUInt32 index;
     if (function == ZR_NULL || function->sealed > ZR_TRUE ||
+        !ZrCore_ExecIr_FunctionValidateBindingRows(function, ZR_NULL) ||
         !zr_fusion_gc_map_is_valid(function) ||
         !zr_fusion_state_map_is_valid(function) ||
         !zr_fusion_pointer_count_valid(function->instructions,
@@ -527,11 +528,20 @@ TZrBool zr_fusion_function_storage_is_valid(const SZrExecIrFunction *function) {
 TZrUInt64 ZrParser_ExecBcFusion_InputHash(const SZrExecIrFunction *function) {
     TZrUInt64 hash = UINT64_C(1469598103934665603);
     TZrUInt64 aggregateHash = ZrCore_ExecIr_DeoptAggregateHash(function);
+    TZrUInt64 bindingRowsHash = ZrCore_ExecIr_FunctionBindingRowsHash(function);
     TZrUInt32 index;
-    if (aggregateHash == 0u || !zr_fusion_function_storage_is_valid(function)) {
+    if (aggregateHash == 0u ||
+        !zr_fusion_function_storage_is_valid(function) ||
+        (function->bindingRowsSchemaVersion !=
+                 ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY &&
+         bindingRowsHash == 0u)) {
         return 0u;
     }
     hash = zr_fusion_hash_u64(hash, aggregateHash);
+    if (function->bindingRowsSchemaVersion ==
+        ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED) {
+        hash = zr_fusion_hash_u64(hash, bindingRowsHash);
+    }
     hash = zr_fusion_hash_u32(hash, function->id);
     hash = zr_fusion_hash_u32(hash, function->functionToken);
     hash = zr_fusion_hash_u64(hash, function->signatureHash);

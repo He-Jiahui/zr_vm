@@ -16,7 +16,6 @@
 
 #define ZR_EXEC_IR_BINDING_FACTS_SCHEMA_VERSION ((TZrUInt32)1u)
 #define ZR_EXEC_IR_BINDING_ROW_NONE ZR_CALL_BINDING_SLOT_NONE
-#define ZR_EXEC_IR_BINDING_SEGMENT_INDEX_NONE ((TZrUInt32)0xffffffffu)
 #define ZR_EXEC_IR_BINDING_MEMBER_NONE ((TZrUInt32)0xffffffffu)
 
 /* A chain segment describes one evaluation step.  FIELD is deliberately
@@ -149,27 +148,6 @@ typedef struct SZrExecIrBindingSegment {
     TZrUInt32 bindingRow;
     TZrExecIrSourceId sourceId;
 } SZrExecIrBindingSegment;
-
-/* A row is the only place where the complete call contract is stored.  The
- * ExecIR instruction stores rowIndex/bindingRow, keeping instruction data
- * fixed width and pointer-free. */
-typedef struct SZrExecIrBindingRow {
-    union {
-        TZrUInt32 rowIndex;
-        TZrUInt32 bindingRow;
-    };
-    union {
-        TZrExecIrInstructionId instructionId;
-        TZrExecIrInstructionId instructionIndex;
-    };
-    union {
-        TZrUInt32 segmentIndex;
-        TZrUInt32 chainSegmentIndex;
-    };
-    SZrCallBindingContract contract;
-    SZrCallBindingLocation location;
-    TZrExecIrSourceId sourceId;
-} SZrExecIrBindingRow;
 
 /* The producer may leave arrays borrowed for the duration of a projection;
  * no pointer is retained in the destination function.  expectedHash, when

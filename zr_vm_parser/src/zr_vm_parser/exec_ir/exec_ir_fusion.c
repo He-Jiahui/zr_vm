@@ -17,6 +17,19 @@ static TZrBool zr_fusion_options_check(
         const SZrExecIrFunction *function,
         const SZrExecBcPatternOptions *options,
         SZrExecIrDiagnostic *diagnostic) {
+    if (!ZrCore_ExecIr_FunctionValidateBindingRows(function, diagnostic)) {
+        return ZR_FALSE;
+    }
+    if (function->bindingRowsSchemaVersion !=
+        ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY) {
+        /* ExecBC fusion plans do not own the typed binding-row table.  Refuse
+         * typed mode before optional parser BindingFacts are consulted. */
+        zr_fusion_diag_set(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED,
+                           function, 0u, 0u,
+                           ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY,
+                           function->bindingRowsSchemaVersion);
+        return ZR_FALSE;
+    }
     if (!zr_fusion_options_valid(options)) {
         zr_fusion_diag_set(diagnostic, ZR_EXECUTION_DIAGNOSTIC_VERSION_MISMATCH,
                            function, 0u, 0u,

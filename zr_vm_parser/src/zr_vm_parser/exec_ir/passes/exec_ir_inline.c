@@ -44,6 +44,18 @@ static void inline_diag(SZrExecIrDiagnostic *diagnostic,
     diagnostic->actualHash = actual;
 }
 
+static const SZrExecIrFunction *module_typed_binding_rows(
+        const SZrExecIrModule *module) {
+    TZrUInt32 i;
+    if (module == ZR_NULL || module->functions == ZR_NULL ||
+        module->functionCount > module->functionCapacity) return ZR_NULL;
+    for (i = 0u; i < module->functionCount; ++i) {
+        if (module->functions[i].bindingRowsSchemaVersion ==
+            ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED) return &module->functions[i];
+    }
+    return ZR_NULL;
+}
+
 static TZrBool range_valid(SZrExecIrRange range, TZrUInt32 count) {
     return (TZrBool)(range.start <= count && range.count <= count - range.start);
 }
@@ -676,11 +688,20 @@ static TZrBool inline_one(SZrExecIrFunction *caller,
 TZrBool ZrParser_ExecIr_InlineCalls(
         SZrExecIrModule *module, const SZrExecIrCallGraph *graph,
         SZrExecIrDiagnostic *diagnostic) {
+    const SZrExecIrFunction *typedFunction;
     TZrUInt32 i;
     TZrUInt32 moduleGrowth = 0u;
     TZrUInt32 *functionGrowth = ZR_NULL;
     TZrBool *modified = ZR_NULL;
     if (diagnostic != ZR_NULL) memset(diagnostic, 0, sizeof(*diagnostic));
+    typedFunction = module_typed_binding_rows(module);
+    if (typedFunction != ZR_NULL) {
+        inline_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED,
+                    typedFunction, 0u,
+                    ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY,
+                    typedFunction->bindingRowsSchemaVersion);
+        return ZR_FALSE;
+    }
     if (module == ZR_NULL || graph == ZR_NULL ||
         !ZrParser_ExecIr_CallGraphValidate(graph, module, diagnostic)) return ZR_FALSE;
     if (module->functionCount != 0u) {

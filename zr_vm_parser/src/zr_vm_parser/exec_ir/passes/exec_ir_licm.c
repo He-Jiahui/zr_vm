@@ -430,6 +430,15 @@ static TZrBool zr_licm_move_instruction(SZrExecIrFunction *function,
                     sourceIndex, destinationIndex);
         }
     }
+    if (function->bindingRows != ZR_NULL) {
+        TZrUInt32 rowIndex;
+        for (rowIndex = 0u; rowIndex < function->bindingRowCount; ++rowIndex) {
+            function->bindingRows[rowIndex].instructionId =
+                    zr_licm_map_instruction_id(
+                            function->bindingRows[rowIndex].instructionId,
+                            sourceIndex, destinationIndex);
+        }
+    }
     return ZR_TRUE;
 }
 
@@ -645,6 +654,8 @@ TZrBool ZrParser_ExecIr_OptimizeLoopsEx(SZrExecIrFunction *function,
     if (diagnostic != ZR_NULL) memset(diagnostic, 0, sizeof(*diagnostic));
     if (function == ZR_NULL || info == ZR_NULL ||
         !zr_licm_function_storage_valid(function, diagnostic)) return ZR_FALSE;
+    if (!ZrCore_ExecIr_FunctionValidateBindingRows(function, diagnostic))
+        return ZR_FALSE;
     if (function->sealed) {
         zr_licm_diagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_SEALED,
                            function, 0u, 0u);

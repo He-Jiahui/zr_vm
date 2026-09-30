@@ -891,6 +891,10 @@ TZrBool zr_parser_exec_ir_promote_places(
     SZrExecIrFunction candidate;
     TZrBool changed = ZR_FALSE;
 
+    if (function == ZR_NULL ||
+        !ZrCore_ExecIr_FunctionValidateBindingRows(function, diagnostic)) {
+        return ZR_FALSE;
+    }
     if (!promotion_has_memory_access(function)) return ZR_TRUE;
     if (function->sealed) {
         return promotion_fail(function, diagnostic,

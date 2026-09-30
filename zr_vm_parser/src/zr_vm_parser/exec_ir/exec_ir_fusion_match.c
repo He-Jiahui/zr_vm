@@ -377,6 +377,10 @@ static TZrBool zr_fusion_binding_row_resolved(
         const SZrExecIrInstruction *instruction,
         TZrUInt32 instructionId,
         TZrUInt32 row) {
+    if (function == ZR_NULL || function->bindingRowsSchemaVersion !=
+        ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY) {
+        return ZR_FALSE;
+    }
     if (row == ZR_CALL_BINDING_SLOT_NONE) {
         return ZR_FALSE;
     }
@@ -417,15 +421,23 @@ static EZrExecBcFusionFallbackReason zr_fusion_match_constraints(
         TZrUInt32 headId,
         TZrUInt32 tailId,
         const SZrExecBcPatternOptions *options) {
-    const SZrExecIrInstruction *head = zr_fusion_instruction(function, headId);
-    const SZrExecIrInstruction *tail = zr_fusion_instruction(function, tailId);
-    const SZrExecIrBlock *headBlock =
-            zr_fusion_block_for_instruction(function, headId);
-    const SZrExecIrBlock *tailBlock =
-            zr_fusion_block_for_instruction(function, tailId);
+    const SZrExecIrInstruction *head;
+    const SZrExecIrInstruction *tail;
+    const SZrExecIrBlock *headBlock;
+    const SZrExecIrBlock *tailBlock;
     TZrExecIrValueId headResult = ZR_EXEC_IR_VALUE_ID_INVALID;
     TZrUInt32 headBoundary;
     TZrUInt32 tailBoundary;
+    if (function == ZR_NULL || function->bindingRowsSchemaVersion !=
+        ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY) {
+        /* No typed-row target resolver exists in this matcher.  Stop before
+         * any legacy zero-based BindingFacts row lookup. */
+        return ZR_EXEC_BC_FUSION_FALLBACK_BINDING_MISSING;
+    }
+    head = zr_fusion_instruction(function, headId);
+    tail = zr_fusion_instruction(function, tailId);
+    headBlock = zr_fusion_block_for_instruction(function, headId);
+    tailBlock = zr_fusion_block_for_instruction(function, tailId);
 
     if (info == ZR_NULL || head == ZR_NULL || tail == ZR_NULL ||
         !zr_fusion_opcode_matches(info, head, tail)) {

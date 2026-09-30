@@ -127,6 +127,14 @@ int main(void) {
                   input.signatureHash, input.frameLayoutHash);
     fill_contract(&moduleContract, 0u, 33u, 44u, 55u);
     memset(&descriptor, 0, sizeof(descriptor));
+    /* A direct descriptor caller can bypass ExecIR projection.  Preserve the
+     * source schema marker here so typed-empty input is still rejected. */
+    input.bindingRowsSchemaVersion = ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED;
+    assert(!ZrParser_AotIrProjection_BuildDescriptor(
+                   &input, &target, &moduleContract, &descriptor, &diagnostic));
+    assert(diagnostic.status != ZR_AOT_IR_OK);
+    assert(descriptor.owner == ZR_NULL);
+    input.bindingRowsSchemaVersion = ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY;
     if (!ZrParser_AotIrProjection_BuildDescriptor(
                    &input, &target,
                    &moduleContract, &descriptor, &diagnostic)) {

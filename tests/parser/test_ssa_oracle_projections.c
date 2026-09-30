@@ -1002,7 +1002,9 @@ static void test_scalar_oracle_and_projection(void) {
                bcExecution.returnValue.as.signedInteger == 5);
     }
     assert(ZrParser_ExecIr_LowerAot(&function, &aot, &diagnostic));
-    assert(aot.signatureHash == 99u && aot.functionToken == 7u && !aot.runnable);
+    assert(aot.signatureHash == 99u && aot.functionToken == 7u && !aot.runnable &&
+           aot.bindingRowsSchemaVersion ==
+                   ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY);
     ZrParser_ExecBcProjection_Free(&bc);
     ZrParser_ExecBcExecutionResult_Free(&bcExecution);
     ZrParser_AotIrProjection_Free(&aot);
@@ -2141,6 +2143,8 @@ void test_oracle_execbc_throw_differential(void);
 void test_oracle_execbc_suspend_differential(void);
 void test_oracle_execbc_invoke_differential(void);
 
+#include "test_ssa_oracle_projection_binding_rows.inc"
+
 int main(void) {
     test_load_requires_and_uses_memory_provider();
     test_oracle_execbc_memory_differential();
@@ -2170,5 +2174,7 @@ int main(void) {
     test_phi_copy_and_critical_edge_split();
     test_unsupported_and_transactional_failures();
     test_malformed_input();
+    test_typed_empty_binding_schema_is_rejected_by_projection();
+    test_projection_rejects_orphan_legacy_rows_but_keeps_compact_hints();
     return 0;
 }

@@ -367,7 +367,14 @@ TZrBool zr_oracle_exec(const SZrExecIrOracleInput *input,
     if (nextOrdinal != ZR_NULL) *nextOrdinal = 0u;
     /* Reject a known-but-unmodeled operation before allocating an operand
      * scratch area or touching any value slot. */
-    if (!zr_oracle_supported(op, input)) {
+    if (!zr_oracle_supported(op, input) ||
+        ((op == ZR_EXEC_IR_OPCODE_CALL || op == ZR_EXEC_IR_OPCODE_INVOKE) &&
+         f->bindingRowsSchemaVersion ==
+                 ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED &&
+         ins->bindingRow != ZR_EXEC_IR_BINDING_ROW_REF_NONE)) {
+        /* The generic oracle callback has no typed-contract parameter.  Do
+         * not silently interpret a Core-owned row reference as the legacy
+         * callback convention until a row-aware target resolver is wired. */
         r->unsupportedInstructionId = id;
         zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED, f, block, id,
                        ins->sourceId, 0u, op);

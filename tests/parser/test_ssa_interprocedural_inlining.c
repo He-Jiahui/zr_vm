@@ -708,6 +708,106 @@ static void test_deep_import_hash_invalidates_in_reverse_declaration_order(void)
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_typed_call_is_unresolved_without_legacy_identity(void) {
+    const TZrUInt64 moduleHash = UINT64_C(0xfeed2201);
+    SZrExecIrModule module;
+    SZrExecIrCallGraph graph;
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrFunction *caller;
+    SZrExecIrFunction *callee;
+    SZrExecIrBindingRow row;
+    TZrExecIrFunctionId callerId, calleeId;
+    TZrExecIrValueId callerResult;
+    TZrUInt64 graphHash;
+
+    ZrCore_ExecIr_ModuleInit(&module);
+    module.moduleHash = moduleHash;
+    caller = add_function(&module, 1201u, UINT64_C(0x1201), &callerId);
+    callee = add_function(&module, 1202u, UINT64_C(0x1202), &calleeId);
+    caller->contract.moduleHash = moduleHash;
+    callerResult = add_value(caller, ZR_EXEC_IR_OWNERSHIP_UNKNOWN);
+    /* The result/callable type token names the real callee, while row ref 1
+     * numerically aliases caller FunctionId 1.  Typed mode must ignore both
+     * legacy interpretations until the row-aware resolver exists. */
+    append_call(caller, callerResult, 0u, 0u, 2201u);
+    caller->instructions[0].typeToken = callee->functionToken;
+
+    memset(&row, 0, sizeof(row));
+    row.rowIndex = 0u;
+    row.instructionId = 1u;
+    row.segmentIndex = ZR_EXEC_IR_BINDING_SEGMENT_INDEX_NONE;
+    row.contract.bindingKind = ZR_CALL_BINDING_TYPED_FUNCTION;
+    row.contract.signatureToken =
+            ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 2201u);
+    row.contract.signatureHash = UINT64_C(0x2201);
+    row.contract.moduleSignatureHash = moduleHash;
+    row.contract.dispatchSlot = ZR_CALL_BINDING_SLOT_NONE;
+    row.contract.operation = ZR_CALL_BINDING_OPERATION_CALL;
+    row.location.kind = ZR_CALL_BINDING_RELOCATION_NONE;
+    row.location.targetIndex = ZR_CALL_BINDING_SLOT_NONE;
+    assert(ZrCore_ExecIr_FunctionSetBindingRows(caller, &row, 1u,
+                                                &diagnostic));
+    publish_function(caller);
+    publish_function(callee);
+
+    ZrParser_ExecIr_CallGraphInit(&graph);
+    assert(ZrParser_ExecIr_BuildCallGraph(&module, &graph, &diagnostic));
+    assert(graph.edgeCount == 1u);
+    assert(graph.edges[0].callerId == callerId);
+    assert(graph.edges[0].calleeId == ZR_EXEC_IR_FUNCTION_ID_INVALID);
+    assert(graph.edges[0].resolved == ZR_FALSE);
+    assert(graph.edges[0].targetToken == 0u);
+    assert(graph.edges[0].kind == ZR_EXEC_IR_CALL_EDGE_UNKNOWN);
+    assert(graph.edges[0].nativeEffectsUnknown == ZR_TRUE);
+
+    graphHash = graph.graphHash;
+    assert(graphHash != 0u);
+
+    /* Public consumers that still use packed/legacy binding identity must
+     * fail closed without changing the row reference. */
+    assert(!ZrParser_ExecIr_DevirtualizeCalls(&module, &graph, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
+    assert(caller->instructions[0].bindingRow == 1u);
+    assert(!ZrParser_ExecIr_InlineCalls(&module, &graph, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
+    assert(caller->instructions[0].bindingRow == 1u);
+
+    /* Keep the instruction row reference fixed while changing only its
+     * contract payload.  The call-graph semantic fingerprint must see it. */
+    caller->bindingRows[0].contract.signatureHash += 1u;
+    assert(ZrCore_ExecIr_FunctionValidateBindingRows(caller, &diagnostic));
+    assert(ZrParser_ExecIr_BuildCallGraph(&module, &graph, &diagnostic));
+    assert(graph.graphHash != graphHash);
+    assert(graph.edges[0].resolved == ZR_FALSE);
+    assert(graph.edges[0].calleeId == ZR_EXEC_IR_FUNCTION_ID_INVALID);
+    ZrParser_ExecIr_CallGraphFree(&graph);
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
+static void test_typed_empty_schema_blocks_legacy_interprocedural_passes(void) {
+    SZrExecIrModule module;
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrFunction *function;
+    TZrExecIrFunctionId functionId;
+
+    ZrCore_ExecIr_ModuleInit(&module);
+    function = add_function(&module, 1211u, UINT64_C(0x1211), &functionId);
+    assert(functionId == 1u);
+    assert(ZrCore_ExecIr_FunctionSetBindingRows(function, ZR_NULL, 0u,
+                                                &diagnostic));
+    assert(function->bindingRowsSchemaVersion ==
+           ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED);
+    assert(function->bindingRowCount == 0u);
+
+    /* These are direct APIs.  Typed-empty still identifies the function as
+     * using a schema neither pass currently remaps or owns. */
+    assert(!ZrParser_ExecIr_DevirtualizeCalls(&module, ZR_NULL, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
+    assert(!ZrParser_ExecIr_InlineCalls(&module, ZR_NULL, &diagnostic));
+    assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 int main(void) {
     test_recursive_summary_and_unknown_native();
     test_virtual_static_binding_and_guarded_resolution();
@@ -721,5 +821,7 @@ int main(void) {
     test_polymorphic_slot_without_exact_receiver_is_not_inlined();
     test_binding_row_without_table_is_not_erased();
     test_deep_import_hash_invalidates_in_reverse_declaration_order();
+    test_typed_call_is_unresolved_without_legacy_identity();
+    test_typed_empty_schema_blocks_legacy_interprocedural_passes();
     return 0;
 }

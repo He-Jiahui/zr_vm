@@ -550,6 +550,20 @@ static EZrArtifactExecIrStatus scalar_select_wire_format(
     EZrArtifactExecIrStatus status;
     if (module == ZR_NULL || outFormat == ZR_NULL || outSize == ZR_NULL)
         return scalar_fail(diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_ARGUMENT, 0u);
+    if (module->functionCount > module->functionCapacity ||
+        (module->functionCount != 0u && module->functions == ZR_NULL)) {
+        return scalar_fail(diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION, 0u);
+    }
+    for (TZrUInt32 functionIndex = 0u;
+         functionIndex < module->functionCount; ++functionIndex) {
+        const SZrExecIrFunction *function = &module->functions[functionIndex];
+        if (function->bindingRowsSchemaVersion !=
+                    ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY ||
+            !ZrCore_ExecIr_FunctionValidateBindingRows(function, ZR_NULL)) {
+            return scalar_fail(diagnostic,
+                               ZR_ARTIFACT_EXEC_IR_INVALID_SECTION, 0u);
+        }
+    }
     if (scalar_shape_is(module)) {
         *outFormat = SCALAR_WIRE_EIS1;
         *outSize = ZR_ARTIFACT_EXEC_IR_SCALAR_ENCODED_SIZE;

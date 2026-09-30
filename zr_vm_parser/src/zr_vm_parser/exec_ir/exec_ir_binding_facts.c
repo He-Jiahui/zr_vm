@@ -1,6 +1,7 @@
 #include "zr_vm_parser/exec_ir_binding_facts.h"
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* FNV-1a is used here only as a deterministic identity for in-memory facts;
@@ -711,14 +712,20 @@ static EZrExecIrBindingFactsStatus validate_rows(
                             function->instructions[instructionId - 1u].opcode,
                             diagnostic);
             }
+            TZrUInt32 expectedRowReference =
+                    function->bindingRowsSchemaVersion ==
+                                    ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED
+                            ? index + 1u
+                            : index;
             if (function->instructions[instructionId - 1u].bindingRow != 0u &&
                 function->instructions[instructionId - 1u].bindingRow !=
                     ZR_EXEC_IR_BINDING_ROW_NONE &&
-                function->instructions[instructionId - 1u].bindingRow != index) {
+                function->instructions[instructionId - 1u].bindingRow !=
+                    expectedRowReference) {
                 return fail(ZR_EXEC_IR_BINDING_FACTS_AMBIGUOUS_MEMBER, facts, function,
                             segment, row,
                             function->instructions[instructionId - 1u].bindingRow,
-                            index, diagnostic);
+                            expectedRowReference, diagnostic);
             }
         }
         for (TZrUInt32 prior = 0u; prior < index; ++prior) {
@@ -792,6 +799,7 @@ EZrExecIrBindingFactsStatus ZrParser_ExecIr_BindingFacts_ValidateEx(
         const SZrExecIrFunction *function,
         SZrExecIrDiagnostic *diagnostic) {
     EZrExecIrBindingFactsStatus status;
+    SZrExecIrDiagnostic bindingRowsDiagnostic;
     TZrUInt32 index;
     diagnostic_init(diagnostic);
     if (facts == ZR_NULL) {
@@ -809,6 +817,20 @@ EZrExecIrBindingFactsStatus ZrParser_ExecIr_BindingFacts_ValidateEx(
     }
     status = validate_function_shape(function, facts, diagnostic);
     if (status != ZR_EXEC_IR_BINDING_FACTS_OK) return status;
+    if (function != ZR_NULL &&
+        !ZrCore_ExecIr_FunctionValidateBindingRows(function,
+                                                   &bindingRowsDiagnostic)) {
+        status = fail(ZR_EXEC_IR_BINDING_FACTS_INVALID_ARGUMENT, facts, function,
+                      ZR_NULL, ZR_NULL,
+                      bindingRowsDiagnostic.expectedVersion,
+                      bindingRowsDiagnostic.actualVersion, diagnostic);
+        if (diagnostic != ZR_NULL) {
+            diagnostic->instructionId = bindingRowsDiagnostic.instructionId;
+            diagnostic->blockId = bindingRowsDiagnostic.blockId;
+            diagnostic->sourceId = bindingRowsDiagnostic.sourceId;
+        }
+        return status;
+    }
     if (facts->expectedHash != 0u &&
         facts->expectedHash != ZrParser_ExecIr_BindingFacts_Hash(facts)) {
         const SZrExecIrBindingSegment *finalSegment = ZR_NULL;
@@ -854,6 +876,8 @@ TZrBool ZrParser_ExecIr_ProjectBindingFacts(
         SZrExecIrDiagnostic *diagnostic) {
     EZrExecIrBindingFactsStatus status;
     TZrUInt32 index;
+    SZrExecIrBindingRow *projectedRows = ZR_NULL;
+    TZrUInt64 priorModuleHash;
     diagnostic_init(diagnostic);
     if (function == ZR_NULL || facts == ZR_NULL) {
         (void)fail(ZR_EXEC_IR_BINDING_FACTS_INVALID_ARGUMENT, facts, function,
@@ -867,24 +891,56 @@ TZrBool ZrParser_ExecIr_ProjectBindingFacts(
     }
     status = ZrParser_ExecIr_BindingFacts_ValidateEx(facts, function, diagnostic);
     if (status != ZR_EXEC_IR_BINDING_FACTS_OK) return ZR_FALSE;
-
-    /* Validation above is complete before this loop, so projection is
-     * transactional with respect to malformed facts: either all rows are
-     * copied or none are touched. */
-    for (index = 0u; index < facts->rowCount; ++index) {
-        TZrExecIrInstructionId instructionId = row_instruction_id(facts, index);
-        if (instructionId == ZR_EXEC_IR_INSTRUCTION_ID_INVALID ||
-            instructionId > function->instructionCount) {
-            /* This should be unreachable after ValidateEx; retain a guarded
-             * check in case a producer mutates borrowed arrays concurrently. */
-            fail(ZR_EXEC_IR_BINDING_FACTS_INVALID_ARGUMENT, facts, function,
-                 segment_for_row(facts, index), &facts->rows[index],
-                 function->instructionCount, instructionId, diagnostic);
+    if (facts->rowCount != 0u) {
+        size_t bytes;
+        if ((size_t)facts->rowCount > SIZE_MAX / sizeof(*projectedRows)) {
+            diagnostic_set(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                           facts, function, ZR_NULL, ZR_NULL,
+                           SIZE_MAX, facts->rowCount);
             return ZR_FALSE;
         }
-        function->instructions[instructionId - 1u].bindingRow = index;
+        bytes = (size_t)facts->rowCount * sizeof(*projectedRows);
+        projectedRows = (SZrExecIrBindingRow *)malloc(bytes);
+        if (projectedRows == ZR_NULL) {
+            diagnostic_set(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                           facts, function, ZR_NULL, ZR_NULL,
+                           (TZrUInt32)bytes, 0u);
+            return ZR_FALSE;
+        }
     }
-    return ZR_TRUE;
+    /* Normalize borrowed facts into one complete candidate table before
+     * asking Core to replace its owned table and publish the 1-based refs. */
+    for (index = 0u; index < facts->rowCount; ++index) {
+        const SZrExecIrBindingRow *row = row_at_index(facts, index);
+        const SZrExecIrBindingSegment *segment;
+        TZrExecIrInstructionId instructionId = row_instruction_id(facts, index);
+        if (row == ZR_NULL ||
+            instructionId == ZR_EXEC_IR_INSTRUCTION_ID_INVALID ||
+            instructionId > function->instructionCount) {
+            fail(ZR_EXEC_IR_BINDING_FACTS_INVALID_ARGUMENT, facts, function,
+                 segment_for_row(facts, index), row,
+                 function->instructionCount, instructionId, diagnostic);
+            free(projectedRows);
+            return ZR_FALSE;
+        }
+        projectedRows[index] = *row;
+        projectedRows[index].rowIndex = index;
+        projectedRows[index].instructionId = instructionId;
+        segment = segment_for_row(facts, index);
+        if (segment != ZR_NULL) projectedRows[index].segmentIndex = segment->index;
+    }
+    priorModuleHash = function->contract.moduleHash;
+    if (function->contract.moduleHash == 0u && facts->moduleHash != 0u)
+        function->contract.moduleHash = facts->moduleHash;
+    status = ZrCore_ExecIr_FunctionSetBindingRows(function, projectedRows,
+                                                  facts->rowCount,
+                                                  diagnostic)
+                     ? ZR_EXEC_IR_BINDING_FACTS_OK
+                     : ZR_EXEC_IR_BINDING_FACTS_INVALID_ARGUMENT;
+    if (status != ZR_EXEC_IR_BINDING_FACTS_OK)
+        function->contract.moduleHash = priorModuleHash;
+    free(projectedRows);
+    return status == ZR_EXEC_IR_BINDING_FACTS_OK;
 }
 
 TZrBool ZrParser_ExecIr_BindingFacts_Project(

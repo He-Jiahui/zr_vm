@@ -50,6 +50,21 @@ static void init_function(SZrExecIrFunction *function) {
     function->signatureHash = 99u;
 }
 
+static void fail_with_exec_ir_diagnostic(const char *site,
+                                         const SZrExecIrDiagnostic *diagnostic) {
+    fprintf(stderr,
+            "DIAGNOSTIC %s code=%u function=%u block=%u instruction=%u source=%u expectedVersion=%u actualVersion=%u expectedHash=%llu actualHash=%llu\n",
+            site, (unsigned)diagnostic->code,
+            (unsigned)diagnostic->functionToken, (unsigned)diagnostic->blockId,
+            (unsigned)diagnostic->instructionId, (unsigned)diagnostic->sourceId,
+            (unsigned)diagnostic->expectedVersion,
+            (unsigned)diagnostic->actualVersion,
+            (unsigned long long)diagnostic->expectedHash,
+            (unsigned long long)diagnostic->actualHash);
+    fflush(stderr);
+    exit(EXIT_FAILURE);
+}
+
 static void build_constant_copy_function(SZrExecIrFunction *function) {
     TZrExecIrValueId first, second, sum, copy;
     SZrExecIrRange firstResult, secondResult, sumResult, copyResult;
@@ -224,6 +239,126 @@ static void test_unused_call_is_preserved(void) {
     build_unused_call_function(&function);
     assert(ZrParser_ExecIr_OptimizeScalar(&function, ZR_NULL, &remarks, &diagnostic));
     assert(function.instructions[0].opcode == ZR_EXEC_IR_OPCODE_CALL);
+    ZrParser_ExecIr_RemarkSinkFree(&remarks);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
+static void test_typed_call_row_survives_scalar_optimization(void) {
+    const TZrUInt64 moduleHash = UINT64_C(0x12344321);
+    const TZrExecIrMemoryTokenId memoryReadTokens[2] = {
+        ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 1u),
+        ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_NATIVE_FFI, 1u)
+    };
+    const TZrExecIrMemoryTokenId memoryWriteTokens[2] = {
+        ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 2u),
+        ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_NATIVE_FFI, 2u)
+    };
+    SZrExecIrFunction function;
+    SZrExecIrRemarkSink remarks;
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrInstruction instruction;
+    SZrExecIrBindingRow row;
+    TZrUInt64 originalHash;
+    TZrUInt64 changedHash;
+    TZrExecIrValueId result;
+    SZrExecIrRange resultRange, returnOperands, memoryIn, memoryOut;
+
+    init_function(&function);
+    function.contract.moduleHash = moduleHash;
+    assert(ZrCore_ExecIr_FunctionAddBlock(
+                   &function, ZR_EXEC_IR_BLOCK_FLAG_ENTRY) ==
+           ZR_EXEC_IR_BLOCK_ID_ENTRY);
+    function.entryBlockId = ZR_EXEC_IR_BLOCK_ID_ENTRY;
+    result = add_value(&function);
+    assert(result != ZR_EXEC_IR_VALUE_ID_INVALID);
+    assert(ZrCore_ExecIr_FunctionAppendResults(&function, &result, 1u,
+                                                &resultRange));
+    assert(ZrCore_ExecIr_FunctionAppendMemoryTokens(
+                   &function, memoryReadTokens, 2u, &memoryIn));
+    assert(ZrCore_ExecIr_FunctionAppendMemoryTokens(
+                   &function, memoryWriteTokens, 2u, &memoryOut));
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = (TZrUInt16)ZR_EXEC_IR_OPCODE_CALL;
+    instruction.results = resultRange;
+    instruction.flags = (TZrUInt16)(ZR_EXEC_IR_FLAG_MAY_THROW |
+                                    ZR_EXEC_IR_FLAG_MAY_ALLOCATE);
+    instruction.memoryIn = memoryIn;
+    instruction.memoryOut = memoryOut;
+    instruction.effectIn = 1u;
+    instruction.effectOut = 2u;
+    instruction.sourceId = 405u;
+    assert(ZrCore_ExecIr_FunctionAppendInstruction(&function, &instruction,
+                                                    ZR_NULL));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(&function, &result, 1u,
+                                                &returnOperands));
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_RETURN, returnOperands,
+                       range(0u, 0u), 0u, 0u, 0u, 0u, 406u);
+    function.blocks[0].instructionRange = range(0u, 2u);
+    function.blocks[0].terminatorInstructionId = 2u;
+
+    memset(&row, 0, sizeof(row));
+    row.rowIndex = 0u;
+    row.instructionId = 1u;
+    row.segmentIndex = ZR_EXEC_IR_BINDING_SEGMENT_INDEX_NONE;
+    row.contract.bindingKind = ZR_CALL_BINDING_DIRECT;
+    row.contract.targetMetadataToken =
+            ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, 405u);
+    row.contract.signatureToken =
+            ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 405u);
+    row.contract.signatureHash = UINT64_C(0x405);
+    row.contract.moduleSignatureHash = moduleHash;
+    row.contract.dispatchSlot = ZR_CALL_BINDING_SLOT_NONE;
+    row.contract.operation = ZR_CALL_BINDING_OPERATION_CALL;
+    row.location.kind = ZR_CALL_BINDING_RELOCATION_NONE;
+    row.location.targetIndex = ZR_CALL_BINDING_SLOT_NONE;
+    row.sourceId = 405u;
+    assert(ZrCore_ExecIr_FunctionSetBindingRows(&function, &row, 1u,
+                                                 &diagnostic));
+    assert(ZrCore_ExecIr_FunctionValidateBindingRows(&function, &diagnostic));
+    assert(function.bindingRows != ZR_NULL &&
+           function.bindingRowCount == 1u);
+    originalHash = ZrParser_ExecIr_FunctionHash(&function);
+    assert(originalHash != 0u);
+    function.bindingRows[0].contract.signatureHash =
+            row.contract.signatureHash + 1u;
+    assert(ZrCore_ExecIr_FunctionValidateBindingRows(&function, &diagnostic));
+    changedHash = ZrParser_ExecIr_FunctionHash(&function);
+    assert(changedHash != 0u && changedHash != originalHash);
+    function.bindingRows[0].contract.signatureHash = row.contract.signatureHash;
+    assert(ZrCore_ExecIr_FunctionValidateBindingRows(&function, &diagnostic));
+    assert(ZrParser_ExecIr_FunctionHash(&function) == originalHash);
+    function.bindingRowsSchemaVersion = ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY;
+    assert(ZrParser_ExecIr_FunctionHash(&function) == 0u);
+    function.bindingRowsSchemaVersion = ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED;
+    assert(ZrCore_ExecIr_FunctionValidateBindingRows(&function, &diagnostic));
+    assert(ZrParser_ExecIr_FunctionHash(&function) == originalHash);
+    assert(function.instructions[0].flags ==
+                   (ZR_EXEC_IR_FLAG_MAY_THROW | ZR_EXEC_IR_FLAG_MAY_ALLOCATE) &&
+           function.instructions[0].effectIn == 1u &&
+           function.instructions[0].effectOut == 2u &&
+           function.instructions[0].memoryIn.count == 2u &&
+           function.instructions[0].memoryOut.count == 2u);
+    if (!ZrCore_ExecIr_VerifyFunction(&function, ZR_EXEC_IR_VERIFY_ALL,
+                                      &diagnostic)) {
+        fail_with_exec_ir_diagnostic("typed binding-row fixture before scalar optimization",
+                                     &diagnostic);
+    }
+
+    ZrParser_ExecIr_RemarkSinkInit(&remarks);
+    if (!ZrParser_ExecIr_OptimizeScalar(&function, ZR_NULL, &remarks,
+                                        &diagnostic)) {
+        fail_with_exec_ir_diagnostic("OptimizeScalar typed binding-row fixture",
+                                     &diagnostic);
+    }
+    assert(function.instructions[0].opcode == ZR_EXEC_IR_OPCODE_CALL);
+    assert(function.instructions[0].bindingRow == 1u);
+    assert(ZrCore_ExecIr_FunctionBindingRowAt(&function, 1u) != ZR_NULL);
+    assert(ZrCore_ExecIr_FunctionValidateBindingRows(&function, &diagnostic));
+    if (!ZrCore_ExecIr_VerifyFunction(&function, ZR_EXEC_IR_VERIFY_ALL,
+                                      &diagnostic)) {
+        fail_with_exec_ir_diagnostic("typed binding-row fixture after scalar optimization",
+                                     &diagnostic);
+    }
     ZrParser_ExecIr_RemarkSinkFree(&remarks);
     ZrCore_ExecIr_FreeFunction(&function);
 }
@@ -466,6 +601,7 @@ int main(void) {
     test_throwing_instruction_is_observable();
     test_checked_overflow_is_not_folded();
     test_unused_call_is_preserved();
+    test_typed_call_row_survives_scalar_optimization();
     test_dead_source_mapping_is_removed();
     test_type_test_identity_survives_hash_and_dead_code_cleanup();
     test_token_phi_metadata_participates_in_hash();

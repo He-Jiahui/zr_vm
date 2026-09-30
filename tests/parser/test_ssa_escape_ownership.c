@@ -1,7 +1,25 @@
 #include "zr_vm_parser/exec_ir_escape.h"
+#include "zr_vm_core/call_binding.h"
 
 #include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+static void fail_with_exec_ir_diagnostic(const char *site,
+                                         const SZrExecIrDiagnostic *diagnostic) {
+    fprintf(stderr,
+            "DIAGNOSTIC %s code=%u function=%u block=%u instruction=%u source=%u expectedVersion=%u actualVersion=%u expectedHash=%llu actualHash=%llu\n",
+            site, (unsigned)diagnostic->code,
+            (unsigned)diagnostic->functionToken, (unsigned)diagnostic->blockId,
+            (unsigned)diagnostic->instructionId, (unsigned)diagnostic->sourceId,
+            (unsigned)diagnostic->expectedVersion,
+            (unsigned)diagnostic->actualVersion,
+            (unsigned long long)diagnostic->expectedHash,
+            (unsigned long long)diagnostic->actualHash);
+    fflush(stderr);
+    exit(EXIT_FAILURE);
+}
 
 static void init_function(SZrExecIrFunction *function) {
     ZrCore_ExecIr_FunctionInit(function);
@@ -68,6 +86,45 @@ static const SZrExecIrEscapeFact *fact(
             ZrParser_ExecIr_EscapeFactAt(summary, valueId);
     assert(result != ZR_NULL);
     return result;
+}
+
+static void test_typed_binding_payload_invalidates_escape_hash(void) {
+    SZrExecIrFunction function;
+    SZrExecIrBindingRow row;
+    SZrExecIrDiagnostic diagnostic;
+    TZrUInt64 beforeHash;
+
+    init_function(&function);
+    function.contract.moduleHash = UINT64_C(0x55667788);
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_CALL, ZR_NULL, 0u,
+                       ZR_NULL, 0u, 0u, 0u, 0u, 106u);
+    memset(&row, 0, sizeof(row));
+    row.rowIndex = 0u;
+    row.instructionId = 1u;
+    row.segmentIndex = ZR_EXEC_IR_BINDING_SEGMENT_INDEX_NONE;
+    row.contract.bindingKind = ZR_CALL_BINDING_DIRECT;
+    row.contract.targetMetadataToken = ZR_METADATA_TOKEN_MAKE(
+            ZR_METADATA_TABLE_MEMBER_DEF, 1601u);
+    row.contract.signatureToken = ZR_METADATA_TOKEN_MAKE(
+            ZR_METADATA_TABLE_SIGNATURE, 1601u);
+    row.contract.signatureHash = UINT64_C(0x1601);
+    row.contract.moduleSignatureHash = function.contract.moduleHash;
+    row.contract.dispatchSlot = ZR_CALL_BINDING_SLOT_NONE;
+    row.contract.operation = ZR_CALL_BINDING_OPERATION_CALL;
+    row.location.kind = ZR_CALL_BINDING_RELOCATION_NONE;
+    row.location.targetIndex = ZR_CALL_BINDING_SLOT_NONE;
+    row.sourceId = 106u;
+    assert(ZrCore_ExecIr_FunctionSetBindingRows(&function, &row, 1u,
+                                                 &diagnostic));
+    beforeHash = ZrParser_ExecIr_EscapeInputHash(&function);
+    assert(beforeHash != 0u);
+
+    function.bindingRows[0].contract.signatureHash += 1u;
+    assert(ZrCore_ExecIr_FunctionValidateBindingRows(&function, &diagnostic));
+    assert(ZrParser_ExecIr_EscapeInputHash(&function) != beforeHash);
+    function.bindingRowsSchemaVersion = ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY;
+    assert(ZrParser_ExecIr_EscapeInputHash(&function) == 0u);
+    ZrCore_ExecIr_FreeFunction(&function);
 }
 
 static void test_local_alloc_is_stack_candidate(void) {
@@ -534,51 +591,86 @@ static void test_phi_flow_propagates_return_and_records_definition(void) {
     SZrExecIrEscapeSummary summary;
     SZrExecIrDiagnostic diagnostic;
     SZrExecIrBlock *entry;
+    SZrExecIrBlock *leftPath;
+    SZrExecIrBlock *rightPath;
     SZrExecIrBlock *merge;
+    TZrExecIrValueId condition;
     TZrExecIrValueId left;
     TZrExecIrValueId right;
     TZrExecIrValueId merged;
     TZrExecIrValueId returnOperand;
-    TZrExecIrValueId incomingValues[2];
     SZrExecIrPhiIncoming incoming[2];
     SZrExecIrPhi phi;
     SZrExecIrRange phiRange;
-    TZrExecIrBlockId successor = 2u;
-    TZrExecIrBlockId predecessor = 1u;
+    TZrExecIrBlockId entrySuccessors[2] = {2u, 3u};
+    TZrExecIrBlockId mergeSuccessor = 4u;
+    TZrExecIrBlockId entryPredecessor = 1u;
+    TZrExecIrBlockId mergePredecessors[2] = {2u, 3u};
 
     init_function(&function);
+    condition = add_external_value(&function, ZR_VALUE_TYPE_BOOL);
     left = add_value(&function, 43u);
     right = add_external_value(&function, 43u);
     merged = add_value(&function, 43u);
     assert(ZrCore_ExecIr_FunctionAddBlock(
                    &function, ZR_EXEC_IR_BLOCK_FLAG_ENTRY) == 1u);
     assert(ZrCore_ExecIr_FunctionAddBlock(&function, 0u) == 2u);
+    assert(ZrCore_ExecIr_FunctionAddBlock(&function, 0u) == 3u);
+    assert(ZrCore_ExecIr_FunctionAddBlock(&function, 0u) == 4u);
+    function.entryBlockId = 1u;
     entry = ZrCore_ExecIr_FunctionBlockAt(&function, 1u);
-    merge = ZrCore_ExecIr_FunctionBlockAt(&function, 2u);
-    assert(entry != ZR_NULL && merge != ZR_NULL);
+    leftPath = ZrCore_ExecIr_FunctionBlockAt(&function, 2u);
+    rightPath = ZrCore_ExecIr_FunctionBlockAt(&function, 3u);
+    merge = ZrCore_ExecIr_FunctionBlockAt(&function, 4u);
+    assert(entry != ZR_NULL && leftPath != ZR_NULL &&
+           rightPath != ZR_NULL && merge != ZR_NULL);
     assert(ZrCore_ExecIr_FunctionAppendSuccessors(
-                   &function, &successor, 1u, &entry->successorRange));
+                   &function, entrySuccessors, 2u, &entry->successorRange));
     assert(ZrCore_ExecIr_FunctionAppendPredecessors(
-                   &function, &predecessor, 1u, &merge->predecessorRange));
+                   &function, &entryPredecessor, 1u,
+                   &leftPath->predecessorRange));
+    assert(ZrCore_ExecIr_FunctionAppendSuccessors(
+                   &function, &mergeSuccessor, 1u,
+                   &leftPath->successorRange));
+    assert(ZrCore_ExecIr_FunctionAppendPredecessors(
+                   &function, &entryPredecessor, 1u,
+                   &rightPath->predecessorRange));
+    assert(ZrCore_ExecIr_FunctionAppendSuccessors(
+                   &function, &mergeSuccessor, 1u,
+                   &rightPath->successorRange));
+    assert(ZrCore_ExecIr_FunctionAppendPredecessors(
+                   &function, mergePredecessors, 2u,
+                   &merge->predecessorRange));
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH,
+                       &condition, 1u, ZR_NULL, 0u, 0u, 0u, 0u, 192u);
     append_instruction(&function, ZR_EXEC_IR_OPCODE_CONSTANT, ZR_NULL, 0u,
                        &left, 1u, 1u, 0u, 0u, 191u);
     append_instruction(&function, ZR_EXEC_IR_OPCODE_BRANCH, ZR_NULL, 0u,
-                       ZR_NULL, 0u, 0u, 0u, 0u, 192u);
+                       ZR_NULL, 0u, 0u, 0u, 0u, 194u);
+    append_instruction(&function, ZR_EXEC_IR_OPCODE_BRANCH, ZR_NULL, 0u,
+                       ZR_NULL, 0u, 0u, 0u, 0u, 195u);
     returnOperand = merged;
     append_instruction(&function, ZR_EXEC_IR_OPCODE_RETURN, &returnOperand, 1u,
                        ZR_NULL, 0u, 0u, 0u, 0u, 193u);
     entry->instructionRange.start = 0u;
-    entry->instructionRange.count = 2u;
-    entry->terminatorInstructionId = 2u;
-    merge->instructionRange.start = 2u;
+    entry->instructionRange.count = 1u;
+    entry->terminatorInstructionId = 1u;
+    leftPath->instructionRange.start = 1u;
+    leftPath->instructionRange.count = 2u;
+    leftPath->terminatorInstructionId = 3u;
+    rightPath->instructionRange.start = 3u;
+    rightPath->instructionRange.count = 1u;
+    rightPath->terminatorInstructionId = 4u;
+    merge->instructionRange.start = 4u;
     merge->instructionRange.count = 1u;
-    merge->terminatorInstructionId = 3u;
-    incomingValues[0] = left;
-    incomingValues[1] = right;
-    incoming[0].predecessor = 1u;
-    incoming[0].value = incomingValues[0];
-    incoming[1].predecessor = 1u;
-    incoming[1].value = incomingValues[1];
+    merge->terminatorInstructionId = 5u;
+    function.instructions[0].successorRange = entry->successorRange;
+    function.instructions[2].successorRange = leftPath->successorRange;
+    function.instructions[3].successorRange = rightPath->successorRange;
+    incoming[0].predecessor = 2u;
+    incoming[0].value = left;
+    incoming[1].predecessor = 3u;
+    incoming[1].value = right;
     assert(ZrCore_ExecIr_FunctionAppendPhiIncoming(
                    &function, incoming, 2u, ZR_NULL));
     memset(&phi, 0, sizeof(phi));
@@ -588,9 +680,17 @@ static void test_phi_flow_propagates_return_and_records_definition(void) {
     assert(ZrCore_ExecIr_FunctionAppendPhis(&function, &phi, 1u,
                                             &phiRange));
     merge->phis = phiRange;
+    if (!ZrCore_ExecIr_VerifyFunction(&function, ZR_EXEC_IR_VERIFY_ALL,
+                                      &diagnostic)) {
+        fail_with_exec_ir_diagnostic("escape phi-flow fixture before analysis",
+                                     &diagnostic);
+    }
     ZrParser_ExecIr_EscapeSummaryInit(&summary);
-    assert(ZrParser_ExecIr_AnalyzeEscape(&function, &summary, &diagnostic));
-    assert(fact(&summary, merged)->definitionInstructionId == 3u);
+    if (!ZrParser_ExecIr_AnalyzeEscape(&function, &summary, &diagnostic)) {
+        fail_with_exec_ir_diagnostic("AnalyzeEscape phi-flow fixture",
+                                     &diagnostic);
+    }
+    assert(fact(&summary, merged)->definitionInstructionId == 5u);
     assert(fact(&summary, merged)->state == ZR_EXEC_IR_ESCAPE_CALLER);
     assert(fact(&summary, left)->state == ZR_EXEC_IR_ESCAPE_CALLER);
     assert(fact(&summary, right)->state == ZR_EXEC_IR_ESCAPE_CALLER);
@@ -885,6 +985,7 @@ static void test_allocation_and_ownership_plans_are_hash_bound(void) {
 #include "ssa_escape_aggregate_cases.h"
 
 int main(void) {
+    test_typed_binding_payload_invalidates_escape_hash();
     test_aggregate_recovery_lifetime_across_suspend();
     test_local_alloc_is_stack_candidate();
     test_alloc_without_concrete_layout_stays_on_heap();

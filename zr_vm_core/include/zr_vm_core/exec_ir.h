@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "zr_vm_core/call_binding.h"
 #include "zr_vm_core/execution_contract.h"
 
 #define ZR_EXEC_IR_MAX_OPERANDS ((TZrUInt32)UINT32_MAX)
@@ -19,6 +20,32 @@ typedef TZrUInt32 TZrExecIrEffectTokenId;
 typedef TZrUInt32 TZrExecIrTypeToken;
 typedef TZrUInt32 TZrExecIrSourceId;
 typedef TZrUInt32 TZrExecIrDeoptId;
+
+/* bindingRow is a row reference in typed mode: zero means no row and 1..N
+ * maps to function.bindingRows[0..N-1].  Schema zero retains the original
+ * compact/legacy interpretation and owns no row table. */
+#define ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY ((TZrUInt32)0u)
+#define ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED ((TZrUInt32)1u)
+#define ZR_EXEC_IR_BINDING_ROW_REF_NONE ((TZrUInt32)0u)
+#define ZR_EXEC_IR_BINDING_SEGMENT_INDEX_NONE ((TZrUInt32)UINT32_MAX)
+
+typedef struct SZrExecIrBindingRow {
+    union {
+        TZrUInt32 rowIndex;
+        TZrUInt32 bindingRow;
+    };
+    union {
+        TZrExecIrInstructionId instructionId;
+        TZrExecIrInstructionId instructionIndex;
+    };
+    union {
+        TZrUInt32 segmentIndex;
+        TZrUInt32 chainSegmentIndex;
+    };
+    SZrCallBindingContract contract;
+    SZrCallBindingLocation location;
+    TZrExecIrSourceId sourceId;
+} SZrExecIrBindingRow;
 
 /* Optional logical state-map side table, defined in exec_ir_state_map.h. */
 typedef struct SZrExecIrStateMap SZrExecIrStateMap;
@@ -471,6 +498,10 @@ typedef struct SZrExecIrFunction {
          * a collection of resume maps. */
         SZrExecIrStateMap *stateMaps;
     };
+    TZrUInt32 bindingRowsSchemaVersion;
+    SZrExecIrBindingRow *bindingRows;
+    TZrUInt32 bindingRowCount;
+    TZrUInt32 bindingRowCapacity;
     TZrBool sealed;
 } SZrExecIrFunction;
 
@@ -516,6 +547,17 @@ ZR_CORE_API TZrBool ZrCore_ExecIr_CloneModule(const SZrExecIrModule *source,
 ZR_CORE_API TZrBool ZrCore_ExecIr_CloneFunction(const SZrExecIrFunction *source,
                                                 SZrExecIrFunction *destination,
                                                 SZrExecIrDiagnostic *diagnostic);
+ZR_CORE_API TZrBool ZrCore_ExecIr_FunctionSetBindingRows(
+        SZrExecIrFunction *function, const SZrExecIrBindingRow *rows,
+        TZrUInt32 rowCount, SZrExecIrDiagnostic *diagnostic);
+ZR_CORE_API TZrBool ZrCore_ExecIr_FunctionValidateBindingRows(
+        const SZrExecIrFunction *function, SZrExecIrDiagnostic *diagnostic);
+ZR_CORE_API const SZrExecIrBindingRow *ZrCore_ExecIr_FunctionBindingRowAt(
+        const SZrExecIrFunction *function, TZrUInt32 rowReference);
+/* Returns zero in legacy mode or for malformed storage.  Typed mode hashes
+ * the schema marker and every field of each owned row deterministically. */
+ZR_CORE_API TZrUInt64 ZrCore_ExecIr_FunctionBindingRowsHash(
+        const SZrExecIrFunction *function);
 
 ZR_CORE_API TZrBool ZrCore_ExecIr_ModuleAddFunction(SZrExecIrModule *module,
                                                      TZrMetadataToken functionToken,

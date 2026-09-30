@@ -75,6 +75,9 @@ TZrBool zr_oracle_validate(const SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
         zr_oracle_diag(d, ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT, f, 0u, 0u, 0u, 0u, 0u);
         return ZR_FALSE;
     }
+    if (!ZrCore_ExecIr_FunctionValidateBindingRows(f, d)) {
+        return ZR_FALSE;
+    }
     for (i = 0u; i < f->valueCount; ++i) {
         if (f->values[i].id != i + 1u) {
             zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, f, 0u, 0u, 0u, i + 1u, f->values[i].id);

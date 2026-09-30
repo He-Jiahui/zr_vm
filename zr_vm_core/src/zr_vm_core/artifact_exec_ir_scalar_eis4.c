@@ -318,6 +318,10 @@ static TZrBool eis4_shape_is(const SZrExecIrModule *module) {
     }
     function = &module->functions[0];
     if (function->id != 1u || function->functionToken == 0u ||
+        function->bindingRowsSchemaVersion !=
+                ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY ||
+        function->bindingRows != ZR_NULL || function->bindingRowCount != 0u ||
+        function->bindingRowCapacity != 0u ||
         function->signatureHash == 0u || function->entryBlockId != 1u ||
         function->valueCount != 3u || function->values == ZR_NULL ||
         function->instructionCount != 4u || function->instructions == ZR_NULL ||

@@ -954,6 +954,8 @@ static void test_empty_function_projection_is_valid(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+#include "test_ssa_generated_fusion_binding_rows.inc"
+
 int main(void) {
     test_compare_branch_int_preserves_modes_and_plan_hash();
     test_compare_branch_int_rejects_noncanonical_inputs();
@@ -981,5 +983,6 @@ int main(void) {
     test_generation_is_deterministic_and_select_wrapper_uses_output();
     test_contract_mismatch_is_rejected_without_overwriting_output();
     test_empty_function_projection_is_valid();
+    test_typed_binding_rows_invalidate_hash_and_fail_closed();
     return 0;
 }

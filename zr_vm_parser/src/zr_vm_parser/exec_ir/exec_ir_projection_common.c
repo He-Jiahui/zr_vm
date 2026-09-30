@@ -97,6 +97,7 @@ static TZrBool zr_projection_block_contains_predecessor(const SZrExecIrFunction 
 static TZrBool zr_projection_validate(const SZrExecIrFunction *f,
                                       SZrExecIrDiagnostic *d) {
     TZrUInt32 i;
+    if (!ZrCore_ExecIr_FunctionValidateBindingRows(f, d)) return ZR_FALSE;
     if (f == ZR_NULL || f->instructionCount > f->instructionCapacity ||
         f->valueCount > f->valueCapacity || f->blockCount > f->blockCapacity ||
         f->operandCount > f->operandCapacity || f->resultCount > f->resultCapacity ||
@@ -614,6 +615,13 @@ TZrBool ZrParser_ExecIr_BuildProjectionWithConstantsAndLayouts(
     SZrProjectionSplitEdge *splits = ZR_NULL;
     size_t bytes;
     if (d != ZR_NULL) memset(d, 0, sizeof(*d));
+    if (f != ZR_NULL && f->bindingRowsSchemaVersion !=
+                             ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY) {
+        zr_projection_diag(d, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED, f, 0u,
+                           0u, ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY,
+                           f->bindingRowsSchemaVersion);
+        return ZR_FALSE;
+    }
     if (p == ZR_NULL || (constantCount != 0u && constants == ZR_NULL) ||
         (layoutCount != 0u && layouts == ZR_NULL) ||
         !zr_projection_validate(f, d)) return ZR_FALSE;
@@ -1047,6 +1055,8 @@ void ZrParser_ExecIr_MoveProjectionToAot(SZrExecBcProjection *source,
     destination->instructionCount = source->instructionCount;
     destination->functionId = source->functionId;
     destination->functionToken = source->functionToken;
+    destination->bindingRowsSchemaVersion =
+            ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY;
     destination->signatureHash = source->signatureHash;
     destination->entryBlockId = source->entryBlockId;
     destination->frameLayoutHash = source->frameLayoutHash;

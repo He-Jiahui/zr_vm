@@ -320,7 +320,8 @@ static TZrBool zr_container_function_storage_valid(
         (function->sourceMapCount != 0u && function->sourceMaps == ZR_NULL)) {
         return ZR_FALSE;
     }
-    if (function->gcMapCount != 0u && function->gcMap == ZR_NULL) {
+    if ((function->gcMapCount != 0u && function->gcMap == ZR_NULL) ||
+        !ZrCore_ExecIr_FunctionValidateBindingRows(function, ZR_NULL)) {
         return ZR_FALSE;
     }
     return ZR_TRUE;
@@ -329,8 +330,14 @@ static TZrBool zr_container_function_storage_valid(
 static TZrUInt64 zr_container_function_hash(const SZrExecIrFunction *function) {
     TZrUInt64 hash = ZR_CONTAINER_SPECIALIZE_FNV_OFFSET;
     TZrUInt64 aggregateHash = ZrCore_ExecIr_DeoptAggregateHash(function);
+    TZrUInt64 bindingRowsHash = 0u;
     TZrUInt32 index;
     if (aggregateHash == 0u || !zr_container_function_storage_valid(function)) return 0u;
+    if (function->bindingRowsSchemaVersion !=
+        ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY) {
+        bindingRowsHash = ZrCore_ExecIr_FunctionBindingRowsHash(function);
+        if (bindingRowsHash == 0u) return 0u;
+    }
     zr_container_hash_u64(&hash, aggregateHash);
     zr_container_hash_u32(&hash, function->id);
     zr_container_hash_u32(&hash, function->functionToken);
@@ -338,6 +345,10 @@ static TZrUInt64 zr_container_function_hash(const SZrExecIrFunction *function) {
     zr_container_hash_u64(&hash, function->contract.generation);
     zr_container_hash_u64(&hash, function->contract.layoutHash);
     zr_container_hash_u64(&hash, function->contract.moduleHash);
+    if (function->bindingRowsSchemaVersion ==
+        ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED) {
+        zr_container_hash_u64(&hash, bindingRowsHash);
+    }
     zr_container_hash_u32(&hash, function->entryBlockId);
     zr_container_hash_u32(&hash, function->valueCount);
     zr_container_hash_u32(&hash, function->instructionCount);
@@ -542,6 +553,17 @@ static TZrBool zr_container_check_function(
         zr_container_diag_set(diagnostic,
                               ZR_EXEC_IR_CONTAINER_SPECIALIZATION_FUNCTION_INVALID,
                               ZR_EXEC_IR_CONTAINER_KIND_NONE, facts, function, ZR_NULL);
+        return ZR_FALSE;
+    }
+    if (function->bindingRowsSchemaVersion !=
+        ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY) {
+        /* This planner has no binding-row owner in its plan shape.  Reject
+         * the complete typed schema, including typed-empty functions, before
+         * consulting parser facts or calculating a candidate plan. */
+        zr_container_diag_set(diagnostic,
+                              ZR_EXEC_IR_CONTAINER_SPECIALIZATION_UNSUPPORTED,
+                              ZR_EXEC_IR_CONTAINER_KIND_NONE, facts, function,
+                              ZR_NULL);
         return ZR_FALSE;
     }
     if (function->sealed) {

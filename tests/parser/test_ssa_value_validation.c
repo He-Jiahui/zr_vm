@@ -290,6 +290,23 @@ static void test_rejects_unknown_opcode_with_location(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void test_ssa_promotion_validates_rows_before_noop_return(void) {
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+
+    ZrCore_ExecIr_FunctionInit(&function);
+    function.functionToken = (TZrMetadataToken)83u;
+    function.bindingRowsSchemaVersion = ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED;
+    function.bindingRowCount = 1u;
+    function.bindingRowCapacity = 1u;
+    /* No LOAD/STORE makes place promotion a no-op.  Its direct SSA entry must
+     * still reject malformed owned rows before taking that fast path. */
+    check(!ZrParser_ExecIr_BuildSsa(&function, &diagnostic) &&
+                  diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE,
+          "SSA promotion skipped binding-row validation on its no-op path");
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 static void test_rejects_undefined_operand_with_source_location(void) {
     SZrExecIrFunction function;
     SZrExecIrInstruction drop;
@@ -331,6 +348,7 @@ int main(void) {
     test_rejects_wrapped_operand_range();
     test_rejects_missing_operand_storage();
     test_rejects_unknown_opcode_with_location();
+    test_ssa_promotion_validates_rows_before_noop_return();
     test_rejects_undefined_operand_with_source_location();
     puts("ssa value validation PASS");
     return EXIT_SUCCESS;

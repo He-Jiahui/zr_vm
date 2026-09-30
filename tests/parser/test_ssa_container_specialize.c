@@ -1,6 +1,7 @@
 #include "zr_vm_parser/exec_ir_container_specialize.h"
 
 #include <assert.h>
+#include <stdlib.h>
 #include <string.h>
 
 static void make_function(SZrExecIrFunction *function) {
@@ -174,6 +175,46 @@ static void test_draft_entry_reports_generic_fallback_without_rewriting_ir(void)
     assert(before == ZrParser_ExecIr_ContainerSpecializationFactsHash(&facts));
 }
 
+static void test_typed_empty_rows_are_structurally_rejected(void) {
+    SZrExecIrFunction function;
+    SZrContainerSpecializationFacts facts;
+    SZrContainerSpecializationPlan plan;
+    SZrContainerSpecializationDiagnostic diagnostic;
+    SZrExecIrDiagnostic rowDiagnostic;
+
+    make_function(&function);
+    ZrParser_ExecIr_ContainerSpecializationFactsInit(&facts);
+    assert(ZrCore_ExecIr_FunctionSetBindingRows(&function, ZR_NULL, 0u,
+                                                &rowDiagnostic));
+    assert(function.bindingRowsSchemaVersion ==
+           ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED);
+    ZrParser_ExecIr_ContainerSpecializationPlanInit(&plan);
+    assert(!ZrParser_ExecIr_BuildContainerSpecialization(
+            &function, &facts, &plan, &diagnostic));
+    assert(diagnostic.status == ZR_EXEC_IR_CONTAINER_SPECIALIZATION_UNSUPPORTED);
+    assert(!ZrParser_ExecIr_ValidateContainerSpecializationPlan(
+            &function, &facts, &plan, &diagnostic));
+    assert(diagnostic.status == ZR_EXEC_IR_CONTAINER_SPECIALIZATION_UNSUPPORTED);
+
+    /* A legacy function cannot own a typed row table.  Reject the malformed
+     * schema before its plan hash path can silently ignore the table. */
+    function.bindingRowsSchemaVersion = ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY;
+    function.bindingRows = (SZrExecIrBindingRow *)calloc(
+            1u, sizeof(*function.bindingRows));
+    assert(function.bindingRows != ZR_NULL);
+    function.bindingRowCount = 1u;
+    function.bindingRowCapacity = 1u;
+    assert(!ZrParser_ExecIr_BuildContainerSpecialization(
+            &function, &facts, &plan, &diagnostic));
+    assert(diagnostic.status ==
+           ZR_EXEC_IR_CONTAINER_SPECIALIZATION_FUNCTION_INVALID);
+    assert(!ZrParser_ExecIr_ValidateContainerSpecializationPlan(
+            &function, &facts, &plan, &diagnostic));
+    assert(diagnostic.status ==
+           ZR_EXEC_IR_CONTAINER_SPECIALIZATION_FUNCTION_INVALID);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 int main(void) {
     test_stable_map_and_builder_are_admitted();
     test_unknown_layout_keeps_generic_path();
@@ -181,5 +222,6 @@ int main(void) {
     test_sealed_function_is_not_mutated();
     test_plan_is_bound_to_current_scalar_facts();
     test_draft_entry_reports_generic_fallback_without_rewriting_ir();
+    test_typed_empty_rows_are_structurally_rejected();
     return 0;
 }

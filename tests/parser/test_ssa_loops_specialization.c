@@ -1,11 +1,28 @@
 #include "zr_vm_core/exec_ir.h"
 #include "zr_vm_parser/exec_ir_loops.h"
 #include "zr_vm_parser/exec_ir_profile.h"
+#include "zr_vm_parser/exec_ir_builder.h"
 
 #include <assert.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
+
+static void fail_with_exec_ir_diagnostic(const char *site,
+                                         const SZrExecIrDiagnostic *diagnostic) {
+    fprintf(stderr,
+            "DIAGNOSTIC %s code=%u function=%u block=%u instruction=%u source=%u expectedVersion=%u actualVersion=%u expectedHash=%llu actualHash=%llu\n",
+            site, (unsigned)diagnostic->code,
+            (unsigned)diagnostic->functionToken, (unsigned)diagnostic->blockId,
+            (unsigned)diagnostic->instructionId, (unsigned)diagnostic->sourceId,
+            (unsigned)diagnostic->expectedVersion,
+            (unsigned)diagnostic->actualVersion,
+            (unsigned long long)diagnostic->expectedHash,
+            (unsigned long long)diagnostic->actualHash);
+    fflush(stderr);
+    exit(EXIT_FAILURE);
+}
 
 static SZrExecIrRange range(TZrUInt32 start, TZrUInt32 count) {
     SZrExecIrRange value;
@@ -60,9 +77,28 @@ static void append_predecessors(SZrExecIrFunction *function,
     function->blocks[blockId - 1u].predecessorRange = predecessorRange;
 }
 
+static void bind_block_terminator_successors(SZrExecIrFunction *function,
+                                              TZrExecIrBlockId blockId) {
+    SZrExecIrBlock *block = ZrCore_ExecIr_FunctionBlockAt(function, blockId);
+    assert(block != ZR_NULL && block->instructionRange.count != 0u);
+    assert(block->terminatorInstructionId !=
+           ZR_EXEC_IR_INSTRUCTION_ID_INVALID);
+    function->instructions[block->terminatorInstructionId - 1u].successorRange =
+            block->successorRange;
+}
+
+static void configure_loop_effect_tokens(SZrExecIrFunction *function) {
+    SZrExecIrDiagnostic diagnostic;
+    if (!ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic)) {
+        fail_with_exec_ir_diagnostic("loop fixture effect-token synthesis",
+                                     &diagnostic);
+    }
+}
+
 static void build_loop(SZrExecIrFunction *function, TZrBool zeroTrip,
                        TZrBool throwingBody, TZrBool strengthBody) {
     TZrExecIrValueId condition;
+    TZrExecIrValueId continueCondition;
     TZrExecIrValueId invariant;
     TZrExecIrValueId divisor = 0u;
     TZrExecIrValueId quotient = 0u;
@@ -75,6 +111,7 @@ static void build_loop(SZrExecIrFunction *function, TZrBool zeroTrip,
     SZrExecIrRange incomingRange;
     SZrExecIrRange phiRange;
     SZrExecIrPhi phi;
+    SZrExecIrDiagnostic diagnostic;
     SZrExecIrPhiIncoming incoming[2];
     TZrExecIrBlockId edge;
     TZrExecIrBlockId edges[2];
@@ -85,6 +122,10 @@ static void build_loop(SZrExecIrFunction *function, TZrBool zeroTrip,
     function->functionToken = 0x1101u;
     function->signatureHash = UINT64_C(0x10101010);
     condition = add_value(function);
+    continueCondition = ZrCore_ExecIr_FunctionAddExternalValue(
+            function, ZR_VALUE_TYPE_BOOL, ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    assert(continueCondition != ZR_EXEC_IR_VALUE_ID_INVALID);
     invariant = add_value(function);
     if (throwingBody) {
         divisor = add_value(function);
@@ -149,8 +190,10 @@ static void build_loop(SZrExecIrFunction *function, TZrBool zeroTrip,
                            resultRange, 0u, ZR_EXEC_IR_FLAG_MAY_THROW,
                            strengthBody ? 35u : 33u);
     }
-    append_instruction(function, ZR_EXEC_IR_OPCODE_BRANCH, range(0u, 0u),
-                       range(0u, 0u), 0u, 0u,
+    assert(ZrCore_ExecIr_FunctionAppendOperands(function, &continueCondition, 1u,
+                                                &operandRange));
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH,
+                       operandRange, range(0u, 0u), 0u, 0u,
                        (TZrExecIrSourceId)(strengthBody ? (throwingBody ? 36u : 34u)
                                                          : (throwingBody ? 34u : 32u)));
     function->blocks[2].instructionRange = range(3u,
@@ -190,6 +233,11 @@ static void build_loop(SZrExecIrFunction *function, TZrBool zeroTrip,
     edges[1] = 3u;
     append_predecessors(function, 4u, edges, 2u);
 
+    bind_block_terminator_successors(function, 1u);
+    bind_block_terminator_successors(function, 2u);
+    bind_block_terminator_successors(function, 3u);
+    bind_block_terminator_successors(function, 4u);
+
     incoming[0].predecessor = 2u;
     incoming[0].value = condition;
     incoming[1].predecessor = 3u;
@@ -203,6 +251,12 @@ static void build_loop(SZrExecIrFunction *function, TZrBool zeroTrip,
     phi.incomings = incomingRange;
     assert(ZrCore_ExecIr_FunctionAppendPhis(function, &phi, 1u, &phiRange));
     function->blocks[3].phis = phiRange;
+    configure_loop_effect_tokens(function);
+    if (!ZrCore_ExecIr_VerifyFunction(function, ZR_EXEC_IR_VERIFY_ALL,
+                                      &diagnostic)) {
+        fail_with_exec_ir_diagnostic("loop fixture before optimization",
+                                     &diagnostic);
+    }
 }
 
 static void test_loop_forest_and_trip_count(void) {
@@ -228,14 +282,112 @@ static void test_licm_hoists_nontrapping_constant(void) {
     SZrExecIrDiagnostic diagnostic;
     build_loop(&function, ZR_FALSE, ZR_FALSE, ZR_FALSE);
     ZrParser_ExecIr_LoopInfoInit(&loops);
-    assert(ZrParser_ExecIr_OptimizeLoops(&function, &loops, &diagnostic));
+    if (!ZrParser_ExecIr_OptimizeLoops(&function, &loops, &diagnostic)) {
+        fail_with_exec_ir_diagnostic("OptimizeLoops legacy hoist fixture",
+                                     &diagnostic);
+    }
     assert(loops.hoistedInstructionCount == 1u);
     assert(function.blocks[0].instructionRange.count == 3u);
     assert(function.instructions[1].opcode == ZR_EXEC_IR_OPCODE_CONSTANT);
-    assert(ZrCore_ExecIr_VerifyFunction(&function,
-                                        (EZrExecIrVerifyLevel)(ZR_EXEC_IR_VERIFY_STRUCTURE |
-                                                                ZR_EXEC_IR_VERIFY_SSA),
-                                        &diagnostic));
+    if (!ZrCore_ExecIr_VerifyFunction(&function, ZR_EXEC_IR_VERIFY_ALL,
+                                      &diagnostic)) {
+        fail_with_exec_ir_diagnostic("OptimizeLoops legacy hoist fixture after LICM",
+                                     &diagnostic);
+    }
+    ZrParser_ExecIr_LoopInfoFree(&loops);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
+static void test_licm_remaps_typed_binding_row_instruction_id(void) {
+    SZrExecIrFunction function;
+    SZrExecIrLoopInfo loops;
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrBindingRow row;
+    TZrExecIrValueId callResult;
+    SZrExecIrRange callResults;
+    SZrExecIrInstruction call;
+    TZrExecIrInstructionId callId;
+    TZrUInt32 oldCount;
+
+    build_loop(&function, ZR_FALSE, ZR_FALSE, ZR_FALSE);
+    function.contract.moduleHash = UINT64_C(0x44005566);
+    callResult = add_value(&function);
+    assert(ZrCore_ExecIr_FunctionAppendResults(&function, &callResult, 1u,
+                                               &callResults));
+    memset(&call, 0, sizeof(call));
+    call.opcode = ZR_EXEC_IR_OPCODE_CALL;
+    call.results = callResults;
+    call.flags = (TZrUInt16)(ZR_EXEC_IR_FLAG_MAY_THROW |
+                             ZR_EXEC_IR_FLAG_MAY_ALLOCATE);
+    call.sourceId = 30u;
+    assert(ZrCore_ExecIr_FunctionAppendInstruction(&function, &call, &callId));
+    assert(callId == 7u);
+
+    /* Put CALL before the invariant loop constant.  LICM moves that constant
+     * into the preheader, shifting the CALL and its row's instruction ID. */
+    oldCount = function.instructionCount;
+    memmove(&function.instructions[4], &function.instructions[3],
+            (size_t)(oldCount - 4u) * sizeof(*function.instructions));
+    function.instructions[3] = call;
+    function.instructions[3].bindingRow = 0u;
+    function.values[callResult - 1u].definition = 4u;
+    /* The invariant constant shifted from instruction 4 to instruction 5. */
+    function.values[function.results[function.instructions[4].results.start] -
+                    1u].definition = 5u;
+    function.blocks[2].instructionRange.count = 3u;
+    function.blocks[2].terminatorInstructionId = 6u;
+    function.blocks[3].instructionRange.start = 6u;
+    function.blocks[3].terminatorInstructionId = 7u;
+    configure_loop_effect_tokens(&function);
+
+    memset(&row, 0, sizeof(row));
+    row.rowIndex = 0u;
+    row.instructionId = 4u;
+    row.segmentIndex = ZR_EXEC_IR_BINDING_SEGMENT_INDEX_NONE;
+    row.contract.bindingKind = ZR_CALL_BINDING_TYPED_FUNCTION;
+    row.contract.signatureToken = ZR_METADATA_TOKEN_MAKE(
+            ZR_METADATA_TABLE_SIGNATURE, 4401u);
+    row.contract.signatureHash = UINT64_C(0x4401);
+    row.contract.moduleSignatureHash = function.contract.moduleHash;
+    row.contract.dispatchSlot = ZR_CALL_BINDING_SLOT_NONE;
+    row.contract.operation = ZR_CALL_BINDING_OPERATION_CALL;
+    row.location.kind = ZR_CALL_BINDING_RELOCATION_NONE;
+    row.location.targetIndex = ZR_CALL_BINDING_SLOT_NONE;
+    row.sourceId = 30u;
+    assert(ZrCore_ExecIr_FunctionSetBindingRows(&function, &row, 1u,
+                                                &diagnostic));
+    if (!ZrCore_ExecIr_VerifyFunction(&function, ZR_EXEC_IR_VERIFY_ALL,
+                                      &diagnostic)) {
+        fail_with_exec_ir_diagnostic("OptimizeLoops typed binding-row fixture before LICM",
+                                     &diagnostic);
+    }
+
+    ZrParser_ExecIr_LoopInfoInit(&loops);
+    assert(ZrParser_ExecIr_OptimizeLoopsEx(&function, &loops, ZR_NULL,
+                                           &diagnostic));
+    assert(loops.hoistedInstructionCount == 1u);
+    assert(function.bindingRowsSchemaVersion ==
+           ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED);
+    assert(function.bindingRowCount == 1u);
+    assert(function.bindingRows[0].rowIndex == 0u);
+    assert(function.bindingRows[0].instructionId == 5u);
+    assert(function.bindingRows[0].segmentIndex ==
+           ZR_EXEC_IR_BINDING_SEGMENT_INDEX_NONE);
+    assert(function.bindingRows[0].contract.signatureHash == UINT64_C(0x4401));
+    assert(function.bindingRows[0].location.kind ==
+           ZR_CALL_BINDING_RELOCATION_NONE);
+    assert(function.bindingRows[0].location.targetIndex ==
+           ZR_CALL_BINDING_SLOT_NONE);
+    assert(function.bindingRows[0].sourceId == 30u);
+    assert(function.instructions[4].opcode == ZR_EXEC_IR_OPCODE_CALL);
+    assert(function.instructions[4].bindingRow == 1u);
+    assert(function.values[callResult - 1u].definition == 5u);
+    assert(ZrCore_ExecIr_FunctionValidateBindingRows(&function, &diagnostic));
+    if (!ZrCore_ExecIr_VerifyFunction(&function, ZR_EXEC_IR_VERIFY_ALL,
+                                      &diagnostic)) {
+        fail_with_exec_ir_diagnostic("OptimizeLoops typed binding-row fixture after LICM",
+                                     &diagnostic);
+    }
     ZrParser_ExecIr_LoopInfoFree(&loops);
     ZrCore_ExecIr_FreeFunction(&function);
 }
@@ -299,6 +451,65 @@ static void test_profile_key_import_and_mismatch(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_profile_hash_includes_typed_binding_payload(void) {
+    const TZrUInt64 moduleHash = UINT64_C(0x44556677);
+    SZrExecIrModule module;
+    SZrExecIrFunction *function;
+    SZrExecIrInstruction instruction;
+    SZrExecIrBindingRow row;
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrInstructionId instructionId;
+    TZrUInt64 beforeHash;
+
+    ZrCore_ExecIr_ModuleInit(&module);
+    module.functions = (SZrExecIrFunction *)calloc(
+            1u, sizeof(*module.functions));
+    assert(module.functions != ZR_NULL);
+    module.functionCount = 1u;
+    module.functionCapacity = 1u;
+    function = &module.functions[0];
+    ZrCore_ExecIr_FunctionInit(function);
+    function->id = 1u;
+    function->functionToken = 0x4401u;
+    function->signatureHash = UINT64_C(0x4401);
+    function->contract.moduleHash = moduleHash;
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_CALL;
+    instruction.sourceId = 441u;
+    assert(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction,
+                                                    &instructionId));
+    assert(instructionId == 1u);
+    memset(&row, 0, sizeof(row));
+    row.rowIndex = 0u;
+    row.instructionId = instructionId;
+    row.segmentIndex = ZR_EXEC_IR_BINDING_SEGMENT_INDEX_NONE;
+    row.contract.bindingKind = ZR_CALL_BINDING_DIRECT;
+    row.contract.targetMetadataToken = ZR_METADATA_TOKEN_MAKE(
+            ZR_METADATA_TABLE_MEMBER_DEF, 4401u);
+    row.contract.signatureToken = ZR_METADATA_TOKEN_MAKE(
+            ZR_METADATA_TABLE_SIGNATURE, 4401u);
+    row.contract.signatureHash = UINT64_C(0x4401);
+    row.contract.moduleSignatureHash = moduleHash;
+    row.contract.dispatchSlot = ZR_CALL_BINDING_SLOT_NONE;
+    row.contract.operation = ZR_CALL_BINDING_OPERATION_CALL;
+    row.location.kind = ZR_CALL_BINDING_RELOCATION_NONE;
+    row.location.targetIndex = ZR_CALL_BINDING_SLOT_NONE;
+    row.sourceId = instruction.sourceId;
+    assert(ZrCore_ExecIr_FunctionSetBindingRows(function, &row, 1u,
+                                                 &diagnostic));
+
+    beforeHash = ZrParser_ExecIr_ProfileModuleHash(&module);
+    assert(beforeHash != 0u);
+    function->bindingRows[0].contract.signatureHash += 1u;
+    assert(ZrCore_ExecIr_FunctionValidateBindingRows(function, &diagnostic));
+    assert(ZrParser_ExecIr_ProfileModuleHash(&module) != beforeHash);
+    function->bindingRowsSchemaVersion =
+            ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY;
+    assert(ZrParser_ExecIr_ProfileModuleHash(&module) == 0u);
+    ZrCore_ExecIr_FreeModule(&module);
+}
+
 static void test_specialization_budget_and_cooldown(void) {
     SZrExecIrSpecializationPolicy policy;
     SZrExecIrSpecializationState state;
@@ -352,9 +563,11 @@ static void test_specialization_budget_and_cooldown(void) {
 int main(void) {
     test_loop_forest_and_trip_count();
     test_licm_hoists_nontrapping_constant();
+    test_licm_remaps_typed_binding_row_instruction_id();
     test_zero_trip_and_throwing_instruction_are_not_hoisted();
     test_strength_reduces_checked_identity_multiply();
     test_profile_key_import_and_mismatch();
+    test_profile_hash_includes_typed_binding_payload();
     test_specialization_budget_and_cooldown();
     return 0;
 }

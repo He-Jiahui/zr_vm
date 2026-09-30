@@ -166,6 +166,7 @@ static void zr_exec_ir_free_function_arrays(SZrExecIrFunction *function) {
     free(function->deoptAggregates);
     free(function->deoptAggregateFields);
     free(function->sourceMaps);
+    free(function->bindingRows);
     if (function->stateMap != ZR_NULL) {
         ZrCore_ExecIr_StateMapFree(function->stateMap);
         free(function->stateMap);
@@ -256,12 +257,17 @@ static TZrBool zr_exec_ir_clone_array(void **destination,
 
 static TZrBool zr_exec_ir_clone_function_into(const SZrExecIrFunction *source,
                                               SZrExecIrFunction *destination) {
+    if (source == ZR_NULL || destination == ZR_NULL ||
+        !ZrCore_ExecIr_FunctionValidateBindingRows(source, ZR_NULL)) {
+        return ZR_FALSE;
+    }
     ZrCore_ExecIr_FunctionInit(destination);
     destination->id = source->id;
     destination->functionToken = source->functionToken;
     destination->signatureHash = source->signatureHash;
     destination->contract = source->contract;
     destination->entryBlockId = source->entryBlockId;
+    destination->bindingRowsSchemaVersion = source->bindingRowsSchemaVersion;
 
 #define ZR_EXEC_IR_CLONE_FIELD(field, countField, elementType) \
     do { \
@@ -366,6 +372,15 @@ static TZrBool zr_exec_ir_clone_function_into(const SZrExecIrFunction *source,
     if (!zr_exec_ir_clone_array((void **)&destination->sourceMaps, &destination->sourceMapCapacity,
                                 source->sourceMaps, source->sourceMapCount, sizeof(*source->sourceMaps))) return ZR_FALSE;
     destination->sourceMapCount = source->sourceMapCount;
+    if (source->bindingRowCapacity != 0u &&
+        !zr_exec_ir_reserve((void **)&destination->bindingRows,
+                            &destination->bindingRowCapacity,
+                            source->bindingRowCapacity,
+                            sizeof(*source->bindingRows))) return ZR_FALSE;
+    if (source->bindingRowCount != 0u)
+        memcpy(destination->bindingRows, source->bindingRows,
+               (size_t)source->bindingRowCount * sizeof(*source->bindingRows));
+    destination->bindingRowCount = source->bindingRowCount;
     if (source->stateMap != ZR_NULL) {
         destination->stateMap = (SZrExecIrStateMap *)calloc(1u, sizeof(*destination->stateMap));
         if (destination->stateMap == ZR_NULL) return ZR_FALSE;

@@ -137,6 +137,9 @@ typedef struct SZrExecBcProjection {
 typedef struct SZrAotIrProjection {
     TZrExecIrFunctionId functionId;
     TZrMetadataToken functionToken;
+    /* Preserve the source function's binding-row schema across APIs that
+     * consume this projection without the owning ExecIR function. */
+    TZrUInt32 bindingRowsSchemaVersion;
     TZrUInt64 signatureHash;
     SZrAotIrCallableAbi callableAbi;
     TZrExecIrBlockId entryBlockId;

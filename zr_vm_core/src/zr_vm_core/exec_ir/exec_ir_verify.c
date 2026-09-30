@@ -361,6 +361,9 @@ static TZrBool zr_exec_ir_validate_function(const SZrExecIrFunction *function,
                                   0u);
         return ZR_FALSE;
     }
+    if (!ZrCore_ExecIr_FunctionValidateBindingRows(function, diagnostic)) {
+        return ZR_FALSE;
+    }
     if (function->entryBlockId != ZR_EXEC_IR_BLOCK_ID_INVALID &&
         function->entryBlockId > function->blockCount) {
         zr_exec_ir_set_diagnostic(diagnostic,

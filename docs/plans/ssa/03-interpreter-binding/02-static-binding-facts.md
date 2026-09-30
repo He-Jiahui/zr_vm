@@ -15,6 +15,10 @@ plan_sources:
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
 tests:
   - tests/parser/test_ssa_static_binding_facts.c
+  - tests/parser/test_ssa_core_model.c
+  - tests/parser/test_ssa_oracle_call_differential.c
+  - tests/parser/test_ssa_pass_manager_scalar.c
+  - tests/parser/test_ssa_binding_rows_artifact.c
   - tests/parser/test_call_binding_pipeline.c
   - tests/parser/test_typed_call_binding.c
 doc_type: milestone-detail
@@ -52,6 +56,40 @@ CallBinding contract、pipeline/runtime/relocation tests 已存在；本任务�
 | 计划新增测试 | `tests/parser/test_ssa_static_binding_facts.c` | 下述正向、失败与状态转换断言；复用既有 harness。 |
 
 新增文件登记到所属模块 CMake；测试登记到计划新增的 `tests/cmake/ssa-tests.cmake`，由 `tests/CMakeLists.txt` 单点 include。先迁移职责并保持行为，再接入新 contract；不要把新分析或慢路径追加到巨型 dispatch/quickening 文件。
+
+## 2026-09：Core owned rows 有界切片
+
+本次实现推进的是 facts 到 Core 的所有权接缝，不代表本计划完成。ExecIR 函数
+增加显式 binding-row schema：schema 0 保持 legacy 且不拥有行表；schema 1
+拥有完整 `SZrExecIrBindingRow` 数组，包括合法空表。typed 模式下 instruction
+引用 `0` 表示 NONE，`1..N` 对应 `bindingRows[ref - 1]`。Core 提供复制、校验、
+访问和字段级哈希 API；函数释放和 clone 管理独立存储，VerifyModule 验证行与
+CALL/INVOKE 指令之间的双向关联及 module identity。
+
+`ProjectBindingFacts` 先校验 borrowed producer facts，再建立候选副本并由 Core
+事务式发布；重复投影和 typed-empty 会替换、释放旧表并清理旧指令引用，失败
+不修改原 function。`tests/parser/test_ssa_static_binding_facts.c` 已把成功投影
+期望改为 1/2，并增加 owned copy、typed-empty 和失败回滚断言。Core/model 与
+Oracle 测试覆盖表校验和拒绝路径；pass-manager 测试确认 zero-effect CALL 保留，
+且只更改 owned row 的 signature hash 会改变 `FunctionHash`。历史 test-only
+RED 由 MSVC target `zr_vm_ssa_static_binding_facts_test` 构建成功后取得：直接运行
+9 个用例中 4 个正向首断言失败，均为旧实现 Expected 1 / Was 0；新的 Core/API
+实现及首轮相关回归已通过 root 报告的 Core 5/5、root 12/12、legacy capability
+direct 0 和已注册 CTest 2/2。该结果对应 direct Oracle preflight follow-up 之前的
+冻结源；后续 reviewer 发现 `zr_oracle_validate` 入口尚未验证 row schema，已补上
+Core `FunctionValidateBindingRows` 检查，并新增未知 schema、失配 reciprocal row
+以及 known-non-call 诊断断言。这些最后代码和测试改动仍待 root 构建/CTest，不能
+据前一轮结果宣称整份计划或当前源已通过最终门禁。
+
+本切片尚未定义通用跨函数 target resolver。带非零 typed row 的 Oracle
+CALL/INVOKE 结构有效时结构化返回 `UNSUPPORTED`，不调用旧 generic callback；
+unknown schema 和失配 row association 则在 interpreter callback 之前拒绝。consumer
+必须解码完整 row 或保守拒绝/unresolved，不能将 row reference 当作 FunctionId。
+EIS1-EIS5 缺少 row schema/payload，因此拒绝 schema 1（包括空表）以免丢失模式。
+typed target execution、call graph/devirtualize/inline/fusion/AOT consumer 迁移、
+ExecBC 持久化与后续 artifact schema 扩展仍是未完成工作。
+本次有界切片的 RED、Core-owned rows 规则、门禁状态和待复验命令记录在
+[`ssa-static-binding-owned-rows.md`](../../../../tests/acceptance/ssa-static-binding-owned-rows.md)。
 
 ## 可逐项执行的重构任务
 
@@ -157,4 +195,3 @@ assert compile error at final member range before artifact write
 使用源码字符串搜索作为测试辅助可以，生产消费者不可出现按具体类名/成员名的分支。每个成员解析失败的诊断需绑定 chain segment index。
 
 本任务的 acceptance 至少附上：上述断言对应的测试名称、实际执行后端/平台、失败注入位置、verifier 输入/输出摘要，以及涉及所有权时的分配/释放或 lease 平衡。新增入口的 OOM、取消、重复调用和部分初始化退出应有明确处理；不适用的状态写明原因。
-
