@@ -98,7 +98,7 @@ struct ZR_STRUCT_ALIGN SZrState {
     /** 异常与挂起控制状态；其中的 value 必须被 GC 标记和转发路径覆盖。 */
     TZrUInt32 nestedNativeCalls; /**< 当前嵌套原生调用数；TryRun 恢复进入时深度。 */
     TZrUInt32 nestedNativeCallYieldFlag; /**< 可 yield 的嵌套 native 调用数。 */
-    SZrExceptionLongJump *exceptionRecoverPoint; /**< 当前线程栈上的恢复点，仅在 TryRun 动态范围有效。 */
+    SZrExceptionLongJump *exceptionRecoverPoint; /**< runtime-owned 的线程栈恢复点，仅在 TryRun 动态范围有效；调用方不得安装、复制或跨线程使用。 */
     TZrMemoryOffset exceptionHandlingFunctionOffset; /**< TODO: 当前仓内仅初始化；核对仓外/生成代码消费者后决定用途。 */
     SZrTypeValue currentException; /**< 当前异常对象；与 hasCurrentException 成对设置/清除。 */
     EZrThreadStatus currentExceptionStatus; /**< currentException 对应的错误状态。 */

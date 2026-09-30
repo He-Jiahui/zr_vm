@@ -253,8 +253,7 @@ static TZrBool gc_aot_root_frame_is_active(const SZrState *state, const SZrAotGc
 }
 
 /* AOT 帧链借用调用方栈内 frame、根槽和映射；扫描前须保持三者有效。
- * BUG: 生成函数在受保护调用中抛异常可跳过 Pop，TryRun 不清链；后续 GC
- * 遍历已失效的栈内 frame，可能读取悬垂根槽。 */
+ * 当前线程受保护回调经 Throw 退出时，在 mutator 发布 inactive 前恢复入口链快照；不遍历已结束的回调帧。 */
 TZrBool ZrCore_Gc_AotRootFramePush(SZrState *state,
                                     SZrAotGcRootFrame *frame,
                                     TZrStackValuePointer frameBase,

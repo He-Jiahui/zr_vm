@@ -5,16 +5,21 @@ related_code:
   - zr_vm_common/include/zr_vm_common/zr_aot_abi.h
   - zr_vm_core/include/zr_vm_core/execution_frame_layout.h
   - zr_vm_core/include/zr_vm_core/gc.h
+  - zr_vm_core/include/zr_vm_core/exception.h
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_core/src/zr_vm_core/gc/gc.c
+  - zr_vm_core/src/zr_vm_core/exception.c
   - zr_vm_core/src/zr_vm_core/stack.c
   - zr_vm_core/src/zr_vm_core/execution/execution_frame_roots.c
   - zr_vm_core/src/zr_vm_core/execution/execution_frame_observation.c
   - tests/core/test_execution_add_stack_relocation.c
   - tests/core/test_execution_add_stack_relocation_aot_roots.inc
+  - tests/core/test_aot_gc_root_frame_exception.inc
   - tests/acceptance/ssa-stack-root-frame-relocation.md
+  - tests/acceptance/aot-root-frame-protected-unwind.md
 implementation_files:
   - zr_vm_core/src/zr_vm_core/gc/gc.c
+  - zr_vm_core/src/zr_vm_core/exception.c
   - zr_vm_core/src/zr_vm_core/stack.c
   - zr_vm_core/include/zr_vm_core/gc.h
   - zr_vm_core/include/zr_vm_core/state.h
@@ -27,7 +32,7 @@ tests:
   - tests/core/test_aot_gc_root_frame.c
   - tests/acceptance/ssa-stack-root-frame-relocation.md
 doc_type: runtime-contract
-status: implemented
+status: in-progress
 ---
 
 # ExecIR frame roots and observation
@@ -129,3 +134,52 @@ GC and cleans up the root chain before reporting that failure. This confirms
 the old-stack RED for the migration contract. GCC/Clang focused runs remain
 pending. The complete command and baseline correction are recorded in
 [the acceptance note](../../tests/acceptance/ssa-stack-root-frame-relocation.md).
+
+## AOT root-frame recovery at protected exception boundaries
+
+`ZrCore_Exception_TryRun` owns a private context whose first member is the
+thread-affine `SZrExceptionLongJump` exposed through `state->exceptionRecoverPoint`.
+On the C11 `longjmp` path, a local `ZrCore_Exception_Throw` restores the AOT
+root-chain top and depth captured at that TryRun entry after status
+normalization and before `MutatorUnwindScopes` marks the mutator inactive and
+broadcasts. This ordering keeps a concurrent stop-the-world scan from observing
+callback-local nodes after their C lifetimes end. TryRun catch repeats the
+assignment idempotently; neither path traverses abandoned nodes. A volatile
+callback-return flag distinguishes normal return even when Throw carries
+`ZR_THREAD_STATUS_FINE`. Normal callbacks retain their existing Push/Pop
+behavior. Nested TryRun scopes restore to their active outer chain.
+
+This ordering and lifetime guarantee is for the current C11 `longjmp`
+configuration. In a forced-C++ build, Throw removes callback roots before C++
+stack unwinding runs destructors; destructor reentry into VM/GC while unwinding
+is not covered. A native C++ exception that bypasses Throw is restored only
+when TryRun catch is reached, also without a pre-catch guarantee.
+
+The root restoration contract covers local Throw paths caught by TryRun. The
+legacy worker-forward path deliberately does not access another thread's
+private snapshot; this change makes no new guarantee for its existing
+cross-thread longjmp behavior. The change does not generalize allocator failure
+guarantees or other GC-domain unwind behavior.
+Generated-AOT throw integration remains a separate Unix shared-library smoke
+gate.
+
+`tests/core/test_aot_gc_root_frame_exception.inc` supplies real C-local
+Push/Throw callbacks and covers empty-chain throws, `Throw(FINE)`, a preserved
+outer `LOCAL_ADDRESS` young root through minor GC, nested TryRun, and a normal
+TryRun Push/Pop control. A combined case pushes a callback-local C root, forces
+a real moving `Stack_GrowTo` while an outer `FRAME_BYTE_OFFSET` root is active,
+then throws and verifies the relocated outer `frameBase` still retains a young
+object through minor GC. Before the first fix, the focused MSVC target built
+6/6 steps and the direct binary reported 9 tests with 3 expected chain-top
+failures (empty, outer, nested); the original six tests passed. Those RED paths
+repaired the saved caller chain before cleanup and skipped GC while it was
+unbalanced. The combined relocation case was added after that RED run.
+The pre-inactive ordering is verified by a GNU real-unwind wrap probe: current code passes both
+empty and caller-root cases, while catch-only and HEAD code fail the same
+restoration invariant. Root independently reran the frozen MSVC standalone
+suite (12/12) and checked its current exception provider in the link map.
+Root also rebuilt the full current native Core target (final increment 5/5),
+ran the 12-case root suite with no failures, and passed the root/capability
+registered CTests (2/2). Full GCC/Clang suites and generated-AOT integration
+smoke remain pending. Details are in
+[the protected-unwind acceptance note](../../tests/acceptance/aot-root-frame-protected-unwind.md).

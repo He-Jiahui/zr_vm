@@ -4,6 +4,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
   - zr_vm_core/src/zr_vm_core/gc/gc.c
   - zr_vm_core/src/zr_vm_core/stack.c
+  - zr_vm_core/src/zr_vm_core/exception.c
+  - zr_vm_core/include/zr_vm_core/exception.h
   - zr_vm_core/include/zr_vm_core/gc.h
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_common/include/zr_vm_common/zr_aot_abi.h
@@ -12,6 +14,8 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
   - zr_vm_core/src/zr_vm_core/gc/gc.c
   - zr_vm_core/src/zr_vm_core/stack.c
+  - zr_vm_core/src/zr_vm_core/exception.c
+  - zr_vm_core/include/zr_vm_core/exception.h
   - zr_vm_core/include/zr_vm_core/gc.h
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_common/include/zr_vm_common/zr_aot_abi.h
@@ -26,9 +30,11 @@ tests:
   - tests/core/test_aot_gc_root_frame.c
   - tests/core/test_execution_add_stack_relocation.c
   - tests/core/test_execution_add_stack_relocation_aot_roots.inc
+  - tests/core/test_aot_gc_root_frame_exception.inc
   - tests/acceptance/ssa-stack-root-frame-relocation.md
+  - tests/acceptance/aot-root-frame-protected-unwind.md
 doc_type: milestone-detail
-status: planned
+status: in-progress
 ---
 
 # 04.04 精确根、Frame 重定位与调试观察
@@ -168,6 +174,41 @@ assert resumed loop observes new value or deopts safely
 ```
 
 ### 迁移结束检查
+
+#### Protected AOT root-frame unwind
+
+`ZrCore_Exception_TryRun` owns a private recovery context whose first member is
+the thread-affine `SZrExceptionLongJump`. On the current C11 `longjmp` path, a
+local Throw restores the entry AOT root-chain top and depth after status
+normalization but before `MutatorUnwindScopes` publishes the mutator as
+inactive. This ordering prevents a concurrent stop-the-world scan from
+observing callback-local root nodes after their C lifetimes end. TryRun catch
+repeats the direct assignment idempotently; neither path traverses abandoned
+nodes. The callback-return flag also distinguishes normal return from
+`Throw(FINE)`. Normal callbacks retain their Push/Pop behavior.
+
+Forced-C++ Throw removes callback roots before stack unwinding runs
+destructors; destructor reentry into VM/GC during that unwind is not covered by
+this lifecycle guarantee. A native C++ exception that bypasses
+`ZrCore_Exception_Throw` is restored only when TryRun catch is reached, with no
+pre-catch ordering guarantee. The legacy worker-forward path does not access
+another thread's private snapshot, and this change makes no new guarantee for
+its existing cross-thread longjmp behavior.
+
+The focused root-frame fixture covers empty and outer chains, nested TryRun,
+`Throw(FINE)`, real minor GC with an outer young root, and normal Push/Pop. A
+combined case forces moving `Stack_GrowTo` with an outer `FRAME_BYTE_OFFSET`
+root and a callback-local root active, then checks the rebased outer frame and
+minor-GC survival after Throw. The initial MSVC RED was confirmed on the three
+non-local-exit chain checks before the combined case was added. Frozen-source
+MSVC standalone verification passed 12/12, independently rerun by root with
+source hashes and map provider checked. The GNU pre-inactive real-unwind wrap
+probe passed both current-code cases; catch-only and HEAD variants failed the
+same invariant with exit1. The full current native Core final increment then
+built 5/5, direct root-frame suite passed 12/12, and registered root/legacy
+capability CTests passed 2/2. Full GCC/Clang suites and generated-AOT shared-
+library smoke remain pending. See
+[the acceptance record](../../../../tests/acceptance/aot-root-frame-protected-unwind.md).
 
 所有异常/挂起出口 root frame push/pop 平衡。生成 map 和实际 machine/frame location 的一致性需要后端测试，不能只验证逻辑 map 自洽。
 

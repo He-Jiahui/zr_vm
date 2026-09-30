@@ -1,7 +1,12 @@
 #include "unity.h"
 
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include "tests/harness/runtime_support.h"
 #include "zr_vm_common/zr_aot_abi.h"
+#include "zr_vm_core/exception.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/object.h"
@@ -317,6 +322,8 @@ static void test_gc_native_call_pin_value_marks_and_releases_temporary_pin(void)
     ZrTests_Runtime_State_Destroy(state);
 }
 
+#include "tests/core/test_aot_gc_root_frame_exception.inc"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_root_frame_push_pop_balances_state_stack);
@@ -325,5 +332,11 @@ int main(void) {
     RUN_TEST(test_gc_safepoint_advances_pending_collection_debt);
     RUN_TEST(test_gc_write_barrier_records_old_to_young_value);
     RUN_TEST(test_gc_native_call_pin_value_marks_and_releases_temporary_pin);
+    RUN_TEST(test_aot_root_frame_tryrun_throw_restores_empty_chain);
+    RUN_TEST(test_aot_root_frame_tryrun_throw_fine_restores_empty_chain);
+    RUN_TEST(test_aot_root_frame_tryrun_throw_preserves_outer_chain);
+    RUN_TEST(test_aot_root_frame_nested_tryrun_throw_restores_outer_chain);
+    RUN_TEST(test_aot_root_frame_tryrun_normal_push_pop_keeps_outer_chain);
+    RUN_TEST(test_aot_root_frame_tryrun_throw_preserves_relocated_outer_frame_base);
     return UNITY_END();
 }

@@ -541,26 +541,42 @@ TZrBool ZrCore_Exception_RaiseNamedRuntimeError(
             state, errorObject, ZR_THREAD_STATUS_RUNTIME_ERROR);
 }
 
+typedef struct SZrExceptionTryRunContext {
+    SZrExceptionLongJump recoverPoint;
+    SZrAotGcRootFrame *savedAotGcRootFrameTop;
+    TZrUInt32 savedAotGcRootFrameDepth;
+} SZrExceptionTryRunContext;
+
+static void exception_throw_on_state(SZrState *state, EZrThreadStatus errorCode);
+
 /* 恢复点嵌套在当前线程栈上；Throw 的非局部跳转只回到最内层 TryRun。 */
 EZrThreadStatus ZrCore_Exception_TryRun(SZrState *state, FZrTryFunction tryFunction, TZrPtr arguments) {
     TZrUInt32 prevNestedNativeCalls = state->nestedNativeCalls;
-    SZrExceptionLongJump exceptionLongJump;
+    volatile TZrBool callbackReturnedNormally = ZR_FALSE;
+    SZrExceptionTryRunContext tryContext;
 
-    exceptionLongJump.status = ZR_THREAD_STATUS_FINE;
-    exceptionLongJump.previous = state->exceptionRecoverPoint;
-    state->exceptionRecoverPoint = &exceptionLongJump;
-    ZR_EXCEPTION_NATIVE_TRY(state, &exceptionLongJump, { tryFunction(state, arguments); });
-    state->exceptionRecoverPoint = exceptionLongJump.previous;
+    tryContext.recoverPoint.status = ZR_THREAD_STATUS_FINE;
+    tryContext.recoverPoint.previous = state->exceptionRecoverPoint;
+    tryContext.savedAotGcRootFrameTop = state->aotGcRootFrameStack;
+    tryContext.savedAotGcRootFrameDepth = state->aotGcRootFrameDepth;
+    state->exceptionRecoverPoint = &tryContext.recoverPoint;
+    ZR_EXCEPTION_NATIVE_TRY(state, &tryContext.recoverPoint, {
+        tryFunction(state, arguments);
+        callbackReturnedNormally = ZR_TRUE;
+    });
+    state->exceptionRecoverPoint = tryContext.recoverPoint.previous;
     state->nestedNativeCalls = prevNestedNativeCalls;
-    return exceptionLongJump.status;
+    if (!callbackReturnedNormally) {
+        /* This confirms Throw's pre-inactive restoration. A native C++
+         * exception that bypasses Throw is only repaired once catch is reached. */
+        state->aotGcRootFrameStack = tryContext.savedAotGcRootFrameTop;
+        state->aotGcRootFrameDepth = tryContext.savedAotGcRootFrameDepth;
+    }
+    return tryContext.recoverPoint.status;
 }
 
-static void exception_throw_on_state(SZrState *state, EZrThreadStatus errorCode) {
-    ZrCore_Exception_Throw(state, errorCode);
-}
-
-/* 抛出首先回当前线程的恢复点；没有恢复点的 worker 尝试向主线程转发。 */
-void ZrCore_Exception_Throw(SZrState *state, EZrThreadStatus errorCode) {
+static void exception_throw_impl(
+        SZrState *state, EZrThreadStatus errorCode, TZrBool restoreLocalRootSnapshot) {
     if (state->exceptionRecoverPoint != ZR_NULL) {
         /*
          * Some native paths (for example legacy IO helpers) longjmp with a thread status without
@@ -577,6 +593,16 @@ void ZrCore_Exception_Throw(SZrState *state, EZrThreadStatus errorCode) {
         }
         state->threadStatus = errorCode;
         state->exceptionRecoverPoint->status = errorCode;
+        if (restoreLocalRootSnapshot) {
+            const SZrExceptionTryRunContext *tryContext =
+                    (const SZrExceptionTryRunContext *)state->exceptionRecoverPoint;
+
+            /* MutatorUnwindScopes publishes ATTACHED_INACTIVE to the domain.
+             * Restore before that publication so a concurrent collector can
+             * never scan nodes on the callback stack that longjmp abandons. */
+            state->aotGcRootFrameStack = tryContext->savedAotGcRootFrameTop;
+            state->aotGcRootFrameDepth = tryContext->savedAotGcRootFrameDepth;
+        }
         ZrCore_GcDomain_MutatorUnwindScopes(state);
         ZR_EXCEPTION_NATIVE_THROW(state, state->exceptionRecoverPoint);
     }
@@ -602,6 +628,19 @@ void ZrCore_Exception_Throw(SZrState *state, EZrThreadStatus errorCode) {
         state->global->panicHandlingFunction(state);
     }
     ZR_ABORT();
+}
+
+static void exception_throw_on_state(SZrState *state, EZrThreadStatus errorCode) {
+    /* This legacy forwarding path jumps to another thread's recovery point.
+     * Its private TryRun root snapshot belongs to that thread, so do not access
+     * or mutate it from the forwarding state. Cross-thread longjmp semantics
+     * remain outside this root-lifecycle guarantee. */
+    exception_throw_impl(state, errorCode, ZR_FALSE);
+}
+
+/* 抛出首先回当前线程的恢复点；没有恢复点的 worker 尝试向主线程转发。 */
+void ZrCore_Exception_Throw(SZrState *state, EZrThreadStatus errorCode) {
+    exception_throw_impl(state, errorCode, ZR_TRUE);
 }
 
 /* TODO: 目前只回传 status，不按 level 停止嵌套层；需与 State_TryRun 的调用目标核对。 */
