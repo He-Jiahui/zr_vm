@@ -4,6 +4,7 @@
 
 #include "zr_vm_parser/semantic.h"
 
+/* 仅同源文件的范围才能建立引用归属；来源名可为内容相等但非同一对象的字符串。 */
 static TZrBool ownership_region_same_source(SZrString *left, SZrString *right) {
     return left == right ||
            (left != ZR_NULL &&
@@ -11,12 +12,14 @@ static TZrBool ownership_region_same_source(SZrString *left, SZrString *right) {
             ZrCore_String_Equal(left, right));
 }
 
+/* 以 AST 与语义事实共享的来源和坐标范围匹配引用。 */
 static TZrBool ownership_region_range_contains(const SZrFileRange *outer,
                                                 const SZrFileRange *inner) {
     if (outer == ZR_NULL || inner == ZR_NULL ||
         !ownership_region_same_source(outer->source, inner->source)) {
         return ZR_FALSE;
     }
+    /* 两端都有非零 offset 信息时按字节边界比较，否则回退到行列坐标。 */
     if ((outer->start.offset > 0 || outer->end.offset > 0) &&
         (inner->start.offset > 0 || inner->end.offset > 0)) {
         return inner->start.offset >= outer->start.offset && inner->end.offset <= outer->end.offset;
@@ -30,6 +33,7 @@ static TZrBool ownership_region_range_contains(const SZrFileRange *outer,
     return inner->end.line != outer->end.line || inner->end.column <= outer->end.column;
 }
 
+/* 优先用 AST 节点身份匹配；派生节点不同时再用同源范围包含补足。 */
 static TZrBool ownership_region_node_contains_reference(
         SZrAstNode *node,
         const SZrSemanticReferenceFact *fact) {
@@ -38,6 +42,7 @@ static TZrBool ownership_region_node_contains_reference(
            (node == fact->node || ownership_region_range_contains(&node->location, &fact->range));
 }
 
+/* 从有效的引用事实中筛选指定 kind 和 target 范围，供区域绑定复用。 */
 static const SZrSemanticReferenceFact *ownership_region_find_reference(
         const SZrSemanticContext *context,
         SZrAstNode *node,
@@ -58,6 +63,9 @@ static const SZrSemanticReferenceFact *ownership_region_find_reference(
             fact->isResolved &&
             fact->symbolId != ZR_SEMANTIC_ID_INVALID &&
             ownership_region_node_contains_reference(node, fact)) {
+            /* TODO: 复合 target 可能同时覆盖 receiver 与 member READ；最小 symbolId 是否对应实际 owner，
+             * 还需核实 member fact 与 ownership symbol map 的身份关系。对照 type_inference_member_facts.c、
+             * dataflow_ownership_symbols.c，并在 test_ownership_diagnostics_region_cases.h 添加成员借用用例。 */
             if (result == ZR_NULL || fact->symbolId < result->symbolId) {
                 result = fact;
             }
@@ -77,6 +85,7 @@ const SZrSemanticReferenceFact *ZrParser_DataflowOwnership_ConstructTargetRead(
                                            ZR_SEMANTIC_REFERENCE_READ);
 }
 
+/* 把 degrade intrinsic 投影为区域绑定共用的 builtin 与 target 视图。 */
 static TZrBool ownership_region_current_member_projection(
         SZrAstNode *node,
         EZrOwnershipBuiltinKind *outBuiltinKind,
@@ -144,6 +153,7 @@ TZrBool ZrParser_DataflowOwnership_StatementRegionBinding(
     if (constructNode == ZR_NULL) {
         return ZR_FALSE;
     }
+    /* 普通 borrow/loan 构造和 degrade intrinsic 使用不同 AST，先归一为同一绑定输入。 */
     if (constructNode->type == ZR_AST_CONSTRUCT_EXPRESSION) {
         builtinKind = constructNode->data.constructExpression.builtinKind;
         ownerNode = constructNode->data.constructExpression.target;
@@ -183,6 +193,7 @@ TZrBool ZrParser_DataflowOwnership_StatementRegionBinding(
     return ZR_TRUE;
 }
 
+/* 取出 CFG 语句承载的表达式；using 资源由释放分类器的专门分支处理。 */
 static SZrAstNode *ownership_region_statement_expression(SZrAstNode *statement) {
     if (statement == ZR_NULL) {
         return ZR_NULL;
@@ -203,6 +214,10 @@ static SZrAstNode *ownership_region_statement_expression(SZrAstNode *statement) 
     }
 }
 
+/* BUG: 这里只识别表达式根部的 DROP，以及简单赋值右侧的 DROP；复合节点内的释放不会被识别。
+ * 可用已有 Shared<Resource>、ref owner 场景扩展为 var boxed = [drop(owner)]; borrowed;：数组推导接受
+ * Array<Null>，lowering 也编译元素，但 owner 没有进入 RELEASED 状态，后续 borrowed 读取漏发 borrow_escape。
+ * 合法输入、状态传播与现有回归入口见覆盖台账。 */
 static TZrBool ownership_region_expression_releases_read(
         SZrAstNode *expression,
         const SZrSemanticReferenceFact *fact) {
@@ -236,6 +251,12 @@ static TZrBool ownership_region_expression_releases_read(
 TZrBool ZrParser_DataflowOwnership_StatementReleasesRead(
         SZrAstNode *statement,
         const SZrSemanticReferenceFact *fact) {
+    /* BUG: using 把 resource 子树内的 READ 全视为 cleanup 对象。合法的
+     * Shared<Resource> 按值函数 sharedReturn(owner) 返回独立共享副本，调用方原 owner 仍有自己的强引用；
+     * 编译器为 call-result 建临时 slot 并只对该 slot 注册 DROP，数据流这里却将原 owner 的 READ 标成 RELEASED，
+     * 使其仍有效的 borrowed alias 在作用域后误报 borrow_escape。using 与 call-result 目前只有分立测试；
+     * 组合路径由 parser/type/copy/cleanup/CFG/diagnostic 静态闭环，完整证据与待补回归入口见覆盖台账。
+     */
     if (statement != ZR_NULL && statement->type == ZR_AST_USING_STATEMENT) {
         return ownership_region_node_contains_reference(
                 statement->data.usingStatement.resource,
