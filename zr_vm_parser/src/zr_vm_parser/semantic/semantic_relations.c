@@ -7,6 +7,7 @@
 #include "semantic_relations_identity.h"
 #include "semantic_relations_order.h"
 
+/* source 标签先按对象身份匹配；独立分配但内容相同的标签仍指向同一源码。 */
 static TZrBool semantic_relations_same_source(
         SZrString *left,
         SZrString *right) {
@@ -15,6 +16,7 @@ static TZrBool semantic_relations_same_source(
                       ZrCore_String_Equal(left, right)));
 }
 
+/* 关系快照保留 URI 到语义 state 的副本，避免依赖发布者临时字符串的寿命。 */
 static SZrString *semantic_relations_clone_string(
         SZrSemanticContext *context,
         SZrString *value) {
@@ -31,6 +33,7 @@ static SZrString *semantic_relations_clone_string(
             context->state, text, ZrCore_String_GetByteLength(value));
 }
 
+/* 同源范围优先按字节偏移包含；任一端缺偏移时回退到行列坐标。 */
 static TZrBool semantic_relations_range_contains(
         const SZrFileRange *outer,
     const SZrFileRange *inner) {
@@ -52,6 +55,7 @@ static TZrBool semantic_relations_range_contains(
               inner->end.column <= outer->end.column)));
 }
 
+/* 全零且无 source 的范围是缺省 sentinel，不能充当关系端点位置。 */
 static TZrBool semantic_relations_range_is_known(const SZrFileRange *range) {
     return (TZrBool)(range != ZR_NULL &&
                       (range->source != ZR_NULL ||
@@ -67,6 +71,7 @@ static TZrBool semantic_relations_endpoint_has_identity(
                      typeId != ZR_SEMANTIC_ID_INVALID);
 }
 
+/* module scope 不过滤；node scope 只保留任一已知端点落在根节点同源范围内的边。 */
 static TZrBool semantic_relations_scope_allows(
         const SZrParserSemanticQueryScope *scope,
         const SZrSemanticRelationFact *fact) {
@@ -85,6 +90,8 @@ static TZrBool semantic_relations_scope_allows(
                                &scope->root->location, &fact->targetRange)));
 }
 
+/* 查询复用调用者数组时只清结果；新数组由快照 state 管理其缓冲区。 */
+/* BUG: 新数组的 Array_Init 分配失败仍可能标为 valid 且 head 为空；命中关系后 Push 会断言或向空地址写入。尚无 OOM 注入复现。 */
 static TZrBool semantic_relations_prepare_output(
         const SZrSemanticContext *context,
         SZrArray *outRelations) {
@@ -105,6 +112,7 @@ static TZrBool semantic_relations_prepare_output(
     return ZR_TRUE;
 }
 
+/* module identity 只从 nominal 定义取得；generic instance 有界追到定义，异常链不猜测回退。 */
 static SZrString *semantic_relations_module_identity_for_type(
         const SZrSemanticContext *context,
         TZrTypeId typeId) {
@@ -133,6 +141,8 @@ static SZrString *semantic_relations_module_identity_for_type(
     return ZR_NULL;
 }
 
+/* 投影只复制查询值；range.source、URI 与 canonical module identity 继续借用当前语义快照。 */
+/* BUG: DerivedTypesOf 等合法查询可返回超过初始容量的匹配边；Push 扩容分配失败会留下空 head，随后 RawCopy 向空地址写入，尚无 OOM 注入复现。 */
 static void semantic_relations_append_query(
         const SZrSemanticContext *context,
         SZrArray *outRelations,
@@ -164,6 +174,8 @@ static void semantic_relations_append_query(
     ZrCore_Array_Push(context->state, outRelations, &query);
 }
 
+/* relationFacts 与 semantic context 共用 state；调用者随后通过 Reset/Free 管理数组长度和存储。 */
+/* BUG: Array_Init 分配失败仍可能保留 isValid=true、head=NULL；合法类型关系首次 Append 会断言或空地址写入，尚无 OOM 注入复现。 */
 void ZrParser_SemanticRelations_Init(SZrSemanticContext *context) {
     if (context == ZR_NULL || context->state == ZR_NULL) {
         return;
@@ -174,12 +186,14 @@ void ZrParser_SemanticRelations_Init(SZrSemanticContext *context) {
                       ZR_PARSER_INITIAL_CAPACITY_SMALL);
 }
 
+/* 新快照只丢弃已有边，不释放数组容量或 state 所有的 URI 副本。 */
 void ZrParser_SemanticRelations_Reset(SZrSemanticContext *context) {
     if (context != ZR_NULL && context->relationFacts.isValid) {
         context->relationFacts.length = 0U;
     }
 }
 
+/* 释放关系数组本身；URI 字符串由 context state 管理，不在此逐条释放。 */
 void ZrParser_SemanticRelations_Free(SZrSemanticContext *context) {
     if (context == ZR_NULL || context->state == ZR_NULL) {
         return;
@@ -188,6 +202,7 @@ void ZrParser_SemanticRelations_Free(SZrSemanticContext *context) {
     ZrCore_Array_Free(context->state, &context->relationFacts);
 }
 
+/* BUG: isValid 不保证关系缓冲区非空；Init 或扩容分配失败后，合法的 BASE_TYPE 发布仍会进入 Array_Push 并断言/空写。尚无 OOM 注入复现。 */
 TZrBool ZrParser_SemanticRelations_Append(
         SZrSemanticContext *context,
         const SZrSemanticRelationFact *fact) {
@@ -228,6 +243,7 @@ TZrBool ZrParser_SemanticRelations_Append(
     return ZR_TRUE;
 }
 
+/* property/accessor 边以 kind 和两个稳定 SymbolId 判重，支持 compiler 与 LSP 重复发布。 */
 static TZrBool semantic_relations_has_property_accessor(
         const SZrSemanticContext *context,
         TZrSymbolId propertySymbolId,
@@ -251,6 +267,7 @@ static TZrBool semantic_relations_has_property_accessor(
     return ZR_FALSE;
 }
 
+/* 未配置的 optional accessor 合法跳过；已配置项必须解析为同类型的 callable function。 */
 static TZrBool semantic_relations_property_accessor_is_valid(
         const SZrSemanticContext *context,
         TZrSymbolId accessorSymbolId,
@@ -267,6 +284,7 @@ static TZrBool semantic_relations_property_accessor_is_valid(
                       accessor->typeId == callableTypeId);
 }
 
+/* 将 canonical property contract 与当前 symbol 表交叉核对后才允许生成关系。 */
 static TZrBool semantic_relations_property_contract_is_valid(
         const SZrSemanticContext *context,
         const SZrSemanticPropertyContract *contract) {
@@ -296,6 +314,7 @@ static TZrBool semantic_relations_property_contract_is_valid(
                               contract->initializerCallableTypeId));
 }
 
+/* 同一声明的不同写入位置各自保留；仅精确相同的目标 range 视为重复。 */
 static TZrBool semantic_relations_has_reference_definition(
         const SZrSemanticContext *context,
         TZrSymbolId symbolId,
@@ -323,6 +342,7 @@ static TZrBool semantic_relations_has_reference_definition(
     return ZR_FALSE;
 }
 
+/* 单个 accessor 从 property declaration 指向 accessor location，再由 Append 保存快照。 */
 static TZrBool semantic_relations_publish_property_accessor(
         SZrSemanticContext *context,
         const SZrSemanticPropertyContract *contract,
@@ -358,6 +378,7 @@ static TZrBool semantic_relations_publish_property_accessor(
     return ZrParser_SemanticRelations_Append(context, &fact);
 }
 
+/* 完整合同先验证、再逐项投影；仅验证错误不会留下前半批边，发布阶段失败不回滚已追加项。 */
 TZrBool ZrParser_SemanticRelations_PublishPropertyContracts(
         SZrSemanticContext *context) {
     TZrSize index;
@@ -366,6 +387,7 @@ TZrBool ZrParser_SemanticRelations_PublishPropertyContracts(
         !context->relationFacts.isValid) {
         return ZR_FALSE;
     }
+    /* 先验证整批合同，避免后续无效条目令前面条目已发布。 */
     for (index = 0U; index < context->propertyContracts.length; index++) {
         const SZrSemanticPropertyContract *contract =
                 (const SZrSemanticPropertyContract *)ZrCore_Array_Get(
@@ -401,6 +423,7 @@ TZrBool ZrParser_SemanticRelations_PublishPropertyContracts(
     return ZR_TRUE;
 }
 
+/* 只投影已解析 WRITE fact；缺少声明身份或任一可信位置的项保持未发布。 */
 TZrBool ZrParser_SemanticRelations_PublishReferenceDefinitions(
         SZrSemanticContext *context) {
     TZrSize index;
@@ -448,6 +471,7 @@ TZrBool ZrParser_SemanticRelations_PublishReferenceDefinitions(
     return ZR_TRUE;
 }
 
+/* import origin 按来源符号、目标类型和 URI 内容查重，允许两条发布路径收敛。 */
 static TZrBool semantic_relations_has_import_origin(
         const SZrSemanticContext *context,
         TZrSymbolId sourceSymbolId,
@@ -474,6 +498,7 @@ static TZrBool semantic_relations_has_import_origin(
     return ZR_FALSE;
 }
 
+/* 仅把可见 import 的 external origin 投影为事实；resolver 返回值由 Append 及时克隆。 */
 TZrBool ZrParser_SemanticRelations_PublishImportOrigins(
         SZrSemanticContext *context) {
     TZrSize index;
@@ -524,6 +549,7 @@ TZrBool ZrParser_SemanticRelations_PublishImportOrigins(
     return ZR_TRUE;
 }
 
+/* resolver 与 userData 仅借用保存；同步发布期间均须有效，context reset 后需重新注册。 */
 void ZrParser_SemanticRelations_SetVirtualDeclarationUriResolver(
         SZrSemanticContext *context,
         FZrSemanticVirtualDeclarationUriResolver resolver,
@@ -536,6 +562,7 @@ void ZrParser_SemanticRelations_SetVirtualDeclarationUriResolver(
     context->virtualDeclarationUriResolverUserData = userData;
 }
 
+/* alias-to-type 以来源符号和目标 TypeId 去重。 */
 static TZrBool semantic_relations_has_alias_target(
         const SZrSemanticContext *context,
         TZrSymbolId sourceSymbolId,
@@ -559,6 +586,7 @@ static TZrBool semantic_relations_has_alias_target(
     return ZR_FALSE;
 }
 
+/* 从可见 alias 符号发布其已解析 TypeId；缺少位置/身份的项不形成导航边。 */
 TZrBool ZrParser_SemanticRelations_PublishAliasTargets(
         SZrSemanticContext *context) {
     TZrSize index;
@@ -600,6 +628,7 @@ TZrBool ZrParser_SemanticRelations_PublishAliasTargets(
     return ZR_TRUE;
 }
 
+/* 只接受 symbol 表中 AST 指针完全相同且具有有效类型身份与位置的类型声明。 */
 static const SZrSemanticSymbolRecord *semantic_relations_find_type_declaration(
         const SZrSemanticContext *context,
         const SZrAstNode *declaration) {
@@ -622,6 +651,7 @@ static const SZrSemanticSymbolRecord *semantic_relations_find_type_declaration(
     return ZR_NULL;
 }
 
+/* AST 指针必须唯一映射到一个 SymbolId；多身份映射按歧义拒绝。 */
 static const SZrSemanticSymbolRecord *semantic_relations_find_symbol_declaration(
         const SZrSemanticContext *context,
         const SZrAstNode *declaration) {
@@ -650,6 +680,7 @@ static const SZrSemanticSymbolRecord *semantic_relations_find_symbol_declaration
     return matched;
 }
 
+/* compiler relation wrapper 按 kind 与端点 SymbolId 保证重复发布幂等。 */
 static TZrBool semantic_relations_has_symbol_relation(
         const SZrSemanticContext *context,
         EZrSemanticRelationKind kind,
@@ -673,6 +704,7 @@ static TZrBool semantic_relations_has_symbol_relation(
     return ZR_FALSE;
 }
 
+/* 仅接受由 compiler 建立的四类成员/层级边，并要求两端均有可导航身份和位置。 */
 TZrBool ZrParser_SemanticRelations_PublishSymbolRelation(
         SZrSemanticContext *context,
         EZrSemanticRelationKind kind,
@@ -718,6 +750,7 @@ TZrBool ZrParser_SemanticRelations_PublishSymbolRelation(
     return ZrParser_SemanticRelations_Append(context, &fact);
 }
 
+/* 把精确 AST 声明映射到稳定符号后复用统一关系校验与去重路径。 */
 TZrBool ZrParser_SemanticRelations_PublishSymbolDeclarationRelation(
         SZrSemanticContext *context,
         EZrSemanticRelationKind kind,
@@ -741,6 +774,7 @@ TZrBool ZrParser_SemanticRelations_PublishSymbolDeclarationRelation(
             context, kind, source->id, target->id);
 }
 
+/* 层级边只接受 symbol 表中精确匹配的类型声明，不从名称相似度推断目标。 */
 TZrBool ZrParser_SemanticRelations_PublishTypeDeclarationRelation(
         SZrSemanticContext *context,
         EZrSemanticRelationKind kind,
@@ -764,6 +798,7 @@ TZrBool ZrParser_SemanticRelations_PublishTypeDeclarationRelation(
             context, kind, source->id, target->id);
 }
 
+/* 构造关系由类型声明和已解析构造函数符号组成，方向为类型到构造函数。 */
 TZrBool ZrParser_SemanticRelations_PublishConstructorRelation(
         SZrSemanticContext *context,
         const SZrAstNode *sourceTypeDeclaration,
@@ -784,6 +819,17 @@ TZrBool ZrParser_SemanticRelations_PublishConstructorRelation(
             constructorSymbolId);
 }
 
+/**
+ * @brief 返回命中符号作为任一端点的直接关系，并按共享关系排序键排序。
+ *
+ * outRelations 可传零初始化数组或同元素类型的已初始化数组；context 与输出存储
+ * 兼容时函数先清空结果，已初始化数组若元素类型不符则在清空前返回 false。
+ * 查询范围为 NULL/module 时不过滤，node 范围要求关系任一端的 range 位于根节点内。
+ * 数组缓冲区使用 context state；range.source、URI 和模块身份仍借用 snapshot，
+ * 调用方须在 reset/free snapshot 前消费这些字段，并使用同一 state 释放数组。
+ *
+ * @return 查询完成且至少有一条匹配关系时为 true；context、输出存储或符号无效，或无匹配项时为 false。
+ */
 TZrBool ZrParser_SemanticQuery_RelationsOfSymbol(
         const SZrSemanticContext *context,
         TZrSymbolId symbolId,
@@ -810,6 +856,17 @@ TZrBool ZrParser_SemanticQuery_RelationsOfSymbol(
     return outRelations->length > 0U;
 }
 
+/**
+ * @brief 返回指向目标符号的直接 implementation/override 关系，不展开传递闭包。
+ *
+ * outRelations 可传零初始化数组或同元素类型的已初始化数组；context 与输出存储
+ * 兼容时函数先清空结果，已初始化数组若元素类型不符则在清空前返回 false。
+ * 查询范围为 NULL/module 时不过滤，node 范围要求关系任一端的 range 位于根节点内。
+ * 结果数组由 context state 分配；其 range.source、URI 和模块身份借用当前快照，
+ * 必须先消费再 reset/free snapshot，并由调用方用同一 state 释放数组。
+ *
+ * @return 查询完成且至少有一条匹配关系时为 true；context、输出存储或符号无效，或无匹配项时为 false。
+ */
 TZrBool ZrParser_SemanticQuery_ImplementationsOf(
         const SZrSemanticContext *context,
         TZrSymbolId symbolId,
@@ -838,6 +895,16 @@ TZrBool ZrParser_SemanticQuery_ImplementationsOf(
     return outRelations->length > 0U;
 }
 
+/**
+ * @brief 返回指定类型作为 derived endpoint 的直接 BASE_TYPE 关系。
+ *
+ * outRelations 可传零初始化数组或同元素类型的已初始化数组；context 与输出存储
+ * 兼容时函数先清空结果，已初始化数组若元素类型不符则在清空前返回 false。
+ * 本查询不做传递展开；range.source、URI 和模块身份借用当前 snapshot，结果数组
+ * 使用 context state，调用方须在 snapshot reset/free 前消费借用字段并释放数组。
+ *
+ * @return 查询完成且至少有一条匹配关系时为 true；context、输出存储或类型无效，或无匹配项时为 false。
+ */
 TZrBool ZrParser_SemanticQuery_BaseTypesOf(
         const SZrSemanticContext *context,
         TZrTypeId typeId,
@@ -862,6 +929,16 @@ TZrBool ZrParser_SemanticQuery_BaseTypesOf(
     return outRelations->length > 0U;
 }
 
+/**
+ * @brief 返回指定类型作为 base endpoint 的直接派生类型关系。
+ *
+ * outRelations 可传零初始化数组或同元素类型的已初始化数组；context 与输出存储
+ * 兼容时函数先清空结果，已初始化数组若元素类型不符则在清空前返回 false。
+ * 本查询不做传递展开；range.source、URI 和模块身份借用当前 snapshot，结果数组
+ * 使用 context state，调用方须在 snapshot reset/free 前消费借用字段并释放数组。
+ *
+ * @return 查询完成且至少有一条匹配关系时为 true；context、输出存储或类型无效，或无匹配项时为 false。
+ */
 TZrBool ZrParser_SemanticQuery_DerivedTypesOf(
         const SZrSemanticContext *context,
         TZrTypeId typeId,
