@@ -23,7 +23,7 @@
 static TZrBool string_trace_enabled(void);
 static void string_trace(const TZrChar *format, ...);
 #else
-/* 非调试构建保留调用位点，但不引入启动期日志开销。 */
+/* 非调试构建把日志调用及实参一并裁去；调用点因此只应提供无副作用的诊断值。 */
 #define string_trace(...) ((void)0)
 #endif
 static SZrString *string_create_short(SZrState *state, TZrNativeString string, TZrSize length);
@@ -169,7 +169,7 @@ static ZR_FORCE_INLINE TZrSize string_concat_pair_cache_bucket_index(const SZrSt
     return (TZrSize)(mixedHash % ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_COUNT);
 }
 
-/* 执行器拼接热路径的短期结果缓存；条目由全局 GC 根负责扫描和重写。 */
+/* 全局有界缓存拼接对象对及结果并作为 GC 根；默认双路次槽命中后提升到首槽。 */
 static ZR_FORCE_INLINE SZrString *string_concat_pair_cache_lookup(SZrState *state,
                                                                   const SZrString *left,
                                                                   const SZrString *right) {
@@ -622,7 +622,7 @@ TZrNativeString ZrCore_NativeString_VFormat(struct SZrState *state, TZrNativeStr
                 /* TODO: 非法占位符当前静默丢弃；明确诊断与 va_arg 类型约束。 */
             } break;
         }
-        /* BUG: 末尾孤立 '%' 使 format 越过 NUL，下一轮 CharFind 或后续 Length 会越界读取。 */
+        /* TODO: 尾随孤立 '%' 当前令 format=e+2 越过 NUL；核 public 格式串契约并补 malformed-format fixture，再定拒绝/诊断语义。 */
         format = e + 2;
     }
     TZrSize suffixLength = ZrCore_NativeString_Length(format);
@@ -682,7 +682,7 @@ void ZrCore_StringTable_Init(SZrState *state) {
     SZrStringTable *stringTable = global->stringTable;
     string_trace("string table init enter state=%p global=%p table=%p", (void *)state, (void *)global, (void *)stringTable);
     // stringTable
-    /* BUG: HashSet_Init 分配失败仍继续创建首个短串，GetBucket 会用零容量取模。 */
+    /* BUG: HashSet_Init 分配失败仍继续创建首个短串；GetBucket 会访问空桶数组。 */
     ZrCore_HashSet_Init(state, &stringTable->stringHashSet, ZR_STRING_TABLE_INITIAL_SIZE_LOG2);
     string_trace("string table hash init done buckets=%p capacity=%llu valid=%d",
                  (void *)stringTable->stringHashSet.buckets,
@@ -692,7 +692,7 @@ void ZrCore_StringTable_Init(SZrState *state) {
     // this is the first string we created
     global->memoryErrorMessage = ZR_STRING_LITERAL(state, ZR_ERROR_MESSAGE_NOT_ENOUGH_MEMORY);
     string_trace("string table memoryErrorMessage=%p", (void *)global->memoryErrorMessage);
-    /* BUG: 首个短串创建失败时 memoryErrorMessage 为 null，永久标记路径会直接解引用。 */
+    /* TODO: 首个短串 Create 返回 null 并继续到永久标记的合法路径未证；核 GcMalloc 重试/Throw 与 RawObject_New 注册失败路径后再定标签。 */
     ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(global->memoryErrorMessage));
     // fill api cache with valid string
     for (TZrSize i = 0; i < ZR_GLOBAL_API_STRING_CACHE_BUCKET_COUNT; i++) {
@@ -923,7 +923,7 @@ SZrString *ZrCore_String_Create(SZrState *state, TZrNativeString string, TZrSize
 }
 
 #if defined(ZR_DEBUG)
-/* 显式环境开关控制启动期字符串追踪，避免默认日志改变热路径。 */
+/* TODO: 首次 Debug trace 把环境开关缓存到进程级 static；核 GlobalState_New 并发首建约束并用 fixture/TSAN 验证，未串行时再定 once 同步。 */
 static TZrBool string_trace_enabled(void) {
     static TZrBool initialized = ZR_FALSE;
     static TZrBool enabled = ZR_FALSE;
