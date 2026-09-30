@@ -2,6 +2,9 @@
 
 #include "type_inference_bitwise_identity_direct_range.h"
 
+/* 本单元只读取 AST 与类型绑定来识别掩码并推导区间；不求值、折叠或改写运行时表达式。 */
+
+/** @brief 沿值不变的零 OR/XOR 与一元正号外壳下钻，返回借用的 AST 节点。 */
 static const SZrAstNode *type_inference_bitwise_identity_supported_count_all_ones_side_skip_zero_bitwise_identity_wrappers(
         SZrCompilerState *cs,
         const SZrAstNode *expression) {
@@ -41,6 +44,7 @@ static const SZrAstNode *type_inference_bitwise_identity_supported_count_all_one
     return expression;
 }
 
+/** @brief 将支持的常量或 OR 形态识别为精确的有符号全 1 掩码区间。 */
 TZrBool type_inference_bitwise_identity_expression_supported_count_all_ones_side_range(
         SZrCompilerState *cs,
         const SZrAstNode *expression,
