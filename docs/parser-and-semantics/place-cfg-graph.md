@@ -3,6 +3,7 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/place.h
   - zr_vm_parser/include/zr_vm_parser/cfg.h
   - zr_vm_parser/src/zr_vm_parser/place.c
+  - zr_vm_parser/src/zr_vm_parser/place_queries.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/cfg_graph.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/cfg_cleanup.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/cfg.c
@@ -13,6 +14,7 @@ implementation_files:
   - zr_vm_parser/include/zr_vm_parser/place.h
   - zr_vm_parser/include/zr_vm_parser/cfg.h
   - zr_vm_parser/src/zr_vm_parser/place.c
+  - zr_vm_parser/src/zr_vm_parser/place_queries.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/cfg_graph.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/cfg_cleanup.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/cfg.c
@@ -59,6 +61,16 @@ Each projected node keeps both a parent link and a flattened path. The parent li
 
 The query never converts `unknown` into `disjoint`. That rule is the safety boundary required by M3 loan and move facts.
 
+At the first divergent projection, either remaining path containing a
+dereference requires `unknown`: distinct pointer-bearing fields can still
+point at the same target. A common dereference before the divergence does not
+prevent distinct fields of that shared target from being disjoint.
+
+`place_queries.c` contains the read-only place and projection accessors and
+overlap query. It has no allocation dependencies, so focused SemanticIR-to-ExecIR
+builder targets can compile the same queries used by the full parser.
+`place.c` owns graph construction and destruction.
+
 ## CFG Storage
 
 Each CFG block owns a dynamic `outgoingEdges` array. An edge records source block, target block, edge kind, and optional source AST node. The public accessor APIs are the semantic traversal surface. The two-entry `successors` array remains only as a compatibility prefix for existing binary-branch tests; `successorCount` reflects the complete dynamic array and is not capped at two.
@@ -84,3 +96,12 @@ M2 does not yet make compile lowering emit load/store/move/borrow instructions. 
 ## Verification
 
 `test_place_cfg_graph.c` directly covers every base and projection, all four overlap states, five outgoing switch edges, every current edge kind, suspension blocks, and builder-produced branch/return terminators. Existing CFG suites cover reachability, typed catches, loops, and dataflow. `test_cfg_finally_abrupt.c` directly proves that a try-return reaches the exit only after its finally block.
+
+The 2026-09-30 MSVC run reproduced two alias-query failures before the suffix
+check in `current-place-queries-direct.log`. The corrected implementation
+passed all eight existing cases in `current-place-queries-fixed-direct.log`,
+including divergent field/index/tuple paths followed by dereference and
+disjoint fields following a shared dereference. Build evidence is in
+`D:/tmp/zr_vm/ssa-control/current-scalar-alias-fixtures-canonical-red-build.log`.
+Current GCC/Clang validation is recorded separately; no wider SSA milestone is
+closed by this query repair.
