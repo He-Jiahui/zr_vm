@@ -5,10 +5,16 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_parser/semantic_facts.h"
 
+/** @brief 判断位置是否提供可优先用于区间匹配的非零字节偏移。
+ * @pre position 可为空；空位置或零偏移表示调用方应使用行列回退。
+ */
 static TZrBool ownership_observation_has_offset(const SZrFilePosition *position) {
     return position != ZR_NULL && position->offset > 0;
 }
 
+/** @brief 按 AST 节点与事实种类查询当前语义上下文中的既有所有权事实。
+ * @note 去重键是 node 和 kind；同节点同种事实只保留一条。
+ */
 static TZrBool ownership_observation_fact_exists(
         const SZrSemanticContext *context,
         SZrAstNode *node,
@@ -30,17 +36,22 @@ static TZrBool ownership_observation_fact_exists(
     return ZR_FALSE;
 }
 
+/** @brief 比较两个来源位置兼容且坐标相同的文件区间。
+ * @note 当任一端提供非零偏移时整体比较起止偏移，否则比较起止行列。
+ */
 static TZrBool ownership_observation_same_range(const SZrFileRange *left,
                                                  const SZrFileRange *right) {
     if (left == ZR_NULL || right == ZR_NULL) {
         return ZR_FALSE;
     }
+    /* 两侧来源都存在时先验证来源身份；一侧缺失来源时保留坐标回退。 */
     if (left->source != ZR_NULL &&
         right->source != ZR_NULL &&
         left->source != right->source &&
         !ZrCore_String_Equal(left->source, right->source)) {
         return ZR_FALSE;
     }
+    /* 只要任一端含字节偏移，就要求双方起止偏移一致，不混用行列坐标。 */
     if (ownership_observation_has_offset(&left->start) ||
         ownership_observation_has_offset(&left->end) ||
         ownership_observation_has_offset(&right->start) ||
@@ -54,6 +65,9 @@ static TZrBool ownership_observation_same_range(const SZrFileRange *left,
            left->end.column == right->end.column;
 }
 
+/** @brief 为同一引用按节点或区间找到首条指定种类的事实供调用方补充。
+ * @return 返回 ownershipFacts 数组内的借用指针；不得跨数组追加或重置持有它。
+ */
 static SZrSemanticOwnershipFact *ownership_observation_find_fact(
         SZrSemanticContext *context,
         const SZrSemanticReferenceFact *reference,
@@ -76,6 +90,9 @@ static SZrSemanticOwnershipFact *ownership_observation_find_fact(
     return ZR_NULL;
 }
 
+/** @brief 将可用的 owner 索引解析为符号条目，不可用时退回引用自身条目。
+ * @pre symbols 与 entry 来自本次已构建的符号映射。
+ */
 static const SZrSemanticOwnershipSymbolEntry *ownership_observation_owner_entry(
         SZrSemanticOwnershipSymbolMap *symbols,
         const SZrSemanticOwnershipSymbolEntry *entry,
@@ -93,6 +110,9 @@ static const SZrSemanticOwnershipSymbolEntry *ownership_observation_owner_entry(
     return ownerEntry;
 }
 
+/** @brief 去重后追加一条 MOVE 或 RELEASE 事实，并带上引用与 owner 的区域。
+ * @note node、range.source 与 AST 节点保持借用；语义上下文只复制事实记录。
+ */
 static TZrBool ownership_observation_append_transition(
         SZrSemanticContext *context,
         const SZrSemanticReferenceFact *reference,
@@ -115,6 +135,11 @@ static TZrBool ownership_observation_append_transition(
     return ZrParser_SemanticFacts_AppendOwnership(context, &fact);
 }
 
+/** @brief 将 CFG 暂存的 move、release 与 violation 投影为语义所有权事实。
+ * @pre observations 必须由同一 context 的当前 referenceFacts 分配；分析期间引用数组和符号映射保持稳定。
+ * @return 验证或事实追加失败时返回 false；已追加的事实不会回滚。
+ * @note AST 节点与 range 内的来源字符串是借用引用，随 AST/语义上下文生命周期有效。
+ */
 TZrBool ZrParser_DataflowOwnership_AppendObservedFacts(
         SZrSemanticContext *context,
         SZrSemanticOwnershipSymbolMap *symbols,
@@ -127,6 +152,7 @@ TZrBool ZrParser_DataflowOwnership_AppendObservedFacts(
         !context->referenceFacts.isValid) {
         return ZR_FALSE;
     }
+    /* 观察数组与 referenceFacts 按同一索引生成；无符号映射的引用不产出所有权事实。 */
     for (index = 0; index < observations->count; index++) {
         const SZrSemanticReferenceFact *reference =
                 (const SZrSemanticReferenceFact *)ZrCore_Array_Get(
@@ -155,6 +181,7 @@ TZrBool ZrParser_DataflowOwnership_AppendObservedFacts(
                 ownerEntry,
                 observations->violationOwnerIndices[index]);
 
+        /* 先追加状态迁移点，供诊断和导航把消费/释放位置映射回原引用。 */
         if (observations->moveSeen[index] &&
             !ownership_observation_append_transition(context,
                                                      reference,
@@ -172,6 +199,7 @@ TZrBool ZrParser_DataflowOwnership_AppendObservedFacts(
             return ZR_FALSE;
         }
 
+        /* weak 读取可能已有较具体的错误事实；优先补齐 owner 与 cause，避免重复节点错误。 */
         existingError = entry->qualifier == ZR_OWNERSHIP_QUALIFIER_WEAK
                                 ? ownership_observation_find_fact(
                                           context,
@@ -211,6 +239,11 @@ TZrBool ZrParser_DataflowOwnership_AppendObservedFacts(
     return ZR_TRUE;
 }
 
+/** @brief 按 referenceFacts 的当前长度分配 CFG 阶段的平行观察数组。
+ * @pre observations 是零初始化状态；context、其 state 与 referenceFacts 已初始化。
+ * @return 失败时返回 false，count 与已成功分配的非空数组仍留在 observations，调用方须用同一 context 释放。
+ * @note 数组只借存 violation cause AST 指针，不拥有节点；count 为零时不分配缓冲区。
+ */
 TZrBool ZrParser_DataflowOwnership_ObservationsAllocate(
         SZrSemanticContext *context,
         SZrDataflowOwnershipObservations *observations) {
@@ -223,9 +256,11 @@ TZrBool ZrParser_DataflowOwnership_ObservationsAllocate(
         return ZR_FALSE;
     }
     observations->count = context->referenceFacts.length;
+    /* 无引用可观察时保留零计数的空状态，让调用方走同一个清理入口。 */
     if (observations->count == 0) {
         return ZR_TRUE;
     }
+    /* 五个数组与 referenceFacts 一一对齐；原始分配失败不会触发 GC 重试。 */
     boolBytes = observations->count * sizeof(TZrBool);
     pointerBytes = observations->count * sizeof(SZrAstNode *);
     ownerIndexBytes = observations->count * sizeof(TZrSize);
@@ -239,6 +274,10 @@ TZrBool ZrParser_DataflowOwnership_ObservationsAllocate(
             context->state->global, pointerBytes, ZR_MEMORY_NATIVE_TYPE_ARRAY);
     observations->violationOwnerIndices = (TZrSize *)ZrCore_Memory_RawMallocWithType(
             context->state->global, ownerIndexBytes, ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    /* 单个缓冲区失败就不启动 CFG；上层目前忽略编译诊断发布失败。
+     * BUG: 唯一值按值传递后再读取的合法输入可绕过 use-after-move 拒绝并生成函数。
+     * TODO: LSP 也忽略该解析结果；需在观察缓冲区分配点注入失败，核对 best-effort 诊断契约。
+     */
     if (observations->moveSeen == ZR_NULL ||
         observations->releaseSeen == ZR_NULL ||
         observations->violationSeen == ZR_NULL ||
@@ -246,6 +285,7 @@ TZrBool ZrParser_DataflowOwnership_ObservationsAllocate(
         observations->violationOwnerIndices == ZR_NULL) {
         return ZR_FALSE;
     }
+    /* 只有全部缓冲区就绪才清零标志；owner 索引另用无效哨兵表示无 owner。 */
     ZrCore_Memory_RawSet(observations->moveSeen, 0, boolBytes);
     ZrCore_Memory_RawSet(observations->releaseSeen, 0, boolBytes);
     ZrCore_Memory_RawSet(observations->violationSeen, 0, boolBytes);
@@ -257,6 +297,9 @@ TZrBool ZrParser_DataflowOwnership_ObservationsAllocate(
     return ZR_TRUE;
 }
 
+/** @brief 释放本次解析已分配的观察缓冲区并归零状态，AST cause 始终不由此函数释放。
+ * @pre context 与 Allocate 时的语义状态一致；允许 count 非零但只有部分缓冲区分配成功。
+ */
 void ZrParser_DataflowOwnership_ObservationsFree(
         SZrSemanticContext *context,
         SZrDataflowOwnershipObservations *observations) {
@@ -273,6 +316,7 @@ void ZrParser_DataflowOwnership_ObservationsFree(
     boolBytes = observations->count * sizeof(TZrBool);
     pointerBytes = observations->count * sizeof(SZrAstNode *);
     ownerIndexBytes = observations->count * sizeof(TZrSize);
+    /* 局部宏只释放非空原始数组；大小与 Allocate 的元素计数和类型配对。 */
 #define FREE_OBSERVATION(pointer, bytes) \
     do { \
         if ((pointer) != ZR_NULL) { \
@@ -288,5 +332,6 @@ void ZrParser_DataflowOwnership_ObservationsFree(
     FREE_OBSERVATION(observations->violationCauses, pointerBytes);
     FREE_OBSERVATION(observations->violationOwnerIndices, ownerIndexBytes);
 #undef FREE_OBSERVATION
+    /* 清掉计数和借用指针，防止调用方再次释放同一批临时数组。 */
     memset(observations, 0, sizeof(*observations));
 }
