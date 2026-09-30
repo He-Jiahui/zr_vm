@@ -2,11 +2,15 @@
 related_code:
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c
   - zr_vm_parser/include/zr_vm_parser/semantic_value_facts.h
   - zr_vm_parser/include/zr_vm_parser/exec_ir_builder.h
   - zr_vm_core/include/zr_vm_core/exec_ir.h
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa_promotion.c
+  - tests/parser/test_ssa_source_cfg_faults.c
+  - tests/parser/ssa_source_cfg_faults.c
+  - tests/parser/ssa_source_cfg_faults.h
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_try.c
@@ -32,6 +36,10 @@ plan_sources:
 tests:
   - tests/parser/test_pre_semantic_ir.c
   - tests/parser/test_pre_semantic_ir_source_cfg.inc
+  - tests/parser/test_ssa_source_cfg_faults.c
+  - tests/parser/ssa_source_cfg_faults.c
+  - tests/parser/ssa_source_cfg_faults.h
+  - tests/acceptance/ssa-source-cfg-promotion-recovery.md
   - tests/parser/test_ssa_builder_cfg.c
   - tests/parser/test_ssa_builder_dominance.c
   - tests/parser/test_ssa_builder_control_edges.c
@@ -501,3 +509,42 @@ unchanged caller output, and malformed edge storage. See
 the remaining 01.02 acceptance gaps.
 The separate instruction-range and branch-successor regression is recorded
 in `tests/acceptance/ssa-builder-instruction-lowering.md`.
+
+## Active source CFG finalizer transaction
+
+The source compiler reaches `compiler_semantic_cfg_finalize` with a live CFG
+after lowering branches, joins and exceptional continuations. Finalization
+closes the current continuation by appending an EXIT block, emitting and
+binding a BRANCH from the current block, connecting its normal edge, then
+emitting and binding the EXIT block's RETURN. Each step can fail after earlier
+steps have changed the graph or append-only SemanticIR arrays.
+
+The active path now stages this finish on a separately owned compiler copy.
+The staging copy deep-copies the CFG block array and each block's outgoing
+edge array, plus the SemanticIR instruction, source-map and value-operand
+arrays. These mutable structures have room for the finalizer's one EXIT block
+and two instructions. Other compiler context remains borrowed and read-only
+during `compiler_semantic_cfg_finish`. If staging allocation fails, finalizing
+does not begin. If finish or staged-storage validation fails, the staging graph
+and arrays are freed while the original block and edge facts, bound ranges,
+append counts and bytes, active flag, cursor and validation flag remain intact.
+On success, the prepared arrays replace the originals in one allocation-free
+publication step and the staged compiler cursor and validation state are
+published with them.
+
+`tests/parser/test_ssa_source_cfg_faults.c` injects failure at EXIT block
+append, BRANCH instruction append, BRANCH range bind, normal-edge append,
+RETURN instruction append and RETURN range bind. For each point it compares
+the active source CFG and append-only SemanticIR state with a pre-finish
+snapshot, then retries the same source through ExecIR build, Core Verify ALL
+and Oracle execution expecting return value 9. The baseline exposed the second
+fault specifically: BRANCH instruction append failed after the EXIT block was
+already present in the live CFG. See
+`tests/acceptance/ssa-source-cfg-promotion-recovery.md` for the RED evidence
+and platform validation record.
+
+Post-fix native validation passed all 18 build steps, both targeted CTests
+(`ssa_source_straight_line_cfg` and `ssa_source_cfg_faults`, 2/2 in 10.88 s),
+and all 117 direct `pre_semantic_ir` tests with zero failures or ignored tests.
+Independent review found no production blockers and commit is pending; SSA plan 01.02
+remains open. Logs are recorded in the acceptance note.

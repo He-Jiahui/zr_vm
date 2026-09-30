@@ -447,6 +447,288 @@ static TZrBool compiler_semantic_cfg_promote_straight_line(SZrCompilerState *cs)
     return ZR_TRUE;
 }
 
+typedef struct SZrCompilerSemanticCfgFinishTransaction {
+    SZrCompilerState stagedCompiler;
+    TZrBool ownsCfg;
+    TZrBool ownsInstructions;
+    TZrBool ownsSourceMap;
+    TZrBool ownsValueOperands;
+} SZrCompilerSemanticCfgFinishTransaction;
+
+/* Clone a core array into independently owned storage and reserve enough room
+ * for the finalizer's bounded append set.  Do not use Array_Init/Append here:
+ * those void helpers cannot report allocator failure to this transaction. */
+static TZrBool compiler_semantic_cfg_clone_array(
+        SZrState *state, const SZrArray *source, TZrSize extraCapacity,
+        SZrArray *destination) {
+    TZrSize capacity;
+    TZrSize byteCount;
+    TZrSize copyBytes;
+
+    if (destination == ZR_NULL) return ZR_FALSE;
+    memset(destination, 0, sizeof(*destination));
+    if (state == ZR_NULL || state->global == ZR_NULL || source == ZR_NULL ||
+        !source->isValid || source->head == ZR_NULL ||
+        source->elementSize == 0U || source->length > source->capacity ||
+        extraCapacity > SIZE_MAX - source->length ||
+        source->capacity > SIZE_MAX / source->elementSize) {
+        return ZR_FALSE;
+    }
+
+    capacity = source->length + extraCapacity;
+    if (capacity < source->capacity) capacity = source->capacity;
+    if (capacity == 0U) capacity = 1U;
+    if (capacity > SIZE_MAX / source->elementSize) return ZR_FALSE;
+    byteCount = capacity * source->elementSize;
+    copyBytes = source->length * source->elementSize;
+    destination->head = ZR_CAST_UINT8_PTR(ZrCore_Memory_RawMallocWithType(
+            state->global, byteCount, ZR_MEMORY_NATIVE_TYPE_ARRAY));
+    if (destination->head == ZR_NULL) return ZR_FALSE;
+    destination->elementSize = source->elementSize;
+    destination->length = source->length;
+    destination->capacity = capacity;
+    destination->isValid = ZR_TRUE;
+    ZrCore_Memory_RawCopy(destination->head, source->head, copyBytes);
+    return ZR_TRUE;
+}
+
+/* A Cfg value contains owned block and per-block edge arrays.  Copying only
+ * the outer SZrParserCfg would retain aliases into the graph being finalized. */
+static TZrBool compiler_semantic_cfg_clone_cfg(
+        SZrState *state, const SZrParserCfg *source,
+        SZrParserCfg *destination) {
+    TZrSize blockIndex;
+
+    if (destination == ZR_NULL) return ZR_FALSE;
+    memset(destination, 0, sizeof(*destination));
+    if (state == ZR_NULL || source == ZR_NULL || source->state != state ||
+        !source->blocks.isValid || source->blocks.head == ZR_NULL ||
+        source->blocks.elementSize != sizeof(SZrParserCfgBlock)) {
+        return ZR_FALSE;
+    }
+
+    destination->state = source->state;
+    destination->semanticContext = source->semanticContext;
+    destination->entryBlockId = source->entryBlockId;
+    destination->exitBlockId = source->exitBlockId;
+    if (!compiler_semantic_cfg_clone_array(
+                state, &source->blocks, 1U, &destination->blocks)) {
+        memset(destination, 0, sizeof(*destination));
+        return ZR_FALSE;
+    }
+
+    /* The raw block copy temporarily contains source edge pointers.  Clear
+     * every one before a clone can fail and enter the common owned cleanup. */
+    for (blockIndex = 0U; blockIndex < destination->blocks.length;
+         ++blockIndex) {
+        SZrParserCfgBlock *block = (SZrParserCfgBlock *)ZrCore_Array_Get(
+                &destination->blocks, blockIndex);
+        memset(&block->outgoingEdges, 0, sizeof(block->outgoingEdges));
+    }
+    for (blockIndex = 0U; blockIndex < source->blocks.length; ++blockIndex) {
+        const SZrParserCfgBlock *sourceBlock =
+                (const SZrParserCfgBlock *)ZrCore_Array_Get(
+                        (SZrArray *)&source->blocks, blockIndex);
+        SZrParserCfgBlock *destinationBlock =
+                (SZrParserCfgBlock *)ZrCore_Array_Get(
+                        &destination->blocks, blockIndex);
+        if (sourceBlock == ZR_NULL || destinationBlock == ZR_NULL ||
+            sourceBlock->outgoingEdges.elementSize !=
+                    sizeof(SZrParserCfgEdge) ||
+            !compiler_semantic_cfg_clone_array(
+                    state, &sourceBlock->outgoingEdges, 1U,
+                    &destinationBlock->outgoingEdges)) {
+            ZrParser_Cfg_Free(state, destination);
+            memset(destination, 0, sizeof(*destination));
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
+static void compiler_semantic_cfg_finish_transaction_dispose(
+        SZrCompilerSemanticCfgFinishTransaction *transaction) {
+    SZrState *state;
+    if (transaction == ZR_NULL) return;
+    state = transaction->stagedCompiler.state;
+    if (transaction->ownsCfg) {
+        ZrParser_Cfg_Free(
+                state, &transaction->stagedCompiler.preSemanticIr.cfg);
+    }
+    if (transaction->ownsInstructions) {
+        ZrCore_Array_Free(state,
+                &transaction->stagedCompiler.preSemanticIr.instructions);
+    }
+    if (transaction->ownsSourceMap) {
+        ZrCore_Array_Free(state,
+                &transaction->stagedCompiler.preSemanticIr.sourceMap);
+    }
+    if (transaction->ownsValueOperands) {
+        ZrCore_Array_Free(state,
+                &transaction->stagedCompiler.preSemanticIr.valueOperands);
+    }
+    memset(transaction, 0, sizeof(*transaction));
+}
+
+static TZrBool compiler_semantic_cfg_finish_transaction_prepare(
+        SZrCompilerState *compiler,
+        SZrCompilerSemanticCfgFinishTransaction *transaction) {
+    SZrParserCfg cfgCopy;
+    SZrArray instructionCopy;
+    SZrArray sourceMapCopy;
+    SZrArray operandCopy;
+
+    if (compiler == ZR_NULL || transaction == ZR_NULL) return ZR_FALSE;
+    memset(transaction, 0, sizeof(*transaction));
+    memset(&cfgCopy, 0, sizeof(cfgCopy));
+    memset(&instructionCopy, 0, sizeof(instructionCopy));
+    memset(&sourceMapCopy, 0, sizeof(sourceMapCopy));
+    memset(&operandCopy, 0, sizeof(operandCopy));
+    transaction->stagedCompiler = *compiler;
+
+    if (!compiler_semantic_cfg_clone_cfg(
+                compiler->state, &compiler->preSemanticIr.cfg, &cfgCopy)) {
+        return ZR_FALSE;
+    }
+    transaction->stagedCompiler.preSemanticIr.cfg = cfgCopy;
+    transaction->ownsCfg = ZR_TRUE;
+    if (!compiler_semantic_cfg_clone_array(
+                compiler->state, &compiler->preSemanticIr.instructions,
+                2U, &instructionCopy)) {
+        compiler_semantic_cfg_finish_transaction_dispose(transaction);
+        return ZR_FALSE;
+    }
+    transaction->stagedCompiler.preSemanticIr.instructions = instructionCopy;
+    transaction->ownsInstructions = ZR_TRUE;
+    if (!compiler_semantic_cfg_clone_array(
+                compiler->state, &compiler->preSemanticIr.sourceMap,
+                2U, &sourceMapCopy)) {
+        compiler_semantic_cfg_finish_transaction_dispose(transaction);
+        return ZR_FALSE;
+    }
+    transaction->stagedCompiler.preSemanticIr.sourceMap = sourceMapCopy;
+    transaction->ownsSourceMap = ZR_TRUE;
+    if (!compiler_semantic_cfg_clone_array(
+                compiler->state, &compiler->preSemanticIr.valueOperands,
+                2U, &operandCopy)) {
+        compiler_semantic_cfg_finish_transaction_dispose(transaction);
+        return ZR_FALSE;
+    }
+    transaction->stagedCompiler.preSemanticIr.valueOperands = operandCopy;
+    transaction->ownsValueOperands = ZR_TRUE;
+    return ZR_TRUE;
+}
+
+static TZrBool compiler_semantic_cfg_finish_staged_state_is_valid(
+        const SZrCompilerState *compiler) {
+    const SZrSemanticIrFunction *function;
+    const SZrParserCfg *cfg;
+    TZrSize blockIndex;
+
+    if (compiler == ZR_NULL) return ZR_FALSE;
+    function = &compiler->preSemanticIr;
+    cfg = &function->cfg;
+    if (!compiler->preSemanticIrCfgActive ||
+        compiler->preSemanticIrCfgBlock != ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+        !cfg->blocks.isValid || cfg->blocks.head == ZR_NULL ||
+        cfg->blocks.elementSize != sizeof(SZrParserCfgBlock) ||
+        cfg->blocks.length > cfg->blocks.capacity ||
+        cfg->entryBlockId >= cfg->blocks.length ||
+        cfg->exitBlockId >= cfg->blocks.length ||
+        !function->instructions.isValid ||
+        function->instructions.head == ZR_NULL ||
+        function->instructions.elementSize !=
+                sizeof(SZrSemanticIrInstruction) ||
+        function->instructions.length > function->instructions.capacity ||
+        !function->sourceMap.isValid || function->sourceMap.head == ZR_NULL ||
+        function->sourceMap.elementSize !=
+                sizeof(SZrSemanticIrSourceMapEntry) ||
+        function->sourceMap.length > function->sourceMap.capacity ||
+        function->sourceMap.length != function->instructions.length ||
+        !function->valueOperands.isValid ||
+        function->valueOperands.head == ZR_NULL ||
+        function->valueOperands.elementSize != sizeof(TZrValueId) ||
+        function->valueOperands.length > function->valueOperands.capacity) {
+        return ZR_FALSE;
+    }
+    for (blockIndex = 0U; blockIndex < cfg->blocks.length; ++blockIndex) {
+        const SZrParserCfgBlock *block = (const SZrParserCfgBlock *)
+                ZrCore_Array_Get((SZrArray *)&cfg->blocks, blockIndex);
+        if (block == ZR_NULL || block->id != blockIndex ||
+            !block->outgoingEdges.isValid ||
+            block->outgoingEdges.head == ZR_NULL ||
+            block->outgoingEdges.elementSize != sizeof(SZrParserCfgEdge) ||
+            block->outgoingEdges.length > block->outgoingEdges.capacity ||
+            block->successorCount != block->outgoingEdges.length) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
+static void compiler_semantic_cfg_finish_transaction_commit(
+        SZrCompilerState *compiler,
+        SZrCompilerSemanticCfgFinishTransaction *transaction) {
+    SZrSemanticIrFunction *destination = &compiler->preSemanticIr;
+    SZrSemanticIrFunction *staged =
+            &transaction->stagedCompiler.preSemanticIr;
+
+    /* All replacements were allocated and finalized on the staged copy, so
+     * this publication path performs no allocation and cannot expose a prefix. */
+    ZrParser_Cfg_Free(compiler->state, &destination->cfg);
+    ZrCore_Array_Free(compiler->state, &destination->instructions);
+    ZrCore_Array_Free(compiler->state, &destination->sourceMap);
+    ZrCore_Array_Free(compiler->state, &destination->valueOperands);
+    destination->cfg = staged->cfg;
+    destination->instructions = staged->instructions;
+    destination->sourceMap = staged->sourceMap;
+    destination->valueOperands = staged->valueOperands;
+    memset(&staged->cfg, 0, sizeof(staged->cfg));
+    memset(&staged->instructions, 0, sizeof(staged->instructions));
+    memset(&staged->sourceMap, 0, sizeof(staged->sourceMap));
+    memset(&staged->valueOperands, 0, sizeof(staged->valueOperands));
+    transaction->ownsCfg = ZR_FALSE;
+    transaction->ownsInstructions = ZR_FALSE;
+    transaction->ownsSourceMap = ZR_FALSE;
+    transaction->ownsValueOperands = ZR_FALSE;
+    compiler->preSemanticIrCfgActive =
+            transaction->stagedCompiler.preSemanticIrCfgActive;
+    compiler->preSemanticIrCfgTerminated =
+            transaction->stagedCompiler.preSemanticIrCfgTerminated;
+    compiler->preSemanticIrCfgBlock =
+            transaction->stagedCompiler.preSemanticIrCfgBlock;
+    compiler->preSemanticIrCfgStart =
+            transaction->stagedCompiler.preSemanticIrCfgStart;
+    compiler->preSemanticIrValidated =
+            transaction->stagedCompiler.preSemanticIrValidated;
+}
+
+static TZrBool compiler_semantic_cfg_finish_active_transaction(
+        SZrCompilerState *compiler) {
+    SZrCompilerSemanticCfgFinishTransaction transaction;
+
+    if (compiler == ZR_NULL || !compiler->preSemanticIrCfgActive) {
+        return ZR_FALSE;
+    }
+    if (compiler->preSemanticIrCfgBlock ==
+        ZR_PARSER_CFG_INVALID_BLOCK_ID) {
+        return compiler_semantic_cfg_finish(compiler);
+    }
+    if (!compiler_semantic_cfg_finish_transaction_prepare(
+                compiler, &transaction)) {
+        return ZR_FALSE;
+    }
+    if (!compiler_semantic_cfg_finish(&transaction.stagedCompiler) ||
+        !compiler_semantic_cfg_finish_staged_state_is_valid(
+                &transaction.stagedCompiler)) {
+        compiler_semantic_cfg_finish_transaction_dispose(&transaction);
+        return ZR_FALSE;
+    }
+    compiler_semantic_cfg_finish_transaction_commit(compiler, &transaction);
+    compiler_semantic_cfg_finish_transaction_dispose(&transaction);
+    return ZR_TRUE;
+}
+
 /**
  * @brief 在 SemanticIR 验证前收束源 CFG，或为入口脚本选择可执行提升/分析专用总图。
  * @pre 由 ValidatePreSemanticIr 在初始化后的编译器状态上调用；源编译器已写出本阶段可见的 SemanticIR。
@@ -460,7 +742,8 @@ TZrBool compiler_semantic_cfg_finalize(SZrCompilerState *cs) {
      * optional、invoke 与异常边由各自的控制流 lowering 先行落图；此处只
      * 关闭当前延续并补函数出口，不能重建或覆盖上游已绑定的分支关系。
      */
-    if (cs->preSemanticIrCfgActive) return compiler_semantic_cfg_finish(cs);
+    if (cs->preSemanticIrCfgActive)
+        return compiler_semantic_cfg_finish_active_transaction(cs);
     if (!cs->preSemanticIrCfgStartupBlocked &&
         !cs->preSemanticIrCfgStartupSuppressed &&
         !cs->preSemanticIrCfgTerminated) {
