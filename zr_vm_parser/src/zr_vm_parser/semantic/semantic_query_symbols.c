@@ -2,6 +2,9 @@
 
 #include <string.h>
 
+/* VisibleSymbols 的临时排序项；record 借用当前 context 的符号数组，
+ * 只在本次查询内用于遮蔽判断，最终仅把 symbol 的值副本写入输出。
+ */
 typedef struct SZrSemanticVisibleSymbolCandidate {
     SZrParserSemanticSymbolQuery symbol;
     const SZrSemanticSymbolRecord *record;
@@ -36,6 +39,10 @@ static TZrSize semantic_query_symbols_range_width(const SZrFileRange *range) {
     return range->end.offset - range->start.offset;
 }
 
+/**
+ * @brief NULL/MODULE 接受任意位置，NODE 仅接受其 root 源码范围内的位置。
+ * @note NODE 缺少 root 或未知 kind 时拒绝查询；root 借用调用方 AST，不延长其生命周期。
+ */
 static TZrBool semantic_query_symbols_scope_allows_position(
         const SZrParserSemanticQueryScope *scope,
         SZrFileRange position) {
@@ -46,6 +53,7 @@ static TZrBool semantic_query_symbols_scope_allows_position(
            semantic_query_symbols_range_contains(&scope->root->location, &position);
 }
 
+/* 沿 scope ID 的 parent 链判断祖先关系；深度上限取已发布 scope 数，避免坏链循环。 */
 static TZrBool semantic_query_symbols_scope_descends_from(
         const SZrSemanticContext *context,
         const SZrSemanticScopeFact *candidate,
@@ -66,6 +74,7 @@ static TZrBool semantic_query_symbols_scope_descends_from(
     return ZR_FALSE;
 }
 
+/* 从覆盖位置的事实中优先选择树上更深的作用域；非祖先候选按源码范围宽度取窄者。 */
 static const SZrSemanticScopeFact *semantic_query_symbols_find_innermost_scope(
         const SZrSemanticContext *context,
         SZrFileRange position) {
@@ -98,6 +107,7 @@ static const SZrSemanticScopeFact *semantic_query_symbols_find_innermost_scope(
     return best;
 }
 
+/* 提升声明不受位置限制；其余绑定需与查询位置同源，且声明起点不晚于查询偏移。 */
 static TZrBool semantic_query_symbols_is_available(
         const SZrSemanticVisibleSymbolFact *fact,
         SZrFileRange position) {
@@ -112,6 +122,7 @@ static TZrBool semantic_query_symbols_is_available(
            fact->declarationRange.start.offset <= position.start.offset;
 }
 
+/* 在可用性之外应用可选类别、可访问性与静态接收者上下文筛选。 */
 static TZrBool semantic_query_symbols_is_eligible(
         const SZrSemanticVisibleSymbolFact *fact,
         const SZrSemanticScopeFact *activeScope,
@@ -136,6 +147,7 @@ static TZrBool semantic_query_symbols_is_eligible(
     return !(activeScope->isStaticContext && fact->isReceiverMember && !fact->isStatic);
 }
 
+/* 类型名占独立命名空间；其他符号种类在此查询中共享值命名空间。 */
 static TZrBool semantic_query_symbols_same_namespace(
         const SZrSemanticSymbolRecord *left,
         const SZrSemanticSymbolRecord *right) {
@@ -150,6 +162,7 @@ static TZrBool semantic_query_symbols_same_namespace(
     return leftIsType == rightIsType;
 }
 
+/* 同名且同命名空间时，内层候选遮蔽外层候选；同一有效 overload set 保留全部成员。 */
 static TZrBool semantic_query_symbols_is_shadowed(
         const SZrArray *candidates,
         const SZrSemanticVisibleSymbolCandidate *candidate) {
@@ -179,6 +192,7 @@ static TZrBool semantic_query_symbols_is_shadowed(
     return ZR_FALSE;
 }
 
+/* 可见结果先按词法距离、再按声明顺序、最后按 SymbolId 排序。 */
 static TZrBool semantic_query_symbols_candidate_precedes(
         const SZrSemanticVisibleSymbolCandidate *left,
         const SZrSemanticVisibleSymbolCandidate *right) {
@@ -219,6 +233,7 @@ static void semantic_query_symbols_sort(SZrArray *candidates) {
     }
 }
 
+/* 新建或清空同元素类型的值数组；元素类型不匹配时失败且不改动原数组。 */
 static TZrBool semantic_query_symbols_prepare_output(
         const SZrSemanticContext *context,
         SZrArray *outSymbols) {
@@ -239,6 +254,10 @@ static TZrBool semantic_query_symbols_prepare_output(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 对声明投影应用相同 MODULE/NODE 边界，并拒绝空声明或无 root 的 NODE scope。
+ * @note NULL scope 与 MODULE 不限制范围；NODE 的 source/range 必须通过同源范围判定。
+ */
 static TZrBool semantic_query_symbols_scope_allows_declaration(
         const SZrParserSemanticQueryScope *scope,
         const SZrSemanticReferenceFact *declaration) {
@@ -314,6 +333,7 @@ static void semantic_query_symbols_sort_declarations(SZrArray *symbols) {
     }
 }
 
+/* 外部引用必须带完整 provider 身份；canonical typeId 与 provider generation 不参与此门槛。 */
 static TZrBool semantic_query_external_reference_is_complete(
         const SZrSemanticReferenceFact *reference) {
     return reference != ZR_NULL && reference->isResolved &&
@@ -327,6 +347,7 @@ static TZrBool semantic_query_external_reference_is_complete(
            reference->externalSignatureHash != 0U;
 }
 
+/* 外部引用先按 source 指针非 NULL 排序（包括指向空字符串的非 NULL 指针），再按范围、token 和 SymbolId。 */
 static TZrBool semantic_query_external_reference_precedes(
         const SZrParserSemanticExternalReferenceQuery *left,
         const SZrParserSemanticExternalReferenceQuery *right) {
@@ -393,6 +414,7 @@ static void semantic_query_external_references_sort(SZrArray *references) {
     }
 }
 
+/* 只按 SymbolId 合并当前快照中的 import 来源；同一符号出现冲突 URI 时拒绝该投影。 */
 static TZrBool semantic_query_symbols_apply_import_identity(
         const SZrSemanticContext *context,
         SZrParserSemanticSymbolQuery *symbol) {
@@ -427,6 +449,17 @@ static TZrBool semantic_query_symbols_apply_import_identity(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 将位置上的 resolved reference 投影为符号值；不要求 canonical typeId 有效。
+ * @param context 提供当前 reference facts 与 symbol records；上下文存活不延长事实指针目标的生命周期。
+ * @param position 需要查询的源码位置。
+ * @param scope 可选的 MODULE/NODE 范围；NODE root 必须非空，且借用 AST 在查询期间保持存活。
+ * @param outSymbol 输出值；进入查询前清零，失败时保持清零。
+ * @return reference 已解析、SymbolId 有效且 import identity 无冲突时返回 true；无符号记录时 kind/node 仍为零/NULL。
+ * @note isResolved 与 canonical typeId 独立。输出浅拷贝 name、signature、identity/import URI、三个 range.source 与 declarationNode 指针；range 值拷贝不会复制 source string。
+ *       name 是 fact producer 提供的 SZrString*（identifier 路径取自 binding->name）；range.source 也是 SZrString*，签名/identity 来自各自 producer，declarationNode 属于来源 AST owner。
+ *       消费输出期间须保持这些 SZrString 的实际 GC roots（含 range.source 的源字符串 root）、provider owners 与来源 AST owner 存活；context->state 只为数组查询提供 allocator，不保证 referents 存活。
+ */
 TZrBool ZrParser_SemanticQuery_SymbolAt(
         const SZrSemanticContext *context,
         SZrFileRange position,
@@ -445,6 +478,7 @@ TZrBool ZrParser_SemanticQuery_SymbolAt(
     }
 
     reference = facts.reference;
+    /* reference 状态与 canonical 类型可用性独立；这里不验证 typeId，只验证引用和符号身份。 */
     if (reference == ZR_NULL || !reference->isResolved ||
         reference->symbolId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_FALSE;
@@ -489,6 +523,18 @@ TZrBool ZrParser_SemanticQuery_SymbolAt(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 投影有匹配符号记录的 resolved 声明，按源码位置排序并去重。
+ * @param context 含有有效 reference facts 的语义快照。
+ * @param scope 可选的 MODULE/NODE 范围。
+ * @param outSymbols 调用方拥有的输出数组；已有数组须使用与 context->state 兼容的 allocator。
+ * @pre 首次调用前输出数组须经 Construct（其前不得持有缓冲区；或等价全零初始化），也可先按精确元素宽度合法 Init；复用时宽度必须匹配。
+ *      已 Init 的数组须与 context->state 使用兼容 allocator，以供增长及后续 Free。
+ * @return 参数/快照有效时返回 true，即使结果为空；无效输入或元素宽度不符时返回 false。
+ * @note 缓冲区归调用方；首次自动 Init、Push 扩容与最终 Free 均须使用与 context->state 兼容的 allocator。
+ * @note 数组仅保存元素字节副本，不接管或延长其中 AST/string/URI 指针目标的生命周期；保持来源 AST 与字符串/provider owner/root 存活。
+ *       context->state 只提供数组 allocator，不是元素内部指针目标的 owner/root。
+ */
 TZrBool ZrParser_SemanticQuery_DeclaredSymbols(
         const SZrSemanticContext *context,
         const SZrParserSemanticQueryScope *scope,
@@ -548,6 +594,18 @@ TZrBool ZrParser_SemanticQuery_DeclaredSymbols(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 投影 provider 身份完整的外部引用，并按稳定 identity 键排序。
+ * @param context 含有有效 reference facts 的语义快照。
+ * @param scope 可选的 MODULE/NODE 范围。
+ * @param outReferences 调用方拥有的输出数组；已有数组须使用与 context->state 兼容的 allocator。
+ * @pre 首次调用前输出数组须经 Construct（其前不得持有缓冲区；或等价全零初始化），也可先按精确元素宽度合法 Init；复用时宽度必须匹配。
+ *      已 Init 的数组须与 context->state 使用兼容 allocator，以供增长及后续 Free。
+ * @return 有合格引用时返回 true；无合格项、无效输入或元素宽度不符时返回 false。
+ * @note 缓冲区归调用方；首次自动 Init、Push 扩容与最终 Free 均须使用与 context->state 兼容的 allocator。
+ * @note 数组仅保存元素字节副本，不接管或延长 externalOwnerIdentity 指针目标的生命周期；保持对应字符串/provider owner/root 存活。
+ *       context->state 只提供数组 allocator，不是元素内部指针目标的 owner/root。
+ */
 TZrBool ZrParser_SemanticQuery_ExternalReferences(
         const SZrSemanticContext *context,
         const SZrParserSemanticQueryScope *scope,
@@ -601,6 +659,20 @@ TZrBool ZrParser_SemanticQuery_ExternalReferences(
     return outReferences->length > 0U;
 }
 
+/**
+ * @brief 从已发布 scope/visible facts 投影当前位置可见符号，不从全局符号表推测绑定。
+ * @param context 当前语义快照及其已发布可见性事实。
+ * @param position 查询位置。
+ * @param scope 可选的 MODULE/NODE 范围；NODE root 借用 AST 并须在查询期间保持存活。
+ * @param options 可选过滤项；NULL 等价于全部采用默认关闭值。
+ * @param outSymbols 调用方拥有的输出数组；已有数组须使用与 context->state 兼容的 allocator。
+ * @pre 首次调用前输出数组须经 Construct（其前不得持有缓冲区；或等价全零初始化），也可先按精确元素宽度合法 Init；复用时宽度必须匹配。
+ *      已 Init 的数组须与 context->state 使用兼容 allocator，以供增长及后续 Free。
+ * @return 至少投影一个符号时返回 true；空集合或无效输入、范围、元素宽度时返回 false。
+ * @note 缓冲区归调用方；首次自动 Init、Push 扩容与最终 Free 均须使用与 context->state 兼容的 allocator。
+ * @note 数组仅保存元素字节副本，不接管或延长其中 AST/string/URI 指针目标的生命周期；保持来源 AST 与字符串/provider owner/root 存活。
+ *       context->state 只提供数组 allocator，不是元素内部指针目标的 owner/root。
+ */
 TZrBool ZrParser_SemanticQuery_VisibleSymbols(
         const SZrSemanticContext *context,
         SZrFileRange position,
@@ -664,6 +736,7 @@ TZrBool ZrParser_SemanticQuery_VisibleSymbols(
             }
             candidate.symbol.declarationNode = record->astNode;
             candidate.record = record;
+            /* record 仅供本次遮蔽判定借用；candidate.symbol 是唯一会逃逸到结果数组的部分。 */
             candidate.scopeDistance = distance;
             candidate.declarationOrder = fact->declarationOrder;
             candidate.overloadSetId = record->overloadSetId;
