@@ -60,7 +60,8 @@ TZrSize garbage_collector_concurrent_major_begin(SZrState *state,
     collector->statsSnapshot.concurrentMajorActive = ZR_TRUE;
     return work > 0u ? work : 1u;
 }
-/* 每次至多弹出 objectBudget 个灰对象；对象字段与写屏障共用域 mutation lock。 */
+/* 每次至多弹出 objectBudget 个灰对象；配置的非零 maxObjects 可收紧单次切片，
+ * 不限制单个对象扫描耗时或后续 remark/sweep；对象字段与写屏障共用域 mutation lock。 */
 TZrSize garbage_collector_concurrent_major_mark_slice(
         SZrState *state,
         TZrSize objectBudget) {
@@ -68,22 +69,28 @@ TZrSize garbage_collector_concurrent_major_mark_slice(
     TZrSize work = 0u;
     TZrUInt64 startedUs;
     TZrUInt64 durationUs;
-    /* BUG: concurrentMajorMarkDrained 在锁内写、下方锁外读；同域并发 GcStep 可形成数据竞争。 */
+    /* BUG: gc.c/gc_cycle.c 仍在此锁外读取 active/drained 选择切片或收尾；该调用者竞态待另行处理。 */
     if (state == ZR_NULL || state->global == ZR_NULL ||
         state->global->garbageCollector == ZR_NULL) {
         return 0u;
     }
     collector = state->global->garbageCollector;
-    if (!collector->concurrentMajorActive ||
-        collector->concurrentMajorMarkDrained) {
-        return 0u;
-    }
     if (objectBudget == 0u) {
         objectBudget = 1u;
     }
     /* objectBudget 限制队列弹出次数而非耗时；零值归一为一次，单个对象扫描仍可很重。 */
     startedUs = garbage_collector_now_us();
     ZrCore_GcDomain_MutationLock(state->gcDomain);
+    if (!collector->concurrentMajorActive ||
+        collector->concurrentMajorMarkDrained) {
+        ZrCore_GcDomain_MutationUnlock(state->gcDomain);
+        return 0u;
+    }
+    if (collector->budgetConfigured && collector->budget.maxObjects > 0u &&
+        collector->budget.maxObjects < (TZrUInt64)objectBudget) {
+        /* 仅收紧调用方上限；比较后才转回宿主大小，避免窄位宽截断。 */
+        objectBudget = (TZrSize)collector->budget.maxObjects;
+    }
     while (objectBudget-- > 0u) {
         if (collector->waitToScanObjectList == ZR_NULL) {
             if (collector->waitToScanAgainObjectList != ZR_NULL) {

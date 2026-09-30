@@ -2,12 +2,14 @@
 related_code:
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_concurrent_major.c
   - zr_vm_core/src/zr_vm_core/gc/gc.c
   - zr_vm_core/src/zr_vm_core/gc/gc_budget_runtime.c
   - zr_vm_core/include/zr_vm_core/gc.h
 implementation_files:
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_concurrent_major.c
   - zr_vm_core/src/zr_vm_core/gc/gc.c
   - zr_vm_core/src/zr_vm_core/gc/gc_budget_runtime.c
   - zr_vm_core/include/zr_vm_core/gc.h
@@ -22,8 +24,9 @@ tests:
   - tests/core/test_gc_concurrent_major.c
   - tests/core/test_gc_budget_constructor_defaults.inc
   - tests/acceptance/2026-09-29-gc-budget-constructor-defaults.md
+  - tests/acceptance/2026-09-29-gc-major-max-objects-slice.md
 doc_type: milestone-detail
-status: planned
+status: in-progress
 ---
 
 # 06.02 并发 Major、GC 预算与移动边界
@@ -104,6 +107,10 @@ GcStep(budget):
 
 构造器预算默认值另有一个真实 native RED：`test_gc_budget_constructor_initializes_optional_state`
 使用自定义上游分配器，只在类型和大小都匹配 `SZrGarbageCollector` 的那次分配中写入合法、已初始化的预算对象和字段，确认注入地址就是随后发布的实际 collector。它经 `ZrCore_GlobalState_New`、主线程 state 和 registry 初始化后调用公开 getter，在释放 global/state 后再断言，以免失败断言遗留分配。目标 `zr_vm_gc_concurrent_major_test` 尚未注册 CTest；修复前直接运行 11 个测试，其中这一新增用例在 `GetBudget` 返回值处 RED（期望 false、实际 true）。构造器通过 `ZrCore_GcBudget_Init` 和逐字段赋值建立 collector 与 snapshot 的预算默认值，保留其余构造初始化。2026-09-30 UTC，root 在 MSVC 19.44 C11 Debug 下完成 71/71 编译步骤并直接运行全部 11 个测试，0 失败、退出码 0；独立只读审查无阻塞问题。详见 [独立验收记录](../../../../tests/acceptance/2026-09-29-gc-budget-constructor-defaults.md)。构造状态为未配置、`ACCEPTED/IDLE/NONE`、计量字段为 0、pressure/fallback 为 false；未配置时 `GetBudget` 的输出参数不属于契约。这个构造器修复子任务已验证，06.02 整体预算、切片和压力矩阵仍未完成。
+
+并发标记切片的首个真实运行时消费者另有 RED：`test_concurrent_major_slice_honors_max_objects` 通过真实 global、collector、公开 `SetBudget`、活动周期内追加 gray roots 和公开 `GcStep` 建立 fixture。`maxObjects=1` 时，切片前 16 个对象都仍存活、处于 gray 状态，并按精确队列顺序排在已有 root 前；修复前一次切片引用了 8 个对象，期望为 1。root-owned MSVC direct run 在原 12-case binary 中为 12 tests / 1 failure，其余 11 cases 通过；目标没有 CTest 注册。随后已将 `maxObjects=0` 与 `maxObjects=64` 的真实 collector caller-cap fixtures 加入同一测试源，预期各处理 8 个对象；三个 maxObjects case 曾在 header 注释错误引入前通过 MSVC Debug，随后在修正头文件后再次通过当前头文件的五目标增量构建和 direct GC 测试，详见验收记录。生产修复仅在共同 `garbage_collector_concurrent_major_mark_slice` 内以非零配置上限收紧调用方的每次队列弹出数，不扩张调用方上限；配置写入及切片读取通过 GC 域递归 mutation lock 串行化。`ZrCore_GarbageCollector_GetBudget`、`ZrCore_GarbageCollector_EvaluateBudgetStep`、`ZrCore_GarbageCollector_GetBudgetStats`、`ZrCore_Gc_GetStats` 与 `ZrCore_GarbageCollector_GetStatsSnapshot` 不因此获得通用线程安全保证；调用方须串行化这些预算读取/评估和 snapshot 访问与 `SetBudget` 或 GC stats 更新的重叠访问。此路径未调用 `EvaluateBudgetStep`，budget telemetry 仍为 `ACCEPTED/IDLE`、cursor/work 为 0；完整 major、remark、sweep、elapsed/work/byte/pressure 预算仍未覆盖。详见 [独立验收记录](../../../../tests/acceptance/2026-09-29-gc-major-max-objects-slice.md)。
+
+2026-09-30 UTC，临时 `gc.h` 注释错误前的 root-owned MSVC Debug 聚焦构建覆盖 16 个 native target，471/471 steps、exit 0。之后 GCC/WSL 18-target 集成构建在 6/969 steps 因该临时错误关闭的注释导致 C 编译失败、exit 1（不是 CMake 配置失败）；注释已修正。当前头文件下，MSVC Debug 五目标增量构建 `python D:/tmp/zr_vm/ssa-control/run_native.py header-final-build build zr_vm_gc_concurrent_major_test zr_vm_ssa_exec_ir_artifact_v6_test zr_vm_ssa_capability_validation_test zr_vm_ssa_exec_ir_execbc_vm_test zr_vm_ssa_oracle_projections_test` 完成 352/352 steps、exit 0；随后 `python D:/tmp/zr_vm/ssa-control/run_suite.py msvc gc` direct 运行 14/14、exit 0。之后 root-owned Clang GC Unity direct run 的 GDB 状态为 `TestFailures=0`、`TestIgnores=0`、`NumberOfTests=8`，当前正在执行第8个 `test_concurrent_marker_and_mutator_serialize_object_storage`；之前完成的7个case（包括第3–5的全部maxObjects变体）无失败。完整线程栈确认该用例触发既存 nested `MutationBegin`/STW deadlock；保存GDB证据后，经核验exe路径并SIGTERM终止owned PID，Clang GC suite因此为partial/aborted，不能宣称14/14通过。GCC大构建仍在运行。详见acceptance中的状态栈、完整线程栈和termination日志。Release/sanitizer和完整预算矩阵仍未验证；06.02整体保持in-progress。
 
 登记新 CTest 名 `ssa_major_budget` 和可执行目标 `zr_vm_ssa_major_budget_test` 后，在 WSL 仓库根运行：
 

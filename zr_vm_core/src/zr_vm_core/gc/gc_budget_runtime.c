@@ -1,5 +1,6 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/state.h"
+#include "gc_domain_internal.h"
 
 #include <limits.h>
 #include <string.h>
@@ -27,7 +28,7 @@ static TZrInt64 gc_budget_debt(const SZrGarbageCollector *collector) {
     return (TZrInt64)collector->gcDebtSize;
 }
 
-/* 预算入口同步同一回收器的通用 GC 快照；调用者需保证没有并发写入。 */
+/* 同步预算快照；SetBudget 在域 mutation lock 内调用，Evaluate/GetBudgetStats 仍由调用方串行化。 */
 static void gc_budget_sync_snapshot(SZrGarbageCollector *collector) {
     SZrGarbageCollectorStatsSnapshot *snapshot = &collector->statsSnapshot;
     snapshot->budgetConfigured = collector->budgetConfigured;
@@ -47,6 +48,7 @@ static void gc_budget_sync_snapshot(SZrGarbageCollector *collector) {
 TZrBool ZrCore_GarbageCollector_SetBudget(SZrGlobalState *global,
                                           const SZrGcBudget *budget) {
     SZrGarbageCollector *collector = gc_budget_collector(global);
+    SZrGcDomain *domain;
     SZrGcBudgetDiagnostic diagnostic;
 
     if (collector == ZR_NULL ||
@@ -54,9 +56,12 @@ TZrBool ZrCore_GarbageCollector_SetBudget(SZrGlobalState *global,
         return ZR_FALSE;
     }
 
-    /* TODO: 同一 global 可供多个 mutator 访问，而设置、评估及读统计均未持锁；
-     * 仓内仅测试单线程调用，需定义宿主并发调用前提或统一同步方式。 */
-    /* 先验证再整体替换配置；无效更新不改变既有预算和累计见证。 */
+    /* 先验证，避免在锁内执行诊断或任何可能扩展的工作。 */
+    domain = global->gcDomain;
+    /* 与并发 major 切片读取 budgetConfigured/maxObjects 使用同一递归锁。
+     * 域为空时 helper 是 no-op，此路径不提供跨线程同步。 */
+    ZrCore_GcDomain_MutationLock(domain);
+    /* 整体替换配置和对应快照；此临界区不分配内存。 */
     collector->budget = *budget;
     collector->budgetConfigured = ZR_TRUE;
     collector->budgetLastStatus = ZR_GC_BUDGET_STEP_ACCEPTED;
@@ -71,6 +76,7 @@ TZrBool ZrCore_GarbageCollector_SetBudget(SZrGlobalState *global,
     collector->budgetPressure = ZR_FALSE;
     collector->budgetFallback = ZR_FALSE;
     gc_budget_sync_snapshot(collector);
+    ZrCore_GcDomain_MutationUnlock(domain);
     return ZR_TRUE;
 }
 

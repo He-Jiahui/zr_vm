@@ -410,8 +410,15 @@ ZR_CORE_API void ZrCore_GarbageCollector_SetHeapLimitBytes(struct SZrGlobalState
 ZR_CORE_API void ZrCore_GarbageCollector_SetPauseBudgetUs(struct SZrGlobalState *global,
                                                           TZrUInt64 pauseBudgetUs,
                                                           TZrUInt64 remarkBudgetUs);
-/** @brief 为可选预算评估 API 安装配置。
- * TODO: 当前回收步骤未调用 EvaluateBudgetStep；需确认该配置是否预期影响实际调度。 */
+/** @brief 为可选预算 API 安装配置。
+ * 已配置的非零 maxObjects 会收紧并发 major 每次 mark slice 的灰对象弹出上限；
+ * 零值保留调用方切片上限，不限制整轮 major 或单对象扫描耗时。其他预算维度
+ * 仍由显式 EvaluateBudgetStep 驱动。存在 GC 域时，SetBudget 与 mark slice
+ * 读取通过递归 mutation lock 串行化，仅同步这两个访问。
+ * GetBudget、EvaluateBudgetStep、GetBudgetStats、ZrCore_Gc_GetStats 与
+ * ZrCore_GarbageCollector_GetStatsSnapshot 不因此获得通用线程安全保证。调用方须将
+ * 预算读取/评估和 snapshot 访问与 SetBudget 或 GC stats 更新串行化。没有已初始化
+ * GC domain 时，锁 helper 不提供跨线程同步。 */
 ZR_CORE_API TZrBool ZrCore_GarbageCollector_SetBudget(struct SZrGlobalState *global,
                                                        const SZrGcBudget *budget);
 /** @brief 读取全局回收器当前配置的预算；首次配置前返回 false。 */

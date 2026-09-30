@@ -299,6 +299,196 @@ static void finish_concurrent_major(void) {
             g_state->global->garbageCollector->concurrentMajorActive);
 }
 
+static void run_concurrent_major_slice_max_objects_case(
+        TZrUInt64 maxObjectsLimit,
+        TZrSize expectedReferencedCount) {
+    enum {
+        fixtureObjectCount = 16,
+        maxCleanupSteps = 4096
+    };
+    SZrGarbageCollector *collector = g_state->global->garbageCollector;
+    SZrObject *preexistingRoot = ZR_NULL;
+    SZrRawObject *preexistingRootRaw = ZR_NULL;
+    SZrObject *fixtureObjects[fixtureObjectCount] = {ZR_NULL};
+    SZrRawObject *fixtureRaws[fixtureObjectCount] = {ZR_NULL};
+    TZrBool ignoredByTest[fixtureObjectCount] = {ZR_FALSE};
+    SZrGcBudget budget;
+    TZrSize ignoredCountBefore = collector->ignoredObjectCount;
+    TZrSize createdCount = 0u;
+    TZrSize liveAfterBeginCount = 0u;
+    TZrSize initialGrayRootCount = 0u;
+    TZrSize grayBeforeSliceCount = 0u;
+    TZrSize grayHeadPrefixCount = 0u;
+    TZrSize referencedAfterSliceCount = 0u;
+    TZrSize waitingAfterSliceCount = 0u;
+    TZrSize otherMarkStatusAfterSliceCount = 0u;
+    TZrSize finishStepCount = 0u;
+    TZrSize ignoredCountAfterCleanup;
+    TZrBool budgetConfigured;
+    TZrBool preexistingRootIgnored = ZR_FALSE;
+    TZrBool preexistingRootQueued = ZR_FALSE;
+    TZrBool majorBegan = ZR_FALSE;
+    TZrBool sliceRan = ZR_FALSE;
+    TZrBool majorFinished = ZR_FALSE;
+    TZrBool fixtureTailMatchesInitialRootHead = ZR_FALSE;
+    const SZrRawObject *initialGrayRootHead = ZR_NULL;
+
+    ZrCore_GcBudget_Init(&budget);
+    budget.maxObjects = maxObjectsLimit;
+    /* SetBudget requires one configured dimension. For maxObjects=0, this
+     * unused work limit keeps the budget valid; mark_slice only consumes the
+     * object cap and leaves budget-step telemetry untouched. */
+    if (maxObjectsLimit == 0u) {
+        budget.maxWorkUnits = 1u;
+    }
+    budgetConfigured = ZrCore_Gc_SetBudget(g_state, &budget);
+
+    ZrCore_GarbageCollector_SetWorkerCount(g_state->global, 1u);
+    if (budgetConfigured) {
+        preexistingRoot = ZrCore_Object_New(g_state, ZR_NULL);
+        if (preexistingRoot != ZR_NULL) {
+            ZrCore_Object_Init(g_state, preexistingRoot);
+            preexistingRootRaw = ZR_CAST_RAW_OBJECT_AS_SUPER(preexistingRoot);
+            preexistingRootIgnored = ZrCore_GarbageCollector_IgnoreObject(
+                    g_state, preexistingRootRaw);
+        }
+    }
+
+    if (budgetConfigured && preexistingRootIgnored) {
+        collector->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        ZrCore_GarbageCollector_ScheduleCollection(
+                g_state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR);
+        ZrCore_GarbageCollector_GcStep(g_state);
+        majorBegan = collector->concurrentMajorActive &&
+                     collector->collectionPhase ==
+                             ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_MARK_CONCURRENT;
+    }
+    if (majorBegan) {
+        const SZrRawObject *grayCursor = collector->waitToScanObjectList;
+        initialGrayRootHead = grayCursor;
+        while (grayCursor != ZR_NULL) {
+            if (grayCursor == preexistingRootRaw) {
+                preexistingRootQueued = ZR_TRUE;
+            }
+            initialGrayRootCount++;
+            grayCursor = grayCursor->gcList;
+        }
+    }
+
+    /* Install roots after the initial snapshot. Each successful IgnoreObject
+     * prepends one gray object, placing this fixture ahead of existing roots. */
+    if (majorBegan) {
+        for (TZrSize index = 0u; index < fixtureObjectCount; ++index) {
+            fixtureObjects[index] = ZrCore_Object_New(g_state, ZR_NULL);
+            if (fixtureObjects[index] == ZR_NULL) {
+                break;
+            }
+            ZrCore_Object_Init(g_state, fixtureObjects[index]);
+            fixtureRaws[index] = ZR_CAST_RAW_OBJECT_AS_SUPER(fixtureObjects[index]);
+            createdCount++;
+            if (collector_contains_object(collector, fixtureRaws[index])) {
+                liveAfterBeginCount++;
+            }
+            ignoredByTest[index] = ZrCore_GarbageCollector_IgnoreObject(
+                    g_state, fixtureRaws[index]);
+            if (!ignoredByTest[index]) {
+                break;
+            }
+        }
+    }
+
+    {
+        const SZrRawObject *grayCursor = collector->waitToScanObjectList;
+        for (TZrSize index = 0u; index < createdCount; ++index) {
+            const SZrRawObject *expectedHead = fixtureRaws[createdCount - index - 1u];
+            if (ZrCore_RawObject_IsWaitToScan(fixtureRaws[index])) {
+                grayBeforeSliceCount++;
+            }
+            if (grayCursor != expectedHead) {
+                break;
+            }
+            grayHeadPrefixCount++;
+            grayCursor = grayCursor->gcList;
+        }
+        fixtureTailMatchesInitialRootHead =
+                grayCursor == initialGrayRootHead;
+    }
+
+    if (majorBegan && createdCount == fixtureObjectCount &&
+        liveAfterBeginCount == fixtureObjectCount &&
+        initialGrayRootCount > 0u &&
+        grayBeforeSliceCount == fixtureObjectCount &&
+        grayHeadPrefixCount == fixtureObjectCount &&
+        fixtureTailMatchesInitialRootHead &&
+        budgetConfigured) {
+        ZrCore_GarbageCollector_GcStep(g_state);
+        sliceRan = ZR_TRUE;
+        for (TZrSize index = 0u; index < fixtureObjectCount; ++index) {
+            if (ZrCore_RawObject_IsMarkReferenced(fixtureRaws[index])) {
+                referencedAfterSliceCount++;
+            } else if (ZrCore_RawObject_IsWaitToScan(fixtureRaws[index])) {
+                waitingAfterSliceCount++;
+            } else {
+                otherMarkStatusAfterSliceCount++;
+            }
+        }
+    }
+
+    while (collector->concurrentMajorActive &&
+           finishStepCount < (TZrSize)maxCleanupSteps) {
+        ZrCore_GarbageCollector_GcStep(g_state);
+        finishStepCount++;
+    }
+    majorFinished = !collector->concurrentMajorActive;
+    if (!majorFinished && collector->concurrentMajorActive) {
+        /* Keep teardown safe even if the bounded drain unexpectedly stalls. */
+        ZrCore_GarbageCollector_GcFull(g_state, ZR_FALSE);
+    }
+
+    for (TZrSize index = 0u; index < createdCount; ++index) {
+        if (ignoredByTest[index]) {
+            (void)ZrCore_GarbageCollector_UnignoreObject(
+                    g_state->global, fixtureRaws[index]);
+        }
+    }
+    if (preexistingRootIgnored) {
+        (void)ZrCore_GarbageCollector_UnignoreObject(
+                g_state->global, preexistingRootRaw);
+    }
+    ignoredCountAfterCleanup = collector->ignoredObjectCount;
+
+    TEST_ASSERT_TRUE(budgetConfigured);
+    TEST_ASSERT_TRUE(preexistingRootIgnored);
+    TEST_ASSERT_TRUE(majorBegan);
+    TEST_ASSERT_EQUAL_UINT64(fixtureObjectCount, createdCount);
+    TEST_ASSERT_EQUAL_UINT64(fixtureObjectCount, liveAfterBeginCount);
+    TEST_ASSERT_TRUE(initialGrayRootCount > 0u);
+    TEST_ASSERT_TRUE(preexistingRootQueued);
+    TEST_ASSERT_EQUAL_UINT64(fixtureObjectCount, grayBeforeSliceCount);
+    TEST_ASSERT_EQUAL_UINT64(fixtureObjectCount, grayHeadPrefixCount);
+    TEST_ASSERT_TRUE(fixtureTailMatchesInitialRootHead);
+    TEST_ASSERT_TRUE(sliceRan);
+    TEST_ASSERT_EQUAL_UINT64(expectedReferencedCount, referencedAfterSliceCount);
+    TEST_ASSERT_EQUAL_UINT64(
+            fixtureObjectCount - expectedReferencedCount,
+            waitingAfterSliceCount);
+    TEST_ASSERT_EQUAL_UINT64(0u, otherMarkStatusAfterSliceCount);
+    TEST_ASSERT_TRUE(majorFinished);
+    TEST_ASSERT_EQUAL_UINT64(ignoredCountBefore, ignoredCountAfterCleanup);
+}
+
+static void test_concurrent_major_slice_honors_max_objects(void) {
+    run_concurrent_major_slice_max_objects_case(1u, 1u);
+}
+
+static void test_concurrent_major_slice_zero_max_objects_keeps_caller_limit(void) {
+    run_concurrent_major_slice_max_objects_case(0u, 8u);
+}
+
+static void test_concurrent_major_slice_large_max_objects_keeps_caller_limit(void) {
+    run_concurrent_major_slice_max_objects_case(64u, 8u);
+}
+
 static void test_concurrent_barrier_keeps_target_written_from_black_owner(void) {
     /* owner 已被 major 标黑后才写入 target；若并发写屏障漏标，
      * 完成收集时 target 会从 gcObjectList 消失。 */
@@ -562,6 +752,9 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_major_step_enters_concurrent_mark_without_finishing_cycle);
     RUN_TEST(test_concurrent_major_mark_slices_finish_one_collection);
+    RUN_TEST(test_concurrent_major_slice_honors_max_objects);
+    RUN_TEST(test_concurrent_major_slice_zero_max_objects_keeps_caller_limit);
+    RUN_TEST(test_concurrent_major_slice_large_max_objects_keeps_caller_limit);
     RUN_TEST(test_concurrent_mark_slice_does_not_pause_same_domain_mutator);
     RUN_TEST(test_concurrent_barrier_keeps_target_written_from_black_owner);
     RUN_TEST(test_concurrent_marker_and_mutator_serialize_object_storage);

@@ -11,6 +11,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/gc/gc_major.c
   - zr_vm_core/src/zr_vm_core/gc/gc_compact.c
 implementation_files:
+  - zr_vm_core/include/zr_vm_core/gc.h
   - zr_vm_core/include/zr_vm_core/gc_budget_contract.h
   - zr_vm_core/src/zr_vm_core/gc/gc_budget_contract.c
   - zr_vm_core/include/zr_vm_core/gc_major.h
@@ -19,6 +20,7 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/gc/gc_major.c
   - zr_vm_core/src/zr_vm_core/gc/gc_compact.c
   - zr_vm_core/src/zr_vm_core/gc/gc.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_concurrent_major.c
   - zr_vm_core/src/zr_vm_core/gc/gc_budget_runtime.c
 plan_sources:
   - docs/plans/ssa/06-gc-domain/02-major-budget.md
@@ -27,6 +29,7 @@ tests:
   - tests/core/test_gc_concurrent_major.c
   - tests/core/test_gc_budget_constructor_defaults.inc
   - tests/acceptance/2026-09-29-gc-budget-constructor-defaults.md
+  - tests/acceptance/2026-09-29-gc-major-max-objects-slice.md
 doc_type: module-detail
 status: in-progress
 ---
@@ -73,11 +76,11 @@ silently turning a selective compact request into an unbounded relocation.
 
 ## Scope and follow-up
 
-The scalar budget contract remains separate from the collector's concurrent
-major state machine. The existing concurrent-major code remains responsible for
-root snapshot, mark queue ownership, remark, sweep, and the collector lock
-protocol. Collector construction must nevertheless establish the budget fields
-before those public getters can observe them.
+The scalar budget contract remains separate from most of the collector's
+concurrent-major state machine. The existing concurrent-major code remains
+responsible for root snapshot, mark queue ownership, remark, sweep, and the
+collector lock protocol. Collector construction must establish the budget
+fields before those public getters can observe them.
 
 ## Collector budget defaults
 
@@ -106,6 +109,62 @@ initialization code now sets these defaults explicitly. The root-owned MSVC
 C11 Debug build completed 71/71 steps, and the direct concurrent-major
 executable passed all 11 tests, including this regression. That executable has
 no CTest registration.
+
+## First runtime consumer: per-slice `maxObjects`
+
+`garbage_collector_concurrent_major_mark_slice` now uses an installed,
+nonzero `maxObjects` to lower the caller's queue-pop cap for that invocation.
+It never raises the caller cap. A zero `maxObjects` retains the caller's
+existing cap, including the current default of eight pops for one worker. The
+limit counts gray objects popped; it does not bound the scan cost of one object,
+the initial pause, remark, sweep, or the complete major cycle. This is a
+per-slice limit, not a claim that the complete major collection is bounded.
+
+The real collector regression is in
+`test_concurrent_major_slice_honors_max_objects` and its zero/large-limit
+variants. It verifies a live gray queue prefix placed ahead of pre-existing
+roots, then checks the result of one public `GcStep` and cleans up the cycle and
+temporary roots before Unity assertions. The RED and root-owned GREEN evidence
+are recorded in
+`tests/acceptance/2026-09-29-gc-major-max-objects-slice.md`.
+
+Before the temporary malformed-comment edit, root-owned MSVC Debug verification
+completed the focused 16-target build at 471/471 steps and directly ran all 14
+`zr_vm_gc_concurrent_major_test` cases, including the `maxObjects=1`, `0`, and
+`64` variants. A later GCC/WSL 18-target attempt failed at 6/969 steps while
+parsing that malformed `gc.h` comment (C compilation failure, exit 1); the
+comment was corrected afterward. With the corrected current header, a new
+root-owned MSVC Debug incremental build covering five targets completed
+352/352 steps, and the direct GC Unity run passed 14/14, exit 0. A later Clang
+GC direct run completed seven cases, including all three `maxObjects` variants,
+then deadlocked in the eighth case. GDB confirmed the main marker waiting for
+the mutation mutex while a mutator waited at a nested safepoint boundary. The
+owned test process was terminated after preserving its state and thread stacks;
+this is partial Clang evidence, not a green full suite. The large GCC build is
+still running. The target has no CTest registration; see the acceptance record
+for exact commands and logs.
+
+This path does not call `ZrCore_GcBudget_EvaluateBudgetStep`; after `SetBudget`,
+budget stats therefore remain at their configured baseline (`ACCEPTED/IDLE`,
+cursor/work zero). Elapsed-time, work-unit, byte, pause, pressure, and phase
+budgets are not connected to concurrent-major execution by this slice. The
+overall 06.02 plan remains in progress.
+
+The slice reads `budgetConfigured` and `maxObjects` under the domain mutation
+lock. `SetBudget` uses the same recursive lock for its configuration and budget
+snapshot writes, so an update is serialized with a concurrent mark slice in a
+registered GC domain. This does not make
+`ZrCore_GarbageCollector_GetBudget`,
+`ZrCore_GarbageCollector_EvaluateBudgetStep`,
+`ZrCore_GarbageCollector_GetBudgetStats`, or `ZrCore_Gc_GetStats` generally
+thread-safe; callers must still serialize those APIs with budget writes and
+evaluation. When a global has no initialized GC domain, the lock helpers
+provide no cross-thread synchronization.
+
+`ZrCore_GarbageCollector_GetStatsSnapshot` is outside that synchronization
+guarantee too: it does not take the mutation lock used by `SetBudget`, while
+mark-slice counters are currently updated after releasing that lock. Callers
+must serialize snapshot reads with budget changes and GC stats updates.
 
 `tests/core/test_ssa_major_budget.c` covers bounded cursor advancement, budget
 rejection without cursor publication, atomic-pause and pressure reporting,
