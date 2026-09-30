@@ -7,26 +7,31 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_common/zr_ast_constants.h"
 
+// 公开契约摘要采用 FNV-1a 64 位字节流；schema 变化必须同步更新版本常量。
 #define ZR_PUBLIC_CONTRACT_HASH_OFFSET ((TZrUInt64)14695981039346656037ULL)
 #define ZR_PUBLIC_CONTRACT_HASH_PRIME ((TZrUInt64)1099511628211ULL)
 #define ZR_PUBLIC_CONTRACT_HASH_SCHEMA_VERSION ((TZrUInt64)1ULL)
 
+// 稳定摘要中的条目类别编号；数值属于 wire hash 输入，不能随意重排。
 typedef enum EZrPublicContractExportKind {
     ZR_PUBLIC_CONTRACT_EXPORT_FUNCTION = 1,
     ZR_PUBLIC_CONTRACT_EXPORT_VARIABLE = 2
 } EZrPublicContractExportKind;
 
+// 计算期间暂存名称与单项摘要；名称借用 AST/语义快照，只在本次查询内排序使用。
 typedef struct SZrPublicContractExport {
     EZrPublicContractExportKind kind;
     const SZrString *name;
     TZrUInt64 contractHash;
 } SZrPublicContractExport;
 
+// 将一个字节混入 FNV-1a 状态；调用方负责提供已初始化的哈希累加器。
 static void public_contract_hash_byte(TZrUInt64 *hash, TZrUInt8 value) {
     *hash ^= (TZrUInt64)value;
     *hash *= ZR_PUBLIC_CONTRACT_HASH_PRIME;
 }
 
+// 将 64 位整数按低字节优先序列化，再逐字节混入摘要以固定跨平台编码。
 static void public_contract_hash_word(TZrUInt64 *hash, TZrUInt64 value) {
     TZrUInt32 shift;
 
@@ -35,6 +40,7 @@ static void public_contract_hash_word(TZrUInt64 *hash, TZrUInt64 value) {
     }
 }
 
+// 文本以 UTF-8 字节长度和原始字节参与摘要；缺失或不可读字符串返回失败。
 static TZrBool public_contract_hash_string(TZrUInt64 *hash, const SZrString *value) {
     const TZrChar *text;
     TZrSize length;
@@ -55,6 +61,7 @@ static TZrBool public_contract_hash_string(TZrUInt64 *hash, const SZrString *val
     return ZR_TRUE;
 }
 
+// 访问数组前验证初始化状态、元素宽度及非空数组的 head，避免按错布局解释数据。
 static TZrBool public_contract_array_is_readable(
         const SZrArray *array,
         TZrSize elementSize) {
@@ -63,6 +70,7 @@ static TZrBool public_contract_array_is_readable(
                      (array->length == 0U || array->head != ZR_NULL));
 }
 
+// 递归编码规范类型图；泛型以所属 symbol 与 ordinal 规范化，深度耗尽或未知节点失败。
 static TZrBool public_contract_hash_type(
         const SZrSemanticContext *context,
         TZrTypeId typeId,
@@ -71,6 +79,7 @@ static TZrBool public_contract_hash_type(
         TZrSize remainingDepth,
         TZrUInt64 *hash);
 
+// 将有序 TypeId 数组逐项递归编码；数组布局错误或任一类型不可编码时整体失败。
 static TZrBool public_contract_hash_type_id_array(
         const SZrSemanticContext *context,
         const SZrArray *typeIds,
@@ -101,6 +110,7 @@ static TZrBool public_contract_hash_type_id_array(
     return ZR_TRUE;
 }
 
+// 按序编码函数参数合同、返回类型、receiver effect 与 effect flags，保留签名差异。
 static TZrBool public_contract_hash_function_type(
         const SZrSemanticContext *context,
         const SZrCanonicalFunctionType *functionType,
@@ -151,6 +161,7 @@ static TZrBool public_contract_hash_function_type(
     return ZR_TRUE;
 }
 
+// 编码泛型定义和有序实参；类型、整数字面量与所属泛型参数分别带类别标记。
 static TZrBool public_contract_hash_generic_instance(
         const SZrSemanticContext *context,
         const SZrCanonicalGenericInstanceType *genericInstance,
@@ -213,6 +224,7 @@ static TZrBool public_contract_hash_generic_instance(
     return ZR_TRUE;
 }
 
+// 按 canonical kind 分派结构化类型编码；非法 TypeId、递归预算耗尽和不支持类型均拒绝。
 static TZrBool public_contract_hash_type(
         const SZrSemanticContext *context,
         TZrTypeId typeId,
@@ -336,6 +348,7 @@ static TZrBool public_contract_hash_type(
     }
 }
 
+// 编码泛型参数的种类、变体、能力与所有权要求；未规范化的类型名约束不能进入摘要。
 static TZrBool public_contract_hash_generic_parameters(
         const SZrFunctionTypeInfo *functionInfo,
         TZrUInt64 *hash) {
@@ -372,6 +385,7 @@ static TZrBool public_contract_hash_generic_parameters(
     return ZR_TRUE;
 }
 
+// 以 AST 声明指针关联唯一函数类型记录；数组无效或同一声明重复时不猜测匹配项。
 static const SZrFunctionTypeInfo *public_contract_find_function(
         const SZrTypeEnvironment *typeEnvironment,
         const SZrAstNode *declaration) {
@@ -398,6 +412,7 @@ static const SZrFunctionTypeInfo *public_contract_find_function(
     return match;
 }
 
+// 以声明/模式节点和名称关联唯一变量符号，并将其稳定 TypeId 输出给摘要编码器。
 static const SZrSemanticSymbolRecord *public_contract_find_variable(
         const SZrSemanticContext *context,
         const SZrAstNode *declaration,
@@ -431,6 +446,7 @@ static const SZrSemanticSymbolRecord *public_contract_find_variable(
     return match;
 }
 
+// 名称按原始字节词典序比较，长度只在公共前缀相同时打破平局。
 static TZrBool public_contract_export_compare_names(
         const SZrString *left,
         const SZrString *right,
@@ -461,6 +477,7 @@ static TZrBool public_contract_export_compare_names(
     return ZR_TRUE;
 }
 
+// 排序键固定为摘要条目类别、名称、单项摘要，使声明源码顺序不影响整体摘要。
 static int public_contract_export_compare(const void *left, const void *right) {
     const SZrPublicContractExport *leftExport = (const SZrPublicContractExport *)left;
     const SZrPublicContractExport *rightExport = (const SZrPublicContractExport *)right;
@@ -481,6 +498,7 @@ static int public_contract_export_compare(const void *left, const void *right) {
                    : (leftExport->contractHash > rightExport->contractHash ? 1 : 0);
 }
 
+// 公共类型声明尚无规范摘要格式；遇到公开 struct/class/interface/enum/union 时保守失败。
 static TZrBool public_contract_public_type_is_unsupported(const SZrAstNode *node) {
     switch (node->type) {
         case ZR_AST_STRUCT_DECLARATION:
@@ -498,6 +516,7 @@ static TZrBool public_contract_public_type_is_unsupported(const SZrAstNode *node
     }
 }
 
+// 校验源函数形状与 canonical 参数合同一一对应，并把公开参数名并入签名摘要。
 static TZrBool public_contract_hash_source_callable_shape(
         const SZrSemanticContext *context,
         const SZrFunctionTypeInfo *functionInfo,
@@ -551,6 +570,7 @@ static TZrBool public_contract_hash_source_callable_shape(
     return ZR_TRUE;
 }
 
+// 关联 AST 与唯一函数类型记录，合并泛型约束、源形状及 canonical 类型后产出函数摘要。
 static TZrBool public_contract_collect_function(
         const SZrSemanticContext *context,
         const SZrTypeEnvironment *typeEnvironment,
@@ -584,6 +604,7 @@ static TZrBool public_contract_collect_function(
     return ZR_TRUE;
 }
 
+// 只接受可规范化的可变标识符变量；通过语义符号解析类型并生成变量摘要。
 static TZrBool public_contract_collect_variable(
         const SZrSemanticContext *context,
         const SZrAstNode *node,
@@ -616,6 +637,14 @@ static TZrBool public_contract_collect_variable(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 为完整无诊断的模块快照计算当前摘要范围内的稳定契约哈希与条目数；schema v1 纳入所有普通顶层函数和显式 public mutable 变量，不含模块身份，调用方须将结果与模块键和条目数配对比较。
+ * @pre typeEnvironment 必须属于 context；moduleRoot 须是具备可读 statements 的同代脚本 AST。
+ * @post 若 outQuery 非空则入口清零；常规返回 false 时保持零值，进入清理路径时释放已初始化的临时数组。
+ * @return 所有摘要条目均可规范编码时返回 true；常规参数、诊断或不支持类型校验拒绝时返回 false。
+ * BUG: 非空脚本中若普通函数或显式 public mutable 变量成功收集，:677/:681 按 statementCount 初始化 exports，:693/:701/:716 每条至多 Push 一项。
+ * 若 Init 的 RawMalloc 返回 NULL，array.h:38/:42 仍可留下 head=NULL 且 isValid=true；首个 Push 在 array.h:74 断言，关闭断言后于 :88 向空目标复制，不会正常返回 false/zero；容量足够，不涉及增长。静态链，未注入 OOM。
+ */
 TZrBool ZrParser_SemanticQuery_PublicContract(
         const SZrSemanticContext *context,
         const SZrTypeEnvironment *typeEnvironment,
@@ -662,6 +691,8 @@ TZrBool ZrParser_SemanticQuery_PublicContract(
         }
         memset(&exportItem, 0, sizeof(exportItem));
         if (node->type == ZR_AST_FUNCTION_DECLARATION) {
+            // 当前 canonical facts 不含普通函数 visibility，因此 schema v1 纳入所有普通顶层函数。
+            // 私有函数签名变化可能保守触发导入者重析；普通变量仍仅纳入显式 public mutable 声明。
             if (!public_contract_collect_function(
                         context, typeEnvironment, node, &exportItem)) {
                 goto cleanup;

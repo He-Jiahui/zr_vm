@@ -5,18 +5,21 @@
 
 #include "zr_vm_parser/canonical_type.h"
 
+// 源码身份先比较字符串对象，再比较非空内容；两侧均缺省才会因指针相同而相等。
 static TZrBool canonical_query_same_source(SZrString *left, SZrString *right) {
     return (TZrBool)(left == right ||
                      (left != ZR_NULL && right != ZR_NULL &&
                       ZrCore_String_Equal(left, right)));
 }
 
+// 统一可缺省源码键的精确比较入口，不做路径归一化或 basename 匹配。
 static TZrBool canonical_query_same_optional_source_exact(
         SZrString *left,
         SZrString *right) {
     return canonical_query_same_source(left, right);
 }
 
+// 范围比较要求来源相同；存在 offset 坐标时用字节区间，否则回退到行列坐标。
 static TZrBool canonical_query_contains(const SZrFileRange *range,
                                         const SZrFileRange *position) {
     if (range == ZR_NULL || position == ZR_NULL ||
@@ -36,6 +39,7 @@ static TZrBool canonical_query_contains(const SZrFileRange *range,
                        position->end.column <= range->end.column)));
 }
 
+// 模块范围或空 scope 不限节点；节点范围只接受完全落在 root AST 范围内的事实。
 static TZrBool canonical_query_scope_allows(
         const SZrParserSemanticQueryScope *scope,
         const SZrFileRange *range) {
@@ -44,6 +48,7 @@ static TZrBool canonical_query_scope_allows(
                      (scope->root != ZR_NULL && canonical_query_contains(&scope->root->location, range)));
 }
 
+// 用字节跨度选择最窄候选；反向 offset 范围返回最大宽度，排在有效候选之后。
 static TZrSize canonical_query_width(const SZrFileRange *range) {
     if (range->end.offset >= range->start.offset) {
         return range->end.offset - range->start.offset;
@@ -51,6 +56,7 @@ static TZrSize canonical_query_width(const SZrFileRange *range) {
     return ZR_MAX_SIZE;
 }
 
+// 精确范围相等同时约束来源、起止 offset 与起止行列，供候选冲突检测使用。
 static TZrBool canonical_query_ranges_equal(const SZrFileRange *left,
                                              const SZrFileRange *right) {
     if (left == ZR_NULL || right == ZR_NULL ||
@@ -66,6 +72,7 @@ static TZrBool canonical_query_ranges_equal(const SZrFileRange *left,
                      left->end.column == right->end.column);
 }
 
+// 可选文本按对象或内容比较；两个空值相等，单侧缺失不相等。
 static TZrBool canonical_query_optional_strings_equal(
         SZrString *left,
         SZrString *right) {
@@ -74,6 +81,7 @@ static TZrBool canonical_query_optional_strings_equal(
                       ZrCore_String_Equal(left, right)));
 }
 
+// 比较调用事实的全部身份字段；同宽但字段不同的事实不能任意择一。
 static TZrBool canonical_query_call_expressions_equal(
         const SZrSemanticExpressionFact *left,
         const SZrSemanticExpressionFact *right) {
@@ -91,12 +99,14 @@ static TZrBool canonical_query_call_expressions_equal(
                      left->isMemberCall == right->isMemberCall);
 }
 
+// 只有解析标志与稳定 symbol id 同时有效，调用引用才算已解析到目标。
 static TZrBool canonical_query_call_reference_has_resolved_target(
         const SZrSemanticReferenceFact *reference) {
     return (TZrBool)(reference->isResolved &&
                      reference->symbolId != ZR_SEMANTIC_ID_INVALID);
 }
 
+// 给调用引用排序：解析目标权重最高，其余分数表示映射、声明、签名和接收者信息。
 static TZrSize canonical_query_call_reference_completeness(
         const SZrSemanticReferenceFact *reference) {
     TZrSize completeness = 0u;
@@ -126,6 +136,7 @@ static TZrSize canonical_query_call_reference_completeness(
     return completeness;
 }
 
+// 参数类型必须精确相同；非值传递合同另允许引用参数的 pointee 与推断类型相同。
 static TZrBool canonical_query_call_argument_parameter_type_matches(
         const SZrSemanticContext *context,
         const SZrCanonicalParameterContract *contract,
@@ -148,6 +159,7 @@ static TZrBool canonical_query_call_argument_parameter_type_matches(
                      contractType->data.refType.pointeeTypeId == parameterTypeId);
 }
 
+// 将规范参数的 passingForm 映射到推断阶段的 passing mode，未知形式拒绝投影。
 static TZrBool canonical_query_call_argument_passing_matches(
         const SZrCanonicalParameterContract *contract,
         EZrParameterPassingMode passingMode) {
@@ -169,6 +181,7 @@ static TZrBool canonical_query_call_argument_passing_matches(
     }
 }
 
+// 每个实参映射必须占用唯一形参；扫描当前映射之前的条目即可发现重复。
 static TZrBool canonical_query_call_argument_parameter_is_unique(
         const SZrArray *mappings,
         TZrSize mappingIndex,
@@ -184,6 +197,7 @@ static TZrBool canonical_query_call_argument_parameter_is_unique(
     return ZR_TRUE;
 }
 
+// 校验调用映射的数组形状、规范函数、索引/转换、形参类型与传递方式及实参范围。
 static TZrBool canonical_query_call_argument_mappings_valid(
         const SZrSemanticContext *context,
         const SZrSemanticExpressionFact *expression,
@@ -242,6 +256,7 @@ static TZrBool canonical_query_call_argument_mappings_valid(
     return ZR_TRUE;
 }
 
+// 只接纳目标范围内、来源一致且具有规范函数类型的 CALL 引用事实。
 static TZrBool canonical_query_call_reference_is_candidate(
         const SZrSemanticContext *context,
         const SZrFileRange *callTargetRange,
@@ -260,6 +275,13 @@ static TZrBool canonical_query_call_reference_is_candidate(
                      callableType->kind == ZR_CANONICAL_TYPE_FUNCTION);
 }
 
+/**
+ * @brief 按位置优先投影引用事实的规范 TypeId，必要时回退到允许投影的表达式事实。
+ * @pre context 与 scope 来自同一未变更语义快照。
+ * @note 节点 scope 必须提供覆盖查询位置及候选事实的 root 范围。
+ * @post outQuery 先清零；返回的 reference 与 expression 是快照借用指针。
+ * @return 找到有效引用类型或可投影表达式类型时返回 true；失败时仍可能保留观察到的事实指针。
+ */
 TZrBool ZrParser_SemanticQuery_CanonicalTypeAt(
         const SZrSemanticContext *context,
         SZrFileRange position,
@@ -291,6 +313,11 @@ TZrBool ZrParser_SemanticQuery_CanonicalTypeAt(
     return ZR_FALSE;
 }
 
+/**
+ * @brief 在给定 scope 中查找符号的已解析声明引用，并选择最窄声明范围。
+ * @pre context 中的 referenceFacts 与 scope 必须属于同一未变更语义快照。
+ * @return 返回快照借用的声明事实；缺少有效 symbol id、事实数组或匹配声明时返回 NULL。
+ */
 const SZrSemanticReferenceFact *ZrParser_SemanticQuery_DeclarationOf(
         const SZrSemanticContext *context,
         TZrSymbolId symbolId,
@@ -325,6 +352,12 @@ const SZrSemanticReferenceFact *ZrParser_SemanticQuery_DeclarationOf(
     return best;
 }
 
+/**
+ * @brief 在位置与 scope 中挑选唯一最窄调用表达式，再关联完整度最高的目标引用。
+ * @pre context、scope 和 AST/semantic facts 属于同一未变更快照。
+ * @post outQuery 先清零；expression、reference 与 argumentMappings 都借用该快照。
+ * @return 找到无冲突且映射自洽的调用时返回 true；目标可未解析，调用方须检查 hasResolvedTarget。
+ */
 TZrBool ZrParser_SemanticQuery_CallAt(
         const SZrSemanticContext *context,
         SZrFileRange position,
@@ -451,6 +484,12 @@ TZrBool ZrParser_SemanticQuery_CallAt(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 优先复制引用事实中的签名文本，否则按规范 callable TypeId 格式化调用签名。
+ * @pre query 必须来自同一存续且未改变的 context 快照；buffer 须为可写且容量非零。
+ * @post 若提供非空缓冲区，函数先写入空串；缓冲区由调用方持有，失败时不保证完整签名。
+ * @return 输入不完整、签名不可表示或输出容量不足时返回 false。
+ */
 TZrBool ZrParser_SemanticQuery_FormatCall(
         const SZrSemanticContext *context,
         const SZrParserSemanticCallQuery *query,
