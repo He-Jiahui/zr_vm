@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include "zr_vm_parser/semantic_facts.h"
-
+/* 按语义 symbolId 查找本次分析对应的唯一流状态槽。 */
 TZrBool ZrParser_DataflowOwnership_SymbolFind(
         const SZrSemanticOwnershipSymbolMap *map,
         TZrSymbolId symbolId,
@@ -33,7 +33,7 @@ TZrBool ZrParser_DataflowOwnership_SymbolFind(
     }
     return ZR_FALSE;
 }
-
+/* 借出表内条目供状态传播读取；地址随表释放或扩容失效。 */
 SZrSemanticOwnershipSymbolEntry *ZrParser_DataflowOwnership_SymbolEntry(
         SZrSemanticOwnershipSymbolMap *map,
         TZrSize index) {
@@ -42,7 +42,7 @@ SZrSemanticOwnershipSymbolEntry *ZrParser_DataflowOwnership_SymbolEntry(
     }
     return (SZrSemanticOwnershipSymbolEntry *)ZrCore_Array_Get(&map->entries, index);
 }
-
+/* 类型事实未直接带限定时，按 typeId 回查语义类型记录。 */
 static EZrOwnershipQualifier ownership_symbol_type_qualifier(
         const SZrSemanticContext *context,
         TZrTypeId typeId) {
@@ -65,7 +65,7 @@ static EZrOwnershipQualifier ownership_symbol_type_qualifier(
     }
     return ZR_OWNERSHIP_QUALIFIER_NONE;
 }
-
+/* 引用 fact 未带限定时，先从同一 symbol 的声明 fact 回补。 */
 static EZrOwnershipQualifier ownership_symbol_declaration_qualifier(
         const SZrSemanticContext *context,
         TZrSymbolId symbolId) {
@@ -89,7 +89,7 @@ static EZrOwnershipQualifier ownership_symbol_declaration_qualifier(
     }
     return ZR_OWNERSHIP_QUALIFIER_NONE;
 }
-
+/* 按引用、声明、类型的优先级解析限定，保留最具体的来源。 */
 static EZrOwnershipQualifier ownership_symbol_reference_qualifier(
         const SZrSemanticContext *context,
         const SZrSemanticReferenceFact *fact) {
@@ -106,7 +106,7 @@ static EZrOwnershipQualifier ownership_symbol_reference_qualifier(
                    ? qualifier
                    : ownership_symbol_type_qualifier(context, fact->typeId);
 }
-
+/* 找到已解析声明引用，为缺少声明 ownership fact 的槽补上位置。 */
 static const SZrSemanticReferenceFact *ownership_symbol_declaration_reference(
         const SZrSemanticContext *context,
         TZrSymbolId symbolId) {
@@ -129,7 +129,7 @@ static const SZrSemanticReferenceFact *ownership_symbol_declaration_reference(
     }
     return ZR_NULL;
 }
-
+/* 复用同一 symbol 已登记的声明 region，保持生命周期身份稳定。 */
 static TZrLifetimeRegionId ownership_symbol_declaration_region(
         const SZrSemanticContext *context,
         TZrSymbolId symbolId) {
@@ -152,7 +152,7 @@ static TZrLifetimeRegionId ownership_symbol_declaration_region(
     }
     return ZR_SEMANTIC_ID_INVALID;
 }
-
+/* TODO: RuntimeRoot 会清掉 source range，submission capture 在编译期先播种、随后被 SemanticContext_Reset 清掉本轮 declaration facts；identifier fact 仍保留 qualifier，MapBuild 可建槽和 region 后因无 declaration reference 跳过本 fact。确认非 source origin 是否要求合成 declaration/lifetime 锚点，当前未证明诊断或区域结果错误；证据入口见 zr_vm_parser/src/zr_vm_parser/type_system.c:1223-1255,1261-1301、zr_vm_parser/src/zr_vm_parser/compiler/compiler_submission.c:157-219、zr_vm_parser/src/zr_vm_parser/compiler.c:1051,720、zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_identifier_facts.c:29-60。 */
 static TZrBool ownership_symbol_append_declaration_fact(
         SZrSemanticContext *context,
         const SZrSemanticReferenceFact *reference,
@@ -173,7 +173,7 @@ static TZrBool ownership_symbol_append_declaration_fact(
     fact.ownerLifetimeRegionId = regionId;
     return ZrParser_SemanticFacts_AppendOwnership(context, &fact);
 }
-
+/* 首次遇到限定 symbol 时建立唯一槽，并补齐其声明 region。 */
 static TZrBool ownership_symbol_map_add(
         SZrSemanticContext *context,
         SZrSemanticOwnershipSymbolMap *map,
@@ -210,13 +210,13 @@ static TZrBool ownership_symbol_map_add(
     }
     return ZR_TRUE;
 }
-
+/* 置空一次性映射容器，供后续 Build 分配本轮槽数组。 */
 void ZrParser_DataflowOwnership_SymbolMapConstruct(SZrSemanticOwnershipSymbolMap *map) {
     if (map != ZR_NULL) {
         ZrCore_Array_Construct(&map->entries);
     }
 }
-
+/* BUG: 合法 Unique 槽表建成后，OwnerSetPoolInit 的单次 RawMalloc 失败使 resolver/publisher 在违规筛选前返回 false；compile_script 丢弃状态并继续，导致 VALUE 移后重读未被拒绝（链见 zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership.c:734-738、zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_query_diagnostics.c:112-121、zr_vm_parser/src/zr_vm_parser/compiler.c:824-828,1090-1111）。TODO: LSP 的相同失败由 zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_query_diagnostics.c:165-175 忽略，而 zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_analysis.c:224-235 按 best-effort 返回成功；其诊断完整性契约仍待确认。 */
 TZrBool ZrParser_DataflowOwnership_SymbolMapBuild(
         SZrSemanticContext *context,
         SZrSemanticOwnershipSymbolMap *map) {
@@ -236,8 +236,8 @@ TZrBool ZrParser_DataflowOwnership_SymbolMapBuild(
     ZrCore_Array_Init(context->state,
                       &map->entries,
                       sizeof(SZrSemanticOwnershipSymbolEntry),
-                      capacity);
-
+                      capacity); // BUG: 已解析限定引用对应的 entries 初始分配失败时 Init 仍置 isValid；启用 ZR_DEBUG 时首个 Push 断言中止，未启用时对空目标 RawCopy（UB），Build 无法返回 false。
+    /* 仅保留已解析、有效且带限定的声明/读/写引用；map_add 按 symbolId 去重以稳定槽位。 */
     for (index = 0; index < context->referenceFacts.length; index++) {
         const SZrSemanticReferenceFact *fact =
                 (const SZrSemanticReferenceFact *)ZrCore_Array_Get(
@@ -267,7 +267,7 @@ TZrBool ZrParser_DataflowOwnership_SymbolMapBuild(
     }
     return ZR_TRUE;
 }
-
+/* 用创建时的 semantic context allocator 回收临时槽数组。 */
 void ZrParser_DataflowOwnership_SymbolMapFree(
         SZrSemanticContext *context,
         SZrSemanticOwnershipSymbolMap *map) {
