@@ -56,6 +56,9 @@ TZrBool execbc_vm_validate_projection(
         TZrUInt32 *outStackSize,
         TZrExecIrTypeToken **outSlotTypes,
         SZrExecIrDiagnostic *diagnostic);
+TZrBool execbc_vm_validate_dead_place_uses(
+        const SZrExecBcProjection *projection,
+        SZrExecIrDiagnostic *diagnostic);
 TZrBool execbc_vm_validate_phi_data(
         const SZrExecBcProjection *projection,
         const TZrUInt32 *instructionOwners,

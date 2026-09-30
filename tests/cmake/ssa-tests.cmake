@@ -1553,3 +1553,5 @@ if (NOT TARGET zr_vm_ssa_exec_ir_execbc_vm_test)
 endif ()
 
 include(${CMAKE_CURRENT_LIST_DIR}/ssa-module-constant-pool-verifier.cmake)
+
+include(${CMAKE_CURRENT_LIST_DIR}/ssa-execbc-vm-dead-place.cmake)

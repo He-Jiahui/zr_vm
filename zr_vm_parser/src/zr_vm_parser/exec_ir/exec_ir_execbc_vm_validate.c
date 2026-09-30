@@ -182,6 +182,9 @@ static TZrBool execbc_vm_validate_instruction_shape(
         case ZR_EXEC_IR_OPCODE_NOP:
             if (operandCount == 0u && resultCount == 0u) return ZR_TRUE;
             break;
+        case ZR_EXEC_IR_OPCODE_PLACE_BASE:
+            /* The projection-wide dead-use proof validates this exact shape. */
+            return ZR_TRUE;
         case ZR_EXEC_IR_OPCODE_PHI:
             /* Phi values are implemented by the projection's scheduled moves. */
             return ZR_TRUE;
@@ -382,6 +385,19 @@ TZrBool execbc_vm_validate_projection(
         projection->returnAreaOffset != 0u || projection->layoutCount != 0u ||
         projection->layouts != ZR_NULL || projection->gcMapPresent != ZR_FALSE ||
         projection->gcMapCount != 0u || projection->gcRootCount != 0u ||
+        projection->gcMap.entryCount != 0u ||
+        projection->gcMap.entryCapacity != 0u ||
+        projection->gcMap.entries != ZR_NULL ||
+        projection->gcMap.slotIndexCount != 0u ||
+        projection->gcMap.slotIndexCapacity != 0u ||
+        projection->gcMap.slotIndexPool != ZR_NULL ||
+        projection->gcMap.inlineRefOffsetCount != 0u ||
+        projection->gcMap.inlineRefOffsetCapacity != 0u ||
+        projection->gcMap.inlineRefOffsetPool != ZR_NULL ||
+        projection->gcMap.safepointId != 0u ||
+        projection->gcMap.sourceId != 0u ||
+        projection->gcMap.rootRange.start != 0u ||
+        projection->gcMap.rootRange.count != 0u ||
         projection->deoptStateCount != 0u || projection->deoptValueCount != 0u ||
         projection->deoptAggregateCount != 0u ||
         projection->deoptAggregateFieldCount != 0u ||
@@ -393,6 +409,9 @@ TZrBool execbc_vm_validate_projection(
         projection->deoptAggregateFields != ZR_NULL) {
         return execbc_vm_fail(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED,
                               projection, 0u, 0u, 0u, 0u, 1u);
+    }
+    if (!execbc_vm_validate_dead_place_uses(projection, diagnostic)) {
+        return ZR_FALSE;
     }
     if (projection->syntheticBlockCount > projection->blockCount ||
         projection->physicalSlotCount > UINT16_MAX + 1u ||
@@ -468,8 +487,7 @@ TZrBool execbc_vm_validate_projection(
                                   projection, 0u, 0u, 0u,
                                   index + 1u, value->id);
         }
-        if (!execbc_vm_scalar_type(value->typeToken) ||
-            (value->flags & ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY) != 0u) {
+        if (!execbc_vm_scalar_type(value->typeToken)) {
             free(instructionOwners);
             free(slotTypes);
             return execbc_vm_fail(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED,

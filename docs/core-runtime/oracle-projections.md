@@ -23,6 +23,7 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_validate.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_place_uses.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_phi_validate.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c
@@ -41,6 +42,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_validate.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_place_uses.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_phi_validate.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c
@@ -62,6 +64,8 @@ tests:
   - tests/parser/test_ssa_execbc_vm_fixtures.inc
   - tests/parser/test_ssa_execbc_vm_trace.inc
   - tests/parser/test_ssa_execbc_vm_cfg_mutations.inc
+  - tests/parser/test_ssa_execbc_vm_dead_place.c
+  - tests/parser/test_ssa_execbc_vm_dead_place_support.inc
   - tests/parser/test_ssa_oracle_resume.c
   - tests/parser/test_ssa_oracle_memory_differential.c
   - tests/parser/test_ssa_oracle_call_differential.c
@@ -443,14 +447,12 @@ in `D:/tmp/zr_vm/ssa-control/accessor-vm-gc-build.log` and
 `D:/tmp/zr_vm/ssa-control/accessor-vm-ctest.log`. The focused acceptance record
 is `tests/acceptance/ssa-execbc-vm-materialization.md`.
 
-This is evidence only for the manually constructed scalar/control VM slice. The
-separate source-to-VM fixture remains RED for its broader source metadata and
-`PLACE_BASE` shape; the latest recorded run fails both branch cases at
-materialization (`code=28`, `actualVersion=1`) in
-`D:/tmp/zr_vm/ssa-control/gc-providers-current-ctest.log`. That target was not
-part of the current five-test CTest selection. The source-to-VM route and the
-full 01.05 Oracle/ExecBC/AOTIR/C/LLVM matrix remain open, so this slice does not
-close M1.
+That five-test selection covers manually constructed scalar/control VM input.
+The historical source test then failed on temporary scalar stores and memory
+tokens (`code=28`, `actualVersion=1`). Current source branch evidence is kept
+separately in `tests/acceptance/ssa-source-execbc-vm.md`, including its producer
+proof and canonical type boundary. The full 01.05 Oracle/ExecBC/AOTIR/C/LLVM
+matrix remains open, so these focused slices do not close M1.
 
 `TYPE_TEST` is also transported by both initial projections with its separate
 `matchTypeToken` side field. This preserves canonical subtype identity for a
@@ -490,6 +492,25 @@ direct Oracle evaluates them through `FZrExecIrOraclePlace`, whose caller-owned
 pointer-free result is the address token consumed by later memory providers.
 Provider rejection reports `ZR_EXEC_IR_DIAGNOSTIC_ORACLE_PLACE_ERROR`; the
 Oracle never manufactures a host pointer.
+
+The ExecBC-to-Core VM materializer has one narrower exception: a metadata-free
+`PLACE_BASE` row is lowered to Core `NOP` only when its scalar result has zero
+uses in every instruction operand, phi incoming, or phi-copy source. The
+validator also rejects that result as a phi-copy destination or duplicate phi
+result. An `EXTERNAL_ENTRY` value must have at least one use, all of which must
+be operand zero of proven dead bases; it cannot be defined by an instruction or
+phi. Live places and all `PLACE_PROJECT`,
+`LOAD`, and `STORE` rows remain unsupported; nonzero memory/effect fields and
+projection memory tokens still fail the existing guards.
+
+The materializer checks every field of its embedded `SZrExecIrGcMap`, including
+entry/pool pointers, counts and capacities, site/source identities, and the
+legacy root range, even when `gcMapPresent` is false. This preserves the
+metadata-free boundary; it does not add GC-map or source-promotion support.
+`test_ssa_execbc_vm_dead_place.c` compares shared-external dead-base Oracle and
+real-VM return values and place/source traces, and covers live operand/phi uses
+and the metadata/flag guards. Its fresh MSVC build and 13-case CTest evidence are in
+`tests/acceptance/ssa-execbc-vm-materialization.md`.
 
 `ITER_INIT`, `ITER_MOVE_NEXT`, and `ITER_CURRENT` are transported with their
 stable operand/result and ordered successor ranges. The projections mark the

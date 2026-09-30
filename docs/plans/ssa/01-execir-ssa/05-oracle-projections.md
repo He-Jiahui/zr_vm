@@ -3,6 +3,7 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/exec_ir_execbc_vm.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_validate.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_place_uses.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_phi_validate.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_internal.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
@@ -18,6 +19,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_validate.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_place_uses.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_phi_validate.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_internal.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
@@ -29,6 +31,9 @@ tests:
   - tests/parser/test_ssa_execbc_vm_fixtures.inc
   - tests/parser/test_ssa_execbc_vm_trace.inc
   - tests/parser/test_ssa_execbc_vm_cfg_mutations.inc
+  - tests/parser/test_ssa_execbc_vm_dead_place.c
+  - tests/parser/test_ssa_execbc_vm_dead_place_support.inc
+  - docs/core-runtime/execbc-vm-dead-place.md
   - tests/acceptance/ssa-execbc-vm-materialization.md
   - tests/parser/test_ssa_oracle_projections.c
   - tests/parser/test_semir_pipeline.c
@@ -134,11 +139,21 @@ and `test_phi_rejects_cfg_edge_missing_from_target_predecessors` passes. Exact
 commands and logs are recorded in
 `tests/acceptance/ssa-execbc-vm-materialization.md`.
 
-This focused target uses directly constructed ExecIR fixtures. The separate
-source-to-VM path remains RED for broader source metadata/`PLACE_BASE` input;
-it is not covered by the focused passing CTest selection. The materializer
-slice therefore does not mark the source-to-VM route complete. Oracle, ExecBC,
-AOTIR, C and LLVM full-semantic parity still gates M1, which remains open.
+This focused target uses directly constructed ExecIR fixtures. The source
+branch fixture has separate producer-proof and canonical-type acceptance in
+`tests/acceptance/ssa-source-execbc-vm.md`; it does not cover source loop phis or
+general effects. Oracle, ExecBC, AOTIR, C and LLVM full-semantic parity still
+gates M1, which remains open.
+
+The separately scoped dead-place extension allows only metadata-free
+`PLACE_BASE` rows whose results have no uses, lowering each row to a Core NOP
+with its source/PC mapping. External provenance is accepted only when all its
+uses are those dead bases and it has no instruction or phi-result definition.
+Embedded or advertised GC maps, state/deopt maps, memory/effect metadata, live
+place values, source promotion and `LOAD`/`STORE` remain unsupported. The new
+independent hand-ExecIR VM/Oracle target passed all 13 cases in root's current
+MSVC CTest run, alongside the 18-case scalar VM target. Cross-toolchain evidence
+is recorded separately; this extension does not complete the M1 gate.
 
 登记新 CTest 名 `ssa_oracle_projections` 和可执行目标 `zr_vm_ssa_oracle_projections_test` 后，在 WSL 仓库根运行：
 

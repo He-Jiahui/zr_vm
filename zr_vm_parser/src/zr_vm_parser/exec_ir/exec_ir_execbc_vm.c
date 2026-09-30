@@ -259,6 +259,7 @@ static TZrBool execbc_vm_build_plan(
                     source->opcode == (TZrUInt16)ZR_EXEC_IR_OPCODE_PHI) continue;
                 switch ((EZrExecIrOpcode)source->opcode) {
                     case ZR_EXEC_IR_OPCODE_NOP:
+                    case ZR_EXEC_IR_OPCODE_PLACE_BASE:
                         instruction = execbc_vm_instruction(ZR_INSTRUCTION_ENUM(NOP), 0u);
                         break;
                     case ZR_EXEC_IR_OPCODE_CONSTANT: {

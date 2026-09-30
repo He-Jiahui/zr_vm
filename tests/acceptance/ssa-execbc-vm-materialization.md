@@ -27,6 +27,14 @@ Emission begins with `entryBlockId`, regardless of block numbering, and starts
 each block only after slot types, operand ranges and CFG terminators have been
 validated.
 
+The dead-place extension admits a metadata-free `PLACE_BASE` only when
+its scalar result has zero uses across every instruction operand, phi incoming,
+and phi-copy value. It emits a Core `NOP` through the ordinary plan append path,
+preserving the source ID and PC map. `EXTERNAL_ENTRY` provenance is allowed
+only as operand zero of one or more such dead bases; mixed uses, unknown flags,
+and place flags on any other value remain rejected. Live `PLACE_BASE`,
+`PLACE_PROJECT`, `LOAD`, and `STORE` remain outside this VM ABI.
+
 The ExecBC projection has no schema or contract field. Its ExecIR producer
 checks the source function's binding-row schema before projection; the
 materializer checks the actual projection fields, including `runnable`, each
@@ -65,6 +73,13 @@ and compares their return values and traversed block/source trace with
   rejection before materialization;
 - malformed synthetic-block instruction ownership, with an invalid-block
   diagnostic.
+
+The independent `ssa_execbc_vm_dead_place` target adds the extension
+coverage: shared external provenance across dead i64/bool bases is compared
+against the Oracle return and place trace, while live operand/phi uses,
+malformed place rows, mixed/unknown value flags, an external value with a local
+definition, memory/effect metadata, memory-token pools, and embedded GC-map
+fields are rejected transactionally.
 
 The Unity fixture cleanup runs before assertions, and setup/lease flags cover
 early exits. Successful functions are rooted immediately after materialization;
@@ -113,11 +128,20 @@ CTest took 0.44 seconds and all 16 Unity cases passed.
 
 ## Acceptance decision
 
-This accepts only the focused, manually constructed scalar/control VM slice on
-the recorded MSVC run. The separate source-to-VM path remains RED for the
-broader source metadata/`PLACE_BASE` shape: the latest recorded source target
-run failed both branch cases at materialization (`code=28`, `actualVersion=1`)
-in `D:/tmp/zr_vm/ssa-control/gc-providers-current-ctest.log`. That target was
-not part of the current 5/5 CTest selection. No source-to-VM pass is claimed.
-The wider 01.05 Oracle/ExecBC/AOTIR/C/LLVM semantic matrix and complete M1
-remain open, including effects and typed calls.
+This accepts the focused scalar/control and dead-place VM slices on MSVC.
+After the full parser and standalone consumers linked, the current
+`current-scalar-shape-fixtures-ctest.log` run passed
+`ssa_exec_ir_execbc_vm` (18 Unity cases, 0.19 seconds) and
+`ssa_execbc_vm_dead_place` (13 Unity cases, 1.36 seconds). Two earlier VM
+timeouts under the same CTest limits are retained in
+`current-scalar-place-queries-ctest.log`; the fresh unchanged-limit rerun passed.
+The eight-test selection had one independent conditional-cleanup fixture
+failure, so no complete eight-suite pass is claimed.
+
+The historical source run with three scalar stores/memory tokens failed with
+`UNSUPPORTED` (`code=28`, `actualVersion=1`). A separate producer-proof and
+canonical-type adapter now has a passing two-branch source test, recorded in
+`tests/acceptance/ssa-source-execbc-vm.md`. Dead-base lowering alone neither
+removes stores nor accepts GC maps. Current GCC/Clang validation and the wider
+01.05 Oracle/ExecBC/AOTIR/C/LLVM semantic matrix remain open, including effects,
+typed calls and source loop phis. M1 is not complete.
