@@ -1,6 +1,8 @@
 ---
 related_code:
   - zr_vm_core/include/zr_vm_core/gc.h
+  - zr_vm_core/src/zr_vm_core/gc/gc.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_budget_runtime.c
   - zr_vm_core/include/zr_vm_core/gc_budget_contract.h
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
   - zr_vm_core/src/zr_vm_core/gc/gc_concurrent_major.c
@@ -16,12 +18,17 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/gc/gc_budget.c
   - zr_vm_core/src/zr_vm_core/gc/gc_major.c
   - zr_vm_core/src/zr_vm_core/gc/gc_compact.c
+  - zr_vm_core/src/zr_vm_core/gc/gc.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_budget_runtime.c
 plan_sources:
   - docs/plans/ssa/06-gc-domain/02-major-budget.md
 tests:
   - tests/core/test_ssa_major_budget.c
+  - tests/core/test_gc_concurrent_major.c
+  - tests/core/test_gc_budget_constructor_defaults.inc
+  - tests/acceptance/2026-09-29-gc-budget-constructor-defaults.md
 doc_type: module-detail
-status: focused-passed
+status: in-progress
 ---
 
 # Budgeted major GC contract
@@ -66,11 +73,39 @@ silently turning a selective compact request into an unbounded relocation.
 
 ## Scope and follow-up
 
-This leaf does not alter `gc_cycle.c`, the public `gc.h` collector lifecycle, or
-the CMake test registry. It supplies the validation and telemetry contract for
-the later major state-machine integration. The existing concurrent-major code
-remains responsible for root snapshot, mark queue ownership, remark, sweep,
-and the actual collector lock protocol.
+The scalar budget contract remains separate from the collector's concurrent
+major state machine. The existing concurrent-major code remains responsible for
+root snapshot, mark queue ownership, remark, sweep, and the collector lock
+protocol. Collector construction must nevertheless establish the budget fields
+before those public getters can observe them.
+
+## Collector budget defaults
+
+`ZrCore_GarbageCollector_New` receives storage from the non-zeroing raw
+allocator. Its constructor must explicitly initialize the budget object and
+runtime telemetry; clearing the whole collector would hide unrelated lifecycle
+initialization omissions. The default contract for a newly constructed
+collector is:
+
+- budget is not configured, so `GetBudget`, global `GetBudgetStats`, and state
+  `GetStats` return false;
+- status is `ZR_GC_BUDGET_STEP_ACCEPTED`, phase is
+  `ZR_GC_BUDGET_PHASE_IDLE`, and pause reason is `ZR_GC_BUDGET_PAUSE_NONE`;
+- cursor, work, elapsed time, debt, and counters are zero; pressure and fallback
+  are false;
+- the corresponding budget fields in the stats snapshot carry the same
+  defaults.
+
+The unconfigured `GetBudget` output is unspecified and is not part of this
+contract. Initialize the budget record with `ZrCore_GcBudget_Init` and assign
+each collector and snapshot telemetry field explicitly. The allocator-seeded
+constructor regression is in `tests/core/test_gc_budget_constructor_defaults.inc`.
+Its RED and GREEN results and exact commands are recorded in
+`tests/acceptance/2026-09-29-gc-budget-constructor-defaults.md`; the production
+initialization code now sets these defaults explicitly. The root-owned MSVC
+C11 Debug build completed 71/71 steps, and the direct concurrent-major
+executable passed all 11 tests, including this regression. That executable has
+no CTest registration.
 
 `tests/core/test_ssa_major_budget.c` covers bounded cursor advancement, budget
 rejection without cursor publication, atomic-pause and pressure reporting,

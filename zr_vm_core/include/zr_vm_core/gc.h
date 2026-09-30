@@ -172,7 +172,7 @@ typedef struct SZrGarbageCollectorStatsSnapshot {
 
 /** @brief 全局状态拥有的回收管理器；字段跨增量、分代、并发标记和预算驱动器共享。
  * @note 构造由 GlobalState_New 发起，关闭时由 GlobalState_Free 释放；外部不应直接改字段。
- * BUG: 构造入口未初始化 budgetConfigured，配置前预算查询可读取未定义值。 */
+ * @note 可选预算记录在构造时初始化为未配置状态和 idle/zero 遥测。 */
 struct ZR_STRUCT_ALIGN SZrGarbageCollector {
     EZrGarbageCollectMode gcMode;
     EZrGarbageCollectStatus gcStatus;
@@ -414,12 +414,10 @@ ZR_CORE_API void ZrCore_GarbageCollector_SetPauseBudgetUs(struct SZrGlobalState 
  * TODO: 当前回收步骤未调用 EvaluateBudgetStep；需确认该配置是否预期影响实际调度。 */
 ZR_CORE_API TZrBool ZrCore_GarbageCollector_SetBudget(struct SZrGlobalState *global,
                                                        const SZrGcBudget *budget);
-/** @brief 读取全局回收器当前配置的预算。
- * BUG: 管理器构造未初始化 budgetConfigured，首次设置预算前读取此入口结果未定义。 */
+/** @brief 读取全局回收器当前配置的预算；首次配置前返回 false。 */
 ZR_CORE_API TZrBool ZrCore_GarbageCollector_GetBudget(struct SZrGlobalState *global,
                                                        SZrGcBudget *outBudget);
-/** @brief 按当前阶段与工作量计算可选预算状态。
- * BUG: 配置前会读取未初始化的 budgetConfigured；若误判已配置，结果可能污染输出。 */
+/** @brief 按当前阶段与工作量计算可选预算状态；未配置预算时返回 false。 */
 ZR_CORE_API TZrBool ZrCore_GarbageCollector_EvaluateBudgetStep(
         struct SZrGlobalState *global,
         EZrGcBudgetPhase phase,
@@ -429,8 +427,7 @@ ZR_CORE_API TZrBool ZrCore_GarbageCollector_EvaluateBudgetStep(
         TZrUInt64 objects,
         TZrUInt64 atomicPauseUs,
         SZrGcBudgetStepResult *outResult);
-/** @brief 取得最近一次预算步骤的状态，用于宿主诊断。
- * BUG: 配置前会读取未初始化的 budgetConfigured，可能返回无效统计。 */
+/** @brief 取得最近一次预算步骤的状态，用于宿主诊断；未配置时返回 false。 */
 ZR_CORE_API TZrBool ZrCore_GarbageCollector_GetBudgetStats(
         struct SZrGlobalState *global,
         SZrGcBudgetStepResult *outResult);
@@ -439,8 +436,7 @@ typedef SZrGcBudgetStepResult SZrGcBudgetStats;
 /** @brief 从 state 为当前全局回收器设置预算。 */
 ZR_CORE_API TZrBool ZrCore_Gc_SetBudget(struct SZrState *state,
                                         const SZrGcBudget *budget);
-/** @brief 从 state 读取当前全局回收器的预算统计。
- * BUG: 配置前受底层未初始化标志影响。 */
+/** @brief 从 state 读取当前全局回收器的预算统计；未配置时返回 false。 */
 ZR_CORE_API TZrBool ZrCore_Gc_GetStats(struct SZrState *state,
                                        SZrGcBudgetStats *stats);
 /** @brief 设置分代并发标记切片的工作量系数；当前实现不创建线程。 */

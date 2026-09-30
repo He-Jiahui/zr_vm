@@ -2,10 +2,14 @@
 related_code:
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
+  - zr_vm_core/src/zr_vm_core/gc/gc.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_budget_runtime.c
   - zr_vm_core/include/zr_vm_core/gc.h
 implementation_files:
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
+  - zr_vm_core/src/zr_vm_core/gc/gc.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_budget_runtime.c
   - zr_vm_core/include/zr_vm_core/gc.h
   - zr_vm_core/src/zr_vm_core/gc/gc_budget.c
   - zr_vm_core/src/zr_vm_core/gc/gc_major.c
@@ -16,6 +20,8 @@ plan_sources:
 tests:
   - tests/core/test_ssa_major_budget.c
   - tests/core/test_gc_concurrent_major.c
+  - tests/core/test_gc_budget_constructor_defaults.inc
+  - tests/acceptance/2026-09-29-gc-budget-constructor-defaults.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -50,6 +56,8 @@ gc_cycle.c/gc_mark.c 已有 major 支持；先审计当前 incremental-update/SA
 | 计划新增 | `zr_vm_core/src/zr_vm_core/gc/gc_major.c` | major mark/remark/sweep 状态 |
 | 计划新增 | `zr_vm_core/src/zr_vm_core/gc/gc_compact.c` | 明确搬迁和 non-moving 整理模式 |
 | 计划新增测试 | `tests/core/test_ssa_major_budget.c` | 下述正向、失败与状态转换断言；复用既有 harness。 |
+| 当前构造器回归 | `zr_vm_core/src/zr_vm_core/gc/gc.c` | collector 由非零化 raw allocator 分配，预算可选字段必须有确定默认值；不要整块清零 collector。 |
+| 当前构造器回归测试 | `tests/core/test_gc_budget_constructor_defaults.inc` | 经真实 `GlobalState`/collector 构造路径和 allocator typed seeding 验证预算 getter 与 telemetry 默认值。 |
 
 新增文件登记到所属模块 CMake；测试登记到计划新增的 `tests/cmake/ssa-tests.cmake`，由 `tests/CMakeLists.txt` 单点 include。先迁移职责并保持行为，再接入新 contract；不要把新分析或慢路径追加到巨型 dispatch/quickening 文件。
 
@@ -90,8 +98,12 @@ GcStep(budget):
 | 并发新增/删除引用 | 对象不丢失 |
 | 长时间低预算和内存高压 | debt/backpressure 可见且不死循环 |
 | pin 碎片和 selective compact | 地址安全，记录回收与真实移动字节 |
+| 新建 collector，allocator 先写入有效的旧预算值 | 未配置 getter 均返回 false；collector 与 snapshot 的预算状态为 idle/zero/false |
 
 复用回归入口：`tests/core/test_gc_concurrent_major.c`。历史计数只作为核对线索，实施时重跑并记录实际总数。
+
+构造器预算默认值另有一个真实 native RED：`test_gc_budget_constructor_initializes_optional_state`
+使用自定义上游分配器，只在类型和大小都匹配 `SZrGarbageCollector` 的那次分配中写入合法、已初始化的预算对象和字段，确认注入地址就是随后发布的实际 collector。它经 `ZrCore_GlobalState_New`、主线程 state 和 registry 初始化后调用公开 getter，在释放 global/state 后再断言，以免失败断言遗留分配。目标 `zr_vm_gc_concurrent_major_test` 尚未注册 CTest；修复前直接运行 11 个测试，其中这一新增用例在 `GetBudget` 返回值处 RED（期望 false、实际 true）。构造器通过 `ZrCore_GcBudget_Init` 和逐字段赋值建立 collector 与 snapshot 的预算默认值，保留其余构造初始化。2026-09-30 UTC，root 在 MSVC 19.44 C11 Debug 下完成 71/71 编译步骤并直接运行全部 11 个测试，0 失败、退出码 0；独立只读审查无阻塞问题。详见 [独立验收记录](../../../../tests/acceptance/2026-09-29-gc-budget-constructor-defaults.md)。构造状态为未配置、`ACCEPTED/IDLE/NONE`、计量字段为 0、pressure/fallback 为 false；未配置时 `GetBudget` 的输出参数不属于契约。这个构造器修复子任务已验证，06.02 整体预算、切片和压力矩阵仍未完成。
 
 登记新 CTest 名 `ssa_major_budget` 和可执行目标 `zr_vm_ssa_major_budget_test` 后，在 WSL 仓库根运行：
 
@@ -158,4 +170,3 @@ assert defer/backpressure recorded; no unsafe resume midway
 不能用测试机器平均 pause 替代最大不可中断工作量说明；报告 max、超预算次数和压力策略触发次数。暂停预算不是硬实时保证。
 
 本任务的 acceptance 至少附上：上述断言对应的测试名称、实际执行后端/平台、失败注入位置、verifier 输入/输出摘要，以及涉及所有权时的分配/释放或 lease 平衡。新增入口的 OOM、取消、重复调用和部分初始化退出应有明确处理；不适用的状态写明原因。
-

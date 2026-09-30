@@ -554,6 +554,8 @@ static void test_heap_pressure_upgrades_active_major_to_full_compaction(void) {
     TEST_ASSERT_TRUE(snapshot.compactPauseCount > 0u);
 }
 
+#include "test_gc_budget_constructor_defaults.inc"
+
 /* TODO: CMake 当前只构建此目标，仓库内未见 CTest/suite 引用；
  * 核查 CI 是否单独执行，若无则接入常规测试入口。 */
 int main(void) {
@@ -568,5 +570,6 @@ int main(void) {
     RUN_TEST(test_remark_pause_is_domain_local);
     RUN_TEST(test_full_collection_cancels_active_concurrent_major);
     RUN_TEST(test_heap_pressure_upgrades_active_major_to_full_compaction);
+    RUN_TEST(test_gc_budget_constructor_initializes_optional_state);
     return UNITY_END();
 }

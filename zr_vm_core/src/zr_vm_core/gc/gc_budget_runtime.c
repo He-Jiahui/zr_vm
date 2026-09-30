@@ -77,8 +77,6 @@ TZrBool ZrCore_GarbageCollector_SetBudget(SZrGlobalState *global,
 TZrBool ZrCore_GarbageCollector_GetBudget(SZrGlobalState *global,
                                           SZrGcBudget *outBudget) {
     SZrGarbageCollector *collector = gc_budget_collector(global);
-    /* BUG: GC 构造器不初始化 budgetConfigured；首次 SetBudget 前，
-     * 本入口及下方评估、统计入口会读取不确定状态。 */
     if (collector == ZR_NULL || outBudget == ZR_NULL ||
         !collector->budgetConfigured) {
         return ZR_FALSE;
@@ -111,8 +109,6 @@ TZrBool ZrCore_GarbageCollector_EvaluateBudgetStep(
             workUnits, elapsedUs, bytes, objects, gc_budget_debt(collector),
             atomicPauseUs, &result, &diagnostic);
     if (!evaluated) {
-        /* BUG: 构造器未初始化 budgetConfigured/budget；首次配置前若标志误为真，
-         * 契约在 result 初始化前拒绝无效预算，此处复制未定义结果给宿主。 */
         *outResult = result;
         return ZR_FALSE;
     }

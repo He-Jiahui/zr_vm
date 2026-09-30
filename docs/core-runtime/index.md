@@ -27,6 +27,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
+  - zr_vm_core/src/zr_vm_core/gc/gc.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_budget_runtime.c
   - zr_vm_core/include/zr_vm_core/gc_domain.h
   - zr_vm_core/include/zr_vm_core/ownership_transfer.h
   - zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c
@@ -73,6 +75,8 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
+  - zr_vm_core/src/zr_vm_core/gc/gc.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_budget_runtime.c
   - zr_vm_core/include/zr_vm_core/gc_domain.h
   - zr_vm_core/include/zr_vm_core/ownership_transfer.h
   - zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c
@@ -107,6 +111,8 @@ tests:
   - tests/parser/test_property_access_lowering.c
   - tests/core/test_gc_domain_multimutator.c
   - tests/core/test_gc_concurrent_major.c
+  - tests/core/test_gc_budget_constructor_defaults.inc
+  - tests/acceptance/2026-09-29-gc-budget-constructor-defaults.md
   - tests/core/test_resource_same_domain_handoff.c
   - tests/core/test_resource_cross_domain_transfer.c
   - tests/core/test_resource_cross_domain_transfer_races.c
@@ -169,6 +175,8 @@ Core runtime documents cover VM stack storage, call-frame data movement, ownersh
 - `gc-domain-concurrent-major.md`: incremental/concurrent major snapshot-mark-remark lifecycle,
   concurrent write-barrier closure, budgeted compaction, full-collection cancellation and
   per-domain GC/transport telemetry.
+- `gc-budgeted-major.md`: resumable budget contract, compaction admission, and explicit
+  constructor defaults for budget configuration and telemetry.
 - `gc-layout-scan-fast-path.md`: fail-closed descriptor proof and inline-array fast path for
   validated structures with no managed fields, including conservative treatment of value and
   nested layouts.

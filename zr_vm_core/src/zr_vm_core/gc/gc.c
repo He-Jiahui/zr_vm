@@ -416,8 +416,6 @@ void ZrCore_GarbageCollector_New(SZrGlobalState *global) {
     global->garbageCollector = gc;
     state = global->mainThreadState;
 
-    /* BUG: 此管理器并非零初始化；budgetConfigured 与预算字段未写入初值，
-     * 宿主首次调用 GetBudget/GetBudgetStats 时会读取未初始化状态。 */
     gc->managedMemories = sizeof(SZrGlobalState) + sizeof(SZrState);
     gc->gcDebtSize = 0;
     gc->atomicMemories = 0;
@@ -487,6 +485,23 @@ void ZrCore_GarbageCollector_New(SZrGlobalState *global) {
     gc->concurrentMajorMarkDrained = ZR_FALSE;
     gc->concurrentMajorCycleId = 0u;
     gc->concurrentMajorWork = 0u;
+
+    /* Budget state is optional, but its unconfigured defaults are observable
+     * through the public getters and must not inherit allocator reuse. */
+    ZrCore_GcBudget_Init(&gc->budget);
+    gc->budgetConfigured = ZR_FALSE;
+    gc->budgetLastStatus = ZR_GC_BUDGET_STEP_ACCEPTED;
+    gc->budgetPhase = ZR_GC_BUDGET_PHASE_IDLE;
+    gc->budgetPauseReason = ZR_GC_BUDGET_PAUSE_NONE;
+    gc->budgetCursor = 0u;
+    gc->budgetWorkDone = 0u;
+    gc->budgetElapsedUs = 0u;
+    gc->budgetDebtBytes = 0;
+    gc->budgetOverBudgetCount = 0u;
+    gc->budgetCompactDeferredCount = 0u;
+    gc->budgetPressure = ZR_FALSE;
+    gc->budgetFallback = ZR_FALSE;
+
     memset(&gc->statsSnapshot, 0, sizeof(gc->statsSnapshot));
     gc->statsSnapshot.heapLimitBytes = gc->heapLimitBytes;
     gc->statsSnapshot.managedMemoryBytes = 0u;
@@ -520,6 +535,19 @@ void ZrCore_GarbageCollector_New(SZrGlobalState *global) {
     gc->statsSnapshot.lastCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
     gc->statsSnapshot.lastRequestedCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
     gc->statsSnapshot.collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE;
+    gc->statsSnapshot.budgetConfigured = gc->budgetConfigured;
+    gc->statsSnapshot.budgetLastStatus = gc->budgetLastStatus;
+    gc->statsSnapshot.budgetPhase = gc->budgetPhase;
+    gc->statsSnapshot.budgetPauseReason = gc->budgetPauseReason;
+    gc->statsSnapshot.budgetCursor = gc->budgetCursor;
+    gc->statsSnapshot.budgetWorkDone = gc->budgetWorkDone;
+    gc->statsSnapshot.budgetElapsedUs = gc->budgetElapsedUs;
+    gc->statsSnapshot.budgetDebtBytes = gc->budgetDebtBytes;
+    gc->statsSnapshot.budgetOverBudgetCount = gc->budgetOverBudgetCount;
+    gc->statsSnapshot.budgetCompactDeferredCount =
+            gc->budgetCompactDeferredCount;
+    gc->statsSnapshot.budgetPressure = gc->budgetPressure;
+    gc->statsSnapshot.budgetFallback = gc->budgetFallback;
     memset(gc->collectionCounts, 0, sizeof(gc->collectionCounts));
     memset(gc->collectionTotalDurationUs, 0, sizeof(gc->collectionTotalDurationUs));
     memset(gc->collectionMaxDurationUs, 0, sizeof(gc->collectionMaxDurationUs));
