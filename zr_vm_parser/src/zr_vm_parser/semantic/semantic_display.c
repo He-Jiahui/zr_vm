@@ -5,6 +5,7 @@
 
 #include "zr_vm_parser/canonical_type.h"
 
+/* 清空输出区，让失败的格式化入口不会遗留调用方旧文本。 */
 static TZrBool semantic_display_prepare_buffer(TZrChar *buffer, TZrSize bufferSize) {
     if (buffer == ZR_NULL || bufferSize == 0U) {
         return ZR_FALSE;
@@ -13,6 +14,7 @@ static TZrBool semantic_display_prepare_buffer(TZrChar *buffer, TZrSize bufferSi
     return ZR_TRUE;
 }
 
+/* 按 VM 字符串的字节长度复制到调用方 buffer，不转移内部字符指针。 */
 static TZrBool semantic_display_copy_string(
         SZrString *value,
         TZrChar *buffer,
@@ -33,6 +35,7 @@ static TZrBool semantic_display_copy_string(
     return ZR_TRUE;
 }
 
+/* 只复用同一 symbol 与 canonical type 的声明签名 fact。 */
 static SZrString *semantic_display_declaration_signature(
         const SZrSemanticContext *context,
         const SZrSemanticSymbolRecord *symbol) {
@@ -54,6 +57,7 @@ static SZrString *semantic_display_declaration_signature(
     return ZR_NULL;
 }
 
+/* property accessor 必须同时是 function symbol 和 canonical function type。 */
 static TZrBool semantic_display_is_function_symbol(
         const SZrSemanticContext *context,
         TZrSymbolId symbolId) {
@@ -70,6 +74,7 @@ static TZrBool semantic_display_is_function_symbol(
                      type != ZR_NULL && type->kind == ZR_CANONICAL_TYPE_FUNCTION);
 }
 
+/* 追加完整文本片段并维护 offset/NUL 不变量，供 generic 与签名格式化共用。 */
 static TZrBool semantic_display_append(
         TZrChar *buffer,
         TZrSize bufferSize,
@@ -90,6 +95,7 @@ static TZrBool semantic_display_append(
     return ZR_TRUE;
 }
 
+/* use-site key 比较位置坐标，并按 source 字符串内容等价而非指针地址。 */
 static TZrBool semantic_display_ranges_equal(
         const SZrFileRange *left,
         const SZrFileRange *right) {
@@ -107,6 +113,12 @@ static TZrBool semantic_display_ranges_equal(
                       ZrCore_String_Equal(left->source, right->source)));
 }
 
+/**
+ * @brief 将 source alias 按 canonical TypeId 与精确 use-site range 固化到当前快照。
+ * @pre context、已注册 TypeId、非空 source range 和 alias 必须有效。
+ * @return 相同键的首次或同文发布返回 true；冲突或无效输入返回 false。
+ * @note 发布会复制 source 与 alias 文本；canonical type formatting 不读取这些别名。
+ */
 TZrBool ZrParser_SemanticTypeDisplayAlias_Publish(
         SZrSemanticContext *context,
         TZrTypeId typeId,
@@ -134,12 +146,14 @@ TZrBool ZrParser_SemanticTypeDisplayAlias_Publish(
         const SZrSemanticTypeDisplayAliasFact *existing =
                 (const SZrSemanticTypeDisplayAliasFact *)ZrCore_Array_Get(
                         &context->typeDisplayAliasFacts, index);
+        /* 相同 TypeId/range 必须得到同一源码别名，避免一处显示随访问顺序改变。 */
         if (existing != ZR_NULL && existing->typeId == typeId &&
             semantic_display_ranges_equal(&existing->useRange, useRange)) {
             return ZrCore_String_Equal(existing->alias, alias);
         }
     }
 
+    /* 保存前复制 parser/source 字符串，事实只依赖快照 state 的 GC 生命周期。 */
     fact.typeId = typeId;
     fact.useRange = *useRange;
     fact.useRange.source = ZrCore_String_Create(
@@ -151,10 +165,18 @@ TZrBool ZrParser_SemanticTypeDisplayAlias_Publish(
     if (fact.useRange.source == ZR_NULL || fact.alias == ZR_NULL) {
         return ZR_FALSE;
     }
+    /* BUG: 若 Context_New 初始化该数组时分配失败，它不检查空 head；有效发布仍到此处，
+     * Array_Push 会在 head 断言处终止；关闭断言时则继续向空指针写入。见 semantic.c:68-75,113 与 array.h:36-42,73-89。 */
     ZrCore_Array_Push(context->state, &context->typeDisplayAliasFacts, &fact);
     return ZR_TRUE;
 }
 
+/**
+ * @brief 查询指定 canonical type 与源代码 use-site 对应的 source alias。
+ * @return 返回当前快照借用的字符串；context 生命周期结束后不得保留。
+ * @note canonical formatter 不叠加这组事实。
+ * TODO: 核查 lsp_inlay_hints.c 与 semantic LSP completion/hover 是否需要读取它；仓内查询目前只见 parser fixtures。
+ */
 SZrString *ZrParser_SemanticQuery_TypeDisplayAliasAt(
         const SZrSemanticContext *context,
         TZrTypeId typeId,
@@ -178,6 +200,7 @@ SZrString *ZrParser_SemanticQuery_TypeDisplayAliasAt(
     return ZR_NULL;
 }
 
+/* 仅映射签名展示支持的 callable AST 变体，未知 owner 不猜参数字段。 */
 static const SZrAstNodeArray *semantic_display_callable_parameters(
         const SZrAstNode *declaration) {
     if (declaration == ZR_NULL) {
@@ -201,6 +224,7 @@ static const SZrAstNodeArray *semantic_display_callable_parameters(
     }
 }
 
+/* generic 名称来自声明 AST；canonical generic identity 由类型图校验。 */
 static const SZrGenericDeclaration *semantic_display_callable_generic(
         const SZrAstNode *declaration) {
     if (declaration == ZR_NULL) {
@@ -220,6 +244,7 @@ static const SZrGenericDeclaration *semantic_display_callable_generic(
     }
 }
 
+/* 从对应 callable 声明节点取源返回类型，用于保留声明显示信息。 */
 static const SZrType *semantic_display_callable_return_type(
         const SZrAstNode *declaration) {
     switch (declaration->type) {
@@ -240,6 +265,7 @@ static const SZrType *semantic_display_callable_return_type(
     }
 }
 
+/* unresolved 或冲突的源类型 fact 要显式降级，不能由 canonical 输出掩盖。 */
 static TZrBool semantic_display_declared_type(
         const SZrSemanticContext *context,
         const SZrType *typeUse,
@@ -264,6 +290,7 @@ static TZrBool semantic_display_declared_type(
     return ZrParser_CanonicalType_Format(context, typeId, buffer, bufferSize);
 }
 
+/* generic 显示保留 AST 名称与 variance；未知节点形状或 kind 使整段失败。 */
 static TZrBool semantic_display_append_generic_clause(
         TZrChar *buffer,
         TZrSize bufferSize,
@@ -316,6 +343,7 @@ static TZrBool semantic_display_append_generic_clause(
     return semantic_display_append(buffer, bufferSize, offset, ">");
 }
 
+/* 参数 passing 与 escape 前缀来自 canonical contract，而非 AST 的表面写法。 */
 static const TZrChar *semantic_display_passing_prefix(
         const SZrCanonicalParameterContract *contract) {
     if (contract == ZR_NULL) {
@@ -341,6 +369,12 @@ static const TZrChar *semantic_display_passing_prefix(
     }
 }
 
+/**
+ * @brief 由精确 function symbol、canonical contracts 与声明 AST 创建 callable label。
+ * @pre symbol 必须解析到 function symbol、canonical function type 和受支持的声明节点。
+ * @return 成功返回 context state 拥有的 VM 字符串；身份、contract 或格式不匹配时返回 NULL。
+ * @note canonical contract 决定类型语义，AST 只提供源名称；未知 contract fail closed。
+ */
 SZrString *ZrParser_SemanticDisplay_CreateCallableSignature(
         SZrSemanticContext *context,
         TZrSymbolId symbolId) {
@@ -375,6 +409,7 @@ SZrString *ZrParser_SemanticDisplay_CreateCallableSignature(
         (functionType->data.function.effectFlags & ~supportedEffects) != 0U) {
         return ZR_NULL;
     }
+    /* AST 只供展示；参数数量和节点形状必须与 canonical contract 一一对应。 */
     parameters = semantic_display_callable_parameters(symbol->astNode);
     if ((parameters == ZR_NULL &&
          functionType->data.function.parameterContracts.length != 0U) ||
@@ -467,6 +502,10 @@ SZrString *ZrParser_SemanticDisplay_CreateCallableSignature(
     return ZrCore_String_Create(context->state, buffer, offset);
 }
 
+/**
+ * @brief 创建 callable label 并发布给当前快照中相同 SymbolId/TypeId 的解析引用。
+ * @return 成功返回 context state 拥有的 VM 字符串；创建失败时不修改引用 facts。
+ */
 SZrString *ZrParser_SemanticDisplay_PublishCallableSignature(
         SZrSemanticContext *context,
         TZrSymbolId symbolId) {
@@ -477,6 +516,7 @@ SZrString *ZrParser_SemanticDisplay_PublishCallableSignature(
         return ZR_NULL;
     }
     symbol = ZrParser_Semantic_FindSymbolById(context, symbolId);
+    /* 精确身份匹配避免同名 overload 之间串用声明签名。 */
     for (TZrSize index = 0U; index < context->referenceFacts.length; index++) {
         SZrSemanticReferenceFact *fact = (SZrSemanticReferenceFact *)ZrCore_Array_Get(
                 &context->referenceFacts, index);
@@ -488,6 +528,12 @@ SZrString *ZrParser_SemanticDisplay_PublishCallableSignature(
     return signature;
 }
 
+/**
+ * @brief 以 SymbolId 将 documentation 文本复制到当前 semantic snapshot。
+ * @return 首次或同文重复发布返回 true；冲突、无效 symbol 或复制失败返回 false。
+ * @pre context、已注册 SymbolId 和有效 documentation 字符串必须存在。
+ * @note TODO: 核查 semantic_analyzer.c 与 lsp_interface_support.c 的文档提取/快照接线；仓内发布调用目前只见测试。
+ */
 TZrBool ZrParser_SemanticDocumentation_Publish(
         SZrSemanticContext *context,
         TZrSymbolId symbolId,
@@ -501,6 +547,7 @@ TZrBool ZrParser_SemanticDocumentation_Publish(
         ZrParser_Semantic_FindSymbolById(context, symbolId) == ZR_NULL) {
         return ZR_FALSE;
     }
+    /* 同一 SymbolId 的文本不可静默替换，否则 completion 与 hover 会看到不同版本。 */
     for (index = 0U; index < context->documentationFacts.length; ++index) {
         const SZrSemanticDocumentationFact *existing =
                 (const SZrSemanticDocumentationFact *)ZrCore_Array_Get(
@@ -521,10 +568,16 @@ TZrBool ZrParser_SemanticDocumentation_Publish(
     if (fact.documentation == ZR_NULL) {
         return ZR_FALSE;
     }
+    /* BUG: 若 Context_New 初始化该数组时分配失败，它不检查空 head；有效发布仍到此处，
+     * Array_Push 会在 head 断言处终止；关闭断言时则继续向空指针写入。见 semantic.c:72-75,113 与 array.h:36-42,73-89。 */
     ZrCore_Array_Push(context->state, &context->documentationFacts, &fact);
     return ZR_TRUE;
 }
 
+/**
+ * @brief 按 SymbolId 查询当前 semantic snapshot 的 documentation。
+ * @return 返回快照借用的 VM 字符串；调用方不得跨 Reset/Free 或 generation 留存。
+ */
 SZrString *ZrParser_SemanticQuery_DocumentationOfSymbol(
         const SZrSemanticContext *context,
         TZrSymbolId symbolId) {
@@ -545,6 +598,11 @@ SZrString *ZrParser_SemanticQuery_DocumentationOfSymbol(
     return ZR_NULL;
 }
 
+/**
+ * @brief 将已注册 canonical TypeId 写为 canonical 类型显示文本。
+ * @return 完整文本适配调用方 buffer 时返回 true；无效身份或空间不足时返回 false，可写 buffer 会预先清空。
+ * @note source alias 通过独立 use-site query，不改变此 canonical 输出。
+ */
 TZrBool ZrParser_SemanticDisplay_FormatType(
         const SZrSemanticContext *context,
         TZrTypeId typeId,
@@ -557,6 +615,10 @@ TZrBool ZrParser_SemanticDisplay_FormatType(
     return ZrParser_CanonicalType_Format(context, typeId, buffer, bufferSize);
 }
 
+/**
+ * @brief 将已注册 SymbolId 写为声明签名，缺少签名时写为名称与 canonical 类型。
+ * @return 完整文本适配调用方 buffer 且身份有效时返回 true，否则返回 false 并清空输出。
+ */
 TZrBool ZrParser_SemanticDisplay_FormatSymbol(
         const SZrSemanticContext *context,
         TZrSymbolId symbolId,
@@ -593,6 +655,11 @@ TZrBool ZrParser_SemanticDisplay_FormatSymbol(
     return (TZrBool)(written >= 0 && (TZrSize)written < bufferSize);
 }
 
+/**
+ * @brief 验证 property contract 后写出 static/receiver/reference/accessor label。
+ * @pre property symbol/type 必须一致，且至少有一个 accessor/init symbol 为 canonical function。
+ * @return 完整文本适配调用方 buffer 时返回 true；身份、contract 或空间无效时返回 false。
+ */
 TZrBool ZrParser_SemanticDisplay_FormatProperty(
         const SZrSemanticContext *context,
         const SZrSemanticPropertyContract *property,

@@ -2,6 +2,7 @@
 
 #include "canonical_type_format_internal.h"
 
+/* 由精确 owner symbol 的 declaration AST 取得其所属 generic 列表。 */
 static const SZrGenericDeclaration *semantic_display_source_generic_declaration(
         const SZrSemanticSymbolRecord *owner) {
     const SZrAstNode *declaration;
@@ -41,6 +42,7 @@ static const SZrGenericDeclaration *semantic_display_source_generic_declaration(
     return ZR_NULL;
 }
 
+/* 将 canonical owner/ordinal/kind 回查为声明中的 generic 源名称。 */
 static const SZrString *semantic_display_source_generic_name(
         const SZrSemanticContext *context,
         TZrSymbolId ownerSymbolId,
@@ -75,6 +77,11 @@ static const SZrString *semantic_display_source_generic_name(
     return parameter->name->name;
 }
 
+/**
+ * @brief 使用声明中的 generic 名称格式化 canonical 类型。
+ * @return 文本适配调用方 buffer 时返回 true；owner 或 generic AST 不匹配时返回 false。
+ * @note callback 内借用 generic 名称仅限同步格式化；最终文本写入调用方 buffer。
+ */
 TZrBool ZrParser_SemanticDisplay_FormatSourceType(
         const SZrSemanticContext *context,
         TZrTypeId typeId,
