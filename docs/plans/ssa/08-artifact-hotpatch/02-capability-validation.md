@@ -103,6 +103,13 @@ validatedPatch = immutableOwnedCopy(bytes, verificationResult)
 
 当前已完成的窄切片统一主 `Validate` 与能力闭包的 requirement 数量上限，让 Apply/Prepare 使用验证时捕获的 manifest 标量快照，并在 Apply 发布副作用前复核借用字节跨度；证据见 [requirement limit acceptance](../../../../tests/acceptance/ssa-hotpatch-requirement-limit.md)、[validated manifest snapshot acceptance](../../../../tests/acceptance/ssa-hotpatch-validated-manifest-snapshot.md) 和 [content mutation acceptance](../../../../tests/acceptance/ssa-hotpatch-content-mutation.md)。这检测顺序且持续存在的改写，不提供 owned immutable byte copy、并发改写原子性或 Apply 后的固定；完整调用图能力分析和发布隔离门禁仍属于本计划未完成项。
 
+新增的 typed canonical-ZRAF 验证入口把 manifest 与 host 预期哈希绑定到完整外层字节跨度，并显式要求 `(entryFunctionToken, entrySignatureHash)` 唯一匹配已打开且 Verify 通过的 ExecIR 函数。它先限额、校验外层哈希和策略，并在验签前快照策略标量、根身份与 manifest requirement 闭包；验签回调收到完整外层 ZRAF，返回后重算内容哈希，随后才 Read/Open/Verify 并选择入口。拒绝不发布 token。令牌继续借用字节存储，Recheck 只检测存活缓冲区上哈希可见的顺序修改，不提供所有权、并发原子性、relocation 或运行时安装。调用者须保证跨度在初始哈希、回调和结构解码期间稳定，并对写者外部同步。当前 canonical reader 只接受单函数模块，不能用合法 fixture 覆盖重复 selector；实现中的唯一性检查仍作防御。
+
+先前 current-root 的 Clang 十目标增量构建为 85/85 成功；focused CTest 中 artifact writer、roundtrip、canonical ZRAF validation、legacy capability validation 四项为 4/4 通过（总计 3.65 秒）。先前 MSVC 五目标增量构建为 352/352 成功，先前 foundation CTest gate 也已通过。具体日志和测试范围见 [canonical ZRAF validation acceptance](../../../../tests/acceptance/ssa-hotpatch-canonical-zraf-validation.md)。这些 focused 门禁不代表 08.02 完成；canonical signed manifest 的完整接入和对完整已验证 IR 推导 capability closure 仍未完成。
+最新 current-root GCC 十三目标增量构建为 107/107 成功（exit 0）；selected CTest gate 为 13/13，耗时 71.52 秒，其中 artifact writer 12.47 秒、roundtrip 2.38 秒、canonical ZRAF validation 0.89 秒、legacy capability validation 0.76 秒。日志：D:/tmp/zr_vm/ssa-control/gcc-current-thirteen-target-build.log、D:/tmp/zr_vm/ssa-control/gcc-current-thirteen-ctests.log。这些 focused 结果仍不代表 08.02 完成；canonical signed manifest 的完整接入和对完整已验证 IR 推导 capability closure 仍未完成。
+
+该入口的 `outerLength` 与成功 token 中的长度均使用 `TZrSize` 保存调用者原值；先检查 artifact/UInt32 上限，`Artifact_Read` 与 `OpenExecIrArtifact` 接收原始大小，仅哈希和签名回调使用经检查后窄化的 `UInt32`。超限诊断保留完整输入长度。one-byte sentinel 测试以 `UINT32_MAX + 1`（64-bit）或 artifact 上限加一（较窄平台）证明检查发生在字节访问之前。
+
 本任务新增测试先独立运行，再进入完整 SSA 差分矩阵。
 
 登记新 CTest 名 `ssa_capability_validation` 和可执行目标 `zr_vm_ssa_capability_validation_test` 后，在 WSL 仓库根运行：

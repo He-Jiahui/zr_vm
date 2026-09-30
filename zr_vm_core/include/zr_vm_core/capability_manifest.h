@@ -2,6 +2,7 @@
 #define ZR_VM_CORE_CAPABILITY_MANIFEST_H
 
 #include "zr_vm_core/artifact_exec_ir.h"
+#include "zr_vm_core/artifact_schema.h"
 
 #define ZR_HOT_PATCH_CAPABILITY_SCHEMA_VERSION ((TZrUInt32)1u)
 
@@ -18,7 +19,8 @@ typedef enum EZrHotPatchCapabilityStatus {
     ZR_HOT_PATCH_MACHINE_CODE_FORBIDDEN,
     ZR_HOT_PATCH_IMPORT_FORBIDDEN,
     ZR_HOT_PATCH_PROFILE_MISMATCH,
-    ZR_HOT_PATCH_LIMIT
+    ZR_HOT_PATCH_LIMIT,
+    ZR_HOT_PATCH_CONTENT_CHANGED
 } EZrHotPatchCapabilityStatus;
 
 /** @brief 把单个元数据 token 的能力需求及来源位置带入授权闭包。 */
@@ -75,6 +77,30 @@ typedef TZrBool (*FZrHotPatchVerifySignature)(const TZrByte *content,
                                                TZrUInt32 signatureLength,
                                                TZrPtr userData);
 
+/** @brief 验证一个完整 canonical ZRAF，并显式选择唯一的 ExecIR 入口函数。
+ * @note outerLength 保持 TZrSize 宽度；超过 artifact 最大字节数时在窄化前拒绝。
+ *       outerBytes、signature、manifest 和 expectedPublicIdentity 均由调用方借用；
+ *       入口在调用回调前快照策略标量、根身份和能力需求闭包；通过验签并复核回调后哈希后，
+ *       才 Read/Open/Verify 外层结构并检查入口。回调收到完整外层字节跨度。
+ *       manifest 与签名是宿主提供的独立策略/认证输入，不包含在外层哈希的认证声明内。 */
+typedef struct SZrHotPatchZrafValidationInput {
+    const TZrByte *outerBytes;
+    TZrSize outerLength;
+    const SZrArtifactPublicIdentity *expectedPublicIdentity;
+    const SZrHotPatchCapabilityManifest *manifest;
+    TZrMetadataToken entryFunctionToken;
+    TZrUInt64 entrySignatureHash;
+    TZrUInt64 loadedBaseModuleHash;
+    TZrUInt64 loadedPublicContractHash;
+    TZrUInt32 hostAbiVersion;
+    TZrUInt32 hostProfile;
+    TZrUInt64 hostAllowedCapabilities;
+    TZrUInt64 expectedPatchId;
+    TZrUInt64 expectedContentHash;
+    const TZrByte *signature;
+    TZrUInt32 signatureLength;
+} SZrHotPatchZrafValidationInput;
+
 /** @brief 验证后交给 Prepare/Apply 的令牌。
  * artifact/manifest 与 contentBytes 的存储仍由调用方持有；Apply/Prepare 使用验证时
  * 捕获的标量、字节地址和长度快照。字节不复制或固定，调用方须保持其生命周期。 */
@@ -103,6 +129,24 @@ typedef struct SZrHotPatchDiagnostic {
     TZrUInt64 actual;
 } SZrHotPatchDiagnostic;
 
+/** @brief 完整 ZRAF 验证后的只读借用令牌；字节仍由调用方持有且须保持存活。 */
+typedef struct SZrValidatedHotPatchZraf {
+    const TZrByte *outerBytes;
+    TZrSize outerLength;
+    TZrUInt64 outerContentHash;
+    SZrArtifactPublicIdentity publicIdentity;
+    TZrMetadataToken entryFunctionToken;
+    TZrUInt64 entrySignatureHash;
+    TZrUInt64 patchId;
+    TZrUInt64 publicContractHash;
+    TZrUInt64 requiredCapabilities;
+    TZrUInt64 validationPolicyHash;
+    TZrUInt32 targetAbiVersion;
+    TZrUInt32 targetProfile;
+    TZrBool signatureVerified;
+    TZrBool canonicalExecIrVerified;
+} SZrValidatedHotPatchZraf;
+
 /** @brief 部署前同时核对字节哈希、基模块、ABI/profile、授权集合与 host 验签。
  * @pre verifySignature 可调用；输入指针指向的存储在本次验证期间保持有效且稳定。
  * @return 成功才填充 validated；失败时清零输出并通过可选 diagnostic 报告原因。
@@ -114,6 +158,34 @@ ZR_CORE_API EZrHotPatchCapabilityStatus ZrCore_HotPatch_Validate(
         FZrHotPatchVerifySignature verifySignature,
         TZrPtr userData,
         SZrValidatedHotPatch *validated,
+        SZrHotPatchDiagnostic *diagnostic);
+/** @brief Validate the complete outer ZRAF, public identity, canonical ExecIR,
+ * and entry selector.
+ * @pre Keep outerBytes alive and unchanged throughout this call, including signature
+ *      verification and structural decoding. The caller must externally synchronize
+ *      all writers. The callback receives a borrowed read-only span and must not modify it.
+ * @return Publish the scalar snapshot only on success; clear validated on rejection.
+ * @note outerLength is not truncated and must not exceed ZR_ARTIFACT_MAX_BYTE_LENGTH. Both
+ *       manifest.contentHash and expectedContentHash cover the complete outerBytes span. The
+ *       post-callback rehash rejects a differing hash; it cannot observe a callback mutation
+ *       restored before return or make concurrent writes atomic. The token borrows outerBytes;
+ *       the caller must keep the storage alive. Recheck observes only changes visible
+ *       to its hash while the storage remains live; it does not own the storage.
+ */
+ZR_CORE_API EZrHotPatchCapabilityStatus ZrCore_HotPatch_ValidateZraf(
+        const SZrHotPatchZrafValidationInput *input,
+        FZrHotPatchVerifySignature verifySignature,
+        TZrPtr userData,
+        SZrValidatedHotPatchZraf *validated,
+        SZrHotPatchDiagnostic *diagnostic);
+/** @brief Recompute the hash of the validated token's borrowed outer ZRAF span.
+ * @pre Keep the borrowed storage alive and externally synchronize all writers during
+ *      this call.
+ * @note Recheck observes only changes visible to its hash; it does not own or pin
+ *       storage and does not provide concurrent-write atomicity.
+ */
+ZR_CORE_API EZrHotPatchCapabilityStatus ZrCore_HotPatch_RecheckZrafContent(
+        const SZrValidatedHotPatchZraf *validated,
         SZrHotPatchDiagnostic *diagnostic);
 /** @brief 为同一 host/base/manifest 策略计算稳定身份；结果不代表签名或内容完整性。 */
 ZR_CORE_API TZrUInt64 ZrCore_HotPatch_ComputePolicyHash(

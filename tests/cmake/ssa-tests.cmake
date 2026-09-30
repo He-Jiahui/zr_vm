@@ -958,30 +958,38 @@ if (NOT TARGET zr_vm_ssa_exec_ir_artifact_v6_test)
     zr_vm_link_parser_core(zr_vm_ssa_exec_ir_artifact_v6_test)
     set(_ssa_exec_ir_artifact_v6_path
             "${CMAKE_BINARY_DIR}/tests_generated/ssa-artifact-v6-canonical.zro")
+    set(_ssa_exec_ir_artifact_v6_variant_path
+            "${CMAKE_BINARY_DIR}/tests_generated/ssa-artifact-v6-variant.zro")
     add_test(NAME ssa_exec_ir_artifact_v6_write
             COMMAND zr_vm_ssa_exec_ir_artifact_v6_test
-                    --write "${_ssa_exec_ir_artifact_v6_path}")
+                    --write "${_ssa_exec_ir_artifact_v6_path}"
+                            "${_ssa_exec_ir_artifact_v6_variant_path}")
     add_test(NAME ssa_exec_ir_artifact_v6_roundtrip
             COMMAND zr_vm_ssa_exec_ir_artifact_v6_test
                     --read "${_ssa_exec_ir_artifact_v6_path}")
+    add_test(NAME ssa_canonical_zraf_validation
+            COMMAND zr_vm_ssa_exec_ir_artifact_v6_test
+                    --validate-zraf "${_ssa_exec_ir_artifact_v6_path}"
+                                     "${_ssa_exec_ir_artifact_v6_variant_path}")
     set_tests_properties(ssa_exec_ir_artifact_v6_write PROPERTIES
             FIXTURES_SETUP ssa_exec_ir_artifact_v6
             LABELS "ssa;artifact")
     set_tests_properties(ssa_exec_ir_artifact_v6_roundtrip PROPERTIES
             FIXTURES_REQUIRED ssa_exec_ir_artifact_v6
             LABELS "ssa;artifact")
+    set_tests_properties(ssa_canonical_zraf_validation PROPERTIES
+            FIXTURES_REQUIRED ssa_exec_ir_artifact_v6
+            LABELS "ssa;artifact;hotpatch")
 endif ()
 
 if (NOT TARGET zr_vm_ssa_capability_validation_test)
     add_executable(zr_vm_ssa_capability_validation_test
-            ${CMAKE_SOURCE_DIR}/tests/library/test_ssa_capability_validation.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/artifact_exec_ir.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_validate.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_capability.c)
+            ${CMAKE_SOURCE_DIR}/tests/library/test_ssa_capability_validation.c)
     target_include_directories(zr_vm_ssa_capability_validation_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
     target_compile_definitions(zr_vm_ssa_capability_validation_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    zr_vm_link_core(zr_vm_ssa_capability_validation_test)
     add_test(NAME ssa_capability_validation COMMAND zr_vm_ssa_capability_validation_test)
     set_tests_properties(ssa_capability_validation PROPERTIES LABELS "ssa")
 endif ()

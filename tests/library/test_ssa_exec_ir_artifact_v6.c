@@ -320,6 +320,7 @@ static SZrArtifactDiagnostic require_rejected(const TZrByte *bytes,
 #include "test_ssa_exec_ir_artifact_v6_eis5_div_chain.inc"
 #include "test_ssa_exec_ir_artifact_v6_eis5_bool.inc"
 #include "test_ssa_exec_ir_artifact_v6_eis5_compare.inc"
+#include "test_ssa_canonical_zraf_validation.inc"
 
 static void run_oracle(const SZrExecIrModule *module) {
     SZrExecIrOracleValue constant;
@@ -456,7 +457,7 @@ static char *branch_artifact_path(const char *path) {
     return branchPath;
 }
 
-static void write_phase(const char *path) {
+static void write_phase(const char *path, const char *variantPath) {
     SFixture fixture;
     SZrExecIrModule module;
     SZrArtifactDiagnostic diagnostic;
@@ -521,6 +522,14 @@ static void write_phase(const char *path) {
                  "failed writes preserved existing artifact bytes");
     free(retainedBytes);
     free(originalBytes);
+    require_true(module.constantCount == 1u,
+                 "canonical fixture has one variant constant");
+    module.constants[0].bits = 43u;
+    require_true(ZrParser_ExecIr_WriteCanonicalZroFile(
+                 &fixture.metadata, &module, variantPath, &diagnostic) ==
+                 ZR_ARTIFACT_STATUS_OK,
+                 "write second canonical ZRAF validation fixture");
+    module.constants[0].bits = 42u;
     ZrCore_ExecIr_FreeModule(&module);
     {
         char *branchPath = branch_artifact_path(path);
@@ -760,9 +769,14 @@ static void read_phase(const char *path) {
 }
 
 int main(int argc, char **argv) {
-    require_true(argc == 3, "expected --write or --read and D artifact path");
-    if (strcmp(argv[1], "--write") == 0) write_phase(argv[2]);
-    else if (strcmp(argv[1], "--read") == 0) read_phase(argv[2]);
-    else require_true(0, "invalid test mode");
+    if (argc == 4 && strcmp(argv[1], "--write") == 0) {
+        write_phase(argv[2], argv[3]);
+    } else if (argc == 3 && strcmp(argv[1], "--read") == 0) {
+        read_phase(argv[2]);
+    } else if (argc == 4 && strcmp(argv[1], "--validate-zraf") == 0) {
+        validate_zraf_phase(argv[2], argv[3]);
+    } else {
+        require_true(0, "expected --write V1 V2, --read V1, or --validate-zraf V1 V2");
+    }
     return EXIT_SUCCESS;
 }
