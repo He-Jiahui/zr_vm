@@ -7,14 +7,17 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
 
+/* 每个符号槽最多保留八个不同到达范围；超限时置槽内 rangeOverflow，表示候选集合可能不完整。 */
 #define ZR_SEMANTIC_RD_MAX_DEFINITION_RANGES 8U
 
+/* UNKNOWN 表示没有可知到达范围；SINGLE 仅表示可证明的唯一范围；合流无法证明唯一时为 AMBIGUOUS。 */
 typedef enum EZrSemanticRdSlotState {
     ZR_SEMANTIC_RD_SLOT_UNKNOWN = 0,
     ZR_SEMANTIC_RD_SLOT_SINGLE,
     ZR_SEMANTIC_RD_SLOT_AMBIGUOUS
 } EZrSemanticRdSlotState;
 
+/* range 只作 SINGLE 的兼容标量；ranges 保存有界备选，rangeOverflow 说明备选可能不完整。 */
 typedef struct SZrSemanticRdSlot {
     EZrSemanticRdSlotState state;
     SZrFileRange range;
@@ -23,11 +26,13 @@ typedef struct SZrSemanticRdSlot {
     TZrBool rangeOverflow;
 } SZrSemanticRdSlot;
 
+/* 两个数组按相同索引并行保存 canonical symbol identity 与入口声明范围。 */
 typedef struct SZrSemanticRdSymbolMap {
     SZrArray symbolIds;
     SZrArray declarationRanges;
 } SZrSemanticRdSymbolMap;
 
+/* 一次同步求解的回调数据；context/symbols 借用，两个 read snapshot 缓冲只在求解期间拥有。 */
 typedef struct SZrSemanticRdAnalysis {
     SZrSemanticContext *context;
     const SZrSemanticRdSymbolMap *symbols;
@@ -36,6 +41,7 @@ typedef struct SZrSemanticRdAnalysis {
     TZrSize readSlotCount;
 } SZrSemanticRdAnalysis;
 
+/* source 一致先按指针 identity（含双 NULL）；仅双方非空时比较字符串内容。 */
 static TZrBool semantic_rd_same_source(SZrString *left, SZrString *right) {
     if (left == right) {
         return ZR_TRUE;
@@ -63,6 +69,7 @@ static TZrBool semantic_rd_range_is_known(const SZrFileRange *range) {
            range->end.offset != 0;
 }
 
+/* 定义备选按同源位置去重，避免把同一声明的不同访问重复发布。 */
 static TZrBool semantic_rd_ranges_equal(const SZrFileRange *left,
                                         const SZrFileRange *right) {
     if (left == ZR_NULL || right == ZR_NULL ||
@@ -84,6 +91,7 @@ static TZrBool semantic_rd_ranges_equal(const SZrFileRange *left,
            left->end.column == right->end.column;
 }
 
+/* 范围回退先按 source 指针/非空文本判等（双 NULL 也相等），再按 offset 或行列比较。 */
 static TZrBool semantic_rd_range_contains_range(const SZrFileRange *outer,
                                                 const SZrFileRange *inner) {
     if (outer == ZR_NULL || inner == ZR_NULL ||
@@ -139,6 +147,7 @@ static TZrBool semantic_rd_reference_is_symbol_definition(
            fact->kind == ZR_SEMANTIC_REFERENCE_WRITE;
 }
 
+/* 声明优先其声明范围，写入使用自身位置；该规则统一线性和 CFG 定义投影。 */
 static void semantic_rd_reference_set_own_definition(SZrSemanticReferenceFact *fact) {
     if (!semantic_rd_reference_is_symbol_definition(fact)) {
         return;
@@ -190,6 +199,7 @@ static SZrFileRange *semantic_rd_symbol_map_range_at(const SZrSemanticRdSymbolMa
     return (SZrFileRange *)ZrCore_Array_Get((SZrArray *)&map->declarationRanges, index);
 }
 
+/* map 新项必须同步追加两条平行数组；已有 identity 只补缺失的声明范围。 */
 static TZrBool semantic_rd_symbol_map_add_or_update(SZrState *state,
                                                     SZrSemanticRdSymbolMap *map,
                                                     TZrSymbolId symbolId,
@@ -244,6 +254,7 @@ static const SZrFileRange *semantic_rd_fact_declaration_range(
     return ZR_NULL;
 }
 
+/* BUG: Array_Init 仍可能留下 isValid=true、head=null；非空匹配事实会继续 Push 空 head。 */
 static TZrBool semantic_rd_build_symbol_map(SZrSemanticContext *context,
                                             SZrSemanticRdSymbolMap *map) {
     TZrSize capacity;
@@ -294,6 +305,8 @@ static void semantic_rd_free_symbol_map(SZrSemanticContext *context,
     ZrCore_Array_Free(context->state, &map->declarationRanges);
 }
 
+/* TODO: byte count 使用整个 context 的 symbol 数，但尚无可证明的 count 上限或 checked-size gate。
+ * CFG 的 block 上限只约束图节点，不能证明该槽数或 read-fact 临时数组的大小安全。 */
 static TZrSize semantic_rd_state_size(TZrSize symbolCount) {
     return sizeof(SZrSemanticRdSlot) * symbolCount;
 }
@@ -305,6 +318,7 @@ static SZrSemanticRdSlot *semantic_rd_slot(void *state, TZrSize symbolIndex) {
     return &((SZrSemanticRdSlot *)state)[symbolIndex];
 }
 
+/* 覆盖定义时丢弃旧路径候选和溢出标记；未知 range 不留下旧标量。 */
 static void semantic_rd_set_slot(void *state,
                                  TZrSize symbolIndex,
                                  EZrSemanticRdSlotState slotState,
@@ -344,6 +358,7 @@ static TZrBool semantic_rd_slot_has_range(const SZrSemanticRdSlot *slot,
     return ZR_FALSE;
 }
 
+/* 只收已知且不同的范围；达到固定上限后保留 overflow 信号而不写越界。 */
 static TZrBool semantic_rd_slot_add_range(SZrSemanticRdSlot *slot,
                                           const SZrFileRange *range) {
     if (slot == ZR_NULL || range == ZR_NULL || !semantic_rd_range_is_known(range)) {
@@ -362,6 +377,7 @@ static TZrBool semantic_rd_slot_add_range(SZrSemanticRdSlot *slot,
     return ZR_TRUE;
 }
 
+/* 合并已保存候选并传播 overflow；返回值报告新增可见候选，而非所有标志变化。 */
 static TZrBool semantic_rd_slot_add_ranges(SZrSemanticRdSlot *dst,
                                            const SZrSemanticRdSlot *src) {
     TZrSize index;
@@ -382,6 +398,7 @@ static TZrBool semantic_rd_slot_add_ranges(SZrSemanticRdSlot *dst,
     return changed;
 }
 
+/* predecessor join 将不同唯一范围提升为模糊集合；changed 决定后继是否重新入队。 */
 static TZrBool semantic_rd_merge_slot(SZrSemanticRdSlot *dst,
                                       const SZrSemanticRdSlot *src) {
     TZrBool changed;
@@ -422,6 +439,7 @@ static TZrBool semantic_rd_merge_slot(SZrSemanticRdSlot *dst,
     return changed;
 }
 
+/* 声明/写入是覆盖型 transfer：当前 symbol 槽改为事实自身的定义位置。 */
 static void semantic_rd_apply_definition_fact(void *state,
                                               const SZrSemanticRdAnalysis *analysis,
                                               SZrSemanticReferenceFact *fact) {
@@ -443,6 +461,7 @@ static void semantic_rd_apply_definition_fact(void *state,
     }
 }
 
+/* 每次重算 READ 投影前先释放旧数组，避免重复 worklist 访问累积旧路径。 */
 static void semantic_rd_clear_fact_definition_ranges(SZrSemanticContext *context,
                                                      SZrSemanticReferenceFact *fact) {
     if (context == ZR_NULL || context->state == ZR_NULL || fact == ZR_NULL) {
@@ -455,6 +474,7 @@ static void semantic_rd_clear_fact_definition_ranges(SZrSemanticContext *context
     ZrCore_Array_Construct(&fact->definitionRanges);
 }
 
+/* BUG: 清空后的数组在此重建；若 Array_Init 的底层分配失败，紧随其后的 Push 会用空 head。 */
 static TZrBool semantic_rd_append_fact_definition_range(SZrSemanticContext *context,
                                                         SZrSemanticReferenceFact *fact,
                                                         const SZrFileRange *range) {
@@ -479,6 +499,8 @@ static TZrBool semantic_rd_append_fact_definition_range(SZrSemanticContext *cont
     return ZR_TRUE;
 }
 
+/* READ 既保留多路径候选供 DefinitionsOf 查询，也只在 SINGLE 时填充兼容标量字段。
+ * TODO: rangeOverflow 未投影到 fact，需核实下游是否允许把截断数组当完整候选。 */
 static void semantic_rd_apply_read_slot_to_fact(SZrSemanticContext *context,
                                                 SZrSemanticReferenceFact *fact,
                                                 const SZrSemanticRdSlot *slot) {
@@ -508,6 +530,7 @@ static void semantic_rd_join_read_slot(SZrSemanticRdSlot *dst,
     (void)semantic_rd_merge_slot(dst, src);
 }
 
+/* 同一 READ 可被 worklist 多次访问；快照必须按路径合并，不能采用最后一次覆盖。 */
 static void semantic_rd_record_read_slot(SZrSemanticRdAnalysis *analysis,
                                          TZrSize factIndex,
                                          const SZrSemanticRdSlot *value) {
@@ -528,6 +551,7 @@ static void semantic_rd_record_read_slot(SZrSemanticRdAnalysis *analysis,
     analysis->readSlotSeen[factIndex] = ZR_TRUE;
 }
 
+/* 读取当前输入槽形成一次路径快照；跨访问的聚合由 readSlots 单独负责。 */
 static void semantic_rd_apply_read_fact(void *state,
                                         SZrSemanticRdAnalysis *analysis,
                                         SZrSemanticReferenceFact *fact,
@@ -557,6 +581,7 @@ static void semantic_rd_apply_read_fact(void *state,
     semantic_rd_apply_read_slot_to_fact(analysis->context, fact, &value);
 }
 
+/* solver 成功后再提交每个已见 READ 的聚合快照；未见事实保留先前线性结果。 */
 static void semantic_rd_apply_read_slots(SZrSemanticRdAnalysis *analysis) {
     TZrSize index;
 
@@ -588,6 +613,8 @@ static void semantic_rd_apply_read_slots(SZrSemanticRdAnalysis *analysis) {
     }
 }
 
+/* 各语句只认自己负责的直接表达式；块和控制流容器不抢走子体 facts。
+ * 未特判的 AST 才用整节点范围归属，调用者必须传入合适的 CFG statement。 */
 static TZrBool semantic_rd_fact_in_statement(SZrAstNode *statement,
                                              const SZrSemanticReferenceFact *fact) {
     if (statement == ZR_NULL || fact == ZR_NULL) {
@@ -632,6 +659,7 @@ static TZrBool semantic_rd_fact_in_statement(SZrAstNode *statement,
     }
 }
 
+/* Dataflow 会重访语句；每次都从当前 out-state 顺序应用该语句拥有的 resolved facts。 */
 static void semantic_rd_transfer_statement(SZrAstNode *statement, void *state, void *userData) {
     SZrSemanticRdAnalysis *analysis = (SZrSemanticRdAnalysis *)userData;
     TZrSize index;
@@ -668,6 +696,7 @@ static void semantic_rd_transfer_statement(SZrAstNode *statement, void *state, v
     }
 }
 
+/* 入口把全局 map 中已知声明范围作为初始可导航定义，其余槽保持 UNKNOWN。 */
 static void semantic_rd_init_entry(void *state, void *userData) {
     SZrSemanticRdAnalysis *analysis = (SZrSemanticRdAnalysis *)userData;
     TZrSize index;
@@ -691,6 +720,7 @@ static void semantic_rd_init_entry(void *state, void *userData) {
     }
 }
 
+/* predecessor 状态按 symbol 槽逐项合并；只要一个槽变化就请求 worklist 重算。 */
 static TZrBool semantic_rd_join(void *dst, const void *src, void *userData) {
     SZrSemanticRdAnalysis *analysis = (SZrSemanticRdAnalysis *)userData;
     TZrSize index;
@@ -715,6 +745,8 @@ static TZrBool semantic_rd_join(void *dst, const void *src, void *userData) {
     return changed;
 }
 
+/* read snapshots 与栈上 callback userData 都属于本次同步调用，并在所有 CFG/Result 清理后失效。
+ * TODO: callback 会立即改写 READ fact；若 Dataflow_Run 在已执行 transfer 后失败，本函数没有回滚。 */
 static TZrBool semantic_rd_run_cfg_for_root(SZrSemanticContext *context,
                                             const SZrSemanticRdSymbolMap *symbols,
                                             SZrAstNode *root) {
@@ -813,6 +845,7 @@ static TZrBool semantic_rd_resolve_node(SZrSemanticContext *context,
                                         const SZrSemanticRdSymbolMap *symbols,
                                         SZrAstNode *node);
 
+/* 函数 root 求解后只递归 block 的直接子项，避免把当前函数 body 当普通语句再次扫描。 */
 static TZrBool semantic_rd_resolve_function_like_body(SZrSemanticContext *context,
                                                       const SZrSemanticRdSymbolMap *symbols,
                                                       SZrAstNode *body) {
@@ -830,6 +863,8 @@ static TZrBool semantic_rd_resolve_function_like_body(SZrSemanticContext *contex
     return ZR_TRUE;
 }
 
+/* BUG: 这里只为 SCRIPT 与 FUNCTION_DECLARATION 建独立 CFG。class method body 的 facts
+ * 会留在 class 声明的整体 range 内，由 script 的普通 class block 线性处理，绕过方法内分支/循环 join。 */
 static TZrBool semantic_rd_resolve_node(SZrSemanticContext *context,
                                         const SZrSemanticRdSymbolMap *symbols,
                                         SZrAstNode *node) {
