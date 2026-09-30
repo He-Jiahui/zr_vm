@@ -148,6 +148,7 @@ if (NOT TARGET zr_vm_ssa_dominator_cfg_test)
 endif ()
 
 include(${CMAKE_CURRENT_LIST_DIR}/ssa-builder-tests.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/ssa-cfg-effects-faults.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/ssa-value-facts-tests.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/ssa-source-straight-line-tests.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/ssa-source-cfg-fault-tests.cmake)

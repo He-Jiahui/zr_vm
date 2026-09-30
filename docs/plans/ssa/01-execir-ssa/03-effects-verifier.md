@@ -13,6 +13,8 @@ plan_sources:
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
 tests:
   - tests/parser/test_ssa_effects_verifier.c
+  - tests/parser/test_ssa_cfg_effects_faults.c
+  - tests/acceptance/ssa-cfg-natural-loop-effects.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -152,7 +154,18 @@ arrange phi includes nonexistent predecessor edge
 assert precise PHI_EDGE error, no invalid dereference
 arrange mayThrow operation with result on exceptional successor
 assert RESULT_UNAVAILABLE error
+arrange typed natural-loop effects synthesis and fail the core phi-incoming pool realloc
+assert OOM and no effect facts are published; retry the same CFG and require Core effect verification
+arrange the same natural-loop fixture and fail the core memory-token pool realloc after phi append
+assert OOM, restore the previous logical phiIncomingCount, and require same-CFG retry to pass Core effect verification
 ```
+
+The natural-loop failure-injection fixture covers these two real core pool
+reallocation sites and the retry verifier gate. It does not run a full
+compiler/source-language loop oracle; see
+`tests/acceptance/ssa-cfg-natural-loop-effects.md` for the recorded result and
+remaining coverage gap. This focused evidence does not complete the broader
+01.03 or M1 plan.
 
 ### 迁移结束检查
 

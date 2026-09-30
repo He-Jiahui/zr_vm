@@ -5,6 +5,7 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/semantic_value_facts.h
   - zr_vm_parser/include/zr_vm_parser/exec_ir_builder.h
   - zr_vm_core/include/zr_vm_core/exec_ir.h
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa_promotion.c
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
@@ -16,6 +17,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finally.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effects.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effects_linear.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effect_loops.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effects_internal.h
@@ -25,6 +27,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa_promotion.c
 plan_sources:
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
+  - docs/plans/ssa/01-execir-ssa/03-effects-verifier.md
   - docs/plans/ssa/guides/A-execir-builder-verifier.md
 tests:
   - tests/parser/test_pre_semantic_ir.c
@@ -44,10 +47,15 @@ tests:
   - tests/parser/test_ssa_place_eligibility.c
   - tests/parser/test_ssa_place_promotion.c
   - tests/parser/test_ssa_cfg_effects_builder.c
+  - tests/parser/test_ssa_cfg_effects_faults.c
+  - tests/parser/ssa_cfg_effects_fault_allocator.h
+  - tests/parser/ssa_cfg_effects_fault_core.c
   - tests/parser/test_ssa_source_cleanup_cfg.c
   - tests/cmake/ssa-tests.cmake
   - tests/cmake/ssa-builder-tests.cmake
+  - tests/cmake/ssa-cfg-effects-faults.cmake
   - tests/acceptance/ssa-builder-cfg.md
+  - tests/acceptance/ssa-cfg-natural-loop-effects.md
   - tests/acceptance/ssa-source-straight-line-cfg.md
   - tests/acceptance/ssa-source-while-short-circuit.md
   - tests/acceptance/ssa-source-for-short-circuit.md
@@ -307,6 +315,18 @@ before allocating tokens; malformed direct-call inputs return `INVALID_RANGE`.
 It assembles all required phi incomings before publishing instruction tokens
 or block phi metadata. An incoming-capacity failure leaves the direct caller's
 logical effect facts unchanged.
+
+The focused pool-OOM fixture redirects `realloc` in the actual core
+`exec_ir.c` translation unit and injects failure at both pool append sites:
+phi incomings first, then memory tokens. On either failure, instruction and
+block effect facts stay unpublished and memory-token pool
+storage/count/capacity stay unchanged. If memory-token append fails after phi
+append succeeds, the logical phi scope is restored to its previous count; the successfully grown phi
+backing buffer may be retained. The test retries synthesis on that same CFG
+after disabling injection, checks both loop-carried phi inputs, and passes the
+graph to `ZrCore_ExecIr_VerifyEffects`. This direct typed-ExecIR test does not
+run a full compiler or source-language loop oracle; that remains an open
+acceptance item.
 For multi-block CFGs, memory version one denotes the untouched entry state
 on every path. A first write receives a later version, so a sibling's first
 read cannot alias that write; distinct states receive a phi at their join.
