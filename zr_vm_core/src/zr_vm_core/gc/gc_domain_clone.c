@@ -266,7 +266,7 @@ TZrBool ZrCore_GcDomainClone_Claim(
     return ZR_TRUE;
 }
 
-/* 目标域重建成功即关闭源侧信封；普通 false 失败需 Abort/Free，非局部 OOM 见下方 BUG。 */
+/* 目标域重建成功即关闭源侧信封；失败保留可重试或 Abort/Free 的已领取事务。 */
 TZrBool ZrCore_GcDomainClone_Commit(
         SZrGcDomainCloneTransaction *transaction,
         SZrTypeValue *target,
@@ -293,7 +293,6 @@ TZrBool ZrCore_GcDomainClone_Commit(
                 0u);
         return ZR_FALSE;
     }
-    /* BUG: TryRun 内目标对象分配 OOM Throw 会跳过临时根清理及 commitInProgress 复位，令 Abort/Free 失败。 */
     result = ZrCore_OwnershipTransfer_CommitCrossDomain(
             transaction->envelope,
             transaction->targetState,

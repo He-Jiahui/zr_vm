@@ -131,8 +131,8 @@ TZrBool ZrCore_OwnershipTransfer_InternalCommitProvider(
 /**
  * @brief 将已认领的结构图重建到目标域并在线性化成功后转移图所有权。
  * @pre 外层跨域提交已验证目标域；workerId/claimEpoch 必须匹配当前 CLAIMED 信封，target 是空的可写槽。
- * @note 正常返回失败时保留原图供 Abort；重建期间不持信封锁，完成后重验原图及认领身份。
- * BUG: 图重建的目标分配若因 OOM 非局部抛出，commitInProgress 无法复位，后续 Abort/Free 无法终结信封。
+ * @note 失败时保留原图供重试或 Abort；重建期间不持信封锁，完成后重验原图及认领身份。
+ * 目标分配 Throw 会先清理临时根并复位 commitInProgress，再向调用方转抛原始状态。
  */
 TZrBool ZrCore_OwnershipTransfer_InternalCommitGraph(
         SZrOwnershipTransferEnvelope *envelope,

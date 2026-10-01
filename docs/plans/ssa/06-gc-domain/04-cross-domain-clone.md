@@ -8,11 +8,13 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/ownership_transfer_value_copy.c
   - zr_vm_core/src/zr_vm_core/gc/gc_domain.c
   - zr_vm_core/src/zr_vm_core/gc/gc_domain_clone.c
+  - zr_vm_core/src/zr_vm_core/ownership_transfer_graph_decode.c
 plan_sources:
   - docs/plans/ssa/index.md
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
 tests:
   - tests/core/test_ssa_cross_domain_clone.c
+  - tests/core/test_ssa_cross_domain_clone_oom.c
   - tests/core/test_resource_cross_domain_transfer.c
   - tests/core/test_resource_cross_domain_transfer_races.c
 doc_type: milestone-detail
@@ -61,6 +63,16 @@ ownership_transfer_cross_domain.c 与 value_copy 已有 transfer 基础；需要
 - [ ] **4. 提交与失败恢复** 目标图完全初始化并验证后原子发布；取消/OOM/native materializer 异常清理全部目标临时资源，源保持可用。
 
 ## 核心算法与接口指导
+
+### 2026-10-01 有界进度
+
+目标字段 HashPair 分配及其 GC 后重试的真实 OOM 已补齐 Commit 恢复路径。
+先修复 TryRun 的 GC scope 恢复，再在图解码器清理临时根，并在转抛原始状态前
+释放提交窗口。两个用例分别验证 Abort/Free 后重新克隆和同一 claim 重试；
+三套编译器均通过克隆 7 项、资源转移 24 项及竞争 5 项。
+详见 [失败注入验收](../../../../tests/acceptance/ssa-cross-domain-clone-oom.md)。
+本结果仅覆盖目标字段分配失败；便利入口 Execute、源 Prepare OOM、provider
+Throw 及完整深图/并发销毁门禁仍待独立验证，上述任务和完整 06.04 保持未完成。
 
 以下草案固定输入、处理顺序和失败行为；名称不是已经存在的 API。将其拆成上述文件中的私有 helper，错误使用项目诊断对象，不能通过布尔成功吞掉具体原因。
 
@@ -155,4 +167,3 @@ assert target graph remains usable
 Transfer 名称仍可保留兼容 API，但文档和实现必须明确复制语义。任何 shared external handle 都需独立 materializer/协议，不可借名跨域共享 GC control block。
 
 本任务的 acceptance 至少附上：上述断言对应的测试名称、实际执行后端/平台、失败注入位置、verifier 输入/输出摘要，以及涉及所有权时的分配/释放或 lease 平衡。新增入口的 OOM、取消、重复调用和部分初始化退出应有明确处理；不适用的状态写明原因。
-

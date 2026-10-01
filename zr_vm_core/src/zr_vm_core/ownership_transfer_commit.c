@@ -4,6 +4,7 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/ownership.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_core/exception.h"
 /* 保留 provider 可诊断的失败码，其余不明状态归并为提交失败。 */
 static EZrDomainTransferStatus ownership_transfer_commit_provider_failure_status(
         EZrDomainTransferStatus status) {
@@ -128,6 +129,7 @@ TZrBool ZrCore_OwnershipTransfer_InternalCommitGraph(
         SZrTypeValue *target,
         SZrDomainTransferDiagnostic *diagnostic) {
     SZrDomainTransferGraph *graph;
+    SZrDomainTransferGraphCommitFailure failure = {0};
     TZrUInt32 objectCount;
     TZrUInt64 byteCount;
     TZrBool result;
@@ -153,9 +155,8 @@ TZrBool ZrCore_OwnershipTransfer_InternalCommitGraph(
     envelope->commitInProgress = ZR_TRUE;
     graph = envelope->graph;
     ZrCore_OwnershipTransfer_InternalUnlock(envelope);
-    /* BUG: 图重建分配 OOM 可 Throw；非局部退出跳过 flag 复位和图清理，后续 Abort/Free 无法终结该信封。 */
     result = ZrCore_DomainTransferGraph_Commit(
-            targetState, graph, target, diagnostic);
+            targetState, graph, target, diagnostic, &failure);
     /* 正常返回后再次核对认领与原图身份，再决定转移 payload 所有权。 */
     ZrCore_OwnershipTransfer_InternalLock(envelope);
     if (!envelope->commitInProgress || !envelope->hasPayload ||
@@ -175,6 +176,7 @@ TZrBool ZrCore_OwnershipTransfer_InternalCommitGraph(
                 objectCount,
                 byteCount,
                 0u);
+        if (failure.thrown) ZrCore_Exception_Throw(targetState, failure.status);
         return ZR_FALSE;
     }
     envelope->commitInProgress = ZR_FALSE;
@@ -195,5 +197,8 @@ TZrBool ZrCore_OwnershipTransfer_InternalCommitGraph(
                 byteCount,
                 0u);
     }
+    /* The graph decoder retired all temporary roots. Release the commit
+     * window before propagating its exact non-local status to the caller. */
+    if (failure.thrown) ZrCore_Exception_Throw(targetState, failure.status);
     return result;
 }

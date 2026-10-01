@@ -5,17 +5,22 @@ related_code:
   - zr_vm_core/include/zr_vm_core/ownership_transfer.h
   - zr_vm_core/src/zr_vm_core/ownership_transfer.c
   - zr_vm_core/src/zr_vm_core/ownership_transfer_cross_domain.c
+  - zr_vm_core/src/zr_vm_core/ownership_transfer_graph_internal.h
+  - zr_vm_core/src/zr_vm_core/ownership_transfer_graph_decode.c
   - zr_vm_core/src/zr_vm_core/ownership_transfer_commit.c
   - zr_vm_core/src/zr_vm_core/ownership_transfer_lifecycle.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/gc_domain_clone.h
   - zr_vm_core/src/zr_vm_core/gc/gc_domain_clone.c
   - zr_vm_core/src/zr_vm_core/ownership_transfer.c
+  - zr_vm_core/src/zr_vm_core/ownership_transfer_graph_decode.c
+  - zr_vm_core/src/zr_vm_core/ownership_transfer_commit.c
 plan_sources:
   - docs/plans/ssa/06-gc-domain/04-cross-domain-clone.md
   - docs/core-runtime/cross-domain-transfer-contracts.md
 tests:
   - tests/core/test_ssa_cross_domain_clone.c
+  - tests/core/test_ssa_cross_domain_clone_oom.c
   - tests/core/test_resource_cross_domain_transfer.c
   - tests/core/test_resource_cross_domain_transfer_races.c
 doc_type: module-detail
@@ -50,11 +55,20 @@ Prepare -> Publish -> Claim(worker, epoch) -> Commit
 ```
 
 `Commit` requires a null destination and uses target-domain root handles while
-allocating and initializing the complete graph. On an ordinary failure return,
-the destination remains unpublished and the caller can abort the transaction;
-the source value is never consumed. A protected OOM during target allocation
-can instead bypass temporary-root cleanup and leave `commitInProgress` set, so
-the ordinary `Abort`/`Free` cleanup guarantee does not cover that path. `Abort`
+allocating and initializing the complete graph. The private graph decoder runs
+inside `Exception_TryRun`; its caller owns the object roots, the current field's
+key/value roots and a staged destination. Those values survive the protected
+callback's non-local exit. Both ordinary failure and Throw release every
+registered temporary root. The destination is written only after the complete
+graph has been initialized.
+
+After decode, the envelope releases `commitInProgress` before propagating the
+original thrown status. A failed transaction remains `CLAIMED`, retains its
+encoded graph and keeps the destination null. Once the caller has caught and
+handled the target exception, the same worker/epoch can retry it, or the caller
+can Abort/Free it. `MEMORY_ERROR` maps to the transfer diagnostic
+`ALLOCATION_FAILED`; the exception is still observable by the outer TryRun.
+The source value is never consumed. `Abort`
 uses the source as an explicit cancellation authority, including when the
 target domain has already become stale. The source-side branch is linear with
 commit through the envelope's `commitInProgress` guard, so a commit and
@@ -97,9 +111,23 @@ commit/abort races, and target shutdown. The focused clone test is intended to
 be registered as `ssa_cross_domain_clone` with executable target
 `zr_vm_ssa_cross_domain_clone_test`.
 
+`test_ssa_cross_domain_clone_oom.c` injects a real field-pair allocation failure
+and its allocator retry during target concurrent-major GC. Its two cases check
+exact `MEMORY_ERROR` propagation, a null destination, root and mutation-depth
+restoration, an unchanged and writable source, and either Abort/Free followed by
+a new clone or retry of the same claim. The successful result must retain the
+cycle and aliased child using independent target addresses. This private-Core
+test is registered only for static builds as `ssa_cross_domain_clone_oom`.
+
 ## Scope and follow-up
 
 This layer intentionally supports the generic object graph forms already
 accepted by the canonical transfer encoder. Prototype-bearing objects, inline
 array layouts, and remote proxy/reference semantics remain explicit future
 contracts rather than silently falling back to shared pointers.
+
+The public `Execute` convenience call still needs its own protected cleanup for
+a Throw from Commit because it hides the transaction from its caller. The
+Commit recovery gate does not establish that guarantee. Source-side Prepare
+allocation failures, raw-array materialization and provider callback Throw are
+also separate contracts; the field-pair OOM regression does not validate them.

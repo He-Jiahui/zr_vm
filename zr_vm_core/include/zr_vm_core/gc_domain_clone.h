@@ -54,7 +54,9 @@ ZR_CORE_API TZrBool ZrCore_GcDomainClone_Claim(
 /**
  * @brief 在目标域重建图并提交已领取事务，成功后目标值归目标域调用方管理。
  * @pre target 已初始化为 null 类型；目标域及领取者身份仍有效。
- * @return 成功后编码信封已释放，包装对象保留快照供 GetSnapshot/Free；失败须 Abort 或 Free。
+ * @return 成功后编码信封已释放，包装对象保留快照供 GetSnapshot/Free；失败可重试、Abort 或 Free。
+ * @note 目标分配 Throw 前会清理临时根并释放提交窗口，再转抛原始状态；目标仍为 null。
+ * 在外层 TryRun 捕获并处理当前异常后，可使用原 worker/epoch 重试已领取事务。
  */
 ZR_CORE_API TZrBool ZrCore_GcDomainClone_Commit(
         SZrGcDomainCloneTransaction *transaction,

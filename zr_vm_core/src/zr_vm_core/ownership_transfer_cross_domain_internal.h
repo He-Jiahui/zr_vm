@@ -5,6 +5,11 @@
 
 typedef struct SZrDomainTransferGraph SZrDomainTransferGraph;
 
+typedef struct SZrDomainTransferGraphCommitFailure {
+    EZrThreadStatus status;
+    TZrBool thrown;
+} SZrDomainTransferGraphCommitFailure;
+
 SZrDomainTransferGraph *ZrCore_DomainTransferGraph_Prepare(
         struct SZrState *sourceState,
         const SZrTypeValue *source,
@@ -17,7 +22,8 @@ TZrBool ZrCore_DomainTransferGraph_Commit(
         struct SZrState *targetState,
         const SZrDomainTransferGraph *graph,
         SZrTypeValue *target,
-        SZrDomainTransferDiagnostic *diagnostic);
+        SZrDomainTransferDiagnostic *diagnostic,
+        SZrDomainTransferGraphCommitFailure *failure);
 
 void ZrCore_DomainTransferGraph_Free(SZrDomainTransferGraph *graph);
 
