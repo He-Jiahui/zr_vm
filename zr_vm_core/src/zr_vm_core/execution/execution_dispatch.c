@@ -5,6 +5,7 @@
 #include "execution/execution_internal.h"
 #include "execution/execution_frame_value_slot_fast.h"
 #include "execution/execution_inline_frame_copy_fast.h"
+#include "execution/execution_dynamic_call_guard.h"
 #include "function_call_spread_internal.h"
 #include "function_precall_internal.h"
 #include "object/object_internal.h"
@@ -3810,6 +3811,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in SUPER_DYN_CALL_NO_ARGS");         \
+        REQUIRE_DYNAMIC_CALLABLE(opA);                                                                                \
                                                                                                                        \
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
         nextCallInfo__ = execution_pre_call_frame_layout_generic_single_result(                                        \
@@ -3873,6 +3875,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         argumentSourceStartSlot__ =                                                                                   \
                 (TZrUInt32)(functionSlot__ + (preparedDynCallTarget__ ? 0u : 1u));                                     \
         callableValue__ = ZrCore_Stack_GetValueNoProfile(functionPointer__);                                          \
+        REQUIRE_DYNAMIC_CALLABLE(callableValue__);                                                                    \
                                                                                                                         \
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
         ZrCore_Function_StackAnchorInit(state, callWindow__, &callWindowAnchor__);                                    \
@@ -3908,6 +3911,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in DYN_CALL");                       \
+        REQUIRE_DYNAMIC_CALLABLE(opA);                                                                                \
                                                                                                                         \
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
         nextCallInfo__ = execution_pre_call_frame_layout_generic_single_result(                                        \
@@ -4305,6 +4309,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
                   "Function value is NULL in SUPER_DYN_TAIL_CALL_NO_ARGS");                                          \
+        REQUIRE_DYNAMIC_CALLABLE(opA);                                                                                \
                                                                                                                        \
         callWindow__ = execution_prepare_frame_layout_call_window(                                                     \
                 state, callInfo, currentFunction, &base, (TZrUInt32)functionSlot__, 0u);                              \
@@ -4346,6 +4351,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             ZrCore_Debug_RunError(state, "SUPER_DYN_TAIL_CALL_CACHED: invalid callsite cache");                      \
         }                                                                                                              \
                                                                                                                        \
+        REQUIRE_DYNAMIC_CALLABLE(FRAME_VALUE_SLOT(functionSlot__));                                                    \
         execution_stage_frame_layout_call_values(                                                                      \
                 state, currentFunction, base, (TZrUInt32)functionSlot__, cacheEntry__->argumentCount);                 \
         state->stackTop.valuePointer = BASE(functionSlot__) + cacheEntry__->argumentCount + 1;                        \
@@ -4391,6 +4397,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
         ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in DYN_TAIL_CALL");                  \
+        REQUIRE_DYNAMIC_CALLABLE(opA);                                                                                \
                                                                                                                        \
         execution_stage_frame_layout_call_values(                                                                      \
                 state, currentFunction, base, (TZrUInt32)functionSlot__, parametersCount__);                          \
@@ -5978,6 +5985,15 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         if (execution_raise_vm_runtime_error((STATE), &callInfo, __VA_ARGS__)) {                                      \
             goto LZrReturning;                                                                                         \
         }                                                                                                              \
+    } while (0)
+
+#define REQUIRE_DYNAMIC_CALLABLE(VALUE)                                                                               \
+    do {                                                                                                              \
+        SZrTypeValue *dynCallErrorValue__ = (VALUE);                                                                    \
+        if (execution_dynamic_call_is_noncallable(state, dynCallErrorValue__)) {                                       \
+            ZrCore_Debug_RunError(state, "Attempted to call non-callable value (type=%d)",                           \
+                    dynCallErrorValue__ != ZR_NULL ? (int)dynCallErrorValue__->type : -1);                              \
+        }                                                                                                             \
     } while (0)
 
 #define RESUME_AFTER_NATIVE_CALL(STATE, CALL_INFO)                                                                     \
@@ -10075,4 +10091,5 @@ LZrExecutionDone:
 #undef ZrCore_Stack_GetValue
 #undef ZrCore_Value_Copy
 #undef ZrCore_Debug_RunError
+#undef REQUIRE_DYNAMIC_CALLABLE
 }

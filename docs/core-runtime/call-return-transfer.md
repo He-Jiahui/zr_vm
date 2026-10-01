@@ -8,15 +8,18 @@ related_code:
   - zr_vm_core/src/zr_vm_core/execution/execution_call_transfer.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/execution/execution_tail_call.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dynamic_call_guard.h
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/exec_ir_call_transfer.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_call_transfer.c
   - zr_vm_core/include/zr_vm_core/execution_call_transfer.h
   - zr_vm_core/src/zr_vm_core/execution/execution_call_transfer.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dynamic_call_guard.h
 tests:
   - tests/core/test_ssa_call_return_tail.c
   - tests/parser/test_call_binding_pipeline.c
+  - tests/parser/test_tail_dispatch_runtime.c
 plan_sources:
   - docs/plans/ssa/04-frame-native/02-call-return-tail.md
 doc_type: module-detail
@@ -86,3 +89,37 @@ The call-binding pipeline direct test passed 18/18, the adjacent tail-reuse
 call-info test passed 4/4, and registered CTest `call_binding_pipeline` plus
 `ssa_call_return_tail` passed 2/2. These results cover the fallback regression
 and nearby tail-call behavior; they do not accept all of 04.02.
+
+## Legacy dynamic call errors
+
+The generic precall helper reports a missing `@call` with `Debug_CallError`,
+which performs a non-local Throw. Calling that helper directly from a dynamic
+VM instruction used to bypass `execution_unwind_exception_to_handler`, so a
+source-language catch was skipped and the caller's Unique owner remained
+registered after the host captured the error.
+
+Dynamic ordinary, tail, no-argument and cached instruction bodies now check
+the target before generic precall. The small private inline guard matches the
+precall admission categories: functions, closures, native pointers and the
+existing native-data case continue directly; other targets require an `@call`
+meta entry. The guard does not stage or invoke the receiver. Rejection uses the
+dispatcher's existing runtime-error path to save the PC, create the same
+non-callable Error message, clear pending control and unwind to the VM handler.
+An unhandled exception propagates after VM frame cleanup.
+
+The source runtime gate covers 8,192 eligible tail calls with a stable frame,
+unhandled ordinary and tail scalar-target errors, and a language catch that
+returns normally. Owned Tracker destruction must run exactly once, ownership
+roots must return to baseline, and the error retains its message and traceback.
+At the catch entry the outer owner is still rooted; after successful execution
+the harness keeps one result at `stackBase + 1` and top at `stackBase + 2`.
+Captured failures use the harness's separate one-slot reset boundary.
+
+These are legacy-bytecode checks. They do not connect ExecIR transfer plans to
+execution or establish null-callable, suspend, malformed native-pointer or
+all ownership/GC failure behavior. The admission and error-recovery choice is
+consistent with the reference interpreter call boundaries in `lua/src/ldo.c`
+and the exception return from a missing call target in
+`lua/QuickJS-master/quickjs.c`; ZR retains its own Error object and VM unwind
+mechanism. Detailed platform results are recorded in
+[the runtime acceptance](../../tests/acceptance/ssa-tail-dispatch-runtime.md).

@@ -3,11 +3,13 @@ related_code:
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/execution/execution_tail_call.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dynamic_call_guard.h
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
 implementation_files:
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/execution/execution_tail_call.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dynamic_call_guard.h
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
   - zr_vm_core/src/zr_vm_core/execution/execution_call_transfer.c
 plan_sources:
@@ -18,6 +20,7 @@ tests:
   - tests/core/test_tail_reuse_callinfo_reset.c
   - tests/core/test_vm_closure_precall.c
   - tests/parser/test_call_binding_pipeline.c
+  - tests/parser/test_tail_dispatch_runtime.c
 doc_type: milestone-detail
 status: in-progress
 ---
@@ -187,3 +190,35 @@ The focused MSVC build completed 708/708 edges in
 passed 18/18; the adjacent tail-reuse call-info direct test passed 4/4; and the
 registered `call_binding_pipeline` plus `ssa_call_return_tail` CTest gates
 passed 2/2. Full 04.02 acceptance remains open.
+
+## Scoped progress: non-callable dynamic dispatch cleanup (2026-10-01)
+
+The current-source regression executes ordinary and tail dynamic calls to the
+integer value `1` while an outer `Unique<Tracker>` remains live. Before the fix,
+the protected runtime errors left an ownership root behind, skipped the tail
+caller's destructor and bypassed a source-language catch. The scalar-only
+8,192-call tail-reuse fixture passed on that same failing build.
+
+The six ordinary/tail dynamic-call handler variants now use a private admission
+check before generic precall. A missing `@call` target enters the dispatcher's
+existing runtime-error path, which normalizes the Error and unwinds through
+language catch and ownership cleanup. Function, closure and native admission,
+plus the existing meta-call fallback, retain their previous precall behavior.
+This check does not invoke the target or stage its receiver.
+
+Final MSVC 19.44 validation passed three exact CTests: the new
+`ssa_tail_dispatch_runtime` (4/4 Unity), `call_binding_pipeline` (18/18) and
+`close_meta_exception` (4/4). The adjacent call-info reset direct test passed
+4/4, for 30 cases. Assertions include the original Error and traceback,
+exactly one destructor, ownership-root restoration, a live outer owner at
+catch entry and the successful harness result-slot boundary. GCC 11.4 and
+Clang 14 each completed an initial 583/583 build, then a 17/17 final rebuild
+after retiring the old fixture object. Their same three CTests passed in
+10.65s and 13.08s respectively, with the adjacent reset test also passing 4/4.
+Each platform passes 30 cases. Commands and evidence are tracked in
+`tests/acceptance/ssa-tail-dispatch-runtime.md`.
+
+This closes a legacy dynamic-dispatch error path. ExecIR transfer-plan wiring,
+return-buffer forwarding, general tail eligibility, null-callable handling,
+suspend/native failure and complete 04.02 acceptance remain open. No
+performance or sanitizer result is claimed.
