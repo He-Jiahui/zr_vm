@@ -725,6 +725,8 @@ the builder, SSA precheck, core verifier, and oracle use the same range.
 
 `ZrCore_ExecIr_CloneModule` and `ZrCore_ExecIr_CloneFunction` build a temporary
 deep copy and publish it only after every side-array allocation succeeds.
+They reject malformed source metadata when a side-array count exceeds its
+owned capacity before attempting to copy it.
 Module clone rollback includes the function currently being copied, even if a
 later side-array copy fails after earlier arrays have allocated storage; the
 previous destination remains published. `ssa_core_model` exercises this with

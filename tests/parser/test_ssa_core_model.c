@@ -738,6 +738,83 @@ static void test_structure_rejects_early_terminator(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void test_clone_rejects_side_array_count_beyond_capacity(void) {
+    SZrExecIrFunction source;
+    SZrExecIrFunction destination;
+    SZrExecIrDiagnostic diagnostic;
+
+    ZrCore_ExecIr_FunctionInit(&source);
+    ZrCore_ExecIr_FunctionInit(&destination);
+    source.id = 1u;
+    source.functionToken = 91u;
+    source.values = (SZrExecIrValue *)calloc(2u, sizeof(*source.values));
+    expect_true(source.values != ZR_NULL, "malformed clone fixture allocation failed");
+    source.valueCapacity = 1u;
+    source.valueCount = 2u;
+    source.values[0].id = 1u;
+    source.values[1].id = 2u;
+
+    destination.id = 7u;
+    destination.functionToken = 73u;
+    expect_true(!ZrCore_ExecIr_CloneFunction(&source, &destination, &diagnostic),
+                "clone accepted a side-array count beyond capacity");
+    expect_true(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT &&
+                    diagnostic.functionToken == source.functionToken &&
+                    diagnostic.instructionId == ZR_EXEC_IR_INSTRUCTION_ID_INVALID &&
+                    diagnostic.blockId == ZR_EXEC_IR_BLOCK_ID_INVALID &&
+                    destination.id == 7u && destination.functionToken == 73u,
+                "malformed clone changed the published destination");
+
+    ZrCore_ExecIr_FreeFunction(&destination);
+    ZrCore_ExecIr_FunctionInit(&destination);
+    destination.id = 8u;
+    destination.functionToken = 74u;
+    free(source.values);
+    source.values = ZR_NULL;
+    source.valueCount = 0u;
+    source.valueCapacity = 0u;
+    source.gcMap = (SZrExecIrGcMap *)calloc(1u, sizeof(*source.gcMap));
+    expect_true(source.gcMap != ZR_NULL, "malformed GC-map fixture allocation failed");
+    source.gcMap->entries = (SZrExecIrGcMapEntry *)calloc(
+            2u, sizeof(*source.gcMap->entries));
+    expect_true(source.gcMap->entries != ZR_NULL,
+                "malformed GC-map entry allocation failed");
+    source.gcMap->entryCount = 2u;
+    source.gcMap->entryCapacity = 1u;
+    expect_true(!ZrCore_ExecIr_CloneFunction(&source, &destination, &diagnostic),
+                "clone accepted a GC-map count beyond capacity");
+    expect_true(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT &&
+                    destination.id == 8u && destination.functionToken == 74u,
+                "malformed GC-map clone changed the published destination");
+
+    ZrCore_ExecIr_FreeFunction(&destination);
+    ZrCore_ExecIr_FunctionInit(&destination);
+    destination.id = 9u;
+    destination.functionToken = 75u;
+    ZrCore_ExecIr_FreeFunction(&source);
+    ZrCore_ExecIr_FunctionInit(&source);
+    source.id = 1u;
+    source.functionToken = 91u;
+    source.frameLayout = (SZrExecIrFrameLayout *)calloc(
+            1u, sizeof(*source.frameLayout));
+    expect_true(source.frameLayout != ZR_NULL,
+                "malformed frame-layout fixture allocation failed");
+    source.frameLayout->slots = (SZrExecIrFrameSlot *)calloc(
+            2u, sizeof(*source.frameLayout->slots));
+    expect_true(source.frameLayout->slots != ZR_NULL,
+                "malformed frame-slot allocation failed");
+    source.frameLayout->slotCount = 2u;
+    source.frameLayout->slotCapacity = 1u;
+    expect_true(!ZrCore_ExecIr_CloneFunction(&source, &destination, &diagnostic),
+                "clone accepted a frame-slot count beyond capacity");
+    expect_true(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT &&
+                    destination.id == 9u && destination.functionToken == 75u,
+                "malformed frame-layout clone changed the published destination");
+
+    ZrCore_ExecIr_FreeFunction(&destination);
+    ZrCore_ExecIr_FreeFunction(&source);
+}
+
 int main(void) {
     test_empty_module_and_entry_block();
     test_value_builder_rejects_unknown_enums();
@@ -750,6 +827,7 @@ int main(void) {
     test_structure_requires_reciprocal_cfg_edges();
     test_structure_rejects_zero_value_phi_incoming();
     test_structure_rejects_early_terminator();
+    test_clone_rejects_side_array_count_beyond_capacity();
     puts("ssa core model PASS");
     return EXIT_SUCCESS;
 }

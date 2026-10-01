@@ -255,9 +255,42 @@ static TZrBool zr_exec_ir_clone_array(void **destination,
     return ZR_TRUE;
 }
 
+static TZrBool zr_exec_ir_clone_function_shape_is_valid(
+        const SZrExecIrFunction *source) {
+    if (source == ZR_NULL || source->valueCount > source->valueCapacity ||
+        source->instructionCount > source->instructionCapacity ||
+        source->blockCount > source->blockCapacity ||
+        source->operandCount > source->operandCapacity ||
+        source->resultCount > source->resultCapacity ||
+        source->memoryTokenCount > source->memoryTokenCapacity ||
+        source->phiCount > source->phiCapacity ||
+        source->phiIncomingCount > source->phiIncomingCapacity ||
+        source->predecessorCount > source->predecessorCapacity ||
+        source->successorCount > source->successorCapacity ||
+        source->gcMapCount > source->gcMapCapacity ||
+        source->gcRootCount > source->gcRootCapacity ||
+        source->deoptStateCount > source->deoptStateCapacity ||
+        source->deoptValueCount > source->deoptValueCapacity ||
+        source->deoptAggregateCount > source->deoptAggregateCapacity ||
+        source->deoptAggregateFieldCount > source->deoptAggregateFieldCapacity ||
+        source->sourceMapCount > source->sourceMapCapacity ||
+        source->bindingRowCount > source->bindingRowCapacity ||
+        (source->gcMap != ZR_NULL &&
+         (source->gcMap->entryCount > source->gcMap->entryCapacity ||
+          source->gcMap->slotIndexCount > source->gcMap->slotIndexCapacity ||
+          source->gcMap->inlineRefOffsetCount >
+                  source->gcMap->inlineRefOffsetCapacity)) ||
+        (source->frameLayout != ZR_NULL &&
+         source->frameLayout->slotCount > source->frameLayout->slotCapacity)) {
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool zr_exec_ir_clone_function_into(const SZrExecIrFunction *source,
                                               SZrExecIrFunction *destination) {
     if (source == ZR_NULL || destination == ZR_NULL ||
+        !zr_exec_ir_clone_function_shape_is_valid(source) ||
         !ZrCore_ExecIr_FunctionValidateBindingRows(source, ZR_NULL)) {
         return ZR_FALSE;
     }
@@ -357,8 +390,6 @@ static TZrBool zr_exec_ir_clone_function_into(const SZrExecIrFunction *source,
     if (!zr_exec_ir_clone_array((void **)&destination->deoptValues, &destination->deoptValueCapacity,
                                 source->deoptValues, source->deoptValueCount, sizeof(*source->deoptValues))) return ZR_FALSE;
     destination->deoptValueCount = source->deoptValueCount;
-    if (source->deoptAggregateCount > source->deoptAggregateCapacity ||
-        source->deoptAggregateFieldCount > source->deoptAggregateFieldCapacity) return ZR_FALSE;
     if (!zr_exec_ir_clone_array((void **)&destination->deoptAggregates,
                                 &destination->deoptAggregateCapacity,
                                 source->deoptAggregates, source->deoptAggregateCount,
