@@ -15,10 +15,17 @@ related_code:
   - zr_vm_core/src/zr_vm_core/module/module_import_signature.c
   - zr_vm_core/src/zr_vm_core/metadata_runtime.c
   - zr_vm_core/src/zr_vm_core/zrp_metadata.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_owner_sets.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_observations.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_query_diagnostics.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_query_diagnostics.c
 implementation_files:
   - zr_vm_common/CommonMacros.cmake
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_signature.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_signature.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership.c
 plan_sources:
   - user: 全仓库首方代码调用链审查与意图注释任务
   - docs/code-review/comment-standard.md
@@ -26,6 +33,11 @@ tests:
   - tests/fixtures/projects/hello_world/hello_world.zrp
   - tests/module/test_metadata_token_model.c
   - tests/module/test_metadata_runtime_query.c
+  - tests/parser/test_dataflow_engine.c
+  - tests/parser/test_compiler_semantic_query_diagnostics.c
+  - tests/parser/test_compiler_return_ownership_diagnostics.c
+  - tests/language_server/test_ownership_diagnostics.c
+  - tests/language_server/test_ownership_diagnostics_owner_set_cases.h
 doc_type: testing-guide
 ---
 
@@ -96,3 +108,29 @@ doc_type: testing-guide
 逐例前后比较receipt于04:38:42Z确认上述结果。其他会话在两阶段间更新了工作区，HEAD从 `9de3d7398c8971c1a22a908597dcf5286f4dfbf0` 推进到 `49a01febdc57ab83b2616bea7c8e38e560677f2b`；这些是限定范围的真实验证及精确注释等价性证据，不是整个旧工作区的受控对照。现有用例未执行非零METHOD泛型格式差异或分配失败的运行时故障注入，相关BUG采用合法输入的完整静态调用证据。没有覆盖上一批101例中13个既有LSP失败，也没有全仓绿色或跨仓捕获成功结论。
 
 该模块采用六条精确路径的正常串行提交：两源、专用台账、inventory、模块文档及本文。提交成员、实际文件和规范化Git blob另用终态receipt核实。唯一readiness队列保持不变；本模块同样未收到capture START/terminal result/release。
+
+## Ownership dataflow driver 的26个审查单元
+
+根代理和两位独立 reviewer 检查当前 driver 的3个类型、14个普通函数、3个回调、1个递归原型及5个契约块。全部17个有直接调用的函数调用集合和3个回调注册点已核对，并沿通用 solver 的同步 dispatch、compiler late-check 与 LSP diagnostics 消费解释使用意图。台账共26单元：21 `commented`、1 `TODO`、2 `BUG`、2 `no-comment`；未加注释的单元也保留理由。
+
+源码由767行增至853行，只增加86行注释，所有原始源码行和非注释token相同。注释说明一次分析的状态所有权、同步回调借用栈上analysis的限制、读取检查先于写入重置的目的、UNKNOWN owner集合与已知EMPTY的区别，以及返回false可能留下部分context事实。两个BUG分别登记合法loan alias分配失败后的诊断遗漏，以及合法Unique消费后的观测分配失败被compiler调用链忽略；lambda独立CFG与LSP best-effort失败处理仍保留具体TODO。没有运行allocator故障注入，没有修改行为。
+
+正式门禁核对26单元、265个caller/evidence锚点、3549个分类首方文件及416张正式台账。7张既有表的92条物理记录中，382个现有driver反向位置按精确原始行映射更新；单位、判断及非driver证据未改变。独立迁移清单与根代理反向多重集合逐项一致。inventory只更新driver一行；模块文档与索引同时补充职责和调用限制。schema、非空/弱锚点、token等价性及限定路径 `git diff --check` 均退出0。
+
+独立语义报告保持冻结；其首次hash manifest末尾为字面量反斜杠n，作者原地修复了manifest，未按要求另建版本。有效manifest和报告hash已由根代理重查，这个过程限制仍保留。独立反向helper最初按unit名判归属的检查，被根代理针对实际file列的检查补足；没有据机械计数推断语义正确或全仓完成。
+
+## Driver修改前后实际验证
+
+使用本任务专属 `D:/tmp/zr_vm/comment-review-20260930/gcc`、`clang` 缓存，构建并运行现有 `zr_vm_dataflow_engine_test`、`zr_vm_compiler_semantic_query_diagnostics_test`、`zr_vm_compiler_return_ownership_diagnostics_test`、`zr_vm_language_server_ownership_diagnostics_test` 四个可执行文件。Windows使用 `msvc-shared` 缓存，验证shared-only配置、现有CLI及hello_world。命令和完整日志保存在各缓存的 `ownership-driver-review-20261001/before.json`、`after.json` 及对应日志。
+
+| 工具链 | 修改前（UTC、原生句柄） | 修改后（UTC、原生句柄） | 实际结果 |
+| --- | --- | --- | --- |
+| GCC | 04:57:08—05:14:42，80224 | 06:03:55—06:51:19，63810 | 前后构建退出0；各101例，88通过、13失败、0忽略，测试退出1 |
+| Clang | 04:57:08—05:10:33，10798 | 06:03:56—06:49:45，92140 | 前后构建退出0；各101例，88通过、13失败、0忽略，测试退出1 |
+| MSVC | 04:57:13—05:02:40，55338 | 06:03:57—06:06:33，35325 | 前后配置、CLI构建、hello_world均退出0，输出hello world |
+
+07:51:54Z的逐例比较确认GCC/Clang前后101个用例的目标、名称、顺序和状态完全相同。13个失败全属于既有LSP ownership diagnostics，完整名称保存在comparison receipt；这些失败未跳过、未修复，也不作为全绿结果。修改前源SHA为 `46f33ac267e402ebfd12a9e411e73adcd2b692cb1437796264d7d2edac1812fe`，修改后为 `6addd445734be338bf527db7ad89448cf845f6df3f7c49b570ba28658cef5e7e`，六次运行各自保持对应源哈希不变。两次Linux修改后各8个Ninja动作。
+
+期间其他写入组将HEAD从 `f9828dc877293e5d0d0d8512a81af19ebafe0991` 推进至 `7e3e0782f30ff2d05017ebc79901fec7d52e9c87`。这是限定目标的真实比较，源码行为不变另由精确注释等价性证明；没有将并发工作区视为受控旧版本。恢复上下文后两个Linux工具句柄已不可查询，随后读取了其实际terminal回执、构建/测试步骤与源码哈希，没有重启验证来替换结果。
+
+本批按13条精确路径正常串行提交：driver源、专用台账、7张位置迁移表、inventory、模块文档、索引和本文。提交成员与规范化Git blob另由终态receipt核实。唯一readiness队列仍为 `01a0e3a1-2bbe-7f23-9026-9e5aa6296c8f`；未收到capture START/terminal result/release，未重复validation或执行archive。模块验证与commit不构成跨仓捕获封印。

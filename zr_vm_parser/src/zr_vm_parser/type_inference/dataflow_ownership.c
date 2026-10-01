@@ -11,6 +11,9 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
 
+/*
+ * 所有权域保留各条可达路径上可能的处置；未初始化检查由独立的 definite-assignment pass 承担。
+ */
 enum EZrSemanticOwnershipFlowState {
     ZR_SEMANTIC_OWNERSHIP_FLOW_OWNED = 1 << 0,
     ZR_SEMANTIC_OWNERSHIP_FLOW_MOVED = 1 << 1,
@@ -18,6 +21,9 @@ enum EZrSemanticOwnershipFlowState {
     ZR_SEMANTIC_OWNERSHIP_FLOW_RELEASED = 1 << 3,
 };
 
+/*
+ * 每个符号在 CFG 快照中同时携带路径状态、owner 来源和诊断见证；AST 见证只借用，ownerSetId 仅在本次 pool 内有效。
+ */
 typedef struct SZrSemanticOwnershipFlowSlot {
     TZrUInt8 states;
     TZrSize ownerSetId;
@@ -25,6 +31,9 @@ typedef struct SZrSemanticOwnershipFlowSlot {
     SZrAstNode *releaseNode;
 } SZrSemanticOwnershipFlowSlot;
 
+/*
+ * 一次解析的共享分析对象，由同步 solver 回调借用；context 与符号映射不转移所有权，观测和 owner-set pool 随本次解析释放。
+ */
 typedef struct SZrSemanticOwnershipAnalysis {
     SZrSemanticContext *context;
     SZrSemanticOwnershipSymbolMap *symbols;
@@ -36,6 +45,9 @@ static TZrBool semantic_ownership_has_offset(const SZrFilePosition *position) {
     return position != ZR_NULL && position->offset > 0;
 }
 
+/*
+ * using 的隐式清理须符合符号的 ownership qualifier；显式 drop 的释放分类由调用方保留。
+ */
 static TZrBool semantic_ownership_using_releases(
         SZrAstNode *statement,
         const SZrSemanticOwnershipSymbolEntry *entry) {
@@ -49,6 +61,9 @@ static TZrBool semantic_ownership_using_releases(
             entry->qualifier == ZR_OWNERSHIP_QUALIFIER_LOANED);
 }
 
+/*
+ * 多路径或重复 CFG 访问的诊断优先指向源码最早见证；offset 0 仍是有效文件起点，不能因另一见证有正偏移而丢弃它。
+ */
 static SZrAstNode *semantic_ownership_earlier_node(SZrAstNode *left, SZrAstNode *right) {
     if (left == ZR_NULL) {
         return right;
@@ -67,6 +82,9 @@ static SZrAstNode *semantic_ownership_earlier_node(SZrAstNode *left, SZrAstNode 
     return left->location.start.column <= right->location.start.column ? left : right;
 }
 
+/*
+ * 来源信息供后续 owner-release 检查使用：UNKNOWN 表示不能确定 owner，EMPTY 才表示已知没有 owner，未绑定 alias 不能臆造来源。
+ */
 static TZrSize semantic_ownership_entry_owner_set(
         SZrSemanticOwnershipAnalysis *analysis,
         const SZrSemanticOwnershipSymbolEntry *entry) {
@@ -91,6 +109,9 @@ static TZrSize semantic_ownership_entry_owner_set(
     return ZR_DATAFLOW_OWNERSHIP_OWNER_SET_EMPTY;
 }
 
+/*
+ * 为当前 CFG 建立所有权边界值；声明先后与未初始化约束仍交给 definite-assignment，入口 OWNED 不等于变量已初始化。
+ */
 static void semantic_ownership_init_entry(void *state, void *userData) {
     SZrSemanticOwnershipAnalysis *analysis = (SZrSemanticOwnershipAnalysis *)userData;
     SZrSemanticOwnershipFlowSlot *slots = (SZrSemanticOwnershipFlowSlot *)state;
@@ -115,6 +136,9 @@ static void semantic_ownership_init_entry(void *state, void *userData) {
     }
 }
 
+/*
+ * join 保留任一路径可能发生的所有权处置；状态、来源或见证变化均须报告 changed，才能让后继重新接受完整信息。
+ */
 static TZrBool semantic_ownership_join(void *dst, const void *src, void *userData) {
     SZrSemanticOwnershipAnalysis *analysis = (SZrSemanticOwnershipAnalysis *)userData;
     SZrSemanticOwnershipFlowSlot *dstSlots = (SZrSemanticOwnershipFlowSlot *)dst;
@@ -162,6 +186,9 @@ static TZrBool semantic_ownership_join(void *dst, const void *src, void *userDat
     return changed;
 }
 
+/*
+ * 重复 CFG 访问先汇总到同一 reference-fact 索引，保留配对的最早 cause/owner；观测随后统一投射为上下文事实。
+ */
 static void semantic_ownership_record_violation(SZrSemanticOwnershipAnalysis *analysis,
                                                  TZrSize factIndex,
                                                  SZrAstNode *cause,
@@ -182,6 +209,11 @@ static void semantic_ownership_record_violation(SZrSemanticOwnershipAnalysis *an
     analysis->observations.violationCauses[factIndex] = earlierCause;
 }
 
+/*
+ * 为 alias 找到任一可能 owner 的最早释放见证，供 borrow/loan 违规和 weak wake 诊断关联具体原因。
+ * BUG: owner-set 的单次分配失败可退化为 UNKNOWN；这里返回无见证，合法分支重绑定的 loan alias 因而漏报 loan_escape。
+ * 合法输入与期望见 tests/language_server/test_ownership_diagnostics_owner_set_cases.h:104-127；此为完整静态失败链，未作运行时故障注入。
+ */
 static SZrAstNode *semantic_ownership_owner_set_release(
         const SZrSemanticOwnershipAnalysis *analysis,
         const SZrSemanticOwnershipFlowSlot *slots,
@@ -231,6 +263,9 @@ static SZrAstNode *semantic_ownership_owner_set_release(
     return releaseCause;
 }
 
+/*
+ * 同一 AST 节点/符号可能有重复 READ 事实；折叠这类重复可避免一次源码读取被按两次 move 处理，不合并不同读取节点。
+ */
 static TZrBool semantic_ownership_read_seen_before(
         const SZrSemanticOwnershipAnalysis *analysis,
         TZrSize factIndex,
@@ -258,6 +293,9 @@ static TZrBool semantic_ownership_read_seen_before(
     return ZR_FALSE;
 }
 
+/*
+ * solver 可能重访同一语句；槽位从输入快照重新求值，跨访问的诊断证据保存在调用级 observations，回调不得保留 solver 缓冲地址。
+ */
 static void semantic_ownership_transfer_statement(SZrAstNode *statement,
                                                    void *state,
                                                    void *userData) {
@@ -290,6 +328,9 @@ static void semantic_ownership_transfer_statement(SZrAstNode *statement,
                                   statementBinding.ownerReference->symbolId,
                                   &bindingOwnerIndex);
 
+    /*
+     * 先检查语句读取时旧值的有效性，再建立写入后的状态；否则赋值或重新绑定会掩盖本语句对已移动/释放值的使用。
+     */
     for (index = 0; index < analysis->context->referenceFacts.length; index++) {
         const SZrSemanticReferenceFact *fact =
                 (const SZrSemanticReferenceFact *)ZrCore_Array_Get(
@@ -411,6 +452,9 @@ static void semantic_ownership_transfer_statement(SZrAstNode *statement,
         slot->states = ZR_SEMANTIC_OWNERSHIP_FLOW_MOVED;
     }
 
+    /*
+     * 写入为目标开启新的值生命周期，旧 move/release 见证不能污染后续读取；具体 owner 仅来自声明绑定或已识别的 alias 重绑定。
+     */
     for (index = 0; index < analysis->context->referenceFacts.length; index++) {
         const SZrSemanticReferenceFact *fact =
                 (const SZrSemanticReferenceFact *)ZrCore_Array_Get(
@@ -454,6 +498,9 @@ static void semantic_ownership_transfer_statement(SZrAstNode *statement,
     }
 }
 
+/*
+ * 将绑定补回已有 ownership facts，让 query 投射共享 alias、owner 与生命周期关系；不另建一份与推断事实竞争的诊断来源。
+ */
 static void semantic_ownership_update_region_facts(
         SZrSemanticOwnershipAnalysis *analysis,
         const SZrDataflowOwnershipRegionBinding *binding,
@@ -500,6 +547,9 @@ static void semantic_ownership_update_region_facts(
     }
 }
 
+/*
+ * CFG 求解前建立 alias 的 owner 来源，使入口和赋值 transfer 使用同一映射；此阶段可能已改写 context，后续失败没有回滚。
+ */
 static TZrBool semantic_ownership_bind_cfg_regions(
         SZrSemanticOwnershipAnalysis *analysis,
         const SZrParserCfg *cfg) {
@@ -554,6 +604,9 @@ static TZrBool semantic_ownership_bind_cfg_regions(
     return ZR_TRUE;
 }
 
+/*
+ * 所选 CFG 成功后补齐 borrow/loan/degrade 构造事实的生命周期关联，涵盖未识别为 CFG alias 绑定的构造用法。
+ */
 static TZrBool semantic_ownership_seed_unbound_builtin_regions(
         SZrSemanticOwnershipAnalysis *analysis) {
     TZrSize index;
@@ -607,6 +660,9 @@ static TZrBool semantic_ownership_seed_unbound_builtin_regions(
     return ZR_TRUE;
 }
 
+/*
+ * 每个调用边界独占临时 CFG 和 solver result；共享分析只借用到同步 Run 返回，两项临时资源在成功或失败后均须释放。
+ */
 static TZrBool semantic_ownership_run_cfg(SZrSemanticOwnershipAnalysis *semanticAnalysis,
                                           SZrAstNode *root) {
     SZrParserCfg cfg;
@@ -622,6 +678,9 @@ static TZrBool semantic_ownership_run_cfg(SZrSemanticOwnershipAnalysis *semantic
         return ZR_TRUE;
     }
 
+    /*
+     * 以同一符号序号解释 solver 的槽位数组；userData 指向解析器栈上共享状态，三个回调仅在本次同步 Run 内借用。
+     */
     analysis.direction = ZR_PARSER_DATAFLOW_FORWARD;
     analysis.stateSize = semanticAnalysis->symbols->entries.length *
                          sizeof(SZrSemanticOwnershipFlowSlot);
@@ -647,6 +706,9 @@ static TZrBool semantic_ownership_run_cfg(SZrSemanticOwnershipAnalysis *semantic
 static TZrBool semantic_ownership_resolve_node(SZrSemanticOwnershipAnalysis *analysis,
                                                SZrAstNode *node);
 
+/*
+ * 类型成员与 accessor 数组共用递归入口；首个子 CFG 失败即停止，避免把部分分析当作整棵 AST 已完成。
+ */
 static TZrBool semantic_ownership_resolve_array(SZrSemanticOwnershipAnalysis *analysis,
                                                 SZrAstNodeArray *nodes) {
     TZrSize index;
@@ -668,6 +730,9 @@ static TZrBool semantic_ownership_resolve_node(SZrSemanticOwnershipAnalysis *ana
         return ZR_TRUE;
     }
 
+    /*
+     * 脚本、可调用成员和显式 block 各有 CFG 边界，类型容器只负责找到这些成员，不承担一份独立的语句流。
+     */
     switch (node->type) {
         case ZR_AST_SCRIPT:
             return semantic_ownership_run_cfg(analysis, node) &&
@@ -698,11 +763,21 @@ static TZrBool semantic_ownership_resolve_node(SZrSemanticOwnershipAnalysis *ana
                     analysis, node->data.propertyAccessor.body);
         case ZR_AST_BLOCK:
             return semantic_ownership_run_cfg(analysis, node);
+        /*
+         * TODO: lambda 带有 block body，却没有独立 dispatch case；沿 parser_function_syntax 的构造、semantic_scope_facts 的范围归属与 CFG 边界核实闭包读取是否被并入外围语句。
+         */
         default:
             return ZR_TRUE;
     }
 }
 
+/**
+ * @brief 为 compiler 与 LSP 的共享语义 query 收集 CFG 所有权事实，违规由后续投射器解释。
+ * @pre context 已完成 reference-fact 生产；同步解析期间其索引/顺序、符号身份和 root AST 必须保持有效且稳定。
+ * @param context 借用的语义上下文；结果写入其 ownershipFacts，区域绑定及部分发布在失败时不会回滚。
+ * @param root 借用的脚本或可调用 AST 根；见证节点的有效期须覆盖后续语义查询。
+ * @return true 表示分析/事实发布流程成功，仍可能包含语义违规；false 表示输入或分析失败，调用方须另行处理。
+ */
 TZrBool ZrParser_SemanticFacts_ResolveControlFlowOwnership(
         SZrSemanticContext *context,
         SZrAstNode *root) {
@@ -717,6 +792,9 @@ TZrBool ZrParser_SemanticFacts_ResolveControlFlowOwnership(
         return ZR_FALSE;
     }
 
+    /*
+     * 索引、owner-set pool 和观测仅属于本次调用；AST/context 由调用方拥有，释放临时缓冲不会撤销已写入 context 的事实。
+     */
     ZrParser_DataflowOwnership_SymbolMapConstruct(&symbols);
     if (!ZrParser_DataflowOwnership_SymbolMapBuild(context, &symbols)) {
         ZrParser_DataflowOwnership_SymbolMapFree(context, &symbols);
@@ -737,6 +815,10 @@ TZrBool ZrParser_SemanticFacts_ResolveControlFlowOwnership(
         ZrParser_DataflowOwnership_SymbolMapFree(context, &symbols);
         return ZR_FALSE;
     }
+    /*
+     * BUG: 合法 Unique consume 后读取在观测缓冲单次分配失败时返回 false；compiler_semantic_query_diagnostics 提前返回，而 compiler.c 忽略结果继续编译，跳过应有拒绝。
+     * 其余前后步骤成功时此失败链已静态证明；未作运行时故障注入。
+     */
     if (!ZrParser_DataflowOwnership_ObservationsAllocate(
                 context,
                 &analysis.observations)) {
@@ -750,6 +832,10 @@ TZrBool ZrParser_SemanticFacts_ResolveControlFlowOwnership(
         return ZR_FALSE;
     }
 
+    /*
+     * 语义违规由观测事实承载，false 则表示分析未完整完成；早先的区域绑定改写或部分事实发布可能已经保留在 context。
+     * TODO: LSP 忽略 false 后继续投射；沿 semantic_analyzer_query_diagnostics 的现有入口核实缺失/部分诊断是否符合 best-effort 契约。
+     */
     ok = semantic_ownership_resolve_node(&analysis, root) &&
          semantic_ownership_seed_unbound_builtin_regions(&analysis) &&
          ZrParser_DataflowOwnership_AppendObservedFacts(

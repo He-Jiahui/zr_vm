@@ -622,3 +622,7 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
 32. 再看 `canonical-call-argument-mapping.md`，了解 call mapping、passing marker range 与
     snapshot ownership合同。
 33. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。
+
+## 所有权 CFG 驱动调用契约
+
+- [所有权 dataflow 驱动](ownership-dataflow-driver.md)：compiler/LSP 调用前提、同步回调、临时资源、两类静态分配失败 BUG 与 lambda/LSP 契约 TODO。
