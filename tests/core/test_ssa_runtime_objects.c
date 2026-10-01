@@ -389,6 +389,41 @@ static void test_attachment_exception_releases_pause_and_preserves_old_graph(voi
     assert_graph();
 }
 
+static void test_concurrent_attachment_throw_does_not_release_unwound_lock_again(void) {
+    SZrGcDomainMutatorSnapshot snapshot;
+    SZrGarbageCollector *collector = state->global->garbageCollector;
+    TZrUInt32 invalidEnds;
+    TZrBool held = ZR_FALSE;
+    TZrBool materialized;
+    /* Keep status normalization allocation-free while testing lock retirement. */
+    ZrCore_Value_InitAsInt(state, &state->currentException, 912);
+    state->hasCurrentException = ZR_TRUE;
+    state->currentExceptionStatus = ZR_THREAD_STATUS_EXCEPTION_ERROR;
+    ZrCore_GarbageCollector_SetWorkerCount(state->global, 1u);
+    ZrCore_GarbageCollector_ScheduleCollection(
+            state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR);
+    ZrCore_GarbageCollector_GcStep(state);
+    TEST_ASSERT_TRUE(collector->concurrentMajorActive);
+    ssa_runtime_objects_set_barrier_hook(throw_during_attachment, &held);
+    materialized = ssa_runtime_objects_materialize(&request, &diagnostic);
+    invalidEnds = ssa_runtime_objects_invalid_mutation_end_count();
+    ZrCore_GcDomain_GetMutatorSnapshot(state, &snapshot);
+    for (TZrUInt32 step = 0u; collector->concurrentMajorActive && step < 4096u; ++step)
+        ZrCore_GarbageCollector_GcStep(state);
+    TEST_ASSERT_FALSE(collector->concurrentMajorActive);
+    TEST_ASSERT_FALSE(materialized);
+    TEST_ASSERT_TRUE(held);
+    TEST_ASSERT_EQUAL_UINT32(0u, invalidEnds);
+    TEST_ASSERT_FALSE(snapshot.pauseRequested);
+    TEST_ASSERT_EQUAL_UINT32(0u, snapshot.runningMutatorCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, target.count);
+    TEST_ASSERT_NULL(objects[0]);
+    TEST_ASSERT_NULL(objects[1]);
+    TEST_ASSERT_TRUE(state->hasCurrentException);
+    TEST_ASSERT_EQUAL_INT64(912, state->currentException.value.nativeObject.nativeInt64);
+    assert_failure_location(ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY);
+}
+
 static void test_existing_pause_survives_nested_materialization(void) {
     SZrGcDomainMutatorSnapshot snapshot;
     TEST_ASSERT_TRUE(ZrCore_GcDomain_StopTheWorldBegin(state, 1000u, ZR_NULL));
@@ -791,6 +826,7 @@ int main(void) {
     RUN_TEST(test_attachment_holds_and_releases_collection_pause);
     RUN_TEST(test_failed_attachment_pause_preserves_old_graph);
     RUN_TEST(test_attachment_exception_releases_pause_and_preserves_old_graph);
+    RUN_TEST(test_concurrent_attachment_throw_does_not_release_unwound_lock_again);
     RUN_TEST(test_existing_pause_survives_nested_materialization);
     RUN_TEST(test_competing_collector_during_field_attachment_preserves_graph);
     RUN_TEST(test_duplicate_field_destination_fails_before_allocating_objects);

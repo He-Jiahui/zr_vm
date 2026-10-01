@@ -7,8 +7,10 @@
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/state.h"
 #include "../../zr_vm_core/src/zr_vm_core/gc/gc_internal.h"
+#include "../../zr_vm_core/src/zr_vm_core/gc/gc_domain_internal.h"
 
 static TZrUInt32 failObjectOrdinal, objectCount, reserveCount, failReserveOrdinal;
+static TZrUInt32 invalidMutationEndCount;
 static TZrBool throwOomEnabled, collectEnabled;
 static size_t failNativeOrdinal, nativeCount;
 static TZrBool nativeFailed;
@@ -21,6 +23,7 @@ void ssa_runtime_objects_faults(TZrUInt32 failObject, TZrBool throwOom,
                                 TZrBool collectEachObject, TZrUInt32 failReserve) {
     failObjectOrdinal = failObject;
     objectCount = reserveCount = 0u;
+    invalidMutationEndCount = 0u;
     throwOomEnabled = throwOom;
     collectEnabled = collectEachObject;
     failReserveOrdinal = failReserve;
@@ -32,6 +35,9 @@ void ssa_runtime_objects_faults(TZrUInt32 failObject, TZrBool throwOom,
 }
 
 TZrUInt32 ssa_runtime_objects_allocation_count(void) { return objectCount; }
+TZrUInt32 ssa_runtime_objects_invalid_mutation_end_count(void) {
+    return invalidMutationEndCount;
+}
 
 void ssa_runtime_objects_fail_native_allocation(size_t ordinal) {
     failNativeOrdinal = ordinal;
@@ -92,6 +98,26 @@ static void test_barrier(SZrState *state, SZrRawObject *object, SZrRawObject *va
     ZrCore_RawObject_Barrier(state, object, value);
 }
 
+static void test_mutation_end(SZrState *state, TZrBool locked) {
+    TZrUInt32 depth = 0u;
+    SZrGcDomain *domain = state->gcDomain;
+    ZrCore_GcDomain_Lock(domain);
+    for (TZrSize index = 0u; index < domain->mutatorLength; ++index) {
+        if (domain->mutators[index].state == state) {
+            depth = domain->mutators[index].mutationDepth;
+            break;
+        }
+    }
+    ZrCore_GcDomain_Unlock(domain);
+    if (locked && depth == 0u) {
+        /* Record the real invalid release request before calling an unlock
+         * with undefined platform behavior, so the regression fails cleanly. */
+        ++invalidMutationEndCount;
+        return;
+    }
+    ZrCore_GcDomain_MutationEnd(state, locked);
+}
+
 /* Fault only the production call boundaries; objects, GC and storage remain
  * the real runtime. A distinct symbol coexists with the unwrapped library API. */
 #define ZrCore_ExecIr_MaterializeObjects ssa_runtime_objects_materialize
@@ -100,5 +126,6 @@ static void test_barrier(SZrState *state, SZrRawObject *object, SZrRawObject *va
 #define garbage_collector_ensure_remembered_registry_capacity test_remembered_reserve
 #define ZrCore_GcDomain_StopTheWorldBegin test_pause
 #define ZrCore_RawObject_Barrier test_barrier
+#define ZrCore_GcDomain_MutationEnd test_mutation_end
 #define calloc test_calloc
 #include "../../zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_objects.c"

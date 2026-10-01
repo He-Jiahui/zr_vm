@@ -393,6 +393,10 @@ the collector's remembered-object registry is reserved before field attachment.
 Caught allocation exceptions also preserve the caller's nested GC mutator and
 native scopes. Detached or critical native contexts cannot perform this
 safepoint operation and are rejected before heap work.
+Local TryRun recovery also consumes callback-owned mutation-lock levels. On
+catch, preparation retires its old lock token without another MutationEnd or
+execution entry. If heap cleanup still owns the collection pause, it acquires
+and ends one fresh marking-lock level before retiring roots and native storage.
 After reserving storage, the transaction acquires a bounded collection pause
 before retaining raw addresses across field writes. It holds the pause and
 concurrent-marking lock through publication and heap cleanup, so nested write

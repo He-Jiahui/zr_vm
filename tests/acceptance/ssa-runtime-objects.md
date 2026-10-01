@@ -119,3 +119,28 @@ Independent specification review passed after the reproduced scope/resource
 findings were fixed. Independent quality review passed after collection-pause
 protection and reservation ordering were corrected; the reviewer also reran
 the final 32-case GCC runtime suite successfully.
+
+## Protected Scope Follow-up (2026-10-01)
+
+After local TryRun began restoring its entry GC scopes, the materializer's old
+catch path attempted to release its already-consumed callback lock token.
+A new concurrent-major attachment-Throw test recorded one invalid MutationEnd
+request while the existing 34 cases passed. The fault wrapper observes the
+registered mutation depth and records the invalid request before a platform
+unlock with undefined behavior; it does not call that unsafe unlock. The RED
+log is `D:/tmp/zr_vm/ssa-control/materializer-scope-consumer-red.log`.
+
+Catch now retires the old token and preserves TryRun's restored RUNNING scope.
+Cleanup obtains a fresh marking-lock level inside its retained collection
+pause when needed, and ends that level once. The new case also checks empty
+output, pause/scope balance, and the original ambient exception. MSVC 19.44,
+GCC 11.4 and Clang 14 each passed all 35 cases. MSVC CTest passed in 0.74
+seconds; GCC and Clang CTest passed in 0.14 and 0.13 seconds (5.30 and 3.77
+seconds total). Both WSL builds completed 146/146 steps; the focused native
+fix rebuild completed 4/4 after its 146-step test preparation build.
+
+Native logs are `materializer-scope-consumer-fixed-build.log`,
+`materializer-scope-consumer-final-ctest.log` and
+`materializer-scopes-msvc-final-last-test.log` under `D:/tmp/zr_vm/ssa-control`.
+WSL logs are `{gcc,clang}-materializer-scopes-final-{build,ctest,last-test}.log`.
+No new sanitizer or shared-DLL run is claimed by this follow-up.

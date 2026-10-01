@@ -706,15 +706,10 @@ TZrBool ZrCore_ExecIr_MaterializeObjects(
     request->state->threadStatus = ZR_THREAD_STATUS_FINE;
     status = ZrCore_Exception_TryRun(request->state, zr_objects_prepare_runtime, &prepared);
     if (status != ZR_THREAD_STATUS_FINE) {
-        TZrBool entered;
-        /* Throw unwinds ALL caller execution/native scopes, not only ours.
-         * Rejoin the safepoint protocol before touching movable heap state.
-         * Never wait for a collector while retaining our mutation lock. */
-        ZrCore_GcDomain_MutationEnd(request->state, prepared.mutationLocked);
+        /* Local Throw restored the entry RUNNING scope and released the
+         * callback's marking lock. Cleanup may acquire a fresh level while
+         * retaining our collection pause; the old token is already consumed. */
         prepared.mutationLocked = ZR_FALSE;
-        entered = ZrCore_GcDomain_MutatorEnter(request->state);
-        ZR_ASSERT(entered); /* The same registered state survived the local catch. */
-        if (!entered) status = ZR_THREAD_STATUS_RUNTIME_ERROR;
     }
     request->state->currentException = prepared.savedException;
     request->state->currentExceptionStatus = prepared.savedExceptionStatus;

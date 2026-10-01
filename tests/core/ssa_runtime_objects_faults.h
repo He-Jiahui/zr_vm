@@ -5,6 +5,7 @@
 ZR_CORE_API void ssa_runtime_objects_faults(TZrUInt32 failObject, TZrBool throwOom,
                                 TZrBool collectEachObject, TZrUInt32 failReserve);
 ZR_CORE_API TZrUInt32 ssa_runtime_objects_allocation_count(void);
+ZR_CORE_API TZrUInt32 ssa_runtime_objects_invalid_mutation_end_count(void);
 ZR_CORE_API void ssa_runtime_objects_fail_native_allocation(size_t ordinal);
 ZR_CORE_API TZrBool ssa_runtime_objects_native_allocation_failed(void);
 ZR_CORE_API void ssa_runtime_objects_fail_remembered_reservation(void);
