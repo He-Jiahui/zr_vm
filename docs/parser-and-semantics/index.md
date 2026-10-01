@@ -626,3 +626,7 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
 ## 所有权 CFG 驱动调用契约
 
 - [所有权 dataflow 驱动](ownership-dataflow-driver.md)：compiler/LSP 调用前提、同步回调、临时资源、两类静态分配失败 BUG 与 lambda/LSP 契约 TODO。
+
+## 公开语义查询调用契约
+
+- [公开语义查询契约](semantic-query-public-contracts.md)：31 个 API 的选择、同代身份、输出与借用期、失败状态以及待核实设计；查询头注释批次的构建验证状态见当日验收。

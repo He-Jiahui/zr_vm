@@ -21,11 +21,18 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_observations.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_query_diagnostics.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_query_diagnostics.c
+  - zr_vm_parser/include/zr_vm_parser/semantic_query.h
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_canonical.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_public_contract.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_formal_evaluation.c
 implementation_files:
   - zr_vm_common/CommonMacros.cmake
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_signature.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_signature.h
   - zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership.c
+  - zr_vm_parser/include/zr_vm_parser/semantic_query.h
 plan_sources:
   - user: 全仓库首方代码调用链审查与意图注释任务
   - docs/code-review/comment-standard.md
@@ -38,6 +45,13 @@ tests:
   - tests/parser/test_compiler_return_ownership_diagnostics.c
   - tests/language_server/test_ownership_diagnostics.c
   - tests/language_server/test_ownership_diagnostics_owner_set_cases.h
+  - tests/parser/test_semantic_query.c
+  - tests/parser/test_semantic_query_symbols.c
+  - tests/parser/test_semantic_query_relations.c
+  - tests/parser/test_semantic_query_calls.c
+  - tests/parser/test_semantic_query_contract.c
+  - tests/parser/test_semantic_query_diagnostics.c
+  - tests/parser/test_property_consumer_contracts.c
 doc_type: testing-guide
 ---
 
@@ -134,3 +148,32 @@ doc_type: testing-guide
 期间其他写入组将HEAD从 `f9828dc877293e5d0d0d8512a81af19ebafe0991` 推进至 `7e3e0782f30ff2d05017ebc79901fec7d52e9c87`。这是限定目标的真实比较，源码行为不变另由精确注释等价性证明；没有将并发工作区视为受控旧版本。恢复上下文后两个Linux工具句柄已不可查询，随后读取了其实际terminal回执、构建/测试步骤与源码哈希，没有重启验证来替换结果。
 
 本批按13条精确路径正常串行提交：driver源、专用台账、7张位置迁移表、inventory、模块文档、索引和本文。提交成员与规范化Git blob另由终态receipt核实。唯一readiness队列仍为 `01a0e3a1-2bbe-7f23-9026-9e5aa6296c8f`；未收到capture START/terminal result/release，未重复validation或执行archive。模块验证与commit不构成跨仓捕获封印。
+
+## 公开语义查询头的58个审查单元
+
+本批定义边界为公开 H 的31个API、17个类型与10个独立契约。根代理读取生产与测试的完整调用函数，并接受 core、call、symbol、type/contract 独立复核；当前3549个分类首方文件中枚举619个直接调用、61个声明/定义和288个完整caller函数。没有额外API函数指针或其它首方语言引用命中；Rust/CLI间接入口仍按其各自实际调用链定位，检索无命中不等于全仓无间接入口。
+
+正式查询头由346行增至457行，非注释token完全相同。专用台账58单元记录35 commented、7 TODO、15 BUG、1 no-comment与332个证据锚点。paired include guard有明确无需再解释实现的理由。FormatCall优先事实的signatureDisplay；ReferencesOf没有复用元素宽度校验，宽度由调用方满足；设计差异保留具体TODO，不声称已观察到合法调用违反宽度前提。
+
+候选字段callableTypeId原样传递symbol.typeId，方法producer可能写ownerTypeId；debug临时求值context的数值TypeId传输保留代际设计TODO。BUG限定在已由合法producer和具体首次分配失败闭合的静态链，没有运行OOM注入。最终symbols reviewer独立全文读29个生产及24个关键测试函数，其他测试语义来自先前完整分片与根代理阅读；字节核对不冒充独立全文审读。
+
+实际门禁于15:14:56Z确认查询头SHA `05f8731295fd85ffc250a2a034007e114233cb7fc97001e37cfe9cf752cab6f0`、58单元/619调用/332证据和7张旧表的20行/70反向锚点。十项旧comment锚点按已复核的职责段落映射，四处过时契约说明同步更正。七表一次整体补丁stdout曾被工具截断；没有从该输出应用任何表，之后逐表完整输出、应用并核对实际内容。源码及台账schema、精确锚点与限定路径diff检查均退出0；这些门禁不替代运行验证。
+
+## 查询头修改前后实际验证
+
+使用原任务专属 gcc/clang/msvc-shared 缓存中的 query-header-review-20261001，保留全部首次结果和恢复结果。修改前Linux七个现有query/property程序各163例、161 PASS/2 FAIL；失败身份为 `test_diagnostic_registry_assigns_stable_descriptors` 和 `test_diagnostic_message_table_covers_registry_and_falls_back_to_english`。
+
+| 工具链 | 修改后实际观察 | 原生/步骤状态 |
+| --- | --- | --- |
+| GCC | WSL CreateVm/0x800705b4超时，0编译动作、0测试例 | session12074退出1；WSL步骤4294967295 |
+| Clang | 同一VM创建超时，0编译动作、0测试例 | session31291退出1；WSL步骤4294967295 |
+| MSVC首次 | 配置0；构建工具句柄丢失，随后任务launcher/cache进程核查0匹配；未观察smoke | session18947最终句柄Unknown，构建退出码未知，原running receipt保留 |
+| MSVC恢复 | 15:55:23–15:58:08Z，独立after-recovery配置/CLI构建/direct smoke，输出hello world | session34056退出0；三步骤0/0/0 |
+| GCC恢复 | 21:01:02–21:18:16Z，81个构建动作；七程序163例，161 PASS/2 FAIL/0 IGNORE | session99332退出1；构建0，逐例状态与before相同 |
+| Clang恢复 | 21:01:02–21:17:35Z，81个构建动作；七程序163例，161 PASS/2 FAIL/0 IGNORE | session14689退出1；构建0，逐例状态与before相同 |
+
+早前Ubuntu-22.04的running状态并未证明命令可执行，两次有限 `/bin/true` 探针仍超时，原收据保留。随后实际读取SSA会话17:19–18:04Z的较新WSL验证日志，再于21:00:36Z执行一次20秒上限的 `/bin/true`，实际0.358秒退出0，据此启动独立after-recovery验证。生成阶段曾等待挂载文件系统的 `p9_client_rpc`，最终两次构建均完成；未停止WSL服务或外部作业。GCC/Clang的before、首次失败after与after-recovery收据、命令和完整日志全部保存在原缓存的 `query-header-review-20261001/`，没有覆盖或跳过失败结果。
+
+21:20Z的逐例比较确认GCC和Clang各163个目标/用例/状态多重集合与修改前完全一致，两个失败身份仍是上述诊断registry/message-table用例，未把包装器退出1改写为全绿。before查询头SHA为 `91dabf637ff270bdb5dbc8f8ed00659c42228ef126b608c821bae7fc8c4fa8ab`，after与恢复运行保持 `05f8731295fd85ffc250a2a034007e114233cb7fc97001e37cfe9cf752cab6f0`。MSVC原before包装器失败/OSError、独立CLI烟测及中断after仍保留，恢复三步骤0/0/0另由windows-validation-closure核验。此验收是注释批次的限定目标对照，期间其他会话改动core与SSA代码；没有受控整个旧工作区、故障注入或全仓绿色结论。
+
+本批采用15条精确路径正常串行提交：查询头、58单元台账、7张位置迁移表、模块文档、foundation文档、parser索引、code-review索引、inventory和本文。提交成员及实际Git blob另由终态收据核实；不纳入其他会话的源码、测试或临时产物。唯一readiness队列仍为 `01a0e3a1-2bbe-7f23-9026-9e5aa6296c8f`，未收到capture START/terminal/release；本批源码哈希、验证与模块提交均不构成跨仓捕获封印。

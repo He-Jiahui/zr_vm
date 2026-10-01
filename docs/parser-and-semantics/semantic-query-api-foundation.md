@@ -257,7 +257,7 @@ After compiler semantic references have resolved, `ZrParser_Semantic_BuildSource
 
 `ZrParser_SemanticQuery_MaterializeDiagnostics` is the mutable analysis-lifecycle operation for one exact query scope. It clears and rebuilds the context-owned structured diagnostic cache after semantic facts have been resolved. `ZrParser_SemanticQuery_Diagnostics` is then a read-only query: it returns the already-materialized borrowed view for that same scope, returns an empty view before materialization, and fails closed for a different scope. A node scope admits a diagnostic only when its complete range is contained by the root range and the optional source identities match exactly; a source-unknown root cannot absorb a source-known diagnostic merely because offsets overlap. A resolved reference suppresses an unresolved fact with the same name and range only when their optional source identities also match exactly; a one-sided missing source never hides a diagnostic from another snapshot. It maps `ZR_SEMANTIC_REACHABILITY_UNREACHABLE` facts to warning diagnostics with code `unreachable_code`, message `Unreachable code`, and cause/suggestion text derived from the reachability cause. It also maps read reference facts with definite-assignment state to structured diagnostics: `UNINIT` becomes an error with code `uninitialized_read`, and `MAYBE_INIT` becomes a warning with code `possibly_uninitialized_read`. These states can be pre-populated by callers, produced by `ZrParser_SemanticFacts_ResolveLinearDefiniteAssignments` for straight-line reference fact order, or produced by `ZrParser_SemanticFacts_ResolveControlFlowDefiniteAssignments` for source reads reached through CFG branch joins, declaration initializers, and cloned `finally` paths. When a definite-assignment diagnostic is built from a read reference fact with a declaration range, it owns one `relatedInformation` entry at that declaration with message `Variable declaration is here`.
 
-All pointer fields exposed by this API, including `FactsAt` facts and diagnostic items, are borrowed snapshot views. They remain valid only while their `SZrSemanticContext` is alive and unchanged. A caller that crosses a snapshot boundary retains stable ids and copied ranges only; it must never retain an AST, fact, or diagnostic pointer. Repeated read-only calls over an unchanged context return the same semantic content without mutating the context.
+查询结果中的 AST、fact、诊断、字符串和 `FileRange.source` 均须按各字段的借用关系使用，保持同代 context、AST 及实际字符串/provider owner 或 GC roots 有效；context 存活或原生数组值复制本身不证明全部 pointee 已保活。`SemanticContext_Reset` 会重置 TypeId、SymbolId 等编号，跨代缓存必须携带模块/文档身份和版本并重新查询，不能只凭相同数字 ID 或浅复制范围识别对象；范围复制也不复制 source 字符串。只读事实查询不触发分析；compiler-AST union 名称查询在规范化名称时可能创建 GC 字符串。
 
 Computed array member inference records parser-owned expression diagnostic facts for bounds and index-type problems, and the query layer maps those facts into `array_index_out_of_bounds`, `array_index_may_be_out_of_bounds`, or `array_index_type_mismatch`. Fixed arrays, `min==max`, and finite `arrayMaxSize` constraints provide an upper bound; min-only / no finite-upper-bound arrays do not fabricate an upper-bound error. They still warn when a known integer index range may be negative, and the message intentionally omits an `array max size` label in that no-upper-bound case.
 
@@ -650,12 +650,12 @@ hierarchy consumers must continue to fail closed for that remaining boundary.
 `CallCandidatesAt` adds the declaration-membership portion of overload facts.
 It first requires `CallAt` to expose a resolved target, then projects only the
 registered function members of that target's `overloadSetId`, sorted by
-SymbolId. Each candidate carries its declaration callable TypeId and range;
+SymbolId. Each candidate copies its symbol record's `typeId` and declaration range;
 exactly one carries `isSelected`. The selected invocation's potentially closed
-callable TypeId remains on `CallAt`, so a generic call does not overwrite every
-candidate with a call-site specialization. The candidate list deliberately
-does not claim overload viability, conversion score, argument-to-parameter
-mapping, or a text-derived alternative when the target is unresolved.
+callable TypeId remains on `CallAt`; candidate values are not filled with that specialization.
+方法 symbol 的 `typeId` 可能是 owner TypeId，候选字段不能普遍解释成声明签名。
+TODO: 沿 compiler_type_member_register_symbol、成员 call fact 的 symbol 复用及 semantic_calls_append_candidate，补方法 overload 候选用例并核实生产消费者契约。
+候选列表不表示重载可行性、转换评分或实参映射；未解析目标不会按名称补候选。
 The selected target and overload membership are atomic: if a referenced
 overload-set row omits the already-resolved target, the query clears its reusable
 output and fails closed instead of returning a candidate list with no selected
@@ -663,7 +663,7 @@ row or inserting a same-name substitute. A non-invalid `overloadSetId` must also
 resolve to an existing snapshot row; a missing row is inconsistent metadata, not
 permission to reinterpret the call as a single-candidate invocation. Every member
 of a resolved overload-set row must project to a registered function with a valid
-callable TypeId. Missing or malformed members invalidate the whole copied result;
+non-invalid `symbol.typeId`; this does not verify a callable signature. Missing or malformed members invalidate the whole copied result;
 the query never returns a silently truncated overload set.
 
 ### CallAt Metadata Projection
