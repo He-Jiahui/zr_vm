@@ -2,6 +2,7 @@
 #include "artifact_exec_ir_scalar_eis3.h"
 #include "artifact_exec_ir_scalar_eis4.h"
 #include "artifact_exec_ir_scalar_eis5.h"
+#include "artifact_exec_ir_scalar_eis6.h"
 #include "zr_vm_common/zr_type_conf.h"
 
 #include <stdlib.h>
@@ -483,7 +484,8 @@ typedef enum EScalarWireFormat {
     SCALAR_WIRE_EIS2,
     SCALAR_WIRE_EIS3,
     SCALAR_WIRE_EIS4,
-    SCALAR_WIRE_EIS5
+    SCALAR_WIRE_EIS5,
+    SCALAR_WIRE_EIS6
 } EScalarWireFormat;
 
 /* Keep recognizable legacy instruction layouts on their original fixed
@@ -554,15 +556,32 @@ static EZrArtifactExecIrStatus scalar_select_wire_format(
         (module->functionCount != 0u && module->functions == ZR_NULL)) {
         return scalar_fail(diagnostic, ZR_ARTIFACT_EXEC_IR_INVALID_SECTION, 0u);
     }
+    TZrBool hasTypedRows = ZR_FALSE;
     for (TZrUInt32 functionIndex = 0u;
          functionIndex < module->functionCount; ++functionIndex) {
         const SZrExecIrFunction *function = &module->functions[functionIndex];
+        if (function->bindingRowsSchemaVersion ==
+            ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED) {
+            hasTypedRows = ZR_TRUE;
+            continue;
+        }
         if (function->bindingRowsSchemaVersion !=
                     ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY ||
             !ZrCore_ExecIr_FunctionValidateBindingRows(function, ZR_NULL)) {
             return scalar_fail(diagnostic,
                                ZR_ARTIFACT_EXEC_IR_INVALID_SECTION, 0u);
         }
+    }
+    if (hasTypedRows) {
+        if (module->functionCount != 1u ||
+            module->functions[0].bindingRowsSchemaVersion !=
+                    ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED)
+            return scalar_fail(diagnostic,
+                               ZR_ARTIFACT_EXEC_IR_INVALID_SECTION, 0u);
+        status = ZrCore_ArtifactExecIrScalarEis6_GetEncodedSize(
+                module, outSize, diagnostic);
+        if (status == ZR_ARTIFACT_EXEC_IR_OK) *outFormat = SCALAR_WIRE_EIS6;
+        return status;
     }
     if (scalar_shape_is(module)) {
         *outFormat = SCALAR_WIRE_EIS1;
@@ -638,6 +657,9 @@ EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_Write(
         free(dynamicTemporary);
         return status;
     }
+    if (format == SCALAR_WIRE_EIS6)
+        return ZrCore_ArtifactExecIrScalarEis6_Write(
+                module, bytes, capacity, diagnostic);
     if (format == SCALAR_WIRE_EIS1)
         scalar_write_record(&cursor, module);
     else
@@ -775,6 +797,9 @@ EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_Read(
                 bytes, length, outModule, diagnostic);
     if (magic == ZR_ARTIFACT_EXEC_IR_EIS5_MAGIC)
         return ZrCore_ArtifactExecIrScalarEis5_Read(
+                bytes, length, outModule, diagnostic);
+    if (magic == ZR_ARTIFACT_EXEC_IR_EIS6_MAGIC)
+        return ZrCore_ArtifactExecIrScalarEis6_Read(
                 bytes, length, outModule, diagnostic);
     if (magic == ZR_ARTIFACT_EXEC_IR_BRANCH_MAGIC)
         return scalar_read_branch(bytes, length, outModule, diagnostic);

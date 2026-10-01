@@ -263,6 +263,8 @@ static void canonical_zraf_reject_oversized_span(
                  "oversized span is rejected before callback or byte access");
 }
 
+#include "test_ssa_canonical_zraf_eis6_guard.inc"
+
 static void validate_zraf_phase(const char *v1Path, const char *v2Path) {
     SFixture fixture;
     SZrHotPatchCapabilityRequirement requirementV1;
@@ -296,6 +298,7 @@ static void validate_zraf_phase(const char *v1Path, const char *v2Path) {
     require_true(v1Hash != v2Hash,
                  "V1 and V2 use distinct full outer ZRAF content hashes");
     init_fixture(&fixture);
+    canonical_zraf_test_eis6_guard();
 
     canonical_zraf_init_manifest(&manifestV1, &requirementV1, v1Hash);
     canonical_zraf_reject_oversized_span(

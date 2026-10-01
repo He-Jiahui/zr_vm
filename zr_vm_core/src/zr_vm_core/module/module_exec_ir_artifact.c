@@ -220,6 +220,17 @@ EZrArtifactStatus ZrCore_Module_OpenExecIrArtifact(
                 bundle.byteOffset + nested.sections[0].byteOffset +
                 nestedDiagnostic.byteOffset);
     }
+    for (TZrUInt32 functionIndex = 0u;
+         functionIndex < temporary.functionCount; ++functionIndex) {
+        if (temporary.functions[functionIndex].bindingRowsSchemaVersion !=
+                ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY) {
+            ZrCore_ExecIr_FreeModule(&temporary);
+            return exec_ir_artifact_fail(diagnostic,
+                    ZR_ARTIFACT_STATUS_INVALID_SECTION,
+                    ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE,
+                    bundle.byteOffset + nested.sections[0].byteOffset);
+        }
+    }
     status = exec_ir_artifact_validate_contract(&outer, &temporary,
                                                 &contract, diagnostic);
     if (status != ZR_ARTIFACT_STATUS_OK) {

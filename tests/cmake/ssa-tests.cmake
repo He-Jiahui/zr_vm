@@ -97,6 +97,15 @@ if (NOT TARGET zr_vm_ssa_binding_rows_artifact_test)
     target_compile_definitions(zr_vm_ssa_binding_rows_artifact_test PRIVATE
             _CRT_SECURE_NO_WARNINGS)
     zr_vm_link_core(zr_vm_ssa_binding_rows_artifact_test)
+    if (BUILD_STATIC_LIB AND NOT BUILD_SHARED_LIB)
+        target_sources(zr_vm_ssa_binding_rows_artifact_test PRIVATE
+                ${CMAKE_SOURCE_DIR}/tests/parser/ssa_eis6_fault_allocator.c
+                ${CMAKE_SOURCE_DIR}/tests/parser/ssa_eis6_fault_exec_ir.c
+                ${CMAKE_SOURCE_DIR}/tests/parser/ssa_eis6_fault_binding_rows.c
+                ${CMAKE_SOURCE_DIR}/tests/parser/ssa_eis6_fault_scalar_read.c)
+        target_compile_definitions(zr_vm_ssa_binding_rows_artifact_test PRIVATE
+                ZR_TEST_EIS6_FAULT_INJECTION)
+    endif ()
     add_test(NAME ssa_binding_rows_artifact
             COMMAND zr_vm_ssa_binding_rows_artifact_test)
     set_tests_properties(ssa_binding_rows_artifact PROPERTIES LABELS "ssa;artifact")

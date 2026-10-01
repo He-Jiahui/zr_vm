@@ -14,6 +14,7 @@ related_code:
 implementation_files:
   - zr_vm_core/include/zr_vm_core/capability_manifest.h
   - zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_validate.c
+  - zr_vm_core/src/zr_vm_core/module/module_exec_ir_artifact.c
   - zr_vm_core/include/zr_vm_core/hotpatch_rollback.h
   - zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_generation.c
   - zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_rollback.c
@@ -23,6 +24,7 @@ tests:
   - tests/library/test_ssa_capability_validation.c
   - tests/library/test_ssa_exec_ir_artifact_v6.c
   - tests/library/test_ssa_canonical_zraf_validation.inc
+  - tests/library/test_ssa_canonical_zraf_eis6_guard.inc
   - tests/cmake/ssa-tests.cmake
   - tests/acceptance/ssa-hotpatch-canonical-zraf-validation.md
   - tests/core/test_ssa_generation_publication.c
@@ -120,6 +122,17 @@ separately trusted inputs whose checked values are captured before the callback.
 This API validates canonical ExecIR metadata and does not relocate, install, or
 execute code.
 
+The public scalar ExecIR reader may decode typed EIS6 binding-row schemas, but
+the canonical outer-artifact opener currently admits only functions using
+`ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY`. It checks every decoded function
+immediately after scalar decoding and before contract validation or publication.
+A typed function returns `ZR_ARTIFACT_STATUS_INVALID_SECTION` for
+`ZR_ARTIFACT_SECTION_EXEC_IR_BUNDLE` at the nested scalar payload offset; the
+temporary decoded module is freed and the caller's empty output module remains
+unchanged. The ZRAF validator preserves that source offset and clears its
+validated output. This keeps typed binding-row data outside the canonical
+hotpatch admission path until its full validation contract is defined.
+
 Focused CTest coverage is provided by ssa_capability_validation,
 ssa_canonical_zraf_validation, and
 ssa_rollback_restricted. The tests exercise a valid closure, escalation,
@@ -130,6 +143,15 @@ generation rollback, and restricted-section rejection. The
 records that sequential byte changes are rejected before registry/generation
 publication. The canonical fixture also records callback ordering, full-width
 length rejection, and policy/identity snapshot behavior under callback writes.
+The EIS6 guard fixture requires successful public scalar decoding and Core
+verification for typed-empty and typed-CALL modules before checking that the
+canonical module opener and ZRAF validator reject them with the scalar payload
+offset and no published output. The new guard cases passed with the EIS6
+codec on MSVC 19.44, GCC 11.4 and Clang 14 in the current SSA artifact caches
+under `D:/tmp/zr_vm`. The GCC/Clang 19-suite runs passed this canonical gate
+while separately exposing an obsolete conditional-cleanup fixture. The guard
+therefore has evidence of successful public decode followed by canonical
+rejection; rejection by the previous scalar reader is not used as evidence.
 Earlier current-root Clang evidence covers ten incremental build targets (85/85 build
 steps) and four focused CTest cases (4/4, 3.65 seconds total): artifact writer
 (2.45 s), artifact roundtrip (0.14 s), canonical ZRAF validation (0.03 s), and

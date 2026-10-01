@@ -9,11 +9,13 @@ related_code:
 implementation_files:
   - zr_vm_core/include/zr_vm_core/capability_manifest.h
   - zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_validate.c
+  - zr_vm_core/src/zr_vm_core/module/module_exec_ir_artifact.c
 plan_sources:
   - docs/plans/ssa/08-artifact-hotpatch/02-capability-validation.md
 tests:
   - tests/library/test_ssa_exec_ir_artifact_v6.c
   - tests/library/test_ssa_canonical_zraf_validation.inc
+  - tests/library/test_ssa_canonical_zraf_eis6_guard.inc
   - tests/cmake/ssa-tests.cmake
 doc_type: testing-guide
 status: focused-passed
@@ -39,6 +41,14 @@ and selects exactly one function by the explicit `(entryFunctionToken,
 entrySignatureHash)` pair. The current canonical reader accepts only a
 single-function module, so a duplicate matching selector cannot be represented
 by this fixture; the validator's uniqueness check remains defensive.
+
+The canonical module opener admits only `ZR_EXEC_IR_BINDING_ROWS_SCHEMA_LEGACY`
+for every decoded function. This guard runs after successful scalar decoding
+and before contract validation or publication. Typed EIS6 input returns
+`ZR_ARTIFACT_STATUS_INVALID_SECTION` for `EXEC_IR_BUNDLE` at the nested scalar
+payload offset, frees the temporary module, and leaves the caller's output
+module unchanged. The ZRAF validator forwards the diagnostic source offset and
+leaves its validated output zeroed.
 
 The capability requirement limit and closure are checked before invoking the
 signature callback. The callback runs before deep outer/ExecIR parsing. If the
@@ -75,6 +85,9 @@ pre-callback token snapshot. It also covers these rejection cases:
 - mismatched expected root identity;
 - missing or mismatched entry selector;
 - malformed outer metadata and unsupported nested ExecIR ABI;
+- typed-empty and typed-CALL EIS6 payloads that the public scalar reader first
+  decodes and Core verifies, then the canonical module opener and ZRAF
+  validator reject at the scalar payload offset;
 - mismatch between the manifest full-outer hash and actual ZRAF bytes;
 - capability escalation and host signature rejection;
 - a still-live buffer modified after validation;
@@ -130,3 +143,12 @@ The latest current-root GCC incremental build covered thirteen targets and compl
 These are focused validator and legacy capability gates. Full canonical signed
 manifest integration and capability-closure derivation from the complete
 verified IR remain open under 08.02.
+
+The typed-EIS6 guard cases passed on MSVC 19.44, GCC 11.4 and Clang 14 in the
+current `D:/tmp/zr_vm/ssa-artifact-v6-{msvc,gcc,clang}` caches. Each fixture
+requires public-reader success and Core verification before testing canonical
+opener and ZRAF-validator rejection. The two WSL 19-suite runs passed artifact
+write, roundtrip, canonical validation and capability validation; an unrelated
+conditional-cleanup fixture failed separately. Their original full logs are
+preserved as `D:/tmp/zr_vm/ssa-control/{gcc,clang}-current-scalar-before-phi-ctest.log`.
+A rejection by the previous scalar reader is not counted as guard evidence.

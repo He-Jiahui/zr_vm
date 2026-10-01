@@ -39,14 +39,24 @@
 #define ZR_ARTIFACT_EXEC_IR_EIS5_MAX_ENCODED_SIZE \
         ((TZrUInt32)(16u * 1024u * 1024u))
 
-/* Reports the exact payload size only for one of the supported, verified
- * graph shapes. No output size is published on failure. */
+/* EIS6 is the additive one-function counted payload for Core's schema-1
+ * binding rows. Legacy EIS1-EIS5 selection and bytes remain unchanged. */
+#define ZR_ARTIFACT_EXEC_IR_EIS6_MAGIC ((TZrUInt32)0x36534945u)
+#define ZR_ARTIFACT_EXEC_IR_EIS6_VERSION ((TZrUInt16)6u)
+#define ZR_ARTIFACT_EXEC_IR_EIS6_HEADER_SIZE ((TZrUInt32)56u)
+#define ZR_ARTIFACT_EXEC_IR_EIS6_FIXED_PREFIX_SIZE ((TZrUInt32)224u)
+#define ZR_ARTIFACT_EXEC_IR_EIS6_BINDING_ROW_SIZE ((TZrUInt32)96u)
+
+/* Reports the exact payload size only for a supported, verified graph.
+ * Schema-zero graphs keep their EIS1-EIS5 encoding selection; one-function
+ * schema-one graphs use the additive standalone EIS6 binding-row payload.
+ * No output size is published on failure. */
 ZR_CORE_API EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_GetEncodedSize(
         const SZrExecIrModule *module, TZrUInt32 *outSize,
         SZrArtifactExecIrDiagnostic *diagnostic);
 
-/* Rejects every graph field or side table outside EIS1/EIS2/EIS3/EIS4/EIS5.
- * On failure the destination bytes are unchanged. */
+/* Rejects every graph field or side table outside the supported EIS1-EIS6
+ * standalone payload profiles. On failure destination bytes are unchanged. */
 ZR_CORE_API EZrArtifactExecIrStatus ZrCore_ArtifactExecIrScalar_Write(
         const SZrExecIrModule *module, TZrByte *bytes, TZrUInt32 capacity,
         SZrArtifactExecIrDiagnostic *diagnostic);
