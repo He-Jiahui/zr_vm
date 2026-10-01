@@ -1111,6 +1111,7 @@ TZrBool ZrCore_ExecIr_CloneModule(const SZrExecIrModule *source,
     for (index = 0u; index < source->functionCount; ++index) {
         /* Include the in-progress function in rollback: cloning can fail after
          * one of its owned side arrays has already been allocated. */
+        ZrCore_ExecIr_FunctionInit(&temporary.functions[index]);
         temporary.functionCount++;
         if (!zr_exec_ir_clone_function_into(&source->functions[index],
                                             &temporary.functions[index])) {

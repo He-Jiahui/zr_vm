@@ -574,6 +574,38 @@ static void test_failed_module_clone_reclaims_partially_copied_function(void) {
     ZrCore_ExecIr_FreeModule(&source);
 }
 
+static void test_module_clone_initializes_early_rejected_function_slot(void) {
+    SZrExecIrModule source;
+    SZrExecIrModule destination;
+    SZrExecIrFunction *function;
+    TZrExecIrFunctionId id;
+    SZrExecIrDiagnostic diagnostic;
+
+    ZrCore_ExecIr_ModuleInit(&source);
+    ZrCore_ExecIr_ModuleInit(&destination);
+    expect_true(ZrCore_ExecIr_ModuleAddFunction(&destination, 173u, 191u, &id),
+                "early-rejection destination setup failed");
+    expect_true(ZrCore_ExecIr_ModuleAddFunction(&source, 181u, 201u, &id),
+                "early-rejection first source function setup failed");
+    expect_true(ZrCore_ExecIr_ModuleAddFunction(&source, 182u, 202u, &id),
+                "early-rejection second source function setup failed");
+    function = ZrCore_ExecIr_ModuleFunctionAt(&source, id);
+    expect_true(function != ZR_NULL, "early-rejection source function lookup failed");
+    function->valueCount = 2u;
+    function->valueCapacity = 1u;
+
+    expect_true(!ZrCore_ExecIr_CloneModule(&source, &destination, &diagnostic),
+                "clone accepted an early-rejected function shape");
+    expect_true(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT &&
+                    diagnostic.functionToken == 182u &&
+                    destination.functionCount == 1u &&
+                    destination.functions[0].functionToken == 173u,
+                "early shape rejection did not preserve the published destination");
+
+    ZrCore_ExecIr_FreeModule(&destination);
+    ZrCore_ExecIr_FreeModule(&source);
+}
+
 static void test_structure_requires_reciprocal_cfg_edges(void) {
     SZrExecIrModule module;
     SZrExecIrFunction *function;
@@ -824,6 +856,7 @@ int main(void) {
     test_invalid_opcode_and_overflow_fail_before_allocation();
     test_validation_rejects_null_operand_pool_without_dereference();
     test_failed_module_clone_reclaims_partially_copied_function();
+    test_module_clone_initializes_early_rejected_function_slot();
     test_structure_requires_reciprocal_cfg_edges();
     test_structure_rejects_zero_value_phi_incoming();
     test_structure_rejects_early_terminator();

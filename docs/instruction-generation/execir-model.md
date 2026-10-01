@@ -729,7 +729,9 @@ They reject malformed source metadata when a side-array count exceeds its
 owned capacity before attempting to copy it.
 Module clone rollback includes the function currently being copied, even if a
 later side-array copy fails after earlier arrays have allocated storage; the
-previous destination remains published. `ssa_core_model` exercises this with
+slot is initialized before it enters the rollback count, so an early shape
+rejection cannot free uninitialized storage. The previous destination remains
+published. `ssa_core_model` exercises this with
 two source functions, an invalid instruction pool in the second function, and
 a pre-existing destination. GCC AddressSanitizer with leak detection caught
 the partial-function leak before the rollback fix and reports no leak after it.
