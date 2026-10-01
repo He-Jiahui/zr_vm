@@ -2,7 +2,7 @@
 include(${CMAKE_SOURCE_DIR}/zr_vm_common/ThirdPartyMacros.cmake)
 
 # 为产品模块创建静态/共享变体，按 use_common_lib 决定是否将 common 源码并入各变体。
-# 调用方先设置 BUILD_STATIC_LIB / BUILD_SHARED_LIB；链接和安装函数沿用同一目标命名约定。
+# ON 要求顶层先加入 common；库开关决定创建哪些目标，后续链接和安装须沿用同一选择。
 function(zr_declare_module module_name use_common_lib)
     set(zr_module_name ${module_name})
     get_filename_component(zr_module_src_dir_name ${CMAKE_CURRENT_SOURCE_DIR} NAME)
@@ -28,7 +28,7 @@ function(zr_declare_module module_name use_common_lib)
         if (${use_common_lib})
             target_include_directories(${zr_module_static} PRIVATE ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
         endif ()
-        set_target_properties(${zr_module_static} PROPERTIES OUTPUT_NAME ${zr_module_name})
+        set_target_properties(${zr_module_static} PROPERTIES OUTPUT_NAME ${zr_module_name}) # BUG: Windows 两种库同开时静态归档与共享导入库同为 lib/<module>.lib，MSVC+Ninja 配置已复现规则冲突。
     endif ()
 
     if (BUILD_SHARED_LIB)
@@ -51,7 +51,7 @@ function(zr_declare_module module_name use_common_lib)
 endfunction()
 
 # CLI 消费此入口；可执行目标只创建一个变体，后续链接函数按构建开关选库。
-# 传入 ON 时 common 源码与 CLI 源码同编译单元集合，避免引入单独的 common 链接目标。
+# ON 把 common 加入本目标的源码列表；本入口不创建独立的 common 链接目标。
 function(zr_declare_executable module_name use_common_lib)
     set(zr_module_name ${module_name})
     get_filename_component(zr_module_src_dir_name ${CMAKE_CURRENT_SOURCE_DIR} NAME)
@@ -84,8 +84,8 @@ function(zr_declare_executable module_name use_common_lib)
 
 endfunction()
 
-# 将首方模块同类型变体相连，避免共享库依赖静态变体或相反。
-# 调用方应先通过 zr_declare_module 建立目标，且被依赖模块须已由顶层加入构建。
+# 将同类型首方变体连成依赖图；依赖头路径不会自动成为本模块的公共 API 契约。
+# 本模块目标须已存在，依赖变体须在配置结束前加入；公开头若引用依赖类型，调用方另设 PUBLIC include。
 function(zr_link_library_for_module module_name library_name)
     set(zr_module_name ${module_name})
 
@@ -104,7 +104,7 @@ function(zr_link_library_for_module module_name library_name)
     endif ()
 endfunction()
 
-# 将线程库、系统数学库等现成目标同时接入已创建的模块变体。
+# 将已解析的线程目标或系统库名接入各模块变体；本模块须已声明，依赖不会套用 _static/_shared 命名。
 function(zr_link_internal_for_module module_name library_name)
     set(zr_module_name ${module_name})
     if (BUILD_STATIC_LIB)
@@ -138,7 +138,7 @@ endfunction()
 
 # 安装已声明的模块变体，并向其公共使用者传播模块名编译定义。
 # 模块各自的 CMakeLists 在依赖配置完成后调用此入口。
-# TODO: 全仓尚未发现按模块名宏条件编译的消费方；复核 PUBLIC 传播是否仍属必要安装契约。
+# TODO: 当前首方条件编译未发现消费这些模块名宏；核查外部嵌入/导出包的依赖，以确认 PUBLIC 传播目的。
 function(zr_install_module module_name)
     set(zr_module_name ${module_name})
     set(zr_module_shared ${zr_module_name}_shared)

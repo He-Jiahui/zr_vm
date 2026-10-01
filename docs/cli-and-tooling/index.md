@@ -1,5 +1,6 @@
 ---
 related_code:
+  - zr_vm_common/CommonMacros.cmake
   - zr_vm_cli/CMakeLists.txt
   - zr_vm_cli/src/zr_vm_cli.c
   - zr_vm_cli/src/zr_vm_cli/app/app.c
@@ -66,6 +67,9 @@ doc_type: category-index
 
 ## 当前主题
 
+- [first-party-module-build-contract.md](first-party-module-build-contract.md)
+  - 模块声明、逻辑目标名、依赖公开边界和安装职责
+  - Windows 双库输出碰撞、链接签名组合与 thread 调用方目标名问题
 - `zr-vm-cli-command-system.md`
   - 主模式、修饰符、别名和非法组合规则
   - `.zrp` 直跑、`--compile --run`、`-e/-c`、`--project -m` 的入口语义
