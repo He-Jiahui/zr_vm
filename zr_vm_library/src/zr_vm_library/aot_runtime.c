@@ -3393,6 +3393,16 @@ const TZrChar *ZrLibrary_AotRuntime_GetLastError(SZrGlobalState *global) {
     return runtimeState->lastError;
 }
 
+void ZrLibrary_AotRuntime_RecordError(SZrState *state, TZrNativeString message) {
+    SZrLibraryAotRuntimeState *runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+
+    if (runtimeState == ZR_NULL) {
+        return;
+    }
+    aot_runtime_set_error(runtimeState, "%s", message != ZR_NULL ? message : "generated AOT runtime error");
+}
+
 /* core 模块加载器仅借用项目 AOT 状态；同一记录的模块体最多执行一次，导入方复用 module 对象。 */
 /* BUG: 调用模块入口 thunk 时递归 import 可能扩容 records；本地 record 可能失效，
  * 返回 record->module 前需重新定位当前记录。见 aot_runtime_append_record。 */

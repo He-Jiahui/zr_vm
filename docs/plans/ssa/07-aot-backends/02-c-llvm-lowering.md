@@ -113,6 +113,23 @@ ctest --test-dir build/ssa-gcc-debug -R '^ssa_c_llvm_lowering$' --output-on-fail
 
 **文档交付：** 同步 docs/wiki 的 AOT C/LLVM 支持矩阵和 ABI 文档；在 [总索引](../index.md) 关联的验收矩阵记录命令、版本、环境、实际覆盖和未通过项。性能收益只按 00.01 的同口径门槛判定。
 
+### Bounded progress evidence (2026-10-01)
+
+The signed typed C-AOT divide/modulo boundary is now covered as a bounded
+sub-slice. The active two-argument writers reject `INT64_MIN/-1` before host
+signed `/` or `%`, preserve a stable runtime diagnostic, and the existing
+three-argument stateful writers check both left-associative steps. The focused
+arithmetic fixture exercises real generated shared libraries, including an
+isolated child for each overflow case. GCC passed the full 10-case arithmetic
+smoke and the 4-case typed-call contract; Clang passed the 2-case overflow
+smoke and the focused target build; MSVC 17.14.40 built both targets and its
+typed-call contract passed 4/0. The acceptance record is
+`tests/acceptance/2026-10-01-aot-typed-i64-checked-divide-modulo.md`.
+
+This evidence does not check task 2 here: the task remains unchecked until the
+complete checked/wrapping integer, shift, floating-point, LLVM, and cross-
+backend matrix has concrete fixtures and successful gates.
+
 ## 函数级设计与实现批次
 
 ### 接口草案
@@ -164,4 +181,3 @@ assert result may be correct but native coverage decreases
 C/LLVM 的简单输出能编译不等于后端完成。生成代码必须实际加载执行，并验证语义原语的每个正常/异常出口。
 
 本任务的 acceptance 至少附上：上述断言对应的测试名称、实际执行后端/平台、失败注入位置、verifier 输入/输出摘要，以及涉及所有权时的分配/释放或 lease 平衡。新增入口的 OOM、取消、重复调用和部分初始化退出应有明确处理；不适用的状态写明原因。
-

@@ -94,13 +94,18 @@ static void backend_aot_c_write_i64_two_arg_thunk_definition(FILE *file,
             returnExpression);
 }
 
-/* BUG: 参数为 INT64_MIN/-1 时仅防零仍会执行 C 有符号除法，生成库可能崩溃或出现未定义结果；
- * test_aot_c_typed_direct_call_arithmetic_shared_library_smoke.c 已证明此 thunk 可从普通静态调用到达。 */
+/* Guard the one signed division pair that is undefined in C before emitting the raw operator. */
 static void backend_aot_c_write_i64_two_arg_divide_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
             "static TZrInt64 zr_aot_typed_i64_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
             "    if (ZR_UNLIKELY(zr_aot_arg1 == 0)) {\n"
+            "        ZrLibrary_AotRuntime_RecordError(state, \"generated AOT signed divide by zero\");\n"
             "        ZrCore_Debug_RunError(state, \"generated AOT signed divide by zero\");\n"
+            "        return (TZrInt64)0;\n"
+            "    }\n"
+            "    if (ZR_UNLIKELY(zr_aot_arg0 == (TZrInt64)(-((TZrInt64)9223372036854775807) - (TZrInt64)1) && zr_aot_arg1 == (TZrInt64)-1)) {\n"
+            "        ZrLibrary_AotRuntime_RecordError(state, \"generated AOT signed division overflow\");\n"
+            "        ZrCore_Debug_RunError(state, \"generated AOT signed division overflow\");\n"
             "        return (TZrInt64)0;\n"
             "    }\n"
             "    return (TZrInt64)(zr_aot_arg0 / zr_aot_arg1);\n"
@@ -108,12 +113,18 @@ static void backend_aot_c_write_i64_two_arg_divide_thunk_definition(FILE *file, 
             (unsigned)flatIndex);
 }
 
-/* BUG: INT64_MIN%-1 未被零除检查拦住，生成的有符号取模同样具有未定义行为。 */
+/* Modulo shares the same signed overflow pair as division. */
 static void backend_aot_c_write_i64_two_arg_modulo_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
             "static TZrInt64 zr_aot_typed_i64_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1) {\n"
             "    if (ZR_UNLIKELY(zr_aot_arg1 == 0)) {\n"
+            "        ZrLibrary_AotRuntime_RecordError(state, \"generated AOT signed modulo by zero\");\n"
             "        ZrCore_Debug_RunError(state, \"generated AOT signed modulo by zero\");\n"
+            "        return (TZrInt64)0;\n"
+            "    }\n"
+            "    if (ZR_UNLIKELY(zr_aot_arg0 == (TZrInt64)(-((TZrInt64)9223372036854775807) - (TZrInt64)1) && zr_aot_arg1 == (TZrInt64)-1)) {\n"
+            "        ZrLibrary_AotRuntime_RecordError(state, \"generated AOT signed modulo overflow\");\n"
+            "        ZrCore_Debug_RunError(state, \"generated AOT signed modulo overflow\");\n"
             "        return (TZrInt64)0;\n"
             "    }\n"
             "    return (TZrInt64)(zr_aot_arg0 %% zr_aot_arg1);\n"
@@ -132,12 +143,19 @@ static void backend_aot_c_write_i64_three_arg_thunk_definition(FILE *file,
             returnExpression);
 }
 
-/* BUG: 左结合的任一除法步骤可遇到 INT64_MIN/-1；这里只检查零除。 */
+/* Check both left-associative division steps before retaining the raw expression. */
 static void backend_aot_c_write_i64_three_arg_divide_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
             "static TZrInt64 zr_aot_typed_i64_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1, TZrInt64 zr_aot_arg2) {\n"
             "    if (ZR_UNLIKELY(zr_aot_arg1 == 0 || zr_aot_arg2 == 0)) {\n"
+            "        ZrLibrary_AotRuntime_RecordError(state, \"generated AOT signed three-arg divide by zero\");\n"
             "        ZrCore_Debug_RunError(state, \"generated AOT signed three-arg divide by zero\");\n"
+            "        return (TZrInt64)0;\n"
+            "    }\n"
+            "    if (ZR_UNLIKELY((zr_aot_arg0 == (TZrInt64)(-((TZrInt64)9223372036854775807) - (TZrInt64)1) && zr_aot_arg1 == (TZrInt64)-1) ||\n"
+            "                     ((zr_aot_arg0 / zr_aot_arg1) == (TZrInt64)(-((TZrInt64)9223372036854775807) - (TZrInt64)1) && zr_aot_arg2 == (TZrInt64)-1))) {\n"
+            "        ZrLibrary_AotRuntime_RecordError(state, \"generated AOT signed three-arg divide overflow\");\n"
+            "        ZrCore_Debug_RunError(state, \"generated AOT signed three-arg divide overflow\");\n"
             "        return (TZrInt64)0;\n"
             "    }\n"
             "    return (TZrInt64)(zr_aot_arg0 / zr_aot_arg1 / zr_aot_arg2);\n"
@@ -145,12 +163,19 @@ static void backend_aot_c_write_i64_three_arg_divide_thunk_definition(FILE *file
             (unsigned)flatIndex);
 }
 
-/* BUG: 左结合取模中的 INT64_MIN%-1 仍可到达宿主 C 的未定义边界。 */
+/* Check both left-associative modulo steps before retaining the raw expression. */
 static void backend_aot_c_write_i64_three_arg_modulo_thunk_definition(FILE *file, TZrUInt32 flatIndex) {
     fprintf(file,
             "static TZrInt64 zr_aot_typed_i64_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1, TZrInt64 zr_aot_arg2) {\n"
             "    if (ZR_UNLIKELY(zr_aot_arg1 == 0 || zr_aot_arg2 == 0)) {\n"
+            "        ZrLibrary_AotRuntime_RecordError(state, \"generated AOT signed three-arg modulo by zero\");\n"
             "        ZrCore_Debug_RunError(state, \"generated AOT signed three-arg modulo by zero\");\n"
+            "        return (TZrInt64)0;\n"
+            "    }\n"
+            "    if (ZR_UNLIKELY((zr_aot_arg0 == (TZrInt64)(-((TZrInt64)9223372036854775807) - (TZrInt64)1) && zr_aot_arg1 == (TZrInt64)-1) ||\n"
+            "                     ((zr_aot_arg0 %% zr_aot_arg1) == (TZrInt64)(-((TZrInt64)9223372036854775807) - (TZrInt64)1) && zr_aot_arg2 == (TZrInt64)-1))) {\n"
+            "        ZrLibrary_AotRuntime_RecordError(state, \"generated AOT signed three-arg modulo overflow\");\n"
+            "        ZrCore_Debug_RunError(state, \"generated AOT signed three-arg modulo overflow\");\n"
             "        return (TZrInt64)0;\n"
             "    }\n"
             "    return (TZrInt64)(zr_aot_arg0 %% zr_aot_arg1 %% zr_aot_arg2);\n"

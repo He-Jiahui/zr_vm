@@ -118,6 +118,9 @@ ZR_LIBRARY_API EZrLibraryExecutedVia ZrLibrary_AotRuntime_GetExecutedVia(struct 
 /** @brief 借用最近一次 AOT 诊断文字；下一次配置或失败会覆盖它。 */
 ZR_LIBRARY_API const TZrChar *ZrLibrary_AotRuntime_GetLastError(struct SZrGlobalState *global);
 
+/** @brief 记录生成代码即将抛出的稳定诊断文本；调用方随后负责进入 VM 异常链。 */
+ZR_LIBRARY_API void ZrLibrary_AotRuntime_RecordError(struct SZrState *state, TZrNativeString message);
+
 /** @brief 从已验证的 AOT 注册表按函数及局部序号定位 native import 契约，供桥接层核对。 */
 ZR_LIBRARY_API const struct SZrNativeImportContract *
 ZrLibrary_AotRuntime_ResolveNativeImportContract(
