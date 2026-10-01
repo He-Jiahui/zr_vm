@@ -28,7 +28,7 @@ static const TZrByte CZrMetadataSignatureHashV1Prefix[] = {
 /**
  * @brief 对完整签名字节计算稳定身份，供 token、TypeSpec 与 module record 共用。
  * @pre signatureBlob 指向本次签名的完整非空序列化范围。
- * @return 稳定哈希；输入为空或缺失时返回 0 作为失败/缺席哨兵。
+ * @return 稳定哈希；0 包括空输入和底层分配/更新失败。TODO: 核查 compiler_metadata_token.c:2032 的 target fallback 是否应传播失败，因 module_import_signature.c:1086 会将零哈希视为缺席并跳过验证。
  */
 TZrUInt64 metadata_signature_hash_v1(const TZrByte *signatureBlob, TZrSize signatureBlobLength) {
     if (signatureBlob == ZR_NULL || signatureBlobLength == 0) {
@@ -516,7 +516,7 @@ TZrSize metadata_token_method_signature_size(SZrCompilerState *cs,
 /**
  * @brief 写出方法 frame、返回类型及有序参数类型，供导出和导入 effect 共用。
  * @pre 目标区容量覆盖配对 size 结果，参数及堆快照在同步写出期间保持有效。
- * BUG: zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c:1144/1148 将 declaration->generic 传给 builder，zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c:1039/1059/1060 再复制到导出符号；zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_export_generics.c:146/147/151-155 检查非空声明、收集泛型参数并转交 infos；zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_export_generics.c:61/62/69 校验实参数组非空并写入 genericParameterCount。仅 genericParameterCount > 0 时错位可观察：zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_token.c:1616 经 zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_signature.c:623 进入 writer，arity 写入 reader 的 flags u8 槽、后续 u32 写 0；core reader zr_vm_core/src/zr_vm_core/metadata_runtime.c:887/892/896 分开读取节点、flags 和元数，故 flags 被污染且 reader 元数归零；零元数时无可观察影响。
+ * BUG: 合法非零泛型方法 blob 放入合法 ZRP signature pool，并经 ZrCore_MetadataRuntime_AttachZrpMetadata 附加后，ReadSignatureView 将 writer 的 arity 当作 flags，并从后续零 u32 读出元数 0；TODO: 核查 compiler raw signatureBlobHeap 到该 pool 的装载入口，自动桥接尚未证实。
  * TODO: arity 大于 255 时被饱和为 0xff；核实上游限制或定义扩展编码。
  */
 void metadata_token_write_method_signature(TZrByte *buffer,
