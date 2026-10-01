@@ -162,8 +162,37 @@ legacy worker-forward path deliberately does not access another thread's
 private snapshot; this change makes no new guarantee for its existing
 cross-thread longjmp behavior. The change does not generalize allocator failure
 guarantees or other GC-domain unwind behavior.
-Generated-AOT throw integration remains a separate Unix shared-library smoke
-gate.
+Generated-C shared-library throw integration is a separate Linux-only gate in
+`tests/parser/test_aot_c_shared_library_throw_root.inc`. A test-only allocator
+decorator delegates every request to the original allocator with its original
+arguments. For the fixture's string payload, `NormalizeThrownValue` checks
+whether the value is already an Error without allocating, then creates the
+Error with `ZrCore_Object_New`; the observer latches that first `OBJECT`
+allocation request before delegation and samples the root chain only after
+the original allocator succeeds. It requires the generated THROW source slot
+to contain the exact fixture payload and records the generated root-frame and
+frame-base identities plus the mapped live object identity. The observed
+`LOCAL_ADDRESS` map must point to a live object in the collector list, distinct
+from the manually registered outer caller root. The built-in `object` source
+spelling compiles on both current Linux toolchains. The emitted entry must
+directly call the generated throw helper after `PrepareStaticDirectCall`; that
+helper's unique payload and metadata are checked during Error normalization.
+Flushed phase markers qualify compilation, emission, linking and execution.
+
+The first qualified runs retained the outer object, but automatic entry GC
+aged it from zero to two and promoted it before the requested final collection.
+The final fixture therefore completes a real full GC after restoring the
+caller's saved VM/native frame window. The collection kind and counter must
+confirm completion, the restored caller C root must retain a live object and
+an unrooted control object must be released. This tests retention even after
+normal promotion, with chain top/depth restored and the external C root popped
+during cleanup. It leaves automatic GC enabled. GCC 11.4 and Clang 14 each
+passed the dedicated `ssa_aot_generated_throw_root` CTest (1/1) and their
+direct core root suites passed 12/12. This does not
+prove that the collector consumed or rewrote the generated map or collected
+while the generated frame was active. All generated artifacts remain under
+the D: cache's `tests_generated/aot_c_shared_library_throw_root` directory for
+owned post-run cleanup.
 
 `tests/core/test_aot_gc_root_frame_exception.inc` supplies real C-local
 Push/Throw callbacks and covers empty-chain throws, `Throw(FINE)`, a preserved
@@ -182,6 +211,7 @@ restoration invariant. Root independently reran the frozen MSVC standalone
 suite (12/12) and checked its current exception provider in the link map.
 Root also rebuilt the full current native Core target (final increment 5/5),
 ran the 12-case root suite with no failures, and passed the root/capability
-registered CTests (2/2). Full GCC/Clang suites and generated-AOT integration
-smoke remain pending. Details are in
-[the protected-unwind acceptance note](../../tests/acceptance/aot-root-frame-protected-unwind.md).
+registered CTests (2/2). The bounded generated-AOT integration smoke passed
+on GCC and Clang; full GCC/Clang suites remain outside this record. Details are in
+[the protected-unwind acceptance note](../../tests/acceptance/aot-root-frame-protected-unwind.md)
+and [the generated-AOT integration note](../../tests/acceptance/ssa-generated-aot-throw-root.md).

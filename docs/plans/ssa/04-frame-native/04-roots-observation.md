@@ -31,8 +31,12 @@ tests:
   - tests/core/test_execution_add_stack_relocation.c
   - tests/core/test_execution_add_stack_relocation_aot_roots.inc
   - tests/core/test_aot_gc_root_frame_exception.inc
+  - tests/parser/test_aot_c_shared_library_smoke.c
+  - tests/parser/test_aot_c_shared_library_throw_root.inc
+  - tests/cmake/aot-generated-root-tests.cmake
   - tests/acceptance/ssa-stack-root-frame-relocation.md
   - tests/acceptance/aot-root-frame-protected-unwind.md
+  - tests/acceptance/ssa-generated-aot-throw-root.md
 doc_type: milestone-detail
 status: in-progress
 ---
@@ -209,6 +213,33 @@ built 5/5, direct root-frame suite passed 12/12, and registered root/legacy
 capability CTests passed 2/2. Full GCC/Clang suites and generated-AOT shared-
 library smoke remain pending. See
 [the acceptance record](../../../../tests/acceptance/aot-root-frame-protected-unwind.md).
+
+#### Generated shared C-AOT Throw integration (2026-10-01)
+
+The Linux fixture now compiles source, emits executable C, builds its shared
+library and reaches the generated throw helper through a direct C call. The
+allocator observer requires that helper's unique THROW slot and payload,
+then records a populated generated `LOCAL_ADDRESS` map pointing to a live
+object distinct from the outer caller root. Error payload and post-TryRun
+chain restoration passed the first qualified GCC/Clang runs.
+
+Their final young-survivor expectation was invalid: automatic entry GC had
+already promoted the live outer object at age two, including during a
+test-only stop-flag attempt. The final fixture leaves automatic GC enabled and
+completes a real full collection after restoring the caller's saved VM/native
+frame window. The caller C root must retain the outer object while an unrooted
+control is released; full-collection kind/count and root Push/Pop must balance.
+The new Linux CTest is
+`ssa_aot_generated_throw_root`, using `--throw-root-only`; GCC 11.4 and Clang
+14 each passed it 1/1, and their direct core root suites passed 12/12. MSVC
+rebuilt the test targets in 17/17 steps and
+passed the adjacent core root suite 12/12; its Linux-only case is not executed.
+
+This adds a bounded generated-C integration gate. It does not prove GC visited
+or rewrote the generated local slot during the callback, wire packed ExecIR
+roots, validate LLVM/deopt/suspend paths or complete 04.04. Commands and exact
+platform evidence are in
+[the generated-AOT acceptance](../../../../tests/acceptance/ssa-generated-aot-throw-root.md).
 
 所有异常/挂起出口 root frame push/pop 平衡。生成 map 和实际 machine/frame location 的一致性需要后端测试，不能只验证逻辑 map 自洽。
 

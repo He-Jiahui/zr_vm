@@ -2703,10 +2703,22 @@ static void test_aot_c_generated_shared_library_compiles_pending_control_helper_
 #endif
 }
 
-int main(void) {
+#include "test_aot_c_shared_library_throw_root.inc"
+
+int main(int argc, char **argv) {
+    if (argc == 2 && strcmp(argv[1], "--throw-root-only") == 0) {
+        UNITY_BEGIN();
+        RUN_TEST(test_aot_c_generated_throw_restores_caller_root_through_full_gc);
+        return UNITY_END();
+    }
+    if (argc != 1) {
+        fprintf(stderr, "usage: %s [--throw-root-only]\n", argv[0]);
+        return EXIT_FAILURE;
+    }
     UNITY_BEGIN();
     RUN_TEST(test_aot_c_generated_source_compiles_and_exports_module_descriptor);
     RUN_TEST(test_aot_c_generated_shared_library_executes_entry_through_runtime_loader);
+    RUN_TEST(test_aot_c_generated_throw_restores_caller_root_through_full_gc);
     RUN_TEST(test_aot_c_generated_shared_library_executes_call_spread);
     RUN_TEST(test_aot_c_generated_shared_library_executes_primitive_constant_writes);
     RUN_TEST(test_aot_c_generated_shared_library_elides_frame_for_bool_constant_return);
