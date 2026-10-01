@@ -351,8 +351,7 @@ TZrBool ZrCore_GcDomain_MutationBegin(SZrState *state) {
         return ZR_FALSE;
     }
 
-    /* BUG: Object_SetValue 的 HashSet_Add 可在持锁期间因持续 OOM Throw；
-     * longjmp 越过 MutationEnd，遗留递归锁使其他 mutator/标记切片无法进入。 */
+    /* Local Throw returns callback-owned levels to the TryRun entry snapshot. */
     ZrCore_GcDomain_MutationLock(domain);
     /* Registry storage can move or the state can be detached while the
      * coordination lock is released. Never retain the earlier record pointer. */

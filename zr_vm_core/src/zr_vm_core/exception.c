@@ -3,8 +3,8 @@
 //
 
 #include "zr_vm_core/exception.h"
+#include "exception_internal.h"
 
-#include <setjmp.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,31 +20,6 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
-
-/* C++ 与 C 构建共用 TryRun 契约；底层展开方式不同，恢复点都只在当前线程栈帧有效。 */
-#if defined(__cplusplus) && !defined(ZR_EXCEPTION_WITH_LONG_JUMP)
-#define ZR_EXCEPTION_NATIVE_THROW(state, context) throw(context)
-#define ZR_EXCEPTION_NATIVE_TRY(state, context, block)                                                                 \
-    try {                                                                                                              \
-        block                                                                                                          \
-    } catch (...) {                                                                                                    \
-        if ((context)->status == ZR_THREAD_STATUS_FINE) {                                                              \
-            (context)->status = ZR_THREAD_STATUS_INVALID;                                                              \
-        }                                                                                                              \
-    }
-#elif defined(ZR_PLATFORM_UNIX)
-#define ZR_EXCEPTION_NATIVE_THROW(state, context) longjmp((context)->jumpBuffer, 1)
-#define ZR_EXCEPTION_NATIVE_TRY(state, context, block)                                                                 \
-    if (setjmp((context)->jumpBuffer) == 0) {                                                                          \
-        block                                                                                                          \
-    }
-#else
-#define ZR_EXCEPTION_NATIVE_THROW(state, context) longjmp((context)->jumpBuffer, 1)
-#define ZR_EXCEPTION_NATIVE_TRY(state, context, block)                                                                 \
-    if (setjmp((context)->jumpBuffer) == 0) {                                                                          \
-        block                                                                                                          \
-    }
-#endif
 
 /* Stack traces expose 0 as "no mapped source line" instead of the debug-hook-only 0xFFFFFFFF sentinel. */
 #define ZR_EXCEPTION_SOURCE_LINE_NONE ((TZrUInt32)0u)
@@ -541,39 +516,7 @@ TZrBool ZrCore_Exception_RaiseNamedRuntimeError(
             state, errorObject, ZR_THREAD_STATUS_RUNTIME_ERROR);
 }
 
-typedef struct SZrExceptionTryRunContext {
-    SZrExceptionLongJump recoverPoint;
-    SZrAotGcRootFrame *savedAotGcRootFrameTop;
-    TZrUInt32 savedAotGcRootFrameDepth;
-} SZrExceptionTryRunContext;
-
 static void exception_throw_on_state(SZrState *state, EZrThreadStatus errorCode);
-
-/* 恢复点嵌套在当前线程栈上；Throw 的非局部跳转只回到最内层 TryRun。 */
-EZrThreadStatus ZrCore_Exception_TryRun(SZrState *state, FZrTryFunction tryFunction, TZrPtr arguments) {
-    TZrUInt32 prevNestedNativeCalls = state->nestedNativeCalls;
-    volatile TZrBool callbackReturnedNormally = ZR_FALSE;
-    SZrExceptionTryRunContext tryContext;
-
-    tryContext.recoverPoint.status = ZR_THREAD_STATUS_FINE;
-    tryContext.recoverPoint.previous = state->exceptionRecoverPoint;
-    tryContext.savedAotGcRootFrameTop = state->aotGcRootFrameStack;
-    tryContext.savedAotGcRootFrameDepth = state->aotGcRootFrameDepth;
-    state->exceptionRecoverPoint = &tryContext.recoverPoint;
-    ZR_EXCEPTION_NATIVE_TRY(state, &tryContext.recoverPoint, {
-        tryFunction(state, arguments);
-        callbackReturnedNormally = ZR_TRUE;
-    });
-    state->exceptionRecoverPoint = tryContext.recoverPoint.previous;
-    state->nestedNativeCalls = prevNestedNativeCalls;
-    if (!callbackReturnedNormally) {
-        /* This confirms Throw's pre-inactive restoration. A native C++
-         * exception that bypasses Throw is only repaired once catch is reached. */
-        state->aotGcRootFrameStack = tryContext.savedAotGcRootFrameTop;
-        state->aotGcRootFrameDepth = tryContext.savedAotGcRootFrameDepth;
-    }
-    return tryContext.recoverPoint.status;
-}
 
 static void exception_throw_impl(
         SZrState *state, EZrThreadStatus errorCode, TZrBool restoreLocalRootSnapshot) {
@@ -594,16 +537,10 @@ static void exception_throw_impl(
         state->threadStatus = errorCode;
         state->exceptionRecoverPoint->status = errorCode;
         if (restoreLocalRootSnapshot) {
-            const SZrExceptionTryRunContext *tryContext =
-                    (const SZrExceptionTryRunContext *)state->exceptionRecoverPoint;
-
-            /* MutatorUnwindScopes publishes ATTACHED_INACTIVE to the domain.
-             * Restore before that publication so a concurrent collector can
-             * never scan nodes on the callback stack that longjmp abandons. */
-            state->aotGcRootFrameStack = tryContext->savedAotGcRootFrameTop;
-            state->aotGcRootFrameDepth = tryContext->savedAotGcRootFrameDepth;
+            ZrCore_Exception_RestoreLocalTryRunScopes(state);
+        } else {
+            ZrCore_GcDomain_MutatorUnwindScopes(state);
         }
-        ZrCore_GcDomain_MutatorUnwindScopes(state);
         ZR_EXCEPTION_NATIVE_THROW(state, state->exceptionRecoverPoint);
     }
 

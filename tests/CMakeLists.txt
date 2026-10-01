@@ -8758,5 +8758,6 @@ add_executable(zr_vm_test_runner ${CMAKE_SOURCE_DIR}/tests/test_runner.c)
 # from the large historical test list.
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/gc-nested-mutation-tests.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/exception-gc-scopes-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-hotpatch-apply-sources.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/close-proxy-tests.cmake")

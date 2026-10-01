@@ -141,8 +141,10 @@ pending. The complete command and baseline correction are recorded in
 thread-affine `SZrExceptionLongJump` exposed through `state->exceptionRecoverPoint`.
 On the C11 `longjmp` path, a local `ZrCore_Exception_Throw` restores the AOT
 root-chain top and depth captured at that TryRun entry after status
-normalization and before `MutatorUnwindScopes` marks the mutator inactive and
-broadcasts. This ordering keeps a concurrent stop-the-world scan from observing
+normalization and before restoring GC scopes and publishing their status.
+Caller execution/native/mutation depths survive a nested Throw; an empty entry
+returns to inactive after releasing callback-owned recursive lock levels.
+This ordering keeps a concurrent stop-the-world scan from observing
 callback-local nodes after their C lifetimes end. TryRun catch repeats the
 assignment idempotently; neither path traverses abandoned nodes. A volatile
 callback-return flag distinguishes normal return even when Throw carries

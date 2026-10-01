@@ -179,6 +179,8 @@ Core runtime documents cover VM stack storage, call-frame data movement, ownersh
 - `gc-domain-concurrent-major.md`: incremental/concurrent major snapshot-mark-remark lifecycle,
   concurrent write-barrier closure, budgeted compaction, full-collection cancellation and
   per-domain GC/transport telemetry.
+- `exception-gc-scope-recovery.md`: local protected Throw restores entry GC
+  scopes and releases callback-owned mutation locks while retaining caller roots.
 - `gc-budgeted-major.md`: resumable budget contract, compaction admission, and explicit
   constructor defaults for budget configuration and telemetry.
 - `gc-layout-scan-fast-path.md`: fail-closed descriptor proof and inline-array fast path for

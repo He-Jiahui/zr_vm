@@ -31,7 +31,8 @@ typedef struct SZrExceptionLongJump SZrExceptionLongJump;
 
 /** @brief 同步执行回调并捕获 Throw 的线程状态；恢复点在返回前自动撤销。
  * C11 longjmp 路径中，Throw 命中本线程 TryRun 恢复点时，会在发布 mutator inactive
- * 前恢复入口 AOT 根链。forced-C++ 展开期间析构函数回入 VM/GC 不在此保证内。 */
+ * 前恢复入口 AOT 根链和 GC 作用域，释放回调新增的递归 mutation lock 层，保留调用者
+ * 外层 execution/native/mutation 深度。forced-C++ 展开期间析构函数回入 VM/GC 不在此保证内。 */
 /** @pre state 和 tryFunction 非空；arguments 在回调返回前保持有效。 */
 /** @note 正常返回时结果为 FINE，不会把回调自行写入的 state->threadStatus 合并为返回值。 */
 ZR_CORE_API EZrThreadStatus ZrCore_Exception_TryRun(struct SZrState *state, FZrTryFunction tryFunction, TZrPtr arguments);

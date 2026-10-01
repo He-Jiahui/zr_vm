@@ -53,6 +53,18 @@ typedef struct SZrGcDomainMutatorRecord {
     TZrBool nativeEnteredFromInactive;
 } SZrGcDomainMutatorRecord;
 
+/* Values copied under coordinationLock; no registry pointer survives a wait. */
+typedef struct SZrGcDomainScopeSnapshot {
+    struct SZrGcDomain *domain;
+    SZrGcDomainIdentity identity;
+    TZrUInt64 mutatorId;
+    TZrUInt32 executionDepth;
+    TZrUInt32 nativeDepth;
+    TZrUInt32 mutationDepth;
+    EZrGcNativeSafepointMode nativeMode;
+    TZrBool nativeEnteredFromInactive;
+} SZrGcDomainScopeSnapshot;
+
 /* 跨域传输在 prepare/publish/claim/commit/abort 边界分别记账，供两端域统计。 */
 typedef enum EZrGcDomainTransferTelemetryEvent {
     ZR_GC_DOMAIN_TRANSFER_TELEMETRY_OUTBOUND_PREPARE = 0,
@@ -136,6 +148,11 @@ void ZrCore_GcDomain_RecordTransferTelemetry(
 /* Begin 返回是否获得 mutationLock，而非请求是否有效；End 必须接收同一令牌。 */
 TZrBool ZrCore_GcDomain_MutationBegin(struct SZrState *state);
 void ZrCore_GcDomain_MutationEnd(struct SZrState *state, TZrBool locked);
+/* Local protected throws restore entry scopes on their owning native thread. */
+void ZrCore_GcDomain_CaptureScopes(
+        struct SZrState *state, SZrGcDomainScopeSnapshot *snapshot);
+void ZrCore_GcDomain_RestoreScopes(
+        struct SZrState *state, const SZrGcDomainScopeSnapshot *snapshot);
 /* 附着时先登记再发布 state->gcDomain；解除时反向撤销且不得仍持有执行作用域。 */
 TZrBool ZrCore_GcDomain_RegisterMutator(
         SZrGcDomain *domain,

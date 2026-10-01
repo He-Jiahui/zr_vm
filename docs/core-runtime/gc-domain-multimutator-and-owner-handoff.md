@@ -13,6 +13,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/object/object.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/exception.c
+  - zr_vm_core/src/zr_vm_core/exception_try_run.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_domain_scopes.c
   - zr_vm_core/src/zr_vm_core/ownership_transfer.c
   - zr_vm_core/src/zr_vm_core/ownership_transfer_cross_domain.c
   - zr_vm_core/src/zr_vm_core/ownership_transfer_lifecycle.c
@@ -143,10 +145,12 @@ index-contract fast callback全部在实际 callback 前后走统一 `NativeEnte
 同时设置两个非默认 mode bit 属于无效 descriptor，调用不会猜测优先级。
 
 native recover-point 使用 `longjmp`/native throw 时，正常的 VM execution leave 与 native leave
-不会执行。`ZrCore_Exception_Throw` 只在该 exact recover-point unwind 边界调用
-`ZrCore_GcDomain_MutatorUnwindScopes`，把当前 state 的 execution/native depth、native mode 与
-mutator status恢复为同一epoch的 inactive状态，再执行native unwind。普通脚本异常控制流不走
-该reset；runtime也不按异常code、message或native function name判断是否清理scope。
+不会执行。本线程 `ZrCore_Exception_Throw` 在 unwind 前恢复最内层 TryRun 的入口 AOT
+根链及 execution/native/mutation depth，释放回调新增的递归 mutation lock 层，保留调用者
+外层作用域。只有入口没有执行或原生作用域时才恢复为 inactive；detached/critical 原生模式
+也按入口保留。恢复使用当前 domain epoch，不复用旧的 parked 状态。普通脚本异常控制流
+不走该恢复；runtime 不按异常 code、message 或 native function name 判断是否清理 scope。
+私有实现及身份检查见 [Protected Exception GC Scopes](exception-gc-scope-recovery.md)。
 
 ## Same-domain TransferEnvelope
 
