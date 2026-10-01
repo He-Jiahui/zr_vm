@@ -180,6 +180,11 @@ void ZrParser_SemanticIrFunction_Init(SZrState *state,
             8U);
     ZrCore_Array_Init(
             state, &function->boundsFacts, sizeof(SZrSemanticBoundsFact), 8U);
+    ZrCore_Array_Init(
+            state,
+            &function->scalarScratchProofs,
+            sizeof(SZrSemanticIrScalarScratchProof),
+            4U);
 }
 
 void ZrParser_SemanticIrFunction_Free(SZrState *state,
@@ -201,6 +206,7 @@ void ZrParser_SemanticIrFunction_Free(SZrState *state,
     ZrCore_Array_Free(state, &function->escapeFacts);
     ZrCore_Array_Free(state, &function->contiguousViewFacts);
     ZrCore_Array_Free(state, &function->boundsFacts);
+    ZrCore_Array_Free(state, &function->scalarScratchProofs);
     memset(function, 0, sizeof(*function));
 }
 

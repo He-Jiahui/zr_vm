@@ -1555,3 +1555,6 @@ endif ()
 include(${CMAKE_CURRENT_LIST_DIR}/ssa-module-constant-pool-verifier.cmake)
 
 include(${CMAKE_CURRENT_LIST_DIR}/ssa-execbc-vm-dead-place.cmake)
+
+include(${CMAKE_CURRENT_LIST_DIR}/ssa-source-execbc-vm.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/exec-ir-scalar-scratch-eligibility.cmake)

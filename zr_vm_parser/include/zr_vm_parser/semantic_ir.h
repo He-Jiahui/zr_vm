@@ -2,6 +2,7 @@
 #define ZR_VM_PARSER_SEMANTIC_IR_H
 
 #include "zr_vm_core/array.h"
+#include "zr_vm_common/zr_type_conf.h"
 #include "zr_vm_parser/cfg.h"
 #include "zr_vm_parser/place.h"
 #include "zr_vm_parser/semantic_value_facts.h"
@@ -183,6 +184,16 @@ typedef struct SZrSemanticIrValue {
     SZrSemanticValueFacts facts;
 } SZrSemanticIrValue;
 
+/* Compiler-certified shape for one private scalar literal scratch place.
+ * This metadata is only a candidate proof: ExecIR Build independently
+ * rechecks the source initializer, address uses, aliases, and canonical IDs. */
+typedef struct SZrSemanticIrScalarScratchProof {
+    TZrPlaceId placeId;
+    TZrValueId constantValueId;
+    TZrTypeId typeId;
+    EZrValueType valueType; /* currently bool or signed i64 only */
+} SZrSemanticIrScalarScratchProof;
+
 typedef struct SZrSemanticIrLocal {
     TZrSymbolId symbolId;
     TZrPlaceId placeId;
@@ -290,6 +301,7 @@ typedef struct SZrSemanticIrFunction {
     SZrArray escapeFacts; /* SZrSemanticEscapeFact */
     SZrArray contiguousViewFacts; /* SZrSemanticContiguousViewFact */
     SZrArray boundsFacts; /* SZrSemanticBoundsFact */
+    SZrArray scalarScratchProofs; /* SZrSemanticIrScalarScratchProof */
 } SZrSemanticIrFunction;
 
 typedef enum EZrSemanticInitializationState {

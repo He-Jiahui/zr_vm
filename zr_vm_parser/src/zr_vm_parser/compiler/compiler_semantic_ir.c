@@ -1,4 +1,5 @@
 #include "compiler_internal.h"
+#include "compiler_semantic_ir_scalar_scratch_internal.h"
 
 SZrCompilerSemanticIrSlot *compiler_semantic_ir_find_slot(
         SZrCompilerState *cs,
@@ -2029,6 +2030,7 @@ TZrBool compiler_semantic_ir_lower_literal(SZrCompilerState *cs,
     TZrTypeId typeId;
     TZrValueId valueId;
     EZrInstructionCode opcode;
+    SZrCompilerSemanticIrSlot *literalSlot;
 
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
         !cs->preSemanticIrInitialized ||
@@ -2070,13 +2072,20 @@ TZrBool compiler_semantic_ir_lower_literal(SZrCompilerState *cs,
     }
     instruction = compiler_semantic_ir_last_instruction(cs);
     opcode = compiler_semantic_ir_exec_opcode(instruction);
-    if (opcode != ZR_INSTRUCTION_ENUM(GET_CONSTANT) ||
-        compiler_semantic_ir_add_temporary_slot(
-                cs, resultSlot, sourceRange, valueId) == ZR_NULL) {
+    if (opcode != ZR_INSTRUCTION_ENUM(GET_CONSTANT)) {
+        return ZR_FALSE;
+    }
+    literalSlot = compiler_semantic_ir_add_temporary_slot(
+            cs, resultSlot, sourceRange, valueId);
+    if (literalSlot == ZR_NULL) {
         return ZR_FALSE;
     }
     emit_instruction(cs, create_instruction_1(
             opcode, (TZrUInt16)resultSlot, (TZrInt32)constantPoolIndex));
+    /* Proof metadata is optional. Unsupported or unrecordable literals keep
+     * their ordinary memory-backed PLACE_BASE/INITIALIZE representation. */
+    (void)compiler_semantic_ir_record_literal_scalar_scratch_proof(
+            cs, literalSlot->placeId, valueId, valueType);
     return ZR_TRUE;
 }
 

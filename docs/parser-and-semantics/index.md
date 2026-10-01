@@ -27,6 +27,9 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/parser.c
   - zr_vm_parser/src/zr_vm_parser/semantic.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_scalar_scratch_internal.h
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_scalar_scratch.c
+  - zr_vm_parser/src/zr_vm_parser/semantic_ir_scalar_scratch_storage.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_flow.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_flow_internal.h
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_loan_liveness.c
@@ -53,9 +56,14 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_cfg.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_place_eligibility.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_query_diagnostics.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function_assembly.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_scalar_scratch_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_scalar_scratch.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_scalar_scratch_rules.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir_scalar_scratch_rules.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_statements.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_reference_escape_internal.h
@@ -166,6 +174,7 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c
 plan_sources:
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
+  - docs/plans/ssa/01-execir-ssa/05-oracle-projections.md
   - docs/plans/ssa/05-data-layout/02-arrays-slices.md
   - docs/plans/ssa/03-interpreter-binding/04-generated-fusion.md
   - docs/plans/syntax/2026-07-18-06-percent-migration-lsp-fixtures-design.md
@@ -185,6 +194,11 @@ plan_sources:
   - docs/plans/lsp/05-implementation-blueprint.md
 tests:
   - tests/parser/test_ssa_dominator_cfg.c
+  - tests/parser/test_exec_ir_scalar_scratch_eligibility.c
+  - tests/cmake/exec-ir-scalar-scratch-eligibility.cmake
+  - tests/parser/test_ssa_source_execbc_vm.c
+  - tests/parser/ssa_source_execbc_vm_diagnostics.inc
+  - tests/acceptance/ssa-source-execbc-vm.md
   - tests/acceptance/ssa-dominator-cfg.md
   - tests/parser/test_span_core.c
   - tests/parser/test_compiler_w2_performance_quickening.c
@@ -361,6 +375,10 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
 - `execbc-vm-canonical-types.md`
   - canonical primitive type resolution for scalar ExecBC VM materialization
   - immutable projection views, compare tags and structured type rejection
+- `scalar-literal-place-scratch-promotion.md`
+  - explicit bool/i64 direct-constant proof for private temporary Places
+  - conservative alias/observer checks and transactional proof storage
+  - source-to-ExecBC/Core VM branch coverage and its remaining limits
 - `iterator-yield-suspension.md`
   - `yield expression;` as a normal `FunctionDefinition` statement
   - explicit canonical `zr.iteration.Iterator<T>` carrier and element contract
