@@ -306,7 +306,8 @@ int ZrPerfReport_ValidateAotPhase(const SZrPerfAotPhaseReport *report) {
     }
     if (report->status == ZR_PERF_AOT_REPORT_FALLBACK &&
         (report->processExitCode != 0 || report->actualBackend[0] == '\0' ||
-         strcmp(report->requestedBackend, report->actualBackend) == 0)) {
+         (strcmp(report->requestedBackend, report->actualBackend) == 0 &&
+          (report->coverageAvailable == ZR_FALSE || report->interpreterSites == 0u)))) {
         return 0;
     }
     if (report->status == ZR_PERF_AOT_REPORT_UNAVAILABLE &&

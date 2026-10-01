@@ -187,6 +187,60 @@ static void test_runner_reports_actual_backend_and_checksum(void) {
                 "valid AOT runner result failed structural validation");
 }
 
+static void test_runner_marks_compiled_entry_with_fallback_as_mixed(void) {
+    SZrAotRunner runner;
+    SZrAotRunnerRequest request;
+    SZrAotRunnerResult result;
+    SZrFixtureEntryState state;
+
+    memset(&state, 0, sizeof(state));
+    state.checksum = UINT64_C(0xfeed);
+    state.coverage.interpreterSites = 2u;
+    state.coverage.semanticSites = 2u;
+    state.coverage.sampleRatePermille = ZR_AOT_COVERAGE_FULL_SAMPLE_PERMILLE;
+    ZrTests_AotRunner_Init(&runner);
+    expect_true(ZrTests_AotRunner_Register(
+                        &runner, ZR_AOT_BACKEND_C, UINT64_C(8), "fixture-c-fallback",
+                        fixture_entry_invoke, &state),
+                "fallback C entry could not be registered");
+
+    memset(&request, 0, sizeof(request));
+    request.requestedBackend = ZR_AOT_BACKEND_C;
+    request.entryToken = UINT64_C(8);
+    expect_true(ZrTests_AotRunner_Run(&runner, &request, &result),
+                "fallback C entry did not run");
+    expect_true(result.status == ZR_AOT_RUNNER_STATUS_FALLBACK &&
+                    result.actualBackend == ZR_AOT_BACKEND_C &&
+                    result.coverage.interpreterSites == 2u &&
+                    result.coverage.mixedExecution != ZR_FALSE &&
+                    result.failure == ZR_AOT_RUNNER_FAILURE_INTERPRETER_FALLBACK &&
+                    ZrTests_AotRunner_ValidateResult(&result),
+                "sampled compiled AOT fallback work was not reported explicitly");
+
+    state.coverage.nativeHelperSites = 2u;
+    state.coverage.interpreterSites = 0u;
+    state.coverage.semanticSites = 2u;
+    request.entryToken = UINT64_C(8);
+    expect_true(ZrTests_AotRunner_Run(&runner, &request, &result),
+                "native-helper-only C entry did not run");
+    expect_true(result.status == ZR_AOT_RUNNER_STATUS_RAN &&
+                    result.actualBackend == ZR_AOT_BACKEND_C &&
+                    result.coverage.nativeHelperSites == 2u &&
+                    result.coverage.mixedExecution == ZR_FALSE,
+                "native helper execution was incorrectly reported as fallback");
+
+    state.coverage.nativeHelperSites = 0u;
+    state.coverage.interpreterSites = 2u;
+    state.coverage.sampleRatePermille = 0u;
+    expect_true(ZrTests_AotRunner_Run(&runner, &request, &result),
+                "unsampled C entry did not run");
+    expect_true(result.status == ZR_AOT_RUNNER_STATUS_RAN &&
+                    result.actualBackend == ZR_AOT_BACKEND_C &&
+                    result.coverage.available == ZR_FALSE &&
+                    result.coverage.mixedExecution == ZR_FALSE,
+                "unsampled interpreter counts invented a fallback status");
+}
+
 static void test_runner_matrix_and_unsupported_backend_diagnostics(void) {
     SZrAotRunner runner;
     SZrAotRunnerMatrix matrix;
@@ -335,6 +389,11 @@ static void test_aot_phase_report_keeps_costs_and_unavailable_values_explicit(vo
     report.nativeCoverage = 0.8;
     expect_true(ZrPerfReport_ValidateAotPhase(&report),
                 "valid AOT phase report was rejected");
+
+    report.status = ZR_PERF_AOT_REPORT_FALLBACK;
+    expect_true(ZrPerfReport_ValidateAotPhase(&report),
+                "mixed compiled fallback report was rejected");
+    report.status = ZR_PERF_AOT_REPORT_RAN;
     expect_true(ZrPerfReport_WriteAotJson("ssa_aot_runner_coverage_report.json", &report),
                 "AOT phase report was not serialized");
     remove("ssa_aot_runner_coverage_report.json");
@@ -351,6 +410,7 @@ int main(void) {
     test_coverage_rejects_inconsistent_denominator();
     test_coverage_record_and_merge_are_overflow_safe();
     test_runner_reports_actual_backend_and_checksum();
+    test_runner_marks_compiled_entry_with_fallback_as_mixed();
     test_runner_matrix_and_unsupported_backend_diagnostics();
     test_runner_makes_interpreter_fallback_explicit();
     test_runner_rejects_missing_backend_and_checksum_mismatch();

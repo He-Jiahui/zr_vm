@@ -1,3 +1,25 @@
+---
+related_code:
+  - tests/benchmarks/aot_runner/aot_coverage.c
+  - tests/benchmarks/aot_runner/aot_coverage.h
+  - tests/benchmarks/aot_runner/aot_runner.c
+  - tests/benchmarks/aot_runner/aot_runner.h
+  - tests/benchmarks/aot_runner/main.c
+  - tests/performance/perf_report.c
+  - tests/performance/perf_report.h
+implementation_files:
+  - tests/benchmarks/aot_runner/aot_coverage.c
+  - tests/benchmarks/aot_runner/aot_runner.c
+  - tests/benchmarks/aot_runner/main.c
+  - tests/performance/perf_report.c
+plan_sources:
+  - docs/plans/ssa/07-aot-backends/04-aot-runner-coverage.md
+tests:
+  - tests/benchmarks/test_ssa_aot_runner_coverage.c
+  - tests/cmake/ssa-tests.cmake
+doc_type: testing-guide
+---
+
 # AOT runner and semantic coverage contract
 
 The SSA 07.04 runner is a standalone, callback-driven consumer of generated
@@ -15,6 +37,12 @@ can satisfy a request only when the caller explicitly enables fallback; the
 result remains FALLBACK and is not a pure-AOT result. Missing entries,
 invocation errors, malformed coverage, and checksum mismatches each retain a
 specific failure code.
+
+When a registered C or LLVM entry reports sampled interpreter sites, the
+runner also reports FALLBACK and sets `coverage.mixedExecution`, while keeping
+the compiled backend as `actualBackend`. Native-helper sites alone do not cause
+fallback. Counts without a non-zero sampling rate leave coverage unavailable
+and do not invent a fallback status.
 
 ## Coverage denominator
 

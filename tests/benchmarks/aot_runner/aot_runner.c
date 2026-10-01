@@ -177,6 +177,18 @@ TZrBool ZrTests_AotRunner_Run(const SZrAotRunner *runner,
                                   ZR_AOT_RUNNER_FAILURE_MALFORMED_COVERAGE);
         return ZR_FALSE;
     }
+    /* A compiled entry can still execute interpreter sites.  Only sampled,
+     * available coverage is strong enough to mark that fallback; preserve the
+     * compiled actual backend so consumers can distinguish mixed execution
+     * from a whole-entry interpreter fallback. */
+    if (fallback == ZR_FALSE &&
+        zr_aot_runner_requested_backend_is_aot(request->requestedBackend) &&
+        result->actualBackend == request->requestedBackend &&
+        result->coverage.available != ZR_FALSE &&
+        result->coverage.interpreterSites != 0u) {
+        result->coverage.mixedExecution = ZR_TRUE;
+        fallback = ZR_TRUE;
+    }
     if (request->checksumRequired != ZR_FALSE && checksum != request->expectedChecksum) {
         zr_aot_runner_result_fail(result,
                                   ZR_AOT_RUNNER_STATUS_FAILED,
@@ -240,10 +252,15 @@ TZrBool ZrTests_AotRunner_ValidateResult(const SZrAotRunnerResult *result) {
                              zr_aot_runner_name_is_valid(result->entryName, &nameLength));
         case ZR_AOT_RUNNER_STATUS_FALLBACK:
             return (TZrBool)(result->failure == ZR_AOT_RUNNER_FAILURE_INTERPRETER_FALLBACK &&
-                             result->actualBackend == ZR_AOT_BACKEND_INTERPRETER &&
                              result->entryInvoked != ZR_FALSE &&
                              result->processExitCode == 0 &&
-                             zr_aot_runner_name_is_valid(result->entryName, &nameLength));
+                             zr_aot_runner_name_is_valid(result->entryName, &nameLength) &&
+                             ((result->actualBackend == ZR_AOT_BACKEND_INTERPRETER) ||
+                              (zr_aot_runner_requested_backend_is_aot(result->requestedBackend) &&
+                               result->actualBackend == result->requestedBackend &&
+                               result->coverage.available != ZR_FALSE &&
+                               result->coverage.interpreterSites != 0u &&
+                               result->coverage.mixedExecution != ZR_FALSE)));
         case ZR_AOT_RUNNER_STATUS_FAILED:
             return (TZrBool)(result->failure != ZR_AOT_RUNNER_FAILURE_NONE &&
                              result->entryInvoked != ZR_FALSE &&
