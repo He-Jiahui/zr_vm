@@ -76,7 +76,13 @@ branches (returns 9 and 8), `ssa_source_execbc_vm` in 0.54 seconds, and
 `exec_ir_scalar_scratch_eligibility` in 0.78 seconds. This same selection
 passed the 18-case scalar/canonical VM target and 13-case dead-place target.
 It was 7/8 overall because an independent conditional-cleanup fixture failed.
-Current GCC/Clang validation is pending; no complete semantic matrix is claimed.
+The 2026-10-01 GCC 11.4 and Clang 14 WSL reruns each passed all 19 selected
+CTest suites, including both source branches, scalar eligibility, the 18-case
+VM suite and the 13-case dead-place suite. The standalone PlaceGraph target
+also passed all eight cases with each compiler. Logs are preserved at
+`D:/tmp/zr_vm/ssa-control/{gcc,clang}-current-scalar-final-{build,ctest,last-test}.log`
+and `{gcc,clang}-place-queries-final-direct.log`. This is a focused scalar
+matrix; the complete semantic matrix remains open.
 
 The previously recorded source run reached Oracle and projection for both
 cases, then failed materialization with diagnostic `UNSUPPORTED` (code 28),

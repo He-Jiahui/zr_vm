@@ -142,6 +142,9 @@ The historical source run with three scalar stores/memory tokens failed with
 `UNSUPPORTED` (`code=28`, `actualVersion=1`). A separate producer-proof and
 canonical-type adapter now has a passing two-branch source test, recorded in
 `tests/acceptance/ssa-source-execbc-vm.md`. Dead-base lowering alone neither
-removes stores nor accepts GC maps. Current GCC/Clang validation and the wider
-01.05 Oracle/ExecBC/AOTIR/C/LLVM semantic matrix remain open, including effects,
+removes stores nor accepts GC maps. Final GCC 11.4 and Clang 14 reruns each
+passed all 19 selected suites, including the scalar VM, dead-place and source
+branch targets. Logs are
+`D:/tmp/zr_vm/ssa-control/{gcc,clang}-current-scalar-final-{build,ctest,last-test}.log`.
+The wider 01.05 Oracle/ExecBC/AOTIR/C/LLVM semantic matrix remains open, including effects,
 typed calls and source loop phis. M1 is not complete.

@@ -62,10 +62,14 @@ full test log preserved in
 Current GCC 11.4 and Clang 14 WSL runs passed `ssa_binding_rows_artifact`,
 `ssa_exec_ir_artifact_v6_write`, `ssa_exec_ir_artifact_v6_roundtrip`,
 `ssa_canonical_zraf_validation` and `ssa_capability_validation`. The 19-suite
-selection had one separate conditional-cleanup fixture failure; it is not
-reported as a passing full matrix. Original logs are preserved at
+initial selection had one separate conditional-cleanup fixture failure.
+Original logs are preserved at
 `D:/tmp/zr_vm/ssa-control/{gcc,clang}-current-scalar-before-phi-ctest.log` and
 the corresponding `last-test.log` files.
+
+After the fixture repair, final GCC and Clang runs each passed all 19 selected
+suites, including these five persistence and loader gates. Final logs are
+`D:/tmp/zr_vm/ssa-control/{gcc,clang}-current-scalar-final-{build,ctest,last-test}.log`.
 
 All caches, generated artifacts and compiler temporary files for these runs
 are under `D:/tmp/zr_vm`. No artifact is moved between volumes.

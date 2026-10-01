@@ -175,7 +175,10 @@ Current logs are
 Earlier GCC/Clang selections each passed 18/19 suites with the same four
 obsolete cleanup-fixture failures; their original full logs are preserved as
 `D:/tmp/zr_vm/ssa-control/{gcc,clang}-current-scalar-before-phi-{ctest,last-test}.log`.
-The final cross-compiler fixture rerun is still pending at this update.
+The final GCC 11.4 and Clang 14 reruns each passed all 19 selected suites,
+including all 24 cleanup cases. Total CTest times were 11.43 and 10.54 seconds,
+respectively. Final build and execution logs are preserved at
+`D:/tmp/zr_vm/ssa-control/{gcc,clang}-current-scalar-final-{build,ctest,last-test}.log`.
 
 ## Reference evidence and scope
 

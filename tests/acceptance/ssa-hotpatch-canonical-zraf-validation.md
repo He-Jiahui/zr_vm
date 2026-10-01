@@ -152,3 +152,8 @@ write, roundtrip, canonical validation and capability validation; an unrelated
 conditional-cleanup fixture failed separately. Their original full logs are
 preserved as `D:/tmp/zr_vm/ssa-control/{gcc,clang}-current-scalar-before-phi-ctest.log`.
 A rejection by the previous scalar reader is not counted as guard evidence.
+
+The 2026-10-01 GCC 11.4 and Clang 14 reruns each passed all 19 selected suites
+after the unrelated cleanup fixture repair. These runs include the typed-EIS6
+guard, artifact write/roundtrip and capability validation gates. Final logs are
+`D:/tmp/zr_vm/ssa-control/{gcc,clang}-current-scalar-final-{build,ctest,last-test}.log`.

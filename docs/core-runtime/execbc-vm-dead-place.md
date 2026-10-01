@@ -12,7 +12,6 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_place_uses.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_internal.h
 plan_sources:
-  - user: 2026-09-30 dead metadata-free PLACE_BASE VM slice
   - docs/plans/ssa/01-execir-ssa/05-oracle-projections.md
 tests:
   - tests/parser/test_ssa_execbc_vm_dead_place.c
@@ -78,7 +77,10 @@ with `gcMapPresent` clear.
 The root-owned MSVC build and `ssa_execbc_vm_dead_place` CTest passed all 13
 cases. The fresh run is recorded in
 `D:/tmp/zr_vm/ssa-control/current-scalar-shape-fixtures-ctest.log`; it also
-passes the 18-case scalar VM target. Current GCC/Clang and the wider M1
-Oracle/ExecBC/AOTIR/C/LLVM matrix remain open. Source literal promotion and
+passes the 18-case scalar VM target. Final GCC 11.4 and Clang 14 runs each
+passed all 19 selected suites, including these 13 cases and the 18-case VM
+target. Logs are
+`D:/tmp/zr_vm/ssa-control/{gcc,clang}-current-scalar-final-{build,ctest,last-test}.log`.
+The wider M1 Oracle/ExecBC/AOTIR/C/LLVM matrix remains open. Source literal promotion and
 canonical type resolution have their own producer/adapter acceptance and
 retain this materializer's metadata guards.

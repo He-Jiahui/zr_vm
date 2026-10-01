@@ -118,8 +118,9 @@ MSVC 19.44 passed `ssa_state_map_ownership`, `ssa_state_map_liveness`,
 `ssa_oracle_resume` and `ssa_conditional_cleanup` (4/4 suites, 9.17 seconds).
 The ownership suite passed all 15 cases. Build/test output is preserved under
 `D:/tmp/zr_vm/ssa-control/cleanup-region-phi-final-{build,ctest}.log`.
-GCC/Clang passed ownership in the earlier 19-suite selections; the final
-conditional-cleanup fixture rerun is recorded separately when it completes.
+The final GCC 11.4 and Clang 14 reruns each passed all 19 selected suites,
+including ownership, liveness, Oracle resume and conditional cleanup. Logs are
+`D:/tmp/zr_vm/ssa-control/{gcc,clang}-current-scalar-final-{build,ctest,last-test}.log`.
 
 ## Acceptance decision
 
