@@ -90,6 +90,7 @@ ZR_CORE_API TZrBool ZrCore_GcDomainClone_GetSnapshot(
  * @brief 同步完成准备、发布、领取、提交和失败清理，不向调用方暴露事务包装对象。
  * @pre 双方域有效且不同，workerId/claimEpoch 非零，target 已初始化为 null 类型。
  * @return 成功时 target 接收目标域副本；失败时由此入口尝试 Abort/Free，诊断保留失败阶段。
+ * @note Commit 的目标分配 Throw 会先关闭内部事务，再向外层恢复点转抛原始状态。
  */
 ZR_CORE_API TZrBool ZrCore_GcDomainClone_Execute(
         struct SZrState *sourceState,

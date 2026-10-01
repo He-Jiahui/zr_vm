@@ -126,8 +126,13 @@ accepted by the canonical transfer encoder. Prototype-bearing objects, inline
 array layouts, and remote proxy/reference semantics remain explicit future
 contracts rather than silently falling back to shared pointers.
 
-The public `Execute` convenience call still needs its own protected cleanup for
-a Throw from Commit because it hides the transaction from its caller. The
-Commit recovery gate does not establish that guarantee. Source-side Prepare
+The public `Execute` convenience call owns a second protected Commit context.
+When Commit throws, Execute aborts and frees its hidden transaction before
+rethrowing the original status. Its caller still receives the target exception
+and failed-stage diagnostic. A third OOM case observes the source allocator's
+envelope allocation/release balance before state teardown, then executes a
+successful object clone through the same convenience entry.
+
+Source-side Prepare
 allocation failures, raw-array materialization and provider callback Throw are
 also separate contracts; the field-pair OOM regression does not validate them.

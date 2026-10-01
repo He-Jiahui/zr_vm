@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "zr_vm_core/gc_domain.h"
+#include "zr_vm_core/exception.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/value.h"
 
@@ -426,7 +427,23 @@ TZrBool ZrCore_GcDomainClone_GetSnapshot(
     return ZR_FALSE;
 }
 
-/* 便利入口顺序执行状态机，并在每个失败阶段尝试完成源侧取消与释放。 */
+typedef struct SZrGcDomainCloneExecuteCommit {
+    SZrGcDomainCloneTransaction *transaction;
+    SZrTypeValue *target;
+    SZrDomainTransferDiagnostic *diagnostic;
+    TZrBool result;
+    TZrBool returned;
+} SZrGcDomainCloneExecuteCommit;
+
+static void gc_domain_clone_execute_commit(SZrState *state, TZrPtr arguments) {
+    SZrGcDomainCloneExecuteCommit *context = (SZrGcDomainCloneExecuteCommit *)arguments;
+    (void)state;
+    context->result = ZrCore_GcDomainClone_Commit(
+            context->transaction, context->target, context->diagnostic);
+    context->returned = ZR_TRUE;
+}
+
+/* The hidden transaction must close before a target Commit Throw leaves Execute. */
 TZrBool ZrCore_GcDomainClone_Execute(
         SZrState *sourceState,
         SZrState *targetState,
@@ -437,7 +454,8 @@ TZrBool ZrCore_GcDomainClone_Execute(
         SZrTypeValue *target,
         SZrDomainTransferDiagnostic *diagnostic) {
     SZrGcDomainCloneTransaction *transaction;
-    TZrBool result;
+    SZrGcDomainCloneExecuteCommit context = {0};
+    EZrThreadStatus commitStatus;
 
     transaction = ZrCore_GcDomainClone_Prepare(
             sourceState,
@@ -455,10 +473,14 @@ TZrBool ZrCore_GcDomainClone_Execute(
         ZrCore_GcDomainClone_Free(transaction);
         return ZR_FALSE;
     }
-    result = ZrCore_GcDomainClone_Commit(transaction, target, diagnostic);
-    if (!result) {
+    context.transaction = transaction;
+    context.target = target;
+    context.diagnostic = diagnostic;
+    commitStatus = ZrCore_Exception_TryRun(targetState, gc_domain_clone_execute_commit, &context);
+    if (!context.result) {
         (void)ZrCore_GcDomainClone_Abort(transaction, ZR_NULL);
     }
     ZrCore_GcDomainClone_Free(transaction);
-    return result;
+    if (!context.returned) ZrCore_Exception_Throw(targetState, commitStatus);
+    return context.result;
 }

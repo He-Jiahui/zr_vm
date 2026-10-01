@@ -71,8 +71,11 @@ ownership_transfer_cross_domain.c 与 value_copy 已有 transfer 基础；需要
 释放提交窗口。两个用例分别验证 Abort/Free 后重新克隆和同一 claim 重试；
 三套编译器均通过克隆 7 项、资源转移 24 项及竞争 5 项。
 详见 [失败注入验收](../../../../tests/acceptance/ssa-cross-domain-clone-oom.md)。
-本结果仅覆盖目标字段分配失败；便利入口 Execute、源 Prepare OOM、provider
-Throw 及完整深图/并发销毁门禁仍待独立验证，上述任务和完整 06.04 保持未完成。
+随后补齐便利入口 Execute 的独立失败恢复：同一真实目标字段 OOM 曾留下源侧
+信封分配 1、释放 0；内部受保护 Commit 清理后，三套编译器的克隆 8 项均通过，
+失败信封分配/释放 1/1，再次成功调用后累计 2/2。
+本结果仅覆盖目标字段分配失败；源 Prepare OOM、provider Throw 及完整深图/
+并发销毁门禁仍待独立验证，上述任务和完整 06.04 保持未完成。
 
 以下草案固定输入、处理顺序和失败行为；名称不是已经存在的 API。将其拆成上述文件中的私有 helper，错误使用项目诊断对象，不能通过布尔成功吞掉具体原因。
 

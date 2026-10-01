@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "gc/gc_domain_internal.h"
+#include "ownership_transfer_internal.h"
 #include "harness/runtime_support.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/gc.h"
@@ -26,6 +27,22 @@ enum {
     max_major_finish_steps = 4096u
 };
 
+typedef enum EZrCloneOomRecovery {
+    clone_abort_and_prepare_again,
+    clone_retry_same_claim,
+    clone_execute_cleanup
+} EZrCloneOomRecovery;
+
+typedef struct SZrCloneEnvelopeAllocatorContext {
+    FZrAllocator delegate;
+    TZrPtr delegateArguments;
+    SZrOwnershipTransferEnvelope *liveEnvelope;
+    TZrUInt32 allocations;
+    TZrUInt32 releases;
+    TZrBool duplicateLiveEnvelope;
+    TZrBool installed;
+} SZrCloneEnvelopeAllocatorContext;
+
 typedef struct SZrCloneOomAllocatorContext {
     FZrAllocator delegate;
     TZrPtr delegateArguments;
@@ -38,6 +55,8 @@ typedef struct SZrCloneOomAllocatorContext {
 
 typedef struct SZrCloneCommitTryContext {
     SZrGcDomainCloneTransaction *transaction;
+    const SZrTypeValue *source;
+    SZrDomainTransferQuota quota;
     SZrTypeValue *target;
     SZrDomainTransferDiagnostic *diagnostic;
     TZrBool commitReturned;
@@ -46,6 +65,7 @@ typedef struct SZrCloneCommitTryContext {
 static SZrState *g_sourceState;
 static SZrState *g_targetState;
 static SZrCloneOomAllocatorContext g_oomAllocator;
+static SZrCloneEnvelopeAllocatorContext g_envelopeAllocator;
 static TZrBool g_targetAllocatorWrapped;
 static SZrGcRootHandle g_sourceRootHandle;
 static SZrGcRootHandle g_sourceChildHandle;
@@ -188,14 +208,57 @@ static void restore_target_allocator(void) {
     g_targetAllocatorWrapped = ZR_FALSE;
 }
 
+static TZrPtr observe_source_envelope_allocations(
+        TZrPtr userData, TZrPtr pointer, TZrSize originalSize,
+        TZrSize newSize, TZrInt64 flag) {
+    SZrCloneEnvelopeAllocatorContext *context = (SZrCloneEnvelopeAllocatorContext *)userData;
+    TZrPtr result;
+    if (pointer != ZR_NULL && pointer == context->liveEnvelope && newSize == 0u) {
+        ++context->releases;
+        context->liveEnvelope = ZR_NULL;
+    }
+    result = context->delegate(context->delegateArguments, pointer, originalSize, newSize, flag);
+    if (pointer == ZR_NULL && originalSize == 0u && result != ZR_NULL &&
+        newSize == sizeof(SZrOwnershipTransferEnvelope) &&
+        flag == (TZrInt64)ZR_MEMORY_NATIVE_TYPE_MANAGER) {
+        ++context->allocations;
+        if (context->liveEnvelope != ZR_NULL) context->duplicateLiveEnvelope = ZR_TRUE;
+        context->liveEnvelope = (SZrOwnershipTransferEnvelope *)result;
+    }
+    return result;
+}
+
+static void install_source_envelope_observer(void) {
+    SZrGlobalState *global = g_sourceState->global;
+    memset(&g_envelopeAllocator, 0, sizeof(g_envelopeAllocator));
+    g_envelopeAllocator.delegate = global->allocator;
+    g_envelopeAllocator.delegateArguments = global->userAllocationArguments;
+    global->allocator = observe_source_envelope_allocations;
+    global->userAllocationArguments = &g_envelopeAllocator;
+    g_envelopeAllocator.installed = ZR_TRUE;
+}
+
+static void restore_source_envelope_observer(void) {
+    if (!g_envelopeAllocator.installed) return;
+    if (g_envelopeAllocator.liveEnvelope != ZR_NULL) {
+        ZrCore_OwnershipTransfer_Free(g_sourceState, g_envelopeAllocator.liveEnvelope);
+    }
+    g_sourceState->global->allocator = g_envelopeAllocator.delegate;
+    g_sourceState->global->userAllocationArguments = g_envelopeAllocator.delegateArguments;
+    g_envelopeAllocator.installed = ZR_FALSE;
+}
+
 static void clone_commit_try_body(SZrState *state, TZrPtr arguments) {
     SZrCloneCommitTryContext *context =
             (SZrCloneCommitTryContext *)arguments;
-    context->commitReturned = ZrCore_GcDomainClone_Commit(
-            context->transaction,
-            context->target,
-            context->diagnostic);
-    (void)state;
+    if (context->transaction != ZR_NULL) {
+        context->commitReturned = ZrCore_GcDomainClone_Commit(
+                context->transaction, context->target, context->diagnostic);
+    } else {
+        context->commitReturned = ZrCore_GcDomainClone_Execute(
+                g_sourceState, state, context->source, &context->quota,
+                clone_worker_id, clone_claim_epoch, context->target, context->diagnostic);
+    }
 }
 
 static TZrBool finish_target_concurrent_major(void) {
@@ -238,6 +301,7 @@ void setUp(void) {
     g_sourceState = ZrTests_Runtime_State_Create(ZR_NULL);
     g_targetState = ZrTests_Runtime_State_Create(ZR_NULL);
     memset(&g_oomAllocator, 0, sizeof(g_oomAllocator));
+    memset(&g_envelopeAllocator, 0, sizeof(g_envelopeAllocator));
     memset(&g_sourceRootHandle, 0, sizeof(g_sourceRootHandle));
     memset(&g_sourceChildHandle, 0, sizeof(g_sourceChildHandle));
     memset(&g_sourceLeftKeyHandle, 0, sizeof(g_sourceLeftKeyHandle));
@@ -256,6 +320,7 @@ void setUp(void) {
 
 void tearDown(void) {
     restore_target_allocator();
+    restore_source_envelope_observer();
     if (g_targetState != ZR_NULL) {
         TZrUInt32 mutationDepth = mutation_depth_for_state(g_targetState);
         if (mutationDepth != 0u) {
@@ -323,7 +388,7 @@ void tearDown(void) {
     }
 }
 
-static void run_clone_target_oom_recovery(TZrBool retrySameClaim) {
+static void run_clone_target_oom_recovery(EZrCloneOomRecovery recovery) {
     SZrObject *sourceRoot = new_plain_object(g_sourceState);
     SZrObject *sourceChild;
     SZrString *leftName;
@@ -341,7 +406,7 @@ static void run_clone_target_oom_recovery(TZrBool retrySameClaim) {
     SZrTypeValue sourceMarker;
     SZrTypeValue targetValue;
     SZrDomainTransferDiagnostic diagnostic;
-    SZrGcDomainCloneTransaction *transaction;
+    SZrGcDomainCloneTransaction *transaction = ZR_NULL;
     SZrCloneCommitTryContext tryContext;
     EZrThreadStatus tryStatus;
     EZrThreadStatus targetThreadStatusAfterTryRun;
@@ -425,11 +490,12 @@ static void run_clone_target_oom_recovery(TZrBool retrySameClaim) {
             &sourceRootValue,
             ZR_CAST_RAW_OBJECT_AS_SUPER(sourceRoot));
     sourceRootValue.type = ZR_VALUE_TYPE_OBJECT;
-    transaction = prepare_and_claim_clone(
-            &sourceRootValue,
-            clone_worker_id,
-            clone_claim_epoch,
-            &diagnostic);
+    if (recovery == clone_execute_cleanup) {
+        install_source_envelope_observer();
+    } else {
+        transaction = prepare_and_claim_clone(
+                &sourceRootValue, clone_worker_id, clone_claim_epoch, &diagnostic);
+    }
 
     g_targetState->global->garbageCollector->gcMode =
             ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
@@ -450,6 +516,10 @@ static void run_clone_target_oom_recovery(TZrBool retrySameClaim) {
     ZrCore_Value_ResetAsNull(&targetValue);
     memset(&tryContext, 0, sizeof(tryContext));
     tryContext.transaction = transaction;
+    tryContext.source = &sourceRootValue;
+    tryContext.quota.maxObjects = 16u;
+    tryContext.quota.maxBytes = 4096u;
+    tryContext.quota.maxDepth = 32u;
     tryContext.target = &targetValue;
     tryContext.diagnostic = &diagnostic;
     tryStatus = ZrCore_Exception_TryRun(
@@ -496,7 +566,16 @@ static void run_clone_target_oom_recovery(TZrBool retrySameClaim) {
             (TZrUInt32)baselineTargetRootCount,
             (TZrUInt32)rootsAfterFailure);
     TEST_ASSERT_EQUAL_INT(ZR_DOMAIN_TRANSFER_STATUS_ALLOCATION_FAILED, diagnostic.status);
-    {
+    if (recovery == clone_execute_cleanup) {
+        fprintf(stderr, "clone Execute envelope recovery: allocated %u released %u live %u\n",
+                (unsigned)g_envelopeAllocator.allocations,
+                (unsigned)g_envelopeAllocator.releases,
+                (unsigned)(g_envelopeAllocator.liveEnvelope != ZR_NULL));
+        TEST_ASSERT_EQUAL_UINT32(1u, g_envelopeAllocator.allocations);
+        TEST_ASSERT_EQUAL_UINT32(1u, g_envelopeAllocator.releases);
+        TEST_ASSERT_NULL(g_envelopeAllocator.liveEnvelope);
+        TEST_ASSERT_FALSE(g_envelopeAllocator.duplicateLiveEnvelope);
+    } else {
         SZrOwnershipTransferSnapshot snapshot;
         TEST_ASSERT_TRUE(ZrCore_GcDomainClone_GetSnapshot(transaction, &snapshot));
         TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_TRANSFER_STATE_CLAIMED, snapshot.state);
@@ -542,7 +621,7 @@ static void run_clone_target_oom_recovery(TZrBool retrySameClaim) {
     TEST_ASSERT_EQUAL_INT64(31337, member->value.nativeObject.nativeInt64);
 
     TEST_ASSERT_TRUE(finish_target_concurrent_major());
-    if (!retrySameClaim) {
+    if (recovery == clone_abort_and_prepare_again) {
         TEST_ASSERT_TRUE(ZrCore_GcDomainClone_Abort(transaction, &diagnostic));
         TEST_ASSERT_EQUAL_INT(ZR_DOMAIN_TRANSFER_STATUS_OK, diagnostic.status);
         ZrCore_GcDomainClone_Free(transaction);
@@ -550,18 +629,32 @@ static void run_clone_target_oom_recovery(TZrBool retrySameClaim) {
                 (TZrUInt32)baselineTargetRootCount,
                 (TZrUInt32)ZrCore_GcDomain_GetRootCount(g_targetState));
 
+    }
+    if (recovery != clone_retry_same_claim) {
         TEST_ASSERT_TRUE(resolve_root_handle(
                 g_sourceState, &g_sourceRootHandle, &resolvedRoot));
         sourceRoot = ZR_CAST_OBJECT(g_sourceState, resolvedRoot);
         ZrCore_Value_InitAsRawObject(
                 g_sourceState, &sourceRootValue, ZR_CAST_RAW_OBJECT_AS_SUPER(sourceRoot));
         sourceRootValue.type = ZR_VALUE_TYPE_OBJECT;
-        transaction = prepare_and_claim_clone(
-                &sourceRootValue, clone_retry_worker_id, clone_retry_claim_epoch, &diagnostic);
+        if (recovery == clone_abort_and_prepare_again) {
+            transaction = prepare_and_claim_clone(
+                    &sourceRootValue, clone_retry_worker_id, clone_retry_claim_epoch, &diagnostic);
+        }
     }
     ZrCore_Value_ResetAsNull(&targetValue);
-    TEST_ASSERT_TRUE(ZrCore_GcDomainClone_Commit(
-            transaction, &targetValue, &diagnostic));
+    if (recovery == clone_execute_cleanup) {
+        TEST_ASSERT_TRUE(ZrCore_GcDomainClone_Execute(
+                g_sourceState, g_targetState, &sourceRootValue, &tryContext.quota,
+                clone_retry_worker_id, clone_retry_claim_epoch, &targetValue, &diagnostic));
+        TEST_ASSERT_EQUAL_UINT32(2u, g_envelopeAllocator.allocations);
+        TEST_ASSERT_EQUAL_UINT32(2u, g_envelopeAllocator.releases);
+        TEST_ASSERT_NULL(g_envelopeAllocator.liveEnvelope);
+        TEST_ASSERT_FALSE(g_envelopeAllocator.duplicateLiveEnvelope);
+    } else {
+        TEST_ASSERT_TRUE(ZrCore_GcDomainClone_Commit(
+                transaction, &targetValue, &diagnostic));
+    }
     TEST_ASSERT_EQUAL_INT(ZR_DOMAIN_TRANSFER_STATUS_OK, diagnostic.status);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, targetValue.type);
     TEST_ASSERT_TRUE(ZrCore_GcRootHandle_Create(
@@ -599,16 +692,21 @@ static void run_clone_target_oom_recovery(TZrBool retrySameClaim) {
 }
 
 static void test_clone_target_allocation_oom_is_abortable_and_retryable(void) {
-    run_clone_target_oom_recovery(ZR_FALSE);
+    run_clone_target_oom_recovery(clone_abort_and_prepare_again);
 }
 
 static void test_clone_target_allocation_oom_can_retry_the_same_claim(void) {
-    run_clone_target_oom_recovery(ZR_TRUE);
+    run_clone_target_oom_recovery(clone_retry_same_claim);
+}
+
+static void test_clone_execute_target_oom_closes_hidden_transaction(void) {
+    run_clone_target_oom_recovery(clone_execute_cleanup);
 }
 
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_clone_target_allocation_oom_is_abortable_and_retryable);
     RUN_TEST(test_clone_target_allocation_oom_can_retry_the_same_claim);
+    RUN_TEST(test_clone_execute_target_oom_closes_hidden_transaction);
     return UNITY_END();
 }

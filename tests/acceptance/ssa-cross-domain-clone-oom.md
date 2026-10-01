@@ -55,7 +55,33 @@ Evidence names: `clone-atomic-fixed-build.log`,
 `{gcc,clang}-clone-atomic-final-{build,ctest,last-test}.log` and
 `{gcc,clang}-clone-atomic-zr_vm_resource_cross_domain_transfer{,_race}_test-direct.log`.
 
+## Execute convenience entry
+
+The third case, `test_clone_execute_target_oom_closes_hidden_transaction`, uses
+the same real target field-pair failure through `GcDomainClone_Execute`. A
+source allocator observer tracks the actual MANAGER allocation for the transfer
+envelope, matching both its size and release address. Before the Execute fix,
+the first two cases passed and this case failed with `allocated 1 released 0
+live 1`; target roots and mutation depth were already restored. Evidence:
+`clone-execute-oom-red-build.log` and `clone-execute-oom-red.log`.
+
+Execute now protects Commit, aborts/frees its hidden transaction and rethrows
+the original status after cleanup. Final Windows MSVC, WSL GCC and WSL Clang
+each built both clone targets and passed the exact two CTests: five original
+clone cases and three OOM cases. The new observer reports `allocated 1 released
+1 live 0` before state teardown. A subsequent successful object clone through
+Execute verifies the cumulative envelope counts are two allocations and two
+releases with no live envelope; cycle/alias and independent-address assertions
+also pass. The outer TryRun still sees MEMORY_ERROR and the allocation-failure
+diagnostic.
+
+Final evidence: `clone-execute-oom-fixed-build.log`,
+`clone-execute-oom-msvc-final-{ctest,last-test}.log` and
+`{gcc,clang}-clone-execute-final-{build,ctest,last-test}.log` in the D: control
+directory. These final clone CTests took 0.61s, 4.21s and 4.80s respectively.
+Earlier provider/race results remain the separate Commit regression evidence.
+
 This gate establishes temporary-root and transaction recovery for target field
-allocation OOM. It is not a full native-heap fault sweep or sanitizer result.
-`Execute` convenience-call cleanup, source Prepare OOM and provider callback
-Throw remain separate checks. SSA 06.04 remains open.
+allocation OOM, including the hidden Execute envelope. It is not a full
+native-heap fault sweep or sanitizer result. Source Prepare OOM and provider
+callback Throw remain separate checks. SSA 06.04 remains open.
