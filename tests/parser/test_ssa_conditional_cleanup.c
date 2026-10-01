@@ -39,11 +39,49 @@ static void effects(TZrExecIrInstructionId id, TZrUInt32 token,
     instruction->effectIn = token;
     instruction->effectOut = next;
     if (memory) {
+        TZrExecIrMemoryTokenId before = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+                ZR_EXEC_IR_MEMORY_OWNERSHIP, token);
+        TZrExecIrMemoryTokenId after = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+                ZR_EXEC_IR_MEMORY_OWNERSHIP, next);
         TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendMemoryTokens(
-                &function, &token, 1u, &instruction->memoryIn));
+                &function, &before, 1u, &instruction->memoryIn));
         TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendMemoryTokens(
-                &function, &next, 1u, &instruction->memoryOut));
+                &function, &after, 1u, &instruction->memoryOut));
     }
+}
+
+static void call_effects(TZrExecIrInstructionId id, TZrUInt32 token,
+                         TZrUInt32 memoryToken) {
+    SZrExecIrInstruction *instruction = &function.instructions[id - 1u];
+    TZrUInt32 next = token + 1u;
+    TZrExecIrMemoryTokenId before[2] = {
+            ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_MANAGED_HEAP, memoryToken),
+            ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_NATIVE_FFI, memoryToken)};
+    TZrExecIrMemoryTokenId after[2] = {
+            ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_MANAGED_HEAP, memoryToken + 1u),
+            ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_NATIVE_FFI, memoryToken + 1u)};
+    instruction->effectIn = token;
+    instruction->effectOut = next;
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendMemoryTokens(
+            &function, before, 2u, &instruction->memoryIn));
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendMemoryTokens(
+            &function, after, 2u, &instruction->memoryOut));
+}
+
+static void ownership_effects(TZrExecIrInstructionId id,
+                              TZrUInt32 effectToken,
+                              TZrUInt32 memoryToken) {
+    SZrExecIrInstruction *instruction = &function.instructions[id - 1u];
+    TZrExecIrMemoryTokenId before = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+            ZR_EXEC_IR_MEMORY_OWNERSHIP, memoryToken);
+    TZrExecIrMemoryTokenId after = ZR_EXEC_IR_MEMORY_TOKEN_MAKE(
+            ZR_EXEC_IR_MEMORY_OWNERSHIP, memoryToken + 1u);
+    instruction->effectIn = effectToken;
+    instruction->effectOut = effectToken + 1u;
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendMemoryTokens(
+            &function, &before, 1u, &instruction->memoryIn));
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendMemoryTokens(
+            &function, &after, 1u, &instruction->memoryOut));
 }
 
 static TZrExecIrInstructionId terminal(TZrExecIrBlockId block,
@@ -57,8 +95,16 @@ static TZrExecIrInstructionId terminal(TZrExecIrBlockId block,
 }
 
 static void elaborate(void) {
+    TZrBool elaborated;
+    char failure[192];
     predecessors();
-    TEST_ASSERT_TRUE(ZrParser_ExecIr_ElaborateCleanupDrops(&function, &diagnostic));
+    elaborated = ZrParser_ExecIr_ElaborateCleanupDrops(&function, &diagnostic);
+    (void)snprintf(failure, sizeof(failure),
+            "cleanup fixture code=%u block=%u instruction=%u expected=%u actual=%u",
+            (unsigned)diagnostic.code, (unsigned)diagnostic.blockId,
+            (unsigned)diagnostic.instructionId,
+            (unsigned)diagnostic.expectedVersion, (unsigned)diagnostic.actualVersion);
+    TEST_ASSERT_TRUE_MESSAGE(elaborated, failure);
     TEST_ASSERT_TRUE(ZrCore_ExecIr_VerifyFunction(
             &function, ZR_EXEC_IR_VERIFY_ALL, &diagnostic));
     TEST_ASSERT_TRUE(ZrParser_ExecIr_BuildStateMaps(&function, &diagnostic));
@@ -91,6 +137,18 @@ static SCleanupFixture diamond(TZrBool moveOnTrue) {
     fixture.drop = emit(4u, ZR_EXEC_IR_OPCODE_DROP, 0u, fixture.owner, 0u);
     effects(fixture.drop, 3u, ZR_TRUE);
     terminal(4u, ZR_EXEC_IR_OPCODE_RETURN, answer);
+    if (moveOnTrue) {
+        SZrExecIrPhiIncoming effectIncoming[2] = {{2u, 2u}, {3u, 0u}};
+        SZrExecIrPhiIncoming memoryIncoming[2] = {
+                {2u, ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_OWNERSHIP, 2u)},
+                {3u, 0u}};
+        TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionSetEffectPhi(
+                &function, 4u, 3u, effectIncoming, 2u));
+        TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionSetMemoryPhi(
+                &function, 4u, ZR_EXEC_IR_MEMORY_OWNERSHIP,
+                ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_OWNERSHIP, 3u),
+                memoryIncoming, 2u));
+    }
     elaborate();
     TEST_ASSERT_EQUAL(ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED,
                       function.instructions[fixture.drop - 1u].opcode);
@@ -427,14 +485,40 @@ static void test_loop_reinitializes_owner_across_repeated_cleanup_resume(void) {
     edges(1u, 2u, 0u);
     edges(2u, 2u, 3u);
     terminal(1u, ZR_EXEC_IR_OPCODE_BRANCH, 0u);
-    effects(emit(2u, ZR_EXEC_IR_OPCODE_CALL,
-            ZR_EXEC_IR_FLAG_MAY_THROW | ZR_EXEC_IR_FLAG_MAY_ALLOCATE, 0u, owner), 1u, ZR_TRUE);
+    call_effects(emit(2u, ZR_EXEC_IR_OPCODE_CALL,
+            ZR_EXEC_IR_FLAG_MAY_THROW | ZR_EXEC_IR_FLAG_MAY_ALLOCATE, 0u, owner), 1u, 1u);
     drop = emit(2u, ZR_EXEC_IR_OPCODE_DROP, 0u, owner, 0u);
-    effects(drop, 2u, ZR_TRUE);
-    effects(emit(2u, ZR_EXEC_IR_OPCODE_CALL,
-            ZR_EXEC_IR_FLAG_MAY_THROW | ZR_EXEC_IR_FLAG_MAY_ALLOCATE, 0u, again), 3u, ZR_TRUE);
+    ownership_effects(drop, 2u, 1u);
+    call_effects(emit(2u, ZR_EXEC_IR_OPCODE_CALL,
+            ZR_EXEC_IR_FLAG_MAY_THROW | ZR_EXEC_IR_FLAG_MAY_ALLOCATE, 0u, again), 3u, 2u);
     terminal(2u, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH, again);
     terminal(3u, ZR_EXEC_IR_OPCODE_RETURN, answer);
+    {
+        SZrExecIrPhiIncoming effectIncoming[2] = {{1u, 0u}, {2u, 4u}};
+        SZrExecIrPhiIncoming memoryIncoming[2] = {
+                {1u, 0u},
+                {2u, ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_OWNERSHIP, 2u)}};
+        SZrExecIrPhiIncoming heapIncoming[2] = {
+                {1u, 0u},
+                {2u, ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 3u)}};
+        SZrExecIrPhiIncoming ffiIncoming[2] = {
+                {1u, 0u},
+                {2u, ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_NATIVE_FFI, 3u)}};
+        TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionSetEffectPhi(
+                &function, 2u, 1u, effectIncoming, 2u));
+        TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionSetMemoryPhi(
+                &function, 2u, ZR_EXEC_IR_MEMORY_OWNERSHIP,
+                ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_OWNERSHIP, 1u),
+                memoryIncoming, 2u));
+        TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionSetMemoryPhi(
+                &function, 2u, ZR_EXEC_IR_MEMORY_MANAGED_HEAP,
+                ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 1u),
+                heapIncoming, 2u));
+        TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionSetMemoryPhi(
+                &function, 2u, ZR_EXEC_IR_MEMORY_NATIVE_FFI,
+                ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_NATIVE_FFI, 1u),
+                ffiIncoming, 2u));
+    }
     elaborate();
     assert_only_root(drop, ZR_EXEC_IR_STATE_CLEANUP_COMPLETE, 0u);
     input.function = &function;

@@ -251,6 +251,14 @@ suite described below; physical frame reconstruction remains a later stage.
 
 ## Conditional cleanup
 
+The focused state-map fixtures carry the same CFG and token metadata required
+of a producer: terminator IDs and successor ranges come from the opcode schema,
+distinct branch effect chains have an explicit effect phi, and loops carry
+each touched memory region separately. CALL uses managed-heap and native-FFI
+tokens; DROP uses ownership tokens. Memory versions are independent of effect
+versions. The shared fixture prints structured verifier fields on rejection,
+so an invalid fixture can be distinguished from ownership/resume failures.
+
 `ZrParser_ExecIr_ElaborateCleanupDrops` explicitly lowers DROP obligations in
 cleanup blocks to `DROP_IF_INITIALIZED`. The guarded operation accepts unique
 or shared owners and checks initialization before reading the payload. It

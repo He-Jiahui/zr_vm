@@ -131,6 +131,7 @@ static void test_loop_carried_move_rejects_live_checkpoint_and_preserves_map(voi
 
 static void test_loop_definition_reinitializes_previously_dropped_owner(void) {
     TZrExecIrValueId owner = value(ZR_EXEC_IR_OWNERSHIP_UNIQUE, ZR_FALSE);
+    SZrExecIrPhiIncoming effects[2] = {{1u, 0u}, {2u, 2u}};
     blocks(2u);
     edges(1u, 2u, 0u);
     edges(2u, 2u, 0u);
@@ -139,6 +140,8 @@ static void test_loop_definition_reinitializes_previously_dropped_owner(void) {
     emit(2u, ZR_EXEC_IR_OPCODE_NOP, ZR_EXEC_IR_FLAG_MAY_GC, 0u, 0u);
     make_drop(emit(2u, ZR_EXEC_IR_OPCODE_NOP, 0u, 0u, 0u), owner);
     emit(2u, ZR_EXEC_IR_OPCODE_BRANCH, 0u, 0u, 0u);
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionSetEffectPhi(
+            &function, 2u, 1u, effects, 2u));
     build();
     assert_initialized(3u, owner);
     assert_only_root(4u, ZR_EXEC_IR_STATE_AFTER_EFFECT, 0u);

@@ -155,6 +155,28 @@ dynamic executions, with 257 iterations covered. Partially prepared ownership
 analysis and resume storage are released on failure; real runtime root and
 graph lifetime checks run in the object suite.
 
+## Current Effect And Memory Fixture Validation
+
+The 2026-10-01 follow-up repairs graph metadata in the test fixtures after
+stricter CFG effect validation exposed three moved-branch failures and one
+loop failure. Production verification and cleanup execution are unchanged.
+
+The moved diamond now merges ownership-memory and effect tokens explicitly.
+The loop carries separate managed-heap, native-FFI and ownership memory phis;
+CALL appends both required region tokens in a single range, and DROP advances
+only the ownership region. Each memory chain has its own version sequence.
+Terminator IDs and successor ranges follow the opcode schema in the shared
+state-map fixture.
+
+MSVC 19.44 passed all 24 cleanup cases, including 257 repeated cleanup
+checkpoints, and the four shared-fixture suites passed 4/4 (9.17 seconds).
+Current logs are
+`D:/tmp/zr_vm/ssa-control/cleanup-region-phi-final-{build,direct,ctest}.log`.
+Earlier GCC/Clang selections each passed 18/19 suites with the same four
+obsolete cleanup-fixture failures; their original full logs are preserved as
+`D:/tmp/zr_vm/ssa-control/{gcc,clang}-current-scalar-before-phi-{ctest,last-test}.log`.
+The final cross-compiler fixture rerun is still pending at this update.
+
 ## Reference evidence and scope
 
 Rust's `elaborate_drop.rs:1407` emits a branch on an explicit drop flag;

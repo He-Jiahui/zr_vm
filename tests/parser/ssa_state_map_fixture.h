@@ -3,6 +3,7 @@
 
 #include "unity.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 
 #include "zr_vm_core/exec_ir.h"
@@ -77,10 +78,15 @@ static TZrExecIrInstructionId emit(TZrExecIrBlockId blockId, EZrExecIrOpcode opc
                                    TZrUInt16 flags, TZrExecIrValueId operand,
                                    TZrExecIrValueId result) {
     SZrExecIrInstruction instruction = {0};
+    const SZrExecIrOpcodeInfo *info = ZrCore_ExecIr_OpcodeInfo(opcode);
     TZrExecIrInstructionId id;
     instruction.opcode = opcode;
     instruction.flags = flags;
     instruction.sourceId = 100u + function.instructionCount + 1u;
+    if (blockId != 0u && info != ZR_NULL &&
+        (info->flags & ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR) != 0u) {
+        instruction.successorRange = function.blocks[blockId - 1u].successorRange;
+    }
     if (operand != 0u) {
         TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendOperands(
                 &function, &operand, 1u, &instruction.operandRange));
@@ -97,6 +103,10 @@ static TZrExecIrInstructionId emit(TZrExecIrBlockId blockId, EZrExecIrOpcode opc
             block->instructionRange.start = id - 1u;
         }
         ++block->instructionRange.count;
+        if (info != ZR_NULL &&
+            (info->flags & ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR) != 0u) {
+            block->terminatorInstructionId = id;
+        }
     }
     return id;
 }
@@ -146,9 +156,17 @@ static void assert_only_root(TZrExecIrInstructionId instruction,
 }
 
 static void build(void) {
+    TZrBool verified;
+    char failure[192];
     predecessors();
-    TEST_ASSERT_TRUE(ZrCore_ExecIr_VerifyFunction(
-            &function, ZR_EXEC_IR_VERIFY_ALL, &diagnostic));
+    verified = ZrCore_ExecIr_VerifyFunction(
+            &function, ZR_EXEC_IR_VERIFY_ALL, &diagnostic);
+    (void)snprintf(failure, sizeof(failure),
+            "fixture verify code=%u block=%u instruction=%u expected=%u actual=%u",
+            (unsigned)diagnostic.code, (unsigned)diagnostic.blockId,
+            (unsigned)diagnostic.instructionId,
+            (unsigned)diagnostic.expectedVersion, (unsigned)diagnostic.actualVersion);
+    TEST_ASSERT_TRUE_MESSAGE(verified, failure);
     TEST_ASSERT_TRUE(ZrParser_ExecIr_BuildStateMaps(&function, &diagnostic));
 }
 

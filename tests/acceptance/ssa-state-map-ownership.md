@@ -107,6 +107,20 @@ UBSAN_OPTIONS=halt_on_error=1
 ^ssa_(state_map_ownership|state_map_liveness|state_maps|deopt_validation)$
 ```
 
+## Current CFG Fixture Validation
+
+The 2026-10-01 follow-up updates the shared fixture to publish terminator
+instruction IDs and successor ranges from the opcode schema. Loop definitions
+now carry an explicit effect phi with the entry and self-edge tokens. Verifier
+failures retain their diagnostic code, block, instruction and token versions.
+
+MSVC 19.44 passed `ssa_state_map_ownership`, `ssa_state_map_liveness`,
+`ssa_oracle_resume` and `ssa_conditional_cleanup` (4/4 suites, 9.17 seconds).
+The ownership suite passed all 15 cases. Build/test output is preserved under
+`D:/tmp/zr_vm/ssa-control/cleanup-region-phi-final-{build,ctest}.log`.
+GCC/Clang passed ownership in the earlier 19-suite selections; the final
+conditional-cleanup fixture rerun is recorded separately when it completes.
+
 ## Acceptance decision
 
 Accepted for shared CFG checkpoint ownership. Full 01.04 remains incomplete: aggregate/inline frame
