@@ -94,7 +94,6 @@ TZrBool ZrParser_ExecIr_BuildFrameRootMap(const SZrExecIrPackedFrameLayout *layo
     TZrUInt32 i;
     if (diagnostic != ZR_NULL) memset(diagnostic, 0, sizeof(*diagnostic));
     if (layout == ZR_NULL || map == ZR_NULL || (specCount != 0u && specs == ZR_NULL) ||
-        specCount > layout->frame.logicalSlotCount ||
         layout->frame.slotCount > layout->frame.slotCapacity ||
         layout->frame.storageSlotCount > layout->frame.slotCount ||
         (layout->frame.slotCount != 0u && layout->frame.slots == ZR_NULL) ||
@@ -105,6 +104,7 @@ TZrBool ZrParser_ExecIr_BuildFrameRootMap(const SZrExecIrPackedFrameLayout *layo
         root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, 0u); return ZR_FALSE;
     }
     ZrParser_ExecIr_FrameRootMapInit(&candidate);
+    /* One logical inline value may contribute several distinct field roots. */
     if (specCount != 0u) {
         candidate.roots = (SZrExecIrFrameRoot *)calloc(specCount, sizeof(*candidate.roots));
         if (candidate.roots == ZR_NULL) { root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY, 0u); return ZR_FALSE; }

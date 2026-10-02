@@ -18,6 +18,7 @@ related_code:
   - tests/acceptance/ssa-stack-root-frame-relocation.md
   - tests/acceptance/aot-root-frame-protected-unwind.md
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_frame_roots.c
   - zr_vm_core/src/zr_vm_core/execution/execution_frame_roots.c
   - zr_vm_core/src/zr_vm_core/execution/execution_frame_observation.c
   - zr_vm_core/src/zr_vm_core/gc/gc.c
@@ -28,6 +29,8 @@ implementation_files:
 plan_sources:
   - docs/plans/ssa/04-frame-native/04-roots-observation.md
 tests:
+  - tests/parser/test_ssa_roots_observation.c
+  - tests/acceptance/2026-10-02-ssa-parser-inline-root-fields.md
   - tests/core/test_execution_add_stack_relocation.c
   - tests/core/test_execution_add_stack_relocation_aot_roots.inc
   - tests/core/test_ssa_roots_observation.c
@@ -55,10 +58,29 @@ address is formed or a callback is invoked.
 Construction also validates slot count/capacity relationships and required
 physical and logical tables before allocating a candidate map; failure leaves
 the caller's existing map intact.
+Root specifications count reference locations, independently of the number of
+logical packed values. One INLINE_SPAN value can therefore contribute several
+inline-field roots at different offsets, including a pointer ending exactly at
+the containing span boundary. Each specification still resolves its value and
+physical slot, checks the root kind and storage class, and bounds the field.
+The duplicate key remains `(valueId, kind, fieldByteOffset)`; repeating that key
+is rejected. Allocation failure and later validation failures preserve the
+existing map through candidate construction.
 Managed and derived roots are accepted only for packed REF/BOXED values, while
 inline-field roots require INLINE_SPAN/BOXED storage. Scalar bit patterns are
 therefore never promoted to roots solely because they resemble an address.
 The base of a derived root must independently be REF/BOXED storage.
+
+The parser regression uses `LayoutPackedFrame` to construct one real
+INLINE_SPAN with three pointer fields. It checks their distinct callback
+addresses and values, the final field boundary, skipping an uninitialized
+field, and unchanged map storage after duplicate, out-of-span, unknown-value
+and unknown-kind failures. The existing managed/derived, relocation and
+observation cases remain in the same test, with always-active checks under
+`NDEBUG`. See the
+[parser inline-field acceptance](../../tests/acceptance/2026-10-02-ssa-parser-inline-root-fields.md).
+This adapter test does not establish source-language GC or safepoint/codegen
+integration.
 
 `ZrParser_ExecIr_ObserveFrame` provides a bounded materialization/writeback
 boundary for debugger and deoptimization consumers. It validates the descriptor

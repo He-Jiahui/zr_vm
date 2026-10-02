@@ -1,11 +1,116 @@
 #include "zr_vm_parser/exec_ir_frame_roots.h"
-#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#define CHECK(condition) do { \
+    if (!(condition)) { \
+        fprintf(stderr, "%s:%d: CHECK failed: %s\n", __FILE__, __LINE__, #condition); \
+        exit(EXIT_FAILURE); \
+    } \
+} while (0)
+
+typedef struct SInlineFieldsVisit {
+    TZrByte *frame;
+    TZrUInt32 count;
+    TZrUInt32 offsets[3];
+    TZrPtr values[3];
+} SInlineFieldsVisit;
+
+static TZrBool visit_inline_fields(SZrExecIrFrameRoot *root, TZrPtr slot,
+                                   TZrPtr base, TZrPtr data) {
+    SInlineFieldsVisit *state = (SInlineFieldsVisit *)data;
+    TZrPtr value;
+    CHECK(state->count < 3u);
+    CHECK(root->valueId == 40u && root->kind == ZR_EXEC_IR_FRAME_ROOT_INLINE_FIELD);
+    CHECK(base == ZR_NULL);
+    CHECK(slot == (TZrPtr)(state->frame + state->offsets[state->count]));
+    memcpy(&value, slot, sizeof(value));
+    CHECK(value == state->values[state->count]);
+    ++state->count;
+    return ZR_TRUE;
+}
+
+static void test_multiple_inline_fields(void) {
+    TZrUInt32 width = (TZrUInt32)sizeof(TZrPtr);
+    SZrExecIrPackedValue value =
+            {40u, 1u, ZR_EXEC_IR_PACKED_SLOT_INLINE_SPAN,
+             3u * (TZrUInt32)sizeof(TZrPtr), (TZrUInt32)sizeof(TZrPtr), 0u, 1u, 0u};
+    SZrExecIrPackedFrameRequest request = {1u, &value, 1u, 0u, 0u, 0u, 0u};
+    SZrExecIrPackedFrameLayout layout;
+    SZrExecIrFrameRootMap map;
+    SZrExecIrDiagnostic d;
+    SZrExecIrFrameRootSpec specs[3] = {
+        {40u, ZR_EXEC_IR_FRAME_ROOT_INLINE_FIELD, 0u, 0u, 0, ZR_TRUE},
+        {40u, ZR_EXEC_IR_FRAME_ROOT_INLINE_FIELD, (TZrUInt32)sizeof(TZrPtr), 0u, 0, ZR_TRUE},
+        {40u, ZR_EXEC_IR_FRAME_ROOT_INLINE_FIELD, 2u * (TZrUInt32)sizeof(TZrPtr), 0u, 0, ZR_TRUE}
+    };
+    TZrByte frame[3u * sizeof(TZrPtr)] = {0};
+    TZrByte objects[3] = {0};
+    SInlineFieldsVisit state = {frame, 0u, {0u, 0u, 0u}, {ZR_NULL, ZR_NULL, ZR_NULL}};
+    SZrExecIrFrameRoot *savedRoots;
+    SZrExecIrFrameRoot saved[3];
+    TZrBool built;
+    ZrParser_ExecIr_PackedFrameLayoutInit(&layout);
+    ZrParser_ExecIr_FrameRootMapInit(&map);
+    CHECK(ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &d));
+    CHECK(layout.frame.logicalSlotCount == 1u && layout.frame.slotCount == 1u);
+    CHECK(layout.frame.frameByteSize == sizeof(frame));
+    built = ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 3u, &map, &d);
+    if (!built) {
+        fprintf(stderr, "multi-inline build diagnostic=%u (INVALID_RANGE=%u)\n",
+                (unsigned)d.code, (unsigned)ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);
+    }
+    CHECK(built);
+    CHECK(map.rootCount == 3u && map.rootCapacity == 3u);
+    for (TZrUInt32 i = 0u; i < 3u; ++i) {
+        CHECK(map.roots[i].physicalSlot == layout.logicalToPhysical[0]);
+        state.offsets[i] = map.roots[i].frameByteOffset + i * width;
+        state.values[i] = &objects[i];
+        memcpy(frame + state.offsets[i], &state.values[i], sizeof(TZrPtr));
+    }
+    CHECK(state.offsets[2] + width == sizeof(frame));
+    CHECK(ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit_inline_fields, &state, &d));
+    CHECK(state.count == 3u);
+    map.roots[1].initialized = ZR_FALSE;
+    state.count = 0u;
+    state.offsets[1] = state.offsets[2];
+    state.values[1] = state.values[2];
+    CHECK(ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit_inline_fields, &state, &d));
+    CHECK(state.count == 2u);
+    map.roots[1].initialized = ZR_TRUE;
+    savedRoots = map.roots;
+    memcpy(saved, map.roots, sizeof(saved));
+    for (TZrUInt32 failure = 0u; failure < 4u; ++failure) {
+        SZrExecIrFrameRootSpec invalid[3];
+        EZrExecutionDiagnosticCode expected;
+        memcpy(invalid, specs, sizeof(invalid));
+        if (failure == 0u) {
+            invalid[2] = invalid[0];
+            expected = ZR_EXEC_IR_DIAGNOSTIC_DUPLICATE_DEFINITION;
+        } else if (failure == 1u) {
+            invalid[2].fieldByteOffset = 3u * width;
+            expected = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
+        } else if (failure == 2u) {
+            invalid[2].valueId = 99u;
+            expected = ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE;
+        } else {
+            invalid[2].kind = (EZrExecIrFrameRootKind)99;
+            expected = ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE;
+        }
+        CHECK(!ZrParser_ExecIr_BuildFrameRootMap(&layout, invalid, 3u, &map, &d));
+        CHECK(d.code == expected);
+        CHECK(map.roots == savedRoots && map.rootCount == 3u && map.rootCapacity == 3u);
+        CHECK(memcmp(map.roots, saved, sizeof(saved)) == 0);
+    }
+    ZrParser_ExecIr_FrameRootMapFree(&map);
+    ZrParser_ExecIr_PackedFrameLayoutFree(&layout);
+}
 
 static TZrBool visit(SZrExecIrFrameRoot *root, TZrPtr slot, TZrPtr base, TZrPtr data) {
     TZrUInt32 *count = (TZrUInt32 *)data;
-    assert(root != ZR_NULL); if (root->initialized) assert(slot != ZR_NULL);
-    if (root->kind == ZR_EXEC_IR_FRAME_ROOT_DERIVED) assert(base != ZR_NULL);
+    CHECK(root != ZR_NULL); if (root->initialized) CHECK(slot != ZR_NULL);
+    if (root->kind == ZR_EXEC_IR_FRAME_ROOT_DERIVED) CHECK(base != ZR_NULL);
     ++*count; return ZR_TRUE;
 }
 
@@ -31,12 +136,13 @@ static TZrBool visit_relocate(SZrExecIrFrameRoot *root, TZrPtr slot,
     } else if (root->kind == ZR_EXEC_IR_FRAME_ROOT_DERIVED) {
         TZrPtr observedBase = ZR_NULL;
         memcpy(&observedBase, base, sizeof(observedBase));
-        assert(observedBase == newBase);
+        CHECK(observedBase == newBase);
     }
     return ZR_TRUE;
 }
 
 int main(void) {
+    test_multiple_inline_fields();
     SZrExecIrPackedValue values[3] = {
         {1u, 1u, ZR_EXEC_IR_PACKED_SLOT_REF, 8u, 8u, 0u, 3u, 0u},
         {2u, 2u, ZR_EXEC_IR_PACKED_SLOT_REF, 8u, 8u, 0u, 3u, 0u},
@@ -48,20 +154,20 @@ int main(void) {
                                        {2u, ZR_EXEC_IR_FRAME_ROOT_DERIVED, 0u, 1u, 4, ZR_TRUE}};
     TZrByte frame[32] = {0}; TZrUInt32 count = 0u; SZrExecIrDiagnostic d;
     ZrParser_ExecIr_PackedFrameLayoutInit(&layout); ZrParser_ExecIr_FrameRootMapInit(&map);
-    assert(ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &d));
-    assert(ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 2u, &map, &d));
-    assert(ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit, &count, &d) && count == 2u);
+    CHECK(ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &d));
+    CHECK(ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 2u, &map, &d));
+    CHECK(ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit, &count, &d) && count == 2u);
     {
         SZrExecIrFrameRoot first = map.roots[0];
         SVisitOrder order = {{ZR_EXEC_IR_FRAME_ROOT_MANAGED,
                               ZR_EXEC_IR_FRAME_ROOT_MANAGED}, 0u};
         map.roots[0] = map.roots[1];
         map.roots[1] = first;
-        assert(ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit_order,
+        CHECK(ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit_order,
                                               &order, &d));
-        assert(order.count == 2u);
-        assert(order.kinds[0] == ZR_EXEC_IR_FRAME_ROOT_MANAGED);
-        assert(order.kinds[1] == ZR_EXEC_IR_FRAME_ROOT_DERIVED);
+        CHECK(order.count == 2u);
+        CHECK(order.kinds[0] == ZR_EXEC_IR_FRAME_ROOT_MANAGED);
+        CHECK(order.kinds[1] == ZR_EXEC_IR_FRAME_ROOT_DERIVED);
         first = map.roots[0];
         map.roots[0] = map.roots[1];
         map.roots[1] = first;
@@ -70,30 +176,30 @@ int main(void) {
         TZrPtr newBase = (TZrPtr)(uintptr_t)0x1000u;
         TZrPtr derived = ZR_NULL;
         TZrPtr expected = (TZrPtr)(uintptr_t)0x1004u;
-        assert(ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit_relocate,
+        CHECK(ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit_relocate,
                                               newBase, &d));
         memcpy(&derived,
                frame + layout.frame.slots[layout.logicalToPhysical[1]].byteOffset,
                sizeof(derived));
-        assert(derived == expected);
+        CHECK(derived == expected);
     }
     count = 0u;
     map.roots[0].initialized = ZR_FALSE;
-    assert(ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit, &count, &d));
-    assert(count == 1u);
+    CHECK(ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit, &count, &d));
+    CHECK(count == 1u);
     map.roots[0].initialized = ZR_TRUE;
     layout.frame.slotCapacity = layout.frame.slotCount - 1u;
-    assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 1u, &map, &d));
-    assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE && map.rootCount == 2u);
+    CHECK(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 1u, &map, &d));
+    CHECK(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE && map.rootCount == 2u);
     layout.frame.slotCapacity = layout.frame.slotCount;
     count = 0u;
     map.rootCapacity = map.rootCount - 1u;
-    assert(!ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit, &count, &d));
-    assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE && count == 0u);
+    CHECK(!ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit, &count, &d));
+    CHECK(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE && count == 0u);
     map.rootCapacity = map.rootCount;
     map.roots[0].kind = (EZrExecIrFrameRootKind)99;
-    assert(!ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit, &count, &d));
-    assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE && count == 0u);
+    CHECK(!ZrParser_ExecIr_VisitFrameRoots(&map, frame, visit, &count, &d));
+    CHECK(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE && count == 0u);
     map.roots[0].kind = ZR_EXEC_IR_FRAME_ROOT_MANAGED;
     {
         TZrUInt64 writeback[3] = {11u, 22u, 33u};
@@ -102,26 +208,26 @@ int main(void) {
             &layout, frame, ZR_NULL, 0u, writeback, 3u,
             invalidated, 3u, 77u
         };
-        assert(layout.frame.storageSlotCount == 3u);
+        CHECK(layout.frame.storageSlotCount == 3u);
         layout.frame.slotCapacity = layout.frame.slotCount - 1u;
-        assert(!ZrParser_ExecIr_ObserveFrame(&observation, &d));
-        assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);
-        assert(writeback[0] == 11u && writeback[1] == 22u && writeback[2] == 33u);
-        assert(invalidated[0] == UINT32_MAX && invalidated[1] == UINT32_MAX &&
+        CHECK(!ZrParser_ExecIr_ObserveFrame(&observation, &d));
+        CHECK(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);
+        CHECK(writeback[0] == 11u && writeback[1] == 22u && writeback[2] == 33u);
+        CHECK(invalidated[0] == UINT32_MAX && invalidated[1] == UINT32_MAX &&
                invalidated[2] == UINT32_MAX);
-        assert(observation.invalidatedCount == 77u);
+        CHECK(observation.invalidatedCount == 77u);
         layout.frame.slotCapacity = layout.frame.slotCount;
         observation.invalidatedCapacity = 2u;
-        assert(!ZrParser_ExecIr_ObserveFrame(&observation, &d));
-        assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);
-        assert(writeback[0] == 11u && writeback[1] == 22u && writeback[2] == 33u);
-        assert(invalidated[0] == UINT32_MAX && observation.invalidatedCount == 77u);
+        CHECK(!ZrParser_ExecIr_ObserveFrame(&observation, &d));
+        CHECK(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);
+        CHECK(writeback[0] == 11u && writeback[1] == 22u && writeback[2] == 33u);
+        CHECK(invalidated[0] == UINT32_MAX && observation.invalidatedCount == 77u);
         observation.invalidatedCapacity = 3u;
         layout.slotClasses[0] = (EZrExecIrPackedSlotClass)99;
-        assert(!ZrParser_ExecIr_ObserveFrame(&observation, &d));
-        assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
-        assert(writeback[0] == 11u && writeback[1] == 22u && writeback[2] == 33u);
-        assert(invalidated[0] == UINT32_MAX && observation.invalidatedCount == 77u);
+        CHECK(!ZrParser_ExecIr_ObserveFrame(&observation, &d));
+        CHECK(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
+        CHECK(writeback[0] == 11u && writeback[1] == 22u && writeback[2] == 33u);
+        CHECK(invalidated[0] == UINT32_MAX && observation.invalidatedCount == 77u);
         layout.slotClasses[0] = ZR_EXEC_IR_PACKED_SLOT_REF;
     }
     {
@@ -140,38 +246,38 @@ int main(void) {
         };
         memcpy(frame + layout.frame.slots[layout.logicalToPhysical[0]].byteOffset,
                &rootValue, sizeof(rootValue));
-        assert(ZrParser_ExecIr_ObserveFrame(&observation, &d));
+        CHECK(ZrParser_ExecIr_ObserveFrame(&observation, &d));
         memcpy(&observedRoot,
                frame + layout.frame.slots[layout.logicalToPhysical[0]].byteOffset,
                sizeof(observedRoot));
-        assert(observedRoot == rootValue && writeback[0] == rootValue);
-        assert(writeback[2] == scalarValues[2]);
+        CHECK(observedRoot == rootValue && writeback[0] == rootValue);
+        CHECK(writeback[2] == scalarValues[2]);
     }
     specs[1].baseValueId = 3u;
-    assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 2u, &map, &d));
-    assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
+    CHECK(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 2u, &map, &d));
+    CHECK(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
     specs[1].baseValueId = 99u;
-    assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 2u, &map, &d));
-    assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
+    CHECK(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 2u, &map, &d));
+    CHECK(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
     specs[1] = specs[0];
-    assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 2u, &map, &d));
-    assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_DUPLICATE_DEFINITION);
+    CHECK(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 2u, &map, &d));
+    CHECK(d.code == ZR_EXEC_IR_DIAGNOSTIC_DUPLICATE_DEFINITION);
     specs[0].kind = (EZrExecIrFrameRootKind)-1;
-    assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 1u, &map, &d));
-    assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
+    CHECK(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 1u, &map, &d));
+    CHECK(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
     specs[0].valueId = 3u;
     specs[0].kind = ZR_EXEC_IR_FRAME_ROOT_MANAGED;
-    assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 1u, &map, &d));
-    assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
+    CHECK(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 1u, &map, &d));
+    CHECK(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
     specs[0].valueId = 1u;
     specs[0].kind = ZR_EXEC_IR_FRAME_ROOT_INLINE_FIELD;
     specs[0].fieldByteOffset = 0u;
-    assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 1u, &map, &d));
-    assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
+    CHECK(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 1u, &map, &d));
+    CHECK(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
     layout.slotClasses[0] = ZR_EXEC_IR_PACKED_SLOT_INLINE_SPAN;
     specs[0].fieldByteOffset = 8u;
-    assert(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 1u, &map, &d));
-    assert(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);
+    CHECK(!ZrParser_ExecIr_BuildFrameRootMap(&layout, specs, 1u, &map, &d));
+    CHECK(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);
     layout.slotClasses[0] = ZR_EXEC_IR_PACKED_SLOT_REF;
     specs[0].kind = ZR_EXEC_IR_FRAME_ROOT_MANAGED;
     specs[0].fieldByteOffset = 0u;
@@ -184,11 +290,11 @@ int main(void) {
                 {20u, ZR_EXEC_IR_FRAME_ROOT_MANAGED, 0u, 0u, 0, ZR_TRUE};
         request.values = reusedValues;
         request.valueCount = 2u;
-        assert(ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &d));
-        assert(layout.logicalToPhysical[0] == layout.logicalToPhysical[1]);
-        assert(ZrParser_ExecIr_BuildFrameRootMap(&layout, &reusedSpec, 1u,
+        CHECK(ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &d));
+        CHECK(layout.logicalToPhysical[0] == layout.logicalToPhysical[1]);
+        CHECK(ZrParser_ExecIr_BuildFrameRootMap(&layout, &reusedSpec, 1u,
                                                 &map, &d));
-        assert(map.roots[0].physicalSlot == layout.logicalToPhysical[1]);
+        CHECK(map.roots[0].physicalSlot == layout.logicalToPhysical[1]);
         {
             TZrUInt64 writeback[2] = {0u, 0u};
             TZrUInt32 invalidated[2] = {UINT32_MAX, UINT32_MAX};
@@ -196,10 +302,10 @@ int main(void) {
                 &layout, frame, ZR_NULL, 0u, writeback, 2u,
                 invalidated, 2u, 0u
             };
-            assert(ZrParser_ExecIr_ObserveFrame(&observation, &d));
-            assert(observation.invalidatedCount == 1u);
-            assert(invalidated[0] == layout.logicalToPhysical[0]);
-            assert(invalidated[1] == UINT32_MAX);
+            CHECK(ZrParser_ExecIr_ObserveFrame(&observation, &d));
+            CHECK(observation.invalidatedCount == 1u);
+            CHECK(invalidated[0] == layout.logicalToPhysical[0]);
+            CHECK(invalidated[1] == UINT32_MAX);
         }
     }
     ZrParser_ExecIr_FrameRootMapFree(&map); ZrParser_ExecIr_PackedFrameLayoutFree(&layout); return 0;
