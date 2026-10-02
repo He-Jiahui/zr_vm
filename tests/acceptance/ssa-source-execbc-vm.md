@@ -117,7 +117,7 @@ verification status are recorded in
 [`2026-10-02-ssa-source-branch-multiply.md`](2026-10-02-ssa-source-branch-multiply.md).
 Its acceptance decision supersedes historical passing results for the new MUL scope.
 The earlier attached StateMap Builder failure has a separate fix (`df3d1213`).
-On 2026-10-03, the current-source MSVC build in
+On 2026-10-02 UTC (2026-10-03 in Asia/Shanghai), the current-source MSVC build in
 `D:/tmp/zr_vm/ssa-20261002-01a0fc3b/matrix/msvc` exited 0. The focused CTest
 selection passed all three suites with exit 0: `ssa_source_execbc_vm` (0.43 s),
 `ssa_source_straight_line_cfg` (0.73 s), and

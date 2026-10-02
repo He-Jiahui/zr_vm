@@ -97,7 +97,7 @@ this preflight change does not create an overflow proof or relax those checks.
 
 ## Current MSVC GREEN
 
-On 2026-10-03, Root rebuilt the frozen current production and fixture files
+On 2026-10-02 UTC (2026-10-03 in Asia/Shanghai), Root rebuilt the frozen current production and fixture files
 in `D:/tmp/zr_vm/ssa-20261002-01a0fc3b/matrix/msvc`; build exit code was 0.
 The formal CTest command was:
 
