@@ -1,4 +1,5 @@
 #include "../exec_ir_pass_internal.h"
+#include "zr_vm_common/zr_type_conf.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -9,6 +10,8 @@ typedef struct SZrSccpLattice {
     EZrExecIrSccpLatticeKind kind;
     TZrUInt64 bits;
     TZrExecIrTypeToken typeToken;
+    /* Type annotations can differ from the runner's actual value kind. */
+    TZrBool signedRepresentation;
 } SZrSccpLattice;
 
 static TZrBool zr_sccp_size_mul_overflow(TZrUInt64 count, size_t elementSize) {
@@ -183,6 +186,7 @@ static SZrSccpLattice zr_sccp_unknown(void) {
     value.kind = ZR_EXEC_IR_SCCP_UNKNOWN;
     value.bits = 0u;
     value.typeToken = 0u;
+    value.signedRepresentation = ZR_FALSE;
     return value;
 }
 
@@ -191,6 +195,7 @@ static SZrSccpLattice zr_sccp_overdefined(TZrExecIrTypeToken typeToken) {
     value.kind = ZR_EXEC_IR_SCCP_OVERDEFINED;
     value.bits = 0u;
     value.typeToken = typeToken;
+    value.signedRepresentation = ZR_FALSE;
     return value;
 }
 
@@ -199,22 +204,26 @@ static SZrSccpLattice zr_sccp_must_throw(TZrExecIrTypeToken typeToken) {
     value.kind = ZR_EXEC_IR_SCCP_MUST_THROW;
     value.bits = 0u;
     value.typeToken = typeToken;
+    value.signedRepresentation = ZR_FALSE;
     return value;
 }
 
 static SZrSccpLattice zr_sccp_constant(TZrUInt64 bits,
-                                       TZrExecIrTypeToken typeToken) {
+                                       TZrExecIrTypeToken typeToken,
+                                       TZrBool signedRepresentation) {
     SZrSccpLattice value;
     value.kind = ZR_EXEC_IR_SCCP_CONSTANT;
     value.bits = bits;
     value.typeToken = typeToken;
+    value.signedRepresentation = signedRepresentation;
     return value;
 }
 
 static TZrBool zr_sccp_equal(SZrSccpLattice left, SZrSccpLattice right) {
     return (TZrBool)(left.kind == right.kind &&
                      (left.kind != ZR_EXEC_IR_SCCP_CONSTANT ||
-                      (left.bits == right.bits && left.typeToken == right.typeToken)));
+                      (left.bits == right.bits && left.typeToken == right.typeToken &&
+                       left.signedRepresentation == right.signedRepresentation)));
 }
 
 static SZrSccpLattice zr_sccp_join(SZrSccpLattice left, SZrSccpLattice right) {
@@ -237,7 +246,11 @@ static SZrSccpLattice zr_sccp_join(SZrSccpLattice left, SZrSccpLattice right) {
     }
     if (left.kind == ZR_EXEC_IR_SCCP_UNKNOWN) return right;
     if (right.kind == ZR_EXEC_IR_SCCP_UNKNOWN) return left;
-    if (left.bits == right.bits && left.typeToken == right.typeToken) return left;
+    if (left.bits == right.bits && left.typeToken == right.typeToken) {
+        left.signedRepresentation = (TZrBool)(left.signedRepresentation &&
+                                             right.signedRepresentation);
+        return left;
+    }
     return zr_sccp_overdefined(left.typeToken != 0u ? left.typeToken : right.typeToken);
 }
 
@@ -306,28 +319,33 @@ static SZrSccpLattice zr_sccp_instruction_value(
                 instruction->layoutId < context->constantCount) {
                 const SZrExecIrConstant *constant = &context->constants[instruction->layoutId];
                 return zr_sccp_constant(constant->bits,
-                                        constant->typeToken != 0u ? constant->typeToken : typeToken);
+                                        constant->typeToken != 0u ? constant->typeToken : typeToken,
+                                        ZR_VALUE_IS_TYPE_SIGNED_INT(constant->typeToken));
             }
             return zr_sccp_constant((TZrUInt64)(TZrInt64)instruction->layoutId,
-                                    instruction->typeToken != 0u ? instruction->typeToken : typeToken);
+                                    instruction->typeToken != 0u ? instruction->typeToken : typeToken,
+                                    ZR_TRUE);
         case ZR_EXEC_IR_OPCODE_COPY:
         case ZR_EXEC_IR_OPCODE_MOVE:
             if (!zr_sccp_operand(function, lattice, instruction, 0u, &left))
                 return zr_sccp_overdefined(typeToken);
             if (left.kind == ZR_EXEC_IR_SCCP_CONSTANT)
-                return zr_sccp_constant(left.bits, typeToken != 0u ? typeToken : left.typeToken);
+                return zr_sccp_constant(left.bits, typeToken != 0u ? typeToken : left.typeToken,
+                                        left.signedRepresentation);
             return left.kind == ZR_EXEC_IR_SCCP_UNKNOWN ? left : zr_sccp_overdefined(typeToken);
         case ZR_EXEC_IR_OPCODE_CONVERT:
             if (!zr_sccp_operand(function, lattice, instruction, 0u, &left))
                 return zr_sccp_overdefined(typeToken);
             if (left.kind == ZR_EXEC_IR_SCCP_UNKNOWN) return left;
-            /* Matching tokens are a filter, not runtime representation proof.
-             * An explicit scalar target may differ from the result annotation;
-             * typed-immediate representation remains a separate concern. */
-            if (left.kind == ZR_EXEC_IR_SCCP_CONSTANT && typeToken != 0u &&
+            /* Only a canonical signed target with proven signed storage is
+             * a runtime identity. Immediate constants always have SIGNED
+             * storage, regardless of their annotation; pooled FLOAT bits and
+             * retagged COPY/PHI values do not establish this proof. */
+            if (left.kind == ZR_EXEC_IR_SCCP_CONSTANT &&
+                left.signedRepresentation && ZR_VALUE_IS_TYPE_SIGNED_INT(typeToken) &&
                 left.typeToken == typeToken &&
                 (instruction->typeToken == 0u || instruction->typeToken == typeToken))
-                return zr_sccp_constant(left.bits, typeToken);
+                return zr_sccp_constant(left.bits, typeToken, ZR_TRUE);
             return zr_sccp_overdefined(typeToken);
         case ZR_EXEC_IR_OPCODE_ADD:
         case ZR_EXEC_IR_OPCODE_ARITHMETIC:
@@ -368,7 +386,8 @@ static SZrSccpLattice zr_sccp_instruction_value(
                 default:
                     return zr_sccp_overdefined(typeToken);
             }
-            return zr_sccp_constant((TZrUInt64)output, typeToken);
+            return zr_sccp_constant((TZrUInt64)output, typeToken,
+                                    (TZrBool)(left.signedRepresentation && right.signedRepresentation));
         case ZR_EXEC_IR_OPCODE_NEG:
             if (!zr_sccp_operand(function, lattice, instruction, 0u, &left))
                 return zr_sccp_overdefined(typeToken);
@@ -377,7 +396,8 @@ static SZrSccpLattice zr_sccp_instruction_value(
             if (left.kind != ZR_EXEC_IR_SCCP_CONSTANT ||
                 !zr_sccp_signed(left.bits, &signedLeft) || signedLeft == INT64_MIN)
                 return zr_sccp_overdefined(typeToken);
-            return zr_sccp_constant((TZrUInt64)(-signedLeft), typeToken);
+            return zr_sccp_constant((TZrUInt64)(-signedLeft), typeToken,
+                                    left.signedRepresentation);
         case ZR_EXEC_IR_OPCODE_COMPARE: {
             int comparison;
             if (!zr_sccp_operand(function, lattice, instruction, 0u, &left) ||
@@ -400,7 +420,7 @@ static SZrSccpLattice zr_sccp_instruction_value(
                 case 5u: comparison = comparison != 0; break;
                 default: comparison = comparison == 0; break;
             }
-            return zr_sccp_constant((TZrUInt64)(comparison != 0), typeToken);
+            return zr_sccp_constant((TZrUInt64)(comparison != 0), typeToken, ZR_FALSE);
         }
         default:
             return instruction->results.count == 0u

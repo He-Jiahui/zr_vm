@@ -77,6 +77,8 @@ static void check_runners(const SZrExecIrFunction *function,
         CHECK(oracle.returnValue.as.floating == expected);
     else if (kind == ZR_EXEC_IR_ORACLE_VALUE_BOOL)
         CHECK(oracle.returnValue.as.boolean == (TZrBool)expected);
+    else if (kind == ZR_EXEC_IR_ORACLE_VALUE_UNSIGNED)
+        CHECK(oracle.returnValue.as.unsignedInteger == (TZrUInt64)expected);
     else
         CHECK(oracle.returnValue.as.signedInteger == (TZrInt64)expected);
     ZrCore_ExecIr_OracleResultFree(&oracle);
@@ -91,6 +93,8 @@ static void check_runners(const SZrExecIrFunction *function,
         CHECK(bcResult.returnValue.as.floating == expected);
     else if (kind == ZR_EXEC_IR_ORACLE_VALUE_BOOL)
         CHECK(bcResult.returnValue.as.boolean == (TZrBool)expected);
+    else if (kind == ZR_EXEC_IR_ORACLE_VALUE_UNSIGNED)
+        CHECK(bcResult.returnValue.as.unsignedInteger == (TZrUInt64)expected);
     else
         CHECK(bcResult.returnValue.as.signedInteger == (TZrInt64)expected);
     ZrParser_ExecBcExecutionResult_Free(&bcResult);
@@ -250,6 +254,172 @@ static void test_explicit_target_overrides_result_annotation(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void test_same_token_representation(TZrExecIrTypeToken token,
+                                          EZrExecIrOracleValueKind kind,
+                                          TZrFloat64 expected,
+                                          TZrBool implicitTarget,
+                                          TZrBool folds) {
+    SZrExecIrFunction function;
+    SZrExecIrAnalysisCache cache;
+    build_conversion(&function, token, token, 7u, implicitTarget);
+    ZrParser_ExecIr_AnalysisCacheInit(&cache);
+    check_runners(&function, NULL, kind, expected);
+    run_sccp(&function, NULL, &cache);
+    check_runners(&function, NULL, kind, expected);
+    CHECK(function.instructions[1].opcode ==
+          (folds ? ZR_EXEC_IR_OPCODE_CONSTANT : ZR_EXEC_IR_OPCODE_CONVERT));
+    if (!folds) {
+        CHECK(cache.sccpValueCount == 2u);
+        CHECK(cache.sccpValues[1].kind == ZR_EXEC_IR_SCCP_OVERDEFINED);
+    }
+    ZrParser_ExecIr_AnalysisCacheFree(&cache);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
+static void test_retagged_pool_representation(EZrExecIrOpcode opcode) {
+    SZrExecIrFunction function;
+    SZrExecIrAnalysisCache cache;
+    SZrExecIrPassContext context = {0};
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrConstant constant = {0};
+    SZrExecIrOracleValue value = {0};
+    TZrExecIrValueId converted;
+    TZrBool changed = ZR_FALSE;
+    build_conversion(&function, ZR_VALUE_TYPE_DOUBLE, ZR_VALUE_TYPE_INT64,
+                     0u, ZR_FALSE);
+    function.instructions[1].opcode = (TZrUInt16)opcode;
+    function.instructions[1].typeToken = ZR_VALUE_TYPE_INT64;
+    --function.instructionCount;
+    converted = ZrCore_ExecIr_FunctionAddValue(&function, ZR_VALUE_TYPE_INT64,
+            ZR_EXEC_IR_OWNERSHIP_UNKNOWN, ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    CHECK(converted == 3u);
+    append(&function, ZR_EXEC_IR_OPCODE_CONVERT, 2u, converted,
+           ZR_VALUE_TYPE_INT64, 0u);
+    append(&function, ZR_EXEC_IR_OPCODE_RETURN, converted, 0u, 0u, 0u);
+    value.kind = ZR_EXEC_IR_ORACLE_VALUE_FLOAT;
+    value.as.floating = -7.75;
+    constant.typeToken = ZR_VALUE_TYPE_DOUBLE;
+    memcpy(&constant.bits, &value.as.floating, sizeof(constant.bits));
+    ZrParser_ExecIr_AnalysisCacheInit(&cache);
+    context.cache = &cache;
+    context.constants = &constant;
+    context.constantCount = 1u;
+    check_runners(&function, &value, ZR_EXEC_IR_ORACLE_VALUE_SIGNED,
+                  opcode == ZR_EXEC_IR_OPCODE_NEG ? 7.0 : -7.0);
+    /* Analyze before alias rewriting: a COPY can retag FLOAT storage as INT64,
+     * and NEG preserves FLOAT storage even with a signed result annotation. */
+    CHECK(ZrParser_ExecIr_ComputeSccp(&function, &context, ZR_FALSE, &changed,
+                                   &diagnostic));
+    CHECK(!changed && cache.sccpValueCount == 3u);
+    CHECK(cache.sccpValues[2].kind == ZR_EXEC_IR_SCCP_OVERDEFINED);
+    run_sccp(&function, &constant, &cache);
+    CHECK(function.instructions[2].opcode == ZR_EXEC_IR_OPCODE_CONVERT);
+    check_runners(&function, &value, ZR_EXEC_IR_ORACLE_VALUE_SIGNED,
+                  opcode == ZR_EXEC_IR_OPCODE_NEG ? 7.0 : -7.0);
+    ZrParser_ExecIr_AnalysisCacheFree(&cache);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
+static void test_signed_copy_keeps_representation_proof(void) {
+    SZrExecIrFunction function;
+    SZrExecIrAnalysisCache cache;
+    TZrExecIrValueId copied;
+    build_conversion(&function, ZR_VALUE_TYPE_INT64, ZR_VALUE_TYPE_INT64,
+                     7u, ZR_FALSE);
+    function.instructions[1].opcode = ZR_EXEC_IR_OPCODE_COPY;
+    --function.instructionCount;
+    copied = ZrCore_ExecIr_FunctionAddValue(&function, ZR_VALUE_TYPE_INT64,
+            ZR_EXEC_IR_OWNERSHIP_UNKNOWN, ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    CHECK(copied == 3u);
+    append(&function, ZR_EXEC_IR_OPCODE_CONVERT, 2u, copied,
+           ZR_VALUE_TYPE_INT64, 0u);
+    append(&function, ZR_EXEC_IR_OPCODE_RETURN, copied, 0u, 0u, 0u);
+    ZrParser_ExecIr_AnalysisCacheInit(&cache);
+    check_runners(&function, NULL, ZR_EXEC_IR_ORACLE_VALUE_SIGNED, 7.0);
+    run_sccp(&function, NULL, &cache);
+    CHECK(function.instructions[2].opcode == ZR_EXEC_IR_OPCODE_CONSTANT);
+    check_runners(&function, NULL, ZR_EXEC_IR_ORACLE_VALUE_SIGNED, 7.0);
+    ZrParser_ExecIr_AnalysisCacheFree(&cache);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
+static void test_loop_phi_representation_merge(TZrBool signedBackedge) {
+    SZrExecIrFunction function;
+    SZrExecIrAnalysisCache cache;
+    SZrExecIrPassContext context = {0};
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrPhi phi = {0};
+    SZrExecIrPhiIncoming incoming[2] = {{1u, 1u}, {3u, 6u}};
+    TZrExecIrBlockId entryTarget = 2u, headerTargets[2] = {3u, 4u};
+    TZrExecIrBlockId headerPredecessors[2] = {1u, 3u}, header = 2u;
+    TZrExecIrValueId comparisonOperands[2] = {1u, 2u};
+    TZrBool changed = ZR_FALSE;
+    ZrCore_ExecIr_FunctionInit(&function);
+    function.id = 1u; function.functionToken = 7u; function.signatureHash = 99u;
+    for (unsigned i = 0u; i < 6u; ++i)
+        CHECK(ZrCore_ExecIr_FunctionAddValue(&function,
+                i == 2u ? ZR_VALUE_TYPE_BOOL : ZR_VALUE_TYPE_INT64,
+                ZR_EXEC_IR_OWNERSHIP_UNKNOWN, ZR_EXEC_IR_NULLABILITY_UNKNOWN) == i + 1u);
+    for (unsigned i = 0u; i < 4u; ++i)
+        CHECK(ZrCore_ExecIr_FunctionAddBlock(&function,
+                i == 0u ? ZR_EXEC_IR_BLOCK_FLAG_ENTRY : 0u) == i + 1u);
+    function.entryBlockId = 1u;
+    CHECK(ZrCore_ExecIr_FunctionAppendSuccessors(&function, &entryTarget, 1u,
+                                               &function.blocks[0].successors));
+    CHECK(ZrCore_ExecIr_FunctionAppendSuccessors(&function, headerTargets, 2u,
+                                               &function.blocks[1].successors));
+    CHECK(ZrCore_ExecIr_FunctionAppendSuccessors(&function, &header, 1u,
+                                               &function.blocks[2].successors));
+    CHECK(ZrCore_ExecIr_FunctionAppendPredecessors(&function, headerPredecessors, 2u,
+                                                 &function.blocks[1].predecessors));
+    for (unsigned i = 2u; i < 4u; ++i)
+        CHECK(ZrCore_ExecIr_FunctionAppendPredecessors(&function, &header, 1u,
+                                                     &function.blocks[i].predecessors));
+    append(&function, ZR_EXEC_IR_OPCODE_CONSTANT, 0u, 1u, ZR_VALUE_TYPE_INT64, 1u);
+    append(&function, ZR_EXEC_IR_OPCODE_CONSTANT, 0u, 2u, ZR_VALUE_TYPE_INT64, 0u);
+    /* Runtime false, but BOOL conversion is OVERDEFINED for SCCP, so both
+     * paths participate and the backedge fact arrives after the first PHI. */
+    append(&function, ZR_EXEC_IR_OPCODE_CONVERT, 2u, 3u, ZR_VALUE_TYPE_BOOL, 0u);
+    append(&function, ZR_EXEC_IR_OPCODE_BRANCH, 0u, 0u, 0u, 0u);
+    function.instructions[3].successorRange = function.blocks[0].successors;
+    append(&function, ZR_EXEC_IR_OPCODE_CONVERT, 4u, 5u, ZR_VALUE_TYPE_INT64, 0u);
+    append(&function, ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH, 3u, 0u, 0u, 0u);
+    function.instructions[5].successorRange = function.blocks[1].successors;
+    append(&function, signedBackedge ? ZR_EXEC_IR_OPCODE_COPY : ZR_EXEC_IR_OPCODE_COMPARE,
+           1u, 6u, signedBackedge ? ZR_VALUE_TYPE_INT64 : 5u, 0u);
+    if (!signedBackedge)
+        CHECK(ZrCore_ExecIr_FunctionAppendOperands(&function, comparisonOperands, 2u,
+                                                  &function.instructions[6].operands));
+    append(&function, ZR_EXEC_IR_OPCODE_BRANCH, 0u, 0u, 0u, 0u);
+    function.instructions[7].successorRange = function.blocks[2].successors;
+    append(&function, ZR_EXEC_IR_OPCODE_RETURN, 5u, 0u, 0u, 0u);
+    const unsigned starts[4] = {0u, 4u, 6u, 8u}, counts[4] = {4u, 2u, 2u, 1u};
+    for (unsigned i = 0u; i < 4u; ++i) {
+        function.blocks[i].instructions.start = starts[i];
+        function.blocks[i].instructions.count = counts[i];
+        function.blocks[i].terminatorInstructionId = starts[i] + counts[i];
+    }
+    phi.result = 4u;
+    CHECK(ZrCore_ExecIr_FunctionAppendPhiIncoming(&function, incoming, 2u, &phi.incomings));
+    CHECK(ZrCore_ExecIr_FunctionAppendPhis(&function, &phi, 1u, &function.blocks[1].phis));
+    ZrParser_ExecIr_AnalysisCacheInit(&cache);
+    context.cache = &cache;
+    check_runners(&function, NULL, ZR_EXEC_IR_ORACLE_VALUE_SIGNED, 1.0);
+    CHECK(ZrCore_ExecIr_VerifyFunction(&function, ZR_EXEC_IR_VERIFY_ALL, &diagnostic));
+    CHECK(ZrParser_ExecIr_ComputeSccp(&function, &context, ZR_FALSE, &changed, &diagnostic));
+    CHECK(!changed && cache.sccpValueCount == 6u);
+    CHECK(cache.sccpValues[3].kind == ZR_EXEC_IR_SCCP_CONSTANT);
+    CHECK(cache.sccpValues[3].bits == 1u);
+    CHECK(cache.sccpValues[4].kind == (signedBackedge ?
+          ZR_EXEC_IR_SCCP_CONSTANT : ZR_EXEC_IR_SCCP_OVERDEFINED));
+    run_sccp(&function, NULL, &cache);
+    CHECK(function.instructions[4].opcode == (signedBackedge ?
+          ZR_EXEC_IR_OPCODE_CONSTANT : ZR_EXEC_IR_OPCODE_CONVERT));
+    check_runners(&function, NULL, ZR_EXEC_IR_ORACLE_VALUE_SIGNED, 1.0);
+    ZrParser_ExecIr_AnalysisCacheFree(&cache);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 int main(void) {
     SZrExecIrOracleValue floating = {0}, signedValue = {0};
     floating.kind = ZR_EXEC_IR_ORACLE_VALUE_FLOAT;
@@ -266,7 +436,7 @@ int main(void) {
                          ZR_EXEC_IR_SCCP_OVERDEFINED);
     test_pool_conversion(ZR_VALUE_TYPE_DOUBLE, ZR_VALUE_TYPE_DOUBLE, floating,
                          ZR_EXEC_IR_ORACLE_VALUE_FLOAT, -7.75,
-                         ZR_EXEC_IR_SCCP_CONSTANT);
+                         ZR_EXEC_IR_SCCP_OVERDEFINED);
     test_pool_conversion(ZR_VALUE_TYPE_INT64, ZR_VALUE_TYPE_INT64, signedValue,
                          ZR_EXEC_IR_ORACLE_VALUE_SIGNED, 7.0,
                          ZR_EXEC_IR_SCCP_CONSTANT);
@@ -274,6 +444,26 @@ int main(void) {
     test_int_double_int_roundtrip_does_not_keep_original_bits();
     test_unknown_type_conversion_does_not_claim_constant();
     test_explicit_target_overrides_result_annotation();
-    puts("SCCP conversion preservation: 10 cases passed");
+    for (unsigned implicit = 0u; implicit < 2u; ++implicit) {
+        test_same_token_representation(ZR_VALUE_TYPE_DOUBLE,
+                ZR_EXEC_IR_ORACLE_VALUE_FLOAT, 7.0, (TZrBool)implicit, ZR_FALSE);
+        test_same_token_representation(ZR_VALUE_TYPE_FLOAT,
+                ZR_EXEC_IR_ORACLE_VALUE_FLOAT, 7.0, (TZrBool)implicit, ZR_FALSE);
+        test_same_token_representation(ZR_VALUE_TYPE_BOOL,
+                ZR_EXEC_IR_ORACLE_VALUE_BOOL, 1.0, (TZrBool)implicit, ZR_FALSE);
+        test_same_token_representation(ZR_VALUE_TYPE_UINT64,
+                ZR_EXEC_IR_ORACLE_VALUE_UNSIGNED, 7.0, (TZrBool)implicit, ZR_FALSE);
+        test_same_token_representation(0x9001u,
+                ZR_EXEC_IR_ORACLE_VALUE_SIGNED, 7.0, (TZrBool)implicit, ZR_FALSE);
+        for (unsigned token = ZR_VALUE_TYPE_INT8; token <= ZR_VALUE_TYPE_INT64; ++token)
+            test_same_token_representation(token, ZR_EXEC_IR_ORACLE_VALUE_SIGNED,
+                    7.0, (TZrBool)implicit, ZR_TRUE);
+    }
+    test_retagged_pool_representation(ZR_EXEC_IR_OPCODE_COPY);
+    test_retagged_pool_representation(ZR_EXEC_IR_OPCODE_NEG);
+    test_signed_copy_keeps_representation_proof();
+    test_loop_phi_representation_merge(ZR_TRUE);
+    test_loop_phi_representation_merge(ZR_FALSE);
+    puts("SCCP conversion preservation: 33 cases passed");
     return 0;
 }

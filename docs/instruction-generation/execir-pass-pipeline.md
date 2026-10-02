@@ -59,24 +59,37 @@ the pass context.  Because `layoutId` is a pool index in that mode, arithmetic
 rewrites are retained until a module-aware constant materializer can allocate
 an unambiguous pool entry; copy propagation is still allowed.
 
-`CONVERT` has its own lattice transfer with a token-level eligibility filter.
-It allows unchanged constant bits only when source and result have the same
-nonzero token and any explicit instruction target agrees with that result type.
-Tokens are compared as type identities; this filter does not prove runtime
-representation identity. SCCP does not interpret an arbitrary token as a scalar
-enum or reinterpret constant bits to simulate a conversion. Cross-type and
-unspecified-type constants become `overdefined`, while an `unknown` source
-remains `unknown`. Those conversions remain executable. This avoids claiming
-that integer bits are a floating value, that floating bits are an integer, or
-that a numeric value already has the canonical boolean representation.
-The focused tests validate INT64 immediate identity and INT64/DOUBLE pool
-identity with matching runner constant representations. No-pool typed
-immediates remain a separate correctness gap: the runner's immediate fallback
-creates a signed value even when its annotation is DOUBLE, BOOL, or UNSIGNED.
-Such a same-token conversion may still change representation or normalize the
-value, so the current filter is insufficient to prove it safe to fold. This
-slice establishes preservation of cross-type conversions and explicitly does
-not accept every same-token conversion as a runtime identity.
+`CONVERT` allows unchanged constant bits only when source and result have the
+same canonical signed integer token, any explicit instruction target agrees,
+and the private lattice proves that the runner value already has SIGNED
+representation. An immediate `CONST` establishes SIGNED storage regardless
+of its annotation. A pool constant establishes that proof only for a canonical
+signed integer type; its supplied runtime value must follow the typed pool
+contract. COPY/MOVE retain the proof, including across annotation changes.
+Equal-bit PHI joins retain it only when every executable input proves SIGNED;
+losing the proof is a lattice change that propagates to dependent conversions.
+Signed arithmetic and NEG retain it only when their operands establish it,
+while COMPARE produces BOOL and does not establish SIGNED storage. These are
+private provenance facts: other opcodes keep their existing numeric transfers
+and branch rules, and the public analysis-cache format stays unchanged.
+
+All other constant conversions become `overdefined`, while an `unknown`
+source remains `unknown`. DOUBLE/FLOAT, BOOL, unsigned, custom, unspecified,
+and cross-type conversions remain executable. In particular, a no-pool CONST
+annotated DOUBLE still stores SIGNED7, so DOUBLE-to-DOUBLE must run to produce
+FLOAT7. A DOUBLE pool identity preserves its FLOAT runtime value without
+claiming its encoded payload is a signed lattice identity. SCCP does not
+simulate floating conversions or allocate new typed pool entries.
+
+Pool mode still reads encoded payload bits into the existing scalar lattice.
+For example, a direct DOUBLE negative-zero branch has nonzero encoded bits
+but false runtime truth: SCCP can mark the false arm nonexecutable even though
+both runners execute it. The current branch instruction remains unchanged,
+so this diagnostic demonstrates incorrect analysis facts rather than a changed
+runtime return. The CONVERT guard stops that fact from propagating through a
+DOUBLE identity conversion; direct pooled branch/arithmetic interpretation
+requires a separate typed-lattice repair. See the
+[representation acceptance record](../../tests/acceptance/2026-10-02-ssa-sccp-representation.md).
 
 Copy propagation never substitutes a definition across a non-dominating
 edge, across a same-instruction use, or through a `MOVE` whose ownership
@@ -137,12 +150,16 @@ diagnostic after rollback and that its pass name survives caller mutation.
 Every successful scalar pass remark is checked for two verifier boundaries.
 
 The separate `ssa_sccp_conversion` CTest target uses always-active checks and
-compares Oracle and ExecBC results before and after SCCP. Its ten cases cover
+compares Oracle and ExecBC results before and after SCCP. Its 33 cases cover
 explicit and implicit integer-to-double targets, double-to-integer truncation,
 integer-to-boolean normalization, same-type pool constants, same-type immediate
 folding, a rounding-sensitive integer/double/integer round trip, and an
 unspecified-type conversion accepted at both pipeline verifier boundaries,
-and an explicit scalar target that differs from the result annotation.
+and an explicit scalar target that differs from the result annotation. They
+also cover explicit/fallback same-token typed immediates, every canonical
+signed width, conservative custom tokens, FLOAT pool COPY/NEG retagging,
+signed COPY propagation, and loop PHIs whose late backedge either retains
+SIGNED proof or loses it through a BOOL-producing comparison with equal bits.
 Run with `ctest --test-dir <build> -R '^ssa_sccp_conversion$'
 --output-on-failure --no-tests=error`. The acceptance record contains the
 concrete build paths, commands, and observed results.
