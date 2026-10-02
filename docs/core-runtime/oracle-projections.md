@@ -384,6 +384,14 @@ Packed frames, typed binding rows, runtime effects and unsupported value types
 return a structured diagnostic without publishing a function or selecting the
 legacy compiler path.
 
+ExecBC projections retain `stateMapPresent` for an attached logical map.
+The producer also sets `stateMapEmpty` only when the map storage is valid,
+its function token/signature/generation match the source, and its entry,
+value, root, and owner-state counts are all zero. This empty map requires no
+VM recovery work and is accepted by the scalar materializer. Nonempty maps,
+identity mismatches, orphan side-pool data, and an empty flag without a present
+map remain unsupported. The owned map stays attached to the ExecIR function.
+
 Before emission, the validator derives expected phi assignments from each
 block's incoming rows and predecessor order, then checks the raw copy arrays
 against them. It symbolically executes each edge's scheduled slot moves to prove

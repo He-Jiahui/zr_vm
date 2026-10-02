@@ -709,6 +709,13 @@ TZrBool ZrParser_ExecIr_BuildProjectionWithConstantsAndLayouts(
     p->deoptAggregateCount = f->deoptAggregateCount;
     p->deoptAggregateFieldCount = f->deoptAggregateFieldCount;
     p->stateMapPresent = f->stateMap != ZR_NULL;
+    p->stateMapEmpty = (TZrBool)(f->stateMap != ZR_NULL &&
+            ZrCore_ExecIr_StateMapStorageValid(f->stateMap) &&
+            f->stateMap->functionToken == f->functionToken &&
+            f->stateMap->signatureHash == f->signatureHash &&
+            f->stateMap->generation == f->contract.generation &&
+            f->stateMap->entryCount == 0u && f->stateMap->valueCount == 0u &&
+            f->stateMap->rootCount == 0u && f->stateMap->ownerStateCount == 0u);
     p->runnable = ZR_TRUE;
     p->ownershipTag = ZR_EXEC_IR_PROJECTION_TAG;
     if (!zr_projection_bytes(p->instructionCount, sizeof(*p->opcodes), &bytes)) goto overflow;

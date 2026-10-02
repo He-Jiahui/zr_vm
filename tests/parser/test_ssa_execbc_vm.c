@@ -944,6 +944,8 @@ static void test_synthetic_block_cannot_own_an_instruction_body(void) {
     TEST_ASSERT_TRUE(report.outputWasEmptyOnFailure);
 }
 
+#include "test_ssa_execbc_vm_state_maps.inc"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_zero_parameter_i64_add_sub_uses_frame_slot_zero);
@@ -964,5 +966,9 @@ int main(void) {
     RUN_TEST(test_wrong_phi_move_source_is_rejected);
     RUN_TEST(test_phi_rejects_cfg_edge_missing_from_target_predecessors);
     RUN_TEST(test_synthetic_block_cannot_own_an_instruction_body);
+    RUN_TEST(test_empty_state_map_does_not_require_vm_recovery);
+    RUN_TEST(test_nonempty_state_map_remains_unsupported);
+    RUN_TEST(test_empty_state_map_with_wrong_identity_remains_unsupported);
+    RUN_TEST(test_state_map_side_pool_without_entries_remains_unsupported);
     return UNITY_END();
 }

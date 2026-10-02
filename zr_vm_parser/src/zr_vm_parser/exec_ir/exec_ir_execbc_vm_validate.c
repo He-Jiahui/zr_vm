@@ -401,7 +401,10 @@ TZrBool execbc_vm_validate_projection(
         projection->deoptStateCount != 0u || projection->deoptValueCount != 0u ||
         projection->deoptAggregateCount != 0u ||
         projection->deoptAggregateFieldCount != 0u ||
-        projection->stateMapPresent != ZR_FALSE ||
+        (projection->stateMapPresent != ZR_FALSE &&
+         projection->stateMapEmpty == ZR_FALSE) ||
+        (projection->stateMapPresent == ZR_FALSE &&
+         projection->stateMapEmpty != ZR_FALSE) ||
         projection->memoryTokenCount != 0u ||
         projection->memoryTokens != ZR_NULL || projection->gcRoots != ZR_NULL ||
         projection->deoptStates != ZR_NULL || projection->deoptValues != ZR_NULL ||

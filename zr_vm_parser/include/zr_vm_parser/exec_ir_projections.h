@@ -129,6 +129,8 @@ typedef struct SZrExecBcProjection {
     SZrExecIrDeoptAggregateField *deoptAggregateFields;
     TZrUInt32 deoptAggregateFieldCount;
     TZrBool stateMapPresent;
+    /* An identity-matched map with no recovery entries or side-pool values. */
+    TZrBool stateMapEmpty;
     TZrUInt32 unsupportedInstructionId;
     TZrBool runnable;
     TZrUInt32 ownershipTag;
