@@ -1,4 +1,5 @@
 #include "zr_vm_parser/exec_ir_builder.h"
+#include "zr_vm_parser/exec_ir_state_maps.h"
 #include "zr_vm_parser/semantic_ir.h"
 
 #include "exec_ir_internal.h"
@@ -903,6 +904,7 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
     return ZrParser_ExecIr_ComputeDominators(output, diagnostic) &&
            ZrParser_ExecIr_BuildSsa(output, diagnostic) &&
            ZrParser_ExecIr_SynthesizeCfgEffects(output, diagnostic) &&
+           ZrParser_ExecIr_BuildStateMaps(output, diagnostic) &&
            verify_unpublished_ssa(output, diagnostic);
 }
 
