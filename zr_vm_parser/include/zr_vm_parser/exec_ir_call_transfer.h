@@ -16,10 +16,12 @@ typedef struct SZrExecIrCallTransferValue {
     TZrExecIrValueId valueId;
     EZrExecIrOwnership ownership;
     EZrExecIrPackedSlotClass slotClass;
+    /* Physical descriptor indices, not logical ordinals or value IDs.
+     * valueId identifies the source's sole logical occupant. */
     TZrUInt32 sourceSlot;
     TZrUInt32 targetSlot;
     TZrUInt32 byteSize;
-    TZrUInt32 flags;
+    TZrUInt32 flags; /* Must be zero in the representation-plan contract. */
 } SZrExecIrCallTransferValue;
 
 typedef struct SZrExecIrCallTransferRequest {
@@ -31,14 +33,28 @@ typedef struct SZrExecIrCallTransferRequest {
     TZrBool requiresWriteback;
 } SZrExecIrCallTransferRequest;
 
+/* Checked representation metadata only. Neither spans nor kinds authorize
+ * memory copying, ownership consumption, borrow escape or GC-root changes. */
+typedef struct SZrExecIrCallTransferSpan {
+    TZrUInt32 sourceByteOffset;
+    TZrUInt32 targetByteOffset;
+    TZrUInt32 byteSize;
+    TZrUInt32 sourceByteAlign;
+    TZrUInt32 targetByteAlign;
+    TZrExecIrTypeToken typeToken;
+} SZrExecIrCallTransferSpan;
+
 typedef struct SZrExecIrCallTransferPlan {
     EZrExecIrTransferKind *kinds;
     TZrUInt32 *sourceSlots;
     TZrUInt32 *targetSlots;
+    SZrExecIrCallTransferSpan *spans;
+    TZrUInt64 sourceLayoutHash;
+    TZrUInt64 targetLayoutHash;
     TZrUInt32 valueCount;
-    TZrBool forwardReturn;
+    TZrBool forwardReturn; /* False: no return descriptors/commit proof. */
     TZrBool noAliasConflict;
-    TZrBool compatibleLayout;
+    TZrBool compatibleLayout; /* Selected argument representations only. */
 } SZrExecIrCallTransferPlan;
 
 ZR_PARSER_API void ZrParser_ExecIr_CallTransferPlanInit(SZrExecIrCallTransferPlan *plan);
