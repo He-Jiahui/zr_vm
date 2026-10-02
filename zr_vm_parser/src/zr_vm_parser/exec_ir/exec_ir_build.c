@@ -536,6 +536,28 @@ static TZrBool verify_unpublished_ssa(SZrExecIrFunction *output,
     return valid;
 }
 
+/* State-map construction reuses the core verifier, which requires a
+ * nonzero identity even while Build is assembling its unpublished candidate.
+ * Use a private verification identity and restore the caller-visible fields;
+ * BuildModule replaces the provisional map token when it publishes the slot. */
+static TZrBool build_state_maps_unpublished(SZrExecIrFunction *function,
+                                            SZrExecIrDiagnostic *diagnostic) {
+    TZrExecIrFunctionId savedId;
+    TZrMetadataToken savedToken;
+    TZrBool result;
+    if (function == ZR_NULL) return ZR_FALSE;
+    savedId = function->id;
+    savedToken = function->functionToken;
+    if (function->id == ZR_EXEC_IR_FUNCTION_ID_INVALID) function->id = 1u;
+    if (function->functionToken == 0u) function->functionToken = 1u;
+    result = ZrParser_ExecIr_BuildStateMaps(function, diagnostic);
+    if (result && function->stateMap != ZR_NULL && savedToken == 0u)
+        function->stateMap->functionToken = 0u;
+    function->id = savedId;
+    function->functionToken = savedToken;
+    return result;
+}
+
 static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                               const SZrExecIrBuildOptions *options,
                               SZrExecIrFunction *output,
@@ -904,7 +926,7 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
     return ZrParser_ExecIr_ComputeDominators(output, diagnostic) &&
            ZrParser_ExecIr_BuildSsa(output, diagnostic) &&
            ZrParser_ExecIr_SynthesizeCfgEffects(output, diagnostic) &&
-           ZrParser_ExecIr_BuildStateMaps(output, diagnostic) &&
+           build_state_maps_unpublished(output, diagnostic) &&
            verify_unpublished_ssa(output, diagnostic);
 }
 
@@ -961,6 +983,8 @@ TZrBool ZrParser_ExecIr_BuildModule(const SZrExecIrBuildInput *input,
     prepared.functionToken = input->functionToken;
     prepared.signatureHash = input->signatureHash;
     prepared.contract = contract;
+    if (prepared.stateMap != ZR_NULL)
+        prepared.stateMap->functionToken = input->functionToken;
     *slot = prepared;
     return ZR_TRUE;
 }
