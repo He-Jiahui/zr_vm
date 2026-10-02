@@ -255,6 +255,8 @@ TZrBool compiler_semantic_cfg_begin_optional_guard(
 TZrBool compiler_semantic_cfg_abandon(SZrCompilerState *cs);
 TZrBool compiler_semantic_cfg_expression_is_linear(
         const SZrAstNode *node);
+TZrBool compiler_semantic_cfg_return_expression_is_supported(
+        const SZrAstNode *node);
 TZrBool compiler_semantic_cfg_short_circuit_is_supported(
         const SZrAstNode *node);
 /** @brief 判断循环条件是否可在当前 CFG 条件分支路径中完整 lowering。 */ TZrBool compiler_semantic_cfg_loop_condition_is_supported(

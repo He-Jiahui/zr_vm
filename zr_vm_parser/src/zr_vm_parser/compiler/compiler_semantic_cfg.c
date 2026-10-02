@@ -174,7 +174,7 @@ static EZrCompilerSemanticCfgArmFlow compiler_semantic_cfg_if_arm_flow(
         return ZR_COMPILER_SEMANTIC_CFG_ARM_FALLS_THROUGH;
     }
     if (node->type == ZR_AST_RETURN_STATEMENT) {
-        return compiler_semantic_cfg_expression_is_linear(
+        return compiler_semantic_cfg_return_expression_is_supported(
                        node->data.returnStatement.expr)
                        ? ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES
                        : ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED;

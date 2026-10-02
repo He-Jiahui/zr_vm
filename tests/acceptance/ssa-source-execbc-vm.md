@@ -8,10 +8,18 @@ ExecIR module function with `ZrParser_ExecIr_BuildModule`, runs the ExecIR
 Oracle, lowers constants into an ExecBC projection, materializes a Core
 `SZrFunction`, and invokes it through the Core runtime dispatcher.
 
-The two cases execute both outcomes of a real source conditional:
+The positive cases execute both outcomes of a real source conditional:
 
 - `test_true_source_branch_runs_through_core_dispatcher`: returns 9.
 - `test_false_source_branch_runs_through_core_dispatcher`: returns 8.
+- `test_source_branch_arithmetic_reaches_core_dispatcher`: executes ADD and returns 10.
+- `test_source_branch_subtraction_reaches_core_dispatcher`: executes SUB and returns 8.
+
+`test_source_branch_division_does_not_publish_execir` checks that an unsupported
+binary arm stays outside executable source CFG, ExecIR projection, and VM
+publication. Conditional-arm arithmetic is limited to ADD/SUB with two integer
+literals. The test requires the corresponding ExecIR opcode before comparing
+Oracle and Core dispatcher returns.
 
 The Oracle fixture resolves Builder-emitted `PLACE_BASE` values by following
 their source IDs back to SemIR and returning the SemIR `placeId` as a stable
@@ -32,7 +40,7 @@ records `execIr.phiCount` for diagnosis but does not claim source value-phi or
 loop-phi coverage. A real-source loop-carried phi remains an open follow-up.
 
 The source fixture covers bool and signed i64 constants, conditional
-branches, and signed i64 returns. Other source operations remain outside
+branches, literal ADD/SUB, and signed i64 returns. Other source operations remain outside
 this focused materializer slice.
 
 The producer change supports only direct bool/i64 constant initialization of a
@@ -69,6 +77,14 @@ python D:/tmp/zr_vm/ssa-control/run_native.py source-ctest ctest -R '^ssa_source
 ```
 
 ## Current validation status
+
+The 2026-10-02 current-source MSVC rebuild used a fresh
+`D:/tmp/zr_vm/ssa-source-native-current` directory and compiled 888 build steps.
+Its initial execution exposed the attached empty StateMap being rejected by
+the materializer and the arithmetic arm being refused by producer preflight.
+The fixes preserve attached metadata, accept only an identity-matched empty
+map with no side-pool values, and preflight only integer-literal ADD/SUB.
+See `2026-10-02-ssa-scalar-boundaries.md` for current command/log evidence.
 
 The 2026-09-30 root MSVC build linked the source target and standalone builder
 consumers. `current-scalar-shape-fixtures-ctest.log` passed the two source

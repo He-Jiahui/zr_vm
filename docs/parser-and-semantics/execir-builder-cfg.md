@@ -2,6 +2,7 @@
 related_code:
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_arithmetic.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c
   - zr_vm_parser/include/zr_vm_parser/semantic_value_facts.h
   - zr_vm_parser/include/zr_vm_parser/exec_ir_builder.h
@@ -12,6 +13,7 @@ related_code:
   - tests/parser/ssa_source_cfg_faults.c
   - tests/parser/ssa_source_cfg_faults.h
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_arithmetic.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_try.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c
@@ -111,6 +113,16 @@ input: its synthetic RETURN edge remains rejected. No verifier rule is relaxed
 and no missing source operation is reconstructed from ExecBC. See
 `source-cfg-finalization.md` for producer completeness and repeat-validation
 contracts.
+
+The source conditional-arm return preflight also admits addition or subtraction
+whose two operands are integer literals. The existing binary SemIR producer
+emits their values and typed operation; the preflight does not synthesize an
+operation from legacy bytecode. Other binary forms, including division and
+multiplication, remain outside this conditional-arm slice. The source-to-VM
+suite covers ADD/SUB returns and verifies that division publishes no ExecIR
+or VM function.
+`compiler_semantic_cfg_arithmetic.c` owns this return-specific check. The
+shared linear-expression predicate used by loops and finally is unchanged.
 
 For supported statement-form `while` loops, each `&&` or `||` node with linear
 or recursively supported logical operands composes its RHS/join with the

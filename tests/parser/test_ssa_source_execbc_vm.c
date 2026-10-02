@@ -52,6 +52,8 @@ typedef struct SZrSourceExecBcReport {
     TZrBool sourceCfgValidated;
     TZrBool execIrBuilt;
     TZrBool hasConditionalBranch;
+    TZrBool hasAdd;
+    TZrBool hasSubtract;
     TZrBool oracleReturned;
     TZrBool projectionBuilt;
     TZrBool materialized;
@@ -478,6 +480,12 @@ static SZrSourceExecBcReport run_source_branch(const TZrChar *source) {
                 ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH) {
             report.hasConditionalBranch = ZR_TRUE;
         }
+        if (execIr->instructions[index].opcode == ZR_EXEC_IR_OPCODE_ADD) {
+            report.hasAdd = ZR_TRUE;
+        }
+        if (execIr->instructions[index].opcode == ZR_EXEC_IR_OPCODE_SUB) {
+            report.hasSubtract = ZR_TRUE;
+        }
     }
     report.execIrPhiCount = execIr->phiCount;
     if (report.hasConditionalBranch == ZR_FALSE) {
@@ -655,7 +663,8 @@ cleanup:
 }
 
 static void assert_source_branch(
-        const TZrChar *source, TZrInt64 expectedReturn) {
+        const TZrChar *source, TZrInt64 expectedReturn,
+        TZrUInt32 expectedArithmetic) {
     SZrSourceExecBcReport report = run_source_branch(source);
     TEST_ASSERT_EQUAL_INT_MESSAGE(
             ZR_EXECUTION_DIAGNOSTIC_NONE, report.diagnosticCode,
@@ -670,6 +679,10 @@ static void assert_source_branch(
                              "module builder did not publish function identity");
     TEST_ASSERT_TRUE_MESSAGE(report.hasConditionalBranch,
                              "source branch did not reach ExecIR");
+    TEST_ASSERT_EQUAL_MESSAGE(expectedArithmetic == ZR_EXEC_IR_OPCODE_ADD,
+                              report.hasAdd, "source ADD did not reach ExecIR");
+    TEST_ASSERT_EQUAL_MESSAGE(expectedArithmetic == ZR_EXEC_IR_OPCODE_SUB,
+                              report.hasSubtract, "source SUB did not reach ExecIR");
     TEST_ASSERT_TRUE_MESSAGE(report.oracleReturned,
                              "ExecIR Oracle did not return signed i64");
     TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
@@ -692,17 +705,41 @@ static void assert_source_branch(
 
 static void test_true_source_branch_runs_through_core_dispatcher(void) {
     assert_source_branch(
-            "if (true) { return 9; }\nreturn 8;\n", 9);
+            "if (true) { return 9; }\nreturn 8;\n", 9, 0u);
 }
 
 static void test_false_source_branch_runs_through_core_dispatcher(void) {
     assert_source_branch(
-            "if (false) { return 9; }\nreturn 8;\n", 8);
+            "if (false) { return 9; }\nreturn 8;\n", 8, 0u);
+}
+
+static void test_source_branch_arithmetic_reaches_core_dispatcher(void) {
+    assert_source_branch(
+            "if (true) { return 9 + 1; }\nreturn 8;\n", 10, ZR_EXEC_IR_OPCODE_ADD);
+}
+
+static void test_source_branch_subtraction_reaches_core_dispatcher(void) {
+    assert_source_branch(
+            "if (true) { return 9 - 1; }\nreturn 7;\n", 8, ZR_EXEC_IR_OPCODE_SUB);
+}
+
+static void test_source_branch_division_does_not_publish_execir(void) {
+    SZrSourceExecBcReport report = run_source_branch(
+            "if (true) { return 9 / 1; }\nreturn 8;\n");
+    TEST_ASSERT_TRUE(report.parsedAndCompiled);
+    TEST_ASSERT_FALSE(report.sourceCfgValidated);
+    TEST_ASSERT_FALSE(report.execIrBuilt);
+    TEST_ASSERT_FALSE(report.projectionBuilt);
+    TEST_ASSERT_FALSE(report.materialized);
+    TEST_ASSERT_FALSE(report.vmReturned);
 }
 
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_true_source_branch_runs_through_core_dispatcher);
     RUN_TEST(test_false_source_branch_runs_through_core_dispatcher);
+    RUN_TEST(test_source_branch_arithmetic_reaches_core_dispatcher);
+    RUN_TEST(test_source_branch_subtraction_reaches_core_dispatcher);
+    RUN_TEST(test_source_branch_division_does_not_publish_execir);
     return UNITY_END();
 }
