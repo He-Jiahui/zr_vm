@@ -314,6 +314,7 @@ static TZrBool execbc_vm_build_plan(
                         break;
                     case ZR_EXEC_IR_OPCODE_ADD:
                     case ZR_EXEC_IR_OPCODE_SUB:
+                    case ZR_EXEC_IR_OPCODE_MUL:
                         if (!execbc_vm_value_slot(
                                 projection,
                                 projection->results[source->results.start],
@@ -329,7 +330,9 @@ static TZrBool execbc_vm_build_plan(
                         instruction = execbc_vm_instruction(
                                 source->opcode == (TZrUInt16)ZR_EXEC_IR_OPCODE_ADD
                                         ? ZR_INSTRUCTION_ENUM(ADD_SIGNED)
-                                        : ZR_INSTRUCTION_ENUM(SUB_SIGNED),
+                                        : source->opcode == (TZrUInt16)ZR_EXEC_IR_OPCODE_SUB
+                                                ? ZR_INSTRUCTION_ENUM(SUB_SIGNED)
+                                                : ZR_INSTRUCTION_ENUM(MUL_SIGNED),
                                 (TZrUInt16)destinationSlot);
                         instruction.instruction.operand.operand1[0] = (TZrUInt16)leftSlot;
                         instruction.instruction.operand.operand1[1] = (TZrUInt16)rightSlot;

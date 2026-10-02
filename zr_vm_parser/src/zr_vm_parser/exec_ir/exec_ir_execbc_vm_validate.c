@@ -255,6 +255,7 @@ static TZrBool execbc_vm_validate_instruction_shape(
             return ZR_TRUE;
         case ZR_EXEC_IR_OPCODE_ADD:
         case ZR_EXEC_IR_OPCODE_SUB:
+        case ZR_EXEC_IR_OPCODE_MUL:
             if (operandCount != 2u || resultCount != 1u ||
                 !execbc_vm_value_slot(projection,
                                       projection->operands[instruction->operands.start],

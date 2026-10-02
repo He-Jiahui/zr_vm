@@ -945,6 +945,7 @@ static void test_synthetic_block_cannot_own_an_instruction_body(void) {
 }
 
 #include "test_ssa_execbc_vm_state_maps.inc"
+#include "ssa_execbc_vm_multiply_cases.inc"
 
 int main(void) {
     UNITY_BEGIN();
@@ -970,5 +971,10 @@ int main(void) {
     RUN_TEST(test_nonempty_state_map_remains_unsupported);
     RUN_TEST(test_empty_state_map_with_wrong_identity_remains_unsupported);
     RUN_TEST(test_state_map_side_pool_without_entries_remains_unsupported);
+    RUN_TEST(test_i64_multiply_materializes_and_executes_signed_products);
+    RUN_TEST(test_i64_multiply_rejects_wrong_type_before_publication);
+    RUN_TEST(test_i64_multiply_rejects_missing_operand_before_publication);
+    RUN_TEST(test_i64_multiply_oracle_rejects_overflow);
+    RUN_TEST(test_materialized_i64_multiply_faults_and_recovers_same_state);
     return UNITY_END();
 }
