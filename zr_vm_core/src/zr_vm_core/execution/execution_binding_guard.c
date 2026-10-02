@@ -72,6 +72,17 @@ EZrExecutionBindingGuardResult ZrCore_Execution_CheckBindingGuard(
                 ZR_CALL_BINDING_LAYOUT_MISMATCH, input->expectedLayoutHash,
                 binding->contract.layoutHash);
 
+    /* A receiver shape miss cannot turn an expired VM witness into a slot
+     * fallback. Caller/frame and resolved-target generations are independent. */
+    if (binding->target.targetKind == ZR_CALL_BINDING_TARGET_VM &&
+        binding->target.vm.function != ZR_NULL &&
+        binding->target.targetGeneration != 0u &&
+        binding->target.vm.function->callBindingGeneration !=
+            binding->target.targetGeneration)
+        return guard_fail(input, diagnostic, ZR_EXECUTION_BINDING_GUARD_STALE_GENERATION,
+                ZR_CALL_BINDING_STALE_GENERATION, binding->target.targetGeneration,
+                binding->target.vm.function->callBindingGeneration);
+
     if (binding->contract.ownerTypeToken != 0u) {
         if (input->receiverPrototype == ZR_NULL)
             return guard_fail(input, diagnostic, ZR_EXECUTION_BINDING_GUARD_RECEIVER_TYPE_MISMATCH,
@@ -94,10 +105,6 @@ EZrExecutionBindingGuardResult ZrCore_Execution_CheckBindingGuard(
         case ZR_CALL_BINDING_TARGET_VM:
             if (binding->target.vm.function == ZR_NULL)
                 status = ZR_CALL_BINDING_TARGET_NOT_FOUND;
-            else if (binding->target.targetGeneration != 0u &&
-                     binding->target.vm.function->callBindingGeneration !=
-                         binding->target.targetGeneration)
-                status = ZR_CALL_BINDING_STALE_GENERATION;
             break;
         case ZR_CALL_BINDING_TARGET_NATIVE:
             if (binding->target.native.function == ZR_NULL)

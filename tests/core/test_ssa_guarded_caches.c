@@ -90,6 +90,146 @@ static void test_shape_miss_can_fall_back_to_declared_slot(void) {
     TEST_ASSERT_EQUAL_UINT32(2u, diagnostic.dispatchSlot);
 }
 
+static void arrange_vm_guard(SZrCallBinding *binding, SZrFunction *function,
+        SZrObjectPrototype *receiver, SZrExecutionBindingGuardInput *input,
+        SZrFunctionCallSiteCacheEntry *entry) {
+    memset(binding, 0, sizeof(*binding));
+    memset(function, 0, sizeof(*function));
+    memset(receiver, 0, sizeof(*receiver));
+    memset(input, 0, sizeof(*input));
+    memset(entry, 0, sizeof(*entry));
+    binding->contract = guard_contract();
+    binding->contract.bindingKind = ZR_CALL_BINDING_VIRTUAL;
+    binding->contract.ownerTypeToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 2u);
+    binding->contract.layoutVersion = 1u;
+    binding->contract.layoutHash = 0x44u;
+    binding->contract.dispatchSlot = 2u;
+    binding->generation = 4u;
+    binding->target.targetKind = ZR_CALL_BINDING_TARGET_VM;
+    binding->target.targetGeneration = 7u;
+    binding->target.vm.function = function;
+    function->callBindingGeneration = 8u;
+    receiver->shapeId = 9u;
+    receiver->shapeGeneration = 3u;
+    receiver->nextVirtualSlotIndex = 4u;
+    input->binding = binding;
+    input->cacheEntry = entry;
+    input->activeGeneration = 4u;
+    input->receiverPrototype = receiver;
+    input->receiverShapeId = 8u;
+    input->receiverShapeGeneration = 3u;
+    input->allowSlotFallback = ZR_TRUE;
+}
+
+static void test_vm_target_generation_precedes_shape_routes(void) {
+    SZrCallBinding binding;
+    SZrFunction function;
+    SZrObjectPrototype receiver;
+    SZrExecutionBindingGuardInput input;
+    SZrFunctionCallSiteCacheEntry entry;
+    SZrExecutionBindingGuardDiagnostic diagnostic;
+    SZrCallBinding before;
+    SZrObjectPrototype receiverBefore;
+    arrange_vm_guard(&binding, &function, &receiver, &input, &entry);
+    before = binding;
+    receiverBefore = receiver;
+    entry.runtimeHitCount = 5u;
+    for (TZrUInt32 route = 0u; route < 4u; ++route) {
+        input.allowSlotFallback = route != 1u;
+        input.receiverShapeId = route == 2u ? receiver.shapeId : 8u;
+        input.receiverShapeGeneration = route == 2u ? 2u : 3u;
+        TEST_ASSERT_EQUAL(ZR_EXECUTION_BINDING_GUARD_STALE_GENERATION,
+                ZrCore_Execution_CheckBindingGuard(&input, &diagnostic));
+        TEST_ASSERT_EQUAL(ZR_EXECUTION_BINDING_GUARD_STALE_GENERATION, diagnostic.result);
+        TEST_ASSERT_EQUAL(ZR_CALL_BINDING_STALE_GENERATION, diagnostic.bindingStatus);
+        TEST_ASSERT_EQUAL_UINT32(ZR_CALL_BINDING_TARGET_VM, diagnostic.targetKind);
+        TEST_ASSERT_EQUAL_UINT32(2u, diagnostic.dispatchSlot);
+        TEST_ASSERT_EQUAL_UINT64(7u, diagnostic.expected);
+        TEST_ASSERT_EQUAL_UINT64(8u, diagnostic.actual);
+        TEST_ASSERT_EQUAL_UINT32(route + 1u, entry.runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(5u, entry.runtimeHitCount);
+        TEST_ASSERT_EQUAL_MEMORY(&before, &binding, sizeof(binding));
+        TEST_ASSERT_EQUAL_MEMORY(&receiverBefore, &receiver, sizeof(receiver));
+    }
+    entry.runtimeMissCount = UINT32_MAX;
+    TEST_ASSERT_EQUAL(ZR_EXECUTION_BINDING_GUARD_STALE_GENERATION,
+            ZrCore_Execution_CheckBindingGuard(&input, &diagnostic));
+    TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, entry.runtimeMissCount);
+}
+
+static void test_vm_target_generation_preserves_contract_priority(void) {
+    SZrCallBinding binding;
+    SZrFunction function;
+    SZrObjectPrototype receiver;
+    SZrExecutionBindingGuardInput input;
+    SZrFunctionCallSiteCacheEntry entry;
+    SZrExecutionBindingGuardDiagnostic diagnostic;
+    arrange_vm_guard(&binding, &function, &receiver, &input, &entry);
+    input.expectedSignatureHash = 0x33u;
+    TEST_ASSERT_EQUAL(ZR_EXECUTION_BINDING_GUARD_CONTRACT_MISMATCH,
+            ZrCore_Execution_CheckBindingGuard(&input, &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_CALL_BINDING_SIGNATURE_MISMATCH, diagnostic.bindingStatus);
+    TEST_ASSERT_EQUAL_UINT64(0x33u, diagnostic.expected);
+    TEST_ASSERT_EQUAL_UINT64(0x11u, diagnostic.actual);
+    input.expectedSignatureHash = 0u;
+    input.expectedLayoutHash = 0x55u;
+    TEST_ASSERT_EQUAL(ZR_EXECUTION_BINDING_GUARD_CONTRACT_MISMATCH,
+            ZrCore_Execution_CheckBindingGuard(&input, &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_CALL_BINDING_LAYOUT_MISMATCH, diagnostic.bindingStatus);
+    TEST_ASSERT_EQUAL_UINT64(0x55u, diagnostic.expected);
+    TEST_ASSERT_EQUAL_UINT64(0x44u, diagnostic.actual);
+    input.expectedLayoutHash = 0u;
+    input.expectedModuleSignatureHash = 0x66u;
+    TEST_ASSERT_EQUAL(ZR_EXECUTION_BINDING_GUARD_CONTRACT_MISMATCH,
+            ZrCore_Execution_CheckBindingGuard(&input, &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_CALL_BINDING_MODULE_MISMATCH, diagnostic.bindingStatus);
+    input.activeGeneration = 5u;
+    TEST_ASSERT_EQUAL(ZR_EXECUTION_BINDING_GUARD_STALE_GENERATION,
+            ZrCore_Execution_CheckBindingGuard(&input, &diagnostic));
+    TEST_ASSERT_EQUAL_UINT64(4u, diagnostic.expected);
+    TEST_ASSERT_EQUAL_UINT64(5u, diagnostic.actual);
+    TEST_ASSERT_EQUAL_UINT32(4u, entry.runtimeMissCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, entry.runtimeHitCount);
+}
+
+static void test_fresh_vm_target_allows_shape_fallback_and_old_frame(void) {
+    SZrCallBinding binding;
+    SZrFunction function;
+    SZrObjectPrototype receiver;
+    SZrExecutionBindingGuardInput input;
+    SZrFunctionCallSiteCacheEntry entry;
+    SZrExecutionBindingGuardDiagnostic diagnostic;
+    arrange_vm_guard(&binding, &function, &receiver, &input, &entry);
+    function.callBindingGeneration = 7u;
+    TEST_ASSERT_EQUAL(ZR_EXECUTION_BINDING_GUARD_SLOT_FALLBACK,
+            ZrCore_Execution_CheckBindingGuard(&input, &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_CALL_BINDING_LAYOUT_MISMATCH, diagnostic.bindingStatus);
+    TEST_ASSERT_EQUAL_UINT32(1u, entry.runtimeMissCount);
+    input.allowSlotFallback = ZR_FALSE;
+    TEST_ASSERT_EQUAL(ZR_EXECUTION_BINDING_GUARD_SHAPE_MISS,
+            ZrCore_Execution_CheckBindingGuard(&input, &diagnostic));
+    input.receiverShapeId = receiver.shapeId;
+    binding.generation = input.activeGeneration = 2u;
+    TEST_ASSERT_EQUAL(ZR_EXECUTION_BINDING_GUARD_OK,
+            ZrCore_Execution_CheckBindingGuard(&input, &diagnostic));
+    TEST_ASSERT_EQUAL_UINT32(1u, entry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(2u, entry.runtimeMissCount);
+    entry.runtimeHitCount = UINT32_MAX;
+    TEST_ASSERT_EQUAL(ZR_EXECUTION_BINDING_GUARD_OK,
+            ZrCore_Execution_CheckBindingGuard(&input, &diagnostic));
+    TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, entry.runtimeHitCount);
+    binding.target.targetGeneration = 0u;
+    function.callBindingGeneration = 8u;
+    TEST_ASSERT_EQUAL(ZR_EXECUTION_BINDING_GUARD_OK,
+            ZrCore_Execution_CheckBindingGuard(&input, &diagnostic));
+    binding.target.vm.function = ZR_NULL;
+    binding.target.targetGeneration = 7u;
+    TEST_ASSERT_EQUAL(ZR_EXECUTION_BINDING_GUARD_TARGET_MISSING,
+            ZrCore_Execution_CheckBindingGuard(&input, &diagnostic));
+    TEST_ASSERT_EQUAL(ZR_CALL_BINDING_TARGET_NOT_FOUND, diagnostic.bindingStatus);
+    TEST_ASSERT_EQUAL_UINT32(3u, entry.runtimeMissCount);
+}
+
 static void test_reset_preserves_contract_and_relocation(void) {
     SZrFunctionCallSiteCacheEntry entry = {0};
     entry.binding.contract = guard_contract();
@@ -117,6 +257,9 @@ int main(void) {
     RUN_TEST(test_guard_accepts_resolved_native_and_counts_hit);
     RUN_TEST(test_guard_separates_stale_and_signature_failures);
     RUN_TEST(test_shape_miss_can_fall_back_to_declared_slot);
+    RUN_TEST(test_vm_target_generation_precedes_shape_routes);
+    RUN_TEST(test_vm_target_generation_preserves_contract_priority);
+    RUN_TEST(test_fresh_vm_target_allows_shape_fallback_and_old_frame);
     RUN_TEST(test_reset_preserves_contract_and_relocation);
     return UNITY_END();
 }
