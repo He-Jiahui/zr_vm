@@ -18,6 +18,7 @@ tests:
   - tests/benchmarks/test_ssa_aot_runner_coverage.c
   - tests/cmake/ssa-tests.cmake
   - tests/acceptance/2026-10-02-ssa-coverage-sampling-merge.md
+  - tests/acceptance/2026-10-02-ssa-aot-phase-coverage-ratio.md
 doc_type: testing-guide
 ---
 
@@ -85,6 +86,17 @@ availability, and all semantic coverage counters. It is valid only when the
 structural identity and counter invariants pass
 ZrPerfReport_ValidateAotPhase.
 
+For available coverage, `nativeCoverage` must equal the producer's computed
+double, `(double)nativeSites / (double)executedSemanticSites`. Native-helper
+sites do not count as native coverage, and the static `semanticSites` count
+does not supply this ratio's denominator. Endpoint and fractional producer
+results are valid; a rounded JSON number is not a replacement for the computed
+double accepted by this C API. The existing finite/range checks and unavailable
+`-1`/zero-counter contract still apply. Validation runs before the writer opens
+its output path, so an inconsistent ratio leaves an existing report intact.
+Focused regression evidence is recorded in
+[the phase ratio acceptance](../../tests/acceptance/2026-10-02-ssa-aot-phase-coverage-ratio.md).
+
 The benchmark registry declares aot_c and aot_llvm in
 ZR_VM_BENCHMARK_AOT_IMPLEMENTATION_ORDER, with availability and runner target
 fields defaulting to false/empty until a generated artifact provider is
@@ -100,6 +112,7 @@ zr_vm_ssa_aot_runner_coverage_test (ssa_aot_runner_coverage). It covers:
   coverage;
 - zero-data UNAVAILABLE reporting;
 - overflow and malformed denominator rejection;
+- phase ratio/counter consistency and rejected-write preservation;
 - requested/actual backend and checksum preservation;
 - explicit fallback, missing backend, invocation failure, and matrix
   diagnostics.

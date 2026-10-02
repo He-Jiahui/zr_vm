@@ -339,6 +339,10 @@ int ZrPerfReport_ValidateAotPhase(const SZrPerfAotPhaseReport *report) {
             semanticSum + report->interpreterSites != report->executedSemanticSites) {
             return 0;
         }
+        if (report->nativeCoverage !=
+            (double)report->nativeSites / (double)report->executedSemanticSites) {
+            return 0;
+        }
     }
     return 1;
 }

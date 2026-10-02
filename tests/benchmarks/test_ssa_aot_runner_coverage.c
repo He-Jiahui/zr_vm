@@ -470,6 +470,127 @@ static void test_aot_phase_report_keeps_costs_and_unavailable_values_explicit(vo
                 "requested/actual mismatch was hidden in AOT report");
 }
 
+static SZrPerfAotPhaseReport phase_report_from_coverage(
+        const SZrAotCoverageCounts *counts) {
+    SZrAotCoverageReport coverage;
+    SZrPerfAotPhaseReport report;
+
+    expect_true(ZrTests_AotCoverage_Compute(counts, &coverage),
+                "phase ratio coverage producer failed");
+    memset(&report, 0, sizeof(report));
+    report.status = ZR_PERF_AOT_REPORT_RAN;
+    snprintf(report.requestedBackend, sizeof(report.requestedBackend), "aot_c");
+    snprintf(report.actualBackend, sizeof(report.actualBackend), "aot_c");
+    snprintf(report.entryToken, sizeof(report.entryToken), "ratio-fixture");
+    report.compileMs = report.linkMs = report.loadMs = -1.0;
+    report.startupMs = report.runMs = -1.0;
+    report.coverageAvailable = coverage.available;
+    report.semanticSites = coverage.semanticSites;
+    report.executedSemanticSites = coverage.executedSemanticSites;
+    report.nativeSites = coverage.nativeSites;
+    report.nativeHelperSites = coverage.nativeHelperSites;
+    report.interpreterSites = coverage.interpreterSites;
+    report.nativeCoverage = coverage.nativeCoverage;
+    return report;
+}
+
+static void test_aot_phase_ratio_matches_dynamic_native_counters(void) {
+    static const double mismatches[] = {1.0, 0.9, 0.08};
+    static const struct {
+        TZrUInt64 nativeSites;
+        TZrUInt64 helperSites;
+        TZrUInt64 executedSites;
+        double expectedRatio;
+    } validCases[] = {
+            {0u, 10u, 10u, 0.0},
+            {10u, 0u, 10u, 1.0},
+            {1u, 2u, 3u, 1.0 / 3.0},
+            {UINT64_MAX, 0u, UINT64_MAX, 1.0}
+    };
+    SZrAotCoverageCounts counts;
+    SZrPerfAotPhaseReport report;
+    SZrPerfAotPhaseReport invalid;
+
+    ZrTests_AotCoverage_Init(&counts);
+    counts.nativeSites = 8u;
+    counts.nativeHelperSites = 1u;
+    counts.interpreterSites = 1u;
+    counts.semanticSites = 100u;
+    counts.executedSemanticSites = 10u;
+    counts.sampleRatePermille = ZR_AOT_COVERAGE_FULL_SAMPLE_PERMILLE;
+    report = phase_report_from_coverage(&counts);
+    expect_true(report.nativeCoverage == 0.8 &&
+                    ZrPerfReport_ValidateAotPhase(&report) != 0,
+                "phase ratio did not preserve the producer's dynamic denominator");
+    for (size_t i = 0u; i < sizeof(mismatches) / sizeof(mismatches[0]); ++i) {
+        invalid = report;
+        invalid.nativeCoverage = mismatches[i];
+        expect_true(ZrPerfReport_ValidateAotPhase(&invalid) == 0,
+                    "phase report accepted a ratio inconsistent with native counters");
+    }
+
+    for (size_t i = 0u; i < sizeof(validCases) / sizeof(validCases[0]); ++i) {
+        ZrTests_AotCoverage_Init(&counts);
+        counts.nativeSites = validCases[i].nativeSites;
+        counts.nativeHelperSites = validCases[i].helperSites;
+        counts.semanticSites = counts.executedSemanticSites =
+                validCases[i].executedSites;
+        counts.sampleRatePermille = ZR_AOT_COVERAGE_FULL_SAMPLE_PERMILLE;
+        report = phase_report_from_coverage(&counts);
+        expect_true(report.nativeCoverage == validCases[i].expectedRatio &&
+                        ZrPerfReport_ValidateAotPhase(&report) != 0,
+                    "valid producer endpoint or fractional ratio was rejected");
+        if (validCases[i].executedSites == 3u) {
+            invalid = report;
+            invalid.nativeCoverage = 0.333333333;
+            expect_true(ZrPerfReport_ValidateAotPhase(&invalid) == 0,
+                        "phase report accepted a rounded ratio as the producer double");
+        }
+    }
+
+    ZrTests_AotCoverage_Init(&counts);
+    report = phase_report_from_coverage(&counts);
+    expect_true(report.coverageAvailable == ZR_FALSE &&
+                    report.nativeCoverage == -1.0 &&
+                    ZrPerfReport_ValidateAotPhase(&report) != 0,
+                "unavailable phase ratio sentinel was rejected");
+}
+
+static void test_invalid_phase_ratio_leaves_existing_output_unchanged(void) {
+    static const char sentinel[] = "existing phase report\n";
+    const char *path = "ssa_aot_phase_ratio_existing.json";
+    SZrAotCoverageCounts counts;
+    SZrPerfAotPhaseReport report;
+    FILE *file;
+    char retained[sizeof(sentinel)];
+    size_t bytesRead;
+    int extraByte;
+
+    ZrTests_AotCoverage_Init(&counts);
+    counts.nativeSites = 8u;
+    counts.nativeHelperSites = 2u;
+    counts.executedSemanticSites = 10u;
+    counts.sampleRatePermille = ZR_AOT_COVERAGE_FULL_SAMPLE_PERMILLE;
+    report = phase_report_from_coverage(&counts);
+    report.nativeCoverage = 1.0;
+    file = fopen(path, "wb");
+    expect_true(file != ZR_NULL, "ratio sentinel file could not be opened");
+    expect_true(fwrite(sentinel, 1u, sizeof(sentinel) - 1u, file) ==
+                    sizeof(sentinel) - 1u && fclose(file) == 0,
+                "ratio sentinel file could not be written");
+    expect_true(ZrPerfReport_WriteAotJson(path, &report) == 0,
+                "inconsistent ratio was written over an existing report");
+    file = fopen(path, "rb");
+    expect_true(file != ZR_NULL, "rejected ratio removed the existing report");
+    bytesRead = fread(retained, 1u, sizeof(retained), file);
+    extraByte = fgetc(file);
+    expect_true(fclose(file) == 0, "retained ratio sentinel could not be closed");
+    expect_true(bytesRead == sizeof(sentinel) - 1u && extraByte == EOF &&
+                    memcmp(retained, sentinel, sizeof(sentinel) - 1u) == 0,
+                "rejected ratio changed the existing report bytes");
+    expect_true(remove(path) == 0, "ratio sentinel file could not be removed");
+}
+
 int main(void) {
     test_coverage_keeps_semantic_denominator_and_classes();
     test_zero_coverage_is_unavailable_not_perfect();
@@ -483,6 +604,8 @@ int main(void) {
     test_runner_rejects_missing_backend_and_checksum_mismatch();
     test_runner_reports_invocation_failure_without_fallback();
     test_aot_phase_report_keeps_costs_and_unavailable_values_explicit();
+    test_aot_phase_ratio_matches_dynamic_native_counters();
+    test_invalid_phase_ratio_leaves_existing_output_unchanged();
     puts("ssa aot runner coverage PASS");
     return EXIT_SUCCESS;
 }
