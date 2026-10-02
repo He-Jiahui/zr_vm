@@ -81,6 +81,45 @@ EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Prepare(SZrHotPatchGenera
     out->record=slot; out->generation=g; out->leased=ZR_FALSE; gen_unlock(m); return gen_fail(d,ZR_HOT_PATCH_GENERATION_OK,0,g,0);
 }
 
+/* 取消只归还尚未发布的元数据槽位；编号不回退，借用 artifact 不由此释放。
+ * 与 Acquire/Publish 共用 manager 锁，避免检查零租约后再被新 reader pin。 */
+EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_DiscardPrepared(
+        SZrHotPatchGenerationManager *m, SZrHotPatchGenerationHandle *h,
+        SZrHotPatchGenerationDiagnostic *d) {
+    if (!m || !h || !h->record || h->leased)
+        return gen_fail(d, ZR_HOT_PATCH_GENERATION_INVALID_ARGUMENT, 0u, 0u, 0u);
+    gen_lock(m);
+    if (!gen_belongs(m, h->record)) {
+        gen_unlock(m);
+        return gen_fail(d, ZR_HOT_PATCH_GENERATION_NOT_PREPARED,
+                        h->generation, 0u, 0u);
+    }
+    SZrHotPatchVersionRecord *r = h->record;
+    TZrUInt64 generation = r->generation;
+    if (generation != h->generation || r->state != ZR_HOT_PATCH_VERSION_PREPARED) {
+        gen_unlock(m);
+        return gen_fail(d, ZR_HOT_PATCH_GENERATION_NOT_PREPARED,
+                        h->generation, generation, 0u);
+    }
+    uint_fast32_t leases = atomic_load_explicit(&r->leaseCount, memory_order_relaxed);
+    if (leases != 0u || atomic_load_explicit(&m->active, memory_order_relaxed) == r) {
+        TZrUInt32 reportedLeases = leases > UINT32_MAX ? UINT32_MAX : (TZrUInt32)leases;
+        gen_unlock(m);
+        return gen_fail(d, ZR_HOT_PATCH_GENERATION_INVALID_STATE,
+                        h->generation, generation, reportedLeases);
+    }
+    r->generation = 0u;
+    r->moduleHash = 0u;
+    r->contentHash = 0u;
+    r->publicContractHash = 0u;
+    r->targetProfile = 0u;
+    atomic_store_explicit(&r->leaseCount, 0u, memory_order_relaxed);
+    r->state = ZR_HOT_PATCH_VERSION_FREE;
+    memset(h, 0, sizeof(*h));
+    gen_unlock(m);
+    return gen_fail(d, ZR_HOT_PATCH_GENERATION_OK, 0u, generation, 0u);
+}
+
 /* 发布使后续 AcquireActive 取得新代际；旧 frame 的租约仍可读取退役槽位。 */
 EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Publish(SZrHotPatchGenerationManager *m,SZrHotPatchGenerationHandle *h,SZrHotPatchGenerationDiagnostic *d) {
     if(!m||!h||!h->record||h->leased) {

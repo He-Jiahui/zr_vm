@@ -784,6 +784,8 @@ cleanup:
     return failures;
 }
 
+#include "ssa_generation_discard_prepared.inc"
+
 int main(void) {
     SZrHotPatchGenerationManager manager;
     SZrHotPatchVersionRecord records[3];
@@ -824,6 +826,12 @@ int main(void) {
         } \
     } while (0)
 
+    if (test_discard_slot_reuse_and_aba() != 0) return 1;
+    if (test_discard_guards_and_live_versions() != 0) return 1;
+    if (test_discard_rollback_and_generation_exhaustion() != 0) return 1;
+    if (test_discard_full_width_busy_and_active_guard() != 0) return 1;
+    if (test_discard_competing_operations(ZR_FALSE) != 0) return 1;
+    if (test_discard_competing_operations(ZR_TRUE) != 0) return 1;
     if (test_lease_limit(ZR_TRUE) != 0) return 1;
     if (test_lease_limit(ZR_FALSE) != 0) return 1;
     if (test_concurrent_resolve_and_publish_snapshots() != 0) return 1;

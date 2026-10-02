@@ -13,6 +13,7 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_rollback.c
 tests:
   - tests/core/test_ssa_generation_publication.c
+  - tests/core/ssa_generation_discard_prepared.inc
   - tests/library/test_ssa_capability_validation.c
   - tests/library/test_ssa_rollback_restricted.c
   - tests/acceptance/ssa-hotpatch-generation-handle-ownership.md
@@ -21,6 +22,7 @@ tests:
   - tests/acceptance/ssa-hotpatch-rollback-test-ndebug.md
   - tests/acceptance/ssa-hotpatch-generation-resolve-concurrency.md
   - tests/acceptance/2026-10-02-ssa-generation-lease-limit.md
+  - tests/acceptance/2026-10-02-ssa-generation-discard-prepared.md
 plan_sources:
   - docs/plans/ssa/08-artifact-hotpatch/03-generation-publication.md
   - docs/plans/ssa/08-artifact-hotpatch/04-rollback-restricted.md
@@ -51,6 +53,44 @@ stale or non-leased handles return a structured `STALE_LINK`/state error.
 Rollback and publication callers must allocate a fresh generation rather than
 mutating an existing record in place.
 
+`DiscardPrepared` cancels a metadata candidate created by Prepare or Rollback
+before publication. It requires an unleased input handle from this manager,
+the matching generation in `PREPARED` state, no acquired leases on that record,
+and a record distinct from active. The membership check precedes record reads;
+state, full-width lease count and clearing share the manager lock with Acquire
+and Publish. A numbered Acquire can pin a PREPARED candidate, so merely checking
+the input handle's `leased` flag would not make cancellation safe.
+
+On success the record's identity fields, generation and lease count are cleared,
+its state becomes FREE, and the supplied handle is cleared. Active,
+nextGeneration and manager count remain unchanged. The success diagnostic's
+`actualGeneration` identifies the discarded generation. Slot reuse still gets
+a fresh generation; an old copied handle cannot publish or cancel the new
+candidate. Discard does not undo generation exhaustion.
+
+Null/cleared/leased inputs return `INVALID_ARGUMENT`, matching Publish's input
+contract. Foreign, mismatched or non-PREPARED records return `NOT_PREPARED`;
+foreign diagnostics have actual generation zero. A pinned matching candidate
+returns `INVALID_STATE`, with its generation and lease count in the diagnostic.
+A defensively detected PREPARED record equal to active is also rejected as
+`INVALID_STATE`. Failed cancellation preserves the handle and manager records;
+callers can release acquired leases and retry. A cleared handle's repeated
+cancellation is invalid; an old retained copy is no longer prepared.
+
+The public `count` field retains its existing bookkeeping: Prepare/Rollback
+increment it up to capacity, while CollectRetired and DiscardPrepared leave it
+unchanged. It is not a defined live-occupancy count; its header TODO remains
+open. Both allocation paths scan FREE slot states, so cancellation restores
+capacity independently of count. This slice does not redefine that field.
+
+Cancellation releases only the current registry's metadata slot. Records are
+caller-owned, Prepare does not own artifact bytes or installed executable code,
+and this API neither mutates the capability registry nor connects interpreter
+frame/GC/code lifetimes. The independent fixture covers reuse, ABA, pinned and
+foreign rejection, rollback candidates, generation exhaustion and bounded
+competing operations; toolchain evidence and limitations are recorded in the
+[prepared-cancellation acceptance](../../tests/acceptance/2026-10-02-ssa-generation-discard-prepared.md).
+
 `AcquireActive` and `Acquire` share a per-record lease limit of `UINT32_MAX`.
 The manager lock protects both the full-width atomic count check and the
 increment. This matters because `atomic_uint_fast32_t` can be wider than the
@@ -69,11 +109,12 @@ the last legal increment and both entry paths at the limit. It resets fictional
 leases before manager deinitialization, including on failure. Debug/NDEBUG and
 toolchain evidence are recorded in the
 [lease-limit acceptance](../../tests/acceptance/2026-10-02-ssa-generation-lease-limit.md).
-This bounds the existing metadata lease protocol; interpreter frame entry/exit,
-executable installation, and staging cancellation remain separate work.
+This bounds the existing metadata lease protocol; interpreter frame entry/exit
+and executable installation remain separate work. Prepared metadata cancellation
+uses the explicit DiscardPrepared contract above.
 
 Every generation handle belongs to the manager whose `records` array contains
-its record. `Publish`, `Resolve`, and `Release` reject a handle from another
+its record. `Publish`, `DiscardPrepared`, `Resolve`, and `Release` reject a handle from another
 manager before reading its record or changing either manager's state. A
 foreign handle reports `actualGeneration == 0`, since its record is not part
 of the requested manager. Membership uses pointer equality over that manager's

@@ -91,6 +91,15 @@ ZR_CORE_API EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Prepare(
         TZrUInt64 moduleHash,
         SZrHotPatchGenerationHandle *outHandle,
         SZrHotPatchGenerationDiagnostic *diagnostic);
+/** @brief 取消未发布且无租约的 PREPARED 元数据候选，归还其槽位。
+ * @note 成功清空 prepared；active、nextGeneration 和 count 保持不变。
+ *       失败保持句柄/记录不变；外 manager、过期或已发布句柄返回 NOT_PREPARED。
+ *       leased 输入返回 INVALID_ARGUMENT；候选有其他 lease 时返回 INVALID_STATE。
+ * @pre manager/records 仍存活；同一句柄对象不得被并发修改。 */
+ZR_CORE_API EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_DiscardPrepared(
+        SZrHotPatchGenerationManager *manager,
+        SZrHotPatchGenerationHandle *prepared,
+        SZrHotPatchGenerationDiagnostic *diagnostic);
 /** @brief 原子切换新调用使用的 active；已有租约继续保留旧版本。
  * @pre prepared 来自同一 manager 的 Prepare/Rollback，且尚未发布或租用。
  * @note 外 manager 句柄返回 NOT_PREPARED，actualGeneration 为零。 */
