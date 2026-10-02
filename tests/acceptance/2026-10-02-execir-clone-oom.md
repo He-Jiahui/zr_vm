@@ -64,7 +64,8 @@ The fixed runs pass all focused cases:
 `D:/tmp/zr_vm/ssa-execir-clone-oom` records the focused runs. The sanitizer
 runs use leak detection and report no sanitizer finding. The separate RED
 logs retain the expected diagnostic and rollback failures. Superseded ExecIR
-RED binaries remain under this D-only evidence directory at this boundary.
+RED binaries were removed after verification; the RED logs remain under this
+D-only evidence directory for the failure-proof record.
 
 The CMake target enables interception for every source in the executable, using
 MSVC `/FI` or separate GCC/Clang `-include` arguments. The MSVC target run
