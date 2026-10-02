@@ -152,6 +152,72 @@ static void test_coverage_record_and_merge_are_overflow_safe(void) {
                 "failed denominator record partially mutated the counters");
 }
 
+static void test_coverage_merge_preserves_sampling_evidence(void) {
+    static const struct {
+        TZrUInt64 destinationSites;
+        TZrUInt32 destinationRate;
+        TZrUInt64 sourceSites;
+        TZrUInt32 sourceRate;
+        TZrUInt32 expectedRate;
+    } cases[] = {
+            {1u, 0u, 1u, 1000u, 0u},
+            {1u, 1000u, 1u, 0u, 0u},
+            {0u, 0u, 1u, 1000u, 1000u},
+            {0u, 500u, 1u, 1000u, 1000u},
+            {1u, 1000u, 0u, 0u, 1000u},
+            {1u, 1000u, 0u, 500u, 1000u},
+            {1u, 0u, 0u, 1000u, 0u},
+            {1u, 500u, 1u, 500u, 500u}
+    };
+    SZrAotCoverageCounts counts;
+    SZrAotCoverageCounts source;
+    SZrAotCoverageReport report;
+
+    for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        ZrTests_AotCoverage_Init(&counts);
+        ZrTests_AotCoverage_Init(&source);
+        counts.nativeSites = cases[i].destinationSites;
+        counts.sampleRatePermille = cases[i].destinationRate;
+        source.nativeSites = cases[i].sourceSites;
+        source.sampleRatePermille = cases[i].sourceRate;
+        expect_true(ZrTests_AotCoverage_Merge(&counts, &source),
+                    "valid sampling evidence merge failed");
+        expect_true(counts.sampleRatePermille == cases[i].expectedRate,
+                    "sampling merge confused empty data with unknown evidence");
+        expect_true(ZrTests_AotCoverage_Compute(&counts, &report),
+                    "merged sampling report failed");
+        expect_true(report.available == (TZrBool)(cases[i].expectedRate != 0u) &&
+                        report.exact == (TZrBool)(cases[i].expectedRate == 1000u) &&
+                        report.executedSemanticSites ==
+                                cases[i].destinationSites + cases[i].sourceSites,
+                    "merged sampling report invented availability or exactness");
+    }
+
+    ZrTests_AotCoverage_Init(&counts);
+    ZrTests_AotCoverage_Init(&source);
+    counts.nativeSites = 1u;
+    counts.sampleRatePermille = 1000u;
+    source.nativeSites = 1u;
+    source.sampleRatePermille = 500u;
+    expect_true(ZrTests_AotCoverage_Merge(&counts, &source),
+                "different-rate merge failed");
+    expect_true(counts.sampleRatePermille == 0u,
+                "different-rate merge retained a sampling claim");
+    source.sampleRatePermille = 1000u;
+    expect_true(ZrTests_AotCoverage_Merge(&counts, &source) &&
+                    counts.sampleRatePermille == 0u &&
+                    ZrTests_AotCoverage_Compute(&counts, &report) &&
+                    report.available == ZR_FALSE && report.exact == ZR_FALSE,
+                "later exact sample restored unknown aggregate evidence");
+
+    /* A nonempty declared denominator is evidence even without observed hits. */
+    ZrTests_AotCoverage_Init(&counts);
+    counts.semanticSites = 5u;
+    expect_true(ZrTests_AotCoverage_Merge(&counts, &source) &&
+                    counts.sampleRatePermille == 0u,
+                "unobserved declared sites were treated as an empty aggregate");
+}
+
 static void test_runner_reports_actual_backend_and_checksum(void) {
     SZrAotRunner runner;
     SZrAotRunnerRequest request;
@@ -409,6 +475,7 @@ int main(void) {
     test_zero_coverage_is_unavailable_not_perfect();
     test_coverage_rejects_inconsistent_denominator();
     test_coverage_record_and_merge_are_overflow_safe();
+    test_coverage_merge_preserves_sampling_evidence();
     test_runner_reports_actual_backend_and_checksum();
     test_runner_marks_compiled_entry_with_fallback_as_mixed();
     test_runner_matrix_and_unsupported_backend_diagnostics();

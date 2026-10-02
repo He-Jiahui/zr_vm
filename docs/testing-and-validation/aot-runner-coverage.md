@@ -17,6 +17,7 @@ plan_sources:
 tests:
   - tests/benchmarks/test_ssa_aot_runner_coverage.c
   - tests/cmake/ssa-tests.cmake
+  - tests/acceptance/2026-10-02-ssa-coverage-sampling-merge.md
 doc_type: testing-guide
 ---
 
@@ -59,6 +60,19 @@ ZrTests_AotCoverage_Record and ZrTests_AotCoverage_Merge are transactional and
 overflow checked. A failed increment or merge leaves the input unchanged. The
 validator rejects a declared denominator smaller than observed semantic work
 and rejects fallback time greater than total time.
+
+Sampling rates describe the work contributed by each input. A merge adopts the
+source rate only when the destination has no declared or observed semantic
+sites. An empty source leaves a nonempty destination's rate intact, even when
+the source carries a different rate. When both inputs contribute work, a
+missing rate or different rates makes the aggregate rate unknown (`0`). That
+unknown aggregate stays unavailable through later merges with exact samples;
+additional samples cannot reconstruct lost sampling information. Declared
+sites without observed hits count as nonempty work for this rule. Equal known
+rates remain known; only the full sampling rate produces `exact=true`.
+
+The regression and direct GCC/Clang/MSVC evidence are recorded in
+[the sampling merge acceptance](../../tests/acceptance/2026-10-02-ssa-coverage-sampling-merge.md).
 
 ## Phase and artifact report
 

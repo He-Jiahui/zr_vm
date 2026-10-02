@@ -252,13 +252,13 @@ TZrBool ZrTests_AotCoverage_Merge(SZrAotCoverageCounts *destination,
         return ZR_FALSE;
     }
     mergedSampleRate = merged.sampleRatePermille;
-    if (mergedSampleRate == 0u) {
+    if (destinationDenominator == 0u) {
+        /* An empty accumulator has no sampling evidence to preserve. */
         mergedSampleRate = source->sampleRatePermille;
-    } else if (source->sampleRatePermille == 0u && sourceDenominator != 0u) {
-        mergedSampleRate = 0u;
-    } else if (source->sampleRatePermille != 0u &&
+    } else if (sourceDenominator != 0u &&
                mergedSampleRate != source->sampleRatePermille) {
-        /* A mixed-rate aggregate is intentionally not presented as exact. */
+        /* Nonempty unknown or mixed-rate evidence stays unknown.  Empty
+         * sources cannot change the rate of observed or declared work. */
         mergedSampleRate = 0u;
     }
     merged.sampleRatePermille = mergedSampleRate;
