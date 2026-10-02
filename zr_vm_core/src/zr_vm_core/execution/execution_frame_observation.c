@@ -95,9 +95,34 @@ TZrBool ZrCore_Execution_ObserveFrame(
             return ZR_FALSE;
         }
         for (prior = 0u; prior < index; ++prior) {
-            if (layout->slots[prior].physicalSlot == slot->physicalSlot) {
+            const SZrExecutionFrameSlot *other = &layout->slots[prior];
+            if ((request->flags & ZR_EXECUTION_FRAME_OBSERVE_WRITE_SCALARS) != 0u &&
+                slot->slotClass == ZR_EXECUTION_FRAME_SLOT_SCALAR &&
+                other->slotClass == ZR_EXECUTION_FRAME_SLOT_SCALAR) {
+                TZrUInt32 otherEnd = other->byteOffset + other->byteSize;
+                TZrUInt32 overlapStart = slot->byteOffset > other->byteOffset
+                                            ? slot->byteOffset : other->byteOffset;
+                TZrUInt32 overlapEnd = end < otherEnd ? end : otherEnd;
+                /* Reused logical slots have no active-occupant selector here.
+                 * All requested writes must agree on their actual shared bytes.
+                 * Earlier destinations were already checked for overflow. */
+                if (overlapStart < overlapEnd &&
+                    memcmp((const TZrByte *)&request->scalarValues[index] +
+                                   (overlapStart - slot->byteOffset),
+                           (const TZrByte *)&request->scalarValues[prior] +
+                                   (overlapStart - other->byteOffset),
+                           overlapEnd - overlapStart) != 0) {
+                    execution_frame_observation_diag(
+                            diagnostic, ZR_EXECUTION_FRAME_DIAGNOSTIC_SLOT_OVERLAP,
+                            index, other->physicalSlot, slot->physicalSlot);
+                    if (diagnostic != ZR_NULL) {
+                        diagnostic->relatedIndex = prior;
+                    }
+                    return ZR_FALSE;
+                }
+            }
+            if (other->physicalSlot == slot->physicalSlot) {
                 seenPhysical = ZR_TRUE;
-                break;
             }
         }
         if ((request->flags & ZR_EXECUTION_FRAME_OBSERVE_INVALIDATE) != 0u &&

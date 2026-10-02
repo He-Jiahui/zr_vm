@@ -448,7 +448,115 @@ static void test_non_inline_root_preserves_access_span(void) {
     ZrCore_ExecutionFrameRootMap_Free(&map);
 }
 
+static void test_observation_reused_scalar_conflict_preserves_outputs(void) {
+    SZrExecutionFrameSlot slots[3] = {
+        {30u, 0u, 0u, 8u, 8u, 0u, 1u, 3u,
+         ZR_EXECUTION_FRAME_SLOT_SCALAR, 0u},
+        {31u, 1u, 8u, 8u, 8u, 0u, 2u, 3u,
+         ZR_EXECUTION_FRAME_SLOT_SCALAR, 0u},
+        {32u, 0u, 0u, 8u, 8u, 1u, 2u, 3u,
+         ZR_EXECUTION_FRAME_SLOT_SCALAR, 0u}
+    };
+    SZrExecutionFrameLayout layout = make_layout(slots);
+    SZrExecutionFrameDiagnostic diagnostic;
+    TZrByte frame[40], snapshot[40];
+    TZrUInt64 values[3] = {111u, 333u, 222u};
+    TZrUInt64 writeback[3] = {91u, 92u, 93u};
+    TZrUInt64 savedWriteback[3];
+    TZrUInt32 invalidated[3] = {81u, 82u, 83u};
+    TZrUInt32 savedInvalidated[3];
+    TZrUInt32 count = 77u;
+    SZrFrameObservationRequest request = {
+        &layout, frame, sizeof(frame), values, 3u, writeback, 3u,
+        invalidated, 3u, &count,
+        ZR_EXECUTION_FRAME_OBSERVE_WRITE_SCALARS |
+        ZR_EXECUTION_FRAME_OBSERVE_INVALIDATE
+    };
+
+    CHECK(ZrCore_ExecutionFrameLayout_Finalize(&layout, &diagnostic));
+    memset(frame, 0xa5, sizeof(frame));
+    memcpy(snapshot, frame, sizeof(frame));
+    memcpy(savedWriteback, writeback, sizeof(writeback));
+    memcpy(savedInvalidated, invalidated, sizeof(invalidated));
+    for (TZrUInt32 repeat = 0u; repeat < 2u; ++repeat) {
+        CHECK(!ZrCore_Execution_ObserveFrame(&request, &diagnostic));
+        CHECK(diagnostic.code == ZR_EXECUTION_FRAME_DIAGNOSTIC_SLOT_OVERLAP);
+        CHECK(diagnostic.index == 2u && diagnostic.relatedIndex == 0u);
+        CHECK(memcmp(frame, snapshot, sizeof(frame)) == 0);
+        CHECK(memcmp(writeback, savedWriteback, sizeof(writeback)) == 0);
+        CHECK(memcmp(invalidated, savedInvalidated, sizeof(invalidated)) == 0);
+        CHECK(count == 77u);
+    }
+}
+
+static void test_observation_compatible_scalar_aliases(void) {
+    SZrExecutionFrameSlot slots[3] = {
+        {40u, 0u, 0u, 4u, 4u, 0u, 1u, 3u,
+         ZR_EXECUTION_FRAME_SLOT_SCALAR, 0u},
+        {41u, 0u, 0u, 4u, 4u, 1u, 2u, 3u,
+         ZR_EXECUTION_FRAME_SLOT_SCALAR, 0u},
+        {42u, 1u, 8u, 8u, 8u, 0u, 2u, 3u,
+         ZR_EXECUTION_FRAME_SLOT_SCALAR, 0u}
+    };
+    SZrExecutionFrameLayout layout = make_layout(slots);
+    SZrExecutionFrameDiagnostic diagnostic;
+    TZrByte frame[40] = {0};
+    TZrByte snapshot[40];
+    TZrUInt64 values[3] = {111u, 111u, 222u};
+    TZrUInt64 writeback[3] = {0u, 0u, 0u};
+    TZrUInt32 invalidated[3] = {99u, 99u, 99u};
+    TZrUInt32 count = 99u;
+    SZrFrameObservationRequest request = {
+        &layout, frame, sizeof(frame), values, 3u, writeback, 3u,
+        invalidated, 3u, &count,
+        ZR_EXECUTION_FRAME_OBSERVE_WRITE_SCALARS |
+        ZR_EXECUTION_FRAME_OBSERVE_INVALIDATE
+    };
+
+    CHECK(ZrCore_ExecutionFrameLayout_Finalize(&layout, &diagnostic));
+    for (TZrUInt32 repeat = 0u; repeat < 2u; ++repeat) {
+        CHECK(ZrCore_Execution_ObserveFrame(&request, &diagnostic));
+        CHECK(diagnostic.code == ZR_EXECUTION_FRAME_DIAGNOSTIC_NONE);
+        CHECK(writeback[0] == writeback[1]);
+        CHECK(memcmp(&writeback[0], &values[0], 4u) == 0);
+        CHECK(writeback[2] == 222u);
+        CHECK(count == 2u && invalidated[0] == 0u && invalidated[1] == 1u);
+        CHECK(invalidated[2] == 99u);
+    }
+    /* Change only bytes outside the actual four-byte payload. This also
+     * exercises unused high bits on the supported little-endian targets. */
+    ((TZrByte *)&values[1])[sizeof(TZrUInt64) - 1u] ^= 0x80u;
+    CHECK(values[0] != values[1]);
+    CHECK(ZrCore_Execution_ObserveFrame(&request, &diagnostic));
+    CHECK(writeback[0] == writeback[1] && writeback[2] == 222u);
+
+    memcpy(snapshot, frame, sizeof(frame));
+    values[1] = 333u;
+    request.flags = ZR_EXECUTION_FRAME_OBSERVE_INVALIDATE;
+    CHECK(ZrCore_Execution_ObserveFrame(&request, &diagnostic));
+    CHECK(memcmp(frame, snapshot, sizeof(frame)) == 0);
+    CHECK(writeback[0] == writeback[1] && count == 2u);
+
+    /* The validator also accepts different physical IDs with byte aliases.
+     * Their actual overlapping payload, rather than identity, is decisive. */
+    slots[1].physicalSlot = 2u;
+    CHECK(ZrCore_ExecutionFrameLayout_Hash(&layout) != layout.layoutHash);
+    layout.layoutHash = 0u;
+    CHECK(ZrCore_ExecutionFrameLayout_Finalize(&layout, &diagnostic));
+    request.flags |= ZR_EXECUTION_FRAME_OBSERVE_WRITE_SCALARS;
+    CHECK(!ZrCore_Execution_ObserveFrame(&request, &diagnostic));
+    CHECK(diagnostic.code == ZR_EXECUTION_FRAME_DIAGNOSTIC_SLOT_OVERLAP);
+    CHECK(diagnostic.index == 1u && diagnostic.relatedIndex == 0u);
+    CHECK(memcmp(frame, snapshot, sizeof(frame)) == 0);
+    values[1] = values[0];
+    CHECK(ZrCore_Execution_ObserveFrame(&request, &diagnostic));
+    CHECK(writeback[0] == writeback[1] && count == 3u);
+    CHECK(invalidated[0] == 0u && invalidated[1] == 2u && invalidated[2] == 1u);
+}
+
 int main(void) {
+    test_observation_reused_scalar_conflict_preserves_outputs();
+    test_observation_compatible_scalar_aliases();
     test_precise_roots_and_derived_relocation();
     test_observation_materializes_and_invalidates_atomically();
     test_root_and_observation_validation_failures();
