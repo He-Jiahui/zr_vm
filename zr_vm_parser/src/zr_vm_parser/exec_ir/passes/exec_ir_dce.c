@@ -202,6 +202,9 @@ static TZrBool zr_dce_effectful(const SZrExecIrInstruction *instruction) {
                                                ZR_EXEC_IR_FLAG_DEBUG_POLL |
                                                ZR_EXEC_IR_FLAG_GUARD_EXIT);
     return (TZrBool)(info == ZR_NULL || instruction->deoptId != 0u ||
+                     instruction->effectIn != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID ||
+                     instruction->effectOut != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID ||
+                     instruction->memoryIn.count != 0u || instruction->memoryOut.count != 0u ||
                      (instruction->flags & effectFlags) != 0u ||
                      info->memoryReads != 0u || info->memoryWrites != 0u ||
                      (info->flags & (ZR_EXEC_IR_SCHEMA_FLAG_MAY_ALLOCATE |
@@ -213,14 +216,17 @@ static TZrBool zr_dce_effectful(const SZrExecIrInstruction *instruction) {
 
 static TZrBool zr_dce_mark_instruction_operands(const SZrExecIrFunction *function,
                                                 const SZrExecIrInstruction *instruction,
-                                                TZrUInt8 *used) {
+                                                TZrUInt8 *used, TZrBool *progress) {
     TZrUInt32 index;
     if (!zr_dce_range_valid(instruction->operands, function->operandCount) ||
         (instruction->operands.count != 0u && function->operands == ZR_NULL)) return ZR_FALSE;
     for (index = instruction->operands.start;
          index < instruction->operands.start + instruction->operands.count; ++index) {
-        if (!zr_dce_mark_value(used, function->valueCount, function->operands[index]))
+        TZrExecIrValueId value = function->operands[index];
+        if (value == ZR_EXEC_IR_VALUE_ID_INVALID || value > function->valueCount)
             return ZR_FALSE;
+        if (used[value] == 0u) *progress = ZR_TRUE;
+        used[value] = 1u;
     }
     return ZR_TRUE;
 }
@@ -381,12 +387,14 @@ TZrBool ZrParser_ExecIr_RunDcePass(SZrExecIrFunction *function,
     }
     do {
         progress = ZR_FALSE;
-        /* Phi incoming values are uses only when the phi result itself is
-         * live.  Treating the entire pool as a root would keep unreachable
-         * branches alive forever. */
+        /* Retained PHIs require defined inputs even when their result is
+         * unused. PHI removal is a separate CFG transformation. */
         for (index = 0u; index < function->phiCount; ++index) {
             const SZrExecIrPhi *phi = &function->phiPool[index];
-            if (used[phi->result] == 0u) continue;
+            if (!ZrParser_ExecIr_PassConsumeBudget(function, context, 1u)) {
+                free(used);
+                return ZR_TRUE;
+            }
             for (TZrUInt32 at = phi->incomings.start;
                  at < phi->incomings.start + phi->incomings.count; ++at) {
                 TZrExecIrValueId value = function->phiIncoming[at].value;
@@ -428,23 +436,39 @@ TZrBool ZrParser_ExecIr_RunDcePass(SZrExecIrFunction *function,
                                    zr_dce_effectful(instruction) ||
                                    zr_dce_boundary_observable(function, index));
             if (observable || resultUsed) {
-                if (!zr_dce_mark_instruction_operands(function, instruction, used)) {
+                if (!zr_dce_mark_instruction_operands(function, instruction, used, &progress)) {
                     ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
                                                    function, 0u, index, function->valueCount, 0u);
                     free(used);
                     return ZR_FALSE;
                 }
-            } else if (zr_dce_pure((EZrExecIrOpcode)instruction->opcode)) {
-                TZrExecIrSourceId sourceId = instruction->sourceId;
-                zr_dce_nop(instruction);
-                zr_dce_remove_metadata_for_instruction(function, index);
-                if (changed != ZR_NULL) *changed = ZR_TRUE;
-                if (context != ZR_NULL && context->lastSourceId == 0u)
-                    context->lastSourceId = sourceId;
-                progress = ZR_TRUE;
             }
         }
     } while (progress != ZR_FALSE);
+    /* Reserve the full deletion sweep before publishing any tombstones so
+     * a direct caller also receives unchanged IR on budget cancellation. */
+    if (!ZrParser_ExecIr_PassConsumeBudget(function, context, function->instructionCount)) {
+        free(used);
+        return ZR_TRUE;
+    }
+    for (index = 0u; index < function->instructionCount; ++index) {
+        SZrExecIrInstruction *instruction = &function->instructions[index];
+        TZrBool resultUsed = ZR_FALSE;
+        TZrBool observable = (TZrBool)(!zr_dce_pure((EZrExecIrOpcode)instruction->opcode) ||
+                                      zr_dce_effectful(instruction) ||
+                                      zr_dce_boundary_observable(function, index + 1u));
+        for (TZrUInt32 at = instruction->results.start;
+             at < instruction->results.start + instruction->results.count; ++at)
+            if (used[function->results[at]] != 0u) resultUsed = ZR_TRUE;
+        if (!observable && !resultUsed) {
+            TZrExecIrSourceId sourceId = instruction->sourceId;
+            zr_dce_nop(instruction);
+            zr_dce_remove_metadata_for_instruction(function, index + 1u);
+            if (changed != ZR_NULL) *changed = ZR_TRUE;
+            if (context != ZR_NULL && context->lastSourceId == 0u)
+                context->lastSourceId = sourceId;
+        }
+    }
     free(used);
     return ZR_TRUE;
 }

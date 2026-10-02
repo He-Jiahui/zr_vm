@@ -7,6 +7,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
   - tests/parser/test_ssa_sccp_conversion.c
+  - tests/parser/test_ssa_dce_phi_liveness.c
+  - tests/parser/ssa_dce_phi_liveness_cases.inc
   - tests/cmake/ssa-sccp-conversion-tests.cmake
   - tests/CMakeLists.txt
   - tests/cmake/ssa-tests.cmake
@@ -25,6 +27,9 @@ tests:
   - tests/acceptance/ssa-pass-failure-snapshot.md
   - tests/acceptance/ssa-pass-verifier-timing.md
   - tests/acceptance/2026-10-02-ssa-sccp-conversion.md
+  - tests/parser/test_ssa_dce_phi_liveness.c
+  - tests/parser/ssa_dce_phi_liveness_cases.inc
+  - tests/acceptance/2026-10-02-ssa-dce-phi-liveness.md
 doc_type: implementation
 status: active
 ---
@@ -37,8 +42,45 @@ verifier.  The initial registry is deliberately small and deterministic:
 1. `sccp` computes executable CFG edges and the value lattice, then performs
    dominance-safe copy propagation and folds only proven, representable
    integer results.
-2. `dce` performs a bounded fixed-point liveness walk and turns only unused,
+2. `dce` completes a bounded fixed-point liveness walk before turning unused,
    side-effect-free definitions into `NOP` tombstones.
+
+## DCE PHI Liveness And Publication
+
+DCE first validates storage and seeds uses from GC roots, deoptimization
+values and aggregate fields, and state-map live/root values. Owner states are
+paired with state-map live values, so those definitions remain rooted. It then
+repeatedly visits PHI incoming edge uses and instruction operands until marking
+does not discover any new used value. Control-flow instructions, owner operations,
+memory reads/writes, explicit memory/effect-token carriers, throw/GC/suspend/
+allocation/debug/guard boundaries, and existing GC/state-map sites retain their
+operands even when their result is unused.
+
+PHIs remain structurally present in this pass. Every retained PHI incoming is
+therefore a structural use, including when the PHI result is unused: the full
+SSA verifier still requires its incoming definitions. This also keeps transitive
+instruction operands behind incoming copies and chained PHIs alive. Removing
+unused PHIs and their CFG bookkeeping is a separate optimization, and this DCE
+pass makes no claim to remove definitions needed by retained unused PHIs.
+
+The marking phase never rewrites instructions or metadata. PHI and instruction
+visits consume the pass work budget. After the fixed point, DCE reserves the
+entire instruction-deletion sweep budget before changing the function. Budget
+exhaustion returns success with `budgetExhausted` set and `changed` false; direct
+callers receive unchanged IR and metadata, with no source remark published.
+After reservation, deletion cannot encounter a budget cancellation halfway
+through publishing tombstones. Deleted instructions become NOPs in place and
+their source-map metadata is removed without changing instruction IDs or CFG.
+The pass manager retains its existing full verification and rollback protocol.
+
+The independent `ssa_dce_phi_liveness` CTest exercises a strict diamond, incoming
+copies, chained PHIs, a loop backedge, unused structural PHIs, and unrelated dead
+pure chains. Each successful fixture fully verifies and executes through both
+Oracle and ExecBC before/after DCE and, where applicable, SCCP+DCE; a repeated
+pipeline must be idempotent. Metadata and observable-boundary cases cover GC/
+deopt roots, debug state maps, owner MOVE, and throw effects. Every smaller work
+budget than a complete direct DCE run must leave the function unchanged, and an
+intentionally invalid following pass verifies transaction rollback after DCE.
 
 The public `SZrExecIrPassInfo` contract records required, preserved, and
 invalidated analyses.  SCCP requires dominators when a function has blocks;

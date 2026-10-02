@@ -43,3 +43,26 @@ if (NOT TARGET zr_vm_ssa_sccp_conversion_test)
     add_test(NAME ssa_sccp_conversion COMMAND zr_vm_ssa_sccp_conversion_test)
     set_tests_properties(ssa_sccp_conversion PROPERTIES LABELS "ssa" TIMEOUT 120)
 endif ()
+
+if (NOT TARGET zr_vm_ssa_dce_phi_liveness_test)
+    if (NOT TARGET zr_vm_core_shared AND NOT TARGET zr_vm_core_static)
+        message(FATAL_ERROR "ssa_dce_phi_liveness requires a zr_vm_core library target")
+    endif ()
+    get_target_property(zr_vm_ssa_dce_sources zr_vm_ssa_sccp_conversion_test SOURCES)
+    list(REMOVE_ITEM zr_vm_ssa_dce_sources
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_sccp_conversion.c)
+    list(APPEND zr_vm_ssa_dce_sources
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_dce_phi_liveness.c)
+    add_executable(zr_vm_ssa_dce_phi_liveness_test ${zr_vm_ssa_dce_sources})
+    get_target_property(zr_vm_ssa_dce_includes
+            zr_vm_ssa_sccp_conversion_test INCLUDE_DIRECTORIES)
+    get_target_property(zr_vm_ssa_dce_definitions
+            zr_vm_ssa_sccp_conversion_test COMPILE_DEFINITIONS)
+    target_include_directories(zr_vm_ssa_dce_phi_liveness_test PRIVATE
+            ${zr_vm_ssa_dce_includes})
+    target_compile_definitions(zr_vm_ssa_dce_phi_liveness_test PRIVATE
+            ${zr_vm_ssa_dce_definitions})
+    zr_vm_link_core(zr_vm_ssa_dce_phi_liveness_test)
+    add_test(NAME ssa_dce_phi_liveness COMMAND zr_vm_ssa_dce_phi_liveness_test)
+    set_tests_properties(ssa_dce_phi_liveness PROPERTIES LABELS "ssa" TIMEOUT 120)
+endif ()
