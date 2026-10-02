@@ -1003,7 +1003,8 @@ TZrBool ZrCore_ExecIr_FunctionSeal(SZrExecIrFunction *function,
 
 SZrExecIrBlock *ZrCore_ExecIr_FunctionBlockAt(SZrExecIrFunction *function,
                                                 TZrExecIrBlockId id) {
-    if (function == ZR_NULL || id == ZR_EXEC_IR_BLOCK_ID_INVALID || id > function->blockCount) {
+    if (function == ZR_NULL || function->sealed ||
+        id == ZR_EXEC_IR_BLOCK_ID_INVALID || id > function->blockCount) {
         return ZR_NULL;
     }
     return &function->blocks[id - 1u];

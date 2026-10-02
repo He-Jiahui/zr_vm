@@ -42,6 +42,49 @@ static void test_empty_module_and_entry_block(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+static void test_block_accessor_respects_publication_boundary(void) {
+    SZrExecIrFunction function;
+    SZrExecIrInstruction instruction;
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrBlock *mutableBlock;
+    const SZrExecIrBlock *publishedBlock;
+    TZrExecIrInstructionId instructionId;
+    TZrExecIrBlockId blockId;
+
+    ZrCore_ExecIr_FunctionInit(&function);
+    function.id = 1u;
+    function.functionToken = 1u;
+    blockId = ZrCore_ExecIr_FunctionAddBlock(&function,
+                                             ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    expect_true(blockId == ZR_EXEC_IR_BLOCK_ID_ENTRY,
+                "publication fixture entry block append failed");
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = ZR_EXEC_IR_OPCODE_RETURN;
+    expect_true(ZrCore_ExecIr_FunctionAppendInstruction(&function,
+                                                         &instruction,
+                                                         &instructionId),
+                "publication fixture return append failed");
+    mutableBlock = ZrCore_ExecIr_FunctionBlockAt(&function, blockId);
+    expect_true(mutableBlock != ZR_NULL,
+                "unsealed builder could not access its block");
+    mutableBlock->instructionRange.count = 1u;
+    mutableBlock->terminatorInstructionId = instructionId;
+    expect_true(mutableBlock->instructionRange.count == 1u,
+                "unsealed builder could not mutate its block");
+
+    expect_true(ZrCore_ExecIr_FunctionSeal(&function, &diagnostic),
+                "publication fixture seal failed");
+    expect_true(ZrCore_ExecIr_FunctionBlockAt(&function, blockId) == ZR_NULL,
+                "mutable block accessor exposed a sealed function");
+    publishedBlock = ZrCore_ExecIr_FunctionBlockAtConst(&function, blockId);
+    expect_true(publishedBlock != ZR_NULL &&
+                    publishedBlock->instructionRange.count == 1u,
+                "const block accessor lost the sealed block");
+
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 static void test_value_builder_rejects_unknown_enums(void) {
     SZrExecIrFunction function;
 
@@ -886,6 +929,7 @@ int main(int argc, char **argv) {
     (void)argv;
 #endif
     test_empty_module_and_entry_block();
+    test_block_accessor_respects_publication_boundary();
     test_value_builder_rejects_unknown_enums();
     test_side_arrays_clone_without_aliasing();
     test_binding_rows_are_owned_typed_and_transactional();
