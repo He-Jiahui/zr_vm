@@ -1,11 +1,19 @@
 #include "zr_vm_parser/exec_ir_alias.h"
 #include "zr_vm_parser/exec_ir_ranges.h"
 #include "zr_vm_parser/exec_ir_gvn.h"
+#include "zr_vm_core/exec_ir_owner_state.h"
 
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#define GVN_CHECK(condition) do { \
+    if (!(condition)) { \
+        fprintf(stderr, "%s:%u: %s\n", __FILE__, (unsigned int)__LINE__, #condition); \
+        exit(EXIT_FAILURE); \
+    } \
+} while (0)
 
 static SZrExecIrAliasLocation location(EZrExecIrAliasBaseKind kind,
                                        TZrUInt64 baseId,
@@ -216,6 +224,116 @@ static void test_direct_bounds_proof_rejects_inverted_intervals(void) {
     assert(!ZrParser_ExecIr_RangeProvesBounds(&index, &length));
     assert(!ZrParser_ExecIr_CanElideBoundsCheck(&index, &length, &diagnostic));
     assert(diagnostic.code == ZR_EXECUTION_DIAGNOSTIC_NONE);
+}
+
+static void build_repeated_unary_function(SZrExecIrFunction *function,
+                                          EZrExecIrOpcode opcode,
+                                          EZrExecIrOwnership ownership) {
+    TZrExecIrValueId values[3];
+    SZrExecIrInstruction instruction;
+    TZrExecIrInstructionId id;
+    SZrExecIrRange operands, result, returned;
+    TZrUInt32 index;
+    ZrCore_ExecIr_FunctionInit(function);
+    function->id = 1u;
+    function->functionToken = 79u;
+    function->entryBlockId = ZrCore_ExecIr_FunctionAddBlock(
+            function, ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    for (index = 0u; index < 3u; ++index) {
+        values[index] = ZrCore_ExecIr_FunctionAddValue(
+                function, ZR_VALUE_TYPE_INT64, ownership,
+                ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+        GVN_CHECK(values[index] != ZR_EXEC_IR_VALUE_ID_INVALID);
+    }
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = (TZrUInt16)ZR_EXEC_IR_OPCODE_CONSTANT;
+    instruction.layoutId = 17u;
+    instruction.sourceId = 790u;
+    GVN_CHECK(ZrCore_ExecIr_FunctionAppendResults(
+            function, &values[0], 1u, &result));
+    instruction.resultRange = result;
+    GVN_CHECK(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, &id));
+    GVN_CHECK(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &values[0], 1u, &operands));
+    for (index = 1u; index < 3u; ++index) {
+        memset(&instruction, 0, sizeof(instruction));
+        instruction.opcode = (TZrUInt16)opcode;
+        instruction.operandRange = operands;
+        instruction.sourceId = 790u + index;
+        GVN_CHECK(ZrCore_ExecIr_FunctionAppendResults(
+                function, &values[index], 1u, &result));
+        instruction.resultRange = result;
+        GVN_CHECK(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, &id));
+    }
+    GVN_CHECK(ZrCore_ExecIr_FunctionAppendOperands(
+            function, &values[1], 1u, &returned));
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.opcode = (TZrUInt16)ZR_EXEC_IR_OPCODE_RETURN;
+    instruction.operandRange = returned;
+    GVN_CHECK(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, &id));
+    function->blocks[0].instructionRange.count = function->instructionCount;
+}
+
+static void test_gvn_preserves_repeated_move_consumption(void) {
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrOwnerAnalysis owners = {0};
+    SZrExecIrRemarkSink remarks = {0};
+    TZrUInt32 repetition;
+    build_repeated_unary_function(
+            &function, ZR_EXEC_IR_OPCODE_MOVE, ZR_EXEC_IR_OWNERSHIP_UNIQUE);
+    GVN_CHECK(ZrCore_ExecIr_VerifyFunction(
+            &function, ZR_EXEC_IR_VERIFY_ALL, &diagnostic));
+    for (repetition = 0u; repetition < 2u; ++repetition) {
+        GVN_CHECK(ZrCore_ExecIr_OwnerAnalysisBuild(&function, &owners, &diagnostic));
+        GVN_CHECK(ZrCore_ExecIr_OwnerStateAt(&owners, 2u, 1u,
+                ZR_EXEC_IR_STATE_BEFORE_EFFECT) == ZR_EXEC_IR_STATE_MAP_OWNER_INITIALIZED);
+        GVN_CHECK(ZrCore_ExecIr_OwnerStateAt(&owners, 2u, 1u,
+                ZR_EXEC_IR_STATE_AFTER_EFFECT) == ZR_EXEC_IR_STATE_MAP_OWNER_MOVED);
+        GVN_CHECK(ZrCore_ExecIr_OwnerStateAt(&owners, 3u, 1u,
+                ZR_EXEC_IR_STATE_BEFORE_EFFECT) == ZR_EXEC_IR_STATE_MAP_OWNER_MOVED);
+        {
+            EZrExecIrStateMapOwnerState repeatedResult = ZrCore_ExecIr_OwnerStateAt(
+                    &owners, 3u, 3u, ZR_EXEC_IR_STATE_AFTER_EFFECT);
+            if (repeatedResult != ZR_EXEC_IR_STATE_MAP_OWNER_UNINITIALIZED) {
+                fprintf(stderr, "Repeated MOVE initialized consumed result: expected %u, got %u\n",
+                        (unsigned int)ZR_EXEC_IR_STATE_MAP_OWNER_UNINITIALIZED,
+                        (unsigned int)repeatedResult);
+                exit(EXIT_FAILURE);
+            }
+        }
+        ZrCore_ExecIr_OwnerAnalysisFree(&owners);
+        GVN_CHECK(ZrParser_ExecIr_RunGvnCse(
+                &function, ZR_NULL, &remarks, &diagnostic));
+        GVN_CHECK(ZrCore_ExecIr_VerifyFunction(
+                &function, ZR_EXEC_IR_VERIFY_ALL, &diagnostic));
+    }
+    GVN_CHECK(function.instructions[1].opcode == ZR_EXEC_IR_OPCODE_MOVE);
+    GVN_CHECK(function.instructions[2].opcode == ZR_EXEC_IR_OPCODE_MOVE);
+    GVN_CHECK(function.operandPool[function.instructions[2].operandRange.start] == 1u);
+    GVN_CHECK(remarks.count == 0u);
+    free(remarks.items);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
+static void test_gvn_still_reuses_repeated_scalar_copy(void) {
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+    SZrExecIrRemarkSink remarks = {0};
+    build_repeated_unary_function(
+            &function, ZR_EXEC_IR_OPCODE_COPY, ZR_EXEC_IR_OWNERSHIP_UNKNOWN);
+    GVN_CHECK(ZrCore_ExecIr_VerifyFunction(
+            &function, ZR_EXEC_IR_VERIFY_ALL, &diagnostic));
+    GVN_CHECK(ZrParser_ExecIr_RunGvnCse(
+            &function, ZR_NULL, &remarks, &diagnostic));
+    GVN_CHECK(function.instructions[2].opcode == ZR_EXEC_IR_OPCODE_COPY);
+    GVN_CHECK(function.operandPool[function.instructions[2].operandRange.start] == 2u);
+    GVN_CHECK(function.resultPool[function.instructions[2].resultRange.start] == 3u);
+    GVN_CHECK(remarks.count == 1u && remarks.items[0].sourceId == 792u);
+    GVN_CHECK(ZrCore_ExecIr_VerifyFunction(
+            &function, ZR_EXEC_IR_VERIFY_ALL, &diagnostic));
+    free(remarks.items);
+    ZrCore_ExecIr_FreeFunction(&function);
 }
 
 static void test_gvn_rewrites_only_duplicate_pure_definitions(void) {
@@ -686,6 +804,8 @@ static void test_gvn_rejects_missing_value_storage(void) {
 }
 
 int main(void) {
+    test_gvn_preserves_repeated_move_consumption();
+    test_gvn_still_reuses_repeated_scalar_copy();
     test_identical_locations_must_alias();
     test_distinct_stable_allocations_are_disjoint();
     test_unknown_external_alias_is_conservative();

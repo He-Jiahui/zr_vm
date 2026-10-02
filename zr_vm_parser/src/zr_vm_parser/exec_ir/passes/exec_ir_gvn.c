@@ -70,13 +70,16 @@ static TZrBool pure_instruction(const SZrExecIrFunction *function,
         case ZR_EXEC_IR_OPCODE_TYPE_TEST:
         case ZR_EXEC_IR_OPCODE_ARITHMETIC:
         case ZR_EXEC_IR_OPCODE_COPY:
-        case ZR_EXEC_IR_OPCODE_MOVE:
         case ZR_EXEC_IR_OPCODE_ADD:
         case ZR_EXEC_IR_OPCODE_SUB:
         case ZR_EXEC_IR_OPCODE_MUL:
         case ZR_EXEC_IR_OPCODE_NEG:
         case ZR_EXEC_IR_OPCODE_COMPARE:
             return ZR_TRUE;
+        /* MOVE consumes its source even without memory/effect tokens.
+         * Reusing a prior result would suppress the ownership transition
+         * and can make a second consumption appear valid. */
+        case ZR_EXEC_IR_OPCODE_MOVE:
         default:
             return ZR_FALSE;
     }
