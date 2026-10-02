@@ -517,23 +517,29 @@ cleanup:
 
 static TZrBool verify_unpublished_ssa(SZrExecIrFunction *output,
                                      SZrExecIrDiagnostic *diagnostic) {
-    TZrExecIrFunctionId savedId = output->id;
-    TZrMetadataToken savedToken = output->functionToken;
-    TZrBool valid;
+    SZrExecIrFunction verificationView = *output;
+    SZrExecIrStateMap mapView;
     /* The core verifier requires published identities. This isolated
-     * candidate may not have either identity yet; keep both unchanged after
-     * verification so BuildModule can assign the real contract. */
-    if (savedId == ZR_EXEC_IR_FUNCTION_ID_INVALID) output->id = 1u;
-    if (savedToken == 0u) output->functionToken = 1u;
-    valid = ZrCore_ExecIr_VerifyFunction(
-            output,
+     * candidate may not have either identity yet. Verify shared storage via
+     * private identity views, leaving publication to BuildModule. */
+    if (verificationView.id == ZR_EXEC_IR_FUNCTION_ID_INVALID)
+        verificationView.id = 1u;
+    if (verificationView.functionToken == 0u)
+        verificationView.functionToken = 1u;
+    if (output->stateMap != ZR_NULL) {
+        mapView = *output->stateMap;
+        /* Only a matching unpublished token receives the temporary identity.
+         * Other identity mismatches must still reach strict map validation. */
+        if (output->functionToken == 0u && mapView.functionToken == 0u)
+            mapView.functionToken = verificationView.functionToken;
+        verificationView.stateMap = &mapView;
+    }
+    return ZrCore_ExecIr_VerifyFunction(
+            &verificationView,
             (EZrExecIrVerifyLevel)(ZR_EXEC_IR_VERIFY_STRUCTURE |
                                    ZR_EXEC_IR_VERIFY_SSA |
                                    ZR_EXEC_IR_VERIFY_EFFECT),
             diagnostic);
-    output->id = savedId;
-    output->functionToken = savedToken;
-    return valid;
 }
 
 /* State-map construction reuses the core verifier, which requires a

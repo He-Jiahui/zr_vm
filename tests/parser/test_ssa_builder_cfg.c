@@ -950,7 +950,11 @@ static void test_builder_reports_missing_fixed_operand(void) {
     ZrCore_ExecIr_FreeFunction(&output);
 }
 
+#include "ssa_builder_unpublished_state_maps.inc"
+
 int main(void) {
+    test_builder_keeps_unpublished_state_map_identity();
+    test_module_builder_publishes_zero_symbol_state_maps();
     test_diamond_preserves_every_edge_and_predecessor();
     test_rejects_out_of_range_semantic_target();
     test_rejects_edge_with_wrong_source_block();
