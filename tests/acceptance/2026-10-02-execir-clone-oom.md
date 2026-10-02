@@ -29,9 +29,10 @@ out-of-memory failure.
 
 ## Focused harness
 
-The core-model test remains production-hook free. A direct validation build
-force-includes `exec_ir_clone_test_allocator.h` and links its support source;
-the remapping is confined to that executable. The fixture populates all
+The core-model test remains production-hook free. The CMake
+`zr_vm_ssa_core_model_test` target and direct validation builds force-include
+`exec_ir_clone_test_allocator.h` and link its support source; the remapping is
+confined to that executable. The fixture populates all
 function arrays plus GC-map, state-map, frame-layout, binding-row, module-array,
 and two-function ownership paths. Snapshots retain object metadata, pointers,
 counts, capacities, and copied pool bytes. Each ordinal is reset before
@@ -62,12 +63,20 @@ The fixed runs pass all focused cases:
 `clone-oom-*-green-*-run.log` under
 `D:/tmp/zr_vm/ssa-execir-clone-oom` records the focused runs. The sanitizer
 runs use leak detection and report no sanitizer finding. The separate RED
-logs retain the expected diagnostic and rollback failures; mutation copies
-were removed after evidence collection.
+logs retain the expected diagnostic and rollback failures. Superseded ExecIR
+RED binaries remain under this D-only evidence directory at this boundary.
+
+The CMake target enables interception for every source in the executable, using
+MSVC `/FI` or separate GCC/Clang `-include` arguments. The MSVC target run
+completed the same 28/28 and 60/60 sweeps. The shared WSL build directories still
+have older generated rules: attempts to regenerate them on 2026-10-02 did not
+complete and were terminated. Their older `ssa core model PASS` output does not
+prove allocator coverage. The GCC/Clang evidence above comes from the focused
+direct builds.
 
 ## Limitations
 
-The allocator remapping is not part of normal production or CMake compiler
-targets. This evidence proves clone lifecycle and diagnostic behavior, not AOT
+The allocator remapping is confined to the core-model test target and is absent
+from production targets. This evidence proves clone lifecycle and diagnostic behavior, not AOT
 emission, physical frame restoration, or execution after a resumed checkpoint.
 The full SSA plan remains open beyond this leaf.
