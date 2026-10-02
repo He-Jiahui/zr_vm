@@ -6,6 +6,7 @@
 #include "execution/execution_frame_value_slot_fast.h"
 #include "execution/execution_inline_frame_copy_fast.h"
 #include "execution/execution_dynamic_call_guard.h"
+#include "execution/execution_checked_integer.h"
 #include "function_call_spread_internal.h"
 #include "function_precall_internal.h"
 #include "object/object_internal.h"
@@ -5201,129 +5202,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                           equalityResult__,                                                                             \
                           ZR_VALUE_TYPE_BOOL);                                                                          \
     } while (0)
-#define EXECUTE_MUL_SIGNED_BODY()                                                                                      \
-    do {                                                                                                               \
-        opA = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                                                \
-        opB = SIGNED_FRAME_VALUE_SLOT(B1(instruction));                                                                \
-        if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {                                     \
-            ALGORITHM_2(nativeInt64, *, ZR_VALUE_TYPE_INT64);                                                          \
-        } else {                                                                                                       \
-            execution_try_binary_numeric_float_fallback_or_raise(                                                      \
-                    state, ZR_EXEC_NUMERIC_FALLBACK_MUL, destination, opA, opB, "MUL_SIGNED");                        \
-        }                                                                                                              \
-    } while (0)
-#define EXECUTE_MUL_SIGNED_BODY_PLAIN_DEST()                                                                           \
-    do {                                                                                                               \
-        SZrTypeValue *plainDestination__ = SIGNED_FRAME_VALUE_SLOT(E(instruction));                                    \
-        const SZrTypeValue *leftValue__ = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                    \
-        const SZrTypeValue *rightValue__ = SIGNED_FRAME_VALUE_SLOT(B1(instruction));                                   \
-        if (ZR_VALUE_IS_TYPE_INT(leftValue__->type) && ZR_VALUE_IS_TYPE_INT(rightValue__->type)) {                    \
-            EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                        \
-                                            nativeInt64,                                                               \
-                                            leftValue__->value.nativeObject.nativeInt64 *                             \
-                                                    rightValue__->value.nativeObject.nativeInt64,                     \
-                                            ZR_VALUE_TYPE_INT64);                                                     \
-        } else {                                                                                                       \
-            destination = plainDestination__;                                                                          \
-            execution_try_binary_numeric_float_fallback_or_raise(                                                      \
-                    state, ZR_EXEC_NUMERIC_FALLBACK_MUL, destination, leftValue__, rightValue__, "MUL_SIGNED");      \
-        }                                                                                                              \
-    } while (0)
-#define EXECUTE_MUL_SIGNED_CONST_BODY()                                                                                \
-    do {                                                                                                               \
-        const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
-        opA = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                                                \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
-        if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
-            ALGORITHM_CONST_2(nativeInt64, *, ZR_VALUE_TYPE_INT64, constOpB->value.nativeObject.nativeInt64);         \
-        } else {                                                                                                       \
-            execution_try_binary_numeric_float_fallback_or_raise(                                                      \
-                    state,                                                                                             \
-                    ZR_EXEC_NUMERIC_FALLBACK_MUL,                                                                      \
-                    destination,                                                                                       \
-                    opA,                                                                                               \
-                    constOpB,                                                                                          \
-                    "MUL_SIGNED_CONST");                                                                               \
-        }                                                                                                              \
-    } while (0)
-#define EXECUTE_MUL_SIGNED_CONST_BODY_PLAIN_DEST()                                                                     \
-    do {                                                                                                               \
-        SZrTypeValue *plainDestination__ = SIGNED_FRAME_VALUE_SLOT(E(instruction));                                    \
-        const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
-        const SZrTypeValue *leftValue__ = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                    \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
-        if (ZR_VALUE_IS_TYPE_INT(leftValue__->type)) {                                                                 \
-            EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                        \
-                                            nativeInt64,                                                               \
-                                            leftValue__->value.nativeObject.nativeInt64 *                             \
-                                                    constOpB->value.nativeObject.nativeInt64,                         \
-                                            ZR_VALUE_TYPE_INT64);                                                     \
-        } else {                                                                                                       \
-            destination = plainDestination__;                                                                          \
-            execution_try_binary_numeric_float_fallback_or_raise(                                                      \
-                    state,                                                                                             \
-                    ZR_EXEC_NUMERIC_FALLBACK_MUL,                                                                      \
-                    destination,                                                                                       \
-                    leftValue__,                                                                                       \
-                    constOpB,                                                                                          \
-                    "MUL_SIGNED_CONST");                                                                               \
-        }                                                                                                              \
-    } while (0)
-#define EXECUTE_MUL_SIGNED_LOAD_CONST_BODY()                                                                           \
-    do {                                                                                                               \
-        TZrUInt16 constantIndex__ = instruction.instruction.operand.operand1[1];                                       \
-        const SZrTypeValue *constOpB = CONST(constantIndex__);                                                         \
-        EXECUTE_MATERIALIZE_CONSTANT_SLOT(constantIndex__, instruction.instruction.operand.operand0[1]);               \
-        opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[0]);                                     \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
-        if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
-            ALGORITHM_CONST_2(nativeInt64, *, ZR_VALUE_TYPE_INT64, constOpB->value.nativeObject.nativeInt64);         \
-        } else {                                                                                                       \
-            execution_try_binary_numeric_float_fallback_or_raise(                                                      \
-                    state,                                                                                             \
-                    ZR_EXEC_NUMERIC_FALLBACK_MUL,                                                                      \
-                    destination,                                                                                       \
-                    opA,                                                                                               \
-                    constOpB,                                                                                          \
-                    "MUL_SIGNED_LOAD_CONST");                                                                          \
-        }                                                                                                              \
-    } while (0)
-#define EXECUTE_MUL_SIGNED_LOAD_STACK_CONST_BODY()                                                                     \
-    do {                                                                                                               \
-        TZrUInt16 constantIndex__ = instruction.instruction.operand.operand1[1];                                       \
-        const SZrTypeValue *constOpB = CONST(constantIndex__);                                                         \
-        EXECUTE_MATERIALIZE_STACK_SLOT(instruction.instruction.operand.operand0[0],                                    \
-                                       instruction.instruction.operand.operand0[1]);                                   \
-        opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[1]);                                     \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
-        if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
-            ALGORITHM_CONST_2(nativeInt64, *, ZR_VALUE_TYPE_INT64, constOpB->value.nativeObject.nativeInt64);         \
-        } else {                                                                                                       \
-            execution_try_binary_numeric_float_fallback_or_raise(                                                      \
-                    state,                                                                                             \
-                    ZR_EXEC_NUMERIC_FALLBACK_MUL,                                                                      \
-                    destination,                                                                                       \
-                    opA,                                                                                               \
-                    constOpB,                                                                                          \
-                    "MUL_SIGNED_LOAD_STACK_CONST");                                                                    \
-        }                                                                                                              \
-    } while (0)
-#define EXECUTE_MUL_SIGNED_LOAD_STACK_BODY()                                                                           \
-    do {                                                                                                               \
-        opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[0]);                                     \
-        opB = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[1]);                                     \
-        if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {                                     \
-            ALGORITHM_2(nativeInt64, *, ZR_VALUE_TYPE_INT64);                                                         \
-        } else {                                                                                                       \
-            execution_try_binary_numeric_float_fallback_or_raise(                                                      \
-                    state,                                                                                             \
-                    ZR_EXEC_NUMERIC_FALLBACK_MUL,                                                                      \
-                    destination,                                                                                       \
-                    opA,                                                                                               \
-                    opB,                                                                                               \
-                    "MUL_SIGNED_LOAD_STACK");                                                                          \
-        }                                                                                                              \
-    } while (0)
+#include "execution/execution_signed_multiply.inc"
 #define EXECUTE_DIV_SIGNED_CONST_BODY()                                                                                \
     do {                                                                                                               \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
@@ -10048,6 +9927,9 @@ LZrExecutionDone:
 #undef EXECUTE_SUB_INT_BODY_PLAIN_DEST
 #undef EXECUTE_SUB_INT_CONST_BODY
 #undef EXECUTE_SUB_INT_CONST_BODY_PLAIN_DEST
+#undef EXECUTION_CHECKED_MUL_RESULT
+#undef EXECUTION_CHECKED_MUL_STORE
+#undef EXECUTION_CHECKED_MUL_STORE_DIRECT
 #undef EXECUTE_MUL_SIGNED_BODY
 #undef EXECUTE_MUL_SIGNED_BODY_PLAIN_DEST
 #undef EXECUTE_MUL_SIGNED_CONST_BODY

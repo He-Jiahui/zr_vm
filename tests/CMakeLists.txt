@@ -273,6 +273,8 @@ function(zr_vm_link_language_server target_name)
     endif ()
 endfunction()
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/checked-multiply-tests.cmake")
+
 if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
     target_include_directories(zr_vm_benchmark_registry_test PRIVATE
             ${CMAKE_SOURCE_DIR}
