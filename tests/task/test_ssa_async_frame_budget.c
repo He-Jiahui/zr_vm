@@ -636,6 +636,7 @@ cleanup:
 }
 
 #include "ssa_async_compile_contract_cases.inc"
+#include "ssa_async_stale_handle_cases.inc"
 
 int main(void) {
     test_frame_budget_only_suspends_at_a_coherent_boundary();
@@ -650,5 +651,7 @@ int main(void) {
     test_compile_queue_running_cancel_keeps_snapshot_until_ack();
     test_compile_queue_rejects_request_identity_mismatch();
     test_compile_queue_rejects_contract_changes_and_reuses_slot();
+    test_wait_stale_handle_cannot_change_reused_slot();
+    test_compile_stale_handle_cannot_change_reused_job();
     return g_testFailureCount == 0u ? 0 : 1;
 }

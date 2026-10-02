@@ -8,6 +8,7 @@ related_code:
   - zr_vm_library/include/zr_vm_library/task_runtime.h
   - tests/task/test_ssa_async_frame_budget.c
   - tests/task/ssa_async_compile_contract_cases.inc
+  - tests/task/ssa_async_stale_handle_cases.inc
 implementation_files:
   - zr_vm_core/include/zr_vm_core/async_frame_budget.h
   - zr_vm_core/src/zr_vm_core/execution/execution_async_wait.c
@@ -19,9 +20,11 @@ plan_sources:
 tests:
   - tests/task/test_ssa_async_frame_budget.c
   - tests/task/ssa_async_compile_contract_cases.inc
+  - tests/task/ssa_async_stale_handle_cases.inc
   - tests/acceptance/ssa-async-frame-budget.md
   - tests/acceptance/2026-09-29-ssa-async-frame-budget-ndebug-tests.md
   - tests/acceptance/2026-10-02-ssa-async-compile-contracts.md
+  - tests/acceptance/2026-10-02-ssa-async-stale-handles.md
 doc_type: module-detail
 ---
 
@@ -152,6 +155,22 @@ result hash; the final completion checks the exact published hash. These
 checks cover contract rejection and slot recovery without changing the
 production completion protocol. Validation evidence is recorded in
 `tests/acceptance/2026-10-02-ssa-async-compile-contracts.md`.
+
+`ssa_async_stale_handle_cases.inc` copies a handle, releases its original
+record, and reuses the only slot at the same generation. The old wait token
+must not wake, cancel, time out, recheck, resume, or release the new wait. The
+old compile job ID must not retrieve the new snapshot, cancel the new job,
+publish a result through it, or release it. The tests exercise stale resume
+against a `READY` wait and stale release against `RESUMED`/`COMPLETED` records,
+where the current handle is allowed to perform those operations. Exact
+`WAIT_NOT_FOUND` diagnostics and the new record's state, identity, resume
+count, snapshot ownership, cancellation flag, result hash, and active count
+make accidental admission observable. Current handles then finish and release
+normally. These are sequential slot-reuse checks with the registry and queue
+kept initialized; they do not extend the existing quiescent-release contract
+or validate concurrent release/reuse or deinitialization/reinitialization.
+Validation evidence is in
+`tests/acceptance/2026-10-02-ssa-async-stale-handles.md`.
 
 The harness uses an always-evaluated `TEST_CHECK` instead of the C `assert`
 macro, so state-changing expressions remain active when `NDEBUG` is defined.
