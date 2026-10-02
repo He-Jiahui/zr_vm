@@ -312,12 +312,23 @@ static SZrSccpLattice zr_sccp_instruction_value(
                                     instruction->typeToken != 0u ? instruction->typeToken : typeToken);
         case ZR_EXEC_IR_OPCODE_COPY:
         case ZR_EXEC_IR_OPCODE_MOVE:
-        case ZR_EXEC_IR_OPCODE_CONVERT:
             if (!zr_sccp_operand(function, lattice, instruction, 0u, &left))
                 return zr_sccp_overdefined(typeToken);
             if (left.kind == ZR_EXEC_IR_SCCP_CONSTANT)
                 return zr_sccp_constant(left.bits, typeToken != 0u ? typeToken : left.typeToken);
             return left.kind == ZR_EXEC_IR_SCCP_UNKNOWN ? left : zr_sccp_overdefined(typeToken);
+        case ZR_EXEC_IR_OPCODE_CONVERT:
+            if (!zr_sccp_operand(function, lattice, instruction, 0u, &left))
+                return zr_sccp_overdefined(typeToken);
+            if (left.kind == ZR_EXEC_IR_SCCP_UNKNOWN) return left;
+            /* Matching tokens are a filter, not runtime representation proof.
+             * An explicit scalar target may differ from the result annotation;
+             * typed-immediate representation remains a separate concern. */
+            if (left.kind == ZR_EXEC_IR_SCCP_CONSTANT && typeToken != 0u &&
+                left.typeToken == typeToken &&
+                (instruction->typeToken == 0u || instruction->typeToken == typeToken))
+                return zr_sccp_constant(left.bits, typeToken);
+            return zr_sccp_overdefined(typeToken);
         case ZR_EXEC_IR_OPCODE_ADD:
         case ZR_EXEC_IR_OPCODE_ARITHMETIC:
         case ZR_EXEC_IR_OPCODE_SUB:

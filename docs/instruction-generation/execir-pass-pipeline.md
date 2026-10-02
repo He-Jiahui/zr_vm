@@ -4,6 +4,11 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_manager.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
+  - tests/parser/test_ssa_sccp_conversion.c
+  - tests/cmake/ssa-sccp-conversion-tests.cmake
+  - tests/CMakeLists.txt
   - tests/cmake/ssa-tests.cmake
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_manager.c
@@ -14,10 +19,12 @@ plan_sources:
   - docs/plans/ssa/02-automatic-optimization/01-pass-manager-scalar.md
 tests:
   - tests/parser/test_ssa_pass_manager_scalar.c
+  - tests/parser/test_ssa_sccp_conversion.c
   - tests/parser/test_ssa_deopt_aggregates.c
   - tests/acceptance/ssa-pass-manager-token-phi-hash.md
   - tests/acceptance/ssa-pass-failure-snapshot.md
   - tests/acceptance/ssa-pass-verifier-timing.md
+  - tests/acceptance/2026-10-02-ssa-sccp-conversion.md
 doc_type: implementation
 status: active
 ---
@@ -51,6 +58,25 @@ and remain executable instructions.  A module constant pool is read through
 the pass context.  Because `layoutId` is a pool index in that mode, arithmetic
 rewrites are retained until a module-aware constant materializer can allocate
 an unambiguous pool entry; copy propagation is still allowed.
+
+`CONVERT` has its own lattice transfer with a token-level eligibility filter.
+It allows unchanged constant bits only when source and result have the same
+nonzero token and any explicit instruction target agrees with that result type.
+Tokens are compared as type identities; this filter does not prove runtime
+representation identity. SCCP does not interpret an arbitrary token as a scalar
+enum or reinterpret constant bits to simulate a conversion. Cross-type and
+unspecified-type constants become `overdefined`, while an `unknown` source
+remains `unknown`. Those conversions remain executable. This avoids claiming
+that integer bits are a floating value, that floating bits are an integer, or
+that a numeric value already has the canonical boolean representation.
+The focused tests validate INT64 immediate identity and INT64/DOUBLE pool
+identity with matching runner constant representations. No-pool typed
+immediates remain a separate correctness gap: the runner's immediate fallback
+creates a signed value even when its annotation is DOUBLE, BOOL, or UNSIGNED.
+Such a same-token conversion may still change representation or normalize the
+value, so the current filter is insufficient to prove it safe to fold. This
+slice establishes preservation of cross-type conversions and explicitly does
+not accept every same-token conversion as a runtime identity.
 
 Copy propagation never substitutes a definition across a non-dominating
 edge, across a same-instruction use, or through a `MOVE` whose ownership
@@ -109,3 +135,14 @@ effect and per-region memory phi results and range coordinates.  The failed
 pass fixture also checks that the captured function reproduces the verifier
 diagnostic after rollback and that its pass name survives caller mutation.
 Every successful scalar pass remark is checked for two verifier boundaries.
+
+The separate `ssa_sccp_conversion` CTest target uses always-active checks and
+compares Oracle and ExecBC results before and after SCCP. Its ten cases cover
+explicit and implicit integer-to-double targets, double-to-integer truncation,
+integer-to-boolean normalization, same-type pool constants, same-type immediate
+folding, a rounding-sensitive integer/double/integer round trip, and an
+unspecified-type conversion accepted at both pipeline verifier boundaries,
+and an explicit scalar target that differs from the result annotation.
+Run with `ctest --test-dir <build> -R '^ssa_sccp_conversion$'
+--output-on-failure --no-tests=error`. The acceptance record contains the
+concrete build paths, commands, and observed results.
