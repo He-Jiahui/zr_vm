@@ -803,7 +803,13 @@ static void test_gvn_rejects_missing_value_storage(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+#include "ssa_gvn_owned_value_cases.inc"
+
 int main(void) {
+    test_gvn_consumed_result_availability();
+    test_gvn_owned_results_and_mixed_ownership();
+    test_gvn_rejects_malformed_consumption_before_mutation();
+    test_gvn_other_consumers_and_later_consumption();
     test_gvn_preserves_repeated_move_consumption();
     test_gvn_still_reuses_repeated_scalar_copy();
     test_identical_locations_must_alias();

@@ -14,10 +14,12 @@ plan_sources:
   - docs/plans/ssa/02-automatic-optimization/02-gvn-range.md
 tests:
   - tests/parser/test_ssa_gvn_range.c
+  - tests/parser/ssa_gvn_owned_value_cases.inc
   - tests/acceptance/ssa-gvn-conversion-result-type.md
   - tests/acceptance/ssa-bounds-proof-mutable-length.md
   - tests/acceptance/ssa-alias-zero-generation.md
   - tests/acceptance/2026-10-02-ssa-gvn-move-consumption.md
+  - tests/acceptance/2026-10-02-ssa-gvn-owned-values.md
 doc_type: implementation-note
 status: implemented
 ---
@@ -73,12 +75,26 @@ transition and the second result's uninitialized state before and after repeated
 GVN runs using Core owner-state analysis. Ordinary scalar `COPY` remains a
 candidate, with an explicit positive reuse regression.
 
+Both the duplicate and its candidate must have `UNKNOWN` result ownership.
+Results with BORROWED, UNIQUE, SHARED, or GC ownership remain separate, even
+when no consumer appears between the definitions. GVN builds one value-sized
+eligibility table and excludes any result referenced by `MOVE`, `DROP`, or
+`DROP_IF_INITIALIZED` anywhere in the function. UNKNOWN ownership does not
+make an explicitly consumed payload reusable: copying a consumed result would
+leave the duplicate uninitialized. This whole-function exclusion includes
+later consumers and other blocks; it deliberately provides no edge-sensitive
+availability proof. Ordinary untouched scalar expressions and dominating
+COPY/arithmetic reuse remain eligible.
+
 A duplicate is rewritten to `COPY` of the dominating result while retaining
 its original result ID; this avoids assuming that physical instruction order
 proves dominance for arbitrary later uses. Invalid function storage and
 block instruction ranges return a structured diagnostic before any rewrite.
 Malformed operand/result ranges are not reusable candidates. An allocation
-failure during a later rewrite can
+failure while allocating the eligibility table, malformed value identity or
+ownership, and malformed consumer operand ranges/IDs return before any
+rewrite. Consumer diagnostics retain instruction/source attribution. A failure
+during a later rewrite can
 leave earlier successful rewrites in place, so callers requiring atomicity
 must use the pass manager's transactional function clone.
 
@@ -90,9 +106,8 @@ field matches. Equally typed repeats in the same block may still become
 `COPY`. Missing or undersized Value storage is rejected before the pass reads
 the result type. Dominating pure-value reuse and sibling-block rejection are
 covered; edge-sensitive range propagation and memory/guard proof elimination
-remain 02.02 work. General ownership availability across intervening operations
-requires further analysis; excluding `MOVE` only establishes the consumption
-boundary covered by this regression.
+remain 02.02 work. Reusing owned results or explicitly consumed scalar results
+would require a stronger availability proof than this conservative boundary.
 
 The bounds-elision API is proof-only: it does not delete an instruction and
 returns false for incomplete range facts. Callers retain the original guard on

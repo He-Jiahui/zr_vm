@@ -85,6 +85,19 @@ static TZrBool pure_instruction(const SZrExecIrFunction *function,
     }
 }
 
+static TZrBool reusable_result(const SZrExecIrFunction *function,
+                               const SZrExecIrInstruction *instruction,
+                               const TZrUInt8 *eligible) {
+    TZrExecIrValueId value;
+    if (instruction->resultRange.count != 1u ||
+        !range_valid(instruction->resultRange, function->resultCount)) {
+        return ZR_FALSE;
+    }
+    value = function->resultPool[instruction->resultRange.start];
+    return (TZrBool)(value != 0u && value <= function->valueCount &&
+                     eligible[value - 1u] != 0u);
+}
+
 static TZrBool same_key(const SZrExecIrFunction *function,
                         const SZrExecIrInstruction *left,
                         const SZrExecIrInstruction *right) {
@@ -163,6 +176,7 @@ TZrBool ZrParser_ExecIr_RunGvnCse(
         SZrExecIrRemarkSink *remarks,
         SZrExecIrDiagnostic *diagnostic) {
     TZrUInt32 index;
+    TZrUInt8 *eligible;
     (void)facts;
     if (diagnostic != ZR_NULL) {
         memset(diagnostic, 0, sizeof(*diagnostic));
@@ -193,13 +207,70 @@ TZrBool ZrParser_ExecIr_RunGvnCse(
             return ZR_FALSE;
         }
     }
+    eligible = (TZrUInt8 *)calloc(function->valueCount == 0u ? 1u :
+                                 function->valueCount, sizeof(*eligible));
+    if (eligible == ZR_NULL) {
+        if (diagnostic != ZR_NULL) {
+            diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY;
+        }
+        return ZR_FALSE;
+    }
+    /* Dominance establishes a definition, not its ownership availability.
+     * Only unowned results without any explicit consumer are reusable. This
+     * deliberately scans every block, including consumers after the reuse;
+     * it does not attempt to prove availability along individual CFG edges. */
+    for (index = 0u; index < function->valueCount; ++index) {
+        if (function->values[index].id != index + 1u ||
+            (TZrUInt32)function->values[index].ownership >= ZR_EXEC_IR_OWNERSHIP_COUNT) {
+            if (diagnostic != ZR_NULL) {
+                diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE;
+            }
+            free(eligible);
+            return ZR_FALSE;
+        }
+        eligible[index] = (TZrUInt8)(function->values[index].ownership ==
+                                    ZR_EXEC_IR_OWNERSHIP_UNKNOWN);
+    }
+    for (index = 0u; index < function->instructionCount; ++index) {
+        const SZrExecIrInstruction *instruction = &function->instructions[index];
+        TZrUInt32 at;
+        if (instruction->opcode != ZR_EXEC_IR_OPCODE_MOVE &&
+            instruction->opcode != ZR_EXEC_IR_OPCODE_DROP &&
+            instruction->opcode != ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED) {
+            continue;
+        }
+        if (!range_valid(instruction->operandRange, function->operandCount)) {
+            if (diagnostic != ZR_NULL) {
+                diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
+                diagnostic->instructionId = index + 1u;
+                diagnostic->sourceId = instruction->sourceId;
+            }
+            free(eligible);
+            return ZR_FALSE;
+        }
+        for (at = 0u; at < instruction->operandRange.count; ++at) {
+            TZrExecIrValueId value = function->operandPool[
+                    instruction->operandRange.start + at];
+            if (value == 0u || value > function->valueCount) {
+                if (diagnostic != ZR_NULL) {
+                    diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE;
+                    diagnostic->instructionId = index + 1u;
+                    diagnostic->sourceId = instruction->sourceId;
+                }
+                free(eligible);
+                return ZR_FALSE;
+            }
+            eligible[value - 1u] = 0u;
+        }
+    }
     for (index = 0u; index < function->instructionCount; ++index) {
         SZrExecIrInstruction *current = &function->instructions[index];
         TZrUInt32 previous;
         TZrUInt32 currentBlock;
         if (!range_valid(current->operandRange, function->operandCount) ||
             !range_valid(current->resultRange, function->resultCount) ||
-            !pure_instruction(function, current) || current->resultRange.count != 1u) {
+            !pure_instruction(function, current) ||
+            !reusable_result(function, current, eligible)) {
             continue;
         }
         currentBlock = containing_block(function, index);
@@ -215,6 +286,7 @@ TZrBool ZrParser_ExecIr_RunGvnCse(
                 (candidateBlock != currentBlock &&
                  !block_dominates(function, candidateBlock, currentBlock)) ||
                 !pure_instruction(function, candidate) ||
+                !reusable_result(function, candidate, eligible) ||
                 !same_key(function, candidate, current)) {
                 continue;
             }
@@ -230,6 +302,7 @@ TZrBool ZrParser_ExecIr_RunGvnCse(
                         diagnostic->instructionId = index + 1u;
                         diagnostic->sourceId = current->sourceId;
                     }
+                    free(eligible);
                     return ZR_FALSE;
                 }
                 TZrUInt32 capacity = function->operandCapacity == 0u
@@ -243,6 +316,7 @@ TZrBool ZrParser_ExecIr_RunGvnCse(
                         diagnostic->instructionId = index + 1u;
                         diagnostic->sourceId = current->sourceId;
                     }
+                    free(eligible);
                     return ZR_FALSE;
                 }
                 function->operandPool = pool;
@@ -262,6 +336,7 @@ TZrBool ZrParser_ExecIr_RunGvnCse(
             break;
         }
     }
+    free(eligible);
     return ZR_TRUE;
 }
 
