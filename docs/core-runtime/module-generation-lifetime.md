@@ -20,6 +20,7 @@ tests:
   - tests/acceptance/ssa-hotpatch-rollback-status-mapping.md
   - tests/acceptance/ssa-hotpatch-rollback-test-ndebug.md
   - tests/acceptance/ssa-hotpatch-generation-resolve-concurrency.md
+  - tests/acceptance/2026-10-02-ssa-generation-lease-limit.md
 plan_sources:
   - docs/plans/ssa/08-artifact-hotpatch/03-generation-publication.md
   - docs/plans/ssa/08-artifact-hotpatch/04-rollback-restricted.md
@@ -49,6 +50,27 @@ they are no longer active. `CollectRetired` clears such records for reuse;
 stale or non-leased handles return a structured `STALE_LINK`/state error.
 Rollback and publication callers must allocate a fresh generation rather than
 mutating an existing record in place.
+
+`AcquireActive` and `Acquire` share a per-record lease limit of `UINT32_MAX`.
+The manager lock protects both the full-width atomic count check and the
+increment. This matters because `atomic_uint_fast32_t` can be wider than the
+public `TZrUInt32` count: accepting one more reader could truncate the count in
+Release, or wrap the atomic to zero on a platform with a 32-bit fast type.
+At the limit, Acquire returns `GENERATION_OVERFLOW`, leaves the output handle
+cleared, and changes no record, active pointer, or generation allocation state.
+The diagnostic identifies the record in `actualGeneration` and reports
+`leaseCount == UINT32_MAX`; `Generation_StatusName` returns `overflow`.
+Existing holders can still Resolve and Release. Once a holder releases a lease,
+the same entry can acquire again. A failed Acquire on a retained retired record
+does not make it eligible for collection.
+
+The focused lease-limit fixture uses exclusive atomic count seeding to exercise
+the last legal increment and both entry paths at the limit. It resets fictional
+leases before manager deinitialization, including on failure. Debug/NDEBUG and
+toolchain evidence are recorded in the
+[lease-limit acceptance](../../tests/acceptance/2026-10-02-ssa-generation-lease-limit.md).
+This bounds the existing metadata lease protocol; interpreter frame entry/exit,
+executable installation, and staging cancellation remain separate work.
 
 Every generation handle belongs to the manager whose `records` array contains
 its record. `Publish`, `Resolve`, and `Release` reject a handle from another

@@ -7,6 +7,7 @@
 #include "zr_vm_core/hotpatch_retire.h"
 
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 
 /* The registered stress case stays short; standalone race-sanitizer runs may
@@ -658,6 +659,131 @@ static int test_cross_manager_handles_are_rejected(void) {
     return failures;
 }
 
+/* Seed only in this single-threaded fixture; fictional leases are cleared
+ * before Deinit, including on the old-code RED failure path. */
+static int test_lease_limit(TZrBool useActiveEntry) {
+    SZrHotPatchGenerationManager manager;
+    SZrHotPatchVersionRecord records[2];
+    SZrValidatedHotPatch validated;
+    SZrArtifactExecIrView artifact;
+    SZrHotPatchCapabilityManifest manifest;
+    SZrHotPatchGenerationHandle prepared, lease, rejected;
+    SZrHotPatchGenerationDiagnostic diagnostic;
+    SZrHotPatchVersionView view;
+    EZrHotPatchGenerationStatus status;
+    TZrUInt64 nextGeneration;
+    TZrUInt32 count, collected;
+    TZrBool initialized = ZR_FALSE;
+    int failures = 0;
+
+#define CHECK_LEASE_LIMIT(condition) \
+    do { \
+        if (!(condition)) { \
+            fprintf(stderr, "lease-limit check failed at line %d (%s): %s\n", \
+                    __LINE__, useActiveEntry ? "active" : "numbered", #condition); \
+            ++failures; \
+            goto cleanup; \
+        } \
+    } while (0)
+
+    status = ZrCore_HotPatch_GenerationManager_Init(
+            &manager, records, 2u, &diagnostic);
+    CHECK_LEASE_LIMIT(status == ZR_HOT_PATCH_GENERATION_OK);
+    initialized = ZR_TRUE;
+    make_validated(&validated, &artifact, &manifest, 101u, 7u);
+    status = ZrCore_HotPatch_Generation_Prepare(
+            &manager, &validated, 7u, &prepared, &diagnostic);
+    CHECK_LEASE_LIMIT(status == ZR_HOT_PATCH_GENERATION_OK);
+    status = ZrCore_HotPatch_Generation_Publish(&manager, &prepared, &diagnostic);
+    CHECK_LEASE_LIMIT(status == ZR_HOT_PATCH_GENERATION_OK);
+    atomic_store_explicit(&records[0].leaseCount, UINT32_MAX - 1u,
+                          memory_order_relaxed);
+    status = useActiveEntry
+            ? ZrCore_HotPatch_Generation_AcquireActive(&manager, &lease, &diagnostic)
+            : ZrCore_HotPatch_Generation_Acquire(&manager, prepared.generation,
+                                                &lease, &diagnostic);
+    CHECK_LEASE_LIMIT(status == ZR_HOT_PATCH_GENERATION_OK);
+    CHECK_LEASE_LIMIT(lease.leased && lease.record == &records[0]);
+    CHECK_LEASE_LIMIT(diagnostic.leaseCount == UINT32_MAX);
+    count = manager.count;
+    nextGeneration = atomic_load_explicit(&manager.nextGeneration,
+                                          memory_order_relaxed);
+    memset(&rejected, 0xff, sizeof(rejected));
+    status = useActiveEntry
+            ? ZrCore_HotPatch_Generation_AcquireActive(&manager, &rejected, &diagnostic)
+            : ZrCore_HotPatch_Generation_Acquire(&manager, prepared.generation,
+                                                &rejected, &diagnostic);
+    CHECK_LEASE_LIMIT(status == ZR_HOT_PATCH_GENERATION_OVERFLOW);
+    CHECK_LEASE_LIMIT(diagnostic.status == status &&
+                      diagnostic.actualGeneration == prepared.generation &&
+                      diagnostic.leaseCount == UINT32_MAX);
+    CHECK_LEASE_LIMIT(strcmp(ZrCore_HotPatch_Generation_StatusName(status),
+                            "overflow") == 0);
+    CHECK_LEASE_LIMIT(!rejected.leased && rejected.record == ZR_NULL &&
+                      rejected.generation == 0u);
+    CHECK_LEASE_LIMIT(atomic_load_explicit(&records[0].leaseCount,
+                                          memory_order_relaxed) == UINT32_MAX);
+    CHECK_LEASE_LIMIT(manager.count == count &&
+                      atomic_load_explicit(&manager.nextGeneration,
+                                           memory_order_relaxed) == nextGeneration &&
+                      atomic_load_explicit(&manager.active,
+                                           memory_order_relaxed) == &records[0]);
+    status = ZrCore_HotPatch_Generation_Resolve(&manager, &lease, &view, &diagnostic);
+    CHECK_LEASE_LIMIT(status == ZR_HOT_PATCH_GENERATION_OK &&
+                      view.generation == prepared.generation && view.moduleHash == 7u &&
+                      view.contentHash == 101u && view.publicContractHash == 55u &&
+                      view.targetProfile == 2u && view.state == ZR_HOT_PATCH_VERSION_ACTIVE &&
+                      view.leaseCount == UINT32_MAX &&
+                      records[1].state == ZR_HOT_PATCH_VERSION_FREE);
+    status = ZrCore_HotPatch_Generation_Release(&manager, &lease, &diagnostic);
+    CHECK_LEASE_LIMIT(status == ZR_HOT_PATCH_GENERATION_OK &&
+                      diagnostic.leaseCount == UINT32_MAX - 1u);
+    status = useActiveEntry
+            ? ZrCore_HotPatch_Generation_AcquireActive(&manager, &lease, &diagnostic)
+            : ZrCore_HotPatch_Generation_Acquire(&manager, prepared.generation,
+                                                &lease, &diagnostic);
+    CHECK_LEASE_LIMIT(status == ZR_HOT_PATCH_GENERATION_OK &&
+                      diagnostic.leaseCount == UINT32_MAX);
+
+    /* Retain this real lease while modeling the other outstanding readers. */
+    make_validated(&validated, &artifact, &manifest, 202u, 7u);
+    status = ZrCore_HotPatch_Generation_Prepare(
+            &manager, &validated, 7u, &prepared, &diagnostic);
+    CHECK_LEASE_LIMIT(status == ZR_HOT_PATCH_GENERATION_OK);
+    status = ZrCore_HotPatch_Generation_Publish(&manager, &prepared, &diagnostic);
+    CHECK_LEASE_LIMIT(status == ZR_HOT_PATCH_GENERATION_OK);
+    status = ZrCore_HotPatch_Generation_Acquire(
+            &manager, lease.generation, &rejected, &diagnostic);
+    CHECK_LEASE_LIMIT(status == ZR_HOT_PATCH_GENERATION_OVERFLOW &&
+                      diagnostic.leaseCount == UINT32_MAX && !rejected.leased &&
+                      rejected.record == ZR_NULL && rejected.generation == 0u);
+    status = ZrCore_HotPatch_Generation_CollectRetired(
+            &manager, &collected, &diagnostic);
+    CHECK_LEASE_LIMIT(status == ZR_HOT_PATCH_GENERATION_OK && collected == 0u &&
+                      records[0].state == ZR_HOT_PATCH_VERSION_RETIRED &&
+                      records[0].generation == lease.generation &&
+                      atomic_load_explicit(&records[0].leaseCount,
+                                           memory_order_relaxed) == UINT32_MAX);
+    atomic_store_explicit(&records[0].leaseCount, 1u, memory_order_relaxed);
+    status = ZrCore_HotPatch_Generation_Release(&manager, &lease, &diagnostic);
+    CHECK_LEASE_LIMIT(status == ZR_HOT_PATCH_GENERATION_OK && diagnostic.leaseCount == 0u);
+    status = ZrCore_HotPatch_Generation_CollectRetired(
+            &manager, &collected, &diagnostic);
+    CHECK_LEASE_LIMIT(status == ZR_HOT_PATCH_GENERATION_OK && collected == 1u &&
+                      records[0].state == ZR_HOT_PATCH_VERSION_FREE &&
+                      atomic_load_explicit(&manager.active,
+                                           memory_order_relaxed) == &records[1]);
+
+cleanup:
+    if (initialized) {
+        atomic_store_explicit(&records[0].leaseCount, 0u, memory_order_relaxed);
+        atomic_store_explicit(&records[1].leaseCount, 0u, memory_order_relaxed);
+        ZrCore_HotPatch_GenerationManager_Deinit(&manager);
+    }
+#undef CHECK_LEASE_LIMIT
+    return failures;
+}
+
 int main(void) {
     SZrHotPatchGenerationManager manager;
     SZrHotPatchVersionRecord records[3];
@@ -698,6 +824,8 @@ int main(void) {
         } \
     } while (0)
 
+    if (test_lease_limit(ZR_TRUE) != 0) return 1;
+    if (test_lease_limit(ZR_FALSE) != 0) return 1;
     if (test_concurrent_resolve_and_publish_snapshots() != 0) return 1;
     if (test_resolve_lock_gate_bounded_schedule_check() != 0) return 1;
     if (test_cross_manager_handles_are_rejected() != 0) return 1;

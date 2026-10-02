@@ -105,12 +105,15 @@ ZR_CORE_API EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Rollback(
         TZrUInt64 targetGeneration,
         SZrHotPatchGenerationHandle *outHandle,
         SZrHotPatchGenerationDiagnostic *diagnostic);
-/** @brief 为一次新调用固定当前 active；成功取得的租约须 Release。 */
+/** @brief 为一次新调用固定当前 active；成功取得的租约须 Release。
+ * @note leaseCount 达到 UINT32_MAX 时返回 OVERFLOW，输出句柄清零且记录不变；
+ *       diagnostic.actualGeneration 标识版本，leaseCount 报告 UINT32_MAX。 */
 ZR_CORE_API EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_AcquireActive(
         SZrHotPatchGenerationManager *manager,
         SZrHotPatchGenerationHandle *outHandle,
         SZrHotPatchGenerationDiagnostic *diagnostic);
-/** @brief 按编号租用仍在槽位中的版本，包括未回收的 RETIRED 版本。 */
+/** @brief 按编号租用仍在槽位中的版本，包括未回收的 RETIRED 版本。
+ * @note 与 AcquireActive 使用同一 UINT32_MAX 租约上限和 OVERFLOW 诊断。 */
 ZR_CORE_API EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Acquire(
         SZrHotPatchGenerationManager *manager,
         TZrUInt64 generation,

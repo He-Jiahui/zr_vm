@@ -156,7 +156,27 @@ EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Rollback(
 }
 
 /* AcquireActive/Acquire 在 manager 锁下建立 lease，回收器据此保留退役记录。 */
-static EZrHotPatchGenerationStatus gen_acquire_locked(SZrHotPatchGenerationManager *m,SZrHotPatchVersionRecord *r,SZrHotPatchGenerationHandle *out,SZrHotPatchGenerationDiagnostic *d) { (void)m; if(!r||r->state==ZR_HOT_PATCH_VERSION_FREE){return gen_fail(d,ZR_HOT_PATCH_GENERATION_STALE_LINK,0,r?r->generation:0u,0);} atomic_fetch_add_explicit(&r->leaseCount,1u,memory_order_relaxed); out->record=r; out->generation=r->generation; out->leased=ZR_TRUE; return gen_fail(d,ZR_HOT_PATCH_GENERATION_OK,0,r->generation,atomic_load_explicit(&r->leaseCount,memory_order_relaxed)); }
+static EZrHotPatchGenerationStatus gen_acquire_locked(
+        SZrHotPatchGenerationManager *m, SZrHotPatchVersionRecord *r,
+        SZrHotPatchGenerationHandle *out, SZrHotPatchGenerationDiagnostic *d) {
+    (void)m;
+    if (!r || r->state == ZR_HOT_PATCH_VERSION_FREE)
+        return gen_fail(d, ZR_HOT_PATCH_GENERATION_STALE_LINK,
+                        0u, r ? r->generation : 0u, 0u);
+    /* The atomic may be wider than the public UInt32 lease count. Keep its
+     * full width until this lock-protected limit check has passed. */
+    uint_fast32_t leases = atomic_load_explicit(&r->leaseCount,
+                                               memory_order_relaxed);
+    if (leases >= UINT32_MAX)
+        return gen_fail(d, ZR_HOT_PATCH_GENERATION_OVERFLOW,
+                        0u, r->generation, UINT32_MAX);
+    atomic_fetch_add_explicit(&r->leaseCount, 1u, memory_order_relaxed);
+    out->record = r;
+    out->generation = r->generation;
+    out->leased = ZR_TRUE;
+    return gen_fail(d, ZR_HOT_PATCH_GENERATION_OK,
+                    0u, r->generation, (TZrUInt32)(leases + 1u));
+}
 /* 新调用入口取得当前 active 的租约，调用完成后必须 Release。 */
 EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_AcquireActive(SZrHotPatchGenerationManager *m,SZrHotPatchGenerationHandle *out,SZrHotPatchGenerationDiagnostic *d) { if(!m||!out)return gen_fail(d,ZR_HOT_PATCH_GENERATION_INVALID_ARGUMENT,0,0,0); memset(out,0,sizeof(*out)); gen_lock(m); SZrHotPatchVersionRecord *r=atomic_load_explicit(&m->active,memory_order_acquire); EZrHotPatchGenerationStatus s=gen_acquire_locked(m,r,out,d); gen_unlock(m); return s; }
 /* 按编号取得仍在槽位中的代际，包括尚未回收的退役版本。 */
@@ -204,4 +224,4 @@ EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_Release(SZrHotPatchGenera
  * 还是当前占用数，再决定是否在回收时同步。 */
 EZrHotPatchGenerationStatus ZrCore_HotPatch_Generation_CollectRetired(SZrHotPatchGenerationManager *m,TZrUInt32 *collected,SZrHotPatchGenerationDiagnostic *d) { if(!m||!collected)return gen_fail(d,ZR_HOT_PATCH_GENERATION_INVALID_ARGUMENT,0,0,0); *collected=0u; gen_lock(m); SZrHotPatchVersionRecord *active=atomic_load_explicit(&m->active,memory_order_relaxed); for(TZrUInt32 i=0u;i<m->capacity;i++){SZrHotPatchVersionRecord *r=&m->records[i]; if(r!=active&&r->state==ZR_HOT_PATCH_VERSION_RETIRED&&atomic_load_explicit(&r->leaseCount,memory_order_acquire)==0u){r->generation=0u;r->moduleHash=0u;r->contentHash=0u;r->publicContractHash=0u;r->targetProfile=0u;atomic_store_explicit(&r->leaseCount,0u,memory_order_relaxed);r->state=ZR_HOT_PATCH_VERSION_FREE;(*collected)++;}} gen_unlock(m); return gen_fail(d,ZR_HOT_PATCH_GENERATION_OK,0,0,*collected); }
 /* 仅供诊断显示；状态枚举仍是调用方的判定依据。 */
-const TZrChar *ZrCore_HotPatch_Generation_StatusName(EZrHotPatchGenerationStatus s){switch(s){case ZR_HOT_PATCH_GENERATION_OK:return "ok";case ZR_HOT_PATCH_GENERATION_CAPACITY:return "capacity";case ZR_HOT_PATCH_GENERATION_STALE_LINK:return "stale-link";case ZR_HOT_PATCH_GENERATION_NOT_PREPARED:return "not-prepared";default:return "invalid-generation";}}
+const TZrChar *ZrCore_HotPatch_Generation_StatusName(EZrHotPatchGenerationStatus s){switch(s){case ZR_HOT_PATCH_GENERATION_OK:return "ok";case ZR_HOT_PATCH_GENERATION_CAPACITY:return "capacity";case ZR_HOT_PATCH_GENERATION_STALE_LINK:return "stale-link";case ZR_HOT_PATCH_GENERATION_NOT_PREPARED:return "not-prepared";case ZR_HOT_PATCH_GENERATION_OVERFLOW:return "overflow";default:return "invalid-generation";}}
