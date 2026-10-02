@@ -751,6 +751,25 @@ static TZrBool zr_sccp_rewrite(SZrExecIrFunction *function,
         return ZR_FALSE;
     }
     for (index = 1u; index <= function->valueCount; ++index) aliases[index] = index;
+    /* COPY payload equality does not prove availability after consumption.
+     * Mark every consumed identity, including UNKNOWN values and consumers
+     * after a potential reuse. INVALID aliases must never be overwritten. */
+    for (index = 0u; index < function->instructionCount; ++index) {
+        const SZrExecIrInstruction *instruction = &function->instructions[index];
+        TZrUInt32 at;
+        if (!ZrParser_ExecIr_PassConsumeBudget(function, context, 1u)) {
+            free(aliases);
+            free(aliasDefinitions);
+            free(aliasBlocks);
+            return ZR_TRUE;
+        }
+        if (instruction->opcode != ZR_EXEC_IR_OPCODE_MOVE &&
+            instruction->opcode != ZR_EXEC_IR_OPCODE_DROP &&
+            instruction->opcode != ZR_EXEC_IR_OPCODE_DROP_IF_INITIALIZED) continue;
+        for (at = instruction->operands.start;
+             at < instruction->operands.start + instruction->operands.count; ++at)
+            aliases[function->operands[at]] = ZR_EXEC_IR_VALUE_ID_INVALID;
+    }
     for (index = 0u; index < function->instructionCount; ++index) {
         SZrExecIrInstruction *instruction = &function->instructions[index];
         if (instruction->opcode == ZR_EXEC_IR_OPCODE_COPY &&
@@ -758,7 +777,11 @@ static TZrBool zr_sccp_rewrite(SZrExecIrFunction *function,
             TZrExecIrValueId source = function->operands[instruction->operands.start];
             TZrExecIrValueId destination = function->results[instruction->results.start];
             if (source != ZR_EXEC_IR_VALUE_ID_INVALID && source <= function->valueCount &&
-                destination != ZR_EXEC_IR_VALUE_ID_INVALID && destination <= function->valueCount)
+                destination != ZR_EXEC_IR_VALUE_ID_INVALID && destination <= function->valueCount &&
+                aliases[source] != ZR_EXEC_IR_VALUE_ID_INVALID &&
+                aliases[destination] != ZR_EXEC_IR_VALUE_ID_INVALID &&
+                function->values[source - 1u].ownership == ZR_EXEC_IR_OWNERSHIP_UNKNOWN &&
+                function->values[destination - 1u].ownership == ZR_EXEC_IR_OWNERSHIP_UNKNOWN)
                 if (instruction->flags == 0u &&
                     instruction->effectIn == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID &&
                     instruction->effectOut == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID &&

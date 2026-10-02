@@ -8770,3 +8770,4 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/close-proxy-tests.cmake")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/task-scheduler-queue-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-invoke-result-tests.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-sccp-copy-availability-tests.cmake")

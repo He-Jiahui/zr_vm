@@ -1,0 +1,18 @@
+if (NOT TARGET zr_vm_ssa_sccp_copy_availability_test)
+    if (NOT TARGET zr_vm_ssa_sccp_conversion_test)
+        message(FATAL_ERROR "ssa_sccp_copy_availability requires the scalar support target")
+    endif ()
+    get_target_property(zr_vm_ssa_copy_sources zr_vm_ssa_sccp_conversion_test SOURCES)
+    list(REMOVE_ITEM zr_vm_ssa_copy_sources
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_sccp_conversion.c)
+    list(APPEND zr_vm_ssa_copy_sources
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_sccp_copy_availability.c)
+    add_executable(zr_vm_ssa_sccp_copy_availability_test ${zr_vm_ssa_copy_sources})
+    get_target_property(zr_vm_ssa_copy_includes zr_vm_ssa_sccp_conversion_test INCLUDE_DIRECTORIES)
+    get_target_property(zr_vm_ssa_copy_definitions zr_vm_ssa_sccp_conversion_test COMPILE_DEFINITIONS)
+    target_include_directories(zr_vm_ssa_sccp_copy_availability_test PRIVATE ${zr_vm_ssa_copy_includes})
+    target_compile_definitions(zr_vm_ssa_sccp_copy_availability_test PRIVATE ${zr_vm_ssa_copy_definitions})
+    zr_vm_link_core(zr_vm_ssa_sccp_copy_availability_test)
+    add_test(NAME ssa_sccp_copy_availability COMMAND zr_vm_ssa_sccp_copy_availability_test)
+    set_tests_properties(ssa_sccp_copy_availability PROPERTIES LABELS "ssa" TIMEOUT 120)
+endif ()
