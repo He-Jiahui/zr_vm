@@ -354,6 +354,7 @@ static TZrBool zr_exec_ir_ssa_result_unavailable_on_exception_edge(
         const SZrExecIrSsaDominance *dominance,
         TZrExecIrInstructionId definitionInstruction,
         TZrExecIrBlockId useBlock,
+        TZrExecIrBlockId phiSuccessor,
         TZrBool *outOfMemory) {
     const SZrExecIrInstruction *definition;
     const SZrExecIrOpcodeInfo *definitionInfo;
@@ -405,6 +406,23 @@ static TZrBool zr_exec_ir_ssa_result_unavailable_on_exception_edge(
         return ZR_FALSE;
     }
 
+    /* A PHI consumes its value on the actual predecessor-to-successor edge.
+     * The defining block alone cannot distinguish normal and exceptional
+     * incoming edges from the same throwing terminator. */
+    if (useBlock == definitionBlock &&
+        phiSuccessor != ZR_EXEC_IR_BLOCK_ID_INVALID) {
+        for (successorIndex = edgeRange.start;
+             successorIndex < edgeRange.start + edgeRange.count;
+             ++successorIndex) {
+            TZrExecIrBlockId successor = function->successors[successorIndex];
+            if (successor == phiSuccessor &&
+                (function->blocks[successor - 1u].flags &
+                 ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION) != 0u) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
     /* Seed only explicitly marked exceptional successors.  Once an exception
      * is raised, every block reachable from that successor is potentially on
      * the exceptional path, even if a handler branches through an ordinary
@@ -417,7 +435,8 @@ static TZrBool zr_exec_ir_ssa_result_unavailable_on_exception_edge(
         if (successor == ZR_EXEC_IR_BLOCK_ID_INVALID ||
             successor > function->blockCount ||
             (function->blocks[successor - 1u].flags &
-             ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION) == 0u) {
+             ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION) == 0u ||
+            successor == definitionBlock) {
             continue;
         }
         if (successor == useBlock) {
@@ -464,6 +483,12 @@ static TZrBool zr_exec_ir_ssa_result_unavailable_on_exception_edge(
     while (stackCount != 0u) {
         TZrExecIrBlockId blockId = stack[--stackCount];
         const SZrExecIrBlock *block = &function->blocks[blockId - 1u];
+        /* Returning to the definition re-executes the throwing terminator.
+         * Its normal edge establishes a new result; the earlier exceptional
+         * path must not poison that result or a direct normal PHI incoming. */
+        if (blockId == definitionBlock) {
+            continue;
+        }
         if (blockId == useBlock) {
             free(visited);
             free(stack);
@@ -700,7 +725,8 @@ static TZrBool zr_exec_ir_verify_ssa_with_dominance(
                 TZrBool exceptionTraversalOutOfMemory = ZR_FALSE;
                 if (zr_exec_ir_ssa_result_unavailable_on_exception_edge(
                             function, dominance, definitionInstructions[valueId],
-                            useBlock, &exceptionTraversalOutOfMemory)) {
+                            useBlock, ZR_EXEC_IR_BLOCK_ID_INVALID,
+                            &exceptionTraversalOutOfMemory)) {
                     zr_exec_ir_ssa_report_exception_edge(
                             diagnostic, function, instructionIndex + 1u,
                             useBlock, instruction->sourceId,
@@ -848,7 +874,7 @@ static TZrBool zr_exec_ir_verify_ssa_with_dominance(
                     TZrBool exceptionTraversalOutOfMemory = ZR_FALSE;
                     if (zr_exec_ir_ssa_result_unavailable_on_exception_edge(
                             function, dominance, definitionInstructions[valueId],
-                            incoming->predecessor,
+                            incoming->predecessor, block->id,
                             &exceptionTraversalOutOfMemory)) {
                         TZrExecIrInstructionId site = block->terminatorInstructionId;
                         TZrExecIrSourceId sourceId =
