@@ -1799,13 +1799,13 @@ Debug semantic-summary walker 现在会先按 AST 节点直接查询 `ZR_SEMANTI
 
 `semantic.c` 仍然负责创建和销毁 `SZrSemanticContext`，但事实数组的细节由 `semantic_facts.c` 管理：
 
-- `ZrParser_SemanticFacts_Init` 初始化六类 `SZrArray`。
-- `ZrParser_SemanticFacts_Reset` 清空事实数组，并释放表达式事实里深拷贝的 `SZrInferredType`。
-- `ZrParser_SemanticFacts_Free` 先 reset，再释放数组内存。
+- `ZrParser_SemanticFacts_Init` 初始化 expression、reference、numeric、reachability、logical、ownership、ownership intrinsic、receiver guard 与 diagnostic 九类数组，并委托 relations 子系统管理关系事实。
+- `ZrParser_SemanticFacts_Reset` 清空事实并释放各自管理的原生嵌套载荷，包括表达式推断类型、引用定义范围及参数映射、数值分段、intrinsic 和 receiver guard 载荷。
+- `ZrParser_SemanticFacts_Free` 先 reset，再释放顶层原生数组缓冲。
 
-表达式事实追加时会深拷贝 `SZrInferredType`，并复制调用目标、成员名和诊断文本等字符串 payload。调用方可以释放自己的临时类型，事实层保留独立副本，避免 LSP 或 Debug 查询到悬空类型。
+表达式事实保存推断类型的原生复制载荷；同一非空 node 的再发布替换旧载荷。调用目标、成员名及诊断文本经 context.state 的字符串工厂重建；typeName、constant string、AST 和 source 等仍受各自借用契约约束。原生载荷复制、VM 对象的 GC 根和分配失败传播是不同保证；保持原字符串有根不能保护独立长串副本，详见 [Semantic Context 与 Facts 的调用契约](semantic-context-and-facts-contracts.md)。
 
-引用事实追加时会按 resolved declaration/write 的 `symbolId` 统一补齐自身 `definitionRange`，因此 parser/type inference 和 LSP semantic analyzer 的声明/写入事实共享同一个到达定义 payload 约定。
+resolved declaration/write 的引用事实可先用自身范围建立 definition seed；后续线性到达定义和 definite-assignment 投影使用已发布顺序中的既有事实，不等同于 CFG 求解。definitionRanges 与参数映射容器由 context 管理，外部 AST/source 的生命周期仍由调用方维持。
 
 ## Type Inference Emission
 
@@ -1821,8 +1821,8 @@ Debug semantic-summary walker 现在会先按 AST 节点直接查询 `ZR_SEMANTI
 - `type_inference_record_expression_and_numeric_facts` 是表达式入口的组合 helper，并带按节点去重保护。它也会为 deterministic boolean/logical expression 写入 parser-owned `logicalFacts`，并为可证明短路的 skipped operand 写入 parser-owned `reachabilityFacts`。布尔常量求值现在会递归穿过数值常量比较、logical-not、以及可证明结果的 `&&` / `||`，让 REPL 和后续 Debug 查询不必依赖 LSP semantic analyzer 才能解释常量布尔、短路和 skipped-branch 可达性。
 - `type_inference_record_primary_call_reference_fact` 在 overload resolution 成功后为 primary function call 写入 resolved `ZR_SEMANTIC_REFERENCE_CALL`。它复用 expression payload 的 callee-token 定位逻辑，但绑定到刚解析成功的具体 call node；事实携带 callee range、declaration range、function symbol/type id 和函数名。
 - `type_inference_record_identifier_write_reference_fact` 为赋值左侧已解析 identifier 写入 `ZR_SEMANTIC_REFERENCE_WRITE`。assignment inference 直接从 type environment 读取绑定类型，保留 left identifier expression/numeric facts，但不再让左侧 token 走普通 identifier read-reference 路径。write fact 会把自己的 token range 作为当前定义 range。
-- `type_inference_record_member_access_reference_fact` 为成功推断的成员读取写入 unresolved `ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS`。`seed.value` 的 fact range 对准 `value`；`seed[index]` 的 computed member-access fact 使用完整 member expression range，并在写入前 materialize index expression facts。reference position query 先按更窄 range 选择事实，因此光标在 `index` token 上仍返回索引变量 read，光标在 `[` 或 wider member expression 范围内返回 member-access fact。
-- `type_inference_record_member_write_reference_fact` 为非 identifier 赋值左值中的最后一个 member/index token 写入 unresolved `ZR_SEMANTIC_REFERENCE_MEMBER_WRITE`。`seed.value = 3` 的事实 range 对准 `value`，`seed[index] = 4` 的事实 range 对准 computed index 表达式；当前只声明 assignment-target token 分类，不声明成员声明解析。reference position query 会在同一 token 上优先返回 write/member-write，因此 `seed.value = 3` 不会被新增的 member-access fact 误报为读取。
+- `type_inference_record_member_access_reference_fact` 为成功推断的成员读取写入 unresolved `ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS`。`seed.value` 的 fact range 对准 `value`；`seed[index]` 的 computed member-access fact 使用完整 member expression range，并在写入前 materialize index expression facts。普通 reference position query 先偏好 range 起点命中，再比较跨度及 kind；更宽的起点命中可以优先于更窄的内部命中，不能概括为总是选择最窄事实。
+- `type_inference_record_member_write_reference_fact` 为非 identifier 赋值左值中的最后一个 member/index token 写入 unresolved `ZR_SEMANTIC_REFERENCE_MEMBER_WRITE`。`seed.value = 3` 的事实 range 对准 `value`，`seed[index] = 4` 的事实 range 对准 computed index 表达式；当前只声明 assignment-target token 分类，不声明成员声明解析。普通 reference position query 在起点偏好和跨度均相同时才以 write/member-write 的 kind 优先级区分候选。
 - `type_inference_record_ownership_builtin_fact` 记录 `%borrow/%loan/%shared/%weak/%release/%detach` 这类 ownership builtin 的动作、结果 qualifier 和相关 operand 节点，让 REPL/LSP 可以读共享事实，而不是根据类型字符串重猜所有权语义。
 
 当前已验证的发射范围：
@@ -1982,9 +1982,9 @@ Suggestion: ...
 
 ## Query Contract
 
-追加函数在空上下文、空事实或未初始化数组时返回 `ZR_FALSE`。查询函数在无法命中时返回 `ZR_NULL`，上层必须把它视为显式 unknown，而不是崩溃或回退到误导性类型。
+追加入口只承诺各自实现显式检查的失败；Array_Init、Copy 与 Push 没有统一的失败传播或回滚保证，bool 成功不证明完整 OOM 安全。查询返回当前数组内的借用记录或 `ZR_NULL`；增长、Reset/Free 和对应载荷替换会结束有效期。事实存在性不额外证明 resolved、已知值、所有权安全或完整类型关联。
 
-位置查询只在事实范围和查询位置双方都有 offset 时使用 offset；任一侧缺少 offset 时回退到 line/column。这样 LSP 可以用带 offset 的位置查询 AST 仍只带行列信息的事实，不会因为一侧 offset 为零而误判未命中。`FindExpressionAtPosition` 和 `FindLogicalAtPosition` 都返回包含该位置的最窄事实范围，用于 hover、局部类型推断、逻辑短路解释和嵌套表达式查询。
+位置查询只用 query.start，采用同源闭区间。事实 range 与 query 各自至少一端有非零 offset 时用 offset；否则用行列，但跨度评分始终只读 offset 差。Expression 和 Logical 选择最窄候选、同宽采用后项；普通 Reference 先比较起点命中，再比较宽度和 kind。NumericByNode 只选择一条已有事实、不汇总其它候选的风险；mayOverflow 仅在其它信息评分相同时作为最后偏好，完全平局保留前项。各入口的完整限制见 [Semantic Context 与 Facts 的调用契约](semantic-context-and-facts-contracts.md)。
 
 ## LSP Local Semantic Query
 

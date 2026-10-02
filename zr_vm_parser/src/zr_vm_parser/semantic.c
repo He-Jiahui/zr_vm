@@ -1,3 +1,8 @@
+/**
+ * @file
+ * @brief 提供语义快照的身份、容器生命周期和非 owning HIR 关联。
+ * @note Parser、compiler 与 LSP 的生产和查询须使用同一快照；Reset 后重用 ID 并丢弃旧事实。
+ */
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/diagnostic_builder.h"
 #include "zr_vm_parser/semantic_calls.h"
@@ -6,6 +11,15 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/string.h"
 
+/**
+ * @brief 保存可见候选的来源 URI，供导入符号查询核对来源身份。
+ * @pre 输入 URI 在创建期间由其实际 owner 保持 GC 可达。
+ * @note 短串可能复用驻留对象，独立长串副本的 GC 生命周期须另行管理。
+ */
+/* BUG: [NATIVE_CONTEXT_INTERNAL_VM_CLONE_UNROOTED] 新建长 URI 仅存于原生数组，没有建立 GC 根。
+ * 默认 incremental GC、未安装补充 host trace 时，完整同线程 FullGC 可回收该副本；随后 SymbolAt 比较多个同 SymbolId 导入候选的来源身份时读取悬空对象。
+ * 原输入的 root 不覆盖独立副本；与事实消息克隆共用根交接及 Reset/Free 释放问题。
+ */
 static SZrString *semantic_context_clone_string(
         SZrSemanticContext *context,
         SZrString *value) {
@@ -22,6 +36,10 @@ static SZrString *semantic_context_clone_string(
             context->state, text, ZrCore_String_GetByteLength(value));
 }
 
+/**
+ * @brief 集中建立语义快照容器并初始化 canonical/facts/calls 子系统。
+ * @note 调用前 state 已写入，只构造一次；Array_Init 无失败返回，types/scopeFacts 初始化 OOM 后仍标有效的失败链单独记录。
+ */
 static void semantic_context_init_arrays(SZrSemanticContext *context) {
     ZrCore_Array_Init(context->state,
                 &context->canonicalTypes,
@@ -29,6 +47,10 @@ static void semantic_context_init_arrays(SZrSemanticContext *context) {
                 ZR_PARSER_INITIAL_CAPACITY_SMALL);
     ZrParser_CanonicalTypeIndex_Init(context);
     ZrParser_CanonicalTypeDefinition_Init(context);
+    /**
+     * @brief 标明顶层语义容器初始化失败尚未传递给构造者。
+     * @note BUG: 有效 state 下仅 types 或 scopeFacts 的初始原生申请失败时，Array_Init 仍设置正 capacity 和 isValid，New 可返回该 context。随后合法类型登记或 BuildSourceScopeFacts 的 module 发布在 length=0 时向空 head 执行 Array_Push，导致断言或空地址写入；应在发布 context 前确认分配成功并清理失败前缀。
+     */
     ZrCore_Array_Init(context->state,
                 &context->types,
                 sizeof(SZrSemanticTypeRecord),
@@ -77,6 +99,10 @@ static void semantic_context_init_arrays(SZrSemanticContext *context) {
     ZrParser_SemanticCalls_Init(context);
 }
 
+/**
+ * @brief 在快照重置或释放时结束诊断查询缓存的生命周期。
+ * @note 合法 context 中，先释放各诊断条目的嵌套资源，再清除缓存身份；本 helper 保留顶层缓冲，旧诊断视图不得继续使用。
+ */
 static void semantic_context_reset_query_diagnostics(SZrSemanticContext *context) {
     TZrSize i;
 
@@ -171,6 +197,10 @@ void ZrParser_SemanticContext_Reset(SZrSemanticContext *context) {
     context->externalProviderGeneration = 0U;
     context->virtualDeclarationUriResolver = ZR_NULL;
     context->virtualDeclarationUriResolverUserData = ZR_NULL;
+    /**
+     * @brief 开始新快照时重用身份编号。
+     * @note 旧 ID、元素借用地址和 AST 关联查询结果不可用于新快照，即使顶层缓冲地址仍相同。
+     */
     context->nextTypeId = ZR_SEMANTIC_ID_FIRST;
     context->nextSymbolId = ZR_SEMANTIC_ID_FIRST;
     context->nextOverloadSetId = ZR_SEMANTIC_ID_FIRST;
@@ -242,6 +272,10 @@ TZrSemanticScopeId ZrParser_Semantic_ReserveScopeId(SZrSemanticContext *context)
     return context->nextScopeId++;
 }
 
+/**
+ * @brief 为类型登记补齐语义投影分类，保留调用方已经指定的分类。
+ * @note 仅 UNKNOWN 按推断基型补分类；这不是 canonical 类型种类或运行时值标签的转换。
+ */
 static EZrSemanticTypeKind semantic_type_kind_from_inferred_type(const SZrInferredType *type,
                                                                  EZrSemanticTypeKind fallback) {
     if (type == ZR_NULL) {
@@ -263,6 +297,10 @@ static EZrSemanticTypeKind semantic_type_kind_from_inferred_type(const SZrInferr
     }
 }
 
+/**
+ * @brief 按名称内容合并当前快照的重载集合。
+ * @note 本入口不涉及词法作用域或符号 kind；同一名称的不同字符串对象也可匹配。字符串对象由外部 owner 保持有效，比较不取得所有权。
+ */
 static TZrBool semantic_names_equal(SZrString *left, SZrString *right) {
     if (left == right) {
         return ZR_TRUE;
@@ -273,6 +311,10 @@ static TZrBool semantic_names_equal(SZrString *left, SZrString *right) {
     return ZrCore_String_Equal(left, right);
 }
 
+/**
+ * @brief 将复制的推断类型约束为可复用的结构类型投影。
+ * @note 保留结构、所有权及嵌套类型形状，剥离表达式值范围、已知布尔和数组长度事实；值范围的原生分段存储随剥离释放。输入须是本次登记持有的副本，state/type 为空时不处理。
+ */
 static void semantic_inferred_type_keep_structural_fields_only(
         SZrState *state,
         SZrInferredType *type) {
@@ -691,6 +733,10 @@ TZrOverloadSetId ZrParser_Semantic_GetOrCreateOverloadSet(SZrSemanticContext *co
 
     record.id = ZrParser_Semantic_ReserveOverloadSetId(context);
     record.name = name;
+    /**
+     * @brief 标明重载集合成员缓冲失败后仍被发布的问题。
+     * @note BUG: 有效 context/name 下仅 members 的初始申请失败，GetOrCreateOverloadSet 仍返回非零 ID。LSP RegisterSymbolSemantics 随后合法登记函数符号并调用 AddOverloadMember，后者对空 members.head 执行 Push；应在发布集合前确认成员缓冲分配成功并回收失败记录。
+     */
     ZrCore_Array_Init(context->state, &record.members, sizeof(TZrSymbolId), ZR_PARSER_INITIAL_CAPACITY_TINY);
 
     ZrCore_Array_Push(context->state, &context->overloadSets, &record);

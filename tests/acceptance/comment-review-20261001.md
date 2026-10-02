@@ -177,3 +177,31 @@ doc_type: testing-guide
 21:20Z的逐例比较确认GCC和Clang各163个目标/用例/状态多重集合与修改前完全一致，两个失败身份仍是上述诊断registry/message-table用例，未把包装器退出1改写为全绿。before查询头SHA为 `91dabf637ff270bdb5dbc8f8ed00659c42228ef126b608c821bae7fc8c4fa8ab`，after与恢复运行保持 `05f8731295fd85ffc250a2a034007e114233cb7fc97001e37cfe9cf752cab6f0`。MSVC原before包装器失败/OSError、独立CLI烟测及中断after仍保留，恢复三步骤0/0/0另由windows-validation-closure核验。此验收是注释批次的限定目标对照，期间其他会话改动core与SSA代码；没有受控整个旧工作区、故障注入或全仓绿色结论。
 
 本批采用15条精确路径正常串行提交：查询头、58单元台账、7张位置迁移表、模块文档、foundation文档、parser索引、code-review索引、inventory和本文。提交成员及实际Git blob另由终态收据核实；不纳入其他会话的源码、测试或临时产物。唯一readiness队列仍为 `01a0e3a1-2bbe-7f23-9026-9e5aa6296c8f`，未收到capture START/terminal/release；本批源码哈希、验证与模块提交均不构成跨仓捕获封印。
+
+## Semantic Context 与 Facts 的310个审查单元
+
+本批正式边界为 `semantic.c`、`semantic.h`、`semantic/semantic_facts.c` 与 `semantic_facts.h`。144条宏观注释说明快照身份、provider/resolver 和诊断缓存、注册与发布约束、载荷所有权以及查询证据的含义。context台账179项、facts台账131项，共250项字段契约；guard、内部控制块和无需额外注释的单元各自保留结论。
+
+调用方语义来自15个完整函数分片、3个非函数引用分片、原作者阅读与根代理复核；原函数语料有1481个不同调用或支撑函数、1749个分配角色，原作者另有194个角色。独立context实现、facts实现和facts头部review核对真正的生产与消费协议，最终144条注释另经过独立复核，135条接受、9条精确修订；7项字段说明勘误保留。最后两个台账reviewer没有重新独立全文阅读所有汇总调用参数或250字段，不能把其指纹核对扩大成重复全文审读。根代理逐项复核最终310项intent、constraints、decision和reason；格式和调用方向门禁只确认这些判断适用于当前源码。
+
+property基础发布未认证accessor存在，relations的FUNCTION、非零callable ID及typeId相等也不等于完整canonical节点验证。scope发布复制parentScopeId，只重写本条id；visible发布需要已有scope/symbol，位置与owner/kind仍有各自限制。ReferenceAtPosition先偏好起点命中，之后才比较宽度和用途；NumericByNode选择单一已有事实，不合并范围或风险。EXACT/IMPLICIT conversion标签不普遍证明兼容性已检查，普通调用producer明确关闭共享mapper的该检查。
+
+三类BUG是限定合法输入路径的静态结论：types/scopeFacts初始原生分配失败未传播、overload members初始分配失败仍发布，以及内部独立VM长串未交接GC根。第三类限定为同线程默认incremental模式、至少128字节的独立副本、成功完成FullGC、没有补充host trace；URI消费需要两个同SymbolId的import候选，所有权消息的首个失效读取位于REPL的repl_string_text。原输入有根不保护独立副本；不宣称所有Expression/Reference consumer、其它GC模式、短串或未完成FullGC都已证明相同故障。UInt32 ID耗尽策略保留具体TODO。未执行分配失败注入或动态GC复现。
+
+四源文件由2755行增至3267行，Git差异为515行注释增加、3行旧注释删除，所有非注释token相同。正式逻辑行与修订稿完全一致；两个context文件有行尾规范化，实际SHA单独记录。47份已有台账迁移359个引用，359个端点逐字对应原语句；其它审查文字保留，不重新认证其结论。两份新台账的check-batch、55条源/表/文档路径的diff检查及模块本地链接检查均实际退出0。首版helper将LF规范化实际hash与混合行尾草稿原始hash比较而失败；该失败保留，随后比较双方原始与逻辑内容，未发现正文差异，未作为源码BUG/TODO。
+
+## Context／Facts 修改前后实际验证
+
+使用任务专属 `context-facts-review-20261001/` 收据和日志，保留before与after，复用原gcc/clang/msvc-shared缓存。Linux运行七个既有query/property程序，加semantic_facts、canonical_type_graph与dataflow_engine共十个程序。
+
+| 工具链 | 修改前实际终态 | 修改后实际终态 |
+| --- | --- | --- |
+| GCC | 21:33:47–21:34:32Z；native81895退出1；构建0，208例206 PASS/2 FAIL | 21:46:54–21:56:08Z；native65780退出1；292个构建动作、构建0，208例206 PASS/2 FAIL |
+| Clang | 21:33:47–21:34:29Z；native8212退出1；构建0，208例206 PASS/2 FAIL | 21:46:54–21:53:46Z；native9790退出1；292个构建动作、构建0，208例206 PASS/2 FAIL |
+| MSVC | 21:33:47–21:34:22Z；native13389退出0；configure/build/hello_world均0 | 21:46:54–21:47:26Z；native82228退出0；configure/build/hello_world均0 |
+
+实际逐例比较确认Linux两个编译器的目标、用例和状态多重集合各自与before完全一致。失败仍是 `test_diagnostic_registry_assigns_stable_descriptors` 和 `test_diagnostic_message_table_covers_registry_and_falls_back_to_english`，未改写包装器退出1或声称全绿。四源hash在每次运行开始与结束一致，after为 `69b7ffd6…`、`a98ffb0f…`、`e4544397…`、`53d906dd…`；完整SHA在application与validation-closure收据中保存。闭合收据SHA为 `d05b8ed747c3aafe98c768c64e1d124cd8bda09b2dabac5a97126f1e238e8882`，同时核对429个相关源码及89个已接受私有artifact指纹。
+
+提交前重新扫描3555个首方文件，覆盖59个公开接口及6个context内部helper，共1383个直接调用点、124个声明/定义，无函数地址或其它首方语言文本命中。原汇总语料为1380个调用；首次完整扫描发现三个 `.inc` getter 调用不在原FULL角色中，而非仅漏填已有角色的调用字段。subagent07与根代理新增全文阅读三个函数及实际producer/consumer链：弱引用optional调用检查guard的kind/mode；两个动态object用例有意保留来源SymbolId而TypeId=INVALID，不用0查询canonical节点。原1481个不同函数加三项补充为1484；没有将扫描指纹冒充原来的FULL记录。三项调用补入facts实现/声明四行台账，全部新证据使用精确point；130行reason只去除已经过时的草稿状态前缀，语义内容保留。这三项测试没有额外运行，现有208例比较仍是上表限定目标。扫描器的配对头/内部helper区分及 `.inc` 分类失败结果保留，均不是源码BUG/TODO。
+
+此验收针对注释批次的限定目标。共享工作区仍有其他会话的core/SSA源码及测试修改；未把整个旧工作区当作受控基线。本批按59条精确路径正常串行提交，成员和实际Git blob由提交终态收据确认；其它会话的dirty、untracked、submodule和作业保持原状。唯一readiness队列仍为 `01a0e3a1-2bbe-7f23-9026-9e5aa6296c8f`，未收到capture START/terminal/release；模块验证与commit不构成跨仓捕获封印，全仓任务尚未完成。

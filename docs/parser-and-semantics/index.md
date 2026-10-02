@@ -630,3 +630,7 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
 ## 公开语义查询调用契约
 
 - [公开语义查询契约](semantic-query-public-contracts.md)：31 个 API 的选择、同代身份、输出与借用期、失败状态以及待核实设计；查询头注释批次的构建验证状态见当日验收。
+
+## 语义快照与事实的调用契约
+
+- [Semantic Context 与 Facts](semantic-context-and-facts-contracts.md)：身份与配置的快照边界、原生载荷和 VM 字符串的生命周期、发布与查询的证据限制，以及三类静态可达问题；实际验证见当日验收。

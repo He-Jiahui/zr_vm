@@ -1,3 +1,7 @@
+/** @file
+ * @brief 保存与查询同一语义快照的事实投影，连接分析发布者与 compiler、LSP、debug/REPL 消费者。
+ * @note 本层管理原生复制载荷；借用输入、内部 VM 文本的 GC 根及完整 OOM 保证分别受对应契约约束。
+ */
 #include "zr_vm_parser/semantic.h"
 
 static TZrBool semantic_facts_has_offset(const SZrFilePosition *position) {
@@ -20,6 +24,7 @@ static TZrBool semantic_facts_same_string(SZrString *left, SZrString *right) {
                       ZrCore_String_Equal(left, right)));
 }
 
+/** @brief 为诊断去重比较同一来源中的同一范围，避免把不同源文件的坐标当作同一位置。 */
 static TZrBool semantic_facts_same_range(
         const SZrFileRange *left,
         const SZrFileRange *right) {
@@ -40,6 +45,9 @@ static TZrBool semantic_facts_same_range(
                      left->end.column == right->end.column);
 }
 
+/** @brief 为位置查询统一以 position.start 作为光标，检查同源闭边界命中。
+ * @note position.end 仅参与 offset 坐标模式的资格判断，不扩大查询区域；双方具备 offset 信息时使用 offset，否则回退到行列。
+ */
 static TZrBool semantic_facts_range_contains_position(const SZrFileRange *range,
                                                       const SZrFileRange *position) {
     TZrSize queryOffset;
@@ -92,6 +100,9 @@ static TZrBool semantic_facts_range_starts_at_position(
                      range->start.column == position->start.column);
 }
 
+/* 供多个位置候选选择较局部的投影；评分依赖 offset 跨度。
+ * 命中检查虽可回退到行列，缺少 offset 的候选仍没有按实际文本跨度选取最局部投影的保障。
+ */
 static TZrSize semantic_facts_range_width(const SZrFileRange *range) {
     if (range == ZR_NULL) {
         return 0;
@@ -116,6 +127,9 @@ static TZrBool semantic_facts_range_is_known(const SZrFileRange *range) {
            range->end.offset != 0;
 }
 
+/** @brief 在同位置、同跨度的多个引用角色重叠时，偏好写入、调用等更强的语义投影。
+ * @note 此偏好只用于位置筛选后的角色取舍，不覆盖精确位置与局部范围的选择。
+ */
 static TZrInt32 semantic_facts_reference_priority(EZrSemanticReferenceKind kind) {
     switch (kind) {
         case ZR_SEMANTIC_REFERENCE_WRITE:
@@ -145,6 +159,9 @@ static TZrBool semantic_facts_reference_is_symbol_definition(const SZrSemanticRe
            fact->kind == ZR_SEMANTIC_REFERENCE_WRITE;
 }
 
+/** @brief 为线性 reaching-definition 与 definite-assignment 解析建立声明/写入事实的自身定义种子。
+ * @pre 引用已解析到非零 SymbolId，且角色是 DECLARATION 或 WRITE；借用的 source 与当前快照保持有效。
+ */
 static void semantic_facts_reference_set_own_definition(SZrSemanticReferenceFact *fact) {
     if (!semantic_facts_reference_is_symbol_definition(fact)) {
         return;
@@ -171,6 +188,10 @@ static void semantic_facts_reference_free_definition_ranges(SZrSemanticContext *
     ZrCore_Array_Construct(&fact->definitionRanges);
 }
 
+/** @brief 为追加事实复制独立的多定义 native 容器；各 range.source 仍借用原来源。
+ * @pre dst 尚未持有旧容器，src 容器与元素在复制期间有效。
+ * @note 未初始化或空 src 视为空成功；TRUE 不构成底层分配失败已处理的保证。
+ */
 static TZrBool semantic_facts_reference_copy_definition_ranges(SZrSemanticContext *context,
                                                                SZrSemanticReferenceFact *dst,
                                                                const SZrSemanticReferenceFact *src) {
@@ -213,6 +234,9 @@ static void semantic_facts_reference_free_argument_mappings(
     ZrCore_Array_Construct(&fact->argumentMappings);
 }
 
+/** @brief 将 producer 的暂存调用参数映射复制到事实自有 native 容器。
+ * @note 映射中的 ID/索引/tag 按值复制，range.source 借用；空源成功，非空仅以最终长度相等判断复制完成，不校验参数兼容性。
+ */
 static TZrBool semantic_facts_reference_copy_argument_mappings(
         SZrSemanticContext *context,
         SZrSemanticReferenceFact *dst,
@@ -244,6 +268,9 @@ static TZrBool semantic_facts_reference_copy_argument_mappings(
     return dst->argumentMappings.length == src->argumentMappings.length;
 }
 
+/** @brief 为线性 reaching-definition 解析查找同符号的已发布前驱定义。
+ * @note 这是发布顺序上的回退，不证明 CFG 支配关系；分支合流结果由后续 CFG 分析发布。
+ */
 static const SZrSemanticReferenceFact *semantic_facts_find_previous_definition(
         SZrSemanticContext *context,
         TZrSize beforeIndex,
@@ -299,6 +326,9 @@ static TZrBool semantic_facts_reference_definite_assignment_source_state(
     return ZR_FALSE;
 }
 
+/** @brief 为线性 definite-assignment 解析读取同符号最近发布的赋值状态。
+ * @note 最近状态即使 UNKNOWN 也遮蔽更早的已初始化状态；不跨分支推导 CFG 合流结果。
+ */
 static TZrBool semantic_facts_find_previous_definite_assignment_state(
         SZrSemanticContext *context,
         TZrSize beforeIndex,
@@ -398,6 +428,13 @@ static void semantic_facts_free_receiver_guard_facts(SZrSemanticContext *context
     }
 }
 
+/** @brief 以 context 的 VM state 重建事实使用的可选展示文本。
+ * @note 原生事实保存返回地址不提供 GC 根；原输入有根也不能保住独立长串副本。
+ */
+/* BUG: [NATIVE_CONTEXT_INTERNAL_VM_CLONE_UNROOTED] 内部新建长串没有交接 GC 根。
+ * 合法 AppendOwnership 在原输入已有根时仍可保存无根副本；默认 incremental GC、未安装补充 host trace 时，完整同线程 FullGC 可回收它，随后 REPL 所有权展示读取悬空对象。
+ * 与原生 context URI 克隆共用根持有及 Reset/Free 释放问题；此链尚未动态复现。
+ */
 static SZrString *semantic_facts_clone_string(SZrSemanticContext *context, SZrString *value) {
     TZrNativeString text;
 
@@ -413,6 +450,9 @@ static SZrString *semantic_facts_clone_string(SZrSemanticContext *context, SZrSt
     return ZrCore_String_Create(context->state, text, ZrCore_String_GetByteLength(value));
 }
 
+/** @brief 为事实发布准备统一的原生数组存储，供 context 的 Init/Reset/Free 生命周期管理。
+ * @note void 初始化不向调用者传播分配失败，不能把数组有效标志当作缓冲申请成功证明。
+ */
 static void semantic_facts_init_array(SZrSemanticContext *context,
                                       SZrArray *array,
                                       TZrSize elementSize) {
@@ -936,6 +976,9 @@ const SZrSemanticReferenceFact *ZrParser_SemanticFacts_FindReferenceByNodeAndKin
     return ZR_NULL;
 }
 
+/** @brief 为同一节点的既有数值投影比较范围信息量，供查询选择展示候选。
+ * @note 仅度量 signed 范围，unsigned 信息由候选选择另行解释；无有效范围用最大宽度表示，评分覆盖完整 Int64 边界。
+ */
 static TZrUInt64 semantic_facts_numeric_range_width(const SZrSemanticNumericFact *fact) {
     TZrUInt64 minMagnitude;
     TZrUInt64 maxMagnitude;
@@ -958,6 +1001,9 @@ static TZrUInt64 semantic_facts_numeric_range_width(const SZrSemanticNumericFact
     return minMagnitude + (TZrUInt64)fact->maxValue;
 }
 
+/** @brief 按投影的信息量为节点查询选取一条已经发布的数值事实。
+ * @note 不合并候选范围或汇总风险；只有其它信息评分均相同时才优先 mayOverflow 为真的候选，完全平局保留前项。具体信息评分门槛见公共数值查询契约。
+ */
 static TZrBool semantic_facts_numeric_candidate_is_better(
         const SZrSemanticNumericFact *candidate,
         const SZrSemanticNumericFact *best) {
@@ -1018,6 +1064,9 @@ const SZrSemanticNumericFact *ZrParser_SemanticFacts_FindNumericByNode(
     return best;
 }
 
+/** @brief 优先采用控制转移之后死代码的原因，帮助诊断定位使后续代码不可达的转移。
+ * @note 这类原因描述转移后的不可达代码，不表示转移语句本身不可达；此取舍不负责选择最局部范围。
+ */
 static TZrInt32 semantic_facts_reachability_priority(EZrSemanticReachabilityCause cause) {
     switch (cause) {
         case ZR_SEMANTIC_REACHABILITY_AFTER_RETURN:
