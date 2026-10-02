@@ -7,6 +7,8 @@
 #include "zr_vm_core/exec_ir_state_map.h"
 #include "zr_vm_parser/exec_ir_builder.h"
 
+#include "ssa_state_map_clone_fault_allocator.h"
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -31,6 +33,10 @@ void test_state_map_clone_copies_pools_and_lifecycle(void);
 void test_state_map_clone_rejects_aliased_destination(void);
 void test_state_map_clone_rejects_interior_pool_alias(void);
 void test_state_map_clone_rejects_overlapping_source_pools(void);
+void test_state_map_clone_preserves_both_maps_on_each_pool_allocation_failure(void);
+void test_state_map_clone_replaces_destination_after_last_pool_success(void);
+void test_state_map_clone_skips_empty_pools_without_allocating(void);
+void test_state_map_self_clone_does_not_allocate_or_change_pools(void);
 void test_state_map_materialization_successfully_copies_logical_values(void);
 void test_state_map_materialization_rejects_overlapping_map_pools(void);
 void test_state_map_materialization_rejects_interior_target_alias(void);
@@ -879,6 +885,8 @@ void test_state_map_clone_copies_pools_and_lifecycle(void) {
     ZrCore_ExecIr_StateMapFree(&clone);
 }
 
+#include "test_ssa_state_map_clone_fault_cases.h"
+
 void test_state_map_clone_rejects_aliased_destination(void) {
     SZrExecIrStateMap source;
     SZrExecIrStateMap destination;
@@ -1363,6 +1371,10 @@ int main(void) {
     RUN_TEST(test_state_map_clone_rejects_aliased_destination);
     RUN_TEST(test_state_map_clone_rejects_interior_pool_alias);
     RUN_TEST(test_state_map_clone_rejects_overlapping_source_pools);
+    RUN_TEST(test_state_map_clone_preserves_both_maps_on_each_pool_allocation_failure);
+    RUN_TEST(test_state_map_clone_replaces_destination_after_last_pool_success);
+    RUN_TEST(test_state_map_clone_skips_empty_pools_without_allocating);
+    RUN_TEST(test_state_map_self_clone_does_not_allocate_or_change_pools);
     RUN_TEST(test_state_map_materialization_successfully_copies_logical_values);
     RUN_TEST(test_state_map_materialization_rejects_overlapping_map_pools);
     RUN_TEST(test_state_map_materialization_rejects_interior_target_alias);

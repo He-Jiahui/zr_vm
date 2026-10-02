@@ -1,5 +1,8 @@
 ---
 related_code:
+  - tests/parser/ssa_state_map_clone_fault_allocator.c
+  - tests/parser/ssa_state_map_clone_fault_allocator.h
+  - tests/parser/test_ssa_state_map_clone_fault_cases.h
   - zr_vm_core/include/zr_vm_core/exec_ir_runtime.h
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_objects.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_deopt_aggregate.c
@@ -49,6 +52,10 @@ plan_sources:
   - docs/plans/ssa/01-execir-ssa/03-effects-verifier.md
   - docs/plans/ssa/01-execir-ssa/04-state-maps.md
 tests:
+  - tests/parser/ssa_state_map_clone_fault_allocator.c
+  - tests/parser/ssa_state_map_clone_fault_allocator.h
+  - tests/parser/test_ssa_state_map_clone_fault_cases.h
+  - tests/acceptance/2026-10-02-state-map-clone-oom.md
   - tests/parser/test_ssa_conditional_cleanup.c
   - tests/acceptance/ssa-conditional-cleanup.md
   - tests/core/test_ssa_runtime_objects.c
@@ -103,6 +110,14 @@ checkpoint verifier. The AOT lowerer distinguishes malformed storage from a
 valid map whose clone cannot allocate, and leaves any previously published
 projection unchanged in either case. No physical AOT frame restoration is
 implemented by this data transport.
+
+The clone copies the four pools in a temporary map and publishes the
+destination only after the last copy succeeds. The focused fault sweep rejects
+each of the four pool allocations in turn and checks the complete source and
+pre-populated destination snapshots, including pointers, counts, capacities,
+metadata, and pool bytes. Partial temporary copies are released before the
+failure is returned; the sweep does not claim a physical frame transition or
+inject allocator failures into unrelated state-map consumers.
 
 An effect or memory phi may carry token zero from an entry edge where no
 effect has yet committed. Structure verification, the direct oracle, and
