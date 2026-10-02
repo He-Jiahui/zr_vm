@@ -399,23 +399,7 @@ static SZrObject *task_runtime_ensure_current_scheduler_for_module(SZrState *sta
     return scheduler;
 }
 
-static SZrObject *task_runtime_scheduler_queue(SZrState *state, SZrObject *scheduler) {
-    SZrObject *queue = task_runtime_get_object_field(state, scheduler, kTaskQueueField);
-    SZrTypeValue queueValue;
-
-    if (queue != ZR_NULL && queue->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
-        return queue;
-    }
-
-    queue = ZrLib_Array_New(state);
-    if (queue == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    ZrLib_Value_SetObject(state, &queueValue, queue, ZR_VALUE_TYPE_ARRAY);
-    task_runtime_set_value_field(state, scheduler, kTaskQueueField, &queueValue);
-    return queue;
-}
+#include "task_runtime_scheduler_queue.inc"
 
 static void task_runtime_execute_callable_body(SZrState *state, TZrPtr arguments) {
     ZrVmTaskExecuteRequest *request = (ZrVmTaskExecuteRequest *)arguments;
@@ -594,10 +578,7 @@ static TZrBool task_runtime_scheduler_step_internal(SZrState *state, SZrObject *
 
     queuedValue = ZrLib_Array_Get(state, queue, (TZrSize)head);
     if (queuedValue == ZR_NULL) {
-        /* BUG: 这里只把 head 归零，没有删除队列中的已执行 Task。下一次
-         * Scheduler.schedule/yieldNow/delay 追加新项后，会先重跑旧 Task；
-         * 旧 Task 的 callable 已清空，可从 completed 被错误改成 faulted。 */
-        task_runtime_set_int_field(state, scheduler, kTaskQueueHeadField, 0);
+        (void)task_runtime_scheduler_detach_queue(state, scheduler, queue);
         return ZR_FALSE;
     }
 

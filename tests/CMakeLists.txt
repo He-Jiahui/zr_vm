@@ -8767,3 +8767,5 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-cross-domain-clone-oom.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/exception-gc-scopes-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-hotpatch-apply-sources.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/close-proxy-tests.cmake")
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/task-scheduler-queue-tests.cmake")

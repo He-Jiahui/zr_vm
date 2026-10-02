@@ -253,6 +253,8 @@ static void test_job_constructor_and_current_scheduler_schedule_complete_callabl
     ZrTests_State_Destroy(state);
 }
 
+#include "task_scheduler_queue_reuse_cases.inc"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_zr_task_descriptor_publishes_job_scheduler_contract);
@@ -260,5 +262,10 @@ int main(void) {
     RUN_TEST(test_yield_now_and_delay_complete_through_task_result_abi);
     RUN_TEST(test_scheduler_consumes_job_at_source_call_boundary);
     RUN_TEST(test_discarded_task_expression_is_rejected);
+    RUN_TEST(test_scheduler_reuse_preserves_completed_job_result);
+    RUN_TEST(test_scheduler_keeps_reentrant_enqueue_until_outer_job_returns);
+    RUN_TEST(test_scheduler_reuses_queue_for_cooperative_turns);
+    RUN_TEST(test_scheduler_checked_fields_reject_writes_without_replaying);
+    RUN_TEST(test_scheduler_queue_oom_releases_pin_and_can_retry);
     return UNITY_END();
 }
