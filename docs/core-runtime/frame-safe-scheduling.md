@@ -7,6 +7,7 @@ related_code:
   - zr_vm_core/include/zr_vm_core/execution_budget.h
   - zr_vm_library/include/zr_vm_library/task_runtime.h
   - tests/task/test_ssa_async_frame_budget.c
+  - tests/task/ssa_async_compile_contract_cases.inc
 implementation_files:
   - zr_vm_core/include/zr_vm_core/async_frame_budget.h
   - zr_vm_core/src/zr_vm_core/execution/execution_async_wait.c
@@ -17,8 +18,10 @@ plan_sources:
   - "user: 2026-09-14 implement 06.05 async frame budget"
 tests:
   - tests/task/test_ssa_async_frame_budget.c
+  - tests/task/ssa_async_compile_contract_cases.inc
   - tests/acceptance/ssa-async-frame-budget.md
   - tests/acceptance/2026-09-29-ssa-async-frame-budget-ndebug-tests.md
+  - tests/acceptance/2026-10-02-ssa-async-compile-contracts.md
 doc_type: module-detail
 ---
 
@@ -138,6 +141,17 @@ between registration and recheck, cancel/timeout winner races, exactly-once
 resume, immutable snapshot copying, stale-generation disposal, warm-up tagging,
 and malformed snapshot rejection.  Exact commands and tool versions are
 recorded in `tests/acceptance/ssa-async-frame-budget.md`.
+
+`ssa_async_compile_contract_cases.inc` adds four completion failures whose
+generation still matches: changed module, signature, or layout hash, and a zero
+result hash. Each must report `CONTRACT_MISMATCH`, leave the record `DISCARDED`
+with no published result hash, and retain its snapshot until `Release`. The
+test uses one slot for all four failures and then a valid completion. After
+each release it checks zero active jobs and a cleared snapshot, length, and
+result hash; the final completion checks the exact published hash. These
+checks cover contract rejection and slot recovery without changing the
+production completion protocol. Validation evidence is recorded in
+`tests/acceptance/2026-10-02-ssa-async-compile-contracts.md`.
 
 The harness uses an always-evaluated `TEST_CHECK` instead of the C `assert`
 macro, so state-changing expressions remain active when `NDEBUG` is defined.

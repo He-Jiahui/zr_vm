@@ -635,6 +635,8 @@ cleanup:
     }
 }
 
+#include "ssa_async_compile_contract_cases.inc"
+
 int main(void) {
     test_frame_budget_only_suspends_at_a_coherent_boundary();
     test_frame_budget_rejects_unsafe_suspend_and_balances_pin();
@@ -647,5 +649,6 @@ int main(void) {
     test_compile_queue_cancel_and_reject_bad_snapshot();
     test_compile_queue_running_cancel_keeps_snapshot_until_ack();
     test_compile_queue_rejects_request_identity_mismatch();
+    test_compile_queue_rejects_contract_changes_and_reuses_slot();
     return g_testFailureCount == 0u ? 0 : 1;
 }
