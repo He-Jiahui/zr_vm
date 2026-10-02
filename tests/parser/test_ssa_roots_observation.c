@@ -141,7 +141,63 @@ static TZrBool visit_relocate(SZrExecIrFrameRoot *root, TZrPtr slot,
     return ZR_TRUE;
 }
 
+static void test_reused_scalar_observation_conflicts(void) {
+    SZrExecIrPackedValue values[3] = {
+        {10u, 1u, ZR_EXEC_IR_PACKED_SLOT_SCALAR, 4u, 4u, 0u, 1u, 0u},
+        {20u, 1u, ZR_EXEC_IR_PACKED_SLOT_SCALAR, 4u, 4u, 1u, 2u, 0u},
+        {30u, 1u, ZR_EXEC_IR_PACKED_SLOT_SCALAR, 4u, 4u, 0u, 2u, 0u}
+    };
+    SZrExecIrPackedFrameRequest request = {1u, values, 3u, 0u, 0u, 0u, 0u};
+    SZrExecIrPackedFrameLayout layout;
+    SZrExecIrDiagnostic d;
+    TZrByte frame[16], savedFrame[16];
+    TZrUInt64 scalars[3] = {111u, 222u, 333u};
+    TZrUInt64 writeback[3] = {91u, 92u, 93u}, savedWriteback[3];
+    TZrUInt32 invalidated[3] = {81u, 82u, 83u}, savedInvalidated[3];
+    SZrExecIrFrameObservation observation = {
+        &layout, frame, scalars, 3u, writeback, 3u, invalidated, 3u, 77u
+    };
+    ZrParser_ExecIr_PackedFrameLayoutInit(&layout);
+    CHECK(ZrParser_ExecIr_LayoutPackedFrame(&request, &layout, &d));
+    CHECK(layout.logicalToPhysical[0] == layout.logicalToPhysical[1]);
+    CHECK(layout.logicalToPhysical[0] != layout.logicalToPhysical[2]);
+    memset(frame, 0x5a, sizeof(frame));
+    memcpy(savedFrame, frame, sizeof(frame));
+    memcpy(savedWriteback, writeback, sizeof(writeback));
+    memcpy(savedInvalidated, invalidated, sizeof(invalidated));
+    CHECK(!ZrParser_ExecIr_ObserveFrame(&observation, &d));
+    CHECK(d.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
+    CHECK(d.actualVersion == 2u);
+    CHECK(memcmp(frame, savedFrame, sizeof(frame)) == 0);
+    CHECK(memcmp(writeback, savedWriteback, sizeof(writeback)) == 0);
+    CHECK(memcmp(invalidated, savedInvalidated, sizeof(invalidated)) == 0);
+    CHECK(observation.invalidatedCount == 77u);
+
+    /* Only the bytes actually written participate in conflict detection. */
+    scalars[1] = scalars[0];
+    ((TZrByte *)&scalars[1])[4] ^= 0xffu;
+    CHECK(ZrParser_ExecIr_ObserveFrame(&observation, &d));
+    CHECK(writeback[0] == writeback[1]);
+    CHECK(memcmp(frame + layout.frame.slots[layout.logicalToPhysical[0]].byteOffset,
+                 &scalars[0], 4u) == 0);
+    CHECK(memcmp(frame + layout.frame.slots[layout.logicalToPhysical[2]].byteOffset,
+                 &scalars[2], 4u) == 0);
+    CHECK(observation.invalidatedCount == 2u);
+
+    /* A single supplied writer and a read-only observation remain legal. */
+    scalars[1] = 222u;
+    observation.scalarValueCount = 1u;
+    CHECK(ZrParser_ExecIr_ObserveFrame(&observation, &d));
+    observation.scalarValues = ZR_NULL;
+    memcpy(savedFrame, frame, sizeof(frame));
+    CHECK(ZrParser_ExecIr_ObserveFrame(&observation, &d));
+    CHECK(writeback[0] == writeback[1]);
+    CHECK(memcmp(frame, savedFrame, sizeof(frame)) == 0);
+    ZrParser_ExecIr_PackedFrameLayoutFree(&layout);
+}
+
 int main(void) {
+    test_reused_scalar_observation_conflicts();
     test_multiple_inline_fields();
     SZrExecIrPackedValue values[3] = {
         {1u, 1u, ZR_EXEC_IR_PACKED_SLOT_REF, 8u, 8u, 0u, 3u, 0u},
@@ -308,5 +364,8 @@ int main(void) {
             CHECK(invalidated[1] == UINT32_MAX);
         }
     }
-    ZrParser_ExecIr_FrameRootMapFree(&map); ZrParser_ExecIr_PackedFrameLayoutFree(&layout); return 0;
+    ZrParser_ExecIr_FrameRootMapFree(&map);
+    ZrParser_ExecIr_PackedFrameLayoutFree(&layout);
+    puts("parser roots observation PASS (including reused scalar conflicts)");
+    return 0;
 }

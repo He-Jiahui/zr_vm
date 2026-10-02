@@ -297,6 +297,31 @@ TZrBool ZrParser_ExecIr_ObserveFrame(SZrExecIrFrameObservation *observation,
                   uniquePhysicalCount);
         return ZR_FALSE;
     }
+    /* No active-occupant selector is available. Conflicting writes to reused
+     * storage must fail before frame, writeback or invalidation outputs change. */
+    if (observation->scalarValues != ZR_NULL) {
+        for (TZrUInt32 logical = 0u;
+             logical < layout->frame.logicalSlotCount &&
+             logical < observation->scalarValueCount; ++logical) {
+            TZrUInt32 physical = layout->logicalToPhysical[logical];
+            TZrUInt32 byteSize;
+            if (layout->slotClasses[logical] != ZR_EXEC_IR_PACKED_SLOT_SCALAR) {
+                continue;
+            }
+            byteSize = layout->frame.slots[physical].byteSize < sizeof(TZrUInt64)
+                           ? layout->frame.slots[physical].byteSize : sizeof(TZrUInt64);
+            for (TZrUInt32 prior = 0u; prior < logical; ++prior) {
+                if (layout->logicalToPhysical[prior] == physical &&
+                    layout->slotClasses[prior] == ZR_EXEC_IR_PACKED_SLOT_SCALAR &&
+                    memcmp(&observation->scalarValues[prior],
+                           &observation->scalarValues[logical], byteSize) != 0) {
+                    root_diag(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                              logical + 1u);
+                    return ZR_FALSE;
+                }
+            }
+        }
+    }
     observation->invalidatedCount = 0u;
     for (TZrUInt32 logical = 0u; logical < layout->frame.logicalSlotCount; ++logical) {
         TZrUInt32 physical = layout->logicalToPhysical[logical];

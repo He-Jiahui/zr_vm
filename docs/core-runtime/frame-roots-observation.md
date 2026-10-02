@@ -30,6 +30,7 @@ plan_sources:
   - docs/plans/ssa/04-frame-native/04-roots-observation.md
 tests:
   - tests/parser/test_ssa_roots_observation.c
+  - tests/acceptance/ssa-parser-observation-reused-slot.md
   - tests/acceptance/2026-10-02-ssa-parser-inline-root-fields.md
   - tests/core/test_execution_add_stack_relocation.c
   - tests/core/test_execution_add_stack_relocation_aot_roots.inc
@@ -92,6 +93,26 @@ changes, and reused logical values emit each physical slot only once. Missing
 precise metadata is an error, not a whole-frame or whole-heap scan fallback.
 Runtime GC integration and native pin lifetimes remain owned by later core
 adapters.
+
+### Parser observation of reused scalar storage
+
+The observation request has no checkpoint or active-occupant selector. Before
+writing any output, the parser adapter therefore rejects conflicting supplied
+scalar payloads for logical values sharing a physical slot. Conflict comparison
+uses the actual copied byte count, `min(physical slot byteSize, sizeof(TZrUInt64))`;
+unused bytes in the scalar input do not cause rejection. The diagnostic is
+`INVALID_VALUE`, with `actualVersion` carrying the one-based logical ordinal of
+the later conflicting writer, following this adapter's existing diagnostic
+convention. Frame bytes, writeback values, invalidation slots and invalidation
+count remain unchanged on this failure.
+
+Equal payloads, different payloads in separate physical slots, a single supplied
+writer and read-only observations of reused slots remain supported. Read-only
+writeback describes the current physical payload for every mapped logical value;
+it does not recover a previous occupant's value. This bounded safeguard does not
+implement safepoint liveness selection or optimized-out debugger values. Its
+actual-source RED/GREEN evidence is in the
+[parser reused-slot acceptance](../../tests/acceptance/ssa-parser-observation-reused-slot.md).
 
 Observation rejects malformed slot count/capacity and storage-count
 relationships before changing frame bytes, writeback values, or invalidation
