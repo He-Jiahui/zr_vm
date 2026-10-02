@@ -36,21 +36,16 @@ static TZrBool zr_exec_ir_size_is_valid(TZrSize count, size_t elementSize) {
                      (elementSize == 0u || count <= SIZE_MAX / elementSize));
 }
 
-static TZrBool zr_exec_ir_reserve(void **storage,
-                                  TZrUInt32 *capacity,
-                                  TZrSize requested,
-                                  size_t elementSize) {
+static TZrBool zr_exec_ir_reserve_capacity(TZrUInt32 capacity,
+                                           TZrSize requested,
+                                           size_t elementSize,
+                                           TZrSize *outCapacity) {
     TZrSize newCapacity;
-    void *newStorage;
-
-    if (storage == ZR_NULL || capacity == ZR_NULL || elementSize == 0u ||
-        !zr_exec_ir_size_is_valid(requested, elementSize)) {
+    if (elementSize == 0u || !zr_exec_ir_size_is_valid(requested, elementSize)) {
         return ZR_FALSE;
     }
-    if (requested <= (TZrSize)*capacity) {
-        return ZR_TRUE;
-    }
-    newCapacity = *capacity == 0u ? ZR_EXEC_IR_INITIAL_CAPACITY : (TZrSize)*capacity;
+    newCapacity = requested <= (TZrSize)capacity ? (TZrSize)capacity :
+                  (capacity == 0u ? ZR_EXEC_IR_INITIAL_CAPACITY : (TZrSize)capacity);
     while (newCapacity < requested) {
         if (newCapacity > (TZrSize)UINT32_MAX / 2u) {
             newCapacity = requested;
@@ -58,8 +53,24 @@ static TZrBool zr_exec_ir_reserve(void **storage,
         }
         newCapacity *= 2u;
     }
-    if (!zr_exec_ir_size_is_valid(newCapacity, elementSize)) {
+    if (!zr_exec_ir_size_is_valid(newCapacity, elementSize)) return ZR_FALSE;
+    *outCapacity = newCapacity;
+    return ZR_TRUE;
+}
+
+static TZrBool zr_exec_ir_reserve(void **storage,
+                                  TZrUInt32 *capacity,
+                                  TZrSize requested,
+                                  size_t elementSize) {
+    TZrSize newCapacity;
+    void *newStorage;
+
+    if (storage == ZR_NULL || capacity == ZR_NULL ||
+        !zr_exec_ir_reserve_capacity(*capacity, requested, elementSize, &newCapacity)) {
         return ZR_FALSE;
+    }
+    if (requested <= (TZrSize)*capacity) {
+        return ZR_TRUE;
     }
     newStorage = realloc(*storage, (size_t)newCapacity * elementSize);
     if (newStorage == ZR_NULL) {
@@ -76,10 +87,10 @@ static TZrBool zr_exec_ir_reserve_with_diagnostic(void **storage,
                                                   size_t elementSize,
                                                   const SZrExecIrFunction *function,
                                                   SZrExecIrDiagnostic *diagnostic) {
+    TZrSize newCapacity;
     zr_exec_ir_clear_diagnostic(diagnostic);
-    if (storage == ZR_NULL || capacity == ZR_NULL || elementSize == 0u ||
-        requested > (TZrSize)UINT32_MAX ||
-        (elementSize != 0u && requested > SIZE_MAX / elementSize)) {
+    if (storage == ZR_NULL || capacity == ZR_NULL ||
+        !zr_exec_ir_reserve_capacity(*capacity, requested, elementSize, &newCapacity)) {
         zr_exec_ir_set_diagnostic(diagnostic,
                                   ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
                                   function,
@@ -243,55 +254,105 @@ static TZrBool zr_exec_ir_clone_array(void **destination,
                                        TZrUInt32 *destinationCapacity,
                                        const void *source,
                                        TZrUInt32 count,
-                                       size_t elementSize) {
+                                       size_t elementSize,
+                                       const SZrExecIrFunction *function,
+                                       SZrExecIrDiagnostic *diagnostic) {
     if (count == 0u) {
         return ZR_TRUE;
     }
-    if (source == ZR_NULL ||
-        !zr_exec_ir_reserve(destination, destinationCapacity, count, elementSize)) {
+    if (source == ZR_NULL) {
+        zr_exec_ir_set_diagnostic(diagnostic, ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
+                                  function, 0u, 0u, count, 0u);
+        return ZR_FALSE;
+    }
+    if (!zr_exec_ir_reserve_with_diagnostic(destination, destinationCapacity,
+                                            count, elementSize, function, diagnostic)) {
         return ZR_FALSE;
     }
     memcpy(*destination, source, (size_t)count * elementSize);
     return ZR_TRUE;
 }
 
-static TZrBool zr_exec_ir_clone_function_shape_is_valid(
-        const SZrExecIrFunction *source) {
-    if (source == ZR_NULL || source->valueCount > source->valueCapacity ||
-        source->instructionCount > source->instructionCapacity ||
-        source->blockCount > source->blockCapacity ||
-        source->operandCount > source->operandCapacity ||
-        source->resultCount > source->resultCapacity ||
-        source->memoryTokenCount > source->memoryTokenCapacity ||
-        source->phiCount > source->phiCapacity ||
-        source->phiIncomingCount > source->phiIncomingCapacity ||
-        source->predecessorCount > source->predecessorCapacity ||
-        source->successorCount > source->successorCapacity ||
-        source->gcMapCount > source->gcMapCapacity ||
-        source->gcRootCount > source->gcRootCapacity ||
-        source->deoptStateCount > source->deoptStateCapacity ||
-        source->deoptValueCount > source->deoptValueCapacity ||
-        source->deoptAggregateCount > source->deoptAggregateCapacity ||
-        source->deoptAggregateFieldCount > source->deoptAggregateFieldCapacity ||
-        source->sourceMapCount > source->sourceMapCapacity ||
-        source->bindingRowCount > source->bindingRowCapacity ||
-        (source->gcMap != ZR_NULL &&
-         (source->gcMap->entryCount > source->gcMap->entryCapacity ||
-          source->gcMap->slotIndexCount > source->gcMap->slotIndexCapacity ||
-          source->gcMap->inlineRefOffsetCount >
-                  source->gcMap->inlineRefOffsetCapacity)) ||
-        (source->frameLayout != ZR_NULL &&
-         source->frameLayout->slotCount > source->frameLayout->slotCapacity)) {
+static TZrBool zr_exec_ir_clone_array_shape_is_valid(
+        const void *storage, TZrUInt32 count, TZrUInt32 capacity, size_t elementSize,
+        const SZrExecIrFunction *function, SZrExecIrDiagnostic *diagnostic) {
+    if (count > capacity || (count != 0u && storage == ZR_NULL)) {
+        zr_exec_ir_set_diagnostic(diagnostic, ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
+                                  function, 0u, 0u, count, capacity);
+        return ZR_FALSE;
+    }
+    if (!zr_exec_ir_size_is_valid(count, elementSize)) {
+        zr_exec_ir_set_diagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                                  function, 0u, 0u, (TZrUInt32)(SIZE_MAX / elementSize), count);
         return ZR_FALSE;
     }
     return ZR_TRUE;
 }
 
+static TZrBool zr_exec_ir_clone_function_shape_is_valid(
+        const SZrExecIrFunction *source, SZrExecIrDiagnostic *diagnostic) {
+    if (source == ZR_NULL ||
+        source->gcMapCount > source->gcMapCapacity ||
+        (source->gcMapCount != 0u && source->gcMap == ZR_NULL)) {
+        zr_exec_ir_set_diagnostic(diagnostic, ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
+                                  source, 0u, 0u, 0u, 0u);
+        return ZR_FALSE;
+    }
+#define ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(object, field, countField, capacityField) \
+    do { \
+        if (!zr_exec_ir_clone_array_shape_is_valid((object)->field, (object)->countField, \
+                (object)->capacityField, sizeof(*(object)->field), source, diagnostic)) \
+            return ZR_FALSE; \
+    } while (0)
+    ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source, values, valueCount, valueCapacity);
+    ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source, instructions, instructionCount, instructionCapacity);
+    ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source, blocks, blockCount, blockCapacity);
+    ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source, operands, operandCount, operandCapacity);
+    ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source, results, resultCount, resultCapacity);
+    ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source, memoryTokenPool, memoryTokenCount, memoryTokenCapacity);
+    ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source, phiPool, phiCount, phiCapacity);
+    ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source, phiIncoming, phiIncomingCount, phiIncomingCapacity);
+    ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source, predecessors, predecessorCount, predecessorCapacity);
+    ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source, successors, successorCount, successorCapacity);
+    ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source, gcRoots, gcRootCount, gcRootCapacity);
+    ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source, deoptStates, deoptStateCount, deoptStateCapacity);
+    ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source, deoptValues, deoptValueCount, deoptValueCapacity);
+    ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source, deoptAggregates, deoptAggregateCount, deoptAggregateCapacity);
+    ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source, deoptAggregateFields, deoptAggregateFieldCount, deoptAggregateFieldCapacity);
+    ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source, sourceMaps, sourceMapCount, sourceMapCapacity);
+    ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source, bindingRows, bindingRowCount, bindingRowCapacity);
+    if (source->gcMap != ZR_NULL) {
+        ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source->gcMap, entries, entryCount, entryCapacity);
+        ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source->gcMap, slotIndexPool, slotIndexCount, slotIndexCapacity);
+        ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source->gcMap, inlineRefOffsetPool, inlineRefOffsetCount, inlineRefOffsetCapacity);
+    }
+    if (source->frameLayout != ZR_NULL) {
+        ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source->frameLayout, slots, slotCount, slotCapacity);
+    }
+    if (source->stateMap != ZR_NULL) {
+        ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source->stateMap, entries, entryCount, entryCapacity);
+        ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source->stateMap, valuePool, valueCount, valueCapacity);
+        ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source->stateMap, rootPool, rootCount, rootCapacity);
+        ZR_EXEC_IR_VALIDATE_CLONE_ARRAY(source->stateMap, ownerStatePool, ownerStateCount, ownerStateCapacity);
+        if (!ZrCore_ExecIr_StateMapStorageValid(source->stateMap)) {
+            zr_exec_ir_set_diagnostic(diagnostic, ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
+                                      source, 0u, 0u, 0u, 0u);
+            return ZR_FALSE;
+        }
+    }
+#undef ZR_EXEC_IR_VALIDATE_CLONE_ARRAY
+    return ZR_TRUE;
+}
+
 static TZrBool zr_exec_ir_clone_function_into(const SZrExecIrFunction *source,
-                                              SZrExecIrFunction *destination) {
+                                              SZrExecIrFunction *destination,
+                                              SZrExecIrDiagnostic *diagnostic) {
     if (source == ZR_NULL || destination == ZR_NULL ||
-        !zr_exec_ir_clone_function_shape_is_valid(source) ||
+        !zr_exec_ir_clone_function_shape_is_valid(source, diagnostic) ||
         !ZrCore_ExecIr_FunctionValidateBindingRows(source, ZR_NULL)) {
+        if (diagnostic != ZR_NULL && diagnostic->code == ZR_EXECUTION_DIAGNOSTIC_NONE)
+            zr_exec_ir_set_diagnostic(diagnostic, ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
+                                      source, 0u, 0u, 0u, 0u);
         return ZR_FALSE;
     }
     ZrCore_ExecIr_FunctionInit(destination);
@@ -302,62 +363,37 @@ static TZrBool zr_exec_ir_clone_function_into(const SZrExecIrFunction *source,
     destination->entryBlockId = source->entryBlockId;
     destination->bindingRowsSchemaVersion = source->bindingRowsSchemaVersion;
 
-#define ZR_EXEC_IR_CLONE_FIELD(field, countField, elementType) \
+#define ZR_EXEC_IR_CLONE_FIELD(field, countField, capacityField) \
     do { \
         if (!zr_exec_ir_clone_array((void **)&destination->field, \
-                                     &destination->countField##Capacity, \
+                                     &destination->capacityField, \
                                      source->field, \
                                      source->countField, \
-                                     sizeof(elementType))) { \
+                                     sizeof(*source->field), source, diagnostic)) { \
             return ZR_FALSE; \
         } \
         destination->countField = source->countField; \
     } while (0)
 
-    /* The macro above cannot form all capacity member names portably; keep
-     * the explicit copies below so every allocation remains auditable. */
-#undef ZR_EXEC_IR_CLONE_FIELD
-    if (!zr_exec_ir_clone_array((void **)&destination->values, &destination->valueCapacity,
-                                source->values, source->valueCount, sizeof(*source->values))) return ZR_FALSE;
-    destination->valueCount = source->valueCount;
-    if (!zr_exec_ir_clone_array((void **)&destination->instructions, &destination->instructionCapacity,
-                                source->instructions, source->instructionCount, sizeof(*source->instructions))) return ZR_FALSE;
-    destination->instructionCount = source->instructionCount;
-    if (!zr_exec_ir_clone_array((void **)&destination->blocks, &destination->blockCapacity,
-                                source->blocks, source->blockCount, sizeof(*source->blocks))) return ZR_FALSE;
-    destination->blockCount = source->blockCount;
-    if (!zr_exec_ir_clone_array((void **)&destination->operands, &destination->operandCapacity,
-                                source->operands, source->operandCount, sizeof(*source->operands))) return ZR_FALSE;
-    destination->operandCount = source->operandCount;
-    if (!zr_exec_ir_clone_array((void **)&destination->results, &destination->resultCapacity,
-                                source->results, source->resultCount, sizeof(*source->results))) return ZR_FALSE;
-    destination->resultCount = source->resultCount;
-    if (!zr_exec_ir_clone_array((void **)&destination->memoryTokenPool,
-                                &destination->memoryTokenCapacity,
-                                source->memoryTokenPool,
-                                source->memoryTokenCount,
-                                sizeof(*source->memoryTokenPool))) return ZR_FALSE;
-    destination->memoryTokenCount = source->memoryTokenCount;
-    if (!zr_exec_ir_clone_array((void **)&destination->phiPool,
-                                &destination->phiCapacity,
-                                source->phiPool,
-                                source->phiCount,
-                                sizeof(*source->phiPool))) return ZR_FALSE;
-    destination->phiCount = source->phiCount;
-    if (!zr_exec_ir_clone_array((void **)&destination->phiIncoming, &destination->phiIncomingCapacity,
-                                source->phiIncoming, source->phiIncomingCount, sizeof(*source->phiIncoming))) return ZR_FALSE;
-    destination->phiIncomingCount = source->phiIncomingCount;
-    if (!zr_exec_ir_clone_array((void **)&destination->predecessors, &destination->predecessorCapacity,
-                                source->predecessors, source->predecessorCount, sizeof(*source->predecessors))) return ZR_FALSE;
-    destination->predecessorCount = source->predecessorCount;
-    if (!zr_exec_ir_clone_array((void **)&destination->successors, &destination->successorCapacity,
-                                source->successors, source->successorCount, sizeof(*source->successors))) return ZR_FALSE;
-    destination->successorCount = source->successorCount;
+    ZR_EXEC_IR_CLONE_FIELD(values, valueCount, valueCapacity);
+    ZR_EXEC_IR_CLONE_FIELD(instructions, instructionCount, instructionCapacity);
+    ZR_EXEC_IR_CLONE_FIELD(blocks, blockCount, blockCapacity);
+    ZR_EXEC_IR_CLONE_FIELD(operands, operandCount, operandCapacity);
+    ZR_EXEC_IR_CLONE_FIELD(results, resultCount, resultCapacity);
+    ZR_EXEC_IR_CLONE_FIELD(memoryTokenPool, memoryTokenCount, memoryTokenCapacity);
+    ZR_EXEC_IR_CLONE_FIELD(phiPool, phiCount, phiCapacity);
+    ZR_EXEC_IR_CLONE_FIELD(phiIncoming, phiIncomingCount, phiIncomingCapacity);
+    ZR_EXEC_IR_CLONE_FIELD(predecessors, predecessorCount, predecessorCapacity);
+    ZR_EXEC_IR_CLONE_FIELD(successors, successorCount, successorCapacity);
     destination->gcMapCount = source->gcMapCount;
     destination->gcMapCapacity = source->gcMapCapacity;
     if (source->gcMap != ZR_NULL) {
         destination->gcMap = (SZrExecIrGcMap *)calloc(1u, sizeof(*destination->gcMap));
-        if (destination->gcMap == ZR_NULL) return ZR_FALSE;
+        if (destination->gcMap == ZR_NULL) {
+            zr_exec_ir_set_diagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                                      source, 0u, 0u, 1u, 0u);
+            return ZR_FALSE;
+        }
         *destination->gcMap = *source->gcMap;
         destination->gcMap->entries = ZR_NULL;
         destination->gcMap->slotIndexPool = ZR_NULL;
@@ -369,58 +405,55 @@ static TZrBool zr_exec_ir_clone_function_into(const SZrExecIrFunction *source,
                                      &destination->gcMap->entryCapacity,
                                      source->gcMap->entries,
                                      source->gcMap->entryCount,
-                                     sizeof(*source->gcMap->entries)) ||
+                                     sizeof(*source->gcMap->entries), source, diagnostic) ||
             !zr_exec_ir_clone_array((void **)&destination->gcMap->slotIndexPool,
                                      &destination->gcMap->slotIndexCapacity,
                                      source->gcMap->slotIndexPool,
                                      source->gcMap->slotIndexCount,
-                                     sizeof(*source->gcMap->slotIndexPool)) ||
+                                     sizeof(*source->gcMap->slotIndexPool), source, diagnostic) ||
             !zr_exec_ir_clone_array((void **)&destination->gcMap->inlineRefOffsetPool,
                                      &destination->gcMap->inlineRefOffsetCapacity,
                                      source->gcMap->inlineRefOffsetPool,
                                      source->gcMap->inlineRefOffsetCount,
-                                     sizeof(*source->gcMap->inlineRefOffsetPool))) return ZR_FALSE;
+                                     sizeof(*source->gcMap->inlineRefOffsetPool), source, diagnostic)) return ZR_FALSE;
     }
-    if (!zr_exec_ir_clone_array((void **)&destination->gcRoots, &destination->gcRootCapacity,
-                                source->gcRoots, source->gcRootCount, sizeof(*source->gcRoots))) return ZR_FALSE;
-    destination->gcRootCount = source->gcRootCount;
-    if (!zr_exec_ir_clone_array((void **)&destination->deoptStates, &destination->deoptStateCapacity,
-                                source->deoptStates, source->deoptStateCount, sizeof(*source->deoptStates))) return ZR_FALSE;
-    destination->deoptStateCount = source->deoptStateCount;
-    if (!zr_exec_ir_clone_array((void **)&destination->deoptValues, &destination->deoptValueCapacity,
-                                source->deoptValues, source->deoptValueCount, sizeof(*source->deoptValues))) return ZR_FALSE;
-    destination->deoptValueCount = source->deoptValueCount;
-    if (!zr_exec_ir_clone_array((void **)&destination->deoptAggregates,
-                                &destination->deoptAggregateCapacity,
-                                source->deoptAggregates, source->deoptAggregateCount,
-                                sizeof(*source->deoptAggregates))) return ZR_FALSE;
-    destination->deoptAggregateCount = source->deoptAggregateCount;
-    if (!zr_exec_ir_clone_array((void **)&destination->deoptAggregateFields,
-                                &destination->deoptAggregateFieldCapacity,
-                                source->deoptAggregateFields, source->deoptAggregateFieldCount,
-                                sizeof(*source->deoptAggregateFields))) return ZR_FALSE;
-    destination->deoptAggregateFieldCount = source->deoptAggregateFieldCount;
-    if (!zr_exec_ir_clone_array((void **)&destination->sourceMaps, &destination->sourceMapCapacity,
-                                source->sourceMaps, source->sourceMapCount, sizeof(*source->sourceMaps))) return ZR_FALSE;
-    destination->sourceMapCount = source->sourceMapCount;
+    ZR_EXEC_IR_CLONE_FIELD(gcRoots, gcRootCount, gcRootCapacity);
+    ZR_EXEC_IR_CLONE_FIELD(deoptStates, deoptStateCount, deoptStateCapacity);
+    ZR_EXEC_IR_CLONE_FIELD(deoptValues, deoptValueCount, deoptValueCapacity);
+    ZR_EXEC_IR_CLONE_FIELD(deoptAggregates, deoptAggregateCount, deoptAggregateCapacity);
+    ZR_EXEC_IR_CLONE_FIELD(deoptAggregateFields, deoptAggregateFieldCount, deoptAggregateFieldCapacity);
+    ZR_EXEC_IR_CLONE_FIELD(sourceMaps, sourceMapCount, sourceMapCapacity);
+#undef ZR_EXEC_IR_CLONE_FIELD
     if (source->bindingRowCapacity != 0u &&
-        !zr_exec_ir_reserve((void **)&destination->bindingRows,
+        !zr_exec_ir_reserve_with_diagnostic((void **)&destination->bindingRows,
                             &destination->bindingRowCapacity,
                             source->bindingRowCapacity,
-                            sizeof(*source->bindingRows))) return ZR_FALSE;
+                            sizeof(*source->bindingRows), source, diagnostic)) return ZR_FALSE;
     if (source->bindingRowCount != 0u)
         memcpy(destination->bindingRows, source->bindingRows,
                (size_t)source->bindingRowCount * sizeof(*source->bindingRows));
     destination->bindingRowCount = source->bindingRowCount;
     if (source->stateMap != ZR_NULL) {
         destination->stateMap = (SZrExecIrStateMap *)calloc(1u, sizeof(*destination->stateMap));
-        if (destination->stateMap == ZR_NULL) return ZR_FALSE;
+        if (destination->stateMap == ZR_NULL) {
+            zr_exec_ir_set_diagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                                      source, 0u, 0u, 1u, 0u);
+            return ZR_FALSE;
+        }
         ZrCore_ExecIr_StateMapInit(destination->stateMap);
-        if (!ZrCore_ExecIr_StateMapClone(source->stateMap, destination->stateMap)) return ZR_FALSE;
+        if (!ZrCore_ExecIr_StateMapClone(source->stateMap, destination->stateMap)) {
+            zr_exec_ir_set_diagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                                      source, 0u, 0u, 0u, 0u);
+            return ZR_FALSE;
+        }
     }
     if (source->frameLayout != ZR_NULL) {
         destination->frameLayout = (SZrExecIrFrameLayout *)calloc(1u, sizeof(*destination->frameLayout));
-        if (destination->frameLayout == ZR_NULL) return ZR_FALSE;
+        if (destination->frameLayout == ZR_NULL) {
+            zr_exec_ir_set_diagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                                      source, 0u, 0u, 1u, 0u);
+            return ZR_FALSE;
+        }
         *destination->frameLayout = *source->frameLayout;
         destination->frameLayout->slots = ZR_NULL;
         destination->frameLayout->slotCapacity = 0u;
@@ -428,7 +461,7 @@ static TZrBool zr_exec_ir_clone_function_into(const SZrExecIrFunction *source,
                                      &destination->frameLayout->slotCapacity,
                                      source->frameLayout->slots,
                                      source->frameLayout->slotCount,
-                                     sizeof(*source->frameLayout->slots))) return ZR_FALSE;
+                                     sizeof(*source->frameLayout->slots), source, diagnostic)) return ZR_FALSE;
     }
     destination->sealed = source->sealed;
     return ZR_TRUE;
@@ -451,15 +484,8 @@ TZrBool ZrCore_ExecIr_CloneFunction(const SZrExecIrFunction *source,
         return ZR_FALSE;
     }
     ZrCore_ExecIr_FunctionInit(&temporary);
-    if (!zr_exec_ir_clone_function_into(source, &temporary)) {
+    if (!zr_exec_ir_clone_function_into(source, &temporary, diagnostic)) {
         ZrCore_ExecIr_FreeFunction(&temporary);
-        zr_exec_ir_set_diagnostic(diagnostic,
-                                  ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
-                                  source,
-                                  0u,
-                                  0u,
-                                  0u,
-                                  0u);
         return ZR_FALSE;
     }
     ZrCore_ExecIr_FreeFunction(destination);
@@ -1045,12 +1071,7 @@ TZrBool ZrCore_ExecIr_CloneModule(const SZrExecIrModule *source,
     TZrUInt32 index;
 
     zr_exec_ir_clear_diagnostic(diagnostic);
-    if (source == ZR_NULL || destination == ZR_NULL || source == destination ||
-        source->functionCount > source->functionCapacity ||
-        source->constantCount > source->constantCapacity ||
-        source->layoutCount > source->layoutCapacity ||
-        source->sourceMapCount > source->sourceMapCapacity ||
-        (source->functionCount != 0u && source->functions == ZR_NULL)) {
+    if (source == ZR_NULL || destination == ZR_NULL || source == destination) {
         zr_exec_ir_set_diagnostic(diagnostic,
                                   ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
                                   ZR_NULL,
@@ -1058,6 +1079,20 @@ TZrBool ZrCore_ExecIr_CloneModule(const SZrExecIrModule *source,
                                   0u,
                                   0u,
                                   0u);
+        return ZR_FALSE;
+    }
+    if (!zr_exec_ir_clone_array_shape_is_valid(source->constants, source->constantCount,
+                                               source->constantCapacity, sizeof(*source->constants),
+                                               ZR_NULL, diagnostic) ||
+        !zr_exec_ir_clone_array_shape_is_valid(source->layouts, source->layoutCount,
+                                               source->layoutCapacity, sizeof(*source->layouts),
+                                               ZR_NULL, diagnostic) ||
+        !zr_exec_ir_clone_array_shape_is_valid(source->sourceMaps, source->sourceMapCount,
+                                               source->sourceMapCapacity, sizeof(*source->sourceMaps),
+                                               ZR_NULL, diagnostic) ||
+        !zr_exec_ir_clone_array_shape_is_valid(source->functions, source->functionCount,
+                                               source->functionCapacity, sizeof(*source->functions),
+                                               ZR_NULL, diagnostic)) {
         return ZR_FALSE;
     }
     ZrCore_ExecIr_ModuleInit(&temporary);
@@ -1069,43 +1104,29 @@ TZrBool ZrCore_ExecIr_CloneModule(const SZrExecIrModule *source,
                                 &temporary.constantCapacity,
                                 source->constants,
                                 source->constantCount,
-                                sizeof(*source->constants)) ||
+                                sizeof(*source->constants), ZR_NULL, diagnostic) ||
         !zr_exec_ir_clone_array((void **)&temporary.layouts,
                                 &temporary.layoutCapacity,
                                 source->layouts,
                                 source->layoutCount,
-                                sizeof(*source->layouts)) ||
+                                sizeof(*source->layouts), ZR_NULL, diagnostic) ||
         !zr_exec_ir_clone_array((void **)&temporary.sourceMaps,
                                 &temporary.sourceMapCapacity,
                                 source->sourceMaps,
                                 source->sourceMapCount,
-                                sizeof(*source->sourceMaps))) {
+                                sizeof(*source->sourceMaps), ZR_NULL, diagnostic)) {
         ZrCore_ExecIr_FreeModule(&temporary);
-        zr_exec_ir_set_diagnostic(diagnostic,
-                                  ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
-                                  ZR_NULL,
-                                  0u,
-                                  0u,
-                                  0u,
-                                  0u);
         return ZR_FALSE;
     }
     temporary.constantCount = source->constantCount;
     temporary.layoutCount = source->layoutCount;
     temporary.sourceMapCount = source->sourceMapCount;
     if (source->functionCount != 0u &&
-        !zr_exec_ir_reserve((void **)&temporary.functions,
+        !zr_exec_ir_reserve_with_diagnostic((void **)&temporary.functions,
                             &temporary.functionCapacity,
                             source->functionCount,
-                            sizeof(*source->functions))) {
+                            sizeof(*source->functions), ZR_NULL, diagnostic)) {
         ZrCore_ExecIr_FreeModule(&temporary);
-        zr_exec_ir_set_diagnostic(diagnostic,
-                                  ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
-                                  ZR_NULL,
-                                  0u,
-                                  0u,
-                                  source->functionCount,
-                                  source->functionCapacity);
         return ZR_FALSE;
     }
     for (index = 0u; index < source->functionCount; ++index) {
@@ -1114,15 +1135,8 @@ TZrBool ZrCore_ExecIr_CloneModule(const SZrExecIrModule *source,
         ZrCore_ExecIr_FunctionInit(&temporary.functions[index]);
         temporary.functionCount++;
         if (!zr_exec_ir_clone_function_into(&source->functions[index],
-                                            &temporary.functions[index])) {
+                                            &temporary.functions[index], diagnostic)) {
             ZrCore_ExecIr_FreeModule(&temporary);
-            zr_exec_ir_set_diagnostic(diagnostic,
-                                      ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
-                                      &source->functions[index],
-                                      0u,
-                                      0u,
-                                      0u,
-                                      0u);
             return ZR_FALSE;
         }
     }

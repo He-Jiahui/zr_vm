@@ -61,6 +61,7 @@ if (NOT TARGET zr_vm_ssa_core_model_test)
     add_executable(
             zr_vm_ssa_core_model_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_core_model.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/exec_ir_clone_test_allocator.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_binding_rows.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
@@ -82,7 +83,15 @@ if (NOT TARGET zr_vm_ssa_core_model_test)
     )
     target_compile_definitions(zr_vm_ssa_core_model_test PRIVATE
             _CRT_SECURE_NO_WARNINGS
+            ZR_EXEC_IR_TEST_ALLOCATOR
     )
+    if (MSVC)
+        target_compile_options(zr_vm_ssa_core_model_test PRIVATE
+                "/FI${CMAKE_SOURCE_DIR}/tests/parser/exec_ir_clone_test_allocator.h")
+    else ()
+        target_compile_options(zr_vm_ssa_core_model_test PRIVATE
+                "-include" "${CMAKE_SOURCE_DIR}/tests/parser/exec_ir_clone_test_allocator.h")
+    endif ()
     add_test(NAME ssa_core_model COMMAND zr_vm_ssa_core_model_test)
     set_tests_properties(ssa_core_model PROPERTIES LABELS "ssa")
 endif ()

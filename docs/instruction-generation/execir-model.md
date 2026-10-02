@@ -735,6 +735,14 @@ published. `ssa_core_model` exercises this with
 two source functions, an invalid instruction pool in the second function, and
 a pre-existing destination. GCC AddressSanitizer with leak detection caught
 the partial-function leak before the rollback fix and reports no leak after it.
+Clone diagnostics distinguish malformed count/pointer metadata
+(`INVALID_ARGUMENT`), an element-count byte-size overflow
+(`CAPACITY_OVERFLOW`), and an allocation or nested state-map copy failure
+(`OUT_OF_MEMORY`). The opt-in core-model fault harness forces every owned
+allocation in a fully populated function and two-function module, then checks
+that source bytes, destination bytes, and live-allocation counts are unchanged
+on each failure. It is a focused validation build; ordinary compiler targets do
+not install a production allocator hook.
 Structural validation reports the first unknown opcode, invalid range, block,
 or value with a stable diagnostic identity.  This slice is intentionally not
 the default compiler path yet; SSA construction and projections consume it in

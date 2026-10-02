@@ -1,9 +1,17 @@
 #include "zr_vm_core/exec_ir.h"
+#include "zr_vm_core/exec_ir_state_map.h"
 
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#if defined(ZR_EXEC_IR_TEST_ALLOCATOR)
+void ZrCore_ExecIr_TestAllocatorReset(void);
+void ZrCore_ExecIr_TestAllocatorFailAt(TZrUInt64 allocationIndex);
+TZrUInt64 ZrCore_ExecIr_TestAllocatorCount(void);
+TZrUInt64 ZrCore_ExecIr_TestAllocatorLiveCount(void);
+#endif
 
 static void expect_true(int condition, const char *message) {
     if (!condition) {
@@ -847,7 +855,36 @@ static void test_clone_rejects_side_array_count_beyond_capacity(void) {
     ZrCore_ExecIr_FreeFunction(&source);
 }
 
-int main(void) {
+#if defined(ZR_EXEC_IR_TEST_ALLOCATOR)
+#include "exec_ir_clone_test_allocator_cases.inc"
+#endif
+
+int main(int argc, char **argv) {
+#if defined(ZR_EXEC_IR_TEST_ALLOCATOR)
+    if (argc == 2 && strcmp(argv[1], "clone-function-faults") == 0) {
+        test_function_clone_reports_allocation_failures_atomically();
+        return EXIT_SUCCESS;
+    }
+    if (argc == 2 && strcmp(argv[1], "clone-module-faults") == 0) {
+        test_module_clone_reports_allocation_failures_atomically();
+        return EXIT_SUCCESS;
+    }
+    if (argc == 2 && strcmp(argv[1], "clone-input-errors") == 0) {
+        test_clone_distinguishes_invalid_input_from_capacity_overflow();
+        return EXIT_SUCCESS;
+    }
+    if (argc == 2 && strcmp(argv[1], "clone-function-capacity") == 0) {
+        test_function_clone_rejects_byte_overflow();
+        return EXIT_SUCCESS;
+    }
+    if (argc == 2 && strcmp(argv[1], "clone-module-capacity") == 0) {
+        test_module_clone_rejects_byte_overflow();
+        return EXIT_SUCCESS;
+    }
+#else
+    (void)argc;
+    (void)argv;
+#endif
     test_empty_module_and_entry_block();
     test_value_builder_rejects_unknown_enums();
     test_side_arrays_clone_without_aliasing();
@@ -861,6 +898,13 @@ int main(void) {
     test_structure_rejects_zero_value_phi_incoming();
     test_structure_rejects_early_terminator();
     test_clone_rejects_side_array_count_beyond_capacity();
+#if defined(ZR_EXEC_IR_TEST_ALLOCATOR)
+    test_function_clone_reports_allocation_failures_atomically();
+    test_module_clone_reports_allocation_failures_atomically();
+    test_clone_distinguishes_invalid_input_from_capacity_overflow();
+    expect_true(ZrCore_ExecIr_TestAllocatorLiveCount() == 0u,
+                "core-model test leaked an owned allocation");
+#endif
     puts("ssa core model PASS");
     return EXIT_SUCCESS;
 }
