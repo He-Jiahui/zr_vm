@@ -12,6 +12,7 @@ related_code:
   - tests/parser/test_ssa_source_cfg_faults.c
   - tests/parser/ssa_source_cfg_faults.c
   - tests/parser/ssa_source_cfg_faults.h
+  - tests/parser/test_ssa_source_execbc_vm.c
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_arithmetic.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
@@ -42,6 +43,8 @@ tests:
   - tests/parser/ssa_source_cfg_faults.c
   - tests/parser/ssa_source_cfg_faults.h
   - tests/acceptance/ssa-source-cfg-promotion-recovery.md
+  - tests/parser/test_ssa_source_execbc_vm.c
+  - tests/acceptance/2026-10-02-ssa-source-branch-multiply.md
   - tests/parser/test_ssa_builder_cfg.c
   - tests/parser/test_ssa_builder_dominance.c
   - tests/parser/test_ssa_builder_control_edges.c
@@ -114,15 +117,26 @@ and no missing source operation is reconstructed from ExecBC. See
 `source-cfg-finalization.md` for producer completeness and repeat-validation
 contracts.
 
-The source conditional-arm return preflight also admits addition or subtraction
+The source conditional-arm return preflight also admits addition, subtraction, or multiplication
 whose two operands are integer literals. The existing binary SemIR producer
 emits their values and typed operation; the preflight does not synthesize an
-operation from legacy bytecode. Other binary forms, including division and
-multiplication, remain outside this conditional-arm slice. The source-to-VM
-suite covers ADD/SUB returns and verifies that division publishes no ExecIR
+operation from legacy bytecode. Other binary forms, including division,
+nested arithmetic, and nonliteral operands, remain outside this conditional-arm slice.
+The source-to-VM suite covers ADD/SUB returns, both outcomes of literal MUL
+returns, and verifies that division publishes no ExecIR
 or VM function.
 `compiler_semantic_cfg_arithmetic.c` owns this return-specific check. The
 shared linear-expression predicate used by loops and finally is unchanged.
+The MUL cases require both source-arm operations and canonical signed i64
+type for every MUL in ExecIR and the ExecBC projection, compare Oracle and
+Core dispatcher results (18 and 21), and
+validate the executed VM source/block path. Integer overflow remains handled
+by the existing arithmetic consumers; this syntax check supplies no range proof.
+The current-source MSVC run passed all seven source cases and both adjacent
+suites (three CTests, exit 0). See
+[the focused multiplication record](../../tests/acceptance/2026-10-02-ssa-source-branch-multiply.md)
+for command/log evidence and the remaining GCC/Clang/sanitizer gates. This
+bounded source slice does not complete 01.02 or 01.05.
 
 For supported statement-form `while` loops, each `&&` or `||` node with linear
 or recursively supported logical operands composes its RHS/join with the

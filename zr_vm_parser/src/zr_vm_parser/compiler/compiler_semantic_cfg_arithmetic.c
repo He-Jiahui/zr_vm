@@ -15,5 +15,6 @@ TZrBool compiler_semantic_cfg_return_expression_is_supported(
     return (TZrBool)(op != ZR_NULL && left != ZR_NULL && right != ZR_NULL &&
             left->type == ZR_AST_INTEGER_LITERAL &&
             right->type == ZR_AST_INTEGER_LITERAL &&
-            (strcmp(op, "+") == 0 || strcmp(op, "-") == 0));
+            (strcmp(op, "+") == 0 || strcmp(op, "-") == 0 ||
+             strcmp(op, "*") == 0));
 }

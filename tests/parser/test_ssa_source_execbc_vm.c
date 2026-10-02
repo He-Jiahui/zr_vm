@@ -54,6 +54,11 @@ typedef struct SZrSourceExecBcReport {
     TZrBool hasConditionalBranch;
     TZrBool hasAdd;
     TZrBool hasSubtract;
+    TZrBool hasMultiply;
+    TZrBool multiplyHasSignedType;
+    TZrBool projectionHasSignedMultiply;
+    TZrUInt32 multiplyCount;
+    TZrUInt32 projectionMultiplyCount;
     TZrBool oracleReturned;
     TZrBool projectionBuilt;
     TZrBool materialized;
@@ -486,6 +491,20 @@ static SZrSourceExecBcReport run_source_branch(const TZrChar *source) {
         if (execIr->instructions[index].opcode == ZR_EXEC_IR_OPCODE_SUB) {
             report.hasSubtract = ZR_TRUE;
         }
+        if (execIr->instructions[index].opcode == ZR_EXEC_IR_OPCODE_MUL) {
+            const SZrCanonicalTypeNode *type = ZrParser_CanonicalType_Find(
+                    compiler.semanticContext,
+                    execIr->instructions[index].typeToken);
+            TZrBool hasSignedType = (TZrBool)(
+                    type != ZR_NULL &&
+                    type->kind == ZR_CANONICAL_TYPE_PRIMITIVE &&
+                    type->data.primitive.valueType == ZR_VALUE_TYPE_INT64);
+            report.multiplyHasSignedType = (TZrBool)(hasSignedType &&
+                    (report.hasMultiply == ZR_FALSE ||
+                     report.multiplyHasSignedType != ZR_FALSE));
+            report.hasMultiply = ZR_TRUE;
+            ++report.multiplyCount;
+        }
     }
     report.execIrPhiCount = execIr->phiCount;
     if (report.hasConditionalBranch == ZR_FALSE) {
@@ -529,6 +548,21 @@ static SZrSourceExecBcReport run_source_branch(const TZrChar *source) {
         goto cleanup;
     }
     report.projectionBuilt = ZR_TRUE;
+    for (index = 0u; index < projection.instructionCount; ++index) {
+        if (projection.instructions[index].opcode == ZR_EXEC_IR_OPCODE_MUL) {
+            const SZrCanonicalTypeNode *type = ZrParser_CanonicalType_Find(
+                    compiler.semanticContext,
+                    projection.instructions[index].typeToken);
+            TZrBool hasSignedType = (TZrBool)(
+                    type != ZR_NULL &&
+                    type->kind == ZR_CANONICAL_TYPE_PRIMITIVE &&
+                    type->data.primitive.valueType == ZR_VALUE_TYPE_INT64);
+            report.projectionHasSignedMultiply = (TZrBool)(hasSignedType &&
+                    (report.projectionMultiplyCount == 0u ||
+                     report.projectionHasSignedMultiply != ZR_FALSE));
+            ++report.projectionMultiplyCount;
+        }
+    }
     if (!ZrParser_ExecBcProjection_MaterializeVmFunctionWithCanonicalTypes(
                 g_state, &projection, compiler.semanticContext,
                 &emission, &diagnostic)) {
@@ -683,6 +717,20 @@ static void assert_source_branch(
                               report.hasAdd, "source ADD did not reach ExecIR");
     TEST_ASSERT_EQUAL_MESSAGE(expectedArithmetic == ZR_EXEC_IR_OPCODE_SUB,
                               report.hasSubtract, "source SUB did not reach ExecIR");
+    TEST_ASSERT_EQUAL_MESSAGE(expectedArithmetic == ZR_EXEC_IR_OPCODE_MUL,
+                              report.hasMultiply, "source MUL did not reach ExecIR");
+    TEST_ASSERT_EQUAL_MESSAGE(expectedArithmetic == ZR_EXEC_IR_OPCODE_MUL,
+                              report.multiplyHasSignedType,
+                              "source MUL does not have canonical signed i64 type");
+    TEST_ASSERT_EQUAL_MESSAGE(expectedArithmetic == ZR_EXEC_IR_OPCODE_MUL,
+                              report.projectionHasSignedMultiply,
+                              "signed i64 MUL did not reach ExecBC projection");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            expectedArithmetic == ZR_EXEC_IR_OPCODE_MUL ? 2u : 0u,
+            report.multiplyCount, "both source MUL arms must reach ExecIR");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            report.multiplyCount, report.projectionMultiplyCount,
+            "ExecBC projection did not preserve both source MUL arms");
     TEST_ASSERT_TRUE_MESSAGE(report.oracleReturned,
                              "ExecIR Oracle did not return signed i64");
     TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
@@ -734,6 +782,18 @@ static void test_source_branch_division_does_not_publish_execir(void) {
     TEST_ASSERT_FALSE(report.vmReturned);
 }
 
+static void test_true_source_branch_multiplication_reaches_core_dispatcher(void) {
+    assert_source_branch(
+            "if (true) { return 9 * 2; } else { return 7 * 3; }\n",
+            18, ZR_EXEC_IR_OPCODE_MUL);
+}
+
+static void test_false_source_branch_multiplication_reaches_core_dispatcher(void) {
+    assert_source_branch(
+            "if (false) { return 9 * 2; } else { return 7 * 3; }\n",
+            21, ZR_EXEC_IR_OPCODE_MUL);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_true_source_branch_runs_through_core_dispatcher);
@@ -741,5 +801,7 @@ int main(void) {
     RUN_TEST(test_source_branch_arithmetic_reaches_core_dispatcher);
     RUN_TEST(test_source_branch_subtraction_reaches_core_dispatcher);
     RUN_TEST(test_source_branch_division_does_not_publish_execir);
+    RUN_TEST(test_true_source_branch_multiplication_reaches_core_dispatcher);
+    RUN_TEST(test_false_source_branch_multiplication_reaches_core_dispatcher);
     return UNITY_END();
 }

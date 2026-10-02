@@ -1,3 +1,33 @@
+---
+related_code:
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_arithmetic.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_validate.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
+  - tests/parser/test_ssa_source_execbc_vm.c
+  - tests/cmake/ssa-source-execbc-vm.cmake
+implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_arithmetic.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_validate.c
+plan_sources:
+  - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
+  - docs/plans/ssa/01-execir-ssa/05-oracle-projections.md
+tests:
+  - tests/parser/test_ssa_source_execbc_vm.c
+  - tests/parser/test_ssa_source_straight_line_cfg.c
+  - tests/parser/test_exec_ir_scalar_scratch_eligibility.c
+  - tests/acceptance/2026-10-02-ssa-source-branch-multiply.md
+doc_type: testing-guide
+status: scoped-accepted-msvc
+---
+
 # SSA source to ExecBC Core VM integration
 
 ## Coverage
@@ -14,12 +44,16 @@ The positive cases execute both outcomes of a real source conditional:
 - `test_false_source_branch_runs_through_core_dispatcher`: returns 8.
 - `test_source_branch_arithmetic_reaches_core_dispatcher`: executes ADD and returns 10.
 - `test_source_branch_subtraction_reaches_core_dispatcher`: executes SUB and returns 8.
+- `test_true_source_branch_multiplication_reaches_core_dispatcher`: executes MUL in the then arm and returns 18.
+- `test_false_source_branch_multiplication_reaches_core_dispatcher`: executes MUL in the else arm and returns 21.
 
 `test_source_branch_division_does_not_publish_execir` checks that an unsupported
 binary arm stays outside executable source CFG, ExecIR projection, and VM
-publication. Conditional-arm arithmetic is limited to ADD/SUB with two integer
+publication. Conditional-arm arithmetic is limited to ADD/SUB/MUL with two integer
 literals. The test requires the corresponding ExecIR opcode before comparing
-Oracle and Core dispatcher returns.
+Oracle and Core dispatcher returns. The MUL cases also require canonical
+signed i64 type in both ExecIR and the ExecBC projection. Nested arithmetic
+and nonliteral operands remain outside this conditional-arm subset.
 
 The Oracle fixture resolves Builder-emitted `PLACE_BASE` values by following
 their source IDs back to SemIR and returning the SemIR `placeId` as a stable
@@ -40,7 +74,7 @@ records `execIr.phiCount` for diagnosis but does not claim source value-phi or
 loop-phi coverage. A real-source loop-carried phi remains an open follow-up.
 
 The source fixture covers bool and signed i64 constants, conditional
-branches, literal ADD/SUB, and signed i64 returns. Other source operations remain outside
+branches, literal ADD/SUB/MUL, and signed i64 returns. Other source operations remain outside
 this focused materializer slice.
 
 The producer change supports only direct bool/i64 constant initialization of a
@@ -78,13 +112,44 @@ python D:/tmp/zr_vm/ssa-control/run_native.py source-ctest ctest -R '^ssa_source
 
 ## Current validation status
 
+The new single-level literal MUL cases, historical source RED, and current
+verification status are recorded in
+[`2026-10-02-ssa-source-branch-multiply.md`](2026-10-02-ssa-source-branch-multiply.md).
+Its acceptance decision supersedes historical passing results for the new MUL scope.
+The earlier attached StateMap Builder failure has a separate fix (`df3d1213`).
+On 2026-10-03, the current-source MSVC build in
+`D:/tmp/zr_vm/ssa-20261002-01a0fc3b/matrix/msvc` exited 0. The focused CTest
+selection passed all three suites with exit 0: `ssa_source_execbc_vm` (0.43 s),
+`ssa_source_straight_line_cfg` (0.73 s), and
+`exec_ir_scalar_scratch_eligibility` (0.28 s). The source suite recorded
+`7 Tests 0 Failures 0 Ignored`: six real source-to-VM positive cases and the
+division nonpublication case. Both multiplication arms returned the expected
+18/21 through the Oracle and actual Core dispatcher, with canonical types,
+both projected MULs, and PC/source/CFG-path assertions active.
+
+Build and CTest logs are
+`D:/tmp/zr_vm/ssa-20261002-01a0fc3b/control/source-branch-multiply-build.log`
+and `D:/tmp/zr_vm/ssa-20261002-01a0fc3b/control/source-branch-multiply-ctest.log`;
+the case output is in that build's `Testing/Temporary/LastTest.log`.
+Checked legacy MUL (`8759ccc2`) and canonical signed i64 ExecBC VM MUL
+(`d6d5882e`) are independently committed and verified prerequisites. Their
+overflow/fault-PC/recovery coverage belongs to the lower suites, rather than
+the small-product source cases above.
+
+This source slice is accepted for the recorded MSVC scope. The current MUL
+extension has not been rerun under GCC, Clang, or sanitizers; historical
+Linux passes below do not validate the new extension. Full 01.02/01.05
+acceptance and source loop-phi coverage remain open.
+
+## Historical evidence
+
 The 2026-10-02 current-source MSVC rebuild used a fresh
 `D:/tmp/zr_vm/ssa-source-native-current` directory and compiled 888 build steps.
 Its initial execution exposed the attached empty StateMap being rejected by
 the materializer and the arithmetic arm being refused by producer preflight.
 The fixes preserve attached metadata, accept only an identity-matched empty
 map with no side-pool values, and preflight only integer-literal ADD/SUB.
-See `2026-10-02-ssa-scalar-boundaries.md` for current command/log evidence.
+See `2026-10-02-ssa-scalar-boundaries.md` for that command/log evidence.
 
 The 2026-09-30 root MSVC build linked the source target and standalone builder
 consumers. `current-scalar-shape-fixtures-ctest.log` passed the two source
