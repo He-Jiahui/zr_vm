@@ -637,7 +637,11 @@ TZrBool ZrCore_Execution_VisitFrameRoots(
     for (pass = 0u; pass < 2u; ++pass) {
         for (index = 0u; index < visitor->rootMap->rootCount; ++index) {
             SZrExecutionFrameRoot *root = &visitor->rootMap->roots[index];
-            TZrUInt32 offset;
+            TZrUInt32 offset = 0u;
+            TZrUInt32 accessByteSize =
+                    root->kind == ZR_EXECUTION_FRAME_ROOT_INLINE_FIELD
+                        ? (TZrUInt32)sizeof(TZrPtr)
+                        : root->byteSize;
             TZrPtr address;
             TZrPtr baseAddress = ZR_NULL;
             TZrPtr baseValue = ZR_NULL;
@@ -650,11 +654,15 @@ TZrBool ZrCore_Execution_VisitFrameRoots(
             if (!root->initialized) {
                 continue;
             }
+            /* Only inline fields narrow the access width to one pointer.
+             * Other roots retain the descriptor-sized access span. */
             if (!execution_frame_add_u32(root->frameByteOffset,
                                          root->fieldByteOffset, &offset) ||
                 root->byteSize < sizeof(TZrPtr) ||
+                root->frameByteOffset > visitor->frameByteSize ||
+                root->byteSize > visitor->frameByteSize - root->frameByteOffset ||
                 offset > visitor->frameByteSize ||
-                root->byteSize > visitor->frameByteSize - offset) {
+                 accessByteSize > visitor->frameByteSize - offset) {
                 execution_frame_diag(diagnostic,
                                      ZR_EXECUTION_FRAME_DIAGNOSTIC_FRAME_BOUNDS,
                                      index, 0u, visitor->frameByteSize, offset);

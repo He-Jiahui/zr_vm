@@ -18,6 +18,8 @@ related_code:
   - tests/acceptance/ssa-stack-root-frame-relocation.md
   - tests/acceptance/aot-root-frame-protected-unwind.md
 implementation_files:
+  - zr_vm_core/src/zr_vm_core/execution/execution_frame_roots.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_frame_observation.c
   - zr_vm_core/src/zr_vm_core/gc/gc.c
   - zr_vm_core/src/zr_vm_core/exception.c
   - zr_vm_core/src/zr_vm_core/stack.c
@@ -29,6 +31,7 @@ tests:
   - tests/core/test_execution_add_stack_relocation.c
   - tests/core/test_execution_add_stack_relocation_aot_roots.inc
   - tests/core/test_ssa_roots_observation.c
+  - tests/acceptance/2026-10-02-ssa-inline-root-bounds.md
   - tests/core/test_aot_gc_root_frame.c
   - tests/acceptance/ssa-stack-root-frame-relocation.md
 doc_type: runtime-contract
@@ -83,6 +86,29 @@ writeback values, and reports unique physical slots to invalidate. A short
 frame or capacity error leaves both frame bytes and invalidation state
 unchanged. The `ssa_core_roots_observation` test covers relocation, inline
 fields, scalar-looking pointer bits, and this atomic failure boundary.
+
+For an inline field, `frameByteOffset` and `byteSize` describe the containing
+span, while `fieldByteOffset` locates a pointer inside that span. The root
+visitor bounds the complete span from `frameByteOffset`, then bounds the
+pointer-sized inline-field access from the computed field address. Managed
+and derived roots retain their descriptor-sized access bounds from that
+computed address, including existing legal nonzero offsets. An inline field
+ending exactly at the frame boundary is valid; its address does not require another
+complete span after it. Checked address overflow reports a frame-bounds
+diagnostic with a defined zero offset and does not invoke the callback.
+
+The core regression covers this final-field boundary, a one-byte-short frame,
+out-of-span fields, an uninitialized root, a stationary root, null writeback,
+unaligned host byte storage, malformed slot alignment, empty maps and null
+visitor inputs. Its checks remain active when `NDEBUG` is defined.
+
+The non-inline regression separately checks managed and derived roots whose
+pointer alone would fit but whose complete access span exceeds the frame;
+both reject before callback. Their legal nonzero-offset accesses still pass.
+Native pin leases and source-language GC/codegen integration are outside this adapter
+fixture; a stationary callback result does not establish a pin lifetime.
+Scoped build and test evidence is recorded in the
+[inline root bounds acceptance](../../tests/acceptance/2026-10-02-ssa-inline-root-bounds.md).
 
 ## AOT root frames during VM stack growth
 
