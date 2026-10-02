@@ -21,6 +21,35 @@ static TZrUInt32 containing_block(const SZrExecIrFunction *function,
     return ZR_EXEC_IR_BLOCK_ID_INVALID;
 }
 
+static TZrBool block_dominates(const SZrExecIrFunction *function,
+                               TZrUInt32 definitionBlock,
+                               TZrUInt32 useBlock) {
+    TZrUInt32 steps;
+    if (definitionBlock == useBlock) {
+        return ZR_TRUE;
+    }
+    if (definitionBlock == ZR_EXEC_IR_BLOCK_ID_INVALID ||
+        useBlock == ZR_EXEC_IR_BLOCK_ID_INVALID ||
+        definitionBlock == 0u || useBlock == 0u ||
+        definitionBlock > function->blockCount ||
+        useBlock > function->blockCount) {
+        return ZR_FALSE;
+    }
+    for (steps = 0u; steps <= function->blockCount; ++steps) {
+        TZrExecIrBlockId parent =
+                function->blocks[useBlock - 1u].immediateDominator;
+        if (parent == definitionBlock) {
+            return ZR_TRUE;
+        }
+        if (parent == 0u || parent == ZR_EXEC_IR_BLOCK_ID_INVALID ||
+            parent > function->blockCount || parent == useBlock) {
+            return ZR_FALSE;
+        }
+        useBlock = parent;
+    }
+    return ZR_FALSE;
+}
+
 static TZrBool pure_instruction(const SZrExecIrFunction *function,
                                 const SZrExecIrInstruction *instruction) {
     const SZrExecIrOpcodeInfo *info =
@@ -174,11 +203,14 @@ TZrBool ZrParser_ExecIr_RunGvnCse(
         if (currentBlock == ZR_EXEC_IR_BLOCK_ID_INVALID) {
             continue;
         }
-        for (previous = 0u; previous < index; ++previous) {
+        for (previous = 0u; previous < function->instructionCount; ++previous) {
             SZrExecIrInstruction *candidate = &function->instructions[previous];
             TZrExecIrValueId oldValue;
             TZrExecIrValueId newValue;
-            if (containing_block(function, previous) != currentBlock ||
+            TZrUInt32 candidateBlock = containing_block(function, previous);
+            if ((candidateBlock == currentBlock && previous >= index) ||
+                (candidateBlock != currentBlock &&
+                 !block_dominates(function, candidateBlock, currentBlock)) ||
                 !pure_instruction(function, candidate) ||
                 !same_key(function, candidate, current)) {
                 continue;
