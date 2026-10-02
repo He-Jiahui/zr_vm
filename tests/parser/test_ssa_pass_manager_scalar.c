@@ -173,6 +173,31 @@ static void build_unused_call_function(SZrExecIrFunction *function) {
     }
 }
 
+static void build_unused_move_function(SZrExecIrFunction *function) {
+    TZrExecIrValueId source, destination;
+    SZrExecIrRange sourceResult, moveOperands, moveResult;
+
+    init_function(function);
+    source = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNIQUE,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    destination = ZrCore_ExecIr_FunctionAddValue(
+            function, 1u, ZR_EXEC_IR_OWNERSHIP_UNIQUE,
+            ZR_EXEC_IR_NULLABILITY_UNKNOWN);
+    assert(source != ZR_EXEC_IR_VALUE_ID_INVALID &&
+           destination != ZR_EXEC_IR_VALUE_ID_INVALID);
+    assert(ZrCore_ExecIr_FunctionAppendResults(function, &source, 1u,
+                                                &sourceResult));
+    assert(ZrCore_ExecIr_FunctionAppendOperands(function, &source, 1u,
+                                                 &moveOperands));
+    assert(ZrCore_ExecIr_FunctionAppendResults(function, &destination, 1u,
+                                                &moveResult));
+    append_instruction(function, ZR_EXEC_IR_OPCODE_CONSTANT,
+                       range(0u, 0u), sourceResult, 1u, 0u, 0u, 0u, 407u);
+    append_instruction(function, ZR_EXEC_IR_OPCODE_MOVE, moveOperands,
+                       moveResult, 0u, 0u, 0u, 0u, 408u);
+}
+
 static void attach_source_map(SZrExecIrFunction *function, TZrExecIrInstructionId id) {
     function->sourceMaps = (SZrExecIrSourceMap *)calloc(1u, sizeof(*function->sourceMaps));
     assert(function->sourceMaps != ZR_NULL);
@@ -239,6 +264,24 @@ static void test_unused_call_is_preserved(void) {
     build_unused_call_function(&function);
     assert(ZrParser_ExecIr_OptimizeScalar(&function, ZR_NULL, &remarks, &diagnostic));
     assert(function.instructions[0].opcode == ZR_EXEC_IR_OPCODE_CALL);
+    ZrParser_ExecIr_RemarkSinkFree(&remarks);
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
+static void test_unused_move_is_preserved(void) {
+    SZrExecIrFunction function;
+    SZrExecIrRemarkSink remarks;
+    SZrExecIrDiagnostic diagnostic;
+
+    ZrParser_ExecIr_RemarkSinkInit(&remarks);
+    build_unused_move_function(&function);
+    assert(ZrCore_ExecIr_VerifyFunction(&function, ZR_EXEC_IR_VERIFY_ALL,
+                                        &diagnostic));
+    assert(ZrParser_ExecIr_OptimizeScalar(&function, ZR_NULL, &remarks,
+                                          &diagnostic));
+    assert(function.instructions[1].opcode == ZR_EXEC_IR_OPCODE_MOVE);
+    assert(ZrCore_ExecIr_VerifyFunction(&function, ZR_EXEC_IR_VERIFY_ALL,
+                                        &diagnostic));
     ZrParser_ExecIr_RemarkSinkFree(&remarks);
     ZrCore_ExecIr_FreeFunction(&function);
 }
@@ -601,6 +644,7 @@ int main(void) {
     test_throwing_instruction_is_observable();
     test_checked_overflow_is_not_folded();
     test_unused_call_is_preserved();
+    test_unused_move_is_preserved();
     test_typed_call_row_survives_scalar_optimization();
     test_dead_source_mapping_is_removed();
     test_type_test_identity_survives_hash_and_dead_code_cleanup();

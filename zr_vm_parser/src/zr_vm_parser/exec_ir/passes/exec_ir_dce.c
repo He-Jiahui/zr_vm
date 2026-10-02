@@ -162,7 +162,6 @@ static TZrBool zr_dce_pure(EZrExecIrOpcode opcode) {
         case ZR_EXEC_IR_OPCODE_TYPE_TEST:
         case ZR_EXEC_IR_OPCODE_ARITHMETIC:
         case ZR_EXEC_IR_OPCODE_COPY:
-        case ZR_EXEC_IR_OPCODE_MOVE:
         case ZR_EXEC_IR_OPCODE_ADD:
         case ZR_EXEC_IR_OPCODE_SUB:
         case ZR_EXEC_IR_OPCODE_MUL:
