@@ -570,6 +570,96 @@ static TZrBool broken_pass(SZrExecIrFunction *function,
     return ZR_TRUE;
 }
 
+static TZrUInt32 unsupported_requirement_pass_invocations;
+static TZrUInt32 preceding_pass_invocations;
+
+static TZrBool preceding_mutating_pass(SZrExecIrFunction *function,
+                                        SZrExecIrPassContext *context,
+                                        TZrBool *changed,
+                                        SZrExecIrDiagnostic *diagnostic) {
+    (void)context;
+    (void)diagnostic;
+    ++preceding_pass_invocations;
+    if (function != ZR_NULL && function->instructionCount != 0u)
+        function->instructions[0].sourceId += 1u;
+    if (changed != ZR_NULL) *changed = ZR_TRUE;
+    return ZR_TRUE;
+}
+
+static TZrBool unsupported_requirement_pass(SZrExecIrFunction *function,
+                                             SZrExecIrPassContext *context,
+                                             TZrBool *changed,
+                                             SZrExecIrDiagnostic *diagnostic) {
+    (void)context;
+    (void)diagnostic;
+    ++unsupported_requirement_pass_invocations;
+    if (function != ZR_NULL && function->instructionCount != 0u)
+        function->instructions[0].sourceId += 1u;
+    if (changed != ZR_NULL) *changed = ZR_TRUE;
+    return ZR_TRUE;
+}
+
+static void test_unsupported_analysis_requirements_roll_back(void) {
+    static const TZrUInt32 requirements[] = {
+        ZR_EXEC_IR_ANALYSIS_LOOPS,
+        ZR_EXEC_IR_ANALYSIS_LIVENESS
+    };
+    static const TZrChar *const names[] = {
+        "requires-loops",
+        "requires-liveness"
+    };
+    TZrUInt32 index;
+
+    for (index = 0u; index < (TZrUInt32)(sizeof(requirements) /
+                                        sizeof(requirements[0])); ++index) {
+        SZrExecIrFunction function;
+        SZrExecIrAnalysisCache cache;
+        SZrExecIrPassContext context;
+        SZrExecIrPassInfo passes[2];
+        SZrExecIrPassFailure failure;
+        SZrExecIrDiagnostic diagnostic;
+        TZrUInt64 beforeHash;
+
+        build_constant_copy_function(&function);
+        beforeHash = ZrParser_ExecIr_FunctionHash(&function);
+        memset(passes, 0, sizeof(passes));
+        passes[0].name = "preceding-mutation";
+        passes[0].run = preceding_mutating_pass;
+        passes[1].name = names[index];
+        passes[1].requiresAnalysis = requirements[index];
+        passes[1].run = unsupported_requirement_pass;
+        ZrParser_ExecIr_AnalysisCacheInit(&cache);
+        ZrParser_ExecIr_PassFailureInit(&failure);
+        memset(&context, 0, sizeof(context));
+        context.cache = &cache;
+        context.failure = &failure;
+        preceding_pass_invocations = 0u;
+        unsupported_requirement_pass_invocations = 0u;
+
+        assert(!ZrParser_ExecIr_RunPassPipeline(&function, passes, 2u,
+                                                &context, &diagnostic));
+        assert(preceding_pass_invocations == 1u);
+        assert(unsupported_requirement_pass_invocations == 0u);
+        assert(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
+        assert(diagnostic.expectedVersion == ZR_EXEC_IR_ANALYSIS_ALL);
+        assert(diagnostic.actualVersion == requirements[index]);
+        assert(ZrParser_ExecIr_FunctionHash(&function) == beforeHash);
+        assert(function.instructions[0].sourceId == 101u);
+        assert(context.lastReasonCode == ZR_EXEC_IR_PASS_REASON_NONE);
+        assert(context.passesRun == 0u);
+        assert(failure.passName != ZR_NULL);
+        assert(strcmp(failure.passName, names[index]) == 0);
+        assert(failure.function.instructions[0].sourceId == 102u);
+        assert(failure.diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
+        assert(failure.diagnostic.expectedVersion == ZR_EXEC_IR_ANALYSIS_ALL);
+        assert(failure.diagnostic.actualVersion == requirements[index]);
+
+        ZrParser_ExecIr_PassFailureFree(&failure);
+        ZrParser_ExecIr_AnalysisCacheFree(&cache);
+        ZrCore_ExecIr_FreeFunction(&function);
+    }
+}
+
 static void test_failed_pass_rolls_back(void) {
     SZrExecIrFunction function;
     SZrExecIrFunction before;
@@ -650,6 +740,7 @@ int main(void) {
     test_type_test_identity_survives_hash_and_dead_code_cleanup();
     test_token_phi_metadata_participates_in_hash();
     test_direct_pass_rejects_malformed_storage();
+    test_unsupported_analysis_requirements_roll_back();
     test_failed_pass_rolls_back();
     test_budget_is_bounded();
     return 0;
