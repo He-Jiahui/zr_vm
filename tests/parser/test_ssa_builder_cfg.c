@@ -327,7 +327,11 @@ static void test_module_builder_preserves_assigned_identity(void) {
               function->signatureHash == 99u &&
               function->contract.targetToken == 77u &&
               function->contract.signatureHash == 99u &&
-              function->contract.generation == 1u,
+              function->contract.generation == 1u &&
+              function->stateMap != NULL &&
+              function->stateMap->functionToken == function->functionToken &&
+              function->stateMap->signatureHash == function->signatureHash &&
+              function->stateMap->generation == function->contract.generation,
           "module builder lost the module-assigned function identity");
     check(ZrCore_ExecIr_VerifyFunction(function, ZR_EXEC_IR_VERIFY_STRUCTURE,
                                        &diagnostic),

@@ -983,8 +983,11 @@ TZrBool ZrParser_ExecIr_BuildModule(const SZrExecIrBuildInput *input,
     prepared.functionToken = input->functionToken;
     prepared.signatureHash = input->signatureHash;
     prepared.contract = contract;
-    if (prepared.stateMap != ZR_NULL)
-        prepared.stateMap->functionToken = input->functionToken;
+    if (prepared.stateMap != ZR_NULL) {
+        prepared.stateMap->functionToken = prepared.functionToken;
+        prepared.stateMap->signatureHash = prepared.signatureHash;
+        prepared.stateMap->generation = prepared.contract.generation;
+    }
     *slot = prepared;
     return ZR_TRUE;
 }

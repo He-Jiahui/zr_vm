@@ -19,11 +19,13 @@ related_code:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_liveness.c
   - zr_vm_core/include/zr_vm_core/exec_ir_state_map_liveness.h
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_owners.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_cleanup_drops.c
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_objects.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_deopt_aggregate.c
@@ -52,6 +54,7 @@ plan_sources:
   - docs/plans/ssa/01-execir-ssa/03-effects-verifier.md
   - docs/plans/ssa/01-execir-ssa/04-state-maps.md
 tests:
+  - tests/parser/test_ssa_builder_cfg.c
   - tests/parser/ssa_state_map_clone_fault_allocator.c
   - tests/parser/ssa_state_map_clone_fault_allocator.h
   - tests/parser/test_ssa_state_map_clone_fault_cases.h
@@ -90,6 +93,13 @@ doc_type: module-detail
 State maps describe a resumable ExecIR position using logical IDs. They are
 owned by an `SZrExecIrFunction` and do not expose machine registers, stack
 addresses, native pointers, or allocator-private frame offsets.
+
+`ZrParser_ExecIr_BuildModule` builds the map before adding the function to its
+module. Publication then copies the module-assigned function token, signature
+hash, and contract generation into the owned map. All three identities must
+match the final function; the temporary builder signature and generation are
+not valid identities for a published map. The module identity fixture in
+`test_ssa_builder_cfg.c` checks this publication boundary.
 
 Each map entry identifies a source position, instruction, cleanup state, and
 resume ID. Its `liveValues` and `rootValues` fields are ranges into side-table
