@@ -1,5 +1,6 @@
 #include "zr_vm_parser/exec_ir_interprocedural.h"
 #include "zr_vm_core/exec_ir_state_map.h"
+#include "exec_ir_call_target.h"
 
 #include <limits.h>
 #include <stdlib.h>
@@ -614,151 +615,6 @@ TZrBool ZrParser_ExecIr_CallGraphSetInlineBudget(
     graph->inlineBudget = *budget;
     graph->graphHash = ZrParser_ExecIr_CallGraphHash(graph);
     return ZR_TRUE;
-}
-
-static TZrExecIrFunctionId unique_function_token(const SZrExecIrModule *module,
-                                                  TZrMetadataToken token) {
-    TZrExecIrFunctionId result = ZR_EXEC_IR_FUNCTION_ID_INVALID;
-    TZrUInt32 i;
-    if (module == ZR_NULL || token == 0u) return result;
-    for (i = 0u; i < module->functionCount; ++i) {
-        /* Published contracts may carry the canonical target token even
-         * when a hand-built ExecIR function's legacy functionToken differs.
-         * Treat either identity as evidence, but keep the match unique. */
-        if (module->functions[i].functionToken != token &&
-            module->functions[i].contract.targetToken != token) continue;
-        if (result != ZR_EXEC_IR_FUNCTION_ID_INVALID) return ZR_EXEC_IR_FUNCTION_ID_INVALID;
-        result = module->functions[i].id;
-    }
-    return result;
-}
-
-/* Forward declaration: target resolution uses the optional high-bit fixture
- * hint to distinguish a callable type token from a direct row id. */
-static EZrExecIrCallEdgeKind edge_kind_from_binding_row(TZrUInt32 row);
-static TZrBool compact_binding_row_valid(TZrUInt32 row);
-
-static TZrExecIrFunctionId resolve_instruction_target(
-        const SZrExecIrModule *module, const SZrExecIrInstruction *instruction,
-        TZrBool *layoutTargetProof) {
-    TZrExecIrFunctionId layoutTarget;
-    TZrExecIrFunctionId typeTarget;
-    TZrExecIrFunctionId rowTarget = ZR_EXEC_IR_FUNCTION_ID_INVALID;
-    EZrExecIrCallEdgeKind rowKind;
-    TZrUInt32 encoded;
-    if (layoutTargetProof != ZR_NULL) *layoutTargetProof = ZR_FALSE;
-    if (module == ZR_NULL || instruction == ZR_NULL) return ZR_EXEC_IR_FUNCTION_ID_INVALID;
-    /* Metadata tokens are the semantically meaningful representation used by
-     * CallBinding facts.  Prefer them over the compact fixture-only row-id
-     * convention so a real binding row index cannot accidentally select an
-     * unrelated function merely because the numbers happen to match.  When
-     * both fields name a unique function they must agree for an explicitly
-     * indirect row: silently choosing one of two contradictory static
-     * identities would be a link error, not a legal receiver fallback.  On a
-     * plain/direct row, typeToken remains a value type and is ignored. */
-    layoutTarget = unique_function_token(module, instruction->layoutId);
-    typeTarget = unique_function_token(module, instruction->typeToken);
-    rowKind = edge_kind_from_binding_row(instruction->bindingRow);
-    if (instruction->bindingRow != 0u &&
-        instruction->bindingRow != ZR_CALL_BINDING_SLOT_NONE &&
-        compact_binding_row_valid(instruction->bindingRow)) {
-        encoded = instruction->bindingRow & ZR_EXEC_IR_BINDING_TARGET_MASK;
-        if (encoded != 0u && encoded <= module->functionCount) {
-            rowTarget = encoded;
-        }
-    }
-    if (layoutTarget != ZR_EXEC_IR_FUNCTION_ID_INVALID &&
-        typeTarget != ZR_EXEC_IR_FUNCTION_ID_INVALID &&
-        (rowKind == ZR_EXEC_IR_CALL_EDGE_VIRTUAL_SLOT ||
-         rowKind == ZR_EXEC_IR_CALL_EDGE_INTERFACE_SLOT ||
-         rowKind == ZR_EXEC_IR_CALL_EDGE_TYPED_FUNCTION) &&
-        layoutTarget != typeTarget) {
-        return ZR_EXEC_IR_FUNCTION_ID_INVALID;
-    }
-    if (layoutTarget != ZR_EXEC_IR_FUNCTION_ID_INVALID &&
-        rowTarget != ZR_EXEC_IR_FUNCTION_ID_INVALID &&
-        (rowKind == ZR_EXEC_IR_CALL_EDGE_VIRTUAL_SLOT ||
-         rowKind == ZR_EXEC_IR_CALL_EDGE_INTERFACE_SLOT ||
-         rowKind == ZR_EXEC_IR_CALL_EDGE_TYPED_FUNCTION) &&
-        layoutTarget != rowTarget) {
-        /* In the compact indirect encoding both the row id and layout token
-         * are target evidence.  Contradictory values are a link failure, not
-         * a reason to guess which receiver body was intended.  Plain direct
-         * rows intentionally do not take this branch because a production
-         * BindingFacts row index may differ from the metadata target id. */
-        return ZR_EXEC_IR_FUNCTION_ID_INVALID;
-    }
-    if (layoutTarget != ZR_EXEC_IR_FUNCTION_ID_INVALID) {
-        if (layoutTargetProof != ZR_NULL) *layoutTargetProof = ZR_TRUE;
-        return layoutTarget;
-    }
-    /* A non-zero layout token is target evidence, not an optimization hint.
-     * If it is missing or ambiguous, do not let a coincidental compact row id
-     * hide the link failure. */
-    if (instruction->layoutId != 0u) return ZR_EXEC_IR_FUNCTION_ID_INVALID;
-    /* The compact fixture encoding puts the candidate id in the low bits of
-     * a non-zero row.  Prefer that explicit id over a CALL result type token;
-     * a type token is not a function identity in the normal lowering.  When
-     * an indirect hint carries both and they disagree, retain an unresolved
-     * edge rather than silently selecting one of two contracts. */
-    if (rowTarget != ZR_EXEC_IR_FUNCTION_ID_INVALID) {
-        if ((rowKind == ZR_EXEC_IR_CALL_EDGE_VIRTUAL_SLOT ||
-             rowKind == ZR_EXEC_IR_CALL_EDGE_INTERFACE_SLOT ||
-             rowKind == ZR_EXEC_IR_CALL_EDGE_TYPED_FUNCTION) &&
-            typeTarget != ZR_EXEC_IR_FUNCTION_ID_INVALID &&
-            typeTarget != rowTarget) {
-            return ZR_EXEC_IR_FUNCTION_ID_INVALID;
-        }
-        return rowTarget;
-    }
-    /* `typeToken` is normally the CALL result/callable type, not the
-     * published function identity.  Only let an explicitly indirect hint
-     * use it as a candidate; a plain/direct row must fall through to its
-     * compact id (or remain unknown) so an unrelated type id cannot select a
-     * function whose token happens to have the same integer value. */
-    if (typeTarget != ZR_EXEC_IR_FUNCTION_ID_INVALID &&
-        (rowKind == ZR_EXEC_IR_CALL_EDGE_VIRTUAL_SLOT ||
-         rowKind == ZR_EXEC_IR_CALL_EDGE_INTERFACE_SLOT ||
-         rowKind == ZR_EXEC_IR_CALL_EDGE_TYPED_FUNCTION)) {
-        return typeTarget;
-    }
-    /* Once a producer supplied token evidence, an unmatched token is a link
-     * failure/unknown edge.  Do not silently fall through to a coincidental
-     * binding-row id and execute a different function. */
-    if (instruction->layoutId != 0u ||
-        (instruction->typeToken != 0u &&
-         (rowKind == ZR_EXEC_IR_CALL_EDGE_VIRTUAL_SLOT ||
-          rowKind == ZR_EXEC_IR_CALL_EDGE_INTERFACE_SLOT ||
-          rowKind == ZR_EXEC_IR_CALL_EDGE_TYPED_FUNCTION))) {
-        return ZR_EXEC_IR_FUNCTION_ID_INVALID;
-    }
-    return ZR_EXEC_IR_FUNCTION_ID_INVALID;
-}
-
-static EZrExecIrCallEdgeKind edge_kind_from_binding_row(TZrUInt32 row) {
-    const TZrUInt32 hints = row & (ZR_EXEC_IR_BINDING_HINT_VIRTUAL |
-                                   ZR_EXEC_IR_BINDING_HINT_INTERFACE |
-                                   ZR_EXEC_IR_BINDING_HINT_TYPED);
-    if (row == ZR_CALL_BINDING_SLOT_NONE) return ZR_EXEC_IR_CALL_EDGE_DIRECT;
-    /* Multiple dispatch-shape bits are contradictory evidence.  Keep the
-     * edge unresolved rather than letting precedence below silently choose a
-     * representation that the binder never published. */
-    if (hints != 0u && (hints & (hints - 1u)) != 0u) {
-        return ZR_EXEC_IR_CALL_EDGE_UNKNOWN;
-    }
-    if ((row & ZR_EXEC_IR_BINDING_HINT_TYPED) != 0u) return ZR_EXEC_IR_CALL_EDGE_TYPED_FUNCTION;
-    if ((row & ZR_EXEC_IR_BINDING_HINT_INTERFACE) != 0u) return ZR_EXEC_IR_CALL_EDGE_INTERFACE_SLOT;
-    if ((row & ZR_EXEC_IR_BINDING_HINT_VIRTUAL) != 0u) return ZR_EXEC_IR_CALL_EDGE_VIRTUAL_SLOT;
-    return ZR_EXEC_IR_CALL_EDGE_DIRECT;
-}
-
-static TZrBool compact_binding_row_valid(TZrUInt32 row) {
-    const TZrUInt32 hints = ZR_EXEC_IR_BINDING_HINT_VIRTUAL |
-                            ZR_EXEC_IR_BINDING_HINT_INTERFACE |
-                            ZR_EXEC_IR_BINDING_HINT_TYPED;
-    const TZrUInt32 selected = row & hints;
-    return (TZrBool)((row & ~ZR_EXEC_IR_BINDING_TARGET_MASK & ~hints) == 0u &&
-                     (selected == 0u || (selected & (selected - 1u)) == 0u));
 }
 
 static EZrExecIrCallEdgeKind edge_kind_from_binding_kind(EZrCallBindingKind kind) {
@@ -1611,6 +1467,8 @@ static void classify_inline_edges(SZrExecIrCallGraph *graph,
         TZrUInt32 inlineGrowth;
         edge->inlineEligible = ZR_FALSE;
         edge->inlineReason = ZR_EXEC_IR_INLINE_REASON_UNSUPPORTED;
+        if (module->functions[edge->callerId - 1u].bindingRowsSchemaVersion ==
+            ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED) continue;
         if (!edge->resolved || edge->calleeId == 0u || edge->calleeId > module->functionCount) {
             edge->inlineReason = (edge->kind == ZR_EXEC_IR_CALL_EDGE_NATIVE ||
                                   edge->kind == ZR_EXEC_IR_CALL_EDGE_UNKNOWN ||
@@ -1861,81 +1719,14 @@ TZrBool ZrParser_ExecIr_BuildCallGraph(
         for (j = 0u; j < function->instructionCount; ++j) {
             const SZrExecIrInstruction *instruction = &function->instructions[j];
             SZrExecIrCallEdge edge;
-            TZrExecIrFunctionId target;
-            TZrBool layoutTargetProof;
-            TZrBool typedBindingSchema;
             if (instruction->opcode != ZR_EXEC_IR_OPCODE_CALL &&
                 instruction->opcode != ZR_EXEC_IR_OPCODE_INVOKE) continue;
-            memset(&edge, 0, sizeof(edge));
-            edge.callerId = function->id;
-            edge.callInstructionId = j + 1u;
-            typedBindingSchema = (TZrBool)(function->bindingRowsSchemaVersion ==
-                    ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED);
-            /* The typed schema owns complete rows.  Until this analyzer has a
-             * full target resolver, neither numeric legacy identities nor
-             * compact row hints can prove a callee (including typed-empty). */
-            edge.targetToken = typedBindingSchema
-                    ? 0u
-                    : (instruction->layoutId != 0u
-                           ? instruction->layoutId : instruction->typeToken);
-            /* An unresolved edge has no trustworthy target signature.  Keep
-             * the field zero rather than leaking the caller signature into a
-             * target contract slot; resolved edges fill it from the callee. */
-            edge.expectedSignatureHash = 0u;
-            layoutTargetProof = ZR_FALSE;
-            target = typedBindingSchema
-                    ? ZR_EXEC_IR_FUNCTION_ID_INVALID
-                    : resolve_instruction_target(module, instruction,
-                                                 &layoutTargetProof);
-            if (target != ZR_EXEC_IR_FUNCTION_ID_INVALID) {
-                const SZrExecIrFunction *callee = &module->functions[target - 1u];
-                edge.calleeId = target;
-                edge.targetToken = callee->contract.targetToken != 0u
-                    ? callee->contract.targetToken : callee->functionToken;
-                edge.targetGeneration = callee->contract.generation;
-                edge.expectedSignatureHash = callee->signatureHash;
-                edge.kind = edge_kind_from_binding_row(instruction->bindingRow);
-                if (instruction->bindingRow != 0u &&
-                    instruction->bindingRow != ZR_CALL_BINDING_SLOT_NONE &&
-                    !compact_binding_row_valid(instruction->bindingRow)) {
-                    /* A malformed/conflicting row cannot be treated as a
-                     * direct proof even when a metadata token happened to
-                     * identify a body.  Preserve the candidate only for
-                     * diagnostics and widen its effects below. */
-                    edge.kind = ZR_EXEC_IR_CALL_EDGE_NATIVE;
-                    edge.nativeEffectsUnknown = ZR_TRUE;
-                }
-                edge.resolved = ZR_TRUE;
-                edge.exactReceiver = (TZrBool)(edge.kind == ZR_EXEC_IR_CALL_EDGE_DIRECT ||
-                                               /* In the compact ExecIR model
-                                                * layoutId is the only field
-                                                * that carries receiver-layout
-                                                * evidence.  typeToken may be
-                                                * the result/callable type and
-                                                * must not by itself turn a
-                                                * polymorphic slot into an
-                                                * exact receiver proof. */
-                                               layoutTargetProof);
-                edge.patchableTarget = (TZrBool)candidate.summaries[target - 1u].patchable;
-            } else {
-                edge.kind = typedBindingSchema
-                    ? ZR_EXEC_IR_CALL_EDGE_UNKNOWN
-                    : (instruction->bindingRow == 0u ||
-                            instruction->bindingRow == ZR_CALL_BINDING_SLOT_NONE
-                                ? ZR_EXEC_IR_CALL_EDGE_UNKNOWN
-                                : (!compact_binding_row_valid(instruction->bindingRow)
-                                      ? ZR_EXEC_IR_CALL_EDGE_NATIVE
-                                      : ((instruction->bindingRow &
-                                          (ZR_EXEC_IR_BINDING_HINT_VIRTUAL |
-                                           ZR_EXEC_IR_BINDING_HINT_INTERFACE |
-                                           ZR_EXEC_IR_BINDING_HINT_TYPED)) != 0u
-                                            ? edge_kind_from_binding_row(instruction->bindingRow)
-                                            : ZR_EXEC_IR_CALL_EDGE_NATIVE)));
-                /* A native-shaped unresolved row is explicitly opaque; an
-                 * unresolved slot/none row is merely indirect and should
-                 * retain that distinction in the summary's unknownReason. */
-                edge.nativeEffectsUnknown = (TZrBool)(typedBindingSchema ||
-                    edge.kind == ZR_EXEC_IR_CALL_EDGE_NATIVE);
+            if (!ZrParser_ExecIr_BuildCallEdge(module, function, j + 1u,
+                    candidate.summaries, candidate.summaryCount, &edge)) {
+                ZrParser_ExecIr_CallGraphFree(&candidate);
+                zr_set_diagnostic(diagnostic, ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
+                                  function, j + 1u, 0u, 0u);
+                return ZR_FALSE;
             }
             if (!append_edge(&candidate, &edge)) {
                 ZrParser_ExecIr_CallGraphFree(&candidate);
@@ -2134,6 +1925,29 @@ TZrBool ZrParser_ExecIr_CallGraphValidate(
                               edge->calleeId);
             return ZR_FALSE;
         }
+        if (callerFunction != ZR_NULL &&
+            callerFunction->bindingRowsSchemaVersion == ZR_EXEC_IR_BINDING_ROWS_SCHEMA_TYPED) {
+            SZrExecIrTypedCallMismatch mismatch = {0};
+            TZrUInt16 opcode;
+            if (edge->callInstructionId == 0u ||
+                edge->callInstructionId > callerFunction->instructionCount) {
+                zr_set_diagnostic(diagnostic, ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
+                    callerFunction, edge->callInstructionId,
+                    callerFunction->instructionCount, edge->callInstructionId);
+                return ZR_FALSE;
+            }
+            opcode = callerFunction->instructions[edge->callInstructionId - 1u].opcode;
+            if (opcode != ZR_EXEC_IR_OPCODE_CALL && opcode != ZR_EXEC_IR_OPCODE_INVOKE) {
+                zr_set_diagnostic(diagnostic, ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
+                    callerFunction, edge->callInstructionId, ZR_EXEC_IR_OPCODE_CALL, opcode);
+                return ZR_FALSE;
+            }
+            if (!ZrParser_ExecIr_TypedCallEdgeMatches(module, graph, edge, &mismatch)) {
+                zr_set_hash_diagnostic(diagnostic, mismatch.code, callerFunction,
+                    edge->callInstructionId, mismatch.expected, mismatch.actual);
+                return ZR_FALSE;
+            }
+        }
         if (edge->resolved) calleeSummary = &graph->summaries[edge->calleeId - 1u];
         if (calleeSummary != ZR_NULL && (graph->graphHash != 0u || module != ZR_NULL) &&
             (edge->targetToken != summary_target_token(calleeSummary) ||
@@ -2189,6 +2003,17 @@ TZrBool ZrParser_ExecIr_CallGraphValidate(
                                   ZR_EXEC_IR_OPCODE_CALL, opcode);
                 return ZR_FALSE;
             }
+        }
+    }
+    if (module != ZR_NULL) {
+        SZrExecIrTypedCallMismatch mismatch = {0};
+        if (!ZrParser_ExecIr_TypedCallSitesMatch(module, graph, &mismatch)) {
+            const SZrExecIrFunction *caller = mismatch.callerId != 0u &&
+                mismatch.callerId <= module->functionCount
+                ? &module->functions[mismatch.callerId - 1u] : ZR_NULL;
+            zr_set_hash_diagnostic(diagnostic, mismatch.code, caller,
+                mismatch.instructionId, mismatch.expected, mismatch.actual);
+            return ZR_FALSE;
         }
     }
     if (graph->graphHash != 0u && graph->graphHash != ZrParser_ExecIr_CallGraphHash(graph)) {
