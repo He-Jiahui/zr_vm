@@ -25,4 +25,14 @@ static inline TZrBool execution_checked_i64_multiply(
     return ZR_TRUE;
 }
 
+/* Signed division truncates toward zero. Check both undefined host cases
+ * before evaluating /; failure preserves output, including operand aliases. */
+static inline TZrBool execution_checked_i64_divide(
+        TZrInt64 left, TZrInt64 right, TZrInt64 *output) {
+    if (output == ZR_NULL || right == 0 ||
+            (left == INT64_MIN && right == -1)) return ZR_FALSE;
+    *output = left / right;
+    return ZR_TRUE;
+}
+
 #endif

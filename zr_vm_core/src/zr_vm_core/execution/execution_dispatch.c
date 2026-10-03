@@ -5203,104 +5203,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                           ZR_VALUE_TYPE_BOOL);                                                                          \
     } while (0)
 #include "execution/execution_signed_multiply.inc"
-#define EXECUTE_DIV_SIGNED_CONST_BODY()                                                                                \
-    do {                                                                                                               \
-        const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
-        opA = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                                                \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
-        if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
-            TZrInt64 divisor = constOpB->value.nativeObject.nativeInt64;                                               \
-            if (ZR_UNLIKELY(divisor == 0)) {                                                                           \
-                SAVE_STATE(state, callInfo);                                                                           \
-                ZrCore_Debug_RunError(state, "divide by zero");                                                        \
-            }                                                                                                          \
-            ALGORITHM_CONST_2(nativeInt64, /, ZR_VALUE_TYPE_INT64, divisor);                                          \
-        } else {                                                                                                       \
-            execution_try_binary_numeric_float_fallback_or_raise(                                                      \
-                    state,                                                                                             \
-                    ZR_EXEC_NUMERIC_FALLBACK_DIV,                                                                      \
-                    destination,                                                                                       \
-                    opA,                                                                                               \
-                    constOpB,                                                                                          \
-                    "DIV_SIGNED_CONST");                                                                               \
-        }                                                                                                              \
-    } while (0)
-#define EXECUTE_DIV_SIGNED_CONST_BODY_PLAIN_DEST()                                                                     \
-    do {                                                                                                               \
-        SZrTypeValue *plainDestination__ = SIGNED_FRAME_VALUE_SLOT(E(instruction));                                    \
-        const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
-        const SZrTypeValue *leftValue__ = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                    \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
-        if (ZR_VALUE_IS_TYPE_INT(leftValue__->type)) {                                                                 \
-            TZrInt64 divisor = constOpB->value.nativeObject.nativeInt64;                                               \
-            if (ZR_UNLIKELY(divisor == 0)) {                                                                           \
-                SAVE_STATE(state, callInfo);                                                                           \
-                ZrCore_Debug_RunError(state, "divide by zero");                                                        \
-            }                                                                                                          \
-            EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                        \
-                                            nativeInt64,                                                               \
-                                            leftValue__->value.nativeObject.nativeInt64 / divisor,                    \
-                                            ZR_VALUE_TYPE_INT64);                                                     \
-        } else {                                                                                                       \
-            destination = plainDestination__;                                                                          \
-            execution_try_binary_numeric_float_fallback_or_raise(                                                      \
-                    state,                                                                                             \
-                    ZR_EXEC_NUMERIC_FALLBACK_DIV,                                                                      \
-                    destination,                                                                                       \
-                    leftValue__,                                                                                       \
-                    constOpB,                                                                                          \
-                    "DIV_SIGNED_CONST");                                                                               \
-        }                                                                                                              \
-    } while (0)
-#define EXECUTE_DIV_SIGNED_LOAD_CONST_BODY()                                                                           \
-    do {                                                                                                               \
-        TZrUInt16 constantIndex__ = instruction.instruction.operand.operand1[1];                                       \
-        const SZrTypeValue *constOpB = CONST(constantIndex__);                                                         \
-        EXECUTE_MATERIALIZE_CONSTANT_SLOT(constantIndex__, instruction.instruction.operand.operand0[1]);               \
-        opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[0]);                                     \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
-        if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
-            TZrInt64 divisor = constOpB->value.nativeObject.nativeInt64;                                               \
-            if (ZR_UNLIKELY(divisor == 0)) {                                                                           \
-                SAVE_STATE(state, callInfo);                                                                           \
-                ZrCore_Debug_RunError(state, "divide by zero");                                                        \
-            }                                                                                                          \
-            ALGORITHM_CONST_2(nativeInt64, /, ZR_VALUE_TYPE_INT64, divisor);                                          \
-        } else {                                                                                                       \
-            execution_try_binary_numeric_float_fallback_or_raise(                                                      \
-                    state,                                                                                             \
-                    ZR_EXEC_NUMERIC_FALLBACK_DIV,                                                                      \
-                    destination,                                                                                       \
-                    opA,                                                                                               \
-                    constOpB,                                                                                          \
-                    "DIV_SIGNED_LOAD_CONST");                                                                          \
-        }                                                                                                              \
-    } while (0)
-#define EXECUTE_DIV_SIGNED_LOAD_STACK_CONST_BODY()                                                                     \
-    do {                                                                                                               \
-        TZrUInt16 constantIndex__ = instruction.instruction.operand.operand1[1];                                       \
-        const SZrTypeValue *constOpB = CONST(constantIndex__);                                                         \
-        EXECUTE_MATERIALIZE_STACK_SLOT(instruction.instruction.operand.operand0[0],                                    \
-                                       instruction.instruction.operand.operand0[1]);                                   \
-        opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[1]);                                     \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
-        if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
-            TZrInt64 divisor = constOpB->value.nativeObject.nativeInt64;                                               \
-            if (ZR_UNLIKELY(divisor == 0)) {                                                                           \
-                SAVE_STATE(state, callInfo);                                                                           \
-                ZrCore_Debug_RunError(state, "divide by zero");                                                        \
-            }                                                                                                          \
-            ALGORITHM_CONST_2(nativeInt64, /, ZR_VALUE_TYPE_INT64, divisor);                                          \
-        } else {                                                                                                       \
-            execution_try_binary_numeric_float_fallback_or_raise(                                                      \
-                    state,                                                                                             \
-                    ZR_EXEC_NUMERIC_FALLBACK_DIV,                                                                      \
-                    destination,                                                                                       \
-                    opA,                                                                                               \
-                    constOpB,                                                                                          \
-                    "DIV_SIGNED_LOAD_STACK_CONST");                                                                    \
-        }                                                                                                              \
-    } while (0)
+#include "execution/execution_signed_divide.inc"
 #define EXECUTE_MOD_SIGNED_CONST_BODY()                                                                                \
     do {                                                                                                               \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
@@ -7345,19 +7248,7 @@ LZrFastInstruction_NEG_FLOAT: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(DIV_SIGNED) {
-                opA = SIGNED_FRAME_VALUE_SLOT(A1(instruction));
-                opB = SIGNED_FRAME_VALUE_SLOT(B1(instruction));
-                if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
-                    SAVE_STATE(state, callInfo); // error: divide by zero
-                    if (ZR_UNLIKELY(opB->value.nativeObject.nativeInt64 == 0)) {
-                        // ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
-                        ZrCore_Debug_RunError(state, "divide by zero");
-                    }
-                    ALGORITHM_2(nativeInt64, /, ZR_VALUE_TYPE_INT64);
-                } else {
-                    execution_try_binary_numeric_float_fallback_or_raise(
-                            state, ZR_EXEC_NUMERIC_FALLBACK_DIV, destination, opA, opB, "DIV_SIGNED");
-                }
+                EXECUTE_DIV_SIGNED_BODY();
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
@@ -9939,6 +9830,10 @@ LZrExecutionDone:
 #undef EXECUTE_MUL_SIGNED_LOAD_STACK_BODY
 #undef EXECUTE_MUL_UNSIGNED_CONST_BODY
 #undef EXECUTE_MUL_UNSIGNED_CONST_BODY_PLAIN_DEST
+#undef EXECUTION_CHECKED_DIV_RESULT
+#undef EXECUTION_CHECKED_DIV_STORE
+#undef EXECUTION_CHECKED_DIV_STORE_DIRECT
+#undef EXECUTE_DIV_SIGNED_BODY
 #undef EXECUTE_DIV_SIGNED_CONST_BODY
 #undef EXECUTE_DIV_SIGNED_CONST_BODY_PLAIN_DEST
 #undef EXECUTE_DIV_SIGNED_LOAD_CONST_BODY
