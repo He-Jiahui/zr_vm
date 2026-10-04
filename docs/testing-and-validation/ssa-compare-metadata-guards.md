@@ -2,6 +2,8 @@
 related_code:
   - tests/parser/test_ssa_compare_metadata_guards.c
   - tests/harness/runtime_support.c
+  - tests/cmake/ssa-compare-metadata-guards.cmake
+  - tests/cmake/ssa-source-direct-validation/CMakeLists.txt
   - zr_vm_parser/src/zr_vm_parser/semantic_ir.c
   - zr_vm_parser/src/zr_vm_parser/semantic_ir_compare_internal.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_compare.c
@@ -17,7 +19,7 @@ plan_sources:
 tests:
   - tests/parser/test_ssa_compare_metadata_guards.c
 doc_type: testing-guide
-status: fixture-written-native-pending
+status: native-green-direct-source
 ---
 
 # Comparison metadata guards
@@ -33,7 +35,7 @@ The executable contains 63 cases: twenty emission faults, the same twenty stored
 | Group | Contract |
 | --- | --- |
 | Emit, 20 cases | Reject source-unsupported EQ and unknown selector; missing/wrong operand metadata; wrong result metadata; zero/out-of-range result; zero/out-of-range/self operand; arity 0/1/3; already-defined result; unrelated comparison metadata; nonzero shared match; wrong operand/result value type; invalid result definition. No SemIR bytes, pool lengths or source-map rows change. |
-| Stored SemIR, 20 cases | Public Validate rejects the mutated instruction/value/pool. BuildModule rejects with INVALID_VALUE and the relevant instruction/source identity; the module remains byte-identical and contains no published function. The SemIR input bytes remain unchanged. |
+| Stored SemIR, 20 cases | Public Validate rejects the mutated instruction/value/pool. BuildModule rejects with INVALID_VALUE and the relevant instruction identity. The generic shared-match gate has source ID zero; other cases retain the rejected instruction's source ID. The module remains byte-identical and contains no published function. The SemIR input bytes remain unchanged. |
 | Canonical semantic, 2 cases | Consistent DOUBLE operands with BOOL result and consistent INT64 operands with DOUBLE result retain opaque relational validity. The actual compiler canonical comparison validator rejects primitive meaning using the real context. |
 | Canonical VM success, 5 cases | MATCH0 LT/GT each execute true and false arms. Explicit canonical INT64 incoming match also succeeds. Returns prove a signed integer comparison actually controls the bool branch. |
 | Canonical VM failure, 16 cases | Reject BOOL/INT8/unknown match, BOOL/DOUBLE operand primitive, INT64 result primitive, INT64 branch operand, unknown selector, zero operand/result ID, bad arities, pool starts outside range, out-of-range physical slot and wrong slot value ID. Empty emission and immutable input are mandatory. |
@@ -44,14 +46,16 @@ The typed VM tests independently pass actual canonical primitives through `ZrPar
 
 The public canonical VM boundary accepts incoming match zero or the exact context-proven operand canonical INT64 ID. BOOL, INT8 and unknown IDs fail. Shared source Core/AOT comparison metadata must still have MATCH0: every new baseline verifies Core at all levels before projection, and the fixture checks that the source function and original projected compare retain zero. Public explicit canonical match compatibility is a VM boundary test and does not relax shared MATCH0.
 
+The two constants use actual zero-based pool indices 0 and 1. The true arm returns the left operand, and the false arm returns the right operand. Swapping the constants exercises the other branch while preserving the signed minimum for LT and maximum for GT. Invalid match metadata reports the already-resolved canonical BOOL result token; earlier malformed comparison checks report zero as the unresolved actual token.
+
 ## Mutation and publication evidence
 
 Emission snapshots include the semantic function structure, instructions, values, operand pool and source-map rows after the deliberate fault and before calling Emit. Stored faults snapshot those same inputs and the empty output module before Validate/BuildModule. These prove malformed-input rejection is non-mutating; they do not prove allocator-failure rollback.
 
 Canonical VM cases snapshot the projection structure and every side pool: instruction/opcode, frame, values/slots, operands/results, memory, CFG, phi/copy/move, source-map, constant/layout, GC-root and deopt pools. Canonical type array metadata and node bytes are also checked. The copy checks occur immediately after materialization, before positive VM execution. A rejected result must have null function, null pcMap and zero pcMapCount. A negative case never executes a VM function. Positive functions are rooted using the real GC API, executed through runtime_support, then unrooted and freed.
 
-## Actual build closure and pending validation
+## Actual build closure and native validation
 
 Compile the actual new test TU with existing `tests/harness/runtime_support.c`. Reuse the direct fullsource route's parser, core, common, library and xxhash/utf8proc/cjson/miniz static archives; use its native system libraries, assertion/UBSan flags and 8 MiB stack setting. The standalone main does not call Unity. All sources must come directly from the current checkout, including the new compiler comparison, builder comparison and canonical comparison annotation TUs. Native configuration, archive provenance, extracted link objects and executable results are owned by Root. Outputs remain beneath `E:/cargo-targets/zr_vm/*/ssa-20261004-01a0fe2b`.
 
-At this document's static freeze, no compilation or test execution has verified this new fixture. One accidentally attempted `clang -fsyntax-only` command found no clang executable and did not start a compiler; it produced no object or test result. Root must run the real native route and record its immutable receipt before describing these 63 cases as passing. No full47 OPEN state changes here.
+Root built `zr_vm_ssa_compare_metadata_guards_test` from the current checkout using the direct-source CMake project, Clang-cl Debug assertions and UBSan. The target explicitly reserves 8 MiB of stack because the instrumented Core dispatcher frame exceeds the default Windows reserve. `ctest -R '^ssa_compare_metadata_guards$' --output-on-failure -V` exited zero: 63 cases, zero failures, zero precondition failures and 346 passing preconditions, with no UBSan diagnostic. The build directory is `E:/cargo-targets/zr_vm/build/ssa-20261004-01a0fe2b/metadata-guards-direct-v2`. Both the ordinary test configuration and the direct-source project register `ssa_compare_metadata_guards`; only the direct-source route was executed for this acceptance. No full47 OPEN state changes here.

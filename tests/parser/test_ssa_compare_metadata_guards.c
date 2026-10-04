@@ -228,6 +228,9 @@ static TZrBool build_projection(SFixture *f) {
     constants[0].typeToken = constants[1].typeToken = f->intType;
     constants[0].bits = (TZrUInt64)(TZrInt64)-7;
     constants[1].bits = 11u;
+    if (!prerequisite("RealConstantPoolIndexes", (TZrBool)(
+            function->instructions[LEFT - 1u].layoutId == 0u &&
+            function->instructions[RIGHT - 1u].layoutId == 1u))) return ZR_FALSE;
     return prerequisite("BuildProjectionWithConstants", ZrParser_ExecIr_BuildProjectionWithConstants(
             function, constants, 2u, &f->projection, &diagnostic));
 }
@@ -372,7 +375,10 @@ static void stored_case(EBadSemantic bad) {
     EXPECT(f.module.functionCount == 0u);
     EXPECT(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
     EXPECT(diagnostic.functionToken == FUNCTION_TOKEN);
-    EXPECT(diagnostic.instructionId == rejectedId && diagnostic.sourceId == rejectedId);
+    EXPECT(diagnostic.instructionId == rejectedId);
+    /* Shared match metadata is rejected in generic preflight before the
+     * comparison-specific source diagnostic is constructed. */
+    EXPECT(diagnostic.sourceId == (bad == BAD_MATCH ? 0u : rejectedId));
     printf("EXPECTED_DIAGNOSTIC %s BuildModule code=%u block=%u instruction=%u source=%u\n",
             caseName, (unsigned)diagnostic.code, (unsigned)diagnostic.blockId,
             (unsigned)diagnostic.instructionId, (unsigned)diagnostic.sourceId);
@@ -444,7 +450,9 @@ static void vm_case(EVmCase test) {
     if (!prerequisite("RealProjectionShape", (TZrBool)(
             f.projection.instructionCount == FIXTURE_INSTRUCTIONS &&
             compare->opcode == ZR_EXEC_IR_OPCODE_COMPARE &&
-            branch->opcode == ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH))) goto done;
+            branch->opcode == ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH &&
+            f.projection.constantCount == 2u &&
+            f.projection.constants != ZR_NULL))) goto done;
     EXPECT(compare->matchTypeToken == 0u);
     switch (test) {
         case VM_ZERO_LT_FALSE: case VM_ZERO_GT_TRUE:
@@ -484,7 +492,9 @@ static void vm_case(EVmCase test) {
             rooted = ZrCore_GarbageCollector_IgnoreObject(f.state, ZR_CAST_RAW_OBJECT_AS_SUPER(output.function));
             if (!prerequisite("RootFunction", rooted)) goto done;
             EXPECT(ZrTests_Runtime_Function_ExecuteExpectInt64(f.state, output.function, &result));
-            EXPECT(result == ((test == VM_ZERO_LT_FALSE || test == VM_ZERO_GT_TRUE)
+            /* The true arm returns LEFT; the false arm returns RIGHT. Swapping
+             * the operands therefore keeps LT at -7 and GT at 11. */
+            EXPECT(result == ((test == VM_ZERO_GT_TRUE || test == VM_ZERO_GT_FALSE)
                               ? 11 : -7));
             printf("VM_RESULT %s integer=%lld\n", caseName, (long long)result);
         } else {
@@ -501,9 +511,11 @@ static void vm_case(EVmCase test) {
                 EXPECT(diagnostic.actualVersion == ZR_VALUE_TYPE_INT64);
             } else {
                 EXPECT(diagnostic.expectedVersion == ZR_VALUE_TYPE_BOOL);
-                /* The canonical consumer reports its resolved result token;
-                 * malformed IDs are intentionally opaque at this boundary. */
-                EXPECT(diagnostic.actualVersion == f.boolType);
+                /* Invalid match metadata is tested after resolving the BOOL
+                 * result. All other mutations stop before that resolution. */
+                EXPECT(diagnostic.actualVersion == ((test == VM_MATCH_BOOL ||
+                        test == VM_MATCH_NARROW || test == VM_MATCH_UNKNOWN)
+                        ? f.boolType : 0u));
             }
             printf("EXPECTED_DIAGNOSTIC %s CanonicalVm code=%u block=%u instruction=%u source=%u expected=%u actual=%u\n",
                     caseName, (unsigned)diagnostic.code, (unsigned)diagnostic.blockId,

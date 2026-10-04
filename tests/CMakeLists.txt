@@ -8784,6 +8784,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-owned-row-direct-call-graph-tests
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-sccp-conversion-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-sccp-phi-copy-edges-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-compare-predicate-domain.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-compare-metadata-guards.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/gc-nested-mutation-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/tail-dispatch-runtime-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/aot-generated-root-tests.cmake")

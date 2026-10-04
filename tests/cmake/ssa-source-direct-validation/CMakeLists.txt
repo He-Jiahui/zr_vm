@@ -162,11 +162,30 @@ target_include_directories(ssa_source_unity PRIVATE ${_zr_test_includes})
 target_compile_definitions(ssa_source_unity PRIVATE ${_zr_unity_definitions} _CRT_SECURE_NO_WARNINGS)
 zr_ssa_source_apply_c_settings(ssa_source_unity)
 
-add_executable(zr_vm_ssa_source_execbc_vm_test
-        "${ZR_SSA_SOURCE_ROOT}/tests/parser/test_ssa_source_execbc_vm.c"
+add_library(ssa_source_runtime_support STATIC
         "${ZR_SSA_SOURCE_ROOT}/tests/harness/runtime_support.c")
+target_include_directories(ssa_source_runtime_support PRIVATE
+        ${_zr_public_includes} ${_zr_vendor_includes} ${_zr_test_includes})
+target_compile_definitions(ssa_source_runtime_support PRIVATE
+        ${_zr_unity_definitions} ZR_LIBRARY_TYPE_STATIC=1
+        ZR_PLATFORM_WIN=1 ZR_PLATFORM_WIN_USE_MSVC=1 ZR_DEBUG=1 _CRT_SECURE_NO_WARNINGS
+        UTF8PROC_STATIC MINIZ_NO_ZLIB_COMPATIBLE_NAMES
+        ZR_CURRENT_MODULE="ssa_source_runtime_support"
+        ZR_VM_COMPILER_VERSION="${CMAKE_C_COMPILER_ID}-${CMAKE_C_COMPILER_VERSION}"
+        ZR_VM_TESTS_SOURCE_DIR="${ZR_SSA_SOURCE_ROOT}/tests"
+        ZR_VM_TESTS_BINARY_DIR="${CMAKE_BINARY_DIR}")
+zr_ssa_source_apply_c_settings(ssa_source_runtime_support)
+
+add_executable(zr_vm_ssa_source_execbc_vm_test
+        "${ZR_SSA_SOURCE_ROOT}/tests/parser/test_ssa_source_execbc_vm.c")
+
+add_executable(zr_vm_ssa_compare_metadata_guards_test
+        "${ZR_SSA_SOURCE_ROOT}/tests/parser/test_ssa_compare_metadata_guards.c")
 target_include_directories(zr_vm_ssa_source_execbc_vm_test PRIVATE
         ${_zr_public_includes} ${_zr_vendor_includes} ${_zr_test_includes})
+target_include_directories(zr_vm_ssa_compare_metadata_guards_test PRIVATE
+        ${_zr_public_includes} ${_zr_vendor_includes} ${_zr_test_includes}
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/compiler")
 target_compile_definitions(zr_vm_ssa_source_execbc_vm_test PRIVATE
         ${_zr_unity_definitions} ZR_LIBRARY_TYPE_STATIC=1
         ZR_PLATFORM_WIN=1 ZR_PLATFORM_WIN_USE_MSVC=1 ZR_DEBUG=1 _CRT_SECURE_NO_WARNINGS
@@ -176,27 +195,51 @@ target_compile_definitions(zr_vm_ssa_source_execbc_vm_test PRIVATE
         ZR_VM_TESTS_SOURCE_DIR="${ZR_SSA_SOURCE_ROOT}/tests"
         ZR_VM_TESTS_BINARY_DIR="${CMAKE_BINARY_DIR}")
 zr_ssa_source_apply_c_settings(zr_vm_ssa_source_execbc_vm_test)
+target_compile_definitions(zr_vm_ssa_compare_metadata_guards_test PRIVATE
+        ${_zr_unity_definitions} ZR_LIBRARY_TYPE_STATIC=1
+        ZR_PLATFORM_WIN=1 ZR_PLATFORM_WIN_USE_MSVC=1 ZR_DEBUG=1 _CRT_SECURE_NO_WARNINGS
+        UTF8PROC_STATIC MINIZ_NO_ZLIB_COMPATIBLE_NAMES
+        ZR_CURRENT_MODULE="zr_vm_ssa_compare_metadata_guards_test"
+        ZR_VM_COMPILER_VERSION="${CMAKE_C_COMPILER_ID}-${CMAKE_C_COMPILER_VERSION}"
+        ZR_VM_TESTS_SOURCE_DIR="${ZR_SSA_SOURCE_ROOT}/tests"
+        ZR_VM_TESTS_BINARY_DIR="${CMAKE_BINARY_DIR}")
+zr_ssa_source_apply_c_settings(zr_vm_ssa_compare_metadata_guards_test)
 target_link_libraries(zr_vm_ssa_source_execbc_vm_test PRIVATE
         ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_library
         ssa_source_zr_vm_common ${_zr_vendor_targets} ssa_source_unity kernel32)
+target_link_libraries(zr_vm_ssa_source_execbc_vm_test PRIVATE ssa_source_runtime_support)
+target_link_libraries(zr_vm_ssa_compare_metadata_guards_test PRIVATE
+        ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_library
+        ssa_source_zr_vm_common ${_zr_vendor_targets} ssa_source_unity kernel32
+        ssa_source_runtime_support)
 target_link_options(zr_vm_ssa_source_execbc_vm_test PRIVATE
         # The Debug/UBSan core dispatcher frame exceeds Windows' default 1 MiB
         # reserve. Keep sufficient stack space in this validation executable.
         /INCREMENTAL:NO /OPT:REF /VERBOSE:LIB /STACK:8388608
         "/MAP:${CMAKE_BINARY_DIR}/ssa-source-link.map")
+target_link_options(zr_vm_ssa_compare_metadata_guards_test PRIVATE
+        # The canonical VM dispatcher uses a large Debug/UBSan frame.
+        /INCREMENTAL:NO /OPT:REF /STACK:8388608
+        "/MAP:${CMAKE_BINARY_DIR}/ssa-compare-metadata-guards-link.map")
 
 # A failed comparison remains a genuine CTest failure. No WILL_FAIL or wrapper.
 add_test(NAME ssa_source_execbc_vm_comparisons
         COMMAND zr_vm_ssa_source_execbc_vm_test --comparisons-only)
 add_test(NAME ssa_source_execbc_vm_regressions
         COMMAND zr_vm_ssa_source_execbc_vm_test --regressions-only)
+add_test(NAME ssa_compare_metadata_guards
+        COMMAND zr_vm_ssa_compare_metadata_guards_test)
 set_tests_properties(ssa_source_execbc_vm_comparisons ssa_source_execbc_vm_regressions
         PROPERTIES LABELS "ssa;source-direct-validation" TIMEOUT 120
+        ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+set_tests_properties(ssa_compare_metadata_guards PROPERTIES
+        LABELS "ssa;source-direct-validation" TIMEOUT 120
         ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
 
 # Source membership and hashes are metadata only. Sources/headers are never copied.
 set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_library
-        ssa_source_zr_vm_common ${_zr_vendor_targets} ssa_source_unity zr_vm_ssa_source_execbc_vm_test)
+        ssa_source_zr_vm_common ${_zr_vendor_targets} ssa_source_unity ssa_source_runtime_support
+        zr_vm_ssa_source_execbc_vm_test zr_vm_ssa_compare_metadata_guards_test)
 set(_zr_graph "target\tabsolute_source\tsha256\n")
 set(_zr_all_sources)
 set(_zr_settings "compiler\t${CMAKE_C_COMPILER}\ncompiler_id\t${CMAKE_C_COMPILER_ID}\ncompiler_version\t${CMAKE_C_COMPILER_VERSION}\narchive_tool\t${CMAKE_AR}\narchive_rule\t${CMAKE_C_CREATE_STATIC_LIBRARY}\nlink_rule\t${CMAKE_C_LINK_EXECUTABLE}\n")
