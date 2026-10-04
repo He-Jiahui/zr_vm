@@ -14,6 +14,7 @@ related_code:
   - zr_vm_core/src/zr_vm_core/execution/execution_frame_observation.c
   - tests/core/test_execution_add_stack_relocation.c
   - tests/core/test_execution_add_stack_relocation_aot_roots.inc
+  - tests/core/test_aot_gc_root_frame.c
   - tests/core/test_aot_gc_root_frame_exception.inc
   - tests/acceptance/ssa-stack-root-frame-relocation.md
   - tests/acceptance/aot-root-frame-protected-unwind.md
@@ -37,6 +38,7 @@ tests:
   - tests/core/test_ssa_roots_observation.c
   - tests/acceptance/2026-10-02-ssa-inline-root-bounds.md
   - tests/core/test_aot_gc_root_frame.c
+  - tests/core/test_aot_gc_root_frame_exception.inc
   - tests/acceptance/ssa-stack-root-frame-relocation.md
 doc_type: runtime-contract
 status: in-progress
@@ -270,7 +272,28 @@ outer `LOCAL_ADDRESS` young root through minor GC, nested TryRun, and a normal
 TryRun Push/Pop control. A combined case pushes a callback-local C root, forces
 a real moving `Stack_GrowTo` while an outer `FRAME_BYTE_OFFSET` root is active,
 then throws and verifies the relocated outer `frameBase` still retains a young
-object through minor GC. Before the first fix, the focused MSVC target built
+object through minor GC. These are hand-written C fixtures of the root-frame protocol ([fixture boundary](../../tests/core/test_aot_gc_root_frame.c#L22)),
+not generated-entry execution. The nested and normal control cases use null
+outer roots and observe chain structure; the outer-young and relocation cases
+also observe retention in the survivor region. Pin coverage in the base C file
+calls the core pin API directly and executes no foreign native function.
+
+The [following-minor helper](../../tests/core/test_aot_gc_root_frame_exception.inc#L174) requests a step with positive debt but returns only
+the last collection kind. That kind can already be MINOR in the [initial snapshot](../../zr_vm_core/src/zr_vm_core/gc/gc.c#L535);
+[GcStep](../../zr_vm_core/src/zr_vm_core/gc/gc.c#L815) also has early-return paths. TODO: check work or collection counters
+before using this helper to claim that the requested collection ran or completed.
+The safepoint case separately asserts nonzero work; neither observation grants
+whole-collector coverage.
+
+The six exception cases save observations, repair the live caller chain and
+destroy the state before their final Unity assertions. The six base cases assert
+before destruction. TODO: review their concrete Unity failure paths and state
+cleanup ownership with the [empty teardown hook](../../tests/core/test_aot_gc_root_frame.c#L28); the empty hook has no shared state to free.
+This is not a claim that every case leaks or a newly reproduced failure.
+The following execution results are historical acceptance evidence; this
+comment integration adds no build or runtime result.
+
+Before the first fix, the focused MSVC target built
 6/6 steps and the direct binary reported 9 tests with 3 expected chain-top
 failures (empty, outer, nested); the original six tests passed. Those RED paths
 repaired the saved caller chain before cleanup and skipped GC while it was
@@ -285,3 +308,15 @@ registered CTests (2/2). The bounded generated-AOT integration smoke passed
 on GCC and Clang; full GCC/Clang suites remain outside this record. Details are in
 [the protected-unwind acceptance note](../../tests/acceptance/aot-root-frame-protected-unwind.md)
 and [the generated-AOT integration note](../../tests/acceptance/ssa-generated-aot-throw-root.md).
+
+## 本次 Windows Clang 编译比较边界
+
+既有 `core-resource-public-contract-compile-validation-r3` 的 AOTGC before/after
+均自然退出 1，各有 5 个 UCRT `__declspec(noreturn)` 错误；Clang
+`stdnoreturn.h` 的宏由 Unity 先引入后污染随后包含的 CRT 声明。
+missing.inc 叠加错误在修正 overlay 后已消失，保留错误不是注释回归。
+本批只在 [fixture include 契约](../../tests/core/test_aot_gc_root_frame.c#L4) 附近补具体 TODO：沿既有
+`zr_vm_aot_gc_root_frame_test` 核查 Windows Clang/Unity 与 CRT 头顺序兼容性。
+原 include、宏、指令、表达式及运行行为保持；新 44 单元候选未重新编译。
+先前八个 TU 比较运行捕获的是原 43 单元 after，本次新增 TODO 的精确字节
+没有 native compile 信用；失败比较也不提供 compile pass 或 runtime/GC 信用。

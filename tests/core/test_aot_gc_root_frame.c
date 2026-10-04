@@ -1,3 +1,6 @@
+/* TODO: Windows Clang 下 Unity 的 stdnoreturn 宏与后续 UCRT 头的兼容性，
+ * 需沿既有 zr_vm_aot_gc_root_frame_test 核查头文件顺序；当前 before/after
+ * 编译均在 __declspec(noreturn) 处失败，尚无编译或运行通过信用。 */
 #include "unity.h"
 
 #include <stdint.h>
@@ -14,15 +17,18 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/value.h"
 
-/* 这些用例从 Unity main 进入核心 GC API，模拟 AOT 生成代码登记
- * 非 VM 栈根的生命周期；map 和 frame 都由调用栈持有，必须先 pop 再退出。 */
+/** @brief 满足 Unity 每用例初始化钩子；state 由各场景独立创建。
+ * @note 本目标用手写 C 模拟 AOT 根帧协议，不装载或执行生成的 AOT 模块。 */
 void setUp(void) {}
 
-/* BUG: 各用例在本地创建 state，Unity 断言中断会跳过函数尾的 Destroy，
- * 空 tearDown 没有兜底，失败用例会泄漏整个 VM。 */
+/** @brief 满足 Unity 每用例收尾钩子；本夹具没有共享 state 可在此回收。
+ * TODO: 本文件前六个场景在 Destroy 前执行断言；若 Unity 中断，局部 state
+ * 无法由此空钩子回收。inc 的正常观察路径则先 Destroy 再断言，不能一概称为
+ * 泄漏；下一步核对 UnityDefaultTestRun 与具体失败入口的 state 回收责任。 */
 void tearDown(void) {}
 
-/* map 借用 slot 地址，调用者须保持 slot 活到对应 root frame 弹出。 */
+/* map 借用单个描述符，零字节偏移选取 frameBase 处的 SZrTypeValue。
+ * slot、map、链节点须活到 Pop；夹具的 typeLayoutId 不覆盖布局注册或解析。 */
 static SZrAotGcRootMap make_single_slot_root_map(SZrAotGcRootSlot *slot) {
     SZrAotGcRootMap map;
 
@@ -39,6 +45,8 @@ static SZrAotGcRootMap make_single_slot_root_map(SZrAotGcRootSlot *slot) {
     return map;
 }
 
+/* 用 LOCAL_ADDRESS 解释 C 局部原始对象指针，不把该地址当作 VM value。
+ * 返回 map 仍借用调用方的 slot；回调非局部退出时必须移除这条借用链。 */
 static SZrAotGcRootMap make_single_local_address_root_map(SZrAotGcRootSlot *slot) {
     SZrAotGcRootMap map;
 
@@ -55,6 +63,8 @@ static SZrAotGcRootMap make_single_local_address_root_map(SZrAotGcRootSlot *slot
     return map;
 }
 
+/* 同一 map 可供两个独立宿主节点借用；乱序 Pop 必须失败且保留链顶和深度，
+ * 正常逐层 Pop 后节点中的借用字段清空，不把失败当作部分弹出。 */
 static void test_aot_root_frame_push_pop_balances_state_stack(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrAotGcRootSlot slot;
@@ -100,6 +110,8 @@ static void test_aot_root_frame_push_pop_balances_state_stack(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 手工登记 stackTop 之外的 value 根，检查年轻对象到 survivor 的存活及引用
+ * 写回；允许对象未搬移，不能据此宣称每次 minor 都移动地址。 */
 static void test_aot_root_frame_keeps_young_value_above_stack_top_live(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrAotGcRootSlot slot;
@@ -147,6 +159,8 @@ static void test_aot_root_frame_keeps_young_value_above_stack_top_live(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 与 value 根场景成对：扫描器读取并改写 C 局部 raw pointer。
+ * 这里不建立常规 VM 栈根，map 和 frame 均须在 C 作用域结束前弹出。 */
 static void test_aot_root_frame_local_address_keeps_young_raw_object_live(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrAotGcRootSlot slot;
@@ -191,6 +205,8 @@ static void test_aot_root_frame_local_address_keeps_young_raw_object_live(void) 
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 人为设置正债务，断言安全点记录非零工作及 minor 类型；
+ * 没有对象搬迁、完整周期终态或跨线程暂停的断言。 */
 static void test_gc_safepoint_advances_pending_collection_debt(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrGarbageCollector *collector;
@@ -213,6 +229,8 @@ static void test_gc_safepoint_advances_pending_collection_debt(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 人为标记老 owner 和年轻 child，验证屏障登记记忆集和逸出/晋升原因；
+ * 不通过实际长寿对象收集得到老代，也不验证后续晋升完成。 */
 static void test_gc_write_barrier_records_old_to_young_value(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrGarbageCollector *collector;
@@ -260,6 +278,8 @@ static void test_gc_write_barrier_records_old_to_young_value(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 直接测试 pin 凭据的新增标记/ignore 所有权；没有调用外部 native 函数。
+ * 原有 ignore 不归本次 unpin 撤销，最终由原拥有者显式归还。 */
 static void test_gc_native_call_pin_value_marks_and_releases_temporary_pin(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *object;
@@ -324,6 +344,8 @@ static void test_gc_native_call_pin_value_marks_and_releases_temporary_pin(void)
 
 #include "tests/core/test_aot_gc_root_frame_exception.inc"
 
+/** @brief 注册六个基础 GC 场景和文本包含的六个异常场景，返回 Unity 失败计数。
+ * @note CTest 通过可执行套件脚本启动此手写 C 入口，无生成 AOT entry thunk。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_aot_root_frame_push_pop_balances_state_stack);

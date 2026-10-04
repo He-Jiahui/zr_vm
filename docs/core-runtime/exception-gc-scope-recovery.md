@@ -1,5 +1,7 @@
 ---
 related_code:
+  - tests/core/test_aot_gc_root_frame.c
+  - tests/core/test_aot_gc_root_frame_exception.inc
   - zr_vm_core/include/zr_vm_core/exception.h
   - zr_vm_core/src/zr_vm_core/exception.c
   - zr_vm_core/src/zr_vm_core/exception_internal.h
@@ -13,6 +15,7 @@ plan_sources:
   - docs/plans/ssa/06-gc-domain/03-domain-sharing.md
   - docs/plans/ssa/06-gc-domain/04-cross-domain-clone.md
 tests:
+  - tests/core/test_aot_gc_root_frame.c
   - tests/core/test_exception_gc_scopes.c
   - tests/core/test_aot_gc_root_frame_exception.inc
   - tests/core/test_gc_nested_mutation.c
@@ -74,3 +77,36 @@ release a clone transaction's temporary root handles or native allocations.
 
 Validation and failure evidence are in
 [the acceptance record](../../tests/acceptance/ssa-exception-gc-scope-recovery.md).
+
+## Hand-Written Root-Frame Fixture Boundaries
+
+The core root-frame target textually includes the exception fixture. Its
+callbacks use real local TryRun/Throw and host-owned frame nodes; it does not
+compile or execute a generated AOT entry ([fixture boundary](../../tests/core/test_aot_gc_root_frame.c#L22)). Throw(FINE) still exits
+non-locally. Normal controls explicitly Pop their own nodes; nested controls
+record the inner chain before repairing the test scene, so later repair does
+not replace the saved inner assertions. GC is gated on those unrepaired
+observations to avoid scanning callback-local nodes whose lifetimes ended.
+
+The [following-minor helper](../../tests/core/test_aot_gc_root_frame_exception.inc#L174) only checks the snapshot kind after requesting a step.
+TODO: qualify actual work or completed collection counters before treating it
+as proof of a fresh minor collection. Object-bearing outer-root cases also
+check survivor retention; null-root controls only establish chain structure.
+
+Exception cases destroy state before final Unity assertions. Base cases in
+the including C file can assert before destruction; TODO: inspect their
+specific Unity failure cleanup ownership at the [empty teardown hook](../../tests/core/test_aot_gc_root_frame.c#L28). The empty hook does
+not own a shared state, and this limitation does not describe all cases as leaks.
+These fixture bounds add no new execution evidence to the acceptance record.
+
+## 本次 Windows Clang 编译比较边界
+
+既有 `core-resource-public-contract-compile-validation-r3` 的 AOTGC before/after
+均自然退出 1，各有 5 个 UCRT `__declspec(noreturn)` 错误；Clang
+`stdnoreturn.h` 的宏由 Unity 先引入后污染随后包含的 CRT 声明。
+missing.inc 叠加错误在修正 overlay 后已消失，保留错误不是注释回归。
+本批只在 [fixture include 契约](../../tests/core/test_aot_gc_root_frame.c#L4) 附近补具体 TODO：沿既有
+`zr_vm_aot_gc_root_frame_test` 核查 Windows Clang/Unity 与 CRT 头顺序兼容性。
+原 include、宏、指令、表达式及运行行为保持；新 44 单元候选未重新编译。
+先前八个 TU 比较运行捕获的是原 43 单元 after，本次新增 TODO 的精确字节
+没有 native compile 信用；失败比较也不提供 compile pass 或 runtime/GC 信用。

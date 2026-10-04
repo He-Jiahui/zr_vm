@@ -1,8 +1,12 @@
+/* 调用方持有的异常回调结果槽：记录 Push 是否成功及本次 Throw 状态。
+ * 它跨 TryRun 存活，但不拥有回调内的 frame、map 或根指针。 */
 typedef struct SZrAotRootFrameThrowContext {
     TZrBool rootFramePushSucceeded;
     EZrThreadStatus throwStatus;
 } SZrAotRootFrameThrowContext;
 
+/* 外层回调带入内层 Throw 配置，并在返回前记录内层恢复状态；
+ * 布尔值供外部场景在清理 state 后断言，不延长内层 C 节点生命期。 */
 typedef struct SZrAotRootFrameNestedTryRunContext {
     SZrAotRootFrameThrowContext throwContext;
     EZrThreadStatus innerStatus;
@@ -10,11 +14,14 @@ typedef struct SZrAotRootFrameNestedTryRunContext {
     TZrBool innerDepthMatchedCaller;
 } SZrAotRootFrameNestedTryRunContext;
 
+/* 正常返回对照只记录成对 Push/Pop 的结果；节点始终留在回调 C 栈中。 */
 typedef struct SZrAotRootFramePushPopContext {
     TZrBool rootFramePushSucceeded;
     TZrBool rootFramePopSucceeded;
 } SZrAotRootFramePushPopContext;
 
+/* 跨 TryRun 观察扩容与抛出：整数地址只比较搬移前后身份，不可解引用；
+ * requiredStackSize 由外层场景设置，旧栈地址不能在扩容后继续作为根基址。 */
 typedef struct SZrAotRootFrameGrowAndThrowContext {
     TZrSize requiredStackSize;
     uintptr_t stackBaseAfterGrowthAddress;
@@ -23,10 +30,15 @@ typedef struct SZrAotRootFrameGrowAndThrowContext {
     EZrThreadStatus throwStatus;
 } SZrAotRootFrameGrowAndThrowContext;
 
+/* 计数所有成功的旧块搬移；场景同时核对栈基址改变，不能单靠此计数
+ * 认定发生了 VM 栈搬移。此上下文须活到全局 state 销毁结束。 */
 typedef struct SZrAotRootFrameMovingAllocatorContext {
     TZrUInt32 moveCount;
 } SZrAotRootFrameMovingAllocatorContext;
 
+/* 成功扩容总在旧块仍存活时另行 malloc，保证地址不同；失败保留旧块。
+ * 0xCD 填充让未初始化区域显露出来，随后仅复制新旧容量的交集；
+ * 低地址沿测试分配器约定当作占位输入，调用方不得传真实的低地址分配。 */
 static TZrPtr aot_root_frame_moving_allocator(TZrPtr userData,
                                                TZrPtr pointer,
                                                TZrSize originalSize,
@@ -69,6 +81,8 @@ static TZrPtr aot_root_frame_moving_allocator(TZrPtr userData,
     return newPointer;
 }
 
+/* 仅为搬移场景把测试分配器和其栈上计数上下文装进 global。
+ * 返回主 state 借用 global；正常收尾仍通过 Runtime_State_Destroy 释放整个 global。 */
 static SZrState *aot_root_frame_create_state_with_moving_allocator(
         SZrAotRootFrameMovingAllocatorContext *allocatorContext) {
     SZrCallbackGlobal callbacks = {0};
@@ -86,8 +100,8 @@ static SZrState *aot_root_frame_create_state_with_moving_allocator(
     return state;
 }
 
-/* This node and its map, descriptor, and slot live in the callback's C frame.
- * The test intentionally throws across that frame using the real TryRun API. */
+/* frame/map/描述符和局部根均属于此回调的 C 作用域；Push 后经真实 Throw
+ * 非局部退出，不在回调中 Pop，专门检验 TryRun 移除已结束节点的责任。 */
 static void aot_root_frame_push_then_throw(SZrState *state, TZrPtr arguments) {
     SZrAotRootFrameThrowContext *context = (SZrAotRootFrameThrowContext *)arguments;
     SZrAotGcRootSlot slot;
@@ -101,6 +115,8 @@ static void aot_root_frame_push_then_throw(SZrState *state, TZrPtr arguments) {
     ZrCore_Exception_Throw(state, context->throwStatus);
 }
 
+/* 正常返回对照显式配对 Pop；TryRun 不应依靠异常恢复替代此常规清理。
+ * 只有 Push 成功才 Pop，两个结果写回外层持有的观察上下文。 */
 static void aot_root_frame_push_pop_normally(SZrState *state, TZrPtr arguments) {
     SZrAotRootFramePushPopContext *context = (SZrAotRootFramePushPopContext *)arguments;
     SZrAotGcRootSlot slot;
@@ -116,8 +132,8 @@ static void aot_root_frame_push_pop_normally(SZrState *state, TZrPtr arguments) 
     }
 }
 
-/* Keep an outer VM-stack root active while this callback pushes a C-local root,
- * forces a moving stack allocation, and exits non-locally. */
+/* 外层 VM 槽根继续有效；本回调另建 C 局部根再扩容并 Throw。
+ * 扩容应重定位外层 frameBase，却不能搬移本回调的宿主节点或局部指针地址。 */
 static void aot_root_frame_grow_stack_then_throw(SZrState *state, TZrPtr arguments) {
     SZrAotRootFrameGrowAndThrowContext *context =
             (SZrAotRootFrameGrowAndThrowContext *)arguments;
@@ -134,10 +150,9 @@ static void aot_root_frame_grow_stack_then_throw(SZrState *state, TZrPtr argumen
     ZrCore_Exception_Throw(state, context->throwStatus);
 }
 
-/* A caught inner throw must restore the still-live outer chain before returning
- * through this callback.  The equality check reads only the state field's byte
- * representation; on the failing implementation it can contain a pointer to
- * the callback frame that the longjmp has already ended. */
+/* 内层 Throw 捕获后应恢复仍存活的外层链；只比较链顶字段的字节，
+ * 不遍历可能已结束的回调节点。先保存观察结果再显式修复测试现场，
+ * 因此修复后的外层正常返回不能替代 innerTop/innerDepth 的断言。 */
 static void aot_root_frame_nested_tryrun_callback(SZrState *state, TZrPtr arguments) {
     SZrAotRootFrameNestedTryRunContext *context =
             (SZrAotRootFrameNestedTryRunContext *)arguments;
@@ -153,6 +168,9 @@ static void aot_root_frame_nested_tryrun_callback(SZrState *state, TZrPtr argume
     state->aotGcRootFrameDepth = savedCallerDepth;
 }
 
+/* 用正债务请求一次后续分代步骤；返回值仅按 lastCollectionKind 判断。
+ * TODO: 该快照初始即可能是 MINOR，GcStep 也可能早退；核查 gc.c 的
+ * gcLastStepWork 或周期计数，确认要证明本次收集执行/完成应增加何种观察。 */
 static TZrBool aot_root_frame_run_following_minor_gc(SZrState *state) {
     SZrGarbageCollector *collector;
 
@@ -168,6 +186,8 @@ static TZrBool aot_root_frame_run_following_minor_gc(SZrState *state) {
     return collector->statsSnapshot.lastCollectionKind == ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
 }
 
+/* 空链入口跨过 callback 局部节点的异常退出；先记录实际链顶/深度，
+ * 再修复现场，仅匹配时请求后续 GC，Destroy 后统一断言观察结果。 */
 static void test_aot_root_frame_tryrun_throw_restores_empty_chain(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrAotRootFrameThrowContext context = {ZR_FALSE, ZR_THREAD_STATUS_RUNTIME_ERROR};
@@ -211,6 +231,8 @@ static void test_aot_root_frame_tryrun_throw_restores_empty_chain(void) {
     TEST_ASSERT_TRUE(followingMinorGcRan);
 }
 
+/* Throw(FINE) 的状态值与正常返回相同，仍必须走非局部退出的根链恢复；
+ * 此场景区分退出方式与状态值，不据 FINE 假定回调显式 Pop。 */
 static void test_aot_root_frame_tryrun_throw_fine_restores_empty_chain(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrAotRootFrameThrowContext context = {ZR_FALSE, ZR_THREAD_STATUS_FINE};
@@ -248,6 +270,8 @@ static void test_aot_root_frame_tryrun_throw_fine_restores_empty_chain(void) {
     TEST_ASSERT_TRUE(followingMinorGcRan);
 }
 
+/* 内层 C 节点退出只移除内层借用；外层 LOCAL_ADDRESS 根仍须可被后续
+ * minor 扫描，并通过 survivor 标记证明外层对象存活。清理完成后再断言。 */
 static void test_aot_root_frame_tryrun_throw_preserves_outer_chain(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrObject *object = ZR_NULL;
@@ -316,6 +340,8 @@ static void test_aot_root_frame_tryrun_throw_preserves_outer_chain(void) {
     TEST_ASSERT_TRUE(outerPopSucceeded);
 }
 
+/* 内层 Throw 被回调捕获，外层 TryRun 正常返回；分别断言两层恢复，
+ * 避免内层主动修复现场掩盖内层失衡。外层空根只检验链恢复，不证明对象存活。 */
 static void test_aot_root_frame_nested_tryrun_throw_restores_outer_chain(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrAotGcRootSlot slot;
@@ -372,6 +398,8 @@ static void test_aot_root_frame_nested_tryrun_throw_restores_outer_chain(void) {
     TEST_ASSERT_TRUE(outerPopSucceeded);
 }
 
+/* 无异常对照：回调自行 Pop 后正常返回，外层空根链应保持不变。
+ * 不把正常路径的配对清理归因于 TryRun 的异常快照回退。 */
 static void test_aot_root_frame_tryrun_normal_push_pop_keeps_outer_chain(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrAotGcRootSlot slot;
@@ -425,6 +453,9 @@ static void test_aot_root_frame_tryrun_normal_push_pop_keeps_outer_chain(void) {
     TEST_ASSERT_TRUE(outerPopSucceeded);
 }
 
+/* 同时检查 C 局部节点被抛出移除、外层节点仍活着及其 VM 槽基址重定位。
+ * 只有链、搬移、当前槽和年轻对象观察均成立才做后续 GC；保存所有布尔值，
+ * 先 Pop/恢复入口链并 Destroy，再让 Unity 断言报告失败。 */
 static void test_aot_root_frame_tryrun_throw_preserves_relocated_outer_frame_base(void) {
     SZrAotRootFrameMovingAllocatorContext allocatorContext = {0};
     SZrState *state = aot_root_frame_create_state_with_moving_allocator(&allocatorContext);
@@ -498,7 +529,7 @@ static void test_aot_root_frame_tryrun_throw_preserves_relocated_outer_frame_bas
                                    &savedCallerTop,
                                    sizeof(savedCallerTop)) == 0;
                     depthMatchedCaller = state->aotGcRootFrameDepth == savedCallerDepth;
-                    /* Repair before any GC or Pop, including the expected RED build. */
+                    /* 先记录未修复结果再恢复活链；回归失败时也不遍历已结束的回调节点。 */
                     state->aotGcRootFrameStack = savedCallerTop;
                     state->aotGcRootFrameDepth = savedCallerDepth;
 
@@ -548,7 +579,7 @@ static void test_aot_root_frame_tryrun_throw_preserves_relocated_outer_frame_bas
                     }
                 }
 
-                /* TryRun's callback-local frame has ended; Pop only the live outer node. */
+                /* 回调局部节点已结束；只 Pop 仍存活的外层节点，再恢复场景入口链。 */
                 state->aotGcRootFrameStack = savedCallerTop;
                 state->aotGcRootFrameDepth = savedCallerDepth;
                 outerPopSucceeded = ZrCore_Gc_AotRootFramePop(state, &outerFrame);
