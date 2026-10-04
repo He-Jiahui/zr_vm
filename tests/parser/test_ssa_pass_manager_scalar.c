@@ -729,7 +729,12 @@ static void test_budget_is_bounded(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+#include "ssa_pass_manager_state_maps_cases.inc"
+
 int main(void) {
+    test_scalar_pipeline_rebuilds_checkpoint_liveness();
+    test_pipeline_rolls_back_failed_map_rebuild();
+    test_pipeline_verifies_storage_before_hashing();
     test_scalar_pipeline_and_fixed_point();
     test_throwing_instruction_is_observable();
     test_checked_overflow_is_not_folded();

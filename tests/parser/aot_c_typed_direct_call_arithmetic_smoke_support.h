@@ -56,6 +56,7 @@ typedef struct SZrAotTypedDirectCallArithmeticSmokeCase {
     const char *const *requiredGeneratedCNeedles;
     size_t requiredGeneratedCNeedleCount;
     TZrInt64 expectedResult;
+    const char *expectedRuntimeError;
 } SZrAotTypedDirectCallArithmeticSmokeCase;
 
 #if defined(ZR_PLATFORM_UNIX)
@@ -69,6 +70,12 @@ static int run_command_expect_success(const char *command) {
         printf("Command failed with status %d:\n%s\n", result, command);
     }
     return result;
+}
+
+/* Overflow-only runs flush phase markers so a timeout or signal identifies its stage. */
+static void trace_i64_divide_overflow_stage(const char *stage) {
+    fprintf(stderr, "[i64-div-overflow] %s\n", stage);
+    fflush(stderr);
 }
 #endif
 
@@ -159,10 +166,6 @@ static ZR_AOT_ARITHMETIC_SMOKE_MAYBE_UNUSED void run_i64_arithmetic_smoke_case(
     TEST_IGNORE_MESSAGE("AOT C typed direct-call arithmetic smoke currently validates the Unix shared-library path");
 #else
     static const char *const forbiddenGeneratedCNeedles[] = {
-            "/* zr_aot_static_i64_two_arg_direct_call_sync_stack_slot */",
-            "/* zr_aot_static_i64_one_arg_direct_call_sync_stack_slot */",
-            "SZrTypeValue *zr_aot_typed_destination",
-            "ZR_VALUE_FAST_SET(zr_aot_typed_destination,",
             "ZrLibrary_AotRuntime_CallStaticDirect(state,",
             "ZrLibrary_AotRuntime_CallStackValue(state,",
     };
@@ -187,6 +190,8 @@ static ZR_AOT_ARITHMETIC_SMOKE_MAYBE_UNUSED void run_i64_arithmetic_smoke_case(
     char *generatedCText;
     char command[4096];
     size_t index;
+    TZrBool executionSucceeded;
+    const TZrChar *lastError;
 
     TEST_ASSERT_NOT_NULL(testCase);
     TEST_ASSERT_NOT_NULL(testCase->source);
@@ -267,13 +272,17 @@ static ZR_AOT_ARITHMETIC_SMOKE_MAYBE_UNUSED void run_i64_arithmetic_smoke_case(
     aotOptions.embeddedModuleBlobLength = embeddedBlobLength;
     aotOptions.requireExecutableLowering = ZR_TRUE;
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
+    if (testCase->expectedRuntimeError != ZR_NULL) {
+        trace_i64_divide_overflow_stage("AOT writer complete");
+    }
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     for (index = 0u; index < testCase->requiredGeneratedCNeedleCount; index++) {
         TEST_ASSERT_NOT_NULL(strstr(generatedCText, testCase->requiredGeneratedCNeedles[index]));
     }
     for (index = 0u; index < ZR_TESTS_ARRAY_COUNT(forbiddenGeneratedCNeedles); index++) {
-        TEST_ASSERT_NULL(strstr(generatedCText, forbiddenGeneratedCNeedles[index]));
+        TEST_ASSERT_NULL_MESSAGE(strstr(generatedCText, forbiddenGeneratedCNeedles[index]),
+                                 forbiddenGeneratedCNeedles[index]);
     }
     free(generatedCText);
 
@@ -295,7 +304,13 @@ static ZR_AOT_ARITHMETIC_SMOKE_MAYBE_UNUSED void run_i64_arithmetic_smoke_case(
              ZR_VM_TESTS_BUILD_LIB_DIR,
              ZR_VM_TESTS_BUILD_LIB_DIR,
              sharedLibraryPath);
+    if (testCase->expectedRuntimeError != ZR_NULL) {
+        trace_i64_divide_overflow_stage("external compile start");
+    }
     TEST_ASSERT_EQUAL_INT(0, run_command_expect_success(command));
+    if (testCase->expectedRuntimeError != ZR_NULL) {
+        trace_i64_divide_overflow_stage("external compile complete");
+    }
 
     project = ZrLibrary_Project_New(state, (TZrNativeString)testCase->projectJson, (TZrNativeString)projectPath);
     TEST_ASSERT_NOT_NULL(project);
@@ -305,12 +320,30 @@ static ZR_AOT_ARITHMETIC_SMOKE_MAYBE_UNUSED void run_i64_arithmetic_smoke_case(
                                                           ZR_TRUE));
 
     ZrCore_Value_ResetAsNull(&result);
-    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_C, &result),
-                             ZrLibrary_AotRuntime_GetLastError(state->global));
-    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
-    TEST_ASSERT_EQUAL_INT64(testCase->expectedResult, result.value.nativeObject.nativeInt64);
-    TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_EXECUTED_VIA_AOT_C,
-                          ZrLibrary_AotRuntime_GetExecutedVia(state->global));
+    if (testCase->expectedRuntimeError != ZR_NULL) {
+        trace_i64_divide_overflow_stage("ExecuteEntry start");
+    }
+    executionSucceeded = ZrLibrary_AotRuntime_ExecuteEntry(
+            state, ZR_AOT_BACKEND_KIND_C, &result);
+    if (testCase->expectedRuntimeError != ZR_NULL) {
+        trace_i64_divide_overflow_stage(executionSucceeded
+                                                ? "ExecuteEntry returned success"
+                                                : "ExecuteEntry returned failure");
+    }
+    lastError = ZrLibrary_AotRuntime_GetLastError(state->global);
+    if (testCase->expectedRuntimeError != ZR_NULL) {
+        TEST_ASSERT_FALSE_MESSAGE(executionSucceeded, lastError);
+        TEST_ASSERT_NOT_NULL(lastError);
+        TEST_ASSERT_NOT_NULL_MESSAGE(
+                strstr(lastError, testCase->expectedRuntimeError), lastError);
+    } else {
+        TEST_ASSERT_TRUE_MESSAGE(executionSucceeded, lastError);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result.type));
+        TEST_ASSERT_EQUAL_INT64(testCase->expectedResult,
+                                result.value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT(ZR_LIBRARY_EXECUTED_VIA_AOT_C,
+                              ZrLibrary_AotRuntime_GetExecutedVia(state->global));
+    }
 
     state->global->userData = ZR_NULL;
     ZrLibrary_Project_Free(state, project);

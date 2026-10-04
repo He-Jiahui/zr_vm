@@ -90,9 +90,20 @@ static void append(SZrExecIrFunction *function, EZrExecIrOpcode opcode,
     instruction.successorRange = successors;
     instruction.sourceId = source;
     if (opcode == ZR_EXEC_IR_OPCODE_INVOKE) {
+        TZrExecIrMemoryTokenId before[2] = {
+            ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 1u),
+            ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_NATIVE_FFI, 1u)};
+        TZrExecIrMemoryTokenId after[2] = {
+            ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 2u),
+            ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_NATIVE_FFI, 2u)};
         instruction.flags = ZR_EXEC_IR_FLAG_MAY_THROW | ZR_EXEC_IR_FLAG_MAY_ALLOCATE;
         instruction.effectIn = 1u;
         instruction.effectOut = 2u;
+        check(ZrCore_ExecIr_FunctionAppendMemoryTokens(function, before, 2u,
+                                                        &instruction.memoryIn) &&
+              ZrCore_ExecIr_FunctionAppendMemoryTokens(function, after, 2u,
+                                                        &instruction.memoryOut),
+              "could not append INVOKE heap/native memory tokens");
     }
     check(ZrCore_ExecIr_FunctionAppendInstruction(function, &instruction, ZR_NULL),
           "could not append INVOKE fixture instruction");

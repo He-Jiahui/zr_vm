@@ -10,8 +10,18 @@ typedef enum EZrExecutionTransferStatus {
     ZR_EXECUTION_TRANSFER_INCOMPATIBLE_LAYOUT,
     ZR_EXECUTION_TRANSFER_PENDING_CLEANUP,
     ZR_EXECUTION_TRANSFER_ESCAPING_ALIAS,
-    ZR_EXECUTION_TRANSFER_DEBUG_FRAME_REQUIRED
+    ZR_EXECUTION_TRANSFER_DEBUG_FRAME_REQUIRED,
+    ZR_EXECUTION_TRANSFER_UNSUPPORTED,
+    ZR_EXECUTION_TRANSFER_NO_MEMORY,
+    ZR_EXECUTION_TRANSFER_SCRATCH_TOO_SMALL
 } EZrExecutionTransferStatus;
+
+typedef struct SZrExecutionArgumentStagingDiagnostic {
+    EZrExecutionTransferStatus status;
+    TZrUInt32 parameterIndex;
+    TZrUInt32 sourceStackSlot;
+    TZrUInt32 relatedParameterIndex;
+} SZrExecutionArgumentStagingDiagnostic;
 
 typedef struct SZrExecutionReturnTransfer {
     TZrBool noAliasConflict;

@@ -174,6 +174,12 @@ typedef struct SZrGenericDeclaration SZrGenericDeclaration;
 typedef struct SZrFunctionType SZrFunctionType;
 
 // AST 节点数组
+/**
+ * @brief 为 AST 构造及编译辅助视图保存有序的子节点指针。
+ * @note 容器拥有 nodes 缓冲区，不定义各节点的所有权：语法树中的拥有型列表
+ * 由所属节点的 Ast_Free 路径递归销毁，编译器的借用重排视图只释放容器。
+ * 扩容可更换 nodes 地址；不能跨 Add 保存元素槽地址，已有节点指针本身不被克隆。
+ */
 typedef struct SZrAstNodeArray {
     SZrAstNode **nodes;
     TZrSize count;
@@ -1170,8 +1176,29 @@ typedef struct SZrAstNode {
 } SZrAstNode;
 
 // AST 节点数组操作
+/**
+ * @brief 在收集语法节点或构造借用视图前建立空列表。
+ * @pre state/global 分配器存活，并与后续 Add/Free 使用的分配器一致。
+ * @return initialCapacity 非零时使用该初始容量，零时使用 SMALL 默认值；
+ * 任一原生分配失败返回 NULL，不在此入口发布解析诊断或触发 GC 分配重试。
+ * @note 调用方须检查 NULL，清理尚未交接的节点并决定解析失败如何传播。
+ * TODO: 当前容量乘法及后续翻倍未检查溢出；核查外部 API 请求容量与超长列表的边界。
+ */
 ZR_PARSER_API SZrAstNodeArray *ZrParser_AstNodeArray_New(SZrState *state, TZrSize initialCapacity);
+/**
+ * @brief 按调用顺序登记已构造节点，供后续 AST 遍历或参数重排消费。
+ * @pre 非空 array 使用与 New 相同的分配器；同一容器的 Add/Free 由调用方串行协调。
+ * @note NULL array/node 被忽略。增长分配失败时保留原缓冲区和 count，返回 void；
+ * 调用结束不能当作节点交接成功的确认，调用方须核对 count 并保留未登记节点的清理责任。
+ * 列表只保存指针，节点归属由拥有型 AST 或借用视图的调用链决定。
+ */
 ZR_PARSER_API void ZrParser_AstNodeArray_Add(SZrState *state, SZrAstNodeArray *array, SZrAstNode *node);
+/**
+ * @brief 结束节点列表或借用重排视图的容器生命周期。
+ * @pre 非空 array 使用与 New 相同且仍存活的 state/global 分配器。
+ * @note NULL array 可直接忽略；仅释放指针缓冲区和容器，不递归销毁节点。
+ * 拥有型 AST 按其析构策略另行释放元素；借用视图不得销毁所引用的原 AST。
+ */
 ZR_PARSER_API void ZrParser_AstNodeArray_Free(SZrState *state, SZrAstNodeArray *array);
 
 // AST 节点创建辅助函数（将在 parser.c 中实现）

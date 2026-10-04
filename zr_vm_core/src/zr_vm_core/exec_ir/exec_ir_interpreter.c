@@ -118,14 +118,6 @@ static TZrBool zr_oracle_convert_scalar(const SZrExecIrOracleValue *source,
 
 static int zr_oracle_compare_values(const SZrExecIrOracleValue *left,
                                     const SZrExecIrOracleValue *right) {
-    if (left->kind == ZR_EXEC_IR_ORACLE_VALUE_FLOAT ||
-        right->kind == ZR_EXEC_IR_ORACLE_VALUE_FLOAT) {
-        TZrFloat64 a = zr_oracle_float(left);
-        TZrFloat64 b = zr_oracle_float(right);
-        if (a < b) return -1;
-        if (a > b) return 1;
-        return 0;
-    }
     if (left->kind == ZR_EXEC_IR_ORACLE_VALUE_UNSIGNED ||
         right->kind == ZR_EXEC_IR_ORACLE_VALUE_UNSIGNED) {
         TZrUInt64 a = zr_oracle_unsigned(left);
@@ -467,7 +459,20 @@ TZrBool zr_oracle_exec(const SZrExecIrOracleInput *input,
         case ZR_EXEC_IR_OPCODE_COMPARE:
             if (n != 2u || !zr_oracle_numeric(&ops[0]) || !zr_oracle_numeric(&ops[1])) goto arithmetic;
             v.kind = ZR_EXEC_IR_ORACLE_VALUE_BOOL;
-            {
+            if (ops[0].kind == ZR_EXEC_IR_ORACLE_VALUE_FLOAT ||
+                ops[1].kind == ZR_EXEC_IR_ORACLE_VALUE_FLOAT) {
+                TZrFloat64 a = zr_oracle_float(&ops[0]);
+                TZrFloat64 b = zr_oracle_float(&ops[1]);
+                /* Ordered predicates must preserve NaN's unordered result. */
+                switch (ins->typeToken) {
+                    case 1u: v.as.boolean = (TZrBool)(a < b); break;
+                    case 2u: v.as.boolean = (TZrBool)(a <= b); break;
+                    case 3u: v.as.boolean = (TZrBool)(a > b); break;
+                    case 4u: v.as.boolean = (TZrBool)(a >= b); break;
+                    case 5u: v.as.boolean = (TZrBool)(a != b); break;
+                    default: v.as.boolean = (TZrBool)(a == b); break;
+                }
+            } else {
                 int comparison = zr_oracle_compare_values(&ops[0], &ops[1]);
                 switch (ins->typeToken) {
                     case 1u: v.as.boolean = (TZrBool)(comparison < 0); break;

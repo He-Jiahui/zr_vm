@@ -29,6 +29,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_public_contract.c
   - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
   - zr_vm_common/include/zr_vm_common/zr_ast_constants.h
+  - zr_vm_parser/src/zr_vm_parser/ast.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_call_arguments.c
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_literals.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_types.c
@@ -50,6 +52,9 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_public_contract.c
   - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
   - zr_vm_common/include/zr_vm_common/zr_ast_constants.h
+  - zr_vm_parser/include/zr_vm_parser/ast.h
+  - zr_vm_parser/src/zr_vm_parser/ast.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_call_arguments.c
 plan_sources:
   - docs/plans/lsp/optimize/2026-09-07-plan01-task06-sub02-parser-recovery-ownership.md
   - docs/superpowers/specs/2026-08-10-ownership-object-member-separation-design.md
@@ -80,6 +85,12 @@ AST node. Array and object literal failures use
 the container. An unattached computed key, key/value pair, or grouped expression
 must also be freed when parsing its enclosing construct fails. Successfully
 returned partial objects retain their attached properties under normal AST ownership.
+
+### 指针容器与节点所有权
+
+`SZrAstNodeArray` 拥有指针缓冲区，不拥有其中节点的深释放职责；New/Add/Free 使用同一 global 的分配器。扩容复制节点指针并释放旧缓冲，所以元素槽地址会失效，节点本身没有复制或移动。
+
+`ZrParser_AstNodeArray_Add` 返回 void；扩容分配失败时直接返回，count 不增加。因此调用 Add 本身不能证明节点已交给父节点或容器。`parser_call_arguments.c` 的参数、名称和标志并行数组仍须由调用方维护一致性与失败清理。`TODO:` 核实容量倍增及指针字节数乘法的溢出边界，并沿扩容失败路径补齐节点归属证据；现有语法恢复测试不能替代 OOM 注入验证。
 
 Function declarations keep initialized local owners for the name, generic
 declaration, parameters, variadic parameter, return type and body. Every failed

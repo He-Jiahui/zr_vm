@@ -481,6 +481,221 @@ static void test_domain_transfer_kind_is_canonical_layout_identity(void) {
     TEST_ASSERT_FALSE(ZrCore_TypeLayout_Validate(&driftedLayout));
 }
 
+typedef struct SExplicitMapVisitRecord {
+    SZrTypeValue *storage;
+    TZrUInt32 count;
+    TZrUInt32 offsets[4];
+} SExplicitMapVisitRecord;
+
+static void record_explicit_map_visit(
+        struct SZrState *state, SZrTypeValue *value, TZrPtr userData) {
+    SExplicitMapVisitRecord *record = (SExplicitMapVisitRecord *)userData;
+    ZR_UNUSED_PARAMETER(state);
+    if (record->count < ZR_ARRAY_COUNT(record->offsets)) {
+        record->offsets[record->count] =
+                (TZrUInt32)((TZrByte *)value - (TZrByte *)record->storage);
+    }
+    record->count++;
+}
+
+static void init_explicit_map_layout(
+        SZrTypeLayout *layout, SZrTypeLayoutField *fields,
+        TZrUInt32 fieldCount, TZrUInt32 flag,
+        const TZrUInt32 *offsets, TZrUInt32 mapCount) {
+    SZrTypeLayoutContract contract;
+    memset(&contract, 0, sizeof(contract));
+    if (flag == ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE) {
+        contract.gcScanKind = ZR_TYPE_LAYOUT_GC_SCAN_MAPPED;
+        contract.gcFieldOffsets = offsets;
+        contract.gcFieldCount = mapCount;
+    } else if (flag == ZR_TYPE_LAYOUT_FIELD_FLAG_OWNERSHIP_VALUE) {
+        contract.ownershipFieldOffsets = offsets;
+        contract.ownershipFieldCount = mapCount;
+    } else {
+        contract.refFieldOffsets = offsets;
+        contract.refFieldCount = mapCount;
+    }
+    ZrCore_TypeLayout_InitStructWithContract(
+            layout, (TZrUInt32)sizeof(SZrTypeValue) * fieldCount,
+            (TZrUInt32)_Alignof(SZrTypeValue),
+            ZR_TYPE_LAYOUT_COPY_KIND_FIELDWISE,
+            ZR_TYPE_LAYOUT_DROP_KIND_FIELDWISE,
+            fields, fieldCount, &contract);
+}
+
+static void assert_explicit_map_rejects_wrong_kind(TZrUInt32 flag) {
+    SZrTypeLayoutField fields[2];
+    SZrTypeLayout layout;
+    SZrTypeValue storage[2];
+    const TZrUInt32 wrongOffset[1] = {(TZrUInt32)sizeof(SZrTypeValue)};
+    TZrBool valid;
+
+    memset(fields, 0, sizeof(fields));
+    memset(storage, 0, sizeof(storage));
+    fields[0].byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+    fields[0].flags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT | flag;
+    fields[1].byteOffset = (TZrUInt32)sizeof(SZrTypeValue);
+    fields[1].byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+    fields[1].flags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT;
+    init_explicit_map_layout(&layout, fields, 2u, flag, wrongOffset, 1u);
+    valid = ZrCore_TypeLayout_Validate(&layout);
+    /* The baseline witness visits only real aligned slots, without collecting objects. */
+    if (valid && flag == ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE) {
+        SExplicitMapVisitRecord record = {storage, 0u, {0u}};
+        TEST_ASSERT_TRUE(ZrCore_TypeLayout_VisitGcValuesWithRegistry(
+                ZR_NULL, &layout, ZR_NULL, storage,
+                record_explicit_map_visit, &record));
+        TEST_ASSERT_EQUAL_UINT32(1u, record.count);
+        TEST_ASSERT_EQUAL_UINT32(wrongOffset[0], record.offsets[0]);
+        printf("baseline wrong GC map: visited=%u expected=0\n",
+               (unsigned)record.offsets[0]);
+    }
+    TEST_ASSERT_FALSE(valid);
+}
+
+static void test_explicit_gc_map_rejects_in_bounds_non_gc_slot(void) {
+    assert_explicit_map_rejects_wrong_kind(ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE);
+}
+
+static void test_explicit_ownership_map_rejects_in_bounds_non_owner_slot(void) {
+    assert_explicit_map_rejects_wrong_kind(ZR_TYPE_LAYOUT_FIELD_FLAG_OWNERSHIP_VALUE);
+}
+
+static void test_explicit_ref_map_rejects_in_bounds_non_ref_slot(void) {
+    assert_explicit_map_rejects_wrong_kind(ZR_TYPE_LAYOUT_FIELD_FLAG_REF_VALUE);
+}
+
+static void assert_explicit_map_rejects_duplicate_missing_field(TZrUInt32 flag) {
+    SZrTypeLayoutField fields[2];
+    SZrTypeLayout layout;
+    const TZrUInt32 duplicateOffsets[2] = {0u, 0u};
+    memset(fields, 0, sizeof(fields));
+    for (TZrUInt32 index = 0u; index < ZR_ARRAY_COUNT(fields); ++index) {
+        fields[index].byteOffset = index * (TZrUInt32)sizeof(SZrTypeValue);
+        fields[index].byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+        fields[index].flags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT | flag;
+    }
+    init_explicit_map_layout(&layout, fields, 2u, flag, duplicateOffsets, 2u);
+    TEST_ASSERT_FALSE(ZrCore_TypeLayout_Validate(&layout));
+}
+
+static void test_explicit_gc_map_rejects_duplicate_and_missing_field(void) {
+    assert_explicit_map_rejects_duplicate_missing_field(ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE);
+}
+
+static void test_explicit_ownership_map_rejects_duplicate_and_missing_field(void) {
+    assert_explicit_map_rejects_duplicate_missing_field(ZR_TYPE_LAYOUT_FIELD_FLAG_OWNERSHIP_VALUE);
+}
+
+static void test_explicit_ref_map_rejects_duplicate_and_missing_field(void) {
+    assert_explicit_map_rejects_duplicate_missing_field(ZR_TYPE_LAYOUT_FIELD_FLAG_REF_VALUE);
+}
+
+static void test_explicit_maps_allow_permutation_and_null_fallback(void) {
+    SZrTypeLayoutField fields[2];
+    SZrTypeLayout layout;
+    SZrTypeValue storage[2];
+    const TZrUInt32 reverseOffsets[2] = {(TZrUInt32)sizeof(SZrTypeValue), 0u};
+    const TZrUInt32 flags[3] = {ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE,
+                              ZR_TYPE_LAYOUT_FIELD_FLAG_OWNERSHIP_VALUE,
+                              ZR_TYPE_LAYOUT_FIELD_FLAG_REF_VALUE};
+    memset(fields, 0, sizeof(fields));
+    memset(storage, 0, sizeof(storage));
+    for (TZrUInt32 kind = 0u; kind < ZR_ARRAY_COUNT(flags); ++kind) {
+        for (TZrUInt32 index = 0u; index < ZR_ARRAY_COUNT(fields); ++index) {
+            fields[index].byteOffset = index * (TZrUInt32)sizeof(SZrTypeValue);
+            fields[index].byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+            fields[index].flags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT | flags[kind];
+        }
+        init_explicit_map_layout(&layout, fields, 2u, flags[kind], reverseOffsets, 2u);
+        TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&layout));
+        if (kind == 0u) {
+            SExplicitMapVisitRecord record = {storage, 0u, {0u}};
+            TEST_ASSERT_TRUE(ZrCore_TypeLayout_VisitGcValuesWithRegistry(
+                    ZR_NULL, &layout, ZR_NULL, storage,
+                    record_explicit_map_visit, &record));
+            TEST_ASSERT_EQUAL_UINT32(2u, record.count);
+            TEST_ASSERT_EQUAL_UINT32(reverseOffsets[0], record.offsets[0]);
+            TEST_ASSERT_EQUAL_UINT32(reverseOffsets[1], record.offsets[1]);
+        }
+        init_explicit_map_layout(&layout, fields, 2u, flags[kind], ZR_NULL, 0u);
+        TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&layout));
+        if (kind == 0u) {
+            SExplicitMapVisitRecord record = {storage, 0u, {0u}};
+            TEST_ASSERT_TRUE(ZrCore_TypeLayout_VisitGcValuesWithRegistry(
+                    ZR_NULL, &layout, ZR_NULL, storage,
+                    record_explicit_map_visit, &record));
+            TEST_ASSERT_EQUAL_UINT32(2u, record.count);
+            TEST_ASSERT_EQUAL_UINT32(0u, record.offsets[0]);
+            TEST_ASSERT_EQUAL_UINT32((TZrUInt32)sizeof(SZrTypeValue), record.offsets[1]);
+        }
+    }
+}
+
+static void test_union_explicit_maps_preserve_legal_overlap_and_active_scan(void) {
+    SZrTypeLayoutField fields[2];
+    SZrTypeLayoutContract contract;
+    SZrTypeLayout layout;
+    SZrTypeValue storage[2];
+    const TZrUInt32 overlappingOffsets[2] = {0u, 0u};
+    TZrUInt32 tag = 1u;
+    SExplicitMapVisitRecord record = {storage, 0u, {0u}};
+    memset(fields, 0, sizeof(fields));
+    memset(&contract, 0, sizeof(contract));
+    memset(storage, 0, sizeof(storage));
+    for (TZrUInt32 index = 0u; index < ZR_ARRAY_COUNT(fields); ++index) {
+        fields[index].byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+        fields[index].flags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT |
+                ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE |
+                ZR_TYPE_LAYOUT_FIELD_FLAG_OWNERSHIP_VALUE |
+                ZR_TYPE_LAYOUT_FIELD_FLAG_REF_VALUE;
+        fields[index].activeTag = index;
+    }
+    contract.gcScanKind = ZR_TYPE_LAYOUT_GC_SCAN_MAPPED;
+    contract.gcFieldOffsets = overlappingOffsets;
+    contract.ownershipFieldOffsets = overlappingOffsets;
+    contract.refFieldOffsets = overlappingOffsets;
+    contract.gcFieldCount = contract.ownershipFieldCount = contract.refFieldCount = 2u;
+    ZrCore_TypeLayout_InitUnionWithContract(
+            &layout, (TZrUInt32)sizeof(storage), (TZrUInt32)_Alignof(SZrTypeValue),
+            (TZrUInt32)sizeof(SZrTypeValue), (TZrUInt32)sizeof(tag),
+            ZR_TYPE_LAYOUT_COPY_KIND_FIELDWISE, ZR_TYPE_LAYOUT_DROP_KIND_FIELDWISE,
+            fields, ZR_ARRAY_COUNT(fields), &contract);
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&layout));
+    memcpy((TZrByte *)storage + sizeof(SZrTypeValue), &tag, sizeof(tag));
+    TEST_ASSERT_TRUE(ZrCore_TypeLayout_VisitGcValuesWithRegistry(
+            ZR_NULL, &layout, ZR_NULL, storage, record_explicit_map_visit, &record));
+    TEST_ASSERT_EQUAL_UINT32(1u, record.count);
+    TEST_ASSERT_EQUAL_UINT32(0u, record.offsets[0]);
+}
+
+static void test_union_explicit_map_rejects_wrong_overlap_multiplicity(void) {
+    SZrTypeLayoutField fields[3];
+    SZrTypeLayoutContract contract;
+    SZrTypeLayout layout;
+    const TZrUInt32 wrongOffsets[3] = {
+        0u, (TZrUInt32)sizeof(SZrTypeValue), (TZrUInt32)sizeof(SZrTypeValue)};
+    memset(fields, 0, sizeof(fields));
+    memset(&contract, 0, sizeof(contract));
+    for (TZrUInt32 index = 0u; index < ZR_ARRAY_COUNT(fields); ++index) {
+        fields[index].byteOffset = index == 2u ? (TZrUInt32)sizeof(SZrTypeValue) : 0u;
+        fields[index].byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+        fields[index].flags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT |
+                              ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE;
+        fields[index].activeTag = index;
+    }
+    contract.gcScanKind = ZR_TYPE_LAYOUT_GC_SCAN_MAPPED;
+    contract.gcFieldOffsets = wrongOffsets;
+    contract.gcFieldCount = 3u;
+    ZrCore_TypeLayout_InitUnionWithContract(
+            &layout, (TZrUInt32)sizeof(SZrTypeValue) * 3u,
+            (TZrUInt32)_Alignof(SZrTypeValue),
+            (TZrUInt32)sizeof(SZrTypeValue) * 2u, (TZrUInt32)sizeof(TZrUInt32),
+            ZR_TYPE_LAYOUT_COPY_KIND_FIELDWISE, ZR_TYPE_LAYOUT_DROP_KIND_FIELDWISE,
+            fields, ZR_ARRAY_COUNT(fields), &contract);
+    TEST_ASSERT_FALSE(ZrCore_TypeLayout_Validate(&layout));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_pod_layout_records_blittable_and_c_type_metadata);
@@ -492,5 +707,14 @@ int main(void) {
     RUN_TEST(test_layout_hash_is_stable_and_tracks_structural_drift);
     RUN_TEST(test_layout_validation_rejects_invalid_spans_maps_and_identity);
     RUN_TEST(test_domain_transfer_kind_is_canonical_layout_identity);
+    RUN_TEST(test_explicit_gc_map_rejects_in_bounds_non_gc_slot);
+    RUN_TEST(test_explicit_ownership_map_rejects_in_bounds_non_owner_slot);
+    RUN_TEST(test_explicit_ref_map_rejects_in_bounds_non_ref_slot);
+    RUN_TEST(test_explicit_gc_map_rejects_duplicate_and_missing_field);
+    RUN_TEST(test_explicit_ownership_map_rejects_duplicate_and_missing_field);
+    RUN_TEST(test_explicit_ref_map_rejects_duplicate_and_missing_field);
+    RUN_TEST(test_explicit_maps_allow_permutation_and_null_fallback);
+    RUN_TEST(test_union_explicit_maps_preserve_legal_overlap_and_active_scan);
+    RUN_TEST(test_union_explicit_map_rejects_wrong_overlap_multiplicity);
     return UNITY_END();
 }

@@ -123,6 +123,10 @@ endif ()
 if (NOT TARGET zr_vm_ssa_effects_verifier_test)
     add_executable(zr_vm_ssa_effects_verifier_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_effects_verifier.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effects.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effects_linear.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effect_loops.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_cfg.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_binding_rows.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
@@ -138,6 +142,7 @@ if (NOT TARGET zr_vm_ssa_effects_verifier_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_owner_state.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution_contract.c)
     target_include_directories(zr_vm_ssa_effects_verifier_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
     target_compile_definitions(zr_vm_ssa_effects_verifier_test PRIVATE _CRT_SECURE_NO_WARNINGS)
@@ -448,6 +453,7 @@ if (NOT TARGET zr_vm_ssa_oracle_resume_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_consumer.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/canonical_type_index.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c)
     zr_vm_apply_common_test_settings(zr_vm_ssa_oracle_resume_test)
     target_include_directories(zr_vm_ssa_oracle_resume_test PRIVATE
@@ -456,6 +462,7 @@ if (NOT TARGET zr_vm_ssa_oracle_resume_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
     target_compile_definitions(zr_vm_ssa_oracle_resume_test PRIVATE UNITY_INCLUDE_CONFIG_H)
     zr_link_third_party_for_target(zr_vm_ssa_oracle_resume_test "zr_unity")
+    zr_vm_link_core(zr_vm_ssa_oracle_resume_test)
     add_test(NAME ssa_oracle_resume COMMAND zr_vm_ssa_oracle_resume_test)
     set_tests_properties(ssa_oracle_resume PROPERTIES LABELS "ssa")
 endif ()
@@ -465,6 +472,10 @@ include(${CMAKE_CURRENT_LIST_DIR}/ssa-cleanup-tests.cmake)
 if (NOT TARGET zr_vm_ssa_oracle_projections_test)
     add_executable(zr_vm_ssa_oracle_projections_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_oracle_projections.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effects.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effects_linear.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effect_loops.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_cfg.c
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_oracle_iterator_differential.c
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_execbc_place.c
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_oracle_memory_differential.c
@@ -500,6 +511,7 @@ if (NOT TARGET zr_vm_ssa_oracle_projections_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_oracle.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/canonical_type_index.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c)
     target_include_directories(zr_vm_ssa_oracle_projections_test PRIVATE
             ${CMAKE_SOURCE_DIR}/tests/harness
@@ -507,6 +519,7 @@ if (NOT TARGET zr_vm_ssa_oracle_projections_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
     target_compile_definitions(zr_vm_ssa_oracle_projections_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    zr_vm_link_core(zr_vm_ssa_oracle_projections_test)
     add_test(NAME ssa_oracle_projections COMMAND zr_vm_ssa_oracle_projections_test)
     set_tests_properties(ssa_oracle_projections PROPERTIES LABELS "ssa")
 endif ()
@@ -539,6 +552,7 @@ if (NOT TARGET zr_vm_ssa_oracle_parallel_edges_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_consumer.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/canonical_type_index.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c)
     target_include_directories(zr_vm_ssa_oracle_parallel_edges_test PRIVATE
             ${CMAKE_SOURCE_DIR}/tests/harness
@@ -546,6 +560,7 @@ if (NOT TARGET zr_vm_ssa_oracle_parallel_edges_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
     target_compile_definitions(zr_vm_ssa_oracle_parallel_edges_test PRIVATE _CRT_SECURE_NO_WARNINGS)
+    zr_vm_link_core(zr_vm_ssa_oracle_parallel_edges_test)
     add_test(NAME ssa_oracle_parallel_edges COMMAND zr_vm_ssa_oracle_parallel_edges_test)
     set_tests_properties(ssa_oracle_parallel_edges PROPERTIES LABELS "ssa")
 endif ()
@@ -573,6 +588,7 @@ if (NOT TARGET zr_vm_ssa_pass_manager_scalar_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_cfg.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_manager.c)
     target_include_directories(zr_vm_ssa_pass_manager_scalar_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
@@ -1571,9 +1587,7 @@ if (NOT TARGET zr_vm_ssa_exec_ir_execbc_vm_test)
             LABELS "ssa" TIMEOUT 30)
 endif ()
 
-include(${CMAKE_CURRENT_LIST_DIR}/ssa-module-constant-pool-verifier.cmake)
-
-include(${CMAKE_CURRENT_LIST_DIR}/ssa-execbc-vm-dead-place.cmake)
-
 include(${CMAKE_CURRENT_LIST_DIR}/ssa-source-execbc-vm.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/ssa-execbc-vm-dead-place.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/exec-ir-scalar-scratch-eligibility.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/ssa-module-constant-pool-verifier.cmake)

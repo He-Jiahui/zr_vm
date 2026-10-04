@@ -308,9 +308,32 @@ Rust safe 层通过 `Drop` 自动释放：
 执行时会注入：
 
 - `ZR_VM_RUST_BINDING_LIB_DIR`
+- `ZR_VM_RUST_BINDING_LINK_KIND`: `dylib` for the shared target or `static`
+  for a static-only SDK. CMake selects this value from the actual
+  `zr_vm_rust_binding_shared`/`zr_vm_rust_binding_static` target and passes the
+  native dependency closure in `ZR_VM_RUST_BINDING_STATIC_LINK_LIBRARIES` plus
+  platform libraries in `ZR_VM_RUST_BINDING_STATIC_SYSTEM_LIBRARIES`.
 - 平台对应的 runtime library path
 
 因此 CMake 和 Cargo 都会针对当前构建出的 binding 动态库做一致性验证。
+
+Static SDKs provide comma-separated archive names; the sys crate emits
+`cargo:rustc-link-lib=static=...` for the binding and each CMake-provided
+dependency, so no shared library is loaded. The standalone sys fallback honors
+the same `ZR_VM_RUST_BINDING_LINK_KIND` value and builds the corresponding
+native CMake target. Shared mode keeps the existing platform runtime path;
+static mode has no runtime library path requirement.
+
+`ZR_VM_RUST_BINDING_LIB_DIR`, `CARGO_TARGET_DIR`, `CARGO_HOME`, `SCCACHE_DIR`,
+`TMP`, `TEMP`, `TMPDIR`, and standalone `OUT_DIR` must be existing physical
+paths below the direct `D:/cargo-targets`, `E:/cargo-targets`, or
+`F:/cargo-targets` roots. This applies equally to an externally supplied SDK
+library directory; an existing C: path, junction, symlink, reparse point,
+alias, nested lookalike root, or repository-local output path is rejected
+before link search or native configuration.
+
+The normal `rust_binding_api` CTest also asserts that the selected CMake target
+declares exactly one shared/static link-kind marker.
 
 ## Testing Coverage
 
@@ -375,3 +398,10 @@ Rust safe 层通过 `Drop` 自动释放：
   - runtime registration 释放
   - native module 释放
   - Rust destroy hook 是否在最后一个引用释放后触发
+
+
+## Owned Cargo output roots
+
+The native CMake root remains a direct physical D:/cargo-targets, E:/cargo-targets, or F:/cargo-targets directory. Ordinary invocations keep the historical leaves under that root. Validation that runs shared and static modes independently sets ZR_VM_CARGO_OUTPUT_ROOT to a distinct owned mode directory below the approved root, for example F:/cargo-targets/zircon-local/vm-r6-20261003-01a0f033/shared or .../static.
+
+CMake creates and validates cargo-target, cargo-home, sccache, and tmp below that explicit mode root. The input is rejected when it uses another drive, a nested lookalike root, parent traversal, an empty path component, or a reparse/path alias. Cargo check and test custom targets use --locked. Run either the CMake Rust custom targets or the matching Cargo CTest entries for a mode; do not invoke both paths for the same operation.

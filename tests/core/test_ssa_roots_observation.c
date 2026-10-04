@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/* CHECK 保持条件求值及失败退出在 NDEBUG 下有效，使回归检查不会随 assert 配置消失。 */
 #define CHECK(condition) do { \
     if (!(condition)) { \
         fprintf(stderr, "%s:%d: check failed: %s\n", __FILE__, __LINE__, #condition); \
@@ -11,6 +12,7 @@
 } while (0)
 #include <string.h>
 
+/* 同步 visitor 的借用状态：旧/新对象均由测试栈持有，计数用于核对三类根各访问一次。 */
 typedef struct SVisitState {
     TZrPtr oldBase;
     TZrPtr movedBase;
@@ -19,6 +21,7 @@ typedef struct SVisitState {
     TZrUInt32 inlineCount;
 } SVisitState;
 
+/* 仅组装三逻辑槽、三物理槽的借用描述符；slots 的生命周期由测试持有，Finalize 留给调用处。 */
 static SZrExecutionFrameLayout make_layout(SZrExecutionFrameSlot *slots) {
     SZrExecutionFrameLayout layout;
     ZrCore_ExecutionFrameLayout_Init(&layout);
@@ -32,6 +35,7 @@ static SZrExecutionFrameLayout make_layout(SZrExecutionFrameSlot *slots) {
     return layout;
 }
 
+/* 只在 managed 分支模拟搬移；derived 分支检查已经更新的基址，派生指针由 visitor 随后重算。 */
 static TZrBool visit_root(SZrExecutionFrameRoot *root,
                           TZrPtr slotAddress,
                           TZrPtr baseAddress,
@@ -59,6 +63,7 @@ static TZrBool visit_root(SZrExecutionFrameRoot *root,
     return ZR_TRUE;
 }
 
+/* 倒置 spec 顺序检验基址先更新、派生地址后重算；栈对象模拟搬移，仅验证 adapter 的顺序与结果。 */
 static void test_precise_roots_and_derived_relocation(void) {
     SZrExecutionFrameSlot slots[3] = {
         {10u, 0u, 0u, (TZrUInt32)sizeof(TZrPtr),
@@ -123,6 +128,7 @@ static void test_precise_roots_and_derived_relocation(void) {
     ZrCore_ExecutionFrameRootMap_Free(&map);
 }
 
+/* 成功路径检查标量 writeback 与物理槽失效列表；短帧失败只比较 frame 与失效计数，不扩大为所有输出的断言。 */
 static void test_observation_materializes_and_invalidates_atomically(void) {
     SZrExecutionFrameSlot slots[3] = {
         {20u, 0u, 0u, 8u, 8u, 0u, 1u, 3u,
@@ -172,6 +178,7 @@ static void test_observation_materializes_and_invalidates_atomically(void) {
     CHECK(memcmp(snapshot, frame, sizeof(snapshot)) == 0);
 }
 
+/* 此 fixture 只验证 derived 根误用 VALUE_BYTES 的构建拒绝；函数名中的 observation 不代表这里有观察请求。 */
 static void test_root_and_observation_validation_failures(void) {
     SZrExecutionFrameSlot slots[3] = {
         {10u, 0u, 0u, 8u, 8u, 0u, 1u, 1u,
@@ -196,12 +203,14 @@ static void test_root_and_observation_validation_failures(void) {
     ZrCore_ExecutionFrameRootMap_Free(&map);
 }
 
+/* 记录借用字段地址与可为空的替换指针，回调按字节复制以支持未对齐的宿主存储。 */
 typedef struct SInlineFieldVisit {
     TZrPtr expectedAddress;
     TZrPtr replacement;
     TZrUInt32 count;
 } SInlineFieldVisit;
 
+/* 核对 inline 字段地址后按字节写回 replacement；只改一个指针宽度，不覆盖整个包含 span。 */
 static TZrBool visit_inline_field(SZrExecutionFrameRoot *root,
                                   TZrPtr slotAddress,
                                   TZrPtr baseAddress,
@@ -215,6 +224,7 @@ static TZrBool visit_inline_field(SZrExecutionFrameRoot *root,
     return ZR_TRUE;
 }
 
+/* 以帧尾字段检验包含 span 与指针访问的两层边界；同时覆盖跳过、原址/空写回和未对齐宿主字节存储。 */
 static void test_inline_field_at_frame_end(void) {
     const TZrUInt32 pointerSize = (TZrUInt32)sizeof(TZrPtr);
     SZrExecutionFrameSlot slot = {
@@ -323,6 +333,7 @@ static void test_inline_field_at_frame_end(void) {
     ZrCore_ExecutionFrameRootMap_Free(&map);
 }
 
+/* 作为地址溢出 fixture 的回调哨兵；本例应在派发前失败，计数必须保持零。 */
 static TZrBool count_only_root(SZrExecutionFrameRoot *root,
                               TZrPtr slotAddress,
                               TZrPtr baseAddress,
@@ -334,6 +345,7 @@ static TZrBool count_only_root(SZrExecutionFrameRoot *root,
     return ZR_TRUE;
 }
 
+/* 脱离 layout 的 map 借用栈 root，包含 span 有效但最终字段地址溢出；检查拒绝且不派发回调。 */
 static void test_root_field_address_overflow(void) {
     SZrExecutionFrameRootMap map;
     SZrExecutionFrameRoot root = {0};
@@ -364,12 +376,14 @@ static void test_root_field_address_overflow(void) {
     /* The detached fixture borrows a stack root, so it does not call Free. */
 }
 
+/* 区分 managed 的空 base 地址与 derived 的基槽地址；所有地址均借用当前测试帧。 */
 typedef struct SNonInlineVisit {
     TZrPtr expectedAddress;
     TZrPtr expectedBase;
     TZrUInt32 count;
 } SNonInlineVisit;
 
+/* 只核对非 inline 根的地址契约并计数；越界请求必须先拒绝，不能把它计入访问次数。 */
 static TZrBool visit_non_inline_root(SZrExecutionFrameRoot *root,
                                     TZrPtr slotAddress,
                                     TZrPtr baseAddress,
@@ -382,6 +396,7 @@ static TZrBool visit_non_inline_root(SZrExecutionFrameRoot *root,
     return ZR_TRUE;
 }
 
+/* 分别覆盖 managed/derived：末端只容得下一个指针仍应拒绝两指针访问 span；较小非零 offset 则可成功。 */
 static void test_non_inline_root_preserves_access_span(void) {
     const TZrUInt32 pointerSize = (TZrUInt32)sizeof(TZrPtr);
     SZrExecutionFrameSlot slots[2] = {
@@ -448,6 +463,7 @@ static void test_non_inline_root_preserves_access_span(void) {
     ZrCore_ExecutionFrameRootMap_Free(&map);
 }
 
+/* 布局允许不同时活跃的 logical 槽复用物理存储，但观察请求没有活跃位置；冲突输入重复拒绝并保留四种输出。 */
 static void test_observation_reused_scalar_conflict_preserves_outputs(void) {
     SZrExecutionFrameSlot slots[3] = {
         {30u, 0u, 0u, 8u, 8u, 0u, 1u, 3u,
@@ -489,6 +505,7 @@ static void test_observation_reused_scalar_conflict_preserves_outputs(void) {
     }
 }
 
+/* 以四字节 payload 比较兼容别名；只读观察返回当前存储，改为不同物理 ID 后仍按重叠字节拒绝冲突。 */
 static void test_observation_compatible_scalar_aliases(void) {
     SZrExecutionFrameSlot slots[3] = {
         {40u, 0u, 0u, 4u, 4u, 0u, 1u, 3u,
@@ -554,6 +571,7 @@ static void test_observation_compatible_scalar_aliases(void) {
     CHECK(invalidated[0] == 0u && invalidated[1] == 2u && invalidated[2] == 1u);
 }
 
+/* 独立 CTest 入口顺序调用八个 fixture；失败由 CHECK 退出进程，不使用 Unity 的 RUN_TEST。 */
 int main(void) {
     test_observation_reused_scalar_conflict_preserves_outputs();
     test_observation_compatible_scalar_aliases();

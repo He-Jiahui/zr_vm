@@ -97,6 +97,12 @@ static void test_definition_order_follows_cfg_instead_of_instruction_ids(void) {
 static void test_exception_successor_keeps_its_own_roots(void) {
     TZrExecIrValueId reference = value(ZR_EXEC_IR_OWNERSHIP_GC, ZR_TRUE);
     TZrExecIrValueId result = value(ZR_EXEC_IR_OWNERSHIP_GC, ZR_FALSE);
+    TZrExecIrMemoryTokenId before[2] = {
+        ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 1u),
+        ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_NATIVE_FFI, 1u)};
+    TZrExecIrMemoryTokenId after[2] = {
+        ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 2u),
+        ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_NATIVE_FFI, 2u)};
     blocks(3u);
     function.blocks[2].flags |= ZR_EXEC_IR_BLOCK_FLAG_EXCEPTION;
     edges(1u, 2u, 3u);
@@ -104,6 +110,10 @@ static void test_exception_successor_keeps_its_own_roots(void) {
          ZR_EXEC_IR_FLAG_MAY_THROW | ZR_EXEC_IR_FLAG_MAY_ALLOCATE, 0u, result);
     function.instructions[0].effectIn = 1u;
     function.instructions[0].effectOut = 2u;
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendMemoryTokens(
+            &function, before, 2u, &function.instructions[0].memoryIn));
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendMemoryTokens(
+            &function, after, 2u, &function.instructions[0].memoryOut));
     emit(2u, ZR_EXEC_IR_OPCODE_NOP, ZR_EXEC_IR_FLAG_MAY_GC, 0u, 0u);
     emit(2u, ZR_EXEC_IR_OPCODE_RETURN, 0u, result, 0u);
     emit(3u, ZR_EXEC_IR_OPCODE_NOP, ZR_EXEC_IR_FLAG_MAY_GC, 0u, 0u);

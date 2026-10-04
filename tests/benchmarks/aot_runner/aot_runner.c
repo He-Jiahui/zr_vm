@@ -3,15 +3,18 @@
 
 #include <string.h>
 
+/** @brief 为注册和结果结构检查排除 UNKNOWN/COUNT 及越界枚举；合法枚举不意味着已注册可执行入口。 */
 static TZrBool zr_aot_runner_backend_is_valid(EZrAotBackend backend) {
     return (TZrBool)(backend > ZR_AOT_BACKEND_UNKNOWN &&
                      backend < ZR_AOT_BACKEND_COUNT);
 }
 
+/** @brief 仅 C/LLVM 请求允许查找整入口解释器回退；也用于识别编译入口的解释器站点。 */
 static TZrBool zr_aot_runner_requested_backend_is_aot(EZrAotBackend backend) {
     return (TZrBool)(backend == ZR_AOT_BACKEND_C || backend == ZR_AOT_BACKEND_LLVM);
 }
 
+/** @brief 在固定容量内要求非空 NUL 结尾的无空白可打印 ASCII 名称，供 registry 复制及结果形状检查共用。失败不发布长度。 */
 static TZrBool zr_aot_runner_name_is_valid(const TZrChar *name, size_t *lengthOut) {
     size_t length = 0u;
 
@@ -34,6 +37,7 @@ static TZrBool zr_aot_runner_name_is_valid(const TZrChar *name, size_t *lengthOu
     return ZR_TRUE;
 }
 
+/** @brief 按 backend/token 二元键借用 registry 中的首个入口；不得越过 runner 存储生命周期，entryCount 必须来自合法初始化与注册。 */
 static const SZrAotRunnerEntry *zr_aot_runner_find(const SZrAotRunner *runner,
                                                    EZrAotBackend backend,
                                                    TZrUInt64 entryToken) {
@@ -51,6 +55,7 @@ static const SZrAotRunnerEntry *zr_aot_runner_find(const SZrAotRunner *runner,
     return ZR_NULL;
 }
 
+/** @brief 先建立失败/未调用和 unavailable 比率哨兵，再复制请求身份；不能把尚未执行的数据表示成成功测量。 */
 static void zr_aot_runner_result_init(SZrAotRunnerResult *result,
                                       const SZrAotRunnerRequest *request) {
     if (result == ZR_NULL) {
@@ -73,6 +78,7 @@ static void zr_aot_runner_result_init(SZrAotRunnerResult *result,
     }
 }
 
+/** @brief 只更新状态与原因，保留已知实际 backend、调用标志和校验值，供调用方区分入口缺失与执行失败。 */
 static void zr_aot_runner_result_fail(SZrAotRunnerResult *result,
                                       EZrAotRunnerStatus status,
                                       EZrAotRunnerFailure failure) {
@@ -82,6 +88,7 @@ static void zr_aot_runner_result_fail(SZrAotRunnerResult *result,
     }
 }
 
+/** @brief 重置固定容量 registry，不申请资源；清除注册不会释放回调 context，context 所有权仍归调用者。 */
 void ZrTests_AotRunner_Init(SZrAotRunner *runner) {
     if (runner != ZR_NULL) {
         memset(runner, 0, sizeof(*runner));
@@ -89,6 +96,7 @@ void ZrTests_AotRunner_Init(SZrAotRunner *runner) {
     }
 }
 
+/** @brief 注册唯一 backend/token 回调并复制名称，借用 invoke/context；拒绝无效输入、满表和重复键，context 须覆盖后续同步调用。 */
 TZrBool ZrTests_AotRunner_Register(SZrAotRunner *runner,
                                    EZrAotBackend backend,
                                    TZrUInt64 entryToken,
@@ -118,6 +126,7 @@ TZrBool ZrTests_AotRunner_Register(SZrAotRunner *runner,
     return ZR_TRUE;
 }
 
+/** @brief 查找显式注册入口并同步调用；仅缺少 C/LLVM 入口且请求允许时尝试解释器。调用失败不再回退，coverage/checksum 失败保留实际入口身份。processExitCode 是回调成功映射，不是此处创建的 OS 子进程状态。 */
 TZrBool ZrTests_AotRunner_Run(const SZrAotRunner *runner,
                               const SZrAotRunnerRequest *request,
                               SZrAotRunnerResult *result) {
@@ -142,6 +151,7 @@ TZrBool ZrTests_AotRunner_Run(const SZrAotRunner *runner,
         return ZR_FALSE;
     }
 
+/* 仅入口缺失时可选择显式允许的整入口回退；已找到入口的调用失败不会触发此路径。 */
     entry = zr_aot_runner_find(runner, request->requestedBackend, request->entryToken);
     if (entry == ZR_NULL && request->allowInterpreterFallback != ZR_FALSE &&
         zr_aot_runner_requested_backend_is_aot(request->requestedBackend)) {
@@ -157,6 +167,7 @@ TZrBool ZrTests_AotRunner_Run(const SZrAotRunner *runner,
         return ZR_FALSE;
     }
 
+/* 先记录实际条目身份，再调用借用 context；后续失败仍需保留已执行入口信息。 */
     result->actualBackend = entry->backend;
     result->entryInvoked = ZR_TRUE;
     memcpy(result->entryName, entry->name, sizeof(result->entryName));
@@ -181,6 +192,7 @@ TZrBool ZrTests_AotRunner_Run(const SZrAotRunner *runner,
      * available coverage is strong enough to mark that fallback; preserve the
      * compiled actual backend so consumers can distinguish mixed execution
      * from a whole-entry interpreter fallback. */
+/* 仅可用采样证据能将编译入口标为 mixed；actualBackend 仍保留编译 backend。 */
     if (fallback == ZR_FALSE &&
         zr_aot_runner_requested_backend_is_aot(request->requestedBackend) &&
         result->actualBackend == request->requestedBackend &&
@@ -206,6 +218,7 @@ TZrBool ZrTests_AotRunner_Run(const SZrAotRunner *runner,
     return ZR_TRUE;
 }
 
+/** @brief 检查结果状态、身份及 coverage 形状，不重算三类和或比率；失败 Run 的非法原始请求不保证能通过该 validator。 */
 TZrBool ZrTests_AotRunner_ValidateResult(const SZrAotRunnerResult *result) {
     TZrBool coverageShapeValid;
     size_t nameLength;
@@ -221,6 +234,7 @@ TZrBool ZrTests_AotRunner_ValidateResult(const SZrAotRunnerResult *result) {
         result->coverage.status >= ZR_AOT_COVERAGE_STATUS_COUNT) {
         return ZR_FALSE;
     }
+/* 这里只核对 coverage 状态及比率范围；producer 计数一致性由 Run 中的 coverage validator 检查。 */
     coverageShapeValid = (TZrBool)(
             (result->coverage.available == ZR_FALSE &&
              result->coverage.status == ZR_AOT_COVERAGE_STATUS_UNAVAILABLE &&
@@ -277,6 +291,7 @@ TZrBool ZrTests_AotRunner_ValidateResult(const SZrAotRunnerResult *result) {
     }
 }
 
+/** @brief 列出 C、LLVM、解释器注册数及目标 token 是否存在；仅描述 registry，不编译或执行条目。 */
 TZrBool ZrTests_AotRunner_DescribeMatrix(const SZrAotRunner *runner,
                                          TZrUInt64 entryToken,
                                          SZrAotRunnerMatrix *matrix) {
@@ -309,12 +324,14 @@ TZrBool ZrTests_AotRunner_DescribeMatrix(const SZrAotRunner *runner,
     return ZR_TRUE;
 }
 
+/** @brief 保留计划命名的 DescribeMatrix 同义入口；不执行代码生成或启动 backend。 */
 TZrBool ZrTests_AotRunner_BuildMatrix(const SZrAotRunner *runner,
                                       TZrUInt64 entryToken,
                                       SZrAotRunnerMatrix *matrix) {
     return ZrTests_AotRunner_DescribeMatrix(runner, entryToken, matrix);
 }
 
+/** @brief 为报告返回 backend 固定文本；未识别值显示 unknown，不表示支持检测。 */
 const TZrChar *ZrTests_AotRunner_BackendName(EZrAotBackend backend) {
     switch (backend) {
         case ZR_AOT_BACKEND_C:
@@ -330,6 +347,7 @@ const TZrChar *ZrTests_AotRunner_BackendName(EZrAotBackend backend) {
     }
 }
 
+/** @brief 固定序列化状态名称；未知状态显示 INVALID，不改变执行结果。 */
 const TZrChar *ZrTests_AotRunner_StatusName(EZrAotRunnerStatus status) {
     switch (status) {
         case ZR_AOT_RUNNER_STATUS_RAN:
@@ -347,6 +365,7 @@ const TZrChar *ZrTests_AotRunner_StatusName(EZrAotRunnerStatus status) {
     }
 }
 
+/** @brief 将失败枚举投影为诊断文本；REGISTRY_FULL/DUPLICATE_ENTRY 名称存在不代表 Register 返回结构化失败原因。 */
 const TZrChar *ZrTests_AotRunner_FailureName(EZrAotRunnerFailure failure) {
     switch (failure) {
         case ZR_AOT_RUNNER_FAILURE_NONE:

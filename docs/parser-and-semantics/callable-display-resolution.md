@@ -3,6 +3,9 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/semantic_display.h
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_display.c
   - zr_vm_parser/src/zr_vm_parser/semantic/semantic_scope_facts.c
+implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_display.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_scope_facts.c
 tests:
   - tests/parser/test_semantic_display_unresolved_cases.h
   - tests/parser/test_semantic_display.c
@@ -41,13 +44,18 @@ and insufficient signature capacity still fail signature construction.
 ## Publication and Ownership
 
 `PublishCallableSignature` runs during source-scope analysis, after declaration
-and type references have been produced. It creates one state-owned string and
+and type references have been produced. On successful construction it creates one VM-managed string and
 updates resolved references whose SymbolId and TypeId both match that callable.
 The scope's visible-symbol fact receives the same signature. Different overload
 identities, specialized TypeIds and unresolved symbol references retain their
 own state; there is no name-based propagation.
 
-The string, IDs and AST nodes belong to the semantic snapshot. Publication may
+The IDs and fact views belong to the semantic snapshot; AST nodes retain
+their parser-owner lifetime. A native fact array stores string pointers without
+registering independent GC roots. The actual VM owner/root must keep generated
+signatures reachable throughout publication and query. The long-string root
+handoff remains a source TODO requiring publication, FullGC, query and
+Reset/Free coverage; snapshot membership alone is not proof of GC survival. Publication may
 replace borrowed signature views and must finish before consumers query that
 snapshot. Queries cannot invoke the publisher. Completion and hover read the
 stored signature and copy text into request-owned results. A document update

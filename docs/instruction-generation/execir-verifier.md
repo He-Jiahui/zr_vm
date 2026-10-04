@@ -114,7 +114,13 @@ continues to apply the legacy function-wide monotonic rule to untagged tokens
 so old artifacts remain readable during the migration. For each direction,
 an all-tagged range must cover every region in the opcode's schema mask; a
 repeated region cannot replace a missing one. A direction containing an
-untagged token retains its compatibility path. A join may publish one tagged
+untagged token retains its compatibility path. `INVOKE` declares the same
+managed-heap and native/FFI read/write masks as `CALL`: promoting a call to
+an exceptional terminator does not prove its callee readonly. CFG effect
+synthesis advances both regions at the invoke and forwards those versions to
+both normal and exceptional successors. Missing invoke memory ranges and
+successor reads of pre-invoke versions are rejected with `MEMORY_TOKEN`.
+A join may publish one tagged
 `memoryPhiResult` and edge-ordered `memoryPhiIncomings` range per
 region. Each incoming must match the predecessor's terminal version and
 region, the result must advance beyond forward incoming versions, and the first
@@ -224,7 +230,11 @@ same-block memory version reports its source, block, instruction, expected
 and actual versions. The tagged CALL fixture accepts its full managed-heap and
 native-FFI token sets, then independently removes one input and one output
 region and checks `MEMORY_TOKEN` diagnostics with function, block, instruction,
-and source identity. Legacy untagged token cases remain covered. A skipped effect
+and source identity. The INVOKE fixture checks matching CALL masks, synthesis
+of heap/native outputs to both successor paths, and stale heap/native inputs
+on each path. Its isolated missing-input/output checks retain the invoke's
+function, block, instruction, and source identity; repairing the tokens restores
+acceptance. Legacy untagged token cases remain covered. A skipped effect
 version between two same-block calls yields the second call's source-identified
 diagnostic; replacing it with the immediate predecessor token is accepted.
 The standalone SSA consumer targets compile the split verifier source through

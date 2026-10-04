@@ -77,14 +77,15 @@ The regression and direct GCC/Clang/MSVC evidence are recorded in
 
 ## Phase and artifact report
 
-ZrPerfReport_WriteAotJson writes the optional AOT phase report used by release
-automation. Compile, link, load, startup, and run costs are independent
-fields; -1 is serialized as null, so an unavailable phase is not confused with
-a zero-cost phase. The report also records requested/actual backend, entry
-token, artifact hash, toolchain, checksum/failure status, RSS/code size
-availability, and all semantic coverage counters. It is valid only when the
-structural identity and counter invariants pass
-ZrPerfReport_ValidateAotPhase.
+ZrPerfReport_WriteAotJson writes an optional, separate AOT phase report. Its
+current in-repository external calls come from the AOT runner coverage test
+fixture. Compile, link, load, startup, and run costs are independent fields;
+-1 is serialized as null, so an unavailable phase retains that meaning. The
+report also records requested/actual backend, entry token, artifact hash,
+toolchain, status/failureReason, RSS/code size availability, and semantic
+coverage counters. ZrPerfReport_ValidateAotPhase checks structural and counter
+invariants. Artifact hash and toolchain are optional caller-supplied text;
+this interface does not authenticate them or carry a checksum field.
 
 For available coverage, `nativeCoverage` must equal the producer's computed
 double, `(double)nativeSites / (double)executedSemanticSites`. Native-helper

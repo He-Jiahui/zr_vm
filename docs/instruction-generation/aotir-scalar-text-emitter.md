@@ -44,7 +44,7 @@ The caller must supply an explicit, trusted
 `ZrCore_AotIr_RequireExecutableAbi` gate checks the AOTIR schema, relocation
 freedom, ABI declaration, RETURN type/value shape, and one earlier definition
 of that SSA value across the function. The emitter then accepts only its
-smaller single-block form. Neither check authenticates the producer of the
+two narrow CFG forms described below. Neither check authenticates the producer of the
 declaration. In the test fixture, `17u` is an arbitrary opaque metadata type
 token: equality to the declared return token alone does not prove that token
 means a language i64. The explicit trusted callable ABI declaration is the
@@ -103,6 +103,8 @@ shape, and too-small buffers return their specific `EZrAotIrStatus` and fill
 `SZrAotIrDiagnostic` when supplied. `snprintf` performs bounded writes and a
 short buffer is reported as `ZR_AOT_IR_INVALID_RANGE`; no truncated source is
 accepted. The emitter allocates no memory and does not retain input pointers.
+
+内部 `scalar_text_prepare` 输出的是按值记录的 functionId、bits 与 branch target，不保存输入指针。双块分支可先写 branch target，再因后续常量检查失败返回；因此失败后内部 plan 可能只部分填写，只能在 `ZR_AOT_IR_OK` 后消费。公共输出缓冲、长度和诊断仍借用调用方存储，调用期间须与输入及彼此按各写入职责分离并保持有效；清首字节不等于擦除整个缓冲区。此处源码契约同步没有新增生成文本编译或执行证据。
 
 ## Validation scope
 

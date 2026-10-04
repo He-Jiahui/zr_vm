@@ -1,12 +1,23 @@
 use std::fs;
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use zr_vm_rust_binding::{ProjectWorkspace, RunOptions, RuntimeBuilder, ValueKind};
 
-// TODO: 本文件四个测试可由 cargo test 并行运行，而 C 最近错误对象为进程级共享状态；
-// safe crate 当前编译受阻，修复后需给此测试二进制加互斥并验证并发路径。
+// The native VM and binding error snapshot are process-global.  Serialize
+// checkpoint tests so Cargo's default parallel test runner cannot interleave
+// separate sessions through that shared state.
+static VM_TEST_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn vm_test_guard() -> MutexGuard<'static, ()> {
+    VM_TEST_MUTEX
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("VM checkpoint test mutex poisoned")
+}
 #[test]
 fn rollback_restores_retained_module_state_and_next_tick() -> Result<(), Box<dyn std::error::Error>>
 {
+    let _vm_guard = vm_test_guard();
     let temp = tempfile::tempdir()?;
     let root = temp.path().join("checkpoint_project");
     let workspace = ProjectWorkspace::scaffold(&root, "checkpoint_project")?;
@@ -40,6 +51,7 @@ fn rollback_restores_retained_module_state_and_next_tick() -> Result<(), Box<dyn
 
 #[test]
 fn rollback_restores_retained_container_uint_array() -> Result<(), Box<dyn std::error::Error>> {
+    let _vm_guard = vm_test_guard();
     let temp = tempfile::tempdir()?;
     let root = temp.path().join("checkpoint_container_array_project");
     let workspace = ProjectWorkspace::scaffold(&root, "checkpoint_container_array_project")?;
@@ -77,6 +89,7 @@ fn rollback_restores_retained_container_uint_array() -> Result<(), Box<dyn std::
 
 #[test]
 fn nested_checkpoints_do_not_count_as_live_value_roots() -> Result<(), Box<dyn std::error::Error>> {
+    let _vm_guard = vm_test_guard();
     let temp = tempfile::tempdir()?;
     let root = temp.path().join("nested_checkpoint_project");
     let workspace = ProjectWorkspace::scaffold(&root, "nested_checkpoint_project")?;
@@ -112,6 +125,7 @@ fn nested_checkpoints_do_not_count_as_live_value_roots() -> Result<(), Box<dyn s
 
 #[test]
 fn checkpoint_rejects_live_vm_value_roots() -> Result<(), Box<dyn std::error::Error>> {
+    let _vm_guard = vm_test_guard();
     let temp = tempfile::tempdir()?;
     let root = temp.path().join("rooted_checkpoint_project");
     let workspace = ProjectWorkspace::scaffold(&root, "rooted_checkpoint_project")?;

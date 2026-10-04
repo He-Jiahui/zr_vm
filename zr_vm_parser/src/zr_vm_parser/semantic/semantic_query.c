@@ -90,6 +90,7 @@ static TZrBool semantic_query_ranges_equal(const SZrFileRange *left,
            left->end.column == right->end.column;
 }
 
+/* 模块查询允许全快照；节点查询只接受完全落在 root 内的事实，避免局部查询泄漏相邻节点。 */
 static TZrBool semantic_query_scope_allows_range(
         const SZrParserSemanticQueryScope *scope,
         const SZrFileRange *range) {
@@ -102,6 +103,7 @@ static TZrBool semantic_query_scope_allows_range(
     return semantic_query_range_contains_range(&scope->root->location, range);
 }
 
+/* 先限制查询位置，再限制命中的事实范围；root 借用当前 AST，调用期须保持有效。 */
 static TZrBool semantic_query_scope_allows_position(
         const SZrParserSemanticQueryScope *scope,
         const SZrFileRange *position) {
@@ -136,6 +138,7 @@ static const SZrSemanticNumericFact *semantic_query_find_numeric_at_position(
     return ZR_NULL;
 }
 
+/* 单目标定义查询的回退：声明引用直接使用自身，其余已解析引用按身份或声明范围找同 scope 声明。 */
 static const SZrSemanticReferenceFact *semantic_query_find_declaration_for_reference(
         const SZrSemanticContext *context,
         const SZrSemanticReferenceFact *reference,
@@ -172,6 +175,7 @@ static const SZrSemanticReferenceFact *semantic_query_find_declaration_for_refer
     return ZR_NULL;
 }
 
+/* 单目标导航只消费 definitionRange；多分支定义集合由 DefinitionsOf 展开，结果借用当前事实快照。 */
 static const SZrSemanticReferenceFact *semantic_query_find_reaching_definition_for_reference(
         const SZrSemanticContext *context,
         const SZrSemanticReferenceFact *reference,
@@ -225,6 +229,7 @@ static TZrBool semantic_query_reference_output_contains(SZrArray *outDefinitions
     return ZR_FALSE;
 }
 
+/* DefinitionsOf 输出存放 fact 借用指针；复用数组必须已按该元素类型初始化，函数只清长度。 */
 static TZrBool semantic_query_prepare_reference_output(const SZrSemanticContext *context,
                                                        SZrArray *outDefinitions) {
     if (context == ZR_NULL || context->state == ZR_NULL || outDefinitions == ZR_NULL) {
@@ -243,6 +248,7 @@ static TZrBool semantic_query_prepare_reference_output(const SZrSemanticContext 
     return ZR_TRUE;
 }
 
+/* 追加借用指针而非复制 fact；以指针去重，调用方持有数组但不持有事实本体。 */
 static TZrBool semantic_query_append_definition_fact(const SZrSemanticContext *context,
                                                      SZrArray *outDefinitions,
                                                      const SZrSemanticReferenceFact *definition,
@@ -260,6 +266,7 @@ static TZrBool semantic_query_append_definition_fact(const SZrSemanticContext *c
     return ZR_TRUE;
 }
 
+/* 把可达定义范围恢复为声明/写入事实；fact 自身和它保存的 definitionRange 都可指向该定义。 */
 static TZrBool semantic_query_append_definition_for_range(
         const SZrSemanticContext *context,
         const SZrSemanticReferenceFact *reference,
@@ -296,6 +303,7 @@ static TZrBool semantic_query_append_definition_for_range(
     return ZR_FALSE;
 }
 
+/* 读取可能有多个 reaching ranges；优先展开集合，仅无集合时使用单一 definitionRange。 */
 static TZrBool semantic_query_append_reaching_definitions_for_reference(
         const SZrSemanticContext *context,
         const SZrSemanticReferenceFact *reference,
@@ -395,6 +403,7 @@ static TZrInt32 semantic_query_compare_definition_facts(
     return semantic_query_compare_file_ranges(&left->range, &right->range);
 }
 
+/* 插入排序仅进行相邻候选比较；不同 source 比较为零并停止移动，不保证跨 source 分隔的同源组整体有序。 */
 static void semantic_query_sort_definition_output(SZrArray *definitions) {
     TZrSize i;
 
@@ -469,6 +478,7 @@ static const TZrChar *semantic_query_reachability_suggestion_text(
     }
 }
 
+/* 物化替换旧缓存：先释放每条诊断拥有的资源，再复用数组容量；旧 Diagnostics 视图随之失效。 */
 static void semantic_query_reset_diagnostics(SZrSemanticContext *context) {
     TZrSize i;
 
@@ -486,6 +496,7 @@ static void semantic_query_reset_diagnostics(SZrSemanticContext *context) {
     context->queryDiagnostics.length = 0;
 }
 
+/* 把不可达事实投影为 warning；自动删除可能不安全，因此明确发布 no-fix 原因。 */
 static TZrBool semantic_query_append_unreachable_diagnostic(
         SZrSemanticContext *context,
         const SZrSemanticReachabilityFact *fact) {
@@ -528,6 +539,7 @@ static TZrBool semantic_query_reference_is_uninitialized_read_diagnostic(
             fact->definiteAssignmentState == ZR_SEMANTIC_DEFINITE_ASSIGNMENT_MAYBE_INIT);
 }
 
+/* UNINIT 是 error，MAYBE_INIT 是 warning；占位修复只提供用户编辑起点，不自动承诺安全初始化。 */
 static TZrBool semantic_query_append_definite_assignment_diagnostic(
         SZrSemanticContext *context,
         const SZrSemanticReferenceFact *fact) {
@@ -595,6 +607,7 @@ static TZrBool semantic_query_numeric_is_overflow_diagnostic(
     return fact != ZR_NULL && fact->mayOverflow;
 }
 
+/* mayOverflow 只表示可能溢出，发布 warning 并要求用户选择扩宽类型或加守卫。 */
 static TZrBool semantic_query_append_numeric_overflow_diagnostic(
         SZrSemanticContext *context,
         const SZrSemanticNumericFact *fact) {
@@ -653,6 +666,7 @@ static EZrStructuredDiagnosticSeverity semantic_query_expression_diagnostic_seve
     }
 }
 
+/* 消费已有 computed member 诊断；code 决定类型不匹配、可能越界或确定越界的解释，不在查询层重算索引。 */
 static TZrBool semantic_query_append_array_bounds_diagnostic(
         SZrSemanticContext *context,
         const SZrSemanticExpressionFact *fact) {
@@ -715,6 +729,7 @@ static TZrBool semantic_query_append_array_bounds_diagnostic(
     return ZR_TRUE;
 }
 
+/* 填充模块查询范围；scope 不拥有语义快照，NULL 输出按无操作处理。 */
 void ZrParser_SemanticQueryScope_Module(SZrParserSemanticQueryScope *scope) {
     if (scope == ZR_NULL) {
         return;
@@ -724,6 +739,7 @@ void ZrParser_SemanticQueryScope_Module(SZrParserSemanticQueryScope *scope) {
     scope->root = ZR_NULL;
 }
 
+/* root 是当前 AST 的借用指针；NULL root 虽可存入，随后查询门禁会拒绝该节点 scope。 */
 void ZrParser_SemanticQueryScope_Node(SZrParserSemanticQueryScope *scope,
                                       const SZrAstNode *root) {
     if (scope == ZR_NULL) {
@@ -734,6 +750,7 @@ void ZrParser_SemanticQueryScope_Node(SZrParserSemanticQueryScope *scope,
     scope->root = root;
 }
 
+/* 只把 exactness 允许 projection 的表达式类型复制给消费者，避免把不完整推断结果当作确定类型。 */
 TZrBool ZrParser_SemanticQuery_TypeAt(const SZrSemanticContext *context,
                                       SZrFileRange position,
                                       const SZrParserSemanticQueryScope *scope,
@@ -756,6 +773,7 @@ TZrBool ZrParser_SemanticQuery_TypeAt(const SZrSemanticContext *context,
     return ZR_TRUE;
 }
 
+/* 单目标导航优先取读取的可达定义，否则退回声明；返回值借用当前 context 的事实存储。 */
 const SZrSemanticReferenceFact *ZrParser_SemanticQuery_DefinitionOf(
         const SZrSemanticContext *context,
         SZrFileRange position,
@@ -780,6 +798,7 @@ const SZrSemanticReferenceFact *ZrParser_SemanticQuery_DefinitionOf(
     return semantic_query_find_declaration_for_reference(context, reference, scope);
 }
 
+/* 多目标导航返回 fact 借用指针数组；调用方释放数组容量，context 保持事实所有权。 */
 TZrBool ZrParser_SemanticQuery_DefinitionsOf(
         const SZrSemanticContext *context,
         SZrFileRange position,
@@ -818,6 +837,7 @@ TZrBool ZrParser_SemanticQuery_DefinitionsOf(
     return outDefinitions->length > 0;
 }
 
+/* 输出包含同身份的全部 reference kinds，用于引用查找/code lens；数组只拥有借用指针槽位。 */
 TZrBool ZrParser_SemanticQuery_ReferencesOf(
         const SZrSemanticContext *context,
         TZrSymbolId symbolId,
@@ -856,6 +876,7 @@ TZrBool ZrParser_SemanticQuery_ReferencesOf(
     return outReferences->length > 0;
 }
 
+/* 按位置聚合各类借用事实供 LSP 复用；结果生命周期不超过当前语义快照。 */
 TZrBool ZrParser_SemanticQuery_FactsAt(const SZrSemanticContext *context,
                                        SZrFileRange position,
                                        const SZrParserSemanticQueryScope *scope,
@@ -909,6 +930,7 @@ TZrBool ZrParser_SemanticQuery_FactsAt(const SZrSemanticContext *context,
            outFacts->ownership != ZR_NULL;
 }
 
+/* compiler 和 LSP 共用此投影缓存；重建释放旧诊断资源，并记录 scope root 供读取时验证。 */
 TZrBool ZrParser_SemanticQuery_MaterializeDiagnostics(
         SZrSemanticContext *context,
         const SZrParserSemanticQueryScope *scope) {
@@ -1012,6 +1034,7 @@ TZrBool ZrParser_SemanticQuery_MaterializeDiagnostics(
     return ZR_TRUE;
 }
 
+/* 未物化返回成功的空视图；已物化只能按同一 root 读取，items 在重建或 context 释放后失效。 */
 TZrBool ZrParser_SemanticQuery_Diagnostics(
         const SZrSemanticContext *context,
         const SZrParserSemanticQueryScope *scope,

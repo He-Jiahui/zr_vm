@@ -49,6 +49,7 @@ static TZrBool contiguous_view_read_int_field(
     if (value == ZR_NULL || !ZR_VALUE_IS_TYPE_INT(value->type)) {
         return ZR_FALSE;
     }
+    /* 无符号字段先限制到 int64，后续区间运算才能使用同一有界整数契约。 */
     if (ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)) {
         *outValue = value->value.nativeObject.nativeInt64;
         return ZR_TRUE;
@@ -113,6 +114,7 @@ static SZrObject *contiguous_view_new(
                              context->state, prototype)
                    : ZrLib_Type_NewInstance(
                              context->state, fallbackTypeName);
+    /* 调用方在本 helper 返回对象后才写入 result；这里只检查分配结果和 store 返回值，字段静默失败风险见 store 的 TODO。 */
     if (view == ZR_NULL ||
         !contiguous_view_store(
                 context->state, view, source, start, length)) {
@@ -169,6 +171,7 @@ static TZrInt64 contiguous_view_checked_absolute_index(
         TZrInt64 start,
         TZrInt64 length,
         TZrInt64 index) {
+    /* RunError 声明为不返回；能执行到 return 的路径因此已经通过边界检查。 */
     if (context == ZR_NULL || index < 0 ||
         (TZrUInt64)index >= (TZrUInt64)length ||
         start > INT64_MAX - index) {

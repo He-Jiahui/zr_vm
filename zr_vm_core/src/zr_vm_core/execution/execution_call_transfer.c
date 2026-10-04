@@ -21,6 +21,9 @@ const TZrChar *ZrCore_Execution_TransferStatusName(EZrExecutionTransferStatus st
         case ZR_EXECUTION_TRANSFER_PENDING_CLEANUP: return "pending-cleanup";
         case ZR_EXECUTION_TRANSFER_ESCAPING_ALIAS: return "escaping-alias";
         case ZR_EXECUTION_TRANSFER_DEBUG_FRAME_REQUIRED: return "debug-frame-required";
+        case ZR_EXECUTION_TRANSFER_UNSUPPORTED: return "unsupported";
+        case ZR_EXECUTION_TRANSFER_NO_MEMORY: return "no-memory";
+        case ZR_EXECUTION_TRANSFER_SCRATCH_TOO_SMALL: return "scratch-too-small";
         default: return "unknown";
     }
 }

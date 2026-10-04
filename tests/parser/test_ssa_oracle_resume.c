@@ -66,6 +66,19 @@ static void effect_metadata(TZrExecIrInstructionId id, TZrUInt32 token,
     TZrExecIrMemoryTokenId next = token + 1u;
     instruction->effectIn = token;
     instruction->effectOut = next;
+    if (instruction->opcode == ZR_EXEC_IR_OPCODE_INVOKE) {
+        TZrExecIrMemoryTokenId before[2] = {
+            ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_MANAGED_HEAP, token),
+            ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_NATIVE_FFI, token)};
+        TZrExecIrMemoryTokenId after[2] = {
+            ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_MANAGED_HEAP, next),
+            ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_NATIVE_FFI, next)};
+        TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendMemoryTokens(
+                &function, before, 2u, &instruction->memoryIn));
+        TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendMemoryTokens(
+                &function, after, 2u, &instruction->memoryOut));
+        return;
+    }
     if (reads) {
         TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionAppendMemoryTokens(
                 &function, &token, 1u, &instruction->memoryIn));

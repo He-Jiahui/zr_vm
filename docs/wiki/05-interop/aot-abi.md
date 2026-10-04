@@ -1,6 +1,9 @@
 ---
 related_code:
   - zr_vm_common/include/zr_vm_common/zr_aot_abi.h
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_function_table.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
+  - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c
   - zr_vm_parser/include/zr_vm_parser/writer.h
   - zr_vm_library/include/zr_vm_library/aot_runtime.h
   - zr_vm_core/include/zr_vm_core/type_layout.h
@@ -49,6 +52,11 @@ loader 在任何函数调用前校验这些字段。
 `EZrAotParameterPassingMode` 必须与 parser/native descriptor 一致：VALUE、IN、REF、
 REF_READONLY、SCOPED_REF、SCOPED_REF_READONLY、OUT。`SZrAotGcRootMap` 不能把短生命周期
 临时 C 局部误标成 frame root；local address 只在生成函数的 safepoint window 有效。
+
+当前 C emitter 的 thunk、method-info 和 method-token 表共享 function-index
+索引空间。裁剪保留的空洞分别写入 `NULL`、`NULL`、`0`；相关 count 表示可寻址
+索引范围，不能改成非空条目数量，也不能独立压缩任意一张表。这是当前 C 生成端的
+表关联契约，不表示本轮已验证所有外部生成器或模块卸载生命周期。
 
 ## 生成与加载
 

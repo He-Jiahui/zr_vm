@@ -1348,8 +1348,13 @@ void test_state_map_function_clone_keeps_side_table_independent(void) {
     ZrCore_ExecIr_FreeFunction(&clone);
 }
 
+#include "ssa_state_map_verifier_cases.inc"
+
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_state_map_verifier_rejects_attached_identity_mismatch);
+    RUN_TEST(test_state_map_verifier_rejects_attached_storage_and_content);
+    RUN_TEST(test_state_map_builder_replaces_stale_attached_map);
     RUN_TEST(test_state_map_find_supports_each_logical_phase);
     RUN_TEST(test_state_map_materialization_rejects_unknown_phase);
     RUN_TEST(test_state_map_materialization_rejects_inconsistent_exception_state);

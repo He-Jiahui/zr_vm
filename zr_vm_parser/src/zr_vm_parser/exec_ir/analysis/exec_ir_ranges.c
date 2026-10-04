@@ -3,10 +3,35 @@
 #include <stdlib.h>
 #include <string.h>
 
+static TZrBool fact_append_required(TZrUInt32 count, TZrUInt32 capacity,
+                                   TZrUInt32 *required) {
+    if (required == ZR_NULL || count > capacity || count == UINT32_MAX) {
+        return ZR_FALSE;
+    }
+    *required = count + 1u;
+    return ZR_TRUE;
+}
+
+static TZrBool fact_capacity_bytes(TZrUInt32 capacity, size_t elementSize,
+                                  size_t *bytes) {
+    if (bytes == ZR_NULL || elementSize == 0u ||
+        (size_t)capacity > SIZE_MAX / elementSize) {
+        return ZR_FALSE;
+    }
+    *bytes = (size_t)capacity * elementSize;
+    return ZR_TRUE;
+}
+
 static TZrBool reserve(void **items, TZrUInt32 *capacity, TZrUInt32 count,
                        size_t elementSize) {
     TZrUInt32 next;
+    size_t bytes;
     void *memory;
+    if (items == ZR_NULL || capacity == ZR_NULL ||
+        (*capacity != 0u && *items == ZR_NULL) ||
+        !fact_capacity_bytes(*capacity, elementSize, &bytes)) {
+        return ZR_FALSE;
+    }
     if (count <= *capacity) {
         return ZR_TRUE;
     }
@@ -18,7 +43,10 @@ static TZrBool reserve(void **items, TZrUInt32 *capacity, TZrUInt32 count,
         }
         next *= 2u;
     }
-    memory = realloc(*items, (size_t)next * elementSize);
+    if (!fact_capacity_bytes(next, elementSize, &bytes)) {
+        return ZR_FALSE;
+    }
+    memory = realloc(*items, bytes);
     if (memory == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -61,11 +89,15 @@ TZrBool ZrParser_ExecIr_AnalysisFacts_AddRange(
         (range->hasLower && range->hasUpper && range->lower > range->upper)) {
         return ZR_FALSE;
     }
-    if (!reserve((void **)&facts->ranges, &facts->rangeCapacity,
-                 facts->rangeCount + 1u, sizeof(*facts->ranges))) {
+    SZrExecIrRangeFact value = *range;
+    TZrUInt32 required;
+    if (!fact_append_required(facts->rangeCount, facts->rangeCapacity, &required) ||
+        !reserve((void **)&facts->ranges, &facts->rangeCapacity,
+                 required, sizeof(*facts->ranges))) {
         return ZR_FALSE;
     }
-    facts->ranges[facts->rangeCount++] = *range;
+    facts->ranges[facts->rangeCount] = value;
+    facts->rangeCount = required;
     return ZR_TRUE;
 }
 
@@ -76,11 +108,15 @@ TZrBool ZrParser_ExecIr_AnalysisFacts_AddShape(
         shape->generation == 0u || shape->generation != facts->generation) {
         return ZR_FALSE;
     }
-    if (!reserve((void **)&facts->shapes, &facts->shapeCapacity,
-                 facts->shapeCount + 1u, sizeof(*facts->shapes))) {
+    SZrExecIrShapeFact value = *shape;
+    TZrUInt32 required;
+    if (!fact_append_required(facts->shapeCount, facts->shapeCapacity, &required) ||
+        !reserve((void **)&facts->shapes, &facts->shapeCapacity,
+                 required, sizeof(*facts->shapes))) {
         return ZR_FALSE;
     }
-    facts->shapes[facts->shapeCount++] = *shape;
+    facts->shapes[facts->shapeCount] = value;
+    facts->shapeCount = required;
     return ZR_TRUE;
 }
 
@@ -93,11 +129,15 @@ TZrBool ZrParser_ExecIr_AnalysisFacts_AddNullability(
         nullability->generation != facts->generation) {
         return ZR_FALSE;
     }
-    if (!reserve((void **)&facts->nullability, &facts->nullabilityCapacity,
-                 facts->nullabilityCount + 1u, sizeof(*facts->nullability))) {
+    SZrExecIrNullabilityFact value = *nullability;
+    TZrUInt32 required;
+    if (!fact_append_required(facts->nullabilityCount, facts->nullabilityCapacity, &required) ||
+        !reserve((void **)&facts->nullability, &facts->nullabilityCapacity,
+                 required, sizeof(*facts->nullability))) {
         return ZR_FALSE;
     }
-    facts->nullability[facts->nullabilityCount++] = *nullability;
+    facts->nullability[facts->nullabilityCount] = value;
+    facts->nullabilityCount = required;
     return ZR_TRUE;
 }
 

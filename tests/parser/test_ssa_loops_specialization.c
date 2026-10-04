@@ -2,6 +2,7 @@
 #include "zr_vm_parser/exec_ir_loops.h"
 #include "zr_vm_parser/exec_ir_profile.h"
 #include "zr_vm_parser/exec_ir_builder.h"
+#include "zr_vm_core/exec_ir_interpreter.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -410,9 +411,21 @@ static void test_strength_reduces_checked_identity_multiply(void) {
     SZrExecIrFunction function;
     SZrExecIrLoopInfo loops;
     SZrExecIrDiagnostic diagnostic;
+    SZrExecIrOracleInput context;
+    SZrExecIrOracleValue constants[10];
     build_loop(&function, ZR_FALSE, ZR_FALSE, ZR_TRUE);
+    memset(&context, 0, sizeof(context));
+    memset(constants, 0, sizeof(constants));
+    constants[1].kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+    constants[1].as.signedInteger = 1;
+    constants[9].kind = ZR_EXEC_IR_ORACLE_VALUE_SIGNED;
+    constants[9].as.signedInteger = 9;
+    context.function = &function;
+    context.constants = constants;
+    context.constantCount = 10u;
     ZrParser_ExecIr_LoopInfoInit(&loops);
-    assert(ZrParser_ExecIr_StrengthReduce(&function, &loops, &diagnostic));
+    assert(ZrParser_ExecIr_StrengthReduceWithContextEx(
+            &function, &loops, &context, ZR_NULL, &diagnostic));
     assert(loops.strengthReducedCount == 1u);
     assert(function.instructions[5].opcode == ZR_EXEC_IR_OPCODE_COPY);
     assert(function.instructions[5].operands.count == 1u);

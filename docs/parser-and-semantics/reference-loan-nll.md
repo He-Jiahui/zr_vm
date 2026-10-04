@@ -76,12 +76,19 @@ is killed at its creation instruction during backward transfer, which bounds the
 region at the origin. The last reachable use, rather than the containing lexical
 block, determines the normal end of the region.
 
-Semantic value ids are reusable and are not SSA definitions. Instruction-use construction therefore
-masks a loan before the actual `BorrowShared`, `BorrowMut`, `Reserve`, or `Reborrow` instruction that
-created it, instead of consulting the current definition attached to a reused ValueId. The mask is
-local to instruction uses: global Place propagation and CFG joins keep their complete reaching-loan
-sets. This prevents a future property receiver loan from appearing on earlier instructions without
-dropping legitimate branch-join facts.
+Semantic value ids with a nonzero `resultValueId` have a single definition: `Emit` rejects a
+second result definition, and `Validate` checks that the recorded definition points back to the
+matching instruction. Instruction-use construction additionally masks a loan before its actual
+`BorrowShared`, `BorrowMut`, `Reserve`, or `Reborrow` origin. This mask is local to instruction uses:
+Place propagation and CFG joins retain their complete reaching-loan sets.
+
+`BUG:` In `test_shared_and_mutable_loans_end_after_last_use`, the two `LOAD` instructions reuse
+`loadValue` as their result. The second `Emit` returns an invalid instruction ID; the subsequent
+no-conflict and false-liveness assertions query that invalid ID, so they do not cover an actual
+read after the mutable loan's last use. Static evidence: `tests/parser/test_reference_loan_nll.c`
+lines 43–51 and 58–70, `semantic_ir.c` lines 610–614 and 659, and `semantic_ir_loan_facts.c`
+lines 155–159. A future behavior fix should use a distinct result value, assert successful emission,
+and then check the actual post-use `LOAD`. This comment review does not make that behavior change.
 
 A `Reborrow` derives its direct parent set from the input ref value. A ref loaded
 after a CFG join may have multiple possible parents; all remain in the child

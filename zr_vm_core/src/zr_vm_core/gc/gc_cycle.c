@@ -1959,6 +1959,7 @@ static TZrSize garbage_collector_rewrite_object_graph(SZrState *state, SZrRawObj
                 work += garbage_collector_rewrite_string_slot(&module->moduleName);
                 work += garbage_collector_rewrite_string_slot(&module->fullPath);
                 if (module->hasMetadataRuntime) {
+                    module->metadataRuntime.module = module;
                     garbage_collector_rewrite_raw_object_slot(
                             (SZrRawObject **)&module->metadataRuntime.metadataFunction);
                 }

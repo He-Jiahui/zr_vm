@@ -410,7 +410,7 @@ static void compare_exception_cleanup(TZrBool throwing) {
     edges(3u, 4u, 0u);
     call = emit(1u, ZR_EXEC_IR_OPCODE_INVOKE,
                 ZR_EXEC_IR_FLAG_MAY_THROW | ZR_EXEC_IR_FLAG_MAY_ALLOCATE, receiver, owner);
-    effects(call, 1u, ZR_FALSE);
+    call_effects(call, 1u, 1u);
     function.instructions[call - 1u].successorRange = function.blocks[0].successorRange;
     function.blocks[0].terminatorInstructionId = call;
     terminal(2u, ZR_EXEC_IR_OPCODE_BRANCH, 0u);

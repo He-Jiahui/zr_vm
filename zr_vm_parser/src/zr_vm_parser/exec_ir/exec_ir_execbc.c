@@ -258,11 +258,22 @@ static TZrBool zr_execbc_compare(const SZrExecBcInstruction *instruction,
                                  SZrExecIrOracleValue *result) {
     int comparison;
     if (!zr_execbc_numeric(left) || !zr_execbc_numeric(right)) return ZR_FALSE;
+    result->kind = ZR_EXEC_IR_ORACLE_VALUE_BOOL;
     if (left->kind == ZR_EXEC_IR_ORACLE_VALUE_FLOAT ||
         right->kind == ZR_EXEC_IR_ORACLE_VALUE_FLOAT) {
         TZrFloat64 a = zr_execbc_float(left), b = zr_execbc_float(right);
-        comparison = a < b ? -1 : (a > b ? 1 : 0);
-    } else if (left->kind == ZR_EXEC_IR_ORACLE_VALUE_UNSIGNED ||
+        /* Evaluate each predicate directly so unordered is never equality. */
+        switch (instruction->typeToken) {
+            case 1u: result->as.boolean = (TZrBool)(a < b); break;
+            case 2u: result->as.boolean = (TZrBool)(a <= b); break;
+            case 3u: result->as.boolean = (TZrBool)(a > b); break;
+            case 4u: result->as.boolean = (TZrBool)(a >= b); break;
+            case 5u: result->as.boolean = (TZrBool)(a != b); break;
+            default: result->as.boolean = (TZrBool)(a == b); break;
+        }
+        return ZR_TRUE;
+    }
+    if (left->kind == ZR_EXEC_IR_ORACLE_VALUE_UNSIGNED ||
                right->kind == ZR_EXEC_IR_ORACLE_VALUE_UNSIGNED) {
         TZrUInt64 a = zr_execbc_unsigned(left), b = zr_execbc_unsigned(right);
         comparison = a < b ? -1 : (a > b ? 1 : 0);
@@ -270,7 +281,6 @@ static TZrBool zr_execbc_compare(const SZrExecBcInstruction *instruction,
         TZrInt64 a = zr_execbc_signed(left), b = zr_execbc_signed(right);
         comparison = a < b ? -1 : (a > b ? 1 : 0);
     }
-    result->kind = ZR_EXEC_IR_ORACLE_VALUE_BOOL;
     switch (instruction->typeToken) {
         case 1u: result->as.boolean = comparison < 0; break;
         case 2u: result->as.boolean = comparison <= 0; break;

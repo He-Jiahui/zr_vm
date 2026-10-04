@@ -1,4 +1,5 @@
 #include "compiler_internal.h"
+#include "compiler_semantic_cfg_loop.h"
 
 /* The source compiler owns block boundaries: ExecBC jump offsets never enter
  * this graph.  The first source control boundary promotes the current
@@ -167,6 +168,7 @@ typedef enum EZrCompilerSemanticCfgArmFlow {
 static EZrCompilerSemanticCfgArmFlow compiler_semantic_cfg_if_arm_flow(
         const SZrAstNode *node,
         TZrBool allowPendingLoopTransfer,
+        TZrBool allowDirectLoopBreak,
         TZrBool allowProtectedInvoke) {
     TZrSize index;
 
@@ -187,7 +189,9 @@ static EZrCompilerSemanticCfgArmFlow compiler_semantic_cfg_if_arm_flow(
                        : ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED;
     }
     if (node->type == ZR_AST_BREAK_CONTINUE_STATEMENT) {
-        return allowPendingLoopTransfer &&
+        return (allowPendingLoopTransfer ||
+                (allowDirectLoopBreak &&
+                 node->data.breakContinueStatement.isBreak)) &&
                        node->data.breakContinueStatement.expr == ZR_NULL
                        ? ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES
                        : ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED;
@@ -201,10 +205,10 @@ static EZrCompilerSemanticCfgArmFlow compiler_semantic_cfg_if_arm_flow(
         }
         thenFlow = compiler_semantic_cfg_if_arm_flow(
                 node->data.ifExpression.thenExpr,
-                allowPendingLoopTransfer, allowProtectedInvoke);
+                allowPendingLoopTransfer, allowDirectLoopBreak, allowProtectedInvoke);
         elseFlow = compiler_semantic_cfg_if_arm_flow(
                 node->data.ifExpression.elseExpr,
-                allowPendingLoopTransfer, allowProtectedInvoke);
+                allowPendingLoopTransfer, allowDirectLoopBreak, allowProtectedInvoke);
         if (thenFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED ||
             elseFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED) {
             return ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED;
@@ -237,7 +241,8 @@ static EZrCompilerSemanticCfgArmFlow compiler_semantic_cfg_if_arm_flow(
             continue;
         }
         flow = compiler_semantic_cfg_if_arm_flow(
-                statement, allowPendingLoopTransfer, allowProtectedInvoke);
+                statement, allowPendingLoopTransfer, allowDirectLoopBreak,
+                allowProtectedInvoke);
         if (flow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED) {
             return flow;
         }
@@ -375,6 +380,7 @@ TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
     EZrCompilerSemanticCfgArmFlow elseFlow;
     TZrBool bothTerminate;
     TZrBool allowPendingLoopTransfer = ZR_FALSE;
+    TZrBool allowDirectLoopBreak = ZR_FALSE;
     if (cs == ZR_NULL || node == ZR_NULL || thenBlock == ZR_NULL ||
         elseBlock == ZR_NULL || joinBlock == ZR_NULL) {
         return ZR_FALSE;
@@ -393,15 +399,18 @@ TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
                          cs, loopLabel->semanticBreakBlockId) ||
                  compiler_semantic_cfg_continue_through_finally_is_active(
                          cs, loopLabel->semanticContinueBlockId)));
+        allowDirectLoopBreak = (TZrBool)(
+                cs->preSemanticIrCfgActive && loopLabel != ZR_NULL &&
+                loopLabel->semanticBreakBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID);
     }
     TZrBool allowProtectedInvoke = (TZrBool)(
             cs->preSemanticIrCfgFinallyPlan != ZR_NULL);
     thenFlow = compiler_semantic_cfg_if_arm_flow(
             node->data.ifExpression.thenExpr, allowPendingLoopTransfer,
-            allowProtectedInvoke);
+            allowDirectLoopBreak, allowProtectedInvoke);
     elseFlow = compiler_semantic_cfg_if_arm_flow(
             node->data.ifExpression.elseExpr, allowPendingLoopTransfer,
-            allowProtectedInvoke);
+            allowDirectLoopBreak, allowProtectedInvoke);
     if (thenFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED ||
         elseFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_UNSUPPORTED) {
         if (cs->preSemanticIrCfgActive && !compiler_semantic_cfg_abandon(cs)) {
@@ -474,9 +483,7 @@ TZrBool compiler_semantic_cfg_begin_while(SZrCompilerState *cs,
     }
     if (!compiler_semantic_cfg_loop_condition_is_supported(
                 node->data.whileLoop.cond) ||
-        !compiler_semantic_cfg_loop_body_analyze(
-                node->data.whileLoop.block, ZR_TRUE, ZR_TRUE, ZR_TRUE,
-                ZR_NULL)) {
+        !compiler_semantic_cfg_while_body_is_supported(node->data.whileLoop.block)) {
         if (cs->preSemanticIrCfgActive && !compiler_semantic_cfg_abandon(cs)) {
             return ZR_FALSE;
         }

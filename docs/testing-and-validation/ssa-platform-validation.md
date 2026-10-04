@@ -15,6 +15,7 @@ plan_sources:
 tests:
   - tests/core/test_ssa_platform_matrix.c
   - tests/acceptance/ssa-platform-matrix.md
+  - tests/acceptance/2026-10-03-ssa-platform-runtime-acceptance-policy.md
 doc_type: module-detail
 ---
 
@@ -52,7 +53,16 @@ runtime, backend, runner (`cross-compile`, `emulator`, `real-device`, or
 WASM/browser runtime), compiled/executed/semantic-passed stages, unsupported
 feature bits, dispatch implementation, and result/exception/source-map
 witnesses.  `ZrCommon_SsaPlatform_IsRuntimeAcceptance` requires all three
-stages and a `passed` outcome; cross compilation alone is never sufficient.
+stages and a `passed` outcome.  A `cross-compile` runner cannot report executed
+or semantic-passed stages, or a `passed` outcome.  Such contradictory evidence
+is rejected even when all three stage fields are true.  A separate observation
+from a host, emulator, real device, browser, or WASM runtime can record actual
+execution; changing the runner does not itself prove those stages occurred.
+
+Both `Check` and `IsRuntimeAcceptance` consume one private observation policy.
+On Android, iOS, and WASM it rejects a Host JIT backend declaration, a
+machine-code execution bit, or a machine-code JIT feature requirement.  Clearing
+the execution bit cannot make a forbidden backend declaration acceptable.
 
 ## Failure Semantics
 
@@ -62,6 +72,9 @@ stages and a `passed` outcome; cross compilation alone is never sufficient.
   PMU, or other required features.  WASM PMU is not inferred from the target.
 - `RUNTIME_UNAVAILABLE` is used for a cross-compiled or otherwise unexecuted
   observation with no semantic result.  It is not a pass.
+- `OBSERVATION_INVALID` rejects cross-compile evidence that claims execution,
+  semantic success, or a passed outcome.  Ordinary cross-compile unavailable
+  evidence keeps its `RUNTIME_UNAVAILABLE` diagnosis.
 - A `passed` observation carrying any `unsupportedFeatures` bit is rejected as
   `OBSERVATION_INVALID`; the convenience acceptance predicate also fails
   closed on malformed schema, ABI, identity, dispatch, or feature fields.
@@ -95,6 +108,9 @@ kind and rejects a dispatch form that the declared profile did not allow.
 - WASM thread/concurrent-GC/PMU unsupported reporting;
 - mobile/WASM machine-code JIT rejection and WASM32 pointer-width validation;
 - cross-compile versus real-device distinction;
+- cross-compile execution-stage combinations and contradictory passed rows;
+- shared rejection of all three JIT policy triggers on Android, iOS, and WASM;
+- positive execution-runner observations after the shared policy check;
 - restricted iOS native-import rejection;
 - x86-64/AArch64 host JIT target checks;
 - target-triple and callback ABI drift;
@@ -118,6 +134,14 @@ warning syntax, C++ header, WSL ASan+UBSan, and Valgrind checks all pass for the
 focused fixture.  Android, iOS, and WASM real runtime/device rows remain
 `unavailable` in this host environment; no cross-compile result is promoted to
 runtime acceptance.
+
+The observation-policy regression was validated separately with MSVC
+19.44.35228 on 2026-10-02 UTC / 2026-10-03 Asia/Shanghai.  A frozen original
+implementation produced ten failed expectations; the fixed implementation and
+the expanded existing fixture passed strict C11 debug compilation, while the
+same explicit policy probe passed both debug and optimized `NDEBUG` production
+builds.  Full commands, hashes, and remaining platform gates are recorded in
+`tests/acceptance/2026-10-03-ssa-platform-runtime-acceptance-policy.md`.
 
 ## Plan Sources and Scope
 

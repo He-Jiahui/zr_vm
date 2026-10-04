@@ -128,7 +128,8 @@ preflights every destination, materializes only scalar slots, returns bounded
 writeback values, and reports unique physical slots to invalidate. A short
 frame or capacity error leaves both frame bytes and invalidation state
 unchanged. The `ssa_core_roots_observation` test covers relocation, inline
-fields, scalar-looking pointer bits, and this atomic failure boundary.
+fields and this atomic failure boundary. The core fixture explicitly classifies
+its reference slots; it does not test rejecting scalar-looking pointer bits.
 
 For an inline field, `frameByteOffset` and `byteSize` describe the containing
 span, while `fieldByteOffset` locates a pointer inside that span. The root

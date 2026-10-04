@@ -77,25 +77,6 @@ static TZrBool zr_licm_loop_contains(const SZrExecIrLoopInfo *info,
     return ZR_FALSE;
 }
 
-static TZrBool zr_licm_value_is_constant(const SZrExecIrFunction *function,
-                                         TZrExecIrValueId valueId,
-                                         TZrUInt64 *bits) {
-    TZrExecIrInstructionId definition;
-    if (function == ZR_NULL || bits == ZR_NULL || valueId == 0u ||
-        valueId > function->valueCount || function->values == ZR_NULL)
-        return ZR_FALSE;
-    definition = function->values[valueId - 1u].definition;
-    if (definition == 0u || definition > function->instructionCount ||
-        function->instructions == ZR_NULL)
-        return ZR_FALSE;
-    if (function->instructions[definition - 1u].opcode !=
-            (TZrUInt16)ZR_EXEC_IR_OPCODE_CONSTANT ||
-        function->instructions[definition - 1u].results.count != 1u)
-        return ZR_FALSE;
-    *bits = function->instructions[definition - 1u].layoutId;
-    return ZR_TRUE;
-}
-
 static TZrBool zr_licm_instruction_is_pure(const SZrExecIrInstruction *instruction) {
     if (instruction == ZR_NULL || instruction->flags != 0u ||
         instruction->memoryIn.count != 0u || instruction->memoryOut.count != 0u ||
@@ -106,49 +87,19 @@ static TZrBool zr_licm_instruction_is_pure(const SZrExecIrInstruction *instructi
     switch ((EZrExecIrOpcode)instruction->opcode) {
         case ZR_EXEC_IR_OPCODE_CONSTANT:
         case ZR_EXEC_IR_OPCODE_COPY:
-        case ZR_EXEC_IR_OPCODE_CONVERT:
             return ZR_TRUE;
         case ZR_EXEC_IR_OPCODE_ADD:
         case ZR_EXEC_IR_OPCODE_SUB:
         case ZR_EXEC_IR_OPCODE_MUL:
-            /* Arithmetic without a range proof is considered safe only when
-             * both operands are constants and the uint32 representation does
-             * not overflow.  A later range-aware pass can widen this set. */
+        case ZR_EXEC_IR_OPCODE_DIV:
+            /* Scalar speculation requires an explicit payload-domain proof. */
             return ZR_TRUE;
         default:
             return ZR_FALSE;
     }
 }
 
-static TZrBool zr_licm_arithmetic_is_safe(const SZrExecIrFunction *function,
-                                           const SZrExecIrInstruction *instruction) {
-    TZrUInt64 left;
-    TZrUInt64 right;
-    TZrUInt64 result;
-    if (instruction->opcode == (TZrUInt16)ZR_EXEC_IR_OPCODE_CONSTANT ||
-        instruction->opcode == (TZrUInt16)ZR_EXEC_IR_OPCODE_COPY ||
-        instruction->opcode == (TZrUInt16)ZR_EXEC_IR_OPCODE_CONVERT)
-        return ZR_TRUE;
-    if (instruction->operands.count != 2u || function->operands == ZR_NULL ||
-        !zr_licm_value_is_constant(function,
-                                    function->operands[instruction->operands.start],
-                                    &left) ||
-        !zr_licm_value_is_constant(function,
-                                    function->operands[instruction->operands.start + 1u],
-                                    &right))
-        return ZR_FALSE;
-    if (instruction->opcode == (TZrUInt16)ZR_EXEC_IR_OPCODE_ADD) {
-        if (left > UINT64_MAX - right) return ZR_FALSE;
-        result = left + right;
-    } else if (instruction->opcode == (TZrUInt16)ZR_EXEC_IR_OPCODE_SUB) {
-        if (left < right) return ZR_FALSE;
-        result = left - right;
-    } else {
-        if (right != 0u && left > UINT64_MAX / right) return ZR_FALSE;
-        result = left * right;
-    }
-    return (TZrBool)(result <= UINT32_MAX);
-}
+#include "exec_ir_licm_scalar.h"
 
 static TZrBool zr_licm_operand_invariant(const SZrExecIrFunction *function,
                                           const SZrExecIrLoopInfo *info,
@@ -236,6 +187,7 @@ static TZrBool zr_licm_result_uses_after(const SZrExecIrFunction *function,
 
 static TZrBool zr_licm_candidate(const SZrExecIrFunction *function,
                                  const SZrExecIrLoopInfo *info,
+                                 const SZrExecIrOracleInput *scalarContext,
                                  const SZrExecIrLoop *loop,
                                  const TZrUInt8 *invariant,
                                  TZrExecIrInstructionId *instructionId,
@@ -246,6 +198,13 @@ static TZrBool zr_licm_candidate(const SZrExecIrFunction *function,
         function == ZR_NULL || info == ZR_NULL || loop == ZR_NULL) return ZR_FALSE;
     *instructionId = 0u;
     *reason = ZR_EXEC_IR_LOOP_REASON_NONE;
+    /* Logical checkpoints and GC sites need a complete owned-map remapper.
+     * Preserve borrowed maps and instruction IDs until that path exists. */
+    if (function->stateMap != ZR_NULL || function->gcMap != ZR_NULL ||
+        function->gcMapCount != 0u) {
+        *reason = ZR_EXEC_IR_LOOP_REASON_NOT_INVARIANT;
+        return ZR_FALSE;
+    }
     if (!loop->reducible || loop->multipleEntry) {
         *reason = loop->multipleEntry ? ZR_EXEC_IR_LOOP_REASON_MULTIPLE_ENTRY
                                       : ZR_EXEC_IR_LOOP_REASON_IRREDUCIBLE;
@@ -278,7 +237,8 @@ static TZrBool zr_licm_candidate(const SZrExecIrFunction *function,
                 instruction->opcode == (TZrUInt16)ZR_EXEC_IR_OPCODE_BRANCH ||
                 instruction->opcode == (TZrUInt16)ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH)
                 continue;
-            if (!zr_licm_instruction_is_pure(instruction)) {
+            if (!zr_licm_instruction_is_pure(instruction) &&
+                !zr_licm_safe_div_candidate(function, scalarContext, instruction)) {
                 *reason = (instruction->flags != 0u || instruction->memoryIn.count != 0u ||
                            instruction->memoryOut.count != 0u || instruction->effectIn != 0u ||
                            instruction->effectOut != 0u)
@@ -294,7 +254,7 @@ static TZrBool zr_licm_candidate(const SZrExecIrFunction *function,
                 *reason = ZR_EXEC_IR_LOOP_REASON_NOT_INVARIANT;
                 continue;
             }
-            if (!zr_licm_arithmetic_is_safe(function, instruction)) {
+            if (!zr_licm_arithmetic_is_safe(function, scalarContext, instruction)) {
                 *reason = ZR_EXEC_IR_LOOP_REASON_OVERFLOW;
                 continue;
             }
@@ -497,50 +457,9 @@ static TZrBool zr_licm_emit_remark(struct SZrExecIrRemarkSink *remarks,
     return ZR_TRUE;
 }
 
-static TZrBool zr_licm_strength_identity(const SZrExecIrFunction *function,
-                                         const SZrExecIrInstruction *instruction,
-                                         TZrExecIrValueId *baseValue) {
-    TZrUInt64 left;
-    TZrUInt64 right;
-    if (function == ZR_NULL || instruction == ZR_NULL || baseValue == ZR_NULL ||
-        function->operands == ZR_NULL || instruction->operands.count != 2u ||
-        instruction->results.count != 1u || instruction->flags != 0u ||
-        instruction->memoryIn.count != 0u || instruction->memoryOut.count != 0u ||
-        instruction->effectIn != 0u || instruction->effectOut != 0u ||
-        instruction->phiRange.count != 0u || instruction->successorRange.count != 0u ||
-        instruction->deoptId != 0u || instruction->bindingRow != 0u) {
-        return ZR_FALSE;
-    }
-    if (instruction->operands.start > function->operandCount ||
-        instruction->operands.count > function->operandCount - instruction->operands.start)
-        return ZR_FALSE;
-    *baseValue = function->operands[instruction->operands.start];
-    if (instruction->opcode == (TZrUInt16)ZR_EXEC_IR_OPCODE_MUL) {
-        if (!zr_licm_value_is_constant(function,
-                                       function->operands[instruction->operands.start + 1u],
-                                       &right) || right != 1u)
-            return ZR_FALSE;
-        return ZR_TRUE;
-    }
-    if (instruction->opcode == (TZrUInt16)ZR_EXEC_IR_OPCODE_ADD ||
-        instruction->opcode == (TZrUInt16)ZR_EXEC_IR_OPCODE_SUB) {
-        if (zr_licm_value_is_constant(function,
-                                       function->operands[instruction->operands.start + 1u],
-                                       &right) && right == 0u)
-            return ZR_TRUE;
-        if (instruction->opcode == (TZrUInt16)ZR_EXEC_IR_OPCODE_ADD &&
-            zr_licm_value_is_constant(function,
-                                       function->operands[instruction->operands.start],
-                                       &left) && left == 0u) {
-            *baseValue = function->operands[instruction->operands.start + 1u];
-            return ZR_TRUE;
-        }
-    }
-    return ZR_FALSE;
-}
-
 static TZrBool zr_licm_apply_strength_identity(
         SZrExecIrFunction *function, const SZrExecIrLoopInfo *info,
+        const SZrExecIrOracleInput *scalarContext,
         TZrUInt32 *reduced, struct SZrExecIrRemarkSink *remarks,
         SZrExecIrDiagnostic *diagnostic) {
     TZrUInt32 loopIndex;
@@ -561,7 +480,7 @@ static TZrBool zr_licm_apply_strength_identity(
                 SZrExecIrInstruction *instruction = &function->instructions[instructionIndex];
                 TZrExecIrValueId baseValue;
                 SZrExecIrRange baseRange;
-                if (!zr_licm_strength_identity(function, instruction, &baseValue)) continue;
+                if (!zr_licm_strength_identity(function, scalarContext, instruction, &baseValue)) continue;
                 if (!ZrCore_ExecIr_FunctionAppendOperands(function, &baseValue, 1u,
                                                           &baseRange)) {
                     zr_licm_diagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
@@ -583,6 +502,7 @@ static TZrBool zr_licm_apply_strength_identity(
 
 static TZrBool zr_licm_find_and_mark(const SZrExecIrFunction *function,
                                      const SZrExecIrLoopInfo *info,
+                                 const SZrExecIrOracleInput *scalarContext,
                                      TZrExecIrInstructionId *instructionId,
                                      EZrExecIrLoopReason *reason,
                                      TZrUInt8 **invariantOut) {
@@ -617,7 +537,7 @@ static TZrBool zr_licm_find_and_mark(const SZrExecIrFunction *function,
                     EZrExecIrLoopReason localReason;
                     TZrExecIrInstructionId ignored;
                     if (invariant[instructionIndex] != 0u) continue;
-                    if (zr_licm_candidate(function, info, loop, invariant,
+                    if (zr_licm_candidate(function, info, scalarContext, loop, invariant,
                                           &ignored, &localReason) &&
                         ignored == instructionIndex + 1u) {
                         invariant[instructionIndex] = 1u;
@@ -631,7 +551,7 @@ static TZrBool zr_licm_find_and_mark(const SZrExecIrFunction *function,
     }
     for (loopIndex = 0u; loopIndex < info->loopCount; ++loopIndex) {
         EZrExecIrLoopReason localReason;
-        if (zr_licm_candidate(function, info, &info->loops[loopIndex], invariant,
+        if (zr_licm_candidate(function, info, scalarContext, &info->loops[loopIndex], invariant,
                               instructionId, &localReason)) {
             *reason = localReason;
             *invariantOut = invariant;
@@ -643,8 +563,9 @@ static TZrBool zr_licm_find_and_mark(const SZrExecIrFunction *function,
     return ZR_FALSE;
 }
 
-TZrBool ZrParser_ExecIr_OptimizeLoopsEx(SZrExecIrFunction *function,
+TZrBool ZrParser_ExecIr_OptimizeLoopsWithContextEx(SZrExecIrFunction *function,
                                         SZrExecIrLoopInfo *info,
+                                        const SZrExecIrOracleInput *scalarContext,
                                         struct SZrExecIrRemarkSink *remarks,
                                         SZrExecIrDiagnostic *diagnostic) {
     SZrExecIrLoopInfo working;
@@ -676,7 +597,10 @@ TZrBool ZrParser_ExecIr_OptimizeLoopsEx(SZrExecIrFunction *function,
         TZrUInt8 *invariant = ZR_NULL;
         TZrExecIrBlockId preheaderId = 0u;
         TZrUInt32 loopIndex;
-        if (!zr_licm_find_and_mark(function, &working, &instructionId, &reason,
+        TZrBool rebuildScalarEffects;
+        SZrExecIrFunction staged;
+        SZrExecIrFunction *moveTarget = function;
+        if (!zr_licm_find_and_mark(function, &working, scalarContext, &instructionId, &reason,
                                    &invariant)) {
             if (working.loopCount != 0u) blocked++;
             if (!zr_licm_emit_remark(remarks, function, 0u,
@@ -704,9 +628,28 @@ TZrBool ZrParser_ExecIr_OptimizeLoopsEx(SZrExecIrFunction *function,
             }
             if (preheaderId != 0u) break;
         }
+        rebuildScalarEffects = (TZrBool)(function->instructions[instructionId - 1u].opcode ==
+                                         ZR_EXEC_IR_OPCODE_DIV);
+        if (rebuildScalarEffects &&
+            !ZrCore_ExecIr_VerifyFunction(function, ZR_EXEC_IR_VERIFY_ALL, diagnostic)) {
+            ZrParser_ExecIr_LoopInfoFree(&working);
+            return ZR_FALSE;
+        }
+        if (rebuildScalarEffects) {
+            /* Destructive effect reconstruction happens only in a deep clone.
+             * Clone/move/synthesis/verification failure leaves the current
+             * original graph valid, including earlier accepted pure moves. */
+            ZrCore_ExecIr_FunctionInit(&staged);
+            if (!ZrCore_ExecIr_CloneFunction(function, &staged, diagnostic)) {
+                ZrParser_ExecIr_LoopInfoFree(&working);
+                return ZR_FALSE;
+            }
+            moveTarget = &staged;
+        }
         if (preheaderId == 0u ||
-            !zr_licm_move_instruction(function, instructionId, preheaderId,
+            !zr_licm_move_instruction(moveTarget, instructionId, preheaderId,
                                        diagnostic)) {
+            if (rebuildScalarEffects) ZrCore_ExecIr_FreeFunction(&staged);
             blocked++;
             if (!zr_licm_emit_remark(remarks, function, instructionId,
                                      ZR_EXEC_IR_REMARK_MISSED,
@@ -716,6 +659,17 @@ TZrBool ZrParser_ExecIr_OptimizeLoopsEx(SZrExecIrFunction *function,
                 return ZR_FALSE;
             }
             break;
+        }
+        if (rebuildScalarEffects &&
+            (!zr_licm_rebuild_scalar_effects(&staged, diagnostic) ||
+             !ZrCore_ExecIr_VerifyFunction(&staged, ZR_EXEC_IR_VERIFY_ALL, diagnostic))) {
+            ZrCore_ExecIr_FreeFunction(&staged);
+            ZrParser_ExecIr_LoopInfoFree(&working);
+            return ZR_FALSE;
+        }
+        if (rebuildScalarEffects) {
+            ZrCore_ExecIr_FreeFunction(function);
+            *function = staged;
         }
         hoisted++;
         if (!zr_licm_emit_remark(remarks, function, instructionId,
@@ -753,8 +707,9 @@ TZrBool ZrParser_ExecIr_OptimizeLoops(SZrExecIrFunction *function,
     return ZrParser_ExecIr_OptimizeLoopsEx(function, info, ZR_NULL, diagnostic);
 }
 
-TZrBool ZrParser_ExecIr_StrengthReduceEx(SZrExecIrFunction *function,
+TZrBool ZrParser_ExecIr_StrengthReduceWithContextEx(SZrExecIrFunction *function,
                                          SZrExecIrLoopInfo *info,
+                                         const SZrExecIrOracleInput *scalarContext,
                                          struct SZrExecIrRemarkSink *remarks,
                                          SZrExecIrDiagnostic *diagnostic) {
     SZrExecIrLoopInfo working;
@@ -776,7 +731,7 @@ TZrBool ZrParser_ExecIr_StrengthReduceEx(SZrExecIrFunction *function,
                                       diagnostic)) return ZR_FALSE;
     ZrParser_ExecIr_LoopInfoInit(&working);
     if (!ZrParser_ExecIr_AnalyzeLoops(function, &working, diagnostic) ||
-        !zr_licm_apply_strength_identity(function, &working, &reduced,
+        !zr_licm_apply_strength_identity(function, &working, scalarContext, &reduced,
                                           remarks, diagnostic)) {
         ZrParser_ExecIr_LoopInfoFree(&working);
         return ZR_FALSE;
@@ -804,4 +759,17 @@ TZrBool ZrParser_ExecIr_RunLicm(SZrExecIrFunction *function,
                                 SZrExecIrLoopInfo *info,
                                 SZrExecIrDiagnostic *diagnostic) {
     return ZrParser_ExecIr_OptimizeLoops(function, info, diagnostic);
+}
+
+TZrBool ZrParser_ExecIr_OptimizeLoopsEx(SZrExecIrFunction *function,
+        SZrExecIrLoopInfo *info, struct SZrExecIrRemarkSink *remarks,
+        SZrExecIrDiagnostic *diagnostic) {
+    return ZrParser_ExecIr_OptimizeLoopsWithContextEx(function, info, ZR_NULL,
+                                                     remarks, diagnostic);
+}
+TZrBool ZrParser_ExecIr_StrengthReduceEx(SZrExecIrFunction *function,
+        SZrExecIrLoopInfo *info, struct SZrExecIrRemarkSink *remarks,
+        SZrExecIrDiagnostic *diagnostic) {
+    return ZrParser_ExecIr_StrengthReduceWithContextEx(function, info, ZR_NULL,
+                                                      remarks, diagnostic);
 }

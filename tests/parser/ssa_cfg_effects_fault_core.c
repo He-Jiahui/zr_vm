@@ -2,6 +2,8 @@
 
 #include <stdlib.h>
 
+/* 场景状态须串行使用：arm/reset 清空累计 realloc 尝试与合成故障命中标志。
+ * 计数包含失败尝试，序号从 1 开始；0 关闭本组注入。 */
 static size_t failureOrdinal;
 static size_t allocationOrdinal;
 static TZrBool failed;
@@ -16,6 +18,7 @@ size_t ssa_cfg_effects_fault_reallocation_attempts(void) {
     return allocationOrdinal;
 }
 
+/* 用例以该标志区分合成故障与正常 realloc 返回值；读取不清空，自然 OOM 不置位。 */
 TZrBool ssa_cfg_effects_fault_reallocation_failed(void) {
     return failed;
 }
@@ -31,6 +34,8 @@ static void *ssa_cfg_effects_fault_realloc(void *storage, size_t bytes) {
 
 /* Compile the real core append-pool implementation with only its allocator
  * redirected. This makes the test hit the actual phi/token pool reallocs. */
+/* 替换 exec_ir.c 的全部 realloc 调用；当前 CFG 用例观察 phiIncoming 与 memoryToken 池。
+ * 构建从源列表移除普通 exec_ir.c，以这份 TU 提供同一组 Core 符号。 */
 #define realloc ssa_cfg_effects_fault_realloc
 #include "../../zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c"
 #undef realloc

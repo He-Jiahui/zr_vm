@@ -1,4 +1,6 @@
 #include "backend_aot_ir_scalar_text_internal.h"
+#include "backend_aot_ir_scalar_arithmetic.h"
+#include "backend_aot_ir_scalar_conditional.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -13,9 +15,18 @@ EZrAotIrStatus backend_aot_ir_llvm_emit_const_i64(
     EZrAotIrStatus status = backend_aot_ir_scalar_text_check_output(
             output, capacity, outLength, diagnostic);
     if (status != ZR_AOT_IR_OK) return status;
+    if (module != ZR_NULL && module->constantCount == 4u) {
+        return backend_aot_ir_scalar_conditional_emit(
+                module, functionId, output, capacity, outLength, diagnostic, 1u);
+    }
+    if (module != ZR_NULL && module->constantCount == 2u) {
+        return backend_aot_ir_scalar_arithmetic_emit(
+                module, functionId, output, capacity, outLength, diagnostic, 1u);
+    }
     status = backend_aot_ir_scalar_text_prepare(module, functionId, &plan,
                                                 diagnostic);
     if (status != ZR_AOT_IR_OK) return status;
+    /* LLVM 接受最小负十进制 i64；在无符号域求幅值，避免宿主有符号转换溢出。 */
     if (plan.bits <= INT64_MAX) {
         count = snprintf(literal, sizeof(literal), "%llu",
                          (unsigned long long)plan.bits);
@@ -40,6 +51,7 @@ EZrAotIrStatus backend_aot_ir_llvm_emit_const_i64(
                          plan.branchTargetBlockId,
                          plan.branchTargetBlockId, literal);
     }
+    /* snprintf 的计数不含 NUL；截断的 IR 必须清空，长度保持入口设置的零。 */
     if (count < 0 || (size_t)count >= capacity) {
         output[0] = '\0';
         return backend_aot_ir_scalar_text_fail(

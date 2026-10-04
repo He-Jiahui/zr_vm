@@ -27,8 +27,9 @@ This isolated acceptance covers the core C ABI for backend registration,
 immutable asynchronous compile jobs, generation-scoped invalidation,
 interpreter resume, code/map ownership, leases, and shutdown.  It exercises a
 C-only mock backend and does not claim that a concrete LLVM/JIT, ExecBC, or
-AOT adapter is present.  The parent integration task owns shared CMake/CTest
-registration and must add the two implementation sources to the core target.
+AOT adapter is present.  The current CMake registration compiles `execution_backend.c` and
+`execution_code_handle.c` into the isolated `zr_vm_ssa_backend_service_test`
+target and registers CTest name `ssa_backend_service`.
 
 ## Baseline
 
@@ -61,18 +62,24 @@ The focused executable runs these cases from
 - invalidation tombstones prevent a new compile for a reclaimed generation;
 - duplicate code identity is rejected and unpublished code is unregistered
   before retirement;
-- exact domain/module/generation/backend key matching avoids cross-domain
-  invalidation;
+- two requests sharing module and generation but using different domains:
+  invalidating the first still permits acquisition of the second; this
+  fixture does not independently vary module or backend registration identity;
 - entry/map lookup and independent dependency-lease balancing;
 - active execution leases delay map unregister/code retirement;
 - shutdown cancels an in-flight job, waits for active leases, and destroys the
   backend only after final collection;
-- interpreter resume forwards the logical request and diagnostic.
+- interpreter-resume callback dispatch, a non-null logical request, and
+  propagation of the callback's sourceId diagnostic sentinel; request field
+  contents and actual interpreter execution are not checked.
 
-Boundary and negative inputs include null-like output handling in the service
-paths, malformed immutable flags, unsupported operation bits, stale/cancelled
-tickets, duplicate code identities, repeated collection, and repeated
-shutdown/finalization sequencing.  Concrete OOM injection is not applicable:
+The fixture passes null service/handle pointers to AcquireDependencyLease,
+ReleaseDependencyLease and ReleaseCode. Other negative cases remove the
+immutable-input flag, request an unsupported operation or target, submit a
+cancelled completion, retry an invalidated generation, reuse a code identity,
+and finalize shutdown while an execution lease remains. Repeated collection
+occurs before and after lease release. These cases do not establish arbitrary
+null-output coverage or repeated successful finalization behavior.  Concrete OOM injection is not applicable:
 the service deliberately uses caller-owned fixed-capacity arrays and reports
 `CAPACITY` before any hidden allocation.
 
@@ -160,7 +167,8 @@ leases remain.  No failures remain in the isolated test.
 
 ## Acceptance decision
 
-Accepted for the isolated 10.01 core contract with the stated scope.  Before
-the milestone can be called complete, the parent task must register the files
-in CMake, build `zr_vm_ssa_backend_service_test`, run the named CTest test,
-and exercise concrete AOT/ExecBC/JIT adapters plus the full repository matrix.
+Accepted for the isolated 10.01 core contract with the stated scope. The
+current CMake configuration registers the focused target and CTest entry.
+Before the milestone can be called complete, build
+`zr_vm_ssa_backend_service_test`, run the named CTest test, and exercise
+concrete AOT/ExecBC/JIT adapters plus the full repository matrix.

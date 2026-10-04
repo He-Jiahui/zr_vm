@@ -194,6 +194,24 @@ static TZrBool ssa_platform_is_machine_code_forbidden(
            target == ZR_SSA_PLATFORM_TARGET_WASM;
 }
 
+/* Both observation entry points use the same execution provenance policy. */
+static EZrSsaPlatformStatus ssa_platform_validate_observation_policy(
+        const SZrSsaPlatformObservation *observation) {
+    if (ssa_platform_is_machine_code_forbidden(observation->target) &&
+        (observation->backend == ZR_SSA_PLATFORM_BACKEND_HOST_JIT ||
+         observation->machineCodeJitExecuted ||
+         (observation->requiredFeatures &
+          ZR_SSA_PLATFORM_FEATURE_MACHINE_CODE_JIT) != 0u)) {
+        return ZR_SSA_PLATFORM_STATUS_MACHINE_CODE_JIT_FORBIDDEN;
+    }
+    if (observation->runner == ZR_SSA_PLATFORM_RUNNER_CROSS_COMPILE &&
+        (observation->executed || observation->semanticPassed ||
+         observation->outcome == ZR_SSA_PLATFORM_OUTCOME_PASSED)) {
+        return ZR_SSA_PLATFORM_STATUS_OBSERVATION_INVALID;
+    }
+    return ZR_SSA_PLATFORM_STATUS_OK;
+}
+
 static TZrBool ssa_platform_feature_allowed(
         EZrSsaPlatformTarget target,
         TZrUInt64 feature) {
@@ -702,9 +720,6 @@ EZrSsaPlatformStatus ZrCommon_SsaPlatform_Check(
         ssa_platform_set_status(diagnostic, ZR_SSA_PLATFORM_STATUS_BACKEND_INVALID);
         return ZR_SSA_PLATFORM_STATUS_BACKEND_INVALID;
     }
-    /* BUG: runner=CROSS_COMPILE 与 executed/semanticPassed/PASSED 同时出现时，
-     * 现有路径仍可能返回 OK；矩阵测试的 passing_observation 可构造该组合。
-     * 交叉编译不能充当目标执行证据，需校验 runner 与阶段/结果的一致性。 */
     if (!ssa_platform_valid_runner(observed->runner)) {
         ssa_platform_set_status(diagnostic, ZR_SSA_PLATFORM_STATUS_RUNNER_INVALID);
         return ZR_SSA_PLATFORM_STATUS_RUNNER_INVALID;
@@ -797,13 +812,10 @@ EZrSsaPlatformStatus ZrCommon_SsaPlatform_Check(
                                  ZR_SSA_PLATFORM_STATUS_OBSERVATION_INVALID);
         return ZR_SSA_PLATFORM_STATUS_OBSERVATION_INVALID;
     }
-    if (ssa_platform_is_machine_code_forbidden(declared->target) &&
-        (observed->backend == ZR_SSA_PLATFORM_BACKEND_HOST_JIT ||
-         observed->machineCodeJitExecuted ||
-         (observed->requiredFeatures & ZR_SSA_PLATFORM_FEATURE_MACHINE_CODE_JIT) != 0u)) {
-        ssa_platform_set_status(
-                diagnostic, ZR_SSA_PLATFORM_STATUS_MACHINE_CODE_JIT_FORBIDDEN);
-        return ZR_SSA_PLATFORM_STATUS_MACHINE_CODE_JIT_FORBIDDEN;
+    status = ssa_platform_validate_observation_policy(observed);
+    if (status != ZR_SSA_PLATFORM_STATUS_OK) {
+        ssa_platform_set_status(diagnostic, status);
+        return status;
     }
     /* 后端能力、显式需求及分派许可是三个独立门槛；任一缺失都不能把
      * 编译或运行观察提升为平台验收。 */
@@ -937,9 +949,6 @@ EZrSsaPlatformStatus ZrCommon_SsaPlatform_Check(
 
 TZrBool ZrCommon_SsaPlatform_IsRuntimeAcceptance(
         const SZrSsaPlatformObservation *observation) {
-    /* BUG: 仅检查 JIT 实际执行位会放过移动端/WASM 的 HOST_JIT 后端声明；
-     * CROSS_COMPILE 配合三个真值和 PASSED 也会返回真。Check 已拒绝前者，
-     * 后者两入口均未拒绝。修正时应沿用同一 runner/后端策略。 */
     if (observation == ZR_NULL ||
         observation->magic != ZR_SSA_PLATFORM_CONTRACT_MAGIC ||
         observation->schemaVersion != ZR_SSA_PLATFORM_CONTRACT_SCHEMA_VERSION ||
@@ -976,8 +985,8 @@ TZrBool ZrCommon_SsaPlatform_IsRuntimeAcceptance(
            observation->semanticPassed &&
            observation->outcome == ZR_SSA_PLATFORM_OUTCOME_PASSED &&
            observation->unsupportedFeatures == 0u &&
-           !(observation->machineCodeJitExecuted &&
-             ssa_platform_is_machine_code_forbidden(observation->target));
+           ssa_platform_validate_observation_policy(observation) ==
+                   ZR_SSA_PLATFORM_STATUS_OK;
 }
 
 void ZrCommon_SsaPlatform_ArtifactContractInit(

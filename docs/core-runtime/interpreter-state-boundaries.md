@@ -1,5 +1,6 @@
 ---
 related_code:
+  - zr_vm_common/include/zr_vm_common/zr_instruction_conf.h
   - zr_vm_core/include/zr_vm_core/execution_context.h
   - zr_vm_core/include/zr_vm_core/call_info.h
   - zr_vm_core/include/zr_vm_core/state.h
@@ -122,6 +123,12 @@ This first boundary layer intentionally does not bind ExecIR layouts or active
 call-binding generations. Those invariants are introduced by the later binding
 guard stages. Bytecode dispatch continues to use the single instruction list
 from `zr_instruction_conf.h` for both computed-goto and switch builds.
+
+`ZR_INSTRUCTION_USE_RET_FLAG` in `operandExtra` selects the interpreter's
+local `ret` temporary instead of a stack destination. Opcode handlers interpret
+that field: loads can write this temporary, while meta-set handlers can read
+it as a receiver. The sentinel does not itself mean that the result is
+discarded or that ownership has been released.
 
 The focused dispatch test runs a 257-NOP function and checks that the saved
 resume PC matches `state->previousProgramCounter` at the 256-fetch poll. Direct

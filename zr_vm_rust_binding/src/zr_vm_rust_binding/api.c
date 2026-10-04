@@ -1169,18 +1169,22 @@ ZrRustBindingStatus ZrRustBinding_ProjectSession_CallModuleExport(ZrRustBindingP
     return status;
 }
 
-/* TODO: 此入口没有检查 activeCall；C 调用方若从 native callback 重入同一 session，需核对 GC 的并发/重入约束。 */
 ZrRustBindingStatus ZrRustBinding_ProjectSession_GcStep(ZrRustBindingProjectSession *session,
                                                         TZrUInt64 maxPauseMicros,
                                                         ZrRustBindingGcStepResult *outResult) {
     SZrGlobalState *global;
     SZrGarbageCollectorStatsSnapshot snapshot;
     TZrUInt64 crossBoundaryReferenceCount;
+    TZrSize liveOwnerReferenceCount;
 
     if (session == ZR_NULL || session->owner == ZR_NULL || session->owner->global == ZR_NULL ||
         session->owner->global->mainThreadState == ZR_NULL || outResult == ZR_NULL) {
         return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT,
                                          "project session or GC step result is null");
+    }
+    if (session->owner->activeCall) {
+        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT,
+                                         "project session is unavailable or already executing an export");
     }
 
     global = session->owner->global;
@@ -1192,11 +1196,16 @@ ZrRustBindingStatus ZrRustBinding_ProjectSession_GcStep(ZrRustBindingProjectSess
     memset(&snapshot, 0, sizeof(snapshot));
     ZrCore_GarbageCollector_GetStatsSnapshot(global, &snapshot);
 
-    /* BUG: checkpoint 也增加 owner->refCount；这里把 checkpoint 算成跨边界 Value 引用，
-     * nested_checkpoints 测试证明可同时存在多个 checkpoint 而没有 live Value。 */
-    crossBoundaryReferenceCount = session->owner->refCount > 0U
-                                          ? (TZrUInt64)(session->owner->refCount - 1U)
-                                          : 0U;
+    /* Owner references held by checkpoints are storage roots, not live Value
+     * handles crossing the binding boundary.  Keep the session reference and
+     * subtract the separately tracked checkpoint references before reporting
+     * the public statistic. */
+    liveOwnerReferenceCount = session->owner->refCount > session->owner->checkpointRefCount
+            ? session->owner->refCount - session->owner->checkpointRefCount
+            : 0u;
+    crossBoundaryReferenceCount = liveOwnerReferenceCount > 0u
+            ? (TZrUInt64)(liveOwnerReferenceCount - 1u)
+            : 0u;
     outResult->pauseMicros = snapshot.lastStepDurationUs;
     outResult->crossBoundaryReferenceCount = crossBoundaryReferenceCount;
     outResult->rootCount = (TZrUInt64)snapshot.ignoredObjectCount + crossBoundaryReferenceCount;

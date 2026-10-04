@@ -4460,6 +4460,10 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
                 ${CMAKE_SOURCE_DIR}/zr_vm_rust_binding/include
         )
         if (BUILD_SHARED_LIB)
+            target_compile_definitions(zr_vm_rust_binding_api_test PRIVATE
+                    ZR_VM_RUST_BINDING_TEST_LINK_SHARED=1
+                    ZR_VM_RUST_BINDING_TEST_LINK_STATIC=0
+            )
             target_link_libraries(zr_vm_rust_binding_api_test PRIVATE
                     zr_vm_parser_shared
                     zr_vm_core_shared
@@ -4467,6 +4471,10 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
                     zr_vm_rust_binding_shared
             )
         else ()
+            target_compile_definitions(zr_vm_rust_binding_api_test PRIVATE
+                    ZR_VM_RUST_BINDING_TEST_LINK_STATIC=1
+                    ZR_VM_RUST_BINDING_TEST_LINK_SHARED=0
+            )
             target_link_libraries(zr_vm_rust_binding_api_test PRIVATE
                     zr_vm_parser_static
                     zr_vm_core_static
@@ -4475,6 +4483,12 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             )
         endif ()
     endif ()
+        if (TARGET zr_vm_rust_binding_api_test)
+            add_test(
+                    NAME rust_binding_api
+                    COMMAND $<TARGET_FILE:zr_vm_rust_binding_api_test>
+            )
+        endif ()
 
     zr_vm_add_unity_test_target(
             zr_vm_project_import_canonicalization_test
@@ -8759,6 +8773,11 @@ add_executable(zr_vm_test_runner ${CMAKE_SOURCE_DIR}/tests/test_runner.c)
 # targets/helpers have been declared.  This keeps future SSA slices isolated
 # from the large historical test list.
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-tests.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-analysis-fact-capacity-tests.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-branch-range-null-tests.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-branch-arithmetic-constraints-tests.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-aot-scalar-arithmetic-tests.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-licm-scalar-legality.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-owned-row-direct-call-graph-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-sccp-conversion-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/gc-nested-mutation-tests.cmake")

@@ -13,13 +13,16 @@
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/type_inference.h"
 
+/* 本文件的 fixture 运行时句柄由 setUp 创建、tearDown 销毁；用例与编译器状态在此期间借用。 */
 static SZrState *g_state;
 
+/* Unity 在每个用例前建立独立运行时，供解析、类型环境和语义事实共用。 */
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
+/* Unity 在独立保护块中回调，销毁并清空 fixture 运行时；本回调只持有 g_state。 */
 void tearDown(void) {
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
@@ -27,6 +30,7 @@ void tearDown(void) {
     }
 }
 
+/* 返回借用 g_state 的独立编译器状态，正常路径由调用者 destroy。TODO: 初始化或用例断言中止会跳过局部 destroy；用本目标失败探针核对 CompilerState_Free/free 的执行与遗留分配，tearDown 仅持有 g_state。 */
 static SZrCompilerState *create_compiler_state(void) {
     SZrCompilerState *cs = (SZrCompilerState *)malloc(sizeof(SZrCompilerState));
 
@@ -38,6 +42,7 @@ static SZrCompilerState *create_compiler_state(void) {
     return cs;
 }
 
+/* 在 fixture 运行时仍存活时释放编译器内部资源，再释放由本文件 malloc 的外层状态。 */
 static void destroy_compiler_state(SZrCompilerState *cs) {
     if (cs == ZR_NULL) {
         return;
@@ -47,6 +52,7 @@ static void destroy_compiler_state(SZrCompilerState *cs) {
     free(cs);
 }
 
+/* 把调用者给定的 INT64 区间复制进类型环境，供分支表达式读取；注册后释放临时推断类型。 */
 static void register_int64_range_variable(SZrCompilerState *cs,
                                            const char *name,
                                            TZrInt64 minValue,
@@ -94,6 +100,7 @@ static SZrAstNode *first_block_expression_statement_expression(SZrAstNode *block
     return statement->data.expressionStatement.expr;
 }
 
+/* 以 seed+1 观察 seed < 10 的 true 分支的 [1,10]，防止上界收紧未参与后续加法。 */
 static void test_true_branch_less_than_refines_integer_interval_range(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -150,6 +157,7 @@ static void test_true_branch_less_than_refines_integer_interval_range(void) {
     destroy_compiler_state(cs);
 }
 
+/* 以 seed+1 观察 seed == 10 的 true 分支的 [11,11]，防止等值分支仍保留宽区间。 */
 static void test_true_branch_equal_refines_integer_interval_range(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -206,6 +214,7 @@ static void test_true_branch_equal_refines_integer_interval_range(void) {
     destroy_compiler_state(cs);
 }
 
+/* 以 seed+1 观察 seed != 0 的 true 分支的 [2,256]，防止边界排除未参与后续加法。 */
 static void test_true_branch_edge_not_equal_refines_integer_interval_range(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -262,6 +271,7 @@ static void test_true_branch_edge_not_equal_refines_integer_interval_range(void)
     destroy_compiler_state(cs);
 }
 
+/* 以 seed+1 观察 seed > 2 && seed < 10 的 true 分支的 [4,10]，防止逻辑与仅应用一个界限。 */
 static void test_true_branch_logical_and_refines_integer_interval_range(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -319,6 +329,7 @@ static void test_true_branch_logical_and_refines_integer_interval_range(void) {
     destroy_compiler_state(cs);
 }
 
+/* 以 seed+1 观察 seed < 10 || seed < 20 的 true 分支的 [1,20]，防止同向逻辑或误取交集。 */
 static void test_true_branch_logical_or_same_direction_refines_integer_interval_range(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -376,6 +387,7 @@ static void test_true_branch_logical_or_same_direction_refines_integer_interval_
     destroy_compiler_state(cs);
 }
 
+/* 以 seed+1 观察 seed < 10 || seed > 20 的 true 分支，验证两段 [1,10] 与 [22,256] 及包络，防止不相交逻辑或填平空洞。 */
 static void test_true_branch_logical_or_disjoint_refines_integer_segment_ranges(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -443,6 +455,7 @@ static void test_true_branch_logical_or_disjoint_refines_integer_segment_ranges(
     destroy_compiler_state(cs);
 }
 
+/* 以 seed+1 观察 (seed > 2 && seed < 10) || seed == 20 的 true 分支，验证两段 [4,10] 与 [21,21] 及包络，防止嵌套逻辑丢失交集或孤立值。 */
 static void test_true_branch_logical_or_nested_and_refines_integer_segment_ranges(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -510,6 +523,7 @@ static void test_true_branch_logical_or_nested_and_refines_integer_segment_range
     destroy_compiler_state(cs);
 }
 
+/* 以 seed+1 观察 !(seed < 10) 的 true 分支的 [11,256]，防止一元否定沿用未取反的范围。 */
 static void test_true_branch_unary_not_refines_integer_interval_range(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -568,6 +582,7 @@ static void test_true_branch_unary_not_refines_integer_interval_range(void) {
     destroy_compiler_state(cs);
 }
 
+/* 手动叠加外层 false 与内层 true 作用域，以 seed+1 的 [11,20] 验证内层仍保留外层下界。 */
 static void test_else_if_chain_preserves_outer_false_scope_for_inner_true_branch(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -639,6 +654,7 @@ static void test_else_if_chain_preserves_outer_false_scope_for_inner_true_branch
     destroy_compiler_state(cs);
 }
 
+/* 以 seed+1 观察 seed < 10 的 false 分支的 [11,256]，防止false 分支未排除小值。 */
 static void test_false_branch_less_than_refines_integer_interval_range(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -697,6 +713,7 @@ static void test_false_branch_less_than_refines_integer_interval_range(void) {
     destroy_compiler_state(cs);
 }
 
+/* 以 seed+1 观察 seed == 0 的 false 分支的 [2,256]，防止等值 false 分支未排除边界。 */
 static void test_false_branch_edge_equal_refines_integer_interval_range(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -755,6 +772,7 @@ static void test_false_branch_edge_equal_refines_integer_interval_range(void) {
     destroy_compiler_state(cs);
 }
 
+/* 以 seed+1 观察 seed != 10 的 false 分支的 [11,11]，防止不等式 false 分支方向错误。 */
 static void test_false_branch_not_equal_refines_integer_interval_range(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -813,6 +831,7 @@ static void test_false_branch_not_equal_refines_integer_interval_range(void) {
     destroy_compiler_state(cs);
 }
 
+/* 以 seed+1 观察 seed <= 2 || seed >= 10 的 false 分支的 [4,10]，防止逻辑或的 false 分支未合取两个补约束。 */
 static void test_false_branch_logical_or_refines_integer_interval_range(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -872,6 +891,7 @@ static void test_false_branch_logical_or_refines_integer_interval_range(void) {
     destroy_compiler_state(cs);
 }
 
+/* 以 seed+1 观察 seed < 10 && seed < 20 的 false 分支的 [11,256]，防止同向逻辑与的 false 分支误取两个补约束的交集。 */
 static void test_false_branch_logical_and_same_direction_refines_integer_interval_range(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -930,6 +950,7 @@ static void test_false_branch_logical_and_same_direction_refines_integer_interva
     destroy_compiler_state(cs);
 }
 
+/* 以 seed+1 观察 seed > 10 && seed < 20 的 false 分支，验证两段 [1,11] 与 [21,256] 及包络，防止中间区间的补集填平空洞。 */
 static void test_false_branch_logical_and_disjoint_refines_integer_segment_ranges(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -999,6 +1020,7 @@ static void test_false_branch_logical_and_disjoint_refines_integer_segment_range
     destroy_compiler_state(cs);
 }
 
+/* 注册本文件的 15 个数值分支收紧用例，并将 Unity 失败计数返回给可执行套件 runner。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_true_branch_less_than_refines_integer_interval_range);

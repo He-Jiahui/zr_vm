@@ -56,9 +56,12 @@ second accepted provider.
   the same Task ABI. M3 establishes the call contract only; a public Duration
   value provider belongs to a later scheduler/provider milestone.
 
-At runtime, consuming a Job clears its callable even when task-handle
-allocation fails. A failed queue handoff therefore cannot restore the source
-owner or execute the callable twice.
+At runtime, preparation marks a Job consumed before task-handle allocation
+and clears its callable on the following success and failure paths. These
+writes use the historical void field setter. Pin or key-allocation failure can
+leave a write unconfirmed while an upper layer still reports success, so the
+source single-consumption contract is not a universal allocation-failure
+guarantee. The checked queue transition below does not repair those writes.
 
 ## Private queue exhaustion and reuse
 
@@ -91,7 +94,9 @@ alive and stable. Allocation and attach execute inside `Exception_TryRun`,
 which allows the caller to unpin after both normal return and a caught memory
 error. Failure removes this replacement if it was partially published; it
 does not reset the cursor of a still-attached exhausted queue. Pin ownership
-is balanced for the registration and flags added by this call.
+is balanced for the registration and flags added by this call. Replacement
+cleanup attempts the checked null write but discards its return value; it does
+not guarantee rollback if cleanup itself is rejected.
 
 The focused tests compile real source for completed-result reuse, cooperative
 yield, and reentrant Job scheduling. A host callback submits the inner cold Job
@@ -104,6 +109,24 @@ Every new case releases its roots and destroys the VM before Unity assertions.
 The exact RED/GREEN commands, immutable linked inputs, and coverage limits are
 recorded in the linked acceptance document. This repair does not complete the
 06.05 asynchronous wait, execution budget or background compiler milestones.
+
+## Provider handoff lifetime
+
+A successful `PrepareJob` gives the provider a WorkItem containing a GC root
+for the completion Task in the caller domain. Execute, fault and completion
+operations settle or inspect that Task without releasing the root. The provider
+must call `ReleasePreparedJob` in the same GC domain when the WorkItem is no
+longer needed; it must not overwrite a live WorkItem with a new preparation.
+Copying its callable does not establish worker-domain ownership or perform
+cross-domain transfer.
+
+Await-hook registration stores a borrowed pointer to the registration record;
+the record, hook and context must outlive every possible scheduler use. The
+registration function currently returns true after a void field write and
+cannot confirm publication on the silent failure path. A missing registration
+therefore selects local queue waiting, which cannot complete provider work.
+Checked registration and failure-path coverage remain required before treating
+that return value as proof of a working provider wait path.
 
 ## Canonical Metadata and Facts
 

@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdint.h>
 
+/* actualVersion 在本规划器中承载失败行索引；不是 SSA 版本或 valueId。 */
 static void transfer_diag(SZrExecIrDiagnostic *diagnostic, EZrExecutionDiagnosticCode code,
                           TZrUInt32 valueId) {
     if (diagnostic != ZR_NULL) {
@@ -53,6 +54,8 @@ static TZrBool transfer_alignment_valid(TZrUInt32 align) {
     return (TZrBool)(align != 0u && (align & (align - 1u)) == 0u);
 }
 
+/* 先核实整个布局的槽几何和逻辑映射，后续才可安全选择物理描述符。
+ * 这里只检查元数据一致性；数组实际容量和调用期间的稳定性仍由调用方保证。 */
 static TZrBool transfer_layout_valid(const SZrExecIrPackedFrameLayout *layout) {
     const SZrExecIrFrameLayout *frame = &layout->frame;
     TZrUInt32 i, j;
@@ -100,6 +103,9 @@ static TZrBool transfer_layout_valid(const SZrExecIrPackedFrameLayout *layout) {
     return ZR_TRUE;
 }
 
+/* 布局没有当前指令位置或活跃 occupant，不能据生命周期选择复用槽的值。
+ * 因此源、目标槽都必须只有一个逻辑映射；互不重叠的生命周期也不放宽此限制。
+ * 此检查只建立表示计划，实际复制和所有权提交仍由后续执行契约决定。 */
 static TZrBool transfer_single_occupant(const SZrExecIrPackedFrameLayout *layout,
                                        TZrUInt32 physical, TZrUInt32 *logical) {
     TZrUInt32 i, count = 0u;
@@ -124,6 +130,8 @@ static TZrBool transfer_count_fits(TZrUInt32 count) {
 #endif
 }
 
+/* BORROW/MOVE 优先保留调用方的所有权要求，再按表示选择复制/桥接标签。
+ * 分类不触发任何复制、所有权消费或 GC 根变更。 */
 static EZrExecIrTransferKind transfer_kind(const SZrExecIrCallTransferValue *value) {
     if (value->ownership == ZR_EXEC_IR_OWNERSHIP_BORROWED) return ZR_EXEC_IR_TRANSFER_BORROW;
     if (value->ownership == ZR_EXEC_IR_OWNERSHIP_UNIQUE) return ZR_EXEC_IR_TRANSFER_MOVE;
@@ -218,6 +226,8 @@ invalid_row:
         ZrParser_ExecIr_CallTransferPlanFree(&candidate);
         return ZR_FALSE;
     }
+    /* 全批核验成功后才替换旧计划；此前任一失败只销毁 candidate。
+     * 这里只转移四组元数据数组，调用方须独占访问 plan。 */
     ZrParser_ExecIr_CallTransferPlanFree(plan);
     *plan = candidate;
     return ZR_TRUE;

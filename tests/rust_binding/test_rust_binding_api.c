@@ -8,9 +8,36 @@
 #include "harness/path_support.h"
 #include "zr_vm_rust_binding.h"
 
+static ZrRustBindingRuntime *g_checkpointReplayRuntime;
+static ZrRustBindingProjectWorkspace *g_checkpointReplayWorkspace;
+static ZrRustBindingProjectSession *g_checkpointReplaySession;
+static ZrRustBindingProjectSessionCheckpoint *g_checkpointReplayCheckpoint;
+static ZrRustBindingValue *g_checkpointReplayValue;
+
 void setUp(void) {}
-/* BUG: 已持有句柄后的断言失败会经 Unity longjmp 中断用例；空 tearDown 无法回收这些句柄。 */
-void tearDown(void) {}
+
+void tearDown(void) {
+    if (g_checkpointReplayValue != ZR_NULL) {
+        (void)ZrRustBinding_Value_Free(g_checkpointReplayValue);
+        g_checkpointReplayValue = ZR_NULL;
+    }
+    if (g_checkpointReplayCheckpoint != ZR_NULL) {
+        (void)ZrRustBinding_ProjectSessionCheckpoint_Free(g_checkpointReplayCheckpoint);
+        g_checkpointReplayCheckpoint = ZR_NULL;
+    }
+    if (g_checkpointReplaySession != ZR_NULL) {
+        (void)ZrRustBinding_ProjectSession_Free(g_checkpointReplaySession);
+        g_checkpointReplaySession = ZR_NULL;
+    }
+    if (g_checkpointReplayWorkspace != ZR_NULL) {
+        (void)ZrRustBinding_ProjectWorkspace_Free(g_checkpointReplayWorkspace);
+        g_checkpointReplayWorkspace = ZR_NULL;
+    }
+    if (g_checkpointReplayRuntime != ZR_NULL) {
+        (void)ZrRustBinding_Runtime_Free(g_checkpointReplayRuntime);
+        g_checkpointReplayRuntime = ZR_NULL;
+    }
+}
 
 static int should_run_test(const char *testName) {
     const char *filter = getenv("ZR_RUST_BINDING_TEST_FILTER");
@@ -25,7 +52,6 @@ static int should_run_test(const char *testName) {
             RUN_TEST(TEST_FN);                                  \
         }                                                       \
     } while (0)
-/* BUG: fopen 成功后忽略 fwrite 和 fclose 结果；部分写入或刷盘失败仍返回真，调用方误认夹具写入成功。 */
 static TZrBool write_text_file(const TZrChar *path, const TZrChar *text) {
     FILE *file;
 
@@ -38,9 +64,19 @@ static TZrBool write_text_file(const TZrChar *path, const TZrChar *text) {
         return ZR_FALSE;
     }
 
-    fwrite(text, 1, strlen(text), file);
-    fclose(file);
-    return ZR_TRUE;
+    {
+        TZrSize expectedLength = strlen(text);
+        TZrSize writtenLength = fwrite(text, 1, expectedLength, file);
+        int closeResult;
+
+        if (writtenLength != expectedLength) {
+            (void)fclose(file);
+            return ZR_FALSE;
+        }
+
+        closeResult = fclose(file);
+        return closeResult == 0 ? ZR_TRUE : ZR_FALSE;
+    }
 }
 
 static void normalize_path_text(TZrChar *path) {
@@ -975,6 +1011,194 @@ static void test_rust_binding_project_session_calls_zero_arg_export_after_entry_
     TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Runtime_Free(runtime));
 }
 
+static void test_rust_binding_project_session_checkpoint_rolls_back_failed_export_state(void) {
+    static const TZrChar *projectName = "session_checkpoint_failed_export_project";
+    static const TZrChar *mainSource =
+            "module main;\n"
+            "var savedState = \"before\";\n"
+            "pub fn saveState(): string {\n"
+            "    return savedState;\n"
+            "}\n"
+            "pub fn mutateThenFail(): void {\n"
+            "    savedState = \"candidate\";\n"
+            "    throw \"forced export failure\";\n"
+            "}\n"
+            "return 0;\n";
+    TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar mainPath[ZR_TESTS_PATH_MAX];
+    TZrChar beforeState[64];
+    TZrChar afterState[64];
+    ZrRustBindingScaffoldOptions scaffoldOptions;
+    ZrRustBindingRuntimeOptions runtimeOptions;
+    ZrRustBindingRunOptions runOptions;
+    ZrRustBindingStatus failedCallStatus;
+
+    memset(&scaffoldOptions, 0, sizeof(scaffoldOptions));
+    memset(&runtimeOptions, 0, sizeof(runtimeOptions));
+    memset(&runOptions, 0, sizeof(runOptions));
+    memset(beforeState, 0, sizeof(beforeState));
+    memset(afterState, 0, sizeof(afterState));
+
+    build_workspace_root("session_checkpoint_failed_export", workspaceRoot, sizeof(workspaceRoot));
+    clean_directory_tree(workspaceRoot);
+    snprintf(mainPath, sizeof(mainPath), "%s/src/main.zr", workspaceRoot);
+
+    scaffoldOptions.rootPath = workspaceRoot;
+    scaffoldOptions.projectName = projectName;
+    scaffoldOptions.overwriteExisting = ZR_TRUE;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Scaffold(&scaffoldOptions,
+                                                        &g_checkpointReplayWorkspace));
+    TEST_ASSERT_NOT_NULL(g_checkpointReplayWorkspace);
+    TEST_ASSERT_TRUE(write_text_file(mainPath, mainSource));
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Runtime_NewStandard(&runtimeOptions,
+                                                            &g_checkpointReplayRuntime));
+    TEST_ASSERT_NOT_NULL(g_checkpointReplayRuntime);
+
+    runOptions.executionMode = ZR_RUST_BINDING_EXECUTION_MODE_INTERP;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_Start(g_checkpointReplayRuntime,
+                                                             g_checkpointReplayWorkspace,
+                                                             &runOptions,
+                                                             &g_checkpointReplaySession));
+    TEST_ASSERT_NOT_NULL(g_checkpointReplaySession);
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_CallModuleExport(
+                                  g_checkpointReplaySession, "main", "saveState",
+                                  ZR_NULL, 0u, &g_checkpointReplayValue));
+    TEST_ASSERT_NOT_NULL(g_checkpointReplayValue);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Value_ReadString(g_checkpointReplayValue,
+                                                         beforeState, sizeof(beforeState)));
+    TEST_ASSERT_EQUAL_STRING("before", beforeState);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Value_Free(g_checkpointReplayValue));
+    g_checkpointReplayValue = ZR_NULL;
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_Checkpoint(
+                                  g_checkpointReplaySession, &g_checkpointReplayCheckpoint));
+    TEST_ASSERT_NOT_NULL(g_checkpointReplayCheckpoint);
+
+    failedCallStatus = ZrRustBinding_ProjectSession_CallModuleExport(
+            g_checkpointReplaySession, "main", "mutateThenFail", ZR_NULL, 0u,
+            &g_checkpointReplayValue);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_RUNTIME_ERROR, failedCallStatus);
+    TEST_ASSERT_NULL(g_checkpointReplayValue);
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_Rollback(
+                                  g_checkpointReplaySession, g_checkpointReplayCheckpoint));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_CallModuleExport(
+                                  g_checkpointReplaySession, "main", "saveState",
+                                  ZR_NULL, 0u, &g_checkpointReplayValue));
+    TEST_ASSERT_NOT_NULL(g_checkpointReplayValue);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Value_ReadString(g_checkpointReplayValue,
+                                                         afterState, sizeof(afterState)));
+    TEST_ASSERT_EQUAL_STRING(beforeState, afterState);
+}
+
+static void test_rust_binding_project_session_checkpoint_stats_exclude_checkpoint_owners(void) {
+    static const TZrChar *projectName = "session_checkpoint_stats_project";
+    static const TZrChar *mainSource =
+            "module main;\n"
+            "pub fn tick(): int { return 1; }\n"
+            "return 0;\n";
+    TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar mainPath[ZR_TESTS_PATH_MAX];
+    ZrRustBindingScaffoldOptions scaffoldOptions;
+    ZrRustBindingRuntimeOptions runtimeOptions;
+    ZrRustBindingRunOptions runOptions;
+    ZrRustBindingProjectWorkspace *workspace = ZR_NULL;
+    ZrRustBindingRuntime *runtime = ZR_NULL;
+    ZrRustBindingProjectSession *session = ZR_NULL;
+    ZrRustBindingProjectSessionCheckpoint *first = ZR_NULL;
+    ZrRustBindingProjectSessionCheckpoint *second = ZR_NULL;
+    ZrRustBindingGcStepResult baselineStats;
+    ZrRustBindingGcStepResult oneCheckpointStats;
+    ZrRustBindingGcStepResult twoCheckpointStats;
+    ZrRustBindingGcStepResult afterSecondFreeStats;
+    ZrRustBindingGcStepResult afterAllFreeStats;
+
+    memset(&scaffoldOptions, 0, sizeof(scaffoldOptions));
+    memset(&runtimeOptions, 0, sizeof(runtimeOptions));
+    memset(&runOptions, 0, sizeof(runOptions));
+    memset(&baselineStats, 0, sizeof(baselineStats));
+    memset(&oneCheckpointStats, 0, sizeof(oneCheckpointStats));
+    memset(&twoCheckpointStats, 0, sizeof(twoCheckpointStats));
+    memset(&afterSecondFreeStats, 0, sizeof(afterSecondFreeStats));
+    memset(&afterAllFreeStats, 0, sizeof(afterAllFreeStats));
+    build_workspace_root("session_checkpoint_stats", workspaceRoot, sizeof(workspaceRoot));
+    clean_directory_tree(workspaceRoot);
+    snprintf(mainPath, sizeof(mainPath), "%s/src/main.zr", workspaceRoot);
+    scaffoldOptions.rootPath = workspaceRoot;
+    scaffoldOptions.projectName = projectName;
+    scaffoldOptions.overwriteExisting = ZR_TRUE;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Scaffold(&scaffoldOptions, &workspace));
+    TEST_ASSERT_NOT_NULL(workspace);
+    TEST_ASSERT_TRUE(write_text_file(mainPath, mainSource));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Runtime_NewStandard(&runtimeOptions, &runtime));
+    TEST_ASSERT_NOT_NULL(runtime);
+    runOptions.executionMode = ZR_RUST_BINDING_EXECUTION_MODE_INTERP;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_Start(runtime, workspace, &runOptions, &session));
+    TEST_ASSERT_NOT_NULL(session);
+    /* The session owner is an ordinary live binding root. Capture its normal
+     * GC statistics first, then prove that retaining one or two checkpoint
+     * owners and freeing them individually does not report those storage
+     * owners as additional public roots. */
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_GcStep(session, 0u, &baselineStats));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_Checkpoint(session, &first));
+    TEST_ASSERT_NOT_NULL(first);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_GcStep(session, 0u, &oneCheckpointStats));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_Checkpoint(session, &second));
+    TEST_ASSERT_NOT_NULL(second);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_GcStep(session, 0u, &twoCheckpointStats));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSessionCheckpoint_Free(second));
+    second = ZR_NULL;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_GcStep(session, 0u, &afterSecondFreeStats));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSessionCheckpoint_Free(first));
+    first = ZR_NULL;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_GcStep(session, 0u, &afterAllFreeStats));
+    TEST_ASSERT_EQUAL_UINT64(baselineStats.rootCount, oneCheckpointStats.rootCount);
+    TEST_ASSERT_EQUAL_UINT64(baselineStats.rootCount, twoCheckpointStats.rootCount);
+    TEST_ASSERT_EQUAL_UINT64(baselineStats.rootCount, afterSecondFreeStats.rootCount);
+    TEST_ASSERT_EQUAL_UINT64(baselineStats.rootCount, afterAllFreeStats.rootCount);
+    TEST_ASSERT_EQUAL_UINT64(baselineStats.crossBoundaryReferenceCount,
+                             oneCheckpointStats.crossBoundaryReferenceCount);
+    TEST_ASSERT_EQUAL_UINT64(baselineStats.crossBoundaryReferenceCount,
+                             twoCheckpointStats.crossBoundaryReferenceCount);
+    TEST_ASSERT_EQUAL_UINT64(baselineStats.crossBoundaryReferenceCount,
+                             afterSecondFreeStats.crossBoundaryReferenceCount);
+    TEST_ASSERT_EQUAL_UINT64(baselineStats.crossBoundaryReferenceCount,
+                             afterAllFreeStats.crossBoundaryReferenceCount);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_Free(session));
+    session = ZR_NULL;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectWorkspace_Free(workspace));
+    workspace = ZR_NULL;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Runtime_Free(runtime));
+    runtime = ZR_NULL;
+}
+
 typedef struct NativeCallbackCapture {
     TZrSize callCount;
     TZrSize destroyCount;
@@ -986,6 +1210,9 @@ typedef struct NativeCallbackCapture {
     TZrChar moduleName[64];
     TZrChar typeName[64];
     TZrChar callableName[64];
+    ZrRustBindingProjectSession *session;
+    ZrRustBindingStatus nestedGcStatus;
+    TZrBool nestedGcAttempted;
 } NativeCallbackCapture;
 
 static void native_callback_capture_reset(NativeCallbackCapture *capture) {
@@ -1064,6 +1291,17 @@ static ZrRustBindingStatus native_host_sum_callback(ZrRustBindingNativeCallConte
             context, 1, native_read_int_argument, &capture->secondValue);
     if (status != ZR_RUST_BINDING_STATUS_OK) {
         return native_callback_capture_fail(capture, 7, status);
+    }
+    if (capture->session != ZR_NULL) {
+        ZrRustBindingGcStepResult nestedStats;
+        memset(&nestedStats, 0, sizeof(nestedStats));
+        capture->nestedGcAttempted = ZR_TRUE;
+        capture->nestedGcStatus = ZrRustBinding_ProjectSession_GcStep(
+                capture->session, 0u, &nestedStats);
+        if (capture->nestedGcStatus != ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT) {
+            return native_callback_capture_fail(
+                    capture, 8, capture->nestedGcStatus);
+        }
     }
     status = ZrRustBinding_Value_NewInt(capture->firstValue + capture->secondValue, outResult);
     if (status != ZR_RUST_BINDING_STATUS_OK) {
@@ -1326,6 +1564,129 @@ static void test_rust_binding_native_module_registration_roundtrip(void) {
     TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Runtime_Free(runtime));
 }
 
+static void test_rust_binding_project_session_gc_rejects_nested_native_call(void) {
+    static const TZrChar *projectName = "session_nested_gc_guard_project";
+    static const TZrChar *mainSource =
+            "let host = import(\"host_guard\");\n"
+            "pub invoke(): int {\n"
+            "    return host.bump(2, 3);\n"
+            "}\n"
+            "return 0;\n";
+    static const TZrChar *parameterTypeNames[] = {"int", "int"};
+    static const TZrChar *parameterNames[] = {"left", "right"};
+    static const TZrChar *parameterDocs[] = {"left operand", "right operand"};
+    TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar mainPath[ZR_TESTS_PATH_MAX];
+    NativeCallbackCapture capture;
+    ZrRustBindingNativeParameterDescriptor parameters[2];
+    ZrRustBindingNativeFunctionDescriptor functionDescriptor;
+    ZrRustBindingNativeModuleBuilder *builder = ZR_NULL;
+    ZrRustBindingNativeModule *module = ZR_NULL;
+    ZrRustBindingRuntimeNativeModuleRegistration *registration = ZR_NULL;
+    ZrRustBindingScaffoldOptions scaffoldOptions;
+    ZrRustBindingRuntimeOptions runtimeOptions;
+    ZrRustBindingRunOptions runOptions;
+    ZrRustBindingProjectWorkspace *workspace = ZR_NULL;
+    ZrRustBindingRuntime *runtime = ZR_NULL;
+    ZrRustBindingProjectSession *session = ZR_NULL;
+    ZrRustBindingValue *result = ZR_NULL;
+    TZrInt64 intValue = 0;
+
+    memset(&capture, 0, sizeof(capture));
+    capture.callbackStatus = ZR_RUST_BINDING_STATUS_OK;
+    memset(parameters, 0, sizeof(parameters));
+    memset(&functionDescriptor, 0, sizeof(functionDescriptor));
+    memset(&scaffoldOptions, 0, sizeof(scaffoldOptions));
+    memset(&runtimeOptions, 0, sizeof(runtimeOptions));
+    memset(&runOptions, 0, sizeof(runOptions));
+    parameters[0].name = parameterNames[0];
+    parameters[0].typeName = parameterTypeNames[0];
+    parameters[0].documentation = parameterDocs[0];
+    parameters[1].name = parameterNames[1];
+    parameters[1].typeName = parameterTypeNames[1];
+    parameters[1].documentation = parameterDocs[1];
+    functionDescriptor.name = "bump";
+    functionDescriptor.minArgumentCount = 2;
+    functionDescriptor.maxArgumentCount = 2;
+    functionDescriptor.callback = native_host_sum_callback;
+    functionDescriptor.userData = &capture;
+    functionDescriptor.destroyUserData = native_callback_capture_destroy;
+    functionDescriptor.returnTypeName = "int";
+    functionDescriptor.documentation = "Adds two values for nested GC guard testing.";
+    functionDescriptor.parameters = parameters;
+    functionDescriptor.parameterCount = 2;
+
+    build_workspace_root("session_nested_gc_guard", workspaceRoot, sizeof(workspaceRoot));
+    clean_directory_tree(workspaceRoot);
+    snprintf(mainPath, sizeof(mainPath), "%s/src/main.zr", workspaceRoot);
+    scaffoldOptions.rootPath = workspaceRoot;
+    scaffoldOptions.projectName = projectName;
+    scaffoldOptions.overwriteExisting = ZR_TRUE;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Scaffold(&scaffoldOptions, &workspace));
+    TEST_ASSERT_NOT_NULL(workspace);
+    TEST_ASSERT_TRUE(write_text_file(mainPath, mainSource));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Runtime_NewStandard(&runtimeOptions, &runtime));
+    TEST_ASSERT_NOT_NULL(runtime);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_New("host_guard", &builder));
+    TEST_ASSERT_NOT_NULL(builder);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_AddFunction(builder, &functionDescriptor));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_Build(builder, &module));
+    TEST_ASSERT_NOT_NULL(module);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_Free(builder));
+    builder = ZR_NULL;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Runtime_RegisterNativeModule(runtime,
+                                                                       module,
+                                                                       &registration));
+    TEST_ASSERT_NOT_NULL(registration);
+
+    runOptions.executionMode = ZR_RUST_BINDING_EXECUTION_MODE_INTERP;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_Start(runtime,
+                                                              workspace,
+                                                              &runOptions,
+                                                              &session));
+    TEST_ASSERT_NOT_NULL(session);
+    capture.session = session;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_CallModuleExport(session,
+                                                                        "main",
+                                                                        "invoke",
+                                                                        ZR_NULL,
+                                                                        0u,
+                                                                        &result));
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Value_ReadInt(result, &intValue));
+    TEST_ASSERT_EQUAL_INT64(5, intValue);
+    TEST_ASSERT_TRUE(capture.nestedGcAttempted);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT, capture.nestedGcStatus);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_Free(result));
+    result = ZR_NULL;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_Free(session));
+    session = ZR_NULL;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModule_Free(module));
+    module = ZR_NULL;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_RuntimeNativeModuleRegistration_Free(registration));
+    registration = ZR_NULL;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectWorkspace_Free(workspace));
+    workspace = ZR_NULL;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Runtime_Free(runtime));
+    runtime = ZR_NULL;
+    TEST_ASSERT_EQUAL_UINT32(1u, (unsigned int)capture.destroyCount);
+}
+
 static void test_rust_binding_native_module_registration_release_allows_re_registration(void) {
     static const TZrChar *projectName = "native_module_reregister_project";
     static const TZrChar *mainSource =
@@ -1529,6 +1890,16 @@ static void test_rust_binding_native_builder_rejects_invalid_function_descriptor
     TEST_ASSERT_EQUAL_UINT32(0u, (unsigned int)capture.destroyCount);
 }
 
+static void test_rust_binding_selected_native_link_contract(void) {
+#if ZR_VM_RUST_BINDING_TEST_LINK_STATIC
+    TEST_ASSERT_FALSE(ZR_VM_RUST_BINDING_TEST_LINK_SHARED);
+#elif ZR_VM_RUST_BINDING_TEST_LINK_SHARED
+    TEST_ASSERT_FALSE(ZR_VM_RUST_BINDING_TEST_LINK_STATIC);
+#else
+    TEST_FAIL_MESSAGE("CMake must declare the selected Rust binding link kind");
+#endif
+}
+
 #include "execution_budget_cases.h"
 
 int main(void) {
@@ -1543,9 +1914,13 @@ int main(void) {
     RUN_FILTERED_TEST(test_rust_binding_scalar_value_kind_and_ownership_metadata);
     RUN_FILTERED_TEST(test_rust_binding_call_module_export_with_owned_arguments);
     RUN_FILTERED_TEST(test_rust_binding_project_session_calls_zero_arg_export_after_entry_run);
+    RUN_FILTERED_TEST(test_rust_binding_project_session_checkpoint_rolls_back_failed_export_state);
+    RUN_FILTERED_TEST(test_rust_binding_project_session_checkpoint_stats_exclude_checkpoint_owners);
     RUN_FILTERED_TEST(test_rust_binding_native_module_registration_roundtrip);
+    RUN_FILTERED_TEST(test_rust_binding_project_session_gc_rejects_nested_native_call);
     RUN_FILTERED_TEST(test_rust_binding_native_module_registration_release_allows_re_registration);
     RUN_FILTERED_TEST(test_rust_binding_native_builder_rejects_invalid_function_descriptor);
+    RUN_FILTERED_TEST(test_rust_binding_selected_native_link_contract);
     RUN_FILTERED_TEST(test_rust_binding_execution_budget_instruction_boundary_and_recovery);
     RUN_FILTERED_TEST(test_rust_binding_execution_budget_deadline_and_native_cancel);
 

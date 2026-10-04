@@ -1,5 +1,6 @@
 #include "zr_vm_core/exec_ir.h"
 #include "zr_vm_core/exec_ir_owner_state.h"
+#include "zr_vm_core/exec_ir_state_map.h"
 
 #include "exec_ir_verify_ssa.h"
 #include "exec_ir_deopt_aggregate.h"
@@ -896,6 +897,10 @@ TZrBool ZrCore_ExecIr_VerifyFunction(const SZrExecIrFunction *function,
         if (!ZrCore_ExecIr_VerifyEffects(function, diagnostic)) {
             return ZR_FALSE;
         }
+    }
+    if (function->stateMap != ZR_NULL &&
+        !ZrCore_ExecIr_ValidateStateMap(function, function->stateMap, diagnostic)) {
+        return ZR_FALSE;
     }
     return ZR_TRUE;
 }

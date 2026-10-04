@@ -14,13 +14,16 @@
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/type_inference.h"
 
+/* 本文件的 Unity fixture 持有运行时状态；用例和编译器借用它，正常清理须先释放局部资源再由 tearDown 销毁状态。 */
 static SZrState *g_state;
 
+/* 为每次 RUN_TEST 创建独立运行时状态；只有创建成功才进入该用例。 */
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
+/* Unity 默认 runner 在用例返回或断言 longjmp 后调用此回调；它只销毁 g_state 并清空句柄。 */
 void tearDown(void) {
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
@@ -28,6 +31,7 @@ void tearDown(void) {
     }
 }
 
+/* TODO: 编译器外壳由 malloc 分配，但只有用例末尾调用 destroy；断言 longjmp 会跳过它，tearDown 只持有 g_state。需在本目标注入创建后失败并核对外壳及内部资源的回收。 */
 static SZrCompilerState *create_compiler_state(void) {
     SZrCompilerState *cs = (SZrCompilerState *)malloc(sizeof(SZrCompilerState));
 
@@ -39,6 +43,7 @@ static SZrCompilerState *create_compiler_state(void) {
     return cs;
 }
 
+/* 在借用的 g_state 仍存活时释放编译器内部资源，再释放调用方持有的 malloc 外壳；不销毁运行时状态。 */
 static void destroy_compiler_state(SZrCompilerState *cs) {
     if (cs == ZR_NULL) {
         return;
@@ -48,6 +53,7 @@ static void destroy_compiler_state(SZrCompilerState *cs) {
     free(cs);
 }
 
+/* 登记没有已知布尔值的 flag/inner，使分支推断保留真假两条可能路径；环境复制临时类型后即可释放它。 */
 static void register_bool_variable(SZrCompilerState *cs, const char *name) {
     SZrInferredType type;
 
@@ -60,6 +66,7 @@ static void register_bool_variable(SZrCompilerState *cs, const char *name) {
     ZrParser_InferredType_Free(g_state, &type);
 }
 
+/* 给 narrowed 或 low/high 设置分支前的 INT64 区间；环境保存类型副本，临时类型在登记成功后释放。 */
 static void register_int64_range_variable(SZrCompilerState *cs,
                                            const char *name,
                                            TZrInt64 minValue,
@@ -97,6 +104,7 @@ static SZrAstNode *expression_statement_expression(SZrAstNode *statement) {
     return statement->data.expressionStatement.expr;
 }
 
+/* 分支分别把 narrowed 从 0 写为 1、10，后继 narrowed+1 的类型与 promotion fact 包络应为 [2,11]，且无溢出。 */
 static void test_if_else_assignments_join_numeric_range_for_following_expression(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -153,6 +161,7 @@ static void test_if_else_assignments_join_numeric_range_for_following_expression
     destroy_compiler_state(cs);
 }
 
+/* 分支写入 1、10 后，后继 narrowed+1 必须在类型与 promotion fact 中保留 [2,2]、[11,11] 两段，避免填平空洞。 */
 static void test_if_else_assignments_preserve_segment_range_for_following_expression(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -229,6 +238,7 @@ static void test_if_else_assignments_preserve_segment_range_for_following_expres
     destroy_compiler_state(cs);
 }
 
+/* 每个分支先读取 flag 再在块尾赋值；后继 narrowed+1 的类型与 promotion fact 包络应为 [2,11]，防止多语句块漏掉尾部赋值。 */
 static void test_if_else_multi_statement_assignments_join_numeric_range_for_following_expression(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -287,6 +297,7 @@ static void test_if_else_multi_statement_assignments_join_numeric_range_for_foll
     destroy_compiler_state(cs);
 }
 
+/* 每个分支赋值后还读取 flag；后继 narrowed+1 的类型与 promotion fact 包络应为 [2,11]，防止非末条赋值被忽略。 */
 static void test_if_else_nonterminal_assignment_joins_numeric_range_for_following_expression(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -345,6 +356,7 @@ static void test_if_else_nonterminal_assignment_joins_numeric_range_for_followin
     destroy_compiler_state(cs);
 }
 
+/* 同一分支第二次赋值的 RHS 读取第一次写入的 narrowed；后继再加一的类型与 promotion fact 包络应为 [3,12]，且无溢出。 */
 static void test_if_else_same_target_sequential_assignments_join_rhs_dependent_range_for_following_expression(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -404,6 +416,7 @@ static void test_if_else_same_target_sequential_assignments_join_rhs_dependent_r
     destroy_compiler_state(cs);
 }
 
+/* 分支内先写 low，再由 low 计算 high；后继 high+low 的类型与 promotion fact 包络应为 [3,30]，防止跨目标 RHS 读取旧 low。 */
 static void test_if_else_multi_target_assignments_join_cross_target_rhs_dependent_range(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -464,6 +477,7 @@ static void test_if_else_multi_target_assignments_join_cross_target_rhs_dependen
     destroy_compiler_state(cs);
 }
 
+/* 外层 flag 与内层 inner 均未知，四条路径写入 1、2、10、20；后继 narrowed+1 的类型与 promotion fact 包络应为 [2,21]，且无溢出。 */
 static void test_if_else_nested_assignments_join_numeric_range_for_following_expression(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -530,6 +544,7 @@ static void test_if_else_nested_assignments_join_numeric_range_for_following_exp
     destroy_compiler_state(cs);
 }
 
+/* 只有 then 将 narrowed 从 5 写为 10；后继 narrowed+1 的类型与 promotion fact 包络 [6,11] 必须包含未进入 then 的初值路径。 */
 static void test_if_then_assignment_joins_pre_branch_range_for_following_expression(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -584,6 +599,7 @@ static void test_if_then_assignment_joins_pre_branch_range_for_following_express
     destroy_compiler_state(cs);
 }
 
+/* then 只读取 flag，只有 else 将 narrowed 从 5 写为 10；后继 narrowed+1 的类型与 promotion fact 包络应保留 [6,11]。 */
 static void test_if_else_only_assignment_joins_pre_branch_range_for_following_expression(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -640,6 +656,7 @@ static void test_if_else_only_assignment_joins_pre_branch_range_for_following_ex
     destroy_compiler_state(cs);
 }
 
+/* 在同一 Unity 进程逐项运行九个分支赋值回归，并把失败计数作为退出码交给套件 runner。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_if_else_assignments_join_numeric_range_for_following_expression);

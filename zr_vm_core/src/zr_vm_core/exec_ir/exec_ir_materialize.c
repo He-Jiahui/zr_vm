@@ -553,7 +553,7 @@ static TZrBool zr_state_map_entry_valid(const SZrExecIrFunction *function,
     return ZR_TRUE;
 }
 
-static TZrBool zr_state_map_validate(const SZrExecIrFunction *function,
+TZrBool ZrCore_ExecIr_ValidateStateMap(const SZrExecIrFunction *function,
                                      const SZrExecIrStateMap *map,
                                      SZrExecIrDiagnostic *diagnostic) {
     TZrUInt32 index;
@@ -562,6 +562,13 @@ static TZrBool zr_state_map_validate(const SZrExecIrFunction *function,
     SZrStateMapLiveness liveness = {0};
     EZrExecutionDiagnosticCode livenessCode;
 
+    zr_state_map_clear_diagnostic(diagnostic);
+    if (function == ZR_NULL || map == ZR_NULL) {
+        zr_state_map_set_diagnostic(diagnostic,
+                ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
+                function, ZR_NULL, 0u, 0u, 0u, 0u);
+        return ZR_FALSE;
+    }
     if (!zr_state_map_function_values_valid(function, diagnostic) ||
         !zr_exec_ir_deopt_aggregates_validate(function, diagnostic) ||
         !zr_state_map_storage_shape_valid(map) ||
@@ -675,7 +682,7 @@ TZrBool ZrCore_ExecIr_MaterializeState(const SZrExecIrResumeRequest *request,
     }
     function = request->function;
     map = request->map != ZR_NULL ? request->map : function->stateMap;
-    if (!zr_state_map_validate(function, map, diagnostic)) {
+    if (!ZrCore_ExecIr_ValidateStateMap(function, map, diagnostic)) {
         return ZR_FALSE;
     }
     entry = ZrCore_ExecIr_StateMapFind(map, request->sourceId,

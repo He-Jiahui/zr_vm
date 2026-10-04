@@ -41,7 +41,10 @@ typedef enum EZrAotReflectionMetadataLevel {
 /** @brief 生成函数的统一入口，加载器与核心模块按函数索引持有该表。 */
 typedef TZrInt64 (*FZrAotEntryThunk)(struct SZrState *state);
 
-/** @brief 通过方法元数据调用生成函数的桥接入口，参数与返回值由调用方提供。 */
+/** @brief 通过方法元数据调用生成函数的桥接入口，参数与返回值由调用方提供。
+ * @note 此 ABI 不传参数数量且返回 void；调用方须提供匹配签名的存储，
+ * 调用入口返回不等于取得独立的执行成功状态。带数量的反射封装也可能在执行后拒绝返回标签。
+ */
 typedef void (*FZrAotReflectionInvoker)(struct SZrState *state,
                                         FZrAotEntryThunk target,
                                         const struct SZrAotMethodInfo *method,
@@ -89,7 +92,11 @@ typedef struct SZrAotGenericResolvedSlot {
     SZrAotGenericResolvedValue value;
 } SZrAotGenericResolvedSlot;
 
-/** @brief 单个生成方法的泛型解析上下文；两个数组均按 slotCount 对齐。 */
+/** @brief 单个生成方法的泛型解析上下文；两个数组均按 slotCount 对齐。
+ * @note resolvedSlots 是借用的可写缓存，不因字典为 const 就成为不可变数据。
+ * TODO: 当前生成端使用模块静态缓存；消费者命中时未区分 metadataRuntime，
+ * 多运行时复用与并发写的隔离需以 GenericSlot_* 调用链核对，不能据此承诺线程安全。
+ */
 typedef struct SZrAotGenericDictionary {
     TZrUInt32 slotCount;
     const SZrAotGenericSlot *slots;
@@ -215,6 +222,9 @@ typedef struct SZrAotNativeImportRange {
 /**
  * @brief 将生成代码表挂到核心模块的只读注册视图。
  * @note 表指针与外层 ZrAotCompiledModule 的对应成员须一致；加载器逐项核对后才挂载。
+ * 该核对覆盖表形状及部分行契约，不替代签名、GC 根和所有指向数据的语义校验。
+ * C 生成端按原 functionIndex 铺开 thunk、methodInfo 和 token 表；裁剪空洞保留为 NULL/0，
+ * 因而对应计数表示索引空间长度，不能用非空方法的数量替代。
  */
 typedef struct SZrAotCodeRegistration {
     TZrUInt32 functionCount;

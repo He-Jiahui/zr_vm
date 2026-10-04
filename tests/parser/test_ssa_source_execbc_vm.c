@@ -73,6 +73,12 @@ typedef struct SZrSourceExecBcReport {
     TZrUInt32 vmPathCount;
     TZrUInt32 traceCount;
     TZrUInt32 oraclePlaceProviderCalls;
+    TZrUInt32 oracleEventCount;
+    TZrUInt32 conditionalBranchCount;
+    TZrUInt32 loopBreakCount;
+    TZrBool loopBreakTargetsValid;
+    TZrUInt32 vmBreakCount;
+    TZrUInt32 vmBreakOffset;
     TZrBool identityPublished;
     EZrSourceExecBcStage diagnosticStage;
     EZrExecutionDiagnosticCode diagnosticCode;
@@ -484,6 +490,7 @@ static SZrSourceExecBcReport run_source_branch(const TZrChar *source) {
         if (execIr->instructions[index].opcode ==
                 ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH) {
             report.hasConditionalBranch = ZR_TRUE;
+            ++report.conditionalBranchCount;
         }
         if (execIr->instructions[index].opcode == ZR_EXEC_IR_OPCODE_ADD) {
             report.hasAdd = ZR_TRUE;
@@ -540,6 +547,26 @@ static SZrSourceExecBcReport run_source_branch(const TZrChar *source) {
     report.oracleReturned = ZR_TRUE;
     report.oracleInteger = oracleResult.returnValue.as.signedInteger;
     report.oracleBlock = oracleResult.currentBlock;
+    report.oracleEventCount = oracleResult.eventCount;
+    report.loopBreakTargetsValid = ZR_TRUE;
+    for (index = 0u; index < execIr->sourceMapCount; ++index) {
+        const SZrExecIrSourceMap *map = &execIr->sourceMaps[index];
+        const SZrExecIrInstruction *instruction;
+        if (map->startOffset >= strlen(source) ||
+            strncmp(source + map->startOffset, "break", 5u) != 0 ||
+            map->instructionId == 0u ||
+            map->instructionId > execIr->instructionCount) {
+            continue;
+        }
+        instruction = &execIr->instructions[map->instructionId - 1u];
+        if (instruction->opcode != ZR_EXEC_IR_OPCODE_BRANCH) continue;
+        ++report.loopBreakCount;
+        if (instruction->successorRange.count != 1u ||
+            execIr->successors[instruction->successorRange.start] !=
+                    report.oracleBlock) {
+            report.loopBreakTargetsValid = ZR_FALSE;
+        }
+    }
 
     if (!ZrParser_ExecIr_BuildProjectionWithConstants(
                 execIr, constants, constantCount, &projection, &diagnostic)) {
@@ -606,6 +633,22 @@ static SZrSourceExecBcReport run_source_branch(const TZrChar *source) {
             break;
         }
         lastBlock = entry->blockId;
+        {
+            TZrUInt32 sourceIndex;
+            for (sourceIndex = 0u; sourceIndex < execIr->sourceMapCount;
+                 ++sourceIndex) {
+                const SZrExecIrSourceMap *map = &execIr->sourceMaps[sourceIndex];
+                if (map->instructionId == entry->instructionId &&
+                    map->startOffset < strlen(source) &&
+                    strncmp(source + map->startOffset, "break", 5u) == 0 &&
+                    execIr->instructions[entry->instructionId - 1u].opcode ==
+                            ZR_EXEC_IR_OPCODE_BRANCH) {
+                    ++report.vmBreakCount;
+                    report.vmBreakOffset = map->startOffset;
+                    break;
+                }
+            }
+        }
         if (trace.pathCount == 0u ||
             trace.path[trace.pathCount - 1u] != entry->blockId) {
             if (trace.pathCount >= SOURCE_EXECBC_PATH_CAPACITY) {
@@ -794,6 +837,8 @@ static void test_false_source_branch_multiplication_reaches_core_dispatcher(void
             21, ZR_EXEC_IR_OPCODE_MUL);
 }
 
+#include "ssa_source_execbc_vm_loop_break.inc"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_true_source_branch_runs_through_core_dispatcher);
@@ -803,5 +848,11 @@ int main(void) {
     RUN_TEST(test_source_branch_division_does_not_publish_execir);
     RUN_TEST(test_true_source_branch_multiplication_reaches_core_dispatcher);
     RUN_TEST(test_false_source_branch_multiplication_reaches_core_dispatcher);
+    RUN_TEST(test_source_while_takes_conditional_break);
+    RUN_TEST(test_source_while_takes_fallthrough_break);
+    RUN_TEST(test_source_conditional_continue_remains_unsupported);
+    RUN_TEST(test_source_conditional_break_cleanup_remains_unsupported);
+    RUN_TEST(test_source_for_conditional_break_remains_unsupported);
+    RUN_TEST(test_source_foreach_conditional_break_remains_unsupported);
     return UNITY_END();
 }

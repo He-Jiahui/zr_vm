@@ -1031,6 +1031,13 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
     cs->isScriptLevel = ZR_FALSE;
 }
 
+/**
+ * @brief 将借用的 AST 编译成可交给 VM 使用的函数，并收束本轮临时编译状态。
+ * @note 仅由阶段包装入口调用；AST、模块键与 submissionContext 须覆盖本次调用。
+ *       成功结果在临时状态释放后仍有效；显式失败返回不交出本轮函数，AST 由调用方管理。
+ * TODO: 模块摘要早于 call-binding 和 submission 发布完成；晚期失败是否须撤销摘要，
+ *       应从 FinalizeCurrentSourceModule 与 compiler_finalize_call_bindings 核对重试契约。
+ */
 static SZrFunction *zr_parser_compiler_compile_mode_active(
         SZrState *state,
         SZrAstNode *ast,
@@ -1174,6 +1181,13 @@ static SZrFunction *zr_parser_compiler_compile_mode_active(
     return func;
 }
 
+/**
+ * @brief 为本次 AST 编译选择 Runtime 或 Test 提供者阶段。
+ * @note 阶段保存在传入的 state 中；active 正常返回时，包括返回空指针时，
+ *       恢复进入时查询到的阶段。同一 state 的阶段切换须由调用方串行协调。
+ * TODO: 非局部异常的阶段恢复责任仍需确认；对象分配可进入 Exception_Throw，
+ *       下一步核查 ZrCore_Exception_TryRun 及宿主受保护编译调用的恢复范围。
+ */
 static SZrFunction *zr_parser_compiler_compile_mode(
         SZrState *state,
         SZrAstNode *ast,
@@ -1213,7 +1227,6 @@ ZR_PARSER_API SZrFunction *ZrParser_Compiler_CompileWithCurrentModuleKey(
             state, ast, currentModuleKey, ZR_FALSE, ZR_NULL, ZR_NULL);
 }
 
-// 主编译入口（占位实现）
 SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
     return ZrParser_Compiler_CompileWithCurrentModuleKey(state, ast, ZR_NULL);
 }

@@ -1484,7 +1484,10 @@ static void test_ssa_rejects_invoke_result_in_exception_phi(void) {
     ZrCore_ExecIr_FreeModule(&module);
 }
 
+#include "test_ssa_effects_verifier_invoke.inc"
+
 int main(void) {
+    test_invoke_memory_versions_on_both_successors();
     test_effect_phi_joins_distinct_cfg_chains();
     test_effect_join_requires_phi_for_distinct_predecessors();
     test_memory_phi_joins_region_versions();

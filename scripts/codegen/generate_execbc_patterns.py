@@ -203,6 +203,8 @@ def validate_rows(rows: Sequence[tuple[str, ...]]) -> None:
 
 # exec_ir_fusion.h 消费生成的宏行；保持顺序及末尾换行稳定，以便 --check 比较精确内容。
 # 调用者须先经过 validate_rows，render 自身不再重复校验符号。
+# 输出的同一有序 X-macro 同时供 pattern 枚举与契约表展开；这里只生成元数据，
+# 新规则的匹配/执行语义仍须在 C 消费端单独实现，不能靠增添 schema 行获得。
 def render(rows: Iterable[tuple[str, ...]]) -> str:
     rows = list(rows)
     lines = [

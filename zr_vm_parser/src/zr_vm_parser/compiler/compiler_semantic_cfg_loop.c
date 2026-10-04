@@ -1,4 +1,74 @@
 #include "compiler_internal.h"
+#include "compiler_semantic_cfg_loop.h"
+
+typedef enum EZrCompilerWhileBreakFlow {
+    ZR_COMPILER_WHILE_BREAK_UNSUPPORTED = 0,
+    ZR_COMPILER_WHILE_BREAK_FALLS_THROUGH,
+    ZR_COMPILER_WHILE_BREAK_TERMINATES
+} EZrCompilerWhileBreakFlow;
+
+/* This fallback models plain conditional breaks only. Continue and cleanup
+ * transfers retain the existing shared analyzer's admission rules. */
+static EZrCompilerWhileBreakFlow compiler_while_break_body_flow(
+        const SZrAstNode *node) {
+    TZrSize index;
+    if (node == ZR_NULL) return ZR_COMPILER_WHILE_BREAK_FALLS_THROUGH;
+    if (node->type == ZR_AST_BREAK_CONTINUE_STATEMENT) {
+        return node->data.breakContinueStatement.isBreak &&
+                       node->data.breakContinueStatement.expr == ZR_NULL
+                       ? ZR_COMPILER_WHILE_BREAK_TERMINATES
+                       : ZR_COMPILER_WHILE_BREAK_UNSUPPORTED;
+    }
+    if (node->type == ZR_AST_IF_EXPRESSION) {
+        EZrCompilerWhileBreakFlow thenFlow;
+        EZrCompilerWhileBreakFlow elseFlow;
+        if (!node->data.ifExpression.isStatement ||
+            !compiler_semantic_cfg_loop_condition_is_supported(
+                    node->data.ifExpression.condition)) {
+            return ZR_COMPILER_WHILE_BREAK_UNSUPPORTED;
+        }
+        thenFlow = compiler_while_break_body_flow(node->data.ifExpression.thenExpr);
+        elseFlow = compiler_while_break_body_flow(node->data.ifExpression.elseExpr);
+        if (thenFlow == ZR_COMPILER_WHILE_BREAK_UNSUPPORTED ||
+            elseFlow == ZR_COMPILER_WHILE_BREAK_UNSUPPORTED) {
+            return ZR_COMPILER_WHILE_BREAK_UNSUPPORTED;
+        }
+        return thenFlow == ZR_COMPILER_WHILE_BREAK_TERMINATES &&
+                       elseFlow == ZR_COMPILER_WHILE_BREAK_TERMINATES
+                       ? ZR_COMPILER_WHILE_BREAK_TERMINATES
+                       : ZR_COMPILER_WHILE_BREAK_FALLS_THROUGH;
+    }
+    if (node->type != ZR_AST_BLOCK) {
+        return compiler_semantic_cfg_arm_falls_through(node)
+                       ? ZR_COMPILER_WHILE_BREAK_FALLS_THROUGH
+                       : ZR_COMPILER_WHILE_BREAK_UNSUPPORTED;
+    }
+    if (node->data.block.body == ZR_NULL) {
+        return ZR_COMPILER_WHILE_BREAK_FALLS_THROUGH;
+    }
+    for (index = 0U; index < node->data.block.body->count; ++index) {
+        EZrCompilerWhileBreakFlow flow = compiler_while_break_body_flow(
+                node->data.block.body->nodes[index]);
+        TZrSize trailingIndex;
+        if (flow == ZR_COMPILER_WHILE_BREAK_UNSUPPORTED) return flow;
+        if (flow != ZR_COMPILER_WHILE_BREAK_TERMINATES) continue;
+        for (trailingIndex = index + 1U;
+             trailingIndex < node->data.block.body->count; ++trailingIndex) {
+            if (node->data.block.body->nodes[trailingIndex] != ZR_NULL) {
+                return ZR_COMPILER_WHILE_BREAK_UNSUPPORTED;
+            }
+        }
+        return flow;
+    }
+    return ZR_COMPILER_WHILE_BREAK_FALLS_THROUGH;
+}
+
+TZrBool compiler_semantic_cfg_while_body_is_supported(const SZrAstNode *node) {
+    return (TZrBool)(compiler_semantic_cfg_loop_body_analyze(
+                            node, ZR_TRUE, ZR_TRUE, ZR_TRUE, ZR_NULL) ||
+                    compiler_while_break_body_flow(node) !=
+                            ZR_COMPILER_WHILE_BREAK_UNSUPPORTED);
+}
 
 /* CFG 只接管可按现有表达式/短路分支规则建模的循环条件；其余情况留给传统编译路径。 */
 TZrBool compiler_semantic_cfg_loop_condition_is_supported(

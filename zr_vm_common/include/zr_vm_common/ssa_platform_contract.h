@@ -358,7 +358,10 @@ ZR_API const TZrChar *ZrCommon_SsaPlatform_OutcomeName(
 
 /** @brief 建立空 ABI 见证，调用方须随后填充目标特有字段；可传 NULL。 */
 ZR_API void ZrCommon_SsaPlatform_AbiInit(SZrSsaPlatformAbi *abi);
-/** @brief 为当前宿主生成初始 ABI 见证，不能替代交叉目标的专用探针。 */
+/** @brief 为当前宿主生成初始 ABI 见证，不能替代交叉目标的专用探针。
+ * @note 聚合返回类别为保守占位，callback 哈希由通用字段推得；
+ * 此接口没有执行 native callback，不提供真实调用约定或跨目标运行证明。
+ */
 ZR_API void ZrCommon_SsaPlatform_DetectHostAbi(SZrSsaPlatformAbi *abi);
 /** @brief 对 ABI 字段生成稳定哈希，供声明、产物和观察采用同一编码。
  * @note 不验证 ABI 是否有效；NULL 返回零。各契约中的 abiHash 由适配器
@@ -400,7 +403,9 @@ ZR_API TZrBool ZrCommon_SsaPlatform_CapabilitySupports(
 ZR_API void ZrCommon_SsaPlatform_ObservationInit(
         SZrSsaPlatformObservation *observation);
 /** @brief 将运行观察与能力声明分层比对，返回状态和可选诊断。
- * @note 当前实现仍需核对 CROSS_COMPILE 与执行成功位的矛盾组合，见实现处 BUG。
+ * @note 与 IsRuntimeAcceptance 共用观察来源策略：CROSS_COMPILE 不能携带
+ * executed、semanticPassed 或 PASSED；移动端/WASM 禁止 HOST_JIT、JIT 执行标记
+ * 和机器码 JIT 需求位。通过此校验不证明记录来自真实设备。
  */
 ZR_API EZrSsaPlatformStatus ZrCommon_SsaPlatform_Check(
         const SZrSsaPlatformCapability *declared,
@@ -408,7 +413,8 @@ ZR_API EZrSsaPlatformStatus ZrCommon_SsaPlatform_Check(
         SZrSsaPlatformDiagnostic *diagnostic);
 /** @brief 仅判断观察对象自身是否足以声称运行通过。
  * @note 此接口不接收能力声明，无法替代 Check 的后端、特性与哈希比较。
- * 当前实现对 CROSS_COMPILE 和移动端/WASM HOST_JIT 仍有漏检，见实现处 BUG。
+ * 共用观察来源策略会拒绝交叉编译冒充运行，以及移动端/WASM 的机器码 JIT 观察。
+ * 返回真只表示记录满足本接口条件，不能独立证明实际执行或声明能力绑定。
  */
 ZR_API TZrBool ZrCommon_SsaPlatform_IsRuntimeAcceptance(
         const SZrSsaPlatformObservation *observation);

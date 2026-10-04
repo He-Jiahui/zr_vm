@@ -1,4 +1,5 @@
 #include "exec_ir_pass_internal.h"
+#include "zr_vm_parser/exec_ir_state_maps.h"
 
 #include <limits.h>
 #include <stdlib.h>
@@ -540,6 +541,7 @@ TZrBool ZrParser_ExecIr_RunPassPipeline(SZrExecIrFunction *function,
         clock_t started;
         clock_t ended;
         SZrExecIrOptimizationRemark remark;
+        SZrExecIrFunction outputView;
 
         if (!ZrCore_ExecIr_CloneFunction(function, &passSnapshot, diagnostic))
             goto rollback;
@@ -569,13 +571,28 @@ TZrBool ZrParser_ExecIr_RunPassPipeline(SZrExecIrFunction *function,
             !passes[index].run(function, context, &changed, diagnostic))
             goto rollback;
         ended = clock();
+        /* Check transformed storage before any hash traversal. Its attached
+         * map still describes the input revision until the refresh below. */
+        outputView = *function;
+        outputView.stateMap = ZR_NULL;
         ++verifierChecks;
-        if (!zr_verify_pass_boundary(function, diagnostic, &verifierTicks)) {
+        if (!zr_verify_pass_boundary(&outputView, diagnostic, &verifierTicks)) {
             context->lastReasonCode = ZR_EXEC_IR_PASS_REASON_VERIFIER;
             goto rollback;
         }
         after = ZrParser_ExecIr_FunctionHash(function);
         if (after != before) changed = ZR_TRUE;
+        if (changed && passSnapshot.stateMap != ZR_NULL &&
+            !ZrParser_ExecIr_BuildStateMaps(function, diagnostic)) {
+            goto rollback;
+        }
+        if (function->stateMap != ZR_NULL) {
+            ++verifierChecks;
+            if (!zr_verify_pass_boundary(function, diagnostic, &verifierTicks)) {
+                context->lastReasonCode = ZR_EXEC_IR_PASS_REASON_VERIFIER;
+                goto rollback;
+            }
+        }
         if (context->cache != ZR_NULL) {
             TZrUInt32 invalidated = passes[index].invalidatesAnalysis;
             if (changed) invalidated |=

@@ -108,6 +108,7 @@ static const ZrLibModuleDescriptor g_iteration_module_descriptor = {
         .publicContractHash = "zr.iteration:v1:canonical-iterator-protocols",
 };
 
+/* 此访问器不分配内存也不执行 provider 回调；调用方借用不可变静态元数据。 */
 const ZrLibModuleDescriptor *ZrVmLibIteration_Runtime_GetModuleDescriptor(void) {
     return &g_iteration_module_descriptor;
 }

@@ -13,6 +13,7 @@
 #include <assert.h>
 #include <string.h>
 
+/* 保存 mock 回调计数、顺序和可控编译结果；栈上 fixture 生命周期覆盖 service；只供串行测试，无锁。 */
 typedef struct SZrBackendFixture {
     TZrUInt32 compileCalls;
     TZrUInt32 cancelCalls;
@@ -27,6 +28,7 @@ typedef struct SZrBackendFixture {
     TZrUInt64 nextCodeIdentity;
 } SZrBackendFixture;
 
+/* 用离散事件值检查撤图和退休的先后；事件标号仅为测试日志，不是 backend ABI。 */
 enum {
     ZR_TEST_EVENT_COMPILE = 1,
     ZR_TEST_EVENT_CANCEL = 2,
@@ -36,6 +38,8 @@ enum {
     ZR_TEST_EVENT_RESUME = 6
 };
 
+/* 记录 mock 回调顺序，让退休测试能区分撤销图注册与释放代码。
+ * 事件数组仅供本测试串行使用；容量由 assert 守护，不是线程安全日志。 */
 static void test_event(SZrBackendFixture *fixture, TZrUInt32 event) {
     assert(fixture != ZR_NULL);
     assert(fixture->eventCount < (TZrUInt32)(sizeof(fixture->events) /
@@ -47,6 +51,8 @@ static SZrExecutionBackendCompiledCode test_code(
         const SZrExecutionCompileRequest *request,
         TZrUInt64 codeIdentity);
 
+/* 在 service 选择后端时只接受 HOST_JIT 的 typed-scalar 请求。
+ * 不验证真实主机 ABI；mock target hash 只用于契约匹配。 */
 static EZrExecutionBackendStatus test_query_target(
         const SZrExecutionBackendTarget *target,
         TZrUInt32 requiredOperations,
@@ -62,6 +68,8 @@ static EZrExecutionBackendStatus test_query_target(
             : ZR_EXECUTION_BACKEND_STATUS_UNSUPPORTED_TARGET;
 }
 
+/* 由 ProcessNext 派发，按 fixture 开关模拟异步 pending、同步产物或编译失败。
+ * 只返回元数据；未生成或执行机器码，完成产物仍需 service 校验和发布。 */
 static EZrExecutionBackendStatus test_compile_async(
         const SZrExecutionBackendCompileInvocation *invocation,
         TZrPtr userData,
@@ -75,6 +83,7 @@ static EZrExecutionBackendStatus test_compile_async(
     assert(invocation->ticket.ticketId != 0u);
     assert((invocation->request.flags &
             ZR_EXECUTION_BACKEND_REQUEST_FLAG_IMMUTABLE_INPUT) != 0u);
+    /* 三种回调结果由 fixture 控制，同步产物通过相同 request 构造；pending 不写 completedCode。 */
     ++fixture->compileCalls;
     test_event(fixture, ZR_TEST_EVENT_COMPILE);
     if (fixture->compileReturnsCode) {
@@ -88,6 +97,8 @@ static EZrExecutionBackendStatus test_compile_async(
             : ZR_EXECUTION_BACKEND_STATUS_COMPILE_FAILED;
 }
 
+/* 为 service 的入口查询给出固定哨兵地址，证明查询被转发到已注册后端。
+ * 0x1234 只比较数值，调用方不能执行它。 */
 static EZrExecutionBackendStatus test_lookup_entry(
         const SZrExecutionBackendCodeInfo *code,
         TZrNativePtr *entryAddress,
@@ -102,6 +113,8 @@ static EZrExecutionBackendStatus test_lookup_entry(
     return ZR_EXECUTION_BACKEND_STATUS_OK;
 }
 
+/* 用 map kind 生成固定 hash，核对 service 的 DEOPT 查询派发。
+ * 当前场景仅断言 DEOPT 的 1003，不验证真实状态图内容。 */
 static EZrExecutionBackendStatus test_query_map(
         const SZrExecutionBackendCodeInfo *code,
         EZrExecutionBackendMapKind mapKind,
@@ -116,6 +129,8 @@ static EZrExecutionBackendStatus test_query_map(
     return ZR_EXECUTION_BACKEND_STATUS_OK;
 }
 
+/* 模拟可同步完成的取消回调，使关闭和失效场景检查取消次数。
+ * 没有 worker 或异步取消协议，返回 OK 后即视为取消已完成。 */
 static EZrExecutionBackendStatus test_cancel_compile(
         const SZrExecutionCompileTicket *ticket,
         TZrPtr userData,
@@ -129,6 +144,8 @@ static EZrExecutionBackendStatus test_cancel_compile(
     return ZR_EXECUTION_BACKEND_STATUS_OK;
 }
 
+/* 在释放或丢弃代码时记录图注册撤销，供测试检查先撤图后退休的顺序。
+ * 不操作系统注册资源，只统计回调次数和事件。 */
 static EZrExecutionBackendStatus test_unregister_maps(
         const SZrExecutionBackendCodeInfo *code,
         TZrPtr userData,
@@ -142,6 +159,8 @@ static EZrExecutionBackendStatus test_unregister_maps(
     return ZR_EXECUTION_BACKEND_STATUS_OK;
 }
 
+/* 记录 mock 代码退休，让 lease 与重复完成场景核对回收次数。
+ * 代码只含身份与 hash，不释放可执行内存。 */
 static EZrExecutionBackendStatus test_retire(
         const SZrExecutionBackendCodeInfo *code,
         TZrPtr userData,
@@ -155,6 +174,8 @@ static EZrExecutionBackendStatus test_retire(
     return ZR_EXECUTION_BACKEND_STATUS_OK;
 }
 
+/* 记录 service 最终关闭后的后端销毁，核对活跃 lease 时仍保留后端。
+ * fixture 是调用方栈对象；此回调不释放 userData。 */
 static void test_destroy(TZrPtr userData) {
     SZrBackendFixture *fixture = (SZrBackendFixture *)userData;
     assert(fixture != ZR_NULL);
@@ -162,6 +183,8 @@ static void test_destroy(TZrPtr userData) {
     test_event(fixture, ZR_TEST_EVENT_DESTROY);
 }
 
+/* 供 ResumeInterpreter 派发，写入 sourceId 哨兵以核对诊断转发。
+ * 不执行解释器，不检查 request 内部字段；diagnostic 可为空。 */
 static TZrBool test_resume(const struct SZrExecIrResumeRequest *request,
                            TZrPtr userData,
                            SZrExecIrDiagnostic *diagnostic) {
@@ -176,6 +199,8 @@ static TZrBool test_resume(const struct SZrExecIrResumeRequest *request,
     return ZR_TRUE;
 }
 
+/* 构造与请求 layout 匹配的 HOST_JIT mock target。
+ * 固定 hash 不探测主机 ABI；仅用于 service 注册选择。 */
 static SZrExecutionBackendTarget test_target(void) {
     SZrExecutionBackendTarget target;
     memset(&target, 0, sizeof(target));
@@ -188,6 +213,8 @@ static SZrExecutionBackendTarget test_target(void) {
     return target;
 }
 
+/* 把栈 fixture 接入完整 mock vtable，供每个 service 场景独立注册。
+ * userData 借用 fixture，场景结束前必须完成 service 关闭。 */
 static SZrExecutionBackendDescriptor test_descriptor(SZrBackendFixture *fixture) {
     SZrExecutionBackendDescriptor descriptor;
     memset(&descriptor, 0, sizeof(descriptor));
@@ -208,6 +235,8 @@ static SZrExecutionBackendDescriptor test_descriptor(SZrBackendFixture *fixture)
     return descriptor;
 }
 
+/* 为请求构造 domain/module/generation 命名空间，注册身份由 service 补齐。
+ * 零初始化保留 backendRegistrationIdentity 为零；不能直接当作完成代码的完整键。 */
 static SZrExecutionGenerationKey test_key(TZrUInt64 domain,
                                           TZrUInt64 module,
                                           TZrUInt64 generation) {
@@ -219,6 +248,8 @@ static SZrExecutionGenerationKey test_key(TZrUInt64 domain,
     return key;
 }
 
+/* 构造允许 ExecBC fallback 的不可变 typed-scalar 请求，供各场景按需改动。
+ * 四图要求与固定 source/instruction ID 用于完成校验和失败定位；不携带可执行 IR。 */
 static SZrExecutionCompileRequest test_request(TZrUInt64 domain,
                                                 TZrUInt64 module,
                                                 TZrUInt64 generation) {
@@ -252,6 +283,8 @@ static SZrExecutionCompileRequest test_request(TZrUInt64 domain,
     return request;
 }
 
+/* 复制请求契约和输入 hash，构造待 Complete 接收的 mock 产物。
+ * 调用方须补 registration identity；固定图 hash 和 codeSize 不证明机器码可用。 */
 static SZrExecutionBackendCompiledCode test_code(
         const SZrExecutionCompileRequest *request,
         TZrUInt64 codeIdentity) {
@@ -275,6 +308,8 @@ static SZrExecutionBackendCompiledCode test_code(
     return code;
 }
 
+/* 覆盖排队不立即编译、pending 完成后显式发布，以及执行 lease 阻止失效代码回收。
+ * 串行手动 Complete；只检查撤图先于退休的最后两个事件，并用 resume 哨兵检查诊断转发。 */
 static void test_queue_complete_publish_and_lease(void) {
     SZrBackendFixture fixture;
     SZrExecutionBackendService service;
@@ -378,6 +413,8 @@ static void test_queue_complete_publish_and_lease(void) {
     assert(fixture.destroyCalls == 1u);
 }
 
+/* 覆盖 worker 同步返回产物、入口与 DEOPT 查询，以及依赖 lease 必须先于执行 lease 释放。
+ * 两个 lease 各为一；入口只是哨兵地址；未测试依赖 lease 计数并发或多持有者。 */
 static void test_sync_compile_entry_map_and_dependency_lease(void) {
     SZrBackendFixture fixture;
     SZrExecutionBackendService service;
@@ -457,6 +494,8 @@ static void test_sync_compile_entry_map_and_dependency_lease(void) {
            ZR_EXECUTION_BACKEND_STATUS_OK);
 }
 
+/* 分别覆盖同步取消 pending 作业，以及活跃执行 lease 使 FinalizeShutdown 拒绝销毁。
+ * 两次重新初始化使用同一栈空间；归还 lease 和 Collect 后才重试最终关闭。 */
 static void test_shutdown_cancels_inflight_and_waits_for_active_lease(void) {
     SZrBackendFixture fixture;
     SZrExecutionBackendService service;
@@ -472,6 +511,7 @@ static void test_shutdown_cancels_inflight_and_waits_for_active_lease(void) {
     TZrUInt32 collected;
 
     /* A synchronous cancellation callback leaves no in-flight worker. */
+    /* 取消回调同步返回 OK，没有遗留实际 worker；这与异步取消尚未完成的状态不同。 */
     memset(&fixture, 0, sizeof(fixture));
     fixture.compileReturnsPending = ZR_TRUE;
     assert(ZrCore_ExecutionBackendService_Init(
@@ -497,6 +537,7 @@ static void test_shutdown_cancels_inflight_and_waits_for_active_lease(void) {
     /* A retired code remains owned until its execution lease is released. */
     memset(&fixture, 0, sizeof(fixture));
     fixture.compileReturnsCode = ZR_TRUE;
+    /* 活跃执行 lease 延迟 FinalizeShutdown；归还、Collect 后才验证销毁计数。 */
     fixture.nextCodeIdentity = 191u;
     assert(ZrCore_ExecutionBackendService_Init(
                    &service, 906u, registrations, 1u, jobs, 2u, codeRecords, 2u,
@@ -538,6 +579,8 @@ static void test_shutdown_cancels_inflight_and_waits_for_active_lease(void) {
     assert(fixture.destroyCalls == 1u);
 }
 
+/* 让两个不同请求返回相同 code identity，核对第二份产物被拒绝、撤图退休并保留请求位置。
+ * 第二份失败不影响第一份已发布记录；最终关闭后两份产物各有一次撤图和退休。 */
 static void test_duplicate_completion_is_disposed_and_failure_is_located(void) {
     SZrBackendFixture fixture;
     SZrExecutionBackendService service;
@@ -606,6 +649,8 @@ static void test_duplicate_completion_is_disposed_and_failure_is_located(void) {
     assert(fixture.unregisterCalls == 2u && fixture.retireCalls == 2u);
 }
 
+/* 覆盖三个 lease API 的全空参数拒绝，以及缺失不可变输入标志时的请求位置保留。
+ * 没有触发编译失败回调；失败发生于 CompileAsync 入队前的请求验证。 */
 static void test_immutable_input_failure_keeps_source_location(void) {
     SZrBackendFixture fixture;
     SZrExecutionBackendService service;
@@ -650,6 +695,8 @@ static void test_immutable_input_failure_keeps_source_location(void) {
            ZR_EXECUTION_BACKEND_STATUS_OK);
 }
 
+/* 覆盖失效取消后的迟到完成清理、同键再次请求拒绝、ExecBC/AOT fallback 和强制机器码拒绝。
+ * AOT fallback 只是状态选择；没有 AOT 或 ExecBC 执行；诊断保留原 unsupported 原因。 */
 static void test_cancel_stale_and_fallback_are_explicit(void) {
     SZrBackendFixture fixture;
     SZrExecutionBackendService service;
@@ -722,6 +769,8 @@ static void test_cancel_stale_and_fallback_are_explicit(void) {
            ZR_EXECUTION_BACKEND_STATUS_OK);
 }
 
+/* 用相同 module/generation、不同 domain 的两份发布代码，核对失效第一份后仍能取得第二份。
+ * 实际只改变 domain；不独立覆盖 module 或 backendRegistrationIdentity 差异。 */
 static void test_generation_namespace_is_not_global(void) {
     SZrBackendFixture fixture;
     SZrExecutionBackendService service;
@@ -791,6 +840,8 @@ static void test_generation_namespace_is_not_global(void) {
            ZR_EXECUTION_BACKEND_STATUS_OK);
 }
 
+/* 由 CTest 的 ssa_backend_service 入口串行运行七个 mock service 契约场景。
+ * API 调用多在 assert 内，验证需启用断言；没有真实 worker 或 JIT 执行。 */
 int main(void) {
     test_queue_complete_publish_and_lease();
     test_sync_compile_entry_map_and_dependency_lease();

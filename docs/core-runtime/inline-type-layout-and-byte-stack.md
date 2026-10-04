@@ -933,6 +933,21 @@ instructions and AOT metadata to resolve the same layout.
 
 ## Current Boundary
 
+`ZrCore_TypeLayout_Validate` requires every explicit GC, ownership, and ref
+offset table to describe exactly the fields carrying its matching flag.
+Offset order may differ from field order. Repeating an offset is valid when
+multiple flagged union variants share that offset; the table must preserve
+that multiplicity. An in-bounds offset naming another kind of value slot, or
+a duplicate that omits a flagged field, is rejected even when the supplied
+layout hash matches. Null tables keep the existing field-derived fallback.
+The comparison uses no heap allocation or byte-size multiplication and has
+quadratic worst-case work in the number of fields; this does not introduce a
+new metadata field-count limit or establish an untrusted-input work budget.
+The focused regression records public GC visitor offsets without collecting
+objects. Its private native validation is documented in
+`tests/acceptance/ssa-type-layout-explicit-map-consistency.md`; registered
+repository gates must be recorded separately before accepting integration.
+
 The implemented boundary covers:
 
 - POD inline copy with overlap-safe byte movement.

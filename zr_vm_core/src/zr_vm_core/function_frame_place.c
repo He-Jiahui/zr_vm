@@ -3,6 +3,7 @@
 //
 
 #include "zr_vm_core/function.h"
+#include "function_argument_staging.h"
 
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/conversion.h"
@@ -124,54 +125,6 @@ static TZrBool function_frame_slot_matches_layout_kind(const SZrFunctionFrameSlo
         default:
             return ZR_FALSE;
     }
-}
-
-static TZrUInt32 function_frame_parameter_index_for_stack_slot(const SZrFunction *function,
-                                                              TZrUInt32 stackSlot) {
-    TZrUInt32 parameterIndex = 0u;
-
-    if (function == ZR_NULL || function->frameSlotLayouts == ZR_NULL) {
-        return 0u;
-    }
-
-    for (TZrUInt32 index = 0u; index < function->frameSlotLayoutLength; index++) {
-        const SZrFunctionFrameSlotLayout *slotLayout = &function->frameSlotLayouts[index];
-
-        if (slotLayout->isParameter && slotLayout->stackSlot < stackSlot) {
-            parameterIndex++;
-        }
-    }
-
-    return parameterIndex;
-}
-
-static ZR_FORCE_INLINE TZrBool function_has_direct_value_parameter_summary(
-        const SZrFunction *function) {
-    TZrUInt32 parameterCount;
-    TZrUInt32 scanLength;
-    const SZrFunctionFrameSlotLayout *lastParameterLayout;
-
-    if (function == ZR_NULL || function->frameSlotLayouts == ZR_NULL ||
-        function->directValueParameterCountPlusOne == 0u) {
-        return ZR_FALSE;
-    }
-    parameterCount = function->directValueParameterCountPlusOne - 1u;
-    scanLength = function->directValueParameterScanLength;
-    if (scanLength > function->frameSlotLayoutLength ||
-        parameterCount > scanLength) {
-        return ZR_FALSE;
-    }
-    if (parameterCount == 0u) {
-        return (TZrBool)(scanLength == 0u);
-    }
-    if (scanLength == 0u) {
-        return ZR_FALSE;
-    }
-
-    lastParameterLayout = &function->frameSlotLayouts[scanLength - 1u];
-    return (TZrBool)(lastParameterLayout->isParameter &&
-                     ZrCore_Function_IsDirectFrameValueSlotLayout(
-                             function, lastParameterLayout));
 }
 
 static void function_frame_reset_value_parameter_destination(struct SZrState *state, SZrTypeValue *value) {
@@ -927,67 +880,6 @@ static ZR_FORCE_INLINE TZrBool function_direct_frame_span_fits_stack(
                      frameBaseOffset <= stackByteSize &&
                      (TZrMemoryOffset)frameByteSize <=
                              stackByteSize - frameBaseOffset);
-}
-
-static ZR_FORCE_INLINE TZrBool function_make_direct_frame_value_slot_place(
-        struct SZrState *state,
-        TZrStackValuePointer frameBase,
-        const SZrFunctionFrameSlotLayout *slotLayout,
-        SZrStackFramePlace *outPlace) {
-    TZrMemoryOffset stackByteSize;
-    TZrMemoryOffset frameBaseOffset;
-    TZrMemoryOffset absoluteOffset;
-
-    if (state == ZR_NULL || frameBase == ZR_NULL ||
-        state->stackBase.valuePointer == ZR_NULL ||
-        state->stackTail.valuePointer == ZR_NULL ||
-        state->stackTail.valuePointer < state->stackBase.valuePointer) {
-        return ZR_FALSE;
-    }
-
-    stackByteSize =
-            (TZrMemoryOffset)(state->stackTail.valuePointer -
-                              state->stackBase.valuePointer) *
-            (TZrMemoryOffset)sizeof(SZrTypeValueOnStack);
-    frameBaseOffset = (TZrByte *)frameBase -
-                      (TZrByte *)state->stackBase.valuePointer;
-    if (frameBaseOffset < 0 || frameBaseOffset > stackByteSize ||
-        (TZrMemoryOffset)slotLayout->byteOffset >
-                stackByteSize - frameBaseOffset ||
-        (TZrMemoryOffset)slotLayout->byteSize >
-                stackByteSize - frameBaseOffset -
-                        (TZrMemoryOffset)slotLayout->byteOffset) {
-        return ZR_FALSE;
-    }
-
-    absoluteOffset = frameBaseOffset +
-                     (TZrMemoryOffset)slotLayout->byteOffset;
-    outPlace->address = (TZrByte *)frameBase + slotLayout->byteOffset;
-    outPlace->byteOffset = absoluteOffset;
-    outPlace->byteSize = slotLayout->byteSize;
-    outPlace->byteAlign = slotLayout->byteAlign;
-    return ZR_TRUE;
-}
-
-static ZR_FORCE_INLINE TZrBool function_make_value_parameter_place(
-        struct SZrState *state,
-        const SZrFunction *function,
-        TZrStackValuePointer frameBase,
-        const SZrFunctionFrameSlotLayout *slotLayout,
-        SZrStackFramePlace *outPlace,
-        TZrBool *outDirect) {
-    TZrBool direct = ZrCore_Function_IsDirectFrameValueSlotLayout(
-            function, slotLayout);
-
-    if (outDirect != ZR_NULL) {
-        *outDirect = direct;
-    }
-    if (direct) {
-        return function_make_direct_frame_value_slot_place(
-                state, frameBase, slotLayout, outPlace);
-    }
-    return ZrCore_Function_MakeFrameSlotPlace(
-            state, function, frameBase, slotLayout->stackSlot, outPlace);
 }
 
 static ZR_FORCE_INLINE void function_record_value_parameter_copy(
@@ -1775,7 +1667,7 @@ TZrBool ZrCore_Function_CopyValueFrameParameters(struct SZrState *state,
     return ZR_TRUE;
 }
 
-TZrBool ZrCore_Function_CopyValueFrameParametersFromFrame(struct SZrState *state,
+static TZrBool function_copy_value_frame_parameters_legacy(struct SZrState *state,
                                                           const SZrFunction *calleeFunction,
                                                           TZrStackValuePointer calleeFrameBase,
                                                           const SZrFunction *sourceFunction,
@@ -1904,6 +1796,22 @@ TZrBool ZrCore_Function_CopyValueFrameParametersFromFrame(struct SZrState *state
     }
 
     return ZR_TRUE;
+}
+
+TZrBool ZrCore_Function_CopyValueFrameParametersFromFrame(
+        struct SZrState *state, const SZrFunction *calleeFunction,
+        TZrStackValuePointer calleeFrameBase, const SZrFunction *sourceFunction,
+        TZrStackValuePointer sourceFrameBase, TZrUInt32 sourceArgumentStartSlot,
+        TZrSize argumentsCount) {
+    EZrExecutionTransferStatus status = ZrCore_Function_StageValueFrameParameters(
+            state, calleeFunction, calleeFrameBase, sourceFunction, sourceFrameBase,
+            sourceArgumentStartSlot, argumentsCount, ZR_NULL);
+    if (status == ZR_EXECUTION_TRANSFER_UNSUPPORTED) {
+        return function_copy_value_frame_parameters_legacy(state, calleeFunction,
+                calleeFrameBase, sourceFunction, sourceFrameBase,
+                sourceArgumentStartSlot, argumentsCount);
+    }
+    return (TZrBool)(status == ZR_EXECUTION_TRANSFER_OK);
 }
 
 static TZrBool function_visit_frame_gc_values(struct SZrState *state,

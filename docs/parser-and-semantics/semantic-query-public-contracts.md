@@ -17,8 +17,13 @@ related_code:
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol_evaluate.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_type_member.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_call_semantic_facts.c
+  - tests/parser/test_numeric_branch_assignment_dataflow.c
+  - tests/parser/test_numeric_branch_refinement.c
+  - tests/parser/test_numeric_loop_assignment_dataflow.c
+  - tests/parser/test_numeric_loop_constant_condition_dataflow.c
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/semantic_query.h
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_query.c
 plan_sources:
   - docs/code-review/comment-standard.md
   - docs/code-review/coverage/zr_vm_parser_semantic_query_public_header.tsv
@@ -32,6 +37,10 @@ tests:
   - tests/parser/test_property_consumer_contracts.c
   - tests/debug/test_debug_evaluate_result_transport_cases.h
   - tests/acceptance/comment-review-20261001.md
+  - tests/parser/test_numeric_branch_assignment_dataflow.c
+  - tests/parser/test_numeric_branch_refinement.c
+  - tests/parser/test_numeric_loop_assignment_dataflow.c
+  - tests/parser/test_numeric_loop_constant_condition_dataflow.c
 doc_type: module-detail
 ---
 
@@ -79,6 +88,12 @@ fact/AST/argumentMappings 视图借用 context 或来源 AST；字符串、provi
 | FindUnionDeclarationByTypeName | LSP switch 穷尽性从 compiler 当前 script/extern AST 找 union；去首个泛型实参文本可创建 GC 字符串，返回借用 AST。 |
 
 各数组清空时点独立：DefinitionsOf 在 context/facts/scope gate 后清长，ReferencesOf 在有效 context/facts 后、invalid ID 拒绝前清长；DeclaredSymbols/VisibleSymbols 先准备输出再检查事实/位置；ExternalReferences/relations 在 context/facts gate 后才准备。实施元素宽度检查的数组接口在清长前拒绝不匹配宽度；ReferencesOf 不检查复用宽度，调用方必须满足同宽前提。`TODO:` 沿其调用方数组复用与其它 prepare 策略核实此差异的设计意图，当前不宣称合法调用已违反前提。false 不能通用解释为“旧结果已清空”。
+
+## 局部诊断投影与数值断言边界
+
+`semantic_query.c` 物化已发布事实的诊断：UNREACHABLE 发布 WARNING；READ 且有 definite-assignment 状态时，UNINIT 发布 ERROR，MAYBE_INIT 发布 WARNING。这个 read 谓词不要求 `isResolved`。数值诊断只以 `mayOverflow` 为门槛并发布 WARNING，不表示每次求值必然溢出，也不重新运行范围推导。消费者仍须按各查询的快照和缓存契约读取结果。
+
+四个 numeric dataflow/refinement 测试文件的源码断言须分别解释：仅检查 min/max 的用例只证明区间包络；显式检查 `rangeSegmentCount` 与每段端点的用例才证明分段表示。例如 branch assignment 检查 `{2} ∪ {11}`，branch refinement 的一项 false-branch 用例检查 `[1,11] ∪ [21,256]`；loop assignment 的一项 while 用例只检查 `[6,11]` 包络及 `mayOverflow=false`，constant-condition 的 false-for 初始化用例检查退出后没有范围事实。不能把这些例子扩展为所有控制流、诊断分类或 reciprocal dependency 的覆盖。四文件的 assertion-abort 清理仍需失败探针核验；这里只同步可见断言，没有新增测试运行证据。
 
 ## 候选类型身份与待核实契约
 

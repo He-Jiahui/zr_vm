@@ -549,9 +549,25 @@ ZR_PARSER_API TZrBool ZrParser_Compiler_PreSemanticIrIsValidated(
 ZR_PARSER_API TZrBool ZrParser_Compiler_ValidatePreSemanticIr(
         SZrCompilerState *cs);
 
-// 编译 AST 为函数
+/** @brief 以 Runtime 提供者阶段编译调用方已有的 AST。
+ * @pre state 是已初始化的 VM 状态；AST 在调用期间有效，其释放仍由调用方负责。
+ * @return 成功返回 VM 管理的函数，临时编译状态不会销毁它；显式编译失败返回空指针。
+ * @note 不传入当前模块键，不生成 TestManifest；需提供项目模块身份时使用 keyed 入口。
+ */
 ZR_PARSER_API SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast);
+/** @brief 以 Test 提供者阶段编译 AST，并保留已发现测试的 TestManifest。
+ * @pre state 已初始化，AST 在调用期间有效；调用方负责 AST 生命周期。
+ * @return 返回 VM 管理的函数或空指针；没有测试条目时不附加 manifest 数据。
+ * @note 不传入当前模块键；测试条目的模块名因此使用 main。需要项目模块身份的测试
+ *       应使用 ZrParser_Source_CompileTest，由 source 入口准备模块身份。
+ */
 ZR_PARSER_API SZrFunction *ZrParser_Compiler_CompileTest(SZrState *state, SZrAstNode *ast);
+/** @brief 在 Runtime 编译中携带调用方提供的当前模块身份。
+ * @pre state 已初始化；AST 与可选模块键在调用期间有效，均由调用方管理。
+ * @return 返回 VM 管理的函数或空指针；临时编译状态清理不销毁成功结果。
+ * @note 模块键传给编译期身份与缓存消费者；本入口不执行 source 入口的项目导入归一化。
+ *       需要项目解析时，先准备 AST 与 canonical key，或使用 ZrParser_Source_Compile。
+ */
 ZR_PARSER_API SZrFunction *ZrParser_Compiler_CompileWithCurrentModuleKey(SZrState *state,
                                                                          SZrAstNode *ast,
                                                                          SZrString *currentModuleKey);

@@ -9,7 +9,8 @@ pub struct GcStepResult {
     pub pause_micros: u64,
     /// VM roots retained by the collector and Rust binding boundary.
     pub root_count: u64,
-    /// BUG: 当前 C 侧按 owner 引用数估算，也包含 checkpoint 引用；不等于 live Value 句柄数。
+    /// Live Value handles crossing the binding boundary; checkpoint owner
+    /// references are retained roots and are excluded from this statistic.
     pub cross_boundary_reference_count: u64,
 }
 

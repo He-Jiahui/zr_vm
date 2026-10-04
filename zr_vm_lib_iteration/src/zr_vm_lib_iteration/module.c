@@ -2,6 +2,7 @@
 
 #include "zr_vm_library/native_registry.h"
 
+/* 运行期描述符集中在 descriptor.c，使内建注册和插件入口共享同一静态地址。 */
 const ZrLibModuleDescriptor *ZrVmLibIteration_Runtime_GetModuleDescriptor(void);
 
 const ZrLibModuleDescriptor *ZrVmLibIteration_GetModuleDescriptor(void) {
@@ -19,6 +20,7 @@ TZrBool ZrVmLibIteration_Register(SZrGlobalState *global) {
         return ZR_FALSE;
     }
 
+    /* RegisterModule 负责重复注册处理；此处仅发布借用的静态描述符。 */
     return ZrLibrary_NativeRegistry_RegisterModule(global, ZrVmLibIteration_GetModuleDescriptor());
 }
 

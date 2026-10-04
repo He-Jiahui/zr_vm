@@ -7,6 +7,8 @@
 
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_common/zr_type_conf.h"
+/* 分发偏好还须与下方编译器/目标支持条件同时成立；WASM 和 MSVC 走同一编号的 switch。
+ * 启用此宏本身不验证输入 opcode，也不声明所有指令处理器已经实现。 */
 #define ZR_INSTRUCTION_USE_DISPATCH_TABLE
 
 #if defined(__EMSCRIPTEN__) || defined(ZR_WASM_BUILD)
@@ -370,6 +372,9 @@ union TZrInstructionType {
 };
 
 typedef union TZrInstructionType TZrInstructionType;
+/** @brief operandExtra 中选择解释器局部 ret 的哨兵值。
+ * @note 结果写入和 META_SET 等接收者读取均可使用该暂存值；字段用途由 opcode 决定。
+ */
 #define ZR_INSTRUCTION_USE_RET_FLAG ((TZrUInt16) (-1))
 /** @brief 固定八字节指令实体，parser 写出后由 core reader 和执行器按相同布局读取。 */
 struct SZrInstruction {

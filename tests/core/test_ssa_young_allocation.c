@@ -5,6 +5,7 @@
 #include <stdalign.h>
 #include <string.h>
 
+/* 检查两种对齐分配的范围与首尾字节清零，以及耗尽后的 cursor 保持；不覆盖算术溢出或全部字节清零。 */
 static void test_tlab_fast_path_aligns_zeroes_and_rejects_exhaustion(void) {
     alignas(64) TZrByte storage[64];
     SZrGcTlab tlab;
@@ -37,6 +38,7 @@ static void test_tlab_fast_path_aligns_zeroes_and_rejects_exhaustion(void) {
     assert(tlab.cursor == cursorBefore);
 }
 
+/* TODO: waste==24 假定首个栈数组满足 8 字节对齐，而声明未显式保证；需核对支持 ABI 的数组地址对齐及 AllocateFast padding。 */
 static void test_tlab_refill_requires_safepoint_and_retire_counts_waste(void) {
     TZrByte firstStorage[32];
     TZrByte secondStorage[32];
@@ -62,6 +64,7 @@ static void test_tlab_refill_requires_safepoint_and_retire_counts_waste(void) {
     assert(tlab.limit == secondStorage + sizeof(secondStorage));
 }
 
+/* 卡表记脏与 remembered set 登记由测试分别调用；扫描检查 kind/token 顺序，年轻内部写入未单独断言卡表不变。 */
 static void test_card_table_marks_old_to_young_and_remembered_roots(void) {
     alignas(64) TZrByte heap[1024];
     TZrByte cards[2] = {ZR_GC_CARD_CLEAN, ZR_GC_CARD_CLEAN};
@@ -83,6 +86,7 @@ static void test_card_table_marks_old_to_young_and_remembered_roots(void) {
             &diagnostic));
     assert(ZrCore_GcCardTable_IsDirty(&table, 0u));
     assert(ZrCore_GcCardTable_DirtyCardCount(&table) == 1u);
+/* 记脏不会自动登记 remembered root；这里显式记录同一卡两次，检验去重。 */
     assert(ZrCore_GcRememberedRootSet_RecordCard(
             &remembered, 0u, &diagnostic));
     assert(ZrCore_GcRememberedRootSet_RecordCard(
@@ -121,6 +125,7 @@ static void test_card_table_marks_old_to_young_and_remembered_roots(void) {
     assert(diagnostic.code == ZR_GC_YOUNG_DIAGNOSTIC_BOUNDS);
 }
 
+/* 逐项改变年龄、pin、旧引用逃逸与大小检查晋升理由；分配侧只检查 TLAB/nativeVisible/阈值大对象决策，不实际迁移对象。 */
 static void test_promotion_policy_preserves_pin_escape_and_age_reasons(void) {
     SZrGcPromotionRequest request;
     SZrGcPromotionDecision decision;
@@ -188,6 +193,7 @@ static void test_promotion_policy_preserves_pin_escape_and_age_reasons(void) {
            ZR_GARBAGE_COLLECT_STORAGE_KIND_LARGE_PERSISTENT);
 }
 
+/* 仅验证标量事务的阶段与恢复门槛：失败 region 不推进 cursor，未解转发不开放恢复；不执行真实疏散或线程恢复。 */
 static void test_minor_transaction_never_resumes_at_partial_region_boundary(void) {
     SZrGcMinorTransaction transaction;
     SZrGcYoungDiagnostic diagnostic;
@@ -231,6 +237,7 @@ static void test_minor_transaction_never_resumes_at_partial_region_boundary(void
     assert(transaction.consistentBoundary);
 }
 
+/* 只检查 Begin 的零 region、未停 mutator 与 roots 不可用三种诊断；其他非法输入不属于这里的覆盖。 */
 static void test_minor_transaction_rejects_invalid_inputs(void) {
     SZrGcMinorTransaction transaction;
     SZrGcYoungDiagnostic diagnostic;
@@ -247,6 +254,7 @@ static void test_minor_transaction_rejects_invalid_inputs(void) {
     assert(diagnostic.code == ZR_GC_YOUNG_DIAGNOSTIC_ROOTS_UNAVAILABLE);
 }
 
+/* 此入口直接调用六个 fixture；assert 内的检查和 API 调用在 NDEBUG 下均不求值，测试覆盖需以未定义 NDEBUG 的构建为准。 */
 int main(void) {
     test_tlab_fast_path_aligns_zeroes_and_rejects_exhaustion();
     test_tlab_refill_requires_safepoint_and_retire_counts_waste();

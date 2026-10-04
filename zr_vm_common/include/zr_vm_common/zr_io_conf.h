@@ -41,6 +41,8 @@ static const union {
  *  40 MODULES [.MODULE]
  */
 #define ZR_IO_SOURCE_SIGNATURE "\x1ZR\x2"
+/* writer 写入当前 patch，ReadSourceNew 拒绝未来 patch；这些门槛还决定历史字段的读取布局，
+ * 因此新增字段时须同步写端和读端，不能只提高版本号。 */
 #define ZR_IO_SOURCE_PATCH_HAS_COMPILE_TIME_METADATA 2U
 #define ZR_IO_SOURCE_PATCH_HAS_PROTOTYPE_BLOB 3U
 #define ZR_IO_SOURCE_PATCH_HAS_SEMIR_METADATA 4U

@@ -112,7 +112,6 @@ SZrAstNodeArray *parse_argument_list(
         {
             SZrAstNode *first = parse_call_argument_expression(ps);
             if (first != ZR_NULL) {
-                /* BUG: 扩容分配失败时 AstNodeArray_Add 静默丢弃节点；当前无返回值可检查，实参 AST 会泄漏。 */
                 ZrParser_AstNodeArray_Add(ps->state, args, first);
             } else {
                 if (names != ZR_NULL) {
@@ -171,7 +170,8 @@ SZrAstNodeArray *parse_argument_list(
             {
                 SZrAstNode *arg = parse_call_argument_expression(ps);
                 if (arg != ZR_NULL) {
-                    /* 同一扩容失败路径还会使表达式、名称和标记三个数组长度失配。 */
+                    /* BUG: 实参数达到当前容量后，增长分配失败会使 Add 静默保留原 count。
+                     * 此处未确认登记成功，arg 会丢失清理入口，已追加的名称/标记与表达式列表也会失配。 */
                     ZrParser_AstNodeArray_Add(ps->state, args, arg);
                 } else {
                     break;

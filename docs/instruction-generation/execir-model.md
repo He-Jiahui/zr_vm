@@ -172,6 +172,10 @@ its `PLACE_BASE`, `LOAD`, and `STORE` instructions remain authoritative.
 metadata table.  It records operand bounds, terminator/value flags, and effect
 classes for arithmetic, place, memory, call, allocation, ownership/drop,
 control-flow, exception, suspension, iterator protocol, and phi operations.
+`CALL` and `INVOKE` both read and write managed-heap and native/FFI memory.
+The invoke's exceptional terminator shape does not reduce the callee's memory
+effects. CFG synthesis forwards the invoke's output versions along both
+successors, and the core verifier rejects pre-invoke versions on either path.
 The appended `WAKE` opcode preserves `OWN_CONSTRUCT(WAKE)` as a distinct
 one-operand/one-result operation. A weak upgrade can fail and return null or
 retain a live owner, so neither `COPY` nor `MOVE` is equivalent. It reads and

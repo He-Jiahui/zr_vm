@@ -90,6 +90,18 @@ doc_type: module-detail
 
 # ExecIR oracle and initial projections
 
+Scalar comparison selectors retain the legacy encoding `0 ==`, `1 <`,
+`2 <=`, `3 >`, `4 >=`, and `5 !=`. The Oracle and ExecBC projection runner
+evaluate floating predicates directly: NaN makes equality and all ordered
+predicates false, and inequality true; positive and negative zero compare
+equal. Signed/unsigned integer comparisons retain exact integer evaluation,
+and BOOL comparisons retain their numeric ordering (false before true).
+`test_ssa_oracle_projection_compare.inc` checks explicit expected results for
+each executor, including NaN in either operand, infinities, signed zero,
+integer limits, and BOOL. Local precedents are `lua/testes/math.lua:815`,
+`lua/QuickJS-master/quickjs.c:14891`, and
+`lua/cpython/Objects/floatobject.c:509`.
+
 01.05 provides a pointer-free reference execution seam and two transactional,
 no-optimization projections. `ZrCore_ExecIr_RunOracleEx` validates the complete
 function shape before reading pools, allocates an isolated value environment,

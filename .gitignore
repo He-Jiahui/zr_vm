@@ -118,3 +118,23 @@ compile_commands.json
 /tests/fixtures/projects/.fixture_prepare/
 /tests/fixtures/projects/.run_backup/
 /.vscode-test
+
+# Local generated build and test outputs
+/bin/
+/lib/
+/cargo/
+/Testing/
+/tests_generated/
+/.tmp-*/
+/tests/benchmarks/dotnet_runner/obj/
+/tests/benchmarks/dotnet_runner/build/
+/*.plist
+/*.zri
+/*.zro
+/*.zrs
+
+# Transient editor/script output and Python test caches
+*.tmp
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

@@ -22,10 +22,27 @@ are local to the semantic context and are not `EZrValueType` values. The
 canonical materializer entry point takes that owning context explicitly and
 resolves each type through `ZrParser_CanonicalType_Find`.
 
-Only primitive bool and i64 nodes are accepted. Narrow integer, reference,
-owner, nominal, unknown, and missing-context inputs fail before a Core
-function is allocated. No type is inferred from the numeric ID. Constant pool
-tokens use the same canonical identity as their instruction result.
+Executable values and instruction targets accept primitive bool and i64
+nodes. Narrow integer, reference, owner, nominal, unknown, and missing-context
+inputs fail before a Core function is allocated. No type is inferred from the
+numeric ID. Constant pool tokens use the same canonical identity as their
+instruction result.
+
+An unreferenced constant pool entry may also describe canonical primitive
+NULL, with flags and bits both zero. The adapter resolves its copied descriptor
+to `ZR_VALUE_TYPE_NULL` and preserves the complete input pool and its indices.
+This descriptor is distinct from the Oracle's undefined value kind. Every
+CONSTANT reference to that NULL entry is rejected with `UNSUPPORTED` at its
+instruction/source location; NULL value annotations, instruction targets,
+match tokens and nullable wrappers remain unsupported. Malformed NULL flags or
+bits produce `INVALID_VALUE`; a 64-bit payload exceeding the diagnostic's
+32-bit actual field is reported as `UINT32_MAX`.
+
+The ordinary VM planner emits only referenced scalar constants. A valid
+two-entry projection containing INT64 42 and unused NULL therefore remains
+unchanged while its Core function has one constant and returns 42. The adapter
+does not implement NULL consumption or relax memory, effect, ownership,
+CONVERT, or STORE validation.
 
 The canonical type array must be initialized, have the correct element size,
 and have a non-overflowing capacity with `length <= capacity` and storage for
@@ -43,8 +60,10 @@ Successful function rooting and emission ownership follow the normal
 materializer contract. The focused tests deliberately reserve IDs before
 interning primitive types, execute the emitted function through Core, and
 check unknown/narrow/mismatched/missing inputs plus byte-for-byte preservation
-of all copied input arrays. Real source branch tests resolve against the
-compiler's own semantic context.
+of all copied input arrays. The two existing registered adapter tests also
+exercise two successful NULL/baseline configurations and eleven strict
+rejections, with exact diagnostics and empty outputs. Real source branch tests
+resolve against the compiler's own semantic context.
 
 The 2026-09-30 root MSVC test-first run accepted an invalid type-array
 descriptor in `canonical-type-shape-red-direct.log`. After array validity and
@@ -53,3 +72,14 @@ in `current-scalar-shape-fixtures-ctest.log`, including eight negative adapter
 inputs with empty output and unchanged projection arrays. The same selection
 passed both real source branch cases. Broader GCC/Clang and full semantic
 matrix results are maintained in the source acceptance record.
+
+The 2026-10-02 UTC (2026-10-03 Asia/Shanghai) unused-NULL preparation observed
+the unchanged adapter reject a legal unused pool descriptor. A D-only copied
+adapter passed all three focused tests and executed Core VM return 42. Root's
+formal MSVC build then succeeded; the first registered CTest timed out with no
+stdout after 41.61 seconds and an unlocalized cause. The unchanged executable
+passed a direct 27-case run and the exact registered retry, 1/1 in 0.57 seconds.
+This establishes the recorded MSVC native adapter scope while preserving the
+unexplained timeout. GCC/Clang, sanitizer and full source-loop VM gates remain
+open. Evidence and remaining gates are in
+[the focused acceptance record](../../tests/acceptance/2026-10-03-ssa-canonical-unused-null-pool.md).

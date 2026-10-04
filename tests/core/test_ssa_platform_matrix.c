@@ -1,3 +1,7 @@
+/* Acceptance assertions must execute even when production is built NDEBUG. */
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <string.h>
 
@@ -177,6 +181,91 @@ static void test_cross_compile_and_real_device_execution_are_distinct(void) {
            ZR_SSA_PLATFORM_STATUS_RUNTIME_UNAVAILABLE);
     assert(diagnostic.runner == ZR_SSA_PLATFORM_RUNNER_CROSS_COMPILE);
     assert(!ZrCommon_SsaPlatform_IsRuntimeAcceptance(&observation));
+}
+
+static void test_cross_compile_cannot_claim_execution_or_a_passed_outcome(void) {
+    SZrSsaPlatformCapability capability = platform_capability(
+            ZR_SSA_PLATFORM_TARGET_DESKTOP_LINUX, ZR_SSA_PLATFORM_ARCH_X86_64);
+    SZrSsaPlatformObservation observation;
+    SZrSsaPlatformDiagnostic diagnostic;
+    TZrUInt32 stages;
+
+    for (stages = 0u; stages < 4u; ++stages) {
+        observation = passing_observation(&capability, ZR_SSA_PLATFORM_BACKEND_EXECBC);
+        observation.runner = ZR_SSA_PLATFORM_RUNNER_CROSS_COMPILE;
+        observation.executed = (stages & 1u) != 0u;
+        observation.semanticPassed = (stages & 2u) != 0u;
+        observation.sourceId = 61u;
+        observation.instructionId = 62u;
+        assert(ZrCommon_SsaPlatform_Check(&capability, &observation, &diagnostic) ==
+               ZR_SSA_PLATFORM_STATUS_OBSERVATION_INVALID);
+        assert(diagnostic.status == ZR_SSA_PLATFORM_STATUS_OBSERVATION_INVALID);
+        assert(diagnostic.runner == ZR_SSA_PLATFORM_RUNNER_CROSS_COMPILE);
+        assert(diagnostic.sourceId == 61u && diagnostic.instructionId == 62u);
+        assert(!ZrTests_Ssa_CheckPlatform(&capability, &observation));
+        assert(!ZrCommon_SsaPlatform_IsRuntimeAcceptance(&observation));
+        if (stages != 0u) {
+            observation.outcome = ZR_SSA_PLATFORM_OUTCOME_FAILED;
+            assert(ZrCommon_SsaPlatform_Check(&capability, &observation, &diagnostic) ==
+                   ZR_SSA_PLATFORM_STATUS_OBSERVATION_INVALID);
+            assert(!ZrCommon_SsaPlatform_IsRuntimeAcceptance(&observation));
+        }
+    }
+}
+
+static void test_execution_runners_remain_eligible_for_runtime_acceptance(void) {
+    const EZrSsaPlatformRunner runners[] = {
+        ZR_SSA_PLATFORM_RUNNER_HOST, ZR_SSA_PLATFORM_RUNNER_EMULATOR,
+        ZR_SSA_PLATFORM_RUNNER_REAL_DEVICE, ZR_SSA_PLATFORM_RUNNER_BROWSER_RUNTIME,
+        ZR_SSA_PLATFORM_RUNNER_WASM_RUNTIME
+    };
+    SZrSsaPlatformCapability capability = platform_capability(
+            ZR_SSA_PLATFORM_TARGET_DESKTOP_LINUX, ZR_SSA_PLATFORM_ARCH_X86_64);
+    TZrSize index;
+
+    for (index = 0u; index < sizeof(runners) / sizeof(runners[0]); ++index) {
+        SZrSsaPlatformObservation observation = passing_observation(
+                &capability, ZR_SSA_PLATFORM_BACKEND_EXECBC);
+        SZrSsaPlatformDiagnostic diagnostic;
+        observation.runner = runners[index];
+        assert(ZrCommon_SsaPlatform_Check(&capability, &observation, &diagnostic) ==
+               ZR_SSA_PLATFORM_STATUS_OK);
+        assert(ZrTests_Ssa_CheckPlatform(&capability, &observation));
+        assert(ZrCommon_SsaPlatform_IsRuntimeAcceptance(&observation));
+    }
+}
+
+static void test_forbidden_jit_observations_fail_both_acceptance_entry_points(void) {
+    const EZrSsaPlatformTarget targets[] = {
+        ZR_SSA_PLATFORM_TARGET_ANDROID, ZR_SSA_PLATFORM_TARGET_IOS,
+        ZR_SSA_PLATFORM_TARGET_WASM
+    };
+    TZrSize index;
+    TZrUInt32 trigger;
+
+    for (index = 0u; index < sizeof(targets) / sizeof(targets[0]); ++index) {
+        SZrSsaPlatformCapability capability = platform_capability(targets[index],
+                targets[index] == ZR_SSA_PLATFORM_TARGET_WASM ?
+                ZR_SSA_PLATFORM_ARCH_WASM64 : ZR_SSA_PLATFORM_ARCH_AARCH64);
+        strcpy(capability.targetTriple, targets[index] == ZR_SSA_PLATFORM_TARGET_WASM ?
+                "wasm64-unknown-unknown" : "aarch64-fixture-mobile");
+        for (trigger = 0u; trigger < 3u; ++trigger) {
+            SZrSsaPlatformObservation observation = passing_observation(
+                    &capability, trigger == 0u ? ZR_SSA_PLATFORM_BACKEND_HOST_JIT :
+                    ZR_SSA_PLATFORM_BACKEND_EXECBC);
+            SZrSsaPlatformDiagnostic diagnostic;
+            observation.machineCodeJitExecuted = trigger == 1u;
+            observation.requiredFeatures = trigger == 2u ?
+                    ZR_SSA_PLATFORM_FEATURE_MACHINE_CODE_JIT : 0u;
+            assert(ZrCommon_SsaPlatform_Check(&capability, &observation, &diagnostic) ==
+                   ZR_SSA_PLATFORM_STATUS_MACHINE_CODE_JIT_FORBIDDEN);
+            assert(diagnostic.status == ZR_SSA_PLATFORM_STATUS_MACHINE_CODE_JIT_FORBIDDEN);
+            assert(diagnostic.target == targets[index]);
+            assert(diagnostic.backend == observation.backend);
+            assert(!ZrTests_Ssa_CheckPlatform(&capability, &observation));
+            assert(!ZrCommon_SsaPlatform_IsRuntimeAcceptance(&observation));
+        }
+    }
 }
 
 static void test_restricted_ios_patch_cannot_add_native_imports(void) {
@@ -417,6 +506,9 @@ int main(void) {
     test_wasm_thread_and_pmu_gaps_are_unsupported_not_passed();
     test_mobile_and_wasm_machine_code_jit_is_forbidden();
     test_cross_compile_and_real_device_execution_are_distinct();
+    test_cross_compile_cannot_claim_execution_or_a_passed_outcome();
+    test_execution_runners_remain_eligible_for_runtime_acceptance();
+    test_forbidden_jit_observations_fail_both_acceptance_entry_points();
     test_restricted_ios_patch_cannot_add_native_imports();
     test_capability_rejects_forbidden_mobile_jit_and_wasm32_width();
     test_observation_rejects_target_and_callback_abi_drift();

@@ -29,6 +29,7 @@ EZrAotIrStatus backend_aot_ir_scalar_text_check_output(
     return ZR_AOT_IR_OK;
 }
 
+/* 文本模板没有效果链、内存链或去优化承载能力，不能默默丢弃这些语义。 */
 static TZrBool scalar_text_instruction_plain(
         const SZrAotIrInstruction *instruction) {
     return (TZrBool)(instruction->flags == 0u &&
@@ -59,6 +60,7 @@ EZrAotIrStatus backend_aot_ir_scalar_text_prepare(
                 1u, 0u);
     }
     memset(plan, 0, sizeof(*plan));
+    /* 先验证数组范围、CFG 和显式 ABI；下面的定址读取依赖这些检查。 */
     status = ZrCore_AotIr_RequireExecutableAbi(module, functionId, &abi,
                                                diagnostic);
     if (status != ZR_AOT_IR_OK) return status;
@@ -68,6 +70,7 @@ EZrAotIrStatus backend_aot_ir_scalar_text_prepare(
                 1u, module->functionCount);
     }
     function = &module->functions[0];
+    /* 模板只承载一个纯常量函数；拒绝需要运行时存储、状态恢复或能力支持的输入。 */
     if (function->id != functionId ||
         abi.kind != ZR_AOT_IR_CALLABLE_ABI_NOARGS_I64 ||
         (function->blockCount != 1u && function->blockCount != 2u) ||
@@ -119,6 +122,7 @@ EZrAotIrStatus backend_aot_ir_scalar_text_prepare(
         }
         constantInstruction = &function->instructions[1];
         returnInstruction = &function->instructions[2];
+        /* 前驱和后继共用 successorPool；两项互证同一入口到出口边，避免模板跳转改义。 */
         if (entry->flags != ZR_EXEC_IR_BLOCK_FLAG_ENTRY || exit->flags != 0u ||
             entry->instructions.offset != 0u ||
             entry->instructions.count != 1u ||
@@ -148,6 +152,7 @@ EZrAotIrStatus backend_aot_ir_scalar_text_prepare(
         }
         plan->branchTargetBlockId = exit->id;
     }
+    /* 返回值必须正是唯一常量的 SSA 结果，不能仅因指令数量相符就替换函数含义。 */
     if (constantInstruction->opcode != ZR_EXEC_IR_OPCODE_CONSTANT ||
         returnInstruction->opcode != ZR_EXEC_IR_OPCODE_RETURN ||
         constantInstruction->results.count != 1u ||

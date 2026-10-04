@@ -10,7 +10,10 @@ struct SZrSessionCheckpoint;
 typedef struct SZrSessionCheckpoint SZrSessionCheckpoint;
 
 /** @brief 在静止的 VM 边界保存全局根可达的可恢复对象图，供项目会话回滚。
- * @pre state 为存活的同一 VM 线程，且没有活动执行帧、待关闭值或异常处理器；跨 FFI 的 live Value 由上层排除。
+ * @pre state 为存活的同一 VM 线程，callinfo 位于 base frame，stackTop 恰为 stackBase 后一格，
+ *      且没有其他 live stack Value、pending control、current exception、异常恢复点/处理器、AOT root
+ *      frame、活动执行预算、嵌套 native 调用或其 yield 计数、开放栈闭包或待关闭栈值；跨 FFI 的 live
+ *      Value 由上层排除。
  * @return 成功时将快照所有权写入 outCheckpoint；失败时不修改原输出值。
  * @note 只保存受支持的逻辑状态，不复制完整堆；快照必须在 state/global 释放前销毁。
  */
@@ -18,9 +21,11 @@ ZR_CORE_API TZrBool ZrCore_SessionCheckpoint_Create(
         struct SZrState *state,
         SZrSessionCheckpoint **outCheckpoint);
 /** @brief 在原有对象上恢复快照，使外部持有的对象身份与环/别名保持有效。
- * @pre 只能在创建快照的同一存活 state 上调用，且会话须静止；成功后快照仍可复用。
- * @return 成功为真；失败可能已经修改部分全局根和对象，调用方不能假定原状态仍完整。
- * @note 当前实现未恢复 SET_CONSTANT 对函数常量槽位的修改，见实现中的 BUG 记录。
+ * @pre 只能在创建快照的同一存活 state 上调用，且会话须静止；不得存在异常处理器、pending control、
+ *      活动异常恢复点、执行预算、嵌套 native 调用、AOT root frame、开放栈闭包或待关闭栈值；
+ *      将被线程归一化丢弃的栈槽不得持有 native ownership。
+ * @return 成功为真；返回假时，不提交快照根、对象、模块、数组或线程边界状态。
+ * @note 线程需要归一化时，会在全部暂存和句柄校验成功后执行；快照成功后仍可重复回滚。
  */
 ZR_CORE_API TZrBool ZrCore_SessionCheckpoint_Rollback(
         struct SZrState *state,

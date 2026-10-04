@@ -3,6 +3,7 @@
 #include "zr_vm_parser/exec_ir_projections.h"
 #include "zr_vm_parser/exec_ir_execbc.h"
 #include "zr_vm_parser/exec_ir_oracle.h"
+#include "zr_vm_parser/exec_ir_builder.h"
 #include "zr_vm_common/zr_type_conf.h"
 
 #include <assert.h>
@@ -1150,6 +1151,7 @@ static void build_invoke_function(SZrExecIrFunction *function) {
     SZrExecIrRange invokeResultRange, payloadResultRange;
     SZrExecIrRange normalReturnOperands, exceptionReturnOperands;
     SZrExecIrInstruction instruction;
+    SZrExecIrDiagnostic diagnostic;
 
     memset(function, 0, sizeof(*function));
     ZrCore_ExecIr_FunctionInit(function);
@@ -1220,6 +1222,7 @@ static void build_invoke_function(SZrExecIrFunction *function) {
     function->blocks[normal - 1u].terminatorInstructionId = 2u;
     function->blocks[exception - 1u].instructionRange = range(2u, 2u);
     function->blocks[exception - 1u].terminatorInstructionId = 4u;
+    assert(ZrParser_ExecIr_SynthesizeCfgEffects(function, &diagnostic));
 }
 
 static void test_invoke_oracle_provider(void) {
@@ -2144,8 +2147,11 @@ void test_oracle_execbc_suspend_differential(void);
 void test_oracle_execbc_invoke_differential(void);
 
 #include "test_ssa_oracle_projection_binding_rows.inc"
+#include "test_ssa_oracle_projection_compare.inc"
 
 int main(void) {
+    test_compare_float_predicates_oracle_and_projection();
+    test_compare_integer_and_bool_predicates_oracle_and_projection();
     test_load_requires_and_uses_memory_provider();
     test_oracle_execbc_memory_differential();
     test_oracle_execbc_call_differential();

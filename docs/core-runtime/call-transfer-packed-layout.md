@@ -92,6 +92,8 @@ contents, counts, flags, spans and hash snapshots. Call `CallTransferPlanFree`
 to release all owned arrays; neither request nor layout memory is owned by the
 plan.
 
+调用方须先对新对象或已 Free 的对象调用 PlanInit，并串行独占访问计划。Init 只清零，不能替代释放已有数组；PlanFree 释放 `kinds/sourceSlots/targetSlots/spans` 四组元数据再清空对象。浅复制只可作为原计划生命周期内的只读视图，不能产生另一份可独立 Free 的 owner。该生命周期不涵盖输入布局或实际值，既有 selected-occupant 与 copied-hash 限制继续适用。
+
 ## Reference principles and remaining consumers
 
 Local references constrain this design: Lua `lua/src/ldo.c` result placement

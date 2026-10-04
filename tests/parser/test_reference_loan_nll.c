@@ -1,5 +1,6 @@
 #include "reference_loan_nll_test_support.h"
 
+/* 用直线 IR 比较共享借用使用前后的写冲突，并检查可变借用使用前的读冲突；可变最后使用后的 LOAD 存在下述构造缺口。 */
 static void test_shared_and_mutable_loans_end_after_last_use(void) {
     SLoanFixture fixture;
     TZrPlaceId placeId;
@@ -46,6 +47,10 @@ static void test_shared_and_mutable_loans_end_after_last_use(void) {
     emit_instruction(
             &fixture, ZR_SEMANTIC_IR_CALL_TYPED, placeId, mutableValue,
             0U, 0U, 9);
+    /* BUG: 第二个 LOAD 重用已定义的 loadValue，Emit 返回无效指令 ID；
+     * mutableAfter 的空诊断和非存活断言因此未覆盖真实的最后使用后读取。
+     * 证据为 semantic_ir.c 的重复结果定义检查；后续修复应使用独立结果值，
+     * 并先断言两次发射成功，再验证最后使用后的实际 LOAD。 */
     mutableAfter = emit_instruction(
             &fixture, ZR_SEMANTIC_IR_LOAD, placeId, 0U,
             loadValue, 0U, 10);
@@ -64,6 +69,7 @@ static void test_shared_and_mutable_loans_end_after_last_use(void) {
             &fixture.result, mutableConflict, mutableLoan, ZR_TRUE));
     TEST_ASSERT_FALSE(ZrParser_SemanticFlow_LoanIsLiveAt(
             &fixture.result, mutableAfter, mutableLoan, ZR_TRUE));
+    /* 同一有效 IR 再分析，核对共享写冲突仍存在；mutableAfter 仍受上面的无效 ID 缺口限制。 */
     analyze(&fixture);
     TEST_ASSERT_NOT_NULL(diagnostic_at_instruction(&fixture, sharedConflict));
     TEST_ASSERT_FALSE(ZrParser_SemanticFlow_LoanIsLiveAt(
@@ -71,6 +77,7 @@ static void test_shared_and_mutable_loans_end_after_last_use(void) {
     fixture_free(&fixture);
 }
 
+/* 在后续仍使用共享引用的前提下，对不同参数 place 的 MOVE 与 DROP 分别断言 loan conflict；不执行 Rust 源码。 */
 static void test_rust_borrowck_move_and_drop_negatives_are_rejected(void) {
     SLoanFixture fixture;
     TZrPlaceId movePlace;
@@ -124,6 +131,7 @@ static void test_rust_borrowck_move_and_drop_negatives_are_rejected(void) {
     fixture_free(&fixture);
 }
 
+/* 把共享引用的最后使用放在 true 分支、false 分支留空，断言 true 分支写冲突及 join 写无 loan conflict；不执行 C# 源码。 */
 static void test_csharp_ref_branch_last_use_allows_join_write(void) {
     SLoanFixture fixture;
     TZrPlaceId placeId;
@@ -159,6 +167,7 @@ static void test_csharp_ref_branch_last_use_allows_join_write(void) {
             &fixture, ZR_SEMANTIC_IR_STORE, placeId, sourceValue,
             0U, 0U, 5);
 
+    /* 借用位于 entry，true 分支先写再用引用，false 分支为空；join 写不应继承已结束的使用。 */
     entry = append_block(&fixture, ZR_PARSER_CFG_BLOCK_ENTRY);
     header = append_block(&fixture, ZR_PARSER_CFG_BLOCK_STATEMENT);
     trueBlock = append_block(&fixture, ZR_PARSER_CFG_BLOCK_STATEMENT);
@@ -202,6 +211,7 @@ static void test_csharp_ref_branch_last_use_allows_join_write(void) {
     fixture_free(&fixture);
 }
 
+/* 把两个共享借用保持到后续调用，断言第二个共享借用可共存、随后同 place 的可变借用产生 loan conflict。 */
 static void test_shared_loans_coexist_and_block_overlapping_mutable_borrow(void) {
     SLoanFixture fixture;
     TZrPlaceId placeId;
@@ -255,6 +265,7 @@ static void test_shared_loans_coexist_and_block_overlapping_mutable_borrow(void)
     fixture_free(&fixture);
 }
 
+/* 显式携带共享 loan 的 LOAD 无冲突，但同一能力的 STORE 及可变 REBORROW 仍产生 loan conflict。 */
 static void test_shared_loan_cannot_authorize_write_or_mutable_reborrow(void) {
     SLoanFixture fixture;
     TZrPlaceId placeId;
@@ -308,6 +319,7 @@ static void test_shared_loan_cannot_authorize_write_or_mutable_reborrow(void) {
     fixture_free(&fixture);
 }
 
+/* 共享引用先存入独立 local 槽再读出，后续使用读出值使源 place 写冲突；最后使用后的源写无 loan conflict。 */
 static void test_ref_value_store_load_propagation_preserves_loan_liveness(void) {
     SLoanFixture fixture;
     TZrPlaceId sourcePlace;
@@ -357,6 +369,7 @@ static void test_ref_value_store_load_propagation_preserves_loan_liveness(void) 
     fixture_free(&fixture);
 }
 
+/* 连续向同一 ref 槽存入来自不同参数的引用；读出第二个引用并安排后续使用，使用前第一源写无 loan conflict、第二源写有冲突。 */
 static void test_ref_slot_overwrite_kills_previous_loan_value(void) {
     SLoanFixture fixture;
     TZrPlaceId firstSource;
@@ -420,6 +433,7 @@ static void test_ref_slot_overwrite_kills_previous_loan_value(void) {
     fixture_free(&fixture);
 }
 
+/* 不同动态索引按 UNKNOWN overlap 报冲突并核对声明、起源、最后使用行；不同常量索引的写无 loan conflict。 */
 static void test_dynamic_indices_conflict_but_constant_indices_are_disjoint(void) {
     SLoanFixture fixture;
     TZrPlaceId basePlace;
@@ -485,6 +499,7 @@ static void test_dynamic_indices_conflict_but_constant_indices_are_disjoint(void
     fixture_free(&fixture);
 }
 
+/* 建立 mutable 父、mutable 子与 shared 孙的链，验证孙存活时父写冲突、孙结束后子写可用、子结束后父写可用。 */
 static void test_nested_reborrow_suspends_parent_until_child_last_use(void) {
     SLoanFixture fixture;
     TZrPlaceId placeId;
@@ -556,6 +571,7 @@ static void test_nested_reborrow_suspends_parent_until_child_last_use(void) {
     fixture_free(&fixture);
 }
 
+/* 两分支分别向 ref 槽存入动态索引引用，join 读出后重借用；核对子 region 为 MULTIPLE，且另一个可能父源的写有冲突。 */
 static void test_joined_ref_reborrow_preserves_all_possible_parents(void) {
     SLoanFixture fixture;
     TZrPlaceId sourceBase;
@@ -627,6 +643,7 @@ static void test_joined_ref_reborrow_preserves_all_possible_parents(void) {
             &fixture, ZR_SEMANTIC_IR_CALL_TYPED, firstSource, childValue,
             0U, 0U, 9);
 
+    /* 两次槽赋值分属互斥分支，join 的 LOAD 必须保留两个可能父 loan，而非按文本顺序覆盖。 */
     entry = append_block(&fixture, ZR_PARSER_CFG_BLOCK_ENTRY);
     header = append_block(&fixture, ZR_PARSER_CFG_BLOCK_STATEMENT);
     trueBlock = append_block(&fixture, ZR_PARSER_CFG_BLOCK_STATEMENT);
@@ -671,6 +688,7 @@ static void test_joined_ref_reborrow_preserves_all_possible_parents(void) {
     fixture_free(&fixture);
 }
 
+/* 分别构造不相交源、普通值无父 loan、字段借用扩大到整对象的重借用；三例 IR 验证通过但 flow Analyze 返回 false。 */
 static void test_reborrow_requires_parent_and_overlapping_provenance(void) {
     SLoanFixture fixture;
     TZrPlaceId firstPlace;
@@ -681,6 +699,7 @@ static void test_reborrow_requires_parent_and_overlapping_provenance(void) {
     TZrLoanId parentLoan;
     TZrLoanId childLoan;
 
+    /* 子来源与父来源不相交：结构验证成功后，由 provenance 阶段拒绝分析。 */
     fixture_init(&fixture);
     firstPlace = add_place(
             &fixture, ZR_PARSER_PLACE_BASE_PARAMETER, 36U);
@@ -709,6 +728,7 @@ static void test_reborrow_requires_parent_and_overlapping_provenance(void) {
             &fixture.result));
     fixture_free(&fixture);
 
+    /* 普通输入值没有创建它的 loan：重借用不能凭一个 ValueId 获得父能力。 */
     fixture_init(&fixture);
     firstPlace = add_place(
             &fixture, ZR_PARSER_PLACE_BASE_PARAMETER, 38U);
@@ -729,6 +749,7 @@ static void test_reborrow_requires_parent_and_overlapping_provenance(void) {
             &fixture.result));
     fixture_free(&fixture);
 
+    /* 父只覆盖字段，子却扩到整个基类：重借用不得扩大授权 place 范围。 */
     fixture_init(&fixture);
     firstPlace = add_place(
             &fixture, ZR_PARSER_PLACE_BASE_PARAMETER, 39U);
@@ -758,6 +779,7 @@ static void test_reborrow_requires_parent_and_overlapping_provenance(void) {
     fixture_free(&fixture);
 }
 
+/* 构造互相引用两个 loan 值的重借用关系，断言 IR 验证通过而 Analyze 拒绝；断言不区分循环与其他拒绝理由。 */
 static void test_reborrow_parent_cycle_is_rejected(void) {
     SLoanFixture fixture;
     TZrPlaceId firstPlace;
@@ -797,6 +819,7 @@ static void test_reborrow_parent_cycle_is_rejected(void) {
     fixture_free(&fixture);
 }
 
+/* header 使用引用，body 写源 place；body→header 回边使下一轮 header 使用保持 loan 存活，exit 写无 loan conflict 且 live-in 为 false。 */
 static void test_loop_back_edge_keeps_loan_live_only_inside_loop(void) {
     SLoanFixture fixture;
     TZrPlaceId placeId;
@@ -829,6 +852,7 @@ static void test_loop_back_edge_keeps_loan_live_only_inside_loop(void) {
             &fixture, ZR_SEMANTIC_IR_STORE, placeId, sourceValue,
             0U, 0U, 5);
 
+    /* body 回到 header，使本轮使用后的写仍冲突；false 边离开循环后无未来引用使用。 */
     entry = append_block(&fixture, ZR_PARSER_CFG_BLOCK_ENTRY);
     header = append_block(&fixture, ZR_PARSER_CFG_BLOCK_STATEMENT);
     body = append_block(&fixture, ZR_PARSER_CFG_BLOCK_STATEMENT);
@@ -862,6 +886,7 @@ static void test_loop_back_edge_keeps_loan_live_only_inside_loop(void) {
     fixture_free(&fixture);
 }
 
+/* 把借用、写和引用使用全部绑定到未连接的 dead block；断言该写无 loan conflict 且 loan 不存活。 */
 static void test_unreachable_block_does_not_publish_loan_conflicts(void) {
     SLoanFixture fixture;
     TZrPlaceId placeId;
@@ -890,6 +915,7 @@ static void test_unreachable_block_does_not_publish_loan_conflicts(void) {
             &fixture, ZR_SEMANTIC_IR_CALL_TYPED, placeId, refValue,
             0U, 0U, 4);
 
+    /* deadBlock 不接入 entry→exit；保留其合法指令范围以隔离可达性过滤的职责。 */
     entry = append_block(&fixture, ZR_PARSER_CFG_BLOCK_ENTRY);
     deadBlock = append_block(&fixture, ZR_PARSER_CFG_BLOCK_STATEMENT);
     exit = append_block(&fixture, ZR_PARSER_CFG_BLOCK_EXIT);
@@ -909,11 +935,13 @@ static void test_unreachable_block_does_not_publish_loan_conflicts(void) {
     fixture_free(&fixture);
 }
 
+/* 为 512 个不同参数分别建立共享 loan 与紧随的调用使用；核对 loanCount、空诊断及最后 loan region 存在，不断言同时存活数或性能。 */
 static void test_large_function_tracks_hundreds_of_disjoint_loans(void) {
     enum { LOAN_STRESS_COUNT = 512 };
     SLoanFixture fixture;
 
     fixture_init(&fixture);
+    /* 每个独立参数 loan 都立即使用；这检查超过固定小表规模的事实发布，不检查 512 个 loan 同时活跃。 */
     for (TZrUInt32 index = 0U; index < LOAN_STRESS_COUNT; index++) {
         TZrPlaceId placeId = add_place(
                 &fixture,
@@ -954,6 +982,7 @@ static void test_large_function_tracks_hundreds_of_disjoint_loans(void) {
     fixture_free(&fixture);
 }
 
+/* 向 Unity 注册这 15 个手工 IR 场景，由统一 setUp/tearDown 管理每例运行时状态并返回 Unity 汇总结果。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_shared_and_mutable_loans_end_after_last_use);

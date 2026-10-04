@@ -278,9 +278,8 @@ static TZrBool type_layout_validate_map(const SZrTypeLayout *layout,
                                         const TZrUInt32 *offsets,
                                         TZrUInt32 count,
                                         TZrUInt32 flag) {
-    /* BUG: 显式表项仅做边界检查，未与相应 flag 字段的偏移核对。
-     * 可传入范围内的错误 GC 偏移并通过 Validate；非联合 GC 快路径随后
-     * 扫描错误值槽，漏掉真实的 GC_VALUE 字段。 */
+    /* 显式表与相应字段偏移须构成同一多重集；表顺序可以不同，联合
+     * 变体共享偏移时也须保留出现次数。无临时分配或尺寸乘法。 */
     for (TZrUInt32 index = 0u; index < count; index++) {
         TZrUInt32 byteOffset;
 
@@ -288,6 +287,26 @@ static TZrBool type_layout_validate_map(const SZrTypeLayout *layout,
             byteOffset > layout->byteSize ||
             sizeof(SZrTypeValue) > layout->byteSize - byteOffset) {
             return ZR_FALSE;
+        }
+        if (offsets != ZR_NULL) {
+            TZrUInt32 mappedCount = 0u;
+            TZrUInt32 fieldCount = 0u;
+
+            for (TZrUInt32 mapIndex = 0u; mapIndex < count; mapIndex++) {
+                if (offsets[mapIndex] == byteOffset) {
+                    mappedCount++;
+                }
+            }
+            for (TZrUInt32 fieldIndex = 0u;
+                 fieldIndex < layout->fieldCount; fieldIndex++) {
+                const SZrTypeLayoutField *field = &layout->fields[fieldIndex];
+                if ((field->flags & flag) != 0u && field->byteOffset == byteOffset) {
+                    fieldCount++;
+                }
+            }
+            if (mappedCount != fieldCount) {
+                return ZR_FALSE;
+            }
         }
     }
     return ZR_TRUE;

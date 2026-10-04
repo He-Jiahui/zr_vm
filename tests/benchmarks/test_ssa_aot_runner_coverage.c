@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/** @brief 断言失败打印原因并终止 fixture 进程；调用者不能依赖失败之后的文件清理继续运行。 */
 static void expect_true(TZrBool condition, const char *message) {
     if (condition == ZR_FALSE) {
         fprintf(stderr, "FAIL: %s\n", message);
@@ -14,12 +15,14 @@ static void expect_true(TZrBool condition, const char *message) {
     }
 }
 
+/* fixture state 由测试栈持有，registry 借用其地址；同步回调返回后由测试继续管理，无堆资源转移。 */
 typedef struct SZrFixtureEntryState {
     TZrUInt64 checksum;
     TZrBool fail;
     SZrAotCoverageCounts coverage;
 } SZrFixtureEntryState;
 
+/** @brief 通过注册的借用 state 注入 checksum、coverage 或同步失败，测试 runner 协议；该回调不证明真实生成 AOT 条目已执行。 */
 static TZrBool fixture_entry_invoke(void *context,
                                     TZrUInt64 *checksum,
                                     SZrAotCoverageCounts *coverage) {
@@ -33,6 +36,7 @@ static TZrBool fixture_entry_invoke(void *context,
     return ZR_TRUE;
 }
 
+/** @brief 区分 native/helper/interpreter 与 deopt，验证动态原生比率及较大静态分母比率各自保留。 */
 static void test_coverage_keeps_semantic_denominator_and_classes(void) {
     SZrAotCoverageCounts counts;
     SZrAotCoverageReport report;
@@ -74,6 +78,7 @@ static void test_coverage_keeps_semantic_denominator_and_classes(void) {
                 "static and dynamic semantic denominators were conflated");
 }
 
+/** @brief 验证零观察仍结构合法，但 Compute 返回 unavailable 和负比率哨兵。 */
 static void test_zero_coverage_is_unavailable_not_perfect(void) {
     SZrAotCoverageCounts counts;
     SZrAotCoverageReport report;
@@ -87,6 +92,7 @@ static void test_zero_coverage_is_unavailable_not_perfect(void) {
                 "missing coverage data was reported as 100 percent");
 }
 
+/** @brief 拒绝静态分母小于已执行类和，同时允许未执行的静态站点。 */
 static void test_coverage_rejects_inconsistent_denominator(void) {
     SZrAotCoverageCounts counts;
 
@@ -105,6 +111,7 @@ static void test_coverage_rejects_inconsistent_denominator(void) {
                 "unexecuted semantic sites were rejected");
 }
 
+/** @brief 验证递增/合并溢出及超静态分母失败不部分发布，并验证未知采样率不冒充精确数据。 */
 static void test_coverage_record_and_merge_are_overflow_safe(void) {
     SZrAotCoverageCounts counts;
     SZrAotCoverageCounts other;
@@ -152,7 +159,9 @@ static void test_coverage_record_and_merge_are_overflow_safe(void) {
                 "failed denominator record partially mutated the counters");
 }
 
+/** @brief 表驱动区分空计数与非空未知证据；不同采样率降为未知，后续精确来源不能恢复已丢失证据。 */
 static void test_coverage_merge_preserves_sampling_evidence(void) {
+/* 采样证据矩阵同时覆盖空目的、空来源、未知和同/异采样率；断言观察最终聚合而非只检查返回值。 */
     static const struct {
         TZrUInt64 destinationSites;
         TZrUInt32 destinationRate;
@@ -218,6 +227,7 @@ static void test_coverage_merge_preserves_sampling_evidence(void) {
                 "unobserved declared sites were treated as an empty aggregate");
 }
 
+/** @brief 经 fixture 注册/调用检查请求及实际 backend、token、checksum 和可用 coverage，不把名称当成真实生成 AOT 证据。 */
 static void test_runner_reports_actual_backend_and_checksum(void) {
     SZrAotRunner runner;
     SZrAotRunnerRequest request;
@@ -253,6 +263,7 @@ static void test_runner_reports_actual_backend_and_checksum(void) {
                 "valid AOT runner result failed structural validation");
 }
 
+/** @brief 编译身份下的采样解释器站点标记 mixed/FALLBACK；helper-only 与未知采样率两种对照不能被误标。 */
 static void test_runner_marks_compiled_entry_with_fallback_as_mixed(void) {
     SZrAotRunner runner;
     SZrAotRunnerRequest request;
@@ -307,6 +318,7 @@ static void test_runner_marks_compiled_entry_with_fallback_as_mixed(void) {
                 "unsampled interpreter counts invented a fallback status");
 }
 
+/** @brief 检查三行 registry 矩阵及未知 backend 的明确 UNAVAILABLE/UNSUPPORTED_BACKEND 诊断。 */
 static void test_runner_matrix_and_unsupported_backend_diagnostics(void) {
     SZrAotRunner runner;
     SZrAotRunnerMatrix matrix;
@@ -337,6 +349,7 @@ static void test_runner_matrix_and_unsupported_backend_diagnostics(void) {
                 "unknown backend diagnostic was not specific");
 }
 
+/** @brief 以仅有解释器注册的 token 验证显式允许回退仍保留实际解释器与 FALLBACK 身份。 */
 static void test_runner_makes_interpreter_fallback_explicit(void) {
     SZrAotRunner runner;
     SZrAotRunnerRequest request;
@@ -367,6 +380,7 @@ static void test_runner_makes_interpreter_fallback_explicit(void) {
                 "interpreter fallback was not visible in runner result");
 }
 
+/** @brief 区分未注册 LLVM 入口与 C 回调 checksum 不匹配；后一失败须保留已实际调用的 C 身份。 */
 static void test_runner_rejects_missing_backend_and_checksum_mismatch(void) {
     SZrAotRunner runner;
     SZrAotRunnerRequest request;
@@ -402,6 +416,7 @@ static void test_runner_rejects_missing_backend_and_checksum_mismatch(void) {
                 "checksum mismatch did not preserve actual backend");
 }
 
+/** @brief 注入 C 回调失败，确认 FAILED/INVOCATION 且无静默解释器替代。 */
 static void test_runner_reports_invocation_failure_without_fallback(void) {
     SZrAotRunner runner;
     SZrAotRunnerRequest request;
@@ -427,6 +442,7 @@ static void test_runner_reports_invocation_failure_without_fallback(void) {
                 "AOT invocation failure was not visible or valid");
 }
 
+/** @brief 验证阶段 -1 不可用哨兵、动态覆盖与 mixed 身份可序列化；只调用写入 API，不重新解析 JSON 内容。 */
 static void test_aot_phase_report_keeps_costs_and_unavailable_values_explicit(void) {
     SZrPerfAotPhaseReport report;
     SZrPerfAotPhaseReport invalid;
@@ -470,6 +486,7 @@ static void test_aot_phase_report_keeps_costs_and_unavailable_values_explicit(vo
                 "requested/actual mismatch was hidden in AOT report");
 }
 
+/** @brief 仅为比率 fixture 复制必要 coverage 字段并将全部阶段设为 -1；不是完整 runner 结果到性能报告的通用转换器。 */
 static SZrPerfAotPhaseReport phase_report_from_coverage(
         const SZrAotCoverageCounts *counts) {
     SZrAotCoverageReport coverage;
@@ -494,8 +511,10 @@ static SZrPerfAotPhaseReport phase_report_from_coverage(
     return report;
 }
 
+/** @brief 验证报告 native 比率精确等于 producer 的动态原生/执行值，覆盖零、全量、1/3 和最大计数以及 unavailable 哨兵。 */
 static void test_aot_phase_ratio_matches_dynamic_native_counters(void) {
     static const double mismatches[] = {1.0, 0.9, 0.08};
+/* 端点与分数 fixture 检查 producer double 的精确合同，不能用格式化小数取代动态计数重算。 */
     static const struct {
         TZrUInt64 nativeSites;
         TZrUInt64 helperSites;
@@ -556,6 +575,7 @@ static void test_aot_phase_ratio_matches_dynamic_native_counters(void) {
                 "unavailable phase ratio sentinel was rejected");
 }
 
+/** @brief 在固定相对路径写 sentinel，再提交不一致比率并逐字节检查原文件保留；正常路径关闭/删除文件，失败断言会立即退出。 */
 static void test_invalid_phase_ratio_leaves_existing_output_unchanged(void) {
     static const char sentinel[] = "existing phase report\n";
     const char *path = "ssa_aot_phase_ratio_existing.json";
@@ -573,6 +593,7 @@ static void test_invalid_phase_ratio_leaves_existing_output_unchanged(void) {
     counts.sampleRatePermille = ZR_AOT_COVERAGE_FULL_SAMPLE_PERMILLE;
     report = phase_report_from_coverage(&counts);
     report.nativeCoverage = 1.0;
+/* 该测试路径为相对 CTest 工作目录中的固定文件；此处创建 sentinel，拒绝写入必须发生在下游 fopen 之前。 */
     file = fopen(path, "wb");
     expect_true(file != ZR_NULL, "ratio sentinel file could not be opened");
     expect_true(fwrite(sentinel, 1u, sizeof(sentinel) - 1u, file) ==
@@ -591,6 +612,7 @@ static void test_invalid_phase_ratio_leaves_existing_output_unchanged(void) {
     expect_true(remove(path) == 0, "ratio sentinel file could not be removed");
 }
 
+/** @brief 按固定顺序执行 coverage、registry、callback failure 与 phase report 回归，全部断言返回后才打印 PASS；不执行外部生成 AOT backend。 */
 int main(void) {
     test_coverage_keeps_semantic_denominator_and_classes();
     test_zero_coverage_is_unavailable_not_perfect();

@@ -4,6 +4,8 @@
 #include <assert.h>
 #include <string.h>
 
+/* 按编译目标宏选择 optional facade 的主机架构见证。
+ * 只支持 x86-64/AArch64 正向注册；没有跨架构执行。 */
 static EZrHostJitArchitecture test_host_architecture(void) {
 #if defined(_M_X64) || defined(__x86_64__) || defined(__amd64__)
     return ZR_HOST_JIT_ARCH_X86_64;
@@ -14,6 +16,8 @@ static EZrHostJitArchitecture test_host_architecture(void) {
 #endif
 }
 
+/* 按传入平台构造 optional facade 目标，正向场景使用 HOST，末尾以 ANDROID 检查拒绝。
+ * pointerSize 来自 sizeof(void*)；endianness 固定 little-endian；无系统目标探测。 */
 static SZrHostJitTargetContract test_target(EZrHostJitPlatform platform) {
     SZrHostJitTargetContract target;
     memset(&target, 0, sizeof(target));
@@ -28,6 +32,8 @@ static SZrHostJitTargetContract test_target(EZrHostJitPlatform platform) {
     return target;
 }
 
+/* 为 optional facade 准备四图已注册的发布事实，与 maps 使用相同固定 hash。
+ * 只有元数据；注册和记录发布不证明可执行入口存在。 */
 static SZrHostJitPublicationFacts test_publication(void) {
     SZrHostJitPublicationFacts facts;
     memset(&facts, 0, sizeof(facts));
@@ -55,6 +61,8 @@ static SZrHostJitPublicationFacts test_publication(void) {
     return facts;
 }
 
+/* 为 facade 构造四类计数、hash 和 frame layout 的一致声明。
+ * 每类计数仅为一；没有实际读取或验证状态图条目。 */
 static SZrJitStateMapFacts test_maps(void) {
     SZrJitStateMapFacts maps;
     memset(&maps, 0, sizeof(maps));
@@ -73,6 +81,8 @@ static SZrJitStateMapFacts test_maps(void) {
     return maps;
 }
 
+/* 从已注册 facade 取得 C ABI descriptor，再实际调用 queryTarget 核对无 provider 的不可用状态。
+ * info 来自 QueryInfo；不调用 descriptor 编译回调，不能据此宣称生成机器码。 */
 static void test_descriptor_unavailable(const SZrJitHostBackendInfo *info) {
     SZrExecutionBackendDescriptor descriptor;
     SZrJitHostDiagnostic diagnostic;
@@ -97,6 +107,8 @@ static void test_descriptor_unavailable(const SZrJitHostBackendInfo *info) {
     assert(backendDiagnostic.status == status);
 }
 
+/* 由启用 ZR_VM_ENABLE_HOST_JIT 的 CTest 入口核对无 provider 注册、fallback 和记录 lease 生命周期。
+ * 只有一个 debugEntryCount=0 负例；编译返回 fallback 不执行 ExecBC，入口查询返回零。 */
 int main(void) {
     SZrHostJitOptions options;
     SZrExecIrDiagnostic executionDiagnostic;
@@ -120,6 +132,7 @@ int main(void) {
     options.codeCacheBytes = 65536u;
     options.maxImports = 8u;
 
+    /* 注册成功只表示 facade 状态可用；机器码不可用由能力查询和 descriptor 回调分别核对。 */
     memset(&executionDiagnostic, 0, sizeof(executionDiagnostic));
     assert(ZrJit_Host_Register(&options, &executionDiagnostic) == ZR_TRUE);
     assert(executionDiagnostic.code == ZR_EXECUTION_DIAGNOSTIC_NONE);
@@ -132,6 +145,7 @@ int main(void) {
     assert(info.supportedOperations == ZR_HOST_JIT_OPERATION_KNOWN_MASK);
     test_descriptor_unavailable(&info);
 
+    /* 只将 debugEntryCount 置零验证缺失条目拒绝，恢复全部声明后继续；没有 hash 错配负例。 */
     ZrJit_Host_DiagnosticInit(&diagnostic);
     assert(ZrJit_Host_ValidateStateMaps(&maps, &diagnostic) ==
            ZR_JIT_HOST_STATUS_OK);
@@ -140,6 +154,7 @@ int main(void) {
            ZR_JIT_HOST_STATUS_STATE_MAP_INVALID);
     maps = test_maps();
 
+    /* 符号和签名共同约束导入；分别改签名与 symbolId 检查禁止状态。 */
     memset(&import, 0, sizeof(import));
     import.symbolId = 6001u;
     import.signatureHash = 6002u;
@@ -157,6 +172,7 @@ int main(void) {
     assert(ZrJit_Host_ValidateImport(&manifest, 6005u, 6002u, &diagnostic) ==
            ZR_JIT_HOST_STATUS_IMPORT_FORBIDDEN);
 
+    /* TODO: publication.platform 被改为 WASM，但下方 Register 仍使用 HOST options 且已有注册；不能证明 WASM 拒绝。下一步在独立行为修复中核对改 options 后的平台注册负例。 */
     publication.target.platform = ZR_HOST_JIT_PLATFORM_WASM;
     ZrJit_Host_DiagnosticInit(&diagnostic);
     assert(ZrJit_Host_ValidateImport(ZR_NULL, 1u, 2u, &diagnostic) ==
@@ -166,6 +182,7 @@ int main(void) {
            executionDiagnostic.code == ZR_EXECUTION_DIAGNOSTIC_TARGET_MISMATCH);
     publication = test_publication();
 
+    /* 合法请求允许 fallback，输出 prepared.record 仍为空；这里只核对回退决策，不运行解释器。 */
     memset(&request, 0, sizeof(request));
     request.magic = ZR_JIT_HOST_MAGIC;
     request.schemaVersion = ZR_JIT_HOST_SCHEMA_VERSION;
@@ -181,6 +198,7 @@ int main(void) {
            ZR_JIT_HOST_STATUS_FALLBACK_EXECBC);
     assert(prepared.record == ZR_NULL);
 
+    /* 记录发布仍无可执行入口；Evict 后活跃 lease 阻止 Collect 与关闭，Release 后再回收关闭。 */
     ZrJit_Host_DiagnosticInit(&diagnostic);
     assert(ZrJit_Host_PrepareWithMaps(&publication, &maps, &prepared, &diagnostic) ==
            ZR_JIT_HOST_STATUS_OK);

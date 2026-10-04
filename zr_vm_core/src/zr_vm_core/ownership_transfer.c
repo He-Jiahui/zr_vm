@@ -575,6 +575,10 @@ TZrBool ZrCore_OwnershipTransfer_Commit(
     return result;
 }
 
+/*
+ * 跨域提交按 kind 分派；provider/图回调在 transitionLock 外运行，返回后
+ * 重新校验 claimant/epoch，避免回调重入或并发撤销消费错误的信封。
+ */
 TZrBool ZrCore_OwnershipTransfer_CommitCrossDomain(
         SZrOwnershipTransferEnvelope *envelope,
         SZrState *targetState,

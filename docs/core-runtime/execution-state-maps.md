@@ -487,6 +487,20 @@ copying data or publishing state.
 
 ## Current limitations
 
+Core function and module verification validate every attached map's identity,
+storage shape and supplied checkpoint contents after validating the IR.
+`ZrCore_ExecIr_ValidateStateMap` exposes the same checks without invoking the
+function verifier. These checks validate supplied entries; they do not require
+every possible boundary phase to be present in a manually supplied map.
+
+The pass pipeline rebuilds an existing attached map after a pass changes the
+IR, before output verification. Rebuild failure rolls back the function,
+attached map, analyses and remarks through the pipeline transaction. Functions
+without an attached map retain that absence. The builder verifies the new IR
+through a shallow view without the previous map, then replaces the old map only
+after the candidate and its storage are complete. A stale map can therefore be
+rebuilt, and a failed rebuild preserves its allocation.
+
 The oracle now pauses and resumes actual reference execution using this logical
 contract; see [oracle checkpoint execution](oracle-projections.md#checkpoint-execution-and-resume).
 It validates identity, restores mapped live values, preserves effect history

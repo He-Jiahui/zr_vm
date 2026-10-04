@@ -14,6 +14,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/type_layout.c
   - zr_vm_core/src/zr_vm_core/type_layout_initialization.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.c
+  - zr_vm_core/src/zr_vm_core/ownership_transfer_commit.c
+  - zr_vm_core/src/zr_vm_core/ownership_transfer_graph_decode.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/ownership_transfer.h
   - zr_vm_core/src/zr_vm_core/ownership_transfer.c
@@ -27,6 +29,8 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/artifact_encoding.c
   - zr_vm_core/src/zr_vm_core/artifact_rows.c
   - zr_vm_core/src/zr_vm_core/artifact_schema.c
+  - zr_vm_core/src/zr_vm_core/ownership_transfer_commit.c
+  - zr_vm_core/src/zr_vm_core/ownership_transfer_graph_decode.c
 plan_sources:
   - docs/plans/syntax/2026-07-18-04-resource-ownership-drop-gc-bridge-design.md
 tests:
@@ -91,6 +95,12 @@ target Place. `ZrCore_OwnershipTransfer_Free` is the single terminal disposer an
 not a concurrent multi-free API. The caller must establish an external quiescent
 point before `Free`: no other thread may retain or access the envelope.
 
+### 图提交窗口与异常传播
+
+图提交在锁内核对 claim 与 payload 后置 `commitInProgress`，锁外执行受保护的图解码。解码器通过 `TryRun` 收集非局部状态并释放临时 roots；提交器重新核对 claim/原图身份，先清窗口并解锁，再传播该状态。失败保留图 payload 供撤销；成功才移交并释放图容器。Abort 对占用窗口的信封拒绝撤销，此门禁不能当作并发 Free 的授权。
+
+`ownership_transfer.h` 仍保留“图分配 Throw 跳过窗口复位”的旧 BUG 注释，和上述现行受保护路径不一致；其注释迁移待处理，不能据旧文字证明当前图路径仍遗留窗口。provider commit 的非局部退出契约另有 TODO，不能把图解码保护扩展为 provider 回调已获同等恢复保证。
+
 ## ValueCopy and StructuredClone
 
 Scalar `ValueCopy` snapshots the canonical scalar value. Layout-backed ValueCopy
@@ -118,8 +128,9 @@ Provider callbacks return a structured `EZrDomainTransferStatus`:
 Provider prepare failure always calls `abort`, including partial-token failure.
 Provider commit success without a target is rejected. A `ResourceMove` target must
 be a direct `Unique`; successful commit transfers the only owner to the target.
-Allocation, decode, provider, cancellation, and shutdown failures leave exactly one
-cleanup path. With `DROP_ON_FAILURE`, an uncommitted ResourceMove source is released
+Ordinarily reported allocation, decode, provider, cancellation, and shutdown failures
+use the terminal cleanup protocol. Provider non-local exits still require a separate
+callback contract and recovery proof. With `DROP_ON_FAILURE`, an uncommitted ResourceMove source is released
 once and is never restored to the source Place.
 
 Callbacks may enter GC-aware native scopes and poll their domain, but must not

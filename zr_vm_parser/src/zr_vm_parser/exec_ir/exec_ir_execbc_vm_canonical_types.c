@@ -139,6 +139,41 @@ TZrBool ZrParser_ExecBcProjection_MaterializeVmFunctionWithCanonicalTypes(
         }
     }
     for (index = 0u; index < projection->constantCount; ++index) {
+        const SZrCanonicalTypeNode *node = ZrParser_CanonicalType_Find(
+                context, (TZrTypeId)constants[index].typeToken);
+        if (node != ZR_NULL &&
+            node->id == (TZrTypeId)constants[index].typeToken &&
+            node->kind == ZR_CANONICAL_TYPE_PRIMITIVE &&
+            node->data.primitive.valueType == ZR_VALUE_TYPE_NULL) {
+            if (constants[index].flags != 0u || constants[index].bits != 0u) {
+                execbc_vm_set_diagnostic(diagnostic,
+                        ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                        projection, 0u, 0u, 0u, 0u,
+                        constants[index].flags != 0u
+                                ? constants[index].flags
+                                : (constants[index].bits > UINT32_MAX
+                                        ? UINT32_MAX
+                                        : (TZrUInt32)constants[index].bits));
+                goto cleanup;
+            }
+            for (TZrUInt32 instructionIndex = 0u;
+                 instructionIndex < projection->instructionCount;
+                 ++instructionIndex) {
+                if (instructions[instructionIndex].opcode ==
+                            ZR_EXEC_IR_OPCODE_CONSTANT &&
+                    instructions[instructionIndex].layoutId == index) {
+                    execbc_vm_set_diagnostic(diagnostic,
+                            ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED,
+                            projection, 0u, instructionIndex + 1u,
+                            instructions[instructionIndex].sourceId,
+                            ZR_VALUE_TYPE_INT64, ZR_VALUE_TYPE_NULL);
+                    goto cleanup;
+                }
+            }
+            /* Preserve the unused pool descriptor; NULL is not a scalar value. */
+            constants[index].typeToken = ZR_VALUE_TYPE_NULL;
+            continue;
+        }
         if (!execbc_vm_resolve_canonical_type(context,
                 constants[index].typeToken, &constants[index].typeToken)) {
             execbc_vm_set_diagnostic(diagnostic,

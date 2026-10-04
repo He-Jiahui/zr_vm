@@ -351,6 +351,7 @@ static TZrBool zr_state_map_deopt_resume_id(
 TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
                                        SZrExecIrDiagnostic *diagnostic) {
     SZrExecIrStateMap candidate;
+    SZrExecIrFunction verificationView;
     SZrStateMapLiveness liveness;
     SZrExecIrOwnerAnalysis ownership = {0};
     EZrExecutionDiagnosticCode livenessResult;
@@ -368,7 +369,11 @@ TZrBool ZrParser_ExecIr_BuildStateMaps(SZrExecIrFunction *function,
                                     function, 0u, 0u);
         return ZR_FALSE;
     }
-    if (!ZrCore_ExecIr_VerifyFunction(function, ZR_EXEC_IR_VERIFY_ALL, diagnostic)) {
+    /* The old map can describe an earlier IR revision. Verify the new IR
+     * independently, retaining the old allocation until candidate publication. */
+    verificationView = *function;
+    verificationView.stateMap = ZR_NULL;
+    if (!ZrCore_ExecIr_VerifyFunction(&verificationView, ZR_EXEC_IR_VERIFY_ALL, diagnostic)) {
         return ZR_FALSE;
     }
     livenessResult = ZrCore_ExecIr_StateMapLivenessBuild(function, &liveness);

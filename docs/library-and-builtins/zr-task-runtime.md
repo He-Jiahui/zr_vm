@@ -38,8 +38,13 @@ var completion = task.currentScheduler.schedule<int>(job);
 return completion.result();
 ```
 
-`Job<T>` is move-only. Submission consumes the source Job even when queue
-allocation fails, so a failed handoff cannot execute the callable twice.
+`Job<T>` is move-only. Submission marks the source Job consumed before
+allocating its completion handle and clears the callable on the subsequent
+success and failure paths. These private writes currently use a void field
+setter: pin or key-allocation failure can return without confirming the write.
+The source ownership rule therefore does not establish reliable runtime
+single-consumption under every allocation failure; checked field publication
+and failure injection remain follow-up work.
 
 ## Source And Runtime Boundary
 
@@ -51,8 +56,10 @@ async fn fetch(pending: zr.task.Task<int>): zr.task.Task<int> {
 }
 ```
 
-`Task.result()` drives the task's owning provider only when it is not already
-inside that provider's active scheduler frame. The queue, pump state, and
+`Task.result()` first observes completed or faulted state, then tries the
+await hook registered on the owning scheduler. A handled successful hook is
+followed by another terminal-state check. Only the local queue fallback is
+suppressed while that scheduler is pumping; the provider hook is tried first. The queue, pump state, and
 provider wait loop are runtime-private; source code cannot select or mutate
 them through a legacy scheduler API.
 

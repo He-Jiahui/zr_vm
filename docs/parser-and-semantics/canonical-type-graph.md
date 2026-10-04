@@ -101,6 +101,14 @@ The graph, definition registry, and index share `SZrSemanticContext` lifetime. L
 - reset frees per-node arrays, clears nodes, and clears buckets and collision links;
 - free performs reset and releases all graph and index storage.
 
+A `Find` result is a borrowed node view. Later interning may relocate the node
+array; callers retain scalar IDs and reacquire views after graph mutation.
+Reset clears the graph and resets session IDs, so IDs must not be reused as
+current identities across semantic snapshots. Name strings remain VM-managed.
+The index's void array-allocation interfaces do not provide a general OOM
+rollback contract; successful ordinary interning is not allocation-failure
+acceptance evidence.
+
 ## Legacy Projection
 
 `ZrParser_CanonicalType_FromInferred` recursively projects the existing inferred representation:
@@ -117,11 +125,11 @@ The graph, definition registry, and index share `SZrSemanticContext` lifetime. L
 
 Generic name decomposition reuses the existing type-inference generic parser. The adapter does not add a second generic string grammar. The remaining `typeName` fields belong to the compatibility representation and diagnostics; new semantic consumers should query `TypeId` and the canonical graph.
 
-`ZrParser_Semantic_RegisterInferredType` and `ZrParser_Semantic_RegisterNamedType` now obtain a canonical ID before publishing compatibility records. Registrations of structurally identical types reuse the same ID even when their use sites differ. Compatibility records retain structural fields only; source AST/name, numeric ranges, known values, and array-size refinements remain expression/reference facts.
+`ZrParser_Semantic_RegisterInferredType` and `ZrParser_Semantic_RegisterNamedType` now obtain a canonical ID before publishing compatibility records. Registrations of structurally identical types reuse the same ID even when their use sites differ. The inferred-registration path copies structural inferred fields and removes numeric ranges, known values and array-size refinements; it clears the compatibility AST pointer. The named-registration path also retains the supplied name and AST pointer. Those borrowed names and ASTs still need their actual owners to remain valid; the native registry is not an independent VM string root.
 
 Top-level union compilation registers a nominal definition, reserves its type symbol, binds type and const generic parameters to that symbol, converts unit/tuple/struct payload fields through inference, interns the ordered canonical union payload list, and rebinds the semantic type symbol to the resulting Union `TypeId`. Projection recursively substitutes nested type and const parameters and gives a closed union the closed generic instance as its definition identity. The union-specific builder lives in `compiler_union_canonical.c` so layout/lowering orchestration remains focused.
 
-Known class, struct, and union generic contracts validate arity, argument kind, and constraints before publishing a prototype, type-environment entry, variable, symbol, or semantic type. Failed canonicalization therefore cannot leave a visible half-registered instance.
+Known class, struct, and union generic contracts validate arity, argument kind, and constraints before publishing a prototype, type-environment entry, variable, symbol, or semantic type. This describes the checked upper-layer publication order, not a transaction over the entire canonical graph. Recursive inferred-type conversion may intern child or base nodes before a later conversion or qualifier check fails; those nodes and consumed IDs need not be rolled back. That partial graph mutation alone does not establish that a prototype, environment entry or semantic fact was half-published.
 
 ## Callable Contracts
 
@@ -156,9 +164,9 @@ A runtime `zr.reflection.Type` expression receives no implicit construction auth
 
 ## Formatting And LSP
 
-The formatter recursively renders every current canonical shape, including qualified nominal names, generic instances, arrays, tuples, unions, refs, owners, readonly views, nullable types, and function contracts. Rank-one and nested arrays use `T[]`/`T[][]`; a single rank-two node uses `T[,]`, so distinct TypeIds cannot format identically. It returns failure and clears the destination when the buffer is too small or the graph is invalid.
+The formatter recursively renders every current canonical shape, including qualified nominal names, generic instances, arrays, tuples, unions, refs, owners, readonly views, nullable types, and function contracts. Rank-one and nested arrays use `T[]`/`T[][]`; a single rank-two node uses `T[,]`, so these array shapes remain distinguishable. Display text is not an identity key: nominal formatting emits module/name without its definition token, and callable formatting does not serialize every parameter-contract field. It returns failure and clears the destination when the buffer is too small or the graph is invalid.
 
-`ZrLanguageServer_SemanticAnalyzer_FormatTypeId` delegates to that formatter. Local semantic hover prefers the `TypeId` on a resolved reference fact and falls back to the legacy inferred display only when no canonical ID is available. This makes a real tuple parameter hover display `(int, bool)` from the graph rather than rebuilding the type from LSP-local strings.
+`ZrLanguageServer_SemanticAnalyzer_FormatTypeId` delegates to that formatter. The local expression-hover builder queries `CanonicalTypeAt` for the current range and formats that query's `TypeId`; query or formatting failure displays `unknown`. This path does not rebuild the expression type from legacy inferred strings. Other hover and signature consumers have their own fallback policies, so no universal legacy-fallback rule follows from this formatter.
 
 ## Boundaries
 

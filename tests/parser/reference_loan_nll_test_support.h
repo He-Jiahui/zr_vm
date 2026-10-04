@@ -18,13 +18,15 @@ typedef struct SLoanFixture {
     TZrRegionId regionId;
 } SLoanFixture;
 
-/* Unity 在每个 RUN_TEST 前创建状态，供 fixture 与 CFG/flow 分析分配使用。 */
+/** @brief 为每个 Unity 测试创建 fixture 与 CFG/flow 使用的运行时状态。 */
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
-/* 与 setUp 配对销毁状态；fixture 的数组也由该状态拥有，测试中须先正常释放。 */
+/** @brief 在 Unity 测试后销毁运行时状态。
+ * @note 正常路径须先 fixture_free；此后 fixture 的数组与查询结果地址均失效。
+ */
 void tearDown(void) {
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
@@ -122,7 +124,8 @@ static TZrLoanId add_loan(SLoanFixture *fixture,
             valueId);
 }
 
-/* 构造一条语义 IR 指令；loan 指令引用 fixture region，CFG 归属稍后绑定。 */
+/* 构造一条语义 IR 指令；loan 指令引用 fixture region，CFG 归属稍后绑定。
+ * 返回值原样传递 Emit 的无效 ID；同一个非零 resultValueId 只能定义一次，调用者须核对发射成功。 */
 static TZrSemanticInstructionId emit_instruction(
         SLoanFixture *fixture,
         EZrSemanticIrOpcode opcode,
@@ -197,7 +200,8 @@ static void bind_linear_cfg(SLoanFixture *fixture) {
             ZR_PARSER_CFG_TERMINATOR_EXIT);
 }
 
-/* 仅查找指定指令的 loan-conflict 诊断；返回的地址借用 fixture 结果数组。 */
+/* 仅查找指定指令的 loan-conflict 诊断；空返回不排除其他种类诊断。
+ * 返回地址借用 fixture 结果数组，只能在下一次分析、结果释放或状态销毁前使用。 */
 static const SZrSemanticFlowDiagnostic *diagnostic_at_instruction(
         const SLoanFixture *fixture,
         TZrSemanticInstructionId instructionId) {

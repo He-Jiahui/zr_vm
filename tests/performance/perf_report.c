@@ -5,12 +5,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 内存中位数的 qsort 回调按完整 uint64_t 排序；不用相减再转 int，
+ * 避免大峰值或相邻峰值被截断后破坏中间元素的次序。 */
 static int zr_perf_report_compare_u64(const void *left, const void *right) {
     const uint64_t leftValue = *(const uint64_t *)left;
     const uint64_t rightValue = *(const uint64_t *)right;
     return leftValue < rightValue ? -1 : (leftValue > rightValue ? 1 : 0);
 }
 
+/* 对每个逻辑样本的进程峰值取均值，不按 repetitions 再除一次。
+ * 先转 double 再求和避免整数累加溢出；返回值是统计近似值。 */
 static double zr_perf_report_mean_u64(const uint64_t *values, int count) {
     double sum = 0.0;
     int index;
@@ -23,6 +27,8 @@ static double zr_perf_report_mean_u64(const uint64_t *values, int count) {
     return sum / (double)count;
 }
 
+/* 临时副本承载排序，保留调用方样本与命令执行次序的对应关系；
+ * 偶数样本先转 double 再平均两个中间峰值，避免 uint64_t 加法溢出。 */
 static double zr_perf_report_median_u64(const uint64_t *values, int count) {
     uint64_t *sortedValues;
     double result;
@@ -30,8 +36,12 @@ static double zr_perf_report_median_u64(const uint64_t *values, int count) {
         return 0.0;
     }
     sortedValues = (uint64_t *)malloc((size_t)count * sizeof(*sortedValues));
-    /* BUG: 临时分配失败会返回合法的 0 中位数，而 ComputeSummary 仍返回成功。
-     * 内存紧张时 JSON 内存统计被静默误报；应向上层传递失败状态。 */
+    /* BUG: 前面的数组和 Bootstrap 分配成功、但本次 malloc 失败时，返回的
+     * 0 会被 ComputeSummary 当成有效中位数并返回 1。process 模式中真实峰值
+     * 中位数为正（例如全部样本峰值为正）时，runner 继续 WriteJson，
+     * median_peak_working_set_bytes 被误报为 0。
+     * 静态可达链为 runner 的 ComputeSummary -> 此处 -> WriteJson -> suite 读取；
+     * 尚未故障注入复现，后续修复须让此分配失败向上返回独立失败状态。 */
     if (sortedValues == NULL) {
         return 0.0;
     }
@@ -44,6 +54,9 @@ static double zr_perf_report_median_u64(const uint64_t *values, int count) {
     return result;
 }
 
+/* runner 已排除校准、预热和失败运行；此处只汇总保留的逻辑样本。
+ * wallMs 已由采样方除以 repetitions，aggregateWallMs 不参与分布统计。
+ * 排序与 Bootstrap 使用临时数组，summary 返回后不持有样本或临时内存。 */
 int ZrPerfReport_ComputeSummary(const SZrPerfRunSample *samples,
                                 int count,
                                 uint64_t bootstrapSeed,
@@ -60,6 +73,8 @@ int ZrPerfReport_ComputeSummary(const SZrPerfRunSample *samples,
     }
     wallValues = (double *)malloc((size_t)count * sizeof(*wallValues));
     peakValues = (uint64_t *)malloc((size_t)count * sizeof(*peakValues));
+    /* 任一工作数组失败都清空输出并释放另一数组，避免调用方消费半份统计。
+     * 参数检查失败则尚未写 summary；两个失败阶段的输出状态并不相同。 */
     if (wallValues == NULL || peakValues == NULL) {
         free(wallValues);
         free(peakValues);
@@ -82,7 +97,8 @@ int ZrPerfReport_ComputeSummary(const SZrPerfRunSample *samples,
             summary->maxPeakWorkingSetBytes = samples[index].peakWorkingSetBytes;
         }
     }
-    /* 时间统计和置信区间应共同成功，才能生成可比较的 summary。 */
+    /* 描述统计和中位数区间必须来自同一组 wallMs 且共同成功。
+     * 这里不授予 comparable/gate 资格；runner 另按 profile、样本数和 CV 判定。 */
     if (!ZrPerfStatistics_Compute(wallValues, (size_t)count, &statistics) ||
         !ZrPerfStatistics_BootstrapMedian95(wallValues,
                                            (size_t)count,
@@ -106,7 +122,9 @@ int ZrPerfReport_ComputeSummary(const SZrPerfRunSample *samples,
     return 1;
 }
 
-/* 命令行和工作目录逐字转义，避免跨语言 suite 读取格式被引号破坏。 */
+/* 两类报告共用 JSON 字符串转义，保护命令、作用域及 AOT 身份字段。
+ * NULL 写成空字符串；哪些可选字段要写 null 由外层先判断。
+ * 普通字节原样输出，此处不验证 UTF-8；I/O 失败由外层最终检查。 */
 static void zr_perf_report_json_escaped(FILE *file, const char *text) {
     const unsigned char *cursor = (const unsigned char *)text;
     fputc('"', file);
@@ -127,6 +145,8 @@ static void zr_perf_report_json_escaped(FILE *file, const char *text) {
     fputc('"', file);
 }
 
+/* 将 runner 已完成的测量批次交给 suite，不执行命令、校验 checksum 或
+ * 重算稳定性。结构与同会话 PID 先受检，打开目标后才按固定字段发布 JSON。 */
 int ZrPerfReport_WriteJson(const char *jsonPath,
                            const char *caseName,
                            const char *workingDirectory,
@@ -146,6 +166,8 @@ int ZrPerfReport_WriteJson(const char *jsonPath,
                            const char *expectedChecksum) {
     FILE *file;
     int index;
+    /* iterations 保留初始预算，sample_count 包含追加样本；两者不能互换。
+     * 先按总上限检查加法两项再核对恒等式，拒绝矛盾元数据后才允许截断目标。 */
     if (jsonPath == NULL || caseName == NULL || measurementScope == NULL || prepareScope == NULL ||
         command == NULL || metadata == NULL || samples == NULL || summary == NULL || metadata->sampleCount <= 0 ||
         metadata->sampleCount > (int)ZR_PERF_MAX_TOTAL_SAMPLES || metadata->initialSampleCount <= 0 ||
@@ -156,7 +178,9 @@ int ZrPerfReport_WriteJson(const char *jsonPath,
         (persistentMode && persistentSession == NULL)) {
         return 0;
     }
-    /* 持久模式报告的是同一服务器的 PID 与会话峰值，不应伪造逐样本 RSS。 */
+    /* 持久会话先由 runner 完成 STOP；快照应与每个 RUN 来自同一 PID。
+     * 此处只核对 PID，一致不代表重新验证退出码或 checksum。
+     * 会话峰值覆盖整个服务器生命周期，不可充当各 RUN 的独立峰值。 */
     if (persistentMode) {
         for (index = 0; index < metadata->sampleCount; index++) {
             if (samples[index].processId != persistentSession->processId) return 0;
@@ -179,6 +203,8 @@ int ZrPerfReport_WriteJson(const char *jsonPath,
     fputs(",\n  \"prepare_scope\": ", file); zr_perf_report_json_escaped(file, prepareScope);
     fprintf(file, ",\n  \"runtime_reused\": %s,\n  \"compiler_reused\": %s,\n  \"jit_state_reused\": %s,\n",
             runtimeReused ? "true" : "false", compilerReused ? "true" : "false", jitStateReused ? "true" : "false");
+    /* 校准批次不进入 runs；这里只保留选定 repetitions 的总耗时作为依据。
+     * 未校准时显式 null 保留“未测量”的含义，不能用 0 伪造校准成本。 */
     if (metadata->calibrationEnabled) {
         fprintf(file,
                 "  \"calibration\": {\"enabled\": true, \"min_sample_ms\": %.3f, "
@@ -205,6 +231,10 @@ int ZrPerfReport_WriteJson(const char *jsonPath,
     fputs("  \"command\": [", file);
     for (index = 0; command[index] != NULL; index++) { if (index > 0) fputs(", ", file); zr_perf_report_json_escaped(file, command[index]); }
     fputs("],\n  \"runs\": [\n", file);
+    /* runs 的 schema_version=3 同时保留总耗时与每次重复的归一化耗时。
+     * 持久模式的样本和 summary 内存字段都写 null，suite 只读会话峰值；
+     * process 模式则发布各逻辑样本的进程峰值，不按重复次数平均峰值。
+     * Bootstrap seed 用十进制字符串保留完整 uint64_t 参数，区间来自 summary。 */
     for (index = 0; index < metadata->sampleCount; index++) {
         if (persistentMode) fprintf(file, "    {\"schema_version\": 3, \"index\": %d, \"repetitions\": %" PRIu32 ", \"aggregate_wall_ms\": %.3f, \"wall_ms\": %.3f, \"pid\": %" PRIu64 ", \"peak_working_set_bytes\": null}%s\n", index + 1, metadata->repetitions, samples[index].aggregateWallMs, samples[index].wallMs, samples[index].processId, (index + 1) == metadata->sampleCount ? "" : ",");
         else fprintf(file, "    {\"schema_version\": 3, \"index\": %d, \"repetitions\": %" PRIu32 ", \"aggregate_wall_ms\": %.3f, \"wall_ms\": %.3f, \"peak_working_set_bytes\": %" PRIu64 "}%s\n", index + 1, metadata->repetitions, samples[index].aggregateWallMs, samples[index].wallMs, samples[index].peakWorkingSetBytes, (index + 1) == metadata->sampleCount ? "" : ",");
@@ -221,6 +251,8 @@ int ZrPerfReport_WriteJson(const char *jsonPath,
     if (persistentMode) fputs("    \"mean_peak_working_set_bytes\": null,\n    \"median_peak_working_set_bytes\": null,\n    \"min_peak_working_set_bytes\": null,\n    \"max_peak_working_set_bytes\": null\n", file);
     else fprintf(file, "    \"mean_peak_working_set_bytes\": %.0f,\n    \"median_peak_working_set_bytes\": %.0f,\n    \"min_peak_working_set_bytes\": %" PRIu64 ",\n    \"max_peak_working_set_bytes\": %" PRIu64 "\n", summary->meanPeakWorkingSetBytes, summary->medianPeakWorkingSetBytes, summary->minPeakWorkingSetBytes, summary->maxPeakWorkingSetBytes);
     fputs("  }\n}\n", file);
+    /* stdio 缓冲可能延后暴露写入失败，flush 和 close 也必须影响返回值。
+     * fopen 已截断目标，后续失败不回滚，调用方不能把残留文件当成成功报告。 */
     if (ferror(file) || fflush(file) != 0) {
         fclose(file);
         return 0;
@@ -228,7 +260,9 @@ int ZrPerfReport_WriteJson(const char *jsonPath,
     return fclose(file) == 0;
 }
 
-/* 固定长 AOT 文本须终止且仅含报告可安全承载的 ASCII。 */
+/* 固定数组必须在 capacity 内终止，避免验证和序列化越界读取。
+ * requestedBackend/entryToken 必填，actualBackend 仅 UNAVAILABLE 可为空；
+ * hash/toolchain/failureReason 可为空。只核对可打印 ASCII，不鉴定身份内容。 */
 static int zr_perf_report_aot_text_valid(const TZrChar *text,
                                          size_t capacity,
                                          int required) {
@@ -253,10 +287,14 @@ static int zr_perf_report_aot_text_valid(const TZrChar *text,
     return 1;
 }
 
+/* 阶段 -1 是唯一“不可用”哨兵，序列化为 null；零是合法测量。
+ * 拒绝其他负值和 NaN/Infinity，避免生成非 JSON 数字。 */
 static int zr_perf_report_aot_phase_valid(double value) {
     return (value == -1.0 || (isfinite(value) && value >= 0.0)) ? 1 : 0;
 }
 
+/* 返回静态状态文本供 JSON 写入；未知枚举也映射 INVALID，永不返回 NULL。
+ * 有效性仍由 ValidateAotPhase 判定，状态名本身不能充当验证结果。 */
 const TZrChar *ZrPerfReport_AotStatusName(EZrPerfAotReportStatus status) {
     switch (status) {
         case ZR_PERF_AOT_REPORT_RAN:
@@ -274,6 +312,8 @@ const TZrChar *ZrPerfReport_AotStatusName(EZrPerfAotReportStatus status) {
     }
 }
 
+/* AOT 报告在写文件前核对身份、可选阶段和覆盖率快照的相互约束。
+ * 此处不调用 backend，也不推导计数；缺失信息必须按报告哨兵由生产方表达。 */
 int ZrPerfReport_ValidateAotPhase(const SZrPerfAotPhaseReport *report) {
     TZrUInt64 semanticSum;
 
@@ -299,6 +339,10 @@ int ZrPerfReport_ValidateAotPhase(const SZrPerfAotPhaseReport *report) {
         !zr_perf_report_aot_phase_valid(report->runMs)) {
         return 0;
     }
+    /* RAN 必须成功退出且 backend 相同；FALLBACK 也必须成功退出。
+     * FALLBACK 若仍声明同一 backend，需以可用覆盖率和 interpreterSites
+     * 证明内部解释器回退。UNAVAILABLE 不能声明成功退出；
+     * FAILED 在这里没有额外退出码规则。 */
     if (report->status == ZR_PERF_AOT_REPORT_RAN &&
         (report->processExitCode != 0 ||
          strcmp(report->requestedBackend, report->actualBackend) != 0)) {
@@ -312,11 +356,14 @@ int ZrPerfReport_ValidateAotPhase(const SZrPerfAotPhaseReport *report) {
     }
     if (report->status == ZR_PERF_AOT_REPORT_UNAVAILABLE &&
         report->processExitCode == 0) {
-        /* An unavailable artifact cannot be represented as a successful
-         * process invocation. */
+        /* 不可用产物不能通过 processExitCode=0 冒充一次成功调用。 */
         return 0;
     }
-    /* 无覆盖率时以 -1 与零计数表示不可用；有覆盖率时分项之和须精确匹配。 */
+    /* 无覆盖率时用 -1 与零语义计数封闭状态，写入方据此生成 null。
+     * 可用时 native/helper/interpreter 必须无溢出地分割 executedSemanticSites；
+     * semanticSites 是声明站点总数，约束 executedSemanticSites 的上界；
+     * nativeCoverage 的分母仍是 executedSemanticSites，fallback/deopt 事件数
+     * 不参加这次求和。 */
     if (report->coverageAvailable == ZR_FALSE) {
         if (report->nativeCoverage != -1.0 || report->semanticSites != 0u ||
             report->executedSemanticSites != 0u || report->nativeSites != 0u ||
@@ -339,6 +386,9 @@ int ZrPerfReport_ValidateAotPhase(const SZrPerfAotPhaseReport *report) {
             semanticSum + report->interpreterSites != report->executedSemanticSites) {
             return 0;
         }
+        /* 与 coverage producer 保持同一 double 表达式：纯 native 除以实际执行数。
+         * helper 不进入分子，不能改用 semanticSites，也不接受格式化舍入值；
+         * JSON 的九位小数用于显示，不能反过来作为 Validate 的输入精度。 */
         if (report->nativeCoverage !=
             (double)report->nativeSites / (double)report->executedSemanticSites) {
             return 0;
@@ -347,6 +397,8 @@ int ZrPerfReport_ValidateAotPhase(const SZrPerfAotPhaseReport *report) {
     return 1;
 }
 
+/* 仅接收已通过阶段验证的值，保留 -1/0 的可用性区别。
+ * name 来自写入方固定键名，不接受外部文本；I/O 状态由写入方统一收尾。 */
 static void zr_perf_report_aot_json_phase(FILE *file,
                                           const char *name,
                                           double value) {
@@ -358,10 +410,13 @@ static void zr_perf_report_aot_json_phase(FILE *file,
     }
 }
 
+/* 阶段快照单独发布，不与 runner 的逻辑样本和 gate 结果混为同一报告。
+ * 无效快照必须在 fopen 之前失败，保留已有目标文件。 */
 int ZrPerfReport_WriteAotJson(const char *jsonPath,
                               const SZrPerfAotPhaseReport *report) {
     FILE *file;
 
+    /* 验证在截断目标前完成，错误比率 fixture 正依赖这一顺序保存原字节。 */
     if (jsonPath == NULL || !ZrPerfReport_ValidateAotPhase(report)) {
         return 0;
     }
@@ -374,6 +429,8 @@ int ZrPerfReport_WriteAotJson(const char *jsonPath,
     fprintf(file, ",\n  \"process_exit_code\": %d,\n  \"requested_backend\": ",
             report->processExitCode);
     zr_perf_report_json_escaped(file, report->requestedBackend);
+    /* 空可选身份写 null；阶段 -1 和未声明可用的内存字段也写 null。
+     * 已声明可用的零字节和零毫秒仍是有效数字，不据数值为零推断缺失。 */
     fputs(",\n  \"actual_backend\": ", file);
     if (report->actualBackend[0] == '\0') fputs("null", file);
     else zr_perf_report_json_escaped(file, report->actualBackend);
@@ -404,6 +461,8 @@ int ZrPerfReport_WriteAotJson(const char *jsonPath,
     fputs(",\n    \"code_size_bytes\": ", file);
     if (report->hasCodeSizeBytes == ZR_FALSE) fputs("null", file);
     else fprintf(file, "%" PRIu64, report->codeSizeBytes);
+    /* 不可用覆盖率的语义计数和比率写 null，保持与合法零覆盖率的区别。
+     * fallback_count/deopt_count 独立保留，不受可用标志遮蔽或加入原生比例。 */
     fputs("\n  },\n  \"coverage\": {\n    \"available\": ", file);
     fputs(report->coverageAvailable != ZR_FALSE ? "true" : "false", file);
     fputs(",\n    \"semantic_sites\": ", file);
@@ -428,6 +487,8 @@ int ZrPerfReport_WriteAotJson(const char *jsonPath,
     if (report->coverageAvailable == ZR_FALSE) fputs("null", file);
     else fprintf(file, "%.9f", report->nativeCoverage);
     fputs("\n  }\n}\n", file);
+    /* 与普通报告相同，写入、flush 和 close 任一失败都返回 0；
+     * 已打开目标后的失败可留下部分文件，返回值才是本次发布成功的依据。 */
     if (ferror(file) || fflush(file) != 0) {
         fclose(file);
         return 0;

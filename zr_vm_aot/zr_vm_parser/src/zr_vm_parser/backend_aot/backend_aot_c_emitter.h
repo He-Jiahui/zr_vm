@@ -458,10 +458,30 @@ void backend_aot_write_c_direct_return_u64_local(FILE *file, TZrUInt32 sourceSlo
 void backend_aot_write_c_direct_return_f64_local(FILE *file, TZrUInt32 sourceSlot);
 void backend_aot_write_c_tail_return(FILE *file, TZrUInt32 sourceSlot, TZrBool publishExports);
 void backend_aot_write_c_begin_instruction(FILE *file, TZrUInt32 instructionIndex, TZrUInt32 stepFlags);
+/**
+ * @brief 生成当前值槽的待关闭登记，使后续作用域退出沿 runtime 清理链处理。
+ * @pre slotIndex 是 MARK_TO_BE_CLOSED 的逻辑槽；生成函数已建立 state、frame 和 ZR_AOT_C_GUARD。
+ * @note 借用调用方输出流并按指令顺序写入；file 为 NULL 时不输出，不接管或关闭流。
+ *       本层不返回写入状态；生成 helper 返回失败时经 guard 进入函数统一出口。
+ */
 void backend_aot_write_c_direct_mark_to_be_closed(FILE *file, TZrUInt32 slotIndex);
+/**
+ * @brief 为已有局部变量生成关闭代理登记，使 using 的关闭职责独立于变量存储槽。
+ * @pre proxySlot 与 sourceSlot 分别取 MARK_CLOSE_PROXY 的 operandExtra 与 operand1[0]；
+ *      proxySlot 是高于源槽的新空槽，运行时还要求物理代理槽高于活动清理链顶。
+ * @note 登记不移动源值；关闭代理时由 runtime 处理源值、镜像及重复登记。
+ *       借用 file，NULL 时不输出；生成环境须已建立 state、frame 和 ZR_AOT_C_GUARD，本层不返回写入状态。
+ */
 void backend_aot_write_c_direct_mark_close_proxy(FILE *file,
                                                 TZrUInt32 proxySlot,
                                                 TZrUInt32 sourceSlot);
+/**
+ * @brief 按 CLOSE_SCOPE 携带的登记项数量生成退出清理，保持 runtime 的后进先出顺序。
+ * @pre cleanupCount 取 operandExtra，表示登记项数；须与当前退出路径的活动登记相符。
+ *      生成函数已建立 state、frame 和 ZR_AOT_C_GUARD。
+ * @note 关闭回调、捕获和所有权清理由 runtime 处理；此处不复制栈指针或关闭算法。
+ *       借用 file，NULL 时不输出，不关闭流，也不返回写入状态。
+ */
 void backend_aot_write_c_direct_close_scope(FILE *file, TZrUInt32 cleanupCount);
 void backend_aot_write_c_direct_own_unique(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
 void backend_aot_write_c_direct_own_borrow(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);

@@ -20,12 +20,17 @@
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
 
+/** @brief TryRun 同步回调的栈上请求；借用 callable，result 与 completed 在捕获返回后供 Task 结算使用。 */
 typedef struct ZrVmTaskExecuteRequest {
     const SZrTypeValue *callable;
     SZrTypeValue result;
     TZrBool completed;
 } ZrVmTaskExecuteRequest;
 
+/**
+ * @brief Job、Task 与 Scheduler 的私有字段协议；字段名由本文件及包含的队列 helper 共用。
+ * @note provider 通过 WorkItem 与 await hook API 交接；completion 状态不代表 worker 已退出。
+ */
 static const TZrChar *kTaskModuleName = "zr.task";
 static const TZrChar *kTaskRootSchedulerField = "__zr_task_scheduler";
 static const TZrChar *kTaskQueueField = "__zr_task_queue";
@@ -104,6 +109,10 @@ static void task_runtime_set_int_field(SZrState *state, SZrObject *object, const
     task_runtime_set_value_field(state, object, fieldName, &fieldValue);
 }
 
+/**
+ * @brief 借用对象字段值供状态检查或随即复制；缺失字段返回 NULL。
+ * @note 返回值不是拥有副本；调用方不能把此地址当作跨分配、字段修改或对象生命周期的稳定句柄。
+ */
 static const SZrTypeValue *task_runtime_get_field_value(SZrState *state, SZrObject *object, const TZrChar *fieldName) {
     if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
         return ZR_NULL;
@@ -363,6 +372,10 @@ static SZrObject *task_runtime_ensure_current_scheduler(SZrState *state) {
     return scheduler;
 }
 
+/**
+ * @brief materialize 阶段从已加载模块取得 Scheduler 原型，避免再次导入正在物化的 zr.task。
+ * @note 同一 global 根上已有 scheduler 时直接复用；字段发布仍使用通用 void setter。
+ */
 static SZrObject *task_runtime_ensure_current_scheduler_for_module(SZrState *state, SZrObjectModule *module) {
     SZrObject *rootObject;
     SZrObject *scheduler;
@@ -411,6 +424,10 @@ static void task_runtime_execute_callable_body(SZrState *state, TZrPtr arguments
     request->completed = ZrLib_CallValue(state, request->callable, ZR_NULL, ZR_NULL, 0, &request->result);
 }
 
+/**
+ * @brief 把当前异常或后备错误结算到 Task，再清理本次执行遗留的 control/exception 状态。
+ * @note callable 与 result 被清空，状态设为 FAULTED；不释放 provider 的 WorkItem 根或 worker 资源。
+ */
 static TZrBool task_runtime_handle_mark_faulted(SZrState *state,
                                                 SZrObject *handle,
                                                 EZrThreadStatus status,
@@ -445,6 +462,11 @@ static TZrBool task_runtime_handle_mark_faulted(SZrState *state,
     return ZR_TRUE;
 }
 
+/**
+ * @brief 在 TryRun 边界同步调用 Task callable，并恢复调用者的栈锚点后结算成功或异常。
+ * @note 保存原异常 handler 深度和 AOT root 链；清理新增 handler 时临时登记 handle/result，
+ * 随后恢复原链及栈位置。provider 持有的 WorkItem 根仍由 provider 显式释放。
+ */
 static TZrBool task_runtime_execute_task(SZrState *state, SZrObject *handle) {
     const SZrTypeValue *callable;
     ZrVmTaskExecuteRequest request;
@@ -555,6 +577,11 @@ static TZrBool task_runtime_execute_task(SZrState *state, SZrObject *handle) {
     return task_runtime_handle_mark_faulted(state, handle, status, request.completed ? &request.result : ZR_NULL);
 }
 
+/**
+ * @brief 从本地队列推进一个元素；先移动 head，允许运行中的 Job 在同一队列尾部提交新工作。
+ * @note cooperative Task 每次剩余 turns 大于零时减一并重新入队；耗尽时尝试分离旧队列，
+ * 不把仍挂载的旧数组游标归零。返回 false 也可能表示缺失/拒绝队列或执行失败。
+ */
 static TZrBool task_runtime_scheduler_step_internal(SZrState *state, SZrObject *scheduler) {
     SZrObject *queue;
     SZrObject *handle;
@@ -611,6 +638,11 @@ static TZrBool task_runtime_scheduler_step_internal(SZrState *state, SZrObject *
     return ZR_TRUE;
 }
 
+/**
+ * @brief 用私有 pumping 标记抑制同一 scheduler 的嵌套 pump，循环推进至 step 返回 false。
+ * @return 成功返回 true 的 step 次数，包含 cooperative 重排和跳过元素，不等于执行 Job 数。
+ * @note 标记的正常清理由循环后的 setter 完成；本函数没有独立 TryRun 或 provider worker 等待。
+ */
 static TZrInt64 task_runtime_scheduler_pump_internal(SZrState *state, SZrObject *scheduler) {
     TZrInt64 executed = 0;
 
@@ -655,6 +687,10 @@ static TZrBool task_runtime_create_task_handle(SZrState *state,
     return task_runtime_finish_object(state, result, handle);
 }
 
+/**
+ * @brief 构造不含 callable 的 cooperative Task，入队后在非 pumping 状态下立即推进本地队列。
+ * @note turns 是重新入队的剩余次数；队列交接失败会尝试把已返回的 handle 结算为 faulted。
+ */
 static TZrBool task_runtime_create_cooperative_task(SZrState *state,
                                                     SZrObject *scheduler,
                                                     TZrInt64 turns,
@@ -697,6 +733,11 @@ static TZrBool task_runtime_create_cooperative_task(SZrState *state,
     return ZR_TRUE;
 }
 
+/**
+ * @brief Task.result 的等待路径：先处理终态，再尝试所属 scheduler 的 provider hook，最后推进本地队列。
+ * @note hook 声明已接管且成功返回后递归复查终态；provider 应使 Task 能继续结算。
+ * 正在 pump 的本地 frame 不递归 pump pending Task，无法完成时报告运行错误。
+ */
 static TZrBool task_runtime_wait_for_task(SZrState *state, SZrObject *handle, SZrTypeValue *result) {
     TZrInt64 status;
     SZrObject *scheduler;
@@ -748,6 +789,12 @@ static TZrBool task_runtime_wait_for_task(SZrState *state, SZrObject *handle, SZ
     ZrCore_Debug_RunError(state, "Task is still pending on an active scheduler frame");
 }
 
+/**
+ * @brief 消费 cold Job，形成 caller-domain Task 并把其 GC 根交给 provider 的 WorkItem。
+ * @pre outItem 不得覆盖尚未释放的成功 WorkItem；后续 resolve、结算与 release 使用同一 GC 域。
+ * @note 消费标记先于 Task 分配；失败后不恢复 Job callable。成功后需要显式 ReleasePreparedJob，
+ * Execute/Fault/Complete 均不替 provider 释放该根；私有字段写入仍受通用 void setter 的限制。
+ */
 TZrBool ZrLibrary_TaskRuntime_PrepareJob(SZrState *state,
                                          SZrObject *scheduler,
                                          SZrObject *job,
@@ -830,6 +877,10 @@ void ZrLibrary_TaskRuntime_ReleasePreparedJob(SZrState *state,
     memset(item, 0, sizeof(*item));
 }
 
+/**
+ * @brief 从 caller-domain Task 复制保留的 callable 给 provider 准备传输；不会消费第二个 Job。
+ * @note 副本仍属于当前域；跨域隔离或序列化由 provider 完成，返回值不是 worker-domain Task 根。
+ */
 TZrBool ZrLibrary_TaskRuntime_CopyPreparedCallable(
         SZrState *state,
         const ZrLibraryTaskRuntimeWorkItem *item,
@@ -851,6 +902,10 @@ TZrBool ZrLibrary_TaskRuntime_CopyPreparedCallable(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 将 provider 返回的当前域结果写入尚未终结的 Task，清空 callable/error 并设为 COMPLETED。
+ * @note 重复终态结算返回 false；成功不表示 worker teardown 已完成，也不释放 item 的 GC 根。
+ */
 TZrBool ZrLibrary_TaskRuntime_CompletePreparedJob(
         SZrState *state,
         ZrLibraryTaskRuntimeWorkItem *item,
@@ -873,6 +928,10 @@ TZrBool ZrLibrary_TaskRuntime_CompletePreparedJob(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 按 prepare、入队、非重入 pump、release 的顺序实现本地 Scheduler.schedule。
+ * @note 队列拒绝时先故障结算再释放根；正常同步返回也释放根。Job 的消费不因交接失败而撤销。
+ */
 static TZrBool task_runtime_schedule_job_on_scheduler(SZrState *state,
                                                        SZrObject *scheduler,
                                                        SZrObject *job,
@@ -903,6 +962,11 @@ TZrBool ZrLibrary_TaskRuntime_ScheduleJob(SZrState *state,
     return task_runtime_schedule_job_on_scheduler(state, scheduler, job, result);
 }
 
+/**
+ * @brief 在 scheduler 中保存 provider 登记结构的原始指针，供 Task.result 调用；不复制或拥有登记。
+ * @pre registration、awaitHook 和 context 必须保持有效到 scheduler 不再可能使用该等待路径。
+ * @note 此入口不拥有 provider 资源，返回 true 的字段写入限制见函数体保留的 BUG。
+ */
 TZrBool ZrLibrary_TaskRuntime_RegisterAwaitHook(
         SZrState *state,
         SZrObject *scheduler,
@@ -919,6 +983,10 @@ TZrBool ZrLibrary_TaskRuntime_RegisterAwaitHook(
     return ZR_TRUE;
 }
 
+/**
+ * @brief 发现有效登记时将 outHandled 设为 true，再同步调用其 awaitHook(state, task, context)。
+ * @note 没有有效登记返回 true 且保持 outHandled=false；hook 返回 false 时 handled 仍表示已选择 provider。
+ */
 TZrBool ZrLibrary_TaskRuntime_AwaitProviderTask(
         SZrState *state,
         SZrObject *scheduler,
@@ -948,6 +1016,7 @@ TZrBool ZrLibrary_TaskRuntime_AwaitProviderTask(
     return registration->awaitHook(state, task, registration->context);
 }
 
+/** @brief 只观察 COMPLETED/FAULTED 状态；不推进队列、不等待 provider worker 退出，也不释放 WorkItem。 */
 TZrBool ZrLibrary_TaskRuntime_IsTaskComplete(SZrState *state, SZrObject *task) {
     TZrInt64 status;
 
@@ -958,6 +1027,7 @@ TZrBool ZrLibrary_TaskRuntime_IsTaskComplete(SZrState *state, SZrObject *task) {
     return status == ZR_VM_TASK_STATUS_COMPLETED || status == ZR_VM_TASK_STATUS_FAULTED;
 }
 
+/** @brief Job constructor 只保存 callable 并初始化 consumed=false；实际执行从 scheduler 交接路径开始。 */
 static TZrBool task_runtime_create_job(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrObject *job = task_runtime_self_object(context);
     SZrTypeValue *callable;
@@ -1016,6 +1086,10 @@ static TZrBool task_runtime_yield_now(ZrLibCallContext *context, SZrTypeValue *r
     return scheduler != ZR_NULL && task_runtime_create_cooperative_task(context->state, scheduler, 1, result);
 }
 
+/**
+ * @brief 当前本地 delay 将非负整数解释为 cooperative 重排次数，返回 Task<void>。
+ * @note descriptor 参数写作 Duration；此 callback 实际读取整数 turns，没有墙钟、休眠或 timer provider 调用。
+ */
 static TZrBool task_runtime_delay(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrObject *scheduler;
     TZrInt64 turns;
@@ -1028,6 +1102,7 @@ static TZrBool task_runtime_delay(ZrLibCallContext *context, SZrTypeValue *resul
     return scheduler != ZR_NULL && task_runtime_create_cooperative_task(context->state, scheduler, turns, result);
 }
 
+/** @brief 从正在物化的模块建立或复用 global 当前 scheduler，并发布 currentScheduler 导出。 */
 static TZrBool task_runtime_task_module_materialize(SZrState *state,
                                                     SZrObjectModule *module,
                                                     const ZrLibModuleDescriptor *descriptor) {
@@ -1146,6 +1221,10 @@ static const TZrChar g_task_hints_json[] =
         "  \"module\": \"zr.task\"\n"
         "}\n";
 
+/**
+ * @brief 单一 zr.task runtime-phase 描述符把 Job constructor、Task 查询与 Scheduler 回调公开给 native registry。
+ * @note contract role 和 protocol mask 供编译器识别能力；实际调度与资源所有权由对应 runtime 路径承担。
+ */
 static const ZrLibModuleDescriptor g_task_descriptor = {
         .abiVersion = ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
         .moduleName = "zr.task",

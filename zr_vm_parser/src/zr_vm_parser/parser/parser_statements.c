@@ -683,7 +683,7 @@ SZrAstNode *parse_while_loop(SZrParserState *ps) {
 
 // break/continue 共用 AST；同一行的可选表达式先保留给后续语义阶段判断合法性。
 SZrAstNode *parse_break_continue_statement(SZrParserState *ps) {
-    SZrFileRange startLoc = get_current_location(ps);
+    SZrFileRange startLoc = get_current_token_location(ps);
     TZrBool isBreak = (ps->lexer->t.token == ZR_TK_BREAK);
     const TZrChar *statementKind = isBreak ? "break" : "continue";
     TZrBool reportedMissingSemicolon = ZR_FALSE;

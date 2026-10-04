@@ -115,6 +115,22 @@ ZR_PARSER_API const TZrChar *ZrParser_ExecIr_LoopReasonName(
  * appends one remark per blocked/hoisted decision.
  */
 struct SZrExecIrRemarkSink;
+struct SZrExecIrOracleInput;
+/* The context supplies an explicit scalar representation contract: only its
+ * function, constants and constantCount fields are read. It must name function.
+ * No callbacks, initial values or Oracle execution are used by these passes.
+ * Same-kind signed/unsigned constant payloads may prove checked arithmetic or
+ * identities; metadata type tokens alone cannot prove a numeric domain. The
+ * function-only APIs below conservatively omit these numeric transformations.
+ * Compiler canonical constant-format production and plumbing remain separate. */
+ZR_PARSER_API TZrBool ZrParser_ExecIr_OptimizeLoopsWithContextEx(
+        SZrExecIrFunction *function, SZrExecIrLoopInfo *info,
+        const struct SZrExecIrOracleInput *scalarContext,
+        struct SZrExecIrRemarkSink *remarks, SZrExecIrDiagnostic *diagnostic);
+ZR_PARSER_API TZrBool ZrParser_ExecIr_StrengthReduceWithContextEx(
+        SZrExecIrFunction *function, SZrExecIrLoopInfo *info,
+        const struct SZrExecIrOracleInput *scalarContext,
+        struct SZrExecIrRemarkSink *remarks, SZrExecIrDiagnostic *diagnostic);
 ZR_PARSER_API TZrBool ZrParser_ExecIr_OptimizeLoops(
         SZrExecIrFunction *function,
         SZrExecIrLoopInfo *info,
