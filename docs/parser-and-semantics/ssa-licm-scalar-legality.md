@@ -9,6 +9,7 @@ related_code:
   - tests/parser/test_ssa_licm_scalar_context.inc
   - tests/parser/test_ssa_loops_specialization.c
   - tests/cmake/ssa-licm-scalar-legality.cmake
+  - tests/cmake/ssa-direct-validation/CMakeLists.txt
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/exec_ir_loops.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_licm.c
@@ -124,8 +125,10 @@ The existing loops suite keeps its positive strength fixture with explicit
 signed pooled constants; its CONSTANT hoist fixtures are unchanged. The isolated
 CMake fragment reuses that suite's support sources and adds Core Oracle sources.
 Root added the central fragment inclusion. Broader CMake configuration and the
-registration integration remain pending. The existing loops executable passed
-the actual V20 regression described below.
+repository-wide build remain outside this finite gate. The actual V31 direct
+CMake subproject configured the owned registration fragments, compiled their
+current checkout sources, and ran both named CTest targets successfully. The
+existing loops executable also passed the earlier V20 regression below.
 
 Root's first fresh build passed compilation and the first four semantic-context
 cases, then full verification rejected safe DIV with INVALID_VALUE (expected
@@ -140,7 +143,7 @@ diagnostic now matches that primary-source behavior, retaining exact before/afte
 code, source/block, event, no-transform, and outcome checks. Production was
 unchanged by this fixture repair.
 
-### Current focused acceptance
+### Historical focused acceptance: V16
 
 Root's V16 fresh fixture compilation, link, actual runtime, and repeat runtime
 all exited 0. All 29 semantic-context cases passed, along with the separate
@@ -158,11 +161,11 @@ Root confirmed current actual dependency files, source/tool/resource identities,
 and compiled/linked products before and after execution. This is not whole-Core
 UBSan or ASan coverage, Linux validation, allocation-failure injection, full
 02.05 acceptance, recurrence optimization, or map-aware hoisting acceptance.
-The changed existing loops fixture also passed V20; broader CMake registration
-is still pending actual configuration/integration. See the focused
+The changed existing loops fixture also passed V20. V31 subsequently verified
+the finite direct CMake configuration and registration described below. See the focused
 [acceptance record](../../tests/acceptance/ssa-licm-scalar-legality.md).
 
-### Existing loops/profile regression and independent audit
+### Historical existing loops/profile regression: V20
 
 Root V20 compiled the current existing loops fixture and profile source with
 UBSan, reused five individually accepted current UBSan Parser objects and 19
@@ -184,5 +187,44 @@ main test calls and enabled assertions, and confirmed natural/reaped/empty/no-
 intervention lifecycle evidence. V19 stopped on an incorrect controller report
 path before any compilation; it was not a fixture/runtime failure.
 
-No whole-milestone acceptance is claimed. There is currently no LICM callsite in
-the pass manager; compiler semantic-pool production and integration remain open.
+### Current direct CMake acceptance: V31
+
+The direct subproject at `tests/cmake/ssa-direct-validation/CMakeLists.txt`
+configured nine finite SSA targets against the actual checkout. Every source
+and header was read directly from `E:/Git/zr_vm`; no source snapshot was used.
+Native Clang plus LLD freshly compiled all 138 translation-unit edges with
+UBSan, nonrecovering sanitizer errors, frame pointers, and `/UNDEBUG`. The LICM
+target contains 26 translation units and the existing loops target contains 21;
+their Core support objects were freshly instrumented too. This supersedes the
+earlier V16/V20 limitation of linking plain Core support for these finite targets.
+
+All nine named CTest targets passed, including `ssa_licm_scalar_legality` and
+`ssa_loops_specialization`. LICM retained the separate pooled-value regression
+(`baseline=18`, `optimized=18`, `reduced=0`) and all 29 semantic-context cases;
+the existing loops suite retained its eight tests. The CTest log reports zero
+failed tests and no sanitizer diagnostic. Its real test time was 31.72 seconds;
+the complete recorded configure/build/test/evidence workflow took
+525.470823399999 seconds.
+
+The authoritative Root receipt is
+`E:/cargo-targets/zr_vm/reports/ssa-20261004-01a0fe2b/direct-ssa-cmake-v31/Root-receipt.json`,
+258995 bytes, SHA256
+`17c71e728b1d84f679bfa7d2d60f2f46793a3c76ab6430782509d244b39e88e2`.
+Its acceptance flag is true. The independent read-only audit
+`E:/cargo-targets/zr_vm/reports/ssa-20261004-01a0fe2b/independent-direct-cmake-v31-current-v1.json`
+is 12198 bytes, SHA256
+`506ad7a314b4b37af3a75af6b746e23298742f73b9079d8d9da9b1a4bb78802e`.
+All 40 checks passed. They cover current file/tool/resource identities, the
+actual source and header dependency graph, all compiler flags, nine UBSan
+links, exact CTest names, enabled assertions or explicit failure returns, and
+natural completion without process intervention. These two file hashes and
+lengths were rechecked when updating this document; no native jobs were rerun.
+
+This is acceptance of the finite direct CMake integration and scalar legality
+slice. Full 02.05 and all 47 SSA leaves remain open. Whole-pass rollback,
+allocation-failure injection, general induction/strength reduction, map-aware
+hoisting, and compiler semantic-pool/context integration remain open; there is
+currently no LICM callsite in the pass manager. DIV staging protects one DIV
+step and retains earlier accepted pure moves; it does not establish whole-pass
+rollback. Linux, ASan, native32, complete repository builds, real typed AOT
+producer integration, and full milestone acceptance are not established by V31.
