@@ -87,55 +87,83 @@ static void test_pipeline_rolls_back_failed_map_rebuild(void) {
 }
 
 static void test_scalar_pipeline_rebuilds_checkpoint_liveness(void) {
-    SZrExecIrFunction function;
-    SZrExecIrDiagnostic diagnostic;
-    SZrExecIrMaterializedState target;
-    SZrExecIrResumeRequest request = {0};
-    SZrExecIrRange copyOperands, copyResults, returnOperands;
-    TZrExecIrValueId source, copied;
-    const SZrExecIrStateMapEntry *entry;
-    init_function(&function);
-    function.contract.generation = 7u;
-    source = ZrCore_ExecIr_FunctionAddExternalValue(&function, 1u,
-            ZR_EXEC_IR_OWNERSHIP_GC, ZR_EXEC_IR_NULLABILITY_NULLABLE);
-    copied = ZrCore_ExecIr_FunctionAddValue(&function, 1u,
-            ZR_EXEC_IR_OWNERSHIP_GC, ZR_EXEC_IR_NULLABILITY_NULLABLE);
-    assert(source != 0u && copied != 0u);
-    assert(ZrCore_ExecIr_FunctionAddBlock(&function,
-            ZR_EXEC_IR_BLOCK_FLAG_ENTRY) == 1u);
-    assert(ZrCore_ExecIr_FunctionAppendOperands(&function, &source, 1u, &copyOperands));
-    assert(ZrCore_ExecIr_FunctionAppendResults(&function, &copied, 1u, &copyResults));
-    assert(ZrCore_ExecIr_FunctionAppendOperands(&function, &copied, 1u, &returnOperands));
-    append_instruction(&function, ZR_EXEC_IR_OPCODE_COPY, copyOperands,
-            copyResults, 0u, 0u, 0u, 0u, 101u);
-    append_instruction(&function, ZR_EXEC_IR_OPCODE_NOP, range(0u, 0u),
-            range(0u, 0u), 0u, ZR_EXEC_IR_FLAG_DEBUG_POLL, 0u, 0u, 102u);
-    append_instruction(&function, ZR_EXEC_IR_OPCODE_RETURN, returnOperands,
-            range(0u, 0u), 0u, 0u, 0u, 0u, 103u);
-    function.blocks[0].instructionRange = range(0u, 3u);
-    function.blocks[0].terminatorInstructionId = 3u;
-    assert(ZrCore_ExecIr_VerifyFunction(&function, ZR_EXEC_IR_VERIFY_ALL, &diagnostic));
-    assert(ZrParser_ExecIr_BuildStateMaps(&function, &diagnostic));
-    entry = ZrCore_ExecIr_StateMapFind(function.stateMap, 102u, 1u,
-            ZR_EXEC_IR_STATE_BEFORE_EFFECT);
-    assert(entry != ZR_NULL && entry->rootValues.count == 1u);
-    assert(function.stateMap->rootPool[entry->rootValues.start] == copied);
-    assert(ZrParser_ExecIr_OptimizeScalar(&function, ZR_NULL, ZR_NULL, &diagnostic));
-    assert(function.operands[function.instructions[2].operands.start] == source);
-    entry = ZrCore_ExecIr_StateMapFind(function.stateMap, 102u, 1u,
-            ZR_EXEC_IR_STATE_BEFORE_EFFECT);
-    assert(entry != ZR_NULL);
-    ZrCore_ExecIr_MaterializedStateInit(&target);
-    request.function = &function;
-    request.map = function.stateMap;
-    request.sourceId = entry->sourceId;
-    request.resumeId = entry->resumeId;
-    request.phase = entry->phase;
-    request.target = &target;
-    assert(ZrCore_ExecIr_MaterializeState(&request, &diagnostic));
-    assert(target.rootCount == 1u && target.roots[0] == source);
-    assert(target.valueCount == 1u && target.values[0] == source);
-    assert(ZrCore_ExecIr_VerifyFunction(&function, ZR_EXEC_IR_VERIFY_ALL, &diagnostic));
-    ZrCore_ExecIr_MaterializedStateFree(&target);
-    ZrCore_ExecIr_FreeFunction(&function);
+    /* GC retains its independent root identity; UNKNOWN exercises rebuilding
+     * checkpoint liveness after the eligible ordinary COPY alias rewrite. */
+    for (TZrUInt32 mode = 0u; mode < 2u; ++mode) {
+        SZrExecIrFunction function;
+        SZrExecIrDiagnostic diagnostic;
+        SZrExecIrMaterializedState target;
+        SZrExecIrResumeRequest request = {0};
+        SZrExecIrRange copyOperands, copyResults, returnOperands;
+        TZrExecIrValueId source, copied;
+        TZrExecIrValueId expected;
+        EZrExecIrOwnership ownership = mode == 0u ? ZR_EXEC_IR_OWNERSHIP_GC
+                                                  : ZR_EXEC_IR_OWNERSHIP_UNKNOWN;
+        TZrUInt32 rootCount = mode == 0u ? 1u : 0u;
+        const SZrExecIrStateMapEntry *entry;
+        init_function(&function);
+        function.contract.generation = 7u;
+        source = ZrCore_ExecIr_FunctionAddExternalValue(&function, 1u,
+                ownership, ZR_EXEC_IR_NULLABILITY_NULLABLE);
+        copied = ZrCore_ExecIr_FunctionAddValue(&function, 1u,
+                ownership, ZR_EXEC_IR_NULLABILITY_NULLABLE);
+        assert(source != 0u && copied != 0u);
+        expected = mode == 0u ? copied : source;
+        assert(ZrCore_ExecIr_FunctionAddBlock(&function,
+                ZR_EXEC_IR_BLOCK_FLAG_ENTRY) == 1u);
+        assert(ZrCore_ExecIr_FunctionAppendOperands(&function, &source, 1u, &copyOperands));
+        assert(ZrCore_ExecIr_FunctionAppendResults(&function, &copied, 1u, &copyResults));
+        assert(ZrCore_ExecIr_FunctionAppendOperands(&function, &copied, 1u, &returnOperands));
+        append_instruction(&function, ZR_EXEC_IR_OPCODE_COPY, copyOperands,
+                copyResults, 0u, 0u, 0u, 0u, 101u);
+        append_instruction(&function, ZR_EXEC_IR_OPCODE_NOP, range(0u, 0u),
+                range(0u, 0u), 0u, ZR_EXEC_IR_FLAG_DEBUG_POLL, 0u, 0u, 102u);
+        append_instruction(&function, ZR_EXEC_IR_OPCODE_RETURN, returnOperands,
+                range(0u, 0u), 0u, 0u, 0u, 0u, 103u);
+        function.blocks[0].instructionRange = range(0u, 3u);
+        function.blocks[0].terminatorInstructionId = 3u;
+        assert(ZrCore_ExecIr_VerifyFunction(&function, ZR_EXEC_IR_VERIFY_ALL, &diagnostic));
+        assert(ZrParser_ExecIr_BuildStateMaps(&function, &diagnostic));
+        assert(ZrCore_ExecIr_VerifyFunction(&function, ZR_EXEC_IR_VERIFY_ALL, &diagnostic));
+        assert(function.operands[function.instructions[2].operands.start] == copied);
+        entry = ZrCore_ExecIr_StateMapFind(function.stateMap, 102u, 1u,
+                ZR_EXEC_IR_STATE_BEFORE_EFFECT);
+        assert(entry != ZR_NULL && entry->liveValues.count == 1u);
+        assert(function.stateMap->valuePool[entry->liveValues.start] == copied);
+        assert(entry->ownerStates.count == entry->liveValues.count);
+        assert(entry->rootValues.count == rootCount);
+        if (rootCount != 0u)
+            assert(function.stateMap->rootPool[entry->rootValues.start] == copied);
+        assert(ZrParser_ExecIr_OptimizeScalar(&function, ZR_NULL, ZR_NULL, &diagnostic));
+        assert(function.operands[function.instructions[2].operands.start] == expected);
+        if (mode == 0u) {
+            assert(function.values[source - 1u].ownership == ZR_EXEC_IR_OWNERSHIP_GC);
+            assert(function.values[copied - 1u].ownership == ZR_EXEC_IR_OWNERSHIP_GC);
+            assert(function.instructions[0].opcode == ZR_EXEC_IR_OPCODE_COPY);
+            assert(function.values[copied - 1u].definition == 1u);
+            assert(function.results[function.instructions[0].results.start] == copied);
+        }
+        entry = ZrCore_ExecIr_StateMapFind(function.stateMap, 102u, 1u,
+                ZR_EXEC_IR_STATE_BEFORE_EFFECT);
+        assert(entry != ZR_NULL && entry->liveValues.count == 1u);
+        assert(function.stateMap->valuePool[entry->liveValues.start] == expected);
+        assert(entry->ownerStates.count == entry->liveValues.count);
+        assert(entry->rootValues.count == rootCount);
+        if (rootCount != 0u)
+            assert(function.stateMap->rootPool[entry->rootValues.start] == copied);
+        ZrCore_ExecIr_MaterializedStateInit(&target);
+        request.function = &function;
+        request.map = function.stateMap;
+        request.sourceId = entry->sourceId;
+        request.resumeId = entry->resumeId;
+        request.phase = entry->phase;
+        request.target = &target;
+        assert(ZrCore_ExecIr_MaterializeState(&request, &diagnostic));
+        assert(target.rootCount == rootCount);
+        if (rootCount != 0u) assert(target.roots[0] == copied);
+        assert(target.valueCount == 1u && target.values[0] == expected);
+        assert(ZrCore_ExecIr_VerifyFunction(&function, ZR_EXEC_IR_VERIFY_ALL, &diagnostic));
+        ZrCore_ExecIr_MaterializedStateFree(&target);
+        ZrCore_ExecIr_FreeFunction(&function);
+    }
 }

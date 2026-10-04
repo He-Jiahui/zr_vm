@@ -1,12 +1,14 @@
+get_filename_component(ZR_SSA_SOURCE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+
 if (NOT TARGET zr_vm_ssa_sccp_phi_copy_edges_test)
     if (NOT TARGET zr_vm_ssa_sccp_conversion_test)
         message(FATAL_ERROR "ssa_sccp_phi_copy_edges requires the current scalar support target")
     endif ()
     get_target_property(_zr_phi_copy_sources zr_vm_ssa_sccp_conversion_test SOURCES)
     list(REMOVE_ITEM _zr_phi_copy_sources
-            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_sccp_conversion.c)
+            ${ZR_SSA_SOURCE_ROOT}/tests/parser/test_ssa_sccp_conversion.c)
     list(APPEND _zr_phi_copy_sources
-            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_sccp_phi_copy_edges.c)
+            ${ZR_SSA_SOURCE_ROOT}/tests/parser/test_ssa_sccp_phi_copy_edges.c)
     add_executable(zr_vm_ssa_sccp_phi_copy_edges_test ${_zr_phi_copy_sources})
     get_target_property(_zr_phi_copy_includes zr_vm_ssa_sccp_conversion_test INCLUDE_DIRECTORIES)
     get_target_property(_zr_phi_copy_definitions zr_vm_ssa_sccp_conversion_test COMPILE_DEFINITIONS)

@@ -14,7 +14,8 @@ enum { V_SOURCE = 1, V_OTHER = 2, V_CONDITION = 3, V_COPY = 4,
        MAX_MEMORY = 4, MAX_INCOMING = 2 };
 enum ECase { C_COPY, C_CHAIN, C_DOMINATING, C_PARALLEL, C_OWNED,
              C_MOVE, C_DROP, C_MAPPED, C_INVOKE, C_SUSPEND,
-             C_BAD_PREDECESSOR, C_BAD_AVAILABILITY };
+             C_BAD_PREDECESSOR, C_BAD_AVAILABILITY,
+             C_INTERIOR_SUSPEND_CALL, C_INTERIOR_CALL_ORDERING };
 
 typedef struct SFixture {
     SZrExecIrFunction function;
@@ -163,6 +164,17 @@ static void build(SFixture *s, enum ECase kind) {
         op(s, 3u, ZR_EXEC_IR_OPCODE_RETURN, V_PHI, 0u);
         finish(s, 3u, V_COPY, 0u); return;
     }
+    /* Analysis-only interior CALL boundaries. A later ordinary BRANCH must
+     * not hide suspension or memory/effect ordering inside this predecessor. */
+    if (kind == C_INTERIOR_SUSPEND_CALL || kind == C_INTERIOR_CALL_ORDERING) {
+        op(s, 1u, ZR_EXEC_IR_OPCODE_CALL, 0u, V_BOUNDARY_RESULT);
+        s->instructions[1].flags = ZR_EXEC_IR_FLAG_MAY_THROW | ZR_EXEC_IR_FLAG_MAY_ALLOCATE;
+        if (kind == C_INTERIOR_SUSPEND_CALL)
+            s->instructions[1].flags |= ZR_EXEC_IR_FLAG_MAY_SUSPEND;
+        /* Recognized CALL schema classes, with actual input/output versions
+         * and effect ordering. No provider or CALL runtime is invoked. */
+        memory_boundary(s, 1u, ZR_EXEC_IR_MEMORY_MANAGED_HEAP, ZR_EXEC_IR_MEMORY_NATIVE_FFI, 2u);
+    }
     if (kind == C_SUSPEND) {
         op(s, 1u, ZR_EXEC_IR_OPCODE_SUSPEND, 0u, V_BOUNDARY_RESULT);
         s->instructions[1].flags = ZR_EXEC_IR_FLAG_MAY_SUSPEND;
@@ -210,7 +222,7 @@ static TZrBool verify(SFixture *s, const char *name) {
 }
 
 /* Only the pure COPY/conditional/PHI/RETURN fixture enters the pointer-free
- * oracle. INVOKE, DROP and SUSPEND fixtures are analysis-only inputs. */
+ * oracle. INVOKE, DROP, SUSPEND and interior CALL fixtures are analysis-only. */
 static TZrBool parallel_paths(SFixture *s, const char *stage) {
     for (TZrUInt32 ordinal = 0u; ordinal < 2u; ++ordinal) {
         SZrExecIrOracleValue initial[MAX_VALUES] = {{0}};
@@ -267,6 +279,9 @@ static void run(enum ECase kind, const char *name) {
     SZrExecIrDiagnostic d = {0};
     TZrBool changed[2] = {0};
     TZrBool positive = (TZrBool)(kind == C_COPY || kind == C_CHAIN || kind == C_PARALLEL);
+    TZrBool interiorBoundary = (TZrBool)(kind == C_INTERIOR_SUSPEND_CALL ||
+                                        kind == C_INTERIOR_CALL_ORDERING);
+    TZrUInt64 boundaryHash = 0u;
     TZrUInt32 instructionCount, incomingCount;
     case_name = name; case_ok = ZR_TRUE; ++cases;
     build(&s, kind);
@@ -275,6 +290,7 @@ static void run(enum ECase kind, const char *name) {
     if (kind == C_PARALLEL && !parallel_paths(&s, "Original")) goto done;
     if (kind == C_MAPPED && !mapped_precondition(&s, "OriginalStateMap")) goto done;
     if (!precondition("Dominators", ZrParser_ExecIr_ComputeDominators(&s.function, &d), &d)) goto done;
+    if (interiorBoundary) boundaryHash = ZrParser_ExecIr_FunctionHash(&s.function);
     for (TZrUInt32 iteration = 0u; iteration < 2u; ++iteration) {
         memset(&d, 0, sizeof(d));
         if (!precondition(iteration ? "RepeatSccp" : "Sccp",
@@ -285,6 +301,27 @@ static void run(enum ECase kind, const char *name) {
         EXPECT(s.function.instructionCount == instructionCount && s.function.phiIncomingCount == incomingCount);
         EXPECT(s.phi.result == V_PHI && s.phi.incomings.count == incomingCount);
         EXPECT(s.instructions[0].opcode == ZR_EXEC_IR_OPCODE_COPY);
+        if (interiorBoundary) {
+            EXPECT(s.instructions[1].opcode == ZR_EXEC_IR_OPCODE_CALL);
+            EXPECT(s.instructions[2].opcode == ZR_EXEC_IR_OPCODE_BRANCH);
+            EXPECT(s.blocks[0].terminatorInstructionId == 3u);
+            EXPECT(boundaryHash == ZrParser_ExecIr_FunctionHash(&s.function));
+            for (TZrUInt32 i = 0u; i < instructionCount; ++i)
+                EXPECT(s.instructions[i].sourceId == 101u + i);
+            if (kind == C_INTERIOR_SUSPEND_CALL)
+                EXPECT((s.instructions[1].flags & ZR_EXEC_IR_FLAG_MAY_SUSPEND) != 0u);
+            else {
+                EXPECT(s.instructions[1].flags ==
+                       (ZR_EXEC_IR_FLAG_MAY_THROW | ZR_EXEC_IR_FLAG_MAY_ALLOCATE));
+                EXPECT(s.instructions[1].memoryIn.count == 2u &&
+                       s.instructions[1].memoryOut.count == 2u);
+                EXPECT(s.memory[0] == ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 1u));
+                EXPECT(s.memory[1] == ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_NATIVE_FFI, 1u));
+                EXPECT(s.memory[2] == ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_MANAGED_HEAP, 2u));
+                EXPECT(s.memory[3] == ZR_EXEC_IR_MEMORY_TOKEN_MAKE(ZR_EXEC_IR_MEMORY_NATIVE_FFI, 2u));
+                EXPECT(s.instructions[1].effectIn == 1u && s.instructions[1].effectOut == 2u);
+            }
+        }
         for (TZrUInt32 i = 0u; i < incomingCount; ++i)
             EXPECT(s.incoming[i].predecessor == s.predecessors[s.blocks[s.join - 1u].predecessors.offset + i]);
         EXPECT(s.operands[s.instructions[s.blocks[s.join - 1u].terminatorInstructionId - 1u].operands.offset] == V_PHI);
@@ -316,6 +353,7 @@ done:
 }
 
 int main(void) {
+    (void)setvbuf(stdout, ZR_NULL, _IONBF, 0u);
     run(C_COPY, "predecessor-copy");
     run(C_CHAIN, "predecessor-copy-chain");
     run(C_DOMINATING, "cross-block-copy-preserved");
@@ -328,6 +366,8 @@ int main(void) {
     run(C_SUSPEND, "suspend-predecessor-preserved");
     run(C_BAD_PREDECESSOR, "malformed-predecessor-diagnostic");
     run(C_BAD_AVAILABILITY, "malformed-definition-availability-diagnostics");
+    run(C_INTERIOR_SUSPEND_CALL, "interior-suspend-call-preserved");
+    run(C_INTERIOR_CALL_ORDERING, "interior-memory-ordering-preserved");
     printf("SCCP PHI copy edges: %u cases, %u failures, %u precondition failures\n",
            cases, failures, precondition_failures);
     return failures || precondition_failures ? 1 : 0;

@@ -1,6 +1,7 @@
 #include "zr_vm_core/exec_ir_interpreter.h"
 #include "zr_vm_parser/exec_ir_execbc.h"
 #include "zr_vm_parser/exec_ir_pass_manager.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_internal.h"
 #include "zr_vm_common/zr_type_conf.h"
 
 #include <stdlib.h>
