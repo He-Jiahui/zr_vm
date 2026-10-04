@@ -20,7 +20,7 @@ tests:
   - tests/parser/test_ssa_aot_scalar_conditional.c
   - tests/acceptance/ssa-aot-scalar-conditional.md
 doc_type: module-detail
-status: implemented-awaiting-root-validation
+status: finite-direct-workspace-accepted
 ---
 
 # Finite signed i64 comparison and conditional returns
@@ -107,10 +107,28 @@ independent fixed witnesses 101 and -202. Sixteen named rejection rows check
 exact statuses/sites and clear stale output. Ten emitter parameter checks cover
 null module/output/length, zero capacity and optional diagnostic. Every positive
 checks exact capacity, failure clearing and successful buffer reuse after that
-failure. Optional successful generation writes twelve C, twelve LLVM and twelve
-runner files; root must compile/run 24 corresponding native products.
+failure. Successful generation writes twelve C, twelve LLVM and twelve runner
+files. Root V30 compiled and ran all 24 corresponding native products against
+the independent expected result bits.
 
-Source preparation is not a GREEN execution result. Actual RED and subsequent
-root validation evidence belong in the acceptance document. Full SSA 07.02,
+Root V29 accepted the current direct-workspace descriptor fixture: twelve
+positives, sixteen guards and ten argument checks, with zero failures. The
+original 25-case arithmetic fixture also passed against the same current
+emitters. All project C TUs were UBSan instrumented. Root V30 then accepted all
+24 generated C/LLVM native products. Generated C and the independent C runners
+were UBSan instrumented; emitted LLVM IR was compiled natively and does not
+carry a C frontend UBSan claim. The acceptance document records receipt pins,
+natural exits, dependency evidence and these scope limits. Independent audit
+`independent-aot-direct-v29-v30-current-v1.json` accepts the finite V29/V30 scope,
+including two current-pin sweeps without conflicts or mismatches. Current CMake
+fragments are outside those receipts' context. Separate Root V31 formal CMake
+validation passed all nine configured finite tests directly from the real
+checkout subproject `tests/cmake/ssa-direct-validation`, including conditional,
+arithmetic and the original scalar-text target. Its 138 project C compile edges
+used UBSan and UNDEBUG. Independent audit
+`independent-direct-cmake-v31-current-v1.json` accepts this finite V31 scope:
+40 checks passed, including current pins, 138 valid dependency blocks,
+138 UBSan/UNDEBUG compile edges and the exact nine CTest results.
+Full SSA 07.02 and the 47-leaf milestone remain OPEN.
 PHI/joins/loops, general bool ABI, parser projection and artifact registration
 remain outside this finite implementation.
