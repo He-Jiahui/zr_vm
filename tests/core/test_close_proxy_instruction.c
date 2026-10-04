@@ -14,6 +14,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 
+/* 单例测试回调观测：保存相对栈偏移，不在解释器/原生调用切换期间保留 source 裸地址。 */
 static TZrUInt32 gCloseCalls;
 static TZrMemoryOffset gSourceOffset;
 static TZrBool gSourceWasCleared;
@@ -26,6 +27,8 @@ void setUp(void) {
 
 void tearDown(void) {}
 
+/* 解释器关闭回调记录原 source 已为 null，避免代理只清自身而保留 local。
+ * 回调只观察源槽与次数，不验证 receiver/error 参数或主动 GC。 */
 static TZrInt64 close_proxy_instruction_close(SZrState *state) {
     ++gCloseCalls;
     gSourceWasCleared = ZR_VALUE_IS_TYPE_NULL(ZrCore_Stack_GetValueNoProfile(
@@ -33,6 +36,8 @@ static TZrInt64 close_proxy_instruction_close(SZrState *state) {
     return 0;
 }
 
+/* 构造清零的单条指令，再由调用方按 opcode 语义填写 E 与 A1 等操作数。
+ * 未填 operand 保持零；此 helper 不检查指令有效性。 */
 static TZrInstruction close_proxy_instruction_one(EZrInstructionCode opcode,
                                                    TZrUInt16 operandExtra) {
     TZrInstruction instruction;
@@ -42,6 +47,8 @@ static TZrInstruction close_proxy_instruction_one(EZrInstructionCode opcode,
     return instruction;
 }
 
+/* 执行手写六条 ExecBC：常量、source登记、高proxy、两次scope close与return，检查一次回调和最终链 sentinel。
+ * 真的运行 ZrCore_Execute，但不编译源码、不执行 AOT；没有中间断言单独观察 older marker。 */
 static void test_interpreter_registers_proxy_from_e_and_a1_and_preserves_older_marker(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrClosureNative *closer;
@@ -84,6 +91,7 @@ static void test_interpreter_registers_proxy_from_e_and_a1_and_preserves_older_m
     function->instructionsList = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
             state->global, sizeof(TZrInstruction) * 6u, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     TEST_ASSERT_NOT_NULL(function->instructionsList);
+    /* E=2 的 proxy 指向 A1=1 的 source；两个 CLOSE_SCOPE 各摘一个登记，第二次不能再次关闭原对象。 */
     function->instructionsList[0] = close_proxy_instruction_one(
             ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1u);
     function->instructionsList[0].instruction.operand.operand2[0] = 0;
@@ -117,6 +125,7 @@ static void test_interpreter_registers_proxy_from_e_and_a1_and_preserves_older_m
     gSourceOffset = ZrCore_Stack_SavePointerAsOffset(state, functionBase + 1u);
     state->stackTop.valuePointer = functionBase + 1u + function->stackSize;
 
+    /* 手工建立 CREATE_FRAME call-info 并从首指令进入解释器，避免把静态操作数检查当作实际派发。 */
     callInfo = ZrCore_CallInfo_Extend(state);
     TEST_ASSERT_NOT_NULL(callInfo);
     ZrCore_CallInfo_EntryNativeInit(state, callInfo, state->stackBase,
@@ -139,6 +148,8 @@ static void test_interpreter_registers_proxy_from_e_and_a1_and_preserves_older_m
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 单条 MARK_CLOSE_PROXY 的高槽9使 generated-frame slot count为10。
+ * source槽3低于9；该断言不能独立区分 source operand 扫描是否遗漏。 */
 static void test_frame_slot_scan_includes_source_and_high_proxy_operands(void) {
     SZrFunction function = {0};
     TZrInstruction instruction = close_proxy_instruction_one(

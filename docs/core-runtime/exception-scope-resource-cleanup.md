@@ -1,5 +1,9 @@
 ---
 related_code:
+  - tests/core/test_close_proxy.c
+  - tests/core/test_close_proxy_instruction.c
+  - tests/core/test_close_meta_exception.c
+  - tests/cmake/close-proxy-tests.cmake
   - zr_vm_core/include/zr_vm_core/closure.h
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_core/include/zr_vm_core/ownership.h
@@ -29,6 +33,7 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/ownership_shared.c
   - zr_vm_library/src/zr_vm_library/aot_runtime.c
 plan_sources:
+  - user: 2026-10-04 首方 core close 三 fixture 注释与实际调用契约审查
   - user: 2026-07-19 按 docs/plans/syntax 严格执行并逐里程碑提交
   - user: 2026-09-27 继续 docs/plans/ssa、完成验证并逐子任务提交
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
@@ -36,6 +41,7 @@ plan_sources:
   - docs/plans/ssa/04-frame-native/04-roots-observation.md
 tests:
   - tests/core/test_close_proxy.c
+  - tests/core/test_close_proxy_instruction.c
   - tests/library/test_close_proxy_aot_runtime.c
   - tests/core/test_close_meta_exception.c
   - tests/cmake/close-proxy-tests.cmake
@@ -258,7 +264,55 @@ protects native closure metadata handling.
 `zr_vm_close_meta_exception_test` covers four script-level paths: a plain
 throw/catch control, repeated cleanup and call-info chain reachability, the
 original Error reaching its catch after script `@close`, and a callback's new
-Error replacing the original one.
+Error replacing the original one. Its three injected `CloseProbe` types are
+ordinary script classes with `@close`, constructed in `using(new CloseProbe())`;
+they exercise ordinary close registration, rather than an existing-local proxy
+or a resource-class destructor. The repeated case executes one compiled
+function three times and checks catch result, reusable call-info reachability
+and handler depth; it does not assert the script's `calls` counter. The preserve
+case checks both the original message and exactly one callback, while the
+replacement case checks the new message. These scripts do not force GC, and
+the named nested-call case does not establish arbitrary recursive nesting.
+See `tests/core/test_close_meta_exception.c:82`,
+`tests/core/test_close_meta_exception.c:102`,
+`tests/core/test_close_meta_exception.c:111`,
+`tests/core/test_close_meta_exception.c:131` and
+`tests/core/test_close_meta_exception.c:156`.
+
+`zr_vm_close_proxy_instruction_test` runs six hand-written interpreter
+instructions. `MARK_CLOSE_PROXY` uses E=2 for the high proxy and A1=1 for its
+source; two subsequent `CLOSE_SCOPE(1)` instructions consume the proxy and the
+older source registration. The assertions observe one callback, source clearing at the callback
+and the stack-base close-chain sentinel. A separate
+frame-slot scan uses E=9 and A1=3 and expects ten slots; because E is the larger
+operand, this assertion alone cannot establish an independent contribution
+from the lower A1 operand. This fixture does not compile or enter generated
+AOT code. See `tests/core/test_close_proxy_instruction.c:101`,
+`tests/core/test_close_proxy_instruction.c:102`,
+`tests/core/test_close_proxy_instruction.c:105`,
+`tests/core/test_close_proxy_instruction.c:107`,
+`tests/core/test_close_proxy_instruction.c:161`.
+
+The core proxy fixture constructs active VM frame-layout mirrors manually
+where required. It observes dense/physical source clearing before callbacks,
+close-chain ordering, ownership-release aliases and exception/budget cleanup.
+Its full-GC requests are followed by receiver/type/message assertions; they
+supply no collection-count or relocation-count assertion. The pending-error
+native replacement case also checks call-info, handler, yield, budget and
+logical-stack restoration, while the cancelled-budget case asserts no callback
+and preservation of termination. These are fixture-specific observations,
+not a proof of the entire runtime or generated AOT entry behavior. See
+`tests/core/test_close_proxy.c:562`, `tests/core/test_close_proxy.c:640`,
+`tests/core/test_close_proxy.c:644`, `tests/core/test_close_proxy.c:655`,
+`tests/core/test_close_proxy.c:730` and `tests/core/test_close_proxy.c:733`.
+
+CTest dispatches the three standalone Unity mains through actual `add_test`
+COMMAND entries: `tests/cmake/close-proxy-tests.cmake:8` for `close_proxy_core`,
+`tests/cmake/close-proxy-tests.cmake:20` for `close_meta_exception`, and
+`tests/cmake/close-proxy-tests.cmake:29` for `close_proxy_instruction`.
+The mains register 19, four and two cases, respectively, through `RUN_TEST`;
+Unity supplies their setup/teardown lifecycle. This documentation and comment
+integration adds no runtime, GC, CTest or native-build execution evidence.
 
 `zr_vm_buffer_pool_ffi_test` throws from inside `using(lease)`, catches outside,
 then rents the same size again. The expected generation and return/reuse counters

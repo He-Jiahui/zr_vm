@@ -15,6 +15,8 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 
+/* 各用例借用此局部 probe 观测关闭协议；对象地址用于未搬迁场景识别，栈相对偏移用于扩栈后重取 source/mirror。
+ * 开关控制具体回调动作，观测 flag 只代表本用例实际走过并断言的路径。 */
 typedef struct SZrCloseProxyProbe {
     SZrRawObject *sourceObject;
     SZrRawObject *olderObject;
@@ -33,8 +35,10 @@ typedef struct SZrCloseProxyProbe {
     TZrBool pushAotRootBeforeThrow;
 } SZrCloseProxyProbe;
 
+/* 进程级回调入口借用当前测试的 C-local probe；setUp/tearDown 清空，不延长 probe 或 VM 生命周期。 */
 static SZrCloseProxyProbe *gProbe;
 
+/* Throw 场景把 callbackRoot 的本地对象指针作为唯一 LOCAL_ADDRESS 根；map 借用此永久静态描述。 */
 static const SZrAotGcRootSlot close_proxy_throw_root_slot = {
     0u, 0u, 0u, 0u, ZR_AOT_GC_ROOT_LOCATION_LOCAL_ADDRESS, 0u, 0u
 };
@@ -42,6 +46,7 @@ static const SZrAotGcRootMap close_proxy_throw_root_map = {
     1u, &close_proxy_throw_root_slot
 };
 
+/* 资源析构专用观测，与普通 @close probe 分开；两种 source 偏移用于验证 Drop 前先清别名，再请求扩栈。 */
 typedef struct SZrCloseProxyDropProbe {
     TZrMemoryOffset sourceOffset;
     TZrMemoryOffset physicalOffset;
@@ -50,6 +55,7 @@ typedef struct SZrCloseProxyDropProbe {
     TZrBool grewStack;
 } SZrCloseProxyDropProbe;
 
+/* 析构回调借用最后一个资源测试的局部 drop probe，生命周期由测试和 Unity hooks 限定。 */
 static SZrCloseProxyDropProbe *gDropProbe;
 
 void setUp(void) {
@@ -62,6 +68,8 @@ void tearDown(void) {
     gDropProbe = ZR_NULL;
 }
 
+/* 资源析构回调在两种 source 都已清空时记录次数并请求栈扩容，防止直接 owner 别名被重复 Drop。
+ * 只在最后一个资源测试中注册；不检查 @close 计数；增长成功不是地址一定搬迁。 */
 static TZrInt64 close_proxy_drop_callback(SZrState *state) {
     SZrTypeValue *source = ZrCore_Stack_GetValue(
             ZrCore_Stack_LoadOffsetToPointer(state, gDropProbe->sourceOffset));
@@ -77,6 +85,8 @@ static TZrInt64 close_proxy_drop_callback(SZrState *state) {
     return 0;
 }
 
+/* 按 source/older 接收者分别观察清理顺序；开关选择扩栈、请求 full GC 或抛 replacement 的具体场景。
+ * gProbe 借用当前测试局部对象；GC 场景重取 receiver，原始对象地址不作为移动后身份保证；开关组合不全覆盖。 */
 static TZrInt64 close_proxy_probe_callback(SZrState *state) {
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
     SZrTypeValue *receiver = ZrCore_Stack_GetValue(base + 1);
@@ -97,6 +107,7 @@ static TZrInt64 close_proxy_probe_callback(SZrState *state) {
                     state, gProbe->physicalOffset);
             gProbe->physicalClearedAtCallback = ZR_VALUE_IS_TYPE_NULL(physical->type);
         }
+        /* 扩容可能改变栈基址；成功后从当前 call-info 重取 receiver，再检查未搬迁对象的身份。 */
         if (gProbe->growStackInCallback) {
             TZrSize grownSize =
                     (TZrSize)(state->stackTail.valuePointer - state->stackBase.valuePointer) * 2u;
@@ -107,6 +118,7 @@ static TZrInt64 close_proxy_probe_callback(SZrState *state) {
                     grew && receiver->type == ZR_VALUE_TYPE_OBJECT &&
                     receiver->value.object == gProbe->sourceObject;
         }
+        /* full GC 请求之后重取栈槽；只按类型和 close meta 观察 receiver，不沿用可能转发的 object 裸地址。 */
         if (gProbe->collectInCallback) {
             ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
             base = state->callInfoList->functionBase.valuePointer;
@@ -115,6 +127,7 @@ static TZrInt64 close_proxy_probe_callback(SZrState *state) {
                     receiver->type == ZR_VALUE_TYPE_OBJECT &&
                     ZrCore_Value_GetMeta(state, receiver, ZR_META_CLOSE) != ZR_NULL;
         }
+        /* 此分支规范化 replacement 后 Throw；根帧用例故意不 Pop，让受保护异常退栈恢复入口根链，避免扫描已离开的 C-local frame。 */
         if (gProbe->throwReplacementInCallback) {
             SZrAotGcRootFrame callbackRootFrame;
             SZrRawObject *callbackRoot = object;
@@ -146,6 +159,8 @@ static TZrInt64 close_proxy_probe_callback(SZrState *state) {
     return 0;
 }
 
+/* 创建带原生 @close 的永久原型，让各场景共享相同回调协议。
+ * closer 和 prototype 永久标记仅限此 VM；失败由 Unity 断言截断，非失败清理证明。 */
 static SZrObjectPrototype *close_proxy_new_prototype(SZrState *state) {
     SZrClosureNative *closer = ZrCore_ClosureNative_New(state, 0u);
     SZrString *name;
@@ -166,6 +181,8 @@ static SZrObjectPrototype *close_proxy_new_prototype(SZrState *state) {
     return prototype;
 }
 
+/* 创建并初始化永久普通对象，用于无需验证对象可回收性的清理场景。
+ * GC 存活用例自行构造非永久 source，不经过本 helper。 */
 static SZrObject *close_proxy_new_object(SZrState *state, SZrObjectPrototype *prototype) {
     SZrObject *object = ZrCore_Object_New(state, prototype);
     TEST_ASSERT_NOT_NULL(object);
@@ -174,6 +191,8 @@ static SZrObject *close_proxy_new_object(SZrState *state, SZrObjectPrototype *pr
     return object;
 }
 
+/* 建立人工活动栈与初始 call-info，给高槽代理和回调 scratch 留空间。
+ * 返回 state 由调用测试成功尾部销毁；默认 baseCallInfo 仍是 native，只有测试显式置 NONE 才启用 VM layout。 */
 static SZrState *close_proxy_new_state(TZrStackValuePointer *frameBase) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(state);
@@ -189,6 +208,8 @@ static SZrState *close_proxy_new_state(TZrStackValuePointer *frameBase) {
     return state;
 }
 
+/* 将普通对象放入指定 logical/physical 栈槽，供关闭链读取 @close 元方法。
+ * 不注册关闭节点，也不创建 Unique/Shared owner。 */
 static void close_proxy_put_object(SZrState *state,
                                    TZrStackValuePointer slot,
                                    SZrObject *object) {
@@ -198,6 +219,8 @@ static void close_proxy_put_object(SZrState *state,
     ZrCore_Stack_GetValue(slot)->type = ZR_VALUE_TYPE_OBJECT;
 }
 
+/* 把文本规范化成 ambient Error，供 pending-error 关闭守卫保存并传给回调。
+ * 此 helper 不 Throw；NormalizeThrownValue 成功与实际异常跳转分别检查。 */
 static void close_proxy_seed_current_error(SZrState *state, const TZrChar *messageText) {
     SZrString *message = ZrCore_String_CreateFromNative(
             state, (TZrNativeString)messageText);
@@ -212,6 +235,8 @@ static void close_proxy_seed_current_error(SZrState *state, const TZrChar *messa
             state, &payload, state->callInfoList, ZR_THREAD_STATUS_RUNTIME_ERROR));
 }
 
+/* 读取当前 Error 的 message，区分保留 original 与替换为 replacement。
+ * 返回借用字符串地址供紧邻断言；缺异常、字段名分配失败或字段类型不符返回 null。 */
 static const TZrChar *close_proxy_current_error_message(SZrState *state) {
     SZrString *fieldName;
     SZrTypeValue key;
@@ -235,6 +260,8 @@ static const TZrChar *close_proxy_current_error_message(SZrState *state) {
                    : ZR_NULL;
 }
 
+/* 代理先消费 source 并在回调扩栈后保持 receiver；随后空 source 登记与更老对象按次摘链。
+ * 分别检查 source 一次、older 延后一次与 sentinel；请求扩栈成功不等于必然搬迁。 */
 static void test_proxy_closes_source_once_and_preserves_older_markers(void) {
     SZrCloseProxyProbe probe = {0};
     TZrStackValuePointer frame;
@@ -278,6 +305,8 @@ static void test_proxy_closes_source_once_and_preserves_older_markers(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 只登记高 proxy 而不登记 source，确认一次关闭仍消费原 local 并回到 sentinel。
+ * 人工 core API 场景，不执行 parser 的 body-free using 语法。 */
 static void test_proxy_closes_unmarked_source_without_a_using_body(void) {
     SZrCloseProxyProbe probe = {0};
     TZrStackValuePointer frame;
@@ -301,6 +330,8 @@ static void test_proxy_closes_unmarked_source_without_a_using_body(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 无 close meta 的整数 73 经代理清理后仍可读取，区分摘登记与消费值。
+ * 只检查 logical source；不构造 ownership owner。 */
 static void test_proxy_preserves_plain_local_without_close_meta(void) {
     TZrStackValuePointer frame;
     SZrState *state = close_proxy_new_state(&frame);
@@ -314,6 +345,8 @@ static void test_proxy_preserves_plain_local_without_close_meta(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 活动 VM layout 把 logical 整数映射到远处 VALUE mirror，关闭代理后两处 73 均保留。
+ * 普通 layout 查找允许偏移16；不是 AOT DIRECT_VALUE fast-layout 夹具。 */
 static void test_proxy_preserves_plain_local_and_distinct_physical_mirror(void) {
     SZrFunction function = {0};
     SZrFunctionFrameSlotLayout layout = {0};
@@ -348,6 +381,8 @@ static void test_proxy_preserves_plain_local_and_distinct_physical_mirror(void) 
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 关闭 borrowed logical/mirror 只清视图，不调用对象 @close；Unique owner 仍由测试显式释放。
+ * owner kind 保持 Unique，未对完整所有权/refcount 状态作额外断言。 */
 static void test_proxy_resets_borrowed_local_without_calling_close_meta(void) {
     SZrCloseProxyProbe probe = {0};
     SZrFunction function = {0};
@@ -394,6 +429,8 @@ static void test_proxy_resets_borrowed_local_without_calling_close_meta(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 用显式关闭阈值模拟 handler 边界，pending error 传入 @close，而较低 source 登记保留到下一次摘链。
+ * 没有建立真实 handler 或脚本 catch；errorPassed 只断言非 null，不断言具体 Error 内容。 */
 static void test_exception_boundary_closes_proxy_before_older_source_marker(void) {
     SZrCloseProxyProbe probe = {0};
     TZrStackValuePointer frame;
@@ -424,6 +461,8 @@ static void test_exception_boundary_closes_proxy_before_older_source_marker(void
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 两个 proxy 指向同一 source，关闭两个节点只有首个回调，后一个看到已清空 local。
+ * 只检查一次回调与最终 sentinel，不覆盖嵌套脚本语义。 */
 static void test_nested_proxies_tombstone_once(void) {
     SZrCloseProxyProbe probe = {0};
     TZrStackValuePointer frame;
@@ -446,6 +485,8 @@ static void test_nested_proxies_tombstone_once(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 对同一普通对象的 logical source 和独立 VM VALUE mirror，回调进入前都应为 null。
+ * 旧 source 登记稍后摘除无重复回调；非所有权控制块场景。 */
 static void test_proxy_clears_distinct_physical_value_before_callback(void) {
     SZrCloseProxyProbe probe = {0};
     SZrFunction function = {0};
@@ -493,6 +534,8 @@ static void test_proxy_clears_distinct_physical_value_before_callback(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 非永久 source 与栈内 proxy 先请求 full GC，再在关闭回调中请求一次，检查 receiver 仍有对象类型和 close meta。
+ * 回调后只检查可访问性；未断言收集统计、地址搬迁或所有对象释放。 */
 static void test_proxy_and_receiver_survive_full_gc(void) {
     SZrCloseProxyProbe probe = {0};
     TZrStackValuePointer frame;
@@ -520,6 +563,8 @@ static void test_proxy_and_receiver_survive_full_gc(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* ambient original Error 在关闭回调请求 full GC 后仍可读 message，防止 guard 保存的异常失根。
+ * source 是永久对象；Error 存活与 receiver 可访问性分别断言。 */
 static void test_original_error_is_rooted_across_full_gc_in_close_callback(void) {
     SZrCloseProxyProbe probe = {0};
     TZrStackValuePointer frame;
@@ -543,16 +588,21 @@ static void test_original_error_is_rooted_across_full_gc_in_close_callback(void)
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 外层 TryRun 的结果载体：只有关闭请求正常返回时才写 closedCount，不存 callback 抛错状态。 */
 typedef struct SZrCloseProxyCloseResult {
     TZrSize closedCount;
 } SZrCloseProxyCloseResult;
 
+/* 作为 TryRun 回调请求关闭一个登记，并把正常返回的关闭数写入外层结果。
+ * result 属于测试局部变量；内部 close guard 消化 callback throw，因此外层 TryRun 可以返回 FINE。 */
 static void close_proxy_close_with_error_in_try(SZrState *state, TZrPtr argument) {
     SZrCloseProxyCloseResult *result = (SZrCloseProxyCloseResult *)argument;
     result->closedCount = ZrCore_Closure_CloseRegisteredValues(
             state, 1u, ZR_THREAD_STATUS_RUNTIME_ERROR, ZR_FALSE);
 }
 
+/* 重复三次让 native @close 抛 replacement，检查原 Error 被替换及可复用 call-info 链、栈顶和预算标记恢复。
+ * 外层 TryRun FINE 表示内层 guard 已处理跳转，不表示 callback 未抛错；未检测所有内存泄漏。 */
 static void test_native_close_error_replaces_original_without_leaking_frame(void) {
     SZrCloseProxyProbe probe = {0};
     SZrCloseProxyCloseResult result = {0};
@@ -567,6 +617,7 @@ static void test_native_close_error_replaces_original_without_leaking_frame(void
     state->executionBudget = &budget;
     probe.sourceOffset = ZrCore_Stack_SavePointerAsOffset(state, frame + 1u);
     probe.throwReplacementInCallback = ZR_TRUE;
+    /* 每轮重新登记并替换 Error，检查活动帧已退回 base、next 链仍完整及栈顶/预算标记恢复；不是堆泄漏检测。 */
     for (TZrUInt32 attempt = 0u; attempt < 3u; ++attempt) {
         SZrObject *source;
         SZrCallInfo *cursor;
@@ -606,6 +657,8 @@ static void test_native_close_error_replaces_original_without_leaking_frame(void
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* native 回调登记 C-local AOT root 后 Throw，返回 guard 时根链/深度必须清空，再请求 full GC 后仍读 replacement。
+ * 人工根帧异常退栈夹具，不执行生成 AOT function。 */
 static void test_native_close_throw_discards_unwound_aot_root_frame(void) {
     SZrCloseProxyProbe probe = {0};
     SZrCloseProxyCloseResult result = {0};
@@ -635,6 +688,8 @@ static void test_native_close_throw_discards_unwound_aot_root_frame(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 已取消预算应阻止 @close 调用并保留 CANCELLED/EXECUTION_TERMINATED，而不恢复旧 ambient Error。
+ * 先保存观测再解绑/free cancel token 与 VM，断言不访问已释放 state。 */
 static void test_pending_error_close_preserves_budget_termination(void) {
     SZrCloseProxyProbe probe = {0};
     SZrCloseProxyCloseResult result = {0};
@@ -660,6 +715,7 @@ static void test_pending_error_close_preserves_budget_termination(void) {
     state->executionBudget = &budget;
     ZrCore_ExecutionCancelToken_Cancel(cancelToken);
 
+    /* 先保存需要断言的状态，再解绑栈内 budget 并释放 token/VM；后续断言只读取保存的标量与 probe。 */
     tryStatus = ZrCore_Exception_TryRun(
             state, close_proxy_close_with_error_in_try, &result);
     threadStatus = state->threadStatus;
@@ -677,6 +733,8 @@ static void test_pending_error_close_preserves_budget_termination(void) {
     TEST_ASSERT_FALSE(hasCurrentException);
 }
 
+/* proxy 低于 source 和现有链头时拒绝登记，原关闭链和值槽保持，随后正常关闭 source。
+ * 一个输入同时违反两个顺序条件，不能单独隔离每个拒绝分支。 */
 static void test_proxy_rejects_slot_below_current_marker_without_changing_chain(void) {
     SZrCloseProxyProbe probe = {0};
     TZrStackValuePointer frame;
@@ -698,6 +756,8 @@ static void test_proxy_rejects_slot_below_current_marker_without_changing_chain(
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 人工 VM layout 的 source/proxy 位于物理偏移16/17，较高 proxy 清空 logical source 与 mirror 后留下外层物理登记。
+ * 直接调用 core API；不是调用 AOT runtime helper 或 generated entry。 */
 static void test_physical_proxy_follows_physical_source_marker(void) {
     SZrCloseProxyProbe probe = {0};
     SZrFunction function = {0};
@@ -752,6 +812,8 @@ static void test_physical_proxy_follows_physical_source_marker(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* native baseCallInfo 虽缓存旧 layout，也不能把无关物理对象当作 logical source mirror 清除。
+ * 保留 unrelated 的类型和对象地址；测试显式移除旧 metadata 再 Destroy。 */
 static void test_native_frame_does_not_clear_an_inactive_physical_layout(void) {
     SZrCloseProxyProbe probe = {0};
     SZrFunction staleFunction = {0};
@@ -799,6 +861,8 @@ static void test_native_frame_does_not_clear_an_inactive_physical_layout(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 复制 token 到另一高槽后，槽身份校验拒绝其加入链；原 proxy 仍只关闭 source 一次。
+ * 调用 ToBeClosedValueClosureNew 无返回值，链头不变是拒绝证据；不调用 MarkCloseProxy 的 occupied 分支。 */
 static void test_copied_proxy_token_cannot_register_at_another_slot(void) {
     SZrCloseProxyProbe probe = {0};
     TZrStackValuePointer frame;
@@ -822,6 +886,8 @@ static void test_copied_proxy_token_cannot_register_at_another_slot(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 普通对象 Unique 值复制后两槽持有同一 control 的两份强引用，代理消费两份引用并清空两槽。
+ * 强计数断言 2→0；不读取已 Drop 对象字段，也不据此断言析构回调次数。 */
 static void test_proxy_releases_retained_owner_mirror_without_invalidating_stage(void) {
     SZrFunction function = {0};
     SZrFunctionFrameSlotLayout layout = {0};
@@ -870,6 +936,8 @@ static void test_proxy_releases_retained_owner_mirror_without_invalidating_stage
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* 资源 direct owner 无 control，复制 mirror 只是别名；两源槽先清空再析构扩栈，外层登记后续摘除不重复 Drop。
+ * 析构回调次数为1；普通 @close 回调不作为该 Drop 观测。 */
 static void test_proxy_drops_direct_owner_alias_once_after_tombstoning(void) {
     SZrCloseProxyDropProbe drop = {0};
     SZrFunction function = {0};
