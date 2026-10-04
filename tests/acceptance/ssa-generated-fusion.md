@@ -69,7 +69,7 @@ acceptance target.
   dereferencing a missing sentinel map.
 - Generator freshness: `generate_execbc_patterns.py --check`.
 
-## Tooling evidence
+## Historical tooling evidence
 
 Focused GCC C11 compile and run (WSL, GCC 11.4):
 
@@ -94,7 +94,7 @@ python scripts/codegen/generate_execbc_patterns.py \
   --check
 ```
 
-## Results
+## Historical results
 
 All focused assertions passed.  Malformed/unsupported windows retain an
 unfused fixed-width operation and an explicit fallback reason; no test observed
@@ -105,8 +105,20 @@ units also passed with `/utf-8`.
 
 ## Acceptance decision
 
-Accepted for the bounded contract stage.  Remaining integration work is to
-register the target in `tests/cmake/ssa-tests.cmake`, connect the projection to
-the existing ExecBC/quickening pipeline, and measure code-size/dispatch impact
-under the 00.01 benchmark gate.  Those shared build/index changes are
-intentionally left to the parent agent.
+Accepted for the bounded contract stage. The focused target is currently
+registered in `tests/cmake/ssa-tests.cmake`: target declaration at line 1350,
+contract source at line 1376, `ssa_generated_fusion` registration at line 1385,
+and the `ssa` label at line 1386. Remaining integration work is to connect the
+projection to the existing ExecBC/quickening pipeline and measure
+code-size/dispatch impact under the 00.01 benchmark gate.
+
+## Current generator check (2026-10-04)
+
+The original and reviewed candidate Python generator both completed the existing
+`--check` command against the same canonical schema and checked-in generated
+header with exit code 0. Each owned job ended naturally with zero active
+processes, and its process handles were reaped and closed. This validates
+generated metadata freshness in the non-writing check mode. It does not
+exercise default generation or writing, compile the C matcher, or execute the
+C fixture. The compile/run results above are historical evidence, separate
+from this current generator check.

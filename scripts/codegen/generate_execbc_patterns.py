@@ -17,6 +17,8 @@ from typing import Iterable, Sequence
 
 
 # 解析器只接受 .def 的符号化七元组；这些白名单同时限制生成头能引用的 C 名称。
+# 白名单是该元数据 schema 的可接受子集，并非自动映射完整 ExecIR opcode 表；
+# 扩展规则语言时须同时核对 C 枚举、matcher 的约束解释和生成头消费端。
 ROW_RE = re.compile(r"ZR_EXECBC_FUSION\s*\(")
 IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 OPCODE_NAMES = {
@@ -85,6 +87,7 @@ def strip_comments(text: str) -> str:
 
 
 # 融合约束允许带括号的表达式；仅顶层逗号构成七个 schema 字段。
+# 此处只识别字段边界；能分出带括号的字段不代表校验器允许该表达式。
 def split_fields(payload: str) -> list[str]:
     fields: list[str] = []
     start = 0
@@ -106,6 +109,7 @@ def split_fields(payload: str) -> list[str]:
 
 
 # 从展开后的 .def 抽取所有规则；空表或字段不全会使生成/检查立即失败。
+# 这里的展开仅指 read_schema 的本地 include 文本替换，不执行 C 预处理条件或宏。
 def find_rows(text: str) -> list[tuple[str, ...]]:
     text = strip_comments(text)
     rows: list[tuple[str, ...]] = []
@@ -139,6 +143,7 @@ def find_rows(text: str) -> list[tuple[str, ...]]:
 
 # main 的输入可通过同目录旧名称转接到规范 .def；限制 include 的解析目录并拒绝递归，
 # 使 --check 与生成模式读取同一组受控规则。
+# include_stack 只记录当前递归链，允许不同分支重复包含；重复规则由 validate_rows 拒绝。
 def read_schema(path: pathlib.Path, include_stack: tuple[pathlib.Path, ...] = ()) -> str:
     """Read a schema and expand only local quoted includes.
 
@@ -155,6 +160,7 @@ def read_schema(path: pathlib.Path, include_stack: tuple[pathlib.Path, ...] = ()
     text = path.read_text(encoding="utf-8")
 
     # include 展开只返回文本，不写文件；路径逃逸或环会由上层以异常终止生成。
+    # re.sub 同步调用此闭包；每层以实际包含文件的目录限定下一次读取。
     def expand(match: re.Match[str]) -> str:
         included = (path.parent / match.group(1)).resolve()
         base = path.parent.resolve()
@@ -170,6 +176,7 @@ def read_schema(path: pathlib.Path, include_stack: tuple[pathlib.Path, ...] = ()
 
 # C 的 ExecIR opcode/constraint/boundary 枚举是规则语言的边界；拒绝未知符号、重复模式
 # 和非 ASCII 的 benefit，避免生成可编译却不符合融合契约的头文件。
+# 名称检查避免把源码片段透传到 X-macro；它不证明 C matcher 已实现新模式的语义。
 def validate_rows(rows: Sequence[tuple[str, ...]]) -> None:
     names: set[str] = set()
     for name, head, tail, constraints, result, benefit, boundary in rows:
@@ -188,6 +195,8 @@ def validate_rows(rows: Sequence[tuple[str, ...]]) -> None:
         ):
             # Constraint and boundary fields may be OR expressions.  Keep the
             # accepted language symbolic and intentionally narrow.
+            # result 字段也走相同符号校验；这里只接受白名单标识符由 | 连接，
+            # 不接受括号、数值 mask 或可执行谓词。
             parts = [part.strip() for part in value.split("|")]
             if (not parts or any(not IDENT_RE.match(part) for part in parts) or
                     any(part not in known for part in parts)):
@@ -205,6 +214,7 @@ def validate_rows(rows: Sequence[tuple[str, ...]]) -> None:
 # 调用者须先经过 validate_rows，render 自身不再重复校验符号。
 # 输出的同一有序 X-macro 同时供 pattern 枚举与契约表展开；这里只生成元数据，
 # 新规则的匹配/执行语义仍须在 C 消费端单独实现，不能靠增添 schema 行获得。
+# 行序决定消费端的 pattern 枚举值、首个匹配/回退规则及 schema hash，不能排序。
 def render(rows: Iterable[tuple[str, ...]]) -> str:
     rows = list(rows)
     lines = [
@@ -230,6 +240,8 @@ def render(rows: Iterable[tuple[str, ...]]) -> str:
 
 # 构建/验收入口：--check 只检查生成头是否与 .def 同步；默认模式先写同目录临时文件，
 # 再替换目标，避免中途生成失败留下半截头文件。
+# --check 按 UTF-8 文本读取并归一化换行，不提供生成头原始字节相等的证明。
+# 参数/schema/读取错误直接终止；所有校验完成前不会触及输出文件。
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=pathlib.Path, required=True)
@@ -246,6 +258,9 @@ def main() -> int:
         return 0
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    # 同目录使临时文件与目标处在同一文件系统；关闭文件后才 replace，
+    # 从而在成功替换时一次发布完整文本。这里不承诺崩溃后的持久化（未 fsync）。
+    # 写入或替换异常向调用者传播，delete=False 的临时文件可能保留，不自动清理。
     with tempfile.NamedTemporaryFile(
         "w", encoding="utf-8", dir=args.output.parent, delete=False
     ) as temporary:

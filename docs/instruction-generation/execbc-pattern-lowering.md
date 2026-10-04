@@ -228,5 +228,8 @@ would widen or duplicate the local matcher context.
 
 This stage does not rewrite the legacy quickening compiler or core dispatch
 table, does not emit executable handlers, and does not mutate `SZrExecIrFunction`.
-CTest registration and integration into the shared dispatch build remain the
-responsibility of the parent 03.04 integration stage.
+The focused target is registered in `tests/cmake/ssa-tests.cmake`: the target
+starts at line 1350, the contract source is listed at line 1376, and
+`ssa_generated_fusion` is registered by `add_test` at line 1385 with the `ssa`
+label at line 1386. Registration does not establish a current fixture run.
+Integration into the shared dispatch build remains outside this stage.
