@@ -18,12 +18,15 @@ tests:
   - tests/parser/test_ssa_gvn_range.c
   - tests/acceptance/ssa-analysis-fact-capacity.md
 doc_type: module-detail
-status: historical-functional-acceptance-reported-current-ubsan-and-mini-ctest-verified-integration-and-commit-pending
+status: finite-direct-checkout-cmake-ubsan-accepted
 ---
 
 # Analysis fact append capacity
 
-This document records the finite checked fact append repair, historical reported functional acceptance and fresh current E UBSan and fragment Mini CTest verification. Both documents exist in E; six-file integration and commit remain pending.
+This document records the finite checked fact append repair, historical validation
+and current direct-checkout CMake/UBSan acceptance. Root V31 and its independent
+audit accept the capacity fixture within nine configured finite SSA tests.
+Full 02.02 and the 47-leaf milestone remain OPEN.
 
 ## Ownership and logical state
 
@@ -69,7 +72,7 @@ Checks remain active under NDEBUG. Every real owning-container fixture returns t
 | Clang_actual17_SAN_runtime | native64 natural0;17 custom cases/0; default sanitizer options/no diagnostics; scoped fixture TU only | 4823d4b1fdad8965efbc09fb751e07a361f2b3a63955bd49733306abccdeb812 |
 | Root_personal_current_four_Clang17_repeat | scoped SAN17/0; full current28/E4 pre/post byte equality; frozen actual product, no fresh E compile | af3c0c75b710ca28832cb9d0e40ee916dd29f55de277f0cf338de794714d06cc |
 
-## Current E validation and integration
+## Earlier E standalone UBSan evidence
 
 On 2026-10-04 Root freshly compiled the actual current E fixture and included production ranges.c using Windows Clang C11 plus LLD with UBSan only (`-fsanitize=undefined`, no recovery). Build products are under `E:/cargo-targets/zr_vm/build/ssa-20261004-01a0fe2b/llvm-capacity-san-ubsan-v5`; reports are under the matching E reports directory. This follows the user's new build-directory instruction and does not borrow old D binaries.
 
@@ -79,21 +82,81 @@ Independent artifact review re-read actual raw logs, source/dependency/tool/prod
 
 This establishes fresh UBSan validation of the single capacity fixture translation unit. It does not establish fresh ASan, whole Core sanitizer coverage, native32, dynamic allocation failure, full parent configuration or all47 SSA completion. Historical finite functional acceptance remains reported in the table above; the old D receipts/products are currently absent and have not been freshly reverified.
 
-The two owned documents now exist in E. Six-file integration and commit remain pending: Root reports the current index is empty, the index-lock creator is unknown and the active profile permits reading rather than writing .git. The prior claim of a one-include cached parent projection described a historical freeze and is not current index evidence. Preserve the mixed parent file and restrict any eventual staging to the capacity include; do not add a duplicate include. No Git mutation was performed by this review.
+The earlier six-file staging, read-only `.git` permission and index-lock concerns
+describe a prior session state. The external user commit `b3b42d53` absorbed the
+finite capacity source; it is not a Root-authored commit. Root's later preflight
+found the October 3 lock absent, without Root deleting it, and effective Git
+permissions now allow ordinary index operations and finite commits. No current
+integration block is inferred from that historical lock or permission state.
+This document reviewer performed no Git action.
 
-## Fresh current Mini CMake and CTest evidence
+## Historical copied Mini CMake and CTest evidence
 
-On 2026-10-04 Root genuinely configured, built and ran the current capacity test fragment in a new E Mini project. Its real source directory is `E:/cargo-targets/zr_vm/tmp/ssa-20261004-01a0fe2b/current-capacity-cmake-source`; build and reports are under the matching `current-capacity-cmake` E task directories. The snapshot preserves forty current project files: thirty-nine actual fixture dependencies plus the unchanged `tests/cmake/ssa-analysis-fact-capacity-tests.cmake`. Original E files and snapshot bytes match. This is a configured current fragment build, not a full repository checkout configuration.
+Earlier on 2026-10-04 Root configured, built and ran the capacity fragment in a
+copied Mini project under the task's `current-capacity-cmake` directories. That
+run used forty copied project inputs: thirty-nine fixture dependencies plus the
+then-current capacity CMake fragment. The audit recorded matching original and
+copied bytes at that time. This is historical copied-input evidence, not current
+direct-checkout acceptance. Those copied inputs have since been removed; this
+document does not require or re-read them. The current gate is V31 below.
 
-Installed CMake 3.31.6 and Ninja produced a genuine Clang 19.1.5 compiler identification and successful executable ABI try_compile. The target compiled one fixture C translation unit, which includes production ranges.c once. System headers use the installed LLVM resource include before VC/SDK headers; target project includes come from the actual fragment. The generated driver link uses Clang plus LLD with UBSan only. Actual Ninja dependency output contains 184 valid dependencies; current project and external header pins were independently checked. Generated cache reports the compiler with type STRING, which is valid.
+Installed CMake 3.31.6 and Ninja produced Clang 19.1.5 identification and a
+successful executable ABI try_compile. That historical target compiled one
+fixture TU including production ranges.c once and linked UBSan through Clang/LLD.
+The audit checked 184 actual Ninja dependencies and the compiler cache type
+STRING. Those observations belong to the copied Mini run.
 
 Configure, build and CTest each exited naturally with status 0, zero active/terminated owned Job members, reaped/closed handles and no cleanup actions or errors. Durations were 3.4923958, 2.4032708 and 0.9888743 seconds. The raw verbose CTest log reports exactly 1/1 named `ssa_analysis_fact_capacity`, seventeen ordered CASE PASS lines and `RESULT cases=17 failures=0`, layout size_t 8/range 40/shape 24/null 16 and three native boundary lines. No UBSan diagnostic appears. The fresh executable is an AMD64 PE of 210432 bytes, SHA256 `4484e5cbdd238c4ceba86abf75ba851052c22423b6eff4f0236efd968a89b9a0`.
 
 Receipt history is preserved precisely. The original controller `current-capacity-cmake/Root-receipt.json`, SHA256 `7383771344aad6c305a3de506478ea9b3b691fbd1be12acc8318e0565e65f70d`, remains FAILED: after all three completed successful steps it asserted a guessed compiler cache type FILEPATH rather than the actual STRING. Read-only adoption audit v2, SHA256 `a0ad9ff7044e35b050e78d2f99a1eae662b9aa2b4202b021843a327a6d68b511`, also remains FAILED after two successful natural Ninja inspection commands because it resolved their relative dependency paths incorrectly. Root's separate read-only adoption audit v3 resolves paths against the actual build directory and accepts only this current Mini scope; its SHA256 is `8f43b128bec9029b5b8df13dc23632fd6a6fdf5329ba48cfea43c0089da8c307`. No fixture rerun or rewrite of the failed receipts was used for adoption.
 
-Independent review read actual raw logs, commands, generated cache/compiler/CTest files, current source/snapshot/tool/resource/product files and Ninja dependency records. All 309 receipt pin records across 271 unique paths matched current SHA256/length; forty current snapshot inputs and 184 actual Ninja dependencies were verified separately. The independent report is `E:/cargo-targets/zr_vm/reports/ssa-20261004-01a0fe2b/independent-capacity-cmake-current-v1.json`, SHA256 `397df45c2b5edb0e200e12af326c757c24ec3f88eeeb713a75b5eb5877bbcb6f`. This reviewer made no compiler, runtime, Job helper or Git call.
+The historical independent review recorded 309 matching pin records across
+271 unique paths, forty copied project inputs and 184 actual Ninja dependencies.
+Its report is
+`E:/cargo-targets/zr_vm/reports/ssa-20261004-01a0fe2b/independent-capacity-cmake-current-v1.json`,
+SHA256 `397df45c2b5edb0e200e12af326c757c24ec3f88eeeb713a75b5eb5877bbcb6f`.
+This is a record of that earlier audit, not a new check of removed copied inputs.
 
-This establishes fresh current fragment Mini CTest acceptance with UBSan. It adds no ASan, full repository configure/build, MSVC compiler runtime, Linux, native32, dynamic OOM, forced allocation movement, GVN compatibility rerun or all 47 SSA credit. Six-file integration and commit remain pending under the unchanged Git/index restrictions.
+This established the historical fragment Mini CTest scope with UBSan. It adds no
+ASan, full repository configure/build, MSVC compiler runtime, Linux, native32,
+dynamic OOM, forced allocation movement, GVN compatibility rerun or all 47 SSA
+credit. Earlier integration and Git restrictions are historical as described
+above; they do not describe the current finite direct-checkout gate.
+
+## Current direct-checkout CMake acceptance
+
+Root receipt:
+`E:/cargo-targets/zr_vm/reports/ssa-20261004-01a0fe2b/direct-ssa-cmake-v31/Root-receipt.json`.
+SHA256: `17c71e728b1d84f679bfa7d2d60f2f46793a3c76ab6430782509d244b39e88e2`;
+258,995 bytes, acceptance true. The actual source directory was
+`E:/Git/zr_vm/tests/cmake/ssa-direct-validation`. The capacity fragment resolves
+the real repository root relative to its own directory and reads the fixture and headers
+directly from `E:/Git/zr_vm`; no copied project inputs were used.
+
+Configure, build, CTest, Ninja dependency inspection and Ninja command inspection
+all naturally exited zero. All 138 project C compile edges across the nine
+configured finite targets used UBSan and UNDEBUG. The capacity target had one
+fixture C translation unit, embedding production `exec_ir_ranges.c` exactly once.
+The actual CTest log contains seventeen named CASE PASS rows,
+`RESULT cases=17 failures=0`, and a PASS for `ssa_analysis_fact_capacity`.
+The complete configured gate passed exactly 9/9 tests with zero failures.
+
+Current capacity pins match the receipt:
+
+| Input | SHA256 |
+| --- | --- |
+| `tests/parser/test_ssa_analysis_fact_capacity.c` | `061575a077e817b3f971b6178d3f5eee9b2686208e1b0756a32e4130d5c8af7d` |
+| `zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_ranges.c` | `3ed906ef8bc69d9c3b8605ed6ea7e4c3f134d3c1c1afa8e0c4f56bd3567449e3` |
+| `tests/cmake/ssa-analysis-fact-capacity-tests.cmake` | `491f195092ee789ebec472a4ad9da049c380b3ca703ae98ca8fe87befb7de51a` |
+
+Independent audit:
+`E:/cargo-targets/zr_vm/reports/ssa-20261004-01a0fe2b/independent-direct-cmake-v31-current-v1.json`.
+SHA256: `506ad7a314b4b37af3a75af6b746e23298742f73b9079d8d9da9b1a4bb78802e`;
+12,198 bytes, acceptance true. All 40 checks passed, including current pins,
+138 valid dependency blocks, all 138 UBSan/UNDEBUG compile edges and exact
+nine-test CTest agreement. This independently adopts the finite configured gate,
+including capacity17. It establishes neither full parent/repository acceptance
+nor fresh ASan, Linux, native32 or dynamic allocation-failure evidence.
 ## Fresh failed gates retained
 
 - WSL GNU entry was rejected by the service with `Wsl/Service/E_ACCESSDENIED`; no Linux compiler or fixture run occurred. Root receipt SHA256 `a77effbd64b0db9dd6e2c49b9ae73b95def9af9bd3f2b75c211708eb6e97edb8` records failure.
@@ -102,10 +165,23 @@ This establishes fresh current fragment Mini CTest acceptance with UBSan. It add
 
 ## Historical failed optional repeat retained
 
-First genuine configured Mini17/real1-of1 adoption411e remains accepted. The optional later Mini repeat wholeFAILED auditf82f is separate and preserved: Root129.554, CTestchild343355 timeout31.5 with TERM/reap/EMPTY, log17PASS but no CTest summary; WSL46348 timeout/TERM/reap and Linuxcontroller343353 UNKNOWN, native postflight incomplete. Partial fixture logs do not credit runtime/CTest acceptance. That historical attempt is separate from the fresh current E Mini acceptance recorded above. Mini alias236568 remains limited read-subproduct adoption; its outer wrapper wholeFAILED is not promoted.
+The first configured Mini17/1-of-1 adoption411e remains historical acceptance.
+The later optional repeat wholeFAILED auditf82f is preserved separately:
+Root129.554, CTestchild343355 timeout31.5 with TERM/reap/EMPTY, log17PASS without
+a CTest summary; WSL46348 timeout/TERM/reap and Linuxcontroller343353 UNKNOWN,
+with incomplete native postflight. Partial logs do not establish runtime/CTest
+acceptance. Mini alias236568 is limited read-subproduct adoption; its failed
+outer wrapper is not promoted. These historical attempts do not alter V31.
 
 ## Limits retained
 
 The fixture uses standard allocation. No controlled allocation failure or hook was added; allocation-NULL rollback follows temporary realloc/publication order by source inspection only. Native32 and dynamic OOM remain unexecuted. Pristine safe reserve RED and separately extracted numeric RED do not execute unsafe old terminal-count append or alias paths. Production helpers are static in ranges.c, not a new private arithmetic header.
 
-GVN compatibility is24 actual bound test-function calls per product and two real1-of1 CTest runs, not24 individual assertions, a printed24 summary or facts-consumption proof. The17-case fixture covers invalid-input/count/backing/size checks, genuine growth, live-input alias for all3 arrays and generation/latest controls. Borrowed plain Core objects/fixture sanitizers do not establish wholeCoreSAN or raw latestE compilation. No full E parent configure/build/107-library/all47/full02.02 completion is claimed. All47 SSA leaves and01.01/02.02 remainOPEN.
+Historical GVN compatibility covers 24 actual bound test-function calls per
+product and two real 1-of-1 CTest runs; it does not prove facts consumption.
+The current 17-case capacity fixture covers invalid-input/count/backing/size
+checks, genuine growth, live-input alias for all three arrays and generation/latest
+controls. Earlier borrowed plain Core objects do not establish whole-Core
+sanitizer coverage. V31 separately establishes current direct-checkout compilation
+for its nine finite targets. Full parent/repository acceptance, 107-library
+acceptance, the 47-leaf milestone and full 01.01/02.02 remain OPEN.
