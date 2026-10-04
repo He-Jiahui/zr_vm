@@ -29,7 +29,7 @@
 static INIT_ONCE g_zr_log_lock_once = INIT_ONCE_STATIC_INIT;
 static CRITICAL_SECTION g_zr_log_lock;
 
-static BOOL CALLBACK zr_log_init_lock(PINIT_ONCE initOnce, PVOID parameter, PVOID context) {
+static BOOL CALLBACK zr_log_init_lock(PINIT_ONCE initOnce, PVOID parameter, PVOID *context) {
     ZR_UNUSED_PARAMETER(initOnce);
     ZR_UNUSED_PARAMETER(parameter);
     ZR_UNUSED_PARAMETER(context);
