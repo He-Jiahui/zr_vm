@@ -36,6 +36,7 @@ plan_sources:
   - docs/plans/ssa/04-frame-native/04-roots-observation.md
 tests:
   - tests/core/test_close_proxy.c
+  - tests/library/test_close_proxy_aot_runtime.c
   - tests/core/test_close_meta_exception.c
   - tests/cmake/close-proxy-tests.cmake
   - tests/parser/test_buffer_pool_ffi.c
@@ -224,6 +225,22 @@ This keeps nested direct/meta-call cleanup on the same exception-scope contract
 as interpreter execution.
 
 ## Verification
+
+`zr_vm_close_proxy_aot_runtime_test` is a manual helper fixture for an ordinary
+closable object. It constructs a `ZrAotGeneratedFrame` and active VM call-info;
+it does not enter a generated AOT function. Dense logical source/proxy slots
+0/1 map to separate physical VALUE storage at stack-slot offsets 2/3. The
+outer registration occupies the physical source, while the higher physical
+proxy token targets the dense source. The first `CloseScope(1)` clears both
+source representations before the native close callback; the second removes
+the already-null physical source without another callback, ending at the
+`stackBase` close-chain sentinel. `CallWithoutYield(..., 0)` reaches ordinary
+native pre-call dispatch and the prepared native-frame invocation, rather than
+SingleResultFastRestore. The callback observes source nullness and call count;
+it does not force GC, stack growth or reentry, and the fixture has no GC API or
+GC-before/after assertions. The 2026-10-04 paired clang-cl check compiled both
+original and comment candidate successfully; this is compile-only evidence,
+with no runtime, GC, CTest or generated-entry execution credit.
 
 `zr_vm_close_proxy_core_test` exercises 19 focused cases: one close with an older
 marker, an unmarked source, plain source and distinct mirror preservation,
