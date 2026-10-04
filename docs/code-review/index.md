@@ -21,6 +21,8 @@ doc_type: category-index
 
 ## 已验收批次
 
+下表记录各批审查与验证发生时的范围。当前文件状态按 `inventory.tsv` 中的内容摘要核对，后续内容变化需重新审查；本轮更新见下方当前复审记录。
+
 | 功能边界 | 逐单元台账 | 验证 |
 | --- | --- | --- |
 | ZRM 容器公开接口与实现 | [53 项](coverage/zr_vm_library_zrm.tsv) | GCC、Clang 的容器测试各 9/9；独立审查发现 2 类已证实缺陷和 3 类待核实边界。 |
@@ -208,3 +210,7 @@ doc_type: category-index
 | parser CompileTool 内容哈希合同 | [25 项](coverage/zr_vm_parser_compile_tool_binding_hash.tsv) | 保留 25 个不同审查单元；18 个共享绑定单元归入[绑定台账](coverage/zr_vm_parser_compile_tool_binding.tsv)。该整理不等同本批当前源码完整复核。 |
 
 表中只列已独立复核并完成文件级状态登记的功能边界；其余文件仍以 `inventory.tsv` 中的 `pending` 为准。共享 `main` 工作树中的其它会话曾把部分尚在审查的注释收入广域 checkpoint，因此验收状态以台账、内容哈希和对应功能验证为准，不以单个 checkpoint 提交名推断完成。
+
+## 2026-10-04 当前复审
+
+[19 个文件、253 单元的当前复审与验证范围](batches/20261004-current-reviewed-files.md)：清单按当前内容摘要同步；roots/young 四个既有 Windows fixture 与 Complex 四次编译通过。Views 和 Math 的其他旧台账债、其余首方待审文件继续登记。
