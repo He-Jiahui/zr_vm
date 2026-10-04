@@ -11,16 +11,6 @@ set(_zr_finite_fragments
         ssa-aot-scalar-arithmetic-tests.cmake
         ssa-aot-scalar-conditional-tests.cmake
         ssa-licm-scalar-legality.cmake)
-foreach (_fragment IN LISTS _zr_finite_fragments)
-    file(READ "${ZR_SSA_SOURCE_ROOT}/tests/cmake/${_fragment}" _fragment_text)
-    string(FIND "${_fragment_text}" "\${CMAKE_SOURCE_DIR}" _old_root)
-    if (NOT _old_root EQUAL -1)
-        message(FATAL_ERROR
-                "${_fragment} still assumes the whole repository CMAKE_SOURCE_DIR. "
-                "Its owner must migrate it to ZR_SSA_SOURCE_ROOT after the active native validation finishes.")
-    endif ()
-endforeach ()
-
 project(zr_ssa_direct_validation LANGUAGES C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -31,9 +21,11 @@ if (ZR_SSA_DIRECT_UBSAN AND CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     # LINK_FLAGS belongs after /link in the verified driver rule. Sanitizer
     # driver options must instead be supplied explicitly before that separator.
     string(FIND "${CMAKE_C_LINK_EXECUTABLE}" "/clang:-fsanitize=undefined" _zr_san_position)
+    string(FIND "${CMAKE_C_LINK_EXECUTABLE}" "/clang:-fno-sanitize-recover=all" _zr_recover_position)
     string(FIND "${CMAKE_C_LINK_EXECUTABLE}" "/link" _zr_link_position)
-    if (_zr_san_position LESS 0 OR _zr_link_position LESS 0 OR
-            NOT _zr_san_position LESS _zr_link_position)
+    if (_zr_san_position LESS 0 OR _zr_recover_position LESS 0 OR _zr_link_position LESS 0 OR
+            NOT _zr_san_position LESS _zr_link_position OR
+            NOT _zr_recover_position LESS _zr_link_position)
         message(FATAL_ERROR "The native LLVM toolchain must place UBSan driver options before /link.")
     endif ()
 endif ()
@@ -143,12 +135,17 @@ set_tests_properties(
 set(_zr_graph "")
 foreach (_target IN LISTS _zr_targets)
     get_target_property(_sources ${_target} SOURCES)
+    set(_zr_seen_sources)
     foreach (_source IN LISTS _sources)
         get_filename_component(_absolute "${_source}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
         cmake_path(IS_PREFIX ZR_SSA_SOURCE_ROOT "${_absolute}" NORMALIZE _inside_checkout)
         if (NOT _inside_checkout OR NOT EXISTS "${_absolute}")
             message(FATAL_ERROR "Unexpected validation source: ${_absolute}")
         endif ()
+        if (_absolute IN_LIST _zr_seen_sources)
+            message(FATAL_ERROR "Duplicate validation source in ${_target}: ${_absolute}")
+        endif ()
+        list(APPEND _zr_seen_sources "${_absolute}")
         string(APPEND _zr_graph "${_target}\t${_absolute}\n")
     endforeach ()
 endforeach ()

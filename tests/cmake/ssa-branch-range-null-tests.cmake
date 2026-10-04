@@ -1,10 +1,12 @@
+get_filename_component(ZR_SSA_SOURCE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+
 # Standalone closure matching the Root branch facts validation target.
 if (NOT TARGET zr_vm_ssa_branch_range_null_test)
-    set(_zr_branch_core ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core)
+    set(_zr_branch_core ${ZR_SSA_SOURCE_ROOT}/zr_vm_core/src/zr_vm_core)
     add_executable(zr_vm_ssa_branch_range_null_test
-            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_branch_range_null.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_branch_facts.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_branch_loop_ranges.c
+            ${ZR_SSA_SOURCE_ROOT}/tests/parser/test_ssa_branch_range_null.c
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_branch_facts.c
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_branch_loop_ranges.c
             ${_zr_branch_core}/exec_ir/exec_ir.c
             ${_zr_branch_core}/exec_ir/exec_ir_binding_rows.c
             ${_zr_branch_core}/exec_ir/exec_ir_verify.c
@@ -25,9 +27,9 @@ if (NOT TARGET zr_vm_ssa_branch_range_null_test)
             ${_zr_branch_core}/execution_contract.c
             ${_zr_branch_core}/exec_ir/exec_ir_interpreter_resume.c)
     target_include_directories(zr_vm_ssa_branch_range_null_test PRIVATE
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
-            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/include
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_core/include
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_common/include)
     target_compile_definitions(zr_vm_ssa_branch_range_null_test PRIVATE
             _CRT_SECURE_NO_WARNINGS)
     add_test(NAME ssa_branch_range_null COMMAND zr_vm_ssa_branch_range_null_test)

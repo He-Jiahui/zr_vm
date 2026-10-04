@@ -1,18 +1,20 @@
+get_filename_component(ZR_SSA_SOURCE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+
 if (NOT TARGET zr_vm_ssa_aot_scalar_conditional_test)
     add_executable(zr_vm_ssa_aot_scalar_conditional_test
-            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_aot_scalar_conditional.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot_ir.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_text.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_arithmetic.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_conditional.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_c.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_llvm.c)
+            ${ZR_SSA_SOURCE_ROOT}/tests/parser/test_ssa_aot_scalar_conditional.c
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_core/src/zr_vm_core/aot_ir.c
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_text.c
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_arithmetic.c
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_conditional.c
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_c.c
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_llvm.c)
     target_include_directories(zr_vm_ssa_aot_scalar_conditional_test PRIVATE
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
-            ${CMAKE_SOURCE_DIR}/zr_vm_common/include
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot)
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/include
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_core/include
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_common/include
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot)
     target_compile_definitions(zr_vm_ssa_aot_scalar_conditional_test PRIVATE _CRT_SECURE_NO_WARNINGS)
     zr_vm_apply_common_test_settings(zr_vm_ssa_aot_scalar_conditional_test)
     add_test(NAME ssa_aot_scalar_conditional COMMAND zr_vm_ssa_aot_scalar_conditional_test)
@@ -32,7 +34,7 @@ if (TARGET zr_vm_ssa_aot_scalar_text_test)
     endforeach ()
     foreach (zr_conditional_helper IN ITEMS scalar_arithmetic scalar_conditional)
         set(zr_conditional_helper_source
-                "${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_${zr_conditional_helper}.c")
+                "${ZR_SSA_SOURCE_ROOT}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_${zr_conditional_helper}.c")
         list(FIND zr_conditional_normalized_sources "${zr_conditional_helper_source}" zr_conditional_helper_index)
         if (zr_conditional_helper_index EQUAL -1)
             target_sources(zr_vm_ssa_aot_scalar_text_test PRIVATE "${zr_conditional_helper_source}")
