@@ -213,4 +213,4 @@ doc_type: category-index
 
 ## 2026-10-04 当前复审
 
-[19 个文件、253 单元的当前复审与验证范围](batches/20261004-current-reviewed-files.md)：清单按当前内容摘要同步；roots/young 四个既有 Windows fixture 与 Complex 四次编译通过。Views 和 Math 的其他旧台账债、其余首方待审文件继续登记。
+[22 个文件、322 单元的当前复审与验证范围](batches/20261004-current-reviewed-files.md)：清单按当前内容摘要同步；新增 ExecBC generator 18、close-proxy fixture 12、FFI runtime 39，分别仅有既有只读 freshness 检查或有限 Windows 编译证据。roots/young 四个既有 Windows fixture 与 Complex 四次编译范围保持；Views、Math、FFI/native/aot 的其他历史台账债与其余首方待审文件继续登记。
