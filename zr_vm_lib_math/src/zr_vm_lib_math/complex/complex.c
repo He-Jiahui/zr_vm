@@ -78,6 +78,8 @@ TZrBool ZrMath_Complex_MetaNeg(ZrLibCallContext *context, SZrTypeValue *result) 
     ZrLib_Value_SetObject(context->state, result, object, ZR_VALUE_TYPE_OBJECT);
     return ZR_TRUE;
 }
+/* TODO: NaN 或双方平方范数溢出为无穷时比较返回 0；
+ * 核对 VM compare 的 unordered 策略，并补充非有限值与极大有限值用例。 */
 TZrBool ZrMath_Complex_MetaCompare(ZrLibCallContext *context, SZrTypeValue *result) {
     /* 比较协议定义为模长平方的顺序，不解释复数本身的自然大小。 */
     ZrMathComplex lhs; ZrMathComplex rhs; SZrObject *other = ZR_NULL; TZrFloat64 dl; TZrFloat64 dr;
@@ -86,6 +88,8 @@ TZrBool ZrMath_Complex_MetaCompare(ZrLibCallContext *context, SZrTypeValue *resu
     dl = lhs.real * lhs.real + lhs.imag * lhs.imag; dr = rhs.real * rhs.real + rhs.imag * rhs.imag;
     ZrLib_Value_SetInt(context->state, result, dl > dr ? 1 : (dl < dr ? -1 : 0)); return ZR_TRUE;
 }
+/* TODO: MakeStringResult 调用 void setter 后无条件返回 true；
+ * 沿 CreateTryHitCache/OOM 和 binding 结果槽确认失败是否抛错，避免把 true 当作已写结果的证明。 */
 TZrBool ZrMath_Complex_MetaToString(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathComplex value;
     if (!ZrMath_ReadComplexObject(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;

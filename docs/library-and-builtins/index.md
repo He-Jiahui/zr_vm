@@ -1,5 +1,7 @@
 ---
 related_code:
+  - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c
   - zr_vm_lib_debug/include/zr_vm_lib_debug/module.h
   - zr_vm_lib_debug/src/zr_vm_lib_debug/module.c
   - zr_vm_lib_debug/CMakeLists.txt
@@ -26,6 +28,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_contiguous_view.c
 implementation_files:
+  - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c
   - zr_vm_lib_debug/include/zr_vm_lib_debug/module.h
   - zr_vm_lib_debug/src/zr_vm_lib_debug/module.c
   - zr_vm_lib_debug/CMakeLists.txt
@@ -56,6 +60,7 @@ plan_sources:
   - docs/plans/syntax/2026-07-18-03-struct-ref-struct-span-layout-design.md
   - docs/plans/syntax/2026-07-19-08-reflection-library-type-system-design.md
 tests:
+  - tests/fixtures/projects/native_numeric_pipeline/src/signal.zr
   - tests/library/test_debug_library.c
   - tests/library/test_native_binding_direct_call.c
   - tests/debug/test_debug_traceback.c
@@ -120,6 +125,10 @@ doc_type: category-index
 - `../core-runtime/gc-domain-multimutator-and-owner-handoff.md`
   - native descriptor 的 `GcAware` / `BlockingDetached` / `NoSafepointCritical` mode
   - generic、cached、known-native direct与readonly index-contract callback的统一enter/leave合同
+
+- [zr.math Complex API](../wiki/03-modules/math-api.md#complex-和-quaternion)
+  - `phase` 返回弧度，compare 按模长平方；非有限值比较策略仍待核实。
+  - 极大有限分量可使 magnitude 溢出、normalized 返回零；toString 分配失败的结果槽语义仍待核实。
 
 ## 阅读顺序
 

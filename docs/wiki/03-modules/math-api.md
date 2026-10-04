@@ -6,6 +6,7 @@ related_code:
   - zr_vm_lib_math/include/zr_vm_lib_math/vector3.h
   - zr_vm_lib_math/include/zr_vm_lib_math/vector4.h
   - zr_vm_lib_math/include/zr_vm_lib_math/complex.h
+  - zr_vm_lib_math/include/zr_vm_lib_math/complex_registry.h
   - zr_vm_lib_math/include/zr_vm_lib_math/quaternion.h
   - zr_vm_lib_math/include/zr_vm_lib_math/matrix3x3.h
   - zr_vm_lib_math/include/zr_vm_lib_math/matrix4x4.h
@@ -58,6 +59,7 @@ plan_sources:
   - docs/library-and-builtins/index.md
 tests:
   - tests/fixtures/projects/native_numeric_pipeline/src/tensor_pipeline.zr
+  - tests/fixtures/projects/native_numeric_pipeline/src/signal.zr
   - tests/fixtures/projects/native_math_export_probe/src/main.zr
   - tests/library/test_official_provider_convergence.c
 doc_type: api-reference
@@ -125,8 +127,20 @@ scalar 实现使用宿主 `<math.h>`；NaN 不应直接参与 `almostEqual` 的 
 
 ## Complex 和 Quaternion
 
-`Complex` 字段 `real`、`imag`；方法 `magnitude`、`phase`、`conjugate`、`normalized`。
-乘法公式为 `(a+bi)(c+di)=(ac-bd)+(ad+bc)i`，compare 按 magnitude squared。
+`Complex(real, imag)` 要求两个数值实参；实例具有可读数值 `real`、`imag` 字段。
+`magnitude()` 返回模长，`phase()` 返回弧度相角；`conjugate()`、`normalized()` 和算术 meta
+返回新对象并保留 receiver，构造器则可能复用 binding 的兼容目标。模长不超过 EPSILON
+时 normalized 返回零复数。乘法公式为 `(a+bi)(c+di)=(ac-bd)+(ad+bc)i`。
+
+compare 按模长平方返回 -1/0/1，不比较分量字典序；**TODO:** NaN 或双方平方溢出时会
+落到 0，需要结合 VM compare 消费规则和边界用例确定 unordered 的策略。
+**BUG:** 有限 `(1e200, 0)` 的平方中间值溢出，使 magnitude 得到无穷、normalized 得到
+零复数。这是当前源码可证实的数值限制，本次未新增运行复现。
+
+C 回调仅借用本次 binding 的 context/state/result；返回对象和字符串归 VM 管理。
+缺参/实参标签错误会进入 VM 异常，字段读取或对象 helper 返回 NULL 是正常失败。
+**TODO:** toString 复用的字符串 helper 在 void setter 后返回 true；仍需沿
+`ZrCore_String_CreateTryHitCache` 的 OOM 与 binding 结果槽核实失败是否抛错或留下旧值。
 
 `Quaternion` 字段 `x/y/z/w`；方法 `length`、`lengthSquared`、`normalized`、`conjugate`、
 `inverse`、`dot`、`mul`、`slerp`。接近零长度时 inverse/normalized 返回单位四元数；slerp

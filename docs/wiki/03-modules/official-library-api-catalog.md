@@ -1,5 +1,9 @@
 ---
 related_code:
+  - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c
+  - zr_vm_lib_math/include/zr_vm_lib_math/complex.h
+  - zr_vm_lib_math/include/zr_vm_lib_math/complex_registry.h
   - CMakeLists.txt
   - zr_vm_cli/src/zr_vm_cli/project/project.c
   - zr_vm_core/include/zr_vm_core/task_runtime.h
@@ -16,6 +20,8 @@ related_code:
   - zr_vm_lib_debug/include/zr_vm_lib_debug/module.h
   - zr_vm_lib_testing/include/zr_vm_lib_testing/module.h
 implementation_files:
+  - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c
   - zr_vm_cli/src/zr_vm_cli/project/project.c
   - zr_vm_library/src/zr_vm_library/builtin_module.c
   - zr_vm_library/src/zr_vm_library/task_runtime.c
@@ -34,6 +40,7 @@ plan_sources:
   - docs/library-and-builtins/index.md
   - docs/plans/syntax/2026-07-19-10-native-ffi-module-package-design.md
 tests:
+  - tests/fixtures/projects/native_numeric_pipeline/src/signal.zr
   - tests/library/test_official_provider_convergence.c
   - tests/module/test_module_system.c
   - tests/container/test_container_runtime.c
@@ -183,6 +190,12 @@ pool destroy 使用 handle 前必须重新 `isLive/Validate`。详见 [Container
 | Quaternion | `length`、`inverse`、`dot`、`mul`、`slerp` |
 | Matrix3x3/4x4 | `identity`、`transpose`、`determinant`、`inverse`、`mulVector`、`mulMatrix` |
 | Tensor | `shape/rank/size`、`get/set`、`reshape`、`fill`、`sum/mean`、`matmul`、`toArray` |
+
+Complex 的 `phase()` 返回弧度；compare 按模长平方，不按分量字典序。
+**TODO:** NaN 或双方平方溢出时比较落到 0，需确认 VM 的 unordered 策略。
+**BUG:** 极大有限输入 `(1e200, 0)` 的平方中间值溢出，可使 magnitude 返回无穷、
+normalized 返回零复数。**TODO:** toString 的字符串 helper 返回 true 并不自行确认结果
+槽写入，分配失败是否抛错仍需核实。详细调用限制见 [Complex API](math-api.md#complex-和-quaternion)。
 
 向量/矩阵 meta 运算通常返回新值；Tensor 需要检查 shape、rank、index 和内存分配。NaN、
 接近零长度和奇异矩阵都应显式处理，不能假定 C math 的 errno 会自动成为 ZR exception。

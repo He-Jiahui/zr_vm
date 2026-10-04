@@ -10,12 +10,17 @@ related_code:
   - zr_vm_lib_math/src/zr_vm_lib_math/matrix/matrix4x4.c
   - zr_vm_lib_math/src/zr_vm_lib_math/quaternion/quaternion.c
   - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c
+  - zr_vm_lib_math/include/zr_vm_lib_math/complex.h
+  - zr_vm_lib_math/include/zr_vm_lib_math/complex_registry.h
   - zr_vm_lib_math/src/zr_vm_lib_math/tensor/tensor.c
   - zr_vm_lib_math/src/zr_vm_lib_math/tensor/tensor_registry.c
   - zr_vm_lib_math/src/zr_vm_lib_math/common.c
   - zr_vm_library/include/zr_vm_library/native_registry.h
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c
 implementation_files:
+  - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c
   - zr_vm_lib_math/src/zr_vm_lib_math/module.c
   - zr_vm_lib_math/src/zr_vm_lib_math/scalar/scalar.c
   - zr_vm_lib_math/src/zr_vm_lib_math/tensor/tensor.c
@@ -29,6 +34,7 @@ tests:
   - tests/fixtures/projects/native_math_export_probe/native_math_export_probe.zrp
   - tests/fixtures/projects/native_numeric_pipeline/native_numeric_pipeline.zrp
   - tests/fixtures/projects/native_numeric_pipeline/src/tensor_pipeline.zr
+  - tests/fixtures/projects/native_numeric_pipeline/src/signal.zr
   - tests/library/test_official_provider_convergence.c
 doc_type: module-detail
 ---
@@ -99,6 +105,11 @@ method 为准。除 Tensor 的 `fill/set` 会修改 receiver 并返回它自身�
 descriptor 的签名文字仍误写为 `fillValue: float`。`get/set` 的单个参数是长度与 rank 相同
 的多维 indices 数组，按 row-major 映射到 data；`set` 原位更新并返回 receiver。
 矩阵构造器支持零参数（生成 identity）或恰好 9/16 个 `float` 参数。
+
+Complex 的 `phase()` 使用弧度；compare 按模长平方，不代表分量相等。
+**BUG:** 极大有限分量的平方溢出会使 magnitude 返回无穷、normalized 返回零；
+**TODO:** 非有限值/溢出的 compare 策略及 toString 分配失败的结果槽语义仍待核实。
+调用约束及现有乘法公式见 [Complex API](math-api.md#complex-和-quaternion)。
 
 ## 数值规则
 
