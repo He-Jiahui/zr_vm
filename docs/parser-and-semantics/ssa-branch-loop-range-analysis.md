@@ -25,8 +25,10 @@ doc_type: module-detail
 
 This private module extends the existing BranchFacts Analyze API. It is called
 only when the reachable graph has a cycle; the DAG path remains unchanged.
-The implementation is supplied for Root validation. Actual evidence currently
-establishes the prior implementation's semantic RED, not this candidate's GREEN.
+Current direct-workspace native Windows evidence accepts the finite 11-case
+loop fixture, the original 53-case foundation and the 40-case arithmetic
+regression. Acceptance is limited to these targets; the whole V27/V28 receipts
+retain their recorded failures. See the scoped evidence below.
 
 ## Supported input
 
@@ -111,14 +113,18 @@ cleanup remain unchanged. IR, PHI rows and effects are never rewritten.
 
 ## Validation and remaining scope
 
-[Scoped evidence](ssa-branch-loop-ranges-scoped-acceptance.md) records the actual
-11-case RED and pending current GREEN/regressions. Each focused target now needs
-the private loop TU in addition to its fixture, BranchFacts producer and19 Core
-support TUs. The three owned standalone fragments include it. The normal parser
-module recursively discovers source files through CommonMacros; parent focused
-includes are Root's integration responsibility.
+[Scoped evidence](ssa-branch-loop-ranges-scoped-acceptance.md) records historical
+11-case RED and current direct-workspace target acceptance. Root V27 completed
+loop11 and foundation53 with all 22 project C TUs UBSan instrumented; V28 completed
+arithmetic40 using the current fixture and audited V27 support objects. The
+independent adoption reports check actual dependency pins and link participation.
+The V26 build typo `phiIncoming` was corrected to `phiRange` before those runs.
+Each focused target needs the private loop TU in addition to its fixture,
+BranchFacts producer and 19 Core support TUs. The three standalone fragments
+include it. The normal parser module recursively discovers source files through
+CommonMacros. Fresh formal CMake acceptance and repeat runs remain open here.
 
-This finite shape does not close02.02. General loops, nested/multiple backedges,
+This finite shape does not close 02.02 or the full 47-leaf milestone. General loops, nested/multiple backedges,
 production witness creation, mutable-memory invalidation, proof remarks, null
 and bounds check consumers, configurable budgets, allocation fault injection and
 backend differential acceptance remain open. No check is deleted by this module.
