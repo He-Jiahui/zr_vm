@@ -1,5 +1,9 @@
 ---
 related_code:
+  - zr_vm_common/include/zr_vm_common/zr_io_conf.h
+  - zr_vm_common/include/zr_vm_common/zr_instruction_conf.h
+  - zr_vm_core/src/zr_vm_core/io.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_binary.c
   - zr_vm_core/include/zr_vm_core/artifact_schema.h
   - zr_vm_parser/include/zr_vm_parser/writer.h
   - zr_vm_parser/include/zr_vm_parser/artifact_projection.h
@@ -9,10 +13,12 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/writer.c
   - zr_vm_library/src/zr_vm_library/zrm.c
 plan_sources:
+  - user: 2026-10-04 全仓库公共注释与调用契约审查，仅补文档与静态证据
   - user: 2026-09-10 继续完善 ZrVm Wiki，要求详细介绍语法规则、用例和实现机制
   - docs/plans/aot/11-metadata.md
   - docs/plans/syntax/2026-07-19-10-native-ffi-module-package-design.md
 tests:
+  - tests/module/test_close_proxy_legacy_patch.c
   - tests/parser/test_artifact_schema.c
   - tests/parser/test_artifact_schema_source_roundtrip.c
   - tests/parser/test_call_binding_artifact.c
@@ -240,3 +246,11 @@ CRC32 与 compression。
 
 文件后缀、项目 manifest 和 archive resolver 的更高层行为见 [产物与格式](artifacts.md) 与
 [项目、文件与 ZRM API](../05-interop/project-file-zrm-api.md)。
+
+## 10. Legacy/general .zro 的公共头与函数线格式
+
+`writer_binary.c` 的 legacy/general 入口与本页 canonical artifact encoded-row API 有不同协议。`zr_io_conf.h` 声明 signature 宽度、宿主宽度与 patch 门槛，writer 逐段写头与函数树；CURRENT 的实际发布点为 `zr_vm_parser/src/zr_vm_parser/writer/writer_binary.c:38`。声明的宽度和端序标记不能单独证明跨平台可读，patch 门槛也不能替代每个读取分支的长度、布局和所有权前置条件。
+
+线格式草图不是可直接 memcpy 的 `SZrIoFunction` C 结构。函数 reader 定义为 `zr_vm_core/src/zr_vm_core/io.c:1611`：指令段当前确实读取原始 `TZrInstruction` 数组（`zr_vm_core/src/zr_vm_core/io.c:1640`），其余函数记录包含长度前缀和逐项子树。闭包长度在 `zr_vm_core/src/zr_vm_core/io.c:1652` 读取并实际调用闭包子树 reader（`zr_vm_core/src/zr_vm_core/io.c:1657`）；异常长度在 `zr_vm_core/src/zr_vm_core/io.c:1672` 读取并调用异常 reader（`zr_vm_core/src/zr_vm_core/io.c:1677`）。头内 FUNCTION 速记的遗漏 TODO 保留，不能用草图省去这些段，也不能把 legacy 原始指令数组的实现推广到 canonical row 的宿主结构转换。
+
+本段没有改变 writer/reader 行为。列出的旧 patch 用例仅作源码证据，本次没有运行新的格式、装载或 native 验证。

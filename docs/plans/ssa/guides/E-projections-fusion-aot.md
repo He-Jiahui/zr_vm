@@ -12,7 +12,7 @@ status: planned
 
 # 实现指南 E：ExecBC 投影、Superinstruction 生成与 AOT 同源 lowering（01.05、03.04、07.01–07.02）
 
-> 待实现草案。既有事实：`SZrInstruction` 固定宽度 `{u16 operationCode, u16 operandExtra, TZrInstructionType operand}`（zr_instruction_conf.h:361）；zr_vm_aot 已有 `SZrAotExecIrInstruction/FrameLayout/BasicBlock/Function/Module` 私有记录（backend_aot_exec_ir.h）待迁移收敛。
+> 待实现草案。既有事实：`SZrInstruction` 固定宽度 `{u16 operationCode, u16 operandExtra, TZrInstructionType operand}`（zr_vm_common/include/zr_vm_common/zr_instruction_conf.h:403）；zr_vm_aot 已有 `SZrAotExecIrInstruction/FrameLayout/BasicBlock/Function/Module` 私有记录（backend_aot_exec_ir.h）待迁移收敛。
 
 ## E.1 ExecIR → ExecBC 无优化投影（01.05）
 

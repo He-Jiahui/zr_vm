@@ -71,6 +71,9 @@ typedef union SZrAotGenericResolvedValue {
 } SZrAotGenericResolvedValue;
 
 /** @brief 生成端发布的泛型需求；静态入口可减少运行时重新解析。 */
+/** @note 当前 GenericSlot 入口读取 kind、typeLayoutId、staticTypeLayout 或 staticMethod。
+ * 生成端保留的 metadataToken、methodIndex、flags 与 debugName 不等于运行时已实现相应解析。
+ */
 typedef struct SZrAotGenericSlot {
     TZrUInt32 kind;
     TZrUInt32 typeLayoutId;
@@ -116,6 +119,9 @@ typedef enum EZrAotParameterPassingMode {
 } EZrAotParameterPassingMode;
 
 /** @brief AOT 方法签名中的单个类型描述；布局和所有权字段供反射边界校验。 */
+/** @note 当前 token 反射入口主要核对 baseType 及 VALUE passingMode；生成端写入的
+ * 布局、所有权、nullable 和数组描述不因此成为该入口已完成的语义校验。
+ */
 typedef struct SZrAotSignatureType {
     TZrUInt16 baseType;
     TZrUInt16 staticCType;
@@ -130,6 +136,9 @@ typedef struct SZrAotSignatureType {
 } SZrAotSignatureType;
 
 /** @brief 方法返回值及参数数组；parameterTypes 长度由 parameterCount 决定。 */
+/** @note hasVarArgs 允许额外参数，但 parameterCount 仍约束固定前缀；returnType
+ * 只在 hasReturnValue 为真时必需。签名数组由生成模块持有，调用过程中须保持有效。
+ */
 typedef struct SZrAotSignature {
     TZrUInt32 parameterCount;
     const SZrAotSignatureType *returnType;
@@ -145,6 +154,10 @@ typedef enum EZrAotGcRootLocationKind {
 } EZrAotGcRootLocationKind;
 
 /** @brief 一个生成帧 GC 根的位置与类型布局；字段偏移必须与目标布局一致。 */
+/** @note 扫描器依据 locationKind 将 frameBase + frameByteOffset 解释为 VM 值槽或
+ * 本地对象指针槽。生成端已把字段偏移计入 frameByteOffset，扫描时不能再加一次。
+ * map、frameBase 及相应槽存储须存活到根帧弹出；LOCAL_ADDRESS 不享有 VM 栈范围检查。
+ */
 typedef struct SZrAotGcRootSlot {
     TZrUInt32 stackSlot;
     TZrUInt32 frameByteOffset;
@@ -189,6 +202,9 @@ typedef struct SZrAotGcDescriptor {
 } SZrAotGcDescriptor;
 
 /** @brief 源成员 token 到生成产物 token 的映射，模块挂载时用于修正导出元数据。 */
+/** @note 加载器拒绝重复 sourceToken；模块挂载按此映射修正导出的成员身份，
+ * 它不重排 functionIndex，也不改变生成函数表的索引空间。
+ */
 typedef struct SZrAotMemberTokenRemap {
     TZrUInt32 sourceToken;
     TZrUInt32 targetToken;
@@ -214,6 +230,9 @@ typedef struct SZrAotManifestExportEntry {
 } SZrAotManifestExportEntry;
 
 /** @brief 单个生成函数在 nativeImportContracts 表中的连续切片。 */
+/** @note 范围表按 functionIndex 索引；加载器要求各范围顺序连续并覆盖整个契约表。
+ * 方法内 localContractIndex 先在本范围内校验，再转换成全局契约索引。
+ */
 typedef struct SZrAotNativeImportRange {
     TZrUInt32 contractStart;
     TZrUInt32 contractCount;
@@ -225,6 +244,10 @@ typedef struct SZrAotNativeImportRange {
  * 该核对覆盖表形状及部分行契约，不替代签名、GC 根和所有指向数据的语义校验。
  * C 生成端按原 functionIndex 铺开 thunk、methodInfo 和 token 表；裁剪空洞保留为 NULL/0，
  * 因而对应计数表示索引空间长度，不能用非空方法的数量替代。
+ */
+/** @note callBindingRows 保存固定行宽的编码字节而非宿主结构体数组，rowSize
+ * 必须与 artifact schema 一致；目标函数索引数组与编码行逐项对应，延迟绑定可用无目标哨兵。
+ * nativeImportRanges 则按函数索引分割 nativeImportContracts，两种索引关系不能混用。
  */
 typedef struct SZrAotCodeRegistration {
     TZrUInt32 functionCount;
@@ -258,6 +281,9 @@ typedef struct SZrAotCodeRegistration {
 /**
  * @brief AOT 动态库导出的根描述符，连接文件身份、嵌入模块与代码注册表。
  * @note 加载器先检查 ABI、模块名、各表的指针与计数，再使用元数据；所有表需随动态库保持有效。
+ */
+/** @note inputKind 选择已有 source 或 binary 的哈希比较路径；inputHash 不是嵌入 blob 的校验和。
+ * runtimeContracts 是生成端发布的需求名称表，当前描述符加载门禁不遍历它来证明能力满足。
  */
 typedef struct ZrAotCompiledModule {
     TZrUInt32 abiVersion;

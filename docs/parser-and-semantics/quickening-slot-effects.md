@@ -1,14 +1,19 @@
 ---
 related_code:
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_instruction.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/profile.c
   - zr_vm_common/include/zr_vm_common/zr_instruction_conf.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_contiguous_view.c
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
 plan_sources:
+  - user: 2026-10-04 全仓库公共注释与调用契约审查，仅补文档与静态证据
   - docs/plans/ssa/05-data-layout/02-arrays-slices.md
   - docs/plans/ssa/03-interpreter-binding/04-generated-fusion.md
 tests:
+  - tests/core/test_execution_dispatch_callable_metadata.c
   - tests/parser/test_span_core.c
   - tests/parser/test_compiler_w2_performance_quickening.c
   - tests/parser/test_compiler_w2_quickening_array_add.inc
@@ -108,3 +113,13 @@ See [`ssa-quickening-member-slot-effects.md`](../../tests/acceptance/ssa-quicken
 for the classifier RED/GREEN evidence. The Array add follow-up has its own
 acceptance record because it changes the typed native-call matcher and binding
 lifecycle.
+
+## 公共指令编码与使用前置条件
+
+`ZR_INSTRUCTION_DECLARE` 是 opcode 行序的共同来源：公共头展开枚举，解释器展开当前函数内的标签表，profile 展开名称。编号保存于旧二进制指令中，重排 schema 会改变既有字节的解释；这与 quickening 的槽读写分类职责分开。枚举封装为 `zr_vm_common/include/zr_vm_common/zr_instruction_conf.h:301`，标签表实际消费为 `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:2374`。
+
+`SZrInstruction` 的 opcode、extra 与四字节 operand 区共同组成指令实体（`zr_vm_common/include/zr_vm_common/zr_instruction_conf.h:403`）。operand 的 8/16/32 位数组重叠同一存储，分类器和构造器须按 opcode 选择视图；extra 的结果、接收者或暂存标记角色也由 opcode 决定，不能仅由数值推断另一个槽读写。
+
+有效推进后的 PC 是调用方前置条件。`FETCH` 与 `FETCH_PREPARE_SHARED` 自身不检查 PC 范围：快速分支直接读取推进后的指令（`zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:2621`），常规分支调用 `ZR_INSTRUCTION_FETCH`（`zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:2631`）处理 trap 后推进。mutator poll 的 safepoint/预算协作不构成每次取指的上界验证。公共 opcode 宏同样不验证编号或操作数。
+
+本段依据当前源码作静态契约说明；既有 Test Coverage 和 Acceptance Record 的运行记录保持原历史范围，本次没有重跑 quickening、解释器或 native 测试。

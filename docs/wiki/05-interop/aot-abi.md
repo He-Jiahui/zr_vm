@@ -1,5 +1,9 @@
 ---
 related_code:
+  - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_generic_dictionary.c
+  - zr_vm_core/src/zr_vm_core/reflection_token_resolve.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
+  - zr_vm_core/src/zr_vm_core/metadata_runtime_method_binding.c
   - zr_vm_common/include/zr_vm_common/zr_aot_abi.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_function_table.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
@@ -15,10 +19,12 @@ implementation_files:
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_emitter.c
   - zr_vm_library/src/zr_vm_library/aot_runtime.c
 plan_sources:
+  - user: 2026-10-04 全仓库公共注释与调用契约审查，仅补文档与静态证据
   - user: 2026-09-09 在 docs/wiki 构建完整 ZrVm 说明书
   - docs/plans/aot/index.md
   - docs/plans/aot/02-typed-value-and-layout.md
 tests:
+  - tests/core/test_aot_gc_root_frame.c
   - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c
   - zr_vm_aot/tests/parser/test_execbc_aot_manual_opcode_sync.c
   - tests/parser/test_aot_c_frame_setup_contracts.c
@@ -36,7 +42,7 @@ doc_type: api-reference
 
 当前 `ZR_VM_AOT_ABI_VERSION` 为 **17**。AOT module 载荷必须声明 `abiVersion`、`backendKind`
 （C=1，LLVM=2）、`inputKind`（source/binary）、moduleName、inputHash 和 runtimeContracts；
-loader 在任何函数调用前校验这些字段。
+loader 在挂载描述符前检查 ABI、backend、module identity 和表形状；inputKind 选择外部 source/binary 的哈希路径。runtimeContracts 是生成端发布的需求名称表，当前描述符门禁没有遍历它来证明能力满足。
 
 ## 核心结构
 
@@ -45,7 +51,7 @@ loader 在任何函数调用前校验这些字段。
 | `SZrAotSignatureType` / `SZrAotSignature` | 参数/返回 base type、static C type、ownership、nullable、array、passing mode |
 | `SZrAotMethodInfo` | function index、metadata function、frame bytes、GC root map、signature、generic dictionary、reflection invoker |
 | `SZrAotGcRootSlot/Map` | frame byte offset 或 local address 的 root 描述 |
-| `SZrAotGenericSlot/Dictionary` | type layout、prototype、method、box、sizeof 延迟解析 |
+| `SZrAotGenericSlot/Dictionary` | 发布泛型需求与缓存槽；当前 helper 消费 layout、method、sizeof，prototype/box 仍为保留描述 |
 | `SZrAotCodeRegistration` | thunks、method/token/layout/GC descriptors、native imports、call-binding rows |
 | `ZrAotCompiledModule` | loader 可见的完整模块和 entry thunk |
 
@@ -81,3 +87,15 @@ size 任何一个不匹配都拒绝加载。reflection metadata level 可为 NON
 DESCRIPTION；裁剪后的 method/type 没有 preserve rule 时反射查询返回 metadata-not-preserved，
 而不是构造一个空 descriptor。VM/AOT parity 测试应覆盖异常、GC root、ownership drop、动态
 dispatch、generic specialization 和 tail call。
+
+## 当前公开字段的消费边界
+
+描述符、数组、字符串和 thunk 指针由生成动态库持有；loader 与模块挂载借用这些表，表及被引用存储须在使用期间有效。`inputHash` 对应外部 source 或 binary 输入，不是嵌入 blob 的校验和。精确 ABI 比对为 `zr_vm_library/src/zr_vm_library/aot_runtime.c:600`；这不授所有字段已经完整校验或所有哈希失败路径关闭的保证。
+
+签名发布 baseType、static C type、ownership、nullable、array 与 passing mode。当前 token 反射入口主要检查 VALUE/baseType、固定参数前缀、varargs 和返回标签，再调用 void invoker（`zr_vm_core/src/zr_vm_core/reflection_token_resolve.c:390`）。ABI 没有 argCount；调用方仍须提供有效参数存储，发布的描述字段不能扩大为该入口已完成的全部语义验证。
+
+GC root 的 `frameByteOffset` 已由生成端计入字段偏移；扫描器按 locationKind 读取 VM 值或本地对象指针，不应再次加 field offset。LOCAL_ADDRESS 没有 VM 栈范围检查，map、frameBase 与槽存储的寿命须覆盖根帧使用期。泛型字典当前公开 helper 消费 layout、sizeof 与静态 method；prototype/box 的保留视图不表示解析已经实现，静态 resolved cache 也没有多 runtime 隔离或并发安全保证（`zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_generic_dictionary.c:143`）。
+
+callBindingRows 是 artifact schema 的固定行宽字节，不能作为宿主结构体数组解释；挂载端逐行解码（`zr_vm_core/src/zr_vm_core/metadata_runtime_method_binding.c:193`）。nativeImportRanges 则按 functionIndex 分割连续 nativeImportContracts：函数内 localContractIndex 在范围内校验后转为全局索引。其范围计数和编码行的目标索引数组承担不同关系，不得互换。
+
+本段仅澄清当前 producer/consumer 契约；前述 parity 测试仍是覆盖要求，不是本次运行结果。本次没有执行 ABI、GC、反射、装载或 native 测试。

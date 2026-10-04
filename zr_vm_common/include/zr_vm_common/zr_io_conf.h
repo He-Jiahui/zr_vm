@@ -5,6 +5,7 @@
 #ifndef ZR_IO_CONF_H
 #define ZR_IO_CONF_H
 
+/** @brief 字符读取器结束或无法补充数据时返回的 stdio 哨兵，不是有效输入字节。 */
 #define ZR_IO_EOF EOF
 #include "zr_vm_common/zr_common_conf.h"
 
@@ -18,6 +19,10 @@ static const union {
 
 /* .zro 头部格式由 parser writer 与 core reader 共同消费；字段宽度和 patch 门槛属于持久化协议。 */
 // IO文件格式相关常量
+/** @brief .zro 文件头宣告的原生整数、长度和指令宽度。
+ * @note 当前 writer 仍用本宿主 sizeof 写入原生长度与数据；这些宣告不能单独证明跨位宽、
+ * 跨端序可读，也不能代替读取端的实际平台布局约束。
+ */
 #define ZR_IO_NATIVE_INT_SIZE 8
 #define ZR_IO_SIZE_T_SIZE 8
 #define ZR_IO_INSTRUCTION_SIZE 8
@@ -243,6 +248,9 @@ static const union {
  */
 
 /** @brief 二进制模块声明的线格式类别，读写端须保持同序。 */
+/** @note 当前二进制 writer 的顶层 declaresLength 为零；这些类别仍供 reader
+ * 的结构化声明分支及对应释放器判别子树，不表示 writer 已输出所有类别。
+ */
 enum EZrIoModuleDeclareType {
     ZR_IO_MODULE_DECLARE_TYPE_CLASS,
     ZR_IO_MODULE_DECLARE_TYPE_STRUCT,
@@ -257,6 +265,7 @@ enum EZrIoModuleDeclareType {
 typedef enum EZrIoModuleDeclareType EZrIoModuleDeclareType;
 
 /** @brief 二进制成员声明类别，供 core 重建字段、属性、方法与元方法。 */
+/** @note ENUM 在此表示 enumField 子树；模块级 ENUM 则对应完整枚举，两层标记不能混用。 */
 enum EZrIoMemberDeclareType {
     ZR_IO_MEMBER_DECLARE_TYPE_FIELD,
     ZR_IO_MEMBER_DECLARE_TYPE_PROPERTY,

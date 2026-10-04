@@ -272,9 +272,17 @@
     Z(MARK_CLOSE_PROXY)
 
 
+/** @brief 从指令联合体取分发编号，供执行器与诊断共享同一解码入口。
+ * @pre INSTRUCTION 提供 TZrInstruction 视图；此宏不检查编号范围或操作数合法性。
+ */
 #define ZR_INSTRUCTION_OPCODE(INSTRUCTION) (INSTRUCTION.instruction.operationCode)
 
 /* 取下一条指令前检查调试 trap；PC 的更新与 interpreter 分发使用同一宏约定。 */
+/** @brief 在执行器已确认取指范围后处理 trap，并推进 PC 取得下一条指令。
+ * @pre 调用上下文提供 trap；PC 指向当前指令，推进 N 后的位置有效。
+ * @note EXCEPTION 在推进前展开，可沿调试调用链更新执行器状态或非局部离开。
+ * 此宏不负责 PC 上界检查；执行器的 FETCH_PREPARE 调用点先完成该检查。
+ */
 #define ZR_INSTRUCTION_FETCH(INSTRUCTION, PC, EXCEPTION, N)                                                            \
     {                                                                                                                  \
         if (ZR_UNLIKELY(trap != ZR_DEBUG_SIGNAL_NONE)) {                                                               \
@@ -284,14 +292,22 @@
     }
 
 
+/** @brief 将 schema 名称映射为统一 opcode 常量，供编译器编码与解释器派发对齐。 */
 #define ZR_INSTRUCTION_ENUM(INSTRUCTION) ZR_INSTRUCTION_OP_##INSTRUCTION
 
+/** @brief 将同一 schema 展开结果封装成 opcode 枚举，并在末尾附加计数哨兵。
+ * @note 枚举值由行序决定；已有二进制保存这些编号，重排行序会改变其解释。
+ */
 #define ZR_INSTRUCTION_ENUM_WRAP(...)                                                                                  \
     ZR_MACRO_REGISTER_WRAP(enum EZrInstructionCode{, ZR_INSTRUCTION_ENUM(ENUM_MAX)}, __VA_ARGS__)
 
+/** @brief 为 ZR_INSTRUCTION_DECLARE 的每行生成一个枚举项；不单独维护编号。 */
 #define ZR_INSTRUCTION_ENUM_DECLARE(INSTRUCTION) ZR_INSTRUCTION_ENUM(INSTRUCTION),
 
 
+/** @brief 在执行函数内封装标签地址表，长度与 opcode 枚举计数一致。
+ * @pre 仅用于支持 computed goto 的编译环境，展开的标签必须属于当前执行函数。
+ */
 #define ZR_INSTRUCTION_DISPATCH_TABLE_WRAP(...)                                                                        \
     ZR_MACRO_REGISTER_WRAP(static const void *const CZrInstructionDispatchTable[ZR_INSTRUCTION_ENUM(ENUM_MAX)] =       \
                                    {                                                                                   \
@@ -299,6 +315,7 @@
                                    },                                                                                  \
                            __VA_ARGS__)
 
+/** @brief 把 schema 的每项映射到当前执行函数的同名处理标签。 */
 #define ZR_INSTRUCTION_DISPATCH_TABLE_DECLARE(INSTRUCTION) &&LZrInstruction_##INSTRUCTION,
 
 /* GNU/Clang 原生构建使用 computed goto；MSVC/WASM 使用 switch，两路径共享 opcode 编号与解释语义。
@@ -365,6 +382,9 @@ ZR_INSTRUCTION_ENUM_WRAP(ZR_INSTRUCTION_DECLARE(ZR_INSTRUCTION_ENUM_DECLARE));
 typedef enum EZrInstructionCode EZrInstructionCode;
 
 /** @brief 指令四字节操作数在不同宽度下的视图；解释器须按 opcode 解释对应槽位。 */
+/** @note 三个数组重叠同一操作数区；编译器的 1/2/4 操作数构造器分别写入对应视图。
+ * opcode 决定宽度与槽位含义，不能把这些视图当成互相独立的数据。
+ */
 union TZrInstructionType {
     TZrUInt8 operand0[4];
     TZrUInt16 operand1[2];
@@ -377,6 +397,9 @@ typedef union TZrInstructionType TZrInstructionType;
  */
 #define ZR_INSTRUCTION_USE_RET_FLAG ((TZrUInt16) (-1))
 /** @brief 固定八字节指令实体，parser 写出后由 core reader 和执行器按相同布局读取。 */
+/** @note operationCode 用于派发；operandExtra 的目标、接收者或标记角色由 opcode 决定。
+ * reader 直接读取原始指令数组；这个 C 布局说明不提供损坏字节码的校验保证。
+ */
 struct SZrInstruction {
     TZrUInt16 operationCode;
     TZrUInt16 operandExtra;
