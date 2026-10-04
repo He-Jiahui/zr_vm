@@ -48,6 +48,35 @@ before `/link`. Target link options would enter `<LINK_FLAGS>` after `/link`,
 where they would incorrectly be parsed by LLD. The driver checks this ordering;
 the target supplies the compile instrumentation flags.
 
+Configuration-only toolchain outline (Root writes it under the permitted E
+temporary directory, with a companion rules file):
+
+```cmake
+set(CMAKE_C_COMPILER "E:/Visual Studio/VC/Tools/Llvm/x64/bin/clang-cl.exe" CACHE FILEPATH "")
+set(CMAKE_LINKER "E:/Visual Studio/VC/Tools/Llvm/x64/bin/lld-link.exe" CACHE FILEPATH "")
+set(CMAKE_RC_COMPILER "E:/Visual Studio/VC/Tools/Llvm/x64/bin/llvm-rc.exe" CACHE FILEPATH "")
+set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreadedDLL CACHE STRING "")
+set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "" CACHE STRING "")
+set(CMAKE_C_FLAGS_INIT [=[--no-default-config /clang:--target=x86_64-pc-windows-msvc /nologo /TC /std:c11 /Od /W4 /utf-8 "/winsdkdir:D:/Windows Kits/10" /winsdkversion:10.0.26100.0 "/vctoolsdir:E:/Visual Studio/VC/Tools/MSVC/14.44.35207"]=])
+foreach(_system_include IN ITEMS
+    "E:/Visual Studio/VC/Tools/Llvm/x64/lib/clang/19/include"
+    "E:/Visual Studio/VC/Tools/MSVC/14.44.35207/include"
+    "D:/Windows Kits/10/Include/10.0.26100.0/ucrt"
+    "D:/Windows Kits/10/Include/10.0.26100.0/shared"
+    "D:/Windows Kits/10/Include/10.0.26100.0/um"
+    "D:/Windows Kits/10/Include/10.0.26100.0/winrt"
+    "D:/Windows Kits/10/Include/10.0.26100.0/cppwinrt")
+    string(APPEND CMAKE_C_FLAGS_INIT " /clang:-isystem \"/clang:${_system_include}\"")
+endforeach()
+set(CMAKE_USER_MAKE_RULES_OVERRIDE_C "${CMAKE_CURRENT_LIST_DIR}/direct-llvm-rules.cmake")
+```
+
+Companion rules file:
+
+```cmake
+set(CMAKE_C_LINK_EXECUTABLE [=[<CMAKE_C_COMPILER> --no-default-config /clang:--target=x86_64-pc-windows-msvc /clang:-fuse-ld=lld /nologo /MD "/winsdkdir:D:/Windows Kits/10" /winsdkversion:10.0.26100.0 "/vctoolsdir:E:/Visual Studio/VC/Tools/MSVC/14.44.35207" /clang:-fsanitize=undefined /clang:-fno-sanitize-recover=all /Fe<TARGET> <OBJECTS> /link <LINK_FLAGS> <LINK_LIBRARIES>]=])
+```
+
 Proposed configure source: `E:/Git/zr_vm/tests/cmake/ssa-direct-validation`.
 Proposed fresh build: `E:/cargo-targets/zr_vm/build/ssa-20261004-01a0fe2b/direct-ssa-cmake`.
 Use Ninja, an explicit installed Ninja path, `CMAKE_BUILD_TYPE=` and
@@ -55,6 +84,26 @@ Use Ninja, an explicit installed Ninja path, `CMAKE_BUILD_TYPE=` and
 `--parallel 1`; verbose CTest must report exactly nine passing tests. Capture
 actual primary inputs from compile commands/Ninja edges and headers/embedded C
 from Ninja dependencies. The capacity fixture embeds ranges.c once.
+
+After fragment migration, the concrete configure argv is:
+
+```text
+E:/Visual Studio/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe
+-S E:/Git/zr_vm/tests/cmake/ssa-direct-validation
+-B E:/cargo-targets/zr_vm/build/ssa-20261004-01a0fe2b/direct-ssa-cmake
+-G Ninja
+-DCMAKE_TOOLCHAIN_FILE=E:/cargo-targets/zr_vm/tmp/ssa-20261004-01a0fe2b/msvc-setup/direct-llvm-toolchain.cmake
+-DCMAKE_MAKE_PROGRAM=E:/Visual Studio/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe
+-DCMAKE_BUILD_TYPE=
+-DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+```
+
+Supply explicit child-only INCLUDE/LIB and LLVM-only PATH using the selected
+installed paths recorded in the task's `selected-llvm-capacity.json`; replace
+all TEMP/TMP/TMPDIR values with a fresh direct-validation E temporary directory.
+No process-global environment import or Visual Studio script is needed. That
+setup JSON is tool metadata, not a source snapshot. The new direct toolchain and
+rules files shown above have not been created or executed by this preparation.
 
 Use Root's reviewed owned Job wrapper for configuration/build/CTest. Suggested
 finite limits are 180 seconds for configuration, 900 for build and 330 for CTest,
