@@ -1,8 +1,9 @@
-#include "unity.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* Parse Windows CRT attributes before Unity introduces C11's noreturn macro. */
+#include "unity.h"
 
 #include "harness/runtime_support.h"
 #include "zr_vm_common/zr_type_conf.h"
@@ -49,6 +50,7 @@ typedef enum EZrSourceExecBcStage {
 
 typedef struct SZrSourceExecBcReport {
     TZrBool parsedAndCompiled;
+    TZrBool preSemanticIrValidated;
     TZrBool sourceCfgValidated;
     TZrBool execIrBuilt;
     TZrBool hasConditionalBranch;
@@ -445,7 +447,9 @@ static SZrSourceExecBcReport run_source_branch(const TZrChar *source) {
         }
     }
     report.parsedAndCompiled = ZR_TRUE;
-    if (!ZrParser_Compiler_ValidatePreSemanticIr(&compiler) ||
+    report.preSemanticIrValidated =
+            ZrParser_Compiler_ValidatePreSemanticIr(&compiler);
+    if (report.preSemanticIrValidated == ZR_FALSE ||
         compiler.preSemanticIrCfgActive == ZR_FALSE) {
         goto cleanup;
     }
@@ -739,10 +743,9 @@ cleanup:
     return report;
 }
 
-static void assert_source_branch(
-        const TZrChar *source, TZrInt64 expectedReturn,
+static void assert_source_branch_report(
+        SZrSourceExecBcReport report, TZrInt64 expectedReturn,
         TZrUInt32 expectedArithmetic) {
-    SZrSourceExecBcReport report = run_source_branch(source);
     TEST_ASSERT_EQUAL_INT_MESSAGE(
             ZR_EXECUTION_DIAGNOSTIC_NONE, report.diagnosticCode,
             "an ExecIR, Oracle, projection, or materializer stage diagnosed input");
@@ -794,6 +797,13 @@ static void assert_source_branch(
                              "VM trace terminal block differs from Oracle");
 }
 
+static void assert_source_branch(
+        const TZrChar *source, TZrInt64 expectedReturn,
+        TZrUInt32 expectedArithmetic) {
+    assert_source_branch_report(
+            run_source_branch(source), expectedReturn, expectedArithmetic);
+}
+
 static void test_true_source_branch_runs_through_core_dispatcher(void) {
     assert_source_branch(
             "if (true) { return 9; }\nreturn 8;\n", 9, 0u);
@@ -838,21 +848,41 @@ static void test_false_source_branch_multiplication_reaches_core_dispatcher(void
 }
 
 #include "ssa_source_execbc_vm_loop_break.inc"
+#include "ssa_source_execbc_vm_compare.inc"
 
-int main(void) {
+int main(int argc, char **argv) {
+    TZrBool comparisonsOnly = ZR_FALSE;
+    TZrBool regressionsOnly = ZR_FALSE;
+    if (argc == 2 && strcmp(argv[1], "--comparisons-only") == 0) {
+        comparisonsOnly = ZR_TRUE;
+    } else if (argc == 2 && strcmp(argv[1], "--regressions-only") == 0) {
+        regressionsOnly = ZR_TRUE;
+    } else if (argc != 1) {
+        (void)fprintf(stderr,
+                "usage: %s [--comparisons-only|--regressions-only]\n", argv[0]);
+        return 2;
+    }
     UNITY_BEGIN();
-    RUN_TEST(test_true_source_branch_runs_through_core_dispatcher);
-    RUN_TEST(test_false_source_branch_runs_through_core_dispatcher);
-    RUN_TEST(test_source_branch_arithmetic_reaches_core_dispatcher);
-    RUN_TEST(test_source_branch_subtraction_reaches_core_dispatcher);
-    RUN_TEST(test_source_branch_division_does_not_publish_execir);
-    RUN_TEST(test_true_source_branch_multiplication_reaches_core_dispatcher);
-    RUN_TEST(test_false_source_branch_multiplication_reaches_core_dispatcher);
-    RUN_TEST(test_source_while_takes_conditional_break);
-    RUN_TEST(test_source_while_takes_fallthrough_break);
-    RUN_TEST(test_source_conditional_continue_remains_unsupported);
-    RUN_TEST(test_source_conditional_break_cleanup_remains_unsupported);
-    RUN_TEST(test_source_for_conditional_break_remains_unsupported);
-    RUN_TEST(test_source_foreach_conditional_break_remains_unsupported);
+    if (comparisonsOnly == ZR_FALSE) {
+        RUN_TEST(test_true_source_branch_runs_through_core_dispatcher);
+        RUN_TEST(test_false_source_branch_runs_through_core_dispatcher);
+        RUN_TEST(test_source_branch_arithmetic_reaches_core_dispatcher);
+        RUN_TEST(test_source_branch_subtraction_reaches_core_dispatcher);
+        RUN_TEST(test_source_branch_division_does_not_publish_execir);
+        RUN_TEST(test_true_source_branch_multiplication_reaches_core_dispatcher);
+        RUN_TEST(test_false_source_branch_multiplication_reaches_core_dispatcher);
+        RUN_TEST(test_source_while_takes_conditional_break);
+        RUN_TEST(test_source_while_takes_fallthrough_break);
+        RUN_TEST(test_source_conditional_continue_remains_unsupported);
+        RUN_TEST(test_source_conditional_break_cleanup_remains_unsupported);
+        RUN_TEST(test_source_for_conditional_break_remains_unsupported);
+        RUN_TEST(test_source_foreach_conditional_break_remains_unsupported);
+    }
+    if (regressionsOnly == ZR_FALSE) {
+        RUN_TEST(test_source_signed_less_true_reaches_core_dispatcher);
+        RUN_TEST(test_source_signed_less_false_reaches_core_dispatcher);
+        RUN_TEST(test_source_signed_greater_true_reaches_core_dispatcher);
+        RUN_TEST(test_source_signed_greater_false_reaches_core_dispatcher);
+    }
     return UNITY_END();
 }

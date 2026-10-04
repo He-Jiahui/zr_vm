@@ -8,7 +8,9 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_validate.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
   - tests/parser/test_ssa_source_execbc_vm.c
+  - tests/parser/ssa_source_execbc_vm_compare.inc
   - tests/cmake/ssa-source-execbc-vm.cmake
+  - tests/cmake/ssa-source-direct-validation/CMakeLists.txt
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_arithmetic.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
@@ -17,6 +19,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_validate.c
 plan_sources:
+  - .codex/plans/20261004-source-comparison-producer-lowering-design.md
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
   - docs/plans/ssa/01-execir-ssa/05-oracle-projections.md
 tests:
@@ -29,6 +32,41 @@ status: scoped-accepted-msvc
 ---
 
 # SSA source to ExecBC Core VM integration
+
+## Actual source comparison RED and sealed regression baseline
+
+The 2026-10-04 source comparison extension adds four literal LT/GT cases to
+the existing TU and preserves the thirteen prior source regressions. The
+runner accepts `--comparisons-only` (four), `--regressions-only` (thirteen),
+or no arguments (seventeen). Ordinary parsing/statement compilation and
+preSemanticIr validation must pass before the executable source CFG gate.
+Root's actual V46 run reached the third executable-CFG assertion in all four
+comparison cases after the two prerequisites passed, with message
+`source comparison producer did not establish an executable source CFG` and
+natural exit 4. This establishes the bounded producer RED. V46's original
+13-regression run exited `0xC00000FD`; its aggregate failed receipt remains false.
+C/LLVM source comparison coverage remains unestablished. Detailed contract and link closure:
+[Source comparison RED](../../docs/testing-and-validation/ssa-source-comparison-red.md).
+
+Root's V47 native unwind evidence identifies 1,169,720 + 48 bytes for the Core
+dispatcher's static frame, exceeding the PE default stack reserve of 1,048,576
+bytes. V48 reused all sealed V46 666 objects and nine static libraries, freshly
+relinked into
+`E:/cargo-targets/zr_vm/build/ssa-20261004-01a0fe2b/source-stack-baseline-v48`,
+and set PE reserve/commit to 8,388,608/4,096 bytes. The original 13 cases all PASS
+with natural exit 0, EMPTY process state, closed handle and no actions. This is
+the sealed historical production-chain baseline; no producer changes being
+edited were compiled or validated by that run. Later addition of three parser
+TUs produces a 669-TU pool, outside the sealed 666-TU evidence.
+
+V48's whole owned run took 81.454 seconds. Its TRUE receipt is
+`E:/cargo-targets/zr_vm/reports/ssa-20261004-01a0fe2b/source-stack-baseline-v48/Root-receipt.json`,
+599,239 bytes, SHA256
+`23c1ac9f1b703453509be030fa6ba1e1f21de41ae14292c466d4232aa1213c40`.
+The limited acceptance is actual four-case RED plus the original 13-case sealed
+baseline PASS. Current comparison GREEN, normal production artifact publication,
+same-source C/LLVM consumers and full 47-item SSA acceptance remain open. The
+historical MSVC/Linux evidence below retains its original scope.
 
 ## Coverage
 
