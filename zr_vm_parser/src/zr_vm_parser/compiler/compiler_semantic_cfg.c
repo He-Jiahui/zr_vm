@@ -1,5 +1,6 @@
 #include "compiler_internal.h"
 #include "compiler_semantic_cfg_loop.h"
+#include "compiler_semantic_compare.h"
 
 /* The source compiler owns block boundaries: ExecBC jump offsets never enter
  * this graph.  The first source control boundary promotes the current
@@ -430,7 +431,9 @@ TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
     conditionValue = ZrParser_SemanticIr_Value(&cs->preSemanticIr, condition);
     if (conditionValue == ZR_NULL ||
         conditionValue->definitionInstructionId ==
-                ZR_SEMANTIC_INSTRUCTION_ID_INVALID) {
+                ZR_SEMANTIC_INSTRUCTION_ID_INVALID ||
+        !compiler_semantic_compare_condition_valid(
+                cs, node->data.ifExpression.condition, conditionValue)) {
         if (cs->preSemanticIrCfgActive && !compiler_semantic_cfg_abandon(cs)) {
             return ZR_FALSE;
         }

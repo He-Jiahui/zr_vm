@@ -1,4 +1,5 @@
 #include "zr_vm_parser/semantic_ir.h"
+#include "semantic_ir_compare_internal.h"
 
 #include <string.h>
 
@@ -102,6 +103,7 @@ static TZrBool semantic_ir_opcode_requires_result(EZrSemanticIrOpcode opcode) {
         case ZR_SEMANTIC_IR_SUB:
         case ZR_SEMANTIC_IR_MUL:
         case ZR_SEMANTIC_IR_DIV:
+        case ZR_SEMANTIC_IR_COMPARE:
             return ZR_TRUE;
         default:
             return ZR_FALSE;
@@ -603,7 +605,11 @@ TZrSemanticInstructionId ZrParser_SemanticIr_Emit(
          ZrParser_SemanticIr_Value(function, spec->resultValueId) == ZR_NULL) ||
         (spec->auxiliaryValueId != ZR_VALUE_ID_INVALID &&
          ZrParser_SemanticIr_Value(function, spec->auxiliaryValueId) == ZR_NULL) ||
-        (spec->operandCount > 0U && spec->operands == ZR_NULL)) {
+        (spec->operandCount > 0U && spec->operands == ZR_NULL) ||
+        !semantic_ir_compare_values_valid(function, spec->opcode,
+                spec->comparisonPredicate, spec->comparisonOperandTypeId,
+                spec->typeId, spec->resultValueId, spec->operands,
+                spec->operandCount)) {
         return ZR_SEMANTIC_INSTRUCTION_ID_INVALID;
     }
 
@@ -639,6 +645,8 @@ TZrSemanticInstructionId ZrParser_SemanticIr_Emit(
     instruction.constantPoolIndex = spec->constantPoolIndex;
     instruction.hasConstantPoolIndex = spec->hasConstantPoolIndex;
     instruction.sourceRange = spec->sourceRange;
+    instruction.comparisonPredicate = spec->comparisonPredicate;
+    instruction.comparisonOperandTypeId = spec->comparisonOperandTypeId;
     for (index = 0; index < spec->operandCount; index++) {
         if (ZrParser_SemanticIr_Value(function, spec->operands[index]) == ZR_NULL) {
             return ZR_SEMANTIC_INSTRUCTION_ID_INVALID;
@@ -820,6 +828,7 @@ TZrBool ZrParser_SemanticIr_Validate(
         TZrSize operandIndex;
 
         if (instruction == ZR_NULL || sourceMapEntry == ZR_NULL ||
+            !semantic_ir_compare_instruction_valid(function, instruction) ||
             instruction->id != (TZrSemanticInstructionId)(index + 1U) ||
             instruction->opcode <= ZR_SEMANTIC_IR_INVALID ||
              instruction->opcode >= ZR_SEMANTIC_IR_ENUM_MAX ||

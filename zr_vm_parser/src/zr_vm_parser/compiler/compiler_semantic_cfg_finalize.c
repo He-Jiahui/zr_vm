@@ -1,4 +1,5 @@
 #include "compiler_internal.h"
+#include "compiler_semantic_compare.h"
 #include <stdlib.h>
 
 /* Starting a graph at the end of a source body must not turn missing
@@ -97,6 +98,7 @@ static TZrBool compiler_semantic_cfg_has_source_write(
 static TZrBool compiler_semantic_cfg_has_complete_value_types(
         const SZrCompilerState *cs) {
     TZrSize index;
+    if (!compiler_semantic_compare_validate(cs)) return ZR_FALSE;
     for (index = 0U; index < cs->preSemanticIr.instructions.length; ++index) {
         const SZrSemanticIrInstruction *instruction =
                 ZrParser_SemanticIr_InstructionAt(&cs->preSemanticIr, index);
@@ -216,6 +218,8 @@ static EZrSemanticIrOpcode compiler_semantic_cfg_binary_opcode(
     }
     op = node->data.binaryExpression.op.op;
     if (op == ZR_NULL) return ZR_SEMANTIC_IR_INVALID;
+    if (compiler_semantic_compare_source_supported(node))
+        return ZR_SEMANTIC_IR_COMPARE;
     if (strcmp(op, "+") == 0) return ZR_SEMANTIC_IR_ADD;
     if (strcmp(op, "-") == 0) return ZR_SEMANTIC_IR_SUB;
     if (strcmp(op, "*") == 0) return ZR_SEMANTIC_IR_MUL;
@@ -237,7 +241,12 @@ static TZrBool compiler_semantic_cfg_has_source_binary(
         if (instruction != ZR_NULL && instruction->opcode == opcode &&
             compiler_semantic_cfg_same_source(instruction, node)) {
             return (TZrBool)(instruction->operandCount == 2U &&
-                             instruction->resultValueId != ZR_VALUE_ID_INVALID);
+                             instruction->resultValueId != ZR_VALUE_ID_INVALID &&
+                             (opcode != ZR_SEMANTIC_IR_COMPARE ||
+                              instruction->comparisonPredicate ==
+                                      (strcmp(node->data.binaryExpression.op.op, "<") == 0
+                                       ? ZR_EXEC_IR_COMPARE_KIND_LESS
+                                       : ZR_EXEC_IR_COMPARE_KIND_GREATER)));
         }
     }
     return ZR_FALSE;

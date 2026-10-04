@@ -1,5 +1,6 @@
 #include "compiler_internal.h"
 #include "compiler_semantic_ir_scalar_scratch_internal.h"
+#include "compiler_semantic_compare.h"
 
 SZrCompilerSemanticIrSlot *compiler_semantic_ir_find_slot(
         SZrCompilerState *cs,
@@ -1487,7 +1488,8 @@ TZrBool ZrParser_Compiler_ValidatePreSemanticIr(SZrCompilerState *cs) {
     if (!compiler_semantic_cfg_finalize(cs) ||
         !ZrParser_SemanticIr_ResolveValueFacts(
                 &cs->preSemanticIr, cs->semanticContext) ||
-        !ZrParser_SemanticIr_Validate(&cs->preSemanticIr)) {
+        !ZrParser_SemanticIr_Validate(&cs->preSemanticIr) ||
+        !compiler_semantic_compare_validate(cs)) {
         return ZR_FALSE;
     }
 

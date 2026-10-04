@@ -4,6 +4,7 @@
 
 #include "compile_expression_internal.h"
 #include "compile_expression_contiguous_view.h"
+#include "compiler_semantic_compare.h"
 #include "type_inference_semantic_facts.h"
 #include "zr_vm_parser/const_assignment.h"
 
@@ -701,7 +702,12 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
     
-    if (!compiler_semantic_ir_lower_binary(
+    EZrCompilerSemanticCompareResult comparisonResult =
+            compiler_semantic_compare_lower(cs, node, opcode,
+                    leftSlot, rightSlot, destSlot,
+                    hasTypeInfo ? &resultType : ZR_NULL);
+    if (comparisonResult == ZR_COMPILER_SEMANTIC_COMPARE_NOT_APPLICABLE &&
+        !compiler_semantic_ir_lower_binary(
                 cs, opcode, leftSlot, rightSlot, destSlot,
                 hasTypeInfo ? &resultType : ZR_NULL, node->location)) {
         TZrInstruction inst = create_instruction_2(

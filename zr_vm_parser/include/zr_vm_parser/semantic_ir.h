@@ -78,6 +78,7 @@ typedef enum EZrSemanticIrOpcode {
     ZR_SEMANTIC_IR_SUB,
     ZR_SEMANTIC_IR_MUL,
     ZR_SEMANTIC_IR_DIV,
+    ZR_SEMANTIC_IR_COMPARE,
     ZR_SEMANTIC_IR_ENUM_MAX
 } EZrSemanticIrOpcode;
 
@@ -257,6 +258,9 @@ typedef struct SZrSemanticIrInstruction {
     TZrUInt32 constantPoolIndex;
     TZrBool hasConstantPoolIndex;
     SZrFileRange sourceRange;
+    /* COMPARE only: explicit selector and canonical operand identity. */
+    TZrUInt32 comparisonPredicate;
+    TZrTypeId comparisonOperandTypeId;
 } SZrSemanticIrInstruction;
 
 typedef struct SZrSemanticIrInstructionSpec {
@@ -282,6 +286,8 @@ typedef struct SZrSemanticIrInstructionSpec {
     TZrUInt32 constantPoolIndex;
     TZrBool hasConstantPoolIndex;
     SZrFileRange sourceRange;
+    TZrUInt32 comparisonPredicate;
+    TZrTypeId comparisonOperandTypeId;
 } SZrSemanticIrInstructionSpec;
 
 typedef struct SZrSemanticIrFunction {

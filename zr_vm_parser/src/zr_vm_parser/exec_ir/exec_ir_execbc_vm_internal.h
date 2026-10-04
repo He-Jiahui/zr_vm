@@ -16,11 +16,6 @@ typedef struct SZrExecBcVmConstant {
     TZrUInt64 bits;
 } SZrExecBcVmConstant;
 
-enum {
-    ZR_EXEC_IR_COMPARE_KIND_LESS = 1u,
-    ZR_EXEC_IR_COMPARE_KIND_GREATER = 3u
-};
-
 void execbc_vm_set_diagnostic(
         SZrExecIrDiagnostic *diagnostic,
         EZrExecutionDiagnosticCode code,

@@ -5,6 +5,7 @@
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/semantic.h"
 #include "exec_ir_execbc_vm_internal.h"
+#include "exec_ir_execbc_compare_types.h"
 
 static TZrBool execbc_vm_resolve_canonical_type(
         const SZrSemanticContext *context,
@@ -99,6 +100,8 @@ TZrBool ZrParser_ExecBcProjection_MaterializeVmFunctionWithCanonicalTypes(
     resolved.instructions = instructions;
     resolved.slotValues = values;
     resolved.constants = constants;
+    if (!execbc_vm_prepare_canonical_compare_types(
+                projection, context, instructions, diagnostic)) goto cleanup;
 
     /* Only the three type-bearing arrays are owned here; all CFG, source,
      * effect, GC and phi metadata remains borrowed and fully validated. */

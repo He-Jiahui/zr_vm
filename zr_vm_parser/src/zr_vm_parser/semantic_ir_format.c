@@ -61,6 +61,7 @@ const TZrChar *ZrParser_SemanticIr_OpcodeName(EZrSemanticIrOpcode opcode) {
         "sub",
         "mul",
         "div",
+        "compare",
     };
 
     if (opcode < ZR_SEMANTIC_IR_INVALID || opcode >= ZR_SEMANTIC_IR_ENUM_MAX) {
@@ -104,6 +105,15 @@ TZrBool ZrParser_SemanticIr_FormatGolden(
                     (unsigned int)instruction->matchTypeId,
                     (unsigned int)instruction->placeId,
                     (unsigned int)instruction->valueId,
+                    (unsigned int)instruction->resultValueId);
+        } else if (instruction->opcode == ZR_SEMANTIC_IR_COMPARE) {
+            written = snprintf(buffer + offset, bufferSize - offset,
+                    "%u %s type=%u operand_type=%u predicate=%u result=%u\n",
+                    (unsigned int)instruction->id,
+                    ZrParser_SemanticIr_OpcodeName(instruction->opcode),
+                    (unsigned int)instruction->typeId,
+                    (unsigned int)instruction->comparisonOperandTypeId,
+                    (unsigned int)instruction->comparisonPredicate,
                     (unsigned int)instruction->resultValueId);
         } else if (instruction->opcode == ZR_SEMANTIC_IR_VALUE_CONSTRUCT) {
             written = snprintf(
