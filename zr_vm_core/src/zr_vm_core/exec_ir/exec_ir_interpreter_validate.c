@@ -231,6 +231,13 @@ TZrBool zr_oracle_validate(const SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
                            ins->sourceId, ZR_EXEC_IR_OPCODE_COUNT - 1u, ins->opcode);
             return ZR_FALSE;
         }
+        if (ins->opcode == ZR_EXEC_IR_OPCODE_COMPARE &&
+            ins->typeToken > ZR_EXEC_IR_COMPARE_KIND_NOT_EQUAL) {
+            zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, f, 0u,
+                           i + 1u, ins->sourceId,
+                           ZR_EXEC_IR_COMPARE_KIND_NOT_EQUAL, ins->typeToken);
+            return ZR_FALSE;
+        }
         if ((ins->flags & ~ZR_EXEC_IR_INSTRUCTION_FLAG_KNOWN_MASK) != 0u ||
             !zr_oracle_range(ins->operands, f->operandCount) ||
             !zr_oracle_range(ins->results, f->resultCount) ||

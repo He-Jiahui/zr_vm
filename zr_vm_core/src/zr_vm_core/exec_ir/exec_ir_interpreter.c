@@ -465,22 +465,24 @@ TZrBool zr_oracle_exec(const SZrExecIrOracleInput *input,
                 TZrFloat64 b = zr_oracle_float(&ops[1]);
                 /* Ordered predicates must preserve NaN's unordered result. */
                 switch (ins->typeToken) {
-                    case 1u: v.as.boolean = (TZrBool)(a < b); break;
-                    case 2u: v.as.boolean = (TZrBool)(a <= b); break;
-                    case 3u: v.as.boolean = (TZrBool)(a > b); break;
-                    case 4u: v.as.boolean = (TZrBool)(a >= b); break;
-                    case 5u: v.as.boolean = (TZrBool)(a != b); break;
-                    default: v.as.boolean = (TZrBool)(a == b); break;
+                    case ZR_EXEC_IR_COMPARE_KIND_EQUAL: v.as.boolean = (TZrBool)(a == b); break;
+                    case ZR_EXEC_IR_COMPARE_KIND_LESS: v.as.boolean = (TZrBool)(a < b); break;
+                    case ZR_EXEC_IR_COMPARE_KIND_LESS_EQUAL: v.as.boolean = (TZrBool)(a <= b); break;
+                    case ZR_EXEC_IR_COMPARE_KIND_GREATER: v.as.boolean = (TZrBool)(a > b); break;
+                    case ZR_EXEC_IR_COMPARE_KIND_GREATER_EQUAL: v.as.boolean = (TZrBool)(a >= b); break;
+                    case ZR_EXEC_IR_COMPARE_KIND_NOT_EQUAL: v.as.boolean = (TZrBool)(a != b); break;
+                    default: goto invalid_compare;
                 }
             } else {
                 int comparison = zr_oracle_compare_values(&ops[0], &ops[1]);
                 switch (ins->typeToken) {
-                    case 1u: v.as.boolean = (TZrBool)(comparison < 0); break;
-                    case 2u: v.as.boolean = (TZrBool)(comparison <= 0); break;
-                    case 3u: v.as.boolean = (TZrBool)(comparison > 0); break;
-                    case 4u: v.as.boolean = (TZrBool)(comparison >= 0); break;
-                    case 5u: v.as.boolean = (TZrBool)(comparison != 0); break;
-                    default: v.as.boolean = (TZrBool)(comparison == 0); break;
+                    case ZR_EXEC_IR_COMPARE_KIND_EQUAL: v.as.boolean = (TZrBool)(comparison == 0); break;
+                    case ZR_EXEC_IR_COMPARE_KIND_LESS: v.as.boolean = (TZrBool)(comparison < 0); break;
+                    case ZR_EXEC_IR_COMPARE_KIND_LESS_EQUAL: v.as.boolean = (TZrBool)(comparison <= 0); break;
+                    case ZR_EXEC_IR_COMPARE_KIND_GREATER: v.as.boolean = (TZrBool)(comparison > 0); break;
+                    case ZR_EXEC_IR_COMPARE_KIND_GREATER_EQUAL: v.as.boolean = (TZrBool)(comparison >= 0); break;
+                    case ZR_EXEC_IR_COMPARE_KIND_NOT_EQUAL: v.as.boolean = (TZrBool)(comparison != 0); break;
+                    default: goto invalid_compare;
                 }
             }
             if (!zr_oracle_assign(f, ins, r, &v, block, id, d)) goto fail;
@@ -748,6 +750,11 @@ TZrBool zr_oracle_exec(const SZrExecIrOracleInput *input,
     }
     if (ops != local) free(ops);
     return ZR_TRUE;
+invalid_compare:
+    zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, f, 0u, id,
+                   ins->sourceId, ZR_EXEC_IR_COMPARE_KIND_NOT_EQUAL,
+                   ins->typeToken);
+    goto fail;
 arithmetic:
     zr_oracle_diag(d, ZR_EXEC_IR_DIAGNOSTIC_ARITHMETIC_ERROR, f, block, id, ins->sourceId, 1u, 0u);
     goto fail;

@@ -21,6 +21,17 @@ typedef TZrUInt32 TZrExecIrTypeToken;
 typedef TZrUInt32 TZrExecIrSourceId;
 typedef TZrUInt32 TZrExecIrDeoptId;
 
+/* COMPARE typeToken is an operation selector, never a canonical TypeId.
+ * Preserve the existing Oracle selector domain and the LT/GT VM encoding. */
+typedef enum EZrExecIrCompareKind {
+    ZR_EXEC_IR_COMPARE_KIND_EQUAL = 0u,
+    ZR_EXEC_IR_COMPARE_KIND_LESS = 1u,
+    ZR_EXEC_IR_COMPARE_KIND_LESS_EQUAL = 2u,
+    ZR_EXEC_IR_COMPARE_KIND_GREATER = 3u,
+    ZR_EXEC_IR_COMPARE_KIND_GREATER_EQUAL = 4u,
+    ZR_EXEC_IR_COMPARE_KIND_NOT_EQUAL = 5u
+} EZrExecIrCompareKind;
+
 /* bindingRow is a row reference in typed mode: zero means no row and 1..N
  * maps to function.bindingRows[0..N-1].  Schema zero retains the original
  * compact/legacy interpretation and owns no row table. */
