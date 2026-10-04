@@ -22,6 +22,7 @@ tests:
   - tests/ffi/test_ffi_module.c
   - tests/ffi/test_native_extern_contract.c
   - tests/ffi/test_ffi_native_call_pin_contract.c
+  - tests/parser/test_buffer_pool_ffi.c
   - tests/ffi/ffi_fixture.c
 doc_type: api-reference
 ---
@@ -118,6 +119,9 @@ try {
 | 运行时用户选择库/符号 | `getSymbol(name, signature)` | signature object 合法、符号存在、library open。 |
 | C 回调 ZR closure | `ffi.callback(signature, fn)` | callback signature、lifetime/thread policy、VM state/root。 |
 
+retained contract 的库定位符与 `loadLibrary` 保存的原始路径文本通过 `strcmp` 精确比较，
+不做路径规范化，也不把加载器解析后的路径或等价相对路径自动视为同一定位符。
+
 `ZrVmLibFfi_ValidateNativeImportContract` 是 runtime module 暴露的 C 验证辅助函数，可在
 尝试 `getContractSymbol` 前把 contract 错误写入 caller buffer。它不能替代 parser 的
 source-aware `ZrParser_FfiContract_Build`，后者才能给出 parameter index 和 ZR source range。
@@ -176,16 +180,18 @@ try {
 
 `PointerHandle`/`Ptr<T>` 是 ABI-aware wrapper，不是语言中的任意整数地址。它携带类型/owner
 事实，并提供 `as`、`read`、index/meta access 与 `span` 等受控入口；调用方须保证 handle
-有效、pointer 可访问、目标 type 支持 lowering、边界/对齐足够。**BUG:** 当前已关闭的
+有效、pointer 可访问、目标 type 支持 lowering、边界/对齐足够。**TODO:** 当前已关闭的
 PointerHandle 仍可经 `as(type)` 创建空地址别名；若它保存 BufferHandle owner，还可能
-重新增加 pin 计数。
+重新增加 pin 计数。需核对 `as` 的关闭后调用契约，确认空别名是否允许以及是否应持有 pin。
 
 `BufferHandle` 是 managed native byte buffer。`pin()` 产生 pointer view，避免 GC/移动/生命周期
 不明时把对象内部地址传给 C。Pin 不授权无限期保存地址：native call 完成或 view close 后，
-地址的有效性由 pointer/buffer contract 决定。`buffer.close()` 会阻止新 pin，已有 pin
-让底层字节保持到最后一个 pointer view 释放；`slice()` 则复制成独立 owned buffer。
-**BUG:** 有存活 pin 时，已关闭 buffer 的 `read`、`write`、`slice` 仍可操作底层字节；
-`write` 也未严格验证 0..255 整数范围，`[256]` 会成功写入 `0`。`span()` 是明确的连续视图；若在 native callback
+地址的有效性由 pointer/buffer contract 决定。`buffer.close()` 立即拒绝 owner 的
+`read`、`write`、`slice` 和新 pin；此前建立的 pointer pin 仍可访问保留字节，
+最后一次 unpin 回收字节。`slice()` 复制成独立 owned buffer。
+**TODO:** `write` 对 `[256]` 会按字节截断写入 `0`；公开声明要求 0..255 整数，
+需核对非法输入是否必须在写入前拒绝。后续元素校验失败时已写前缀不会回滚，
+是否要求原子写入也需核对 API 契约。`span()` 是明确的连续视图；若在 native callback
 中保留 span/inline argument view，遇到 safepoint 或 stack relocation 后必须重新获取。
 
 | 错误做法 | 为什么错误 | 正确替代 |
