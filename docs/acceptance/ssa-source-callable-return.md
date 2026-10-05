@@ -1,7 +1,9 @@
 ---
 related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler.c
-  - zr_vm_parser/include/zr_vm_parser/core_function.h
+  - zr_vm_core/include/zr_vm_core/function.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_script_callable_return.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_script_callable_return.h
   - tests/parser/test_ssa_source_callable_return.c
   - tests/cmake/ssa-source-execbc-vm.cmake
   - tests/cmake/ssa-source-direct-validation/CMakeLists.txt
@@ -50,24 +52,35 @@ result.
 
 ## Green evidence
 
-The reviewed green receipt is
-`E:\\cargo-targets\\zr_vm\\reports\\ssa-20261004-01a0fe2b\\source-callable-return-green-v1\\receipt.json`.
+The final reviewed green receipt is
+`E:\cargo-targets\zr_vm\reports\ssa-20261004-01a0fe2b\source-callable-return-green-v2\receipt.json`.
+Its SHA-256 is
+`1be7f2df03b843404081b59091e3c56a180623151813bcb41a042e2217638ed9`.
 The direct build directory is
-`E:\\cargo-targets\\zr_vm\\build\\ssa-20261004-01a0fe2b\\metadata-guards-direct-v2`.
-Windows clang-cl 19 built Debug UBSan binaries with an 8 MiB stack. The
-focused fixture passed 8/8 cases. The companion CTest run passed all eight
+`E:\cargo-targets\zr_vm\build\ssa-20261004-01a0fe2b\metadata-guards-direct-v2`.
+Windows clang-cl 19 built Debug UBSan binaries with `/UNDEBUG` and an 8 MiB
+stack directly from the current checkout, without a source copy. The recorded
+producer compile command compiles the actual `compiler_script_callable_return.c`
+with `/UNDEBUG` and `-fsanitize=undefined`. V2 includes the final CFG
+edge-consistency guard. Configure, build, and CTest each exited zero, and the
+receipt verifies all 17 owned source/test/CMake input hashes were unchanged.
+The final CTest run passed all eight
 groups: 4 comparisons, 13 regressions, 6 loops, 7 scalar guards, 63 metadata
 guards with 346 preconditions, 35 straight-line cases, and 8 callable-return
 cases; the standalone scratch eligibility check also passed. Failures and
 ignored cases were zero, and no UBSan diagnostic was emitted. The final CTest
 log SHA-256 is
-`968cc6600f796ca2cb81a04fb6f54a3d56846b54dd9f51c22b2ca36b89bdb8bd`.
+`e8a4a8dcacc8e55ab68b605545da48d3aa56f9d2557c553839eabe56179a6be8`.
 The immutable red receipt remains preserved.
 
-The focused eight-case fixture was run alongside the current direct
+The earlier V1 receipt remains historical evidence: its final focused rerun
+ran the eight-case callable-return fixture separately from its companion log.
+V2 is the final all-groups acceptance evidence for this record.
+
+The focused eight-case fixture was also included in the companion direct
 source-SSA comparison, regression, loop, scalar-guard, metadata-guard, and
-straight-line groups, plus the standalone scratch-eligibility check. Report
-The acceptance is limited to this direct route and does not claim failure
+straight-line groups, plus the standalone scratch-eligibility check. This
+acceptance is limited to this direct route and does not claim failure
 rollback after module-summary finalization, OOM injection, or broader native
 coverage. Results come from the CTest log, not a build-only pass.
 The ordinary top-level CMake route, Linux route, native 32-bit route, ASan,

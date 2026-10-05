@@ -2,7 +2,9 @@
 related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
-  - zr_vm_parser/include/zr_vm_parser/core_function.h
+  - zr_vm_core/include/zr_vm_core/function.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_script_callable_return.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_script_callable_return.h
   - zr_vm_parser/include/zr_vm_parser/cfg.h
   - tests/parser/test_ssa_source_callable_return.c
   - tests/cmake/ssa-source-execbc-vm.cmake
@@ -91,12 +93,17 @@ The first accepted red run is recorded in the external receipt
 `5ed8fd4f3cc0027a1890b8bcd87d2d2864d2e78a438acfe9a993649141ef9299`.
 It demonstrated the intended gap: the four eligible positive cases compiled
 but failed because script entry callable return metadata was absent, while
-the four guard cases passed. The reviewed green run is recorded in
-`E:\\cargo-targets\\zr_vm\\reports\\ssa-20261004-01a0fe2b\\source-callable-return-green-v1\\receipt.json`.
-The focused fixture reports 8/8 passing cases; the companion run reports
-4, 13, 6, 7, 63, 35, and 8 passing cases plus the standalone scratch
-eligibility check, with zero failures and zero ignored cases. The CTest log
-SHA-256 is `968cc6600f796ca2cb81a04fb6f54a3d56846b54dd9f51c22b2ca36b89bdb8bd`.
+the four guard cases passed. The final reviewed green run is recorded in
+`E:\cargo-targets\zr_vm\reports\ssa-20261004-01a0fe2b\source-callable-return-green-v2\receipt.json`.
+Its SHA-256 is
+`1be7f2df03b843404081b59091e3c56a180623151813bcb41a042e2217638ed9`.
+V2 includes the final CFG edge-consistency guard and directly validates the
+current source without a source copy. Configure, build, and CTest each exited
+zero; all 17 pinned source/test/CMake inputs remained unchanged. The eight
+CTest groups report 136 counted cases (4, 13, 6, 7, 63, 35, and 8), plus the
+standalone scratch eligibility check, with zero failures, zero ignored cases,
+and no UBSan diagnostics. The CTest log SHA-256 is
+`e8a4a8dcacc8e55ab68b605545da48d3aa56f9d2557c553839eabe56179a6be8`.
 The module summary is finalized before this hook, so late allocation or
 binding failure remains subject to the compiler's existing summary rollback
 limitation; this gate does not claim OOM rollback coverage.
