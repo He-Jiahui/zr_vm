@@ -114,6 +114,16 @@ static TZrBool cfg_validate_edges(const SZrExecIrFunction *f, SZrExecIrDiagnosti
             }
             return ZR_FALSE;
         }
+        if ((block->flags & ZR_EXEC_IR_BLOCK_FLAG_ENTRY) != 0u &&
+            block->id != f->entryBlockId) {
+            if (d != ZR_NULL) {
+                d->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK;
+                d->blockId = block->id;
+                d->expectedVersion = f->entryBlockId;
+                d->actualVersion = block->id;
+            }
+            return ZR_FALSE;
+        }
         for (edgeIndex = block->successorRange.start;
              edgeIndex < block->successorRange.start + block->successorRange.count;
              ++edgeIndex) {

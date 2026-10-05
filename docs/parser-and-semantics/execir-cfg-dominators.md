@@ -44,6 +44,13 @@ expected/actual edge ID for invalid endpoints. Scratch allocation failures
 report `OUT_OF_MEMORY`; on a 32-bit size type, impossible stack or edge
 capacities report `CAPACITY_OVERFLOW`.
 
+Entry flags follow the core verifier's one-way identity rule: a block carrying
+`ZR_EXEC_IR_BLOCK_FLAG_ENTRY` must have `id == entryBlockId`. A flag on another
+block fails prevalidation with `INVALID_BLOCK`, `blockId` and `actualVersion`
+set to that block's ID, and `expectedVersion` set to `entryBlockId`. This does
+not add a requirement that the designated entry carry the flag. The rejection
+occurs before traversal and preserves every cached `immediateDominator`.
+
 All traversal and dominator work stays in temporary arrays. The function
 updates `immediateDominator` only after the complete analysis succeeds.
 Malformed edges, allocation failure, and a disconnected reachable block with
@@ -92,3 +99,12 @@ cleanup, or suspend paths, or full M1 four-backend parity. See
 `tests/acceptance/ssa-dominator-cfg.md` for the standalone analysis and the
 `ssa-construction-builder-phi.md` and `ssa-construction-builder-loop-phi.md`
 records for the builder integrations.
+
+The 2026-10-05 entry-flag regression mutates a second block's flag and checks
+both the structured diagnostic and preservation of two seeded idoms. The
+current focused fixture has seven test functions covering eight graph
+scenarios; the missing-parallel-predecessor test exercises two graphs. A Windows
+clang-cl 19 Debug UBSan run passed the focused CTest and then the three-target
+CFG/source-straight-line/scalar-loop regression set. The dated acceptance record
+contains the RED/GREEN logs and limits; these results do not close 01.02, M1,
+or the full 47-target gate.

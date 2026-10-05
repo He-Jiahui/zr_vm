@@ -101,3 +101,48 @@ WSL GCC 11.4 rebuilt the same eight focused sources with
 `/mnt/d/zr-ssa-verify-871bc234/ssa_dominator_gcc_asan`; it printed
 `ssa dominator CFG PASS` and exited 0 without a sanitizer report. The
 earlier Clang evidence predates this follow-up and has not been rerun.
+
+## Entry-flag consistency follow-up (2026-10-05)
+
+RED test commit `be7036f2d0db348efc94a9abf9663196e7ae9b56` adds a two-block
+regression that sets `ENTRY` on the second block while retaining the original
+`entryBlockId`. Before the fix, CTest failed with
+`FAIL: dominator computation accepted an entry flag on a non-entry block`.
+The test requires `INVALID_BLOCK`, `blockId = rogue`,
+`expectedVersion = entry`, and `actualVersion = rogue`, and checks that both
+preseeded `immediateDominator` values remain unchanged.
+
+The guard in `cfg_validate_edges` now rejects an `ENTRY` flag when its block ID
+differs from `entryBlockId`, before traversal. This matches the core verifier's
+one-way rule; it does not require the designated entry to carry the flag.
+Independent review found no blocker for this limited fix. The focused fixture
+now contains seven test functions and eight graph scenarios because the
+missing-parallel-predecessor test checks two graphs. This standalone executable
+does not report a Unity case count.
+
+Validation used the current Windows checkout with clang-cl 19, Debug and UBSan,
+in `E:/cargo-targets/zr_vm/build/ssa-20261004-01a0fe2b/metadata-guards-direct-v2`:
+
+- The focused target rebuilt successfully (exit 0); `ssa_dominator_cfg` passed
+  1/1, with total CTest time 0.13 seconds.
+- The subsequent build of the focused CFG and existing source regression
+  targets exited 0. CTest with
+  `-R '^ssa_(dominator_cfg|source_straight_line_cfg|source_execbc_vm_loops)$'
+  -V --no-tests=error --timeout 60` passed 3/3 in 0.61 seconds. The source
+  straight-line fixture reported 35 Unity cases and the scalar-loop fixture
+  reported six, each with zero failures and zero ignored cases; the standalone
+  CFG fixture printed `ssa dominator CFG PASS`.
+
+Evidence is preserved under
+`E:/cargo-targets/zr_vm/reports/ssa-20261005-01a0fe2b/`:
+
+- `ssa-dominator-entry-flag-red.log`
+- `ssa-dominator-entry-flag-green-build.log`
+- `ssa-dominator-entry-flag-green.log`
+- `ssa-dominator-entry-flag-regression-build.log`
+- `ssa-dominator-entry-flag-regressions.log`
+
+Accepted only as the entry-flag consistency and failure-atomicity fix with the
+listed source regressions. No fresh WSL, native 32-bit, ASan, full backend, or
+full 47-target validation is claimed. The historical evidence above retains
+its original scope; 01.02, M1, and the full 47-target gate remain **OPEN**.
