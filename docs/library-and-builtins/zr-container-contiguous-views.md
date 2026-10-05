@@ -201,3 +201,11 @@ generated inline field lowering, shared-library loading, and VM/AOT result
 equivalence. Unix GCC and Clang execute the real generated library; the Windows
 MSVC target retains its existing platform-ignore boundary for this Unix-specific
 shared-library smoke.
+
+
+## 原生模块静态契约补充
+
+[zr.container 原生模块与反射注册契约](zr-container-module-runtime.md) 说明完整
+容器模块的字段、构造参数范围、迭代/下标派发与失败路径；包括Pair整数比较及
+内建array适配双阶段OOM成功误报的合法静态链。这是2026-10-04注释审查，
+没有新的native/runtime信用，不能替代本页历史测试或编译器lowering证据。
