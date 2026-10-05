@@ -5,6 +5,7 @@
 #include "zr_vm_parser/compiler.h"
 #include "compiler_internal.h"
 #include "compiler_attribute_binding.h"
+#include "compiler_source_callable_identity.h"
 #include "compile_expression_internal.h"
 #include "compile_time_binding_metadata.h"
 #include "compile_time_executor_internal.h"
@@ -3510,6 +3511,9 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
             resultSlot = cs->lastExpressionSlot;
         }
         if (hasSemanticIrIsolation) {
+            if (!cs->hasError && !hasFinallyContext && !hasOwnershipCleanupContext) {
+                compiler_source_callable_identity_try_publish_return(cs, node, resultSlot);
+            }
             compiler_semantic_ir_isolation_end(cs, &semanticIrIsolation);
             hasSemanticIrIsolation = ZR_FALSE;
         }

@@ -346,6 +346,8 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->callBindingGeneration = 1u;
     function->callBindingInstructionMap = ZR_NULL;
     function->callBindingInstructionMapLength = 0u;
+    ZrCore_Memory_RawSet(&function->sourceCallableIdentity, 0, sizeof(function->sourceCallableIdentity));
+    function->hasSourceCallableIdentity = ZR_FALSE;
     function->cachedStatelessClosure = ZR_NULL;
     return function;
 }
@@ -1250,6 +1252,8 @@ static void function_reset_to_tombstone(SZrFunction *function) {
     function->callBindingGeneration = 0u;
     function->callBindingInstructionMap = ZR_NULL;
     function->callBindingInstructionMapLength = 0u;
+    ZrCore_Memory_RawSet(&function->sourceCallableIdentity, 0, sizeof(function->sourceCallableIdentity));
+    function->hasSourceCallableIdentity = ZR_FALSE;
     function->prototypeInstances = ZR_NULL;
     function->prototypeInstancesLength = 0;
     function->functionName = ZR_NULL;

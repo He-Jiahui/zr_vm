@@ -6,6 +6,7 @@
 #include "compiler_typed_call_binding.h"
 #include "compile_time_executor_internal.h"
 #include "compiler_attribute_binding.h"
+#include "compiler_source_callable_identity.h"
 
 void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -460,6 +461,7 @@ function_type_scope_cleanup:
         }
     }
     if (hasSemanticIrIsolation) {
+        compiler_source_callable_identity_finish(cs);
         compiler_semantic_ir_isolation_end(cs, &semanticIrIsolation);
     }
     if (callableTypeScope.child != ZR_NULL &&

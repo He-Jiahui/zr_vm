@@ -274,6 +274,24 @@ typedef struct SZrFunctionSourceRange {
     TZrUInt32 endColumn;
 } SZrFunctionSourceRange;
 
+/* Source-compiler proof only; not serialized by the artifact writer. The IDs
+ * below identify the original compilation context and are not reusable lookup
+ * handles after that context is released. The signature hash is a canonical
+ * structural hash, not a metadata-token ABI hash or a global definition ID. */
+#define ZR_FUNCTION_SOURCE_CALLABLE_IDENTITY_SCHEMA_V1 1u
+typedef struct SZrFunctionSourceCallableIdentity {
+    TZrUInt32 schemaVersion;
+    TZrUInt32 symbolId;
+    TZrUInt32 typeId;
+    TZrUInt64 canonicalSignatureHash;
+    TZrUInt32 returnPrimitive;
+    TZrUInt32 parameterCount;
+    TZrUInt32 receiverFlags;
+    TZrUInt32 effectFlags;
+    SZrFunctionSourceRange declarationRange;
+    TZrBool hasExplicitNoArgsI64;
+} SZrFunctionSourceCallableIdentity;
+
 /*
  * A compiler-owned scheduler call fact. This is intentionally not an artifact
  * row: the artifact writer must still join its canonical TypeId with an exact
@@ -752,6 +770,8 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt64 callBindingGeneration;
     TZrUInt32 *callBindingInstructionMap;
     TZrUInt32 callBindingInstructionMapLength;
+    SZrFunctionSourceCallableIdentity sourceCallableIdentity;
+    TZrBool hasSourceCallableIdentity;
 };
 
 typedef struct SZrFunction SZrFunction;
