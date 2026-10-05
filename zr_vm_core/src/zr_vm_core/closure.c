@@ -191,6 +191,8 @@ static ZR_FORCE_INLINE TZrBool closure_value_is_ownership_cleanup_value(
                       value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_LOANED));
 }
 
+/* using 代理关闭时区分需消费的 owner、只清视图的 BORROWED 和保持可读的普通值；
+ * 仅有 CLOSE 名称不足以触发调用，还必须有实际 callback。 */
 static TZrBool closure_value_needs_proxy_cleanup(SZrState *state,
                                                  SZrTypeValue *value) {
     const SZrMeta *meta;
@@ -642,6 +644,8 @@ static void closure_value_close_proxy(SZrState *state,
     closure_value_call_close_meta(state, proxyPointer, errorStatus, isYield, ZR_TRUE);
 }
 
+/* 登记链同时容纳普通值和私有代理；先验 token 身份及原登记槽，
+ * 再决定读原槽还是取 source，普通 NATIVE_DATA 不因类型相同而成为代理。 */
 static void closure_value_pre_call_close_meta(SZrState *state, TZrStackPointer stackPointer, EZrThreadStatus errorStatus,
                                             TZrBool isYield) {
     TZrMemoryOffset sourceOffset;
@@ -673,6 +677,8 @@ void ZrCore_Closure_ToBeClosedValueClosureNew(struct SZrState *state, TZrStackVa
     state->toBeClosedValueList.valuePointer = stackPointer;
 }
 
+/* compiler 先初始化高位空槽，解释器与 AOT helper 再调用本入口。
+ * token 保存栈偏移以跨分配恢复槽地址，成功安装后才把代理加入关闭链。 */
 TZrBool ZrCore_Closure_MarkCloseProxy(struct SZrState *state,
                                      TZrStackValuePointer proxySlot,
                                      TZrStackValuePointer sourceSlot) {

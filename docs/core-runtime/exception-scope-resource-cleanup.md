@@ -1,5 +1,12 @@
 ---
 related_code:
+  - zr_vm_core/src/zr_vm_core/exception_try_run.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
+  - zr_vm_core/src/zr_vm_core/ownership.c
+  - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_cleanup_registration.c
+  - zr_vm_common/include/zr_vm_common/zr_aot_abi.h
+  - tests/core/test_close_proxy_instruction.c
   - tests/core/test_close_proxy.c
   - tests/core/test_close_proxy_instruction.c
   - tests/core/test_close_meta_exception.c
@@ -21,6 +28,12 @@ related_code:
   - zr_vm_library/include/zr_vm_library/aot_runtime.h
   - zr_vm_library/src/zr_vm_library/aot_runtime.c
 implementation_files:
+  - zr_vm_core/src/zr_vm_core/exception_try_run.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
+  - zr_vm_core/src/zr_vm_core/ownership.c
+  - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_cleanup_registration.c
+  - zr_vm_common/include/zr_vm_common/zr_aot_abi.h
   - zr_vm_core/include/zr_vm_core/closure.h
   - zr_vm_core/include/zr_vm_core/state.h
   - zr_vm_core/src/zr_vm_core/closure.c
@@ -125,11 +138,12 @@ It trims callback handlers to the entry depth and rejects a handler underflow.
 The logical top is reconstructed from the scratch-slot byte
 offset; `outer->functionTop` remains a frame high-water boundary and cannot be
 used as the logical top because repeated cleanup would advance it every time.
-Stack offsets survive stack growth. A nested AOT root frame may be left on the
-state chain when a native callback longjumps past its own Pop. Immediately after
-`TryRun`, the guard cuts that chain back to its still-live root frame without
-following pointers into returned C stack frames, then pops its own root. A
-normal-return callback that leaves extra roots is rejected as an error.
+Stack offsets survive stack growth. The current local `TryRun` recovery restores
+the AOT root stack and depth captured at entry when the callback throws. The close
+guard then checks the chain against its still-live root frame and repairs an
+imbalance before handler cleanup, without walking abandoned C-local roots. A
+normal-return callback that leaves extra roots is rejected as an error; the guard
+pops its own saved-Error root after verification.
 
 A direct native `@close` throw can also bypass the callback's ordinary
 `PostCall`. The guard discards exactly one directly linked native child frame
@@ -156,19 +170,27 @@ control dead before resource Drop, which makes an upgrade attempted during Drop 
 ## Distinct physical frame values
 
 A frame-layout VALUE slot can have a dense registered cleanup cell and a distinct
-byte-frame physical `SZrTypeValue`. Close processing resolves the physical cell
-through the active `SZrCallInfo` chain. When both cells retain the same ownership
-control, or the dense cell aliases a direct resource owner, cleanup clears the
-dense registration before releasing the physical value. This ordering is
-required because a resource destructor may re-enter the VM and grow or relocate
-the stack. Re-entrant code must observe the registration as null and must not
-retain a pointer that became stale during the destructor call.
+physical `SZrTypeValue`. `closure_registered_mirror_frame_value` resolves this
+pair through the active call-info chain. Proxy lookup accepts active VM frames;
+the ordinary registration path may also use native frames with metadata.
 
-The physical value is the release source when it is distinct and still owns the
-resource. The dense mirror is then reloaded from its stack offset and reset, so
-ordinary objects, resources, loans, Shared/Weak controls, overwritten physical
-slots, and pre-close stack relocation all converge on one release without a
-stale alias or duplicate Drop.
+The release branches have different obligations. If both owner cells retain the
+same non-null ownership control, `closure_value_call_close_meta` releases the
+physical reference and then the registered reference: each cell owns a retained
+reference. If both cells are direct UNIQUE/LOANED aliases without a control,
+the registered cell is reset before the physical owner is released, preventing
+duplicate direct Drop. The ordinary close path therefore cannot be summarized
+as always clearing the dense cell first. The proxy path separately stages the
+chosen receiver in its registered high slot and clears source representations
+before requesting the callback. These branches express their actual slot and
+reference obligations; they do not establish a general reentry or relocation
+guarantee for every destructor path.
+
+Ownership cleanup reaches `ZrCore_Ownership_ReleaseValue`. Resource classes use
+their Drop/destructor contract; ordinary closable objects use the CLOSE meta
+callback. A borrowed view is cleared without releasing its owner or invoking
+CLOSE. A plain proxy source without ownership cleanup or a callable CLOSE stays
+readable. These distinctions must be preserved when adding registration callers.
 
 ## Close proxies for an existing local
 
@@ -219,6 +241,33 @@ VALUE slot, then passes the dense source to the core API so cleanup clears its
 physical mirror as well. Invalid or out-of-order slots fail before registration.
 The generated helper symbol is required when linking a module that contains
 this opcode against the runtime; an older runtime cannot execute such a module.
+
+## 捕获单元与关闭接口的调用限制
+
+VM 闭包的捕获数组保存共享 `SZrClosureValue`。`FindOrCreateValue` 使捕获同一
+活栈槽的闭包共享开放单元；开放链按地址降序排列。`CloseStackValue` 将阈值以上
+且仍在逻辑栈顶以内的捕获复制到单元自身存储，摘链并补传已锚定逃逸及 GC 屏障，
+它不调用 CLOSE。`CloseClosure` 先冻结捕获，再从关闭链逆序摘下登记并执行清理。
+`CloseRegisteredValues` 只按数量消费登记；AOT cleanup helper 在每项消费前
+另行调用 `CloseStackValue`。新增调用者必须明确哪一层负责冻结捕获和保持有效栈顶。
+
+原生闭包同时保存捕获地址和 owner 尾数组，均由同一次 GC 对象分配管理。
+`GetCaptureValue` 在 owner 的 tag 为 CLOSURE_VALUE 时通过单元重取当前值；
+其他 owner 类型或无 owner 时返回直接捕获地址。消费者须保持相应对象或栈槽可达，
+不能跨关闭或栈搬迁缓存旧地址。GC 的 native closure 扫描会扫描非空 owner；
+`PropagateEscapeFromObject` 的分支则检查 owner 的类型：CLOSURE_VALUE owner
+传播到共享单元；NULL 或其他类型 owner 且捕获值有效时，直接标记该捕获值逸出。
+扫描可达性与逸出传播的条件不同，不能互相替代。
+
+私有 proxy token 只保存当前 state 的 source/self 栈偏移及进程内身份，不持有
+source 资源。GC 按 NATIVE_DATA 的 value 数组扫描 token，关闭时还必须重新检查
+身份、原登记槽、自身偏移和 source 范围。`MarkCloseProxy` 的 false 表示校验或
+安装未完成；分配层在完整 GC 后仍失败时可以抛出 MEMORY_ERROR，调用者不能把
+它当作只返回 bool 的无抛出接口。非法、空、越界及非原槽 token 不获得关闭信用。
+
+`InitValue` 的现存 TODO 针对 AOT 投影尚未发布到 projectedSelfValue 时的 GC 根：
+应从 library 投影调用与 GC-capable 分配处核查，并用分配失败注入验证；本次注释
+整合没有复现此风险，也没有授予 runtime 或 GC 保证。
 
 ## Generated-call exception transfer
 
@@ -311,8 +360,11 @@ COMMAND entries: `tests/cmake/close-proxy-tests.cmake:8` for `close_proxy_core`,
 `tests/cmake/close-proxy-tests.cmake:20` for `close_meta_exception`, and
 `tests/cmake/close-proxy-tests.cmake:29` for `close_proxy_instruction`.
 The mains register 19, four and two cases, respectively, through `RUN_TEST`;
-Unity supplies their setup/teardown lifecycle. This documentation and comment
-integration adds no runtime, GC, CTest or native-build execution evidence.
+Unity supplies their setup/teardown lifecycle. The existing Windows compile-only before/after check completed six compile steps
+successfully for these three core translation units. It supplies no link,
+runtime, GC, CTest or generated-AOT execution proof. The overall eight-run result
+remains false because both original and comment AOT-GC fixture compiles report
+macro errors; these core compile pairs do not establish behavior correctness.
 
 `zr_vm_buffer_pool_ffi_test` throws from inside `using(lease)`, catches outside,
 then rents the same size again. The expected generation and return/reuse counters

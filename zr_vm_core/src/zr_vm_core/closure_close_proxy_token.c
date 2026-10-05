@@ -5,9 +5,11 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/value.h"
 
-/* Runtime-only identity. Bytecode and artifacts contain stack slots, never this address. */
+/* 只比较此静态对象的地址，不读取其数值；防止普通 NATIVE_DATA 被当作关闭代理。
+ * 字节码与 artifact 仅保存栈槽编号，不序列化此进程内身份。 */
 static TZrUInt8 gCloseProxyIdentity;
 
+/* 一次分配容纳身份、source 偏移和登记偏移；分配前保存偏移，发布前重取代理槽。 */
 TZrBool ZrCore_ClosureProxyToken_Install(struct SZrState *state,
                                         TZrStackValuePointer proxySlot,
                                         TZrStackValuePointer sourceSlot) {
@@ -32,6 +34,7 @@ TZrBool ZrCore_ClosureProxyToken_Install(struct SZrState *state,
     return ZR_TRUE;
 }
 
+/* token 自带登记槽偏移，关闭消费方只接受仍处于原槽且 source 仍在活栈的实例。 */
 TZrBool ZrCore_ClosureProxyToken_GetSourceOffset(struct SZrState *state,
                                                 TZrStackValuePointer proxySlot,
                                                 TZrMemoryOffset *outSourceOffset) {

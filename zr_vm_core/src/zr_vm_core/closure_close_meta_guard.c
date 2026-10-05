@@ -12,18 +12,23 @@
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/value.h"
 
+/* TryRun 同步消费的调用描述；使用栈偏移，不持有可在扩容后失效的 callable 地址。 */
 typedef struct SZrCloseMetaGuardCall {
-    TZrMemoryOffset callableOffset;
-    TZrBool isYield;
+    TZrMemoryOffset callableOffset; /* callable 相对线程栈基址的字节偏移。 */
+    TZrBool isYield; /* 选择普通调用或禁止让出的调用入口。 */
 } SZrCloseMetaGuardCall;
 
+/* 暂存的原异常会退出 state.currentException；用 local-address 根槽保存其对象地址，
+ * 让 callback 期间的 GC 能更新地址，正常恢复时再写回 savedException。 */
 static const SZrAotGcRootSlot closure_close_meta_saved_exception_slot = {
     0u, 0u, 0u, 0u, ZR_AOT_GC_ROOT_LOCATION_LOCAL_ADDRESS, 0u, 0u
 };
+/* 上述异常对象指针的一槽根图；不把整个 SZrTypeValue 当 raw object 指针扫描。 */
 static const SZrAotGcRootMap closure_close_meta_saved_exception_map = {
     1u, &closure_close_meta_saved_exception_slot
 };
 
+/* 注册给 TryRun 的同步 body，恢复当前 callable 地址并以零结果派发 @close。 */
 static void closure_close_meta_call_body(SZrState *state, TZrPtr argument) {
     const SZrCloseMetaGuardCall *call = (const SZrCloseMetaGuardCall *)argument;
     TZrStackValuePointer callable =
@@ -68,6 +73,8 @@ static TZrBool closure_close_meta_can_discard_direct_native_frame(
                              state, frameBase, child->functionTop.valuePointer));
 }
 
+/* 额外原生边界承接 VM 展开与直接 native longjmp；暂藏原异常以允许嵌套调用，
+ * 回到边界后核对 callback 的帧/handler/root 状态，再决定恢复原异常或保留替代状态。 */
 void ZrCore_ClosureCloseMetaGuard_Invoke(SZrState *state,
                                          TZrMemoryOffset boundarySlotOffset,
                                          TZrBool isYield) {
@@ -143,9 +150,9 @@ void ZrCore_ClosureCloseMetaGuard_Invoke(SZrState *state,
     state->threadStatus = ZR_THREAD_STATUS_FINE;
     callbackStatus = ZrCore_Exception_TryRun(state, closure_close_meta_call_body, &call);
 
-    /* TryRun cannot pop root frames created by a callback that longjumped.
-     * Their C stack storage is already dead, so cut the chain directly back
-     * to this still-live guard frame before any handler cleanup can run GC. */
+    /* TryRun 的异常路径会恢复进入时的根链；这里仍独立核对 callback 的根深度与链头。
+     * 若 callback 留下不平衡的根，先接回仍存活的 guard，
+     * 再允许 handler 清理触发 GC，避免扫描失效的 C 局部根。 */
     rootFrameUnderflow = state->aotGcRootFrameDepth < savedRootFrameDepth + 1u;
     rootFrameUnbalanced = state->aotGcRootFrameStack != &rootFrame ||
                           state->aotGcRootFrameDepth != savedRootFrameDepth + 1u;

@@ -16,72 +16,78 @@ struct SZrState;
 struct SZrClosureValue;
 struct SZrCallInfo;
 
-/* 原生绑定的 receiver 来源；捕获模式由闭包自身的捕获 owner 保持生命周期。 */
+/** @brief 原生绑定的 receiver 来源；NONE 不传接收者，FRAME 从调用帧取，CAPTURED 从闭包捕获取。
+ * @note 捕获模式的 owner 与值由原生闭包的两个尾部数组关联。 */
 #define ZR_NATIVE_BINDING_RECEIVER_NONE 0u
 #define ZR_NATIVE_BINDING_RECEIVER_FRAME 1u
 #define ZR_NATIVE_BINDING_RECEIVER_CAPTURED 2u
 
-/* 开放时保存按栈槽降序排列的双向链；关闭后同一空间保存独立值。 */
+/** @brief 捕获单元的互斥存储：开放时挂在线程链上，关闭后保存离栈的值。
+ * @note 由 value 是否指向 closedValue 判别，摘链必须先于覆盖 link。 */
 union TZrClosureLink {
     struct {
-        struct SZrClosureValue *next;
-        struct SZrClosureValue **previous;
+        struct SZrClosureValue *next; /**< 下一较低栈槽的开放单元，关闭后不再读取。 */
+        struct SZrClosureValue **previous; /**< 指向前驱的 next 或线程链头，供摘链原地更新。 */
     };
     // if value is not on stack, value is closed
-    SZrTypeValue closedValue;
+    SZrTypeValue closedValue; /**< 摘链后接收捕获值；与开放链指针互斥。 */
 };
 
-/* 栈槽捕获由线程开放链表锚定；关闭后 value 指回本对象的 closedValue。 */
+/** @brief 共享同一栈槽的捕获单元；开放链按栈地址降序，便于退栈时从高处关闭。
+ * @note 关闭后 value 指回本对象的 closedValue，GC 按关闭状态扫描或重写内部值。 */
 struct ZR_STRUCT_ALIGN SZrClosureValue {
-    SZrRawObject super;
-    TZrStackPointer value;
-    union TZrClosureLink link;
-    TZrUInt32 captureScopeDepth;
-    TZrUInt32 captureEscapeFlags;
-    TZrUInt32 anchoredEscapeFlags;
-    TZrUInt32 anchoredPromotionReason;
+    SZrRawObject super; /**< GC 对象头，开放链与闭包捕获数组提供可达关系。 */
+    TZrStackPointer value; /**< 开放时指向活栈槽，关闭时指向本对象的 closedValue。 */
+    union TZrClosureLink link; /**< 开放链与关闭值的互斥存储，由 value 的自指状态选择。 */
+    TZrUInt32 captureScopeDepth; /**< 共享捕获合并后的最外层有效深度，NONE 表示尚无作用域信息。 */
+    TZrUInt32 captureEscapeFlags; /**< 来自函数捕获记录的逃逸标志，按位累积。 */
+    TZrUInt32 anchoredEscapeFlags; /**< 闭包实际逃逸后记录的标志，关闭时补传给离栈值。 */
+    TZrUInt32 anchoredPromotionReason; /**< 逃逸传播的提升原因；已有明确原因优先于 NONE 或 SURVIVAL。 */
 };
 
 typedef struct SZrClosureValue SZrClosureValue;
 
 
-/* 捕获指针数组后紧跟等长 owner 数组；owner 指向捕获单元时读取当前槽值。 */
+/** @brief 原生 callable 与 AOT shim 共用的闭包对象。
+ * @note 捕获指针数组后紧跟等长 owner 数组；owner 为捕获单元时，以单元当前值为准。
+ * 原生绑定描述符供 library 派发使用，GC 另行扫描 shim 与捕获 owner。 */
 struct ZR_STRUCT_ALIGN SZrClosureNative {
-    SZrRawObject super;
+    SZrRawObject super; /**< 原生闭包对象头，isNative 区分 VM 分支。 */
     // SZrRawObject *gcList;
-    FZrNativeFunction nativeFunction;
-    struct SZrFunction *aotShimFunction;
-    TZrSize nativeBindingLookupIndex;
-    TZrUInt64 callBindingGeneration;
-    TZrPtr nativeBindingDescriptor;
-    TZrPtr nativeBindingModuleDescriptor;
-    TZrPtr nativeBindingTypeDescriptor;
-    TZrPtr nativeBindingOwnerPrototype;
-    TZrUInt32 nativeBindingKind;
-    TZrUInt32 nativeBindingUsesReceiver;
-    SZrObjectKnownNativeDirectDispatch nativeBindingDirectDispatch;
-    TZrSize closureValueCount;
-    SZrTypeValue *closureValuesExtend[1];
+    FZrNativeFunction nativeFunction; /**< 原生派发入口；构造时为空，由注册者或 AOT 绑定安装。 */
+    struct SZrFunction *aotShimFunction; /**< AOT callable 的函数元数据，普通原生闭包可以为空。 */
+    TZrSize nativeBindingLookupIndex; /**< library 绑定表定位索引，未绑定时为 ZR_MAX_SIZE。 */
+    TZrUInt64 callBindingGeneration; /**< typed call 缓存验证使用的非零代次，绑定刷新时推进。 */
+    TZrPtr nativeBindingDescriptor; /**< 按 nativeBindingKind 解释的 library 函数或方法描述符。 */
+    TZrPtr nativeBindingModuleDescriptor; /**< 绑定所属模块描述符，供 library 重建解析条目。 */
+    TZrPtr nativeBindingTypeDescriptor; /**< 方法绑定所属类型描述符，供 library 重建解析条目。 */
+    TZrPtr nativeBindingOwnerPrototype; /**< 绑定所属原型的定位信息，供 library 派发重建条目。 */
+    TZrUInt32 nativeBindingKind; /**< 决定描述符种类及 receiver 处理方式的 library 绑定类别。 */
+    TZrUInt32 nativeBindingUsesReceiver; /**< 由 receiver 来源常量编码；不可将 CAPTURED 当成独立 owner。 */
+    SZrObjectKnownNativeDirectDispatch nativeBindingDirectDispatch; /**< known native 快速派发的绑定记录，构造时清零。 */
+    TZrSize closureValueCount; /**< 捕获指针与 owner 两个尾部数组共有的有效长度。 */
+    SZrTypeValue *closureValuesExtend[1]; /**< 捕获值地址尾数组；owner 为 upvalue 时应使用 GetCaptureValue 重取当前值。 */
 };
 
 typedef struct SZrClosureNative SZrClosureNative;
 
-/* VM 闭包借用函数元数据，捕获数组引用由 GC 管理的共享 upvalue 单元。 */
+/** @brief VM callable 将函数元数据与共享捕获单元关联。
+ * @note function 与捕获数组均形成 GC 扫描边；捕获单元可在父帧退出后继续保存值。 */
 struct ZR_STRUCT_ALIGN SZrClosure {
-    SZrRawObject super;
+    SZrRawObject super; /**< VM 闭包对象头，与原生分支共用 raw object 类型。 */
     // SZrRawObject *gcList;
     // todo: closure info
-    SZrFunction *function;
-    TZrSize closureValueCount;
-    SZrClosureValue *closureValuesExtend[1];
+    SZrFunction *function; /**< VM 执行和捕获元数据来源，由 GC 扫描保持引用。 */
+    TZrSize closureValueCount; /**< 尾部共享捕获单元指针的有效长度。 */
+    SZrClosureValue *closureValuesExtend[1]; /**< 按子函数捕获记录顺序保存共享单元，写入时需建立 GC 边。 */
 };
 
 typedef struct SZrClosure SZrClosure;
 
-/* 两种闭包共用原始对象头，分支由 isNative 判定。 */
+/** @brief 两种闭包共用原始对象头；调用派发按 isNative 选择有效分支。 */
 union TZrClosure {
-    SZrClosureNative nativeClosure;
-    SZrClosure zrClosure;
+    SZrClosureNative nativeClosure; /**< isNative 为真时供原生派发读取的分支。 */
+    SZrClosure zrClosure; /**< isNative 为假时供 VM 派发读取的分支。 */
 };
 
 typedef union TZrClosure TZrClosure;
@@ -113,10 +119,12 @@ ZR_CORE_API TZrBool ZrCore_Closure_HasOpenStackValueInRange(const struct SZrStat
 /** @brief 将具备所有权清理或 CLOSE 元方法的栈槽登记为待关闭值。 */
 ZR_CORE_API void ZrCore_Closure_ToBeClosedValueClosureNew(struct SZrState *state, TZrStackValuePointer stackPointer);
 
-/** @brief Register a higher cleanup proxy for an existing local without copying its resource.
- * @pre proxySlot is an empty rooted frame slot above both sourceSlot and the current close marker.
- * @note sourceSlot is the dense logical local; frame-layout physical mirrors are resolved at close time.
- * @return false when the slots are invalid or proxy allocation fails; the close chain is then unchanged. */
+/** @brief 为已存在的 local 登记更高的关闭代理，使内层 using 无需复制资源。
+ * @pre 两槽属于当前线程的活栈；proxySlot 为空且高于 sourceSlot 与当前关闭链头。
+ * @note sourceSlot 是 dense 逻辑槽；AOT 可登记独立物理代理，关闭时再定位 source 的镜像。
+ * 代理槽保留到摘链；资源清理前清空 source，借用值只清视图，无清理的普通值保持可读。
+ * @return 槽约束不满足或 token 构造返回空时为 false，关闭链不新增代理。
+ * @note 内存耗尽可由分配层抛出 MEMORY_ERROR，不能只按布尔返回处理。 */
 ZR_CORE_API TZrBool ZrCore_Closure_MarkCloseProxy(struct SZrState *state,
                                                  TZrStackValuePointer proxySlot,
                                                  TZrStackValuePointer sourceSlot);
@@ -132,8 +140,10 @@ ZR_CORE_API void ZrCore_Closure_CloseStackValue(struct SZrState *state, TZrStack
 ZR_CORE_API TZrStackValuePointer ZrCore_Closure_CloseClosure(struct SZrState *state, TZrStackValuePointer stackPointer,
                                                        EZrThreadStatus errorStatus, TZrBool isYield);
 
-/** @brief 从待关闭链表处理至多 count 个登记值。
- * @return 实际处理数；清理调用可能让出执行权或抛出状态。 */
+/** @brief 从待关闭链头处理至多 count 个登记值，供按清理登记数退出作用域。
+ * @note 此接口不自行关闭开放捕获；AOT 清理 helper 在每次调用前关闭相应捕获。
+ * 每项先摘链再执行清理，避免同一项在回调期间再次被链头选中。
+ * @return 实际处理数，可小于 count；清理调用可能让出执行权或抛出状态。 */
 ZR_CORE_API TZrSize ZrCore_Closure_CloseRegisteredValues(struct SZrState *state,
                                                    TZrSize count,
                                                    EZrThreadStatus errorStatus,
