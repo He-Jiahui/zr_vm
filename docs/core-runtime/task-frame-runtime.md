@@ -63,17 +63,21 @@ drop again.
 GC-rooted slots receive a `SZrGcRootHandle`. A load resolves that handle before
 copying the value, which preserves a compacted object identity without
 retaining a stale raw pointer. Completed task results and fault values are
-also rooted on the task header until released (owned results release their
-header handle when transferred by Await; plain results retain it until Free).
+also rooted on the task header until released. Await detaches the header
+handle for every non-NONE ownership kind, including a copied BORROWED value;
+NONE results retain it until Free.
 This retains the object without requiring a promoted frame. Root retention
 and refreshing a copied raw pointer after actual movement are distinct facts;
 the fixture limitations below do not establish the latter for header results.
 
 ## Completion, Fault, And Await
 
-Plain results may be observed by more than one await. An ownership-bearing
-result transfers from the task exactly once; later awaits return
-`RESULT_CONSUMED`. A layout may also provide one `finally` callback. It runs
+NONE results may be observed by more than one await. Materialization transfers
+and clears the source only for UNIQUE, LOANED, SHARED, and WEAK. BORROWED
+results are copied without clearing the source; their outputs remain borrowed.
+Await still detaches the header root and sets consumed for every non-NONE kind,
+including BORROWED, so later awaits return `RESULT_CONSUMED`.
+A layout may also provide one `finally` callback. It runs
 before the frame's initialized slots are released on complete, fault, or an
 early task free, and the task records that it has run so later cleanup cannot
 invoke it a second time. Faulting then returns a leased frame to the pool and
@@ -91,9 +95,11 @@ prior task's live-slot or cleanup state.
 ## Scope Boundary
 
 This M2 runtime foundation does not itself lower source `await`, define
-`Job`/`Scheduler`, schedule worker work, add artifact/AOT frame rows, project
-debug or LSP state, or migrate the legacy `TaskRunner` surface. Those are
-separate plan milestones. In particular, this module is not evidence that the
+`Job`/`Scheduler`, schedule worker work, add artifact/AOT frame rows, or
+migrate the legacy `TaskRunner` surface. Those are separate plan milestones.
+The existing `ProjectDebugTerminal` adapter only reads task status/provenance
+and delegates terminal-event projection; it does not drive poll or consume
+results. Broader scheduler debug and LSP integration remain separate work. In particular, this module is not evidence that the
 old dynamic `TaskRunner` model has become the canonical `Task<T>` runtime.
 
 ## Test Coverage
@@ -141,3 +147,30 @@ ownershipKind（并可能读控制指针）。前一次 poll 的 InitAsInt 不�
 
 本轮完整 fixture 注释与台账为静态审查，未构建、未运行、没有新的 runtime、
 CTest 或平台配置通过信用；历史接受记录与本轮静态问题分别保留。
+
+## 当前生产 ABI 的静态审查边界
+
+仓内公开驱动入口是 task-frame 与 debug 测试；生产 debug 投影器消费状态枚举。
+guest task/job 实现未见直接调用此 frame ABI；未来 lowering、调度器与仓外宿主的
+串行驱动、callback异常退出和 VM 销毁前释放约定尚待在真实接入点核查。
+此边界不把测试注册当作生产 scheduler/wake/cancel 集成证据。
+
+LoadSlot 的 outValue 必须先初始化：Value_Copy 覆盖准备会读取旧 ownership 元数据。
+它先 Resolve rooted slot 的当前地址，再复制输出；root 保活不为输出新增独立句柄。
+普通 GC result 输出及仍借用的 BORROWED 输出跨 GC/task Free 必须遵守各自值/根生命周期。
+StoreSlot 先清旧值，再复制并发布 initialized；根创建失败仍走正常 drop 回滚，旧值不会恢复。
+direct unique 的内部镜像 Copy 约束不能扩大为任意可独立释放的 spill owner。
+
+**TODO**：现有 drop 仅计数/比较地址，finally 只有限 LoadSlot；核查外部 callback 的
+GC、异常与同 slot/task 清理重入。finallyRan 只阻止重复派发 finally；cleanup_slot
+在 drop 返回后才撤 initialized，也未在 drop 前 Resolve 移动地址。
+poll 输出每次先 Reset，但非 COMPLETE 输出和异常路径的清理约定待真实 callback 接入核查。
+
+**TODO**：完成结果 root 失败释放 result，却尚未 finally/归还frame/发布 COMPLETED；
+Start/Resume 可返回 false 并保留 RUNNING。fault error root 失败已清 frame/finally，
+却尚未发布 FAULTED/provenance。核查调用方失败后 Free、状态投影及预期终态责任。
+Await 读取 header.result/error 没有 Resolve 根；现有请求 full GC 后的非空/域戳断言
+不证明实际移动后的 header 地址或完整内容更新，需在真实移动入口补充强内容证据。
+
+上述为完整生产 H/C 注释和台账的静态审查；BORROWED 分流依据当前 materialization/Copy
+实际分支，未增加运行探针。本批不授予新的构建、GC、CTest、MSVC或runtime信用。

@@ -1,3 +1,10 @@
+/** @file
+ * 供宿主直接驱动 poll 的公开 continuation ABI：Init、Start、按需 Resume，最后 Free。
+ * 仓内 API 驱动来自 task-frame 与 debug 测试，生产 debug 投影器另消费状态枚举；
+ * guest task/job runtime 未见调用本接口。
+ * TODO: 接入生产 lowering/调度器或仓外宿主时，核对串行驱动、异常退出和 VM 销毁前的释放约定；
+ * 当前测试入口不能证明这些外部调用契约已经落实。
+ */
 #ifndef ZR_VM_CORE_TASK_FRAME_RUNTIME_H
 #define ZR_VM_CORE_TASK_FRAME_RUNTIME_H
 
@@ -24,7 +31,7 @@ struct SZrDebugAsyncTerminalEvent;
 /** @brief 单个 task-frame task 的生命周期状态；Await 可复制值或转移拥有所有权的 result，Free 会清理剩余值。 */
 typedef enum EZrCoreTaskFrameStatus {
     ZR_CORE_TASK_FRAME_STATUS_IDLE = 0, /**< 已初始化或清理完成，可以调用 Start。 */
-    ZR_CORE_TASK_FRAME_STATUS_RUNNING,  /**< poll callback 正在执行。 */
+    ZR_CORE_TASK_FRAME_STATUS_RUNNING,  /**< 已开始一次推进；结果 root 失败时也可能保留此状态，见失败路径 TODO。 */
     ZR_CORE_TASK_FRAME_STATUS_SUSPENDED,/**< 已保留 frame，可以恢复执行。 */
     ZR_CORE_TASK_FRAME_STATUS_COMPLETED,/**< poll 已完成，可通过 Await 读取结果。 */
     ZR_CORE_TASK_FRAME_STATUS_FAULTED   /**< poll 或显式故障已终止任务。 */
@@ -49,6 +56,8 @@ typedef enum EZrCoreTaskFrameAwaitStatus {
  * @brief 已初始化 frame slot 的可选清理回调。
  * @note runtime 释放 slot 值及 root 前会调用此回调。value
  *       指针仅在回调执行期间有效。
+ * TODO: 现有测试 drop 仅计数/比较地址；核查外部 drop 的 GC、异常和同 slot 重入约束，
+ *       cleanup 尚未在调用前撤销 initialized，也未在此处重新 Resolve 移动后的 slot 地址。
  */
 typedef void (*FZrCoreTaskFrameDrop)(struct SZrState *state,
                                      SZrTypeValue *value,
@@ -60,6 +69,8 @@ struct SZrCoreTaskFrameTask;
  * @brief 每个 task 的清理回调；释放已保留 slot 前最多调用一次。
  * @note 回调执行期间 task 及已初始化的 slot 仍可访问；
  *       回调返回后不得继续持有这些指针。
+ * @note finallyRan 在派发前置位，避免再次进入 finally；这不保证同一 task 的其他清理可以重入。
+ * TODO: 现有 finally 只 Reset 后 LoadSlot；外部回调抛异常或改变 task/layout 的收尾需在接入点核查。
  */
 typedef void (*FZrCoreTaskFrameFinally)(struct SZrState *state,
                                         struct SZrCoreTaskFrameTask *task,
@@ -69,7 +80,7 @@ typedef void (*FZrCoreTaskFrameFinally)(struct SZrState *state,
 typedef struct SZrCoreTaskFrameSlotLayout {
     TZrBool isGcRoot;                /**< frame 存活期间保持 GC 对象可达。 */
     TZrBool requiresDrop;            /**< 已初始化的 slot 是否要求调用用户 drop 回调。 */
-    FZrCoreTaskFrameDrop drop;       /**< TODO: 请确认 requiresDrop 为真但 drop 为空时是否属于无效配置。 */
+    FZrCoreTaskFrameDrop drop;       /**< TODO: requiresDrop 为真且 drop 为空时当前会跳过用户清理；接入点需确认是否应拒绝此配置。 */
     TZrPtr dropUserData;             /**< 借用数据，直到 task frame 清理完成。 */
 } SZrCoreTaskFrameSlotLayout;
 
@@ -109,6 +120,9 @@ typedef struct SZrCoreTaskFrameTask SZrCoreTaskFrameTask;
  * @pre 调用期间 state、task 和 outResult 必须有效；返回 SUSPEND 前应调用 Suspend 和 slot
  *      访问函数；返回 COMPLETE 时必须初始化 outResult。
  * @note runtime 会在 Start 和每次 Resume 时调用此回调。userData 为借用数据。
+ *       outResult 在每次派发前已 ResetAsNull；COMPLETE 的可转移 owner 由 header 接管。
+ * TODO: SUSPEND/FAULT 当前不释放回调临时 outResult；接入回调须核查非 COMPLETE 路径
+ *       是否约定保持该输出为空，并核实异常退出后的 task/pool 收尾。
  */
 typedef EZrCoreTaskFramePollOutcome (*FZrCoreTaskFramePoll)(
         struct SZrState *state,
@@ -129,10 +143,12 @@ struct SZrCoreTaskFrameTask {
     const SZrCoreTaskFrameLayout *layout; /**< 此 task 借用的状态 / slot 策略。 */
     FZrCoreTaskFramePoll poll; /**< 由 Start 和 Resume 调用的回调。 */
     TZrPtr userData; /**< poll 回调使用的借用上下文。 */
-    SZrTypeValue result; /**< runtime 持有终态 result；Await 可复制普通值或一次性转移拥有所有权的值。 */
+    SZrTypeValue result; /**< header 持有的值槽；普通 Await 可重复复制，拥有所有权的值只转移一次。 */
     SZrTypeValue error; /**< runtime 持有终态 error 直到 Free；Await 只会复制给调用方。 */
-    SZrGcRootHandle resultRoot; /**< task 持有 GC result 时为其保留 root。 */
-    SZrGcRootHandle errorRoot; /**< task 持有 GC error 时为其保留 root。 */
+    /* TODO: GC 更新域根表不等于更新 result/error 裸值槽；核查实际移动后的 Await、再 Fault 和 Free，
+     * 当前完成 GC 用例只检查非空/域戳，未证明这些 header 地址已经刷新。 */
+    SZrGcRootHandle resultRoot; /**< header 保活句柄；普通结果到 Free 才撤销，拥有所有权的结果在 Await 转移后撤销。 */
+    SZrGcRootHandle errorRoot; /**< fault 错误的保活句柄；Await 只复制错误，句柄仍由 task 保留到 Free 或替换。 */
     TZrUInt32 debugAsyncFaultProvenance; /**< 用于 debug 投影的故障来源标记。 */
     TZrBool resultConsumed; /**< Await 转移拥有所有权的 result 后置位，避免重复转移。 */
     TZrBool finallyRan; /**< 防止清理时重复调用 finally。 */
@@ -143,6 +159,7 @@ ZR_CORE_API void ZrCore_TaskFramePool_Init(SZrCoreTaskFramePool *pool);
 /**
  * @brief 所有相关 task 释放后，销毁缓存的 frame 并重置 pool。
  * @pre 清理缓存 slot 或释放 GC root 期间，state 必须保持有效。
+ * @note 仅销毁空闲链表；活动 frame 属于 task，Pool_Free 不替代 Task_Free。
  */
 ZR_CORE_API void ZrCore_TaskFramePool_Free(struct SZrState *state,
                                             SZrCoreTaskFramePool *pool);
@@ -204,7 +221,10 @@ ZR_CORE_API TZrBool ZrCore_TaskFrameTask_Suspend(struct SZrState *state,
 /**
  * @brief 保存或替换 layout slot；替换前会清理已初始化的旧值。
  * @pre 必须在 frame 已保留时调用（通常来自 poll/finally），并传入有效的
- *      state、slot index 和 value。
+ *      state、slot index 和已初始化的源 value。
+ * @return 根注册失败时通过正常 drop/value/root 清理回滚刚复制的 slot，返回 false；旧值已被覆盖清理。
+ * TODO: 通用 Value_Copy 可复制的 ownership 种类与 direct unique 的内部镜像约束不同；
+ *       接入生成 spill 时核查源是否可复制，不能由本 API 的 bool 假定任意 owner 可复制。
  */
 ZR_CORE_API TZrBool ZrCore_TaskFrameTask_StoreSlot(struct SZrState *state,
                                                     SZrCoreTaskFrameTask *task,
@@ -213,6 +233,7 @@ ZR_CORE_API TZrBool ZrCore_TaskFrameTask_StoreSlot(struct SZrState *state,
 /**
  * @brief 在 frame 和 GC root 均有效时，复制已初始化的 slot 值。
  * @pre state、已初始化的 outValue 目标及已初始化的有效范围内 slot 均必须有效。
+ * @note 先 Resolve slot root 更新地址，再按普通 Value_Copy 语义覆盖输出；输出跨 GC 使用需另持根。
  */
 ZR_CORE_API TZrBool ZrCore_TaskFrameTask_LoadSlot(struct SZrState *state,
                                                    SZrCoreTaskFrameTask *task,
@@ -229,6 +250,7 @@ ZR_CORE_API TZrBool ZrCore_TaskFrameTask_Fault(struct SZrState *state,
  * @brief 将 task 置为故障，并附加经过验证的 debug async-fault 来源。
  * @pre state 和 task 必须有效；faultProvenance 必须有效；若提供 error，其值在调用期间必须可读。
  * @return 输入无效或可选 error 无法建立 root 时返回 false。
+ * @note finally/frame 清理发生在 error root 注册之前；失败不保证已经发布 FAULTED，调用方仍须 Free。
  */
 ZR_CORE_API TZrBool ZrCore_TaskFrameTask_FaultWithDebugProvenance(
         struct SZrState *state,
@@ -241,6 +263,9 @@ ZR_CORE_API TZrBool ZrCore_TaskFrameTask_FaultWithDebugProvenance(
  *      outResult 已初始化。若 task 已故障且 outError 非空，该目标必须已初始化；
  *      仅查询故障状态时可将 outError 置空。
  * @note 拥有所有权的 result 只转移一次；普通值可通过多次 Await 复制。
+ *       普通 GC result 的复制输出不新增独立句柄；error 输出遵循 Value_Copy 的所有权语义。
+ *       task 保活不替代输出跨 task Free/GC 使用所需的根。
+ * TODO: header 结果/错误读取未在此 Resolve root；核查实际移动后的地址更新入口与更强的内容断言。
  */
 ZR_CORE_API EZrCoreTaskFrameAwaitStatus ZrCore_TaskFrameTask_Await(
         struct SZrState *state,
