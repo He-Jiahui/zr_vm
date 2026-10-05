@@ -91,6 +91,19 @@ ExecBC 持久化与后续 artifact schema 扩展仍是未完成工作。
 本次有界切片的 RED、Core-owned rows 规则、门禁状态和待复验命令记录在
 [`ssa-static-binding-owned-rows.md`](../../../../tests/acceptance/ssa-static-binding-owned-rows.md)。
 
+Schema 1 顶层 `flags` 目前保留给未来扩展，所有 producer 必须将其置零。
+`ZrParser_ExecIr_BindingFacts_ValidateEx` 在 schema 检查后拒绝低位和高位非零值，
+返回 `ZR_EXEC_IR_BINDING_FACTS_INVALID_ARGUMENT`，并把 `actualVersion` 设置为
+传入 flags；事务式 `ProjectBindingFacts` 在 owned rows 替换前失败，因此不会改变
+函数 metadata、行表或指令引用。RED 基线记录于
+`E:/cargo-targets/zr_vm/reports/ssa-20261005-01a0fe2b/binding-flags-red-receipt.json`
+（SHA256 `64ed3de95b09b01fa14805e0a78dc0a515c147c80c5b49db7ce20a459efe7622`），
+实现后的 GREEN 回执为
+`E:/cargo-targets/zr_vm/reports/ssa-20261005-01a0fe2b/binding-flags-green-receipt.json`
+（SHA256 `dc0033da8495cc8e08636d1a0c210ec722fcfcb9a5c3528d44d61dce338bcc43`）；
+`ssa_typed_binding_contract` 的 4/4 测试通过且 UBSan 无诊断。验证只覆盖 parser/Core
+facts，未执行 network、FFI、provider 或安全能力；本计划仍为 OPEN。
+
 ## 可逐项执行的重构任务
 
 - [ ] **1. 列清所有链段** module.Type.method 与 obj.a.b.invoke 分开；前者直接 token，后者 project/load 保留 null/ownership 检查，再调用最终 token/slot。

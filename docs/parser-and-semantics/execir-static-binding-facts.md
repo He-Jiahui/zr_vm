@@ -78,6 +78,19 @@ field load。
 status，并在 `SZrExecIrDiagnostic` 中提供 function token、IR instruction、
 source id 和 expected/actual hash/version。失败不会生成名称查找 opcode。
 
+Schema 1 的顶层 `flags` 当前没有已定义位，producer 必须写入零。`ValidateEx`
+在 schema 检查后拒绝任意低位或高位标志，返回
+`ZR_EXEC_IR_BINDING_FACTS_INVALID_ARGUMENT`，并在诊断中保留
+`expectedVersion=0`、`actualVersion=facts->flags`；`ProjectBindingFacts` 因而在
+替换 owned rows 前失败，原有函数 metadata、行表和引用保持不变。该边界先由
+`E:/cargo-targets/zr_vm/reports/ssa-20261005-01a0fe2b/binding-flags-red-receipt.json`
+（SHA256 `64ed3de95b09b01fa14805e0a78dc0a515c147c80c5b49db7ce20a459efe7622`）固定，随后由
+`E:/cargo-targets/zr_vm/reports/ssa-20261005-01a0fe2b/binding-flags-green-receipt.json`
+（SHA256 `dc0033da8495cc8e08636d1a0c210ec722fcfcb9a5c3528d44d61dce338bcc43`）验证；
+`ssa_typed_binding_contract` 目标的 4 个测试全部通过，低位和高位保留标志均被拒绝，
+且 UBSan 没有诊断。该 fixture 只验证 parser/Core facts，不执行 network、FFI、provider
+或其他安全边界；SSA 总计划仍保持 OPEN。
+
 当前 schema 1 是行所有权和模式迁移切片，不代表跨函数调用目标解析已经完成。
 `zr_oracle_validate` 在执行前调用 Core 行表验证器：schema 0 的历史 prototype
 references 仍保留原有行为；未知 schema、损坏的 typed 表或不匹配的指令关联在

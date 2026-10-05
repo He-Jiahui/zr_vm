@@ -811,6 +811,10 @@ EZrExecIrBindingFactsStatus ZrParser_ExecIr_BindingFacts_ValidateEx(
                     ZR_NULL, ZR_NULL, ZR_EXEC_IR_BINDING_FACTS_SCHEMA_VERSION,
                     facts->schemaVersion, diagnostic);
     }
+    if (facts->flags != 0u) {
+        return fail(ZR_EXEC_IR_BINDING_FACTS_INVALID_ARGUMENT, facts, function,
+                    ZR_NULL, ZR_NULL, 0u, facts->flags, diagnostic);
+    }
     if (facts->segmentCount != 0u && facts->segments == ZR_NULL) {
         return fail(ZR_EXEC_IR_BINDING_FACTS_INVALID_ARGUMENT, facts, function,
                     ZR_NULL, ZR_NULL, facts->segmentCount, 0u, diagnostic);
