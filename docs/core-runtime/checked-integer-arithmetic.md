@@ -11,12 +11,18 @@ related_code:
   - tests/cmake/checked-multiply-tests.cmake
   - tests/core/test_execution_checked_divide.c
   - tests/cmake/checked-divide-tests.cmake
+  - tests/harness/runtime_support.c
+  - tests/harness/runtime_support.h
+  - zr_vm_core/src/zr_vm_core/debug.c
+  - zr_vm_core/src/zr_vm_core/closure.c
+  - zr_vm_core/src/zr_vm_core/ownership.c
 implementation_files:
   - zr_vm_core/src/zr_vm_core/execution/execution_checked_integer.h
   - zr_vm_core/src/zr_vm_core/execution/execution_signed_multiply.inc
   - zr_vm_core/src/zr_vm_core/execution/execution_signed_divide.inc
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
 plan_sources:
+  - user: 2026-10-04 checked integer fixture comments and static contract review
   - user: 2026-10-02 SSA plan execution and checked i64 multiplication
   - docs/plans/ssa/index.md
   - docs/plans/ssa/architecture-design.md
@@ -213,3 +219,35 @@ runtime execution. The independent GNU repeat has also passed. The acceptance re
 the failed attempts and completed independent code/document review. Git history
 records the finite Root-owned change. These Core checks do not admit DIV into the canonical
 SSA materializer or close other SSA plan leaves.
+
+## 夹具调用、观察与清理边界
+
+`checked-divide-tests.cmake` 与 `checked-multiply-tests.cmake` 各自通过
+`add_test` 注册对应 Unity 可执行目标；目标创建以 core static/shared 库目标存在为条件。
+两个 `main` 用 `RUN_TEST` 注册具体测试，普通 Unity 断言跳转后由 `tearDown`
+调用夹具清理。这里手工创建 core 函数、常量和指令，没有经过 parser 或 AOT 生成入口。
+
+整数 catalog 分别列出 19 个除法和 26 个乘法输入，遍历五种 signed 除法形式及
+七种 signed 乘法形式。纯 checked helper 同时检查失败时输出保持、空输出和输入/输出
+别名；除法包括零除、`INT64_MIN / -1` 与向零截断，乘法包括四种符号组合的有限边界。
+这些输入和断言不提供 unsigned opcode、通用 boxed number、meta 方法或完整整数域的信用。
+浮点分支只用 `-2.5` 与 `2` 观察 DOUBLE 结果，不扩展为特殊浮点输入覆盖。
+
+observer 借用同步执行期间仍存活的局部 trace，按目标函数及指令偏移计数算术访问，
+另计 `END_FINALLY`。记录的 `callInfo` 字段没有被独立断言；observer 开关两个值也不能
+单独证明构建产物采用了哪种 dispatch 机制的运行证据。失败 PC 与线程复用测试限定于基本
+signed 指令；catch/finally 先观察接住异常，再移除 catch 观察 finally 后继续传播，并没有
+断言传播后异常文本与所有对象状态。
+
+owned destination 场景使用 shared STRING 与显式 weak 观察 strong 归零及对象失活。
+手工登记的 close proxy 位于槽 4，源值位于槽 2；成功路径由目标覆盖释放旧值，失败路径
+由异常展开关闭登记值。场景排除要求无旧所有权值的 `PLAIN_DEST` 形式，没有 GC API
+收集断言，也没有普通脚本 `@close` class 的关闭方法测试。
+
+`runtime_support` 捕获失败时重设执行栈并保留标准化异常状态。夹具清理首先解除 observer，
+随后关闭登记值，利用已保存的偏移重新定位目标槽，再释放 owner/weak、重置线程、释放
+函数及 VM。静态登记使普通 Unity assertion longjmp 后的清理能够找到资源；空 state 守卫
+允许主动清理后 `tearDown` 再进入，但不构成 fatal signal guard 的清理保证。
+
+本节的 2026-10-04 注释审查只提供源码、调用关系、字节恢复和静态锚点证据，没有新增
+native、构建、CTest、GC 或运行验收。上文既有运行记录保留其原有日期、工具链和范围。

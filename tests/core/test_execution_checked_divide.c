@@ -20,9 +20,11 @@ static SZrState *fixture_state;
 static SZrFunction *fixture_function;
 static SZrTypeValue fixture_owner;
 static SZrTypeValue fixture_weak;
+/* has_owned_destination 为真时，offset 指向夹具需兜底释放的 VM 目标槽；保存偏移而非可被栈增长搬走的地址。 */
 static TZrMemoryOffset fixture_owned_destination_offset;
 static TZrBool fixture_has_owned_destination;
 
+/* 在普通完成和 Unity 断言跳转后的 tearDown 中释放夹具；先撤掉指向局部 trace 的 observer，再关闭登记值。目标槽用保存的栈偏移重新定位，避免清理依赖旧栈指针。 */
 static void cleanup_fixture(void) {
     SZrState *state = fixture_state;
     if (state == ZR_NULL) return;
@@ -52,6 +54,7 @@ static SZrState *new_state(void) {
     return fixture_state;
 }
 
+/** @brief 为每个 Unity 用例建立空的静态清理记录；不在此处创建 VM。 */
 void setUp(void) {
     fixture_state = ZR_NULL;
     fixture_function = ZR_NULL;
@@ -60,8 +63,10 @@ void setUp(void) {
     ZrCore_Value_ResetAsNull(&fixture_weak);
 }
 
+/** @brief 回收被 Unity 普通断言跳转中断的夹具，也容许测试已经主动清理。 */
 void tearDown(void) { cleanup_fixture(); }
 
+/* 本组全部 五种 signed 指令形式；各用例按场景选择目的槽、observer 和边界目录。 */
 static const EZrInstructionCode divide_forms[] = {
     ZR_INSTRUCTION_ENUM(DIV_SIGNED),
     ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST),
@@ -70,6 +75,7 @@ static const EZrInstructionCode divide_forms[] = {
     ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST)
 };
 
+/* 同步 observer 的借用记录：function 限定目标函数，算术 offset 与两个计数限定所观察事件；callInfo 仅记当时帧，不拥有该帧。 */
 typedef struct DivideTrace {
     SZrFunction *function;
     SZrCallInfo *callInfo;
@@ -78,6 +84,7 @@ typedef struct DivideTrace {
     TZrUInt32 observedFinally;
 } DivideTrace;
 
+/* 只计目标函数的算术偏移和 END_FINALLY；在算术处借用当前 callInfo 作观察记录，返回 NONE 不主动请求 trap。 */
 static TZrDebugSignal observe_divide(SZrState *state, SZrFunction *function,
         const TZrInstruction *pc, TZrUInt32 offset, TZrUInt32 line, TZrPtr data) {
     DivideTrace *trace = (DivideTrace *)data;
@@ -94,6 +101,7 @@ static TZrDebugSignal observe_divide(SZrState *state, SZrFunction *function,
     return ZR_DEBUG_SIGNAL_NONE;
 }
 
+/* 按普通 E/A1/B1 编码构造手写 VM 指令；融合加载的 operand0 布局由专用构造器补充。 */
 static TZrInstruction instruction(EZrInstructionCode code, TZrUInt16 dest,
         TZrUInt16 left, TZrUInt16 right) {
     TZrInstruction result = {0};
@@ -104,6 +112,7 @@ static TZrInstruction instruction(EZrInstructionCode code, TZrUInt16 dest,
     return result;
 }
 
+/* 按本组融合 opcode 的 operand0 布局补充取数位置；LOAD_STACK_CONST 先把源槽 0 物化到独立槽 3，再用加载后的槽参与算术。 */
 static TZrInstruction divide_instruction(EZrInstructionCode code, TZrUInt16 dest) {
     TZrInstruction result = instruction(code, dest, 0u, 1u);
     if (code == ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_CONST)) {
@@ -117,6 +126,7 @@ static TZrInstruction divide_instruction(EZrInstructionCode code, TZrUInt16 dest
     return result;
 }
 
+/* 用两条常量加载、单条算术和返回搭建最小真实 Core 函数；统一五个栈槽，供目的槽别名及融合加载槽 3 的场景复用。 */
 static SZrFunction *new_function(SZrState *state, EZrInstructionCode code,
         TZrInt64 left, TZrInt64 right, TZrUInt16 dest) {
     SZrFunction *function = ZrCore_Function_New(state);
@@ -146,6 +156,7 @@ static SZrFunction *new_function(SZrState *state, EZrInstructionCode code,
     return function;
 }
 
+/* 从当前规范化异常对象读取 message 字符串，供除零与溢出的消息断言区分失败原因。 */
 static const TZrChar *current_error_message(SZrState *state) {
     SZrString *fieldName;
     SZrTypeValue key;
@@ -163,6 +174,7 @@ static const TZrChar *current_error_message(SZrState *state) {
             : ZR_NULL;
 }
 
+/* 统一检查手写算术函数的成功值或运行时失败；observer 只证明目标算术指令被看见一次，不能证明宿主采用 computed-goto。 */
 static void assert_vm_quotient(EZrInstructionCode code, TZrInt64 left,
         TZrInt64 right, TZrBool overflow, TZrInt64 expected,
         TZrBool observer, TZrUInt16 dest) {
@@ -196,6 +208,7 @@ static void assert_vm_quotient(EZrInstructionCode code, TZrInt64 left,
     cleanup_fixture();
 }
 
+/* 把一个明确的不可表示算术输入送过全部指令形式，并分别启用/停用 observer，防止某个形式绕过 checked 路径。 */
 static void test_all_signed_divide_forms_reject_overflow(void) {
     size_t form;
     TZrBool observer;
@@ -205,11 +218,13 @@ static void test_all_signed_divide_forms_reject_overflow(void) {
                     ZR_TRUE, 0, observer, 2u);
 }
 
+/* 边界目录的一条输入与期望；overflow 在除法也包括零除失败，失败行的 result 只是占位，不应被作为成功结果读取。 */
 typedef struct DivideCase {
     TZrInt64 left, right, result;
     TZrBool overflow;
 } DivideCase;
 
+/* 19 组离散边界：成功值与失败标志共同驱动 helper 和 VM 矩阵，不是全域穷举。 */
 static const DivideCase boundary_cases[] = {
     {0, INT64_MIN, 0, 0}, {0, INT64_MAX, 0, 0},
     {INT64_MAX, 1, INT64_MAX, 0}, {INT64_MIN, 1, INT64_MIN, 0},
@@ -222,6 +237,7 @@ static const DivideCase boundary_cases[] = {
     {0, 0, 0, 1}, {1, 0, 0, 1}, {INT64_MIN, 0, 0, 1}
 };
 
+/* 直接核对纯 checked helper 的边界结果和失败时的输出哨兵，再检查空输出及输入变量作输出的别名。 */
 static void test_checked_helper_boundaries_preserve_failure_output(void) {
     size_t index;
     TZrInt64 alias = INT64_MIN;
@@ -241,6 +257,7 @@ static void test_checked_helper_boundaries_preserve_failure_output(void) {
     TEST_ASSERT_EQUAL_INT64(INT64_MIN, alias);
 }
 
+/* 将边界目录逐项送入每种 VM 形式与 observer 开关，核对成功结果及运行时错误归一。 */
 static void test_vm_boundaries_all_forms_and_dispatch_modes(void) {
     size_t form, index;
     TZrBool observer;
@@ -253,6 +270,7 @@ static void test_vm_boundaries_all_forms_and_dispatch_modes(void) {
             }
 }
 
+/* 让目的槽依次复用左、右源槽，分别检查普通负数结果与溢出拒绝，防止存储提前覆盖尚需读取的操作数。 */
 static void test_destination_aliases_each_operand(void) {
     size_t form;
     TZrUInt16 destination;
@@ -263,10 +281,12 @@ static void test_destination_aliases_each_operand(void) {
         }
 }
 
+/* 把预先保留的 VM callInfo 交给 TryRun 执行，以便异常后仍能检查该记录保存的故障 PC。 */
 static void execute_call_info(SZrState *state, TZrPtr arguments) {
     ZrCore_Execute(state, (SZrCallInfo *)arguments);
 }
 
+/* 手工发布 function 值和空局部槽，再挂起 CREATE_FRAME 的 callInfo；供保留故障 PC 和预置 owned 目标槽的用例使用。 */
 static SZrCallInfo *prepare_call_info(SZrState *state, SZrFunction *function) {
     SZrTypeValue callable;
     TZrStackValuePointer base;
@@ -296,6 +316,7 @@ static SZrCallInfo *prepare_call_info(SZrState *state, SZrFunction *function) {
     return callInfo;
 }
 
+/* 保留故障调用记录核对 PC 与异常栈清空，再重置同一线程、替换常量并成功重跑，检查失败不会阻止下一次调用。 */
 static void test_overflow_saves_faulting_pc_and_thread_recovers(void) {
     TZrBool observer;
     for (observer = 0; observer <= 1; ++observer) {
@@ -325,6 +346,7 @@ static void test_overflow_saves_faulting_pc_and_thread_recovers(void) {
     }
 }
 
+/* 手写一个无类型筛选的 catch 和 finally 元数据，检查算术失败能被消费并执行 END_FINALLY；随后去掉 catch 检查 finally 后仍传播失败。 */
 static void test_overflow_runs_catch_and_finally(void) {
     SZrState *state = new_state();
     SZrFunction *function = new_function(state, divide_forms[0], INT64_MIN, -1, 2u);
@@ -385,6 +407,7 @@ static void test_overflow_runs_catch_and_finally(void) {
     cleanup_fixture();
 }
 
+/* 把左常量改为 -2.5、右常量保留整数 2，检查各 signed 形式仍得到 DOUBLE 浮点结果。 */
 static void test_float_fallback_remains_available(void) {
     size_t form;
     for (form = 0; form < sizeof(divide_forms) / sizeof(divide_forms[0]); ++form) {
@@ -399,6 +422,7 @@ static void test_float_fallback_remains_available(void) {
     }
 }
 
+/* 让 shared 字符串目标成为最后一份 strong，并保留 weak 观察其失效；比较正常写回与 checked 失败 unwind 的释放结果。 */
 static void test_owned_destination_releases_on_store_and_overflow_unwind(void) {
     size_t form;
     TZrBool overflow;
@@ -419,6 +443,7 @@ static void test_owned_destination_releases_on_store_and_overflow_unwind(void) {
             TEST_ASSERT_NOT_NULL(string);
             code[0] = function->instructionsList[0];
             code[1] = function->instructionsList[1];
+            /* proxy 槽 4 登记目标槽 2，使算术失败前的 owned 值进入既有 unwind 关闭链。 */
             code[2] = instruction(ZR_INSTRUCTION_ENUM(MARK_CLOSE_PROXY), 4u, 2u, 0u);
             code[3] = function->instructionsList[2];
             code[4] = function->instructionsList[3];
@@ -439,6 +464,7 @@ static void test_owned_destination_releases_on_store_and_overflow_unwind(void) {
             ZrCore_Value_ResetAsNull(&fixture_weak);
             TEST_ASSERT_TRUE(ZrCore_Ownership_SharePlainValue(state, &fixture_owner, &plain));
             TEST_ASSERT_TRUE(ZrCore_Ownership_DegradeValue(state, &fixture_weak, &fixture_owner));
+            /* 把 strong 留在目标槽后撤掉夹具 owner；显式 weak 保证控制块仍可供释放断言读取。 */
             ZrCore_Value_Copy(state, destination, &fixture_owner);
             ZrCore_Ownership_ReleaseValue(state, &fixture_owner);
             TEST_ASSERT_EQUAL_UINT32(1u, fixture_weak.ownershipControl->strongRefCount);
@@ -459,6 +485,7 @@ static void test_owned_destination_releases_on_store_and_overflow_unwind(void) {
     }
 }
 
+/** @brief 注册本翻译单元的八个 Unity 场景，作为 checked integer 独立 CTest 可执行文件入口。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_all_signed_divide_forms_reject_overflow);
