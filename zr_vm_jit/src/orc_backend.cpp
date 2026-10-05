@@ -209,9 +209,9 @@ EZrJitHostStatus map_core_status(EZrHostJitStatus status,
         case ZR_HOST_JIT_STATUS_INVALID_STATE:
             mapped = ZR_JIT_HOST_STATUS_INVALID_STATE;
             break;
-        /* BUG: Register 传入错误 abiVersion，或 ValidateCompileRequest 传入
-         * layoutHash 为零的 target 时，core 分别返回 ABI_MISMATCH 和
-         * LAYOUT_MISMATCH；这里未列举，公开结果误报 INVALID_STATE。 */
+        /* TODO: ABI_MISMATCH/LAYOUT_MISMATCH 未单列，当前落 INVALID_STATE；
+         * Register/ValidateCompileRequest 的合法可达输入与公开诊断分类尚未核实；
+         * 下一步从 Register 与 ValidateCompileRequest 核 core 前提、facade/ExecIR 分类约定。 */
         case ZR_HOST_JIT_STATUS_OK:
         default:
             mapped = ZR_JIT_HOST_STATUS_INVALID_STATE;
@@ -500,7 +500,7 @@ EZrJitHostStatus validate_publication_proof(
 }
 
 /* 调用方持 global_mutex；先对照状态图与发布 hash，再交给 core 建记录。
- * 证明数组追加失败时撤销刚建的记录，避免只有一半的发布元数据。 */
+ * proof 追加失败仅尝试 Evict/Collect 并忽略返回；仍清 handle、返回 CAPACITY，不保证撤销成功。 */
 EZrJitHostStatus prepare_locked(
         HostImpl &impl,
         const SZrHostJitPublicationFacts &facts,
@@ -520,9 +520,9 @@ EZrJitHostStatus prepare_locked(
         return fail_jit(diagnostic, ZR_JIT_HOST_STATUS_TARGET_MISMATCH,
                         1u, 0u, facts.layoutHash, stateMaps.frameLayoutHash);
     }
-    /* BUG: Register 已固定 impl.options.target，但这里只对照 maps 与 facts；
-     * 同架构且 triple/layout 与注册目标不同的 facts 可 Prepare/Publish 成功，
-     * 而 Compile 对相同请求会返回 TARGET_MISMATCH。core 只验证 facts 自洽。 */
+    /* TODO: maps/facts 自洽后 core 验 facts.target；此处未比较 impl.options.target。
+     * Prepare/Publish 是否必须沿用注册目标尚待确认，Compile 则另有 target 比较；
+     * 下一步核 PrepareWithMaps/Publish 公开约定与 provider 的 target 身份绑定要求。 */
     EZrHostJitStatus status = ZrCore_HostJit_Code_Prepare(
             &impl.manager, &facts, handle, &coreDiagnostic);
     if (status != ZR_HOST_JIT_STATUS_OK) {
