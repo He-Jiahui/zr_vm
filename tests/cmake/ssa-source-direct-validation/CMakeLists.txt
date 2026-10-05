@@ -231,7 +231,8 @@ foreach (_zr_guard_target IN ITEMS
         zr_vm_ssa_source_script_entry_tokens_test
         zr_vm_ssa_source_callable_identity_test
         zr_vm_ssa_source_script_entry_identity_test
-        zr_vm_ssa_typed_binding_contract_test)
+        zr_vm_ssa_typed_binding_contract_test
+        zr_vm_ssa_dominator_cfg_test)
     if (_zr_guard_target STREQUAL "zr_vm_ssa_source_straight_line_cfg_test")
         set(_zr_guard_source tests/parser/test_ssa_source_straight_line_cfg.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_exec_ir_scalar_scratch_eligibility_test")
@@ -244,6 +245,8 @@ foreach (_zr_guard_target IN ITEMS
         set(_zr_guard_source tests/parser/test_ssa_source_script_entry_identity.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_typed_binding_contract_test")
         set(_zr_guard_source tests/parser/test_ssa_typed_binding_contract_witness.c)
+    elseif (_zr_guard_target STREQUAL "zr_vm_ssa_dominator_cfg_test")
+        set(_zr_guard_source tests/parser/test_ssa_dominator_cfg.c)
     else ()
         set(_zr_guard_source tests/parser/test_ssa_source_callable_return.c)
     endif ()
@@ -295,6 +298,8 @@ add_test(NAME ssa_source_script_entry_identity
         COMMAND zr_vm_ssa_source_script_entry_identity_test)
 add_test(NAME ssa_typed_binding_contract
         COMMAND zr_vm_ssa_typed_binding_contract_test)
+add_test(NAME ssa_dominator_cfg
+        COMMAND zr_vm_ssa_dominator_cfg_test)
 set_tests_properties(ssa_source_execbc_vm_comparisons ssa_source_execbc_vm_regressions
         ssa_source_execbc_vm_loops
         ssa_source_execbc_vm_scalar_guards

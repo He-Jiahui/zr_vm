@@ -48,6 +48,31 @@ static void test_rejects_invalid_successor_before_traversal(void) {
     ZrCore_ExecIr_FreeFunction(&function);
 }
 
+static void test_rejects_mismatched_entry_flag_before_traversal(void) {
+    SZrExecIrFunction function;
+    SZrExecIrDiagnostic diagnostic;
+    TZrExecIrBlockId entry, rogue;
+
+    ZrCore_ExecIr_FunctionInit(&function);
+    entry = append_block(&function, ZR_EXEC_IR_BLOCK_FLAG_ENTRY);
+    rogue = append_block(&function, 0u);
+    function.blocks[rogue - 1u].flags |= ZR_EXEC_IR_BLOCK_FLAG_ENTRY;
+    function.blocks[entry - 1u].immediateDominator = rogue;
+    function.blocks[rogue - 1u].immediateDominator = entry;
+
+    check(!ZrParser_ExecIr_ComputeDominators(&function, &diagnostic),
+          "dominator computation accepted an entry flag on a non-entry block");
+    check(diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK &&
+              diagnostic.blockId == rogue &&
+              diagnostic.expectedVersion == entry &&
+              diagnostic.actualVersion == rogue,
+          "mismatched entry flag lost structured block identity");
+    check(function.blocks[entry - 1u].immediateDominator == rogue &&
+              function.blocks[rogue - 1u].immediateDominator == entry,
+          "mismatched entry flag changed cached dominators");
+    ZrCore_ExecIr_FreeFunction(&function);
+}
+
 static void test_diamond_and_repeated_analysis(void) {
     SZrExecIrFunction function;
     SZrExecIrDiagnostic diagnostic;
@@ -190,6 +215,7 @@ static void test_accepts_parallel_edge_occurrences(void) {
 
 int main(void) {
     test_rejects_invalid_successor_before_traversal();
+    test_rejects_mismatched_entry_flag_before_traversal();
     test_diamond_and_repeated_analysis();
     test_backedge_and_unreachable_block();
     test_rejects_mismatched_predecessor_adjacency();
