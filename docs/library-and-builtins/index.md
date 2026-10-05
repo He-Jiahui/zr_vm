@@ -1,5 +1,7 @@
 ---
 related_code:
+  - zr_vm_library/include/zr_vm_library/aot_runtime.h
+  - zr_vm_library/src/zr_vm_library/aot_runtime.c
   - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c
   - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c
   - zr_vm_lib_debug/include/zr_vm_lib_debug/module.h
@@ -28,6 +30,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_contiguous_view.c
 implementation_files:
+  - zr_vm_library/include/zr_vm_library/aot_runtime.h
+  - zr_vm_library/src/zr_vm_library/aot_runtime.c
   - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c
   - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c
   - zr_vm_lib_debug/include/zr_vm_lib_debug/module.h
@@ -142,3 +146,6 @@ doc_type: category-index
 8. 然后看 `../parser-and-semantics/ffi-extern-declarations.md`，了解 source-level FFI 如何接入 `zr.ffi`。
 9. 再看 `zr-system-submodules.md`，了解本仓库当前的 `zr.system` 结构、叶子 API 和元信息约束。
 10. 调试脚本或宿主嵌入 debug 库时，看 `zr-debug-module.md`。
+
+- [AOT 运行时适配层](aot-runtime-adapter.md)
+  - 宿主配置、模块记录、生成帧、值所有权和失败状态；区分实际调用、ABI 声明与文本测试。

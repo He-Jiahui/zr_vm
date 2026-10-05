@@ -90,7 +90,7 @@ dispatch、generic specialization 和 tail call。
 
 ## 当前公开字段的消费边界
 
-描述符、数组、字符串和 thunk 指针由生成动态库持有；loader 与模块挂载借用这些表，表及被引用存储须在使用期间有效。`inputHash` 对应外部 source 或 binary 输入，不是嵌入 blob 的校验和。精确 ABI 比对为 `zr_vm_library/src/zr_vm_library/aot_runtime.c:600`；这不授所有字段已经完整校验或所有哈希失败路径关闭的保证。
+描述符、数组、字符串和 thunk 指针由生成动态库持有；loader 与模块挂载借用这些表，表及被引用存储须在使用期间有效。`inputHash` 对应外部 source 或 binary 输入，不是嵌入 blob 的校验和。精确 ABI 比对为 `zr_vm_library/src/zr_vm_library/aot_runtime.c:649`；这不授所有字段已经完整校验或所有哈希失败路径关闭的保证。
 
 签名发布 baseType、static C type、ownership、nullable、array 与 passing mode。当前 token 反射入口主要检查 VALUE/baseType、固定参数前缀、varargs 和返回标签，再调用 void invoker（`zr_vm_core/src/zr_vm_core/reflection_token_resolve.c:390`）。ABI 没有 argCount；调用方仍须提供有效参数存储，发布的描述字段不能扩大为该入口已完成的全部语义验证。
 
