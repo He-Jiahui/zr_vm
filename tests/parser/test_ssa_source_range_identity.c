@@ -38,13 +38,17 @@ static TZrBool g_sourceNameRooted;
 static SZrParserState g_parsers[RANGE_STATE_COUNT];
 static TZrBool g_parserInitialized[RANGE_STATE_COUNT];
 static SZrAstNode *g_ast;
+static SZrAstNode *g_followingAst;
 static TZrUInt32 g_diagnosticCount;
+static EZrToken g_diagnosticToken;
 
 void setUp(void) {
     g_sourceName = ZR_NULL;
     g_sourceNameRooted = ZR_FALSE;
     g_ast = ZR_NULL;
+    g_followingAst = ZR_NULL;
     g_diagnosticCount = 0u;
+    g_diagnosticToken = ZR_TK_EOS;
     memset(g_parsers, 0, sizeof(g_parsers));
     memset(g_parserInitialized, 0, sizeof(g_parserInitialized));
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -57,6 +61,10 @@ void tearDown(void) {
     if (g_ast != ZR_NULL) {
         ZrParser_Ast_Free(g_state, g_ast);
         g_ast = ZR_NULL;
+    }
+    if (g_followingAst != ZR_NULL) {
+        ZrParser_Ast_Free(g_state, g_followingAst);
+        g_followingAst = ZR_NULL;
     }
     for (index = 0u; index < RANGE_STATE_COUNT; ++index) {
         if (g_parserInitialized[index]) {
@@ -79,8 +87,21 @@ static void capture_parse_error(TZrPtr userData, const SZrFileRange *location,
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(location);
     ZR_UNUSED_PARAMETER(message);
-    ZR_UNUSED_PARAMETER(token);
+    g_diagnosticToken = token;
     ++g_diagnosticCount;
+}
+
+/* Literal coordinates keep expected ranges independent of parser helpers. */
+static void assert_exact_range(const SZrFileRange *range,
+        TZrSize startOffset, TZrInt32 startLine, TZrInt32 startColumn,
+        TZrSize endOffset, TZrInt32 endLine, TZrInt32 endColumn) {
+    TEST_ASSERT_EQUAL_PTR(g_sourceName, range->source);
+    TEST_ASSERT_EQUAL_UINT64((TZrUInt64)startOffset, (TZrUInt64)range->start.offset);
+    TEST_ASSERT_EQUAL_INT(startLine, range->start.line);
+    TEST_ASSERT_EQUAL_INT(startColumn, range->start.column);
+    TEST_ASSERT_EQUAL_UINT64((TZrUInt64)endOffset, (TZrUInt64)range->end.offset);
+    TEST_ASSERT_EQUAL_INT(endLine, range->end.line);
+    TEST_ASSERT_EQUAL_INT(endColumn, range->end.column);
 }
 
 static void assert_same_range(const SZrFileRange *expected,
@@ -122,11 +143,7 @@ static SZrParserState *initialize_parser(const char *source, TZrUInt32 index) {
     return parser;
 }
 
-static void parse_with_token_evidence(const char *source,
-        SZrRangeTokenEvidence *evidence) {
-    SZrParserState *scan;
-    SZrParserState *parser;
-    memset(evidence, 0, sizeof(*evidence));
+static void initialize_source_name(void) {
     g_sourceName = ZrCore_String_CreateFromNative(g_state,
             "ssa_source_range_identity.zr");
     TEST_ASSERT_NOT_NULL(g_sourceName);
@@ -134,6 +151,14 @@ static void parse_with_token_evidence(const char *source,
             ZR_CAST_RAW_OBJECT_AS_SUPER(g_sourceName));
     TEST_ASSERT_TRUE_MESSAGE(g_sourceNameRooted,
             "PRECONDITION: source name remains rooted through both parses");
+}
+
+static void parse_with_token_evidence(const char *source,
+        SZrRangeTokenEvidence *evidence) {
+    SZrParserState *scan;
+    SZrParserState *parser;
+    memset(evidence, 0, sizeof(*evidence));
+    initialize_source_name();
 
     scan = initialize_parser(source, RANGE_SCAN_STATE);
     evidence->first = get_current_token_location(scan);
@@ -249,8 +274,101 @@ static void test_return_expression_on_later_line(void) {
 }
 
 static void test_crlf_return_and_root_ranges(void) {
-    assert_literal_ranges("// leading\r\n  return\r\n    9;\r\n",
-            "return\r\n    9;", 1u);
+    SZrRangeTokenEvidence evidence;
+    SZrAstNode *statement;
+    const char *source = "// leading\r\n  return\r\n    9;\r\n";
+    parse_with_token_evidence(source, &evidence);
+    assert_exact_range(&evidence.returnToken, 14u, 2, 3, 20u, 2, 9);
+    assert_exact_range(&evidence.value, 26u, 3, 5, 27u, 3, 6);
+    assert_exact_range(&evidence.semicolon, 27u, 3, 6, 28u, 3, 7);
+    assert_exact_range(&evidence.eos, 30u, 4, 1, 30u, 4, 1);
+    statement = assert_return_range(&evidence, 1u);
+    TEST_ASSERT_NOT_NULL(statement->data.returnStatement.expr);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_INTEGER_LITERAL,
+            statement->data.returnStatement.expr->type);
+    TEST_ASSERT_EQUAL_INT64(9, statement->data.returnStatement.expr->data.integerLiteral.value);
+    assert_exact_range(&statement->data.returnStatement.expr->location,
+            26u, 3, 5, 27u, 3, 6);
+    assert_exact_range(&statement->location, 14u, 2, 3, 28u, 3, 7);
+    assert_source_span(source, &statement->location, "return\r\n    9;");
+    assert_exact_range(&g_ast->location, 14u, 2, 3, 30u, 4, 1);
+    assert_script_range(&evidence);
+}
+
+static void test_semicolon_token_before_crlf_excludes_both_newline_bytes(void) {
+    const char *source = "return 9;\r\n";
+    SZrParserState *scan;
+    SZrFileRange range;
+    initialize_source_name();
+    scan = initialize_parser(source, RANGE_SCAN_STATE);
+    TEST_ASSERT_EQUAL_INT(ZR_TK_RETURN, scan->lexer->t.token);
+    ZrParser_Lexer_Next(scan->lexer);
+    TEST_ASSERT_EQUAL_INT(ZR_TK_INTEGER, scan->lexer->t.token);
+    ZrParser_Lexer_Next(scan->lexer);
+    TEST_ASSERT_EQUAL_INT(ZR_TK_SEMICOLON, scan->lexer->t.token);
+    TEST_ASSERT_FALSE(scan->lexer->t.hasLexError);
+    /* The scanner has already read the whole CRLF into its newline cursor. */
+    TEST_ASSERT_EQUAL_UINT64(8u, (TZrUInt64)scan->lexer->tokenStartOffset);
+    TEST_ASSERT_EQUAL_UINT64(0u, (TZrUInt64)scan->lexer->tokenStartLineStart);
+    TEST_ASSERT_EQUAL_INT(1, scan->lexer->tokenStartLine);
+    TEST_ASSERT_EQUAL_UINT64(11u, (TZrUInt64)scan->lexer->currentPos);
+    TEST_ASSERT_EQUAL_INT('\n', scan->lexer->currentChar);
+    TEST_ASSERT_EQUAL_INT(2, scan->lexer->lineNumber);
+    TEST_ASSERT_EQUAL_UINT64(11u, (TZrUInt64)scan->lexer->currentLineStartOffset);
+    range = get_current_token_location(scan);
+    assert_exact_range(&range, 8u, 1, 9, 9u, 1, 10);
+    assert_source_span(source, &range, ";");
+    ZrParser_Lexer_Next(scan->lexer);
+    TEST_ASSERT_EQUAL_INT(ZR_TK_EOS, scan->lexer->t.token);
+    range = get_current_token_location(scan);
+    assert_exact_range(&range, 11u, 2, 1, 11u, 2, 1);
+    TEST_ASSERT_EQUAL_UINT32(0u, g_diagnosticCount);
+}
+
+static void test_missing_return_semicolon_preserves_following_declaration(void) {
+    const char *source = "return 9 var next = 8;";
+    SZrParserState *parser;
+    SZrFileRange following;
+    initialize_source_name();
+    parser = initialize_parser(source, RANGE_PARSE_STATE);
+    /* Parse each statement directly; SCRIPT's error-state contract is separate. */
+    g_ast = parse_return_statement(parser);
+    TEST_ASSERT_NOT_NULL(g_ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_RETURN_STATEMENT, g_ast->type);
+    TEST_ASSERT_TRUE(parser->hasError);
+    TEST_ASSERT_FALSE(parser->hasFatalError);
+    TEST_ASSERT_EQUAL_UINT32(1u, g_diagnosticCount);
+    TEST_ASSERT_EQUAL_INT(ZR_TK_VAR, g_diagnosticToken);
+    TEST_ASSERT_EQUAL_INT(ZR_TK_VAR, parser->lexer->t.token);
+    TEST_ASSERT_FALSE(parser->lexer->t.hasLexError);
+    following = get_current_token_location(parser);
+    assert_exact_range(&following, 9u, 1, 10, 12u, 1, 13);
+    assert_source_span(source, &following, "var");
+    assert_exact_range(&g_ast->location, 0u, 1, 1, 8u, 1, 9);
+    assert_source_span(source, &g_ast->location, "return 9");
+    TEST_ASSERT_FALSE(g_ast->data.returnStatement.isReferenceReturn);
+    TEST_ASSERT_NOT_NULL(g_ast->data.returnStatement.expr);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_INTEGER_LITERAL, g_ast->data.returnStatement.expr->type);
+    TEST_ASSERT_EQUAL_INT64(9, g_ast->data.returnStatement.expr->data.integerLiteral.value);
+    assert_exact_range(&g_ast->data.returnStatement.expr->location,
+            7u, 1, 8, 8u, 1, 9);
+
+    g_followingAst = parse_variable_declaration(parser);
+    TEST_ASSERT_NOT_NULL(g_followingAst);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, g_followingAst->type);
+    TEST_ASSERT_NOT_NULL(g_followingAst->data.variableDeclaration.pattern);
+    assert_source_span(source, &g_followingAst->data.variableDeclaration.pattern->location,
+            "next");
+    TEST_ASSERT_NOT_NULL(g_followingAst->data.variableDeclaration.value);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_INTEGER_LITERAL,
+            g_followingAst->data.variableDeclaration.value->type);
+    TEST_ASSERT_EQUAL_INT64(8,
+            g_followingAst->data.variableDeclaration.value->data.integerLiteral.value);
+    assert_source_span(source, &g_followingAst->data.variableDeclaration.value->location, "8");
+    TEST_ASSERT_EQUAL_INT(ZR_TK_EOS, parser->lexer->t.token);
+    TEST_ASSERT_EQUAL_UINT32(1u, g_diagnosticCount);
+    TEST_ASSERT_TRUE(parser->hasError);
+    TEST_ASSERT_FALSE(parser->hasFatalError);
 }
 
 static void test_return_excludes_following_statement(void) {
@@ -333,6 +451,8 @@ int main(void) {
     RUN_TEST(test_leading_and_trailing_trivia);
     RUN_TEST(test_return_expression_on_later_line);
     RUN_TEST(test_crlf_return_and_root_ranges);
+    RUN_TEST(test_semicolon_token_before_crlf_excludes_both_newline_bytes);
+    RUN_TEST(test_missing_return_semicolon_preserves_following_declaration);
     RUN_TEST(test_return_excludes_following_statement);
     RUN_TEST(test_empty_script_is_eos_point);
     RUN_TEST(test_trivia_only_script_is_eos_point);

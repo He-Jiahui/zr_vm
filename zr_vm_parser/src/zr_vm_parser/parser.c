@@ -50,7 +50,7 @@ void ZrParser_State_Free(SZrParserState *ps) {
 // 可恢复的脚本入口：错误语句通过同步 token 跳过，已成功构造的节点进入脚本数组。
 
 SZrAstNode *parse_script(SZrParserState *ps) {
-    SZrFileRange startLoc = get_current_location(ps);
+    SZrFileRange startLoc = get_current_token_location(ps);
 
     // 解析可选的模块声明
     SZrAstNode *moduleName = ZR_NULL;
@@ -151,7 +151,7 @@ SZrAstNode *parse_script(SZrParserState *ps) {
             }
         }
     }
-    SZrFileRange endLoc = get_current_location(ps);
+    SZrFileRange endLoc = get_current_token_location(ps);
     SZrFileRange scriptLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_SCRIPT, scriptLoc);

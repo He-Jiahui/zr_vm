@@ -714,6 +714,12 @@ SZrFileRange get_current_token_location(SZrParserState *ps) {
     if (endOffset > ps->lexer->sourceLength) {
         endOffset = ps->lexer->sourceLength;
     }
+    /* lexer 将 CRLF 合并为一个预读字符；token 终点须排除这两个源字节。 */
+    if (ps->lexer->currentChar == '\n' && ps->lexer->source != ZR_NULL &&
+        endOffset > 0 && endOffset < ps->lexer->sourceLength &&
+        ps->lexer->source[endOffset - 1] == '\r' && ps->lexer->source[endOffset] == '\n') {
+        endOffset--;
+    }
     startOffset = ps->lexer->tokenStartOffset;
     if (startOffset > endOffset) {
         startOffset = endOffset;

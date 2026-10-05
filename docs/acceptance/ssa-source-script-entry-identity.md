@@ -7,6 +7,9 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_script_callable_return.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_script_callable_identity.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_script_callable_identity.h
+  - zr_vm_parser/src/zr_vm_parser/parser.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_state.c
   - tests/parser/test_ssa_source_script_entry_identity.c
   - tests/cmake/ssa-source-execbc-vm.cmake
   - tests/cmake/ssa-source-direct-validation/CMakeLists.txt
@@ -22,6 +25,7 @@ plan_sources:
 tests:
   - tests/parser/test_ssa_source_script_entry_identity.c
   - docs/parser-and-semantics/ssa-source-script-entry-identity.md
+  - docs/acceptance/ssa-source-range-identity.md
 doc_type: acceptance
 status: accepted-script-entry-identity-direct-green
 ---
@@ -36,9 +40,13 @@ exactly one explicit nonreference integer-literal return. It checks provenance
 after `Source_Compile` releases temporary compiler state. Context-local IDs
 remain provenance; the SCRIPT range represents an implicit callable origin.
 The design document explains the actual semantic IR and canonical owner proof.
-Current parser positions are preserved: the RETURN range is a point range,
-and neither complete statement spans nor corrected token-start precision are
-claimed by this gate.
+At this historical gate, parser positions were preserved with a point RETURN
+range; complete statement spans and corrected token starts were outside its
+acceptance. The subsequent [source range acceptance](ssa-source-range-identity.md)
+records the current corrected SCRIPT/RETURN and CRLF ranges, with its own
+13/13 direct parser gate and 8/8 consumers regression. It includes a current
+13-case SCRIPT identity regression, while the receipts in this historical
+record remain unchanged.
 
 The focused fixture has thirteen Unity cases:
 

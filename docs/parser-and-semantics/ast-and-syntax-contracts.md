@@ -12,6 +12,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_postfix_call.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_declarations.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_state.c
+  - tests/parser/test_ssa_source_range_identity.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_loops.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_property.c
   - zr_vm_parser/src/zr_vm_parser/lexer.c
@@ -38,6 +40,8 @@ implementation_files:
   - zr_vm_parser/include/zr_vm_parser/lexer.h
   - zr_vm_parser/src/zr_vm_parser/lexer.c
   - zr_vm_parser/src/zr_vm_parser/parser.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_state.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_postfix_call.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_property.c
@@ -62,6 +66,7 @@ plan_sources:
   - docs/plans/syntax/2026-07-18-05-property-unified-ast-design.md
   - docs/plans/syntax/05-property-unified-ast/m1-unified-ast-symbol-implementation-plan.md
   - docs/plans/syntax/05-property-unified-ast/m2-explicit-field-init-implementation-plan.md
+  - .codex/plans/20261004-source-aot-handoff-design-2005.md
 tests:
   - tests/parser/test_parser_recovery_ownership.c
   - tests/iterator/test_yield_syntax.c
@@ -72,10 +77,30 @@ tests:
   - tests/parser/test_property_unified_ast.c
   - tests/parser/test_property_explicit_field_init.c
   - tests/parser/test_parser.c
+  - tests/parser/test_ssa_source_range_identity.c
+  - docs/acceptance/ssa-source-range-identity.md
 doc_type: module-detail
 ---
 
 # AST And Syntax Contracts
+
+## SCRIPT and RETURN Source Ranges
+
+The finite [source range contract](ssa-source-range-identity.md) uses source-byte
+offsets with exclusive ends. SCRIPT starts at the first actual token and ends
+at EOS after trailing trivia; an empty or trivia-only script is the EOS point.
+RETURN starts at the `return` token and includes its semicolon captured before
+consumption, while its expression and optional `ref` retain their own ranges.
+Following trivia and statements are outside the RETURN span.
+
+When the semicolon is missing, RETURN ends at accepted expression/ref evidence
+and preserves the current next token. A direct statement recovery case verifies
+that `return 9 var next = 8;` diagnoses `var` once and then parses the preserved
+declaration. Shared token ranges exclude both raw bytes of a pre-read CRLF.
+The separate [acceptance record](../acceptance/ssa-source-range-identity.md)
+reports 13/13 parser cases and 8/8 focused consumers regression entries under
+Windows clang-cl x64 Debug UBSan. This is a finite range gate; the full 47-item
+SSA plan remains OPEN.
 
 ## Parser Recovery Ownership
 

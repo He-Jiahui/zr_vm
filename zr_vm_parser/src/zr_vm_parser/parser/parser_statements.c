@@ -369,7 +369,8 @@ static SZrAstNode *parse_decorated_statement(SZrParserState *ps) {
 
 // 返回语句可携带 ref 标记及可选值；此处仅记录语法，引用有效性留给语义阶段。
 SZrAstNode *parse_return_statement(SZrParserState *ps) {
-    SZrFileRange startLoc = get_current_location(ps);
+    SZrFileRange startLoc = get_current_token_location(ps);
+    SZrFileRange endLoc = startLoc;
     SZrFileRange referenceLocation;
     TZrBool isReferenceReturn = ZR_FALSE;
 
@@ -380,21 +381,26 @@ SZrAstNode *parse_return_statement(SZrParserState *ps) {
     if (ps->lexer->t.token == ZR_TK_REF) {
         isReferenceReturn = ZR_TRUE;
         referenceLocation = get_current_token_location(ps);
+        endLoc = referenceLocation;
         ZrParser_Lexer_Next(ps->lexer);
     }
 
     SZrAstNode *expr = ZR_NULL;
     if (ps->lexer->t.token != ZR_TK_SEMICOLON) {
         expr = parse_expression(ps);
+        if (expr != ZR_NULL) {
+            endLoc = expr->location;
+        }
     }
 
     if (ps->lexer->t.token != ZR_TK_SEMICOLON) {
         report_missing_statement_semicolon(ps, "return", get_current_token_location(ps));
     } else {
+        endLoc = get_current_token_location(ps);
         consume_token(ps, ZR_TK_SEMICOLON);
     }
 
-    SZrAstNode *node = create_ast_node(ps, ZR_AST_RETURN_STATEMENT, startLoc);
+    SZrAstNode *node = create_ast_node(ps, ZR_AST_RETURN_STATEMENT, ZrParser_FileRange_Merge(startLoc, endLoc));
     if (node == ZR_NULL) {
         // BUG: 已解析返回值未移交节点时直接返回，非空 expr 会泄漏。
         return ZR_NULL;

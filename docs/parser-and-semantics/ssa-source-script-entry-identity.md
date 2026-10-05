@@ -11,6 +11,9 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_script_callable_return.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_script_callable_identity.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_script_callable_identity.h
+  - zr_vm_parser/src/zr_vm_parser/parser.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_state.c
   - tests/parser/test_ssa_source_script_entry_identity.c
   - tests/cmake/ssa-source-execbc-vm.cmake
   - tests/cmake/ssa-source-direct-validation/CMakeLists.txt
@@ -26,6 +29,7 @@ plan_sources:
 tests:
   - tests/parser/test_ssa_source_script_entry_identity.c
   - docs/acceptance/ssa-source-script-entry-identity.md
+  - docs/acceptance/ssa-source-range-identity.md
 doc_type: module-detail
 status: accepted-script-entry-identity-direct-green
 ---
@@ -64,10 +68,9 @@ or scratch allocation failure follows the existing false/error path.
 Preparation then calls `compiler_script_callable_identity_try_publish` with
 that TypeId while the actual AST, semantic context, and semantic IR are alive.
 Identity is an optional additional proof: unsupported or incomplete evidence
-publishes nothing and adds no source diagnostic. The final preparation ordering
-will place identity after the existing `functionName` assignment and GC write
-barrier; its temporary roots will be only roots acquired by this helper and
-released by this helper. This ordering is still awaiting implementation freeze.
+publishes nothing and adds no source diagnostic. The frozen implementation
+places identity after the existing `functionName` assignment and GC write
+barrier; the helper acquires and releases only its own temporary roots.
 Metadata token refresh and module summary hashing remain later stages in
 module finalization.
 
@@ -115,14 +118,20 @@ parameter, receiver, and effect fields are zero; `hasExplicitNoArgsI64` is true.
 For SCRIPT, `declarationRange` means the implicit callable's source origin,
 rather than the location of a named `fn` declaration.
 
-The current parser obtains SCRIPT/RETURN starts from
-`get_current_location` after the first token has been scanned. RETURN location
-is currently a point range, so this proof does not require the RETURN range
-to contain its expression. It preserves the actual numeric SCRIPT origin,
-RETURN, and expression positions and checks equality with their real semantic
-IR/source-map positions. The final producer also checks that the SCRIPT
-offset range contains those origins. This slice does not repair token-start
-precision or certify a complete RETURN statement span.
+At this gate's historical acceptance, the parser obtained SCRIPT/RETURN starts
+from `get_current_location` after scanning the first token, and RETURN was a
+point range. The finite identity proof therefore did not require RETURN to
+contain its expression. It preserved numeric SCRIPT origin, RETURN, and
+expression positions, checked equality with real semantic IR/source-map
+positions, and checked that SCRIPT contained those origins.
+
+The subsequent [source range contract](ssa-source-range-identity.md) corrects
+SCRIPT to start at the first actual token and reach EOS, and RETURN to start
+at `return` and end after its consumed semicolon. Its separate direct GREEN
+also verifies CRLF token ends and bounded missing-semicolon recovery. Current
+identity publication consumes those actual corrected parser positions. The
+historical identity receipts below remain evidence for their original finite
+gate; complete statement spans are established by the separate range gate.
 
 The IDs remain local to the original semantic context. After source compile
 returns, they record provenance and cannot be resolved as persistent handles.
@@ -138,7 +147,7 @@ record.
 
 `tests/parser/test_ssa_source_script_entry_identity.c` contains thirteen cases:
 four positive publication/lifetime/retry sequences and nine refusal guards.
-The completed GREEN path will make seventeen public compile calls, sixteen
+The completed GREEN path makes seventeen public compile calls, sixteen
 successful and one expected malformed-source NULL. The positive cases inspect
 the whole existing return type reference before the witness assertion, root
 returned functions, and compare record fields individually across another
