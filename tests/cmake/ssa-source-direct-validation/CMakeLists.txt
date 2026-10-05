@@ -257,6 +257,10 @@ foreach (_zr_guard_target IN ITEMS
         set(_zr_guard_source tests/parser/test_ssa_source_callable_return.c)
     endif ()
     add_executable(${_zr_guard_target} "${ZR_SSA_SOURCE_ROOT}/${_zr_guard_source}")
+    if (_zr_guard_target STREQUAL "zr_vm_ssa_dead_source_places_test")
+        target_sources(${_zr_guard_target} PRIVATE
+                "${ZR_SSA_SOURCE_ROOT}/tests/parser/support/ssa_literal_script_fixture.c")
+    endif ()
     target_include_directories(${_zr_guard_target} PRIVATE
             ${_zr_public_includes} ${_zr_vendor_includes} ${_zr_test_includes}
             "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser"
@@ -369,6 +373,7 @@ foreach (_header IN ITEMS
         tests/parser/ssa_source_execbc_vm_loop_phi.inc
         tests/parser/ssa_source_execbc_vm_scalar_guards.inc
         tests/parser/ssa_source_execbc_vm_compare.inc
+        tests/parser/support/ssa_literal_script_fixture.h
         zr_vm_parser/include/zr_vm_parser/exec_ir_dead_source_places.h
         zr_vm_library/third_party/zr_miniz/miniz/miniz_export.h)
     file(SHA256 "${ZR_SSA_SOURCE_ROOT}/${_header}" _hash)

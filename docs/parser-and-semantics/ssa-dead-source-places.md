@@ -6,12 +6,16 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_script_callable_identity.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
   - tests/parser/test_ssa_dead_source_places.c
+  - tests/parser/support/ssa_literal_script_fixture.h
+  - tests/parser/support/ssa_literal_script_fixture.c
   - tests/parser/ssa_dead_source_places_edges.inc
   - tests/cmake/ssa-source-execbc-vm.cmake
   - tests/cmake/ssa-source-direct-validation/CMakeLists.txt
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/exec_ir_dead_source_places.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_dead_source_places.c
+  - tests/parser/support/ssa_literal_script_fixture.h
+  - tests/parser/support/ssa_literal_script_fixture.c
 plan_sources:
   - .codex/plans/20261005-ssa-dead-source-places.md
   - docs/plans/ssa/02-automatic-optimization/01-pass-manager-scalar.md
@@ -23,6 +27,7 @@ tests:
   - docs/acceptance/ssa-dead-source-places.md
 doc_type: module-detail
 status: dead-source-places-focused-windows-green-accepted
+fixture_extraction_status: focused-windows-green-accepted
 ---
 
 # Dead Source Temporary Places
@@ -75,6 +80,48 @@ frame/GC/state allocations. Interior and cross-array overlaps within either
 owner, or between input and output, are invalid. Arithmetic for byte spans is
 checked. `input == output` is invalid.
 
+## Shared literal source fixture
+
+The single actual source preparation path has moved from the dead-place test
+into `tests/parser/support/ssa_literal_script_fixture.h/.c`. Its public source
+enum selects only `return 9;\n` or `return 8;\n`. `Prepare` performs the real
+Parse → CanonicalizeAst → module Prepare → compile/validate/assemble → module
+Finalize → BuildModule sequence. It checks genuine SCRIPT_ENTRY/canonical
+identity, attaches actual module constants and external-place initial values,
+and proves the original three-value source graph and its maps with VERIFY_ALL.
+It does not compact the graph, attach a frame or implicitly execute Oracle.
+
+The caller creates the runtime state and registers an initialized fixture with
+its teardown owner before `Prepare` can assert. The fixture owns its AST,
+compiler, rooted compiled function, CoreExecIR module and Oracle input buffers;
+it borrows the runtime state. `Function` returns a borrowed module function.
+`AssertSourceMaps` and the digest helpers observe these live records; digests
+include allocation identity/capacity for within-test mutation detection and are
+not canonical ABI identities.
+
+`AssertOracle` takes a caller-owned initialized execution result. That owner
+must remain reachable by teardown even if a Unity assertion aborts. The
+dead-place main retains its global Oracle result, output/mutated graphs, CLI
+selection and all 30 compaction/guard cases; thin adapters call shared support.
+Its wrapper explicitly executes Oracle after preparation. `Free` supports
+partially prepared fixtures: release module/input buffers, unroot/free the
+compiled function, release compiler and clear/free AST identity. The caller
+destroys the state only after every fixture and Oracle result is released.
+The same support TU is explicitly attached to both CMake test target routes,
+with its header included in direct validation hash metadata.
+
+This extraction is a separate accepted finite Windows validation step:
+configure/build/independent prerequisites/full CTest exited 0, prerequisites
+passed 2/2 and all 30 cases passed with no observed UBSan diagnostic. Its current
+main/support/CMake hashes, actual support-TU membership, logs and binary are
+recorded in the [acceptance record](../acceptance/ssa-dead-source-places.md).
+The final v2 extraction evidence follows removal of one extra blank line at
+the support TU's EOF found during Root's staged whitespace check. Its new TU
+hash is 05FB2408…CCA23; the original extraction receipt remains historical.
+The production TU pin is unchanged. The older producer
+GREEN and eight-suite consumer evidence remains historical evidence for the
+committed pre-extraction fixture.
+
 ## Transaction and preserved records
 
 1. Validate storage and ownership; run Core `VERIFY_ALL` on the input.
@@ -106,7 +153,7 @@ records are never silently erased. Allocation and capacity failures retain
 their corresponding diagnostics.
 
 The [acceptance record](../acceptance/ssa-dead-source-places.md) records the
-behavioral RED and fresh direct-checkout focused GREEN: 30/30 cases, comprising
+behavioral RED and committed pre-extraction focused GREEN: 30/30 cases, comprising
 2 source prerequisites, 8 feature cases and 20 guards. The separate prerequisite
 run passed 2/2. Build and CTest exited 0 with no observed UBSan diagnostic.
 After the selected current shared libraries were rebuilt, configure, focused

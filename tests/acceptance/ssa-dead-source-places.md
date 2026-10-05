@@ -3,12 +3,16 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/exec_ir_dead_source_places.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_dead_source_places.c
   - tests/parser/test_ssa_dead_source_places.c
+  - tests/parser/support/ssa_literal_script_fixture.h
+  - tests/parser/support/ssa_literal_script_fixture.c
   - tests/parser/ssa_dead_source_places_edges.inc
   - tests/cmake/ssa-source-execbc-vm.cmake
   - tests/cmake/ssa-source-direct-validation/CMakeLists.txt
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/exec_ir_dead_source_places.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_dead_source_places.c
+  - tests/parser/support/ssa_literal_script_fixture.h
+  - tests/parser/support/ssa_literal_script_fixture.c
 plan_sources:
   - .codex/plans/20261005-ssa-dead-source-places.md
   - docs/plans/ssa/02-automatic-optimization/01-pass-manager-scalar.md
@@ -18,6 +22,7 @@ tests:
   - docs/acceptance/ssa-dead-source-places.md
 doc_type: testing-guide
 status: dead-source-places-focused-windows-green-accepted
+fixture_extraction_status: focused-windows-green-accepted
 ---
 
 # Dead Source Places Test Acceptance
@@ -42,6 +47,19 @@ boundaries. It did not fail to link. Logs and hashes are in the
 No full repository baseline is claimed by this focused task.
 
 ## Test inventory
+
+### Shared source preparation ownership
+
+`support/ssa_literal_script_fixture.h/.c` now owns the one moved real-source
+Prepare/Finalize/BuildModule path and its actual constants/place initial values,
+source-map checks, Oracle callback and within-test digests. Prepare itself does
+not execute Oracle or call compaction/frame APIs. The dead-place main keeps
+thin adapters, the 30 cases and CLI, and the global Oracle/output/mutated owners.
+Register Init'd fixtures in teardown before Prepare can assert; keep the state
+alive until Free completes. Free handles partial preparation. AssertOracle
+requires an initialized caller-owned result retained across assertion abort;
+teardown releases results/graphs/fixtures before destroying the runtime state.
+Both ordinary and direct CMake target routes compile the same shared support TU.
 
 | Layer | Required checks |
 | --- | --- |
@@ -95,7 +113,7 @@ Selected consumer reproduction uses the actual executable target for loops:
 & 'E:\Visual Studio\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\ctest.exe' --test-dir 'E:\cargo-targets\zr_vm\build\ssa-20261004-01a0fe2b\metadata-guards-direct-v2' -R '^(ssa_source_execbc_vm_loops|ssa_source_straight_line_cfg|ssa_source_callable_return|ssa_source_script_entry_tokens|ssa_source_callable_identity|ssa_source_script_entry_identity|ssa_typed_binding_contract|ssa_dominator_cfg)$' -VV --output-on-failure --no-tests=error
 ```
 
-The final primary receipt preserves the exact MSVC compiler, argument array,
+The pre-extraction primary receipt preserves the exact MSVC compiler, argument array,
 INCLUDE and temporary-directory environments. To reproduce that compile-only
 command without guessing any include or define:
 
@@ -135,3 +153,35 @@ Linux GCC/Clang remain OPEN. No full repository GREEN is claimed.
 Full SSA47 stays **OPEN**; primitive frame construction, canonical AOT/native
 execution, returned artifact retention, other toolchains and exhaustive OOM
 testing are subsequent gates.
+
+## Independent extraction validation
+
+The preceding RED/DD09/CC31/B5 results cover the committed pre-extraction
+fixture. The shared-support extraction has separate completed validation:
+
+| Gate | Required observation |
+| --- | --- |
+| Static review | Independent gpt-6-sol specification/lifecycle review: no blocker; one moved route without hidden compaction/frame/Oracle |
+| Configure/build | Exit 0/0; shared support is a real target TU and its header is in refreshed metadata |
+| Independent prerequisites | Exit 0; 2/2 actual source identity graphs verify and return Oracle 9/8 |
+| Full focused suite | CTest exit 0; unchanged 30-case CLI inventory passes with 0 failures/ignored and no UBSan diagnostic |
+| Ownership | Main keeps result/graph teardown; partial fixture Free precedes runtime-state destruction |
+| Evidence | New main/support/CMake/header metadata pins and actual logs; old main/binary pins remain historical |
+
+This refactor is **focused Windows GREEN accepted**. Root's immutable
+`literal-fixture-extraction-green-receipt-v2.json` has SHA-256
+`93DCDB420BCDB4E549405933F008CEDAAD836A792BA921DD174A474C47A65A3C`;
+the [evidence record](../../docs/acceptance/ssa-dead-source-places.md) lists
+its seven current source pins, four logs, three metadata hashes and current
+binary. The current main hash is E02A7F8F…CDD55, not historical B6A5.
+All commands read the live checkout directly and use the E: build root above;
+configure precedes the same build, `--prerequisites-only` and full focused CTest
+commands. Root's staged check found and removed one extra support-TU EOF blank
+line; its final hash is 05FB2408…CCA23, with all other source pins unchanged.
+The original extraction receipt SHA-256
+`5524AE58BD9F3E8B583FAD1FEF6A90E4995CB6DD0839BA2F1D7319E51A345673`
+is retained as first-run history. After the correction, the same focused gates
+were rerun successfully. Final native session 4729 exited naturally, active
+0/stopped 0. Prior MSVC
+evidence is production-TU compilation only; Linux access denial and SSA47 OPEN
+remain unchanged. No source snapshot or cross-drive copy is generated.

@@ -116,6 +116,8 @@ endif ()
 if (NOT TARGET zr_vm_ssa_dead_source_places_test)
     zr_vm_add_unity_test_target(zr_vm_ssa_dead_source_places_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_dead_source_places.c)
+    target_sources(zr_vm_ssa_dead_source_places_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/tests/parser/support/ssa_literal_script_fixture.c)
     target_include_directories(zr_vm_ssa_dead_source_places_test PRIVATE
             ${CMAKE_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
