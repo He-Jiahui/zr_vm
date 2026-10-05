@@ -5,8 +5,8 @@
 #include "zr_vm_core/type_layout.h"
 #include "zr_vm_core/value.h"
 
-/* 构造器将 AOT 字段表与复制、GC、所有权和跨域传递约束一起固化为布局身份。
- * 本套件直接检查该身份，供 IO、反射和跨域路径依赖同一份契约。 */
+/* Unity 套件直接核对布局构造、身份校验及显式映射的约束；
+ * GC 访问用栈上值槽记录偏移，不执行对象收集或跨域传递。 */
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -37,6 +37,8 @@ static void test_pod_layout_records_blittable_and_c_type_metadata(void) {
     TEST_ASSERT_TRUE(ZrCore_TypeLayout_CanRawCopy(&layout));
 }
 
+/* 旧式 metadata 入口借用两张栈上偏移表，计数仍由字段标记推导；
+ * 本例只检查记录结果，不将这组字段跨度作为有效布局的证明。 */
 static void test_managed_layout_records_gc_and_ownership_offset_tables(void) {
     SZrTypeLayoutField fields[2];
     TZrUInt32 gcOffsets[2] = {8u, 24u};
@@ -105,6 +107,8 @@ static void test_default_struct_init_keeps_neutral_aot_metadata(void) {
     TEST_ASSERT_NULL(layout.ownershipFieldOffsets);
 }
 
+/* 故意保留非零 fieldCount 与空表，只核构造器不解引用空表；
+ * 不把构造完成当成 Validate 成功。 */
 static void test_null_field_table_does_not_scan_metadata_counts(void) {
     SZrTypeLayout layout;
 
@@ -123,6 +127,7 @@ static void test_null_field_table_does_not_scan_metadata_counts(void) {
     TEST_ASSERT_FALSE(layout.blittable);
 }
 
+/* 无托管字段也不能绕过 MOVE_ONLY；字节缓冲仅用于复制拒绝路径。 */
 static void test_layout_contract_exposes_canonical_copy_drop_and_scan_kinds(void) {
     SZrTypeLayout layout;
     TZrByte source[8] = {0u};
@@ -251,7 +256,8 @@ static void test_layout_hash_is_stable_and_tracks_structural_drift(void) {
     TEST_ASSERT_TRUE(ZrCore_TypeLayout_Validate(&changed));
 }
 
-/* 验证端同时拒绝字段越界、映射失配、哈希漂移和版本漂移。 */
+/* 前两组描述符用于拒绝无效跨度或显式映射；不隔离每个拒绝原因。
+ * 随后清空显式表，靠字段推导 GC 映射建立有效基线，再分别篡改 hash 与版本。 */
 static void test_layout_validation_rejects_invalid_spans_maps_and_identity(void) {
     const TZrUInt32 invalidGcOffset[1] = {12u};
     SZrTypeLayoutField field;
@@ -481,12 +487,16 @@ static void test_domain_transfer_kind_is_canonical_layout_identity(void) {
     TEST_ASSERT_FALSE(ZrCore_TypeLayout_Validate(&driftedLayout));
 }
 
+/* 同步 GC 遍历的借用记录；storage 与本记录均须活到遍历返回，
+ * count 可超过 offsets 容量，未保存的尾项仍计入总次数。 */
 typedef struct SExplicitMapVisitRecord {
     SZrTypeValue *storage;
     TZrUInt32 count;
     TZrUInt32 offsets[4];
 } SExplicitMapVisitRecord;
 
+/* 访问器只记录相对同一栈数组的字节偏移；count 计全部调用，
+ * offsets 最多保留前四项，使额外访问仍能被次数断言发现。 */
 static void record_explicit_map_visit(
         struct SZrState *state, SZrTypeValue *value, TZrPtr userData) {
     SExplicitMapVisitRecord *record = (SExplicitMapVisitRecord *)userData;
@@ -498,6 +508,9 @@ static void record_explicit_map_visit(
     record->count++;
 }
 
+/* 三个映射类别共用相同字段形状，以隔离显式表与相应字段标记的匹配。
+ * 调用仅传 GC/OWNERSHIP/REF 三种 flag；字段和偏移表由用例栈保有，
+ * 临时 contract 在返回后无须保留，布局借用的是其中指向的表。 */
 static void init_explicit_map_layout(
         SZrTypeLayout *layout, SZrTypeLayoutField *fields,
         TZrUInt32 fieldCount, TZrUInt32 flag,
@@ -523,6 +536,8 @@ static void init_explicit_map_layout(
             fields, fieldCount, &contract);
 }
 
+/* 偏移仍在真实值槽内，但指向未带目标标记的第二槽；防止只检查边界
+ * 与数量而接受错误映射。三种 flag 共用该反例。 */
 static void assert_explicit_map_rejects_wrong_kind(TZrUInt32 flag) {
     SZrTypeLayoutField fields[2];
     SZrTypeLayout layout;
@@ -539,7 +554,8 @@ static void assert_explicit_map_rejects_wrong_kind(TZrUInt32 flag) {
     fields[1].flags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT;
     init_explicit_map_layout(&layout, fields, 2u, flag, wrongOffset, 1u);
     valid = ZrCore_TypeLayout_Validate(&layout);
-    /* The baseline witness visits only real aligned slots, without collecting objects. */
+    /* 仅当回归使错误 GC 表被接受时记录错误访问，帮助定位拒绝断言的失败；
+     * storage 是对齐的真实值槽，不调用收集器，也不释放或复制槽中对象。 */
     if (valid && flag == ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE) {
         SExplicitMapVisitRecord record = {storage, 0u, {0u}};
         TEST_ASSERT_TRUE(ZrCore_TypeLayout_VisitGcValuesWithRegistry(
@@ -565,6 +581,8 @@ static void test_explicit_ref_map_rejects_in_bounds_non_ref_slot(void) {
     assert_explicit_map_rejects_wrong_kind(ZR_TYPE_LAYOUT_FIELD_FLAG_REF_VALUE);
 }
 
+/* 两字段都有目标标记，但显式表重复第一槽并遗漏第二槽；
+ * 计数相等仍须拒绝，不能以逐项落在某个合法字段内代替完整覆盖。 */
 static void assert_explicit_map_rejects_duplicate_missing_field(TZrUInt32 flag) {
     SZrTypeLayoutField fields[2];
     SZrTypeLayout layout;
@@ -591,6 +609,8 @@ static void test_explicit_ref_map_rejects_duplicate_and_missing_field(void) {
     assert_explicit_map_rejects_duplicate_missing_field(ZR_TYPE_LAYOUT_FIELD_FLAG_REF_VALUE);
 }
 
+/* 三类显式映射都允许颠倒顺序，也允许空表由字段推导；
+ * 仅 GC 类别执行访问器，分别核对显式表顺序与字段回退顺序。 */
 static void test_explicit_maps_allow_permutation_and_null_fallback(void) {
     SZrTypeLayoutField fields[2];
     SZrTypeLayout layout;
@@ -632,6 +652,8 @@ static void test_explicit_maps_allow_permutation_and_null_fallback(void) {
     }
 }
 
+/* 两个变体合法共享偏移，三张表都保留重复项；tag 放在载荷之后。
+ * GC 遍历仍只报告 tag=1 的活动成员，不能把显式表的两项都当作根。 */
 static void test_union_explicit_maps_preserve_legal_overlap_and_active_scan(void) {
     SZrTypeLayoutField fields[2];
     SZrTypeLayoutContract contract;
@@ -669,6 +691,8 @@ static void test_union_explicit_maps_preserve_legal_overlap_and_active_scan(void
     TEST_ASSERT_EQUAL_UINT32(0u, record.offsets[0]);
 }
 
+/* 联合字段的偏移多重集为 {0,0,一槽大小}，表却为 {0,一槽大小,一槽大小}；
+ * 同样数量与合法偏移不能掩盖各偏移出现次数失配。 */
 static void test_union_explicit_map_rejects_wrong_overlap_multiplicity(void) {
     SZrTypeLayoutField fields[3];
     SZrTypeLayoutContract contract;
@@ -696,6 +720,7 @@ static void test_union_explicit_map_rejects_wrong_overlap_multiplicity(void) {
     TEST_ASSERT_FALSE(ZrCore_TypeLayout_Validate(&layout));
 }
 
+/* CTest 通过套件脚本启动本可执行文件；注册全部用例，并以 Unity 汇总结果退出。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_pod_layout_records_blittable_and_c_type_metadata);
