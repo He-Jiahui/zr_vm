@@ -1,3 +1,4 @@
+/* 本翻译单元只维护 caller-owned 元数据与 lease；普通 core 构建无需 LLVM 或可执行页 provider。 */
 #include "zr_vm_core/host_baseline_jit.h"
 
 #include <stdint.h>
@@ -7,12 +8,20 @@
 #include <intrin.h>
 #endif
 
+/*
+ * 使可选诊断成为本次调用的空白输出。
+ * 只清零调用方可写存储；不表示已准备或已发布代码。
+ */
 static void host_jit_clear(SZrHostJitDiagnostic *diagnostic) {
     if (diagnostic != ZR_NULL) {
         memset(diagnostic, 0, sizeof(*diagnostic));
     }
 }
 
+/*
+ * 把拒绝原因及标量见证写入可选诊断，供上层映射状态。
+ * 不保存输入指针；expected/actual 与 hash 的含义由失败分支决定。
+ */
 static EZrHostJitStatus host_jit_fail(
         EZrHostJitStatus status,
         SZrHostJitDiagnostic *diagnostic,
@@ -32,12 +41,20 @@ static EZrHostJitStatus host_jit_fail(
     return status;
 }
 
+/*
+ * 限定此契约允许尝试的主机平台与两种架构。
+ * 属于声明白名单；仍需另核编译架构、指针宽度与 ABI。
+ */
 static TZrBool host_jit_target_is_host(const SZrHostJitTargetContract *target) {
     return target != ZR_NULL && target->platform == ZR_HOST_JIT_PLATFORM_HOST &&
            (target->architecture == ZR_HOST_JIT_ARCH_X86_64 ||
             target->architecture == ZR_HOST_JIT_ARCH_AARCH64);
 }
 
+/*
+ * 从编译器目标宏取得本翻译单元的架构见证。
+ * 未知目标返回 NONE；不探测运行时 CPU 或操作系统能力。
+ */
 static EZrHostJitArchitecture host_jit_compiled_architecture(void) {
 #if defined(_M_X64) || defined(__x86_64__) || defined(__amd64__)
     return ZR_HOST_JIT_ARCH_X86_64;
@@ -48,6 +65,10 @@ static EZrHostJitArchitecture host_jit_compiled_architecture(void) {
 #endif
 }
 
+/*
+ * 确认目标声明符合本 core 的主机、ABI 与布局摘要约束。
+ * 只读借用输入；hash 仅要求非零，不重算宿主布局或证明 provider 可用。
+ */
 EZrHostJitStatus ZrCore_HostJit_ValidateTarget(
         const SZrHostJitTargetContract *target,
         SZrHostJitDiagnostic *diagnostic) {
@@ -94,6 +115,10 @@ EZrHostJitStatus ZrCore_HostJit_ValidateTarget(
     return ZR_HOST_JIT_STATUS_OK;
 }
 
+/*
+ * 为启用主机记录管理的配置建立前置契约。
+ * 未设 ENABLE 时只核 schema 和已知选项位；不校验 target/预算，也不分配缓存。
+ */
 EZrHostJitStatus ZrCore_HostJit_ValidateOptions(
         const SZrHostJitOptions *options,
         SZrHostJitDiagnostic *diagnostic) {
@@ -113,6 +138,10 @@ EZrHostJitStatus ZrCore_HostJit_ValidateOptions(
                              ZR_HOST_JIT_OPTION_FLAG_KNOWN_MASK,
                              options->flags, 0u, 0u, 0u);
     }
+    /*
+     * 禁用配置保留普通 core 路由的前置校验边界。
+     * 只核 schema/已知选项位；不把该成功解释为 target 或预算已有效。
+     */
     if ((options->flags & ZR_HOST_JIT_OPTION_FLAG_ENABLE) == 0u) {
         return ZR_HOST_JIT_STATUS_OK;
     }
@@ -127,6 +156,10 @@ EZrHostJitStatus ZrCore_HostJit_ValidateOptions(
     return ZR_HOST_JIT_STATUS_OK;
 }
 
+/*
+ * 核对借用导入清单的结构与符号唯一性，供发布和查询共用。
+ * 发布允许空 manifest；非空摘要仅核非零，不验证实际符号绑定或摘要来源。
+ */
 static EZrHostJitStatus host_jit_validate_manifest(
         const SZrHostJitImportManifest *manifest,
         SZrHostJitDiagnostic *diagnostic) {
@@ -160,6 +193,10 @@ static EZrHostJitStatus host_jit_validate_manifest(
     return ZR_HOST_JIT_STATUS_OK;
 }
 
+/*
+ * 按符号身份与签名共同限制一次导入查询。
+ * 调用期间借用完整清单和数组；拒绝缺项或签名不符，不返回可调用地址。
+ */
 EZrHostJitStatus ZrCore_HostJit_ValidateImports(
         const SZrHostJitImportManifest *manifest,
         TZrUInt64 symbolId,
@@ -190,6 +227,10 @@ EZrHostJitStatus ZrCore_HostJit_ValidateImports(
                          0u, 0u, symbolId, 0u, manifest->count);
 }
 
+/*
+ * 检查一个已知操作位是否包含在给定声明掩码中。
+ * operation 必须恰有一个已知位；不校验 mask 的其他位，也不查询机器码能力。
+ */
 TZrBool ZrCore_HostJit_SupportsOperation(
         TZrUInt32 operation,
         TZrUInt32 operationMask) {
@@ -200,6 +241,10 @@ TZrBool ZrCore_HostJit_SupportsOperation(
     return (TZrBool)((operationMask & operation) != 0u);
 }
 
+/*
+ * 核对发布者提交的目标、注册与代码摘要声明是否自洽。
+ * MACHINE_CODE/WX/四图位与非零 hash 都是提交者的声明；本层不检查页权限、图内容或机器码。
+ */
 EZrHostJitStatus ZrCore_HostJit_ValidatePublication(
         const SZrHostJitPublicationFacts *facts,
         SZrHostJitDiagnostic *diagnostic) {
@@ -220,6 +265,10 @@ EZrHostJitStatus ZrCore_HostJit_ValidatePublication(
                              ZR_HOST_JIT_PUBLICATION_FLAG_KNOWN_MASK,
                              facts->flags, 0u, 0u, 0u);
     }
+    /*
+     * 发布标记与四图声明的责任边界。
+     * 真正页权限与登记资源由 provider/调用方负责，core 只核提交声明。
+     */
     if ((facts->flags & ZR_HOST_JIT_PUBLICATION_FLAG_MACHINE_CODE) == 0u) {
         return host_jit_fail(ZR_HOST_JIT_STATUS_CODE_INVALID, diagnostic,
                              ZR_HOST_JIT_PUBLICATION_FLAG_MACHINE_CODE,
@@ -257,6 +306,10 @@ EZrHostJitStatus ZrCore_HostJit_ValidatePublication(
     return host_jit_validate_manifest(facts->imports, diagnostic);
 }
 
+/*
+ * 串行化同一 manager 的记录与计数观察。
+ * MSVC 与其他编译器使用各自原子交换；自旋锁不可重入，存储须在整个操作期间有效。
+ */
 static void host_jit_lock(SZrHostJitCodeManager *manager) {
 #if defined(_MSC_VER)
     while (_InterlockedExchange((volatile long *)&manager->lock, 1L) != 0L) {
@@ -267,6 +320,10 @@ static void host_jit_lock(SZrHostJitCodeManager *manager) {
 #endif
 }
 
+/*
+ * 结束 manager 的互斥观察并允许后续记录操作。
+ * 须由持锁路径配对调用；volatile 字段本身不能替代这对锁操作。
+ */
 static void host_jit_unlock(SZrHostJitCodeManager *manager) {
 #if defined(_MSC_VER)
     _InterlockedExchange((volatile long *)&manager->lock, 0L);
@@ -275,10 +332,18 @@ static void host_jit_unlock(SZrHostJitCodeManager *manager) {
 #endif
 }
 
+/*
+ * 拒绝无法解释的记录状态数值。
+ * 枚举当前连续从 FREE 到 RETIRED；具体状态与字段关系另由 shape 验证。
+ */
 static TZrBool host_jit_code_state_valid(TZrUInt32 state) {
     return (TZrBool)(state <= (TZrUInt32)ZR_HOST_JIT_CODE_RETIRED);
 }
 
+/*
+ * 保证记录数组容量在地址宽度下可形成字节跨度。
+ * 32 位地址分支限制乘积；不证明调用方实际提供了足够、对齐且存活的数组。
+ */
 static TZrBool host_jit_capacity_bytes_valid(TZrUInt32 capacity) {
 #if UINTPTR_MAX <= UINT32_MAX
     return (TZrBool)(capacity != 0u &&
@@ -290,6 +355,10 @@ static TZrBool host_jit_capacity_bytes_valid(TZrUInt32 capacity) {
 #endif
 }
 
+/*
+ * 在解引用外来记录指针前核对数组范围和记录边界。
+ * 整数地址检查只证明声明范围内的位置；manager 和底层数组的有效生命周期仍由调用方保证。
+ */
 static TZrBool host_jit_belongs(const SZrHostJitCodeManager *manager,
                                 const SZrHostJitCodeRecord *record) {
     uintptr_t begin;
@@ -309,6 +378,10 @@ static TZrBool host_jit_belongs(const SZrHostJitCodeManager *manager,
                      ((candidate - begin) % sizeof(*manager->records)) == 0u);
 }
 
+/*
+ * 先核对借用数组的外壳，避免完整扫描使用明显失效的容量。
+ * 调用者须持 manager 锁；合法容量不等于实际分配长度证明。
+ */
 static TZrBool host_jit_manager_shell_valid(
         const SZrHostJitCodeManager *manager) {
     if (manager == ZR_NULL || manager->records == ZR_NULL ||
@@ -321,6 +394,10 @@ static TZrBool host_jit_manager_shell_valid(
 /* Validate the caller-owned manager shell while its lock is held.  All
  * mutable manager fields are therefore observed as one shape, even when a
  * concurrent operation is publishing, collecting, or deinitializing code. */
+/*
+ * 在同一次持锁观察中确认记录、计数、唯一身份与 active 一致。
+ * 扫描整个固定容量；FREE 必须全零，PREPARED 不得有 lease，PUBLISHED 至多一条。
+ */
 static TZrBool host_jit_manager_shape_valid(
         const SZrHostJitCodeManager *manager) {
     TZrUInt32 index;
@@ -329,6 +406,10 @@ static TZrBool host_jit_manager_shape_valid(
     if (!host_jit_manager_shell_valid(manager)) {
         return ZR_FALSE;
     }
+    /*
+     * 将数组、唯一身份、计数与 active 作为同一次观察验证。
+     * 调用者持锁；普通局部 guard 均归此函数，不对外部数组分配作证明。
+     */
     for (index = 0u; index < manager->capacity; ++index) {
         const SZrHostJitCodeRecord *record = &manager->records[index];
         if (!host_jit_code_state_valid(record->state)) return ZR_FALSE;
@@ -373,11 +454,19 @@ static TZrBool host_jit_manager_shape_valid(
                      manager->active->state == ZR_HOST_JIT_CODE_PUBLISHED);
 }
 
+/*
+ * 给公共记录操作统一提供持锁完整验证入口。
+ * 保留调用层次；不获取锁，也不允许无锁直接调用。
+ */
 static TZrBool host_jit_manager_valid_locked(
         const SZrHostJitCodeManager *manager) {
     return host_jit_manager_shape_valid(manager);
 }
 
+/*
+ * 在尝试获取锁前拒绝空 manager 参数。
+ * 只核指针非空；可变外壳和全部记录须在锁内另核。
+ */
 static EZrHostJitStatus host_jit_require_manager(
         const SZrHostJitCodeManager *manager,
         SZrHostJitDiagnostic *diagnostic) {
@@ -388,6 +477,10 @@ static EZrHostJitStatus host_jit_require_manager(
     return ZR_HOST_JIT_STATUS_OK;
 }
 
+/*
+ * 把调用方的固定记录数组接入新 manager 并建立全空状态。
+ * 借用并清零整个数组，不分配或释放存储；初始化须独占且不可覆盖尚有记录或 lease 的实例。
+ */
 EZrHostJitStatus ZrCore_HostJit_CodeManager_Init(
         SZrHostJitCodeManager *manager,
         SZrHostJitCodeRecord *records,
@@ -409,11 +502,19 @@ EZrHostJitStatus ZrCore_HostJit_CodeManager_Init(
     return ZR_HOST_JIT_STATUS_OK;
 }
 
+/*
+ * 仅在完整且已排空的 manager 上解除对数组的借用。
+ * void 入口在有记录或外壳失效时保留原状态；调用方须确认 records 已为空后才释放数组。
+ */
 void ZrCore_HostJit_CodeManager_Deinit(SZrHostJitCodeManager *manager) {
     if (manager == ZR_NULL) {
         return;
     }
     host_jit_lock(manager);
+    /*
+     * 有活跃或未收集记录时保留 manager，允许所有者继续清理。
+     * void 入口无法返回失败；records 清空前不得释放借用存储。
+     */
     if (!host_jit_manager_valid_locked(manager) ||
         manager->active != ZR_NULL || manager->count != 0u) {
         /* A void deinit API cannot report failure.  Leave the manager intact
@@ -429,6 +530,11 @@ void ZrCore_HostJit_CodeManager_Deinit(SZrHostJitCodeManager *manager) {
     host_jit_unlock(manager);
 }
 
+/*
+ * 把已验证发布声明的身份与三个 hash 放入空记录。
+ * 输出是未租用的准备句柄；不保存 imports/状态图，不生成机器码；调用方须提供无活跃 lease 的独立输出。
+ * facts/manager 前置校验失败时输出可能仍为原值；进入记录操作前才清零，失败时不能把输出当作新准备句柄。
+ */
 EZrHostJitStatus ZrCore_HostJit_Code_Prepare(
         SZrHostJitCodeManager *manager,
         const SZrHostJitPublicationFacts *facts,
@@ -456,6 +562,7 @@ EZrHostJitStatus ZrCore_HostJit_Code_Prepare(
     for (TZrUInt32 j = 0u; j < manager->capacity; ++j) {
         if (manager->records[j].state != ZR_HOST_JIT_CODE_FREE &&
             manager->records[j].codeIdentity == facts->codeIdentity) {
+            /* TODO: 重复身份与容量失败分支在解锁后读取 manager/record 作为诊断；需确认公开直接并发调用的约束，或改为锁内标量快照。 */
             host_jit_unlock(manager);
             return host_jit_fail(ZR_HOST_JIT_STATUS_CODE_INVALID,
                                  diagnostic, 0u, 0u, facts->codeIdentity,
@@ -491,6 +598,10 @@ EZrHostJitStatus ZrCore_HostJit_Code_Prepare(
                          manager->capacity, manager->capacity, 0u, 0u, 0u);
 }
 
+/*
+ * 使准备记录成为唯一 active，并让旧发布记录进入退休状态。
+ * 仅接受本 manager 的未租用 PREPARED 句柄；不会取得 lease 或清空 prepared，也不发布可执行地址。
+ */
 EZrHostJitStatus ZrCore_HostJit_Code_Publish(
         SZrHostJitCodeManager *manager,
         SZrHostJitCodeHandle *prepared,
@@ -522,6 +633,10 @@ EZrHostJitStatus ZrCore_HostJit_Code_Publish(
                              prepared->codeIdentity, 0u);
     }
     {
+        /*
+         * 替换 active 时先退休旧记录，保留既有 lease 的可解析性。
+         * 不减旧 lease，不回收资源；最后归还后另 CollectRetired。
+         */
         SZrHostJitCodeRecord *old = manager->active;
         if (old != ZR_NULL && old != prepared->record &&
             old->state == ZR_HOST_JIT_CODE_PUBLISHED) {
@@ -534,6 +649,11 @@ EZrHostJitStatus ZrCore_HostJit_Code_Publish(
     return ZR_HOST_JIT_STATUS_OK;
 }
 
+/*
+ * 为当前已发布记录取得一份须归还的 lease。
+ * 输出不得覆盖已有 lease；退休可与既有 lease 并存，记录数组必须保持有效直到归还。
+ * 空 manager 等前置失败不保证清空输出；只有成功返回才表示取得新 lease。
+ */
 EZrHostJitStatus ZrCore_HostJit_Code_AcquireActive(
         SZrHostJitCodeManager *manager,
         SZrHostJitCodeHandle *outHandle,
@@ -556,6 +676,7 @@ EZrHostJitStatus ZrCore_HostJit_Code_AcquireActive(
     }
     record = manager->active;
     if (record == ZR_NULL || record->state != ZR_HOST_JIT_CODE_PUBLISHED) {
+        /* TODO: 失败诊断在解锁后读取 record 状态或 leaseCount；facade 已外层串行，公开 core 并发消费仍需核清，不能据此保证一致快照。 */
         host_jit_unlock(manager);
         return host_jit_fail(ZR_HOST_JIT_STATUS_STALE_HANDLE, diagnostic,
                              ZR_HOST_JIT_CODE_PUBLISHED,
@@ -575,6 +696,10 @@ EZrHostJitStatus ZrCore_HostJit_Code_AcquireActive(
     return ZR_HOST_JIT_STATUS_OK;
 }
 
+/*
+ * 按身份退休记录，阻止其继续作为 active 被获取。
+ * PREPARED 也可退休；已有 lease 不减少，实际回收由 CollectRetired 在归还后完成。
+ */
 EZrHostJitStatus ZrCore_HostJit_Code_Evict(
         SZrHostJitCodeManager *manager,
         TZrUInt64 codeIdentity,
@@ -614,6 +739,11 @@ EZrHostJitStatus ZrCore_HostJit_Code_Evict(
                          1u, 0u, codeIdentity, 0u, 0u);
 }
 
+/*
+ * 在 lease 有效期间取得记录元数据的同次持锁快照。
+ * RETIRED 仍可解析；const manager 仍会修改锁，须来自可写实例；view 不是入口地址或新 lease。
+ * 无效输入的早期失败不保证清空 view；仅成功快照可供调用方观察。
+ */
 EZrHostJitStatus ZrCore_HostJit_Code_Resolve(
         const SZrHostJitCodeManager *manager,
         const SZrHostJitCodeHandle *handle,
@@ -635,6 +765,10 @@ EZrHostJitStatus ZrCore_HostJit_Code_Resolve(
     status = host_jit_require_manager(manager, diagnostic);
     if (status != ZR_HOST_JIT_STATUS_OK) return status;
     memset(outView, 0, sizeof(*outView));
+    /*
+     * 以可写锁保护对 const 视图的一次元数据读取。
+     * 只返回标量快照；底层实例必须可写且仍存活，不代表机器码地址。
+     */
     mutableManager = (SZrHostJitCodeManager *)(void *)manager;
     host_jit_lock(mutableManager);
     if (!host_jit_manager_valid_locked(manager)) {
@@ -665,6 +799,11 @@ EZrHostJitStatus ZrCore_HostJit_Code_Resolve(
     return ZR_HOST_JIT_STATUS_OK;
 }
 
+/*
+ * 归还传入句柄代表的一份 lease，并清空该句柄。
+ * 成功后该句柄不可再用；不自动回收退休记录，复制 leased 句柄不能产生另一份拥有权。
+ * 失败路径保留传入句柄；不能把失败当作 lease 已归还。
+ */
 EZrHostJitStatus ZrCore_HostJit_Code_Release(
         SZrHostJitCodeManager *manager,
         SZrHostJitCodeHandle *handle,
@@ -689,6 +828,7 @@ EZrHostJitStatus ZrCore_HostJit_Code_Release(
     if (!host_jit_belongs(manager, record) ||
         record->codeIdentity != handle->codeIdentity ||
         record->state == ZR_HOST_JIT_CODE_FREE) {
+        /* TODO: stale 分支解锁后再次判断归属并读取 identity；需核清外部直接并发调用和存储生命周期，再确定诊断是否需锁内快照。 */
         host_jit_unlock(manager);
         return host_jit_fail(ZR_HOST_JIT_STATUS_STALE_HANDLE, diagnostic,
                              1u, 0u, handle->codeIdentity,
@@ -710,6 +850,11 @@ EZrHostJitStatus ZrCore_HostJit_Code_Release(
     return ZR_HOST_JIT_STATUS_OK;
 }
 
+/*
+ * 在最后一份 lease 归还后把退休记录恢复为空槽。
+ * 只清除 core 元数据并报告数量；外部 proof 与可执行资源由其所有者另行管理。
+ * 非空 outCollected 在 manager 校验前置零；成功计数仅表示本层清零的记录数。
+ */
 EZrHostJitStatus ZrCore_HostJit_Code_CollectRetired(
         SZrHostJitCodeManager *manager,
         TZrUInt32 *outCollected,
@@ -732,6 +877,10 @@ EZrHostJitStatus ZrCore_HostJit_Code_CollectRetired(
     }
     for (TZrUInt32 i = 0u; i < manager->capacity; ++i) {
         SZrHostJitCodeRecord *record = &manager->records[i];
+        /*
+         * 退休且无 lease 才清零槽位，允许随后重新准备。
+         * 只回收记录元数据；不能据此证明外部代码页或 proof 已释放。
+         */
         if (record->state == ZR_HOST_JIT_CODE_RETIRED &&
             record->leaseCount == 0u) {
             memset(record, 0, sizeof(*record));
@@ -746,6 +895,10 @@ EZrHostJitStatus ZrCore_HostJit_Code_CollectRetired(
     return ZR_HOST_JIT_STATUS_OK;
 }
 
+/*
+ * 为 core 状态提供借用的静态诊断名称。
+ * 未知值返回通用名称，调用方不得释放返回字符串；TODO: 当前全后缀检索无正向调用，需确认仓库外公开 ABI 消费者。
+ */
 const TZrChar *ZrCore_HostJit_StatusName(EZrHostJitStatus status) {
     switch (status) {
         case ZR_HOST_JIT_STATUS_OK: return "OK";

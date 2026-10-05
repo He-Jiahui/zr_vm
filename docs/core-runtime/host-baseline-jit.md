@@ -2,21 +2,16 @@
 related_code:
   - zr_vm_core/include/zr_vm_core/host_baseline_jit.h
   - zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c
+  - zr_vm_core/include/zr_vm_core/execution_contract.h
+  - zr_vm_core/include/zr_vm_core/execution_backend.h
   - zr_vm_jit/include/zr_vm_jit/backend.h
   - zr_vm_jit/src/orc_backend.cpp
-  - zr_vm_jit/src/jit_state_maps.cpp
-  - zr_vm_core/include/zr_vm_core/execution_contract.h
-  - zr_vm_core/include/zr_vm_core/aot_ir.h
-  - zr_vm_common/include/zr_vm_common/zr_io_conf.h
-  - zr_vm_common/include/zr_vm_common/zr_aot_abi.h
+  - tests/core/test_ssa_host_baseline_jit.c
+  - tests/core/test_ssa_host_jit_optional.c
+  - tests/cmake/ssa-tests.cmake
 implementation_files:
   - zr_vm_core/include/zr_vm_core/host_baseline_jit.h
   - zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c
-  - zr_vm_jit/CMakeLists.txt
-  - zr_vm_jit/include/zr_vm_jit/backend.h
-  - zr_vm_jit/src/orc_backend.cpp
-  - zr_vm_jit/src/jit_state_maps.cpp
-  - zr_vm_common/include/zr_vm_common/zr_io_conf.h
 plan_sources:
   - docs/plans/ssa/10-jit-platforms/02-host-baseline-jit.md
   - docs/plans/ssa/10-jit-platforms/01-backend-service.md
@@ -29,91 +24,60 @@ doc_type: module-detail
 status: implemented-subset
 ---
 
-# Host Baseline JIT Contract
+# Host baseline JIT：声明校验与记录生命周期
 
-## Purpose
+## 当前实现范围
 
-`host_baseline_jit` 为可选的 x86-64/AArch64 machine-code backend 提供 core 层 C ABI。它冻结目标 ABI、允许导入、可执行代码发布前的安全登记和 code-cache lease 生命周期；没有 LLVM/ORC 的构建仍然可以使用 AOT/ExecBC。该模块不生成机器码，也不保存宿主地址，因此可以先独立验证边界，再由后续 C++ ORC/JITLink 适配层消费。
+core 提供 C ABI 的目标、配置、导入与发布声明校验，以及调用方数组内记录的生命周期管理。它不生成机器码，不分配可执行页，不保存入口地址，不执行 GC 或真实图登记。可选 facade 的 provider、proof 与地址资源属于另外的所有者；当前 facade 注册时把 machineCodeAvailable 设为 false（`zr_vm_jit/src/orc_backend.cpp:769`），有无 LLVM 构建探测都不能据此获得机器码能力。
 
-## Contract layers
+目标、身份与 hash 是不含执行地址的标量见证，但整个 lifetime 对象并非无指针：manifest 借用数组，manager 借用记录数组，HostJitCodeHandle 借用记录位置。输入在调用期间保持稳定，可写输出与输入、manager/records 使用独立存储，共享诊断与输出由调用方串行化。公共 C++ 链接包裹只提供 C 链接名（`zr_vm_core/include/zr_vm_core/host_baseline_jit.h:23`）。
 
-`SZrHostJitTargetContract` 是运行时 target witness：schema、架构、host 平台、指针宽度、端序、execution ABI 版本、target triple hash 和 layout hash 必须一致。当前 contract 只接受 host x86-64 与 AArch64、8-byte little-endian target；Android/iOS/WASM 会被明确标记为 unsupported，而不会创建 machine-code 路径。
+## 校验的前提与成功含义
 
-`SZrHostJitImportManifest` 由稳定的 symbol/signature identity 组成。resolver 必须逐项调用 `ZrCore_HostJit_ValidateImports`，只允许 manifest 内的 runtime/native symbol 及匹配签名；代码不做任意宿主地址搜索。manifest 和每个 import 都要求非零 identity、已知 kind、正确 schema 和非零 allowlist hash。
+| 声明 | 当前校验 | 成功不代表 |
+| --- | --- | --- |
+| Target | schema1、HOST、编译 x86-64/AArch64 匹配、pointerSize==sizeof(void*)、LITTLE 声明、execution ABI17、非零 triple/layout hash | 运行时 CPU/端序探测、实际 target/layout hash 重算、provider 可用 |
+| Options | schema/已知选项位始终校验；仅 ENABLE 后验证 target 与非零预算 | 禁用配置的 target/预算有效，或预算已分配为代码页 |
+| Imports | 完整清单 schema、非零摘要、条目非零 ID/签名、RUNTIME/NATIVE、reserved0、ID唯一；查询还需同签名 | 实际符号绑定、地址解析或 native 权限授予 |
+| Publication | MACHINE_CODE/WX、四图注册位、非零图与身份摘要、layout同target、已知操作/capability/effect位 | 真实页权限、状态图内容、平台图登记或代码行为已被验证 |
 
-`SZrHostJitPublicationFacts` 以稳定标量承载发布前 proof；其中的 import manifest 是只读的 borrowed validation view，不会复制到 code record。它必须声明 typed scalar、control、direct call、simple member 或 array 中至少一个受支持操作，且 signature/layout/ABI、GC map、unwind、debug、deopt map 和 code identity 都非零。machine-code 与 W^X 标志必须同时存在，四种 registration（roots、unwind、debug、deopt）全部完成后才能进入 published 状态。
+具体操作见 target 的 ABI 比较 `zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:106`、options 禁用早回 `zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:145`、manifest 唯一身份比较 `zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:186`、publication 注册位比较 `zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:282`。schema 与执行 ABI 分别验证；指针宽度按 sizeof(void*)，不能把 fixture 的固定8写成通用契约。Publication 的 imports 可空，非空时只在本次验证借用，不复制到记录。
 
-The public header is usable from C++ adapters through an `extern "C"` guard.
-Target validation also compares the requested host architecture with the
-architecture used to compile the core (x86-64 or AArch64); a mismatched target
-is rejected before publication. Import manifests reject duplicate symbol IDs,
-even when the duplicate carries a different signature, so resolver lookups do
-not have an ambiguous identity.
+## 记录数组与 lease
 
-## Lifecycle
+调用方提供真实容量、对齐且稳定存活的 records 数组。Init 独占初始化并清零数组，manager 不分配或释放它（`zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:498`、`zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:501`）。正常操作内部配对自旋锁；MSVC 用 InterlockedExchange，其他分支用 __sync。volatile 不能替代互斥，锁不可重入。32位容量检查只防字节跨度溢出，不证明调用方实际分配长度。
 
-`ZrCore_HostJit_Code_Prepare` 先完整验证 facts，再占用一个 free record；失败时不会留下可发布的部分记录，且同一 `codeIdentity` 不能重复占用记录。`Code_Publish` 在 manager lock 下把旧 published record 标为 retired，再发布新 record。`Code_AcquireActive` 创建 lease，并在计数达到 `UINT32_MAX` 时拒绝溢出。`Code_Evict`、`Code_Resolve`、`Code_Release` 和 `Code_CollectRetired` 都先验证 manager shell，再在锁内验证完整 record shape；Resolve/Release 的 record、state 和 lease 读取不会与 collect 并发发生竞态。`Code_Evict` 只撤销 active 入口并标记 retired，不释放仍有 lease 的 record。`Code_CollectRetired` 仅回收 lease count 为零的记录，因此 active frame 期间不会释放其 code page 的拥有者。
+完整 shape 在同锁下验证所有槽：FREE 字段全零、非空身份与三个hash非零且身份唯一、PREPARED lease0、nonFREE count一致、最多一条PUBLISHED及active归属（`zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:416`、`zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:446`）。直接改 count/leaseCount 的 fixture 注入不是普通调用协议。
 
-`CodeManager_Deinit` 同样在 manager lock 下运行。只要存在 active/non-free
-record（包括仍有 lease 的 retired record），deinit 保持 manager 完整并返回；
-调用方应先 release/collect，再重试 deinit。无效或内部 shape 不一致的
-manager 也不会被清空。宿主适配层应在调用本 API 前后负责 W^X 页权限和真实
-unwind/debug/root 注册，登记完成后才提交 facts。
+| 操作 | 资源与状态边界 |
+| --- | --- |
+| Prepare | 验证 facts 后写身份/三个hash，返回未租用准备引用；不持有 imports/图内容。前置失败不保证清空输出，不能把失败输出当新句柄。 |
+| Publish | 只接受本manager的未租用PREPARED引用；旧active退休，新active唯一发布。prepared不被清空，也不自动取得lease或生成地址。 |
+| AcquireActive | 为当前PUBLISHED增加一份lease；UINT32_MAX拒绝。输出不得覆盖既有lease，复制句柄不能增加拥有权。 |
+| Evict | 按身份退休，包括准备记录；移除active，不减少已有lease。 |
+| Resolve | 合法lease可观察RETIRED记录；返回同锁下标量快照，不返回地址或新lease。const manager仍会修改锁，底层实例必须可写。早期失败不保证清空view。 |
+| Release | 成功减少这一份lease并清空传入句柄；失败保留句柄，不表示归还成功，也不自动Collect。 |
+| CollectRetired | 仅RETIRED&&lease0清零元数据槽；不释放代码页或外部proof。非空计数输出在manager验证前置零。 |
+| Deinit | shape有效且active/count都空才解除records借用；void拒绝保留原实例。所有者确认records为空后才可释放数组。 |
 
-Code handle 只携带 record identity 和 lease 状态，不暴露函数指针或 executable address。`Resolve` 可以读取 semantic signature/layout/ABI witness 及状态；实际 entry address 必须留在适配层的进程内存中，不能进入 artifact、persistent CallBinding 或 cache key。
+实际退休、lease与回收分别在 `zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:643`、`zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:691`、`zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:845`、`zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:884`；Deinit 保留条件在 `zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:518`。core 计数不能被外推为真实 active frame 或代码页寿命的证明。
 
-## Design rationale and scope
+## 可选 facade 与 SDK 的不同家族
 
-本实现使用 C11-compatible fixed-width fields 与 compiler intrinsic spin lock，避免 Windows GCC 4.8 因缺少 `stdatomic.h` 而无法编译；manager lock 串行化 record 状态和 lease 变化。它是生命周期和拒绝策略 contract，不宣称已完成 LLVM lowering、ORC resolver、W^X 系统调用、stack-map/unwind 注册或两架构实际机器码执行。
+facade 在 global_mutex 内拥有 records vector 与 proof vector，把 records.data 借给 core manager（`zr_vm_jit/src/orc_backend.cpp:773`）。proof追加失败的补偿调用Evict/Collect并清句柄（`zr_vm_jit/src/orc_backend.cpp:544`、`zr_vm_jit/src/orc_backend.cpp:546`）；正常Collect先清core槽再清proof，Shutdown确认core解除借用后才析构单例。GetDescriptor 复制回调且 userData为空，optional测试实际派发queryTarget（`tests/core/test_ssa_host_jit_optional.c:101`）；queryTarget 当前因机器码不可用拒绝（`zr_vm_jit/src/orc_backend.cpp:347`）。Compile只选择fallback或不可用；LookupEntry输出零，不产生机器码入口。
 
-The contract deliberately validates all registrations before publication. A backend compile failure or unsupported operation must retain AOT/ExecBC fallback and must not install a partially initialized entry. The independent backend-service state machine, asynchronous queue, cancellation, generation key and deopt resume remain dependencies/follow-up from 10.01.
+HostJitCodeHandle 的 record/codeIdentity/leased 与 SDK service 的 SZrExecutionCodeHandle 不互换。后者有 service/slot/generation/dependency 身份协议（`zr_vm_core/include/zr_vm_core/execution_backend.h:295`），不能把它的防复用或地址 lease 保证搬给本 manager。
 
-## Optional C++ adapter
+## 具体 TODO
 
-`ZR_VM_ENABLE_HOST_JIT` enables `zr_vm_jit` after the C core and parser.  The
-adapter exposes a C ABI (`zr_vm_jit/backend.h`) and an execution-backend
-descriptor, while keeping all C++/LLVM concerns out of the default build.  It
-copies only scalar target and publication witnesses, delegates code ownership
-to `ZrCore_HostJit_CodeManager_*`, and keeps callback `userData` null so a
-descriptor copied into the core service cannot retain a dangling C++ object.
+- 空槽Collect后可复用相同codeIdentity，Host句柄没有独立generation；旧准备引用如何按外部协议失效仍待确认。
+- Prepare/Acquire/Release 的失败诊断有解锁后再读字段路径（`zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:569`、`zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:689`、`zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:835`）。当前facade外层串行；公开core直接并发 owner/存储约束未闭合，不宣称所有失败诊断无竞态，也未据此升级BUG。
+- core OPERATION_UNSUPPORTED/ACTIVE_LEASE 当前无producer，仅名称/上层映射；facade 同名状态属另一枚举，未来或外部生产协议待核。
+- StatusName 当前没有仓库正向调用，仓库外公开ABI用途未知；返回借用静态字符串。
+- facade缺ABI/LAYOUT专门映射、Prepare是否必须与注册target相同的诊断/使用契约仍需有限确认。旧表BUG没有在本轮得到完整legal证明或复现，不继承其信用。
 
-The checked-in provider is deliberately contract-only when LLVM ORC/JITLink is
-not available.  Registration can therefore succeed for capability discovery,
-but `ZrJit_Host_Compile`, entry lookup, and descriptor target probing return an
-explicit `BACKEND_UNAVAILABLE` (or `FALLBACK_EXECBC` when requested).  No
-machine-code address is synthesized.  `jit_state_maps.cpp` requires non-zero
-root, unwind, debug, and deopt counts/hashes plus a frame-layout witness before
-a compile request is admitted.
+## 测试、构建与验证范围
 
-The C++17 adapter also includes the shared I/O configuration header. Its endian
-probe uses a positional union initializer, which is valid in both C11 and
-MSVC's C++17 mode; it does not rely on a C99 designated initializer.
+baseline fixture由 `tests/cmake/ssa-tests.cmake:1321` 编译本C与测试，CTest在1327登记；optional fixture在host开关下链接JIT目标，在1345登记。core普通模块经CommonMacros递归C glob纳入本源，无需LLVM。
 
-## Test coverage
-
-`tests/core/test_ssa_host_baseline_jit.c` verifies:
-
-- valid host target and explicit WASM rejection;
-- host-architecture mismatch rejection and C++-compatible C linkage;
-- manifest import acceptance and unlisted symbol rejection;
-- duplicate import identity rejection;
-- W^X/publication registration completeness;
-- prepare/publish/active lease/eviction/retired collection sequence;
-- no collection while an active lease remains, followed by collection after release;
-- duplicate code identity, lease-counter overflow, malformed manager shape, and
-  deinit refusal while a live record remains.
-
-The core fixture remains independently compilable without C++.  When the
-option is enabled, `test_ssa_host_jit_optional.c` additionally checks the C
-ABI descriptor, explicit no-LLVM fallback, state-map rejection, import
-allow-listing, and active-lease shutdown/collection ordering.
-
-## Open issues and follow-up
-
-The contract adapter still has no executable memory allocator, LLVM version
-pin, real ORC/JITLink symbol resolver, generated stack maps, platform
-unwind/debug registration, or AOTIR machine-code lowering.  Those remain
-explicitly unavailable until a verified ORC provider is supplied.  Platform
-smoke and unavailable records belong to 10.03.  Performance acceptance must
-separately measure compile latency, cold start, warm throughput, cache and RSS
-using the 00.01 measurement contract.
+baseline源码覆盖target/选项/导入/发布声明拒绝、重复身份、lease overflow注入、manager count注入、退休后Deinit保留、归还后Collect；optional源码覆盖descriptor直接派发、fallback/零入口和Shutdown顺序。assert须启用；此处描述源码覆盖，本轮仅静态审查与只读patch检查，没有重新运行编译、native、GC、provider或两架构机器码测试。实际代码页/W^X系统调用、图内容与平台登记、ORC resolver、lowering与性能仍不在本模块已实现信用内。计划与历史验收文件是设计/历史来源，不替代当前运行证据。
