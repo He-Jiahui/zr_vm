@@ -235,6 +235,7 @@ foreach (_zr_guard_target IN ITEMS
         zr_vm_ssa_dead_source_places_test
         zr_vm_ssa_host_primitive_layout_test
         zr_vm_ssa_primitive_source_frame_test
+        zr_vm_ssa_primitive_source_frame_storage_test
         zr_vm_ssa_typed_binding_contract_test
         zr_vm_ssa_dominator_cfg_test)
     if (_zr_guard_target STREQUAL "zr_vm_ssa_source_straight_line_cfg_test")
@@ -255,6 +256,8 @@ foreach (_zr_guard_target IN ITEMS
         set(_zr_guard_source tests/parser/test_ssa_host_primitive_layout.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_primitive_source_frame_test")
         set(_zr_guard_source tests/parser/test_ssa_primitive_source_frame.c)
+    elseif (_zr_guard_target STREQUAL "zr_vm_ssa_primitive_source_frame_storage_test")
+        set(_zr_guard_source tests/parser/test_ssa_primitive_source_frame_storage.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_typed_binding_contract_test")
         set(_zr_guard_source tests/parser/test_ssa_typed_binding_contract_witness.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_dominator_cfg_test")
@@ -265,7 +268,8 @@ foreach (_zr_guard_target IN ITEMS
     add_executable(${_zr_guard_target} "${ZR_SSA_SOURCE_ROOT}/${_zr_guard_source}")
     if (_zr_guard_target STREQUAL "zr_vm_ssa_dead_source_places_test" OR
             _zr_guard_target STREQUAL "zr_vm_ssa_host_primitive_layout_test" OR
-            _zr_guard_target STREQUAL "zr_vm_ssa_primitive_source_frame_test")
+            _zr_guard_target STREQUAL "zr_vm_ssa_primitive_source_frame_test" OR
+            _zr_guard_target STREQUAL "zr_vm_ssa_primitive_source_frame_storage_test")
         target_sources(${_zr_guard_target} PRIVATE
                 "${ZR_SSA_SOURCE_ROOT}/tests/parser/support/ssa_literal_script_fixture.c")
     endif ()
@@ -322,6 +326,8 @@ add_test(NAME ssa_host_primitive_layout
         COMMAND zr_vm_ssa_host_primitive_layout_test)
 add_test(NAME ssa_primitive_source_frame
         COMMAND zr_vm_ssa_primitive_source_frame_test)
+add_test(NAME ssa_primitive_source_frame_storage
+        COMMAND zr_vm_ssa_primitive_source_frame_storage_test)
 add_test(NAME ssa_typed_binding_contract
         COMMAND zr_vm_ssa_typed_binding_contract_test)
 add_test(NAME ssa_dominator_cfg
@@ -341,6 +347,7 @@ set_tests_properties(ssa_source_straight_line_cfg exec_ir_scalar_scratch_eligibi
         ssa_dead_source_places
         ssa_host_primitive_layout
         ssa_primitive_source_frame
+        ssa_primitive_source_frame_storage
         ssa_typed_binding_contract
         PROPERTIES LABELS "ssa;source-direct-validation" TIMEOUT 120
         ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
@@ -356,6 +363,7 @@ set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_l
         zr_vm_ssa_dead_source_places_test
         zr_vm_ssa_host_primitive_layout_test
         zr_vm_ssa_primitive_source_frame_test
+        zr_vm_ssa_primitive_source_frame_storage_test
         zr_vm_ssa_typed_binding_contract_test)
 set(_zr_graph "target\tabsolute_source\tsha256\n")
 set(_zr_settings "compiler\t${CMAKE_C_COMPILER}\ncompiler_id\t${CMAKE_C_COMPILER_ID}\ncompiler_version\t${CMAKE_C_COMPILER_VERSION}\narchive_tool\t${CMAKE_AR}\narchive_rule\t${CMAKE_C_CREATE_STATIC_LIBRARY}\nlink_rule\t${CMAKE_C_LINK_EXECUTABLE}\n")

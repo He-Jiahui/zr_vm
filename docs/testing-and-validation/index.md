@@ -24,6 +24,7 @@ related_code:
   - tests/TEST_EXECUTION_ORDER.md
   - tests/parser/test_char_and_type_cast.c
   - tests/parser/test_type_inference.c
+  - tests/parser/test_ssa_primitive_source_frame_storage.c
   - tests/function/test_named_arguments.c
   - tests/module/test_module_system.c
   - tests/parser/test_syntax_reference_v1.c
@@ -155,6 +156,10 @@ owns the created string, while the literal remains borrowed input for the call.
 The iterable import case in `tests/parser/test_type_inference.c` is covered by
 the full type-inference runner under Clang ASan/UBSan; see
 [Plan 01 Task 6 Sub08](../plans/lsp/optimize/2026-09-07-plan01-task06-sub08-type-test-string-boundary.md).
+
+## SSA primitive frame 存储边界
+
+- [Primitive source frame storage](ssa-primitive-source-frame-storage.md)：真实 source 图的容量矛盾和最终对齐溢出，故障字段恢复前捕获与独立清理所有权；实际结果见关联验收记录。
 
 ## 阅读顺序
 
