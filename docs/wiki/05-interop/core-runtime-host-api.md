@@ -13,6 +13,9 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/execution/execution_budget.c
   - zr_vm_core/src/zr_vm_core/session_checkpoint.c
+  - zr_vm_core/src/zr_vm_core/session_checkpoint_capture.c
+  - zr_vm_core/src/zr_vm_core/session_checkpoint_preflight.c
+  - zr_vm_core/src/zr_vm_core/session_checkpoint_restore.c
 plan_sources:
   - user: 2026-09-10 继续细化 Wiki，要求详细介绍 C native 库调用方案和宿主接口
   - docs/core-runtime/index.md
@@ -216,10 +219,12 @@ TZrBool ZrCore_SessionCheckpoint_Rollback(SZrState *state, ...);
 void ZrCore_SessionCheckpoint_Free(SZrState *state, ...);
 ```
 
-创建后只允许在相同 state/global 生命周期中 rollback 或 free。它不能跨进程持久化，也不替代
-`.zro/.zri/.zrm` artifact；这类文件格式见 [产物格式](../06-reference/artifacts.md)。rollback
-前先停止并发 mutator 和 native callback，避免其它线程仍持有旧 frame、对象或 descriptor 的
-借用指针。
+创建后只允许在创建时同一存活 state/global 上 rollback 或 free；core 快照借用线程生命周期，
+自身 GC 根句柄保留已捕获对象身份。它不能跨进程持久化，也不替代 `.zro/.zri/.zrm` artifact；
+这类文件格式见 [产物格式](../06-reference/artifacts.md)。调用方先结束 active call、跨边界 live Value、
+活动 cleanup/异常恢复作用域和 AOT root frame；core 会协作暂停同域 mutator，暂停失败返回假。
+rollback 先用不触发 GC 的暂存分配、根句柄解析及写屏障容量预留完成预检；失败不提交对象图或线程边界。
+只有准备成功后才归一化无 ownership 的线程槽并原位提交；快照仍可再次回滚，借用裸地址仍须遵守 GC 生命周期。
 
 ## 5. source loader、IO 与日志
 

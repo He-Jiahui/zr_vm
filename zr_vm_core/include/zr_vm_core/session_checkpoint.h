@@ -6,7 +6,9 @@
 struct SZrState;
 struct SZrSessionCheckpoint;
 
-/** @brief 保存对象身份及可恢复状态的会话快照；借用创建时的 state，自己持有 GC 根句柄。 */
+/** @brief 保存对象身份及可恢复状态的会话快照；借用创建时的 state，自己持有 GC 根句柄。
+ * @note core 句柄不延长 state/global 的寿命；跨语言包装层须另行保留其 owner，先释放快照再释放 owner。
+ */
 typedef struct SZrSessionCheckpoint SZrSessionCheckpoint;
 
 /** @brief 在静止的 VM 边界保存全局根可达的可恢复对象图，供项目会话回滚。

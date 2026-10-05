@@ -102,5 +102,7 @@ native callback 期间使用 pin/root，不要直接冻结整个 collector。`Ig
 
 `ZrCore_Module_Create`、`SetInfo`、`AddPubExport/AddProExport`、`GetPubExport/GetProExport`、
 `AddToCache/GetFromCache/RemoveFromCache` 管理模块。`ZrCore_SessionCheckpoint_Create`、
-`Rollback`、`Free` 只保存 parser/REPL 允许的 session 绑定，不是任意 heap snapshot；回滚后
-旧 function/closure handle 必须丢弃并重新查 generation。
+`Rollback`、`Free` 保存静止会话中受支持的全局根可达逻辑对象图，不是任意 heap snapshot。
+回滚在原对象上恢复状态，保留环和别名的对象身份；快照根可在移动 GC 后重新解析对象。
+core 快照须先于原 state/global 销毁；跨边界 live Value 和活动执行/cleanup 作用域由调用边界排除，
+裸地址或 descriptor 借用不因此获得跨 GC 的有效期。

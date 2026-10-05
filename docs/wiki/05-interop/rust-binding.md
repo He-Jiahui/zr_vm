@@ -50,7 +50,10 @@ workspace 可读取 project/root/manifest/entry，解析依赖和 artifact；`Ma
 executedInstructions、elapsedMicros、peakHeapBytes、nativeCalls、gcMicros 和 termination。
 `ZrRustBinding_ProjectSession_GcStep`、`ZrRustBinding_ProjectSession_Checkpoint`、
 `ZrRustBinding_ProjectSession_Rollback`、`ZrRustBinding_ProjectSession_Free` 允许 REPL/编辑器增量工作；
-rollback 要求使用同一 session 的 checkpoint，且不能保留跨边界的 live Value root；成功后原 session 仍可继续调用。
+rollback 要求 checkpoint 与 session 使用同一 owner、没有 activeCall，且 owner 引用只由 session 与
+checkpoint 构成；因此不能保留跨边界的 live Value root。成功后原 session 仍可继续调用。
+checkpoint 成功创建时额外保留 owner，Rust Drop 先释放 core 快照根，再释放 owner；
+可先释放 session 外壳后独立销毁快照，但回滚仍需要原 session。
 
 ## Value API
 
