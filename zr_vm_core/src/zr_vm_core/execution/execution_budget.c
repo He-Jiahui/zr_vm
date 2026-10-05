@@ -15,6 +15,7 @@
 
 /* 宿主拥有令牌；只有取消位跨线程访问，令牌本体在调用结束前不得释放。 */
 struct SZrExecutionCancelToken {
+/* 一次性原子位：只从未取消到取消；并发安全不包含令牌本体的 free。 */
     volatile TZrInt32 cancelled;
 };
 
@@ -165,6 +166,8 @@ static void execution_budget_release_frame(SZrState *state, TZrPtr argument) {
                                      ZR_THREAD_STATUS_EXECUTION_TERMINATED, ZR_FALSE);
 }
 
+/* 由dispatch预算失败路径同步进入；state/callInfo须有效，TryRun只隔离清理失败，
+ * 不将预算终止重新交给guest异常处理；最终仍保持EXECUTION_TERMINATED。 */
 void ZrCore_ExecutionBudget_UnwindVmFrames(SZrState *state) {
     SZrCallInfo *callInfo = state->callInfoList;
     /* 只回收到外层 native 帧：跳过 guest catch/finally 与 close 回调，仍经现有路径

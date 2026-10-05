@@ -382,3 +382,50 @@ cells, including a resource Drop callback that verifies the dense alias is
 already null and then forces stack growth. The AOT call and receiver shared
 library suites cover caught nested exceptions, tail callable propagation, and
 post-call Weak expiry through generated C and LLVM.
+
+## VM 有界执行预算与终止清理（2026-10-05 静态契约审阅）
+
+`execution_budget.h/c` 的预算域是一次受限导出调用。Rust binding 在
+`zr_vm_rust_binding/src/zr_vm_rust_binding/execution_budget.c:58` 零初始化 scope，
+设置限额后绑定到 state；完成时结算 GC、Poll、恢复线程并撤销借用绑定，最后发布 usage。
+它与 async frame 标量调度预算各有用途，不提供跨线程共享预算记录的同步。
+has* 开关区分未设置和零限额：指令/native 的零限额拒绝下一次入场；堆与已结算
+GC 时间以严格大于限额拒绝，等于仍可放行。计数只在允许入场后累计并饱和。
+
+deadline 是 `NowMicros` 同一单调时钟域的绝对微秒时间，在协作 Poll 时观察。
+时钟故障返回最大值，使启用的期限检查拒绝继续；不能据此保证 GC 时间测量准确。
+cancelToken 是借用的一次性原子取消信号，取消后没有 reset；宿主必须等预算调用和
+所有并发读写结束才 Free。仅取消位原子化，不使 scope 的计数、终止原因或 GC 深度线程安全。
+Poll 首次原因按取消、期限、堆、GC、指令顺序锁存，随后发布 EXECUTION_TERMINATED
+并清除活动异常标志；后续 Poll 保持首次原因。没有副作用回滚承诺。
+
+native 在真正进入回调前收费：`zr_vm_core/src/zr_vm_core/function.c:3630` 是实际
+NativeEnter 调用。注册函数帧与紧接着的 binding 层用借用 call-info 身份去重一次，
+返回路径清除该身份；它不持有帧、不注册 GC root，也不能中断正在运行的 C 回调。
+dispatch 在 `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:5719` 的入场
+Poll 消费指令，失败在 `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:5722`
+展开 VM 帧；native 返回边界只检查，不重复计指令。
+
+BeginMemory 以既有 global 存量开启共享峰值窗口；同 global 的其他 mutator/GC worker
+分配也进入统计，它不是单次调用净增长或 RSS。allocator 成功后记账，堆拒绝由后续 Poll
+执行，故可暂时超过限额。execution_memory.c 已有并发 peak 低报 BUG 保持原证据与范围，
+此次不修复，也不把预算比较当作精确隔离计量证明。
+
+GC 只结算最外层 Begin/End 墙钟区间，内层不重新启动计时。实际 GC caller 在
+`zr_vm_core/src/zr_vm_core/gc/gc.c:765` Begin，失败 STW 入口在
+`zr_vm_core/src/zr_vm_core/gc/gc.c:768` End，正常结束在
+`zr_vm_core/src/zr_vm_core/gc/gc.c:811` End；因此时间包含等待和失败入口窗口，
+不是各 worker CPU 用时之和。调用方必须在同一串行 state 上以有限深度配对，
+gcDepth 非原子且 UINT32 增量不饱和；宿主完成路径补齐未结束层数后再读取 usage。
+未结算区间不会被限额抢占，时钟反向时该次 elapsed 记零。
+
+Unwind 仅清理 VM 帧到 native 边界，丢弃 guest handler，先冻结开放捕获再消费帧值和
+关闭登记；栈增长期间用偏移恢复位置。同步 TryRun 隔离 C 清理异常，不跨外部 C 回调栈，
+也不保证失败的 close/drop 已完成全部资源释放。清理之后仍恢复执行终止状态；异常资源
+协议与上文相同，不能把隔离异常视为成功清理证明。
+
+本次完整范围为两源 62 单元（旧 32 行补齐字段、枚举值及 guards），沿用完整源码独审
+与 r3 有限修订接受；只执行 after-aware 台账检查和只读 patch 检查，没有 native/build/
+runtime 执行信用。上面的既有 fixture/验收叙述保持其历史范围，当前测试注册与正调用
+仅支持静态 producer/caller/lifetime 证据。legacy inventory 的 reviewed 记录不自动成为
+本次 whole62 或整个 module 已接受的证明。
