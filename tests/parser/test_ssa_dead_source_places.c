@@ -8,6 +8,7 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/hash.h"
 #include "zr_vm_core/exec_ir_interpreter.h"
+#include "zr_vm_core/exec_ir_state_map.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/compiler.h"
@@ -298,7 +299,7 @@ static void assert_oracle(SZrDeadPlaceFixture *fixture,
 
 static SZrDeadPlaceFixture *prepare_fixture(TZrUInt32 index) {
     static const char *const sources[DEAD_PLACE_FIXTURE_COUNT] = {"return 9;\n", "return 8;\n"};
-    static const char *const names[DEAD_PLACE_FIXTURE_COUNT] = {
+    static char names[DEAD_PLACE_FIXTURE_COUNT][40] = {
         "ssa_dead_source_places_nine.zr", "ssa_dead_source_places_eight.zr"};
     SZrDeadPlaceFixture *fixture = &g_fixtures[index];
     SZrCompilerState *compiler = &fixture->compiler;
@@ -635,6 +636,8 @@ static void test_guard_input_output_alias(void) {
     TEST_ASSERT_EQUAL_UINT64(sourceBefore, source_digest(fixture));
 }
 
+#include "ssa_dead_source_places_edges.inc"
+
 int main(int argc, char **argv) {
     TZrBool prerequisites = ZR_TRUE, features = ZR_TRUE, guards = ZR_TRUE;
     if (argc == 2 && strcmp(argv[1], "--prerequisites-only") == 0) {
@@ -657,6 +660,10 @@ int main(int argc, char **argv) {
         RUN_TEST(test_eliminate_return_eight);
         RUN_TEST(test_repeat_original_input);
         RUN_TEST(test_replace_actual_eight_output);
+        RUN_TEST(test_compressed_nine_as_input);
+        RUN_TEST(test_compressed_eight_as_input);
+        RUN_TEST(test_null_diagnostic_success);
+        RUN_TEST(test_actual_empty_state_header_preserved);
     }
     if (guards) {
         RUN_TEST(test_guard_actual_address_use_preserves_eight);
@@ -664,6 +671,21 @@ int main(int argc, char **argv) {
         RUN_TEST(test_guard_sealed_metadata_preserves_eight);
         RUN_TEST(test_guard_invalid_range_preserves_eight);
         RUN_TEST(test_guard_input_output_alias);
+        RUN_TEST(test_guard_source_map_location_mismatch);
+        RUN_TEST(test_guard_duplicate_source_map_identity);
+        RUN_TEST(test_guard_shared_value_storage);
+        RUN_TEST(test_guard_shared_operand_storage);
+        RUN_TEST(test_guard_shared_state_map_storage);
+        RUN_TEST(test_guard_interior_value_storage);
+        RUN_TEST(test_guard_interior_operand_storage);
+        RUN_TEST(test_guard_interior_state_value_storage);
+        RUN_TEST(test_guard_missing_semantic_symbol);
+        RUN_TEST(test_guard_missing_semantic_callable);
+        RUN_TEST(test_guard_missing_semantic_identity);
+        RUN_TEST(test_guard_empty_state_header_mismatch);
+        RUN_TEST(test_guard_owned_state_value_pool);
+        RUN_TEST(test_guard_owned_deopt_reconstruction);
+        RUN_TEST(test_guard_null_required_arguments);
     }
     return UNITY_END();
 }
