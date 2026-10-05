@@ -10,6 +10,7 @@
 #include <intrin.h>
 #endif
 
+/* 共享 static helper 在两个翻译单元中按需使用；unused 属性只抑制未引用告警，不改变协议。 */
 #if defined(__GNUC__) || defined(__clang__)
 #define ZR_EXECUTION_BACKEND_INTERNAL_UNUSED __attribute__((unused))
 #else
@@ -19,6 +20,7 @@
 /* Internal helpers are shared by the service and code-lifetime translation
  * units.  They intentionally operate on caller-owned fixed-capacity arrays. */
 
+/* 可选诊断在每次操作开始时清零，避免旧请求位置与新失败混杂。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED void zr_execution_backend_diag_clear(
         SZrExecutionBackendDiagnostic *diagnostic) {
     if (diagnostic != ZR_NULL) {
@@ -26,6 +28,7 @@ static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED void zr_execution_backend_diag_clear
     }
 }
 
+/* 填入本次失败的状态与标量对照，保留调用方预先记录的源码位置和键；不修改 service 状态。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED EZrExecutionBackendStatus zr_execution_backend_fail(
         EZrExecutionBackendStatus status,
         SZrExecutionBackendDiagnostic *diagnostic,
@@ -47,6 +50,7 @@ static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED EZrExecutionBackendStatus zr_executi
     return status;
 }
 
+/* 串行化服务表和状态计数；调用者先保证 service 存储有效，宿主回调必须在解锁后执行。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED void zr_execution_backend_lock(SZrExecutionBackendService *service) {
 #if defined(_MSC_VER)
     while (_InterlockedExchange((volatile long *)&service->lock, 1L) != 0L) {
@@ -57,6 +61,7 @@ static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED void zr_execution_backend_lock(SZrEx
 #endif
 }
 
+/* 发布本次受保护状态并允许其他操作进入；不允许继续解锁后借用表中可变记录。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED void zr_execution_backend_unlock(SZrExecutionBackendService *service) {
 #if defined(_MSC_VER)
     _InterlockedExchange((volatile long *)&service->lock, 0L);
@@ -69,6 +74,7 @@ static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED void zr_execution_backend_unlock(SZr
  * while holding the lock, release it before invoking user code, and leave
  * after the callback returns.  The counter is deliberately bounded so a
  * corrupt/overflowed service fails closed instead of wrapping to zero. */
+/* 持锁登记即将离开锁的回调，阻止注销或最终关闭销毁其上下文；达到计数上限时拒绝派发。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool
 zr_execution_backend_callback_enter_locked(SZrExecutionBackendService *service) {
     if (service == ZR_NULL || service->backendCallbackInFlight == UINT32_MAX) {
@@ -78,6 +84,7 @@ zr_execution_backend_callback_enter_locked(SZrExecutionBackendService *service) 
     return ZR_TRUE;
 }
 
+/* 持锁归还已完成回调计数；本层不清理回调资源。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED void
 zr_execution_backend_callback_leave_locked(SZrExecutionBackendService *service) {
     if (service != ZR_NULL && service->backendCallbackInFlight != 0u) {
@@ -85,6 +92,7 @@ zr_execution_backend_callback_leave_locked(SZrExecutionBackendService *service) 
     }
 }
 
+/* 供锁外回调结束路径重新加锁归还计数；进入与退出必须由同一派发协议配对。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED void
 zr_execution_backend_callback_leave(SZrExecutionBackendService *service) {
     if (service == ZR_NULL) return;
@@ -93,11 +101,13 @@ zr_execution_backend_callback_leave(SZrExecutionBackendService *service) {
     zr_execution_backend_unlock(service);
 }
 
+/* 只读查询仍需锁定可变服务记录；const 表示不改查询内容，不表示底层锁存储不可写。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED void zr_execution_backend_lock_const(
         const SZrExecutionBackendService *service) {
     zr_execution_backend_lock((SZrExecutionBackendService *)service);
 }
 
+/* 拒绝未初始化或 Deinit 后服务的基本形状；不校验数组实际长度、内部计数或关闭阶段，各入口另行检查状态。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool zr_execution_backend_service_shape_valid(
         const SZrExecutionBackendService *service) {
     return (TZrBool)(service != ZR_NULL &&
@@ -110,6 +120,7 @@ static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool zr_execution_backend_service
                      service->codes != ZR_NULL && service->codeCapacity != 0u);
 }
 
+/* 内部所有匹配共享完整四元键比较，防止另一域或注册的同号 generation 被一并失效。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool zr_execution_backend_generation_equal(
         const SZrExecutionGenerationKey *left,
         const SZrExecutionGenerationKey *right) {
@@ -121,6 +132,7 @@ static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool zr_execution_backend_generat
                              right->backendRegistrationIdentity);
 }
 
+/* 检查持锁墓碑集，既处理已有记录的失效，也阻止同一完整键再次提交。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool
 zr_execution_backend_generation_invalidated_locked(
         const SZrExecutionBackendService *service,
@@ -137,6 +149,7 @@ zr_execution_backend_generation_invalidated_locked(
     return ZR_FALSE;
 }
 
+/* 请求可暂不指定注册身份，完成与失效必须携带完整身份；由调用阶段选择严格程度。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool zr_execution_backend_key_valid(
         const SZrExecutionGenerationKey *key,
         TZrBool requireBackendIdentity) {
@@ -146,17 +159,20 @@ static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool zr_execution_backend_key_val
                       key->backendRegistrationIdentity != 0u));
 }
 
+/* 限制后端选择为实际目标枚举，排除 NONE 和计数哨兵。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool zr_execution_backend_target_kind_valid(
         EZrExecutionBackendTargetKind kind) {
     return (TZrBool)(kind > ZR_EXECUTION_BACKEND_TARGET_NONE &&
                      kind < ZR_EXECUTION_BACKEND_TARGET_COUNT);
 }
 
+/* 限制图查询和 hash 遍历为可映射的图种类，COUNT 只作为边界。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool zr_execution_backend_map_kind_valid(EZrExecutionBackendMapKind kind) {
     return (TZrBool)(kind >= ZR_EXECUTION_BACKEND_MAP_KIND_ROOTS &&
                      kind < ZR_EXECUTION_BACKEND_MAP_KIND_COUNT);
 }
 
+/* 把单一图种类映射到注册位，供完成校验和 QueryMap 使用；非法种类不写输出。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool zr_execution_backend_map_flag_for_kind(
         EZrExecutionBackendMapKind kind, TZrUInt32 *flag) {
     if (flag == ZR_NULL || !zr_execution_backend_map_kind_valid(kind)) {
@@ -173,6 +189,7 @@ static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool zr_execution_backend_map_fla
     return ZR_TRUE;
 }
 
+/* 注册前核对标量目标和必需派发/清理入口；可选取消、入口查询和图查询由使用入口另行处理。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool zr_execution_backend_descriptor_shape_valid(
         const SZrExecutionBackendDescriptor *descriptor) {
     if (descriptor == ZR_NULL ||
@@ -199,6 +216,7 @@ static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool zr_execution_backend_descrip
     return ZR_TRUE;
 }
 
+/* 让队列只接收自洽的标量输入见证；不读取 IR 正文，不据 hash 验证输入实际不可变。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool zr_execution_backend_request_shape_valid(
         const SZrExecutionCompileRequest *request) {
     if (request == ZR_NULL || request->magic != ZR_EXECUTION_BACKEND_MAGIC ||
@@ -229,6 +247,7 @@ static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool zr_execution_backend_request
     return ZR_TRUE;
 }
 
+/* 按图种类读取代码快照中的 hash，供完成校验及没有 queryMap 回调时的查询回退。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrUInt64 zr_execution_backend_code_map_hash(
         const SZrExecutionBackendCodeInfo *code,
         EZrExecutionBackendMapKind kind) {
@@ -243,6 +262,7 @@ static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrUInt64 zr_execution_backend_code_
     }
 }
 
+/* 接收产物前绑定它与原请求的完整键、执行契约及输入 hash；已声明注册的每种图都必须有非零 hash。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool zr_execution_backend_code_shape_valid(
         const SZrExecutionCompileRequest *request,
         const SZrExecutionBackendCodeInfo *code) {
@@ -284,6 +304,7 @@ static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool zr_execution_backend_code_sh
     return ZR_TRUE;
 }
 
+/* 在持锁表中按单调注册身份找活跃 owner，供注销及迟到结果清理；返回指针只在锁保护内借用。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED SZrExecutionBackendRegistrationRecord *
 zr_execution_backend_find_registration_locked(
         SZrExecutionBackendService *service,
@@ -302,6 +323,7 @@ zr_execution_backend_find_registration_locked(
     return ZR_NULL;
 }
 
+/* 按服务身份、ticketId 和完整键定位当前作业；传入 state 只是快照，实际状态由调用方读取记录再判断。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED SZrExecutionCompileJob *zr_execution_backend_find_job_locked(
         SZrExecutionBackendService *service,
         const SZrExecutionCompileTicket *ticket,
@@ -326,18 +348,21 @@ static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED SZrExecutionCompileJob *zr_execution
     return ZR_NULL;
 }
 
+/* 标识可以被下一请求复用的失败/取消槽；READY 和 PUBLISHED 仍关联产物，不能按完成就复用。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool zr_execution_backend_job_state_terminal(
         EZrExecutionBackendJobState state) {
     return (TZrBool)(state == ZR_EXECUTION_BACKEND_JOB_FAILED ||
                      state == ZR_EXECUTION_BACKEND_JOB_CANCELLED);
 }
 
+/* 在持锁复用或代码回收时清除作业；拥有 service 计数的外层负责相应减数。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED void zr_execution_backend_reset_job_locked(
         SZrExecutionCompileJob *job) {
     if (job != ZR_NULL) memset(job, 0, sizeof(*job));
 }
 
 /* Mark matching code as retired. The caller must hold service->lock. */
+/* 持锁取消匹配代码的可新获取资格，不释放图或后端资源；已有租约继续阻止 CollectRetired 回收。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED void zr_execution_backend_mark_codes_retired_locked(
         SZrExecutionBackendService *service,
         const SZrExecutionGenerationKey *key,
@@ -361,6 +386,7 @@ static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED void zr_execution_backend_mark_codes
     if (outMarked != ZR_NULL) *outMarked = marked;
 }
 
+/* 持锁阻止匹配排队/READY 作业继续发布，编译中只记录取消意图，实际取消回调由外层解锁后派发。 */
 static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED void zr_execution_backend_mark_jobs_cancelled_locked(
         SZrExecutionBackendService *service,
         const SZrExecutionGenerationKey *key,
@@ -391,11 +417,13 @@ static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED void zr_execution_backend_mark_jobs_
 
 /* Implemented by execution_code_handle.c; callbacks are always invoked after
  * the service lock has been released. */
+/* 丢弃未被代码表接收的 worker 结果；在锁外先尝试撤图再退休，即使撤图失败仍给后端一次退休机会。 */
 EZrExecutionBackendStatus zr_execution_backend_dispose_unpublished(
         SZrExecutionBackendService *service,
         const SZrExecutionBackendDescriptor *descriptor,
         const SZrExecutionBackendCodeInfo *code,
         SZrExecutionBackendDiagnostic *diagnostic);
+/* 回收退休且两类租约归零的单槽；锁内标为 RECLAIMING，锁外按撤图成功后退休，失败保留可重试进度。 */
 EZrExecutionBackendStatus zr_execution_backend_collect_code_slot(
         SZrExecutionBackendService *service,
         TZrUInt32 slotIndex,

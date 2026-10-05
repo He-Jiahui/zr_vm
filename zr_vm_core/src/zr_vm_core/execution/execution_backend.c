@@ -9,9 +9,11 @@
  * and generation checks explicit at every hand-off.
  */
 
+/* 默认服务指针仅借用宿主存储；默认锁保护指针本身，宿主另行保证替换及关闭期间的寿命。 */
 static volatile TZrUInt32 zr_execution_backend_default_lock;
 static SZrExecutionBackendService *zr_execution_backend_default_service;
 
+/* 保护默认指针的短暂读写；不得在此锁内调用 service API 或宿主回调。 */
 static void zr_execution_backend_default_lock_enter(void) {
 #if defined(_MSC_VER)
     while (_InterlockedExchange((volatile long *)&zr_execution_backend_default_lock,
@@ -23,6 +25,7 @@ static void zr_execution_backend_default_lock_enter(void) {
 #endif
 }
 
+/* 结束默认指针访问；解锁不提供指针所指服务的寿命保证。 */
 static void zr_execution_backend_default_lock_leave(void) {
 #if defined(_MSC_VER)
     _InterlockedExchange((volatile long *)&zr_execution_backend_default_lock, 0L);
@@ -87,6 +90,7 @@ const TZrChar *ZrCore_ExecutionBackend_StatusName(
     }
 }
 
+/* 在占用注册槽前区分版本、标志、目标和能力拒绝原因；必需清理回调缺失不能成为有效注册。 */
 static EZrExecutionBackendStatus zr_execution_backend_validate_descriptor(
         const SZrExecutionBackendDescriptor *descriptor,
         SZrExecutionBackendDiagnostic *diagnostic) {
@@ -137,6 +141,7 @@ static EZrExecutionBackendStatus zr_execution_backend_validate_descriptor(
     return ZR_EXECUTION_BACKEND_STATUS_OK;
 }
 
+/* 先保存请求源码位置，再报告入队前的形状错误，使拒绝不可变输入时仍能定位请求。 */
 static EZrExecutionBackendStatus zr_execution_backend_validate_request(
         const SZrExecutionCompileRequest *request,
         SZrExecutionBackendDiagnostic *diagnostic) {
@@ -182,6 +187,7 @@ static EZrExecutionBackendStatus zr_execution_backend_validate_request(
     return ZR_EXECUTION_BACKEND_STATUS_OK;
 }
 
+/* 生成不绑定作业的回退票据；将选择结果放 ticket，诊断保留触发回退的原始原因。 */
 static void zr_execution_backend_fill_fallback(
         const SZrExecutionCompileRequest *request,
         EZrExecutionBackendFallback fallback,
@@ -201,6 +207,7 @@ static void zr_execution_backend_fill_fallback(
     if (diagnostic != ZR_NULL) diagnostic->status = reason;
 }
 
+/* 只依据请求许可选择确定性回退；强制机器码禁止回退，双许可时先选 AOT。本层不执行所选后端。 */
 static EZrExecutionBackendFallback zr_execution_backend_choose_fallback(
         const SZrExecutionCompileRequest *request) {
     if (request == ZR_NULL) return ZR_EXECUTION_BACKEND_FALLBACK_NONE;
@@ -218,6 +225,7 @@ static EZrExecutionBackendFallback zr_execution_backend_choose_fallback(
     return ZR_EXECUTION_BACKEND_FALLBACK_NONE;
 }
 
+/* 将回退选择映射为返回状态；NONE 表示未找到可用执行后端。 */
 static EZrExecutionBackendStatus zr_execution_backend_status_for_fallback(
         EZrExecutionBackendFallback fallback) {
     switch (fallback) {
@@ -231,6 +239,7 @@ static EZrExecutionBackendStatus zr_execution_backend_status_for_fallback(
     }
 }
 
+/* 注销前保留仍可能编译、发布或关联代码的作业注册；失败与取消作业不单独阻止注销。 */
 static TZrBool zr_execution_backend_job_references_registration(
         const SZrExecutionCompileJob *job, TZrUInt32 registrationSlot) {
     if (job == ZR_NULL || job->ticket.magic != ZR_EXECUTION_BACKEND_MAGIC) {
@@ -243,6 +252,7 @@ static TZrBool zr_execution_backend_job_references_registration(
                      job->ticket.state == ZR_EXECUTION_BACKEND_JOB_PUBLISHED);
 }
 
+/* 任何非 FREE 记录仍需要原注册的查询或清理回调，不能以退休替代资源归还。 */
 static TZrBool zr_execution_backend_code_references_registration(
         const SZrExecutionCodeRecord *code, TZrUInt32 registrationSlot) {
     if (code == ZR_NULL || code->state == ZR_EXECUTION_BACKEND_CODE_FREE) {
@@ -251,6 +261,7 @@ static TZrBool zr_execution_backend_code_references_registration(
     return (TZrBool)(code->registrationSlot == registrationSlot);
 }
 
+/* 在锁内选择首个匹配目标、可选注册身份、能力子集和 ABI/layout 的注册；能力回调由外层在解锁后进一步查询。 */
 static TZrBool zr_execution_backend_find_candidate_locked(
         SZrExecutionBackendService *service,
         const SZrExecutionCompileRequest *request,
@@ -293,6 +304,7 @@ static TZrBool zr_execution_backend_find_candidate_locked(
     return ZR_FALSE;
 }
 
+/* 优先使用空槽，再复用失败或取消槽；发布作业随代码回收释放，旧 terminal ticket 因复用失去查询资格。 */
 static TZrUInt32 zr_execution_backend_find_job_slot_locked(
         SZrExecutionBackendService *service) {
     TZrUInt32 index;
@@ -316,6 +328,7 @@ static TZrUInt32 zr_execution_backend_find_job_slot_locked(
     return UINT32_MAX;
 }
 
+/* 只分配 FREE 代码槽；退休、清理中和回收失败的记录必须先完成正常回收。 */
 static TZrUInt32 zr_execution_backend_find_code_slot_locked(
         SZrExecutionBackendService *service) {
     TZrUInt32 index;
@@ -328,6 +341,7 @@ static TZrUInt32 zr_execution_backend_find_code_slot_locked(
     return UINT32_MAX;
 }
 
+/* 阻止与任何存活记录重名的产物进入代码表，包括已退休但尚未回收的记录。 */
 static TZrBool zr_execution_backend_code_identity_exists_locked(
         const SZrExecutionBackendService *service,
         TZrUInt64 codeIdentity) {
@@ -630,6 +644,8 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_CompileAsync(
     }
     ++service->nextTicketId;
     descriptor = service->registrations[registrationSlot].descriptor;
+/* 先占作业槽并复制请求，再锁外 queryTarget；该临时 QUEUED 状态及回调计数参与注销和关闭屏障。 */
+/* TODO: 同一 QUEUED 槽在 queryTarget 返回前已可被 ProcessNext 看到；下一步在 test_ssa_backend_service 加入阻塞查询及并发调度场景，核对宿主是否约束提交与 worker 时序。 */
     memset(&service->jobs[jobSlot], 0, sizeof(service->jobs[jobSlot]));
     service->jobs[jobSlot].request = *request;
     service->jobs[jobSlot].request.generationKey = candidateKey;
@@ -661,6 +677,7 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_CompileAsync(
     if (ticket != ZR_NULL) *ticket = candidateTicket;
     zr_execution_backend_unlock(service);
 
+/* 目标查询由提交线程执行；释放服务锁允许回调重入查询，但 queryTargetInFlight 仍阻止最终销毁。 */
     memset(&callbackDiagnostic, 0, sizeof(callbackDiagnostic));
     status = descriptor.vtable.queryTarget(
             &descriptor.target, request->requiredOperations, descriptor.userData,
@@ -692,6 +709,7 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_CompileAsync(
     return ZR_EXECUTION_BACKEND_STATUS_PENDING;
 }
 
+/* 回调返回后重新定位票据，仅将仍在编译的作业转为失败或取消，避免覆盖回调重入产生的新状态。 */
 static EZrExecutionBackendStatus zr_execution_backend_mark_callback_failure(
         SZrExecutionBackendService *service,
         const SZrExecutionCompileTicket *ticket,
@@ -716,6 +734,7 @@ static EZrExecutionBackendStatus zr_execution_backend_mark_callback_failure(
                                      0u, 0u, 0u);
 }
 
+/* 给 Complete 的无效产物选择代次、执行契约或代码错误分类；只分类，不代替完整形状验证。 */
 static EZrExecutionBackendStatus zr_execution_backend_code_mismatch_status(
         const SZrExecutionCompileRequest *request,
         const SZrExecutionBackendCodeInfo *code) {
@@ -807,6 +826,7 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_ProcessNext(
     zr_execution_backend_lock(service);
     zr_execution_backend_callback_leave_locked(service);
     zr_execution_backend_unlock(service);
+/* PENDING 的返回状态与作业状态可不同：期间的取消会把作业标记 CANCELLED，观察者须查询实际状态。 */
     if (status == ZR_EXECUTION_BACKEND_STATUS_PENDING) {
         zr_execution_backend_lock(service);
         {
@@ -883,6 +903,7 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_Complete(
     }
     zr_execution_backend_lock(service);
     job = zr_execution_backend_find_job_locked(service, ticket, &jobSlot);
+/* 迟到结果只借原注册找清理入口；票据已经失效时不会重新接纳为 READY。 */
     if (job == ZR_NULL) {
         /* A worker can finish after its terminal ticket slot has been reused.
          * If the ticket still carries a validated backend registration key,
@@ -933,6 +954,7 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_Complete(
                 ? ZR_EXECUTION_BACKEND_STATUS_CANCELLED
                 : ZR_EXECUTION_BACKEND_STATUS_INVALID_STATE;
         actualState = job->ticket.state;
+/* TODO: Complete 解锁后才由 dispose_unpublished 增加回调计数；核对并发 Unregister/FinalizeShutdown 是否能在此间销毁快照 userData，入口见 execution_code_handle.c 的清理计数协议。 */
         zr_execution_backend_unlock(service);
         if (dispose) {
             SZrExecutionBackendDiagnostic disposeDiagnostic;
@@ -999,6 +1021,7 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_Complete(
                 code->codeIdentity);
     }
     codeSlot = zr_execution_backend_find_code_slot_locked(service);
+/* 代码容量失败终止内部作业并清理产物；此分支不更新传入 ticket.state，调用者应 QueryTicket 而非读旧快照。 */
     if (codeSlot == UINT32_MAX) {
         descriptor = service->registrations[job->registrationSlot].descriptor;
         disposeCode = *code;
@@ -1019,6 +1042,7 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_Complete(
                 codeCapacitySnapshot, codeCountSnapshot, ticket->ticketId,
                 code->codeIdentity, 0u, 0u);
     }
+/* 接收只记录后端声称已注册的图元数据；发布、租约取得与平台图内容正确性是后续不同责任。 */
     service->codes[codeSlot].info = *code;
     service->codes[codeSlot].state = ZR_EXECUTION_BACKEND_CODE_READY;
     service->codes[codeSlot].registrationSlot = job->registrationSlot;
@@ -1160,6 +1184,7 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_QueryTicket(
     return ZR_EXECUTION_BACKEND_STATUS_OK;
 }
 
+/* 锁内保存取消意图及回调快照，锁外发送取消，再按 ticketId 和状态核对结果；失败或 PENDING 不冒充取消完成。 */
 static EZrExecutionBackendStatus zr_execution_backend_cancel_compiling_one(
         SZrExecutionBackendService *service,
         TZrUInt32 jobSlot,
@@ -1280,6 +1305,7 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_InvalidateGeneration(
                 ZR_EXECUTION_BACKEND_STATUS_SHUTTING_DOWN, diagnostic,
                 0u, 0u, 0u, 0u, 0u, 0u);
     }
+/* 墓碑先于记录扫描提交；容量拒绝发生在取消或退休之前，避免部分失效却不能阻止重新入队。 */
     if (!zr_execution_backend_generation_invalidated_locked(service, key)) {
         if (service->invalidatedKeyCount >=
                 ZR_EXECUTION_BACKEND_INVALIDATION_CAPACITY) {
@@ -1345,6 +1371,7 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_InvalidateGeneration(
             zr_execution_backend_unlock(service);
         }
     }
+/* 返回 OK 的契约是失效标记完成；取消回调失败或仍编译不在这里转换成整体失败，资源回收需单独观察。 */
     if (diagnostic != ZR_NULL) {
         diagnostic->status = ZR_EXECUTION_BACKEND_STATUS_OK;
         diagnostic->expectedKey = *key;
@@ -1511,6 +1538,7 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_FinalizeShutdown(
     /* Registration callbacks own the code/map implementation.  Keep those
      * callbacks alive while any retired record still has a lease; otherwise a
      * later ReleaseCode/CollectRetired could no longer reach the owner. */
+/* 所有代码记录清空后才销毁 owner；RETIRE_FAILED 也占 codeCount，不能以关闭请求替代资源清理。 */
     zr_execution_backend_lock(service);
     if (service->codeCount != 0u) {
         TZrUInt32 activeCodes = service->codeCount;
@@ -1584,6 +1612,7 @@ TZrBool ZrCore_ExecutionBackendService_ResumeInterpreter(
         return ZR_FALSE;
     }
     zr_execution_backend_lock(service);
+/* 恢复入口未检查 shuttingDown/destroyed；TODO: 宿主接入 ResumeInterpreter 时核对最终关闭与恢复的并发约束，当前 mock 只覆盖关闭前的串行恢复。 */
     resume = service->resumeInterpreter;
     userData = service->resumeUserData;
     if (resume != ZR_NULL) {
@@ -1622,6 +1651,7 @@ TZrBool ZrCore_ExecutionBackend_SetDefaultService(
     return ZR_TRUE;
 }
 
+/* 在默认锁下借用当前指针，再由短接口派发；宿主必须另行协调释放与并发替换。 */
 static SZrExecutionBackendService *zr_execution_backend_get_default(void) {
     SZrExecutionBackendService *service;
     zr_execution_backend_default_lock_enter();
