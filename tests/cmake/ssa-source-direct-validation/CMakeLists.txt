@@ -226,11 +226,14 @@ target_link_options(zr_vm_ssa_compare_metadata_guards_test PRIVATE
 # eligibility guards affected by scalar value binding.
 foreach (_zr_guard_target IN ITEMS
         zr_vm_ssa_source_straight_line_cfg_test
-        zr_vm_exec_ir_scalar_scratch_eligibility_test)
+        zr_vm_exec_ir_scalar_scratch_eligibility_test
+        zr_vm_ssa_source_callable_return_test)
     if (_zr_guard_target STREQUAL "zr_vm_ssa_source_straight_line_cfg_test")
         set(_zr_guard_source tests/parser/test_ssa_source_straight_line_cfg.c)
-    else ()
+    elseif (_zr_guard_target STREQUAL "zr_vm_exec_ir_scalar_scratch_eligibility_test")
         set(_zr_guard_source tests/parser/test_exec_ir_scalar_scratch_eligibility.c)
+    else ()
+        set(_zr_guard_source tests/parser/test_ssa_source_callable_return.c)
     endif ()
     add_executable(${_zr_guard_target} "${ZR_SSA_SOURCE_ROOT}/${_zr_guard_source}")
     target_include_directories(${_zr_guard_target} PRIVATE
@@ -270,6 +273,8 @@ add_test(NAME ssa_source_straight_line_cfg
         COMMAND zr_vm_ssa_source_straight_line_cfg_test)
 add_test(NAME exec_ir_scalar_scratch_eligibility
         COMMAND zr_vm_exec_ir_scalar_scratch_eligibility_test)
+add_test(NAME ssa_source_callable_return
+        COMMAND zr_vm_ssa_source_callable_return_test)
 set_tests_properties(ssa_source_execbc_vm_comparisons ssa_source_execbc_vm_regressions
         ssa_source_execbc_vm_loops
         ssa_source_execbc_vm_scalar_guards
@@ -279,6 +284,7 @@ set_tests_properties(ssa_compare_metadata_guards PROPERTIES
         LABELS "ssa;source-direct-validation" TIMEOUT 120
         ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
 set_tests_properties(ssa_source_straight_line_cfg exec_ir_scalar_scratch_eligibility
+        ssa_source_callable_return
         PROPERTIES LABELS "ssa;source-direct-validation" TIMEOUT 120
         ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
 
@@ -286,7 +292,8 @@ set_tests_properties(ssa_source_straight_line_cfg exec_ir_scalar_scratch_eligibi
 set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_library
         ssa_source_zr_vm_common ${_zr_vendor_targets} ssa_source_unity ssa_source_runtime_support
         zr_vm_ssa_source_execbc_vm_test zr_vm_ssa_compare_metadata_guards_test
-        zr_vm_ssa_source_straight_line_cfg_test zr_vm_exec_ir_scalar_scratch_eligibility_test)
+        zr_vm_ssa_source_straight_line_cfg_test zr_vm_exec_ir_scalar_scratch_eligibility_test
+        zr_vm_ssa_source_callable_return_test)
 set(_zr_graph "target\tabsolute_source\tsha256\n")
 set(_zr_all_sources)
 set(_zr_settings "compiler\t${CMAKE_C_COMPILER}\ncompiler_id\t${CMAKE_C_COMPILER_ID}\ncompiler_version\t${CMAKE_C_COMPILER_VERSION}\narchive_tool\t${CMAKE_AR}\narchive_rule\t${CMAKE_C_CREATE_STATIC_LIBRARY}\nlink_rule\t${CMAKE_C_LINK_EXECUTABLE}\n")
