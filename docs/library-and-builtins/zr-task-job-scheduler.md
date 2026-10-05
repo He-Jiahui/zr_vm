@@ -124,7 +124,8 @@ Await-hook registration stores a borrowed pointer to the registration record;
 the record, hook and context must outlive every possible scheduler use. The
 registration function currently returns true after a void field write and
 cannot confirm publication on the silent failure path. A missing registration
-therefore selects local queue waiting, which cannot complete provider work.
+therefore selects the local queue fallback for a pending Task; that fallback does
+not dispatch the provider queue. A Task already terminal is read before hook lookup.
 Checked registration and failure-path coverage remain required before treating
 that return value as proof of a working provider wait path.
 
@@ -151,3 +152,29 @@ M6.2 removes `%async`, `%await`, `%async T`, `TaskRunner`, `Async`,
 use `async fn ...: Task<T>`, direct `await`, and the resolved
 `currentScheduler.schedule(Job<T>)` contract. Thread providers consume the
 same Job/Scheduler role and do not recreate the deleted wrappers.
+
+## 当前请求与核查边界
+
+共享 queue helper 被生产 task_runtime.c 和测试 task_scheduler_queue_reuse_cases.inc
+实际 include；测试 TU 的同名 static helper 不构成生产函数 caller。head 先推进后调用
+Job 的目的允许 callback 追加工作；消费 Job 和创建 WorkItem 根位于参数 guard 之后。
+同步 TryRun 回调不保存栈 request，调用者在返回后读取 result/completed 或 attached/queue。
+
+PrepareJob 先消费 callable 再创建 completion Task 和域根；失败没有恢复可再次提交的
+Job。ExecutePreparedJob 返回 true 可表示已故障结算；FaultPreparedJob 没有 terminal
+guard，而 CompletePreparedJob 拒绝已完成 Task。ReleasePreparedJob 只释放根并清空
+工作项，不等待 worker 退出。provider 按一次结算和同域释放安排自己的时序。
+
+现存两个 void setter BUG 的静态前提沿 global.c:374 安装预算 allocator，进入
+execution/execution_memory.c:65 上游分配及 :69–70 null 普通返回，再经 GC Ignore ARRAY
+扩容失败和 native field pin guard 普通返回闭合；注册 true 和消费写入不等于成功发布。
+没有新增运行重现。Duration/ReadInt 参数与 callback 内 moving GC 窗口仍按 runtime
+文档的具体 TODO 入口核查，不将 cleanup 测试外推为完整回调 GC 证明。
+
+## 本次静态证据锚点
+
+实际同步调用与请求返回后读取：`zr_vm_library/src/zr_vm_library/task_runtime.c:593`、`zr_vm_library/src/zr_vm_library/task_runtime.c:615`、`zr_vm_library/src/zr_vm_library/task_runtime_scheduler_queue.inc:161`。provider 先接管：`zr_vm_library/src/zr_vm_library/task_runtime.c:852`；无 hook 的本地 pumping guard：`zr_vm_library/src/zr_vm_library/task_runtime.c:859`。
+
+消费与域根创建：`zr_vm_library/src/zr_vm_library/task_runtime.c:913`、`zr_vm_library/src/zr_vm_library/task_runtime.c:923`；释放根：`zr_vm_library/src/zr_vm_library/task_runtime.c:972`；结算 guard：`zr_vm_library/src/zr_vm_library/task_runtime.c:1021`。真实共享 helper include：`tests/task/task_scheduler_queue_reuse_cases.inc:11`。
+
+allocator 安装与普通 null 返回：`zr_vm_core/src/zr_vm_core/global.c:374`、`zr_vm_core/src/zr_vm_core/execution/execution_memory.c:65`、`zr_vm_core/src/zr_vm_core/execution/execution_memory.c:70`。pin 失败返回：`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1385`、`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1386`。Duration 核查入口：`zr_vm_library/src/zr_vm_library/task_runtime.c:1219`。
