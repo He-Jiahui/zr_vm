@@ -213,6 +213,6 @@ doc_type: category-index
 
 ## 2026-10-04 当前复审
 
-[22 个文件、322 单元的当前复审与验证范围](batches/20261004-current-reviewed-files.md)：清单按当前内容摘要同步；新增 ExecBC generator 18、close-proxy fixture 12、FFI runtime 39，分别仅有既有只读 freshness 检查或有限 Windows 编译证据。roots/young 四个既有 Windows fixture 与 Complex 四次编译范围保持；Views、Math、FFI/native/aot 的其他历史台账债与其余首方待审文件继续登记。
+[49 个文件、1962 单元的当前完整复审与验证范围](batches/20261004-current-reviewed-files.md)：原完整正文与单元盘点、当前源码摘要及已提交有限台账修订共同绑定；Function 六文件194单元的用途差量经独审闭合。历史 HOLD 与44/59/33债记录保留；库存未审文件仅同步 pending 内容摘要，没有本轮新运行信用。
 
 [布局元数据 fixture 的 31 单元完整复审](batches/20261004-layout-metadata-fixture.md)：替换该文件的旧 13 行局部记录；核对构造、校验与同步 GC 访问记录的实际边界，未新增对象收集、跨域传递或 native 测试证据。
