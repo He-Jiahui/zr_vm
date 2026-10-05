@@ -168,10 +168,15 @@ producer state: establish owned/transfer-safe value
 static void host_try_body(SZrState *state, TZrPtr userData) {
     HostRunArgs *args = userData;
     args->ok = run_bound_operation(state, args);
+    args->completed = ZR_TRUE;
 }
 
+args.ok = ZR_FALSE;
+args.completed = ZR_FALSE;
 EZrThreadStatus status = ZrCore_Exception_TryRun(state, host_try_body, &args);
-if (ZrCore_Exception_IsStausError(status)) {
+if (status != ZR_THREAD_STATUS_FINE || !args.completed || !args.ok ||
+    state->threadStatus != ZR_THREAD_STATUS_FINE || state->hasCurrentException) {
+    /* run_bound_operation 须先完成它拥有的 VM 栈、control 与资源收束。 */
     ZrCore_Exception_LogUnhandled(state, &state->currentException);
     ZrCore_Exception_ClearCurrent(state);
     return ZR_FALSE;
@@ -179,16 +184,32 @@ if (ZrCore_Exception_IsStausError(status)) {
 ```
 
 `TryRun` 为给定 state 建立 runtime recovery point，并返回 `EZrThreadStatus`。它是 C host 调用
-可能触发 ZR 异常的操作时的边界。不要在同一 callback 中用 `setjmp`/`longjmp` 绕开它，因为那会
-遗漏 VM frame、root、ownership 和 `finally` 清理。
+可能触发 ZR 异常的操作时的保护边界。正常回调返回时，恢复点结果仍为 `FINE`；宿主还须检查
+自己的完成标记、`state->threadStatus` 与 `state->hasCurrentException`。
+
+示例中的 `HostRunArgs` 含 `ok` 与 `completed` 布尔成员，每次进入 `TryRun` 前都重置为假；
+`completed` 只在宿主回调正常执行到末尾时置真，内部的正常返回标志并不由 API 返回。
+调用前应由宿主处理遗留异常并准备有效 state；`TryRun` 不会代为清除入口异常。
+
+C `setjmp`/`longjmp` 分支中，本地 `Throw(FINE)` 仍会跳出回调：`TryRun` 可以返回 `FINE`，
+但回调末尾的完成标志不会置真。因此不能只用返回 status 判断正常完成。
+
+forced C++ 分支（以 C++ 编译且未定义 `ZR_EXCEPTION_WITH_LONG_JUMP`）的本地 catch 会把
+捕获时仍为 `FINE` 的恢复状态改为 `INVALID`，包括本地 `Throw(FINE)`。这只说明该宏分支
+的本地保护块；外来 C++ 异常跨已编译 C 的传播、析构重入和跨原生线程跳转等入口的恢复
+保证尚未验证，不能从此本地分支推及这些入口。
+
+`TryRun` 撤销恢复点并恢复入口 native 调用深度；异常收束还原入口 AOT 根链。本线程 C11
+`Throw` 在跳转前恢复入口 GC 作用域。VM 栈、call-info、handler、pending control 与资源清理
+由具体调用方负责，不能仅凭 `TryRun` 返回断言已恢复。不要用自设 `longjmp` 绕过这些协议。
 
 ### 6.2 API 分类
 
 | API | 用途 | 调用后的责任 |
 | --- | --- | --- |
-| `TryRun` | 运行 C try body 并捕获 runtime throw | 检查 status 和 `currentException` |
+| `TryRun` | 同步运行受保护 C try body 并捕获 runtime throw | 检查 status、操作完成标记、threadStatus 和当前异常；由调用方收束 VM 栈/control |
 | `Throw` | 以 thread status 发起 runtime throw | 不应继续依赖普通后续执行 |
-| `TryStop` | 在指定栈级别停止/恢复控制 | runtime exception machinery 用 |
+| `TryStop` | 当前忽略 state/level 并原样返回 status | `State_ResetThread` 保留 level=1 调用；分层停止语义仍待核查 |
 | `MarkError` | 写入 error/status/previous stack top | instruction/runtime helper 用 |
 | `NormalizeThrownValue` | 将 ZR payload 归一为 exception | payload 必须在调用期间有效 |
 | `NormalizeStatus` | 将 status 转为 exception 表示 | 适合 native/loader 错误桥接 |
@@ -198,8 +219,10 @@ if (ZrCore_Exception_IsStausError(status)) {
 | `PrintUnhandled` / `LogUnhandled` | 输出未处理异常 | 不改变异常状态 |
 
 `ClearCurrent` 不能被用来吞掉任意失败后继续运行。只有在 host 已决定把异常转换成自己的错误结果、
-并且 VM stack/control 已由 `TryRun` 边界恢复后才调用。否则旧 call frame、pending control 或
-resource cleanup 可能尚未完成。
+并且调用方已完成自己的 VM 栈、call-info、handler/pending control 与资源收束后才清除当前异常。
+`TryRun` 本身不完成这些调用方清理；例如任务执行入口自行恢复栈锚点与调用帧，
+`State_ResetThread` 则按线程复用协议清理 handler、pending 和栈。`ClearCurrent` 仅清异常值、
+状态与存在标记，不替代上述清理。
 
 ## 7. budget 终止如何与异常/GC 协作
 
