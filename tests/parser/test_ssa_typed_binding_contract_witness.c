@@ -101,9 +101,11 @@ static void test_polymorphic_identity_witness_is_retained(void) {
         init_facts(&facts, &segment, &row, &contract, kinds[index]);
         TEST_ASSERT_TRUE(ZrParser_ExecIr_ProjectBindingFacts(&facts, &function,
                                                               &diagnostic));
-        TEST_ASSERT_EQUAL_UINT32(contract.ownerTypeToken, segment.receiverTypeToken);
+        TEST_ASSERT_EQUAL_UINT32(0u, segment.receiverTypeToken);
         TEST_ASSERT_EQUAL_UINT32(contract.layoutVersion, segment.layoutVersion);
         TEST_ASSERT_EQUAL_UINT64(contract.layoutHash, segment.layoutHash);
+        TEST_ASSERT_EQUAL_UINT32(contract.ownerTypeToken,
+                function.bindingRows[0].contract.ownerTypeToken);
         TEST_ASSERT_EQUAL_UINT32(contract.dispatchSlot, function.bindingRows[0].contract.dispatchSlot);
         TEST_ASSERT_EQUAL_UINT32(segment.sourceId, diagnostic.sourceId);
         ZrCore_ExecIr_FreeFunction(&function);
