@@ -128,6 +128,8 @@ doc_type: category-index
 
 # Core Runtime
 
+- [CallInfo runtime](call-info-runtime.md): 调用帧的活动链、复用缓存、栈借用与返回/GC 约束；仅静态审查。
+
 Typed function-value call contracts, closure preservation, and runtime signature
 validation are documented in [Typed Call Binding](typed-call-binding.md).
 

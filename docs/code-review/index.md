@@ -134,7 +134,7 @@ doc_type: category-index
 | parser 泛型约束与实例化测试 | [19 项](coverage/tests_parser_generic_contracts.tsv) | 2 个 C 文件独立复核，148 个 evidence 路径锚点有效，源码仅增 15 行注释；GCC/Clang 语法检查 4/4 通过。2 个 BUG 行记录失败断言跳过清理，1 个 TODO 留待真实命名结构体 AOT 用例核对；定向构建停在 CMake 重新生成，未运行 CTest。 |
 | core 哈希集合与字符串构建器 | [75 项](coverage/zr_vm_core_hash_set_string_builder.tsv) | 4 个 C/H 文件独立复核，259 个非空证据锚点，源码仅改注释；GCC/Clang 对两个 C 文件语法检查通过。11 个 TODO 保留所有权、极端容量、GC 地址稳定和自追加契约疑点；未运行运行时测试。 |
 | parser cast 操作数与逻辑表达式事实测试 | [33 项](coverage/tests_parser_expression_fact_focus.tsv) | 2 个 C 文件独立复核，141 个非空证据锚点、8 个 Unity 用例，源码仅增 33 行注释；GCC/Clang 语法检查 4/4 通过。2 个 BUG 行记录失败退出后的悬挂状态或原生资源泄漏，1 个 TODO 为 logical 目标自动套件归属；未运行完整 CTest。 |
-| core 调用帧与缓存链 | [23 项](coverage/zr_vm_core_call_info.tsv) | 2 个 C/H 文件独立复核，157 个非空证据锚点，源码仅增 35 行注释；GCC/Clang 定向语法检查通过。4 个 TODO 留待确认预留状态位、续体、yield 联合体与入口重复清零契约；未运行运行时测试。 |
+| core 调用帧与缓存链 | [73 项](coverage/zr_vm_core_call_info.tsv) | 当前 2 个 C/H 文件完整静态审查及 included `.inc` 调用方有限复核；51 commented / 15 TODO / 7 no-comment / 0 新 BUG。本轮未执行编译或运行时测试。旧 23 项及其 GCC/Clang 检查为历史记录，不作为本次验证；协议疑点仍保留具体 TODO。 |
 | parser extern decorator 诊断查询测试 | [41 项](coverage/tests_parser_extern_decorator_diagnostics.tsv) | 3 个 C 文件独立复核，206 个 evidence 与 67 个 callers 锚点有效，源码仅增 48 行注释；GCC/Clang 语法检查 6/6 通过。3 个 BUG 行记录失败断言跳过 AST/编译状态清理，3 个 TODO 记录独立目标未注册 CTest；未运行动态测试。 |
 | core 字符串驻留、拼接与格式化 | [77 项](coverage/zr_vm_core_string.tsv) | 2 个 C/H 文件独立复核，169 个 evidence 与 60 个 callers 锚点有效，源码仅改注释；GCC/Clang 定向语法检查通过。8 个 BUG 记录创建失败后解引用、格式串越界及数组插入假成功等可达问题，1 个 TODO 待明确对象占位符契约；未运行运行时测试。 |
 | core canonical artifact 消费与类型投影 | [41 项](coverage/zr_vm_core_canonical_consumer.tsv) | 2 个 C/H 文件独立复核，172 个非空证据锚点有效，源码仅增 58 行注释；GCC/Clang 定向语法检查通过。类型、布局与调度器合同的借用期和错误语义已按当前调用链核准；未发现可证实的新 BUG/TODO，未运行运行时测试。 |
