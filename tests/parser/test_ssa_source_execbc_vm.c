@@ -343,8 +343,17 @@ static TZrBool make_source_constants(
             constants[index].bits = value != ZR_FALSE ? 1u : 0u;
             oracleValues[index].kind = ZR_EXEC_IR_ORACLE_VALUE_BOOL;
             oracleValues[index].as.boolean = value;
-        } else if (constant->type == ZR_VALUE_TYPE_INT64) {
-            TZrInt64 value = constant->value.nativeObject.nativeInt64;
+        } else if (constant->type == ZR_VALUE_TYPE_INT8 ||
+                   constant->type == ZR_VALUE_TYPE_INT16 ||
+                   constant->type == ZR_VALUE_TYPE_INT32 ||
+                   constant->type == ZR_VALUE_TYPE_INT64) {
+            TZrInt64 value;
+            switch (constant->type) {
+                case ZR_VALUE_TYPE_INT8: value = (TZrInt8)constant->value.nativeObject.nativeInt64; break;
+                case ZR_VALUE_TYPE_INT16: value = (TZrInt16)constant->value.nativeObject.nativeInt64; break;
+                case ZR_VALUE_TYPE_INT32: value = (TZrInt32)constant->value.nativeObject.nativeInt64; break;
+                default: value = constant->value.nativeObject.nativeInt64; break;
+            }
             constants[index].typeToken = ZrParser_CanonicalType_InternPrimitive(
                     compiler->semanticContext, ZR_VALUE_TYPE_INT64);
             constants[index].bits = (TZrUInt64)value;
