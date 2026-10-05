@@ -40,7 +40,8 @@ to a scheduler: suspension is explicit, a state-map boundary is present,
 non-crossing borrows and critical native sections never yield, and teardown
 cannot race an active pin.
 
-The same module contains two non-blocking coordination records.  The wait
+The same module contains two coordination records. Registry identity changes
+use a spin lock; this contract makes no wait-free or lock-free progress promise.  The wait
 registry closes the register/recheck lost-wakeup window with a single atomic
 winner transition.  The compile queue owns a copied IR snapshot, so a worker
 never reads a movable AST or VM allocation and never publishes a result whose
@@ -49,8 +50,8 @@ generation or contract hashes are stale.
 ## Frame and budget state machine
 
 An initialized `SZrAsyncFrameBudget` starts in `IDLE` and enters `RUNNING` only
-through `ZrCore_AsyncFrameBudget_Begin`.  `Poll` accounts bounded work units at
-loop backedges and call boundaries.  Reaching the configured work limit sets a
+through `ZrCore_AsyncFrameBudget_Begin`.  `Poll` accounts caller-supplied work units. A future adapter chooses safe
+poll sites; the current consumers are standalone SSA tests.  Reaching the configured work limit sets a
 pending bit; it becomes `SUSPENDED` only when all of the following hold:
 
 1. the caller is in an async contract with suspension enabled;
@@ -127,16 +128,51 @@ shutdown primitive.
 ## Integration boundaries
 
 The files are standalone core sources so they can be integrated into the core
-target without changing existing dispatch or task-runtime ownership.  The
-parent build integration must register both C sources and
-`tests/task/test_ssa_async_frame_budget.c` under the planned
-`ssa_async_frame_budget` CTest.  Existing `execution_budget.h/c` and
+target without changing existing dispatch or task-runtime ownership.  The current `tests/cmake/ssa-tests.cmake:1218` executable includes the test,
+wait C source (`:1220`) and compile C source (`:1221`), and registers
+`ssa_async_frame_budget` at `:1226`. This is the actual current build entry,
+not evidence that this comment candidate has run.  Existing `execution_budget.h/c` and
 `task_frame_runtime.c` remain the owners of concrete VM budget counters and
 GC-rooted task slots; an adapter should call this contract at their safe poll,
 state-map, and cleanup boundaries rather than create a second counter or
 continuation owner.
 
-## Test coverage
+## 当前等待与帧契约的有限源码审阅（2026-10-04）
+
+本节只记录 execution_async_wait.c 和其转发头的完整审阅；公开 record/field 全文
+信用由独立 header 批次负责。当前上游是 SSA 测试及 included stale-handle case，
+没有查到 VM、FFI、生成 C/LLVM、worker 或用户回调消费这组帧/等待 API。
+公开但仓内未调用的 DiagnosticClear/DiagnosticName/StatusName/Fault/显式 Wait_Begin
+保留具体仓外适配器 TODO；转发头没有仓内直接包含者，保留原兼容入口 TODO。
+
+Init 建立空闲 ABI 记录，调用方补非零 identity/generation 和可暂停 state map。
+Begin 重置计量并保留预启动取消；Resume 保留累计预算，不能视作预算 reset。
+Pin/Unpin 只是适配器活跃引用计数，不能注册 GC root 或稳定 VM 对象地址；它们
+阻止 Complete/Fault/Teardown，CanSuspend 本身不按 pinCount 拒绝暂停。
+资源 flags 和边界布尔值是调用方声明，Validate 不能验证实际对象寿命。
+Poll 饱和累计、native 临界区延后事件，在安全边界取消优先于预算暂停。
+返回 FAULTED outcome 不总是把 frame.status 改成 FAULTED，需按实际失败路径区分。
+RequestCancel 仅取消位原子写，status/pendingFlags 是普通字段；当前同线程测试
+不能证明跨线程许可，适配器须明确同步并补并发验证，此处保留 TODO 而非 BUG。
+Suspend 只改变标量，不注册等待；Resume 无用户回调，取消分支不承诺清空所有
+reason/pending字段。Complete/Teardown 不释放 VM、槽数组或对象存储。
+
+registry、数组、request、handle 都由调用方保持有效。deadlineMicros 只随槽保存，
+Timeout 是显式外部事件，不读取时钟。Begin 注册前的拒绝不发布输出 handle，
+两入口分别选请求内指针或显式参数，不把 CompileQueue 的指针相等门禁移植过来。
+REGISTERING发布后CAS不覆盖已获胜的Wake/Cancel/Timeout；Recheck 成功也可表示
+已有取消、超时或消费终态。Resume 只认领一次，resumeCount 非回调调用数。
+Release 失败保留句柄和槽身份；成功清空本句柄、归还槽位，不释放外部数组。
+调用方必须先结束同槽访问才能 Release；Deinit 必须在所有访问停止后进行，
+原子state和registry锁不能替代寿命约束。token/generation拒绝旧身份不是GC保护。
+staleWinners 的三个函数指针在 `tests/task/ssa_async_stale_handle_cases.inc:5` 登记，
+真实间接调用在 `tests/task/ssa_async_stale_handle_cases.inc:45`，`:44`只是循环头。
+私有 ASYNC_STAGE_COMPILE 是本wait C未使用的保留member，不承担 compile queue 诊断。
+
+本次只进行静态审阅、after-aware 48行检查和readonly patch check；没有 native、
+build 或测试执行。下列历史验收保持其原时间与范围，不能转记为本次候选执行。
+
+## Historical test coverage
 
 The focused test exercises budget exhaustion before and at a coherent boundary,
 borrow rejection, pin balancing, cancellation and idempotent teardown, wake
