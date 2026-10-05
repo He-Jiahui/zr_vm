@@ -443,7 +443,140 @@ static void test_reference_return_preserves_ref_token_range(void) {
     assert_script_range(&evidence);
 }
 
-int main(void) {
+typedef struct SZrRangeExpectedCoordinates {
+    TZrSize startOffset;
+    TZrInt32 startLine;
+    TZrInt32 startColumn;
+    TZrSize endOffset;
+    TZrInt32 endLine;
+    TZrInt32 endColumn;
+} SZrRangeExpectedCoordinates;
+
+static void assert_literal_coordinates(const SZrFileRange *actual,
+        const SZrRangeExpectedCoordinates *expected) {
+    assert_exact_range(actual, expected->startOffset, expected->startLine,
+            expected->startColumn, expected->endOffset, expected->endLine,
+            expected->endColumn);
+}
+
+static void assert_multiline_template_token_ranges(const char *source,
+        const char *templateSource,
+        const SZrRangeExpectedCoordinates expected[3]) {
+    SZrParserState *parser;
+    SZrParserState *scan;
+    SZrAstNode *statement;
+    SZrFileRange returnBeforeLookahead;
+    SZrFileRange returnAfterLookahead;
+    SZrFileRange templateBeforeLookahead;
+    SZrFileRange templateAfterLookahead;
+    SZrFileRange semicolon;
+    SZrFileRange eos;
+
+    initialize_source_name();
+    /* Establish legal source/owned AST before any coordinate assertion. */
+    parser = initialize_parser(source, RANGE_PARSE_STATE);
+    g_ast = ZrParser_ParseWithState(parser);
+    TEST_ASSERT_NOT_NULL_MESSAGE(g_ast,
+            "PRECONDITION: multiline template source parses successfully");
+    TEST_ASSERT_FALSE(parser->hasError);
+    TEST_ASSERT_FALSE(parser->hasFatalError);
+    TEST_ASSERT_EQUAL_UINT32(0u, g_diagnosticCount);
+    TEST_ASSERT_EQUAL_INT(ZR_TK_EOS, parser->lexer->t.token);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, g_ast->type);
+    TEST_ASSERT_NOT_NULL(g_ast->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT32(1u, (TZrUInt32)g_ast->data.script.statements->count);
+    TEST_ASSERT_NOT_NULL(g_ast->data.script.statements->nodes);
+    statement = g_ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(statement);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_RETURN_STATEMENT, statement->type);
+    TEST_ASSERT_FALSE(statement->data.returnStatement.isReferenceReturn);
+    TEST_ASSERT_NOT_NULL(statement->data.returnStatement.expr);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_TEMPLATE_STRING_LITERAL,
+            statement->data.returnStatement.expr->type);
+    TEST_ASSERT_NOT_NULL(statement->data.returnStatement.expr->data.templateStringLiteral.segments);
+    TEST_ASSERT_TRUE(statement->data.returnStatement.expr->data.templateStringLiteral.segments->count > 0);
+    /* Template AST coordinates have a separate producer contract. */
+
+    scan = initialize_parser(source, RANGE_SCAN_STATE);
+    TEST_ASSERT_EQUAL_INT(ZR_TK_RETURN, scan->lexer->t.token);
+    returnBeforeLookahead = get_current_token_location(scan);
+    TEST_ASSERT_EQUAL_INT(ZR_TK_TEMPLATE_STRING, ZrParser_Lexer_Lookahead(scan->lexer));
+    TEST_ASSERT_FALSE(scan->lexer->lookahead.hasLexError);
+    TEST_ASSERT_EQUAL_INT(ZR_TK_RETURN, scan->lexer->t.token);
+    returnAfterLookahead = get_current_token_location(scan);
+    ZrParser_Lexer_Next(scan->lexer);
+    TEST_ASSERT_EQUAL_INT(ZR_TK_TEMPLATE_STRING, scan->lexer->t.token);
+    TEST_ASSERT_FALSE(scan->lexer->t.hasLexError);
+    templateBeforeLookahead = get_current_token_location(scan);
+    TEST_ASSERT_EQUAL_INT(ZR_TK_SEMICOLON, ZrParser_Lexer_Lookahead(scan->lexer));
+    TEST_ASSERT_FALSE(scan->lexer->lookahead.hasLexError);
+    TEST_ASSERT_EQUAL_INT(ZR_TK_TEMPLATE_STRING, scan->lexer->t.token);
+    templateAfterLookahead = get_current_token_location(scan);
+    ZrParser_Lexer_Next(scan->lexer);
+    TEST_ASSERT_EQUAL_INT(ZR_TK_SEMICOLON, scan->lexer->t.token);
+    TEST_ASSERT_FALSE(scan->lexer->t.hasLexError);
+    semicolon = get_current_token_location(scan);
+    ZrParser_Lexer_Next(scan->lexer);
+    TEST_ASSERT_EQUAL_INT(ZR_TK_EOS, scan->lexer->t.token);
+    TEST_ASSERT_FALSE(scan->lexer->t.hasLexError);
+    eos = get_current_token_location(scan);
+    TEST_ASSERT_EQUAL_UINT32(0u, g_diagnosticCount);
+
+    assert_same_range(&returnBeforeLookahead, &returnAfterLookahead);
+    assert_exact_range(&returnBeforeLookahead, 0u, 1, 1, 6u, 1, 7);
+    assert_same_range(&templateBeforeLookahead, &templateAfterLookahead);
+    assert_source_span(source, &templateBeforeLookahead, templateSource);
+    assert_source_span(source, &semicolon, ";");
+    assert_source_span(source, &eos, "");
+    assert_literal_coordinates(&semicolon, &expected[1]);
+    assert_literal_coordinates(&eos, &expected[2]);
+    assert_literal_coordinates(&templateBeforeLookahead, &expected[0]);
+}
+
+static void test_multiline_template_token_coordinates_bare_cr(void) {
+    const SZrRangeExpectedCoordinates expected[3] = {
+        {7u, 1, 8, 14u, 2, 4},
+        {14u, 2, 4, 15u, 2, 5},
+        {16u, 3, 1, 16u, 3, 1}
+    };
+    assert_multiline_template_token_ranges("return `ab\rcd`;\r", "`ab\rcd`", expected);
+}
+
+static void test_multiline_template_token_coordinates_lf(void) {
+    const SZrRangeExpectedCoordinates expected[3] = {
+        {7u, 1, 8, 14u, 2, 4},
+        {14u, 2, 4, 15u, 2, 5},
+        {16u, 3, 1, 16u, 3, 1}
+    };
+    assert_multiline_template_token_ranges("return `ab\ncd`;\n", "`ab\ncd`", expected);
+}
+
+static void test_multiline_template_token_coordinates_crlf(void) {
+    const SZrRangeExpectedCoordinates expected[3] = {
+        {7u, 1, 8, 15u, 2, 4},
+        {15u, 2, 4, 16u, 2, 5},
+        {18u, 3, 1, 18u, 3, 1}
+    };
+    assert_multiline_template_token_ranges("return `ab\r\ncd`;\r\n", "`ab\r\ncd`", expected);
+}
+
+static void test_multiline_template_token_coordinates_mixed_newlines(void) {
+    const SZrRangeExpectedCoordinates expected[3] = {
+        {7u, 1, 8, 17u, 4, 3},
+        {19u, 5, 1, 20u, 5, 2},
+        {21u, 6, 1, 21u, 6, 1}
+    };
+    assert_multiline_template_token_ranges("return `a\rb\r\nc\nd`\r\n;\n",
+            "`a\rb\r\nc\nd`", expected);
+}
+
+int main(int argc, char **argv) {
+    TZrBool baselineOnly = ZR_FALSE;
+    if (argc == 2 && strcmp(argv[1], "--baseline-only") == 0) {
+        baselineOnly = ZR_TRUE;
+    } else if (argc != 1) {
+        return 2;
+    }
     UNITY_BEGIN();
     RUN_TEST(test_script_root_starts_at_first_token);
     RUN_TEST(test_return_literal_includes_semicolon);
@@ -458,5 +591,11 @@ int main(void) {
     RUN_TEST(test_trivia_only_script_is_eos_point);
     RUN_TEST(test_operandless_return_includes_semicolon);
     RUN_TEST(test_reference_return_preserves_ref_token_range);
+    if (!baselineOnly) {
+        RUN_TEST(test_multiline_template_token_coordinates_bare_cr);
+        RUN_TEST(test_multiline_template_token_coordinates_lf);
+        RUN_TEST(test_multiline_template_token_coordinates_crlf);
+        RUN_TEST(test_multiline_template_token_coordinates_mixed_newlines);
+    }
     return UNITY_END();
 }
