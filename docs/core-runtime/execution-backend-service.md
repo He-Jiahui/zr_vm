@@ -106,7 +106,8 @@ lease keeps it executable.  `AcquireCode` is the only route to an entry
 address; it returns an opaque `SZrExecutionCodeHandle` and increments the
 execution lease.  `AcquireDependencyLease` separately protects map/import/
 deoptimization dependencies.  `ReleaseCode` refuses to drop an execution
-lease while a dependency lease remains, making ownership imbalance explicit.
+lease while any dependency lease on that code record remains, including a
+dependency held by another handle; ownership imbalance remains explicit.
 
 `LookupEntry` and `QueryMap` copy the code metadata while locked, then invoke
 the backend vtable without the lock.  If a backend has no map query callback,
@@ -135,7 +136,8 @@ diagnostic, and callback failures preserve the callback's source/state data.
 
 `Shutdown` prevents new registration/compile/publish work, cancels queued
 jobs, requests cancellation of in-flight jobs, and retires ready/published
-code.  It returns `IN_FLIGHT` only when a compile callback is still active.
+code.  `IN_FLIGHT` covers remaining compiling jobs, target queries and
+backend callbacks counted by the service; it is broader than a compile callback.
 `FinalizeShutdown` first verifies that all in-flight jobs and code leases are
 gone, then collects retired code, destroys backend registrations, clears job
 slots, and marks the service destroyed.  Registrations stay alive while a
@@ -172,16 +174,49 @@ interpreter resume, and backend destroy ordering.  Assertions check the
 unregister-before-retire event sequence and the exact source/instruction IDs
 on a failure path.
 
-The acceptance record in `tests/acceptance/ssa-backend-service.md` records the
-direct GCC/Clang and sanitizer commands.  The shared CMake/CTest registration
-is intentionally left to the parent integration task; this isolated change
-therefore does not claim a full repository build or an end-to-end JIT.
+The acceptance record in `tests/acceptance/ssa-backend-service.md` records
+historical direct GCC/Clang and sanitizer commands. Current
+`tests/cmake/ssa-tests.cmake` registers the focused source, both service
+translation units and the `ssa_backend_service` CTest entry. This comment
+integration adds no native/build/link/runtime/CTest execution evidence.
 
 ## Open issues / follow-up
 
 The service currently uses a small spin lock suitable for the short metadata
 critical sections; a host scheduler may wrap `ProcessNext` in its own queue.
-Parent integration should register the two implementation translation units
-and the focused test in the SSA CMake list, then run the repository's full
-GCC/Clang/MSVC matrix.  Concrete AOT, ExecBC, and host-JIT adapters remain
-separate tasks and must supply their own executable/map ownership proofs.
+Concrete AOT, ExecBC, and host-JIT adapters remain separate tasks and must
+supply their own executable/map ownership proofs. Current build registration
+is source linkage evidence; it does not prove a completed compiler matrix or
+execution of a backend entry.
+
+## 当前 code-handle 生命周期与失败后状态
+
+`AcquireCode` 先清空新输出槽，仅从 PUBLISHED 作业与记录加一份执行 lease；
+复制 handle 字节不会再加引用。owner 需协调同一 handle 的查询和释放，并让 lease
+覆盖入口使用期。`QueryCode` 只复制标量状态；入口与 map 查询的 callback 计数保护
+descriptor/userData，不是额外 code lease。失败回调可能留下输出值，失败输出不可使用。
+`QueryMap` 不自动加 dependency lease；没有 queryMap 回调时只返回已登记 bit 的标量 hash。
+
+有记录的回收先认领 RECLAIMING，撤图失败不调用 retire，保留 RETIRE_FAILED 与
+mapsRegistered 以供重试；撤图成功而 retire 失败，重试不再撤图。全部清理成功才归还
+code/job 槽。`CollectRetired` 遇硬失败保留已成功回收的数量，不保证整轮回滚。
+未入表产物的清理不同：撤图失败仍尝试 retire，任一失败报告 RETIRE_FAILED，
+没有 code record 保存自动重试状态。固定容量拒收不是 allocator OOM 回滚证明。
+
+TODO：`Complete` 把作业置 FAILED/CANCELLED 并解锁后，到
+`dispose_unpublished` 登记 callback 计数之间，复制的 descriptor/userData 存活窗口
+仍须沿 `Unregister`/`FinalizeShutdown` 的实际并发 owner 契约核查；已登记计数的保护
+不能证明此前窗口。本次没有合法并发运行或 BUG 证明。
+
+mock descriptor 将 lookupEntry/queryMap/unregisterMaps/retire 注册到 service；
+service 复制 descriptor 后锁外派发。mock 只产生哨兵地址、hash 和事件。当前生产
+`FinalizeShutdown` 确实调用 CollectRetired，然后才按 codeCount 门禁决定 backend
+destroy；不能将另一 `SZrHostJitCodeHandle`/manager 家族作为此 service 句柄的消费者。
+公共 C ABI 的仓外 adapter 未知，仍需在其真实 Register/vtable 与 entry 使用、卸载入口
+验证执行和依赖 lease 归还责任。默认 facade 只是借用 service，不隐藏句柄 ownerref。
+
+### 当前有限证据
+
+消费与释放：`zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c:229`、`zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c:357`、`zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c:369`。入口与 map 派发：`zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c:476`、`zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c:569`。回收状态：`zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c:653`、`zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c:691`。
+
+未入表产物清理：`zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c:94`、`zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c:105`；Complete 窗口：`zr_vm_core/src/zr_vm_core/execution/execution_backend.c:929`、`zr_vm_core/src/zr_vm_core/execution/execution_backend.c:936`、`zr_vm_core/src/zr_vm_core/execution/execution_backend.c:940`。mock 注册：`tests/core/test_ssa_backend_service.c:229`、`tests/core/test_ssa_backend_service.c:232`；service descriptor 复制：`zr_vm_core/src/zr_vm_core/execution/execution_backend.c:469`；生产回收调用：`zr_vm_core/src/zr_vm_core/execution/execution_backend.c:1491`；当前 CTest 登记：`tests/cmake/ssa-tests.cmake:977`、`tests/cmake/ssa-tests.cmake:984`。

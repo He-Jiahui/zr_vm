@@ -11,6 +11,8 @@
  * callback without recursively taking the lock.
  */
 
+/* 在持锁路径按 service、slot、code 与完整 generation 身份定位 lease 的当前记录。
+ * 调用方已持有 service lock；只拒绝 FREE，因此旧 lease 可继续查询 RETIRED 记录，身份校验不等于句柄副本各自拥有 lease。 */
 static SZrExecutionCodeRecord *zr_execution_backend_find_code_locked_local(
         SZrExecutionBackendService *service,
         const SZrExecutionCodeHandle *handle,
@@ -39,6 +41,8 @@ static TZrUInt64 zr_execution_backend_handle_ticket_id(
     return handle != ZR_NULL ? handle->codeIdentity : 0u;
 }
 
+/* 把 backend 返回结果归入此 code 的诊断，再向查询或回收调用方返回状态。
+ * 只覆盖 status/codeIdentity；其他诊断由调用路径保留，不能据此恢复失败操作。 */
 static EZrExecutionBackendStatus zr_execution_backend_finish_callback(
         EZrExecutionBackendStatus callbackStatus,
         SZrExecutionBackendDiagnostic *diagnostic,
@@ -50,6 +54,8 @@ static EZrExecutionBackendStatus zr_execution_backend_finish_callback(
     return callbackStatus;
 }
 
+/* 清理 ProcessNext/Complete 拒收的 backend 产物，避免未入 code table 的资源无人交还。
+ * descriptor/code 为调用方快照；userData 需覆盖完整回调序列，先撤图再尝试 retire，任一失败统一 RETIRE_FAILED；不创建可重试 code record。TODO: Complete 将作业置终态并解锁后到本函数登记 callback 之间的 userData 窗口，需沿 Unregister/FinalizeShutdown 的实际并发 owner 契约核查。 */
 EZrExecutionBackendStatus zr_execution_backend_dispose_unpublished(
         SZrExecutionBackendService *service,
         const SZrExecutionBackendDescriptor *descriptor,
@@ -67,6 +73,7 @@ EZrExecutionBackendStatus zr_execution_backend_dispose_unpublished(
                 1u, 0u, 0u, code != ZR_NULL ? code->codeIdentity : 0u, 0u, 0u);
     }
 
+    /* 未发布结果不在代码表中，作业可能已终态；用一个 callback 计数覆盖两次清理，阻止并发销毁 userData。 */
     /* Keep the descriptor's userData alive across the complete unregister /
      * retire sequence.  Complete() may have already moved its job to a
      * terminal state, so the callback counter is the remaining destruction
@@ -119,6 +126,8 @@ EZrExecutionBackendStatus zr_execution_backend_dispose_unpublished(
             ZR_EXECUTION_BACKEND_STATUS_OK, diagnostic, code->codeIdentity);
 }
 
+/* 为 lease 修改、视图、入口和 map 查询共用句柄校验，区分坏 magic、未 leased 与身份失效。
+ * 已持 service lock；输出 record 只可在锁内使用，成功不增加引用计数，不核对 leaseCount 非零。 */
 static EZrExecutionBackendStatus zr_execution_backend_validate_handle_locked(
         SZrExecutionBackendService *service,
         const SZrExecutionCodeHandle *handle,
@@ -158,6 +167,10 @@ static void zr_execution_backend_reset_code_record_locked(
     if (record != ZR_NULL) memset(record, 0, sizeof(*record));
 }
 
+/**
+ * @brief 从已发布 ticket 取得执行 lease，用于后续入口/map 查询并延迟退役回收。
+ * @note handle 必须是新输出槽，函数先清空；仅接受 PUBLISHED job/code，失败不加 lease，成功需 ReleaseCode；不可把 struct 复制当新 lease。
+ */
 EZrExecutionBackendStatus ZrCore_ExecutionBackendService_AcquireCode(
         SZrExecutionBackendService *service,
         const SZrExecutionCompileTicket *ticket,
@@ -212,6 +225,7 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_AcquireCode(
                 UINT32_MAX, code->leaseCount, ticket->ticketId,
                 code->info.codeIdentity, 0u, 0u);
     }
+    /* 计数与完整身份同在锁内发布；句柄只代表这次 Acquire 的一份 lease，复制其字节不会再加计数。 */
     ++code->leaseCount;
     handle->magic = ZR_EXECUTION_BACKEND_MAGIC;
     handle->slotIndex = job->codeSlot;
@@ -229,6 +243,10 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_AcquireCode(
     return ZR_EXECUTION_BACKEND_STATUS_OK;
 }
 
+/**
+ * @brief 在有效执行句柄上加一份 map/import/deopt 依赖 lease，显式延长依赖有效期。
+ * @note 同一 handle 仅可加一次，记录计数溢出前拒绝；成功后需该 handle ReleaseDependencyLease；退休状态仍按既有身份接受。
+ */
 EZrExecutionBackendStatus ZrCore_ExecutionBackendService_AcquireDependencyLease(
         SZrExecutionBackendService *service,
         SZrExecutionCodeHandle *handle,
@@ -271,6 +289,10 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_AcquireDependencyLease(
     return ZR_EXECUTION_BACKEND_STATUS_OK;
 }
 
+/**
+ * @brief 先归还该句柄的依赖保护，为之后释放执行 lease 和 collect 创造条件。
+ * @note 必须 dependencyLeased 且记录依赖计数非零；失败保持 lease，成功只改依赖计数/标记，不释放代码。
+ */
 EZrExecutionBackendStatus ZrCore_ExecutionBackendService_ReleaseDependencyLease(
         SZrExecutionBackendService *service,
         SZrExecutionCodeHandle *handle,
@@ -306,6 +328,10 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_ReleaseDependencyLease(
     return ZR_EXECUTION_BACKEND_STATUS_OK;
 }
 
+/**
+ * @brief 归还一次执行 lease 并使本句柄失效，实际 backend 释放由后续 CollectRetired 完成。
+ * @note 记录上任何 dependencyLeaseCount 非零都拒绝，包含其他 handle 的依赖；失败保留 handle/计数，成功不自动 collect。
+ */
 EZrExecutionBackendStatus ZrCore_ExecutionBackendService_ReleaseCode(
         SZrExecutionBackendService *service,
         SZrExecutionCodeHandle *handle,
@@ -327,6 +353,7 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_ReleaseCode(
         return status;
     }
     codeIdentity = record->info.codeIdentity;
+    /* 门禁看整个 record 的依赖计数；即使依赖属于另一个 handle，也不能先归还这次执行 lease。 */
     if (handle->dependencyLeased || record->dependencyLeaseCount != 0u) {
         zr_execution_backend_unlock(service);
         return zr_execution_backend_fail(
@@ -349,6 +376,10 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_ReleaseCode(
     return ZR_EXECUTION_BACKEND_STATUS_OK;
 }
 
+/**
+ * @brief 取得此有效 lease 对应代码状态和两种计数的标量快照，供持有者观察退休与引用平衡。
+ * @note view 先清空；成功复制不增加 lease，快照不是 backend 资源所有权或并发稳定性的证明。
+ */
 EZrExecutionBackendStatus ZrCore_ExecutionBackendService_QueryCode(
         const SZrExecutionBackendService *service,
         const SZrExecutionCodeHandle *handle,
@@ -381,6 +412,10 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_QueryCode(
     return status;
 }
 
+/**
+ * @brief 把 leased code 的标量快照交给已注册 backend 查询运行时入口地址。
+ * @note 调用方需保留并协调同一执行 lease 覆盖查询与入口使用；回调计数保护 userData，不是额外 code lease；失败保留回调可能写出的地址，不能使用失败输出。
+ */
 EZrExecutionBackendStatus ZrCore_ExecutionBackendService_LookupEntry(
         SZrExecutionBackendService *service,
         const SZrExecutionCodeHandle *handle,
@@ -419,6 +454,7 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_LookupEntry(
                 ZR_EXECUTION_BACKEND_STATUS_NOT_REGISTERED, diagnostic,
                 1u, 0u, 0u, record->info.codeIdentity, 0u, 0u);
     }
+    /* callback 计数保护复制的 descriptor/userData，锁外调用允许回查 service；执行 lease 仍由调用方维持。 */
     descriptor = service->registrations[record->registrationSlot].descriptor;
     code = record->info;
     if (descriptor.vtable.lookupEntry == ZR_NULL) {
@@ -454,6 +490,10 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_LookupEntry(
             ZR_EXECUTION_BACKEND_STATUS_OK, diagnostic, code.codeIdentity);
 }
 
+/**
+ * @brief 查询该代码已登记的指定 map hash；可由 backend 提供或使用 code 元数据快照。
+ * @note 必须有效 leased handle 和 map bit；本查询不自动取得 dependency lease；零 hash 拒绝，失败后的回调输出不可视为有效图。
+ */
 EZrExecutionBackendStatus ZrCore_ExecutionBackendService_QueryMap(
         SZrExecutionBackendService *service,
         const SZrExecutionCodeHandle *handle,
@@ -514,6 +554,7 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_QueryMap(
     }
     zr_execution_backend_unlock(service);
 
+    /* 没有 map 回调时返回记录中的标量见证；这条路径不创建图资源或额外依赖 lease。 */
     if (descriptor.vtable.queryMap == ZR_NULL) {
         *mapHash = zr_execution_backend_code_map_hash(&code, mapKind);
         if (*mapHash == 0u) {
@@ -542,6 +583,8 @@ EZrExecutionBackendStatus ZrCore_ExecutionBackendService_QueryMap(
             ZR_EXECUTION_BACKEND_STATUS_OK, diagnostic, code.codeIdentity);
 }
 
+/* 对一份无执行/依赖 lease 的退休记录撤图和 retire，成功后才归还 code/job slot。
+ * RETIRED/RETIRE_FAILED 才可认领；RECLAIMING 阻止重复收集；撤图失败不调用 retire，失败保留记录供重试，已撤图成功则不重复撤图。 */
 EZrExecutionBackendStatus zr_execution_backend_collect_code_slot(
         SZrExecutionBackendService *service,
         TZrUInt32 slotIndex,
@@ -594,6 +637,7 @@ EZrExecutionBackendStatus zr_execution_backend_collect_code_slot(
                 1u, 0u, 0u, codeIdentity, 0u, 0u);
     }
     descriptor = service->registrations[record->registrationSlot].descriptor;
+    /* 在解锁调用 backend 前认领记录，另一 collector 会跳过 RECLAIMING；回调返回后仍按 slot/code 身份核对提交。 */
     code = record->info;
     jobSlot = record->jobSlot;
     codeIdentity = code.codeIdentity;
@@ -628,6 +672,7 @@ EZrExecutionBackendStatus zr_execution_backend_collect_code_slot(
             status = ZR_EXECUTION_BACKEND_STATUS_BACKEND_UNAVAILABLE;
         }
     }
+    /* 只在完整清理成功后归还槽；失败保留重试状态，撤图已成功时不重复撤图，retire 尚未成功时不清 record。 */
     if (callbackPinned) zr_execution_backend_callback_leave(service);
     zr_execution_backend_lock(service);
     record = &service->codes[slotIndex];
@@ -657,6 +702,10 @@ EZrExecutionBackendStatus zr_execution_backend_collect_code_slot(
             ZR_EXECUTION_BACKEND_STATUS_OK, diagnostic, codeIdentity);
 }
 
+/**
+ * @brief 让显式 owner 或 FinalizeShutdown 扫描退休记录，统计本次成功回收并报告首次硬失败。
+ * @note 跳过仍有 lease 或当前不处于可回收状态的 slot；失败 outCollected 保留已完成数量，无全扫描事务回滚；不保证其他并发 collector 的回收计数。
+ */
 EZrExecutionBackendStatus ZrCore_ExecutionBackendService_CollectRetired(
         SZrExecutionBackendService *service,
         TZrUInt32 *outCollected,
