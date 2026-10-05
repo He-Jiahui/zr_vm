@@ -5,6 +5,9 @@
 #include "artifact_schema_internal.h"
 
 /* writer 和 artifact 行共用这条逐字段编码路径，避免 C 结构体布局进入磁盘格式。 */
+/** @brief 为 writer 和 artifact 行编码固定宽度契约，使磁盘格式独立于宿主结构体布局。
+ * @note 输出必须恰为 64 字节；校验失败前不写输出，成功按小端字段编码并写零保留位，不保存运行时目标。
+ */
 TZrBool ZrCore_CallBinding_EncodeContract(const SZrCallBindingContract *contract,
                                          TZrByte *bytes, TZrSize length) {
     if (bytes == ZR_NULL || length != ZR_CALL_BINDING_CONTRACT_ENCODED_SIZE ||
@@ -27,6 +30,8 @@ TZrBool ZrCore_CallBinding_EncodeContract(const SZrCallBindingContract *contract
 }
 
 /* 保留完整检查状态供 artifact reader 分类，同时维持失败时输出清零。 */
+/* 先清输出、在局部契约中完成检查再发布；保留具体状态供 artifact reader 分类，不在这里重建运行时目标。
+ * 输入与输出若重叠，清零会改变输入；当前 reader 使用分开的存储。 */
 EZrCallBindingStatus zr_call_binding_decode_contract_status(
         const TZrByte *bytes,
         TZrSize length,
@@ -56,6 +61,9 @@ EZrCallBindingStatus zr_call_binding_decode_contract_status(
 }
 
 /* 公开 bool API 维持原有语义；详细分类仅供 core 内部 artifact 路径使用。 */
+/** @brief 为普通二进制 IO 提供契约解码的布尔结果，详细分类由内部 artifact 入口保留。
+ * @note 非空输出在失败时清零；成功只恢复静态字段，运行时目标由后续链接重建。
+ */
 TZrBool ZrCore_CallBinding_DecodeContract(const TZrByte *bytes, TZrSize length,
                                          SZrCallBindingContract *contract) {
     return (TZrBool)(zr_call_binding_decode_contract_status(bytes, length, contract) ==

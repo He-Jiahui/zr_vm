@@ -8,6 +8,7 @@
 /* Pure contract checks are shared by the public runtime API and Core-owned
  * ExecIR row validation. Keep this implementation independent from the
  * runtime graph visitor and call-target linker in call_binding.c. */
+/* 返回原状态并只补失败类别和差值；调用层负责诊断初始化、位置和目标失效。 */
 static inline EZrCallBindingStatus zr_core_call_binding_contract_fail(
         SZrCallBindingDiagnostic *diagnostic,
         EZrCallBindingStatus status,
@@ -21,6 +22,7 @@ static inline EZrCallBindingStatus zr_core_call_binding_contract_fail(
     return status;
 }
 
+/* 每次独立检查建立完整诊断起点，旧指令/候选位置也会清零；空契约的 token 为零。 */
 static inline void zr_core_call_binding_contract_diagnostic_init(
         SZrCallBindingDiagnostic *diagnostic,
         const SZrCallBindingContract *contract) {
@@ -31,6 +33,7 @@ static inline void zr_core_call_binding_contract_diagnostic_init(
     }
 }
 
+/* 只判断表标记与非零 RID 的形状，不证明该身份在某份元数据中存在。 */
 static inline TZrBool zr_core_call_binding_contract_token_is(
         TZrMetadataToken token,
         TZrUInt32 table) {
@@ -38,6 +41,7 @@ static inline TZrBool zr_core_call_binding_contract_token_is(
            ZR_METADATA_TOKEN_RID(token) != 0u;
 }
 
+/* 共享字段层的接受规则，避免 ExecIR 行校验引入函数图与目标链接依赖；版本、重定位和真实签名由各消费层继续核查。 */
 static inline EZrCallBindingStatus zr_core_call_binding_check_contract(
         const SZrCallBindingContract *contract,
         SZrCallBindingDiagnostic *diagnostic) {

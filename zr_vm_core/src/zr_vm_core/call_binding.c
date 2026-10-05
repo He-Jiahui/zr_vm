@@ -8,17 +8,24 @@
 
 /* Runtime-path diagnostics share the same pure status/field writer as the
  * public contract check and ExecIR-owned row validation. */
+/* 为运行时拒绝补状态和差值，沿用已初始化的位置字段；此处不清诊断或释放目标。 */
 static EZrCallBindingStatus binding_fail(SZrCallBindingDiagnostic *diagnostic,
         EZrCallBindingStatus status, TZrUInt64 expected, TZrUInt64 actual) {
     return zr_core_call_binding_contract_fail(diagnostic, status, expected,
                                               actual);
 }
 
+/** @brief 供持久化和链接入口复用静态契约检查，避免 ExecIR 与运行时采用不同的字段规则。
+ * @note 这里只检查 token 形状与字段组合，不查元数据实体、不重算哈希，也不验证运行时目标。
+ */
 EZrCallBindingStatus ZrCore_CallBinding_CheckContract(const SZrCallBindingContract *contract,
                                                       SZrCallBindingDiagnostic *diagnostic) {
     return zr_core_call_binding_check_contract(contract, diagnostic);
 }
 
+/** @brief 对照编译期预期和当前 provider 契约，按首个差异给出可定位的链接状态。
+ * @note 先检查预期，合法后才检查实际契约；不按名称寻找替代目标，也不持有或安装运行时入口。
+ */
 EZrCallBindingStatus ZrCore_CallBinding_CompareContracts(const SZrCallBindingContract *expected,
         const SZrCallBindingContract *actual, SZrCallBindingDiagnostic *diagnostic) {
     EZrCallBindingStatus status = ZrCore_CallBinding_CheckContract(expected, diagnostic);
@@ -43,6 +50,9 @@ EZrCallBindingStatus ZrCore_CallBinding_CompareContracts(const SZrCallBindingCon
     return ZR_CALL_BINDING_OK;
 }
 
+/** @brief 撤销可丢弃的运行时见证，保留 token 契约供后续重新链接。
+ * @note 不释放目标对象或指令映射；目标保活和访问同步仍由缓存拥有者负责。
+ */
 void ZrCore_CallBinding_Invalidate(SZrCallBinding *binding) {
     if (binding != ZR_NULL) {
         binding->generation = 0u;
@@ -69,11 +79,15 @@ static TZrBool call_binding_advance_generation(SZrFunction *function, void *cont
     return ZR_TRUE;
 }
 
+/** @brief 在模块卸载或重挂前使整张函数图的旧调用目标失效。
+ * @note 先完整收集去重图再推进；收集失败不执行代际推进回调。图和缓存须保持有效，接口不提供并发同步。
+ */
 TZrBool ZrCore_CallBinding_AdvanceGeneration(struct SZrFunction *function) {
     return ZrCore_CallBinding_VisitFunctions(function, call_binding_advance_generation, ZR_NULL);
 }
 
 /* 目标见证与持久化契约分开验证：typed 和多态调用点允许链接时尚无具体目标。 */
+/* 检查已有目标的入口和代际见证；typed/多态的延迟选择不是丢失目标，接收者布局另由 PrepareMember 核查。 */
 static EZrCallBindingStatus binding_validate_target(const SZrCallBinding *binding,
                                                      SZrCallBindingDiagnostic *diagnostic) {
     const SZrCallBindingTarget *target = &binding->target;
@@ -133,6 +147,9 @@ static EZrCallBindingStatus binding_validate_target(const SZrCallBinding *bindin
     return binding_fail(diagnostic, ZR_CALL_BINDING_TARGET_NOT_FOUND, 0u, target->targetKind);
 }
 
+/** @brief 调用前检查静态契约、所属函数代际及已有目标见证，失败时撤销运行时目标。
+ * @note 被读取的函数或闭包元数据须仍有效；本检查不建立 GC root，也不替代接收者布局检查。
+ */
 EZrCallBindingStatus ZrCore_CallBinding_Validate(SZrCallBinding *binding,
         TZrUInt64 generation, SZrCallBindingDiagnostic *diagnostic) {
     EZrCallBindingStatus status;
@@ -147,6 +164,9 @@ EZrCallBindingStatus ZrCore_CallBinding_Validate(SZrCallBinding *binding,
     return status;
 }
 
+/** @brief 从唯一 token 候选重建调用目标，使失败路径保留契约而不遗留旧入口。
+ * @note expected 可指向 binding->contract；候选只在本次读取，复制的目标引用仍依赖拥有者保活和同步。
+ */
 EZrCallBindingStatus ZrCore_CallBinding_Resolve(const SZrCallBindingContract *expected,
         const SZrCallBindingCandidate *candidates, TZrUInt32 count, TZrUInt64 generation,
         SZrCallBinding *binding, SZrCallBindingDiagnostic *diagnostic) {
@@ -170,6 +190,7 @@ EZrCallBindingStatus ZrCore_CallBinding_Resolve(const SZrCallBindingContract *ex
         if (diagnostic != ZR_NULL) diagnostic->candidateIndex = index;
     }
     if (selected == ZR_NULL) return binding_fail(diagnostic, ZR_CALL_BINDING_TARGET_NOT_FOUND, contractCopy.targetMetadataToken, 0u);
+/* TODO: 非零候选位置在 CompareContracts 的检查中会被清零；从多候选 Resolve 入口核查 candidateIndex 的诊断用途并补位置测试。 */
     status = ZrCore_CallBinding_CompareContracts(&contractCopy, &selected->contract, diagnostic);
     if (status != ZR_CALL_BINDING_OK) return status;
     binding->generation = selected->generation;
@@ -178,6 +199,9 @@ EZrCallBindingStatus ZrCore_CallBinding_Resolve(const SZrCallBindingContract *ex
 }
 
 /* 面向运行错误的有限状态名；未知数值保持独立的兜底名称。 */
+/** @brief 为解释器、模块加载和 AOT 错误报告返回稳定的状态短名称。
+ * @return 借用静态字符串；未知值使用兜底名称，无需释放。
+ */
 const char *ZrCore_CallBinding_StatusName(EZrCallBindingStatus status) {
     switch (status) {
         case ZR_CALL_BINDING_OK: return "ok";
