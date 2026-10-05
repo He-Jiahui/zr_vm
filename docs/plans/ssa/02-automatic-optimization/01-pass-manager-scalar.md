@@ -1,6 +1,8 @@
 ---
 related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_dead_source_places.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_dead_source_places.c
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_manager.c
@@ -11,6 +13,9 @@ plan_sources:
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
 tests:
   - tests/parser/test_ssa_pass_manager_scalar.c
+  - tests/parser/test_ssa_dead_source_places.c
+  - tests/parser/ssa_dead_source_places_edges.inc
+  - docs/acceptance/ssa-dead-source-places.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -33,6 +38,20 @@ status: planned
 - 统一约束、测试命令与状态定义见 [00.02](../00-measurement-contracts/02-contract-freeze.md) 和 [00.03](../00-measurement-contracts/03-differential-harness.md)。每个子任务的编译依赖来自显式前置；未满足完整门禁时不得标记里程碑完成。
 
 ## 现状与代码落点
+
+### 有限 source temporary place 前置
+
+实际 literal i64 SCRIPT 的共享 CoreExecIR 保留未使用 PLACE_BASE 地址及
+EXTERNAL_ENTRY provenance。现有 DCE tombstone 和 VM emitter NOP 不压缩共享
+ValueId 或 operand/result pools。独立事务入口的契约见
+[dead-source places](../../../parser-and-semantics/ssa-dead-source-places.md)，
+实际 RED/GREEN 状态见[验收记录](../../../acceptance/ssa-dead-source-places.md)。
+它只接受真实 literal SCRIPT 身份及其精确 NOP 形式，保留 source/instruction
+记录；rich metadata 显式拒绝。该有限入口不是完整 DCE/pass pipeline 门禁。
+该有限 Windows gate 已通过30/30 focused与8/8相关消费者，完整 DCE pipeline
+未完成。后续 primitive frame 使用显式目标布局事实，Linux矩阵仍OPEN。M6 与
+SSA47 保持 OPEN；本任务直接修改 checkout，以 Git OID、源码/日志哈希和
+receipt 记录版本，不生成源码快照副本。
 
 compiler_quickening.c 包含大量后期 opcode 选择，不能继续承载 SSA 数据流。新增 exec_ir/passes 目录独立实现，保留 quickening 为 ExecBC 投影消费者。
 
@@ -152,4 +171,3 @@ assert last valid IR retained and budget remark emitted
 优化 passes 不读取 bytecode PC 或 cache target pointer；pass 开关只影响优化强度，不能决定语义是否合法。
 
 本任务的 acceptance 至少附上：上述断言对应的测试名称、实际执行后端/平台、失败注入位置、verifier 输入/输出摘要，以及涉及所有权时的分配/释放或 lease 平衡。新增入口的 OOM、取消、重复调用和部分初始化退出应有明确处理；不适用的状态写明原因。
-

@@ -55,6 +55,10 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_cfg.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_dead_source_places.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_dead_source_places.c
+  - tests/parser/test_ssa_dead_source_places.c
+  - tests/parser/ssa_dead_source_places_edges.inc
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_ssa.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_place_eligibility.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
@@ -372,6 +376,12 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
   - idempotent finalization and explicit analysis-only fallback boundaries
 - `execir-ssa-validation.md`
   - conservative operand/value validation and precise SSA diagnostic locations
+- [ssa-source-range-identity.md](ssa-source-range-identity.md)
+  - actual SCRIPT/RETURN spans, shared CRLF token ends and recovery boundaries
+- [ssa-dead-source-places.md](ssa-dead-source-places.md)
+  - actual literal SCRIPT provenance and transactional shared value/pool compaction
+  - finite source acceptance before explicit target-layout frame production
+  - focused Windows 30-case GREEN and eight consumer suites; Linux matrix OPEN
 - `execbc-vm-canonical-types.md`
   - canonical primitive type resolution for scalar ExecBC VM materialization
   - immutable projection views, compare tags and structured type rejection

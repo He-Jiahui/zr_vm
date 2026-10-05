@@ -1,6 +1,8 @@
 ---
 related_code:
   - zr_vm_parser/include/zr_vm_parser/exec_ir_execbc_vm.h
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_dead_source_places.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_dead_source_places.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_validate.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm_place_uses.c
@@ -32,6 +34,9 @@ tests:
   - tests/parser/test_ssa_execbc_vm_trace.inc
   - tests/parser/test_ssa_execbc_vm_cfg_mutations.inc
   - tests/parser/test_ssa_execbc_vm_dead_place.c
+  - tests/parser/test_ssa_dead_source_places.c
+  - tests/parser/ssa_dead_source_places_edges.inc
+  - docs/acceptance/ssa-dead-source-places.md
   - tests/parser/test_ssa_execbc_vm_dead_place_support.inc
   - docs/core-runtime/execbc-vm-dead-place.md
   - tests/acceptance/ssa-execbc-vm-materialization.md
@@ -154,6 +159,15 @@ place values, source promotion and `LOAD`/`STORE` remain unsupported. The new
 independent hand-ExecIR VM/Oracle target passed all 13 cases in root's current
 MSVC CTest run, alongside the 18-case scalar VM target. Cross-toolchain evidence
 is recorded separately; this extension does not complete the M1 gate.
+
+The separate [shared source compaction entry](../../../parser-and-semantics/ssa-dead-source-places.md)
+uses the actual literal SCRIPT SemIR/context proof, preserves instruction/source
+records and rebuilds the shared dense value and operand/result pools. Its
+[acceptance evidence](../../../acceptance/ssa-dead-source-places.md) is independent
+of the VM emitter's 13-case historical result. It is the prerequisite for a
+later explicit target-layout primitive frame producer; M1 and SSA47 remain OPEN.
+Its current focused Windows gate passed 30/30, and selected source consumers
+passed 8/8. Linux validation and the full semantic matrix remain OPEN.
 
 登记新 CTest 名 `ssa_oracle_projections` 和可执行目标 `zr_vm_ssa_oracle_projections_test` 后，在 WSL 仓库根运行：
 

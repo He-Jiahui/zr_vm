@@ -3,6 +3,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
   - zr_vm_core/src/zr_vm_core/execution/execution_inline_frame.c
   - zr_vm_core/include/zr_vm_core/function.h
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_dead_source_places.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_dead_source_places.c
 implementation_files:
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
   - zr_vm_core/src/zr_vm_core/execution/execution_inline_frame.c
@@ -16,6 +18,9 @@ tests:
   - tests/core/test_ssa_frame_layout.c
   - tests/core/test_frame_slot_layout_lookup.c
   - tests/core/test_value_copy_fast_paths.c
+  - tests/parser/test_ssa_dead_source_places.c
+  - tests/parser/ssa_dead_source_places_edges.inc
+  - docs/acceptance/ssa-dead-source-places.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -38,6 +43,20 @@ status: planned
 - 统一约束、测试命令与状态定义见 [00.02](../00-measurement-contracts/02-contract-freeze.md) 和 [00.03](../00-measurement-contracts/03-differential-harness.md)。每个子任务的编译依赖来自显式前置；未满足完整门禁时不得标记里程碑完成。
 
 ## 现状与代码落点
+
+### 真实 source 到 primitive frame 的有限前置
+
+真实 literal i64 SCRIPT 的地址值没有 primitive physical layout 合同。
+先由[dead-source places](../../../parser-and-semantics/ssa-dead-source-places.md)
+证明并压缩 inert PLACE_BASE/address/provenance；其
+[验收记录](../../../acceptance/ssa-dead-source-places.md) 记录已完成的 Windows
+30/30 focused与8/8消费者有限GREEN；可据此推进独立 frame producer。
+不能给残留地址猜测 uintptr 大小，也不能添加伪造 scratch proof。
+后续 producer 应按真实 surviving ValueId/TypeId 使用调用方显式 target
+layout rows；宿主 sizeof/alignof 只可作为明示 host-only adapter。初批使用
+全函数重叠 lifetime、不复用槽，验证 geometry/mapping/hash 后事务附着。
+空 state-map header 没有 layoutHash 字段，必须保留真实身份。
+此有限前置不关闭 M2，不证明 native artifact retention 或全平台 ABI；SSA47 OPEN。
 
 现有 function_frame_place、execution_inline_frame 已支持布局快路；测试 test_frame_slot_layout_lookup.c 正被其他任务修改，实施前核对 HEAD，避免覆盖。
 
@@ -154,4 +173,3 @@ assert descriptor root offsets and total aligned size exact
 不能残留按旧最大 stack count 扫描全部 frame 的代码。storageSlotCount 与 logical slot count 分别命名，所有 offset 计算用 checked helper。
 
 本任务的 acceptance 至少附上：上述断言对应的测试名称、实际执行后端/平台、失败注入位置、verifier 输入/输出摘要，以及涉及所有权时的分配/释放或 lease 平衡。新增入口的 OOM、取消、重复调用和部分初始化退出应有明确处理；不适用的状态写明原因。
-
