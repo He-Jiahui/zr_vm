@@ -92,19 +92,23 @@ to a member-name lookup.
 
 ## Guarded cache witnesses
 
-`ZrCore_Execution_CheckBindingGuard` is the common witness check for resolved
-callsite entries. It validates the persistent contract first, then the
-frame-owned generation, optional module/signature/layout expectations, and
-receiver shape. A shape miss can be reported as `slot-fallback` when the
-declared dispatch slot is still within the receiver's bounded slot table;
-otherwise it is a typed `shape-miss`. Stale generations and contract failures
-remain distinct structured outcomes and never trigger a name lookup.
+`ZrCore_Execution_CheckBindingGuard` is a classification-only API. Its current
+first-party callers are the guarded-cache unit fixture, not interpreter/native
+or AOT dispatch. It checks a supplied nonzero generation and contract witnesses,
+then the independent VM target generation before receiver shape/slot routing.
+A slot fallback only permits later slot lookup and counts as a miss; it neither
+looks up nor invokes the target. OK may retain TARGET_NONE for deferred typed
+or polymorphic selection. This guard does not invalidate a failing binding.
 
-Dynamic target pointers and PIC witnesses remain runtime-only. The reset
-helper clears those witnesses and statistics while preserving the contract and
-relocation location, so reload and deoptimization cannot erase persistent
-binding facts. Existing GC tracing continues to visit callable, prototype, and
-cached function edges.
+Pointers are borrowed for the synchronous check; the caller keeps them valid
+and owns exclusive writes to optional counters/diagnostics. Exact receiver type
+identity and native/AOT callable-object generation are not fully checked here.
+Reset drops dynamic witnesses and counters while preserving contract, relocation
+and static callsite coordinates, without releasing referenced objects. See
+[the detailed guard contract](core-binding-guard-generation.md) for field-level
+constraints, branch-specific diagnostics, all eight states and finite tests.
+Existing runtime graph GC behavior and historical runtime acceptance are separate
+from this guard's static comment review.
 
 ## Test coverage
 

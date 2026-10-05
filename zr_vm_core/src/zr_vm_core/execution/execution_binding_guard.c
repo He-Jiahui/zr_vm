@@ -5,6 +5,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/object.h"
 
+/* 可空诊断统一写入同一组分类与数值，避免各提前返回留下上次检查的字段。 */
 static void guard_diag(SZrExecutionBindingGuardDiagnostic *diagnostic,
         EZrExecutionBindingGuardResult result, EZrCallBindingStatus status,
         TZrUInt32 targetKind, TZrUInt32 slot, TZrUInt64 expected, TZrUInt64 actual) {
@@ -17,6 +18,7 @@ static void guard_diag(SZrExecutionBindingGuardDiagnostic *diagnostic,
     diagnostic->actual = actual;
 }
 
+/* 所有失败出口共用饱和 miss 统计；保留绑定和目标见证供调用方决定回退或失效。 */
 static EZrExecutionBindingGuardResult guard_fail(
         const SZrExecutionBindingGuardInput *input,
         SZrExecutionBindingGuardDiagnostic *diagnostic,
@@ -46,6 +48,7 @@ EZrExecutionBindingGuardResult ZrCore_Execution_CheckBindingGuard(
         return guard_fail(input, diagnostic, ZR_EXECUTION_BINDING_GUARD_TARGET_MISSING,
                 ZR_CALL_BINDING_INVALID_ARGUMENT, 0u, 0u);
 
+    /* 先判持久契约与所属函数代际，再考虑目标/shape；失配不能降为槽回退。 */
     status = ZrCore_CallBinding_CheckContract(&binding->contract, ZR_NULL);
     if (status != ZR_CALL_BINDING_OK)
         return guard_fail(input, diagnostic, ZR_EXECUTION_BINDING_GUARD_CONTRACT_MISMATCH,
@@ -72,8 +75,8 @@ EZrExecutionBindingGuardResult ZrCore_Execution_CheckBindingGuard(
                 ZR_CALL_BINDING_LAYOUT_MISMATCH, input->expectedLayoutHash,
                 binding->contract.layoutHash);
 
-    /* A receiver shape miss cannot turn an expired VM witness into a slot
-     * fallback. Caller/frame and resolved-target generations are independent. */
+    /* 所属调用点与目标函数的代际独立；VM 见证已过期时，接收者 shape
+     * 改变也不能把失败降级为仍可使用的槽回退。零目标代际不参加此检查。 */
     if (binding->target.targetKind == ZR_CALL_BINDING_TARGET_VM &&
         binding->target.vm.function != ZR_NULL &&
         binding->target.targetGeneration != 0u &&
@@ -117,8 +120,8 @@ EZrExecutionBindingGuardResult ZrCore_Execution_CheckBindingGuard(
                 status = ZR_CALL_BINDING_TARGET_NOT_FOUND;
             break;
         case ZR_CALL_BINDING_TARGET_NONE:
-            /* Typed and polymorphic contracts may intentionally defer target
-             * selection until the value/receiver is available. */
+            /* 类型化函数值及多态契约可先通过守卫，待后续拿到值/接收者
+             * 再选目标；此 OK 不承诺已有可立即调用的函数指针。 */
             if (binding->contract.bindingKind != ZR_CALL_BINDING_TYPED_FUNCTION &&
                 binding->contract.bindingKind != ZR_CALL_BINDING_VIRTUAL &&
                 binding->contract.bindingKind != ZR_CALL_BINDING_INTERFACE)
@@ -138,6 +141,7 @@ EZrExecutionBindingGuardResult ZrCore_Execution_CheckBindingGuard(
             binding->target.targetKind, binding->contract.dispatchSlot, 0u, 0u);
     return ZR_EXECUTION_BINDING_GUARD_OK;
 
+/* shape 见证不匹配时，只确认声明槽仍落在当前槽范围；不在此查询或执行槽目标。 */
 shape_miss:
     if (input->allowSlotFallback &&
         binding->contract.dispatchSlot != ZR_CALL_BINDING_SLOT_NONE &&
@@ -162,6 +166,7 @@ void ZrCore_Execution_ResetBindingCache(struct SZrFunctionCallSiteCacheEntry *ca
     TZrUInt32 deoptId;
     TZrUInt32 argumentCount;
     if (cacheEntry == ZR_NULL) return;
+    /* 持久契约、重定位与静态调用点坐标跨失效保存；PIC 槽和临时计数重新积累。 */
     contract = cacheEntry->binding.contract;
     location = cacheEntry->bindingLocation;
     kind = cacheEntry->kind;
