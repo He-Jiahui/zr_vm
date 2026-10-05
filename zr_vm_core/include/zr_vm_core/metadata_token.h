@@ -85,6 +85,7 @@ typedef struct SZrMetadataTokenRecord {
 #define ZR_METADATA_TOKEN_RECORD_CALLABLE_MODULE ((TZrUInt32)3u)
 #define ZR_METADATA_TOKEN_RECORD_CALLABLE_SIGNATURE ((TZrUInt32)4u)
 #define ZR_METADATA_TOKEN_RECORD_CALLABLE_CHILD ((TZrUInt32)5u)
+#define ZR_METADATA_TOKEN_RECORD_SCRIPT_ENTRY ((TZrUInt32)6u)
 
 /** @brief 编译期稳定排序的字符串堆条目；value 由 GC 管理，表仅借用。 */
 typedef struct SZrMetadataStringHeapEntry {

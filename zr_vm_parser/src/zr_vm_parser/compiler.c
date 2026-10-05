@@ -7,7 +7,6 @@
 #include "compiler/compile_time_executor_internal.h"
 #include "compiler/compiler_attribute_binding.h"
 #include "compiler/compiler_top_level_duplicate.h"
-#include "compiler/compiler_script_callable_return.h"
 #include "zr_vm_parser/semantic_calls.h"
 #include "semantic/semantic_scope_facts.h"
 
@@ -1165,13 +1164,6 @@ static SZrFunction *zr_parser_compiler_compile_mode_active(
         return ZR_NULL;
     }
     zr_parser_compile_trace("finalize current source module ok func=%p", (void *)func);
-
-    if (!compiler_script_callable_return_publish(&cs, func, ast)) {
-        ZrParser_Compiler_Error(&cs, "Failed to certify script callable return metadata", ast->location);
-        ZrCore_Function_Free(state, func);
-        ZrParser_CompilerState_Free(&cs);
-        return ZR_NULL;
-    }
 
     if (!compiler_finalize_call_bindings(&cs, func)) {
         ZrCore_Function_Free(state, func);

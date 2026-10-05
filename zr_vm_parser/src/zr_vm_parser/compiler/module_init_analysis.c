@@ -1,4 +1,5 @@
 #include "module_init_analysis.h"
+#include "compiler_script_entry_metadata.h"
 
 #include "type_inference_internal.h"
 #include "zr_vm_core/io.h"
@@ -4461,6 +4462,10 @@ TZrBool ZrParser_ModuleInitAnalysis_FinalizeCurrentSourceModule(SZrCompilerState
         !module_init_build_top_level_callable_bindings(cs, function, cs->currentAst) ||
         !module_init_attach_callable_effects_to_child_functions(cs, function)) {
         ZrParser_Compiler_Error(cs, "failed to attach module init analysis metadata", cs->currentAst->location);
+        return ZR_FALSE;
+    }
+    if (!compiler_script_entry_metadata_prepare(cs, function)) {
+        ZrParser_Compiler_Error(cs, "failed to prepare script entry metadata", cs->currentAst->location);
         return ZR_FALSE;
     }
     if (!compiler_build_function_metadata_tokens(cs, function)) {

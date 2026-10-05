@@ -7,6 +7,7 @@
 #include "compiler_metadata_type_ref.h"
 #include "compiler_metadata_type_spec.h"
 #include "module_init_analysis.h"
+#include "compiler_script_entry_metadata.h"
 #include "type_inference_internal.h"
 
 #include <string.h>
@@ -1384,6 +1385,7 @@ ZR_PARSER_API TZrBool compiler_build_function_metadata_tokens(SZrCompilerState *
     TZrUInt32 assemblyRefRidCursor = 1u;
     TZrUInt32 typeRefRidCursor = 1u;
     TZrSize heapOffset = 0;
+    SZrScriptEntryMetadataPlan scriptEntryPlan;
 
     if (cs == ZR_NULL || function == ZR_NULL || cs->state == ZR_NULL || cs->state->global == ZR_NULL) {
         return ZR_FALSE;
@@ -1393,12 +1395,15 @@ ZR_PARSER_API TZrBool compiler_build_function_metadata_tokens(SZrCompilerState *
     if (!metadata_token_effect_arrays_are_valid(function)) {
         return ZR_FALSE;
     }
+    if (!compiler_script_entry_metadata_plan(cs, function, &scriptEntryPlan)) {
+        return ZR_FALSE;
+    }
     exportCount = function->typedExportedSymbolLength;
     effectCount =
             metadata_token_count_import_member_ref_effects(function->moduleEntryEffects, function->moduleEntryEffectLength);
     callableEffectCount = metadata_token_count_callable_import_member_ref_effects(function);
     totalEffectCount = effectCount + callableEffectCount;
-    if (exportCount == 0 && totalEffectCount == 0 && function->typedLocalBindingLength == 0u) {
+    if (!scriptEntryPlan.present && exportCount == 0 && totalEffectCount == 0 && function->typedLocalBindingLength == 0u) {
         return ZR_TRUE;
     }
     if (!metadata_token_build_string_heap(cs, function, totalEffectCount, &stringHeapBuilder)) {
@@ -1494,6 +1499,15 @@ ZR_PARSER_API TZrBool compiler_build_function_metadata_tokens(SZrCompilerState *
         }
         heapLength += moduleRecordPlan.signatureHeapLength;
     }
+    if (scriptEntryPlan.signatureHeapLength > 0) {
+        if (scriptEntryPlan.signatureHeapLength > (TZrSize)0xFFFFFFFFu ||
+            heapLength > (TZrSize)0xFFFFFFFFu - scriptEntryPlan.signatureHeapLength) {
+            metadata_token_explicit_module_list_free(&explicitTypeRefModules);
+            metadata_token_string_heap_free(cs, &stringHeapBuilder);
+            return ZR_FALSE;
+        }
+        heapLength += scriptEntryPlan.signatureHeapLength;
+    }
     if (typeSpecPlan.signatureHeapLength > 0) {
         if (typeSpecPlan.signatureHeapLength > (TZrSize)0xFFFFFFFFu ||
             heapLength > (TZrSize)0xFFFFFFFFu - typeSpecPlan.signatureHeapLength) {
@@ -1579,7 +1593,7 @@ ZR_PARSER_API TZrBool compiler_build_function_metadata_tokens(SZrCompilerState *
 
     recordCount =
             (moduleRecordCount + exportCount + typeDefCount + typeSpecCount + assemblyRefCount + typeRefCount +
-             totalEffectCount) *
+             totalEffectCount + (scriptEntryPlan.present ? 1u : 0u)) *
             2u;
     global = cs->state->global;
     records = (SZrMetadataTokenRecord *)ZrCore_Memory_RawMallocWithType(
@@ -1689,6 +1703,18 @@ ZR_PARSER_API TZrBool compiler_build_function_metadata_tokens(SZrCompilerState *
         ZrCore_Memory_RawFreeWithType(global,
                                       records,
                                       sizeof(SZrMetadataTokenRecord) * recordCount,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        ZrCore_Memory_RawFreeWithType(global, heap, heapLength, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        metadata_token_explicit_module_list_free(&explicitTypeRefModules);
+        metadata_token_string_heap_free(cs, &stringHeapBuilder);
+        return ZR_FALSE;
+    }
+    if (scriptEntryPlan.present &&
+        !compiler_script_entry_metadata_emit(cs, function, &scriptEntryPlan, records, recordCount,
+                                             &recordIndex, heap, heapLength, &heapOffset,
+                                             exportCount + 1u, &signatureRidCursor,
+                                             stringHeapBuilder.entries, stringHeapBuilder.length)) {
+        ZrCore_Memory_RawFreeWithType(global, records, sizeof(SZrMetadataTokenRecord) * recordCount,
                                       ZR_MEMORY_NATIVE_TYPE_FUNCTION);
         ZrCore_Memory_RawFreeWithType(global, heap, heapLength, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
         metadata_token_explicit_module_list_free(&explicitTypeRefModules);
@@ -2077,6 +2103,13 @@ ZR_PARSER_API TZrBool compiler_build_function_metadata_tokens(SZrCompilerState *
     if (exportCount > 0 && function->moduleSignatureHash == 0u) {
         metadata_token_clear_function(cs, function);
         return ZR_FALSE;
+    }
+    if (scriptEntryPlan.present) {
+        function->moduleSignatureHash = compiler_script_entry_metadata_hash(cs, function);
+        if (function->moduleSignatureHash == 0u) {
+            metadata_token_clear_function(cs, function);
+            return ZR_FALSE;
+        }
     }
     if (!compiler_build_module_metadata_ref_table(cs, function)) {
         metadata_token_clear_function(cs, function);
