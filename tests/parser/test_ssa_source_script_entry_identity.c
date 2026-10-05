@@ -40,7 +40,8 @@ void tearDown(void) {
     g_state = ZR_NULL;
 }
 
-static SZrFunction *compile_entry(const char *source, TZrUInt32 index) {
+static SZrFunction *compile_entry(const char *source, TZrUInt32 index,
+        TZrBool require_no_args) {
     SZrString *name = ZrCore_String_CreateFromNative(g_state,
             index == 0u ? "ssa_script_identity_first.zr"
                         : "ssa_script_identity_second.zr");
@@ -52,10 +53,12 @@ static SZrFunction *compile_entry(const char *source, TZrUInt32 index) {
             ZR_CAST_RAW_OBJECT_AS_SUPER(g_entries[index]));
     TEST_ASSERT_TRUE_MESSAGE(g_rooted[index],
             "PRECONDITION: root returned script entry during metadata assertions");
-    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, g_entries[index]->parameterCount,
-            "PRECONDITION: script entry has no parameters");
-    TEST_ASSERT_FALSE(g_entries[index]->hasVariableArguments);
-    TEST_ASSERT_EQUAL_UINT32(0u, g_entries[index]->childFunctionLength);
+    if (require_no_args != ZR_FALSE) {
+        TEST_ASSERT_EQUAL_UINT16_MESSAGE(0u, g_entries[index]->parameterCount,
+                "PRECONDITION: script entry has no parameters");
+        TEST_ASSERT_FALSE(g_entries[index]->hasVariableArguments);
+        TEST_ASSERT_EQUAL_UINT32(0u, g_entries[index]->childFunctionLength);
+    }
     return g_entries[index];
 }
 
@@ -80,20 +83,20 @@ static void assert_script_identity_witness(const SZrFunction *entry) {
 }
 
 static void assert_no_script_identity(const char *source) {
-    const SZrFunction *entry = compile_entry(source, 0u);
+    const SZrFunction *entry = compile_entry(source, 0u, ZR_TRUE);
     TEST_ASSERT_FALSE_MESSAGE(entry->hasSourceCallableIdentity,
             "guard script must not publish a callable identity witness");
     TEST_ASSERT_FALSE(entry->sourceCallableIdentity.hasExplicitNoArgsI64);
 }
 
 static void test_script_entry_i64_literal_identity(void) {
-    assert_script_identity_witness(compile_entry("return 9;\n", 0u));
+    assert_script_identity_witness(compile_entry("return 9;\n", 0u, ZR_TRUE));
 }
 
 static void test_script_entry_identity_survives_second_compile(void) {
-    SZrFunction *first = compile_entry("return 9;\n", 0u);
+    SZrFunction *first = compile_entry("return 9;\n", 0u, ZR_TRUE);
     SZrFunctionSourceCallableIdentity expected = first->sourceCallableIdentity;
-    SZrFunction *second = compile_entry("return 8;\n", 1u);
+    SZrFunction *second = compile_entry("return 8;\n", 1u, ZR_TRUE);
     assert_script_identity_witness(first);
     assert_script_identity_witness(second);
     TEST_ASSERT_EQUAL_UINT32(expected.symbolId, first->sourceCallableIdentity.symbolId);
@@ -114,7 +117,11 @@ static void test_guard_script_implicit_return(void) {
 }
 
 static void test_guard_child_with_parameters(void) {
-    assert_no_script_identity("fn answer(value: int): int { return value; }\n");
+    const SZrFunction *entry = compile_entry(
+            "fn answer(value: int): int { return value; }\n", 0u, ZR_FALSE);
+    TEST_ASSERT_FALSE_MESSAGE(entry->hasSourceCallableIdentity,
+            "guard script must not publish a callable identity witness");
+    TEST_ASSERT_FALSE(entry->sourceCallableIdentity.hasExplicitNoArgsI64);
 }
 
 int main(void) {
