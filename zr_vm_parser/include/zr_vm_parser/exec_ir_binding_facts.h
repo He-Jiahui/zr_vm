@@ -154,6 +154,7 @@ typedef struct SZrExecIrBindingSegment {
  * non-zero, pins the exact facts payload and catches stale/reordered rows. */
 typedef struct SZrExecIrBindingFacts {
     TZrUInt32 schemaVersion;
+    /* Schema 1 reserves all top-level flags; producers must write zero. */
     TZrUInt32 flags;
     TZrMetadataToken functionToken;
     union {
