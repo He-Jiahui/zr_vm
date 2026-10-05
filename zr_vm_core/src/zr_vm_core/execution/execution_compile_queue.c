@@ -15,6 +15,7 @@ enum {
     COMPILE_STAGE_COMPLETE = 4u
 };
 
+/* 跨MSVC/GNU读取状态发布；volatile本身不提供同步，使用平台原子操作。 */
 static TZrUInt32 compile_atomic_load(const volatile TZrUInt32 *value) {
 #if defined(_MSC_VER)
     return (TZrUInt32)InterlockedCompareExchange(
@@ -24,6 +25,7 @@ static TZrUInt32 compile_atomic_load(const volatile TZrUInt32 *value) {
 #endif
 }
 
+/* 发布状态/锁标量；GNU release与MSVC interlocked保持字段先于状态可见。 */
 static void compile_atomic_store(volatile TZrUInt32 *value, TZrUInt32 next) {
 #if defined(_MSC_VER)
     (void)InterlockedExchange((volatile LONG *)value, (LONG)next);
@@ -32,6 +34,7 @@ static void compile_atomic_store(volatile TZrUInt32 *value, TZrUInt32 next) {
 #endif
 }
 
+/* 锁争用尝试；失败更新expected供调用者决定是否重试。 */
 static TZrBool compile_atomic_cas(volatile TZrUInt32 *value,
                                   TZrUInt32 *expected,
                                   TZrUInt32 desired) {
@@ -50,6 +53,7 @@ static TZrBool compile_atomic_cas(volatile TZrUInt32 *value,
 #endif
 }
 
+/* 以原子CAS串行化队列记录转移；忙等无公平性/超时，调用者避免递归持锁。 */
 static void compile_lock(volatile TZrUInt32 *lock) {
     TZrUInt32 expected;
 
@@ -61,16 +65,19 @@ static void compile_lock(volatile TZrUInt32 *lock) {
     }
 }
 
+/* 结束记录临界区，发布锁释放。 */
 static void compile_unlock(volatile TZrUInt32 *lock) {
     compile_atomic_store(lock, 0u);
 }
 
+/* 常规入口清诊断；wrapper早拒绝没有经过此清空。 */
 static void compile_diag_clear(SZrAsyncFrameDiagnostic *diagnostic) {
     if (diagnostic != ZR_NULL) {
         memset(diagnostic, 0, sizeof(*diagnostic));
     }
 }
 
+/* 集中填写阶段/状态/身份失败诊断；返回false不等于所有调用点都保留原状态。 */
 static TZrBool compile_fail(SZrAsyncFrameDiagnostic *diagnostic,
                             EZrAsyncFrameDiagnosticCode code,
                             TZrUInt32 stage,
@@ -89,6 +96,7 @@ static TZrBool compile_fail(SZrAsyncFrameDiagnostic *diagnostic,
     return ZR_FALSE;
 }
 
+/* 只做records和capacity结构检查，不验证queue存储寿命或是否并发Deinit。 */
 static TZrBool compile_queue_valid(const SZrCompileQueue *queue) {
     return (TZrBool)(queue != ZR_NULL && queue->records != ZR_NULL &&
                      queue->capacity != 0u);
@@ -220,6 +228,7 @@ TZrBool ZrCore_CompileQueue_Queue(
                             request->requestedGeneration);
     }
     if (request->irLength != 0u) {
+    /* 先复制后抢锁，避免队列锁覆盖宿主分配；拒绝容量/计数后释放临时副本。 */
         copy = (TZrByte *)malloc(request->irLength);
         if (copy == ZR_NULL) {
             return compile_fail(diagnostic, ZR_ASYNC_FRAME_DIAGNOSTIC_OUT_OF_MEMORY,
@@ -267,6 +276,7 @@ TZrBool ZrCore_CompileQueue_Queue(
                             UINT32_MAX, queue->activeCount,
                             request->requestedGeneration);
     }
+    /* 锁内先发布契约字段、最后QUEUED与handle；失败校验在发布前，jobId耗尽不回绕。 */
     queue->nextJobId = jobId == UINT64_MAX ? 0u : jobId + 1u;
     record->jobId = jobId;
     record->requestedGeneration = request->requestedGeneration;
@@ -344,6 +354,7 @@ TZrBool ZrCore_CompileQueue_ClaimNext(
                             1u, 0u, 0u);
     }
     compile_lock(&queue->lock);
+    /* 按索引领取首个QUEUED，终态仍占槽；不是FIFO或warmup优先队列。 */
     for (index = 0u; index < queue->capacity; index++) {
         if (compile_atomic_load(&queue->records[index].state) ==
             ZR_COMPILE_JOB_QUEUED) {
@@ -467,6 +478,7 @@ TZrBool ZrCore_CompileQueue_GetSnapshot(
         compile_unlock(&queue->lock);
         return ZR_FALSE;
     }
+    /* 锁保证取址时身份一致，不延长解锁后的字节寿命；QUEUED借用另需外部排除取消释放。 */
     *outSnapshot = record->snapshot;
     *outLength = record->snapshotLength;
     compile_unlock(&queue->lock);
@@ -516,6 +528,7 @@ TZrBool ZrCore_CompileQueue_Complete(
         compile_unlock(&queue->lock);
         return ZR_FALSE;
     }
+    /* Complete结束worker借用；取消或契约失配false但转终态，仍待Release。 */
     if (compile_atomic_load(&record->cancellationRequested) != 0u) {
         compile_atomic_store(&record->state, ZR_COMPILE_JOB_DISCARDED);
         compile_fail(diagnostic, ZR_ASYNC_FRAME_DIAGNOSTIC_COMPILE_CANCELLED,
@@ -583,6 +596,7 @@ TZrBool ZrCore_CompileQueue_Release(
         compile_unlock(&queue->lock);
         return ZR_FALSE;
     }
+    /* 先释放快照清身份再FREE，锁保护重用；清本handle不写其他副本。 */
     free(record->snapshot);
     record->snapshot = ZR_NULL;
     record->snapshotLength = 0u;
