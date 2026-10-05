@@ -24,6 +24,7 @@ const TZrChar *ZrCore_Execution_TransferStatusName(EZrExecutionTransferStatus st
         case ZR_EXECUTION_TRANSFER_UNSUPPORTED: return "unsupported";
         case ZR_EXECUTION_TRANSFER_NO_MEMORY: return "no-memory";
         case ZR_EXECUTION_TRANSFER_SCRATCH_TOO_SMALL: return "scratch-too-small";
+        /* 保留未知枚举输入的诊断出口，不把未列出的值解释成成功。 */
         default: return "unknown";
     }
 }

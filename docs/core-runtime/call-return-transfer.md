@@ -28,28 +28,61 @@ status: draft
 
 # Call, return, and tail transfer
 
-04.02 separates transfer classification from execution. The parser receives the
-packed frame layouts produced by 04.01 and records one of five explicit classes:
-scalar copy, inline-span copy, move, borrow, or boxed bridge. Core execution
-consumes that class; it must not infer boxing or ownership from a runtime value.
+04.02 separates transfer classification from execution. The parser records
+scalar copy, inline-span copy, move, borrow, or boxed bridge from packed frame
+layouts. These parser plans and the Core eligibility helpers are distinct APIs;
+the helpers do not execute an ExecIR transfer plan.
 
-Return forwarding is allowed only when source and target layouts are compatible,
-there is no alias conflict, commit order is preserved, and no receiver/writeback
-step is required. Otherwise the callee writes an independent return buffer and
-the caller commits it after successful completion. A throw or native failure
-therefore cannot expose a half-written aggregate.
+## Current Core eligibility and entry scope
 
-Tail-frame reuse is an optimization. The eligibility predicate requires no
-pending cleanup, no escaping alias into the old frame, a compatible
-continuation, and a debug policy that permits frame identity reuse. If any
-condition is false, callers use the normal call-frame path. Existing
-`ZrCore_Function_TryReuseTailVmCall` remains the runtime frame operation; this
-contract only centralizes the safety decision.
+`ZrCore_Execution_CanForwardReturn` and `ZrCore_Execution_CanReuseTailFrame`
+currently consume caller-supplied scalar summaries in focused tests. The first
+requires compatible layout, no alias conflict, preserved commit order and no
+writeback; the second requires no pending cleanup, no escaping frame alias,
+compatible continuation and permissive debug policy. They do not inspect the
+live frame, execute forwarding/reuse, or establish runtime ownership-commit or
+aggregate failure-atomicity guarantees. A null summary is rejected by the
+implementation; the existing tests assert only their constructed conditions.
+`ZrCore_Execution_TransferStatusName` returns borrowed static names, with
+`unknown` for an unlisted value; no current repository caller was found, and
+external public-ABI consumers remain unknown.
 
-Transfer plans are transactional: validation and allocation occur in a
-candidate plan, and the destination plan is replaced only after every value is
-validated. Failure leaves the caller's previous plan intact. Ownership cleanup
-is consequently performed by the selected runtime path exactly once.
+The existing `ZrCore_Function_TryReuseTailVmCall` is a separate runtime frame
+operation. Eligibility-helper tests do not establish that the dispatcher uses
+these summaries or that an ExecIR return plan is committed by that operation.
+The parser candidate-plan transaction does not by itself prove exactly-once
+runtime ownership cleanup or an independent return buffer on every failure.
+
+The current VM entry comes from Function precall: a prepared VM frame is marked
+CREATE_FRAME and passed to `ZrCore_Execute`. It borrows the state and call-info
+in that execution context and does not create its own exception catch boundary.
+Native callbacks, allocation and mutator pauses may invalidate cached stack
+addresses; callers restore anchors or reacquire frame slots after such calls.
+Exceptions are observed through the surrounding VM/host recovery boundary and
+state, rather than a boolean return from the void dispatch entry.
+
+FFI callback invocation is wrapped in `ZrCore_Exception_TryRun` and enters
+through `ZrLib_CallValue` and the Function call helpers. Task workers likewise
+wrap a callable in their own isolate's TryRun and use CallAndRestoreAnchor;
+this does not authorize concurrent use of the same state or establish async
+frame suspension through the eligibility helpers. Those callback/request
+objects are borrowed for the synchronous invocation.
+
+AOT runtime Add calls `ZrCore_Execution_Add` and then reacquires frame slots
+from the current call chain. Its handled result may contain null; the boolean
+does not guarantee that a failure preserved the original destination. Typed
+AOT conversion goes through Bridge BoxTyped/UnboxTyped to ToObject/ToStruct.
+Their retained call-info parameter is currently unused. A true handled result
+can contain null for an invalid type name or unsuccessful conversion; it is not
+a successful-construction or complete allocation-failure guarantee. Resource
+class conversion initializes unique ownership and CONSTRUCTING state, with the
+remaining construction lifecycle left to its caller.
+
+The 2026-10-04 comment review covers four entry/transfer files and 44 units,
+including all twelve summary/diagnostic fields and ten transfer status members.
+It preserves code, literals, directives and original code line endings. This
+static review supplies no new native, link, runtime, GC, ABI-layout or CTest
+execution result; historical validation below retains its original scope.
 
 ## Tail-call fallback window
 
