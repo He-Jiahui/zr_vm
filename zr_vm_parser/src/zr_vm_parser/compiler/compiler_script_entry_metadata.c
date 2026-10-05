@@ -1,5 +1,6 @@
 #include "compiler_script_entry_metadata.h"
 #include "compiler_script_callable_return.h"
+#include "compiler_script_callable_identity.h"
 #include "compiler_metadata_signature.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/hash.h"
@@ -27,13 +28,16 @@ static TZrBool script_entry_is_eligible(const SZrCompilerState *cs, const SZrFun
 }
 
 TZrBool compiler_script_entry_metadata_prepare(SZrCompilerState *cs, SZrFunction *function) {
-    if (!compiler_script_callable_return_publish(cs, function, cs != ZR_NULL ? cs->currentAst : ZR_NULL))
+    TZrTypeId returnTypeId = ZR_SEMANTIC_ID_INVALID;
+    if (!compiler_script_callable_return_publish(cs, function,
+            cs != ZR_NULL ? cs->currentAst : ZR_NULL, &returnTypeId))
         return ZR_FALSE;
     if (!script_entry_is_eligible(cs, function) || !function->hasCallableReturnType ||
         function->callableReturnType.baseType != ZR_VALUE_TYPE_INT64)
         return ZR_TRUE;
     function->functionName = cs->currentModuleKey;
     ZrCore_RawObject_Barrier(cs->state, &function->super, &cs->currentModuleKey->super);
+    compiler_script_callable_identity_try_publish(cs, function, returnTypeId);
     return ZR_TRUE;
 }
 

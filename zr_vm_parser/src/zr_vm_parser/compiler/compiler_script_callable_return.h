@@ -7,8 +7,11 @@
  * entry whose validated, finite reachable CFG returns canonical INT64 on every
  * path. Unsupported sources succeed without publication. Malformed admitted
  * state or scratch allocation failure returns false for the normal error path.
- * No graph, frame, instruction or callable identity is retained or rewritten. */
+ * No graph, frame, instruction or callable identity is retained or rewritten.
+ * The optional output is cleared first and receives the actual canonical
+ * return TypeId only when the reachable CFG proof and publication succeed. */
 TZrBool compiler_script_callable_return_publish(
-        SZrCompilerState *cs, SZrFunction *function, const SZrAstNode *script);
+        SZrCompilerState *cs, SZrFunction *function, const SZrAstNode *script,
+        TZrTypeId *outProvenReturnTypeId);
 
 #endif

@@ -189,11 +189,14 @@ static EZrScriptReturnProof script_return_prove_cfg(
 }
 
 TZrBool compiler_script_callable_return_publish(
-        SZrCompilerState *cs, SZrFunction *function, const SZrAstNode *script) {
+        SZrCompilerState *cs, SZrFunction *function, const SZrAstNode *script,
+        TZrTypeId *outProvenReturnTypeId) {
     EZrScriptReturnProof proof;
     TZrTypeId returnTypeId = ZR_SEMANTIC_ID_INVALID;
     SZrInferredType inferred;
     SZrFunctionTypedTypeRef metadata;
+    if (outProvenReturnTypeId != ZR_NULL)
+        *outProvenReturnTypeId = ZR_SEMANTIC_ID_INVALID;
     if (cs == ZR_NULL || function == ZR_NULL || script == ZR_NULL) return ZR_FALSE;
     if (script->type != ZR_AST_SCRIPT || script != cs->scriptAst ||
         script != cs->currentAst || function != cs->currentFunction ||
@@ -216,5 +219,6 @@ TZrBool compiler_script_callable_return_publish(
     ZrParser_InferredType_Free(cs->state, &inferred);
     function->callableReturnType = metadata;
     function->hasCallableReturnType = ZR_TRUE;
+    if (outProvenReturnTypeId != ZR_NULL) *outProvenReturnTypeId = returnTypeId;
     return ZR_TRUE;
 }
