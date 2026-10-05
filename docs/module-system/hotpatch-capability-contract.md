@@ -48,9 +48,10 @@ must fit the bounded requirement count. Unknown manifest flags, missing rows,
 and capability escalation are reported with a structured diagnostic; callers
 must not turn them into a generic false/success result.
 
-ZrCore_HotPatch_ValidateCapabilityClosure delegates identity and signature
-checks to the manifest validator, then uses the transactional closure seam in
-hotpatch_capability.c. The output mask is written only after all rows pass.
+ZrCore_HotPatch_ValidateCapabilityClosure only rejects unknown manifest flags
+and invokes the shared closure calculation in hotpatch_capability.c. It does
+not call the main validator or perform identity/signature checks; the host
+must invoke the appropriate full admission entry separately. The output mask is written only after all rows pass.
 Repeated requirements are harmless (bitwise union), while a single
 out-of-policy bit rejects the complete patch.
 
@@ -84,9 +85,9 @@ pre-callback and post-callback hashes, it proceeds only if they match; then it
 reads the outer document, checks the copied expected public identity, opens the
 canonical ExecIR module, verifies that graph, and requires exactly one function matching the explicit
 `(entryFunctionToken, entrySignatureHash)` selector. It does not infer an
-entry from function order or from the manifest. The current canonical reader
-accepts only single-function modules, so a duplicate selector fixture is not
-currently representable; the uniqueness check remains defensive.
+entry from function order or from the manifest. The selector check does not infer an entry from function order. Admission
+remains limited by the current opener schema and contract-table checks; no
+claim about every representable function graph follows from this entry check.
 The public input and validated token preserve `outerLength` as `TZrSize`; the
 validator rejects lengths above `ZR_ARTIFACT_MAX_BYTE_LENGTH` or the `UInt32`
 hash/callback limit before reading bytes. It passes the original size to the
@@ -132,6 +133,20 @@ temporary decoded module is freed and the caller's empty output module remains
 unchanged. The ZRAF validator preserves that source offset and clears its
 validated output. This keeps typed binding-row data outside the canonical
 hotpatch admission path until its full validation contract is defined.
+
+## 当前接口限制与后续消费
+
+旧 Validate 核对的是捕获的 inner ExecIR 视图 buffer，不做完整 ZRAF 结构解码；它在验签后读取需求，验证期间输入须稳定。ZRAF 入口则在回调前捕获清单/身份和授权闭包，再认证完整外层跨度。旧入口的 expectedContentHash 可为零，ZRAF 的该值必须非零。两个结果类型不能将内层/外层内容哈希混用。
+
+Prepare 只复制验证时捕获的身份/profile 等标量至版本记录，不安装字节或再次验签。旧 Apply 用原 contentBytes/contentLength 重哈希；ZRAF Recheck 只检查跨度/成功标记并比较当前哈希，不重新解析或核验宿主策略。借用跨度有效期、写入同步和最后消费者仍由宿主负责，immutableContent 不是内存冻结。
+
+StatusName 返回静态借用文字，部分枚举/未知值共用兜底，程序按状态枚举决策。Diagnostic 的 token/sourceOffset 是检查点相关信息，可零、需求/入口/产物 token、产物字节偏移或图指令 ID。PolicyHash 只覆盖有限版本/flags/目标 ABI/profile 与 host/base 字段，不含补丁 ID、内容或逐需求，不是完整清单认证。
+
+TODO：从公开验签回调核查仓外宿主的算法/信任根和清单绑定策略；当前仓内正向入口是测试桩，不能据此宣称生产密码学认证通过。完整 signed manifest 集成与从完整 IR 推导能力需求仍未完成。
+
+## 既有测试记录与本次信用边界
+
+以下运行数据是既有文档的历史记录，本次未读取其 native 日志重授当前信用，也没有编译或运行新的头文件候选。本次只确认当前正向 caller、注册/dispatch、支持 schema 和生命周期契约；历史结果不代表此次 after 原始字节已运行通过。
 
 Focused CTest coverage is provided by ssa_capability_validation,
 ssa_canonical_zraf_validation, and
