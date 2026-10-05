@@ -307,7 +307,7 @@ void ZrCore_TaskFrameTask_Free(SZrState *state, SZrCoreTaskFrameTask *task) {
     }
     if (task->status != ZR_CORE_TASK_FRAME_STATUS_IDLE) {
         /* finally 要在 slot 还可观察时运行，随后归还 frame；保持结果根直到其值不再被持有。 */
-    task_frame_task_run_finally(state, task);
+        task_frame_task_run_finally(state, task);
     }
     /* 归还帧后再释放 header 根与值，最后撤销所有借用关系，允许再次 Start。 */
     task_frame_task_release_frame(state, task);
