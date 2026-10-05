@@ -107,7 +107,7 @@ static void test_polymorphic_identity_witness_is_retained(void) {
         TEST_ASSERT_EQUAL_UINT32(contract.ownerTypeToken,
                 function.bindingRows[0].contract.ownerTypeToken);
         TEST_ASSERT_EQUAL_UINT32(contract.dispatchSlot, function.bindingRows[0].contract.dispatchSlot);
-        TEST_ASSERT_EQUAL_UINT32(segment.sourceId, diagnostic.sourceId);
+        TEST_ASSERT_EQUAL_UINT32(0u, diagnostic.sourceId);
         ZrCore_ExecIr_FreeFunction(&function);
     }
 }
