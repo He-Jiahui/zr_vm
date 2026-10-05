@@ -53,6 +53,7 @@ typedef struct SZrSourceExecBcReport {
     TZrBool preSemanticIrValidated;
     TZrBool sourceCfgValidated;
     TZrBool execIrBuilt;
+    TZrBool coreVerifyAllPassed;
     TZrBool hasConditionalBranch;
     TZrBool hasAdd;
     TZrBool hasSubtract;
@@ -72,6 +73,13 @@ typedef struct SZrSourceExecBcReport {
     TZrExecIrBlockId oracleBlock;
     TZrExecIrBlockId vmLastBlock;
     TZrUInt32 execIrPhiCount;
+    TZrUInt32 loopCarriedPhiCount;
+    TZrBool phiPredecessorOrderValid;
+    TZrUInt32 execIrComparisonKind;
+    TZrUInt32 projectionComparisonKind;
+    TZrUInt32 execIrComparisonCount;
+    TZrUInt32 projectionComparisonCount;
+    TZrBool vmRepeatedMappedBlock;
     TZrUInt32 vmPathCount;
     TZrUInt32 traceCount;
     TZrUInt32 oraclePlaceProviderCalls;
@@ -385,6 +393,13 @@ static const char *source_execbc_stage_name(EZrSourceExecBcStage stage) {
     }
 }
 
+static SZrSourceExecBcReport run_source_branch(const TZrChar *source);
+static void assert_source_branch_report(
+        SZrSourceExecBcReport report, TZrInt64 expectedReturn,
+        TZrUInt32 expectedArithmetic);
+
+#include "ssa_source_execbc_vm_loop_phi.inc"
+
 static SZrSourceExecBcReport run_source_branch(const TZrChar *source) {
     SZrSourceExecBcReport report;
     SZrCompilerState compiler;
@@ -483,14 +498,20 @@ static SZrSourceExecBcReport run_source_branch(const TZrChar *source) {
         goto cleanup;
     }
     report.identityPublished = ZR_TRUE;
-    if (!ZrParser_ExecIr_VerifyFunction(
+    if (!ZrCore_ExecIr_VerifyFunction(
                 execIr, ZR_EXEC_IR_VERIFY_ALL, &diagnostic)) {
         capture_diagnostic(
                 &report, ZR_SOURCE_EXECBC_STAGE_VERIFY, &diagnostic);
         goto cleanup;
     }
+    report.coreVerifyAllPassed = ZR_TRUE;
     report.execIrBuilt = ZR_TRUE;
+    source_execbc_capture_loop_phis(execIr, &report);
     for (index = 0u; index < execIr->instructionCount; ++index) {
+        if (execIr->instructions[index].opcode == ZR_EXEC_IR_OPCODE_COMPARE) {
+            ++report.execIrComparisonCount;
+            report.execIrComparisonKind = execIr->instructions[index].typeToken;
+        }
         if (execIr->instructions[index].opcode ==
                 ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH) {
             report.hasConditionalBranch = ZR_TRUE;
@@ -580,6 +601,10 @@ static SZrSourceExecBcReport run_source_branch(const TZrChar *source) {
     }
     report.projectionBuilt = ZR_TRUE;
     for (index = 0u; index < projection.instructionCount; ++index) {
+        if (projection.instructions[index].opcode == ZR_EXEC_IR_OPCODE_COMPARE) {
+            ++report.projectionComparisonCount;
+            report.projectionComparisonKind = projection.instructions[index].typeToken;
+        }
         if (projection.instructions[index].opcode == ZR_EXEC_IR_OPCODE_MUL) {
             const SZrCanonicalTypeNode *type = ZrParser_CanonicalType_Find(
                     compiler.semanticContext,
@@ -663,6 +688,7 @@ static SZrSourceExecBcReport run_source_branch(const TZrChar *source) {
         }
     }
     report.vmPathCount = trace.pathCount;
+    report.vmRepeatedMappedBlock = source_execbc_has_repeated_block(&trace);
     report.vmLastBlock = lastBlock;
     if (report.pcSourceTraceValid != ZR_FALSE && trace.pathCount != 0u &&
         trace.path[0] == execIr->entryBlockId) {
@@ -853,17 +879,20 @@ static void test_false_source_branch_multiplication_reaches_core_dispatcher(void
 int main(int argc, char **argv) {
     TZrBool comparisonsOnly = ZR_FALSE;
     TZrBool regressionsOnly = ZR_FALSE;
+    TZrBool loopsOnly = ZR_FALSE;
     if (argc == 2 && strcmp(argv[1], "--comparisons-only") == 0) {
         comparisonsOnly = ZR_TRUE;
     } else if (argc == 2 && strcmp(argv[1], "--regressions-only") == 0) {
         regressionsOnly = ZR_TRUE;
+    } else if (argc == 2 && strcmp(argv[1], "--loops-only") == 0) {
+        loopsOnly = ZR_TRUE;
     } else if (argc != 1) {
         (void)fprintf(stderr,
-                "usage: %s [--comparisons-only|--regressions-only]\n", argv[0]);
+                "usage: %s [--comparisons-only|--regressions-only|--loops-only]\n", argv[0]);
         return 2;
     }
     UNITY_BEGIN();
-    if (comparisonsOnly == ZR_FALSE) {
+    if (comparisonsOnly == ZR_FALSE && loopsOnly == ZR_FALSE) {
         RUN_TEST(test_true_source_branch_runs_through_core_dispatcher);
         RUN_TEST(test_false_source_branch_runs_through_core_dispatcher);
         RUN_TEST(test_source_branch_arithmetic_reaches_core_dispatcher);
@@ -878,11 +907,16 @@ int main(int argc, char **argv) {
         RUN_TEST(test_source_for_conditional_break_remains_unsupported);
         RUN_TEST(test_source_foreach_conditional_break_remains_unsupported);
     }
-    if (regressionsOnly == ZR_FALSE) {
+    if (regressionsOnly == ZR_FALSE && loopsOnly == ZR_FALSE) {
         RUN_TEST(test_source_signed_less_true_reaches_core_dispatcher);
         RUN_TEST(test_source_signed_less_false_reaches_core_dispatcher);
         RUN_TEST(test_source_signed_greater_true_reaches_core_dispatcher);
         RUN_TEST(test_source_signed_greater_false_reaches_core_dispatcher);
+    }
+    if (comparisonsOnly == ZR_FALSE && regressionsOnly == ZR_FALSE) {
+        RUN_TEST(test_source_while_less_loop_carried_phi);
+        RUN_TEST(test_source_while_less_zero_iterations);
+        RUN_TEST(test_source_while_greater_loop_carried_phi);
     }
     return UNITY_END();
 }
