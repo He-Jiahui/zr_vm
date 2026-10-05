@@ -1,4 +1,5 @@
 #include "compiler_semantic_compare.h"
+#include "compiler_semantic_scalar_expression.h"
 #include "../semantic_ir_compare_internal.h"
 
 #include <string.h>
@@ -8,8 +9,8 @@ TZrBool compiler_semantic_compare_source_supported(const SZrAstNode *node) {
     if (node == ZR_NULL || node->type != ZR_AST_BINARY_EXPRESSION ||
         node->data.binaryExpression.left == ZR_NULL ||
         node->data.binaryExpression.right == ZR_NULL ||
-        node->data.binaryExpression.left->type != ZR_AST_INTEGER_LITERAL ||
-        node->data.binaryExpression.right->type != ZR_AST_INTEGER_LITERAL)
+        !compiler_semantic_scalar_expression_shape(node->data.binaryExpression.left) ||
+        !compiler_semantic_scalar_expression_shape(node->data.binaryExpression.right))
         return ZR_FALSE;
     op = node->data.binaryExpression.op.op;
     return (TZrBool)(op != ZR_NULL &&
@@ -33,31 +34,38 @@ EZrCompilerSemanticCompareResult compiler_semantic_compare_lower(
     TZrValueId operands[2], resultId;
     TZrTypeId operandType, boolType;
     TZrUInt32 predicate;
+    TZrBool literalOperands;
     if (!compiler_semantic_compare_source_supported(node) ||
         (cs != ZR_NULL && cs->preSemanticIrCfgTerminated))
         return ZR_COMPILER_SEMANTIC_COMPARE_NOT_APPLICABLE;
+    literalOperands = (TZrBool)(node->data.binaryExpression.left->type == ZR_AST_INTEGER_LITERAL &&
+            node->data.binaryExpression.right->type == ZR_AST_INTEGER_LITERAL);
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || resultType == ZR_NULL ||
         !cs->preSemanticIrInitialized || cs->preSemanticIrCfgTerminated ||
-        resultSlot == ZR_PARSER_SLOT_NONE) goto failure;
+        resultSlot == ZR_PARSER_SLOT_NONE) goto unsupported;
     predicate = strcmp(node->data.binaryExpression.op.op, "<") == 0
             ? ZR_EXEC_IR_COMPARE_KIND_LESS : ZR_EXEC_IR_COMPARE_KIND_GREATER;
     if (opcode != (predicate == ZR_EXEC_IR_COMPARE_KIND_LESS
                     ? ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED)
-                    : ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED))) goto failure;
+                    : ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED))) goto unsupported;
     left = compiler_semantic_ir_find_slot(cs, leftSlot);
     right = compiler_semantic_ir_find_slot(cs, rightSlot);
     if (left == ZR_NULL || right == ZR_NULL || left->valueId == 0u ||
-        right->valueId == 0u || left->typeId != right->typeId) goto failure;
+        right->valueId == 0u || left->typeId != right->typeId) goto unsupported;
     /* Preserve IDs before registration/binding can grow compiler arrays. */
     operands[0] = left->valueId;
     operands[1] = right->valueId;
     operandType = left->typeId;
     if (!primitive_matches(cs->semanticContext, operandType, ZR_VALUE_TYPE_INT64))
-        goto failure;
+        goto unsupported;
+    if (!literalOperands &&
+        (!compiler_semantic_scalar_value_matches(cs, node->data.binaryExpression.left, operands[0]) ||
+         !compiler_semantic_scalar_value_matches(cs, node->data.binaryExpression.right, operands[1])))
+        goto unsupported;
     boolType = ZrParser_Semantic_RegisterInferredType(cs->semanticContext,
             resultType, ZR_SEMANTIC_TYPE_KIND_UNKNOWN, ZR_NULL, ZR_NULL);
     if (!primitive_matches(cs->semanticContext, boolType, ZR_VALUE_TYPE_BOOL))
-        goto failure;
+        goto unsupported;
     resultId = ZrParser_SemanticIr_AddValue(&cs->preSemanticIr, boolType, node->location);
     if (resultId == 0u || !compiler_semantic_ir_bind_result_value(
             cs, resultSlot, boolType, resultId, node->location)) goto failure;
@@ -74,6 +82,8 @@ EZrCompilerSemanticCompareResult compiler_semantic_compare_lower(
     emit_instruction(cs, create_instruction_2(opcode,
             (TZrUInt16)resultSlot, (TZrUInt16)leftSlot, (TZrUInt16)rightSlot));
     return ZR_COMPILER_SEMANTIC_COMPARE_LOWERED;
+unsupported:
+    if (!literalOperands) return ZR_COMPILER_SEMANTIC_COMPARE_NOT_APPLICABLE;
 failure:
     if (cs != ZR_NULL && node != ZR_NULL)
         ZrParser_Compiler_Error(cs, "Cannot produce canonical signed literal comparison", node->location);
@@ -108,12 +118,30 @@ TZrBool compiler_semantic_compare_condition_valid(
     in = ZrParser_SemanticIr_InstructionAt(&cs->preSemanticIr,
             condition->definitionInstructionId - 1u);
     if (in == ZR_NULL) return ZR_FALSE;
-    if (in->opcode != ZR_SEMANTIC_IR_COMPARE) return ZR_TRUE;
+    if (in->opcode != ZR_SEMANTIC_IR_COMPARE)
+        return (TZrBool)!compiler_semantic_compare_source_supported(node);
     if (!compiler_semantic_compare_source_supported(node)) return ZR_FALSE;
     predicate = strcmp(node->data.binaryExpression.op.op, "<") == 0
             ? ZR_EXEC_IR_COMPARE_KIND_LESS : ZR_EXEC_IR_COMPARE_KIND_GREATER;
+    if (node->data.binaryExpression.left->type != ZR_AST_INTEGER_LITERAL ||
+        node->data.binaryExpression.right->type != ZR_AST_INTEGER_LITERAL) {
+        const TZrValueId *left, *right;
+        if (in->operandCount != 2U ||
+            in->operandStart > cs->preSemanticIr.valueOperands.length ||
+            cs->preSemanticIr.valueOperands.length - in->operandStart < 2U)
+            return ZR_FALSE;
+        left = (const TZrValueId *)ZrCore_Array_Get((SZrArray *)&cs->preSemanticIr.valueOperands,
+                                                 in->operandStart);
+        right = (const TZrValueId *)ZrCore_Array_Get((SZrArray *)&cs->preSemanticIr.valueOperands,
+                                                  in->operandStart + 1U);
+        if (left == ZR_NULL || right == ZR_NULL ||
+            !compiler_semantic_scalar_value_matches(cs, node->data.binaryExpression.left, *left) ||
+            !compiler_semantic_scalar_value_matches(cs, node->data.binaryExpression.right, *right))
+            return ZR_FALSE;
+    }
     return (TZrBool)(in->comparisonPredicate == predicate &&
             in->resultValueId == condition->id && in->typeId == condition->typeId &&
+            in->sourceRange.source == node->location.source &&
             in->sourceRange.start.offset == node->location.start.offset &&
             in->sourceRange.end.offset == node->location.end.offset &&
             primitive_matches(cs->semanticContext, condition->typeId, ZR_VALUE_TYPE_BOOL));

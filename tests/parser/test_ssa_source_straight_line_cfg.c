@@ -319,9 +319,9 @@ static TZrBool source_memory_provider(
 }
 
 static void test_source_assignment_oracle_returns_second_constant(void) {
+    const char *source = "var value: int = 7;\nvalue = 9;\nreturn value;\n";
     SZrCompilerState compiler;
-    SZrAstNode *ast = compile_source(&compiler,
-            "var value: int = 7;\nvalue = 9;\nreturn value;\n");
+    SZrAstNode *ast = compile_source(&compiler, source);
     SZrExecIrFunction output;
     SZrExecIrOracleInput input = {0};
     SZrExecIrOracleExecutionResult result;
@@ -331,6 +331,91 @@ static void test_source_assignment_oracle_returns_second_constant(void) {
     SZrStraightLineOracleMemory memory = {0};
     TZrSize index;
     TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgActive);
+    {
+        const SZrSemanticIrInstruction *initialize = ZR_NULL;
+        const SZrSemanticIrInstruction *store = ZR_NULL;
+        const SZrSemanticIrInstruction *load = ZR_NULL;
+        const SZrSemanticIrInstruction *returned = ZR_NULL;
+        const SZrSemanticIrInstruction *writes[2];
+        TZrUInt32 writeIndex;
+        /* Locate the real named local operations, excluding private temporaries. */
+        for (index = 0u; index < compiler.preSemanticIr.instructions.length; ++index) {
+            const SZrSemanticIrInstruction *instruction =
+                    ZrParser_SemanticIr_InstructionAt(&compiler.preSemanticIr, index);
+            const SZrParserPlace *place = ZrParser_PlaceGraph_Get(
+                    &compiler.preSemanticIr.places, instruction->placeId);
+            if (instruction->opcode == ZR_SEMANTIC_IR_RETURN) {
+                TEST_ASSERT_NULL(returned);
+                returned = instruction;
+            }
+            if (place == ZR_NULL || place->base.kind != ZR_PARSER_PLACE_BASE_LOCAL) continue;
+            if (instruction->opcode == ZR_SEMANTIC_IR_INITIALIZE) {
+                TEST_ASSERT_NULL(initialize);
+                initialize = instruction;
+            } else if (instruction->opcode == ZR_SEMANTIC_IR_STORE) {
+                TEST_ASSERT_NULL(store);
+                store = instruction;
+            } else if (instruction->opcode == ZR_SEMANTIC_IR_LOAD) {
+                TEST_ASSERT_NULL(load);
+                load = instruction;
+            }
+        }
+        TEST_ASSERT_NOT_NULL(initialize);
+        TEST_ASSERT_NOT_NULL(store);
+        TEST_ASSERT_NOT_NULL(load);
+        TEST_ASSERT_NOT_NULL(returned);
+        TEST_ASSERT_EQUAL_UINT32(initialize->placeId, store->placeId);
+        TEST_ASSERT_EQUAL_UINT32(store->placeId, load->placeId);
+        TEST_ASSERT_EQUAL_UINT32(1u, initialize->sourceRange.start.line);
+        TEST_ASSERT_EQUAL_UINT32(2u, store->sourceRange.start.line);
+        TEST_ASSERT_EQUAL_UINT32(3u, load->sourceRange.start.line);
+        TEST_ASSERT_EQUAL_UINT32(1u, returned->operandCount);
+        TEST_ASSERT_EQUAL_UINT32(load->resultValueId,
+                *(const TZrValueId *)ZrCore_Array_Get(
+                        &compiler.preSemanticIr.valueOperands, returned->operandStart));
+        writes[0] = initialize;
+        writes[1] = store;
+        for (writeIndex = 0u; writeIndex < 2u; ++writeIndex) {
+            const SZrSemanticIrValue *value = ZrParser_SemanticIr_Value(
+                    &compiler.preSemanticIr, writes[writeIndex]->valueId);
+            const SZrSemanticIrInstruction *literal;
+            const SZrTypeValue *constant;
+            TEST_ASSERT_NOT_NULL(value);
+            TEST_ASSERT_GREATER_THAN_UINT32(0u, value->definitionInstructionId);
+            literal = ZrParser_SemanticIr_InstructionAt(
+                    &compiler.preSemanticIr, value->definitionInstructionId - 1u);
+            TEST_ASSERT_NOT_NULL(literal);
+            TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_CONSTANT, literal->opcode);
+            TEST_ASSERT_EQUAL_UINT32(value->id, literal->resultValueId);
+            TEST_ASSERT_TRUE(literal->hasConstantPoolIndex);
+            TEST_ASSERT_EQUAL_UINT32(writeIndex + 1u, literal->sourceRange.start.line);
+            constant = (const SZrTypeValue *)ZrCore_Array_Get(
+                    &compiler.constants, literal->constantPoolIndex);
+            TEST_ASSERT_NOT_NULL(constant);
+            TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, constant->type);
+            TEST_ASSERT_EQUAL_INT64(writeIndex == 0u ? 7 : 9,
+                    constant->value.nativeObject.nativeInt64);
+        }
+        /* Source maps must describe the same actual source spans as the operations. */
+        for (index = 0u; index < compiler.preSemanticIr.instructions.length; ++index) {
+            const SZrSemanticIrInstruction *instruction =
+                    ZrParser_SemanticIr_InstructionAt(&compiler.preSemanticIr, index);
+            const SZrSemanticIrSourceMapEntry *map =
+                    (const SZrSemanticIrSourceMapEntry *)ZrCore_Array_Get(
+                            &compiler.preSemanticIr.sourceMap, index);
+            if (instruction != initialize && instruction != store &&
+                instruction != load && instruction != returned) continue;
+            TEST_ASSERT_NOT_NULL(map);
+            TEST_ASSERT_EQUAL_UINT32(instruction->id, map->instructionId);
+            TEST_ASSERT_TRUE(map->sourceRange.source == instruction->sourceRange.source);
+            TEST_ASSERT_EQUAL_UINT32(instruction->sourceRange.start.offset, map->sourceRange.start.offset);
+            TEST_ASSERT_EQUAL_UINT32(instruction->sourceRange.end.offset, map->sourceRange.end.offset);
+            TEST_ASSERT_TRUE(map->sourceRange.start.offset < strlen(source));
+            if (instruction == store || instruction == load)
+                TEST_ASSERT_EQUAL_MEMORY("value", source + map->sourceRange.start.offset, 5u);
+        }
+    }
     TEST_ASSERT_TRUE(compiler.constants.length <= ZR_ARRAY_COUNT(constants));
     for (index = 0u; index < compiler.constants.length; ++index) {
         const SZrTypeValue *constant = (const SZrTypeValue *)ZrCore_Array_Get(
@@ -344,6 +429,13 @@ static void test_source_assignment_oracle_returns_second_constant(void) {
         }
     }
     build_source(&compiler.preSemanticIr, &output);
+    TEST_ASSERT_EQUAL_UINT32(0u, output.phiCount);
+    for (index = 0u; index < output.instructionCount; ++index) {
+        TEST_ASSERT_NOT_EQUAL_MESSAGE(ZR_EXEC_IR_OPCODE_LOAD, output.instructions[index].opcode,
+                "pure local assignment retained an executable memory load");
+        TEST_ASSERT_NOT_EQUAL_MESSAGE(ZR_EXEC_IR_OPCODE_STORE, output.instructions[index].opcode,
+                "pure local assignment retained an executable memory store");
+    }
     TEST_ASSERT_TRUE(output.valueCount <= ZR_ARRAY_COUNT(initial));
     for (index = 0u; index < output.valueCount; ++index) {
         /* The source builder exposes place provenance as external tokens;
@@ -385,7 +477,10 @@ static void test_source_assignment_oracle_returns_second_constant(void) {
     }
     TEST_ASSERT_TRUE(result.returned);
     TEST_ASSERT_FALSE(result.terminatedByThrow);
-    TEST_ASSERT_GREATER_THAN_UINT32(0u, memory.stores);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, memory.stores,
+            "promoted local assignment must not call the memory store provider");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, result.eventCount,
+            "pure local assignment must not produce observable effect events");
     TEST_ASSERT_EQUAL_INT(ZR_EXEC_IR_ORACLE_VALUE_SIGNED, result.returnValue.kind);
     TEST_ASSERT_EQUAL_INT64(9, result.returnValue.as.signedInteger);
     ZrCore_ExecIr_OracleResultFree(&result);

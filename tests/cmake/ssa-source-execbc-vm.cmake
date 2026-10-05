@@ -8,6 +8,10 @@ if (NOT TARGET zr_vm_ssa_source_execbc_vm_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
     zr_vm_link_parser_core_plus_library(zr_vm_ssa_source_execbc_vm_test)
+    if (MSVC)
+        # The Debug core dispatcher frame exceeds the default Windows reserve.
+        target_link_options(zr_vm_ssa_source_execbc_vm_test PRIVATE /STACK:8388608)
+    endif ()
     add_test(NAME ssa_source_execbc_vm
             COMMAND zr_vm_ssa_source_execbc_vm_test)
     set_tests_properties(ssa_source_execbc_vm PROPERTIES

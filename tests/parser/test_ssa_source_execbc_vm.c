@@ -204,7 +204,9 @@ static TZrBool make_source_place_initial_values(
         TZrBool isPlaceProvenance = ZR_FALSE;
         TZrUInt32 instructionIndex;
         if (function->values[valueIndex].definition !=
-            ZR_EXEC_IR_INSTRUCTION_ID_INVALID) {
+                ZR_EXEC_IR_INSTRUCTION_ID_INVALID ||
+            (function->values[valueIndex].flags &
+             ZR_EXEC_IR_VALUE_FLAG_EXTERNAL_ENTRY) == 0u) {
             continue;
         }
         for (instructionIndex = 0u;
@@ -336,7 +338,28 @@ static TZrBool make_source_constants(
             free(oracleValues);
             return ZR_FALSE;
         }
-        if (ZR_VALUE_IS_TYPE_BOOL(constant->type)) {
+        if (constant->type == ZR_VALUE_TYPE_NULL) {
+            TZrSize instructionIndex;
+            for (instructionIndex = 0u;
+                 instructionIndex < compiler->preSemanticIr.instructions.length;
+                 ++instructionIndex) {
+                const SZrSemanticIrInstruction *instruction =
+                        ZrParser_SemanticIr_InstructionAt(
+                                &compiler->preSemanticIr, instructionIndex);
+                if (instruction == ZR_NULL ||
+                    (instruction->opcode == ZR_SEMANTIC_IR_CONSTANT &&
+                     instruction->hasConstantPoolIndex &&
+                     instruction->constantPoolIndex == index)) {
+                    free(constants);
+                    free(oracleValues);
+                    return ZR_FALSE;
+                }
+            }
+            /* Local declarations retain an unused NULL pool descriptor. */
+            constants[index].typeToken = ZrParser_CanonicalType_InternPrimitive(
+                    compiler->semanticContext, ZR_VALUE_TYPE_NULL);
+            oracleValues[index].kind = ZR_EXEC_IR_ORACLE_VALUE_UNDEFINED;
+        } else if (ZR_VALUE_IS_TYPE_BOOL(constant->type)) {
             TZrBool value = (TZrBool)(constant->value.nativeObject.nativeBool != 0);
             constants[index].typeToken = ZrParser_CanonicalType_InternPrimitive(
                     compiler->semanticContext, ZR_VALUE_TYPE_BOOL);
@@ -884,24 +907,28 @@ static void test_false_source_branch_multiplication_reaches_core_dispatcher(void
 
 #include "ssa_source_execbc_vm_loop_break.inc"
 #include "ssa_source_execbc_vm_compare.inc"
+#include "ssa_source_execbc_vm_scalar_guards.inc"
 
 int main(int argc, char **argv) {
     TZrBool comparisonsOnly = ZR_FALSE;
     TZrBool regressionsOnly = ZR_FALSE;
     TZrBool loopsOnly = ZR_FALSE;
+    TZrBool scalarGuardsOnly = ZR_FALSE;
     if (argc == 2 && strcmp(argv[1], "--comparisons-only") == 0) {
         comparisonsOnly = ZR_TRUE;
     } else if (argc == 2 && strcmp(argv[1], "--regressions-only") == 0) {
         regressionsOnly = ZR_TRUE;
     } else if (argc == 2 && strcmp(argv[1], "--loops-only") == 0) {
         loopsOnly = ZR_TRUE;
+    } else if (argc == 2 && strcmp(argv[1], "--scalar-guards-only") == 0) {
+        scalarGuardsOnly = ZR_TRUE;
     } else if (argc != 1) {
         (void)fprintf(stderr,
-                "usage: %s [--comparisons-only|--regressions-only|--loops-only]\n", argv[0]);
+                "usage: %s [--comparisons-only|--regressions-only|--loops-only|--scalar-guards-only]\n", argv[0]);
         return 2;
     }
     UNITY_BEGIN();
-    if (comparisonsOnly == ZR_FALSE && loopsOnly == ZR_FALSE) {
+    if (comparisonsOnly == ZR_FALSE && loopsOnly == ZR_FALSE && scalarGuardsOnly == ZR_FALSE) {
         RUN_TEST(test_true_source_branch_runs_through_core_dispatcher);
         RUN_TEST(test_false_source_branch_runs_through_core_dispatcher);
         RUN_TEST(test_source_branch_arithmetic_reaches_core_dispatcher);
@@ -916,16 +943,28 @@ int main(int argc, char **argv) {
         RUN_TEST(test_source_for_conditional_break_remains_unsupported);
         RUN_TEST(test_source_foreach_conditional_break_remains_unsupported);
     }
-    if (regressionsOnly == ZR_FALSE && loopsOnly == ZR_FALSE) {
+    if (regressionsOnly == ZR_FALSE && loopsOnly == ZR_FALSE && scalarGuardsOnly == ZR_FALSE) {
         RUN_TEST(test_source_signed_less_true_reaches_core_dispatcher);
         RUN_TEST(test_source_signed_less_false_reaches_core_dispatcher);
         RUN_TEST(test_source_signed_greater_true_reaches_core_dispatcher);
         RUN_TEST(test_source_signed_greater_false_reaches_core_dispatcher);
     }
-    if (comparisonsOnly == ZR_FALSE && regressionsOnly == ZR_FALSE) {
+    if (comparisonsOnly == ZR_FALSE && regressionsOnly == ZR_FALSE && scalarGuardsOnly == ZR_FALSE) {
         RUN_TEST(test_source_while_less_loop_carried_phi);
         RUN_TEST(test_source_while_less_zero_iterations);
         RUN_TEST(test_source_while_greater_loop_carried_phi);
+        RUN_TEST(test_source_while_less_one_iteration);
+        RUN_TEST(test_source_while_greater_negative_endpoint);
+        RUN_TEST(test_source_while_less_arithmetic_condition);
+    }
+    if (comparisonsOnly == ZR_FALSE && regressionsOnly == ZR_FALSE && loopsOnly == ZR_FALSE) {
+        RUN_TEST(test_source_float_local_less_remains_cfg_unsupported);
+        RUN_TEST(test_source_unsigned_local_less_remains_cfg_unsupported);
+        RUN_TEST(test_source_mixed_width_local_less_remains_cfg_unsupported);
+        RUN_TEST(test_source_while_multiply_update_remains_cfg_unsupported);
+        RUN_TEST(test_source_while_divide_update_remains_cfg_unsupported);
+        RUN_TEST(test_source_while_compound_update_remains_cfg_unsupported);
+        RUN_TEST(test_source_while_index_assignment_remains_cfg_unsupported);
     }
     return UNITY_END();
 }

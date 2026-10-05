@@ -17,6 +17,32 @@ static TZrExecIrValueId source_execbc_skip_copies(
     return 0u;
 }
 
+/* VerifyAll has already checked value ranges and dominance. Bound each walk
+ * by valueCount so a malformed dependency cycle cannot recurse indefinitely. */
+static TZrBool source_execbc_value_depends_on_phi(
+        const SZrExecIrFunction *function, TZrExecIrValueId value,
+        TZrExecIrValueId phi, TZrUInt32 depth) {
+    TZrExecIrInstructionId definition;
+    const SZrExecIrInstruction *instruction;
+    TZrUInt32 operandIndex;
+    if (value == phi) return ZR_TRUE;
+    if (depth >= function->valueCount || value == 0u ||
+        value > function->valueCount) return ZR_FALSE;
+    definition = function->values[value - 1u].definition;
+    if (definition == 0u || definition > function->instructionCount) return ZR_FALSE;
+    instruction = &function->instructions[definition - 1u];
+    if (instruction->opcode != ZR_EXEC_IR_OPCODE_COPY &&
+        instruction->opcode != ZR_EXEC_IR_OPCODE_ADD &&
+        instruction->opcode != ZR_EXEC_IR_OPCODE_SUB) return ZR_FALSE;
+    for (operandIndex = 0u; operandIndex < instruction->operands.count; ++operandIndex) {
+        if (source_execbc_value_depends_on_phi(function, function->operandPool[
+                    instruction->operands.start + operandIndex], phi, depth + 1u)) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 /* Called only after VerifyAll: its SSA check validates incoming edge order
  * and dominance. Also require an arithmetic update using the header phi and
  * feeding it from the body predecessor, rather than counting any merge phi. */
@@ -47,8 +73,9 @@ static void source_execbc_capture_loop_phis(
                         if (compare->opcode == ZR_EXEC_IR_OPCODE_COMPARE) {
                             for (operandIndex = 0u; operandIndex < compare->operands.count;
                                  ++operandIndex) {
-                                if (source_execbc_skip_copies(function, function->operandPool[
-                                            compare->operands.start + operandIndex]) == phi->result) {
+                                if (source_execbc_value_depends_on_phi(function,
+                                            function->operandPool[compare->operands.start + operandIndex],
+                                            phi->result, 0u)) {
                                     usedByCondition = ZR_TRUE;
                                 }
                             }
@@ -167,4 +194,23 @@ static void test_source_while_greater_loop_carried_phi(void) {
     assert_source_finite_loop(
             "var i:int=3; while(i>0){i=i-1;} return i;\n", 0,
             ZR_EXEC_IR_OPCODE_SUB, ZR_EXEC_IR_COMPARE_KIND_GREATER, ZR_TRUE);
+}
+
+/* All finite fixtures stay well within run_source_branch's maxSteps = 128. */
+static void test_source_while_less_one_iteration(void) {
+    assert_source_finite_loop(
+            "var i:int=2; while(i<3){i=i+1;} return i;\n", 3,
+            ZR_EXEC_IR_OPCODE_ADD, ZR_EXEC_IR_COMPARE_KIND_LESS, ZR_TRUE);
+}
+
+static void test_source_while_greater_negative_endpoint(void) {
+    assert_source_finite_loop(
+            "var i:int=1; while(i>0-2){i=i-1;} return i;\n", -2,
+            ZR_EXEC_IR_OPCODE_SUB, ZR_EXEC_IR_COMPARE_KIND_GREATER, ZR_TRUE);
+}
+
+static void test_source_while_less_arithmetic_condition(void) {
+    assert_source_finite_loop(
+            "var i:int=0; while(i+1<4){i=i+1;} return i;\n", 3,
+            ZR_EXEC_IR_OPCODE_ADD, ZR_EXEC_IR_COMPARE_KIND_LESS, ZR_TRUE);
 }

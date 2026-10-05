@@ -222,24 +222,71 @@ target_link_options(zr_vm_ssa_compare_metadata_guards_test PRIVATE
         /INCREMENTAL:NO /OPT:REF /STACK:8388608
         "/MAP:${CMAKE_BINARY_DIR}/ssa-compare-metadata-guards-link.map")
 
+# These existing fixtures exercise producer fallback and the unchanged scratch
+# eligibility guards affected by scalar value binding.
+foreach (_zr_guard_target IN ITEMS
+        zr_vm_ssa_source_straight_line_cfg_test
+        zr_vm_exec_ir_scalar_scratch_eligibility_test)
+    if (_zr_guard_target STREQUAL "zr_vm_ssa_source_straight_line_cfg_test")
+        set(_zr_guard_source tests/parser/test_ssa_source_straight_line_cfg.c)
+    else ()
+        set(_zr_guard_source tests/parser/test_exec_ir_scalar_scratch_eligibility.c)
+    endif ()
+    add_executable(${_zr_guard_target} "${ZR_SSA_SOURCE_ROOT}/${_zr_guard_source}")
+    target_include_directories(${_zr_guard_target} PRIVATE
+            ${_zr_public_includes} ${_zr_vendor_includes} ${_zr_test_includes}
+            "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser"
+            "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/compiler"
+            "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir")
+    target_compile_definitions(${_zr_guard_target} PRIVATE
+            ${_zr_unity_definitions} ZR_LIBRARY_TYPE_STATIC=1
+            ZR_PLATFORM_WIN=1 ZR_PLATFORM_WIN_USE_MSVC=1 ZR_DEBUG=1 _CRT_SECURE_NO_WARNINGS
+            UTF8PROC_STATIC MINIZ_NO_ZLIB_COMPATIBLE_NAMES
+            ZR_CURRENT_MODULE="${_zr_guard_target}"
+            ZR_VM_COMPILER_VERSION="${CMAKE_C_COMPILER_ID}-${CMAKE_C_COMPILER_VERSION}"
+            ZR_VM_TESTS_SOURCE_DIR="${ZR_SSA_SOURCE_ROOT}/tests"
+            ZR_VM_TESTS_BINARY_DIR="${CMAKE_BINARY_DIR}")
+    zr_ssa_source_apply_c_settings(${_zr_guard_target})
+    target_link_libraries(${_zr_guard_target} PRIVATE
+            ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_library
+            ssa_source_zr_vm_common ${_zr_vendor_targets} ssa_source_unity kernel32
+            ssa_source_runtime_support)
+    target_link_options(${_zr_guard_target} PRIVATE
+            /INCREMENTAL:NO /OPT:REF /STACK:8388608)
+endforeach ()
+
 # A failed comparison remains a genuine CTest failure. No WILL_FAIL or wrapper.
 add_test(NAME ssa_source_execbc_vm_comparisons
         COMMAND zr_vm_ssa_source_execbc_vm_test --comparisons-only)
 add_test(NAME ssa_source_execbc_vm_regressions
         COMMAND zr_vm_ssa_source_execbc_vm_test --regressions-only)
+add_test(NAME ssa_source_execbc_vm_loops
+        COMMAND zr_vm_ssa_source_execbc_vm_test --loops-only)
+add_test(NAME ssa_source_execbc_vm_scalar_guards
+        COMMAND zr_vm_ssa_source_execbc_vm_test --scalar-guards-only)
 add_test(NAME ssa_compare_metadata_guards
         COMMAND zr_vm_ssa_compare_metadata_guards_test)
+add_test(NAME ssa_source_straight_line_cfg
+        COMMAND zr_vm_ssa_source_straight_line_cfg_test)
+add_test(NAME exec_ir_scalar_scratch_eligibility
+        COMMAND zr_vm_exec_ir_scalar_scratch_eligibility_test)
 set_tests_properties(ssa_source_execbc_vm_comparisons ssa_source_execbc_vm_regressions
+        ssa_source_execbc_vm_loops
+        ssa_source_execbc_vm_scalar_guards
         PROPERTIES LABELS "ssa;source-direct-validation" TIMEOUT 120
         ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
 set_tests_properties(ssa_compare_metadata_guards PROPERTIES
         LABELS "ssa;source-direct-validation" TIMEOUT 120
         ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
+set_tests_properties(ssa_source_straight_line_cfg exec_ir_scalar_scratch_eligibility
+        PROPERTIES LABELS "ssa;source-direct-validation" TIMEOUT 120
+        ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
 
 # Source membership and hashes are metadata only. Sources/headers are never copied.
 set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_library
         ssa_source_zr_vm_common ${_zr_vendor_targets} ssa_source_unity ssa_source_runtime_support
-        zr_vm_ssa_source_execbc_vm_test zr_vm_ssa_compare_metadata_guards_test)
+        zr_vm_ssa_source_execbc_vm_test zr_vm_ssa_compare_metadata_guards_test
+        zr_vm_ssa_source_straight_line_cfg_test zr_vm_exec_ir_scalar_scratch_eligibility_test)
 set(_zr_graph "target\tabsolute_source\tsha256\n")
 set(_zr_all_sources)
 set(_zr_settings "compiler\t${CMAKE_C_COMPILER}\ncompiler_id\t${CMAKE_C_COMPILER_ID}\ncompiler_version\t${CMAKE_C_COMPILER_VERSION}\narchive_tool\t${CMAKE_AR}\narchive_rule\t${CMAKE_C_CREATE_STATIC_LIBRARY}\nlink_rule\t${CMAKE_C_LINK_EXECUTABLE}\n")
@@ -269,6 +316,8 @@ foreach (_header IN ITEMS
         tests/unity_config.h
         tests/parser/ssa_source_execbc_vm_diagnostics.inc
         tests/parser/ssa_source_execbc_vm_loop_break.inc
+        tests/parser/ssa_source_execbc_vm_loop_phi.inc
+        tests/parser/ssa_source_execbc_vm_scalar_guards.inc
         tests/parser/ssa_source_execbc_vm_compare.inc
         zr_vm_library/third_party/zr_miniz/miniz/miniz_export.h)
     file(SHA256 "${ZR_SSA_SOURCE_ROOT}/${_header}" _hash)

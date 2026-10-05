@@ -2,6 +2,8 @@
 related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_arithmetic.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_scalar_expression.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_scalar_result.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc_vm.c
@@ -9,6 +11,10 @@ related_code:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
   - tests/parser/test_ssa_source_execbc_vm.c
   - tests/parser/ssa_source_execbc_vm_compare.inc
+  - tests/parser/ssa_source_execbc_vm_loop_phi.inc
+  - tests/parser/ssa_source_execbc_vm_scalar_guards.inc
+  - docs/parser-and-semantics/ssa-source-scalar-loop.md
+  - docs/parser-and-semantics/scalar-literal-place-scratch-promotion.md
   - tests/cmake/ssa-source-execbc-vm.cmake
   - tests/cmake/ssa-source-direct-validation/CMakeLists.txt
 implementation_files:
@@ -28,10 +34,70 @@ tests:
   - tests/parser/test_exec_ir_scalar_scratch_eligibility.c
   - tests/acceptance/2026-10-02-ssa-source-branch-multiply.md
 doc_type: testing-guide
-status: scoped-accepted-msvc
+status: finite-source-loop-windows-ubsan-accepted-v4
 ---
 
 # SSA source to ExecBC Core VM integration
+
+## Current finite source scalar loop acceptance
+
+The current source extension adds signed i64 `<`/`>` while conditions and local
+`=` assignment with `+`/`-` expressions. Existing Place promotion must produce
+a real header PHI with entry initialization and body-update backedge incoming
+values. Core VerifyAll precedes Oracle execution, ExecBC projection and actual
+Core VM dispatch. The private scalar expression helper checks AST admission,
+canonical types and defining-instruction/source witnesses; the scalar result
+binder preserves typed literal/LOAD/transfer value identity. These canonical i64
+pure value bindings do not emit INITIALIZE or manufacture scratch proofs. Narrow
+same-type local initialization reuses an existing typed, loan-free TEMPORARY
+value in the local's real INITIALIZE; it does not add a COPY initializer or relax
+existing eligibility protections. Unsupported float/unsigned/mixed, compound and member paths remain on
+ordinary compilation and are not claimed by this added CFG admission.
+
+Current `--loops-only` selects six prepared tests: ascending 0→3, zero trips at 3,
+descending 3→0, one iteration 2→3, negative endpoint 1→-2 using `i>0-2`, and
+arithmetic condition `i+1<4` returning 3. Each checks loop PHI/condition/update relationships,
+predecessor order, Oracle/Core VM returns and mapped backedge behavior.
+The separate seven scalar guards cover float, unsigned, mixed width, multiply,
+divide, compound update and indexed assignment; they require ordinary compile
+and SemIR validation success while refusing executable source CFG publication.
+The runner selects four comparisons, thirteen regressions, six loops or seven
+guards separately; no arguments selects all thirty. The historical seventeen-case descriptions below describe
+their earlier revision.
+
+Unused NULL pool entries are retained; referenced NULL constants remain rejected.
+Oracle input seeding requires EXTERNAL_ENTRY plus PLACE_BASE provenance and does
+not seed definition-zero PHI values. See
+[the scalar loop module note](../../docs/parser-and-semantics/ssa-source-scalar-loop.md)
+for the exact current contract.
+
+**Current Root V4 scoped GREEN is accepted.** Configure, incremental build and
+CTest naturally exited zero; owned inputs remained unchanged. All seven selected
+CTest groups passed: four comparisons, thirteen regressions, six loops, seven
+guards, 35 source straight-line cases, 63 metadata cases and the existing
+standalone scratch-eligibility fixture. The first six groups total 128 cases;
+the standalone fixture is additional. Metadata recorded 346 passing preconditions,
+zero precondition failures and no UBSan diagnostic.
+
+Receipt:
+`E:/cargo-targets/zr_vm/reports/ssa-20261004-01a0fe2b/source-loop-direct-v4/receipt.json`,
+SHA256 `844fb85e034261c010f28b2498942b21943c86755ef7be17d3e0ba84a08fbd69`.
+CTest log SHA256:
+`db897305e7fd6ed04cca4c04ab20386bbb2d1a524cbc60433f2276d22d4e2a6f`.
+The source directory was `E:/Git/zr_vm/tests/cmake/ssa-source-direct-validation`;
+the build was `E:/cargo-targets/zr_vm/build/ssa-20261004-01a0fe2b/metadata-guards-direct-v2`.
+The executed scope is Windows clang-cl 19/MSVC ABI, UNDEBUG, selected-input UBSan
+and an 8 MiB PE stack reserve, without source copies.
+
+V1/V2/V3 failures remain false. V3 passed six loops and seven guards but failed
+two of 35 straight-line regressions. The final straight-line fixture checks the
+real SemIR initialize/store/load contract, source pool 7/9 and mappings; promoted
+ExecIR has no LOAD/STORE or PHI, and Oracle return 9 has zero events/stores.
+The unknown-child LOAD restores the original INVALID type analysis. V4 accepts
+these current regression contracts without changing scratch eligibility rules.
+Linux, ASan, native32, C/LLVM source-loop parity, automatic production publication
+and full 01.02/01.05/47-leaf completion remain open. Historical acceptance below
+retains its original revision and scope.
 
 ## Actual source comparison RED and sealed regression baseline
 
@@ -64,7 +130,7 @@ V48's whole owned run took 81.454 seconds. Its TRUE receipt is
 599,239 bytes, SHA256
 `23c1ac9f1b703453509be030fa6ba1e1f21de41ae14292c466d4232aa1213c40`.
 The limited acceptance is actual four-case RED plus the original 13-case sealed
-baseline PASS. Current comparison GREEN, normal production artifact publication,
+baseline PASS. At that historical revision, comparison GREEN, normal production artifact publication,
 same-source C/LLVM consumers and full 47-item SSA acceptance remain open. The
 historical MSVC/Linux evidence below retains its original scope.
 
@@ -95,7 +161,7 @@ and nonliteral operands remain outside this conditional-arm subset.
 
 The Oracle fixture resolves Builder-emitted `PLACE_BASE` values by following
 their source IDs back to SemIR and returning the SemIR `placeId` as a stable
-signed token. It seeds only external ExecIR values that are used as
+signed token. It seeds only explicitly EXTERNAL_ENTRY-flagged ExecIR values that are used as
 `PLACE_BASE` provenance operands. Other undefined ExecIR inputs fail fixture
 setup instead of being silently modeled.
 
@@ -107,15 +173,15 @@ Oracle's reported final block. The Oracle exposes the final block but not a
 complete block history, so this does not claim full path-by-path Oracle trace
 equality.
 
-These branch bodies return independently and do not merge a value. The test
-records `execIr.phiCount` for diagnosis but does not claim source value-phi or
-loop-phi coverage. A real-source loop-carried phi remains an open follow-up.
+The historical branch bodies return independently and do not merge a value.
+They do not establish loop-PHI coverage. The current six-loop fixture above
+adds explicit real-source loop-carried PHI assertions accepted in Root V4.
 
 The source fixture covers bool and signed i64 constants, conditional
 branches, literal ADD/SUB/MUL, and signed i64 returns. Other source operations remain outside
 this focused materializer slice.
 
-The producer change supports only direct bool/i64 constant initialization of a
+The historical scalar-scratch producer change supports direct bool/i64 constant initialization of a
 root `TEMPORARY` Place with a compiler-authored proof. The Place must be unique
 by root identity, disjoint from every other Place, projection/loan/escape/local
 free, and have exactly one `PLACE_BASE` plus one `INITIALIZE` with no other
@@ -126,7 +192,9 @@ checks the live constant pool; Builder can only recheck the SemIR `CONSTANT`,
 constant pool. The separate Core `VerifyModule` owned-pool validation is
 documented in `ssa-module-constant-pool-verifier.md`; this source module uses
 the compiler pool explicitly when constructing its projection and Oracle
-input.
+input. The current canonical i64 pure value bindings described above are a
+separate path; they retain this scratch eligibility contract and do not acquire
+its proof by adding an INITIALIZE.
 
 Builder value/instruction types are canonical IDs. The fixture copies the
 actual compiler constants into a projection pool using IDs interned in the
@@ -135,7 +203,7 @@ same semantic context, then calls
 adapter resolves those IDs to runtime bool/i64 tokens in copied arrays; the
 original graph's types, source metadata, CFG and effect guards remain intact.
 
-## Focused validation
+## Historical focused validation
 
 The CMake registration is `ssa_source_execbc_vm`, target
 `zr_vm_ssa_source_execbc_vm_test`, included through
@@ -148,7 +216,7 @@ python D:/tmp/zr_vm/ssa-control/run_native.py source-build build zr_vm_ssa_sourc
 python D:/tmp/zr_vm/ssa-control/run_native.py source-ctest ctest -R '^ssa_source_execbc_vm$' --no-tests=error
 ```
 
-## Current validation status
+## Historical MUL validation status
 
 The new single-level literal MUL cases, historical source RED, and current
 verification status are recorded in
@@ -177,7 +245,8 @@ the small-product source cases above.
 This source slice is accepted for the recorded MSVC scope. The current MUL
 extension has not been rerun under GCC, Clang, or sanitizers; historical
 Linux passes below do not validate the new extension. Full 01.02/01.05
-acceptance and source loop-phi coverage remain open.
+acceptance and source loop-phi coverage remained open at that revision. Current
+finite loop-PHI acceptance is recorded by V4 above.
 
 ## Historical evidence
 
@@ -222,5 +291,5 @@ python D:/tmp/zr_vm/ssa-control/run_native.py scratch-build build zr_vm_exec_ir_
 python D:/tmp/zr_vm/ssa-control/run_native.py scratch-ctest ctest -R '^exec_ir_scalar_scratch_eligibility$' --no-tests=error
 ```
 
-The source loop-phi claim remains open. This source branch has no value merge;
-the acceptance does not count its observed branch as loop-phi coverage.
+Current finite source loop-PHI acceptance is recorded by Root V4 above. Historical source
+branches have no value merge and do not count as loop-PHI coverage.

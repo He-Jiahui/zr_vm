@@ -1,6 +1,7 @@
 #include "compiler_internal.h"
 #include "compiler_semantic_ir_scalar_scratch_internal.h"
 #include "compiler_semantic_compare.h"
+#include "compiler_semantic_scalar_result.h"
 
 SZrCompilerSemanticIrSlot *compiler_semantic_ir_find_slot(
         SZrCompilerState *cs,
@@ -1563,6 +1564,7 @@ TZrBool compiler_semantic_ir_register_local(SZrCompilerState *cs,
     const SZrCompilerSemanticIrSlot *priorSlot;
     const SZrParserPlace *priorPlace = ZR_NULL;
     TZrValueId priorTemporaryValueId = ZR_VALUE_ID_INVALID;
+    TZrValueId reusableInitializerValueId = ZR_VALUE_ID_INVALID;
     TZrTypeId localTypeId;
     SZrSemanticContiguousViewFact priorViewFact;
     const SZrSemanticContiguousViewFact *priorViewFactRef;
@@ -1601,6 +1603,10 @@ TZrBool compiler_semantic_ir_register_local(SZrCompilerState *cs,
         /* The declaration remains visible to the legacy compiler, but no
          * executable SemanticIR local can be formed without a source type. */
         return ZR_TRUE;
+    }
+    if (initialized) {
+        reusableInitializerValueId = compiler_semantic_scalar_result_initializer_value(
+                cs, priorSlot, localTypeId);
     }
     priorViewFactRef = compiler_semantic_ir_contiguous_view_fact_for_slot(
             cs, stackSlot, sourceRange);
@@ -1647,14 +1653,17 @@ TZrBool compiler_semantic_ir_register_local(SZrCompilerState *cs,
         return ZR_TRUE;
     }
 
-    slot.valueId = ZrParser_SemanticIr_AddValue(
-            &cs->preSemanticIr, slot.typeId, sourceRange);
+    slot.valueId = reusableInitializerValueId != ZR_VALUE_ID_INVALID
+            ? reusableInitializerValueId
+            : ZrParser_SemanticIr_AddValue(
+                      &cs->preSemanticIr, slot.typeId, sourceRange);
     if (slot.valueId == ZR_VALUE_ID_INVALID) {
         return ZR_FALSE;
     }
     *(SZrCompilerSemanticIrSlot *)ZrCore_Array_Get(
             &cs->preSemanticIrSlots, cs->preSemanticIrSlots.length - 1U) = slot;
-    if (priorTemporaryValueId != ZR_VALUE_ID_INVALID) {
+    if (priorTemporaryValueId != ZR_VALUE_ID_INVALID &&
+        reusableInitializerValueId == ZR_VALUE_ID_INVALID) {
         const SZrSemanticIrValue *priorValue = ZrParser_SemanticIr_Value(
                 &cs->preSemanticIr, priorTemporaryValueId);
         memset(&spec, 0, sizeof(spec));
@@ -1970,7 +1979,12 @@ TZrBool compiler_semantic_ir_lower_load(SZrCompilerState *cs,
                                         TZrUInt32 resultSlot,
                                         SZrFileRange sourceRange) {
     const SZrSemanticIrInstruction *instruction;
+    const SZrCompilerSemanticIrSlot *sourceSlot;
     EZrInstructionCode opcode;
+    TZrTypeId typeId;
+    TZrPlaceId sourcePlaceId;
+    TZrValueId resultValueId;
+    EZrCompilerSemanticScalarResult binding;
 
     if (cs != ZR_NULL && cs->preSemanticIrCfgTerminated) {
         emit_instruction(
@@ -2000,9 +2014,23 @@ TZrBool compiler_semantic_ir_lower_load(SZrCompilerState *cs,
     if (opcode != ZR_INSTRUCTION_ENUM(GET_STACK)) {
         return ZR_FALSE;
     }
-    if (compiler_semantic_ir_add_temporary_slot(
-                cs, resultSlot, sourceRange,
-                instruction->resultValueId) == ZR_NULL) {
+    sourceSlot = compiler_semantic_ir_find_slot(cs, stackSlot);
+    if (sourceSlot == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    /* Keep IDs, rather than array pointers, across result binding. */
+    typeId = sourceSlot->typeId;
+    sourcePlaceId = instruction->placeId;
+    resultValueId = instruction->resultValueId;
+    binding = compiler_semantic_scalar_result_bind_load(
+            cs, stackSlot, resultSlot, typeId, sourcePlaceId,
+            resultValueId, sourceRange);
+    if (binding == ZR_COMPILER_SEMANTIC_SCALAR_RESULT_FAILED) {
+        return ZR_FALSE;
+    }
+    if (binding == ZR_COMPILER_SEMANTIC_SCALAR_RESULT_NOT_APPLICABLE &&
+        compiler_semantic_ir_add_temporary_slot(
+                cs, resultSlot, sourceRange, resultValueId) == ZR_NULL) {
         return ZR_FALSE;
     }
     if (!compiler_semantic_ir_propagate_contiguous_view(
@@ -2033,6 +2061,8 @@ TZrBool compiler_semantic_ir_lower_literal(SZrCompilerState *cs,
     TZrValueId valueId;
     EZrInstructionCode opcode;
     SZrCompilerSemanticIrSlot *literalSlot;
+    TZrPlaceId literalPlaceId = ZR_PLACE_ID_INVALID;
+    EZrCompilerSemanticScalarResult binding;
 
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
         !cs->preSemanticIrInitialized ||
@@ -2077,17 +2107,27 @@ TZrBool compiler_semantic_ir_lower_literal(SZrCompilerState *cs,
     if (opcode != ZR_INSTRUCTION_ENUM(GET_CONSTANT)) {
         return ZR_FALSE;
     }
-    literalSlot = compiler_semantic_ir_add_temporary_slot(
-            cs, resultSlot, sourceRange, valueId);
-    if (literalSlot == ZR_NULL) {
+    binding = compiler_semantic_scalar_result_bind_literal(
+            cs, resultSlot, typeId, valueId, constantPoolIndex, valueType, sourceRange);
+    if (binding == ZR_COMPILER_SEMANTIC_SCALAR_RESULT_FAILED) {
         return ZR_FALSE;
+    }
+    if (binding == ZR_COMPILER_SEMANTIC_SCALAR_RESULT_NOT_APPLICABLE) {
+        literalSlot = compiler_semantic_ir_add_temporary_slot(
+                cs, resultSlot, sourceRange, valueId);
+        if (literalSlot == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        literalPlaceId = literalSlot->placeId;
     }
     emit_instruction(cs, create_instruction_1(
             opcode, (TZrUInt16)resultSlot, (TZrInt32)constantPoolIndex));
     /* Proof metadata is optional. Unsupported or unrecordable literals keep
      * their ordinary memory-backed PLACE_BASE/INITIALIZE representation. */
-    (void)compiler_semantic_ir_record_literal_scalar_scratch_proof(
-            cs, literalSlot->placeId, valueId, valueType);
+    if (binding == ZR_COMPILER_SEMANTIC_SCALAR_RESULT_NOT_APPLICABLE) {
+        (void)compiler_semantic_ir_record_literal_scalar_scratch_proof(
+                cs, literalPlaceId, valueId, valueType);
+    }
     return ZR_TRUE;
 }
 
@@ -2183,6 +2223,7 @@ TZrBool compiler_semantic_ir_transfer_expression_result(
     const SZrCompilerSemanticIrSlot *destination;
     const SZrParserPlace *destinationPlace;
     TZrValueId valueId;
+    EZrCompilerSemanticScalarResult binding;
 
     if (cs == ZR_NULL) {
         return ZR_FALSE;
@@ -2210,6 +2251,10 @@ TZrBool compiler_semantic_ir_transfer_expression_result(
             return ZR_TRUE;
         }
     }
+    binding = compiler_semantic_scalar_result_transfer(
+            cs, sourceSlot, destinationSlot, sourceRange);
+    if (binding != ZR_COMPILER_SEMANTIC_SCALAR_RESULT_NOT_APPLICABLE)
+        return (TZrBool)(binding == ZR_COMPILER_SEMANTIC_SCALAR_RESULT_BOUND);
     /* A recycled temporary slot must name this expression, not its prior user. */
     return (TZrBool)(compiler_semantic_ir_add_temporary_slot(
             cs, destinationSlot, sourceRange, valueId) != ZR_NULL);

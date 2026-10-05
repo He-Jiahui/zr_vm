@@ -1,6 +1,7 @@
 #include "compiler_internal.h"
 #include "compiler_semantic_cfg_loop.h"
 #include "compiler_semantic_compare.h"
+#include "compiler_semantic_scalar_expression.h"
 
 /* The source compiler owns block boundaries: ExecBC jump offsets never enter
  * this graph.  The first source control boundary promotes the current
@@ -484,9 +485,16 @@ TZrBool compiler_semantic_cfg_begin_while(SZrCompilerState *cs,
     if (cs->preSemanticIrCfgTerminated) {
         return ZR_FALSE;
     }
-    if (!compiler_semantic_cfg_loop_condition_is_supported(
-                node->data.whileLoop.cond) ||
-        !compiler_semantic_cfg_while_body_is_supported(node->data.whileLoop.block)) {
+    if (!(compiler_semantic_cfg_loop_condition_is_supported(
+                  node->data.whileLoop.cond) ||
+          (compiler_semantic_compare_source_supported(node->data.whileLoop.cond) &&
+           compiler_semantic_scalar_expression_typed(
+                   cs, node->data.whileLoop.cond->data.binaryExpression.left) &&
+           compiler_semantic_scalar_expression_typed(
+                   cs, node->data.whileLoop.cond->data.binaryExpression.right))) ||
+        !((compiler_semantic_cfg_loop_condition_is_supported(node->data.whileLoop.cond) &&
+           compiler_semantic_cfg_while_body_is_supported(node->data.whileLoop.block)) ||
+          compiler_semantic_scalar_while_body_supported(cs, node->data.whileLoop.block))) {
         if (cs->preSemanticIrCfgActive && !compiler_semantic_cfg_abandon(cs)) {
             return ZR_FALSE;
         }
@@ -705,6 +713,11 @@ TZrBool compiler_semantic_cfg_branch_while(SZrCompilerState *cs,
         return ZR_FALSE;
     }
     condition = compiler_semantic_ir_slot_value(cs, conditionSlot);
+    if (node->type == ZR_AST_WHILE_LOOP &&
+        compiler_semantic_compare_source_supported(node->data.whileLoop.cond) &&
+        !compiler_semantic_compare_condition_valid(cs, node->data.whileLoop.cond,
+                ZrParser_SemanticIr_Value(&cs->preSemanticIr, condition)))
+        return ZR_FALSE;
     if (condition == ZR_VALUE_ID_INVALID ||
         !compiler_semantic_cfg_emit_branch(
                 cs, bodyBlock, condition, node->location) ||
