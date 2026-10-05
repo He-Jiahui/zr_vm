@@ -233,6 +233,7 @@ foreach (_zr_guard_target IN ITEMS
         zr_vm_ssa_source_script_entry_identity_test
         zr_vm_ssa_source_range_identity_test
         zr_vm_ssa_dead_source_places_test
+        zr_vm_ssa_host_primitive_layout_test
         zr_vm_ssa_typed_binding_contract_test
         zr_vm_ssa_dominator_cfg_test)
     if (_zr_guard_target STREQUAL "zr_vm_ssa_source_straight_line_cfg_test")
@@ -249,6 +250,8 @@ foreach (_zr_guard_target IN ITEMS
         set(_zr_guard_source tests/parser/test_ssa_source_range_identity.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_dead_source_places_test")
         set(_zr_guard_source tests/parser/test_ssa_dead_source_places.c)
+    elseif (_zr_guard_target STREQUAL "zr_vm_ssa_host_primitive_layout_test")
+        set(_zr_guard_source tests/parser/test_ssa_host_primitive_layout.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_typed_binding_contract_test")
         set(_zr_guard_source tests/parser/test_ssa_typed_binding_contract_witness.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_dominator_cfg_test")
@@ -257,7 +260,8 @@ foreach (_zr_guard_target IN ITEMS
         set(_zr_guard_source tests/parser/test_ssa_source_callable_return.c)
     endif ()
     add_executable(${_zr_guard_target} "${ZR_SSA_SOURCE_ROOT}/${_zr_guard_source}")
-    if (_zr_guard_target STREQUAL "zr_vm_ssa_dead_source_places_test")
+    if (_zr_guard_target STREQUAL "zr_vm_ssa_dead_source_places_test" OR
+            _zr_guard_target STREQUAL "zr_vm_ssa_host_primitive_layout_test")
         target_sources(${_zr_guard_target} PRIVATE
                 "${ZR_SSA_SOURCE_ROOT}/tests/parser/support/ssa_literal_script_fixture.c")
     endif ()
@@ -310,6 +314,8 @@ add_test(NAME ssa_source_range_identity
         COMMAND zr_vm_ssa_source_range_identity_test)
 add_test(NAME ssa_dead_source_places
         COMMAND zr_vm_ssa_dead_source_places_test)
+add_test(NAME ssa_host_primitive_layout
+        COMMAND zr_vm_ssa_host_primitive_layout_test)
 add_test(NAME ssa_typed_binding_contract
         COMMAND zr_vm_ssa_typed_binding_contract_test)
 add_test(NAME ssa_dominator_cfg
@@ -327,6 +333,7 @@ set_tests_properties(ssa_source_straight_line_cfg exec_ir_scalar_scratch_eligibi
         ssa_source_script_entry_tokens ssa_source_callable_identity
         ssa_source_script_entry_identity ssa_source_range_identity
         ssa_dead_source_places
+        ssa_host_primitive_layout
         ssa_typed_binding_contract
         PROPERTIES LABELS "ssa;source-direct-validation" TIMEOUT 120
         ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
@@ -340,11 +347,14 @@ set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_l
         zr_vm_ssa_source_callable_identity_test
         zr_vm_ssa_source_script_entry_identity_test zr_vm_ssa_source_range_identity_test
         zr_vm_ssa_dead_source_places_test
+        zr_vm_ssa_host_primitive_layout_test
         zr_vm_ssa_typed_binding_contract_test)
 set(_zr_graph "target\tabsolute_source\tsha256\n")
-set(_zr_all_sources)
 set(_zr_settings "compiler\t${CMAKE_C_COMPILER}\ncompiler_id\t${CMAKE_C_COMPILER_ID}\ncompiler_version\t${CMAKE_C_COMPILER_VERSION}\narchive_tool\t${CMAKE_AR}\narchive_rule\t${CMAKE_C_CREATE_STATIC_LIBRARY}\nlink_rule\t${CMAKE_C_LINK_EXECUTABLE}\n")
 foreach (_target IN LISTS _zr_targets)
+    # A shared fixture is a valid source of several distinct targets. Reject
+    # duplicate membership within a target while recording every target pair.
+    set(_zr_target_sources)
     get_target_property(_sources ${_target} SOURCES)
     list(LENGTH _sources _count)
     string(APPEND _zr_settings "source_count\t${_target}\t${_count}\n")
@@ -357,10 +367,10 @@ foreach (_target IN LISTS _zr_targets)
     foreach (_source IN LISTS _sources)
         file(REAL_PATH "${_source}" _absolute)
         cmake_path(IS_PREFIX ZR_SSA_SOURCE_ROOT "${_absolute}" NORMALIZE _inside_checkout)
-        if (NOT _inside_checkout OR NOT EXISTS "${_absolute}" OR _absolute IN_LIST _zr_all_sources)
+        if (NOT _inside_checkout OR NOT EXISTS "${_absolute}" OR _absolute IN_LIST _zr_target_sources)
             message(FATAL_ERROR "Missing, duplicate or non-checkout source: ${_absolute}")
         endif ()
-        list(APPEND _zr_all_sources "${_absolute}")
+        list(APPEND _zr_target_sources "${_absolute}")
         file(SHA256 "${_absolute}" _hash)
         string(APPEND _zr_graph "${_target}\t${_absolute}\t${_hash}\n")
     endforeach ()
@@ -375,6 +385,7 @@ foreach (_header IN ITEMS
         tests/parser/ssa_source_execbc_vm_compare.inc
         tests/parser/support/ssa_literal_script_fixture.h
         zr_vm_parser/include/zr_vm_parser/exec_ir_dead_source_places.h
+        zr_vm_parser/include/zr_vm_parser/exec_ir_host_primitive_layout.h
         zr_vm_library/third_party/zr_miniz/miniz/miniz_export.h)
     file(SHA256 "${ZR_SSA_SOURCE_ROOT}/${_header}" _hash)
     string(APPEND _zr_header_hashes "${ZR_SSA_SOURCE_ROOT}/${_header}\t${_hash}\n")
