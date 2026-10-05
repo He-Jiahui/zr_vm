@@ -111,3 +111,25 @@ if (NOT TARGET zr_vm_ssa_source_range_identity_test)
     set_tests_properties(ssa_source_range_identity PROPERTIES
             LABELS "ssa" TIMEOUT 120)
 endif ()
+
+# Shared CoreExecIR compaction of proved inert source temporary places.
+if (NOT TARGET zr_vm_ssa_dead_source_places_test)
+    zr_vm_add_unity_test_target(zr_vm_ssa_dead_source_places_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_dead_source_places.c)
+    target_include_directories(zr_vm_ssa_dead_source_places_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/compiler
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir)
+    zr_vm_link_parser_core_plus_library(zr_vm_ssa_dead_source_places_test)
+    if (MSVC)
+        target_link_options(zr_vm_ssa_dead_source_places_test PRIVATE /STACK:8388608)
+    endif ()
+    add_test(NAME ssa_dead_source_places
+            COMMAND zr_vm_ssa_dead_source_places_test)
+    set_tests_properties(ssa_dead_source_places PROPERTIES
+            LABELS "ssa" TIMEOUT 120)
+endif ()

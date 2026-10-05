@@ -232,6 +232,7 @@ foreach (_zr_guard_target IN ITEMS
         zr_vm_ssa_source_callable_identity_test
         zr_vm_ssa_source_script_entry_identity_test
         zr_vm_ssa_source_range_identity_test
+        zr_vm_ssa_dead_source_places_test
         zr_vm_ssa_typed_binding_contract_test
         zr_vm_ssa_dominator_cfg_test)
     if (_zr_guard_target STREQUAL "zr_vm_ssa_source_straight_line_cfg_test")
@@ -246,6 +247,8 @@ foreach (_zr_guard_target IN ITEMS
         set(_zr_guard_source tests/parser/test_ssa_source_script_entry_identity.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_source_range_identity_test")
         set(_zr_guard_source tests/parser/test_ssa_source_range_identity.c)
+    elseif (_zr_guard_target STREQUAL "zr_vm_ssa_dead_source_places_test")
+        set(_zr_guard_source tests/parser/test_ssa_dead_source_places.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_typed_binding_contract_test")
         set(_zr_guard_source tests/parser/test_ssa_typed_binding_contract_witness.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_dominator_cfg_test")
@@ -301,6 +304,8 @@ add_test(NAME ssa_source_script_entry_identity
         COMMAND zr_vm_ssa_source_script_entry_identity_test)
 add_test(NAME ssa_source_range_identity
         COMMAND zr_vm_ssa_source_range_identity_test)
+add_test(NAME ssa_dead_source_places
+        COMMAND zr_vm_ssa_dead_source_places_test)
 add_test(NAME ssa_typed_binding_contract
         COMMAND zr_vm_ssa_typed_binding_contract_test)
 add_test(NAME ssa_dominator_cfg
@@ -317,6 +322,7 @@ set_tests_properties(ssa_source_straight_line_cfg exec_ir_scalar_scratch_eligibi
         ssa_source_callable_return
         ssa_source_script_entry_tokens ssa_source_callable_identity
         ssa_source_script_entry_identity ssa_source_range_identity
+        ssa_dead_source_places
         ssa_typed_binding_contract
         PROPERTIES LABELS "ssa;source-direct-validation" TIMEOUT 120
         ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
@@ -329,6 +335,7 @@ set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_l
         zr_vm_ssa_source_callable_return_test zr_vm_ssa_source_script_entry_tokens_test
         zr_vm_ssa_source_callable_identity_test
         zr_vm_ssa_source_script_entry_identity_test zr_vm_ssa_source_range_identity_test
+        zr_vm_ssa_dead_source_places_test
         zr_vm_ssa_typed_binding_contract_test)
 set(_zr_graph "target\tabsolute_source\tsha256\n")
 set(_zr_all_sources)
@@ -362,6 +369,7 @@ foreach (_header IN ITEMS
         tests/parser/ssa_source_execbc_vm_loop_phi.inc
         tests/parser/ssa_source_execbc_vm_scalar_guards.inc
         tests/parser/ssa_source_execbc_vm_compare.inc
+        zr_vm_parser/include/zr_vm_parser/exec_ir_dead_source_places.h
         zr_vm_library/third_party/zr_miniz/miniz/miniz_export.h)
     file(SHA256 "${ZR_SSA_SOURCE_ROOT}/${_header}" _hash)
     string(APPEND _zr_header_hashes "${ZR_SSA_SOURCE_ROOT}/${_header}\t${_hash}\n")
