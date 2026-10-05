@@ -196,9 +196,12 @@ static void test_required_arguments_and_zero_ids(void) {
 static void test_unknown_type_id(void) {
     SZrSsaLiteralScriptFixture *fixture = prepare(0u);
     SZrSemanticContext *context = fixture->compiler.semanticContext;
+    TZrTypeId unknownId;
     TEST_ASSERT_TRUE(context->canonicalTypes.length < UINT32_MAX);
-    assert_failure(context, (TZrTypeId)context->canonicalTypes.length + 1u,
-            1u, ZR_TRUE, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);
+    unknownId = (TZrTypeId)context->canonicalTypes.length + 1u;
+    TEST_ASSERT_NULL_MESSAGE(ZrParser_CanonicalType_Find(context, unknownId),
+            "PRECONDITION: derived ID is absent from the actual context");
+    assert_failure(context, unknownId, 1u, ZR_TRUE, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);
 }
 
 enum EArrayMutation { BAD_VALID, BAD_ELEMENT_SIZE, BAD_LENGTH, BAD_HEAD,

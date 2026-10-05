@@ -5,6 +5,8 @@ related_code:
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_parser/include/zr_vm_parser/exec_ir_dead_source_places.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_dead_source_places.c
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_host_primitive_layout.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_host_primitive_layout.c
 implementation_files:
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
   - zr_vm_core/src/zr_vm_core/execution/execution_inline_frame.c
@@ -21,6 +23,8 @@ tests:
   - tests/parser/test_ssa_dead_source_places.c
   - tests/parser/ssa_dead_source_places_edges.inc
   - docs/acceptance/ssa-dead-source-places.md
+  - tests/parser/test_ssa_host_primitive_layout.c
+  - docs/acceptance/ssa-host-primitive-layout.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -57,6 +61,17 @@ layout rows；宿主 sizeof/alignof 只可作为明示 host-only adapter。初�
 全函数重叠 lifetime、不复用槽，验证 geometry/mapping/hash 后事务附着。
 空 state-map header 没有 layoutHash 字段，必须保留真实身份。
 此有限前置不关闭 M2，不证明 native artifact retention 或全平台 ABI；SSA47 OPEN。
+
+有限[host primitive layout adapter](../../../parser-and-semantics/ssa-host-primitive-layout.md)
+按当前 host 的实际 canonical i64 `sizeof/alignof` 生产独立 layout row；
+以31-byte domain加32-byte明确LE字段构成63-byte Stable64输入，排除本地
+TypeId、layoutId、context地址、salt/time。它不附frame、不追加module行；
+caller检查count+1后实际AppendLayout。当前行为验证见
+[独立验收记录](../../../acceptance/ssa-host-primitive-layout.md)：实际source前置2/2
+及compaction30/30后，stub的host15例12失败建立行为RED；实际实现GREEN通过
+host15/15及compaction30/30，独立source前置2/2，MSVC仅新TU编译通过且有C4127。
+既有packed-frame hash不含该row hash，后续AOT必须保留并消费真实layout table。
+完整ABI、source provenance、frame/native/artifact retention与SSA47仍OPEN。
 
 现有 function_frame_place、execution_inline_frame 已支持布局快路；测试 test_frame_slot_layout_lookup.c 正被其他任务修改，实施前核对 HEAD，避免覆盖。
 
