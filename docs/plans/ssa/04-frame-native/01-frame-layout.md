@@ -7,6 +7,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_dead_source_places.c
   - zr_vm_parser/include/zr_vm_parser/exec_ir_host_primitive_layout.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_host_primitive_layout.c
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_source_frame.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame.c
 implementation_files:
   - zr_vm_core/src/zr_vm_core/function_frame_place.c
   - zr_vm_core/src/zr_vm_core/execution/execution_inline_frame.c
@@ -25,6 +27,8 @@ tests:
   - docs/acceptance/ssa-dead-source-places.md
   - tests/parser/test_ssa_host_primitive_layout.c
   - docs/acceptance/ssa-host-primitive-layout.md
+  - tests/parser/test_ssa_primitive_source_frame.c
+  - docs/acceptance/ssa-primitive-source-frame.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -72,6 +76,20 @@ caller检查count+1后实际AppendLayout。当前行为验证见
 host15/15及compaction30/30，独立source前置2/2，MSVC仅新TU编译通过且有C4127。
 既有packed-frame hash不含该row hash，后续AOT必须保留并消费真实layout table。
 完整ABI、source provenance、frame/native/artifact retention与SSA47仍OPEN。
+
+后续有限[primitive source frame](../../../parser-and-semantics/ssa-primitive-source-frame.md)
+使用显式row geometry与全instruction lifetime的SCALAR请求，不复用槽，参数/
+return buffer为0。输入数学storage检查后先CoreVERIFY_ALL、再SEALED/admission；
+候选mapping/三counts/geometry及borrowed-view验证后只事务发布frame与
+contract.layoutHash，保留empty state-map原pointer/header（没有layoutHash字段）。
+接口不独立证明originalsource/context/callable，实际fixture携SemIR.callableTypeId
+与同output/constants/layouttable到canonical AOT，NOARGS_I64且runnable=false。
+行为门禁状态见[验收记录](../../../acceptance/ssa-primitive-source-frame.md)，
+RED已在真实2/2前置及host15/compaction30通过后以18例9失败建立；当前GREEN19例
+全通过（新增Core-valid definition0拒绝），host15/compaction30及独立2/2也通过，
+新TU MSVC仅编译exit0。原始source/context/callable不由Attach独立认证；storage
+preflight后逻辑Core错误保持精确diagnostic。framehash仅现有geometry，非ABI证书；
+完整M2、native/retention/SSA47保持OPEN。
 
 现有 function_frame_place、execution_inline_frame 已支持布局快路；测试 test_frame_slot_layout_lookup.c 正被其他任务修改，实施前核对 HEAD，避免覆盖。
 

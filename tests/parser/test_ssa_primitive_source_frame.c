@@ -365,6 +365,30 @@ static void test_missing_row(void) {
             ZR_NULL, 0u, 0u), ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
 }
 
+static void test_core_valid_missing_definition_unsupported(void) {
+    TZrExecIrValueId valueId;
+    TZrExecIrInstructionId savedDefinition;
+    SZrExecIrDiagnostic diagnostic = {0};
+    TZrBool valid;
+    SRefusalObservation observation;
+    prepare_guard();
+    TEST_ASSERT_EQUAL_UINT16(ZR_EXEC_IR_OPCODE_CONSTANT, g_mutated.instructions[0].opcode);
+    TEST_ASSERT_EQUAL_UINT32(1u, g_mutated.instructions[0].results.count);
+    valueId = g_mutated.resultPool[g_mutated.instructions[0].results.offset];
+    TEST_ASSERT_TRUE(valueId > 0u && valueId <= g_mutated.valueCount);
+    savedDefinition = g_mutated.values[valueId - 1u].definition;
+    TEST_ASSERT_NOT_EQUAL_UINT32(0u, savedDefinition);
+    g_mutated.values[valueId - 1u].definition = 0u;
+    valid = ZrCore_ExecIr_VerifyFunction(&g_mutated, ZR_EXEC_IR_VERIFY_ALL, &diagnostic);
+    observation = refuse(&g_mutated);
+    g_mutated.values[valueId - 1u].definition = savedDefinition;
+    TEST_ASSERT_TRUE_MESSAGE(valid, "PRECONDITION: ordinary result with missing definition is Core VERIFY_ALL-valid");
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
+    TEST_ASSERT_EQUAL_UINT32(0u, g_mutated.values[valueId - 1u].flags);
+    TEST_ASSERT_EQUAL_UINT32(actual_return_type(), g_mutated.values[valueId - 1u].typeToken);
+    assert_refusal(observation, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
+}
+
 static void test_duplicate_actual_type_row(void) {
     SZrExecIrRange range;
     SZrExecIrLayout row;
@@ -509,6 +533,7 @@ int main(int argc, char **argv) {
         RUN_TEST(test_original_address_unsupported);
         RUN_TEST(test_core_valid_external_unsupported);
         RUN_TEST(test_missing_row);
+        RUN_TEST(test_core_valid_missing_definition_unsupported);
         RUN_TEST(test_duplicate_actual_type_row);
         RUN_TEST(test_invalid_row_fields);
         RUN_TEST(test_frame_limit);

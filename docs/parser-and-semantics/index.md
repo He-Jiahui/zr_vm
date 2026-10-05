@@ -59,6 +59,9 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_dead_source_places.c
   - zr_vm_parser/include/zr_vm_parser/exec_ir_host_primitive_layout.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_host_primitive_layout.c
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_source_frame.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame.c
+  - tests/parser/test_ssa_primitive_source_frame.c
   - tests/parser/test_ssa_host_primitive_layout.c
   - tests/parser/test_ssa_dead_source_places.c
   - tests/parser/ssa_dead_source_places_edges.inc
@@ -388,6 +391,9 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
 - [ssa-host-primitive-layout.md](ssa-host-primitive-layout.md)
   - actual canonical i64 host storage row and explicit 63-byte stable hash contract
   - focused Windows host15/15 and compaction30/30 GREEN; frame and target ABI remain separate gates
+- [ssa-primitive-source-frame.md](ssa-primitive-source-frame.md)
+  - explicit-row whole-lifetime primitive frame and transactional attachment contract
+  - actual source/canonical AOT fixture; focused Windows 19-case GREEN, native/retention OPEN
 - `execbc-vm-canonical-types.md`
   - canonical primitive type resolution for scalar ExecBC VM materialization
   - immutable projection views, compare tags and structured type rejection
