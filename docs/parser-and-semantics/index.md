@@ -1,5 +1,6 @@
 ---
 related_code:
+  - docs/parser-and-semantics/ssa-source-module-contract.md
   - docs/parser-and-semantics/ssa-host-aot-target.md
   - docs/parser-and-semantics/template-literal-source-range.md
   - docs/parser-and-semantics/ssa-multiline-token-coordinates.md
@@ -108,6 +109,8 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
 implementation_files:
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_source_module_contract.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_module_contract.c
   - zr_vm_parser/include/zr_vm_parser/exec_ir_host_aot_target.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_host_aot_target.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_literals.c
@@ -189,6 +192,7 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
   - zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c
 plan_sources:
+  - .codex/plans/20261006-ssa-source-module-contract.md
   - .codex/plans/20261005-ssa-host-aot-target.md
   - .codex/plans/20261005-ssa-template-ast-ranges.md
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
@@ -211,6 +215,8 @@ plan_sources:
   - docs/plans/lsp/03-lsp-robustness-and-position.md
   - docs/plans/lsp/05-implementation-blueprint.md
 tests:
+  - tests/parser/test_ssa_source_aot_descriptor.c
+  - tests/acceptance/ssa-source-aot-descriptor.md
   - tests/parser/test_ssa_host_noargs_i64_aot_target.c
   - tests/acceptance/ssa-host-aot-target.md
   - tests/parser/test_template_literal_source_range.c
@@ -680,3 +686,8 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
   - Current-host no-argument INT64 target, canonical callable and host-row witness
   - Frozen 52/88-byte restricted ABI schema; actual RED then finite 48-case GREEN
   - [Acceptance](../acceptance/ssa-host-aot-target.md) and [test guide](../../tests/acceptance/ssa-host-aot-target.md)
+
+- [ssa-source-module-contract.md](ssa-source-module-contract.md)
+  - Original source module contract binding before compaction; descriptor borrowed-owner lifetime
+  - Committed actual RED; finite 55-case GREEN and two-TU MSVC compile-only proof
+  - [Acceptance](../acceptance/ssa-source-aot-descriptor.md) and [test guide](../../tests/acceptance/ssa-source-aot-descriptor.md)

@@ -18,6 +18,6 @@ TZrBool compiler_script_entry_metadata_emit(SZrCompilerState *cs, const SZrFunct
         TZrUInt32 recordCount, TZrUInt32 *recordIndex, TZrByte *heap, TZrSize heapLength,
         TZrSize *heapOffset, TZrUInt32 memberRid, TZrUInt32 *signatureRid,
         const SZrMetadataStringHeapEntry *strings, TZrUInt32 stringCount);
-TZrUInt64 compiler_script_entry_metadata_hash(SZrCompilerState *cs, const SZrFunction *function);
+TZrUInt64 compiler_script_entry_metadata_hash(const SZrCompilerState *cs, const SZrFunction *function);
 
 #endif

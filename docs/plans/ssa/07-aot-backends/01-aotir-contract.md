@@ -1,5 +1,7 @@
 ---
 related_code:
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_source_module_contract.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_module_contract.c
   - zr_vm_parser/include/zr_vm_parser/exec_ir_host_aot_target.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_host_aot_target.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h
@@ -13,10 +15,12 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_lowering.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_adapter.c
 plan_sources:
+  - .codex/plans/20261006-ssa-source-module-contract.md
   - .codex/plans/20261005-ssa-host-aot-target.md
   - docs/plans/ssa/index.md
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
 tests:
+  - tests/parser/test_ssa_source_aot_descriptor.c
   - tests/parser/test_ssa_host_noargs_i64_aot_target.c
   - tests/parser/test_ssa_aotir_contract.c
   - tests/parser/test_aot_c_frame_setup_contracts.c
@@ -174,3 +178,16 @@ assert architectural dependency check rejects that path
 现有 AOT 源码已编进 parser，这里是语义输入迁移，不是重新启动 AOT 项目。避免为方便 include 使 core 依赖 zr_vm_aot 私有目录。
 
 本任务的 acceptance 至少附上：上述断言对应的测试名称、实际执行后端/平台、失败注入位置、verifier 输入/输出摘要，以及涉及所有权时的分配/释放或 lease 平衡。新增入口的 OOM、取消、重复调用和部分初始化退出应有明确处理；不适用的状态写明原因。
+
+## 有限 source module contract / descriptor 后继（有限功能 gate 与两 TU 编译 GREEN）
+
+[真实 source module contract](../../../parser-and-semantics/ssa-source-module-contract.md)
+在 original Prepare/BuildModule 之后、compaction 之前绑定真实模块合同，
+使现有 descriptor builder 消费同一 source/canonical/module 元数据。
+[验收](../../../acceptance/ssa-source-aot-descriptor.md)与
+[测试指南](../../../../tests/acceptance/ssa-source-aot-descriptor.md)记录实际已提交 RED 与 r2 四套55例功能 GREEN；两 TU MSVC 仅编译检查退出0、零警告；完整 MSVC 矩阵仍 OPEN。
+SCRIPT ABI、MODULE blob 与 canonical callable 三种 hash 不互换；module layoutHash
+零明确表示缺席，generation 来自 actual Core entry，而非 source version/runtime generation。
+借用 descriptor 不延长 projection owner 生命周期；projection.runnable 保持 false。
+本有限前置不关闭 real-frame scalar emitter、native execution、normal returned retention、
+Linux、完整 MSVC、完整47，也不勾选本计划任何迁移门禁；status 仍为 planned。

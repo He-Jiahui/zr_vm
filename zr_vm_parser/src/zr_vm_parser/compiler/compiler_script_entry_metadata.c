@@ -104,7 +104,7 @@ TZrBool compiler_script_entry_metadata_emit(SZrCompilerState *cs, const SZrFunct
 
 /* Versioned entry ABI domain: key byte length + exact bytes, absent version,
  * METHOD_SIG byte length + complete bytes. No tokens or legacy hash guesses. */
-TZrUInt64 compiler_script_entry_metadata_hash(SZrCompilerState *cs, const SZrFunction *function) {
+TZrUInt64 compiler_script_entry_metadata_hash(const SZrCompilerState *cs, const SZrFunction *function) {
     static const TZrByte prefix[] = "zr.md.script.entry.v1";
     const SZrMetadataTokenRecord *entry = ZR_NULL;
     TZrSize keyLength, length, offset = 0U;

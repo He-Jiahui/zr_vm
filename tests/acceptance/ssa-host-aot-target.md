@@ -104,3 +104,12 @@ The independent encoder consumes 52 triple bytes and 88 ABI bytes (the fixed
 triple itself is 22 bytes). MSVC /c passed the new TU with zero warnings.
 The aggregate r2 driver exit was not observed after interruption; phase exits
 and naturally terminal MSVC evidence are recorded separately in acceptance.
+
+## Separate source module contract and descriptor successor
+
+Host target GREEN completed at `6bdedf45c1b202cd1f2c1f4164bc0c235611fc46`.
+Its original proof above remains frozen. The independent
+[source module contract and descriptor gate](ssa-source-aot-descriptor.md)
+binds the actual original module before compaction; actual RED is committed
+and r2 functional 55-case GREEN passed. Both changed TUs passed MSVC compile-only checks; full matrix remains OPEN. A valid target record does not prove
+module binding, borrowed descriptor lifetime, native execution or retention.

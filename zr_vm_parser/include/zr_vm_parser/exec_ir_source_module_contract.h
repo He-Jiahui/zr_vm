@@ -6,9 +6,8 @@
 
 /**
  * @par Summary
- * 冻结的有限 source module contract producer API；当前实现为 feature RED stub，
- * 仅返回 UNSUPPORTED，以下合同描述待实现的 GREEN 行为，不能视为已交付能力。
- * GREEN 将从真实 finalized SCRIPT metadata 和同一编译快照的 single-entry
+ * 有限 source module contract producer，从真实 finalized SCRIPT metadata
+ * 和同一编译快照的 single-entry
  * BuildModule 结果验证并发布模块身份，不产生 module layout 或 AOT descriptor。
  *
  * @par Parameters
@@ -24,13 +23,12 @@
  * SZrExecIrDiagnostic。入口清零；只有确认真实 entry 身份后才填 functionToken。
  *
  * @par Returns
- * GREEN：ZR_TRUE 表示 module.contract 与唯一原 function.contract.moduleHash
+ * ZR_TRUE 表示 module.contract 与唯一原 function.contract.moduleHash
  * 已在全部校验通过后发布，重复调用幂等；成功 diagnostic 的全部字节为零。
  * ZR_FALSE 表示拒绝，整个 compiler、源函数、module 及所有可达 owner 存储
- * 保持不变。RED stub：忽略 compiler/module，不读非空输入，不写 module，
- * 清零可选 diagnostic 并设置 ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED，返回 ZR_FALSE。
+ * 保持不变。
  *
- * GREEN 诊断映射：NULL compiler/module 为 INVALID_ARGUMENT；不支持源资格为
+ * 诊断映射：NULL compiler/module 为 INVALID_ARGUMENT；不支持源资格为
  * ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED；record/blob/container 的数值范围错误为
  * ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE；MODULE token/hash/binding/唯一性矛盾为
  * MODULE_MISMATCH；entry target 为 TARGET_MISMATCH；canonical/signature/blob/
@@ -55,7 +53,7 @@
  * 检查不能证明任意指针可读，也不能证明混合快照来自同一次编译；调用者提供
  * 真实来源，producer 验证当前存储的一致性。
  *
- * GREEN 先验证容器形状、乘积/跨度与 Blob 范围，再查唯一真实 MODULE/SIGNATURE
+ * 先验证容器形状、乘积/跨度与 Blob 范围，再查唯一真实 MODULE/SIGNATURE
  * 和 SCRIPT_ENTRY MEMBER_DEF/SIGNATURE 配对，使用现有 ValidateSignatureBlob
  * 与 metadata_signature_hash_v1 重算两类 Blob 的实际哈希。源函数
  * moduleSignatureHash 使用现有 compiler_script_entry_metadata_hash 独立重算；
@@ -71,6 +69,9 @@
  * producer 可为既有 entry ABI hash helper 暂时分配并释放内存，不保留指针，
  * 不转移 owner，不延长 compiler/module 生命周期。只在全部检查结束后写两个
  * 合同目标；失败路径没有输入补丁。frame/projection producer 独立负责其证据。
+ * 临时分配正常调用现有 global allocator；分配器自身账本可能变化，输入 owner
+ * 不变不承诺任意分配回调内部状态逐字节不变。此 API 不回放编译或验证函数体
+ * 与源 IR 等价；真实 Prepare/Finalize/BuildModule 来源由调用者保证。
  *
  * @par References
  * exec_ir_builder.h: ZrParser_ExecIr_BuildModule；execution_contract.h:
