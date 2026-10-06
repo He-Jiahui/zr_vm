@@ -237,6 +237,26 @@ zr_ssa_source_apply_c_settings(ssa_source_primitive_frame_oom_object)
 target_compile_options(ssa_source_primitive_frame_oom_object PRIVATE
         "/FI${ZR_SSA_SOURCE_ROOT}/tests/parser/support/ssa_primitive_source_frame_oom_shim.h")
 
+# Compile the existing buffer-only scalar emitters from their actual checkout.
+set(_zr_scalar_backend "${ZR_SSA_SOURCE_ROOT}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot")
+add_library(ssa_source_aot_scalar_text_support STATIC
+        "${_zr_scalar_backend}/backend_aot_ir_scalar_text.c"
+        "${_zr_scalar_backend}/backend_aot_ir_scalar_c.c"
+        "${_zr_scalar_backend}/backend_aot_ir_scalar_llvm.c"
+        "${_zr_scalar_backend}/backend_aot_ir_scalar_arithmetic.c"
+        "${_zr_scalar_backend}/backend_aot_ir_scalar_conditional.c")
+target_include_directories(ssa_source_aot_scalar_text_support PRIVATE
+        ${_zr_public_includes} ${_zr_vendor_includes})
+target_compile_definitions(ssa_source_aot_scalar_text_support PRIVATE
+        ZR_CURRENT_MODULE="zr_vm_parser"
+        ZR_LIBRARY_TYPE_STATIC=1 ZR_PLATFORM_WIN=1 ZR_PLATFORM_WIN_USE_MSVC=1
+        ZR_DEBUG=1 _CRT_SECURE_NO_WARNINGS
+        ZR_VM_COMPILER_VERSION="${CMAKE_C_COMPILER_ID}-${CMAKE_C_COMPILER_VERSION}")
+zr_ssa_source_apply_c_settings(ssa_source_aot_scalar_text_support)
+set(_zr_scalar_targets zr_vm_ssa_source_aot_scalar_text_test
+        zr_vm_ssa_aot_scalar_text_test zr_vm_ssa_aot_scalar_arithmetic_test
+        zr_vm_ssa_aot_scalar_conditional_test)
+
 # These existing fixtures exercise producer fallback and the unchanged scratch
 # eligibility guards affected by scalar value binding.
 foreach (_zr_guard_target IN ITEMS
@@ -253,6 +273,7 @@ foreach (_zr_guard_target IN ITEMS
         zr_vm_ssa_host_primitive_layout_test
         zr_vm_ssa_host_noargs_i64_aot_target_test
         zr_vm_ssa_source_aot_descriptor_test
+        ${_zr_scalar_targets}
         zr_vm_ssa_primitive_source_frame_test
         zr_vm_ssa_primitive_source_frame_storage_test
         zr_vm_ssa_primitive_source_frame_oom_test
@@ -282,6 +303,14 @@ foreach (_zr_guard_target IN ITEMS
         set(_zr_guard_source tests/parser/test_ssa_host_noargs_i64_aot_target.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_source_aot_descriptor_test")
         set(_zr_guard_source tests/parser/test_ssa_source_aot_descriptor.c)
+    elseif (_zr_guard_target STREQUAL "zr_vm_ssa_source_aot_scalar_text_test")
+        set(_zr_guard_source tests/parser/test_ssa_source_aot_scalar_text.c)
+    elseif (_zr_guard_target STREQUAL "zr_vm_ssa_aot_scalar_text_test")
+        set(_zr_guard_source tests/parser/test_ssa_aot_scalar_text.c)
+    elseif (_zr_guard_target STREQUAL "zr_vm_ssa_aot_scalar_arithmetic_test")
+        set(_zr_guard_source tests/parser/test_ssa_aot_scalar_arithmetic.c)
+    elseif (_zr_guard_target STREQUAL "zr_vm_ssa_aot_scalar_conditional_test")
+        set(_zr_guard_source tests/parser/test_ssa_aot_scalar_conditional.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_primitive_source_frame_test")
         set(_zr_guard_source tests/parser/test_ssa_primitive_source_frame.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_primitive_source_frame_storage_test")
@@ -300,6 +329,7 @@ foreach (_zr_guard_target IN ITEMS
             _zr_guard_target STREQUAL "zr_vm_ssa_host_primitive_layout_test" OR
             _zr_guard_target STREQUAL "zr_vm_ssa_host_noargs_i64_aot_target_test" OR
             _zr_guard_target STREQUAL "zr_vm_ssa_source_aot_descriptor_test" OR
+            _zr_guard_target STREQUAL "zr_vm_ssa_source_aot_scalar_text_test" OR
             _zr_guard_target STREQUAL "zr_vm_ssa_primitive_source_frame_test" OR
             _zr_guard_target STREQUAL "zr_vm_ssa_primitive_source_frame_storage_test" OR
             _zr_guard_target STREQUAL "zr_vm_ssa_primitive_source_frame_oom_test")
@@ -324,6 +354,10 @@ foreach (_zr_guard_target IN ITEMS
         target_link_libraries(${_zr_guard_target} PRIVATE ssa_source_primitive_frame_oom_object)
         target_link_options(${_zr_guard_target} PRIVATE /VERBOSE:LIB
                 "/MAP:${CMAKE_BINARY_DIR}/ssa-primitive-source-frame-oom-link.map")
+    endif ()
+    if (_zr_guard_target IN_LIST _zr_scalar_targets)
+        target_include_directories(${_zr_guard_target} PRIVATE "${_zr_scalar_backend}")
+        target_link_libraries(${_zr_guard_target} PRIVATE ssa_source_aot_scalar_text_support)
     endif ()
     target_link_libraries(${_zr_guard_target} PRIVATE
             ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_library
@@ -370,6 +404,11 @@ add_test(NAME ssa_host_noargs_i64_aot_target
         COMMAND zr_vm_ssa_host_noargs_i64_aot_target_test)
 add_test(NAME ssa_source_aot_descriptor
         COMMAND zr_vm_ssa_source_aot_descriptor_test)
+add_test(NAME ssa_source_aot_scalar_text
+        COMMAND zr_vm_ssa_source_aot_scalar_text_test)
+add_test(NAME ssa_aot_scalar_text COMMAND zr_vm_ssa_aot_scalar_text_test)
+add_test(NAME ssa_aot_scalar_arithmetic COMMAND zr_vm_ssa_aot_scalar_arithmetic_test)
+add_test(NAME ssa_aot_scalar_conditional COMMAND zr_vm_ssa_aot_scalar_conditional_test)
 add_test(NAME ssa_primitive_source_frame
         COMMAND zr_vm_ssa_primitive_source_frame_test)
 add_test(NAME ssa_primitive_source_frame_storage
@@ -397,6 +436,8 @@ set_tests_properties(ssa_source_straight_line_cfg exec_ir_scalar_scratch_eligibi
         ssa_host_primitive_layout
         ssa_host_noargs_i64_aot_target
         ssa_source_aot_descriptor
+        ssa_source_aot_scalar_text ssa_aot_scalar_text
+        ssa_aot_scalar_arithmetic ssa_aot_scalar_conditional
         ssa_primitive_source_frame
         ssa_primitive_source_frame_storage
         ssa_primitive_source_frame_oom
@@ -406,6 +447,7 @@ set_tests_properties(ssa_source_straight_line_cfg exec_ir_scalar_scratch_eligibi
 
 # Source membership and hashes are metadata only. Sources/headers are never copied.
 set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_library
+        ssa_source_aot_scalar_text_support ${_zr_scalar_targets}
         ssa_source_primitive_frame_oom_object
         ssa_source_zr_vm_common ${_zr_vendor_targets} ssa_source_unity ssa_source_runtime_support
         zr_vm_ssa_source_execbc_vm_test zr_vm_ssa_compare_metadata_guards_test
@@ -462,6 +504,8 @@ foreach (_header IN ITEMS
         zr_vm_parser/include/zr_vm_parser/exec_ir_host_primitive_layout.h
         zr_vm_parser/include/zr_vm_parser/exec_ir_host_aot_target.h
         zr_vm_parser/include/zr_vm_parser/exec_ir_source_module_contract.h
+        zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_text.h
+        zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_text_internal.h
         zr_vm_parser/include/zr_vm_parser/exec_ir_source_frame.h
         zr_vm_library/third_party/zr_miniz/miniz/miniz_export.h)
     file(SHA256 "${ZR_SSA_SOURCE_ROOT}/${_header}" _hash)

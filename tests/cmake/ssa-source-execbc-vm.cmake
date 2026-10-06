@@ -235,6 +235,28 @@ if (NOT TARGET zr_vm_ssa_source_aot_descriptor_test)
             LABELS "ssa;aot" TIMEOUT 120)
 endif ()
 
+# Existing buffer emitters consume the real retained source descriptor.
+if (NOT TARGET zr_vm_ssa_source_aot_scalar_text_test)
+    zr_vm_add_unity_test_target(zr_vm_ssa_source_aot_scalar_text_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_source_aot_scalar_text.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/support/ssa_literal_script_fixture.c)
+    target_include_directories(zr_vm_ssa_source_aot_scalar_text_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/compiler
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir
+            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot)
+    zr_vm_link_parser_core_plus_library(zr_vm_ssa_source_aot_scalar_text_test)
+    if (MSVC)
+        target_link_options(zr_vm_ssa_source_aot_scalar_text_test PRIVATE /STACK:8388608)
+    endif ()
+    add_test(NAME ssa_source_aot_scalar_text COMMAND zr_vm_ssa_source_aot_scalar_text_test)
+    set_tests_properties(ssa_source_aot_scalar_text PROPERTIES LABELS "ssa;aot" TIMEOUT 120)
+endif ()
+
 # Primitive frame attachment after actual source compaction and explicit rows.
 if (NOT TARGET zr_vm_ssa_primitive_source_frame_test)
     zr_vm_add_unity_test_target(zr_vm_ssa_primitive_source_frame_test
