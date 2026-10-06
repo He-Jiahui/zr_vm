@@ -1,5 +1,6 @@
 ---
 related_code:
+  - docs/parser-and-semantics/ssa-host-aot-target.md
   - docs/parser-and-semantics/template-literal-source-range.md
   - docs/parser-and-semantics/ssa-multiline-token-coordinates.md
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c
@@ -107,6 +108,8 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
 implementation_files:
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_host_aot_target.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_host_aot_target.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_literals.c
   - scripts/syntax_migration_inventory.py
   - zr_vm_parser/include/zr_vm_parser/ast.h
@@ -186,6 +189,7 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
   - zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c
 plan_sources:
+  - .codex/plans/20261005-ssa-host-aot-target.md
   - .codex/plans/20261005-ssa-template-ast-ranges.md
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
   - docs/plans/ssa/01-execir-ssa/05-oracle-projections.md
@@ -207,6 +211,8 @@ plan_sources:
   - docs/plans/lsp/03-lsp-robustness-and-position.md
   - docs/plans/lsp/05-implementation-blueprint.md
 tests:
+  - tests/parser/test_ssa_host_noargs_i64_aot_target.c
+  - tests/acceptance/ssa-host-aot-target.md
   - tests/parser/test_template_literal_source_range.c
   - tests/acceptance/template-literal-source-range.md
   - tests/parser/test_ssa_dominator_cfg.c
@@ -669,3 +675,8 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
   - Saved template token range to actual AST root, with six parse-only cases
   - Finite six-case AST root GREEN after corrected RED; retained GC-rooting prerequisite failure
   - [Acceptance](../acceptance/template-literal-source-range.md) and [test guide](../../tests/acceptance/template-literal-source-range.md)
+
+- [ssa-host-aot-target.md](ssa-host-aot-target.md)
+  - Current-host no-argument INT64 target, canonical callable and host-row witness
+  - Frozen 52/88-byte restricted ABI schema; actual RED then finite 48-case GREEN
+  - [Acceptance](../acceptance/ssa-host-aot-target.md) and [test guide](../../tests/acceptance/ssa-host-aot-target.md)

@@ -80,3 +80,12 @@ No source snapshot was created.
 Segment coordinates, OOM/GC stress, Linux/full MSVC matrices, offset-cache and
 snippet handling, source execution, descriptor/native/retention acceptance
 and SSA47 remain OPEN. The new cases supply local parse/scan evidence only.
+
+## Separate host AOT target successor
+
+The finite template AST root gate completed at
+`a986da50b7d68ada4b17e175eaed99d99c40f9b0`. Its historical proof above remains
+frozen. The independent [host no-argument I64 AOT target gate](ssa-host-aot-target.md)
+consumes canonical callable and actual host-row identity; its separate finite
+48-case Windows gate passed after actual RED. AST root acceptance does not establish the
+target contract, descriptor binding, backend execution or retention.

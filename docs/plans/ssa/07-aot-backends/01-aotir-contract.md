@@ -1,5 +1,7 @@
 ---
 related_code:
+  - zr_vm_parser/include/zr_vm_parser/exec_ir_host_aot_target.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_host_aot_target.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_constant_consumers.c
   - zr_vm_parser/CMakeLists.txt
@@ -11,9 +13,11 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_lowering.c
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_adapter.c
 plan_sources:
+  - .codex/plans/20261005-ssa-host-aot-target.md
   - docs/plans/ssa/index.md
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
 tests:
+  - tests/parser/test_ssa_host_noargs_i64_aot_target.c
   - tests/parser/test_ssa_aotir_contract.c
   - tests/parser/test_aot_c_frame_setup_contracts.c
   - tests/parser/test_call_binding_aot_projection.c
@@ -30,6 +34,19 @@ status: planned
 **Architecture：** AOTIR 保留 typed operations、CFG、effect 和逻辑 state maps，只补 ABI/legalization/物理布局；C/LLVM 后端共享它，不再各自判定所有权和调用目标。
 
 **Tech Stack：** C11、CMake、Unity/CTest；共享 ExecIR 与现有 ZR runtime。
+
+## 有限宿主 target 前置（有限 Windows gate GREEN）
+
+[Win64 无参数 INT64 target](../../../parser-and-semantics/ssa-host-aot-target.md)
+是本计划的有限前置切片：仅从真实 canonical callable 与重算的 host layout
+row 产生现有 Core target record，并固定独立的 restricted callable ABI hash。
+实际两例 prerequisite 通过后，stub 的三例 feature RED 已提交；r2 三套48例
+Unity 全通过，MSVC 单 TU 仅编译检查零警告通过。聚合 driver 退出未观察到，见
+[验收记录](../../../acceptance/ssa-host-aot-target.md)与
+[测试指南](../../../../tests/acceptance/ssa-host-aot-target.md)。
+它不构成 Common 完整平台 ABI、module descriptor binding、真实 frame scalar
+emitter、native execution 或 retention 验收。Linux、完整 MSVC、完整 SSA47
+及本文件全部未勾选迁移门禁保持 OPEN；不得据此标记本计划完成。
 
 ## 依赖与交付范围
 
@@ -157,4 +174,3 @@ assert architectural dependency check rejects that path
 现有 AOT 源码已编进 parser，这里是语义输入迁移，不是重新启动 AOT 项目。避免为方便 include 使 core 依赖 zr_vm_aot 私有目录。
 
 本任务的 acceptance 至少附上：上述断言对应的测试名称、实际执行后端/平台、失败注入位置、verifier 输入/输出摘要，以及涉及所有权时的分配/释放或 lease 平衡。新增入口的 OOM、取消、重复调用和部分初始化退出应有明确处理；不适用的状态写明原因。
-

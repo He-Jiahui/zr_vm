@@ -10,8 +10,6 @@
  * 独立的 SZrAotIrTargetContract。目标只描述有限的 Win64 C callable ABI；
  * 不产生模块、descriptor、源代码、可执行文件或具有保留所有权的 artifact，
  * 不建立 Common 完整平台 ABI，也不证明函数体能够通过 native backend。
- * 当前 RED 阶段实现是明确的 UNSUPPORTED stub，所有调用均返回 ZR_FALSE；
- * 下述成功条件与哈希 schema 是后续 producer 必须遵循的接口契约。
  *
  * @par Parameters
  * @param context 借用当前已初始化的语义上下文及其真实 canonical interner 快照。
@@ -29,13 +27,12 @@
  * @param output 独立且可写的完整目标记录；无需预先初始化。仅在所有验证通过后
  * 一次性发布完全初始化的候选；失败保持该记录的每一个字节不变。NULL 时拒绝。
  * @param diagnostic 可为 NULL；非空时必须指向独立且可写的完整诊断记录。
- * 入口可清零，失败写入 AOTIR status；当前 stub 清零后只置 UNSUPPORTED。
+ * 入口可清零，失败写入 AOTIR status。
  *
  * @par Returns
  * ZR_TRUE 表示输出已发布且通过 ZrCore_AotIr_ValidateTarget；ZR_FALSE 表示
  * 拒绝或尚不支持，输出与输入源对象均保持不变，可读取非空 diagnostic。
- * 当前 RED stub 总是返回 ZR_FALSE，不读取 context、returnLayout 或 output。
- * 完整 producer 的诊断分配：空必需指针为 INVALID_ARGUMENT；无效或未驻留
+ * 诊断分配：空必需指针为 INVALID_ARGUMENT；无效或未驻留
  * callable ID 为 INVALID_ID；非 FUNCTION 或其 structuralHash 为零为
  * INVALID_SIGNATURE；参数、接收者、效果、非 INT64 返回或宿主属性不支持为
  * UNSUPPORTED；行 ID 为零、返回类型不符或重算字段不同为 INVALID_LAYOUT；
