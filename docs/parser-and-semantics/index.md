@@ -1,5 +1,6 @@
 ---
 related_code:
+  - docs/parser-and-semantics/ssa-multiline-token-coordinates.md
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_contiguous_view.c
@@ -383,7 +384,9 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
 - `execir-ssa-validation.md`
   - conservative operand/value validation and precise SSA diagnostic locations
 - [ssa-source-range-identity.md](ssa-source-range-identity.md)
-  - actual SCRIPT/RETURN spans, shared CRLF token ends and recovery boundaries
+  - historical 13-case SCRIPT/RETURN spans, CRLF token ends and recovery baseline
+- [ssa-multiline-token-coordinates.md](ssa-multiline-token-coordinates.md)
+  - actual CR/LF/CRLF token coordinates, 17-case successor and bounded GREEN evidence
 - [ssa-dead-source-places.md](ssa-dead-source-places.md)
   - actual literal SCRIPT provenance and transactional shared value/pool compaction
   - finite source acceptance before explicit target-layout frame production

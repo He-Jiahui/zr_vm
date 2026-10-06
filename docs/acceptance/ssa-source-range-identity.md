@@ -34,9 +34,17 @@ defines source-byte offsets, exclusive ends, fixed CRLF coordinates, and the
 direct missing-semicolon recovery boundary. The full 47-item SSA plan remains
 **OPEN**.
 
+## Successor gate
+
+This document freezes the historical 13-case baseline and 85-case consumers
+regression. The [multiline token successor](ssa-multiline-token-coordinates.md)
+retains those 13 assertions and runs 17 range cases by default. Its independent
+RED/GREEN record owns the new fixture, production and executable pins. The
+historical hashes below do not claim to match the current files.
+
 ## Fixture inventory
 
-The current `test_ssa_source_range_identity.c` reports 13/13 cases passing:
+The historical frozen `test_ssa_source_range_identity.c` reported 13/13 cases passing:
 
 | Case | Observed contract |
 | --- | --- |
@@ -76,13 +84,13 @@ Build exit was 0; focused CTest exit was 8. Eleven Unity cases produced nine
 expected old-parser failures and two passes, with no ignored cases. RED is
 diagnostic evidence of the producer gap, not passing acceptance.
 
-## Current GREEN environment and evidence
+## Historical frozen GREEN environment and evidence
 
 The route is `01a0fe2b-2f6b-7063-9a67-ac0e08c0d82d`. The existing direct build
 root is `E:/cargo-targets/zr_vm/build/ssa-20261004-01a0fe2b/metadata-guards-direct-v2`.
-Windows clang-cl 19 x64 Debug UBSan compiles the current checkout directly;
+Windows clang-cl 19 x64 Debug UBSan compiled the then-current checkout directly;
 `source_copy_created` is false. The GREEN receipt's base HEAD is the frozen
-RED commit above, and the production hashes identify the tested current files.
+RED commit above, and the production hashes identify those historical tested files.
 
 Target `zr_vm_ssa_source_range_identity_test` built with exit 0. Focused CTest
 `ssa_source_range_identity` exited 0, and its real executable reported
@@ -93,7 +101,7 @@ fixture; this result belongs to the direct driver.
 
 - Receipt: `E:/cargo-targets/zr_vm/reports/ssa-20261005-01a0fe2b/source-range-green-receipt.json`
 - Receipt SHA-256: `96F1BEB193833930D235E23EEC3F8BEDAB5FD2AD6594E517550847502F2ABEB8`
-- Current fixture SHA-256: `A7483E3E37BC224B13DDB6942F9FBAD0CF8F11FE02E0265C4FA499C699C66623`
+- Historical frozen fixture SHA-256: `A7483E3E37BC224B13DDB6942F9FBAD0CF8F11FE02E0265C4FA499C699C66623`
 - Build log: `source-range-green-build.log`, SHA-256 `AEC91D18E9A481C3AC2B00B00399F3B7869F9B43114C64967970CA28C2F0EC36`
 - CTest log: `source-range-green.log`, SHA-256 `32EE5754002E0A492697E58A7FD7CC2125879C2AE4807A2E61AFDAA3EC71BF9A`
 
@@ -103,7 +111,7 @@ fixture; this result belongs to the direct driver.
 | `zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c` | `ECCE14E30CC6784D2FEFAFB8D73B9B2204D8987D5BA2FB2D17AD7F5CC91CC6D9` |
 | `zr_vm_parser/src/zr_vm_parser/parser/parser_state.c` | `43C9BE6D6FC4D61D1DF74F6E1ADDD53B17163874D151F773EFE219C1FA7F2ECB` |
 
-The RED/GREEN receipt hashes, current fixture/production hashes, and GREEN
+The RED/GREEN receipt hashes, then-current fixture/production hashes, and GREEN
 CTest log hash were read and verified while preparing this record. The
 13-case GREEN strengthens the 11-case RED inventory with fixed CRLF coordinate
 checks and two additional cases; it does not rewrite the frozen RED fixture.
@@ -147,4 +155,4 @@ The 47-item SSA plan remains **OPEN**.
 No network, FFI, provider, external-service, or security-boundary execution
 contributes evidence to this gate. Historical SCRIPT identity receipts remain
 unchanged; their earlier point-range boundary is superseded only by this
-separate range contract and its current evidence.
+separate range contract and its historical evidence.

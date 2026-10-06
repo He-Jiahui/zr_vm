@@ -620,10 +620,16 @@ static SZrFilePosition file_position_advance_over_span(SZrLexState *lexer,
         endOffset = lexer->sourceLength;
     }
 
-    /* BUG: 模板字符串可跨单独 CR 换行，lexer 为其增行；此扫描只计 LF，
-     * get_current_token_location 得到的模板 token 结束行因此偏前。 */
+    /* 与 lexer 一致：CR 和 LF 各计一次换行，跨度内的 CRLF 合并为一次；
+     * 行首保留原始源字节偏移，不读取 token 终点之后的预读字符。 */
     for (TZrSize index = startOffset; index < endOffset; index++) {
-        if (lexer->source[index] == '\n') {
+        if (lexer->source[index] == '\r') {
+            line++;
+            if (index + 1 < endOffset && lexer->source[index + 1] == '\n') {
+                index++;
+            }
+            lineStart = index + 1;
+        } else if (lexer->source[index] == '\n') {
             line++;
             lineStart = index + 1;
         }

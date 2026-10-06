@@ -122,7 +122,7 @@ itself.
 
 The frozen RED commit is `d2551f5953786cc5b7ef34ba852b376792f49e3d`:
 11 cases, 9 failures and 2 passes; build exit 0 and focused CTest exit 8.
-The current GREEN fixture has 13 cases, 0 failures and 0 ignored; build and
+The historical frozen GREEN fixture has 13 cases, 0 failures and 0 ignored; build and
 focused CTest both exit 0. Additional coverage fixes CRLF coordinates and
 checks semicolon-before-CRLF and missing-semicolon recovery. Tests parse real
 source and release their AST/parser/state owners.
@@ -134,8 +134,12 @@ callable identity, SCRIPT entry identity, typed binding, and dominator CFG.
 The [acceptance record](../acceptance/ssa-source-range-identity.md) preserves
 receipt hashes, exact suite names, environment, and limits.
 
-Both runs use Windows clang-cl 19 x64 Debug UBSan against the current checkout
-directly, with no source snapshot. No UBSan diagnostic was observed. The full
+Both historical runs used Windows clang-cl 19 x64 Debug UBSan against the then-current checkout
+directly, with no source snapshot. No UBSan diagnostic was observed. The
+[new multiline token gate](ssa-multiline-token-coordinates.md) preserves the
+original 13 as a baseline and expands default execution to 17 cases for bare
+CR, LF, CRLF and mixed newlines. Its separate evidence owns the newer source
+and executable pins; these historical 13-case pins remain frozen. The full
 47-item SSA plan remains **OPEN**. Retained canonical graphs, frame publication,
 serialization, native/AOT consumers, full parser acceptance, other platforms,
 and exhaustive OOM or rollback handling are not established by this finite gate.
