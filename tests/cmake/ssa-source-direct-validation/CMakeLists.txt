@@ -237,6 +237,7 @@ foreach (_zr_guard_target IN ITEMS
         zr_vm_ssa_dead_source_places_test
         zr_vm_ssa_host_primitive_layout_test
         zr_vm_ssa_host_noargs_i64_aot_target_test
+        zr_vm_ssa_source_aot_descriptor_test
         zr_vm_ssa_primitive_source_frame_test
         zr_vm_ssa_primitive_source_frame_storage_test
         zr_vm_ssa_typed_binding_contract_test
@@ -263,6 +264,8 @@ foreach (_zr_guard_target IN ITEMS
         set(_zr_guard_source tests/parser/test_ssa_host_primitive_layout.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_host_noargs_i64_aot_target_test")
         set(_zr_guard_source tests/parser/test_ssa_host_noargs_i64_aot_target.c)
+    elseif (_zr_guard_target STREQUAL "zr_vm_ssa_source_aot_descriptor_test")
+        set(_zr_guard_source tests/parser/test_ssa_source_aot_descriptor.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_primitive_source_frame_test")
         set(_zr_guard_source tests/parser/test_ssa_primitive_source_frame.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_primitive_source_frame_storage_test")
@@ -278,6 +281,7 @@ foreach (_zr_guard_target IN ITEMS
     if (_zr_guard_target STREQUAL "zr_vm_ssa_dead_source_places_test" OR
             _zr_guard_target STREQUAL "zr_vm_ssa_host_primitive_layout_test" OR
             _zr_guard_target STREQUAL "zr_vm_ssa_host_noargs_i64_aot_target_test" OR
+            _zr_guard_target STREQUAL "zr_vm_ssa_source_aot_descriptor_test" OR
             _zr_guard_target STREQUAL "zr_vm_ssa_primitive_source_frame_test" OR
             _zr_guard_target STREQUAL "zr_vm_ssa_primitive_source_frame_storage_test")
         target_sources(${_zr_guard_target} PRIVATE
@@ -340,6 +344,8 @@ add_test(NAME ssa_host_primitive_layout
         COMMAND zr_vm_ssa_host_primitive_layout_test)
 add_test(NAME ssa_host_noargs_i64_aot_target
         COMMAND zr_vm_ssa_host_noargs_i64_aot_target_test)
+add_test(NAME ssa_source_aot_descriptor
+        COMMAND zr_vm_ssa_source_aot_descriptor_test)
 add_test(NAME ssa_primitive_source_frame
         COMMAND zr_vm_ssa_primitive_source_frame_test)
 add_test(NAME ssa_primitive_source_frame_storage
@@ -364,6 +370,7 @@ set_tests_properties(ssa_source_straight_line_cfg exec_ir_scalar_scratch_eligibi
         ssa_dead_source_places
         ssa_host_primitive_layout
         ssa_host_noargs_i64_aot_target
+        ssa_source_aot_descriptor
         ssa_primitive_source_frame
         ssa_primitive_source_frame_storage
         ssa_typed_binding_contract
@@ -382,6 +389,7 @@ set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_l
         zr_vm_ssa_dead_source_places_test
         zr_vm_ssa_host_primitive_layout_test
         zr_vm_ssa_host_noargs_i64_aot_target_test
+        zr_vm_ssa_source_aot_descriptor_test
         zr_vm_ssa_primitive_source_frame_test
         zr_vm_ssa_primitive_source_frame_storage_test
         zr_vm_ssa_typed_binding_contract_test)
@@ -423,6 +431,7 @@ foreach (_header IN ITEMS
         zr_vm_parser/include/zr_vm_parser/exec_ir_dead_source_places.h
         zr_vm_parser/include/zr_vm_parser/exec_ir_host_primitive_layout.h
         zr_vm_parser/include/zr_vm_parser/exec_ir_host_aot_target.h
+        zr_vm_parser/include/zr_vm_parser/exec_ir_source_module_contract.h
         zr_vm_parser/include/zr_vm_parser/exec_ir_source_frame.h
         zr_vm_library/third_party/zr_miniz/miniz/miniz_export.h)
     file(SHA256 "${ZR_SSA_SOURCE_ROOT}/${_header}" _hash)
