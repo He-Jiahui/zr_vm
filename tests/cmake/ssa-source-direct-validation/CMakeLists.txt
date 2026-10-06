@@ -232,6 +232,8 @@ foreach (_zr_guard_target IN ITEMS
         zr_vm_ssa_source_callable_identity_test
         zr_vm_ssa_source_script_entry_identity_test
         zr_vm_ssa_source_range_identity_test
+        zr_vm_template_literal_source_range_test
+        zr_vm_expression_fragment_parser_test
         zr_vm_ssa_dead_source_places_test
         zr_vm_ssa_host_primitive_layout_test
         zr_vm_ssa_primitive_source_frame_test
@@ -250,6 +252,10 @@ foreach (_zr_guard_target IN ITEMS
         set(_zr_guard_source tests/parser/test_ssa_source_script_entry_identity.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_source_range_identity_test")
         set(_zr_guard_source tests/parser/test_ssa_source_range_identity.c)
+    elseif (_zr_guard_target STREQUAL "zr_vm_template_literal_source_range_test")
+        set(_zr_guard_source tests/parser/test_template_literal_source_range.c)
+    elseif (_zr_guard_target STREQUAL "zr_vm_expression_fragment_parser_test")
+        set(_zr_guard_source tests/parser/test_expression_fragment_parser.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_dead_source_places_test")
         set(_zr_guard_source tests/parser/test_ssa_dead_source_places.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_host_primitive_layout_test")
@@ -320,6 +326,10 @@ add_test(NAME ssa_source_script_entry_identity
         COMMAND zr_vm_ssa_source_script_entry_identity_test)
 add_test(NAME ssa_source_range_identity
         COMMAND zr_vm_ssa_source_range_identity_test)
+add_test(NAME template_literal_source_range
+        COMMAND zr_vm_template_literal_source_range_test)
+add_test(NAME expression_fragment_parser
+        COMMAND zr_vm_expression_fragment_parser_test)
 add_test(NAME ssa_dead_source_places
         COMMAND zr_vm_ssa_dead_source_places_test)
 add_test(NAME ssa_host_primitive_layout
@@ -344,6 +354,7 @@ set_tests_properties(ssa_source_straight_line_cfg exec_ir_scalar_scratch_eligibi
         ssa_source_callable_return
         ssa_source_script_entry_tokens ssa_source_callable_identity
         ssa_source_script_entry_identity ssa_source_range_identity
+        template_literal_source_range expression_fragment_parser
         ssa_dead_source_places
         ssa_host_primitive_layout
         ssa_primitive_source_frame
@@ -360,6 +371,7 @@ set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_l
         zr_vm_ssa_source_callable_return_test zr_vm_ssa_source_script_entry_tokens_test
         zr_vm_ssa_source_callable_identity_test
         zr_vm_ssa_source_script_entry_identity_test zr_vm_ssa_source_range_identity_test
+        zr_vm_template_literal_source_range_test zr_vm_expression_fragment_parser_test
         zr_vm_ssa_dead_source_places_test
         zr_vm_ssa_host_primitive_layout_test
         zr_vm_ssa_primitive_source_frame_test

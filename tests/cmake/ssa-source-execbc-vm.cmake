@@ -112,6 +112,33 @@ if (NOT TARGET zr_vm_ssa_source_range_identity_test)
             LABELS "ssa" TIMEOUT 120)
 endif ()
 
+# Actual template AST roots retain their saved token range after lexer advance.
+if (NOT TARGET zr_vm_template_literal_source_range_test)
+    zr_vm_add_unity_test_target(zr_vm_template_literal_source_range_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_template_literal_source_range.c)
+    target_include_directories(zr_vm_template_literal_source_range_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
+    zr_vm_link_parser_core_plus_library(zr_vm_template_literal_source_range_test)
+    if (MSVC)
+        target_link_options(zr_vm_template_literal_source_range_test PRIVATE /STACK:8388608)
+    endif ()
+    add_test(NAME template_literal_source_range
+            COMMAND zr_vm_template_literal_source_range_test)
+    set_tests_properties(template_literal_source_range PROPERTIES
+            LABELS "parser;ssa" TIMEOUT 120)
+endif ()
+
+# The ordinary build already defines this unchanged parser consumer target.
+if (TARGET zr_vm_expression_fragment_parser_test AND NOT TEST expression_fragment_parser)
+    add_test(NAME expression_fragment_parser
+            COMMAND zr_vm_expression_fragment_parser_test)
+    set_tests_properties(expression_fragment_parser PROPERTIES
+            LABELS "parser;ssa" TIMEOUT 120)
+endif ()
+
 # Shared CoreExecIR compaction of proved inert source temporary places.
 if (NOT TARGET zr_vm_ssa_dead_source_places_test)
     zr_vm_add_unity_test_target(zr_vm_ssa_dead_source_places_test
