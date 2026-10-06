@@ -448,6 +448,9 @@ SZrAstNode *parse_literal(SZrParserState *ps) {
             SZrString *value = ps->lexer->t.seminfo.stringValue;
             ZrParser_Lexer_Next(ps->lexer);
             node = parse_template_string_literal(ps, value);
+            if (node != ZR_NULL) {
+                node->location = literalLoc;
+            }
             return node;
         }
 

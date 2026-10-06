@@ -1,5 +1,6 @@
 ---
 related_code:
+  - docs/parser-and-semantics/template-literal-source-range.md
   - docs/parser-and-semantics/ssa-multiline-token-coordinates.md
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
@@ -106,6 +107,7 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_literals.c
   - scripts/syntax_migration_inventory.py
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/cfg.h
@@ -184,6 +186,7 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
   - zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c
 plan_sources:
+  - .codex/plans/20261005-ssa-template-ast-ranges.md
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
   - docs/plans/ssa/01-execir-ssa/05-oracle-projections.md
   - docs/plans/ssa/05-data-layout/02-arrays-slices.md
@@ -204,6 +207,8 @@ plan_sources:
   - docs/plans/lsp/03-lsp-robustness-and-position.md
   - docs/plans/lsp/05-implementation-blueprint.md
 tests:
+  - tests/parser/test_template_literal_source_range.c
+  - tests/acceptance/template-literal-source-range.md
   - tests/parser/test_ssa_dominator_cfg.c
   - tests/parser/test_exec_ir_scalar_scratch_eligibility.c
   - tests/cmake/exec-ir-scalar-scratch-eligibility.cmake
@@ -659,3 +664,8 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
 ## 语义快照与事实的调用契约
 
 - [Semantic Context 与 Facts](semantic-context-and-facts-contracts.md)：身份与配置的快照边界、原生载荷和 VM 字符串的生命周期、发布与查询的证据限制，以及三类静态可达问题；实际验证见当日验收。
+
+- [template-literal-source-range.md](template-literal-source-range.md)
+  - Saved template token range to actual AST root, with six parse-only cases
+  - Finite six-case AST root GREEN after corrected RED; retained GC-rooting prerequisite failure
+  - [Acceptance](../acceptance/template-literal-source-range.md) and [test guide](../../tests/acceptance/template-literal-source-range.md)

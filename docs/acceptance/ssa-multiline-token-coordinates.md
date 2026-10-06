@@ -144,3 +144,11 @@ This new gate exercises local parse/scan behavior. Consumer regressions include
 existing local VM/Oracle fixtures; they add no network/import, FFI, provider,
 capability or security test evidence. No external delivery or whole-tree
 acceptance is implied by the finite result.
+
+## Subsequent template AST root gate
+
+The OPEN template AST range statement above records this frozen token-only
+acceptance boundary. The independent [template AST root gate](template-literal-source-range.md)
+now has actual finite GREEN evidence for six template AST root cases, after
+its own corrected RED. This successor does not change the historical token
+receipts, hashes or coverage claims. Other OPEN gates remain OPEN.

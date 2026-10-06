@@ -88,3 +88,11 @@ full SSA47 plan remain **OPEN**.
 This gate exercises local parsing and scanning. The existing consumers include
 local VM/Oracle behavior, without adding network/import, FFI, provider,
 capability or security tests.
+
+## Subsequent template AST root gate
+
+The OPEN template AST range statement above records this frozen token-only
+acceptance boundary. The independent [template AST root gate](template-literal-source-range.md)
+now has actual finite GREEN evidence for six template AST root cases, after
+its own corrected RED. This successor does not change the historical token
+receipts, hashes or coverage claims. Other OPEN gates remain OPEN.

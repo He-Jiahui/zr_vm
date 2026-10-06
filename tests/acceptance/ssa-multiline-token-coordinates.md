@@ -71,3 +71,11 @@ full MSVC acceptance remains OPEN despite the changed TU compile-only success.
 Template AST coordinates, offset-cache/snippet CR handling, full parser/OOM,
 descriptor/native execution, retention and full SSA47 remain OPEN. This gate
 adds local parse/scan evidence and no network, FFI, provider or security tests.
+
+## Subsequent template AST root gate
+
+The OPEN template AST range statement above records this frozen token-only
+acceptance boundary. The independent [template AST root gate](../../docs/acceptance/template-literal-source-range.md)
+now has actual finite GREEN evidence for six template AST root cases, after
+its own corrected RED. This successor does not change the historical token
+receipts, hashes or coverage claims. Other OPEN gates remain OPEN.
