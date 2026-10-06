@@ -35,12 +35,16 @@ doc_type: module-detail
 `recordMemory`. It tracks managed object allocation count/bytes, value-copy bytes,
 write barriers, collection kinds, mark/rewrite work, promotion bytes, raw integer
 access, raw/node synchronization, member-cache outcomes, and bytes scanned. The
-shared metric counters use relaxed atomic additions so concurrent GC workers do not
-lose increments. Disabled recording is one unlikely null/flag check and does not
+shared memory metric counters use platform atomic additions (GNU/Clang relaxed;
+MSVC Interlocked). These additions do not protect profile runtime lifetime or
+serialize ordinary helper, instruction, slow-path, probe, or pause fields. Disabled recording is one unlikely null/flag check and does not
 allocate or read a clock.
 
-Pause data uses a fixed 256-entry ring owned by the collection coordinator. Total
-count, total microseconds, and maximum duration cover the currently instrumented
+Pause data uses a fixed 256-entry ring stored in the global-owned
+`SZrProfileRuntime`. Callers must serialize these ordinary writes. TODO: verify
+sole-writer coordination at concurrent-major remark and compaction call sites;
+the ring itself has no lock or thread ownership guard. Total count, total
+microseconds, and maximum duration cover the currently instrumented
 concurrent-major remark and compaction phases. Minor collections and outer
 non-concurrent/full collection pauses are not yet added to this ring, so these fields
 must not be interpreted as complete process pause accounting. The bounded sample
@@ -62,3 +66,16 @@ The JSON report emits these values in the `memory` array, omitting zero-valued
 entries. `hotspot_summary.py` derives allocation bytes per managed allocation and
 scan bytes per marked object from that array; these are event-normalized rates, not
 benchmark-operation-normalized rates.
+
+## Profile API contracts
+
+画像接口的声明、公开 inline 和内部回调在源码中按 Summary、Parameters、Returns、
+Constraints and lifecycle、References 组织，说明计数边界、借用关系、释放责任和报告副作用。
+
+- `ZrCore_Profile_GlobalInit`：为新 global 建立可选画像存储并复制所需环境文本。
+- `ZrCore_Profile_SetCurrentState`：把 state 所属 global 的画像借用到当前线程。
+- `ZrCore_Profile_RecordValueCopyCurrent` 与 `ZrCore_Profile_RecordValueCopyFromState`：记录值复制的次数和字节事件。
+- `ZrCore_Profile_RecordPauseFromState`：维护暂停累计量和固定容量的最近样本窗口。
+
+函数指针注册和实际派发分别说明；计数表示对应事件边界，不能推断成功执行、
+分配所有权转移或全部线程安全。已证明的 JSON 转义问题和并发协调 TODO 保持各自的适用边界。
