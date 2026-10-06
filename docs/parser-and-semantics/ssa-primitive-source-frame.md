@@ -10,6 +10,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify_ssa.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
   - tests/parser/test_ssa_primitive_source_frame.c
+  - tests/parser/test_ssa_primitive_source_frame_oom.c
+  - tests/parser/support/ssa_primitive_source_frame_oom_shim.h
   - tests/parser/support/ssa_literal_script_fixture.h
   - tests/parser/support/ssa_literal_script_fixture.c
   - tests/cmake/ssa-source-execbc-vm.cmake
@@ -17,7 +19,12 @@ related_code:
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/exec_ir_source_frame.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame.c
+  - tests/parser/test_ssa_primitive_source_frame_oom.c
+  - tests/parser/support/ssa_primitive_source_frame_oom_shim.h
+  - tests/cmake/ssa-source-direct-validation/CMakeLists.txt
+  - tests/cmake/ssa-source-execbc-vm.cmake
 plan_sources:
+  - .codex/plans/20261006-ssa-primitive-frame-oom.md
   - docs/plans/ssa/04-frame-native/01-frame-layout.md
   - docs/parser-and-semantics/ssa-dead-source-places.md
   - docs/parser-and-semantics/ssa-host-primitive-layout.md
@@ -25,6 +32,9 @@ tests:
   - tests/parser/test_ssa_primitive_source_frame.c
   - tests/acceptance/ssa-primitive-source-frame.md
   - docs/acceptance/ssa-primitive-source-frame.md
+  - tests/parser/test_ssa_primitive_source_frame_oom.c
+  - tests/acceptance/ssa-primitive-source-frame-oom.md
+  - docs/acceptance/ssa-primitive-source-frame-oom.md
 doc_type: module-detail
 status: primitive-source-frame-focused-windows-green-accepted
 ---
@@ -145,3 +155,100 @@ observed in its compile log; no MSVC runtime matrix is claimed. Descriptor
 runtime, artifact retention, native execution, Linux/MSVC runtime matrices and
 SSA47 remain OPEN. No network, FFI, providers, hotpatch or security functions
 are exercised by the pure local fixture.
+
+## Finite OOM successor: actual allocator failures
+
+**Focused Windows direct-source OOM gate accepted.** Root registered and built
+the standalone OBJECT and executable, then ran four complete suites under
+Windows x64 clang-cl 19 Debug assertions and UBSan: host 15, frame 19, storage
+4 and OOM 2, totaling 40 Unity cases, zero failures and ignored cases. Configure,
+build and CTest each naturally exited 0. No UBSan diagnostics or build warnings
+were observed. Final receipt has `validated: true`; Root's final Git transaction
+remains pending, and this record assigns no new commit or RED run.
+The preceding frame evidence remains historical dependency evidence. See
+the [OOM evidence record](../acceptance/ssa-primitive-source-frame-oom.md) and
+[two-case guide](../../tests/acceptance/ssa-primitive-source-frame-oom.md).
+
+The new test uses the shared real NINE source fixture from the existing 9/8
+pipeline. Each case independently compacts the actual source graph in its live
+canonical context, creates the actual host i64 row and appends it to the real
+module. It preserves the source graph, semantic/context pools, source maps and
+module tables as separate caller owners. The new test does not execute Oracle
+or lower a native/backend artifact. Its two direct faults are genuine NULL
+results from selected allocation wrappers, without malformed metadata:
+
+| Actual attachment call site | Request | Failure consequence |
+| --- | --- | --- |
+| `exec_ir_source_frame.c:313`, `calloc` | `valueCount * sizeof(SZrExecIrPackedValue)` | Returns `OUT_OF_MEMORY` before packed construction; no direct temporary owner exists. |
+| `exec_ir_source_frame.c:337`, `malloc` | `sizeof(SZrExecIrFrameLayout)` | Returns `OUT_OF_MEMORY` through cleanup after real packed construction; direct values and owned packed arrays are released. |
+
+The compacted fixture has one surviving actual value. The test compares the
+allocator arguments to the real count and `sizeof` expressions; it does not
+hardcode a guessed allocation width or request an oversized allocation.
+The diagnostic is prefilled, then compared byte-for-byte to a zeroed expected
+record with only OOM code and the original function token set. Failure checks
+retain the entire original graph header, contract, pool identities and active
+contents, plus original source/context and module-table observations.
+
+Only an independent OBJECT target compiles the actual production attachment TU
+with a forced test shim. The shim includes the real CRT and packed-layout
+declarations before redirecting call sites. The normal parser archive and
+shared fixture are not injected. Existing static-archive extraction permits
+the explicit object to supply Attach while the ordinary archive supplies real
+dependencies.
+Actual compile commands contain exactly two production frame TU entries and
+one forced-include entry belonging solely to the standalone OBJECT. The normal
+parser entry has no shim. The sole Attach link-map record resolves to explicit
+`exec_ir_source_frame.c.obj`, without a parser-archive member prefix. Source-global
+properties, renamed CRT declaration flags, production test hooks and source
+copies are not part of this route.
+
+Wrappers use fixed global owner records and never Unity-assert inside the
+production stack. They count the two direct attachment allocation sites and
+their wrapped frees. A separate PackedFrameLayoutFree call wrapper invokes the
+original helper and observes clearing of its still-live header; it never reads
+freed arrays. Packed construction also allocates ordering, mapping and slot
+storage in another TU. Those allocations and Core frees are neither injected
+nor dynamically counted by this finite ledger, so this gate cannot certify
+total heap allocation/free balance or an exhaustive helper OOM matrix.
+
+After each failure, the test disables injection and retries Attach on the
+**same live graph**, without clone, rebuild, restoration or recompaction. A
+successful retry may publish only frameLayout and contract.layoutHash; the
+remaining header, pool contents, source maps and caller tables must match the
+original observation. Actual ValueId/TypeId slot geometry, Core VERIFY_ALL and
+source-map correspondence are then checked. Immediately after Attach returns,
+the test records any header publication before asserting: header ownership
+moves to the output graph, and successful packed slots move with it. Core
+FreeFunction owns their later teardown; those frees do not increase wrapped
+free counts. Teardown disables injection, frees the actual graph, releases any
+still-owned direct temporary allocation after an assertion failure, then frees
+fixture and state.
+
+The unchanged production attachment module passed this finite gate. Acceptance
+covers only the two direct Attach allocation sites, preservation and recovery
+on the same live graph. Packed-helper allocations remain uninstrumented; no total heap
+balance or exhaustive allocator OOM claim is made. Ordinary static/shared route
+execution, full MSVC/Linux matrices, descriptor/native/retention acceptance,
+sensitive boundaries and full SSA47 remain OPEN. Root owns the final Git
+transaction; no new commit is assigned here.
+
+Initial aggregate driver native83590 was actually observed exiting 1: its
+expected inventory was storage 17 / total 53 instead of actual 4 / 40. All
+functional child phases had naturally exited 0. Recovery driver native7660 was
+actually observed naturally terminal with exit 0 after reconciling the actual
+source inventory, 28 source pins, three immutable logs, five metadata files,
+four executables and compile/link isolation. It reran no tests and changed no
+source or functional logs. The historical failed receipt and earlier g2:18
+wrong-header-pin preflight failure remain retained; the preflight failure
+preceded native configure/build/test phases. The correct frame-layout header
+is `zr_vm_parser/include/zr_vm_parser/exec_ir_frame_layout.h`.
+
+Final receipt: `E:/cargo-targets/zr_vm/reports/ssa-20261005-01a0fe2b/primitive-frame-oom-r2-receipt.json`,
+SHA-256 `522FA6E2E2CD2FF8776EAE86BA682DF1EB1E3511478D6B26F217350E79DEEC87`.
+All 28 source pins, five metadata files, four executables and three immutable
+logs were freshly checked against the receipt and matched. Historical receipt:
+`primitive-frame-oom-receipt.json`, SHA-256
+`A0AF1B6825597C3F68941C0B4EE19286D8DCC59126253A948F02E88A97D329E0`.
+Earlier preflight record: `primitive-frame-oom-preflight-failure.json`.
+Both historical records remain in the same report directory.

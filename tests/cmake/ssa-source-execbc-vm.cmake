@@ -259,6 +259,47 @@ if (NOT TARGET zr_vm_ssa_primitive_source_frame_test)
             LABELS "ssa" TIMEOUT 120)
 endif ()
 
+# Two direct allocator failures compile the actual production TU with a local shim.
+if (NOT TARGET zr_vm_ssa_primitive_source_frame_oom_test)
+    add_library(zr_vm_ssa_primitive_source_frame_oom_object OBJECT
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame.c)
+    target_include_directories(zr_vm_ssa_primitive_source_frame_oom_object PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include)
+    target_compile_definitions(zr_vm_ssa_primitive_source_frame_oom_object PRIVATE
+            ZR_LIBRARY_TYPE_STATIC=1 ZR_CURRENT_MODULE="zr_vm_parser")
+    if (MSVC)
+        target_compile_options(zr_vm_ssa_primitive_source_frame_oom_object PRIVATE
+                "/FI${CMAKE_SOURCE_DIR}/tests/parser/support/ssa_primitive_source_frame_oom_shim.h")
+    else ()
+        target_compile_options(zr_vm_ssa_primitive_source_frame_oom_object PRIVATE
+                -include "${CMAKE_SOURCE_DIR}/tests/parser/support/ssa_primitive_source_frame_oom_shim.h")
+    endif ()
+    zr_vm_add_unity_test_target(zr_vm_ssa_primitive_source_frame_oom_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_primitive_source_frame_oom.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/support/ssa_literal_script_fixture.c)
+    target_include_directories(zr_vm_ssa_primitive_source_frame_oom_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/compiler
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir)
+    target_link_libraries(zr_vm_ssa_primitive_source_frame_oom_test PRIVATE
+            zr_vm_ssa_primitive_source_frame_oom_object)
+    zr_vm_link_parser_core_plus_library(zr_vm_ssa_primitive_source_frame_oom_test)
+    if (MSVC)
+        target_link_options(zr_vm_ssa_primitive_source_frame_oom_test PRIVATE /STACK:8388608)
+    endif ()
+    add_test(NAME ssa_primitive_source_frame_oom
+            COMMAND zr_vm_ssa_primitive_source_frame_oom_test)
+    set_tests_properties(ssa_primitive_source_frame_oom PROPERTIES
+            LABELS "ssa" TIMEOUT 120)
+endif ()
+
 # Metadata capacity and final alignment refusals on actual source graphs.
 if (NOT TARGET zr_vm_ssa_primitive_source_frame_storage_test)
     zr_vm_add_unity_test_target(zr_vm_ssa_primitive_source_frame_storage_test
