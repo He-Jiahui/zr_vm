@@ -254,6 +254,7 @@ target_compile_definitions(ssa_source_aot_scalar_text_support PRIVATE
         ZR_VM_COMPILER_VERSION="${CMAKE_C_COMPILER_ID}-${CMAKE_C_COMPILER_VERSION}")
 zr_ssa_source_apply_c_settings(ssa_source_aot_scalar_text_support)
 set(_zr_scalar_targets zr_vm_ssa_source_aot_scalar_text_test
+        zr_vm_ssa_source_aot_owned_module_test
         zr_vm_ssa_aot_scalar_text_test zr_vm_ssa_aot_scalar_arithmetic_test
         zr_vm_ssa_aot_scalar_conditional_test)
 
@@ -305,6 +306,8 @@ foreach (_zr_guard_target IN ITEMS
         set(_zr_guard_source tests/parser/test_ssa_source_aot_descriptor.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_source_aot_scalar_text_test")
         set(_zr_guard_source tests/parser/test_ssa_source_aot_scalar_text.c)
+    elseif (_zr_guard_target STREQUAL "zr_vm_ssa_source_aot_owned_module_test")
+        set(_zr_guard_source tests/parser/test_ssa_source_aot_owned_module.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_aot_scalar_text_test")
         set(_zr_guard_source tests/parser/test_ssa_aot_scalar_text.c)
     elseif (_zr_guard_target STREQUAL "zr_vm_ssa_aot_scalar_arithmetic_test")
@@ -330,6 +333,7 @@ foreach (_zr_guard_target IN ITEMS
             _zr_guard_target STREQUAL "zr_vm_ssa_host_noargs_i64_aot_target_test" OR
             _zr_guard_target STREQUAL "zr_vm_ssa_source_aot_descriptor_test" OR
             _zr_guard_target STREQUAL "zr_vm_ssa_source_aot_scalar_text_test" OR
+            _zr_guard_target STREQUAL "zr_vm_ssa_source_aot_owned_module_test" OR
             _zr_guard_target STREQUAL "zr_vm_ssa_primitive_source_frame_test" OR
             _zr_guard_target STREQUAL "zr_vm_ssa_primitive_source_frame_storage_test" OR
             _zr_guard_target STREQUAL "zr_vm_ssa_primitive_source_frame_oom_test")
@@ -406,6 +410,8 @@ add_test(NAME ssa_source_aot_descriptor
         COMMAND zr_vm_ssa_source_aot_descriptor_test)
 add_test(NAME ssa_source_aot_scalar_text
         COMMAND zr_vm_ssa_source_aot_scalar_text_test)
+add_test(NAME ssa_source_aot_owned_module
+        COMMAND zr_vm_ssa_source_aot_owned_module_test)
 add_test(NAME ssa_aot_scalar_text COMMAND zr_vm_ssa_aot_scalar_text_test)
 add_test(NAME ssa_aot_scalar_arithmetic COMMAND zr_vm_ssa_aot_scalar_arithmetic_test)
 add_test(NAME ssa_aot_scalar_conditional COMMAND zr_vm_ssa_aot_scalar_conditional_test)
@@ -436,7 +442,7 @@ set_tests_properties(ssa_source_straight_line_cfg exec_ir_scalar_scratch_eligibi
         ssa_host_primitive_layout
         ssa_host_noargs_i64_aot_target
         ssa_source_aot_descriptor
-        ssa_source_aot_scalar_text ssa_aot_scalar_text
+        ssa_source_aot_scalar_text ssa_source_aot_owned_module ssa_aot_scalar_text
         ssa_aot_scalar_arithmetic ssa_aot_scalar_conditional
         ssa_primitive_source_frame
         ssa_primitive_source_frame_storage
@@ -500,6 +506,11 @@ foreach (_header IN ITEMS
         tests/parser/ssa_source_execbc_vm_compare.inc
         tests/parser/support/ssa_literal_script_fixture.h
         tests/parser/support/ssa_primitive_source_frame_oom_shim.h
+        zr_vm_core/include/zr_vm_core/aot_ir_owned_module.h
+        zr_vm_core/include/zr_vm_core/aot_ir.h
+        zr_vm_core/include/zr_vm_core/exec_ir.h
+        zr_vm_core/include/zr_vm_core/exec_ir_state_map.h
+        zr_vm_core/include/zr_vm_core/execution_contract.h
         zr_vm_parser/include/zr_vm_parser/exec_ir_dead_source_places.h
         zr_vm_parser/include/zr_vm_parser/exec_ir_host_primitive_layout.h
         zr_vm_parser/include/zr_vm_parser/exec_ir_host_aot_target.h
