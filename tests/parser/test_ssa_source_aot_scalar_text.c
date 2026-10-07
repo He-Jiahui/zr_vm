@@ -306,6 +306,13 @@ static void prepare(EZrSsaLiteralScriptSource source) {
     TEST_ASSERT_EQUAL_UINT32(3u, g_descriptor.function.instructionCount);
     TEST_ASSERT_EQUAL_UINT32(ZR_EXEC_IR_OPCODE_CONSTANT, g_descriptor.instructions[0].opcode);
     TEST_ASSERT_EQUAL_UINT32(ZR_EXEC_IR_OPCODE_NOP, g_descriptor.instructions[1].opcode);
+    TEST_ASSERT_EQUAL_UINT32(0u, g_descriptor.instructions[1].results.count);
+    TEST_ASSERT_TRUE(g_descriptor.instructions[1].results.offset != 0u);
+    TEST_ASSERT_EQUAL_UINT32(g_descriptor.instructions[0].results.offset +
+            g_descriptor.instructions[0].results.count,
+            g_descriptor.instructions[1].results.offset);
+    TEST_ASSERT_EQUAL_UINT32(g_descriptor.function.callableAbi.returnTypeToken,
+            g_descriptor.instructions[1].typeToken);
     TEST_ASSERT_EQUAL_UINT32(ZR_EXEC_IR_OPCODE_RETURN, g_descriptor.instructions[2].opcode);
     TEST_ASSERT_EQUAL_UINT32(g_compacted.blocks[0].terminatorInstructionId, g_descriptor.instructions[2].id);
     TEST_ASSERT_EQUAL_UINT32(1u, g_descriptor.module.constantCount);
@@ -370,6 +377,7 @@ static void parse_text(const char *text, size_t length, TZrBool llvm) {
 static void emit_success(FEmitter emitter, TZrBool llvm, EZrSsaLiteralScriptSource source,
         TZrBool nullDiagnostic) {
     char text[256];
+    char featureMessage[768];
     size_t length = 99u;
     SZrAotIrDiagnostic diagnostic = {0};
     TZrUInt64 before;
@@ -379,8 +387,34 @@ static void emit_success(FEmitter emitter, TZrBool llvm, EZrSsaLiteralScriptSour
     memset(text, 0xa5, sizeof(text));
     status = emitter(&g_descriptor.module, g_descriptor.function.id, text, sizeof(text),
             &length, nullDiagnostic ? ZR_NULL : &diagnostic);
-    TEST_ASSERT_EQUAL_INT_MESSAGE(ZR_AOT_IR_OK, status,
-            "FEATURE RED: existing scalar emitter must accept actual source descriptor");
+    (void)snprintf(featureMessage, sizeof(featureMessage),
+            "FEATURE RED: existing scalar emitter must accept actual source descriptor"
+            " status=%d instruction=%lu nop=%lu results={%lu,%lu} operands={%lu,%lu}"
+            " flags=%lu type=%lu match=%lu layout=%lu effects={%lu,%lu} binding=%lu deopt=%lu"
+            " successors={%lu,%lu} phi={%lu,%lu} memoryIn={%lu,%lu} memoryOut={%lu,%lu}",
+            (int)status, (unsigned long)diagnostic.instructionId,
+            (unsigned long)g_descriptor.instructions[1].id,
+            (unsigned long)g_descriptor.instructions[1].results.offset,
+            (unsigned long)g_descriptor.instructions[1].results.count,
+            (unsigned long)g_descriptor.instructions[1].operands.offset,
+            (unsigned long)g_descriptor.instructions[1].operands.count,
+            (unsigned long)g_descriptor.instructions[1].flags,
+            (unsigned long)g_descriptor.instructions[1].typeToken,
+            (unsigned long)g_descriptor.instructions[1].matchTypeToken,
+            (unsigned long)g_descriptor.instructions[1].layoutId,
+            (unsigned long)g_descriptor.instructions[1].effectIn,
+            (unsigned long)g_descriptor.instructions[1].effectOut,
+            (unsigned long)g_descriptor.instructions[1].bindingRow,
+            (unsigned long)g_descriptor.instructions[1].deoptId,
+            (unsigned long)g_descriptor.instructions[1].successors.offset,
+            (unsigned long)g_descriptor.instructions[1].successors.count,
+            (unsigned long)g_descriptor.instructions[1].phiIncoming.offset,
+            (unsigned long)g_descriptor.instructions[1].phiIncoming.count,
+            (unsigned long)g_descriptor.instructions[1].memoryIn.offset,
+            (unsigned long)g_descriptor.instructions[1].memoryIn.count,
+            (unsigned long)g_descriptor.instructions[1].memoryOut.offset,
+            (unsigned long)g_descriptor.instructions[1].memoryOut.count);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(ZR_AOT_IR_OK, status, featureMessage);
     if (!nullDiagnostic) TEST_ASSERT_EQUAL_INT(ZR_AOT_IR_OK, diagnostic.status);
     TEST_ASSERT_TRUE(length < sizeof(text));
     parse_text(text, length, llvm);
@@ -511,7 +545,7 @@ static void nop_refusal(FEmitter emitter, TZrBool coreInvalid) {
     before = inputs_observation();
     memcpy(&saved, nop, sizeof(saved));
     if (coreInvalid) nop->flags |= (ZR_EXEC_IR_INSTRUCTION_FLAG_KNOWN_MASK + 1u);
-    else nop->typeToken = g_descriptor.function.callableAbi.returnTypeToken;
+    else nop->typeToken = saved.typeToken == 1u ? 2u : 1u;
     memcpy(&perturbed, nop, sizeof(perturbed));
     coreStatus = ZrCore_AotIr_RequireExecutableAbi(&g_descriptor.module,
             g_descriptor.function.id, &abi, &coreDiagnostic);
@@ -519,6 +553,10 @@ static void nop_refusal(FEmitter emitter, TZrBool coreInvalid) {
     status = emitter(&g_descriptor.module, g_descriptor.function.id, text, sizeof(text), &length, &diagnostic);
     memcpy(&observed, nop, sizeof(observed));
     memcpy(nop, &saved, sizeof(saved));
+    if (!coreInvalid) {
+        TEST_ASSERT_TRUE(perturbed.typeToken != 0u);
+        TEST_ASSERT_TRUE(perturbed.typeToken != saved.typeToken);
+    }
     TEST_ASSERT_EQUAL_MEMORY(&perturbed, &observed, sizeof(observed));
     TEST_ASSERT_EQUAL_INT(coreInvalid ? ZR_AOT_IR_INVALID_OPCODE : ZR_AOT_IR_OK, coreStatus);
     TEST_ASSERT_EQUAL_INT(coreInvalid ? ZR_AOT_IR_INVALID_OPCODE : ZR_AOT_IR_UNSUPPORTED, status);
@@ -535,6 +573,68 @@ static void test_c_nop_semantic_type_is_unsupported(void) { nop_refusal(backend_
 static void test_llvm_nop_semantic_type_is_unsupported(void) { nop_refusal(backend_aot_ir_llvm_emit_const_i64, ZR_FALSE); }
 static void test_c_nop_core_error_propagates(void) { nop_refusal(backend_aot_ir_c_emit_const_i64, ZR_TRUE); }
 static void test_llvm_nop_core_error_propagates(void) { nop_refusal(backend_aot_ir_llvm_emit_const_i64, ZR_TRUE); }
+
+/* Core validates these individual records; the scalar consumer also requires
+ * their cross-record agreement. Restore whole owners before any assertions. */
+static void source_layout_mismatch(FEmitter emitter, TZrBool rowWidth) {
+    SZrAotIrFrameSlot savedSlot, perturbedSlot, observedSlot;
+    SZrExecIrLayout savedRow, perturbedRow, observedRow;
+    SZrAotIrDiagnostic moduleDiagnostic = {0}, abiDiagnostic = {0};
+    SZrAotIrDiagnostic diagnostic, expectedDiagnostic = {0};
+    SZrAotIrCallableAbi abi = {0};
+    EZrAotIrStatus moduleStatus, abiStatus, status;
+    TZrUInt32 mutatedToken, functionId, instructionId;
+    TZrUInt64 before;
+    char text[256];
+    size_t length = 99u;
+    prepare(rowWidth ? ZR_TEST_SSA_LITERAL_SCRIPT_EIGHT : ZR_TEST_SSA_LITERAL_SCRIPT_NINE);
+    TEST_ASSERT_EQUAL_UINT32(1u, g_descriptor.function.frameSlotCount);
+    TEST_ASSERT_EQUAL_UINT32(1u, g_descriptor.module.layoutCount);
+    TEST_ASSERT_EQUAL_UINT32(8u, g_descriptor.layouts[0].byteSize);
+    TEST_ASSERT_NOT_EQUAL_UINT64(0u, g_descriptor.layouts[0].layoutHash);
+    TEST_ASSERT_EQUAL_UINT32(ZR_EXEC_IR_OPCODE_CONSTANT, g_descriptor.instructions[0].opcode);
+    functionId = g_descriptor.function.id;
+    instructionId = g_descriptor.instructions[0].id;
+    before = inputs_observation();
+    memcpy(&savedSlot, &g_descriptor.frameSlots[0], sizeof(savedSlot));
+    memcpy(&savedRow, &g_descriptor.layouts[0], sizeof(savedRow));
+    mutatedToken = savedSlot.typeToken == 1u ? 2u : 1u;
+    if (rowWidth) g_descriptor.layouts[0].byteSize = 4u;
+    else g_descriptor.frameSlots[0].typeToken = mutatedToken;
+    memcpy(&perturbedSlot, &g_descriptor.frameSlots[0], sizeof(perturbedSlot));
+    memcpy(&perturbedRow, &g_descriptor.layouts[0], sizeof(perturbedRow));
+    moduleStatus = ZrCore_AotIr_ValidateModule(&g_descriptor.module, &moduleDiagnostic);
+    abiStatus = ZrCore_AotIr_RequireExecutableAbi(&g_descriptor.module,
+            functionId, &abi, &abiDiagnostic);
+    memset(text, 0xa5, sizeof(text));
+    memset(&diagnostic, 0xa5, sizeof(diagnostic));
+    status = emitter(&g_descriptor.module, functionId, text, sizeof(text), &length, &diagnostic);
+    memcpy(&observedSlot, &g_descriptor.frameSlots[0], sizeof(observedSlot));
+    memcpy(&observedRow, &g_descriptor.layouts[0], sizeof(observedRow));
+    memcpy(&g_descriptor.frameSlots[0], &savedSlot, sizeof(savedSlot));
+    memcpy(&g_descriptor.layouts[0], &savedRow, sizeof(savedRow));
+    expectedDiagnostic.status = ZR_AOT_IR_INVALID_LAYOUT;
+    expectedDiagnostic.functionId = functionId;
+    expectedDiagnostic.instructionId = instructionId;
+    expectedDiagnostic.expected = rowWidth ? 8u : abi.returnTypeToken;
+    expectedDiagnostic.actual = rowWidth ? 4u : mutatedToken;
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_IR_OK, moduleStatus);
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_IR_OK, abiStatus);
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_IR_CALLABLE_ABI_NOARGS_I64, abi.kind);
+    TEST_ASSERT_EQUAL_UINT32(savedSlot.typeToken, abi.returnTypeToken);
+    TEST_ASSERT_EQUAL_MEMORY(&perturbedSlot, &observedSlot, sizeof(observedSlot));
+    TEST_ASSERT_EQUAL_MEMORY(&perturbedRow, &observedRow, sizeof(observedRow));
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_IR_INVALID_LAYOUT, status);
+    TEST_ASSERT_EQUAL_MEMORY(&expectedDiagnostic, &diagnostic, sizeof(diagnostic));
+    TEST_ASSERT_EQUAL_CHAR('\0', text[0]);
+    TEST_ASSERT_EQUAL_UINT64(0u, length);
+    TEST_ASSERT_EQUAL_UINT64(before, inputs_observation());
+}
+
+static void test_c_actual_frame_type_mismatch(void) { source_layout_mismatch(backend_aot_ir_c_emit_const_i64, ZR_FALSE); }
+static void test_llvm_actual_frame_type_mismatch(void) { source_layout_mismatch(backend_aot_ir_llvm_emit_const_i64, ZR_FALSE); }
+static void test_c_actual_layout_width_mismatch(void) { source_layout_mismatch(backend_aot_ir_c_emit_const_i64, ZR_TRUE); }
+static void test_llvm_actual_layout_width_mismatch(void) { source_layout_mismatch(backend_aot_ir_llvm_emit_const_i64, ZR_TRUE); }
 
 #else
 static void test_other_host_actual_target_is_unsupported(void) {
@@ -588,6 +688,10 @@ int main(int argc, char **argv) {
             RUN_TEST(test_llvm_nop_semantic_type_is_unsupported);
             RUN_TEST(test_c_nop_core_error_propagates);
             RUN_TEST(test_llvm_nop_core_error_propagates);
+            RUN_TEST(test_c_actual_frame_type_mismatch);
+            RUN_TEST(test_llvm_actual_frame_type_mismatch);
+            RUN_TEST(test_c_actual_layout_width_mismatch);
+            RUN_TEST(test_llvm_actual_layout_width_mismatch);
         }
     }
 #else

@@ -181,3 +181,29 @@ assert result may be correct but native coverage decreases
 C/LLVM 的简单输出能编译不等于后端完成。生成代码必须实际加载执行，并验证语义原语的每个正常/异常出口。
 
 本任务的 acceptance 至少附上：上述断言对应的测试名称、实际执行后端/平台、失败注入位置、verifier 输入/输出摘要，以及涉及所有权时的分配/释放或 lease 平衡。新增入口的 OOM、取消、重复调用和部分初始化退出应有明确处理；不适用的状态写明原因。
+
+### Actual source scalar text foundation (finite r3 verified)
+
+The existing C/LLVM scalar buffer APIs now have a finite actual-source descriptor
+profile verified at finite r3: finalized `9;` / `8;` SCRIPT metadata, original module
+binding before compaction, primitive/frame witnesses, canonical projection and
+current-host `NOARGS_I64` descriptor. The consumer retains actual IDs, source
+maps, frame/value slots and the complete empty state map. Empty NOP ranges may
+carry valid pool cursors; zero count does not imply zero offset.
+The actual NOP also retains the return ABI type token; the finite consumer
+requires that exact actual token, rather than zero or any arbitrary type.
+
+Committed actual RED is `9d6df0fdee43351b196c24e40a1537afdf14fa50`. Implementation
+runs r1/r2 each failed 12 of 22 source cases despite configure/build exit 0.
+The cursor change alone did not repair actual NOP admission; bounded r4 diagnosed
+its actual return ABI type. Final r3 passed five CTest suites: 42 Unity cases
+(source22 + descriptor20) and three prior standalone regressions. Configure,
+build and CTest exited 0; build and changed-TU MSVC compile had zero warnings.
+This slice emits buffers and leaves projection runnable false.
+
+See [module detail](../../../parser-and-semantics/ssa-source-aot-scalar-text.md),
+[acceptance](../../../acceptance/ssa-source-aot-scalar-text.md) and
+[test guide](../../../../tests/acceptance/ssa-source-aot-scalar-text.md).
+This progress does not complete 07.02 or any unchecked task above. Linux/full
+MSVC, native/general lowering, registration, owner retention after owner release
+and the full 47-shape typed matrix remain OPEN.

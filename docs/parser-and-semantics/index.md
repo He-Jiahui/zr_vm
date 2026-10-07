@@ -691,3 +691,8 @@ projector。analyzer rule 源文件不得直接构造 LSP diagnostic、调用 pa
   - Original source module contract binding before compaction; descriptor borrowed-owner lifetime
   - Committed actual RED; finite 55-case GREEN and two-TU MSVC compile-only proof
   - [Acceptance](../acceptance/ssa-source-aot-descriptor.md) and [test guide](../../tests/acceptance/ssa-source-aot-descriptor.md)
+
+- [ssa-source-aot-scalar-text.md](ssa-source-aot-scalar-text.md)
+  - Actual source CONSTANT/plain NOP/RETURN descriptor to caller-owned C/LLVM text buffers
+  - Primitive/frame/state/source records preserved; genuine RED and failed r1/r2 retained; finite r3 five-suite GREEN
+  - [Acceptance](../acceptance/ssa-source-aot-scalar-text.md) and [test guide](../../tests/acceptance/ssa-source-aot-scalar-text.md)
