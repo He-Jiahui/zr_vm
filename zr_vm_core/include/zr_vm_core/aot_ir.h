@@ -34,7 +34,8 @@ typedef enum EZrAotIrStatus {
     ZR_AOT_IR_INVALID_LAYOUT,
     ZR_AOT_IR_INVALID_SIGNATURE,
     ZR_AOT_IR_RELOCATION,
-    ZR_AOT_IR_UNSUPPORTED
+    ZR_AOT_IR_UNSUPPORTED,
+    ZR_AOT_IR_OUT_OF_MEMORY
 } EZrAotIrStatus;
 
 typedef struct SZrAotIrDiagnostic {

@@ -11,8 +11,9 @@ typedef struct SZrAotIrOwnedModule SZrAotIrOwnedModule;
  * @pre source 及完整数组范围调用期间可读且无并发修改；destination 指向
  *      初始化为 NULL 或本接口返回的唯一 live owner 的指针槽。该槽和
  *      可选 diagnostic 不覆盖 source、旧 arena 或彼此。
- * @note source 可为旧 owner 的 view；失败不改变旧 owner。当前 RED stub
- *       对合法输入返回 UNSUPPORTED，尚未建立独立复制的成功路径。
+ * @note source 可为旧 owner 的 view；成功时建立新的单一 arena 后再释放旧
+ *       owner，失败不改变旧 owner。零长度数组规范化为 NULL，map 容量规范化
+ *       为对应计数；保留存在但为空的 map header。本接口不授予执行权限。
  */
 ZR_CORE_API EZrAotIrStatus ZrCore_AotIr_CloneOwnedModule(
         const SZrAotIrModule *source, SZrAotIrOwnedModule **destination,

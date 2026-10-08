@@ -13,6 +13,8 @@ related_code:
 implementation_files:
   - zr_vm_core/include/zr_vm_core/aot_ir_owned_module.h
   - zr_vm_core/src/zr_vm_core/aot_ir_owned_module.c
+  - zr_vm_core/include/zr_vm_core/aot_ir.h
+  - zr_vm_core/src/zr_vm_core/aot_ir.c
 plan_sources:
   - .codex/plans/20261007-ssa-core-owned-module.md
   - .codex/plans/20261006-ssa-core-scalar-owner-design-v2.md
@@ -20,7 +22,7 @@ tests:
   - tests/parser/test_ssa_source_aot_owned_module.c
   - tests/acceptance/ssa-aot-owned-module.md
 doc_type: module-detail
-status: finite-core-owner-genuine-red
+status: finite-core-owner-lifetime-green
 ---
 
 # Independent Core AOT module ownership
@@ -30,20 +32,26 @@ status: finite-core-owner-genuine-red
 The AOT IR is a structural representation with borrowed C array views and numeric
 semantic references. Parser's projection descriptor does not independently retain
 all those arrays. The owner interface provides the location for an independent
-Core lifetime: consumers should eventually keep a module after its descriptor,
+Core lifetime: consumers can retain a module after its descriptor,
 projection, compiler, fixture and runtime state have been released.
 
-**Current implementation is a validation stub.** Clone rejects NULL source or
-destination, invokes the existing Core module validator, propagates its failures,
-and returns `ZR_AOT_IR_UNSUPPORTED` (14) for valid input. It performs no allocation
-and never writes the destination slot. Its own argument/unsupported diagnostics
-are zeroed and then receive the returned status; a NULL diagnostic is accepted.
-It has no successful independent-copy path. Actual r1 proved finite genuine RED:
-configure/build and two prerequisites passed; both isolated feature cases failed
-only at the Clone-success assertion (expected 0, observed 14). This proves the
-missing feature with working prerequisites, not successful ownership.
+**The frozen production implementation now performs independent copying.** Clone
+validates the source, measures a checked arena, allocates once, copies and rebinds
+the complete reachable schema, validates its candidate and atomically replaces
+the destination before freeing the old arena. Its 259-line owner TU is pinned at
+`54B3179C21FEF38B1D6528CBE7D430F70FAE12139F92760B655CF188820AAD4A`.
+Actual reviewed r3 proves finite lifetime GREEN: three selected no-argument
+CTest suites passed 52 Unity cases (descriptor20, scalar22, owner10), with zero
+failures/ignored and no observed UBSan diagnostic. The run reused the r3 binaries
+after preserving/reviewing 17 Parser warnings; it did not rebuild or suppress
+warnings. The independent MSVC r3 evidence is two-TU compile-only proof.
 
-The stub includes only the Core public header and CRT headers. It introduces no
+Historical RED used the validation stub: valid input returned UNSUPPORTED (14)
+without allocation or destination writes. Actual r1 passed configure/build and
+two prerequisites, then failed both Clone assertions (expected 0, observed 14).
+That RED is committed as `511513d459ad4425ff0d0622444f28f137d078ab`.
+
+The implementation includes only the Core public header and CRT headers. It introduces no
 Core-to-Parser dependency. Parser and scalar emitters are test consumers.
 See [acceptance](../acceptance/ssa-aot-owned-module.md) for evidence status and
 [test guide](../../tests/acceptance/ssa-aot-owned-module.md) for the finite modes.
@@ -62,9 +70,8 @@ const SZrAotIrModule *ZrCore_AotIr_OwnedModuleView(
 void ZrCore_AotIr_OwnedModuleFree(SZrAotIrOwnedModule **owner);
 ```
 
-Initialize a destination slot to NULL. The full interface contract permits NULL
-or a unique live owner produced by successful Clone; the stub currently produces
-none. Source and every advertised array extent must remain readable and unchanged
+Initialize a destination slot to NULL. The interface permits NULL or a unique live
+owner produced by successful Clone. Source and every advertised array extent must remain readable and unchanged
 through the entire call. Arithmetic checks cannot establish memory readability.
 Destination must be a writable pointer slot. That slot and optional diagnostic
 storage must not overlap source records/pools, the old arena, or each other.
@@ -76,7 +83,7 @@ Free or successful replacement; it does not allocate or validate. Free(NULL) and
 Free(&nullOwner) are no-ops. Free of a unique live owner releases its base once
 and clears the caller's slot. Never individually free interior arrays or map
 headers. Existing StateMapFree/GcMapFree own separately allocated storage and are
-inappropriate for future arena interiors.
+inappropriate for these arena interiors.
 
 Clone is structural ownership. Module validity does not establish an executable
 ABI or authorize execution. `ZrCore_AotIr_RequireExecutableAbi` remains a separate
@@ -92,8 +99,9 @@ primitive layouts, source coordinates and deopt records contain numeric facts;
 their semantic references are IDs/ranges. Pointer addresses are storage views,
 not ABI hashes or serializable semantic references.
 
-The following table is the frozen implementation contract, **not implemented by
-the stub**. Each span uses its actual `sizeof(*source.field)` and element alignment.
+The implementation visits the complete inventory below using explicit actual
+record types for sizeof/alignof. General schema coverage in the copy traversal
+does not establish acceptance for every nonempty combination of those pools.
 
 | Level | Pointer and matching count |
 | --- | --- |
@@ -122,9 +130,9 @@ slotValues pointer belongs in the owner: none is reachable through this AOT sche
 The CONSTANT instruction's layoutId is its constant-pool index; it must not be
 confused with the primitive layout record's id.
 
-## Planned arena geometry and publication
+## Arena geometry and publication
 
-The frozen design specifies one CRT allocation. Its first aligned object is the
+The implementation uses one CRT allocation. Its first aligned object is the
 private owner containing an inline module; the functions, constants, layouts,
 all function pools and present map headers/pools follow in that same arena.
 Owner and map headers must never be temporary stack objects behind published
@@ -136,14 +144,27 @@ Geometry uses size_t without narrowing totals to TZrUInt32. Check multiplication
 before forming `count * width`; calculate alignment padding without unchecked
 `offset + align - 1`; check padding and final addition separately against SIZE_MAX.
 Width is positive and alignment is a positive power of two. Use actual record
-alignments, with compile-time assertions that they fit `alignof(max_align_t)`;
+alignments, with compile-time assertions that they fit `alignof(TOwnedModuleMaxAlign)`;
 pointerSize and a guessed eight-byte alignment do not define arena alignment.
 Zero-count arrays consume no storage or padding; present-empty headers do.
 No arbitrary count cap replaces checked arithmetic. Nonzero spans must have
 aligned starts and disjoint exact extents inside the measured allocation.
 
-The intended sequence rejects invalid arguments, establishes safe geometry and
-validates the source, measures, allocates, zeroes/copies/rebases a private candidate,
+`TOwnedModuleMaxAlign` is private: double under _MSC_VER, max_align_t otherwise.
+The Microsoft-ABI branch matches the actual MSVC cstddef and clang 19
+__stddef_max_align_t.h definitions; MSVC C did not expose max_align_t in the first
+compile attempt. All per-record alignment assertions remain active. This is a
+toolchain-specific ordinary-alignment definition, not removal of the alignment gate.
+
+`owned_module_checked_span` validates its cursor/offset arguments, positive width,
+power-of-two alignment and the ordinary-alignment upper bound before zero-count
+handling. Failure preserves cursor and offset. Zero count reports the current
+offset and consumes no bytes/padding. `owned_module_copy_span` uses a local void*
+slot, so it never writes a typed pointer field through an incompatible void**.
+`owned_module_layout` runs the same traversal for measurement and placement.
+
+The sequence rejects invalid arguments, validates the source using existing Core
+validation, measures, allocates, zeroes/copies/rebases a private candidate,
 then validates that candidate using existing Core validation. All source reads
 and candidate validation precede publication. On success, save the old owner,
 publish the new owner, and free the old base. On any failure, preserve destination
@@ -157,14 +178,20 @@ Cloning between owners must leave the new owner usable after freeing the first.
 
 ## Errors and unfinished gates
 
-Currently NULL source/destination returns INVALID_ARGUMENT; source validation
-failure and diagnostic are propagated unchanged; valid input returns UNSUPPORTED.
-The current enum ends at UNSUPPORTED and has no OUT_OF_MEMORY member. Future
-production work may append OUT_OF_MEMORY and its StatusName case while preserving
-existing numeric values. The frozen design assigns arithmetic overflow to
-INVALID_RANGE and failed arena allocation to OUT_OF_MEMORY, expected=required
-bytes and actual=0. Neither allocation failure nor geometry behavior is implemented
-or accepted in this phase.
+NULL source/destination returns INVALID_ARGUMENT. Source/candidate validator
+failures and diagnostics are propagated unchanged. Measurement/placement failure
+or measured/filled size disagreement returns INVALID_RANGE; a failed candidate
+is released. Failed allocation returns appended OUT_OF_MEMORY (15), with diagnostic
+expected=required arena bytes and actual=0. StatusName returns `out_of_memory`;
+existing values, including UNSUPPORTED=14, retain their values. The owner-created
+diagnostic is zeroed before status/expected writes. NULL diagnostic is supported.
+Success returns OK after publication and old-arena release.
+
+The OOM branch and private checked arithmetic are implemented but have no injected
+allocation-failure or direct SIZE_MAX boundary acceptance. Those need the following
+independent actual-TU allocator/private-helper gate, rather than credit from ordinary
+successful scalar cloning. The admitted scalar lifetime gate is GREEN; broader
+schema/fault/platform/returned-program acceptance remains OPEN.
 
 The authored 677-line test inventories all pointers, but real 9/8 inputs populate
 only their actual scalar spans, have no GC header and have a present-empty logical

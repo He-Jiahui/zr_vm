@@ -1380,6 +1380,7 @@ const TZrChar *ZrCore_AotIr_StatusName(EZrAotIrStatus status) {
         case ZR_AOT_IR_INVALID_SIGNATURE: return "invalid_signature";
         case ZR_AOT_IR_RELOCATION: return "relocation";
         case ZR_AOT_IR_UNSUPPORTED: return "unsupported";
+        case ZR_AOT_IR_OUT_OF_MEMORY: return "out_of_memory";
         default: return "unknown";
     }
 }

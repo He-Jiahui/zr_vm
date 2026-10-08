@@ -5,11 +5,15 @@ related_code:
   - tests/parser/support/ssa_literal_script_fixture.h
   - zr_vm_core/include/zr_vm_core/aot_ir_owned_module.h
   - zr_vm_core/src/zr_vm_core/aot_ir_owned_module.c
+  - zr_vm_core/include/zr_vm_core/aot_ir.h
+  - zr_vm_core/src/zr_vm_core/aot_ir.c
   - tests/cmake/ssa-source-direct-validation/CMakeLists.txt
   - tests/cmake/ssa-source-execbc-vm.cmake
 implementation_files:
   - zr_vm_core/include/zr_vm_core/aot_ir_owned_module.h
   - zr_vm_core/src/zr_vm_core/aot_ir_owned_module.c
+  - zr_vm_core/include/zr_vm_core/aot_ir.h
+  - zr_vm_core/src/zr_vm_core/aot_ir.c
 plan_sources:
   - .codex/plans/20261007-ssa-core-owned-module.md
   - .codex/plans/20261006-ssa-core-scalar-owner-design-v2.md
@@ -18,7 +22,7 @@ tests:
   - tests/parser/test_ssa_source_aot_scalar_text.c
   - tests/parser/test_ssa_source_aot_descriptor.c
 doc_type: testing-guide
-status: finite-core-owner-genuine-red
+status: finite-core-owner-lifetime-green
 ---
 
 # Independent Core owner lifetime test guide
@@ -28,13 +32,13 @@ status: finite-core-owner-genuine-red
 The actual test source has 677 lines. Its admitted branch requires Windows64,
 _MSC_VER and x64/AMD64, excluding ARM64/ARM64EC. These counts describe the authored
 inventory. Actual r1 passed the prerequisite mode and established isolated
-genuine feature RED; the no-argument ten-case inventory remains unproved.
+genuine feature RED; final reviewed r3 passed the ten-case owner inventory.
 
 | Invocation | Admitted-host inventory | Current expected phase |
 | --- | --- | --- |
 | --prerequisites-only | Two actual 9/8 descriptor/ABI/pure-buffer cases | Actual r1: 2 PASS, exit 0 |
 | --features-only | Two actual 9/8 producer-lifetime cases | Actual r1: 2 FAIL only Clone-success assertion, exit 2 |
-| No arguments | Ten cases: two prerequisites and eight ownership cases | Later functional acceptance, currently unproved |
+| No arguments | Ten cases: two prerequisites and eight ownership cases | Actual reviewed r3: 10 PASS, 0 failures/ignored |
 | Other arguments | Returns 2 before Unity execution | Invalid invocation |
 | Other actual host, including either recognized mode | One actual target UNSUPPORTED case | Host refusal; never substitute lifetime RED |
 
@@ -42,8 +46,8 @@ The eight ownership cases are 9 and 8 surviving all producers, owner-to-owner
 survival after first Free, exact self-source replacement, actual 9-to-8
 replacement, actual opcode-category error atomicity, actual contract error
 atomicity, and required arguments/NULL-safe Free. The final case also exercises
-owned C/LLVM buffer boundaries. Current stub returns UNSUPPORTED, so the lifetime
-assertion expects 0 and observes 14. Root's actual r1 logs establish that exact
+owned C/LLVM buffer boundaries. Historical RED stub returned UNSUPPORTED, so the lifetime
+assertion expected 0 and observed 14. Root's actual r1 logs establish that exact
 failure for both literal cases, with prerequisite mode passing.
 
 ## Producer chain and lifetime proof
@@ -87,8 +91,8 @@ Buffer checks cover insufficient capacity and adjacent sentinel preservation,
 exact required bytes plus NUL, NULL output/length, zero capacity, diagnostic status
 and owner observation stability. Required Clone arguments preserve a preexisting
 owner. View(NULL), Free(NULL), repeated empty Free and Free followed by View(NULL)
-are explicit assertions, although this combined case currently cannot reach them
-because initial Clone is unsupported.
+are explicit assertions. Production Clone now implements arena copying; actual
+coverage of those assertions is established by the final actual no-argument owner10 run.
 
 ## Build registration and evidence interpretation
 
@@ -117,13 +121,70 @@ exited 2, and Root PID86154 naturally terminated with observed exit 0. Warnings
 were zero and no UBSan diagnostic was observed. The final RED receipt SHA-256 is
 `5AC6E5B9FFA2CC4304428C719F9EAE346429F096A6DF39619A6CB8FB4F969501`.
 No new run was made for this guide. Earlier scalar-text GREEN is a prerequisite,
-not owner GREEN; default10 and successful ownership remain OPEN.
+not owner GREEN; the final reviewed run below separately proves the finite owner10 gate.
+
+The RED commit is `511513d459ad4425ff0d0622444f28f137d078ab`. Production owner
+source is frozen at 259 lines with SHA-256
+`54B3179C21FEF38B1D6528CBE7D430F70FAE12139F92760B655CF188820AAD4A`.
+Direct r3 driver PID73929 naturally terminated with exit 1; configure PID14212
+and build PID28332 exited 0. The warning gate stopped before CTest on 17 Parser
+warnings, zero in owner/scalar/test finite units. Current source/headers advanced
+since r1, so the 17 warnings are not declared identical to its 52. Failed r3 receipt
+SHA-256 is `D7DF32FCC34BBBBCD7035C716A741ADB3D80B76879CB7073FA3B4DEAA4895CF3`.
+Root subsequently checked pins and reviewed those warnings before the successful
+actual same-three-suite default run below. Build success alone did not provide
+the lifetime/default10 result; the new terminal CTest evidence does.
+
+MSVC r1 owner compile exited 2 on missing max_align_t. Direct attempted GREEN r1
+configured/built successfully but its driver exited 1 before CTest on 52 warnings
+in existing files, zero in current finite units. r2 dispatch observation failed
+and supplies no actual results. Preserve these failures. MSVC r3 owner PID26584
+and validator PID24300 each naturally exited 0 with zero warnings; receipt
+`8D6F95B4C9D968EDB8617FE6093C646947AAAE85416CF414F4370BF64E1435E2`
+pins the two actual TUs. This is compile-only evidence. Whole-tree warning-free
+and full MSVC runtime are not established by those compiles.
+The [acceptance record](../../docs/acceptance/ssa-aot-owned-module.md) pins all
+retained failure receipts and the actual compile logs. No new run is made here.
+
+## Final actual reviewed lifetime run
+
+Root's reviewed native PID75467 naturally exited 0; actual CTest PID27400 completed
+WaitForExit with exit 0. The run reused the existing r3 configure/build outputs
+without rebuild or warning suppression. Source/header pins (48), the entire actual
+source graph, five explicit schema headers, four metadata artifacts and all three
+binaries were verified unchanged before and after. All three CTest commands used
+no arguments, and the log records descriptor20, scalar22 and owner10: 52 Unity
+cases, zero failures/ignored and no observed UBSan diagnostic.
+
+The exact selected CTest regex was:
+
+```text
+^(ssa_source_aot_owned_module|ssa_source_aot_scalar_text|ssa_source_aot_descriptor)$
+```
+
+Final receipt SHA-256:
+`B7E56AB14E85CACFD0C840D7B0680C98153306F980D2D3CF1AEC9EC9D1C2A070`.
+Actual CTest log SHA-256:
+`EF9BB8E8B0EB7286FAB099FFC6D0AF6FD06C11B0B436535A56EBE723DBBB549D`.
+Independent warning review SHA-256:
+`36DFDAD661866A433D22CF4755F4B58022EA627747C3099A0805AC1CCF470265`.
+The review classified 17 existing Parser warnings (8 unused functions, 4 unused
+parameters, 3 braces, 2 discarded const) and found no concrete bounded blocker.
+It preserved all diagnostics; whole-tree warning acceptance remains OPEN.
+
+The actual owner10 PASS cases cover producer destruction for 9/8, owner-to-owner
+after first Free, exact self-source with fresh addresses, actual 9-to-8 replacement,
+opcode-category and contract refusal atomicity, NULL arguments, Free idempotence
+and owned buffer boundaries. Only the admitted scalar profile gains this evidence.
+No additional test run or guessed GREEN commit identity is introduced by this guide.
 
 ## Subsequent finite tests and limits
 
 Allocator/OOM and direct arithmetic-helper tests are not in these ten cases.
-A subsequent production Clone phase must append the OOM status/string. The following
-separate fault/arithmetic gate must compile the real owner TU in an independent
+Production now appends OUT_OF_MEMORY=15 and StatusName `out_of_memory`, retaining
+all previous numeric values; its failed malloc diagnostic reports expected arena
+bytes and actual zero. This implemented branch has no allocation-failure proof.
+The following separate fault/arithmetic gate must compile the real owner TU in an independent
 OBJECT target with test-local allocator redirection, and expose
 only a private test wrapper calling actual checked geometry. Verify exclusive
 owner symbol resolution; do not include production .c text or duplicate formulas.
