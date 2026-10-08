@@ -73,6 +73,19 @@ static TZrBool owned_module_checked_span(
     return ZR_TRUE;
 }
 
+#if defined(ZR_TEST_SSA_AOT_OWNED_MODULE_FAULTS)
+/* Private symbols exist only in the independently shimmed test object. */
+TZrBool ZrTests_AotOwnedModule_CheckedSpan(
+        size_t *cursor, size_t count, size_t width, size_t alignment,
+        size_t *offset) {
+    return owned_module_checked_span(cursor, count, width, alignment, offset);
+}
+
+size_t ZrTests_AotOwnedModule_AlignmentBound(void) {
+    return alignof(TOwnedModuleMaxAlign);
+}
+#endif
+
 /* out is a local void* slot, never an alias of a typed pointer field. The same
  * checked span helper drives measurement and placement, including byte extents. */
 static TZrBool owned_module_copy_span(

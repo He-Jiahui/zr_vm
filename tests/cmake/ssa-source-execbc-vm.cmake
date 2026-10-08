@@ -278,6 +278,47 @@ if (NOT TARGET zr_vm_ssa_source_aot_owned_module_test)
     set_tests_properties(ssa_source_aot_owned_module PROPERTIES LABELS "ssa;aot" TIMEOUT 120)
 endif ()
 
+# One actual Core arena allocation and the real private geometry helper.
+if (NOT TARGET zr_vm_ssa_aot_owned_module_faults_test)
+    add_library(zr_vm_ssa_aot_owned_module_fault_object OBJECT
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot_ir_owned_module.c)
+    target_include_directories(zr_vm_ssa_aot_owned_module_fault_object PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include)
+    target_compile_definitions(zr_vm_ssa_aot_owned_module_fault_object PRIVATE
+            ZR_LIBRARY_TYPE_STATIC=1 ZR_CURRENT_MODULE="zr_vm_core"
+            ZR_TEST_SSA_AOT_OWNED_MODULE_FAULTS=1)
+    if (MSVC)
+        target_compile_options(zr_vm_ssa_aot_owned_module_fault_object PRIVATE
+                "/FI${CMAKE_SOURCE_DIR}/tests/parser/support/ssa_aot_owned_module_fault_shim.h")
+    else ()
+        target_compile_options(zr_vm_ssa_aot_owned_module_fault_object PRIVATE
+                -include "${CMAKE_SOURCE_DIR}/tests/parser/support/ssa_aot_owned_module_fault_shim.h")
+    endif ()
+    zr_vm_add_unity_test_target(zr_vm_ssa_aot_owned_module_faults_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_aot_owned_module_faults.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/support/ssa_literal_script_fixture.c)
+    target_include_directories(zr_vm_ssa_aot_owned_module_faults_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/compiler
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir)
+    target_link_libraries(zr_vm_ssa_aot_owned_module_faults_test PRIVATE
+            zr_vm_ssa_aot_owned_module_fault_object)
+    zr_vm_link_parser_core_plus_library(zr_vm_ssa_aot_owned_module_faults_test)
+    if (MSVC)
+        target_link_options(zr_vm_ssa_aot_owned_module_faults_test PRIVATE /STACK:8388608)
+    endif ()
+    add_test(NAME ssa_aot_owned_module_faults
+            COMMAND zr_vm_ssa_aot_owned_module_faults_test)
+    set_tests_properties(ssa_aot_owned_module_faults PROPERTIES
+            LABELS "ssa;aot;allocator-fault" TIMEOUT 120)
+endif ()
+
 # Primitive frame attachment after actual source compaction and explicit rows.
 if (NOT TARGET zr_vm_ssa_primitive_source_frame_test)
     zr_vm_add_unity_test_target(zr_vm_ssa_primitive_source_frame_test

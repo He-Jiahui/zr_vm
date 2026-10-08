@@ -8,6 +8,8 @@ related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir_state_map.h
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c
   - tests/parser/test_ssa_source_aot_owned_module.c
+  - tests/parser/test_ssa_aot_owned_module_faults.c
+  - tests/parser/support/ssa_aot_owned_module_fault_shim.h
   - tests/cmake/ssa-source-direct-validation/CMakeLists.txt
   - tests/cmake/ssa-source-execbc-vm.cmake
 implementation_files:
@@ -18,9 +20,11 @@ implementation_files:
 plan_sources:
   - .codex/plans/20261007-ssa-core-owned-module.md
   - .codex/plans/20261006-ssa-core-scalar-owner-design-v2.md
+  - .codex/plans/20261007-ssa-owner-fault-gate.md
 tests:
   - tests/parser/test_ssa_source_aot_owned_module.c
   - tests/acceptance/ssa-aot-owned-module.md
+  - tests/acceptance/ssa-aot-owned-module-faults.md
 doc_type: module-detail
 status: finite-core-owner-lifetime-green
 ---
@@ -38,8 +42,12 @@ projection, compiler, fixture and runtime state have been released.
 **The frozen production implementation now performs independent copying.** Clone
 validates the source, measures a checked arena, allocates once, copies and rebinds
 the complete reachable schema, validates its candidate and atomically replaces
-the destination before freeing the old arena. Its 259-line owner TU is pinned at
+the destination before freeing the old arena. The historical 259-line lifetime
+owner TU was pinned at
 `54B3179C21FEF38B1D6528CBE7D430F70FAE12139F92760B655CF188820AAD4A`.
+Its lifetime commit is `78ce8caf737ed7d0a4f1dce3e377e1bd2b0904b8`.
+The current 272-line TU adds only conditional private fault-test forwarding
+symbols; the following section records its new pin and separate fault gate.
 Actual reviewed r3 proves finite lifetime GREEN: three selected no-argument
 CTest suites passed 52 Unity cases (descriptor20, scalar22, owner10), with zero
 failures/ignored and no observed UBSan diagnostic. The run reused the r3 binaries
@@ -187,15 +195,67 @@ existing values, including UNSUPPORTED=14, retain their values. The owner-create
 diagnostic is zeroed before status/expected writes. NULL diagnostic is supported.
 Success returns OK after publication and old-arena release.
 
-The OOM branch and private checked arithmetic are implemented but have no injected
-allocation-failure or direct SIZE_MAX boundary acceptance. Those need the following
-independent actual-TU allocator/private-helper gate, rather than credit from ordinary
-successful scalar cloning. The admitted scalar lifetime gate is GREEN; broader
-schema/fault/platform/returned-program acceptance remains OPEN.
+The OOM branch and private checked arithmetic now have a separate actual-TU
+allocation-failure and numeric boundary gate described below. Scalar lifetime
+and the seventeen-case private fault gate are GREEN; broader schema/platform/
+returned-program acceptance remains OPEN.
 
 The authored 677-line test inventories all pointers, but real 9/8 inputs populate
 only their actual scalar spans, have no GC header and have a present-empty logical
-map. Generic multi-function/GC/CFG/deopt retention is unproved. Allocator injection,
-the actual-TU OBJECT shim, private-helper arithmetic boundaries, Linux/full MSVC,
-native lowering and normal returned-program retention are separate unfinished
-gates. The full SSA47 goal and C/LLVM milestone remain OPEN.
+map. Generic multi-function/GC/CFG/deopt retention is unproved. Linux/full MSVC,
+native lowering and normal returned-program retention remain unfinished gates.
+The full SSA47 goal and C/LLVM milestone remain OPEN.
+
+## Private allocator and geometry gate: finite GREEN
+
+The current owner source is 272 lines, SHA-256
+`312E94D857FE5B74610EF4C4894B55A65E2AF0648ABB0DDCE76FD605984EC3AC`.
+Under `ZR_TEST_SSA_AOT_OWNED_MODULE_FAULTS`, two private symbols forward directly
+to the real checked-span helper and return `alignof(TOwnedModuleMaxAlign)`.
+They are absent from ordinary production objects and the installed public header.
+No geometry formula or production allocation policy was replaced.
+
+The 24-line shim reads real CRT/owner declarations before redirecting malloc/free.
+Only the independent actual-source owner OBJECT receives the forced include and
+private define. The 588-line Unity test includes it with NO_REDIRECT so its wrapper
+bodies call CRT allocators. Parser, fixture, Core validator, support and ordinary
+owner objects retain their normal allocators. No copied production .c or global
+allocator hook is used. Link-map evidence must prove fault calls resolve solely
+from the shimmed object, rather than the unshimmed Core archive member.
+
+The authored 17-case inventory targets three single-site OOM/retry phases
+(initial 9, independent 9-to-8 replacement, exact self-source), two zero-allocation
+Core refusals, numeric checked-size/alignment boundaries and status stability.
+Its fixed eight-record ledger observes only owner-TU direct allocator calls,
+tracks request bytes/failure/free/live counts, and performs no heap bookkeeping.
+Assertions disarm injection first; explicit release proves zero live owners and
+one free for each successful arena before teardown fallback.
+
+OOM expects one failed request with positive measured bytes, an otherwise zero
+diagnostic containing OUT_OF_MEMORY and expected bytes, unchanged old/source
+observations, zero free during failure and same-byte successful retry. Self retry
+uses a value-only witness and never dereferences its invalidated old owner view.
+Geometry tests call the real private helper with numeric SIZE_MAX arguments;
+they allocate no huge arrays/arenas and independently test multiply, padding and
+extent overflow, exact fit, zero count, invalid/null inputs and actual bound B
+versus 2*B. Status checks target every old value/name 0..14, OOM=15 and unknown=999.
+
+Actual MSVC fault r1 compiled the shimmed owner and test TUs with exit 0 and zero
+warnings; receipt `FAC6B16062AA3474B41E0BF35DF67A67F871DD055EAF4F46CD13DA6A68C79951`
+is compile-only. Direct r2 configure/build/CTest naturally exited 0: one suite,
+17/17 passes, zero ignored, no UBSan diagnostic. Its receipt SHA-256 is
+`6E153DAC65CAE4AB75EDA9D5569AEF5CAD3F4853F85598E26279A4E175A71700`.
+Compilation confines the shim to its owner OBJECT; Root independently read the
+pinned raw map to verify all three owner APIs and both private wrappers resolve
+from that object. Source/header/settings/map/binary hashes remained unchanged.
+
+R1 configure/build succeeded, but 231 warnings stopped its strict driver before
+CTest and six foreign Parser inputs changed during that build. Its failed receipt
+is preserved and receives no runtime credit. R2 reused the same build directory,
+freshly configured current inputs and incrementally rebuilt; zero new warnings
+do not establish whole-project warning acceptance.
+See [fault acceptance](../acceptance/ssa-aot-owned-module-faults.md) and
+[fault test guide](../../tests/acceptance/ssa-aot-owned-module-faults.md).
+Normal registration is present but unrun. Candidate-corruption failure cleanup,
+OS memory exhaustion, nonempty general maps/CFG/deopt/multiple-function retention,
+Linux/full MSVC, default returned retention and full47 remain OPEN.
