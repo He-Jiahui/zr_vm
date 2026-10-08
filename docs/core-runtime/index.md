@@ -129,6 +129,7 @@ doc_type: category-index
 # Core Runtime
 
 - [CallInfo runtime](call-info-runtime.md): 调用帧的活动链、复用缓存、栈借用与返回/GC 约束；仅静态审查。
+- [Metadata token contract](metadata-token-contract.md): token 域、签名正文、局部 child alias、绑定快照与具体 TODO 边界；仅该 header 全 114 单元静态审查。
 
 Typed function-value call contracts, closure preservation, and runtime signature
 validation are documented in [Typed Call Binding](typed-call-binding.md).
