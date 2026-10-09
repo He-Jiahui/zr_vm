@@ -152,3 +152,6 @@ doc_type: category-index
 
 - [zr.system.assembly 资源调用契约](zr-system-assembly-contract.md)
   - 当前项目资源定位、callback 与脚本结果的区别、资源所有权及文本 NUL 限制。
+
+- [FFI 模块测试调用契约](ffi-test-harness-contract.md)
+  - 样本实际判据、执行状态、借用资源，以及断言失败时的清理链。
