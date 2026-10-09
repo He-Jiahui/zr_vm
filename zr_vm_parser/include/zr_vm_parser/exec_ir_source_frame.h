@@ -36,4 +36,51 @@ ZR_PARSER_API TZrBool ZrParser_ExecIr_AttachPrimitiveSourceFrame(
         const SZrExecIrLayout *layouts, TZrUInt32 layoutCount,
         TZrUInt32 frameByteLimit, SZrExecIrDiagnostic *diagnostic);
 
+/* Validate an already attached primitive INT64 frame against the existing
+ * packed producer's regenerated result, without changing any input storage.
+ * Function, context, explicit target rows and their reachable typed storage
+ * must be initialized, readable, live, stable, serialized and independently
+ * nonoverlapping. An optional diagnostic must be independent writable storage.
+ * Address/shape checks cannot establish arbitrary-pointer readability or source
+ * provenance. Context must have valid typed canonical storage with sorted,
+ * nonzero node IDs; numeric IDs and hashes do not certify Binder provenance.
+ * Both sealed and unsealed Functions are eligible for this const operation.
+ * The body/value/target profile and whole-function SCALAR request are those of
+ * Attach above, allowing an existing frame and contract.layoutHash. Target rows
+ * provide geometry, not a target ABI certificate. Zero frameByteLimit is unbounded.
+ *
+ * Intended first-error order: NULL arguments; storage spans and capacities;
+ * temporary count products; Core VERIFY_ALL; body profile; target rows;
+ * sorted canonical IDs; value/type predicates; missing frame; request-values
+ * allocation; existing LayoutPackedFrame; logical frame fields; frame hash;
+ * contract hash; physical slot fields; actual-frame geometry. Validation may
+ * allocate temporary verification/request/packed storage, all released before
+ * return. It never allocates or publishes a persistent frame header or owner.
+ * Compare logical content, excluding capacity equality, spare bytes and padding;
+ * storage preflight still requires each live count to fit its readable capacity.
+ * The existing packed hash domain is retained without adding row identity/ABI.
+ *
+ * Every wrapper refusal resets all nine diagnostic fields. NULL Function/context,
+ * or nonzero layoutCount with NULL layouts, reports INVALID_ARGUMENT with token
+ * and all payload zero. Other wrapper refusals use the actual functionToken:
+ * invalid storage/sorted IDs use INVALID_RANGE; arithmetic uses CAPACITY_OVERFLOW;
+ * body/row/value admission uses UNSUPPORTED; request allocation uses OUT_OF_MEMORY;
+ * frame comparisons/geometry use LAYOUT_MISMATCH. Value admission additionally
+ * reports actualVersion=value.id, instructionId=value.definition and sourceId
+ * from a bounded defining instruction. Missing frame reports versions 1/0;
+ * logical/slot comparisons report expected/actual versions, hash comparisons
+ * expected/actual hashes. Other locations and payload fields remain zero.
+ * Core verification and packed-layout failures preserve all nine lower fields.
+ * Intended success clears all nine fields; NULL diagnostic is supported.
+ * Every return preserves all input logical content, owners, pointers and capacities.
+ *
+ * Current RED staging: after the NULL guards, this entry returns false with
+ * UNSUPPORTED/functionToken and all other diagnostic fields zero. It allocates
+ * nothing and performs no structural validation yet.
+ */
+ZR_PARSER_API TZrBool ZrParser_ExecIr_ValidatePrimitiveSourceFrame(
+        const SZrExecIrFunction *function, const SZrSemanticContext *context,
+        const SZrExecIrLayout *layouts, TZrUInt32 layoutCount,
+        TZrUInt32 frameByteLimit, SZrExecIrDiagnostic *diagnostic);
+
 #endif
