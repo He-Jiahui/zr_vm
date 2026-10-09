@@ -175,3 +175,39 @@ debug agent 可以读取 TestManifest，但 testing provider 不能在 Runtime p
 覆盖。ZrVmLibDebug_RegisterSandboxed 用受限 evaluate policy；宿主若只需要 coverage/profile
 可不注册脚本 debug module。关闭顺序为停止 agent/profile/coverage -> 释放 snapshot -> 关闭
 state/global，避免 callback 访问已销毁 frame。
+
+## Coverage 的调用契约与报告边界
+
+Coverage 由宿主分配，Init 只清初始状态；已拥有行数组或活动 hook 的对象应先 Destroy。
+CLI 在 zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:961 初始化，再由 zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:102 登记入口树、zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:103 开始采集。
+静态登记使未命中行也进入分母；LINE hook 在 zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:249 合并同一函数身份/行号，也能新增动态行。
+RegisterFunction 只登记单函数；Tree 按有限、无环 child 树递归，分配失败保留已经登记的前缀。
+
+### 所有权与读取时序
+
+- 会话拥有行数组和 NUL 终止的 name/source 文本快照；容量含 NUL，长文本会截断。function 只借用 VM。
+- 新增记录只有在扩容时才可能改变数组地址；重复登记或 LINE 仍可原位更新状态，地址稳定不保证内容不变。
+- Reset 只清 line_count，不卸 hook、不释放容量。实现不拒绝活动对象，因此建议 Stop 后重置；再次报告完整静态分母前重新登记。
+- zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:1151 Stop 后才在 zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:1153 输出报告，zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:1158 随后 Destroy。
+  报告失败分支在 zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:1154 Destroy；早退 helper 的 Stop/Destroy 位于 zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:81 和 zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:82。
+- Stop 恢复旧 hook、mask 和 COUNT 周期基值；core 的 zr_vm_core/src/zr_vm_core/debug.c:682 重启计数，不恢复之前剩余计数。
+  Stop 不冻结对象；后续 Register、Reset、Destroy 仍改变结果。借用函数必须保持到最后一次 GetLine 读取。
+- GetLine 用零基索引借内部行，越界/NULL 返回 NULL；Reset 使旧记录逻辑失效并可复用，Destroy 释放数组。
+  全表顺序包括多函数与动态追加，不承诺整体按源行排序。
+
+### 已知报告 I/O 边界
+
+BUG: CLI 在 zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:191 打开文件失败时返回 false；但 zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:199 的 fprintf、zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:217 的 fclose 和 zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:219 的 fflush 均未检查返回值，zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:221 仍返回 true。调用方不能据此判定报告已完整写入；后续沿 CLI 的覆盖率输出错误传播核查此已知路径。
+
+### 待核实设计边界
+
+- TODO: zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:12 的进程级活动表无锁；沿多 state 宿主调度与并发采集用例核共同同步模型。
+- TODO: zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:391 用旧快照覆盖活动期间外部 SetHook 配置；沿 zr_vm_core/src/zr_vm_core/debug.c:663 和嵌入宿主调用链核 hook 的所有权策略。
+- TODO: zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:252 的 LINE 扩容失败静默漏记，zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:201 的报告查询没有 incomplete 状态；用可控内存失败路径核报告语义。
+- TODO: zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:119 的容量倍增、zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:124 的字节乘法、zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:173 的计数加一及 zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:309 的静态行号数组乘法均需核上界；沿 zr_vm_common/include/zr_vm_common/zr_common_conf.h:35、zr_vm_core/include/zr_vm_core/function.h:646、zr_vm_core/src/zr_vm_core/debug.c:744 核宽度和可达规模，尚不足以标 BUG。
+
+### 现有验证覆盖
+
+tests/profile/test_coverage.c:119 的入口树登记、tests/profile/test_coverage.c:120 的 Start 和 tests/profile/test_coverage.c:122 的执行形成正常路径。
+断言 tests/profile/test_coverage.c:133 检查已执行 return，tests/profile/test_coverage.c:138 检查未执行 return，tests/profile/test_coverage.c:144 检查 Stop 后空 hook mask。
+这些是现有测试的实际内容；本批未执行该运行时测试，不声称覆盖 OOM、并发采集、重复 Start 或外部 hook 冲突。
