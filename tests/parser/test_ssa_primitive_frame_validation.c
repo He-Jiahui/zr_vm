@@ -24,6 +24,7 @@ static void test_actual_attached_frame_is_accepted(void) {
     Pf_Feature();
     TEST_ASSERT_EQUAL_UINT32(2u, function()->frameLayout->slotCount);
     TEST_ASSERT_NOT_EQUAL_UINT64(0u, function()->contract.layoutHash);
+    Pf_AttachFaults();
 }
 static void test_sealed_and_unsealed_frames_are_accepted(void) {
     Pf_Feature();
@@ -166,14 +167,14 @@ static void test_declared_canonical_ids_must_be_sorted_and_nonzero(void) {
 static void test_core_verifier_failure_precedes_later_admission(void) {
     Pf_Feature();
     SZrExecIrDiagnostic e = {0};
-    TZrUInt32 saved = function()->values[0].definition, flags = function()->instructions[0].flags;
-    function()->values[0].definition = 0u;
+    TZrUInt32 saved = function()->values[0].id, flags = function()->instructions[0].flags;
+    function()->values[0].id = 0u;
     function()->instructions[0].flags = 1u;
     SPfResult r = lower_first(&e, 0u);
-    function()->values[0].definition = saved;
+    function()->values[0].id = saved;
     function()->instructions[0].flags = (TZrUInt16) flags;
-    Pf_Refused(&r, &e);
     TEST_ASSERT_NOT_EQUAL_UINT(ZR_EXECUTION_DIAGNOSTIC_NONE, e.code);
+    Pf_Refused(&r, &e);
 }
 static void test_unsupported_body_profiles_are_refused(void) {
     Pf_Feature();

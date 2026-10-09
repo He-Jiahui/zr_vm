@@ -222,9 +222,10 @@ target_link_options(zr_vm_ssa_compare_metadata_guards_test PRIVATE
         /INCREMENTAL:NO /OPT:REF /STACK:8388608
         "/MAP:${CMAKE_BINARY_DIR}/ssa-compare-metadata-guards-link.map")
 
-# Instrument the two direct allocation sites in the actual production TU.
+# Instrument both production TUs for the two direct Attach allocation sites.
 add_library(ssa_source_primitive_frame_oom_object OBJECT
-        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame.c")
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame.c"
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame_validation.c")
 target_include_directories(ssa_source_primitive_frame_oom_object PRIVATE
         ${_zr_public_includes} ${_zr_vendor_includes}
         "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser")

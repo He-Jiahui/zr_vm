@@ -29,6 +29,7 @@ void Pf_Healthy(const SPfObservation *before, const SPfObservation *after);
 SPfResult Pf_Call(TZrUInt32 limit);
 void Pf_Refused(const SPfResult *result, const SZrExecIrDiagnostic *expected);
 void Pf_Feature(void);
+void Pf_AttachFaults(void);
 void Pf_Request(SZrExecIrPackedFrameRequest *request, SZrExecIrPackedValue values[2], TZrUInt32 limit);
 SZrOwnerHeapEvent Pf_FailedEvent(unsigned first, unsigned last);
 #endif

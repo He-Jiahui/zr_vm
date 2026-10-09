@@ -429,10 +429,11 @@ if (NOT TARGET zr_vm_ssa_primitive_source_frame_test)
             LABELS "ssa" TIMEOUT 120)
 endif ()
 
-# Two direct allocator failures compile the actual production TU with a local shim.
+# Instrument both production TUs for the two direct Attach allocation failures.
 if (NOT TARGET zr_vm_ssa_primitive_source_frame_oom_test)
     add_library(zr_vm_ssa_primitive_source_frame_oom_object OBJECT
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame_validation.c)
     target_include_directories(zr_vm_ssa_primitive_source_frame_oom_object PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include

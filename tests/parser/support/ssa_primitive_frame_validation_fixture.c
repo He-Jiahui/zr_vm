@@ -54,9 +54,25 @@ void Pf_Observe(SPfObservation *o) {
         POOL(results, resultCapacity);
         POOL(sourceMaps, sourceMapCapacity);
 #undef POOL
-        observe_bytes(o, f->frameLayout, sizeof(*f->frameLayout));
+        if (f->frameLayout != ZR_NULL)
+            observe_bytes(o, f->frameLayout, sizeof(*f->frameLayout));
         observe_bytes(o, g_frames[i].slots, (size_t) g_frames[i].slotCapacity * sizeof(*g_frames[i].slots));
     }
+}
+static void refresh_owners(void) {
+    g_liveCount = 0u;
+    for (unsigned i = 0u; i < 2u; ++i) {
+        g_owners[i] = g_pfFunctions[i];
+        memset(&g_frames[i], 0, sizeof(g_frames[i]));
+        if (g_pfFunctions[i].frameLayout != ZR_NULL)
+            g_frames[i] = *g_pfFunctions[i].frameLayout;
+    }
+    g_producerRecords = ZrTests_ExecOwner_Stats().records;
+    for (unsigned i = 0u; i < g_producerRecords; ++i)
+        if (ZrTests_ExecOwner_RecordFrees(i) == 0u) {
+            TEST_ASSERT_LESS_THAN_UINT(256u, g_liveCount);
+            g_liveRecords[g_liveCount++] = i;
+        }
 }
 void Pf_Healthy(const SPfObservation *a, const SPfObservation *b) {
     TEST_ASSERT_EQUAL_UINT(0u, a->error);
@@ -308,6 +324,180 @@ void Pf_SetUp(void) {
             TEST_ASSERT_LESS_THAN_UINT(256u, g_liveCount);
             g_liveRecords[g_liveCount++] = i;
         }
+}
+static void same_request(SZrOwnerHeapEvent a, SZrOwnerHeapEvent b) {
+    TEST_ASSERT_EQUAL_UINT(a.kind, b.kind);
+    TEST_ASSERT_EQUAL_UINT64(a.count, b.count);
+    TEST_ASSERT_EQUAL_UINT64(a.width, b.width);
+    TEST_ASSERT_EQUAL_UINT64(a.bytes, b.bytes);
+}
+static unsigned unframed_clone(void) {
+    SZrExecIrDiagnostic d, zero = {0};
+    /* The live source remains owner 1. This view is borrowed, never freed. */
+    SZrExecIrFunction borrowed = g_pfFunctions[1];
+    borrowed.frameLayout = ZR_NULL;
+    borrowed.contract.layoutHash = 0u;
+    ZrCore_ExecIr_FreeFunction(&g_pfFunctions[0]);
+    unsigned first = ZrTests_ExecOwner_Stats().attempts;
+    TZrBool ok = ZrCore_ExecIr_CloneFunction(&borrowed, &g_pfFunctions[0], &d);
+    unsigned count = ZrTests_ExecOwner_Stats().attempts - first;
+    /* Clone's destination is registered even on partial failure. */
+    TEST_ASSERT_TRUE_MESSAGE(ok, "actual unframed Core clone prerequisite");
+    Pf_Diagnostic(&zero, &d);
+    initialize_spare(&g_pfFunctions[0]);
+    refresh_owners();
+    TEST_ASSERT_NULL(g_pfFunctions[0].frameLayout);
+    TEST_ASSERT_EQUAL_UINT64(0u, g_pfFunctions[0].contract.layoutHash);
+    return count;
+}
+static unsigned verify_unframed(void) {
+    SPfObservation a, b;
+    SZrExecIrDiagnostic d, zero = {0};
+    Pf_Observe(&a);
+    TZrBool ok = ZrCore_ExecIr_VerifyFunction(&g_pfFunctions[0], ZR_EXEC_IR_VERIFY_ALL, &d);
+    ZrTests_ExecOwner_Disarm();
+    Pf_Observe(&b);
+    Pf_Healthy(&a, &b);
+    TEST_ASSERT_TRUE(ok);
+    Pf_Diagnostic(&zero, &d);
+    return b.heap.attempts - a.heap.attempts;
+}
+static unsigned attach_success(void) {
+    SZrExecIrDiagnostic d, zero = {0};
+    SPfObservation before, after;
+    Pf_Observe(&before);
+    unsigned first = ZrTests_ExecOwner_Stats().attempts;
+    memset(&d, 0xA5, sizeof(d));
+    TZrBool ok = ZrParser_ExecIr_AttachPrimitiveSourceFrame(&g_pfFunctions[0], &g_pfContext, g_pfRows, 2u, 0u, &d);
+    ZrTests_ExecOwner_Disarm();
+    unsigned count = ZrTests_ExecOwner_Stats().attempts - first;
+    /* Actual published frame stays registered before any assertion. */
+    SZrExecIrFrameLayout *published = g_pfFunctions[0].frameLayout;
+    TZrUInt64 publishedHash = g_pfFunctions[0].contract.layoutHash;
+    /* Observe the allowed publication delta separately from all borrowed inputs.
+     * Both temporary header mutations are restored before any Unity assertion. */
+    g_pfFunctions[0].frameLayout = ZR_NULL;
+    g_pfFunctions[0].contract.layoutHash = 0u;
+    Pf_Observe(&after);
+    g_pfFunctions[0].frameLayout = published;
+    g_pfFunctions[0].contract.layoutHash = publishedHash;
+    TEST_ASSERT_EQUAL_UINT(0u, before.error);
+    TEST_ASSERT_EQUAL_UINT(0u, after.error);
+    TEST_ASSERT_EQUAL_UINT(before.length, after.length);
+    TEST_ASSERT_EQUAL_MEMORY(before.bytes, after.bytes, before.length);
+    TEST_ASSERT_EQUAL_UINT(0u, after.heap.errors);
+    TEST_ASSERT_EQUAL_UINT(before.heap.live + 2u, after.heap.live);
+    for (unsigned i = 0u; i < g_liveCount; ++i)
+        ZrTests_ExecOwner_AssertLive(g_liveRecords[i], g_liveRecords[i] + 1u);
+    unsigned survivors = 0u;
+    for (unsigned i = before.heap.records; i < after.heap.records; ++i) {
+        if (ZrTests_ExecOwner_RecordFrees(i) == 0u) {
+            ZrTests_ExecOwner_AssertLive(i, i + 1u);
+            ++survivors;
+        } else {
+            ZrTests_ExecOwner_AssertReleased(i, i + 1u);
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT(2u, survivors);
+    initialize_spare(&g_pfFunctions[0]);
+    refresh_owners();
+    TEST_ASSERT_TRUE_MESSAGE(ok, "actual Attach fault retry must succeed");
+    Pf_Diagnostic(&zero, &d);
+    TEST_ASSERT_NOT_NULL(g_pfFunctions[0].frameLayout);
+    TEST_ASSERT_NOT_NULL(g_pfFunctions[0].frameLayout->slots);
+    TEST_ASSERT_EQUAL_UINT32(g_pfFunctions[0].valueCount, g_pfFunctions[0].frameLayout->slotCount);
+    TEST_ASSERT_NOT_EQUAL_UINT64(0u, g_pfFunctions[0].frameLayout->layoutHash);
+    TEST_ASSERT_EQUAL_UINT64(g_pfFunctions[0].frameLayout->layoutHash, g_pfFunctions[0].contract.layoutHash);
+    return count;
+}
+void Pf_AttachFaults(void) {
+    SZrExecIrDiagnostic d, zero = {0};
+    unsigned clone = unframed_clone();
+    unsigned verifyStart = ZrTests_ExecOwner_Stats().attempts;
+    unsigned verify = verify_unframed();
+    SZrExecIrPackedFrameRequest request;
+    SZrExecIrPackedValue values[2];
+    Pf_Request(&request, values, 0u);
+    SPfObservation a, b;
+    Pf_Observe(&a);
+    unsigned packedStart = a.heap.attempts;
+    TZrBool packedOk = ZrParser_ExecIr_LayoutPackedFrame(&request, &g_pfPacked, &d);
+    ZrTests_ExecOwner_Disarm();
+    unsigned packed = ZrTests_ExecOwner_Stats().attempts - packedStart;
+    ZrParser_ExecIr_PackedFrameLayoutFree(&g_pfPacked);
+    Pf_Observe(&b);
+    Pf_Healthy(&a, &b);
+    TEST_ASSERT_TRUE(packedOk);
+    Pf_Diagnostic(&zero, &d);
+    unsigned first = ZrTests_ExecOwner_Stats().attempts;
+    unsigned total = attach_success();
+    unsigned sites[2] = {0u, 0u}, matches[2] = {0u, 0u};
+    SZrOwnerHeapEvent requests[2] = {{0}, {0}};
+    for (unsigned i = 0u; i < total; ++i) {
+        SZrOwnerHeapEvent e = ZrTests_ExecOwner_Event(first + i);
+        TEST_ASSERT_EQUAL_UINT(0u, e.failed);
+        if (e.kind == 2u && e.count == g_pfFunctions[0].valueCount && e.width == sizeof(*values)) {
+            sites[0] = i + 1u;
+            requests[0] = e;
+            ++matches[0];
+        }
+        if (e.kind == 1u && e.bytes == sizeof(SZrExecIrFrameLayout)) {
+            sites[1] = i + 1u;
+            requests[1] = e;
+            ++matches[1];
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT(1u, matches[0]);
+    TEST_ASSERT_EQUAL_UINT(1u, matches[1]);
+    TEST_ASSERT_TRUE(sites[0] < sites[1]);
+    TEST_ASSERT_EQUAL_UINT(verify, sites[0] - 1u);
+    TEST_ASSERT_EQUAL_UINT(packed, sites[1] - sites[0] - 1u);
+    for (unsigned i = 0u; i < verify; ++i)
+        same_request(ZrTests_ExecOwner_Event(verifyStart + i), ZrTests_ExecOwner_Event(first + i));
+    for (unsigned i = 0u; i < packed; ++i)
+        same_request(ZrTests_ExecOwner_Event(packedStart + i), ZrTests_ExecOwner_Event(first + sites[0] + i));
+    unsigned framedVerify = verify_unframed(); /* Verify the newly published real frame. */
+    SPfResult admitted = Pf_Call(0u);
+    Pf_Healthy(&admitted.before, &admitted.after);
+    TEST_ASSERT_TRUE(admitted.success);
+    Pf_Diagnostic(&zero, &admitted.diagnostic);
+    unsigned validation = admitted.after.heap.attempts - admitted.before.heap.attempts;
+    SZrOwnerHeapStats stats = ZrTests_ExecOwner_Stats();
+    /* Two clone/failure/retry sequences plus their Verify/const admission calls.
+     * 3*N*N bounds Attach requests/records; additions use independently measured costs. */
+    TZrUInt64 budget = 3u * (TZrUInt64) total * total + 2u * clone + 2u * verify + 2u * framedVerify + 2u * validation;
+    TEST_ASSERT_TRUE(total > 0u);
+    TEST_ASSERT_TRUE(stats.records <= 32768u && stats.attempts <= 65536u);
+    TEST_ASSERT_TRUE(budget <= 32768u - stats.records);
+    TEST_ASSERT_TRUE(budget <= 65536u - stats.attempts);
+    for (unsigned selected = 0u; selected < 2u; ++selected) {
+        TEST_ASSERT_EQUAL_UINT(clone, unframed_clone());
+        TEST_ASSERT_EQUAL_UINT(verify, verify_unframed());
+        Pf_Observe(&a);
+        ZrTests_ExecOwner_Arm(sites[selected]);
+        memset(&d, 0xA5, sizeof(d));
+        TZrBool ok = ZrParser_ExecIr_AttachPrimitiveSourceFrame(&g_pfFunctions[0], &g_pfContext, g_pfRows, 2u, 0u, &d);
+        ZrTests_ExecOwner_Disarm();
+        Pf_Observe(&b);
+        SZrOwnerHeapEvent failed = Pf_FailedEvent(a.heap.attempts, b.heap.attempts);
+        Pf_Healthy(&a, &b);
+        TEST_ASSERT_FALSE(ok);
+        SZrExecIrDiagnostic expected = Pf_Error(ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY);
+        Pf_Diagnostic(&expected, &d);
+        same_request(requests[selected], failed);
+        TEST_ASSERT_NULL(g_pfFunctions[0].frameLayout);
+        TEST_ASSERT_EQUAL_UINT64(0u, g_pfFunctions[0].contract.layoutHash);
+        TEST_ASSERT_EQUAL_UINT(total, attach_success());
+        TEST_ASSERT_EQUAL_UINT(framedVerify, verify_unframed());
+        SPfResult retry = Pf_Call(0u);
+        Pf_Healthy(&retry.before, &retry.after);
+        TEST_ASSERT_TRUE(retry.success);
+        Pf_Diagnostic(&zero, &retry.diagnostic);
+        TEST_ASSERT_EQUAL_UINT(validation, retry.after.heap.attempts - retry.before.heap.attempts);
+    }
+    fprintf(stderr,
+            "PRIMITIVE_FRAME_ATTACH_FAULTS values=1 header=1 completed=2 attempts=%u values_site=%u header_site=%u\n",
+            total, sites[0], sites[1]);
 }
 void Pf_TearDown(void) {
     SZrOwnerHeapStats s;

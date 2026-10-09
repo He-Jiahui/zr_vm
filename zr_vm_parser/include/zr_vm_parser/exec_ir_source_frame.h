@@ -31,10 +31,11 @@
  * hashing is retained: row identity/fingerprint and ABI are not added to it.
  * AOT still requires the explicit target table and canonical callable context.
  */
-ZR_PARSER_API TZrBool ZrParser_ExecIr_AttachPrimitiveSourceFrame(
-        SZrExecIrFunction *function, const SZrSemanticContext *context,
-        const SZrExecIrLayout *layouts, TZrUInt32 layoutCount,
-        TZrUInt32 frameByteLimit, SZrExecIrDiagnostic *diagnostic);
+ZR_PARSER_API TZrBool ZrParser_ExecIr_AttachPrimitiveSourceFrame(SZrExecIrFunction *function,
+                                                                 const SZrSemanticContext *context,
+                                                                 const SZrExecIrLayout *layouts, TZrUInt32 layoutCount,
+                                                                 TZrUInt32 frameByteLimit,
+                                                                 SZrExecIrDiagnostic *diagnostic);
 
 /* Validate an already attached primitive INT64 frame against the existing
  * packed producer's regenerated result, without changing any input storage.
@@ -49,7 +50,7 @@ ZR_PARSER_API TZrBool ZrParser_ExecIr_AttachPrimitiveSourceFrame(
  * Attach above, allowing an existing frame and contract.layoutHash. Target rows
  * provide geometry, not a target ABI certificate. Zero frameByteLimit is unbounded.
  *
- * Intended first-error order: NULL arguments; storage spans and capacities;
+ * First-error order: NULL arguments; storage spans and capacities;
  * temporary count products; Core VERIFY_ALL; body profile; target rows;
  * sorted canonical IDs; value/type predicates; missing frame; request-values
  * allocation; existing LayoutPackedFrame; logical frame fields; frame hash;
@@ -71,16 +72,13 @@ ZR_PARSER_API TZrBool ZrParser_ExecIr_AttachPrimitiveSourceFrame(
  * logical/slot comparisons report expected/actual versions, hash comparisons
  * expected/actual hashes. Other locations and payload fields remain zero.
  * Core verification and packed-layout failures preserve all nine lower fields.
- * Intended success clears all nine fields; NULL diagnostic is supported.
+ * Success clears all nine fields; NULL diagnostic is supported.
  * Every return preserves all input logical content, owners, pointers and capacities.
- *
- * Current RED staging: after the NULL guards, this entry returns false with
- * UNSUPPORTED/functionToken and all other diagnostic fields zero. It allocates
- * nothing and performs no structural validation yet.
  */
-ZR_PARSER_API TZrBool ZrParser_ExecIr_ValidatePrimitiveSourceFrame(
-        const SZrExecIrFunction *function, const SZrSemanticContext *context,
-        const SZrExecIrLayout *layouts, TZrUInt32 layoutCount,
-        TZrUInt32 frameByteLimit, SZrExecIrDiagnostic *diagnostic);
+ZR_PARSER_API TZrBool ZrParser_ExecIr_ValidatePrimitiveSourceFrame(const SZrExecIrFunction *function,
+                                                                   const SZrSemanticContext *context,
+                                                                   const SZrExecIrLayout *layouts,
+                                                                   TZrUInt32 layoutCount, TZrUInt32 frameByteLimit,
+                                                                   SZrExecIrDiagnostic *diagnostic);
 
 #endif
