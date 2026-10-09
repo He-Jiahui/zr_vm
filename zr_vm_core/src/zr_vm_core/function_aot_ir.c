@@ -8,14 +8,14 @@
 EZrAotIrStatus ZrCore_Function_SnapshotAotIr(
         SZrFunction *function, const SZrAotIrModule *source,
         SZrAotIrDiagnostic *diagnostic) {
-    /* Safe RED scaffolding: no allocation, attachment or replacement yet. */
-    EZrAotIrStatus status = (function == ZR_NULL || source == ZR_NULL)
-            ? ZR_AOT_IR_INVALID_ARGUMENT : ZR_AOT_IR_UNSUPPORTED;
-    if (diagnostic != ZR_NULL) {
-        memset(diagnostic, 0, sizeof(*diagnostic));
-        diagnostic->status = status;
+    if (function == ZR_NULL) {
+        if (diagnostic != ZR_NULL) {
+            memset(diagnostic, 0, sizeof(*diagnostic));
+            diagnostic->status = ZR_AOT_IR_INVALID_ARGUMENT;
+        }
+        return ZR_AOT_IR_INVALID_ARGUMENT;
     }
-    return status;
+    return ZrCore_AotIr_CloneOwnedModule(source, &function->ownedAotIr, diagnostic);
 }
 
 const SZrAotIrModule *ZrCore_Function_GetAotIr(const SZrFunction *function) {

@@ -27,7 +27,7 @@ tests:
   - tests/core/test_ssa_function_aot_owner.c
   - tests/acceptance/ssa-function-aot-owner.md
 doc_type: milestone-detail
-status: function-owner-functional-red-validated
+status: function-owner-finite-green
 ---
 
 # Finite Function AOT metadata ownership acceptance
@@ -41,15 +41,16 @@ The seventeen-case allocation-failure/geometry gate is committed as
 RED scaffolding and an independent twelve-case actual Core lifecycle design.
 Two actual twelve-case attempts exposed a lower shutdown allocation-size
 failure. After the production size repair, a third actual twelve-case run
-established functional RED; Function GREEN remains OPEN.
+established functional RED. Snapshot implementation subsequently passed all
+twelve actual lifecycle cases; this finite Function gate is GREEN.
 
 | Gate | Current evidence |
 | --- | --- |
 | Core owner lifetime and arithmetic/OOM prerequisites | Previously committed finite GREEN |
 | Function safe RED source and lifecycle hooks | Frozen source; lower allocation-size repair source-reviewed and actually validated |
 | Twelve-case functional RED | Actual r3: three prerequisites pass, nine feature failures at UNSUPPORTED, zero ignores |
-| Actual Snapshot publication and twelve-case GREEN | OPEN |
-| Finite MSVC translation-unit checks | Three new translation units compiled with exits zero and zero warnings |
+| Actual Snapshot publication and twelve-case GREEN | Actual GREEN r1: twelve passing, zero failures/ignores, strict ledgers and UBSan clean |
+| Finite MSVC translation-unit checks | Current module/test/fixture r3 compile exits zero and zero warnings |
 | Normal CMake route and full MSVC/Linux matrices | OPEN |
 | Parser Source_Compile retention and full forty-seven SSA leaves | OPEN |
 
@@ -76,6 +77,10 @@ No VM allocation remained live after shutdown. Failed receipts remain unchanged.
 | Root's verified r1 warning comparison | `AFFF1536CBF47A158BE449DB7EE1AED35152A40C1A0687B5A59316B472D2D6A7` |
 | Accepted functional RED r3 receipt | `781081AB25A9F4123715043D2B23D22ED11B5067573CA70411949A1280E5B2B3` |
 | RED r3 raw CTest log | `D6C7F0F31FE10CA48C40FB1DCDF388491DE5A719299BB318D743A1ED2391096C` |
+| Actual GREEN r1 receipt | `04B0B0F48E74A32CDB3F284ECD5CA01610B533ED12D5ACBEA33C19340EF69F96` |
+| GREEN r1 raw CTest log | `DC39BCDAA89A264149B9E7C14CA02198DDD81272183EC3DA7315B53F1CDB69DC` |
+| Root's GREEN raw provenance review | `11ACD4CD05B0AA636DA0A45802C620FB95D6A93EA418E2F5FDB008462A3EADDF` |
+| Current finite MSVC r3 receipt | `91B86EFFF630C8A9731E8026ECB4812D5FB650D75007A9DB3CB584F11A5F57C9` |
 
 Diagnostic r2 recorded exactly 380 size mismatches across ten real shutdowns:
 all allocated 335 bytes, freed with original-size arguments 212 through 226,
@@ -117,6 +122,30 @@ byte-identical to the r1 log. Source, header, settings and selected link
 provenance were pinned before and unchanged after the run. The raw map selects
 the actual private owner OBJECT and static Core providers required below.
 This accepted RED permits Snapshot implementation; it is not Function GREEN.
+
+## Actual finite Function GREEN
+
+Regression/support scaffolding is committed as
+`2ca19f3d4359c4bc4e7479148c86124fc5f88899`, exact sixteen paths, with actual
+author and committer He-Jiahui <814111601@qq.com>. Snapshot implementation
+changed one body only, delegating to the existing Core clone transaction.
+
+Actual GREEN r1 driver PID 32468 ran configure/build/CTest children
+5548/37244/13552 to natural zero exits. All twelve default Unity cases passed,
+zero failed and zero were ignored. The raw CTest summary is
+`12 Tests 0 Failures 0 Ignored`; the selected single CTest suite passed.
+Strict VM/arena count, size/type, exact release and zero-live assertions passed
+through actual GlobalState shutdown, with no UBSan or ledger diagnostics.
+The incremental build emitted zero warnings. The current test executable
+SHA256 is `5080B82FE2F5E9327D43A5EC0DEF18F2530F91486EE7037F7DE0CAC8D9FAAFEE`.
+
+Root independently checked all twelve raw case names and nine exact link-map
+symbol providers. Source/header/settings and selected graph pins were unchanged
+across the run. The current module, test and fixture also compiled under MSVC
+with actual child exits zero and zero warnings. These are finite Windows
+metadata/lifecycle and translation-unit results; full MSVC/Linux, normal CMake
+execution, broad GC runtime, Parser returned-source retention, native execution
+and all forty-seven full SSA gates remain OPEN.
 
 ## Required actual proof
 

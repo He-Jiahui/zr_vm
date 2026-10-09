@@ -35,7 +35,7 @@ tests:
   - tests/core/test_ssa_function_aot_owner.c
   - tests/acceptance/ssa-function-aot-owner.md
 doc_type: module-detail
-status: function-owner-functional-red-validated
+status: function-owner-finite-green
 ---
 
 # Function ownership of immutable Core AOT metadata
@@ -44,16 +44,17 @@ status: function-owner-functional-red-validated
 
 The independent [Core owner](ssa-aot-owned-module.md) already copies and rebases
 the reachable AOT module schema into one uniquely owned arena. Function now has
-a runtime-only owner slot and lifecycle hooks. The Snapshot entry point is
-currently safe functional RED scaffolding: it clears the complete diagnostic,
-returns INVALID_ARGUMENT for a NULL Function/source, otherwise returns
-UNSUPPORTED, and neither allocates nor changes the owner slot. Source review is
-not functional acceptance. Two actual twelve-case attempts exposed a lower
-short-string allocation-size mismatch during real GlobalState shutdown. The
-common allocation-size helper is repaired; a third actual run established
-functional RED with three prerequisites passing and nine UNSUPPORTED feature
-failures. The strict support assertion remains unchanged. GREEN publication
-remains pending. See [acceptance](../acceptance/ssa-function-aot-owner.md).
+a runtime-only owner slot and lifecycle hooks. Snapshot refuses a NULL Function
+with a fully reset INVALID_ARGUMENT diagnostic, then delegates other requests
+to the actual Core clone transaction. NULL source, validation, replacement,
+exact self-source and OOM behavior follow that transaction.
+
+Two initial attempts exposed a lower short-string allocation-size mismatch
+during real GlobalState shutdown. After repairing the common size helper,
+a third actual run established functional RED. The implemented Snapshot then
+passed all twelve default lifecycle cases, with zero failures/ignores and no
+allocator or UBSan diagnostic. Strict allocation assertions remain unchanged.
+See [acceptance](../acceptance/ssa-function-aot-owner.md).
 
 This finite gate concerns metadata lifetime in actual Core Function records.
 It does not attach executable entries, perform calls, check source callable
@@ -84,7 +85,7 @@ The slot is runtime-only and is not serialized; artifact schema 6 and AOT
 metadata ABI 17 are unchanged. Runtime modules using Function records must be
 rebuilt together.
 
-The target Snapshot protocol delegates directly to CloneOwnedModule using the
+Snapshot delegates directly to CloneOwnedModule using the
 Function's unique destination slot. The source arrays remain readable and
 unchanged during the call. Caller diagnostics must not overlap the source,
 destination slot or old arena. Mutation and destruction require external
@@ -194,3 +195,10 @@ The strict ledger is the regression observation. No error, type, size or live
 allocation check is weakened to obtain functional acceptance. Finite MSVC
 compilation of the new Function module, test and fixture succeeded with zero
 warnings; that compile evidence does not establish lifecycle GREEN.
+
+The subsequent actual GREEN run did establish finite lifecycle acceptance:
+all twelve cases passed, including independent producer release, replacement,
+self-source, refusals, one-site arena OOM/retry, typed moves, owned descendants,
+borrowed immediate shells and explicit-free/collector shutdown. The incremental
+Clang build and current three-unit MSVC check both emitted zero warnings;
+the earlier Core rebuild diagnostics and full-platform gates remain separate.

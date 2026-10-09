@@ -20,7 +20,7 @@ plan_sources:
 tests:
   - docs/acceptance/ssa-function-aot-owner.md
 doc_type: testing-guide
-status: function-owner-functional-red-validated
+status: function-owner-finite-green
 ---
 
 # Actual Core Function AOT owner test guide
@@ -31,7 +31,8 @@ Target: `zr_vm_ssa_function_aot_owner_test`. CTest: `ssa_function_aot_owner`.
 Its default no-argument run must execute all twelve cases, with no selector or
 skipped cases. Two failed attempts exposed a lower allocation-size failure.
 After repair, actual r3 ran all twelve cases and established the required
-three-pass, nine-UNSUPPORTED-failure functional RED.
+three-pass, nine-UNSUPPORTED-failure functional RED. Implemented Snapshot then
+passed all twelve default cases with zero failures/ignores in actual GREEN r1.
 
 | Case | Required observation |
 | --- | --- |
@@ -67,6 +68,15 @@ and no VM allocator or UBSan diagnostic appeared. Its receipt SHA256 is
 The common GC short-string size helper now matches fixed constructor capacity.
 The existing synthetic GC STRING helper received the same minimum allocation
 repair; this finite target does not run or claim the broad GC suite.
+
+Actual GREEN r1 receipt SHA256 is
+`04B0B0F48E74A32CDB3F284ECD5CA01610B533ED12D5ACBEA33C19340EF69F96`;
+raw CTest SHA256 is
+`DC39BCDAA89A264149B9E7C14CA02198DDD81272183EC3DA7315B53F1CDB69DC`.
+All twelve named cases above passed through their real owner and VM assertions,
+with no UBSan/ledger diagnostic. Current module/test/fixture MSVC r3 compile
+also returned zero with zero warnings. Runtime validation used Windows x64
+Clang 19 Debug with assertions and UBSan; full platform matrices remain OPEN.
 
 ## Fixture and allocator boundary
 
