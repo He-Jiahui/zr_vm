@@ -16,7 +16,7 @@ tests:
   - tests/parser/test_ssa_source_descriptor_oom.c
   - tests/parser/support/ssa_literal_script_fixture.c
 doc_type: testing-guide
-status: source-descriptor-oom-functional-red-established
+status: source-descriptor-oom-finite-green
 ---
 
 # Descriptor OOM source test protocol
@@ -59,6 +59,20 @@ Cases 1 and 2 must establish the real producer chain and clean lifecycle before 
 `prepare` owns real Global/State and the existing literal fixture. It binds the module contract, verifies the original graph, resolves the canonical callable/I64 type, eliminates dead source places, verifies CONSTANT/NOP/RETURN, constructs a primitive layout/frame, verifies again, lowers with the actual canonical callable and obtains the current supported host target.
 
 It checks projection geometry `3/1/1/3/1/1` for instructions/blocks/frame slots/maps/constants/layouts, zero successor/predecessor/phi incoming counts and a present-empty state map. Compiler runtime pool, module/projection constant rows and actual integer AST records witness 9/8. No expected-return field is an input to production construction. The producer stays live until descriptor destruction.
+
+## Current GREEN evidence
+
+Actual GREEN r1 runs the unchanged611-line test through all sixteen default
+cases:16PASS/0fail/0ignore. Each initial/replacement fault verifies exact OOM
+bytes and completes production partial cleanup, old/source preservation,
+disarmed six-call retry and explicit balanced release. All native exits are0,
+no ledger or UBSan error occurs, and the selected build has0 warnings. The
+finite module/test/literal-fixture MSVC check also has0 exits/0 warnings.
+Current gate receipt is `FEE211A2881C757D4C84E9C144C56D22F3EA67F57168D01D38EE25A4C6002D60`;
+raw CTest is `108E931F2C82126DDE1848913881EA09A03244436B9A531CACAB1D1DFC6D6EAD`;
+finite MSVC receipt is `BFC216CB4640FE18111A319D6E11BC7B83EB1709158BF46BC8ABD3759C0983AB`.
+The earlier RED tests/registration are committed as
+`d3e8268b1eb22554c6753ce2448d31080c3dc454`; no test or ledger change accompanies GREEN.
 
 ## Actual allocation sequence
 

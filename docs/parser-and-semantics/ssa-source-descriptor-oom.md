@@ -20,7 +20,7 @@ tests:
   - tests/parser/support/ssa_source_descriptor_oom_shim.h
   - tests/acceptance/ssa-source-descriptor-oom.md
 doc_type: module-detail
-status: source-descriptor-oom-functional-red-established
+status: source-descriptor-oom-finite-green
 ---
 
 # Source descriptor allocation diagnostics
@@ -29,7 +29,9 @@ status: source-descriptor-oom-functional-red-established
 
 This finite support gate checks descriptor construction from actual literal SCRIPT sources containing `return 9;` and `return 8;`. It requires an allocation failure to report the requested byte size, preserve the existing descriptor and live source, and release every successful partial candidate allocation.
 
-The production implementation is currently unchanged. Its private `descriptor_alloc` skips count zero, calls `calloc(count, elementSize)` for a nonzero count, and returns only a boolean. Both allocation failure branches currently report `ZR_AOT_IR_INVALID_ARGUMENT`. The required design reports `ZR_AOT_IR_OUT_OF_MEMORY` after a genuine allocator failure. Actual sixteen-case RED runs both prerequisites successfully, with four PASS, twelve diagnostic FAIL and zero ignores. Each fault failure reports expected OUT_OF_MEMORY15 but actual INVALID_ARGUMENT1 after cleanup and preservation checks pass.
+The private allocation helper now checks the representable product before `calloc` and publishes its storage slot only on success. A genuine NULL result reports `ZR_AOT_IR_OUT_OF_MEMORY` with the exact admitted byte count. Both failure exits preserve that diagnostic, candidate cleanup and the old descriptor. Actual GREEN executes all sixteen default cases with zero failures or ignores.
+
+The earlier actual RED had four PASS and twelve diagnostic FAIL, each expected OUT_OF_MEMORY15 but actual INVALID_ARGUMENT1 after cleanup and preservation checks. Its tests and registration are committed as `d3e8268b1eb22554c6753ce2448d31080c3dc454`.
 
 ## Interface and caller requirements
 
@@ -81,7 +83,7 @@ Tests seed diagnostics with nonzero bytes and compare all seven fields individua
 | Successful construction/retry | true / OK | every field zero |
 | Optional diagnostic is NULL | same ownership/cleanup result | no diagnostic access |
 
-The approved future private helper repair checks representable count and `count * width` before calling the allocator. Arithmetic refusal remains INVALID_RANGE with the maximum admitted count and supplied count; zero width has expected 1/actual 0. These are source-review requirements, not exercised by forged oversized arrays in this gate. Cleanup must preserve the allocation helper's precise status instead of overwriting it with INVALID_ARGUMENT.
+The private helper returns immediately for count zero without allocating. For a nonzero count it rejects zero width, then compares count as `uintmax_t` against `SIZE_MAX / width` before narrowing or multiplication. Arithmetic refusal is INVALID_RANGE with the maximum admitted count and supplied count; zero width has expected1/actual0. The failure helper clears the entire diagnostic before writing status/expected/actual. These arithmetic branches are source-reviewed, not exercised by forged oversized arrays in this gate. Cleanup preserves the precise helper status.
 
 ## Independent allocator observations
 
@@ -99,13 +101,13 @@ Retry makes six further successful requests. Successful replacement allocates al
 
 | Input | SHA256 |
 | --- | --- |
-| Descriptor implementation | `A2D3867B562DC71BF7F3B755FB8BD6746C760A19CEDB98A2E4EC829370D99BC2` |
+| GREEN descriptor implementation C292 | `2866981C237884057E8153257094F9FD1B6C4FB1B279574A7F8D7E6D6FA75F7B` |
 | Dedicated test | `735303ACBDCB32EC83C4B95B32CB8EB54D34F5806CFC5E5686D978D7E401DE39` |
 | Private shim | `97301B28D29663665C645EAE9FB93D049ECED981A135F252AE63F916DACD370B` |
 
 Root supplied historical finite MSVC receipt `C3EC86DBF58AD81F1E4D83CCDE2308B5D6E8E9BC0D81144A741BD2D0F59630A8`: descriptor module, dedicated test and literal fixture, three units, zero warnings. It is not a current runtime, link, sanitizer or sixteen-case acceptance receipt.
 
-Fresh RED configure/build exit0, CTest8; sixteen cases run, twelve diagnostic failures, zero ignores, no strict ledger or UBSan error and zero incremental warnings. Both descriptor symbols resolve once from the actual instrumented OBJECT; no Oracle/network/FFI symbol is selected. Current finite MSVC module/test/literal-fixture three units exit0 with zero warnings. Failed diagnostic assertions stop those twelve cases before their retry; the optional-NULL-diagnostic case completes cleanup and retry. GREEN still needs all sixteen cases passing.
+Fresh GREEN configure/build/CTest exit0; sixteen cases PASS, zero failures/ignores, no strict ledger or UBSan error and zero incremental warnings. Both descriptor symbols resolve once from the actual instrumented OBJECT; no Oracle/network/FFI symbol is selected. Current finite MSVC module/test/literal-fixture three units exit0 with zero warnings. All twelve six-site initial/replacement faults now complete exact OOM payload, cleanup, preservation, disarmed retry and explicit release checks. The optional-NULL-diagnostic case also completes cleanup/retry.
 
 All build/cache/report/test/tmp outputs belong under `E:/cargo-targets/zr_vm`. See [acceptance state](../acceptance/ssa-source-descriptor-oom.md) for actual receipt hashes and [test protocol](../../tests/acceptance/ssa-source-descriptor-oom.md) for the complete inventory.
 

@@ -22,11 +22,34 @@ void ZrParser_AotIrProjection_FreeDescriptor(
     memset(descriptor, 0, sizeof(*descriptor));
 }
 
+static TZrBool descriptor_allocation_fail(SZrAotIrDiagnostic *diagnostic,
+        EZrAotIrStatus status, TZrUInt64 expected, TZrUInt64 actual) {
+    descriptor_clear(diagnostic);
+    if (diagnostic != ZR_NULL) {
+        diagnostic->status = status;
+        diagnostic->expected = expected;
+        diagnostic->actual = actual;
+    }
+    return ZR_FALSE;
+}
+
 static TZrBool descriptor_alloc(void **storage, TZrUInt32 count,
-                                size_t elementSize) {
+                                size_t elementSize, SZrAotIrDiagnostic *diagnostic) {
+    void *candidate;
+    size_t bytes;
     if (count == 0u) return ZR_TRUE;
-    *storage = calloc((size_t)count, elementSize);
-    return (TZrBool)(*storage != ZR_NULL);
+    if (elementSize == 0u)
+        return descriptor_allocation_fail(diagnostic, ZR_AOT_IR_INVALID_RANGE, 1u, 0u);
+    if ((uintmax_t)count > (uintmax_t)(SIZE_MAX / elementSize))
+        return descriptor_allocation_fail(diagnostic, ZR_AOT_IR_INVALID_RANGE,
+                (TZrUInt64)(SIZE_MAX / elementSize), count);
+    bytes = (size_t)count * elementSize;
+    candidate = calloc((size_t)count, elementSize);
+    if (candidate == ZR_NULL)
+        return descriptor_allocation_fail(diagnostic, ZR_AOT_IR_OUT_OF_MEMORY,
+                (TZrUInt64)bytes, 0u);
+    *storage = candidate;
+    return ZR_TRUE;
 }
 
 static TZrBool descriptor_edge_range_valid(SZrExecIrRange range,
@@ -116,34 +139,32 @@ TZrBool ZrParser_AotIrProjection_BuildDescriptor(
     candidate.function.gcMapHash = projection->gcMapCount;
     candidate.function.exceptionMapHash = projection->deoptStateCount;
     candidate.function.debugMapHash = projection->sourceMapCount;
-    if (!descriptor_alloc((void **)&edgePool, edgeCount, sizeof(*edgePool))) {
-        if (diagnostic != ZR_NULL) diagnostic->status = ZR_AOT_IR_INVALID_ARGUMENT;
+    if (!descriptor_alloc((void **)&edgePool, edgeCount, sizeof(*edgePool), diagnostic)) {
         return ZR_FALSE;
     }
     /* A built descriptor owns this in-memory AOTIR edge view. */
     candidate.function.successorPool = edgePool;
     if (!descriptor_alloc((void **)&candidate.instructions,
                           projection->instructionCount,
-                          sizeof(*candidate.instructions)) ||
+                          sizeof(*candidate.instructions), diagnostic) ||
         !descriptor_alloc((void **)&candidate.blocks, projection->blockCount,
-                          sizeof(*candidate.blocks)) ||
+                          sizeof(*candidate.blocks), diagnostic) ||
         !descriptor_alloc((void **)&candidate.phiIncoming,
                           projection->phiIncomingCount,
-                          sizeof(*candidate.phiIncoming)) ||
+                          sizeof(*candidate.phiIncoming), diagnostic) ||
         !descriptor_alloc((void **)&candidate.frameSlots,
                           projection->frameSlotCount,
-                          sizeof(*candidate.frameSlots)) ||
+                          sizeof(*candidate.frameSlots), diagnostic) ||
         !descriptor_alloc((void **)&candidate.sourceMaps,
                           projection->sourceMapCount,
-                          sizeof(*candidate.sourceMaps)) ||
+                          sizeof(*candidate.sourceMaps), diagnostic) ||
         !descriptor_alloc((void **)&candidate.constants,
                           projection->constantCount,
-                          sizeof(*candidate.constants)) ||
+                          sizeof(*candidate.constants), diagnostic) ||
         !descriptor_alloc((void **)&candidate.layouts,
                           projection->layoutCount,
-                          sizeof(*candidate.layouts))) {
+                          sizeof(*candidate.layouts), diagnostic)) {
         ZrParser_AotIrProjection_FreeDescriptor(&candidate);
-        if (diagnostic != ZR_NULL) diagnostic->status = ZR_AOT_IR_INVALID_ARGUMENT;
         return ZR_FALSE;
     }
     if (projection->successorCount != 0u) {

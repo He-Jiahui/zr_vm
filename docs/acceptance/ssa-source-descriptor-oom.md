@@ -15,14 +15,14 @@ tests:
   - tests/parser/support/ssa_source_descriptor_oom_shim.h
   - tests/acceptance/ssa-source-descriptor-oom.md
 doc_type: milestone-detail
-status: source-descriptor-oom-functional-red-established
+status: source-descriptor-oom-finite-green
 ---
 
 # Descriptor OOM finite acceptance
 
 ## Current decision
 
-**Functional RED established.** Actual sixteen-case default execution has four PASS, twelve diagnostic FAIL and zero ignores. Both real9/8 allocation prerequisites pass. Production allocation faults report INVALID_ARGUMENT1 instead of required OUT_OF_MEMORY15, after the candidate cleanup and old/source preservation checks pass. GREEN remains pending.
+**Finite GREEN established.** Actual sixteen-case default execution has sixteen PASS, zero failures/ignores. All six initial and six replacement faults now report exact OOM bytes, preserve old/source owners, release candidate allocations and retry successfully. The unchanged frozen tests establish the repair without weakening ledger or diagnostic assertions.
 
 This is retention support task B. It does not close task A, returned-source retention, arbitrary descriptor support or any full SSA leaf. The [module documentation](../parser-and-semantics/ssa-source-descriptor-oom.md) describes current ownership and diagnostics; the [test protocol](../../tests/acceptance/ssa-source-descriptor-oom.md) names all sixteen cases.
 
@@ -30,7 +30,7 @@ This is retention support task B. It does not close task A, returned-source rete
 
 | Input | SHA256 |
 | --- | --- |
-| Actual unchanged descriptor C | `A2D3867B562DC71BF7F3B755FB8BD6746C760A19CEDB98A2E4EC829370D99BC2` |
+| Actual GREEN descriptor C292 | `2866981C237884057E8153257094F9FD1B6C4FB1B279574A7F8D7E6D6FA75F7B` |
 | Actual test C | `735303ACBDCB32EC83C4B95B32CB8EB54D34F5806CFC5E5686D978D7E401DE39` |
 | Actual private shim H | `97301B28D29663665C645EAE9FB93D049ECED981A135F252AE63F916DACD370B` |
 
@@ -43,9 +43,9 @@ Root's historical MSVC receipt is `C3EC86DBF58AD81F1E4D83CCDE2308B5D6E8E9BC0D811
 | Source/test freeze | recorded | matching hashes, exact sixteen RUN_TEST calls, current dependency/settings pins |
 | Actual 9/8 lower prerequisites | passed in actual RED r1 | real compiler, binder, compaction, primitive frame, canonical AOT projection and host target; six exact successful allocations; ValidateModule/RequireABI; strict teardown |
 | Functional RED | actual sixteen cases, twelve diagnostic failures, zero ignores | current actual descriptor OBJECT linked; real injected nonzero allocation returns false/INVALID_ARGUMENT and fails required OUT_OF_MEMORY assertion; every actual outcome recorded |
-| Finite RED commit | pending | Root-reviewed raw evidence and actual commit receipt |
-| Production diagnostic repair | pending separate source GO | checked private products, exact OOM bytes, preserved candidate cleanup and old owner |
-| Fresh GREEN | pending | sixteen tests, zero failures/ignores, real exit, zero strict ledger errors/live records, required current warning/sanitizer receipts |
+| Finite RED commit | d3e8268b1eb22554c6753ce2448d31080c3dc454 | exact eight paths, actual He-Jiahui author/committer; commit receipt1DE0E655352FF459B3F2D39728B3E1484CA35FFA52BC05FA75375CCDC8DEC4F7 |
+| Production diagnostic repair | implemented after separate source GO | checked private products, exact OOM bytes, preserved candidate cleanup and old owner |
+| Fresh GREEN | actual sixteen PASS, zero failures/ignores | all native exits0, no strict ledger or UBSan errors,0 selected warnings |
 | Finite GREEN commit | pending | reviewed exact-path diff, source/header/settings/link pins and actual commit receipt |
 
 Missing symbols, incorrect fixtures, unsupported host target, ledger errors, source drift or sanitizer failures are infrastructure failures. They do not establish the intended functional RED. Actual cases1/2 pass; cases3-14 fail exactly at the required status assertion; cases15/16 pass. No ledger or sanitizer error occurs. The twelve failed cases stop before retry; candidate cleanup and preservation were already checked, while only optional-diagnostic case16 completes its fault/retry path in RED.
@@ -69,7 +69,28 @@ Reports are under `E:/cargo-targets/zr_vm/reports/ssa-20261005-01a0fe2b`:
 
 Sol independently reviewed all six allocation sites, both failure exits,
 candidate cleanup, old destination publication and the actual frozen tests.
-The arithmetic repair remains a separate source GO after this RED commit.
+The private arithmetic repair received a separate source GO after the RED commit.
+
+## Actual GREEN r1 evidence
+
+Configure39476/build36416/CTest8876 all exit0. All sixteen default cases PASS,
+zero failures/ignores, with no descriptor/VM ledger or UBSan error. Actual
+finite MSVC module28964/test2524/literal-fixture6988 each exit0 with0 warnings.
+The selected incremental build has0 warnings. Both descriptor symbols are
+supplied once by the same intended private OBJECT; no Oracle/network/FFI
+selection is present. All current pins are unchanged across the actual run.
+
+| Evidence | SHA256 |
+| --- | --- |
+| source-descriptor-oom-green-r1-receipt.json | FEE211A2881C757D4C84E9C144C56D22F3EA67F57168D01D38EE25A4C6002D60 |
+| source-descriptor-oom-green-r1-ctest.log | 108E931F2C82126DDE1848913881EA09A03244436B9A531CACAB1D1DFC6D6EAD |
+| source-descriptor-oom-msvc-green-r1-receipt.json | BFC216CB4640FE18111A319D6E11BC7B83EB1709158BF46BC8ABD3759C0983AB |
+
+Sol independently reviewed the exact production diff and both cleanup exits
+with no actionable findings. Luna independently reviewed the frozen tests'
+pointer lifetime, partial releases and NULL-diagnostic retry with no actionable
+findings. Product overflow/zero-width branches remain source review only; this
+small x64 scalar gate does not claim forged geometry or full-platform execution.
 
 ## Allocation and ownership denominator
 
