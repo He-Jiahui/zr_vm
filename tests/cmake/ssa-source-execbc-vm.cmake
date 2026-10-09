@@ -355,6 +355,55 @@ if (TARGET zr_vm_core_static AND NOT TARGET zr_vm_ssa_function_aot_owner_test)
 endif ()
 
 # Primitive frame attachment after actual source compaction and explicit rows.
+# The constant bridge gate has explicit dependencies and no general test harness.
+if (TARGET zr_vm_parser_static AND TARGET zr_vm_core_static AND TARGET zr_vm_library_static
+        AND NOT TARGET zr_vm_ssa_source_scalar_constant_test)
+    add_library(zr_vm_ssa_source_scalar_constant_noalloc_object OBJECT
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_scalar_constant.c)
+    target_include_directories(zr_vm_ssa_source_scalar_constant_noalloc_object PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser)
+    target_compile_definitions(zr_vm_ssa_source_scalar_constant_noalloc_object PRIVATE
+            ZR_LIBRARY_TYPE_STATIC=1 ZR_CURRENT_MODULE="zr_vm_parser")
+    if (MSVC)
+        target_compile_options(zr_vm_ssa_source_scalar_constant_noalloc_object PRIVATE
+                "/FI${CMAKE_SOURCE_DIR}/tests/parser/support/ssa_source_scalar_constant_noalloc_shim.h")
+    else ()
+        target_compile_options(zr_vm_ssa_source_scalar_constant_noalloc_object PRIVATE
+                -include "${CMAKE_SOURCE_DIR}/tests/parser/support/ssa_source_scalar_constant_noalloc_shim.h")
+    endif ()
+    add_executable(zr_vm_ssa_source_scalar_constant_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_source_scalar_constant.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/support/ssa_literal_script_fixture.c
+            ${CMAKE_SOURCE_DIR}/tests/third_party/zr_unity/Unity/src/unity.c)
+    target_include_directories(zr_vm_ssa_source_scalar_constant_test PRIVATE
+            ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/tests/third_party/zr_unity/Unity/src
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/compiler
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir)
+    target_compile_definitions(zr_vm_ssa_source_scalar_constant_test PRIVATE
+            UNITY_INCLUDE_CONFIG_H UNITY_INCLUDE_DOUBLE UNITY_DOUBLE_PRECISION=1e-6
+            UNITY_USE_FLUSH_STDOUT ZR_LIBRARY_TYPE_STATIC=1
+            ZR_CURRENT_MODULE="zr_vm_ssa_source_scalar_constant_test")
+    target_link_libraries(zr_vm_ssa_source_scalar_constant_test PRIVATE
+            zr_vm_ssa_source_scalar_constant_noalloc_object
+            zr_vm_parser_static zr_vm_core_static zr_vm_library_static)
+    if (MSVC)
+        target_link_options(zr_vm_ssa_source_scalar_constant_test PRIVATE /STACK:8388608)
+    endif ()
+    add_test(NAME ssa_source_scalar_constant COMMAND ${CMAKE_COMMAND} -E env
+            --unset=ZR_VM_PROFILE_OUT --unset=ZR_VM_TRACE_CORE_BOOTSTRAP
+            ZR_VM_PROFILE_INSTRUCTIONS=0 ZR_VM_PROFILE_SLOWPATHS=0
+            ZR_VM_PROFILE_HELPERS=0 ZR_VM_PROFILE_MEMORY=0
+            $<TARGET_FILE:zr_vm_ssa_source_scalar_constant_test>)
+    set_tests_properties(ssa_source_scalar_constant PROPERTIES
+            LABELS "ssa;source-metadata;nonallocation" TIMEOUT 120)
+endif ()
+
 if (NOT TARGET zr_vm_ssa_primitive_source_frame_test)
     zr_vm_add_unity_test_target(zr_vm_ssa_primitive_source_frame_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_primitive_source_frame.c)

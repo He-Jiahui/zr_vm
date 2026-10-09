@@ -435,6 +435,54 @@ set_tests_properties(ssa_function_aot_owner PROPERTIES
         ENVIRONMENT_MODIFICATION "ZR_VM_PROFILE_OUT=unset:;ZR_VM_TRACE_CORE_BOOTSTRAP=unset:")
 
 # A failed comparison remains a genuine CTest failure. No WILL_FAIL or wrapper.
+# Production constant extraction uses the actual bridge TU with isolated CRT
+# observation. Its real source fixture needs Parser's compile metadata closure.
+add_library(ssa_source_source_scalar_constant_noalloc_object OBJECT
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_scalar_constant.c")
+target_include_directories(ssa_source_source_scalar_constant_noalloc_object PRIVATE
+        ${_zr_public_includes} ${_zr_vendor_includes}
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser")
+target_compile_definitions(ssa_source_source_scalar_constant_noalloc_object PRIVATE
+        ZR_CURRENT_MODULE="zr_vm_parser" ZR_LIBRARY_TYPE_STATIC=1
+        ZR_PLATFORM_WIN=1 ZR_PLATFORM_WIN_USE_MSVC=1 ZR_DEBUG=1 _CRT_SECURE_NO_WARNINGS
+        ZR_VM_COMPILER_VERSION="${CMAKE_C_COMPILER_ID}-${CMAKE_C_COMPILER_VERSION}")
+zr_ssa_source_apply_c_settings(ssa_source_source_scalar_constant_noalloc_object)
+target_compile_options(ssa_source_source_scalar_constant_noalloc_object PRIVATE
+        "/FI${ZR_SSA_SOURCE_ROOT}/tests/parser/support/ssa_source_scalar_constant_noalloc_shim.h")
+add_executable(zr_vm_ssa_source_scalar_constant_test
+        "${ZR_SSA_SOURCE_ROOT}/tests/parser/test_ssa_source_scalar_constant.c"
+        "${ZR_SSA_SOURCE_ROOT}/tests/parser/support/ssa_literal_script_fixture.c")
+target_include_directories(zr_vm_ssa_source_scalar_constant_test PRIVATE
+        ${_zr_public_includes}
+        "${ZR_SSA_SOURCE_ROOT}/tests"
+        "${ZR_SSA_SOURCE_ROOT}/tests/third_party/zr_unity/Unity/src"
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser"
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/compiler"
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir")
+target_compile_definitions(zr_vm_ssa_source_scalar_constant_test PRIVATE
+        ${_zr_unity_definitions} ZR_LIBRARY_TYPE_STATIC=1
+        ZR_PLATFORM_WIN=1 ZR_PLATFORM_WIN_USE_MSVC=1 ZR_DEBUG=1 _CRT_SECURE_NO_WARNINGS
+        ZR_CURRENT_MODULE="zr_vm_ssa_source_scalar_constant_test"
+        ZR_VM_COMPILER_VERSION="${CMAKE_C_COMPILER_ID}-${CMAKE_C_COMPILER_VERSION}")
+zr_ssa_source_apply_c_settings(zr_vm_ssa_source_scalar_constant_test)
+target_link_libraries(zr_vm_ssa_source_scalar_constant_test PRIVATE
+        ssa_source_source_scalar_constant_noalloc_object
+        ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_library
+        ssa_source_zr_vm_common ${_zr_vendor_targets} ssa_source_unity kernel32)
+set(ZR_SSA_SOURCE_SCALAR_CONSTANT_MAP_NAME "ssa-source-scalar-constant-link.map"
+        CACHE STRING "Link map basename for the finite scalar constant target")
+if (NOT ZR_SSA_SOURCE_SCALAR_CONSTANT_MAP_NAME MATCHES "^[A-Za-z0-9][A-Za-z0-9_.-]*\\.map$")
+    message(FATAL_ERROR "Scalar constant map must be a .map basename in the build directory.")
+endif ()
+target_link_options(zr_vm_ssa_source_scalar_constant_test PRIVATE
+        /INCREMENTAL:NO /OPT:REF /VERBOSE:LIB /STACK:8388608
+        "/MAP:${CMAKE_BINARY_DIR}/${ZR_SSA_SOURCE_SCALAR_CONSTANT_MAP_NAME}")
+add_test(NAME ssa_source_scalar_constant COMMAND zr_vm_ssa_source_scalar_constant_test)
+set_tests_properties(ssa_source_scalar_constant PROPERTIES
+        LABELS "ssa;source-direct-validation;source-metadata;nonallocation" TIMEOUT 120
+        ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1;ZR_VM_PROFILE_INSTRUCTIONS=0;ZR_VM_PROFILE_SLOWPATHS=0;ZR_VM_PROFILE_HELPERS=0;ZR_VM_PROFILE_MEMORY=0"
+        ENVIRONMENT_MODIFICATION "ZR_VM_PROFILE_OUT=unset:;ZR_VM_TRACE_CORE_BOOTSTRAP=unset:")
+
 add_test(NAME ssa_source_execbc_vm_comparisons
         COMMAND zr_vm_ssa_source_execbc_vm_test --comparisons-only)
 add_test(NAME ssa_source_execbc_vm_regressions
@@ -525,6 +573,7 @@ set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_l
         ssa_source_aot_owned_module_fault_object zr_vm_ssa_aot_owned_module_faults_test
         zr_vm_ssa_function_aot_owner_test
         zr_vm_ssa_metadata_string_heap_owner_test
+        ssa_source_source_scalar_constant_noalloc_object zr_vm_ssa_source_scalar_constant_test
         ssa_source_zr_vm_common ${_zr_vendor_targets} ssa_source_unity ssa_source_runtime_support
         zr_vm_ssa_source_execbc_vm_test zr_vm_ssa_compare_metadata_guards_test
         zr_vm_ssa_source_straight_line_cfg_test zr_vm_exec_ir_scalar_scratch_eligibility_test
@@ -578,6 +627,8 @@ foreach (_header IN ITEMS
         tests/parser/support/ssa_primitive_source_frame_oom_shim.h
         tests/parser/support/ssa_aot_owned_module_fault_shim.h
         tests/core/support/ssa_function_aot_owner_fixture.h
+        tests/parser/support/ssa_source_scalar_constant_noalloc_shim.h
+        zr_vm_parser/include/zr_vm_parser/exec_ir_source_scalar_constant.h
         zr_vm_core/include/zr_vm_core/function.h
         zr_vm_core/include/zr_vm_core/function_aot_ir.h
         zr_vm_core/src/zr_vm_core/function_aot_ir_internal.h
