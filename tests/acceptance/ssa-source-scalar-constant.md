@@ -14,7 +14,7 @@ plan_sources:
 tests:
   - tests/parser/test_ssa_source_scalar_constant.c
 doc_type: test-acceptance-record
-status: source-scalar-constant-functional-red-established
+status: source-scalar-constant-finite-green
 ---
 
 # Actual source scalar constant tests
@@ -89,8 +89,9 @@ allocation observations. No VM ledger or UBSan error occurs. The finite
 module/test/fixture MSVC compilation had0 exits/0 warnings. The566-line test
 correction is freshly verified against the working GREEN implementation:
 all24 cases PASS,0 failures/ignores, no ledger or UBSan error, and three actual
-MSVC translation units return0 with0 warnings. The production commit follows
-this independently reviewed test correction.
+MSVC translation units return0 with0 warnings. The production GREEN uses the
+independently reviewed correction committed as
+`9d8283a6542734b2137c688721eed9c736102abb`.
 
 The actual GREEN r1 gate receipt is
 `9BB8B83996E2FDB876A617A314D2F8860C2889DECF58633A3721963543D7DA94`;

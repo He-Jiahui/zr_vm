@@ -22,7 +22,7 @@ tests:
   - tests/parser/test_ssa_source_scalar_constant.c
   - tests/acceptance/ssa-source-scalar-constant.md
 doc_type: module-detail
-status: source-scalar-constant-functional-red-established
+status: source-scalar-constant-finite-green
 ---
 
 # Scalar constants from the actual compiler snapshot
@@ -35,14 +35,16 @@ It is a prerequisite for retained returned-source metadata. It consumes the
 actual compiler/runtime pools and canonical types; source text and fixture
 expected return values are not API inputs.
 
-The current implementation is the deliberately linked RED refusal stub. NULL
-compiler/output returns false with INVALID_ARGUMENT; every other call returns
-false with UNSUPPORTED. It clears the entire optional diagnostic and does not
-read owners or modify output. Actual extraction requires a separate GREEN
-implementation and the complete current 24-case validation gate.
+The implementation performs ordered read-only admission and constructs the
+constant from actual canonical and typed pool facts. It clears the entire
+optional diagnostic, preserves output on refusal, and publishes one local
+candidate only after every check succeeds. Its only nonlocal lookup helpers
+are the existing read-only canonical binary search and string-length accessor.
 
-Actual current validation has both source prerequisites and the NULL-argument
-case passing,21 feature failures/0 ignores, with no allocator or UBSan error.
+Actual current validation has all24 default cases passing,0 failures/ignores,
+with no allocator or UBSan error. The finite three-unit MSVC compilation has
+zero exits and warnings. The invalid RETURN operand test was independently
+corrected and committed as `9d8283a6542734b2137c688721eed9c736102abb`.
 The lower metadata-string-heap cleanup fault found in the first attempt was
 repaired and independently committed as `5bd92350596d95c9dd99a217b8e98efd335a294a`.
 
@@ -92,7 +94,7 @@ and sorted nonzero IDs must be established first. Resolve kind before reading
 the canonical union. Empty callable parameter contracts still need valid
 geometry. Certification flags do not excuse contradictory live facts.
 
-The implementation must use local checks for this profile. The general SemIR
+The implementation uses local checks for this profile. The general SemIR
 validator can reject stale value facts before the required source/result type
 diagnostic. `ResolveValueFacts`, canonical interning, identity finalization,
 module binding and compiler producers are outside the bridge call.
@@ -120,6 +122,13 @@ prerequisites, independent values, optional diagnostics, eligibility, geometry,
 pool/type/value disagreement, actual signature witnesses and a fresh Build.
 Faults restore before assertions; fresh module, fixture, saved GC state and
 Global cleanup are registered even after a failed assertion.
+
+Actual source9/source8 trace confirms one live SemIR value in each fixture:
+CONSTANT result1, PLACE_BASE result0 and RETURN operand1. Case22 explicitly
+checks the invalid RETURN operand sentinel in a bounded live slot. A different
+valid live SemIR value is absent from these producers, so that variant remains
+OPEN. Geometry overflow, identity schema and nested-header variations receive
+source review here and are not advertised as isolated executed tests.
 
 The fresh-Build case appends only the production bridge result, then invokes
 the existing allocating binder outside the bridge observation interval. It

@@ -70,11 +70,11 @@ struct SZrCompilerState;
  * - Bad array flag/width/length/capacity: INVALID_RANGE, required flag/width/
  *   capacity versus supplied flag/width/length. Span overflow: CAPACITY_OVERFLOW,
  *   maximum admitted count versus actual count.
- * - Missing certification/SCRIPT/ownership/arity/receiver/effect eligibility:
+ * - Missing certification/SCRIPT/ownership/arity/runtime receiver/effect eligibility:
  *   UNSUPPORTED, 1 versus 0, or 0 versus the isolated nonzero count/flags.
  * - State disagreement: SIGNATURE_MISMATCH, 1 versus 0, sourceId zero.
  * - Identity schema: VERSION_MISMATCH, required versus supplied schema.
- * - Identity type/symbol/noargs/I64 witness: SIGNATURE_MISMATCH, 1 versus 0;
+ * - Identity type/symbol/noargs/I64/receiver/effect witness: SIGNATURE_MISMATCH, 1 versus 0;
  *   canonical hash mismatch instead reports callable hash versus source hash.
  * - Missing/extra scalar opcode/return shape: UNSUPPORTED, 1 versus 0.
  * - Missing hasPoolIndex: INVALID_VALUE, 1 versus 0 at the CONSTANT.
@@ -90,11 +90,6 @@ struct SZrCompilerState;
  * - Non-I64 typed pool: UNSUPPORTED, INT64 tag versus actual tag at CONSTANT.
  * - Pool I64 disagreement: INVALID_VALUE, compiler versus runtime UInt64 bits
  *   at the CONSTANT. This nonallocating API has no OUT_OF_MEMORY result.
- *
- * Finite RED staging: the current linked implementation is a safe refusal stub.
- * It clears the whole optional diagnostic, refuses NULL compiler/output with
- * INVALID_ARGUMENT and all other calls with UNSUPPORTED, with zero payloads,
- * without reading input owners or writing output. Extraction is not yet enabled.
  */
 ZR_PARSER_API TZrBool ZrParser_ExecIr_MakeSourceScalarConstant(
         const struct SZrCompilerState *compiler,
