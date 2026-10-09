@@ -19,19 +19,18 @@ tests:
   - tests/core/test_ssa_exec_ir_owned_module.c
   - docs/acceptance/exec-ir-module-copy.md
 doc_type: testing-guide
-status: functional-red-observed-commit-pending
+status: green-observed-rootproof-commit-pending
 ---
 
 # Whole-module copy finite validation design
 
-## Planned twenty cases
+## Twenty cases and actual finite GREEN
 
-Actual REDr1 observes20 cases:3 guard PASS/17 feature FAIL/0ignored.
-Cases1/3/4 PASS; every other case stops at the exact feature success assertion
-with code28/attempts0. GREEN requirements below remain unfulfilled by this RED.
-Main/fixture paths are registered above; their actual pins are in the receipt. Reuse the genuine constructed generic module
-fixture, logical witness and strict allocator. No new language inputs or source
-execution are required.
+Actual GREENr1 observes20PASS/0FAIL/0ignored. Historical REDr1 has3 guard PASS/
+17 exact feature FAIL and is preserved in acceptance. Main/fixture paths are
+registered above. The actual constructed profile uses two fixed one-row functions
+with equal replacement geometry; these twenty cases do not cover arbitrary
+source graphs or storage geometry.
 
 | Case | Required observation |
 | --- | --- |
@@ -87,7 +86,7 @@ longjmp inside production clones or callbacks.
 
 Use the existing bounded typed ExecIR allocator ledger and paired allocation/
 free shim across fifteen Core clone/storage TUs plus the new module-copy TU.
-Actual REDr1 uses small-direct all-OBJECT closure:41 configured TUs/41 objects
+Actual REDr1 and GREENr1 use small-direct all-OBJECT closure:41 configured TUs/41 objects
 and6 unique provider rows. It has no residual archive, Parser or vendor-body
 compilation. Normal-project/Parser integration and future residual exclusions
 are separate OPEN gates. No broad ordinary-library redirection or unknown-free
@@ -103,7 +102,10 @@ For each measured site require exact lower diagnostic witness, source/replacemen
 old-output logical preservation, exact candidate allocation/free balance, no
 hidden bookkeeping allocation, and disarmed clean retry. Both empty/populated
 output lifecycle paths must end with balanced live/free/error records before
-fallback or reset. No numeric denominator is observed yet.
+fallback or reset. Actual GREENr1 independently measures module60/replacement28/composite88
+allocations and completes88 injected faults with direct lower geometry/diagnostic
+comparison and disarmed retry. This is one Unity case within20, not88 cases.
+The equality60+28=88 is observed for this exact profile, not a general count.
 
 ## Required evidence and open gates
 
@@ -114,13 +116,14 @@ measured composite sweeps and lower support suites. Native phase PIDs/natural
 exits, raw logs, warning/sanitizer/ledger diagnostics and finite compiler receipts
 must be actual evidence. Compile-only checks cannot prove runtime behavior.
 
-Actual REDr1 receipt/logs are recorded in acceptance; CoreModel and generic14
-PASS independently. No new fault denominator, GREEN, clean source/index state
-or commit is claimed. Finite MSVC REDr1 observes7 naturally completed compile
-units with zero exits/warnings; raw log/object hashes match receipt. This is
-compile-only. Root proof/commit remain pending. Full MSVC/Linux, normal
-runtime/backend parity, default canonical
-output, source-family integration, registry lifetime and all47 remain OPEN.
+Actual GREENr1 raw logs match receipt, all five phases terminate naturally0 and
+contain no warning/ledger/UBSan diagnostic. CoreModel and generic14 PASS as
+separate support. Root current proof and GREEN commit remain pending. Historical
+finite MSVC REDr1 has7 zero exits/warnings, compile-only. Actual GREENr1 also
+completes7/7 natural0/zero warnings with matching raw-log/object hashes; this
+remains compile-only.
+Full MSVC/Linux, normal runtime/backend parity, default canonical output,
+source-family integration, registry lifetime and all47 remain OPEN.
 
 - [Storage and diagnostic contract](../core-runtime/exec-ir-module-copy.md)
 - [Pending acceptance record](../acceptance/exec-ir-module-copy.md)

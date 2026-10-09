@@ -20,7 +20,7 @@ tests:
   - docs/testing-and-validation/exec-ir-module-copy.md
   - docs/acceptance/exec-ir-module-copy.md
 doc_type: module-detail
-status: functional-red-observed-commit-pending
+status: green-observed-rootproof-commit-pending
 ---
 
 # ExecIR whole-module selected-function copy
@@ -33,14 +33,16 @@ same-identity replacement storage. It uses existing typed module storage,
 CloneModule, CloneFunction and FreeModule. A separate small implementation keeps
 this orchestration out of the large existing exec_ir.c.
 
-Current actual RED implements complete diagnostic reset, NULL/exact-alias
-refusal, selectedId range refusal, then UNSUPPORTED. It performs no clone,
-allocation, ownership release or destination publication. Actual REDr1 observes
-20 cases:3 guard PASS/17 exact feature FAIL/0ignored, with17 code28/attempts0
-witnesses. No new composite fault denominator or GREEN result is observed.
-Finite MSVC seven-unit RED compile-only checks also observe natural exits0/
-zero warnings; they do not execute this storage transaction. Root proof and
-commit remain pending. The transaction below is the approved future GREEN contract.
+Current GREEN implements the complete candidate transaction described below.
+Actual GREENr1 observes20PASS/0FAIL/0ignored and independently measures module
+clone60/replacement clone28/composite88, with88 faults completed and disarmed
+retries. CoreModel and generic14 independently PASS. Root current proof/commit
+remain pending. Finite MSVC GREENr1 observes7/7 natural0/zero warnings,
+compile-only; no Source GREEN is inferred.
+
+Historical REDr1 was3 guard PASS/17 code28/attempts0 feature FAIL and is committed
+as `fcc84729099e5bbb4de0a16dd3980c3a545be139`. The historical refusal is no longer
+the current implementation. Finite evidence details remain in acceptance.
 
 ## Inputs and lifetime
 
@@ -62,7 +64,7 @@ clones finish; success frees the old destination and invalidates that borrow.
 Failure preserves the borrow and old destination. No input owning record is
 blanket-zeroed, and no rollback across nonlocal exceptions is promised.
 
-## Future transaction and storage preservation
+## Implemented transaction and storage preservation
 
 1. Reset all nine diagnostic fields; reject NULL/exact source alias before range.
 2. Reject selectedId zero/outside source.functionCount before slot access.
@@ -94,7 +96,7 @@ adds transient allocations whose actual count must be measured independently.
 
 The diagnostic has code, functionToken, blockId, instructionId, sourceId,
 expectedVersion, actualVersion, expectedHash and actualHash. Entry and successful
-GREEN return reset every field to zero. Diagnostic may be NULL.
+return reset every field to zero. Diagnostic may be NULL.
 
 | Order / condition | Code | Active expected / actual payload |
 | --- | --- | --- |

@@ -6,7 +6,7 @@
 /**
  * Deep-copy a whole module with one same-identity function replacement.
  *
- * Intended GREEN storage contract: clone all source module pools/functions,
+ * Clone all source module pools/functions,
  * then clone replacement into the selected candidate slot. All fallible work
  * precedes release of the old destination and publication of the candidate.
  * Failure leaves source, replacement and old destination unchanged and usable;
@@ -39,7 +39,7 @@
  * are allowed equality values, subject to existing lower clone storage checks.
  *
  * Diagnostic is optional. All nine fields are reset at entry and success.
- * First-error order for the intended GREEN implementation is:
+ * First-error order is:
  *  1. NULL source/replacement/destination or exact source==destination:
  *     INVALID_ARGUMENT, all payload fields zero.
  *  2. selectedId==0 or >source.functionCount: INVALID_RANGE,
@@ -73,11 +73,6 @@
  * Thus range refusal precedes malformed source storage; source clone failure
  * precedes identity mismatch; identity mismatch precedes replacement storage
  * refusal. No whole-output rollback across nonlocal exceptions is promised.
- *
- * Current RED staging implements only orders1-2, then refuses other readable
- * inputs with UNSUPPORTED and zero payload. It performs no clone/allocation,
- * frees no ownership and never publishes a destination. GREEN requires a
- * separate implementation and validation gate.
  */
 ZR_CORE_API TZrBool ZrCore_ExecIr_CloneModuleReplacingFunction(
         const SZrExecIrModule *source, TZrExecIrFunctionId selectedId,

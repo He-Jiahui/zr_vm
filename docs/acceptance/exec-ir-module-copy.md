@@ -19,10 +19,10 @@ tests:
   - tests/core/test_ssa_exec_ir_owned_module.c
   - docs/testing-and-validation/exec-ir-module-copy.md
 doc_type: acceptance-record
-status: functional-red-observed-commit-pending
+status: green-observed-rootproof-commit-pending
 ---
 
-# ExecIR module-copy pending finite acceptance
+# ExecIR module-copy finite GREEN observations
 
 ## Authority and current implementation
 
@@ -32,12 +32,12 @@ Root's subsequent authorization without changing that plan.
 Actual plan SHA is
 `6A755C0B1E0764361D9435FC8C97292FDCF9DEECAB5CE93B614093BADE2A969C`.
 
-Actual read public header SHA is
+Historical RED public header SHA is
 `950EAE336E6E24A469142A865C826B8980EBCFA1D92B75E2B4DE3588EB0B3B4E`;
 implementation SHA is
 `2AECC6A42DDA04D310190286098E7BC4946FB9EBA0ACACACA436AF8F895FE777`.
 These are physical read observations, not a clean/staged/committed claim or a
-Root acceptance receipt. Current source resets all nine fields, refuses NULL/
+Root acceptance receipt. Historical RED source resets all nine fields, refuses NULL/
 exact source alias and selectedId range, then returns UNSUPPORTED without
 allocation, clone, ownership release or destination publication.
 
@@ -54,7 +54,48 @@ current runtime acceptance is pending; this draft makes no Source GREEN claim.
 Neither this Core API nor existing numeric registry identities finalize source
 semantics or extend canonical registry ownership.
 
-## Actual functional REDr1 observed
+## Actual finite GREENr1 observed
+
+Current public header SHA is
+`34937E7E9DBD02D8D6904B9DA049F94BCB2BF69D998567066007567072C6D863`;
+current implementation SHA is
+`50BD7505BA9A017DADD6A19968C1DD8DF3484886A626CE49DED413E0C66D1A37`.
+It implements initialized candidate CloneModule, ordered immutable identity
+checks, CloneFunction replacement, candidate-only rollback and old-destination
+release/publication last. Entry/success reset all nine fields; lower failures
+survive candidate cleanup unchanged. This physical read is not a commit claim.
+
+GREEN receipt `execir-module-copy-green-r1-receipt.json` in
+`E:/cargo-targets/zr_vm/reports/ssa-20261005-01a0fe2b` has SHA
+`70A78108A3A1683D05EA6D60BE4E8BABFFF846417BD2EA2C1BFA163168B0D50D`.
+It records validated true/error null,20PASS/0FAIL/0ignored. Raw module CTest log
+`execir-module-copy-green-r1-module-copy-ctest.log` SHA is
+`2F6800B7F0C8BDF1BC854D058C404BCC88233C94E6EA0CCD43FE69F547D7C46E`.
+
+Actual raw marker is
+`MODULE_COPY_FAULT_SWEEP module=60 replacement=28 composite=88 completed=88`.
+All three allocation denominators are independently measured for the actual
+two-function/one-row/equal-replacement profile; historical61 is not used.
+The88 injected composite failures compare direct lower nine-field diagnostics
+and allocation kind/count/width/bytes, preserve source/replacement/old output,
+release candidate records and complete disarmed retry. This sweep is one Unity
+case among20, not88 extra cases or arbitrary-geometry coverage.
+
+Configure35888/build39404/CoreModel36516/generic37048/module30104 all terminate
+naturally0. All five physical raw-log hashes match receipt and show no warning,
+ledger-error or UBSan diagnostic. CoreModel and generic14 independently PASS.
+Actual GREEN graph remains41 TUs/41 objects/6 providers in small-direct OBJECT
+closure; no residual archive, Parser or vendor-body integration is credited.
+
+MSVC GREENr1 receipt `execir-module-copy-msvc-green-r1-receipt.json` SHA is
+`FBE8284B48DDB955FC1339636DD6E070E5DD72BE38EA9B2809FAAB9633500DF7`.
+Actual header39956/module-copy40704/test30372/fixture38836/generic-fixture2628/
+allocator33752/exec-ir11712 all seven terminate naturally0/zero warnings.
+All seven raw-log/object hashes independently match receipt. This is compile-only
+and supplies no runtime/semantic admission evidence. Root current proof and
+GREEN commit remain pending; full MSVC/Linux/normal/platform gates remain OPEN.
+
+## Preserved functional REDr1 history
 
 Primary receipt:
 `E:/cargo-targets/zr_vm/reports/ssa-20261005-01a0fe2b/execir-module-copy-red-r1-receipt.json`,
@@ -74,7 +115,10 @@ Configure34972/build34788/CoreModel19396/generic6976 terminate naturally0;
 module41520 terminates naturally8. Independent generic14 and CoreModel support
 PASS. All five physical raw-log hashes match receipt; none contains warning,
 ledger-error or UBSan diagnostics. Assertions and UBSan are enabled. This is a
-finite observed RED feature gate, with GREEN implementation/proof/commit pending.
+finite historical RED feature gate. RED committed
+`fcc84729099e5bbb4de0a16dd3980c3a545be139`; commit receipt
+`execir-module-copy-red-commit-r1.json` SHA is
+`AF41B8730CB91E25241184D1D2615AD51CBCE269C509BDBB2F9B182401BCFC06`.
 
 Actual small-direct configuration has41 TUs/41 objects and6 unique providers:
 FreeModule, CloneModuleReplacingFunction, CloneFunction, CloneModule,
@@ -90,16 +134,8 @@ record slots bound observation. Present-empty and normalized-capacity assertions
 cover the actual GC/state/frame header presence/counts, StateMap count/capacity,
 and value/instruction capacity>=live count. No all-spare-byte or arbitrary-shape
 coverage follows. Nine-field diagnostic/borrow-before-free/direct fault geometry
-and healthy teardown requirements remain future GREEN checks where RED exits
-at the feature assertion.
-
-| Remaining evidence | Current state |
-| --- | --- |
-| Finite MSVC seven-unit compile gate | REDr1 observed, compile-only7/7 natural0/zero warnings |
-| New composite allocation denominator and completed fault/retry sweep | Not observed under RED |
-| Independent GREEN implementation/full20 | Pending |
-| Root current proof and RED commit | Pending |
-| Normal/Parser integration and platform gates | OPEN |
+and healthy teardown requirements were not exercised beyond the RED feature
+assertion; the current GREEN observations above cover this finite profile.
 
 Finite MSVC receipt `execir-module-copy-msvc-red-r1-receipt.json` in the same
 report directory has SHA
@@ -109,16 +145,18 @@ module-copy38056,test29768,fixture40020,generic-fixture35484,allocator24960,
 exec-ir41204 each terminate naturally0/zero warnings. All seven raw log and
 object hashes independently match the physical receipt. This finite result
 performs no link/runtime test, diagnostic execution or fault sweep; full MSVC
-and the new composite denominator remain OPEN/pending respectively.
+remains OPEN. At this historical RED point the composite denominator was
+unmeasured; current GREEN independently measures88 as recorded above.
 
-No new commit, GREEN or source runtime acceptance is inferred. Source documents
+No GREEN commit or source runtime acceptance is inferred. Root current proof
+and GREEN commit remain pending. Source documents
 remain frozen under their separate gate; this record does not claim Source GREEN.
 Any failed attempts and emitted diagnostics will remain historical evidence
 when actual receipts are supplied.
 
-## Future GREEN acceptance boundary
+## Implemented finite contract and open acceptance
 
-GREEN must independently implement CloneModule into initialized candidate,
+Current GREEN implements CloneModule into initialized candidate,
 complete ordered identity comparisons and CloneFunction into selected slot,
 then free old destination and publish only after all fallible work. Failures
 release only candidate and preserve source/replacement/old output. All nine
@@ -126,11 +164,12 @@ lower diagnostic fields must survive cleanup unchanged; wrapper identity
 refusals obey complete reset and the frozen expected-source/actual-replacement
 mapping. No VerifyModule/ExecutionContract_Check admission gate may be added.
 
-Future default20 must establish full logical module/storage preservation,
+Actual finite20 establishes logical module/storage preservation within the
+fixed two-function/one-row profile,
 replacement/old-source borrows, independent post-producer lifetimes, normalized
-capacities and repeated balanced release. Measure actual composite fault sites
-and each clone phase independently; do not infer a sum from lower61-site gates.
-Every fault requires direct lower diagnostic comparison, exact candidate cleanup,
+capacities and repeated balanced release. Actual composite fault sites and each clone phase are measured independently;
+no historical lower61-site count is used.
+Every measured fault checks direct lower diagnostic comparison, exact candidate cleanup,
 old-output preservation and disarmed clean retry before recovery assertions.
 
 Finite compile checks remain compile-only. Core storage success does not prove
