@@ -5,6 +5,9 @@ related_code:
   - zr_vm_core/include/zr_vm_core/call_binding.h
   - zr_vm_core/include/zr_vm_core/artifact_schema.h
   - zr_vm_common/include/zr_vm_common/zr_aot_abi.h
+  - zr_vm_core/include/zr_vm_core/function_aot_ir.h
+  - zr_vm_parser/include/zr_vm_parser/compiler_source_retention.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_source_retention.c
 implementation_files: []
 plan_sources:
   - "user: 2026-09-12 SSA 全栈自动优化计划拆分与详细重构指导"
@@ -12,6 +15,8 @@ tests:
   - tests/parser/test_call_binding_pipeline.c
   - tests/core/test_call_binding_runtime.c
   - tests/library/test_call_binding_relocation.c
+  - tests/core/test_ssa_function_aot_owner.c
+  - tests/parser/test_ssa_source_returned_retention.c
 doc_type: category-index
 status: planned
 ---
@@ -25,6 +30,20 @@ status: planned
 每份子计划包含：目标、前置依赖、已有/新增文件及职责、逐项重构任务、算法与接口草案、数据生产/消费关系、三批可审查实施步骤、正反向测试与断言、精确 CTest 目标、退出门禁、失败恢复和文档交付。C 接口和 fixture 断言是实施指导，新增类型/API 必须由所标任务实现；不能把草案视作当前已提供的接口。
 
 先读 [00.01 基线、性能指标与真实执行模式](00-measurement-contracts/01-baseline-metrics.md)、[00.02 共享契约、语义边界与版本冻结](00-measurement-contracts/02-contract-freeze.md) 和 [00.03 差分测试支架与里程碑门禁](00-measurement-contracts/03-differential-harness.md)，再按叶子计划的依赖推进。实现代码时先读共享的 [实现架构指导：关键数据结构与函数设计](architecture-design.md)，它给出全计划统一的模块分层、ExecIR 数据模型、opcode 单源生成、verifier/pass/guard/frame/GC/artifact 关键结构与函数契约，以及最小可行实施链；其导读区链接的 guides/ 分册 A–E 进一步提供算法骨架、完整函数草案与常见坑清单。本文与叶子计划冲突时以叶子为准。目录顺序方便阅读，不是严格串行工期；高级优化可在基础 IR 验证可用后独立展开。main-only、自动语义推断、无性能标注负担、无静态字符串回退、无持久化裸地址等约束贯穿全部任务。
+
+### 已提交的有限返回所有权前置
+
+显式 `REQUIRE_SCALAR_AOT` 返回元数据保留已提交为 `360a0aa0`。
+[模块说明](../../parser-and-semantics/ssa-source-returned-retention.md)、
+[测试指南](../../testing-and-validation/ssa-source-returned-retention.md)与
+[验收记录](../../acceptance/ssa-source-returned-retention.md)记录真实 source
+wrapper 返回后的 25 项通过、四套依赖共 58 项通过，以及六 TU MSVC 编译检查。
+全部构建读取当前 checkout，产物位于已配置的 E 盘构建目录，无源码快照。
+两条既有 parser 未使用 static helper 警告如实保留在验收记录。
+
+本前置使 literal I64 Function 独立拥有 Core AOT 元数据；普通 NONE/default
+编译输出、独立 canonical ExecIR 所有权、完整状态恢复、后端执行与 Linux/完整
+MSVC 验收继续推进。47 个完整叶子仍为 planned，分母和未勾选任务不变。
 
 ### 测量与基础契约（00-measurement-contracts）
 

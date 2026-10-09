@@ -3,6 +3,9 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h
   - zr_vm_core/CMakeLists.txt
+  - zr_vm_core/include/zr_vm_core/aot_ir_owned_module.h
+  - zr_vm_core/include/zr_vm_core/function_aot_ir.h
+  - zr_vm_parser/include/zr_vm_parser/compiler_source_retention.h
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h
@@ -16,6 +19,8 @@ plan_sources:
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
 tests:
   - tests/parser/test_ssa_core_model.c
+  - tests/core/test_ssa_function_aot_owner.c
+  - tests/parser/test_ssa_source_returned_retention.c
 doc_type: milestone-detail
 status: planned
 ---
@@ -162,3 +167,14 @@ assert reject before allocation
 
 本任务的 acceptance 至少附上：上述断言对应的测试名称、实际执行后端/平台、失败注入位置、verifier 输入/输出摘要，以及涉及所有权时的分配/释放或 lease 平衡。新增入口的 OOM、取消、重复调用和部分初始化退出应有明确处理；不适用的状态写明原因。
 
+## 已提交的有限 Function / returned-source 所有权前置
+
+Core Function AOT owner 的 12 项生命周期证明、source constant 的 24 项、
+descriptor OOM 的 16 项和 metadata heap 的 6 项，在当前依赖回放中共 58 项通过。
+后继 `360a0aa0` 的真实返回入口 25 项证明显式 literal I64 保留的元数据在
+CompilerState/AST 释放后有效，两个 owner 独立、实际释放一次，七项分配失败
+清理后可重试。详见[验收记录](../../../acceptance/ssa-source-returned-retention.md)。
+
+此 owner 保存 AOTIR 元数据，producer 清理仍释放 original/compacted ExecIR；
+独立 canonical ExecIR owner 与普通默认输出尚待实现。完整 side arrays、跨函数
+重编号和全模块失败分母继续按本计划推进，以上有限证明不勾选任何完整任务。

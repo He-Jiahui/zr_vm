@@ -191,3 +191,16 @@ SCRIPT ABI、MODULE blob 与 canonical callable 三种 hash 不互换；module l
 借用 descriptor 不延长 projection owner 生命周期；projection.runnable 保持 false。
 本有限前置不关闭 real-frame scalar emitter、native execution、normal returned retention、
 Linux、完整 MSVC、完整47，也不勾选本计划任何迁移门禁；status 仍为 planned。
+
+## 后继显式 returned-source metadata retention
+
+`360a0aa0` 已接通真实 source wrapper 的 `REQUIRE_SCALAR_AOT` 保留路径。
+[模块说明](../../../parser-and-semantics/ssa-source-returned-retention.md)与
+[验收记录](../../../acceptance/ssa-source-returned-retention.md)记录 25 项返回
+生命周期/OOM 用例、58 项下层依赖及六 TU MSVC 编译检查。constant bridge、
+module binder、compaction、frame、projection、host target、descriptor 与 Core
+snapshot 依次消费真实源记录；所有临时 producer 在 wrapper 返回前释放。
+
+显式保留覆盖当前 noargs I64 literal 元数据，未执行返回 Function 或生成的
+native 程序。普通默认 canonical 输出、完整 opcode/ABI/map/emitter 消费迁移、
+C/LLVM/native parity 与平台矩阵仍 OPEN；本计划全部未勾选门禁保持不变。
