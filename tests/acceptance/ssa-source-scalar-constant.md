@@ -32,12 +32,23 @@ Exactly 24 `RUN_TEST` calls execute in the default binary:
 | 8-10 | Certification/termination, SCRIPT eligibility, declared callable effect |
 | 11-15 | Pool-index presence/bounds, counts, element width and capacity |
 | 16-18 | Compiler/runtime tags and actual I64 disagreement |
-| 19-22 | Canonical source kind, result type and bounded RETURN operand |
+| 19-21 | Canonical source kind and result type |
+| 22 | Invalid RETURN operand in the actual bounded live operand slot |
 | 23 | Actual finalized signature witness disagreement |
 | 24 | Fresh Build with only the production bridge constant, binder/verification/free |
 
 Case9 mutates currentAst and compiler.hasError. The independent second-State
 variant is outside this finite profile and is not credited as executed coverage.
+
+Case22 now explicitly substitutes `ZR_VALUE_ID_INVALID` into the actual RETURN
+operand slot. The source producer leaves PLACE_BASE's result invalid; it cannot
+supply the different live SemIR value formerly advertised by this case. The
+constant's actual result and the operand slot are checked before mutation, and
+the original operand restores before assertions. Valid different-live-value
+coverage remains OPEN. Cases1-2 print bounded numeric SemIR value inventories
+from the real9/8 fixtures; no source value is manufactured. Actual GREEN r1
+confirms both fixtures have one SemIR value: id1/typeId1/definition1, CONSTANT
+result1, PLACE_BASE result0 and RETURN operand1.
 
 Expected successful bits come from both real INT64-tagged compiler/runtime rows;
 typeToken comes from the actual canonical CONSTANT. Fixed source9/source8 values
@@ -69,13 +80,23 @@ fixture, but no Oracle/source execution occurs.
 
 ## Current actual result
 
-Source is frozen: C535 lines, shim19; actual SHA256 values and the finite driver
-scope are recorded in [acceptance](../../docs/acceptance/ssa-source-scalar-constant.md).
-Current actual r3 runs all24 cases: source9/source8 prerequisite and NULL
+The historical RED source had535 lines, shim19; its actual SHA256 values and
+finite driver scope are recorded in [acceptance](../../docs/acceptance/ssa-source-scalar-constant.md).
+Actual r3 ran all24 cases: source9/source8 prerequisite and NULL
 argument cases PASS,21 feature FAIL,0 ignored. Feature case3 actually reports
 UNSUPPORTED28 from the linked stub after immutable input/output and zero
 allocation observations. No VM ledger or UBSan error occurs. The finite
-module/test/fixture MSVC compilation has0 exits/0 warnings. GREEN remains pending.
+module/test/fixture MSVC compilation had0 exits/0 warnings. The566-line test
+correction is freshly verified against the working GREEN implementation:
+all24 cases PASS,0 failures/ignores, no ledger or UBSan error, and three actual
+MSVC translation units return0 with0 warnings. The production commit follows
+this independently reviewed test correction.
+
+The actual GREEN r1 gate receipt is
+`9BB8B83996E2FDB876A617A314D2F8860C2889DECF58633A3721963543D7DA94`;
+raw CTest is `57A98F8B9A87D8C0C024DFBB4A2D0FA93575D6C543339D2DD919B87E3A0C2043`.
+The finite MSVC receipt is
+`AC8928E545AC0E7D9CC7FC46C8D135659FB2D0EEF0EF105B8558B8C15B859551`.
 
 R1's lower128-versus16 byte metadata cleanup failure is preserved as rejected
 evidence; its independent6-case repair is committed. Saved GC-state restoration

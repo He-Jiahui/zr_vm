@@ -283,7 +283,29 @@ static void prerequisite(EZrSsaLiteralScriptSource source, TZrInt64 literal) {
     TEST_ASSERT_EQUAL_UINT32(1u, c->currentFunction->constantValueLength);
     TEST_ASSERT_EQUAL_PTR(c->state, c->preSemanticIr.state);
     TEST_ASSERT_EQUAL_PTR(c->state, c->semanticContext->state);
+    TEST_ASSERT_TRUE(c->preSemanticIr.values.isValid);
+    TEST_ASSERT_EQUAL_UINT32(sizeof(SZrSemanticIrValue), c->preSemanticIr.values.elementSize);
+    TEST_ASSERT_TRUE(c->preSemanticIr.values.length <= c->preSemanticIr.values.capacity);
+    TEST_ASSERT_TRUE(c->preSemanticIr.values.length <= 3u);
+    TEST_ASSERT_NOT_NULL(c->preSemanticIr.values.head);
+    TEST_ASSERT_TRUE(c->preSemanticIr.valueOperands.isValid);
+    TEST_ASSERT_EQUAL_UINT32(sizeof(TZrValueId), c->preSemanticIr.valueOperands.elementSize);
+    TEST_ASSERT_TRUE(c->preSemanticIr.valueOperands.length <= c->preSemanticIr.valueOperands.capacity);
+    TEST_ASSERT_NOT_NULL(c->preSemanticIr.valueOperands.head);
     TEST_ASSERT_EQUAL_UINT32(1u, instruction(f, 2u)->operandCount);
+    TEST_ASSERT_TRUE(instruction(f, 2u)->operandStart < c->preSemanticIr.valueOperands.length);
+    fprintf(stderr, "SCALAR_SEMIR source=%u values=%llu constantResult=%u placeResult=%u returnOperand=%u\n",
+            (unsigned)source, (unsigned long long)c->preSemanticIr.values.length,
+            (unsigned)instruction(f, 0u)->resultValueId, (unsigned)instruction(f, 1u)->resultValueId,
+            (unsigned)*(TZrValueId *)ZrCore_Array_Get(&c->preSemanticIr.valueOperands,
+                                                    instruction(f, 2u)->operandStart));
+    for (TZrSize i = 0u; i < c->preSemanticIr.values.length; ++i) {
+        const SZrSemanticIrValue *v = (const SZrSemanticIrValue *)ZrCore_Array_Get(&c->preSemanticIr.values, i);
+        TEST_ASSERT_EQUAL_UINT32((TZrUInt32)i + 1u, v->id);
+        fprintf(stderr, "SCALAR_SEMIR_VALUE source=%u row=%llu id=%u typeId=%u definition=%u\n",
+                (unsigned)source, (unsigned long long)i, (unsigned)v->id,
+                (unsigned)v->typeId, (unsigned)v->definitionInstructionId);
+    }
     TEST_ASSERT_EQUAL_UINT32(instruction(f, 0u)->resultValueId,
             *(TZrValueId *)ZrCore_Array_Get(&c->preSemanticIr.valueOperands,
                                            instruction(f, 2u)->operandStart));
@@ -438,16 +460,25 @@ static void test_result_type_disagreement_is_refused(void) {
     REFUSE(f, v->typeId, callable, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
             instruction(f, 0u)->id, instruction(f, 0u)->typeId, callable);
 }
-static void test_return_value_disagreement_is_refused(void) {
+static void test_invalid_return_operand_is_refused(void) {
     SZrSsaLiteralScriptFixture *f = prepare(0u, ZR_TEST_SSA_LITERAL_SCRIPT_NINE);
     SZrSemanticIrInstruction *ret = instruction(f, 2u);
-    TZrValueId other = instruction(f, 1u)->resultValueId;
+    TZrValueId invalid = ZR_VALUE_ID_INVALID;
     TZrValueId *operand;
+    TEST_ASSERT_TRUE(f->compiler.preSemanticIr.valueOperands.isValid);
+    TEST_ASSERT_EQUAL_UINT32(sizeof(TZrValueId), f->compiler.preSemanticIr.valueOperands.elementSize);
+    TEST_ASSERT_TRUE(f->compiler.preSemanticIr.valueOperands.length <=
+                     f->compiler.preSemanticIr.valueOperands.capacity);
+    TEST_ASSERT_NOT_NULL(f->compiler.preSemanticIr.valueOperands.head);
     TEST_ASSERT_EQUAL_UINT32(1u, ret->operandCount);
-    TEST_ASSERT_NOT_EQUAL_UINT32(instruction(f, 0u)->resultValueId, other);
+    TEST_ASSERT_TRUE(ret->operandStart < f->compiler.preSemanticIr.valueOperands.length);
+    TEST_ASSERT_NOT_EQUAL_UINT32(ZR_VALUE_ID_INVALID, instruction(f, 0u)->resultValueId);
+    TEST_ASSERT_TRUE(instruction(f, 0u)->resultValueId <= f->compiler.preSemanticIr.values.length);
+    TEST_ASSERT_NOT_NULL(ZrParser_SemanticIr_Value(&f->compiler.preSemanticIr,
+                                                 instruction(f, 0u)->resultValueId));
     operand = (TZrValueId *)ZrCore_Array_Get(&f->compiler.preSemanticIr.valueOperands, ret->operandStart);
-    REFUSE(f, *operand, other, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, ret->id,
-            instruction(f, 0u)->resultValueId, other);
+    REFUSE(f, *operand, invalid, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, ret->id,
+            instruction(f, 0u)->resultValueId, invalid);
 }
 static void test_finalized_signature_witness_disagreement_is_refused(void) {
     SZrSsaLiteralScriptFixture *f = prepare(0u, ZR_TEST_SSA_LITERAL_SCRIPT_NINE);
@@ -528,7 +559,7 @@ int main(void) {
     RUN_TEST(test_missing_source_canonical_type_is_refused);
     RUN_TEST(test_nonprimitive_source_canonical_type_is_refused);
     RUN_TEST(test_result_type_disagreement_is_refused);
-    RUN_TEST(test_return_value_disagreement_is_refused);
+    RUN_TEST(test_invalid_return_operand_is_refused);
     RUN_TEST(test_finalized_signature_witness_disagreement_is_refused);
     RUN_TEST(test_fresh_build_uses_only_production_bridge_constant);
     return UNITY_END();
