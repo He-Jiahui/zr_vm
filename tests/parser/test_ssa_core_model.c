@@ -398,8 +398,9 @@ static void test_binding_rows_pass_complete_verifier_gate(void) {
     SZrExecIrBindingRow row;
     SZrExecIrInstruction instruction;
     SZrExecIrDiagnostic diagnostic;
-    SZrExecIrRange constantRange, constantResult, callOperand, callResult;
-    SZrExecIrRange returnOperand, memoryIn, memoryOut;
+    SZrExecIrRange constantRange = {0}, constantResult = {0};
+    SZrExecIrRange callOperand = {0}, callResult = {0};
+    SZrExecIrRange returnOperand = {0}, memoryIn = {0}, memoryOut = {0};
     TZrExecIrFunctionId functionId;
     TZrExecIrValueId inputValue, callValue;
     TZrExecIrInstructionId instructionId;
