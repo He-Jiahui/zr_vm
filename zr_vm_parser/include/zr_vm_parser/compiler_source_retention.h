@@ -91,9 +91,11 @@ typedef struct SZrSourceCompileDiagnostic {
  * is performed by retention. Default retained output and broader programs remain
  * separate future work.
  *
- * Current finite RED implementation refuses REQUIRE at COMPILE/UNSUPPORTED,
- * with no lower record/range and no owner attachment. The producer chain requires
- * a separate GREEN implementation after actual returned-source RED acceptance.
+ * REQUIRE uses the current constant, module contract, compaction, frame,
+ * projection, host target and descriptor producers before one independent
+ * Function snapshot. Unsupported literal types preserve CONSTANT/UNSUPPORTED
+ * and the actual bridge diagnostic. Bool append failures without a lower
+ * diagnostic report PRODUCER_FAILED at BUILD or LAYOUT without guessing OOM.
  */
 ZR_PARSER_API struct SZrFunction *ZrParser_Source_CompileWithOptions(
         struct SZrState *state, const TZrChar *source, TZrSize sourceLength,

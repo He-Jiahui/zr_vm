@@ -1,6 +1,25 @@
 ---
+related_code:
+  - tests/parser/test_ssa_source_returned_retention.c
+  - tests/parser/support/ssa_source_returned_retention_fixture.c
+  - tests/parser/support/ssa_source_returned_retention_fixture.h
+  - tests/parser/support/ssa_source_returned_descriptor_shim.h
+  - tests/parser/support/ssa_source_returned_owner_shim.h
+  - tests/cmake/ssa-source-returned-retention.cmake
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_source_retention.c
+implementation_files:
+  - tests/parser/test_ssa_source_returned_retention.c
+  - tests/parser/support/ssa_source_returned_retention_fixture.c
+  - tests/parser/support/ssa_source_returned_retention_fixture.h
+  - tests/cmake/ssa-source-returned-retention.cmake
+plan_sources:
+  - .codex/plans/20261008-ssa-function-retention-next-finite-v4.md
+  - .codex/plans/20261009-ssa-source-returned-retention-source-tests-design.md
+tests:
+  - tests/parser/test_ssa_source_returned_retention.c
+  - docs/acceptance/ssa-source-returned-retention.md
 doc_type: test-documentation
-status: finite-red-established
+status: finite-green-accepted
 ---
 
 # Real returned source retention tests
@@ -81,13 +100,38 @@ It does not establish whole-project MSVC or Linux acceptance.
 
 ## Evidence
 
+The accepted current replay uses returned GREEN r3 (25PASS/0fail/0ignore) and
+dependency r6 (58PASS across four CTest tests), with independent Root raw/map
+and current input checks. The refreshed six-unit MSVC GREEN r4 compile gate is the
+finite Windows compatibility evidence. Two inherited unused static Parser
+diagnostics are disclosed from dependency r3/r5; incremental nonrepeat is not
+a warning-free dependency graph claim. Exact receipts are in the acceptance
+record below. These gates compile and inspect metadata without executing the
+returned Function or generated native code.
+
 Actual finite receipt results are recorded in the
 [acceptance record](../acceptance/ssa-source-returned-retention.md).
 
-Current C r3: 25 cases, 10PASS/15 functional FAIL/0 ignored; the first six
+Historical C r3: 25 cases, 10PASS/15 functional FAIL/0 ignored; the first six
 prerequisites pass. Six REQUIRE-return assertions observe the safe NULL refusal,
 two non-I64 cases observe COMPILE rather than the expected CONSTANT stage, and
 seven fault cases observe zero producer hits. These failures stop before their
-GREEN-only cleanup/retry/metadata assertions, so those assertions are not yet
-credited. Configure/build exit0, CTest8; current build and six finite MSVC units
+GREEN-only cleanup/retry/metadata assertions, so those assertions were not
+credited by RED. Configure/build exit0, CTest8; the historical C build and six finite MSVC units
 have zero warnings, with no strict ledger or UBSan diagnostic.
+
+D GREEN r2 observed 25PASS/0FAIL/0ignored, including returned metadata,
+independent owner lifetimes and all seven allocation-failure cleanup/retry cases.
+Configure7732, build34468 and CTest39472 exited0, with no ledger or UBSan
+diagnostic. Fresh six-unit MSVC GREEN r3 also exited0 with zero warnings.
+
+Dependency r4 observed 58PASS across four CTest gates: Function12, scalar
+constant24, descriptor16 and metadata lifecycle6. Its incremental build emitted
+zero warnings; the preceding dependency r3 build has an inherited unused static
+`parser_types` warning, so this does not establish a warning-free dependency graph.
+
+Those earlier r2/r4 observations did not establish current provenance. Root's
+later proof refused after foreign source changes. The accepted r3/r6 replay
+above supersedes that provenance failure; all historical receipts are preserved.
+The finite commit follows current source/header/artifact admission, with its
+exact transaction recorded in the active session note.
