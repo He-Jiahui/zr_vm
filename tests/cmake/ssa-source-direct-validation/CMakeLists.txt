@@ -400,6 +400,40 @@ foreach (_zr_guard_target IN ITEMS
             /INCREMENTAL:NO /OPT:REF /STACK:8388608)
 endforeach ()
 
+# Separate Core-only metadata/lifecycle gate. Keep this out of the broad guard
+# loop, whose dependencies include Parser, Library and runtime support.
+add_executable(zr_vm_ssa_function_aot_owner_test
+        "${ZR_SSA_SOURCE_ROOT}/tests/core/test_ssa_function_aot_owner.c"
+        "${ZR_SSA_SOURCE_ROOT}/tests/core/support/ssa_function_aot_owner_fixture.c")
+target_include_directories(zr_vm_ssa_function_aot_owner_test PRIVATE
+        "${ZR_SSA_SOURCE_ROOT}"
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_common/include"
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_core/include"
+        "${ZR_SSA_SOURCE_ROOT}/tests"
+        "${ZR_SSA_SOURCE_ROOT}/tests/third_party/zr_unity/Unity/src")
+target_compile_definitions(zr_vm_ssa_function_aot_owner_test PRIVATE
+        ${_zr_unity_definitions} ZR_LIBRARY_TYPE_STATIC=1
+        ZR_PLATFORM_WIN=1 ZR_PLATFORM_WIN_USE_MSVC=1 ZR_DEBUG=1 _CRT_SECURE_NO_WARNINGS
+        ZR_CURRENT_MODULE="zr_vm_ssa_function_aot_owner_test"
+        ZR_VM_COMPILER_VERSION="${CMAKE_C_COMPILER_ID}-${CMAKE_C_COMPILER_VERSION}")
+zr_ssa_source_apply_c_settings(zr_vm_ssa_function_aot_owner_test)
+target_link_libraries(zr_vm_ssa_function_aot_owner_test PRIVATE
+        ssa_source_aot_owned_module_fault_object ssa_source_zr_vm_core
+        ssa_source_zr_vm_common ssa_source_xxhash ssa_source_utf8proc ssa_source_unity kernel32)
+set(ZR_SSA_FUNCTION_AOT_OWNER_MAP_NAME "ssa-function-aot-owner-link.map"
+        CACHE STRING "Link map basename for the finite Function owner target")
+if (NOT ZR_SSA_FUNCTION_AOT_OWNER_MAP_NAME MATCHES "^[A-Za-z0-9][A-Za-z0-9_.-]*\\.map$")
+    message(FATAL_ERROR "Function owner link map must be a .map basename inside the build directory.")
+endif ()
+target_link_options(zr_vm_ssa_function_aot_owner_test PRIVATE
+        /INCREMENTAL:NO /OPT:REF /VERBOSE:LIB /STACK:8388608
+        "/MAP:${CMAKE_BINARY_DIR}/${ZR_SSA_FUNCTION_AOT_OWNER_MAP_NAME}")
+add_test(NAME ssa_function_aot_owner COMMAND zr_vm_ssa_function_aot_owner_test)
+set_tests_properties(ssa_function_aot_owner PROPERTIES
+        LABELS "ssa;source-direct-validation;core-lifecycle;allocator-fault" TIMEOUT 120
+        ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1;ZR_VM_PROFILE_INSTRUCTIONS=0;ZR_VM_PROFILE_SLOWPATHS=0;ZR_VM_PROFILE_HELPERS=0;ZR_VM_PROFILE_MEMORY=0"
+        ENVIRONMENT_MODIFICATION "ZR_VM_PROFILE_OUT=unset:;ZR_VM_TRACE_CORE_BOOTSTRAP=unset:")
+
 # A failed comparison remains a genuine CTest failure. No WILL_FAIL or wrapper.
 add_test(NAME ssa_source_execbc_vm_comparisons
         COMMAND zr_vm_ssa_source_execbc_vm_test --comparisons-only)
@@ -488,6 +522,7 @@ set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_l
         ssa_source_aot_scalar_text_support ${_zr_scalar_targets}
         ssa_source_primitive_frame_oom_object
         ssa_source_aot_owned_module_fault_object zr_vm_ssa_aot_owned_module_faults_test
+        zr_vm_ssa_function_aot_owner_test
         ssa_source_zr_vm_common ${_zr_vendor_targets} ssa_source_unity ssa_source_runtime_support
         zr_vm_ssa_source_execbc_vm_test zr_vm_ssa_compare_metadata_guards_test
         zr_vm_ssa_source_straight_line_cfg_test zr_vm_exec_ir_scalar_scratch_eligibility_test
@@ -540,6 +575,10 @@ foreach (_header IN ITEMS
         tests/parser/support/ssa_literal_script_fixture.h
         tests/parser/support/ssa_primitive_source_frame_oom_shim.h
         tests/parser/support/ssa_aot_owned_module_fault_shim.h
+        tests/core/support/ssa_function_aot_owner_fixture.h
+        zr_vm_core/include/zr_vm_core/function.h
+        zr_vm_core/include/zr_vm_core/function_aot_ir.h
+        zr_vm_core/src/zr_vm_core/function_aot_ir_internal.h
         zr_vm_core/include/zr_vm_core/aot_ir_owned_module.h
         zr_vm_core/include/zr_vm_core/aot_ir.h
         zr_vm_core/include/zr_vm_core/exec_ir.h

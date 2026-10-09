@@ -70,14 +70,14 @@ void destroyTestState(SZrState* state) {
     }
 }
 
-// 仅为 OBJECT/STRING 补足基础布局，避免后续 GC 类型扫描越界。
+// OBJECT 补足基础布局；零初始化的短 STRING 保留构造器的固定内联容量。
 SZrRawObject* createTestObject(SZrState* state, EZrValueType type, TZrSize size) {
     if (!state || !state->global) return NULL;
 
     if (type == ZR_VALUE_TYPE_OBJECT && size < sizeof(SZrObject)) {
         size = sizeof(SZrObject);
-    } else if (type == ZR_VALUE_TYPE_STRING && size < sizeof(SZrString)) {
-        size = sizeof(SZrString);
+    } else if (type == ZR_VALUE_TYPE_STRING && size < sizeof(SZrString) + ZR_VM_SHORT_STRING_MAX) {
+        size = sizeof(SZrString) + ZR_VM_SHORT_STRING_MAX;
     }
     
     return ZrCore_RawObject_New(state, type, size, ZR_FALSE);

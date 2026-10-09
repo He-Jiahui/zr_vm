@@ -16,6 +16,7 @@
 #include "module_init_analysis.h"
 #include "type_inference_internal.h"
 #include "zr_vm_library/native_registry.h"
+#include "zr_vm_core/function_aot_ir.h"
 
 static TZrBool zr_parser_compile_trace_enabled(void);
 static void zr_parser_compile_trace(const TZrChar *format, ...);
@@ -81,6 +82,8 @@ static TZrBool compiler_refresh_borrowed_child_function_graph(SZrState *state,
     }
 
     memcpy(function->childFunctionList, sourceRoot->childFunctionList, childFuncSize);
+    ZrCore_Function_ForgetCopiedAotIrOwnerAliases(
+            function->childFunctionList, sourceRoot->childFunctionLength);
     function->childFunctionLength = sourceRoot->childFunctionLength;
     function->childFunctionGraphIsBorrowed = ZR_TRUE;
     ZrCore_Function_RebindConstantFunctionValuesToChildren(function);

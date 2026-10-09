@@ -104,8 +104,9 @@ static ZR_FORCE_INLINE TZrSize garbage_collector_get_object_base_size_fast(const
         case ZR_RAW_OBJECT_TYPE_STRING: {
             const SZrString *stringValue = (const SZrString *)object;
 
+            /* Short strings reserve the constructor's fixed inline capacity. */
             return stringValue->shortStringLength < ZR_VM_LONG_STRING_FLAG
-                           ? sizeof(SZrString) + (TZrSize)stringValue->shortStringLength + 1u
+                           ? sizeof(SZrString) + ZR_VM_SHORT_STRING_MAX
                            : sizeof(SZrString);
         }
         case ZR_RAW_OBJECT_TYPE_BUFFER:

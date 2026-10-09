@@ -319,6 +319,40 @@ if (NOT TARGET zr_vm_ssa_aot_owned_module_faults_test)
             LABELS "ssa;aot;allocator-fault" TIMEOUT 120)
 endif ()
 
+# Function owns one immutable Core module through its real GC lifecycle.
+# Use explicit static Core and Unity sources; the general Unity helper adds
+# Parser/Library runtime helpers which this metadata-only gate does not need.
+if (TARGET zr_vm_core_static AND NOT TARGET zr_vm_ssa_function_aot_owner_test)
+    add_executable(zr_vm_ssa_function_aot_owner_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_function_aot_owner.c
+            ${CMAKE_SOURCE_DIR}/tests/core/support/ssa_function_aot_owner_fixture.c
+            ${CMAKE_SOURCE_DIR}/tests/third_party/zr_unity/Unity/src/unity.c)
+    target_include_directories(zr_vm_ssa_function_aot_owner_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/tests
+            ${CMAKE_SOURCE_DIR}/tests/third_party/zr_unity/Unity/src
+            ${CMAKE_SOURCE_DIR}/zr_vm_common/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include)
+    target_compile_definitions(zr_vm_ssa_function_aot_owner_test PRIVATE
+            UNITY_INCLUDE_CONFIG_H UNITY_INCLUDE_DOUBLE
+            UNITY_DOUBLE_PRECISION=1e-6 UNITY_USE_FLUSH_STDOUT
+            ZR_LIBRARY_TYPE_STATIC=1 ZR_CURRENT_MODULE="zr_vm_ssa_function_aot_owner_test")
+    target_link_libraries(zr_vm_ssa_function_aot_owner_test PRIVATE
+            zr_vm_ssa_aot_owned_module_fault_object zr_vm_core_static)
+    if (MSVC)
+        target_link_options(zr_vm_ssa_function_aot_owner_test PRIVATE /STACK:8388608)
+    endif ()
+    # cmake -E env predates the repository's CMake 3.12 minimum. Avoid the
+    # ENVIRONMENT_MODIFICATION property, which requires CMake/CTest 3.22.
+    add_test(NAME ssa_function_aot_owner COMMAND ${CMAKE_COMMAND} -E env
+            --unset=ZR_VM_PROFILE_OUT --unset=ZR_VM_TRACE_CORE_BOOTSTRAP
+            ZR_VM_PROFILE_INSTRUCTIONS=0 ZR_VM_PROFILE_SLOWPATHS=0
+            ZR_VM_PROFILE_HELPERS=0 ZR_VM_PROFILE_MEMORY=0
+            $<TARGET_FILE:zr_vm_ssa_function_aot_owner_test>)
+    set_tests_properties(ssa_function_aot_owner PROPERTIES
+            LABELS "ssa;aot;core-lifecycle;allocator-fault" TIMEOUT 120)
+endif ()
+
 # Primitive frame attachment after actual source compaction and explicit rows.
 if (NOT TARGET zr_vm_ssa_primitive_source_frame_test)
     zr_vm_add_unity_test_target(zr_vm_ssa_primitive_source_frame_test
