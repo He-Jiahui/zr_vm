@@ -59,3 +59,28 @@ target_compile_options(zr_vm_ssa_core_model_test PRIVATE
 zr_ssa_execir_owner_apply_settings(zr_vm_ssa_core_model_test)
 add_test(NAME ssa_core_model COMMAND zr_vm_ssa_core_model_test)
 set_tests_properties(ssa_core_model PROPERTIES LABELS "ssa;clone-support" TIMEOUT 120)
+include("${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/tests/cmake/ssa-execir-module-copy.cmake")
+
+set(_zr_module_copy_graph "target\tabsolute_source\tsha256\n")
+set(_zr_module_copy_settings "compiler\t${CMAKE_C_COMPILER}\ncompiler_id\t${CMAKE_C_COMPILER_ID}\ncompiler_version\t${CMAKE_C_COMPILER_VERSION}\ngenerator\t${CMAKE_GENERATOR}\nbuild_type\t${CMAKE_BUILD_TYPE}\nlinker\t${CMAKE_LINKER}\ntoolchain_file\t${CMAKE_TOOLCHAIN_FILE}\nmake_rules_override_c\t${CMAKE_USER_MAKE_RULES_OVERRIDE_C}\narchive_tool\t${CMAKE_AR}\narchive_rule\t${CMAKE_C_CREATE_STATIC_LIBRARY}\nlink_rule\t${CMAKE_C_LINK_EXECUTABLE}\n")
+foreach (_target IN ITEMS zr_vm_ssa_core_model_test zr_vm_ssa_execir_owner_private_core
+        zr_vm_ssa_exec_ir_owned_module_test zr_vm_ssa_execir_module_copy_private
+        zr_vm_ssa_exec_ir_module_copy_test)
+    get_target_property(_sources ${_target} SOURCES)
+    foreach (_source IN LISTS _sources)
+        get_filename_component(_absolute "${_source}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+        file(SHA256 "${_absolute}" _hash)
+        string(APPEND _zr_module_copy_graph "${_target}\t${_absolute}\t${_hash}\n")
+    endforeach ()
+    foreach (_property IN ITEMS INCLUDE_DIRECTORIES COMPILE_DEFINITIONS COMPILE_OPTIONS
+            LINK_OPTIONS LINK_LIBRARIES C_STANDARD C_STANDARD_REQUIRED C_EXTENSIONS
+            MSVC_RUNTIME_LIBRARY)
+        get_target_property(_value ${_target} ${_property})
+        if (_value STREQUAL "_value-NOTFOUND")
+            set(_value "")
+        endif ()
+        string(APPEND _zr_module_copy_settings "${_target}.${_property}\t${_value}\n")
+    endforeach ()
+endforeach ()
+file(WRITE "${CMAKE_BINARY_DIR}/module-copy-target-sources.tsv" "${_zr_module_copy_graph}")
+file(WRITE "${CMAKE_BINARY_DIR}/module-copy-settings.tsv" "${_zr_module_copy_settings}")
