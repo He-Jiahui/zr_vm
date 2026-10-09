@@ -7,6 +7,7 @@
 #include "compiler/compile_time_executor_internal.h"
 #include "compiler/compiler_attribute_binding.h"
 #include "compiler/compiler_top_level_duplicate.h"
+#include "compiler/compiler_source_retention_internal.h"
 #include "zr_vm_parser/semantic_calls.h"
 #include "semantic/semantic_scope_facts.h"
 
@@ -25,6 +26,19 @@ static void zr_parser_source_compile_capture_error(TZrPtr userData,
                                                    const TZrChar *message,
                                                    EZrToken token);
 
+typedef struct SZrSourceCompileErrorCapture {
+    TZrBool hadError;
+    SZrSourceCompileDiagnostic *diagnostic;
+} SZrSourceCompileErrorCapture;
+
+static void zr_parser_source_report_failure(SZrSourceCompileDiagnostic *diagnostic,
+        EZrSourceCompileStage stage, EZrSourceCompileResult result) {
+    if (diagnostic != ZR_NULL && diagnostic->result == ZR_SOURCE_RESULT_OK) {
+        diagnostic->stage = stage;
+        diagnostic->result = result;
+    }
+}
+
 static void zr_parser_source_compile_discard_cache(
         SZrState *state,
         SZrParserSourceComptimeCache *cache) {
@@ -35,60 +49,6 @@ static void zr_parser_source_compile_discard_cache(
             state, cache->outputSnapshot, cache->outputSnapshotSize);
     cache->outputSnapshot = ZR_NULL;
     cache->outputSnapshotSize = 0U;
-}
-
-static TZrBool compiler_refresh_borrowed_child_function_graph(SZrState *state,
-                                                              SZrFunction *function,
-                                                              const SZrFunction *sourceRoot) {
-    SZrGlobalState *global;
-    TZrSize childFuncSize;
-
-    if (state == ZR_NULL || state->global == ZR_NULL || function == ZR_NULL || sourceRoot == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (!function->childFunctionGraphIsBorrowed) {
-        return ZR_TRUE;
-    }
-
-    global = state->global;
-    if (sourceRoot->childFunctionList == ZR_NULL || sourceRoot->childFunctionLength == 0) {
-        if (function->childFunctionList != ZR_NULL && function->childFunctionLength > 0) {
-            ZrCore_Memory_RawFreeWithType(global,
-                                          function->childFunctionList,
-                                          sizeof(SZrFunction) * function->childFunctionLength,
-                                          ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-        }
-        function->childFunctionList = ZR_NULL;
-        function->childFunctionLength = 0;
-        return ZR_TRUE;
-    }
-
-    childFuncSize = sizeof(SZrFunction) * sourceRoot->childFunctionLength;
-    if (function->childFunctionList == ZR_NULL || function->childFunctionLength != sourceRoot->childFunctionLength) {
-        if (function->childFunctionList != ZR_NULL && function->childFunctionLength > 0) {
-            ZrCore_Memory_RawFreeWithType(global,
-                                          function->childFunctionList,
-                                          sizeof(SZrFunction) * function->childFunctionLength,
-                                          ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-        }
-
-        function->childFunctionList =
-                (SZrFunction *)ZrCore_Memory_RawMallocWithType(global, childFuncSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
-        if (function->childFunctionList == ZR_NULL) {
-            function->childFunctionLength = 0;
-            return ZR_FALSE;
-        }
-    }
-
-    memcpy(function->childFunctionList, sourceRoot->childFunctionList, childFuncSize);
-    ZrCore_Function_ForgetCopiedAotIrOwnerAliases(
-            function->childFunctionList, sourceRoot->childFunctionLength);
-    function->childFunctionLength = sourceRoot->childFunctionLength;
-    function->childFunctionGraphIsBorrowed = ZR_TRUE;
-    ZrCore_Function_RebindConstantFunctionValuesToChildren(function);
-    ZrCore_Function_ClearChildOwnerLinks(function);
-    return ZR_TRUE;
 }
 
 // 初始化编译器状态
@@ -1047,7 +1007,9 @@ static SZrFunction *zr_parser_compiler_compile_mode_active(
         SZrString *currentModuleKey,
         TZrBool emitTestManifest,
         const SZrParserSubmissionContext *submissionContext,
-        SZrParserSubmissionResult *outSubmissionResult) {
+        SZrParserSubmissionResult *outSubmissionResult,
+        EZrSourceRetention retention,
+        SZrSourceCompileDiagnostic *diagnostic) {
     if (state == ZR_NULL || ast == ZR_NULL) {
         return ZR_NULL;
     }
@@ -1174,6 +1136,13 @@ static SZrFunction *zr_parser_compiler_compile_mode_active(
         return ZR_NULL;
     }
 
+    if (retention == ZR_SOURCE_RETENTION_REQUIRE_SCALAR_AOT &&
+        !compiler_retain_source_scalar_aot(&cs, func, diagnostic)) {
+        ZrCore_Function_Free(state, func);
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_NULL;
+    }
+
     if (!compiler_submission_publish_result(&cs, outSubmissionResult)) {
         ZrCore_Function_Free(state, func);
         ZrParser_CompilerState_Free(&cs);
@@ -1197,7 +1166,9 @@ static SZrFunction *zr_parser_compiler_compile_mode(
         SZrString *currentModuleKey,
         TZrBool emitTestManifest,
         const SZrParserSubmissionContext *submissionContext,
-        SZrParserSubmissionResult *outSubmissionResult) {
+        SZrParserSubmissionResult *outSubmissionResult,
+        EZrSourceRetention retention,
+        SZrSourceCompileDiagnostic *diagnostic) {
     EZrLibrary_ProviderPhase previousPhase;
     SZrFunction *result;
 
@@ -1217,8 +1188,14 @@ static SZrFunction *zr_parser_compiler_compile_mode(
             currentModuleKey,
             emitTestManifest,
             submissionContext,
-            outSubmissionResult);
+            outSubmissionResult,
+            retention,
+            diagnostic);
     ZrLibrary_State_SetProviderPhase(state, previousPhase);
+    if (result == ZR_NULL) {
+        zr_parser_source_report_failure(diagnostic, ZR_SOURCE_STAGE_COMPILE,
+                                         ZR_SOURCE_RESULT_COMPILE_FAILED);
+    }
     return result;
 }
 
@@ -1227,7 +1204,8 @@ ZR_PARSER_API SZrFunction *ZrParser_Compiler_CompileWithCurrentModuleKey(
         SZrAstNode *ast,
         SZrString *currentModuleKey) {
     return zr_parser_compiler_compile_mode(
-            state, ast, currentModuleKey, ZR_FALSE, ZR_NULL, ZR_NULL);
+            state, ast, currentModuleKey, ZR_FALSE, ZR_NULL, ZR_NULL,
+            ZR_SOURCE_RETENTION_NONE, ZR_NULL);
 }
 
 SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
@@ -1236,7 +1214,8 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
 
 SZrFunction *ZrParser_Compiler_CompileTest(SZrState *state, SZrAstNode *ast) {
     return zr_parser_compiler_compile_mode(
-            state, ast, ZR_NULL, ZR_TRUE, ZR_NULL, ZR_NULL);
+            state, ast, ZR_NULL, ZR_TRUE, ZR_NULL, ZR_NULL,
+            ZR_SOURCE_RETENTION_NONE, ZR_NULL);
 }
 
 ZR_PARSER_API void ZrParser_Compiler_CompileStructDeclaration(SZrCompilerState *cs, SZrAstNode *node) {
@@ -1260,15 +1239,26 @@ static struct SZrFunction *zr_parser_source_compile_mode(
         TZrBool emitTestManifest,
         SZrParserSourceComptimeCache *comptimeCache,
         const SZrParserSubmissionContext *submissionContext,
-        SZrParserSubmissionResult *outSubmissionResult) {
+        SZrParserSubmissionResult *outSubmissionResult,
+        EZrSourceRetention retention,
+        SZrSourceCompileDiagnostic *diagnostic) {
     TZrChar importError[ZR_PARSER_ERROR_BUFFER_LENGTH];
     SZrFileRange importErrorLocation;
     SZrString *currentModuleKey = ZR_NULL;
     SZrParserState parserState;
-    TZrBool hadParserError = ZR_FALSE;
+    SZrSourceCompileErrorCapture errorCapture = {ZR_FALSE, diagnostic};
     SZrAstNode *ast;
     SZrFunction *func;
 
+    if (diagnostic != ZR_NULL) memset(diagnostic, 0, sizeof(*diagnostic));
+    if ((retention != ZR_SOURCE_RETENTION_NONE &&
+         retention != ZR_SOURCE_RETENTION_REQUIRE_SCALAR_AOT) ||
+        (retention == ZR_SOURCE_RETENTION_REQUIRE_SCALAR_AOT &&
+         (submissionContext != ZR_NULL || outSubmissionResult != ZR_NULL))) {
+        zr_parser_source_report_failure(diagnostic, ZR_SOURCE_STAGE_OPTIONS,
+                                         ZR_SOURCE_RESULT_INVALID_ARGUMENT);
+        return ZR_NULL;
+    }
     if (comptimeCache != ZR_NULL) {
         comptimeCache->outputSnapshot = ZR_NULL;
         comptimeCache->outputSnapshotSize = 0U;
@@ -1276,7 +1266,9 @@ static struct SZrFunction *zr_parser_source_compile_mode(
         comptimeCache->hitCount = 0U;
         comptimeCache->missCount = 0U;
     }
-    if (state == ZR_NULL || source == ZR_NULL || sourceLength == 0) {
+    if (state == ZR_NULL || source == ZR_NULL || sourceLength == 0U) {
+        zr_parser_source_report_failure(diagnostic, ZR_SOURCE_STAGE_OPTIONS,
+                                         ZR_SOURCE_RESULT_INVALID_ARGUMENT);
         return ZR_NULL;
     }
     zr_parser_compile_trace("source compile start name='%s' len=%llu",
@@ -1285,9 +1277,11 @@ static struct SZrFunction *zr_parser_source_compile_mode(
 
     ZrParser_State_Init(&parserState, state, source, sourceLength, sourceName);
     parserState.errorCallback = zr_parser_source_compile_capture_error;
-    parserState.errorUserData = &hadParserError;
+    parserState.errorUserData = &errorCapture;
     ast = ZrParser_ParseWithState(&parserState);
-    if (parserState.hasError || hadParserError) {
+    if (parserState.hasError || errorCapture.hadError) {
+        zr_parser_source_report_failure(diagnostic, ZR_SOURCE_STAGE_PARSE,
+                                         ZR_SOURCE_RESULT_PARSE_FAILED);
         if (ast != ZR_NULL) {
             ZrParser_Ast_Free(state, ast);
         }
@@ -1298,6 +1292,8 @@ static struct SZrFunction *zr_parser_source_compile_mode(
     }
     ZrParser_State_Free(&parserState);
     if (ast == ZR_NULL) {
+        zr_parser_source_report_failure(diagnostic, ZR_SOURCE_STAGE_PARSE,
+                                         ZR_SOURCE_RESULT_PARSE_FAILED);
         zr_parser_compile_trace("parse failed name='%s'",
                                 sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>");
         return ZR_NULL;
@@ -1312,6 +1308,8 @@ static struct SZrFunction *zr_parser_source_compile_mode(
                 comptimeCache,
                 source,
                 sourceLength)) {
+        zr_parser_source_report_failure(diagnostic, ZR_SOURCE_STAGE_COMPILE,
+                                         ZR_SOURCE_RESULT_COMPILE_FAILED);
         ZrParser_ModuleInitAnalysis_ClearAstIdentity(state->global, ast);
         ZrParser_Ast_Free(state, ast);
         return ZR_NULL;
@@ -1324,6 +1322,8 @@ static struct SZrFunction *zr_parser_source_compile_mode(
                                                  importError,
                                                  sizeof(importError),
                                                  &importErrorLocation)) {
+        zr_parser_source_report_failure(diagnostic, ZR_SOURCE_STAGE_COMPILE,
+                                         ZR_SOURCE_RESULT_COMPILE_FAILED);
         ZrCore_Log_Diagnosticf(state,
                                ZR_LOG_LEVEL_ERROR,
                                ZR_OUTPUT_CHANNEL_STDERR,
@@ -1335,6 +1335,8 @@ static struct SZrFunction *zr_parser_source_compile_mode(
     }
 
     if (!ZrParser_ModuleInitAnalysis_PrepareCurrentSourceModule(state, currentModuleKey, ast)) {
+        zr_parser_source_report_failure(diagnostic, ZR_SOURCE_STAGE_COMPILE,
+                                         ZR_SOURCE_RESULT_COMPILE_FAILED);
         zr_parser_compile_trace("prepare current source module failed name='%s'",
                                 sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>");
         zr_parser_source_compile_discard_cache(state, comptimeCache);
@@ -1352,7 +1354,9 @@ static struct SZrFunction *zr_parser_source_compile_mode(
             currentModuleKey,
             emitTestManifest,
             submissionContext,
-            outSubmissionResult);
+            outSubmissionResult,
+            retention,
+            diagnostic);
     zr_parser_compile_trace("compiler compile finished name='%s' func=%p",
                             sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>",
                             (void *)func);
@@ -1365,6 +1369,10 @@ static struct SZrFunction *zr_parser_source_compile_mode(
 
     if (func == ZR_NULL) {
         zr_parser_source_compile_discard_cache(state, comptimeCache);
+        zr_parser_source_report_failure(diagnostic, ZR_SOURCE_STAGE_COMPILE,
+                                         ZR_SOURCE_RESULT_COMPILE_FAILED);
+    } else if (diagnostic != ZR_NULL) {
+        memset(diagnostic, 0, sizeof(*diagnostic));
     }
     
     return func;
@@ -1376,7 +1384,19 @@ struct SZrFunction *ZrParser_Source_Compile(
         TZrSize sourceLength,
         struct SZrString *sourceName) {
     return zr_parser_source_compile_mode(
-            state, source, sourceLength, sourceName, ZR_FALSE, ZR_NULL, ZR_NULL, ZR_NULL);
+            state, source, sourceLength, sourceName, ZR_FALSE, ZR_NULL, ZR_NULL, ZR_NULL,
+            ZR_SOURCE_RETENTION_NONE, ZR_NULL);
+}
+
+struct SZrFunction *ZrParser_Source_CompileWithOptions(
+        struct SZrState *state, const TZrChar *source, TZrSize sourceLength,
+        struct SZrString *sourceName, const SZrSourceCompileOptions *options,
+        SZrSourceCompileDiagnostic *diagnostic) {
+    EZrSourceRetention retention = options != ZR_NULL
+            ? options->retention : ZR_SOURCE_RETENTION_NONE;
+    return zr_parser_source_compile_mode(
+            state, source, sourceLength, sourceName, ZR_FALSE, ZR_NULL, ZR_NULL, ZR_NULL,
+            retention, diagnostic);
 }
 
 struct SZrFunction *ZrParser_Source_CompileWithComptimeCache(
@@ -1386,7 +1406,8 @@ struct SZrFunction *ZrParser_Source_CompileWithComptimeCache(
         struct SZrString *sourceName,
         SZrParserSourceComptimeCache *cache) {
     return zr_parser_source_compile_mode(
-            state, source, sourceLength, sourceName, ZR_FALSE, cache, ZR_NULL, ZR_NULL);
+            state, source, sourceLength, sourceName, ZR_FALSE, cache, ZR_NULL, ZR_NULL,
+            ZR_SOURCE_RETENTION_NONE, ZR_NULL);
 }
 
 struct SZrFunction *ZrParser_Source_CompileTest(
@@ -1395,7 +1416,8 @@ struct SZrFunction *ZrParser_Source_CompileTest(
         TZrSize sourceLength,
         struct SZrString *sourceName) {
     return zr_parser_source_compile_mode(
-            state, source, sourceLength, sourceName, ZR_TRUE, ZR_NULL, ZR_NULL, ZR_NULL);
+            state, source, sourceLength, sourceName, ZR_TRUE, ZR_NULL, ZR_NULL, ZR_NULL,
+            ZR_SOURCE_RETENTION_NONE, ZR_NULL);
 }
 
 struct SZrFunction *ZrParser_Source_CompileSubmission(
@@ -1410,7 +1432,8 @@ struct SZrFunction *ZrParser_Source_CompileSubmission(
     }
 
     return zr_parser_source_compile_mode(
-            state, source, sourceLength, sourceName, ZR_FALSE, ZR_NULL, context, outResult);
+            state, source, sourceLength, sourceName, ZR_FALSE, ZR_NULL, context, outResult,
+            ZR_SOURCE_RETENTION_NONE, ZR_NULL);
 }
 
 TZrBool ZrParser_CompilerState_SeedSubmissionContext(
@@ -1438,14 +1461,23 @@ static void zr_parser_source_compile_capture_error(TZrPtr userData,
                                                    const SZrFileRange *location,
                                                    const TZrChar *message,
                                                    EZrToken token) {
-    TZrBool *hadParserError = (TZrBool *)userData;
+    SZrSourceCompileErrorCapture *capture = (SZrSourceCompileErrorCapture *)userData;
 
-    ZR_UNUSED_PARAMETER(location);
     ZR_UNUSED_PARAMETER(message);
     ZR_UNUSED_PARAMETER(token);
 
-    if (hadParserError != ZR_NULL) {
-        *hadParserError = ZR_TRUE;
+    if (capture != ZR_NULL) {
+        SZrSourceCompileDiagnostic *diagnostic = capture->diagnostic;
+        capture->hadError = ZR_TRUE;
+        if (diagnostic != ZR_NULL && !diagnostic->hasRange && location != ZR_NULL) {
+            diagnostic->hasRange = ZR_TRUE;
+            diagnostic->startOffset = location->start.offset;
+            diagnostic->endOffset = location->end.offset;
+            diagnostic->startLine = location->start.line;
+            diagnostic->startColumn = location->start.column;
+            diagnostic->endLine = location->end.line;
+            diagnostic->endColumn = location->end.column;
+        }
     }
 }
 

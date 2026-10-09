@@ -1,6 +1,7 @@
 # Real source -> SemIR -> ExecIR -> ExecBC VM materialization integration.
 include("${CMAKE_CURRENT_LIST_DIR}/ssa-metadata-string-heap-owner.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/ssa-source-descriptor-oom.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/ssa-source-returned-retention.cmake")
 if (NOT TARGET zr_vm_ssa_source_execbc_vm_test)
     zr_vm_add_unity_test_target(zr_vm_ssa_source_execbc_vm_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_source_execbc_vm.c)

@@ -568,6 +568,7 @@ set_tests_properties(ssa_source_straight_line_cfg exec_ir_scalar_scratch_eligibi
 # Source membership and hashes are metadata only. Sources/headers are never copied.
 include("${CMAKE_CURRENT_LIST_DIR}/../ssa-metadata-string-heap-owner.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/../ssa-source-descriptor-oom.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../ssa-source-returned-retention.cmake")
 set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_library
         ssa_source_aot_scalar_text_support ${_zr_scalar_targets}
         ssa_source_primitive_frame_oom_object
@@ -575,6 +576,8 @@ set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_l
         zr_vm_ssa_function_aot_owner_test
         zr_vm_ssa_metadata_string_heap_owner_test
         ssa_source_descriptor_oom_object zr_vm_ssa_source_descriptor_oom_test
+        ssa_source_returned_descriptor_object ssa_source_returned_owner_object
+        zr_vm_ssa_source_returned_retention_test
         ssa_source_source_scalar_constant_noalloc_object zr_vm_ssa_source_scalar_constant_test
         ssa_source_zr_vm_common ${_zr_vendor_targets} ssa_source_unity ssa_source_runtime_support
         zr_vm_ssa_source_execbc_vm_test zr_vm_ssa_compare_metadata_guards_test
@@ -631,6 +634,11 @@ foreach (_header IN ITEMS
         tests/core/support/ssa_function_aot_owner_fixture.h
         tests/parser/support/ssa_source_scalar_constant_noalloc_shim.h
         tests/parser/support/ssa_source_descriptor_oom_shim.h
+        tests/parser/support/ssa_source_returned_retention_fixture.h
+        tests/parser/support/ssa_source_returned_descriptor_shim.h
+        tests/parser/support/ssa_source_returned_owner_shim.h
+        zr_vm_parser/include/zr_vm_parser/compiler_source_retention.h
+        zr_vm_parser/src/zr_vm_parser/compiler/compiler_source_retention_internal.h
         zr_vm_parser/include/zr_vm_parser/aot_ir_projection_descriptor.h
         zr_vm_parser/include/zr_vm_parser/exec_ir_source_scalar_constant.h
         zr_vm_core/include/zr_vm_core/function.h
