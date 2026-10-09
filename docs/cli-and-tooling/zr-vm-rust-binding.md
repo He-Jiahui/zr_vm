@@ -405,3 +405,22 @@ declares exactly one shared/static link-kind marker.
 The native CMake root remains a direct physical D:/cargo-targets, E:/cargo-targets, or F:/cargo-targets directory. Ordinary invocations keep the historical leaves under that root. Validation that runs shared and static modes independently sets ZR_VM_CARGO_OUTPUT_ROOT to a distinct owned mode directory below the approved root, for example F:/cargo-targets/zircon-local/vm-r6-20261003-01a0f033/shared or .../static.
 
 CMake creates and validates cargo-target, cargo-home, sccache, and tmp below that explicit mode root. The input is rejected when it uses another drive, a nested lookalike root, parent traversal, an empty path component, or a reparse/path alias. Cargo check and test custom targets use --locked. Run either the CMake Rust custom targets or the matching Cargo CTest entries for a mode; do not invoke both paths for the same operation.
+
+## Session GC 的安全 Rust 契约
+
+`ProjectSession::gc_step(max_pause_micros)` 用于 standard runtime 保留的 session：宿主可在导出调用之间请求一次协作式回收，并按返回的值快照安排下一次调用。该方法只同步借用当前 session 和局部 ABI 输出。先释放希望不再保活的 live `Value`，再读取下一步的计数；保存 `GcStepResult` 不保留 VM、owner 或 root。
+
+参数为传到 core 的暂停/工作预算目标。零值合法，非分代工作循环至少取得一次机会；这是协作式目标，不能保证完成一次完整回收，也不承诺墙钟耗时不超过参数。`pause_micros` 是最后一步的耗时观测值；core 因暂停请求失败提前返回时，它可能仍来自此前一步。因此 C 的 OK 不保证本次取得了回收工作或完成了回收。`root_count` 当前汇总 `ignoredObjectCount + crossBoundaryReferenceCount`，不是 VM 内部全部 root 槽位的枚举。跨边界计数从 owner 引用中先扣除 checkpoint storage 引用，再扣 session 自身；因此 checkpoint 与 live `Value` 的统计意义不同。
+
+C 入口在修改结果、预算和 GC 状态前拒绝空/失效 session、缺少 main-thread state 以及 `activeCall` 重入；safe Rust 的 `&mut self` 顺序借用不能替代外部 C/unsafe 调用的同一执行线程约束。owner 引用计数非原子。FFI 返回状态失败时，Rust 先用 `check_status` 读取错误快照并返回 `Error`，不把未成功的 ABI 输出解释成统计。
+
+TODO: core `GcStep` 是 void，分代疏散 OOM 可以进入 `Exception_Throw`。现有普通成功、checkpoint 统计及重入拒绝测试不能证明故障后是否跨过 Rust FFI 或 session 能否继续使用。下一步沿 `zr_vm_rust_binding/src/zr_vm_rust_binding/api.c:1123` 的线程重置、`zr_vm_core/src/zr_vm_core/gc/gc_cycle.c:2380` 的异常入口，以及 `zr_vm_core/src/zr_vm_core/exception.c:570` 的恢复点核查实际异常边界。
+
+调用与配套证据：
+
+- `zr_vm_rust_binding/rust/zr_vm_rust_binding/src/lib.rs:1371` 和 `zr_vm_rust_binding/rust/zr_vm_rust_binding/src/lib.rs:1376` 在 live Value 释放前后调用。
+- `zr_vm_rust_binding/rust/zr_vm_rust_binding/tests/execution_budget.rs:235` 在导出调用后的预算场景读取跨边界计数。
+- `tests/rust_binding/test_rust_binding_api.c:1163`、`tests/rust_binding/test_rust_binding_api.c:1168` 检查保留 checkpoint 的统计；`tests/rust_binding/test_rust_binding_api.c:1299` 构造实际重入，`tests/rust_binding/test_rust_binding_api.c:1669` 检查拒绝结果。
+- `zr_vm_rust_binding/src/zr_vm_rust_binding/api.c:1185`、`zr_vm_rust_binding/src/zr_vm_rust_binding/api.c:1203` 和 `zr_vm_rust_binding/src/zr_vm_rust_binding/api.c:1211` 分别定义重入门禁、checkpoint 排除及根汇总。
+
+此处说明当前契约和现有测试的断言范围，不表示这些测试已在本次注释工作中运行。
