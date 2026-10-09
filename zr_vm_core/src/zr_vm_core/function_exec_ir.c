@@ -4,17 +4,17 @@
 
 #include <string.h>
 
-/* RED staging: association remains a nonallocating refusal constructor. */
 TZrBool ZrCore_Function_SnapshotExecIr(
         SZrFunction *function, const SZrExecIrModule *source,
         SZrExecIrDiagnostic *diagnostic) {
-    if (diagnostic != ZR_NULL) {
-        memset(diagnostic, 0, sizeof(*diagnostic));
-        diagnostic->code = function == ZR_NULL || source == ZR_NULL
-                ? ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT
-                : ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED;
+    if (function == ZR_NULL) {
+        if (diagnostic != ZR_NULL) {
+            memset(diagnostic, 0, sizeof(*diagnostic));
+            diagnostic->code = ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT;
+        }
+        return ZR_FALSE;
     }
-    return ZR_FALSE;
+    return ZrCore_ExecIr_CloneOwnedModule(source, &function->ownedExecIr, diagnostic);
 }
 
 const SZrExecIrModule *ZrCore_Function_GetExecIr(const SZrFunction *function) {

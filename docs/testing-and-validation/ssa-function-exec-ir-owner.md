@@ -19,7 +19,7 @@ tests:
   - tests/core/test_ssa_exec_ir_owned_module.c
   - tests/core/test_ssa_function_aot_owner.c
 doc_type: testing-guide
-status: functional-red-verified-commit-pending
+status: finite-green-verified-commit-pending
 ---
 
 # Finite Function ExecIR owner validation
@@ -27,9 +27,10 @@ status: functional-red-verified-commit-pending
 ## Planned twenty default cases
 
 The approved design fixes20 default cases. Five RED source and six test/support
-paths are frozen. RED r3 observes4PASS/16featureFAIL/0ignored. Successful
-association and Function fault denominators remain uncredited; the rows below
-describe the complete requirements.
+paths are frozen. Historical RED r3 observes4PASS/16featureFAIL/0ignored.
+Current GREEN completes all20PASS/0FAIL/0ignored. First attachment and replacement
+each measure61/completed61 faults:122 subobservations within cases11/12, not122
+additional Unity cases. The rows below describe the verified finite inventory.
 
 | Case | Required observation |
 | --- | --- |
@@ -118,7 +119,7 @@ ledger, fixture and AOT owner. It is compile-only evidence and does not erase
 the native r2 build failure or its warnings. Exact receipts are in the acceptance
 record.
 
-## Accepted RED and remaining gates
+## Historical RED and current GREEN
 
 R3 configure41464/build15780/ordinary11960/residual12860/support37524 exited0;
 Function CTest37664 exited8. All16 failures use the exact real attachment-success
@@ -131,11 +132,21 @@ it does not erase r2's174 warnings or prove a clean full rebuild.
 
 Root's r3 gate verifies actual registration, current Function layout and selected
 providers against the raw output and input pins. The earlier MSVC7 and CoreModel
-receipts remain valid separate support. RED is verified with commit pending.
-No unobserved loop denominator is credited. Future GREEN requires all20 plus generic/CoreModel/AOT Function
-regressions and current provenance; warnings and failed attempts stay visible.
+receipts remain separate RED support. RED was committed as `ba7e2f13`.
+The selected1208/1192/1200 values are Clang runtime observations; the MSVC header
+probe only asserts field order, without printing size.
+Current GREEN configure38940/build7684/ordinary41808/residual8256/support30176/
+FunctionCTest37164 all exit0. All20 cases pass, as do generic14/AOT12 support.
+Both61-site Function sweeps compare direct lower diagnostics and request
+count/kind/width/bytes, preserve source/old owners, clean candidates and retry
+disarmed. Real shutdown balances VM, ExecIR and AOT records. Fresh CoreModel
+build8348/CTest40972 exits0; fresh seven-unit MSVC exits0/0warnings, compile-only.
+Only association, main test and fixture TUs rebuilt in the Function gate plus
+links/filter: no new diagnostics does not erase174 historical r2 warnings or
+prove a full clean rebuild. GREEN is verified with commit pending; Root's final
+current-pin/provenance review follows. Warnings and failed attempts stay visible.
 
 These gates inspect metadata and ownership without source/native execution or
 new provider/security callbacks. Function/source/default/full47 migration,
-Linux/full MSVC and backend/native parity remain OPEN. Actual receipts will be
+Linux/full MSVC and backend/native parity remain OPEN. Actual receipts are
 recorded in the [acceptance record](../acceptance/ssa-function-exec-ir-owner.md).

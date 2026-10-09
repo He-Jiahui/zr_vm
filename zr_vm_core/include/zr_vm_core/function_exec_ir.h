@@ -20,10 +20,6 @@
  *
  * This runtime-only association does not perform semantic verification, remap
  * IDs, change AOT ownership, install execution entries or serialize the slot.
- *
- * RED status: this constructor currently refuses all non-NULL Function/source
- * pairs with UNSUPPORTED, zero diagnostic payload and false return. It performs
- * no allocation, publication or source/owner mutation until separate GREEN GO.
  */
 ZR_CORE_API TZrBool ZrCore_Function_SnapshotExecIr(
         SZrFunction *function, const SZrExecIrModule *source,
