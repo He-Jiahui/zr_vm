@@ -114,7 +114,7 @@ doc_type: category-index
   - 同步容器收敛为 `UniqueMutex/SharedMutex`，guard 是 affine 的 `Lock/SharedLock`
   - 跨 isolate transport 只允许 `Send` payload 与 thread transport handles
 - `zr-system-submodules.md`
-  - `zr.system` 从扁平模块拆成 6 个叶子模块和 1 个聚合根模块
+  - `zr.system` 从扁平模块拆成 8 个叶子模块和 1 个聚合根模块
   - `zr.system.fs` 现在提供 `File` / `Folder` / `FileStream` 对象模型、`SystemFileInfo` 快照 struct，以及兼容函数薄封装
   - `FileStream` 作为 owned `handle_id` wrapper，只在 extern/native 边界自动 lowering 到 `i32`
 - `zr-container-contiguous-views.md`
@@ -149,3 +149,6 @@ doc_type: category-index
 
 - [AOT 运行时适配层](aot-runtime-adapter.md)
   - 宿主配置、模块记录、生成帧、值所有权和失败状态；区分实际调用、ABI 声明与文本测试。
+
+- [zr.system.assembly 资源调用契约](zr-system-assembly-contract.md)
+  - 当前项目资源定位、callback 与脚本结果的区别、资源所有权及文本 NUL 限制。
