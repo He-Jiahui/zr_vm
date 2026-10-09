@@ -518,11 +518,13 @@ set_tests_properties(ssa_source_straight_line_cfg exec_ir_scalar_scratch_eligibi
         ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
 
 # Source membership and hashes are metadata only. Sources/headers are never copied.
+include("${CMAKE_CURRENT_LIST_DIR}/../ssa-metadata-string-heap-owner.cmake")
 set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_library
         ssa_source_aot_scalar_text_support ${_zr_scalar_targets}
         ssa_source_primitive_frame_oom_object
         ssa_source_aot_owned_module_fault_object zr_vm_ssa_aot_owned_module_faults_test
         zr_vm_ssa_function_aot_owner_test
+        zr_vm_ssa_metadata_string_heap_owner_test
         ssa_source_zr_vm_common ${_zr_vendor_targets} ssa_source_unity ssa_source_runtime_support
         zr_vm_ssa_source_execbc_vm_test zr_vm_ssa_compare_metadata_guards_test
         zr_vm_ssa_source_straight_line_cfg_test zr_vm_exec_ir_scalar_scratch_eligibility_test
@@ -588,6 +590,7 @@ foreach (_header IN ITEMS
         zr_vm_parser/include/zr_vm_parser/exec_ir_host_primitive_layout.h
         zr_vm_parser/include/zr_vm_parser/exec_ir_host_aot_target.h
         zr_vm_parser/include/zr_vm_parser/exec_ir_source_module_contract.h
+        zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_string_heap.h
         zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_text.h
         zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_text_internal.h
         zr_vm_parser/include/zr_vm_parser/exec_ir_source_frame.h
