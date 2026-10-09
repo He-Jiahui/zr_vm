@@ -22,16 +22,19 @@ tests:
   - tests/parser/test_ssa_core_model.c
   - docs/acceptance/ssa-execir-owned-module.md
 doc_type: testing-guide
-status: finite-red-ready-to-submit-commit-pending
+status: finite-green-verified-commit-pending
 ---
 
 # Finite Core ExecIR owner tests
 
 ## Frozen 14-case inventory
 
-The frozen actual test contains14 default Unity cases. Current RED r5 observed1PASS,
+The frozen actual test contains14 default Unity cases. Historical RED r5 observed1PASS,
 13featureFAIL and0ignored. Only case1's genuine lower prerequisite completed;
 owner cases stop at the actual constructor refusal before their GREEN assertions.
+Current GREEN completes all14 with0FAIL/0ignored. Cases12/13 each measure61
+owner requests, complete61 injected failures and compare the60-site direct clone
+segment. The122 owner failures are subobservations, not122 additional Unity cases.
 
 | Case | Purpose |
 | --- | --- |
@@ -84,16 +87,16 @@ The new registration selects 14 existing Core support TUs plus the owner TU as
 15 private objects. Its executable has four TUs: test, fixture, allocator and
 Unity. Forced allocator includes apply only to that private Core closure.
 The focused registration also includes the existing 16-TU core-model executable,
-giving35 compile units across the two tests. Root's r5 review verifies current
+giving35 compile units across the two tests. Root's GREEN review verifies current
 source/header/settings/artifact pins and seven provider symbols in the actual
 maps, including owner, CloneModule/FreeModule and StateMap clone/free providers.
 
-Current r5 configure18708/build39720/support25844/owner6612 exited0/0/0/8.
+Historical RED r5 configure18708/build39720/support25844/owner6612 exited0/0/0/8.
 The existing core-model support passed, including its original28 Function and60
 Module allocation fault loops. The new14 cases produced1PASS/13featureFAIL/
 0ignored, with build0warnings and no ledger/UBSan diagnostic. Cases12/13 stop at
 constructor refusal: their new measured denominator and fault assertions have
-not run. The current r5 driver receipt is validatedtrue with a separate Root
+not run in RED. The r5 driver receipt is validatedtrue with a separate Root
 current-pin/provider review. Historical r4's driver receipt remains validatedfalse because its parser
 expected `Expected TRUE` while Unity emitted the test's custom assertion message.
 Root accepted a separate read-only r4 raw/provider review without changing that
@@ -102,8 +105,11 @@ validated the normalized input; the parser accepts the exact custom message
 without weakening the tests. Seven finite MSVC units exited0/0warnings; this is
 compile-only evidence. Failed earlier gates remain in the acceptance record.
 
-Future GREEN requires all14 PASS, every measured fault accounted,
-lower core-model support, strict balance, assertions/UBSan and fresh finite MSVC
-scope. Those future results and broader execution/platform coverage are not
-claimed here. RED is ready to submit; commit is pending. Receipts are in the
+Current GREEN configure34280/build34464/support40624/owner30884 exited0/0/0/0.
+Core-model support and all14 owner cases pass, with0warnings, no ledger/UBSan
+diagnostic and exact record balance. Each61-site sweep verifies actual failed
+candidate cleanup before fallback, old/source preservation, full lower diagnostic
+witnesses and disarmed clean retries. Seven fresh finite MSVC units also
+exited0/0warnings; they are compile-only evidence. GREEN is verified with commit
+pending. Broader execution/platform coverage remains OPEN. Receipts are in the
 [acceptance record](../acceptance/ssa-execir-owned-module.md).

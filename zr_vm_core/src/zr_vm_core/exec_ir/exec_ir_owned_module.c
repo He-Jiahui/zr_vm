@@ -7,17 +7,41 @@ struct SZrExecIrOwnedModule {
     SZrExecIrModule module;
 };
 
-/* RED staging: the constructor refuses storage snapshots until GREEN GO. */
 TZrBool ZrCore_ExecIr_CloneOwnedModule(
         const SZrExecIrModule *source, SZrExecIrOwnedModule **destination,
         SZrExecIrDiagnostic *diagnostic) {
+    SZrExecIrOwnedModule *candidate;
+    SZrExecIrOwnedModule *old;
     if (diagnostic != ZR_NULL) {
         memset(diagnostic, 0, sizeof(*diagnostic));
-        diagnostic->code = source == ZR_NULL || destination == ZR_NULL
-                ? ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT
-                : ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED;
     }
-    return ZR_FALSE;
+    if (source == ZR_NULL || destination == ZR_NULL) {
+        if (diagnostic != ZR_NULL) {
+            diagnostic->code = ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT;
+        }
+        return ZR_FALSE;
+    }
+    candidate = (SZrExecIrOwnedModule *)calloc(1u, sizeof(*candidate));
+    if (candidate == ZR_NULL) {
+        if (diagnostic != ZR_NULL) {
+            diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY;
+            diagnostic->expectedVersion = 1u;
+        }
+        return ZR_FALSE;
+    }
+    ZrCore_ExecIr_ModuleInit(&candidate->module);
+    if (!ZrCore_ExecIr_CloneModule(source, &candidate->module, diagnostic)) {
+        ZrCore_ExecIr_FreeModule(&candidate->module);
+        free(candidate);
+        return ZR_FALSE;
+    }
+    old = *destination;
+    *destination = candidate;
+    ZrCore_ExecIr_OwnedModuleFree(&old);
+    if (diagnostic != ZR_NULL) {
+        memset(diagnostic, 0, sizeof(*diagnostic));
+    }
+    return ZR_TRUE;
 }
 
 const SZrExecIrModule *ZrCore_ExecIr_OwnedModuleView(

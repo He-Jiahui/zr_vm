@@ -17,12 +17,12 @@ tests:
   - tests/core/test_ssa_exec_ir_owned_module.c
   - tests/parser/test_ssa_core_model.c
 doc_type: acceptance-record
-status: finite-red-ready-to-submit-commit-pending
+status: finite-green-verified-commit-pending
 ---
 
 # Core ExecIR owner finite acceptance
 
-## Actual RED source
+## Historical RED source
 
 | Input | SHA256 |
 | --- | --- |
@@ -36,19 +36,20 @@ Read-only source review confirms complete diagnostic reset, NULL-argument
 INVALID_ARGUMENT and non-NULL UNSUPPORTED refusal with all payload fields zero.
 The constructor allocates nothing and does not publish an owner. View and Free
 are real borrowed-view and slot-clearing APIs, but RED creates no live owner.
-The public snapshot/OOM contract describes future GREEN behavior, not current
-construction success.
+At RED, the public snapshot/OOM contract described future GREEN behavior rather
+than construction success. The implemented contract is recorded below.
 
-## Actual RED evidence
+## Historical RED evidence
 
-Current r5 configure18708/build39720/support25844/owner6612 exited0/0/0/8.
+RED r5 configure18708/build39720/support25844/owner6612 exited0/0/0/8.
 The existing core-model support passed, including its original28 Function and60
 Module allocation fault loops. New default14 cases observed1PASS/13featureFAIL/
 0ignored, with build0warnings and no strict ledger or UBSan diagnostic. Case1
 proves the real full/present-empty/absent-header lower clone prerequisite.
 The13 feature failures reach the linked constructor's UNSUPPORTED refusal.
 Cases12/13 do not establish the new owner allocation denominator or fault coverage;
-metadata/owner success, rollback/retry and replacement remain future GREEN gates.
+metadata/owner success, rollback/retry and replacement were uncredited until
+the GREEN run recorded below.
 
 Registration currently selects15 private Core TUs and4 owner test TUs, plus the
 existing16-TU core-model test:35 compile units. Root's separate read-only review
@@ -92,14 +93,46 @@ The staged14-path scope was preserved for Root's resumed transaction; no test
 or production behavior changed. The finite MSVC RED seven-unit receipt above
 remains current.
 
-RED is ready to submit; its separate commit remains pending.
+RED was committed as `ef37e51451d0685dd6501f701ec333c20a2b6c31`, exact14 paths,
+with He-Jiahui author and committer and13 Git steps exiting0. Its receipt SHA is
+`3B292C69E10B0DE657606053993F0A010E700CC0A27ADF452B0149F809608024`.
 
-After genuine accepted RED and its separate commit, future GREEN may implement
-the fresh envelope/CloneModule transaction. Acceptance will require all14 cases,
-full measured owner/self-view allocation fault loops, preserved lower nine-field
-diagnostics, candidate cleanup before fallback, real lower support and current
-source/header/settings/artifact proofs. GREEN has not been implemented or
-accepted in this record.
+## Current verified GREEN
+
+The public header remains45 lines with the hash above. The implementation is
+now61 lines, SHA `02A1FF2B00A22D58A14031D57CBE22C5C00D688B50CB3B6D4F812EE861D888CF`.
+All six frozen test/support files remain unchanged. Independent source review
+confirms fresh candidate rollback, complete lower diagnostic preservation,
+publication before old-owner release, old-view source lifetime and full resets.
+
+Native configure34280/build34464/support40624/owner30884 all exited0.
+Core-model support passes, including its original28 Function/60 Module loops.
+New default14 cases produce14PASS/0FAIL/0ignored, with build0warnings and no
+strict ledger or UBSan diagnostic. Allocation/free records balance exactly.
+
+The ordinary-source and old-view-source sweeps each measure61 owner requests,
+complete61 injected owner failures and identify60 direct CloneModule requests.
+There are122 injected owner failures within two of the14 Unity cases. For lower
+sites the same-source direct clone supplies the complete nine-field diagnostic
+witness; envelope OOM uses the actual1/0 contract. Every failure checks candidate
+release before fallback, source/old-record preservation and disarmed clean retry.
+These counts apply to this fixed genuine constructed profile, not arbitrary
+modules or the full graph/producer denominator.
+
+Root verifies current35 compile units, seven actual provider symbols and
+source/header/settings/artifact pins. Assertions and UBSan are admitted in the
+finite gate. Fresh seven-unit MSVC GREEN covers header, owner, clone, StateMap,
+test, fixture and allocator, all exit0/0warnings; it is compile-only evidence.
+
+| Current GREEN receipt under the report root above | SHA256 |
+| --- | --- |
+| execir-owned-module-green-r1-receipt.json | `A2E926CFBE324EAFBAA49F1144FDD029D2CCF85B0E07A39A59EB9AFFFCB3C2B5` |
+| execir-owned-module-green-r1-owner-ctest.log | `B7F3FB6F41EBE85BB5F742994C59E330AD995C5354F09CCD6DCA09626FB32EE3` |
+| execir-owned-module-green-r1-root-review.json | `B8CF9087A572A64D9C19AEAE230176EF497A95DE2B830729C18485534DBB8DCE` |
+| execir-owned-module-msvc-green-r1-receipt.json | `76C5175716D888B7672A52E722CCCFF13075EA851BC6F7F4B60AA7B61F7C7C6F` |
+
+Finite GREEN is verified; its separate commit remains pending. Historical RED
+and failed receipts above are retained.
 
 ## Scope remains open
 
