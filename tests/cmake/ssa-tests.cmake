@@ -454,6 +454,7 @@ if (NOT TARGET zr_vm_ssa_oracle_resume_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_consumer.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/canonical_type_lookup.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/canonical_type_index.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c)
     zr_vm_apply_common_test_settings(zr_vm_ssa_oracle_resume_test)
@@ -512,6 +513,7 @@ if (NOT TARGET zr_vm_ssa_oracle_projections_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_oracle.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/canonical_type_lookup.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/canonical_type_index.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c)
     target_include_directories(zr_vm_ssa_oracle_projections_test PRIVATE
@@ -553,6 +555,7 @@ if (NOT TARGET zr_vm_ssa_oracle_parallel_edges_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_consumer.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/canonical_type_lookup.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/canonical_type_index.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c)
     target_include_directories(zr_vm_ssa_oracle_parallel_edges_test PRIVATE
@@ -1595,3 +1598,4 @@ include(${CMAKE_CURRENT_LIST_DIR}/exec-ir-scalar-scratch-eligibility.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/ssa-module-constant-pool-verifier.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/ssa-execir-owned-module.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/ssa-function-execir-owner.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/ssa-canonical-type-lookup.cmake)

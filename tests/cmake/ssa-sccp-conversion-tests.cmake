@@ -36,6 +36,7 @@ if (NOT TARGET zr_vm_ssa_sccp_conversion_test)
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_consumer.c
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/canonical_type_lookup.c
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/canonical_type_index.c)
     target_include_directories(zr_vm_ssa_sccp_conversion_test PRIVATE
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/include

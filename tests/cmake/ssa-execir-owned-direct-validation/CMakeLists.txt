@@ -84,3 +84,4 @@ foreach (_target IN ITEMS zr_vm_ssa_core_model_test zr_vm_ssa_execir_owner_priva
 endforeach ()
 file(WRITE "${CMAKE_BINARY_DIR}/module-copy-target-sources.tsv" "${_zr_module_copy_graph}")
 file(WRITE "${CMAKE_BINARY_DIR}/module-copy-settings.tsv" "${_zr_module_copy_settings}")
+include("${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/tests/cmake/ssa-canonical-type-lookup.cmake")
