@@ -24,7 +24,7 @@
 #include "zr_vm_core/call_info.h"
 
 #include "function_precall_internal.h"
-#include "function_aot_ir_internal.h"
+#include "function_ir_owners_internal.h"
 
 /*
  * VM call setup/teardown stays on the main interpreter path. Keep the public
@@ -222,8 +222,12 @@ TZrStackValuePointer ZrCore_Function_CheckStack(struct SZrState *state, TZrSize 
 
 SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     SZrRawObject *newObject = ZrCore_RawObject_New(state, ZR_VALUE_TYPE_FUNCTION, sizeof(SZrFunction), ZR_FALSE);
+    if (newObject == ZR_NULL) {
+        return ZR_NULL;
+    }
     SZrFunction *function = ZR_CAST_FUNCTION(state, newObject);
     function->ownedAotIr = ZR_NULL;
+    function->ownedExecIr = ZR_NULL;
     function->constantValueList = ZR_NULL;
     function->constantValueLength = 0;
     function->childFunctionList = ZR_NULL;
@@ -1169,7 +1173,7 @@ static void function_reset_to_tombstone(SZrFunction *function) {
         return;
     }
 
-    ZrCore_Function_ForgetAotIrOwnerAfterMove(function);
+    ZrCore_Function_ForgetIrOwnersAfterMove(function);
     function->instructionsList = ZR_NULL;
     function->instructionsLength = 0;
     function->childFunctionList = ZR_NULL;
@@ -1323,7 +1327,7 @@ const SZrFunctionSchedulerSourceFact *ZrCore_Function_FindSchedulerSourceFact(
 void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
     SZrGlobalState *global = state->global;
     ZR_ASSERT(function != ZR_NULL);
-    ZrCore_Function_ReleaseAotIrOwner(function);
+    ZrCore_Function_ReleaseIrOwners(function);
 #define ZR_FUNCTION_FREE_METADATA_PARAMETERS(PARAMETERS, COUNT)                                                      \
     do {                                                                                                             \
         if ((PARAMETERS) != ZR_NULL && (COUNT) > 0) {                                                                \

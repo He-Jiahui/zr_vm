@@ -23,6 +23,7 @@ struct SZrTypeLayoutField;
 struct SZrTypeLayoutRegistryView;
 struct SZrAotCodeRegistration;
 struct SZrAotIrOwnedModule;
+struct SZrExecIrOwnedModule;
 
 typedef enum EZrFunctionMemberEntryKind {
     ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL = 0,
@@ -775,6 +776,8 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrBool hasSourceCallableIdentity;
     /* Unique runtime-only metadata owner; never serialized or shallow-aliased. */
     struct SZrAotIrOwnedModule *ownedAotIr;
+    /* Unique runtime-only ExecIR storage owner; never serialized or shallow-aliased. */
+    struct SZrExecIrOwnedModule *ownedExecIr;
 };
 
 typedef struct SZrFunction SZrFunction;

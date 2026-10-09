@@ -569,11 +569,14 @@ set_tests_properties(ssa_source_straight_line_cfg exec_ir_scalar_scratch_eligibi
 include("${CMAKE_CURRENT_LIST_DIR}/../ssa-metadata-string-heap-owner.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/../ssa-source-descriptor-oom.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/../ssa-source-returned-retention.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../ssa-function-execir-owner.cmake")
 set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_library
         ssa_source_aot_scalar_text_support ${_zr_scalar_targets}
         ssa_source_primitive_frame_oom_object
         ssa_source_aot_owned_module_fault_object zr_vm_ssa_aot_owned_module_faults_test
         zr_vm_ssa_function_aot_owner_test
+        zr_vm_ssa_execir_owner_private_core zr_vm_ssa_exec_ir_owned_module_test
+        zr_vm_ssa_function_execir_aot_object zr_vm_ssa_function_exec_ir_owner_test
         zr_vm_ssa_metadata_string_heap_owner_test
         ssa_source_descriptor_oom_object zr_vm_ssa_source_descriptor_oom_test
         ssa_source_returned_descriptor_object ssa_source_returned_owner_object
@@ -632,6 +635,12 @@ foreach (_header IN ITEMS
         tests/parser/support/ssa_primitive_source_frame_oom_shim.h
         tests/parser/support/ssa_aot_owned_module_fault_shim.h
         tests/core/support/ssa_function_aot_owner_fixture.h
+        tests/core/support/ssa_exec_ir_owned_module_fixture.h
+        tests/core/support/ssa_exec_ir_owned_module_allocator.h
+        tests/core/support/ssa_exec_ir_owned_module_shim.h
+        tests/core/support/ssa_function_exec_ir_owner_fixture.h
+        tests/core/support/ssa_function_exec_ir_owner_ledger.h
+        tests/core/support/ssa_function_exec_ir_owner_aot_shim.h
         tests/parser/support/ssa_source_scalar_constant_noalloc_shim.h
         tests/parser/support/ssa_source_descriptor_oom_shim.h
         tests/parser/support/ssa_source_returned_retention_fixture.h
@@ -643,6 +652,9 @@ foreach (_header IN ITEMS
         zr_vm_parser/include/zr_vm_parser/exec_ir_source_scalar_constant.h
         zr_vm_core/include/zr_vm_core/function.h
         zr_vm_core/include/zr_vm_core/function_aot_ir.h
+        zr_vm_core/include/zr_vm_core/function_exec_ir.h
+        zr_vm_core/include/zr_vm_core/exec_ir_owned_module.h
+        zr_vm_core/src/zr_vm_core/function_ir_owners_internal.h
         zr_vm_core/src/zr_vm_core/function_aot_ir_internal.h
         zr_vm_core/include/zr_vm_core/aot_ir_owned_module.h
         zr_vm_core/include/zr_vm_core/aot_ir.h
