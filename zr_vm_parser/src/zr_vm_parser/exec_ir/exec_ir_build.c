@@ -376,7 +376,7 @@ static TZrBool append_cfg_predecessors(const SZrSemanticIrFunction *semantic,
     TZrUInt32 *counts = ZR_NULL;
     TZrUInt32 *cursor = ZR_NULL;
     TZrExecIrBlockId *rows = ZR_NULL;
-    SZrExecIrRange appended = {0u, 0u};
+    SZrExecIrRange appended = {{0u}, 0u};
     TZrUInt32 total = 0u;
     TZrUInt32 i;
     TZrBool result = ZR_FALSE;
@@ -636,7 +636,7 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
         if (b->instructionCount != 0u) {
             for (j = 0u; j < b->instructionCount; ++j) {
                 const SZrSemanticIrInstruction *in = (const SZrSemanticIrInstruction *)ZrCore_Array_Get((SZrArray *)&s->instructions, b->firstInstructionIndex + j);
-                SZrExecIrInstruction x; SZrExecIrRange rr = {0u, 0u}, orr = {0u, 0u};
+                SZrExecIrInstruction x; SZrExecIrRange rr = {{0u}, 0u}, orr = {{0u}, 0u};
                 TZrExecIrValueId loweredOperands[2];
                 TZrExecIrValueId loweredResult = ZR_EXEC_IR_VALUE_ID_INVALID;
                 const TZrExecIrValueId *operandValues = ZR_NULL;
