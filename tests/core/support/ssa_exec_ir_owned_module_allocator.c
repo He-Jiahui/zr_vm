@@ -84,6 +84,45 @@ int ZrTests_ExecOwner_TryRecordFrees(unsigned record, unsigned *frees) {
     *frees = g_rows[record].frees;
     return 1;
 }
+int ZrTests_ExecOwner_TryLiveSpan(unsigned first, unsigned last, const void *pointer,
+                               size_t count, size_t width, SZrOwnerLiveSpan *output) {
+    size_t bytes;
+    uintptr_t start, end;
+    unsigned found = OWNER_RECORDS;
+    SZrOwnerLiveSpan candidate = {0};
+    if (output == NULL || pointer == NULL || count == 0u || width == 0u ||
+        g_stats.records > OWNER_RECORDS || first >= last || last > g_stats.records)
+        return 0;
+    if (count > SIZE_MAX / width) return 0;
+    bytes = count * width;
+    if ((size_t)(uintptr_t)bytes != bytes) return 0;
+    start = (uintptr_t)pointer;
+    if ((const void *)start != pointer || start > UINTPTR_MAX - (uintptr_t)bytes)
+        return 0;
+    end = start + (uintptr_t)bytes;
+    for (unsigned i = 0u; i < g_stats.records; ++i) {
+        const SOwnerHeapRecord *row = &g_rows[i];
+        uintptr_t rowStart, rowEnd;
+        if (row->pointer == NULL) continue;
+        if (row->frees != 0u || row->bytes == 0u ||
+            (size_t)(uintptr_t)row->bytes != row->bytes)
+            return 0;
+        rowStart = (uintptr_t)row->pointer;
+        if ((void *)rowStart != row->pointer || rowStart > UINTPTR_MAX - (uintptr_t)row->bytes)
+            return 0;
+        rowEnd = rowStart + (uintptr_t)row->bytes;
+        if (start >= rowStart && end <= rowEnd) {
+            if (found != OWNER_RECORDS) return 0;
+            found = i;
+        }
+    }
+    if (found == OWNER_RECORDS || found < first || found >= last) return 0;
+    candidate.record = found;
+    candidate.allocation = g_rows[found].pointer;
+    candidate.bytes = g_rows[found].bytes;
+    *output = candidate;
+    return 1;
+}
 void ZrTests_ExecOwner_AssertReleased(unsigned first, unsigned last) {
     TEST_ASSERT_TRUE(first <= last && last <= g_stats.records);
     for (unsigned i = first; i < last; ++i) {
