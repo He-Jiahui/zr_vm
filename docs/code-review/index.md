@@ -226,3 +226,5 @@ doc_type: category-index
 - [字面量测试调用与日志契约](../testing-and-validation/literal-log-caller-contract.md)：实际判据、Unity 失败控制流、资源边界与具体 BUG/TODO。
 
 - [原生 FFI fixture 的 ABI 与调用生命周期](../testing-and-validation/ffi-fixture-abi-caller-contract.md)：导出、字段与平台回调契约，借用资源限制及具体 BUG/TODO。
+
+- [Checked integer 独立测试入口](../testing-and-validation/checked-arithmetic-registration-contract.md)：父级注册与链接上下文、私有头可见性、CTest 标签及超时边界。

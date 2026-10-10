@@ -243,8 +243,8 @@ tests/cmake/benchmark_registry_contract_fixture.cmake	tests/cmake	config	2815fcb
 tests/cmake/benchmark_task3_case_assembly.cmake	tests/cmake	config	15f15bb2cad8c196bb61e0e8fab893633e37a136c230b2d33747133f02f42ce1	reviewed	-
 tests/cmake/benchmark_task3_suite.cmake	tests/cmake	config	e9c93f391493c706a8a97087aba6000c0142c8786c8a679516eab33dfa5060a2	reviewed	基准计时与环境契约调用链复核
 tests/cmake/benchmark_task4_environment.cmake	tests/cmake	config	41babbf1a64a4de066cbb60c95a4261a0331608221f9e9a96b97d5805609a712	reviewed	基准计时与环境契约调用链复核
-tests/cmake/checked-divide-tests.cmake	tests/cmake	config	7c8db48b49ab545cc1c1d82a670350eb27bf3f3c79ee1df770e4d59ca86769f4	pending	-
-tests/cmake/checked-multiply-tests.cmake	tests/cmake	config	7300f7750a3169ac96ad4bc4279b4d9c687deeb05a173c23e6680328fd052326	pending	-
+tests/cmake/checked-divide-tests.cmake	tests/cmake	config	2e57a9923b4d393406f73cbf80a458301d2d2663f17a82e8e6a671972551d5a6	pending	本批完整配置入口及 CTest 属性块已登记；文件级覆盖待当前清单验收
+tests/cmake/checked-multiply-tests.cmake	tests/cmake	config	af3274e00a07064d2b1f2e66053426ff47bc0b1aa10939a414892cf70fe5a910	pending	本批完整配置入口及 CTest 属性块已登记；文件级覆盖待当前清单验收
 tests/cmake/close-proxy-tests.cmake	tests/cmake	config	c145dfade91298174a67d11562261287984a28fb72e2e9950907d6801b3069e1	pending	-
 tests/cmake/exception-gc-scopes-tests.cmake	tests/cmake	config	958793b475cbb078f2f054e23c226aeba6052ded12267c1671a2c713b9140895	pending	-
 tests/cmake/exec-ir-scalar-scratch-eligibility.cmake	tests/cmake	config	40e892cda9b04546b89d239bdb8e99f1c9563d76b3611b77dd157f68d9d59dbb	pending	-
