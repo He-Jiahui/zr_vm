@@ -131,6 +131,27 @@ extern void test_logical_short_circuit_runtime_preserves_side_effect_boundaries(
 extern void test_matrix_add_2d_compile_binds_super_array_items_for_hot_typed_int_paths(void);
 extern void test_w2_load_typed_arithmetic_probe_reports_residual_candidates(void);
 /* language_pipeline 的编译器入口；仅组织用例，资源清理由各用例承担。 */
+/**
+ * @brief 组织编译器基础、表达式、语句、元数据、所有权及工程回归的统一 Unity 入口，向 language_pipeline 交付本进程结果。
+ *
+ * ## Summary
+ * 直接运行 zr_vm_compiler_integration_test，或由 CTest language_pipeline 的 manifest suite runner 启动。
+ * 套件标题、分隔线及 Completed 文本标识派发阶段；测试判据由用例断言及 Unity 计账交付。
+ *
+ * ## Parameters
+ * 无参数；由可执行目标作为进程入口调用，不作为可重入测试 helper。
+ *
+ * ## Returns
+ * 返回 UNITY_END() 的失败计数；零值表示没有被 Unity 计为失败，忽略用例仍单独统计。
+ *
+ * ## Constraints
+ * features 源提供空 setUp/tearDown；本入口不拥有各用例取得的 VM、源码或 fixture，非局部失败的清理责任须在用例侧解决。
+ * 本入口不启动公共日志 timer；分隔线不登记测试。RUN_TEST 的保护和生命周期回调由 Unity 调度。
+ *
+ * ## References
+ * CMake 链接 features、regressions、W2、escape 和两个编译 fixture；language_pipeline 展开目标路径后，runner 消费进程退出码。
+ * UnityDefaultTestRun 派发回调，UnityConcludeTest 计账，UnityEnd 为 suite runner 提供退出结果。
+ */
 int main(void) {
     printf("\n");
     ZR_TEST_MODULE_DIVIDER();

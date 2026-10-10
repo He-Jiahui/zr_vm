@@ -13,6 +13,27 @@ extern void test_map_object_access_benchmark_project_compile_quickens_labelFor_l
 extern void test_call_chain_polymorphic_benchmark_project_compile_quickens_loop_helper_calls(void);
 extern void test_call_chain_polymorphic_dispatch_callable_parameter_quickens_to_known_vm_call(void);
 /* 专项目标由 CMake 独立构建并手工执行；资源仍由各回归用例管理。 */
+/**
+ * @brief 集中派发调用降级的九个回归用例，提供 typed 算术、native/member、子函数和真实基准调用路径的独立检查入口。
+ *
+ * ## Summary
+ * 直接运行 zr_vm_compiler_call_lowering_focus_test；当前已查注册配置没有把本目标加入 CTest suite。
+ * 套件标题、分隔线及 Completed 文本标识派发阶段；测试判据由用例断言及 Unity 计账交付。
+ *
+ * ## Parameters
+ * 无参数；由可执行目标作为进程入口调用，不作为可重入测试 helper。
+ *
+ * ## Returns
+ * 返回 UNITY_END() 的失败计数；零值表示没有被 Unity 计为失败，忽略用例仍单独统计。
+ *
+ * ## Constraints
+ * 目标链接回归源及空 setUp/tearDown；每个用例管理自己的 fixture，入口不会在失败后替它释放。
+ * 本入口不启动公共日志 timer；分隔线不登记测试。RUN_TEST 的保护和生命周期回调由 Unity 调度。
+ *
+ * ## References
+ * CMake 的独立 focus 目标链接本入口及回归/编译 fixture；这里用 RUN_TEST 交给 Unity 派发，用例负责具体断言和资源。
+ * UnityDefaultTestRun 派发回调，UnityConcludeTest 计账，UnityEnd 为 suite runner 提供退出结果。
+ */
 int main(void) {
     printf("\n");
     ZR_TEST_MODULE_DIVIDER();

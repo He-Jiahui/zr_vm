@@ -17,6 +17,28 @@ extern void test_runtime_compiled_child_functions_detach_owner_links(void);
 extern void test_binary_roundtrip_runtime_child_functions_detach_owner_links(void);
 
 // 独立 escape_pipeline 目标注册全部跨编译单元用例；compiler_integration 还复用其中两例。
+/**
+ * @brief 派发逃逸元数据的编译/二进制形状用例及运行时闭包用例，作为独立 escape_pipeline 的进程入口。
+ *
+ * ## Summary
+ * 直接运行 zr_vm_escape_pipeline_test，或由 CTest escape_pipeline 的 executable suite runner 启动。
+ * 套件标题、分隔线及 Completed 文本标识派发阶段；测试判据由用例断言及 Unity 计账交付。
+ *
+ * ## Parameters
+ * 无参数；由可执行目标作为进程入口调用，不作为可重入测试 helper。
+ *
+ * ## Returns
+ * 返回 UNITY_END() 的失败计数；零值表示没有被 Unity 计为失败，忽略用例仍单独统计。
+ *
+ * ## Constraints
+ * 各用例自行持有并尝试清理编译、二进制和运行时资源；main 只负责注册和汇总，不拥有或保证释放。
+ * TODO: 用例侧的正常路径漏释放与硬断言越过清理仍需处理；空 setUp/tearDown 不兜底。
+ * 本入口不启动公共日志 timer；分隔线不登记测试。RUN_TEST 的保护和生命周期回调由 Unity 调度。
+ *
+ * ## References
+ * 本入口注册十二例；compiler_integration 另复用其中两个形状用例。CMake 注册独立 escape_pipeline 并由 runner 检查退出码。
+ * UnityDefaultTestRun 派发回调，UnityConcludeTest 计账，UnityEnd 为 suite runner 提供退出结果。
+ */
 int main(void) {
     printf("\n");
     ZR_TEST_MODULE_DIVIDER();
