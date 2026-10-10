@@ -25,23 +25,105 @@
 #include "zr_vm_common/zr_meta_conf.h"
 
 #ifndef ZR_ARRAY_COUNT
+/**
+ * @brief 提供真数组的编译期元素数约定。
+ *
+ * ## Summary
+ * 仅在头文件未提供同名宏时作为本翻译单元后备；当前文件未找到实际展开调用。
+ *
+ * ## Parameters
+ * @param[in] value 真数组表达式，不接受裸指针或依赖求值副作用的输入。
+ *
+ * ## Returns
+ * 元素数量表达式，不登记测试或管理存储。
+ *
+ * ## Constraints and lifecycle
+ * TODO: 当前后备未使用，沿头文件宏约定及历史测试版本核查保留意图；不能据仓内未展开排除未来或头文件条件消费者。
+ *
+ * ## References
+ * 本文件的#ifndef ZR_ARRAY_COUNT后备边界；metadata数组遍历当前使用ZrLib_Array_Length。
+ */
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
 
+/**
+ * @brief 提供 system_fs 每例开始前的 Unity 生命周期入口。
+ *
+ * ## Summary
+ * UnityDefaultTestRun 在每次 RUN_TEST 前派发本回调，使本文件拥有独立的生命周期符号。
+ *
+ * ## Returns
+ * 无返回值；当前不建立共享夹具，也不重置文件系统产物。
+ *
+ * ## Constraints and lifecycle
+ * 本例取得的 VM、Function 与路径资源由用例侧管理；不能依赖此空回调补建状态。
+ *
+ * ## References
+ * UnityDefaultTestRun 的 setUp 派发；main 注册八个本地用例。
+ */
 void setUp(void) {
 }
 /* BUG: 持有测试 state 后的断言失败会经 Unity longjmp 跳过局部销毁；空 tearDown 不回收 state。 */
+/**
+ * @brief 提供 system_fs 每例结束后的 Unity 生命周期入口。
+ *
+ * ## Summary
+ * UnityDefaultTestRun 在用例退出或受保护的断言跳转后调用 tearDown；现有泄漏标记指向此所有权缺口。
+ *
+ * ## Returns
+ * 无返回值；当前不回收用例的局部 State、Function 或生成路径。
+ *
+ * ## Constraints and lifecycle
+ * BUG: 成功取得用例资源后的 Unity 硬断言会跳过正常尾部释放；本空回调不兜底，该条件下资源保留至进程退出。
+ *
+ * ## References
+ * UnityDefaultTestRun 的 tearDown 派发；create_test_state/destroy_test_state 是用例侧资源边界。
+ */
 void tearDown(void) {
 }
 
+/**
+ * @brief 保留本测试的 panic 回调槽位，不增加测试专属处理。
+ *
+ * ## Summary
+ * create_test_state 将回调交给 ZrTests_State_Create；支持层分发器保留并在 fatal hook 前调用它。
+ *
+ * ## Parameters
+ * @param[in] state 借用的发生 panic 的 VM 状态；当前忽略，不释放或保存。
+ *
+ * ## Returns
+ * 无返回值；正常返回给测试支持分发器，不自行把 panic 变成成功判据。
+ *
+ * ## Constraints and lifecycle
+ * 回调不是 State 的所有者；支持分发器仍可继续调用已安装的 fatal hook。
+ *
+ * ## References
+ * create_test_state；zr_tests_runtime_panic_handler_dispatch。
+ */
 static void test_panic_handler(SZrState *state) {
     ZR_UNUSED_PARAMETER(state);
 }
 
+/**
+ * @brief 创建可解析源码并导入 system/container/ffi 模块的本例 VM。
+ *
+ * ## Summary
+ * 八个用例复用相同的创建顺序；新状态不跨用例共享。
+ *
+ * ## Returns
+ * @return NULL 表示支持层未给出 State；非空结果交给本例，最终通过 destroy_test_state 释放其 Global。
+ *
+ * ## Constraints and lifecycle
+ * 注册是后续导入、源码编译及 FFI fixture 的前提；当前没有检查三个库的注册返回值，不能把非空 State 当作注册全部成功。
+ *
+ * ## References
+ * 本文件八个用例的 create_test_state 调用；ZrTests_Runtime_State_Create 提供拥有型 Global 生命周期。
+ */
 static SZrState *create_test_state(void) {
     SZrState *state = ZrTests_State_Create(test_panic_handler);
     if (state != ZR_NULL) {
         ZrParser_ToGlobalState_Register(state);
+        /* TODO: system/container/ffi 的注册返回值未消费；沿各 Register 的失败返回核实如何把部分注册状态交给用例诊断，不能仅凭 state 非空接受准备完成。 */
         ZrVmLibSystem_Register(state->global);
         ZrVmLibContainer_Register(state->global);
         ZrVmLibFfi_Register(state->global);
@@ -49,10 +131,47 @@ static SZrState *create_test_state(void) {
     return state;
 }
 
+/**
+ * @brief 结束本例 VM 和其模块、字符串及对象的有效期。
+ *
+ * ## Summary
+ * 普通执行用例先显式 Free Function，再调用本 helper；元数据用例直接结束 VM 生命周期。
+ *
+ * ## Parameters
+ * @param[in] state 本例拥有的 State；NULL 由支持层按无操作处理，非空状态销毁后不得再用。
+ *
+ * ## Returns
+ * 无返回值；支持层销毁关联 Global，所有借用的模块、字段和字符串视图随之失效。
+ *
+ * ## Constraints and lifecycle
+ * 销毁只发生在当前调用路径可达时；本 helper 不为被 longjmp 跳过的尾部提供自动清理。
+ *
+ * ## References
+ * 本文件用例的正常尾部；ZrTests_Runtime_State_Destroy。
+ */
 static void destroy_test_state(SZrState *state) {
     ZrTests_State_Destroy(state);
 }
 
+/**
+ * @brief 为元数据检查取得已注册的 system 叶模块。
+ *
+ * ## Summary
+ * 元数据用例分别检查 filesystem 描述和 IOException 的继承描述。
+ *
+ * ## Parameters
+ * @param[in] state 借用已准备的 State；NULL 返回 NULL。
+ * @param[in] moduleName 借用以 NUL 结尾的模块名；本例使用固定的 zr.system.fs/exception，NULL 返回 NULL。
+ *
+ * ## Returns
+ * @return 返回 VM 模块对象或 NULL；对象不交给本 helper 的调用者单独 free，使用受 State 生命周期约束。
+ *
+ * ## Constraints and lifecycle
+ * 导入可物化模块；调用方需检查返回值，不能仅从提前登记推断导入成功。
+ *
+ * ## References
+ * test_system_fs_module_metadata_exposes_object_surface_and_wrapper_fields；ZrCore_Module_ImportByPath。
+ */
 static SZrObjectModule *import_module(SZrState *state, const TZrChar *moduleName) {
     SZrString *modulePath;
 
@@ -68,6 +187,26 @@ static SZrObjectModule *import_module(SZrState *state, const TZrChar *moduleName
     return ZrCore_Module_ImportByPath(state, modulePath);
 }
 
+/**
+ * @brief 把本例合成的 ZR 源码交给解析和编译入口，保留诊断但不执行。
+ *
+ * ## Summary
+ * 运行用例再调用执行支持；ordinary-call 负例仅以 NULL 为判据，probe 仅检查编译产物。
+ *
+ * ## Parameters
+ * @param[in] state 借用准备好的 State；必须保持到返回 Function 使用结束。
+ * @param[in] source 借用 NUL 结尾的源码，按 strlen 取长，不能包含作为内容的内嵌 NUL。
+ * @param[in] sourceNameText 借用 NUL 结尾的诊断源名；三个输入任一为 NULL 都返回 NULL。
+ *
+ * ## Returns
+ * @return 成功的 Function 交给用例在 State 销毁前显式释放；NULL 表示输入、解析或编译未完成，不区分具体原因。
+ *
+ * ## Constraints and lifecycle
+ * 正常编译路径释放 AST，包括编译返回空的路径；未经此正常路径的 panic/非局部退出不由本 helper 保证释放。
+ *
+ * ## References
+ * 本文件七个源码用例的 compile_source；ZrParser_Parse、ZrParser_Compiler_Compile 和 ZrParser_Ast_Free。
+ */
 static SZrFunction *compile_source(SZrState *state, const TZrChar *source, const TZrChar *sourceNameText) {
     SZrAstNode *ast;
     SZrString *sourceName;
@@ -99,6 +238,25 @@ static SZrFunction *compile_source(SZrState *state, const TZrChar *source, const
     return compiled;
 }
 
+/**
+ * @brief 为元数据名称比较借用字符串字节视图。
+ *
+ * ## Summary
+ * string_equals_cstring 将该视图立即交给 strcmp；不是通用的按 VM 字节长度比较。
+ *
+ * ## Parameters
+ * @param[in] state 借用当前 State；NULL 返回 NULL。
+ * @param[in] value 借用元数据值；要求字符串标签及非空对象，否则返回 NULL。
+ *
+ * ## Returns
+ * @return 借用字符串的 NUL 字节视图；调用者不能 free，释放或移动所属字符串后必须重新取得。
+ *
+ * ## Constraints and lifecycle
+ * 视图可以包含内嵌 NUL；本文件只拿它即时比较固定元数据标识，不保存跨 GC 或 State 销毁。
+ *
+ * ## References
+ * string_equals_cstring；ZrCore_String_GetNativeString。
+ */
 static const TZrChar *string_value_native(SZrState *state, const SZrTypeValue *value) {
     if (state == ZR_NULL || value == ZR_NULL || value->type != ZR_VALUE_TYPE_STRING || value->value.object == ZR_NULL) {
         return ZR_NULL;
@@ -107,11 +265,51 @@ static const TZrChar *string_value_native(SZrState *state, const SZrTypeValue *v
     return ZrCore_String_GetNativeString(ZR_CAST_STRING(state, value->value.object));
 }
 
+/**
+ * @brief 判定元数据标识是否匹配本例约定的 C 字符串。
+ *
+ * ## Summary
+ * 名称数组搜索及元数据字段断言复用同一比较口径，避免把字段缺失当作匹配。
+ *
+ * ## Parameters
+ * @param[in] state 借用当前 State，转交字符串视图 helper。
+ * @param[in] value 借用待检查的 VM 字符串值。
+ * @param[in] text 借用预期 NUL 文本；NULL 不匹配。
+ *
+ * ## Returns
+ * @return 只有可读字符串视图和预期文本的 strcmp 结果相等时为真；错误标签、空值等为假。
+ *
+ * ## Constraints and lifecycle
+ * 使用 C 字符串语义，内嵌 NUL 后的字节不参与比较；仅适用于本例的固定名称和契约标识。
+ *
+ * ## References
+ * find_named_entry_in_array、string_array_contains 及元数据用例字段断言。
+ */
 static TZrBool string_equals_cstring(SZrState *state, const SZrTypeValue *value, const TZrChar *text) {
     const TZrChar *nativeText = string_value_native(state, value);
     return nativeText != ZR_NULL && text != ZR_NULL && strcmp(nativeText, text) == 0;
 }
 
+/**
+ * @brief 按字段名借用元数据对象或原型的可见属性值。
+ *
+ * ## Summary
+ * 元数据用例查公开反射字段，也查 FileStream 原型上的隐藏 FFI 约定。
+ *
+ * ## Parameters
+ * @param[in] state 借用 State；NULL 返回 NULL。
+ * @param[in] object 借用保持可达的元数据对象/原型；NULL 返回 NULL。
+ * @param[in] fieldName 借用 NUL 结尾的固定字段名；NULL 返回 NULL。
+ *
+ * ## Returns
+ * @return 借用 Object_GetValue 的结果或 NULL；不转移值存储所有权，不能 free 或在对象存储改写后沿用。
+ *
+ * ## Constraints and lifecycle
+ * 字段名创建可能分配；所属对象须保持可达。Object_GetValue 可以继续查原型链，不表示只查自身字段。
+ *
+ * ## References
+ * 元数据用例、find_named_entry_in_array；ZrCore_Object_GetValue。
+ */
 static const SZrTypeValue *object_field(SZrState *state, SZrObject *object, const TZrChar *fieldName) {
     SZrString *fieldString;
     SZrTypeValue key;
@@ -130,6 +328,26 @@ static const SZrTypeValue *object_field(SZrState *state, SZrObject *object, cons
     return ZrCore_Object_GetValue(state, object, &key);
 }
 
+/**
+ * @brief 为元数据检查借用模块的公开导出值。
+ *
+ * ## Summary
+ * metadata 用例读取 moduleInfo，get_module_exported_prototype 读取具名类型导出。
+ *
+ * ## Parameters
+ * @param[in] state 借用 State；NULL 返回 NULL。
+ * @param[in] module 借用导入的模块；须保持可达，NULL 返回 NULL。
+ * @param[in] exportName 借用 NUL 结尾的导出名；NULL 返回 NULL。
+ *
+ * ## Returns
+ * @return 借用模块属性值或 NULL，不交给调用者释放；模块存储变化或 State 销毁后不能沿用。
+ *
+ * ## Constraints and lifecycle
+ * 公开导出与 protected 表不同；当前实现按模块对象属性查询，缺失仍须由调用方断言。
+ *
+ * ## References
+ * 元数据用例及 get_module_exported_prototype；ZrCore_Module_GetPubExport。
+ */
 static const SZrTypeValue *get_module_export_value(SZrState *state,
                                                    SZrObjectModule *module,
                                                    const TZrChar *exportName) {
@@ -147,6 +365,26 @@ static const SZrTypeValue *get_module_export_value(SZrState *state,
     return ZrCore_Module_GetPubExport(state, module, exportString);
 }
 
+/**
+ * @brief 把具名公开导出收窄为可检查隐藏字段的类型原型。
+ *
+ * ## Summary
+ * metadata 用例以它核对真正 FileStream 原型的隐藏 FFI 约定，不只检查 moduleInfo 的文本描述。
+ *
+ * ## Parameters
+ * @param[in] state 借用 State，转交公开导出查询。
+ * @param[in] module 借用 filesystem 模块。
+ * @param[in] typeName 借用 NUL 结尾的类型导出名；本例查 FileStream。
+ *
+ * ## Returns
+ * @return 借用 OBJECT_PROTOTYPE 或 NULL；导出缺失、值标签或内部种类不符都不接受。
+ *
+ * ## Constraints and lifecycle
+ * 返回对象仍属 VM；不能单独 free，不能越过 State 生命周期。
+ *
+ * ## References
+ * test_system_fs_module_metadata_exposes_object_surface_and_wrapper_fields。
+ */
 static SZrObjectPrototype *get_module_exported_prototype(SZrState *state,
                                                          SZrObjectModule *module,
                                                          const TZrChar *typeName) {
@@ -165,6 +403,27 @@ static SZrObjectPrototype *get_module_exported_prototype(SZrState *state,
     return (SZrObjectPrototype *)object;
 }
 
+/**
+ * @brief 从反射条目数组借用第一个名称匹配的对象。
+ *
+ * ## Summary
+ * metadata 用例查 File/Folder/FileStream、两个接口和 IOException 的反射记录。
+ *
+ * ## Parameters
+ * @param[in] state 借用 State；NULL 返回 NULL。
+ * @param[in] array 借用真实 VM 数组；调用方先检查 types 值的 ARRAY 标签并取得对象。
+ * @param[in] fieldName 借用条目名称字段的 NUL 文本。
+ * @param[in] expectedName 借用本例期望的 NUL 名称；任一空输入返回 NULL。
+ *
+ * ## Returns
+ * @return 第一个可读对象条目且字段匹配的借用对象，找不到为 NULL；不要求名称唯一。
+ *
+ * ## Constraints and lifecycle
+ * 条目对象和数组必须保持可达；跳过非对象条目不是对整个 metadata schema 的验证。
+ *
+ * ## References
+ * test_system_fs_module_metadata_exposes_object_surface_and_wrapper_fields；object_field 与 string_equals_cstring。
+ */
 static SZrObject *find_named_entry_in_array(SZrState *state,
                                             SZrObject *array,
                                             const TZrChar *fieldName,
@@ -198,6 +457,26 @@ static SZrObject *find_named_entry_in_array(SZrState *state,
     return ZR_NULL;
 }
 
+/**
+ * @brief 检查 FileStream 的 implements 元数据包含约定接口名。
+ *
+ * ## Summary
+ * metadata 用例仅核对 implements 列表同时包含 reader 和 writer，运行接口传参由另一用例覆盖。
+ *
+ * ## Parameters
+ * @param[in] state 借用 State。
+ * @param[in] arrayValue 借用 ARRAY 元数据值及真实数组对象；空值或不符的值标签为假。
+ * @param[in] expectedText 借用预期 NUL 标识；NULL 为假。
+ *
+ * ## Returns
+ * @return 存在即时 C 字符串匹配的条目为真，否则为假；不是唯一性、顺序或实际接口实现验证。
+ *
+ * ## Constraints and lifecycle
+ * 不拥有数组及其条目；读取过程中保持它们可达，不跨 State 销毁保存视图。
+ *
+ * ## References
+ * metadata 的 implements 断言；ZrLib_Array_Get。
+ */
 static TZrBool string_array_contains(SZrState *state, const SZrTypeValue *arrayValue, const TZrChar *expectedText) {
     SZrObject *array;
     TZrSize index;
@@ -222,6 +501,27 @@ static TZrBool string_array_contains(SZrState *state, const SZrTypeValue *arrayV
     return ZR_FALSE;
 }
 
+/**
+ * @brief 把路径中的反斜杠和双引号转成可嵌入本例 ZR 文本的形式。
+ *
+ * ## Summary
+ * 所有合成源码用例在 snprintf 前调用；它不是任意 ZR 字面量的完整编码器。
+ *
+ * ## Parameters
+ * @param[out] destination 调用者的独立可写缓冲；NULL 或零容量不写入，不能与 source 重叠。
+ * @param[in] destinationSize 可写总字节数，含最终 NUL 的位置。
+ * @param[in] source 借用 NUL 文本；NULL 在有容量时产生空文本。
+ *
+ * ## Returns
+ * 无返回值；在可写缓冲上交付 NUL 结尾的文本，容量不足时可能只有前缀，调用者无法从返回状态得知截断。
+ *
+ * ## Constraints and lifecycle
+ * 只处理这两类字符，不编码换行或其他控制字符；当前路径来源、长度及字符集合须适合双引号字面量。
+ *
+ * ## References
+ * 七个源码用例的 escape_for_zr_string_literal；本例路径和 FFI fixture 模板构造。
+ */
+/* TODO: 当前转义只覆盖反斜杠/双引号且不报告容量截断；沿生成路径和 FFI fixture 配置核查允许字符、最坏展开长度及可消费的完整写入判据。 */
 static void escape_for_zr_string_literal(char *destination, size_t destinationSize, const char *source) {
     size_t writeIndex = 0;
     size_t readIndex = 0;
@@ -248,7 +548,28 @@ static void escape_for_zr_string_literal(char *destination, size_t destinationSi
     destination[writeIndex] = '\0';
 }
 
+/**
+ * @brief 为本例保留位于 system_fs/runtime 生成树下的测试根路径。
+ *
+ * ## Summary
+ * 七个源码用例用独立根隔离文件操作；时间和进程内计数降低重名概率，但不构成跨进程互斥。
+ *
+ * ## Parameters
+ * @param[in] stem 借用本文件固定的短场景名；按 NUL 文本使用。
+ * @param[out] buffer 调用者可写路径缓冲；只有成功时可使用结果。
+ * @param[in] bufferSize 总容量含最终 NUL；空输入或零容量为失败。
+ *
+ * ## Returns
+ * @return 真表示取得去掉 .tmp 的路径并清除该路径已有条目；假表示准备未完成，不能继续使用结果。
+ *
+ * ## Constraints and lifecycle
+ * 路径支持会建立父目录；本 helper 不建立最终测试根。已有同名根会被递归删除，名称不是操作系统原子预留。
+ *
+ * ## References
+ * 七个源码用例的 make_unique_test_root；ZrTests_Path_GetGeneratedArtifact。
+ */
 static TZrBool make_unique_test_root(const TZrChar *stem, TZrChar *buffer, TZrSize bufferSize) {
+    /* TODO: 时间/clock/进程内计数不承诺跨进程唯一或线程互斥；并行 system_fs 运行可能选到同名根并触发下面的旧条目删除，需核查原子预留或独立进程命名契约。 */
     static unsigned long long uniqueCounter = 0;
     TZrChar baseName[128];
     TZrChar artifactPath[ZR_TESTS_PATH_MAX];
@@ -286,6 +607,21 @@ static TZrBool make_unique_test_root(const TZrChar *stem, TZrChar *buffer, TZrSi
     return ZR_TRUE;
 }
 
+/**
+ * @brief 核对 filesystem 与 IOException 的反射表面及 FileStream 原型隐藏的 FFI 包装约定。
+ *
+ * ## Summary
+ * main经RUN_TEST注册本例；公开 types 描述和实际 FileStream 原型隐藏字段来自同一 descriptor 的两条物化路径；本例交叉核对，防止只更新其中一面。
+ *
+ * ## Returns
+ * 无返回值；由Unity硬断言或支持层失败标志交付验收，PASS日志只展示当前成功路径。
+ *
+ * ## Constraints and lifecycle
+ * 公开 types 条目和原型隐藏字段双向核对 handle_id/i32/owned/close；接口名存在不等于所有方法行为已验证。 成功取得State后，正常尾部销毁并结束计时；后续硬断言失败会跳过释放，空tearDown不回收。
+ *
+ * ## References
+ * main 的元数据 RUN_TEST；import_module/get_module_export_value/object_field 读取元数据，get_module_exported_prototype 检查实际原型。
+ */
 static void test_system_fs_module_metadata_exposes_object_surface_and_wrapper_fields(void) {
     SZrTestTimer timer = {0};
     SZrState *state;
@@ -379,6 +715,21 @@ static void test_system_fs_module_metadata_exposes_object_surface_and_wrapper_fi
     ZR_TEST_DIVIDER();
 }
 
+/**
+ * @brief 从真实 ZR 调用检查路径对象、文本/字节、拷贝移动、枚举与目录删除的组合行为。
+ *
+ * ## Summary
+ * main经RUN_TEST注册本例；合成脚本把具体路径/目录行为的失败编码为负整数；编译成功仍须执行并校验结果1，成功脚本才走根删除。
+ *
+ * ## Returns
+ * 无返回值；由Unity硬断言或支持层失败标志交付验收，PASS日志只展示当前成功路径。
+ *
+ * ## Constraints and lifecycle
+ * 脚本将具体检查失败编码为负整数，C 侧要求返回1；成功脚本删除根，早期失败可能保留生成条目。 成功取得State后，正常尾部销毁并结束计时；后续硬断言失败会跳过释放，空tearDown不回收。
+ *
+ * ## References
+ * main 的路径对象 RUN_TEST；make_unique_test_root/compile_source 准备输入，ZrTests_Function_ExecuteExpectInt64 执行并交付整数判据。
+ */
 static void test_system_fs_source_runtime_supports_path_objects_and_directory_operations(void) {
     static const TZrChar *kSourceTemplate =
             "var fs = import(\"zr.system.fs\");\n"
@@ -459,6 +810,7 @@ static void test_system_fs_source_runtime_supports_path_objects_and_directory_op
     timer.startTime = clock();
 
     TEST_ASSERT_TRUE(make_unique_test_root("path_objects", rootPath, sizeof(rootPath)));
+    /* TODO: 后续路径拼接、转义及源码snprintf均未消费完整写入结果；结合1024字节路径上界和八个占位符核查长构建路径/fixture路径是否会截断或改变测试输入。 */
     snprintf(nestedPath, sizeof(nestedPath), "%s/nested.dir", rootPath);
     snprintf(filePath, sizeof(filePath), "%s/example.data.txt", nestedPath);
     snprintf(bytesPath, sizeof(bytesPath), "%s/bytes.bin", rootPath);
@@ -503,6 +855,21 @@ static void test_system_fs_source_runtime_supports_path_objects_and_directory_op
     ZR_TEST_DIVIDER();
 }
 
+/**
+ * @brief 单独调用拷贝结果的 exists 和 readText，避免复合条件掩盖对象成员调用问题。
+ *
+ * ## Summary
+ * main经RUN_TEST注册本例；拷贝后的成员调用拆成两个结果变量再检查，保留 exists 与 readText 的独立调用路径，不依赖逻辑短路。
+ *
+ * ## Returns
+ * 无返回值；由Unity硬断言或支持层失败标志交付验收，PASS日志只展示当前成功路径。
+ *
+ * ## Constraints and lifecycle
+ * 脚本要求拷贝存在且文本为alpha，C侧要求返回1；正常路径不删除该场景的生成根。 成功取得State后，正常尾部销毁并结束计时；后续硬断言失败会跳过释放，空tearDown不回收。
+ *
+ * ## References
+ * main 的拷贝结果 RUN_TEST；compile_source 与 ZrTests_Function_ExecuteExpectInt64 配合检查两个成员的结果。
+ */
 static void test_system_fs_copy_result_supports_exists_and_read_text_separately(void) {
     static const TZrChar *kSourceTemplate =
             "var fs = import(\"zr.system.fs\");\n"
@@ -513,6 +880,7 @@ static void test_system_fs_copy_result_supports_exists_and_read_text_separately(
             "source.create(true);\n"
             "source.writeText(\"alpha\");\n"
             "var copy = source.copyTo(copyTarget, true);\n"
+    /* TODO: 本场景的源码和C尾部都未删除生成根；沿system_fs运行产物保留规则核实成功/失败后的磁盘回收责任，不能从销毁State推断文件已删除。 */
             "var copiedExists = copy.exists();\n"
             "var copiedText = copy.readText();\n"
             "if (!copiedExists) { return -1; }\n"
@@ -558,6 +926,21 @@ static void test_system_fs_copy_result_supports_exists_and_read_text_separately(
     ZR_TEST_DIVIDER();
 }
 
+/**
+ * @brief 经 ZR 执行检查 FileStream 模式、读写接口、位置长度、独占打开及 native 句柄调用。
+ *
+ * ## Summary
+ * main经RUN_TEST注册本例；真实执行同时覆盖 stream 接口传参、native 句柄实参和 using 读取分支；成功整数覆盖脚本中的检查，但关闭观测有单独 TODO。
+ *
+ * ## Returns
+ * 无返回值；由Unity硬断言或支持层失败标志交付验收，PASS日志只展示当前成功路径。
+ *
+ * ## Constraints and lifecycle
+ * 依赖真实 FFI fixture；脚本显式close部分流并走using读取，但本例不直接断言离开using后资源已关闭。 成功取得State后，正常尾部销毁并结束计时；后续硬断言失败会跳过释放，空tearDown不回收。
+ *
+ * ## References
+ * main 的流模式 RUN_TEST；FFI fixture 依赖及 FileStream descriptor 提供 native 实参约定，compile_source/执行支持驱动脚本。
+ */
 static void test_system_fs_source_runtime_supports_stream_modes_and_using(void) {
     static const TZrChar *kSourceTemplate =
             "native extern(\"%s\") {\n"
@@ -616,6 +999,7 @@ static void test_system_fs_source_runtime_supports_stream_modes_and_using(void) 
             "  duplicateFailed = 1;\n"
             "}\n"
             "if (duplicateFailed != 1) { return -19; }\n"
+            /* TODO: 此判据只观察using读取结果，未观察作用域退出后的closed/句柄状态；需在现有生命周期验收中确认close钩子的可观测检查入口。 */
             "if (readWithUsing(file) != \"aZ!\") { return -20; }\n"
             "return 1;\n";
     SZrTestTimer timer = {0};
@@ -658,6 +1042,21 @@ static void test_system_fs_source_runtime_supports_stream_modes_and_using(void) 
     ZR_TEST_DIVIDER();
 }
 
+/**
+ * @brief 要求缺失路径打开失败由 ZR 的 IOException 类型捕获，而不是正常返回。
+ *
+ * ## Summary
+ * main经RUN_TEST注册本例；通过指定 IOException catch 块返回1，区分没有异常的返回0；不把任意执行失败当作预期异常被捕获。
+ *
+ * ## Returns
+ * 无返回值；由Unity硬断言或支持层失败标志交付验收，PASS日志只展示当前成功路径。
+ *
+ * ## Constraints and lifecycle
+ * 脚本catch返回1，未抛出返回0；C侧校验1，不检查异常消息、错误码或其他缺失路径边界。 成功取得State后，正常尾部销毁并结束计时；后续硬断言失败会跳过释放，空tearDown不回收。
+ *
+ * ## References
+ * main 的异常 RUN_TEST；compile_source 和 ZrTests_Function_ExecuteExpectInt64 将 ZR catch 的结果交给 Unity。
+ */
 static void test_system_fs_source_runtime_raises_io_exception_for_missing_file(void) {
     static const TZrChar *kSourceTemplate =
             "var fs = import(\"zr.system.fs\");\n"
@@ -700,6 +1099,21 @@ static void test_system_fs_source_runtime_raises_io_exception_for_missing_file(v
     ZR_TEST_DIVIDER();
 }
 
+/**
+ * @brief 让关闭后的 FileStream 进入 native整数实参边界，检查执行被拒绝。
+ *
+ * ## Summary
+ * main经RUN_TEST注册本例；先要求源码成功编译，再检查关闭流后的 native 实参执行失败；具体失败归属仍须补诊断核查。
+ *
+ * ## Returns
+ * 无返回值；由Unity硬断言或支持层失败标志交付验收，PASS日志只展示当前成功路径。
+ *
+ * ## Constraints and lifecycle
+ * 只有执行失败判据，没有异常种类/诊断断言；尚不能排除其他执行失败满足该负例。 成功取得State后，正常尾部销毁并结束计时；后续硬断言失败会跳过释放，空tearDown不回收。
+ *
+ * ## References
+ * main 的关闭流 RUN_TEST；ZrTests_Runtime_Function_ExecuteCaptureFailure 交付失败状态，FFI 的 handle_id 分支读取 closed。
+ */
 static void test_system_fs_handle_id_lowering_rejects_closed_stream(void) {
     static const TZrChar *kSourceTemplate =
             "native extern(\"%s\") {\n"
@@ -735,6 +1149,7 @@ static void test_system_fs_handle_id_lowering_rejects_closed_stream(void) {
 
     entryFunction = compile_source(state, source, "system_fs_closed_stream_ffi_lowering.zr");
     TEST_ASSERT_NOT_NULL(entryFunction);
+    /* TODO: 当前只要求执行失败；核对捕获的异常种类/诊断或native调用观察，区分关闭句柄拒绝与不相关的执行错误。 */
     TEST_ASSERT_FALSE(ZrTests_Runtime_Function_ExecuteCaptureFailure(state, entryFunction, &result));
 
     ZrCore_Function_Free(state, entryFunction);
@@ -744,6 +1159,21 @@ static void test_system_fs_handle_id_lowering_rejects_closed_stream(void) {
     ZR_TEST_DIVIDER();
 }
 
+/**
+ * @brief 要求普通 ZR 的i32形参调用不接受 FileStream 作为native句柄隐式降级。
+ *
+ * ## Summary
+ * main经RUN_TEST注册本例；只要求普通 i32 形参调用的源码编译返回NULL，不启动执行；该范围意在限制 native 边界特例泄入普通类型检查。
+ *
+ * ## Returns
+ * 无返回值；由Unity硬断言或支持层失败标志交付验收，PASS日志只展示当前成功路径。
+ *
+ * ## Constraints and lifecycle
+ * 本例只编译并要求NULL，不执行源码；没有具体诊断检查，其他编译错误也可能满足返回空判据。 成功取得State后，正常尾部销毁并结束计时；后续硬断言失败会跳过释放，空tearDown不回收。
+ *
+ * ## References
+ * main 的普通调用负例 RUN_TEST；compile_source 负责返回拒绝结果，未调用执行支持。
+ */
 static void test_system_fs_handle_id_lowering_does_not_apply_to_ordinary_calls(void) {
     static const TZrChar *kSourceTemplate =
             "var fs = import(\"zr.system.fs\");\n"
@@ -773,6 +1203,7 @@ static void test_system_fs_handle_id_lowering_does_not_apply_to_ordinary_calls(v
     TEST_ASSERT_NOT_NULL(state);
 
     entryFunction = compile_source(state, source, "system_fs_ordinary_call_no_lowering.zr");
+    /* TODO: 当前NULL判据没有核对普通调用类型诊断；沿编译失败信息确认是禁止handle_id降级的规则，而不是其他语法/导入错误。 */
     TEST_ASSERT_NULL(entryFunction);
 
     destroy_test_state(state);
@@ -788,6 +1219,21 @@ static void test_system_fs_handle_id_lowering_does_not_apply_to_ordinary_calls(v
  *
  * 栈槽说明：本探测使用在首处 tellFd 截断的模板，入口函数槽位分配可与「完整 stream_modes 源」不同；
  * 在 WSL 上完整模板运行时，line 22 处 tellFd 的 PreCall 帧内槽约为 21（与截断模板 bytecode 不必一致）。
+ */
+/**
+ * @brief 检查tellFd源码行的调用指令与一元@call契约，并展示SymbolHandle原型查询结果。
+ *
+ * ## Summary
+ * main经RUN_TEST注册本例；编译完整 stream 模板，按源码第22行核对调用家族、一元 @call 和无数字转换；没有执行模板，原型查找输出不等于断言。
+ *
+ * ## Returns
+ * 无返回值；由Unity硬断言或支持层失败标志交付验收，PASS日志只展示当前成功路径。
+ *
+ * ## Constraints and lifecycle
+ * 本例只编译，不执行该脚本；line22检查依赖源码定位元数据。历史ip112仅作诊断参考，原型/元方法查询只打印。 成功取得State后，正常尾部销毁并结束计时；后续硬断言失败会跳过释放，空tearDown不回收。
+ *
+ * ## References
+ * main 的 probe RUN_TEST；ZrCore_Exception_FindSourceLine 选择指令行，ZrLib_Type_FindPrototype/ZrCore_Prototype_GetMetaRecursively 提供诊断。
  */
 static void test_tellfd_stream_call_bytecode_and_symbol_handle_meta_probe(void) {
     static const TZrChar *kProbeTemplate =
@@ -875,6 +1321,7 @@ static void test_tellfd_stream_call_bytecode_and_symbol_handle_meta_probe(void) 
 
     ZR_TEST_INFO("bytecode mapping",
                  "Expect first tellFd(stream) site at source line 22 (same as failing stream_modes template).");
+    /* BUG: 此处“在第一次tellFd后截断”的诊断与当前模板不符；kProbeTemplate与stream_modes模板解码后逐字相同，都是58行，会误导源码/槽位比对。本例没有执行这段模板。 */
     printf("  Note: probe template is truncated after first tellFd; A1 slot in bytecode may differ from full "
            "stream_modes entry (WSL full template: PreCall slot for tellFd at line 22 is often ~21).\n");
 
@@ -1029,6 +1476,7 @@ static void test_tellfd_stream_call_bytecode_and_symbol_handle_meta_probe(void) 
 
     printf("Testing SymbolHandle prototype ZR_META_CALL:\n");
     {
+        /* TODO: 两个SymbolHandle原型及ZR_META_CALL查询只打印，没有非空/一致性断言；按专项意图核查是否应把原型可调用性纳入本用例验收。 */
         SZrObjectPrototype *prototypeByFqn = ZrLib_Type_FindPrototype(state, "zr.ffi.SymbolHandle");
         SZrObjectPrototype *prototypeShort = ZrLib_Type_FindPrototype(state, "SymbolHandle");
         SZrMeta *metaFqn =
@@ -1053,6 +1501,21 @@ static void test_tellfd_stream_call_bytecode_and_symbol_handle_meta_probe(void) 
     ZR_TEST_DIVIDER();
 }
 
+/**
+ * @brief 组织system_fs八个用例并把Unity失败计数交给进程调用方。
+ *
+ * ## Summary
+ * 注册顺序先查元数据、路径/拷贝，再探测调用字节码与流/异常/降级边界；日志分隔线不负责注册。
+ *
+ * ## Returns
+ * @return UNITY_END的失败计数；零值仅表示没有被Unity计为失败，忽略用例仍独立统计。
+ *
+ * ## Constraints and lifecycle
+ * 直接启动可执行目标或由CTest system_fs runner派发；文件/FFI用例有实际副作用，生命周期和清理由每个用例负责。
+ *
+ * ## References
+ * zr_vm_system_fs_test目标；CTest system_fs调用run_executable_suite并消费退出码。
+ */
 int main(void) {
     UNITY_BEGIN();
 
