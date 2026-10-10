@@ -243,8 +243,8 @@ tests/cmake/benchmark_registry_contract_fixture.cmake	tests/cmake	config	2815fcb
 tests/cmake/benchmark_task3_case_assembly.cmake	tests/cmake	config	15f15bb2cad8c196bb61e0e8fab893633e37a136c230b2d33747133f02f42ce1	reviewed	-
 tests/cmake/benchmark_task3_suite.cmake	tests/cmake	config	e9c93f391493c706a8a97087aba6000c0142c8786c8a679516eab33dfa5060a2	reviewed	基准计时与环境契约调用链复核
 tests/cmake/benchmark_task4_environment.cmake	tests/cmake	config	41babbf1a64a4de066cbb60c95a4261a0331608221f9e9a96b97d5805609a712	reviewed	基准计时与环境契约调用链复核
-tests/cmake/checked-divide-tests.cmake	tests/cmake	config	2e57a9923b4d393406f73cbf80a458301d2d2663f17a82e8e6a671972551d5a6	pending	本批完整配置入口及 CTest 属性块已登记；文件级覆盖待当前清单验收
-tests/cmake/checked-multiply-tests.cmake	tests/cmake	config	af3274e00a07064d2b1f2e66053426ff47bc0b1aa10939a414892cf70fe5a910	pending	本批完整配置入口及 CTest 属性块已登记；文件级覆盖待当前清单验收
+tests/cmake/checked-divide-tests.cmake	tests/cmake	config	2e57a9923b4d393406f73cbf80a458301d2d2663f17a82e8e6a671972551d5a6	reviewed	全文件逐单元独立复核闭合（2 项）；docs/code-review/coverage/tests_cmake_checked_arithmetic.tsv
+tests/cmake/checked-multiply-tests.cmake	tests/cmake	config	af3274e00a07064d2b1f2e66053426ff47bc0b1aa10939a414892cf70fe5a910	reviewed	全文件逐单元独立复核闭合（2 项）；docs/code-review/coverage/tests_cmake_checked_arithmetic.tsv
 tests/cmake/close-proxy-tests.cmake	tests/cmake	config	c145dfade91298174a67d11562261287984a28fb72e2e9950907d6801b3069e1	pending	-
 tests/cmake/exception-gc-scopes-tests.cmake	tests/cmake	config	958793b475cbb078f2f054e23c226aeba6052ded12267c1671a2c713b9140895	pending	-
 tests/cmake/exec-ir-scalar-scratch-eligibility.cmake	tests/cmake	config	40e892cda9b04546b89d239bdb8e99f1c9563d76b3611b77dd157f68d9d59dbb	pending	-
@@ -473,7 +473,7 @@ tests/decorators/test_compile_time_member_decorators.c	tests/decorators	test	9d9
 tests/exceptions/CMakeLists.txt	tests/exceptions	config	988a19284cbf211df6fb3e3995f584e9d9c879b98e1381c06b619fa65c8d886e	reviewed	31 单元异常测试调用链与构建入口已独立复核；中文译文再复核
 tests/exceptions/test_exceptions.c	tests/exceptions	test	c1347774342d372f7d216b8e55e6c2bceec46ec283e796f3dfd194b883652357	reviewed	31 单元异常测试调用链与构建入口已独立复核；中文译文再复核
 tests/ffi/debug_ffi_close_probe.c	tests/ffi	test	0a0030d31db8799675e3654166ec3db6b3f2f1182abb9d769cc5048c4f28e1f4	reviewed	183 项 FFI 回归单元完成调用链审查并经独立复核
-tests/ffi/ffi_fixture.c	tests/ffi	test	54a1207580672732f9eccaaa193cd19efec314226f17feeadde0fbf447763e78	pending	本批 84 项 ABI、成员、平台入口和关键块已登记；文件级覆盖待后续当前清单验收
+tests/ffi/ffi_fixture.c	tests/ffi	test	54a1207580672732f9eccaaa193cd19efec314226f17feeadde0fbf447763e78	reviewed	全文件逐单元独立复核闭合（84 项）；docs/code-review/coverage/tests_ffi.tsv
 tests/ffi/ffi_source_extern_add_manual.zr	tests/ffi	test	aa33f9cc93acc50d0dee25272b6fdeae188dc2a6d1003632d965fc0b30d34b5e	reviewed	183 项 FFI 回归单元完成调用链审查并经独立复核；样例无需新增注释
 tests/ffi/gdb_ffi_load_failure_probe.gdb	tests/ffi	test	e74d814022fdd99d42835386edc5f14807148d1261178a26dbb84a46a1dc69dd	reviewed	183 项 FFI 回归单元完成调用链审查并经独立复核
 tests/ffi/gdb_source_extern_compile_error.gdb	tests/ffi	test	e49c4935337fb102667e443cb8e6e33ad44f3e7d370a2b8b3e07a6cc0cd6204d	reviewed	183 项 FFI 回归单元完成调用链审查并经独立复核
