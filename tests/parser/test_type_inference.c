@@ -968,6 +968,25 @@ static SZrAstNode *test_type_inference_first_expression(SZrAstNode *ast) {
 }
 
 // 测试整数字面量类型推断
+/**
+ * ## Summary
+ * 在本地测试 State/CompilerState 中解析整数字面量并检查推断结果为 INT64，
+ * 将字面量的默认类型合同交付给 type inference suite 的 Unity 用例。
+ *
+ * ## Returns
+ * 正常路径由硬断言检查推断成功及类型，再打印耗时；本函数没有返回值。
+ * 两个早期 AST 筛选失败分支只打印本地失败日志后返回，其 Unity 判定缺口见 BUG。
+ *
+ * ## Constraints and lifecycle
+ * CompilerState 借用本例 State，正常路径先释放推断结果、AST 与 CompilerState，
+ * 再销毁 State；正常结束计时包含这些清理。硬断言可绕过局部尾部清理，
+ * 本目标 tearDown 为空；State 已创建而 CompilerState 创建失败时也存在释放缺口。
+ * 本文件的 TEST_FAIL_CUSTOM 是本地宏，不转接公共 ZR_TEST_FAIL；失败计时仍待核实。
+ *
+ * ## References
+ * main 以 RUN_TEST 注册本例；ZrParser_LiteralType_Infer 提供被检查的类型，
+ * destroy_test_compiler_state/destroy_test_state 提供普通返回路径的手工释放。
+ */
 static void test_type_inference_integer_literal(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Integer Literal";
@@ -978,6 +997,7 @@ static void test_type_inference_integer_literal(void) {
     SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
+    /* BUG: State 已取得后，CompilerState 的 malloc 可失败；随后的 Unity 硬断言会跳过 State 销毁，且本目标 tearDown 为空。需把 State 所有权交给失败也能到达的回收入口。 */
     SZrCompilerState *cs = create_test_compiler_state(state);
     TEST_ASSERT_NOT_NULL(cs);
 
@@ -989,6 +1009,8 @@ static void test_type_inference_integer_literal(void) {
     SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
     if (ast == ZR_NULL || ast->type != ZR_AST_SCRIPT) {
+        /* BUG: 本地失败宏只打印，随后正常返回；若此前 Unity 标志为通过且清理完成，本例会被计为通过。需向 Unity 交付这个 AST 拒绝判定。 */
+        /* TODO: 此分支未采样 endTime，但本地宏读取零初始化的 endTime；核对失败日志的计时合同并补充有效结束样本。 */
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse integer literal");
         destroy_test_compiler_state(cs);
         destroy_test_state(state);
@@ -1005,6 +1027,8 @@ static void test_type_inference_integer_literal(void) {
     }
 
     if (expr == ZR_NULL || expr->type != ZR_AST_INTEGER_LITERAL) {
+        /* BUG: 节点筛选失败只调用不标记 Unity 的本地宏后返回；正常清理不会使该失败计入汇总。需明确该分支的 Unity 失败交付。 */
+        /* TODO: 此处同样没有结束采样；需与本例另一个早退分支一起核对本地 timer 的使用约束。 */
         TEST_FAIL_CUSTOM(timer, testSummary, "Failed to get integer literal node");
         ZrParser_Ast_Free(state, ast);
         destroy_test_compiler_state(cs);
