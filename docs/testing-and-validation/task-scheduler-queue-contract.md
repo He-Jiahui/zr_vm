@@ -35,6 +35,6 @@ tests/cmake/task-scheduler-queue-tests.cmake:23 为已登记的同名项发布 s
 
 ## 支持证据边界
 
-tests/task/test_task_job_scheduler.c:256 将 queue reuse 用例 include 到同一翻译单元；tests/task/task_scheduler_queue_reuse_cases.inc:11 又读取生产 private queue helper。这些位置解释同一测试目标怎样接入队列回归。本片段审查不授予测试正文、生产 helper 或 tests/CMakeLists.txt 的整文件完成信用。
+tests/task/test_task_job_scheduler.c:256 将 queue reuse 用例 include 到同一翻译单元；tests/task/task_scheduler_queue_reuse_cases.inc:35 又读取生产 private queue helper。这些位置解释同一测试目标怎样接入队列回归。本片段审查不授予测试正文、生产 helper 或 tests/CMakeLists.txt 的整文件完成信用。
 
 tests/acceptance/2026-10-02-task-scheduler-queue-reuse.md:117 记录首次加入注册的背景；其历史构建和运行结果只适用于该记录的快照。当前注释审查没有重新运行构建或 CTest，配置注册不能证明当前用例通过。
