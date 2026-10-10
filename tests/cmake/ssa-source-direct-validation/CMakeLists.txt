@@ -645,6 +645,7 @@ foreach (_header IN ITEMS
         tests/parser/support/ssa_source_scalar_constant_noalloc_shim.h
         tests/parser/support/ssa_source_descriptor_oom_shim.h
         tests/parser/support/ssa_source_returned_retention_fixture.h
+        tests/parser/support/ssa_source_returned_crt_ledger.h
         tests/parser/support/ssa_source_returned_descriptor_shim.h
         tests/parser/support/ssa_source_returned_owner_shim.h
         zr_vm_parser/include/zr_vm_parser/compiler_source_retention.h

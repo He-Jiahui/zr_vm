@@ -8,7 +8,7 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/string.h"
 
-enum { VM_ROWS = 8192, CRT_ROWS = 256, VM_ERRORS = 64, FUNCTION_SLOTS = 2, NAME_SLOTS = 32 };
+enum { VM_ROWS = 8192, CRT_ROWS = ZR_RETURNED_CRT_ROWS, VM_ERRORS = 64, FUNCTION_SLOTS = 2, NAME_SLOTS = 32 };
 typedef struct SVmRow { void *pointer; size_t bytes; TZrInt64 flag; } SVmRow;
 typedef struct SVmError {
     unsigned reason, row;
@@ -19,14 +19,7 @@ typedef struct SVmLedger {
     SVmRow rows[VM_ROWS]; SVmError diagnostics[VM_ERRORS];
     unsigned attempts, frees, live, errors, diagnosticCount, dropped;
 } SVmLedger;
-typedef struct SCrtRow { void *pointer; size_t bytes; unsigned frees; } SCrtRow;
-typedef struct SCrtLedger {
-    SCrtRow rows[CRT_ROWS]; SZrReturnedHeapEvent events[CRT_ROWS];
-    SZrReturnedHeapStats stats;
-    unsigned failAt, callBase;
-} SCrtLedger;
 static SVmLedger g_vm;
-static SCrtLedger g_crt[2];
 static SZrGlobalState *g_global;
 static SZrFunction *g_functions[FUNCTION_SLOTS];
 static TZrBool g_functionRooted[FUNCTION_SLOTS];
@@ -36,10 +29,6 @@ static unsigned g_nameCount;
 static unsigned g_pendingDescriptor;
 static TZrBool g_pendingOwner;
 static TZrBool g_savedStopGc, g_haveStopGc;
-static const size_t g_counts[6] = {3u, 1u, 1u, 3u, 1u, 1u};
-static const size_t g_widths[6] = {sizeof(SZrAotIrInstruction), sizeof(SZrAotIrBlock),
-    sizeof(SZrAotIrFrameSlot), sizeof(SZrAotIrSourceMap), sizeof(SZrExecIrConstant), sizeof(SZrExecIrLayout)};
-
 static void vm_error(unsigned reason, unsigned row, size_t original, size_t requested, TZrInt64 flag) {
     SVmError *d;
     ++g_vm.errors;
@@ -70,49 +59,11 @@ static TZrPtr vm_allocator(TZrPtr user, TZrPtr pointer, TZrSize original, TZrSiz
     g_vm.rows[row].pointer = replacement; g_vm.rows[row].bytes = bytes; g_vm.rows[row].flag = flag;
     return replacement;
 }
-static void *crt_allocate(unsigned kind, size_t count, size_t width) {
-    SCrtLedger *l = &g_crt[kind];
-    unsigned site = l->stats.attempts - l->callBase;
-    SZrReturnedHeapEvent *e;
-    SCrtRow *r;
-    void *pointer;
-    if (l->stats.attempts == CRT_ROWS || count == 0u || width == 0u || count > SIZE_MAX / width ||
-        (kind == ZR_RETURNED_DESCRIPTOR && (site >= 6u || count != g_counts[site] || width != g_widths[site]))) {
-        ++l->stats.errors; return ZR_NULL;
-    }
-    e = &l->events[l->stats.attempts++]; e->count = count; e->width = width;
-    e->bytes = count * width; e->site = site + 1u; e->record = CRT_ROWS;
-    if (l->failAt == l->stats.attempts) {
-        e->injected = ZR_TRUE; ++l->stats.failures; return ZR_NULL;
-    }
-    if (l->stats.successes == CRT_ROWS) { ++l->stats.errors; return ZR_NULL; }
-    pointer = kind == ZR_RETURNED_DESCRIPTOR ? calloc(count, width) : malloc(e->bytes);
-    if (pointer == ZR_NULL) { ++l->stats.errors; return ZR_NULL; }
-    e->record = l->stats.successes;
-    r = &l->rows[l->stats.successes++]; r->pointer = pointer; r->bytes = e->bytes;
-    ++l->stats.live; return pointer;
-}
-static void crt_free(unsigned kind, void *pointer) {
-    SCrtLedger *l = &g_crt[kind];
-    if (pointer == ZR_NULL) return;
-    for (unsigned i = 0u; i < l->stats.successes; ++i) {
-        SCrtRow *r = &l->rows[i];
-        if (r->pointer != ZR_NULL && r->pointer == pointer) {
-            r->pointer = ZR_NULL; ++r->frees; ++l->stats.frees; --l->stats.live;
-            free(pointer); return;
-        }
-    }
-    ++l->stats.errors;
-}
-void *ZrTests_ReturnedDescriptor_Calloc(size_t count, size_t width) { return crt_allocate(0u, count, width); }
-void ZrTests_ReturnedDescriptor_Free(void *pointer) { crt_free(0u, pointer); }
-void *ZrTests_ReturnedOwner_Malloc(size_t bytes) { return crt_allocate(1u, 1u, bytes); }
-void ZrTests_ReturnedOwner_Free(void *pointer) { crt_free(1u, pointer); }
-
 void ZrTests_Returned_Init(void) {
+    SZrReturnedHeapStats before[2] = {ZrTests_ReturnedCrt_Stats(0u), ZrTests_ReturnedCrt_Stats(1u)};
     TEST_ASSERT_EQUAL_UINT(0u, g_vm.live);
-    TEST_ASSERT_EQUAL_UINT(0u, g_crt[0].stats.live); TEST_ASSERT_EQUAL_UINT(0u, g_crt[1].stats.live);
-    memset(&g_vm, 0, sizeof(g_vm)); memset(g_crt, 0, sizeof(g_crt));
+    TEST_ASSERT_EQUAL_UINT(0u, before[0].live); TEST_ASSERT_EQUAL_UINT(0u, before[1].live);
+    memset(&g_vm, 0, sizeof(g_vm)); ZrTests_ReturnedCrt_Reset();
     memset(g_functions, 0, sizeof(g_functions)); memset(g_functionRooted, 0, sizeof(g_functionRooted));
     memset(g_names, 0, sizeof(g_names)); memset(g_nameRooted, 0, sizeof(g_nameRooted));
     g_global = ZR_NULL; g_nameCount = 0u; g_savedStopGc = ZR_FALSE; g_haveStopGc = ZR_FALSE;
@@ -154,9 +105,7 @@ SZrFunction *ZrTests_Returned_Compile(unsigned slot, const char *source, TZrBool
     size_t bytes = strlen(source);
     TZrUInt64 sourceHash = ZrCore_Hash_CreateStable64((const TZrByte *)source, bytes);
     TEST_ASSERT_LESS_THAN_UINT(FUNCTION_SLOTS, slot); TEST_ASSERT_NULL(g_functions[slot]);
-    for (unsigned i = 0u; i < 2u; ++i) g_crt[i].callBase = g_crt[i].stats.attempts;
-    if (g_pendingDescriptor != 0u) g_crt[0].failAt = g_crt[0].stats.attempts + g_pendingDescriptor;
-    if (g_pendingOwner) g_crt[1].failAt = g_crt[1].stats.attempts + 1u;
+    ZrTests_ReturnedCrt_BeginCall(g_pendingDescriptor, g_pendingOwner);
     /* Assigned to the registered slot before any post-call Unity assertion. */
     g_functions[slot] = ordinary ? ZrParser_Source_Compile(state, source, bytes, name) :
             ZrParser_Source_CompileWithOptions(state, source, bytes, name, options, diagnostic);
@@ -183,28 +132,33 @@ unsigned ZrTests_Returned_OwnerRecord(unsigned slot) {
     SZrFunction *f = ZrTests_Returned_Function(slot);
     unsigned result = CRT_ROWS;
     TEST_ASSERT_NOT_NULL(f); TEST_ASSERT_NOT_NULL(f->ownedAotIr);
-    for (unsigned i = 0u; i < g_crt[1].stats.successes; ++i)
-        if (g_crt[1].rows[i].pointer != ZR_NULL && g_crt[1].rows[i].pointer == f->ownedAotIr) { result = i; break; }
+    (void)ZrTests_ReturnedCrt_TryFindLiveRecord(ZR_RETURNED_OWNER, f->ownedAotIr, &result);
     TEST_ASSERT_LESS_THAN_UINT(CRT_ROWS, result); return result;
 }
 void ZrTests_Returned_Disarm(void) {
-    g_crt[0].failAt = 0u; g_crt[1].failAt = 0u; g_pendingDescriptor = 0u; g_pendingOwner = ZR_FALSE;
+    ZrTests_ReturnedCrt_Disarm(); g_pendingDescriptor = 0u; g_pendingOwner = ZR_FALSE;
 }
 void ZrTests_Returned_ArmDescriptor(unsigned site) {
     TEST_ASSERT_TRUE(site >= 1u && site <= 6u); g_pendingDescriptor = site;
 }
 void ZrTests_Returned_ArmOwner(void) { g_pendingOwner = ZR_TRUE; }
 unsigned ZrTests_Returned_RecordFrees(unsigned kind, unsigned record) {
-    TEST_ASSERT_LESS_THAN_UINT(2u, kind); TEST_ASSERT_LESS_THAN_UINT(g_crt[kind].stats.successes, record);
-    return g_crt[kind].rows[record].frees;
+    unsigned result = 0u;
+    TEST_ASSERT_LESS_THAN_UINT(2u, kind);
+    TEST_ASSERT_LESS_THAN_UINT(ZrTests_ReturnedCrt_Stats(kind).successes, record);
+    (void)ZrTests_Returned_TryRecordFrees(kind, record, &result);
+    return result;
 }
 unsigned ZrTests_Returned_VmAttempts(void) { return g_vm.attempts; }
 SZrReturnedHeapStats ZrTests_Returned_Stats(unsigned kind) {
-    TEST_ASSERT_LESS_THAN_UINT(2u, kind); return g_crt[kind].stats;
+    TEST_ASSERT_LESS_THAN_UINT(2u, kind); return ZrTests_ReturnedCrt_Stats(kind);
 }
 SZrReturnedHeapEvent ZrTests_Returned_Event(unsigned kind, unsigned index) {
-    TEST_ASSERT_LESS_THAN_UINT(2u, kind); TEST_ASSERT_LESS_THAN_UINT(g_crt[kind].stats.attempts, index);
-    return g_crt[kind].events[index];
+    SZrReturnedHeapEvent result = {0};
+    TEST_ASSERT_LESS_THAN_UINT(2u, kind);
+    TEST_ASSERT_LESS_THAN_UINT(ZrTests_ReturnedCrt_Stats(kind).attempts, index);
+    (void)ZrTests_ReturnedCrt_TryEvent(kind, index, &result);
+    return result;
 }
 void ZrTests_Returned_Shutdown(void) {
     SZrGlobalState *live = g_global;
@@ -235,17 +189,18 @@ void ZrTests_Returned_Close(void) {
     for (unsigned i = 0u; i < FUNCTION_SLOTS; ++i) ZrTests_Returned_FreeFunction(i);
     ZrTests_Returned_Shutdown();
     /* Recovery only: normal tests prove candidate cleanup before this interval. */
-    for (unsigned k = 0u; k < 2u; ++k) {
-        if (g_crt[k].stats.live != 0u) ++g_crt[k].stats.errors;
-        for (unsigned i = 0u; i < g_crt[k].stats.successes; ++i)
-            if (g_crt[k].rows[i].pointer != ZR_NULL) crt_free(k, g_crt[k].rows[i].pointer);
-    }
+    ZrTests_ReturnedCrt_Recover();
 }
 void ZrTests_Returned_AssertBalanced(void) {
     TEST_ASSERT_EQUAL_UINT(0u, g_vm.live); TEST_ASSERT_EQUAL_UINT(0u, g_vm.errors);
     for (unsigned k = 0u; k < 2u; ++k) {
-        TEST_ASSERT_EQUAL_UINT(0u, g_crt[k].stats.live); TEST_ASSERT_EQUAL_UINT(0u, g_crt[k].stats.errors);
-        TEST_ASSERT_EQUAL_UINT(g_crt[k].stats.successes, g_crt[k].stats.frees);
-        for (unsigned i = 0u; i < g_crt[k].stats.successes; ++i) TEST_ASSERT_EQUAL_UINT(1u, g_crt[k].rows[i].frees);
+        SZrReturnedHeapStats stats = ZrTests_ReturnedCrt_Stats(k);
+        TEST_ASSERT_EQUAL_UINT(0u, stats.live); TEST_ASSERT_EQUAL_UINT(0u, stats.errors);
+        TEST_ASSERT_EQUAL_UINT(stats.successes, stats.frees);
+        for (unsigned i = 0u; i < stats.successes; ++i) {
+            unsigned frees = 0u;
+            (void)ZrTests_Returned_TryRecordFrees(k, i, &frees);
+            TEST_ASSERT_EQUAL_UINT(1u, frees);
+        }
     }
 }

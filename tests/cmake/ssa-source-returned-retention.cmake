@@ -20,6 +20,7 @@ add_library(${_zr_returned_owner} OBJECT
         "${_zr_returned_root}/zr_vm_core/src/zr_vm_core/aot_ir_owned_module.c")
 add_executable(zr_vm_ssa_source_returned_retention_test
         "${_zr_returned_root}/tests/parser/test_ssa_source_returned_retention.c"
+        "${_zr_returned_root}/tests/parser/support/ssa_source_returned_crt_ledger.c"
         "${_zr_returned_root}/tests/parser/support/ssa_source_returned_retention_fixture.c")
 if (NOT DEFINED ZR_SSA_SOURCE_ROOT)
     target_sources(zr_vm_ssa_source_returned_retention_test PRIVATE
