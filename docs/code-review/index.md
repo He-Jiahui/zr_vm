@@ -228,3 +228,5 @@ doc_type: category-index
 - [原生 FFI fixture 的 ABI 与调用生命周期](../testing-and-validation/ffi-fixture-abi-caller-contract.md)：导出、字段与平台回调契约，借用资源限制及具体 BUG/TODO。
 
 - [Checked integer 独立测试入口](../testing-and-validation/checked-arithmetic-registration-contract.md)：父级注册与链接上下文、私有头可见性、CTest 标签及超时边界。
+
+- [FFI 手工诊断探针的调用契约](../testing-and-validation/ffi-close-probe-caller-contract.md)：39 个完整单元、同步输出槽和资源约束、未初始化结果 BUG 及具体诊断 TODO。

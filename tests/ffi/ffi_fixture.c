@@ -299,8 +299,8 @@ ZR_FFI_FIXTURE_EXPORT int64_t zr_ffi_identity_i64(int64_t value);
  *
  * ## References
  * tests/ffi/test_ffi_module.c:672
- * tests/ffi/debug_ffi_close_probe.c:205
- * tests/ffi/debug_ffi_close_probe.c:225
+ * tests/ffi/debug_ffi_close_probe.c:387
+ * tests/ffi/debug_ffi_close_probe.c:423
  */
 ZR_FFI_FIXTURE_EXPORT double zr_ffi_mul_f64(double lhs, double rhs);
 /**
@@ -318,8 +318,8 @@ ZR_FFI_FIXTURE_EXPORT double zr_ffi_mul_f64(double lhs, double rhs);
  *
  * ## References
  * tests/ffi/test_ffi_module.c:676
- * tests/ffi/debug_ffi_close_probe.c:209
- * tests/ffi/debug_ffi_close_probe.c:233
+ * tests/ffi/debug_ffi_close_probe.c:391
+ * tests/ffi/debug_ffi_close_probe.c:439
  */
 ZR_FFI_FIXTURE_EXPORT size_t zr_ffi_strlen_utf8(const char *text);
 /**
