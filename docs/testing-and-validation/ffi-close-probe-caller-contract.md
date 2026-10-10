@@ -6,6 +6,10 @@ related_code:
   - tests/ffi/gdb_ffi_load_failure_probe.gdb
   - tests/ffi/gdb_zr_vm_ffi_close_crash.gdb
   - tests/CMakeLists.txt
+  - zr_vm_parser/src/zr_vm_parser/compiler.c
+  - zr_vm_parser/src/zr_vm_parser/parser.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_state.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c
   - zr_vm_core/include/zr_vm_core/value.h
   - zr_vm_core/include/zr_vm_core/ownership.h
   - zr_vm_core/src/zr_vm_core/function.c
@@ -35,7 +39,7 @@ doc_type: test-contract
 | `library` / `library-bool` | 打开与两次 logical close 的三态组合 | 没有 SymbolHandle 延迟卸载场景；bool false 或整数0仍可退出0 |
 | `primitive`、`primitive-add/mul/strlen/stdcall` | 隔离标量动态符号调用及对应签名 | 需匹配 fixture 导出和受支持 ABI；`size_t` 对 u64 的32位宽度疑点沿 fixture TODO 保留 |
 | `primitive-numeric-fold` / `ternary` | 无库的数值或表达式基线 | 不取得 FFI close 或 native ABI 信用 |
-| `all` | 组合 library、callback、buffer 的重复关闭 | 返回值只汇总 library 三态；没有 callback 派发、buffer 读写或 pin 断言 |
+| `all` | 原设计组合 library、callback、buffer 的重复关闭 | BUG: 旧式 `(value) =>` 缺 `fn`，普通 parser 拒绝整段源，main 返回3；这些 runtime 语句未执行 |
 | `callback` / `buffer` / `all-no-lib` | 无库的创建与重复关闭观察 | 固定返回1不是资源不变量断言；三个注入 identity 函数都未被派发 |
 | `load-failure` | 提取预期缺失库的错误文本 | 任意非 FINE 都退出0，没有核对错误类别；同名库也不保证永远不存在 |
 
@@ -51,6 +55,8 @@ doc_type: test-contract
 
 ## 已证实缺陷与后续核查
 
+BUG: `all` 的 `kAllTemplate` 在 `debug_ffi_close_probe.c:521` 使用旧式 `(value) =>`。`main:643` 选择该模板、`:662` 生成源、`:688` 调用普通编译入口；其他 library/primitive 模式会在`:649-659` 换成自己的模板，不能泛化此缺陷。`compiler.c:1279` 初始化 parser，`parser.c:20` 关闭 legacy migration；`parser_expression_primary.c:73-75` 检测配对括号后的箭头，`:848-853` 报 `lambda without fn`。`parser_state.c:252` 标 fatal，`parser.c:302-309` 拒绝 AST，`compiler.c:1292` 返回 NULL，最终 `main:692` 销毁状态后返回3。编译先于执行，因此连文本中先出现的 loadLibrary/close 也没有执行；缺 libraryPath 的提前返回1另属输入限制。该完整静态路径证明不兼容语法，本轮保持源码字符串，不修语法、不声称运行复现。
+
 BUG: `main.result-destination` 声明全新自动 `result` 后直接传址。正常成功条件成立时，`execute_function_capture_status` 调用 `ZrCore_Value_Copy`；`value.h:218-236` 进入 `PrepareDestinationForOverwriteNoProfile`，在 `value.h:147-164` 先读取旧 ownershipKind/control/weakRef，可能进一步 ReleaseValue。该可达调用链证明未初始化读取；表现可能是错误所有权释放、诊断陷阱或崩溃，未声称每次运行必然崩溃。默认无库模式也可能到达该成功路径，load-failure 的空输出槽不走复制。建议修复入口为传址前 `ZrCore_Value_ResetAsNull(&result)`；本轮只加标签，不改行为。
 
 TODO: 转义器仅处理反斜杠和双引号，容量不足静默截断；两个 `snprintf` 调用也未检查返回值。沿这些调用核查超长路径和控制字符的源有效性及诊断策略。
@@ -63,8 +69,8 @@ TODO: 核查 load-failure 的错误分类，区分预期缺失库与其他运行
 
 ## 审查与验证范围
 
-逐单元台账为 `docs/code-review/coverage/tests_ffi.tsv` 中本文件的39项：7函数、1类型、3字段、14数据模板、3注入函数、1结果状态和10重要块。注释位于 C 源的字符串外，注入源字节、全部原400物理行及其混合换行均保持不变（344 CRLF、56 LF）；新增39个完整注释块共349行，形成749行文件。
+逐单元台账为 `docs/code-review/coverage/tests_ffi.tsv` 中本文件的39项：7函数、1类型、3字段、14数据模板、3处注入函数文本（其中all的一处被当前parser拒绝）、1结果状态和10重要块。注释位于 C 源的字符串外，注入源字节、全部原400物理行及其混合换行均保持不变（344 CRLF、56 LF）；新增39个完整注释块共349行，形成749行文件。
 
 fixture 中四处指向本探针的旧行号也按同一原始语句迁移；fixture 原974行仅四处数字引用改变，不新增该文件单元或语义覆盖。
 
-修改前已完成真实消费者 TU 编译，342个实际依赖，owned job 自然退出0并关闭全部句柄。后续修改后编译必须使用同一命令、同一非本批依赖并与该基线配对；台账检查和非注释投影只证明各自静态事实。未取得 fixture DLL 构建、链接、probe 运行、BUG运行复现或整个模块验收信用。
+修改前已完成真实消费者 TU 编译，342个实际依赖，owned job 自然退出0并关闭全部句柄。第一次39单元批次已完成同命令修改后编译且非本批依赖相同；本次两个旧注释的纠正另取当前编译基线，修改后必须再次配对；台账检查和非注释投影只证明各自静态事实。未取得 fixture DLL 构建、链接、probe 运行、BUG运行复现或整个模块验收信用。

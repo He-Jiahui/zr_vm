@@ -492,23 +492,23 @@ int main(int argc, char **argv) {
             "return 0;\n";
     /**
      * ## Summary
-     * 组合 library 双 close、callback 创建/双 close和四字节 buffer 创建/双 close。
+     * 意图组合 library 双 close、callback 与 buffer 双 close；当前 all 源含已移除的 lambda 语法，编译被拒。
      * ## Constraints and lifecycle
-     * 最终值只汇总 library 三态；callback/buffer 不参与该返回条件。callback 没有派发，buffer 没有读写或 pin 验证。
+     * BUG: 参数列表后的 (value) => 缺 fn；普通 Source_Compile 禁用旧语法，整段源在执行前被拒，不能取得任何 close 场景信用。字符串本轮保持原样。
      * ## References
-     * tests/ffi/debug_ffi_close_probe.c:513-529；tests/ffi/debug_ffi_close_probe.c:643-662；tests/ffi/debug_ffi_close_probe.c:513-529；zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c:100-123；zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c:171-180；zr_vm_lib_ffi/src/zr_vm_lib_ffi/runtime.c:652-667
+     * tests/ffi/debug_ffi_close_probe.c:521；tests/ffi/debug_ffi_close_probe.c:643；tests/ffi/debug_ffi_close_probe.c:662；tests/ffi/debug_ffi_close_probe.c:688；tests/ffi/debug_ffi_close_probe.c:692；zr_vm_parser/src/zr_vm_parser/compiler.c:1279；zr_vm_parser/src/zr_vm_parser/compiler.c:1282；zr_vm_parser/src/zr_vm_parser/compiler.c:1292；zr_vm_parser/src/zr_vm_parser/compiler.c:1387；zr_vm_parser/src/zr_vm_parser/parser.c:20；zr_vm_parser/src/zr_vm_parser/parser.c:302；zr_vm_parser/src/zr_vm_parser/parser.c:309；zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c:73；zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c:848；zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c:849；zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c:853；zr_vm_parser/src/zr_vm_parser/parser/parser_state.c:252；zr_vm_parser/src/zr_vm_parser/parser/parser_state.c:290
      */
     /**
      * ## Summary
-     * 供 ffi.callback 创建使用的 ZR f64 identity 函数；函数体属于紧随的数据源，不是 C 回调入口。
+     * 旧式源码原想提供 f64 identity 函数给 ffi.callback；它是被解析器拒绝的注入函数文本，不是已创建的 C/VM 回调。
      * ## Parameters
-     * @param[in] value 真正派发时由 callback 调用方提供的 f64 值；本场景未派发。
+     * @param[in] value 按原设计为 callback 的 f64 参数；当前 all 源未通过编译，没有实际派发。
      * ## Returns
-     * @return 真正派发时原样返回 f64 value；该返回路径在此诊断场景未执行。
+     * @return 原设计原样返回 value；当前解析失败，函数对象和此返回路径都未建立。
      * ## Constraints and lifecycle
-     * 当前所在源只创建和关闭 handle，不派发该函数；函数体和其字符串字节保持不变，不能声称 native callback ABI 已运行。
+     * BUG: 此 (value) => 缺当前语法要求的 fn；普通 parser 标 fatal 并令 compile_source 返回 NULL，main 销毁状态后返回3。无 runtime 复现信用，代码字符串未修复。
      * ## References
-     * tests/ffi/debug_ffi_close_probe.c:521-523
+     * tests/ffi/debug_ffi_close_probe.c:521；tests/ffi/debug_ffi_close_probe.c:643；tests/ffi/debug_ffi_close_probe.c:662；tests/ffi/debug_ffi_close_probe.c:688；tests/ffi/debug_ffi_close_probe.c:692；zr_vm_parser/src/zr_vm_parser/compiler.c:1279；zr_vm_parser/src/zr_vm_parser/compiler.c:1282；zr_vm_parser/src/zr_vm_parser/compiler.c:1292；zr_vm_parser/src/zr_vm_parser/compiler.c:1387；zr_vm_parser/src/zr_vm_parser/parser.c:20；zr_vm_parser/src/zr_vm_parser/parser.c:302；zr_vm_parser/src/zr_vm_parser/parser.c:309；zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c:73；zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c:848；zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c:849；zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c:853；zr_vm_parser/src/zr_vm_parser/parser/parser_state.c:252；zr_vm_parser/src/zr_vm_parser/parser/parser_state.c:290
      */
     static const char *kAllTemplate =
             "var ffi = import(\"zr.ffi\");\n"
