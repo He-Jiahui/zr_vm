@@ -1,6 +1,8 @@
 #ifndef ZR_VM_PARSER_EXEC_IR_SOURCE_FINALIZED_MODULE_INTERNAL_H
 #define ZR_VM_PARSER_EXEC_IR_SOURCE_FINALIZED_MODULE_INTERNAL_H
 
+#include <stdint.h>
+#include "exec_ir_source_callable_query_internal.h"
 #include "zr_vm_core/exec_ir_owned_module.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_parser/ast.h"
@@ -24,17 +26,16 @@
  * publication. Overlapping input owners and same selected/finalized Function
  * admission remain subject to the exact finite v3 contract, not alias repair.
  *
- * Intended success deep-copies whole module storage with the finalized selected
+ * Success deep-copies whole module storage with the finalized selected
  * Function, validates current witnesses and snapshots last. Stored numeric IDs
  * do not extend registry lifetime or authorize execution/default compilation.
  * Failure preserves inputs and destination; all nine diagnostic fields are reset
  * before reporting the exact wrapper or preserved lower refusal.
  *
- * Current RED staging: required NULL arguments report INVALID_ARGUMENT/token0;
- * other calls report UNSUPPORTED with only a safely bounded original selected
- * token, otherwise token0. No allocation/free, nested traversal, query, Verify,
- * clone, lifecycle or publication occurs. NULL functionConstants is not a
- * top-level guard; its count/storage admission belongs to later GREEN.
+ * Required NULL arguments report INVALID_ARGUMENT/token0. Other refusals follow
+ * the ordered finite v3 contract. NULL functionConstants is a pool-shape check,
+ * not a top-level argument guard. No wrapper allocation or input mutation occurs;
+ * real lower verification/frame/copy/snapshot operations own their temporaries.
  */
 TZrBool source_snapshot_finalized_primitive_module(
         const SZrSemanticIrFunction *semantic, const SZrSemanticContext *context, const SZrAstNode *script,
@@ -46,7 +47,43 @@ TZrBool source_snapshot_finalized_primitive_module(
 TZrBool source_finalized_module_fail(SZrExecIrDiagnostic *diagnostic, EZrExecutionDiagnosticCode code,
                                      TZrMetadataToken token);
 
-/* RED token observation only: table arithmetic is not source admission. */
-TZrMetadataToken source_finalized_module_read_selected_token(const SZrExecIrModule *original);
+enum {
+    SOURCE_FINALIZED_INPUT_SPANS = 94,
+    SOURCE_FINALIZED_ALL_SPANS = 127,
+    SOURCE_FINALIZED_ROLES = 3,
+    SOURCE_FINALIZED_NO_ROLE = 3
+};
+typedef struct SSourceFinalizedSpan {
+    uintptr_t start, end;
+} SSourceFinalizedSpan;
+/* Per-call borrowed witnesses; none survives the last snapshot operation. */
+typedef struct SSourceFinalizedModuleWitness {
+    const SZrSemanticIrFunction *semantic;
+    const SZrSemanticContext *context;
+    const SZrAstNode *script;
+    const SZrFunctionSourceCallableIdentity *identity;
+    const SZrArray *compilerConstants;
+    const SZrTypeValue *functionConstants;
+    TZrUInt32 functionConstantCount;
+    const SZrExecIrModule *original;
+    const SZrExecIrFunction *finalized, *selected;
+    SZrExecIrOwnedModule **destination;
+    SZrExecIrDiagnostic *diagnostic;
+    TZrMetadataToken token;
+    SSourceCallableFacts facts;
+    SSourceFinalizedSpan spans[SOURCE_FINALIZED_ALL_SPANS];
+    size_t spanCount, spanLimit;
+    TZrUInt32 instructionIds[SOURCE_FINALIZED_ROLES], sourceIds[SOURCE_FINALIZED_ROLES];
+    TZrBool mapped;
+} SSourceFinalizedModuleWitness;
+TZrBool source_finalized_module_error(SSourceFinalizedModuleWitness *w, EZrExecutionDiagnosticCode code,
+                                      TZrUInt32 expectedVersion, TZrUInt32 actualVersion, TZrUInt64 expectedHash,
+                                      TZrUInt64 actualHash, unsigned role);
+TZrBool source_finalized_module_preflight(SSourceFinalizedModuleWitness *w);
+TZrBool source_finalized_module_admit_source(SSourceFinalizedModuleWitness *w);
+TZrBool source_finalized_module_mapping(SSourceFinalizedModuleWitness *w);
+TZrBool source_finalized_module_relation(SSourceFinalizedModuleWitness *w, const SZrExecIrFunction *function);
+TZrBool source_finalized_module_candidate_storage(SSourceFinalizedModuleWitness *w, const SZrExecIrModule *module);
+TZrBool source_finalized_module_metadata(SSourceFinalizedModuleWitness *w, const SZrExecIrFunction *function);
 
 #endif

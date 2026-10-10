@@ -28,21 +28,26 @@ tests:
   - tests/parser/test_ssa_source_finalized_module.c
   - docs/testing-and-validation/source-finalized-module.md
 doc_type: validation-protocol
-status: functional-red-verified-commit-pending
+status: functional-green-verified-commit-pending
 ---
 
 # Finalized Source module: finite validation
 
-## Observed RED baseline and intended GREEN protocol
+## Observed finite GREEN and preserved RED baseline
 
-Actual RED r3 observed24 ordered cases: case1 guard PASS, other23 exact feature
-FAIL, zero ignored. There were23 actual
-`SOURCE_FINALIZED_FEATURE code=28 attempts=0 frees=0` markers, complete9 refusal
-witnesses, unchanged inputs/old output and healthy cleanup; no ledger/UBSan or
-Setup cascade occurred. The later predicates described below remain intended
-GREEN checks: every case2-24 stops at its first successful-baseline requirement.
-No finalizer allocation denominator, fault retry, wide readable allocation,
-complete independent output or16-cycle lifetime result has been observed.
+Actual GREEN r2 observed all24 ordered cases PASS/0 FAIL/0 ignored. Case23 emitted
+`SOURCE_FINALIZED_LIFETIME cycles=16 declared_storage_cleared=16`; case24 emitted
+`SOURCE_FINALIZED_FAULT_SWEEP measured=89 completed=89 original_verify=12 finalized_frame=18 whole_copy=17 candidate_verify=12 candidate_frame=18 snapshot=12`.
+These are actual raw markers, not inherited lower denominators or89 Unity cases.
+The predicates, complete-copy ownership, exact lower9 refusals, every measured
+failure/retry and declared-storage lifetime below were reached in this finite run.
+Genuine Source preparation and readable compiler storage>UINT32_MAX remain OPEN.
+
+Historical RED r3/r4 observed guard1 PASS/23 feature FAIL/0 ignored and23 exact
+`SOURCE_FINALIZED_FEATURE code=28 attempts=0 frees=0` markers. That baseline
+proved healthy full9 refusal/preservation and cleanup, not later variants.
+RED was committed as `1f9488b9c4065c54980e3841bc1a41279bdebb3a`; GREEN Root proof
+and finite commit are currently pending. Failed attempts remain in the evidence record.
 
 This fixture owns declared canonical/symbol/AST/SemIR/SourceIdentity witnesses
 and two independent actual SZrTypeValue pools. It constructs owning ExecIR storage
@@ -128,10 +133,10 @@ publication. Record IDs/frees witness old release; no stale pointer comparisons.
 Two live owners have independent reachable addresses. Release allocated source storage and clear declared inline context/
 AST/pool witnesses, then inspect stored logical arrays/bits/IDs without canonical lookup.
 Clearing these inline fixtures is not genuine context/interner destruction.
-The intended GREEN protocol includes16 complete construct/finalize/free cycles
-with healthy ledger boundaries; RED did not reach them.
+Actual GREEN case23 completed16 construct/finalize/free cycles with healthy
+ledger boundaries and the literal lifetime marker above; historical RED did not reach them.
 
-## RED feature observation
+## Historical RED feature observation
 
 Before intended feature failure, compare complete9, unchanged input/old output
 contents and records, allocation/free delta0 and healthy cleanup. Print exactly
@@ -170,29 +175,32 @@ longjmp safety and assert original/current health. Fallback cannot mask leaks.
 
 ## Native closure and platform gates
 
-Current runtime receipt establishes selected30 translation units/FI23, support36
-and configured66. The selected closure is Core16+Parser existing5+finalizer2 plus
-seven test/support units; no residual archive or unrelated Compiler/VM/Semantic
-provider import. Query/lookup use the generic owner shim here. Actual r3 build
-had39 compiles and4 links (43 incremental steps), not a clean66-TU rebuild.
-Six independent lower gates passed: CoreModel (28 Function/60 Module fault loops),
-generic owner14/two61 sweeps, modulecopy20/88, frame18/18, query18/zeroallocation,
-and lookup8. Those lower denominators do not measure this finalizer.
+GREEN r2 establishes selected30 translation units/FI23, support36 and configured66.
+Groups are Core15+modulecopy1+frame3+finalizer/query/lookup4+test/support7. No residual
+archive or unrelated Compiler/VM/Semantic provider is imported. Query/lookup use
+the generic owner shim. Build r2 compiled only the two production C files and
+linked in three steps with zero warnings;66 current objects are admitted by
+actual selected dependencies/hash evidence, not a claimed clean rebuild.
 
-MSVC v2 r3 observed31 compile-only units:23 providers with generic FI, seven
-unredirected test/support units plus fresh tiny declaration probe. All31 native
-children naturally exited0 with zero warnings and exact raw basename profiles.
-Actual Version1.2 JSON has Source/ProvidedModule(empty)/Includes; optional import
-fields are absent, not observed empty arrays. Selected current pins240 were
-checked; broad prebaseline is historical inventory. This grants no MSVC runtime,
-fault/provider execution or full MSVC credit. Exact evidence and failed attempts
-are recorded in the acceptance document.
+Six independent lower gates passed: CoreModel (28 Function/60 Module clone fault
+loops), generic owner14/two61, modulecopy20/88, frame18/18, query18/zeroallocation
+and lookup8. Finalizer89 was independently measured in six actual phases and is
+not a sum or reuse of those lower historical denominators.
+
+MSVC v2 GREEN r2 observed31 compile-only units:23 real providers with generic FI,
+seven unredirected test/support units and one fresh tiny declaration probe.
+All31 children naturally exited0, zero warnings and exact raw basename profiles.
+Actual C Version1.2 JSON has Source/ProvidedModule(empty)/Includes; optional import
+fields are absent, not observed empty arrays. Selected current pins240 and each
+JSON/raw/object/tool/script were checked. Broad prebaseline is historical inventory.
+This gives no MSVC runtime, fault execution, whole-project or full MSVC credit.
+Exact raw/receipt hashes and17/31 phases appear in the acceptance document.
 
 The nonasserting TryRecordFrees getter and deferred numeric observers allow
 cleanup after Unity marks a test failed. Teardown records original health,
 releases registered storage before assertions, then reports any real residue;
-recovery cannot turn failed health into accepted evidence. The r2 aborting
-assertion path and its31 live records remain failed history.
+recovery cannot turn failed health into accepted evidence. The historical RED r2
+aborting assertion path and its31 live records remain failed history.
 
 Genuine Source/Binder preparation, registry lifetime, normal/default pipeline,
 Linux/full MSVC/backend parity and all47 remain OPEN.

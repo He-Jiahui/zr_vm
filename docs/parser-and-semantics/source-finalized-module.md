@@ -28,36 +28,33 @@ tests:
   - tests/parser/test_ssa_source_finalized_module.c
   - docs/testing-and-validation/source-finalized-module.md
 doc_type: module-contract
-status: functional-red-verified-commit-pending
+status: functional-green-verified-commit-pending
 ---
 
 # Finalized primitive Source module
 
 ## Current implementation and evidence boundary
 
-The private RED seam exists in two C translation units and one private header.
-It resets all nine diagnostic fields and refuses any required top-level NULL with
-INVALID_ARGUMENT/token0. Other calls return UNSUPPORTED with a safely bounded
-original selected Function token, or token0 if that header cannot be established.
-It performs no allocation/free, query, Verify, clone or publication. NULL
-functionConstants is not a top-level NULL guard: its count/storage relation
-belongs to the intended GREEN admission.
+The private two-C/header implementation now performs bounded typed admission,
+actual lower query/Verify/frame checks, complete replacement-module copy and last
+owned snapshot. It resets all nine diagnostic fields, supports NULL diagnostic,
+preserves borrowed inputs/old destination on refusal, and frees its initialized
+temporary candidate on every post-initialization path, including success.
+NULL functionConstants is a checked pool relation, not a required top-level guard.
 
-Actual RED r3 reached all24 cases: required-NULL guard1 PASS and23 exact
-feature failures. Each feature refusal preserved all nine fields and input/old
-output records with attempts0/frees0; healthy teardown completed without ledger
-or UBSan errors. This establishes the RED baseline, not any later mutation,
-complete-copy, lifetime-cycle or allocation-sweep acceptance. Current MSVC r3
-compiled31 ordered units with zero warnings. Root proof, exact16-path RED commit
-and conditional obsolete-object cleanup remain pending.
+Actual GREEN r2 observed24 ordered PASS/0 FAIL/0 ignored, complete89-site fault
+sweep and16 declared-storage lifetime cycles. Six independent lower gates passed.
+MSVC r2 compiled31 ordered units with zero warnings; it is compile-only evidence.
+The runtime rebuilt the two implementation C files and linked in three steps,
+not a clean66-TU rebuild. Current Root GREEN proof and finite commit remain pending.
+See the evidence record for exact receipts, preserved failures and scope limits.
 
-The following complete contract is the accepted GREEN target, not behavior
-supplied by the RED stub. Callable query GREEN is separately committed at227ba1ff;
-the v3 plan's earlier query-pending statement is historical. Test-support scope
-also includes an additive nonasserting allocator getter: invalid record/output
-returns false without changing the output. Numeric observers use it and cleanup
-finishes before Unity assertions, including after an intentional feature failure.
-The three production RED files have not changed to implement GREEN.
+Historical RED commit `1f9488b9c4065c54980e3841bc1a41279bdebb3a` specified this
+contract without implementing feature behavior. Callable query is separately
+committed at227ba1ff. The additive nonasserting TryRecordFrees allocator getter
+and deferred numeric observers preserve healthy teardown even when Unity has
+already marked a test failed. Invalid record/output returns false without
+changing the output; cleanup completes before assertions and fallback recovery.
 
 ## Private API and caller lifetime
 
@@ -137,7 +134,7 @@ arrays. Canonical/symbol scans and query establish active FUNCTION parameters
 before their allocation is globally registered; AST shape is established before
 following each child.
 
-## Intended first-error and transaction sequence
+## Implemented first-error and transaction sequence
 
 1. Reset nine fields; required NULL guards precede all other reads. Preflight
    numeric roots/pools and obtain original selected token T.
@@ -159,8 +156,8 @@ following each child.
    every path, including success, while preserving the precise diagnostic.
 
 No Function_SnapshotExecIr double clone, original owner transfer, new arena,
-ID remapping or registry ownership is introduced. Source clone failure precedes
-Core's actual immutable identity comparison table and replacement clone.
+ID remapping or registry ownership is introduced. Complete candidate recheck
+precedes the last generic owned clone and publication.
 
 ## Current domains, origin and constants
 
@@ -218,11 +215,12 @@ global errors retain locations0. Success returns all nine fields zero.
 - Actual envelope OOM comes from CloneOwnedModule V1/0/token0, not sizeof guessed
   by this wrapper. No boolean producer failure is relabeled OOM.
 
-## Intended complete diagnostic table
+## Complete diagnostic table
 
-This is the accepted v3 wrapper table for future GREEN, not RED implementation
-credit. Established T, V/H widths and completed original mapping M mean exactly
+This is the implemented v3 wrapper table; the finite24-case gate observes its
+declared-storage predicates, not arbitrary pointer readability or huge-storage credit. Established T, V/H widths and completed original mapping M mean exactly
 what the previous sections specify. Actual lower diagnostics bypass normalization.
+
 | Predicate family, evaluated in its exact field/row order above | Code / active fields |
 | --- | --- |
 | Any required top-level NULL | INVALID_ARGUMENT; token0; V/H/locations0 |
@@ -272,7 +270,7 @@ what the previous sections specify. Actual lower diagnostics bypass normalizatio
 | candidate selected frameHash differs from finalized | LAYOUT_MISMATCH; T; H finalized/candidate |
 | Actual query/frame/Core copy/Verify/snapshot failure | Preserve all actual lower9 unchanged |
 
-## Intended logical transition and candidate recheck
+## Logical transition and candidate recheck
 
 Original source-map count equals instruction count before its profile gate;
 original values3 become finalized values1 while instruction/block counts remain3/1.
@@ -311,7 +309,7 @@ Declared consistency is not Binder/interner provenance, authenticated hashes,
 durable registry lifetime, target ABI or execution admission. Genuine Source
 preparation, mode4 adoption, ordinary/default compilation, Linux/full MSVC/backend
 parity and all47 remain OPEN. Existing NONE/AOT/Source modes are unchanged by
-this private pending seam.
+this private finite seam.
 
 - [Validation protocol](../testing-and-validation/source-finalized-module.md)
 - [Evidence record](../acceptance/source-finalized-module.md)
