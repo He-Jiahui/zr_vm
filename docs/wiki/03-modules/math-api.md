@@ -139,8 +139,8 @@ compare 按模长平方返回 -1/0/1，不比较分量字典序；**TODO:** NaN 
 
 C 回调仅借用本次 binding 的 context/state/result；返回对象和字符串归 VM 管理。
 缺参/实参标签错误会进入 VM 异常，字段读取或对象 helper 返回 NULL 是正常失败。
-**TODO:** toString 复用的字符串 helper 在 void setter 后返回 true；仍需沿
-`ZrCore_String_CreateTryHitCache` 的 OOM 与 binding 结果槽核实失败是否抛错或留下旧值。
+**BUG:** toString 生成未驻留短串、对象创建成功而 HASH_BUCKET 扩容失败时，字符串
+setter 不写结果槽，helper 仍返回 true；常规 VM 派发预置 NULL，因此可能成功但无字符串结果。
 
 `Quaternion` 字段 `x/y/z/w`；方法 `length`、`lengthSquared`、`normalized`、`conjugate`、
 `inverse`、`dot`、`mul`、`slerp`。接近零长度时 inverse/normalized 返回单位四元数；slerp
@@ -220,3 +220,51 @@ native callback 读写数学值时使用 `ZrLib_CallContext_ReadFloat` 和
 `ZrLib_Value_SetFloat`；不要假定 `SZrTypeValue` 的 union 与 `double` 对齐。若需要把自定义
 struct 暴露为 Vector-like value，必须提供完整 field/layout/protocol descriptor，并让
 `ZrLibrary_NativeRegistry_ComputeModuleSignatureHash` 反映变化。
+
+## Complex C binding 调用约束
+
+Complex 的公开 C 声明包含构造、4 个命名方法和 6 个运算元方法。脚本先导入已注册的
+zr.math，再通过方法或运算协议进入同步 binding；不把这些 C 回调当作脱离 VM 域的
+独立数学函数。zr_vm_lib_math/src/zr_vm_lib_math/module.c:129 聚合类型；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:202、zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:205 选择方法回调，
+zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:274 完成 native GC 准入后才在 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:277 执行。
+
+### 参数、结果与失败
+
+| 入口 | 调用方提供 | 成功结果和设计目的 |
+| --- | --- | --- |
+| Construct | 两个数值 real、imag；binding 的构造目标 | 沿 owner/construct target 初始化对象，兼容 self 可复用。 |
+| Magnitude、Phase | 无显式实参；可读数值分量的 self | 模长或弧度相角，供数值流程使用。 |
+| Conjugate、Normalized | 无显式实参；可读数值分量的 self | 新 Complex，保留原 receiver；近零模交付零复数。 |
+| MetaAdd、MetaSub、MetaMul | self 与一个对象或数组 rhs，两者分量可读为数值 | 新 Complex；rhs 只检查可读字段，不额外核名义原型。 |
+| MetaNeg | 可读数值分量的 self，无显式实参 | 符号相反的新 Complex。 |
+| MetaCompare | self 与一个分量可读的对象或数组 rhs | 模长平方顺序的 int -1/0/1；0 不能证明分量相等。 |
+| MetaToString | 可读数值分量的 self，无显式实参 | VM 管理的调试字符串，不借用格式化栈缓冲。 |
+
+context、state、参数视图和 result 仅借用本次调用。结果对象和字符串由 VM 管理；
+跨调用保存裸指针仍须由宿主维持根。构造目标可复用，其余对象运算创建独立结果。
+正常 false 不应消费 result；缺参或实参标签不符经 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:862、zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:877 的
+不返回错误入口报告，分配产生的非局部异常也不等于正常 false。字段 setter 为 void，
+构造及新对象 helper 没有逐字段成功凭据，应沿已有 setter 失败记录审查故障路径。
+
+### 静态注册数据
+
+GetType 返回模块持有的静态描述符与嵌套表；GetFunctions 返回 NULL 并在非空 count
+写 0，实例方法仍由类型表发布；GetHints 返回一项静态字段形状提示，count 可为 NULL。
+调用方不释放、不修改这些数据，模块卸载后不能继续保存借用指针。三入口只交付元数据，
+分别由 zr_vm_lib_math/src/zr_vm_lib_math/module.c:129、zr_vm_lib_math/src/zr_vm_lib_math/module.c:117、zr_vm_lib_math/src/zr_vm_lib_math/module.c:142 聚合，不执行数值回调。
+
+### 已确认问题与待核查边界
+
+- BUG: 合法有限 (1e200, 0) 的平方在 zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:20 和 zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:39 溢出，使模长为无穷、
+  归一化结果为零；结论来自完整数值调用路径，不代表本批新增执行复现。
+- TODO: zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:89 对 NaN 和双边平方溢出也可给 0；需追踪 VM compare 消费策略和
+  数值边界用例，确认 unordered/溢出与等模的区分意图。
+- BUG: 有效 state/receiver 生成未驻留短串，且短串对象创建成功而 HASH_BUCKET 扩容失败时，
+  zr_vm_core/src/zr_vm_core/hash_set.c:181 → zr_vm_core/include/zr_vm_core/hash_set.h:537 → zr_vm_core/src/zr_vm_core/string.c:808 正常返回 NULL；
+  zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1313 不写结果槽，但 zr_vm_lib_math/src/zr_vm_lib_math/common.c:519 仍 true；常规派发在 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:362 预置 NULL。此为合法失败路径的静态证明，未执行故障注入。
+
+tests/fixtures/projects/native_numeric_pipeline/src/signal.zr:5、
+tests/fixtures/projects/native_numeric_pipeline/src/signal.zr:6、
+tests/fixtures/projects/native_numeric_pipeline/src/signal.zr:7 与
+tests/fixtures/projects/native_numeric_pipeline/src/signal.zr:10 提供正常脚本调用入口。
+本批静态复核与编译消费者检查不证明这些脚本已经执行，不赋予故障注入或整库测试通过。

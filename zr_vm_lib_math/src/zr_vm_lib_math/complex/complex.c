@@ -88,8 +88,8 @@ TZrBool ZrMath_Complex_MetaCompare(ZrLibCallContext *context, SZrTypeValue *resu
     dl = lhs.real * lhs.real + lhs.imag * lhs.imag; dr = rhs.real * rhs.real + rhs.imag * rhs.imag;
     ZrLib_Value_SetInt(context->state, result, dl > dr ? 1 : (dl < dr ? -1 : 0)); return ZR_TRUE;
 }
-/* TODO: MakeStringResult 调用 void setter 后无条件返回 true；
- * 沿 CreateTryHitCache/OOM 和 binding 结果槽确认失败是否抛错，避免把 true 当作已写结果的证明。 */
+/* BUG: 合法短串对象申请成功但哈希桶扩容失败时，zr_vm_core/src/zr_vm_core/hash_set.c:181 与 zr_vm_core/src/zr_vm_core/string.c:808 正常返回 NULL；
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1313 不写结果槽，常规派发在 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:362 预置 NULL；zr_vm_lib_math/src/zr_vm_lib_math/common.c:519 仍 TRUE，toString 可报告成功而无字符串。 */
 TZrBool ZrMath_Complex_MetaToString(ZrLibCallContext *context, SZrTypeValue *result) {
     ZrMathComplex value;
     if (!ZrMath_ReadComplexObject(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;

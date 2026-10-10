@@ -132,7 +132,7 @@ doc_type: category-index
 
 - [zr.math Complex API](../wiki/03-modules/math-api.md#complex-和-quaternion)
   - `phase` 返回弧度，compare 按模长平方；非有限值比较策略仍待核实。
-  - 极大有限分量可使 magnitude 溢出、normalized 返回零；toString 分配失败的结果槽语义仍待核实。
+  - 极大有限分量可使 magnitude 溢出、normalized 返回零；短串 HASH_BUCKET 扩容失败时 toString 可能成功但无字符串结果。
 
 ## 阅读顺序
 
