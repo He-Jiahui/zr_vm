@@ -19,24 +19,27 @@ tests:
   - tests/parser/test_ssa_source_callable_query.c
   - docs/acceptance/source-callable-query.md
 doc_type: module-detail
-status: functional-red
+status: functional-green-verified-commit-pending
 ---
 
 # Const Source callable field query
 
 ## Current delivery boundary
 
-The accepted private query design reads a declared canonical noargs, no-receiver,
-no-effects primitive INT64 callable. The RED implementation contract resets all
-nine diagnostic fields, rejects NULL context/output with INVALID_ARGUMENT/token0,
-and otherwise returns UNSUPPORTED/supplied token with remaining fields0. Output
-is preserved; RED performs no lookup, traversal, allocation or publication.
-Actual RED r4 observed18 cases: case2 guard PASS,17 exact feature FAIL,0 ignored;
-all17 baseline markers report attempts0/frees0. Current MSVC RED r5 four units
-naturally exit0/zero warnings. Physical freezes and full receipts are recorded in
-acceptance; Root current proof/exact RED commit remain pending.
-The GREEN field predicate described below requires separate authorization and
-verification; no implemented GREEN or observed result is asserted here.
+The private query now implements a current declared canonical noargs/no-receiver/
+no-effects primitive INT64 field predicate. It validates the five traversed spans,
+sorted IDs, active union kinds, callable/return hashes and profile, then publishes
+five actual numeric facts once. It owns and retains nothing, performs no heap
+allocation/free, and preserves output on refusal. Exact nine-field diagnostics
+and optional independent diagnostic behavior are implemented.
+
+Actual GREEN r1 passes18 cases with exact marker
+`SOURCE_CALLABLE_ZERO_ALLOC cases=18 attempts=0 frees=0`; lower lookup8 passes.
+MSVC GREEN r1 passes four compile-only units, natural0/zero warnings. The
+zero-counter observer covers only query/lookup FI, supplemented by actual object
+import/provider evidence. It is not a CRT-internals audit or allocation fault sweep.
+RED was committed as `27ebf3195f547889ec0cd0a64bd0aa5ffaf7d77f`; historical RED/
+failed gates remain in acceptance. Current GREEN Root proof/commit are pending.
 
 ## API, result and lifetime
 
@@ -60,7 +63,7 @@ Output/diagnostic independence from untraversed context allocations is a caller
 precondition, not an exhaustive ownership check. Overlapping diagnostic violates
 that precondition; writing its refusal cannot preserve aliased input bytes.
 
-GREEN constructs a zeroed local candidate, assigns its five numeric fields after
+The implementation constructs a zeroed local candidate, assigns its five numeric fields after
 all checks and publishes once. Failure preserves output and input content,
 pointers/capacities. Candidate padding is not identity evidence. Success returns
 all nine diagnostic fields zero. Query retains no storage pointer after return.
@@ -86,7 +89,7 @@ kind FUNCTION before reading its function union; preflight parameter storage
 before arity/receiver/effects. Check return kind PRIMITIVE before primitive union.
 No unselected node kind/hash/nested payload is validated.
 
-## Complete intended first-error diagnostics
+## Complete implemented first-error diagnostics
 
 Nine fields: code/functionToken/blockId/instructionId/sourceId/expectedVersion/
 actualVersion/expectedHash/actualHash. Locations always0. T is supplied token;
@@ -125,10 +128,10 @@ relative order solely by those outcomes.
 
 ## Minimal closure and limits
 
-GREEN's intended callees are actual allocation-free canonical Find and inline
+Implemented callees are actual allocation-free canonical Find and inline
 Array_Get; no index/interner/semantic lifecycle/compiler/AOT/VM allocator TU is
-required. Runtime FI observations and imports/providers must independently prove
-zero malloc/calloc/realloc/free calls from query/lookup. There is no fault sweep
+required. Actual runtime FI observations and imports/providers establish the finite
+zero malloc/calloc/realloc/free query/lookup closure. There is no fault sweep
 denominator. Hashes are read, not computed or authenticated. Nonzero return hash
 is an additive query predicate, not a modification of Binder's return admission.
 

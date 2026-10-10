@@ -16,10 +16,10 @@ tests:
   - tests/parser/test_ssa_source_callable_query.c
   - docs/testing-and-validation/source-callable-query.md
 doc_type: acceptance-record
-status: functional-red
+status: functional-green-verified-commit-pending
 ---
 
-# Source callable query: actual finite RED
+# Source callable query: actual finite GREEN
 
 ## Authorization and separate prerequisites
 
@@ -37,7 +37,76 @@ retired frozen at Root's `d2404b00` commit. Lookup8/frame18/Core20/composite88 a
 owner61 evidence does not become query runtime evidence or a query denominator.
 Current Source returned/finalizer GREEN is not asserted by this new query record.
 
-## Current runtime RED r4 / structured MSVC RED r5
+## Current actual GREEN r1; final proof/commit pending
+
+Runtime `source-callable-query-green-r1-receipt.json` SHA
+`7D7E01FC277341FA2C92088F438708BE2E6AECD01A1CD0E513D78FC408140A32`
+is validated:true. Primary raw SHA
+`F419EFC06D653FE73B6A78DBF48765328C455B16A8E5517231D1E6DED501540C`
+records18 PASS/0 FAIL/0 ignored and exact
+`SOURCE_CALLABLE_ZERO_ALLOC cases=18 attempts=0 frees=0` after the successful suite.
+All18 frozen names/order run. Lower lookup8 PASS. No allocation fault denominator
+exists; frame18/Core88/owner61 evidence is unrelated to this zero-call observer.
+
+| GREEN phase | Actual PID | Natural exit |
+| --- | --- | --- |
+| configure |34796|0|
+| build |9424|0|
+| query undefined |11820|0|
+| query defined |37600|0|
+| lookup undefined |35112|0|
+| lookup defined |1820|0|
+| lower lookup CTest |33608|0|
+| primary query CTest |33524|0|
+
+Root unified runtime controller48374 naturally exited0 and closed. Build actually
+compiled query C and main C, then linked,3 steps. Selected4/FI2/providers2 within
+configured55 retain5657 gate-time broad inventory rows,6 metadata pins and7
+artifacts. Assertions/UBSan/current warning and actual U/defined/map provider gates
+pass. Broad header inventory is historical at run, not global-current acceptance.
+Current final proof must derive actual selected4 and lookup-support3 Ninja deps,
+retain real type_system dependency and all nonheader/source/tool/CMake/metadata/
+raw/object/provider checks. Root independently reviewed current GREEN Ninja dependency counts224/220/231/29
+for selected4 and219/226/29 for lookup-support3, union231. Filtered runtime
+admission is1599 existing pins; Root proof adds its own pin separately,1600.
+Final GREEN Root proof execution and commit are pending.
+
+MSVC `callable-query-msvc-GREEN-r1-receipt.json` SHA
+`B24932F1364DACE0D1E67814AB5ABD00E0FD4BB44B575D1D138987230360DA8E`
+is validated:true. Query/lookup/main/probe PIDs19280/9840/32792/11728 all naturally
+exit0/zero warnings; unified controller48000 naturally exited0 and closed.
+Actual selected current input_pins count189, separate broad baseline4304.
+Unique actual headers113/109/120/103 are backed by four pinned Version1.2 C JSON
+files with exact Source and absolute Includes. Each has ProvidedModule empty
+string and explicitly absent ImportedModules/ImportedHeaderUnits; absence is not an
+observed empty array. FI2 remains query/lookup, main/probe unredirected. Four
+raw/object/JSON hashes independently match. Driver v4 remains immutable at
+`1105E2CBEDC720DFA7054DC52FCC0119FAA50904A72277DA6DB4D662638C76CC`.
+This is compile-only: no MSVC runtime, diagnostic or CRT-internals heap credit.
+
+| Current physical file | Lines | SHA256 |
+| --- | --- | --- |
+| private H |42|3645DB4983497716FEB1A42B59C90001AB5F37A349B3A264B020761F728D1FC8|
+| GREEN query C |144|B078AB64F7E09514D9DDD4CC96BF55D857FAF8019B7D0CE156423D0CDE380974|
+| main C, unchanged |478|05C671CD4E80467743833B4207FFE52930810F96F1F0BF4B10F905202E88B9E3|
+| shim H, unchanged |14|81013A62E3F2EF3FD6835D75CDF4DA125761A3B85CD93F877DC71B127DE745DC|
+
+The implemented query validates exactly five possible spans, sorted IDs and active
+union kinds, then publishes five zero-initialized numeric facts once. Refusals
+preserve output and input storage with exact9 diagnostics. Parameter spare storage
+is accepted without traversing spare bytes. Actual Find-ID contradictions remain
+unreachable under valid storage, and identical profile diagnostic payloads do not
+reveal their internal relative order. This finite predicate never authenticates
+source/interner/Binder history, hashes, ABI or registry lifetime.
+
+RED exact10-path commit is27ebf3195f547889ec0cd0a64bd0aa5ffaf7d77f, consuming
+accepted proof744603F42BB69D4151F83312EFE82E6C6AE6EFD4F0BBE403FDB2A853172A7D7A.
+All prior Docs pending descriptions below are historical. Current final GREEN
+Root proof and exact GREEN commit remain pending; no hash is invented. Old RED
+objects/failed scripts/receipts remain preserved; the separately authored cleanup
+driver has not been executed by this documentation writer.
+
+## Historical accepted runtime RED r4 / structured MSVC RED r5
 
 Runtime `source-callable-query-red-r4-receipt.json` SHA
 `1049C17FC1BAD54BCFBC37C31B6334A568D5F9E850A383ADC90BFA2E5B7F1C74`
@@ -62,7 +131,7 @@ inventory4304 is separate historical non-admission storage. Per-unit observed
 unique headers104/109/120/103 are backed by pinned sourceDependencies JSON.
 All actual C Version1.2 Data contain Source/ProvidedModule/Includes: Source equals
 the exact unit, ProvidedModule is empty string, Includes are complete absolute
-paths checked against prebaseline/current hashes. ImportedModules/HeaderUnits
+paths checked against prebaseline/current hashes. ImportedModules/ImportedHeaderUnits
 are explicitly absent, not claimed as observed empty arrays. If present in a
 future run they must be real empty arrays; unknown fields refuse. Four actual
 JSON/raw/object hashes were independently read and matched. FI2 remains query/
@@ -70,9 +139,10 @@ lookup only; main/probe unredirected. This is compile-only, not runtime/heap cre
 Executed immutable v4 driver229 SHA
 `1105E2CBEDC720DFA7054DC52FCC0119FAA50904A72277DA6DB4D662638C76CC`.
 
-Root reviewed proof v2 script SHA
+At the RED stage Root reviewed proof v2 script SHA
 `0388669279596AC64396F21448B2E9B99AADB236CDB8CBDF280A0805B19F9463`
-remains unexecuted until this final documentation freeze. It requires actual
+was pending before the RED documentation freeze and later accepted for that commit.
+The proof requires actual
 selected4 plus lookup-support3 transitive header membership from pinned Ninja
 v4 dependency records/commands/objects. Actual read type_system.h remains in
 admission; the Compiler private header is genuinely absent from these dependencies.
@@ -84,8 +154,11 @@ also required; no whole-tree header-current claim or provider waiver is made.
 Coverage independently checked1599 filtered runtime pins (proof script pin is
 additional), selected dependencies215/220/231/29 and lookup-support219/226/29,
 231 unique dependency paths. Those counts are read-only coverage evidence; the
-new final Root proof has not yet run.
-Fresh final proof/exact10-path RED commit and all GREEN delivery remain pending.
+RED-stage proof was later accepted; these RED counts are not current GREEN counts.
+This RED evidence was consumed by the exact10-path commit
+`27ebf3195f547889ec0cd0a64bd0aa5ffaf7d77f`, using proof SHA
+`744603F42BB69D4151F83312EFE82E6C6AE6EFD4F0BBE403FDB2A853172A7D7A`.
+Earlier pending statuses are historical; current GREEN proof/commit remain pending.
 
 ### Additional preserved failed proof and MSVC history
 
@@ -204,15 +277,15 @@ It is validated:true with4303 inputs matched at the r1 gate; query/lookup/main/p
 unredirected main/probe2 remain exact. Its four raw logs/object hashes match.
 No linking/runtime/diagnostic/variant or full MSVC credit arises from this gate.
 
-| Frozen current file | Lines | SHA256 |
+| Historical RED frozen file | Lines | SHA256 |
 | --- | --- | --- |
 | private query H |41|222C1A7CF8DA15A749E91A21220B1B4E10866D9854A84A71B077C49B59B57FB4|
 | query RED C |23|0B38BAD69FCD62C054B2A4AEA8F14BAC1511CB56CCF1F28C9B18E83E1A7D7C89|
 | main C |478|05C671CD4E80467743833B4207FFE52930810F96F1F0BF4B10F905202E88B9E3|
 | FI shim H |14|81013A62E3F2EF3FD6835D75CDF4DA125761A3B85CD93F877DC71B127DE745DC|
 
-Current Root final proof and exact10-path RED commit remain pending. GREEN
-implementation/variant acceptance needs a separate later Root lease and gate.
+At that historical RED gate the final proof/commit and GREEN were pending.
+RED subsequently committed27ebf319; current GREEN r1 observations are recorded above.
 There is no fault sweep denominator and no invented commit/proof hash.
 
 ## Preserved failed runtime r1
@@ -229,14 +302,14 @@ scope, actual source closure and object import proof remain distinct evidence.
 Historical v1 driver147 SHA is
 `53B08E9DBA96523BA29C6630DADF773EEB9D44C307E9A9CCB66F033086DF1788`.
 Author static ParseFile reported0 errors; Root ran historical MSVC RED r1 with
-that v1. Current r5 uses immutable v4 described above. Runtime
+that v1. Historical RED r5 uses immutable v4 described above. Runtime
 query/lookup object U/defined+map evidence must be separate from whole executable
 Unity/CRT imports; actual pinned llvm-nm is Root-owned proof work.
 
-## Required finite GREEN acceptance
+## Implemented finite GREEN contract
 
 Five registered spans, embedded header accounting, capacity-width/end overflow,
-array validity/null/count-capacity checks and sorted IDs must match exact order.
+array validity/null/count-capacity checks and sorted IDs match the implemented order.
 Callable FUNCTION and return PRIMITIVE kinds precede inactive union reads.
 Parameter geometry wins before arity/receiver/effects. Complete diagnostic table
 uses32-bit V for IDs/enums and64-bit H for hashes, not truncated TZrSize counts.
@@ -244,9 +317,9 @@ Output publishes five actual numeric fields once; every refusal preserves it.
 Optional independent diagnostic and repeat calls preserve all live storage.
 
 The closure is actual Find plus inline Array_Get only. Query FI and lookup FI
-must independently observe zero allocation/free calls, with sole actual providers
-and no allocating/lifecycle/interner/compiler imports. GREEN marker
-`SOURCE_CALLABLE_ZERO_ALLOC cases=18 attempts=0 frees=0` appears only after all18
+observed zero allocation/free calls, with sole actual providers
+and no allocating/lifecycle/interner/compiler imports. Actual GREEN marker
+`SOURCE_CALLABLE_ZERO_ALLOC cases=18 attempts=0 frees=0` appeared after all18
 success; it supplements import/map proof, not replaces it. There is no fault sweep.
 
 Finite MSVC query/lookup/main/signature probe must naturally exit0/zero warnings,

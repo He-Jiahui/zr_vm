@@ -25,14 +25,15 @@ typedef struct SSourceCallableFacts {
  * Numeric span checks establish
  * no arbitrary-pointer readability, source history or hash authenticity.
  * functionToken is only a supplied diagnostic scalar; zero is allowed.
- * Intended success publishes a zeroed numeric candidate and clears all nine
+ * Success publishes a zeroed numeric candidate and clears all nine
  * diagnostic fields; failure preserves output and context. No allocation/free,
  * lookup-lifetime retention, interning, hashing or semantic lifecycle occurs.
  * NULL context/output reports INVALID_ARGUMENT with token/payload zero.
- * Current RED staging: other calls report UNSUPPORTED with the supplied token
- * and all other diagnostic fields zero, without lookup or traversal.
- * Exact intended geometry/profile/diagnostic order is frozen in the callable
- * query design v1 and Root execution addendum; implementation awaits GREEN GO.
+ * Geometry precedes sorted-ID checks and actual canonical lookup. Callable and
+ * return kinds precede union reads; parameter geometry precedes profile checks.
+ * All non-NULL refusals retain the supplied diagnostic token and zero locations.
+ * Exact geometry/profile/diagnostic order is frozen in the callable query
+ * design v1 and Root execution addendum.
  */
 TZrBool source_callable_query(const struct SZrSemanticContext *context, TZrTypeId callableTypeId,
                               TZrMetadataToken functionToken, SSourceCallableFacts *output,

@@ -16,20 +16,19 @@ tests:
   - tests/parser/test_ssa_source_callable_query.c
   - docs/acceptance/source-callable-query.md
 doc_type: testing-guide
-status: functional-red
+status: functional-green-verified-commit-pending
 ---
 
 # Source callable query finite protocol
 
 ## Current state and actual input profile
 
-The accepted test plan uses declared sorted typed canonical tables, actual node
-union tags and independently owned parameter storage. It requires no runtime
-SemanticContext lifecycle or interning. IDs/hashes remain declared field
-witnesses rather than Source/Binder-authenticated identity. Actual RED r4 observed case2 PASS/17 exact feature FAIL/0 ignored with17 full9
-UNSUPPORTED baseline markers and attempts0/frees0. It gives no later variant or
-GREEN marker credit. Current MSVC RED r5 passed4 compile-only units; exact receipts
-and physical freezes are in acceptance, final Root proof/RED commit pending.
+The frozen tests use declared sorted typed canonical tables, actual node union
+tags and independently owned parameter storage. No runtime SemanticContext
+lifecycle or interning is required. IDs/hashes remain declared field witnesses,
+not Source/Binder-authenticated identity. Actual GREEN r1 passes all18 with the
+exact zero marker; lower lookup8 also passes. MSVC GREEN r1 naturally completes
+four compile-only units with zero warnings. Final GREEN Root proof/commit pending.
 
 ## Exact eighteen names and order
 
@@ -52,12 +51,12 @@ and physical freezes are in acceptance, final Root proof/RED commit pending.
 17. `test_independent_equal_ids_and_repeat_calls_preserve_inputs`
 18. `test_paired_errors_and_every_failure_preserve_output`
 
-Case2 is NULL guards only. Every other case first calls the admitted declared
+Historically in RED, case2 was NULL guards only. Every other case first called the admitted declared
 baseline. RED refusal must check all9 UNSUPPORTED28/T/other0 fields, unchanged
 output/inputs and zero actual allocation/free counters before printing
 `SOURCE_CALLABLE_FEATURE code=28 attempts=0 frees=0` and failing with exact text
-`actual const source callable query must succeed`. Actual RED r4 observed1 guard PASS/17 feature
-FAIL; later GREEN predicates remain unexecuted. No later variants are
+`actual const source callable query must succeed`. Historical RED r4 observed1 guard PASS/17 feature
+FAIL; current GREEN r1 now executes the finite predicates/variants. No later variants are
 credited when the baseline fails.
 
 ## Storage and diagnostic test discipline
@@ -97,35 +96,35 @@ exits. Reset counters only when no query runs. Every test requires zero attempts
 and frees from this instrumented closure; ordinary CRT activity elsewhere is
 outside that observation.
 
-GREEN emits `SOURCE_CALLABLE_ZERO_ALLOC cases=18 attempts=0 frees=0` only after
+Actual GREEN r1 emits `SOURCE_CALLABLE_ZERO_ALLOC cases=18 attempts=0 frees=0` after
 all18 completed successfully. An import/provider/map proof is still required;
 the marker alone is insufficient. Zero attempts give no allocation fault sweep
 denominator or completed fault marker. Frame18/Core88/owner61 counts are unrelated.
 
-## Actual finite RED native/MSVC gates
+## Actual finite GREEN native/MSVC gates
 
-Root owns `ssa_source_callable_query` registration and native execution. Intended
-runtime selected membership is query+lookup+main+Unity, two production FI TUs;
-actual configuration/provider/object evidence must establish these counts.
-No semantic lifecycle/index/interner/Compiler/VM/AOT/provider object is linked.
-Actual RED r4 selected4/FI2/providers2 within configured55, with assertions/UBSan
-and strict object import/provider gates accepted. Lower lookup8 PASS. r4 build compiles4 affected TUs and links2 executables; r1 built4 TUs+link. No full rebuild or GREEN scope is credited.
+Root's runtime selected4=query/lookup/main/Unity, FI2/providers2, configured55.
+Actual GREEN r1 passes18, lower lookup8, assertions/UBSan/current import-provider
+and warning gates. Build log has query C+main C compilation and link, three steps.
+Other pinned objects remain current; no full ordinary project rebuild is claimed.
 
-Root-executed compile-only MSVC driver at
-`E:/cargo-targets/zr_vm/tmp/ssa-source-callable-query-msvc-v4.ps1` compiles query,
-lookup, main and fresh tiny private declaration probe, in that order. Query/lookup
-use the new shim; main/probe do not. Four /c /TC C11 /UNDEBUG /MD /W4 compilations
-must naturally exit0 with zero warnings, actual selected source/header/tool/script pre/post
-pins and log/object hashes. It links/runs nothing and arms no faults. Actual `callable-query-msvc-RED-r5-receipt.json` records four natural exit0/
-zero warnings with189 selected current input pins and4304 historical baseline rows.
-Actual C JSON Source/Includes and explicit absent module fields pin dependencies.
-This is MSVC r5, paired with runtime r4, and
-establishes compile-only compatibility, not query GREEN behavior.
-Runtime broad5657 header inventory is historical gate-time evidence. Current
-proof checks selected4 and lookup-support3 actual Ninja transitive dependencies,
-all nonheader/tool/source/CMake/metadata/raw/object/U/map gates and MSVC JSON.
-Real type_system stays selected; Compiler private headers are genuinely absent.
-The fresh final Root proof remains unexecuted until this documentation freeze.
+Immutable MSVC driver v4 performs query/lookup/main/fresh private probe, FI only
+query/lookup, /c /TC C11 /UNDEBUG /MD /W4. Actual GREEN r1 receipt records four
+natural0/zero-warning units,189 actual selected input pins,4304 historical baseline
+rows,113/109/120/103 actual headers per unit. Structured Version1.2 Source/Includes
+prove actual dependencies; module-import fields are explicitly absent and
+ProvidedModule is actual empty string. Present optional imports would require
+real empty arrays. Actual raw/object/JSON pins all match. It links/runs nothing
+and arms no faults, so provides no runtime or full MSVC credit.
+
+Runtime5657 broad inventory is historical gate-time data. Current Root proof
+must derive selected4 plus lookup-support3 actual Ninja transitive dependencies
+and retain all nonheader/tool/source/CMake/metadata/raw/object/U/map checks.
+Root independently reviewed current dependency counts224/220/231/29 for selected4
+and219/226/29 for support3, union231, with1599 existing filtered pins; its proof
+adds one self pin separately. Real type_system remains selected; unselected
+Compiler private headers are not
+assumed current. No final GREEN proof result is credited before Root runs it.
 
 Normal/full Parser/Linux/full MSVC/default output, genuine Source/Binder/interner,
 registry lifetime, canonical hash authenticity, finalizer and all47 remain OPEN.
