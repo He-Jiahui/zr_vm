@@ -79,6 +79,11 @@ SZrOwnerHeapEvent ZrTests_ExecOwner_Event(unsigned index) {
 unsigned ZrTests_ExecOwner_RecordFrees(unsigned record) {
     TEST_ASSERT_LESS_THAN_UINT(g_stats.records, record); return g_rows[record].frees;
 }
+int ZrTests_ExecOwner_TryRecordFrees(unsigned record, unsigned *frees) {
+    if (frees == NULL || record >= g_stats.records || record >= OWNER_RECORDS) return 0;
+    *frees = g_rows[record].frees;
+    return 1;
+}
 void ZrTests_ExecOwner_AssertReleased(unsigned first, unsigned last) {
     TEST_ASSERT_TRUE(first <= last && last <= g_stats.records);
     for (unsigned i = first; i < last; ++i) {

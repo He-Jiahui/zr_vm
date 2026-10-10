@@ -87,3 +87,4 @@ file(WRITE "${CMAKE_BINARY_DIR}/module-copy-settings.tsv" "${_zr_module_copy_set
 include("${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/tests/cmake/ssa-canonical-type-lookup.cmake")
 include("${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/tests/cmake/ssa-primitive-frame-validation.cmake")
 include("${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/tests/cmake/ssa-source-callable-query.cmake")
+include("${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/tests/cmake/ssa-source-finalized-module.cmake")

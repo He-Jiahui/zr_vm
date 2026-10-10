@@ -1,0 +1,201 @@
+---
+related_code:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_finalized_module_internal.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_finalized_module.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_finalized_module_validation.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_callable_query.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame_validation.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_module_copy.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_owned_module.c
+  - tests/parser/test_ssa_source_finalized_module.c
+  - tests/parser/support/ssa_source_finalized_module_fixture.h
+  - tests/parser/support/ssa_source_finalized_module_fixture.c
+  - tests/parser/support/ssa_source_finalized_module_witness.c
+  - tests/parser/support/ssa_source_finalized_module_faults.c
+  - tests/cmake/ssa-source-finalized-module.cmake
+  - tests/core/support/ssa_exec_ir_owned_module_allocator.h
+  - tests/core/support/ssa_exec_ir_owned_module_allocator.c
+implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_finalized_module_internal.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_finalized_module.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_finalized_module_validation.c
+  - tests/core/support/ssa_exec_ir_owned_module_allocator.h
+  - tests/core/support/ssa_exec_ir_owned_module_allocator.c
+plan_sources:
+  - .codex/plans/20261009-ssa-source-finalized-module-design-v3.md
+  - .codex/plans/20261009-ssa-source-finalized-module-test-protocol-v1.md
+tests:
+  - tests/parser/test_ssa_source_finalized_module.c
+  - docs/testing-and-validation/source-finalized-module.md
+doc_type: validation-protocol
+status: functional-red-verified-commit-pending
+---
+
+# Finalized Source module: finite validation
+
+## Observed RED baseline and intended GREEN protocol
+
+Actual RED r3 observed24 ordered cases: case1 guard PASS, other23 exact feature
+FAIL, zero ignored. There were23 actual
+`SOURCE_FINALIZED_FEATURE code=28 attempts=0 frees=0` markers, complete9 refusal
+witnesses, unchanged inputs/old output and healthy cleanup; no ledger/UBSan or
+Setup cascade occurred. The later predicates described below remain intended
+GREEN checks: every case2-24 stops at its first successful-baseline requirement.
+No finalizer allocation denominator, fault retry, wide readable allocation,
+complete independent output or16-cycle lifetime result has been observed.
+
+This fixture owns declared canonical/symbol/AST/SemIR/SourceIdentity witnesses
+and two independent actual SZrTypeValue pools. It constructs owning ExecIR storage
+through real Core APIs/returned IDs, verifies it and uses actual Clone/Attach/
+const frame validation prerequisites. Parser Build/Binder/compactor preparation
+is excluded: imports Semantic_FindSymbolById/SemanticIr_Validate and their genuine
+provider/lifetime closure remain a separate OPEN Source gate. No fake provider,
+whole mutable Semantic TU, VM constructor, SourceExecute or Oracle is allowed.
+
+## Exact24 names and order
+
+1. `test_null_arguments_reset_all_nine_fields`
+2. `test_finalized_module_publishes_complete_independent_owned_output`
+3. `test_same_function_and_partial_owner_aliases_refuse_before_traversal`
+4. `test_native_pool_and_owner_headers_refuse_invalid_geometry`
+5. `test_typed_headers_wide_counts_and_real_spare_storage_are_checked`
+6. `test_module_and_entry_contract_domains_are_preserved`
+7. `test_source_identity_schema_ids_signature_and_profile_are_checked`
+8. `test_live_state_unique_symbol_and_script_origin_agree`
+9. `test_origin_ranges_are_valid_contained_and_lossless`
+10. `test_semantic_cfg_place_region_and_empty_profile_are_checked`
+11. `test_semantic_roles_values_facts_and_operand_bounds_agree`
+12. `test_keyed_source_maps_counts_ids_and_ranges_agree`
+13. `test_dual_constant_counts_and_index_are_checked_before_reads`
+14. `test_constant_canonical_types_flags_and_pool_tags_agree`
+15. `test_negative_minimum_and_mutated_dual_pool_bits_are_checked`
+16. `test_only_dead_place_to_nop_transition_is_accepted`
+17. `test_retained_value_address_and_provenance_relationship_is_exact`
+18. `test_present_empty_maps_and_sealed_finalized_lifetime_are_preserved`
+19. `test_actual_frame_failure_preserves_every_lower_diagnostic_field`
+20. `test_actual_core_failure_precedes_later_source_refusals`
+21. `test_complete_candidate_copy_preserves_logical_pools_and_real_capacities`
+22. `test_null_diagnostic_and_distinct_paired_error_priority_are_exact`
+23. `test_old_output_borrow_and_post_source_release_lifetime_are_safe`
+24. `test_every_measured_finalizer_allocation_failure_preserves_owners_and_retries`
+
+Cases2-24 first require one successful admitted baseline through actual lower
+prerequisites. Feature refusal cannot credit later mutations/refusal variants.
+Required NULL guards are case1; NULL Function constants with positive count is
+pool shape in case13; optional NULL diagnostic is case22.
+
+## Fixture modules and observations
+
+Main orchestrates product mutations. New fixture C owns construction and teardown;
+witness C owns typed equality/full9 checks; faults C owns independent measurement/
+direct lower witnesses/all-site retries. Reuse generic strict allocator/shim and
+logical Capture/Equal/Diagnostic by reference, without calling generic Build/
+SetUp/TearDown or copying its implementation.
+
+Register every partial Module/Function/output/scratch before Unity assertions.
+Restore malformed headers/mutations and disarm fault injection before assertions.
+Allocator callbacks/armed calls/observers never Unity-longjmp. Capture known owned
+initialized buffers rather than dereference mutated headers. Generic logical
+4096-word witness requires exact preflighted measured budget; overflow is visible,
+not truncated equality. Padding/capacity/spare bytes are not semantic identity.
+
+Cases3-5 exercise genuine typed geometry, actual initialized spare capacity and
+aligned overlap probes. Same selected/finalized header has UNSUPPORTED/T before
+second traversal; partial/shared owners have INVALID_RANGE. Product/end overflow
+uses readable malformed headers, not claimed giant allocations. Actual readable
+storage with compiler length>UINT32_MAX remains unexecuted; a forged length alone
+would not establish that wide-storage branch.
+
+Cases6-15 prove current versions/domains, explicit Source identity, unique symbol/
+AST origin, finite Semantic roles/inert fields/types/bounds and complete source
+maps M. Dedicated count/type/index/map refusals occur at their actual first
+comparison. Pool bits use zero,-1,INT64_MIN and9/8 declared data; never execute
+new Source programs or read AST integer bits as producer truth.
+
+Cases16-18 compare live operand/result slices, retained value/address/provenance
+relationship, all block fields and sole PLACE_BASE→NOP transition. Present-empty
+StateMap and sealed finalized are genuine lower storage boundaries. No borrowed
+descendant Free or clone-capacity==count requirement is valid.
+
+Cases19-20 require direct same-input real frame/Core FALSE witnesses before
+claiming lower precedence, comparing all9 after restore. Do not force a legal
+Core profile into a manufactured production failure. Case22 pairs distinguishable
+earlier/later errors and checks optional NULL diagnostic independently. Identical
+payloads cannot prove their internal relative order.
+
+Case23 borrows finalized from an actual prior successful old output until last
+publication. Record IDs/frees witness old release; no stale pointer comparisons.
+Two live owners have independent reachable addresses. Release allocated source storage and clear declared inline context/
+AST/pool witnesses, then inspect stored logical arrays/bits/IDs without canonical lookup.
+Clearing these inline fixtures is not genuine context/interner destruction.
+The intended GREEN protocol includes16 complete construct/finalize/free cycles
+with healthy ledger boundaries; RED did not reach them.
+
+## RED feature observation
+
+Before intended feature failure, compare complete9, unchanged input/old output
+contents and records, allocation/free delta0 and healthy cleanup. Print exactly
+`SOURCE_FINALIZED_FEATURE code=28 attempts=0 frees=0` once per actual reached
+baseline refusal, then fail with
+`actual finalized primitive source module snapshot must succeed`.
+No feature marker for unrelated prerequisite/ledger failure and no inverted
+assertions, ignored cases or guessed actual result.
+
+## Independently measured case24 sweep
+
+Require unarmed finalizer success first. Measure original VerifyModule, finalized
+const frame validation, CloneModuleReplacingFunction, candidate Verify/frame and
+CloneOwnedModule separately on actual inputs/candidate scratch. Measure complete
+finalizer N and ordered request geometry independently. Query/scans zero allocation
+are not fault sites. Historical Core88/frame18/generic61 are not this denominator.
+
+For every relative site1..N, obtain same-phase direct FALSE/full9/failed event
+kind/count/width/bytes; clean its registered partial output before fallback.
+Eager requests may continue after failed ordinal, so scan actual failed events.
+Arm only finalizer interval; immediately Disarm, preserve its exact diagnostic,
+prove candidate cleanup and old/live inputs unchanged before recovery. Retry
+disarmed with same live inputs must publish independent complete output with
+zero9 and exact old record release. Healthy teardown precedes Reset.
+
+Check remaining32768-record/65536-event budgets before arming from actual direct/
+full/scratch/prerequisite/retry traces. A quadratic bound is valid only if proved
+to cover all work; do not hardcap/reset/silently omit sites. Completion marker
+`SOURCE_FINALIZED_FAULT_SWEEP measured=N completed=N` appears only after every
+fault and retry, with measured phase counts. Wrapper does not invent OOM; envelope
+V1/0/token0 and every other lower9 come from actual same-phase calls.
+
+Cache original zero-health/exact frees before recovery. Print
+`SOURCE_FINALIZED_LEDGER` only for real errors/live residue, then recover for
+longjmp safety and assert original/current health. Fallback cannot mask leaks.
+
+## Native closure and platform gates
+
+Current runtime receipt establishes selected30 translation units/FI23, support36
+and configured66. The selected closure is Core16+Parser existing5+finalizer2 plus
+seven test/support units; no residual archive or unrelated Compiler/VM/Semantic
+provider import. Query/lookup use the generic owner shim here. Actual r3 build
+had39 compiles and4 links (43 incremental steps), not a clean66-TU rebuild.
+Six independent lower gates passed: CoreModel (28 Function/60 Module fault loops),
+generic owner14/two61 sweeps, modulecopy20/88, frame18/18, query18/zeroallocation,
+and lookup8. Those lower denominators do not measure this finalizer.
+
+MSVC v2 r3 observed31 compile-only units:23 providers with generic FI, seven
+unredirected test/support units plus fresh tiny declaration probe. All31 native
+children naturally exited0 with zero warnings and exact raw basename profiles.
+Actual Version1.2 JSON has Source/ProvidedModule(empty)/Includes; optional import
+fields are absent, not observed empty arrays. Selected current pins240 were
+checked; broad prebaseline is historical inventory. This grants no MSVC runtime,
+fault/provider execution or full MSVC credit. Exact evidence and failed attempts
+are recorded in the acceptance document.
+
+The nonasserting TryRecordFrees getter and deferred numeric observers allow
+cleanup after Unity marks a test failed. Teardown records original health,
+releases registered storage before assertions, then reports any real residue;
+recovery cannot turn failed health into accepted evidence. The r2 aborting
+assertion path and its31 live records remain failed history.
+
+Genuine Source/Binder preparation, registry lifetime, normal/default pipeline,
+Linux/full MSVC/backend parity and all47 remain OPEN.
+
+- [Contract](../parser-and-semantics/source-finalized-module.md)
+- [Evidence](../acceptance/source-finalized-module.md)

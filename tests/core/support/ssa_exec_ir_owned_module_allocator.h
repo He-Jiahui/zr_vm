@@ -13,6 +13,8 @@ void ZrTests_ExecOwner_Disarm(void);
 SZrOwnerHeapStats ZrTests_ExecOwner_Stats(void);
 SZrOwnerHeapEvent ZrTests_ExecOwner_Event(unsigned index);
 unsigned ZrTests_ExecOwner_RecordFrees(unsigned record);
+/* Nonasserting read; invalid record/output leaves the output unchanged. */
+int ZrTests_ExecOwner_TryRecordFrees(unsigned record, unsigned *frees);
 void ZrTests_ExecOwner_AssertReleased(unsigned first, unsigned last);
 void ZrTests_ExecOwner_AssertLive(unsigned first, unsigned last);
 void ZrTests_ExecOwner_Recover(void);
