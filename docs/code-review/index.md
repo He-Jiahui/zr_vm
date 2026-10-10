@@ -224,3 +224,5 @@ doc_type: category-index
 - [编译与逃逸测试入口的调用契约](../testing-and-validation/compiler-suite-main-caller-contract.md)：三组入口的启动方式、日志判据及清理边界。
 
 - [字面量测试调用与日志契约](../testing-and-validation/literal-log-caller-contract.md)：实际判据、Unity 失败控制流、资源边界与具体 BUG/TODO。
+
+- [原生 FFI fixture 的 ABI 与调用生命周期](../testing-and-validation/ffi-fixture-abi-caller-contract.md)：导出、字段与平台回调契约，借用资源限制及具体 BUG/TODO。
