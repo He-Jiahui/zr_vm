@@ -63,6 +63,19 @@ extern void test_reference_types_casts_const_fixture_matrix(void);
 extern void test_reference_construct_target_misuse_fixture_matrix(void);
 
 /* 每个 RUN_TEST 进入对应模块实现；此入口统一返回 Unity 失败计数。 */
+/**
+ * ## Summary
+ * 作为 literal surface 可执行目标的进程入口，组织原型、const、字符与转换回归的 Unity 派发，并提供 suite 日志分界。
+ *
+ * ## Returns
+ * @return UNITY_END 汇总的测试失败数；分界日志不影响这一计账。子用例是否覆盖其名义场景必须按各自断言核对。
+ *
+ * ## Constraints and lifecycle
+ * 参数为空；runner 不拥有子用例局部 State 或文本，也不在空 tearDown 中回收它们。此处不计 clock 耗时，MODULE_DIVIDER/DIVIDER 只负责展示。
+ *
+ * ## References
+ * zr_vm_literal_surface_test 的 CMake 源码列表包含本入口及三组用例；RUN_TEST 经 UnityDefaultTestRun 派发，UNITY_END 提供退出判定。
+ */
 int main(void) {
     printf("\n");
     ZR_TEST_MODULE_DIVIDER();

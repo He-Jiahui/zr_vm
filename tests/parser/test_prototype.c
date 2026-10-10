@@ -221,6 +221,19 @@ void test_prototype_inheritance_loading(void);
 void test_struct_value_copy_clones_nested_storage(void);
 
 // 测试 struct prototype 编译时收集
+/**
+ * ## Summary
+ * 从 parser 的 struct fixture 编译到原型元数据，再提供装载、调试输出及生成产物的诊断入口。
+ *
+ * ## Returns
+ * 找不到文件、读取或编译失败时标记 Unity 失败并返回；编译后的诊断路径最后打印 PASS，不能据此认定原型数量、字段或产物写入正确。
+ *
+ * ## Constraints and lifecycle
+ * 路径及源码由本例 free；原型和模块对象依附本例 Global。正常返回分支释放 Global 后记录结束时刻，因此日志耗时包含该释放阶段。
+ *
+ * ## References
+ * test_literal_surface_main.c 中的 main 以 RUN_TEST 注册本例；ZrCore_GlobalState_New/Free 界定本例 VM 对象的生存期；ZR_TEST_PASS 提供已采样片段的耗时日志。
+ */
 void test_struct_prototype_compilation(void) {
     ZR_TEST_START("Struct Prototype Compilation");
     SZrTestTimer timer;
@@ -289,6 +302,7 @@ void test_struct_prototype_compilation(void) {
             if (*countPtr == func->prototypeCount) {
                 printf("    Data format verification: PASS (header count matches)\n");
             } else {
+        /* TODO: 原型数不符这里只打印 FAIL，后续仍可 PASS；先确认本例是编译诊断还是元数据验收，再核对字节格式及 Unity 失败判据。 */
                 printf("    Data format verification: FAIL (header count mismatch: %u vs %u)\n", 
                        *countPtr, func->prototypeCount);
             }
@@ -393,6 +407,19 @@ void test_struct_prototype_compilation(void) {
 }
 
 // 测试 class prototype 编译时收集
+/**
+ * ## Summary
+ * 编译 class fixture，检查是否留下原型数据或 Animal 名称常量，并在具备数据时显示装载结果。
+ *
+ * ## Returns
+ * 存在原型数据或相应字符串即可打印 PASS；两者都缺失时标记 Unity 失败。这一判据不证明 class 装载或 Dog 的继承关系已经成立。
+ *
+ * ## Constraints and lifecycle
+ * 输入路径及源码由本例拥有；VM 对象限制在本例 Global 内。可见普通错误分支和正常分支均手工释放，结束采样包含 Global 的释放。
+ *
+ * ## References
+ * test_literal_surface_main.c 中的 main 以 RUN_TEST 注册本例；ZrCore_GlobalState_New/Free 界定本例 VM 对象的生存期；ZR_TEST_PASS 提供已采样片段的耗时日志。
+ */
 void test_class_prototype_compilation(void) {
     ZR_TEST_START("Class Prototype Compilation");
     SZrTestTimer timer;
@@ -530,6 +557,7 @@ void test_class_prototype_compilation(void) {
 
     timer.endTime = clock();
 
+    /* TODO: Animal 字符串即可满足通过判据，装载失败仍可能 PASS；需确认 class 原型验收是否要求成功重建实际导出。 */
     if (hasPrototypeData || hasPrototypeInfo) {
         ZR_TEST_PASS(timer, "Class Prototype Compilation");
     } else {
@@ -538,6 +566,19 @@ void test_class_prototype_compilation(void) {
 }
 
 // 测试 prototype 运行时创建函数
+/**
+ * ## Summary
+ * 直接覆盖 struct/class 原型工厂的基本身份合同，防止类型名称或原型种类在构造过程中改变。
+ *
+ * ## Returns
+ * 原型创建、名称或种类检查失败时标记 Unity 失败；末尾对象构造只提供可选调试输出，其 NULL 结果不会改变当前通过判定。
+ *
+ * ## Constraints and lifecycle
+ * 所有 VM 名称、原型和对象在本例 Global 内使用；普通失败分支由本例释放，正常耗时包含 Global 释放。日志宏不承担对象清理。
+ *
+ * ## References
+ * test_literal_surface_main.c 中的 main 以 RUN_TEST 注册本例；ZrCore_GlobalState_New/Free 界定本例 VM 对象的生存期；ZR_TEST_PASS 提供已采样片段的耗时日志。
+ */
 void test_prototype_creation_functions(void) {
     ZR_TEST_START("Prototype Creation Functions");
     SZrTestTimer timer;
@@ -629,6 +670,7 @@ void test_prototype_creation_functions(void) {
     ZrCore_Debug_PrintPrototype(state, classPrototype, stdout);
 
     // 测试创建并输出object信息
+    /* TODO: 对象工厂返回 NULL 只跳过调试输出；确认本例是否也承诺对象构造成功，再决定此结果的验收条件。 */
     SZrObject *testObject = ZrCore_Object_New(state, classPrototype);
     if (testObject != ZR_NULL) {
         printf("\n  Debug output for created Object:\n");
@@ -641,6 +683,19 @@ void test_prototype_creation_functions(void) {
 }
 
 // 测试 prototype 继承关系设置
+/**
+ * ## Summary
+ * 绕过源码编译层，直接检查 class 原型 SetSuper 是否保留本例指定的父原型身份。
+ *
+ * ## Returns
+ * 构造或父指针身份检查失败时标记 Unity 失败；正常通过只证明这一直接设置合同，不证明继承的源码解析或序列化装载。
+ *
+ * ## Constraints and lifecycle
+ * 父子原型同属本例 Global，普通退出路径手工释放；PASS 的 timer 结束采样发生在 Global 释放之后。
+ *
+ * ## References
+ * test_literal_surface_main.c 中的 main 以 RUN_TEST 注册本例；ZrCore_GlobalState_New/Free 界定本例 VM 对象的生存期；ZR_TEST_PASS 提供已采样片段的耗时日志。
+ */
 void test_prototype_inheritance(void) {
     ZR_TEST_START("Prototype Inheritance");
     SZrTestTimer timer;
@@ -695,6 +750,19 @@ void test_prototype_inheritance(void) {
 }
 
 // 测试 prototype 模块导出
+/**
+ * ## Summary
+ * 把本例创建的 struct 原型发布为模块公共导出，并核对按名取得的值仍指向同一原型。
+ *
+ * ## Returns
+ * 导出缺失、值种类或对象身份错误均标记 Unity 失败；本例验证模块内导出查询，不覆盖文件装载后的导出重建。
+ *
+ * ## Constraints and lifecycle
+ * 模块、原型及查询结果在同一 Global 中借用，不能在本例释放后交给 runner 使用。普通失败分支和正常分支由本例清理，结束采样包含释放。
+ *
+ * ## References
+ * test_literal_surface_main.c 中的 main 以 RUN_TEST 注册本例；ZrCore_GlobalState_New/Free 界定本例 VM 对象的生存期；ZR_TEST_PASS 提供已采样片段的耗时日志。
+ */
 void test_prototype_module_export(void) {
     ZR_TEST_START("Prototype Module Export");
     SZrTestTimer timer;
@@ -772,6 +840,19 @@ void test_prototype_module_export(void) {
 }
 
 // 测试 struct 字段偏移量
+/**
+ * ## Summary
+ * 编译 struct fixture 后尝试装载 Vector3，并提供字段偏移布局的调试观察入口。
+ *
+ * ## Returns
+ * 文件或编译失败会标记 Unity 失败；装载后只在字段表存在且非空时输出布局，随后统一打印 PASS，当前没有数值偏移断言。
+ *
+ * ## Constraints and lifecycle
+ * 本例拥有路径及源码；模块和原型只在本例 Global 存活期间使用。普通退出分支手工清理，结束采样包含 Global 的释放。
+ *
+ * ## References
+ * test_literal_surface_main.c 中的 main 以 RUN_TEST 注册本例；ZrCore_GlobalState_New/Free 界定本例 VM 对象的生存期；ZR_TEST_PASS 提供已采样片段的耗时日志。
+ */
 void test_struct_field_offsets(void) {
     ZR_TEST_START("Struct Field Offsets");
     SZrTestTimer timer;
@@ -852,6 +933,7 @@ void test_struct_field_offsets(void) {
                             (SZrStructPrototype *) ZR_CAST_OBJECT(state, prototypeValue->value.object);
                     if (structProto != ZR_NULL && structProto->super.type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
                         // 检查keyOffsetMap中是否有字段
+            /* TODO: 当前只输出非空字段表，未核对字段偏移或缺失导出；需以 Vector3 fixture 的预期布局建立可失败的验收。 */
                         if (structProto->keyOffsetMap.elementCount > 0) {
                             printf("\n  Vector3 field offsets:\n");
                             ZrCore_Debug_PrintPrototype(state, (SZrObjectPrototype *) structProto, stdout);
@@ -871,6 +953,19 @@ void test_struct_field_offsets(void) {
 }
 
 // 测试继承关系的完整加载
+/**
+ * ## Summary
+ * 尝试从 struct fixture 的编译产物取得 Point2D/Point3D，在父指针匹配时显示装载后的继承信息。
+ *
+ * ## Returns
+ * 输入或编译失败会标记 Unity 失败；缺失导出、零装载数量或父指针不匹配都可能跳过诊断后打印 PASS，不能把此日志当作继承验收。
+ *
+ * ## Constraints and lifecycle
+ * 原型查询值依附本例 Global；路径、源码与 Global 在普通返回路径手工释放后结束计时。夹具父关系仍需按 TODO 核实。
+ *
+ * ## References
+ * test_literal_surface_main.c 中的 main 以 RUN_TEST 注册本例；ZrCore_GlobalState_New/Free 界定本例 VM 对象的生存期；ZR_TEST_PASS 提供已采样片段的耗时日志。
+ */
 void test_prototype_inheritance_loading(void) {
     ZR_TEST_START("Prototype Inheritance Loading");
     SZrTestTimer timer;
@@ -956,6 +1051,7 @@ void test_prototype_inheritance_loading(void) {
                         if (point2DValue != ZR_NULL && point2DValue->type == ZR_VALUE_TYPE_OBJECT) {
                             SZrObjectPrototype *point2D =
                                     (SZrObjectPrototype *) ZR_CAST_OBJECT(state, point2DValue->value.object);
+                /* TODO: fixture 的 Point3D 未声明父结构，且父指针不匹配不会失败；先核实合法继承夹具，再明确装载关系断言。 */
                             if (prototype->superPrototype == point2D) {
                                 printf("\n  Point3D correctly inherits from Point2D:\n");
                                 ZrCore_Debug_PrintPrototype(state, prototype, stdout);
@@ -976,6 +1072,19 @@ void test_prototype_inheritance_loading(void) {
 }
 
 /* 值类型复制后修改嵌套字段，防止原对象与副本共享可写内部存储。 */
+/**
+ * ## Summary
+ * 构造嵌套 struct 值并复制，再修改副本内层字段，防止值复制退化为共享可变对象存储。
+ *
+ * ## Returns
+ * 外层及内层对象身份、源值 1 与副本值 9 由 Unity 硬断言检查；正常路径释放 Global 后打印耗时，失败可在该日志前直接跳回 runner。
+ *
+ * ## Constraints and lifecycle
+ * 所有对象属于本例 Global；正常释放不涵盖硬断言的非局部退出。当前目标链接空 tearDown，失败后 Global 的释放缺口见创建位置的 BUG。
+ *
+ * ## References
+ * test_literal_surface_main.c 中的 main 以 RUN_TEST 注册本例；ZrCore_GlobalState_New/Free 界定本例 VM 对象的生存期；ZR_TEST_PASS 提供已采样片段的耗时日志。
+ */
 void test_struct_value_copy_clones_nested_storage(void) {
     ZR_TEST_START("Struct Value Copy Clones Nested Storage");
     ZR_TEST_INFO("Struct copy semantics",
@@ -1002,6 +1111,7 @@ void test_struct_value_copy_clones_nested_storage(void) {
         timer.startTime = clock();
         timer.endTime = timer.startTime;
 
+        /* BUG: Global 成功创建后，后续 Unity 硬断言失败会 longjmp 跳过尾部 GlobalState_Free；本目标 tearDown 为空，VM 分配持续到进程退出。需将所有权交给可达的失败清理入口。 */
         global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12351, ZR_NULL);
         TEST_ASSERT_NOT_NULL(global);
         state = global->mainThreadState;

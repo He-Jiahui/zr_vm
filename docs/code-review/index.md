@@ -222,3 +222,5 @@ doc_type: category-index
 - [整数字面量推断测试的失败交付](../testing-and-validation/type-inference-integer-failure-contract.md)：本地失败日志、Unity 计账、资源所有权及计时 TODO。
 
 - [编译与逃逸测试入口的调用契约](../testing-and-validation/compiler-suite-main-caller-contract.md)：三组入口的启动方式、日志判据及清理边界。
+
+- [字面量测试调用与日志契约](../testing-and-validation/literal-log-caller-contract.md)：实际判据、Unity 失败控制流、资源边界与具体 BUG/TODO。
