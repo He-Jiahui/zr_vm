@@ -23,6 +23,7 @@ add_executable(zr_vm_ssa_source_finalized_module_test
         "${_zr_finalized_root}/tests/parser/support/ssa_source_finalized_module_witness.c"
         "${_zr_finalized_root}/tests/parser/support/ssa_source_finalized_module_faults.c"
         "${_zr_finalized_root}/tests/core/support/ssa_exec_ir_owned_module_fixture.c"
+        "${_zr_finalized_root}/tests/core/support/ssa_exec_ir_owner_capture.c"
         "${_zr_finalized_root}/tests/core/support/ssa_exec_ir_owned_module_allocator.c"
         "${_zr_finalized_root}/tests/third_party/zr_unity/Unity/src/unity.c")
 foreach (_target IN ITEMS zr_vm_ssa_source_finalized_module_private

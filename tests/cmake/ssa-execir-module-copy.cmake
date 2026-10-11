@@ -16,6 +16,7 @@ add_executable(zr_vm_ssa_exec_ir_module_copy_test
         "${_zr_module_copy_root}/tests/core/test_ssa_exec_ir_module_copy.c"
         "${_zr_module_copy_root}/tests/core/support/ssa_exec_ir_module_copy_fixture.c"
         "${_zr_module_copy_root}/tests/core/support/ssa_exec_ir_owned_module_fixture.c"
+        "${_zr_module_copy_root}/tests/core/support/ssa_exec_ir_owner_capture.c"
         "${_zr_module_copy_root}/tests/core/support/ssa_exec_ir_owned_module_allocator.c"
         "${_zr_module_copy_root}/tests/third_party/zr_unity/Unity/src/unity.c")
 foreach (_target IN ITEMS zr_vm_ssa_execir_module_copy_private

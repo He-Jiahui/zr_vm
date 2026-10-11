@@ -98,6 +98,7 @@ add_executable(zr_vm_ssa_function_exec_ir_owner_test
         "${_zr_function_execir_root}/tests/core/support/ssa_function_exec_ir_owner_fixture.c"
         "${_zr_function_execir_root}/tests/core/support/ssa_function_exec_ir_owner_ledger.c"
         "${_zr_function_execir_root}/tests/core/support/ssa_exec_ir_owned_module_fixture.c"
+        "${_zr_function_execir_root}/tests/core/support/ssa_exec_ir_owner_capture.c"
         "${_zr_function_execir_root}/tests/core/support/ssa_exec_ir_owned_module_allocator.c"
         "${_zr_function_execir_root}/tests/core/support/ssa_function_aot_owner_fixture.c")
 foreach (_zr_function_execir_target IN ITEMS zr_vm_ssa_function_execir_aot_object

@@ -22,6 +22,7 @@ add_library(zr_vm_ssa_execir_owner_private_core OBJECT
 add_executable(zr_vm_ssa_exec_ir_owned_module_test
         "${_zr_execir_owner_root}/tests/core/test_ssa_exec_ir_owned_module.c"
         "${_zr_execir_owner_root}/tests/core/support/ssa_exec_ir_owned_module_fixture.c"
+        "${_zr_execir_owner_root}/tests/core/support/ssa_exec_ir_owner_capture.c"
         "${_zr_execir_owner_root}/tests/core/support/ssa_exec_ir_owned_module_allocator.c"
         "${_zr_execir_owner_root}/tests/third_party/zr_unity/Unity/src/unity.c")
 foreach (_zr_execir_owner_target IN ITEMS zr_vm_ssa_execir_owner_private_core

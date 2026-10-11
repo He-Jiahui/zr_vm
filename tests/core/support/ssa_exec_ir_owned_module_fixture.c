@@ -123,78 +123,14 @@ void ZrTests_ExecOwner_AssertProducerLive(const SZrExecIrModule *m) {
 static void word(SZrOwnerContents *s,TZrUInt64 value) {
     TEST_ASSERT_LESS_THAN_UINT(ZR_OWNER_WORDS,s->count); s->words[s->count++]=value;
 }
-#define W(f) word(s,(TZrUInt64)(o->f))
-#define R(f) W(f.offset);W(f.count)
-static void capture_contract(const SZrExecutionContract *o,SZrOwnerContents *s) {
-    W(schemaVersion);W(abiVersion);W(logicalVersion);W(reserved0);W(generation);W(targetToken);W(reserved1);
-    W(signatureHash);W(layoutHash);W(moduleHash);W(requiredCapabilities);W(declaredEffects);
-}
-static void capture_function(const SZrExecIrFunction *f,SZrOwnerContents *s) {
-    { const SZrExecIrFunction *o=f;
-    W(id);W(functionToken);W(signatureHash);W(entryBlockId);W(bindingRowsSchemaVersion);W(sealed);W(gcMapCount);
-    capture_contract(&f->contract,s);
-#define COUNT(field) W(field)
-    COUNT(valueCount);COUNT(instructionCount);COUNT(blockCount);COUNT(operandCount);COUNT(resultCount);
-    COUNT(memoryTokenCount);COUNT(phiCount);COUNT(phiIncomingCount);COUNT(predecessorCount);COUNT(successorCount);
-    COUNT(gcRootCount);COUNT(deoptStateCount);COUNT(deoptValueCount);COUNT(deoptAggregateCount);COUNT(deoptAggregateFieldCount);
-    COUNT(sourceMapCount);COUNT(bindingRowCount);
-#undef COUNT
-    }
-    for(TZrUInt32 i=0u;i<f->valueCount;++i){const SZrExecIrValue *o=&f->values[i];W(id);W(definition);W(typeToken);W(ownership);W(nullability);W(flags);}
-    for(TZrUInt32 i=0u;i<f->instructionCount;++i){const SZrExecIrInstruction *o=&f->instructions[i];
-        W(opcode);W(flags);R(results);R(operands);R(phiRange);R(successorRange);W(typeToken);W(matchTypeToken);W(layoutId);
-        R(memoryIn);R(memoryOut);W(effectIn);W(effectOut);W(sourceId);W(deoptId);W(bindingRow);}
-    for(TZrUInt32 i=0u;i<f->blockCount;++i){const SZrExecIrBlock *o=&f->blocks[i];
-        W(id);W(flags);R(instructions);R(predecessors);R(successors);R(phis);W(effectPhiResult);R(effectPhiIncomings);
-        for(unsigned j=0u;j<ZR_EXEC_IR_MEMORY_CLASS_COUNT;++j){word(s,o->memoryPhiResults[j]);word(s,o->memoryPhiIncomings[j].offset);word(s,o->memoryPhiIncomings[j].count);}
-        W(immediateDominator);W(terminatorInstructionId);}
-#define NUM(field,count) for(TZrUInt32 i=0u;i<f->count;++i)word(s,f->field[i])
-    NUM(operandPool,operandCount);NUM(resultPool,resultCount);NUM(memoryTokenPool,memoryTokenCount);
-    NUM(predecessors,predecessorCount);NUM(successors,successorCount);NUM(gcRoots,gcRootCount);NUM(deoptValues,deoptValueCount);
-#undef NUM
-    for(TZrUInt32 i=0u;i<f->phiCount;++i){const SZrExecIrPhi *o=&f->phiPool[i];W(result);R(incomings);}
-    for(TZrUInt32 i=0u;i<f->phiIncomingCount;++i){const SZrExecIrPhiIncoming *o=&f->phiIncoming[i];W(predecessor);W(value);}
-    for(TZrUInt32 i=0u;i<f->deoptStateCount;++i){const SZrExecIrDeoptState *o=&f->deoptStates[i];W(id);W(sourceId);W(resumeId);R(valueRange);W(cleanupState);R(aggregates);}
-    for(TZrUInt32 i=0u;i<f->deoptAggregateCount;++i){const SZrExecIrDeoptAggregate *o=&f->deoptAggregates[i];W(identityId);W(typeToken);W(layoutId);R(fields);}
-    for(TZrUInt32 i=0u;i<f->deoptAggregateFieldCount;++i){const SZrExecIrDeoptAggregateField *o=&f->deoptAggregateFields[i];W(fieldIndex);W(kind);W(valueId);W(aggregateId);}
-    for(TZrUInt32 i=0u;i<f->sourceMapCount;++i){const SZrExecIrSourceMap *o=&f->sourceMaps[i];W(sourceId);W(instructionId);W(startOffset);W(endOffset);W(startLine);W(startColumn);W(endLine);W(endColumn);}
-    for(TZrUInt32 i=0u;i<f->bindingRowCount;++i){const SZrExecIrBindingRow *o=&f->bindingRows[i];
-        W(rowIndex);W(instructionId);W(segmentIndex);W(sourceId);
-        W(contract.bindingKind);W(contract.targetMetadataToken);W(contract.signatureToken);W(contract.ownerTypeToken);
-        W(contract.signatureHash);W(contract.moduleSignatureHash);W(contract.layoutVersion);W(contract.dispatchSlot);
-        W(contract.layoutHash);W(contract.operation);W(contract.reserved0);W(contract.reserved1);
-        W(location.kind);W(location.targetIndex);W(location.ownerDepth);W(location.flags);}
-    word(s,f->gcMap != ZR_NULL);
-    if(f->gcMap != ZR_NULL){
-        {const SZrExecIrGcMap *o=f->gcMap;W(entryCount);W(slotIndexCount);W(inlineRefOffsetCount);W(safepointId);W(sourceId);R(rootRange);}
-        for(TZrUInt32 i=0u;i<f->gcMap->entryCount;++i){const SZrExecIrGcMapEntry *o=&f->gcMap->entries[i];W(site);R(liveRefSlots);R(inlineRefOffsets);}
-        for(TZrUInt32 i=0u;i<f->gcMap->slotIndexCount;++i)word(s,f->gcMap->slotIndexPool[i]);
-        for(TZrUInt32 i=0u;i<f->gcMap->inlineRefOffsetCount;++i)word(s,f->gcMap->inlineRefOffsetPool[i]);}
-    word(s,f->stateMap != ZR_NULL);
-    if(f->stateMap != ZR_NULL){
-        {const SZrExecIrStateMap *o=f->stateMap;W(functionToken);W(signatureHash);W(generation);W(entryCount);W(valueCount);W(rootCount);W(ownerStateCount);}
-        for(TZrUInt32 i=0u;i<f->stateMap->entryCount;++i){const SZrExecIrStateMapEntry *o=&f->stateMap->entries[i];
-            W(sourceId);W(instructionId);W(deoptId);W(resumeId);W(cleanupState);W(boundaryFlags);W(phase);
-            R(liveValues);R(rootValues);R(ownerStates);W(effectIn);W(effectOut);W(handlerBlockId);W(exceptionState);}
-        for(TZrUInt32 i=0u;i<f->stateMap->valueCount;++i)word(s,f->stateMap->valuePool[i]);
-        for(TZrUInt32 i=0u;i<f->stateMap->rootCount;++i)word(s,f->stateMap->rootPool[i]);
-        for(TZrUInt32 i=0u;i<f->stateMap->ownerStateCount;++i)word(s,f->stateMap->ownerStatePool[i]);}
-    word(s,f->frameLayout != ZR_NULL);
-    if(f->frameLayout != ZR_NULL){ {const SZrExecIrFrameLayout *o=f->frameLayout;
-        W(storageSlotCount);W(logicalSlotCount);W(parameterPrefixCount);W(returnBufferOffset);W(frameByteSize);
-        W(frameByteAlign);W(parameterCount);W(localCount);W(slotCount);W(layoutHash);}
-        for(TZrUInt32 i=0u;i<f->frameLayout->slotCount;++i){const SZrExecIrFrameSlot *o=&f->frameLayout->slots[i];W(slotId);W(byteOffset);W(byteSize);W(byteAlign);W(typeToken);W(kind);}}
+static int legacy_word(void *context,TZrUInt64 value) {
+    word((SZrOwnerContents *)context,value);
+    return 1;
 }
 void ZrTests_ExecOwner_Capture(const SZrExecIrModule *o,SZrOwnerContents *s) {
-    s->count=0u;W(id);W(moduleToken);W(moduleHash);capture_contract(&o->contract,s);
-    W(constantCount);W(layoutCount);W(sourceMapCount);W(functionCount);
-    for(TZrUInt32 i=0u;i<o->constantCount;++i){word(s,o->constants[i].typeToken);word(s,o->constants[i].flags);word(s,o->constants[i].bits);}
-    for(TZrUInt32 i=0u;i<o->layoutCount;++i){const SZrExecIrLayout *r=&o->layouts[i];word(s,r->id);word(s,r->typeToken);word(s,r->byteSize);word(s,r->byteAlign);word(s,r->layoutHash);}
-    for(TZrUInt32 i=0u;i<o->sourceMapCount;++i){const SZrExecIrSourceMap *r=&o->sourceMaps[i];word(s,r->sourceId);word(s,r->instructionId);word(s,r->startOffset);word(s,r->endOffset);word(s,r->startLine);word(s,r->startColumn);word(s,r->endLine);word(s,r->endColumn);}
-    for(TZrUInt32 i=0u;i<o->functionCount;++i)capture_function(&o->functions[i],s);
+    s->count=0u;
+    (void)ZrTests_ExecOwner_VisitContents(o,0,legacy_word,s);
 }
-#undef W
-#undef R
 void ZrTests_ExecOwner_Equal(const SZrOwnerContents *expected,const SZrExecIrModule *m) {
     SZrOwnerContents actual; TEST_ASSERT_NOT_NULL(m);ZrTests_ExecOwner_Capture(m,&actual);
     TEST_ASSERT_EQUAL_UINT(expected->count,actual.count);
