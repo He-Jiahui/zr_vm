@@ -11,7 +11,7 @@
  *
  * ## References
  * zr_vm_cli/src/zr_vm_cli/commands/test_command.c:551、zr_vm_cli/src/zr_vm_cli/commands/test_command.c:570 和 zr_vm_cli/src/zr_vm_cli/commands/test_command.c:592 建立用例窗口；
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:33 将三个断言绑定到原生回调；docs/library-and-builtins/zr-testing.md 说明 Test phase 与异常投影。
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:170 将三个断言绑定到原生回调；docs/library-and-builtins/zr-testing.md 说明 Test phase 与异常投影。
  */
 #ifndef ZR_VM_LIB_TESTING_MODULE_H
 #define ZR_VM_LIB_TESTING_MODULE_H
@@ -214,7 +214,7 @@ typedef struct SZrTestingAssertionFailure {
  *
  * ## References
  * tests/testing/test_assertions.c:59 和 tests/library/test_official_provider_convergence.c:415 查询契约；
- * zr_vm_lib_testing/src/zr_vm_lib_testing/module.c:8 转交，zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:153 返回静态表。
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/module.c:23 转交，zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:594 返回静态表。
  */
 ZR_VM_LIB_TESTING_API const ZrLibModuleDescriptor *ZrVmLibTesting_GetModuleDescriptor(void);
 /**
@@ -236,7 +236,7 @@ ZR_VM_LIB_TESTING_API const ZrLibModuleDescriptor *ZrVmLibTesting_GetModuleDescr
  *
  * ## References
  * zr_vm_cli/src/zr_vm_cli/commands/test_command.c:83 和 tests/testing/test_assertions.c:25 传播登记结果；
- * zr_vm_lib_testing/src/zr_vm_lib_testing/module.c:13 至 zr_vm_lib_testing/src/zr_vm_lib_testing/module.c:17 建立依赖链；
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/module.c:48 至 zr_vm_lib_testing/src/zr_vm_lib_testing/module.c:52 建立依赖链；
  * tests/testing/test_assertions.c:109 和 tests/testing/test_assertions.c:123 核对访问 phase。
  */
 ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_Register(SZrGlobalState *global);
@@ -291,11 +291,11 @@ ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_GetLastFailure(SZrTestingAssertionF
  *
  * ## Constraints and lifecycle
  * context/参数仅在 native 调用期间有效，异常须由正常 VM/宿主异常边界处理。
- * 断言失败先保存 TLS 再构造 AssertionFailure；仅软返回失败走 VM 运行错误回退，GC分配OOM可直接抛错。BUG: Normalize把脚本exception快照字段覆为self，宿主TLS仍为快照；入口zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:57、zr_vm_core/src/zr_vm_core/exception.c:407、zr_vm_core/src/zr_vm_core/exception.c:684。
+ * 断言失败先保存 TLS 再构造 AssertionFailure；仅软返回失败走 VM 运行错误回退，GC分配OOM可直接抛错。BUG: Normalize把脚本exception快照字段覆为self，宿主TLS仍为快照；入口zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:243、zr_vm_core/src/zr_vm_core/exception.c:407、zr_vm_core/src/zr_vm_core/exception.c:684。
  * 注册/物化仍遵循 Test phase，成功清理 TLS 不清理其它线程记录。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:34 注册回调；tests/testing/test_assertions.c:142 和 tests/testing/test_assertions.c:148 通过正常宿主入口调用；
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:172 注册回调；tests/testing/test_assertions.c:142 和 tests/testing/test_assertions.c:148 通过正常宿主入口调用；
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:821 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:839 是回调边界。
  */
 ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_Assert(ZrLibCallContext *context, SZrTypeValue *result);
@@ -318,7 +318,7 @@ ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_Assert(ZrLibCallContext *context, S
  * BUG: 有界快照可按字节裁剪到 UTF-8 字符中间；见 testing_copy_bounded 与 SZrTestingValueSnapshot。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:37 注册回调；tests/testing/test_assertions.c:178 和 tests/testing/test_assertions.c:185 是实际相等/失败调用；
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:176 注册回调；tests/testing/test_assertions.c:178 和 tests/testing/test_assertions.c:185 是实际相等/失败调用；
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:875 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:888 建立比较和失败快照顺序。
  */
 ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_Equal(ZrLibCallContext *context, SZrTypeValue *result);
@@ -344,7 +344,7 @@ ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_Equal(ZrLibCallContext *context, SZ
  * TODO: 经公开ObjectPrototype_AddMeta安装抛错formatter，组合现有throws<AssertionFailure>(assert(false))补回归；equal formatterFaulted测试未覆盖此分支。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:41 注册 native 两参回调；tests/testing/test_assertions.c:297、tests/testing/test_assertions.c:324 和 tests/testing/test_assertions.c:432 走正常 export 调用；
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:181 注册 native 两参回调；tests/testing/test_assertions.c:297、tests/testing/test_assertions.c:324 和 tests/testing/test_assertions.c:432 走正常 export 调用；
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:619 和 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1997 区分回调拒绝与宿主完成；tests/testing/test_assertions.c:337 核对非法 E 不执行 action 的 null 路径；
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1007 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1080 实施同步捕获/类型重读/结果交付。
  */
@@ -365,7 +365,7 @@ ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_Throws(ZrLibCallContext *context, S
  *
  * ## References
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:370 查找符号，zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:383 调用；
- * zr_vm_lib_testing/src/zr_vm_lib_testing/module.c:22 转交描述符查询。
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/module.c:77 转交描述符查询。
  */
 ZR_VM_LIB_TESTING_API const ZrLibModuleDescriptor *ZrVm_GetNativeModule_v1(void);
 #endif

@@ -49,7 +49,8 @@ the runtime accepts only the exact exception type or an allowed subtype.
 Failures are bounded structured `AssertionFailure` values rather than
 process-global text matching. They carry the caller source span and bounded
 type/value snapshots. In `equal`, a value formatter fault sets the snapshot's
-`formatterFaulted` flag without replacing the comparison failure. The `throws`
+`formatterFaulted` flag when formatting throws or returns no text, without
+replacing the comparison failure. The `throws`
 path snapshots a caught exception before matching its type. BUG: a throwing
 formatter clears the caught exception, so the later match loses the original
 value. TODO: add the public formatter/throws regression. The provider
@@ -135,8 +136,8 @@ only by migration or negative fixtures, never by the production parser.
 本批登记 assertions.c 的63个实际单元：21函数、2个同步请求类型及5字段、2个TLS状态、TLS宏、
 文件/依赖边界和30个有独立契约的语句块。普通局部guard与字段适配流程随所属函数审查；
 不是按花括号数制造覆盖条目。旧27条粗粒度记录替换为当前路径/行号证据；公共头部38项覆盖保持，Snapshot/Assert/Equal/Throws四项同步已证BUG及软失败边界，
-其中30处内部数字References按保护行映射迁移；旧TODO行530的引用更正为实际snapshot调用532。清单先保持内部文件pending，待当前源/台账/
-实际编译证据和独立完整性复核一致后记录全文件闭合；这不授整个Testing模块或运行时验收。
+其中30处内部数字References按保护行映射迁移；旧TODO行530的引用更正为实际snapshot调用532。内部文件已在2b667bb提交中按63项完整性、当前台账及实际编译对照闭合；
+本批只迁移其反向数字引用，不授整个Testing模块或运行时验收。
 
 ### 同步异常与诊断窗口
 
@@ -175,7 +176,7 @@ TODO: TypeId参数pin仅保证其对象根，canonical name仍为borrowed；沿`
 
 ### 脚本异常字段与宿主快照
 
-BUG: descriptor.c:57将AssertionFailure.exception声明为ValueSnapshot；`zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:701`先投影该快照，
+BUG: zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:243将AssertionFailure.exception声明为ValueSnapshot；`zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:701`先投影该快照，
 随后Normalize已有Error把exception覆为self（exception.c:407、exception.c:684）。底层Object_SetValue
 不检查descriptor字段类型；object/object.c:2393、object/object.c:2399的成员读取优先返回own nodeMap，
 普通成功构造后的脚本failure.exception因此是AssertionFailure自身。宿主C TLS exception仍是普通快照，
@@ -200,6 +201,27 @@ BUG: core Value_ToDebugString的合法对象若含超过buffer容量的字符串
 TODO: formatter元方法GC期间obj/pair裸遍历地址仍需对应core模块强制GC复核；
 本批只记录跨模块BUG，不修改活跃core实现，不授其运行时信用，未运行长字段或GC fixture.
 
-descriptor.c旧16个顶层单元和module.c旧3入口仍需补详细格式、字段/数组条目和插件生命周期；
-它们的清单已回到pending，不能用descriptor总表一行替代逐成员审查。parser-only的
-test_test_role_binding测试只作schema cross-check，不是这些native表的直接调用者；具体返工随下一批处理。
+描述表/注册批次现已细分82项：descriptor.c 69、module.c 3、runtime_internal.h 2、Testing CMake 8。
+类型/字段/参数/泛型/角色/链接及15个显式descriptor成员均逐项核对；两份已闭合断言源码和公开头只迁移反向引用。
+parser-only test_test_role_binding只作schema cross-check，不是这些native表的直接调用者。
+本批四文件在当前源/台账、实际编译对照和独立完整性审查一致后才闭合，不授整个运行时验收。
+
+
+## 描述表、直接注册与共享加载
+
+公开参数表与native arity分别记账：throws只声明一个action，第二个native实参是编译器隐藏的E TypeId；
+泛型E受Error约束。字段类型是描述/反射schema，普通对象setter不据此阻止exception被Normalize覆为self。
+普通ValueSnapshot.typeName是诊断桶/原型名，Throws expected-only可为预期类型名；不承诺canonical identity。
+hasValue可表示合法null或expected-only，formatterFaulted包括抛错和Fine但没有文本；旧英文descriptor文案的三处偏差保留TODO。
+函数、类型、字段以及模块documentation当前未进入对应FunctionInfo/TypeInfo/field/ModuleInfo和结构hash；
+参数、泛型和moduleLink文案有复制入口，反射展示其它文案须另核发布实现。
+
+提供者attributeRoles镜像parser builtin并参与结构hash及直接测试核查；compiler实际读parser自身schema。
+Register按task builtin、Attach、Testing登记顺序短路，失败不回滚前序；CLI释放新global，直接宿主管理残留。
+phase由宿主在注册成功后另设TEST，getter和Register均不自动切换；链接task导出在物化时另解析zr.task。
+共享v1入口只交付静态descriptor，不执行Register。静态表和嵌套字符串/数组由provider持有，注册记录和闭包借用直到消费结束。
+
+本地CMake八项分别说明配置入口、基名、common并入/变体开关、三项PRIVATE依赖、公开头和库安装；
+私有runtime头不安装，dependency头的PRIVATE路径不等于消费者自动具有完整include契约。
+CommonMacros共享目标定义SHARED=1，static目标不定义它；自定义SHARED=0下defined guard与数值ZR_API条件差异留TODO。
+双变体Windows同名lib冲突及模块名PUBLIC宏用途沿共用helper已有BUG/TODO继续核查，不改其行为。

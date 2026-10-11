@@ -12,14 +12,14 @@
  * 本批只增加契约说明；记录构造的分配失败和 GC 根边界分别在对应 helper 标记。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:34、zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:37、zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:41 是函数指针注册入口；zr_vm_lib_testing/CMakeLists.txt:7 经 zr_vm_common/CommonMacros.cmake:9 收集本源。
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:172、zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:176、zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:181 是函数指针注册入口；zr_vm_lib_testing/CMakeLists.txt:11 经 zr_vm_common/CommonMacros.cmake:9 收集本源。
  * zr_vm_cli/src/zr_vm_cli/commands/test_command.c:551、zr_vm_cli/src/zr_vm_cli/commands/test_command.c:570、zr_vm_cli/src/zr_vm_cli/commands/test_command.c:592 管理宿主报告；docs/library-and-builtins/zr-testing.md 说明公共签名和诊断投影。
  */
 #include "zr_vm_lib_testing/module.h"
 
 /**
  * 运行时依赖只用于帧恢复、异常捕获、TypeId 验证和诊断文本；不把编译期测试发现放进此 provider。
- * stdio/string 的文本操作构造普通 C 副本；实际构建依赖见 zr_vm_lib_testing/CMakeLists.txt:9、zr_vm_lib_testing/CMakeLists.txt:10。
+ * stdio/string 的文本操作构造普通 C 副本；实际构建依赖见 zr_vm_lib_testing/CMakeLists.txt:15、zr_vm_lib_testing/CMakeLists.txt:18。
  */
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/exception.h"
@@ -605,7 +605,7 @@ static void testing_set_object_record(SZrState *state,
  * TODO: 首个sourceFile分配前及后续setter间raw owner的GC稳定性沿new_record强制GC入口核查。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:696;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:60;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:95;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:612;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:616;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:617
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:696;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:267;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:412;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:612;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:616;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:617
  */
 static SZrObject *testing_build_source_span_object(SZrState *state,
                                                    const SZrTestingSourceSpan *span) {
@@ -637,7 +637,7 @@ static SZrObject *testing_build_source_span_object(SZrState *state,
  * TODO: 首字符串及连续setter间的raw记录稳定性需强制GC验证；SetString NULL的未初始化BUG仍适用。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:698;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:700;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:702;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:68;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:101;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:648;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:649;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:650
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:698;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:700;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:702;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:303;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:433;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:648;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:649;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:650
  */
 static SZrObject *testing_build_snapshot_object(SZrState *state,
                                                 const SZrTestingValueSnapshot *snapshot) {
@@ -673,7 +673,7 @@ static SZrObject *testing_build_snapshot_object(SZrState *state,
  * TODO: 独立核查保存恢复策略；不能把临时根风险与已证TLS破坏混为同一结论。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:835;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:884;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1031;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1071;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:107;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:112;zr_vm_core/src/zr_vm_core/exception.c:666;zr_vm_core/src/zr_vm_core/exception.c:684;zr_vm_core/src/zr_vm_core/exception.c:691;zr_vm_cli/src/zr_vm_cli/commands/test_command.c:570;zr_vm_core/src/zr_vm_core/memory.c:39;zr_vm_core/src/zr_vm_core/memory.c:46;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1069;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:57;zr_vm_core/src/zr_vm_core/exception.c:36;zr_vm_core/src/zr_vm_core/exception.c:54;zr_vm_core/src/zr_vm_core/exception.c:407;zr_vm_core/src/zr_vm_core/object/object.c:1846;zr_vm_core/src/zr_vm_core/object/object.c:1886;zr_vm_core/src/zr_vm_core/object/object.c:2393;zr_vm_core/src/zr_vm_core/object/object.c:2399
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:835;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:884;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1031;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1071;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:455;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:460;zr_vm_core/src/zr_vm_core/exception.c:666;zr_vm_core/src/zr_vm_core/exception.c:684;zr_vm_core/src/zr_vm_core/exception.c:691;zr_vm_cli/src/zr_vm_cli/commands/test_command.c:570;zr_vm_core/src/zr_vm_core/memory.c:39;zr_vm_core/src/zr_vm_core/memory.c:46;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1069;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:243;zr_vm_core/src/zr_vm_core/exception.c:36;zr_vm_core/src/zr_vm_core/exception.c:54;zr_vm_core/src/zr_vm_core/exception.c:407;zr_vm_core/src/zr_vm_core/object/object.c:1846;zr_vm_core/src/zr_vm_core/object/object.c:1886;zr_vm_core/src/zr_vm_core/object/object.c:2393;zr_vm_core/src/zr_vm_core/object/object.c:2399
  */
 static ZR_NO_RETURN void testing_raise_failure(ZrLibCallContext *context) {
     SZrState *state = context != ZR_NULL ? context->state : ZR_NULL;
@@ -996,7 +996,7 @@ static TZrBool testing_read_expected_type_name(ZrLibCallContext *context,
  * TODO: canonical-name跨formatter分配和TLS重入稳定性沿read_expected_type_name/testing_snapshot核查。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1017;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1020;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1033;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1048;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1052;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1076;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:619;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1997;zr_vm_core/src/zr_vm_core/exception.c:407;zr_vm_core/src/zr_vm_core/exception.c:684;zr_vm_core/src/zr_vm_core/exception.c:691;zr_vm_core/src/zr_vm_core/value.c:329;zr_vm_core/src/zr_vm_core/value.c:600;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:112;tests/testing/test_assertions.c:250;tests/testing/test_assertions.c:432;tests/testing/test_assertions.c:433;zr_vm_core/include/zr_vm_core/object.h:525;zr_vm_core/src/zr_vm_core/object/object.c:2208
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1017;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1020;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1033;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1048;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1052;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1076;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:619;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1997;zr_vm_core/src/zr_vm_core/exception.c:407;zr_vm_core/src/zr_vm_core/exception.c:684;zr_vm_core/src/zr_vm_core/exception.c:691;zr_vm_core/src/zr_vm_core/value.c:329;zr_vm_core/src/zr_vm_core/value.c:600;zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:460;tests/testing/test_assertions.c:250;tests/testing/test_assertions.c:432;tests/testing/test_assertions.c:433;zr_vm_core/include/zr_vm_core/object.h:525;zr_vm_core/src/zr_vm_core/object/object.c:2208
  */
 TZrBool ZrVmLibTesting_Throws(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrTypeValue *callable;
