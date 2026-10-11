@@ -184,8 +184,8 @@ capacity构造参数仍叫index；已有同名非callable字段被当适配已�
 
 ## 四种宿主缓存与登记入口的当前契约
 
-前批详细复核四个缓存类型、23字段及Register共28项；本批补齐下节40项，累计68项。
-357项台账保留，剩余289项待当前契约及完整性复核；数字引用迁移不增加完成数。
+前批28项及字段名/缓存入口40项均已提交；本批补齐静态状态/枚举/块21项，累计89项。
+357项台账保留，剩余268项待当前契约及完整性复核；数字引用迁移不增加完成数。
 
 | 类型 | 调用目的 | 借用与失效边界 |
 | --- | --- | --- |
@@ -199,28 +199,28 @@ capacity构造参数仍叫index；已有同名非callable字段被当适配已�
 Map 的普通 entries/key/Pair缓存没有这项标记或独立GC根；不能跨分配、用户回调或GC继续持有旧裸地址。
 同一种 cacheIdentity 仅由对应 accessor 比较/更新；它是生命周期标量，不是同步锁或内容版本。
 
-TODO: 多 GlobalState/mutator交错访问进程静态缓存的同步需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:553` 核查。
-TODO: Map裸地址重写与 moving GC协作需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:1378` 及 gc_cycle 的对象重写入口核查；
-Pair.first 的合法写入与 entries.memberVersion 联动需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:2278` 核查，不能由相同版本推出键内容未变。
+TODO: 多 GlobalState/mutator交错访问进程静态缓存的同步需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:591` 核查。
+TODO: Map裸地址重写与 moving GC协作需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:1669` 及 gc_cycle 的对象重写入口核查；
+Pair.first 的合法写入与 entries.memberVersion 联动需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:2569` 核查，不能由相同版本推出键内容未变。
 
 宿主 Register 的顺序是 iteration→container→pooling→基本ARRAY适配。iteration链按需 Attach registry，
 所以调用者无需提前创建 registry；global/mainThreadState/基本ARRAY原型必须已有效。后阶段失败不回滚
 前阶段成功登记。CLI `zr_vm_cli/src/zr_vm_cli/project/project.c:368` 检查 bool，`tests/container/container_test_common.c:60` 忽略 bool，
 该测试工厂调用本身不能证明登记成功。描述符查询及共享插件 getter 不执行这条宿主初始化链。
 
-TODO: `zr_vm_lib_container/src/zr_vm_lib_container/module.c:5313` 的同名字段 presence检查不验证 callable/getIterator协议；核查已有字段的实际消费者。
+TODO: `zr_vm_lib_container/src/zr_vm_lib_container/module.c:5604` 的同名字段 presence检查不验证 callable/getIterator协议；核查已有字段的实际消费者。
 BUG: 合法初始化global、ARRAY原型尚未ignore且ignored表已满、字段缺失时，宿主分阶段拒绝
 getter pin的ignore扩容、允许中间闭包创建、再拒绝setter pin的扩容，void setter早退但Register可仍true。
-完整链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:5313`→闭包创建→`zr_vm_lib_container/src/zr_vm_lib_container/module.c:5326`；pin入口
+完整链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:5604`→闭包创建→`zr_vm_lib_container/src/zr_vm_lib_container/module.c:5617`；pin入口
 `zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1429`/`:1385`；
 只拒绝一次setter扩容不足以证明该链，先前getter可能已扩表。本轮只有静态证据，无故障注入信用。
-实际宿主登记链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:5372`，iteration 的 Attach入口是 `zr_vm_lib_iteration/src/zr_vm_lib_iteration/module.c:21`。
+实际宿主登记链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:5663`，iteration 的 Attach入口是 `zr_vm_lib_iteration/src/zr_vm_lib_iteration/module.c:21`。
 
 
 ## 字段名与缓存入口的40项详细契约
 
-23函数、16字段名常量及1 DEBUG状态逐项核对实际消费点。缓存家族另有3 enum、
-15函数内static状态及3语句块未闭合，不由函数注释替代；iterator prototype不在本批。
+23函数、16字段名常量及1 DEBUG状态逐项核对实际消费点。缓存家族的3 enum、
+15函数内static状态及3语句块由下节21项独立审查；iterator prototype另有4状态不在本批。
 first区分LinkedList首节点和Pair首分量，同文本键和角色Pair槽不说明共享字段值；
 C也不保证等字面量地址合并或分离。fallback借用宿主文本，48槽满走断言后NULL。
 
@@ -235,3 +235,45 @@ Get非DEBUG全零。TODO: 多域静态缓存/统计同步、moving GC裸地址�
 仍待合法执行链核查，不升级BUG。公开头16处旧数字引用已按当前语义修正后迁移，其12项既有职责范围保留。
 本批仅以字节保护、真实调用、独立review和一TU编译对照验收；module.c继续pending，
 不授运行时、GC、OOM、ABI、性能或跨仓库capture信用。
+
+
+## 静态缓存状态、枚举及边界块21项
+
+本批1匿名enum、2 enumerator、15函数内static和3 meaningful blocks按所属词法函数逐项
+复核直接读写及上层消费；旧裸name跨函数混算的cache/identity调用点已更正。不是新增语义单元：
+台账仍357项，累计89详细复核，剩268待核；module.c保持pending、H12既有闭合保留。
+
+48是普通字段名fallback容量，固定11名字走专槽，source/current/index/nextNode另有热accessor；
+同一identity内无淘汰，fallback借用的宿主指针及NUL文本内容须保持有效且不变直至换域清表。4是Map成功候选槽，另有独立MRU；
+查询路径显式slots[0..3]，更改常量须联动数组、查询、取模与TZrUInt8游标。
+
+identity来自GlobalState创建时非零counter。域切换只覆盖静态槽，不析构仍活旧域永久键；
+返回块是可覆盖借用视图，不能跨域保存。多域/宿主并行合法入口和同步仍精确TODO；
+当前普通OBJECT/ARRAY的minor原地晋升、old compaction地址稳定，缓存不建立根。
+未来搬迁及不可达对象回收时的静态裸地址重写/保活协议仍待核，不冒充当前moving-GC BUG。
+
+### BUG: 删除末项后Map成功缓存仍可命中
+
+合法单域串行路径：Map<string,int>构造建立entries，插入Pair走generic storage_set；
+remove的find_index先命中或成功扫描填入key/Pair/index/version，然后generic last removal
+只HashSet_Remove摘bucket/elementCount，不改entries.memberVersion；self.count写到Map自身。
+在无中间GC或其它Map查询覆盖缓存、同一backing和同一字符串对象的窗口，下一containsKey
+在真实length扫描前直接true；普通/只读内联GET_ITEM都可读脱链Pair.second。
+这一逻辑结果无需推断Pair立即被free；bucket节点与Pair SZrObject分开管理。
+
+示意可检验路径（本轮不执行、不新增实现镜像测试）：
+
+    let container = import("zr.container");
+    var key = "k";
+    var map = new container.Map<string, int>();
+    map[key] = 1;
+    var removed = map.remove(key);
+    var stillPresent = map.containsKey(key);
+
+remove成功时stillPresent应为false，上述可达窗口当前错误地为true。待后续修复generic
+删除时backing版本联动或显式清缓存；本轮不改行为。既有warm-cache/clear测试没有覆盖
+remove末项→同对象键contains/get。完整证明锚点由本批static Map状态和backing-reset台账
+记录；Pair.first写入的另一个版本联动疑点仍为TODO。
+
+单TU编译复用前批实际r106结果为当前源码基线；只增加新注释后的同配置对照。
+数字引用迁移、old unselected checker211保留，不授全台账、runtime、整模块或capture信用。
