@@ -66,7 +66,7 @@
  * Coverage 的行数组未因新增记录扩容前通常保持物理地址；扩容可能使指针失效，重复登记或 LINE 命中仍可能原位更新字段。Reset 会清空可读前缀并允许以后复用，Destroy 才释放数组。
  *
  * ## References
- * zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:304 supplies static rows;
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:316 supplies static rows;
  * zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:249 merges LINE hits, including a row first seen dynamically;
  * zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:207 writes the fields and tests/profile/test_coverage.c:132 asserts them.
  */
@@ -324,7 +324,7 @@ ZR_DEBUG_API void ZrDebug_Coverage_Destroy(ZrDebugCoverage *coverage);
  * ## References
  * CLI obtains the count at zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:201 and reads each row at
  * zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:202; the test drives the same loop from
- * tests/profile/test_coverage.c:127.
+ * tests/profile/test_coverage.c:128.
  */
 ZR_DEBUG_API TZrSize ZrDebug_Coverage_GetLineCount(const ZrDebugCoverage *coverage);
 /**
