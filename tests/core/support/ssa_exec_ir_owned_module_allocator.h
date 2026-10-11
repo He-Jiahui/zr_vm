@@ -12,6 +12,18 @@ void ZrTests_ExecOwner_Arm(unsigned relativeAttempt);
 void ZrTests_ExecOwner_Disarm(void);
 SZrOwnerHeapStats ZrTests_ExecOwner_Stats(void);
 SZrOwnerHeapEvent ZrTests_ExecOwner_Event(unsigned index);
+/* Serialized coordination over the actual owner ledger; no Unity assertions.
+ * TryArm requires no armed fault, a positive relative attempt and remaining
+ * private event capacity. Acceptance explicitly schedules that fault, changes
+ * no statistics or event rows, and allocates nothing. Refusal returns 0 with
+ * the complete ledger and fault schedule unchanged.
+ * TryEvent requires genuine independent writable output and an existing event
+ * index within the private bound. Success returns 1 with the actual event copy;
+ * refusal returns 0 preserving the complete output representation. This pure
+ * query allocates nothing and changes no ledger bytes or fault schedule.
+ */
+int ZrTests_ExecOwner_TryArm(unsigned relativeAttempt);
+int ZrTests_ExecOwner_TryEvent(unsigned index, SZrOwnerHeapEvent *output);
 unsigned ZrTests_ExecOwner_RecordFrees(unsigned record);
 /* Nonasserting read; invalid record/output leaves the output unchanged. */
 int ZrTests_ExecOwner_TryRecordFrees(unsigned record, unsigned *frees);

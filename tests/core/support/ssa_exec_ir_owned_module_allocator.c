@@ -76,6 +76,17 @@ SZrOwnerHeapStats ZrTests_ExecOwner_Stats(void) { return g_stats; }
 SZrOwnerHeapEvent ZrTests_ExecOwner_Event(unsigned index) {
     TEST_ASSERT_LESS_THAN_UINT(g_stats.attempts, index); return g_events[index];
 }
+int ZrTests_ExecOwner_TryArm(unsigned relativeAttempt) {
+    if (g_failAt != 0u || relativeAttempt == 0u || g_stats.attempts > OWNER_EVENTS) return 0;
+    if (relativeAttempt > OWNER_EVENTS - g_stats.attempts) return 0;
+    g_failAt = g_stats.attempts + relativeAttempt;
+    return 1;
+}
+int ZrTests_ExecOwner_TryEvent(unsigned index, SZrOwnerHeapEvent *output) {
+    if (output == NULL || index >= g_stats.attempts || index >= OWNER_EVENTS) return 0;
+    *output = g_events[index];
+    return 1;
+}
 unsigned ZrTests_ExecOwner_RecordFrees(unsigned record) {
     TEST_ASSERT_LESS_THAN_UINT(g_stats.records, record); return g_rows[record].frees;
 }
