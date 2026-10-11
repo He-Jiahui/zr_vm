@@ -15,8 +15,8 @@
 # ## References
 # CMakeLists.txt:187 进入测试目录；tests/CMakeLists.txt:225 是宏基础专用模式的提前返回。
 # tests/CMakeLists.txt:617、tests/CMakeLists.txt:618 是目标创建门禁，tests/CMakeLists.txt:4752 选择此目标。
-# tests/CMakeLists.txt:8804 实际 include；tests/task/test_task_job_scheduler.c:258 是程序入口。
-# tests/task/test_task_job_scheduler.c:260、tests/task/test_task_job_scheduler.c:269 界定 main 的十个 RUN_TEST。
+# tests/CMakeLists.txt:8804 实际 include；tests/task/test_task_job_scheduler.c:471 是程序入口。
+# tests/task/test_task_job_scheduler.c:473、tests/task/test_task_job_scheduler.c:482 界定 main 的十个 RUN_TEST。
 if (TARGET zr_vm_task_job_scheduler_test)
     add_test(NAME task_job_scheduler COMMAND zr_vm_task_job_scheduler_test)
     # 分类和整项时限随同一个 CTest 名称发布；用例仍由测试程序自己的 main 顺序登记。

@@ -232,3 +232,5 @@ doc_type: category-index
 - [FFI 手工诊断探针的调用契约](../testing-and-validation/ffi-close-probe-caller-contract.md)：39 个完整单元、同步输出槽和资源约束、未初始化结果 BUG 及具体诊断 TODO。
 
 - [本地 Scheduler 队列复用测试的调用契约](../testing-and-validation/task-scheduler-queue-reuse-caller-contract.md)：59 个单元、重入与根清理、只读拒写和限定 OOM 的真实观察范围。
+
+- [Job/Scheduler 父测试的调用契约](../testing-and-validation/task-job-scheduler-caller-contract.md)：27 项完整审查、描述符和源调用边界、完成值目标槽 BUG 与诊断/次数 TODO。

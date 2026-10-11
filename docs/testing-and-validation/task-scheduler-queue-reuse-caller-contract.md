@@ -25,9 +25,9 @@ doc_type: test-contract
 
 ## 编译和执行入口
 
-`tests/task/test_task_job_scheduler.c:256` 将此片段编入同一翻译单元；父文件提供状态创建、源码编译和descriptor查找支持。片段先定义两项私有字段名，再在 `tests/task/task_scheduler_queue_reuse_cases.inc:35` include原生产private helper，开放真实checked-write/pin/OOM路径的测试调用，产品ABI不增加入口，也没有替换生产queue实现。
+`tests/task/test_task_job_scheduler.c:459` 将此片段编入同一翻译单元；父文件提供状态创建、源码编译和descriptor查找支持。片段先定义两项私有字段名，再在 `tests/task/task_scheduler_queue_reuse_cases.inc:35` include原生产private helper，开放真实checked-write/pin/OOM路径的测试调用，产品ABI不增加入口，也没有替换生产queue实现。
 
-`tests/CMakeLists.txt:4752-4754` 创建父测试目标；`tests/cmake/task-scheduler-queue-tests.cmake:20-25` 只在目标存在时登记一个 `task_job_scheduler` CTest项及ssa/task标签、120秒整程序timeout。父main的`:265-269` 顺序执行这里的五个Unity用例，另外五个父文件用例不在本片段覆盖范围。构建目标后可用 `ctest -R '^task_job_scheduler$' --output-on-failure` 选择整个程序。
+`tests/CMakeLists.txt:4752-4754` 创建父测试目标；`tests/cmake/task-scheduler-queue-tests.cmake:20-25` 只在目标存在时登记一个 `task_job_scheduler` CTest项及ssa/task标签、120秒整程序timeout。父main的`tests/task/test_task_job_scheduler.c:478-482` 顺序执行这里的五个Unity用例，另外五个父文件用例不在本片段覆盖范围。构建目标后可用 `ctest -R '^task_job_scheduler$' --output-on-failure` 选择整个程序。
 
 ## 场景和观察范围
 
@@ -51,7 +51,7 @@ doc_type: test-contract
 
 ## 已证明的结果槽问题
 
-BUG: cooperative用例的 `tests/task/task_scheduler_queue_reuse_cases.inc:602` 声明result却不初始化，`tests/task/task_scheduler_queue_reuse_cases.inc:619` 的Task.result回调直接使用其地址。成功delay(3)由 `zr_vm_library/src/zr_vm_library/task_runtime.c:795` 建立typed-null结果字段，`:813` 的同步pump经`:710`/`:713`进入COMPLETED；Task.result的`:1162`→`:835`/`:836`/`:837`取到的是存在的null值，不是缺失字段的NULL指针，于是`:216`/`:217`仍调用Value_Copy。`zr_vm_core/include/zr_vm_core/value.h:229`先进入PrepareDestination，`:151`/`:161`读取未初始化ownership元数据，可能触发误释放或崩溃。回调返回后的bool/type比较不能保护回调内读取。初始化入口可在调用前使用ZrLib_Value_SetNull，但本注释任务保留程序行为；完整静态可达链不代表运行时复现。父文件assert helper有同类问题，由下一独立父文件批次登记，不扩大本片段台账范围。
+BUG: cooperative用例的 `tests/task/task_scheduler_queue_reuse_cases.inc:602` 声明result却不初始化，`tests/task/task_scheduler_queue_reuse_cases.inc:619` 的Task.result回调直接使用其地址。成功delay(3)由 `zr_vm_library/src/zr_vm_library/task_runtime.c:795` 建立typed-null结果字段，`:813` 的同步pump经`:710`/`:713`进入COMPLETED；Task.result的`:1162`→`:835`/`:836`/`:837`取到的是存在的null值，不是缺失字段的NULL指针，于是`:216`/`:217`仍调用Value_Copy。`zr_vm_core/include/zr_vm_core/value.h:229`先进入PrepareDestination，`:151`/`:161`读取未初始化ownership元数据，可能触发误释放或崩溃。回调返回后的bool/type比较不能保护回调内读取。初始化入口可在调用前使用ZrLib_Value_SetNull，但本注释任务保留程序行为；完整静态可达链不代表运行时复现。父文件assert helper的同类问题由[Job/Scheduler父测试调用契约](task-job-scheduler-caller-contract.md)单独登记；它不扩大此片段59项台账的范围。
 
 ## 构造和失败边界
 

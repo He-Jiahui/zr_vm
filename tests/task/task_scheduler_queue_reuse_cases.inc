@@ -30,7 +30,7 @@ static const TZrChar *kTaskQueueHeadField = "__zr_task_queue_head";
  * ## Constraints and lifecycle
  * 依赖父 TU 已包含的 core/native API 及前置 key 定义；此处不是另一套 queue provider，生产片段保持原样。
  * ## References
- * tests/task/task_scheduler_queue_reuse_cases.inc:17；tests/task/task_scheduler_queue_reuse_cases.inc:26；tests/task/task_scheduler_queue_reuse_cases.inc:35；zr_vm_library/src/zr_vm_library/task_runtime_scheduler_queue.inc:11；zr_vm_library/src/zr_vm_library/task_runtime_scheduler_queue.inc:132；tests/task/test_task_job_scheduler.c:256
+ * tests/task/task_scheduler_queue_reuse_cases.inc:17；tests/task/task_scheduler_queue_reuse_cases.inc:26；tests/task/task_scheduler_queue_reuse_cases.inc:35；zr_vm_library/src/zr_vm_library/task_runtime_scheduler_queue.inc:11；zr_vm_library/src/zr_vm_library/task_runtime_scheduler_queue.inc:132；tests/task/test_task_job_scheduler.c:459
  */
 #include "../../zr_vm_library/src/zr_vm_library/task_runtime_scheduler_queue.inc"
 

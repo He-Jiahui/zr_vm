@@ -27,7 +27,7 @@ CMakeLists.txt:187 通过 BUILD_TESTS 门禁进入测试目录。完整 tests �
 
 tests/cmake/task-scheduler-queue-tests.cmake:21 发布名称 task_job_scheduler，COMMAND 指向已有 zr_vm_task_job_scheduler_test。构建该目标后，可从构建目录用 ctest -R '^task_job_scheduler$' --output-on-failure 选择它；名称正则选择整个测试程序。
 
-程序入口 tests/task/test_task_job_scheduler.c:258 先进入 Unity，tests/task/test_task_job_scheduler.c:260 至 tests/task/test_task_job_scheduler.c:269 依次登记十个 RUN_TEST，tests/task/test_task_job_scheduler.c:270 将 Unity 汇总状态作为程序返回值。CTest 中一个测试项对应这次程序执行，不能把它拆称十个 CTest 项。当前注册数说明入口结构，不替代每个用例的断言审查或执行证据。
+程序入口 tests/task/test_task_job_scheduler.c:471 先进入 Unity，tests/task/test_task_job_scheduler.c:473 至 tests/task/test_task_job_scheduler.c:482 依次登记十个 RUN_TEST，tests/task/test_task_job_scheduler.c:486 将 Unity 汇总状态作为程序返回值。CTest 中一个测试项对应这次程序执行，不能把它拆称十个 CTest 项。当前注册数说明入口结构，不替代每个用例的断言审查或执行证据。
 
 ## 标签与执行时限
 
@@ -35,6 +35,6 @@ tests/cmake/task-scheduler-queue-tests.cmake:23 为已登记的同名项发布 s
 
 ## 支持证据边界
 
-tests/task/test_task_job_scheduler.c:256 将 queue reuse 用例 include 到同一翻译单元；tests/task/task_scheduler_queue_reuse_cases.inc:35 又读取生产 private queue helper。这些位置解释同一测试目标怎样接入队列回归。本片段审查不授予测试正文、生产 helper 或 tests/CMakeLists.txt 的整文件完成信用。
+tests/task/test_task_job_scheduler.c:459 将 queue reuse 用例 include 到同一翻译单元；tests/task/task_scheduler_queue_reuse_cases.inc:35 又读取生产 private queue helper。这些位置解释同一测试目标怎样接入队列回归。本片段审查不授予测试正文、生产 helper 或 tests/CMakeLists.txt 的整文件完成信用。
 
 tests/acceptance/2026-10-02-task-scheduler-queue-reuse.md:117 记录首次加入注册的背景；其历史构建和运行结果只适用于该记录的快照。当前注释审查没有重新运行构建或 CTest，配置注册不能证明当前用例通过。
