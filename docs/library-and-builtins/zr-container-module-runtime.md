@@ -14,14 +14,38 @@ tests:
   - tests/container/test_container_runtime.c
   - tests/container/container_test_common.c
   - tests/iterator/test_enumerator_protocol.c
+  - tests/container/test_pooling_closed_type_runtime.c
+  - tests/library/test_official_provider_convergence.c
 doc_type: module-detail
 ---
 
 # zr.container 原生模块与反射注册契约
 
 本页描述 module.c 当前静态调用链；不宣称本轮运行测试、GC、OOM、ABI或性能通过。
-已审批注释候选覆盖本文件161函数及全部状态、字段、枚举、注册项与非显然块，
-357单元台账不等于相关core/library/parser依赖全文件已审。
+共享 module.c 已有161函数及全部状态、字段、枚举、注册项与非显然块的357项语义台账；
+内部类型和部分函数仍须补齐当前文档级注释规范，该文件继续为 pending。
+公开 module.h 此批补齐12项完整契约；它的验收不扩大为内部实现或相关依赖全文件已审。
+
+## 宿主公开 C 接口
+
+公开头部将描述符查询、VM 登记和诊断窗口分开说明。六个接口的签名及构建条件均不变。
+
+| 入口 | 调用目的 | 使用边界 |
+| --- | --- | --- |
+| GetModuleDescriptor | 检查 container 类型、泛型与协议；迭代协议测试直接查询。 | 不创建 VM/容器、不登记依赖；返回 provider 的 const 静态借用数据。 |
+| GetPoolingModuleDescriptor | 检查池的类型和稳定槽回调角色。 | 仅查询；pooling 的模块链接引用 container Span，VM 使用前仍须满足依赖。 |
+| Register | CLI 标准模块启动链登记 iteration、container、pooling，再安装基本 ARRAY 迭代桥接。 | global/mainThreadState/基本ARRAY原型须有效，registry由登记链按需Attach；失败保留前序登记，测试 state 工厂忽略 bool，不能替代成功检查。 |
+| Debug_ResetHotMapLookupStats | 在待测脚本前开始新的进程计数窗口。 | 只清诊断数字，不清真实缓存；非 DEBUG 无动作，不暂停其它线程。 |
+| Debug_GetHotMapLookupStats | 脚本运行后按值取得整数快照。 | 非 DEBUG 全零；当前 hotHitCount/memberVersionHitCount 同时递增，entryValidationReadCount 没有写入，不能据此证明查询结果正确。 |
+| ZrVm_GetNativeModule_v1 | 共享 provider 提供固定 ABI 导出符号。 | 仅共享构建；加载器查询/验证后登记，不在此执行宿主 Register 的依赖链或基本 ARRAY 适配。 |
+
+实际入口为 `zr_vm_cli/src/zr_vm_cli/project/project.c:368`、
+`tests/iterator/test_enumerator_protocol.c:132`、`tests/container/test_pooling_closed_type_runtime.c:21`、
+`tests/container/test_container_runtime.c:1535`/`tests/container/test_container_runtime.c:1539` 和
+`zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:383`。
+描述符内表、字符串和回调借用 provider 存储；provider 必须活到最后一次消费。
+统计快照不持有 VM 对象，进程计数与并行更新的同步/窗口隔离保留具体 TODO。
+Register 的同名字段 presence 策略和双 ignore 扩容失败 BUG 沿下文完整静态链说明；本次不改变行为。
 
 ## 数据与生命周期
 
