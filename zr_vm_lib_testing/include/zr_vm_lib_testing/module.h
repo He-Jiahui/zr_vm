@@ -33,8 +33,8 @@
  * 该缺陷可影响宿主副本及脚本异常中的文本，不能把 NUL 结尾解释成有效 UTF-8。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:96 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:112 是有界复制；
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:196、zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:367 和 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:235 是实际文本消费者。
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:225 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:241 是有界复制；
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:370、zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:750 和 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:430 是实际文本消费者。
  */
 #define ZR_VM_LIB_TESTING_SNAPSHOT_CAPACITY 256U
 #define ZR_VM_LIB_TESTING_MESSAGE_CAPACITY 256U
@@ -53,7 +53,7 @@
  * 与 SZrTestingAssertionFailure 按值复制，不持有线程或 VM 身份。可用记录须由 GetLastFailure 的成功结果确认。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:365 写分类；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:336 投影到异常；
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:748 写分类；zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:693 投影到异常；
  * tests/testing/test_assertions.c:152、tests/testing/test_assertions.c:188 和 tests/testing/test_assertions.c:306 核对三个场景。
  */
 typedef enum EZrTestingAssertionKind {
@@ -83,12 +83,12 @@ typedef enum EZrTestingAssertionKind {
  *
  * ## Invariants and lifecycle
  * 全部字段按值复制，无 VM 指针或 GC 根；保存副本无需保留原 GlobalState。
- * formatterFaulted 时 text 为 <format-error>，不能将该文本作为参与相等比较的实际值。
+ * formatterFaulted 时 text 为 <format-error>，不能将该文本作为参与相等比较的实际值。BUG: 调试格式化含长字符串字段的对象可使core snprintf累计offset越界；入口zr_vm_core/src/zr_vm_core/value.c:604、zr_vm_core/src/zr_vm_core/value.c:628、zr_vm_core/src/zr_vm_core/value.c:695，TLS裁剪不能隔离此core写越界。
  * BUG: 文本和诊断类型名按字节截断，可能以不完整 UTF-8 字符结束；见 testing_copy_bounded。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:129 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:196 生产快照；
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:513 和 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:543 生产仅预期类型视图；
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:297 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:370 生产快照；
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1026 和 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1059 生产仅预期类型视图；
  * tests/testing/test_assertions.c:189 和 tests/testing/test_assertions.c:395 核对裁剪与格式化故障。
  */
 typedef struct SZrTestingValueSnapshot {
@@ -126,10 +126,10 @@ typedef struct SZrTestingValueSnapshot {
  * ## Invariants and lifecycle
  * 内联字符数组和整数可按值保存，不借用 Function、String 或 CallInfo；不会保持调试元数据可达。
  * TODO: endColumn 的包含/排除边界需沿执行位置记录生产者核对，宿主不要仅凭字段名推定切片规则。
- * 核查入口为 zr_vm_core/src/zr_vm_core/io_runtime.c:695 的位置生产者及 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:244 的消费者。
+ * 核查入口为 zr_vm_core/src/zr_vm_core/io_runtime.c:695 的位置生产者及 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:439 的消费者。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:207 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:245 投影最近 VM 帧；
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:399 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:440 投影最近 VM 帧；
  * tests/testing/test_assertions.c:503 至 tests/testing/test_assertions.c:506 只核对源码名称、正起始行与行范围顺序。
  */
 typedef struct SZrTestingSourceSpan {
@@ -171,8 +171,8 @@ typedef struct SZrTestingSourceSpan {
  * 普通副本可由宿主保存；struct/enum 布局仍遵循同一头部与构建 ABI，不是稳定 wire protocol。
  *
  * ## References
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:363 重置记录，zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:383 按值复制；
- * zr_vm_cli/src/zr_vm_cli/commands/test_command.c:570 读取，zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:336 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:345 投影脚本异常。
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:746 重置记录，zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:795 按值复制；
+ * zr_vm_cli/src/zr_vm_cli/commands/test_command.c:570 读取，zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:693 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:702 投影脚本异常。
  */
 typedef struct SZrTestingAssertionFailure {
     /**
@@ -253,7 +253,7 @@ ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_Register(SZrGlobalState *global);
  *
  * ## References
  * zr_vm_cli/src/zr_vm_cli/commands/test_command.c:551 和 zr_vm_cli/src/zr_vm_cli/commands/test_command.c:592 管理用例窗口；
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:375 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:376 清理 TLS。
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:771 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:772 清理 TLS。
  */
 ZR_VM_LIB_TESTING_API void ZrVmLibTesting_ClearLastFailure(void);
 /**
@@ -273,7 +273,7 @@ ZR_VM_LIB_TESTING_API void ZrVmLibTesting_ClearLastFailure(void);
  *
  * ## References
  * zr_vm_cli/src/zr_vm_cli/commands/test_command.c:570 在失败报告分支读取；tests/testing/test_assertions.c:151 核对副本；
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:380 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:384 定义输出边界。
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:792 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:796 定义输出边界。
  */
 ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_GetLastFailure(SZrTestingAssertionFailure *outFailure);
 /**
@@ -291,12 +291,12 @@ ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_GetLastFailure(SZrTestingAssertionF
  *
  * ## Constraints and lifecycle
  * context/参数仅在 native 调用期间有效，异常须由正常 VM/宿主异常边界处理。
- * 断言失败先保存 TLS 再构造 AssertionFailure；构造/规范化未成功时回退 VM 运行错误。
+ * 断言失败先保存 TLS 再构造 AssertionFailure；仅软返回失败走 VM 运行错误回退，GC分配OOM可直接抛错。BUG: Normalize把脚本exception快照字段覆为self，宿主TLS仍为快照；入口zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:57、zr_vm_core/src/zr_vm_core/exception.c:407、zr_vm_core/src/zr_vm_core/exception.c:684。
  * 注册/物化仍遵循 Test phase，成功清理 TLS 不清理其它线程记录。
  *
  * ## References
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:34 注册回调；tests/testing/test_assertions.c:142 和 tests/testing/test_assertions.c:148 通过正常宿主入口调用；
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:391 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:409 是回调边界。
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:821 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:839 是回调边界。
  */
 ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_Assert(ZrLibCallContext *context, SZrTypeValue *result);
 /**
@@ -314,12 +314,12 @@ ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_Assert(ZrLibCallContext *context, S
  *
  * ## Constraints and lifecycle
  * 相等比较按 CompareDirectly/Value_Equal 的值语义执行；后续快照调试格式化可能执行 VM/用户代码。
- * 格式化失败标 formatterFaulted 和 <format-error>，TLS 副本不保活 actual/expected。
+ * 格式化失败标 formatterFaulted 和 <format-error>，TLS 副本不保活 actual/expected。BUG: TO_STRING内失败Assert覆盖外层TLS；成功Assert或显式ClearLastFailure清空记录，Equal仍构造失败；TODO: 补嵌套formatter回归及保存恢复。
  * BUG: 有界快照可按字节裁剪到 UTF-8 字符中间；见 testing_copy_bounded 与 SZrTestingValueSnapshot。
  *
  * ## References
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:37 注册回调；tests/testing/test_assertions.c:178 和 tests/testing/test_assertions.c:185 是实际相等/失败调用；
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:425 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:434 建立比较和失败快照顺序。
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:875 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:888 建立比较和失败快照顺序。
  */
 ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_Equal(ZrLibCallContext *context, SZrTypeValue *result);
 /**
@@ -339,14 +339,14 @@ ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_Equal(ZrLibCallContext *context, SZ
  *
  * ## Constraints and lifecycle
  * 这是同步捕获，不等待 Task；E 必须为 Error 或其派生类型。action 后重读隐藏身份，避免持有跨 GC 搬迁的旧参数指针。
- * TODO: 捕获异常的快照格式化若再抛错，可能清除随后匹配所需 currentException；具体核查入口为
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:530 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:538。
- * 不能将 equal 的 formatterFaulted 回归测试当成该 throws 分支已验证。
+ * BUG: AssertionFailure的exception自字段TO_STRING可抛错，快照清currentException后将原本匹配判成错型；Fine+NULL文本也会清异常。入口为
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1048 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1054。
+ * TODO: 经公开ObjectPrototype_AddMeta安装抛错formatter，组合现有throws<AssertionFailure>(assert(false))补回归；equal formatterFaulted测试未覆盖此分支。
  *
  * ## References
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:41 注册 native 两参回调；tests/testing/test_assertions.c:297、tests/testing/test_assertions.c:324 和 tests/testing/test_assertions.c:432 走正常 export 调用；
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:619 和 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1997 区分回调拒绝与宿主完成；tests/testing/test_assertions.c:337 核对非法 E 不执行 action 的 null 路径；
- * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:494 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:561 实施同步捕获/类型重读/结果交付。
+ * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1007 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:1080 实施同步捕获/类型重读/结果交付。
  */
 ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_Throws(ZrLibCallContext *context, SZrTypeValue *result);
 
