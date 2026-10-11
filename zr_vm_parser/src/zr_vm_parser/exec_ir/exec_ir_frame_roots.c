@@ -354,3 +354,249 @@ TZrBool ZrParser_ExecIr_ObserveFrame(SZrExecIrFrameObservation *observation,
     }
     return ZR_TRUE;
 }
+
+/* Borrowed storage is live and typed by caller contract. Spans check arithmetic
+ * and aliasing; they do not establish allocation ownership or readability. */
+typedef struct SActiveFrameSpan {
+    uintptr_t begin;
+    uintptr_t end;
+} SActiveFrameSpan;
+
+enum {
+    ACTIVE_READ_REQUEST, ACTIVE_READ_LAYOUT, ACTIVE_READ_IDS,
+    ACTIVE_READ_MAPPING, ACTIVE_READ_CLASSES, ACTIVE_READ_SLOTS,
+    ACTIVE_READ_SELECTION, ACTIVE_READ_SCALARS, ACTIVE_READ_COUNT
+};
+enum {
+    ACTIVE_WRITE_FRAME, ACTIVE_WRITE_VALUES, ACTIVE_WRITE_INVALIDATIONS,
+    ACTIVE_WRITE_RESULT, ACTIVE_WRITE_COUNT
+};
+
+static TZrBool active_frame_fail(SZrExecIrDiagnostic *diagnostic,
+                                 EZrExecutionDiagnosticCode code,
+                                 TZrUInt32 valueId) {
+    SZrExecIrDiagnostic candidate;
+    root_diag(&candidate, code, valueId);
+    if (diagnostic != ZR_NULL) memcpy(diagnostic, &candidate, sizeof(candidate));
+    return ZR_FALSE;
+}
+
+static TZrBool active_frame_span(const void *base, uintmax_t count,
+                                 size_t elementSize, SActiveFrameSpan *span,
+                                 SZrExecIrDiagnostic *diagnostic) {
+    size_t bytes;
+    uintptr_t begin;
+    if (elementSize == 0u || count > (uintmax_t)(SIZE_MAX / elementSize)) {
+        return active_frame_fail(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW, 0u);
+    }
+    bytes = (size_t)count * elementSize;
+    if (bytes != 0u && base == ZR_NULL) {
+        return active_frame_fail(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, 0u);
+    }
+    begin = (uintptr_t)base;
+    if ((uintmax_t)bytes > (uintmax_t)(UINTPTR_MAX - begin)) {
+        return active_frame_fail(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW, 0u);
+    }
+    span->begin = begin;
+    span->end = begin + (uintptr_t)bytes;
+    return ZR_TRUE;
+}
+
+static TZrBool active_frame_overlap(const SActiveFrameSpan *a,
+                                    const SActiveFrameSpan *b) {
+    return (TZrBool)(a->begin != a->end && b->begin != b->end &&
+                     a->begin < b->end && b->begin < a->end);
+}
+
+static TZrUInt32 active_frame_logical(const SZrExecIrPackedFrameLayout *layout,
+                                     TZrExecIrValueId valueId) {
+    TZrUInt32 logical;
+    for (logical = 0u; logical < layout->frame.logicalSlotCount; ++logical) {
+        if (layout->logicalValueIds[logical] == valueId) return logical;
+    }
+    return layout->frame.logicalSlotCount;
+}
+
+static TZrExecIrValueId active_frame_slot_id(const SZrExecIrPackedFrameLayout *layout,
+                                            TZrUInt32 physical) {
+    TZrUInt32 logical;
+    for (logical = 0u; logical < layout->frame.logicalSlotCount; ++logical) {
+        if (layout->logicalToPhysical[logical] == physical) return layout->logicalValueIds[logical];
+    }
+    return ZR_EXEC_IR_VALUE_ID_INVALID;
+}
+
+static TZrBool active_frame_layout(const SZrExecIrPackedFrameLayout *layout,
+                                   SZrExecIrDiagnostic *diagnostic) {
+    const SZrExecIrFrameLayout *frame = &layout->frame;
+    TZrUInt32 logical, physical;
+    if (frame->slotCount > frame->slotCapacity ||
+        frame->storageSlotCount != frame->slotCount ||
+        frame->parameterPrefixCount > frame->logicalSlotCount ||
+        frame->parameterCount != frame->parameterPrefixCount ||
+        frame->localCount != frame->logicalSlotCount - frame->parameterPrefixCount ||
+        frame->frameByteAlign == 0u ||
+        (frame->frameByteAlign & (frame->frameByteAlign - 1u)) != 0u ||
+        frame->frameByteSize % frame->frameByteAlign != 0u ||
+        frame->returnBufferOffset > frame->frameByteSize) {
+        return active_frame_fail(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, 0u);
+    }
+    for (logical = 0u; logical < frame->logicalSlotCount; ++logical) {
+        TZrExecIrValueId id = layout->logicalValueIds[logical];
+        EZrExecIrPackedSlotClass slotClass = layout->slotClasses[logical];
+        TZrUInt32 prior;
+        physical = layout->logicalToPhysical[logical];
+        if (id == ZR_EXEC_IR_VALUE_ID_INVALID || !slot_class_valid(slotClass) ||
+            physical >= frame->storageSlotCount) {
+            return active_frame_fail(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, id);
+        }
+        for (prior = 0u; prior < logical; ++prior) {
+            if (layout->logicalValueIds[prior] == id) {
+                return active_frame_fail(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_DUPLICATE_DEFINITION, id);
+            }
+        }
+        if (frame->slots[physical].kind != (slotClass == ZR_EXEC_IR_PACKED_SLOT_REF
+                ? ZR_EXEC_IR_FRAME_SLOT_REFERENCE : ZR_EXEC_IR_FRAME_SLOT_VALUE)) {
+            return active_frame_fail(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, id);
+        }
+    }
+    for (physical = 0u; physical < frame->slotCount; ++physical) {
+        const SZrExecIrFrameSlot *slot = &frame->slots[physical];
+        TZrExecIrValueId id = active_frame_slot_id(layout, physical);
+        TZrUInt32 prior;
+        if (id == ZR_EXEC_IR_VALUE_ID_INVALID) {
+            return active_frame_fail(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, 0u);
+        }
+        if (slot->byteSize == 0u || slot->byteAlign == 0u ||
+            (slot->byteAlign & (slot->byteAlign - 1u)) != 0u ||
+            slot->byteAlign > frame->frameByteAlign ||
+            slot->byteOffset % slot->byteAlign != 0u ||
+            slot->byteOffset > frame->frameByteSize ||
+            slot->byteSize > frame->frameByteSize - slot->byteOffset ||
+            slot->byteOffset > frame->returnBufferOffset ||
+            slot->byteSize > frame->returnBufferOffset - slot->byteOffset) {
+            return active_frame_fail(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, id);
+        }
+        /* Subtractive bounds above make these UInt32 additions representable. */
+        for (prior = 0u; prior < physical; ++prior) {
+            const SZrExecIrFrameSlot *other = &frame->slots[prior];
+            if (slot->byteOffset < other->byteOffset + other->byteSize &&
+                other->byteOffset < slot->byteOffset + slot->byteSize) {
+                return active_frame_fail(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, id);
+            }
+        }
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrParser_ExecIr_ObserveActiveFrame(
+        const SZrExecIrActiveFrameObservation *request,
+        SZrExecIrActiveFrameObservationResult *result,
+        SZrExecIrDiagnostic *diagnostic) {
+    SZrExecIrActiveFrameObservation input;
+    SZrExecIrPackedFrameLayout layout;
+    SActiveFrameSpan readonly[ACTIVE_READ_COUNT], writable[ACTIVE_WRITE_COUNT];
+    TZrUInt32 selected;
+    size_t i, prior;
+    if (request == ZR_NULL || result == ZR_NULL || request->layout == ZR_NULL) {
+        return active_frame_fail(diagnostic, ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT, 0u);
+    }
+    memcpy(&input, request, sizeof(input));
+    memcpy(&layout, input.layout, sizeof(layout));
+
+    /* Use only initialized slotCount rows. slotCapacity is owner bookkeeping. */
+    if (!active_frame_span(request, 1u, sizeof(*request), &readonly[ACTIVE_READ_REQUEST], diagnostic) ||
+        !active_frame_span(input.layout, 1u, sizeof(*input.layout), &readonly[ACTIVE_READ_LAYOUT], diagnostic) ||
+        !active_frame_span(layout.logicalValueIds, layout.frame.logicalSlotCount,
+                           sizeof(*layout.logicalValueIds), &readonly[ACTIVE_READ_IDS], diagnostic) ||
+        !active_frame_span(layout.logicalToPhysical, layout.frame.logicalSlotCount,
+                           sizeof(*layout.logicalToPhysical), &readonly[ACTIVE_READ_MAPPING], diagnostic) ||
+        !active_frame_span(layout.slotClasses, layout.frame.logicalSlotCount,
+                           sizeof(*layout.slotClasses), &readonly[ACTIVE_READ_CLASSES], diagnostic) ||
+        !active_frame_span(layout.frame.slots, layout.frame.slotCount,
+                           sizeof(*layout.frame.slots), &readonly[ACTIVE_READ_SLOTS], diagnostic) ||
+        !active_frame_span(input.activeValueIds, input.activeValueCount,
+                           sizeof(*input.activeValueIds), &readonly[ACTIVE_READ_SELECTION], diagnostic) ||
+        !active_frame_span(input.scalarValues, input.scalarValueCount,
+                           sizeof(*input.scalarValues), &readonly[ACTIVE_READ_SCALARS], diagnostic) ||
+        !active_frame_span(input.frameBase, input.frameCapacityBytes, sizeof(*input.frameBase),
+                           &writable[ACTIVE_WRITE_FRAME], diagnostic) ||
+        !active_frame_span(input.writebackValues, input.writebackCapacity,
+                           sizeof(*input.writebackValues), &writable[ACTIVE_WRITE_VALUES], diagnostic) ||
+        !active_frame_span(input.invalidatedPhysicalSlots, input.invalidatedCapacity,
+                           sizeof(*input.invalidatedPhysicalSlots), &writable[ACTIVE_WRITE_INVALIDATIONS], diagnostic) ||
+        !active_frame_span(result, 1u, sizeof(*result), &writable[ACTIVE_WRITE_RESULT], diagnostic)) {
+        return ZR_FALSE;
+    }
+    if (!active_frame_layout(&layout, diagnostic)) return ZR_FALSE;
+    if ((input.scalarValues == ZR_NULL && input.scalarValueCount != 0u) ||
+        (input.scalarValues != ZR_NULL && input.scalarValueCount < layout.frame.logicalSlotCount) ||
+        input.frameCapacityBytes < layout.frame.frameByteSize ||
+        (layout.frame.frameByteSize != 0u && input.frameBase == ZR_NULL) ||
+        input.invalidatedCapacity < input.activeValueCount ||
+        (input.activeValueCount != 0u && (input.writebackValues == ZR_NULL ||
+                                        input.invalidatedPhysicalSlots == ZR_NULL))) {
+        return active_frame_fail(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, 0u);
+    }
+    for (selected = 0u; selected < input.activeValueCount; ++selected) {
+        TZrExecIrValueId id = input.activeValueIds[selected];
+        TZrUInt32 logical = active_frame_logical(&layout, id);
+        TZrUInt32 physical, previous;
+        const SZrExecIrFrameSlot *slot;
+        if (id == ZR_EXEC_IR_VALUE_ID_INVALID || logical == layout.frame.logicalSlotCount) {
+            return active_frame_fail(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, id);
+        }
+        physical = layout.logicalToPhysical[logical];
+        slot = &layout.frame.slots[physical];
+        for (previous = 0u; previous < selected; ++previous) {
+            TZrExecIrValueId oldId = input.activeValueIds[previous];
+            TZrUInt32 oldLogical;
+            if (oldId == id) {
+                return active_frame_fail(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_DUPLICATE_DEFINITION, id);
+            }
+            oldLogical = active_frame_logical(&layout, oldId);
+            if (layout.logicalToPhysical[oldLogical] == physical) {
+                return active_frame_fail(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, id);
+            }
+        }
+        if (layout.slotClasses[logical] != ZR_EXEC_IR_PACKED_SLOT_SCALAR ||
+            slot->kind != ZR_EXEC_IR_FRAME_SLOT_VALUE || slot->byteSize > sizeof(TZrUInt64)) {
+            return active_frame_fail(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED, id);
+        }
+        if (logical >= input.writebackCapacity) {
+            return active_frame_fail(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, id);
+        }
+    }
+    /* Full declared writable extents include inactive cells and unused tails. */
+    for (i = 0u; i < ACTIVE_WRITE_COUNT; ++i) {
+        for (prior = 0u; prior < i; ++prior) {
+            if (active_frame_overlap(&writable[i], &writable[prior])) {
+                return active_frame_fail(diagnostic, ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT, 0u);
+            }
+        }
+        for (prior = 0u; prior < ACTIVE_READ_COUNT; ++prior) {
+            if (active_frame_overlap(&writable[i], &readonly[prior])) {
+                return active_frame_fail(diagnostic, ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT, 0u);
+            }
+        }
+    }
+
+    /* All possible refusals are above. Live serialized inputs remain unchanged,
+     * so re-resolution needs no allocation or saved per-row state. The physical
+     * width belongs to the reused slot, not a reconstructed logical type. */
+    for (selected = 0u; selected < input.activeValueCount; ++selected) {
+        TZrUInt32 logical = active_frame_logical(&layout, input.activeValueIds[selected]);
+        TZrUInt32 physical = layout.logicalToPhysical[logical];
+        const SZrExecIrFrameSlot *slot = &layout.frame.slots[physical];
+        if (input.scalarValues != ZR_NULL) {
+            memcpy(input.frameBase + slot->byteOffset, &input.scalarValues[logical], slot->byteSize);
+        }
+        input.writebackValues[logical] = 0u;
+        memcpy(&input.writebackValues[logical], input.frameBase + slot->byteOffset, slot->byteSize);
+        input.invalidatedPhysicalSlots[selected] = physical;
+    }
+    result->observedValueCount = input.activeValueCount;
+    result->invalidatedCount = input.activeValueCount;
+    if (diagnostic != ZR_NULL) memset(diagnostic, 0, sizeof(*diagnostic));
+    return ZR_TRUE;
+}

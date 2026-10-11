@@ -320,3 +320,13 @@ missing.inc 叠加错误在修正 overlay 后已消失，保留错误不是注�
 原 include、宏、指令、表达式及运行行为保持；新 44 单元候选未重新编译。
 先前八个 TU 比较运行捕获的是原 43 单元 after，本次新增 TODO 的精确字节
 没有 native compile 信用；失败比较也不提供 compile pass 或 runtime/GC 信用。
+
+## Active selected-ValueId scalar observation: finite progress
+
+The additive `ZrParser_ExecIr_ObserveActiveFrame` entry preflights the complete packed layout, resolves explicit active ValueIds and publishes selected scalar physical bytes only after validation. Reused slots keep their physical width; the caller supplies genuine typed live storage and trusted active-liveness context. The existing all-values API and root visitor ABI remain unchanged.
+
+Accepted Windows Clang GREEN2 freshly compiled51 explicit C occurrences and linked three finite executables. The focused16-case child reported15 PASS and one deliberate prior-Unity FAIL (actual child1, exact wrapper0); both unchanged legacy regressions exited0. All4161 calls and24 registered layout-owner drains matched the raw protocol, with warnings0/UBSan0. MSVC separately compiled rootsC and the runner with warnings0; it did not link or run them. The RED functional result is independently accepted while its failed footer-orchestration receipt remains false.
+
+See the [module contract](../parser-and-semantics/ssa-active-packed-frame-observation.md), [exact validation protocol](../testing-and-validation/ssa-active-packed-frame-observation.md) and [finite acceptance/history](../acceptance/ssa-active-packed-frame-observation.md). Shared registration now includes the module; its default is GREEN after explicit-GREEN acceptance. No normal full-project run is inferred.
+
+This closes only the selected-scalar primitive and these two legacy regressions. The existing plan status and checklist remain unchanged. Full04.01/04.04, all47, genuine Source/VM liveness, GC/relocation/unwind, debugger/backend integration, Linux, full MSVC runtime, complete OOM/heap-leak checks and performance remain OPEN.

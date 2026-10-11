@@ -206,3 +206,13 @@ assert descriptor root offsets and total aligned size exact
 不能残留按旧最大 stack count 扫描全部 frame 的代码。storageSlotCount 与 logical slot count 分别命名，所有 offset 计算用 checked helper。
 
 本任务的 acceptance 至少附上：上述断言对应的测试名称、实际执行后端/平台、失败注入位置、verifier 输入/输出摘要，以及涉及所有权时的分配/释放或 lease 平衡。新增入口的 OOM、取消、重复调用和部分初始化退出应有明确处理；不适用的状态写明原因。
+
+## Active selected-ValueId scalar observation: finite progress
+
+The additive `ZrParser_ExecIr_ObserveActiveFrame` entry preflights the complete packed layout, resolves explicit active ValueIds and publishes selected scalar physical bytes only after validation. Reused slots keep their physical width; the caller supplies genuine typed live storage and trusted active-liveness context. The existing all-values API and root visitor ABI remain unchanged.
+
+Accepted Windows Clang GREEN2 freshly compiled51 explicit C occurrences and linked three finite executables. The focused16-case child reported15 PASS and one deliberate prior-Unity FAIL (actual child1, exact wrapper0); both unchanged legacy regressions exited0. All4161 calls and24 registered layout-owner drains matched the raw protocol, with warnings0/UBSan0. MSVC separately compiled rootsC and the runner with warnings0; it did not link or run them. The RED functional result is independently accepted while its failed footer-orchestration receipt remains false.
+
+See the [module contract](../../../parser-and-semantics/ssa-active-packed-frame-observation.md), [exact validation protocol](../../../testing-and-validation/ssa-active-packed-frame-observation.md) and [finite acceptance/history](../../../acceptance/ssa-active-packed-frame-observation.md). Shared registration now includes the module; its default is GREEN after explicit-GREEN acceptance. No normal full-project run is inferred.
+
+This closes only the selected-scalar primitive and these two legacy regressions. The existing plan status and checklist remain unchanged. Full04.01/04.04, all47, genuine Source/VM liveness, GC/relocation/unwind, debugger/backend integration, Linux, full MSVC runtime, complete OOM/heap-leak checks and performance remain OPEN.
