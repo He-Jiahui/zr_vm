@@ -28,16 +28,16 @@ tests:
   - tests/parser/test_ssa_source_finalized_module.c
   - docs/testing-and-validation/source-finalized-module.md
 doc_type: acceptance-record
-status: functional-green-verified-commit-pending
+status: functional-green-verified-committed
 ---
 
 # Finalized Source module: finite GREEN evidence
 
 ## Current finite GREEN scope and status
 
-Status is functional-green-verified-commit-pending. Actual runtime GREEN r2 and
-MSVC GREEN r2 are validated; optimized current Root GREEN proof and finite commit
-remain pending. The implemented private helper validates declared typed consistency
+Status is functional-green-verified-committed. Actual runtime GREEN r2 and
+MSVC GREEN r2 are validated; the finite GREEN implementation was committed as
+`d475d47494d5b7566e258dd379466ca099b3da6f`. The implemented private helper validates declared typed consistency
 and owns complete copied module storage. It does not establish genuine Source/
 Binder history, Compiler/VM bootstrap behavior, registry durability or admission.
 
@@ -342,9 +342,9 @@ Ordinary/default adoption, broader Source, normal-project runtime, Linux, full
 MSVC, backend/native parity and all47 remain OPEN. No SourceExecute, Oracle,
 FFI/network/security or generated native execution occurred in this lower gate.
 
-Current optimized Root GREEN proof and exact finite GREEN commit remain pending;
-no proof/commit hash or future cleanup result is invented. Separate returned
-Source docs remain frozen and retain their own build-only/failed history.
+The exact finite GREEN commit is `d475d47494d5b7566e258dd379466ca099b3da6f`.
+This documentation synchronization does not change the finite validation scope.
+Separate returned Source docs remain frozen and retain their own build-only/failed history.
 
 - [Private contract](../parser-and-semantics/source-finalized-module.md)
 - [Exact24 protocol](../testing-and-validation/source-finalized-module.md)
