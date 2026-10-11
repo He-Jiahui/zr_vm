@@ -62,6 +62,40 @@ trailing byte sequence in the copied failure message or snapshot; see its `BUG:`
 review note in `runtime/assertions.c`. The existing assertion tests do not cover
 this boundary case.
 
+## 宿主 C 接口与失败副本
+
+公共头部的八个 C 接口保持原签名。查询描述符、登记 VM、调用断言和读取诊断副本有各自的使用窗口。
+
+| 入口 | 调用目的 | 使用边界 |
+| --- | --- | --- |
+| GetModuleDescriptor | 核查静态 Test provider 签名、属性和 phase。 | 无需 VM；返回 const 静态借用表，provider 须活到最后一次消费。 |
+| Register | 登记 zr.task、按需附着 native registry，再登记 zr.testing。 | 有效 global/mainThread；不自动切 Test phase，失败保留前序登记，不回滚。 |
+| ClearLastFailure | 在当前 OS 线程开始或结束诊断窗口。 | 不清 VM currentException，也不清其它线程记录；已复制值仍有效。 |
+| GetLastFailure | 按值复制当前 OS 线程的最近失败。 | out 非空且有记录才成功；false 时不改输出，不消费记录，不按 GlobalState 分区。 |
+| Assert | 把 false 条件转成结构化失败与 VM 异常。 | 正常 native context；一或两个实参，成功写 null 并清 TLS；失败由 VM 异常边界处理。 |
+| Equal | 先作规范相等比较，失败后制作 actual/expected 诊断。 | 两实参；格式化故障不是相等性结论；有界文本仍有按字节截断 BUG。 |
+| Throws | 同步捕获 action 异常并匹配 Error 派生 E。 | public 一实参/native 两实参含隐藏 TypeId；result 沿 VM 初始化/复制协议，不按诊断结构处理。 |
+| ZrVm_GetNativeModule_v1 | 共享 provider 的固定描述符查询符号。 | 仅共享构建；查询不执行宿主 Register 依赖链；加载器先查 ABI/登记，后续解析或物化时查 phase。 |
+
+诊断结构全部内嵌字符数组与普通值，不保活 VM 对象，宿主可保存成功读取的副本。
+TLS 以 OS 线程为单位，同一线程的多个 GlobalState 或重入用例共享它；宿主应先读取再清理。
+`hasValue` 表示视图有生产记录，合法 null 值仍可为真，Throws 的 expected 还可能只有 typeName。
+`truncated` 只报告正常 snapshot.text 的裁剪，message/sourceFile/typeName 没有独立标志。
+没有可用 VM 帧/调试元数据时 source span 清零；有源码名称但没有匹配位置记录时可以只有 sourceFile 非空。
+TODO: endColumn 的包含/排除语义仍须沿执行位置生产者核对，不能仅凭字段名推定字符串切片规则；
+具体从 `zr_vm_core/src/zr_vm_core/io_runtime.c:695` 的 instructionRanges 复制继续追踪。
+
+原生回调 bool 与宿主 `ZrLib_CallModuleExport` 的 bool 含义不同：回调 false 且 threadStatus 正常时，
+派发层把结果置 null，宿主仍可返回 true。非法 E 的用例验证 action 未执行和 null 结果；
+宿主 true 只说明调用完成且没有 VM 异常，不能作为断言已经执行的证明。
+
+当前证据为 `zr_vm_cli/src/zr_vm_cli/commands/test_command.c:551`、`:570`、`:592` 的诊断窗口，
+`zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:375`、`:380`、`:383` 的 TLS 边界，
+`zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:136`、`:513` 的 hasValue 生产者，
+`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:619`、`:1997` 的两层返回路径，
+及 `tests/testing/test_assertions.c:337` 的非法 E 调用。
+本节只更新公共头部契约；内部 assertions.c 的完整文件单元和文档格式仍待重核，不据此授予整个模块或运行时验收。
+
 ## TestManifest
 
 Test compilation type-checks ordinary functions and emits a versioned binary
