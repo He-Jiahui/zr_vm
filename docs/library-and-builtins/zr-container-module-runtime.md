@@ -184,8 +184,8 @@ capacity构造参数仍叫index；已有同名非callable字段被当适配已�
 
 ## 四种宿主缓存与登记入口的当前契约
 
-本批逐项复核四个缓存类型、23个字段和 Register 定义，共28项。module.c 的357项既有语义台账
-保留，其余329项的当前详细注释格式和完整文件闭合仍待重核；数字引用迁移不增加审查完成数。
+前批详细复核四个缓存类型、23字段及Register共28项；本批补齐下节40项，累计68项。
+357项台账保留，剩余289项待当前契约及完整性复核；数字引用迁移不增加完成数。
 
 | 类型 | 调用目的 | 借用与失效边界 |
 | --- | --- | --- |
@@ -199,19 +199,39 @@ capacity构造参数仍叫index；已有同名非callable字段被当适配已�
 Map 的普通 entries/key/Pair缓存没有这项标记或独立GC根；不能跨分配、用户回调或GC继续持有旧裸地址。
 同一种 cacheIdentity 仅由对应 accessor 比较/更新；它是生命周期标量，不是同步锁或内容版本。
 
-TODO: 多 GlobalState/mutator交错访问进程静态缓存的同步需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:285` 核查。
-TODO: Map裸地址重写与 moving GC协作需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:790` 及 gc_cycle 的对象重写入口核查；
-Pair.first 的合法写入与 entries.memberVersion 联动需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:1690` 核查，不能由相同版本推出键内容未变。
+TODO: 多 GlobalState/mutator交错访问进程静态缓存的同步需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:553` 核查。
+TODO: Map裸地址重写与 moving GC协作需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:1378` 及 gc_cycle 的对象重写入口核查；
+Pair.first 的合法写入与 entries.memberVersion 联动需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:2278` 核查，不能由相同版本推出键内容未变。
 
 宿主 Register 的顺序是 iteration→container→pooling→基本ARRAY适配。iteration链按需 Attach registry，
 所以调用者无需提前创建 registry；global/mainThreadState/基本ARRAY原型必须已有效。后阶段失败不回滚
 前阶段成功登记。CLI `zr_vm_cli/src/zr_vm_cli/project/project.c:368` 检查 bool，`tests/container/container_test_common.c:60` 忽略 bool，
 该测试工厂调用本身不能证明登记成功。描述符查询及共享插件 getter 不执行这条宿主初始化链。
 
-TODO: `zr_vm_lib_container/src/zr_vm_lib_container/module.c:4725` 的同名字段 presence检查不验证 callable/getIterator协议；核查已有字段的实际消费者。
+TODO: `zr_vm_lib_container/src/zr_vm_lib_container/module.c:5313` 的同名字段 presence检查不验证 callable/getIterator协议；核查已有字段的实际消费者。
 BUG: 合法初始化global、ARRAY原型尚未ignore且ignored表已满、字段缺失时，宿主分阶段拒绝
 getter pin的ignore扩容、允许中间闭包创建、再拒绝setter pin的扩容，void setter早退但Register可仍true。
-完整链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:4725`→闭包创建→`zr_vm_lib_container/src/zr_vm_lib_container/module.c:4738`；pin入口
+完整链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:5313`→闭包创建→`zr_vm_lib_container/src/zr_vm_lib_container/module.c:5326`；pin入口
 `zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1429`/`:1385`；
 只拒绝一次setter扩容不足以证明该链，先前getter可能已扩表。本轮只有静态证据，无故障注入信用。
-实际宿主登记链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:4784`，iteration 的 Attach入口是 `zr_vm_lib_iteration/src/zr_vm_lib_iteration/module.c:21`。
+实际宿主登记链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:5372`，iteration 的 Attach入口是 `zr_vm_lib_iteration/src/zr_vm_lib_iteration/module.c:21`。
+
+
+## 字段名与缓存入口的40项详细契约
+
+23函数、16字段名常量及1 DEBUG状态逐项核对实际消费点。缓存家族另有3 enum、
+15函数内static状态及3语句块未闭合，不由函数注释替代；iterator prototype不在本批。
+first区分LinkedList首节点和Pair首分量，同文本键和角色Pair槽不说明共享字段值；
+C也不保证等字面量地址合并或分离。fallback借用宿主文本，48槽满走断言后NULL。
+
+永久键由原域保活且域内不搬迁；identity切换清槽，不立即回收仍活旧域字符串。
+accessor静态缓存视图不可跨identity切换保存使用，键缓存不保活目标容器/字段值。
+Map try依赖刚由accessor核验域，本身不重验cacheIdentity；slot假定非NULL key而未独立检查。
+命中仅按对象地址、entries版本及非NULL Pair，不重比Pair.first或检查下标长度。
+成功扫描才发布候选，不缓存NULL entry；已有同key/version覆盖不推进，空槽或满槽插入均推进。
+
+两Debug命中计数同点递增，entryValidationReadCount没有递增/非零更新，初始化和Reset写零；Reset不清真实缓存，
+Get非DEBUG全零。TODO: 多域静态缓存/统计同步、moving GC裸地址重写及Pair.first版本联动
+仍待合法执行链核查，不升级BUG。公开头16处旧数字引用已按当前语义修正后迁移，其12项既有职责范围保留。
+本批仅以字节保护、真实调用、独立review和一TU编译对照验收；module.c继续pending，
+不授运行时、GC、OOM、ABI、性能或跨仓库capture信用。

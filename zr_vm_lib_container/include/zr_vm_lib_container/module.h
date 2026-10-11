@@ -35,11 +35,11 @@
  * ZR_DEBUG 下 Reset 开始新的计数窗口，Get 复制当前三个数；非 DEBUG 的 Get 返回全零。
  * 快照本身不持有 VM 对象，调用方可按普通值保存。读取与计数更新没有锁或原子快照协议。
  * TODO: 多线程或多个 GlobalState 交错测量时的统计同步与窗口隔离需核对；入口为
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:446 和 tests/container/test_container_runtime.c:1535。
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:890 和 tests/container/test_container_runtime.c:1535。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:137 保存过程计数，
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:446 与 zr_vm_lib_container/src/zr_vm_lib_container/module.c:447 一起更新；
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:419 保存过程计数，
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:890 与 zr_vm_lib_container/src/zr_vm_lib_container/module.c:891 一起更新；
  * tests/container/test_container_runtime.c:1539 读取快照，tests/container/test_container_runtime.c:1541 至 tests/container/test_container_runtime.c:1547 检查构建分支。
  */
 typedef struct ZrVmLibContainerDebugHotMapLookupStats {
@@ -75,7 +75,7 @@ typedef struct ZrVmLibContainerDebugHotMapLookupStats {
  *
  * ## References
  * tests/iterator/test_enumerator_protocol.c:132 查询容器类型的迭代协议；
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4594 保存静态描述符，zr_vm_lib_container/src/zr_vm_lib_container/module.c:4620 返回其地址。
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:5261 保存静态描述符，zr_vm_lib_container/src/zr_vm_lib_container/module.c:5284 返回其地址。
  */
 ZR_VM_LIB_CONTAINER_API const ZrLibModuleDescriptor *ZrVmLibContainer_GetModuleDescriptor(void);
 /**
@@ -93,7 +93,7 @@ ZR_VM_LIB_CONTAINER_API const ZrLibModuleDescriptor *ZrVmLibContainer_GetModuleD
  *
  * ## References
  * tests/container/test_pooling_closed_type_runtime.c:21 从描述符找稳定槽回调角色；
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4625 转交查询，
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:5289 转交查询，
  * zr_vm_lib_container/src/zr_vm_lib_container/pooling.c:928 声明 container 链接，zr_vm_lib_container/src/zr_vm_lib_container/pooling.c:950 返回静态表。
  */
 ZR_VM_LIB_CONTAINER_API const ZrLibModuleDescriptor *ZrVmLibContainer_GetPoolingModuleDescriptor(void);
@@ -114,15 +114,15 @@ ZR_VM_LIB_CONTAINER_API const ZrLibModuleDescriptor *ZrVmLibContainer_GetPooling
  * @pre global 的主线程与基本类型原型已建立；注册与执行的域同步由宿主协调。
  * 成功报告不额外保证当前同名 getIterator 字段可调用；已有任意同名字段都会被视为已安装。
  * TODO: 该 presence 策略需结合宿主预置同名非闭包字段核对；入口为
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4648。
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:5313。
  * BUG: 合法宿主分配器在原型未 ignored、ignore 表已满且原先无 getIterator 时，
  * 连续拒绝 getter 与 setter 的两次 ignore 表扩容、允许中间闭包申请，安装仍可报告成功
  * 而字段缺失。void setter 无成功凭据；完整静态调用路径见模块文档，尚未进行故障注入验证。
  *
  * ## References
  * zr_vm_cli/src/zr_vm_cli/project/project.c:368 传播返回值；tests/container/container_test_common.c:60 的 state 工厂忽略该值；
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4686 至 zr_vm_lib_container/src/zr_vm_lib_container/module.c:4690 建立依赖顺序，
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4661 调用 void setter，zr_vm_lib_container/src/zr_vm_lib_container/module.c:4666 仍返回成功；
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:5376 至 zr_vm_lib_container/src/zr_vm_lib_container/module.c:5380 建立依赖顺序，
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:5326 调用 void setter，zr_vm_lib_container/src/zr_vm_lib_container/module.c:5331 仍返回成功；
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1385 与 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1429 是两次固定失败入口；
  * docs/library-and-builtins/zr-container-module-runtime.md 记录合法双失败条件及部分登记边界。
  */
@@ -141,7 +141,7 @@ ZR_VM_LIB_CONTAINER_API TZrBool ZrVmLibContainer_Register(SZrGlobalState *global
  *
  * ## References
  * tests/container/test_container_runtime.c:1535 在待测脚本执行前重置；
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:171 仅清除计数结构。
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:483 仅清除计数结构。
  */
 ZR_VM_LIB_CONTAINER_API void ZrVmLibContainer_Debug_ResetHotMapLookupStats(void);
 /**
@@ -158,7 +158,7 @@ ZR_VM_LIB_CONTAINER_API void ZrVmLibContainer_Debug_ResetHotMapLookupStats(void)
  *
  * ## References
  * tests/container/test_container_runtime.c:1539 在脚本执行后查询；
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:178 复制 DEBUG 计数，zr_vm_lib_container/src/zr_vm_lib_container/module.c:181 构造非 DEBUG 零值。
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:506 复制 DEBUG 计数，zr_vm_lib_container/src/zr_vm_lib_container/module.c:508 构造非 DEBUG 零值。
  */
 ZR_VM_LIB_CONTAINER_API ZrVmLibContainerDebugHotMapLookupStats ZrVmLibContainer_Debug_GetHotMapLookupStats(void);
 
@@ -178,7 +178,7 @@ ZR_VM_LIB_CONTAINER_API ZrVmLibContainerDebugHotMapLookupStats ZrVmLibContainer_
  * ## References
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:370 查找固定符号，
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:383 调用它；
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4696 转交描述符查询。
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:5386 转交描述符查询。
  */
 ZR_VM_LIB_CONTAINER_API const ZrLibModuleDescriptor *ZrVm_GetNativeModule_v1(void);
 #endif
