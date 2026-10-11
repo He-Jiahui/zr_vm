@@ -181,3 +181,37 @@ capacity构造参数仍叫index；已有同名非callable字段被当适配已�
 | g_container_types[6] | 声明LinkedNode<T>类，保存value及双向链接。 | 单T无额外约束；CLASS、允许值与装箱构造、protocolMask0；零或一参构造，脱链后value仍可由外部节点引用保活。 |
 | g_container_types[7] | 声明可写Span<T>连续非拥有视图，接入区间字段与slice/read/write回调。 | 单T无额外约束；STRUCT、允许值构造禁止装箱，REF_LIKE/CONTIGUOUS_VIEW_MUTABLE协议；source/start/length来源与边界须有效。 |
 | g_container_types[8] | 声明ReadOnlySpan<T>连续非拥有只读视图，复用区间字段并接入slice/read回调。 | 单T无额外约束；STRUCT、允许值构造禁止装箱，REF_LIKE/CONTIGUOUS_VIEW_READONLY协议；无SET_ITEM，不冻结其他持有者可写来源。 |
+
+## 四种宿主缓存与登记入口的当前契约
+
+本批逐项复核四个缓存类型、23个字段和 Register 定义，共28项。module.c 的357项既有语义台账
+保留，其余329项的当前详细注释格式和完整文件闭合仍待重核；数字引用迁移不增加审查完成数。
+
+| 类型 | 调用目的 | 借用与失效边界 |
+| --- | --- | --- |
+| ZrContainerFieldStringCacheEntry | 为固定热名以外的宿主字段文本保存本域永久字符串，避免每次访问重建键。 | fieldName 不复制，NUL文本必须活到缓存清空；fieldString 不接管域寿命；identity切换清槽。 |
+| ZrContainerHotFieldStringCache | 为 backing、Pair、Enumerator 的八种热字段角色复用永久键。 | 缓存的是键名，不是字段值或容器GC根；按本类型 accessor 的 GlobalState身份失效。 |
+| ZrContainerHotMapLookupCacheSlot | 保存成功字符串键扫描的位置，供同一 backing/版本/对象身份的候选命中。 | key/Pair都是裸借用；负查找不入槽；版本相同不独立证明 Pair.first未变或下标合法。 |
+| ZrContainerHotMapLookupCache | 合并最近成功命中与四候选槽，减少 Map重复扫描。 | entries或域切换清 MRU/槽/游标；已有同key/version覆盖不推进，空槽插入与满槽轮换均推进。 |
+
+已 MarkAsPermanent 的字段字符串由永久区域/根保活且不被 moving GC搬迁，依据
+`zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210` 和 `zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217`。
+Map 的普通 entries/key/Pair缓存没有这项标记或独立GC根；不能跨分配、用户回调或GC继续持有旧裸地址。
+同一种 cacheIdentity 仅由对应 accessor 比较/更新；它是生命周期标量，不是同步锁或内容版本。
+
+TODO: 多 GlobalState/mutator交错访问进程静态缓存的同步需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:285` 核查。
+TODO: Map裸地址重写与 moving GC协作需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:790` 及 gc_cycle 的对象重写入口核查；
+Pair.first 的合法写入与 entries.memberVersion 联动需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:1690` 核查，不能由相同版本推出键内容未变。
+
+宿主 Register 的顺序是 iteration→container→pooling→基本ARRAY适配。iteration链按需 Attach registry，
+所以调用者无需提前创建 registry；global/mainThreadState/基本ARRAY原型必须已有效。后阶段失败不回滚
+前阶段成功登记。CLI `zr_vm_cli/src/zr_vm_cli/project/project.c:368` 检查 bool，`tests/container/container_test_common.c:60` 忽略 bool，
+该测试工厂调用本身不能证明登记成功。描述符查询及共享插件 getter 不执行这条宿主初始化链。
+
+TODO: `zr_vm_lib_container/src/zr_vm_lib_container/module.c:4725` 的同名字段 presence检查不验证 callable/getIterator协议；核查已有字段的实际消费者。
+BUG: 合法初始化global、ARRAY原型尚未ignore且ignored表已满、字段缺失时，宿主分阶段拒绝
+getter pin的ignore扩容、允许中间闭包创建、再拒绝setter pin的扩容，void setter早退但Register可仍true。
+完整链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:4725`→闭包创建→`zr_vm_lib_container/src/zr_vm_lib_container/module.c:4738`；pin入口
+`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1429`/`:1385`；
+只拒绝一次setter扩容不足以证明该链，先前getter可能已扩表。本轮只有静态证据，无故障注入信用。
+实际宿主登记链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:4784`，iteration 的 Attach入口是 `zr_vm_lib_iteration/src/zr_vm_lib_iteration/module.c:21`。

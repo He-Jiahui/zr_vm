@@ -67,68 +67,145 @@ enum {
     ZR_CONTAINER_HOT_MAP_LOOKUP_CACHE_SLOT_COUNT = 4
 };
 
-/** @brief 其他字段名缓存项；名称借用宿主文本，字符串经 permanent 标记属于 VM 域。 */
+/**
+ * ## Summary
+ * 保存固定热名之外的一个宿主字段名与本 VM 的永久字符串，避免重复字段访问时重建键对象。
+ * 实际使用者为 make_field_key、set_int/set_null、try_get 与字段 Pair 查找，不拥有容器实例。
+ *
+ * ## Fields
+ * fieldName 借用 NUL 结尾的宿主文本，比较仍会读取内容；fieldString 借用创建后永久标记的本域字符串。
+ * 两字段不作为一份可跨 VM 的键；宿主文本未复制，永久标记也不赋予宿主释放字符串的权利。
+ *
+ * ## Invariants and lifecycle
+ * fallback 静态表最多48项，固定热名走独立槽。cacheIdentity 改变时全表清零，不析构原域字符串。
+ * fieldName 必须保持有效到相应缓存清空；字符串只在当前 GlobalState 存活期间有效。
+ * PERMANENT 区域及持久根保证已标记字符串不被 moving GC 搬迁；这不适用于下面 Map 的普通 Pair 借用。
+ * TODO: 多 GlobalState 并行访问的进程静态缓存同步仍待核对，具体入口是本文件的缓存 accessor 与双域并行调用。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:294 是静态表；zr_vm_lib_container/src/zr_vm_lib_container/module.c:322、zr_vm_lib_container/src/zr_vm_lib_container/module.c:324 清空，zr_vm_lib_container/src/zr_vm_lib_container/module.c:410、zr_vm_lib_container/src/zr_vm_lib_container/module.c:411 匹配读出，zr_vm_lib_container/src/zr_vm_lib_container/module.c:428、zr_vm_lib_container/src/zr_vm_lib_container/module.c:429 发布。
+ * 实际字段消费者 zr_vm_lib_container/src/zr_vm_lib_container/module.c:445、zr_vm_lib_container/src/zr_vm_lib_container/module.c:991、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1016、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1200、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1541；创建/永久标记 zr_vm_lib_container/src/zr_vm_lib_container/module.c:422、zr_vm_lib_container/src/zr_vm_lib_container/module.c:426。
+ * zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210 与 zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217 是永久根/不可移动区域的依据。
+ */
 typedef struct ZrContainerFieldStringCacheEntry {
-    /** @brief 借用且稳定的 C 名称文本；缓存匹配时仍会读取其内容。 */
+    /** @brief fieldName 借用 NUL 结尾宿主文本，缓存清空前必须有效；命中仍读取其内容，不复制或释放。 */
     const TZrChar *fieldName;
-    /** @brief 本域永久字段字符串，换域丢弃借用指针。 */
+    /** @brief 本域永久字段字符串借用，永久根保活且不搬迁；identity 切换丢弃指针，不接管域生命周期。 */
     SZrString *fieldString;
 } ZrContainerFieldStringCacheEntry;
 
-/** @brief 当前 VM 域的永久字段名指针集合；换域必须先清空，不能保活容器实例。 */
+/**
+ * ## Summary
+ * 给当前 VM 的八个热字段角色保存永久字符串，供 backing、Pair 和 Enumerator 的字段热路径复用。
+ * 它只缓存字段名，不缓存该字段指向的容器、条目或迭代位置。
+ *
+ * ## Fields
+ * cacheIdentity 区分 GlobalState 生命周期；items/entries 对应隐藏 backing 键，pairFirst/pairSecond 对应 Pair 分量键。
+ * iteratorSource/Current/Index/NextNode 分别用于来源、当前值与两种迭代游标，均是延迟创建的字符串借用。
+ *
+ * ## Invariants and lifecycle
+ * accessor 的进程静态实例按当前 global->cacheIdentity 清零；槽第一次使用时创建字符串并 MarkAsPermanent。
+ * 已创建字符串在本域存续期间由永久根保活且不搬迁；缓存不形成容器实例或 backing 的 GC 根。
+ * 切换 identity 只丢弃槽值，不释放原域对象；各字符串不能跨所属 GlobalState 销毁继续使用。
+ * TODO: identity 切换不提供锁；多个 VM/mutator 的并发窗口需沿各字段 accessor 与主域调用契约核对。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:458 定义唯一静态实例；zr_vm_lib_container/src/zr_vm_lib_container/module.c:464、zr_vm_lib_container/src/zr_vm_lib_container/module.c:466 比较/写入本类型身份。
+ * 八字段 accessor 为 zr_vm_lib_container/src/zr_vm_lib_container/module.c:721、zr_vm_lib_container/src/zr_vm_lib_container/module.c:729、zr_vm_lib_container/src/zr_vm_lib_container/module.c:737、zr_vm_lib_container/src/zr_vm_lib_container/module.c:745、zr_vm_lib_container/src/zr_vm_lib_container/module.c:753、zr_vm_lib_container/src/zr_vm_lib_container/module.c:761、zr_vm_lib_container/src/zr_vm_lib_container/module.c:769、zr_vm_lib_container/src/zr_vm_lib_container/module.c:777；通用创建/永久标记为 zr_vm_lib_container/src/zr_vm_lib_container/module.c:276、zr_vm_lib_container/src/zr_vm_lib_container/module.c:280。
+ * 真实消费者包括 backing zr_vm_lib_container/src/zr_vm_lib_container/module.c:2439、zr_vm_lib_container/src/zr_vm_lib_container/module.c:2489，Pair zr_vm_lib_container/src/zr_vm_lib_container/module.c:1620、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1636，Enumerator zr_vm_lib_container/src/zr_vm_lib_container/module.c:2897、zr_vm_lib_container/src/zr_vm_lib_container/module.c:3017。
+ * zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210 与 zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217 说明永久字符串生命周期。
+ */
 typedef struct ZrContainerHotFieldStringCache {
-    /** @brief 区分 VM GlobalState 生命周期，防止跨域复用已销毁字符串。 */
+    /** @brief 当前 GlobalState 生命周期标量，只由本类型 accessor 比较/写入；不是锁、对象版本或 GC 根。 */
     TZrUInt64 cacheIdentity;
-    /** @brief 延迟创建的 items 角色永久字符串；身份切换时置空。 */
+    /** @brief items 隐藏 backing 的永久字符串键；仅缓存键名，不保活对应 Array。 */
     SZrString *itemsFieldString;
-    /** @brief 延迟创建的 entries 角色永久字符串；身份切换时置空。 */
+    /** @brief entries 隐藏 backing 的永久字符串键；仅缓存键名，不拥有 Map/Set 条目。 */
     SZrString *entriesFieldString;
-    /** @brief 延迟创建的 pairFirst 角色永久字符串；身份切换时置空。 */
+    /** @brief Pair.first 的永久字符串键；字段值仍由 Pair/VM 管理。 */
     SZrString *pairFirstFieldString;
-    /** @brief 延迟创建的 pairSecond 角色永久字符串；身份切换时置空。 */
+    /** @brief Pair.second 的永久字符串键；不复制或保活对应分量值。 */
     SZrString *pairSecondFieldString;
-    /** @brief 延迟创建的 iteratorSource 角色永久字符串；身份切换时置空。 */
+    /** @brief Enumerator.source 的永久键名；实例中的字段值负责保持来源可达。 */
     SZrString *iteratorSourceFieldString;
-    /** @brief 延迟创建的 iteratorCurrent 角色永久字符串；身份切换时置空。 */
+    /** @brief Enumerator.current 的永久键名；缓存不拥有迭代当前值。 */
     SZrString *iteratorCurrentFieldString;
-    /** @brief 延迟创建的 iteratorIndex 角色永久字符串；身份切换时置空。 */
+    /** @brief Array Enumerator 隐藏 index 的永久键名；不是游标数值或版本快照。 */
     SZrString *iteratorIndexFieldString;
-    /** @brief 延迟创建的 iteratorNextNode 角色永久字符串；身份切换时置空。 */
+    /** @brief LinkedList Enumerator nextNode 的永久键名；节点由实例字段保持可达。 */
     SZrString *iteratorNextNodeFieldString;
 } ZrContainerHotFieldStringCache;
 
-/** @brief 一次成功字符串键查找的借用位置；只在 backing 与成员版本匹配时使用。 */
+/**
+ * ## Summary
+ * 保存一次成功字符串键查找的位置，供同一 Map backing 的 MRU 和四候选槽复用。
+ * 同一键对象身份、同一 entries.memberVersion 且 Pair 指针非空时才能交付缓存位置；负查找不写槽。
+ *
+ * ## Fields
+ * keyObject 是查询字符串对象的裸借用身份，不是内容哈希；entryObject 是对应 Pair 的裸借用。
+ * entriesMemberVersion 及 index 是成功扫描时的普通版本/下标；没有独立的所有权、边界或内容证明。
+ *
+ * ## Invariants and lifecycle
+ * 父缓存负责 entries/backing 与域切换失效；槽本身不保活 key、Pair 或 backing，不能跨分配/用户回调持有裸地址。
+ * 现有验证不重新比较 Pair.first 的当前内容，也不单独重查 index 边界。
+ * TODO: Pair.first 的合法写入与 entries 版本联动需沿 zr_vm_lib_container/src/zr_vm_lib_container/module.c:1690 的写路径核对，不能把版本相同当成键未变的证明。
+ * TODO: moving GC 后的 raw key/entry 重写仍待沿 zr_vm_lib_container/src/zr_vm_lib_container/module.c:790 和 gc_cycle 对象重写入口核对。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:550、zr_vm_lib_container/src/zr_vm_lib_container/module.c:698 是槽读取验证；zr_vm_lib_container/src/zr_vm_lib_container/module.c:592 至 zr_vm_lib_container/src/zr_vm_lib_container/module.c:618 是已有候选覆盖及新槽发布/推进。
+ * Map 真实扫描与缓存接入 zr_vm_lib_container/src/zr_vm_lib_container/module.c:2551、zr_vm_lib_container/src/zr_vm_lib_container/module.c:2677，公开消费者 zr_vm_lib_container/src/zr_vm_lib_container/module.c:3632、zr_vm_lib_container/src/zr_vm_lib_container/module.c:3648、zr_vm_lib_container/src/zr_vm_lib_container/module.c:3728、zr_vm_lib_container/src/zr_vm_lib_container/module.c:3777、zr_vm_lib_container/src/zr_vm_lib_container/module.c:3810、zr_vm_lib_container/src/zr_vm_lib_container/module.c:3886。
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:577 拒绝 NULL entry，zr_vm_lib_container/src/zr_vm_lib_container/module.c:2646 的负查找不发布候选；父容量为 zr_vm_lib_container/src/zr_vm_lib_container/module.c:67 的四槽常量。
+ */
 typedef struct ZrContainerHotMapLookupCacheSlot {
-    /** @brief 借用字符串对象身份；不是内容哈希，也不额外保活键。 */
+    /** @brief 查询字符串的裸对象身份借用；按地址匹配，不作为内容哈希或 GC 根。 */
     SZrRawObject *keyObject;
-    /** @brief 记录 entries 结构版本，改变位置后旧槽不可命中。 */
+    /** @brief 成功扫描时的 backing memberVersion；须与当前版本相等，不独立证明 Pair.first 内容未变。 */
     TZrUInt32 entriesMemberVersion;
-    /** @brief 成功扫描得到的 entries 下标，未命中不读取。 */
+    /** @brief 成功位置下标；仅在 key/version/Pair 同时有效时使用，不独立做长度或所有权证明。 */
     TZrSize index;
-    /** @brief 对应 Pair 借用指针，依赖 backing 的可达性和结构稳定。 */
+    /** @brief 成功位置的 Pair 裸借用；缓存不保活，不跨分配/回调/moving GC 保留旧地址。 */
     SZrObject *entryObject;
 } ZrContainerHotMapLookupCacheSlot;
 
 /* Map 字符串键热路径只缓存 entries 中已有 Pair 的位置；同一 entries 的成员版本
  * 变化后，旧位置与 Pair 指针都不能再用于查找。
  */
-/** @brief 进程静态字符串键热缓存；最近槽与四槽轮换不形成容器/Pairs 的独立 GC 根。 */
+/**
+ * ## Summary
+ * 进程静态字符串键 Map 热状态，将最近一次命中与四个候选槽用于减少重复扫描。
+ * 所有位置都借用当前 backing；同一域、entries 身份、键对象身份及成员版本共同决定可否复用。
+ *
+ * ## Fields
+ * cacheIdentity 是域生命周期标量；entries 是当前 backing 借用；lastKey/lastEntry 是 MRU 的对象借用。
+ * lastEntriesMemberVersion 和 lastIndex 与 MRU 同时有效；slots 内嵌四个同契约候选，nextSlotIndex 只控制替换次序。
+ *
+ * ## Invariants and lifecycle
+ * identity 改变时清零整份缓存；entries 改变时丢弃 MRU、候选和游标，不析构容器元素。
+ * 已有同 key/version 槽被覆盖后直接返回，不推进游标；插入空槽或轮换满槽后均推进游标。
+ * entries/key/Pair 裸指针没有永久标记或独立 GC 根；不能据此延长它们的生命周期或跨分配/回调保留。
+ * TODO: moving GC 裸指针重写、Pair.first 与 backing 版本联动及多域并发同步分别沿 zr_vm_lib_container/src/zr_vm_lib_container/module.c:790、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1690、zr_vm_lib_container/src/zr_vm_lib_container/module.c:285 核对。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:475 是本类型静态实例；zr_vm_lib_container/src/zr_vm_lib_container/module.c:481、zr_vm_lib_container/src/zr_vm_lib_container/module.c:483 是本类型 identity 访问。
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:491 至 zr_vm_lib_container/src/zr_vm_lib_container/module.c:505 切换 backing，zr_vm_lib_container/src/zr_vm_lib_container/module.c:507、zr_vm_lib_container/src/zr_vm_lib_container/module.c:567 发布 MRU/候选，zr_vm_lib_container/src/zr_vm_lib_container/module.c:598 至 zr_vm_lib_container/src/zr_vm_lib_container/module.c:618 覆盖/插入/推进游标。
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:622、zr_vm_lib_container/src/zr_vm_lib_container/module.c:669 是两类查找；zr_vm_lib_container/src/zr_vm_lib_container/module.c:2574、zr_vm_lib_container/src/zr_vm_lib_container/module.c:2693 是 Map 真实接入点，zr_vm_lib_container/src/zr_vm_lib_container/module.c:3728、zr_vm_lib_container/src/zr_vm_lib_container/module.c:3777 是公开读写消费者。
+ */
 typedef struct ZrContainerHotMapLookupCache {
-    /** @brief 本缓存的 VM 域身份，变化时清零所有借用状态。 */
+    /** @brief 本类型静态缓存的 GlobalState 身份标量；只由 Map cache accessor 比较/写入，变化清零。 */
     TZrUInt64 cacheIdentity;
-    /** @brief 当前 Map backing 借用对象；切换 backing 清除全部候选槽。 */
+    /** @brief 当前 entries backing 裸借用；切换 backing 清除 MRU/全部候选，不保活 Array。 */
     SZrObject *entries;
-    /** @brief 最近成功查找的字符串对象身份，不缓存未找到结果。 */
+    /** @brief 最近成功字符串键的裸身份借用；不缓存负查找，也不比较字符串内容。 */
     SZrRawObject *lastKeyObject;
-    /** @brief 最近命中时的 backing 版本，命中前重新比较。 */
+    /** @brief 最近命中 backing 版本标量，与 lastKey/lastEntry 同时有效；不授 Pair 所有权。 */
     TZrUInt32 lastEntriesMemberVersion;
-    /** @brief 最近命中的数组位置，不独立证明 Pair 仍具有原键。 */
+    /** @brief 最近成功位置的普通下标，与 MRU 其它字段同时有效，不独立证明 Pair 键/边界。 */
     TZrSize lastIndex;
-    /** @brief 最近命中的借用 Pair，不作为 GC root。 */
+    /** @brief 最近成功 Pair 裸借用；非 GC 根，不跨失效操作持有。 */
     SZrObject *lastEntryObject;
-    /** @brief 四槽循环替换游标；更新后按槽数取模。 */
+    /** @brief 新槽插入后推进的四槽替换游标；已有同 key/version 槽覆盖不推进。 */
     TZrUInt8 nextSlotIndex;
-    /** @brief 成功查找的小候选集合，与 last 快槽使用同一版本约定。 */
+    /** @brief 四个内嵌候选槽；不额外拥有 slot 中 key/Pair，与 MRU 共用 backing/版本失效约定。 */
     ZrContainerHotMapLookupCacheSlot slots[ZR_CONTAINER_HOT_MAP_LOOKUP_CACHE_SLOT_COUNT];
 } ZrContainerHotMapLookupCache;
 
@@ -4678,7 +4755,32 @@ static TZrBool zr_container_install_basic_array_adapter(SZrGlobalState *global) 
 }
 
 /* 先注册迭代依赖，再注册 Span 和引用其契约的池，最后桥接内建 array 迭代。 */
-/** @brief 依次注册 iteration、容器、pooling 并安装内建 array 桥接；要求已初始化 registry/基本原型，失败保留此前成功步骤。 */
+/**
+ * ## Summary
+ * 为宿主的标准模块启动链登记 iteration、container、pooling，再给内建 ARRAY 安装 getIterator 桥接。
+ * 类型依赖先于池和基本数组适配，确保普通容器、Span、池和原生 ARRAY 可接入同一迭代协议。
+ *
+ * ## Parameters
+ * @param[in,out] global 宿主拥有、已初始化主线程及基本 ARRAY 原型的有效 VM；调用期间借用，不接管或释放。
+ * native registry 可尚未存在，iteration/RegisterModule 链会按需 Attach；不用由宿主预先初始化 registry。
+ *
+ * ## Returns
+ * @return global 为空或任一登记/适配阶段拒绝时为 ZR_FALSE；正常完成全部阶段时为 ZR_TRUE。
+ * 前序成功登记在后续失败时保留，没有事务回滚；返回 true 不证明已有 getIterator 字段满足调用协议。
+ *
+ * ## Constraints and lifecycle
+ * 沿主 VM 初始化窗口串行调用；不会切换 provider phase。静态描述符、嵌套表和回调仍依赖 provider 存续。
+ * TODO: 已有同名非 callable 字段也被当作适配完成，需沿 install_basic_array_method 的 presence 检查核对。
+ * BUG: void setter 不能反馈字段写失败。合法已初始化 global、ARRAY 原型未 ignored、ignored 表已满且无 getIterator 时，
+ * 若先拒绝 getter pin 的 ignore 扩容，允许中间闭包创建，再拒绝 setter pin 的扩容，适配与 Register 仍可 true 而字段缺失。
+ * 这是一条完整静态可达链，未运行故障注入；仅拒绝一次 setter 扩容不能替代该双阶段条件。
+ *
+ * ## References
+ * zr_vm_cli/src/zr_vm_cli/project/project.c:368 消费 bool；tests/container/container_test_common.c:60 调用但未检查返回。
+ * zr_vm_lib_iteration/src/zr_vm_lib_iteration/module.c:21 及 zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c:739 按需 Attach；本文件 zr_vm_lib_container/src/zr_vm_lib_container/module.c:4788 至 zr_vm_lib_container/src/zr_vm_lib_container/module.c:4792 顺序登记/适配。
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4725 检查已有字段，zr_vm_lib_container/src/zr_vm_lib_container/module.c:4738 写入，zr_vm_lib_container/src/zr_vm_lib_container/module.c:4752 进入基本 ARRAY 适配。
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1429 与 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1385 是 getter/setter pin 入口。
+ */
 TZrBool ZrVmLibContainer_Register(SZrGlobalState *global) {
     if (global == ZR_NULL) {
         return ZR_FALSE;
