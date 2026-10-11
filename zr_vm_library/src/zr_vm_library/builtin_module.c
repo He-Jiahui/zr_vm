@@ -241,25 +241,25 @@ static const ZrLibGenericParameterDescriptor g_builtin_single_generic_parameter[
 };
 
 static const ZrLibParameterDescriptor g_object_value_parameter[] = {
-        {"value", "object", "Value to inspect or box."},
+        {"value", "object", "Value to inspect or box.", ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
 };
 
 static const ZrLibParameterDescriptor g_generic_value_parameter[] = {
-        {"other", "T", "Comparison target."},
+        {"other", "T", "Comparison target.", ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
 };
 
 static const ZrLibParameterDescriptor g_comparer_parameters[] = {
-        {"left", "T", "Left value."},
-        {"right", "T", "Right value."},
+        {"left", "T", "Left value.", ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+        {"right", "T", "Right value.", ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
 };
 
 static const ZrLibParameterDescriptor g_array_like_get_item_parameters[] = {
-        {"index", "int", "Element index."},
+        {"index", "int", "Element index.", ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
 };
 
 static const ZrLibParameterDescriptor g_array_like_set_item_parameters[] = {
-        {"index", "int", "Element index."},
-        {"value", "T", "Element value."},
+        {"index", "int", "Element index.", ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
+        {"value", "T", "Element value.", ZR_LIB_PARAMETER_PASSING_MODE_VALUE},
 };
 
 static const ZrLibFieldDescriptor g_array_like_fields[] = {
@@ -278,9 +278,9 @@ static const ZrLibFieldDescriptor g_type_info_fields[] = {
 static const ZrLibMetaMethodDescriptor g_array_like_meta_methods[] = {
         {ZR_META_GET_ITEM, 1, 1, ZR_NULL, "T", "Read an indexed element.",
          g_array_like_get_item_parameters, ZR_ARRAY_COUNT(g_array_like_get_item_parameters), ZR_NULL, 0,
-         ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER},
+         ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_RECEIVER, ZR_NULL, ZR_NULL, 0U},
         {ZR_META_SET_ITEM, 2, 2, ZR_NULL, "T", "Write an indexed element.",
-         g_array_like_set_item_parameters, ZR_ARRAY_COUNT(g_array_like_set_item_parameters), ZR_NULL, 0},
+         g_array_like_set_item_parameters, ZR_ARRAY_COUNT(g_array_like_set_item_parameters), ZR_NULL, 0, 0U, ZR_NULL, ZR_NULL, 0U},
 };
 
 static const ZrLibMethodDescriptor g_equatable_methods[] = {
@@ -303,7 +303,7 @@ static const ZrLibMethodDescriptor g_comparable_methods[] = {
 static const ZrLibMethodDescriptor g_comparer_methods[] = {
         {"compare", 2, 2, builtin_comparer_compare, "int", "Compare two values.", ZR_FALSE,
          g_comparer_parameters, ZR_ARRAY_COUNT(g_comparer_parameters), 0U,
-         ZR_NULL, 0},
+         ZR_NULL, 0, 0U, ZR_NULL, ZR_LIB_REFERENCE_ACCESS_NONE, ZR_FALSE},
 };
 
 static const ZrLibMethodDescriptor g_object_methods[] = {

@@ -98,6 +98,19 @@ reflection contract provider 提供构造和 invocation 能力，详见[反射�
 和 parent graph；缺失父角色、重复 protocol 或错误 projection 都拒绝注册。普通 host
 loader 可以继续被 registry 组合，但不能覆盖 builtin role。
 
+### 描述符默认值
+
+`builtin_module.c` 显式初始化描述符尾字段：
+
+- 参数的 `passingMode` 为 `VALUE`，值为零。
+- `IComparer.compare` 的 dispatch flags 为零，property name 为空，
+  reference access 为 `NONE`，writable-ref 标志为 false。
+- `IArrayLike` GET 保留 `READONLY_RECEIVER`，SET flags 为零；
+  两者的快速回调为空，contract role 为零。
+
+这些值与原先省略尾字段所得的零值一致；结构布局、ABI、
+注册元数据及调用行为保持不变。
+
 ## C 调用接口
 
 ```c
