@@ -22,6 +22,17 @@ related_code:
   - zr_vm_core/src/zr_vm_core/gc/gc_internal.h
   - zr_vm_core/src/zr_vm_core/gc/gc_sweep.c
   - zr_vm_core/src/zr_vm_core/function.c
+  - tests/container/test_container_runtime.c
+  - zr_vm_common/include/zr_vm_common/zr_type_conf.h
+  - zr_vm_core/include/zr_vm_core/hash_set.h
+  - zr_vm_core/include/zr_vm_core/ownership.h
+  - zr_vm_core/include/zr_vm_core/value.h
+  - zr_vm_core/src/zr_vm_core/closure.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_domain.c
+  - zr_vm_core/src/zr_vm_core/hash_set.c
+  - zr_vm_core/src/zr_vm_core/object/object_super_array.c
+  - zr_vm_core/src/zr_vm_core/stack.c
+  - zr_vm_library/include/zr_vm_library/native_binding.h
 implementation_files:
   - zr_vm_lib_container/src/zr_vm_lib_container/module.c
 plan_sources:
@@ -201,8 +212,8 @@ capacity构造参数仍叫index；已有同名非callable字段被当适配已�
 
 ## 四种宿主缓存与登记入口的当前契约
 
-前批详细契约128项均已提交；本批补齐构造/结果6、迭代状态发布8及Map entry消费3，共17函数，累计145项。
-357项台账保留，剩余212项待当前契约及完整性复核；数字引用迁移及保留旧BUG不增加完成数。
+前批详细契约145项均已提交；本批补齐数组存储7、标量/复制结果6及方法派发/键协议5，共18函数，累计163项。
+357项台账保留，剩余194项待当前契约及完整性复核；数字引用迁移及保留旧BUG不增加完成数。
 
 | 类型 | 调用目的 | 借用与失效边界 |
 | --- | --- | --- |
@@ -225,13 +236,13 @@ Pair.first 的合法写入与 entries.memberVersion 联动需沿 `zr_vm_lib_cont
 前阶段成功登记。CLI `zr_vm_cli/src/zr_vm_cli/project/project.c:368` 检查 bool，`tests/container/container_test_common.c:60` 忽略 bool，
 该测试工厂调用本身不能证明登记成功。描述符查询及共享插件 getter 不执行这条宿主初始化链。
 
-TODO: `zr_vm_lib_container/src/zr_vm_lib_container/module.c:6514` 的同名字段 presence检查不验证 callable/getIterator协议；核查已有字段的实际消费者。
+TODO: `zr_vm_lib_container/src/zr_vm_lib_container/module.c:6802` 的同名字段 presence检查不验证 callable/getIterator协议；核查已有字段的实际消费者。
 BUG: 合法初始化global、ARRAY原型尚未ignore且ignored表已满、字段缺失时，宿主分阶段拒绝
 getter pin的ignore扩容、允许中间闭包创建、再拒绝setter pin的扩容，void setter早退但Register可仍true。
-完整链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:6514`→闭包创建→`zr_vm_lib_container/src/zr_vm_lib_container/module.c:6527`；pin入口
+完整链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:6802`→闭包创建→`zr_vm_lib_container/src/zr_vm_lib_container/module.c:6815`；pin入口
 `zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1429`/`:1385`；
 只拒绝一次setter扩容不足以证明该链，先前getter可能已扩表。本轮只有静态证据，无故障注入信用。
-实际宿主登记链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:6573`，iteration 的 Attach入口是 `zr_vm_lib_iteration/src/zr_vm_lib_iteration/module.c:21`。
+实际宿主登记链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:6861`，iteration 的 Attach入口是 `zr_vm_lib_iteration/src/zr_vm_lib_iteration/module.c:21`。
 
 
 ## 字段名与缓存入口的40项详细契约
@@ -447,3 +458,59 @@ plain分支先赋值后Barrier，其中ValidateWrite拒绝不能撤销赋值；C
 旧3条cache备注仅精确同步此C API证明和未决点，0新增单元信用。
 此轮沿用实际r148配置与277依赖基线，只编译真实TU一次，不增加运行、GC、OOM、
 并发、全模块或跨仓捕获信用；所有现有数字引用同步迁移。
+
+## 数组存储、结果发布与键协议18函数
+
+本批在已提交145项之上完成数组存储7、标量/复制结果6及方法派发/键协议5，
+累计163/357项；其余194项待审，主文件继续pending。既有Map两项、H原12项及
+其它引用仅迁移数字，不增加本批完成数。
+
+### backing、长度与借用边界
+
+Array扫描和Map/Set entry消费共用存储读取，但返回的是backing槽的借用值。
+Core读取可能将RAW存储转成节点；既不是容器快照，也不转移owner或保持地址不变。
+storage length/count只说明backing当前条目，不保证公开length/count同步、整数键稠密
+或迭代版本仍有效。raw-int资格只是模式、元素类型与长度/容量匹配，不能替代索引、
+dirty同步、root或锁的检查。临时receiver包装只为Core整型写入提供目标身份，
+写入返回后仍由外层容器接口维护公开字段。
+
+BUG: 普通Array已有索引可经同域公开C API取__zr_items，再用SharePlainValue及
+Object_SetValue将Shared object写入backing；Core复制成功后增strong并保留合法域资格。
+Array.clear断开桶链并复用pool，未逐值Release；pool后续ResetAsNull覆盖元数据，
+GC标记与正常HashSet解构也不再访问这份值owner。宿主其它Shared正常释放后，
+这份strong/control/root仍不配对；结论限VM存活期间，不主张强制销毁后永久泄漏。
+此外，默认零容量Array首次insert可走HashSet_Add的独立GcMalloc HASH_PAIR分配，
+并不属于pairPool。clear丢失桶指针后，正常解构无法释放该独立节点。
+完整合法静态链见clear两项契约，测试当前只覆盖整数clear/容量复用。
+TODO: 分别核值释放、非池节点释放与复用约束，不能以内部字段名排除合法C API写入。
+
+### 返回槽的所有权与修改事务
+
+标量及NULL返回热写只初始化新/空结果，不释放旧owner。普通绑定回调由dispatcher
+先置局部result为NULL；非标量复制沿Core ownership协议并按线程错误决定发布。
+Array/Map写入可能先于复制失败，返回false不回滚；LinkedList首尾摘链先成功复制
+再修改链。STRUCT的具体复制意图继续沿Core和容器普通值分支核查。
+
+BUG: 基本ARRAY原型的getIterator是permanent raw native closure；同域公开API可
+建立Shared callable并以CallValue传非ARRAY receiver。scratch callable复制增strong，
+raw bridge却把functionBase本身当返回槽，在错误receiver分支清NULL而不Release；
+Core native返回source==target跳过覆盖复制，CallValue再复制NULL并恢复top。
+释放宿主原Shared后仍有未配对strong/control。该闭包本来permanent，不能把它的
+固有GC存活属性说成本次缺陷导致；仅此错误receiver分支已完成静态证明。
+TODO: 在raw native结果复用槽沿Core覆盖协议配对旧owner；成功发布和分配失败
+分支仍待所属raw bridge单元独立审查。此处不推广为其它标量setter的已证实缺陷。
+
+### 同步用户协议与整数搜索
+
+方法适配用于equals/compare/hashCode，失败输出不是可消费结果；无yield只限制
+让出，不能证明没有重入、GC或容器修改。Core相等/直接比较命中可在用户协议前
+短路，否则仅左OBJECT/ARRAY调用equals，且只接受BOOL结果，不尝试反向方法。
+Map/Set通用路径先hash后equals，要求自定义协议兼容、键在查找期间稳定。
+整数needle快路不回退stored object.equals(int)，过大unsigned也可在raw-int搜索
+中直接未命中。TODO: 核定这些跨标签行为的设计意图，并逐caller核回调后借用槽、
+entry和游标的保活/地址稳定；尚无完整合法UAF链，不能标为已证实释放或移动缺陷。
+hashCode失败或返回非整数时回退Core hash，但不清threadStatus；后备读取的借用值
+同样需要核查，哈希结果不保证跨运行稳定。
+
+本批沿用实际r157配置/277依赖基线，只编译真实TU一次；不增加运行、GC、OOM、
+并发、全模块或跨仓捕获信用。代码与原有空白/EOL保留，所有数字References同步迁移。
