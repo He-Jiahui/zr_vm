@@ -25,7 +25,7 @@ status: planned
 
 ## 子计划导航与使用方式
 
-本目录按 **12 个方向、47 个子计划** 拆分。每个方向内序号从 `01` 连续编号，文件格式为 `方向/nn-标题.md`；文档内另用 `方向序号.任务序号`（例如 `03.02`）标识依赖。所有子计划当前均为 **planned**，本文的代码入口核对不代表实现或运行验收已完成。
+本目录按 **12 个方向、47 个子计划** 拆分。每个方向内序号从 `01` 连续编号，文件格式为 `方向/nn-标题.md`；文档内另用 `方向序号.任务序号`（例如 `03.02`）标识依赖。截至 **2026-10-12**，47 个叶计划的文档标签为 **43 planned、4 in-progress**；in-progress 为 [01.05 Oracle](01-execir-ssa/05-oracle-projections.md)、[04.02 call/return](04-frame-native/02-call-return-tail.md)、[04.04 roots](04-frame-native/04-roots-observation.md) 和 [06.02 major](06-gc-domain/02-major-budget.md)。标签不替代实际交付或整叶退出门禁的证据。
 
 每份子计划包含：目标、前置依赖、已有/新增文件及职责、逐项重构任务、算法与接口草案、数据生产/消费关系、三批可审查实施步骤、正反向测试与断言、精确 CTest 目标、退出门禁、失败恢复和文档交付。C 接口和 fixture 断言是实施指导，新增类型/API 必须由所标任务实现；不能把草案视作当前已提供的接口。
 
@@ -39,11 +39,47 @@ status: planned
 [验收记录](../../acceptance/ssa-source-returned-retention.md)记录真实 source
 wrapper 返回后的 25 项通过、四套依赖共 58 项通过，以及六 TU MSVC 编译检查。
 全部构建读取当前 checkout，产物位于已配置的 E 盘构建目录，无源码快照。
-两条既有 parser 未使用 static helper 警告如实保留在验收记录。
+该历史验收记录如实保留当时两条既有 parser 未使用 static helper 警告；它不表示当前全树警告数或全量零警告验收。
 
-本前置使 literal I64 Function 独立拥有 Core AOT 元数据；普通 NONE/default
-编译输出、独立 canonical ExecIR 所有权、完整状态恢复、后端执行与 Linux/完整
-MSVC 验收继续推进。47 个完整叶子仍为 planned，分母和未勾选任务不变。
+本前置使 literal I64 Function 独立拥有 Core AOT 元数据。通用独立 ExecIR
+module 所有权、Function association/lifetime 与 module copy 已有下表所列的
+有限验收和提交；完整 Source finalized 返回所有权仍待当前生产实现的功能
+GREEN 验证。普通 NONE/default 编译输出、完整状态恢复、后端执行及 Linux/
+完整 MSVC 验收继续推进，47 个叶计划的退出条件和未勾选任务不变。
+
+### 已完成有限交付（2026-10-12）
+
+已核实至少 **19 项有限交付**，包括功能子任务、代码修正、专项故障验证和文档修正。
+Root 于 2026-10-12 只读核对下列提交均属于当时观察的 HEAD
+1306ca4235d9cf59fdbd6256c4f9d88d0a32b6b1 历史，作者与提交者均为
+He-Jiahui。表中链接提供各自范围的验收或模块记录；支持回归不重复计为新交付。
+
+| 已完成有限子任务 | 完整提交 SHA | 已验收有限范围 |
+| --- | --- | --- |
+| [Arm/Event 非断言观察接口](../../acceptance/ssa-owner-arm-event.md) | 4d6ff9f83886fcd428ff0db71de74c44ca26c74b | RED 8 FAIL / 4 PASS；GREEN 11 PASS / 1 故意 prior-failure，由检查器验收；MSVC 3 TU。 |
+| [断言前清理与健康报告 worker](../../acceptance/source-returned-execir-cleanup.md) | 03f2b8cce6e22efb81546be54b7e6bc8205b9b4b | 6 例协议；GREEN 4 PASS / 2 故意 FAIL；保留恢复前健康状态和重复关闭报告；MSVC 5 TU。 |
+| [Builder 释放后的 CFG/effects 保留](../../acceptance/ssa-retained-builder-cfg.md) | f82f78425f29ea8ac24e0d5a2a0f104aed8fe59a | 实际 Build→CloneOwned→释放 producer，8 PASS；Clang/UBSan 与 MSVC 31 TU。 |
+| [Returned CRT ledger 与 TryStats](../../acceptance/source-returned-crt-ledger.md) | 5a4d941e735a101415051fa461d2c88362daa845 | RED 16 FAIL / 2 PASS→GREEN 18 PASS；256 请求边界和六处 descriptor 故障；MSVC 5 TU。 |
+| [非分配 LiveSpan 查询](../../acceptance/exec-ir-owner-live-span.md) | e9d2cabb93b98958da1ddffcf0039784f47a6d4e | 实际 malloc/calloc/realloc/freed/armed 查询，12 PASS；MSVC 4 TU。 |
+| [finalized module 事务与独立所有权](../../acceptance/source-finalized-module.md) | d475d47494d5b7566e258dd379466ca099b3da6f | 下层 24 PASS、89/89 分配故障、16 次生命周期；MSVC 31 TU，不计 Source GREEN。 |
+| [显式 Source AOT 返回元数据](../../acceptance/ssa-source-returned-retention.md) | 360a0aa09ffc900edb46ab07aad7205950458e7c | 返回入口 25 PASS、七处故障清理后重试、支持回归 58 PASS；MSVC 6 TU。 |
+| [TryCapture 与共享逻辑遍历](../../acceptance/ssa-owner-try-capture.md) | bb5e16ebb57c11ba6f8744c311377901fdfb941e | GREEN 11 PASS / 1 故意 prior-failure；4096 预算、60 结构拒绝、owner/copy 回归和 61/88 故障；MSVC 3 TU。 |
+| [Active packed-frame 标量观察](../../acceptance/ssa-active-packed-frame-observation.md) | 45de3214dc442a8d1b1ab38770acb312eff7c9bf | Clang/UBSan 51 次 C 编译、3 次链接、3 项 CTest；focused 16 例按预期验收；MSVC 2 TU。 |
+| [builtin 默认值显式初始化](../../wiki/03-modules/builtin.md) | 2d045b0ca2310030979b94b12968e839fcece935 | 原隐式零默认值显式补齐，布局与回调保持；Clang/UBSan 和 MSVC 生产 TU 编译零警告。 |
+| [finalized module 提交状态文档修正](../../acceptance/source-finalized-module.md) | f680ba84c31105271fdcb595c6d0272271a391ce | 单文档三处状态同步，引用实际 d475d474 提交；不新增功能。 |
+| [Dispatch/super-array 警告收敛](../../core-runtime/interpreter-state-boundaries.md) | ca260b06e7b154ef8f04f39406acf0b662208cce | Clang/UBSan、MSVC 四次 C 编译及四验证，零警告；仅 compile-only。 |
+| [AOT module 独立 arena 所有权](../../acceptance/ssa-aot-owned-module.md) | 78ce8caf737ed7d0a4f1dce3e377e1bd2b0904b8 | owner 10 PASS；descriptor20/scalar22 另作支持回归。 |
+| [AOT owner 故障与几何验证](../../acceptance/ssa-aot-owned-module-faults.md) | 8f7cc4b1aa3a5407b0569a30f5f83e39c1bb1ff1 | 独立 17 PASS、0 失败、0 忽略；专项故障验证交付。 |
+| [Function 保留 AOT metadata](../../acceptance/ssa-function-aot-owner.md) | 60df9cb15cde6ac44a2ed4728416babce5c71cb8 | 12 PASS、0 失败、0 忽略。 |
+| [Metadata string heap 精确所有权](../../acceptance/ssa-metadata-string-heap-owner.md) | 5bd92350596d95c9dd99a217b8e98efd335a294a | 6 PASS；容量存储精确压缩后发布，生产正确性修正。 |
+| [通用独立 ExecIR module 所有权](../../acceptance/ssa-execir-owned-module.md) | 3496923f58c6f4be2bb61c82c51a7743bef9fba4 | 14 PASS；两组各 61 处故障，共 122 处完成；内存 IR 保留，不是源码副本。 |
+| [Function ExecIR association/lifetime](../../acceptance/ssa-function-exec-ir-owner.md) | 112cbf4256a819d554659c7bdfd9d77eb8a04610 | 20 PASS；首次附加、替换各 61 处故障完成。 |
+| [Module copy 替换选定 Function](../../acceptance/exec-ir-module-copy.md) | 238fb35d160bad6142acee08da910742b0f1d2c9 | 20 PASS；module60＋replacement28，共 88 处故障完成。 |
+
+上述有意失败验证 prior-failure 与清理协议，检查器按精确预期验收；非预期失败不计通过。
+19 项是已核实有限交付的下限，不能与 47 个叶计划相除表示进度。
+整叶全部退出条件已完成的数量尚未证实；当前未验证的 Source finalized 生产代码
+不计完成。完整 Source、状态恢复、后端、GC、平台及 47 项整体门禁仍待逐项闭合。
 
 ### 测量与基础契约（00-measurement-contracts）
 
