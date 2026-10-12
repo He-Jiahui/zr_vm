@@ -56,6 +56,10 @@ related_code:
   - zr_vm_core/src/zr_vm_core/string.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_foreach.c
+  - tests/container/test_container_metadata.c
+  - tests/container/test_container_type_inference.c
+  - tests/fixtures/reference/core_semantics/protocols_iteration_comparable/empty_iterator_boundary.zr
+  - tests/iterator/test_enumerator_protocol.c
 implementation_files:
   - zr_vm_lib_container/src/zr_vm_lib_container/module.c
 plan_sources:
@@ -235,8 +239,8 @@ capacity构造参数仍叫index；已有同名非callable字段被当适配已�
 
 ## 四种宿主缓存与登记入口的当前契约
 
-前批详细契约192项均已提交；本批补齐Array入口/适配13及Map/Set搜索和入口18，共31函数，累计223项。
-357项台账保留，剩余134项待当前契约及完整性复核；数字引用迁移及保留旧BUG不增加完成数。
+前批详细契约223项均已提交；本批补齐LinkedNode/LinkedList构造、删除、清空及Iterable入口，共5函数，累计228项。
+357项台账保留，剩余129项待当前契约及完整性复核；数字引用迁移及保留旧BUG不增加完成数。
 
 | 类型 | 调用目的 | 借用与失效边界 |
 | --- | --- | --- |
@@ -259,13 +263,13 @@ Pair.first 的合法写入与 entries.memberVersion 联动需沿 `zr_vm_lib_cont
 前阶段成功登记。CLI `zr_vm_cli/src/zr_vm_cli/project/project.c:368` 检查 bool，`tests/container/container_test_common.c:60` 忽略 bool，
 该测试工厂调用本身不能证明登记成功。描述符查询及共享插件 getter 不执行这条宿主初始化链。
 
-TODO: `zr_vm_lib_container/src/zr_vm_lib_container/module.c:7764` 的同名字段 presence检查不验证 callable/getIterator协议；核查已有字段的实际消费者。
+TODO: `zr_vm_lib_container/src/zr_vm_lib_container/module.c:7844` 的同名字段 presence检查不验证 callable/getIterator协议；核查已有字段的实际消费者。
 BUG: 合法初始化global、ARRAY原型尚未ignore且ignored表已满、字段缺失时，宿主分阶段拒绝
 getter pin的ignore扩容、允许中间闭包创建、再拒绝setter pin的扩容，void setter早退但Register可仍true。
-完整链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:7764`→闭包创建→`zr_vm_lib_container/src/zr_vm_lib_container/module.c:7777`；pin入口
+完整链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:7844`→闭包创建→`zr_vm_lib_container/src/zr_vm_lib_container/module.c:7857`；pin入口
 `zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1429`/`:1385`；
 只拒绝一次setter扩容不足以证明该链，先前getter可能已扩表。本轮只有静态证据，无故障注入信用。
-实际宿主登记链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:7838`，iteration 的 Attach入口是 `zr_vm_lib_iteration/src/zr_vm_lib_iteration/module.c:21`。
+实际宿主登记链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:7918`，iteration 的 Attach入口是 `zr_vm_lib_iteration/src/zr_vm_lib_iteration/module.c:21`。
 
 
 ## 字段名与缓存入口的40项详细契约
@@ -635,3 +639,13 @@ Set.add搜索false后继续尝试push，错误传播是否阻止部分追加仍T
 随后Native169-r3用当前输入重新编译成功：277实际依赖，2外部头文件较旧基线改变、273其他nonowned保持相同；不能称275外部依赖全量旧配对。
 本批以该当前输入编译结果为基线。注释/数字引用改动不改变原代码、空行与EOL；后续本批编译及实际post-apply审查仍是独立门禁。
 没有runtime tests、全CMake构建、整体ABI/行为、全ledger或全仓验收信用。
+
+## LinkedNode与LinkedList五项调用契约
+
+前223项已提交；本批为独立Node构造、空List构造、remove、clear、getIterator补齐职责、调用前提和生命周期，累计228/357，剩129，主文件继续pending。
+独立Node构造没有加入列表；首尾插入使用make_linked_node。两个构造沿共享resolver允许缺省receiver，目标的临时root、再次构造和部分失败责任保留TODO，不扩大其他构造器的BUG。
+remove按存储value作为lhs比较，guest bool、callback状态与threadStatus分别解释。equals允许执行guest代码；是否支持同表重入未定，clear/addLast后摘旧node的具体条件路径保留TODO，未立新BUG。void unlink不反馈每次字段写入，故命中bool不是原子摘链保证。
+clear恢复空表并脱开节点间链接，外部节点仍可持有node.value。有限无环、自洽链接由caller维持；部分失败不回滚，既有Shared-owner首尾热槽问题只沿同一条件引用。
+getIterator供ITERABLE_INIT/foreach链消费，source提供对象图引用、nextNode跟随live节点next。current遵循T的Core值复制，不提供序列快照、锁或修改检测。空表guest fixture与Iterable元数据测试职责不同；非空推进、修改中遍历、单独保活和初始化GC边界仍TODO。
+
+本批只更改注释与引用，原代码、空行和物理行尾精确保护；static review、当前单TU编译和正常索引提交分别验收，不授runtime、全构建、全模块、全仓或capture通过结论。
