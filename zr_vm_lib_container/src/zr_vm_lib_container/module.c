@@ -39,7 +39,7 @@
  * 名称不拥有对象、字段值或backing；指针快分支之外有文本匹配，C不保证等字面量地址合并或分离。更名须同步键映射、热槽分类及实际构造/访问链。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:858;zr_vm_lib_container/src/zr_vm_lib_container/module.c:859;zr_vm_lib_container/src/zr_vm_lib_container/module.c:895;zr_vm_lib_container/src/zr_vm_lib_container/module.c:896;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1509;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1921;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2029;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2061;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4334;zr_vm_lib_container/src/zr_vm_lib_container/module.c:44;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2023
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:858;zr_vm_lib_container/src/zr_vm_lib_container/module.c:859;zr_vm_lib_container/src/zr_vm_lib_container/module.c:895;zr_vm_lib_container/src/zr_vm_lib_container/module.c:896;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1509;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1939;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2146;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2178;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4752;zr_vm_lib_container/src/zr_vm_lib_container/module.c:44;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140
  */
 static const TZrChar *kContainerItemsField = "__zr_items";
 /**
@@ -53,7 +53,7 @@ static const TZrChar *kContainerItemsField = "__zr_items";
  * 名称不拥有对象、字段值或backing；指针快分支之外有文本匹配，C不保证等字面量地址合并或分离。更名须同步键映射、热槽分类及实际构造/访问链。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:861;zr_vm_lib_container/src/zr_vm_lib_container/module.c:862;zr_vm_lib_container/src/zr_vm_lib_container/module.c:898;zr_vm_lib_container/src/zr_vm_lib_container/module.c:899;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1484;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1922;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2029;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2062;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4703;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4993;zr_vm_lib_container/src/zr_vm_lib_container/module.c:58;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2023
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:861;zr_vm_lib_container/src/zr_vm_lib_container/module.c:862;zr_vm_lib_container/src/zr_vm_lib_container/module.c:898;zr_vm_lib_container/src/zr_vm_lib_container/module.c:899;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1484;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1940;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2146;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2179;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5121;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5411;zr_vm_lib_container/src/zr_vm_lib_container/module.c:58;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140
  */
 static const TZrChar *kContainerEntriesField = "__zr_entries";
 /**
@@ -67,7 +67,7 @@ static const TZrChar *kContainerEntriesField = "__zr_entries";
  * 名称不拥有对象、字段值或backing；指针快分支之外有文本匹配，C不保证等字面量地址合并或分离。更名须同步键映射、热槽分类及实际构造/访问链。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1584;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2043;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2075;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3988;zr_vm_lib_container/src/zr_vm_lib_container/module.c:72;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2023
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1584;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2160;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2192;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4406;zr_vm_lib_container/src/zr_vm_lib_container/module.c:72;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140
  */
 static const TZrChar *kContainerSourceField = "__zr_source";
 /**
@@ -81,7 +81,7 @@ static const TZrChar *kContainerSourceField = "__zr_source";
  * 名称不拥有对象、字段值或backing；指针快分支之外有文本匹配，C不保证等字面量地址合并或分离。更名须同步键映射、热槽分类及实际构造/访问链。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1634;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2049;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2081;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4070;zr_vm_lib_container/src/zr_vm_lib_container/module.c:86;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2023
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1634;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2166;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2198;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4488;zr_vm_lib_container/src/zr_vm_lib_container/module.c:86;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140
  */
 static const TZrChar *kContainerIndexField = "__zr_index";
 /**
@@ -95,7 +95,7 @@ static const TZrChar *kContainerIndexField = "__zr_index";
  * 名称不拥有对象、字段值或backing；指针快分支之外有文本匹配，C不保证等字面量地址合并或分离。更名须同步键映射、热槽分类及实际构造/访问链。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1660;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2052;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2084;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4028;zr_vm_lib_container/src/zr_vm_lib_container/module.c:100;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2023
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1660;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2169;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2201;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4446;zr_vm_lib_container/src/zr_vm_lib_container/module.c:100;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140
  */
 static const TZrChar *kContainerNextNodeField = "__zr_nextNode";
 /**
@@ -109,7 +109,7 @@ static const TZrChar *kContainerNextNodeField = "__zr_nextNode";
  * 名称不拥有对象、字段值或backing；指针快分支之外有文本匹配，C不保证等字面量地址合并或分离。更名须同步键映射、热槽分类及实际构造/访问链。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:864;zr_vm_lib_container/src/zr_vm_lib_container/module.c:865;zr_vm_lib_container/src/zr_vm_lib_container/module.c:901;zr_vm_lib_container/src/zr_vm_lib_container/module.c:902;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2033;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2066;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4704;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4745;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4768;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4933;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4994;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5020;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5063;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5086;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5167;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5168;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5177;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5217;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5219;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5254;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5256;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5357;zr_vm_lib_container/src/zr_vm_lib_container/module.c:114;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2023
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:864;zr_vm_lib_container/src/zr_vm_lib_container/module.c:865;zr_vm_lib_container/src/zr_vm_lib_container/module.c:901;zr_vm_lib_container/src/zr_vm_lib_container/module.c:902;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2150;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2183;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5122;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5163;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5186;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5351;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5412;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5438;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5481;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5504;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5585;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5586;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5595;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5635;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5637;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5672;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5674;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5775;zr_vm_lib_container/src/zr_vm_lib_container/module.c:114;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140
  */
 static const TZrChar *kContainerCountField = "count";
 /**
@@ -123,7 +123,7 @@ static const TZrChar *kContainerCountField = "count";
  * 名称不拥有对象、字段值或backing；指针快分支之外有文本匹配，C不保证等字面量地址合并或分离。更名须同步键映射、热槽分类及实际构造/访问链。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:867;zr_vm_lib_container/src/zr_vm_lib_container/module.c:868;zr_vm_lib_container/src/zr_vm_lib_container/module.c:904;zr_vm_lib_container/src/zr_vm_lib_container/module.c:905;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2032;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2065;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4335;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4367;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4393;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4416;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4438;zr_vm_lib_container/src/zr_vm_lib_container/module.c:128;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2023
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:867;zr_vm_lib_container/src/zr_vm_lib_container/module.c:868;zr_vm_lib_container/src/zr_vm_lib_container/module.c:904;zr_vm_lib_container/src/zr_vm_lib_container/module.c:905;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2149;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2182;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4753;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4785;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4811;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4834;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4856;zr_vm_lib_container/src/zr_vm_lib_container/module.c:128;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140
  */
 static const TZrChar *kContainerLengthField = "length";
 /**
@@ -137,7 +137,7 @@ static const TZrChar *kContainerLengthField = "length";
  * 名称不拥有对象、字段值或backing；指针快分支之外有文本匹配，C不保证等字面量地址合并或分离。更名须同步键映射、热槽分类及实际构造/访问链。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:870;zr_vm_lib_container/src/zr_vm_lib_container/module.c:871;zr_vm_lib_container/src/zr_vm_lib_container/module.c:907;zr_vm_lib_container/src/zr_vm_lib_container/module.c:908;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2038;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2070;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3793;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3796;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3809;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4336;zr_vm_lib_container/src/zr_vm_lib_container/module.c:142;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2023
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:870;zr_vm_lib_container/src/zr_vm_lib_container/module.c:871;zr_vm_lib_container/src/zr_vm_lib_container/module.c:907;zr_vm_lib_container/src/zr_vm_lib_container/module.c:908;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2155;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2187;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4211;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4214;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4227;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4754;zr_vm_lib_container/src/zr_vm_lib_container/module.c:142;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140
  */
 static const TZrChar *kContainerCapacityField = "capacity";
 /**
@@ -151,7 +151,7 @@ static const TZrChar *kContainerCapacityField = "capacity";
  * 名称不拥有对象、字段值或backing；指针快分支之外有文本匹配，C不保证等字面量地址合并或分离。更名须同步键映射、热槽分类及实际构造/访问链。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1609;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2046;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2078;zr_vm_lib_container/src/zr_vm_lib_container/module.c:156;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2023
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1609;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2163;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2195;zr_vm_lib_container/src/zr_vm_lib_container/module.c:156;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140
  */
 static const TZrChar *kContainerCurrentField = "current";
 /**
@@ -165,7 +165,7 @@ static const TZrChar *kContainerCurrentField = "current";
  * 名称不拥有对象、字段值或backing；指针快分支之外有文本匹配，C不保证等字面量地址合并或分离。更名须同步键映射、热槽分类及实际构造/访问链。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:873;zr_vm_lib_container/src/zr_vm_lib_container/module.c:874;zr_vm_lib_container/src/zr_vm_lib_container/module.c:910;zr_vm_lib_container/src/zr_vm_lib_container/module.c:911;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2055;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3492;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3496;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4169;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5122;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5127;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5278;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5302;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5323;zr_vm_lib_container/src/zr_vm_lib_container/module.c:170;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2023
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:873;zr_vm_lib_container/src/zr_vm_lib_container/module.c:874;zr_vm_lib_container/src/zr_vm_lib_container/module.c:910;zr_vm_lib_container/src/zr_vm_lib_container/module.c:911;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2172;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3910;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3914;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4587;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5540;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5545;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5696;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5720;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5741;zr_vm_lib_container/src/zr_vm_lib_container/module.c:170;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140
  */
 static const TZrChar *kContainerValueField = "value";
 /**
@@ -179,7 +179,7 @@ static const TZrChar *kContainerValueField = "value";
  * 名称不拥有对象、字段值或backing；指针快分支之外有文本匹配，C不保证等字面量地址合并或分离。更名须同步键映射、热槽分类及实际构造/访问链。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:876;zr_vm_lib_container/src/zr_vm_lib_container/module.c:877;zr_vm_lib_container/src/zr_vm_lib_container/module.c:913;zr_vm_lib_container/src/zr_vm_lib_container/module.c:914;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2056;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3500;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4181;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5131;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5153;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5155;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5165;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5205;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5246;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5329;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5347;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5348;zr_vm_lib_container/src/zr_vm_lib_container/module.c:184;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2023
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:876;zr_vm_lib_container/src/zr_vm_lib_container/module.c:877;zr_vm_lib_container/src/zr_vm_lib_container/module.c:913;zr_vm_lib_container/src/zr_vm_lib_container/module.c:914;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2173;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3918;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4599;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5549;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5571;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5573;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5583;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5623;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5664;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5747;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5765;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5766;zr_vm_lib_container/src/zr_vm_lib_container/module.c:184;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140
  */
 static const TZrChar *kContainerNextField = "next";
 /**
@@ -193,7 +193,7 @@ static const TZrChar *kContainerNextField = "next";
  * 名称不拥有对象、字段值或backing；指针快分支之外有文本匹配，C不保证等字面量地址合并或分离。更名须同步键映射、热槽分类及实际构造/访问链。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:879;zr_vm_lib_container/src/zr_vm_lib_container/module.c:880;zr_vm_lib_container/src/zr_vm_lib_container/module.c:916;zr_vm_lib_container/src/zr_vm_lib_container/module.c:917;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2057;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3501;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5132;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5152;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5160;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5166;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5209;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5242;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5349;zr_vm_lib_container/src/zr_vm_lib_container/module.c:198;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2023
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:879;zr_vm_lib_container/src/zr_vm_lib_container/module.c:880;zr_vm_lib_container/src/zr_vm_lib_container/module.c:916;zr_vm_lib_container/src/zr_vm_lib_container/module.c:917;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2174;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3919;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5550;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5570;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5578;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5584;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5627;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5660;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5767;zr_vm_lib_container/src/zr_vm_lib_container/module.c:198;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140
  */
 static const TZrChar *kContainerPreviousField = "previous";
 /**
@@ -207,7 +207,7 @@ static const TZrChar *kContainerPreviousField = "previous";
  * 名称不拥有对象、字段值或backing；指针快分支之外有文本匹配，C不保证等字面量地址合并或分离。更名须同步键映射、热槽分类及实际构造/访问链。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:885;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2034;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5157;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5178;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5204;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5218;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5250;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5272;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5321;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5345;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5355;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5377;zr_vm_lib_container/src/zr_vm_lib_container/module.c:212;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2023
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:885;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2151;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5575;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5596;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5622;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5636;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5668;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5690;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5739;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5763;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5773;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5795;zr_vm_lib_container/src/zr_vm_lib_container/module.c:212;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140
  */
 static const TZrChar *kContainerFirstField = "first";
 /**
@@ -221,7 +221,7 @@ static const TZrChar *kContainerFirstField = "first";
  * 名称不拥有对象、字段值或backing；指针快分支之外有文本匹配，C不保证等字面量地址合并或分离。更名须同步键映射、热槽分类及实际构造/访问链。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:882;zr_vm_lib_container/src/zr_vm_lib_container/module.c:883;zr_vm_lib_container/src/zr_vm_lib_container/module.c:919;zr_vm_lib_container/src/zr_vm_lib_container/module.c:920;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2039;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2071;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5162;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5179;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5213;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5241;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5255;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5296;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5356;zr_vm_lib_container/src/zr_vm_lib_container/module.c:226;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2023
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:882;zr_vm_lib_container/src/zr_vm_lib_container/module.c:883;zr_vm_lib_container/src/zr_vm_lib_container/module.c:919;zr_vm_lib_container/src/zr_vm_lib_container/module.c:920;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2156;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2188;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5580;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5597;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5631;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5659;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5673;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5714;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5774;zr_vm_lib_container/src/zr_vm_lib_container/module.c:226;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140
  */
 static const TZrChar *kContainerLastField = "last";
 /**
@@ -235,7 +235,7 @@ static const TZrChar *kContainerLastField = "last";
  * 名称不拥有对象、字段值或backing；指针快分支之外有文本匹配，C不保证等字面量地址合并或分离。更名须同步键映射、热槽分类及实际构造/访问链。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:886;zr_vm_lib_container/src/zr_vm_lib_container/module.c:888;zr_vm_lib_container/src/zr_vm_lib_container/module.c:889;zr_vm_lib_container/src/zr_vm_lib_container/module.c:922;zr_vm_lib_container/src/zr_vm_lib_container/module.c:923;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1534;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2035;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2067;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2592;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3465;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3469;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4209;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4218;zr_vm_lib_container/src/zr_vm_lib_container/module.c:240;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2023
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:886;zr_vm_lib_container/src/zr_vm_lib_container/module.c:888;zr_vm_lib_container/src/zr_vm_lib_container/module.c:889;zr_vm_lib_container/src/zr_vm_lib_container/module.c:922;zr_vm_lib_container/src/zr_vm_lib_container/module.c:923;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1534;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2152;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2184;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2959;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3883;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3887;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4627;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4636;zr_vm_lib_container/src/zr_vm_lib_container/module.c:240;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140
  */
 static const TZrChar *kContainerPairFirstField = "first";
 /**
@@ -249,7 +249,7 @@ static const TZrChar *kContainerPairFirstField = "first";
  * 名称不拥有对象、字段值或backing；指针快分支之外有文本匹配，C不保证等字面量地址合并或分离。更名须同步键映射、热槽分类及实际构造/访问链。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:891;zr_vm_lib_container/src/zr_vm_lib_container/module.c:892;zr_vm_lib_container/src/zr_vm_lib_container/module.c:925;zr_vm_lib_container/src/zr_vm_lib_container/module.c:926;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1559;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2040;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2072;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2608;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2646;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3474;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3478;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4213;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4219;zr_vm_lib_container/src/zr_vm_lib_container/module.c:254;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2023
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:891;zr_vm_lib_container/src/zr_vm_lib_container/module.c:892;zr_vm_lib_container/src/zr_vm_lib_container/module.c:925;zr_vm_lib_container/src/zr_vm_lib_container/module.c:926;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1559;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2157;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2189;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2991;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3046;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3892;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3896;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4631;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4637;zr_vm_lib_container/src/zr_vm_lib_container/module.c:254;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140
  */
 static const TZrChar *kContainerPairSecondField = "second";
 
@@ -314,7 +314,7 @@ enum {
  *
  * ## References
  * zr_vm_lib_container/src/zr_vm_lib_container/module.c:645 是静态表；zr_vm_lib_container/src/zr_vm_lib_container/module.c:842、zr_vm_lib_container/src/zr_vm_lib_container/module.c:844 清空，zr_vm_lib_container/src/zr_vm_lib_container/module.c:930、zr_vm_lib_container/src/zr_vm_lib_container/module.c:931 匹配读出，zr_vm_lib_container/src/zr_vm_lib_container/module.c:948、zr_vm_lib_container/src/zr_vm_lib_container/module.c:949 发布。
- * 实际字段消费者 zr_vm_lib_container/src/zr_vm_lib_container/module.c:981、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1951、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1976、zr_vm_lib_container/src/zr_vm_lib_container/module.c:2160、zr_vm_lib_container/src/zr_vm_lib_container/module.c:2501；创建/永久标记 zr_vm_lib_container/src/zr_vm_lib_container/module.c:942、zr_vm_lib_container/src/zr_vm_lib_container/module.c:946。
+ * 实际字段消费者 zr_vm_lib_container/src/zr_vm_lib_container/module.c:981、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1986、zr_vm_lib_container/src/zr_vm_lib_container/module.c:2042、zr_vm_lib_container/src/zr_vm_lib_container/module.c:2343、zr_vm_lib_container/src/zr_vm_lib_container/module.c:2818；创建/永久标记 zr_vm_lib_container/src/zr_vm_lib_container/module.c:942、zr_vm_lib_container/src/zr_vm_lib_container/module.c:946。
  * zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210 与 zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217 是永久根/不可移动区域的依据。
  */
 typedef struct ZrContainerFieldStringCacheEntry {
@@ -342,7 +342,7 @@ typedef struct ZrContainerFieldStringCacheEntry {
  * ## References
  * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1024 定义唯一静态实例；zr_vm_lib_container/src/zr_vm_lib_container/module.c:1030、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1032 比较/写入本类型身份。
  * 八字段 accessor 为 zr_vm_lib_container/src/zr_vm_lib_container/module.c:1481、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1506、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1531、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1556、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1581、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1606、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1631、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1656；通用创建/永久标记为 zr_vm_lib_container/src/zr_vm_lib_container/module.c:582、zr_vm_lib_container/src/zr_vm_lib_container/module.c:586。
- * 真实消费者包括 backing zr_vm_lib_container/src/zr_vm_lib_container/module.c:3399、zr_vm_lib_container/src/zr_vm_lib_container/module.c:3449，Pair zr_vm_lib_container/src/zr_vm_lib_container/module.c:2580、zr_vm_lib_container/src/zr_vm_lib_container/module.c:2596，Enumerator zr_vm_lib_container/src/zr_vm_lib_container/module.c:3876、zr_vm_lib_container/src/zr_vm_lib_container/module.c:4090。
+ * 真实消费者包括 backing zr_vm_lib_container/src/zr_vm_lib_container/module.c:3817、zr_vm_lib_container/src/zr_vm_lib_container/module.c:3867，Pair zr_vm_lib_container/src/zr_vm_lib_container/module.c:2947、zr_vm_lib_container/src/zr_vm_lib_container/module.c:2979，Enumerator zr_vm_lib_container/src/zr_vm_lib_container/module.c:4294、zr_vm_lib_container/src/zr_vm_lib_container/module.c:4508。
  * zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210 与 zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217 说明永久字符串生命周期。
  */
 typedef struct ZrContainerHotFieldStringCache {
@@ -378,13 +378,13 @@ typedef struct ZrContainerHotFieldStringCache {
  * ## Invariants and lifecycle
  * 父缓存负责 entries/backing 与域切换失效；槽本身不保活 key、Pair 或 backing，不能跨分配/用户回调持有裸地址。
  * 现有验证不重新比较 Pair.first 的当前内容，也不单独重查 index 边界。
- * TODO: Pair.first 的合法写入与 entries 版本联动需沿 zr_vm_lib_container/src/zr_vm_lib_container/module.c:2650 的写路径核对，不能把版本相同当成键未变的证明。
+ * TODO: Pair.first 的合法写入与 entries 版本联动需沿 zr_vm_lib_container/src/zr_vm_lib_container/module.c:3050 的写路径核对，不能把版本相同当成键未变的证明。
  * TODO: moving GC 后的 raw key/entry 重写仍待沿 zr_vm_lib_container/src/zr_vm_lib_container/module.c:1685 和 gc_cycle 对象重写入口核对。
  *
  * ## References
  * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1214、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1441 是槽读取验证；zr_vm_lib_container/src/zr_vm_lib_container/module.c:1274 至 zr_vm_lib_container/src/zr_vm_lib_container/module.c:1313 是已有候选覆盖及新槽发布/推进。
- * Map 真实扫描与缓存接入 zr_vm_lib_container/src/zr_vm_lib_container/module.c:3511、zr_vm_lib_container/src/zr_vm_lib_container/module.c:3637，公开消费者 zr_vm_lib_container/src/zr_vm_lib_container/module.c:4721、zr_vm_lib_container/src/zr_vm_lib_container/module.c:4737、zr_vm_lib_container/src/zr_vm_lib_container/module.c:4817、zr_vm_lib_container/src/zr_vm_lib_container/module.c:4866、zr_vm_lib_container/src/zr_vm_lib_container/module.c:4899、zr_vm_lib_container/src/zr_vm_lib_container/module.c:4975。
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1259 拒绝 NULL entry，zr_vm_lib_container/src/zr_vm_lib_container/module.c:3606 的负查找不发布候选；父容量为 zr_vm_lib_container/src/zr_vm_lib_container/module.c:298 的四槽常量。
+ * Map 真实扫描与缓存接入 zr_vm_lib_container/src/zr_vm_lib_container/module.c:3929、zr_vm_lib_container/src/zr_vm_lib_container/module.c:4055，公开消费者 zr_vm_lib_container/src/zr_vm_lib_container/module.c:5139、zr_vm_lib_container/src/zr_vm_lib_container/module.c:5155、zr_vm_lib_container/src/zr_vm_lib_container/module.c:5235、zr_vm_lib_container/src/zr_vm_lib_container/module.c:5284、zr_vm_lib_container/src/zr_vm_lib_container/module.c:5317、zr_vm_lib_container/src/zr_vm_lib_container/module.c:5393。
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1259 拒绝 NULL entry，zr_vm_lib_container/src/zr_vm_lib_container/module.c:4024 的负查找不发布候选；父容量为 zr_vm_lib_container/src/zr_vm_lib_container/module.c:298 的四槽常量。
  */
 typedef struct ZrContainerHotMapLookupCacheSlot {
     /** @brief 查询字符串的裸对象身份借用；按地址匹配，不作为内容哈希或 GC 根。 */
@@ -413,12 +413,12 @@ typedef struct ZrContainerHotMapLookupCacheSlot {
  * identity 改变时清零整份缓存；entries 改变时丢弃 MRU、候选和游标，不析构容器元素。
  * 已有同 key/version 槽被覆盖后直接返回，不推进游标；插入空槽或轮换满槽后均推进游标。
  * entries/key/Pair 裸指针没有永久标记或独立 GC 根；不能据此延长它们的生命周期或跨分配/回调保留。
- * TODO: moving GC 裸指针重写、Pair.first 与 backing 版本联动及多域并发同步分别沿 zr_vm_lib_container/src/zr_vm_lib_container/module.c:1685、zr_vm_lib_container/src/zr_vm_lib_container/module.c:2650、zr_vm_lib_container/src/zr_vm_lib_container/module.c:591 核对。
+ * TODO: moving GC 裸指针重写、Pair.first 与 backing 版本联动及多域并发同步分别沿 zr_vm_lib_container/src/zr_vm_lib_container/module.c:1685、zr_vm_lib_container/src/zr_vm_lib_container/module.c:3050、zr_vm_lib_container/src/zr_vm_lib_container/module.c:591 核对。
  *
  * ## References
  * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1075 是本类型静态实例；zr_vm_lib_container/src/zr_vm_lib_container/module.c:1081、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1083 是本类型 identity 访问。
  * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1106 至 zr_vm_lib_container/src/zr_vm_lib_container/module.c:1119 切换 backing，zr_vm_lib_container/src/zr_vm_lib_container/module.c:1138、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1249 发布 MRU/候选，zr_vm_lib_container/src/zr_vm_lib_container/module.c:1280 至 zr_vm_lib_container/src/zr_vm_lib_container/module.c:1313 覆盖/插入/推进游标。
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1334、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1412 是两类查找；zr_vm_lib_container/src/zr_vm_lib_container/module.c:3534、zr_vm_lib_container/src/zr_vm_lib_container/module.c:3653 是 Map 真实接入点，zr_vm_lib_container/src/zr_vm_lib_container/module.c:4817、zr_vm_lib_container/src/zr_vm_lib_container/module.c:4866 是公开读写消费者。
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1334、zr_vm_lib_container/src/zr_vm_lib_container/module.c:1412 是两类查找；zr_vm_lib_container/src/zr_vm_lib_container/module.c:3952、zr_vm_lib_container/src/zr_vm_lib_container/module.c:4071 是 Map 真实接入点，zr_vm_lib_container/src/zr_vm_lib_container/module.c:5235、zr_vm_lib_container/src/zr_vm_lib_container/module.c:5284 是公开读写消费者。
  */
 typedef struct ZrContainerHotMapLookupCache {
     /** @brief 本类型静态缓存的 GlobalState 身份标量；只由 Map cache accessor 比较/写入，变化清零。 */
@@ -493,7 +493,7 @@ static ZR_FORCE_INLINE void zr_container_cache_string_lookup_pair_mru(SZrObject 
  * 不访问VM、不复制/释放文本；指针不同会读取内容，不能传悬空或未终止文本。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:895;zr_vm_lib_container/src/zr_vm_lib_container/module.c:898;zr_vm_lib_container/src/zr_vm_lib_container/module.c:901;zr_vm_lib_container/src/zr_vm_lib_container/module.c:904;zr_vm_lib_container/src/zr_vm_lib_container/module.c:907;zr_vm_lib_container/src/zr_vm_lib_container/module.c:910;zr_vm_lib_container/src/zr_vm_lib_container/module.c:913;zr_vm_lib_container/src/zr_vm_lib_container/module.c:916;zr_vm_lib_container/src/zr_vm_lib_container/module.c:919;zr_vm_lib_container/src/zr_vm_lib_container/module.c:922;zr_vm_lib_container/src/zr_vm_lib_container/module.c:925;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1921;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1922;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2061;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2062;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2065;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2066;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2067;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2070;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2071;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2072;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2075;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2078;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2081;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2084;zr_vm_lib_container/src/zr_vm_lib_container/module.c:498;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2023
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:895;zr_vm_lib_container/src/zr_vm_lib_container/module.c:898;zr_vm_lib_container/src/zr_vm_lib_container/module.c:901;zr_vm_lib_container/src/zr_vm_lib_container/module.c:904;zr_vm_lib_container/src/zr_vm_lib_container/module.c:907;zr_vm_lib_container/src/zr_vm_lib_container/module.c:910;zr_vm_lib_container/src/zr_vm_lib_container/module.c:913;zr_vm_lib_container/src/zr_vm_lib_container/module.c:916;zr_vm_lib_container/src/zr_vm_lib_container/module.c:919;zr_vm_lib_container/src/zr_vm_lib_container/module.c:922;zr_vm_lib_container/src/zr_vm_lib_container/module.c:925;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1939;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1940;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2178;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2179;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2182;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2183;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2184;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2187;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2188;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2189;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2192;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2195;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2198;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2201;zr_vm_lib_container/src/zr_vm_lib_container/module.c:498;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140
  */
 static ZR_FORCE_INLINE TZrBool zr_container_field_name_equals(const TZrChar *fieldName, const TZrChar *expectedFieldName) {
     return fieldName == expectedFieldName ||
@@ -605,11 +605,11 @@ static SZrString *zr_container_cache_field_string_once(SZrState *state,
  * ## Constraints and lifecycle
  * 字符串由原GlobalState永久根保活且在域内不搬迁；调用者只借用，不能释放或交给另一域。identity切换只清槽，原域仍存活的旧字符串不因此立即失效。
  * first两别名共用键字符串，不说明LinkedList和Pair共享实例字段。identity切换丢弃缓存值，不析构原域对象。
- * TODO: 新增动态名字调用时沿zr_vm_lib_container/src/zr_vm_lib_container/module.c:981;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1951;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1976;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2160;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2501核对宿主文本有效期和48槽容量；固定字面量调用不承诺任意名字数量。
+ * TODO: 新增动态名字调用时沿zr_vm_lib_container/src/zr_vm_lib_container/module.c:981;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1986;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2042;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2343;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2818核对宿主文本有效期和48槽容量；固定字面量调用不承诺任意名字数量。
  * TODO: 进程静态缓存没有锁；沿两条Map查询、字段accessor和多GlobalState/mutator入口核对合法并行与同步协议。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:981;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1951;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1976;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2160;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2501;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:842;zr_vm_lib_container/src/zr_vm_lib_container/module.c:930;zr_vm_lib_container/src/zr_vm_lib_container/module.c:942;zr_vm_lib_container/src/zr_vm_lib_container/module.c:946;zr_vm_lib_container/src/zr_vm_lib_container/module.c:953;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210;zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:981;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1986;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2042;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2343;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2818;zr_vm_lib_container/src/zr_vm_lib_container/module.c:614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:842;zr_vm_lib_container/src/zr_vm_lib_container/module.c:930;zr_vm_lib_container/src/zr_vm_lib_container/module.c:942;zr_vm_lib_container/src/zr_vm_lib_container/module.c:946;zr_vm_lib_container/src/zr_vm_lib_container/module.c:953;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210;zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217
  */
 static SZrString *zr_container_cached_field_string(SZrState *state, const TZrChar *fieldName) {
     /**
@@ -837,7 +837,7 @@ static SZrString *zr_container_cached_field_string(SZrState *state, const TZrCha
      * TODO: 进程静态缓存没有锁；沿GlobalState创建、thread/task宿主入口与两条Map查询核实合法并行及串行协议。cacheIdentity失效不是同步。
      *
      * ## References
-     * zr_vm_lib_container/src/zr_vm_lib_container/module.c:981;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1951;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1976;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2160;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2501;zr_vm_lib_container/src/zr_vm_lib_container/module.c:842;zr_vm_lib_container/src/zr_vm_lib_container/module.c:823;zr_vm_lib_container/src/zr_vm_lib_container/module.c:843;zr_vm_lib_container/src/zr_vm_lib_container/module.c:844;zr_vm_lib_container/src/zr_vm_lib_container/module.c:855;zr_vm_core/src/zr_vm_core/global.c:376
+     * zr_vm_lib_container/src/zr_vm_lib_container/module.c:981;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1986;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2042;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2343;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2818;zr_vm_lib_container/src/zr_vm_lib_container/module.c:842;zr_vm_lib_container/src/zr_vm_lib_container/module.c:823;zr_vm_lib_container/src/zr_vm_lib_container/module.c:843;zr_vm_lib_container/src/zr_vm_lib_container/module.c:844;zr_vm_lib_container/src/zr_vm_lib_container/module.c:855;zr_vm_core/src/zr_vm_core/global.c:376
      */
     if (cachedGlobalCacheIdentity != state->global->cacheIdentity) {
         cachedGlobalCacheIdentity = state->global->cacheIdentity;
@@ -969,7 +969,7 @@ static SZrString *zr_container_cached_field_string(SZrState *state, const TZrCha
  * outKey借用字符串，不取得容器、字段值或域所有权。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1906;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2016;zr_vm_lib_container/src/zr_vm_lib_container/module.c:974;zr_vm_lib_container/src/zr_vm_lib_container/module.c:981
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1924;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2117;zr_vm_lib_container/src/zr_vm_lib_container/module.c:974;zr_vm_lib_container/src/zr_vm_lib_container/module.c:981
  */
 static TZrBool zr_container_make_field_key(SZrState *state, const TZrChar *fieldName, SZrTypeValue *outKey) {
     SZrString *fieldString;
@@ -1048,11 +1048,11 @@ static ZR_FORCE_INLINE ZrContainerHotFieldStringCache *zr_container_hot_field_st
  * ## Constraints and lifecycle
  * identity切换覆盖同一块，缓存视图不可跨切换保存；后续try依赖本accessor先核对域身份。
  * entries/key/Pair为普通裸借用，缓存不建立GC根；调用者须保持对象可达，不跨分配、用户回调或moving GC保留旧地址。
- * TODO: 沿zr_vm_lib_container/src/zr_vm_lib_container/module.c:2650的Pair.first疑点及gc_cycle对象重写入口核对版本联动和裸地址重定位；相同memberVersion不是键内容或地址仍有效的证明。
+ * TODO: 沿zr_vm_lib_container/src/zr_vm_lib_container/module.c:3050的Pair.first疑点及gc_cycle对象重写入口核对版本联动和裸地址重定位；相同memberVersion不是键内容或地址仍有效的证明。
  * BUG: 默认空线程锁钩子下，启用supportMultithread的AttachedDomain ThreadScheduler(workerCount=2)可让两个Job<int>在各自worker内构造独立Map并查询字符串键。队列锁在ExecutePreparedJob前释放，NativeEnter只登记状态即解锁；不同backing仍并发读写同一进程静态MRU/四槽/游标，形成C数据竞争。cacheIdentity和GC native模式不是缓存互斥。TODO: 后续明确缓存域/线程归属或建立完整同步；这里只是完整静态调用链证明，未运行并发复现。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1254;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3534;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3653;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1057;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1081;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1083;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1181;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1215;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1256;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1315;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c:118;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c:123;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c:172;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c:275;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c:280;zr_vm_library/src/zr_vm_library/task_runtime.c:490;zr_vm_library/src/zr_vm_library/task_runtime.c:593;zr_vm_library/src/zr_vm_library/task_runtime.c:886;zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c:518;zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c:691;zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c:350;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:274;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:277;zr_vm_common/include/zr_vm_common/zr_thread_conf.h:18;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1254;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3534;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4721
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1254;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3952;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4071;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1057;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1081;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1083;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1181;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1215;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1256;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1315;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c:118;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c:123;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c:172;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c:275;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c:280;zr_vm_library/src/zr_vm_library/task_runtime.c:490;zr_vm_library/src/zr_vm_library/task_runtime.c:593;zr_vm_library/src/zr_vm_library/task_runtime.c:886;zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c:518;zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c:691;zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c:350;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:274;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:277;zr_vm_common/include/zr_vm_common/zr_thread_conf.h:18;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1254;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3952;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5139
  */
 static ZR_FORCE_INLINE ZrContainerHotMapLookupCache *zr_container_hot_map_lookup_cache(SZrState *state) {
     /**
@@ -1070,7 +1070,7 @@ static ZR_FORCE_INLINE ZrContainerHotMapLookupCache *zr_container_hot_map_lookup
      * BUG: 默认空线程锁钩子下，启用supportMultithread的AttachedDomain ThreadScheduler(workerCount=2)可让两个Job<int>在各自worker内构造独立Map并查询字符串键。队列锁在ExecutePreparedJob前释放，NativeEnter只登记状态即解锁；不同backing仍并发读写同一进程静态MRU/四槽/游标，形成C数据竞争。cacheIdentity和GC native模式不是缓存互斥。TODO: 后续明确缓存域/线程归属或建立完整同步；这里只是完整静态调用链证明，未运行并发复现。
      *
      * ## References
-     * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1081;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1082;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1083;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1086;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1254;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3534;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3653;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1075;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4695;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4898;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4924;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3218;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3240;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3337;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3363;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4737;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4743;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3536;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3552;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3655;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4817;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4866;zr_vm_core/include/zr_vm_core/hash_set.h:584;zr_vm_core/src/zr_vm_core/object/object.c:1877;tests/container/test_container_runtime.c:1416;tests/container/test_container_runtime.c:1580;zr_vm_core/src/zr_vm_core/gc/gc_cycle.c:2226;zr_vm_core/src/zr_vm_core/gc/gc_cycle.c:2718;zr_vm_core/src/zr_vm_core/gc/gc_cycle.c:2799;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1181;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1215;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1256;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1315;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c:118;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c:123;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c:172;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c:275;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c:280;zr_vm_library/src/zr_vm_library/task_runtime.c:490;zr_vm_library/src/zr_vm_library/task_runtime.c:593;zr_vm_library/src/zr_vm_library/task_runtime.c:886;zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c:518;zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c:691;zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c:350;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:274;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:277;zr_vm_common/include/zr_vm_common/zr_thread_conf.h:18;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1254;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3534;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4721
+     * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1081;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1082;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1083;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1086;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1254;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3952;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4071;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1075;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5113;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5316;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5342;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3636;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3658;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3755;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3781;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5155;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5161;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3954;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3970;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4073;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5235;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5284;zr_vm_core/include/zr_vm_core/hash_set.h:584;zr_vm_core/src/zr_vm_core/object/object.c:1877;tests/container/test_container_runtime.c:1416;tests/container/test_container_runtime.c:1580;zr_vm_core/src/zr_vm_core/gc/gc_cycle.c:2226;zr_vm_core/src/zr_vm_core/gc/gc_cycle.c:2718;zr_vm_core/src/zr_vm_core/gc/gc_cycle.c:2799;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1181;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1215;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1256;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c:1315;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c:118;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c:123;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c:172;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c:275;zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c:280;zr_vm_library/src/zr_vm_library/task_runtime.c:490;zr_vm_library/src/zr_vm_library/task_runtime.c:593;zr_vm_library/src/zr_vm_library/task_runtime.c:886;zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c:518;zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c:691;zr_vm_core/src/zr_vm_core/gc/gc_domain_mutator.c:350;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:274;zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:277;zr_vm_common/include/zr_vm_common/zr_thread_conf.h:18;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1254;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3952;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5139
      */
     static ZrContainerHotMapLookupCache cache = {0};
 
@@ -1206,10 +1206,10 @@ static ZR_FORCE_INLINE void zr_container_commit_hot_map_lookup_cache_hit(ZrConta
  * ## Constraints and lifecycle
  * 不独立拒绝NULL key，高层try先拒绝NULL；违反前提可能进入下层断言。域/backing身份由上层保证，也不重读Pair.first或独立验证下标。
  * entries/key/Pair为普通裸借用，缓存不建立GC根；调用者须保持对象可达，不跨分配、用户回调或moving GC保留旧地址。
- * TODO: 沿zr_vm_lib_container/src/zr_vm_lib_container/module.c:2650的Pair.first疑点及gc_cycle对象重写入口核对版本联动和裸地址重定位；相同memberVersion不是键内容或地址仍有效的证明。
+ * TODO: 沿zr_vm_lib_container/src/zr_vm_lib_container/module.c:3050的Pair.first疑点及gc_cycle对象重写入口核对版本联动和裸地址重定位；相同memberVersion不是键内容或地址仍有效的证明。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1380;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1382;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1384;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1386;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1214;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1221;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1222;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1226;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1342;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2650
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1380;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1382;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1384;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1386;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1214;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1221;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1222;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1226;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1342;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3050
  */
 static ZR_FORCE_INLINE TZrBool zr_container_try_hot_map_lookup_cache_slot(
         ZrContainerHotMapLookupCache *cache,
@@ -1240,11 +1240,11 @@ static ZR_FORCE_INLINE TZrBool zr_container_try_hot_map_lookup_cache_slot(
  * ## Constraints and lifecycle
  * backing改变先清旧位置；已有同key/version槽覆盖不推进游标，空槽插入和满槽轮换均推进。无边界/内容复验或异常反馈。
  * entries/key/Pair为普通裸借用，缓存不建立GC根；调用者须保持对象可达，不跨分配、用户回调或moving GC保留旧地址。
- * TODO: 沿zr_vm_lib_container/src/zr_vm_lib_container/module.c:2650的Pair.first疑点及gc_cycle对象重写入口核对版本联动和裸地址重定位；相同memberVersion不是键内容或地址仍有效的证明。
+ * TODO: 沿zr_vm_lib_container/src/zr_vm_lib_container/module.c:3050的Pair.first疑点及gc_cycle对象重写入口核对版本联动和裸地址重定位；相同memberVersion不是键内容或地址仍有效的证明。
  * TODO: 进程静态缓存没有锁；沿两条Map查询、字段accessor和多GlobalState/mutator入口核对合法并行与同步协议。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:3572;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3596;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3606;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3681;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3695;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1249;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1259;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1280;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1289;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1310;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1313
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:3990;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4014;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4024;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4099;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4113;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1249;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1259;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1280;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1289;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1310;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1313
  */
 static ZR_FORCE_INLINE void zr_container_update_hot_map_lookup_cache(SZrState *state,
                                                                      SZrObject *entries,
@@ -1304,7 +1304,7 @@ static ZR_FORCE_INLINE void zr_container_update_hot_map_lookup_cache(SZrState *s
      * 4候选之外有独立MRU；不存负结果，无集合成员验证；accessor在参数拒绝前已可清域。改槽数须同步显式四槽读取与TZrUInt8游标。
      *
      * ## References
-     * zr_vm_lib_container/src/zr_vm_lib_container/module.c:3572;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3596;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3606;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3681;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3695;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1309;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1254;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1259;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1279;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1282;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1287;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1289;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1310;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1312;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1313;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1380;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1387
+     * zr_vm_lib_container/src/zr_vm_lib_container/module.c:3990;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4014;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4024;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4099;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4113;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1309;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1254;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1259;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1279;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1282;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1287;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1289;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1310;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1312;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1313;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1380;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1387
      */
     if (insertIndex == ZR_CONTAINER_HOT_MAP_LOOKUP_CACHE_SLOT_COUNT) {
         insertIndex = cache->nextSlotIndex % ZR_CONTAINER_HOT_MAP_LOOKUP_CACHE_SLOT_COUNT;
@@ -1324,12 +1324,12 @@ static ZR_FORCE_INLINE void zr_container_update_hot_map_lookup_cache(SZrState *s
  * 无效输入、backing切换或无候选false且不改输出；命中更新MRU/统计、写可选输出并true。
  *
  * ## Constraints and lifecycle
- * 本函数只检查state非NULL，不自行核验global/cacheIdentity；域前提来自zr_vm_lib_container/src/zr_vm_lib_container/module.c:3534调用链。backing改变清槽并miss，版本不同使旧候选不被选中。
+ * 本函数只检查state非NULL，不自行核验global/cacheIdentity；域前提来自zr_vm_lib_container/src/zr_vm_lib_container/module.c:3952调用链。backing改变清槽并miss，版本不同使旧候选不被选中。
  * entries/key/Pair为普通裸借用，缓存不建立GC根；调用者须保持对象可达，不跨分配、用户回调或moving GC保留旧地址。
- * TODO: 沿zr_vm_lib_container/src/zr_vm_lib_container/module.c:2650的Pair.first疑点及gc_cycle对象重写入口核对版本联动和裸地址重定位；相同memberVersion不是键内容或地址仍有效的证明。
+ * TODO: 沿zr_vm_lib_container/src/zr_vm_lib_container/module.c:3050的Pair.first疑点及gc_cycle对象重写入口核对版本联动和裸地址重定位；相同memberVersion不是键内容或地址仍有效的证明。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:3536;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1334;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3534;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1342;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1362;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1376;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2650
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:3954;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1334;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3952;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1342;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1362;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1376;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3050
  */
 static ZR_FORCE_INLINE TZrBool zr_container_try_hot_map_lookup_cache(SZrState *state,
                                                                      ZrContainerHotMapLookupCache *cache,
@@ -1357,7 +1357,7 @@ static ZR_FORCE_INLINE TZrBool zr_container_try_hot_map_lookup_cache(SZrState *s
      * BUG: 同一backing的generic Map删除末项时，remove的find_index命中已有缓存，或删除前成功扫描并填槽；HashSet_Remove只减elementCount，self.count只改Map自身，entries.memberVersion不变。单域串行、同一字符串对象且删除至下次查询间无GC/其它Map查询替换缓存时，containsKey在真实length扫描前返回true；GET_ITEM可读取已脱链Pair.second。需后续修复backing版本联动或显式失效；bucket节点释放不等于Pair对象释放。
      *
      * ## References
-     * zr_vm_lib_container/src/zr_vm_lib_container/module.c:3536;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1362;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1106;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1363;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1364;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1423;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1424;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3655;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4695;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4898;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4924;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3218;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3240;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3337;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3363;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4737;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4743;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3552;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4817;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4866;zr_vm_core/include/zr_vm_core/hash_set.h:584;zr_vm_core/src/zr_vm_core/object/object.c:1877;tests/container/test_container_runtime.c:1416;tests/container/test_container_runtime.c:1580
+     * zr_vm_lib_container/src/zr_vm_lib_container/module.c:3954;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1362;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1106;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1363;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1364;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1423;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1424;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4073;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5113;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5316;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5342;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3636;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3658;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3755;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3781;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5155;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5161;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3970;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5235;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5284;zr_vm_core/include/zr_vm_core/hash_set.h:584;zr_vm_core/src/zr_vm_core/object/object.c:1877;tests/container/test_container_runtime.c:1416;tests/container/test_container_runtime.c:1580
      */
     if (cache->entries != entries) {
         zr_container_reset_hot_map_lookup_cache_state(cache, entries);
@@ -1402,12 +1402,12 @@ static ZR_FORCE_INLINE TZrBool zr_container_try_hot_map_lookup_cache(SZrState *s
  * 成功返回MRU或候选Pair借用；无效输入/backing切换/无匹配时NULL，backing切换清旧状态。
  *
  * ## Constraints and lifecycle
- * 没有state或域核验，依赖zr_vm_lib_container/src/zr_vm_lib_container/module.c:3653 accessor；命中更新MRU/统计，不重比Pair.first。
+ * 没有state或域核验，依赖zr_vm_lib_container/src/zr_vm_lib_container/module.c:4071 accessor；命中更新MRU/统计，不重比Pair.first。
  * entries/key/Pair为普通裸借用，缓存不建立GC根；调用者须保持对象可达，不跨分配、用户回调或moving GC保留旧地址。
- * TODO: 沿zr_vm_lib_container/src/zr_vm_lib_container/module.c:2650的Pair.first疑点及gc_cycle对象重写入口核对版本联动和裸地址重定位；相同memberVersion不是键内容或地址仍有效的证明。
+ * TODO: 沿zr_vm_lib_container/src/zr_vm_lib_container/module.c:3050的Pair.first疑点及gc_cycle对象重写入口核对版本联动和裸地址重定位；相同memberVersion不是键内容或地址仍有效的证明。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:3655;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1412;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3653;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1423;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1431;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1450;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2650
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4073;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1412;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4071;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1423;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1431;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1450;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3050
  */
 static ZR_FORCE_INLINE SZrObject *zr_container_try_hot_map_lookup_cache_entry(ZrContainerHotMapLookupCache *cache,
                                                                               SZrObject *entries,
@@ -1476,7 +1476,7 @@ static ZR_FORCE_INLINE SZrObject *zr_container_try_hot_map_lookup_cache_entry(Zr
  * TODO: 进程静态缓存没有锁；沿两条Map查询、字段accessor和多GlobalState/mutator入口核对合法并行与同步协议。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:3400;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3450;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1481;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210;zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:3818;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3868;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1481;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210;zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217
  */
 static ZR_FORCE_INLINE SZrString *zr_container_entries_field_string_fast(SZrState *state) {
     ZrContainerHotFieldStringCache *cache = zr_container_hot_field_string_cache(state);
@@ -1501,7 +1501,7 @@ static ZR_FORCE_INLINE SZrString *zr_container_entries_field_string_fast(SZrStat
  * TODO: 进程静态缓存没有锁；沿两条Map查询、字段accessor和多GlobalState/mutator入口核对合法并行与同步协议。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:3455;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1506;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210;zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:3873;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1506;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210;zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217
  */
 static ZR_FORCE_INLINE SZrString *zr_container_items_field_string_fast(SZrState *state) {
     ZrContainerHotFieldStringCache *cache = zr_container_hot_field_string_cache(state);
@@ -1526,7 +1526,7 @@ static ZR_FORCE_INLINE SZrString *zr_container_items_field_string_fast(SZrState 
  * TODO: 进程静态缓存没有锁；沿两条Map查询、字段accessor和多GlobalState/mutator入口核对合法并行与同步协议。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2581;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1531;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210;zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2948;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1531;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210;zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217
  */
 static ZR_FORCE_INLINE SZrString *zr_container_pair_first_field_string_fast(SZrState *state) {
     ZrContainerHotFieldStringCache *cache = zr_container_hot_field_string_cache(state);
@@ -1551,7 +1551,7 @@ static ZR_FORCE_INLINE SZrString *zr_container_pair_first_field_string_fast(SZrS
  * TODO: 进程静态缓存没有锁；沿两条Map查询、字段accessor和多GlobalState/mutator入口核对合法并行与同步协议。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2597;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2615;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1556;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210;zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2980;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3015;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1556;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210;zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217
  */
 static ZR_FORCE_INLINE SZrString *zr_container_pair_second_field_string_fast(SZrState *state) {
     ZrContainerHotFieldStringCache *cache = zr_container_hot_field_string_cache(state);
@@ -1576,7 +1576,7 @@ static ZR_FORCE_INLINE SZrString *zr_container_pair_second_field_string_fast(SZr
  * TODO: 进程静态缓存没有锁；沿两条Map查询、字段accessor和多GlobalState/mutator入口核对合法并行与同步协议。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2388;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1581;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210;zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2688;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1581;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210;zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217
  */
 static ZR_FORCE_INLINE SZrString *zr_container_iterator_source_field_string_fast(SZrState *state) {
     ZrContainerHotFieldStringCache *cache = zr_container_hot_field_string_cache(state);
@@ -1601,7 +1601,7 @@ static ZR_FORCE_INLINE SZrString *zr_container_iterator_source_field_string_fast
  * TODO: 进程静态缓存没有锁；沿两条Map查询、字段accessor和多GlobalState/mutator入口核对合法并行与同步协议。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2399;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1606;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210;zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2699;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1606;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210;zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217
  */
 static ZR_FORCE_INLINE SZrString *zr_container_iterator_current_field_string_fast(SZrState *state) {
     ZrContainerHotFieldStringCache *cache = zr_container_hot_field_string_cache(state);
@@ -1626,7 +1626,7 @@ static ZR_FORCE_INLINE SZrString *zr_container_iterator_current_field_string_fas
  * TODO: 进程静态缓存没有锁；沿两条Map查询、字段accessor和多GlobalState/mutator入口核对合法并行与同步协议。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2464;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1631;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210;zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2764;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1631;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210;zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217
  */
 static ZR_FORCE_INLINE SZrString *zr_container_iterator_index_field_string_fast(SZrState *state) {
     ZrContainerHotFieldStringCache *cache = zr_container_hot_field_string_cache(state);
@@ -1651,7 +1651,7 @@ static ZR_FORCE_INLINE SZrString *zr_container_iterator_index_field_string_fast(
  * TODO: 进程静态缓存没有锁；沿两条Map查询、字段accessor和多GlobalState/mutator入口核对合法并行与同步协议。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2482;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1656;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210;zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2782;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1656;zr_vm_core/src/zr_vm_core/gc/gc_object.c:1210;zr_vm_core/src/zr_vm_core/gc/gc_compact.c:217
  */
 static ZR_FORCE_INLINE SZrString *zr_container_iterator_next_node_field_string_fast(SZrState *state) {
     ZrContainerHotFieldStringCache *cache = zr_container_hot_field_string_cache(state);
@@ -1680,7 +1680,7 @@ static ZR_FORCE_INLINE SZrString *zr_container_iterator_next_node_field_string_f
  * TODO: 这组进程静态原型/名字槽没有跨mutator或跨域首填充同步；另核并行getIterator和换域清槽的发布边界，不从cacheIdentity或permanent标记推出互斥。Map缓存的已证竞争不替代本组原型发布的独立核查。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:3865;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1685;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1763;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1765;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1822;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1823;zr_vm_core/src/zr_vm_core/object/object.c:4105;zr_vm_core/src/zr_vm_core/object/object.c:4130;zr_vm_core/src/zr_vm_core/object/object.c:4135;zr_vm_core/src/zr_vm_core/object/object.c:4307;zr_vm_core/src/zr_vm_core/object/object.c:4417;zr_vm_core/src/zr_vm_core/gc/gc_mark.c:877;zr_vm_core/src/zr_vm_core/gc/gc_mark.c:879;zr_vm_core/src/zr_vm_core/gc/gc_cycle.c:1648;zr_vm_core/src/zr_vm_core/gc/gc_cycle.c:1650;zr_vm_core/src/zr_vm_core/closure.c:239;zr_vm_core/src/zr_vm_core/closure.c:247;tests/iterator/test_enumerator_protocol.c:131
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4283;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1685;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1763;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1765;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1822;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1823;zr_vm_core/src/zr_vm_core/object/object.c:4105;zr_vm_core/src/zr_vm_core/object/object.c:4130;zr_vm_core/src/zr_vm_core/object/object.c:4135;zr_vm_core/src/zr_vm_core/object/object.c:4307;zr_vm_core/src/zr_vm_core/object/object.c:4417;zr_vm_core/src/zr_vm_core/gc/gc_mark.c:877;zr_vm_core/src/zr_vm_core/gc/gc_mark.c:879;zr_vm_core/src/zr_vm_core/gc/gc_cycle.c:1648;zr_vm_core/src/zr_vm_core/gc/gc_cycle.c:1650;zr_vm_core/src/zr_vm_core/closure.c:239;zr_vm_core/src/zr_vm_core/closure.c:247;tests/iterator/test_enumerator_protocol.c:131
  */
 static SZrObjectPrototype *zr_container_iterator_runtime_prototype(SZrState *state,
                                                                    FZrNativeFunction moveNextFunction) {
@@ -1801,7 +1801,7 @@ static SZrObjectPrototype *zr_container_iterator_runtime_prototype(SZrState *sta
      * TODO: 核对原型缓存填充的失败原子性：*slot先发布并永久标记，之后才创建闭包和安装Iterator contract/protocol。ClosureNative_New在分配后直接解引用，显式closure==NULL分支不能证明OOM可恢复，也不能证明后续缓存命中是完整装配；核查分配器异常退场及重试，未授故障注入信用。
      *
      * ## References
-     * zr_vm_lib_container/src/zr_vm_lib_container/module.c:3865;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1806;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1771;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1810;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1812;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1822;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1823;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1826;zr_vm_core/src/zr_vm_core/closure.c:239;zr_vm_core/src/zr_vm_core/closure.c:247;zr_vm_core/src/zr_vm_core/object/object.c:4417
+     * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4283;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1806;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1771;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1810;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1812;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1822;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1823;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1826;zr_vm_core/src/zr_vm_core/closure.c:239;zr_vm_core/src/zr_vm_core/closure.c:247;zr_vm_core/src/zr_vm_core/object/object.c:4417
      */
         *slot = ZrCore_ObjectPrototype_New(state, prototypeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
         if (*slot == ZR_NULL) {
@@ -1892,7 +1892,25 @@ static TZrBool zr_container_finish_object(ZrLibCallContext *context, SZrTypeValu
     return ZR_TRUE;
 }
 
-/** @brief 封装缓存字段键并调用核心对象 setter；成功后刷新字段热槽与隐藏 backing 快指针，异常不报告字段设置成功。 */
+/**
+ * ## Summary
+ * 统一Pair构造/更新、容器元数据及链表连接的字段发布责任，使调用方通过核心复制和写屏障维护热读缓存。
+ *
+ * ## Parameters
+ * @param[in,out] state 当前有效执行域状态；供字段键准备、Core字段发布及其后异常状态观察。
+ * @param[in,out] object 字段发布的有效目标对象；写入可同步角色槽与隐藏backing缓存。
+ * @param[in] fieldName 有效的NUL结尾字段名；当前调用均为模块稳定角色常量，新增动态名字须另核键缓存的文本寿命。
+ * @param[in] value 只在本次调用读取的借用值；按核心Value复制/ownership协议存入字段，不消耗调用方槽。
+ *
+ * ## Returns
+ * @return 参数/键准备拒绝或core setter后threadStatus非FINE时false；否则在刷新本地缓存后true。true须结合核心写入资格，不能证明底层void setter未静默拒绝。
+ *
+ * ## Constraints and lifecycle
+ * 调用方须保证当前state域仍有效，目标对象及非空GC载荷符合该域id/generation归属；本接口的Core setter执行ValidateValueWrite，拒绝时可能静默返回。本批owner BUG静态证明使用有效同域对象和值。写入的是普通对象值槽，不派发字段描述符setter或在此验证声明类型；跨域写入沿核心GC域规则。false不表示已回滚此前字段/分配。items/entries写成功时同步借用backing缓存；其它字段不承担该同步职责。TODO: 底层Object_SetValue/SetExistingPairValueUnchecked返回void；GC域检查拒绝时可不改变threadStatus直接返回。这里的true只代表wrapper未观察到受检查的异常并完成本地路径，不能独立证明字段已接受写入；沿核心资格校验及上游失败传播核对可观察结果。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2011;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2053;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2090;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3046;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3883;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3892;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3910;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4625;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4629;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5538;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1914;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1930;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1931;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1936;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1941;zr_vm_core/src/zr_vm_core/object/object.c:1753;zr_vm_core/src/zr_vm_core/object/object.c:1886;zr_vm_core/src/zr_vm_core/gc/gc_domain.c:327;zr_vm_core/src/zr_vm_core/object/object.c:1775;zr_vm_core/src/zr_vm_core/object/object.c:1898
+ */
 static TZrBool zr_container_set_value_field_fast(SZrState *state,
                                                  SZrObject *object,
                                                  const TZrChar *fieldName,
@@ -1933,8 +1951,25 @@ static TZrBool zr_container_set_value_field_fast(SZrState *state,
     return ZR_TRUE;
 }
 
-/** @brief 写容器计数/游标整数，已有热槽直接改写；这些内部标量槽必须仍为普通无 ownership 值。 */
-/* TODO：核对公开可写元数据或动态字段是否可把内部整数槽改成 ownership 值；直写 int/null 路径不释放旧 owner，核查字段类型/动态写入口再决定是否需要回退。 */
+/**
+ * ## Summary
+ * 为容量、计数等容器元数据提供整数发布接口，保留字段角色缓存和成员版本的联动。
+ *
+ * ## Parameters
+ * @param[in,out] state 当前有效执行域状态；供字段名字准备、热槽键核验和Core回退；热槽路径信任已满足的域前提。
+ * @param[in,out] object 整数元数据发布的有效目标对象；调用方维持热角色节点有效。
+ * @param[in] fieldName 有效的NUL结尾字段名；当前调用均为模块稳定角色常量，新增动态名字须另核键缓存的文本寿命。
+ * @param[in] value 本次发布的有符号64位整数；业务容量/计数范围由调用方约束。
+ *
+ * ## Returns
+ * @return 参数拒绝或通用字段发布报告失败时false；整数热槽本地完成或通用路径报告完成时true。热槽不另查已有threadStatus，回退true仍受void核心setter静默拒绝边界约束。
+ *
+ * ## Constraints and lifecycle
+ * 调用方须保证当前state域仍有效且目标对象属于该域；整数热槽直写信任此前提而不执行ValidateValueWrite，字段热槽未中才经set_value的Core setter执行域资格检查。本批owner BUG静态证明使用有效同域对象和值。热槽仅核键；整数新值不含GC引用，不代表被覆盖的旧值无需owner释放。BUG: 公开Core C API在有效state和同域Array上可用Ownership API构造Shared值，经可写Object_SetMember存入capacity；字段运行描述只含name/kind/isWritable，不检查typeName，Core复制Shared增加强引用。随后正常Array.add的容量读取将非整数视作0，并使capacity Pair缓存就绪，整数快写清掉owner元数据却没有释放这份强引用；其余Shared正常释放后仍不能到达最后强引用的drop/归回GC。只证明这条合法C API静态链，不主张guest静态赋值通过或运行复现。TODO: 后续校验旧槽owner并走核心覆盖释放协议。TODO: 底层Object_SetValue/SetExistingPairValueUnchecked返回void；GC域检查拒绝时可不改变threadStatus直接返回。这里的true只代表wrapper未观察到受检查的异常并完成本地路径，不能独立证明字段已接受写入；沿核心资格校验及上游失败传播核对可观察结果。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4214;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4227;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4753;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4754;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4785;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4811;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4834;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4856;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5122;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5161;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5186;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5349;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5412;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5436;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5479;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5504;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5586;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5595;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5637;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5674;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5775;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1973;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1987;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2004;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2264;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3253;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4211;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4778;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5862;zr_vm_library/include/zr_vm_library/native_binding.h:347;zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:1237;zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:1240;zr_vm_core/src/zr_vm_core/object/object.c:2543;zr_vm_core/src/zr_vm_core/object/object.c:2942;zr_vm_core/src/zr_vm_core/object/object.c:2979;zr_vm_core/src/zr_vm_core/object/object.c:2987;zr_vm_core/include/zr_vm_core/ownership.h:42;zr_vm_core/include/zr_vm_core/ownership.h:67;zr_vm_core/include/zr_vm_core/ownership.h:72;zr_vm_core/src/zr_vm_core/ownership.c:724;zr_vm_core/src/zr_vm_core/ownership.c:802;zr_vm_core/include/zr_vm_core/value.h:72;zr_vm_core/src/zr_vm_core/gc/gc_domain.c:327;zr_vm_core/src/zr_vm_core/object/object.c:1775;zr_vm_core/src/zr_vm_core/object/object.c:1898
+ */
 static TZrBool zr_container_set_int_field_fast(SZrState *state,
                                                SZrObject *object,
                                                const TZrChar *fieldName,
@@ -1952,6 +1987,20 @@ static TZrBool zr_container_set_int_field_fast(SZrState *state,
     if (hotPairSlot != ZR_NULL &&
         fieldString != ZR_NULL &&
         zr_container_pair_matches_field_string(state, *hotPairSlot, fieldString)) {
+    /**
+     * ## Summary
+     * 缓存命中的整数发布仍须维护成员版本；新值为标量不能替代旧值的owner清理。
+     *
+     * ## Usage
+     * 所属set_int_field_fast在角色槽和字符串键核验成功后进入；不构成独立函数参数接口。
+     * 本分支本地完成后返回true，未单独检查已有threadStatus。
+     *
+     * ## Constraints and lifecycle
+     * BUG: 公开Core C API在有效state和同域Array上可用Ownership API构造Shared值，经可写Object_SetMember存入capacity；字段运行描述只含name/kind/isWritable，不检查typeName，Core复制Shared增加强引用。随后正常Array.add的容量读取将非整数视作0，并使capacity Pair缓存就绪，整数快写清掉owner元数据却没有释放这份强引用；其余Shared正常释放后仍不能到达最后强引用的drop/归回GC。只证明这条合法C API静态链，不主张guest静态赋值通过或运行复现。TODO: 后续校验旧槽owner并走核心覆盖释放协议。
+     *
+     * ## References
+     * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1987;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2004;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1973;zr_vm_core/include/zr_vm_core/value.h:72;zr_vm_core/src/zr_vm_core/object/object.c:2987;zr_vm_core/src/zr_vm_core/ownership.c:802;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4214
+     */
         ZR_VALUE_FAST_SET(&(*hotPairSlot)->value, nativeInt64, value, ZR_VALUE_TYPE_INT64);
         object->memberVersion++;
         zr_container_cache_string_lookup_pair_mru(object, *hotPairSlot);
@@ -1962,7 +2011,24 @@ static TZrBool zr_container_set_int_field_fast(SZrState *state,
     return zr_container_set_value_field_fast(state, object, fieldName, &fieldValue);
 }
 
-/** @brief 将内部标量/链接槽置空；已有热槽直接重置，调用者须保证旧槽不需 ownership 释放。 */
+/**
+ * ## Summary
+ * 供Pair初始化、链表连接及清空流程将字段发布为空值，并保持角色缓存与成员版本的可用性。
+ *
+ * ## Parameters
+ * @param[in,out] state 当前有效执行域状态；供字段名字准备、热槽键核验和Core回退；热槽路径信任已满足的域前提。
+ * @param[in,out] object 空值发布的有效目标对象；调用方维持热角色节点有效。
+ * @param[in] fieldName 有效的NUL结尾字段名；当前调用均为模块稳定角色常量，新增动态名字须另核键缓存的文本寿命。
+ *
+ * ## Returns
+ * @return 参数拒绝或通用字段发布报告失败时false；空值热槽本地完成或通用路径报告完成时true。热槽不另查已有threadStatus，回退true仍受void核心setter静默拒绝边界约束。
+ *
+ * ## Constraints and lifecycle
+ * 调用方须保证当前state域仍有效且目标对象属于该域；null热槽直写信任此前提而不执行ValidateValueWrite，字段热槽未中才经set_value的Core setter执行域资格检查。本批owner BUG静态证明使用有效同域对象和值。热槽仅核键；NULL新值不含GC引用，不代表旧值无需owner释放。BUG: 正常单节点LinkedList中的真实LinkedNode可由公开Ownership API取得Shared视图，再经同域可写Object_SetMember写回first；底层节点类型仍正确，Core复制增加强引用。removeFirst读取该节点并恢复first缓存后，unlink以NULL更新首尾，空值快写命中first热槽并清掉Shared元数据，没有释放该引用，造成最后强引用释放无法到达。此证明限定公开C API静态链；node的next/previous/value无对应热槽，不能扩为同一BUG，也不授guest赋值或动态复现信用。TODO: 旧槽owner须经核心覆盖协议释放。TODO: 底层Object_SetValue/SetExistingPairValueUnchecked返回void；GC域检查拒绝时可不改变threadStatus直接返回。这里的true只代表wrapper未观察到受检查的异常并完成本地路径，不能独立证明字段已接受写入；沿核心资格校验及上游失败传播核对可观察结果。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2086;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3887;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3896;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3914;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3918;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3919;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4636;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4637;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5545;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5549;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5550;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5583;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5584;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5596;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5597;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5766;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5767;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5773;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5774;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2032;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2043;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2046;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2917;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5575;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5580;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5681;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5700;zr_vm_lib_container/src/zr_vm_lib_container/module.c:6020;zr_vm_library/include/zr_vm_library/native_binding.h:347;zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:1240;zr_vm_core/src/zr_vm_core/object/object.c:2543;zr_vm_core/src/zr_vm_core/object/object.c:2979;zr_vm_core/include/zr_vm_core/ownership.h:72;zr_vm_core/src/zr_vm_core/ownership.c:724;zr_vm_core/src/zr_vm_core/ownership.c:802;zr_vm_core/include/zr_vm_core/value.h:90;zr_vm_core/src/zr_vm_core/gc/gc_domain.c:327;zr_vm_core/src/zr_vm_core/object/object.c:1775;zr_vm_core/src/zr_vm_core/object/object.c:1898
+ */
 static TZrBool zr_container_set_null_field_fast(SZrState *state, SZrObject *object, const TZrChar *fieldName) {
     SZrHashKeyValuePair **hotPairSlot;
     SZrString *fieldString;
@@ -1987,7 +2053,25 @@ static TZrBool zr_container_set_null_field_fast(SZrState *state, SZrObject *obje
     return zr_container_set_value_field_fast(state, object, fieldName, &fieldValue);
 }
 
-/** @brief 封装借用 GC 对象再写字段；持久可达性由目标对象字段与写屏障建立，不由局部裸指针建立。 */
+/**
+ * ## Summary
+ * 让backing和链表连接调用方按统一字段协议发布借用对象引用，空引用复用字段置空责任。
+ *
+ * ## Parameters
+ * @param[in,out] state 当前有效执行域状态；供对象值包装及委托字段发布。
+ * @param[in,out] object 对象引用字段发布的有效目标对象；调用方维持其及载荷有效。
+ * @param[in] fieldName 有效的NUL结尾字段名；当前调用均为模块稳定角色常量，新增动态名字须另核键缓存的文本寿命。
+ * @param[in] valueObject 本次借用的有效对象；NULL表示发布guest null，不转移其owner。
+ *
+ * ## Returns
+ * @return 参数或委托路径报告失败时false；委托报告本地完成时true。非空引用的true不单独证明core接受，NULL快路不额外检查已有threadStatus。
+ *
+ * ## Constraints and lifecycle
+ * 调用方须保证当前state域仍有效，目标对象及非空valueObject属于该域。非空对象包装后委托set_value执行Core资格检查；NULL委托set_null，热槽分支信任域前提而不执行ValidateValueWrite，热槽未中才经Core检查。本批owner BUG静态证明使用有效同域对象和值。非空对象按实际对象类型包装后经核心字段复制与GC写屏障建立可达边，局部C指针不是root。NULL分支继承set_null已标记的旧owner覆盖BUG边界；借用对象需满足核心域写入及存活规则。TODO: 底层Object_SetValue/SetExistingPairValueUnchecked返回void；GC域检查拒绝时可不改变threadStatus直接返回。这里的true只代表wrapper未观察到受检查的异常并完成本地路径，不能独立证明字段已接受写入；沿核心资格校验及上游失败传播核对可观察结果。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4752;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5121;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5411;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5573;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5575;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5578;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5580;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5623;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5627;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5631;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5636;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5660;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5664;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5668;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5673;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2075;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2086;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2089;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2090;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1914;zr_vm_core/src/zr_vm_core/gc/gc_mark.c:152;zr_vm_core/include/zr_vm_core/conversion.h:65;zr_vm_core/src/zr_vm_core/gc/gc_domain.c:327;zr_vm_core/src/zr_vm_core/object/object.c:1775;zr_vm_core/src/zr_vm_core/object/object.c:1898
+ */
 static TZrBool zr_container_set_object_field_fast(SZrState *state,
                                                   SZrObject *object,
                                                   const TZrChar *fieldName,
@@ -2006,7 +2090,24 @@ static TZrBool zr_container_set_object_field_fast(SZrState *state,
     return zr_container_set_value_field_fast(state, object, fieldName, &fieldValue);
 }
 
-/** @brief 以永久字段名读取对象值；NULL 表示键创建失败或字段不存在，返回槽在结构修改后不可继续借用。 */
+/**
+ * ## Summary
+ * 为自有字段快查的最终回退和动态方法查找提供普通对象读取契约，允许使用继承字段。
+ *
+ * ## Parameters
+ * @param[in,out] state 当前域执行上下文；供字段键准备与普通Core对象值读取。
+ * @param[in,out] object 有效接收对象；普通读取可从该对象或其原型取得借用值。 普通Core读取回退遇活跃RAW Array时还可能改变其存储表示。
+ * @param[in] fieldName 有效NUL结尾字段名；当前调用使用稳定模块角色常量，动态文本须另核名字缓存寿命。
+ *
+ * ## Returns
+ * @return 字段值槽的借用指针；参数/键准备拒绝或自有及原型读取未命中时NULL；guest null与缺槽不同。
+ *
+ * ## Constraints and lifecycle
+ * 最终Core Object_GetValue先查自有再查原型，不能从此结果推导自有字段归属。返回值或节点只借用，不retain、不新增GC root或转移owner；持有对象和相应节点须持续有效。节点删除、清空或所属map销毁后地址失效；可能覆写字段或改变结构的调用之后重新取得所需值，不能靠缓存指针延长节点或载荷寿命。 普通Core读取回退若接收internal ARRAY、RAW_CANONICAL且raw-int活跃的对象，可先将raw整数存储物化为nodeMap、释放旧raw buffer、切换NODE_CANONICAL并推进storageGeneration，再查字段及原型；这条物化条件不要求dirty位为true。读取目的不保证表示不变，跨该回退须重新取得raw view/节点视图；正常Pair/Enumerator等非RAW Array接收者不触发此条件。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2896;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3285;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2111;zr_vm_lib_container/src/zr_vm_lib_container/module.c:974;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2120;zr_vm_core/src/zr_vm_core/object/object.c:870;zr_vm_core/src/zr_vm_core/object/object.c:2015;zr_vm_core/src/zr_vm_core/object/object.c:2034;zr_vm_core/src/zr_vm_core/object/object.c:2041;zr_vm_core/src/zr_vm_core/object/object.c:2028;zr_vm_core/src/zr_vm_core/object/object.c:2030;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:200;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:214;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:446;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:454;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:493;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:506;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:507
+ */
 static const SZrTypeValue *zr_container_get_field_value(SZrState *state,
                                                         SZrObject *object,
                                                         const TZrChar *fieldName) {
@@ -2019,7 +2120,23 @@ static const SZrTypeValue *zr_container_get_field_value(SZrState *state,
     return ZrCore_Object_GetValue(state, object, &key);
 }
 
-/** @brief 按字段角色选择对象内的专用缓存槽；同一个槽承载不同类型的同角色名称，使用前必须验证键。 */
+/**
+ * ## Summary
+ * 把容器的字段角色映射到对象缓存槽，供共享查找和发布入口保持相同的热字段约定。
+ *
+ * ## Parameters
+ * @param[in] object 有效缓存持有对象；返回内嵌槽地址供上层管理，调用方维持对象有效。
+ * @param[in] fieldName 有效NUL结尾字段名；当前调用使用稳定模块角色常量，动态文本须另核名字缓存寿命。
+ *
+ * ## Returns
+ * @return 对象内角色Pair槽的借用地址；空参数或没有专用角色时NULL。
+ *
+ * ## Constraints and lifecycle
+ * length/count/first共用一槽，capacity/last/second共用另一槽，items/entries也共享角色；迭代器source/current/index/nextNode各有独立专用槽；value/next/previous没有专用槽。槽非空不证明键、map成员关系或节点寿命；使用者须按实际字段核验。地址不建立root，依赖object仍有效。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1929;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1985;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2041;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2338;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2823;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2146;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2149;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2155;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2172;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2160;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2163;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2166;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2169
+ */
 static ZR_FORCE_INLINE SZrHashKeyValuePair **zr_container_hot_field_pair_slot(SZrObject *object,
                                                                                const TZrChar *fieldName) {
     if (object == ZR_NULL || fieldName == ZR_NULL) {
@@ -2088,7 +2205,23 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair **zr_container_hot_field_pair_slot(SZ
     return ZR_NULL;
 }
 
-/** @brief 仅查本对象哈希桶中的相同字符串对象键；不沿原型链，也不进行字符串内容相等回退。 */
+/**
+ * ## Summary
+ * 给字段查找及写后缓存刷新提供无继承、无字符串内容回调的自有节点身份查找。
+ *
+ * ## Parameters
+ * @param[in] object 有效字段持有对象；本函数不修改map。
+ * @param[in] fieldString 有效且仍活的本域字段String；只借用，不转移名字所有权。
+ *
+ * ## Returns
+ * @return String键对象身份精确匹配的自有Pair；空参数、无有效桶或无该身份键时NULL。
+ *
+ * ## Constraints and lifecycle
+ * 仅自有nodeMap，不沿原型；名字内容相同但String身份不同可未命中，内容回退由上层决定。哈希重排重链节点不使Pair本身搬迁；节点删除或map销毁会使借用失效。返回值或节点只借用，不retain、不新增GC root或转移owner；持有对象和相应节点须持续有效。节点删除、清空或所属map销毁后地址失效；可能覆写字段或改变结构的调用之后重新取得所需值，不能靠缓存指针延长节点或载荷寿命。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2495;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2573;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2839;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2225;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2235;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2237;zr_vm_core/include/zr_vm_core/hash_set.h:480;zr_vm_core/include/zr_vm_core/hash_set.h:566;zr_vm_core/include/zr_vm_core/hash_set.h:600
+ */
 static ZR_FORCE_INLINE SZrHashKeyValuePair *zr_container_find_own_string_pair_exact(SZrObject *object,
                                                                                      SZrString *fieldString) {
     SZrHashKeyValuePair *pair;
@@ -2110,7 +2243,24 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair *zr_container_find_own_string_pair_ex
     return ZR_NULL;
 }
 
-/** @brief 核验缓存节点的字符串键身份或内容；不以缓存槽非空代替字段身份验证。 */
+/**
+ * ## Summary
+ * 为共享角色槽和两级MRU确认字段键，避免用缓存非空代替字段身份判断。
+ *
+ * ## Parameters
+ * @param[in,out] state 当前域执行上下文；供候选String键的raw类型转换。
+ * @param[in] pair 可为空的候选借用节点；非空候选必须仍有效。
+ * @param[in] fieldString 有效且仍活的本域字段String；只借用，不转移名字所有权。
+ *
+ * ## Returns
+ * @return 候选含有效String键且身份或String内容匹配时true，否则false。
+ *
+ * ## Constraints and lifecycle
+ * 只核验键，不证明候选仍属于当前map，更不能解引用已释放节点来验证寿命。String_Equal不派发guest equality；内容匹配不等于String对象身份相同。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1989;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2045;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2474;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2479;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2487;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2568;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2570;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2825;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2264;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2269;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2274;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2279
+ */
 static ZR_FORCE_INLINE TZrBool zr_container_pair_matches_field_string(SZrState *state,
                                                                       SZrHashKeyValuePair *pair,
                                                                       SZrString *fieldString) {
@@ -2129,7 +2279,23 @@ static ZR_FORCE_INLINE TZrBool zr_container_pair_matches_field_string(SZrState *
     return pairKeyString != ZR_NULL && ZrCore_String_Equal(pairKeyString, fieldString);
 }
 
-/** @brief 验证候选缓存节点后输出；只有精确字符串身份匹配才走最短读取分支。 */
+/**
+ * ## Summary
+ * 为Pair及热字段读取提供严格的缓存身份门槛，身份不合即让上层选择更完整查找。
+ *
+ * ## Parameters
+ * @param[in] pair 可为空的借用候选；非空节点须仍存活。
+ * @param[in] fieldString 有效且仍活的本域字段String；只借用，不转移名字所有权。
+ *
+ * ## Returns
+ * @return String键对象身份精确匹配时返回原候选；否则NULL。
+ *
+ * ## Constraints and lifecycle
+ * 不按名字内容相等回退，不证明map成员关系。返回值或节点只借用，不retain、不新增GC root或转移owner；持有对象和相应节点须持续有效。节点删除、清空或所属map销毁后地址失效；可能覆写字段或改变结构的调用之后重新取得所需值，不能靠缓存指针延长节点或载荷寿命。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2344;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2950;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2982;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3022;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2299;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2301;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2306
+ */
 static ZR_FORCE_INLINE SZrHashKeyValuePair *zr_container_try_match_cached_field_pair_exact(SZrHashKeyValuePair *pair,
                                                                                             SZrString *fieldString) {
     if (pair == ZR_NULL || fieldString == ZR_NULL || pair->key.type != ZR_VALUE_TYPE_STRING ||
@@ -2140,7 +2306,24 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair *zr_container_try_match_cached_field_
     return pair;
 }
 
-/** @brief 从对应热槽尝试借用字段值；缓存键不匹配即失败，调用方继续常规查找。 */
+/**
+ * ## Summary
+ * 为自有优先字段读取提供无结构查找的候选视图，未命中由共享读取层继续处理。
+ *
+ * ## Parameters
+ * @param[in,out] state 当前域执行上下文；供字段名字准备及角色缓存核验。
+ * @param[in] object 有效缓存持有对象；返回热槽所指字段值的借用视图。
+ * @param[in] fieldName 有效NUL结尾字段名；当前调用使用稳定模块角色常量，动态文本须另核名字缓存寿命。
+ *
+ * ## Returns
+ * @return 热角色槽键身份匹配时借用其value；参数、角色键或候选不合时NULL。
+ *
+ * ## Constraints and lifecycle
+ * 不沿原型，不在这里刷新Pair/MRU；字段名字准备可更新模块名字缓存。命中只说明键身份，不说明节点成员关系。返回值或节点只借用，不retain、不新增GC root或转移owner；持有对象和相应节点须持续有效。节点删除、清空或所属map销毁后地址失效；可能覆写字段或改变结构的调用之后重新取得所需值，不能靠缓存指针延长节点或载荷寿命。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2886;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2327;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2140;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2299;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2338;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2343;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2345
+ */
 static ZR_FORCE_INLINE const SZrTypeValue *zr_container_try_get_hot_field_value_exact(SZrState *state,
                                                                                       SZrObject *object,
                                                                                       const TZrChar *fieldName) {
@@ -2162,7 +2345,23 @@ static ZR_FORCE_INLINE const SZrTypeValue *zr_container_try_get_hot_field_value_
     return pair != ZR_NULL ? &pair->value : ZR_NULL;
 }
 
-/** @brief 将确认的自有字符串字段提升到对象最近查找槽；仅重排缓存，不改变成员版本或键值。 */
+/**
+ * ## Summary
+ * 在字段查找与写入入口间复用最近自有节点，缓存次序不承担字段发布或版本职责。
+ *
+ * ## Parameters
+ * @param[in,out] object 有效缓存持有对象；本次更新两个MRU槽，不承担字段值发布。
+ * @param[in] pair 已核验的当前自有节点；NULL表示清空两级MRU。
+ *
+ * ## Returns
+ * @return 无返回值；object为空时不执行更新。
+ *
+ * ## Constraints and lifecycle
+ * 只调整对象内两个借用缓存，不核验节点成员关系，不建立root，也不改变字段值或memberVersion。调用方负责已有节点存活及结构变更时的失效；NULL清槽不释放字段或载荷。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2006;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2048;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2437;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2488;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2502;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2571;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2574;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2365;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2370;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2384;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2385
+ */
 static ZR_FORCE_INLINE void zr_container_cache_string_lookup_pair_mru(SZrObject *object, SZrHashKeyValuePair *pair) {
     if (object == ZR_NULL) {
         return;
@@ -2186,14 +2385,43 @@ static ZR_FORCE_INLINE void zr_container_cache_string_lookup_pair_mru(SZrObject 
     object->cachedStringLookupPair = pair;
 }
 
-/* Pair 的已存在字段走非拥有值快写；只有双方值均满足 normalized/no-ownership
- * 条件才跳过通用 setter，GC 值仍须对持有对象执行写屏障。
+/**
+ * ## Summary
+ * 为Iterator.current及Map/Pair已有字段更新提供有限的非拥有快写许可，把owner覆盖责任留给调用方的Core回退。
+ *
+ * ## Parameters
+ * @param[in,out] state 当前有效执行域状态；供成功plain快写的GC写屏障。
+ * @param[in,out] object 已有字段的有效持有对象；快写更新该字段的GC写屏障和MRU。
+ * @param[in,out] pair object当前有效的自有字段节点；调用方已证明成员关系和目标字段身份。
+ * @param[in] value 本次读取的借用源槽；符合Core域写入资格，不因本调用消费调用方槽。
+ *
+ * ## Returns
+ * @return 参数及两侧normalized/no-ownership满足时完成本地快写并true；否则false且本helper不写字段。true不检查已有threadStatus。
+ *
+ * ## Constraints and lifecycle
+ * 调用方须保证当前state域仍有效，目标对象及非空GC载荷符合该域id/generation归属；热槽与plain快路信任这一前提，不执行ValidateValueWrite，只有Core setter路径执行资格检查。本批owner BUG静态证明使用有效同域对象和值。 helper维护GC写屏障和MRU，不改变memberVersion；调用方完成版本/隐藏backing职责。false是快路不适用，调用方仍可Core回退；不承诺整体调用回滚。 TODO: normalized/no-ownership仅核值槽owner元数据，不能证明非RefLike STRUCT可浅赋值。Value_Copy对此类STRUCT转入CloneStruct；容器plain helper和Core普通existing-Pair快路却都可直接复制槽位。沿已核实的Iterator.current与Map已有键更新链明确语言/API值复制和身份契约，再决定是否同时调整Core与容器；本批不将该疑点升级为BUG。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2619;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3024;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3099;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2407;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2425;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2432;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2435;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3877;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4538;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4546;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5203;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5319;zr_vm_lib_container/src/zr_vm_lib_container/module.c:6136;zr_vm_core/include/zr_vm_core/value.h:170;zr_vm_core/include/zr_vm_core/value.h:186;zr_vm_core/include/zr_vm_core/value.h:225;zr_vm_core/src/zr_vm_core/ownership.c:193;zr_vm_core/src/zr_vm_core/object/object.c:1636;zr_vm_core/src/zr_vm_core/object/object.c:1907;zr_vm_core/src/zr_vm_core/object/object_internal.h:275;zr_vm_core/src/zr_vm_core/object/object_internal.h:292
  */
-/** @brief 仅在源和旧目标都无 ownership 时直接复制字段并写屏障；否则返回 false 让通用 setter 执行覆盖释放。 */
 static ZR_FORCE_INLINE TZrBool zr_container_try_set_existing_pair_value_plain_fast(SZrState *state,
                                                                                    SZrObject *object,
                                                                                    SZrHashKeyValuePair *pair,
                                                                                    const SZrTypeValue *value) {
+    /**
+     * ## Summary
+     * 守住已有值覆盖的owner边界：任一槽不能按无ownership处理时，外围调用者承担通用覆盖而非强制浅写。
+     *
+     * ## Usage
+     * 由所属helper的state/object/pair/value局部上下文进入；不是独立函数参数接口。
+     * 此条件拒绝时helper返回false且尚未写目标；三个直接调用方随后选择Core覆盖。
+     *
+     * ## Constraints and lifecycle
+     * 调用方须保证当前state域仍有效，目标对象及非空GC载荷符合该域id/generation归属；热槽与plain快路信任这一前提，不执行ValidateValueWrite，只有Core setter路径执行资格检查。本批owner BUG静态证明使用有效同域对象和值。 任一输入无效或源/旧目标不是normalized/no-ownership都拒绝该快路；调用方随后可能释放旧owner并复制新值。本条件并未验证完整类型、Pair成员关系或STRUCT赋值语义。 TODO: normalized/no-ownership仅核值槽owner元数据，不能证明非RefLike STRUCT可浅赋值。Value_Copy对此类STRUCT转入CloneStruct；容器plain helper和Core普通existing-Pair快路却都可直接复制槽位。沿已核实的Iterator.current与Map已有键更新链明确语言/API值复制和身份契约，再决定是否同时调整Core与容器；本批不将该疑点升级为BUG。
+     *
+     * ## References
+     * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2619;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3024;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3099;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2425;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2407;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2426;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2428;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2624;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3027;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3102;zr_vm_core/include/zr_vm_core/value.h:170;zr_vm_core/src/zr_vm_core/object/object.c:1898;zr_vm_core/src/zr_vm_core/object/object.c:1907;zr_vm_core/src/zr_vm_core/object/object_internal.h:275;zr_vm_core/include/zr_vm_core/value.h:186;zr_vm_core/src/zr_vm_core/ownership.c:193
+     */
     if (state == ZR_NULL || object == ZR_NULL || pair == ZR_NULL || value == ZR_NULL ||
         !ZrCore_Value_HasNormalizedNoOwnership(&pair->value) ||
         !ZrCore_Value_HasNormalizedNoOwnership(value)) {
@@ -2210,8 +2438,25 @@ static ZR_FORCE_INLINE TZrBool zr_container_try_set_existing_pair_value_plain_fa
     return ZR_TRUE;
 }
 
-/* 字段热槽和最近使用缓存只加速查找；未命中时仍回到对象自己的 nodeMap 核实键。 */
-/** @brief 结合专用槽、最近查找和桶查找获取自有字段节点；可更新缓存，返回值依赖对象 nodeMap 的当前结构。 */
+/**
+ * ## Summary
+ * 为Pair字段、隐藏backing和现有字段写入共享自有节点契约，缓存未中仍以当前nodeMap为后备。
+ *
+ * ## Parameters
+ * @param[in,out] state 当前域执行上下文；供String键核验及Core自有nodeMap后备查找。
+ * @param[in,out] object 有效字段持有对象；查找可刷新专用Pair槽和MRU。
+ * @param[in] fieldString 有效且仍活的本域字段String；只借用，不转移名字所有权。
+ * @param[in,out] hotPairSlot 可为空的对象专用Pair槽地址；非空时须属于object并符合字段角色。
+ *
+ * ## Returns
+ * @return 键匹配的自有Pair借用指针；参数/map拒绝或字段未找到时NULL；查询可以刷新专用槽与MRU。
+ *
+ * ## Constraints and lifecycle
+ * 不查原型；角色/MRU命中核身份或内容，精确桶查找后仍可Core HashSet内容回退。Pair与hotPairSlot须属于当前对象，不能以键匹配证明成员关系；本层依赖核心结构变更失效协议。返回值或节点只借用，不retain、不新增GC root或转移owner；持有对象和相应节点须持续有效。节点删除、清空或所属map销毁后地址失效；可能覆写字段或改变结构的调用之后重新取得所需值，不能靠缓存指针延长节点或载荷寿命。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2533;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3800;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2460;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2264;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2225;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2474;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2500;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2502;zr_vm_core/include/zr_vm_core/hash_set.h:600
+ */
 static ZR_FORCE_INLINE SZrHashKeyValuePair *zr_container_find_own_cached_field_pair_fast(
         SZrState *state,
         SZrObject *object,
@@ -2261,7 +2506,25 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair *zr_container_find_own_cached_field_p
     return pair;
 }
 
-/** @brief 借用已核验的自有缓存字段值；不沿原型继承，NULL 交由调用方选择回退。 */
+/**
+ * ## Summary
+ * 为Pair first/second读接口提供严格自有值借用层，继承回退由上层读取入口决定。
+ *
+ * ## Parameters
+ * @param[in,out] state 当前域执行上下文；供自有节点查找与缓存核验。
+ * @param[in,out] object 有效字段持有对象；查找可刷新专用Pair槽和MRU。
+ * @param[in] fieldString 有效且仍活的本域字段String；只借用，不转移名字所有权。
+ * @param[in,out] hotPairSlot 可为空的对象专用Pair槽地址；非空时须属于object并符合字段角色。
+ *
+ * ## Returns
+ * @return 当前自有Pair.value借用地址；查找拒绝/未中时NULL，guest null仍是存在的值槽。
+ *
+ * ## Constraints and lifecycle
+ * 不沿原型；查找可更新Pair缓存及MRU。返回值或节点只借用，不retain、不新增GC root或转移owner；持有对象和相应节点须持续有效。节点删除、清空或所属map销毁后地址失效；可能覆写字段或改变结构的调用之后重新取得所需值，不能靠缓存指针延长节点或载荷寿命。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2954;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2986;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2528;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2460;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2533
+ */
 static ZR_FORCE_INLINE const SZrTypeValue *zr_container_get_cached_field_value_fast(
         SZrState *state,
         SZrObject *object,
@@ -2272,7 +2535,25 @@ static ZR_FORCE_INLINE const SZrTypeValue *zr_container_get_cached_field_value_f
     return pair != ZR_NULL ? &pair->value : ZR_NULL;
 }
 
-/** @brief 结构写入后只重新查找字段并刷新 pair 缓存槽；隐藏 backing 对象快指针由调用方另行同步。 */
+/**
+ * ## Summary
+ * 在字段发布后重新绑定角色槽与MRU，使上层缓存继续指向已存在的当前字段节点。
+ *
+ * ## Parameters
+ * @param[in,out] state 当前域执行上下文；供String键核验及自有节点身份查找。
+ * @param[in,out] object 有效缓存持有对象；本次刷新只更新其Pair/MRU缓存。
+ * @param[in] fieldString 有效且仍活的本域字段String；只借用，不转移名字所有权。
+ * @param[in,out] hotPairSlot 必需的object角色槽地址；无效参数直接返回。
+ *
+ * ## Returns
+ * @return 无返回值；有效参数下找到节点或NULL均写入目标槽。
+ *
+ * ## Constraints and lifecycle
+ * 只刷新查找缓存，不递增memberVersion、不更新cachedHiddenItemsObject。MRU按键内容核验，桶后备只接受String身份相同，故不提供任意内容等值键查找的保证；调用方须使用与发布一致的字段String。借用节点不另建根，结构删除/销毁后失效。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1936;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2650;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2557;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2225;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2264;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2568;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2573;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2577
+ */
 static ZR_FORCE_INLINE void zr_container_refresh_cached_field_slot(SZrState *state,
                                                                    SZrObject *object,
                                                                    SZrString *fieldString,
@@ -2296,8 +2577,27 @@ static ZR_FORCE_INLINE void zr_container_refresh_cached_field_slot(SZrState *sta
     *hotPairSlot = pair;
 }
 
-/* 字段更新需同步 memberVersion 与隐藏数组缓存，使 Map 热查找和迭代源看到新状态。 */
-/** @brief 按缓存键更新字段并维护 memberVersion/隐藏 backing 缓存；缺字段走通用插入，线程异常时返回 false。 */
+/**
+ * ## Summary
+ * 在Iterator、Pair和隐藏backing字段发布间共享更新/插入职责，并由调用方决定隐藏数组快指针同步。
+ *
+ * ## Parameters
+ * @param[in,out] state 当前有效执行域状态；供字段发布的写屏障、Core回退和状态观察。
+ * @param[in,out] object 字段发布的有效目标对象；本接口同步版本及所要求的隐藏backing缓存。
+ * @param[in] fieldString 有效且仍活的本域字段String；只借用，不转移名字所有权。
+ * @param[in,out] hotPairSlot 可为空的对象专用Pair槽地址；非空时须属于object并符合字段角色。
+ * @param[in] value 本次读取的借用源槽；符合Core域写入资格，不因本调用消费调用方槽。
+ * @param[in] refreshHiddenItemsObject 是否在状态正常后同步隐藏Array backing快指针；true强制避开本地plain路径。
+ *
+ * ## Returns
+ * @return 参数拒绝或Core路径观察到threadStatus非FINE时false；本地plain完成或Core路径未观察到该错误时true，不能单凭true证明void Core已接受写入。
+ *
+ * ## Constraints and lifecycle
+ * 调用方须保证当前state域仍有效，目标对象及非空GC载荷符合该域id/generation归属；热槽与plain快路信任这一前提，不执行ValidateValueWrite，只有Core setter路径执行资格检查。本批owner BUG静态证明使用有效同域对象和值。 plain路径还要求关闭隐藏刷新且对象两种hidden缓存为空；本地成功不检查threadStatus。已有字段本函数推进版本，新增字段由Core推进；隐藏缓存只在要求刷新及状态正常后同步。false不回滚Core可能已改变的字段/owner，也不保证版本及隐藏指针已同步。TODO: void Core setter可能资格拒绝而不改threadStatus，须沿资格及上游失败传播核对可观察结果。 TODO: normalized/no-ownership仅核值槽owner元数据，不能证明非RefLike STRUCT可浅赋值。Value_Copy对此类STRUCT转入CloneStruct；容器plain helper和Core普通existing-Pair快路却都可直接复制槽位。沿已核实的Iterator.current与Map已有键更新链明确语言/API值复制和身份契约，再决定是否同时调整Core与容器；本批不将该疑点升级为BUG。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2671;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3038;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3853;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2601;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2614;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2616;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2619;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2624;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2629;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2645;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2650;zr_vm_core/src/zr_vm_core/gc/gc_domain.c:327;zr_vm_core/src/zr_vm_core/object/object.c:1775;zr_vm_core/src/zr_vm_core/object/object.c:1898;zr_vm_core/src/zr_vm_core/object/object.c:1907;zr_vm_core/src/zr_vm_core/object/object_internal.h:275;zr_vm_core/include/zr_vm_core/value.h:186;zr_vm_core/src/zr_vm_core/ownership.c:193
+ */
 static ZR_FORCE_INLINE TZrBool zr_container_set_cached_field_value_fast(SZrState *state,
                                                                         SZrObject *object,
                                                                         SZrString *fieldString,
@@ -2484,7 +2784,24 @@ static ZR_FORCE_INLINE TZrBool zr_container_set_iterator_next_node_fast(SZrState
                                                        &fieldValue);
 }
 
-/** @brief 先使用已核验的热字符串槽，再查自有 nodeMap；继承字段不作为自有节点缓存。 */
+/**
+ * ## Summary
+ * 给共享字段读取层提供自有nodeMap节点视图，复用角色槽和字符串查找缓存而不把继承字段当作自有节点。
+ *
+ * ## Parameters
+ * @param[in,out] state 当前域执行上下文；供字段名字准备、字符串键核验和自有nodeMap查找。
+ * @param[in,out] object 有效字段持有对象；自有字段查找可刷新其Pair/MRU缓存，调用方维持对象和节点有效。
+ * @param[in] fieldName 有效的NUL结尾字段名；当前调用均为模块稳定角色常量，新增动态名字须另核键缓存的文本寿命。
+ *
+ * ## Returns
+ * @return 自有字段查找所借用的C HashKeyValuePair；参数/nodeMap无效或未命中时NULL。
+ *
+ * ## Constraints and lifecycle
+ * 不沿原型链；热槽键核验只确认字段角色，不重新证明该Pair仍属于当前map。缓存有效性依赖核心结构变更时的失效规则。返回值或字段节点只借用，不retain、不新增GC root或转移owner；须保持字段持有者可达。删除/清空节点、覆写值或可能改变字段的回调之后重新取得所需槽，不能靠cached Pair指针延长节点或载荷寿命。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2891;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2805;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2825;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2839;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2850;zr_vm_core/include/zr_vm_core/hash_set.h:566;zr_vm_core/include/zr_vm_core/hash_set.h:600
+ */
 static ZR_FORCE_INLINE SZrHashKeyValuePair *zr_container_find_own_field_pair_fast(SZrState *state,
                                                                                    SZrObject *object,
                                                                                    const TZrChar *fieldName) {
@@ -2538,7 +2855,24 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair *zr_container_find_own_field_pair_fas
     return pair;
 }
 
-/** @brief 优先借用自有字段值，必要时回退对象读；回退可能沿原型查找，名称不保证返回值一定自有。 */
+/**
+ * ## Summary
+ * 为节点载荷、Pair及整数读取共享自有字段优先的借用接口，并把普通对象读取作为最终回退。
+ *
+ * ## Parameters
+ * @param[in,out] state 当前域执行上下文；供字段名字准备、自有优先查找及普通Core读取回退。
+ * @param[in,out] object 有效接收对象；自有优先查找可刷新字段缓存，最终普通读取也可借用原型字段。 普通Core读取回退遇活跃RAW Array时还可能改变其存储表示。
+ * @param[in] fieldName 有效的NUL结尾字段名；当前调用均为模块稳定角色常量，新增动态名字须另核键缓存的文本寿命。
+ *
+ * ## Returns
+ * @return 借用字段值槽；参数/键失败或自有及普通读取均未命中时NULL。guest null仍是存在的非NULL值槽。
+ *
+ * ## Constraints and lifecycle
+ * 名字中的own不保证所有结果都为自有：最终Core Object_GetValue可返回原型继承值；调用方依赖字段归属时须区分该回退。返回值或字段节点只借用，不retain、不新增GC root或转移owner；须保持字段持有者可达。删除/清空节点、覆写值或可能改变字段的回调之后重新取得所需槽，不能靠cached Pair指针延长节点或载荷寿命。 普通Core读取回退若接收internal ARRAY、RAW_CANONICAL且raw-int活跃的对象，可先将raw整数存储物化为nodeMap、释放旧raw buffer、切换NODE_CANONICAL并推进storageGeneration，再查字段及原型；这条物化条件不要求dirty位为true。读取目的不保证表示不变，跨该回退须重新取得raw view/节点视图；正常Pair/Enumerator等非RAW Array接收者不触发此条件。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:2920;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2959;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2991;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3257;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4587;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5696;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5720;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5741;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2876;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2886;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2891;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2896;zr_vm_core/src/zr_vm_core/object/object.c:870;zr_vm_core/src/zr_vm_core/object/object.c:2015;zr_vm_core/src/zr_vm_core/gc/gc_mark.c:152;zr_vm_core/src/zr_vm_core/object/object.c:2028;zr_vm_core/src/zr_vm_core/object/object.c:2030;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:200;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:214;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:446;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:454;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:493;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:506;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:507
+ */
 static ZR_FORCE_INLINE const SZrTypeValue *zr_container_get_own_field_value_fast(SZrState *state,
                                                                                   SZrObject *object,
                                                                                   const TZrChar *fieldName) {
@@ -2562,7 +2896,24 @@ static ZR_FORCE_INLINE const SZrTypeValue *zr_container_get_own_field_value_fast
     return zr_container_get_field_value(state, object, fieldName);
 }
 
-/** @brief 只接受 OBJECT/ARRAY 值并返回其借用对象；字段缺失、空值及其他标签均返回 NULL。 */
+/**
+ * ## Summary
+ * 为迭代来源和链表连接读取提供对象视图，把字段缺失/非引用与有效借用对象区分。
+ *
+ * ## Parameters
+ * @param[in,out] state 当前域执行上下文；供字段值读取与Debug raw种类转换。
+ * @param[in,out] object 有效接收对象；字段读取可刷新缓存，返回载荷由该字段或原型持有。 普通Core读取回退遇活跃RAW Array时还可能改变其存储表示。
+ * @param[in] fieldName 有效的NUL结尾字段名；当前调用均为模块稳定角色常量，新增动态名字须另核键缓存的文本寿命。
+ *
+ * ## Returns
+ * @return 非空OBJECT/ARRAY值所指借用对象；缺字段、guest null、其它标签或空引用时NULL。
+ *
+ * ## Constraints and lifecycle
+ * 字段仍是自有优先并可继承回退。转换宏在Debug检查raw OBJECT/ARRAY种类，不验证Enumerator/LinkedNode等业务形状或声明泛型。调用方维持载荷和持有者有效。返回值或字段节点只借用，不retain、不新增GC root或转移owner；须保持字段持有者可达。删除/清空节点、覆写值或可能改变字段的回调之后重新取得所需槽，不能靠cached Pair指针延长节点或载荷寿命。 普通Core读取回退若接收internal ARRAY、RAW_CANONICAL且raw-int活跃的对象，可先将raw整数存储物化为nodeMap、释放旧raw buffer、切换NODE_CANONICAL并推进storageGeneration，再查字段及原型；这条物化条件不要求dirty位为true。读取目的不保证表示不变，跨该回退须重新取得raw view/节点视图；正常Pair/Enumerator等非RAW Array接收者不触发此条件。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4406;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4446;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4599;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5570;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5571;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5622;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5659;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5690;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5714;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5739;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5747;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5763;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5765;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5795;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2917;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2920;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2922;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2927;zr_vm_core/include/zr_vm_core/conversion.h:65;zr_vm_core/src/zr_vm_core/gc/gc_mark.c:152;zr_vm_core/src/zr_vm_core/gc/gc_cycle.c:1206;zr_vm_core/src/zr_vm_core/gc/gc_cycle.c:1951;zr_vm_core/src/zr_vm_core/object/object.c:2028;zr_vm_core/src/zr_vm_core/object/object.c:2030;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:200;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:214;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:446;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:454;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:493;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:506;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:507
+ */
 static ZR_FORCE_INLINE SZrObject *zr_container_get_object_field_fast(SZrState *state,
                                                                      SZrObject *object,
                                                                      const TZrChar *fieldName) {
@@ -2576,7 +2927,23 @@ static ZR_FORCE_INLINE SZrObject *zr_container_get_object_field_fast(SZrState *s
     return ZR_CAST_OBJECT(state, value->value.object);
 }
 
-/** @brief 读取 Pair.first 的自有缓存槽，未命中回退字段读取；返回借用值，不自动初始化结果目标。 */
+/**
+ * ## Summary
+ * 为Map entry包装及Pair值语义运算提供first的借用字段视图，不复制键或元素。
+ *
+ * ## Parameters
+ * @param[in,out] state 当前域执行上下文；供first名字准备、缓存核验及字段读取。
+ * @param[in,out] pair 持有first字段的有效对象；读取可刷新其字段缓存，NULL由查找失败处理。 普通Core读取回退遇活跃RAW Array时还可能改变其存储表示。
+ *
+ * ## Returns
+ * @return first值槽的借用指针；缺字段或查找失败时NULL，guest null与缺槽不同。
+ *
+ * ## Constraints and lifecycle
+ * 对应角色槽按精确字符串身份核验；不单凭键证明当前map成员关系。最终字段读取可能返回继承值，不验证Pair业务内部形状或K/V类型。返回值或字段节点只借用，不retain、不新增GC root或转移owner；须保持字段持有者可达。删除/清空节点、覆写值或可能改变字段的回调之后重新取得所需槽，不能靠cached Pair指针延长节点或载荷寿命。 普通Core读取回退若接收internal ARRAY、RAW_CANONICAL且raw-int活跃的对象，可先将raw整数存储物化为nodeMap、释放旧raw buffer、切换NODE_CANONICAL并推进storageGeneration，再查字段及原型；这条物化条件不要求dirty位为true。读取目的不保证表示不变，跨该回退须重新取得raw view/节点视图；正常Pair/Enumerator等非RAW Array接收者不触发此条件。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:3064;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4670;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4672;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4698;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4699;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4719;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2947;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2153;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2299;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2876;zr_vm_core/include/zr_vm_core/hash_set.h:600;zr_vm_core/src/zr_vm_core/gc/gc_mark.c:152;zr_vm_core/src/zr_vm_core/object/object.c:2028;zr_vm_core/src/zr_vm_core/object/object.c:2030;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:200;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:214;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:446;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:454;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:493;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:506;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:507
+ */
 static ZR_FORCE_INLINE const SZrTypeValue *zr_container_pair_get_first_fast(SZrState *state, SZrObject *pair) {
     SZrString *fieldString = zr_container_pair_first_field_string_fast(state);
     SZrHashKeyValuePair *cachedPair =
@@ -2592,7 +2959,23 @@ static ZR_FORCE_INLINE const SZrTypeValue *zr_container_pair_get_first_fast(SZrS
     return value != ZR_NULL ? value : zr_container_get_own_field_value_fast(state, pair, kContainerPairFirstField);
 }
 
-/** @brief 读取 Pair.second 的自有缓存槽，未命中回退字段读取；Pair 结构修改后须重新取得值槽。 */
+/**
+ * ## Summary
+ * 为Map entry包装及Pair值语义运算提供second的借用字段视图，不复制键或元素。
+ *
+ * ## Parameters
+ * @param[in,out] state 当前域执行上下文；供second名字准备、缓存核验及字段读取。
+ * @param[in,out] pair 持有second字段的有效对象；读取可刷新其字段缓存，NULL由查找失败处理。 普通Core读取回退遇活跃RAW Array时还可能改变其存储表示。
+ *
+ * ## Returns
+ * @return second值槽的借用指针；缺字段或查找失败时NULL，guest null与缺槽不同。
+ *
+ * ## Constraints and lifecycle
+ * 对应角色槽按精确字符串身份核验；不单凭键证明当前map成员关系。最终字段读取可能返回继承值，不验证Pair业务内部形状或K/V类型。返回值或字段节点只借用，不retain、不新增GC root或转移owner；须保持字段持有者可达。删除/清空节点、覆写值或可能改变字段的回调之后重新取得所需槽，不能靠cached Pair指针延长节点或载荷寿命。 普通Core读取回退若接收internal ARRAY、RAW_CANONICAL且raw-int活跃的对象，可先将raw整数存储物化为nodeMap、释放旧raw buffer、切换NODE_CANONICAL并推进storageGeneration，再查字段及原型；这条物化条件不要求dirty位为true。读取目的不保证表示不变，跨该回退须重新取得raw view/节点视图；正常Pair/Enumerator等非RAW Array接收者不触发此条件。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:3081;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4671;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4673;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4702;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4703;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4720;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2979;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2158;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2299;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2876;zr_vm_core/include/zr_vm_core/hash_set.h:600;zr_vm_core/src/zr_vm_core/gc/gc_mark.c:152;zr_vm_core/src/zr_vm_core/object/object.c:2028;zr_vm_core/src/zr_vm_core/object/object.c:2030;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:200;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:214;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:446;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:454;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:493;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:506;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:507
+ */
 static ZR_FORCE_INLINE const SZrTypeValue *zr_container_pair_get_second_fast(SZrState *state, SZrObject *pair) {
     SZrString *fieldString = zr_container_pair_second_field_string_fast(state);
     SZrHashKeyValuePair *cachedPair =
@@ -2608,7 +2991,24 @@ static ZR_FORCE_INLINE const SZrTypeValue *zr_container_pair_get_second_fast(SZr
     return value != ZR_NULL ? value : zr_container_get_own_field_value_fast(state, pair, kContainerPairSecondField);
 }
 
-/** @brief 更新 Pair.second，普通值走直接屏障分支，ownership 值走对象覆盖路径；成功依据线程状态。 */
+/**
+ * ## Summary
+ * 供Map更新值包装器的缓存缺失回退发布Pair.second，统一普通值与核心ownership覆盖责任。
+ *
+ * ## Parameters
+ * @param[in,out] state 当前有效执行域状态；供second名字准备、plain写屏障及Core回退状态观察。
+ * @param[in,out] pair 持有second字段的有效对象；成功发布会更新其成员版本和缓存。
+ * @param[in] value 本次借用的输入；核心分支按复制协议取得字段值，不消耗调用方槽。
+ *
+ * ## Returns
+ * @return 参数拒绝或受检查的core/通用路径报告失败时false；所选路径报告本地完成时true。两种plain快路不检查已有threadStatus；core回退的true也不独立证明void setter未静默拒绝。
+ *
+ * ## Constraints and lifecycle
+ * 调用方须保证当前state域仍有效，目标对象及非空GC载荷符合该域id/generation归属；热槽与plain快路信任这一前提，不执行ValidateValueWrite，只有Core setter路径执行资格检查。本批owner BUG静态证明使用有效同域对象和值。旧/新槽都normalized no-ownership才进入标量/GC普通值快路；其它已存在字段交核心覆盖并检查threadStatus。缺缓存的set_cached仍可能命中plain字段快路，不能把整个委托结果写成线程正常保证。Map entry wrapper的非空缓存路径绕过本helper，不由此推出所有Map更新均经过second键核验。TODO: 底层Object_SetValue/SetExistingPairValueUnchecked返回void；GC域检查拒绝时可不改变threadStatus直接返回。这里的true只代表wrapper未观察到受检查的异常并完成本地路径，不能独立证明字段已接受写入；沿核心资格校验及上游失败传播核对可观察结果。 TODO: normalized/no-ownership仅核值槽owner元数据，不能证明非RefLike STRUCT可浅赋值。Value_Copy对此类STRUCT转入CloneStruct；容器plain helper和Core普通existing-Pair快路却都可直接复制槽位。沿已核实的Iterator.current与Map已有键更新链明确语言/API值复制和身份契约，再决定是否同时调整Core与容器；本批不将该疑点升级为BUG。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:3096;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3012;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3022;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3024;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3025;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3038;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3046;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3099;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2619;zr_vm_core/src/zr_vm_core/object/object.c:1890;zr_vm_core/src/zr_vm_core/gc/gc_domain.c:327;zr_vm_core/src/zr_vm_core/object/object.c:1775;zr_vm_core/src/zr_vm_core/object/object.c:1898;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2407;zr_vm_core/include/zr_vm_core/value.h:170;zr_vm_core/include/zr_vm_core/value.h:186;zr_vm_core/include/zr_vm_core/value.h:225;zr_vm_core/src/zr_vm_core/ownership.c:193;zr_vm_core/src/zr_vm_core/object/object.c:1636;zr_vm_core/src/zr_vm_core/object/object.c:1907;zr_vm_core/src/zr_vm_core/object/object_internal.h:275;zr_vm_core/src/zr_vm_core/object/object_internal.h:292
+ */
 static ZR_FORCE_INLINE TZrBool zr_container_pair_set_second_fast(SZrState *state,
                                                                  SZrObject *pair,
                                                                  const SZrTypeValue *value) {
@@ -2831,7 +3231,25 @@ static ZR_FORCE_INLINE void zr_container_array_make_receiver_value(SZrState *sta
     zr_container_value_set_object_fast(state, outReceiver, self, zr_container_value_type_for_object(self));
 }
 
-/** @brief 读取整数字段并支持指定 fallback；非整数或缺字段不会作为任意 nativeInt64 解读。 */
+/**
+ * ## Summary
+ * 为容量、计数和迭代位置提供带默认策略的整数读取接口，避免把缺字段或非整数载荷解释成nativeInt64。
+ *
+ * ## Parameters
+ * @param[in,out] state 当前域执行上下文；供自有优先字段读取，查找失败由defaultValue承接。
+ * @param[in,out] object 有效接收对象；字段读取可刷新缓存，整数结果按值返回。 普通Core读取回退遇活跃RAW Array时还可能改变其存储表示。
+ * @param[in] fieldName 有效的NUL结尾字段名；当前调用均为模块稳定角色常量，新增动态名字须另核键缓存的文本寿命。
+ * @param[in] defaultValue 未取得有符号/无符号整数字段时交付的默认值；不代表读错误恢复完成。
+ *
+ * ## Returns
+ * @return 有符号整数内容、无符号内容转换到TZrInt64的结果，或defaultValue；不验证后续业务范围。
+ *
+ * ## Constraints and lifecycle
+ * 读取仍是自有优先/原型回退；无符号转TZrInt64没有范围拒绝。TODO: 沿公开Core成员写入及整数构造入口，核对超INT64值进入capacity/count/index后各调用方算术与恢复边界，建立完整影响证据；未授guest静态赋值或动态边界用例信用。 普通Core读取回退若接收internal ARRAY、RAW_CANONICAL且raw-int活跃的对象，可先将raw整数存储物化为nodeMap、释放旧raw buffer、切换NODE_CANONICAL并推进storageGeneration，再查字段及原型；这条物化条件不要求dirty位为true。读取目的不保证表示不变，跨该回退须重新取得raw view/节点视图；正常Pair/Enumerator等非RAW Array接收者不触发此条件。
+ *
+ * ## References
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4211;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4488;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5585;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5635;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5672;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3253;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3257;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3262;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3265;zr_vm_core/src/zr_vm_core/object/object.c:2543;zr_vm_core/src/zr_vm_core/object/object.c:2028;zr_vm_core/src/zr_vm_core/object/object.c:2030;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:200;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:214;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:446;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:454;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:493;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:506;zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:507
+ */
 static TZrInt64 zr_container_get_int_field(SZrState *state,
                                            SZrObject *object,
                                            const TZrChar *fieldName,
@@ -3847,7 +4265,7 @@ static TZrBool zr_container_array_prepare_backing_storage(SZrState *state,
  * 不记录长度/版本；后续来源变更可影响遍历。失败不回滚已分配实例、已写字段或已建立永久原型；分配器异常不一定经过NULL分支。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4568;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4604;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4786;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5104;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5373;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3852;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3865;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3876;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3879;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3881;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2388;tests/container/test_container_runtime.c:259;tests/container/test_container_runtime.c:301;tests/container/test_container_runtime.c:1290;tests/container/test_container_runtime.c:1632
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4986;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5022;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5204;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5522;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5791;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4270;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4283;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4294;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4297;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4299;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2688;tests/container/test_container_runtime.c:259;tests/container/test_container_runtime.c:301;tests/container/test_container_runtime.c:1290;tests/container/test_container_runtime.c:1632
  */
 static SZrObject *zr_container_iterator_make(SZrState *state,
                                              SZrObject *source,
@@ -3898,7 +4316,7 @@ static SZrObject *zr_container_iterator_make(SZrState *state,
  * 先按值标签及非空指针显式拒绝；ZR_CAST_OBJECT的raw OBJECT/ARRAY种类只由调试断言核对，发布构建仍依赖调用方保证布局。这里不检查Enumerator原型、Iterator contract或owner类型。没有单独GC根；帧及对象字段维持可达性，不能把返回指针跨释放、改帧或未经核实的GC边界保存。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4091;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4153;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3903;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3912;zr_vm_core/src/zr_vm_core/object/object.c:4135;zr_vm_core/include/zr_vm_core/conversion.h:65
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4509;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4571;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4321;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4330;zr_vm_core/src/zr_vm_core/object/object.c:4135;zr_vm_core/include/zr_vm_core/conversion.h:65
  */
 static SZrObject *zr_container_iterator_self(SZrState *state) {
     SZrCallInfo *callInfo;
@@ -3933,7 +4351,7 @@ static SZrObject *zr_container_iterator_self(SZrState *state) {
  * 调用后旧返回槽/stackTop布局已经改变；调用方不得继续依赖被覆盖的旧值。本函数不清threadStatus或制造异常，也不区分自然结束和字段操作失败。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4097;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4109;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4111;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4115;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4117;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4123;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4125;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4130;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4132;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4158;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4164;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4166;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4172;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4176;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4182;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4184;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3938;zr_vm_core/src/zr_vm_core/object/object.c:4135;zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:3429
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4515;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4527;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4529;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4533;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4535;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4541;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4543;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4548;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4550;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4576;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4582;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4584;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4590;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4594;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4600;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4602;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4356;zr_vm_core/src/zr_vm_core/object/object.c:4135;zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:3429
  */
 static TZrInt64 zr_container_iterator_finish_move_next(SZrState *state, TZrBool ok) {
     TZrStackValuePointer base;
@@ -3963,7 +4381,7 @@ static TZrInt64 zr_container_iterator_finish_move_next(SZrState *state, TZrBool 
  * 实例来源字段承担可达性，cached Pair与返回C地址不另建根。缓存为NULL值时直接视作空来源，其它非引用标签回退自有字段；不检查backing内部形状或所属域，不转移来源所有权。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4100;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3968;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3988;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2388;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4568;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4786;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5104
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4518;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4386;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4406;zr_vm_lib_container/src/zr_vm_lib_container/module.c:2688;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4986;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5204;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5522
  */
 static ZR_FORCE_INLINE SZrObject *zr_container_iterator_source_object_fast(SZrState *state, SZrObject *iterator) {
     SZrHashKeyValuePair *pair;
@@ -4003,7 +4421,7 @@ static ZR_FORCE_INLINE SZrObject *zr_container_iterator_source_object_fast(SZrSt
  * 不证明游标为LinkedNode，不另建root；缓存空值不再回退，其他不适合的缓存标签回退自有字段。正确来源和游标由构造/推进写入保持可达，摘链或修改next会影响后续遍历。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4161;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4008;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4028;zr_vm_lib_container/src/zr_vm_lib_container/module.c:3881;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4181;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5377
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4579;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4426;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4446;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4299;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4599;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5795
  */
 static ZR_FORCE_INLINE SZrObject *zr_container_iterator_next_node_object_fast(SZrState *state, SZrObject *iterator) {
     SZrHashKeyValuePair *pair;
@@ -4044,7 +4462,7 @@ static ZR_FORCE_INLINE SZrObject *zr_container_iterator_next_node_object_fast(SZ
  * 不验证负值、长度或backing版本；无符号值直接转TZrInt64，不做范围拒绝。TODO: 沿guest隐藏字段访问/恢复入口核对大于INT64范围的UINT游标是否可达，不能由默认0推导任意外部字段安全。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4101;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4049;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4062;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4065;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4070
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:4519;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4467;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4480;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4483;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4488
  */
 static ZR_FORCE_INLINE TZrInt64 zr_container_iterator_index_fast(SZrState *state,
                                                                  SZrObject *iterator,
@@ -4085,7 +4503,7 @@ static ZR_FORCE_INLINE TZrInt64 zr_container_iterator_index_fast(SZrState *state
  * 每步取当前长度和值；自然结束尝试清current。字段写失败不回滚已发布current，也不保证清空；外层另看threadStatus。核心cached-array快路可在指令层直接推进；命中时绕过本回调及Object_IterMoveNext。它与后备Object路径共用数组游标helper，需按两入口核对语义。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1763;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1777;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4568;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4573;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4604;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4609;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4786;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4791;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5104;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5109;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4090;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4107;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4113;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4120;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4128;zr_vm_core/src/zr_vm_core/object/object.c:379;zr_vm_core/src/zr_vm_core/object/object.c:4130;zr_vm_core/src/zr_vm_core/object/object.c:4135;zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:3417;tests/container/test_container_runtime.c:259;tests/container/test_container_runtime.c:545;tests/container/test_container_runtime.c:1290;tests/container/test_container_runtime.c:1632
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1763;zr_vm_lib_container/src/zr_vm_lib_container/module.c:1777;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4986;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4991;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5022;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5027;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5204;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5209;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5522;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5527;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4508;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4525;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4531;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4538;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4546;zr_vm_core/src/zr_vm_core/object/object.c:379;zr_vm_core/src/zr_vm_core/object/object.c:4130;zr_vm_core/src/zr_vm_core/object/object.c:4135;zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:3417;tests/container/test_container_runtime.c:259;tests/container/test_container_runtime.c:545;tests/container/test_container_runtime.c:1290;tests/container/test_container_runtime.c:1632
  */
 static TZrInt64 zr_container_array_iterator_move_next_native(SZrState *state) {
     SZrObject *iterator = zr_container_iterator_self(state);
@@ -4147,7 +4565,7 @@ static TZrInt64 zr_container_array_iterator_move_next_native(SZrState *state) {
  * 借用节点不建立独立GC根；不要从列表count或初始first保证固定元素序列。TODO: 当前所查容器/协议测试没有专门LinkedList foreach、来源中途变更或实例单独保活来源的GC用例，需后续验收这些契约边界；所引协议用例只确认Iterable元数据，没有验收链表推进。
  *
  * ## References
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1765;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5373;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5378;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4152;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4161;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4169;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4181;zr_vm_core/src/zr_vm_core/object/object.c:4135;tests/iterator/test_enumerator_protocol.c:131
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:1765;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5791;zr_vm_lib_container/src/zr_vm_lib_container/module.c:5796;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4570;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4579;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4587;zr_vm_lib_container/src/zr_vm_lib_container/module.c:4599;zr_vm_core/src/zr_vm_core/object/object.c:4135;tests/iterator/test_enumerator_protocol.c:131
  */
 static TZrInt64 zr_container_linked_list_iterator_move_next_native(SZrState *state) {
     SZrObject *iterator = zr_container_iterator_self(state);
@@ -5866,8 +6284,8 @@ static TZrBool zr_container_install_basic_array_adapter(SZrGlobalState *global) 
  *
  * ## References
  * zr_vm_cli/src/zr_vm_cli/project/project.c:368 消费 bool；tests/container/container_test_common.c:60 调用但未检查返回。
- * zr_vm_lib_iteration/src/zr_vm_lib_iteration/module.c:21 及 zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c:739 按需 Attach；本文件 zr_vm_lib_container/src/zr_vm_lib_container/module.c:5877 至 zr_vm_lib_container/src/zr_vm_lib_container/module.c:5881 顺序登记/适配。
- * zr_vm_lib_container/src/zr_vm_lib_container/module.c:5814 检查已有字段，zr_vm_lib_container/src/zr_vm_lib_container/module.c:5827 写入，zr_vm_lib_container/src/zr_vm_lib_container/module.c:5841 进入基本 ARRAY 适配。
+ * zr_vm_lib_iteration/src/zr_vm_lib_iteration/module.c:21 及 zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c:739 按需 Attach；本文件 zr_vm_lib_container/src/zr_vm_lib_container/module.c:6295 至 zr_vm_lib_container/src/zr_vm_lib_container/module.c:6299 顺序登记/适配。
+ * zr_vm_lib_container/src/zr_vm_lib_container/module.c:6232 检查已有字段，zr_vm_lib_container/src/zr_vm_lib_container/module.c:6245 写入，zr_vm_lib_container/src/zr_vm_lib_container/module.c:6259 进入基本 ARRAY 适配。
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1429 与 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1385 是 getter/setter pin 入口。
  */
 TZrBool ZrVmLibContainer_Register(SZrGlobalState *global) {

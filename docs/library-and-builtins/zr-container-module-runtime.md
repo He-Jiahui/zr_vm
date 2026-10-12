@@ -5,6 +5,10 @@ related_code:
   - zr_vm_lib_container/src/zr_vm_lib_container/contiguous_view.h
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c
   - zr_vm_core/src/zr_vm_core/execution/execution_memory.c
+  - zr_vm_core/src/zr_vm_core/object/object.c
+  - zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h
+  - zr_vm_core/src/zr_vm_core/ownership.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c
 implementation_files:
   - zr_vm_lib_container/src/zr_vm_lib_container/module.c
 plan_sources:
@@ -184,8 +188,8 @@ capacity构造参数仍叫index；已有同名非callable字段被当适配已�
 
 ## 四种宿主缓存与登记入口的当前契约
 
-前批28项、字段名/缓存入口40项和静态状态/枚举/块21项均已提交；本批补齐迭代原型/状态/块及消费者14项，累计103项。
-357项台账保留，剩余254项待当前契约及完整性复核；数字引用迁移及重审旧BUG不增加完成数。
+前批28项、字段名/缓存入口40项、静态状态/枚举/块21项及迭代原型/状态/消费者14项均已提交；本批补齐字段发布/读取及lookup23函数和2边界块25项，累计128项。
+357项台账保留，剩余229项待当前契约及完整性复核；数字引用迁移及保留旧BUG不增加完成数。
 
 | 类型 | 调用目的 | 借用与失效边界 |
 | --- | --- | --- |
@@ -201,20 +205,20 @@ Map 的普通 entries/key/Pair缓存没有这项标记或独立GC根；不能跨
 
 TODO: 多 GlobalState/mutator交错访问进程静态缓存的同步需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:591` 核查。
 TODO: Map裸地址重写与 moving GC协作需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:1068` 及 gc_cycle 的对象重写入口核查；
-Pair.first 的合法写入与 entries.memberVersion 联动需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:2650` 核查，不能由相同版本推出键内容未变。
+Pair.first 的合法写入与 entries.memberVersion 联动需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:3050` 核查，不能由相同版本推出键内容未变。
 
 宿主 Register 的顺序是 iteration→container→pooling→基本ARRAY适配。iteration链按需 Attach registry，
 所以调用者无需提前创建 registry；global/mainThreadState/基本ARRAY原型必须已有效。后阶段失败不回滚
 前阶段成功登记。CLI `zr_vm_cli/src/zr_vm_cli/project/project.c:368` 检查 bool，`tests/container/container_test_common.c:60` 忽略 bool，
 该测试工厂调用本身不能证明登记成功。描述符查询及共享插件 getter 不执行这条宿主初始化链。
 
-TODO: `zr_vm_lib_container/src/zr_vm_lib_container/module.c:5814` 的同名字段 presence检查不验证 callable/getIterator协议；核查已有字段的实际消费者。
+TODO: `zr_vm_lib_container/src/zr_vm_lib_container/module.c:6232` 的同名字段 presence检查不验证 callable/getIterator协议；核查已有字段的实际消费者。
 BUG: 合法初始化global、ARRAY原型尚未ignore且ignored表已满、字段缺失时，宿主分阶段拒绝
 getter pin的ignore扩容、允许中间闭包创建、再拒绝setter pin的扩容，void setter早退但Register可仍true。
-完整链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:5814`→闭包创建→`zr_vm_lib_container/src/zr_vm_lib_container/module.c:5827`；pin入口
+完整链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:6232`→闭包创建→`zr_vm_lib_container/src/zr_vm_lib_container/module.c:6245`；pin入口
 `zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1429`/`:1385`；
 只拒绝一次setter扩容不足以证明该链，先前getter可能已扩表。本轮只有静态证据，无故障注入信用。
-实际宿主登记链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:5873`，iteration 的 Attach入口是 `zr_vm_lib_iteration/src/zr_vm_lib_iteration/module.c:21`。
+实际宿主登记链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:6291`，iteration 的 Attach入口是 `zr_vm_lib_iteration/src/zr_vm_lib_iteration/module.c:21`。
 
 
 ## 字段名与缓存入口的40项详细契约
@@ -319,3 +323,51 @@ concurrent major时不持域mutation lock，也不是这些静态槽的同步协
 
 源码证明与测试缺口见对应台账evidence；数字引用一并迁移，旧211无关checker问题身份
 保留。编译沿用实际r120基线，对照一次真实TU；不授完整模块、全表或跨仓捕获信用。
+
+
+## 字段发布、读取与lookup25项
+
+本批23函数及2个覆盖边界块按全部直接调用及Core入口复核；前103加25为128/357，
+229仍待审，C继续pending，H原12项仅迁移引用。普通C HashKeyValuePair节点与guest
+Pair STRUCT对象不同；借用值/节点/缓存槽不retain、不建立GC root、不转移owner。
+角色槽和MRU键匹配不证明节点仍属于当前map；节点删除、清空、map销毁或可能改字段
+的调用后应重新取得视图。当前hash rehash重链不搬节点，未据此扩张为所有缓存安全。
+
+find_own字段节点层只查自有；get_own_field_value最终普通Core读取却可沿原型返回继承值。
+guest null值槽存在与缺槽NULL指针不同；对象转换仅检查raw OBJECT/ARRAY，不验证业务
+形状/泛型。UInt到TZrInt64转换不拒绝越界，沿公开写入与下游算术保留精确TODO。
+
+普通Core读取若接收活跃RAW_CANONICAL内部Array，可先物化整数存储至nodeMap，
+释放旧raw buffer、切NODE_CANONICAL并推进storageGeneration，再查命名字段及原型。
+这一条件不依赖dirty位true；正常Pair/Enumerator非RAW Array接收者不触发。
+跨该读取回退重新取得raw view/节点视图，调用目的为读取不能保证存储表示不变。
+
+所有写者须使用有效的同域state和目标对象；非空GC载荷亦须同域。热int/null新值
+不含GC引用，热槽写入信任此前提而不调用域校验；plain写先赋值，再对GC值调用
+Value_Barrier，其中ValidateWrite拒绝可静默返回，不阻止已发生的赋值，也不改变
+threadStatus。Core回退的void setter则在赋值前执行ValidateValueWrite，资格拒绝
+也可不改变状态。wrapper的true只说明本地完成或未观察受检查错误，不独立证明
+写入被接受；false也不回滚已改变的字段、owner或分配。版本推进、MRU及隐藏backing
+同步分别受路径约束。
+
+### BUG: 两条合法同域Core C API旧owner丢失链
+
+Array.capacity可经可写Object_SetMember存Shared；运行字段描述只检查name/kind/writable，
+不校验typeName。正常Array.add读取非整数capacity为0并就绪热Pair，随后integer快写
+清除owner元数据而未释放该强引用，其他Shared释放后不能到达最后strong drop/归回GC。
+单节点LinkedList.first同样可存指向该正确节点的Shared；removeFirst读first并unlink，
+null热槽直接Reset丢失owner强引用。两链仅以公开Core C API完整静态证据标BUG，
+不声称guest静态赋值通过、运行复现或VM强制销毁后的永远泄漏；只注释，不修行为。
+
+TODO: 后续核对旧owner覆盖释放协议；Array.value/LinkedNode.next等没有相同热槽，
+本批不把两链扩展到所有字段。TODO: void setter的资格拒绝与上游失败传播可观察性。
+
+### TODO: 非RefLike STRUCT浅赋值与clone契约
+
+HasNormalizedNoOwnership只核owner槽；Value_Copy对非RefLike STRUCT可转CloneStruct，
+而容器plain helper及Core ordinary existing-Pair快路均可直接复制槽。已读Iterator.current
+及Map已有键更新链可达STRUCT输入，但仍须明确语言/API值复制和身份契约；不把疑点
+记成容器独有回归或新BUG。后续同时核Core与容器，不改变当前实现。
+
+本轮沿用实际r131配置/277依赖基线，只对当前真实TU再编译一次；不授运行、并发、GC、
+OOM、全模块或跨仓捕获信用。具体调用与证据在25单元台账，所有现有数字引用同步迁移。
