@@ -184,8 +184,8 @@ capacity构造参数仍叫index；已有同名非callable字段被当适配已�
 
 ## 四种宿主缓存与登记入口的当前契约
 
-前批28项及字段名/缓存入口40项均已提交；本批补齐静态状态/枚举/块21项，累计89项。
-357项台账保留，剩余268项待当前契约及完整性复核；数字引用迁移不增加完成数。
+前批28项、字段名/缓存入口40项和静态状态/枚举/块21项均已提交；本批补齐迭代原型/状态/块及消费者14项，累计103项。
+357项台账保留，剩余254项待当前契约及完整性复核；数字引用迁移及重审旧BUG不增加完成数。
 
 | 类型 | 调用目的 | 借用与失效边界 |
 | --- | --- | --- |
@@ -200,27 +200,27 @@ Map 的普通 entries/key/Pair缓存没有这项标记或独立GC根；不能跨
 同一种 cacheIdentity 仅由对应 accessor 比较/更新；它是生命周期标量，不是同步锁或内容版本。
 
 TODO: 多 GlobalState/mutator交错访问进程静态缓存的同步需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:591` 核查。
-TODO: Map裸地址重写与 moving GC协作需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:1669` 及 gc_cycle 的对象重写入口核查；
-Pair.first 的合法写入与 entries.memberVersion 联动需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:2569` 核查，不能由相同版本推出键内容未变。
+TODO: Map裸地址重写与 moving GC协作需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:1068` 及 gc_cycle 的对象重写入口核查；
+Pair.first 的合法写入与 entries.memberVersion 联动需沿 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:2650` 核查，不能由相同版本推出键内容未变。
 
 宿主 Register 的顺序是 iteration→container→pooling→基本ARRAY适配。iteration链按需 Attach registry，
 所以调用者无需提前创建 registry；global/mainThreadState/基本ARRAY原型必须已有效。后阶段失败不回滚
 前阶段成功登记。CLI `zr_vm_cli/src/zr_vm_cli/project/project.c:368` 检查 bool，`tests/container/container_test_common.c:60` 忽略 bool，
 该测试工厂调用本身不能证明登记成功。描述符查询及共享插件 getter 不执行这条宿主初始化链。
 
-TODO: `zr_vm_lib_container/src/zr_vm_lib_container/module.c:5604` 的同名字段 presence检查不验证 callable/getIterator协议；核查已有字段的实际消费者。
+TODO: `zr_vm_lib_container/src/zr_vm_lib_container/module.c:5814` 的同名字段 presence检查不验证 callable/getIterator协议；核查已有字段的实际消费者。
 BUG: 合法初始化global、ARRAY原型尚未ignore且ignored表已满、字段缺失时，宿主分阶段拒绝
 getter pin的ignore扩容、允许中间闭包创建、再拒绝setter pin的扩容，void setter早退但Register可仍true。
-完整链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:5604`→闭包创建→`zr_vm_lib_container/src/zr_vm_lib_container/module.c:5617`；pin入口
+完整链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:5814`→闭包创建→`zr_vm_lib_container/src/zr_vm_lib_container/module.c:5827`；pin入口
 `zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1429`/`:1385`；
 只拒绝一次setter扩容不足以证明该链，先前getter可能已扩表。本轮只有静态证据，无故障注入信用。
-实际宿主登记链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:5663`，iteration 的 Attach入口是 `zr_vm_lib_iteration/src/zr_vm_lib_iteration/module.c:21`。
+实际宿主登记链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:5873`，iteration 的 Attach入口是 `zr_vm_lib_iteration/src/zr_vm_lib_iteration/module.c:21`。
 
 
 ## 字段名与缓存入口的40项详细契约
 
 23函数、16字段名常量及1 DEBUG状态逐项核对实际消费点。缓存家族的3 enum、
-15函数内static状态及3语句块由下节21项独立审查；iterator prototype另有4状态不在本批。
+15函数内static状态及3语句块由下节21项独立审查；该40项批次未覆盖iterator prototype状态；本次14项详见后节。
 first区分LinkedList首节点和Pair首分量，同文本键和角色Pair槽不说明共享字段值；
 C也不保证等字面量地址合并或分离。fallback借用宿主文本，48槽满走断言后NULL。
 
@@ -231,8 +231,8 @@ Map try依赖刚由accessor核验域，本身不重验cacheIdentity；slot假定
 成功扫描才发布候选，不缓存NULL entry；已有同key/version覆盖不推进，空槽或满槽插入均推进。
 
 两Debug命中计数同点递增，entryValidationReadCount没有递增/非零更新，初始化和Reset写零；Reset不清真实缓存，
-Get非DEBUG全零。TODO: 多域静态缓存/统计同步、moving GC裸地址重写及Pair.first版本联动
-仍待合法执行链核查，不升级BUG。公开头16处旧数字引用已按当前语义修正后迁移，其12项既有职责范围保留。
+Get非DEBUG全零。Map静态查找缓存的AttachedDomain合法并发已由后节源码链标为BUG；其它缓存/统计同步、
+moving GC裸地址重写及Pair.first版本联动仍各自TODO，不能扩大本次缺陷结论。公开头16处旧数字引用已按当前语义修正后迁移，其12项既有职责范围保留。
 本批仅以字节保护、真实调用、独立review和一TU编译对照验收；module.c继续pending，
 不授运行时、GC、OOM、ABI、性能或跨仓库capture信用。
 
@@ -277,3 +277,45 @@ remove末项→同对象键contains/get。完整证明锚点由本批static Map�
 
 单TU编译复用前批实际r106结果为当前源码基线；只增加新注释后的同配置对照。
 数字引用迁移、old unselected checker211保留，不授全台账、runtime、整模块或capture信用。
+
+
+## 迭代原型、状态与消费者14项
+
+本批9函数、4个词法函数内static和1发布顺序块按当前调用链复核；其中8函数是消费者，
+另1函数是runtime prototype。先前89加本14为103/357，254仍待审，C保持pending，H12保持。
+
+五入口：包装Array的items、内建array本身、Map/Set的entries和LinkedList本身。来源字段
+只在成功写入后形成实例到来源的可达边；没有独立root handle，也不复制集合或锁定长度/版本。
+链表创建时取当时first，后续取节点当时next；数组每步读当前backing。guest null元素仍
+能yield true；字段读不到元素的NULL指针与值标签NULL不同。native返回数量1与payload
+bool分开，来源为空/负游标可在读取前结束；current经ownership-aware setter发布，字段部分写入不回滚。
+
+两种prototype按精确native函数身份选择，current名字供contract成员读取；永久标记只在
+所属GlobalState内保活，换域清槽不释放仍活旧域对象。SetIteratorContract按值复制栈local
+contract；核心Object_IterMoveNext/IterCurrent读取contract，不把protocol位作为派发门槛。
+核心数组快路可绕过native回调；iterator_runtime.h的IteratorFrame是另一套producer接口。receiver的raw-kind转换检查是调试断言，发布构建依赖调用方布局契约。
+
+TODO: slot先发布后装配closure/contract的异常恢复与重试；ClosureNative_New分配后直接
+解引用，调用方NULL分支不证明OOM可恢复。原型并行首填充/切域需独立核查，不能用Map
+查找缓存的竞争结论替代。TODO: 无符号异常游标是否可由guest隐藏字段/恢复入口带入。
+
+已读现有测试覆盖固定数组重复/嵌套、raw-int、Map Pair聚合和Set foreach及协议/适配器；
+未据这些测试证明LinkedList foreach、来源中途变更可见、迭代器单独保活来源后GC、多域
+切换/并发或OOM发布重试。此轮不运行测试，不授runtime/故障注入信用。
+
+### BUG: AttachedDomain多worker竞争Map静态查找缓存
+
+默认ZR_THREAD_LOCK/UNLOCK空钩子下，启用supportMultithread、workerCount=2的attached
+ThreadScheduler可以安排两个Job<int>，每个worker只在自己任务中构造/查询自己的Map。
+Send限制作用于Job结果T；不需要共享Map对象。worker用同一GlobalState创建不同State，
+WorkItem root保活任务/callable；队列锁在ExecutePreparedJob之前释放。MutatorEnter与
+NativeEnter在短持协调锁登记状态后释放，绑定lane再执行callback；MutationBegin在无
+concurrent major时不持域mutation lock，也不是这些静态槽的同步协议。
+
+因此两个合法独立Map的字符串查询可同时改变同一静态cache的backing、MRU、四槽及游标，
+构成C数据竞争，与删除末项导致旧结果的串行BUG分开。已在旧accessor及其scoped static
+两单元同步注释/台账，重审不增加103完成数；其它缓存/统计和原型发布问题仍各自核查。
+这里只用完整静态可达链标记，未执行并发复现、不修改行为；后续建立明确归属或完整同步。
+
+源码证明与测试缺口见对应台账evidence；数字引用一并迁移，旧211无关checker问题身份
+保留。编译沿用实际r120基线，对照一次真实TU；不授完整模块、全表或跨仓捕获信用。
