@@ -28,7 +28,7 @@ scripts/benchmark/run_typed_opcode_perf_closure.sh	scripts	script	56d7700da62349
 scripts/benchmark/run_wsl_benchmarks_report_csv.sh	scripts	script	2197eacd5b09890911bb306110be8df5aa84e7719c2dd08a7d42ae6bcbbdffc6	reviewed	-
 scripts/code_review_inventory.py	scripts	script	b53d122a91bc83df8ad6862798c474131cd35adebe5259d34385df4e5ef01f8d	reviewed	coverage/review_tooling.tsv; batch anchor validator independent review and negative cases
 scripts/codegen/generate_execbc_patterns.py	scripts	script	ef808cc17ee5c631985e799489c71e483df40dc9a1cffa1963415e8c32d49181	reviewed	2026-10-04 current full-file caller/intention review: 18 units; validation scope recorded in batches/20261004-current-reviewed-files.md; TODO/BUG retained
-scripts/layout/apply_moves.py	scripts	script	5f3de7aad0a35f54b14143c5984b2ad52c8761277676abedfb0ab24d9262a9a1	pending	新首方文件；调用链与详细契约待审；本批未改此源码
+scripts/layout/apply_moves.py	scripts	script	2dc4810604f367de7e4f5ae818388b74028d9087be020aaf82650b67b53d9e2e	pending	本次有限清点观察到内容变化，调用链待复核；前次记录：新首方文件；调用链与详细契约待审；本批未改此源码
 scripts/syntax_migration_inventory.py	scripts	script	994971db29a74121fe6bd46a7bce256ca4a58070baac4a5e50de6dd747f45c01	reviewed	-
 scripts/syntax_status_records.py	scripts	script	b0e34890224d28581a0ea2615c7f25bd6c8c753ec0bafd92070a893bf7bd3786	reviewed	-
 scripts/validate_wiki.py	scripts	script	b3c6029413efb23bb3d520f3f14f07206d4364295ec36f431c7ad64fb532e6bf	reviewed	wiki source validation: 31 units; independent review; tests 5/5
@@ -1919,7 +1919,7 @@ tests/testing/test_runner.c	tests/testing	test	03ae9f84955ca169b9f079c57b0e3bcd7
 tests/testing/test_test_role_binding.c	tests/testing	test	9d1b1ae23150d492c390259df6be5cc2aec9aa14c2bcdd15f3ff2482b79cd934	reviewed	53 单元调用链及失败路径已独立复核
 tests/thread/test_thread_runtime.c	tests/thread	test	782c34ef3f3b1ef69e612685f62b541d5633774f40d92be5b2e6f78e2a02a8f9	reviewed	剩余测试入口与失败路径调用链复核
 tests/tooling/test_debug_cli_auth.py	tests/tooling	test	5d6fd095e1b66ef22c0ac0a980f7caf0c12188946facbf0daa1f6001a9739846	pending	新首方文件；调用链与详细契约待审；本批未改此源码
-tests/tooling/test_layout_moves.py	tests/tooling	test	5f8fa186de939427fb2eaf6054cbd8878261e29a541f815b38024a89c65caa68	pending	新首方文件；调用链与详细契约待审；本批未改此源码
+tests/tooling/test_layout_moves.py	tests/tooling	test	96df41d46af4d937118804de28d406f4cf244a53066c484a0d18581e956c090e	pending	本次有限清点观察到内容变化，调用链待复核；前次记录：新首方文件；调用链与详细契约待审；本批未改此源码
 tests/unity_config.h	tests/unity_config.h	test	45a7953baa66de43b9d2088e320fa136b0fc7de034b08a82d9ccb205a0e4a484	reviewed	剩余测试入口与失败路径调用链复核
 tests/unity_lifecycle_noop.c	tests/unity_lifecycle_noop.c	test	51a98177a3d52517b11a71bb5c2f37fe9234d37ac22b7f6a22faf28d0162a645	reviewed	剩余测试入口与失败路径调用链复核
 zr_vm_aot/scripts/benchmark/callgrind_aot_c.sh	zr_vm_aot	code	12219ec7f8b8d5e93edd2f833aff86cfa98ae10a87a918671b6c4cc99be13b09	reviewed	-
@@ -2536,7 +2536,7 @@ zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_publish.c	zr_vm_core	code	c924eba1fa
 zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_retire.c	zr_vm_core	code	44fdb3df1a58e5c6b29a115cba48d72c863946d88764f5329f24ad9586a66289	reviewed	-
 zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_rollback.c	zr_vm_core	code	3b822783228a27ab012c3563bc66b4779a741df8670adb335d19417fa8da8d36	pending	-
 zr_vm_core/src/zr_vm_core/hotpatch/hotpatch_validate.c	zr_vm_core	code	2a7abcfeac8cf9f12c870d2ef724a2e6b42390afdad6ae85f6d17c2ac2fb5b46	pending	-
-zr_vm_core/src/zr_vm_core/io.c	zr_vm_core	code	afd4dc0b86db7b6422901f565c6284ba0f326670844b88bab99c5598cc28b815	pending	本次有限清点观察到内容变化，调用链待复核；前次记录：docs/code-review/coverage/zr_vm_core_io_callback_exception.tsv
+zr_vm_core/src/zr_vm_core/io.c	zr_vm_core	code	324606091a455f3e2a4df55d474fa69e37b80c7a8749660513e673bc84d5d6c9	pending	本次有限清点观察到内容变化，调用链待复核；前次记录：本次有限清点观察到内容变化，调用链待复核；前次记录：docs/code-review/coverage/zr_vm_core_io_callback_exception.tsv
 zr_vm_core/src/zr_vm_core/io_call_binding.c	zr_vm_core	code	08150aeaa8bfdea0d467887717498654c77a661770274e5894ec17c3e42af9bd	reviewed	-
 zr_vm_core/src/zr_vm_core/io_runtime.c	zr_vm_core	code	cca5c3e804db2f9a87cb010c60ae722c9d531f5542d71fe58c13de13aacdadbc	reviewed	docs/code-review/coverage/zr_vm_core_io_callback_exception.tsv
 zr_vm_core/src/zr_vm_core/io_source_free.c	zr_vm_core	code	60a64542d808ff8590aeda3ddd0b15b6ad2aac1d8b2418f6a8c8ff3554dcc90c	reviewed	docs/code-review/coverage/zr_vm_core_io_callback_exception.tsv
@@ -2965,13 +2965,13 @@ zr_vm_language_server_extension/webpack.config.js	zr_vm_language_server_extensio
 zr_vm_lib_container/CMakeLists.txt	zr_vm_lib_container	config	ccf6f2fc3a532348b2843cbc2b91c3f4758fb6d626c1a58a72a0d5a43438e746	reviewed	container review: 458 units; GCC build; 55 tests pass, 7 baseline failures
 zr_vm_lib_container/include/zr_vm_lib_container/conf.h	zr_vm_lib_container	code	859d0a8caaca9742b87fcabce989a0a05df4abac6855fa44ddc9bea6b889cc5f	reviewed	container review: 458 units; GCC build; 55 tests pass, 7 baseline failures
 zr_vm_lib_container/include/zr_vm_lib_container/generational_pool.h	zr_vm_lib_container	code	28370eb983d3b189e2033bcd11b7fff6305cdce173fa813e9f7487166988acb2	reviewed	container review: 458 units; GCC build; 55 tests pass, 7 baseline failures
-zr_vm_lib_container/include/zr_vm_lib_container/module.h	zr_vm_lib_container	code	58fd94f0e01ef35e7ae7a9c2742027eb2febd3e57fac35dd0a530deb5e458245	reviewed	原12项职责范围保持；16数字引用迁移，非数字文本/源码字节保护不变；docs/code-review/coverage/zr_vm_lib_container_module.tsv
+zr_vm_lib_container/include/zr_vm_lib_container/module.h	zr_vm_lib_container	code	93fc1afc2f24acb122f58e1eb77a3cb4713c32ef60fc0ef872edc4610b6b344c	reviewed	原12项范围保持，仅C数字引用迁移；代码/空行/EOL不变；docs/code-review/coverage/zr_vm_lib_container_module.tsv
 zr_vm_lib_container/src/zr_vm_lib_container/contiguous_view.c	zr_vm_lib_container	code	b940e0f631bcc53006e1d34c62295d34b9f58d8592fef9c8836db59bd0693429	reviewed	2026-10-04 current full-file caller/intention review: 22 units; validation scope recorded in batches/20261004-current-reviewed-files.md; TODO/BUG retained
 zr_vm_lib_container/src/zr_vm_lib_container/contiguous_view.h	zr_vm_lib_container	code	1f792185621ed1fa0cf6e0761a523dcfab299da6c909d16e4f8cb2902062b1e9	reviewed	2026-10-04 current full-file caller/intention review: 7 units; validation scope recorded in batches/20261004-current-reviewed-files.md; TODO/BUG retained
 zr_vm_lib_container/src/zr_vm_lib_container/generational_pool.c	zr_vm_lib_container	code	94b2a17bf51c1e2907ac8c85ff05b61384f340d59478399e9ef7ea5381cea682	reviewed	container review: 458 units; GCC build; 55 tests pass, 7 baseline failures
 zr_vm_lib_container/src/zr_vm_lib_container/generational_pool_internal.h	zr_vm_lib_container	code	106eaf30837f8b2c627ffac9296822060a004151a5813b6170512ca73851bb1a	reviewed	container review: 458 units; GCC build; 55 tests pass, 7 baseline failures
 zr_vm_lib_container/src/zr_vm_lib_container/generational_pool_type_layout.c	zr_vm_lib_container	code	11db7a83e3ba6b303eee61919774e667ec2ca8a2cd27b8cddecac1760d19554d	reviewed	container review: 458 units; GCC build; 55 tests pass, 7 baseline failures
-zr_vm_lib_container/src/zr_vm_lib_container/module.c	zr_vm_lib_container	code	f02de1eb5b919909fbcb3315629d5533b09ec37e01e13b0d2bcaaa31f7db694a	pending	357项当前详细复核192(前163+本29)，165待重核；docs/code-review/coverage/zr_vm_lib_container_module.tsv
+zr_vm_lib_container/src/zr_vm_lib_container/module.c	zr_vm_lib_container	code	9ac07cd7c99466840b42f6b5e766a86856e313308b3d88f6ca262fe593a0224e	pending	详细契约223/357(前192+本31)，134待审；docs/code-review/coverage/zr_vm_lib_container_module.tsv
 zr_vm_lib_container/src/zr_vm_lib_container/pooling.c	zr_vm_lib_container	code	3d3e48924d314ccef0b891a001b90c4910b97329fce6d68b8828d7aee5dc3b9d	reviewed	container review: 458 units; GCC build; 55 tests pass, 7 baseline failures
 zr_vm_lib_container/src/zr_vm_lib_container/pooling.h	zr_vm_lib_container	code	79d10bcaaa0ec4bdf2843918b541198893e05ab253f4dd84c409fe7ee7a9fd30	reviewed	container review: 458 units; GCC build; 55 tests pass, 7 baseline failures
 zr_vm_lib_container/src/zr_vm_lib_container/pooling_generational_runtime.c	zr_vm_lib_container	code	a2e82df991077faa48de1181df782daddfc8d9853301a78709e992eb66119369	reviewed	container review: 458 units; GCC build; 55 tests pass, 7 baseline failures

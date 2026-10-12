@@ -48,6 +48,14 @@ related_code:
   - zr_vm_lib_container/include/zr_vm_lib_container/conf.h
   - zr_vm_library/src/zr_vm_library/builtin_module.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.c
+  - docs/code-review/coverage/zr_vm_lib_container_module.tsv
+  - zr_vm_core/include/zr_vm_core/debug.h
+  - zr_vm_core/include/zr_vm_core/io.h
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/module/module_prototype.c
+  - zr_vm_core/src/zr_vm_core/string.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_foreach.c
 implementation_files:
   - zr_vm_lib_container/src/zr_vm_lib_container/module.c
 plan_sources:
@@ -227,8 +235,8 @@ capacity构造参数仍叫index；已有同名非callable字段被当适配已�
 
 ## 四种宿主缓存与登记入口的当前契约
 
-前批详细契约163项均已提交；本批补齐存储8、backing及容量8、工厂/Map/摘链5及Pair/LinkedList入口8，共29函数，累计192项。
-357项台账保留，剩余165项待当前契约及完整性复核；数字引用迁移及保留旧BUG不增加完成数。
+前批详细契约192项均已提交；本批补齐Array入口/适配13及Map/Set搜索和入口18，共31函数，累计223项。
+357项台账保留，剩余134项待当前契约及完整性复核；数字引用迁移及保留旧BUG不增加完成数。
 
 | 类型 | 调用目的 | 借用与失效边界 |
 | --- | --- | --- |
@@ -251,13 +259,13 @@ Pair.first 的合法写入与 entries.memberVersion 联动需沿 `zr_vm_lib_cont
 前阶段成功登记。CLI `zr_vm_cli/src/zr_vm_cli/project/project.c:368` 检查 bool，`tests/container/container_test_common.c:60` 忽略 bool，
 该测试工厂调用本身不能证明登记成功。描述符查询及共享插件 getter 不执行这条宿主初始化链。
 
-TODO: `zr_vm_lib_container/src/zr_vm_lib_container/module.c:7281` 的同名字段 presence检查不验证 callable/getIterator协议；核查已有字段的实际消费者。
+TODO: `zr_vm_lib_container/src/zr_vm_lib_container/module.c:7764` 的同名字段 presence检查不验证 callable/getIterator协议；核查已有字段的实际消费者。
 BUG: 合法初始化global、ARRAY原型尚未ignore且ignored表已满、字段缺失时，宿主分阶段拒绝
 getter pin的ignore扩容、允许中间闭包创建、再拒绝setter pin的扩容，void setter早退但Register可仍true。
-完整链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:7281`→闭包创建→`zr_vm_lib_container/src/zr_vm_lib_container/module.c:7294`；pin入口
+完整链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:7764`→闭包创建→`zr_vm_lib_container/src/zr_vm_lib_container/module.c:7777`；pin入口
 `zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1429`/`:1385`；
 只拒绝一次setter扩容不足以证明该链，先前getter可能已扩表。本轮只有静态证据，无故障注入信用。
-实际宿主登记链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:7340`，iteration 的 Attach入口是 `zr_vm_lib_iteration/src/zr_vm_lib_iteration/module.c:21`。
+实际宿主登记链为 `zr_vm_lib_container/src/zr_vm_lib_container/module.c:7838`，iteration 的 Attach入口是 `zr_vm_lib_iteration/src/zr_vm_lib_iteration/module.c:21`。
 
 
 ## 字段名与缓存入口的40项详细契约
@@ -606,3 +614,24 @@ GC地址稳定性仍保留TODO，callback true不单独证明每次链接写入�
 Core两个未调用helper的外部删除仅使旧Object锚点移动，Root不修改Core。
 旧185处Container注释锚点及相关台账只按保留行字节证据迁移，候选当前锚点不重复迁移；
 未增加运行、OOM、GC、并发、全模块或跨仓捕获验收。
+
+## Array与Map/Set31项调用契约
+
+前29项已提交；本批补齐Array13及Map/Set18，累计223/357，剩134，主文件仍pending。
+普通绑定提供预置null的非NULL结果槽；回调局部false与guest结果及threadStatus必须分开。
+本批只有Map SET实际设置RESULT_OPTIONAL并提供无结果inline lane；该标志不令普通callback收到NULL。
+构造允许无receiver；实参与存在的receiver借自帧，构造target沿resolver的GC/发布契约。
+Array扫描只捕获开始scalar length，不是元素或版本快照；equals可执行用户代码，重入后backing/needle/槽有效期保留TODO。
+Map普通GET可因entries准备或搜索NULL而写null/true；inline GET在已有backing的entry搜索NULL时也true/null，不能证明纯miss。
+这些函数内true/null路径与Core对callback false+FINE的转换不同；非FINE最终仍拒绝结果，合法K非miss可达性及区分职责待核。
+inline GET缺backing先false；inline GET/SET false且FINE由Core归为成功空结果/无结果，不retry普通callback。
+Set迭代current为T，遵循通用Array iterator/Value_Copy；Map迭代Pair<K,V>须遵循STRUCT复制契约。iterator使用live backing，不建立快照或锁。
+Set.add搜索false后继续尝试push，错误传播是否阻止部分追加仍TODO，不升级BUG。删除/清空/元数据及结果发布失败没有统一回滚。
+内建ARRAY原生桥的真实间接invoke是function.c:5004，5113仅提取函数指针。安装器现存非callable字段、双ignore增长拒绝的既有BUG沿Register链引用，不新增缺陷身份。
+
+### 编译证据的时间范围
+
+前Source169首次单TU编译之后，外部io.h增加布局字段、raw_object.h修复地址identity hash，CommonMacros配置引用也变化。
+随后Native169-r3用当前输入重新编译成功：277实际依赖，2外部头文件较旧基线改变、273其他nonowned保持相同；不能称275外部依赖全量旧配对。
+本批以该当前输入编译结果为基线。注释/数字引用改动不改变原代码、空行与EOL；后续本批编译及实际post-apply审查仍是独立门禁。
+没有runtime tests、全CMake构建、整体ABI/行为、全ledger或全仓验收信用。
