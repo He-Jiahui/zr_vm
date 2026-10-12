@@ -1221,7 +1221,6 @@ static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_frame_layout_spread_singl
             ZrCore_Debug_RunError(
                     state,
                     "FUNCTION_CALL_SPREAD: spread operand must be an array");
-            return ZR_NULL;
         }
     }
 
@@ -2373,8 +2372,11 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 
     ZR_INSTRUCTION_DISPATCH_TABLE
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+    /* This reviewed opcode count makes schema changes require a complete table update. */
+    enum { ZR_FAST_DISPATCH_OPCODE_COUNT = 246 };
+    _Static_assert(ZR_FAST_DISPATCH_OPCODE_COUNT == ZR_INSTRUCTION_ENUM(ENUM_MAX),
+                   "Update every fast-dispatch entry when the opcode schema changes");
     static void *const fastDispatchTable[ZR_INSTRUCTION_ENUM(ENUM_MAX)] = {
-            [0 ... ZR_INSTRUCTION_ENUM(ENUM_MAX) - 1] = &&LZrFastInstruction_FALLBACK,
             [ZR_INSTRUCTION_ENUM(GET_STACK)] = &&LZrFastInstruction_GET_STACK,
             [ZR_INSTRUCTION_ENUM(SET_STACK)] = &&LZrFastInstruction_SET_STACK,
             [ZR_INSTRUCTION_ENUM(GET_CONSTANT)] = &&LZrFastInstruction_GET_CONSTANT,
@@ -2545,6 +2547,109 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                     &&LZrFastInstruction_SUPER_META_TAIL_CALL_CACHED,
             [ZR_INSTRUCTION_ENUM(META_TAIL_CALL)] = &&LZrFastInstruction_META_TAIL_CALL,
             [ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)] = &&LZrFastInstruction_FUNCTION_RETURN,
+            /* All other current opcodes retain the ordinary dispatch fallback. */
+            [ZR_INSTRUCTION_ENUM(SET_CONSTANT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(GET_CLOSURE)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(SET_CLOSURE)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(GETUPVAL)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(SETUPVAL)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(GET_MEMBER)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(SET_MEMBER)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(SET_BY_INDEX)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(TO_BOOL)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(TO_INT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(TO_UINT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(TO_FLOAT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(TO_STRING)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(TO_STRUCT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(TO_OBJECT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(ADD_FLOAT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(ADD_STRING)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(SUB)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(SUB_FLOAT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(MUL_UNSIGNED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(MUL_FLOAT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(NEG)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(DIV)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(DIV_SIGNED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(DIV_UNSIGNED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(DIV_FLOAT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(MOD_SIGNED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(MOD_UNSIGNED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(MOD_FLOAT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(POW)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(POW_SIGNED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(POW_UNSIGNED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(POW_FLOAT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(SHIFT_LEFT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(SHIFT_LEFT_INT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(SHIFT_RIGHT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(SHIFT_RIGHT_INT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_NOT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_AND)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_OR)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_UNSIGNED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_LESS_UNSIGNED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_SIGNED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_UNSIGNED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_FLOAT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_UNSIGNED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_FLOAT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(BITWISE_NOT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(BITWISE_AND)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(BITWISE_OR)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_LEFT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_RIGHT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(GET_GLOBAL)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(CREATE_CLOSURE)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(CREATE_OBJECT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(CREATE_ARRAY)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(OWN_UNIQUE)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(OWN_BORROW)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(OWN_LOAN)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(OWN_SHARE)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(OWN_DEGRADE)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(CLOSE_SCOPE)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(TRY)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(END_TRY)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(THROW)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(CATCH)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(END_FINALLY)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(SET_PENDING_RETURN)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(SET_PENDING_BREAK)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(SET_PENDING_CONTINUE)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(TYPEOF)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(SUPER_META_GET_CACHED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(SUPER_META_SET_CACHED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(OWN_DETACH)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(OWN_WAKE)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(OWN_DROP)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(META_GET)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(META_SET)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(SUPER_META_GET_STATIC_CACHED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(SUPER_META_SET_STATIC_CACHED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(NOP)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(OWN_VIEW_SHARED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(OWN_VIEW_MUT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(OWN_INTO_GC_BOX)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(OWN_RETURN_TO_GC)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(PROPERTY_REF_LOAD)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(PROPERTY_REF_STORE)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(PROPERTY_REF_CREATE_MEMBER)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(PROPERTY_REF_CREATE_INDEX)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(PROPERTY_REF_CREATE_LOCAL)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(MARK_CLOSE_PROXY)] = &&LZrFastInstruction_FALLBACK,
     };
 #define ZR_FAST_INSTRUCTION_DISPATCH(INSTRUCTION) goto *fastDispatchTable[ZR_INSTRUCTION_OPCODE(INSTRUCTION)];
 #endif
@@ -2617,11 +2722,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     do {                                                                                                               \
         EXECUTION_MUTATOR_POLL_BEFORE_FETCH(N);                                                                        \
         if (ZR_LIKELY(fastDispatchMode)) {                                                                             \
-            if ((N) == 1) {                                                                                            \
-                instruction = *++programCounter;                                                                       \
-            } else {                                                                                                   \
-                instruction = *(programCounter += (N));                                                                \
-            }                                                                                                          \
+            instruction = ((N) == 1 ? *++programCounter : *(programCounter += (N)));                                   \
         } else if (ZR_UNLIKELY(state->debugTraceObserver != ZR_NULL)) {                                                \
             /* Per-instruction observers are independent of pending hook traps. */                                     \
             trap = ZrCore_Debug_TraceExecution(state, programCounter);                                                  \
@@ -3622,7 +3723,6 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_SUPER_FUNCTION_CALL_NO_ARGS_BODY()                                                                     \
     do {                                                                                                               \
         TZrSize functionSlot__ = A1(instruction);                                                                      \
-        TZrSize expectedReturnCount__ = 1;                                                                             \
         SZrCallInfo *nextCallInfo__;                                                                                   \
         TZrStackValuePointer callWindow__;                                                                             \
                                                                                                                        \
@@ -3738,7 +3838,6 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     do {                                                                                                               \
         TZrSize functionSlot__ = A1(instruction);                                                                      \
         TZrSize parametersCount__ = B1(instruction);                                                                   \
-        TZrSize expectedReturnCount__ = 1;                                                                             \
         SZrCallInfo *nextCallInfo__;                                                                                   \
         TZrStackValuePointer callWindow__;                                                                             \
                                                                                                                        \
@@ -3806,7 +3905,6 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_SUPER_DYN_CALL_NO_ARGS_BODY()                                                                          \
     do {                                                                                                               \
         TZrSize functionSlot__ = A1(instruction);                                                                      \
-        TZrSize expectedReturnCount__ = 1;                                                                             \
         SZrCallInfo *nextCallInfo__;                                                                                   \
         TZrStackValuePointer callWindow__;                                                                             \
                                                                                                                        \
@@ -3906,7 +4004,6 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     do {                                                                                                               \
         TZrSize functionSlot__ = A1(instruction);                                                                      \
         TZrSize parametersCount__ = B1(instruction);                                                                   \
-        TZrSize expectedReturnCount__ = 1;                                                                             \
         SZrCallInfo *nextCallInfo__;                                                                                   \
         TZrStackValuePointer callWindow__;                                                                             \
                                                                                                                        \
@@ -8068,7 +8165,7 @@ LZrFastInstruction_FUNCTION_CALL: {
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
-LZrFastInstruction_FUNCTION_CALL_SPREAD: {
+            {
                 EXECUTE_FUNCTION_CALL_SPREAD_BODY();
             }
             DONE_FAST(1);
@@ -9222,7 +9319,9 @@ LZrFastInstruction_JUMP_IF_NULL: {
                 }
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 LZrFastInstruction_CREATE_INLINE_ARRAY:
+#endif
             ZR_INSTRUCTION_LABEL(CREATE_INLINE_ARRAY) {
                 SZrObject *array = ZrCore_Object_NewInlineArray(
                         state,
@@ -9244,7 +9343,9 @@ LZrFastInstruction_CREATE_INLINE_ARRAY:
                 }
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
+#endif
             ZR_INSTRUCTION_LABEL(BIND_INLINE_ARRAY_ELEMENT_PLACE) {
                 TZrInt64 elementIndex;
                 opA = FRAME_VALUE_SLOT(B1(instruction));
@@ -9701,7 +9802,10 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
                 execution_clear_pending_control(state);
             }
             DONE(1);
-            ZR_INSTRUCTION_DEFAULT() {
+#if !defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) || !ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+            ZR_INSTRUCTION_DEFAULT()
+#endif
+            {
                 // todo: error unreachable
                 char message[ZR_RUNTIME_DIAGNOSTIC_BUFFER_LENGTH];
                 sprintf(message, "Not implemented op code:%d at offset %d\n", instruction.instruction.operationCode,

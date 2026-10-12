@@ -11,6 +11,8 @@ related_code:
   - zr_vm_core/src/zr_vm_core/execution/execution_safepoint.c
   - zr_vm_core/src/zr_vm_core/execution/execution_cold.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h
+  - zr_vm_core/src/zr_vm_core/object/object_super_array.c
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/stack.c
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
@@ -22,6 +24,8 @@ implementation_files:
   - zr_vm_core/src/zr_vm_core/execution/execution_safepoint.c
   - zr_vm_core/src/zr_vm_core/execution/execution_cold.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h
+  - zr_vm_core/src/zr_vm_core/object/object_super_array.c
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/stack.c
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
@@ -123,6 +127,55 @@ This first boundary layer intentionally does not bind ExecIR layouts or active
 call-binding generations. Those invariants are introduced by the later binding
 guard stages. Bytecode dispatch continues to use the single instruction list
 from `zr_instruction_conf.h` for both computed-goto and switch builds.
+
+The computed-goto fast table explicitly initializes every current opcode:
+144 existing fast-handler entries and 102 ordinary fallback entries, including
+`FUNCTION_CALL_SPREAD`. This removes overlapping default initializers without
+changing handler targets or the indexed dispatch expression. The reviewed
+246-opcode count is checked at compile time; changes to the instruction schema
+require a complete table review. Label addresses remain in `ZrCore_Execute`,
+because computed-goto labels belong to that function. The switch build keeps
+the same opcode numbers and default handler. This finite table maintenance does
+not close the remaining runtime or performance gates in 03.01.
+
+The shared fetch uses a conditional expression for the one-instruction advance.
+It preserves the comparison and selected operand evaluation: the one-instruction
+path increments the PC before dereferencing it, and the other path adds the
+requested count before dereferencing it. The indexed dispatch expression and
+the fast-only fetch macro remain unchanged. The two inline-array fast label names
+are emitted only in computed-goto builds; their ordinary switch handlers remain
+unchanged.
+
+The invalid spread-operand path and the by-value super-array fast setter raise
+errors through the declared non-returning ZrCore_Debug_RunError. Their following
+dead returns are removed; the error calls and reachable success returns retain
+their behavior. The raw-int materializer also removes dead returns after its
+three errors: unexpected node entries, pair-capacity overflow and failed
+materialization. The optional by-value setter in object_super_array.c removes
+dead returns after the bounds errors in both its primitive and copy branches.
+All conditions, error calls, materialization order and reachable returns remain
+unchanged.
+
+The retained r2 compile-only run completed four actual compiler processes with
+exit 0. Clang dispatch, Clang super-array and MSVC dispatch passed the zero
+diagnostic and actual-header gates. MSVC super-array emitted five C4702 warnings;
+the r2 receipt is validated=false, with four actual compilations and three
+verified compilations. Its stdout/stderr logs were decoded with a UTF-8
+StreamReader and may contain replacement characters; they are decoded evidence,
+not byte-exact native output.
+
+The five additional dead-return removals passed a new four-phase compile-only
+verification with Clang 19 UBSan instrumentation and MSVC 19.44, using the existing
+C11, MD, W4 and UNDEBUG settings and the MSVC C11 atomics option. Both compilers
+compiled dispatch and super-array with zero diagnostics and natural exit 0.
+Their actual header dependencies numbered 243 and 213 for Clang, and 132 and 102
+for MSVC. All four native processes completed and both output streams drained;
+the new receipt records four actual and four verified compilations. The helper
+saved raw BaseStream bytes, then decoded only in memory for diagnostic analysis.
+The internal super-array header is also consumed by object.c and
+execution_member_access.c; their affected objects require header-dependency
+validation. Compilation does not establish interpreter execution, Source
+retention, runtime performance or completion of the remaining SSA gates.
 
 `ZR_INSTRUCTION_USE_RET_FLAG` in `operandExtra` selects the interpreter's
 local `ret` temporary instead of a stack destination. Opcode handlers interpret

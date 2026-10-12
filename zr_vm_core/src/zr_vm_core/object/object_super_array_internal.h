@@ -468,7 +468,6 @@ static ZR_FORCE_INLINE TZrBool zr_super_array_raw_int_materialize_dirty(SZrState
     rawLength = itemsObject->superArrayRawIntLength;
     if (nodeMap->elementCount != 0) {
         ZrCore_Debug_RunError(state, "Array raw int storage has unexpected node entries");
-        return ZR_FALSE;
     }
     if (rawLength == 0) {
         zr_super_array_raw_int_release(state->global, itemsObject);
@@ -479,7 +478,6 @@ static ZR_FORCE_INLINE TZrBool zr_super_array_raw_int_materialize_dirty(SZrState
     }
     if (nodeMap->pairPoolUsed > ZR_MAX_SIZE - rawLength) {
         ZrCore_Debug_RunError(state, "Array raw int storage pair capacity overflow");
-        return ZR_FALSE;
     }
     requiredPairPoolCapacity = nodeMap->pairPoolUsed + rawLength;
     requiredCapacity = ZrCore_HashSet_MinDenseSequentialIntKeyCapacity(rawLength);
@@ -490,7 +488,6 @@ static ZR_FORCE_INLINE TZrBool zr_super_array_raw_int_materialize_dirty(SZrState
         nodeMap->pairPoolUsed > nodeMap->pairPoolCapacity ||
         nodeMap->pairPoolCapacity - nodeMap->pairPoolUsed < rawLength) {
         ZrCore_Debug_RunError(state, "Array raw int storage materialization failed");
-        return ZR_FALSE;
     }
 
     for (index = 0; index < rawLength; index++) {
@@ -801,7 +798,6 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Object_SuperArraySetIntByValueInlineAssume
     nodeMap = &itemsObject->nodeMap;
     if (ZR_UNLIKELY((TZrUInt64)indexValue >= (TZrUInt64)nodeMap->elementCount)) {
         ZrCore_Debug_RunError(state, "Array index out of range");
-        return ZR_TRUE;
     }
 
     pair = nodeMap->buckets[(TZrSize)indexValue];

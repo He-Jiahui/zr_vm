@@ -1941,7 +1941,6 @@ TZrBool ZrCore_Object_SuperArrayTrySetIntFast(SZrState *state,
         if (indexValue < 0 ||
             (TZrUInt64)indexValue >= (TZrUInt64)zr_super_array_raw_int_length_or_node_count(itemsObject)) {
             ZrCore_Debug_RunError(state, "Array index out of range");
-            return ZR_TRUE;
         }
         if (!zr_super_array_raw_int_materialize_dirty(state, itemsObject)) {
             return ZR_FALSE;
@@ -1955,7 +1954,6 @@ TZrBool ZrCore_Object_SuperArrayTrySetIntFast(SZrState *state,
         if (indexValue < 0 ||
             (TZrUInt64)indexValue >= (TZrUInt64)zr_super_array_raw_int_length_or_node_count(itemsObject)) {
             ZrCore_Debug_RunError(state, "Array index out of range");
-            return ZR_TRUE;
         }
         if (!zr_super_array_raw_int_materialize_dirty(state, itemsObject)) {
             return ZR_FALSE;
