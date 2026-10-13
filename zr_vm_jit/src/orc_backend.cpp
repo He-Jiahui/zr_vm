@@ -1,3 +1,23 @@
+/**
+ * @file
+ * @brief JIT C facade、core record manager 适配及 backend-service callbacks。
+ *
+ * ## Summary
+ * 该翻译单元在进程内维护一个 HostImpl：复制注册选项、固定 core 记录数组和 publication
+ * proof；core manager 借用数组并负责记录状态/lease 计数。公开 API 负责串行生命周期，
+ * descriptor callbacks 则满足 core service vtable，同时明确报告当前无机器码 provider。
+ *
+ * ## Constraints and lifecycle
+ * global_mutex 覆盖 singleton、manager 和 proof 的所有共享访问；持锁取得的 HostImpl
+ * 指针不能越锁保存。成功 Acquire 的 lease 必须 Release，退休记录须 Collect 后才能
+ * Shutdown。proof 与 core record 共同存活，但不代表存在机器码或平台状态图。
+ *
+ * ## References
+ * @see zr_vm_jit/include/zr_vm_jit/backend.h
+ * @see zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c
+ * @see ZrJit_Host_Register
+ * @see ZrJit_Host_TryShutdown
+ */
 #include "zr_vm_jit/backend.h"
 
 #include <algorithm>
@@ -47,45 +67,128 @@ EZrExecutionBackendStatus retire_code(
         SZrExecutionBackendDiagnostic *diagnostic);
 void destroy_backend(TZrPtr userData);
 
-/* core manager 只保存记录生命周期；facade 另存发布证据供 Publish 前复核。
- * proof 与记录以 codeIdentity 关联，并在退休记录被回收后一起删除。 */
+/**
+ * ## Summary
+ * Facade 在 Prepare 成功后保存的发布证明，供 Publish 前复核 core record 未覆盖的声明。
+ *
+ * ## Fields
+ * codeIdentity 与 core manager 槽关联；publication hash/flags 和 operationMask
+ * 缓存准备时输入；stateMaps 保存四类图声明，供后续发布路径核对。
+ *
+ * ## Constraints and lifecycle
+ * HostImpl 独占 proof vector，所有读写受 global_mutex 保护。该对象不拥有实际图、
+ * 可执行地址或额外 lease；core 收集相应 record 后 proof 一并删除。
+ *
+ * ## References
+ * @see HostImpl
+ * @see validate_publication_proof
+ * @see prepare_locked
+ * @see erase_collected_proofs
+ */
 struct SZrJitPublicationProof {
-    TZrUInt64 codeIdentity;
-    TZrUInt64 signatureHash;
-    TZrUInt64 layoutHash;
-    TZrUInt64 abiHash;
-    TZrUInt32 publicationFlags;
-    TZrUInt32 registrationFlags;
-    TZrUInt32 operationMask;
-    SZrJitStateMapFacts stateMaps;
+    TZrUInt64 codeIdentity; /**< 对应 core manager 记录的 identity。 */
+    TZrUInt64 signatureHash; /**< Prepare 时核对的签名摘要。 */
+    TZrUInt64 layoutHash; /**< publication 的布局摘要。 */
+    TZrUInt64 abiHash; /**< publication 的 ABI 摘要。 */
+    TZrUInt32 publicationFlags; /**< core publication 的 W^X/机器码声明位。 */
+    TZrUInt32 registrationFlags; /**< 四类图注册声明位。 */
+    TZrUInt32 operationMask; /**< publication 声明支持的操作集合。 */
+    SZrJitStateMapFacts stateMaps; /**< PrepareWithMaps 提交的值副本，不是实际图存储。 */
 };
 
-/* 单例持有记录数组和证明数组；manager 借用 records.data()，故析构前必须
- * 先确保无记录/lease，再撤销 manager。所有访问由 global_mutex 串行化。 */
+/**
+ * ## Summary
+ * 进程唯一的 facade 实现对象，拥有配置快照、记录/证明 vector 和 core manager 外壳。
+ *
+ * ## Fields
+ * manager 借用 records.data()；proofs 与记录按 codeIdentity 关联。
+ * state 控制公开入口是否可操作；当前 machineCodeAvailable 固定 false，
+ * fallbackAvailable 来自注册 options；backendIdentity 是进程内标量摘要。
+ *
+ * ## Constraints and lifecycle
+ * 全部字段由 global_mutex 保护；manager 不拥有 records 存储。
+ * Shutdown 前必须先排空/收集 records、确认无 lease，再 Deinit 解除借用，
+ * 最后才能析构 vectors。调用方不得持有 HostImpl 裸指针越过锁。
+ *
+ * ## References
+ * @see global_mutex
+ * @see global_impl
+ * @see require_impl
+ * @see ZrJit_Host_Register
+ * @see ZrJit_Host_TryShutdown
+ */
 struct HostImpl {
-    SZrHostJitOptions options{};
-    std::vector<SZrHostJitCodeRecord> records;
-    std::vector<SZrJitPublicationProof> proofs;
-    SZrHostJitCodeManager manager{};
-    EZrJitHostState state = ZR_JIT_HOST_STATE_UNINITIALIZED;
-    TZrBool machineCodeAvailable = ZR_FALSE;
-    TZrBool fallbackAvailable = ZR_FALSE;
-    TZrUInt64 backendIdentity = 0u;
+    SZrHostJitOptions options{}; /**< Register 时复制的配置；内部不借用调用方内存。 */
+    std::vector<SZrHostJitCodeRecord> records; /**< manager 借用其固定 data() 地址。 */
+    std::vector<SZrJitPublicationProof> proofs; /**< 与未收集记录关联的 facade 证明。 */
+    SZrHostJitCodeManager manager{}; /**< 只管理 records 中的 core 元数据与 lease 计数。 */
+    EZrJitHostState state = ZR_JIT_HOST_STATE_UNINITIALIZED; /**< 锁保护的生命周期状态。 */
+    TZrBool machineCodeAvailable = ZR_FALSE; /**< 当前无 provider，保持 false。 */
+    TZrBool fallbackAvailable = ZR_FALSE; /**< 从注册配置复制的 ExecBC fallback 能力。 */
+    TZrUInt64 backendIdentity = 0u; /**< 由目标/profile 派生的非零进程内身份值。 */
 };
 
-/* 公共 API 与 descriptor 回调共享同一锁，以免注销时留下借用的 HostImpl。 */
+/**
+ * ## Summary
+ * 返回保护 JIT singleton、manager 和 proof 容器的唯一进程级互斥量。
+ *
+ * ## Returns
+ * @return 返回函数静态存储的 mutex 借用引用；调用方不拥有且不得销毁它。
+ *
+ * ## Constraints and lifecycle
+ * 共享状态访问者必须在持锁期间完成读取或变更；锁采用非递归 std::mutex，
+ * 不得在已持锁路径再次调用会取同一锁的公开 API。
+ *
+ * ## References
+ * @see global_impl
+ * @see require_impl
+ * @see fill_descriptor
+ * @see ZrJit_Host_Register
+ */
 std::mutex &global_mutex() {
     static std::mutex mutex;
     return mutex;
 }
 
-/* 只有 Register 发布候选对象；TryShutdown 在 core 记录完全回收后释放它。 */
+/**
+ * ## Summary
+ * 返回保存可选 JIT facade singleton 的唯一 owning slot。
+ *
+ * ## Returns
+ * @return 返回函数静态 std::unique_ptr 的可变引用；生命周期覆盖进程。
+ *
+ * ## Constraints and lifecycle
+ * 所有读写必须先持 global_mutex。Register 在全部初始化成功后发布对象；
+ * TryShutdown 只有在 manager 记录/lease 排空并 Deinit 后才 reset。
+ *
+ * ## References
+ * @see global_mutex
+ * @see require_impl
+ * @see ZrJit_Host_Register
+ * @see ZrJit_Host_TryShutdown
+ */
 std::unique_ptr<HostImpl> &global_impl() {
     static std::unique_ptr<HostImpl> impl;
     return impl;
 }
 
-/* Register 使用 core ExecIR 诊断，而其余 facade API 使用 JIT 诊断。 */
+/**
+ * ## Summary
+ * 清理 Register 使用的 core ExecIR 诊断对象。
+ *
+ * ## Parameters
+ * @param[out] diagnostic 可空；非空时归零并将 code 设为 NONE。
+ *
+ * ## Returns
+ * 无返回值；空指针不产生副作用。
+ *
+ * ## Constraints and lifecycle
+ * 只初始化调用方值对象，不拥有或分配诊断存储；其协议与其余 JIT diagnostic 不同。
+ *
+ * ## References
+ * @see set_exec_diagnostic_for_host
+ * @see ZrJit_Host_Register
+ */
 void clear_execution_diagnostic(SZrExecIrDiagnostic *diagnostic) {
     if (diagnostic != ZR_NULL) {
         std::memset(diagnostic, 0, sizeof(*diagnostic));
@@ -93,7 +196,24 @@ void clear_execution_diagnostic(SZrExecIrDiagnostic *diagnostic) {
     }
 }
 
-/* 可选诊断先归零，防止一次成功调用遗留上次失败的字段。 */
+/**
+ * ## Summary
+ * 将可选 facade 诊断重置为成功态，供入口和成功转换路径复用。
+ *
+ * ## Parameters
+ * @param[out] diagnostic 可空；非空时归零所有字段并将 facade/core status 置为 OK。
+ *
+ * ## Returns
+ * 无返回值；空诊断是 no-op。
+ *
+ * ## Constraints and lifecycle
+ * 只写本次调用者的诊断对象；不触碰共享状态。
+ *
+ * ## References
+ * @see fail_jit_with_core
+ * @see core_operation
+ * @see ZrJit_Host_DiagnosticInit
+ */
 void clear_jit_diagnostic(SZrJitHostDiagnostic *diagnostic) {
     if (diagnostic != ZR_NULL) {
         std::memset(diagnostic, 0, sizeof(*diagnostic));
@@ -102,7 +222,30 @@ void clear_jit_diagnostic(SZrJitHostDiagnostic *diagnostic) {
     }
 }
 
-/* 映射失败时保留 core 状态及 hash 差异，供调用方定位拒绝的契约字段。 */
+/**
+ * ## Summary
+ * 同时写入 facade 状态、原始 core 状态及可选差异上下文。
+ *
+ * ## Parameters
+ * @param[out] diagnostic 可空的 facade 诊断。
+ * @param[in] status 向 facade 调用方返回的分类。
+ * @param[in] coreStatus 触发映射的原始 core 状态；facade 自身错误使用 core OK。
+ * @param[in] expected 32 位期望字段。
+ * @param[in] actual 32 位实际字段。
+ * @param[in] expectedHash 64 位期望摘要。
+ * @param[in] actualHash 64 位实际摘要。
+ * @param[in] sourceIndex core 或 facade 报告的来源编号。
+ *
+ * ## Returns
+ * @return 原样返回 @p status；诊断为空时仍返回该状态。
+ *
+ * ## Constraints and lifecycle
+ * 不清理诊断中其他预先存在字段；公开调用方通常先经 clear_jit_diagnostic。
+ *
+ * ## References
+ * @see fail_jit
+ * @see map_core_status
+ */
 EZrJitHostStatus fail_jit_with_core(SZrJitHostDiagnostic *diagnostic,
                                     EZrJitHostStatus status,
                                     EZrHostJitStatus coreStatus,
@@ -123,7 +266,29 @@ EZrJitHostStatus fail_jit_with_core(SZrJitHostDiagnostic *diagnostic,
     return status;
 }
 
-/* facade 自己发现的失败不伪造 core 错误。 */
+/**
+ * ## Summary
+ * 记录由 facade 自己发现的失败，并将 coreStatus 保持为 OK。
+ *
+ * ## Parameters
+ * @param[out] diagnostic 可空的调用方诊断。
+ * @param[in] status facade 的失败状态。
+ * @param[in] expected 32 位期望字段。
+ * @param[in] actual 32 位实际字段。
+ * @param[in] expectedHash 64 位期望摘要。
+ * @param[in] actualHash 64 位实际摘要。
+ * @param[in] sourceIndex 可选来源索引。
+ *
+ * ## Returns
+ * @return 返回 facade status；诊断非空时经 fail_jit_with_core 写入。
+ *
+ * ## Constraints and lifecycle
+ * 只写诊断，不更改 HostImpl 或 core manager。
+ *
+ * ## References
+ * @see fail_jit_with_core
+ * @see prepare_locked
+ */
 EZrJitHostStatus fail_jit(SZrJitHostDiagnostic *diagnostic,
                           EZrJitHostStatus status,
                           TZrUInt32 expected = 0u,
@@ -136,7 +301,29 @@ EZrJitHostStatus fail_jit(SZrJitHostDiagnostic *diagnostic,
                               sourceIndex);
 }
 
-/* core 的验证/生命周期错误必须映射到公开状态，同时保留原始 coreStatus。 */
+/**
+ * ## Summary
+ * 把 core manager/validator 状态映射到 facade 枚举，并保留原 core 状态和差异。
+ *
+ * ## Parameters
+ * @param[in] status core 返回状态。
+ * @param[out] diagnostic 可空 facade 输出。
+ * @param[in] coreDiagnostic 可空的 core 差异快照；不转移所有权。
+ *
+ * ## Returns
+ * @return 成功映射 OK 为 facade OK；已知错误使用对应 facade 值；未显式列出的 core
+ * 状态当前回落到 INVALID_STATE，并仍保留 coreStatus。
+ *
+ * ## Constraints and lifecycle
+ * 不调用 core、不修改 manager。TODO: ABI_MISMATCH/LAYOUT_MISMATCH 当前落到
+ * INVALID_STATE；需核对 Register / ValidateCompileRequest 的可达输入及稳定诊断分类，
+ * 再决定是否增加 facade 状态映射。
+ *
+ * ## References
+ * @see fail_jit_with_core
+ * @see ZrJit_Host_Register
+ * @see ZrJit_Host_ValidateCompileRequest
+ */
 EZrJitHostStatus map_core_status(EZrHostJitStatus status,
                                   SZrJitHostDiagnostic *diagnostic,
                                   const SZrHostJitDiagnostic *coreDiagnostic) {
@@ -209,9 +396,6 @@ EZrJitHostStatus map_core_status(EZrHostJitStatus status,
         case ZR_HOST_JIT_STATUS_INVALID_STATE:
             mapped = ZR_JIT_HOST_STATUS_INVALID_STATE;
             break;
-        /* TODO: ABI_MISMATCH/LAYOUT_MISMATCH 未单列，当前落 INVALID_STATE；
-         * Register/ValidateCompileRequest 的合法可达输入与公开诊断分类尚未核实；
-         * 下一步从 Register 与 ValidateCompileRequest 核 core 前提、facade/ExecIR 分类约定。 */
         case ZR_HOST_JIT_STATUS_OK:
         default:
             mapped = ZR_JIT_HOST_STATUS_INVALID_STATE;
@@ -221,7 +405,27 @@ EZrJitHostStatus map_core_status(EZrHostJitStatus status,
                               expectedHash, actualHash, sourceIndex);
 }
 
-/* 仅在持有 global_mutex 后使用；返回的裸指针不能越过锁的生命周期。 */
+/**
+ * ## Summary
+ * 在已持有 global_mutex 的前提下取得当前 REGISTERED 实例。
+ *
+ * ## Parameters
+ * @param[out] out 可空；成功时接收 HostImpl 借用指针，失败时清为 null。
+ * @param[out] diagnostic 可空；实例不存在或非 REGISTERED 时写 NOT_REGISTERED。
+ *
+ * ## Returns
+ * @return 当前单例可用时返回 OK，否则返回 NOT_REGISTERED。
+ *
+ * ## Constraints and lifecycle
+ * 调用者必须先持 global_mutex，并保持锁直到所有 HostImpl 访问结束；
+ * 返回指针不拥有对象、不可越锁保存。该 helper 本身不加锁。
+ *
+ * ## References
+ * @see global_mutex
+ * @see global_impl
+ * @see ZrJit_Host_QueryInfo
+ * @see query_target
+ */
 EZrJitHostStatus require_impl(HostImpl **out,
                               SZrJitHostDiagnostic *diagnostic) {
     std::unique_ptr<HostImpl> &impl = global_impl();
@@ -233,7 +437,26 @@ EZrJitHostStatus require_impl(HostImpl **out,
     return ZR_JIT_HOST_STATUS_OK;
 }
 
-/* 正常 core 操作重置诊断，失败统一转成 facade 可观察状态。 */
+/**
+ * ## Summary
+ * 把一次 core record manager 调用结果统一转换为 facade 结果。
+ *
+ * ## Parameters
+ * @param[in] status core 操作的返回码。
+ * @param[out] diagnostic 可空的 facade 诊断。
+ * @param[in] coreDiagnostic 可空的 core 诊断快照。
+ *
+ * ## Returns
+ * @return core 成功时清理 facade 诊断并返回 OK；失败时由 map_core_status 转换。
+ *
+ * ## Constraints and lifecycle
+ * 本函数不改变 manager/handle 状态，也不保存诊断指针。
+ *
+ * ## References
+ * @see map_core_status
+ * @see ZrJit_Host_Publish
+ * @see ZrJit_Host_Release
+ */
 EZrJitHostStatus core_operation(EZrHostJitStatus status,
                                  SZrJitHostDiagnostic *diagnostic,
                                  const SZrHostJitDiagnostic *coreDiagnostic) {
@@ -244,7 +467,23 @@ EZrJitHostStatus core_operation(EZrHostJitStatus status,
     return map_core_status(status, diagnostic, coreDiagnostic);
 }
 
-/* 身份只表示本进程的 target/profile，不将执行地址写入可持久化键。 */
+/**
+ * ## Summary
+ * 从已复制的 target/profile 产生非零 backend identity 标量。
+ *
+ * ## Parameters
+ * @param[in] options 当前 HostImpl 持有的注册选项。
+ *
+ * ## Returns
+ * @return 对 architecture、targetTripleHash 和 layoutHash 混合后返回非零值。
+ *
+ * ## Constraints and lifecycle
+ * 仅供本进程诊断/能力标识使用，不是密码学 hash、跨进程稳定缓存键或执行地址。
+ *
+ * ## References
+ * @see ZrJit_Host_Register
+ * @see ZrJit_Host_QueryInfo
+ */
 TZrUInt64 backend_identity(const SZrHostJitOptions &options) {
     TZrUInt64 value = 0x5a524a4954000001ULL;
     value ^= ((TZrUInt64)options.target.architecture << 8u);
@@ -253,7 +492,23 @@ TZrUInt64 backend_identity(const SZrHostJitOptions &options) {
     return value == 0u ? 1u : value;
 }
 
-/* 从缓存预算导出 core 记录容量，并限制单次注册的 C++ 分配上界。 */
+/**
+ * ## Summary
+ * 将 codeCacheBytes 换算为固定数量的 core metadata record 槽。
+ *
+ * ## Parameters
+ * @param[in] options Register 已验证的选项快照。
+ *
+ * ## Returns
+ * @return 预算小于一个 record 时返回 0；否则向下取整并将容量截在 4096 个槽。
+ *
+ * ## Constraints and lifecycle
+ * 该预算用于 vector metadata 槽，不是可执行代码 cache 大小；结果在 Register 分配前使用。
+ *
+ * ## References
+ * @see ZrJit_Host_Register
+ * @see SZrHostJitCodeRecord
+ */
 TZrUInt32 record_capacity(const SZrHostJitOptions &options) {
     const TZrUInt32 recordSize = (TZrUInt32)sizeof(SZrHostJitCodeRecord);
     if (recordSize == 0u || options.codeCacheBytes < recordSize) return 0u;
@@ -262,7 +517,26 @@ TZrUInt32 record_capacity(const SZrHostJitOptions &options) {
     return std::min<TZrUInt32>(capacity, 4096u);
 }
 
-/* core backend service 只获得可复制的回调和标量目标契约。 */
+/**
+ * ## Summary
+ * 根据当前 HostImpl 填充 core backend service 可复制的 descriptor 值。
+ *
+ * ## Parameters
+ * @param[in] impl 由调用方持 global_mutex 保护的 REGISTERED 实例。
+ * @param[out] descriptor 调用方提供的非空输出；先清零后写入 ABI/目标/vtable。
+ *
+ * ## Returns
+ * 无返回值；结果通过 descriptor 交付。
+ *
+ * ## Constraints and lifecycle
+ * descriptor 的回调函数是静态代码，userData 清空，不借用 impl；复制值不会注册到
+ * service，也不会延长 impl 生命周期。operation mask 是契约掩码，不是 provider 证明。
+ *
+ * ## References
+ * @see ZrJit_Host_GetDescriptor
+ * @see query_target
+ * @see destroy_backend
+ */
 void fill_descriptor(const HostImpl &impl,
                      SZrExecutionBackendDescriptor *descriptor) {
     std::memset(descriptor, 0, sizeof(*descriptor));
@@ -290,7 +564,27 @@ void fill_descriptor(const HostImpl &impl,
     descriptor->userData = ZR_NULL;
 }
 
-/* descriptor 回调使用 core backend service 的诊断类型，而非 facade 类型。 */
+/**
+ * ## Summary
+ * 清零并填充 core execution backend callback 的诊断结构。
+ *
+ * ## Parameters
+ * @param[out] diagnostic 可空的 core service 输出。
+ * @param[in] status callback 的 core backend 结果。
+ * @param[in] expected 32 位期望/类别字段。
+ * @param[in] actual 32 位实际/类别字段。
+ *
+ * ## Returns
+ * 无返回值；空诊断时不写入。
+ *
+ * ## Constraints and lifecycle
+ * 先清零整份结构；此 helper 参数限制为 32 位，因此不得用它承载完整 64 位 hash。
+ *
+ * ## References
+ * @see query_target
+ * @see compile_async
+ * @see lookup_entry
+ */
 void fill_backend_diagnostic(SZrExecutionBackendDiagnostic *diagnostic,
                              EZrExecutionBackendStatus status,
                              TZrUInt32 expected = 0u,
@@ -303,7 +597,34 @@ void fill_backend_diagnostic(SZrExecutionBackendDiagnostic *diagnostic,
     }
 }
 
-/* 服务选择目标时查询能力；当前无机器码 provider，拒绝后由服务决定 fallback。 */
+/**
+ * ## Summary
+ * 响应 core service 的 target-selection callback，检查 target 类别、操作位和注册摘要。
+ *
+ * ## Parameters
+ * @param[in] target service 提供的目标快照；必须非空且 kind 为 HOST_JIT。
+ * @param[in] requiredOperations 请求操作集合；未知位被拒绝。
+ * @param[in] userData descriptor 预留上下文；本实现忽略，因为 descriptor 不借用 HostImpl。
+ * @param[out] diagnostic 可空的 core backend 诊断。
+ *
+ * ## Returns
+ * @return 已注销或目标无效时报告不可用/不支持；ABI、triple 或 layout 不匹配时报契约错误；
+ * 当前机器码能力为 false，因此所有匹配目标仍返回 BACKEND_UNAVAILABLE。
+ *
+ * ## Constraints and lifecycle
+ * 通过复制 descriptor 中的静态回调进入；持 global_mutex 后重新查 singleton，
+ * 不保存 target/userData。service 可据不可用结果决定 fallback。
+ * BUG: layoutHash 比较使用完整 64 位值，但错误诊断经 32 位 fill_backend_diagnostic
+ * 参数截断。可达路径是 GetDescriptor 后直接调用 vtable.queryTarget，并传入仅高 32
+ * 位不同的 layoutHash：返回 CONTRACT_MISMATCH，却无法在 expected/actual 诊断中区分。
+ * 修正入口应为 fill_backend_diagnostic 的哈希宽度契约及本 callback。
+ *
+ * ## References
+ * @see fill_descriptor
+ * @see require_impl
+ * @see fill_backend_diagnostic
+ * @see tests/core/test_ssa_host_jit_optional.c
+ */
 EZrExecutionBackendStatus query_target(
         const SZrExecutionBackendTarget *target,
         TZrUInt32 requiredOperations,
@@ -335,9 +656,7 @@ EZrExecutionBackendStatus query_target(
     if (target->abiVersion != impl->options.target.abiVersion ||
         target->targetTripleHash != impl->options.target.targetTripleHash ||
         target->layoutHash != impl->options.target.layoutHash) {
-        /* BUG: 对外诊断字段是 64 位，但这里把 layout hash 截为 32 位；
-         * 通过 GetDescriptor 取得回调后传入仅高 32 位不同的 target，
-         * 会返回 CONTRACT_MISMATCH，却显示相同的 expected/actual。 */
+        /* BUG 证据见 callback 文档：该 helper 的两个值参数只有 32 位。 */
         fill_backend_diagnostic(diagnostic,
                                 ZR_EXECUTION_BACKEND_STATUS_CONTRACT_MISMATCH,
                                 (TZrUInt32)impl->options.target.layoutHash,
@@ -354,7 +673,27 @@ EZrExecutionBackendStatus query_target(
     return ZR_EXECUTION_BACKEND_STATUS_OK;
 }
 
-/* 即使被直接调用，也不向服务发布伪造的 completedCode。 */
+/**
+ * ## Summary
+ * 实现 descriptor 的 compileAsync 回调；当前 adapter 没有编译 provider。
+ *
+ * ## Parameters
+ * @param[in] invocation 非空的 service 编译请求；本实现只检查其是否存在。
+ * @param[in] userData 未使用的 descriptor context。
+ * @param[out] completedCode 可空；非空时先清零，绝不伪造已编译结果。
+ * @param[out] diagnostic 可空的 service 诊断。
+ *
+ * ## Returns
+ * @return invocation 为空时 INVALID_ARGUMENT；否则 BACKEND_UNAVAILABLE。
+ *
+ * ## Constraints and lifecycle
+ * 不创建异步任务、代码缓存或 machine code；无资源需取消或释放。
+ *
+ * ## References
+ * @see fill_descriptor
+ * @see cancel_compile
+ * @see ZrJit_Host_Compile
+ */
 EZrExecutionBackendStatus compile_async(
         const SZrExecutionBackendCompileInvocation *invocation,
         TZrPtr userData,
@@ -373,7 +712,25 @@ EZrExecutionBackendStatus compile_async(
     return ZR_EXECUTION_BACKEND_STATUS_BACKEND_UNAVAILABLE;
 }
 
-/* facade 没有可取消的异步编译资源；取消回调只履行 vtable 协议。 */
+/**
+ * ## Summary
+ * 满足 descriptor cancelCompile vtable 的无工作取消回调。
+ *
+ * ## Parameters
+ * @param[in] ticket 非空的 service 编译票据；当前实现不解释其内容。
+ * @param[in] userData 未使用的 descriptor context。
+ * @param[out] diagnostic 可空的 service 诊断。
+ *
+ * ## Returns
+ * @return 非空票据返回 OK；空指针返回 INVALID_ARGUMENT。
+ *
+ * ## Constraints and lifecycle
+ * 当前 compileAsync 不启动异步任务，因此成功表示无待取消工作，不释放票据或其他资源。
+ *
+ * ## References
+ * @see compile_async
+ * @see fill_descriptor
+ */
 EZrExecutionBackendStatus cancel_compile(
         const SZrExecutionCompileTicket *ticket,
         TZrPtr userData,
@@ -388,7 +745,26 @@ EZrExecutionBackendStatus cancel_compile(
     return ZR_EXECUTION_BACKEND_STATUS_OK;
 }
 
-/* descriptor 路径也必须保持无入口地址的保证。 */
+/**
+ * ## Summary
+ * 实现 descriptor lookupEntry callback，并保证当前 provider 不泄露入口地址。
+ *
+ * ## Parameters
+ * @param[in] code 非空 service 代码元数据；只检查是否存在。
+ * @param[out] entryAddress 非空原生地址输出；非空时先置零。
+ * @param[in] userData 未使用的 descriptor context。
+ * @param[out] diagnostic 可空的 service 诊断。
+ *
+ * ## Returns
+ * @return 参数无效时 INVALID_ARGUMENT；合法输入在当前无 provider 时返回 BACKEND_UNAVAILABLE。
+ *
+ * ## Constraints and lifecycle
+ * 从不生成或返回可执行地址；空输出保持零，调用方不得执行零值。
+ *
+ * ## References
+ * @see fill_descriptor
+ * @see ZrJit_Host_LookupEntry
+ */
 EZrExecutionBackendStatus lookup_entry(
         const SZrExecutionBackendCodeInfo *code,
         TZrNativePtr *entryAddress,
@@ -407,7 +783,28 @@ EZrExecutionBackendStatus lookup_entry(
     return ZR_EXECUTION_BACKEND_STATUS_BACKEND_UNAVAILABLE;
 }
 
-/* 服务查询发布快照中的 hash；它不是实际平台图注册的读取接口。 */
+/**
+ * ## Summary
+ * 从 service 提供的 code-info 值快照选择并返回一种 map/import 摘要。
+ *
+ * ## Parameters
+ * @param[in] code 非空发布元数据快照；调用期间只读借用。
+ * @param[in] mapKind 指定 roots、EH、debug、deopt 或 imports 字段。
+ * @param[out] mapHash 非空输出；入口先清零，成功后写入选定摘要。
+ * @param[in] userData 未使用的 descriptor context。
+ * @param[out] diagnostic 可空的 service 诊断。
+ *
+ * ## Returns
+ * @return 参数或 kind 非法时 INVALID_ARGUMENT；选定摘要为零时 MAP_REGISTRATION_INCOMPLETE；
+ * 非零快照值返回 OK。
+ *
+ * ## Constraints and lifecycle
+ * 只读取 code-info 中的标量，不读取真实图注册或检查摘要内容；值由调用方提供。
+ *
+ * ## References
+ * @see fill_descriptor
+ * @see ZrJit_Host_ValidateStateMaps
+ */
 EZrExecutionBackendStatus query_map(
         const SZrExecutionBackendCodeInfo *code,
         EZrExecutionBackendMapKind mapKind,
@@ -440,7 +837,25 @@ EZrExecutionBackendStatus query_map(
     return ZR_EXECUTION_BACKEND_STATUS_OK;
 }
 
-/* 当前没有真实平台图可注销；core service 仍需可调用的图注销回调。 */
+/**
+ * ## Summary
+ * 实现 descriptor unregisterMaps callback；当前无平台图注册资源需要注销。
+ *
+ * ## Parameters
+ * @param[in] code 非空 service 代码元数据，仅用于验证调用形状。
+ * @param[in] userData 未使用的 descriptor context。
+ * @param[out] diagnostic 可空的 service 诊断。
+ *
+ * ## Returns
+ * @return code 非空返回 OK；空指针返回 INVALID_ARGUMENT。
+ *
+ * ## Constraints and lifecycle
+ * 本回调不修改 maps、code record 或平台状态；core service 的记录退休仍由其自己的流程完成。
+ *
+ * ## References
+ * @see fill_descriptor
+ * @see retire_code
+ */
 EZrExecutionBackendStatus unregister_maps(
         const SZrExecutionBackendCodeInfo *code,
         TZrPtr userData,
@@ -455,7 +870,25 @@ EZrExecutionBackendStatus unregister_maps(
     return ZR_EXECUTION_BACKEND_STATUS_OK;
 }
 
-/* 本适配层没有可执行内存；facade 的记录退休另由 core manager 管理。 */
+/**
+ * ## Summary
+ * 实现 descriptor retire callback；本适配层没有需要释放的可执行内存。
+ *
+ * ## Parameters
+ * @param[in] code 非空 service 代码元数据，仅用于检查调用。
+ * @param[in] userData 未使用的 descriptor context。
+ * @param[out] diagnostic 可空的 service 诊断。
+ *
+ * ## Returns
+ * @return code 非空返回 OK；空指针返回 INVALID_ARGUMENT。
+ *
+ * ## Constraints and lifecycle
+ * 此 callback 不退休 facade handle、不更改 core manager lease；公开 Evict API 负责记录状态。
+ *
+ * ## References
+ * @see fill_descriptor
+ * @see ZrJit_Host_Evict
+ */
 EZrExecutionBackendStatus retire_code(
         const SZrExecutionBackendCodeInfo *code,
         TZrPtr userData,
@@ -470,12 +903,48 @@ EZrExecutionBackendStatus retire_code(
     return ZR_EXECUTION_BACKEND_STATUS_OK;
 }
 
-/* descriptor 不拥有单例；注销服务时不得释放仍由显式 Shutdown 管理的状态。 */
+/**
+ * ## Summary
+ * 满足 descriptor destroy vtable 的空操作。
+ *
+ * ## Parameters
+ * @param[in] userData 当前 descriptor 将其设为 null；该参数不会被解引用。
+ *
+ * ## Returns
+ * 无返回值；不修改任何共享状态。
+ *
+ * ## Constraints and lifecycle
+ * descriptor 不拥有 facade singleton，因此 core service 注销 descriptor 不能隐式关闭 JIT；
+ * singleton 仅由显式 TryShutdown/Shutdown 管理。
+ *
+ * ## References
+ * @see fill_descriptor
+ * @see ZrJit_Host_TryShutdown
+ */
 void destroy_backend(TZrPtr userData) {
     (void)userData;
 }
 
-/* Publish 使用准备时保存的证明核对 W^X、图注册标记和代码身份。 */
+/**
+ * ## Summary
+ * 在调用 core Publish 前核对 facade 保存的 publication/proof 不变量。
+ *
+ * ## Parameters
+ * @param[in] proof Prepare 时由 facade 保存的值副本。
+ * @param[out] diagnostic 可空；失败时写入声明缺失或代码身份错误。
+ *
+ * ## Returns
+ * @return 已知 publication/registration 位齐全且 identity、hash 和 operationMask 非零时返回 OK；
+ * W^X、图登记或代码摘要缺失时返回对应 facade 状态。
+ *
+ * ## Constraints and lifecycle
+ * 只验证 proof 中缓存的声明，不检验真实页权限、图内容或 machine code。
+ * proof 生命周期与对应未回收 core record 一致。
+ *
+ * ## References
+ * @see SZrJitPublicationProof
+ * @see ZrJit_Host_Publish
+ */
 EZrJitHostStatus validate_publication_proof(
         const SZrJitPublicationProof &proof,
         SZrJitHostDiagnostic *diagnostic) {
@@ -499,8 +968,34 @@ EZrJitHostStatus validate_publication_proof(
     return ZR_JIT_HOST_STATUS_OK;
 }
 
-/* 调用方持 global_mutex；先对照状态图与发布 hash，再交给 core 建记录。
- * proof 追加失败仅尝试 Evict/Collect 并忽略返回；仍清 handle、返回 CAPACITY，不保证撤销成功。 */
+/**
+ * ## Summary
+ * 持全局锁时验证 map/publication 声明、准备 core record 并登记对应 facade proof。
+ *
+ * ## Parameters
+ * @param[in,out] impl 当前 REGISTERED HostImpl；调用方持 global_mutex。
+ * @param[in] facts 待准备的 publication 值快照。
+ * @param[in] stateMaps 对应四类图与 frame layout 声明。
+ * @param[out] handle 已由公开 wrapper 清空的 core handle 输出。
+ * @param[out] diagnostic 可空的 facade 诊断。
+ *
+ * ## Returns
+ * @return 两组声明与 core prepare 均成功且 proof 追加成功时返回 OK。map 或 publication 不自洽、
+ * core 拒绝或 proof 分配失败时返回对应状态；proof 追加失败分支会尝试 Evict/Collect、
+ * 清空 handle 并返回 CAPACITY，但忽略清理调用结果，不能保证失败回滚已完成。
+ *
+ * ## Constraints and lifecycle
+ * 必须由持 global_mutex 的 wrapper 调用；facts/stateMaps 仅同步借用。
+ * 当前逐一比较四个 map hash 与 publication。TODO: facts.target 由 core 自身校验，
+ * 但此处未和 impl.options.target 比较；核 Prepare/Publish 的目标身份公开约定及未来
+ * provider 绑定要求，避免仅因 Compile 有比较就推断准备阶段契约。
+ *
+ * ## References
+ * @see ZrJit_Host_PrepareWithMaps
+ * @see ZrJit_Host_ValidateStateMaps
+ * @see ZrCore_HostJit_Code_Prepare
+ * @see erase_collected_proofs
+ */
 EZrJitHostStatus prepare_locked(
         HostImpl &impl,
         const SZrHostJitPublicationFacts &facts,
@@ -520,9 +1015,6 @@ EZrJitHostStatus prepare_locked(
         return fail_jit(diagnostic, ZR_JIT_HOST_STATUS_TARGET_MISMATCH,
                         1u, 0u, facts.layoutHash, stateMaps.frameLayoutHash);
     }
-    /* TODO: maps/facts 自洽后 core 验 facts.target；此处未比较 impl.options.target。
-     * Prepare/Publish 是否必须沿用注册目标尚待确认，Compile 则另有 target 比较；
-     * 下一步核 PrepareWithMaps/Publish 公开约定与 provider 的 target 身份绑定要求。 */
     EZrHostJitStatus status = ZrCore_HostJit_Code_Prepare(
             &impl.manager, &facts, handle, &coreDiagnostic);
     if (status != ZR_HOST_JIT_STATUS_OK) {
@@ -540,6 +1032,7 @@ EZrJitHostStatus prepare_locked(
     try {
         impl.proofs.push_back(proof);
     } catch (...) {
+        /* core 记录先于 proof vector 写入；清理可能失败，故返回 CAPACITY 不等于回滚成功。 */
         TZrUInt32 collected = 0u;
         (void)ZrCore_HostJit_Code_Evict(&impl.manager, facts.codeIdentity,
                                         ZR_NULL);
@@ -551,10 +1044,30 @@ EZrJitHostStatus prepare_locked(
     return ZR_JIT_HOST_STATUS_OK;
 }
 
-/* 只清除 core 已经释放的 identity；带 lease 的退休记录仍须留证明。 */
+/**
+ * ## Summary
+ * 移除已经没有非 FREE core record 对应的 publication proofs。
+ *
+ * ## Parameters
+ * @param[in,out] impl 持锁访问的 HostImpl；proof vector 被原地压缩。
+ *
+ * ## Returns
+ * 无返回值；仅保留仍能在记录数组中找到的 codeIdentity。
+ *
+ * ## Constraints and lifecycle
+ * 调用前需完成 core CollectRetired；带 active/retired lease 的记录仍非 FREE，
+ * 因而其 proof 必须保留。操作受 global_mutex 保护。
+ *
+ * ## References
+ * @see ZrJit_Host_Collect
+ * @see ZrJit_Host_TryShutdown
+ * @see SZrJitPublicationProof
+ */
 void erase_collected_proofs(HostImpl &impl) {
     impl.proofs.erase(
             std::remove_if(impl.proofs.begin(), impl.proofs.end(),
+                           /* 只删 records 扫描已不存在或 FREE 的 identity；带 lease 的
+                            * retired record 仍非 FREE，因此本谓词会保留其 proof。 */
                            [&impl](const SZrJitPublicationProof &proof) {
                                for (const SZrHostJitCodeRecord &record : impl.records) {
                                    if (record.state != ZR_HOST_JIT_CODE_FREE &&
@@ -567,7 +1080,26 @@ void erase_collected_proofs(HostImpl &impl) {
             impl.proofs.end());
 }
 
-/* 注册入口沿用 ExecIR 诊断协议，向上层传递映射状态及 core 差异。 */
+/**
+ * ## Summary
+ * 把 facade 注册错误转成既有 ExecIR diagnostic code，并复制 core 差异字段。
+ *
+ * ## Parameters
+ * @param[out] diagnostic 可空的 ExecIR 诊断输出。
+ * @param[in] status facade 注册阶段状态。
+ * @param[in] coreDiagnostic 可空的 core 差异快照。
+ *
+ * ## Returns
+ * 无返回值；由 diagnostic->code 与 source/version/hash 字段交付映射结果。
+ *
+ * ## Constraints and lifecycle
+ * 仅 Register 使用的诊断协议；未知或未专门处理的 facade 状态按 default 分类。
+ * 不修改 HostImpl，也不保留诊断指针。
+ *
+ * ## References
+ * @see clear_execution_diagnostic
+ * @see ZrJit_Host_Register
+ */
 void set_exec_diagnostic_for_host(SZrExecIrDiagnostic *diagnostic,
                                   EZrJitHostStatus status,
                                   const SZrHostJitDiagnostic *coreDiagnostic) {
@@ -708,9 +1240,9 @@ extern "C" EZrJitHostStatus ZrJit_Host_ValidateCompileRequest(
         return diagnostic != ZR_NULL ? diagnostic->status
                                      : ZR_JIT_HOST_STATUS_STATE_MAP_INVALID;
     }
-    /* BUG: 这里只比较 frameLayoutHash；其余四个非零 map hash 若与
-     * publication 对应 hash 不同，直接调用仍返回 OK，Compile 继续返回 fallback。
-     * PrepareWithMaps 的 prepare_locked 则会拒绝同一组不一致的证据。 */
+    /* TODO: 该 validator 只比较 frameLayoutHash；prepare_locked 还逐一比较四图 hash。
+     * 非零但不同的 map hash 可通过本函数并继续得到 fallback。需核 fallback 请求契约是否
+     * 要求与 publication 完全一致，再决定两入口是否统一；当前不能在此承诺四 hash 相等。 */
     if (request->stateMaps.frameLayoutHash != request->publication.layoutHash) {
         return fail_jit(diagnostic, ZR_JIT_HOST_STATUS_TARGET_MISMATCH,
                         1u, 0u, request->publication.layoutHash,
@@ -760,6 +1292,8 @@ extern "C" TZrBool ZrJit_Host_Register(
                                      ZR_NULL);
         return ZR_FALSE;
     }
+    /* 先在局部 candidate 中完成 vector 与 manager 初始化；只有全部成功后才把 owning
+     * unique_ptr 发布到全局 slot，避免其他线程看到半初始化状态。 */
     try {
         std::unique_ptr<HostImpl> candidate(new HostImpl());
         candidate->options = *options;
@@ -820,6 +1354,8 @@ extern "C" EZrJitHostStatus ZrJit_Host_TryShutdown(
     }
     erase_collected_proofs(*impl);
     if (impl->manager.count != 0u || impl->manager.active != ZR_NULL) {
+        /* Deinit 只允许空 manager；区分 lease 阻塞与仍存在的非租用记录，供调用方选
+         * Release 或 Evict/Collect 后重试，而不是释放 records.data() 的借用存储。 */
         TZrBool hasLease = ZR_FALSE;
         for (const SZrHostJitCodeRecord &record : impl->records) {
             if (record.state != ZR_HOST_JIT_CODE_FREE && record.leaseCount != 0u) {
@@ -931,6 +1467,8 @@ extern "C" EZrJitHostStatus ZrJit_Host_Prepare(
         SZrJitHostDiagnostic *diagnostic) {
     SZrJitStateMapFacts stateMaps;
     clear_jit_diagnostic(diagnostic);
+    /* TODO: 与下面两个 facade 输出一样会覆盖旧句柄。调用方须提供空独立槽；
+     * 核对仓内/外使用是否遵守 core Prepare 的 no-active-lease 前置，再确认此 API 契约。 */
     if (handle != ZR_NULL) std::memset(handle, 0, sizeof(*handle));
     if (facts == ZR_NULL || handle == ZR_NULL) {
         return fail_jit(diagnostic, ZR_JIT_HOST_STATUS_INVALID_ARGUMENT);
@@ -956,6 +1494,8 @@ extern "C" EZrJitHostStatus ZrJit_Host_PrepareWithMaps(
         SZrHostJitCodeHandle *handle,
         SZrJitHostDiagnostic *diagnostic) {
     clear_jit_diagnostic(diagnostic);
+    /* TODO: wrapper 不检查 handle 原状态，先清空再校验；空输出/非租用句柄是调用前提，
+     * 复用 lease 时须先保留原句柄并 Release。核对 facade 输出语义和所有调用点。 */
     if (handle != ZR_NULL) std::memset(handle, 0, sizeof(*handle));
     if (facts == ZR_NULL || stateMaps == ZR_NULL || handle == ZR_NULL) {
         return fail_jit(diagnostic, ZR_JIT_HOST_STATUS_INVALID_ARGUMENT);
@@ -983,6 +1523,7 @@ extern "C" EZrJitHostStatus ZrJit_Host_Publish(
         return diagnostic != ZR_NULL ? diagnostic->status
                                      : ZR_JIT_HOST_STATUS_NOT_REGISTERED;
     }
+    /* 谓词只按 handle identity 找准备时保存的副本；core Publish 仍复核句柄身份/状态。 */
     const auto proof = std::find_if(
             impl->proofs.begin(), impl->proofs.end(),
             [handle](const SZrJitPublicationProof &candidate) {
@@ -1016,6 +1557,8 @@ extern "C" EZrJitHostStatus ZrJit_Host_Acquire(
     EZrHostJitStatus status = ZrCore_HostJit_Code_AcquireActive(
             &impl->manager, &acquired, &coreDiagnostic);
     if (status != ZR_HOST_JIT_STATUS_OK) return map_core_status(status, diagnostic, &coreDiagnostic);
+    /* TODO: core 已对新临时槽取得 lease；写入 facade 输出前不检查旧值。
+     * 调用方须提供空独立槽，复用 lease 前保存并 Release；核查 facade 公开输出约定。 */
     *handle = acquired;
     return ZR_JIT_HOST_STATUS_OK;
 }
@@ -1103,6 +1646,8 @@ extern "C" EZrJitHostStatus ZrJit_Host_Compile(
         SZrHostJitCodeHandle *outHandle,
         SZrJitHostDiagnostic *diagnostic) {
     clear_jit_diagnostic(diagnostic);
+    /* TODO: outHandle 即使校验失败也会先清零；调用方必须给独立空槽，
+     * 不得用仍须 Release 的 lease 作输出。核查 facade 与公开 C 输出参数约定是否一致。 */
     if (outHandle != ZR_NULL) std::memset(outHandle, 0, sizeof(*outHandle));
     if (request == ZR_NULL || outHandle == ZR_NULL) {
         return fail_jit(diagnostic, ZR_JIT_HOST_STATUS_INVALID_ARGUMENT);
@@ -1135,6 +1680,8 @@ extern "C" EZrJitHostStatus ZrJit_Host_Compile(
          * an ORC provider can replace this branch without changing callers. */
         return fail_jit(diagnostic, ZR_JIT_HOST_STATUS_BACKEND_UNAVAILABLE);
     }
+    /* 只有请求和注册两层都允许 fallback 时才返回可继续执行 ExecBC 的提示状态，
+     * 否则保持显式 BACKEND_UNAVAILABLE。 */
     if ((request->flags & ZR_JIT_HOST_OPTION_REQUIRE_MACHINE_CODE) != 0u ||
         (request->flags & ZR_JIT_HOST_OPTION_ALLOW_FALLBACK) == 0u ||
         !impl->fallbackAvailable) {

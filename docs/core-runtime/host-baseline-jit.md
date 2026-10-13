@@ -6,16 +6,22 @@ related_code:
   - zr_vm_core/include/zr_vm_core/execution_backend.h
   - zr_vm_jit/include/zr_vm_jit/backend.h
   - zr_vm_jit/src/orc_backend.cpp
+  - zr_vm_jit/src/jit_state_maps.cpp
+  - zr_vm_jit/CMakeLists.txt
   - tests/core/test_ssa_host_baseline_jit.c
   - tests/core/test_ssa_host_jit_optional.c
   - tests/cmake/ssa-tests.cmake
 implementation_files:
   - zr_vm_core/include/zr_vm_core/host_baseline_jit.h
   - zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c
+  - zr_vm_jit/include/zr_vm_jit/backend.h
+  - zr_vm_jit/src/orc_backend.cpp
+  - zr_vm_jit/src/jit_state_maps.cpp
 plan_sources:
   - docs/plans/ssa/10-jit-platforms/02-host-baseline-jit.md
   - docs/plans/ssa/10-jit-platforms/01-backend-service.md
   - "user: 2026-09-13 实现 10.02 host baseline/JIT contract leaf"
+  - docs/code-review/batches/20261013-jit-contracts.md
 tests:
   - tests/core/test_ssa_host_baseline_jit.c
   - tests/core/test_ssa_host_jit_optional.c
@@ -28,7 +34,7 @@ status: implemented-subset
 
 ## 当前实现范围
 
-core 提供 C ABI 的目标、配置、导入与发布声明校验，以及调用方数组内记录的生命周期管理。它不生成机器码，不分配可执行页，不保存入口地址，不执行 GC 或真实图登记。可选 facade 的 provider、proof 与地址资源属于另外的所有者；当前 facade 注册时把 machineCodeAvailable 设为 false（`zr_vm_jit/src/orc_backend.cpp:769`），有无 LLVM 构建探测都不能据此获得机器码能力。
+core 提供 C ABI 的目标、配置、导入与发布声明校验，以及调用方数组内记录的生命周期管理。它不生成机器码，不分配可执行页，不保存入口地址，不执行 GC 或真实图登记。可选 facade 的 provider、proof 与地址资源属于另外的所有者；当前 facade 注册时把 machineCodeAvailable 设为 false（`zr_vm_jit/src/orc_backend.cpp:1303`），有无 LLVM 构建探测都不能据此获得机器码能力。
 
 目标、身份与 hash 是不含执行地址的标量见证，但整个 lifetime 对象并非无指针：manifest 借用数组，manager 借用记录数组，HostJitCodeHandle 借用记录位置。输入在调用期间保持稳定，可写输出与输入、manager/records 使用独立存储，共享诊断与输出由调用方串行化。公共 C++ 链接包裹只提供 C 链接名（`zr_vm_core/include/zr_vm_core/host_baseline_jit.h:23`）。
 
@@ -64,7 +70,11 @@ core 提供 C ABI 的目标、配置、导入与发布声明校验，以及调�
 
 ## 可选 facade 与 SDK 的不同家族
 
-facade 在 global_mutex 内拥有 records vector 与 proof vector，把 records.data 借给 core manager（`zr_vm_jit/src/orc_backend.cpp:773`）。proof追加失败的补偿调用Evict/Collect并清句柄（`zr_vm_jit/src/orc_backend.cpp:544`、`zr_vm_jit/src/orc_backend.cpp:546`）；正常Collect先清core槽再清proof，Shutdown确认core解除借用后才析构单例。GetDescriptor 复制回调且 userData为空，optional测试实际派发queryTarget（`tests/core/test_ssa_host_jit_optional.c:101`）；queryTarget 当前因机器码不可用拒绝（`zr_vm_jit/src/orc_backend.cpp:347`）。Compile只选择fallback或不可用；LookupEntry输出零，不产生机器码入口。
+facade 在 global_mutex 内拥有 records vector 与 proof vector，把 records.data 借给 core manager（`zr_vm_jit/src/orc_backend.cpp:1308`）。proof追加失败的补偿调用Evict/Collect并清句柄（`zr_vm_jit/src/orc_backend.cpp:1037`、`zr_vm_jit/src/orc_backend.cpp:1039`）；补偿调用的返回码被忽略，因此不承诺该失败分支已完成回收。正常Collect先清core槽再清proof，Shutdown确认core解除借用后才析构单例。GetDescriptor 复制静态回调且 userData为空，optional测试实际派发queryTarget（`tests/core/test_ssa_host_jit_optional.c:101`）；queryTarget 重新查单例，目标检查通过后仍因机器码不可用拒绝（`zr_vm_jit/src/orc_backend.cpp:666`）。其他回调有不查询单例的快照/no-op 路径，不能承诺关闭后所有回调都返回不可用。Compile只选择fallback或不可用；LookupEntry输出零，不产生机器码入口。descriptor 副本不延长注册寿命，也没有被该测试注册到 core backend service。
+
+ValidateStateMaps 只检查四种登记位、非零 count/hash 和 frameLayoutHash 的声明关系，不读取图内容。ValidateCompileRequest 会核对 publication 与 frameLayoutHash；prepare_locked 另核对四个图摘要。当前 fallback 请求是否也必须满足四摘要一致仍为 TODO，不能把前置校验成功解释为真实图已登记。诊断为空时 ValidateCompileRequest 的图失败统一返回 STATE_MAP_INVALID；独立 ValidateStateMaps 仍返回其具体拒绝码。SZrJitHostDiagnostic.operation 当前只被清零，没有赋值入口，字段语义仍待核查。
+
+Prepare、PrepareWithMaps、Acquire、Compile 的输出必须使用独立空槽，不能覆盖尚须 Release 的 lease。前两个 wrapper 先清空输出再校验，Acquire 成功后复制新 lease，Compile 即使拒绝也会清空输出；这些输出规则继承 core 的 lease 前提，不据无效调用推断生产缺陷。
 
 HostJitCodeHandle 的 record/codeIdentity/leased 与 SDK service 的 SZrExecutionCodeHandle 不互换。后者有 service/slot/generation/dependency 身份协议（`zr_vm_core/include/zr_vm_core/execution_backend.h:295`），不能把它的防复用或地址 lease 保证搬给本 manager。
 
@@ -74,10 +84,11 @@ HostJitCodeHandle 的 record/codeIdentity/leased 与 SDK service 的 SZrExecutio
 - Prepare/Acquire/Release 的失败诊断有解锁后再读字段路径（`zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:569`、`zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:689`、`zr_vm_core/src/zr_vm_core/execution/host_baseline_jit.c:835`）。当前facade外层串行；公开core直接并发 owner/存储约束未闭合，不宣称所有失败诊断无竞态，也未据此升级BUG。
 - core OPERATION_UNSUPPORTED/ACTIVE_LEASE 当前无producer，仅名称/上层映射；facade 同名状态属另一枚举，未来或外部生产协议待核。
 - StatusName 当前没有仓库正向调用，仓库外公开ABI用途未知；返回借用静态字符串。
-- facade缺ABI/LAYOUT专门映射、Prepare是否必须与注册target相同的诊断/使用契约仍需有限确认。旧表BUG没有在本轮得到完整legal证明或复现，不继承其信用。
+- facade缺ABI/LAYOUT专门映射、Prepare是否必须与注册target相同的诊断/使用契约仍需有限确认。旧表BUG没有在本轮得到完整合法路径证明或复现，不继承其信用。四图摘要的前置校验差异、operation 字段、输出空槽和 ORC 探测门禁的逐项核查入口见本次 JIT 台账。
+- BUG: query_target 比较完整 64 位 layoutHash 后，通过 32 位 helper 参数填入 service 诊断。Register 成功、GetDescriptor 取得回调、直接传入仅 layoutHash 高 32 位不同的 HOST_JIT target 时，返回 CONTRACT_MISMATCH，但 expected/actual 相同，丢失区别值（`zr_vm_jit/src/orc_backend.cpp:656`、`:660`；`tests/core/test_ssa_host_jit_optional.c:101` 证明直接回调入口）。该结论来自完整可达路径和字段宽度证据，现有测试没有执行这一高位差异用例；本轮只标记。
 
 ## 测试、构建与验证范围
 
-baseline fixture由 `tests/cmake/ssa-tests.cmake:1321` 编译本C与测试，CTest在1327登记；optional fixture在host开关下链接JIT目标，在1345登记。core普通模块经CommonMacros递归C glob纳入本源，无需LLVM。
+baseline fixture由 `tests/cmake/ssa-tests.cmake:1325` 编译本C与测试，CTest在1332登记；optional fixture在host开关下链接JIT目标，在1350登记。core普通模块经CommonMacros递归C glob纳入本源，无需LLVM。
 
-baseline源码覆盖target/选项/导入/发布声明拒绝、重复身份、lease overflow注入、manager count注入、退休后Deinit保留、归还后Collect；optional源码覆盖descriptor直接派发、fallback/零入口和Shutdown顺序。assert须启用；此处描述源码覆盖，本轮仅静态审查与只读patch检查，没有重新运行编译、native、GC、provider或两架构机器码测试。实际代码页/W^X系统调用、图内容与平台登记、ORC resolver、lowering与性能仍不在本模块已实现信用内。计划与历史验收文件是设计/历史来源，不替代当前运行证据。
+baseline源码覆盖target/选项/导入/发布声明拒绝、重复身份、lease overflow注入、manager count注入、退休后Deinit保留、归还后Collect；optional源码覆盖descriptor直接派发、fallback/零入口和Shutdown顺序。assert须启用。2026-10-13 在实际 checkout 使用 MSVC 19.44 Debug、显式 /UNDEBUG 的定向 driver，修改前 configure/build 和 optional CTest 均退出0，测试1/1通过；最终注释版本复用同一构建目录与配置执行 clean-first 重编译，日志确认实际编译，build/CTest也均退出0，optional测试1/1通过，四个模块源文件、测试及所用core实现的SHA在运行前后保持。三个JIT C/C++文件的Clang raw lexer非注释token及行首标志一致，CMake非注释行一致；最终结果与词法证据分别登记于 `E:/cargo-targets/zr_vm/reports/first-party-review-01a13463/jit-summary-recompile-after-results.json` 和 `jit-summary-comment-equivalence.json`。本次没有重跑 core-only baseline fixture；其上述项目仅为源码覆盖证据。WSL启动实际返回 E_ACCESSDENIED，不能据 Windows 结果授予 Linux 或两架构验证信用。实际代码页/W^X系统调用、图内容与平台登记、ORC resolver、lowering与性能仍不在本模块已实现信用内。计划与历史验收文件是设计/历史来源，不替代当前运行证据。
