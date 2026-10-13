@@ -2,7 +2,16 @@
 
 #include "zr_vm_library/native_registry.h"
 
-/* 运行期描述符集中在 descriptor.c，使内建注册和插件入口共享同一静态地址。 */
+/**
+ * ## Summary
+ * 描述符定义集中在 descriptor.c，使内建注册和共享插件入口返回同一静态对象。
+ * ## Returns
+ * @return descriptor.c 中唯一静态描述符的借用只读地址；不分配或注册。
+ * ## Constraints and lifecycle
+ * 此跨翻译单元访问器只在本模块内部使用；描述符地址由 provider 静态存储期持有。
+ * ## References
+ * @ref ZrVmLibIteration_Runtime_GetModuleDescriptor; @ref g_iteration_module_descriptor; @ref ZrVmLibIteration_GetModuleDescriptor.
+ */
 const ZrLibModuleDescriptor *ZrVmLibIteration_Runtime_GetModuleDescriptor(void);
 
 const ZrLibModuleDescriptor *ZrVmLibIteration_GetModuleDescriptor(void) {
@@ -14,13 +23,19 @@ TZrBool ZrVmLibIteration_Register(SZrGlobalState *global) {
         return ZR_FALSE;
     }
 
-    // TODO: RegisterModule 内部也执行 Attach；需核对这里的提前附着是否承载独立的生命周期约束。
-    // 核查入口：native_binding_support.c 的注册流程及容器重复注册测试。
+    /*
+     * ## Summary
+     * 先检查并附着全局原生注册表，再提交本模块描述符。
+     * ## Constraints and lifecycle
+     * RegisterModule 的记录路径也会 Attach；已附着时 Attach 返回成功。若后续注册失败，此处不撤销已建立的注册表。
+     * 保留显式 Attach 的既有返回检查，不将它解释为独立的重复注册语义。
+     * ## References
+     * ZrLibrary_NativeRegistry_Attach; ZrLibrary_NativeRegistry_RegisterModule.
+     */
     if (!ZrLibrary_NativeRegistry_Attach(global)) {
         return ZR_FALSE;
     }
 
-    /* RegisterModule 负责重复注册处理；此处仅发布借用的静态描述符。 */
     return ZrLibrary_NativeRegistry_RegisterModule(global, ZrVmLibIteration_GetModuleDescriptor());
 }
 
