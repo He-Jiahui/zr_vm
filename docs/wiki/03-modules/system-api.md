@@ -251,3 +251,22 @@ callback 仍成功，导致已有值被交付成缺失标记。这两项有完�
 环境查询、nullable metadata、长值同桶读取和分配失败没有执行信用。逐单元依据见
 [Env 审查批次](../../code-review/batches/20261013-system-env-contracts.md)和
 [Env 台账](../../code-review/coverage/zr_vm_lib_system_env.tsv)。
+
+
+## Console 调用、资源与失败边界
+
+`print` / `printLine` / `printError` / `printErrorLine` 注册元数均为 1，`read` / `readLine` 为 0；数量错误在 callback 前由 native dispatcher 抛 `ArityError`。非空 context 必须关联有效 VM state，result 必须是当前调用的可写槽；回调只同步借用它们。打印会转换第一个参数，可能执行用户 `toString` 并重入或抛出 VM 异常；异常发生后不继续日志提交。正常 true 仅表示日志 API 调用完成，返回值仍为 null，不保证操作系统写入或持久化成功。
+
+日志默认 FILE sink 先按 channel 写 stdout/stderr，随后同步通知宿主 observer，print/printLine 传递 INFO/STDOUT/RESULT，printError/printErrorLine 传递 ERROR/STDERR/DIAGNOSTIC；observer 不取代默认输出。observer 的消息指针仅在本次同步通知内有效，需保留时自行复制。输入函数开始前只刷新默认 stdout/stderr，不触发 observer 的 flush。
+
+`read` 按首字节候选长度消费一个 UTF-8 序列，严格 decoder 再验证完整码点；非法前缀、截断或非法编码会抛 VM 错误，已经消费的输入不回滚。首字节 EOF 返回 null。`readLine` 消费到 LF 或 EOF，删除 LF，并对两种结束都删除一个尾 CR；空行返回空字符串，未消费任何字节的 EOF 返回 null。输入来自进程共享 stdin，本模块没有覆盖整个码点/行的锁，宿主需要串行化并发读取；fgetc 可能无限等待。
+
+**BUG:** 打印对显式字符串字节长度验证 UTF-8，但 `Log_Write` 默认 sink 用 strlen、换行路径以 `%s` 格式化；合法嵌入 NUL 会使其后文本从默认输出中消失。合法脚本入口为 lexer.c:262-275 的 `\x00` 转义，:51-78 的 save_char 保留零字节并增加显式长度，:302 把 bytes/length 交给 parser/parser_ownership.c:463-505 的 helper，后者在 :488 原样调用 String_Create。输出消费证据为 Console 共用 print helper、`value/value.c:319-363` 的转换路径及 `base/log.c:75-160` 的日志消费；非换行 observer 仍收到原 C 指针，不能据默认 sink 的截断推断宿主 observer 的全部处理行为。
+
+**BUG:** 读取并分配 realloc buffer 后（剥除尾 CR 后的文本可为空），如果字符串尚需创建对象，`String_Create` 的 RawObject/GcMalloc 首次分配及 full-GC 后重试均失败会抛 MemoryError；活动 `TryRun` 的 C 异常入口执行 longjmp，跳过其后的 free(buffer)。realloc 失败和 UTF-8 校验失败均先释放 buffer，初始空行或行首 EOF 没有已分配 buffer，均不属于该触发条件。完整静态链见 `gc/gc_object.c:1069-1074`、`base/memory.c:39-47`、`exception/exception.c:543-574` 与 `exception_internal.h:18-21`；本轮不修复，不赋予 OOM 执行证据。
+
+**BUG:** `read` 的新码点或 `readLine` 的新短行若尚未驻留，且 short-intern 表需要 HASH_BUCKET rehash，raw allocator 失败可让 String_Create 软返回 null 而不设置 VM 异常。SetStringObject 对 null 不写槽，callback 仍返回 true，dispatcher 交付预置 null，因而与正常 EOF 混淆。该分支见 `string/string.c:802-808`、`hash_set.h:525-537`、`base/hash_set.c:170-181`、`memory.h:19-22` 和 `native_binding_dispatch.c:362,1311-1316`；readLine 在此正常返回路径仍释放 C buffer，与硬异常泄漏分开。
+
+**TODO:** `ferror` 尚未区分：首字节流错误与 EOF 返回同样 null，中途 read 错误表现为截断 UTF-8，readLine 的部分输入遇到错误可照常交付；须明确并测试 I/O 错误策略。末尾孤立 CR 加 EOF 的裁剪是否符合行契约也须核实。descriptor 默认 GC_AWARE 模式下，阻塞 fgetc/同步日志仍持有 RUNNING mutator；须从 `native_binding_dispatch_lanes.h:240-278` 和 `gc_domain_mutator.c:630-693` 检查 STW 等待与 native 模式策略，现有测试没有该时序覆盖。
+
+System 的现有 module 测试检查 console 导出/hint，provider 测试检查官方归属；它们没有执行 Console 读输入或验证边界。CLI suite 的 `repl_native_import` 用例（`tests/cmake/run_cli_suite.cmake:1130-1149`）调用 print("xxx") 并断言 stdout 含 xxx 且 stderr 为空，其他项目 marker 断言只能提供整体流程信用。完整逐单元审查见 [Console 台账](../../code-review/coverage/zr_vm_lib_system_console.tsv)；本节不声称本批已执行整套 CLI 或 OOM/UTF-8/线程故障测试。
