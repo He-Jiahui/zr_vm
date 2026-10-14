@@ -308,3 +308,22 @@ Vector2 的 constructor 取两个数值实参；具名 method 与 meta 的固定
 **TODO:** 对照 `math_common.h:20-23,54-55` 核查将 Vector2 struct 地址当作连续 `double` 数组的对象模型与布局前提；依赖不止 `dot`，还包含 length、lengthSquared、normalized 和 compare。compare 当前按平方长度返回 -1/0/1；NaN 或双方平方溢出使两个严格比较均为假而落到 0，其 unordered 策略须结合 VM compare 消费规则和具体边界断言继续核实。
 
 `tests/fixtures/projects/native_numeric_pipeline/src/signal.zr:8` 确实构造并归一化 Vector2，但下游 checksum 只消费复数 magnitude；现有项目断言不验证返回的 vx/vy。provider 测试核查模块注册契约，不构成 Vector2 数值、字段 pin OOM 或短串分配失败的执行证据。完整逐单元审查与结论见 [Vector2 台账](../../code-review/coverage/zr_vm_lib_math_vector2.tsv)。
+
+
+## Vector3 回调、结果与数值边界
+
+Vector3 constructor 元数为 3，命名方法 length/lengthSquared/normalized 为 0、dot/distance/cross 为 1、lerp 为 2；meta add/sub/compare 为 1、neg/toString 为 0。native dispatcher 在回调前校验元数。ReadFloat 接受整数与浮点值，错误标签抛 TypeError；二元方法的 rhs 由 ReadObject 接受 object/array，再逐字段读取数值 x/y/z，不要求 rhs 的 prototype 恰为 Vector3。字段缺失或非数值正常 false，在 thread 状态仍 FINE 时会交付预置 null，不能把异常与此普通失败混为一类。
+
+构造 helper 可以复用兼容 self，否则依据 construct target/owner prototype 新建实例；三维结果工厂另行创建 VM 对象。字段名表是静态存储，构造 values[3] 是本次调用的栈数组，索引顺序均为 x/y/z。context、state、receiver、rhs、result 只在同步回调期间借用；新对象/字符串由 VM 管理，不向调用者转移手动 free 责任。registry 的 type、字段/方法/meta 表与 hints 都借用 provider image，消费者存续期间须保持映像驻留。GetFunctions 返回 NULL 并将可选 count 写 0；它不表示实例方法或 meta callback 不存在。
+
+**BUG:** 合法三数值构造入口经 CREATE_OBJECT/TO_STRUCT 和 fast lane 取得尚未显式 pin 的 seed receiver。ignored-root 表处于 capacity-1，receiver 与字段键此前不在表中时，setter 先 pin receiver 占最后一格，随后字段键的 ARRAY RawMalloc 扩容失败会让 void setter 静默跳过写入，ConstructFloatObject 仍完成并发布。Normalized/Lerp/Cross/MetaAdd/Sub/Neg 的 MakeVector3 工厂也逐字段调用 void setter，存在同类缺字段成功返回。三字段普通 nodeMap 容量 4、负载阈值 3，第三项恰好到阈值，不触发 Quaternion 第四项的 HASH_BUCKET 扩桶路径；本批不把那条独立缺陷移植到 Vector3。
+
+**BUG:** 有限 `(1e200,0,0)` 的平方和中间溢出，Length 返回 Inf，Normalized 返回零向量，到零点的 Distance 返回 Inf，而相应长度与单位向量本可表示。Dot 的有限 `(1e200,1e200,0)` 与 `(1e200,-1e200,0)` 乘积先成为正负 Inf，累加为 NaN，数学结果为零。Cross 的 `(0,1e200,1e200)` 与自身运算产生 Inf-Inf，数学结果为零向量。Lerp 的 x 端点 `1e308/-1e308`、factor `.5` 先使差分溢出而返回 -Inf，数学中点为零；factor 本身不夹紧。上述均由合法参数与表达式闭合静态证据，未执行极值用例。LengthSquared 的平方值本身不可表示与这些可表示结果的中间溢出分开处理。
+
+**TODO:** Length、LengthSquared、Normalized、Dot 和 MetaCompare 把 ZrMathVector3 地址当作连续 TZrFloat64 输入；需从 math_common.h 的结构声明、ZrMath_Dot 的 count=3 索引与目标 C 对象模型核实布局和跨成员指针运算契约。Distance 使用自己的三元素数组，不归入该 cast 疑点。MetaCompare 对 dl>dr 写 1、dl<dr 写 -1、其余写 0；NaN 或双方平方和均为 Inf 时也写 0，不能据此推断对象相等，排序/compare 消费协议和边界断言仍待核。
+
+**BUG:** toString 先在 512 字节栈窗口格式化，VM 字符串创建不保留该窗口。仅当格式文本尚未驻留且属于短串、插入触发 HASH_BUCKET rehash 而宿主 allocator 扩容失败时，String_Create 可不抛异常地返回 NULL，SetStringObject 不写结果槽，MakeStringResult 仍返回 true；dispatcher 最后交付预置 null。该具体分支和对象创建时抛出的硬失败分别记录，没有 allocator 故障注入信用。
+
+现有 `test_native_vector3_constructor_binds_all_numeric_arguments_at_runtime` 明确断言 x/y/z 为 2/3/4，Root 的修改前整 module target 78 项运行中该项 PASS，另两项既有失败保留。pipeline 的 lin_alg 执行 dot/cross/cross.length，最终 checksum 只消费 dot，未消费 crossLength，不能为叉积或长度结果授予断言信用。极值、比较、布局和分配失败没有专门执行证据。完整定义、间接调用与测试边界见 [Vector3 台账](../../code-review/coverage/zr_vm_lib_math_vector3.tsv) 与 [Vector3 批次](../../code-review/batches/20261014-vector3-contracts.md)。
+
+最终 GC helper 文档补齐后的共享 target 验证另见 `gc-vector3-final-r3-results.json`：构建成功，78 项为 70 PASS / 8 FAIL；Vector3 构造、GC 控制及统计字段用例仍 PASS。原有两项失败保留，另六项二进制元数据往返用例由 PASS 变为 FAIL，尚未隔离归因。与旧 before 的输入已有九个并发 Parser 文件差异；本轮 1652 个输入在构建和测试期间稳定，但不能据此声称与旧基线完全一致或整个 suite 通过。Vector3 四源与 r2 冻结版本相同，严格非注释 token 证明和 r2 的四对象实际重编证据继续限定于其原范围。
