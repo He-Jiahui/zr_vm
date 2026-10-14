@@ -11,6 +11,14 @@ related_code:
   - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_registry.c
   - zr_vm_lib_system/src/zr_vm_lib_system/process/process.c
   - zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c
+  - zr_vm_lib_system/include/zr_vm_lib_system/exception.h
+  - zr_vm_lib_system/src/zr_vm_lib_system/exception/exception.c
+  - zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl_session.c
+  - tests/harness/runtime_support.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c
+  - zr_vm_core/include/zr_vm_core/value.h
+  - zr_vm_core/src/zr_vm_core/function/function.c
 implementation_files:
   - zr_vm_lib_system/src/zr_vm_lib_system/module.c
   - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c
@@ -20,6 +28,12 @@ implementation_files:
   - zr_vm_lib_system/src/zr_vm_lib_system/process/process.c
   - zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c
   - zr_vm_lib_system/src/zr_vm_lib_system/exception/exception_registry.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/exception/exception.c
+  - zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl_session.c
+  - tests/harness/runtime_support.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c
+  - zr_vm_core/src/zr_vm_core/function/function.c
 plan_sources:
   - user: 2026-09-09 在 docs/wiki 构建完整 ZrVm 说明书
   - docs/library-and-builtins/index.md
@@ -27,6 +41,7 @@ tests:
   - tests/system/test_system_fs_module.c
   - tests/module/test_module_system.c
   - tests/library/test_file_list.c
+  - tests/exceptions/test_exceptions.c
 doc_type: api-reference
 ---
 
@@ -208,8 +223,10 @@ native callback 必须先 root 临时值。
 `vm.state(): SystemVmState` 返回 loadedModuleCount、garbageCollectionMode、garbageCollectionDebt、garbageCollectionThreshold、stackDepth 和 frameDepth，组合已加载缓存计数、全局 GC 标量及当前 VM 线程状态。
 `vm.callModuleExport(moduleName, exportName, args)` 将数组元素转发给 ZrLib_CallModuleExport；目标解析可包含该共享调用器的惰性导入路径。目标实际调用约束由共享调用器和 native dispatcher 处理。
 
-`exception.registerUnhandledException(handler: (Error) -> bool): null` 注册未处理异常 handler。
-生产宿主的未处理异常分发路径尚待核查，目前不承诺 handler 的调用时机或其自身抛错时的策略。
+`exception.registerUnhandledException(handler: (Error) -> bool): null` 将函数值复制到当前 VM global
+的单一槽，后续注册覆盖旧值；GC 追踪该槽，session 仅在 handler 值及可达图均可恢复时保存/恢复它。此调用只登记函数。
+当前 CLI/REPL 失败出口没有调用它，测试宿主才显式读取并同步分发；hint 的 bool 签名不规定生产宿主的
+调用时机、重入或 handler 自身抛错策略。接入意图仍为 TODO，核查入口见文末 Exception 契约。
 
 ## C 注册和资源顺序
 
@@ -309,3 +326,26 @@ callModuleExport 借用两个 VM 字符串的原生文本，以 malloc 申请只
 最终共享 global 约束注释使用四源 strict proof `system-vm-final-r2-comment-equivalence.json`，最终原生验证为 `system-vm-clang-final-r3e-results.json`：clang-cl/原生 ml64、Debug/static 配置经 cache guard 核对，构建成功并实际编译两个 VM 实现。模块测试 70/78 PASS、8 FAIL，与此前 r1 的全部 case 行一致；provider 9/9 PASS，reference member-chain 的 State/count 正常路径再次 PASS。vm_registry.c 的四条缺省 initializer 警告和其他模块/工具参数警告保留；不称全测试通过或无 warning。MSVC r2 的编译器缺失、r4 的 C1902 失败及未重建 object 另有记录。
 
 最终验证期间 2950 个保守编译/配置输入及四个 VM 源码稳定，State 引用样例另核对单文件前后哈希；这些范围不涵盖全部运行时样例、生成输入或外部 SDK/toolchain。与 r1 之间有其他会话的 Core/Parser 改动且工具链不同，不能作隔离的行为归因。完整逐项比较见 `system-vm-clang-final-r3e-comparison.json`；没有执行分配故障、并发、GC 压力或惰性导入异常专项。
+
+## Exception 构造与宿主分派
+
+Error 及六个派生异常类共用 0..1 参数的 native 构造 callback。常规反射构造先保活新 receiver，
+callback 将 `stacks` 初始化为空数组、把消息写入 `message`，并让 `exception` 指向 receiver；
+callback 自身返回 null，反射调用者交付构造实例。省略消息写 VM null；显式消息经字符串转换协议处理，
+可能执行用户代码并传播 VM 异常。抛出与规范化阶段维护诊断栈，不能把这里的空数组等同于已捕获 traceback。
+
+**BUG:** 若进入反射构造前 ignored-root count 恰为 capacity-1，receiver pin 会占满表；
+新建的 stacks 数组未先 pin。其字段 setter 对数组值做 ignored-root 扩容时，单次 `RawMallocWithType(ARRAY)`
+软失败会被 void setter 吞掉；在其他分配、转换及 VM 状态均成功的限定路径上，反射构造仍会交付缺少
+`stacks` 的实例。这是闭合静态调用链的结论，未做分配失败注入，不代表一般 OOM 路径都如此。
+
+注册 handler 的 global 槽由 GC 标记与转发；可恢复 VM 函数/闭包可随 checkpoint 保存和恢复，原生指针/native closure 使 capture 失败。这不构成跨线程调用保证。
+当前 CLI 的 `zr_cli_runtime_handle_failure` 与 REPL 的 `zr_cli_repl_session_handle_failure` 记录异常后重置状态；
+测试宿主 `zr_tests_runtime_try_invoke_unhandled_handler` 才负责实际调用，并把 bool true 解释为消费异常。
+**TODO:** 沿这两个生产失败出口核实 API 是否仅服务嵌入宿主，或 CLI/REPL 也应分派；同时确定重入及 handler 失败策略。
+完整定义、绑定、间接入口、测试证据和逐单元结论见 [Exception 台账](../../code-review/coverage/zr_vm_lib_system_exception.tsv)
+及 [审查批次](../../code-review/batches/20261014-system-exception-contracts.md)。
+
+注册读取器还接受 VM closure 和原生函数指针，不校验 hint 的 `(Error) -> bool` 签名或原生地址。
+宿主调用原生指针前必须保证非空入口满足 `FZrNativeFunction` ABI；原生指针和 native closure 所指向的代码及关联资源均须在 global 槽
+仍可能引用它时保持有效；GC 不会延长原生代码映像的寿命。checkpoint 只接收满足可恢复条件的 VM 函数/闭包及对象图；NATIVE_POINTER 或 native closure 会使 capture 失败。

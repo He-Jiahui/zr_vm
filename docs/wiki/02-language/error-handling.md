@@ -6,18 +6,33 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
   - zr_vm_lib_system/include/zr_vm_lib_system/exception_registry.h
   - zr_vm_lib_testing/include/zr_vm_lib_testing/module.h
+  - zr_vm_lib_system/include/zr_vm_lib_system/exception.h
+  - zr_vm_lib_system/src/zr_vm_lib_system/exception/exception.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/exception/exception_registry.c
+  - zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl_session.c
+  - tests/harness/runtime_support.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c
+  - zr_vm_core/include/zr_vm_core/value.h
+  - zr_vm_core/src/zr_vm_core/function/function.c
 implementation_files:
   - zr_vm_core/src/zr_vm_core/exception.c
   - zr_vm_core/src/zr_vm_core/execution_control.c
   - zr_vm_core/src/zr_vm_core/debug.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/exception_registry.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/exception/exception_registry.c
   - zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/exception/exception.c
+  - zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl_session.c
+  - tests/harness/runtime_support.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c
+  - zr_vm_core/src/zr_vm_core/function/function.c
 plan_sources:
   - user: 2026-09-09 在 docs/wiki 构建完整 ZrVm 说明书
   - docs/core-runtime/index.md
 tests:
   - tests/core/test_exception.c
-  - tests/system/test_system_exception_module.c
+  - tests/exceptions/test_exceptions.c
   - tests/ffi/test_native_extern_contract.c
   - tests/fixtures/projects/syntax_reference_v1/negative
 doc_type: language-reference
@@ -132,13 +147,22 @@ generation 保存诊断时调用复制 API，把 range 和 message 复制到宿�
 let exception = import("zr.system.exception");
 exception.registerUnhandledException((error: exception.Error) => {
     import("zr.system.console").printErrorLine(error.message);
-    return false; // false: 继续默认终止策略
+    return false; // 返回值的解释由实际调用 handler 的宿主决定
 });
 ```
 
-handler 运行在异常尚未最终终止的边界，只能读取稳定 snapshot；不要在 handler 中再次触发
-可能抛异常的复杂调用或释放当前 frame 持有的值。返回约定由 provider descriptor 固定，
-应以当前版本的 `registerUnhandledException` 文档为准。
+此接口只把一个函数值保存在当前 VM global 的单一槽中；后续注册会覆盖旧值。hint 中的
+`(Error) -> bool` 描述函数形状，不规定宿主何时调用 handler、是否允许重入或如何处理 handler 自身抛错。
+
+当前 CLI project runtime 与 REPL 的失败出口会记录异常并重置线程，没有调用此槽。测试宿主
+`tests/harness/runtime_support.c` 则会同步调用 handler，并把 bool true 视为已消费异常；这是该宿主的策略，
+不能推及其他执行入口。嵌入宿主需要自行定义分发边界、异常值的有效期与失败策略；注册成功不等于 handler 会运行。
+已核查调用链及待确认的生产接入意图见 [Exception 台账](../../code-review/coverage/zr_vm_lib_system_exception.tsv)。
+
+
+注册读取器还接受 VM closure 和原生函数指针，不校验 hint 的 `(Error) -> bool` 签名或原生地址。
+宿主调用原生指针前必须保证非空入口满足 `FZrNativeFunction` ABI；原生指针和 native closure 所指向的代码及关联资源均须在 global 槽
+仍可能引用它时保持有效；GC 不会延长原生代码映像的寿命。checkpoint 只接收满足可恢复条件的 VM 函数/闭包及对象图；NATIVE_POINTER 或 native closure 会使 capture 失败。
 
 ## 测试中的异常
 
