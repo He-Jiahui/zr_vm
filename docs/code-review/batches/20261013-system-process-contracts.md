@@ -54,8 +54,10 @@ Emscripten 官方文档将 `emscripten_sleep(unsigned int)` 列为伪同步 API�
 ## 验证与边界
 
 台账33项结论：19已注释、6无需注释、3BUG、5TODO，无未审查项。源码新增 BUG/TODO
-均对应上述具体完整路径或核查入口。旧 System 总台账只将本四叶源的17项替换为29项，
-其他行字节及相对顺序保持；既有失效锚点仍登记，整张 System 表尚未认证。
+均对应上述具体完整路径或核查入口。旧 System 总台账的本四叶源17项经重新枚举形成
+叶模块29项；完整记录只保留在 Process 叶台账，总表已移出本四叶源的重复行，使跨表
+`(file, unit, kind)` 唯一。叶台账另有4个只读测试单元，不从总表移除其他测试行。
+其他总表行字节及相对顺序保持；既有失效锚点仍登记，整张 System 表尚未认证。
 
 Root 最后修订后在同一实际 checkout 和同一 MSVC Debug/static 产品目录构建 Math、System
 及官方 provider test；构建24.984秒退出0，provider9/9 PASS（1.469秒），各case与修改前
