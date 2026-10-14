@@ -1,6 +1,8 @@
-/* Host C++ compiles of the WASM export glue include C headers that use
+/* Host GCC C++ compiles of the WASM export glue include C headers that use
  * <stdatomic.h>. GCC's stdatomic.h is not valid C++. This prelude is forced
- * in before those sources so the C11 atomic spellings stay available. */
+ * in before those sources so the C11 atomic spellings stay available.
+ * Clang already accepts its own <stdatomic.h>; predefining these types
+ * conflicts with that header, so this file is only forced for GNU. */
 #ifndef ZR_VM_WASM_CXX_STDATOMIC_COMPAT_H
 #define ZR_VM_WASM_CXX_STDATOMIC_COMPAT_H
 

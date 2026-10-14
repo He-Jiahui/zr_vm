@@ -1,5 +1,19 @@
 include(${CMAKE_SOURCE_DIR}/zr_vm_common/CommonMacros.cmake)
 
+# Release 会定义 NDEBUG，assert() 连同参数里的调用一起被抹掉。
+# 测试把必要的构造放在 assert() 里；这些调用必须留下，否则 Release 会跳过初始化然后崩溃。
+if (MSVC)
+    add_compile_options(
+            "$<$<CONFIG:Release>:/UNDEBUG>"
+            "$<$<CONFIG:RelWithDebInfo>:/UNDEBUG>"
+            "$<$<CONFIG:MinSizeRel>:/UNDEBUG>")
+else ()
+    add_compile_options(
+            "$<$<CONFIG:Release>:-UNDEBUG>"
+            "$<$<CONFIG:RelWithDebInfo>:-UNDEBUG>"
+            "$<$<CONFIG:MinSizeRel>:-UNDEBUG>")
+endif ()
+
 # FFI fixture path for tests: generated header (tests/cmake/zr_vm_write_ffi_fixture_path.cmake).
 # Avoids MSVC cl /D where backslashes in -D strings become invalid macro escapes (\a \b \f …).
 set(ZR_VM_TESTS_FFI_FIXTURE_PATH_HEADER "${CMAKE_BINARY_DIR}/tests_generated/zr_vm_ffi_fixture_path.h")

@@ -34,7 +34,7 @@ target_compile_options(zr_vm_language_server_wasm_exports_test PRIVATE
         "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>>:-fpermissive>"
         "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>>:-Wno-error>"
         "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>>:-Wno-c++11-narrowing>"
-        "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>>:-include${CMAKE_SOURCE_DIR}/zr_vm_language_server/wasm/cxx_stdatomic_compat.h>"
+        "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:GNU>>:-include${CMAKE_SOURCE_DIR}/zr_vm_language_server/wasm/cxx_stdatomic_compat.h>"
         "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/FI${CMAKE_SOURCE_DIR}/zr_vm_language_server/wasm/cxx_stdatomic_compat.h>"
 )
 # 宿主 C++ 编译单元包含 C 风格声明；按语言映射线程局部与对齐关键字以编译导出胶水。

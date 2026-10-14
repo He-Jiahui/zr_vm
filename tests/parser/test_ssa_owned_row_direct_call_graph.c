@@ -151,6 +151,9 @@ static void fixture_init_mode(Fixture *fixture, TZrBool invoke,
     SZrExecIrRange range;
     SZrExecIrBindingRow row;
     TZrUInt32 index;
+    /* CallGraphInit frees storage when the graph looks initialized. A raw
+     * stack Fixture can match that check and free a garbage pointer. */
+    memset(fixture, 0, sizeof(*fixture));
     ZrCore_ExecIr_ModuleInit(&fixture->module);
     ZrParser_ExecIr_CallGraphInit(&fixture->graph);
     fixture->callSiteCount = nestedCall ? 2u : 1u;
