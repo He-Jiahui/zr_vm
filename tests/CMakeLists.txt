@@ -102,7 +102,9 @@ add_executable(
         ${CMAKE_SOURCE_DIR}/tests/performance/perf_report.c
         ${CMAKE_SOURCE_DIR}/tests/performance/perf_statistics.c
 )
-target_include_directories(zr_vm_perf_runner PRIVATE ${CMAKE_SOURCE_DIR}/tests/performance)
+target_include_directories(zr_vm_perf_runner PRIVATE
+        ${CMAKE_SOURCE_DIR}/tests/performance
+        ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
 target_compile_definitions(zr_vm_perf_runner PRIVATE _CRT_SECURE_NO_WARNINGS)
 
 add_executable(
@@ -122,7 +124,9 @@ add_executable(
         ${CMAKE_SOURCE_DIR}/tests/performance/perf_report.c
         ${CMAKE_SOURCE_DIR}/tests/performance/perf_statistics.c
 )
-target_include_directories(zr_vm_perf_report_test PRIVATE ${CMAKE_SOURCE_DIR}/tests/performance)
+target_include_directories(zr_vm_perf_report_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/tests/performance
+        ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
 target_compile_definitions(zr_vm_perf_report_test PRIVATE _CRT_SECURE_NO_WARNINGS)
 if (NOT WIN32)
     target_link_libraries(zr_vm_perf_report_test PRIVATE m)

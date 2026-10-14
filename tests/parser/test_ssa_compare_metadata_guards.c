@@ -530,6 +530,11 @@ done:
     end_case();
 }
 
+/* Unity's runner references these even when this file supplies its own main. */
+void setUp(void) {}
+
+void tearDown(void) {}
+
 int main(void) {
     (void)setvbuf(stdout, ZR_NULL, _IONBF, 0u);
     for (EBadSemantic bad = BAD_PREDICATE_ZERO; bad < BAD_SEMANTIC_COUNT; ++bad) {
