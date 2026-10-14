@@ -491,21 +491,53 @@ static void register_function_type_binding_in_env(SZrState *state,
     semantic_collect_generic_parameter_info(
             analyzer, declarationNode, &genericParameters, funcDecl->generic);
     semantic_collect_parameter_passing_modes(state, &parameterPassingModes, funcDecl->params);
-    resolvedReturnTypeInfo =
-        create_type_info_for_callable_return(state,
-                                             analyzer,
-                                             funcDecl->returnType,
-                                             funcDecl->params,
-                                             declarationNode,
-                                             declarationNode != ZR_NULL
-                                                 ? declarationNode->location
-                                                 : funcDecl->nameLocation);
-    if (resolvedReturnTypeInfo == ZR_NULL) {
-        semantic_free_collected_generic_parameters(state, &genericParameters);
-        if (parameterPassingModes.isValid && parameterPassingModes.head != ZR_NULL) {
-            ZrCore_Array_Free(state, &parameterPassingModes);
+    if (funcDecl->returnType != ZR_NULL) {
+        TZrBool returnFullyResolved = ZR_FALSE;
+        SZrFileRange returnDiagnosticLocation = declarationNode != ZR_NULL
+                                                        ? declarationNode->location
+                                                        : funcDecl->nameLocation;
+
+        resolvedReturnTypeInfo = allocate_object_type_info(state);
+        if (resolvedReturnTypeInfo == ZR_NULL ||
+            !ZrLanguageServer_SemanticAnalyzer_ProjectDeclaredType(
+                    analyzer,
+                    ZR_NULL,
+                    declarationNode,
+                    funcDecl->returnType,
+                    resolvedReturnTypeInfo,
+                    &returnFullyResolved)) {
+            if (resolvedReturnTypeInfo != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
+                        state, analyzer, returnDiagnosticLocation);
+            }
+            semantic_free_type_info(state, resolvedReturnTypeInfo);
+            semantic_free_collected_generic_parameters(state, &genericParameters);
+            if (parameterPassingModes.isValid && parameterPassingModes.head != ZR_NULL) {
+                ZrCore_Array_Free(state, &parameterPassingModes);
+            }
+            return;
         }
-        return;
+        if (!returnFullyResolved) {
+            ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
+                    state, analyzer, returnDiagnosticLocation);
+        }
+    } else {
+        resolvedReturnTypeInfo =
+            create_type_info_for_callable_return(state,
+                                                 analyzer,
+                                                 funcDecl->returnType,
+                                                 funcDecl->params,
+                                                 declarationNode,
+                                                 declarationNode != ZR_NULL
+                                                     ? declarationNode->location
+                                                     : funcDecl->nameLocation);
+        if (resolvedReturnTypeInfo == ZR_NULL) {
+            semantic_free_collected_generic_parameters(state, &genericParameters);
+            if (parameterPassingModes.isValid && parameterPassingModes.head != ZR_NULL) {
+                ZrCore_Array_Free(state, &parameterPassingModes);
+            }
+            return;
+        }
     }
 
     ZrParser_InferredType_Init(state, &returnType, ZR_VALUE_TYPE_NULL);
@@ -523,12 +555,15 @@ static void register_function_type_binding_in_env(SZrState *state,
 
             ZrParser_InferredType_Init(state, &paramType, ZR_VALUE_TYPE_OBJECT);
             if (paramNode->data.parameter.typeInfo != ZR_NULL) {
-                if (!ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(
+                TZrBool parameterFullyResolved = ZR_FALSE;
+
+                if (!ZrLanguageServer_SemanticAnalyzer_ProjectDeclaredType(
                             analyzer,
                             ZR_NULL,
                             declarationNode,
                             paramNode->data.parameter.typeInfo,
-                            &paramType)) {
+                            &paramType,
+                            &parameterFullyResolved)) {
                     ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
                             state,
                             analyzer,
@@ -536,6 +571,12 @@ static void register_function_type_binding_in_env(SZrState *state,
                     ZrParser_InferredType_Free(state, &paramType);
                     hasUnresolvedParameter = ZR_TRUE;
                     continue;
+                }
+                if (!parameterFullyResolved) {
+                    ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
+                            state,
+                            analyzer,
+                            semantic_parameter_diagnostic_location(paramNode));
                 }
             } else {
                 ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
