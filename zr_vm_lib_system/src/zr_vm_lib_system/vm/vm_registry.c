@@ -4,12 +4,13 @@
 
 #include "zr_vm_lib_system/vm_registry.h"
 
+/* 独立包含时的条件备用定义；产品 include 链已从 system conf 引入 zr_array_conf.h，通常不会启用此分支。 */
 #ifndef ZR_ARRAY_COUNT
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
 
 const ZrLibModuleDescriptor *ZrSystem_VmRegistry_GetModule(void) {
-    /* state() 的字段同时包含线程栈和全局 GC 视图，由 vm.c 负责填充。 */
+    /* 脚本结构布局契约；字段来源横跨当前线程和共享 global，具体采样/写入由 vm.c 执行。 */
     static const ZrLibFieldDescriptor kVmStateFields[] = {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("loadedModuleCount", "int", "Number of currently loaded modules."),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("garbageCollectionMode", "int",
@@ -20,7 +21,7 @@ const ZrLibModuleDescriptor *ZrSystem_VmRegistry_GetModule(void) {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("stackDepth", "int", "Current VM stack depth."),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("frameDepth", "int", "Current VM call-frame depth."),
     };
-    /* loadedModules() 的投影形状在此声明，模块来源和插件身份来自不同注册层。 */
+    /* loadedModules() 的投影形状；模块实例字段与 NativeRegistry/plugin 元数据由不同层提供。 */
     static const ZrLibFieldDescriptor kLoadedModuleInfoFields[] = {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("name", "string", "Resolved module name."),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("sourceKind", "string",
@@ -40,6 +41,7 @@ const ZrLibModuleDescriptor *ZrSystem_VmRegistry_GetModule(void) {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("isDescriptorPlugin", "bool",
                                          "Whether the module descriptor came from a dynamic native plugin."),
     };
+    /* 两个结构类型没有自定义构造器；实例字段布局由上方表驱动，脚本侧读取投影值。 */
     static const ZrLibTypeDescriptor kTypes[] = {
             ZR_LIB_TYPE_DESCRIPTOR_INIT("SystemVmState", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, kVmStateFields,
                                         ZR_ARRAY_COUNT(kVmStateFields), ZR_NULL, 0, ZR_NULL, 0,
@@ -50,11 +52,13 @@ const ZrLibModuleDescriptor *ZrSystem_VmRegistry_GetModule(void) {
                                         ZR_NULL, 0, "Loaded module metadata snapshot.", ZR_NULL, ZR_NULL, 0, ZR_NULL,
                                         0, ZR_NULL, ZR_TRUE, ZR_TRUE, "SystemLoadedModuleInfo()", ZR_NULL, 0),
     };
+    /* FunctionDescriptor 保存 callback 指针与元数范围；通用 dispatcher 在进入 callback 前检查参数数量。 */
     static const ZrLibFunctionDescriptor kFunctions[] = {
             {"loadedModules", 0, 0, ZrSystem_Vm_LoadedModules, "SystemLoadedModuleInfo[]", "Return metadata for all loaded modules.", ZR_NULL, 0},
             {"state", 0, 0, ZrSystem_Vm_State, "SystemVmState", "Return a snapshot of VM execution state.", ZR_NULL, 0},
             {"callModuleExport", 3, 3, ZrSystem_Vm_CallModuleExport, "value", "Call an export from another module.", ZR_NULL, 0},
     };
+    /* 编辑器/语言服务消费的签名提示；导出名和类型名需与上方 runtime descriptor 一致。 */
     static const ZrLibTypeHintDescriptor kHints[] = {
             {"loadedModules", "function", "loadedModules(): SystemLoadedModuleInfo[]", "Return metadata for all loaded modules."},
             {"state", "function", "state(): SystemVmState", "Return a snapshot of VM execution state."},
@@ -62,11 +66,13 @@ const ZrLibModuleDescriptor *ZrSystem_VmRegistry_GetModule(void) {
             {"SystemVmState", "type", "struct SystemVmState { loadedModuleCount, garbageCollectionMode, garbageCollectionDebt, garbageCollectionThreshold, stackDepth, frameDepth }", "Runtime VM state snapshot."},
             {"SystemLoadedModuleInfo", "type", "struct SystemLoadedModuleInfo { name, sourceKind, sourcePath, registrationKind, hasTypeHints, moduleVersion, runtimeAbiVersion, requiredCapabilities, isDescriptorPlugin }", "Loaded module metadata snapshot."},
     };
+    /* native hints 的机器可读模块标识，由公共 descriptor 元数据一并发布。 */
     static const TZrChar kHintsJson[] =
             "{\n"
             "  \"schema\": \"zr.native.hints/v1\",\n"
             "  \"module\": \"zr.system.vm\"\n"
             "}\n";
+    /* 静态聚合表把上述数组的借用指针发布给 native registry；provider image 须保持驻留。 */
     static const ZrLibModuleDescriptor kModule = {
             ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
             "zr.system.vm",

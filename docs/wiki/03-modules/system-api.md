@@ -204,11 +204,9 @@ native callback 必须先 root 临时值。
 
 ## vm 和 exception
 
-`vm.loadedModules(): SystemLoadedModuleInfo[]` 返回模块名称、source kind/path、registration
-kind、type hints、module/runtime ABI、required capabilities 和 descriptor-plugin 标志。
-`vm.state(): SystemVmState` 返回 loadedModuleCount、GC 控制、debt/threshold、stackDepth 和
-frameDepth。`vm.callModuleExport(moduleName, exportName, args)` 按已注册 descriptor 调用导出；
-参数数组由目标导出的实际调用约束处理，native descriptor 会检查参数数量。
+`vm.loadedModules(): SystemLoadedModuleInfo[]` 遍历 global 的已加载模块实例缓存，再投影原生注册元数据；仅注册而尚未导入的 descriptor 不在列表中。sourceKind 由 moduleName/fullPath 文本相等与否推断，registrationKind 则另取注册来源。moduleVersion 是 descriptor 版本文本，runtimeAbiVersion 取 descriptor.minRuntimeAbi，零值或无 descriptor 时回退当前 runtime ABI，并非测量插件正在执行的 ABI。
+`vm.state(): SystemVmState` 返回 loadedModuleCount、garbageCollectionMode、garbageCollectionDebt、garbageCollectionThreshold、stackDepth 和 frameDepth，组合已加载缓存计数、全局 GC 标量及当前 VM 线程状态。
+`vm.callModuleExport(moduleName, exportName, args)` 将数组元素转发给 ZrLib_CallModuleExport；目标解析可包含该共享调用器的惰性导入路径。目标实际调用约束由共享调用器和 native dispatcher 处理。
 
 `exception.registerUnhandledException(handler: (Error) -> bool): null` 注册未处理异常 handler。
 生产宿主的未处理异常分发路径尚待核查，目前不承诺 handler 的调用时机或其自身抛错时的策略。
@@ -287,3 +285,27 @@ System 的现有 module 测试检查 console 导出/hint，provider 测试检查
 **BUG:** 42 次字段写入使用 void setter，三条软失败路径均可留下缺字段对象：新实例的初始 nodeMap 桶申请失败，首个 setter 内重试初始化仍失败时，只记录日志并跳过 enabled；ignored-root pin 表扩容的 ARRAY RawMalloc 失败会跳过对应字段；后续整数项使 map 跨负载阈值时，HASH_BUCKET rehash 分配失败也会让 Object_SetValue 静默返回。首字段初始化失败与后续扩容分别记录，不将 enabled 的正常首写归于负载阈值。投影 helper 不检测这些状态，GetStats 仍把非空对象作为成功结果。证据涵盖 native instance helper、Object_Init/SetValue、HashSet_Init/Rehash、dispatcher pin 和成功返回链；没有故障注入信用。抛出 VM 异常的分配失败属于另一条传播路径，不归为正常成功。
 
 现有两项 module 测试中，`test_system_gc_safe_controls_report_runtime_stats` 在单 VM state 中核对控制参数及选定计数，`test_system_native_types_register_complete_struct_fields` 核对字段元数据。Root 修改前运行整 module target 78 项，相关两项及 Vector3 构造均 PASS；另两项既有失败保留。另有 `tests/gc/gc_tests.c` 的 `test_system_gc_enable_callback_switches_generational_mode` 直接调用 Enable/Disable，断言模式及 stop flag，不经 dispatcher；本批尚未运行该直接 C 测试。上述测试未覆盖非法 numeric/kind、disable 后自动推进、allocator 软失败或并发快照。完整逐单元依据见 [GC 台账](../../code-review/coverage/zr_vm_lib_system_gc.tsv) 与 [GC 批次](../../code-review/batches/20261014-system-gc-contracts.md)。
+
+## VM 快照与跨层调用契约
+
+loadedModules 按 loadedModulesRegistry 的哈希桶和链遍历，不保证名称排序，也不扫描所有注册 descriptor。记录字段包括 name、sourceKind、sourcePath、registrationKind、hasTypeHints、moduleVersion、runtimeAbiVersion、requiredCapabilities、isDescriptorPlugin；对应文本为空时可按实现省略字段。返回数组和记录对象由 VM 管理，descriptor/plugin 文本由注册来源借用；需沿 root/搬迁协议核查分配期间 registry/pair、文本及尚未发布对象的有效性，不能由局部 C 指针推定稳定。
+
+state 先统计 loadedModuleCount，再创建对象并逐字段读取 GC 和线程状态；对象及字段名分配可能推进 GC，这些值不是同一时刻的原子快照。garbageCollectionMode 只反映 gcMode；gc.disable() 只改 stopGC，不能用 mode 字段推断自动 GC 是否启用。stackDepth/frameDepth 是当前调用时的 VM 状态，不是全部线程或 C 栈的深度。
+
+**TODO:** 同 global 可由 State_New/State_MutatorLaunch 建立多个 mutator，Module_AddToCache 会修改 loadedModulesRegistry；需沿 runtime/state.c:61-70,173-182、module/module.c:300-316 与 gc_domain_mutator.c 的受支持协议核实 loadedModules() 和 state() 的缓存遍历是否要求外层串行化。state() 还读取 gc.h:177,199,204 的普通 collector 字段；沿 gc.c:658-671 等写路径核查同步。跨字段非原子与读写受保护不是同一保证；当前只记录待核边界，不断言已证数据竞争。
+
+**BUG:** 新快照对象的 Object_Init 初次建 nodeMap 失败后，void 字段 setter 虽会重试建表，仍可在合法的再次分配失败时跳过字段；已有容量 4、阈值 3 的表也可在第四个实际字段插入需要 HASH_BUCKET 扩容时失败。ignored-root ARRAY pin 扩容失败是另一条软失败路径。helper 不返回字段写入状态，State/LoadedModules 仍可能成功发布不完整对象；不把抛 VM 异常的分配路径混入这些结论。
+
+**BUG:** LoadedModules 的字符串字段 helper 使用未初始化的 fieldValue；若待写值是未驻留短串，字符串驻留表跨阈值时的 HASH_BUCKET Memory_Allocate 失败可让创建返回 NULL，SetStringObject 随即不写槽。helper 仍把 fieldValue 交给对象字段 setter，后者可读取未初始化值。合法 descriptor 的 moduleVersion 或固定 sourceKind 文本可走到该路径；没有故障注入执行信用。
+
+**BUG:** LoadedModules 忽略 Array_PushValue 的 false 返回。数组或 entry 的 ignored-root ARRAY 扩容失败可让追加正常失败，但循环仍继续，最终成功返回缺少条目的数组；它与记录内字段遗漏分别登记。
+
+callModuleExport 借用两个 VM 字符串的原生文本，以 malloc 申请只保存 SZrTypeValue 浅拷贝的连续参数区；空数组保持 NULL。逐项读取失败、共享调用器正常返回后都 free 该区，不转移 VM 对象所有权。**TODO:** 共享调用器在本地恢复点前可能进行目标查找/惰性导入；需沿 ZrLib_CallModuleExport、Module_GetExport、CallValue 的实际 GC root 与异常跳转核实名称、浅拷贝对象及 malloc 区的有效期和回收边界。目前不据此断言已证泄漏或搬迁缺陷。
+
+现有 nested-native 模块测试先注册 math，再直接调用导出，随后脚本转发 sqrt；断言只比较非空结果及类型一致，不验证数值 2。另一个 reference member-chain 用例实际编译执行 native_root_member_chain_pass.zr，调用 state() 并将 loadedModuleCount>0 转成返回1、断言1，r1该用例PASS；它仅支持正常单state计数投影。callbacks/probe项目脚本也会调用 loadedModules/state，但本批未运行 project suite；probe只断言阶段标记，Parser/LSP内同名源码仅供静态分析。上述范围不证明全部状态字段、惰性导入、GC压力、并发同步或分配故障。逐项定义、调用和证据见 [VM 台账](../../code-review/coverage/zr_vm_lib_system_vm.tsv) 与 [VM 批次](../../code-review/batches/20261014-system-vm-contracts.md)。
+
+本批与 Vector4 共用 `system-vm-vector4-final-r1-results.json` 的实际验证：四个实现对象强制重建、构建成功；模块测试 78 项为 70 PASS / 8 FAIL，全部 78 行与最近 r3 基线精确一致，provider 9 项全部 PASS。相对更早 76 PASS / 2 FAIL 的记录，六项二进制元数据失败仍保留，本批未新增失败。当前输入与 r3 有三个并发 core/Parser 文件差异；保守扩展的 2950 个输入在构建及两个 suite 期间稳定，八个冻结源码未变化。Parser 的两条 C4701 和其他配置测试的 CMAKE_OBJECT_PATH_MAX 警告另行记录，所选 target 构建成功；不据此授予 State/LoadedModules 根对象协议、并发或分配失败测试信用，也不声称整个 suite 通过。
+
+最终共享 global 约束注释使用四源 strict proof `system-vm-final-r2-comment-equivalence.json`，最终原生验证为 `system-vm-clang-final-r3e-results.json`：clang-cl/原生 ml64、Debug/static 配置经 cache guard 核对，构建成功并实际编译两个 VM 实现。模块测试 70/78 PASS、8 FAIL，与此前 r1 的全部 case 行一致；provider 9/9 PASS，reference member-chain 的 State/count 正常路径再次 PASS。vm_registry.c 的四条缺省 initializer 警告和其他模块/工具参数警告保留；不称全测试通过或无 warning。MSVC r2 的编译器缺失、r4 的 C1902 失败及未重建 object 另有记录。
+
+最终验证期间 2950 个保守编译/配置输入及四个 VM 源码稳定，State 引用样例另核对单文件前后哈希；这些范围不涵盖全部运行时样例、生成输入或外部 SDK/toolchain。与 r1 之间有其他会话的 Core/Parser 改动且工具链不同，不能作隔离的行为归因。完整逐项比较见 `system-vm-clang-final-r3e-comparison.json`；没有执行分配故障、并发、GC 压力或惰性导入异常专项。

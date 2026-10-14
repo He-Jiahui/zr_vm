@@ -58,7 +58,7 @@ system.console.printLine(text);
 | `env` | `getVariable(name)` | 读取宿主环境；未定义变量返回 `null` |
 | `process` | `arguments`、`sleepMilliseconds`、`exit` | 启动参数、阻塞休眠和进程退出 |
 | `assembly` | `resourceExists`、`readResourceText`、`readResourceBytes` | 查询和读取当前项目包中的资源 |
-| `vm` | `loadedModules`、`state`、`callModuleExport` | 运行时模块快照和受控导出调用 |
+| `vm` | `loadedModules`、`state`、`callModuleExport` | 全局已加载缓存快照、当前线程状态取样与模块导出转发 |
 
 `exit` 直接终止宿主进程，是不可恢复控制转移；验证退出路径时应使用独立进程。
 环境和参数字符串由 VM 创建并受 GC 管理，C callback 只在 `ZrLibCallContext` 生命周期内
@@ -153,3 +153,9 @@ TZrBool ok = ZrVmLibSystem_Register(global);
 `Register` 负责 descriptor 校验、叶子 module links 注册和全局缓存挂接。共享库导出
 `ZrVm_GetNativeModule_v1()`。宿主应显式关闭仍打开的 `FileStream`；其隐藏文件句柄另有
 finalizer 作为兜底。`assembly` 在单次资源读取中关闭归档，`vm` 查询不持有文件句柄。
+
+### VM 快照与转发边界
+
+`loadedModules` 只遍历 global 的已加载实例缓存，按哈希桶顺序投影注册元数据；它不是全部可用 descriptor 的枚举。`state` 的六字段混合缓存计数、全局 GC 与当前线程栈/帧取样，分配可能推进 GC，不保证原子一致；gcMode 不能替代 stopGC 启停标志。`callModuleExport` 通过共享调用器解析并转发模块导出，允许其惰性导入路径；malloc 参数区只浅拷贝 VM 值，正常返回负责 free。
+
+void 字段写入失败、短串驻留失败后未初始化值读取、被忽略的数组追加失败分别记录为 BUG；GC 搬迁与局部异常恢复前的资源边界保留为 TODO。见 [system API 的 VM 契约](system-api.md#vm-快照与跨层调用契约) 和 [VM 逐单元台账](../../code-review/coverage/zr_vm_lib_system_vm.tsv)；一次 nested-native 类型比较不能扩大为快照、数值或故障路径保证。
