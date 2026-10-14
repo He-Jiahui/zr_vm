@@ -270,3 +270,20 @@ callback 仍成功，导致已有值被交付成缺失标记。这两项有完�
 **TODO:** `ferror` 尚未区分：首字节流错误与 EOF 返回同样 null，中途 read 错误表现为截断 UTF-8，readLine 的部分输入遇到错误可照常交付；须明确并测试 I/O 错误策略。末尾孤立 CR 加 EOF 的裁剪是否符合行契约也须核实。descriptor 默认 GC_AWARE 模式下，阻塞 fgetc/同步日志仍持有 RUNNING mutator；须从 `native_binding_dispatch_lanes.h:240-278` 和 `gc_domain_mutator.c:630-693` 检查 STW 等待与 native 模式策略，现有测试没有该时序覆盖。
 
 System 的现有 module 测试检查 console 导出/hint，provider 测试检查官方归属；它们没有执行 Console 读输入或验证边界。CLI suite 的 `repl_native_import` 用例（`tests/cmake/run_cli_suite.cmake:1130-1149`）调用 print("xxx") 并断言 stdout 含 xxx 且 stderr 为空，其他项目 marker 断言只能提供整体流程信用。完整逐单元审查见 [Console 台账](../../code-review/coverage/zr_vm_lib_system_console.tsv)；本节不声称本批已执行整套 CLI 或 OOM/UTF-8/线程故障测试。
+
+
+## GC 调用、统计与失败边界
+
+这六个 callback 使用当前 state 所属 global 的共享 collector；多个 state 可以共享它。GcDomain 指标是统计内容，不代表每次调用拥有独立 collector。context、state、collector 与 result 都只借用至本次同步调用结束；宿主须协调同一 global 的并发控制和读取。注册元数分别为 enable/disable/get_stats 0、collect 0..1、set_heap_limit/set_budget 1，数量错误在 callback 前抛 ArityError。
+
+`enable` 设置 generational 模式并清除 stop flag；`disable` 只设置 stop flag，保留模式，不终止当前 step。Core 仅在部分推进循环检查该标志，generational safe-point 分支仍可执行回收；enabled 字段只表示 `!stopGcFlag`，不证明后台线程存在、回收正在运行或所有自动推进均已停止。此接口的禁用范围仍需从 `CheckGc`、`GcStep` 与 generational step 明确设计意图和断言。
+
+`collect` 省略参数时走 full。minor/major 安排对应请求后调用一次 GcStep，成功返回 null 不保证整个周期完成。full 调用同步 GcFull 入口，但 Core 在 StopTheWorldBegin 超时后会 void 早退，callback 无完成状态可检查；成功 null 同样不是完成证明。kind 参数错误标签由 ReadString 抛 TypeError，未知文本正常 false 可被 FINE dispatcher 折叠为预置 null。**BUG:** 合法脚本字符串如 `"full\x00tail"` 在 lexer 的显式长度路径保留 NUL，ReadString 的 C 指针随后由 strcmp 比较，后缀被忽略；接口约定的精确 kind 被当作前缀接受。这是完整静态路径结论，未执行 NUL 测试。
+
+两个 setter 共用 ReadInt 后检查转换结果非负；可靠输入是非负且可表示的 int64。有限浮点先向零截断，`-0.5` 可变成 0；大 UINT64 转 int64 依赖实现。**BUG:** 当前共享 Reader 对 NaN、无穷或超 int64 范围的 FLOAT/DOUBLE 直接转换，触发 C 未定义行为，GC 注册入口可达该既有共享缺陷。**TODO:** heap limit 再转 ptrdiff_t，pause budget 在 Core 中转 TZrSize，需核实支持的 32 位配置与越界策略。heap limit 0 清除软阈值；set_budget 同时写 pause/remark 配置，0 在 Core 中仍将 gcPauseBudget 设置为 1。预算不构成整个 collection、最终 remark、sweep 或 finalizer 的时间上限。
+
+`get_stats` 先取得无指针的栈快照，再分配 VM 管理的 SystemGcStats 对象并逐个写入 42 个字段；enabled 在对象分配后单独读取。它没有发布栈指针，但字段并非同一瞬间的原子快照，对象分配还可能触发 GC。Core getter 对域指标局部加锁，压力汇总仍有 regions 数组并发访问的既有缺陷；当前入口不应被当作任意线程安全的宿主快照 API。返回对象按普通 VM 根与有效期规则持有，调用者不手动 free。
+
+**BUG:** 42 次字段写入使用 void setter，三条软失败路径均可留下缺字段对象：新实例的初始 nodeMap 桶申请失败，首个 setter 内重试初始化仍失败时，只记录日志并跳过 enabled；ignored-root pin 表扩容的 ARRAY RawMalloc 失败会跳过对应字段；后续整数项使 map 跨负载阈值时，HASH_BUCKET rehash 分配失败也会让 Object_SetValue 静默返回。首字段初始化失败与后续扩容分别记录，不将 enabled 的正常首写归于负载阈值。投影 helper 不检测这些状态，GetStats 仍把非空对象作为成功结果。证据涵盖 native instance helper、Object_Init/SetValue、HashSet_Init/Rehash、dispatcher pin 和成功返回链；没有故障注入信用。抛出 VM 异常的分配失败属于另一条传播路径，不归为正常成功。
+
+现有两项 module 测试中，`test_system_gc_safe_controls_report_runtime_stats` 在单 VM state 中核对控制参数及选定计数，`test_system_native_types_register_complete_struct_fields` 核对字段元数据。Root 修改前运行整 module target 78 项，相关两项及 Vector3 构造均 PASS；另两项既有失败保留。另有 `tests/gc/gc_tests.c` 的 `test_system_gc_enable_callback_switches_generational_mode` 直接调用 Enable/Disable，断言模式及 stop flag，不经 dispatcher；本批尚未运行该直接 C 测试。上述测试未覆盖非法 numeric/kind、disable 后自动推进、allocator 软失败或并发快照。完整逐单元依据见 [GC 台账](../../code-review/coverage/zr_vm_lib_system_gc.tsv) 与 [GC 批次](../../code-review/batches/20261014-system-gc-contracts.md)。

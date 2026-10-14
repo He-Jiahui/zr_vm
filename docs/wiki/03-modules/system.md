@@ -125,9 +125,11 @@ system.console.printLine(text);
 ## GC、VM 和异常子模块
 
 `gc.enable()`、`gc.disable()`、`gc.collect(kind = "full")`、`gc.set_heap_limit(bytes)`、
-`gc.set_budget(microseconds)` 和 `gc.get_stats()` 操作当前 `GcDomain`。统计快照区分
-eden/survivor/old/pinned/large/permanent region 的 used/live bytes；读快照不会暂停
-其他 mutator。
+`gc.set_budget(microseconds)` 和 `gc.get_stats()` 操作当前 state 所属 global 的共享 collector。
+统计包括 GcDomain 指标及 eden/survivor/old/pinned/large/permanent region 的 used/live bytes。
+Core getter 只对部分域指标加锁；脚本统计对象的后续分配可能触发 GC，整次调用没有
+“不暂停其他 mutator”或线程安全保证。`disable()` 只设置 stop flag，保留 generational 模式，
+不能据此保证所有后续自动推进均已停止。
 
 `exception` 导出 `Error`、`RuntimeError`、`NullReferenceError`、`IOException`、
 `TypeError`、`MemoryError`、`ExceptionError` 和 `StackFrame`，并提供
@@ -136,8 +138,10 @@ eden/survivor/old/pinned/large/permanent region 的 used/live bytes；读快照�
 
 `gc` 的公开签名为 `enable(): null`、`disable(): null`、`collect(kind?: string): null`、
 `set_heap_limit(bytes: int): null`、`set_budget(microseconds: int): null` 和
-`get_stats(): SystemGcStats`。`kind` 只能是 `minor`、`major` 或 `full`，省略时使用 `full`；
-`0` 作为 heap limit 表示清除限制。
+`get_stats(): SystemGcStats`。`kind` 的接口约定为 `minor`、`major` 或 `full`，省略时使用
+`full`；当前 C 字符串比较接受嵌入 NUL 前的合法前缀，已在 [GC 详细契约](system-api.md#gc-调用统计与失败边界)
+记录为缺陷。`0` 作为 heap limit 表示清除软阈值；collection 的成功 null 不证明周期完成。
+参数转换、预算、统计对象与并发限制见上述详细契约。
 
 ## C 接口与注册入口
 

@@ -4,23 +4,27 @@
 
 #include "zr_vm_lib_system/gc_registry.h"
 
+/* 实际 System include 链已定义共享宏；此 fallback 仅供缺少 common 配置的独立编译兜底。 */
 #ifndef ZR_ARRAY_COUNT
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
 
+/* collect 的 kind 说明供工具展示；运行时元数仍由函数描述符和 dispatcher 检查。 */
 static const ZrLibParameterDescriptor g_collect_parameters[] = {
         {"kind", "string", "Collection kind: minor, major, or full. Defaults to full."},
 };
 
+/* 堆上限以 bytes 输入；0 清除限制，数值检查由 callback 完成。 */
 static const ZrLibParameterDescriptor g_heap_limit_parameters[] = {
         {"bytes", "int", "Heap limit in bytes. Use 0 to clear the limit."},
 };
 
+/* 同一 microseconds 参数会写入 pause 与 remark 两项 Core 配置。 */
 static const ZrLibParameterDescriptor g_budget_parameters[] = {
         {"microseconds", "int", "Pause budget in microseconds used for both pause and remark slices."},
 };
 
-/* 字段名须与 gc.c 的快照投影一致，编译期成员访问据此获知字段类型。 */
+/* 42 个字段名和类型须与 gc.c 的快照投影一致；描述符也供类型导入/访问检查使用。 */
 static const ZrLibFieldDescriptor g_gc_stats_fields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT("enabled", "bool", "Whether background and incremental GC steps are enabled."),
         ZR_LIB_FIELD_DESCRIPTOR_INIT("heapLimitBytes", "int", "Configured heap limit in bytes."),
@@ -66,13 +70,16 @@ static const ZrLibFieldDescriptor g_gc_stats_fields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT("fullCollectionMaxDurationUs", "int", "Maximum observed full collection duration in microseconds."),
 };
 
+/* 所有描述符及嵌套表为静态借用数据；注册及后续调用期间须保持 provider 映像驻留。 */
 const ZrLibModuleDescriptor *ZrSystem_GcRegistry_GetModule(void) {
+    /* 声明脚本可见的统计对象布局；字段定义与 gc.c 的投影共同维护。 */
     static const ZrLibTypeDescriptor kTypes[] = {
             ZR_LIB_TYPE_DESCRIPTOR_INIT("SystemGcStats", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, g_gc_stats_fields,
                                         ZR_ARRAY_COUNT(g_gc_stats_fields), ZR_NULL, 0, ZR_NULL, 0,
                                         "Snapshot of safe GC control and telemetry state.", ZR_NULL, ZR_NULL, 0,
                                         ZR_NULL, 0, ZR_NULL, ZR_TRUE, ZR_TRUE, "SystemGcStats()", ZR_NULL, 0),
     };
+    /* 六个 callback 的 arity 在调用前检查；hint 类型不替代回调内部值读取。 */
     static const ZrLibFunctionDescriptor kFunctions[] = {
             {"enable", 0, 0, ZrSystem_Gc_Enable, "null", "Enable incremental and scheduled garbage collection.",
              ZR_NULL, 0},
@@ -88,6 +95,7 @@ const ZrLibModuleDescriptor *ZrSystem_GcRegistry_GetModule(void) {
             {"get_stats", 0, 0, ZrSystem_Gc_GetStats, "SystemGcStats",
              "Return a safe snapshot of GC control and telemetry state.", ZR_NULL, 0},
     };
+    /* IDE/LSP 元数据与 runtime descriptors 分离；提示签名不构成运行时参数验证。 */
     static const ZrLibTypeHintDescriptor kHints[] = {
             {"enable", "function", "enable(): null", "Enable incremental and scheduled garbage collection."},
             {"disable", "function", "disable(): null", "Disable incremental and scheduled garbage collection."},
@@ -111,11 +119,13 @@ const ZrLibModuleDescriptor *ZrSystem_GcRegistry_GetModule(void) {
              "fullCollectionMaxDurationUs }",
              "Snapshot of safe GC control and telemetry state."},
     };
+    /* 静态 hints 协议标记随模块借出；消费者按 schema 解析。 */
     static const TZrChar kHintsJson[] =
             "{\n"
             "  \"schema\": \"zr.native.hints/v1\",\n"
             "  \"module\": \"zr.system.gc\"\n"
             "}\n";
+    /* 浅描述符及嵌套指针都不拥有 provider image；保留返回值不能替代映像驻留。 */
     static const ZrLibModuleDescriptor kModule = {
             ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
             "zr.system.gc",
