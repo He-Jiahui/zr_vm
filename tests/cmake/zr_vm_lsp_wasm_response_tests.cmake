@@ -28,12 +28,14 @@ zr_vm_add_support_target(zr_vm_language_server_wasm_exports_test
 # TODO: 此目标只在宿主编译器下定义 ZR_WASM_BUILD，未覆盖 __EMSCRIPTEN__ 和最终导出表；
 # 发布前须由真实 Emscripten 构建或 worker 探针验证浏览器 ABI。
 target_compile_definitions(zr_vm_language_server_wasm_exports_test PRIVATE ZR_WASM_BUILD)
-# 宿主 C++ 编译导出胶水时沿用当前 C 兼容宽松选项；这些选项不属于产品 WASM 构建契约。
-# TODO: 选项只按 CXX 语言过滤，未按编译器过滤；需在 MSVC 目标上验证 -fpermissive 等选项的兼容性。
+# 宿主 C++ 编译导出胶水时沿用 GNU/Clang 的宽松选项；这些选项不属于产品 WASM 构建契约。
+# MSVC 会把 -Wno-error 当成非法的 /Wno-error（D8021），所以只交给 GNU/Clang。
 target_compile_options(zr_vm_language_server_wasm_exports_test PRIVATE
-        "$<$<COMPILE_LANGUAGE:CXX>:-fpermissive>"
-        "$<$<COMPILE_LANGUAGE:CXX>:-Wno-error>"
-        "$<$<COMPILE_LANGUAGE:CXX>:-Wno-c++11-narrowing>"
+        "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>>:-fpermissive>"
+        "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>>:-Wno-error>"
+        "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>>:-Wno-c++11-narrowing>"
+        "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:GNU>>:-include${CMAKE_SOURCE_DIR}/zr_vm_language_server/wasm/cxx_stdatomic_compat.h>"
+        "$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/FI${CMAKE_SOURCE_DIR}/zr_vm_language_server/wasm/cxx_stdatomic_compat.h>"
 )
 # 宿主 C++ 编译单元包含 C 风格声明；按语言映射线程局部与对齐关键字以编译导出胶水。
 target_compile_definitions(zr_vm_language_server_wasm_exports_test PRIVATE

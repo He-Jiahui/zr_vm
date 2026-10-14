@@ -520,6 +520,38 @@ static ZR_FORCE_INLINE void object_record_helper(SZrState *state, EZrProfileHelp
     }
 }
 
+/* 范围内的下标写入必须先把原始缓冲交回节点图。范围外的键留在节点图，
+ * 原始缓冲继续作为规范存储，会话快照才能同时保留两侧。 */
+static ZR_FORCE_INLINE TZrBool object_key_hits_active_raw_index(const SZrObject *object,
+                                                                 const SZrTypeValue *key) {
+    TZrInt64 index;
+
+    if (object == ZR_NULL || key == ZR_NULL ||
+        object->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY ||
+        object->superArrayStorageMode != ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL ||
+        object->superArrayRawIntData == ZR_NULL ||
+        object->superArrayRawIntLength == 0u) {
+        return ZR_FALSE;
+    }
+    switch (key->type) {
+        case ZR_VALUE_TYPE_INT8:
+        case ZR_VALUE_TYPE_INT16:
+        case ZR_VALUE_TYPE_INT32:
+        case ZR_VALUE_TYPE_INT64:
+            index = key->value.nativeObject.nativeInt64;
+            break;
+        case ZR_VALUE_TYPE_UINT8:
+        case ZR_VALUE_TYPE_UINT16:
+        case ZR_VALUE_TYPE_UINT32:
+        case ZR_VALUE_TYPE_UINT64:
+            return (TZrBool)(key->value.nativeObject.nativeUInt64 <
+                             (TZrUInt64)object->superArrayRawIntLength);
+        default:
+            return ZR_FALSE;
+    }
+    return (TZrBool)(index >= 0 && (TZrUInt64)index < (TZrUInt64)object->superArrayRawIntLength);
+}
+
 static ZR_FORCE_INLINE TZrBool object_disable_raw_int_storage_for_generic_array_write(SZrState *state,
                                                                                       SZrObject *object) {
     if (object != ZR_NULL &&
@@ -827,8 +859,7 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair *object_get_own_pair_unchecked(SZrSta
     ZR_ASSERT(object != ZR_NULL);
     ZR_ASSERT(key != ZR_NULL);
 
-    if (object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY &&
-        object->superArrayStorageMode == ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL &&
+    if (object_key_hits_active_raw_index(object, key) &&
         !ZrCore_Object_SuperArrayMaterializeGeneric(state, object)) {
         return ZR_NULL;
     }
@@ -1830,7 +1861,8 @@ static void object_set_value_core(SZrState *state,
         return;
     }
 
-    if (!object_disable_raw_int_storage_for_generic_array_write(state, object)) {
+    if (object_key_hits_active_raw_index(object, storageKey) &&
+        !object_disable_raw_int_storage_for_generic_array_write(state, object)) {
         object_unpin_value_object(state->global, value, valuePinned);
         object_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinned);
         return;
@@ -1900,7 +1932,8 @@ void ZrCore_Object_SetExistingPairValueUnchecked(SZrState *state,
         return;
     }
 
-    if (!object_disable_raw_int_storage_for_generic_array_write(state, object)) {
+    if (object_key_hits_active_raw_index(object, &pair->key) &&
+        !object_disable_raw_int_storage_for_generic_array_write(state, object)) {
         return;
     }
 
@@ -1926,7 +1959,8 @@ void ZrCore_Object_SetExistingPairValueNoWriteBarrierUnchecked(SZrState *state,
         return;
     }
 
-    if (!object_disable_raw_int_storage_for_generic_array_write(state, object)) {
+    if (object_key_hits_active_raw_index(object, &pair->key) &&
+        !object_disable_raw_int_storage_for_generic_array_write(state, object)) {
         return;
     }
 
@@ -2025,8 +2059,7 @@ const SZrTypeValue *ZrCore_Object_GetValue(struct SZrState *state, SZrObject *ob
         return ZR_NULL;
     }
 
-    if (object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY &&
-        object->superArrayStorageMode == ZR_SUPER_ARRAY_STORAGE_MODE_RAW_CANONICAL &&
+    if (object_key_hits_active_raw_index(object, key) &&
         !zr_super_array_raw_int_materialize_dirty(state, object)) {
         return ZR_NULL;
     }

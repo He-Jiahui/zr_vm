@@ -7,6 +7,7 @@
 #include "tests/harness/runtime_support.h"
 #include "zr_vm_common/zr_type_conf.h"
 #include "zr_vm_core/debug.h"
+#include "zr_vm_core/execution.h"
 #include "zr_vm_core/exec_ir.h"
 #include "zr_vm_core/exec_ir_interpreter.h"
 #include "zr_vm_core/gc.h"

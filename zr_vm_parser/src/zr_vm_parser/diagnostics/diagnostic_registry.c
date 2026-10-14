@@ -22,7 +22,7 @@
         (categoryValue) \
     }
 
-/* 解析、类型、所有权和优化诊断共用稳定 code/id。BUG: 5001-5023 的 23 个优化描述符无消息表键；查询其 title/message 返回空，目录覆盖测试断言 188 条消息却只有 142 条。 */
+/* 解析、类型、所有权和优化诊断共用稳定 code/id。5001-5023 的文案在消息目录中成对登记。 */
 static const SZrDiagnosticDescriptor g_diagnostic_descriptors[] = {
     ZR_DIAGNOSTIC_DESCRIPTOR(1001, "missing_expression_after_assignment",
                              ZR_STRUCTURED_DIAGNOSTIC_ERROR, ZR_LINT_CATEGORY_SYNTAX),

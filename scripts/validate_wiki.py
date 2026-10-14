@@ -120,7 +120,8 @@ def _slugify_heading(title: str) -> str:
     """Approximate the slug used by common Markdown documentation themes."""
 
     title = re.sub(r"[`*_~]", "", title).strip().lower()
-    title = re.sub(r"[^\w\-\u0080-\uffff ]", "", title, flags=re.UNICODE)
+    # Zensical drops non-ASCII heading text, so "Complex 和 Quaternion" is complex-quaternion.
+    title = re.sub(r"[^\w\- ]", "", title, flags=re.ASCII)
     return re.sub(r"[\s-]+", "-", title).strip("-")
 
 

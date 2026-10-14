@@ -849,6 +849,17 @@ static SZrString *append_resolved_type_to_detail(SZrState *state,
     }
 
     if (detailText != ZR_NULL) {
+        static const TZrChar unresolvedMarker[] = "cannot infer exact type";
+        TZrSize unresolvedLength = sizeof(unresolvedMarker) - 1U;
+
+        /* 签名已经标明类型未确定时，规范格式会把猜测名写回来，补全不能再附加。 */
+        if (detailLength >= unresolvedLength) {
+            for (TZrSize index = 0; index + unresolvedLength <= detailLength; index++) {
+                if (memcmp(detailText + index, unresolvedMarker, unresolvedLength) == 0) {
+                    return detail;
+                }
+            }
+        }
         for (TZrSize index = 0; index + prefixLength + resolvedLength <= detailLength; index++) {
             if (memcmp(detailText + index, prefix, prefixLength) == 0 &&
                 memcmp(detailText + index + prefixLength, resolvedText, resolvedLength) == 0) {

@@ -87,6 +87,11 @@ jobs:
       if: runner.os != 'Windows'
       run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }}
 
+    - name: Install language server TypeScript
+      # 清单测试按扩展目录解析 typescript；CI 不装依赖时三个 inventory 用例会找不到模块。
+      working-directory: zr_vm_language_server_extension
+      run: npm ci
+
     - name: Test
       working-directory: ${{ steps.strings.outputs.build-output-dir }}
       # CTest 消费当前配置注册的测试；Windows Visual Studio 是多配置生成器，必须传 --build-config。

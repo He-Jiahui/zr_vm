@@ -195,7 +195,7 @@ Complex 的 `phase()` 返回弧度；compare 按模长平方，不按分量字�
 **TODO:** NaN 或双方平方溢出时比较落到 0，需确认 VM 的 unordered 策略。
 **BUG:** 极大有限输入 `(1e200, 0)` 的平方中间值溢出，可使 magnitude 返回无穷、
 normalized 返回零复数。**TODO:** toString 的字符串 helper 返回 true 并不自行确认结果
-槽写入，分配失败是否抛错仍需核实。详细调用限制见 [Complex API](math-api.md#complex-和-quaternion)。
+槽写入，分配失败是否抛错仍需核实。详细调用限制见 [Complex API](math-api.md#complex-quaternion)。
 
 向量/矩阵 meta 运算通常返回新值；Tensor 需要检查 shape、rank、index 和内存分配。NaN、
 接近零长度和奇异矩阵都应显式处理，不能假定 C math 的 errno 会自动成为 ZR exception。
