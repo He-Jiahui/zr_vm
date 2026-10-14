@@ -32,6 +32,7 @@ related_code:
   - zr_vm_lib_math/src/zr_vm_lib_math/matrix/matrix4x4_registry.c
   - zr_vm_lib_math/src/zr_vm_lib_math/tensor/tensor.c
   - zr_vm_lib_math/src/zr_vm_lib_math/tensor/tensor_registry.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c
 implementation_files:
   - zr_vm_lib_math/src/zr_vm_lib_math/module.c
   - zr_vm_lib_math/src/zr_vm_lib_math/common.c
@@ -327,3 +328,24 @@ Vector3 constructor 元数为 3，命名方法 length/lengthSquared/normalized �
 现有 `test_native_vector3_constructor_binds_all_numeric_arguments_at_runtime` 明确断言 x/y/z 为 2/3/4，Root 的修改前整 module target 78 项运行中该项 PASS，另两项既有失败保留。pipeline 的 lin_alg 执行 dot/cross/cross.length，最终 checksum 只消费 dot，未消费 crossLength，不能为叉积或长度结果授予断言信用。极值、比较、布局和分配失败没有专门执行证据。完整定义、间接调用与测试边界见 [Vector3 台账](../../code-review/coverage/zr_vm_lib_math_vector3.tsv) 与 [Vector3 批次](../../code-review/batches/20261014-vector3-contracts.md)。
 
 最终 GC helper 文档补齐后的共享 target 验证另见 `gc-vector3-final-r3-results.json`：构建成功，78 项为 70 PASS / 8 FAIL；Vector3 构造、GC 控制及统计字段用例仍 PASS。原有两项失败保留，另六项二进制元数据往返用例由 PASS 变为 FAIL，尚未隔离归因。与旧 before 的输入已有九个并发 Parser 文件差异；本轮 1652 个输入在构建和测试期间稳定，但不能据此声称与旧基线完全一致或整个 suite 通过。Vector3 四源与 r2 冻结版本相同，严格非注释 token 证明和 r2 的四对象实际重编证据继续限定于其原范围。
+
+
+## Vector4 回调、四字段发布与数值边界
+
+Vector4 constructor 元数为 4；length/lengthSquared/normalized 为 0，dot/distance 为 1，lerp 为 2；meta add/sub/compare 为 1、neg/toString 为 0。descriptor 保存固定元数，native dispatcher 在每次回调前检查。ReadFloat 接受 VM 整数和浮点，错误标签抛 TypeError；rhs 由 ReadObject 接受 object/array，再按 x/y/z/w 读取数值字段，不要求名义 prototype 为 Vector4。字段缺失或非数值返回普通 false；thread 仍 FINE 时交付预置 null，异常路径另行退出。
+
+构造 helper 可复用兼容 self，也可根据 construct target/owner prototype 新建实例；MakeVector4 运算工厂总是另建 VM 对象。静态字段名表与本次调用的 values[4] 均按 x/y/z/w 同步读取。context、state、receiver、rhs 和 result 借用于本次回调；对象及字符串由 VM 管理，调用者不获得手动释放责任。registry 的 type、字段/methods/meta 和 hints 表及其字符串均借用 provider image，消费者使用期间必须保持映像有效。GetFunctions 返回 NULL、可选 count 写 0，表示 module-level function 空表；实例方法和 meta callback 仍由 type descriptor 提供。
+
+**BUG:** 普通四数值 constructor 经 CREATE_OBJECT/TO_STRUCT 取得空 nodeMap 的 seed，再由 FUNCTION_CALL 的数值 fast lane 和 ResolveConstructTarget 复用；MakeVector4 工厂也从空 nodeMap 新对象开始。初始容量 4、3/4 load threshold 下，前三字段成功写入后第四字段 w 触发 HASH_BUCKET rehash。若其他对象/字段键创建、所有 ignored-root pin 和 x/y/z 写入均成功，只有此次 `Memory_Allocate(HASH_BUCKET)` 返回 NULL，void setter 不反馈失败，构造 helper/factory 仍可成功发布缺 w 的对象。局部触发点见 `vector4.c:38-42,58-60`；下层链见 `common.c:22-35,200-252,267-270`、`execution_object.c:558-600`、`value_construct.c:185-190,330`、`hash_set.h:498-500`、`hash_set.c:170-181`、`memory.h:14-22`（raw allocator 不设置 VM 异常）、`object.c:1840-1847`（Add 失败仅记录日志并从 void setter 返回）和 `native_binding_dispatch.c:1406-1407`（调用 setter 后仍继续发布）。这是完整静态单故障路径，未做 allocator 故障注入。
+
+**BUG:** ignored-root ARRAY 扩容是另一条字段缺失路径。seed/factory 新 receiver 和字段 key 尚未登记、表 count 为 capacity-1 时，Object_SetFieldCString 先 pin receiver 占最后一槽，再尝试 pin key；该次 `RawMallocWithType(ARRAY)` 失败可让 void setter 静默跳过写入，helper/factory 仍完成。此链见 `gc_object.c:722-749` 和 `native_binding_dispatch.c:210,1385-1407`；不能把 ARRAY 失败与上一段仅 w 的 HASH_BUCKET 失败合并成任意 OOM 结论。
+
+**BUG:** 有限 `(1e200,0,0,0)` 的平方和中间溢出，使 Length 返回 Inf、Normalized 返回零向量，到零点的 Distance 返回 Inf，而相应长度和单位向量本可表示。Dot 的 `(1e200,1e200,0,0)` 与 `(1e200,-1e200,0,0)` 先生成 +Inf/-Inf，累加为 NaN，数学点积为零。Lerp 的 x 端点 `1e308/-1e308`、factor `.5` 先使差分溢出，数学中点为零却返回 -Inf；factor 不夹紧。LengthSquared 的平方值本身不可表示与这些有限结果的中间溢出分别记录。本批证据为合法输入和实际表达式的静态闭合，未执行极值样例。
+
+**TODO:** Length、LengthSquared、Normalized、Dot 和 MetaCompare 把 ZrMathVector4 地址转作连续 double 输入；需沿 `math_common.h` 的结构声明及 `ZrMath_Dot(count=4)` 核实对象模型和跨成员指针运算契约。Distance 使用自己的 d[4] 数组，不归入该 cast。MetaCompare 对两次严格比较均为假时写 0：不同有限幅值 `(1e200,0,0,0)` 与 `(2e200,0,0,0)` 的平方都为 Inf，NaN 也走同一分支；是否符合比较契约需追踪实际 VM compare/排序消费者及 unordered 策略，不能仅凭返回 0 推断对象相等或直接升级 BUG。
+
+**BUG:** toString 使用 512 字节栈格式窗口，VM 字符串创建不保留该栈地址。调用链从 `common.c:512-519` 经 `Value_SetString`（`native_binding_dispatch.c:1303-1307`）进入 `native_binding_support.c:320-324` 的 native_binding_create_string，再到 `string.c:958-974` 的 CreateTryHitCache。仅当格式文本为未驻留短串，缓存 miss 后进入 Create/short interning，并且驻留表所需的 HASH_BUCKET rehash 宿主分配失败时，创建才不抛 VM 异常地返回 NULL；SetStringObject 不覆写结果槽，MakeStringResult 仍 true，成功派发交付预置 null。失败与回写证据见 `string.c:802-808`、`hash_set.h:525-537`、`hash_set.c:170-181`、`memory.h:14-22`（raw allocator 不设置 VM 异常）和 `native_binding_dispatch.c:362,1311-1316,673`。不泛化为所有分配失败，无故障注入执行信用。
+
+Matrix4x4 的 mulVector/meta mul 是实际 C 消费者。pipeline 的 `lin_alg.zr:11-18` 确实构造 Vector4、执行矩阵乘向量并把 XYZ 放进记录，但 callbacks/probe 只把记录中的 dot 纳入 checksum，未数值断言这些 XYZ。因此该夹具不提供 Vector4 数值、比较、布局或字段/短串分配失败的断言证据，本批也不运行会改写夹具目录的 project suite。完整逐单元定义、绑定、调用与结论见 [Vector4 台账](../../code-review/coverage/zr_vm_lib_math_vector4.tsv) 和 [Vector4 批次](../../code-review/batches/20261014-vector4-contracts.md)。
+
+本批与 SystemVM 共用 `system-vm-vector4-final-r1-results.json` 的实际验证：四个实现对象强制重建、构建成功；模块测试 78 项为 70 PASS / 8 FAIL，全部 78 行与最近 r3 基线精确一致，provider 9 项全部 PASS。相对更早 76 PASS / 2 FAIL 的记录，六项二进制元数据失败仍保留，本批未新增失败。当前输入与 r3 有三个并发 core/Parser 文件差异；保守扩展的 2950 个输入在构建及两个 suite 期间稳定，八个冻结源码未变化。Parser 的两条 C4701 和其他配置测试的 CMAKE_OBJECT_PATH_MAX 警告另行记录，所选 target 构建成功；不据此授予 Vector4 极值、布局或分配失败测试信用，也不声称整个 suite 通过。
