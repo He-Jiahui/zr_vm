@@ -108,7 +108,7 @@ Windows 的 `0xFFFFFFFF` 被解释为 `INFINITE`。POSIX 收到信号使 `nanosl
 **TODO:** Windows/POSIX 长等待的默认 GC-aware 策略、Emscripten Asyncify/JSPI 配置及
 重入/挂起期借用有效性、支持 ABI 的 `time_t` 宽度、退出码范围和 function hint 的消费
 仍需沿各自入口核实。调用链、平台资料与测试边界见
-[Process 审查台账](../../code-review/coverage/zr_vm_lib_system_process.tsv)。
+`docs/code-review/coverage/zr_vm_lib_system_process.tsv`。
 
 ## 文件系统
 
@@ -249,8 +249,8 @@ callback 仍成功，导致已有值被交付成缺失标记。这两项有完�
 
 相关 module 测试只核导出、根模块缓存身份和 module links；本轮 provider 9/9 只验证提供者契约。
 环境查询、nullable metadata、长值同桶读取和分配失败没有执行信用。逐单元依据见
-[Env 审查批次](../../code-review/batches/20261013-system-env-contracts.md)和
-[Env 台账](../../code-review/coverage/zr_vm_lib_system_env.tsv)。
+`docs/code-review/batches/20261013-system-env-contracts.md` 和
+`docs/code-review/coverage/zr_vm_lib_system_env.tsv`。
 
 
 ## Console 调用、资源与失败边界
@@ -269,4 +269,4 @@ callback 仍成功，导致已有值被交付成缺失标记。这两项有完�
 
 **TODO:** `ferror` 尚未区分：首字节流错误与 EOF 返回同样 null，中途 read 错误表现为截断 UTF-8，readLine 的部分输入遇到错误可照常交付；须明确并测试 I/O 错误策略。末尾孤立 CR 加 EOF 的裁剪是否符合行契约也须核实。descriptor 默认 GC_AWARE 模式下，阻塞 fgetc/同步日志仍持有 RUNNING mutator；须从 `native_binding_dispatch_lanes.h:240-278` 和 `gc_domain_mutator.c:630-693` 检查 STW 等待与 native 模式策略，现有测试没有该时序覆盖。
 
-System 的现有 module 测试检查 console 导出/hint，provider 测试检查官方归属；它们没有执行 Console 读输入或验证边界。CLI suite 的 `repl_native_import` 用例（`tests/cmake/run_cli_suite.cmake:1130-1149`）调用 print("xxx") 并断言 stdout 含 xxx 且 stderr 为空，其他项目 marker 断言只能提供整体流程信用。完整逐单元审查见 [Console 台账](../../code-review/coverage/zr_vm_lib_system_console.tsv)；本节不声称本批已执行整套 CLI 或 OOM/UTF-8/线程故障测试。
+System 的现有 module 测试检查 console 导出/hint，provider 测试检查官方归属；它们没有执行 Console 读输入或验证边界。CLI suite 的 `repl_native_import` 用例（`tests/cmake/run_cli_suite.cmake:1130-1149`）调用 print("xxx") 并断言 stdout 含 xxx 且 stderr 为空，其他项目 marker 断言只能提供整体流程信用。完整逐单元审查见 `docs/code-review/coverage/zr_vm_lib_system_console.tsv`；本节不声称本批已执行整套 CLI 或 OOM/UTF-8/线程故障测试。

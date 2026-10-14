@@ -167,7 +167,7 @@ Quaternion 回调按字段名读取数值快照，不核对 prototype，也不�
 **BUG:** 对未驻留的短字符串，短串表扩桶的 `HASH_BUCKET` 原生分配返回 NULL 且没有
 VM 异常时，字符串 setter 保留 dispatch 预置的 null，格式化 helper 和 `toString` 回调
 仍报告成功。完整 descriptor → dispatch → 字符串表 → 分配器证据见
-[Quaternion 审查台账](../../code-review/coverage/zr_vm_lib_math_quaternion.tsv)。该结论是
+`docs/code-review/coverage/zr_vm_lib_math_quaternion.tsv`。该结论是
 静态调用路径证明，本批未做分配失败注入。
 
 **BUG:** 新建实例的字段哈希表初始容量 4、负载阈值 3，按 `x/y/z/w` 填充时第四次写入
@@ -307,4 +307,4 @@ Vector2 的 constructor 取两个数值实参；具名 method 与 meta 的固定
 
 **TODO:** 对照 `math_common.h:20-23,54-55` 核查将 Vector2 struct 地址当作连续 `double` 数组的对象模型与布局前提；依赖不止 `dot`，还包含 length、lengthSquared、normalized 和 compare。compare 当前按平方长度返回 -1/0/1；NaN 或双方平方溢出使两个严格比较均为假而落到 0，其 unordered 策略须结合 VM compare 消费规则和具体边界断言继续核实。
 
-`tests/fixtures/projects/native_numeric_pipeline/src/signal.zr:8` 确实构造并归一化 Vector2，但下游 checksum 只消费复数 magnitude；现有项目断言不验证返回的 vx/vy。provider 测试核查模块注册契约，不构成 Vector2 数值、字段 pin OOM 或短串分配失败的执行证据。完整逐单元审查与结论见 [Vector2 台账](../../code-review/coverage/zr_vm_lib_math_vector2.tsv)。
+`tests/fixtures/projects/native_numeric_pipeline/src/signal.zr:8` 确实构造并归一化 Vector2，但下游 checksum 只消费复数 magnitude；现有项目断言不验证返回的 vx/vy。provider 测试核查模块注册契约，不构成 Vector2 数值、字段 pin OOM 或短串分配失败的执行证据。完整逐单元审查与结论见 `docs/code-review/coverage/zr_vm_lib_math_vector2.tsv`。

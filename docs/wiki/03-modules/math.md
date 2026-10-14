@@ -109,7 +109,7 @@ descriptor 的签名文字仍误写为 `fillValue: float`。`get/set` 的单个�
 Complex 的 `phase()` 使用弧度；compare 按模长平方，不代表分量相等。
 **BUG:** 极大有限分量的平方溢出会使 magnitude 返回无穷、normalized 返回零；
 **TODO:** 非有限值/溢出的 compare 策略及 toString 分配失败的结果槽语义仍待核实。
-调用约束及现有乘法公式见 [Complex API](math-api.md#complex-和-quaternion)。
+调用约束及现有乘法公式见 [Complex API](math-api.md#complex-quaternion)。
 
 ## 数值规则
 
