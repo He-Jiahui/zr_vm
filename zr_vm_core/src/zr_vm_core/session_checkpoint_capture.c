@@ -76,6 +76,9 @@ static TZrBool checkpoint_object_is_recoverable(const SZrRawObject *raw) {
         case ZR_RAW_OBJECT_TYPE_CLOSURE_VALUE:
             return !raw->isNative && raw->finalizerData == ZR_NULL;
         case ZR_RAW_OBJECT_TYPE_CLOSURE:
+            if (checkpoint_native_closure_is_immortal_stateless(raw)) {
+                return ZR_TRUE;
+            }
             /* Native callback/shim/binding state is not represented by the
              * graph-indexed checkpoint contract, even for zero captures. */
             return !raw->isNative && raw->finalizerData == ZR_NULL;
