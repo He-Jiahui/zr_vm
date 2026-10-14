@@ -116,6 +116,8 @@ descriptor 的签名文字仍误写为 `fillValue: float`。`get/set` 的单个�
 Matrix3x3 的 `inverse` 在 `abs(det) <= 1e-9` 时以 native false 表示失败；VM 无异常时 dispatcher 返回
 null，虽然 descriptor 仍写 `Matrix3x3`。其阈值/类型契约、极值运算及字段写入失败的限制见
 [Matrix3x3 API](math-api.md#matrix3x3-调用与失败边界)。
+Matrix4x4 则逐枢轴检查 `abs(pivot) <= 1e-9`，失败时同样可能交付 null；固定阈值的政策疑点、
+行列式静态反例及字段写入失败路径见 [Matrix4x4 API](math-api.md#matrix4x4-调用与失败边界)。
 
 Complex 的 `phase()` 使用弧度；compare 按模长平方，不代表分量相等。
 **BUG:** 极大有限分量的平方溢出会使 magnitude 返回无穷、normalized 返回零；

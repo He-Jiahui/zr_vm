@@ -389,3 +389,34 @@ callback 随后拒绝，却仍报告“expected 0..9”，这是元数错误文�
 其 Vector3/sqrt 用例不能作为 Matrix3x3 数值覆盖。完整定义、绑定、间接入口和逐单元结论见
 [Matrix3x3 台账](../../code-review/coverage/zr_vm_lib_math_matrix3x3.tsv) 与
 [审查批次](../../code-review/batches/20261014-matrix3x3-contracts.md)。
+
+## Matrix4x4 调用与失败边界
+
+Matrix4x4 以 row-major 字段 `m00` 至 `m33` 保存数值，矩阵乘列向量，`mulMatrix` 为左乘右。
+`translation` 把平移量放在 `m03/m13/m23`；`rotationX/Y/Z` 接收弧度。构造只接受零参数
+（identity）或完整十六个数值；descriptor 的 0..16 区间也放行 1..15 个参数，随后 callback
+拒绝，却报告“expected 0..16”，其错误文本未说明实际接受的两种形状。静态工厂产生新值，
+实例运算不修改输入；receiver 与参数只在同步 native 调用内借用。
+
+**BUG:** 行列式使用绝对枢轴阈值 `1e-9`，`diag(1e-10,1e10,1,1)` 的数学行列式为 1，
+当前分支却返回 0。对 `diag(1.5e154,1.5e154,2e-9,2e-9)`，每个枢轴都超过阈值，
+数学行列式约为 `9e290`，累乘却先溢出为 Inf。矩阵乘向量和矩阵乘法也直接累加乘积：
+取 `A=1e200`，行 `[A,A,0,0]` 与列 `[A,-A,0,0]` 的数学结果为 0，实际中间项可形成
+Inf 与 -Inf 并得到 NaN。这些是完整公式路径的静态反例，本批没有执行极值数值测试。
+
+**TODO:** `inverse` 在任一选定枢轴满足 `abs(pivot) <= 1e-9` 时返回 native false；
+VM 无异常时 dispatcher 交付 null，虽然 descriptor 声明 Matrix4x4。`diag(1e-10,1e-10,1e-10,1e-10)`
+可逆且条件数为 1，当前仍被拒绝；需确认这个绝对阈值与返回类型的语言契约。NaN 不会满足
+该比较，返回成功也不保证输出有限或精确。未将阈值政策疑点升级为已证实的 inverse 缺陷。
+
+**BUG:** 构造和工厂依赖 void 字段 setter。空字段表按容量 4/8/16 与阈值 3/6/12 扩容；
+写入第 4、7、13 个字段时，若单次 `HASH_BUCKET` 扩容软失败，其他分配与 pin 成功且 VM 无异常，
+默认 realloc 分配器保留旧块，callback 仍可交付缺字段对象。新工厂还存在 ignored-root `ARRAY`
+扩容软失败的受限路径。短格式 `toString` 在未驻留短串的缓存扩桶软失败后，可返回 true 而结果
+仍为 null。精确前提与共享 helper 调用证据记于台账，未做故障注入；长串 API 地址缓存的影响仍为 TODO。
+
+现有工程样例包含 Matrix4x4 的 scale 数值断言与矩阵流水线入口，但本批未运行会重建产物目录的
+工程样例 suite。module/provider 测试链接 Math，其执行结果不授予 Matrix4x4 数值、阈值、故障或 GC
+专项覆盖。完整单元、注册项、调用入口与证据见
+[Matrix4x4 台账](../../code-review/coverage/zr_vm_lib_math_matrix4x4.tsv) 和
+[审查批次](../../code-review/batches/20261014-matrix4x4-contracts.md)。
