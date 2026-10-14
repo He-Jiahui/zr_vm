@@ -96,9 +96,9 @@ process.sleepMilliseconds(10);
 `exit` 不是异常，当前回调直接调用宿主 `exit()`；测试退出路径应使用独立进程。
 
 Process getter 借出提供者映像中的静态 descriptor 和嵌套表；注册方必须使该映像驻留到
-所有借用结束。callback 只在本次 native dispatch 期间借用 context/result；`ReadInt`
-接受整数、无符号整数及浮点数值，缺参或标签不匹配触发 VM 异常，signature hint 的 `int`
-文本不充当运行时类型门禁。
+所有借用结束。注册分派先验证恰好一个参数，数量不符在 callback 前抛元数异常；
+callback 内的 `ReadInt` 接受有符号整数、无符号整数及浮点数值，非数值抛类型异常；
+合法直接 C 调用绕过分派器时，缺参由 helper 自身抛元数异常。hint 的 `int` 文本不充当运行时类型门禁。
 
 **BUG:** 大等待值窄化为 Windows `DWORD` 或 Emscripten `unsigned int` 后会改变时长；
 Windows 的 `0xFFFFFFFF` 被解释为 `INFINITE`。POSIX 收到信号使 `nanosleep` 提前返回时，

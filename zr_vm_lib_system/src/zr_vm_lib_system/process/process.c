@@ -30,12 +30,12 @@
  *
  * ## Parameters
  * @param[in] context 仅本次调用有效的借用上下文；从位置 0 读取整数接口接受的数值，注册描述符
- *                    要求恰好一个显式参数。分派器通常先检查固定元数。
+ *                    要求恰好一个显式参数；注册分派器在进入回调前检查固定元数。
  * @param[out] result 分派器提供的借用结果槽；仅在平台等待调用返回后写入 null，回调不保留该指针。
  *
  * ## Returns
- * @return context/result 为空时返回 ZR_FALSE。缺参或类型不符由 ReadInt 抛出 VM 参数异常，不会作为
- *         普通 ZR_FALSE 返回；在有效 context/result 和可接受数值下，平台等待调用返回后返回 ZR_TRUE，
+ * @return context/result 为空时返回 ZR_FALSE。注册分派先验证恰好一个实参，失败在调用前抛元数异常；
+ *         回调内 ReadInt 对非数值或直接 C 调用缺参抛 VM 参数异常。有效输入经平台等待后返回 ZR_TRUE，
  *         即使 POSIX `nanosleep` 报错或提前结束也不会由此回调报告失败。
  *
  * ## Constraints and lifecycle
@@ -97,12 +97,12 @@ TZrBool ZrSystem_Process_SleepMilliseconds(ZrLibCallContext *context, SZrTypeVal
  * @param[in] result 原生分派器提供的结果槽；实现为兼容回调签名而忽略它，不读取、不写入。
  *
  * ## Returns
- * @return context 为空时返回 ZR_FALSE。缺少参数或参数类型不符由 ReadInt 抛出 VM 参数异常，不会作为
- *         普通 ZR_FALSE 返回；读取可接受数值后执行标准库 `exit`，宿主进程终止且本函数不返回。
+ * @return context 为空时返回 ZR_FALSE。注册数量错误先在分派器抛元数异常，回调不会执行；ReadInt 对非数值
+ *         或直接 C 调用缺参抛 VM 参数异常。读取可接受数值后执行 `exit`，宿主进程终止且本函数不返回。
  *
  * ## Constraints and lifecycle
  * context/result 为分派器在本次回调期间借用的指针，回调不持有或释放 VM 对象；result 完全未使用。
- * 缺参和非数值参数由 `ZrLib_CallContext_ReadInt` 经 noreturn 异常入口报告，不属于普通 bool 失败。
+ * 注册分派先验证数量；ReadInt 对非数值或绕过分派器的直接 C 调用缺参走 noreturn 异常，不是普通 bool 失败。
  * 成功读取后，`exit` 终止宿主进程，不会返回到分派器清理/返回阶段。TODO: 确认 `exitCode` 从
  * `TZrInt64` 转为 `int` 的范围契约；当前没有范围检查。
  *

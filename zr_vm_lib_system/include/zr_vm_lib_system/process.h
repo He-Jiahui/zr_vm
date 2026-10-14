@@ -22,10 +22,10 @@
  * @param[out] result 分派器提供的借用结果槽；等待调用返回后写入 VM null，不转移或保存其所有权。
  *
  * ## Returns
- * @return context/result 为空时返回 ZR_FALSE。有效指针下，缺少参数或参数类型不符会由
- *         `ZrLib_CallContext_ReadInt` 抛出 VM 参数异常，不会作为普通 ZR_FALSE 返回；可接受的有符号、
- *         无符号或浮点数值经该 helper 读取后，平台等待函数返回时返回 ZR_TRUE。成功不保证完整时长
- *         已经过，因为 POSIX `nanosleep` 可被信号中断，且平台宽度转换可能改变等待值。
+ * @return context/result 为空时返回 ZR_FALSE。注册调用由分派器先检查恰好一个实参，数量不符时
+ *         在进入回调前抛 VM 元数异常；进入回调后，ReadInt 对非数值抛 VM 类型异常。直接 C 调用
+ *         绕过分派器时，缺参由 ReadInt 抛元数异常。可读的有符号、无符号或浮点数值等待后返回 ZR_TRUE；
+ *         POSIX 信号中断或平台宽度转换可能改变实际时长，成功不保证完整等待。
  *
  * ## Constraints and lifecycle
  * 正常注册调用以一个可由 `ZrLib_CallContext_ReadInt` 接受的数值参数进入；直接 C 调用者仍需提供
@@ -38,8 +38,8 @@
  *
  * ## References
  * `ZrSystem_ProcessRegistry_GetModule` 将回调注册到 `zr.system.process`；实际调用经
- * `native_binding_invoke_callback_inline` 派发，参数读取由 `ZrLib_CallContext_ReadInt` 完成，结果由
- * `ZrLib_Value_SetNull` 写入。
+ * `native_binding_auto_check_arity` 先验证数量，`native_binding_invoke_callback_inline` 派发后由
+ * `ZrLib_CallContext_ReadInt` 读取数值，`ZrLib_Value_SetNull` 写入结果。
  */
 TZrBool ZrSystem_Process_SleepMilliseconds(ZrLibCallContext *context, SZrTypeValue *result);
 /**
@@ -53,9 +53,9 @@ TZrBool ZrSystem_Process_SleepMilliseconds(ZrLibCallContext *context, SZrTypeVal
  * @param[in] result 分派器提供的结果槽指针；为匹配回调签名而保留，此函数不读取或写入该槽。
  *
  * ## Returns
- * @return context 为空时返回 ZR_FALSE。缺少参数或参数类型不符由
- *         `ZrLib_CallContext_ReadInt` 抛出 VM 参数异常，不会作为普通 ZR_FALSE 返回；读取可接受的
- *         数值后调用 C 运行库 `exit`，整个宿主进程终止且本函数不返回。
+ * @return context 为空时返回 ZR_FALSE。注册调用的参数数量不符由分派器在进入回调前抛元数异常；
+ *         回调内非数值、以及绕过分派器的直接 C 调用缺参，由 ReadInt 抛 VM 参数异常。
+ *         可读数值交给 C 运行库 `exit`，整个宿主进程终止且本函数不返回。
  *
  * ## Constraints and lifecycle
  * 正常注册调用要求一个可由 `ZrLib_CallContext_ReadInt` 读取的数值参数和非空 context；result 指针
@@ -65,8 +65,8 @@ TZrBool ZrSystem_Process_SleepMilliseconds(ZrLibCallContext *context, SZrTypeVal
  *
  * ## References
  * `ZrSystem_ProcessRegistry_GetModule` 注册此回调；执行路径经
- * `native_binding_invoke_callback_inline` 派发，由 `ZrLib_CallContext_ReadInt` 读取参数，成功路径进入
- * 标准库 `exit`。
+ * `native_binding_auto_check_arity` 先验证数量；`native_binding_invoke_callback_inline` 派发后由
+ * `ZrLib_CallContext_ReadInt` 读取参数，成功路径进入标准库 `exit`。
  */
 TZrBool ZrSystem_Process_Exit(ZrLibCallContext *context, SZrTypeValue *result);
 
