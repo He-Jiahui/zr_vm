@@ -86,14 +86,29 @@ process.sleepMilliseconds(10);
 | 模块 | 导出 | 行为 |
 | --- | --- | --- |
 | `env` | `getVariable(name: string): string/null` | 未定义变量返回 null，不修改环境。 |
-| `process` | `arguments: string[]` | 启动参数快照；数组由 VM 管理。 |
-| `process` | `sleepMilliseconds(milliseconds: int): null` | 阻塞当前执行线程；负值按 0 毫秒处理。 |
+| `process` | `arguments: string[]` | VM 管理的数组；CLI 在执行前写入启动参数，单独注册 descriptor 不注入 argv。 |
+| `process` | `sleepMilliseconds(milliseconds: int): null` | Windows/POSIX 等待当前 OS 线程；Emscripten 配置异步转换后让出 event loop；负值按 0 处理。 |
 | `process` | `exit(code: int): null` | 不可恢复控制转移；不会正常返回。 |
 | `assembly` | `resourceExists(name: string): bool` | 查询当前 assembly 资源。 |
 | `assembly` | `readResourceText(name: string): string` | 将资源字节作为文本构造字符串，当前不验证 UTF-8；资源缺失或读取失败触发运行错误，内嵌 NUL 会截断。 |
 | `assembly` | `readResourceBytes(name: string): array` | 读取原始字节整数数组。 |
 
 `exit` 不是异常，当前回调直接调用宿主 `exit()`；测试退出路径应使用独立进程。
+
+Process getter 借出提供者映像中的静态 descriptor 和嵌套表；注册方必须使该映像驻留到
+所有借用结束。callback 只在本次 native dispatch 期间借用 context/result；`ReadInt`
+接受整数、无符号整数及浮点数值，缺参或标签不匹配触发 VM 异常，signature hint 的 `int`
+文本不充当运行时类型门禁。
+
+**BUG:** 大等待值窄化为 Windows `DWORD` 或 Emscripten `unsigned int` 后会改变时长；
+Windows 的 `0xFFFFFFFF` 被解释为 `INFINITE`。POSIX 收到信号使 `nanosleep` 提前返回时，
+当前代码不续睡，仍写 null 并报告成功。这些结论基于完整静态 callback 路径和平台 API，
+本批未执行无限等待、信号注入或 Emscripten 运行验证。
+
+**TODO:** Windows/POSIX 长等待的默认 GC-aware 策略、Emscripten Asyncify/JSPI 配置及
+重入/挂起期借用有效性、支持 ABI 的 `time_t` 宽度、退出码范围和 function hint 的消费
+仍需沿各自入口核实。调用链、平台资料与测试边界见
+[Process 审查台账](../../code-review/coverage/zr_vm_lib_system_process.tsv)。
 
 ## 文件系统
 
