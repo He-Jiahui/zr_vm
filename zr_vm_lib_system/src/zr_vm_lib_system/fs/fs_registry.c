@@ -1,3 +1,15 @@
+/**
+ * @file fs_registry.c
+ * ## Summary
+ * 定义 zr.system.fs 的参数、字段、方法、类型、兼容函数、hints 与模块 descriptor 静态表。
+ *
+ * ## Constraints and lifecycle
+ * 返回的 descriptor 引用本文件静态表；参数签名/可选性由表声明，运行时缺省值由 callback 实现。
+ * 本地 ZR_ARRAY_COUNT 仅是条件备用定义；当前产品 include 链已先提供 shared macro。
+ *
+ * ## References
+ * 公开回调声明见 fs.h；叶子注册由 zr.system module.c 调用 GetModule。
+ */
 //
 // zr.system.fs descriptor registry.
 //
@@ -8,7 +20,7 @@
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
 
-/* 参数表同时服务 native 调用签名和编译器/LSP 元数据；可选参数的运行时默认值由回调决定。 */
+/** 参数数组供 native descriptor、编译器与 LSP 描述调用形状；它们不执行运行时转换，也不编码默认值。 */
 static const ZrLibParameterDescriptor g_path_parameter[] = {
         {"path", "string", "Filesystem path."},
 };
@@ -61,20 +73,20 @@ static const ZrLibParameterDescriptor g_glob_parameters[] = {
         {"recursively", "bool", "Whether to recurse into subfolders."},
 };
 
-/* File 与 Folder 复用基类构造回调，但实际实例原型由调用上下文的构造目标决定。 */
+/** FileSystemEntry、File、Folder 复用构造 callback；实际 receiver 原型由 VM 构造目标确定。 */
 static const ZrLibMetaMethodDescriptor g_entry_constructors[] = {
         {ZR_META_CONSTRUCTOR, 1, 1, ZrSystem_Fs_Entry_Constructor, "null",
          "Initialize a path wrapper object from the supplied path.", g_path_parameter,
          ZR_ARRAY_COUNT(g_path_parameter), ZR_NULL, 0},
 };
 
-/* using 的标准 @close 钩子与显式 FileStream.close 共用资源释放入口。 */
+/** using 自动关闭与 FileStream.close 复用 callback；meta arity=1 计 VM 额外关闭状态值，receiver 单独剥离。 */
 static const ZrLibMetaMethodDescriptor g_stream_meta_methods[] = {
         {ZR_META_CLOSE, 1, 1, ZrSystem_Fs_Stream_Close, "null",
          "Close this FileStream. Registered for canonical using auto-close.", ZR_NULL, 0, ZR_NULL, 0},
 };
 
-/* SystemFileInfo 是查询时点的值快照；FileSystemEntry 的 fileInfo 通过 refresh 替换。 */
+/** SystemFileInfo 字段描述查询时点的值快照；refresh 更新 wrapper 的 fileInfo，不修改此前返回的快照。 */
 static const ZrLibFieldDescriptor g_file_info_fields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT("path", "string", "Normalized absolute path that was queried."),
         ZR_LIB_FIELD_DESCRIPTOR_INIT("size", "int", "File size in bytes when available."),
@@ -92,6 +104,7 @@ static const ZrLibFieldDescriptor g_file_info_fields[] = {
                                      "Last access timestamp in milliseconds when available."),
 };
 
+/** FileSystemEntry 子类型共享的路径/元数据字段；parent 可在文件系统根路径为 null。 */
 static const ZrLibFieldDescriptor g_entry_fields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT("path", "string", "Original constructor path."),
         ZR_LIB_FIELD_DESCRIPTOR_INIT("fullPath", "string", "Normalized absolute path."),
@@ -101,7 +114,7 @@ static const ZrLibFieldDescriptor g_entry_fields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT("fileInfo", "SystemFileInfo", "Latest metadata snapshot for this path wrapper."),
 };
 
-/* 公开字段展示流状态；真实句柄和关闭标志保存在 fs_internal.h 的私有数据中。 */
+/** 公开字段仅展示流状态；真实 handle、可读写位与关闭状态由 fs_internal.h 私有数据维护。 */
 static const ZrLibFieldDescriptor g_stream_fields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT("path", "string", "Normalized absolute path bound to this stream."),
         ZR_LIB_FIELD_DESCRIPTOR_INIT("mode", "string", "Canonical open mode without the optional b alias."),
@@ -110,6 +123,7 @@ static const ZrLibFieldDescriptor g_stream_fields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT("closed", "bool", "Whether this stream has been closed."),
 };
 
+/** 下列方法表描述实例方法；arity 只计显式脚本参数，receiver 由 dispatcher 单独绑定。 */
 static const ZrLibMethodDescriptor g_entry_methods[] = {
         ZR_LIB_METHOD_DESCRIPTOR_INIT("exists", 0, 0, ZrSystem_Fs_Entry_Exists, "bool",
                                       "Refresh and return whether the wrapped path exists.", ZR_FALSE, ZR_NULL, 0),
@@ -174,7 +188,7 @@ static const ZrLibMethodDescriptor g_folder_methods[] = {
                                       g_delete_recursive_parameter, ZR_ARRAY_COUNT(g_delete_recursive_parameter)),
 };
 
-/* 接口方法与 FileStream 具体方法复用回调，使脚本类型检查不改变资源所有权。 */
+/** Reader/Writer interface 与 FileStream 复用具体 callback；接口视图不另持 native handle。 */
 static const ZrLibMethodDescriptor g_stream_reader_methods[] = {
         ZR_LIB_METHOD_DESCRIPTOR_INIT("readBytes", 0, 1, ZrSystem_Fs_Stream_ReadBytes, "array",
                                       "Read bytes from the current position.", ZR_FALSE,
@@ -220,10 +234,25 @@ static const ZrLibMethodDescriptor g_file_stream_methods[] = {
                                       "Close this FileStream.", ZR_FALSE, ZR_NULL, 0),
 };
 
-/* 作为接口参数传递仍是对象引用；只有 FFI/native 边界执行 handle_id lowering。 */
+/** FileStream 作接口值仍传对象引用；底层 StreamData 持有文件句柄，handle_id 仅供 FFI/native lowering 为 i32。 */
 static const TZrChar *g_file_stream_implements[] = {"IStreamReader", "IStreamWriter"};
 
-/* 此静态描述符由 zr.system 注册为 Runtime 叶模块；直接导入与根字段使用同一模块身份。 */
+/**
+ * ## Summary
+ * 返回供 zr.system 注册的静态 zr.system.fs module descriptor。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * @return 指向本文件静态 kModule 的借用指针；非空且调用方不得释放。
+ *
+ * ## Constraints and lifecycle
+ * kModule 引用的类型、函数、hints 与 JSON 表均在 provider 映像内静态存储；聚合字段和直接导入共用 descriptor 身份。
+ *
+ * ## References
+ * 公开声明见 fs_registry.h；聚合注册调用见 zr_vm_lib_system/src/zr_vm_lib_system/module.c。
+ */
 const ZrLibModuleDescriptor *ZrSystem_FsRegistry_GetModule(void) {
     /* FileStream 是唯一拥有 native handle 的类型；路径包装器只保存路径与元数据快照。 */
     static const ZrLibTypeDescriptor kTypes[] = {
@@ -267,7 +296,7 @@ const ZrLibModuleDescriptor *ZrSystem_FsRegistry_GetModule(void) {
                                             0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL, ZR_NULL, 0,
                                             "handle_id", ZR_NULL, "i32", "owned", "close"),
     };
-    /* 旧模块级函数保留给兼容脚本，新的 File/Folder API 由 kTypes 中的方法表提供。 */
+    /** 兼容函数 descriptor 保留旧模块级入口；对象方法另列在 kTypes 的 method 表中。 */
     static const ZrLibFunctionDescriptor kFunctions[] = {
             {"currentDirectory", 0, 0, ZrSystem_Fs_CurrentDirectory, "string",
              "Return the current working directory.", ZR_NULL, 0},
@@ -294,7 +323,7 @@ const ZrLibModuleDescriptor *ZrSystem_FsRegistry_GetModule(void) {
             {"getInfo", 1, 1, ZrSystem_Fs_GetInfo, "SystemFileInfo", "Query filesystem metadata for a path.",
              g_path_parameter, ZR_ARRAY_COUNT(g_path_parameter)},
     };
-    /* hints 支持编辑器发现公开形状；可调用行为仍由上面的 descriptor 与回调决定。 */
+    /** hints 供编辑器静态发现 API 形状；不负责执行，也不覆盖 callback/descriptor 的运行时行为。 */
     static const ZrLibTypeHintDescriptor kHints[] = {
             {"currentDirectory", "function", "currentDirectory(): string", "Return the current working directory."},
             {"changeCurrentDirectory", "function", "changeCurrentDirectory(path: string): bool",
@@ -318,11 +347,13 @@ const ZrLibModuleDescriptor *ZrSystem_FsRegistry_GetModule(void) {
             {"FileStream", "type", "class FileStream implements IStreamReader, IStreamWriter",
              "Owned native file descriptor wrapper."},
     };
+    /** 原始 JSON metadata 只标明 hints schema 与模块名，不是第二份完整 API 表。 */
     static const TZrChar kHintsJson[] =
             "{\n"
             "  \"schema\": \"zr.native.hints/v1\",\n"
             "  \"module\": \"zr.system.fs\"\n"
             "}\n";
+    /** 模块 descriptor 静态持有上面的 arrays/JSON；registry consumer 仅借用这些地址。 */
     static const ZrLibModuleDescriptor kModule = {
             ZR_VM_NATIVE_PLUGIN_ABI_VERSION,
             "zr.system.fs",

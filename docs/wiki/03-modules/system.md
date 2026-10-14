@@ -85,13 +85,15 @@ system.console.printLine(text);
 `IStreamReader`、`IStreamWriter` 和 `FileStream` 组成：
 
 - `FileSystemEntry(path)` 立即计算 `path`、`fullPath`、`name`、`extension`、`parent`
-  和 `fileInfo` 快照；`exists()` 先刷新快照再返回布尔值，`refresh()` 返回本轮对象视图。
+  和 `fileInfo` 快照；`exists()` 先刷新 `fileInfo` 再返回布尔值，`refresh()` 返回新的
+  `SystemFileInfo`。刷新不重建 receiver 的其他路径字段。
 - `File(path).open(mode = "r")` 返回 `FileStream`；`create(recursively = true)`、
   `readText()`、`writeText(text)`、`appendText(text)` 委托同一个 stream/handle 层。
 - `Folder(path).entries()`、`files()`、`folders()` 和 `glob(pattern, recursively = true)`
   返回按 `fullPath` 排序的 `array`；`entries` 只列直接子项，`glob` 才按参数递归。
-- `FileStream` 的宿主句柄存放在隐藏 `handle_id` wrapper 中。脚本只能通过公开 close/read/write
-  方法操作，不能把 `Ptr` 直接当文件句柄。
+- `FileStream` 的隐藏 `__zr_fs_stream` 原生指针指向拥有宿主句柄的 `ZrSystemFsStreamData`；
+  `__zr_ffi_handleId` 是供 FFI 绑定读取的整数视图，不承担资源所有权。脚本通过公开
+  close/read/write 方法操作流。
 
 ### 对象 API 速查
 
@@ -119,8 +121,10 @@ system.console.printLine(text);
 
 `File`、`Folder` 和 `FileStream` 的 I/O 操作会将相应失败转换为
 `zr.system.exception.IOException`。兼容的路径探测和 `changeCurrentDirectory` 通过布尔值
-报告结果，不保证附带异常。脚本 API 不返回裸指针或宿主 errno sentinel。`close()` 可重复调用，
-第一次释放句柄，后续调用无副作用。
+报告结果，不保证附带异常。脚本 API 不返回裸指针或宿主 errno sentinel。首次成功 `close()`
+释放句柄并标记关闭，后续关闭可成功返回 null；宿主关闭失败时保留私有句柄号与 `closed=false`，
+底层句柄是否已释放待平台核验。终结器对私有状态仍未关闭的句柄尝试关闭后释放 `ZrSystemFsStreamData`，不保证关闭失败可重试。C 回调的普通 false 也可能在 VM
+无异常时变为 null；逐接口约束见 [Fs 公共接口台账](../../code-review/coverage/zr_vm_lib_system_fs_public.tsv)。
 
 ## GC、VM 和异常子模块
 

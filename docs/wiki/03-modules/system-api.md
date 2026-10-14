@@ -142,13 +142,28 @@ Windows 的 `0xFFFFFFFF` 被解释为 `INFINITE`。POSIX 收到信号使 `nanosl
 | `writeText` / `appendText` | `(path: string, text: string): bool` | 覆盖/追加文本。 |
 | `getInfo` | `(path: string): SystemFileInfo` | 返回 metadata snapshot。 |
 
-兼容函数适合一次性操作；需要多次读写、seek 或资源组合时使用对象 API。布尔 false 表示
-操作未完成，其中 `changeCurrentDirectory` 不提供结构化 I/O 错误详情。
+兼容函数适合一次性操作；需要多次读写、seek 或资源组合时使用对象 API。
+`changeCurrentDirectory` 和路径探测可成功执行 callback 并返回脚本布尔 false；
+`createDirectory/createDirectories/removePath/writeText/appendText` 的正常脚本结果为 true，
+宿主操作失败则构造 `IOException` 并返回 native false。`currentDirectory` 的路径归一化失败、
+`getInfo` 的查询或包装对象失败也可返回 native false，却不保证设置 I/O 异常；VM 仍正常时
+dispatcher 交付 null。不能把 C 回调的 false 统一解释为脚本布尔 false。
+
+文本接口按宿主 C 字符串处理内容：四个 `readText` 导出入口复用三个 C callback，虽然读取显式字节数，
+返回 VM string 时仍在首个 NUL 截断；合法内容 `A\0B` 会返回 `A`。FileStream 的
+读取位置按已消费字节推进，`count` 也是字节数，可能截开 UTF-8 多字节序列，
+当前路径不保证校验 UTF-8。`writeText`／`appendText` 按 `strlen` 取得写入长度，
+嵌入 NUL 后的内容不会写入。需要保留任意字节时使用 `readBytes`／`writeBytes`。
+字符串结果和 metadata 字段的 void setter 还存在软失败边界；native true 不证明
+所有结果或字段均已写入。File/Folder I/O 完成后的快照刷新只是尝试，失败不会
+回滚已经完成的宿主操作。逐入口的失败、借用与测试边界见
+[Fs 公共契约台账](../../code-review/coverage/zr_vm_lib_system_fs_public.tsv)。
 
 ### 对象和字段
 
 `FileSystemEntry(path: string)` 是基类；`File`、`Folder` 继承它。构造时计算 `path`、
-`fullPath`、`name`、`extension`、`parent` 和 `fileInfo`，`exists()` 会先刷新 snapshot。
+`fullPath`、`name`、`extension`、`parent` 和 `fileInfo`。`exists()` 和 `refresh()` 重新查询并替换
+`fileInfo` 快照；`refresh()` 返回这份 `SystemFileInfo`，不返回 receiver，也不重新计算其他路径字段。
 
 | 类型 | 字段 |
 | --- | --- |
@@ -199,8 +214,14 @@ using (let stream = file.open("w+")) {
 
 `readBytes/readText(count = -1)` 从当前位置读取，`-1` 表示剩余全部；`write*` 返回实际写入
 字节数；`flush` 刷新缓冲；`seek(offset, origin = "begin")` 返回新的绝对位置；`setLength`
-截断或扩展文件；`close` 幂等。读写模式不匹配、负长度（除 -1）、越界 seek 和已关闭句柄
-抛 IOException，不返回 errno sentinel。
+截断或扩展文件。首次成功 `close` 后再次关闭可成功返回 null；宿主关闭返回失败时，
+包装对象的私有句柄号与 `closed=false` 保持原值，后续仍可进入关闭路径；底层句柄是否已释放需按平台核验。读写模式不匹配、负长度（除 -1）、越界 seek 和已关闭句柄的 I/O 保护路径
+抛 `IOException`；参数 helper 的普通 false、缓冲或对象构造失败不一定设置异常，需按具体回调判断。
+
+公共声明与注册表的逐单元契约见 [Fs 公共接口台账](../../code-review/coverage/zr_vm_lib_system_fs_public.tsv)。
+现有 Fs 八例基线为 7 PASS / 1 FAIL，流模式用例在 `takeReader` 的 cached native callable 检查处提前失败；
+其后的 read、setLength、append、using 等语句未执行。省略可选参数、appendText 和 flush 没有本批运行覆盖；
+默认值来自回调实现，descriptor 只记录参数区间与类型。
 
 ## gc
 
