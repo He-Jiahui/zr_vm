@@ -33,6 +33,12 @@ related_code:
   - zr_vm_lib_math/src/zr_vm_lib_math/tensor/tensor.c
   - zr_vm_lib_math/src/zr_vm_lib_math/tensor/tensor_registry.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c
+  - zr_vm_lib_math/include/zr_vm_lib_math/matrix3x3_registry.h
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c
+  - zr_vm_core/src/zr_vm_core/string/string.c
+  - zr_vm_core/include/zr_vm_core/conversion.h
+  - zr_vm_core/include/zr_vm_core/string.h
+  - zr_vm_common/include/zr_vm_common/zr_string_conf.h
 implementation_files:
   - zr_vm_lib_math/src/zr_vm_lib_math/module.c
   - zr_vm_lib_math/src/zr_vm_lib_math/common.c
@@ -54,6 +60,7 @@ implementation_files:
   - zr_vm_lib_math/src/zr_vm_lib_math/matrix/matrix4x4_registry.c
   - zr_vm_lib_math/src/zr_vm_lib_math/tensor/tensor.c
   - zr_vm_lib_math/src/zr_vm_lib_math/tensor/tensor_registry.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c
 plan_sources:
   - user: 2026-09-09 在 docs/wiki 构建完整 ZrVm 说明书
   - user: 2026-09-26 全仓库首方代码调用链审查与注释任务
@@ -63,6 +70,7 @@ tests:
   - tests/fixtures/projects/native_numeric_pipeline/src/signal.zr
   - tests/fixtures/projects/native_math_export_probe/src/main.zr
   - tests/library/test_official_provider_convergence.c
+  - tests/module/test_module_system.c
 doc_type: api-reference
 ---
 
@@ -192,7 +200,9 @@ let world = model.mulVector(position);
 ```
 
 当前实现以固定阈值判定逆矩阵计算失败，并从 native 回调返回失败；矩阵乘法顺序不可
-交换，文档示例按实现的 row-major 约定解释。
+交换，文档示例按实现的 row-major 约定解释。Matrix3x3 的回调在 `abs(det) <= 1e-9` 时返回
+false；若 VM 没有异常，native dispatcher 将该失败投影为 null。descriptor 的返回类型文本仍为
+`Matrix3x3`，调用方需要处理此失败边界；阈值策略与类型投影的对应关系仍待核查。
 
 ## Tensor
 
@@ -349,3 +359,33 @@ Vector4 constructor 元数为 4；length/lengthSquared/normalized 为 0，dot/di
 Matrix4x4 的 mulVector/meta mul 是实际 C 消费者。pipeline 的 `lin_alg.zr:11-18` 确实构造 Vector4、执行矩阵乘向量并把 XYZ 放进记录，但 callbacks/probe 只把记录中的 dot 纳入 checksum，未数值断言这些 XYZ。因此该夹具不提供 Vector4 数值、比较、布局或字段/短串分配失败的断言证据，本批也不运行会改写夹具目录的 project suite。完整逐单元定义、绑定、调用与结论见 [Vector4 台账](../../code-review/coverage/zr_vm_lib_math_vector4.tsv) 和 [Vector4 批次](../../code-review/batches/20261014-vector4-contracts.md)。
 
 本批与 SystemVM 共用 `system-vm-vector4-final-r1-results.json` 的实际验证：四个实现对象强制重建、构建成功；模块测试 78 项为 70 PASS / 8 FAIL，全部 78 行与最近 r3 基线精确一致，provider 9 项全部 PASS。相对更早 76 PASS / 2 FAIL 的记录，六项二进制元数据失败仍保留，本批未新增失败。当前输入与 r3 有三个并发 core/Parser 文件差异；保守扩展的 2950 个输入在构建及两个 suite 期间稳定，八个冻结源码未变化。Parser 的两条 C4701 和其他配置测试的 CMAKE_OBJECT_PATH_MAX 警告另行记录，所选 target 构建成功；不据此授予 Vector4 极值、布局或分配失败测试信用，也不声称整个 suite 通过。
+
+## Matrix3x3 调用与失败边界
+
+Matrix3x3 是按 row-major 字段 `m00` 至 `m22` 存储的值类型；矩阵乘列向量，矩阵乘法为左乘右。
+构造 callback 只接受零个参数（identity）或完整九个数值；descriptor 的 0..9 区间还会放行 1..8 个参数，
+callback 随后拒绝，却仍报告“expected 0..9”，这是元数错误文本与实际接受条件不一致的 BUG。
+`identity` 是静态新值工厂，其他命名运算产生新结果；构造 helper 则可填充解析器预建的兼容 receiver。
+接收值与参数在同步 native 调用内借用，局部 C 数组不会被保存到回调之外。
+
+**BUG:** 行列式与乘法使用直接浮点公式。取有限 `A=1e200`，矩阵 `[[A,A,0],[A,A,0],[0,0,1]]`
+的数学行列式为零，中间乘积却溢出为 Inf，随后 Inf-Inf 得到 NaN；逆矩阵的绝对阈值检查也不会拒绝 NaN。
+相同矩阵乘列向量 `[A,-A,0]`，以及乘首列为该向量的矩阵，有限乘积的抵消也可变成 NaN。
+这些是当前公式的静态反例，未运行极值数值测试；不据现有 module/provider 用例宣称这些边界已验证。
+
+**BUG:** 工厂和构造 helper 使用 void 字段 setter。对初始容量 4、阈值 3 的空字段表，写第 4 个字段时需要
+扩桶；在默认 realloc 分配器或同样保留失败前旧块的分配器下，若单次 `HASH_BUCKET` 扩容软失败，
+其他 pin、键和分配均成功且 VM 无异常，setter 只记录日志，callback 仍可交付缺字段矩阵。
+新对象工厂另有 ignored-root `ARRAY` 扩容软失败遗漏字段的受限路径；toString 还存在短字符串缓存扩桶
+软失败后返回 true 而结果保持 null 的路径。各路径的精确前提和调用证据分别记在台账，未做故障注入。
+
+**TODO:** 长格式文本也经过共享 API 地址缓存。`MakeStringResult` 经 `Value_SetString`、
+`native_binding_create_string` 进入 `CreateTryHitCache`；后者在比较缓存项时使用仅适用于短串内联字节的
+`ZR_CAST_STRING_TO_NATIVE`。应沿 `native_binding_support.c:320-324`、`string/string.c:958-974`、
+`conversion.h:73-76` 和 `string.h:35-37`，核对超过 127 字节的矩阵文本在后续同桶查询中的长串布局与可观察影响。
+既存 Core 台账记录了该布局问题；本批没有长串同桶复测，不另授予 Matrix3x3 错误文本或无效读取的 BUG 结论。
+
+本批没有找到 Matrix3x3 专项构造、数值或失败路径断言；现有 module/provider 目标链接 Math，
+其 Vector3/sqrt 用例不能作为 Matrix3x3 数值覆盖。完整定义、绑定、间接入口和逐单元结论见
+[Matrix3x3 台账](../../code-review/coverage/zr_vm_lib_math_matrix3x3.tsv) 与
+[审查批次](../../code-review/batches/20261014-matrix3x3-contracts.md)。

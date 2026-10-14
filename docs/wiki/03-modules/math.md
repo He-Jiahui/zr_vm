@@ -18,6 +18,10 @@ related_code:
   - zr_vm_lib_math/src/zr_vm_lib_math/common.c
   - zr_vm_library/include/zr_vm_library/native_registry.h
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c
+  - zr_vm_lib_math/include/zr_vm_lib_math/matrix3x3.h
+  - zr_vm_lib_math/include/zr_vm_lib_math/matrix3x3_registry.h
+  - zr_vm_lib_math/src/zr_vm_lib_math/matrix/matrix3x3_registry.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c
 implementation_files:
   - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c
   - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c
@@ -26,6 +30,9 @@ implementation_files:
   - zr_vm_lib_math/src/zr_vm_lib_math/tensor/tensor.c
   - zr_vm_lib_math/src/zr_vm_lib_math/tensor/tensor_registry.c
   - zr_vm_lib_math/src/zr_vm_lib_math/common.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/matrix/matrix3x3.c
+  - zr_vm_lib_math/src/zr_vm_lib_math/matrix/matrix3x3_registry.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c
 plan_sources:
   - user: 2026-09-09 在 docs/wiki 构建完整 ZrVm 说明书
   - user: 2026-09-26 全仓库首方代码调用链审查与注释任务
@@ -36,6 +43,7 @@ tests:
   - tests/fixtures/projects/native_numeric_pipeline/src/tensor_pipeline.zr
   - tests/fixtures/projects/native_numeric_pipeline/src/signal.zr
   - tests/library/test_official_provider_convergence.c
+  - tests/module/test_module_system.c
 doc_type: module-detail
 ---
 
@@ -105,6 +113,9 @@ method 为准。除 Tensor 的 `fill/set` 会修改 receiver 并返回它自身�
 descriptor 的签名文字仍误写为 `fillValue: float`。`get/set` 的单个参数是长度与 rank 相同
 的多维 indices 数组，按 row-major 映射到 data；`set` 原位更新并返回 receiver。
 矩阵构造器支持零参数（生成 identity）或恰好 9/16 个 `float` 参数。
+Matrix3x3 的 `inverse` 在 `abs(det) <= 1e-9` 时以 native false 表示失败；VM 无异常时 dispatcher 返回
+null，虽然 descriptor 仍写 `Matrix3x3`。其阈值/类型契约、极值运算及字段写入失败的限制见
+[Matrix3x3 API](math-api.md#matrix3x3-调用与失败边界)。
 
 Complex 的 `phase()` 使用弧度；compare 按模长平方，不代表分量相等。
 **BUG:** 极大有限分量的平方溢出会使 magnitude 返回无穷、normalized 返回零；
