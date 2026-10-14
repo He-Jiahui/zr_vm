@@ -291,3 +291,20 @@ tests/fixtures/projects/native_numeric_pipeline/src/signal.zr:6、
 tests/fixtures/projects/native_numeric_pipeline/src/signal.zr:7 与
 tests/fixtures/projects/native_numeric_pipeline/src/signal.zr:10 提供正常脚本调用入口。
 本批静态复核与编译消费者检查不证明这些脚本已经执行，不赋予故障注入或整库测试通过。
+
+
+## Vector2 调用边界与已核实限制
+
+Vector2 的 constructor 取两个数值实参；具名 method 与 meta 的固定参数数目由 native dispatcher 在 callback 前检查，数量不符抛 `ArityError`。进入 callback 后，数值或对象标签不符通过 `ReadFloat` / `ReadObject` 抛 `TypeError`；对象/数组中的 `x`、`y` 字段形状不符则返回 false。false 只有在线程状态仍为 FINE 时转成 null，异常状态走清理与传播。`dot`、`distance`、`lerp` 和二元 meta 读取 rhs 的数值字段，不要求同一名义 prototype；`lerp` 不夹紧 factor，允许外推。
+
+构造 helper 复用与 owner prototype 兼容的 receiver，否则按 construct target/owner prototype 创建实例。`normalized`、`lerp`、加减与取负则通过 factory 新建 Vector2，不修改输入。context、receiver、参数和 result 槽仅借用本次同步调用；结果对象和字符串归 VM 管理，静态 descriptor、hint、嵌套表、字面量与函数地址必须随 provider image 保持有效。
+
+**BUG:** `length` 与 `normalized` 对有限 `(1e200, 0)` 先计算平方和，中间值溢出使长度为无穷、归一化结果为零；`distance` 对该向量和零向量同样丢失有限距离。`lerp((1e308,0),(-1e308,0),0.5)` 的差先溢出，返回负无穷分量而数学中点为零。`lengthSquared` 直接返回平方和，其不可表示平方值的溢出与上述有限结果丢失分别记录。当前结论来自实际表达式与调用路径，未运行数值复现。
+
+**BUG:** factory 创建空实例后调用 void 字段 setter；满 ignored-root 表的 RawMalloc 扩表失败不置 VM 异常，却可使 setter 跳过字段，factory 仍发布非空对象。编译器生成的 `CREATE_OBJECT` / `TO_STRUCT` 加 `__constructor` FUNCTION_CALL 另有合法数值 fast-lane 路径：receiver 未被 lane pin，ignored-root 仅余一槽时 setter 先 pin receiver，再为未登记字段 key 扩表；失败后构造 helper 仍可成功返回缺字段对象。这两条路径见 `common.c:22-35,200-252`、`native_binding_dispatch.c:1385,1400` 和 `gc_object.c:722-749`；Vector2 的两个字段不沿用 Quaternion 第四字段 nodeMap 扩桶失败的证据。
+
+**BUG:** `toString` 格式结果为未驻留短串且 short-intern 哈希表需要扩容时，HASH_BUCKET raw allocation 失败可使字符串创建返回 null 而没有 VM 异常；`SetString` 不写槽，helper 仍返回 true，dispatcher 交付预置 null。完整链见 `common.c:512-519`、`string.c:802-808,958-974`、`hash_set.h:525-537`、`hash_set.c:170-181`、`memory.h:19-22`（raw allocator 原样返回，不设置 VM 异常）及 `native_binding_dispatch.c:362,1303-1316`。该触发条件不等同于所有内存不足，也未做故障注入。
+
+**TODO:** 对照 `math_common.h:20-23,54-55` 核查将 Vector2 struct 地址当作连续 `double` 数组的对象模型与布局前提；依赖不止 `dot`，还包含 length、lengthSquared、normalized 和 compare。compare 当前按平方长度返回 -1/0/1；NaN 或双方平方溢出使两个严格比较均为假而落到 0，其 unordered 策略须结合 VM compare 消费规则和具体边界断言继续核实。
+
+`tests/fixtures/projects/native_numeric_pipeline/src/signal.zr:8` 确实构造并归一化 Vector2，但下游 checksum 只消费复数 magnitude；现有项目断言不验证返回的 vx/vy。provider 测试核查模块注册契约，不构成 Vector2 数值、字段 pin OOM 或短串分配失败的执行证据。完整逐单元审查与结论见 [Vector2 台账](../../code-review/coverage/zr_vm_lib_math_vector2.tsv)。
