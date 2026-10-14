@@ -155,6 +155,29 @@ let halfway = q0.slerp(q1, 0.5);
 
 当前 descriptor 注册了 constructor、算术 meta 和上表列出的实例方法。
 
+Quaternion 回调按字段名读取数值快照，不核对 prototype，也不统一要求单位范数；
+`slerp` 的单位端点要求仍适用。context、self/参数视图和 result 仅在本次 native 回调内
+借用；构造可复用兼容实例，运算结果对象交给 VM 管理。缺参或实参标签错误进入 VM
+异常，字段读取或对象 factory 返回 NULL 则可使回调返回失败。
+
+**BUG:** 合法有限输入 `(1e200,0,0,0)` 的中间平方范数溢出：`length` 返回无穷，
+`normalized` 返回零四元数，`inverse` 把可表示的 `-1e-200` 分量算成零。上述结果可由
+构造、字段读取和当前公式的完整路径证实，本批没有运行数值边界复现或修改算法。
+
+**BUG:** 对未驻留的短字符串，短串表扩桶的 `HASH_BUCKET` 原生分配返回 NULL 且没有
+VM 异常时，字符串 setter 保留 dispatch 预置的 null，格式化 helper 和 `toString` 回调
+仍报告成功。完整 descriptor → dispatch → 字符串表 → 分配器证据见
+[Quaternion 审查台账](../../code-review/coverage/zr_vm_lib_math_quaternion.tsv)。该结论是
+静态调用路径证明，本批未做分配失败注入。
+
+**BUG:** 新建实例的字段哈希表初始容量 4、负载阈值 3，按 `x/y/z/w` 填充时第四次写入
+需要扩桶。如果 pin、键字符串创建均成功，而宿主分配器对该 `HASH_BUCKET` 扩容返回
+NULL 并保留旧块、VM 没有异常，void setter 只记录日志；factory 不检查状态，构造或
+运算回调仍可交付缺少 `w` 的对象。构造 helper 还可复用兼容 self，上述条件限定到
+空字段表的填充路径。完整静态路径见同一审查台账，未做故障注入。
+
+**TODO:** 应以单位近邻端点核实 `slerp` 的单位输出需求和 `t` 区间；当前文档未承诺这两项。
+
 ## Matrix3x3/4x4
 
 矩阵字段按 row-major 暴露：`m00 ... m22` 或 `m00 ... m33`。两者都提供

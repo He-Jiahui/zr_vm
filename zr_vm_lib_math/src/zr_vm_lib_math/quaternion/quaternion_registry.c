@@ -5,9 +5,9 @@
 #include "zr_vm_lib_math/quaternion_registry.h"
 #include "zr_vm_common/zr_meta_conf.h"
 
+/* 所有表项均为模块静态存储；聚合器只浅拷贝 descriptor，native registry 在模块期内借用嵌套数组。 */
 const ZrLibTypeDescriptor *ZrMath_QuaternionRegistry_GetType(void) {
-    /* 静态 descriptor 汇集公开字段、Hamilton 乘法回调和比较元方法；
-     * 聚合器浅拷贝 descriptor，继续借用其中静态数组，不转移数组所有权。 */
+    /* 字段列表定义结构形状；方法/meta 表把公开名字、arity、类型提示和回调地址配对。 */
     static const ZrLibFieldDescriptor kFields[] = {
             ZR_LIB_FIELD_DESCRIPTOR_INIT("x", "float", ZR_NULL),
             ZR_LIB_FIELD_DESCRIPTOR_INIT("y", "float", ZR_NULL),
@@ -66,6 +66,7 @@ const ZrLibTypeDescriptor *ZrMath_QuaternionRegistry_GetType(void) {
 }
 
 const ZrLibFunctionDescriptor *ZrMath_QuaternionRegistry_GetFunctions(TZrSize *count) {
+    /* Quaternion 行为挂在类型方法/meta 表上，不导出额外 zr.math 顶层函数。 */
     if (count != ZR_NULL) *count = 0;
     return ZR_NULL;
 }
@@ -74,6 +75,7 @@ const ZrLibTypeHintDescriptor *ZrMath_QuaternionRegistry_GetHints(TZrSize *count
     static const ZrLibTypeHintDescriptor kHints[] = {
             {"Quaternion","type","struct Quaternion { x: float, y: float, z: float, w: float }","Quaternion value type."}
     };
+    /* 这是编译期投影文本，不是运行时字段校验器；count 可省略但表指针仍借用静态数组。 */
     if (count != ZR_NULL) *count = ZR_ARRAY_COUNT(kHints);
     return kHints;
 }
