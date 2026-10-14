@@ -227,3 +227,27 @@ if (!ZrVmLibSystem_Register(global)) {
 `FileStream`；其文件句柄由 finalizer 兜底释放。资源读取归档在单次调用内关闭；注册的
 exception handler 由 VM global 持有。详细 descriptor/callback helper 见 [Native API](native-api.md)，宿主阶段见
 [C 宿主指南](../05-interop/c-host-guide.md)。
+
+## Env 调用与交付边界
+
+注册的 `getVariable` 先由分派器验证恰好一个参数，再由 `ReadString` 验证字符串类型；
+两种参数异常均通过 VM 异常传播。缺失变量正常返回 null，存在值经 `SetString` 交给 VM。
+名称包含嵌入 NUL 时只查询该字节之前的前缀，完整名称查询应传入不含 NUL 的字符串。
+宿主环境值只借用到复制完成；callback 不加锁，宿主须按目标 CRT 的约定协调并发环境修改。
+静态 Env descriptor 及嵌套表、字符串和 callback 依赖 provider image 驻留至所有借用结束。
+
+**BUG:** `kFunctions` 的返回声明是 `string`，而缺失变量可正常返回 null，独立 hint 为 `string?`。
+当前 runtime typed metadata、parser 和 LSP 均有直接消费 descriptor 返回类型的路径；hint 不会覆盖该声明。
+另在合法的新短环境值触发字符串驻留哈希桶扩容且该桶分配失败时，void `SetString` 可保留预置 null，
+callback 仍成功，导致已有值被交付成缺失标记。这两项有完整静态证据，本轮未修复或运行故障注入。
+
+**TODO:** 字符串对象分配失败后的完整 GC 恢复可能首次通过 `ZR_VM_TRACE_GC_REWRITE_SLOTS` 再次调用
+`getenv`；需按支持的 CRT 核查旧宿主指针在该嵌套查询后是否有效，并以受控 GC 验证复制窗口。
+任意长值还进入 Core API 字符串缓存，缓存比较已有短串转换宏用于长串的缺陷记录；
+长环境值后续同桶查询的可观察影响须从 `CreateTryHitCache` 和 `ZR_CAST_STRING_TO_NATIVE` 核查。
+当前只登记具体待核入口，不把上述风险当作已验证的 Env 行为缺陷。
+
+相关 module 测试只核导出、根模块缓存身份和 module links；本轮 provider 9/9 只验证提供者契约。
+环境查询、nullable metadata、长值同桶读取和分配失败没有执行信用。逐单元依据见
+[Env 审查批次](../../code-review/batches/20261013-system-env-contracts.md)和
+[Env 台账](../../code-review/coverage/zr_vm_lib_system_env.tsv)。
