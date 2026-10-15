@@ -420,3 +420,16 @@ VM 无异常时 dispatcher 交付 null，虽然 descriptor 声明 Matrix4x4。`d
 专项覆盖。完整单元、注册项、调用入口与证据见
 [Matrix4x4 台账](../../code-review/coverage/zr_vm_lib_math_matrix4x4.tsv) 和
 [审查批次](../../code-review/batches/20261014-matrix4x4-contracts.md)。
+
+
+## 模块描述符与宿主注册边界
+
+Math 入口只聚合 registry 并交给 native binding，不执行数值 callback。当前逐 getter 核对为 25 个模块函数、8 个类型、13 条结构化提示；类型方法仍在各自 type descriptor 中。三组静态容量为 48/8/32，类型表恰满。六个常量是 PI、TAU、E、EPSILON、INF、NAN。精简 JSON 仅列两个函数和八个类型，不能用它代替完整函数表；已核消费者是提示导出和 native 反射。
+
+GetModuleDescriptor 惰性初始化并借出同一静态描述符，不注册到 VM。Register 初始化后把描述符借给指定 global 的 NativeRegistry；false 不保证 VM 没有变化，下层 Attach 可能已完成，静态描述符也不会因一次 VM 注册失败而回滚。描述符、嵌套表、文本及 callback 的有效期受模块映像限制，借用者不释放这些静态对象；共享库不能在 VM 或其他借用者仍使用它们时卸载。
+
+**TODO:** 三个 append 没有容量检查；新增 registry 前须重新核对各 getter 数量及三组上界。g_math_initialized 是非原子完成标志；宿主须串行首次初始化，并在跨线程读取前建立同步，同一 global 的注册也由宿主协调。当前可检索入口没有证明允许并发首次调用，本批不把该策略疑点宣称为已复现数据竞争。
+
+共享发现符号 ZrVm_GetNativeModule_v1 只在共享配置编译，由加载器按字符串查符号后经函数指针调用；它借出描述符，不自行注册或管理库句柄。加载器随后核对 ABI 与请求模块名。静态 Debug 构建不提供共享发现分支的执行信用。
+
+完整定义、41 处实际 checkout 直接 Register 调用、间接插件入口、所有权和测试边界见 [模块入口台账](../../code-review/coverage/zr_vm_lib_math_module.tsv) 与 [批次记录](../../code-review/batches/20261015-math-module-contracts.md)。现有 sqrt 转发测试只断言非空结果与标签；provider 的官方模块清单不等于三组计数或插件加载断言。
