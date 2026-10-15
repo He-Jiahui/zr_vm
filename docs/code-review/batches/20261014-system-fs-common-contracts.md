@@ -8,6 +8,15 @@ related_code:
   - zr_vm_core/src/zr_vm_core/string/string.c
   - zr_vm_core/include/zr_vm_core/hash_set.h
   - zr_vm_core/src/zr_vm_core/base/hash_set.c
+  - zr_vm_core/src/zr_vm_core/exception/exception.c
+  - zr_vm_core/src/zr_vm_core/exception/exception_internal.h
+  - zr_vm_core/src/zr_vm_core/exception/exception_try_run.c
+  - zr_vm_core/src/zr_vm_core/object/object.c
+  - zr_vm_core/src/zr_vm_core/object/object_super_array.c
+  - zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h
+  - zr_vm_core/src/zr_vm_core/base/memory.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
 implementation_files:
   - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c
   - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_internal.h
@@ -25,7 +34,7 @@ doc_type: workflow-detail
 
 本批覆盖 fs_common.c 与 fs_internal.h；fs_entry.c、fs_stream.c、Core、Library dispatcher 和测试仅作只读调用链证据。coverage leaf 有 73 个唯一 unit key：fs_internal.h 44 项（文件说明、include guard、2 个宏、stream 结构及 6 字段、33 个共享声明），fs_common.c 29 项（文件职责和 28 个函数定义）。本批未发现未登记的静态数据表或独立配置块；两个字符串 setter 缺陷、path 借用 TODO 和无调用 getter 都记录在所属函数单元，未重复拆成同一语义的伪单元。
 
-表内决策为 59 条 commented、2 条 no-comment、5 条 BUG、7 条 TODO。BUG 决策涉及短串字段未初始化、隐藏 owner 丢失、ReadText 软失败；首 NUL 截断也在 ReadText 同单元记录。TODO 决策覆盖 getter 用途、path 借用、errno 时序、ReadBytes 非局部异常清理；NewStream/ReadText 的清理 TODO 随其 BUG 单元记录，不重复造单位。no-comment 仅用于标准 include guard 和已有文件职责注释覆盖的 C 实现文件。
+表内仍73键；FsEntry复核后四个Stream helper声明合同同步为58 commented、2 no-comment、7 BUG、6 TODO。新增BUG结论是既有ReadBytes/WriteBytes声明单元的证据升级，不新增单元或重复缺陷数；path借用、getter用途和errno等疑点仍具体TODO。
 
 ## 调用链与契约
 
@@ -51,14 +60,25 @@ WriteBytes/ReadBytes helper 以 byte array 和逐项范围校验处理字节；R
 
 ## 修改与验证状态
 
-最终冻结源：fs_common.c SHA256 eba198dd90fcfc98dbf8c173be4c4cfbc274b26cadc4b14e0779e28b45998a0a（702行）；fs_internal.h SHA256 fb7f1b155f12e91c2625547225ea87c7a731d9b658690cd2f8a4049fd8fdd8e6（631行）。严格 system-fs-common-final-r7-comment-equivalence.json（SHA256 30539a784bc481dd0d46df741731f7a61b2cce99b2c5147053f47772ec83dd54）通过4119个非注释token种类/拼写/StartOfLine/LeadingSpace比较，4个lexer子进程全部等到退出，C token原行号不变。较早 proof 只作为历史记录，不代替此最终身份。
+先前已提交批次冻结源：fs_common.c SHA256 eba198dd90fcfc98dbf8c173be4c4cfbc274b26cadc4b14e0779e28b45998a0a（702行）；fs_internal.h SHA256 fb7f1b155f12e91c2625547225ea87c7a731d9b658690cd2f8a4049fd8fdd8e6（631行）。严格 system-fs-common-final-r7-comment-equivalence.json（SHA256 30539a784bc481dd0d46df741731f7a61b2cce99b2c5147053f47772ec83dd54）通过4119个非注释token种类/拼写/StartOfLine/LeadingSpace比较，4个lexer子进程全部等到退出，C token原行号不变。该段记录先前提交身份；新header原始字节、r2词法证明及当前构建结果见下方追认。
 
 ReadText 另有独立于 NUL 截断的软失败 BUG：stream.c:347 -> native_binding_dispatch.c:1303-1315 -> native_binding_support.c:320-324 -> string.c:767-818。未驻留短文本跨驻留阈值且仅一次 HASH_BUCKET 扩容申请软返回 NULL 时，SetStringObject 因 NULL 不写 result。dispatcher.c:362 预置 null；helper:352 仍 true，File 包装器 entry.c:47-55/:425-429 在 close 成功后仍 true，Stream:471-475 在同步成功后仍 true，脚本正常得到 null。完整静态路径支持该结论，没有故障注入，不概括硬 GC OOM。
 
-finalizer 在 stream.c:257-264 忽略 CloseHandle 结果，仍将 handle/closed 标记后 free(data)，所以只承诺尝试关闭及释放记录。非局部 MemoryError 清理待核：ReadBytes 的 malloc 缓冲跨 Array_New:290/Push:299；ReadText 的 malloc text 跨 SetString:347 到 free:351；File_Open 在 entry.c:389 开句柄后跨 NewStreamObject 的 Type_NewInstance:144，NULL-only 清理仅在 entry.c:395-397。Memory_GcMalloc 在 core/base/memory.c:39-47 可非局部抛异常；是否有外层 unwind 补偿须继续追踪，不把这三条窗口升级为 BUG。
+finalizer 在 stream.c:257–264 忽略 CloseHandle 结果并 invalid/free(data)，仅承诺尝试关闭。原ReadBytes/ReadText malloc缓冲及NewStreamObject尚未包装句柄的非局部清理TODO现已闭合为BUG：exception.c:545–570/exception_internal.h:18用longjmp，exception_try_run.c:10–27仅恢复VM roots/scopes，无C malloc/fd/list清理注册；callback后置cleanup不执行这些局部资源释放。WriteBytes另限定非空、未物化的合法RAW_CANONICAL且当前物化需新增pairpool，相关VM分配异常非局部退出跳过free；普通false路径仍显式清理。无故障注入。
 
 Root 全仓候选扫描不按扩展名筛选，剔除注释/string/char 后核得38个函数各唯一实现、257处direct call；只有 StreamFinalize 在 stream.c:159 有非调用函数指针赋值，GC OBJECT 分支见 gc_object.c:1008-1014。gc_sweep.c:71-72 是另一个泛型派发位置，但当前 waitToRelease 入链路径尚待核，不能借此证明 FileStream 必经该队列；gc_mark 的 NATIVE_DATA 分支不是普通 FileStream OBJECT 的入口。GetBoolField 仓内无直接 call/裸引用，不推断仓外不可达。全部函数caller列已列完整实际坐标，字段按owner使用列全；审计元数据 system-fs-common-full-caller-evidence-audit.json（SHA256 c48ad120f8396399fe2c06be4101552759a8d5e2c0c2f2a0f9df9de719cc16e7）。
 
-最终实际 checkout 验证 support-common-final-native-r2-results.json（SHA256 5fa0fdb3ef91eefc45022f086f2806134696b69efed8e0121ab0e01d98aafe5d）：build0/5.047秒；module70/78 exit8、provider9/9 exit0、Fs7/8 exit1，所有case行分别与Complex最近基线/Fs基线一致。3216输入及13冻结源码在运行中稳定；对比 81f1f28267e260a31f251aaa6008bdaabfaddb8f3ff11644a021335b66e8a361。pre-edit完整build1来自外部Parser宏定义缺失，当前Parser已变且阻塞解除，不能隔离归因注释。Fs stream_modes仍在takeReader处失败，后续readText/setLength/bytes/using没有执行信用；无新增allocator/GC/数值极值/并发/WSL信用。删除旧聚合66个key并保留其余113行原字节；本批73key为唯一canonical叶。共享构建/缓存/索引复用，累计20个65B Fs生成夹具保留，本批释放0B；此前自动清理拒绝未绕过、任务未关闭。
+先前提交的实际 checkout 验证 support-common-final-native-r2-results.json（SHA256 5fa0fdb3ef91eefc45022f086f2806134696b69efed8e0121ab0e01d98aafe5d）：build0/5.047秒；module70/78 exit8、provider9/9 exit0、Fs7/8 exit1，所有case行分别与Complex最近基线/Fs基线一致。3216输入及13冻结源码在运行中稳定；对比 81f1f28267e260a31f251aaa6008bdaabfaddb8f3ff11644a021335b66e8a361。pre-edit完整build1来自外部Parser宏定义缺失，当前Parser已变且阻塞解除，不能隔离归因注释。Fs stream_modes仍在takeReader处失败，后续readText/setLength/bytes/using没有执行信用；无新增allocator/GC/数值极值/并发/WSL信用。删除旧聚合66个key并保留其余113行原字节；本批73key为唯一canonical叶。共享构建/缓存/索引复用，累计20个65B Fs生成夹具保留，本批释放0B；此前自动清理拒绝未绕过、任务未关闭。
 
-Root 最后校正 h:257/279/320 的错误返回描述与两个 caller References，并在27个非void Returns原行补@return标记：mode 在 File_Open，optional int 仅两个 read count，seek/length 直接 ReadInt。这些注释修订晚于 native-r2，r7 与 r5 的非注释摘要及全部token坐标一致；system-fs-common-final-source-native-token-bridge-r2.json（SHA256 dd45c61251bb9eb99319b2436134fc6eb6f8607cb0828f6c26213ee5f76f53dc）固定实际测试源码与最终源码身份。未为相同程序语义重复运行 suite，不将注释文字修订另算执行覆盖。
+Root 先前提交前校正 h:257/279/320 的错误返回描述与两个 caller References，并在27个非void Returns原行补@return标记：mode 在 File_Open，optional int 仅两个 read count，seek/length 直接 ReadInt。这些注释修订晚于 native-r2，r7 与 r5 的非注释摘要及全部token坐标一致；system-fs-common-final-source-native-token-bridge-r2.json（SHA256 dd45c61251bb9eb99319b2436134fc6eb6f8607cb0828f6c26213ee5f76f53dc）固定实际测试源码与最终源码身份。未为相同程序语义重复运行 suite，不将注释文字修订另算执行覆盖。
+
+
+## FsEntry 审查闭合后的声明合同追认
+
+本次仅更正 fs_internal.h 四个 Stream helper 的已有声明合同、对应73键台账的四行及上文旧未决清理段。所有声明签名、程序token物理行、unit keys与其余69行原字节保持；不重复累计73单元。header单独严格词法证明与本次最终native由Root在FsEntry同批验收中记录；旧r7/source fb7f1b15 及旧构建结果保留为历史证据，不当作新header原始字节的构建信用。完整非局部链和RAW数组构造入口见 [FileStream追认](20261015-system-fs-stream-contracts.md)。
+
+## 当前私有头文件与共同构建身份
+
+当前fs_internal.h SHA256 c2684f8bbd837f38a1d470bcccf1b6f507eb575b1b01071892df22d9b6ad6e88；system-fs-internal-nonlocal-final-r2-comment-equivalence.json SHA256 54cdddd33169c549b8b6cd8bf1ad48b5e3946833d588bf9686f4f53c4e40fdc1证明660程序token、2lexer、原token物理行及声明签名一致，含NewStreamObject openResult只有完整owner发布才转移所有权的限定。fs_common.c仍eba198dd90fcfc98dbf8c173be4c4cfbc274b26cadc4b14e0779e28b45998a0a；r7仅用于该未变C源，旧fb7 header不是当前头文件身份。最终实际 checkout 验证 math-config-fs-entry-final-native-r1：build exit0（75.453 s，105条warning、0 error）；Module70/78、Provider9/9、Fs7/8，三组逐项case lines与tensor-stream-final-native-r1完全一致，保留8个Module失败及Fs断言1035的takeReader cached native member失败。results SHA256 de826a391eccc12ca129ff63a853b4d7ceddafa84cb913554edcf126c68a4384；comparison SHA256 032bf97f9a3510a41d86f468022a95bcdd72ceaacf96de67858e12dea9181694。3216输入及31冻结源码运行前后稳定；修改前全量构建受其他会话Parser输入阻断，不能作隔离行为归因。无allocator/GC/并发/UB/WSL/shared专项或未到达callback执行信用。
+
+只更正已有73键中的4个Stream声明行，其他69行原字节保留；现58 commented、2 no-comment、7 BUG、6 TODO，无新增/重复73单元。Root原有FileStream/finalizer软失败和errno TODO仍保留，不把非局部Throw与ordinaryfalse混淆。本次随FsEntry提交，不重复先前common批次。

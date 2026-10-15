@@ -675,14 +675,14 @@ TZrBool ZrSystem_Fs_Stream_Close(ZrLibCallContext *context, SZrTypeValue *result
  * @param[in] path 已规范化路径的 C 字符串借用至构造完成；不由本函数释放。
  * @param[in] openResult 成功打开的句柄及 readable/writable/append 快照；句柄所有权在 wrapper 成功交付后转移。
  * ## Returns
- * @return 成功时返回新的 wrapper；输入、对象/记录分配失败时返回 NULL，调用方仍负责原句柄。
+ * @return 成功时返回新的 wrapper；输入、对象/记录普通分配失败时返回 NULL；VM 异常可非局部退出，原句柄仍需清理。
  * ## Constraints and lifecycle
  * `TempValueRoot_Begin` 建立临时根；对象在 `Type_NewInstance` 和 `data` malloc 成功后才于 :157 放入该根，
  * 随后字段写入期间保持可追踪。`data` 由 malloc 创建并由 finalizer 释放。BUG: 受限软失败链为：自定义 allocator
  * 令 ignored-root 表已满时唯一一次 `RawMallocWithType(ARRAY)` 扩容失败；`Object_SetFieldCString` 对字段名
  * string 调 `native_binding_pin_raw_object` 后静默返回，隐藏 owner 未写入，而本函数仍返回 wrapper。`File_Open`
  * 因非 NULL 结果交付对象，之后 GetStreamData/finalizer 无法找到 record。该路径未故障注入，不泛化为所有 OOM。
- * TODO: Type_NewInstance 非局部抛 MemoryError 会绕过 File_Open 的 NULL-only CloseHandle 清理；
+ * BUG: Type_NewInstance 的 VM 分配异常非局部跳出时，尚未包装的句柄越过 File_Open 的 NULL-only CloseHandle；Exception_Throw/TryRun 仅恢复 VM 根与 scopes，不释放此 C 局部句柄。
  * path 只在同步构造窗口借用，File_Open 的跨分配有效期另有 TODO。TODO: :165 忽略初始 StreamSyncFields 的 false；开放句柄位置或长度查询失败时仍返回 wrapper，position/length 未发布。需核初始查询失败应拒绝构造还是如何表示未知快照（:202-204）。
  * ## References
  * `fs_entry.c:394` 的 `File_Open`、`system_fs_set_hidden_native_pointer` :160、
@@ -793,8 +793,8 @@ TZrBool ZrSystem_Fs_Stream_Close(ZrLibCallContext *context, SZrTypeValue *result
  * array 已完成构造，不代表此前输入位置可回滚。
  * ## Constraints and lifecycle
  * malloc 缓冲在 array 构造结束或普通失败后释放；失败时未发布的 VM array 留待 GC 回收，句柄位置不回滚。
- * 结果数组由 VM 所有，outReadCount 不表示结果发布成功以外的宿主事务保证。TODO: Array_New/PushValue
- * 若以内存异常非局部退出，局部 malloc 缓冲是否越过 free 需沿 exception 恢复路径确认；本批无 OOM 注入。
+ * 结果数组由 VM 所有，outReadCount 不表示宿主事务保证。BUG: Array_New/PushValue 的 VM 分配异常非局部退出时，
+ * 已成功 malloc 的 bytes 缓冲越过 free；Exception_Throw/exception_try_run.c 只恢复 VM roots/scopes，不遍历放弃的 C 栈。
  * ## References
  * `Stream_ReadBytes` :449、`fs_entry.c` 的 `ReadBytes` aliases、`system_fs_read_buffer_from_handle`、`ZrLib_Array_PushValue`。
  */
@@ -814,8 +814,8 @@ TZrBool ZrSystem_Fs_Stream_Close(ZrLibCallContext *context, SZrTypeValue *result
  * HASH_BUCKET 扩容软失败时 SetString 可能不写 dispatcher 预置的 null 槽，本函数仍报告成功；Stream 后续查询成功、或 fs_entry.c:47/276-284/419-432 的 File API 临时句柄关闭成功且其余步骤正常返回时，外层同样交付 true/null。
  * ## Constraints and lifecycle
  * text 通过 C-string `SetString`，嵌入 NUL 会截断 VM string，但句柄已消费完整 count；不验证 UTF-8，count
- * 可能切开多字节序列。缓冲在 setter 正常返回后释放；TODO: SetString 非局部 MemoryError 会否跳过 free(text)
- * 需沿 Exception_Throw/恢复路径核对，本批无故障注入。
+ * 可能切开多字节序列。缓冲在 setter 正常返回后释放；BUG: SetString 的 VM 分配异常非局部退出时跳过 free(text)，
+ * Exception_Throw/TryRun 无 C 资源清理注册；一次性 File 入口还越过外层 CloseHandle，普通 false 清理不受此结论影响。
  * ## References
  * `Stream_ReadText` :471、`fs_entry.c:47/425`、`ZrLib_Value_SetString`、既有首 NUL BUG 注释 :344-346。
  */
@@ -830,10 +830,10 @@ TZrBool ZrSystem_Fs_Stream_Close(ZrLibCallContext *context, SZrTypeValue *result
  * @param[in] array 元素必须是有符号/无符号整数且位于 0..255。
  * @param[out] outWrittenCount 可选写入字节数；进入函数清零，全部完成后写入长度。
  * ## Returns
- * @return 预校验和 write-all 成功返回 `ZR_TRUE`；类型/范围/分配或宿主写失败返回 `ZR_FALSE`。
+ * @return 预校验和 write-all 成功返回 `ZR_TRUE`；元素类型/范围、原生 malloc 或宿主写失败返回 `ZR_FALSE`；VM 分配异常可非局部退出。
  * ## Constraints and lifecycle
  * 所有元素先复制到 malloc 缓冲，避免后段非法元素造成提前写；宿主短写循环完成后才发布 count。部分写失败
- * 无法回滚已写前缀；输入数组由 VM 持有，本函数不保留其引用。
+ * 无法回滚已写前缀；输入数组由 VM 持有。BUG: 合法未物化 RAW_CANONICAL 连续整数数组首次 Array_Get 需物化 pair pool；该 VM 分配抛异常非局部退出时，已 malloc 的 bytes 越过 free；一次性 File bytes 入口也越过 CloseHandle，普通 false 及非 raw 数组不属于此条件。
  * ## References
  * `Stream_WriteBytes` :492、`fs_entry.c` 的 bytes aliases、`system_fs_write_all`、`ZrLib_Array_Get`。
  */

@@ -138,7 +138,7 @@ Windows 的 `0xFFFFFFFF` 被解释为 `INFINITE`。POSIX 收到信号使 `nanosl
 | `createDirectory` | `(path: string): bool` | 创建单层目录。 |
 | `createDirectories` | `(path: string): bool` | 递归创建目录树。 |
 | `removePath` | `(path: string): bool` | 删除文件或空目录。 |
-| `readText` | `(path: string): string` | 读取整个 UTF-8 文件。 |
+| `readText` | `(path: string): string` | 读取文件字节并构造文本 string，不验证 UTF-8，首 NUL 截断。 |
 | `writeText` / `appendText` | `(path: string, text: string): bool` | 覆盖/追加文本。 |
 | `getInfo` | `(path: string): SystemFileInfo` | 返回 metadata snapshot。 |
 
@@ -176,9 +176,9 @@ dispatcher 交付 null。不能把 C 回调的 false 统一解释为脚本布尔
 | 方法 | 签名 | 细节 |
 | --- | --- | --- |
 | `open` | `open(mode: string = "r"): FileStream` | 支持 `r/r+/w/w+/a/a+/x/x+`，可带 `b` 别名。 |
-| `create` | `create(recursively: bool = true): null` | 创建文件；按参数决定是否创建父目录。 |
+| `create` | `create(recursively: bool = true): null` | 缺失时创建空文件；已存在普通文件保留内容，按参数决定是否创建父目录。 |
 | `readText` / `readBytes` | `(): string` / `(): array` | 从头读取整个文件。 |
-| `writeText` / `appendText` | `(text: string): int` | 覆盖/追加 UTF-8，返回字节数。 |
+| `writeText` / `appendText` | `(text: string): int` | 按 C-string 覆盖/追加文本，首 NUL 截断且不验证 UTF-8，返回字节数。 |
 | `writeBytes` / `appendBytes` | `(bytes: array): int` | 数组元素必须是 0..255 整数。 |
 | `copyTo` / `moveTo` | `(targetPath: string, overwrite: bool = false): File` | 返回目标 wrapper。 |
 | `delete` | `(): null` | 删除文件；已不存在通常视 provider 结果处理。 |
@@ -260,7 +260,7 @@ if (!ZrVmLibSystem_Register(global)) {
 ```
 
 共享库入口是 `ZrVm_GetNativeModule_v1()`。宿主销毁 global 前应显式关闭仍打开的
-`FileStream`；其文件句柄由 finalizer 兜底释放。资源读取归档在单次调用内关闭；注册的
+`FileStream`；仅在隐藏 owner 字段成功发布时，finalizer 才能找到记录并尝试关闭句柄、释放记录。资源读取归档在单次调用内关闭；注册的
 exception handler 由 VM global 持有。详细 descriptor/callback helper 见 [Native API](native-api.md)，宿主阶段见
 [C 宿主指南](../05-interop/c-host-guide.md)。
 
@@ -390,13 +390,29 @@ StreamCloseInternal 由显式 close callback 调用；using 经注册的关闭�
 
 **BUG:** ReadTextFromHandle 在短串驻留表 HASH_BUCKET 扩容软失败时，void SetString 可不写结果，helper 仍报告成功；正常 dispatcher 预置的 null 在 Stream 后续快照查询成功时到达脚本。module/File readText 经临时句柄 helper，关闭成功且回调正常返回时亦可 true/null；File 刷新普通 false 被忽略，非局部异常则不形成 true 返回。限定未驻留短文本、一次 bucket 软失败及其余步骤正常返回，完整路径见 Stream 台账；与首 NUL 截断不同，均无故障注入信用。
 
-**TODO:** stream 调用 RaiseErrnoIOException 前先求值路径 getter，需核查其键物化/分配是否覆盖原 errno。ReadBytes/ReadText 的 malloc 缓冲和 File_Open 已开句柄分别跨越 VM 分配；正常返回清理已核，MemoryError 非局部 unwind 的资源恢复仍按具体窗口待核。
+**TODO:** stream 调用 RaiseErrnoIOException 前先求值路径 getter，需核查键物化/分配是否覆盖原 errno。**BUG:** ReadBytes/ReadText 已 malloc 的 bytes/text、File_Open 已开且尚未包装的句柄跨 VM 分配；该分配异常非局部退出会越过 C free/CloseHandle。Exception/TryRun 仅恢复 VM roots/scopes，不清理放弃的 C 栈资源。普通 false 的本地清理已核实；静态链闭合，无故障注入。
 
 
 ## FileStream 同步操作与快照
 
-readText/readBytes 的 count 按字节计，0 不消费输入，所有负值目前都读取至 EOF；默认值 -1 并不是唯一接受的负数。文本发布/写入用 C-string，NUL 与 UTF-8 边界见前文。Stream callback 不保留 context/result，成功交付的 VM 数组/字符串由 VM 管理，临时 malloc 缓冲在普通返回路径释放；非局部分配异常是否越过 free 保留 TODO。
+readText/readBytes 的 count 按字节计，0 不消费输入，所有负值目前都读取至 EOF；默认值 -1 并不是唯一接受的负数。文本发布/写入用 C-string，NUL 与 UTF-8 边界见前文。Stream callback 不保留 context/result，成功交付的 VM 数组/字符串由 VM 管理，临时 malloc 缓冲在普通返回路径释放；相关 VM 分配异常非局部退出会越过 free，按上述窄 BUG 记录；普通 false 仍正常释放。
 
 NewStreamObject 在 initial StreamSyncFields 返回 false 时仍交付 wrapper，位置/长度查询失败的未知快照政策为 TODO。后续读写/seek/resize先执行宿主操作再同步；同步查询失败抛 IOException，不回滚已发生的副作用。setLength 忽略移动超尾游标的 seek 失败，因此返回成功不保证游标已经移到新长度。公开字段 setter 是 void，查询成功也不保证各字段均写入。
 
 显式 close 的成功路径幂等；宿主错误后的句柄状态及重试安全性待平台核验。完整周期和增量 sweep 均能经普通 OBJECT 释放调用 finalizer；wait-to-release 列表尚无已证入队入口，不作为额外调用信用。缺陷、TODO 与现有测试实际到达范围见 [Stream 台账](../../code-review/coverage/zr_vm_lib_system_fs_stream.tsv) 和 [批次记录](../../code-review/batches/20261015-system-fs-stream-contracts.md)。
+
+## File、Folder 一次性操作的调用边界
+
+File.create 对已存在普通文件保留内容，缺失时才创建空文件。File copy/move 完成宿主操作后尝试刷新源receiver，普通refresh false被忽略；File.moveTo原receiver仍指旧路径。Folder copy/move不刷新原receiver。目标wrapper构造失败不回滚副本或移动。必需string/array缺参或错型分别沿ArityError/TypeError退出；可选bool错型是普通false，不能统一解释为IOException。
+
+**BUG:** 一次性ReadBytes/ReadText已取得缓冲与临时handle后，相关VM分配异常非局部退出越过free及close；WriteBytes另限定合法非空RAW_CANONICAL数组物化需要新pairpool，分配异常退出时同样跳过这些清理。WriteText helper没有该VM分配路径。目录枚举成功后，在条目/数组VM物化中非局部退出还会跳过File_List_Free；平台普通失败的部分列表清理仍执行。Exception/TryRun只恢复VM roots/scopes，不回收这些C局部资源。
+
+CurrentDirectory的限定短串HASH_BUCKET软失败可交付true/null；GetInfo、构造/刷新及目标对象字段写入受共享WriteStringField未初始化值BUG影响，结果未定义，不保证只是缺字段。上述均是静态调用链证据，本批没有allocator故障注入、GC压力、NUL或并发专项执行。参数保活、字符串存储有效期、File.open构造失败后close错误仍有具体TODO；Glob省略recursively的默认已由当前helper调用路径确认true。逐函数定义、全部调用坐标、证据与结论见[FsEntry台账](../../code-review/coverage/zr_vm_lib_system_fs_entry.tsv)和[批次记录](../../code-review/batches/20261015-system-fs-entry-contracts.md)。
+
+写入、创建、复制、移动和递归删除都不承诺事务回滚。短写后报错可能已写出前缀；File.writeBytes虽先完整校验元素才写字节，却先以w打开，非法元素也可能已截断旧文件（appendBytes不追加非法内容，但可先创建缺失文件）。递归创建失败保留已建父目录，File创建后的close失败保留新文件；递归删除失败不恢复已删子项。overwrite复制/移动可先删除旧目标，随后失败留下部分目标；移动的复制后删源回退若删除失败，也可能两边仍有内容。这些是现有失败状态契约，本批没有故障注入或专项执行。
+
+File.open的w/a/x在宿主open成功时已可截断或创建文件，后续append seek失败或wrapper构造失败也不恢复文件内容；普通wrapper失败只尝试关闭句柄。Folder.glob省略recursively时确定默认true，现有显式true测试不提供省略参数的专项运行覆盖。
+
+复制的普通文件分支会忽略close返回值，成功不保证关闭成功；overwrite可先删除旧目标，失败时目标可能仍不存在或只留下已建父目录。BUG：File/Folder.moveTo覆盖同一现存路径会先删源，再以IOException失败；Folder.copyTo把目录复制到自身子目录会不断纳入新建目标，moveTo在rename失败后的复制回退也可触发。调用时避开这些路径组合；本轮仅记录静态已证缺陷，未改行为，也未运行这两类破坏性场景。
+
+路径重叠的另一已证BUG：overwrite=true且目标是源的现存祖先目录，Copy/Move会先递归删除该祖先树，连源及兄弟项一起删除，再报IOException；目录Copy还可能留下重建的空目标。File/Folder包装名称不校验实际源类型，实际源为目录的File.copyTo也可能触发前述子目录递归；moveTo在rename失败后的复制回退适用。上述结论按NormalizePath实际输出的组件关系说明，不承诺文件系统别名或并发操作安全。

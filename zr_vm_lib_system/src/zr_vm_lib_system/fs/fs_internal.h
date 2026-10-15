@@ -452,9 +452,9 @@ TZrBool ZrSystem_Fs_RefreshEntryObject(SZrState *state,
  * ## Parameters
  * @param[in] state 当前 VM state。
  * @param[in] path 构造包装所用路径字符串，调用期间须有效。
- * @param[in] openResult 成功打开后的句柄、权限、模式快照；成功返回时句柄应由新对象接管。
+ * @param[in] openResult 已打开句柄及权限/模式快照；完整 owner 发布成功时由新对象接管，当前非 NULL 软失败例外见 Constraints。
  * ## Returns
- * @return wrapper 进入发布路径时返回对象；输入/根或普通可返回分配失败时为 NULL，由 caller 管理原句柄。TODO: File_Open 在 entry.c:389 已开句柄，stream.c:144 的 Type_NewInstance 若经 Memory_GcMalloc 非局部抛错，会绕过 entry.c:395-397 的 NULL-only 清理；需核查 unwind 恢复。
+ * @return wrapper 进入发布路径时返回对象；输入/根或普通分配失败时为 NULL，由 caller 管理原句柄。BUG: File_Open 已打开句柄且 Type_NewInstance VM 分配异常非局部退出时，越过 NULL-only CloseHandle；TryRun 仅恢复 VM roots/scopes，不释放尚未包装的 C 局部句柄。
  * ## Constraints and lifecycle
  * `NewStreamObject` 设置 finalizer 后以 void setter 写隐藏 owner；若 owner 字段的 key/string 或 pin 软失败，它仍可返回非 NULL。BUG: 在打开句柄后仅此 owner 写入失败时，File_Open 视为成功并不关闭句柄；后续 `GetStreamData`/finalizer 因字段缺失而无法释放 malloc 记录或关闭句柄。确切条件与证据在本批台账；该失败未做 fault injection。
  * ## References
@@ -554,9 +554,9 @@ void ZrSystem_Fs_StreamFinalize(SZrState *state, SZrRawObject *rawObject);
  * @param[out] result 成功时接收 ARRAY VM 值。
  * @param[out] outReadCount 可选实际消费字节数；入口先清零。
  * ## Returns
- * @return 完整读取并构造数组时 true；宿主读取、native buffer、数组或元素追加失败时 false。
+ * @return 完整读取并构造数组时 true；宿主读取、native buffer 或数组/元素普通失败时 false；VM 分配异常可非局部退出。
  * ## Constraints and lifecycle
- * native 缓冲在正常返回路径由本函数 free；已消费数据不回滚。TODO: stream.c:286 取得缓冲后跨 Array_New:290/Array_PushValue:299，Memory_GcMalloc 可非局部抛 MemoryError；须核查 unwind 是否释放缓冲，不把普通 false 清理泛化到非局部异常。
+ * native 缓冲在普通返回路径 free，已消费数据不回滚。BUG: Array_New/Array_PushValue 的 VM 分配异常非局部退出会越过 free(bytes)；一次性 File helper 还越过外层 CloseHandle。Exception_Throw/TryRun 不遍历放弃的 C 栈资源，普通 false 清理与此区分。
  * ## References
  * `fs_entry.c` 的兼容 readBytes 与 `fs_stream.c` 的 FileStream.readBytes；`system_fs_read_buffer_from_handle`。
  */
@@ -578,7 +578,7 @@ TZrBool ZrSystem_Fs_ReadBytesFromHandle(SZrState *state,
  * ## Returns
  * @return 宿主读取及 native buffer 准备通过后返回 true，未检查 void SetString 的结果；参数、宿主读或 native buffer 失败时 false。
  * ## Constraints and lifecycle
- * C-string 建串会截断首 NUL 后缀且不验证 UTF-8；已消费字节不回滚。BUG: 未驻留短文本跨 HASH_BUCKET 扩容且仅该申请软失败时，SetString 不写 result，File/Stream.readText 仍可成功返回 dispatcher 预置 null。TODO: malloc text 正常返回时在 SetString:347 后 free:351，MemoryError 非局部 unwind 清理待核。
+ * C-string 建串截断首 NUL 且不验证 UTF-8。BUG: 未驻留短文本的单次 HASH_BUCKET 软失败可让 void SetString 不写 result；其余步骤正常返回时 File/Stream 可 true/null。另在 SetString VM 分配异常非局部退出时，malloc text 越过 free(text)，一次性 File helper 还越过外层 CloseHandle；普通 false 清理不受此条件影响。
  * ## References
  * `fs_entry.c` 的 readText aliases 与 `fs_stream.c` 的 FileStream.readText；`ZrLib_Value_SetString`。
  */
@@ -599,7 +599,7 @@ TZrBool ZrSystem_Fs_ReadTextFromHandle(SZrState *state,
  * ## Returns
  * @return 所有字节写完时 true；非法元素、native buffer 或宿主写入失败时 false。
  * ## Constraints and lifecycle
- * 中间分配的字节缓冲由本函数释放；短写会循环，失败时已写前缀不可回滚。句柄不由本函数关闭。
+ * 短写循环完成，部分已写前缀不可回滚，句柄归 caller。中间 bytes 缓冲仅在普通返回路径释放。BUG: 非空且仍未物化的合法 RAW_CANONICAL 连续整数数组，Array_Get 物化需新增 pair pool；相关 GcMalloc 失败并非局部抛异常时，越过已 malloc 缓冲的 free，一次性 File helper 还越过外层 CloseHandle；不泛化到非 raw/普通 false。
  * ## References
  * `fs_entry.c` 的 File.writeBytes/appendBytes 与 `fs_stream.c` 的 stream.writeBytes；`system_fs_write_all`。
  */
