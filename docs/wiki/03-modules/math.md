@@ -22,6 +22,14 @@ related_code:
   - zr_vm_lib_math/include/zr_vm_lib_math/matrix3x3_registry.h
   - zr_vm_lib_math/src/zr_vm_lib_math/matrix/matrix3x3_registry.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c
+  - zr_vm_core/src/zr_vm_core/object/object.c
+  - zr_vm_core/src/zr_vm_core/base/memory.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
+  - zr_vm_parser/src/zr_vm_parser/syntax/lexer.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
+  - zr_vm_lib_math/CMakeLists.txt
+  - zr_vm_common/CommonMacros.cmake
 implementation_files:
   - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c
   - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c
@@ -110,8 +118,8 @@ method 为准。除 Tensor 的 `fill/set` 会修改 receiver 并返回它自身�
 | `Tensor(shape: array, data: array)` | `clone()`、`reshape(shape: array)`、`fill(value: float)`、`get(indices: array)`、`set(indices: array, value: float)`、`sum()`、`mean()`、`transpose2D()`、`matmul(other: Tensor)`、`add/sub(other: Tensor)`、`mulScalar(value: float)`、`toArray()` |
 
 `Tensor` 构造回调实际读取 shape 与 data 两个数组，要求 data 长度等于各维度之积；当前
-descriptor 的签名文字仍误写为 `fillValue: float`。`get/set` 的单个参数是长度与 rank 相同
-的多维 indices 数组，按 row-major 映射到 data；`set` 原位更新并返回 receiver。
+descriptor 的签名文字仍误写为 `fillValue: float`。get(indices) 与 set(indices, value) 都读取完整多维 indices 数组，长度由实际 shape 数组检查；
+按 row-major 映射到 data。set 尝试原位更新并返回 receiver，底层 void setter 不报告写入状态。
 矩阵构造器支持零参数（生成 identity）或恰好 9/16 个 `float` 参数。
 Matrix3x3 的 `inverse` 在 `abs(det) <= 1e-9` 时以 native false 表示失败；VM 无异常时 dispatcher 返回
 null，虽然 descriptor 仍写 `Matrix3x3`。其阈值/类型契约、极值运算及字段写入失败的限制见
@@ -152,3 +160,12 @@ registry 附着、ABI、能力或 provider 契约检查失败时返回 false；�
 `ZrLibrary_NativeRegistry_GetLastErrorMessage(global)` 查询 registry 错误。共享构建导出
 `ZrVm_GetNativeModule_v1()`。数学模块不拥有调用方传入的 `SZrTypeValue`，native callback
 返回值必须写入由 binding 分配的 result slot。
+
+
+### Tensor 复制、结果与生命周期
+
+构造/clone/reshape/toArray只复制外层数组容器，元素对象不递归复制。constructorSignature第二参数fillValue: float与实际data数组不符，是metadata缺陷；参数类型仍由callback读取，Parser只保存签名并检查无参构造形式。shape/data/rank/size缓存一致性不由GetStorage重建。
+
+**BUG:** 有效shape/index数组中的有限1e300可到达未检查的float-to-int64转换；正维度乘积无溢出检查。正确长度的非数值data可经构造进入sum/mean或按零继续的运算。单次ignored-root ARRAY扩容软失败可令复制/输出shape漏轴；仅丢值1的轴、其他步骤成功时仍可能通过总量校验。短串格式化缓存的HASH_BUCKET软失败也可true/null。具体条件及共享根因见 [Tensor台账](../../code-review/coverage/zr_vm_lib_math_tensor.tsv)。
+
+**TODO:** 新VM数组由C临时值持有并跨后续复制、对象构造或字段发布；条件性full GC窗口的显式root需按具体链核查，不宣称已回收或移动。小数索引/shape比较、void写状态和缓存一致性政策另列待核。现有module suite的两个同名pipeline为常量11 stub；人工numeric project本批未运行，无数值/故障断言。详见 [批次证据](../../code-review/batches/20261015-math-tensor-contracts.md)。

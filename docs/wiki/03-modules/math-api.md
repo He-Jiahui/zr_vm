@@ -39,6 +39,14 @@ related_code:
   - zr_vm_core/include/zr_vm_core/conversion.h
   - zr_vm_core/include/zr_vm_core/string.h
   - zr_vm_common/include/zr_vm_common/zr_string_conf.h
+  - zr_vm_core/src/zr_vm_core/object/object.c
+  - zr_vm_core/src/zr_vm_core/base/memory.c
+  - zr_vm_core/src/zr_vm_core/gc/gc_mark.c
+  - zr_vm_parser/src/zr_vm_parser/syntax/lexer.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
+  - zr_vm_lib_math/CMakeLists.txt
+  - zr_vm_common/CommonMacros.cmake
 implementation_files:
   - zr_vm_lib_math/src/zr_vm_lib_math/module.c
   - zr_vm_lib_math/src/zr_vm_lib_math/common.c
@@ -221,16 +229,16 @@ let product = tensor.matmul(transposed);
 
 | 方法 | 规则 |
 | --- | --- |
-| `clone` | 复制 shape 和 data 数组容器，返回新 Tensor。 |
+| `clone` | 浅复制shape/data外层容器并返回新Tensor；不递归复制元素对象。 |
 | `reshape(shape)` | 新 shape 的元素总数必须与 size 相同；返回 shape 和 data 均复制的新 Tensor。 |
-| `fill(value)` | 原位覆盖全部元素，并返回 receiver。 |
-| `get(indices)` / `set(indices,value)` | indices 数组长度必须等于 rank；按 row-major 计算 offset；set 原位更新并返回 receiver。 |
-| `sum` / `mean` | 全量聚合；mean 要求 size 大于零，否则 native 回调失败。 |
+| `fill(value)` | 尝试原位覆盖data元素并返回receiver；void setter不报告逐项写入状态。 |
+| `get(indices)` / `set(indices,value)` | indices长度须等于实际shape数组长度；按row-major计算offset；set尝试写入并返回receiver。 |
+| `sum` / `mean` | 累加可读取的数值项；mean除以缓存size且要求大于零；非数值项被跳过的缺陷见下文。 |
 | `transpose2D` | 仅 rank=2；返回数据重排后的新 Tensor。 |
 | `matmul` | 两个 rank=2，左列数等于右行数。 |
-| `add` / `sub` | shape 完全相同。 |
+| `add` / `sub` | ShapeEquals比较维度个数及转成int64后的逐维值；小数维度政策待核。 |
 | `mulScalar` | 每元素乘一个 scalar。 |
-| `toArray` | 返回数据副本，不暴露内部 storage。 |
+| `toArray` | 返回data外层数组的浅副本；copy helper忽略append软失败的限制见下文。 |
 
 实现逐项拒绝非正维度并检查普通尺寸匹配、indices 数量和索引范围；shape乘积未检查有符号溢出。
 BUG: shape/index 中有限 1e300 可沿 common.c:356 到 :156 触发浮点转 int64 的 C 未定义行为；两个 3037000500 维度可在 :380 触发有符号乘法溢出。
@@ -452,3 +460,14 @@ Scalar 以25个模块函数 descriptor 进入 native派发，17个一元与4个�
 **BUG:** invokeCallback元数据声明float，但CallValue成功后原样转发callable的实际VM标签，例如bool或字符串。**TODO:** NativePointer作为callable的非空、ABI与代码映像有效期须沿宿主SetNativePointer入口核查。clamp倒置边界、lerp中间差溢出和almostEqual跨量级误差策略仍有明确核查入口；本批仅记录，不改策略。
 
 现有module转发sqrt用例实际PASS，但只检查非空/标签。Rust sqrt数值断言、两个callback pipeline及LSP文档字符串入口本批均仅静态核查，后者不执行callback。94个唯一单元的调用、生命周期、无需另写注释的判断及验证限制见[Scalar台账](../../code-review/coverage/zr_vm_lib_math_scalar.tsv)与[审查批次](../../code-review/batches/20261015-math-scalar-contracts.md)。
+
+
+## Tensor 回调、失败与存储生命周期
+
+构造、clone、reshape复制shape/data外层容器，元素对象仍共享。get/set按实际shape长度校验indices；rank/size是公开缓存，GetStorage不重建全部不变量。ReadArray/ReadObject/ReadFloat对错误参数标签抛VM类型异常；普通false与非局部异常分开。arity来自实际descriptor，constructorSignature文本不作类型门禁；Parser消费者只保存文本并检查无参构造形式，不按fillValue文本推断第二参数类型。
+
+**BUG:** Populate仅核data长度，Tensor([1],["x"])可进入运算；Sum/Mean跳过失败读取而mean仍除以全部size，Transpose/Matmul/Add/Sub/MulScalar按局部零继续。各callback保留BUG结论，共享根因引用Populate.numeric-data-block。copy_array忽略PushValue普通false：唯一一次ignored-root ARRAY扩容返回NULL且其余步骤成功时，shape[1,2]可缩为[2]而总量匹配；ToArray可直接返回短data。Transpose输出首维为原cols=1、Matmul为左rows=1时，输出shape同类软失败可将rank2变为rank1。这些ARRAY路径与对象/短串HASH_BUCKET扩容分开，不概括任意OOM。MetaToString格式化短串未驻留且单次HASH_BUCKET扩容软失败时，可由MakeStringResult交付true/null。
+
+**TODO:** Clone/Reshape的C实参求值顺序未规定，新数组可能跨另一复制和TensorMake分配。Construct中shapeCopy跨dataCopy分配，dataCopy还跨先写shape字段；两个显式root窗口需分别核查。Transpose/Matmul/binary/MulScalar的中间数组也跨后续分配。GcMalloc仅在首次raw申请失败、collector已初始化且非immediate-GC时进入full GC；PushValue仅在单次调用内pin/unpin，不能覆盖后续窗口。ToArray在copy返回后直接写result，不列入该疑点。未观察到回收、移动或故障执行。
+
+Fill/Set的void写入状态、小数维度/索引向零截断与公开缓存一致性政策保留独立TODO，不改行为。人工numeric_pipeline含真实Tensor调用，但本批未运行project suite，toArray的arr不参与checksum214；两个module同名stub只返回11，parser/LSP匹配为静态文本。当前源通过3204tokens/8lexer与现有native构建，仍有原8项Module失败和Fs C1035，无Tensor数值或故障专项信用。逐单元证据见 [Tensor台账](../../code-review/coverage/zr_vm_lib_math_tensor.tsv) 与 [批次](../../code-review/batches/20261015-math-tensor-contracts.md)。

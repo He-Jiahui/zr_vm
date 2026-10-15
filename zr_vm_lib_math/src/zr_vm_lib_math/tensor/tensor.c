@@ -1,12 +1,12 @@
-//
-// Tensor native callbacks.
-//
+/** @file
+ * ## Summary
+ * 实现 Tensor 注册表回调及内部数组/二元运算辅助函数；详细 public callback 契约位于 tensor.h。 */
 
 #include "zr_vm_lib_math/tensor.h"
 
 static SZrObject *zr_math_tensor_copy_array(SZrState *state, SZrObject *array) {
     /* 只复制外层数组：构造、reshape 和 toArray 的调用方不会共享可变数组容器。 */
-    /* TODO: PushValue 结果未检查；需用分配失败注入验证副本是否可能静默截短。 */
+    /* BUG: 忽略 PushValue 的 false；若唯一一次 ARRAY ignored-root 扩容分配失败且后续追加成功，副本会静默少一项。构造 shape [1,2] 可缩成 [2] 并通过长度校验，ToArray 也可能直接返回短 data 副本；完整窄链见批次。 */
     SZrObject *copy = ZrLib_Array_New(state); TZrSize i;
     for (i = 0; copy != ZR_NULL && i < ZrLib_Array_Length(array); i++) ZrLib_Array_PushValue(state, copy, ZrLib_Array_Get(state, array, i));
     return copy;
@@ -88,7 +88,7 @@ TZrBool ZrMath_Tensor_Mean(ZrLibCallContext *context, SZrTypeValue *result) {
 }
 
 TZrBool ZrMath_Tensor_Transpose2D(ZrLibCallContext *context, SZrTypeValue *result) {
-    /* 将 row-major 的二维坐标交换后写入新数组，供脚本保留原 Tensor。 */
+    /* BUG: shape 的 PushValue 失败未检查；若输出首维（原 cols）为 1、仅该次 ARRAY ignored-root 扩容返回 NULL 且后续成功，首维被漏掉但乘积仍匹配，返回 Tensor 的 rank 可从 2 静默变为 1。 */
     ZrMathTensorStorage storage; TZrInt64 rows = 0, cols = 0, r, c; SZrObject *shape; SZrObject *data; SZrObject *tensor;
     if (!ZrMath_TensorGetStorage(context->state, ZrMath_SelfObject(context), &storage) || storage.rank != 2 ||
         !ZrMath_ArrayReadInt(context->state, storage.shape, 0, &rows) || !ZrMath_ArrayReadInt(context->state, storage.shape, 1, &cols)) return ZR_FALSE;
@@ -99,7 +99,7 @@ TZrBool ZrMath_Tensor_Transpose2D(ZrLibCallContext *context, SZrTypeValue *resul
 }
 
 TZrBool ZrMath_Tensor_Matmul(ZrLibCallContext *context, SZrTypeValue *result) {
-    /* 仅支持严格二维的矩阵乘积；不做广播，输出形状为左行数 × 右列数。 */
+    /* BUG: shape 的 PushValue 失败未检查；若左行数为 1、仅该次 ARRAY ignored-root 扩容返回 NULL 且后续成功，输出首维被漏掉但乘积仍匹配，返回 rank 可从 2 静默变为 1；不做广播。 */
     ZrMathTensorStorage lhs; ZrMathTensorStorage rhs; SZrObject *other = ZR_NULL; TZrInt64 lr = 0, lc = 0, rr = 0, rc = 0, r, c, k; SZrObject *shape; SZrObject *data; SZrObject *tensor;
     if (!ZrMath_TensorGetStorage(context->state, ZrMath_SelfObject(context), &lhs) || !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_TensorGetStorage(context->state, other, &rhs) || lhs.rank != 2 || rhs.rank != 2 ||
@@ -138,3 +138,41 @@ TZrBool ZrMath_Tensor_MetaToString(ZrLibCallContext *context, SZrTypeValue *resu
     ZrMathTensorStorage storage; if (!ZrMath_TensorGetStorage(context->state, ZrMath_SelfObject(context), &storage)) return ZR_FALSE;
     return ZrMath_MakeStringResult(context->state, result, "Tensor(rank=%lu, size=%lld)", (unsigned long)storage.rank, (long long)storage.size);
 }
+
+/**
+ * @fn static SZrObject *zr_math_tensor_copy_array(SZrState *state, SZrObject *array)
+ * ## Summary
+ * 分配一个新的 VM 外层数组并按原顺序浅复制 array 中的值，供 Tensor 复制/导出路径隔离容器修改。
+ *
+ * ## Parameters
+ * @param[in] state 当前 VM 状态；仅在同步 callback 调用期间使用。
+ * @param[in] array 借用的源数组；函数不改变或释放它。
+ *
+ * ## Returns
+ * @return 新的 VM-managed 数组，创建失败时为 ZR_NULL。逐项 PushValue 返回值被忽略，因此非空返回不保证长度与源数组一致。
+ *
+ * ## Constraints and lifecycle
+ * 不递归复制数组元素；返回对象由 VM 管理，调用者须按其后续使用方式保持根。BUG 的窄条件是：该次 ignored-root 扩容 RawMallocWithType(ARRAY) 返回 NULL、PushValue 返回普通 false，唯一该次分配失败后后续步骤成功；helper 仍返回已缩短数组。构造 shape [1,2] 被缩为 [2] 后可通过 TensorPopulate 的元素积校验，ToArray 也直接暴露短 data 副本。不是 HASH_BUCKET 分配路径，未做故障注入。
+ *
+ * ## References
+ * ZrLib_Array_New、ZrLib_Array_PushValue、ZrCore_GarbageCollector_IgnoreObject、garbage_collector_ensure_ignore_registry_capacity；全部调用来自 Construct 的两次数组复制、Clone/Reshape 的各两次复制，以及 zr_math_tensor_binary、MulScalar、ToArray；同一调用行可有两次复制。
+ */
+/**
+ * @fn static TZrBool zr_math_tensor_binary(ZrLibCallContext *context, SZrTypeValue *result, TZrFloat64 sign)
+ * ## Summary
+ * 为 add/sub 两个注册 callback 共享同 shape 的逐元素加减实现，避免重复存储检查和结果构造。
+ *
+ * ## Parameters
+ * @param[in] context 当前 callback context，含 receiver 和一个显式对象/数组实参；仅在同步调用期间有效。
+ * @param[out] result 成功时写入新 Tensor 值，由 dispatcher 接管。
+ * @param[in] sign Add 传 1.0，Sub 传 -1.0；其他值没有注册入口。
+ *
+ * ## Returns
+ * @return shape 完全相等且结果 Tensor 创建成功时为 ZR_TRUE；普通存储/shape/分配失败时为 ZR_FALSE。错误参数类别由 ReadObject 抛出 VM 类型错误。
+ *
+ * ## Constraints and lifecycle
+ * 每个 data 读取失败时本地 double 初值为零且继续运算；numeric-data 校验缺陷属于公共 TensorPopulate BUG。新 data 与复制 shape 的外层对象由 VM 管理；copy helper 的短副本风险另列。
+ *
+ * ## References
+ * ZrMath_Tensor_Add、ZrMath_Tensor_Sub、ZrMath_TensorShapeEquals、ZrMath_TensorMake、zr_math_tensor_copy_array。
+ */
