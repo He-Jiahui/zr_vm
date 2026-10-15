@@ -6,7 +6,7 @@ const {
     pickBestProjectForFile,
 } = require('../out/projectSupport.js');
 
-/** 有效 .zrp 的定位字段与别名应被提取，供工作区发现和调试共用。 */
+/** 有效 `.zrp` 的字段筛选正例：定位字段和两个非空别名会进入返回模型；不覆盖 schema 拒绝、`null` 或路径归一化边界。 */
 test('parseProjectManifestText reads the required zrp fields', () => {
     const manifest = parseProjectManifestText(
         JSON.stringify({
@@ -32,7 +32,7 @@ test('parseProjectManifestText reads the required zrp fields', () => {
     });
 });
 
-/** 候选中有无关源码根时，文件应归属实际包含它的项目。 */
+/** 回归意图是保护重叠源码根时最深候选获胜；当前样例只有一个根实际匹配，故无法证明排序优先级（BUG 证据如下）。 */
 test('pickBestProjectForFile prefers the deepest matching source root', () => {
     // BUG: root-project 的 D:/repo/src 并不包含目标文件；去掉“最长根优先”的排序
     // 本例仍会通过，故测试名称所称的重叠源码根优先级未被真正保护。
