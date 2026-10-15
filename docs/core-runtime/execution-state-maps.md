@@ -515,3 +515,31 @@ analysis validates checkpoint value availability; it does not replace full
 ownership/borrow/alias verification of every non-checkpoint operation or prove
 linear resource balance. Later stages must preserve stable source/resume IDs and
 transactional publication while completing those contracts.
+
+
+## 条件清理接口的现有 map 限制（2026-10-15 审查）
+
+`ZrParser_ExecIr_ElaborateCleanupDrops` 在克隆前调用结构与 effect 校验；
+`VerifyFunction` 的任意 level 都会继续校验非空的现有 state map。因此输入若带有 map，
+该 map 必须仍与当前 IR 一致。它与 `BuildStateMaps` 的重建入口不同：后者在临时校验视图中
+移除旧 map，才验证新的 IR。不能据“最终会重建 map”推断 cleanup 接口接受任意过期 map。
+
+成功调用会释放原 function 拥有的存储并发布独立候选；指令、值池、map entry 等旧借用指针
+均须重新取得。即使没有待改写的 DROP，也仍会克隆、重建 map 并替换存储；只有发生改写时
+才检查 generation 上限并递增。失败保留原 function 的保证要求 diagnostic 与输入对象及其
+拥有存储分离，并要求调用期间独占该可变 function。当前可检索仓内直接入口是
+`tests/parser/test_ssa_conditional_cleanup.c:101`、`:633`、`:651`；
+尚未接入普通源码编译流程，仓外公开 ABI 消费者未由仓内检索排除。
+
+现有 OOM 用例 `test_elaboration_owner_analysis_oom_is_transactional` 先经 diamond 构造
+guarded DROP 与匹配 map，再仅把 opcode 改回普通 DROP，保留旧 map。入口校验会据普通
+DROP 的语义使用重新检查 owner 状态，因而在没有注入分配失败时也会拒绝输入；该测试在
+第 659 行的“确实发生注入”断言失败。修改前的实际 ClangCL Debug 基线为 cleanup 23/24，
+三个相关 runner 合计 46/46。默认配置还遇到共享 fixture 的 Unity/UCRT include 顺序编译错误；
+上述可运行基线使用 Unity 支持的 `UNITY_NORETURN=_Noreturn` 覆盖，源码本轮均只标记，
+不修复行为。测试用例的断言失败是实际观察，旧 map 拒绝原因由完整调用路径确认；不授予
+该 OOM 遍历完整通过的信用。
+
+逐单元证据与最终前后比较见
+[条件清理审查批次](../code-review/batches/20261015-parser-conditional-cleanup-contracts.md)及
+[共享 fixture 审查批次](../code-review/batches/20261015-ssa-state-map-fixture-contracts.md)。

@@ -81,3 +81,25 @@ failure:
     ZrCore_ExecIr_FreeFunction(&candidate);
     return ZR_FALSE;
 }
+
+/**
+ * @fn TZrBool zr_cleanup_failure(const SZrExecIrFunction *function, SZrExecIrDiagnostic *diagnostic, EZrExecutionDiagnosticCode code, TZrExecIrInstructionId id)
+ *
+ * ## Summary
+ * 统一构造清理展开失败诊断并返回假值，供早期参数检查及候选函数校验失败路径传播。
+ *
+ * ## Parameters
+ * @param[in] function 可选的当前或候选函数；非空时用于提供 functionToken，并在 id 有效时读取对应 sourceId。
+ * @param[out] diagnostic 可选诊断输出；非空时先清零再填写 code、functionToken、instructionId 和可取得的 sourceId。
+ * @param[in] code 调用点已确定的失败类别。
+ * @param[in] id 零表示函数级失败；非零时按 ExecIR 的一基指令编号解释。
+ *
+ * ## Returns
+ * @return 始终返回 ZR_FALSE，便于调用方直接结束失败路径；不分配或转移资源。
+ *
+ * ## Constraints and lifecycle
+ * function 与 diagnostic 仅在本次同步调用期间借用。只有 function 非空且 id 位于现有指令范围内时才读取指令；diagnostic 为空时不写入输出。
+ *
+ * ## References
+ * ZrParser_ExecIr_ElaborateCleanupDrops 在 function 参数为空指针、函数已 sealed 及候选语义检查失败时使用该辅助函数。
+ */
