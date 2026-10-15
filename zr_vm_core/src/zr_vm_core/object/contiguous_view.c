@@ -119,3 +119,77 @@ TZrBool ZrCore_View_IndexOffset(const SZrContiguousView *view, TZrInt64 index,
     }
     return ZR_TRUE;
 }
+
+/**
+ * @fn void view_diag(SZrViewDiagnostic *d, EZrViewDiagnosticCode code, TZrUInt64 expected, TZrUInt64 actual)
+ * ## Summary
+ * 将当前校验分支的失败类别和值上下文写入可选诊断；供本文件的公开 API 共用，避免
+ * 每个分支采用不同的字段更新方式。
+ *
+ * ## Parameters
+ * @param[out] d 可选诊断槽；为空时丢弃本次信息。
+ * @param[in] code 本次失败分类。
+ * @param[in] expected 与该分类对应的参考值。
+ * @param[in] actual 与该分类对应的实际值。
+ *
+ * ## Returns
+ * 无返回值；d 非空时同步覆盖其三个字段，d 为空时不产生副作用；本 helper 不分配资源。
+ *
+ * ## Constraints and lifecycle
+ * 调用方负责使 d 在同步写入期间可写；helper 只借用该输出地址且不保存，不解释 code 对
+ * expected/actual 的具体语义，也不清理调用方持有的资源。
+ *
+ * ## References
+ * 本 helper 由 Validate、Create、Slice 和 IndexOffset 调用；
+ * Validate 的字段、末端、代数和 pin 分类位于本文件 `:39`、`:45`、`:49`、
+ * `:52`；Create 的空输入、Slice 的空输出/越界/溢出以及 IndexOffset 的空输出/越界/溢出
+ * 分别位于 `:62`、`:80`、`:84`、`:89`、`:107`、`:111`、`:117`。
+ */
+
+/**
+ * @fn TZrBool checked_mul(TZrSize a, TZrSize b, TZrSize *out)
+ * ## Summary
+ * 在写入偏移输出前验证两个 `TZrSize` 因子的乘积可表示，供 view 末端、slice 起点和
+ * 元素索引计算共用。
+ *
+ * ## Parameters
+ * @param[in] a 第一个非负 size 因子。
+ * @param[in] b 第二个非负 size 因子。
+ * @param[out] out 可为空的乘积输出槽；为空时返回 `ZR_FALSE`。
+ *
+ * ## Returns
+ * @return out 非空且乘积不超过 SIZE_MAX 时返回 `ZR_TRUE` 并写入结果；否则返回
+ * `ZR_FALSE`，不写 out。
+ *
+ * ## Constraints and lifecycle
+ * 本 helper 只判断无符号整数表示范围，不证明乘积对应真实内存或有效 backing 区间；
+ * 调用方仍须执行上层边界校验。
+ *
+ * ## References
+ * 由 `ZrCore_View_Validate`、`ZrCore_View_Slice` 和 `ZrCore_View_IndexOffset` 调用；
+ * 当前乘法检查点见本文件 `:42`、`:87`、`:115`。
+ */
+
+/**
+ * @fn TZrBool checked_add(TZrSize a, TZrSize b, TZrSize *out)
+ * ## Summary
+ * 在写入偏移输出前验证两个 `TZrSize` 加数的和不会回绕，供末元素末端、切片起点和
+ * owner 相对元素偏移计算共用。
+ *
+ * ## Parameters
+ * @param[in] a 第一个非负 size 加数。
+ * @param[in] b 第二个非负 size 加数。
+ * @param[out] out 可为空的和输出槽；为空时返回 `ZR_FALSE`。
+ *
+ * ## Returns
+ * @return out 非空且 `a + b` 可由 SIZE_MAX 表示时返回 `ZR_TRUE` 并写入结果；否则返回
+ * `ZR_FALSE`，不写 out。
+ *
+ * ## Constraints and lifecycle
+ * 本 helper 只保证算术可表示，不检查 owner、真实 backing 容量、连续性或生命周期；
+ * 调用方须结合相应 descriptor 边界判断解释结果。
+ *
+ * ## References
+ * 由 `ZrCore_View_Validate`、`ZrCore_View_Slice` 和 `ZrCore_View_IndexOffset` 调用；
+ * 当前加法检查点见本文件 `:43`、`:44`、`:88`、`:116`。
+ */
