@@ -144,7 +144,6 @@ static TZrBool object_module_guard_pending_export(SZrState *state,
     SZrObjectModule *module;
     const TZrChar *moduleNameText;
     const TZrChar *memberNameText;
-    TZrBool blocked = ZR_FALSE;
 
     if (state == ZR_NULL || object == ZR_NULL || memberName == ZR_NULL ||
         object->internalType != ZR_OBJECT_INTERNAL_TYPE_MODULE) {
@@ -169,7 +168,6 @@ static TZrBool object_module_guard_pending_export(SZrState *state,
                               moduleNameText,
                               memberNameText,
                               moduleNameText);
-        blocked = ZR_TRUE;
     }
 
     if (descriptor != ZR_NULL &&
@@ -182,10 +180,9 @@ static TZrBool object_module_guard_pending_export(SZrState *state,
                               moduleNameText,
                               memberNameText,
                               moduleNameText);
-        blocked = ZR_TRUE;
     }
 
-    return blocked;
+    return ZR_FALSE;
 }
 
 static ZR_FORCE_INLINE TZrBool object_key_matches_known_field(SZrState *state,
@@ -493,15 +490,6 @@ static void object_refresh_hidden_items_object_cache(SZrState *state,
     if (itemsObject != ZR_NULL && itemsObject->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
         object->cachedHiddenItemsObject = itemsObject;
     }
-}
-
-static ZR_FORCE_INLINE const SZrTypeValue *object_try_get_cached_string_value_unchecked(SZrState *state,
-                                                                                         SZrObject *object,
-                                                                                         const SZrTypeValue *key) {
-    SZrHashKeyValuePair *pair;
-
-    pair = object_try_get_cached_string_pair_unchecked(state, object, key);
-    return pair != ZR_NULL ? &pair->value : ZR_NULL;
 }
 
 static ZR_FORCE_INLINE SZrProfileRuntime *object_profile_runtime(SZrState *state) {
@@ -927,17 +915,6 @@ static TZrBool object_can_use_direct_index_fallback(const SZrObject *object) {
 static ZR_FORCE_INLINE TZrBool object_can_use_direct_index_fallback_unchecked(const SZrObject *object) {
     ZR_ASSERT(object != ZR_NULL);
     return object->prototype == ZR_NULL || object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY;
-}
-
-static ZR_FORCE_INLINE TZrBool object_value_is_struct_instance_local(SZrState *state, const SZrTypeValue *value) {
-    SZrObject *object;
-
-    if (state == ZR_NULL || value == ZR_NULL || value->type != ZR_VALUE_TYPE_OBJECT || value->value.object == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    object = ZR_CAST_OBJECT(state, value->value.object);
-    return object != ZR_NULL && object->internalType == ZR_OBJECT_INTERNAL_TYPE_STRUCT;
 }
 
 static ZR_FORCE_INLINE TZrBool object_cached_readonly_inline_get_fast_shape_matches(
