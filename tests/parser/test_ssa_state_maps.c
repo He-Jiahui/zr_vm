@@ -1540,3 +1540,123 @@ int main(void) {
  * ## References
  * source 扩容、旧 root pool 释放与内部 alias 构造位于本文件 932–943 行；失败及最小 destination 断言、释放前修复位于 945–949 行；main 在 1378 行注册。
  */
+
+/**
+ * @fn static void map_with_one_entry(SZrExecIrStateMap *map, EZrExecIrStateMapPhase phase, TZrUInt32 flags)
+ *
+ * ## Summary
+ * 在测试中构造包含一个 entry、一个 live ValueId、一个 root ValueId 和一个 owner-state 项的独立 map，并提供少量固定身份字段供 checkpoint 用例复用。
+ *
+ * ## Parameters
+ * @param[out] map 调用方提供的无资源 map 记录；helper 先调用 StateMapInit。
+ * @param[in] phase 原样写入 entry 的逻辑阶段；本 helper 不验证枚举值。
+ * @param[in] flags 原样写入 entry 的 boundary flags；零值也会被保留以供负例构造。
+ *
+ * ## Returns
+ * 无 C 返回值；四个各含一个元素的池构造完成后正常返回，分配断言失败会由 Unity 离开当前 case。
+ *
+ * ## Constraints and lifecycle
+ * map 记录须新鲜或已释放，否则 Init 会丢失旧池指针。helper 固定 generation=7、sourceId=42、instructionId=1、resumeId=7 和单元素池，但不设置 functionToken/signatureHash；要用于匹配函数的正向验证时，调用方须另行填入与 function 一致的身份字段。phase 与 flags 原样写入，零 flags 仅适合负例，本 helper 不保证构成任意合法 map。成功时调用方取得四池释放责任；若中途 TEST_ASSERT 失败，Unity longjmp 会跳过调用方后续清理，fixture 的 setUp/tearDown 不回收该局部 map。此 helper 只准备测试字段，不验证 map。
+ *
+ * ## References
+ * 定义位于本文件 55 行；直接调用分布在本文件 249 行、875 行、958 行及本批其余 materialization cases；clone fault fixture 经本文件 888 行包含的 test_ssa_state_map_clone_fault_cases.h 15 行间接调用。
+ */
+
+/**
+ * @fn static void function_with_one_gc_value(SZrExecIrFunction *function)
+ *
+ * ## Summary
+ * 构造用于 state-map 测试的最小函数：一个 nullable GC external value 和一个 MAY_GC NOP 边界。
+ *
+ * ## Parameters
+ * @param[out] function 调用方提供的无资源函数记录；helper 先调用 FunctionInit。
+ *
+ * ## Returns
+ * 无 C 返回值；函数值与 NOP 指令加入成功后正常返回，Unity 断言失败会离开当前 case。
+ *
+ * ## Constraints and lifecycle
+ * function 须新鲜或已释放；FunctionInit 不负责释放已有资源。正常返回后函数池由调用方通过 Core FreeFunction 释放；若内部断言提前失败，Unity longjmp 会跳过调用者的尾部释放，空 setUp/tearDown 不接管这些局部对象。该 fixture 固定设置 functionToken、signatureHash、generation 和 sourceId，但只添加值与一条 MAY_GC NOP，不构造可执行 CFG，也不代表一般函数构造。
+ *
+ * ## References
+ * 定义位于本文件 91 行；除本文件直接调用外，function_with_two_gc_boundaries、function_with_drop_boundary 和 function_with_deopt_boundary 分别在本文件 111 行、124 行和 136 行复用。
+ */
+
+/**
+ * @fn void test_state_map_materialization_successfully_copies_logical_values(void)
+ *
+ * ## Summary
+ * 对一个 AFTER_EFFECT、GC boundary checkpoint 执行 MaterializeState，并检查少量逻辑状态字段及首个 ValueId。
+ *
+ * ## Returns
+ * 本 case 无 C 返回值；断言通过时正常返回，失败由 Unity runner 记录，最终由 UNITY_END 返回失败计数。正常路径显式释放 target、function 和 map；提前断言失败可能跳过局部释放。
+ *
+ * ## Constraints and lifecycle
+ * 仅断言 sourceId、valueCount/rootCount 各为 1，以及 values[0]/roots[0] 等于逻辑 ValueId 1；这些数组保存 ValueId，不是运行时对象或 GC 保活指针。用例未检查 ownerStates、所有池内容或一般失败清理。
+ *
+ * ## References
+ * 定义位于本文件 952 行，materialization 调用与断言位于 972–977 行，Unity 注册位于 1383 行，CTest 目标注册位于 tests/cmake/ssa-tests.cmake 422 行。
+ */
+
+/**
+ * @fn void test_state_map_materialization_rejects_overlapping_map_pools(void)
+ *
+ * ## Summary
+ * 将 source map 的 rootPool 指向 valuePool 第二个元素，检查重叠源池导致 materialization 拒绝。
+ *
+ * ## Returns
+ * 无 C 返回值；断言通过时 case 正常返回；Unity 断言失败只退出当前 case，runner 继续执行。正常路径先解除故意构造的 source alias，再释放 map/function。
+ *
+ * ## Constraints and lifecycle
+ * 只断言失败、diagnostic.code 为 STATE_MAP_INVALID 及 target.values 仍为 NULL；不检查其他 target 字段或通用事务行为。rootPool 借用了 valuePool 内部地址，因此清理前必须将 rootPool/count/capacity 清零，避免重复释放。
+ *
+ * ## References
+ * alias 构造位于本文件 993–1000 行，失败与字段断言位于 1015–1017 行，修复清理位于 1018–1022 行，Unity 注册位于 1384 行。
+ */
+
+/**
+ * @fn void test_state_map_materialization_rejects_interior_target_alias(void)
+ *
+ * ## Summary
+ * 将 target.values 指向 map.valuePool 内部的一个元素，验证目标池覆盖输入池时被拒绝。
+ *
+ * ## Returns
+ * 无 C 返回值；断言通过时 case 正常返回；Unity 断言失败只退出当前 case，runner 继续执行。
+ *
+ * ## Constraints and lifecycle
+ * 仅断言 MaterializeState 失败且诊断为 MATERIALIZATION_FAILED。target.values 是借自 map 的内部地址，不由 target 拥有；用例在释放 map 前将该字段与容量清零，不能对该 borrow 调用 MaterializedStateFree。
+ *
+ * ## References
+ * 扩容和 alias 设置位于本文件 1035–1045 行，失败断言位于 1055–1057 行，解除借用和正常释放位于 1058–1061 行，Unity 注册位于 1385 行。
+ */
+
+/**
+ * @fn void test_state_map_materialization_rejects_overlapping_target_arrays(void)
+ *
+ * ## Summary
+ * 让 target.values 与 target.roots 指向同一分配的重叠区间，验证目标池之间重叠时被拒绝。
+ *
+ * ## Returns
+ * 无 C 返回值；断言通过时 case 正常返回；Unity 断言失败只退出当前 case，runner 继续执行。
+ *
+ * ## Constraints and lifecycle
+ * 仅断言失败、diagnostic.code 为 MATERIALIZATION_FAILED，以及 target.values 基址仍保留。两个字段共享一块分配，用例清空 target 两个借用字段后手动释放 sharedStorage；不构成对其他字段的完整保留或通用失败事务证明。
+ *
+ * ## References
+ * 目标 alias 构造位于本文件 1078–1083 行，失败与断言位于 1093–1096 行，解除 alias 和释放位于 1097–1103 行，Unity 注册位于 1386 行。
+ */
+
+/**
+ * @fn void test_state_map_materialization_is_transactional_on_failure(void)
+ *
+ * ## Summary
+ * 通过一个无效 checkpoint 触发 MaterializeState 失败，并检查原 target 的 values 指针、计数和首个值仍保留。
+ *
+ * ## Returns
+ * 无 C 返回值；断言通过时 case 正常返回；Unity 断言失败只退出当前 case，runner 继续执行。
+ *
+ * ## Constraints and lifecycle
+ * fixture 在本用例以 AFTER_EFFECT 和 flags=0 构造 map；ValidateStateMap 会因 boundaryFlags 为零先拒绝，早于请求的 generation mismatch 检查。因此本测试只覆盖 map-validation rejection 后 values 指针、valueCount=1 和 values[0]=99 的保留，不断言 diagnostic.code，也不覆盖 stale-generation、分配失败或一般事务性。正常路径释放 target/function/map；Unity 提前失败可能跳过这些局部释放。
+ *
+ * ## References
+ * flags=0 和请求初始化位于本文件 1113–1130 行，实际失败及 target 断言位于 1131–1134 行；验证先于 generation 检查的顺序见 exec_ir_materialize.c 685 行和 704 行，boundaryFlags 拒绝见 484 行；Unity 注册位于本文件 1387 行。
+ */

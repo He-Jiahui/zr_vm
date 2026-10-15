@@ -522,3 +522,103 @@ TZrBool zr_state_map_target_valid(const SZrExecIrMaterializedState *target,
  * ## References
  * Core function clone 在 exec_ir.c 444 行复制侧表；Parser AOT projection 在 exec_ir_lower_aot.c 74 行复制；本测试目标通过 allocator wrapper 调用同一实现，其他 direct caller 包括 tests/parser/test_ssa_deopt_aggregates.c 376 行。
  */
+
+/**
+ * @fn TZrBool ZrCore_ExecIr_StateMapStorageValid(const SZrExecIrStateMap *map)
+ *
+ * ## Summary
+ * 检查 Core state-map 四个池的存储形状，供复制和投影入口在读取内容前拒绝结构不一致的 map。
+ *
+ * ## Parameters
+ * @param[in] map 借用的 map 记录；NULL、count 超过 capacity、容量与指针配对不一致或池区间重叠时无效。
+ *
+ * ## Returns
+ * @return 仅当四池的 count/capacity、NULL 配对、容量字节可表示性及容量区间互斥检查均通过时返回 ZR_TRUE；不分配、不修改 map，也不生成诊断。
+ *
+ * ## Constraints and lifecycle
+ * 只验证存储形状，不验证 checkpoint 内容、ID/range 语义、池指针是否实际可读或是否可安全释放。调用期间 map 记录和池须保持稳定；函数只借用输入。
+ *
+ * ## References
+ * 实现转发到本文件 75 行的 shape helper；生产调用包括 exec_ir.c 337 行、aot_ir.c 305 行、exec_ir_lower_aot.c 70 行和 exec_ir_projection_common.c 713 行。
+ */
+
+/**
+ * @fn void ZrCore_ExecIr_MaterializedStateInit(SZrExecIrMaterializedState *state)
+ *
+ * ## Summary
+ * 将尚未拥有池的 materialized-state 记录清零，建立可供后续填充或 Free 使用的空状态。
+ *
+ * ## Parameters
+ * @param[out] state 可为 NULL；非空时须指向可写记录。
+ *
+ * ## Returns
+ * 不返回 C 值；非空输入被清零，NULL 输入无操作。
+ *
+ * ## Constraints and lifecycle
+ * 仅用于新鲜、零初始化或已释放的记录；函数不会先释放已有池。若记录仍拥有池，清零会丢失其所有权指针并泄漏池。无内部同步。
+ *
+ * ## References
+ * MaterializeState 在本文件外的 exec_ir_materialize.c 728 行初始化候选；interpreter resume 在 exec_ir_interpreter_resume.c 308 行初始化逻辑状态。
+ */
+
+/**
+ * @fn void ZrCore_ExecIr_MaterializedStateFree(SZrExecIrMaterializedState *state)
+ *
+ * ## Summary
+ * 释放 materialized-state 记录的五个池，并将记录清零；记录本身仍由调用方持有。
+ *
+ * ## Parameters
+ * @param[in,out] state 可为 NULL；非空时须指向可写记录，且每个非空池必须是独立且符合 C free 前提的分配。
+ *
+ * ## Returns
+ * 不返回 C 值；非空记录清零，NULL 输入无操作。
+ *
+ * ## Constraints and lifecycle
+ * 此函数不检查池指针的有效性或别名；调用方须保证 values、roots、ownerStates、aggregates 和 aggregateFields 各自是独立且可传给 C free 的分配。完成后旧池及指向池元素的借用失效，但 state 记录地址仍有效且为空。无内部同步。
+ *
+ * ## References
+ * MaterializeState 在 exec_ir_materialize.c 764 行等回滚路径释放候选，并在 818 行替换旧目标；interpreter resume 的释放路径见 exec_ir_interpreter_resume.c 312 行和 367 行。
+ */
+
+/**
+ * @fn TZrBool zr_state_map_input_span_disjoint(const SZrExecIrFunction *function, const SZrExecIrStateMap *map, const void *storage, size_t bytes)
+ *
+ * ## Summary
+ * 检查给定字节范围是否与函数及 state-map 输入记录和其容量池重叠，供 materialization 与恢复入口验证目标缓冲区隔离。
+ *
+ * ## Parameters
+ * @param[in] function 调用期间保持稳定且可读取的函数记录。
+ * @param[in] map 调用期间保持稳定且可读取的 state-map 记录。
+ * @param[in] storage 待比较字节范围的起始地址；bytes 为零时可为 NULL。
+ * @param[in] bytes 待比较范围的字节数；零长度不构成候选区间。
+ *
+ * ## Returns
+ * @return function/map 为空、非零候选范围为空或地址末端溢出、任一输入容量字节数不可表示或候选与输入区间重叠时返回 ZR_FALSE；否则返回 ZR_TRUE。零长度仍会检查输入容量的尺寸可表示性。
+ *
+ * ## Constraints and lifecycle
+ * 本函数按容量而非逻辑 count 比较记录、函数池、map 池及 frameLayout、gcMap、stateMap 的嵌套池地址。它不验证输入池的实际分配来源、可读性或完整语义，也不读取候选范围内容；调用方须保证记录和嵌套记录可安全读取并在调用期间不变。函数不检查 request、diagnostic 或 target 记录别名，也无内部同步。
+ *
+ * ## References
+ * target 数组逐项检查在本文件 345 行调用此 helper；interpreter resume 的独立输入范围检查位于 exec_ir_interpreter_resume.c 256 行。
+ */
+
+/**
+ * @fn TZrBool zr_state_map_target_valid(const SZrExecIrMaterializedState *target, const SZrExecIrStateMap *map, const SZrExecIrFunction *function)
+ *
+ * ## Summary
+ * 检查 materialized-state 现有池的计数、容量及容量区间隔离，供调用方确认目标池不覆盖函数或 map 输入池；旧池能否安全释放仍由调用方保证。
+ *
+ * ## Parameters
+ * @param[in] target 调用方提供的目标记录；须可读取，且池指针与容量描述须稳定。
+ * @param[in] map 将被读取的 state-map 输入。
+ * @param[in] function 将被读取的 ExecIR 函数输入。
+ *
+ * ## Returns
+ * @return 任一记录为空、count 超出 capacity、NULL/capacity 配对不一致、容量字节不可表示、目标池彼此或与 target 记录重叠，或任一目标池覆盖函数/map 输入记录及池时返回 ZR_FALSE；否则返回 ZR_TRUE。
+ *
+ * ## Constraints and lifecycle
+ * helper 检查五组池的容量范围，不证明指针指向的分配真实存在或可释放，也不检查 target 记录自身与 function/map/request/diagnostic 的别名。MaterializeState 成功时会 Free 旧 target 后发布新候选；调用方须保证每个非空旧池独立且符合 C free 的前提，并提供与输入记录分离且可写的 target 记录。function、map 及其嵌套池须有效且在检查期间保持稳定。本 helper 不分配、不修改目标，也不提供同步。
+ *
+ * ## References
+ * 唯一生产调用位于 exec_ir_materialize.c 720 行；通过后候选准备于 728 行开始，成功提交在 818–819 行。
+ */

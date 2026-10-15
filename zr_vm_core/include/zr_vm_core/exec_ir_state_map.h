@@ -208,3 +208,77 @@ ZR_CORE_API TZrBool ZrCore_ExecIr_MaterializeState(
  * ## References
  * 实现位于 exec_ir_state_map_storage.c；直接生产调用包括 exec_ir.c 444 行与 exec_ir_lower_aot.c 74 行，fault-injection 测试由 tests/parser/test_ssa_state_map_clone_fault_cases.h 调用。
  */
+
+/**
+ * @struct SZrExecIrMaterializedState
+ *
+ * ## Summary
+ * 保存从一个 state-map checkpoint 复制出的逻辑恢复元数据及调用方拥有的池；它不是运行时值对象或直接的 GC 保活对象。
+ *
+ * ## Fields
+ * sourceId、resumeId、phase、cleanupState、boundaryFlags 和 generation 共同描述选中的 checkpoint 及其清理/边界上下文；effectIn/effectOut、handlerBlockId、exceptionState 与 deoptId 携带 effect、异常和 deopt 元数据。该类型本身不含 functionToken 或 signatureHash；身份检查来自 ResumeRequest 与匹配的 function/map。
+ * values/valueCount/valueCapacity、roots/rootCount/rootCapacity、ownerStates/ownerStateCount/ownerStateCapacity、aggregates/aggregateCount/aggregateCapacity、aggregateFields/aggregateFieldCount/aggregateFieldCapacity 分别组成五组池。ownerStates 依 values 的相同索引描述 owner 状态；roots 是独立的逻辑 ID 清单，不能将 root 下标直接当作 ownerStates 下标。
+ *
+ * ## Invariants and lifecycle
+ * 每组 count 必须不大于对应 capacity；capacity 为零时指针必须为 NULL，capacity 非零时指针必须非 NULL。values 与 roots 是逻辑 TZrExecIrValueId 清单，roots 是根 ID 列表而非对象指针；ownerStates 是 owner-state 元数据，aggregates 与 aggregateFields 是 deopt recipe，不是普通 ValueId 数组。ID 和 checkpoint 元数据须与产生它们的匹配 function/map/generation 上下文配合解释；ID 不延长 function/map 或运行时对象的生命周期。五组非空池须来自彼此分离、可独立由 C free 释放的分配，记录与池的存储由调用方管理。Init 只清零无资源记录；Free 释放五池并清零字段，但不释放记录本身。Free 或成功替换后旧池元素借用失效；Free 后记录为空，成功替换后记录承载新结果，记录地址继续有效。该结构不提供内部同步。
+ *
+ * ## References
+ * ZrCore_ExecIr_MaterializeState 在 exec_ir_materialize.c 728 行初始化局部候选、819 行发布结果；interpreter resume 在 exec_ir_interpreter_resume.c 315–321 行读取逻辑 ID 与对应 owner 状态来核对暂停状态。
+ */
+
+/**
+ * @fn TZrBool ZrCore_ExecIr_StateMapStorageValid(const SZrExecIrStateMap *map)
+ *
+ * ## Summary
+ * 对外检查 state-map 四个池的容量存储形状，供 Core 函数克隆形状预检、AOT 逻辑 map 验证与 Parser projection 使用；StateMapClone 使用相同的内部 shape 契约。
+ *
+ * ## Parameters
+ * @param[in] map 借用的 map；调用期间记录和池保持稳定。
+ *
+ * ## Returns
+ * @return 仅当计数、容量、NULL 配对、字节尺寸和四池区间形状均有效时返回 ZR_TRUE；否则返回 ZR_FALSE，不生成诊断。
+ *
+ * ## Constraints and lifecycle
+ * 该接口只检查存储形状，不验证 checkpoint 语义、池内存实际可读性或释放所有权，不分配、不修改输入。无内部同步。
+ *
+ * ## References
+ * 实现位于 exec_ir_state_map_storage.c 152 行；生产调用包括 exec_ir.c 337 行、aot_ir.c 305 行、exec_ir_lower_aot.c 70 行及 exec_ir_projection_common.c 713 行。
+ */
+
+/**
+ * @fn void ZrCore_ExecIr_MaterializedStateInit(SZrExecIrMaterializedState *state)
+ *
+ * ## Summary
+ * 初始化无资源的 materialized-state 记录，以便由后续 materialization 写入或由 Free 清理。
+ *
+ * ## Parameters
+ * @param[out] state 可为空；非空时须指向可写记录。
+ *
+ * ## Returns
+ * 无 C 返回值；非空记录清零，NULL 输入无操作。
+ *
+ * ## Constraints and lifecycle
+ * 函数不先释放已有池，调用方只能传入新鲜、零初始化或已释放的记录；否则旧池指针会丢失并泄漏。无内部同步。
+ *
+ * ## References
+ * 实现位于 exec_ir_state_map_storage.c 218 行；MaterializeState 与 interpreter resume 的初始化调用分别位于 exec_ir_materialize.c 728 行和 exec_ir_interpreter_resume.c 308 行。
+ */
+
+/**
+ * @fn void ZrCore_ExecIr_MaterializedStateFree(SZrExecIrMaterializedState *state)
+ *
+ * ## Summary
+ * 释放 materialized-state 的五组池并清空记录字段，结束当前池借用生命周期。
+ *
+ * ## Parameters
+ * @param[in,out] state 可为空；非空时须为可写记录，且五组非空池均须可独立由 C free 释放。
+ *
+ * ## Returns
+ * 无 C 返回值；完成后记录为零状态，NULL 输入无操作。
+ *
+ * ## Constraints and lifecycle
+ * Free 不验证池形状或别名；调用方负责确保各池独立且可传给 C free。释放后池指针及指向池元素的借用失效，state 记录本身仍有效且为空。无内部同步。
+ *
+ * ## References
+ * 实现位于 exec_ir_state_map_storage.c 224 行；MaterializeState 回滚和替换路径位于 exec_ir_materialize.c 764 行与 818 行。
+ */

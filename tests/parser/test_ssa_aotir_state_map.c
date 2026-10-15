@@ -179,3 +179,19 @@ void test_aotir_moves_frame_layout_metadata(void) {
     TEST_ASSERT_NULL(source.frameSlots);
     ZrParser_AotIrProjection_Free(&destination);
 }
+
+/**
+ * @fn void test_aotir_owns_state_map(void)
+ *
+ * ## Summary
+ * 构造并验证一个带 deopt state 的 ExecIR 函数，LowerAot 后检查输出 state-map 池与源 map 的独立地址及少数内容隔离断言。
+ *
+ * ## Returns
+ * 无 C 返回值；断言通过时 case 正常返回；Unity 断言失败只退出当前 case 并由 runner 继续执行。
+ *
+ * ## Constraints and lifecycle
+ * 此 case 断言 entries、valuePool、rootPool 和 ownerStatePool 四个源/输出基址不同，比较 entryCount、rootCount、ownerStateCount，并在改动源 rootPool[0] 与首个 entry.resumeId 后检查对应两个输出字段保持原值；它还确认 AOT projection 不可运行且 ABI 未知，检查一个 constant、一个 layout、一个 deopt state/value/aggregate/field 的少量字段，并验证四组 deopt 数组基址独立。随后令 source valueCount 超过 capacity，检查 storage validation 拒绝、LowerAot 报 INVALID_PROJECTION 且旧输出 entries 指针/rootPool[0] 保留；释放 source 后再检查这两个字段。它不检查 valuePool/ownerStatePool/deopt 池元素的全面独立性、全池内容或每个输出字段的失败保留，也不注入自然 OOM；本 case 执行 AOT 投影，不调用 MaterializeState、interpreter 或 oracle。
+ *
+ * ## References
+ * FunctionInit 位于本文件 24 行，Verify 与 BuildStateMaps 分别位于 89 行和 91 行，首次 LowerAot 调用位于 96 行；projection、map count、ABI、constant、layout 与 deopt 的有限断言位于 98–127 行，池基址与内容隔离断言位于 128–137 行，旧输出拒绝断言位于 138–149 行。Unity 注册在 test_ssa_oracle_resume.c 992 行，测试源与 CTest target 在 tests/cmake/ssa-tests.cmake 429 行和 468 行。
+ */
