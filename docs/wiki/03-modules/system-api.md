@@ -370,3 +370,24 @@ callback 自身返回 null，反射调用者交付构造实例。省略消息写
 注册读取器还接受 VM closure 和原生函数指针，不校验 hint 的 `(Error) -> bool` 签名或原生地址。
 宿主调用原生指针前必须保证非空入口满足 `FZrNativeFunction` ABI；原生指针和 native closure 所指向的代码及关联资源均须在 global 槽
 仍可能引用它时保持有效；GC 不会延长原生代码映像的寿命。checkpoint 只接收满足可恢复条件的 VM 函数/闭包及对象图；NATIVE_POINTER 或 native closure 会使 capture 失败。
+
+
+## Fs 公共对象、字段与资源边界
+
+Fs 公共 helper 在当前 native 调用中借用 context、state、对象、字段槽和字符串视图。字段 getter 不延长 VM 对象的生命周期；调用者需要遵守实际 native lane/root 协议。MakeInfoObject 和 PopulateEntryObject 用临时根保护正在物化的对象，并在相关分配后重取对象；当前普通 OBJECT 的原址晋升路径已核查，不能把所有裸对象指针一概认定会因该路径搬迁。
+
+字段 setter 是 void：返回到调用者不证明字段存在或已经更新。RefreshEntryObject 的 true 表示宿主查询和本地物化流程完成，不能据此保证 fileInfo 字段已替换；返回的查询快照与对象仍持有的字段可能不同。ReadOptionalBoolArgument 的错误标签是普通 false，并保留已写入的默认值；ReadString/ReadInt 的错误标签由共享 reader 的 VM 异常路径处理，两类失败不能互换。
+
+**BUG:** WriteStringField 与异常 message helper 的局部 fieldValue 未初始化。若待写短串未驻留、驻留表跨扩容阈值，且受控 allocator 仅让这一次 HASH_BUCKET 申请返回 NULL、其余分配成功，字符串创建可软返回 NULL，void SetString 不写槽；随后对象 setter 的 pin lane 读取未初始化的值。该结论有完整静态调用链，没有分配故障注入信用，也不概括所有 OOM 路径。
+
+**BUG:** FileStream 的 native owner 通过隐藏字段关联。限定隐藏 owner 键尚未驻留且其 HASH_BUCKET 扩容软失败，或相应 ignored-root ARRAY pin 扩容软失败，其余分配成功时，void setter 可跳过关联，而 NewStreamObject 仍交付非空 wrapper。File_Open 只在构造结果为 NULL 时关闭原句柄；finalizer 无隐藏 owner 时找不到 malloc 记录及句柄，因而无法释放。这里审查的是公共声明及其闭合调用契约，不表示 fs_stream.c 全部实现已完成逐单元审查。
+
+StreamCloseInternal 由显式 close callback 调用；using 经注册的关闭入口进入。GC finalizer 独立尝试关闭并释放 native 记录，没有调用 StreamCloseInternal，也不向脚本报告 close 错误。显式 close 失败保留私有 closed=false；finalizer 忽略 close 结果后仍置 invalid/closed 并释放记录，字段不能证明宿主关闭成功，也不能承诺失败后可安全重试。
+
+**TODO:** PopulateEntryObject 的 originalPath/fullPathOverride 可能借用 VM 字符串，并跨 MakeInfoObject 和递归 parent 构造分配后再次使用。需沿实际 caller 的参数根、native lane 与字符串存储稳定性核查这一窗口；目前不宣称已观察悬空。未检索到仓内调用的 GetBoolField 也只登记用途待核，不能直接认定死代码。
+
+定义、实际 consumer、声明与实现范围、逐项测试边界和证据分别见 [Fs 公共支撑台账](../../code-review/coverage/zr_vm_lib_system_fs_common.tsv) 与 [批次记录](../../code-review/batches/20261014-system-fs-common-contracts.md)。此处没有赋予 allocator、GC、并发或异常重入的专项执行信用。
+
+**BUG:** ReadTextFromHandle 在短串驻留表 HASH_BUCKET 扩容软失败时，void SetString 可不写结果，helper 和 File/Stream 包装器仍报告成功；正常 dispatcher 预置的 null 因此到达脚本。限定未驻留短文本、一次 bucket 软失败及其余分配成功，完整路径见台账；与首 NUL 截断不同，均无故障注入信用。
+
+**TODO:** stream 调用 RaiseErrnoIOException 前先求值路径 getter，需核查其键物化/分配是否覆盖原 errno。ReadBytes/ReadText 的 malloc 缓冲和 File_Open 已开句柄分别跨越 VM 分配；正常返回清理已核，MemoryError 非局部 unwind 的资源恢复仍按具体窗口待核。

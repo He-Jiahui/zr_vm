@@ -1,5 +1,5 @@
 //
-// Shared helpers for zr.system.fs object/runtime implementation.
+// Shared helpers for zr.system.fs object/runtime implementation; see fs_internal.h for related contracts.
 //
 
 #include "fs/fs_internal.h"
@@ -15,14 +15,14 @@
 #include <stdio.h>
 #include <string.h>
 
-/* 临时根按数组/对象的真实值类型登记，供构造元数据时跨 VM 分配恢复移动后的对象地址。 */
+/* See the detailed @fn system_fs_root_value_type contract at end of file. */
 static EZrValueType system_fs_root_value_type(const SZrObject *object) {
     if (object != ZR_NULL && object->super.type == ZR_RAW_OBJECT_TYPE_ARRAY) {
         return ZR_VALUE_TYPE_ARRAY;
     }
     return ZR_VALUE_TYPE_OBJECT;
 }
-
+/* See the detailed @fn system_fs_begin_rooted_object contract at end of file. */
 static TZrBool system_fs_begin_rooted_object(SZrState *state, SZrObject *object, ZrLibTempValueRoot *root) {
     if (state == ZR_NULL || object == ZR_NULL || root == ZR_NULL) {
         return ZR_FALSE;
@@ -36,7 +36,7 @@ static TZrBool system_fs_begin_rooted_object(SZrState *state, SZrObject *object,
     }
     return ZR_TRUE;
 }
-
+/* See the detailed @fn system_fs_rooted_object contract at end of file. */
 static SZrObject *system_fs_rooted_object(SZrState *state, ZrLibTempValueRoot *root) {
     SZrTypeValue *rootValue;
 
@@ -52,7 +52,7 @@ static SZrObject *system_fs_rooted_object(SZrState *state, ZrLibTempValueRoot *r
     return ZR_CAST_OBJECT(state, rootValue->value.object);
 }
 
-/* IOException 的 message 值创建可能触发 GC；先根住异常对象再设置字段。 */
+/* See the detailed @fn system_fs_set_message_field contract at end of file. */
 static void system_fs_set_message_field(SZrState *state, SZrObject *object, const TZrChar *message) {
     SZrTypeValue fieldValue;
     ZrLibTempValueRoot objectRoot;
@@ -74,7 +74,7 @@ static void system_fs_set_message_field(SZrState *state, SZrObject *object, cons
     ZrLib_TempValueRoot_End(&objectRoot);
 }
 
-/* 生成与系统异常原型兼容的 IOException 对象，供所有文件回调汇聚失败原因。 */
+/* See the detailed @fn system_fs_make_io_exception contract at end of file. */
 static TZrBool system_fs_make_io_exception(SZrState *state,
                                            const TZrChar *message,
                                            ZR_OUT SZrTypeValue *outValue) {
@@ -130,7 +130,7 @@ static TZrBool system_fs_make_io_exception(SZrState *state,
     return ZR_TRUE;
 }
 
-/* 下列字段写入共同物化 FileSystemEntry、SystemFileInfo 与 FileStream 的描述符字段。 */
+/* 字段助手共同物化 FileSystemEntry、SystemFileInfo、FileStream；底层 Object_SetFieldCString 为 void/软失败接口。 */
 void ZrSystem_Fs_WriteIntField(SZrState *state, SZrObject *object, const TZrChar *fieldName, TZrInt64 value) {
     SZrTypeValue fieldValue;
     if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
@@ -148,7 +148,7 @@ void ZrSystem_Fs_WriteBoolField(SZrState *state, SZrObject *object, const TZrCha
     ZrLib_Value_SetBool(state, &fieldValue, value);
     ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue);
 }
-
+/** BUG: 短串 cache miss 跨驻留表阈值且自定义 allocator 仅本次 HASH_BUCKET 扩容失败时，SetString 不写 fieldValue，后续 void setter 仍读取未初始化槽；不泛化其他 OOM。 */
 void ZrSystem_Fs_WriteStringField(SZrState *state, SZrObject *object, const TZrChar *fieldName, const TZrChar *value) {
     SZrTypeValue fieldValue;
     ZrLibTempValueRoot objectRoot;
@@ -243,7 +243,7 @@ SZrObject *ZrSystem_Fs_SelfObject(const ZrLibCallContext *context) {
     return ZR_CAST_OBJECT(context->state, selfValue->value.object);
 }
 
-/* native 构造可复用调度器已经创建的子类实例；否则按实际构造目标原型新建。 */
+/* native 构造复用调度器已创建的子类实例；否则按 construct target/owner 原型新建。 */
 SZrObject *ZrSystem_Fs_ResolveConstructTarget(ZrLibCallContext *context) {
     SZrObject *self;
     SZrObjectPrototype *ownerPrototype;
@@ -287,7 +287,7 @@ TZrBool ZrSystem_Fs_ReadStringArgument(const ZrLibCallContext *context, TZrSize 
     return *outText != ZR_NULL;
 }
 
-/* 将短模式、seek 原点等可选参数复制到调用方缓冲，避免直接持有借用字符串。 */
+/* 将短模式、seek 原点等可选参数复制到调用方缓冲；越界失败不修改输出缓冲。 */
 TZrBool ZrSystem_Fs_ReadOptionalStringArgument(const ZrLibCallContext *context,
                                                TZrSize index,
                                                const TZrChar *defaultValue,
@@ -353,7 +353,7 @@ TZrBool ZrSystem_Fs_ReadArrayArgument(const ZrLibCallContext *context, TZrSize i
     return context != ZR_NULL && outArray != ZR_NULL && ZrLib_CallContext_ReadArray(context, index, outArray);
 }
 
-/* 所有会抛错的 I/O 回调经此统一设置 VM 异常状态，回调本身仍返回失败。 */
+/* 将已格式化的宿主失败转为 IOException 状态；回调按 C false 返回，VM 异常链可能非局部退出。 */
 TZrBool ZrSystem_Fs_RaiseIOException(SZrState *state, const TZrChar *format, ...) {
     TZrChar message[512];
     va_list arguments;
@@ -385,7 +385,7 @@ TZrBool ZrSystem_Fs_RaiseIOException(SZrState *state, const TZrChar *format, ...
     return ZR_FALSE;
 }
 
-/* 读取最近一次平台错误；调用方应先保存或避免覆盖 errno，再报告原始失败。 */
+/* 立即读取最近一次平台错误；调用方须在覆盖 errno 前调用，action/path 同步格式化为消息。 */
 TZrBool ZrSystem_Fs_RaiseErrnoIOException(SZrState *state, const TZrChar *action, const TZrChar *path) {
     const TZrChar *detail = strerror(errno);
     return ZrSystem_Fs_RaiseIOException(state,
@@ -395,7 +395,7 @@ TZrBool ZrSystem_Fs_RaiseErrnoIOException(SZrState *state, const TZrChar *action
                                         detail != ZR_NULL ? detail : "unknown error");
 }
 
-/* 宿主的路径/时间/类型信息在此复制为脚本快照，避免脚本对象借用栈上 Info。 */
+/* 将栈上宿主 File_Info 复制为脚本快照；每次字段分配后从根重取 receiver。 */
 SZrObject *ZrSystem_Fs_MakeInfoObject(SZrState *state, const SZrLibrary_File_Info *info) {
     SZrObject *object;
     ZrLibTempValueRoot objectRoot;
@@ -476,13 +476,13 @@ SZrObject *ZrSystem_Fs_NewEntryObject(SZrState *state,
     if (object == ZR_NULL) {
         return ZR_NULL;
     }
-    /* TODO: PopulateEntryObject 内部用临时根恢复地址，此处却返回调用前的裸 object。
-     * 需在 GC 压力下验证目录列举、copyTo/moveTo 及 parent 递归构造的返回地址；
-     * 当前临时根只保护内部填充期间的存活性，未向本层回传可能更新的指针。 */
+    /* PopulateEntryObject 在 VM 分配期间根住对象并重新读取；当前普通 OBJECT 晋升保持地址稳定。
+     * 因此这里返回该对象指针不构成已证实的移动缺陷；path/string 借用窗口单独记录在声明契约中。
+     */
     return ZrSystem_Fs_PopulateEntryObject(state, object, originalPath, fullPathOverride) ? object : ZR_NULL;
 }
 
-/* path 保留调用者提供的拼写，fullPath 和 fileInfo 记录当前规范化快照。 */
+/* path 保留调用者拼写，fullPath/fileInfo 记录查询快照；pathSource 可能跨 VM 分配，借用约束见声明。 */
 TZrBool ZrSystem_Fs_PopulateEntryObject(SZrState *state,
                                         SZrObject *object,
                                         const TZrChar *originalPath,
@@ -580,7 +580,7 @@ cleanup:
     return result;
 }
 
-/* refresh 仅更新 fileInfo，原路径及构造时的 name/parent 保持原有包装对象语义。 */
+/* refresh 仅更新 fileInfo；原 path/name/parent 不重算，输出结构即使字段 setter 软失败仍可成功。 */
 TZrBool ZrSystem_Fs_RefreshEntryObject(SZrState *state,
                                        SZrObject *object,
                                        ZR_OUT SZrLibrary_File_Info *outInfo,
@@ -623,3 +623,80 @@ TZrBool ZrSystem_Fs_RefreshEntryObject(SZrState *state,
     }
     return ZR_TRUE;
 }
+
+/**
+ * @fn static EZrValueType system_fs_root_value_type(const SZrObject *object)
+ * ## Summary
+ * 为临时强根选择与对象种类匹配的 VM 值标签。
+ * ## Parameters
+ * @param[in] object 待标记对象；本函数只检查 raw-object kind，NULL 按普通对象标签处理。
+ * ## Returns
+ * @return 数组返回 ZR_VALUE_TYPE_ARRAY，其他对象（包括 NULL）返回 ZR_VALUE_TYPE_OBJECT。
+ * ## Constraints and lifecycle
+ * 本函数不创建根、不持有对象，也不延长指针寿命；由调用方保证传入对象在读取其 kind 时有效。
+ * ## References
+ * system_fs_begin_rooted_object() 使用此标签调用 ZrLib_TempValueRoot_SetObject()。
+ */
+
+/**
+ * @fn static TZrBool system_fs_begin_rooted_object(SZrState *state, SZrObject *object, ZrLibTempValueRoot *root)
+ * ## Summary
+ * 开始一个临时值根并把对象写入根槽；写入失败时配对结束已开始的根。
+ * ## Parameters
+ * @param[in,out] state 当前 VM state，必须与对象和后续根读取属于同一调用。
+ * @param[in] object 要保活的对象；调用者须在进入本函数时持有有效引用。
+ * @param[out] root 调用者提供的栈上根槽；成功时变为 active。
+ * ## Returns
+ * @return 成功并激活根时返回 ZR_TRUE；参数无效、Begin 失败或 SetObject 失败时返回 ZR_FALSE。
+ * ## Constraints and lifecycle
+ * 正常返回 ZR_TRUE 后调用者必须恰好调用一次 ZrLib_TempValueRoot_End()；返回 ZR_FALSE 时若本函数已 Begin，会先自行 End，调用者不得再 End。后续 VM 分配后应从根槽重新取得对象地址。VM 异常可能非局部退出，不能据此推断所有异常路径都执行配对清理。
+ * ## References
+ * system_fs_root_value_type()、system_fs_rooted_object()、ZrLib_TempValueRoot_Begin()、ZrLib_TempValueRoot_SetObject()。
+ */
+
+/**
+ * @fn static SZrObject *system_fs_rooted_object(SZrState *state, ZrLibTempValueRoot *root)
+ * ## Summary
+ * 从当前 active 的临时值根读取对象并转换为公开对象视图。
+ * ## Parameters
+ * @param[in] state 创建该根的 VM state。
+ * @param[in] root 由 system_fs_begin_rooted_object() 成功激活、且尚未 End 的根槽。
+ * ## Returns
+ * @return 根参数/值无效或根值为空时返回 ZR_NULL；否则返回根中当前对象视图。
+ * ## Constraints and lifecycle
+ * 返回的是借用指针，不增加引用也不延长根寿命；任何可能触发 VM 分配的调用后都应重新读取根槽，且不得在 End() 后使用。
+ * ## References
+ * system_fs_begin_rooted_object()、ZrLib_TempValueRoot_Value()、ZrLib_TempValueRoot_End()。
+ */
+
+/**
+ * @fn static void system_fs_set_message_field(SZrState *state, SZrObject *object, const TZrChar *message)
+ * ## Summary
+ * 在临时根保护的异常对象上物化并尝试写入 message 字段。
+ * ## Parameters
+ * @param[in,out] state 当前 VM state。
+ * @param[in,out] object 要更新的异常对象；本函数先建立临时根。
+ * @param[in] message 同步读取的 NUL 结尾 C 字符串；为 ZR_NULL 时使用 I/O error 回退文本。
+ * ## Returns
+ * 本函数无返回值；无效 state/object 或建立临时根失败时直接返回，字段写入结果也不会向调用者报告。
+ * ## Constraints and lifecycle
+ * 字符串创建可能触发分配，因此写字段前从根槽重新读取对象；成功建立根后本函数负责 End。ZrLib_Value_SetString() 与 ZrLib_Object_SetFieldCString() 都是 void/软失败边界。BUG: 若短串缓存 miss 恰逢 HASH_BUCKET 扩容，且自定义 allocator 仅令该扩容失败而其他步骤成功，SetString 不初始化局部 fieldValue，随后 setter/value-pin 路径仍读取该槽；未做故障注入。
+ * ## References
+ * system_fs_make_io_exception()、ZrLib_Value_SetString()、ZrLib_Object_SetFieldCString()；完整窄故障链见本批 coverage 行。
+ */
+
+/**
+ * @fn static TZrBool system_fs_make_io_exception(SZrState *state, const TZrChar *message, SZrTypeValue *outValue)
+ * ## Summary
+ * 创建 IOException，根住对象并尝试写入其 stacks、exception 与 message 字段。
+ * ## Parameters
+ * @param[in,out] state 当前 VM state。
+ * @param[in] message 已准备好的 NUL 结尾错误消息；下游按 C 字符串处理。
+ * @param[out] outValue 成功时接收指向新异常对象的 OBJECT typed value；失败时保持调用者原值。
+ * ## Returns
+ * @return 成功创建并发布对象时返回 ZR_TRUE；参数无效、实例/数组创建失败或根对象无法恢复时返回 ZR_FALSE。
+ * ## Constraints and lifecycle
+ * 实例建立后先临时根住 receiver；数组创建及字段写入后都从根槽重取 receiver。只有最终输出写入前的所有显式检查通过才返回 true；字段 setter 为 void，故 true 不证明每个字段均已成功写入。message 的短串缓存窄软失败风险由 system_fs_set_message_field() 记录。
+ * ## References
+ * ZrSystem_Fs_RaiseIOException()、ZrLib_Type_NewInstance()、ZrLib_Array_New()、system_fs_begin_rooted_object()、system_fs_set_message_field()。
+ */
