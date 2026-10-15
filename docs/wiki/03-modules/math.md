@@ -120,8 +120,8 @@ Matrix4x4 则逐枢轴检查 `abs(pivot) <= 1e-9`，失败时同样可能交付 
 行列式静态反例及字段写入失败路径见 [Matrix4x4 API](math-api.md#matrix4x4-调用与失败边界)。
 
 Complex 的 `phase()` 使用弧度；compare 按模长平方，不代表分量相等。
-**BUG:** 极大有限分量的平方溢出会使 magnitude 返回无穷、normalized 返回零；
-**TODO:** 非有限值/溢出的 compare 策略及 toString 分配失败的结果槽语义仍待核实。
+**BUG:** 极大有限分量的平方溢出使 magnitude 返回无穷、normalized 返回零；两个不同有限模长可能在 compare 中同返 0，复乘的可表示实部也可能因 Inf-Inf 变为 NaN。
+**BUG:** 未驻留短串 HASH_BUCKET 扩容失败可使 toString 成功却保留 NULL 结果；新对象 factory 的首次 ignored-root ARRAY pin 扩容软失败可交付缺字段对象。**TODO:** NaN / unordered 的 compare tri-state 策略和 Construct target 借用仍待核实，已证缺陷的窄化前提见 [Complex 审查记录](../../code-review/batches/20261014-complex-contracts.md)。
 调用约束及现有乘法公式见 [Complex API](math-api.md#complex-和-quaternion)。
 
 ## 数值规则

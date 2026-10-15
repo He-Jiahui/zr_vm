@@ -2,7 +2,8 @@
  * ## Summary
  * 为 zr.math.Complex 的构造、实例方法和 VM 运算协议声明 native 回调。
  * 注册表把同一组回调交给数学模块聚合器，脚本调用随后由 binding 同步派发。
- * Complex 以可读数值 real、imag 字段表示；普通运算交付新结果，不改写输入对象。
+ * Complex 以可读数值 real、imag 字段表示；产生 Complex 的实例方法与算术元运算交付新对象，
+ * 标量方法交付值槽，toString 交付 VM 字符串，均不改写输入对象。
  *
  * ## Calling model and lifecycle
  * 应通过已注册的模块或 VM 元方法协议调用。context、state、参数视图和 result 槽
@@ -16,10 +17,12 @@
  * 作为普通 ZR_FALSE 推断。void 字段与字符串 setter 不提供逐项成功凭据。
  *
  * ## References
- * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:16 登记命名方法；zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:26 登记构造和运算元方法。
+ * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:22 登记命名方法；zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:32 登记构造和运算元方法。
  * - zr_vm_lib_math/src/zr_vm_lib_math/module.c:129 汇入类型；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:202 与 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:205 选择回调。
  * - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:274 进入 native GC 域，zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:277 同步派发。
  * - zr_vm_lib_math/src/zr_vm_lib_math/common.c:219 选择构造目标；zr_vm_lib_math/src/zr_vm_lib_math/common.c:282 创建普通运算的新 Complex。
+ * BUG: Conjugate、Normalized、MetaAdd/Sub/Mul/Neg 共用新对象字段工厂。若宿主定制 allocator 仅拒绝新对象首次 pin 所需的 ignored-root ARRAY 扩容、其余步骤均成功，void setter 可漏写字段而工厂和回调继续成功；这不是两字段 nodeMap 扩桶失败，也不将构造目标协议纳入此结论。
+ * - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1385 发起 receiver pin；zr_vm_core/src/zr_vm_core/gc/gc_object.c:746 扩容失败返回；zr_vm_lib_math/src/zr_vm_lib_math/common.c:33 忽略 setter 结果并返回对象。宿主 allocator 接口见 zr_vm_common/include/zr_vm_common/zr_common_conf.h:179；透传路径见 zr_vm_core/src/zr_vm_core/execution/execution_memory.c:60-76。
  */
 
 #ifndef ZR_VM_LIB_MATH_COMPLEX_H
@@ -44,10 +47,11 @@
  * 兼容 owner prototype 的 self 可复用；否则优先按 construct target、再按 owner
  * prototype 创建实例。该接口不承诺始终分配新对象。结果由 VM 管理；字段 setter 为
  * void，成功返回不额外证明每个字段写入均完成。
+ * TODO: 单独核实构造 target 复用与新建路径在字段 setter pin 失败时的传播/回滚；下一入口为 zr_vm_lib_math/src/zr_vm_lib_math/common.c:211、zr_vm_lib_math/src/zr_vm_lib_math/common.c:231、zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1385。
  *
  *
  * ## References
- * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:26 登记恰好两个实参；zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:11 读取它们。
+ * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:32 登记恰好两个实参；zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:17 读取它们。
  * - zr_vm_lib_math/src/zr_vm_lib_math/common.c:211 复用兼容 self；zr_vm_lib_math/src/zr_vm_lib_math/common.c:215 和 zr_vm_lib_math/src/zr_vm_lib_math/common.c:219 选择新目标。
  * - zr_vm_lib_math/src/zr_vm_lib_math/common.c:249 写字段，zr_vm_lib_math/src/zr_vm_lib_math/common.c:252 交付对象；
  *   tests/fixtures/projects/native_numeric_pipeline/src/signal.zr:5 是脚本调用。
@@ -68,12 +72,12 @@ TZrBool ZrMath_Complex_Construct(ZrLibCallContext *context, SZrTypeValue *result
  * ## Constraints and lifecycle
  * 不改写 receiver，结果槽仅属于此次 binding。计算沿用宿主 double 的平方中间值，
  * 不是防溢出的范数实现，数值成功不代表结果有限。
- * BUG: 合法有限输入 (1e200, 0) 在 zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:20 的平方中间值溢出，模长变为无穷。
+ * BUG: 合法有限输入 (1e200, 0) 在 zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:26 的平方中间值溢出，模长变为无穷。
  *
  * ## References
- * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:16 登记无参方法；zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:19 和 zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:20 读取并交付模长。
+ * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:22 登记无参方法；zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:25 和 zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:26 读取并交付模长。
  * - zr_vm_lib_math/src/zr_vm_lib_math/common.c:323 和 zr_vm_lib_math/src/zr_vm_lib_math/common.c:324 定义分量读取约束。
- * - tests/fixtures/projects/native_numeric_pipeline/src/signal.zr:10 消费模长。 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1298 与 zr_vm_core/src/zr_vm_core/value.c:108 说明标量写入不建立 GC 对象。
+ * - tests/fixtures/projects/native_numeric_pipeline/src/signal.zr:10 消费模长。 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1298 与 zr_vm_core/src/zr_vm_core/value/value.c:108 说明标量写入不建立 GC 对象。
  */
 TZrBool ZrMath_Complex_Magnitude(ZrLibCallContext *context, SZrTypeValue *result);
 /**
@@ -94,8 +98,8 @@ TZrBool ZrMath_Complex_Magnitude(ZrLibCallContext *context, SZrTypeValue *result
  *
  *
  * ## References
- * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:18 登记无参方法；zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:23 检查分量，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:24 写相角。
- * - tests/fixtures/projects/native_numeric_pipeline/src/signal.zr:7 消费结果。 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1298 与 zr_vm_core/src/zr_vm_core/value.c:108 说明标量写入不建立 GC 对象。
+ * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:24 登记无参方法；zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:29 检查分量，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:30 写相角。
+ * - tests/fixtures/projects/native_numeric_pipeline/src/signal.zr:7 消费结果。 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1298 与 zr_vm_core/src/zr_vm_core/value/value.c:108 说明标量写入不建立 GC 对象。
  */
 TZrBool ZrMath_Complex_Phase(ZrLibCallContext *context, SZrTypeValue *result);
 /**
@@ -112,12 +116,12 @@ TZrBool ZrMath_Complex_Phase(ZrLibCallContext *context, SZrTypeValue *result);
  *
  * ## Constraints and lifecycle
  * 不修改 receiver；新 Complex 归 VM 管理，不能当作由调用方释放的 C 对象。
- * 对象创建与字段写入可能进入分配路径；void 字段 setter 不提供逐项成功凭据。
+ * 对象创建与字段写入可能进入分配路径；共享字段工厂的窄化 ignored-root 扩容软失败见文件级 BUG，void setter 不提供逐项成功凭据。
  *
  *
  * ## References
- * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:20 将方法交给 binding；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:202 选择命名方法回调。
- * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:28 检查 receiver，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:29 建新对象，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:31 写结果。
+ * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:26 将方法交给 binding；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:202 选择命名方法回调。
+ * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:34 检查 receiver，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:35 建新对象，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:37 写结果。
  * - zr_vm_lib_math/src/zr_vm_lib_math/common.c:27 和 zr_vm_lib_math/src/zr_vm_lib_math/common.c:33 说明类型实例与字段建立入口。
  */
 TZrBool ZrMath_Complex_Conjugate(ZrLibCallContext *context, SZrTypeValue *result);
@@ -135,12 +139,12 @@ TZrBool ZrMath_Complex_Conjugate(ZrLibCallContext *context, SZrTypeValue *result
  *
  * ## Constraints and lifecycle
  * 模长不超过 ZR_MATH_EPSILON 时交付零复数，包括非零但接近零的输入；不能把
- * 每次成功视为单位模保证。新对象归 VM 管理，void 字段写入不提供逐项成功凭据。
- * BUG: 合法有限 (1e200, 0) 在 zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:39 平方溢出，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:41 按无穷缩放得到零复数。
+ * 每次成功视为单位模保证。新对象归 VM 管理；共享字段工厂的窄化 ignored-root 扩容软失败见文件级 BUG。
+ * BUG: 合法有限 (1e200, 0) 在 zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:45 平方溢出，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:47 按无穷缩放得到零复数。
  *
  * ## References
- * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:22 登记方法；zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:39 计算模长，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:40 选择零模策略。
- * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:41 缩放非零路径，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:43 交付对象。
+ * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:28 登记方法；zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:45 计算模长，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:46 选择零模策略。
+ * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:47 缩放非零路径，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:49 交付对象。
  * - tests/fixtures/projects/native_numeric_pipeline/src/signal.zr:6 是脚本调用。
  */
 TZrBool ZrMath_Complex_Normalized(ZrLibCallContext *context, SZrTypeValue *result);
@@ -160,13 +164,13 @@ TZrBool ZrMath_Complex_Normalized(ZrLibCallContext *context, SZrTypeValue *resul
  *
  * ## Constraints and lifecycle
  * 结果按 Complex 类型创建并归 VM 管理，不复用 rhs。输入只借用本次调用，
- * 保存裸 VM 对象须由上层保活；浮点中间值沿用宿主 double。void 字段 setter 不逐项
- * 报告成功；分配异常退出与 helper 的正常 NULL 返回应分别处理。
+ * 保存裸 VM 对象须由上层保活；浮点中间值沿用宿主 double。共享字段工厂的窄化
+ * ignored-root 扩容软失败见文件级 BUG；分配异常退出与 helper 的正常 NULL 返回应分别处理。
  *
  *
  * ## References
- * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:27 登记一个显式实参；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:205 选择元方法回调。
- * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:48 检查输入，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:50 建新对象，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:52 交付结果。
+ * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:33 登记一个显式实参；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:205 选择元方法回调。
+ * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:54 检查输入，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:56 建新对象，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:58 交付结果。
  * - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1224 处理缺参；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1228 处理对象标签错误。
  * - zr_vm_lib_math/src/zr_vm_lib_math/common.c:323 与 zr_vm_lib_math/src/zr_vm_lib_math/common.c:324 仅核对可读数值字段。
  */
@@ -187,13 +191,13 @@ TZrBool ZrMath_Complex_MetaAdd(ZrLibCallContext *context, SZrTypeValue *result);
  *
  * ## Constraints and lifecycle
  * 结果按 Complex 类型创建并归 VM 管理，不复用 rhs。输入只借用本次调用，
- * 保存裸 VM 对象须由上层保活；浮点中间值沿用宿主 double。void 字段 setter 不逐项
- * 报告成功；分配异常退出与 helper 的正常 NULL 返回应分别处理。
+ * 保存裸 VM 对象须由上层保活；浮点中间值沿用宿主 double。共享字段工厂的窄化
+ * ignored-root 扩容软失败见文件级 BUG；分配异常退出与 helper 的正常 NULL 返回应分别处理。
  *
  *
  * ## References
- * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:28 登记一个显式实参；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:205 选择元方法回调。
- * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:57 检查输入，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:59 建新对象，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:61 交付结果。
+ * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:34 登记一个显式实参；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:205 选择元方法回调。
+ * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:63 检查输入，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:65 建新对象，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:67 交付结果。
  * - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1224 处理缺参；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1228 处理对象标签错误。
  * - zr_vm_lib_math/src/zr_vm_lib_math/common.c:323 与 zr_vm_lib_math/src/zr_vm_lib_math/common.c:324 仅核对可读数值字段。
  */
@@ -214,13 +218,14 @@ TZrBool ZrMath_Complex_MetaSub(ZrLibCallContext *context, SZrTypeValue *result);
  *
  * ## Constraints and lifecycle
  * 结果按 Complex 类型创建并归 VM 管理，不复用 rhs。输入只借用本次调用，
- * 保存裸 VM 对象须由上层保活；浮点中间值沿用宿主 double。void 字段 setter 不逐项
- * 报告成功；分配异常退出与 helper 的正常 NULL 返回应分别处理。
+ * 保存裸 VM 对象须由上层保活；浮点中间值沿用宿主 double。共享字段工厂的窄化
+ * ignored-root 扩容软失败见文件级 BUG；分配异常退出与 helper 的正常 NULL 返回应分别处理。
+ * BUG: 对合法有限输入 lhs = rhs = (1e200, 1e200)，实部数学结果为 0；两次乘法分别溢出为 Inf，当前 Inf - Inf 写入 NaN。
  *
  *
  * ## References
- * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:29 登记一个显式实参；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:205 选择元方法回调。
- * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:66 检查输入，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:68 建新对象，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:70 交付结果。
+ * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:35 登记一个显式实参；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:205 选择元方法回调。
+ * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:72 检查输入，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:74 建新对象，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:76 交付结果。
  * - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1224 处理缺参；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1228 处理对象标签错误。
  * - zr_vm_lib_math/src/zr_vm_lib_math/common.c:323 与 zr_vm_lib_math/src/zr_vm_lib_math/common.c:324 仅核对可读数值字段。
  */
@@ -243,8 +248,8 @@ TZrBool ZrMath_Complex_MetaMul(ZrLibCallContext *context, SZrTypeValue *result);
  *
  *
  * ## References
- * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:30 登记无参元方法；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:205 选择回调。
- * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:75 检查字段，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:76 建对象，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:78 交付结果。
+ * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:36 登记无参元方法；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:205 选择回调。
+ * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:81 检查字段，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:82 建对象，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:84 交付结果。
  */
 TZrBool ZrMath_Complex_MetaNeg(ZrLibCallContext *context, SZrTypeValue *result);
 /**
@@ -263,13 +268,12 @@ TZrBool ZrMath_Complex_MetaNeg(ZrLibCallContext *context, SZrTypeValue *result);
  *
  * ## Constraints and lifecycle
  * 不修改输入、不建立新 Complex；result 只属于本次 binding。相同模长可返回 0，
- * NaN 或双方平方溢出也会使两个严格比较都不成立；使用方不能据此推断分量等价。
- * TODO: 结合 zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:89 的返回值与 VM compare 消费规则、数值边界用例核实
- *       unordered/双边溢出是否应与等模分开；当前策略意图尚未解明。
+ * BUG: 不同合法有限输入 (1e200, 0) 与 (2e200, 0) 的平方模长都溢出为 Inf，当前返回 0，错误折叠严格不同的模长。
+ * TODO: 核实 NaN/unordered compare 的 VM 约定与此回调应返回的 tri-state；下一入口为 zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:94-95 与 zr_vm_core/src/zr_vm_core/value/meta.c:29-31。
  *
  * ## References
- * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:31 登记比较元方法；zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:86 检查输入。
- * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:88 计算平方模长，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:89 交付比较值。 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1291 与 zr_vm_core/src/zr_vm_core/value.c:84 说明标量写入不建立 GC 对象。
+ * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:37 登记比较元方法；zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:92 检查输入。
+ * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:94 计算平方模长，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:95 交付比较值。 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1291 与 zr_vm_core/src/zr_vm_core/value/value.c:84 说明标量写入不建立 GC 对象。
  */
 TZrBool ZrMath_Complex_MetaCompare(ZrLibCallContext *context, SZrTypeValue *result);
 /**
@@ -290,10 +294,10 @@ TZrBool ZrMath_Complex_MetaCompare(ZrLibCallContext *context, SZrTypeValue *resu
  * 与 context 只借用本次调用；可能进入 GC 分配，异常退出不能视为普通返回成功。
  * BUG: 合法 receiver 生成未驻留短串时，若对象创建成功但短串哈希表扩容失败，
  *      setter 不写结果槽，helper 仍 TRUE；常规 VM 派发预置 NULL，因此成功状态可没有字符串结果。
- *      zr_vm_core/src/zr_vm_core/hash_set.c:181 经 zr_vm_core/include/zr_vm_core/hash_set.h:537、zr_vm_core/src/zr_vm_core/string.c:808 使 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1313 不写结果槽；常规派发在 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:362 预置 NULL，zr_vm_lib_math/src/zr_vm_lib_math/common.c:519 仍报告成功；静态证明。
+ *      zr_vm_core/src/zr_vm_core/base/hash_set.c:181 经 zr_vm_core/include/zr_vm_core/hash_set.h:537、zr_vm_core/src/zr_vm_core/string/string.c:808 使 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1313 不写结果槽；常规派发在 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:362 预置 NULL，zr_vm_lib_math/src/zr_vm_lib_math/common.c:519 仍报告成功；静态证明。
  *
  * ## References
- * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:32 登记无参元方法；zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:95 检查分量，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:96 调用格式 helper。
+ * - zr_vm_lib_math/src/zr_vm_lib_math/complex/complex_registry.c:38 登记无参元方法；zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:101 检查分量，zr_vm_lib_math/src/zr_vm_lib_math/complex/complex.c:102 调用格式 helper。
  * - zr_vm_lib_math/src/zr_vm_lib_math/common.c:516 写临时文本，zr_vm_lib_math/src/zr_vm_lib_math/common.c:518 使用 void setter。
  * - zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1307 创建字符串；zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1312 对 NULL 字符串直接返回。
  */

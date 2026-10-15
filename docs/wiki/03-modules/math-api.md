@@ -141,10 +141,10 @@ scalar 实现使用宿主 `<math.h>`；NaN 不应直接参与 `almostEqual` 的 
 返回新对象并保留 receiver，构造器则可能复用 binding 的兼容目标。模长不超过 EPSILON
 时 normalized 返回零复数。乘法公式为 `(a+bi)(c+di)=(ac-bd)+(ad+bc)i`。
 
-compare 按模长平方返回 -1/0/1，不比较分量字典序；**TODO:** NaN 或双方平方溢出时会
-落到 0，需要结合 VM compare 消费规则和边界用例确定 unordered 的策略。
+compare 按模长平方返回 -1/0/1，不比较分量字典序。**BUG:** 有限 (1e200, 0) 与 (2e200, 0) 的平方模长都溢出到 Inf，当前返回 0，折叠了不同模长。
+**TODO:** NaN / unordered 的 VM tri-state 策略仍待结合实际 compare 消费规则核查；不把这一政策疑问与上述有限输入缺陷混同。
 **BUG:** 有限 `(1e200, 0)` 的平方中间值溢出，使 magnitude 得到无穷、normalized 得到
-零复数。这是当前源码可证实的数值限制，本次未新增运行复现。
+零复数。这是当前源码可证实的数值限制，本次未新增运行复现。**BUG:** 两个有限 (1e200, 1e200) 相乘，精确实部为 0，当前两个中间乘积溢出后以 Inf-Inf 写入 NaN。
 
 C 回调仅借用本次 binding 的 context/state/result；返回对象和字符串归 VM 管理。
 缺参/实参标签错误会进入 VM 异常，字段读取或对象 helper 返回 NULL 是正常失败。
@@ -278,7 +278,7 @@ context、state、参数视图和 result 仅借用本次调用。结果对象和
 跨调用保存裸指针仍须由宿主维持根。构造目标可复用，其余对象运算创建独立结果。
 正常 false 不应消费 result；缺参或实参标签不符经 zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:862、zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:877 的
 不返回错误入口报告，分配产生的非局部异常也不等于正常 false。字段 setter 为 void，
-构造及新对象 helper 没有逐字段成功凭据，应沿已有 setter 失败记录审查故障路径。
+**BUG:** 新对象 factory 在合法定制 allocator 仅拒绝首次 ignored-root ARRAY 扩容、其余步骤成功时，会忽略 receiver pin 失败并成功交付缺字段对象；注册时的 prototype 只有字段 descriptor，没有 real/imag 默认值。Construct 复用 target 的路径仍为 TODO，完整失败链见 [Complex 审查记录](../../code-review/batches/20261014-complex-contracts.md)。
 
 ### 静态注册数据
 
