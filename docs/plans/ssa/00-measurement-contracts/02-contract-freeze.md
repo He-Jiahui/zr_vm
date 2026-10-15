@@ -1,10 +1,19 @@
 ---
 related_code:
+  - zr_vm_core/include/zr_vm_core/execution_contract.h
+  - zr_vm_core/src/zr_vm_core/runtime/execution_contract.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
   - zr_vm_core/include/zr_vm_core/call_binding.h
   - zr_vm_core/include/zr_vm_core/artifact_schema.h
   - zr_vm_common/include/zr_vm_common/zr_aot_abi.h
+  - zr_vm_aot/zr_vm_common/include/zr_vm_common/zr_aot_abi.h
+  - zr_vm_common/CommonMacros.cmake
+  - tests/cmake/ssa-source-direct-validation/CMakeLists.txt
   - zr_vm_parser/CMakeLists.txt
 implementation_files:
+  - zr_vm_core/include/zr_vm_core/execution_contract.h
+  - zr_vm_core/src/zr_vm_core/runtime/execution_contract.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
   - zr_vm_core/include/zr_vm_core/call_binding.h
   - zr_vm_core/include/zr_vm_core/artifact_schema.h
   - zr_vm_common/include/zr_vm_common/zr_aot_abi.h
@@ -39,19 +48,24 @@ status: planned
 
 ## 现状与代码落点
 
-已存在 CallBinding schema 1、artifact schema 5、AOT ABI 16。compiler_semir.c 明确是 ExecBC 之后的兼容投影，而 compiler.h 的 preSemanticIr 位于 ExecBC 之前。zr_vm_parser/CMakeLists.txt 已显式编译 zr_vm_aot 下的后端源码，不能因为根 CMake 没有 add_subdirectory(zr_vm_aot) 就判定 AOT 未接入。
+2026-10-15 源码核对：当前顶层工作区契约为 CallBinding schema 1、artifact schema 6、AOT ABI 17，execution contract 的 schema/ABI/logical 为 6/17/1。早期 artifact 5、AOT ABI 16 与 execution 6/17 候选的描述属于历史状态，不能作为当前兼容性结论。各版本域保持独立；canonical 宏所有者、真实生产/消费位置与纯 checker 顺序见[有限契约字典与边界矩阵](../../../testing-and-validation/ssa-contract-freeze.md)。其中 AOT ABI 宏在全仓并非唯一定义：Git 跟踪的 `zr_vm_aot/zr_vm_common/include/zr_vm_common/zr_aot_abi.h` 另定义 2u，AOT README 将其标为历史参考；已检查的顶层模块、parser AOTIR 和 Source direct-validation 使用顶层 common include。历史同名头的全部消费者与所有权隔离策略仍未闭合，不能由这些 include 路由推导全仓唯一。本次不合并、删除或同步两份头；该记录不代表本叶全部接口族和持久字段已经冻结。
+
+compiler_semir.c 明确是 ExecBC 之后的兼容投影，而 compiler.h 的 preSemanticIr 位于 ExecBC 之前。当前 `zr_vm_parser/CMakeLists.txt` 通过递归源码发现编译 `zr_vm_parser/src/zr_vm_parser/backend_aot` 下的后端并排除 disabled stub；早期源码位于 `zr_vm_aot` 的描述不再表示当前路径。不能因为根 CMake 没有 add_subdirectory(zr_vm_aot) 就判定 AOT 未接入。
 
 | 类别 | 路径 | 责任与修改边界 |
 | --- | --- | --- |
+| 现有，修改/复用 | `zr_vm_core/include/zr_vm_core/execution_contract.h` | execution contract、九字段诊断和公开 checker 的唯一声明；版本宏不替代其他版本域 |
+| 现有，修改/复用 | `zr_vm_core/src/zr_vm_core/runtime/execution_contract.c` | 纯契约比较与状态名；不承担解析、加载或发布 |
 | 现有，修改/复用 | `zr_vm_core/include/zr_vm_core/call_binding.h` | 复用 contract/target 分离与结构化错误 |
 | 现有，修改/复用 | `zr_vm_core/include/zr_vm_core/artifact_schema.h` | 登记序列化版本和必选 section |
 | 现有，修改/复用 | `zr_vm_common/include/zr_vm_common/zr_aot_abi.h` | 冻结 frame/native/code registration ABI |
+| 现有历史参考，边界未闭合 | `zr_vm_aot/zr_vm_common/include/zr_vm_common/zr_aot_abi.h` | 同名 AOT ABI 宏为 2u；顶层 canonical 为 17u，仍须登记全部消费者和隔离策略，不在本批改动源码 |
 | 现有，修改/复用 | `zr_vm_parser/CMakeLists.txt` | 确认后端源码所有权与低层依赖 |
-| 计划新增 | `zr_vm_core/include/zr_vm_core/exec_ir.h` | 低层无 AST 依赖的 IR 定义，细节由 01.01 实施 |
-| 计划新增 | `zr_vm_core/include/zr_vm_core/execution_backend.h` | 后端状态与运行期 handle 接口，细节由 10.01 实施 |
-| 计划新增测试 | `tests/parser/test_ssa_contract_freeze.c` | 下述正向、失败与状态转换断言；复用既有 harness。 |
+| 现有，修改/复用 | `zr_vm_core/include/zr_vm_core/exec_ir.h` | 低层无 AST 依赖的 IR 定义，细节归 01.01；本叶不另建平行定义 |
+| 现有，修改/复用 | `zr_vm_core/include/zr_vm_core/execution_backend.h` | 后端状态与运行期 handle 接口，细节归 10.01 |
+| 现有测试，覆盖有限 | `tests/parser/test_ssa_contract_freeze.c` | 已有契约相等、部分失配分类和版本常量断言；完整覆盖仍待补齐 |
 
-新增文件登记到所属模块 CMake；测试登记到计划新增的 `tests/cmake/ssa-tests.cmake`，由 `tests/CMakeLists.txt` 单点 include。先迁移职责并保持行为，再接入新 contract；不要把新分析或慢路径追加到巨型 dispatch/quickening 文件。
+`tests/cmake/ssa-tests.cmake` 已登记 `zr_vm_ssa_contract_freeze_test` 与 `ssa_contract_freeze`，目标只编译该测试和 `runtime/execution_contract.c`。后续新增文件仍须登记到所属模块 CMake；不得重复登记既有目标。先迁移职责并保持行为，再接入新 contract；不要把新分析或慢路径追加到巨型 dispatch/quickening 文件。
 
 ## 可逐项执行的重构任务
 
@@ -61,7 +75,9 @@ status: planned
 
 - [ ] **3. 冻结域和热更规则** 隔离域只复制对象图，不共享 GC 指针或 ownership control；Transfer 是复制事务协议。同域共享必须证明访问和生命周期安全。公开 ABI 不变且可热更目标经过版本入口单元，冻结目标才可无条件内联。
 
-- [ ] **4. 冻结版本与接口归属** schema/ABI 取实施时最新值的下一版本，v6/17 仅当前候选；磁盘 generation 是逻辑版本，加载分配本进程 epoch。返回状态区分 invalid IR/link/capability/deopt/unsupported/compile pending。
+- [ ] **4. 冻结版本与接口归属** 当前值、顶层 canonical 所有者及历史同名 AOT 宏冲突已作有限登记；后续变更按所属版本域评审，不能把当前 6/17 再当作待发布候选或直接推导下一版本。磁盘 generation 与本进程 load epoch 的生产/消费映射仍待冻结，不能从 checker 的相等比较推导已经实现。返回状态仍须覆盖各接口族的 invalid IR/link/capability/deopt/unsupported/compile pending。
+
+本轮边界登记仅描述现有纯 checker：NULL → version 三元组 → target → generation → signature → layout → module → capabilities → effects，首个失败返回；无解析、hash 重算、分配或发布。相等但不受支持的版本未被该入口拒绝、logical-only 失配诊断不携带 logical expected/actual、reserved 字段未校验；对应准入所有者、诊断与保留字段策略均仍待决。具体字段载荷与既有测试覆盖见上述矩阵，不据此勾选完整退出门禁。
 
 ## 核心算法与接口指导
 
@@ -93,11 +109,11 @@ GC budget 是可观测的工作预算而非硬实时承诺；没有读屏障/句
 
 本任务新增测试先独立运行，再进入完整 SSA 差分矩阵。
 
-登记新 CTest 名 `ssa_contract_freeze` 和可执行目标 `zr_vm_ssa_contract_freeze_test` 后，在 WSL 仓库根运行：
+既有 CTest 名为 `ssa_contract_freeze`，可执行目标为 `zr_vm_ssa_contract_freeze_test`。后续验证在已初始化的 E 盘外部构建目录执行；下列为 WSL 示例，本次文档更新未配置、编译或运行：
 
 ```bash
-cmake --build build/ssa-gcc-debug --target zr_vm_ssa_contract_freeze_test -j 4
-ctest --test-dir build/ssa-gcc-debug -R '^ssa_contract_freeze$' --output-on-failure --no-tests=error
+cmake --build /mnt/e/cargo-targets/zr_vm/build/ssa-gcc-debug --target zr_vm_ssa_contract_freeze_test -j 4
+ctest --test-dir /mnt/e/cargo-targets/zr_vm/build/ssa-gcc-debug -R '^ssa_contract_freeze$' --output-on-failure --no-tests=error
 ```
 
 预期：目标构建成功，至少一个匹配测试执行，全部断言通过、退出码 0。构建目录初始化、Clang/MSVC 和 sanitizer 扩展命令见 00.03；不得把“未找到测试”当作通过。
@@ -112,17 +128,7 @@ ctest --test-dir build/ssa-gcc-debug -R '^ssa_contract_freeze$' --output-on-fail
 
 ### 接口草案
 
-下面的 `SZr*` 入参/结果类型由本任务或显式前置任务定义；这是待实现的 C 接口设计，不是当前仓库 API 清单。实现时使用已有错误、分配器和容器约定，不把草案整体复制成新的平行框架。
-
-```c
-typedef struct SZrExecIrDiagnostic {
-    TZrUInt32 code, functionToken, blockId, instructionId, sourceId;
-    TZrUInt64 expectedHash, actualHash;
-} SZrExecIrDiagnostic;
-typedef struct SZrExecutionContract SZrExecutionContract;
-TZrBool ZrCore_ExecutionContract_Check(const SZrExecutionContract *expected,
-    const SZrExecutionContract *actual, SZrExecIrDiagnostic *diagnostic);
-```
+历史七字段诊断与布尔 checker 草案已经由真实公开接口取代。`SZrExecIrDiagnostic` 的九字段声明、`SZrExecutionContract` 和返回 `EZrExecutionContractStatus` 的 `ZrCore_ExecutionContract_Check` 均以 [`execution_contract.h`](../../../../zr_vm_core/include/zr_vm_core/execution_contract.h) 为唯一权威；本计划不再复制第二份 C 声明。后续草案使用已有错误、分配器和容器约定，不另建平行框架。
 
 ### 数据生产与消费
 
@@ -136,9 +142,9 @@ TZrBool ZrCore_ExecutionContract_Check(const SZrExecutionContract *expected,
 
 以下批次分别形成可审查改动。每批先固定测试输入和失败预期，再实现；只完成前一批不能提前标记整份计划完成。
 
-- [ ] **批次 1：** 写字段字典：类型、宽度、有效域、hash 编码顺序、生产/消费模块；为重复术语建立唯一名称。
+- [ ] **批次 1：** 完成全字段字典：类型、宽度、有效域、hash 编码顺序、生产/消费模块；为重复术语建立唯一名称。当前仅已有版本域所有者和纯 checker 边界的有限登记，不代表本批完成。
 
-- [ ] **批次 2：** 用现有 binding/artifact/AOT ABI 对照字段字典，明确下一版改动而非盲目固定 v6/17。
+- [ ] **批次 2：** 用现有 binding/artifact/AOT ABI 对照字段字典，按独立版本域明确兼容性和下一版改动；当前 artifact 6/AOT 17 不等于 execution 6/17 与其格式互通。
 
 - [ ] **批次 3：** 完成兼容矩阵：源码重编、旧 artifact 拒绝、profile 失配忽略、patch contract 失配拒绝。
 
@@ -157,7 +163,7 @@ assert RECOMPILE_REQUIRED; no partial module published
 
 ### 迁移结束检查
 
-公共接口归属必须写清：Build/Optimize/Lower/ReadWrite 的实现由 parser 驱动，低层结构/verifier/runtime resolution 在 core；不要让 core include parser AST。00.02 仅冻结 exec_ir.h/execution_backend.h 的所有权，正式建文件分别由 01.01/10.01 执行。
+公共接口归属必须写清：Build/Optimize/Lower/ReadWrite 的实现由 parser 驱动，低层结构/verifier/runtime resolution 在 core；不要让 core include parser AST。上述是责任边界目标，具体读写入口仍须逐项对照真实实现。exec_ir.h/execution_backend.h 已存在，细节分别归 01.01/10.01，本叶不重复创建；本次有限字典不能替代全接口族和持久字段唯一所有者、完整边界策略矩阵。
 
 本任务的 acceptance 至少附上：上述断言对应的测试名称、实际执行后端/平台、失败注入位置、verifier 输入/输出摘要，以及涉及所有权时的分配/释放或 lease 平衡。新增入口的 OOM、取消、重复调用和部分初始化退出应有明确处理；不适用的状态写明原因。
 
