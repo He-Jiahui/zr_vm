@@ -52,7 +52,7 @@ TZrBool ZrMath_Vector3_Construct(ZrLibCallContext *context, SZrTypeValue *result
  *
  * ## Constraints and lifecycle
  * 由 native binding 同步派发；context、context->state 和 result 只在本次 callback 期间有效，不得保存到回调外或跨线程使用。
- * 无显式 VM 参数，只读 receiver 数值字段；缺失或非数值字段返回普通 false。有限 (1e200,0,0) 的平方和先溢出而长度仍可表示，见 BUG 块。
+ * 无显式 VM 参数，只读 receiver 数值字段；缺失或非数值字段返回普通 false。有限 (1e200,0,0) 的平方和先溢出而长度仍可表示，见 BUG 块。 BUG: struct 输入 count=3 在 scalar 及 AVX2/SSE2/NEON 尾循环读取下标2越界，见 math_common.h:134。
  *
  * ## References
  * ZrMath_ReadVector3Object；ZrMath_Dot；docs/wiki/03-modules/math-api.md
@@ -72,7 +72,7 @@ TZrBool ZrMath_Vector3_Length(ZrLibCallContext *context, SZrTypeValue *result);
  *
  * ## Constraints and lifecycle
  * 由 native binding 同步派发；context、context->state 和 result 只在本次 callback 期间有效，不得保存到回调外或跨线程使用。
- * 无显式 VM 参数；字段缺失或非数值时返回普通 false。平方值超出 double 范围时为 IEEE 浮点溢出结果；这与有限长度的中间溢出分开记录。
+ * 无显式 VM 参数；字段缺失或非数值时返回普通 false。平方值超出 double 范围时为 IEEE 浮点溢出结果；这与有限长度的中间溢出分开记录。 BUG: struct 输入 count=3 在 scalar 及 AVX2/SSE2/NEON 尾循环读取下标2越界，见 math_common.h:134。
  *
  * ## References
  * ZrMath_ReadVector3Object；ZrMath_Dot；ZrMath_Vector3_Length
@@ -92,7 +92,7 @@ TZrBool ZrMath_Vector3_LengthSquared(ZrLibCallContext *context, SZrTypeValue *re
  *
  * ## Constraints and lifecycle
  * 由 native binding 同步派发；context、context->state 和 result 只在本次 callback 期间有效，不得保存到回调外或跨线程使用。
- * 无显式 VM 参数。字段读取或 MakeVector3 无法创建对象时返回普通 false。有限超大输入的平方范数会溢出为无穷，再除后返回零向量；共享工厂字段发布软失败也适用。
+ * 无显式 VM 参数。字段读取或 MakeVector3 无法创建对象时返回普通 false。有限超大输入的平方范数会溢出为无穷，再除后返回零向量；共享工厂字段发布软失败也适用。 BUG: struct 输入 count=3 在 scalar 及 AVX2/SSE2/NEON 尾循环读取下标2越界，见 math_common.h:134。
  *
  * ## References
  * ZR_MATH_EPSILON；ZrMath_Dot；ZrMath_MakeVector3；zr_math_make_object_with_fields
@@ -112,7 +112,7 @@ TZrBool ZrMath_Vector3_Normalized(ZrLibCallContext *context, SZrTypeValue *resul
  *
  * ## Constraints and lifecycle
  * 由 native binding 同步派发；context、context->state 和 result 只在本次 callback 期间有效，不得保存到回调外或跨线程使用。
- * 固定 arity=1。rhs 非 OBJECT/ARRAY 时 ReadObject 抛 TypeError；只验证数值字段、不验证 nominal prototype。有限 (1e200,1e200,0) 点乘 (1e200,-1e200,0) 中间产生 +Inf/-Inf，结果 NaN 而实数点积为 0，见 BUG 块。
+ * 固定 arity=1。rhs 非 OBJECT/ARRAY 时 ReadObject 抛 TypeError；只验证数值字段、不验证 nominal prototype。有限 (1e200,1e200,0) 点乘 (1e200,-1e200,0) 中间产生 +Inf/-Inf，结果 NaN 而实数点积为 0，见 BUG 块。 BUG: struct 输入 count=3 在 scalar 及 AVX2/SSE2/NEON 尾循环读取下标2越界，见 math_common.h:134。
  *
  * ## References
  * ZrMath_ReadVector3Object；ZrMath_Dot；registry kMethods.dot；native callback 间接调用
@@ -248,14 +248,14 @@ TZrBool ZrMath_Vector3_MetaNeg(ZrLibCallContext *context, SZrTypeValue *result);
  *
  * ## Returns
  * @return ZR_TRUE 表示结果槽写入 -1/0/1；字段读取失败时返回 ZR_FALSE。
- * 整数结果不转移资源；另有连续结构体布局 TODO，不能据值比较结果推断对象相等。
+ * 整数结果不转移资源；另有 C11 结构体跨成员越界 BUG，不能据值比较结果推断对象相等。
  *
  * ## Constraints and lifecycle
  * 由 native binding 同步派发；context、context->state 和 result 只在本次 callback 期间有效，不得保存到回调外或跨线程使用。
- * 固定 arity=1；rhs 标签错误抛 TypeError，字段形状错误普通 false。NaN 或双方平方和均溢出为 Inf 时两个严格比较都失败而返回 0；这不证明相等，实际 VM compare consumer 与排序语义待核。
+ * 固定 arity=1；rhs 标签错误抛 TypeError，字段形状错误普通 false。NaN 或双方平方和均溢出为 Inf 时两个严格比较都失败而返回 0；这不证明相等，实际 VM compare consumer 与排序语义待核。 BUG: struct 输入 count=3 在 scalar 及 AVX2/SSE2/NEON 尾循环读取下标2越界，见 math_common.h:134。
  *
  * ## References
- * registry kMeta/ZR_META_COMPARE；docs/wiki/03-modules/math-api.md Vector3 compare；math_common.h 连续布局 TODO
+ * registry kMeta/ZR_META_COMPARE；docs/wiki/03-modules/math-api.md Vector3 compare；math_common.h:134 的 C11 对象边界 BUG
  */
 TZrBool ZrMath_Vector3_MetaCompare(ZrLibCallContext *context, SZrTypeValue *result);
 /**

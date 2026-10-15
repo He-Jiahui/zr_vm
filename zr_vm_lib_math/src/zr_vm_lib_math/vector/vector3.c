@@ -12,7 +12,7 @@
  * ReadFloat/ReadObject 标签异常走 VM 错误清理路径。
  *
  * BUG: 构造和 MakeVector3 工厂都调用 void 字段 setter。ignored-root 数组扩容分配失败可令字段写入静默跳过，
- * 外层仍可能交付对象。三字段对象表只到 3/4 threshold，不触发第四字段 nodeMap 扩桶。
+ * 外层仍可能交付对象。三字段对象表只到 3/4 threshold，不触发第四字段 nodeMap 扩桶。 BUG: struct 输入 count=3 在 scalar 及 AVX2/SSE2/NEON 尾循环读取下标2越界，见 math_common.h:134。 Length/LengthSquared/Normalized/Dot/MetaCompare 均适用；Distance 使用显式数组。
  *
  * ## References
  * ZrMath_Vector3Registry_GetType；ZrMath_ConstructFloatObject；ZrMath_MakeVector3；

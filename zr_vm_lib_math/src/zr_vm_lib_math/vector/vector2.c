@@ -24,7 +24,7 @@ TZrBool ZrMath_Vector2_Construct(ZrLibCallContext *context, SZrTypeValue *result
 TZrBool ZrMath_Vector2_Length(ZrLibCallContext *context, SZrTypeValue *result) {
     /* BUG: 有限向量 (1e200, 0) 的点积中间值溢出，length 得到无穷；
      * normalized 沿用该范数后把非零向量压成零向量。详见 ZrMath_Vector2_Normalized 回调。 */
-    /* TODO: struct 转连续 TZrFloat64[] 依赖 zr_vm_lib_math/include/zr_vm_lib_math/math_common.h:20,54。 */
+    /* BUG: count=2 的 struct 输入在 AVX2 尾循环/纯 scalar 读取下标1越界；SSE2/NEON 单次 intrinsic 对象范围仍待核，见 math_common.h:134。 */
     ZrMathVector2 value;
     if (!ZrMath_ReadVector2Object(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
     ZrLib_Value_SetFloat(context->state, result, sqrt(ZrMath_Dot((const TZrFloat64 *)&value, (const TZrFloat64 *)&value, 2)));
@@ -33,7 +33,7 @@ TZrBool ZrMath_Vector2_Length(ZrLibCallContext *context, SZrTypeValue *result) {
 
 TZrBool ZrMath_Vector2_LengthSquared(ZrLibCallContext *context, SZrTypeValue *result) {
     /* 与 length 共享平方和，但本方法直接暴露 IEEE 浮点平方和结果。 */
-    /* TODO: struct 转连续 TZrFloat64[] 依赖 zr_vm_lib_math/include/zr_vm_lib_math/math_common.h:20,54。 */
+    /* BUG: count=2 的 struct 输入在 AVX2 尾循环/纯 scalar 读取下标1越界；SSE2/NEON 单次 intrinsic 对象范围仍待核，见 math_common.h:134。 */
     ZrMathVector2 value;
     if (!ZrMath_ReadVector2Object(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
     ZrLib_Value_SetFloat(context->state, result, ZrMath_Dot((const TZrFloat64 *)&value, (const TZrFloat64 *)&value, 2));
@@ -44,7 +44,7 @@ TZrBool ZrMath_Vector2_Normalized(ZrLibCallContext *context, SZrTypeValue *resul
     /* BUG: (1e200, 0) 的平方范数溢出后按无穷长度缩放，非零输入得到零向量。
      * BUG: 当新对象/字段键 pin 要扩容满载的 ignored-root 表且 RawMalloc 失败时，
      * SetFieldCString 可静默漏写 x/y，下面仍把新对象作为成功结果交付。 */
-    /* TODO: struct 转连续 TZrFloat64[] 依赖 zr_vm_lib_math/include/zr_vm_lib_math/math_common.h:20,54。 */
+    /* BUG: count=2 的 struct 输入在 AVX2 尾循环/纯 scalar 读取下标1越界；SSE2/NEON 单次 intrinsic 对象范围仍待核，见 math_common.h:134。 */
     ZrMathVector2 value; TZrFloat64 length; SZrObject *object;
     if (!ZrMath_ReadVector2Object(context->state, ZrMath_SelfObject(context), &value)) return ZR_FALSE;
     length = sqrt(ZrMath_Dot((const TZrFloat64 *)&value, (const TZrFloat64 *)&value, 2));
@@ -60,7 +60,7 @@ TZrBool ZrMath_Vector2_Dot(ZrLibCallContext *context, SZrTypeValue *result) {
     if (!ZrMath_ReadVector2Object(context->state, ZrMath_SelfObject(context), &lhs) ||
         !ZrLib_CallContext_ReadObject(context, 0, &other) ||
         !ZrMath_ReadVector2Object(context->state, other, &rhs)) return ZR_FALSE;
-    /* TODO: 本 cast 依赖 zr_vm_lib_math/include/zr_vm_lib_math/math_common.h:20,54 的连续 double 布局；需核实 strict-aliasing 约束。 */
+    /* BUG: count=2 的 struct 输入在 AVX2 尾循环/纯 scalar 读取下标1越界；SSE2/NEON 单次 intrinsic 对象范围仍待核，见 math_common.h:134。 */
     ZrLib_Value_SetFloat(context->state, result, ZrMath_Dot((const TZrFloat64 *)&lhs, (const TZrFloat64 *)&rhs, 2));
     return ZR_TRUE;
 }
@@ -130,7 +130,7 @@ TZrBool ZrMath_Vector2_MetaNeg(ZrLibCallContext *context, SZrTypeValue *result) 
 }
 
 TZrBool ZrMath_Vector2_MetaCompare(ZrLibCallContext *context, SZrTypeValue *result) {
-    /* TODO: struct 转连续 TZrFloat64[] 依赖 zr_vm_lib_math/include/zr_vm_lib_math/math_common.h:20,54。 */
+    /* BUG: count=2 的 struct 输入在 AVX2 尾循环/纯 scalar 读取下标1越界；SSE2/NEON 单次 intrinsic 对象范围仍待核，见 math_common.h:134。 */
     ZrMathVector2 lhs; ZrMathVector2 rhs; SZrObject *other = ZR_NULL;
     TZrFloat64 dl; TZrFloat64 dr;
     if (!ZrMath_ReadVector2Object(context->state, ZrMath_SelfObject(context), &lhs) ||

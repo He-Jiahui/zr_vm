@@ -15,8 +15,8 @@
  * capacity-1 且 receiver 与字段键都尚未登记，setter 先登记 receiver、再登记字段键；后一步的 ARRAY 扩容 RawMallocWithType
  * 失败会静默漏写，外层仍可发布对象。四字段 nodeMap 的 HASH_BUCKET 扩桶是另一条独立失败路径。
  *
- * TODO: Length、LengthSquared、Normalized、Dot 和 MetaCompare 将 ZrMathVector4 地址转成 double 数组供 ZrMath_Dot
- * 读取四项；需核对 math_common.h 的结构布局和跨成员指针运算契约。Distance 使用自己的 `d[4]` 数组，不依赖该 cast。
+ * BUG: Length、LengthSquared、Normalized、Dot 和 MetaCompare 传入 struct 地址及 count=4；SSE2/NEON 第二轮形成首成员指针+2，纯 scalar 也越界。
+ * TODO: 核查 AVX2 单次 intrinsic 的对象范围，入口见 math_common.h:134。Distance 使用自己的 d[4]，不依赖该 cast。
  *
  * ## References
  * ZrMath_Vector4Registry_GetType；ZrMath_ConstructFloatObject；ZrMath_MakeVector4；ZrMath_ReadVector4Object；

@@ -57,10 +57,10 @@ TZrBool ZrMath_Vector4_Construct(ZrLibCallContext *context, SZrTypeValue *result
  *
  * ## Constraints and lifecycle
  * 只读当前 receiver，不修改或保留它；字段读取经 ReadVector4Object。有限 `(1e200,0,0,0)` 的平方和溢出，
- * 虽然数学长度仍可由 double 表示，结果却是无穷，见实现 BUG。Dot 对结构体地址按连续 double 读取的布局前提另见 TODO。
+ * 虽然数学长度仍可由 double 表示，结果却是无穷，见实现 BUG。BUG: struct 输入 count=4 在 SSE2/NEON 第二轮形成首成员指针+2，纯 scalar 也越界；AVX2 单次 intrinsic 对象范围仍待核，见 math_common.h:134。
  *
  * ## References
- * ZrMath_ReadVector4Object；ZrMath_Dot；ZrMathVector4；math_common.h 的连续布局 TODO；
+ * ZrMath_ReadVector4Object；ZrMath_Dot；ZrMathVector4；math_common.h:134 的 C11 边界 BUG 与 AVX2 intrinsic TODO；
  * docs/wiki/03-modules/math-api.md 的 vector 方法契约
  */
 TZrBool ZrMath_Vector4_Length(ZrLibCallContext *context, SZrTypeValue *result);
@@ -78,10 +78,10 @@ TZrBool ZrMath_Vector4_Length(ZrLibCallContext *context, SZrTypeValue *result);
  *
  * ## Constraints and lifecycle
  * 只读 receiver 的 x/y/z/w，不保留字段指针。平方结果本身不可表示时产生无穷属于当前 IEEE double 运算；
- * 这与 Length 的“中间平方溢出但最终长度本可表示”分开。Dot 的结构体连续布局假设见 TODO。
+ * 这与 Length 的“中间平方溢出但最终长度本可表示”分开。BUG: struct 输入 count=4 在 SSE2/NEON 第二轮形成首成员指针+2，纯 scalar 也越界；AVX2 单次 intrinsic 对象范围仍待核，见 math_common.h:134。
  *
  * ## References
- * ZrMath_ReadVector4Object；ZrMath_Dot；ZrMath_Vector4_Length；math_common.h 的连续布局 TODO
+ * ZrMath_ReadVector4Object；ZrMath_Dot；ZrMath_Vector4_Length；math_common.h:134 的 C11 边界 BUG 与 AVX2 intrinsic TODO
  */
 TZrBool ZrMath_Vector4_LengthSquared(ZrLibCallContext *context, SZrTypeValue *result);
 /**
@@ -99,7 +99,7 @@ TZrBool ZrMath_Vector4_LengthSquared(ZrLibCallContext *context, SZrTypeValue *re
  * ## Constraints and lifecycle
  * receiver 只读，结果不覆盖它。长度不大于 ZR_MATH_EPSILON 时造零向量，否则逐分量除以长度；
  * 有限 `(1e200,0,0,0)` 令平方范数溢出为无穷，再除后得到零而不是单位向量，见实现 BUG。
- * MakeVector4 的四字段 nodeMap 扩桶与 ignored-root pin 失败是独立的发布风险。
+ * MakeVector4 的四字段 nodeMap 扩桶与 ignored-root pin 失败是独立的发布风险。 BUG: struct 输入 count=4 在 SSE2/NEON 第二轮形成首成员指针+2，纯 scalar 也越界；AVX2 单次 intrinsic 对象范围仍待核，见 math_common.h:134。
  *
  * ## References
  * ZR_MATH_EPSILON；ZrMath_Dot；ZrMath_MakeVector4；zr_math_make_object_with_fields；
@@ -121,7 +121,7 @@ TZrBool ZrMath_Vector4_Normalized(ZrLibCallContext *context, SZrTypeValue *resul
  * ## Constraints and lifecycle
  * descriptor 固定 arity=1，由 dispatcher 预检。rhs 可为 OBJECT 或 ARRAY；只按 x/y/z/w 读取数值字段，
  * 不要求名义 Vector4 prototype。有限 `(1e200,1e200,0,0)` 点乘 `(1e200,-1e200,0,0)` 时，
- * 乘积先成为 +Inf 和 -Inf，累加得到 NaN，而精确点积为 0，见实现 BUG。Dot 的结构体连续布局假设另见 TODO。
+ * 乘积先成为 +Inf 和 -Inf，累加得到 NaN，而精确点积为 0，见实现 BUG。BUG: struct 输入 count=4 在 SSE2/NEON 第二轮形成首成员指针+2，纯 scalar 也越界；AVX2 单次 intrinsic 对象范围仍待核，见 math_common.h:134。
  *
  * ## References
  * ZrMath_ReadVector4Object；ZrMath_Dot；ZrMath_Vector4Registry_GetType 的 kMethods.dot；
@@ -250,11 +250,11 @@ TZrBool ZrMath_Vector4_MetaNeg(ZrLibCallContext *context, SZrTypeValue *result);
  * ## Constraints and lifecycle
  * descriptor 固定 arity=1；rhs 可为 OBJECT 或 ARRAY，字段 helper 只校验数值形状。比较按平方长度而非分量顺序；
  * 非有限输入/平方溢出的排序策略及实际 VM compare 消费者尚待核实。此实现也把 ZrMathVector4 地址当连续 double 输入，
- * 布局前提另见 TODO。
+ * BUG: struct 输入 count=4 在 SSE2/NEON 第二轮形成首成员指针+2，纯 scalar 也越界；AVX2 单次 intrinsic 对象范围仍待核，见 math_common.h:134。
  *
  * ## References
  * ZrMath_ReadVector4Object；ZrMath_Dot；ZrMath_Vector4Registry_GetType 的 ZR_META_COMPARE；
- * docs/wiki/03-modules/math-api.md 的 vector compare 契约；math_common.h 的布局 TODO
+ * docs/wiki/03-modules/math-api.md 的 vector compare 契约；math_common.h:134 的 C11 边界 BUG 与 AVX2 intrinsic TODO
  */
 TZrBool ZrMath_Vector4_MetaCompare(ZrLibCallContext *context, SZrTypeValue *result);
 /**

@@ -68,14 +68,14 @@ TZrBool ZrMath_Vector2_Construct(ZrLibCallContext *context, SZrTypeValue *result
  * BUG:有限输入 `(1e200, 0)` 的平方和溢出，当前实现返回正无穷。
  *
  * ## Constraints and lifecycle
- * descriptor 固定 arity=0；receiver 不被修改，字段指针不跨回调保存。当前 `ZrMath_Dot` cast 的结构布局
- * 依赖项见 `math_common.h:20,54`。
+ * descriptor 固定 arity=0；receiver 不被修改，字段指针不跨回调保存。BUG: count=2 的 struct 输入在 AVX2 尾循环/纯 scalar 越界；其余单次 intrinsic 范围
+ * 仍待核，见 `math_common.h:134`。
  *
  * ## References
  * 注册：`zr_vm_lib_math/src/zr_vm_lib_math/vector/vector2_registry.c:17`；
  * 计算：`zr_vm_lib_math/src/zr_vm_lib_math/vector/vector2.c`；字段读取：
- * `zr_vm_lib_math/src/zr_vm_lib_math/common.c:297-300`；布局 TODO:
- * `zr_vm_lib_math/include/zr_vm_lib_math/math_common.h:20,54`。
+ * `zr_vm_lib_math/src/zr_vm_lib_math/common.c:297-300`；Dot C11 边界契约:
+ * `zr_vm_lib_math/include/zr_vm_lib_math/math_common.h:134`。
  */
 TZrBool ZrMath_Vector2_Length(ZrLibCallContext *context, SZrTypeValue *result);
 
@@ -92,13 +92,13 @@ TZrBool ZrMath_Vector2_Length(ZrLibCallContext *context, SZrTypeValue *result);
  * IEEE 平方和溢出为无穷是本方法直接返回的平方结果。
  *
  * ## Constraints and lifecycle
- * descriptor 固定 arity=0；不缓存对象或字段地址，也不修改 receiver。当前 `ZrMath_Dot` cast 的布局
- * 依赖项见 `math_common.h:20,54`。
+ * descriptor 固定 arity=0；不缓存对象或字段地址，也不修改 receiver。BUG: count=2 的 struct 输入在 AVX2 尾循环/纯 scalar 越界；其余单次 intrinsic 范围
+ * 仍待核，见 `math_common.h:134`。
  *
  * ## References
  * 注册：`zr_vm_lib_math/src/zr_vm_lib_math/vector/vector2_registry.c:19`；
  * 实现：`zr_vm_lib_math/src/zr_vm_lib_math/vector/vector2.c`；
- * 共享布局核查：`zr_vm_lib_math/include/zr_vm_lib_math/math_common.h:20,54`。
+ * Dot C11 边界契约：`zr_vm_lib_math/include/zr_vm_lib_math/math_common.h:134`。
  */
 TZrBool ZrMath_Vector2_LengthSquared(ZrLibCallContext *context, SZrTypeValue *result);
 
@@ -117,13 +117,13 @@ TZrBool ZrMath_Vector2_LengthSquared(ZrLibCallContext *context, SZrTypeValue *re
  *
  * ## Constraints and lifecycle
  * descriptor 固定 arity=0；结果由 `ZrMath_MakeVector2` 创建，字段 setter 是软失败且 helper 不校验；
- * 当前 `ZrMath_Dot` cast 的布局依赖项见 `math_common.h:20,54`。不保存 context 或字段指针。
+ * BUG: count=2 的 struct 输入在 AVX2 尾循环/纯 scalar 读取下标1越界；SSE2/NEON 单次 intrinsic 对象范围仍待核，见 math_common.h:134。不保存 context 或字段指针。
  *
  * ## References
  * 注册：`zr_vm_lib_math/src/zr_vm_lib_math/vector/vector2_registry.c:21`；
  * 回调及 factory：`zr_vm_lib_math/src/zr_vm_lib_math/vector/vector2.c`；
  * `ZrMath_MakeVector2`：`zr_vm_lib_math/src/zr_vm_lib_math/common.c:22-35,255-259`；
- * 布局 TODO:`zr_vm_lib_math/include/zr_vm_lib_math/math_common.h:20,54`。
+ * Dot C11 边界契约:`zr_vm_lib_math/include/zr_vm_lib_math/math_common.h:134`。
  */
 TZrBool ZrMath_Vector2_Normalized(ZrLibCallContext *context, SZrTypeValue *result);
 
@@ -141,12 +141,12 @@ TZrBool ZrMath_Vector2_Normalized(ZrLibCallContext *context, SZrTypeValue *resul
  *
  * ## Constraints and lifecycle
  * descriptor 固定 arity=1；object rhs 不满足 scalar fast-lane 条件，dispatcher 使用 pinned 或通用 lane。
- * 实现只读取快照、不修改操作数。TODO:核实 struct 地址转连续 double 数组的布局与 strict-aliasing 前提。
+ * 实现只读取快照、不修改操作数。BUG: count=2 的 struct 输入在 AVX2 尾循环/纯 scalar 读取下标1越界；SSE2/NEON 单次 intrinsic 对象范围仍待核，见 math_common.h:134。
  *
  * ## References
  * 注册：`zr_vm_lib_math/src/zr_vm_lib_math/vector/vector2_registry.c:23`；
  * 实现及 cast：`zr_vm_lib_math/src/zr_vm_lib_math/vector/vector2.c`；
- * 共享布局核查：`zr_vm_lib_math/include/zr_vm_lib_math/math_common.h:20,54`。
+ * Dot C11 边界契约：`zr_vm_lib_math/include/zr_vm_lib_math/math_common.h:134`。
  */
 TZrBool ZrMath_Vector2_Dot(ZrLibCallContext *context, SZrTypeValue *result);
 
@@ -280,13 +280,13 @@ TZrBool ZrMath_Vector2_MetaNeg(ZrLibCallContext *context, SZrTypeValue *result);
  *
  * ## Constraints and lifecycle
  * descriptor 固定 arity=1；object rhs 不满足 scalar fast-lane 条件；比较平方和且不修改操作数。
- * TODO:对照 `docs/wiki/03-modules/math-api.md:296-308` 的 Vector2 compare 契约，为 NaN、双边平方和
- * 溢出为 Inf，以及当前 struct cast 的布局假设分别补核查/断言。
+ * TODO:对照 `docs/wiki/03-modules/math-api.md:307-319` 的 Vector2 compare 契约，为 NaN、双边平方和
+ * 溢出为 Inf 的排序策略补核查/断言；BUG: count=2 的 struct 输入在 AVX2 尾循环/纯 scalar 读取下标1越界；SSE2/NEON 单次 intrinsic 对象范围仍待核，见 math_common.h:134。
  *
  * ## References
  * 注册：`zr_vm_lib_math/src/zr_vm_lib_math/vector/vector2_registry.c:35`；
- * 实现及比较表达式：`zr_vm_lib_math/src/zr_vm_lib_math/vector/vector2.c`；布局 TODO:
- * `zr_vm_lib_math/include/zr_vm_lib_math/math_common.h:20,54`。
+ * 实现及比较表达式：`zr_vm_lib_math/src/zr_vm_lib_math/vector/vector2.c`；Dot C11 边界契约:
+ * `zr_vm_lib_math/include/zr_vm_lib_math/math_common.h:134`。
  */
 TZrBool ZrMath_Vector2_MetaCompare(ZrLibCallContext *context, SZrTypeValue *result);
 
