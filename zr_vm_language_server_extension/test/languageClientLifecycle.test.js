@@ -20,13 +20,15 @@ class FakeClient {
         this.stopCalls = 0;
         this.listeners = [];
         this.defaultErrorHandler = {
+            // 只留作普通错误的委托哨兵；本文件没有断言此动作，也没有用例进入该分支。
             error: async () => ({ action: 99 }),
+            // Restart 与适配器未绑定时的回退值相同，单凭该值不能证明发生了委托。
             closed: async () => ({ action: CLOSE_ACTION_RESTART }),
         };
     }
 
     createDefaultErrorHandler() {
-        // 固定策略让用例能够区分适配层自己的决定与交给 SDK 的决定。
+        // 返回固定对象供适配器委托；本替身不模拟 SDK 的预算与恢复时序。
         return this.defaultErrorHandler;
     }
 
@@ -34,7 +36,9 @@ class FakeClient {
         // 返回的租约对应单次订阅，允许覆盖重绑定和 dispose 的责任边界。
         this.listeners.push(listener);
         return {
+            // 仅撤销本次注册；filter 谓词按函数身份保留其他订阅者。
             dispose: () => {
+                // 纯身份筛选，不模拟 SDK 的事件排队或重入语义。
                 this.listeners = this.listeners.filter((entry) => entry !== listener);
             },
         };
@@ -81,8 +85,8 @@ test('marks transport as broken and continues on destroyed transport errors', as
     assert.equal(lifecycle.isTransportBroken(), true);
 });
 
-// TODO: 本例只检查标记最终清除，未断言 closed 的委托结果或 STOPPED 当下的值；
-// 拆分这两处观察后才能分别证明重启策略与停止/运行状态的清除边界。
+// TODO: 调用 closed 的 Promise 结果被丢弃，且 FakeClient 返回的 Restart 与回退值相同；
+// STOPPED 后没有中间断言，最终 false 同时发生在 STOPPED 和 RUNNING 之后，不能分辨清除时点。
 test('delegates close handling and clears transport-broken state after running again', async () => {
     const lifecycle = createTransportAwareLanguageClientLifecycle();
     const client = new FakeClient();
@@ -97,9 +101,10 @@ test('delegates close handling and clears transport-broken state after running a
     assert.equal(lifecycle.isTransportBroken(), false);
 });
 
-// retirement 闭包必须在回调时读取，防止旧 session 被 SDK 自动恢复重新激活。
+// retirement 闭包供 closed 在检查时跳过已退休 session 的默认恢复决定。
 test('a retired session never delegates automatic restart after connection closure', async () => {
     let retired = false;
+    // 闭包由工厂保留，并在每次 closed 调用时读取变量，而不是保存创建时快照。
     const lifecycle = createTransportAwareLanguageClientLifecycle(undefined, () => retired);
     const client = new FakeClient();
     lifecycle.attachClient(client);
