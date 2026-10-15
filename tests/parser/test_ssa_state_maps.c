@@ -1396,3 +1396,83 @@ int main(void) {
     RUN_TEST(test_state_map_function_clone_keeps_side_table_independent);
     return UNITY_END();
 }
+
+/**
+ * @fn void test_state_map_builder_reuses_deopt_resume_identity(void)
+ *
+ * ## Summary
+ * 防止 deopt 边界被重新编号：为含一个 deopt 状态的测试函数构建 map，并确认同一 source/resume 的 BEFORE_EFFECT 与 AFTER_EFFECT entry 都可查到且保留 resumeId 701。
+ *
+ * ## Returns
+ * 本测试无 C 返回值；所有 Unity 断言通过时正常结束。断言失败由 Unity 退出当前 case 并继续 teardown 与 main 的后续派发，不代表整个测试进程立即结束。
+ *
+ * ## Constraints and lifecycle
+ * 结论只覆盖该单一 deopt identity 及两种阶段 entry，不证明一般 deopt 去重、payload 恢复或其他 boundary phase。function 由 `function_with_deopt_boundary` 初始化，并在正常路径由 Core FreeFunction 释放；若前置断言失败，函数末尾的局部释放语句不会执行。
+ *
+ * ## References
+ * 构造 helper 为 `function_with_deopt_boundary`；Unity main 在本文件 1390 行注册本 case；被测接口为 `ZrParser_ExecIr_BuildStateMaps`，entry 通过 `ZrCore_ExecIr_StateMapFind` 查询。
+ */
+
+/**
+ * @fn void test_state_map_builder_rejects_duplicate_deopt_identity(void)
+ *
+ * ## Summary
+ * 构造两个共享 deopt id 与 source id、但 resumeId 分别为 701 和 702 的状态记录，确认 builder 拒绝不唯一的 deopt 身份，报告 STATE_MAP_INVALID 且不发布 map。
+ *
+ * ## Returns
+ * 本测试无 C 返回值；断言通过时正常结束。Unity 断言失败只退出当前 case，之后测试 harness 仍运行 teardown 与其余 main 派发。
+ *
+ * ## Constraints and lifecycle
+ * 断言针对重复 id/source 的这一组矛盾 resume 记录；不测试 map 已存在时的失败保留或其他重复形式。测试通过 helper 创建函数后扩展 deoptStates 数组，并在正常路径释放函数；断言提前失败时局部释放语句会被跳过。
+ *
+ * ## References
+ * 输入来自 `function_with_deopt_boundary`，重复项在本函数中复制并修改；Unity main 在本文件 1391 行注册，接口调用及诊断断言位于本函数内。
+ */
+
+/**
+ * @fn void test_state_map_builder_records_boundaries_and_is_liveness_conservative(void)
+ *
+ * ## Summary
+ * 以 ALLOC 与 DEBUG_POLL 边界构造 map，检查指定 source/resume 的 before/after entry、token/hash/generation 元数据，并确认 alloc-after 的 liveValues 与 rootValues 数量各为 1、live value pool 中的 ID 为 1，且死借用 value 2 不进入 valuePool。
+ *
+ * ## Returns
+ * 本测试无 C 返回值；所有 Unity 断言通过时正常结束。断言失败由 Unity 结束当前 case 后继续 harness 流程，而非立即终止整个进程。
+ *
+ * ## Constraints and lifecycle
+ * 覆盖仅限 `function_with_alloc_debug_boundary` 生成的两个边界和列明的 liveness/root 断言；测试没有检查 rootPool 中具体的 value ID，也不据此推断所有 phase、异常/挂起路径或所有 owner state 的覆盖。函数与其 map 在正常路径由 Core FreeFunction 释放；提前断言失败会跳过本函数末尾的释放语句。
+ *
+ * ## References
+ * 测试图由 `function_with_alloc_debug_boundary` 构造；main 在本文件 1389 行注册该 case。map 检查使用 `ZrCore_ExecIr_StateMapFind` 与 map pools，生产接口为 `ZrParser_ExecIr_BuildStateMaps`。
+ */
+
+/**
+ * @fn void test_state_map_builder_rejects_unknown_value_enums(void)
+ *
+ * ## Summary
+ * 在同一 ALLOC/DEBUG_POLL fixture 上分别把 value ownership 与 nullability 改为无效枚举值，确认两种输入都返回失败、报告 INVALID_VALUE，并且不关联 state map。
+ *
+ * ## Returns
+ * 本测试无 C 返回值；断言通过时正常结束。Unity 断言失败仅跳出当前 case，测试进程随后继续 teardown 与其他用例。
+ *
+ * ## Constraints and lifecycle
+ * 第二轮先恢复有效的 GC ownership，再单独破坏 nullability；测试只覆盖这两个 -1 枚举输入，不覆盖其他畸形 value 字段。函数在正常路径释放；如果断言提前失败，局部 Core FreeFunction 不会执行。
+ *
+ * ## References
+ * 测试数据来自 `function_with_alloc_debug_boundary`；Unity main 在本文件 1392 行注册，builder 与 INVALID_VALUE 断言位于本函数。
+ */
+
+/**
+ * @fn void test_state_map_builder_preserves_existing_map_on_verification_failure(void)
+ *
+ * ## Summary
+ * 先成功构建一个 map，再把入口 block 的 instructionRange.start 改为 UINT32_MAX，确认结构验证失败时诊断为 INVALID_BLOCK，旧 map 指针和 entryCount 均保持原值。
+ *
+ * ## Returns
+ * 本测试无 C 返回值；断言通过时正常结束。Unity 断言失败只结束当前 case，之后 harness 继续运行 teardown 与剩余用例。
+ *
+ * ## Constraints and lifecycle
+ * 本用例只证明 Core verification 早期失败时 map 指针与 entryCount 的保留，不证明 builder 分析、pool 扩容或最终 map 分配失败路径，也不逐字段比较旧 map。局部 function 在正常路径释放；断言提前失败会跳过末尾释放语句。
+ *
+ * ## References
+ * 图由 `function_with_alloc_debug_boundary` 构造；main 在本文件 1393 行注册本 case；被测调用及 INVALID_BLOCK、旧指针和计数断言位于本函数。
+ */
