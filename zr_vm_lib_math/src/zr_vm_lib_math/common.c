@@ -1,12 +1,12 @@
 //
-// Shared helpers for zr.math split implementation.
+// `zr.math` shared value/field helpers, object factories, SIMD dot product and Tensor storage operations.
 //
 
 #include "zr_vm_lib_math/math_common.h"
 
 #include <stdio.h>
 
-/* 在编译期选择可用指令集；调用方仍只依赖点积及余数处理这一数值契约。 */
+/* 配置块：编译期优先选择 AVX2、SSE2、再选 AArch64 NEON；无可用宏时 Dot 回退标量循环，向量分支另处理尾项。 */
 #if defined(__AVX2__)
 #define ZR_VM_LIB_MATH_USE_AVX2 1
 #include <immintrin.h>
@@ -18,7 +18,7 @@
 #include <arm_neon.h>
 #endif
 
-/* 命名方法和 meta 运算需要创建新对象，字段顺序与各 type descriptor 保持一致。 */
+/* Shared by the fixed-layout Math object wrappers below. */
 static SZrObject *zr_math_make_object_with_fields(SZrState *state,
                                                   const TZrChar *typeName,
                                                   const TZrChar *const *fieldNames,
@@ -30,14 +30,14 @@ static SZrObject *zr_math_make_object_with_fields(SZrState *state,
         return ZR_NULL;
     }
     for (index = 0; index < fieldCount; index++) {
-        ZrMath_WriteFloatField(state, object, fieldNames[index], fieldValues[index]);
+        ZrMath_WriteFloatField(state, object, fieldNames[index], fieldValues[index]); /* setter无状态返回；一次字段失败不打断循环。 */
     }
     return object;
 }
 
 TZrFloat64 ZrMath_AbsFloat(TZrFloat64 value) {
-    /* TODO: -0.0 < 0.0 为假，此写法会保留负零；核对 VM 中负零的可观测性及
-     * math.abs 是否要求与 fabs 一致，再决定是否属于公开契约缺陷。 */
+    /* TODO: -0.0 < 0.0 为假，当前会保留负零；从 math.abs 对负零的公开行为和测试入口
+     * 核对是否需与 fabs 一致。 */
     return value < 0.0 ? -value : value;
 }
 
@@ -133,8 +133,8 @@ TZrBool ZrMath_NumberFromValue(const SZrTypeValue *value, TZrFloat64 *outValue) 
 }
 
 TZrBool ZrMath_IntFromValue(const SZrTypeValue *value, TZrInt64 *outValue) {
-    /* TODO: Tensor shape/index 会走此处；核查非有限、越界浮点和 uint64 大值转换为
-     * int64 的平台语义，避免非法维度在转换后参与长度计算。 */
+    /* BUG: Tensor shape/index 的有限 1e300 可达浮点转 int64 并触发 C 未定义行为；GetStorage 也以本 helper 读取 rank/size，公开写入策略另待核。 */
+    /* TODO: uint64 大于 INT64_MAX 的转换由 C 实现定义；核对 shape/index 及公开 rank/size 的整数范围与写入约束。 */
     if (value == ZR_NULL || outValue == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -153,7 +153,7 @@ TZrBool ZrMath_IntFromValue(const SZrTypeValue *value, TZrInt64 *outValue) {
             return ZR_TRUE;
         case ZR_VALUE_TYPE_FLOAT:
         case ZR_VALUE_TYPE_DOUBLE:
-            *outValue = (TZrInt64)value->value.nativeObject.nativeDouble;
+            *outValue = (TZrInt64)value->value.nativeObject.nativeDouble; /* BUG: 超出 int64 可表示范围的浮点转换为未定义行为。 */
             return ZR_TRUE;
         default:
             return ZR_FALSE;
@@ -167,20 +167,20 @@ TZrBool ZrMath_ReadFloatField(SZrState *state, SZrObject *object, const TZrChar 
 void ZrMath_WriteFloatField(SZrState *state, SZrObject *object, const TZrChar *fieldName, TZrFloat64 value) {
     SZrTypeValue fieldValue;
     ZrLib_Value_SetFloat(state, &fieldValue, value);
-    ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue);
+    ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue); /* BUG: setter 无状态返回；软失败不阻止工厂报告成功。 */
 }
 
 void ZrMath_WriteIntField(SZrState *state, SZrObject *object, const TZrChar *fieldName, TZrInt64 value) {
     SZrTypeValue fieldValue;
     ZrLib_Value_SetInt(state, &fieldValue, value);
-    ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue);
+    ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue); /* BUG: 新 Tensor 第四个 size 字段扩桶软失败时此 void setter 不报告状态，Populate 仍返回 true。 */
 }
 
 void ZrMath_WriteBoolField(SZrState *state, SZrObject *object, const TZrChar *fieldName, TZrBool value) {
-    /* TODO: 全仓只找到此定义及声明，确认布尔字段 helper 是否仍属当前 math 契约。 */
+    /* TODO: 全仓只有声明和定义；核对未来 callback/注册表是否仍需要布尔字段写入 helper。 */
     SZrTypeValue fieldValue;
     ZrLib_Value_SetBool(state, &fieldValue, value);
-    ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue);
+    ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue); /* 同一 void setter 失败边界。 */
 }
 
 SZrObject *ZrMath_SelfObject(ZrLibCallContext *context) {
@@ -253,42 +253,42 @@ TZrBool ZrMath_ConstructFloatObject(ZrLibCallContext *context,
 }
 
 SZrObject *ZrMath_MakeVector2(SZrState *state, TZrFloat64 x, TZrFloat64 y) {
-    static const TZrChar *const kFields[] = {"x", "y"};
+    static const TZrChar *const kFields[] = {"x", "y"}; /* 静态字段映射配置；次序与参数 values 配对。 */
     const TZrFloat64 values[] = {x, y};
     return zr_math_make_object_with_fields(state, "Vector2", kFields, values, ZR_ARRAY_COUNT(kFields));
 }
 
 SZrObject *ZrMath_MakeVector3(SZrState *state, TZrFloat64 x, TZrFloat64 y, TZrFloat64 z) {
-    static const TZrChar *const kFields[] = {"x", "y", "z"};
+    static const TZrChar *const kFields[] = {"x", "y", "z"}; /* 静态字段映射配置；次序与参数 values 配对。 */
     const TZrFloat64 values[] = {x, y, z};
     return zr_math_make_object_with_fields(state, "Vector3", kFields, values, ZR_ARRAY_COUNT(kFields));
 }
 
 SZrObject *ZrMath_MakeVector4(SZrState *state, TZrFloat64 x, TZrFloat64 y, TZrFloat64 z, TZrFloat64 w) {
-    static const TZrChar *const kFields[] = {"x", "y", "z", "w"};
+    static const TZrChar *const kFields[] = {"x", "y", "z", "w"}; /* 静态字段映射配置；次序与参数 values 配对。 */
     const TZrFloat64 values[] = {x, y, z, w};
     return zr_math_make_object_with_fields(state, "Vector4", kFields, values, ZR_ARRAY_COUNT(kFields));
 }
 
 SZrObject *ZrMath_MakeQuaternion(SZrState *state, TZrFloat64 x, TZrFloat64 y, TZrFloat64 z, TZrFloat64 w) {
-    static const TZrChar *const kFields[] = {"x", "y", "z", "w"};
+    static const TZrChar *const kFields[] = {"x", "y", "z", "w"}; /* 静态字段映射配置；次序与参数 values 配对。 */
     const TZrFloat64 values[] = {x, y, z, w};
     return zr_math_make_object_with_fields(state, "Quaternion", kFields, values, ZR_ARRAY_COUNT(kFields));
 }
 
 SZrObject *ZrMath_MakeComplex(SZrState *state, TZrFloat64 real, TZrFloat64 imag) {
-    static const TZrChar *const kFields[] = {"real", "imag"};
+    static const TZrChar *const kFields[] = {"real", "imag"}; /* 静态字段映射配置；次序与参数 values 配对。 */
     const TZrFloat64 values[] = {real, imag};
     return zr_math_make_object_with_fields(state, "Complex", kFields, values, ZR_ARRAY_COUNT(kFields));
 }
 
 SZrObject *ZrMath_MakeMatrix3x3(SZrState *state, const TZrFloat64 *values) {
-    static const TZrChar *const kFields[] = {"m00","m01","m02","m10","m11","m12","m20","m21","m22"};
+    static const TZrChar *const kFields[] = {"m00","m01","m02","m10","m11","m12","m20","m21","m22"}; /* row-major 静态字段映射，与 values 的九项顺序一致。 */
     return zr_math_make_object_with_fields(state, "Matrix3x3", kFields, values, ZR_ARRAY_COUNT(kFields));
 }
 
 SZrObject *ZrMath_MakeMatrix4x4(SZrState *state, const TZrFloat64 *values) {
-    static const TZrChar *const kFields[] = {
+    static const TZrChar *const kFields[] = { /* row-major 静态字段映射，与 values 的十六项顺序一致。 */
             "m00","m01","m02","m03","m10","m11","m12","m13","m20","m21","m22","m23","m30","m31","m32","m33"
     };
     return zr_math_make_object_with_fields(state, "Matrix4x4", kFields, values, ZR_ARRAY_COUNT(kFields));
@@ -325,7 +325,7 @@ TZrBool ZrMath_ReadComplexObject(SZrState *state, SZrObject *object, ZrMathCompl
 }
 
 TZrBool ZrMath_ReadMatrix3Object(SZrState *state, SZrObject *object, TZrFloat64 *outValues) {
-    static const TZrChar *const kFields[] = {"m00","m01","m02","m10","m11","m12","m20","m21","m22"};
+    static const TZrChar *const kFields[] = {"m00","m01","m02","m10","m11","m12","m20","m21","m22"}; /* row-major 读取映射；按字段顺序填入 outValues。 */
     TZrSize index;
     for (index = 0; outValues != ZR_NULL && index < ZR_ARRAY_COUNT(kFields); index++) {
         if (!ZrMath_ReadFloatField(state, object, kFields[index], &outValues[index])) {
@@ -336,7 +336,7 @@ TZrBool ZrMath_ReadMatrix3Object(SZrState *state, SZrObject *object, TZrFloat64 
 }
 
 TZrBool ZrMath_ReadMatrix4Object(SZrState *state, SZrObject *object, TZrFloat64 *outValues) {
-    static const TZrChar *const kFields[] = {
+    static const TZrChar *const kFields[] = { /* row-major 读取映射；按字段顺序填入 outValues。 */
             "m00","m01","m02","m03","m10","m11","m12","m13","m20","m21","m22","m23","m30","m31","m32","m33"
     };
     TZrSize index;
@@ -375,8 +375,8 @@ TZrInt64 ZrMath_TensorTotalSize(SZrState *state, SZrObject *shapeArray) {
         if (!ZrMath_ArrayReadInt(state, shapeArray, index, &dimension) || dimension <= 0) {
             return -1;
         }
-        /* BUG: ReadInt 会把 2.9 截断为 2；Tensor([2.9], [1,2]) 因而通过长度校验，
-         * 但对外 shape 字段仍为 2.9，维度契约与实际布局不一致。 */
+        /* TODO: Float shape 按 ArrayReadInt 截断而原数组仍保留小数；核实 shape 是否承诺仅整数及兼容现有构造语义。
+         * 当前已定义截断行为，不能仅凭存储表示差异推定需要拒绝小数。 */
         total *= dimension;
     }
     return total;
@@ -447,7 +447,7 @@ TZrBool ZrMath_TensorPopulate(SZrState *state, SZrObject *tensor, SZrObject *sha
     }
 
     ZrMath_WriteIntField(state, tensor, "rank", (TZrInt64)ZrLib_Array_Length(shapeArray));
-    ZrMath_WriteIntField(state, tensor, "size", totalSize);
+    ZrMath_WriteIntField(state, tensor, "size", totalSize); /* BUG: 初始空 map 的第四次插入；仅此 HASH_BUCKET 扩容返回 NULL、其余步骤成功时 size 缺失却继续报告成功。 */
     return ZR_TRUE;
 }
 
@@ -465,8 +465,8 @@ SZrObject *ZrMath_TensorMake(SZrState *state, SZrObject *shapeArray, SZrObject *
 }
 
 TZrBool ZrMath_TensorShapeEquals(SZrState *state, SZrObject *lhsShape, SZrObject *rhsShape) {
-    /* BUG: 浮点维度沿 ArrayReadInt 截断后比较；[1.1] 和 [1.9] 会被 Add/Sub
-     * 判为同形状，这两种 shape 都可用单元素 data 通过当前构造器。 */
+    /* TODO: 浮点维度沿 ArrayReadInt 截断后比较；例如 [1.1] 与 [1.9] 会判同形。
+     * 先核查 shape 的公开整数契约与既有兼容要求，再决定是否拒绝小数。 */
     TZrSize index;
     TZrSize count = ZrLib_Array_Length(lhsShape);
     if (count != ZrLib_Array_Length(rhsShape)) {
@@ -486,7 +486,7 @@ TZrBool ZrMath_TensorShapeEquals(SZrState *state, SZrObject *lhsShape, SZrObject
 
 TZrBool ZrMath_TensorComputeOffset(SZrState *state, SZrObject *shape, SZrObject *indices, TZrSize *outOffset) {
     /* 逆序累积 stride，保证 get/set 与 matmul 使用相同的 row-major 布局。 */
-    /* BUG: ArrayReadInt 对浮点索引截断；get([0.9]) 会访问第 0 项而非拒绝非整数索引。 */
+    /* TODO: ArrayReadInt 对浮点索引截断；核实 Get/Set 接口是否应只接受整数位置，而非保留数值截断行为。 */
     TZrSize rank = ZrLib_Array_Length(shape);
     TZrSize stride = 1;
     TZrSize offset = 0;
@@ -515,6 +515,32 @@ TZrBool ZrMath_MakeStringResult(SZrState *state, SZrTypeValue *result, const TZr
     va_start(arguments, format);
     vsnprintf(buffer, sizeof(buffer), format, arguments);
     va_end(arguments);
-    ZrLib_Value_SetString(state, result, buffer);
+    ZrLib_Value_SetString(state, result, buffer); /* BUG: 短串缓存桶扩容软失败不写 result；本 helper 仍返回 ZR_TRUE。 */
     return ZR_TRUE;
 }
+
+/**
+ * @fn static SZrObject *zr_math_make_object_with_fields(SZrState *state, const TZrChar *typeName, const TZrChar *const *fieldNames, const TZrFloat64 *fieldValues, TZrSize fieldCount)
+ * ## Summary
+ * 按类型名创建 Math 实例，并按并行字段表尝试写入七个 Make wrapper 提供的数值快照。
+ * 它集中处理对象创建与字段发布；各 wrapper 负责确定类型、字段顺序和结果含义。
+ *
+ * ## Parameters
+ * @param[in] state 当前 VM state；仅在同步 native callback/factory 调用期间借用。
+ * @param[in] typeName 已注册 Math 类型名，供 VM 创建其实例。
+ * @param[in] fieldNames 字段名数组；必须至少有 fieldCount 项，顺序须与 fieldValues 对应。
+ * @param[in] fieldValues 本次调用的浮点快照；必须至少有 fieldCount 项，不转移 VM 所有权。
+ * @param[in] fieldCount 要尝试写入的字段数；由每个 wrapper 的固定布局决定。
+ *
+ * ## Returns
+ * @return 创建失败时为 ZR_NULL；否则返回 VM 管理的新对象。非空只证明实例创建成功，不能证明每个字段写入成功。
+ *
+ * ## Constraints and lifecycle
+ * 实例创建成功后按数组顺序调用 void WriteFloatField；单次字段 setter 的软失败不会中断循环，也不会在这里传播给调用者。
+ * 受支持的 allocator 若仅在 HASH_BUCKET 扩容时返回 NULL 并保留旧桶，第四、七或第十三次插入可漏掉该字段，wrapper 仍可能交付缺字段对象；数组和快照只在本次调用中有效。
+ * VM 实例由 VM 管理；本 helper 不释放对象，也不提供跨线程或异步保存这些参数的保证。
+ *
+ * ## References
+ * 七个本地 wrapper 为 ZrMath_MakeVector2/3/4、ZrMath_MakeQuaternion、ZrMath_MakeComplex、ZrMath_MakeMatrix3x3 和 ZrMath_MakeMatrix4x4；字段写入由 ZrMath_WriteFloatField 完成。
+ * 分配与缺字段路径见 docs/code-review/batches/20261014-math-common-contracts.md。
+ */

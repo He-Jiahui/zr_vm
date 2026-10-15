@@ -232,9 +232,9 @@ let product = tensor.matmul(transposed);
 | `mulScalar` | 每元素乘一个 scalar。 |
 | `toArray` | 返回数据副本，不暴露内部 storage。 |
 
-实现会检查 shape 各维为正、data 长度、indices 数量和索引范围，以及 matmul 的二维尺寸。
-当前整数读取会把浮点维度与索引截断，构造器也未逐项验证 data 是否为数值；因此调用方
-应传整数维度、整数索引和数值数据。负索引会被拒绝。
+实现逐项拒绝非正维度并检查普通尺寸匹配、indices 数量和索引范围；shape乘积未检查有符号溢出。
+BUG: shape/index 中有限 1e300 可沿 common.c:356 到 :156 触发浮点转 int64 的 C 未定义行为；两个 3037000500 维度可在 :380 触发有符号乘法溢出。
+可表示浮点维度/索引的小数部分当前被截去，是否拒绝小数仍是 TODO；调用者应传可表示的整数维度/索引和数值数据。
 
 ## 计算和对象分配
 
@@ -316,7 +316,7 @@ Vector2 的 constructor 取两个数值实参；具名 method 与 meta 的固定
 
 **BUG:** `toString` 格式结果为未驻留短串且 short-intern 哈希表需要扩容时，HASH_BUCKET raw allocation 失败可使字符串创建返回 null 而没有 VM 异常；`SetString` 不写槽，helper 仍返回 true，dispatcher 交付预置 null。完整链见 `common.c:512-519`、`string.c:802-808,958-974`、`hash_set.h:525-537`、`hash_set.c:170-181`、`memory.h:19-22`（raw allocator 原样返回，不设置 VM 异常）及 `native_binding_dispatch.c:362,1303-1316`。该触发条件不等同于所有内存不足，也未做故障注入。
 
-**TODO:** 对照 `math_common.h:20-23,54-55` 核查将 Vector2 struct 地址当作连续 `double` 数组的对象模型与布局前提；依赖不止 `dot`，还包含 length、lengthSquared、normalized 和 compare。compare 当前按平方长度返回 -1/0/1；NaN 或双方平方溢出使两个严格比较均为假而落到 0，其 unordered 策略须结合 VM compare 消费规则和具体边界断言继续核实。
+**BUG:** Vector2 回调将快照地址传给 Dot(count=2)，在 AVX2 分支跳过四项向量循环后以 common.c:62 读取下标1，纯标量 :102 也越出首成员 double 对象（C11 N1570 §6.5.6p7–8）；SSE2/NEON 的单次 intrinsic load 对象范围仍 TODO，见 math_common.h:51、134、135。该结论未声称默认构建执行过边界输入。**TODO:** compare 对 NaN 或双方平方和溢出均落入0，其 unordered 策略须沿实际VM比较/排序消费者核查。
 
 `tests/fixtures/projects/native_numeric_pipeline/src/signal.zr:8` 确实构造并归一化 Vector2，但下游 checksum 只消费复数 magnitude；现有项目断言不验证返回的 vx/vy。provider 测试核查模块注册契约，不构成 Vector2 数值、字段 pin OOM 或短串分配失败的执行证据。完整逐单元审查与结论见 [Vector2 台账](../../code-review/coverage/zr_vm_lib_math_vector2.tsv)。
 
@@ -331,7 +331,7 @@ Vector3 constructor 元数为 3，命名方法 length/lengthSquared/normalized �
 
 **BUG:** 有限 `(1e200,0,0)` 的平方和中间溢出，Length 返回 Inf，Normalized 返回零向量，到零点的 Distance 返回 Inf，而相应长度与单位向量本可表示。Dot 的有限 `(1e200,1e200,0)` 与 `(1e200,-1e200,0)` 乘积先成为正负 Inf，累加为 NaN，数学结果为零。Cross 的 `(0,1e200,1e200)` 与自身运算产生 Inf-Inf，数学结果为零向量。Lerp 的 x 端点 `1e308/-1e308`、factor `.5` 先使差分溢出而返回 -Inf，数学中点为零；factor 本身不夹紧。上述均由合法参数与表达式闭合静态证据，未执行极值用例。LengthSquared 的平方值本身不可表示与这些可表示结果的中间溢出分开处理。
 
-**TODO:** Length、LengthSquared、Normalized、Dot 和 MetaCompare 把 ZrMathVector3 地址当作连续 TZrFloat64 输入；需从 math_common.h 的结构声明、ZrMath_Dot 的 count=3 索引与目标 C 对象模型核实布局和跨成员指针运算契约。Distance 使用自己的三元素数组，不归入该 cast 疑点。MetaCompare 对 dl>dr 写 1、dl<dr 写 -1、其余写 0；NaN 或双方平方和均为 Inf 时也写 0，不能据此推断对象相等，排序/compare 消费协议和边界断言仍待核。
+**BUG:** Vector3 的 Length、LengthSquared、Normalized、Dot 和 MetaCompare 传快照地址和count=3，标量与AVX2/SSE2/NEON尾项均读取下标2，越出首成员标量对象；common.c:62、79、94、102 与 math_common.h:134 按 C11 规则闭合证据。Distance使用真正的三元素数组，不能归入该cast。**TODO:** MetaCompare在NaN/双方Inf时写0的排序语义与消费规则仍待核，不能用值0推断对象相等。
 
 **BUG:** toString 先在 512 字节栈窗口格式化，VM 字符串创建不保留该窗口。仅当格式文本尚未驻留且属于短串、插入触发 HASH_BUCKET rehash 而宿主 allocator 扩容失败时，String_Create 可不抛异常地返回 NULL，SetStringObject 不写结果槽，MakeStringResult 仍返回 true；dispatcher 最后交付预置 null。该具体分支和对象创建时抛出的硬失败分别记录，没有 allocator 故障注入信用。
 
@@ -352,7 +352,7 @@ Vector4 constructor 元数为 4；length/lengthSquared/normalized 为 0，dot/di
 
 **BUG:** 有限 `(1e200,0,0,0)` 的平方和中间溢出，使 Length 返回 Inf、Normalized 返回零向量，到零点的 Distance 返回 Inf，而相应长度和单位向量本可表示。Dot 的 `(1e200,1e200,0,0)` 与 `(1e200,-1e200,0,0)` 先生成 +Inf/-Inf，累加为 NaN，数学点积为零。Lerp 的 x 端点 `1e308/-1e308`、factor `.5` 先使差分溢出，数学中点为零却返回 -Inf；factor 不夹紧。LengthSquared 的平方值本身不可表示与这些有限结果的中间溢出分别记录。本批证据为合法输入和实际表达式的静态闭合，未执行极值样例。
 
-**TODO:** Length、LengthSquared、Normalized、Dot 和 MetaCompare 把 ZrMathVector4 地址转作连续 double 输入；需沿 `math_common.h` 的结构声明及 `ZrMath_Dot(count=4)` 核实对象模型和跨成员指针运算契约。Distance 使用自己的 d[4] 数组，不归入该 cast。MetaCompare 对两次严格比较均为假时写 0：不同有限幅值 `(1e200,0,0,0)` 与 `(2e200,0,0,0)` 的平方都为 Inf，NaN 也走同一分支；是否符合比较契约需追踪实际 VM compare/排序消费者及 unordered 策略，不能仅凭返回 0 推断对象相等或直接升级 BUG。
+**BUG:** Vector4 的相关回调传快照地址和count=4；SSE2/NEON第二轮在common.c:71、72、87、88计算首成员指针+2，纯标量:102也越界。**TODO:** AVX2单次intrinsic load的对象范围仍待核。Distance使用真正d[4]不属于cast问题；MetaCompare对NaN/双方平方为Inf落入0的比较策略仍须追踪VM消费者，无当前backend边界运行信用。
 
 **BUG:** toString 使用 512 字节栈格式窗口，VM 字符串创建不保留该栈地址。调用链从 `common.c:512-519` 经 `Value_SetString`（`native_binding_dispatch.c:1303-1307`）进入 `native_binding_support.c:320-324` 的 native_binding_create_string，再到 `string.c:958-974` 的 CreateTryHitCache。仅当格式文本为未驻留短串，缓存 miss 后进入 Create/short interning，并且驻留表所需的 HASH_BUCKET rehash 宿主分配失败时，创建才不抛 VM 异常地返回 NULL；SetStringObject 不覆写结果槽，MakeStringResult 仍 true，成功派发交付预置 null。失败与回写证据见 `string.c:802-808`、`hash_set.h:525-537`、`hash_set.c:170-181`、`memory.h:14-22`（raw allocator 不设置 VM 异常）和 `native_binding_dispatch.c:362,1311-1316,673`。不泛化为所有分配失败，无故障注入执行信用。
 
@@ -433,3 +433,13 @@ GetModuleDescriptor 惰性初始化并借出同一静态描述符，不注册到
 共享发现符号 ZrVm_GetNativeModule_v1 只在共享配置编译，由加载器按字符串查符号后经函数指针调用；它借出描述符，不自行注册或管理库句柄。加载器随后核对 ABI 与请求模块名。静态 Debug 构建不提供共享发现分支的执行信用。
 
 完整定义、41 处实际 checkout 直接 Register 调用、间接插件入口、所有权和测试边界见 [模块入口台账](../../code-review/coverage/zr_vm_lib_math_module.tsv) 与 [批次记录](../../code-review/batches/20261015-math-module-contracts.md)。现有 sqrt 转发测试只断言非空结果与标签；provider 的官方模块清单不等于三组计数或插件加载断言。
+
+## Math 公共辅助层与 Tensor 存储边界
+
+公共helper只在当前同步VM调用中借用state、receiver、数组和结果槽；按值快照不拥有VM资源。直接参数、字段和元素读取失败的普通false与VM非局部异常分别处理。WriteFloatField的直接消费者为固定分量构造器和七个对象工厂；Tensor使用WriteIntField发布rank/size。返回对象或true不能证明所有void字段写入成功。
+
+**BUG:** Tensor的公开数值元素预期见tensor.h:12。Populate仅检查data长度，Tensor([1], ["x"])仍可建立，sum/mean跳过非数值项后继续返回数值。新Tensor空map容量4/阈值3，按shape、__data、rank、size写入，若仅第四项size的HASH_BUCKET扩容返回NULL，其余步骤成功，void setter静默漏字段而Populate仍true，构造或factory可交付随后GetStorage无法读取的实例。这是静态闭合的单次软失败链，未故障注入。
+
+**TODO:** GetStorage在common.c:415还直接把公开rank/size转换为int64，只检查字段存在和标签，不重建shape/data/rank/size一致性；公开写入范围和缓存一致性政策须沿tensor_registry字段descriptor及VM成员写入规则核查，不能直接把所有修改输入都视为已证缺陷。
+
+MakeStringResult使用固定512字节格式窗口；过长输出截断及短串缓存软失败true/null是独立边界。长串缓存布局仍见共享TODO。最终118个公共辅助层单元及每条BUG/TODO完整定义、调用、契约和验证边界见[公共层审查记录](../../code-review/batches/20261014-math-common-contracts.md)及[台账](../../code-review/coverage/zr_vm_lib_math_common.tsv)。
