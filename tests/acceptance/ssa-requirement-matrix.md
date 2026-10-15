@@ -91,6 +91,32 @@ This supplies the zero-selection command boundary evidence. The 00.03 row
 stays `open`: this command ran no semantic fixture and did not bind the
 complete dirty-tree digest required for whole-row acceptance.
 
+### Finite 00.03 pure observation evidence (2026-10-15)
+
+The pure differential harness passed Windows x64 standalone compilation,
+linking and direct execution with Clang-cl 19.1.5 and MSVC 19.44.35229.0
+(VC toolset 14.44.35207, Windows SDK 10.0.26100.0). Each build compiled the
+test and existing support C as two real translation units. Both executable
+children (48216 and 4404) printed `ssa differential harness PASS` and exited
+naturally with code 0. All 12 recorded phases exited naturally with code 0,
+both streams drained, and zero warnings. The eight groups preserve the
+original four and add four groups with 17 negative injections; the new
+checks cover all six diagnostic fields and use synthetic local callbacks.
+
+The receipt is
+`E:/cargo-targets/zr_vm/reports/ssa-20261005-01a0fe2b/differential-harness-fields-receipt.json`,
+SHA256 `99CD9738DD342DC87F730A0CCD7A0B96A4C4D2E6F710118325E8B05873B880B2`.
+HEAD `619c9eebfe9ed9a3ed86b613b6fc6eb69981b4d3` and the selected three-file
+tracked diff SHA256
+`18C70E961D1FD773142169FA58A36B4354B3F089E1A3CA893F05361B5D3641BA`
+matched before and after; physical test/support C/H hashes and raw log routes
+are recorded in [the differential guide](../../docs/testing-and-validation/ssa-differential-validation.md#finite-pure-observation-validation-2026-10-15).
+This is not a complete dirty-tree digest. This run supplies no CTest, Linux,
+UBSan, real backend, VM, Oracle, Source/SourceExecute, Global initialization,
+network, or FFI execution evidence. The earlier zero-selection evidence is
+unchanged. `whole_leaf_accepted` and `real_backend_coverage_accepted` remain
+false, and the 00.03 row and all 47 release rows stay `open`.
+
 ### Whole-row requirements
 
 The focused validator requires every row to carry:

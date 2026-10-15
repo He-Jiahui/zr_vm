@@ -29,6 +29,10 @@ status: planned
 
 **Tech Stack：** C11、CMake、Unity/CTest；共享 ExecIR 与现有 ZR runtime。
 
+### 有限进展（2026-10-15）
+
+纯 observation 支架已完成 Windows x64 Clang-cl 19.1.5 与 MSVC 19.44.35229.0 的 standalone 双 TU 编译、链接和直接运行；两次运行均 PASS、退出 0，12 个实际阶段均自然终态、双流排空，warning 为 0。原 4 组保留，新增 4 组覆盖 17 项字段隔离及本地 callback 负注入，并核对全部 6 个诊断字段。收据 SHA256 为 `99CD9738DD342DC87F730A0CCD7A0B96A4C4D2E6F710118325E8B05873B880B2`，输入身份、平台和日志路径见[有限纯 observation 验证](../../../testing-and-validation/ssa-differential-validation.md#finite-pure-observation-validation-2026-10-15)。本次没有运行 CTest、Linux、UBSan 或真实后端，不取得 VM、Oracle、Source/SourceExecute、Global、network 或 FFI 信用；选定三文件 diff 不替代完整 dirty-tree digest。此项有限通过不勾选整叶任务，00.03 与 release matrix 保持 open；原 zero-selection 命令证据独立保留。
+
 ## 依赖与交付范围
 
 - 对应主计划：M0 验证基础；所有里程碑。
@@ -54,7 +58,7 @@ tests/CMakeLists.txt 已有 zr_vm_add_unity_test_target、共享 runtime harness
 
 ## 可逐项执行的重构任务
 
-- [ ] **1. 建立 baseline 清单** 已有失败、环境缺失、未实现后端分别记录；当前工作区不干净，记录快照而不覆盖或吸收其他修改。
+- [ ] **1. 建立 baseline 清单** 已有失败、环境缺失、未实现后端分别记录；在实际 checkout 记录 HEAD、Git diff 和文件 SHA256，不创建源码快照，不覆盖或吸收其他修改。
 
 - [ ] **2. 加入可复用断言** 记录 result type/bit pattern、exception type/source、外部写入、析构顺序、inline writeback；浮点默认按语义规则精确比较，fast-math 用许可下的专属 oracle。
 

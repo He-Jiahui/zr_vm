@@ -58,6 +58,55 @@ the sibling stdout/stderr logs retain the raw command output. This accepts the
 bound, so release-matrix acceptance remains open. The actual checkout and
 existing build tree were reused, with no source copy or compiler product.
 
+## Finite pure observation validation (2026-10-15)
+
+The current `tests/core/test_ssa_differential_harness.c` corpus passed two
+Windows x64 standalone builds and direct executable runs. Clang-cl 19.1.5
+and MSVC cl 19.44.35229.0 each compiled the test and
+`tests/harness/ssa_differential_support.c` as C11, linked, and ran the result.
+The imported toolset was VC 14.44.35207 with Windows SDK 10.0.26100.0.
+Both runs printed exactly `ssa differential harness PASS` and exited
+naturally with code 0: Clang child 48216 and MSVC child 4404. All 12 recorded
+phases exited naturally with code 0 and both streams drained; the strict
+compile/link output checks recorded zero warnings.
+
+The eight test groups retain the original four and add four groups containing
+17 negative injections: nine isolated scalar fields, shorter/longer valid
+event lists, four isolated event fields, and two local callback failures.
+The new comparison inputs are validated before comparison; all six diagnostic
+fields are checked, and equal observations and a valid callback retry must
+clear stale diagnostics. The malformed callback case deliberately tests
+runner rejection rather than semantic comparison.
+
+The receipt is
+`E:/cargo-targets/zr_vm/reports/ssa-20261005-01a0fe2b/differential-harness-fields-receipt.json`,
+SHA256 `99CD9738DD342DC87F730A0CCD7A0B96A4C4D2E6F710118325E8B05873B880B2`.
+Its sibling `differential-harness-fields-stdout.log` and
+`differential-harness-fields-stderr.log` retain the original bytes, including
+the strictly decoded MSVC CP936 showIncludes output. Controller 51532
+completed naturally with code 0 (unified session 55728, terminal `b46148`).
+The invoked helper SHA256 was
+`588FFFAEDF67E9D55838FD80532F955EF55ABBCCD8FB2015ED158D5212448CF7`.
+
+The observed HEAD remained `619c9eebfe9ed9a3ed86b613b6fc6eb69981b4d3`
+before and after execution. The selected tracked diff for the following three
+files also remained unchanged, SHA256
+`18C70E961D1FD773142169FA58A36B4354B3F089E1A3CA893F05361B5D3641BA`:
+
+| Input | SHA256 |
+| --- | --- |
+| `tests/core/test_ssa_differential_harness.c` | `55A2E8E74E9AE8216DC72AB1386E5F5D2707E0DB619FA88925B391AE7D6049FF` |
+| `tests/harness/ssa_differential_support.c` | `3D630A79A13B7C52B75ABC05CB84A4EF2D603080540381526BB56E3F9CDA8D3F` |
+| `tests/harness/ssa_differential_support.h` | `2FB70A6A3B2C8C586FC8C6837F60AE6DDCC5CDF99A9BA8F5E208ED1CAB584147` |
+
+This is focused evidence for pure observation comparison and synthetic local
+callbacks. This run did not invoke CTest, Linux, UBSan, a real backend, VM,
+Oracle, Source/SourceExecute, Global initialization, network, or FFI. The
+selected diff is not a complete dirty-tree digest. The receipt keeps
+`whole_leaf_accepted=false` and `real_backend_coverage_accepted=false`;
+00.03 and all 47 release rows remain open. The separate zero-selection
+CTest evidence above remains limited to its command boundary.
+
 ## Shared semantic observations
 
 `tests/harness/ssa_differential_support.[ch]` provides the first shared
@@ -79,7 +128,16 @@ reported actual backend mismatch or malformed observation also fails that gate.
 Failures remain sticky across subsequent recordings of the same backend.
 
 The focused `ssa_differential_harness` CTest exercises result bit-pattern,
-exception, event-order, unsupported-runner, and coverage failure paths.  The
+exception, event-order, unsupported-runner, and coverage failure paths.
+Its pure observation regression corpus also isolates 17 negative inputs:
+nine result/exception/effect fields, shorter and longer valid event lists,
+four fields of one event, and failing or malformed local fixture callbacks.
+Each comparison input remains valid, so the expected mismatch cannot be
+masked by malformed-input rejection. Diagnostics check all six fields,
+including the first mismatching event index and cleared sentinel fields;
+equal observations and a successful callback retry must clear old diagnostics.
+These callbacks populate observations locally and supply no real backend
+execution or native-coverage evidence. The
 same support API can later be connected to the existing runtime/reference
 harnesses as ExecIR, ExecBC, AOT, and JIT runners become available. The
 `ssa_oracle_parallel_edges` test now runs one verified, pointer-free function
