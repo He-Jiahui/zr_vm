@@ -1476,3 +1476,67 @@ int main(void) {
  * ## References
  * 图由 `function_with_alloc_debug_boundary` 构造；main 在本文件 1393 行注册本 case；被测调用及 INVALID_BLOCK、旧指针和计数断言位于本函数。
  */
+
+/**
+ * @fn void test_state_map_clone_copies_pools_and_lifecycle(void)
+ *
+ * ## Summary
+ * 从单条 AFTER_EFFECT/GC fixture 克隆一张 map，检查 generation、entry sourceId 与首个 value ID 相等，并确认 entries/valuePool 地址独立后可分别释放。
+ *
+ * ## Returns
+ * 本测试无 C 返回值；Unity 断言均通过时正常返回。断言失败只 longjmp 离开当前 case，runner 继续 teardown 与其余用例。
+ *
+ * ## Constraints and lifecycle
+ * 本用例只比较 entries 和 valuePool 指针及首个逻辑元素，没有逐项断言 rootPool/ownerStatePool 内容或地址；分别 Free 仅检查正常路径可完成释放，不增加对未断言字段的覆盖信用。source 与 clone 的局部资源在正常路径释放，提前失败可能跳过末尾释放。
+ *
+ * ## References
+ * fixture 和被测调用位于本文件 875–878 行；实际字段及地址断言位于 879–883 行；main 在 1375 行注册。
+ */
+
+/**
+ * @fn void test_state_map_clone_rejects_aliased_destination(void)
+ *
+ * ## Summary
+ * 把 source 记录浅拷贝到 destination 形成共享池别名，确认 Clone 拒绝该 pair，且调用方脱离别名后 source entry 仍可读。
+ *
+ * ## Returns
+ * 本测试无 C 返回值；Unity 断言均通过时正常返回。断言失败只退出当前 case，后续 teardown 和 Unity cases 仍继续。
+ *
+ * ## Constraints and lifecycle
+ * 用例覆盖 map 记录不同地址但池指针完全相同的情况。失败后通过清零 destination 防止两张记录重复释放同一池；只断言 source.entries 非空及首个 sourceId，不比较完整 destination 状态。source 在正常路径释放；断言提前失败可能跳过局部清理。
+ *
+ * ## References
+ * 浅拷贝、Clone 调用和 alias 分离位于本文件 894–898 行；source 断言与释放位于 899–901 行；main 在 1376 行注册。
+ */
+
+/**
+ * @fn void test_state_map_clone_rejects_interior_pool_alias(void)
+ *
+ * ## Summary
+ * 令 destination.valuePool 指向 source.valuePool 的容量内部槽，确认 Clone 以容量区间重叠拒绝此 cross-map interior alias。
+ *
+ * ## Returns
+ * 本测试无 C 返回值；Unity 断言均通过时正常返回。断言失败仅结束当前 case，runner 会继续其余流程。
+ *
+ * ## Constraints and lifecycle
+ * source 的 valuePool 扩至两个槽，destination 的 valuePool 从第二槽开始且 capacity 为一。Clone 后测试清除 destination 的借用指针以免误释放 source 内部地址，再检查 source 首值并释放 source；本例未逐字段快照 destination，也未覆盖其他池类型的 interior alias。断言早退可能跳过 detach/Free。
+ *
+ * ## References
+ * source 扩容和 destination interior 地址设置位于本文件 909–918 行，失败断言及脱离借用位于 920–924 行；main 在 1377 行注册。
+ */
+
+/**
+ * @fn void test_state_map_clone_rejects_overlapping_source_pools(void)
+ *
+ * ## Summary
+ * 人为令 source 的 rootPool 指向其 valuePool 的第二槽，确认同一 map 内部池区间重叠会令 Clone 拒绝输入。
+ *
+ * ## Returns
+ * 本测试无 C 返回值；Unity 断言均通过时正常返回。断言失败只退出当前 case，harness 随后继续 teardown 与剩余用例。
+ *
+ * ## Constraints and lifecycle
+ * destination 是初始化后的空 map；用例只断言 Clone 失败且 destination.entries 仍为空，不对目标其他字节做快照。由于故意制造的 source 不可直接安全释放，测试在 Free 前清除 rootPool alias 和相应计数/容量。正常路径释放 source；断言提前失败可能跳过 alias 修复和释放。
+ *
+ * ## References
+ * source 扩容、旧 root pool 释放与内部 alias 构造位于本文件 932–943 行；失败及最小 destination 断言、释放前修复位于 945–949 行；main 在 1378 行注册。
+ */

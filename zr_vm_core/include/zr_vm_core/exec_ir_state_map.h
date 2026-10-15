@@ -150,3 +150,61 @@ ZR_CORE_API TZrBool ZrCore_ExecIr_MaterializeState(
         SZrExecIrDiagnostic *diagnostic);
 
 #endif
+
+/**
+ * @fn void ZrCore_ExecIr_StateMapInit(SZrExecIrStateMap *map)
+ *
+ * ## Summary
+ * 将尚未拥有资源的 Core state-map 记录初始化为空值状态，供构造新 map 或准备一个新 Clone destination 时调用。
+ *
+ * ## Parameters
+ * @param[out] map 可为 NULL；非空时须指向可写 map 记录。
+ *
+ * ## Returns
+ * 无 C 返回值；非空调用通过清零整条记录交付空状态，NULL 调用无操作。
+ *
+ * ## Constraints and lifecycle
+ * 此接口不释放已有池，只能用于新鲜、零初始化或已释放记录。对仍拥有池的 map 调用会遗失池指针并泄漏资源。Core 不为同一 map 提供并发同步。
+ *
+ * ## References
+ * 实现位于 exec_ir_state_map_storage.c；function clone 的新记录初始化见 exec_ir.c 443 行，Clone 的临时候选初始化见实现 188 行。
+ */
+
+/**
+ * @fn void ZrCore_ExecIr_StateMapFree(SZrExecIrStateMap *map)
+ *
+ * ## Summary
+ * 释放 Core state-map 记录的 entries、value、root、owner-state 池并清零记录，用于销毁或回收 map 所有权。
+ *
+ * ## Parameters
+ * @param[in,out] map 可为 NULL；非空时须指向已初始化、可写记录，且每个非空池地址均可独立释放。
+ *
+ * ## Returns
+ * 无 C 返回值；完成后记录全零，可再次 Free。NULL 输入无操作。
+ *
+ * ## Constraints and lifecycle
+ * 调用方负责保证池指针有效且彼此独立；本接口不校验形状、分配来源或别名。Free 完成后旧池指针及其元素借用失效；map 记录本身继续有效且已清零。无内部锁。
+ *
+ * ## References
+ * 实现位于 exec_ir_state_map_storage.c；Core function 清理在 exec_ir.c 181–183 行，Clone 失败候选及旧 destination 的释放在实现 206、213 行。
+ */
+
+/**
+ * @fn TZrBool ZrCore_ExecIr_StateMapClone(const SZrExecIrStateMap *source, SZrExecIrStateMap *destination)
+ *
+ * ## Summary
+ * 深拷贝 Core state-map 的逻辑内容，供函数/投影复制等需要独立侧表所有权的调用方使用；不会共享四个池。
+ *
+ * ## Parameters
+ * @param[in] source 非空源 map；当其地址不同于 destination 时，存储形状须有效且池在调用期间保持可读。
+ * @param[in,out] destination 非空目标记录；同址路径不读取或释放池。地址不同于 source 时，目标须已初始化、现有池可独立释放，两个记录对象及源/目标池容量区间须互不重叠。
+ *
+ * ## Returns
+ * @return source 与 destination 是同一记录地址时直接返回 ZR_TRUE，且不校验、不分配、不修改。其他情况下仅当形状检查及四池复制全部成功才返回 ZR_TRUE；参数为空、形状无效、容量区间重叠或分配失败返回 ZR_FALSE。失败时源和目标保持不变。
+ *
+ * ## Constraints and lifecycle
+ * 以下资源、并发与替换约束适用于 source 与 destination 地址不同的路径。成功复制 functionToken、signatureHash、generation 和各池逻辑 count 个元素，destination 的容量变为对应 count；generation 不递增。所有复制在局部候选完成后才替换并释放旧 destination，失败候选由实现清理；成功时旧目标池的借用地址立即失效。接口按容量检查池区间，但不验证 map 的语义内容，也不检查记录对象重叠；不同地址的 source/destination 记录本身必须互不重叠。调用期间 source 记录及池不得被并发修改或释放；destination 须由调用方独占写入和释放，旧目标池借用须停止使用；Core 不提供内部同步。
+ *
+ * ## References
+ * 实现位于 exec_ir_state_map_storage.c；直接生产调用包括 exec_ir.c 444 行与 exec_ir_lower_aot.c 74 行，fault-injection 测试由 tests/parser/test_ssa_state_map_clone_fault_cases.h 调用。
+ */
