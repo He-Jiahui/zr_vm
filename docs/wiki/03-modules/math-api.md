@@ -443,3 +443,12 @@ GetModuleDescriptor 惰性初始化并借出同一静态描述符，不注册到
 **TODO:** GetStorage在common.c:415还直接把公开rank/size转换为int64，只检查字段存在和标签，不重建shape/data/rank/size一致性；公开写入范围和缓存一致性政策须沿tensor_registry字段descriptor及VM成员写入规则核查，不能直接把所有修改输入都视为已证缺陷。
 
 MakeStringResult使用固定512字节格式窗口；过长输出截断及短串缓存软失败true/null是独立边界。长串缓存布局仍见共享TODO。最终118个公共辅助层单元及每条BUG/TODO完整定义、调用、契约和验证边界见[公共层审查记录](../../code-review/batches/20261014-math-common-contracts.md)及[台账](../../code-review/coverage/zr_vm_lib_math_common.tsv)。
+
+
+## Scalar 数值与嵌套 callback 边界
+
+Scalar 以25个模块函数 descriptor 进入 native派发，17个一元与4个二元实现由宏展开，另有 clamp/lerp/almostEqual/invokeCallback 四个显式实现。参数、context和result仅当前同步调用借用；ReadFloat接受整数/浮点并转换为double，缺参/错标签抛VM异常，不能笼统算作普通false。getter返回的只读静态表及函数地址仅在provider映像驻留时有效，调用者不释放或改写。
+
+**BUG:** invokeCallback元数据声明float，但CallValue成功后原样转发callable的实际VM标签，例如bool或字符串。**TODO:** NativePointer作为callable的非空、ABI与代码映像有效期须沿宿主SetNativePointer入口核查。clamp倒置边界、lerp中间差溢出和almostEqual跨量级误差策略仍有明确核查入口；本批仅记录，不改策略。
+
+现有module转发sqrt用例实际PASS，但只检查非空/标签。Rust sqrt数值断言、两个callback pipeline及LSP文档字符串入口本批均仅静态核查，后者不执行callback。94个唯一单元的调用、生命周期、无需另写注释的判断及验证限制见[Scalar台账](../../code-review/coverage/zr_vm_lib_math_scalar.tsv)与[审查批次](../../code-review/batches/20261015-math-scalar-contracts.md)。

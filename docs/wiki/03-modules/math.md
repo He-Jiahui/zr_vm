@@ -82,7 +82,7 @@ descriptor 签名如下；所有参数按值传递，除 `almostEqual` 外返回
 | `sign` | `sign(value: float): float` | 符号值 |
 | `degrees` / `radians` | 各接收一个 `float`，返回 `float` | 角度转换 |
 | `almostEqual` | `almostEqual(lhs: float, rhs: float, epsilon?: float): bool` | 仅比较绝对误差 `abs(lhs-rhs) <= epsilon` |
-| `invokeCallback` | `invokeCallback(callback: function, value: float): float` | 通过 `ZrLibCallContext` 调用 ZR callable |
+| `invokeCallback` | `invokeCallback(callback: function, value: float): float` | 元数据声明 float；运行时同步调用 callable 并原样转交其 VM 结果标签（见返回标签 BUG） |
 
 值类型：`Vector2`、`Vector3`、`Vector4`、`Quaternion`、`Complex`、`Matrix3x3`、
 `Matrix4x4`；引用类型：`Tensor`。
@@ -136,7 +136,7 @@ helper 保持一致。
 模块初始化按 scalar、vector、quaternion、complex、matrix、tensor registry 顺序收集
 function/type descriptors，并发布 `zr.math`、版本 `1.0.0`、native plugin ABI 和
 runtime ABI。当前收集 25 个模块函数、8 个类型和 13 条结构化提示，类型方法保留在类型 descriptor。注册入口委托 native registry 核查 ABI、能力和 provider 契约；
-`invokeCallback` 通过 `ZrLib_CallValue` 调用 ZR callable，并将调用结果交给 binding。
+`invokeCallback` 通过 `ZrLib_CallValue` 同步调用 callable，并原样交付实际 VM 结果标签。当前 descriptor、hint 和精简 JSON 声明 float，但 bool/字符串等成功结果不会据此转换；这是已静态证实的返回标签 BUG，见[Scalar审查批次](../../code-review/batches/20261015-math-scalar-contracts.md)。
 
 静态 descriptor 与嵌套表依赖模块映像，查询不注册到 VM；Register 的 false 可能发生在下层 Attach 之后。首次初始化需要宿主同步，扩展 registry 前须复核容量，具体借用、线程及失败边界见 [模块入口 API](math-api.md#模块描述符与宿主注册边界)。
 

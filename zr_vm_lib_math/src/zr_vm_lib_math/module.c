@@ -42,7 +42,7 @@ static ZrLibTypeHintDescriptor g_math_hints[ZR_MATH_MAX_HINTS]; /* 结构化提�
 static ZrLibModuleDescriptor g_math_module_descriptor; /* 静态零初始化保留未赋值的可选协议字段，不从某个 VM 借用状态。 */
 static TZrBool g_math_initialized = ZR_FALSE; /* 只表示串行初始化完成，不是原子发布或锁。 */
 
-/* JSON 是导出/反射附带的精简摘要；函数仅列 abs、invokeCallback，不能把它当作完整的可执行函数表或已证编译器输入。 */
+/* JSON 是导出/反射附带的精简摘要，仅列 abs、invokeCallback，不是完整可执行表或已证编译器输入。BUG: 摘要同样把 invokeCallback 标为 float，而 CallValue 成功透传 bool/字符串等实际VM标签；见 Scalar 契约批次。 */
 static const TZrChar *g_math_type_hints_json =
         "{\n"
         "  \"schema\": \"zr.native.hints/v1\",\n"
