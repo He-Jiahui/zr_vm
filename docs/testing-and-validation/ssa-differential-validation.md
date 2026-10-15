@@ -33,6 +33,33 @@ doc_type: testing-guide
 
 # SSA differential validation harness
 
+## Zero-selection command boundary (2026-10-15)
+
+The CTest command boundary has now been exercised with an intentionally
+unmatched expression, using the existing Root-owned configured tree at
+`E:/cargo-targets/zr_vm/build/ssa-20261011-01a0fe2b-source-returned-finalized-red-r2`.
+The actual command was
+`"E:/Visual Studio/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/ctest.exe" --test-dir "E:/cargo-targets/zr_vm/build/ssa-20261011-01a0fe2b-source-returned-finalized-red-r2" -R "^__zr_ssa_zero_match_01a0fe2b__$" --no-tests=error`.
+
+The child PID was 36144. It exited naturally with code 8, printed
+`No tests were found!!!`, and started no test executable. Both output streams
+were drained. The controller completed naturally with code 0 after accepting
+this exact negative outcome. The CTest executable, configured test file and
+permission config hashes matched before and after the command.
+
+The receipt is
+`E:/cargo-targets/zr_vm/reports/ssa-20261005-01a0fe2b/ssa-differential-zero-match-current-r1-receipt.json`,
+SHA256 `3147CF8FF522454FD0D47D2ED7D4038B5B9092A9F9692EFA2B82914DCD3154F1`;
+the sibling stdout/stderr logs retain the raw command output. This accepts the
+00.03 zero-selection CLI boundary only. It does not execute
+`ssa_differential_harness`, establish its semantic cases, or accept the whole
+00.03 row. The observed revision was
+`266f7e94fca78847f128544b52c809d0743608d2`; no complete dirty-tree digest was
+bound, so release-matrix acceptance remains open. The actual checkout and
+existing build tree were reused, with no source copy or compiler product.
+
+## Shared semantic observations
+
 `tests/harness/ssa_differential_support.[ch]` provides the first shared
 observation boundary for the SSA plan.  An observation records the exact
 result type/bit pattern, exception type/source, effect counters, backend

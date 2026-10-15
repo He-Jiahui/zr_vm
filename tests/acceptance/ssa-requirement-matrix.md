@@ -73,6 +73,26 @@ missing case, duplicate ID, or unbound evidence is a gate failure.
 
 ## Evidence contract
 
+### Finite 00.03 boundary evidence (2026-10-15)
+
+The intentionally empty CTest selection was executed against the existing
+Root-owned configured tree with `--no-tests=error`. The actual CTest child
+36144 exited naturally with code 8 and `No tests were found!!!`; no test
+executable ran, and both streams were drained. The controller accepted that
+specific negative result and exited naturally with code 0. Tool, configured
+test-file and permission-config hashes matched before and after execution.
+
+The receipt is
+`E:/cargo-targets/zr_vm/reports/ssa-20261005-01a0fe2b/ssa-differential-zero-match-current-r1-receipt.json`,
+SHA256 `3147CF8FF522454FD0D47D2ED7D4038B5B9092A9F9692EFA2B82914DCD3154F1`.
+The exact command and scope are recorded in
+[the differential guide](../../docs/testing-and-validation/ssa-differential-validation.md#zero-selection-command-boundary-2026-10-15).
+This supplies the zero-selection command boundary evidence. The 00.03 row
+stays `open`: this command ran no semantic fixture and did not bind the
+complete dirty-tree digest required for whole-row acceptance.
+
+### Whole-row requirements
+
 The focused validator requires every row to carry:
 
 - `revision`, a non-empty source revision identifier;
