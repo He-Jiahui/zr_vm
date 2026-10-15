@@ -1,8 +1,1 @@
 file	unit	kind	callers	intent	constraints	evidence	decision	reason
-zr_vm_lib_math/include/zr_vm_lib_math/conf.h	ZR_VM_LIB_MATH_API	macro	所有公开头/共享库构建	公开符号导出别名	遵循 ZR_API 平台可见性	zr_vm_lib_math/include/zr_vm_lib_math/conf.h:ZR_VM_LIB_MATH_API; 所有公开头/共享库构建	no-comment	常量名和消费位置足以解释其作用
-zr_vm_lib_math/include/zr_vm_lib_math/conf.h	ZR_MATH_PI	macro	module.c; scalar.c	圆周率常量	double 常量	zr_vm_lib_math/include/zr_vm_lib_math/conf.h:ZR_MATH_PI; module.c; scalar.c	no-comment	常量名和消费位置足以解释其作用
-zr_vm_lib_math/include/zr_vm_lib_math/conf.h	ZR_MATH_TAU	macro	module.c	完整周角常量	PI 的两倍	zr_vm_lib_math/include/zr_vm_lib_math/conf.h:ZR_MATH_TAU; module.c	no-comment	常量名和消费位置足以解释其作用
-zr_vm_lib_math/include/zr_vm_lib_math/conf.h	ZR_MATH_E	macro	module.c	自然常数	double 常量	zr_vm_lib_math/include/zr_vm_lib_math/conf.h:ZR_MATH_E; module.c	no-comment	常量名和消费位置足以解释其作用
-zr_vm_lib_math/include/zr_vm_lib_math/conf.h	ZR_MATH_EPSILON	macro	向量/矩阵/四元数/复数/scalar	近零与 almostEqual 默认阈值	固定绝对值 1e-9，不随量级缩放	zr_vm_lib_math/include/zr_vm_lib_math/conf.h:ZR_MATH_EPSILON; 向量/矩阵/四元数/复数/scalar	commented	源码说明跨类型阈值用途
-zr_vm_lib_math/include/zr_vm_lib_math/conf.h	ZR_MATH_FORMAT_BUFFER_LENGTH	macro	common.c:MakeStringResult	字符串化格式缓冲区长度	长输出可能被截断	zr_vm_lib_math/include/zr_vm_lib_math/conf.h:ZR_MATH_FORMAT_BUFFER_LENGTH; common.c:MakeStringResult	no-comment	常量名和消费位置足以解释其作用
-zr_vm_lib_math/CMakeLists.txt	zr_vm_lib_math build target	build	根 CMakeLists.txt; zr_declare_module	生成 math 模块并链接 core、library 与 Unix libm	仅非 Windows 查找 libm；公开头安装	zr_vm_lib_math/CMakeLists.txt:1-19; CMakeLists.txt	no-comment	构建规则本身清晰且无隐含模块约束
