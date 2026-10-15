@@ -116,8 +116,8 @@ system.console.printLine(text);
 | `FileStream` | `flush()` / `seek(offset, origin = "begin"): int` / `setLength(length)` | 刷新、定位、截断或扩展；`seek` 返回新的绝对位置；`origin` 为 `begin/current/end` |
 | `FileStream` | `close()` | 关闭句柄；重复调用幂等 |
 
-`FileStream` 同时实现 `IStreamReader` 和 `IStreamWriter`。读写模式不匹配、负长度（除
-`-1` 外）、越界 seek 和已关闭句柄都会抛出 `IOException`；不会返回 errno 整数哨兵。
+`FileStream` 同时实现 `IStreamReader` 和 `IStreamWriter`。读写模式不匹配、宿主 I/O 失败和已关闭句柄的保护路径
+会抛 `IOException`；读取的负 count 当前均按读至 EOF 处理（缺省 -1），seek 的失败由宿主 helper 报告。
 
 `File`、`Folder` 和 `FileStream` 的 I/O 操作会将相应失败转换为
 `zr.system.exception.IOException`。兼容的路径探测和 `changeCurrentDirectory` 通过布尔值
@@ -163,3 +163,10 @@ finalizer 作为兜底。`assembly` 在单次资源读取中关闭归档，`vm` 
 `loadedModules` 只遍历 global 的已加载实例缓存，按哈希桶顺序投影注册元数据；它不是全部可用 descriptor 的枚举。`state` 的六字段混合缓存计数、全局 GC 与当前线程栈/帧取样，分配可能推进 GC，不保证原子一致；gcMode 不能替代 stopGC 启停标志。`callModuleExport` 通过共享调用器解析并转发模块导出，允许其惰性导入路径；malloc 参数区只浅拷贝 VM 值，正常返回负责 free。
 
 void 字段写入失败、短串驻留失败后未初始化值读取、被忽略的数组追加失败分别记录为 BUG；GC 搬迁与局部异常恢复前的资源边界保留为 TODO。见 [system API 的 VM 契约](system-api.md#vm-快照与跨层调用契约) 和 [VM 逐单元台账](../../code-review/coverage/zr_vm_lib_system_vm.tsv)；一次 nested-native 类型比较不能扩大为快照、数值或故障路径保证。
+
+
+### FileStream 结果与生命周期边界
+
+position/length 是尽力写入的快照；初始查询失败被构造器忽略，读写或 seek 后的查询失败则报异常且不回滚已发生的 I/O。setLength 尝试把超出末尾的游标移回，但该次 seek 的失败被忽略。读取 count 按字节计，0 不消费输入，负值均读至 EOF。
+
+readText 的首 NUL 截断、指定短串 HASH_BUCKET 扩容软失败下的 true/null，以及隐藏 owner 的 ARRAY pin 扩容软失败丢失，均有静态闭合路径。File 一次性 readText 需临时关闭成功且回调正常返回；File 刷新的普通 false 被忽略，Stream readText 还需后续快照查询成功。终结器只有能取回 owner 时才能尝试关闭/释放原生记录，关闭失败后的宿主状态仍待平台核实。详见 [Stream 逐单元台账](../../code-review/coverage/zr_vm_lib_system_fs_stream.tsv) 与 [批次证据](../../code-review/batches/20261015-system-fs-stream-contracts.md)。

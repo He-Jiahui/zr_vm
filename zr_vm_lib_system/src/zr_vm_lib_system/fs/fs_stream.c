@@ -214,7 +214,7 @@ TZrBool ZrSystem_Fs_StreamSyncFields(SZrState *state, SZrObject *object, ZrSyste
     return ZR_TRUE;
 }
 
-/* 显式 close 和 using 共用此幂等入口；GC 最终只负责尚未关闭的句柄和 malloc 状态。 */
+/* 显式 close 和 using 共用此幂等入口；GC finalizer 独立关闭并释放 native record，不调用本函数。 */
 TZrBool ZrSystem_Fs_StreamCloseInternal(SZrState *state, SZrObject *object, ZrSystemFsStreamData *data) {
     if (state == ZR_NULL || object == ZR_NULL || data == ZR_NULL) {
         return ZR_FALSE;
@@ -341,9 +341,9 @@ TZrBool ZrSystem_Fs_ReadTextFromHandle(SZrState *state,
     }
     text[size] = '\0';
     free(bytes);
-    /* BUG: 含 U+0000 的文件经 File.readText/Stream.readText 读取时，句柄已消费全部 size 字节，
-     * 但 SetString -> CreateTryHitCache 按 strlen 建串，会把 A\0B 返回为 A。
-     * 该路径必须保留显式长度，才能让文本结果与已读取数据一致。 */
+    /* BUG: 含 U+0000 时句柄消费完整 size，但 C-string SetString 按 strlen 截断结果。
+     * 短串 HASH_BUCKET 软分配失败也会令 void SetString 不写 null 结果槽，而本函数仍返回 true。
+     * 两种情况均不回滚已读数据；短串分配和 NUL 行为分别见 leaf 的 BUG 记录。 */
     ZrLib_Value_SetString(state, result, text);
     if (outReadCount != ZR_NULL) {
         *outReadCount = (TZrInt64)size;
@@ -607,3 +607,394 @@ TZrBool ZrSystem_Fs_Stream_Close(ZrLibCallContext *context, SZrTypeValue *result
     ZrLib_Value_SetNull(result);
     return ZR_TRUE;
 }
+
+/**
+ * @fn static TZrBool system_fs_set_hidden_native_pointer(SZrState *state, SZrObject *object, const TZrChar *fieldName, TZrPtr pointerValue)
+ * ## Summary
+ * 将不由 VM GC 管理的 native 记录地址写入 wrapper 的隐藏字段。该 helper 只统一构造字段值和
+ * 调用 void setter，供 `NewStreamObject` 建立 owner、`StreamFinalize` 清除 owner 使用。
+ * ## Parameters
+ * @param[in] state 当前有效 VM state；调用期间负责字段写入所需的运行时资源。
+ * @param[in] object 要写字段的 VM 对象；其生命周期由调用方的临时根或 GC 回调保证。
+ * @param[in] fieldName 非空 C 字符串字段名，借用至 setter 返回。
+ * @param[in] pointerValue 要写入的外部地址；写入不转移 native 记录的释放责任。
+ * ## Returns
+ * @return 输入有效且字段 setter 被调用时返回 `ZR_TRUE`；返回值不证明 void setter 已完成字段写入。
+ * ## Constraints and lifecycle
+ * `ZrLib_Object_SetFieldCString` 不报告软分配或 pin 失败；因此 owner 写失败可能留下没有记录指针的
+ * wrapper，调用方必须把该窗口作为资源交付风险处理。此函数不释放旧指针或新指针。
+ * ## References
+ * `ZrSystem_Fs_NewStreamObject` :160、`ZrSystem_Fs_StreamFinalize` :264、
+ * `ZrLib_Value_SetNativePointer` 与 `ZrLib_Object_SetFieldCString`。
+ */
+
+/**
+ * @fn static TZrBool system_fs_read_buffer_from_handle(TZrLibrary_File_Handle handle, TZrInt64 count, unsigned char **outBytes, TZrSize *outSize)
+ * ## Summary
+ * 从已打开的宿主句柄读取原始字节，统一供 byte 和 text 结果构造使用。
+ * ## Parameters
+ * @param[in] handle 当前仍归调用者所有且可读的宿主句柄；本 helper 不关闭它。
+ * @param[in] count 非负时为最多读取的字节数，负值表示读取至 EOF，零值不消费输入。
+ * @param[out] outBytes 成功时接收 malloc 缓冲区；所有权转给调用方，失败时写为 NULL。
+ * @param[out] outSize 成功时接收实际字节数，失败或无数据时写为 0。
+ * ## Returns
+ * @return 完整读取循环成功（包括 EOF 或达到 count）返回 `ZR_TRUE`；参数、malloc、宿主读或 realloc
+ * 失败返回 `ZR_FALSE` 并释放本层缓冲。TODO: 极大输入下 size_t 加法和容量倍增的上界仍需核对。
+ * ## Constraints and lifecycle
+ * 缓冲区只在成功返回后有效，调用方必须在构造 VM 值后 `free`；宿主短读会继续循环，部分已读数据在
+ * 后续错误时不发布给调用方。该层不改变句柄关闭状态，跨线程读序由宿主负责。
+ * ## References
+ * `ZrSystem_Fs_ReadBytesFromHandle` :286、`ZrSystem_Fs_ReadTextFromHandle` :329、
+ * `ZrLibrary_File_ReadHandle`。
+ */
+
+/**
+ * @fn static TZrBool system_fs_write_all(TZrLibrary_File_Handle handle, const unsigned char *bytes, TZrSize size)
+ * ## Summary
+ * 处理宿主 API 的短写，直到指定字节全部写完或报告失败。
+ * ## Parameters
+ * @param[in] handle 当前可写且由上层保持开放的宿主句柄。
+ * @param[in] bytes 非空或 size 为零的待写缓冲；只在调用期间借用。
+ * @param[in] size 要交付的字节数。
+ * ## Returns
+ * @return 所有字节均已交给宿主返回 `ZR_TRUE`；宿主报错或返回零进度返回 `ZR_FALSE`。
+ * ## Constraints and lifecycle
+ * 已写前缀不能回滚；零进度被转成 `EIO`，不会关闭句柄。调用方据 false 抛 IOException，并不得把
+ * false 当成文件保持原状。
+ * ## References
+ * `ZrSystem_Fs_WriteBytesToHandle` :398、`ZrSystem_Fs_WriteTextToHandle` :426、
+ * `ZrLibrary_File_WriteHandle`。
+ */
+
+/**
+ * @fn SZrObject *ZrSystem_Fs_NewStreamObject(SZrState *state, const TZrChar *path, const SZrLibrary_File_StreamOpenResult *openResult)
+ * ## Summary
+ * 为已打开句柄建立 `FileStream` wrapper，复制打开模式快照并注册 GC 清理回调。
+ * ## Parameters
+ * @param[in] state 有效 VM state；构造期间可能分配、触发 GC。
+ * @param[in] path 已规范化路径的 C 字符串借用至构造完成；不由本函数释放。
+ * @param[in] openResult 成功打开的句柄及 readable/writable/append 快照；句柄所有权在 wrapper 成功交付后转移。
+ * ## Returns
+ * @return 成功时返回新的 wrapper；输入、对象/记录分配失败时返回 NULL，调用方仍负责原句柄。
+ * ## Constraints and lifecycle
+ * `TempValueRoot_Begin` 建立临时根；对象在 `Type_NewInstance` 和 `data` malloc 成功后才于 :157 放入该根，
+ * 随后字段写入期间保持可追踪。`data` 由 malloc 创建并由 finalizer 释放。BUG: 受限软失败链为：自定义 allocator
+ * 令 ignored-root 表已满时唯一一次 `RawMallocWithType(ARRAY)` 扩容失败；`Object_SetFieldCString` 对字段名
+ * string 调 `native_binding_pin_raw_object` 后静默返回，隐藏 owner 未写入，而本函数仍返回 wrapper。`File_Open`
+ * 因非 NULL 结果交付对象，之后 GetStreamData/finalizer 无法找到 record。该路径未故障注入，不泛化为所有 OOM。
+ * TODO: Type_NewInstance 非局部抛 MemoryError 会绕过 File_Open 的 NULL-only CloseHandle 清理；
+ * path 只在同步构造窗口借用，File_Open 的跨分配有效期另有 TODO。TODO: :165 忽略初始 StreamSyncFields 的 false；开放句柄位置或长度查询失败时仍返回 wrapper，position/length 未发布。需核初始查询失败应拒绝构造还是如何表示未知快照（:202-204）。
+ * ## References
+ * `fs_entry.c:394` 的 `File_Open`、`system_fs_set_hidden_native_pointer` :160、
+ * `ZrSystem_Fs_StreamFinalize`、`ZrSystem_Fs_GetStreamData`。
+ */
+
+/**
+ * @fn ZrSystemFsStreamData *ZrSystem_Fs_GetStreamData(SZrState *state, SZrObject *object)
+ * ## Summary
+ * 从 `FileStream` 隐藏字段取出 native stream record，供所有操作 callback 读取当前句柄状态。
+ * ## Parameters
+ * @param[in] state 有效 VM state，用于字段读取和对象转换。
+ * @param[in] object 仍存活且应为 FileStream wrapper 的对象；返回值是其中记录的借用地址。
+ * ## Returns
+ * @return 字段是 native pointer 时返回 `ZrSystemFsStreamData *`；字段缺失、类型不符或对象无效返回 NULL。
+ * ## Constraints and lifecycle
+ * 返回地址指向 malloc record，本身不会被 GC 搬迁；有效期依赖 wrapper 仍持有 hidden owner 且尚未 finalized。
+ * 活跃 callback 可跨 VM 分配使用它的前提是分派/lane 仍保活 wrapper；不得跨 callback、close 后操作或 finalizer
+ * 保存该指针。owner 丢失时本函数无法恢复记录或句柄，调用方须把 NULL 视作无效路径。
+ * ## References
+ * `StreamEnsureOpen`、`StreamFinalize`、`Stream_Close` 及 `ZrSystem_Fs_GetFieldValue`。
+ */
+
+/**
+ * @fn TZrBool ZrSystem_Fs_StreamEnsureOpen(SZrState *state, SZrObject *object, ZrSystemFsStreamData **outData)
+ * ## Summary
+ * 在读写、定位、刷新或调整长度前统一确认 wrapper 仍持有可用句柄。
+ * ## Parameters
+ * @param[in] state 有效 VM state；关闭错误需要在其中登记 IOException。
+ * @param[in] object FileStream wrapper，借用至检查完成。
+ * @param[out] outData 可选输出槽；接收查到的借用 record，即使 record 已 closed；无 owner 时为 NULL。
+ * ## Returns
+ * @return record 存在、未 closed 且 handle 非 invalid 时返回 `ZR_TRUE`；否则抛 closed IOException 并返回 `ZR_FALSE`。
+ * ## Constraints and lifecycle
+ * 不验证 readable/writable，权限由具体 callback 检查；不会持有额外根或延长 record 生命周期。record 是
+ * malloc 地址，活跃 callback 可跨 VM 分配继续使用，但前提是 dispatcher/lane 持续保活 wrapper；不能跨 callback、
+ * close 或 finalizer 留存。FileStream.close 直接读取 owner，不调用本函数。
+ * ## References
+ * `Stream_ReadBytes/ReadText/WriteBytes/WriteText/Flush/Seek/SetLength`、`ZrSystem_Fs_GetStreamData`、
+ * `ZrSystem_Fs_RaiseIOException`；`Stream_Close` 不经此检查。
+ */
+
+/**
+ * @fn TZrBool ZrSystem_Fs_StreamSyncFields(SZrState *state, SZrObject *object, ZrSystemFsStreamData *data)
+ * ## Summary
+ * 把宿主句柄的 position/length 以及 closed 状态尽力同步到公开 wrapper 字段。
+ * ## Parameters
+ * @param[in] state 有效 VM state；字段写入由 VM setter 管理。
+ * @param[in] object FileStream wrapper，借用至字段更新完成。
+ * @param[in] data 当前 record；开放句柄时用于查询宿主位置和长度。
+ * ## Returns
+ * @return 开放句柄的位置/长度查询成功，或关闭状态下成功读取旧快照时返回 `ZR_TRUE`；查询前置无效或宿主查询失败返回 `ZR_FALSE`。
+ * ## Constraints and lifecycle
+ * 关闭后使用对象字段作为最后快照；开放状态下任一 position/length 查询失败不会覆盖现有字段。三个字段
+ * setter 为 void，`ZR_TRUE` 只表示查询阶段完成，不保证每个字段写入成功。读写/seek/resize 已产生的副作用不回滚。
+ * ## References
+ * `Stream_ReadBytes/ReadText/WriteBytes/WriteText/Seek/SetLength` 在底层操作后调用本函数；
+ * `ZrSystem_Fs_GetIntField`、`WriteIntField`、`WriteBoolField`。
+ */
+
+/**
+ * @fn TZrBool ZrSystem_Fs_StreamCloseInternal(SZrState *state, SZrObject *object, ZrSystemFsStreamData *data)
+ * ## Summary
+ * 执行显式 `close` callback 的幂等关闭路径；GC finalizer 使用独立的无错误返回清理逻辑。
+ * ## Parameters
+ * @param[in] state 有效 VM state，供快照同步和字段写入使用。
+ * @param[in] object FileStream wrapper，借用至状态字段更新完成。
+ * @param[in,out] data 当前 record；成功时 handle 变为 invalid、closed 置 true。
+ * ## Returns
+ * @return 已关闭或本次宿主 close 成功返回 `ZR_TRUE`；输入无效或宿主 close 失败返回 `ZR_FALSE`。
+ * ## Constraints and lifecycle
+ * close 前尝试同步快照但忽略其返回值；宿主失败时保留原 handle 与 `closed=false` 以允许重试，OS 是否已
+ * 释放句柄仍取决于平台语义。成功后的字段写入是 void setter，不能保证公开字段已更新；本函数不由 finalizer 调用。
+ * ## References
+ * `ZrSystem_Fs_Stream_Close` :604、`ZrLibrary_File_CloseHandle`、`StreamFinalize` :257。
+ */
+
+/**
+ * @fn void ZrSystem_Fs_StreamFinalize(SZrState *state, SZrRawObject *rawObject)
+ * ## Summary
+ * GC 对象 sweep 时的兜底资源回收回调，尝试关闭未关闭句柄并释放 malloc record。
+ * ## Parameters
+ * @param[in] state 当前 GC state；不得触发脚本可观察异常。
+ * @param[in,out] rawObject 正在被 GC 处理的 raw object；其 hidden owner 只在对象仍可转换时读取。
+ * ## Returns
+ * 无返回值；close 和清除 owner 的失败不会向脚本报告。
+ * ## Constraints and lifecycle
+ * `NewStreamObject` 将本函数赋给 `scanMarkGcFunction`；Core GC 的对象 sweep 路径调用它。`finalized`
+ * 先置位防止重复清理；`CloseHandle` 返回值被忽略，随后把 handle 置 invalid、closed 置 true 并 free record，
+ * 故不能据私有状态证明宿主关闭成功。若 hidden owner setter 曾软失败，函数取不到 record，无法补救。
+ * ## References
+ * `gc_cycle.c:2892` 的 sweep 回收调用 `gc_object.c:1013`，后者派发对象 callback；另见
+ * `NewStreamObject` :159、`GetStreamData` :251。
+ */
+
+/**
+ * @fn TZrBool ZrSystem_Fs_ReadBytesFromHandle(SZrState *state, TZrLibrary_File_Handle handle, TZrInt64 count, SZrTypeValue *result, TZrInt64 *outReadCount)
+ * ## Summary
+ * 从句柄读取字节并构造 VM array；数组元素逐一保存 0..255 整数。
+ * ## Parameters
+ * @param[in] state 有效 VM state；数组分配和元素写入在其中进行。
+ * @param[in] handle 可读宿主句柄，借用且不由本函数关闭。
+ * @param[in] count 非负字节上限，负值读到 EOF。
+ * @param[out] result 成功时写入新 array；失败时不保证结果槽内容。
+ * @param[out] outReadCount 可选实际读取字节数；进入函数先清零，成功后写入完整读取量。
+ * ## Returns
+ * @return 缓冲读取、数组构造及所有 push 成功返回 `ZR_TRUE`；任一普通失败返回 `ZR_FALSE`。成功返回只表示
+ * array 已完成构造，不代表此前输入位置可回滚。
+ * ## Constraints and lifecycle
+ * malloc 缓冲在 array 构造结束或普通失败后释放；失败时未发布的 VM array 留待 GC 回收，句柄位置不回滚。
+ * 结果数组由 VM 所有，outReadCount 不表示结果发布成功以外的宿主事务保证。TODO: Array_New/PushValue
+ * 若以内存异常非局部退出，局部 malloc 缓冲是否越过 free 需沿 exception 恢复路径确认；本批无 OOM 注入。
+ * ## References
+ * `Stream_ReadBytes` :449、`fs_entry.c` 的 `ReadBytes` aliases、`system_fs_read_buffer_from_handle`、`ZrLib_Array_PushValue`。
+ */
+
+/**
+ * @fn TZrBool ZrSystem_Fs_ReadTextFromHandle(SZrState *state, TZrLibrary_File_Handle handle, TZrInt64 count, SZrTypeValue *result, TZrInt64 *outReadCount)
+ * ## Summary
+ * 从句柄读取字节并尝试建立 VM string，供 File 与 FileStream 的 text read aliases 复用。
+ * ## Parameters
+ * @param[in] state 有效 VM state；字符串分配在其中完成。
+ * @param[in] handle 可读宿主句柄，借用且不由本函数关闭。
+ * @param[in] count 非负字节上限，负值读到 EOF。
+ * @param[out] result 成功路径的 VM string 结果槽；setter 为 void，不能仅凭函数返回保证写槽成功。
+ * @param[out] outReadCount 可选实际消费字节数；成功时包含首 NUL 后的全部已读字节。
+ * ## Returns
+ * @return 缓冲读取及 SetString 调用后返回 `ZR_TRUE`；普通原生分配或读取失败返回 `ZR_FALSE`。BUG: 短串
+ * HASH_BUCKET 扩容软失败时 SetString 可能不写 dispatcher 预置的 null 槽，本函数仍报告成功；Stream 后续查询成功、或 fs_entry.c:47/276-284/419-432 的 File API 临时句柄关闭成功且其余步骤正常返回时，外层同样交付 true/null。
+ * ## Constraints and lifecycle
+ * text 通过 C-string `SetString`，嵌入 NUL 会截断 VM string，但句柄已消费完整 count；不验证 UTF-8，count
+ * 可能切开多字节序列。缓冲在 setter 正常返回后释放；TODO: SetString 非局部 MemoryError 会否跳过 free(text)
+ * 需沿 Exception_Throw/恢复路径核对，本批无故障注入。
+ * ## References
+ * `Stream_ReadText` :471、`fs_entry.c:47/425`、`ZrLib_Value_SetString`、既有首 NUL BUG 注释 :344-346。
+ */
+
+/**
+ * @fn TZrBool ZrSystem_Fs_WriteBytesToHandle(SZrState *state, TZrLibrary_File_Handle handle, SZrObject *array, TZrInt64 *outWrittenCount)
+ * ## Summary
+ * 预校验 VM byte array 后将其完整写入宿主句柄。
+ * ## Parameters
+ * @param[in] state 有效 VM state，用于读取数组元素。
+ * @param[in] handle 可写宿主句柄，借用且不由本函数关闭。
+ * @param[in] array 元素必须是有符号/无符号整数且位于 0..255。
+ * @param[out] outWrittenCount 可选写入字节数；进入函数清零，全部完成后写入长度。
+ * ## Returns
+ * @return 预校验和 write-all 成功返回 `ZR_TRUE`；类型/范围/分配或宿主写失败返回 `ZR_FALSE`。
+ * ## Constraints and lifecycle
+ * 所有元素先复制到 malloc 缓冲，避免后段非法元素造成提前写；宿主短写循环完成后才发布 count。部分写失败
+ * 无法回滚已写前缀；输入数组由 VM 持有，本函数不保留其引用。
+ * ## References
+ * `Stream_WriteBytes` :492、`fs_entry.c` 的 bytes aliases、`system_fs_write_all`、`ZrLib_Array_Get`。
+ */
+
+/**
+ * @fn TZrBool ZrSystem_Fs_WriteTextToHandle(SZrState *state, TZrLibrary_File_Handle handle, const TZrChar *text, TZrInt64 *outWrittenCount)
+ * ## Summary
+ * 将 C-string 文本写入宿主句柄并返回交付字节数。
+ * ## Parameters
+ * @param[in] state 有效 VM state；仅用于统一参数错误状态。
+ * @param[in] handle 可写宿主句柄，借用且不由本函数关闭。
+ * @param[in] text 非空 NUL 结尾字符串，借用至写循环完成。
+ * @param[out] outWrittenCount 可选写入字节数；成功为 `strlen(text)`。
+ * ## Returns
+ * @return write-all 完成返回 `ZR_TRUE`；参数或宿主写失败返回 `ZR_FALSE`。
+ * ## Constraints and lifecycle
+ * 长度由 `strlen` 决定，嵌入 NUL 只写首 NUL 前缀；不验证 UTF-8。部分宿主写失败留下不可回滚前缀，句柄保持
+ * 由上层 stream record 管理。
+ * ## References
+ * `Stream_WriteText` :514、`fs_entry.c` 的 text aliases、`system_fs_write_all`。
+ */
+
+/**
+ * @fn TZrBool ZrSystem_Fs_Stream_ReadBytes(ZrLibCallContext *context, SZrTypeValue *result)
+ * ## Summary
+ * FileStream reader callback；读取当前字节位置的数据并返回 array。
+ * ## Parameters
+ * @param[in] context 注册 dispatcher 提供的有效 context；可选 count 为 VM 借用实参。
+ * @param[out] result dispatcher 提供的可写 VM 结果槽。
+ * ## Returns
+ * @return 成功返回 `ZR_TRUE` 和 byte array；closed、不可读、I/O 或同步失败走 IOException 并返回 `ZR_FALSE`。
+ * ## Constraints and lifecycle
+ * count 缺省 -1，单位为字节；读取后同步 position/length，已消费字节和游标不回滚。接口 descriptor 与
+ * FileStream descriptor 都绑定本 callback，arity 由 dispatcher 先检查。
+ * ## References
+ * `fs_registry.c:193-195,213-215`、`ReadBytesFromHandle`、`StreamEnsureOpen`、`StreamSyncFields`。
+ */
+
+/**
+ * @fn TZrBool ZrSystem_Fs_Stream_ReadText(ZrLibCallContext *context, SZrTypeValue *result)
+ * ## Summary
+ * FileStream reader callback；按字节读取并尝试构造文本 VM string。
+ * ## Parameters
+ * @param[in] context 有效 native context；可选 count 借用至 callback 返回。
+ * @param[out] result 可写 VM 结果槽。
+ * ## Returns
+ * @return 成功返回 `ZR_TRUE`；closed、不可读、读取或字段同步失败抛 IOException 并返回 `ZR_FALSE`。
+ * ## Constraints and lifecycle
+ * count 缺省 -1 且按字节计；首 NUL 截断返回 string，UTF-8 不验证，切断多字节边界仍待用例明确。I/O
+ * 已消费后再同步公开字段，查询失败不回滚位置。
+ * BUG: ReadTextFromHandle 的 void SetString 在短串 HASH_BUCKET 扩容软失败时可不写 dispatcher 预置的 null 结果；若后续字段查询成功，本回调仍返回 true，已读字节不回滚。
+ * ## References
+ * `fs_registry.c:196-198,216-218`、`ReadTextFromHandle`、首 NUL BUG :344-347、UTF-8 byte-count TODO :469-470。
+ */
+
+/**
+ * @fn TZrBool ZrSystem_Fs_Stream_WriteBytes(ZrLibCallContext *context, SZrTypeValue *result)
+ * ## Summary
+ * FileStream writer callback；校验并写入 byte array，返回写入字节数。
+ * ## Parameters
+ * @param[in] context 有效 native context；索引 0 为 VM array 借用值。
+ * @param[out] result 可写 VM 整数结果槽。
+ * ## Returns
+ * @return 完整写入并同步成功返回 `ZR_TRUE`；closed、不可写、类型/范围、I/O 或同步失败返回 `ZR_FALSE`/IOException。
+ * ## Constraints and lifecycle
+ * 底层先完成写入再同步 position/length；同步失败不撤销已写前缀。数组元素必须是 0..255 整数，descriptor
+ * arity 为一个显式参数。
+ * ## References
+ * `fs_registry.c:202-204,219-221`、`WriteBytesToHandle`、`StreamEnsureOpen`、`StreamSyncFields`。
+ */
+
+/**
+ * @fn TZrBool ZrSystem_Fs_Stream_WriteText(ZrLibCallContext *context, SZrTypeValue *result)
+ * ## Summary
+ * FileStream writer callback；按 C-string 语义写文本并返回实际字节数。
+ * ## Parameters
+ * @param[in] context 有效 native context；索引 0 为借用 VM string。
+ * @param[out] result 可写 VM 整数结果槽。
+ * ## Returns
+ * @return 写入并同步成功返回 `ZR_TRUE` 和字节数；closed、不可写、类型或宿主失败返回 `ZR_FALSE`/IOException。
+ * ## Constraints and lifecycle
+ * `strlen` 计算长度，嵌入 NUL 只写首前缀，不保证 UTF-8；已写前缀与位置在同步失败时不回滚。
+ * ## References
+ * `fs_registry.c:205-207,222-224`、`WriteTextToHandle`、`StreamSyncFields`。
+ */
+
+/**
+ * @fn TZrBool ZrSystem_Fs_Stream_Flush(ZrLibCallContext *context, SZrTypeValue *result)
+ * ## Summary
+ * FileStream writer callback；刷新当前拥有句柄的宿主缓冲。
+ * ## Parameters
+ * @param[in] context 有效 native context，无显式 VM 参数。
+ * @param[out] result 成功时写入 null 的可写结果槽。
+ * ## Returns
+ * @return 宿主 flush 成功返回 `ZR_TRUE`；closed 或 flush 失败抛 IOException 并返回 `ZR_FALSE`。
+ * ## Constraints and lifecycle
+ * 只刷新 owner handle，不同步 position/length 字段、不关闭或转移句柄；当前测试脚本在 takeReader 前失败，
+ * 没有 Flush 行为断言。
+ * ## References
+ * `fs_registry.c:208-210,225-226`、`ZrLibrary_File_FlushHandle`、`StreamEnsureOpen`。
+ */
+
+/**
+ * @fn TZrBool ZrSystem_Fs_Stream_Seek(ZrLibCallContext *context, SZrTypeValue *result)
+ * ## Summary
+ * FileStream callback；按 begin/current/end 调整字节游标并返回绝对位置。
+ * ## Parameters
+ * @param[in] context 有效 native context；offset 必需 int，origin 可选 string。
+ * @param[out] result 成功时写入绝对位置的 VM 整数槽。
+ * ## Returns
+ * @return 定位和字段同步成功返回 `ZR_TRUE`；closed、非法 origin、平台 seek 或同步失败返回 IOException/`ZR_FALSE`。
+ * ## Constraints and lifecycle
+ * origin 缺省 begin，偏移按字节计；定位后同步快照失败不回滚已改变的游标，类型错误由 ReadInt 非局部抛出。
+ * ## References
+ * `fs_registry.c:227-229`、`ReadOptionalStringArgument`、`ZrLibrary_File_SeekHandle`、`StreamSyncFields`。
+ */
+
+/**
+ * @fn TZrBool ZrSystem_Fs_Stream_SetLength(ZrLibCallContext *context, SZrTypeValue *result)
+ * ## Summary
+ * FileStream callback；设置宿主文件字节长度并同步公开快照。
+ * ## Parameters
+ * @param[in] context 有效 native context；索引 0 为长度 int。
+ * @param[out] result 成功时写入 null 的可写结果槽。
+ * ## Returns
+ * @return 宿主 resize 和后续 position/length 查询成功返回 `ZR_TRUE`；closed、不可写、平台或查询失败返回 IOException/`ZR_FALSE`。
+ * ## Constraints and lifecycle
+ * 负长度交给平台错误路径；若位置查询成功且游标超过新长度会尝试 seek 到末端，但该内部 seek 失败被忽略。
+ * 截断/扩展及可能的 seek 副作用不因字段查询失败回滚；descriptor arity 为一个显式参数。
+ * ## References
+ * `fs_registry.c:230-232`、`ZrLibrary_File_SetHandleLength`、`SeekHandle`、`StreamSyncFields`。
+ */
+
+/**
+ * @fn TZrBool ZrSystem_Fs_Stream_Close(ZrLibCallContext *context, SZrTypeValue *result)
+ * ## Summary
+ * FileStream close callback；显式关闭 owner handle，并作为 using 的 close meta callback。
+ * ## Parameters
+ * @param[in] context 有效 native context，无显式 VM 参数。
+ * @param[out] result 成功时写入 null 的可写结果槽。
+ * ## Returns
+ * @return close 成功或已成功关闭时返回 `ZR_TRUE`；owner 缺失时普通返回 `ZR_FALSE`，宿主 close 失败经 IOException 返回 `ZR_FALSE`。
+ * ## Constraints and lifecycle
+ * 显式 FileStream.close method descriptor 为零 VM 实参；ZR_META_CLOSE descriptor 另计 close-state 参数，
+ * receiver 由分派框架处理。两条入口共用此函数，成功后重复调用幂等。
+ * 失败保持私有 closed=false/handle 以允许重试，但底层 OS 是否已释放未知；GC finalizer 是独立兜底路径，不能
+ * 当作此函数的调用者。
+ * ## References
+ * `fs_registry.c:85-86,233-234`、`StreamCloseInternal`、`StreamFinalize`、`FileStream` using lowering。
+ */
+
+/**
+ * @file fs_stream.c
+ * ## Summary
+ * 实现 FileStream 的 native owner、句柄快照、字节/文本读写和注册回调；共享 helper 负责把宿主 I/O
+ * 结果转换为 VM array/string/整数值。
+ * ## Constraints and lifecycle
+ * `ZrSystemFsStreamData` 的宿主句柄由成功包装的 FileStream 独占；显式 close 与 using callback 走可报告
+ * 错误的路径，GC 通过 `scanMarkGcFunction` 走无返回值的兜底路径。公开字段 setter 是 void，任何 true
+ * 结果只代表本层流程完成，不保证所有快照字段已写入。文本使用 C-string 语义，二进制数据必须走 byte API。
+ * ## References
+ * `fs_internal.h` 的声明与字段约束、`fs_entry.c:394` 的 File_Open、`fs_registry.c:193-234` 的 descriptor
+ * 绑定，以及 Core `gc_cycle.c:2892`→`gc_object.c:1013` 的对象 finalizer 派发。
+ */
