@@ -116,7 +116,7 @@ R3注释阶段的实际 checkout 验证 math-config-fs-entry-final-native-r1：b
 
 公开六个text/bytes写入callback及两个一次性write helper现在明确：宿主短写后续报错或零进度EIO可留已写前缀，IOException/false不回滚。bytes完整元素校验发生在首次WriteHandle前，但一次性File helper在此前以w/a打开：writeBytes对非法元素也可能先截断旧文件，appendBytes不追加非法内容却可创建缺失文件。text的w打开同样可在后续失败前截断。证据是fs_entry.c:114/118、fs_stream.c:110–125/:373–403，file.c:686–740/:1361–1403；不授予短写、无效元素副作用或close故障执行信用。
 
-四个CopyTo/MoveTo明确宿主操作本身失败亦不保证原子或回滚。file.c:772–774/:847–849先删除overwrite目标；:793–831打开/写目标失败只close，:851–879递归失败保留已建目录/子项；:1259–1269在rename失败后Copy(true)&&Delete(source)，copy失败不删源，copy成功源删除失败则可能两边仍有内容。module/Folder CreateDirectories和File_Create说明递归失败保留已建父目录，file.c:1187的close失败亦保留新文件；Folder_Delete递归失败后此前删除的子项不恢复（:882–903）。此前R7对此类失败状态只补充契约，不新增unit；R8新增确认的两个窄缺陷家族另见下节，仍归现有函数键，不重复累计。
+四个CopyTo/MoveTo明确宿主操作本身失败亦不保证原子或回滚。file.c:772–774/:847–849先删除overwrite目标；:793–831打开/写目标失败只close，:851–879递归失败保留已建目录/子项；:1259–1269在rename失败后Copy(true)&&Delete(source)，Copy返回false不执行&&右侧最后的源Delete，但此前overwrite目标预删除可能已删除源；Copy true后源删除失败则可能两边仍有内容。module/Folder CreateDirectories和File_Create说明递归失败保留已建父目录，file.c:1187的close失败亦保留新文件；Folder_Delete递归失败后此前删除的子项不恢复（:882–903）。此前R7对此类失败状态只补充契约，不新增unit；R8新增确认的两个窄缺陷家族另见下节，仍归现有函数键，不重复累计。
 
 R10 source SHA256 8d496ef6ecb5f344ca14337696beeea3fb775dab31ce72fe2020206d0aad1baa保持原1528物理行，只修改已有EOF文档，R8相对R7修订5行、R9再修订1行，4693程序token及全部词法flags/原程序行严格一致，proof SHA256 2929a3d4b0afa5a40f5fc8ce7251564923e082b7ff2ff73bd57228927cd356f6。上方actual native实际使用R3 source31f502，并未直接编译R10注释字节；system-fs-entry-final-r10-native-token-bridge.json SHA256 b0cebedf01b0a1fa1929b6deeb4cce6f3bd6598d58a91df16f3e44787edd8b85逐一固定实际results、R3/R10原始身份、完整程序摘要及token坐标一致。未重复运行相同程序的三suite，不为新文字增加执行覆盖。R10 caller/resource bridge SHA256 4156c7da25578ac6456da7d72a654b91236ef7bb10b941128f3062258925c3d2保持全部静态锚及19源码证据身份；sharedStreamR6和privateHr2仍是该native直接使用的原字节。
 
@@ -130,7 +130,7 @@ File.open的w/a/x模式在宿主open成功后已经可能截断/创建文件，�
 
 9. **目录复制把新建子目标纳入自己。** 现存源目录a、尚不存在的目标a/b，:851先建立b，:852经ListDirectory:1290和:515–567枚举a，新增b被列入；:865–866再把b复制至b/b，每层重复先建后枚举。初始创建/枚举成功时可递归增长并留下嵌套部分树；Move的rename失败后Copy(true)回退同样可达。file_join_into:658–665另有snprintf截断误判成功，不能承诺该递归一定于:860路径拼接失败终止。本批无递归增长专项运行，目标自身子树作为当前禁止使用的输入边界写入Folder两个函数合同。
 
-R8边界报告system-fs-entry-final-r8-transfer-boundaries.json SHA256 7753a842f7e055c5d58a5487f6f4b3e22f3d8bd04f575d8203c1699f04e3c1cf；上述新根因归既有31条BUG函数记录，不新增51键或累计数。已交付宿主聚合表zr_vm_library.tsv里的Move/Copy helper旧no-comment结论须在紧接的宿主契约更正批同步，本13路径批没有把这些历史记录算作已覆盖新边界。R8历史proof 50399a951936cef34955f6d93b74ca0521a03e1582fa37ff50681c9613e34d58；actualnativeR3→R8完整4693token、flags与原程序坐标一致，R7后只修订5条既有EOF文档行；没有新的执行信用。
+R8边界报告system-fs-entry-final-r8-transfer-boundaries.json SHA256 7753a842f7e055c5d58a5487f6f4b3e22f3d8bd04f575d8203c1699f04e3c1cf；上述新根因归既有31条BUG函数记录，不新增51键或累计数。本13路径交付时宿主聚合表zr_vm_library.tsv的六个Move/Copy定义/声明仍是旧no-comment；紧接的20261015-library-file-transfer-contracts批现已对这六个旧键补齐祖先预删除、目录后代递归、同路径Move、真实caller与ignored-close约束，不新增累计单元，after native与提交验收见该批。R8历史proof 50399a951936cef34955f6d93b74ca0521a03e1582fa37ff50681c9613e34d58；actualnativeR3→R8完整4693token、flags与原程序坐标一致，R7后只修订5条既有EOF文档行；没有新的执行信用。
 
 R9仅在File_Open的Returns :1158明确OpenHandle在宿主open成功后append seek-end失败也返回false并转IOException（file.c:1394–1400，entry:389–390）；Constraints原有不回滚副作用仍适用。R9最终source ff21ee07978cdca1069fdef4f77b89dcd72e0c7ad23694d3611b10ec7fef97ba；strict 97c97647a9211ad523848bea4bf5f62df07b0d36d673911de63894ae392e36b8；native bridge 9fa8a1935934285546f80fe60309d879027072422564438cd6de3e6176e230f5；仍为51键31BUG15commented5TODO，不新增执行覆盖。上节R8“五行细化”及transfer报告为保留的修订证据，R9为该轮冻结身份，当前最终源码以末尾R10身份为准。
 
@@ -148,3 +148,8 @@ R9仅在File_Open的Returns :1158明确OpenHandle在宿主open成功后append se
 10. **覆盖祖先目标会删除源与同树兄弟。** 充分条件是overwrite=true、现存target为source严格祖先目录、递归删除成功且无外部重建。Copy先在:1228 stat源，再于普通文件helper:772–783或目录helper:847–853删目标即删源；Move:1259–1269同样先删祖先再rename/Copy失败。递归删除链:882–903；File/Folder CopyTo/MoveTo的:529/:552/:663/:682将失败映射IOException（:530/:553/:664/:683）。这是既有BUG函数行内的新确认条件，不新增单元；未作破坏性运行。Move在删除overwrite目标前也不预验源存在，缺失源仍可能导致现存目标先被删除。
 
 当前R10 source 8d496ef6ecb5f344ca14337696beeea3fb775dab31ce72fe2020206d0aad1baa；proof 2929a3d4b0afa5a40f5fc8ce7251564923e082b7ff2ff73bd57228927cd356f6；actualnativeR3→R10 bridge b0cebedf01b0a1fa1929b6deeb4cce6f3bd6598d58a91df16f3e44787edd8b85；caller/resource bridge 4156c7da25578ac6456da7d72a654b91236ef7bb10b941128f3062258925c3d2。R9→R10只扩写4条已有EOF文档行，51键31BUG15commented5TODO不变，无程序/API/测试修改或新增执行信用。上节R8/R9均为历史修订身份，当前以此R10为准。
+
+
+## Host transfer 六个既有键后续验证
+
+Host File Copy/Move 的实现/声明合同已在 20261015-library-file-transfer-contracts.md 完成，同步更正 library.tsv 六个旧键，不增加本 FsEntry 的51键或累计覆盖数。修改后统一原生构建 exit 0，Fs 7/8 与修改前同一 stream_modes 失败，Copy/Move 普通新目标用例通过。Host 最终源 C ac43d93b6538996ed204564a9c03285c07623a8150cccb3991939826661854ee / H b32e75d5781422cfe5b15bb0866b32f08061f297585d270dc283b4a2a37eb264 的完整严格证明和实际 after 报告见该批次末段；不追加祖先/后代、同路径、失败部分副作用或回退的运行信用。先前“Copy 失败不执行源 Delete”的宽泛表述现限为最后 && 右侧，先行覆盖删除仍可能已移除源。

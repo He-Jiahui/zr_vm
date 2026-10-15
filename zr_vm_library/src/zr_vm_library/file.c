@@ -1685,3 +1685,126 @@ void ZrLibrary_File_SourceCloseImplementation(SZrState *state, TZrPtr reader) {
 
     ZrLibrary_File_CloseRead(state->global, (SZrLibrary_File_Reader *)reader);
 }
+
+/**
+ * @fn static TZrBool file_copy_file_contents(const TZrChar *sourcePath,
+ *                                            const TZrChar *targetPath,
+ *                                            TZrBool overwrite)
+ *
+ * ## Summary
+ * 将一个非目录源逐块复制到目标文件；由 `ZrLibrary_File_Copy` 的文件分支及
+ * 递归目录复制中的文件项调用。
+ *
+ * ## Parameters
+ * @param[in] sourcePath 调用期间有效的 NUL 结尾源路径；在目标处理后打开并读取。
+ * @param[in] targetPath 调用期间有效的 NUL 结尾目标文件路径；缺少的父目录会尝试创建。
+ * @param[in] overwrite 为真时允许先递归删除现存目标，再以截断方式创建目标文件。
+ *
+ * ## Returns
+ * @return 只有读到源末尾且每个写块完整后才返回真；打开、建目录、读取或短写失败返回假。
+ * 失败不会回滚已删除的目标、已创建的目录或已写入的部分文件；成功标志在关闭句柄前确定，
+ * 两个 `CloseHandle` 的返回值均被忽略。
+ *
+ * ## Constraints and lifecycle
+ * 固定使用 64 KiB 栈缓冲区同步搬运；路径仅借用，句柄由本调用尝试关闭而不交付调用方。`overwrite` 为假时先拒绝任何已
+ * 存在的目标；为真时先删除目标，再打开源，因此没有事务性替换保证。BUG: 若目标是包含源
+ * 文件的严格词法组件祖先目录，且递归删除成功、期间无外部重建时，源及目标树内其他内容会先删除，随后打开源失败；不是物理别名检测。
+ *
+ * ## References
+ * 静态调用来自 `file_copy_directory_recursive`（本文件 `:871`）和
+ * `ZrLibrary_File_Copy`（本文件 `:1239`）；上层脚本入口是
+ * `ZrSystem_Fs_File_CopyTo` / `ZrSystem_Fs_Folder_CopyTo`。
+ */
+
+/**
+ * @fn static TZrBool file_copy_directory_recursive(const TZrChar *sourcePath,
+ *                                                  const TZrChar *targetPath,
+ *                                                  TZrBool overwrite)
+ *
+ * ## Summary
+ * 按源目录的直接子项快照递归复制目录树，供 `ZrLibrary_File_Copy` 的目录分支使用。
+ *
+ * ## Parameters
+ * @param[in] sourcePath 调用期间有效的 NUL 结尾源目录路径。
+ * @param[in] targetPath 调用期间有效的 NUL 结尾目标目录路径。
+ * @param[in] overwrite 为真时允许先递归删除现存目标；否则目标必须不存在。
+ *
+ * ## Returns
+ * @return 所有子项均成功递归复制时返回真；任一目录列表、建目录、被检测出的路径拼接或子项复制失败即返回假。
+ * 先完成的删除、目录创建和子项写入不会回滚。
+ *
+ * ## Constraints and lifecycle
+ * 先创建目标目录，再枚举源目录的非递归快照；目录项按列表返回的 existence 类型递归，其他项交给文件复制。
+ * BUG: 源为实际目录、目标是其严格词法后代且不存在（或允许覆盖）时，在建目录/枚举成功且无外部路径变化的路径上，新建目标会进入源快照并继续作为下一层源递归；此重叠路径
+ * 没有目标排除或深度/环拒绝，可留下嵌套部分树；不能以固定缓冲推断可靠终止，`file_join_into` 只判断 snprintf>=0 而忽略截断（:658-666）。
+ * BUG: overwrite=true、目标为源目录的严格词法组件祖先、递归删除成功且无外部重建时，会先移除源及目标树内其他内容，随后即使重建空目标也会在枚举源时
+ * 失败。任何后续失败都可能留下部分目标树。
+ *
+ * ## References
+ * 由自身（本文件 `:866`）及 `ZrLibrary_File_Copy`（本文件 `:1238`）调用；子项枚举使用
+ * `ZrLibrary_File_ListDirectory`，文件项交由 `file_copy_file_contents`。
+ */
+
+/**
+ * @fn TZrBool ZrLibrary_File_Copy(TZrNativeString sourcePath,
+ *                                 TZrNativeString targetPath,
+ *                                 TZrBool overwrite)
+ *
+ * ## Summary
+ * 同步复制一个路径对象；源实际为目录时递归复制，否则按文件内容复制。System.Fs 的 File 与
+ * Folder `copyTo` 共用此入口。
+ *
+ * ## Parameters
+ * @param[in] sourcePath 本次调用使用的 NUL 结尾源路径，不由本函数保留。
+ * @param[in] targetPath 本次调用使用的 NUL 结尾目标路径，不由本函数保留。
+ * @param[in] overwrite 规范化字符串不同时，为真可先递归删除现存目标后重建，为假要求目标不存在；源存在且两字符串相等时，两种取值均成功空操作。
+ *
+ * ## Returns
+ * @return 源存在且规范化字符串相等，或复制流程完成时返回真；源被判为不存在、路径处理或复制
+ * 步骤失败时返回假。
+ * 返回假不表示文件系统未改变；已删除目标、已创建目录和已复制子项不会回滚。文件 helper 在 close 前确定成功并忽略两个 CloseHandle 返回值，目录子文件同样如此，故 true 不证明 close 成功；清理失败也可能影响最终 errno，不承诺保留第一失败。
+ *
+ * ## Constraints and lifecycle
+ * 两路径先规范化到固定大小缓冲区，再以源的实际 `stat` 类型选择目录或非目录分支；包装对象
+ * 声称的 File/Folder 类型不参与分派。只有规范化后的路径字符串逐字节相等时才是成功空操作，
+ * 这不是物理文件别名检测。BUG: overwrite=true、目标为源的严格词法组件祖先、递归删除成功且无外部重建时，目标预删除会移除源；
+ * 随后复制失败但源及目标树内其他内容已删除。BUG: 实际目录源复制到自身严格词法后代，目标缺失或允许覆盖且建/列目录成功时，先建目标再枚举源，
+ * 新目标进入源快照并继续作为下一层源递归，没有目标排除或深度/环拒绝，可留部分嵌套树且不保证可靠终止（:851-866/:658-666）。这些结论限定 NormalizePath 后的字符串/组件关系，不涵盖 symlink、hardlink、reparse 或 mount 物理别名，也不保证外部改路径/cwd并发下的稳定结果。文件复制会尝试创建缺失父目录；以上副作用不回滚。
+ *
+ * ## References
+ * 声明见 `zr_vm_library/include/zr_vm_library/file.h:119`；内部移动回退在本文件 `:1268`。
+ * System.Fs 的直接调用来自 `fs_entry.c:529,663`，由 `fs_registry.c:157-162,180-185`
+ * 绑定到 File/Folder 的 `copyTo`。现有正常路径断言见
+ * `tests/system/test_system_fs_module.c:757-758,776-777,881-887`。
+ */
+
+/**
+ * @fn TZrBool ZrLibrary_File_Move(TZrNativeString sourcePath,
+ *                                 TZrNativeString targetPath,
+ *                                 TZrBool overwrite)
+ *
+ * ## Summary
+ * 先尝试用宿主 `rename` 移动路径；该调用失败时以复制后递归删除源作为回退。System.Fs 的 File
+ * 与 Folder `moveTo` 共用此入口。
+ *
+ * ## Parameters
+ * @param[in] sourcePath 本次调用使用的 NUL 结尾源路径，不由本函数保留。
+ * @param[in] targetPath 本次调用使用的 NUL 结尾目标路径，不由本函数保留。
+ * @param[in] overwrite 为真时可先递归删除现存目标；为假时任何已存在目标都会拒绝操作。
+ *
+ * ## Returns
+ * @return 宿主 `rename` 成功，或复制与随后递归删除源均成功时返回真；其他路径返回假。
+ * 回退不是原子操作：复制失败可留部分目标；源删除失败时目标已复制且源可能部分删除。Copy 内部文件 close 结果被忽略，故其返回 true 后仍会继续删除源，即使此前 close 报错；true 不是 close 成功或持久化保证。
+ *
+ * ## Constraints and lifecycle
+ * 两路径先规范化到固定大小缓冲区；目标存在且 `overwrite` 为真时，会在尝试 `rename` 或验证
+ * 源可复制之前先递归删除目标。BUG: overwrite=true、现存目标递归删除成功且无外部重建时，若源缺失、两规范化字符串相同，或目标是源的严格词法组件祖先，
+ * 后续步骤会因源缺失而失败，原目标、源或其兄弟项却已删除。BUG: 实际目录源的严格词法后代目标在 rename 失败后会进入上述自递归复制路径。`rename` 的失败原因不
+ * 限于跨文件系统；本函数对所有失败均尝试 Copy(source,target,true)&&Delete(source,true)，Copy 返回 false 不执行最后的源 Delete，但此前目标预删除仍可能已删源。关系判断仅描述 NormalizePath 的词法输出，不检测物理别名，不提供外部并发改路径下的原子/稳定结果。
+ *
+ * ## References
+ * 声明见 `zr_vm_library/include/zr_vm_library/file.h:123`；复制回退调用
+ * `ZrLibrary_File_Copy`（本文件 `:1268`）。System.Fs 的直接调用来自
+ * `fs_entry.c:552,682`，由 `fs_registry.c:159-162,182-185` 绑定到 File/Folder `moveTo`。
+ * 正常新目标行为断言见 `tests/system/test_system_fs_module.c:759-760,778-779`。
+ */
