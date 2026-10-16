@@ -16,6 +16,94 @@ static SZrReturnedExecCleanupRecord g_ownerWitnesses[RETURNED_EXEC_OWNER_WITNESS
 static SZrReturnedExecTeardown g_teardown;
 static unsigned g_closed;
 static unsigned g_lifecycleErrors;
+/* This transaction borrows the already built producer tree only around the
+ * real finalizer call. Byte witnesses include headers plus the actual child
+ * slot, which source_facts intentionally does not encode. No callback asserts.
+ */
+static SZrReturnedExecChildObservation g_child;
+static struct {
+    SZrAstNode *script,*returned,*integer;
+    SZrAstNodeArray *array;
+    SZrAstNode **nodes;
+    SZrAstNode beforeScript,beforeReturn,beforeInteger,armedScript,armedReturn;
+    SZrAstNodeArray beforeArray,armedArray;
+    unsigned active;
+} g_childTree;
+int ZrTests_ReturnedExec_ChildArm(unsigned site){
+    if(site<ZR_RETURNED_EXEC_CHILD_STATEMENTS_NULL||site>ZR_RETURNED_EXEC_CHILD_EXPRESSION_NULL||
+            g_child.site||g_childTree.active||g_closed)return 0;
+    g_child.site=site;return 1;
+}
+SZrReturnedExecChildObservation ZrTests_ReturnedExec_ChildObservation(void){return g_child;}
+void ZrTests_ReturnedExec_ChildBegin(const SZrAstNode *script,TZrUInt32 token,
+        SZrExecIrOwnedModule **destination,SZrExecIrDiagnostic *diagnostic){
+    if(!g_child.site)return;
+    ++g_child.entered;
+    if(g_child.entered!=1u||g_childTree.active||!script||script->type!=ZR_AST_SCRIPT||
+            !script->data.script.statements||!token||!destination||*destination||!diagnostic){
+        ++g_child.errors;return;}
+    SZrAstNodeArray *array=script->data.script.statements;
+    if(array->count!=1u||!array->capacity||array->count>array->capacity||!array->nodes||
+            !array->nodes[0]||array->nodes[0]->type!=ZR_AST_RETURN_STATEMENT||
+            !array->nodes[0]->data.returnStatement.expr||
+            array->nodes[0]->data.returnStatement.expr->type!=ZR_AST_INTEGER_LITERAL){
+        ++g_child.errors;return;}
+    /* The const view was supplied from this genuine mutable compiler AST.
+     * No new node, list or output Function is substituted for the real input.
+     */
+    g_childTree.script=(SZrAstNode *)script;g_childTree.array=array;
+    g_childTree.nodes=array->nodes;g_childTree.returned=array->nodes[0];
+    g_childTree.integer=g_childTree.returned->data.returnStatement.expr;
+    memcpy(&g_childTree.beforeScript,script,sizeof(*script));
+    memcpy(&g_childTree.beforeArray,array,sizeof(*array));
+    memcpy(&g_childTree.beforeReturn,g_childTree.returned,sizeof(*g_childTree.returned));
+    memcpy(&g_childTree.beforeInteger,g_childTree.integer,sizeof(*g_childTree.integer));
+    g_child.scriptAddress=(uintptr_t)script;g_child.arrayAddress=(uintptr_t)array;
+    g_child.nodesAddress=(uintptr_t)array->nodes;g_child.returnAddress=(uintptr_t)g_childTree.returned;
+    g_child.integerAddress=(uintptr_t)g_childTree.integer;g_child.destinationAddress=(uintptr_t)destination;
+    g_child.functionToken=token;g_childTree.active=1u;
+    switch(g_child.site){
+    case ZR_RETURNED_EXEC_CHILD_STATEMENTS_NULL:g_childTree.script->data.script.statements=ZR_NULL;break;
+    case ZR_RETURNED_EXEC_CHILD_STATEMENTS_EMPTY:array->count=0u;break;
+    case ZR_RETURNED_EXEC_CHILD_STATEMENT_NULL:array->nodes[0]=ZR_NULL;break;
+    case ZR_RETURNED_EXEC_CHILD_EXPRESSION_NULL:g_childTree.returned->data.returnStatement.expr=ZR_NULL;break;
+    default:++g_child.errors;break;
+    }
+    memcpy(&g_childTree.armedScript,script,sizeof(*script));
+    memcpy(&g_childTree.armedArray,array,sizeof(*array));
+    memcpy(&g_childTree.armedReturn,g_childTree.returned,sizeof(*g_childTree.returned));
+    memset(diagnostic,0xA5,sizeof(*diagnostic));g_child.poisoned=1u;
+}
+void ZrTests_ReturnedExec_ChildEnd(TZrBool result,SZrExecIrOwnedModule **destination,
+        const SZrExecIrDiagnostic *diagnostic){
+    if(!g_child.site)return;
+    ++g_child.completed;g_child.result=result;
+    g_child.ownerEmpty=(unsigned)(destination&&(uintptr_t)destination==g_child.destinationAddress&&!*destination);
+    if(diagnostic)g_child.diagnostic=*diagnostic;else ++g_child.errors;
+    if(!g_childTree.active){++g_child.errors;return;}
+    g_child.unchanged=(unsigned)(
+        memcmp(g_childTree.script,&g_childTree.armedScript,sizeof(*g_childTree.script))==0&&
+        memcmp(g_childTree.array,&g_childTree.armedArray,sizeof(*g_childTree.array))==0&&
+        memcmp(g_childTree.returned,&g_childTree.armedReturn,sizeof(*g_childTree.returned))==0&&
+        memcmp(g_childTree.integer,&g_childTree.beforeInteger,sizeof(*g_childTree.integer))==0&&
+        g_childTree.nodes[0]==(g_child.site==ZR_RETURNED_EXEC_CHILD_STATEMENT_NULL?ZR_NULL:g_childTree.returned));
+    /* Restore every link before any caller observation, assertion or AST Free,
+     * even if the real helper unexpectedly succeeded or altered its inputs.
+     */
+    g_childTree.script->data.script.statements=g_childTree.array;
+    g_childTree.array->nodes=g_childTree.nodes;g_childTree.array->count=g_childTree.beforeArray.count;
+    g_childTree.array->capacity=g_childTree.beforeArray.capacity;
+    g_childTree.nodes[0]=g_childTree.returned;
+    g_childTree.returned->data.returnStatement.expr=g_childTree.integer;
+    g_child.restored=(unsigned)(
+        memcmp(g_childTree.script,&g_childTree.beforeScript,sizeof(*g_childTree.script))==0&&
+        memcmp(g_childTree.array,&g_childTree.beforeArray,sizeof(*g_childTree.array))==0&&
+        memcmp(g_childTree.returned,&g_childTree.beforeReturn,sizeof(*g_childTree.returned))==0&&
+        memcmp(g_childTree.integer,&g_childTree.beforeInteger,sizeof(*g_childTree.integer))==0&&
+        g_childTree.nodes[0]==g_childTree.returned);
+    if(g_child.completed!=1u||!g_child.unchanged||!g_child.restored)++g_child.errors;
+    memset(&g_childTree,0,sizeof(g_childTree)); /* no borrowed pointer survives */
+}
 static int record_frees(unsigned record,unsigned *frees){
     int result=ZrTests_ExecOwner_TryRecordFrees(record,frees);
     ++g_observed.recordQueries;
@@ -157,7 +245,7 @@ TZrBool ZrTests_ReturnedExec_Snapshot(SZrFunction *function,const SZrExecIrModul
 static int prior_health(void){
     SZrReturnedVmStats vm={0};SZrOwnerHeapStats owner=ZrTests_ExecOwner_Stats();
     SZrReturnedHeapStats crt[2];
-    if(g_directOwner!=ZR_NULL||g_fault!=0u||ZrTests_Returned_TryVmStats(&vm)!=1||
+    if(g_childTree.active||g_child.errors||g_directOwner!=ZR_NULL||g_fault!=0u||ZrTests_Returned_TryVmStats(&vm)!=1||
             vm.live||vm.errors||vm.diagnosticCount||vm.dropped||owner.live||owner.errors||
             owner.records!=owner.frees||owner.records>RETURNED_EXEC_OWNER_WITNESSES)return 0;
     for(unsigned k=0u;k<2u;++k){
@@ -204,6 +292,7 @@ void ZrTests_ReturnedExec_Init(void){
     ZrTests_Returned_Init();ZrTests_ExecOwner_Reset();
     memset(&g_observed,0,sizeof(g_observed));memset(&g_teardown,0,sizeof(g_teardown));
     memset(g_crtWitnesses,0,sizeof(g_crtWitnesses));memset(g_ownerWitnesses,0,sizeof(g_ownerWitnesses));
+    memset(&g_child,0,sizeof(g_child));memset(&g_childTree,0,sizeof(g_childTree));
     g_fault=0u;g_directOwner=ZR_NULL;g_lifecycleErrors=0u;g_closed=0u;
     g_teardown.beginResult=ZrTests_ReturnedExec_CleanupBegin(&g_teardown.ledgers,&storage,verified);
     TEST_ASSERT_EQUAL_INT(1,g_teardown.beginResult);
@@ -238,7 +327,7 @@ void ZrTests_ReturnedExec_Close(void){
     ZrTests_ExecOwner_Disarm();g_fault=0u;ZrCore_ExecIr_OwnedModuleFree(&g_directOwner);
     ZrTests_Returned_Shutdown();
     g_teardown.vmResult=ZrTests_Returned_TryVmStats(&g_teardown.vm);
-    g_teardown.observerErrors=g_lifecycleErrors+g_observed.errors;
+    g_teardown.observerErrors=g_lifecycleErrors+g_observed.errors+g_child.errors+g_childTree.active;
     ZrTests_ReturnedExec_CleanupLedgers(&g_teardown.ledgers);
     g_closed=1u;
     if(g_teardown.observerErrors||g_teardown.vmResult!=1||g_teardown.vm.live||g_teardown.vm.errors||

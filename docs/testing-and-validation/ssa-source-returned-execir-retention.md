@@ -55,16 +55,35 @@ status: implemented-validated-finite
 
 ## Current evidence boundary
 
-Current status is implemented-validated-finite for the Source handoff.
-Production mode4 uses AttachPrimitiveSourceFrame, VerifyFunction_ALL and the
-eleven-argument finalized helper. Actual direct Source22 and AOT25 both pass,
-and the exact two-test CTest selection passes; all three phases exit0 naturally.
-The twenty existing RUN_TEST names/order and both original sweep protocols are
-preserved, with two passing Frame OOM cases appended. This is no release or
-whole-leaf acceptance. Earlier r1/r2 input-pin and VerifyGlobs failures, later
-r3/r4 helper failures and the older generic Source REDr3 remain historical.
+Current status is implemented-validated-finite for the Source handoff and four
+child AST boundaries. Production mode4 uses AttachPrimitiveSourceFrame,
+VerifyFunction_ALL and the eleven-argument finalized helper. Actual direct
+Source26 and AOT25 pass, and the exact two-test CTest selection passes; all three
+phases exit0 naturally. The original twenty cases, two Frame OOM cases and both
+156-site sweep protocols are preserved, followed by four child refusal/retry
+cases. This is no release, whole-leaf or all47 acceptance. Earlier r1/r2 input-pin
+and VerifyGlobs failures, r3/r4 helper failures and generic Source REDr3 remain
+historical; no failed receipt is rewritten.
 
-Actual raw logs and validation are under
+Current evidence is under
+`E:/cargo-targets/zr_vm/reports/ssa-source-child-boundaries-01a0fe2b/`:
+
+| Record | SHA256 | Finite evidence |
+| --- | --- | --- |
+| receipt.json | `2AFCA16CBE0C70459B490126BA00CC9418A4D5CE2734F3E0E137B09B3C47A0FF` | Eleven native phases naturally exit0; current build/dependency/runtime records |
+| runtime-validation.json | `CB375DF69C3843ABE628B225C7EFCB2A47EC0BB5F05A4ABB7BD96136BC334872` | Source26/AOT25/CTest2, exact ordered protocols and healthy FINAL |
+| symbols-check.json | `863BF1A1C230B2B67BED5920070238B2E0DAFA9F49EC7DEA41358D06007095FA` | Six metadata phases naturally exit0;15 changed objects,772 exact cached objects,27 providers |
+| msvc-validation.json | `7FAEF779E20424BA1FB26E249A4B69C802C6A05AD5B9E2252713DE28E00A5D0F` | Two current TUs compile-only exit0; fixture W0, main has two unchanged prior-body warnings |
+
+Source stdout is3470B/SHA
+`9EA569CDEAA3A01EA046E23C6EFFB1A109BB1419D0F45B861C207B0AEA10C29D`;
+stderr is25376B/SHA
+`4705EC80CA0D6C56F7CAE089EBE5395AE7B5A0EF35ED9F154F837F456F8A25D2`.
+The last build-r3 actually compiles10 objects, reuses777 cached objects, emits no
+new warnings and has no measured input drift. This incremental result is not a
+fresh full build or a whole-byte atomic snapshot of the shared checkout.
+
+The preceding Source30 delivery's historical Source22 raw logs and validation are under
 `E:/cargo-targets/zr_vm/reports/ssa-20261005-01a0fe2b/source-current-direct/`.
 `receipt.json` SHA is
 `1AA01EE774524549B5D8C7160ACCDA311791A8F5F63D82BE68607E52165EBC55`;
@@ -74,7 +93,7 @@ Ninja dependency and archive-member relative-path handling, and the exact CTest
 environment preamble were corrected in the metadata verifiers using the same
 authenticated raw logs. Those native phases were not rerun. The two generated
 AOT UBSAN_OPTIONS preamble rows are checked separately from child output.
-Independent SourceSol review accepts the current physical dependency/provider
+Independent SourceSol review accepted those physical dependency/provider
 evidence and exact raw runtime protocols without another native run.
 
 The measured inputs are independently recorded shared-checkout files, including
@@ -127,7 +146,9 @@ retry uses a fresh Global, publishes real frame/header/slots, reaches the finali
 and observes exactly-once release. All nine lower diagnostic fields and the full
 Source diagnostic are compared; callbacks defer errors without Unity assertions.
 
-The actual direct result is Source22 PASS/0FAIL/0ignored and child0; independent
+### Historical Source22 protocol
+
+The previous delivery's actual direct result was Source22 PASS/0FAIL/0ignored and child0; independent
 AOT25 PASS/child0 has its exact42 diagnostic rows. CTest passes exactly those
 two selections with exit0. Source stdout requires22 unique ordered PASS
 rows, the footer "22 Tests 0 Failures 0 Ignored ", OK and the healthy FINAL row.
@@ -142,13 +163,67 @@ followed by these exact stderr rows:
 Here F is that exact FEATURE row; n9/n8 are independently measured and completed
 whole-finalizer sweep counts. Total FEATURE rows must be29+n9+n8. Direct and CTest
 protocols must agree without unknown, missing or duplicated observer rows.
-The actual n9/n8 values are156/156; each sweep measures156 and completes156.
-Thus the observed FEATURE count is341. Both Frame OOM rows report failed=1 retry=1.
+The historical n9/n8 values were156/156; each sweep measured156 and completed156.
+Thus that observed FEATURE count was341. Both Frame OOM rows reported failed=1 retry=1.
 FINAL reports closed=1 support=1 with vm_live=0 vm_errors=0 owner_live=0
 owner_errors=0 observer_errors=0. Direct and CTest child protocols agree.
-Four child NULL/zero cases injected through Source remain open. The four lower
-AST empty-child checks at `963a81af3502d11361cab3dd64a9c0b9a5dc46a7` have separate
-validation and do not supply this Source injection coverage.
+
+### Current Source26 child-boundary protocol
+
+Four Source cases now follow the historical22 without changing its case names,
+order or observer prefix:
+
+| Case | RUN_TEST name | Temporary mutation at the genuine finalizer call |
+| --- | --- | --- |
+| 23 | test_source_child_statements_null_cleanup_retry | SCRIPT statements header becomes NULL |
+| 24 | test_source_child_statements_empty_cleanup_retry | statements count becomes0; real nodes allocation and capacity stay unchanged |
+| 25 | test_source_child_statement_null_cleanup_retry | The sole RETURN child in nodes[0] becomes NULL |
+| 26 | test_source_child_expression_null_cleanup_retry | The real RETURN expression child becomes NULL |
+
+The typed `ZrTests_ReturnedExec_Finalized` wrapper in
+`tests/parser/test_ssa_source_returned_execir_retention.c` calls the real
+eleven-argument finalizer with its genuine arguments. The fixture's
+`ZrTests_ReturnedExec_ChildBegin/End` in
+`tests/parser/support/ssa_source_returned_execir_fixture.c` surround that call:
+they inject only these four shapes, record the live SCRIPT/header/nodes/RETURN/
+integer addresses, selected destination and actual entry token, poison the lower
+diagnostic, check the armed input bytes, and restore the exact saved child field
+before returning to compiler/AST cleanup. No Unity
+assertion occurs while a mutated AST could escape to cleanup. The nodesNULL/count1
+malformed-range case is a separate earlier guard, not the legal count0 shape.
+Count0 is valid array geometry but unsupported by this sole-RETURN retention
+profile; all four cases must refuse without publishing an owner.
+
+The main records actual producer windows, input preservation and output-record
+state while their borrows are live. It proves all candidate records released
+before shutdown, then completes real Global shutdown and observes pre-recovery
+health before assertions. Expected Source diagnostic is EXECIR_OWNER/UNSUPPORTED,
+hasExecIr=true, with lower UNSUPPORTED and the actual nonzero entry functionToken;
+the other seven lower fields and unrelated Source/range/AOT fields are zero.
+All nine lower fields and the full Source diagnostic are compared. Saved numerical
+witnesses survive cleanup; stale AST/owner pointers are not dereferenced afterward.
+Each case then opens a fresh Global, performs a disarmed successful literal9
+retry, observes real owner publication and exactly-once release, and closes it.
+These are semantic refusals, not allocation failures; zero total allocations is
+not a required assertion. The separate lower checks at
+`963a81af3502d11361cab3dd64a9c0b9a5dc46a7` remain historical lower evidence rather
+than a substitute for these actual Source injections.
+
+Current stdout requires26 unique ordered PASS rows, footer
+"26 Tests 0 Failures 0 Ignored ", OK and the exact healthy FINAL row.
+After the historical22 stderr prefix, each child contributes one successful
+retry FEATURE followed by its exact row, in this order:
+
+    RETURNED_EXEC_CHILD_AST site=statements_null refused=1 restored=1 retry=1
+    RETURNED_EXEC_CHILD_AST site=statements_empty refused=1 restored=1 retry=1
+    RETURNED_EXEC_CHILD_AST site=statement_null refused=1 restored=1 retry=1
+    RETURNED_EXEC_CHILD_AST site=expression_null refused=1 restored=1 retry=1
+
+There are345 FEATURE rows (`33+n9+n8`), two completed156/156 sweeps, two Frame
+OOM rows and four child rows. The exact stderr union is353 lines with no unknown,
+missing or duplicated rows. FINAL has closed=1 support=1 and zero VM/owner/observer
+errors/live counts. AOT25 retains its exact42 diagnostic rows. Direct Source,
+direct AOT and the exact CTest2 stream unions agree and all exit0 naturally.
 
 ## Actual producer observation and logical expectations
 
@@ -204,14 +279,15 @@ ignored paths remain OPEN.
 
 ## Current private provider and build selection
 
-The actual selection has18 roles/786 TUs/29 FI TUs. It uses15 private Core owner
+The current selection has18 roles/787 TUs/29 FI TUs and813 unique actual dependency
+paths. It uses15 private Core owner
 providers plus one private module-copy
 TU,8 private Parser providers,2 private Frame providers and one observed producer.
 The ten parser-side providers remain build, state_maps, dead_source_places,
 source_frame, source_frame_validation, frame_layout, finalized_module,
 finalized_module_validation, callable_query and canonical_type_lookup. Only the
 two source_frame objects move from private_parser to private_frame. Historical
-static784-TU expectations are superseded by the actual786-TU graph and current
+static784-TU and previous786-TU expectations are superseded by the actual787-TU graph and current
 command/dependency evidence.
 Only Frame2 receives ssa_source_returned_execir_frame_shim.h. The observed producer
 uses the typed AttachFrame/finalizer shim; all five Frame callbacks must be unique
@@ -237,16 +313,27 @@ C11/MD and no-recovery UBSan stay enabled; diagnostic warnings are recorded and
 release_accepted stays false. Those r2 counts and preview checks are historical.
 The later r3/r4 helper gates and their failed receipts remain historical; they
 are not replaced with a claim that a strict helper accepted the current run.
-The actual current direct build performs775 compilations and two executable
+The preceding Source30 direct build performed775 compilations and two executable
 links. After shared input changes, its actual refresh performs27 compilations
 and two links, with759 exact cached objects and811 unique current dependency
-paths checked VALID. The current graph and symbol/member evidence cover all18
+paths checked VALID. That historical graph and symbol/member evidence covered all18
 roles/786 TUs. No fresh full rebuild or atomic shared-checkout snapshot is claimed.
 The initial build emits61 warnings and the refresh22 warnings. The complete
 build warning audit retains three coordinate migrations and the checkpoint
 size1208-to1232 message change. These are observed diagnostics, not W0; neither
 the historical62-warning budget nor its fourteen coordinate migrations grants
-fullW0 or release credit.
+fullW0 or release credit. The current child-boundary task adds actual incremental
+build/dependency records and15-object symbol checks, current linked maps and four
+archive inventories: ordinary/residual Core229→212 and Parser465→453, preserving
+the exact17/12 exclusions and27 provider identities. The15 changed objects plus
+772 exact cached objects account for all787 selected TUs; the final build-r3's
+10 compilations plus777 cached objects is a different incremental phase, not a
+claim that all15 symbol-checked objects compiled in that last phase.
+
+Current MSVC validation compiles only the Source main and its Source ExecIR
+fixture. Both exit0; the fixture has no warnings. The main retains two warnings
+in unchanged prior bodies: C4389 at line260 and C4702 at line563. This supplies
+neither an MSVC executable run nor fullMSVC/fullW0/Linux acceptance.
 
 Current execution credit covers Source compilation and real Global metadata
 initialization/shutdown. SourceExecute, returned Function execution, VM execution,
@@ -258,7 +345,8 @@ The lower [finalized-module gate](../acceptance/source-finalized-module.md)
 proved24 cases/89 faults/16 declared-profile lifetimes at commit `d475d47494d5b7566e258dd379466ca099b3da6f`.
 Those finite lower observations and independent AOT25/Function20/generic14 gates
 do not supply the Source denominator or its functional credit; the current
-Source22 run supplies its own evidence above. Full Source/family migration, registry durability,
+Source26 run supplies its own evidence above. The four Source child NULL/zero
+cases are now covered in this finite profile. Full Source/family migration, registry durability,
 Linux/full MSVC, normal project, backend/runtime parity and all47 stay OPEN.
 
 - [Finalized producer contract](../parser-and-semantics/ssa-source-returned-execir-retention.md)

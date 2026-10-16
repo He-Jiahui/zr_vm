@@ -1,6 +1,7 @@
 #ifndef ZR_TEST_RETURNED_EXEC_FIXTURE_H
 #define ZR_TEST_RETURNED_EXEC_FIXTURE_H
 #include <stdint.h>
+#include "zr_vm_parser/ast.h"
 #include "ssa_source_returned_retention_fixture.h"
 #include "ssa_source_returned_execir_cleanup.h"
 #include "tests/core/support/ssa_exec_ir_owned_module_fixture.h"
@@ -21,6 +22,29 @@ typedef struct SZrReturnedExecObservation {
     int directArmResult,actualArmResult,directEventResult,actualEventResult;
     unsigned recordQueries,recordRefusals,eventQueries,eventRefusals;
 } SZrReturnedExecObservation;
+enum EZrReturnedExecChildSite {
+    ZR_RETURNED_EXEC_CHILD_STATEMENTS_NULL=1,
+    ZR_RETURNED_EXEC_CHILD_STATEMENTS_EMPTY,
+    ZR_RETURNED_EXEC_CHILD_STATEMENT_NULL,
+    ZR_RETURNED_EXEC_CHILD_EXPRESSION_NULL
+};
+typedef struct SZrReturnedExecChildObservation {
+    unsigned site,entered,completed,unchanged,restored,ownerEmpty,poisoned,errors;
+    uintptr_t scriptAddress,arrayAddress,nodesAddress,returnAddress,integerAddress,destinationAddress;
+    TZrUInt32 functionToken;
+    TZrBool result;
+    SZrExecIrDiagnostic diagnostic;
+} SZrReturnedExecChildObservation;
+/* Only a genuine live producer AST is accepted. Begin/End have no assertions,
+ * never decide the callee result, and restore all borrowed child links before
+ * the producer resumes cleanup. Observation retains no dereferenceable borrow.
+ */
+int ZrTests_ReturnedExec_ChildArm(unsigned site);
+void ZrTests_ReturnedExec_ChildBegin(const SZrAstNode *script,TZrUInt32 token,
+        SZrExecIrOwnedModule **destination,SZrExecIrDiagnostic *diagnostic);
+void ZrTests_ReturnedExec_ChildEnd(TZrBool result,SZrExecIrOwnedModule **destination,
+        const SZrExecIrDiagnostic *diagnostic);
+SZrReturnedExecChildObservation ZrTests_ReturnedExec_ChildObservation(void);
 typedef struct SZrReturnedExecTeardown {
     int beginResult,vmResult;
     SZrReturnedVmStats vm;

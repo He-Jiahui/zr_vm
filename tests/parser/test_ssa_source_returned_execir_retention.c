@@ -358,8 +358,10 @@ TZrBool ZrTests_ReturnedExec_Finalized(
     before=ZrTests_ExecOwner_Stats();g_final.first=before.records;
     if(g_site!=0u){g_final.actualArmResult=(unsigned)ZrTests_ExecOwner_TryArm(g_site);
         if(g_final.actualArmResult!=1u)++g_final.errors;}
+    ZrTests_ReturnedExec_ChildBegin(script,finalized?finalized->functionToken:0u,destination,diagnostic);
     g_final.result=source_snapshot_finalized_primitive_module(semantic,context,script,sourceIdentity,
             compilerConstants,functionConstants,functionConstantCount,original,finalized,destination,diagnostic);
+    ZrTests_ReturnedExec_ChildEnd(g_final.result,destination,diagnostic);
     ZrTests_ExecOwner_Disarm();end=ZrTests_ExecOwner_Stats();g_final.last=end.records;
     g_final.attempts=end.attempts-before.attempts;if(diagnostic)g_final.actual=*diagnostic;
     g_final.actualEventResult=(unsigned)trace_read(before.attempts,end.attempts,g_final.actualTrace,&g_final.failedIndex);
@@ -812,6 +814,55 @@ static void frame_oom(unsigned site){
 }
 static void test_source_frame_values_oom_cleanup_retry(void){frame_oom(1u);}
 static void test_source_frame_header_oom_cleanup_retry(void){frame_oom(2u);}
+/* Four independently registered Source calls: mutation starts after all real
+ * producer observations and is restored inside the wrapper before cleanup.
+ */
+static void child_ast_refusal(unsigned site,const char *name){
+    SZrSourceCompileDiagnostic d,expected={0};SZrFunction *f;SZrReturnedExecObservation producer;
+    SZrReturnedExecChildObservation child;SZrOwnerHeapStats owner;
+    unsigned returned,released,scriptMatches=0u;TEST_ASSERT_EQUAL_INT(1,ZrTests_ReturnedExec_ChildArm(site));
+    memset(&d,0xA5,sizeof(d));f=compile_source(0u,g_nine,ZR_FALSE,&g_exec,&d);returned=(unsigned)(f!=ZR_NULL);
+    child=ZrTests_ReturnedExec_ChildObservation();producer=ZrTests_ReturnedExec_Observation();
+    owner=ZrTests_ExecOwner_Stats();released=frame_window_released(g_final.producerFirst,owner.records);
+    for(unsigned i=0u;i<g_final.addressCount;++i)if(g_final.addresses[i]==child.scriptAddress)++scriptMatches;
+    /* No assertions until the actual producer/AST cleanup and Global shutdown
+     * have completed. The saved numerical witnesses outlive those borrows.
+     */
+    close_source();assert_closed();TEST_ASSERT_EQUAL_UINT(0u,returned);
+    TEST_ASSERT_EQUAL_UINT(site,child.site);TEST_ASSERT_EQUAL_UINT(1u,child.entered);
+    TEST_ASSERT_EQUAL_UINT(1u,child.completed);TEST_ASSERT_EQUAL_UINT(1u,child.poisoned);
+    TEST_ASSERT_EQUAL_UINT(1u,child.unchanged);TEST_ASSERT_EQUAL_UINT(1u,child.restored);
+    TEST_ASSERT_EQUAL_UINT(1u,child.ownerEmpty);TEST_ASSERT_FALSE(child.result);TEST_ASSERT_EQUAL_UINT(0u,child.errors);
+    TEST_ASSERT_EQUAL_UINT(1u,scriptMatches);TEST_ASSERT_NOT_EQUAL_UINT64(0u,child.arrayAddress);
+    TEST_ASSERT_NOT_EQUAL_UINT64(0u,child.nodesAddress);TEST_ASSERT_NOT_EQUAL_UINT64(0u,child.returnAddress);
+    TEST_ASSERT_NOT_EQUAL_UINT64(0u,child.integerAddress);TEST_ASSERT_EQUAL_UINT64(g_final.slotAddress,child.destinationAddress);
+    TEST_ASSERT_EQUAL_UINT(1u,producer.appendCalls);TEST_ASSERT_TRUE(producer.appendResult);
+    TEST_ASSERT_TRUE(producer.identityValid);TEST_ASSERT_EQUAL_UINT64(9u,producer.literalBits);
+    TEST_ASSERT_EQUAL_UINT(0u,producer.snapshotCalls);TEST_ASSERT_EQUAL_UINT(0u,producer.errors);
+    TEST_ASSERT_EQUAL_UINT(1u,g_final.calls);TEST_ASSERT_FALSE(g_final.result);TEST_ASSERT_EQUAL_UINT(0u,g_final.errors);
+    TEST_ASSERT_EQUAL_UINT(1u,g_final.originalResult);TEST_ASSERT_EQUAL_UINT(1u,g_final.finalizedResult);
+    TEST_ASSERT_EQUAL_UINT(1u,g_final.profileResult);TEST_ASSERT_EQUAL_UINT(1u,g_final.inputPreserved);
+    TEST_ASSERT_EQUAL_UINT(1u,g_final.actualEventResult);TEST_ASSERT_EQUAL_UINT(0u,g_final.publishedResult);
+    TEST_ASSERT_EQUAL_UINT(0u,g_final.outputCount);TEST_ASSERT_EQUAL_UINT(1u,released);
+    TEST_ASSERT_EQUAL_UINT(0u,owner.live);TEST_ASSERT_EQUAL_UINT(0u,owner.errors);TEST_ASSERT_EQUAL_UINT(0u,owner.failures);
+    TEST_ASSERT_EQUAL_UINT(owner.records,owner.frees);TEST_ASSERT_NOT_EQUAL_UINT32(0u,producer.entryToken);
+    TEST_ASSERT_EQUAL_UINT32(producer.entryToken,child.functionToken);
+    expected.stage=ZR_SOURCE_STAGE_EXECIR_OWNER;expected.result=ZR_SOURCE_RESULT_UNSUPPORTED;expected.hasExecIr=ZR_TRUE;
+    expected.execIr.code=ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED;expected.execIr.functionToken=producer.entryToken;
+    diag_equal(&expected,&d);ZrTests_ExecOwner_Diagnostic(&expected.execIr,&child.diagnostic);
+    ZrTests_ExecOwner_Diagnostic(&expected.execIr,&g_final.actual);no_aot();
+    init_source();(void)exec(0u,g_nine,9u,ZR_TRUE);ZrTests_Returned_FreeFunction(0u);
+    assert_output_ids(&g_final,1u);close_source();assert_closed();
+    fprintf(stderr,"RETURNED_EXEC_CHILD_AST site=%s refused=1 restored=1 retry=1\n",name);
+}
+static void test_source_child_statements_null_cleanup_retry(void){
+    child_ast_refusal(ZR_RETURNED_EXEC_CHILD_STATEMENTS_NULL,"statements_null");}
+static void test_source_child_statements_empty_cleanup_retry(void){
+    child_ast_refusal(ZR_RETURNED_EXEC_CHILD_STATEMENTS_EMPTY,"statements_empty");}
+static void test_source_child_statement_null_cleanup_retry(void){
+    child_ast_refusal(ZR_RETURNED_EXEC_CHILD_STATEMENT_NULL,"statement_null");}
+static void test_source_child_expression_null_cleanup_retry(void){
+    child_ast_refusal(ZR_RETURNED_EXEC_CHILD_EXPRESSION_NULL,"expression_null");}
 int main(void){UNITY_BEGIN();
     RUN_TEST(test_none_nine_returns_without_owners);
     RUN_TEST(test_zero_eight_and_null_options_nine_without_owners);
@@ -835,6 +886,10 @@ int main(void){UNITY_BEGIN();
     RUN_TEST(test_each_source_snapshot_allocation_fault_cleanup_retry);
     RUN_TEST(test_source_frame_values_oom_cleanup_retry);
     RUN_TEST(test_source_frame_header_oom_cleanup_retry);
+    RUN_TEST(test_source_child_statements_null_cleanup_retry);
+    RUN_TEST(test_source_child_statements_empty_cleanup_retry);
+    RUN_TEST(test_source_child_statement_null_cleanup_retry);
+    RUN_TEST(test_source_child_expression_null_cleanup_retry);
     close_source();int support=closed_valid();
     printf("RETURNED_EXEC_FINAL closed=%u support=%u vm_live=%u vm_errors=%u owner_live=%u owner_errors=%u observer_errors=%u\n",
            g_closed,(unsigned)support,g_close.vm.live,g_close.vm.errors,g_close.ledgers.ownerBefore.live,
