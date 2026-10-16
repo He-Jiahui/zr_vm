@@ -1,14 +1,9 @@
 cmake_minimum_required(VERSION 3.31)
 
-# This is an independent project. Source paths always identify the current
-# checkout; only build products and provenance metadata belong in the build tree.
-get_filename_component(ZR_SSA_SOURCE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." REALPATH)
-set(_zr_output_root "E:/cargo-targets/zr_vm/build")
-cmake_path(ABSOLUTE_PATH CMAKE_BINARY_DIR NORMALIZE OUTPUT_VARIABLE _zr_binary_dir)
-cmake_path(IS_PREFIX _zr_output_root "${_zr_binary_dir}" NORMALIZE _zr_output_allowed)
-if (NOT _zr_output_allowed OR CMAKE_BINARY_DIR STREQUAL CMAKE_SOURCE_DIR)
-    message(FATAL_ERROR "Use a separate build directory under E:/cargo-targets/zr_vm/build.")
-endif ()
+include("${CMAKE_CURRENT_LIST_DIR}/../ssa-direct-validation-paths.cmake")
+zr_ssa_validation_source_root(_zr_direct_source_root)
+set(ZR_SSA_SOURCE_ROOT "${_zr_direct_source_root}")
+zr_ssa_validation_binary_dir(_zr_direct_binary_dir)
 if (DEFINED CMAKE_TRY_COMPILE_TARGET_TYPE AND
         NOT CMAKE_TRY_COMPILE_TARGET_TYPE STREQUAL "EXECUTABLE")
     message(FATAL_ERROR "Compiler detection must include the real executable ABI/link probe.")
@@ -230,8 +225,8 @@ target_link_options(zr_vm_ssa_compare_metadata_guards_test PRIVATE
 
 # Instrument both production TUs for the two direct Attach allocation sites.
 add_library(ssa_source_primitive_frame_oom_object OBJECT
-        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame.c"
-        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame_validation.c")
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_frame.c"
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_frame_validation.c")
 target_include_directories(ssa_source_primitive_frame_oom_object PRIVATE
         ${_zr_public_includes} ${_zr_vendor_includes}
         "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser")
@@ -446,7 +441,7 @@ set_tests_properties(ssa_function_aot_owner PROPERTIES
 # Production constant extraction uses the actual bridge TU with isolated CRT
 # observation. Its real source fixture needs Parser's compile metadata closure.
 add_library(ssa_source_source_scalar_constant_noalloc_object OBJECT
-        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_scalar_constant.c")
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_scalar_constant.c")
 target_include_directories(ssa_source_source_scalar_constant_noalloc_object PRIVATE
         ${_zr_public_includes} ${_zr_vendor_includes}
         "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser")
@@ -579,6 +574,9 @@ include("${CMAKE_CURRENT_LIST_DIR}/../ssa-source-descriptor-oom.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/../ssa-source-returned-retention.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/../ssa-function-execir-owner.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/../ssa-source-returned-execir-retention.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../ssa-source-integer-expression-retention.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../ssa-source-integer-expression-faults.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../ssa-source-integer-expression-proof.cmake")
 set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_library
         ssa_source_aot_scalar_text_support ${_zr_scalar_targets}
         ssa_source_primitive_frame_oom_object
@@ -593,6 +591,10 @@ set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_l
         ssa_source_descriptor_oom_object zr_vm_ssa_source_descriptor_oom_test
         ssa_source_returned_descriptor_object ssa_source_returned_owner_object
         zr_vm_ssa_source_returned_retention_test
+        zr_vm_ssa_source_integer_expression_retention_test
+        zr_vm_ssa_integer_fault_private_parser zr_vm_ssa_integer_fault_producer
+        zr_vm_ssa_source_integer_expression_faults_test
+        zr_vm_ssa_integer_proof_producer zr_vm_ssa_source_integer_expression_proof_test
         ssa_source_source_scalar_constant_noalloc_object zr_vm_ssa_source_scalar_constant_test
         ssa_source_zr_vm_common ${_zr_vendor_targets} ssa_source_unity ssa_source_runtime_support
         zr_vm_ssa_source_execbc_vm_test zr_vm_ssa_compare_metadata_guards_test
@@ -610,7 +612,7 @@ set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_l
         zr_vm_ssa_primitive_source_frame_oom_test
         zr_vm_ssa_typed_binding_contract_test)
 set(_zr_graph "target\tabsolute_source\tsha256\n")
-set(_zr_settings "compiler\t${CMAKE_C_COMPILER}\ncompiler_id\t${CMAKE_C_COMPILER_ID}\ncompiler_version\t${CMAKE_C_COMPILER_VERSION}\narchive_tool\t${CMAKE_AR}\narchive_rule\t${CMAKE_C_CREATE_STATIC_LIBRARY}\nlink_rule\t${CMAKE_C_LINK_EXECUTABLE}\n")
+set(_zr_settings "compiler\t${CMAKE_C_COMPILER}\ncompiler_id\t${CMAKE_C_COMPILER_ID}\ncompiler_version\t${CMAKE_C_COMPILER_VERSION}\ntoolchain_file\t${CMAKE_TOOLCHAIN_FILE}\nmake_rules_override_c\t${CMAKE_USER_MAKE_RULES_OVERRIDE_C}\narchive_tool\t${CMAKE_AR}\narchive_rule\t${CMAKE_C_CREATE_STATIC_LIBRARY}\nlink_rule\t${CMAKE_C_LINK_EXECUTABLE}\n")
 foreach (_target IN LISTS _zr_targets)
     # A shared fixture is a valid source of several distinct targets. Reject
     # duplicate membership within a target while recording every target pair.
@@ -663,12 +665,12 @@ foreach (_header IN ITEMS
         tests/parser/support/ssa_source_returned_execir_owner_shim.h
         tests/parser/support/ssa_source_returned_descriptor_shim.h
         tests/parser/support/ssa_source_returned_owner_shim.h
-        zr_vm_parser/include/zr_vm_parser/compiler_source_retention.h
-        zr_vm_parser/src/zr_vm_parser/compiler/compiler_source_retention_internal.h
+        zr_vm_parser/src/zr_vm_parser/compiler/semantic/compiler_source_retention.h
+        zr_vm_parser/src/zr_vm_parser/compiler/semantic/compiler_source_retention_internal.h
         zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_finalized_module_internal.h
         zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_callable_query_internal.h
-        zr_vm_parser/include/zr_vm_parser/aot_ir_projection_descriptor.h
-        zr_vm_parser/include/zr_vm_parser/exec_ir_source_scalar_constant.h
+        zr_vm_parser/src/zr_vm_parser/exec_ir/aot_ir_projection_descriptor.h
+        zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_scalar_constant.h
         zr_vm_core/include/zr_vm_core/function.h
         zr_vm_core/include/zr_vm_core/function_aot_ir.h
         zr_vm_core/include/zr_vm_core/function_exec_ir.h
@@ -681,14 +683,14 @@ foreach (_header IN ITEMS
         zr_vm_core/include/zr_vm_core/exec_ir.h
         zr_vm_core/include/zr_vm_core/exec_ir_state_map.h
         zr_vm_core/include/zr_vm_core/execution_contract.h
-        zr_vm_parser/include/zr_vm_parser/exec_ir_dead_source_places.h
-        zr_vm_parser/include/zr_vm_parser/exec_ir_host_primitive_layout.h
-        zr_vm_parser/include/zr_vm_parser/exec_ir_host_aot_target.h
-        zr_vm_parser/include/zr_vm_parser/exec_ir_source_module_contract.h
-        zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_string_heap.h
+        zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_dead_source_places.h
+        zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_host_primitive_layout.h
+        zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_host_aot_target.h
+        zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_module_contract.h
+        zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_metadata_string_heap.h
         zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_text.h
         zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_text_internal.h
-        zr_vm_parser/include/zr_vm_parser/exec_ir_source_frame.h
+        zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_frame.h
         zr_vm_library/third_party/zr_miniz/miniz/miniz_export.h)
     file(SHA256 "${ZR_SSA_SOURCE_ROOT}/${_header}" _hash)
     string(APPEND _zr_header_hashes "${ZR_SSA_SOURCE_ROOT}/${_header}\t${_hash}\n")

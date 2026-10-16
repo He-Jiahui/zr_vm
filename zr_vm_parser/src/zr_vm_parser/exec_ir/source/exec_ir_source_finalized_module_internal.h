@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "exec_ir/source/exec_ir_source_callable_query_internal.h"
+#include "exec_ir/source/exec_ir_source_integer_expression_internal.h"
 #include "zr_vm_core/exec_ir_owned_module.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_parser/ast.h"
@@ -34,8 +35,9 @@
  *
  * Required NULL arguments report INVALID_ARGUMENT/token0. Other refusals follow
  * the ordered finite v3 contract. NULL functionConstants is a pool-shape check,
- * not a top-level argument guard. No wrapper allocation or input mutation occurs;
- * real lower verification/frame/copy/snapshot operations own their temporaries.
+ * not a top-level argument guard. Literal admission uses no new scratch; expression
+ * admission owns one local proof and checked span growth, released on every exit.
+ * No input is mutated and real lower copy/snapshot operations remain transactional.
  */
 TZrBool source_snapshot_finalized_primitive_module(
         const SZrSemanticIrFunction *semantic, const SZrSemanticContext *context, const SZrAstNode *script,
@@ -48,8 +50,8 @@ TZrBool source_finalized_module_fail(SZrExecIrDiagnostic *diagnostic, EZrExecuti
                                      TZrMetadataToken token);
 
 enum {
-    SOURCE_FINALIZED_INPUT_SPANS = 94,
-    SOURCE_FINALIZED_ALL_SPANS = 127,
+    /* Literal geometry fits inline without adding allocation fault sites. */
+    SOURCE_FINALIZED_INLINE_SPANS = 127,
     SOURCE_FINALIZED_ROLES = 3,
     SOURCE_FINALIZED_NO_ROLE = 3
 };
@@ -71,7 +73,10 @@ typedef struct SSourceFinalizedModuleWitness {
     SZrExecIrDiagnostic *diagnostic;
     TZrMetadataToken token;
     SSourceCallableFacts facts;
-    SSourceFinalizedSpan spans[SOURCE_FINALIZED_ALL_SPANS];
+    SSourceFinalizedSpan inlineSpans[SOURCE_FINALIZED_INLINE_SPANS];
+    SSourceFinalizedSpan *spans;
+    SSourceIntegerProof integerProof;
+    TZrBool integerExpression;
     size_t spanCount, spanLimit;
     TZrUInt32 instructionIds[SOURCE_FINALIZED_ROLES], sourceIds[SOURCE_FINALIZED_ROLES];
     TZrBool mapped;
@@ -79,6 +84,7 @@ typedef struct SSourceFinalizedModuleWitness {
 TZrBool source_finalized_module_error(SSourceFinalizedModuleWitness *w, EZrExecutionDiagnosticCode code,
                                       TZrUInt32 expectedVersion, TZrUInt32 actualVersion, TZrUInt64 expectedHash,
                                       TZrUInt64 actualHash, unsigned role);
+void source_finalized_module_release(SSourceFinalizedModuleWitness *w);
 TZrBool source_finalized_module_preflight(SSourceFinalizedModuleWitness *w);
 TZrBool source_finalized_module_admit_source(SSourceFinalizedModuleWitness *w);
 TZrBool source_finalized_module_mapping(SSourceFinalizedModuleWitness *w);

@@ -1,6 +1,7 @@
 #include "exec_ir/exec_ir_dead_source_places.h"
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_core/exec_ir_state_map.h"
+#include "exec_ir/source/exec_ir_source_integer_expression_internal.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -269,15 +270,12 @@ static TZrBool dead_source_semantic_instruction_inert(
             instruction->escape == ZR_SEMANTIC_ESCAPE_LOCAL);
 }
 
-/* This finite admission independently proves the actual literal SCRIPT, whose
- * temporary has no projections, aliases, locals, views, loans or identity peer.
- * The AST is used only for origin/shape, never to synthesize constant bits. */
+/* Allocation-free literal canonical profile. No AST input or AST certification. */
 static TZrBool dead_source_prove_semantic_literal(
         const SZrSemanticIrFunction *semantic, const SZrSemanticContext *context,
         const SZrExecIrFunction *input, SZrExecIrDiagnostic *diagnostic) {
     const SZrSemanticSymbolRecord *symbol;
     const SZrCanonicalTypeNode *callable, *type;
-    const SZrAstNode *script, *terminalAst, *literal;
     const SZrSemanticIrInstruction *constant, *base, *terminal;
     const SZrSemanticIrValue *value;
     const SZrParserPlace *place;
@@ -305,7 +303,6 @@ static TZrBool dead_source_prove_semantic_literal(
         symbol->id != semantic->symbolId || symbol->typeId != semantic->callableTypeId ||
         symbol->kind != ZR_SEMANTIC_SYMBOL_KIND_FUNCTION ||
         symbol->overloadSetId != ZR_SEMANTIC_ID_INVALID ||
-        symbol->astNode == ZR_NULL || symbol->astNode->type != ZR_AST_SCRIPT ||
         callable->id != semantic->callableTypeId || callable->kind != ZR_CANONICAL_TYPE_FUNCTION ||
         callable->structuralHash == 0u || callable->structuralHash != input->signatureHash ||
         !dead_source_array_valid(&callable->data.function.parameterContracts,
@@ -320,22 +317,6 @@ static TZrBool dead_source_prove_semantic_literal(
     if (type == ZR_NULL || type->id != callable->data.function.returnTypeId ||
         type->kind != ZR_CANONICAL_TYPE_PRIMITIVE ||
         type->data.primitive.valueType != ZR_VALUE_TYPE_INT64) goto unsupported;
-    script = symbol->astNode;
-    if (!dead_source_range_valid(&script->location) ||
-        !dead_source_same_range(&symbol->location, &script->location) ||
-        script->data.script.statements == ZR_NULL ||
-        script->data.script.statements->count != 1u ||
-        script->data.script.statements->nodes == ZR_NULL) goto unsupported;
-    terminalAst = script->data.script.statements->nodes[0];
-    if (terminalAst == ZR_NULL || terminalAst->type != ZR_AST_RETURN_STATEMENT ||
-        terminalAst->data.returnStatement.isReferenceReturn ||
-        terminalAst->data.returnStatement.expr == ZR_NULL) goto unsupported;
-    literal = terminalAst->data.returnStatement.expr;
-    if (literal->type != ZR_AST_INTEGER_LITERAL ||
-        !dead_source_range_valid(&terminalAst->location) ||
-        !dead_source_range_valid(&literal->location) ||
-        !dead_source_range_contains(&script->location, &terminalAst->location) ||
-        !dead_source_range_contains(&terminalAst->location, &literal->location)) goto unsupported;
     block = (const SZrParserCfgBlock *)ZrCore_Array_Get((SZrArray *)&semantic->cfg.blocks, 0u);
     region = (const SZrSemanticIrRegion *)ZrCore_Array_Get((SZrArray *)&semantic->regions, 0u);
     place = ZrParser_PlaceGraph_Get(&semantic->places, 1u);
@@ -354,7 +335,7 @@ static TZrBool dead_source_prove_semantic_literal(
         place->base.kind != ZR_PARSER_PLACE_BASE_TEMPORARY || place->typeId != type->id ||
         !dead_source_array_valid(&place->projections, sizeof(SZrParserPlaceProjection)) ||
         place->projections.length != 0u ||
-        !dead_source_same_range(&place->sourceRange, &literal->location)) goto unsupported;
+        !dead_source_range_valid(&place->sourceRange)) goto unsupported;
     constant = ZrParser_SemanticIr_InstructionAt(semantic, 0u);
     base = ZrParser_SemanticIr_InstructionAt(semantic, 1u);
     terminal = ZrParser_SemanticIr_InstructionAt(semantic, 2u);
@@ -374,10 +355,14 @@ static TZrBool dead_source_prove_semantic_literal(
         value->facts.typeId != type->id ||
         value->facts.ownership != ZR_SEMANTIC_VALUE_OWNERSHIP_VALUE ||
         value->facts.nullability != ZR_SEMANTIC_VALUE_NULLABILITY_NONNULL ||
-        !dead_source_same_range(&constant->sourceRange, &literal->location) ||
-        !dead_source_same_range(&base->sourceRange, &literal->location) ||
-        !dead_source_same_range(&value->sourceRange, &literal->location) ||
-        !dead_source_same_range(&terminal->sourceRange, &terminalAst->location)) goto unsupported;
+        !dead_source_range_valid(&constant->sourceRange) ||
+        !dead_source_range_valid(&terminal->sourceRange) ||
+        !dead_source_range_valid(&symbol->location) ||
+        !dead_source_range_contains(&symbol->location, &terminal->sourceRange) ||
+        !dead_source_range_contains(&terminal->sourceRange, &constant->sourceRange) ||
+        !dead_source_same_range(&constant->sourceRange, &place->sourceRange) ||
+        !dead_source_same_range(&base->sourceRange, &constant->sourceRange) ||
+        !dead_source_same_range(&value->sourceRange, &constant->sourceRange)) goto unsupported;
     for (i = 0u; i < semantic->instructions.length; ++i) {
         const SZrSemanticIrInstruction *instruction = ZrParser_SemanticIr_InstructionAt(semantic, i);
         const SZrSemanticIrSourceMapEntry *map = (const SZrSemanticIrSourceMapEntry *)
@@ -537,7 +522,7 @@ unsupported:
 }
 
 static TZrBool dead_source_compact(
-        SZrExecIrFunction *candidate, const SZrDeadSourcePlaceProof *proof,
+        SZrExecIrFunction *candidate, TZrUInt32 retainedValues,
         SZrExecIrDiagnostic *diagnostic) {
     TZrExecIrValueId *map = ZR_NULL, *operands = ZR_NULL, *results = ZR_NULL;
     SZrExecIrValue *values = ZR_NULL;
@@ -553,7 +538,7 @@ static TZrBool dead_source_compact(
     if (map == ZR_NULL) goto oom;
     for (i = 0u; i < candidate->valueCount; ++i) {
         TZrExecIrValueId id = i + 1u;
-        if (id == proof->addressId || id == proof->provenanceId) continue;
+        if (id > retainedValues) continue;
         map[id] = ++valueCount;
     }
     if (!dead_source_size_valid(valueCount, sizeof(*values))) goto overflow;
@@ -563,7 +548,7 @@ static TZrBool dead_source_compact(
     }
     for (i = 0u; i < candidate->instructionCount; ++i) {
         const SZrExecIrInstruction *instruction = &candidate->instructions[i];
-        if (i + 1u == proof->placeInstructionId) continue;
+        if (instruction->opcode == ZR_EXEC_IR_OPCODE_PLACE_BASE) continue;
         if (instruction->operands.count > UINT32_MAX - operandCount ||
             instruction->results.count > UINT32_MAX - resultCount) goto overflow;
         operandCount += instruction->operands.count;
@@ -581,7 +566,7 @@ static TZrBool dead_source_compact(
         SZrExecIrRange oldOperands = instruction->operands, oldResults = instruction->results;
         instruction->operands.start = operandCount;
         instruction->results.start = resultCount;
-        if (i + 1u == proof->placeInstructionId) {
+        if (instruction->opcode == ZR_EXEC_IR_OPCODE_PLACE_BASE) {
             instruction->opcode = ZR_EXEC_IR_OPCODE_NOP;
             instruction->operands.count = instruction->results.count = 0u;
             continue;
@@ -632,6 +617,34 @@ cleanup:
     return success;
 }
 
+/* A fresh canonical witness never implies AST certification. */
+static TZrBool dead_source_integer_expression(
+        const SZrSemanticIrFunction *semantic, const SZrSemanticContext *context,
+        const SZrExecIrFunction *input, SZrExecIrFunction *output,
+        SZrExecIrDiagnostic *diagnostic) {
+    SSourceIntegerProof proof;
+    SZrExecIrFunction candidate;
+    TZrBool success = ZR_FALSE;
+    ESourceIntegerPhase phase;
+    source_integer_proof_init(&proof);
+    ZrCore_ExecIr_FunctionInit(&candidate);
+    if (!source_integer_prove(semantic, context, input->functionToken, &proof, diagnostic)) goto cleanup;
+    phase = input->valueCount == proof.valueCount ? SOURCE_INTEGER_COMPACTED : SOURCE_INTEGER_ORIGINAL;
+    if (!source_integer_check_function(&proof, input, phase, diagnostic) ||
+        !ZrCore_ExecIr_CloneFunction(input, &candidate, diagnostic) ||
+        !dead_source_compact(&candidate, proof.valueCount, diagnostic) ||
+        !source_integer_check_function(&proof, &candidate, SOURCE_INTEGER_COMPACTED, diagnostic) ||
+        !ZrCore_ExecIr_VerifyFunction(&candidate, ZR_EXEC_IR_VERIFY_ALL, diagnostic)) goto cleanup;
+    ZrCore_ExecIr_FreeFunction(output);
+    *output = candidate;
+    ZrCore_ExecIr_FunctionInit(&candidate);
+    success = ZR_TRUE;
+cleanup:
+    ZrCore_ExecIr_FreeFunction(&candidate);
+    source_integer_proof_free(&proof);
+    return success;
+}
+
 TZrBool ZrParser_ExecIr_EliminateDeadSourcePlaces(
         const SZrSemanticIrFunction *semantic,
         const SZrSemanticContext *context,
@@ -649,12 +662,15 @@ TZrBool ZrParser_ExecIr_EliminateDeadSourcePlaces(
         return dead_source_fail(input, diagnostic, ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT, 0u);
     /* Preserve the core verifier's actual diagnostic for malformed input. */
     if (!ZrCore_ExecIr_VerifyFunction(input, ZR_EXEC_IR_VERIFY_ALL, diagnostic) ||
-        !dead_source_metadata_supported(input, diagnostic) ||
-        !dead_source_prove_semantic_literal(semantic, context, input, diagnostic) ||
+        !dead_source_metadata_supported(input, diagnostic)) return ZR_FALSE;
+    if (semantic->instructions.length != 3u || semantic->values.length != 1u ||
+        semantic->places.places.length != 1u)
+        return dead_source_integer_expression(semantic, context, input, output, diagnostic);
+    if (!dead_source_prove_semantic_literal(semantic, context, input, diagnostic) ||
         !dead_source_prove_exec_literal(semantic, input, &proof, diagnostic)) return ZR_FALSE;
     ZrCore_ExecIr_FunctionInit(&candidate);
     if (!ZrCore_ExecIr_CloneFunction(input, &candidate, diagnostic)) return ZR_FALSE;
-    if (!dead_source_compact(&candidate, &proof, diagnostic) ||
+    if (!dead_source_compact(&candidate, (TZrUInt32)semantic->values.length, diagnostic) ||
         !ZrCore_ExecIr_VerifyFunction(&candidate, ZR_EXEC_IR_VERIFY_ALL, diagnostic)) {
         ZrCore_ExecIr_FreeFunction(&candidate);
         return ZR_FALSE;

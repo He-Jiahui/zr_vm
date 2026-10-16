@@ -4,6 +4,7 @@
 
 #include "exec_ir_internal.h"
 #include "exec_ir_build_compare.h"
+#include "exec_ir_build_storage_internal.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -109,17 +110,25 @@ static const SZrParserPlace *semantic_place_at(
 static TZrBool append_place_values(const SZrSemanticIrFunction *semantic,
                                    SZrExecIrFunction *output,
                                    TZrExecIrValueId *firstPlaceValue,
-                                   TZrExecIrValueId *firstPlaceProvenance) {
+                                   TZrExecIrValueId *firstPlaceProvenance,
+                                   SZrExecIrDiagnostic *diagnostic) {
     TZrUInt32 i;
 
+    if (semantic->places.places.length == 0u) {
+        const SExecIrBuildStorageSite site = {diagnostic, output, 0u, 0u, 0u};
+        if (output->valueCount == UINT32_MAX)
+            return build_storage_fail(&site, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW);
+        *firstPlaceValue = *firstPlaceProvenance = output->valueCount + 1u;
+        return ZR_TRUE;
+    }
     *firstPlaceValue = output->valueCount + 1u;
     for (i = 0u; i < (TZrUInt32)semantic->places.places.length; ++i) {
         const SZrParserPlace *place = (const SZrParserPlace *)ZrCore_Array_Get(
                 (SZrArray *)&semantic->places.places, i);
-        if (ZrCore_ExecIr_FunctionAddValue(
+        if (build_storage_add_value(
                     output, (TZrMetadataToken)place->typeId,
                     ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
-                    ZR_EXEC_IR_NULLABILITY_UNKNOWN) ==
+                    ZR_EXEC_IR_NULLABILITY_UNKNOWN, ZR_FALSE, diagnostic) ==
             ZR_EXEC_IR_VALUE_ID_INVALID) {
             return ZR_FALSE;
         }
@@ -128,10 +137,10 @@ static TZrBool append_place_values(const SZrSemanticIrFunction *semantic,
     for (i = 0u; i < (TZrUInt32)semantic->places.places.length; ++i) {
         const SZrParserPlace *place = (const SZrParserPlace *)ZrCore_Array_Get(
                 (SZrArray *)&semantic->places.places, i);
-        if (ZrCore_ExecIr_FunctionAddExternalValue(
+        if (build_storage_add_value(
                     output, (TZrMetadataToken)place->typeId,
                     ZR_EXEC_IR_OWNERSHIP_UNKNOWN,
-                    ZR_EXEC_IR_NULLABILITY_UNKNOWN) ==
+                    ZR_EXEC_IR_NULLABILITY_UNKNOWN, ZR_TRUE, diagnostic) ==
             ZR_EXEC_IR_VALUE_ID_INVALID) {
             return ZR_FALSE;
         }
@@ -309,25 +318,6 @@ static TZrBool validate_instruction_owners(const SZrSemanticIrFunction *semantic
         return ZR_FALSE;
     }
     free(claimed);
-    return ZR_TRUE;
-}
-
-static TZrBool append_source(SZrExecIrFunction *f, const SZrSemanticIrInstruction *in) {
-    SZrExecIrSourceMap *p;
-    if (f->sourceMapCount == f->sourceMapCapacity) {
-        TZrUInt32 cap = f->sourceMapCapacity == 0u ? 8u : f->sourceMapCapacity * 2u;
-        p = (SZrExecIrSourceMap *)realloc(f->sourceMaps, (size_t)cap * sizeof(*p));
-        if (p == ZR_NULL) return ZR_FALSE;
-        f->sourceMaps = p; f->sourceMapCapacity = cap;
-    }
-    p = &f->sourceMaps[f->sourceMapCount++];
-    p->sourceId = in->id; p->instructionId = in->id;
-    p->startOffset = (TZrUInt32)in->sourceRange.start.offset;
-    p->endOffset = (TZrUInt32)in->sourceRange.end.offset;
-    p->startLine = (TZrUInt32)in->sourceRange.start.line;
-    p->startColumn = (TZrUInt32)in->sourceRange.start.column;
-    p->endLine = (TZrUInt32)in->sourceRange.end.line;
-    p->endColumn = (TZrUInt32)in->sourceRange.end.column;
     return ZR_TRUE;
 }
 
@@ -531,6 +521,10 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
     if (!validate_semantic_places(s, diagnostic)) return ZR_FALSE;
     if (!validate_semantic_ids(s, diagnostic) ||
         !validate_instruction_owners(s, diagnostic)) return ZR_FALSE;
+    if (s->places.places.length > ((uintmax_t)UINT32_MAX - s->values.length) / 2u) {
+        const SExecIrBuildStorageSite site = {diagnostic, output, 0u, 0u, 0u};
+        return build_storage_fail(&site, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW);
+    }
     ZrCore_ExecIr_FunctionInit(output);
     output->functionToken = (TZrMetadataToken)s->symbolId;
     output->signatureHash = (TZrUInt64)s->callableTypeId;
@@ -542,27 +536,15 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
 
     for (i = 0u; i < (TZrUInt32)s->values.length; ++i) {
         const SZrSemanticIrValue *v = (const SZrSemanticIrValue *)ZrCore_Array_Get((SZrArray *)&s->values, i);
-        TZrExecIrValueId valueId =
-                v->definitionInstructionId == ZR_SEMANTIC_INSTRUCTION_ID_INVALID
-                        ? ZrCore_ExecIr_FunctionAddExternalValue(
-                                  output,
-                                  (TZrMetadataToken)v->typeId,
-                                  value_ownership(&v->facts),
-                                  value_nullability(&v->facts))
-                        : ZrCore_ExecIr_FunctionAddValue(
-                                  output,
-                                  (TZrMetadataToken)v->typeId,
-                                  value_ownership(&v->facts),
-                                  value_nullability(&v->facts));
+        TZrExecIrValueId valueId = build_storage_add_value(output,
+                (TZrMetadataToken)v->typeId, value_ownership(&v->facts), value_nullability(&v->facts),
+                (TZrBool)(v->definitionInstructionId == ZR_SEMANTIC_INSTRUCTION_ID_INVALID), diagnostic);
         if (valueId == ZR_EXEC_IR_VALUE_ID_INVALID) {
-            diag_missing(diagnostic, output, 0u, 0u); ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE;
+            ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE;
         }
     }
     if (!append_place_values(s, output, &firstPlaceValue,
-                             &firstPlaceProvenance)) {
-        diag_missing(diagnostic, output, 0u, 0u);
-        if (diagnostic != ZR_NULL)
-            diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY;
+                             &firstPlaceProvenance, diagnostic)) {
         ZrCore_ExecIr_FreeFunction(output);
         return ZR_FALSE;
     }
@@ -573,9 +555,9 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
     }
     for (i = 0u; i < (TZrUInt32)s->cfg.blocks.length; ++i) {
         const SZrParserCfgBlock *b = (const SZrParserCfgBlock *)ZrCore_Array_Get((SZrArray *)&s->cfg.blocks, i);
-        TZrUInt32 id = ZrCore_ExecIr_FunctionAddBlock(output,
+        TZrUInt32 id = build_storage_add_block(output,
                 (i == s->cfg.entryBlockId ? ZR_EXEC_IR_BLOCK_FLAG_ENTRY : 0u) |
-                (b->kind == ZR_PARSER_CFG_BLOCK_CLEANUP ? ZR_EXEC_IR_BLOCK_FLAG_CLEANUP : 0u));
+                (b->kind == ZR_PARSER_CFG_BLOCK_CLEANUP ? ZR_EXEC_IR_BLOCK_FLAG_CLEANUP : 0u), diagnostic);
         if (id == ZR_EXEC_IR_BLOCK_ID_INVALID) { ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE; }
     }
     output->entryBlockId = s->cfg.entryBlockId < s->cfg.blocks.length
@@ -849,26 +831,34 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                 }
                 if (isTerminator)
                     x.successorRange = db->successorRange;
+                SExecIrBuildStorageSite site = {diagnostic, output, db->id, 0u, in->id};
                 if (resultCount != 0u) {
                     TZrExecIrValueId v = loweredResult !=
                                                  ZR_EXEC_IR_VALUE_ID_INVALID
                                              ? loweredResult
                                              : in->resultValueId;
-                    if (!ZrCore_ExecIr_FunctionAppendResults(output, &v, 1u, &rr)) { diag_missing(diagnostic, output, db->id, in->id); ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE; }
+                    if (!build_storage_append_results(output, &v, 1u, &rr, &site)) {
+                        ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE;
+                    }
                 }
                 if (operandCount != 0u) {
-                    if (!ZrCore_ExecIr_FunctionAppendOperands(
-                                output, operandValues, operandCount, &orr)) {
-                        diag_missing(diagnostic, output, db->id, in->id);
-                        if (diagnostic != ZR_NULL) diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY;
+                    if (!build_storage_append_operands(
+                                output, operandValues, operandCount, &orr, &site)) {
                         ZrCore_ExecIr_FreeFunction(output);
                         return ZR_FALSE;
                     }
                 }
                 x.results = rr; x.operands = orr;
-                { TZrExecIrInstructionId execId = 0u;
-                if (!ZrCore_ExecIr_FunctionAppendInstruction(output, &x, &execId) || !append_source(output, in)) { diag_missing(diagnostic, output, db->id, in->id); ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE; }
-                output->sourceMaps[output->sourceMapCount - 1u].instructionId = execId; }
+                {
+                    TZrExecIrInstructionId execId = 0u;
+                    if (!build_storage_append_instruction(output, &x, &execId, &site)) {
+                        ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE;
+                    }
+                    site.instructionId = execId;
+                    if (!build_storage_append_source(output, in, &site)) {
+                        ZrCore_ExecIr_FreeFunction(output); return ZR_FALSE;
+                    }
+                }
             }
             db->instructionRange.count = b->instructionCount;
             db->terminatorInstructionId = db->instructionRange.start + db->instructionRange.count;

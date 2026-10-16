@@ -1,4 +1,5 @@
 #include "exec_ir/source/exec_ir_source_frame_internal.h"
+#include "exec_ir/source/exec_ir_source_integer_expression_internal.h"
 #include "zr_vm_core/exec_ir_state_map.h"
 #include "zr_vm_parser/canonical_type.h"
 
@@ -161,14 +162,8 @@ TZrBool source_frame_body_metadata(const SZrExecIrFunction *function) {
             return ZR_FALSE;
     for (i = 0u; i < function->instructionCount; ++i) {
         const SZrExecIrInstruction *instruction = &function->instructions[i];
-        if ((instruction->opcode != ZR_EXEC_IR_OPCODE_CONSTANT && instruction->opcode != ZR_EXEC_IR_OPCODE_NOP &&
-             instruction->opcode != ZR_EXEC_IR_OPCODE_RETURN) ||
-            instruction->flags != 0u || instruction->matchTypeToken != 0u ||
-            (instruction->opcode != ZR_EXEC_IR_OPCODE_CONSTANT && instruction->layoutId != 0u) ||
-            instruction->memoryIn.count != 0u || instruction->memoryOut.count != 0u ||
-            instruction->effectIn != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID ||
-            instruction->effectOut != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID || instruction->deoptId != 0u ||
-            instruction->bindingRow != 0u)
+        /* This predicate certifies pure fields only, not AST or canonical history. */
+        if (!source_integer_pure_fields(instruction))
             return ZR_FALSE;
     }
     return ZR_TRUE;

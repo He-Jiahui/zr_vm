@@ -49,7 +49,11 @@ static TZrBool contract(SSourceFinalizedModuleWitness *w, const SZrExecutionCont
 }
 static TZrBool original_contracts(SSourceFinalizedModuleWitness *w) {
     const SZrExecIrModule *m = w->original;
-    REQUIRE(m->constantCount == 1 && m->layoutCount == 1 && !m->sourceMapCount, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
+    /* Preserve the literal contract gate; larger canonical profiles are proved
+     * against actual AST and both pools before they can be snapshotted. */
+    REQUIRE((m->constantCount == 1 || (w->semantic->values.length > 1 &&
+                    w->semantic->instructions.length > 3)) && m->constantCount != 0 &&
+                    m->layoutCount == 1 && !m->sourceMapCount, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
     if (!token(w, m->moduleToken, ZR_METADATA_TABLE_MODULE, ZR_EXECUTION_DIAGNOSTIC_MODULE_MISMATCH))
         return ZR_FALSE;
     if (!m->moduleHash)
@@ -81,34 +85,53 @@ static TZrBool constants(SSourceFinalizedModuleWitness *w) {
     if (count != (uintmax_t) w->functionConstantCount)
         return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, 0, 0, count,
                                              w->functionConstantCount, SOURCE_FINALIZED_NO_ROLE);
-    if (count != 1 || count != w->original->constantCount)
-        return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, 0, 0, 1, count,
-                                             SOURCE_FINALIZED_NO_ROLE);
-    const SZrSemanticIrInstruction *semantic = (const SZrSemanticIrInstruction *) w->semantic->instructions.head;
-    TZrUInt32 index = semantic[0].constantPoolIndex;
-    TZrUInt32 bounds[3] = {(TZrUInt32) count, w->functionConstantCount, w->original->constantCount};
-    for (unsigned i = 0; i < 3; ++i)
-        if (index >= bounds[i])
-            return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, bounds[i], index, 0, 0, 0);
-    const SZrExecIrConstant *constant = &w->original->constants[index];
-    if (constant->typeToken != w->facts.returnTypeId)
-        return source_finalized_module_error(w, ZR_EXECUTION_DIAGNOSTIC_SIGNATURE_MISMATCH, w->facts.returnTypeId,
-                                             constant->typeToken, 0, 0, 0);
-    if (constant->flags)
-        return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED, 0, constant->flags, 0, 0, 0);
-    const SZrTypeValue *compiler = (const SZrTypeValue *) w->compilerConstants->head, *runtime = w->functionConstants;
-    if (compiler[index].type != ZR_VALUE_TYPE_INT64)
-        return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED, ZR_VALUE_TYPE_INT64,
-                                             compiler[index].type, 0, 0, 0);
-    if (runtime[index].type != ZR_VALUE_TYPE_INT64)
-        return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED, ZR_VALUE_TYPE_INT64,
-                                             runtime[index].type, 0, 0, 0);
-    TZrUInt64 bits = (TZrUInt64) compiler[index].value.nativeObject.nativeInt64;
-    TZrUInt64 actual = (TZrUInt64) runtime[index].value.nativeObject.nativeInt64;
-    if (bits != actual)
-        return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, 0, 0, bits, actual, 0);
-    if (bits != constant->bits)
-        return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, 0, 0, bits, constant->bits, 0);
+    if (w->integerExpression) {
+        if (count == 0 || count != w->original->constantCount)
+            return ERROR(ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);
+        for (TZrUInt32 i = 0; i < (TZrUInt32)count; ++i) {
+            SZrExecIrConstant expected;
+            if (!source_integer_constant_at(&w->integerProof, i, &expected, w->diagnostic)) return ZR_FALSE;
+            const SZrExecIrConstant *actual = &w->original->constants[i];
+            if (actual->typeToken != expected.typeToken)
+                return source_finalized_module_error(w, ZR_EXECUTION_DIAGNOSTIC_SIGNATURE_MISMATCH,
+                        expected.typeToken, actual->typeToken, 0, 0, SOURCE_FINALIZED_NO_ROLE);
+            if (actual->flags != expected.flags)
+                return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED,
+                        expected.flags, actual->flags, 0, 0, SOURCE_FINALIZED_NO_ROLE);
+            if (actual->bits != expected.bits)
+                return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                        0, 0, expected.bits, actual->bits, SOURCE_FINALIZED_NO_ROLE);
+        }
+    } else {
+        if (count != 1 || count != w->original->constantCount)
+            return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, 0, 0, 1, count,
+                                                 SOURCE_FINALIZED_NO_ROLE);
+        const SZrSemanticIrInstruction *semantic = (const SZrSemanticIrInstruction *) w->semantic->instructions.head;
+        TZrUInt32 index = semantic[0].constantPoolIndex;
+        TZrUInt32 bounds[3] = {(TZrUInt32) count, w->functionConstantCount, w->original->constantCount};
+        for (unsigned i = 0; i < 3; ++i)
+            if (index >= bounds[i])
+                return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE, bounds[i], index, 0, 0, 0);
+        const SZrExecIrConstant *constant = &w->original->constants[index];
+        if (constant->typeToken != w->facts.returnTypeId)
+            return source_finalized_module_error(w, ZR_EXECUTION_DIAGNOSTIC_SIGNATURE_MISMATCH, w->facts.returnTypeId,
+                                                 constant->typeToken, 0, 0, 0);
+        if (constant->flags)
+            return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED, 0, constant->flags, 0, 0, 0);
+        const SZrTypeValue *compiler = (const SZrTypeValue *) w->compilerConstants->head, *runtime = w->functionConstants;
+        if (compiler[index].type != ZR_VALUE_TYPE_INT64)
+            return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED, ZR_VALUE_TYPE_INT64,
+                                                 compiler[index].type, 0, 0, 0);
+        if (runtime[index].type != ZR_VALUE_TYPE_INT64)
+            return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED, ZR_VALUE_TYPE_INT64,
+                                                 runtime[index].type, 0, 0, 0);
+        TZrUInt64 bits = (TZrUInt64) compiler[index].value.nativeObject.nativeInt64;
+        TZrUInt64 actual = (TZrUInt64) runtime[index].value.nativeObject.nativeInt64;
+        if (bits != actual)
+            return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, 0, 0, bits, actual, 0);
+        if (bits != constant->bits)
+            return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, 0, 0, bits, constant->bits, 0);
+    }
     const SZrExecIrLayout *layout = &w->original->layouts[0];
     if (!layout->id)
         return source_finalized_module_error(w, ZR_EXECUTION_DIAGNOSTIC_LAYOUT_MISMATCH, 1, 0, 0, 0,
@@ -134,7 +157,8 @@ static TZrBool candidate(SSourceFinalizedModuleWitness *w, const SZrExecIrModule
     REQUIRE(m->id == w->original->id && m->moduleToken == w->original->moduleToken &&
                     m->moduleHash == w->original->moduleHash,
             ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
-    REQUIRE(m->constantCount == 1 && m->layoutCount == 1 && !m->sourceMapCount, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
+    REQUIRE(m->constantCount == w->original->constantCount && m->layoutCount == 1 && !m->sourceMapCount,
+            ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
     if (!contract(w, &m->contract, m->moduleToken, w->original->contract.signatureHash, 1, ZR_TRUE))
         return ZR_FALSE;
     HASH(m->contract.layoutHash, 0, ZR_EXECUTION_DIAGNOSTIC_LAYOUT_MISMATCH);
@@ -145,14 +169,16 @@ static TZrBool candidate(SSourceFinalizedModuleWitness *w, const SZrExecIrModule
         !signatures(w, f))
         return ZR_FALSE;
     REQUIRE(f->sealed == w->finalized->sealed, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
-    const SZrExecIrConstant *a = &w->original->constants[0], *b = &m->constants[0];
-    if (a->typeToken != b->typeToken)
-        return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, a->typeToken, b->typeToken, 0, 0,
-                                             0);
-    if (a->flags != b->flags)
-        return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, a->flags, b->flags, 0, 0, 0);
-    if (a->bits != b->bits)
-        return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, 0, 0, a->bits, b->bits, 0);
+    for (TZrUInt32 i = 0; i < m->constantCount; ++i) {
+        const SZrExecIrConstant *a = &w->original->constants[i], *b = &m->constants[i];
+        if (a->typeToken != b->typeToken)
+            return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, a->typeToken, b->typeToken, 0, 0,
+                                                 0);
+        if (a->flags != b->flags)
+            return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, a->flags, b->flags, 0, 0, 0);
+        if (a->bits != b->bits)
+            return source_finalized_module_error(w, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE, 0, 0, a->bits, b->bits, 0);
+    }
     const SZrExecIrLayout *la = &w->original->layouts[0], *lb = &m->layouts[0];
     VERSION(lb->id, la->id, ZR_EXECUTION_DIAGNOSTIC_LAYOUT_MISMATCH);
     VERSION(lb->typeToken, la->typeToken, ZR_EXECUTION_DIAGNOSTIC_LAYOUT_MISMATCH);
@@ -189,16 +215,16 @@ TZrBool source_snapshot_finalized_primitive_module(
     w->finalized = finalized;
     w->destination = destination;
     w->diagnostic = diagnostic;
+    TZrBool success = ZR_FALSE;
+    SZrExecIrModule temporary;
+    ZrCore_ExecIr_ModuleInit(&temporary);
     if (!source_finalized_module_preflight(w) || !original_contracts(w) ||
         !ZrCore_ExecIr_VerifyModule(original, diagnostic) || !source_finalized_module_admit_source(w) ||
         !signatures(w, w->selected) || !signatures(w, finalized) || !source_finalized_module_mapping(w) ||
         !constants(w) || !source_finalized_module_relation(w, finalized) ||
         !ZrParser_ExecIr_ValidatePrimitiveSourceFrame(finalized, context, original->layouts, original->layoutCount, 0,
                                                       diagnostic))
-        return ZR_FALSE;
-    SZrExecIrModule temporary;
-    ZrCore_ExecIr_ModuleInit(&temporary);
-    TZrBool success = ZR_FALSE;
+        goto cleanup;
     if (!ZrCore_ExecIr_CloneModuleReplacingFunction(original, 1, finalized, &temporary, diagnostic))
         goto cleanup;
     if (!candidate(w, &temporary))
@@ -208,5 +234,6 @@ TZrBool source_snapshot_finalized_primitive_module(
     success = ZR_TRUE;
 cleanup:
     ZrCore_ExecIr_FreeModule(&temporary);
+    source_finalized_module_release(w);
     return success;
 }

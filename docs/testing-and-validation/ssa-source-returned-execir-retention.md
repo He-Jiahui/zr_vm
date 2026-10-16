@@ -25,6 +25,29 @@ related_code:
   - tests/core/support/ssa_exec_ir_owned_module_allocator.h
   - tests/cmake/ssa-source-returned-execir-retention.cmake
   - tests/cmake/ssa-source-direct-validation/CMakeLists.txt
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_integer_constants.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_integer_constants.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_integer_expression.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_integer_expression_internal.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_dead_source_places.c
+  - tests/parser/test_ssa_source_integer_expression_retention.c
+  - tests/parser/test_ssa_source_integer_expression_proof.c
+  - tests/parser/test_ssa_source_integer_expression_faults.c
+  - tests/parser/support/ssa_source_integer_expression_faults_fixture.c
+  - tests/parser/support/ssa_source_integer_expression_faults_fixture.h
+  - tests/parser/support/ssa_source_integer_expression_faults_producer_shim.h
+  - tests/parser/support/ssa_source_integer_expression_faults_frame_shim.h
+  - tests/parser/support/ssa_source_integer_expression_faults_graph_shim.h
+  - tests/cmake/ssa-source-integer-expression-retention.cmake
+  - tests/cmake/ssa-source-integer-expression-proof.cmake
+  - tests/cmake/ssa-source-integer-expression-faults.cmake
+  - tests/cmake/ssa-source-integer-expression-support.cmake
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_script_callable_identity.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_script_callable_identity.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build_storage_internal.h
+  - tests/parser/support/ssa_source_integer_expression_proof_shim.h
+  - tests/parser/support/ssa_execir_builder_storage_cases.inc
 implementation_files:
   - tests/parser/test_ssa_source_returned_execir_retention.c
   - tests/parser/support/ssa_source_returned_execir_fixture.c
@@ -39,19 +62,227 @@ implementation_files:
   - tests/parser/support/ssa_source_returned_execir_cleanup.c
   - tests/parser/support/ssa_source_returned_retention_fixture.c
   - tests/core/support/ssa_exec_ir_owner_capture.c
+  - tests/parser/test_ssa_source_integer_expression_retention.c
+  - tests/parser/test_ssa_source_integer_expression_proof.c
+  - tests/parser/test_ssa_source_integer_expression_faults.c
+  - tests/parser/support/ssa_source_integer_expression_faults_fixture.c
+  - tests/parser/support/ssa_source_integer_expression_faults_fixture.h
+  - tests/parser/support/ssa_source_integer_expression_faults_producer_shim.h
+  - tests/parser/support/ssa_source_integer_expression_faults_frame_shim.h
+  - tests/parser/support/ssa_source_integer_expression_faults_graph_shim.h
+  - tests/cmake/ssa-source-integer-expression-retention.cmake
+  - tests/cmake/ssa-source-integer-expression-proof.cmake
+  - tests/cmake/ssa-source-integer-expression-faults.cmake
+  - tests/cmake/ssa-source-integer-expression-support.cmake
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_script_callable_identity.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_script_callable_identity.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_build_storage_internal.h
+  - tests/parser/support/ssa_source_integer_expression_proof_shim.h
+  - tests/parser/support/ssa_execir_builder_storage_cases.inc
 plan_sources:
   - .codex/plans/20261009-ssa-source-returned-execir-retention-design-v1.md
   - .codex/plans/20261009-ssa-source-finalized-handoff-addendum-v1.md
+  - .codex/plans/20261016-ssa-source-integer-expression-retention.md
 tests:
   - tests/parser/test_ssa_source_returned_execir_retention.c
   - tests/parser/test_ssa_source_returned_retention.c
   - tests/core/test_ssa_function_exec_ir_owner.c
   - tests/core/test_ssa_exec_ir_owned_module.c
+  - tests/parser/test_ssa_source_integer_expression_retention.c
+  - tests/parser/test_ssa_source_integer_expression_proof.c
+  - tests/parser/test_ssa_source_integer_expression_faults.c
 doc_type: testing-guide
 status: implemented-validated-finite
+integer_expression_status: implemented-validated-finite
 ---
 
 # Genuine returned-source finalized ExecIR tests
+
+## Integer-expression checks: current finite acceptance
+
+The integer-expression extension has independently accepted Source r10
+functional/proof/CTest, lower r3 regression and finite MSVC r5 compile-only
+evidence. The Source26/AOT25/CTest2 account below preserves the earlier
+literal/child implementation. r8 separately reruns Source26/AOT25, both156-site
+sweeps, two Frame faults and four child cases against its recorded current
+inputs; it does not replace those historical receipts.
+
+Actual expression RED evidence is under
+`E:/cargo-targets/zr_vm/reports/ssa-source-integer-expression-01a0fe2b/`:
+
+| Actual RED record | Observed result |
+| --- | --- |
+| `red-receipt.json` plus `red-validation.json` review | Configure/build/dependencies terminate naturally with exit0; direct test terminates naturally with exit11 |
+| `red-direct-stdout.log` | 22 tests, 11 FAIL, 11 PASS, zero ignored; the eleven failures lack the retained expression owner |
+| `red-direct-stderr.log` | Ten exact `SOURCE_I64_EXPRESSION_REFUSED stage=4 result=4 code=28` rows; the failing NULL-diagnostic case emits no such row |
+| RED graph/build | 19 roles, 791 TUs, 405 compiled and 386 cached; 813 unique dependencies, 58 warnings, no recorded input drift |
+
+The accepted feature RED is recorded by the later review; the original collection
+receipt's awaiting-review flags are preserved. Failed-case teardown assertions
+were interrupted by Unity's existing failure state, so the RED does not certify
+their ledger health. This RED supplies no GREEN fault-sweep or mutation result. The actual r4
+observations below remain insufficient for current acceptance.
+
+The table describes the finite checks passed in r8 and Source r10. Historical r4/r7 outcomes
+below remain bound to their own inputs:
+
+| Target | Intended finite assertions |
+| --- | --- |
+| `zr_vm_ssa_source_integer_expression_retention_test` | 22 cases: actual I64 operator/operand graph, precedence, grouping, shared literal pool indices, source positions, independent owners, refusal and retry; NONE/NULL/zero and literal mode1 separation |
+| `zr_vm_ssa_source_integer_expression_faults_test` | Two cases: measure a real successful trace, then fail each actual allocation attempt in a fresh lifecycle while preserving a separately returned keeper owner |
+| `zr_vm_ssa_source_integer_expression_proof_test` | Four cases: unchanged22 mutations and proof-output/phase/scratch guards, independent measured span-growth OOM/cleanup/retry, and32 builder refusals/32 no-growth retries/5 numeric checks |
+
+The fault fixture observes producer-other, bridge, compactor, Frame, finalizer,
+candidate and owner windows. Each callback calls its real callee once and records
+the innermost allocation phase. The sweep must compare actual kind/count/width/
+bytes to the successful trace, observe exactly one failed allocation, preserve
+the real lower diagnostic and correlate the Source stage. It requires failed
+records freed once, keeper contents/address/records intact, a healthy unfaulted
+retry, and both owner/CRT ledgers healthy before recovery. `INTEGER_EXPR_TRACE`,
+`INTEGER_EXPR_FAULT`, `INTEGER_EXPR_SUMMARY` and `INTEGER_EXPR_FINAL` rows report
+actual observations. The expression attempt count is dynamic and is not 156 by
+assumption.
+
+The mutation fixture borrows genuine Source-produced SemIR, AST, pools and both
+ExecIR phases. It changes one fact, calls the real eleven-argument finalizer,
+restores the exact borrowed storage before observation, and requires deterministic
+refusal diagnostics, an unchanged existing owner and successful healthy retry.
+The checked ORIGINAL/COMPACTED maps, independent `V`/`P` geometry and dynamic span
+witness are described in the
+[integer-expression guide](ssa-source-integer-expression-retention.md).
+
+All new tests compile fixed local input using SourceCompile and CoreGlobal
+metadata init/free with NULL loader/resolver callbacks. They do not execute the
+returned function. Source r10 passes targeted CTest and current builder/proof
+regression; lower r3 also passes. Finite changed-TU MSVC r5 compile-only
+acceptance is recorded separately. The RED warnings are not W0; Linux, full MSVC, fullW0, execution/security
+coverage and all47 acceptance remain open.
+
+### Current producer and builder revision: finite functional evidence
+
+The current scope also includes the two-file real identity producer
+`compiler_script_callable_identity.c/.h` and the generic builder
+`exec_ir_build.c` with `exec_ir_build_storage_internal.h`. The binary identity
+candidate checks actual validated pure SemIR without allocating or fabricating
+IDs. The existing literal branch, canonical interning, symbol registration,
+root protection and final identity publication remain separate responsibilities;
+the retention bridge still validates the actual entry token, AST and both pools.
+The private builder header classifies invalid arguments, invalid storage/value
+geometry, sealed state and capacity overflow before mutators. Only a genuine
+allocation failure after valid growth is OOM; a false result is not blanket OOM.
+Its `sourceId` identifies the semantic row. `instructionId` is zero before the
+ExecIR instruction is published and becomes the actual returned ID afterward.
+
+The earlier actual r4 run is recorded in `green-r4-receipt.json` and
+`green-r4-runtime-observation.json` under
+`E:/cargo-targets/zr_vm/reports/ssa-source-integer-expression-01a0fe2b/`.
+Expression22, literalSource26 and AOT25 each naturally exit0 with every case
+passing. The fault sweep measures/sweeps423 sites, refuses423 and retries423;
+412 satisfy the full protocol and11 fail diagnostic checks. Cleanup, keeper,
+retry and final ledger observations are healthy, but the fault target exits1
+and the complete r4 attempt exits1. Proof and CTest did not run. These recorded
+inputs precede the current builder/proof revision and do not validate it.
+
+The earlier r7 receipt and runtime observation record 24 roles, 819 TUs,
+822 dependencies and 1610 inputs: 5 compiles and 814 exact cached objects with
+zero incremental warnings, not full-project W0. Expression22, literalSource26,
+AOT25 and both fault tests naturally exit0. All 423 measured fault sites are
+refused, retried and accepted; all 424 lifecycles close healthy with zero final
+owner/VM/both CRT live/errors and VM diagnostics/dropped counts. Proof naturally exits1 with
+3 PASS and 1 FAIL. Its healthy large case measures the unique 4064-byte span
+growth at ordinal1 and 3840-byte scratch at ordinal30, both free1, with complete
+owner/Frame/oracle and cleanup witnesses. These are actual observations, not
+fixed ordinal requirements. The only failed assertion incorrectly required
+scratch before span; that Unity failure prevents the third case's fault/retry.
+
+The assertion-only correction is proof main SHA256
+`047F3EABCE60BD815A8F22E3E049A409FC84C5A92524D7E1CDBAF0A203A41A50`
+(61980 bytes). It uses the healthy measured order to decide whether a failed
+span-growth prefix can reach scratch; it preserves unique geometry/free1,
+complete nine-field diagnostics, inputs, owner checks, normal close and fresh
+retry. At the r7 checkpoint this corrected case and CTest were unvalidated;
+the subsequent accepted r8 result is recorded below.
+
+### Final current Source r10 and lower r3 acceptance
+
+`green-r10-runtime-review.json` accepts session65436, terminal `1b1d8d`, natural
+exit0: nine phases, direct22/26/25/2/4 and CTest5. Current24roles/819TUs/822deps/
+1610inputs use5 compiles+814 exact cached objects, incremental W0 only; current
+1610input/819object/5EXE/18raw pins match. All423 fault sites/424 lifecycles and
+FINAL records/frees1353/1353 are healthy. Ten direct raw files are byte-identical
+to accepted r8, including literal156/156, Frame2/Child4 and all proof/storage/P0/
+large-span protocols below. This CTest review uses complete nonempty-line
+multisets: AOT70/literal383/expression25/fault3350/proof39, distinct from r8's
+selected-protocol-row counts.
+
+`lower-r3-runtime-review.json` accepts session74303, terminal `9d8c1b`, natural
+exit0:24 PASS/89 faults/16 lifecycles;5roles/32TUs/257deps/1641inputs,2 compiles+
+30 exact cached objects, incremental W0. Lower has no FINAL line: health comes
+from each tearDown before Recover and AssertBalanced. Source r9/lower r2 failed
+preflight receipts remain unchanged: VS imports ran, but no configure/build/run
+phase was recorded. The guide gives the exact current receipt/review hashes.
+
+### Actual r8 functional acceptance and lower regression
+
+`green-r8-runtime-review.json` records independent ACCEPT of Root session60434,
+terminal `b1b01e`, natural exit0: all nine phases, direct expression22,
+literalSource26, AOT25, faults2 and proof4, plus targeted CTest5 pass. The graph
+has 24 roles, 819 TUs, 822 dependencies and 1610 inputs; 3 compiles and 816 exact
+cached objects have zero incremental warnings, not full-project W0. All 423
+fault sites and 424 lifecycle cleanup/keeper/retry observations are healthy.
+Literal156/156 sweeps, two Frame faults and four child-boundary retries pass.
+The collection receipt retains its original awaiting-review fields; the
+separate runtime review records the accepted raw-protocol result.
+
+Proof main047F now passes all four cases: the unchanged22-mutation matrix,
+direct proof/scratch guards, all three large-span healthy/fault/fresh-retry
+lifecycles, and storage32/32/5 plus independent allocating P0. The healthy/retry
+measurements remain grow4064 bytes at ordinal1 and scratch3840 bytes at
+ordinal30, both free1; these are observations, not fixed test ordinals. The
+failed grow has one failed event/no record, scratch is correctly unreachable,
+and normal close precedes Reset and the successful fresh retry. Complete
+nine-field diagnostics and full input/owner/Frame/oracle checks pass.
+
+`lower-r1-runtime-review.json` separately accepts 24 lower metadata tests,
+89 measured/completed fault sites and 16 lifecycles, natural exit0. Its five
+roles/32 TUs use 257 dependencies and 1641 inputs, with 17 compiles and 15 cached
+objects, zero finite-build warnings. Lower health comes from each tearDown's
+pre-Recover ledger checks and AssertBalanced; the lower raw output has no
+FINAL line. See the integer-expression guide for review hashes and exact
+large-case diagnostics. Neither this lower result nor r8 executes a VM.
+
+The proof target now registers four cases. Its original two cases and22
+mutations remain unchanged. The independent third case compiles181 bytes with
+44 literal leaves and43 ADDs, checks the actual87-value operand/source/pool/Frame
+graph, and measures the unique real finalizer span-growth allocation. It uses
+that observed relative ordinal for OOM injection; it never assumes ordinal2.
+The fourth case implements32 storage-guard refusals,32 restored no-growth Core
+retries and5 arithmetic-only growth checks. Its separate P0 positive calls the
+real public `ZrParser_ExecIr_Build` with a genuine zero-place CFG and replaces a
+tracked sealed old destination. It checks unchanged inputs, a cleared complete
+diagnostic and one free per successful record. P0 uses real allocations and
+accounts for them separately; it is outside the32/32/5 zero-allocation contract
+and has its own `storage_zero_places` protocol row. This fourth case passes in
+r7 and again in r8; the corrected third case also passes all three lifecycles
+in r8. The third case alone uses four independent16384-word visitor buffers;
+the original4096-word capture remains unchanged.
+
+MSVC r5 has independent strict W0 acceptance:15 actual compiles/13 C/228deps/
+64 outputs, session86909 natural0/`acd12c`;1822 before/after pins matched at
+that run. It is compile-only, with actual ordered D/I/FI roles and dependency
+admission. r1/r2 preserve zero-cl environment failures after VS imports; r3 runs
+3 W0 cl phases then rejects8 unpinned headers; r4 runs5 cl phases with real
+C4457 and strict CP936 decode failure. r5 genuinely fixes only three local
+`capacity` identifiers to `spanCapacity`, without warning or encoding waiver.
+Later foreign Core EOF comments are outside the owned36 paths and selected
+15 C/228deps; the historical1822-pin match is not claimed globally current.
+The guide preserves all failed attempts and the accepted r5 pins. See the
+[integer-expression guide](ssa-source-integer-expression-retention.md)
+for the finite evidence and remaining gates. Fixed local SourceCompile and NULL
+loader/resolver callbacks remain the entry; SourceExecute, FunctionExecute, VM,
+import/plugin, network/FFI and security execution remain outside scope. FullW0,
+Linux, complete MSVC, release and the full47-leaf acceptance remain unproven.
 
 ## Current evidence boundary
 

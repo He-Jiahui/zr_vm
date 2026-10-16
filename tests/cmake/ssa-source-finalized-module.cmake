@@ -13,10 +13,11 @@ include(${CMAKE_CURRENT_LIST_DIR}/ssa-primitive-frame-validation.cmake)
 
 # Query and lookup use this target's allocator callbacks, supplied by its ledger.
 add_library(zr_vm_ssa_source_finalized_module_private OBJECT
-        "${_zr_finalized_root}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_finalized_module.c"
-        "${_zr_finalized_root}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_finalized_module_validation.c"
-        "${_zr_finalized_root}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_callable_query.c"
-        "${_zr_finalized_root}/zr_vm_parser/src/zr_vm_parser/canonical_type_lookup.c")
+        "${_zr_finalized_root}/zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_finalized_module.c"
+        "${_zr_finalized_root}/zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_finalized_module_validation.c"
+        "${_zr_finalized_root}/zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_integer_expression.c"
+        "${_zr_finalized_root}/zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_callable_query.c"
+        "${_zr_finalized_root}/zr_vm_parser/src/zr_vm_parser/types/canonical_type_lookup.c")
 add_executable(zr_vm_ssa_source_finalized_module_test
         "${_zr_finalized_root}/tests/parser/test_ssa_source_finalized_module.c"
         "${_zr_finalized_root}/tests/parser/support/ssa_source_finalized_module_fixture.c"

@@ -1,6 +1,7 @@
 #include "exec_ir/source/exec_ir_source_finalized_module_internal.h"
 
 #include <string.h>
+#include <stdlib.h>
 #include "zr_vm_core/exec_ir_state_map.h"
 
 TZrBool source_finalized_module_fail(SZrExecIrDiagnostic *diagnostic, EZrExecutionDiagnosticCode code,
@@ -54,7 +55,16 @@ static TZrBool span(SSourceFinalizedModuleWitness *w, const void *p, uintmax_t c
     uintptr_t end = start + bytes;
     for (size_t i = 0; i < w->spanCount; ++i)
         REQUIRE(end <= w->spans[i].start || start >= w->spans[i].end, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);
-    REQUIRE(w->spanCount < w->spanLimit, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW);
+    if (w->spanCount == w->spanLimit) {
+        REQUIRE(w->spanLimit <= SIZE_MAX / 2 / sizeof(*w->spans), ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW);
+        size_t spanCapacity = w->spanLimit * 2;
+        SSourceFinalizedSpan *grown = (SSourceFinalizedSpan *)malloc(spanCapacity * sizeof(*grown));
+        REQUIRE(grown != ZR_NULL, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY);
+        memcpy(grown, w->spans, w->spanCount * sizeof(*grown));
+        if (w->spans != w->inlineSpans) free(w->spans);
+        w->spans = grown;
+        w->spanLimit = spanCapacity;
+    }
     w->spans[w->spanCount++] = (SSourceFinalizedSpan) {start, end};
     return ZR_TRUE;
 }
@@ -124,7 +134,9 @@ static TZrBool function_storage(SSourceFinalizedModuleWitness *w, const SZrExecI
     return ZR_TRUE;
 }
 TZrBool source_finalized_module_preflight(SSourceFinalizedModuleWitness *w) {
-    w->spanLimit = SOURCE_FINALIZED_INPUT_SPANS;
+    w->spans = w->inlineSpans;
+    w->spanLimit = SOURCE_FINALIZED_INLINE_SPANS;
+    source_integer_proof_init(&w->integerProof);
     HEADER(w->semantic, SZrSemanticIrFunction);
     HEADER(w->context, SZrSemanticContext);
     HEADER(w->identity, SZrFunctionSourceCallableIdentity);
@@ -159,26 +171,30 @@ TZrBool source_finalized_module_preflight(SSourceFinalizedModuleWitness *w) {
     ARRAY(&s->contiguousViewFacts, SZrSemanticContiguousViewFact);
     ARRAY(&s->boundsFacts, SZrSemanticBoundsFact);
     ARRAY(&s->scalarScratchProofs, SZrSemanticIrScalarScratchProof);
-    REQUIRE(s->places.places.length == 1 && s->cfg.blocks.length == 1, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
-    const SZrParserPlace *place = (const SZrParserPlace *) s->places.places.head;
-    const SZrParserCfgBlock *block = (const SZrParserCfgBlock *) s->cfg.blocks.head;
-    ARRAY(&place->projections, SZrParserPlaceProjection);
-    ARRAY(&block->outgoingEdges, SZrParserCfgEdge);
+    REQUIRE(s->places.places.length != 0 && s->cfg.blocks.length == 1, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
+    const SZrParserPlace *places = (const SZrParserPlace *) s->places.places.head;
+    const SZrParserCfgBlock *blocks = (const SZrParserCfgBlock *) s->cfg.blocks.head;
+    for (size_t i = 0; i < s->places.places.length; ++i)
+        ARRAY(&places[i].projections, SZrParserPlaceProjection);
+    for (size_t i = 0; i < s->cfg.blocks.length; ++i)
+        ARRAY(&blocks[i].outgoingEdges, SZrParserCfgEdge);
     ARRAY(w->compilerConstants, SZrTypeValue);
     return span(w, w->functionConstants, w->functionConstantCount, w->functionConstantCount,
                 sizeof(*w->functionConstants), _Alignof(SZrTypeValue));
 }
+void source_finalized_module_release(SSourceFinalizedModuleWitness *w) {
+    source_integer_proof_free(&w->integerProof);
+    if (w->spans != ZR_NULL && w->spans != w->inlineSpans) free(w->spans);
+    w->spans = ZR_NULL;
+    w->spanCount = w->spanLimit = 0;
+}
 TZrBool source_finalized_module_candidate_storage(SSourceFinalizedModuleWitness *w, const SZrExecIrModule *m) {
-    size_t before = w->spanCount;
-    w->spanLimit = SOURCE_FINALIZED_ALL_SPANS;
     HEADER(m, SZrExecIrModule);
     if (!module_storage(w, m))
         return ZR_FALSE;
     REQUIRE(m->functionCount == 1, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
     if (!function_storage(w, &m->functions[0]))
         return ZR_FALSE;
-    REQUIRE(w->spanCount - before <= SOURCE_FINALIZED_ALL_SPANS - SOURCE_FINALIZED_INPUT_SPANS,
-            ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW);
     return ZR_TRUE;
 }
 TZrBool source_finalized_module_metadata(SSourceFinalizedModuleWitness *w, const SZrExecIrFunction *f) {
@@ -330,7 +346,22 @@ TZrBool source_finalized_module_admit_source(SSourceFinalizedModuleWitness *w) {
     const SZrAstNode *integer = returned->data.returnStatement.expr;
     REQUIRE(integer != ZR_NULL, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
     HEADER(integer, SZrAstNode);
-    REQUIRE(integer->type == ZR_AST_INTEGER_LITERAL, ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
+    if (integer->type != ZR_AST_INTEGER_LITERAL) {
+        SSourceIntegerProof *proof = &w->integerProof;
+        if (!source_integer_prove(s, w->context, w->token, proof, w->diagnostic) ||
+            !source_integer_check_ast(proof, w->script, w->identity, w->diagnostic) ||
+            !source_integer_check_pools(proof, w->compilerConstants, w->functionConstants,
+                                        w->functionConstantCount, w->diagnostic)) return ZR_FALSE;
+        /* The certified complete tree still participates in cross-input geometry. */
+        if (!span(w, proof->scratch, proof->scratchBytes, proof->scratchBytes, 1, 1)) return ZR_FALSE;
+        for (TZrUInt32 i = 0; i < proof->valueCount; ++i) {
+            const SZrAstNode *node = proof->astByValue[i];
+            REQUIRE(node != ZR_NULL, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
+            if (node != integer) HEADER(node, SZrAstNode);
+        }
+        w->integerExpression = ZR_TRUE;
+        return ZR_TRUE;
+    }
     REQUIRE(range_valid(w->script->location) && range_valid(returned->location) && range_valid(integer->location) &&
                     contained(returned->location, w->script->location) &&
                     contained(integer->location, returned->location) &&
@@ -403,6 +434,9 @@ static TZrBool counts(SSourceFinalizedModuleWitness *w, const SZrExecIrFunction 
     return ZR_TRUE;
 }
 TZrBool source_finalized_module_mapping(SSourceFinalizedModuleWitness *w) {
+    if (w->integerExpression)
+        return source_integer_check_function(&w->integerProof, w->selected, SOURCE_INTEGER_ORIGINAL, w->diagnostic);
+
     uintmax_t values = w->semantic->values.length, places = w->semantic->places.places.length;
     REQUIRE(places <= (UINT32_MAX - values) / 2, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW);
     if (!counts(w, w->selected, (TZrUInt32) (values + 2 * places)) || !counts(w, w->finalized, (TZrUInt32) values))
@@ -482,6 +516,16 @@ static TZrBool value_profile(SSourceFinalizedModuleWitness *w, const SZrExecIrVa
     return ZR_TRUE;
 }
 TZrBool source_finalized_module_relation(SSourceFinalizedModuleWitness *w, const SZrExecIrFunction *f) {
+    if (w->integerExpression) {
+        SSourceIntegerProof *proof = &w->integerProof;
+        if (!source_finalized_module_metadata(w, f) ||
+            !source_integer_check_function(proof, f, SOURCE_INTEGER_COMPACTED, w->diagnostic)) return ZR_FALSE;
+        REQUIRE((w->selected->stateMap != ZR_NULL) == (f->stateMap != ZR_NULL), ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
+        for (TZrUInt32 i = 0; i < proof->instructionCount; ++i)
+            REQUIRE(proof->instructionIds[SOURCE_INTEGER_ORIGINAL][i] ==
+                    proof->instructionIds[SOURCE_INTEGER_COMPACTED][i], ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
+        return ZR_TRUE;
+    }
     if (!counts(w, f, (TZrUInt32) w->semantic->values.length) || !source_finalized_module_metadata(w, f))
         return ZR_FALSE;
     REQUIRE((w->selected->stateMap != ZR_NULL) == (f->stateMap != ZR_NULL), ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);

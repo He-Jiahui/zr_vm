@@ -1,6 +1,7 @@
 #include "compiler_script_callable_identity.h"
 
 #include <string.h>
+#include <stdint.h>
 
 static TZrBool script_identity_same_range(
         const SZrFileRange *left, const SZrFileRange *right) {
@@ -73,7 +74,8 @@ static const SZrAstNode *script_identity_return_node(
     if (returnNode == ZR_NULL || returnNode->type != ZR_AST_RETURN_STATEMENT ||
         returnNode->data.returnStatement.isReferenceReturn ||
         returnNode->data.returnStatement.expr == ZR_NULL ||
-        returnNode->data.returnStatement.expr->type != ZR_AST_INTEGER_LITERAL ||
+        (returnNode->data.returnStatement.expr->type != ZR_AST_INTEGER_LITERAL &&
+         returnNode->data.returnStatement.expr->type != ZR_AST_BINARY_EXPRESSION) ||
         !script_identity_valid_range(&script->location) ||
         !script_identity_valid_range(&returnNode->location) ||
         !script_identity_valid_range(&returnNode->data.returnStatement.expr->location) ||
@@ -81,8 +83,8 @@ static const SZrAstNode *script_identity_return_node(
         !script_identity_contains_range(&script->location,
                 &returnNode->data.returnStatement.expr->location))
         return ZR_NULL;
-    /* The current RETURN AST origin is a point range at the return keyword;
-     * retain it exactly instead of fabricating an extent over its expression. */
+    /* Preserve the actual parser RETURN extent, including its expression and
+     * any consumed semicolon; never synthesize a range for identity. */
     return returnNode;
 }
 
@@ -180,6 +182,220 @@ static TZrBool script_identity_prove_literal_return(
     return ZR_TRUE;
 }
 
+static TZrBool script_identity_array(
+        const SZrArray *array, size_t width, size_t alignment) {
+    return (TZrBool)(array->isValid && array->elementSize == width &&
+            array->length <= array->capacity &&
+            (array->capacity == 0U || array->head != ZR_NULL) &&
+            (uintptr_t)array->head % alignment == 0U &&
+            array->capacity <= SIZE_MAX / width &&
+            array->capacity * width <= UINTPTR_MAX - (uintptr_t)array->head);
+}
+
+/* An identity candidate, not the later AST/pool/ExecIR retention certificate.
+ * All rows are borrowed from the actual validated producer; no allocation,
+ * evaluation, IR construction or canonical identity fabrication occurs here. */
+static TZrBool script_identity_prove_binary_return(
+        const SZrCompilerState *cs, const SZrAstNode *returnNode, TZrTypeId returnTypeId) {
+    const SZrSemanticIrFunction *ir = &cs->preSemanticIr;
+    const SZrAstNode *expression = returnNode->data.returnStatement.expr;
+    const SZrSemanticIrInstruction *rows;
+    const SZrSemanticIrValue *values;
+    const TZrValueId *operands;
+    const SZrSemanticIrSourceMapEntry *maps;
+    const SZrParserPlace *places;
+    const SZrCompilerSemanticIrSlot *slots;
+    const SZrParserCfgBlock *block;
+    const SZrSemanticIrRegion *region;
+    const SZrSemanticIrInstruction *terminal, *root;
+    const SZrSemanticIrValue *returned;
+    const SZrFileRange emptyRange = {0};
+    TZrSize operandEnd = 0U, valueRows = 0U, bases = 0U, constants = 0U;
+    EZrSemanticIrOpcode rootOpcode;
+    const TZrChar *op = expression->data.binaryExpression.op.op;
+    if (expression->type != ZR_AST_BINARY_EXPRESSION || op == ZR_NULL || op[1] != '\0' ||
+        expression->data.binaryExpression.left == ZR_NULL ||
+        expression->data.binaryExpression.right == ZR_NULL ||
+        !script_identity_contains_range(&returnNode->location, &expression->location) ||
+        !script_identity_is_int64(cs->semanticContext, returnTypeId) ||
+        cs->currentFunction->ownerFunction != ZR_NULL ||
+        cs->currentFunction->childFunctionGraphIsBorrowed ||
+        cs->currentFunction->testManifestData != ZR_NULL ||
+        cs->currentFunction->testManifestDataLength != 0U ||
+        ir->symbolId != ZR_SEMANTIC_ID_INVALID || ir->callableTypeId != ZR_SEMANTIC_ID_INVALID ||
+        ir->state != cs->state || ir->places.state != cs->state || ir->cfg.state != cs->state)
+        return ZR_FALSE;
+    if (op[0] == '+') rootOpcode = ZR_SEMANTIC_IR_ADD;
+    else if (op[0] == '-') rootOpcode = ZR_SEMANTIC_IR_SUB;
+    else if (op[0] == '*') rootOpcode = ZR_SEMANTIC_IR_MUL;
+    else return ZR_FALSE;
+#define IDENTITY_ARRAY(field, type) \
+    if (!script_identity_array(&ir->field, sizeof(type), _Alignof(type))) return ZR_FALSE
+    IDENTITY_ARRAY(instructions, SZrSemanticIrInstruction);
+    IDENTITY_ARRAY(values, SZrSemanticIrValue);
+    IDENTITY_ARRAY(valueOperands, TZrValueId);
+    IDENTITY_ARRAY(sourceMap, SZrSemanticIrSourceMapEntry);
+    IDENTITY_ARRAY(places.places, SZrParserPlace);
+    IDENTITY_ARRAY(cfg.blocks, SZrParserCfgBlock);
+    IDENTITY_ARRAY(regions, SZrSemanticIrRegion);
+    IDENTITY_ARRAY(locals, SZrSemanticIrLocal);
+    IDENTITY_ARRAY(cleanupScopes, SZrSemanticIrCleanupScope);
+    IDENTITY_ARRAY(loanFacts, SZrSemanticIrLoanFact);
+    IDENTITY_ARRAY(escapeFacts, SZrSemanticEscapeFact);
+    IDENTITY_ARRAY(contiguousViewFacts, SZrSemanticContiguousViewFact);
+    IDENTITY_ARRAY(boundsFacts, SZrSemanticBoundsFact);
+    IDENTITY_ARRAY(scalarScratchProofs, SZrSemanticIrScalarScratchProof);
+#undef IDENTITY_ARRAY
+    if (!script_identity_array(&cs->preSemanticIrSlots,
+                sizeof(SZrCompilerSemanticIrSlot), _Alignof(SZrCompilerSemanticIrSlot)) ||
+        !script_identity_array(&cs->constants, sizeof(SZrTypeValue), _Alignof(SZrTypeValue)) ||
+        cs->preSemanticIrReceiverLoanIds.length != 0U ||
+        ir->instructions.length < 4U || ir->instructions.length > UINT32_MAX ||
+        ir->values.length == 0U || ir->values.length > UINT32_MAX ||
+        ir->places.places.length > UINT32_MAX || ir->valueOperands.length > UINT32_MAX ||
+        ir->sourceMap.length != ir->instructions.length ||
+        ir->cfg.blocks.length != 1U || ir->cfg.entryBlockId != 0U || ir->cfg.exitBlockId != 0U ||
+        ir->regions.length != 1U || ir->locals.length != 0U || ir->cleanupScopes.length != 0U ||
+        ir->loanFacts.length != 0U || ir->escapeFacts.length != 0U ||
+        ir->contiguousViewFacts.length != 0U || ir->boundsFacts.length != 0U ||
+        ir->scalarScratchProofs.length != 0U) return ZR_FALSE;
+    block = (const SZrParserCfgBlock *)ir->cfg.blocks.head;
+    region = (const SZrSemanticIrRegion *)ir->regions.head;
+    if (block->id != 0U || block->kind != ZR_PARSER_CFG_BLOCK_ENTRY || block->statement != ZR_NULL ||
+        block->firstInstructionIndex != 0U || block->instructionCount != ir->instructions.length ||
+        block->successorCount != 0U || block->predecessorCount != 0U ||
+        block->terminatorKind != ZR_PARSER_CFG_TERMINATOR_RETURN ||
+        !script_identity_array(&block->outgoingEdges, sizeof(SZrParserCfgEdge), _Alignof(SZrParserCfgEdge)) ||
+        block->outgoingEdges.length != 0U || region->id != 1U ||
+        region->parentId != ZR_SEMANTIC_REGION_ID_INVALID ||
+        region->escapeBound != ZR_SEMANTIC_ESCAPE_FUNCTION ||
+        !script_identity_same_range(&region->sourceRange, &emptyRange)) return ZR_FALSE;
+    rows = (const SZrSemanticIrInstruction *)ir->instructions.head;
+    values = (const SZrSemanticIrValue *)ir->values.head;
+    operands = (const TZrValueId *)ir->valueOperands.head;
+    maps = (const SZrSemanticIrSourceMapEntry *)ir->sourceMap.head;
+    places = (const SZrParserPlace *)ir->places.places.head;
+    slots = (const SZrCompilerSemanticIrSlot *)cs->preSemanticIrSlots.head;
+    for (TZrSize i = 0U; i < ir->instructions.length; ++i) {
+        const SZrSemanticIrInstruction *row = &rows[i];
+        if (row->id != i + 1U || row->typeId != returnTypeId ||
+            !script_identity_valid_range(&row->sourceRange) ||
+            !script_identity_contains_range(&cs->currentAst->location, &row->sourceRange) ||
+            maps[i].instructionId != row->id ||
+            !script_identity_same_range(&maps[i].sourceRange, &row->sourceRange) ||
+            row->operandStart != operandEnd || row->operandStart > ir->valueOperands.length ||
+            row->operandCount > ir->valueOperands.length - row->operandStart ||
+            row->valueId != ZR_VALUE_ID_INVALID || row->auxiliaryValueId != ZR_VALUE_ID_INVALID ||
+            row->scalarConversionTypeToken != 0U || row->matchTypeId != ZR_SEMANTIC_ID_INVALID ||
+            row->symbolId != ZR_SEMANTIC_ID_INVALID || row->accessorSymbolId != ZR_SEMANTIC_ID_INVALID ||
+            row->constructorId != ZR_SEMANTIC_ID_INVALID ||
+            row->ownershipOperation != ZR_SEMANTIC_OWNERSHIP_NONE ||
+            row->targetBlockId != ZR_PARSER_CFG_INVALID_BLOCK_ID ||
+            row->loanId != ZR_SEMANTIC_LOAN_ID_INVALID || row->regionId != ZR_SEMANTIC_REGION_ID_INVALID ||
+            row->cleanupScopeId != ZR_SEMANTIC_CLEANUP_SCOPE_ID_INVALID ||
+            row->comparisonPredicate != 0U || row->comparisonOperandTypeId != ZR_SEMANTIC_ID_INVALID ||
+            row->escape != ZR_SEMANTIC_ESCAPE_LOCAL) return ZR_FALSE;
+        operandEnd += row->operandCount;
+        for (TZrSize j = 0U; j < row->operandCount; ++j) {
+            TZrValueId id = operands[row->operandStart + j];
+            if (id == ZR_VALUE_ID_INVALID || id > ir->values.length ||
+                values[id - 1U].definitionInstructionId == ZR_SEMANTIC_INSTRUCTION_ID_INVALID ||
+                values[id - 1U].definitionInstructionId >= row->id) return ZR_FALSE;
+        }
+        if (row->opcode == ZR_SEMANTIC_IR_PLACE_BASE) {
+            if (row->placeId == ZR_PLACE_ID_INVALID || row->placeId > ir->places.places.length ||
+                row->resultValueId != ZR_VALUE_ID_INVALID || row->operandCount != 0U ||
+                row->hasConstantPoolIndex || row->constantPoolIndex != 0U) return ZR_FALSE;
+            ++bases;
+        } else if (row->opcode == ZR_SEMANTIC_IR_RETURN) {
+            if (i + 1U != ir->instructions.length || row->operandCount != 1U ||
+                row->resultValueId != ZR_VALUE_ID_INVALID || row->placeId != ZR_PLACE_ID_INVALID ||
+                row->hasConstantPoolIndex || row->constantPoolIndex != 0U ||
+                !script_identity_same_range(&row->sourceRange, &returnNode->location)) return ZR_FALSE;
+        } else {
+            TZrUInt32 arity;
+            if (row->opcode == ZR_SEMANTIC_IR_CONSTANT) {
+                const SZrTypeValue *constant;
+                arity = 0U;
+                if (!row->hasConstantPoolIndex || row->constantPoolIndex >= cs->constants.length)
+                    return ZR_FALSE;
+                constant = &((const SZrTypeValue *)cs->constants.head)[row->constantPoolIndex];
+                if (constant->type != ZR_VALUE_TYPE_INT64) return ZR_FALSE;
+                ++constants;
+            } else if (row->opcode == ZR_SEMANTIC_IR_ADD || row->opcode == ZR_SEMANTIC_IR_SUB ||
+                       row->opcode == ZR_SEMANTIC_IR_MUL) {
+                arity = 2U;
+                if (row->hasConstantPoolIndex || row->constantPoolIndex != 0U) return ZR_FALSE;
+            } else return ZR_FALSE;
+            if (row->operandCount != arity || row->placeId != ZR_PLACE_ID_INVALID ||
+                row->resultValueId == ZR_VALUE_ID_INVALID || row->resultValueId > ir->values.length ||
+                values[row->resultValueId - 1U].definitionInstructionId != row->id) return ZR_FALSE;
+            ++valueRows;
+        }
+    }
+    terminal = &rows[ir->instructions.length - 1U];
+    if (terminal->opcode != ZR_SEMANTIC_IR_RETURN || constants == 0U ||
+        valueRows != ir->values.length || bases != ir->places.places.length ||
+        operandEnd != ir->valueOperands.length) return ZR_FALSE;
+    returned = &values[operands[terminal->operandStart] - 1U];
+    root = &rows[returned->definitionInstructionId - 1U];
+    if (root->opcode != rootOpcode ||
+        !script_identity_same_range(&root->sourceRange, &expression->location) ||
+        !script_identity_same_range(&values[operands[root->operandStart] - 1U].sourceRange,
+                &expression->data.binaryExpression.left->location) ||
+        !script_identity_same_range(&values[operands[root->operandStart + 1U] - 1U].sourceRange,
+                &expression->data.binaryExpression.right->location)) return ZR_FALSE;
+    for (TZrSize i = 0U; i < ir->values.length; ++i) {
+        const SZrSemanticIrValue *value = &values[i];
+        if (value->id != i + 1U || value->typeId != returnTypeId ||
+            value->definitionInstructionId == ZR_SEMANTIC_INSTRUCTION_ID_INVALID ||
+            value->definitionInstructionId > ir->instructions.length ||
+            rows[value->definitionInstructionId - 1U].resultValueId != value->id ||
+            !script_identity_same_range(&value->sourceRange,
+                    &rows[value->definitionInstructionId - 1U].sourceRange) ||
+            !ZrParser_SemanticValueFacts_Validate(&value->facts, returnTypeId) ||
+            value->facts.ownership != ZR_SEMANTIC_VALUE_OWNERSHIP_VALUE ||
+            value->facts.nullability != ZR_SEMANTIC_VALUE_NULLABILITY_NONNULL) return ZR_FALSE;
+    }
+    for (TZrSize i = 0U; i < cs->preSemanticIrSlots.length; ++i) {
+        const SZrCompilerSemanticIrSlot *slot = &slots[i];
+        if (slot->placeId == ZR_PLACE_ID_INVALID || slot->placeId > ir->places.places.length ||
+            slot->stackSlot == ZR_PARSER_SLOT_NONE ||
+            slot->stackSlot != places[slot->placeId - 1U].base.identity ||
+            slot->typeId != returnTypeId || slot->valueId == ZR_VALUE_ID_INVALID ||
+            slot->valueId > ir->values.length || slot->symbolId != ZR_SEMANTIC_ID_INVALID ||
+            slot->loanId != ZR_SEMANTIC_LOAN_ID_INVALID ||
+            slot->regionId != ZR_SEMANTIC_REGION_ID_INVALID) return ZR_FALSE;
+    }
+    for (TZrSize i = 0U; i < ir->places.places.length; ++i) {
+        const SZrParserPlace *place = &places[i];
+        TZrSize baseCount = 0U;
+        TZrBool actualValueRange = ZR_FALSE, actualSlot = ZR_FALSE;
+        if (place->id != i + 1U || place->parentId != ZR_PLACE_ID_INVALID ||
+            place->typeId != returnTypeId || place->base.kind != ZR_PARSER_PLACE_BASE_TEMPORARY ||
+            !script_identity_array(&place->projections,
+                    sizeof(SZrParserPlaceProjection), _Alignof(SZrParserPlaceProjection)) ||
+            place->projections.length != 0U) return ZR_FALSE;
+        for (TZrSize j = 0U; j < ir->instructions.length; ++j)
+            if (rows[j].opcode == ZR_SEMANTIC_IR_PLACE_BASE && rows[j].placeId == place->id) {
+                ++baseCount;
+                if (!script_identity_same_range(&place->sourceRange, &rows[j].sourceRange)) return ZR_FALSE;
+            }
+        for (TZrSize j = 0U; j < ir->values.length; ++j)
+            if (script_identity_same_range(&place->sourceRange, &values[j].sourceRange)) actualValueRange = ZR_TRUE;
+        for (TZrSize j = 0U; j < cs->preSemanticIrSlots.length; ++j)
+            if (slots[j].placeId == place->id && slots[j].stackSlot == place->base.identity &&
+                slots[j].stackSlot != ZR_PARSER_SLOT_NONE && slots[j].typeId == returnTypeId &&
+                slots[j].symbolId == ZR_SEMANTIC_ID_INVALID &&
+                slots[j].loanId == ZR_SEMANTIC_LOAN_ID_INVALID &&
+                slots[j].regionId == ZR_SEMANTIC_REGION_ID_INVALID &&
+                slots[j].valueId != ZR_VALUE_ID_INVALID && slots[j].valueId <= ir->values.length)
+                actualSlot = ZR_TRUE;
+        if (baseCount != 1U || !actualValueRange || !actualSlot) return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
 void compiler_script_callable_identity_try_publish(
         SZrCompilerState *cs, SZrFunction *function, TZrTypeId returnTypeId) {
     const SZrAstNode *returnNode = script_identity_return_node(cs, function);
@@ -190,8 +406,10 @@ void compiler_script_callable_identity_try_publish(
     TZrSymbolId symbolId;
     TZrBool functionRootAdded = ZR_FALSE, nameRootAdded = ZR_FALSE;
     SZrFunctionSourceCallableIdentity identity = {0};
-    if (returnNode == ZR_NULL ||
-        !script_identity_prove_literal_return(cs, returnNode, returnTypeId)) return;
+    if (returnNode == ZR_NULL) return;
+    if (returnNode->data.returnStatement.expr->type == ZR_AST_INTEGER_LITERAL) {
+        if (!script_identity_prove_literal_return(cs, returnNode, returnTypeId)) return;
+    } else if (!script_identity_prove_binary_return(cs, returnNode, returnTypeId)) return;
     /* Native semantic arrays borrow names. The prepare caller has attached
      * the actual key to functionName with a barrier; preserve both across this
      * allocation window, without removing roots owned by another caller. */

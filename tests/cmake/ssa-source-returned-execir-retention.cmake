@@ -20,8 +20,9 @@ include("${CMAKE_CURRENT_LIST_DIR}/ssa-function-execir-owner.cmake")
 set(_zr_returned_execir_parser_sources)
 foreach (_name IN ITEMS exec_ir_build exec_ir_state_maps exec_ir_dead_source_places
         exec_ir_source_frame exec_ir_source_frame_validation exec_ir_frame_layout
-        exec_ir_source_finalized_module exec_ir_source_finalized_module_validation exec_ir_source_callable_query)
-    if (_name MATCHES "^exec_ir_source_(frame|finalized_module|callable_query)")
+        exec_ir_source_finalized_module exec_ir_source_finalized_module_validation exec_ir_source_callable_query
+        exec_ir_source_integer_expression exec_ir_source_integer_constants)
+    if (_name MATCHES "^exec_ir_source_(frame|finalized_module|callable_query|integer_)")
         set(_source_dir exec_ir/source)
     else ()
         set(_source_dir exec_ir)
@@ -163,7 +164,7 @@ add_custom_command(OUTPUT "${_zr_returned_execir_archive}"
         "-DARCHIVE_ROOT=${CMAKE_BINARY_DIR}"
         "-DARCHIVER=${ZR_SSA_FUNCTION_EXECIR_ARCHIVER}"
         "-DEXCLUDED_BASENAMES=${_zr_returned_execir_excluded_members}"
-        -DEXPECTED_EXCLUDED_COUNT=12
+        -DEXPECTED_EXCLUDED_COUNT=14
         -P "${CMAKE_CURRENT_LIST_DIR}/ssa-function-execir-residual-archive.cmake"
         DEPENDS ssa_source_zr_vm_parser "${ZR_SSA_FUNCTION_EXECIR_ARCHIVER}"
         "${CMAKE_CURRENT_LIST_DIR}/ssa-function-execir-residual-archive.cmake"
@@ -214,7 +215,7 @@ else ()
     _zr_returned_execir_residual(zr_vm_ssa_returned_execir_residual_core zr_vm_core_static 17
             ${_zr_returned_execir_core_excluded_sources})
     _zr_returned_execir_residual(zr_vm_ssa_returned_execir_residual_library zr_vm_library_static 0)
-    _zr_returned_execir_residual(zr_vm_ssa_returned_execir_residual_parser zr_vm_parser_static 12
+    _zr_returned_execir_residual(zr_vm_ssa_returned_execir_residual_parser zr_vm_parser_static 14
             ${_zr_returned_execir_excluded_sources})
     target_sources(zr_vm_ssa_source_returned_execir_retention_test PRIVATE
             "${_zr_returned_execir_root}/tests/third_party/zr_unity/Unity/src/unity.c")
