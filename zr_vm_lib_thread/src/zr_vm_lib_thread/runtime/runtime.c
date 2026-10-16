@@ -1195,7 +1195,10 @@ static TZrBool zr_vm_thread_scheduler_construct(ZrLibCallContext *context, SZrTy
         return zr_vm_task_raise_runtime_error(context->state,
                                               "ThreadScheduler workerCount must be greater than zero");
     }
-    /* BUG: 只检查正数却将 int64 workerCount 窄化为 uint32；例如 4294967297 会被当作 1 个 worker。 */
+    if ((TZrUInt64)workerCount > (TZrUInt64)UINT32_MAX) {
+        return zr_vm_task_raise_runtime_error(context->state,
+                                              "ThreadScheduler workerCount exceeds uint32 capacity");
+    }
 
     scheduler = zr_vm_task_resolve_construct_target(context);
     queue = ZrLib_Array_New(context->state);

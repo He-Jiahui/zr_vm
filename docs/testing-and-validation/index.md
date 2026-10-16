@@ -184,3 +184,5 @@ the full type-inference runner under Clang ASan/UBSan; see
 - [Object write allocation failures](object-write-allocation-failure.md)：Core、Library 与 Reflection 写入失败、结构体复制及临时根清理。
 
 - [FS 文本及包装失败](system-fs-failures.md)：内嵌零字节长度与指定文件句柄的失败清理。
+
+- [Thread worker count](thread-worker-count.md)：构造前的 uint32 计数边界与正常控制。
