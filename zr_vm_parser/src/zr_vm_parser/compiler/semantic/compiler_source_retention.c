@@ -1,8 +1,10 @@
 #include "compiler/semantic/compiler_source_retention_internal.h"
+#include "exec_ir/source/exec_ir_source_finalized_module_internal.h"
 
 #include <stdint.h>
 #include <string.h>
 #include "zr_vm_core/function_aot_ir.h"
+#include "zr_vm_core/function_exec_ir.h"
 #include "exec_ir/aot_ir_projection_descriptor.h"
 #include "zr_vm_parser/exec_ir_builder.h"
 #include "exec_ir/exec_ir_dead_source_places.h"
@@ -134,7 +136,8 @@ mismatch:
     return ZR_FALSE;
 }
 
-TZrBool compiler_retain_source_scalar_aot(SZrCompilerState *cs, SZrFunction *selected,
+TZrBool compiler_retain_source_scalar_metadata(SZrCompilerState *cs,
+        SZrFunction *selected, EZrSourceRetention mode,
         SZrSourceCompileDiagnostic *diagnostic) {
     SZrSourceCompileDiagnostic local;
     SZrSourceCompileDiagnostic *d = diagnostic != ZR_NULL ? diagnostic : &local;
@@ -150,13 +153,16 @@ TZrBool compiler_retain_source_scalar_aot(SZrCompilerState *cs, SZrFunction *sel
     SZrExecIrFunction *original;
     TZrBool success = ZR_FALSE;
     retention_result(d, ZR_SOURCE_STAGE_COMPILE, ZR_SOURCE_RESULT_INVALID_ARGUMENT);
-    if (cs == ZR_NULL || selected == ZR_NULL) goto done;
+    if (cs == ZR_NULL || selected == ZR_NULL ||
+        (mode != ZR_SOURCE_RETENTION_REQUIRE_SCALAR_AOT &&
+         mode != ZR_SOURCE_RETENTION_REQUIRE_SCALAR_EXECIR)) goto done;
     retention_result(d, ZR_SOURCE_STAGE_COMPILE, ZR_SOURCE_RESULT_UNSUPPORTED);
     if (cs->state == ZR_NULL || selected != cs->currentFunction ||
         cs->emitTestManifest || cs->testManifestEntries.length != 0u ||
         cs->childFunctions.length != 0u || cs->closureVarCount != 0u ||
         cs->submissionDeclaredCaptureIndices.length != 0u ||
-        ZrCore_Function_GetAotIr(selected) != ZR_NULL) goto done;
+        ZrCore_Function_GetAotIr(selected) != ZR_NULL ||
+        ZrCore_Function_GetExecIr(selected) != ZR_NULL) goto done;
     /* Bridge owns finite SCRIPT/canonical/geometry/profile validation.
      * A duplicated I64 filter would hide its bool/float diagnostic. */
     if (!ZrParser_ExecIr_MakeSourceScalarConstant(cs, &constant, &e)) {
@@ -219,6 +225,16 @@ TZrBool compiler_retain_source_scalar_aot(SZrCompilerState *cs, SZrFunction *sel
                     p.original.layouts, p.original.layoutCount, 0u, &e));
     RETENTION_EXEC(ZR_SOURCE_STAGE_FRAME,
             ZrCore_ExecIr_VerifyFunction(&p.compacted, ZR_EXEC_IR_VERIFY_ALL, &e));
+    if (mode == ZR_SOURCE_RETENTION_REQUIRE_SCALAR_EXECIR) {
+        RETENTION_EXEC(ZR_SOURCE_STAGE_EXECIR_OWNER,
+                source_snapshot_finalized_primitive_module(&cs->preSemanticIr,
+                        cs->semanticContext, cs->scriptAst, &selected->sourceCallableIdentity,
+                        &cs->constants, selected->constantValueList, selected->constantValueLength,
+                        &p.original, &p.compacted, &selected->ownedExecIr, &e));
+        success = ZR_TRUE;
+        memset(d, 0, sizeof(*d));
+        goto done;
+    }
     RETENTION_EXEC(ZR_SOURCE_STAGE_PROJECTION,
             ZrParser_ExecIr_LowerAotWithCanonicalCallable(&p.compacted,
                     p.original.constants, p.original.constantCount,

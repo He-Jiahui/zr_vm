@@ -1136,8 +1136,8 @@ static SZrFunction *zr_parser_compiler_compile_mode_active(
         return ZR_NULL;
     }
 
-    if (retention == ZR_SOURCE_RETENTION_REQUIRE_SCALAR_AOT &&
-        !compiler_retain_source_scalar_aot(&cs, func, diagnostic)) {
+    if (retention != ZR_SOURCE_RETENTION_NONE &&
+        !compiler_retain_source_scalar_metadata(&cs, func, retention, diagnostic)) {
         ZrCore_Function_Free(state, func);
         ZrParser_CompilerState_Free(&cs);
         return ZR_NULL;
@@ -1252,8 +1252,9 @@ static struct SZrFunction *zr_parser_source_compile_mode(
 
     if (diagnostic != ZR_NULL) memset(diagnostic, 0, sizeof(*diagnostic));
     if ((retention != ZR_SOURCE_RETENTION_NONE &&
-         retention != ZR_SOURCE_RETENTION_REQUIRE_SCALAR_AOT) ||
-        (retention == ZR_SOURCE_RETENTION_REQUIRE_SCALAR_AOT &&
+         retention != ZR_SOURCE_RETENTION_REQUIRE_SCALAR_AOT &&
+         retention != ZR_SOURCE_RETENTION_REQUIRE_SCALAR_EXECIR) ||
+        (retention != ZR_SOURCE_RETENTION_NONE &&
          (submissionContext != ZR_NULL || outSubmissionResult != ZR_NULL))) {
         zr_parser_source_report_failure(diagnostic, ZR_SOURCE_STAGE_OPTIONS,
                                          ZR_SOURCE_RESULT_INVALID_ARGUMENT);

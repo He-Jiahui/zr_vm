@@ -150,6 +150,12 @@ unsigned ZrTests_Returned_RecordFrees(unsigned kind, unsigned record) {
     return result;
 }
 unsigned ZrTests_Returned_VmAttempts(void) { return g_vm.attempts; }
+int ZrTests_Returned_TryVmStats(SZrReturnedVmStats *output) {
+    if (output == NULL) return 0;
+    *output = (SZrReturnedVmStats){g_vm.attempts, g_vm.frees, g_vm.live,
+            g_vm.errors, g_vm.diagnosticCount, g_vm.dropped};
+    return 1;
+}
 SZrReturnedHeapStats ZrTests_Returned_Stats(unsigned kind) {
     TEST_ASSERT_LESS_THAN_UINT(2u, kind); return ZrTests_ReturnedCrt_Stats(kind);
 }

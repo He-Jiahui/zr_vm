@@ -21,6 +21,15 @@ void ZrTests_Returned_FreeFunction(unsigned slot);
 unsigned ZrTests_Returned_OwnerRecord(unsigned slot);
 unsigned ZrTests_Returned_RecordFrees(unsigned kind, unsigned record);
 unsigned ZrTests_Returned_VmAttempts(void);
+typedef struct SZrReturnedVmStats {
+    unsigned attempts, frees, live, errors, diagnosticCount, dropped;
+} SZrReturnedVmStats;
+/* Serialized read of the actual VM allocator counters, including after Shutdown
+ * until Init. Output must be genuine independent writable storage. Null refuses
+ * with no mutation; acceptance copies six counters, without allocation or Unity.
+ * Attempts include realloc/free requests and do not count successful allocations.
+ */
+int ZrTests_Returned_TryVmStats(SZrReturnedVmStats *output);
 SZrReturnedHeapStats ZrTests_Returned_Stats(unsigned kind);
 SZrReturnedHeapEvent ZrTests_Returned_Event(unsigned kind, unsigned index);
 void ZrTests_Returned_ArmDescriptor(unsigned site);

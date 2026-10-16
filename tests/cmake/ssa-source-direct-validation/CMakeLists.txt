@@ -578,6 +578,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/../ssa-metadata-string-heap-owner.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/../ssa-source-descriptor-oom.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/../ssa-source-returned-retention.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/../ssa-function-execir-owner.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../ssa-source-returned-execir-retention.cmake")
 set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_library
         ssa_source_aot_scalar_text_support ${_zr_scalar_targets}
         ssa_source_primitive_frame_oom_object
@@ -585,6 +586,9 @@ set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_l
         zr_vm_ssa_function_aot_owner_test
         zr_vm_ssa_execir_owner_private_core zr_vm_ssa_exec_ir_owned_module_test
         zr_vm_ssa_function_execir_aot_object zr_vm_ssa_function_exec_ir_owner_test
+        zr_vm_ssa_returned_execir_private_parser zr_vm_ssa_returned_execir_observed_producer
+        zr_vm_ssa_returned_execir_private_core_copy zr_vm_ssa_returned_execir_private_frame
+        zr_vm_ssa_source_returned_execir_retention_test
         zr_vm_ssa_metadata_string_heap_owner_test
         ssa_source_descriptor_oom_object zr_vm_ssa_source_descriptor_oom_test
         ssa_source_returned_descriptor_object ssa_source_returned_owner_object
@@ -644,6 +648,7 @@ foreach (_header IN ITEMS
         tests/parser/support/ssa_aot_owned_module_fault_shim.h
         tests/core/support/ssa_function_aot_owner_fixture.h
         tests/core/support/ssa_exec_ir_owned_module_fixture.h
+        tests/core/support/ssa_exec_ir_owner_capture.h
         tests/core/support/ssa_exec_ir_owned_module_allocator.h
         tests/core/support/ssa_exec_ir_owned_module_shim.h
         tests/core/support/ssa_function_exec_ir_owner_fixture.h
@@ -653,16 +658,22 @@ foreach (_header IN ITEMS
         tests/parser/support/ssa_source_descriptor_oom_shim.h
         tests/parser/support/ssa_source_returned_retention_fixture.h
         tests/parser/support/ssa_source_returned_crt_ledger.h
+        tests/parser/support/ssa_source_returned_execir_fixture.h
+        tests/parser/support/ssa_source_returned_execir_cleanup.h
+        tests/parser/support/ssa_source_returned_execir_owner_shim.h
         tests/parser/support/ssa_source_returned_descriptor_shim.h
         tests/parser/support/ssa_source_returned_owner_shim.h
         zr_vm_parser/include/zr_vm_parser/compiler_source_retention.h
         zr_vm_parser/src/zr_vm_parser/compiler/compiler_source_retention_internal.h
+        zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_finalized_module_internal.h
+        zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_callable_query_internal.h
         zr_vm_parser/include/zr_vm_parser/aot_ir_projection_descriptor.h
         zr_vm_parser/include/zr_vm_parser/exec_ir_source_scalar_constant.h
         zr_vm_core/include/zr_vm_core/function.h
         zr_vm_core/include/zr_vm_core/function_aot_ir.h
         zr_vm_core/include/zr_vm_core/function_exec_ir.h
         zr_vm_core/include/zr_vm_core/exec_ir_owned_module.h
+        zr_vm_core/include/zr_vm_core/exec_ir_module_copy.h
         zr_vm_core/src/zr_vm_core/function/function_ir_owners_internal.h
         zr_vm_core/src/zr_vm_core/function/function_aot_ir_internal.h
         zr_vm_core/src/zr_vm_core/aot/aot_ir_owned_module.h

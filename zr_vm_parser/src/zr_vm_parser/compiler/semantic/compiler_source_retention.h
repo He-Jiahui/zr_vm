@@ -11,7 +11,8 @@ struct SZrFunction;
 
 typedef enum EZrSourceRetention {
     ZR_SOURCE_RETENTION_NONE = 0,
-    ZR_SOURCE_RETENTION_REQUIRE_SCALAR_AOT = 1
+    ZR_SOURCE_RETENTION_REQUIRE_SCALAR_AOT = 1,
+    ZR_SOURCE_RETENTION_REQUIRE_SCALAR_EXECIR = 4
 } EZrSourceRetention;
 
 typedef struct SZrSourceCompileOptions {
@@ -32,7 +33,8 @@ typedef enum EZrSourceCompileStage {
     ZR_SOURCE_STAGE_PROJECTION,
     ZR_SOURCE_STAGE_TARGET,
     ZR_SOURCE_STAGE_DESCRIPTOR,
-    ZR_SOURCE_STAGE_OWNER
+    ZR_SOURCE_STAGE_OWNER,
+    ZR_SOURCE_STAGE_EXECIR_OWNER
 } EZrSourceCompileStage;
 
 typedef enum EZrSourceCompileResult {
@@ -58,7 +60,8 @@ typedef struct SZrSourceCompileDiagnostic {
 /* Compile through the ordinary source wrapper with an explicit retention mode.
  * NULL options or zero options mean NONE; existing ordinary/test/submission and
  * registered host compile entrypoints remain NONE. sourceName is optional.
- * Unknown retention, NULL state/source or zero sourceLength reports
+ * Modes are exact enum values, not combinable flags; values 2 and 1|4 are
+ * unknown. Unknown retention, NULL state/source or zero sourceLength reports
  * OPTIONS/INVALID_ARGUMENT before parsing, build facts, canonicalization, module
  * preparation or output mutation. REQUIRE combined with submission context or
  * output is rejected before module preparation by the internal pipeline.
@@ -91,9 +94,20 @@ typedef struct SZrSourceCompileDiagnostic {
  * is performed by retention. Default retained output and broader programs remain
  * separate future work.
  *
- * REQUIRE uses the current constant, module contract, compaction, frame,
- * projection, host target and descriptor producers before one independent
- * Function snapshot. Unsupported literal types preserve CONSTANT/UNSUPPORTED
+ * Both REQUIRE modes use the current constant, module contract, compaction,
+ * host primitive layout and verified frame attachment producers.
+ * REQUIRE_SCALAR_AOT then uses the current projection, host target and descriptor
+ * producers and retains AOT only. REQUIRE_SCALAR_EXECIR validates the genuine
+ * source witnesses and deep-copies whole module storage with its selected
+ * Function replaced by the finalized frame-attached Function, with no AOT owner.
+ * Other logical rows/counts, header presence and identities are retained; clone
+ * capacity normalization does not preserve spare bytes or every capacity.
+ * Publication occurs only after finalizer verification and successful ownership
+ * cloning. A finalizer refusal reports EXECIR_OWNER with its actual complete
+ * lower diagnostic. Canonical type IDs are numeric identities; the snapshot does
+ * not own the canonical registry or extend its lifetime, and does not authorize
+ * execution or default retained output.
+ * Unsupported literal types preserve CONSTANT/UNSUPPORTED
  * and the actual bridge diagnostic. Bool append failures without a lower
  * diagnostic report PRODUCER_FAILED at BUILD or LAYOUT without guessing OOM.
  */
