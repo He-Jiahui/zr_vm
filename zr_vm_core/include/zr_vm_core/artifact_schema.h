@@ -102,7 +102,8 @@ typedef enum EZrArtifactStatus {
     ZR_ARTIFACT_STATUS_SCHEDULER_REQUIREMENT_MISMATCH,
     ZR_ARTIFACT_STATUS_SCHEDULER_ABI_MISMATCH,
     ZR_ARTIFACT_STATUS_TRANSPORT_CONTRACT_MISMATCH,
-    ZR_ARTIFACT_STATUS_SCHEDULER_CONTRACT_MISMATCH
+    ZR_ARTIFACT_STATUS_SCHEDULER_CONTRACT_MISMATCH,
+    ZR_ARTIFACT_STATUS_COUNT /* Sentinel, not a valid status. */
 } EZrArtifactStatus;
 
 /** @brief 签名字节流的节点标签，深度及子节点数受上方限额约束。 */
@@ -525,7 +526,7 @@ typedef struct SZrArtifactDocument {
 } SZrArtifactDocument;
 
 /** @brief 从已验证目录取得的节窗口；data 借用原始 artifact buffer。
- * @note 固定行读取期望对应 kind 且完整 byteLength；直接构造的视图须自行保证。 */
+ * @note 固定行读取核对 kind、步长和完整表的 byteLength；data 实际指向声明范围由调用方保证。 */
 typedef struct SZrArtifactSectionView {
     TZrUInt32 kind;
     TZrUInt32 flags;
@@ -579,8 +580,10 @@ ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_FindSection(
         SZrArtifactSectionView *outSection,
         SZrArtifactDiagnostic *diagnostic);
 
-/* BUG: 下列十一种固定行读取共用的定位器未核对节 kind、data 和完整 byteLength；
- * 直接传入伪造节视图可误解码或越界，且成功时可能保留旧诊断。 */
+/* 下列十一种接口核对对应 kind、非空 data、固定步长、完整表范围和行号。
+ * TypeIdentity 接受 TYPE_REF/TYPE_SPEC；其余只接受各自的节种类。
+ * 失败保留 outRow；入口清空整个可选 diagnostic，再写本次错误，OK 时全零。
+ * 这里只投影字段；token/哈希/跨表语义由完整文档和元数据图校验。 */
 /** @brief 读取 TypeDef 类型和构造器身份；推荐使用 FindSection 的对应节。 */
 ZR_CORE_API EZrArtifactStatus ZrCore_Artifact_ReadTypeDefRow(
         const SZrArtifactSectionView *section,

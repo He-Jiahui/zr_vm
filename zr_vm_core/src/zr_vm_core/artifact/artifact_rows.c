@@ -240,23 +240,24 @@ void zr_artifact_write_section_payload(TZrByte *bytes, const SZrArtifactSectionI
     }
 }
 
-/* 单行 API 的共同入口；正常解码路径从 Read/FindSection 取得已验证的借用节视图。 */
-/* BUG: 公开调用可用错误 kind、空 data 或不足 byteLength 且匹配的步长通过检查；
- * 随后的读取可能误解码或越界，需按目标行种类和完整字节范围拒绝该输入。 */
+/* Check the complete declared table before forming a row pointer. */
 static EZrArtifactStatus artifact_get_row_bytes(const SZrArtifactSectionView *section,
                                                 TZrUInt32 rowIndex,
                                                 TZrUInt32 expectedSize,
+                                                TZrUInt32 expectedKind,
+                                                TZrUInt32 alternateKind,
                                                 const TZrByte **outBytes,
                                                 SZrArtifactDiagnostic *diagnostic) {
-    if (section == ZR_NULL || outBytes == ZR_NULL ||
-        section->elementSize != expectedSize || rowIndex >= section->elementCount) {
+    if (section == ZR_NULL || outBytes == ZR_NULL || section->data == ZR_NULL ||
+        (section->kind != expectedKind && section->kind != alternateKind) ||
+        section->elementSize != expectedSize || rowIndex >= section->elementCount ||
+        (TZrUInt64)section->elementCount * expectedSize > section->byteLength) {
         return zr_artifact_fail(diagnostic,
                                 ZR_ARTIFACT_STATUS_INVALID_ARGUMENT,
                                 section != ZR_NULL ? section->kind : 0u,
                                 rowIndex,
                                 0u);
     }
-    /* BUG: 复用 diagnostic 时成功不清旧状态，可返回 OK 而 diagnostic.status 仍为上次错误。 */
     *outBytes = section->data + (TZrSize)rowIndex * expectedSize;
     return ZR_ARTIFACT_STATUS_OK;
 }
@@ -269,9 +270,11 @@ EZrArtifactStatus ZrCore_Artifact_ReadTypeDefRow(const SZrArtifactSectionView *s
                                                  SZrArtifactDiagnostic *diagnostic) {
     const TZrByte *bytes;
     EZrArtifactStatus status;
+    zr_artifact_diagnostic_clear(diagnostic);
     if (outRow == ZR_NULL)
         return zr_artifact_fail(diagnostic, ZR_ARTIFACT_STATUS_INVALID_ARGUMENT, 0u, rowIndex, 0u);
     status = artifact_get_row_bytes(section, rowIndex, ZR_ARTIFACT_TYPE_DEF_ROW_ENCODED_SIZE,
+            ZR_ARTIFACT_SECTION_TYPE_DEF_TABLE, ZR_ARTIFACT_SECTION_TYPE_DEF_TABLE,
                                     &bytes, diagnostic);
     if (status != ZR_ARTIFACT_STATUS_OK) return status;
     memset(outRow, 0, sizeof(*outRow));
@@ -292,9 +295,11 @@ EZrArtifactStatus ZrCore_Artifact_ReadTypeIdentityRow(const SZrArtifactSectionVi
                                                       SZrArtifactDiagnostic *diagnostic) {
     const TZrByte *bytes;
     EZrArtifactStatus status;
+    zr_artifact_diagnostic_clear(diagnostic);
     if (outRow == ZR_NULL)
         return zr_artifact_fail(diagnostic, ZR_ARTIFACT_STATUS_INVALID_ARGUMENT, 0u, rowIndex, 0u);
     status = artifact_get_row_bytes(section, rowIndex, ZR_ARTIFACT_TYPE_IDENTITY_ROW_ENCODED_SIZE,
+            ZR_ARTIFACT_SECTION_TYPE_REF_TABLE, ZR_ARTIFACT_SECTION_TYPE_SPEC_TABLE,
                                     &bytes, diagnostic);
     if (status != ZR_ARTIFACT_STATUS_OK) return status;
     memset(outRow, 0, sizeof(*outRow));
@@ -317,9 +322,11 @@ EZrArtifactStatus ZrCore_Artifact_ReadMemberDefRow(const SZrArtifactSectionView 
                                                    SZrArtifactDiagnostic *diagnostic) {
     const TZrByte *bytes;
     EZrArtifactStatus status;
+    zr_artifact_diagnostic_clear(diagnostic);
     if (outRow == ZR_NULL)
         return zr_artifact_fail(diagnostic, ZR_ARTIFACT_STATUS_INVALID_ARGUMENT, 0u, rowIndex, 0u);
     status = artifact_get_row_bytes(section, rowIndex, ZR_ARTIFACT_MEMBER_DEF_ROW_ENCODED_SIZE,
+            ZR_ARTIFACT_SECTION_MEMBER_DEF_TABLE, ZR_ARTIFACT_SECTION_MEMBER_DEF_TABLE,
                                     &bytes, diagnostic);
     if (status != ZR_ARTIFACT_STATUS_OK) return status;
     memset(outRow, 0, sizeof(*outRow));
@@ -340,9 +347,11 @@ EZrArtifactStatus ZrCore_Artifact_ReadPropertyDefRow(const SZrArtifactSectionVie
                                                      SZrArtifactDiagnostic *diagnostic) {
     const TZrByte *bytes;
     EZrArtifactStatus status;
+    zr_artifact_diagnostic_clear(diagnostic);
     if (outRow == ZR_NULL)
         return zr_artifact_fail(diagnostic, ZR_ARTIFACT_STATUS_INVALID_ARGUMENT, 0u, rowIndex, 0u);
     status = artifact_get_row_bytes(section, rowIndex, ZR_ARTIFACT_PROPERTY_DEF_ROW_ENCODED_SIZE,
+            ZR_ARTIFACT_SECTION_PROPERTY_DEF_TABLE, ZR_ARTIFACT_SECTION_PROPERTY_DEF_TABLE,
                                     &bytes, diagnostic);
     if (status != ZR_ARTIFACT_STATUS_OK) return status;
     memset(outRow, 0, sizeof(*outRow));
@@ -366,9 +375,11 @@ EZrArtifactStatus ZrCore_Artifact_ReadContractRow(const SZrArtifactSectionView *
                                                   SZrArtifactDiagnostic *diagnostic) {
     const TZrByte *bytes;
     EZrArtifactStatus status;
+    zr_artifact_diagnostic_clear(diagnostic);
     if (outRow == ZR_NULL)
         return zr_artifact_fail(diagnostic, ZR_ARTIFACT_STATUS_INVALID_ARGUMENT, 0u, rowIndex, 0u);
     status = artifact_get_row_bytes(section, rowIndex, ZR_ARTIFACT_CONTRACT_ROW_ENCODED_SIZE,
+            ZR_ARTIFACT_SECTION_CONTRACT_TABLE, ZR_ARTIFACT_SECTION_CONTRACT_TABLE,
                                     &bytes, diagnostic);
     if (status != ZR_ARTIFACT_STATUS_OK) return status;
     memset(outRow, 0, sizeof(*outRow));
@@ -391,9 +402,11 @@ EZrArtifactStatus ZrCore_Artifact_ReadLayoutRow(const SZrArtifactSectionView *se
                                                 SZrArtifactDiagnostic *diagnostic) {
     const TZrByte *bytes;
     EZrArtifactStatus status;
+    zr_artifact_diagnostic_clear(diagnostic);
     if (outRow == ZR_NULL)
         return zr_artifact_fail(diagnostic, ZR_ARTIFACT_STATUS_INVALID_ARGUMENT, 0u, rowIndex, 0u);
     status = artifact_get_row_bytes(section, rowIndex, ZR_ARTIFACT_LAYOUT_ROW_ENCODED_SIZE,
+            ZR_ARTIFACT_SECTION_LAYOUT_TABLE, ZR_ARTIFACT_SECTION_LAYOUT_TABLE,
                                     &bytes, diagnostic);
     if (status != ZR_ARTIFACT_STATUS_OK) return status;
     memset(outRow, 0, sizeof(*outRow));
@@ -419,6 +432,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadMetadataStateRow(
     const TZrByte *bytes;
     EZrArtifactStatus status;
 
+    zr_artifact_diagnostic_clear(diagnostic);
     if (outRow == ZR_NULL) {
         return zr_artifact_fail(
                 diagnostic, ZR_ARTIFACT_STATUS_INVALID_ARGUMENT, 0u, rowIndex, 0u);
@@ -427,6 +441,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadMetadataStateRow(
             section,
             rowIndex,
             ZR_ARTIFACT_METADATA_STATE_ROW_ENCODED_SIZE,
+            ZR_ARTIFACT_SECTION_METADATA_STATE_TABLE, ZR_ARTIFACT_SECTION_METADATA_STATE_TABLE,
             &bytes,
             diagnostic);
     if (status != ZR_ARTIFACT_STATUS_OK) return status;
@@ -457,6 +472,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadMetadataRecordRow(
     const TZrByte *bytes;
     EZrArtifactStatus status;
 
+    zr_artifact_diagnostic_clear(diagnostic);
     if (outRow == ZR_NULL) {
         return zr_artifact_fail(
                 diagnostic, ZR_ARTIFACT_STATUS_INVALID_ARGUMENT, 0u, rowIndex, 0u);
@@ -465,6 +481,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadMetadataRecordRow(
             section,
             rowIndex,
             ZR_ARTIFACT_METADATA_RECORD_ROW_ENCODED_SIZE,
+            ZR_ARTIFACT_SECTION_METADATA_RECORD_TABLE, ZR_ARTIFACT_SECTION_METADATA_RECORD_TABLE,
             &bytes,
             diagnostic);
     if (status != ZR_ARTIFACT_STATUS_OK) return status;
@@ -492,6 +509,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadDomainTransferRow(
     const TZrByte *bytes;
     EZrArtifactStatus status;
 
+    zr_artifact_diagnostic_clear(diagnostic);
     if (outRow == ZR_NULL) {
         return zr_artifact_fail(
                 diagnostic,
@@ -504,6 +522,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadDomainTransferRow(
             section,
             rowIndex,
             ZR_ARTIFACT_DOMAIN_TRANSFER_ROW_ENCODED_SIZE,
+            ZR_ARTIFACT_SECTION_DOMAIN_TRANSFER_TABLE, ZR_ARTIFACT_SECTION_DOMAIN_TRANSFER_TABLE,
             &bytes,
             diagnostic);
     if (status != ZR_ARTIFACT_STATUS_OK) {
@@ -531,6 +550,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadSchedulerContractRow(
     const TZrByte *bytes;
     EZrArtifactStatus status;
 
+    zr_artifact_diagnostic_clear(diagnostic);
     if (outRow == ZR_NULL) {
         return zr_artifact_fail(
                 diagnostic, ZR_ARTIFACT_STATUS_INVALID_ARGUMENT, 0u, rowIndex, 0u);
@@ -539,6 +559,7 @@ EZrArtifactStatus ZrCore_Artifact_ReadSchedulerContractRow(
             section,
             rowIndex,
             ZR_ARTIFACT_SCHEDULER_CONTRACT_ROW_ENCODED_SIZE,
+            ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE, ZR_ARTIFACT_SECTION_SCHEDULER_CONTRACT_TABLE,
             &bytes,
             diagnostic);
     if (status != ZR_ARTIFACT_STATUS_OK) {
@@ -565,9 +586,11 @@ EZrArtifactStatus ZrCore_Artifact_ReadRelocationRow(const SZrArtifactSectionView
                                                     SZrArtifactDiagnostic *diagnostic) {
     const TZrByte *bytes;
     EZrArtifactStatus status;
+    zr_artifact_diagnostic_clear(diagnostic);
     if (outRow == ZR_NULL)
         return zr_artifact_fail(diagnostic, ZR_ARTIFACT_STATUS_INVALID_ARGUMENT, 0u, rowIndex, 0u);
     status = artifact_get_row_bytes(section, rowIndex, ZR_ARTIFACT_RELOCATION_ROW_ENCODED_SIZE,
+            ZR_ARTIFACT_SECTION_RELOCATION_BINDING_TABLE, ZR_ARTIFACT_SECTION_RELOCATION_BINDING_TABLE,
                                     &bytes, diagnostic);
     if (status != ZR_ARTIFACT_STATUS_OK) return status;
     memset(outRow, 0, sizeof(*outRow));

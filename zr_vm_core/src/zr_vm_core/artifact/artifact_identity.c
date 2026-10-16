@@ -140,7 +140,6 @@ TZrUInt64 ZrCore_Artifact_ComputeMetadataRecordHash(
 }
 
 /* 将公开状态映射为稳定的静态诊断文本；仓内尚无直接调用，外部调用者可查询任意状态。 */
-/* BUG: 新增的五种 scheduler/transport 失配状态在此表缺席，合法状态会被报告为 unknown。 */
 const TZrChar *ZrCore_Artifact_StatusName(EZrArtifactStatus status) {
     static const TZrChar *names[] = {
             "ok", "invalid-argument", "bad-magic", "unsupported-version", "invalid-kind",
@@ -149,7 +148,11 @@ const TZrChar *ZrCore_Artifact_StatusName(EZrArtifactStatus status) {
             "truncated-blob", "invalid-signature", "type-ref-hash-mismatch",
             "type-spec-hash-mismatch", "signature-hash-mismatch", "layout-version-mismatch",
             "layout-hash-mismatch", "contract-hash-mismatch", "module-hash-mismatch",
-            "buffer-too-small", "invalid-text"};
+            "buffer-too-small", "invalid-text", "scheduler-policy-mismatch",
+            "scheduler-requirement-mismatch", "scheduler-abi-mismatch",
+            "transport-contract-mismatch", "scheduler-contract-mismatch"};
+    _Static_assert(sizeof(names) / sizeof(names[0]) == ZR_ARTIFACT_STATUS_COUNT,
+                   "Every artifact status needs a stable diagnostic name");
     if ((TZrUInt32)status >= (TZrUInt32)(sizeof(names) / sizeof(names[0]))) return "unknown";
     return names[status];
 }

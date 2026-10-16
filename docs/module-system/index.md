@@ -97,3 +97,5 @@ doc_type: category-index
 2. 再看 `zrm-assembly-container.md`，了解 `.zro` 单模块产物如何被 `.zrm` 程序集容器聚合和引用。
 3. 再看 `module-specifier-identity.md`，了解 10R 的结构化 specifier 解析、identity 等价和 relative 解析边界。
 4. 需要落代码时，再沿 frontmatter 的 `related_code` / `tests` 进入具体实现和验证入口。
+
+- [Artifact row boundaries](artifact-row-boundaries.md)：固定行视图、输出与诊断失败契约及状态名称。
