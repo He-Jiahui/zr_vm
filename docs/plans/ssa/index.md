@@ -53,14 +53,16 @@ AOT25、CTest2 全部通过。整数表达式 ExecIR 保留已提交 `7adc0e22`�
 
 ### 已完成有限交付（2026-10-16）
 
-已核实 **32 项有限交付：16 项功能、6 项代码修正、5 项专项验证、5 项文档**。
-Root 与独立审查者核对下表提交；原31项已逐项证明属于旧观察HEAD的历史，
-最新第32项提交为 `7adc0e22418b675caa16190c39af838bb196ad3c`，该提交的父提交包含前31项。
-功能数量包含测试基础设施功能；
-支持回归及本次进度文档维护不重复计为新成果。原始日志、故障与编译证据各按实际范围成立。
+已核实 **33 项有限交付：16 项功能、7 项代码修正、5 项专项验证、5 项文档**。
+原32项的逐项验收与提交证明保留；最新第33项为
+`150f641f4b5d50d67e888fb8b34987d264a18ac1`，父提交
+`3f7d8d8cbc7601c292afefb594de0e05969b2b17`，精确98路径、双He身份，
+postcommit独审接受且4条foreign cached保持。按交付目的分类，功能数量含测试
+基础设施；支持回归与本次索引维护不重复计为第34项成果。
 
 | 已完成有限子任务 | 完整提交 SHA | 已验收有限范围 |
 | --- | --- | --- |
+| [ExecIR构造接口收敛Core私有边界](../../instruction-generation/execir-model.md) | `150f641f4b5d50d67e888fb8b34987d264a18ac1` | 30个构建期声明（含10 Reserve、2 mutable及SetBindingRows）迁入Core私有头；Source5/Lower4项元数据CTest、永久头32模式及78 caller syntax均实际通过并独审。精确98路径、双He、4外来cached保持；自有8文件清理2076206B，现用构建与必要证据保留。仅有限代码修正，不授VM/Linux/fullW0或整叶信用。 |
 | [Source I64整数表达式ExecIR保留](../../testing-and-validation/ssa-source-integer-expression-retention.md) | `7adc0e22418b675caa16190c39af838bb196ad3c` | Source r10：direct22/26/25/2/4、CTest5；423故障站/424健康生命周期、proof22 mutations、storage32+32+5/P0及真实span故障恢复。lower24/89/16；MSVC15phase/13C有限W0编译。Root及独立Sol验收；精确36路径、双He身份，7272范围外index条目及10条foreign cached raw保持。不计VM/Linux/fullW0或整叶完成。 |
 | [Arm/Event 非断言观察接口](../../acceptance/ssa-owner-arm-event.md) | 4d6ff9f83886fcd428ff0db71de74c44ca26c74b | RED 8 FAIL / 4 PASS；GREEN 11 PASS / 1 故意 prior-failure，由检查器验收；MSVC 3 TU。 |
 | [断言前清理与健康报告 worker](../../acceptance/source-returned-execir-cleanup.md) | 03f2b8cce6e22efb81546be54b7e6bc8205b9b4b | 6 例协议；GREEN 4 PASS / 2 故意 FAIL；保留恢复前健康状态和重复关闭报告；MSVC 5 TU。 |
@@ -95,11 +97,14 @@ Root 与独立审查者核对下表提交；原31项已逐项证明属于旧观�
 | 纯契约checker完整诊断矩阵 | `dc10784ab7d9d7b910a874798531e3c7884df9e0` | 新增6组：NULL、scalar/mask边界、45字段配对优先关系、失败→成功清空及输入保持。GREEN9B7B2936…EDC88：12phase、4compileW0、2link/2run自然0，209输入/195实际头依赖/6产物及24raw range已独立验收。commitreceiptD9AC8FBC…0DF94，精确2路径、双He、4foreigncached及7172范围外index保持。仅Windows纯checker；schema/ABI共用分支，不计整叶/Source/VM。 |
 
 上述有意失败验证 prior-failure 与清理协议，检查器按精确预期验收；非预期失败不计通过。
-上述 32 项均有实际验收和提交；本次索引维护不重复计为第33项成果。
-47 个叶计划的完整退出门禁仍需分别闭合，不能用32/47表示整体完成率，
-也不能从叶标签complete=0推导没有完成项目。旧整数表达式11失败是历史
-RED结果，最新r10已全部通过并提交；完整Source、状态恢复、后端、GC、
-平台及47项整体门禁继续按依赖推进。
+上述33项均有实际验收和提交；本次索引维护不新增第34项成果。
+47个叶计划仍须分别闭合完整退出门禁，不能用33/47表示整体完成率，
+也不能从43 planned/4 in-progress或complete=0标签推导没有完成项目。
+旧整数表达式11失败保留为历史RED；整数表达式7adc0e22及私有接口边界150f641f
+均已有限验收提交和清理。第33项子清单closed，完整SSA及Parent未知项仍active。
+下一项GC-map outer shape设计已审；纯metadata guard fixture接线计划补齐后实施，
+尚无implementation GO或新RED信用，见
+[ExecIR模型剩余工作](01-execir-ssa/01-core-model.md)。
 
 ### 测量与基础契约（00-measurement-contracts）
 
