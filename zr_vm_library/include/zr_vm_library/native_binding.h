@@ -633,7 +633,12 @@ ZR_LIBRARY_API void ZrLib_Value_SetNativePointer(SZrState *state, SZrTypeValue *
 ZR_LIBRARY_API SZrObject *ZrLib_Object_New(SZrState *state);
 /** @brief 分配 VM 数组供原生模块返回。 */
 ZR_LIBRARY_API SZrObject *ZrLib_Array_New(SZrState *state);
-/** @brief 以 C 字段名设置对象属性；无返回状态，调用者不可据此断言写入成功。 */
+/** @brief 以 C 字段名写入属性；字段名创建或写入失败时先清理，再返回 false 并保存 threadStatus。 */
+ZR_LIBRARY_API TZrBool ZrLib_Object_TrySetFieldCString(SZrState *state,
+                                                      SZrObject *object,
+                                                      const TZrChar *fieldName,
+                                                      const SZrTypeValue *value);
+/** @brief 完成字段写入后正常返回；失败先清理临时根，再抛出实际状态。state 为 NULL 时直接返回。 */
 ZR_LIBRARY_API void ZrLib_Object_SetFieldCString(SZrState *state,
                                                  SZrObject *object,
                                                  const TZrChar *fieldName,

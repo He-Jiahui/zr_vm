@@ -129,23 +129,7 @@ static TZrBool construction_set_field(
         SZrObject *object,
         const TZrChar *name,
         const SZrTypeValue *value) {
-    SZrString *keyString;
-    SZrTypeValue key;
-
-    if (state == ZR_NULL || object == ZR_NULL || name == ZR_NULL ||
-        value == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    keyString = ZrCore_String_CreateFromNative(
-            state, (TZrNativeString)name);
-    if (keyString == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    ZrCore_Value_InitAsRawObject(
-            state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(keyString));
-    key.type = ZR_VALUE_TYPE_STRING;
-    ZrCore_Object_SetValue(state, object, &key, value);
-    return state->threadStatus == ZR_THREAD_STATUS_FINE;
+    return ZrCore_Object_TrySetFieldCString(state, object, name, value);
 }
 
 /* 将签名压成 descriptor 字段名；固定缓冲区不足时放弃缓存，构造语义仍由慢路径决定。 */

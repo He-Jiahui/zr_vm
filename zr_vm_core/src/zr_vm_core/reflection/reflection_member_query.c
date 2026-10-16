@@ -77,32 +77,21 @@ static const SZrTypeValue *query_get_field(SZrState *state,
     return ZrCore_Object_GetValue(state, object, &key);
 }
 
-/* TODO: 缓存写入经过 void Object_SetValue；threadStatus 只能发现部分错误，
- * 不能证明 HashSet_Add 等内部写入已经落盘，需确认缓存写失败的契约。 */
+/* Cache insertion reports its actual result after key/write cleanup. */
 static TZrBool query_set_object_field(SZrState *state,
                                       SZrObject *object,
                                       const TZrChar *name,
                                       SZrObject *value) {
-    SZrString *keyString;
-    SZrTypeValue key;
     SZrTypeValue objectValue;
 
     if (state == ZR_NULL || object == ZR_NULL || name == ZR_NULL ||
         value == ZR_NULL) {
         return ZR_FALSE;
     }
-    keyString = ZrCore_String_CreateFromNative(state, (TZrNativeString)name);
-    if (keyString == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    ZrCore_Value_InitAsRawObject(
-            state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(keyString));
-    key.type = ZR_VALUE_TYPE_STRING;
     ZrCore_Value_InitAsRawObject(
             state, &objectValue, ZR_CAST_RAW_OBJECT_AS_SUPER(value));
     objectValue.type = ZR_VALUE_TYPE_ARRAY;
-    ZrCore_Object_SetValue(state, object, &key, &objectValue);
-    return state->threadStatus == ZR_THREAD_STATUS_FINE;
+    return ZrCore_Object_TrySetFieldCString(state, object, name, &objectValue);
 }
 
 /* 将查询的全部筛选维度编码进描述符私有字段，防止不同查询共享结果。 */
@@ -318,8 +307,7 @@ static const SZrTypeValue *query_array_get(SZrState *state,
     return ZrCore_Object_GetValue(state, array, &key);
 }
 
-/* BUG: Object_SetValue 是 void；候选成员对象的临时 pin 若因 ignored-root 表扩容失败，
- * setter 只记录日志就返回，不写入数组；这里仍报成功，上游可能缓存并发布缺项结果。 */
+/* Preserve the caller's normal bool cleanup path on a failed insertion. */
 static TZrBool query_array_push_object(SZrState *state,
                                        SZrObject *array,
                                        SZrObject *object) {
@@ -338,8 +326,7 @@ static TZrBool query_array_push_object(SZrState *state,
     ZrCore_Value_InitAsRawObject(
             state, &value, ZR_CAST_RAW_OBJECT_AS_SUPER(object));
     value.type = ZR_VALUE_TYPE_OBJECT;
-    ZrCore_Object_SetValue(state, array, &key, &value);
-    return ZR_TRUE;
+    return ZrCore_Object_TrySetValue(state, array, &key, &value);
 }
 
 /* 创建查询期间受保护的临时结果容器，发布或失败清理前由 QueryMembers 持有。 */

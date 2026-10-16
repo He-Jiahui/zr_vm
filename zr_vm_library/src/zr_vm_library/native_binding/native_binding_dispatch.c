@@ -1365,53 +1365,6 @@ SZrObject *ZrLib_Array_New(SZrState *state) {
     return array;
 }
 
-/* 用临时字符串键设置对象字段；内部临时固定键、值和宿主对象。 */
-void ZrLib_Object_SetFieldCString(SZrState *state,
-                                  SZrObject *object,
-                                  const TZrChar *fieldName,
-                                  const SZrTypeValue *value) {
-    SZrTypeValue keyValue;
-    SZrString *fieldString;
-    TZrBool objectPinAdded = ZR_FALSE;
-    TZrBool valuePinAdded = ZR_FALSE;
-    TZrBool keyPinAdded = ZR_FALSE;
-
-    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL || value == ZR_NULL) {
-        return;
-    }
-
-    /* BUG: 此 void API 在固定对象/值或创建键失败时静默返回；FFI handle 的
-     * 隐藏 owner 字段及结构体结果字段调用者无法得知写入失败，仍会发布不完整对象。 */
-    if (!native_binding_pin_raw_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &objectPinAdded)) {
-        return;
-    }
-    if (!native_binding_pin_value_object(state, value, &valuePinAdded)) {
-        native_binding_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinAdded);
-        return;
-    }
-
-    fieldString = ZrCore_String_Create(state, (TZrNativeString)fieldName, strlen(fieldName));
-    if (fieldString == ZR_NULL) {
-        native_binding_unpin_value_object(state->global, value, valuePinAdded);
-        native_binding_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinAdded);
-        return;
-    }
-
-    if (!native_binding_pin_raw_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString), &keyPinAdded)) {
-        native_binding_unpin_value_object(state->global, value, valuePinAdded);
-        native_binding_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinAdded);
-        return;
-    }
-    ZrCore_Value_InitAsRawObject(state, &keyValue, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
-    keyValue.type = ZR_VALUE_TYPE_STRING;
-
-    ZrCore_Object_SetValue(state, object, &keyValue, value);
-
-    native_binding_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString), keyPinAdded);
-    native_binding_unpin_value_object(state->global, value, valuePinAdded);
-    native_binding_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinAdded);
-}
-
 /* 借用对象字段值；返回后目标对象必须仍有根，调用方不可跨修改长期保存指针。 */
 const SZrTypeValue *ZrLib_Object_GetFieldCString(SZrState *state,
                                                  SZrObject *object,

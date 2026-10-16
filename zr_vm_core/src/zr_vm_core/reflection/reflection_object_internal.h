@@ -53,9 +53,8 @@ SZrString *ZrCore_Reflection_ObjectMakeString(
         const TZrChar *text);
 /** @brief 创建字符串键并把 TypeValue 写入对象字段。
  * @pre object、fieldName 和 value 非空，且所有 GC 值属于 state 的 GC domain。
- * @return 参数/pin 前置步骤成功时为 true。
- * @note 本函数只在写入前临时 pin object、key 和 value；返回后 field value 由对象存储持有，调用方仍须保护其返回前的临时对象。
- * BUG: 底层 Object_SetValue 是 void 且可能因 domain 校验、rehash 或 pair 分配失败而不写入，本函数仍无条件返回 true；异常分配 longjmp 还会跳过下面的 unpin 清理。
+ * @return 字段存储写入成功时为 true；失败返回 false 并保存 state->threadStatus。
+ * @note 创建字段名和存储写入由 Core Try 事务保护；普通和异常失败均释放本次 root leases，保留调用者原有显式根。
  */
 TZrBool ZrCore_Reflection_ObjectSetFieldValue(
         SZrState *state,

@@ -287,6 +287,14 @@ ZR_CORE_API SZrObject *ZrCore_Object_CloneStruct(struct SZrState *state, const S
 // different
 ZR_CORE_API TZrBool ZrCore_Object_CompareWithAddress(struct SZrState *state, SZrObject *object1, SZrObject *object2);
 
+/** Try writes release temporary roots and return false on failure, recording
+ * state->threadStatus. A surrounding TryRun returns FINE on normal bool return. */
+ZR_CORE_API TZrBool ZrCore_Object_TrySetValue(struct SZrState *state, SZrObject *object,
+                                             const SZrTypeValue *key, const SZrTypeValue *value);
+/** Includes field-name string creation in the protected write transaction. */
+ZR_CORE_API TZrBool ZrCore_Object_TrySetFieldCString(struct SZrState *state, SZrObject *object,
+                                                    const TZrChar *fieldName, const SZrTypeValue *value);
+/** A failed write releases its roots, then throws the recorded failure status. */
 ZR_CORE_API void ZrCore_Object_SetValue(struct SZrState *state, SZrObject *object, const SZrTypeValue *key,
                                   const SZrTypeValue *value);
 

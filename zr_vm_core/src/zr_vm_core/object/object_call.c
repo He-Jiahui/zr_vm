@@ -339,8 +339,7 @@ static TZrBool object_sync_struct_receiver_value(SZrState *state,
     if (object_node_map_is_ready(sourceObject)) {
         for (TZrSize bucketIndex = 0; bucketIndex < sourceObject->nodeMap.capacity; bucketIndex++) {
             for (SZrHashKeyValuePair *pair = sourceObject->nodeMap.buckets[bucketIndex]; pair != ZR_NULL; pair = pair->next) {
-                ZrCore_Object_SetValue(state, targetObject, &pair->key, &pair->value);
-                if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+                if (!ZrCore_Object_TrySetValue(state, targetObject, &pair->key, &pair->value)) {
                     return ZR_FALSE;
                 }
             }

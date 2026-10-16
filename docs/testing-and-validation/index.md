@@ -180,3 +180,5 @@ the full type-inference runner under Clang ASan/UBSan; see
 - [Core bootstrap support OOM](core-bootstrap-support-allocation-failure.md)：GC/StringTable 管理器和驻留桶失败的完整回滚。
 
 - [Benchmark 对比页面的数据入口](benchmark-compare-viewer.md)：报告格式、bundle 自动加载、UTF-8、实现分类与文本转义的实际页面回归。
+
+- [Object write allocation failures](object-write-allocation-failure.md)：Core、Library 与 Reflection 写入失败、结构体复制及临时根清理。

@@ -60,55 +60,9 @@ SZrString *ZrCore_Reflection_ObjectMakeString(
 }
 
 TZrBool ZrCore_Reflection_ObjectSetFieldValue(
-        SZrState *state,
-        SZrObject *object,
-        const TZrChar *fieldName,
+        SZrState *state, SZrObject *object, const TZrChar *fieldName,
         const SZrTypeValue *value) {
-    SZrString *fieldString;
-    SZrTypeValue key;
-    TZrBool objectPinned = ZR_FALSE;
-    TZrBool keyPinned = ZR_FALSE;
-    TZrBool valuePinned = ZR_FALSE;
-
-    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL || value == ZR_NULL ||
-        !ZrCore_Reflection_ObjectPinRaw(
-                state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &objectPinned) ||
-        !ZrCore_Reflection_ObjectPinValue(state, value, &valuePinned)) {
-        ZrCore_Reflection_ObjectUnpinValue(
-                state != ZR_NULL ? state->global : ZR_NULL, value, valuePinned);
-        ZrCore_Reflection_ObjectUnpinRaw(
-                state != ZR_NULL ? state->global : ZR_NULL,
-                object != ZR_NULL ? ZR_CAST_RAW_OBJECT_AS_SUPER(object) : ZR_NULL,
-                objectPinned);
-        return ZR_FALSE;
-    }
-
-    fieldString = ZrCore_Reflection_ObjectMakeString(state, fieldName);
-    if (fieldString == ZR_NULL ||
-        !ZrCore_Reflection_ObjectPinRaw(
-                state, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString), &keyPinned)) {
-        ZrCore_Reflection_ObjectUnpinValue(state->global, value, valuePinned);
-        ZrCore_Reflection_ObjectUnpinRaw(
-                state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinned);
-        return ZR_FALSE;
-    }
-
-    ZrCore_Value_InitAsRawObject(
-            state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
-    key.type = ZR_VALUE_TYPE_STRING;
-    /*
-     * BUG: Object_SetValue 没有成功返回值；domain 校验、对象初始化、rehash
-     * 或 HashSet_Add 失败都可不写入，而本包装器仍在下面返回 true。
-     * BUG: HashSet_Add 可经 GcMalloc/Exception_Throw 非局部跳转，绕过下面三次
-     * unpin，留下 ignored registry root。
-     */
-    ZrCore_Object_SetValue(state, object, &key, value);
-    ZrCore_Reflection_ObjectUnpinRaw(
-            state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString), keyPinned);
-    ZrCore_Reflection_ObjectUnpinValue(state->global, value, valuePinned);
-    ZrCore_Reflection_ObjectUnpinRaw(
-            state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinned);
-    return ZR_TRUE;
+    return ZrCore_Object_TrySetFieldCString(state, object, fieldName, value);
 }
 
 TZrBool ZrCore_Reflection_ObjectSetString(

@@ -9,6 +9,9 @@ typedef struct SZrExceptionTryRunContext {
     SZrExceptionLongJump recoverPoint;
 /* 仅保护本恢复点的状态规范化；不能借用 status，否则外来 C++ 异常失去 INVALID 语义。 */
     TZrBool statusNormalizationInProgress;
+/* A cleanup boundary inside Error construction must not reopen normalization.
+ * Kept separate so End only clears normalization owned by this context. */
+    TZrBool inheritedNormalizationSuppression;
 /* 不遍历被放弃的回调C栈节点；外层节点必须活到TryRun返回 */
     SZrAotGcRootFrame *savedAotGcRootFrameTop;
 /* 与top一并恢复；不凭该数修复正常返回回调的根泄漏 */
@@ -21,7 +24,7 @@ typedef struct SZrExceptionTryRunContext {
 TZrBool ZrCore_Exception_BeginStatusNormalization(SZrExceptionLongJump *recoverPoint) {
     volatile SZrExceptionTryRunContext *context =
             (volatile SZrExceptionTryRunContext *)recoverPoint;
-    if (context->statusNormalizationInProgress) {
+    if (context->statusNormalizationInProgress || context->inheritedNormalizationSuppression) {
         return ZR_FALSE;
     }
     context->statusNormalizationInProgress = ZR_TRUE;
@@ -60,6 +63,13 @@ EZrThreadStatus ZrCore_Exception_TryRun(
     context.recoverPoint.status = ZR_THREAD_STATUS_FINE;
     context.recoverPoint.previous = state->exceptionRecoverPoint;
     context.statusNormalizationInProgress = ZR_FALSE;
+    context.inheritedNormalizationSuppression = ZR_FALSE;
+    if (context.recoverPoint.previous != ZR_NULL) {
+        const volatile SZrExceptionTryRunContext *outer =
+                (const volatile SZrExceptionTryRunContext *)context.recoverPoint.previous;
+        context.inheritedNormalizationSuppression =
+                (TZrBool)(outer->statusNormalizationInProgress || outer->inheritedNormalizationSuppression);
+    }
     context.savedAotGcRootFrameTop = state->aotGcRootFrameStack;
     context.savedAotGcRootFrameDepth = state->aotGcRootFrameDepth;
     ZrCore_GcDomain_CaptureScopes(state, &snapshot);
