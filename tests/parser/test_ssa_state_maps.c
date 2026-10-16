@@ -2282,3 +2282,48 @@ int main(void) {
  * 构建/CTest 入口：tests/cmake/ssa-tests.cmake:397；tests/cmake/ssa-tests.cmake:422。
  * 宏与回调：tests/third_party/zr_unity/Unity/src/unity_internals.h:910；tests/third_party/zr_unity/Unity/src/unity.c:2283；tests/third_party/zr_unity/Unity/src/unity.c:2298；tests/third_party/zr_unity/Unity/src/unity.c:2299；tests/third_party/zr_unity/Unity/src/unity.c:2303；失败计数返回：tests/third_party/zr_unity/Unity/src/unity.c:2359。
  */
+
+/**
+ * @fn void test_state_map_materialization_rejects_unknown_phase(void)
+ *
+ * ## Summary
+ * 防止物化入口把未知请求 phase 当作合法 checkpoint：同时将夹具 entry 和请求的 phase 设为 -1，以已初始化的空 target 调用 MaterializeState。
+ * 实际执行先命中请求 phase 的参数早退；断言返回 ZR_FALSE、诊断为 INVALID_ARGUMENT，并检查 target.valueCount 仍为零且 target.values 仍为 NULL。
+ *
+ * ## Returns
+ * 无返回值；结果通过 Unity 断言交付。正常完成时依次释放局部 target、function 和 map。
+ *
+ * ## Constraints and lifecycle
+ * map 与 function 由两个 helper 分配构造，target 在使用前初始化；这些对象及 request/diagnostic 都是本用例的局部存储，没有所有权转移给 MaterializeState。
+ * 本用例只覆盖 -1 这一请求 phase 及空 target 的两个字段，不能证明 map entry 的未知 phase 检查、COUNT 或所有未知枚举、NULL 参数、已有非空 target 的完整回滚、分配失败或所有池内容保持。
+ * 当前目标使用默认 Unity setjmp/longjmp 机制；本用例或构造 helper 的断言失败会中断剩余测试正文，跳过尚未执行的局部 Free。runner 随后调用本文件的空 tearDown，后者不会代替这些局部清理；正常释放路径不等于失败断言后的资源保证。
+ *
+ * ## References
+ * 定义与实际断言：tests/parser/test_ssa_state_maps.c:242；tests/parser/test_ssa_state_maps.c:249；tests/parser/test_ssa_state_maps.c:261；tests/parser/test_ssa_state_maps.c:263；tests/parser/test_ssa_state_maps.c:264；tests/parser/test_ssa_state_maps.c:265；tests/parser/test_ssa_state_maps.c:266。
+ * 夹具构造：tests/parser/test_ssa_state_maps.c:55；tests/parser/test_ssa_state_maps.c:91；正常释放：tests/parser/test_ssa_state_maps.c:267；tests/parser/test_ssa_state_maps.c:268；tests/parser/test_ssa_state_maps.c:269；Unity 注册：tests/parser/test_ssa_state_maps.c:1359。
+ * 参数早退实现：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:675；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:681；目标与 CTest 注册：tests/cmake/ssa-tests.cmake:397；tests/cmake/ssa-tests.cmake:420；tests/cmake/ssa-tests.cmake:422。
+ * 空 teardown：tests/parser/test_ssa_state_maps.c:13；默认配置：tests/unity_config.h:4；默认 longjmp 与 runner 的 teardown：tests/third_party/zr_unity/Unity/src/unity_internals.h:881；tests/third_party/zr_unity/Unity/src/unity_internals.h:891；tests/third_party/zr_unity/Unity/src/unity.c:2283；tests/third_party/zr_unity/Unity/src/unity.c:2303。
+ */
+
+/**
+ * @fn void test_state_map_function_clone_keeps_side_table_independent(void)
+ *
+ * ## Summary
+ * 为 CloneFunction 携带 StateMap 的成功路径提供回归入口，检查映射记录、entries 地址与条目数，并记录源函数释放后的有限断言。
+ *
+ * ## Parameters
+ * 无参数；由 main 的 RUN_TEST 注册项通过 UnityTestFunction 派发。
+ *
+ * ## Returns
+ * 本函数为 void case，无 C 返回值。所列断言全部通过时正常返回；断言失败由 Unity 记录并跳出当前 case，最终进程失败数由 main 的 UNITY_END() 汇总。
+ *
+ * ## Constraints and lifecycle
+ * function_with_alloc_debug_boundary 为 source 构造普通拥有池的 IR，clone 先调用 FunctionInit；之后分别断言 BuildStateMaps 与 CloneFunction 返回 true。该 case 只检查 clone.stateMap 非空、两个 map 记录地址不同、entryCount 相等，以及 entries 地址不同，未逐项比较 payload、value/root/owner 池、身份或全部存储是否重叠。
+ * 正常路径先 FreeFunction(source)，然后只检查 clone.stateMap 仍非空，最后 FreeFunction(clone)。源函数释放后的那条断言没有解引用 clone 映射，不能据此单独推断其全部内容或所有嵌套池都仍有效。实际独立存储契约仍应结合 CloneFunction/StateMapClone 实现与对应专门测试核查。
+ * source 和 clone 记录在 case 栈上，其拥有的池由各自 FreeFunction 回收；diagnostic 仅作同步输出。此例没有分配故障注入或失败回滚断言。Unity 断言可 longjmp 并跳过后续局部释放，空 setUp/tearDown 不补偿清理。
+ *
+ * ## References
+ * 声明、定义与唯一 runner 注册：tests/parser/test_ssa_state_maps.c:53；tests/parser/test_ssa_state_maps.c:1333；tests/parser/test_ssa_state_maps.c:1396。
+ * fixture、初始化及 builder/clone 断言：tests/parser/test_ssa_state_maps.c:1338；tests/parser/test_ssa_state_maps.c:1339；tests/parser/test_ssa_state_maps.c:1340；tests/parser/test_ssa_state_maps.c:1341。有限地址/计数断言与释放顺序：tests/parser/test_ssa_state_maps.c:1342；tests/parser/test_ssa_state_maps.c:1343；tests/parser/test_ssa_state_maps.c:1344；tests/parser/test_ssa_state_maps.c:1345；tests/parser/test_ssa_state_maps.c:1346；tests/parser/test_ssa_state_maps.c:1347；tests/parser/test_ssa_state_maps.c:1348。
+ * CloneFunction 当前实现入口、候选失败清理与成功替换：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:470；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:487；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:491。FreeFunction 与 builder 入口：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:229；zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c:351。这些跨文件依赖不因本例获得新增完整审查信用。
+ */

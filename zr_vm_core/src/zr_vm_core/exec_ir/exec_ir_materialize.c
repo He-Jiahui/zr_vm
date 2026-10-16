@@ -1180,3 +1180,58 @@ TZrBool ZrCore_ExecIr_MaterializeState(const SZrExecIrResumeRequest *request,
  * ## References
  * same-instruction 关系：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:626；same-resume 关系：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:636；重复 triple：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:646；失败统一释放：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:660、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:661。
  */
+
+/**
+ * @fn static TZrBool zr_state_map_size_valid(TZrUInt32 count, size_t elementSize)
+ *
+ * ## Summary
+ * 在物化候选的 live value、root 和 owner-state 池分配前，检查 count 与元素大小的乘积能否用 size_t 表示，避免字节数计算截断后分配过小。
+ *
+ * ## Parameters
+ * @param[in] count 待分配的元素数量；数量为零时仍要求 elementSize 非零。
+ * @param[in] elementSize 单个元素的字节数；零表示无效大小。
+ *
+ * ## Returns
+ * @return elementSize 非零且 count 不超过 SIZE_MAX / elementSize 时为 ZR_TRUE，否则为 ZR_FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 这是纯算术检查，不分配、释放或访问存储，也不证明实际地址、容量、对齐或可读性。没有资源转移或内部同步。
+ * 本定义只供本翻译单元的三处候选池分配调用；storage 翻译单元中的同名 static helper 是独立定义。
+ *
+ * ## References
+ * live value 分配前检查：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:741；root 检查：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:763；owner-state 检查：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:786。
+ * 另一翻译单元的同名独立定义：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c:7。
+ */
+
+/**
+ * @fn TZrBool ZrCore_ExecIr_MaterializeState(const SZrExecIrResumeRequest *request, SZrExecIrDiagnostic *diagnostic)
+ *
+ * ## Summary
+ * 为解释器恢复及对象物化选择一个逻辑 checkpoint。先验证整个 function/map 对，再按 sourceId、resumeId、phase 查找 entry 并检查可选请求身份；target 非空时在局部候选中构造逻辑值、root、owner-state 及 deopt recipe 池，全部成功后一次替换调用方结果。
+ * target 为空时只走 metadata/owner-witness 验证路径，不创建或发布物化输出；该路径仍可能由 map 验证和 witness 分析分配临时存储。
+ *
+ * ## Parameters
+ * @param[in] request 同步借用的请求描述符；NULL、NULL function 或未知 phase 返回 ZR_FALSE。非空指针及将被读取的嵌套对象必须真实有效。map 为 NULL 时使用 function->stateMap；target 的可写借用及所有权约束见下节。
+ * @param[out] diagnostic 可为 NULL；否则须为独立、可写的诊断对象。本函数在检查 request 前先清零它，失败后可写入所命中阶段的诊断；不保存该指针。
+ *
+ * ## Returns
+ * @return ZR_TRUE 表示所选 checkpoint 及适用的 owner witness 验证成功；target 非空时还表示所有候选池与 recipe 已准备并提交。ZR_FALSE 表示参数、map、entry 查找、可选身份、target、尺寸、分配、owner witness 或 recipe 准备的某一步失败。按下述独立存储和有效所有权前提，失败不改变旧 target；diagnostic 不属于该事务。
+ *
+ * ## Constraints and lifecycle
+ * 调用顺序先于请求身份检查：ValidateStateMap 必须先成功，再查找 entry，最后依次检查非零的 functionToken、generation、signatureHash；任一请求身份字段为零时仅跳过该项额外比较，不跳过 function/map 的一致性验证。
+ * request、function、所选 map 及可选 ownerStates 只在本次同步调用期间借用，不取得其所有权。输入及其嵌套存储在读取期间必须稳定；调用方负责同步，函数没有保护并发修改或释放的锁。
+ * 非空 ownerStates 按 valueId - 1 索引，ownerStateCount 必须等于 function->valueCount；空指针与零数量必须成对。具体 witness 必须落在该 checkpoint 的静态 owner mask 内，并与非 CONDITIONAL 的静态状态一致。非空 target 所选 entry 中的 CONDITIONAL owner 状态需要具体 witness；空 target 可以在没有 witness 时只验证此类 metadata。
+ * 非空 target 必须是已初始化的可写记录。旧的五个池须满足数量/容量/指针对应关系、所检查的区间分离关系，并各自来自可由 C free 释放的独立分配。target 校验不证明分配来源或实际地址可读性，也不检测 target 记录本身对 request、function/map 等输入的别名。
+ * request、diagnostic 与 target 记录须相互独立；target 记录及旧池还须与 request、function/map、被读池和 owner witness 分离，这是调用方前提而非 helper 已证明的全部别名关系。diagnostic 不得与输入、owner witness、target 记录或其池重叠。不得把将继续使用的请求或输入置于提交时将释放的旧 target 池内；本接口不承诺任意输出别名安全。
+ * live value、root、owner-state 池按该顺序分配；首池分配或尺寸失败前尚无候选池，后续失败释放已取得的候选存储。owner 解析可收缩有效 rootCount；容量仍记录已分配空间。owner 解析或 aggregate 准备失败时，由此函数释放整个候选。
+ * 唯一提交点先释放旧 target 的五个池，再把完整候选写入同一记录。成功后旧池的全部借用失效；新池所有权交给 target，调用方最终调用 ZrCore_ExecIr_MaterializedStateFree。失败后可保留旧结果并按具体诊断决定是否重试。
+ * values/roots 是逻辑 value ID，ownerStates 是状态元数据，aggregate/field 是复制并重排字段区间的逻辑 recipe；它们不是运行时对象或 GC root 注册，不保活原 function/map 或运行时对象。ID 的解释仍依赖对应函数和版本语义。
+ *
+ * ## References
+ * 公开接口：zr_vm_core/include/zr_vm_core/exec_ir_state_map.h:148；完整 map 验证及 scratch 清理：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:556；entry 选择：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:688。
+ * target 约束检查：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c:308；候选初始化与五池释放：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c:218；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c:224。
+ * witness 解析、临时分析清理和 root 筛选：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_owners.c:85；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_owners.c:100；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_owners.c:121；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_owners.c:127；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_owners.c:143。
+ * aggregate 准备及其两处 malloc：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_deopt_aggregate.c:361；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_deopt_aggregate.c:387；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_deopt_aggregate.c:391；失败回收与提交：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:811；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:813；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:818；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:819。
+ * 生产调用为解释器的验证/物化两阶段及对象物化：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_resume.c:31；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_resume.c:80；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_objects.c:684。
+ * 未知请求 phase 的有限早退断言：tests/parser/test_ssa_state_maps.c:242；root witness 与旧 target 记录保持用例：tests/parser/test_ssa_conditional_cleanup.c:268；tests/parser/test_ssa_conditional_cleanup.c:293。pass-manager 的调用在测试 include 中：tests/parser/ssa_pass_manager_state_maps_cases.inc:161。这些引用不授予相关测试的新审查信用。
+ */
