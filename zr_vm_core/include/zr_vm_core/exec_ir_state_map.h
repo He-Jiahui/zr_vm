@@ -282,3 +282,44 @@ ZR_CORE_API TZrBool ZrCore_ExecIr_MaterializeState(
  * ## References
  * 实现位于 exec_ir_state_map_storage.c 224 行；MaterializeState 回滚和替换路径位于 exec_ir_materialize.c 764 行与 818 行。
  */
+
+/**
+ * @fn TZrBool ZrCore_ExecIr_StateMapBoundaryFlags(const SZrExecIrInstruction *instruction, TZrUInt32 *flags)
+ *
+ * ## Summary
+ * 对外提供 state-map 边界位分类，供 Parser checkpoint builder 和 Core validator 共用。
+ *
+ * ## Parameters
+ * @param[in] instruction 调用期间可读的 IR 指令。
+ * @param[out] flags 独立可写的输出槽；不得与 instruction 存储重叠。
+ *
+ * ## Returns
+ * @return 两参数非空、opcode schema 可查询且计算所得边界位非零时返回 ZR_TRUE；其他情况返回 ZR_FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 任一参数为空时在清零前返回 FALSE；两参数均非空后先清零。未知 opcode 或已知但无边界的 opcode 返回 FALSE 且 flags 为零。对 MAY_ALLOCATE、MAY_GC、MAY_THROW、MAY_SUSPEND，指令或 schema 任一来源具备相应属性就设置对应边界位。DEBUG_POLL 仅看指令标志；GUARD_EXIT 接受显式指令标志或非零 deoptId；DEOPT 由非零 deoptId 贡献；DROP/DROP_IF_INITIALIZED 设置 CLEANUP。instruction 只在调用期间借用，不保存；无内部同步，也不检查别名。
+ *
+ * ## References
+ * 声明：zr_vm_core/include/zr_vm_core/exec_ir_state_map.h:138；实现：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:91；Core 调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:467；Parser 构造调用：zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c:402。
+ */
+/**
+ * @fn const SZrExecIrStateMapEntry *ZrCore_ExecIr_StateMapFind(const SZrExecIrStateMap *map, TZrExecIrSourceId sourceId, TZrUInt32 resumeId, EZrExecIrStateMapPhase phase)
+ *
+ * ## Summary
+ * 按源码点 ID、恢复 ID 和逻辑 phase 查询首个 state-map entry。
+ *
+ * ## Parameters
+ * @param[in] map 待查询的映射；仅轻量检查数组描述符。
+ * @param[in] sourceId 精确匹配值；本接口不额外禁止零值。
+ * @param[in] resumeId 非零恢复 ID。
+ * @param[in] phase BEFORE_EFFECT、AFTER_EFFECT 或 CLEANUP_COMPLETE。
+ *
+ * ## Returns
+ * @return 返回只读 entry 借用指针；轻量描述符检查失败或未命中返回 NULL，重复三元组返回数组首项。
+ *
+ * ## Constraints and lifecycle
+ * 本接口不代替 StateMapStorageValid 或 ValidateStateMap，不检验完整 checkpoint 语义、底层真实分配 extent 或 entry 唯一性。返回指针直接别名 map.entries 中的元素，不是快照；调用方须在读取期间保持 map 描述符、entries 数组及对应条目稳定。修改条目会改变借用所见内容；替换、重分配或释放 entries 后借用指针失效。接口不转移所有权、不保存输入、无内部同步。
+ *
+ * ## References
+ * 声明：zr_vm_core/include/zr_vm_core/exec_ir_state_map.h:141；实现：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:139；Core 调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:688；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_resume.c:38；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_objects.c:117。其他直接测试入口见 tests/parser/ssa_state_map_verifier_cases.inc:60；tests/parser/ssa_pass_manager_state_maps_cases.inc:129；tests/parser/ssa_pass_manager_state_maps_cases.inc:146；tests/parser/test_ssa_state_maps.c:230；tests/parser/test_ssa_state_maps.c:235；tests/parser/test_ssa_state_maps.c:237；tests/parser/test_ssa_state_maps.c:843；tests/parser/test_ssa_state_maps.c:845；tests/parser/test_ssa_state_maps.c:1198；tests/parser/test_ssa_state_maps.c:1200；tests/parser/test_ssa_state_maps.c:1202；tests/parser/test_ssa_state_maps.c:1204；tests/parser/test_ssa_retained_builder_cfg.c:100；tests/parser/test_ssa_deopt_aggregates.c:116。
+ */

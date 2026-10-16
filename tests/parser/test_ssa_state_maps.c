@@ -1660,3 +1660,22 @@ int main(void) {
  * ## References
  * flags=0 和请求初始化位于本文件 1113–1130 行，实际失败及 target 断言位于 1131–1134 行；验证先于 generation 检查的顺序见 exec_ir_materialize.c 685 行和 704 行，boundaryFlags 拒绝见 484 行；Unity 注册位于本文件 1387 行。
  */
+
+/**
+ * @fn void test_state_map_find_supports_each_logical_phase(void)
+ *
+ * ## Summary
+ * 验证三个受支持逻辑 phase 均可查到相应 entry，并拒绝 COUNT 哨兵和负一枚举值。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 无 C 返回值；所有 Unity 断言通过时正常结束此 case。断言失败由 runner 记录；当前 Unity setjmp 路径会跳过本函数后续语句，因此可能跳过末尾的 StateMapFree，随后 runner 调用空 tearDown，最终 UNITY_END 返回失败计数。
+ *
+ * ## Constraints and lifecycle
+ * 初始化空 map 后分配三项 entry，均设 sourceId=10、resumeId=20，phase 按0、1、2设置；逐项查询只断言结果非空和返回 phase 相等，另断言 PHASE_COUNT 及 (EZrExecIrStateMapPhase)-1 返回 NULL。成功路径在 tests/parser/test_ssa_state_maps.c:239 释放 map。setUp/tearDown 为空；未覆盖 NULL map、resumeId=0、未命中、重复键首项选择、损坏shape或借用指针失效。Unity 配置入口当前为空，不屏蔽默认 setjmp/longjmp 断言中止路径。
+ *
+ * ## References
+ * 定义：tests/parser/test_ssa_state_maps.c:217；Unity 注册：tests/parser/test_ssa_state_maps.c:1358；空 setUp/tearDown：tests/parser/test_ssa_state_maps.c:12；tests/parser/test_ssa_state_maps.c:13；目标定义和 CTest 注册：tests/cmake/ssa-tests.cmake:397；tests/cmake/ssa-tests.cmake:422；Unity 配置：tests/cmake/ssa-tests.cmake:420；tests/unity_config.h:4；RUN_TEST 到 UnityDefaultTestRun：tests/third_party/zr_unity/Unity/src/unity_internals.h:909；tests/third_party/zr_unity/Unity/src/unity_internals.h:910；断言失败及 longjmp：tests/third_party/zr_unity/Unity/src/unity_internals.h:983；tests/third_party/zr_unity/Unity/src/unity_internals.h:891；tests/third_party/zr_unity/Unity/src/unity.c:2239；tests/third_party/zr_unity/Unity/src/unity.c:2247；runner 调用 teardown：tests/third_party/zr_unity/Unity/src/unity.c:2283；tests/third_party/zr_unity/Unity/src/unity.c:2303；最终进程结果：tests/parser/test_ssa_state_maps.c:1397。查询实现：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:139。
+ */

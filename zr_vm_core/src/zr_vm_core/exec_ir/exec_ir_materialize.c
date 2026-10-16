@@ -819,3 +819,62 @@ TZrBool ZrCore_ExecIr_MaterializeState(const SZrExecIrResumeRequest *request,
     *request->target = prepared;
     return ZR_TRUE;
 }
+
+/**
+ * @fn static TZrBool zr_state_map_phase_valid(EZrExecIrStateMapPhase phase)
+ *
+ * ## Summary
+ * 判断 StateMap 查询、条目及请求使用的逻辑阶段是否受当前 Core 实现支持。
+ *
+ * ## Parameters
+ * @param[in] phase 待检查的逻辑阶段；接受 BEFORE_EFFECT、AFTER_EFFECT 与 CLEANUP_COMPLETE。
+ *
+ * ## Returns
+ * @return 三种受支持阶段返回 ZR_TRUE；PHASE_COUNT 及其他未知值返回 ZR_FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只比较枚举值，不访问或保存 map、function 或 instruction；调用后不保留输入。
+ *
+ * ## References
+ * Core 调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:146；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:482；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:676。Parser 同名静态函数属于另一物理定义。
+ */
+/**
+ * @fn TZrBool ZrCore_ExecIr_StateMapBoundaryFlags(const SZrExecIrInstruction *instruction, TZrUInt32 *flags)
+ *
+ * ## Summary
+ * 合并指令显式 effect 标志与 opcode schema 属性，计算该指令对应的 state-map 边界位，供 Core 校验和 Parser 构造器共用。
+ *
+ * ## Parameters
+ * @param[in] instruction 调用期间可读的待分类指令。
+ * @param[out] flags 独立、可写的输出槽；两参数均非空时函数先将其清零，再写入计算结果。不得与 instruction 存储重叠。
+ *
+ * ## Returns
+ * @return 两参数非空、opcode schema 可查询且结果边界位非零时返回 ZR_TRUE；否则返回 ZR_FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 任一参数为空时在清零前返回 FALSE；两者非空后先清零，未知 opcode 时保持零并返回 FALSE。对 MAY_ALLOCATE、MAY_GC、MAY_THROW、MAY_SUSPEND，指令或 schema 任一来源具备相应属性就设置对应边界位。DEBUG_POLL 仅看指令标志；GUARD_EXIT 接受显式指令标志或非零 deoptId；DEOPT 由非零 deoptId 贡献；DROP/DROP_IF_INITIALIZED 设置 CLEANUP。已知 opcode 得到零边界位也返回 FALSE。指令只在调用期间借用；无分配、无持久化、无内部同步，且不检测输出别名。
+ *
+ * ## References
+ * 定义：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:91；Core 边界比较调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:467；Parser 构造调用：zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c:402。
+ */
+/**
+ * @fn const SZrExecIrStateMapEntry *ZrCore_ExecIr_StateMapFind(const SZrExecIrStateMap *map, TZrExecIrSourceId sourceId, TZrUInt32 resumeId, EZrExecIrStateMapPhase phase)
+ *
+ * ## Summary
+ * 在 state-map entry 数组中按 sourceId、resumeId 与逻辑 phase 查询首个匹配项。
+ *
+ * ## Parameters
+ * @param[in] map 待查询的映射；函数仅读取轻量数组描述符及被扫描的条目。
+ * @param[in] sourceId 精确匹配的源码点 ID；本接口不额外禁止零值。
+ * @param[in] resumeId 精确匹配的恢复 ID；零值被拒绝。
+ * @param[in] phase 精确匹配的受支持逻辑阶段。
+ *
+ * ## Returns
+ * @return 返回首个三元组相等 entry 的只读借用指针；轻量描述符检查失败或未命中时返回 NULL。
+ *
+ * ## Constraints and lifecycle
+ * 只检查 map/phase/resumeId、entryCount 不大于 entryCapacity，以及 entryCount 非零时 entries 非空；不调用 StateMapStorageValid 或 ValidateStateMap，不验证底层分配 extent、实际可读性或 entry 语义，也不拒绝重复项。顺序扫描，重复键返回数组首项。返回指针直接别名 map.entries 中的元素，不是快照；调用方须在读取期间保持 map 描述符、entries 数组及对应条目稳定。修改条目会改变借用所见内容；替换、重分配或释放 entries 后借用指针失效。函数不写 map、不保存参数、不分配资源、无内部同步。
+ *
+ * ## References
+ * Core 调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:688；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_resume.c:38；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_objects.c:117。直接调用还见 tests/parser/ssa_state_map_verifier_cases.inc:60；tests/parser/ssa_pass_manager_state_maps_cases.inc:129；tests/parser/ssa_pass_manager_state_maps_cases.inc:146；tests/parser/test_ssa_state_maps.c:230；tests/parser/test_ssa_state_maps.c:235；tests/parser/test_ssa_state_maps.c:237；tests/parser/test_ssa_state_maps.c:843；tests/parser/test_ssa_state_maps.c:845；tests/parser/test_ssa_state_maps.c:1198；tests/parser/test_ssa_state_maps.c:1200；tests/parser/test_ssa_state_maps.c:1202；tests/parser/test_ssa_state_maps.c:1204；tests/parser/test_ssa_retained_builder_cfg.c:100；tests/parser/test_ssa_deopt_aggregates.c:116。
+ */
