@@ -13,18 +13,18 @@
  * @pre 被选中的实参会重复求值；调用方须传无副作用且类型可比较的表达式。 */
 #define ZR_MATH_MAX(x, y) ((x) > (y) ? (x) : (y))
 /** @brief 以平方递推计算无符号整数幂，供解释器与 AOT 的 typed power 使用。
- * @return 指数为零时返回 1；当前实现也以 0 表示检测到的溢出，调用方不能据此区分结果与错误。
- * @note 数值域与溢出检查存在下列已证问题，不能把返回值当成完整的溢出判定。 */
+ * @return 指数为零时返回 1；正指数结果溢出时返回 0。零结果与溢出共用返回值。 */
 ZR_FORCE_INLINE TZrUInt64 ZrCore_Math_UIntPower(TZrUInt64 base, TZrUInt64 exponent) {
     if (ZR_UNLIKELY(exponent == 0)) {
         return 1;
     }
+    if (ZR_UNLIKELY(base == 0)) {
+        return 0;
+    }
     TZrUInt64 result = 1;
     while (exponent > 0) {
         if (exponent & 1) {
-            // BUG: base=0 且指数为正时这里除零；POW_UNSIGNED 只排除 0^0，0^1 可由 VM 到达。
-            // BUG: 用 base^2 检查本次 result*base，导致 2^32 的一次幂也错误返回 0。
-            if (ZR_UNLIKELY(base > ZR_UINT_MAX / base)) {
+            if (ZR_UNLIKELY(result > ZR_UINT_MAX / base)) {
                 // overflow!
                 return 0;
             }
@@ -34,7 +34,6 @@ ZR_FORCE_INLINE TZrUInt64 ZrCore_Math_UIntPower(TZrUInt64 base, TZrUInt64 expone
         if (exponent == 0) {
             break;
         }
-        // BUG: 指数为偶数且 base=0 时同样除零，例如 0^2。
         if (ZR_UNLIKELY(base > ZR_UINT_MAX / base)) {
             // overflow!
             return 0;
@@ -45,8 +44,7 @@ ZR_FORCE_INLINE TZrUInt64 ZrCore_Math_UIntPower(TZrUInt64 base, TZrUInt64 expone
 }
 
 /** @brief 计算有符号整数幂；解释器与 AOT 在调用前另行检查语言级幂定义域。
- * @return 负指数或当前检测到的溢出返回 0；零指数返回 1。
- * @note 内部复用 UIntPower，因此继承其对可表示大数的误拒绝。 */
+ * @return 负指数或正指数结果溢出时返回 0；零指数返回 1。溢出与合法零结果共用返回值。 */
 ZR_FORCE_INLINE TZrInt64 ZrCore_Math_IntPower(TZrInt64 base, TZrInt64 exponent) {
     if (ZR_UNLIKELY(exponent < 0)) {
         return 0;
@@ -64,9 +62,8 @@ ZR_FORCE_INLINE TZrInt64 ZrCore_Math_IntPower(TZrInt64 base, TZrInt64 exponent) 
         return (exponent & 1) ? -1 : 1;
     }
     TZrBool isNegative = base < 0;
-    // BUG: 直接调用 IntPower(INT64_MIN, 正指数) 时对最小有符号值取负，发生 C 有符号溢出。
-    // VM typed power 目前拒绝负底数，但此公开内联函数自身未限制该实参。
-    TZrUInt64 absBase = isNegative ? -base : base;
+    /* Unsigned subtraction computes |base| modulo 2^64, including INT64_MIN. */
+    TZrUInt64 absBase = isNegative ? (TZrUInt64) 0 - (TZrUInt64) base : (TZrUInt64) base;
     TZrUInt64 absResult = ZrCore_Math_UIntPower(absBase, exponent);
 
     if (ZR_UNLIKELY(absResult == 0 && absBase != 0)) {
@@ -77,6 +74,9 @@ ZR_FORCE_INLINE TZrInt64 ZrCore_Math_IntPower(TZrInt64 base, TZrInt64 exponent) 
         if (ZR_UNLIKELY(absResult>(TZrUInt64)ZR_INT_MAX + 1)) {
             // overflow!
             return 0;
+        }
+        if (absResult == (TZrUInt64) ZR_INT_MAX + 1) {
+            return ZR_INT_MIN;
         }
         return -(TZrInt64) absResult;
     } {

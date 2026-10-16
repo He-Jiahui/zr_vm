@@ -8797,3 +8797,6 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/task-scheduler-queue-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-invoke-result-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-sccp-copy-availability-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/checked-divide-tests.cmake")
+
+set(ZR_NATIVE_MATH_SOURCE_ROOT "${CMAKE_SOURCE_DIR}")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/native-math-tests.cmake")
