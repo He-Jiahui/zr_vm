@@ -100,8 +100,10 @@ SZrGlobalState *ZrLibrary_CommonState_CommonGlobalState_New(TZrNativeString conf
     zr_library_common_state_trace("global=%p mainThread=%p", (void *)global,
                                   global != ZR_NULL ? (void *)global->mainThreadState : ZR_NULL);
 
-    /* BUG: GlobalState_New 在分配失败时可返回 NULL，但这里仍将其传给 ReadAll；
-     * ReadAll -> OpenRead -> RawMallocWithType 会取 global->allocator，导致空指针访问。 */
+    if (global == ZR_NULL) {
+        return ZR_NULL;
+    }
+
     TZrNativeString configContent = ZrLibrary_File_ReadAll(global, configFilePath);
     zr_library_common_state_trace("configContent=%p", (void *)configContent);
     if (configContent == ZR_NULL) {
@@ -121,9 +123,10 @@ SZrGlobalState *ZrLibrary_CommonState_CommonGlobalState_New(TZrNativeString conf
     global->sourceLoader = ZrLibrary_Project_SourceLoadImplementation;
     global->sourceLoaderUserData = project;
     zr_library_common_state_trace("attach native registry");
-    /* TODO: Attach 可因分配失败返回 false；这里仍返回 global。需确认调用方是否
-     * 依赖构造成功即已注册 native provider，以及失败后是否允许延迟重试。 */
-    ZrLibrary_NativeRegistry_Attach(global);
+    if (!ZrLibrary_NativeRegistry_Attach(global)) {
+        ZrLibrary_CommonState_CommonGlobalState_Free(global);
+        return ZR_NULL;
+    }
     zr_library_common_state_trace("complete");
     return global;
 }

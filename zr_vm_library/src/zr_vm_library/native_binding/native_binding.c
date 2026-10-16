@@ -106,24 +106,33 @@ TZrBool ZrLibrary_NativeRegistry_Attach(SZrGlobalState *global) {
     }
 
     memset(registry, 0, sizeof(*registry));
-    /* 三类记录在发布钩子前建立，基础模块注册失败时统一交给 Free 清理。
-     * BUG: Array_Init 分配 moduleRecords.head 失败仍将 isValid 设为 true；
-     * Attach 继续注册基础模块，后续 Array_Push 断言/解引用空 head。 */
+    /* 三类记录在发布钩子前建立；TryInit 失败时没有异常长跳转，必须释放
+     * 已成功建立的前序数组和 registry，再让宿主观察到干净的 Attach 失败。 */
     ZrCore_Array_Construct(&registry->moduleRecords);
     ZrCore_Array_Construct(&registry->bindingEntries);
     ZrCore_Array_Construct(&registry->pluginHandles);
-    ZrCore_Array_Init(state,
-                      &registry->moduleRecords,
-                      sizeof(ZrLibRegisteredModuleRecord),
-                      ZR_LIBRARY_NATIVE_MODULE_RECORDS_INITIAL_CAPACITY);
-    ZrCore_Array_Init(state,
-                      &registry->bindingEntries,
-                      sizeof(ZrLibBindingEntry),
-                      ZR_LIBRARY_NATIVE_BINDING_ENTRIES_INITIAL_CAPACITY);
-    ZrCore_Array_Init(state,
-                      &registry->pluginHandles,
-                      sizeof(ZrLibPluginHandleRecord),
-                      ZR_LIBRARY_NATIVE_PLUGIN_HANDLES_INITIAL_CAPACITY);
+    if (!ZrCore_Array_TryInit(state,
+                              &registry->moduleRecords,
+                              sizeof(ZrLibRegisteredModuleRecord),
+                              ZR_LIBRARY_NATIVE_MODULE_RECORDS_INITIAL_CAPACITY) ||
+        !ZrCore_Array_TryInit(state,
+                              &registry->bindingEntries,
+                              sizeof(ZrLibBindingEntry),
+                              ZR_LIBRARY_NATIVE_BINDING_ENTRIES_INITIAL_CAPACITY) ||
+        !ZrCore_Array_TryInit(state,
+                              &registry->pluginHandles,
+                              sizeof(ZrLibPluginHandleRecord),
+                              ZR_LIBRARY_NATIVE_PLUGIN_HANDLES_INITIAL_CAPACITY)) {
+        ZrCore_Array_Free(state, &registry->pluginHandles);
+        ZrCore_Array_Free(state, &registry->bindingEntries);
+        ZrCore_Array_Free(state, &registry->moduleRecords);
+        global->allocator(global->userAllocationArguments,
+                          registry,
+                          sizeof(ZrLibrary_NativeRegistryState),
+                          0,
+                          ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+        return ZR_FALSE;
+    }
     for (cacheIndex = 0; cacheIndex < ZR_LIBRARY_NATIVE_BINDING_LOOKUP_CACHE_CAPACITY; cacheIndex++) {
         registry->bindingLookupHotIndices[cacheIndex] = ZR_LIBRARY_NATIVE_BINDING_LOOKUP_CACHE_INVALID_INDEX;
     }

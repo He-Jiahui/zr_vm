@@ -820,9 +820,7 @@ TZrBool native_registry_register_module_record(SZrGlobalState *global,
                     }
                 }
             }
-            /* BUG: 插件加载器在这里提交记录后才分配 handleRecord 字符串；
-             * 任一分配失败会卸载动态库却保留本记录，后续 FindModule 得到悬垂描述符。
-             * 证据：native_binding_registry_plugin.c 中注册后构造句柄及失败释放路径。 */
+            /* 插件调用方已保留新句柄；提交后才允许卸载旧映像。 */
             record->descriptor = descriptor;
             record->moduleName = moduleNameCopy;
             record->registrationKind = registrationKind;
@@ -858,10 +856,19 @@ TZrBool native_registry_register_module_record(SZrGlobalState *global,
             }
             return ZR_FALSE;
         }
-        /* BUG: 新插件记录也先于句柄元数据提交；后续分配失败会留下已卸载库的描述符。 */
-        /* BUG: moduleRecords 容量满且分配器返回 NULL 时，Array_Push 会覆盖 head
-         * 并在后续 RawCopy 解引用空指针；注册入口无法报告内存不足。 */
-        ZrCore_Array_Push(global->mainThreadState, &registry->moduleRecords, &record);
+        if (!ZrCore_Array_TryPush(global->mainThreadState, &registry->moduleRecords, &record)) {
+            global->allocator(global->userAllocationArguments,
+                              record.moduleName,
+                              strlen(record.moduleName) + 1,
+                              0,
+                              ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+            global->allocator(global->userAllocationArguments,
+                              record.sourcePath,
+                              strlen(record.sourcePath) + 1,
+                              0,
+                              ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+            return ZR_FALSE;
+        }
     }
 
     native_registry_clear_error(registry);

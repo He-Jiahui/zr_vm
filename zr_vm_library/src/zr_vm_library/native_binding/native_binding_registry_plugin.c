@@ -235,10 +235,11 @@ static FZrVmGetNativeModuleV1 native_registry_cast_module_symbol(TZrPtr symbolPo
     return symbol;
 }
 
-/* 替换模块代际时释放同名旧映像；调用方先检查活跃 owner，避免卸载仍被调用的代码。 */
+/* 提交后释放同名旧映像；按数组位置保留新记录，系统句柄可能因重复装载而相等。 */
 static void native_registry_remove_plugin_handles_for_module(SZrState *state,
                                                              ZrLibrary_NativeRegistryState *registry,
-                                                             const TZrChar *moduleName) {
+                                                             const TZrChar *moduleName,
+                                                             TZrSize preservedIndex) {
     if (state == ZR_NULL || state->global == ZR_NULL || registry == ZR_NULL || moduleName == ZR_NULL ||
         !registry->pluginHandles.isValid) {
         return;
@@ -248,7 +249,8 @@ static void native_registry_remove_plugin_handles_for_module(SZrState *state,
         ZrLibPluginHandleRecord *handleRecord =
             (ZrLibPluginHandleRecord *)ZrCore_Array_Get(&registry->pluginHandles, index - 1);
 
-        if (handleRecord == ZR_NULL || handleRecord->moduleName == ZR_NULL ||
+        if (index - 1 == preservedIndex ||
+            handleRecord == ZR_NULL || handleRecord->moduleName == ZR_NULL ||
             strcmp(handleRecord->moduleName, moduleName) != 0) {
             continue;
         }
@@ -261,6 +263,9 @@ static void native_registry_remove_plugin_handles_for_module(SZrState *state,
                     (registry->pluginHandles.length - index) * registry->pluginHandles.elementSize);
         }
         registry->pluginHandles.length--;
+        if (index - 1 < preservedIndex) {
+            preservedIndex--;
+        }
     }
 }
 
@@ -435,15 +440,7 @@ const ZrLibModuleDescriptor *native_registry_load_plugin_descriptor(SZrState *st
         }
     }
 
-    /* BUG: 注册记录在下方 handle record 分配之前发布；若之后任一字符串分配失败，
-     * 清理路径卸载此库并返回，但 FindModule 仍可取到库内 descriptor 的悬垂指针。
-     * 需把登记与句柄记录做成共同提交/回滚事务，分配失败注入可验证。 */
-    if (!native_registry_validate_descriptor_compatibility(registry, descriptor) ||
-        !native_registry_register_module_record(state->global,
-                                               descriptor,
-                                               ZR_LIB_NATIVE_MODULE_REGISTRATION_KIND_DESCRIPTOR_PLUGIN,
-                                               candidatePath,
-                                               ZR_TRUE)) {
+    if (!native_registry_validate_descriptor_compatibility(registry, descriptor)) {
         native_registry_close_library(handle);
         if (loadedFromShadow) {
             remove(loadPath);
@@ -451,23 +448,53 @@ const ZrLibModuleDescriptor *native_registry_load_plugin_descriptor(SZrState *st
         return ZR_NULL;
     }
 
-    native_registry_remove_plugin_handles_for_module(state, registry, requestedModuleName);
     {
         ZrLibPluginHandleRecord handleRecord;
         memset(&handleRecord, 0, sizeof(handleRecord));
         handleRecord.handle = handle;
-        handleRecord.moduleName = native_registry_duplicate_string(state->global, requestedModuleName);
         handleRecord.sourcePath = native_registry_duplicate_string(state->global, candidatePath);
-        handleRecord.loadedPath = native_registry_duplicate_string(state->global, loadPath);
+        if (handleRecord.sourcePath != ZR_NULL) {
+            handleRecord.moduleName = native_registry_duplicate_string(state->global, requestedModuleName);
+        }
+        if (handleRecord.moduleName != ZR_NULL) {
+            handleRecord.loadedPath = native_registry_duplicate_string(state->global, loadPath);
+        }
         if (handleRecord.moduleName == ZR_NULL ||
             handleRecord.sourcePath == ZR_NULL ||
             handleRecord.loadedPath == ZR_NULL) {
+            native_registry_set_error(registry,
+                                      ZR_LIB_NATIVE_REGISTRY_ERROR_LOAD,
+                                      "unable to allocate native plugin handle metadata for '%s'",
+                                      requestedModuleName);
+            native_registry_release_plugin_handle_record(state->global, &handleRecord);
+            /* loadedPath 本身可能分配失败，仍须删除已创建的影子副本。 */
+            if (loadedFromShadow) {
+                remove(loadPath);
+            }
+            return ZR_NULL;
+        }
+        /* 先保留新句柄，再提交模块记录；准备失败不改变旧 descriptor/句柄。 */
+        if (!ZrCore_Array_TryPush(state, &registry->pluginHandles, &handleRecord)) {
+            native_registry_set_error(registry,
+                                      ZR_LIB_NATIVE_REGISTRY_ERROR_LOAD,
+                                      "unable to retain native plugin '%s' after allocation failure",
+                                      requestedModuleName);
             native_registry_release_plugin_handle_record(state->global, &handleRecord);
             return ZR_NULL;
         }
-        /* BUG: pluginHandles 扩容时若宿主 allocator 返回 NULL，Array_Push 直接用空 head
-         * 复制记录而崩溃；初始容量耗尽后以分配失败注入复现。 */
-        ZrCore_Array_Push(state, &registry->pluginHandles, &handleRecord);
+        if (!native_registry_register_module_record(state->global,
+                                                   descriptor,
+                                                   ZR_LIB_NATIVE_MODULE_REGISTRATION_KIND_DESCRIPTOR_PLUGIN,
+                                                   candidatePath,
+                                                   ZR_TRUE)) {
+            ZrLibPluginHandleRecord *uncommitted =
+                    (ZrLibPluginHandleRecord *)ZrCore_Array_Pop(&registry->pluginHandles);
+            native_registry_release_plugin_handle_record(state->global, uncommitted);
+            return ZR_NULL;
+        }
+        /* 从此新记录拥有句柄；卸载旧映像后仍可读取新 descriptor 的模块名。 */
+        native_registry_remove_plugin_handles_for_module(
+                state, registry, descriptor->moduleName, registry->pluginHandles.length - 1);
     }
     native_registry_clear_error(registry);
     return descriptor;
@@ -798,9 +825,6 @@ TZrBool native_binding_make_callable_value(SZrState *state,
     }
 
     closure->nativeFunction = native_binding_dispatcher;
-    /* BUG: closure 立即成为 GC 永久根；后续导出名或其他模块成员构造失败时
-     * 直接返回，且没有撤销永久状态。重复失败导入会累积常驻 closure。 */
-    ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     bindingIndex = registry->bindingEntries.length;
 
     entry.closure = closure;
@@ -834,9 +858,11 @@ TZrBool native_binding_make_callable_value(SZrState *state,
                                                        descriptor,
                                                        &entry);
 
-    /* BUG: bindingEntries 扩容失败时 Array_Push 用空 head 复制并崩溃；
-     * 此处没有可观察的失败返回，需以容量耗尽后的 allocator 故障注入验证。 */
-    ZrCore_Array_Push(state, &registry->bindingEntries, &entry);
+    if (!ZrCore_Array_TryPush(state, &registry->bindingEntries, &entry)) {
+        return ZR_FALSE;
+    }
+    /* TryPush 不触发 GC；只有 registry 已拥有 entry 后才固定 closure。 */
+    ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     native_binding_closure_store_cached_binding(closure,
                                                 bindingIndex,
                                                 bindingKind,
