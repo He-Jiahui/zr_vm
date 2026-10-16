@@ -62,6 +62,10 @@ static TZrInt64 meta_to_string_null(SZrState *state) {
     TZrStackValuePointer base = callInfo->functionBase.valuePointer;
     // 返回值放在 base 位置
     SZrString *result = ZrCore_String_CreateFromNative(state, ZR_STRING_NULL_STRING);
+    if (result == ZR_NULL) {
+        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+        return 0;
+    }
     ZrCore_Value_InitAsRawObject(state, ZrCore_Stack_GetValue(base), ZR_CAST_RAW_OBJECT_AS_SUPER(result));
     state->stackTop.valuePointer = base + 1;
     return 1;
@@ -78,6 +82,10 @@ static TZrInt64 meta_to_string_bool(SZrState *state) {
     } else {
         result = ZrCore_String_CreateFromNative(state, ZR_STRING_FALSE_STRING);
     }
+    if (result == ZR_NULL) {
+        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+        return 0;
+    }
     ZrCore_Value_InitAsRawObject(state, ZrCore_Stack_GetValue(base), ZR_CAST_RAW_OBJECT_AS_SUPER(result));
     state->stackTop.valuePointer = base + 1;
     return 1;
@@ -90,7 +98,8 @@ static TZrInt64 meta_to_string_number(SZrState *state) {
     SZrTypeValue *self = ZrCore_Stack_GetValue(ZR_META_CALL_SELF_SLOT(base));
     SZrString *result = ZrCore_String_FromNumber(state, self);
     if (result == ZR_NULL) {
-        result = ZrCore_String_CreateFromNative(state, "");
+        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+        return 0;
     }
     ZrCore_Value_InitAsRawObject(state, ZrCore_Stack_GetValue(base), ZR_CAST_RAW_OBJECT_AS_SUPER(result));
     state->stackTop.valuePointer = base + 1;

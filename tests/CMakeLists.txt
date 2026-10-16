@@ -8857,3 +8857,5 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/math-input-boundary-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/native-numeric-boundary-tests.cmake")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/string-format-oom-tests.cmake")
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/meta-string-oom-tests.cmake")
