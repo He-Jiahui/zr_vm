@@ -158,3 +158,5 @@ doc_type: category-index
 
 - [文件系统测试调用契约](system-fs-test-harness-contract.md)
   - 元数据、脚本执行与编译判据、生成路径和断言失败时的清理责任。
+
+- [Math input boundaries](../library/math-input-boundaries.md)：整数转换、Tensor 形状乘积及数值数据校验。

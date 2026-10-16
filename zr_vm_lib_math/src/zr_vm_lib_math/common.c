@@ -133,7 +133,6 @@ TZrBool ZrMath_NumberFromValue(const SZrTypeValue *value, TZrFloat64 *outValue) 
 }
 
 TZrBool ZrMath_IntFromValue(const SZrTypeValue *value, TZrInt64 *outValue) {
-    /* BUG: Tensor shape/index 的有限 1e300 可达浮点转 int64 并触发 C 未定义行为；GetStorage 也以本 helper 读取 rank/size，公开写入策略另待核。 */
     /* TODO: uint64 大于 INT64_MAX 的转换由 C 实现定义；核对 shape/index 及公开 rank/size 的整数范围与写入约束。 */
     if (value == ZR_NULL || outValue == ZR_NULL) {
         return ZR_FALSE;
@@ -152,9 +151,17 @@ TZrBool ZrMath_IntFromValue(const SZrTypeValue *value, TZrInt64 *outValue) {
             *outValue = (TZrInt64)value->value.nativeObject.nativeUInt64;
             return ZR_TRUE;
         case ZR_VALUE_TYPE_FLOAT:
-        case ZR_VALUE_TYPE_DOUBLE:
-            *outValue = (TZrInt64)value->value.nativeObject.nativeDouble; /* BUG: 超出 int64 可表示范围的浮点转换为未定义行为。 */
+        case ZR_VALUE_TYPE_DOUBLE: {
+            TZrFloat64 number = value->value.nativeObject.nativeDouble;
+            /* INT64_MIN is exactly representable; -lower is the exclusive +2^63
+             * bound. Casting INT64_MAX to double would round up to that bound. */
+            const TZrFloat64 lower = (TZrFloat64)INT64_MIN;
+            if (!isfinite(number) || number < lower || number >= -lower) {
+                return ZR_FALSE;
+            }
+            *outValue = (TZrInt64)number;
             return ZR_TRUE;
+        }
         default:
             return ZR_FALSE;
     }
@@ -366,8 +373,6 @@ TZrBool ZrMath_ArraySetValue(SZrState *state, SZrObject *array, TZrSize index, c
 }
 
 TZrInt64 ZrMath_TensorTotalSize(SZrState *state, SZrObject *shapeArray) {
-    /* BUG: 构造器允许 shape 数组进入此路径；正维度如 [INT64_MAX, 2] 在乘法处发生
-     * 有符号溢出，后续 data 长度校验无法可靠拒绝该输入。见 Tensor_Construct/Populate。 */
     TZrInt64 total = 1;
     TZrSize index;
     for (index = 0; index < ZrLib_Array_Length(shapeArray); index++) {
@@ -377,6 +382,9 @@ TZrInt64 ZrMath_TensorTotalSize(SZrState *state, SZrObject *shapeArray) {
         }
         /* TODO: Float shape 按 ArrayReadInt 截断而原数组仍保留小数；核实 shape 是否承诺仅整数及兼容现有构造语义。
          * 当前已定义截断行为，不能仅凭存储表示差异推定需要拒绝小数。 */
+        if (total > INT64_MAX / dimension) {
+            return -1;
+        }
         total *= dimension;
     }
     return total;
@@ -424,8 +432,6 @@ TZrBool ZrMath_TensorGetStorage(SZrState *state, SZrObject *tensor, ZrMathTensor
 TZrBool ZrMath_TensorPopulate(SZrState *state, SZrObject *tensor, SZrObject *shapeArray, SZrObject *dataArray) {
     /* 构造器和计算回调把数组交给 Tensor 持有；此处建立 shape、data、rank、size
      * 的共同基线，后续 get/set 和数值运算依赖这四个字段仍然一致。 */
-    /* BUG: 这里只检查 data 长度。Tensor([1], ["x"]) 可构造；sum/mean 忽略
-     * 该元素并返回 0，其他计算路径把读取失败的元素当作零值使用。 */
     TZrInt64 totalSize;
 
     if (state == ZR_NULL || tensor == ZR_NULL || shapeArray == ZR_NULL || dataArray == ZR_NULL) {
@@ -435,6 +441,14 @@ TZrBool ZrMath_TensorPopulate(SZrState *state, SZrObject *tensor, SZrObject *sha
     totalSize = ZrMath_TensorTotalSize(state, shapeArray);
     if (totalSize < 0 || (TZrSize)totalSize != ZrLib_Array_Length(dataArray)) {
         return ZR_FALSE;
+    }
+    /* Validate every payload before publishing any Tensor fields. Numeric
+     * NaN/Inf values remain valid data; this checks tags, not numerical policy. */
+    for (TZrSize index = 0; index < ZrLib_Array_Length(dataArray); ++index) {
+        TZrFloat64 number;
+        if (!ZrMath_ArrayReadFloat(state, dataArray, index, &number)) {
+            return ZR_FALSE;
+        }
     }
 
     {

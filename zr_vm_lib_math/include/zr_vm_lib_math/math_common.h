@@ -237,13 +237,13 @@ TZrBool ZrMath_NumberFromValue(const SZrTypeValue *value, TZrFloat64 *outValue);
  *
  * ## Parameters
  * @param[in] value 待转换的 VM 数值。
- * @param[out] outValue 整数结果槽；有效整数标签或浮点转换完成时写入。
+ * @param[out] outValue 整数结果槽；只在成功时写入，失败保留原值。
  *
  * ## Returns
- * @return 对受支持标签返回 `ZR_TRUE`，空指针或非数值标签返回 `ZR_FALSE`。
+ * @return 对有效数值转换返回 `ZR_TRUE`；空指针、非数值或浮点超范围/非有限值返回 `ZR_FALSE`。
  *
  * ## Constraints and lifecycle
- * 浮点值按 C 转换截去小数部分；不可由 `TZrInt64` 表示的浮点数转换会触发未定义行为，见本函数 BUG。
+ * 浮点值先检查有限值和 [-2^63, 2^63) 范围，再按 C 转换截去小数部分。
  * 超出 `TZrInt64` 范围的 `uint64` 转换由 C 实现定义，见本函数 TODO；成功布尔值不验证范围。
  *
  * ## References
@@ -740,7 +740,7 @@ TZrBool ZrMath_ArrayReadFloat(SZrState *state, SZrObject *array, TZrSize index, 
  * @return 元素存在且 `ZrMath_IntFromValue` 接受其标签时为 `ZR_TRUE`，否则为 `ZR_FALSE`。
  *
  * ## Constraints and lifecycle
- * 浮点元素截去小数部分；超范围浮点转整数的未定义行为与超范围 uint64 实现定义行为见 `ZrMath_IntFromValue`。
+ * 浮点元素截去小数部分；超范围/非有限浮点返回 false；超范围 uint64 的实现定义行为见 `ZrMath_IntFromValue`。
  * 越界与非数值标签不写出可靠结果。
  *
  * ## References
@@ -802,8 +802,8 @@ TZrBool ZrMath_TensorGetStorage(SZrState *state, SZrObject *tensor, ZrMathTensor
  * @return 参数无效、shape 无效或 shape 总元素数与 data 长度不同返回 `ZR_FALSE`；通过长度检查并写字段后返回 `ZR_TRUE`。
  *
  * ## Constraints and lifecycle
- * 仅校验 data 数量，不验证数值标签（公开预期见 tensor.h）；输入数组引用由 Tensor 持有，所有权仍归 VM。BUG: 新对象的第四个 size 字段桶扩容软失败会静默漏字段，
- * TensorPopulate 仍返回 true，构造/工厂可交付随后 TensorGetStorage 无法读取的实例；此证据限定单次 HASH_BUCKET 软失败及其他步骤成功。另有 shape 乘积溢出和非数值 data BUG。
+ * 写入字段前校验 shape 正尺寸乘积、data 数量与每个元素的数值标签；输入数组引用由 Tensor 持有，所有权仍归 VM。BUG: 新对象的第四个 size 字段桶扩容软失败会静默漏字段，
+ * TensorPopulate 仍返回 true，构造/工厂可交付随后 TensorGetStorage 无法读取的实例；此证据限定单次 HASH_BUCKET 软失败及其他步骤成功。
  *
  * ## References
  * `ZrMath_Tensor_Construct`、`ZrMath_TensorMake` 建立实例；读取侧由 `ZrMath_TensorGetStorage` 取回字段。
@@ -880,7 +880,7 @@ TZrBool ZrMath_TensorComputeOffset(SZrState *state, SZrObject *shape, SZrObject 
  * @return 所有维度为正且读取成功时返回乘积；无效维度/读取失败返回 `-1`。
  *
  * ## Constraints and lifecycle
- * 浮点维度经 `ZrMath_ArrayReadInt` 截断；整数乘积当前未做溢出检查，正合法维度可造成有符号溢出，见 BUG。
+ * 浮点维度经 `ZrMath_ArrayReadInt` 截断；正维度乘积超出 int64 范围时返回 -1，乘法前检查上界。
  * shape 保留小数而运算按截断维度的兼容策略仍需核实。
  *
  * ## References
