@@ -878,3 +878,305 @@ TZrBool ZrCore_ExecIr_MaterializeState(const SZrExecIrResumeRequest *request,
  * ## References
  * Core 调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:688；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_resume.c:38；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_objects.c:117。直接调用还见 tests/parser/ssa_state_map_verifier_cases.inc:60；tests/parser/ssa_pass_manager_state_maps_cases.inc:129；tests/parser/ssa_pass_manager_state_maps_cases.inc:146；tests/parser/test_ssa_state_maps.c:230；tests/parser/test_ssa_state_maps.c:235；tests/parser/test_ssa_state_maps.c:237；tests/parser/test_ssa_state_maps.c:843；tests/parser/test_ssa_state_maps.c:845；tests/parser/test_ssa_state_maps.c:1198；tests/parser/test_ssa_state_maps.c:1200；tests/parser/test_ssa_state_maps.c:1202；tests/parser/test_ssa_state_maps.c:1204；tests/parser/test_ssa_retained_builder_cfg.c:100；tests/parser/test_ssa_deopt_aggregates.c:116。
  */
+
+/**
+ * @fn static TZrUInt32 zr_state_map_containing_block(const SZrExecIrFunction *function, TZrUInt32 instructionId)
+ *
+ * ## Summary
+ * 按 function 的 block 数组顺序查找覆盖指定 1 基 instruction ID 的首个基本块。
+ *
+ * ## Parameters
+ * @param[in] function 提供 instruction 数量和 block 数组的函数记录。
+ * @param[in] instructionId 1 基指令 ID；函数内部以 instructionId - 1 转为 0 基下标。
+ *
+ * ## Returns
+ * @return 找到覆盖该 instruction 下标的 block 时返回 block ID；函数为空、ID 为零或超出 instructionCount、blocks 为空或没有覆盖区间时返回 ZR_EXEC_IR_BLOCK_ID_INVALID。
+ *
+ * ## Constraints and lifecycle
+ * 本函数只按每个 block 的 instructionRange 做区间查找，不验证整个 CFG，也不证明非空 blocks 指针指向足够且可读的分配。若多个 block 范围匹配，返回数组中的第一个。
+ *
+ * ## References
+ * 诊断 block 回填调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:51、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:64；handler 查找调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:422；诊断 setter 定义：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:36。
+ */
+
+/**
+ * @fn static void zr_state_map_set_diagnostic(SZrExecIrDiagnostic *diagnostic, EZrExecutionDiagnosticCode code, const SZrExecIrFunction *function, const SZrExecIrStateMapEntry *entry, TZrUInt32 instructionId, TZrUInt32 sourceId, TZrUInt64 expected, TZrUInt64 actual)
+ *
+ * ## Summary
+ * 写入 StateMap 验证或物化路径显式提供的诊断字段，并在缺少身份时用 entry 回填。
+ *
+ * ## Parameters
+ * @param[out] diagnostic 可为空；非空时接收本函数写入的诊断字段。
+ * @param[in] code 本次失败的诊断代码。
+ * @param[in] function 可为空；非空时提供 functionToken 和 block 查找所需的指令/块数据。
+ * @param[in] entry 可为空；非空时用于回填未指定的 instructionId、sourceId 与 blockId。
+ * @param[in] instructionId 显式 instruction ID；零值可由 entry 补足。
+ * @param[in] sourceId 显式 source ID；零值可由 entry 补足。
+ * @param[in] expected 依调用点语义传入的预期值；低 32 位写入 expectedVersion，完整 64 位写入 expectedHash。
+ * @param[in] actual 依调用点语义传入的实际值；低 32 位写入 actualVersion，完整 64 位写入 actualHash。
+ *
+ * ## Returns
+ * 无 C 返回值；diagnostic 为空时无操作，非空时只写代码、身份及 expected/actual 字段。
+ *
+ * ## Constraints and lifecycle
+ * 本函数不清零诊断中未写字段；需要空白输出时调用方须先调用 zr_state_map_clear_diagnostic。expected/actual 的业务含义由调用点决定，不能解释为一种固定版本比较。function 的 block 查找数据只在同步调用期间读取；diagnostic 必须是独立可写输出。
+ *
+ * ## References
+ * block 查找 helper：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:17；完整直接调用点：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:190；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:200；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:219；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:230；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:257；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:268；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:279；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:288；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:356；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:371；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:403；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:512；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:524；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:535；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:545；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:567；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:579；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:586；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:596；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:605；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:629；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:639；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:648；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:677；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:691；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:698；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:705；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:712；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:721；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:743；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:751；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:765；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:774；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:789；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:799。
+ */
+
+/**
+ * @fn static TZrBool zr_state_map_range_valid(SZrExecIrRange range, TZrUInt32 count)
+ *
+ * ## Summary
+ * 检查 range 是否落在 count 个元素组成的半开区间内。
+ *
+ * ## Parameters
+ * @param[in] range 待验证的 start/count 描述符。
+ * @param[in] count 被引用池或数组的有效元素数量。
+ *
+ * ## Returns
+ * @return 仅当 range.start <= count 且 range.count <= count - range.start 时返回 ZR_TRUE。
+ *
+ * ## Constraints and lifecycle
+ * 第二项使用减法而非 start + range.count，避免校验本身发生无符号加法溢出；允许零长度范围从 count 位置开始。本函数只检查整数边界，不校验指针、底层分配大小或内容可读性。
+ *
+ * ## References
+ * function block 检查：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:210、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:212、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:214、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:216、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:217、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:228；value/deopt/handler/entry 范围调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:255、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:365、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:369、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:425、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:501、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:502。
+ */
+
+/**
+ * @fn static TZrBool zr_state_map_function_values_valid(const SZrExecIrFunction *function, SZrExecIrDiagnostic *diagnostic)
+ *
+ * ## Summary
+ * 在分析 StateMap 前检查 function 的值表、IR 数组描述符、逻辑 ID、枚举和 block 子范围。
+ *
+ * ## Parameters
+ * @param[in] function 待检查的 function；可为空，空值被显式拒绝并返回 ZR_FALSE。
+ * @param[out] diagnostic 可为空；发现结构错误时接收 STATE_MAP_INVALID 及相关 identity。
+ *
+ * ## Returns
+ * @return function 非空、function.id 有效且 functionToken 非零，所检查的计数不超过容量、非空数组具有所需指针、value/block ID 连续有效、枚举有效且各 block 子范围均在对应池计数内时返回 ZR_TRUE；否则返回 ZR_FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 检查 value、instruction、block、operand、result、phi、phiIncoming、predecessor、successor、deoptState 与 deoptValue 的 count/capacity 及非空指针配对；value 与 block ID 均要求按数组位置从 1 连续编号。block 的 instruction、predecessor、successor、phi、effectPhi 和每个 memory-phi 区域均执行范围检查。本函数不检查 constants pool，也不证明任意非空指针实际指向足量或可读的分配。
+ *
+ * ## References
+ * 唯一生产调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:572；空值及池指针检查：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:166、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:179；诊断填充 helper：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:36。
+ */
+
+/**
+ * @fn static TZrBool zr_state_map_validate_value_range(const SZrExecIrFunction *function, const SZrExecIrStateMap *map, const SZrExecIrStateMapEntry *entry, SZrExecIrRange range, TZrBool roots, TZrBool suspended, SZrExecIrDiagnostic *diagnostic)
+ *
+ * ## Summary
+ * 校验 entry 所选 live-value 或 root-value 池范围中的逻辑 value ID 及相应 ownership 限制。
+ *
+ * ## Parameters
+ * @param[in] function 非空函数描述符，提供 valueCount 和按 valueId - 1 索引的可读 value ownership。
+ * @param[in] map 非空映射描述符，提供 valuePool、rootPool 及其有效计数；选定范围为空时所选池可为空。
+ * @param[in] entry 当前 checkpoint；可为空以省略部分诊断身份回填。
+ * @param[in] range 要检查的池内区间；本 helper 自行验证其逻辑边界。
+ * @param[in] roots 为 ZR_TRUE 时读取 rootPool 并要求 GC、UNIQUE 或 SHARED owner；否则读取 valuePool。
+ * @param[in] suspended 为 ZR_TRUE 时拒绝 live 集合中的 BORROWED owner。
+ * @param[out] diagnostic 可为空；范围越界、非空范围缺少池指针、ID 或 owner 规则失败时接收相应诊断。
+ *
+ * ## Returns
+ * @return 逻辑 range 位于所选池计数内、非空范围具有非空池指针，且每个 ID 非 INVALID、不大于 function.valueCount 并满足所选 owner 规则时返回 ZR_TRUE；范围/池指针、ID 或 owner 不符合规则时返回 ZR_FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 本 helper 自行检查逻辑 range，并在 range.count 非零时拒绝空的所选池指针；调用方仍须保证非空 function/map 描述符及实际数组存储在同步调用期间稳定、真实可读。整数边界与空指针检查不证明实际分配 extent。本函数不复制、pin 或保活运行时对象；live/root 的唯一性与 roots 属于 live 的关系由相邻 helper 分别检查。
+ *
+ * ## References
+ * live/root 两个调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:505、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:509；本 helper 的 range/空池失败分支：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:255、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:256、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:262；诊断填充 helper：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:36。
+ */
+
+/**
+ * @fn static TZrBool zr_state_map_range_values_unique(const SZrExecIrStateMap *map, SZrExecIrRange range, TZrBool roots)
+ *
+ * ## Summary
+ * 检查 map 所选池的 range 中没有重复 value ID。
+ *
+ * ## Parameters
+ * @param[in] map 提供 valuePool 与 rootPool。
+ * @param[in] range 已由外层检查过的池内区间。
+ * @param[in] roots 为 ZR_TRUE 时选择 rootPool，否则选择 valuePool。
+ *
+ * ## Returns
+ * @return range 中所有 ID 两两不同时返回 ZR_TRUE；有重复时返回 ZR_FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 两个池执行相同的重复规则；roots 参数只选择池，不改变规则。本 helper 不校验范围、池指针、ID 合法性，也不比较跨池重复或 owner 语义，调用方须保证选定 range 与池可读。
+ *
+ * ## References
+ * valuePool 与 rootPool 调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:521、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:522。
+ */
+
+/**
+ * @fn static TZrBool zr_state_map_roots_are_live(const SZrExecIrStateMap *map, const SZrExecIrStateMapEntry *entry)
+ *
+ * ## Summary
+ * 检查 entry 的每个 root value ID 都出现在同一 entry 的 live-value range 中。
+ *
+ * ## Parameters
+ * @param[in] map 提供 live valuePool 与 rootPool。
+ * @param[in] entry 提供待比较的 liveValues 与 rootValues range。
+ *
+ * ## Returns
+ * @return 所有 root ID 都在该 entry 的 live range 中时返回 ZR_TRUE；否则返回 ZR_FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 调用前须已验证两个 range 和对应池指针；本函数只做同一 entry 的集合包含检查，不验证 owner、跨entry关系或完整 StateMap 语义，也不设置诊断。
+ *
+ * ## References
+ * 调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:523；相邻两池唯一性检查：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:521、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:522。
+ */
+
+/**
+ * @fn static TZrBool zr_state_map_entry_deopt_valid(const SZrExecIrFunction *function, const SZrExecIrStateMap *map, const SZrExecIrStateMapEntry *entry, SZrExecIrDiagnostic *diagnostic)
+ *
+ * ## Summary
+ * 将 entry 的 deoptId 与唯一匹配的 function deopt state、source/resume identity、live value 和 aggregate recipe 关联校验。
+ *
+ * ## Parameters
+ * @param[in] function 提供 deopt states、deopt values 和 valueCount。
+ * @param[in] map 提供 entry live-value range 与 valuePool。
+ * @param[in] entry 待验证的单个 checkpoint。
+ * @param[out] diagnostic 可为空；关联、range 或 value 不一致时接收 STATE_MAP_INVALID 或下层 aggregate 诊断。
+ *
+ * ## Returns
+ * @return entry.deoptId 为零时返回 ZR_TRUE；否则仅在恰有一个匹配 deopt state、sourceId 相同、非零 resumeId 相同、deopt range 有效且其中每个 ID 都属于 entry live values，并且相关 aggregate recipe 值仍 live 时返回 ZR_TRUE。
+ *
+ * ## Constraints and lifecycle
+ * 外层 ZrCore_ExecIr_ValidateStateMap 先校验全局 function/deopt/aggregate 结构及 map shape；本 helper只处理选中 entry 的引用关系。它不检查 constants pool，不拥有或释放 function/map 池；输入和嵌套数组须在同步调用期间稳定可读。
+ *
+ * ## References
+ * 唯一调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:504；aggregate-live 委托调用点：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:400。
+ */
+
+/**
+ * @fn static TZrExecIrBlockId zr_state_map_expected_handler(const SZrExecIrFunction *function, TZrUInt32 instructionId, TZrUInt32 boundaryFlags)
+ *
+ * ## Summary
+ * 从 instruction 所属 source block 的 successor 数组中选择第一个现存的 exception 或 cleanup block。
+ *
+ * ## Parameters
+ * @param[in] function 提供 instruction/block/successor 结构的 function。
+ * @param[in] instructionId 1 基 instruction ID，用于定位 source block。
+ * @param[in] boundaryFlags 当前 entry 的 boundary flags；没有 THROW 时不推导 handler。
+ *
+ * ## Returns
+ * @return 按 successor 数组顺序遇到首个带 EXCEPTION 或 CLEANUP 标志且可解析的 block 时返回其 ID；没有 THROW、输入/范围无效、source block 不存在或没有合格 successor 时返回 ZR_EXEC_IR_BLOCK_ID_INVALID。
+ *
+ * ## Constraints and lifecycle
+ * EXCEPTION 与 CLEANUP 在本 helper 中没有额外优先级，数组顺序决定结果；本函数不要求一定存在 handler。function 的 blocks、successors 和嵌套范围须在同步调用期间有效可读。
+ *
+ * ## References
+ * 结果的精确比较调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:455；source block 查找：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:422。
+ */
+
+/**
+ * @fn static TZrBool zr_state_map_entry_handler_valid(const SZrExecIrFunction *function, const SZrExecIrStateMapEntry *entry)
+ *
+ * ## Summary
+ * 检查 entry.handlerBlockId 与其 THROW boundary 所推导的 expected handler 一致。
+ *
+ * ## Parameters
+ * @param[in] function 提供所属 block 与 successor 数组的 function。
+ * @param[in] entry 提供 instructionId、boundaryFlags 与记录的 handlerBlockId。
+ *
+ * ## Returns
+ * @return entry 没有 THROW 时仅当 handlerBlockId 为 INVALID 返回 ZR_TRUE；有 THROW 时仅当 recorded ID 等于 zr_state_map_expected_handler 的结果返回 ZR_TRUE。
+ *
+ * ## Constraints and lifecycle
+ * 当有 THROW 但找不到合格 successor 时 expected 仍是 INVALID，所以 INVALID/INVALID 会通过；本 helper 不附加“必须存在handler”的规则。调用方须保证 entry 和 function CFG 数据可读。
+ *
+ * ## References
+ * expected handler helper 定义：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:410；推导调用与相等比较：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:455、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:457；唯一外层调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:491。
+ */
+
+/**
+ * @fn static TZrBool zr_state_map_entry_boundary_valid(const SZrExecIrFunction *function, const SZrExecIrStateMapEntry *entry)
+ *
+ * ## Summary
+ * 重新计算 entry 指向 instruction 的 boundary flags，并要求与记录值完全一致。
+ *
+ * ## Parameters
+ * @param[in] function 提供 instruction 数组。
+ * @param[in] entry 提供 1 基 instructionId 与 boundaryFlags。
+ *
+ * ## Returns
+ * @return instructionId 非零且在 instructionCount 内、StateMapBoundaryFlags 能计算出非零边界并与 entry.boundaryFlags 相等时返回 ZR_TRUE。
+ *
+ * ## Constraints and lifecycle
+ * 本 helper 只比较 boundaryFlags，不比较 exceptionState；后者由 zr_state_map_entry_valid 单独比对。instruction 数组须稳定可读。
+ *
+ * ## References
+ * BoundaryFlags 定义：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:91；计算调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:467；本 helper 外层调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:490；exceptionState 的独立比较：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:486。
+ */
+
+/**
+ * @fn static TZrBool zr_state_map_entry_valid(const SZrExecIrFunction *function, const SZrExecIrOwnerAnalysis *ownership, const SZrStateMapLiveness *liveness, const SZrExecIrStateMap *map, const SZrExecIrStateMapEntry *entry, SZrExecIrDiagnostic *diagnostic)
+ *
+ * ## Summary
+ * 在当前 owner 与 liveness scratch 上验证一个已提供 StateMap entry。
+ *
+ * ## Parameters
+ * @param[in] function 经外层基础结构检查的 function。
+ * @param[in] ownership 当前 function 的 owner-analysis 结果。
+ * @param[in] liveness 当前 function 的 StateMap liveness 结果。
+ * @param[in] map 待检查的 StateMap 及其 value/root 池。
+ * @param[in] entry 待检查的单个 checkpoint。
+ * @param[out] diagnostic 可为空；子校验未设置具体代码时补充 STATE_MAP_INVALID。
+ *
+ * ## Returns
+ * @return entry identity/phase、boundary/exception/handler、cleanup/deopt、live/root ranges、owner/liveness 关系及 instruction source/effect/deopt 关联均满足当前实现规则时返回 ZR_TRUE。
+ *
+ * ## Constraints and lifecycle
+ * 本 helper 只验证传入 entry，不要求 StateMap 覆盖所有潜在边界；规则还包括 exceptionState 等于 boundary exception mask、各 phase 对应 cleanupState 为 0/1/2，以及 DEOPT boundary 必须有非零 deoptId。跨entry身份约束由 ZrCore_ExecIr_ValidateStateMap 的后续pairwise阶段检查。ownership 与 liveness 是由外层构建并释放的借用scratch，本函数不取得所有权。它组合调用已分列的 boundary、handler、deopt、owner、range、unique 与 roots-live 检查。
+ *
+ * ## References
+ * 唯一调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:621；边界/handler/owner/deopt/value 子检查：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:490、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:491、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:503、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:504、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:505、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:509；唯一性/root-live 检查：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:521、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:522、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:523。
+ */
+
+/**
+ * @fn TZrBool ZrCore_ExecIr_ValidateStateMap(const SZrExecIrFunction *function, const SZrExecIrStateMap *map, SZrExecIrDiagnostic *diagnostic)
+ *
+ * ## Summary
+ * 同步验证显式 StateMap 与 function 当前 identity、结构、owner/liveness 及已提供 checkpoint 的一致性。
+ *
+ * ## Parameters
+ * @param[in] function 验证基准 function；可为空，空值返回 ZR_FALSE。
+ * @param[in] map 可为空的显式 StateMap；空值返回 ZR_FALSE，非空时可不同于 function.stateMap，但 identity 必须匹配。
+ * @param[out] diagnostic 可为空；非空时入口在读取输入前先清零，失败时记录可得到的阶段诊断。
+ *
+ * ## Returns
+ * @return function/map 非空，基础形状和 token/signature/generation 匹配、function/deopt 结构有效、owner/liveness 分析成功且每个已提供 entry 与 pairwise identity 规则均有效时返回 ZR_TRUE；否则返回 ZR_FALSE。任一输入为空时，在非空 diagnostic 中记录 INVALID_ARGUMENT。
+ *
+ * ## Constraints and lifecycle
+ * 本接口验证 map 中已提供的 entries，但不要求每个可能的 boundary 都有 entry。function、map 及其嵌套数组仅同步只读借用；调用期间必须稳定且可读，本接口不持有、复制或内部同步输入。诊断必须独立可写并且不得与 function、map 或任一嵌套存储别名，因为入口先清零。
+ *
+ * ## Resources and failure
+ * 验证会构建临时 owner-analysis 与 liveness scratch，可能分配内存。OwnerAnalysisBuild 若自身失败，由该builder清理部分scratch后返回；之后若 liveness/entry/pairwise检查失败，统一路径释放两种 scratch；成功路径也释放。false可来自参数、结构、身份、deopt、owner/liveness、entry或资源失败，诊断码随实际阶段而异。count/capacity和整数range检查不证明任意非空地址可读。
+ *
+ * ## References
+ * 生产调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:910。测试直接调用：tests/parser/test_ssa_sccp_phi_copy_edges.c:256；tests/parser/test_ssa_retained_builder_cfg.c:60；tests/parser/test_ssa_licm_scalar_context.inc:136；tests/parser/test_ssa_licm_scalar_context.inc:202。这些引用不授予测试单元审查信用。
+ */
+
+/**
+ * @anchor zr_state_map_validation_checkpoint_identity_rules
+ *
+ * ## Summary
+ * 规定 ValidateStateMap 对 map 已提供 entries 执行的 pairwise identity 一致性约束。
+ *
+ * ## Parameters
+ * 此代码块没有独立参数；比较对象是当前 entry 与先前已验证的 entries。
+ *
+ * ## Returns
+ * 此代码块没有独立返回值；冲突时设置 STATE_MAP_INVALID 并跳转到外层统一 scratch 清理路径。
+ *
+ * ## Constraints and lifecycle
+ * 若两项 instructionId 相同，则 sourceId 与 resumeId 必须都相同；若 resumeId 相同，则 instructionId 与 sourceId 必须都相同；完全相同的 (sourceId, resumeId, phase) 被拒绝。相同 sourceId/resumeId 搭配不同 phase 可以共存；sourceId 本身不要求全局唯一。规则仅覆盖 map 中显式提供的 entries。
+ *
+ * ## References
+ * same-instruction 关系：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:626；same-resume 关系：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:636；重复 triple：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:646；失败统一释放：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:660、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:661。
+ */

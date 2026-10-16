@@ -323,3 +323,24 @@ ZR_CORE_API TZrBool ZrCore_ExecIr_MaterializeState(
  * ## References
  * 声明：zr_vm_core/include/zr_vm_core/exec_ir_state_map.h:141；实现：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:139；Core 调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:688；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_resume.c:38；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_objects.c:117。其他直接测试入口见 tests/parser/ssa_state_map_verifier_cases.inc:60；tests/parser/ssa_pass_manager_state_maps_cases.inc:129；tests/parser/ssa_pass_manager_state_maps_cases.inc:146；tests/parser/test_ssa_state_maps.c:230；tests/parser/test_ssa_state_maps.c:235；tests/parser/test_ssa_state_maps.c:237；tests/parser/test_ssa_state_maps.c:843；tests/parser/test_ssa_state_maps.c:845；tests/parser/test_ssa_state_maps.c:1198；tests/parser/test_ssa_state_maps.c:1200；tests/parser/test_ssa_state_maps.c:1202；tests/parser/test_ssa_state_maps.c:1204；tests/parser/test_ssa_retained_builder_cfg.c:100；tests/parser/test_ssa_deopt_aggregates.c:116。
  */
+
+/**
+ * @fn TZrBool ZrCore_ExecIr_ValidateStateMap(const SZrExecIrFunction *function, const SZrExecIrStateMap *map, SZrExecIrDiagnostic *diagnostic)
+ *
+ * ## Summary
+ * 对外提供 StateMap 相对指定 function 当前结构与 identity 的同步验证入口。
+ *
+ * ## Parameters
+ * @param[in] function 可为空的验证基准 function；空值返回 ZR_FALSE。
+ * @param[in] map 可为空的显式待验证映射；空值返回 ZR_FALSE；非空时允许不是 function.stateMap，但映射身份须匹配该 function。
+ * @param[out] diagnostic 可为空；非空时先清零，之后按失败阶段写入诊断。
+ *
+ * ## Returns
+ * @return function/map 非空且结构、身份和所有已提供 checkpoint 均通过验证时返回 ZR_TRUE，否则返回 ZR_FALSE；任一输入为空时，在非空 diagnostic 中记录 INVALID_ARGUMENT。
+ *
+ * ## Constraints and lifecycle
+ * 不要求 map 覆盖 function 中所有潜在边界。function、map 及嵌套数组是调用期间的只读借用，调用方负责保持稳定可读；Core 不保存输入且不提供同步。diagnostic 必须可写且与两个输入及其嵌套存储不重叠，因为实现清零诊断早于读取输入。临时 owner/liveness 分析可能分配，调用返回前会按相应成功/失败路径清理。
+ *
+ * ## References
+ * 实现：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:556；NULL 拒绝与入口清零：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:565、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:566；临时分析释放：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:656、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:657、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:660、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:661。生产调用：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:910。测试直接调用：tests/parser/test_ssa_sccp_phi_copy_edges.c:256；tests/parser/test_ssa_retained_builder_cfg.c:60；tests/parser/test_ssa_licm_scalar_context.inc:136；tests/parser/test_ssa_licm_scalar_context.inc:202。这些引用不授予测试单元审查信用。
+ */

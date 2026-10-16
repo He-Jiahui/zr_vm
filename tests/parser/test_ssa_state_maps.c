@@ -1679,3 +1679,606 @@ int main(void) {
  * ## References
  * 定义：tests/parser/test_ssa_state_maps.c:217；Unity 注册：tests/parser/test_ssa_state_maps.c:1358；空 setUp/tearDown：tests/parser/test_ssa_state_maps.c:12；tests/parser/test_ssa_state_maps.c:13；目标定义和 CTest 注册：tests/cmake/ssa-tests.cmake:397；tests/cmake/ssa-tests.cmake:422；Unity 配置：tests/cmake/ssa-tests.cmake:420；tests/unity_config.h:4；RUN_TEST 到 UnityDefaultTestRun：tests/third_party/zr_unity/Unity/src/unity_internals.h:909；tests/third_party/zr_unity/Unity/src/unity_internals.h:910；断言失败及 longjmp：tests/third_party/zr_unity/Unity/src/unity_internals.h:983；tests/third_party/zr_unity/Unity/src/unity_internals.h:891；tests/third_party/zr_unity/Unity/src/unity.c:2239；tests/third_party/zr_unity/Unity/src/unity.c:2247；runner 调用 teardown：tests/third_party/zr_unity/Unity/src/unity.c:2283；tests/third_party/zr_unity/Unity/src/unity.c:2303；最终进程结果：tests/parser/test_ssa_state_maps.c:1397。查询实现：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:139。
  */
+
+/**
+ * @fn static void function_with_two_gc_boundaries(SZrExecIrFunction *function)
+ *
+ * ## Summary
+ * 复用单 GC value fixture，再追加一条 sourceId=84、带 MAY_GC 的 NOP，供两个不同 checkpoint 复用 resumeId 的负例构造。
+ *
+ * ## Parameters
+ * @param[out] function 非空、可写的新鲜或已释放 function 记录；正常返回后由调用方拥有并释放构造所得的池。
+ *
+ * ## Returns
+ * 正常返回时 function 含原 sourceId=42 的 MAY_GC NOP 与新增 sourceId=84 的 MAY_GC NOP。 本函数为 void，无 C 返回值；构造断言失败时由 Unity 记录失败并跳出调用此 helper 的当前 case。
+ *
+ * ## Constraints and lifecycle
+ * function 必须非空、可写且是新鲜或已释放的记录：本 helper 会直接或经基础 helper 调用 FunctionInit，不能用于覆盖仍拥有池的 function。正常路径由调用方最终调用 FreeFunction 释放池；helper 不取得记录对象本身的所有权。构造操作或分配后的 Unity 断言失败会跳出所属 case，可能跳过该 case 的尾部清理；空 setUp/tearDown 不补做局部资源回收。
+ * 内部先调用 function_with_one_gc_value，因此使用其固定 token、signature 和 generation；不建立 CFG、stateMap 或运行时对象。本 helper 只断言追加第二条 instruction 成功。
+ *
+ * ## References
+ * 定义及首次声明：tests/parser/test_ssa_state_maps.c:108。
+ * 全部直接调用：tests/parser/test_ssa_state_maps.c:420。
+ * 构造依赖：function_with_one_gc_value，tests/parser/test_ssa_state_maps.c:111；ZrCore_ExecIr_FunctionAppendInstruction，tests/parser/test_ssa_state_maps.c:116。
+ * 本体断言：tests/parser/test_ssa_state_maps.c:116。
+ */
+
+/**
+ * @fn static void function_with_drop_boundary(SZrExecIrFunction *function)
+ *
+ * ## Summary
+ * 在单 GC value fixture 后追加 ValueId=1 的 operand 范围和 sourceId=84 的 DROP，供 owner-state 与 operand 畸形负例修改。
+ *
+ * ## Parameters
+ * @param[out] function 非空、可写的新鲜或已释放 function 记录；正常返回后由调用方拥有并释放构造所得的池。
+ *
+ * ## Returns
+ * 正常返回时 function 拥有新增 operand 池内容及第二条 DROP instruction。 本函数为 void，无 C 返回值；构造断言失败时由 Unity 记录失败并跳出调用此 helper 的当前 case。
+ *
+ * ## Constraints and lifecycle
+ * function 必须非空、可写且是新鲜或已释放的记录：本 helper 会直接或经基础 helper 调用 FunctionInit，不能用于覆盖仍拥有池的 function。正常路径由调用方最终调用 FreeFunction 释放池；helper 不取得记录对象本身的所有权。构造操作或分配后的 Unity 断言失败会跳出所属 case，可能跳过该 case 的尾部清理；空 setUp/tearDown 不补做局部资源回收。
+ * 不把 GC fixture 解释为可执行 CFG；不执行 DROP，也不建立 stateMap。AppendOperands 与 AppendInstruction 的返回值分别由 Unity 断言检查。
+ *
+ * ## References
+ * 定义及首次声明：tests/parser/test_ssa_state_maps.c:119。
+ * 全部直接调用：tests/parser/test_ssa_state_maps.c:634；tests/parser/test_ssa_state_maps.c:772。
+ * 构造依赖：function_with_one_gc_value，tests/parser/test_ssa_state_maps.c:124；ZrCore_ExecIr_FunctionAppendOperands，tests/parser/test_ssa_state_maps.c:125；ZrCore_ExecIr_FunctionAppendInstruction，tests/parser/test_ssa_state_maps.c:131。
+ * 本体断言：tests/parser/test_ssa_state_maps.c:125；tests/parser/test_ssa_state_maps.c:131。
+ */
+
+/**
+ * @fn static void function_with_deopt_boundary(SZrExecIrFunction *function)
+ *
+ * ## Summary
+ * 在单 GC value fixture 上设置 deoptId=91，并分配一条 sourceId=42、resumeId=701、payload ValueId=1 的 deopt state。
+ *
+ * ## Parameters
+ * @param[out] function 非空、可写的新鲜或已释放 function 记录；正常返回后由调用方拥有并释放构造所得的池。
+ *
+ * ## Returns
+ * 正常返回时 deoptStates 与 deoptValues 两个池各有一个元素，count 与 capacity 均为 1，第一条 instruction 的 deoptId 为 91。 本函数为 void，无 C 返回值；构造断言失败时由 Unity 记录失败并跳出调用此 helper 的当前 case。
+ *
+ * ## Constraints and lifecycle
+ * function 必须非空、可写且是新鲜或已释放的记录：本 helper 会直接或经基础 helper 调用 FunctionInit，不能用于覆盖仍拥有池的 function。正常路径由调用方最终调用 FreeFunction 释放池；helper 不取得记录对象本身的所有权。构造操作或分配后的 Unity 断言失败会跳出所属 case，可能跳过该 case 的尾部清理；空 setUp/tearDown 不补做局部资源回收。
+ * 该 helper 的 state/payload 由 calloc 独立分配；若一项分配成功而后续断言失败，可留下部分 function 状态，不提供回滚。固定 identity 用于有意制造匹配或矛盾的测试，不是任意合法 deopt 图构造器，不构造可执行 CFG。
+ *
+ * ## References
+ * 定义及首次声明：tests/parser/test_ssa_state_maps.c:135。
+ * 全部直接调用：tests/parser/test_ssa_state_maps.c:667；tests/parser/test_ssa_state_maps.c:706；tests/parser/test_ssa_state_maps.c:807；tests/parser/test_ssa_state_maps.c:840；tests/parser/test_ssa_state_maps.c:858。
+ * 构造依赖：function_with_one_gc_value，tests/parser/test_ssa_state_maps.c:136；calloc deoptStates，tests/parser/test_ssa_state_maps.c:138；calloc deoptValues，tests/parser/test_ssa_state_maps.c:140。
+ * 本体断言：tests/parser/test_ssa_state_maps.c:142；tests/parser/test_ssa_state_maps.c:143。
+ */
+
+/**
+ * @fn static void function_with_alloc_debug_boundary(SZrExecIrFunction *function)
+ *
+ * ## Summary
+ * 构造供 builder、verifier 与 FunctionClone 测试复用的单 entry block：ALLOC、DEBUG_POLL NOP、RETURN 三条 instruction，并保留一个不被 instruction 使用的 BORROWED value。
+ *
+ * ## Parameters
+ * @param[out] function 非空、可写的新鲜或已释放 function 记录；正常返回后由调用方拥有并释放构造所得的池。
+ *
+ * ## Returns
+ * 正常返回时固定 token=77、signatureHash=0x1234、generation=11，function 拥有两个 value、一个 entry block 及相关 instruction/result/operand/memory-token 池。 本函数为 void，无 C 返回值；构造断言失败时由 Unity 记录失败并跳出调用此 helper 的当前 case。
+ *
+ * ## Constraints and lifecycle
+ * function 必须非空、可写且是新鲜或已释放的记录：本 helper 会直接或经基础 helper 调用 FunctionInit，不能用于覆盖仍拥有池的 function。正常路径由调用方最终调用 FreeFunction 释放池；helper 不取得记录对象本身的所有权。构造操作或分配后的 Unity 断言失败会跳出所属 case，可能跳过该 case 的尾部清理；空 setUp/tearDown 不补做局部资源回收。
+ * ValueId=1 为 nullable GC value，ALLOC 定义它且 RETURN 使用它；ValueId=2 为 nullable BORROWED value，未加入 instruction operand，因此该 fixture 不把它当作跨 SUSPEND 的活跃借用。ALLOC 带 MAY_ALLOCATE|MAY_GC、effect 1→2 和 memoryOut token=1；DEBUG_POLL 与 RETURN 的 sourceId 分别为 20 与 30。这里只生成 IR 供测试接口读取，没有运行解释器或 Oracle，也没有创建实际 GC 对象。
+ *
+ * ## References
+ * 定义及首次声明：tests/parser/test_ssa_state_maps.c:154。
+ * 全部直接调用：tests/parser/test_ssa_state_maps.c:1192；tests/parser/test_ssa_state_maps.c:1225；tests/parser/test_ssa_state_maps.c:1245；tests/parser/test_ssa_state_maps.c:1338；tests/parser/ssa_state_map_verifier_cases.inc:5；tests/parser/ssa_state_map_verifier_cases.inc:26；tests/parser/ssa_state_map_verifier_cases.inc:50。
+ * 构造依赖：ZrCore_ExecIr_FunctionInit，tests/parser/test_ssa_state_maps.c:162；ZrCore_ExecIr_FunctionAddValue，tests/parser/test_ssa_state_maps.c:167；ZrCore_ExecIr_FunctionAddValue，tests/parser/test_ssa_state_maps.c:173；ZrCore_ExecIr_FunctionAddBlock，tests/parser/test_ssa_state_maps.c:177；ZrCore_ExecIr_FunctionAppendResults，tests/parser/test_ssa_state_maps.c:186；ZrCore_ExecIr_FunctionAppendMemoryTokens，tests/parser/test_ssa_state_maps.c:190；ZrCore_ExecIr_FunctionAppendInstruction，tests/parser/test_ssa_state_maps.c:192；ZrCore_ExecIr_FunctionAppendInstruction，tests/parser/test_ssa_state_maps.c:199；ZrCore_ExecIr_FunctionAppendOperands，tests/parser/test_ssa_state_maps.c:205；ZrCore_ExecIr_FunctionAppendInstruction，tests/parser/test_ssa_state_maps.c:208。
+ * 本体断言：tests/parser/test_ssa_state_maps.c:170；tests/parser/test_ssa_state_maps.c:173；tests/parser/test_ssa_state_maps.c:176；tests/parser/test_ssa_state_maps.c:186；tests/parser/test_ssa_state_maps.c:190；tests/parser/test_ssa_state_maps.c:192；tests/parser/test_ssa_state_maps.c:199；tests/parser/test_ssa_state_maps.c:205；tests/parser/test_ssa_state_maps.c:208。
+ * 文本 include 入口：tests/parser/test_ssa_state_maps.c:1351。
+ */
+
+/**
+ * @fn void test_state_map_materialization_rejects_inconsistent_exception_state(void)
+ *
+ * ## Summary
+ * 在 AFTER_EFFECT/GC checkpoint 中故意保留 THROW exceptionState，通过物化入口检查该不一致被拒绝。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 本函数为 void case，无 C 返回值。所列断言均通过时正常返回；断言失败由 Unity 记录并跳出当前 case，runner 随后执行 tearDown 并继续后续注册项。最终退出值由 main 的 UNITY_END() 汇总结果决定。
+ *
+ * ## Constraints and lifecycle
+ * 构造场景：AFTER_EFFECT/GC entry的exceptionState改为THROW。
+ * 实际断言：false；STATE_MAP_INVALID；target valueCount=0/values=NULL。
+ * 只构造 GC flags 与 THROW exceptionState 的这一种矛盾，不推断其他异常组合。
+ * map、function 和 target 均为 case 局部记录；正常路径按 MaterializedStateFree、FreeFunction、StateMapFree 的顺序释放各自拥有的池。Unity 断言可 longjmp，跳过当前 case 的剩余局部释放；空 setUp/tearDown 不接管这些局部资源。
+ * 本例通过 MaterializeState 间接进入 ValidateStateMap。以下下层路径来自源码静态阅读，不表示本提案运行或追踪过对应分支，也不为跨文件依赖新增完整审查信用。
+ *
+ * ## References
+ * 声明：tests/parser/test_ssa_state_maps.c:17；定义：tests/parser/test_ssa_state_maps.c:272；RUN_TEST 注册：tests/parser/test_ssa_state_maps.c:1360。
+ * 断言：tests/parser/test_ssa_state_maps.c:294；tests/parser/test_ssa_state_maps.c:295；tests/parser/test_ssa_state_maps.c:296；tests/parser/test_ssa_state_maps.c:297。
+ * 构造/依赖调用：tests/parser/test_ssa_state_maps.c:279；tests/parser/test_ssa_state_maps.c:282；正常释放：tests/parser/test_ssa_state_maps.c:298；tests/parser/test_ssa_state_maps.c:299；tests/parser/test_ssa_state_maps.c:300。
+ * 物化及验证入口：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:666；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:556。
+ * 相关检查：zr_state_map_entry_valid，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:486。
+ */
+
+/**
+ * @fn void test_state_map_materialization_rejects_boundary_mismatch(void)
+ *
+ * ## Summary
+ * 让 map 声明 GC 边界而对应 instruction 仅带 MAY_SUSPEND，通过物化入口检查边界种类不一致。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 本函数为 void case，无 C 返回值。所列断言均通过时正常返回；断言失败由 Unity 记录并跳出当前 case，runner 随后执行 tearDown 并继续后续注册项。最终退出值由 main 的 UNITY_END() 汇总结果决定。
+ *
+ * ## Constraints and lifecycle
+ * 构造场景：map声明GC，instruction改为MAY_SUSPEND。
+ * 实际断言：false；STATE_MAP_INVALID；target.values=NULL。
+ * 只断言 target.values 仍为空，不检查 valueCount 或其余目标字段。
+ * map、function 和 target 均为 case 局部记录；正常路径按 MaterializedStateFree、FreeFunction、StateMapFree 的顺序释放各自拥有的池。Unity 断言可 longjmp，跳过当前 case 的剩余局部释放；空 setUp/tearDown 不接管这些局部资源。
+ * 本例通过 MaterializeState 间接进入 ValidateStateMap。以下下层路径来自源码静态阅读，不表示本提案运行或追踪过对应分支，也不为跨文件依赖新增完整审查信用。
+ *
+ * ## References
+ * 声明：tests/parser/test_ssa_state_maps.c:18；定义：tests/parser/test_ssa_state_maps.c:303；RUN_TEST 注册：tests/parser/test_ssa_state_maps.c:1361。
+ * 断言：tests/parser/test_ssa_state_maps.c:325；tests/parser/test_ssa_state_maps.c:326；tests/parser/test_ssa_state_maps.c:327。
+ * 构造/依赖调用：tests/parser/test_ssa_state_maps.c:310；tests/parser/test_ssa_state_maps.c:312；正常释放：tests/parser/test_ssa_state_maps.c:328；tests/parser/test_ssa_state_maps.c:329；tests/parser/test_ssa_state_maps.c:330。
+ * 物化及验证入口：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:666；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:556。
+ * 相关检查：zr_state_map_entry_boundary_valid，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:460；zr_state_map_entry_valid，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:490。
+ */
+
+/**
+ * @fn void test_state_map_materialization_rejects_forged_fallback_source(void)
+ *
+ * ## Summary
+ * 将 instruction.sourceId 清零，但保留 map/request 的 sourceId=42，检查物化拒绝及诊断中的 expected/actual 字段。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 本函数为 void case，无 C 返回值。所列断言均通过时正常返回；断言失败由 Unity 记录并跳出当前 case，runner 随后执行 tearDown 并继续后续注册项。最终退出值由 main 的 UNITY_END() 汇总结果决定。
+ *
+ * ## Constraints and lifecycle
+ * 构造场景：instruction sourceId=0，map/request sourceId=42。
+ * 实际断言：false；STATE_MAP_INVALID；expectedVersion=1、actualVersion=42；values=NULL。
+ * 实际断言 expectedVersion=1、actualVersion=42；只记录这组输入的字段结果，不把测试名推广为所有 source fallback 情况。
+ * map、function 和 target 均为 case 局部记录；正常路径按 MaterializedStateFree、FreeFunction、StateMapFree 的顺序释放各自拥有的池。Unity 断言可 longjmp，跳过当前 case 的剩余局部释放；空 setUp/tearDown 不接管这些局部资源。
+ * 本例通过 MaterializeState 间接进入 ValidateStateMap。以下下层路径来自源码静态阅读，不表示本提案运行或追踪过对应分支，也不为跨文件依赖新增完整审查信用。
+ *
+ * ## References
+ * 声明：tests/parser/test_ssa_state_maps.c:19；定义：tests/parser/test_ssa_state_maps.c:333；RUN_TEST 注册：tests/parser/test_ssa_state_maps.c:1362。
+ * 断言：tests/parser/test_ssa_state_maps.c:356；tests/parser/test_ssa_state_maps.c:357；tests/parser/test_ssa_state_maps.c:358；tests/parser/test_ssa_state_maps.c:359；tests/parser/test_ssa_state_maps.c:360。
+ * 构造/依赖调用：tests/parser/test_ssa_state_maps.c:340；tests/parser/test_ssa_state_maps.c:342；正常释放：tests/parser/test_ssa_state_maps.c:361；tests/parser/test_ssa_state_maps.c:362；tests/parser/test_ssa_state_maps.c:363。
+ * 物化及验证入口：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:666；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:556。
+ * 相关检查：zr_state_map_entry_valid，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:532；zr_state_map_set_diagnostic，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:535。
+ */
+
+/**
+ * @fn void test_state_map_materialization_rejects_split_resume_identity(void)
+ *
+ * ## Summary
+ * 为同一 instruction/source 复制出 BEFORE_EFFECT 与 AFTER_EFFECT 两项，并给它们不同 resumeId，检查物化拒绝。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 本函数为 void case，无 C 返回值。所列断言均通过时正常返回；断言失败由 Unity 记录并跳出当前 case，runner 随后执行 tearDown 并继续后续注册项。最终退出值由 main 的 UNITY_END() 汇总结果决定。
+ *
+ * ## Constraints and lifecycle
+ * 构造场景：复制entry形成同instruction/source但不同resume的BEFORE/AFTER项。
+ * 实际断言：false；STATE_MAP_INVALID；values=NULL。
+ * realloc 直接写回 map.entries；若分配断言早退，不承诺局部资源回滚。该负例不证明同 identity 的不同 phase 正例已通过验证。
+ * map、function 和 target 均为 case 局部记录；正常路径按 MaterializedStateFree、FreeFunction、StateMapFree 的顺序释放各自拥有的池。Unity 断言可 longjmp，跳过当前 case 的剩余局部释放；空 setUp/tearDown 不接管这些局部资源。
+ * 本例通过 MaterializeState 间接进入 ValidateStateMap。以下下层路径来自源码静态阅读，不表示本提案运行或追踪过对应分支，也不为跨文件依赖新增完整审查信用。
+ *
+ * ## References
+ * 声明：tests/parser/test_ssa_state_maps.c:20；定义：tests/parser/test_ssa_state_maps.c:366；RUN_TEST 注册：tests/parser/test_ssa_state_maps.c:1363。
+ * 断言：tests/parser/test_ssa_state_maps.c:396；tests/parser/test_ssa_state_maps.c:397；tests/parser/test_ssa_state_maps.c:398。
+ * 构造/依赖调用：tests/parser/test_ssa_state_maps.c:373；tests/parser/test_ssa_state_maps.c:383；正常释放：tests/parser/test_ssa_state_maps.c:399；tests/parser/test_ssa_state_maps.c:400；tests/parser/test_ssa_state_maps.c:401。
+ * 物化及验证入口：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:666；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:556。
+ * 相关检查：ZrCore_ExecIr_ValidateStateMap::checkpoint_identity_consistency，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:626。
+ */
+
+/**
+ * @fn void test_state_map_materialization_rejects_reused_resume_identity(void)
+ *
+ * ## Summary
+ * 在两个不同 instruction/source 的 MAY_GC checkpoint 中复用 resumeId=7，检查物化拒绝。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 本函数为 void case，无 C 返回值。所列断言均通过时正常返回；断言失败由 Unity 记录并跳出当前 case，runner 随后执行 tearDown 并继续后续注册项。最终退出值由 main 的 UNITY_END() 汇总结果决定。
+ *
+ * ## Constraints and lifecycle
+ * 构造场景：不同instruction/source的两个MAY_GC boundary复用resume 7。
+ * 实际断言：false；STATE_MAP_INVALID；values=NULL。
+ * realloc 直接写回 map.entries，分配断言早退时不保证局部清理。此例不要求 sourceId 全局唯一，也不覆盖所有 pairwise identity 规则。
+ * map、function 和 target 均为 case 局部记录；正常路径按 MaterializedStateFree、FreeFunction、StateMapFree 的顺序释放各自拥有的池。Unity 断言可 longjmp，跳过当前 case 的剩余局部释放；空 setUp/tearDown 不接管这些局部资源。
+ * 本例通过 MaterializeState 间接进入 ValidateStateMap。以下下层路径来自源码静态阅读，不表示本提案运行或追踪过对应分支，也不为跨文件依赖新增完整审查信用。
+ *
+ * ## References
+ * 声明：tests/parser/test_ssa_state_maps.c:21；定义：tests/parser/test_ssa_state_maps.c:404；RUN_TEST 注册：tests/parser/test_ssa_state_maps.c:1364。
+ * 断言：tests/parser/test_ssa_state_maps.c:433；tests/parser/test_ssa_state_maps.c:434；tests/parser/test_ssa_state_maps.c:435。
+ * 构造/依赖调用：tests/parser/test_ssa_state_maps.c:411；tests/parser/test_ssa_state_maps.c:420；正常释放：tests/parser/test_ssa_state_maps.c:436；tests/parser/test_ssa_state_maps.c:437；tests/parser/test_ssa_state_maps.c:438。
+ * 物化及验证入口：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:666；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:556。
+ * 相关检查：ZrCore_ExecIr_ValidateStateMap::checkpoint_identity_consistency，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:636。
+ */
+
+/**
+ * @fn void test_state_map_materialization_rejects_unknown_value_enums(void)
+ *
+ * ## Summary
+ * 清空 root 需求后，分别注入无效 ownership 与无效 nullability 枚举，检查两轮物化均被拒绝。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 本函数为 void case，无 C 返回值。所列断言均通过时正常返回；断言失败由 Unity 记录并跳出当前 case，runner 随后执行 tearDown 并继续后续注册项。最终退出值由 main 的 UNITY_END() 汇总结果决定。
+ *
+ * ## Constraints and lifecycle
+ * 构造场景：ownership设-1；第二轮设UNKNOWN并将nullability设-1，root range/count清零。
+ * 实际断言：两轮均false、STATE_MAP_INVALID、values=NULL。
+ * 第二轮把 ownership 设为 UNKNOWN 后再令 nullability=-1；两轮只覆盖显式的 -1 枚举，不代表穷尽所有 value 结构畸形。
+ * map、function 和 target 均为 case 局部记录；正常路径按 MaterializedStateFree、FreeFunction、StateMapFree 的顺序释放各自拥有的池。Unity 断言可 longjmp，跳过当前 case 的剩余局部释放；空 setUp/tearDown 不接管这些局部资源。
+ * 本例通过 MaterializeState 间接进入 ValidateStateMap。以下下层路径来自源码静态阅读，不表示本提案运行或追踪过对应分支，也不为跨文件依赖新增完整审查信用。
+ *
+ * ## References
+ * 声明：tests/parser/test_ssa_state_maps.c:22；定义：tests/parser/test_ssa_state_maps.c:441；RUN_TEST 注册：tests/parser/test_ssa_state_maps.c:1365。
+ * 断言：tests/parser/test_ssa_state_maps.c:466；tests/parser/test_ssa_state_maps.c:467；tests/parser/test_ssa_state_maps.c:468；tests/parser/test_ssa_state_maps.c:472；tests/parser/test_ssa_state_maps.c:473；tests/parser/test_ssa_state_maps.c:474。
+ * 构造/依赖调用：tests/parser/test_ssa_state_maps.c:448；tests/parser/test_ssa_state_maps.c:452；正常释放：tests/parser/test_ssa_state_maps.c:475；tests/parser/test_ssa_state_maps.c:476；tests/parser/test_ssa_state_maps.c:477。
+ * 物化及验证入口：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:666；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:556。
+ * 相关检查：zr_state_map_function_values_valid，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:195；ZrCore_ExecIr_ValidateStateMap，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:572。
+ */
+
+/**
+ * @fn void test_state_map_materialization_rejects_unreachable_handler(void)
+ *
+ * ## Summary
+ * 构造 MAY_THROW instruction 与单独的 exception block，但不为 entry block 添加到该 handler 的 successor，检查物化拒绝该 handler 指定。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 本函数为 void case，无 C 返回值。所列断言均通过时正常返回；断言失败由 Unity 记录并跳出当前 case，runner 随后执行 tearDown 并继续后续注册项。最终退出值由 main 的 UNITY_END() 汇总结果决定。
+ *
+ * ## Constraints and lifecycle
+ * 构造场景：THROW entry引用exception block，MAY_THROW entry block无到handler successor。
+ * 实际断言：false；STATE_MAP_INVALID；values=NULL。
+ * 只覆盖当前 block 没有该 successor、却在 entry 中保存非 INVALID handler 的场景；不证明一般 CFG 可达性，也不把 THROW 的 INVALID/INVALID 比较写成必然失败。
+ * map、function 和 target 均为 case 局部记录；正常路径按 MaterializedStateFree、FreeFunction、StateMapFree 的顺序释放各自拥有的池。Unity 断言可 longjmp，跳过当前 case 的剩余局部释放；空 setUp/tearDown 不接管这些局部资源。
+ * 本例通过 MaterializeState 间接进入 ValidateStateMap。以下下层路径来自源码静态阅读，不表示本提案运行或追踪过对应分支，也不为跨文件依赖新增完整审查信用。
+ *
+ * ## References
+ * 声明：tests/parser/test_ssa_state_maps.c:23；定义：tests/parser/test_ssa_state_maps.c:480；RUN_TEST 注册：tests/parser/test_ssa_state_maps.c:1366。
+ * 断言：tests/parser/test_ssa_state_maps.c:512；tests/parser/test_ssa_state_maps.c:513；tests/parser/test_ssa_state_maps.c:514。
+ * 构造/依赖调用：tests/parser/test_ssa_state_maps.c:487；tests/parser/test_ssa_state_maps.c:491；tests/parser/test_ssa_state_maps.c:493；tests/parser/test_ssa_state_maps.c:495；正常释放：tests/parser/test_ssa_state_maps.c:515；tests/parser/test_ssa_state_maps.c:516；tests/parser/test_ssa_state_maps.c:517。
+ * 物化及验证入口：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:666；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:556。
+ * 相关检查：zr_state_map_expected_handler，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:431；zr_state_map_entry_handler_valid，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:455。
+ */
+
+/**
+ * @fn void test_state_map_materialization_rejects_noncanonical_handler(void)
+ *
+ * ## Summary
+ * 按 exception block、cleanup block 的顺序添加两个合格 successor，却让 entry 指向第二个，检查物化拒绝。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 本函数为 void case，无 C 返回值。所列断言均通过时正常返回；断言失败由 Unity 记录并跳出当前 case，runner 随后执行 tearDown 并继续后续注册项。最终退出值由 main 的 UNITY_END() 汇总结果决定。
+ *
+ * ## Constraints and lifecycle
+ * 构造场景：successor先exception再cleanup，map handler指向后者。
+ * 实际断言：false；STATE_MAP_INVALID；values=NULL。
+ * 本例的规则来自 successor 数组顺序，不表示 EXCEPTION 在所有图中优先于 CLEANUP。仅检查该两项顺序与 handler 选择。
+ * map、function 和 target 均为 case 局部记录；正常路径按 MaterializedStateFree、FreeFunction、StateMapFree 的顺序释放各自拥有的池。Unity 断言可 longjmp，跳过当前 case 的剩余局部释放；空 setUp/tearDown 不接管这些局部资源。
+ * 本例通过 MaterializeState 间接进入 ValidateStateMap。以下下层路径来自源码静态阅读，不表示本提案运行或追踪过对应分支，也不为跨文件依赖新增完整审查信用。
+ *
+ * ## References
+ * 声明：tests/parser/test_ssa_state_maps.c:24；定义：tests/parser/test_ssa_state_maps.c:520；RUN_TEST 注册：tests/parser/test_ssa_state_maps.c:1367。
+ * 断言：tests/parser/test_ssa_state_maps.c:562；tests/parser/test_ssa_state_maps.c:563；tests/parser/test_ssa_state_maps.c:564。
+ * 构造/依赖调用：tests/parser/test_ssa_state_maps.c:528；tests/parser/test_ssa_state_maps.c:531；tests/parser/test_ssa_state_maps.c:533；tests/parser/test_ssa_state_maps.c:535；tests/parser/test_ssa_state_maps.c:537；tests/parser/test_ssa_state_maps.c:548；正常释放：tests/parser/test_ssa_state_maps.c:565；tests/parser/test_ssa_state_maps.c:566；tests/parser/test_ssa_state_maps.c:567。
+ * 物化及验证入口：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:666；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:556。
+ * 相关检查：zr_state_map_expected_handler，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:431；zr_state_map_entry_handler_valid，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:457。
+ */
+
+/**
+ * @fn void test_state_map_materialization_requires_throw_boundary_for_handler(void)
+ *
+ * ## Summary
+ * 先物化一个带可选定 handler 的 THROW checkpoint，再改成 GC 且保留 handler，检查后一次拒绝及有限目标字段保留。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 本函数为 void case，无 C 返回值。所列断言均通过时正常返回；断言失败由 Unity 记录并跳出当前 case，runner 随后执行 tearDown 并继续后续注册项。最终退出值由 main 的 UNITY_END() 汇总结果决定。
+ *
+ * ## Constraints and lifecycle
+ * 构造场景：先成功物化THROW/MAY_THROW及有效handler；再把map改为GC/exception=0、instruction改MAY_GC。
+ * 实际断言：先断言成功和handler id；后续false/STATE_MAP_INVALID，旧values指针和handler id保留。
+ * 第一轮仅断言成功与 handlerBlockId；第二轮仅断言 false、STATE_MAP_INVALID、旧 values 指针和 handlerBlockId 保留，不比较其他池或完整 target 快照。
+ * map、function 和 target 均为 case 局部记录；正常路径按 MaterializedStateFree、FreeFunction、StateMapFree 的顺序释放各自拥有的池。Unity 断言可 longjmp，跳过当前 case 的剩余局部释放；空 setUp/tearDown 不接管这些局部资源。
+ * 本例通过 MaterializeState 间接进入 ValidateStateMap。以下下层路径来自源码静态阅读，不表示本提案运行或追踪过对应分支，也不为跨文件依赖新增完整审查信用。
+ *
+ * ## References
+ * 声明：tests/parser/test_ssa_state_maps.c:25；定义：tests/parser/test_ssa_state_maps.c:570；RUN_TEST 注册：tests/parser/test_ssa_state_maps.c:1368。
+ * 断言：tests/parser/test_ssa_state_maps.c:606；tests/parser/test_ssa_state_maps.c:607；tests/parser/test_ssa_state_maps.c:613；tests/parser/test_ssa_state_maps.c:614；tests/parser/test_ssa_state_maps.c:615；tests/parser/test_ssa_state_maps.c:616。
+ * 构造/依赖调用：tests/parser/test_ssa_state_maps.c:579；tests/parser/test_ssa_state_maps.c:583；tests/parser/test_ssa_state_maps.c:585；tests/parser/test_ssa_state_maps.c:587；tests/parser/test_ssa_state_maps.c:593；正常释放：tests/parser/test_ssa_state_maps.c:617；tests/parser/test_ssa_state_maps.c:618；tests/parser/test_ssa_state_maps.c:619。
+ * 物化及验证入口：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:666；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:556。
+ * 相关检查：zr_state_map_entry_handler_valid，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:452；ZrCore_ExecIr_MaterializeState，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685。
+ */
+
+/**
+ * @fn void test_state_map_materialization_rejects_forged_owner_state(void)
+ *
+ * ## Summary
+ * 将 DROP 前的 CLEANUP checkpoint owner state 伪造为 DROPPED，检查物化拒绝。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 本函数为 void case，无 C 返回值。所列断言均通过时正常返回；断言失败由 Unity 记录并跳出当前 case，runner 随后执行 tearDown 并继续后续注册项。最终退出值由 main 的 UNITY_END() 汇总结果决定。
+ *
+ * ## Constraints and lifecycle
+ * 构造场景：BEFORE/CLEANUP对应DROP；owner state伪造DROPPED。
+ * 实际断言：false；STATE_MAP_INVALID；values=NULL。
+ * 只覆盖该一项伪造 owner state，不推断整个 OwnerAnalysis 或运行时 DROP 行为已审。
+ * map、function 和 target 均为 case 局部记录；正常路径按 MaterializedStateFree、FreeFunction、StateMapFree 的顺序释放各自拥有的池。Unity 断言可 longjmp，跳过当前 case 的剩余局部释放；空 setUp/tearDown 不接管这些局部资源。
+ * 本例通过 MaterializeState 间接进入 ValidateStateMap。以下下层路径来自源码静态阅读，不表示本提案运行或追踪过对应分支，也不为跨文件依赖新增完整审查信用。
+ *
+ * ## References
+ * 声明：tests/parser/test_ssa_state_maps.c:26；定义：tests/parser/test_ssa_state_maps.c:622；RUN_TEST 注册：tests/parser/test_ssa_state_maps.c:1369。
+ * 断言：tests/parser/test_ssa_state_maps.c:647；tests/parser/test_ssa_state_maps.c:648；tests/parser/test_ssa_state_maps.c:649。
+ * 构造/依赖调用：tests/parser/test_ssa_state_maps.c:629；tests/parser/test_ssa_state_maps.c:634；正常释放：tests/parser/test_ssa_state_maps.c:650；tests/parser/test_ssa_state_maps.c:651；tests/parser/test_ssa_state_maps.c:652。
+ * 物化及验证入口：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:666；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:556。
+ * 相关检查：zr_state_map_entry_valid，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:503；zr_state_map_owners_valid，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_owners.c:65；zr_state_map_owners_valid，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_owners.c:75。
+ */
+
+/**
+ * @fn void test_state_map_materialization_rejects_mismatched_deopt_identity(void)
+ *
+ * ## Summary
+ * 让 entry/request 使用 resumeId=7，而关联 deopt state 使用 resumeId=701，检查物化拒绝该 identity 不一致。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 本函数为 void case，无 C 返回值。所列断言均通过时正常返回；断言失败由 Unity 记录并跳出当前 case，runner 随后执行 tearDown 并继续后续注册项。最终退出值由 main 的 UNITY_END() 汇总结果决定。
+ *
+ * ## Constraints and lifecycle
+ * 构造场景：map带GC/DEOPT/GUARD_EXIT和deoptId91；entry/request resume7但function deopt resume701。
+ * 实际断言：false；STATE_MAP_INVALID；values=NULL。
+ * 只断言失败、STATE_MAP_INVALID 和 target.values 为空，不恢复 deopt payload，也不检查具体首个拒绝分支。
+ * map、function 和 target 均为 case 局部记录；正常路径按 MaterializedStateFree、FreeFunction、StateMapFree 的顺序释放各自拥有的池。Unity 断言可 longjmp，跳过当前 case 的剩余局部释放；空 setUp/tearDown 不接管这些局部资源。
+ * 本例通过 MaterializeState 间接进入 ValidateStateMap。以下下层路径来自源码静态阅读，不表示本提案运行或追踪过对应分支，也不为跨文件依赖新增完整审查信用。
+ *
+ * ## References
+ * 声明：tests/parser/test_ssa_state_maps.c:27；定义：tests/parser/test_ssa_state_maps.c:655；RUN_TEST 注册：tests/parser/test_ssa_state_maps.c:1370。
+ * 断言：tests/parser/test_ssa_state_maps.c:680；tests/parser/test_ssa_state_maps.c:681；tests/parser/test_ssa_state_maps.c:682。
+ * 构造/依赖调用：tests/parser/test_ssa_state_maps.c:662；tests/parser/test_ssa_state_maps.c:667；正常释放：tests/parser/test_ssa_state_maps.c:683；tests/parser/test_ssa_state_maps.c:684；tests/parser/test_ssa_state_maps.c:685。
+ * 物化及验证入口：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:666；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:556。
+ * 相关检查：zr_state_map_entry_deopt_valid，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:362；ZrCore_ExecIr_ValidateStateMap，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:573。
+ */
+
+/**
+ * @fn void test_state_map_materialization_rejects_deopt_value_outside_live_state(void)
+ *
+ * ## Summary
+ * 将 deopt checkpoint 的 live/root/owner 范围置空并检查物化拒绝；精确记录当前构造先在 owner/liveness 的缺 live occurrence 检查失败。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 本函数为 void case，无 C 返回值。所列断言均通过时正常返回；断言失败由 Unity 记录并跳出当前 case，runner 随后执行 tearDown 并继续后续注册项。最终退出值由 main 的 UNITY_END() 汇总结果决定。
+ *
+ * ## Constraints and lifecycle
+ * entry/request 的 resumeId 已改为 701，与 fixture 的 deopt state 对应；deopt payload 仍包含 ValueId=1，而 entry 的 live/root/owner ranges 被置空。
+ * 实际断言仅为 MaterializeState 返回 false、STATE_MAP_INVALID，以及 target.values 仍为空。
+ * 该 fixture 的 deopt payload ValueId=1 被 liveness 计入 after 集合，而 entry.liveValues.count=0；在 entry_valid 调用 owners_valid 时先因必需 live value 没有 occurrence 被拒绝，未到后续 entry_deopt 检查。本例的 false 不为 deopt payload-membership 分支授信，也不表示执行了值恢复。
+ * map、function 和 target 均为 case 局部记录；正常路径按 MaterializedStateFree、FreeFunction、StateMapFree 的顺序释放各自拥有的池。Unity 断言可 longjmp，跳过当前 case 的剩余局部释放；空 setUp/tearDown 不接管这些局部资源。
+ * 上述首拒绝点由当前源码短路顺序与 liveness 构造静态闭合；本提案没有运行或追踪该 case，也不为 liveness/owner/deopt 依赖新增完整审查信用。
+ *
+ * ## References
+ * 声明：tests/parser/test_ssa_state_maps.c:28；定义：tests/parser/test_ssa_state_maps.c:688；RUN_TEST 注册：tests/parser/test_ssa_state_maps.c:1371。
+ * 构造及置空：tests/parser/test_ssa_state_maps.c:695；tests/parser/test_ssa_state_maps.c:701；tests/parser/test_ssa_state_maps.c:702；tests/parser/test_ssa_state_maps.c:703；tests/parser/test_ssa_state_maps.c:706；断言：tests/parser/test_ssa_state_maps.c:719；tests/parser/test_ssa_state_maps.c:720；tests/parser/test_ssa_state_maps.c:721。
+ * 验证路径：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:614；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:621；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:503；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_owners.c:52；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_owners.c:62；deopt liveness 加入点：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_liveness.c:122。
+ * 未到达的后续 deopt 检查：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:504；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:377。
+ * 正常释放：tests/parser/test_ssa_state_maps.c:722；tests/parser/test_ssa_state_maps.c:723；tests/parser/test_ssa_state_maps.c:724。
+ */
+
+/**
+ * @fn void test_state_map_materialization_rejects_missing_managed_root(void)
+ *
+ * ## Summary
+ * 在带 GC ownership value 的 checkpoint 中移除 root 范围，检查物化拒绝遗漏 managed root。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 本函数为 void case，无 C 返回值。所列断言均通过时正常返回；断言失败由 Unity 记录并跳出当前 case，runner 随后执行 tearDown 并继续后续注册项。最终退出值由 main 的 UNITY_END() 汇总结果决定。
+ *
+ * ## Constraints and lifecycle
+ * 构造场景：function含managed GC value；entry root range/count清零。
+ * 实际断言：false；STATE_MAP_INVALID；values=NULL。
+ * 只覆盖此单 value、单 root 缺失配置；不证明实际 GC 对象保活或所有 owner kind 的负例。
+ * map、function 和 target 均为 case 局部记录；正常路径按 MaterializedStateFree、FreeFunction、StateMapFree 的顺序释放各自拥有的池。Unity 断言可 longjmp，跳过当前 case 的剩余局部释放；空 setUp/tearDown 不接管这些局部资源。
+ * 本例通过 MaterializeState 间接进入 ValidateStateMap。以下下层路径来自源码静态阅读，不表示本提案运行或追踪过对应分支，也不为跨文件依赖新增完整审查信用。
+ *
+ * ## References
+ * 声明：tests/parser/test_ssa_state_maps.c:29；定义：tests/parser/test_ssa_state_maps.c:727；RUN_TEST 注册：tests/parser/test_ssa_state_maps.c:1372。
+ * 断言：tests/parser/test_ssa_state_maps.c:751；tests/parser/test_ssa_state_maps.c:752；tests/parser/test_ssa_state_maps.c:753。
+ * 构造/依赖调用：tests/parser/test_ssa_state_maps.c:734；tests/parser/test_ssa_state_maps.c:738；正常释放：tests/parser/test_ssa_state_maps.c:754；tests/parser/test_ssa_state_maps.c:755；tests/parser/test_ssa_state_maps.c:756。
+ * 物化及验证入口：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:666；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:556。
+ * 相关检查：zr_state_map_owners_valid，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_owners.c:69；zr_state_map_owners_valid，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_owners.c:79；zr_state_map_entry_valid，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:503。
+ */
+
+/**
+ * @fn void test_state_map_materialization_rejects_malformed_owner_operand(void)
+ *
+ * ## Summary
+ * 把 DROP operand 改为不存在的 ValueId=2，检查物化经 OwnerAnalysisBuild 输入验证拒绝该畸形 operand。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 本函数为 void case，无 C 返回值。所列断言均通过时正常返回；断言失败由 Unity 记录并跳出当前 case，runner 随后执行 tearDown 并继续后续注册项。最终退出值由 main 的 UNITY_END() 汇总结果决定。
+ *
+ * ## Constraints and lifecycle
+ * case 为 sourceId=84 的 CLEANUP entry 配 INITIALIZED owner state，并在 function_with_drop_boundary 生成的 DROP operand 池中将 ValueId=1 改为 2；function 仍只有一个 value。
+ * 实际断言为 MaterializeState 返回 false、diagnostic.code 为 STATE_MAP_INVALID，以及 target.values 仍为空。
+ * function 仅有 ValueId=1，却把 DROP operand 改成 2；OwnerAnalysisBuild 的输入验证先拒绝该越界 operand，ValidateStateMap 立即返回，未到达逐 entry 的 owner-state 比较。本例不为伪造 INITIALIZED owner-state 的后续比较授信。
+ * map、function 和 target 均为 case 局部记录；正常路径按 MaterializedStateFree、FreeFunction、StateMapFree 的顺序释放各自拥有的池。Unity 断言可 longjmp，跳过当前 case 的剩余局部释放；空 setUp/tearDown 不接管这些局部资源。
+ * 首拒绝阶段由当前输入验证及调用顺序静态确定；本提案没有新的运行结果，不将此单一越界输入推广成任意损坏地址的可读性保证。
+ *
+ * ## References
+ * 声明：tests/parser/test_ssa_state_maps.c:30；定义：tests/parser/test_ssa_state_maps.c:759；RUN_TEST 注册：tests/parser/test_ssa_state_maps.c:1373。
+ * fixture 与 operand 修改：tests/parser/test_ssa_state_maps.c:766；tests/parser/test_ssa_state_maps.c:772；tests/parser/test_ssa_state_maps.c:773；断言：tests/parser/test_ssa_state_maps.c:786；tests/parser/test_ssa_state_maps.c:787；tests/parser/test_ssa_state_maps.c:788。
+ * 完整调用及首拒绝：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:611；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:612；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_owner_state.c:267；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_owner_state.c:286；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_owner_state.c:92；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_owner_state.c:143；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_owner_state.c:144。
+ * 未到达的后续 entry 循环及 owner 检查：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:621；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:503。
+ * 正常释放：tests/parser/test_ssa_state_maps.c:789；tests/parser/test_ssa_state_maps.c:790；tests/parser/test_ssa_state_maps.c:791。
+ */
+
+/**
+ * @fn void test_state_map_materialization_rejects_duplicate_deopt_identity(void)
+ *
+ * ## Summary
+ * 复制同一 deopt id/source 的 state 并把第二项 resumeId 改为 702，检查物化拒绝。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 本函数为 void case，无 C 返回值。所列断言均通过时正常返回；断言失败由 Unity 记录并跳出当前 case，runner 随后执行 tearDown 并继续后续注册项。最终退出值由 main 的 UNITY_END() 汇总结果决定。
+ *
+ * ## Constraints and lifecycle
+ * 构造场景：复制deopt state，保留id/source、第二项resume改702；map绑定701。
+ * 实际断言：false；STATE_MAP_INVALID；values=NULL。
+ * realloc 直接覆盖 function.deoptStates，断言早退不承诺局部回滚；此例不比较完整 target，也不授予 aggregate helper 全实现审查信用。
+ * map、function 和 target 均为 case 局部记录；正常路径按 MaterializedStateFree、FreeFunction、StateMapFree 的顺序释放各自拥有的池。Unity 断言可 longjmp，跳过当前 case 的剩余局部释放；空 setUp/tearDown 不接管这些局部资源。
+ * 本例通过 MaterializeState 间接进入 ValidateStateMap。以下下层路径来自源码静态阅读，不表示本提案运行或追踪过对应分支，也不为跨文件依赖新增完整审查信用。
+ *
+ * ## References
+ * 声明：tests/parser/test_ssa_state_maps.c:31；定义：tests/parser/test_ssa_state_maps.c:794；RUN_TEST 注册：tests/parser/test_ssa_state_maps.c:1374。
+ * 断言：tests/parser/test_ssa_state_maps.c:826；tests/parser/test_ssa_state_maps.c:827；tests/parser/test_ssa_state_maps.c:828。
+ * 构造/依赖调用：tests/parser/test_ssa_state_maps.c:801；tests/parser/test_ssa_state_maps.c:807；正常释放：tests/parser/test_ssa_state_maps.c:829；tests/parser/test_ssa_state_maps.c:830；tests/parser/test_ssa_state_maps.c:831。
+ * 物化及验证入口：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:666；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:556。
+ * 相关检查：ZrCore_ExecIr_ValidateStateMap，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:573；zr_exec_ir_deopt_aggregates_validate，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_deopt_aggregate.c:175；zr_state_map_entry_deopt_valid，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:348。
+ */
+
+/**
+ * @fn void test_state_map_rejects_borrowed_value_across_suspend(void)
+ *
+ * ## Summary
+ * 构造 BEFORE_EFFECT/SUSPEND 与 BORROWED value 的负例，只断言 false；记录其 entry exceptionState 不一致先拒绝而未覆盖目标 borrowed 分支的 TODO。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 本函数为 void case，无 C 返回值。所列断言通过时正常返回；断言失败由 Unity 记录并跳出当前 case，runner 随后执行 tearDown 并继续后续注册项。最终退出值由 main 的 UNITY_END() 汇总结果决定。
+ *
+ * ## Constraints and lifecycle
+ * map fixture 用 calloc 清零 entry，再填 BEFORE_EFFECT/SUSPEND 等字段，但没有设置 exceptionState；case 也没有补齐该字段。EXCEPTION_MASK 包含 SUSPEND，因此 entry_valid 内 exceptionState 比较会在后续 value-range 调用前拒绝这一 entry。
+ * 实际断言仅检查 MaterializeState 返回 false，不检查 diagnostic.code 或 target。该负例不覆盖 BORROWED_ACROSS_SUSPEND 分支；不能把测试名当作该分支已执行或具体诊断已观察的证据。
+ * TODO: tests/parser/test_ssa_state_maps.c:1140：待核对该场景预期的入口状态及目标分支覆盖。完整静态路径为 fixture 清零/填 flags，经物化前置 ValidateStateMap 到 entry 的 exceptionState 检查，尚未到后续 validate_value_range；不改本 case 行为，不把此覆盖缺口称为生产 BUG。
+ * map、function 和 target 均为 case 局部记录；正常路径按 MaterializedStateFree、FreeFunction、StateMapFree 的顺序释放各自拥有的池。Unity 断言可 longjmp，跳过当前 case 的剩余局部释放；空 setUp/tearDown 不接管这些局部资源。
+ *
+ * ## References
+ * 声明：tests/parser/test_ssa_state_maps.c:45；定义：tests/parser/test_ssa_state_maps.c:1140；RUN_TEST 注册：tests/parser/test_ssa_state_maps.c:1388。
+ * fixture 与调用：tests/parser/test_ssa_state_maps.c:55；tests/parser/test_ssa_state_maps.c:59；tests/parser/test_ssa_state_maps.c:78；tests/parser/test_ssa_state_maps.c:1146；唯一拒绝断言：tests/parser/test_ssa_state_maps.c:1176。
+ * mask 定义：zr_vm_core/include/zr_vm_core/exec_ir_state_map.h:27；zr_vm_core/include/zr_vm_core/exec_ir_state_map.h:28。
+ * 完整验证调用与先拒绝点：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:621；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:486。
+ * 未到达的后续 value-range 路径：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:505；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:275；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:286。
+ * 正常释放：tests/parser/test_ssa_state_maps.c:1177；tests/parser/test_ssa_state_maps.c:1178；tests/parser/test_ssa_state_maps.c:1179。
+ */
+
+/**
+ * @fn void test_state_map_materialization_accepts_managed_owner_roots(void)
+ *
+ * ## Summary
+ * 分别用 UNIQUE 和 SHARED ownership 的固定逻辑 value 构造 GC checkpoint，检查物化成功及一个 root 的计数。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 本函数为 void case，无 C 返回值。所列断言均通过时正常返回；断言失败由 Unity 记录并跳出当前 case，runner 随后执行 tearDown 并继续后续注册项。最终退出值由 main 的 UNITY_END() 汇总结果决定。
+ *
+ * ## Constraints and lifecycle
+ * 构造场景：两轮将managed value ownership设UNIQUE、SHARED。
+ * 实际断言：两轮均断言成功和rootCount=1。
+ * 每轮仅断言 true 和 rootCount=1；未比较 roots[0]、values、ownerStates、数组独立性或全部池。roots 是逻辑 ID，不是实际运行时对象的保活证明。
+ * map、function 和 target 均为 case 局部记录；正常路径按 MaterializedStateFree、FreeFunction、StateMapFree 的顺序释放各自拥有的池。Unity 断言可 longjmp，跳过当前 case 的剩余局部释放；空 setUp/tearDown 不接管这些局部资源。
+ * 本例通过 MaterializeState 间接进入 ValidateStateMap。以下下层路径来自源码静态阅读，不表示本提案运行或追踪过对应分支，也不为跨文件依赖新增完整审查信用。
+ *
+ * ## References
+ * 声明：tests/parser/test_ssa_state_maps.c:51；定义：tests/parser/test_ssa_state_maps.c:1257；RUN_TEST 注册：tests/parser/test_ssa_state_maps.c:1394。
+ * 断言：tests/parser/test_ssa_state_maps.c:1287；tests/parser/test_ssa_state_maps.c:1288。
+ * 构造/依赖调用：tests/parser/test_ssa_state_maps.c:1272；tests/parser/test_ssa_state_maps.c:1274；正常释放：tests/parser/test_ssa_state_maps.c:1289；tests/parser/test_ssa_state_maps.c:1290；tests/parser/test_ssa_state_maps.c:1291。
+ * 物化及验证入口：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:666；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:556。
+ * 相关检查：zr_state_map_validate_value_range，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:276；zr_state_map_owners_valid，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_owners.c:69；ZrCore_ExecIr_MaterializeState，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:779。
+ */
+
+/**
+ * @fn void test_state_map_materialization_rejects_malformed_function_without_deref(void)
+ *
+ * ## Summary
+ * 释放 function.values 并保留非零 valueCount，再检查物化拒绝且现有 target.values 的指针和首个逻辑 ID 保留。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 本函数为 void case，无 C 返回值。所列断言均通过时正常返回；断言失败由 Unity 记录并跳出当前 case，runner 随后执行 tearDown 并继续后续注册项。最终退出值由 main 的 UNITY_END() 汇总结果决定。
+ *
+ * ## Constraints and lifecycle
+ * 构造场景：free function.values并置NULL；target.values预置独立数组及123。
+ * 实际断言：false；STATE_MAP_INVALID；target.values指针和首值123保留。
+ * 旧 target.values 是独立 calloc 的单元素数组，手工释放 function.values 后立即置 NULL；只检查 target 指针和首值 123，不检查 count/capacity，不把该 NULL 用例推广成任意地址不会被解引用。
+ * map、function 和 target 均为 case 局部记录；正常路径按 MaterializedStateFree、FreeFunction、StateMapFree 的顺序释放各自拥有的池。Unity 断言可 longjmp，跳过当前 case 的剩余局部释放；空 setUp/tearDown 不接管这些局部资源。
+ * 本例通过 MaterializeState 间接进入 ValidateStateMap。以下下层路径来自源码静态阅读，不表示本提案运行或追踪过对应分支，也不为跨文件依赖新增完整审查信用。
+ *
+ * ## References
+ * 声明：tests/parser/test_ssa_state_maps.c:52；定义：tests/parser/test_ssa_state_maps.c:1295；RUN_TEST 注册：tests/parser/test_ssa_state_maps.c:1395。
+ * 断言：tests/parser/test_ssa_state_maps.c:1324；tests/parser/test_ssa_state_maps.c:1325；tests/parser/test_ssa_state_maps.c:1326；tests/parser/test_ssa_state_maps.c:1327。
+ * 构造/依赖调用：tests/parser/test_ssa_state_maps.c:1303；tests/parser/test_ssa_state_maps.c:1305；正常释放：tests/parser/test_ssa_state_maps.c:1328；tests/parser/test_ssa_state_maps.c:1329；tests/parser/test_ssa_state_maps.c:1330。
+ * 物化及验证入口：zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:666；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685；zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:556。
+ * 相关检查：zr_state_map_function_values_valid，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:179；ZrCore_ExecIr_ValidateStateMap，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:572；ZrCore_ExecIr_MaterializeState，zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:685。
+ */
+
+/**
+ * @fn int main(void)
+ *
+ * ## Summary
+ * 初始化 Unity，按本 TU 中实际的 42 个 RUN_TEST 注册项派发测试，并把汇总失败数返回给进程调用者。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * @return 返回 UNITY_END() 所调用 UnityEnd 的失败 case 数；0 表示该次 runner 未记录失败。函数的静态注册表和本注释不是测试执行结果。
+ *
+ * ## Constraints and lifecycle
+ * 42 个注册项由本 C 的 35 个 case、文本 include 的 verifier .inc 中 3 个 case 和 clone fault header 中 4 个 case 组成。每次 RUN_TEST 把 case 作为 UnityTestFunction 交给 UnityDefaultTestRun；后者在保护段调用 setUp、case 与 tearDown。断言 longjmp 只结束当前 case，runner 记录结果并继续后续注册项。
+ * 本 main 不拥有各 case 的局部 map/function/target 池。setUp 和 tearDown 为空，不补偿 case 早退跳过的局部尾部清理。全部依赖、fixture 和未纳入本批的 case 不因同一 TU/include 或本 runner 文档获得新增审查信用。
+ *
+ * ## References
+ * 入口及 Unity 起止：tests/parser/test_ssa_state_maps.c:1353；tests/parser/test_ssa_state_maps.c:1354；tests/parser/test_ssa_state_maps.c:1397。
+ * 全部注册：tests/parser/test_ssa_state_maps.c:1355；tests/parser/test_ssa_state_maps.c:1356；tests/parser/test_ssa_state_maps.c:1357；tests/parser/test_ssa_state_maps.c:1358；tests/parser/test_ssa_state_maps.c:1359；tests/parser/test_ssa_state_maps.c:1360；tests/parser/test_ssa_state_maps.c:1361；tests/parser/test_ssa_state_maps.c:1362；tests/parser/test_ssa_state_maps.c:1363；tests/parser/test_ssa_state_maps.c:1364；tests/parser/test_ssa_state_maps.c:1365；tests/parser/test_ssa_state_maps.c:1366；tests/parser/test_ssa_state_maps.c:1367；tests/parser/test_ssa_state_maps.c:1368；tests/parser/test_ssa_state_maps.c:1369；tests/parser/test_ssa_state_maps.c:1370；tests/parser/test_ssa_state_maps.c:1371；tests/parser/test_ssa_state_maps.c:1372；tests/parser/test_ssa_state_maps.c:1373；tests/parser/test_ssa_state_maps.c:1374；tests/parser/test_ssa_state_maps.c:1375；tests/parser/test_ssa_state_maps.c:1376；tests/parser/test_ssa_state_maps.c:1377；tests/parser/test_ssa_state_maps.c:1378；tests/parser/test_ssa_state_maps.c:1379；tests/parser/test_ssa_state_maps.c:1380；tests/parser/test_ssa_state_maps.c:1381；tests/parser/test_ssa_state_maps.c:1382；tests/parser/test_ssa_state_maps.c:1383；tests/parser/test_ssa_state_maps.c:1384；tests/parser/test_ssa_state_maps.c:1385；tests/parser/test_ssa_state_maps.c:1386；tests/parser/test_ssa_state_maps.c:1387；tests/parser/test_ssa_state_maps.c:1388；tests/parser/test_ssa_state_maps.c:1389；tests/parser/test_ssa_state_maps.c:1390；tests/parser/test_ssa_state_maps.c:1391；tests/parser/test_ssa_state_maps.c:1392；tests/parser/test_ssa_state_maps.c:1393；tests/parser/test_ssa_state_maps.c:1394；tests/parser/test_ssa_state_maps.c:1395；tests/parser/test_ssa_state_maps.c:1396。
+ * allocator 声明头 include：tests/parser/test_ssa_state_maps.c:10；四个 clone fault case 的定义文本 include：tests/parser/test_ssa_state_maps.c:888；三个 verifier/builder case 的定义文本 include：tests/parser/test_ssa_state_maps.c:1351。
+ * 构建/CTest 入口：tests/cmake/ssa-tests.cmake:397；tests/cmake/ssa-tests.cmake:422。
+ * 宏与回调：tests/third_party/zr_unity/Unity/src/unity_internals.h:910；tests/third_party/zr_unity/Unity/src/unity.c:2283；tests/third_party/zr_unity/Unity/src/unity.c:2298；tests/third_party/zr_unity/Unity/src/unity.c:2299；tests/third_party/zr_unity/Unity/src/unity.c:2303；失败计数返回：tests/third_party/zr_unity/Unity/src/unity.c:2359。
+ */
