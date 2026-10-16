@@ -1308,10 +1308,16 @@ void ZrLib_Value_SetFloat(SZrState *state, SZrTypeValue *value, TZrFloat64 float
 
 /* 为回调结果创建受 VM 管理的字符串；分配可能触发 GC。 */
 void ZrLib_Value_SetString(SZrState *state, SZrTypeValue *value, const TZrChar *stringValue) {
+    SZrString *stringObject;
     if (state == ZR_NULL || value == ZR_NULL) {
         return;
     }
-    ZrLib_Value_SetStringObject(state, value, native_binding_create_string(state, stringValue != ZR_NULL ? stringValue : ""));
+    stringObject = native_binding_create_string(state, stringValue != ZR_NULL ? stringValue : "");
+    if (stringObject == ZR_NULL) {
+        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+        return;
+    }
+    ZrLib_Value_SetStringObject(state, value, stringObject);
 }
 
 /* 将已有 VM 字符串交给结果槽；调用方须保证对象在此处仍有效。 */

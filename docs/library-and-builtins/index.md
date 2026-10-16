@@ -162,3 +162,5 @@ doc_type: category-index
 - [Math input boundaries](../library/math-input-boundaries.md)：整数转换、Tensor 形状乘积及数值数据校验。
 
 - [Native numeric boundaries](../library/native-numeric-boundaries.md)：公开 ReadInt 的浮点范围、非有限值和诊断。
+
+- [Native string publication](native-string-publication.md)：短串与长串创建失败的异常和原槽位保持。

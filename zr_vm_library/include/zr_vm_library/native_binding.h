@@ -620,7 +620,7 @@ ZR_LIBRARY_API void ZrLib_Value_SetBool(SZrState *state, SZrTypeValue *value, TZ
 ZR_LIBRARY_API void ZrLib_Value_SetInt(SZrState *state, SZrTypeValue *value, TZrInt64 intValue);
 /** @brief 为回调结果写入浮点 VM 值。 */
 ZR_LIBRARY_API void ZrLib_Value_SetFloat(SZrState *state, SZrTypeValue *value, TZrFloat64 floatValue);
-/** @brief 从 C 字符串建立 VM 字符串结果；可能触发分配和 GC。 */
+/** @brief 从 C 字符串建立 VM 字符串结果；分配失败抛出 MemoryError 并保留原槽位。 */
 ZR_LIBRARY_API void ZrLib_Value_SetString(SZrState *state, SZrTypeValue *value, const TZrChar *stringValue);
 /** @brief 将已有 VM 字符串对象写入结果；调用方须保持对象可追踪。 */
 ZR_LIBRARY_API void ZrLib_Value_SetStringObject(SZrState *state, SZrTypeValue *value, SZrString *stringObject);
