@@ -166,7 +166,7 @@ equal logical versions of 11, while the current producer macro remains 1.
   ABI 2 header coexist. The include-route evidence above does not close the
   repository-wide owner and consumer boundary.
 
-## Focused tests and finite RED/GREEN evidence
+## Focused logical tests and finite RED/GREEN evidence
 
 [`test_ssa_contract_freeze.c`](../../tests/parser/test_ssa_contract_freeze.c)
 contains these focused checks:
@@ -360,3 +360,62 @@ equal unsupported-version admission remain open. The standalone work credits
 no CTest, Linux, Source, Global, VM, backend artifact execution, network, FFI or
 full-project validation. Plan 00.02, whole-leaf acceptance and the overall
 47-leaf plan remain open.
+
+
+## Pure checker diagnostic matrix: finite Windows validation
+
+`tests/parser/test_ssa_contract_freeze.c` adds six groups to the ten logical
+and identity groups above. It calls the public checker directly using stack
+contracts and poisoned diagnostics. `expect_true` checks remain active when
+`NDEBUG` is defined. The original equal-logical-version 11 case and success
+output remain part of the test.
+
+| New group | Exercised boundary |
+| --- | --- |
+| `test_null_arguments_clear_all_diagnostic_fields` | Three NULL input combinations, optional diagnostic, live input preservation and recovery |
+| `test_scalar_mismatch_payloads_preserve_both_boundary_directions` | Fourteen scalar boundary directions; the earlier two logical directions remain covered separately |
+| `test_mask_payloads_reject_unknown_bits_on_either_or_both_sides` | Twelve unknown-mask combinations and four known-mask mismatch cases, with complete payloads |
+| `test_equal_known_masks_clear_all_diagnostic_fields` | Four equal valid mask combinations and success clearing |
+| `test_each_earlier_failure_precedes_each_later_failure` | All 45 pairs of the ten field entries, checking the declared first failure and all nine diagnostic fields |
+| `test_each_failure_repeats_and_recovers_without_stale_diagnostics` | Two failure/success cycles for each of ten fields, optional diagnostic and byte-preserved inputs |
+
+Schema and ABI occupy two payload entries in the same implementation branch.
+The 45 field pairs do not establish separate schema-versus-ABI priority.
+Equality of unsupported versions and the generic checker's reserved-field
+admission policy still require their separate decisions. This test does not
+supply runtime or persisted-format admission rules.
+
+### Actual standalone execution
+
+The same checkout bytes were compiled with Windows Clang-cl and MSVC. Each
+compiler compiled the test and `runtime/execution_contract.c`, linked the
+standalone executable and ran it directly. Compilation used C11, `/W4`,
+UTF8 source encoding and `/UNDEBUG`. Four compile phases were warning-free;
+both links were silent; each run exited 0 with stderr empty and exactly
+`ssa contract freeze PASS` plus CRLF (26 bytes), SHA256
+`3A1948D09C3D68928A6D7BE8994FCF5619503D33D25586B191B3984DC2D891F5`.
+
+The controller 20956, unified session 61261, naturally exited 0 at terminal
+`f41089`; the receipt finished at 2026-10-16T05:56:21.5802335Z. All 12 recorded
+phases were naturally terminal with both streams drained: four Git metadata
+observations, four compilations, two links and two checker runs.
+
+| Evidence | Actual identity |
+| --- | --- |
+| Test input | `6EA99BB6FB842B649F6F3458C2EA65DA3E96D544EF8FC69E4FEF49E443E25122` |
+| Production input | `D82E8233679CF18697FA5422545AC3AB99C93CCE058D857BB27FD62619C889AC` |
+| Receipt | `E:/cargo-targets/zr_vm/reports/ssa-20261005-01a0fe2b/contract-freeze-matrix-green-receipt.json`, SHA256 `9B7B2936B67ECED2CEC8D72D3E6B5B83739F903E4D543EEF47FC570FF73EDC88` |
+| Raw stdout | 36787 bytes, SHA256 `98CC03DAE0A7D2A6A0FA1C7F7FD1E7C7B33C70D9BB53B63D9E2B8825A1CD1C98` |
+| Raw stderr | 0 bytes, SHA256 `E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855` |
+| Physical checks | 209 input pins, 195 actual header dependencies and 6 published products; raw stream ranges and aggregate hashes checked |
+
+The 2395 allowed header identities were captured before compilation. Actual
+includes were decoded as strict UTF8 for Clang and CP936 for MSVC and checked
+against those identities throughout execution. Git observations used raw
+NUL-framed metadata, containing no source blob bodies. HEAD and selected
+diff were observed equal before/after; acceptance also required unchanged
+physical source, tool, actual dependency and output identities.
+
+This accepts the pure diagnostic matrix on the two recorded Windows tools.
+Source, Global, VM, Function execution, plugins, FFI, network, Linux, CTest,
+backend semantics and the complete 00.02 leaf were outside this invocation.
