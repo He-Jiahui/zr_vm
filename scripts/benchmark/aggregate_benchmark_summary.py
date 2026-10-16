@@ -402,7 +402,8 @@ def _inject_bundle(html_template: str, summary: dict[str, Any]) -> str:
     marker = "__ZR_BENCH_SUMMARY_B64__"
     if marker not in html_template:
         raise ValueError(f"template missing placeholder {marker}")
-    return html_template.replace(marker, b64)
+    # The first marker is the data script; leave the later JS guard literal intact.
+    return html_template.replace(marker, b64, 1)
 
 
 def main() -> int:

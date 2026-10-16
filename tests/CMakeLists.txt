@@ -8847,3 +8847,5 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/string-storage-oom-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/core-bootstrap-support-oom-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/gc-allocation-debt-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/gc-root-leases-tests.cmake")
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/benchmark-viewer-tests.cmake")
