@@ -440,8 +440,7 @@ TZrInt64 native_binding_dispatcher(SZrState *state) {
         }
         hasCopiedSelf = ZR_TRUE;
     }
-    /* BUG: 实例调用已复制带所有权的 self 后，超过内联容量的参数缓冲区分配失败会直接返回，
-     * 未释放 stableSelfCopy 增加的强引用；见 Value_CopySlow -> Ownership_AssignValue。 */
+    /* Raw scratch allocation failures must release the already copied self owner. */
     if (context.argumentCount > 0) {
         if (context.argumentCount > ZR_LIBRARY_NATIVE_INLINE_ARGUMENT_CAPACITY) {
             stableArgumentCopyBytes = context.argumentCount * sizeof(SZrTypeValue);
@@ -449,6 +448,9 @@ TZrInt64 native_binding_dispatcher(SZrState *state) {
                                                                                    stableArgumentCopyBytes,
                                                                                    ZR_MEMORY_NATIVE_TYPE_OBJECT);
             if (stableArgumentCopies == ZR_NULL) {
+                if (hasCopiedSelf) {
+                    ZrCore_Ownership_ReleaseValue(state, &stableSelfCopy);
+                }
                 return 0;
             }
             freeStableArgumentCopies = ZR_TRUE;
@@ -459,6 +461,9 @@ TZrInt64 native_binding_dispatcher(SZrState *state) {
                                                                           argumentPinAddedBytes,
                                                                           ZR_MEMORY_NATIVE_TYPE_OBJECT);
             if (argumentPinAdded == ZR_NULL) {
+                if (hasCopiedSelf) {
+                    ZrCore_Ownership_ReleaseValue(state, &stableSelfCopy);
+                }
                 if (freeStableArgumentCopies) {
                     ZrCore_Memory_RawFreeWithType(state->global,
                                                   stableArgumentCopies,

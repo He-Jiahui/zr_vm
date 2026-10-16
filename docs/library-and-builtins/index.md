@@ -172,3 +172,5 @@ doc_type: category-index
 - [Thread transport string bytes](thread-transport-string-bytes.md)：显式长度、clone 和 decode 的内嵌 NUL 保真。
 
 - [文件路径、复制与移动](../library/file-path-operations.md)：join 截断、Windows 根路径及覆盖前的源与路径关系检查。
+
+- [Native dispatcher receiver cleanup](../library/native-dispatch-self-oom.md)：参数暂存分配失败时归还 receiver 副本。
