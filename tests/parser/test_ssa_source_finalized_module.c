@@ -190,6 +190,16 @@ static void test_live_state_unique_symbol_and_script_origin_agree(void) {
     memset(&g_fm.symbols[1], 0, sizeof(g_fm.symbols[1]));
     REFUSE(g_fm.returned.data.returnStatement.isReferenceReturn, ZR_TRUE, Fm_Error(ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED));
     REFUSE(g_fm.statementNodes[0], &g_fm.integer, Fm_Error(ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED));
+    /* Restore each child mutation before assertions, then require a healthy retry. */
+    REFUSE(g_fm.script.data.script.statements, ZR_NULL, Fm_Error(ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED));
+    Fm_Feature();
+    /* count0 retains the genuine nodes allocation and positive capacity. */
+    REFUSE(g_fm.statements.count, 0, Fm_Error(ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED));
+    Fm_Feature();
+    REFUSE(g_fm.statementNodes[0], ZR_NULL, Fm_Error(ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED));
+    Fm_Feature();
+    REFUSE(g_fm.returned.data.returnStatement.expr, ZR_NULL, Fm_Error(ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED));
+    Fm_Feature();
 }
 static void test_origin_ranges_are_valid_contained_and_lossless(void) {
     Fm_Feature();

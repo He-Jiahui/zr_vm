@@ -28,7 +28,7 @@ tests:
   - tests/parser/test_ssa_source_finalized_module.c
   - docs/testing-and-validation/source-finalized-module.md
 doc_type: validation-protocol
-status: functional-green-verified-commit-pending
+status: child-null-zero-clang-ubsan-green-msvc-compile-verified
 ---
 
 # Finalized Source module: finite validation
@@ -88,6 +88,59 @@ Cases2-24 first require one successful admitted baseline through actual lower
 prerequisites. Feature refusal cannot credit later mutations/refusal variants.
 Required NULL guards are case1; NULL Function constants with positive count is
 pool shape in case13; optional NULL diagnostic is case22.
+
+## Case8 child NULL/zero extension: finite Clang/UBSan GREEN
+
+Case8 now additionally checks four separate refusals: SCRIPT statements header
+NULL, statements count0 with the genuine nodes allocation/capacity retained,
+sole RETURN child NULL, and RETURN expression NULL. A well-formed empty statement
+array and the general language's bare return are outside this finite single
+INTEGER-return profile; neither broadens the finalizer's admission contract.
+Each refusal requires UNSUPPORTED, the actual selected Function token and all
+seven inactive diagnostic fields zero. NULL nodes with count1/positive capacity
+instead belongs to the earlier INVALID_RANGE storage guard and is not this
+count0 check.
+
+Existing REFUSE restores each field before any Unity assertion. Fm_Observe and
+Fm_Refused compare input bytes, the unchanged old output and live allocation
+records, including release of any temporary allocations. Each restored input
+then runs Fm_Feature again, requiring successful publication, complete diagnostic
+clearing and exact old-owner release. VerifyModule runs before AST admission,
+so these refusals do not require zero allocation attempts.
+
+The first current Clang/UBSan build failed before runtime: the fixture header's
+existing `tests/core/...` include could not resolve because the standalone test
+target lacked the actual repository root include directory. Its CMake target now
+adds that root privately; existing source-path migrations and strict flags are
+preserved. The failed build receipt/raw logs remain unchanged under
+`E:/cargo-targets/zr_vm/reports/ssa-lower-child-boundaries-01a0fe2b/`.
+The corrected build and actual execution subsequently passed as recorded below.
+The existing24 test names/order and output protocol remain unchanged. The current
+Clang/UBSan test was recompiled and linked in r3 (build31508, exit0); direct
+children5596 and31920 naturally exited0 with all24 ordered PASS, zero failures
+and ignored cases. The strict r4 raw output is3229B stdout/223B stderr, containing
+exact lifetime16 and independently measured/completed89 fault markers. No UBSan
+or ledger diagnostic occurred. The current executable SHA256 is
+`562C37331C4ED2EAFB619A176F591781DE093C54452A903B93E335A38C742E2D`.
+
+The r6 completion receipt rechecks r3 compilation/configuration and r4 raw runtime
+identities, then records31 actual MSVC14.44 compile-only units: all naturally
+exit0, warning0 and only the exact expected source-basename output. It checks50
+strict source/tool/config inputs,31 Clang objects and273 actual consumed header
+identities before/after;63 products are the31 Clang objects,31 MSVC objects and
+runtime executable. Reused production objects were actually compiled in this
+batch's earlier build phases; this is no claim of an atomic checkout snapshot or
+fresh full rebuild in r6. No MSVC link/runtime or whole-project W0 is credited.
+
+Completion receipt:
+`E:/cargo-targets/zr_vm/reports/ssa-lower-child-boundaries-01a0fe2b/r6/receipt.json`
+SHA256 `3F3BE7307F88F407496975FDF29EC8C0FF2B970AE0687CAD71C35B8A2B1DDDA1`.
+Earlier failed receipts remain false: missing include root, omitted actual .def
+header admission, a footer regex matching normal Ignored text, MSVC macro quote
+escaping and Windows dependency-path case comparison. Those verifier failures
+do not change the actual successful compile/runtime phases; their raw logs are
+retained. This adds declared lower-fixture coverage only, with no new genuine
+Source22, VM, FFI, network, Linux/full MSVC or all47 credit.
 
 ## Fixture modules and observations
 

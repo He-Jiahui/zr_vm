@@ -46,6 +46,8 @@ foreach (_target IN ITEMS zr_vm_ssa_source_finalized_module_private
         zr_ssa_execir_owner_apply_settings(${_target})
     endif ()
 endforeach ()
+target_include_directories(zr_vm_ssa_source_finalized_module_test PRIVATE "${_zr_finalized_root}")
+
 target_compile_definitions(zr_vm_ssa_source_finalized_module_private PRIVATE
         ZR_CURRENT_MODULE="zr_vm_parser")
 target_compile_definitions(zr_vm_ssa_source_finalized_module_test PRIVATE
