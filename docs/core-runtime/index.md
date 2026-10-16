@@ -232,3 +232,5 @@ boundaries remain future work.
 - [GC root leases](gc-root-leases.md)：显式根、原生 pin 与临时根的独立所有权及失败回滚。
 
 - [Meta string allocation failures](meta-string-oom.md)：null、bool 和 number 字符串转换的失败发布边界。
+
+- [Error construction roots](exception-construction-roots.md)：分配失败触发完整回收时保护构造中的 Error、栈帧和输入。
