@@ -2131,6 +2131,38 @@ static void semantic_type_prototypes_publish_declared_type_reference(
                     analyzer, ownerTypeNode, functionNode, typeNode));
 }
 
+/* 投影成功即可供函数注册使用；是否完全解析单独返回，未解析事实仍会发布。 */
+TZrBool ZrLanguageServer_SemanticAnalyzer_ProjectDeclaredType(
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *ownerTypeNode,
+        SZrAstNode *functionNode,
+        const SZrType *typeNode,
+        SZrInferredType *outType,
+        TZrBool *outFullyResolved) {
+    if (outFullyResolved != ZR_NULL) {
+        *outFullyResolved = ZR_FALSE;
+    }
+    if (analyzer == ZR_NULL || typeNode == ZR_NULL || outType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!semantic_type_prototypes_build_inferred_type(analyzer,
+                                                       ownerTypeNode,
+                                                       functionNode,
+                                                       typeNode,
+                                                       outType)) {
+        return ZR_FALSE;
+    }
+
+    semantic_type_prototypes_publish_declared_type_reference(
+            analyzer, ownerTypeNode, functionNode, typeNode, outType);
+    if (outFullyResolved != ZR_NULL) {
+        *outFullyResolved = semantic_type_prototypes_declared_type_is_resolved(
+                analyzer, ownerTypeNode, functionNode, typeNode);
+    }
+    return ZR_TRUE;
+}
+
 /* 对符号分析、签名帮助与补全提供统一的声明类型推断，并在成功后发布解析状态。
  * 返回 false 表示类型未能确认解析；outType 可能已有可展示的部分投影，仍由调用方释放。 */
 TZrBool ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(
@@ -2139,22 +2171,15 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(
         SZrAstNode *functionNode,
         const SZrType *typeNode,
         SZrInferredType *outType) {
-    TZrBool isResolved;
+    TZrBool fullyResolved = ZR_FALSE;
 
-    if (analyzer == ZR_NULL || typeNode == ZR_NULL || outType == ZR_NULL) {
+    if (!ZrLanguageServer_SemanticAnalyzer_ProjectDeclaredType(analyzer,
+                                                                ownerTypeNode,
+                                                                functionNode,
+                                                                typeNode,
+                                                                outType,
+                                                                &fullyResolved)) {
         return ZR_FALSE;
     }
-
-    isResolved = semantic_type_prototypes_build_inferred_type(analyzer,
-                                                               ownerTypeNode,
-                                                               functionNode,
-                                                               typeNode,
-                                                               outType);
-    if (isResolved) {
-        semantic_type_prototypes_publish_declared_type_reference(
-                analyzer, ownerTypeNode, functionNode, typeNode, outType);
-        isResolved = semantic_type_prototypes_declared_type_is_resolved(
-                analyzer, ownerTypeNode, functionNode, typeNode);
-    }
-    return isResolved;
+    return fullyResolved;
 }

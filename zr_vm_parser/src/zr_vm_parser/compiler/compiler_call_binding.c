@@ -2,6 +2,7 @@
 
 #include "compiler_internal.h"
 #include "compiler/expression/compile_expression_internal.h"
+#include "type_inference/type_inference_internal.h"
 
 #include <string.h>
 
@@ -13,6 +14,49 @@
 #include "compiler_typed_call_binding.h"
 
 static TZrUInt32 binding_next_rid(const SZrFunction *function, TZrUInt32 table);
+
+/* i8/u8/i16/u16/i32/u32/i64/u64/f32/f64 会留在函数元数据的 typeName 里。
+ * int/uint/float/bool/string/object/null/void 在元数据里是空名字，哈希必须同样丢掉。 */
+static TZrBool typed_call_spelling_is_preserved_primitive_alias(const TZrNativeString name,
+                                                                TZrSize length) {
+    if (name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    return (length == 2u &&
+            (memcmp(name, "i8", 2) == 0 || memcmp(name, "u8", 2) == 0)) ||
+           (length == 3u &&
+            (memcmp(name, "i16", 3) == 0 || memcmp(name, "u16", 3) == 0 ||
+             memcmp(name, "i32", 3) == 0 || memcmp(name, "u32", 3) == 0 ||
+             memcmp(name, "i64", 3) == 0 || memcmp(name, "u64", 3) == 0 ||
+             memcmp(name, "f32", 3) == 0 || memcmp(name, "f64", 3) == 0));
+}
+
+static void typed_call_clear_unpreserved_primitive_name(struct SZrString **typeName,
+                                                        EZrValueType baseType) {
+    EZrValueType mappedType;
+    TZrNativeString text;
+    TZrSize length;
+
+    if (typeName == ZR_NULL || *typeName == ZR_NULL) {
+        return;
+    }
+    text = ZrCore_String_GetNativeString(*typeName);
+    length = ZrCore_String_GetByteLength(*typeName);
+    if (!inferred_type_try_map_primitive_name(text, length, &mappedType) ||
+        mappedType != baseType ||
+        typed_call_spelling_is_preserved_primitive_alias(text, length)) {
+        return;
+    }
+    *typeName = ZR_NULL;
+}
+
+static void typed_call_normalize_signature_type_ref(SZrFunctionTypedTypeRef *typeRef) {
+    if (typeRef == ZR_NULL) {
+        return;
+    }
+    typed_call_clear_unpreserved_primitive_name(&typeRef->typeName, typeRef->baseType);
+    typed_call_clear_unpreserved_primitive_name(&typeRef->elementTypeName, typeRef->elementBaseType);
+}
 
 /** @brief 把已解析的 typed-call 签名投影为 core linker 复用的结构哈希。
  *  @pre compiler 的 state/global 可供临时分配；signature 的类型与传参方式数组必须同长且可读，参数数量受元数据 16 位计数限制。
@@ -49,6 +93,7 @@ TZrUInt64 compiler_typed_call_signature_hash(
     temporary.parameterMetadata = parameters;
     temporary.hasCallableReturnType = ZR_TRUE;
     compiler_typed_type_ref_from_inferred(&temporary.callableReturnType, &signature->returnType);
+    typed_call_normalize_signature_type_ref(&temporary.callableReturnType);
     temporary.typedLocalBindings = locals;
     temporary.typedLocalBindingLength = (TZrUInt32)count;
     for (TZrSize index = 0u; index < count; ++index) {
@@ -61,6 +106,7 @@ TZrUInt64 compiler_typed_call_signature_hash(
             goto cleanup;
         }
         compiler_typed_type_ref_from_inferred(&parameters[index].type, type);
+        typed_call_normalize_signature_type_ref(&parameters[index].type);
         parameters[index].name = ZR_NULL;
         locals[index].stackSlot = (TZrUInt32)index;
         locals[index].roleFlags = (*mode == ZR_PARAMETER_PASSING_MODE_IN)

@@ -8,7 +8,7 @@
     {"diagnostic." codeValue ".title", (titleValue), ZR_NULL}, \
     {"diagnostic." codeValue ".message", (messageValue), ZR_NULL}
 
-/* 英文为基准文案，中文缺失时 Resolve 回退英文。BUG: 当前 71 组消息缺注册表 5001-5023 的 23 组；Find/Resolve 对这些键返回空，test_semantic_query 的数量与逐项覆盖断言失败。 */
+/* 英文为基准文案，中文缺失时 Resolve 回退英文。优化备注 5001-5023 与描述符成对登记。 */
 static const SZrDiagnosticMessage g_diagnostic_messages[] = {
     ZR_DIAGNOSTIC_MESSAGE_PAIR(
             "missing_expression_after_assignment",
@@ -294,6 +294,98 @@ static const SZrDiagnosticMessage g_diagnostic_messages[] = {
             "nullable_ownership_intrinsic_operand",
             "Nullable ownership intrinsic operand",
             "Ownership transition requires a live owner"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_alias_unknown",
+            "Optimization blocked by unknown alias",
+            "Optimization skipped because an alias relationship is unknown"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_escapes",
+            "Optimization blocked by escape",
+            "Optimization skipped because the value escapes"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_abi_visible",
+            "Optimization blocked by ABI",
+            "Optimization skipped because the value is ABI-visible"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_effect_order",
+            "Optimization blocked by effect order",
+            "Optimization skipped to preserve effect order"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_code_budget",
+            "Optimization blocked by code budget",
+            "Optimization skipped because the code budget was exhausted"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_profile_stale",
+            "Optimization blocked by stale profile",
+            "Optimization skipped because profile data is stale"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_target_unsupported",
+            "Optimization blocked by target",
+            "Optimization skipped because the target does not support it"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_capability_denied",
+            "Optimization blocked by capability",
+            "Optimization skipped because a required capability was denied"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_no_profile",
+            "Optimization blocked by missing profile",
+            "Optimization skipped because no profile is available"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_boxing",
+            "Optimization blocked by boxing",
+            "Optimization skipped because the value is boxed"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_bounds",
+            "Optimization blocked by bounds",
+            "Optimization skipped because a bounds check remains"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_vector",
+            "Optimization blocked by vectorization",
+            "Optimization skipped because the loop could not be vectorized"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_barrier",
+            "Optimization blocked by barrier",
+            "Optimization skipped because a memory barrier remains"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_inlining",
+            "Optimization blocked by inlining",
+            "Optimization skipped because the callee was not inlined"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_aot",
+            "Optimization blocked by AOT",
+            "Optimization skipped because ahead-of-time compilation could not apply it"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_layout",
+            "Optimization blocked by layout",
+            "Optimization skipped because the value layout is not eligible"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_allocation",
+            "Optimization blocked by allocation",
+            "Optimization skipped because an allocation remains"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_deopt",
+            "Optimization blocked by deoptimization",
+            "Optimization skipped because a deoptimization edge remains"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_software_ic_miss",
+            "Optimization blocked by inline cache miss",
+            "Optimization skipped because a software inline cache missed"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_hardware_cache_miss",
+            "Optimization blocked by hardware cache miss",
+            "Optimization skipped because a hardware cache miss was observed"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_bounds_unknown",
+            "Optimization blocked by unknown bounds",
+            "Optimization skipped because the bounds are unknown"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_cancelled",
+            "Optimization cancelled",
+            "Optimization was cancelled before it completed"),
+    ZR_DIAGNOSTIC_MESSAGE_PAIR(
+            "optimization_remark_truncated",
+            "Optimization remark truncated",
+            "Optimization remarks were truncated"),
 };
 
 /* 供目录覆盖测试枚举静态消息项；数量只对应当前编译的消息目录。 */

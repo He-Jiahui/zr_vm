@@ -44,7 +44,11 @@ function(zr_declare_module module_name use_common_lib)
         if (${use_common_lib})
             target_include_directories(${zr_module_shared} PRIVATE ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
         endif ()
-        set_target_properties(${zr_module_shared} PROPERTIES OUTPUT_NAME ${zr_module_name})
+        set_target_properties(${zr_module_shared} PROPERTIES
+                OUTPUT_NAME ${zr_module_name}
+                WINDOWS_EXPORT_ALL_SYMBOLS ON)
+        # ELF 默认导出全部全局符号，MSVC DLL 只导出 __declspec(dllexport)。
+        # 测试会调用未标 ZR_API 的内部函数；不导出时 Windows 链接报 LNK2019。
 
     endif ()
 

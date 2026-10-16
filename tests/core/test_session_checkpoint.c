@@ -1604,7 +1604,7 @@ static void test_checkpoint_old_to_young_restore_edge_survives_reservation_failu
     TEST_ASSERT_NOT_NULL(originalRegistry);
     originalRegistryBuckets = originalRegistry->nodeMap.buckets;
     originalRegistryElementCount = originalRegistry->nodeMap.elementCount;
-    TEST_ASSERT_EQUAL_PTR(originalParent,
+    TEST_ASSERT_EQUAL_PTR(originalChild,
             ZrCore_Object_GetValue(state, originalParent, &childKey)->value.object);
     TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(
             global, ZR_CAST_RAW_OBJECT_AS_SUPER(parent)));

@@ -409,6 +409,30 @@ static TZrBool checkpoint_resolve_optional_plan_object(
     return ZR_TRUE;
 }
 
+/* 原型上的 callable 既可以是 VM 函数，也可以是内置永久原生闭包。 */
+static TZrBool checkpoint_resolve_optional_callable(
+        const ZrCheckpointRestorePlan *plan,
+        TZrSize objectCount,
+        TZrSize objectIndex,
+        SZrRawObject **outObject) {
+    if (outObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    *outObject = ZR_NULL;
+    if (objectIndex == ZR_CHECKPOINT_NO_INDEX) {
+        return ZR_TRUE;
+    }
+    if (!checkpoint_resolve_plan_object(plan, objectCount, objectIndex, outObject)) {
+        return ZR_FALSE;
+    }
+    if ((*outObject)->type == ZR_RAW_OBJECT_TYPE_FUNCTION ||
+        checkpoint_native_closure_is_immortal_stateless(*outObject)) {
+        return ZR_TRUE;
+    }
+    *outObject = ZR_NULL;
+    return ZR_FALSE;
+}
+
 static TZrBool checkpoint_prepare_prototype_state(
         SZrState *state,
         const SZrSessionCheckpoint *checkpoint,
@@ -472,9 +496,8 @@ static TZrBool checkpoint_prepare_prototype_state(
         if (snapshot->hasMeta[index]) {
             SZrMeta *meta = prepared->prototypeMetas[index];
             if (meta == ZR_NULL ||
-                !checkpoint_resolve_optional_plan_object(plan, checkpoint->objectCount,
-                    snapshot->metaFunctionIndexes[index], ZR_RAW_OBJECT_TYPE_FUNCTION,
-                    ZR_FALSE, ZR_OBJECT_INTERNAL_TYPE_OBJECT, &resolved)) {
+                !checkpoint_resolve_optional_callable(plan, checkpoint->objectCount,
+                    snapshot->metaFunctionIndexes[index], &resolved)) {
                 return ZR_FALSE;
             }
             meta->metaType = snapshot->metaTypes[index];
@@ -490,12 +513,13 @@ static TZrBool checkpoint_prepare_prototype_state(
         SZrRawObject *references[8];
         *destination = source->value;
         for (TZrSize referenceIndex = 0u; referenceIndex < 8u; referenceIndex++) {
-            EZrRawObjectType expectedType =
-                    referenceIndex == 0u || referenceIndex >= 5u
-                    ? ZR_RAW_OBJECT_TYPE_STRING : ZR_RAW_OBJECT_TYPE_FUNCTION;
-            if (!checkpoint_resolve_optional_plan_object(plan, checkpoint->objectCount,
-                    source->objectIndexes[referenceIndex], expectedType, ZR_FALSE,
-                    ZR_OBJECT_INTERNAL_TYPE_OBJECT, &references[referenceIndex])) {
+            TZrBool resolvedReference = referenceIndex >= 1u && referenceIndex <= 4u
+                    ? checkpoint_resolve_optional_callable(plan, checkpoint->objectCount,
+                            source->objectIndexes[referenceIndex], &references[referenceIndex])
+                    : checkpoint_resolve_optional_plan_object(plan, checkpoint->objectCount,
+                            source->objectIndexes[referenceIndex], ZR_RAW_OBJECT_TYPE_STRING,
+                            ZR_FALSE, ZR_OBJECT_INTERNAL_TYPE_OBJECT, &references[referenceIndex]);
+            if (!resolvedReference) {
                 return ZR_FALSE;
             }
         }
@@ -535,9 +559,8 @@ static TZrBool checkpoint_prepare_prototype_state(
             &prepared->prototypeIndexContract.containsKeyFunction,
             &prepared->prototypeIndexContract.getLengthFunction };
         for (index = 0u; index < 4u; index++) {
-            if (!checkpoint_resolve_optional_plan_object(plan, checkpoint->objectCount,
-                    snapshot->indexFunctionIndexes[index], ZR_RAW_OBJECT_TYPE_FUNCTION,
-                    ZR_FALSE, ZR_OBJECT_INTERNAL_TYPE_OBJECT, &resolved)) {
+            if (!checkpoint_resolve_optional_callable(plan, checkpoint->objectCount,
+                    snapshot->indexFunctionIndexes[index], &resolved)) {
                 return ZR_FALSE;
             }
             *functions[index] = (SZrFunction *)resolved;
@@ -552,22 +575,19 @@ static TZrBool checkpoint_prepare_prototype_state(
     memset(&prepared->prototypeIndexContract.setByIndexKnownNativeDirectDispatch, 0,
            sizeof(prepared->prototypeIndexContract.setByIndexKnownNativeDirectDispatch));
     prepared->prototypeIterableContract = snapshot->iterableContract;
-    if (!checkpoint_resolve_optional_plan_object(plan, checkpoint->objectCount,
-            snapshot->iterableFunctionIndex, ZR_RAW_OBJECT_TYPE_FUNCTION, ZR_FALSE,
-            ZR_OBJECT_INTERNAL_TYPE_OBJECT, &resolved)) {
+    if (!checkpoint_resolve_optional_callable(plan, checkpoint->objectCount,
+            snapshot->iterableFunctionIndex, &resolved)) {
         return ZR_FALSE;
     }
     prepared->prototypeIterableContract.iterInitFunction = (SZrFunction *)resolved;
     prepared->prototypeIteratorContract = snapshot->iteratorContract;
-    if (!checkpoint_resolve_optional_plan_object(plan, checkpoint->objectCount,
-            snapshot->iteratorFunctionIndexes[0], ZR_RAW_OBJECT_TYPE_FUNCTION, ZR_FALSE,
-            ZR_OBJECT_INTERNAL_TYPE_OBJECT, &resolved)) {
+    if (!checkpoint_resolve_optional_callable(plan, checkpoint->objectCount,
+            snapshot->iteratorFunctionIndexes[0], &resolved)) {
         return ZR_FALSE;
     }
     prepared->prototypeIteratorContract.moveNextFunction = (SZrFunction *)resolved;
-    if (!checkpoint_resolve_optional_plan_object(plan, checkpoint->objectCount,
-            snapshot->iteratorFunctionIndexes[1], ZR_RAW_OBJECT_TYPE_FUNCTION, ZR_FALSE,
-            ZR_OBJECT_INTERNAL_TYPE_OBJECT, &resolved)) {
+    if (!checkpoint_resolve_optional_callable(plan, checkpoint->objectCount,
+            snapshot->iteratorFunctionIndexes[1], &resolved)) {
         return ZR_FALSE;
     }
     prepared->prototypeIteratorContract.currentFunction = (SZrFunction *)resolved;

@@ -108,6 +108,14 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_BootstrapTypePrototypes(SZrState *stat
                                                                   SZrSemanticAnalyzer *analyzer,
                                                                   SZrAstNode *ast);
 
+TZrBool ZrLanguageServer_SemanticAnalyzer_ProjectDeclaredType(
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *ownerTypeNode,
+        SZrAstNode *functionNode,
+        const SZrType *typeNode,
+        SZrInferredType *outType,
+        TZrBool *outFullyResolved);
+
 TZrBool ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(
         SZrSemanticAnalyzer *analyzer,
         SZrAstNode *ownerTypeNode,

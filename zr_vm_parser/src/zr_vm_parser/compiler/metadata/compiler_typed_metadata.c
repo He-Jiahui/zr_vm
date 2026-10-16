@@ -1362,6 +1362,22 @@ TZrBool compiler_build_typed_local_bindings(SZrCompilerState *cs,
             bindings[index].declarationEndColumn =
                     semanticIdentity.declarationRange.end.column;
         }
+        /* 参数在进入函数体前就登记了声明符号，但未必形成可执行 Semantic IR 槽。
+         * 元数据仍要带上该声明的规范符号，同名参数在不同函数里不能共用一个 id。 */
+        if (bindings[index].symbolId == ZR_SEMANTIC_ID_INVALID &&
+            localVar->name != ZR_NULL &&
+            cs->typeEnv != ZR_NULL) {
+            const SZrTypeBinding *typeBinding =
+                    ZrParser_TypeEnvironment_FindVariableBinding(
+                            cs->typeEnv, localVar->name);
+            if (typeBinding != ZR_NULL &&
+                typeBinding->symbolId != ZR_SEMANTIC_ID_INVALID) {
+                bindings[index].symbolId = typeBinding->symbolId;
+                if (bindings[index].typeId == ZR_SEMANTIC_ID_INVALID) {
+                    bindings[index].typeId = typeBinding->typeId;
+                }
+            }
+        }
 
         if (typed_local_binding_is_implicit_receiver(cs, localVar)) {
             bindings[index].roleFlags |= ZR_FUNCTION_TYPED_LOCAL_ROLE_RECEIVER;

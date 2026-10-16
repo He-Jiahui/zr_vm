@@ -1,6 +1,28 @@
 include(${CMAKE_SOURCE_DIR}/zr_vm_common/CommonMacros.cmake)
 set(zr_curr_module_name "zr_vm_rust_binding")
 
+# Cargo 输出策略只接受 D:/、E:/、F: 的 cargo-targets 根。GitHub Ubuntu 的工作目录
+# 和 Windows 短路径 D:/b 都不在该根下；可选绑定应跳过，而不是让整个 VM 配置失败。
+function(zr_vm_rust_binding_binary_dir_approved result_name)
+    set(${result_name} OFF PARENT_SCOPE)
+    if (NOT IS_ABSOLUTE "${CMAKE_BINARY_DIR}" OR NOT IS_DIRECTORY "${CMAKE_BINARY_DIR}")
+        return()
+    endif ()
+    get_filename_component(zr_vm_rust_binding_binary_real "${CMAKE_BINARY_DIR}" REALPATH)
+    file(TO_CMAKE_PATH "${zr_vm_rust_binding_binary_real}" zr_vm_rust_binding_binary_real)
+    string(TOLOWER "${zr_vm_rust_binding_binary_real}" zr_vm_rust_binding_binary_lower)
+    if ("${zr_vm_rust_binding_binary_lower}" MATCHES "^[def]:/cargo-targets(/|$)")
+        set(${result_name} ON PARENT_SCOPE)
+    endif ()
+endfunction()
+
+zr_vm_rust_binding_binary_dir_approved(zr_vm_rust_binding_binary_dir_ok)
+if (NOT zr_vm_rust_binding_binary_dir_ok)
+    message(STATUS
+            "Skipping zr_vm_rust_binding: CMAKE_BINARY_DIR is outside D:/cargo-targets, E:/cargo-targets, or F:/cargo-targets (${CMAKE_BINARY_DIR})")
+    return()
+endif ()
+
 zr_declare_module(${zr_curr_module_name} ON)
 
 # Native and Cargo products must use a physical approved drive-root.  Resolve
