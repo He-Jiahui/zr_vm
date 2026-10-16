@@ -25,7 +25,7 @@ status: planned
 
 ## 子计划导航与使用方式
 
-本目录按 **12 个方向、47 个子计划** 拆分。每个方向内序号从 `01` 连续编号，文件格式为 `方向/nn-标题.md`；文档内另用 `方向序号.任务序号`（例如 `03.02`）标识依赖。截至 **2026-10-12**，47 个叶计划的文档标签为 **43 planned、4 in-progress**；in-progress 为 [01.05 Oracle](01-execir-ssa/05-oracle-projections.md)、[04.02 call/return](04-frame-native/02-call-return-tail.md)、[04.04 roots](04-frame-native/04-roots-observation.md) 和 [06.02 major](06-gc-domain/02-major-budget.md)。标签不替代实际交付或整叶退出门禁的证据。
+本目录按 **12 个方向、47 个子计划** 拆分。每个方向内序号从 `01` 连续编号，文件格式为 `方向/nn-标题.md`；文档内另用 `方向序号.任务序号`（例如 `03.02`）标识依赖。截至 **2026-10-16**，47 个叶计划的文档标签为 **43 planned、4 in-progress**；in-progress 为 [01.05 Oracle](01-execir-ssa/05-oracle-projections.md)、[04.02 call/return](04-frame-native/02-call-return-tail.md)、[04.04 roots](04-frame-native/04-roots-observation.md) 和 [06.02 major](06-gc-domain/02-major-budget.md)。标签不替代实际交付或整叶退出门禁的证据。
 
 每份子计划包含：目标、前置依赖、已有/新增文件及职责、逐项重构任务、算法与接口草案、数据生产/消费关系、三批可审查实施步骤、正反向测试与断言、精确 CTest 目标、退出门禁、失败恢复和文档交付。C 接口和 fixture 断言是实施指导，新增类型/API 必须由所标任务实现；不能把草案视作当前已提供的接口。
 
@@ -43,16 +43,19 @@ wrapper 返回后的 25 项通过、四套依赖共 58 项通过，以及六 TU 
 
 本前置使 literal I64 Function 独立拥有 Core AOT 元数据。通用独立 ExecIR
 module 所有权、Function association/lifetime 与 module copy 已有下表所列的
-有限验收和提交；完整 Source finalized 返回所有权仍待当前生产实现的功能
-GREEN 验证。普通 NONE/default 编译输出、完整状态恢复、后端执行及 Linux/
-完整 MSVC 验收继续推进，47 个叶计划的退出条件和未勾选任务不变。
+有限验收和提交。Source finalized 返回所有权已提交 `3b9613cf`，四种
+Source AST 子节点拒绝、恢复与重试已提交 `edfd5834`；后者实测 Source26、
+AOT25、CTest2 全部通过。当前整数表达式增量编译成功，但实测 22 项为
+11 通过、11 失败，尚未验收提交。完整表达式家族、状态恢复、后端执行及
+Linux/完整 MSVC 验收继续推进，47 个叶计划的退出条件仍需逐项闭合。
 
-### 已完成有限交付（2026-10-12）
+### 已完成有限交付（2026-10-16）
 
-已核实至少 **19 项有限交付**，包括功能子任务、代码修正、专项故障验证和文档修正。
-Root 于 2026-10-12 只读核对下列提交均属于当时观察的 HEAD
-1306ca4235d9cf59fdbd6256c4f9d88d0a32b6b1 历史，作者与提交者均为
-He-Jiahui。表中链接提供各自范围的验收或模块记录；支持回归不重复计为新交付。
+已核实 **31 项有限交付：15 项功能、6 项代码修正、5 项专项验证、5 项文档**。
+Root 与独立审查者只读核对以下 31 个不同提交均属于观察 HEAD
+`1ff40154ac353fb9414174ef22075dd2ab61e387` 的历史；最新完成项为
+`edfd5834991acfc9bd9adb0407323cf9119b042a`。功能数量包含测试基础设施功能；
+支持回归及本次进度文档维护不重复计为新成果。原始日志、故障与编译证据各按实际范围成立。
 
 | 已完成有限子任务 | 完整提交 SHA | 已验收有限范围 |
 | --- | --- | --- |
@@ -75,11 +78,24 @@ He-Jiahui。表中链接提供各自范围的验收或模块记录；支持回�
 | [通用独立 ExecIR module 所有权](../../acceptance/ssa-execir-owned-module.md) | 3496923f58c6f4be2bb61c82c51a7743bef9fba4 | 14 PASS；两组各 61 处故障，共 122 处完成；内存 IR 保留，不是源码副本。 |
 | [Function ExecIR association/lifetime](../../acceptance/ssa-function-exec-ir-owner.md) | 112cbf4256a819d554659c7bdfd9d77eb8a04610 | 20 PASS；首次附加、替换各 61 处故障完成。 |
 | [Module copy 替换选定 Function](../../acceptance/exec-ir-module-copy.md) | 238fb35d160bad6142acee08da910742b0f1d2c9 | 20 PASS；module60＋replacement28，共 88 处故障完成。 |
+| Source四种AST子节点拒绝、恢复与重试 | `edfd5834991acfc9bd9adb0407323cf9119b042a` | Source26/AOT25/CTest2实际自然0，345FEATURE、9/8各156/156故障、Frame2/Child4及FINAL全零；787TUs/813依赖、15变更对象+772精确缓存/27符号来源/四库成员核对。MSVC2TU仅编译成功，main保留两旧警告、fixtureW0；四路径提交保留7267范围外index条目。清理4文件133,148B。有限专项验证，不授整叶/全量W0/Linux/完整MSVC信用。 |
+| 真正Source finalized ExecIR返回所有权及Frame故障验证 | `3b9613cf10fcc3ca8f60c134b8eba40a92bfc25c` | Source22/AOT25 direct及CTest2实际自然0，9/8各156/156分配故障，341次成功finalizer观察、两Frame失败清理重试、FINAL全零；786对象/811依赖、14+5+5+2符号和四库清单独立验收。精确17路径、双He身份、7232外部index条目保持；仅SourceCompile/CoreGlobal元数据，不含执行或fullW0信用。 |
+| finalized AST四种空子边界恢复与重试 | `963a81af3502d11361cab3dd64a9c0b9a5dc46a7` | 精确10测试行、私有root include与既有验证文档；Clang/UBSan24 PASS、故障89/89、生命周期16；MSVC31 TU编译自然0。r6实际收据3F3BE730…1DDDA1，独立接受；3个废弃文件精确清理50,089B。有限专项验证，不扩展为Source或整叶完成。 |
+| 01.01 独立owner已交付进度纠正 | `35d229d3e05ea077a205de1d2e8315bb08ccaf0a` | 核对3496923f/112cbf4/238fb35及三份验收记录；修正过时owner-pending文字，保留完整叶退出条件。仅1文档路径、双He身份、7197范围外index条目保持，不新增功能信用。 |
+| SSA 索引实际进度与既有交付同步 | 0adde39965cdb6b7fe67c237ca03042355b76b70 | 仅一个文档；43 planned/4 in-progress、19个历史提交及19个新增链接核对通过；独立审查与git diff check通过，双He身份，128个其他dirty SHA无变化。功能数保持14。 |
+| Object 未用 helper 清理 | `3cb9cff84545c228d759236040fc1e76779615ea` | 精确提交 `object.c` 与模块文档两路径；当前 r5 收据 `A4EFBC75099BC64FDBA8864B0BD67228544FEF1A7B892D105D524096E1925D5F` validated=true，Clang/MSVC 各实际编译一次、自然退出 0、W0/E0、双流排空；429 个当前头文件身份并集与 441 项输入哈希均通过。仅为 `object.c` 双编译 W0，不扩展为 runtime、Source 或完整 selected 对象 W0。 |
+| 00.02版本所有者与纯checker边界文档修正 | `36f65a94ee1b0bd23e244d568a343df832d81c37` | 精确两路径：契约冻结说明与00.02计划。Root全文独立review并核对九字段诊断、6个版本宏共7处定义、历史AOT ABI2 Git blob／README／实际include路由；native82849／terminal `3b511b` 自然退出0，作者／提交者均为He-Jiahui，4个foreign staged raw条目前后完全保持。仅文档有限交付；相等但unsupported版本、logical诊断、reserved策略及历史AOT头消费者隔离仍待决，00.02未完成。 |
+| 00.03零匹配CTest边界文档与实际验证登记 | eed58071d92a2f8d43d6abcff732499864fb673c | 精确提交差分验证指南与需求矩阵两路径，47项行结构保持。实际CTest36144自然退出8、双流排空、零测试可执行文件；收据3147CF8FF522454FD0D47D2ED7D4038B5B9092A9F9692EFA2B82914DCD3154F1 validated=true。独立Sol审查接受；Root unified69047／terminal3b7061自然0，作者与提交者均He-Jiahui，外来4个暂存条目保持。仅证明CLI零选择边界，未执行差分semantic fixtures，00.03整叶仍待验收。 |
+| 差分支架字段隔离与本地callback拒绝回归 | `67a3fed011c3dc971560a772b293d25f7b7d1edc` | 原4组保持、新4组/17负例；Clang-cl19.1.5及MSVC19.44实际2TU各编译/链接/直接运行，12phase自然终态/W0、两次精确PASS。收据99CD9738DD342DC87F730A0CCD7A0B96A4C4D2E6F710118325E8B05873B880B2独立验收。4路径提交、双He身份、10foreigncachedraw保持；仅纯observation和synthetic callback，不计CTest/Linux/UBSan/真实后端或整叶通过。 |
+| logical-only版本诊断与执行契约路径迁移 | `da71cb7aaac984de9a2bf669572446f2afb3ab69` | RED7实际双compiler均以精确43B错误自然exit1；修正后GREEN53E4C611…12DC31，12phase/W0、两次精确PASS，原4组+新6组覆盖九字段/优先级/边界/清零/输入保持。候选18路径仅含13CMake的35处必要引用、旧flat删除、新runtime生产C、test及两文档；commitreceiptA99D0B0C…52C19，actualparent67a3fed、双He身份。10foreigncached raw及所有非选中indexentry前后保持，选中WT哈希不变。仅纯checker，不计Source/VM/后端或整叶通过。 |
+| AOTIR执行契约保留字段校验 | `d1b3aad7f2bbe26aae1a241a71fbaa8b17ac9235` | GREEN931C57FA…3023：14phase、6次编译W0、2link/2run均自然0，214输入/199实际头依赖/8产物及所有raw range已独立验收。实际commitreceipt6327CE73…B063，精确5路径、双He身份、4外来cached及范围外index原字节保持。原RED驱动整体失败保留；只计纯AOTIR Validate/Hash，不计Source/VM/网络/FFI/整叶。 |
+| 纯契约checker完整诊断矩阵 | `dc10784ab7d9d7b910a874798531e3c7884df9e0` | 新增6组：NULL、scalar/mask边界、45字段配对优先关系、失败→成功清空及输入保持。GREEN9B7B2936…EDC88：12phase、4compileW0、2link/2run自然0，209输入/195实际头依赖/6产物及24raw range已独立验收。commitreceiptD9AC8FBC…0DF94，精确2路径、双He、4foreigncached及7172范围外index保持。仅Windows纯checker；schema/ABI共用分支，不计整叶/Source/VM。 |
 
 上述有意失败验证 prior-failure 与清理协议，检查器按精确预期验收；非预期失败不计通过。
-19 项是已核实有限交付的下限，不能与 47 个叶计划相除表示进度。
-整叶全部退出条件已完成的数量尚未证实；当前未验证的 Source finalized 生产代码
-不计完成。完整 Source、状态恢复、后端、GC、平台及 47 项整体门禁仍待逐项闭合。
+上述 31 项均有实际验收和提交；47 个叶计划的完整退出门禁仍需分别闭合，
+不能用 31/47 表示整体完成率，也不能从叶标签 complete=0 推导没有完成项目。
+当前整数表达式运行仍有 11 项失败，不计新增完成；完整 Source、状态恢复、
+后端、GC、平台及 47 项整体门禁继续按依赖推进。
 
 ### 测量与基础契约（00-measurement-contracts）
 
