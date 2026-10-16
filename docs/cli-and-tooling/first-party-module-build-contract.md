@@ -22,6 +22,7 @@ implementation_files:
 plan_sources:
   - user: 全仓库首方代码调用链审查与意图注释任务
   - docs/code-review/comment-standard.md
+  - .codex/plans/20261016-review-bugfix.md
 tests:
   - tests/fixtures/projects/hello_world/hello_world.zrp
 doc_type: build-contract
@@ -62,11 +63,11 @@ CLI 的普通首方链接同开两种库时选择 static；生成外部产物使
 
 ## 已确认问题与待核查边界
 
-### Windows 双库输出碰撞
+### Windows 双库输出名称
 
-`BUG:` 在 Windows 同时启用 static/shared 时，两个目标设置相同 `OUTPUT_NAME`，顶层也给它们设置相同 archive 输出目录。静态归档和共享导入库都落为 `lib/<module>.lib`。实际 MSVC19.44.35228.0 + Ninja 配置报 `multiple rules generate lib/zr_vm_core.lib` 并退出1。
+在 Windows 同时启用 static/shared 时，静态目标额外设置 `ARCHIVE_OUTPUT_NAME=<module>_static`，生成 `lib/<module>_static.lib`；DLL 和导入库仍使用 `<module>.dll`、`<module>.lib`。CMake 逻辑目标名称及目标链接关系保持原约定。只启用一种变体或在其他平台构建时，产物仍使用原来的名称。
 
-项目默认 static OFF、shared ON 的独立缓存配置、CLI 构建和现有 hello_world 验证通过。本轮在产生相同 basename 的位置备注问题，保持所有构建命令及输出选择不变。
+2026-10-16 使用实际 checkout、ClangCL 19.1.5 与 Ninja 验证。修改前 CMake 配置成功，但 `ninja -t targets` 因 `multiple rules generate lib/zr_vm_core.lib` 退出1。修改后复用同一缓存重新配置，两个步骤均退出0，并生成不同的静态归档与共享导入库规则；两次收据的输入哈希均稳定。此验证确认双库输出规则不再碰撞，未授予全部双库 C 源编译或跨平台支持信用。记录位于 `E:/cargo-targets/zr_vm/reports/review-bugfix-20261016/dual-variants-{red,green}-receipt.json`。
 
 ### 同一 executable 混合链接签名
 

@@ -28,7 +28,11 @@ function(zr_declare_module module_name use_common_lib)
         if (${use_common_lib})
             target_include_directories(${zr_module_static} PRIVATE ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
         endif ()
-        set_target_properties(${zr_module_static} PROPERTIES OUTPUT_NAME ${zr_module_name}) # BUG: Windows 两种库同开时静态归档与共享导入库同为 lib/<module>.lib，MSVC+Ninja 配置已复现规则冲突。
+        set_target_properties(${zr_module_static} PROPERTIES OUTPUT_NAME ${zr_module_name})
+        if (WIN32 AND BUILD_SHARED_LIB)
+            # DLL 的导入库沿用 <module>.lib；静态归档另名，避免 Ninja 输出规则冲突。
+            set_target_properties(${zr_module_static} PROPERTIES ARCHIVE_OUTPUT_NAME ${zr_module_name}_static)
+        endif ()
     endif ()
 
     if (BUILD_SHARED_LIB)
