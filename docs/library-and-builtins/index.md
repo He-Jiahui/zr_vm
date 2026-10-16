@@ -168,3 +168,5 @@ doc_type: category-index
 - [Setter caller cleanup](setter-caller-cleanup.md)：FFI 聚合写入与 Reflection 泛型字段调用的临时根清理。
 
 - [Native plugin allocation and I/O](../library/native-registry-allocation-lifecycle.md)：注册回滚、影子副本复制与加载失败清理。
+
+- [Thread transport string bytes](thread-transport-string-bytes.md)：显式长度、clone 和 decode 的内嵌 NUL 保真。

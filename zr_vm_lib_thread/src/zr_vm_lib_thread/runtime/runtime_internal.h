@@ -73,6 +73,8 @@ typedef struct ZrVmTaskTransportValue {
     /* 原生队列或 cell 持有的跨线程副本；STRING 和引用型 kind 须由 transport_clear 结清。 */
     TZrUInt32 kind;
     TZrUInt32 reserved;
+    /* STRING owns exactly this many bytes plus an extra terminating NUL. */
+    TZrSize stringByteLength;
     union {
         TZrBool boolValue;
         TZrInt64 intValue;

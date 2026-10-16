@@ -2,27 +2,28 @@
 
 #include <stdio.h>
 
+#include "zr_vm_core/exception.h"
+#include "zr_vm_core/string.h"
+
 static const TZrChar *kTaskChannelTransportField = "__zr_task_channel_transport";
 static const TZrChar *kTaskTransferValueField = "__zr_task_transfer_value";
 static const TZrChar *kTaskTransferTakenField = "__zr_task_transfer_taken";
 
-static TZrChar *zr_vm_task_duplicate_native_string(const TZrChar *text) {
-    /* BUG: VM 字符串有显式 byteLength，此 C 字符串副本用 strlen 丢弃首个内嵌 NUL 后的字节；
-     * Channel/Shared/旧 worker transport 的字符串往返不能保持原值。 */
-    TZrSize length;
+static TZrChar *zr_vm_task_duplicate_native_string(const TZrChar *text, TZrSize length) {
     TZrChar *copy;
 
-    if (text == ZR_NULL) {
-        text = "";
+    if (length == (TZrSize)-1 || (text == ZR_NULL && length != 0)) {
+        return ZR_NULL;
     }
-
-    length = strlen(text);
     copy = (TZrChar *)malloc(length + 1);
     if (copy == ZR_NULL) {
         return ZR_NULL;
     }
 
-    memcpy(copy, text, length + 1);
+    if (length != 0) {
+        memcpy(copy, text, length);
+    }
+    copy[length] = '\0';
     return copy;
 }
 
@@ -51,7 +52,8 @@ TZrBool zr_vm_task_transport_clone_value(const ZrVmTaskTransportValue *value, Zr
             outValue->as.floatValue = value->as.floatValue;
             return ZR_TRUE;
         case ZR_VM_TASK_TRANSPORT_KIND_STRING:
-            outValue->as.stringValue = zr_vm_task_duplicate_native_string(value->as.stringValue);
+            outValue->stringByteLength = value->stringByteLength;
+            outValue->as.stringValue = zr_vm_task_duplicate_native_string(value->as.stringValue, value->stringByteLength);
             return outValue->as.stringValue != ZR_NULL;
         case ZR_VM_TASK_TRANSPORT_KIND_CHANNEL:
             outValue->as.pointerValue = value->as.pointerValue;
@@ -336,7 +338,9 @@ TZrBool zr_vm_task_transport_encode_value(SZrState *state,
     if (value->type == ZR_VALUE_TYPE_STRING && value->value.object != ZR_NULL) {
         SZrString *stringObject = ZR_CAST_STRING(state, value->value.object);
         outValue->kind = ZR_VM_TASK_TRANSPORT_KIND_STRING;
-        outValue->as.stringValue = zr_vm_task_duplicate_native_string(ZrCore_String_GetNativeString(stringObject));
+        outValue->stringByteLength = ZrCore_String_GetByteLength(stringObject);
+        outValue->as.stringValue = zr_vm_task_duplicate_native_string(
+                ZrCore_String_GetNativeString(stringObject), outValue->stringByteLength);
         return outValue->as.stringValue != ZR_NULL;
     }
     if (zr_vm_task_channel_try_get_transport(state, value, &channelTransport)) {
@@ -389,9 +393,21 @@ TZrBool zr_vm_task_transport_decode_value(SZrState *state,
         case ZR_VM_TASK_TRANSPORT_KIND_FLOAT:
             ZrLib_Value_SetFloat(state, result, value->as.floatValue);
             return ZR_TRUE;
-        case ZR_VM_TASK_TRANSPORT_KIND_STRING:
-            ZrLib_Value_SetString(state, result, value->as.stringValue != ZR_NULL ? value->as.stringValue : "");
+        case ZR_VM_TASK_TRANSPORT_KIND_STRING: {
+            SZrString *stringObject;
+            if (value->as.stringValue == ZR_NULL && value->stringByteLength != 0) {
+                return ZR_FALSE;
+            }
+            stringObject = ZrCore_String_Create(state,
+                    value->as.stringValue != ZR_NULL ? value->as.stringValue : "",
+                    value->stringByteLength);
+            if (stringObject == ZR_NULL) {
+                ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+                return ZR_FALSE;
+            }
+            ZrLib_Value_SetStringObject(state, result, stringObject);
             return ZR_TRUE;
+        }
         case ZR_VM_TASK_TRANSPORT_KIND_CHANNEL:
             return zr_vm_task_channel_make_value(state, (ZrVmTaskChannelTransport *)value->as.pointerValue, result);
         case ZR_VM_TASK_TRANSPORT_KIND_TRANSFER:

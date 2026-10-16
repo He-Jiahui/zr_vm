@@ -628,6 +628,7 @@ static void zr_vm_task_worker_queue_error_message(ZrVmTaskSchedulerRuntime *runt
     memset(&payload, 0, sizeof(payload));
     payload.kind = ZR_VM_TASK_TRANSPORT_KIND_STRING;
     payload.as.stringValue = zr_vm_task_worker_strdup(message != ZR_NULL ? message : "Worker task fault");
+    payload.stringByteLength = payload.as.stringValue != ZR_NULL ? strlen(payload.as.stringValue) : 0;
     zr_vm_task_worker_enqueue_message(runtime, ZR_VM_TASK_SCHEDULER_MESSAGE_FAULT, handle, &payload);
 }
 
