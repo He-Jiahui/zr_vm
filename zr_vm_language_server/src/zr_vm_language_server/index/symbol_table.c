@@ -552,8 +552,15 @@ SZrSymbolTable *ZrLanguageServer_SymbolTable_New(SZrState *state) {
     
     table->state = state;
     table->globalScope = ZR_NULL;
-    ZrCore_Array_Init(state, &table->scopeStack, sizeof(SZrSymbolScope *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
-    ZrCore_Array_Init(state, &table->allScopes, sizeof(SZrSymbolScope *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
+    table->nameToSymbolsMap = ZR_NULL;
+    ZrCore_Array_Construct(&table->scopeStack);
+    ZrCore_Array_Construct(&table->allScopes);
+    ZrCore_HashSet_Construct(&table->nameToSymbolsHashSet);
+    if (!ZrCore_Array_TryInit(state, &table->scopeStack, sizeof(SZrSymbolScope *), ZR_LSP_ARRAY_INITIAL_CAPACITY) ||
+        !ZrCore_Array_TryInit(state, &table->allScopes, sizeof(SZrSymbolScope *), ZR_LSP_ARRAY_INITIAL_CAPACITY)) {
+        ZrLanguageServer_SymbolTable_Free(state, table);
+        return ZR_NULL;
+    }
     
     // 创建映射对象（使用 SZrObject 的 nodeMap 存储）
     table->nameToSymbolsMap = ZrCore_Object_New(state, ZR_NULL);
@@ -570,17 +577,20 @@ SZrSymbolTable *ZrLanguageServer_SymbolTable_New(SZrState *state) {
     
     // 创建全局作用域
     table->globalScope = (SZrSymbolScope *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrSymbolScope));
-    /* BUG: 若此处分配失败，已分配的 scopeStack、allScopes 和哈希桶没有析构；
-     * New 返回 NULL 后分析器无表可释放，低内存请求会泄漏这些原生资源。 */
     if (table->globalScope == ZR_NULL) {
-        ZrCore_Memory_RawFree(state->global, table, sizeof(SZrSymbolTable));
+        ZrLanguageServer_SymbolTable_Free(state, table);
         return ZR_NULL;
     }
     
-    ZrCore_Array_Init(state,
+    if (!ZrCore_Array_TryInit(state,
                       &table->globalScope->symbols,
                       sizeof(SZrSymbol *),
-                      ZR_LSP_GLOBAL_SCOPE_SYMBOL_INITIAL_CAPACITY);
+                      ZR_LSP_GLOBAL_SCOPE_SYMBOL_INITIAL_CAPACITY)) {
+        ZrCore_Memory_RawFree(state->global, table->globalScope, sizeof(SZrSymbolScope));
+        table->globalScope = ZR_NULL;
+        ZrLanguageServer_SymbolTable_Free(state, table);
+        return ZR_NULL;
+    }
     table->globalScope->parent = ZR_NULL;
     table->globalScope->isFunctionScope = ZR_FALSE;
     table->globalScope->isClassScope = ZR_FALSE;
@@ -755,7 +765,10 @@ SZrSymbol *ZrLanguageServer_Symbol_New(SZrState *state, EZrSymbolType type,
         }
     }
     
-    ZrCore_Array_Init(state, &symbol->references, sizeof(SZrFileRange), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    if (!ZrCore_Array_TryInit(state, &symbol->references, sizeof(SZrFileRange), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY)) {
+        ZrLanguageServer_Symbol_Free(state, symbol);
+        return ZR_NULL;
+    }
     
     return symbol;
 }
@@ -781,7 +794,9 @@ TZrBool ZrLanguageServer_Symbol_AddReference(SZrState *state, SZrSymbol *symbol,
         return ZR_FALSE;
     }
     
-    ZrCore_Array_Push(state, &symbol->references, &location);
+    if (!ZrCore_Array_TryPush(state, &symbol->references, &location)) {
+        return ZR_FALSE;
+    }
     symbol->referenceCount++;
     return ZR_TRUE;
 }

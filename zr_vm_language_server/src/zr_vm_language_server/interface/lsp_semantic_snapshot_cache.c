@@ -142,13 +142,14 @@ SZrLspSemanticSnapshotCache *ZrLanguageServer_LspSemanticSnapshotCache_New(
     if (cache == ZR_NULL) {
         return ZR_NULL;
     }
-    /* BUG: Array_Init 分配失败时仍把 entries 标为有效；此构造函数会返回
-     * 非空缓存，首次 Capture 的 Array_Push 随即向空缓冲区复制。 */
-    ZrCore_Array_Init(
+    if (!ZrCore_Array_TryInit(
             state,
             &cache->entries,
             sizeof(SZrLspSemanticSnapshotEntry),
-            ZR_LSP_HISTORICAL_SEMANTIC_SNAPSHOT_CAPACITY);
+            ZR_LSP_HISTORICAL_SEMANTIC_SNAPSHOT_CAPACITY)) {
+        ZrCore_Memory_RawFree(state->global, cache, sizeof(SZrLspSemanticSnapshotCache));
+        return ZR_NULL;
+    }
     cache->nextInsertionOrder = 0U;
     return cache;
 }
@@ -208,6 +209,9 @@ TZrBool ZrLanguageServer_LspSemanticSnapshotCache_Capture(
     SZrLspSemanticSnapshotEntry entry;
     const SZrFileVersionHistoricalContent *previousContent;
     SZrSemanticAnalyzer *snapshotAnalyzer;
+    TZrSize uriCount;
+    TZrSize evictionCount;
+    TZrSize retainedCount;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL ||
         fileVersion == ZR_NULL || currentAnalyzer == ZR_NULL ||
@@ -217,6 +221,18 @@ TZrBool ZrLanguageServer_LspSemanticSnapshotCache_Capture(
     }
     previousContent = &fileVersion->historicalContent[0];
     if (previousContent->contentBlock == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    /* 失败时调用方仍拥有 retainedAst；先预留最终容量，再转移分析器所有权。 */
+    cache = context->semanticSnapshotCache;
+    uriCount = snapshot_cache_count_uri(cache, uri);
+    evictionCount = uriCount >= ZR_LSP_HISTORICAL_SEMANTIC_SNAPSHOT_CAPACITY
+            ? uriCount - ZR_LSP_HISTORICAL_SEMANTIC_SNAPSHOT_CAPACITY + 1U
+            : 0U;
+    retainedCount = cache->entries.length - evictionCount;
+    if (retainedCount == ZR_MAX_SIZE ||
+        !ZrCore_Array_TryReserve(state, &cache->entries, retainedCount + 1U)) {
         return ZR_FALSE;
     }
 
@@ -247,8 +263,7 @@ TZrBool ZrLanguageServer_LspSemanticSnapshotCache_Capture(
     entry.contentGeneration = previousContent->contentBlock->contentGeneration;
     entry.insertionOrder = ++cache->nextInsertionOrder;
     entry.analyzer = snapshotAnalyzer;
-    /* BUG: 第三个跨 URI 快照等触发 entries 扩容时，Array_Push 的分配失败路径
-     * 会覆盖数组缓冲区指针并继续复制，导致崩溃；这里也无法接收失败状态。 */
+    /* 容量已在所有权转移前预留，此处不再分配。 */
     ZrCore_Array_Push(state, &cache->entries, &entry);
     return ZR_TRUE;
 }

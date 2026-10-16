@@ -112,8 +112,7 @@ static TZrBool reference_is_better_match(SZrReference *candidate, SZrReference *
 
 /** @brief 为语义分析器建立引用列表；symbolTable 仍由调用方持有。
  *  @pre state 及其 global、symbolTable 有效；释放 tracker 须早于符号表。
- *  @return 新 tracker，或显式参数/结构分配失败时返回空。
- *  @note BUG: Array_Init 的缓冲分配失败仍标记数组有效；此处未检查 head 就返回，后续 AddReference 会断言失败或向空缓冲写入。 */
+ *  @return 新 tracker，或参数无效、结构及数组分配失败时返回空。 */
 SZrReferenceTracker *ZrLanguageServer_ReferenceTracker_New(SZrState *state, SZrSymbolTable *symbolTable) {
     if (state == ZR_NULL || symbolTable == ZR_NULL) {
         return ZR_NULL;
@@ -124,10 +123,13 @@ SZrReferenceTracker *ZrLanguageServer_ReferenceTracker_New(SZrState *state, SZrS
         return ZR_NULL;
     }
     
-    ZrCore_Array_Init(state,
+    if (!ZrCore_Array_TryInit(state,
                       &tracker->allReferences,
                       sizeof(SZrReference *),
-                      ZR_LSP_LARGE_ARRAY_INITIAL_CAPACITY);
+                      ZR_LSP_LARGE_ARRAY_INITIAL_CAPACITY)) {
+        ZrCore_Memory_RawFree(state->global, tracker, sizeof(SZrReferenceTracker));
+        return ZR_NULL;
+    }
     
     return tracker;
 }
@@ -154,7 +156,7 @@ void ZrLanguageServer_ReferenceTracker_Free(SZrState *state, SZrReferenceTracker
 
 /** @brief 将定义或使用位置同步登记到 tracker 和 symbol，供精确位置查询与语义索引使用。
  *  @pre symbol 和 location.source 的寿命覆盖 tracker；tracker 在有效数组状态下使用。
- *  @note BUG: Array_Push 扩容失败没有状态返回；这里可能写空缓冲且无法保证两份索引一致。 */
+ *  @return 分配失败时返回 false；成功时两份索引均包含新位置。 */
 TZrBool ZrLanguageServer_ReferenceTracker_AddReference(SZrState *state, 
                                      SZrReferenceTracker *tracker,
                                      SZrSymbol *symbol,
@@ -176,10 +178,17 @@ TZrBool ZrLanguageServer_ReferenceTracker_AddReference(SZrState *state,
     reference->type = type;
     
     // 添加到所有引用数组
-    ZrCore_Array_Push(state, &tracker->allReferences, &reference);
+    if (!ZrCore_Array_TryPush(state, &tracker->allReferences, &reference)) {
+        ZrCore_Memory_RawFree(state->global, reference, sizeof(SZrReference));
+        return ZR_FALSE;
+    }
     
     // 同时添加到符号的引用列表
-    ZrLanguageServer_Symbol_AddReference(state, symbol, location);
+    if (!ZrLanguageServer_Symbol_AddReference(state, symbol, location)) {
+        ZR_UNUSED_PARAMETER(ZrCore_Array_Pop(&tracker->allReferences));
+        ZrCore_Memory_RawFree(state->global, reference, sizeof(SZrReference));
+        return ZR_FALSE;
+    }
     
     return ZR_TRUE;
 }
