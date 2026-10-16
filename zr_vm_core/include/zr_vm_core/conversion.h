@@ -72,7 +72,7 @@
 #define ZR_CAST_STRING(STATE, EXP) ZR_CAST_CHECKED(STATE, SZrString *, (EXP), ZR_RAW_OBJECT_TYPE_STRING)
 /** @brief 借用短串内联字节区的地址；不复制字节。
  * @pre EXP 非空且 shortStringLength 表示短串；长串须用 ZrCore_String_GetNativeString。
- * BUG: VFormat 与 CreateTryHitCache 可传入长串，此宏把 longString 指针槽当作字节串。 */
+ * 任意布局的字符串须用 ZrCore_String_GetNativeString。 */
 #define ZR_CAST_STRING_TO_NATIVE(EXP) ZR_CAST(TZrNativeString, (EXP)->stringDataExtend)
 
 

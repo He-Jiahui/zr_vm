@@ -631,8 +631,8 @@ TZrNativeString ZrCore_NativeString_VFormat(struct SZrState *state, TZrNativeStr
     }
     native_string_clear_format_buffer_and_push_to_stack(&buffer);
     ZR_ASSERT(buffer.isOnStack == ZR_TRUE);
-    /* BUG: 长结果把指针槽当字节视图；前序 Concat 失败将栈槽置 null 时，此处 CAST_STRING 也会解引用。 */
-    return ZR_CAST_STRING_TO_NATIVE(
+    /* BUG: 前序 Concat 失败将栈槽置 null 时，此处 CAST_STRING 仍会解引用。 */
+    return ZrCore_String_GetNativeString(
             ZR_CAST_STRING(state, ZrCore_Value_GetRawObject(ZrCore_Stack_GetValue(state->stackTop.valuePointer - 1))));
 }
 
@@ -960,8 +960,8 @@ SZrString *ZrCore_String_CreateTryHitCache(SZrState *state, TZrNativeString stri
     TZrUInt64 addressHash = ZR_CAST_UINT64(string) % ZR_GLOBAL_API_STRING_CACHE_BUCKET_COUNT;
     SZrString **apiCache = global->stringHashApiCache[addressHash];
     for (TZrSize i = 0; i < ZR_GLOBAL_API_STRING_CACHE_BUCKET_DEPTH; i++) {
-        /* BUG: 缓存长串时该宏读取指针槽而非长串字节；缓存创建失败留下 null 后还会解引用。 */
-        if (ZrCore_NativeString_Compare(ZR_CAST_STRING_TO_NATIVE(apiCache[i]), string) == 0) {
+        /* BUG: 缓存创建失败留下 null 后，以下文本访问仍会解引用。 */
+        if (ZrCore_NativeString_Compare(ZrCore_String_GetNativeString(apiCache[i]), string) == 0) {
             return apiCache[i];
         }
     }
