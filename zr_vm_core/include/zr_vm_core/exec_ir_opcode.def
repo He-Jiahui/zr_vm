@@ -47,3 +47,984 @@ ZR_EXEC_IR_OP(EXCEPTION_PAYLOAD,   1u, 0u,                   0u, 0u, ZR_EXEC_IR_
 ZR_EXEC_IR_OP(TYPE_TEST,           1u, 1u,                   0u, 0u, ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE)
 ZR_EXEC_IR_OP(DROP_IF_INITIALIZED, 0u, 1u,                   (1u << ZR_EXEC_IR_MEMORY_OWNERSHIP), (1u << ZR_EXEC_IR_MEMORY_OWNERSHIP), ZR_EXEC_IR_SCHEMA_FLAG_MAY_DROP)
 ZR_EXEC_IR_OP(WAKE,                1u, 1u,                   (1u << ZR_EXEC_IR_MEMORY_OWNERSHIP), (1u << ZR_EXEC_IR_MEMORY_OWNERSHIP), ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE)
+
+/**
+ * @file exec_ir_opcode.def
+ *
+ * ## Summary
+ * 以可重复文本包含的 X-macro 记录集共享 ExecIR opcode 名称、结果/操作数形状、内存 token 类别及 schema flags，供公开枚举与 Core 静态元数据表保持同源。
+ *
+ * ## Include protocol
+ * 包含者先定义六形参 ZR_EXEC_IR_OP(name, resultArity, operandArity, memoryReads, memoryWrites, schemaFlags)，在适当枚举或初始化上下文包含本文件，再自行 #undef。该文件故意没有 include guard，也不替包含者定义或解除映射；它不是独立翻译单元，记录是宏展开输入而非函数调用。
+ * name 必须可供 token 拼接和字符串化；其余字段是无副作用的整数常量表达式。公开 H 的映射只生成枚举名，Core C 的映射才读取形状、内存和标志；不能因某个映射忽略字段就改变其它消费者的前提。
+ *
+ * ## Shape and effect model
+ * resultArity 描述结果数量；operandArity 为固定上限或 ZR_EXEC_IR_VARIADIC。Core 表把普通固定指令的 minimumOperands 设成同值，变长设成 0，并专门将 RETURN 下界设成 0。结构验证仍另查实际池、值 ID、后继和指令位置。
+ * memoryReads/memoryWrites 是 EZrExecIrMemoryClass 位集；0 仅表示该方向不要求 schema memory token，不能泛称没有副作用。schema flags 与具体 instruction.flags 及派生 effects 是不同域；Core 表将非零内存域及部分 schema flags 转换成通用效果，MAY_GC 不对应独立的通用 effect 位。
+ *
+ * ## Constraints and lifecycle
+ * 行序参与公开枚举的自动编号：INVALID 在前为 0，记录依次展开，COUNT 由枚举末尾生成；本文件没有独立版本标记或重编号兼容机制。修改名称、顺序、形状或类别须连同公共 H、元数据表、验证器及实际格式/后端能力一起核对，不能把存在记录等同于所有后端已实现。
+ * 本文件没有运行期分配、错误返回或拥有对象；生成的 const 表和名称由 Core 静态持有，查询借用不得写入或释放。运行期函数、指令、池和 provider 的借用及释放遵循各自接口；重复包含在编译期发生，不是重复初始化或异步派发。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:201
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1054
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - scripts/codegen/generate_execbc_patterns.py:189
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_NOP
+ * @par Schema record: ZR_EXEC_IR_OP(NOP, ...)
+ *
+ * ## Summary
+ * 为空操作提供零结果、零操作数的结构身份，供图中的占位和指令序列处理使用。
+ *
+ * ## Schema fields
+ * name 为 NOP；resultArity 为 0u；operandArity 为 0u。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 0u。
+ *
+ * ## Constraints and lifecycle
+ * schema NOP 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。该行没有 schema flags 或内存 token 需求；不能由此推出任意动态 flags、调试观察或所有后端的完整无副作用语义。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:15
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:318
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:411
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_CONSTANT
+ * @par Schema record: ZR_EXEC_IR_OP(CONSTANT, ...)
+ *
+ * ## Summary
+ * 为常量产生一个逻辑结果；常量内容和模块池的解释由验证及执行层负责。
+ *
+ * ## Schema fields
+ * name 为 CONSTANT；resultArity 为 1u；operandArity 为 0u。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE。
+ *
+ * ## Constraints and lifecycle
+ * schema CONSTANT 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。该行只限定一结果、零操作数；不认证常量池索引、类型或外部常量配置，相关验证仍须调用方完成。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:16
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:318
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:412
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_CONVERT
+ * @par Schema record: ZR_EXEC_IR_OP(CONVERT, ...)
+ *
+ * ## Summary
+ * 为显式转换提供单输入、单结果的结构形状，供转换分析及执行后端识别。
+ *
+ * ## Schema fields
+ * name 为 CONVERT；resultArity 为 1u；operandArity 为 1u。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE。
+ *
+ * ## Constraints and lifecycle
+ * schema CONVERT 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。schema 不编码源/目标类型转换表、溢出或数值舍入规则；这些约束不能从零 memory masks 或 PRODUCES_VALUE 推导。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:17
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:318
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:417
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_ARITHMETIC
+ * @par Schema record: ZR_EXEC_IR_OP(ARITHMETIC, ...)
+ *
+ * ## Summary
+ * 保留通用二元算术的单结果身份，供历史构造和后端分派与具体算术 opcode 协作。
+ *
+ * ## Schema fields
+ * name 为 ARITHMETIC；resultArity 为 1u；operandArity 为 2u。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE。
+ *
+ * ## Constraints and lifecycle
+ * schema ARITHMETIC 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。该行不携带算术种类、数值域或溢出策略；Oracle 当前把该名称与 ADD 共用部分分支，并不代表所有后端通用算术能力。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:18
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:142
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:169
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_COPY
+ * @par Schema record: ZR_EXEC_IR_OP(COPY, ...)
+ *
+ * ## Summary
+ * 描述复制样式的一输入一结果指令，供值传播及后端搬运识别。
+ *
+ * ## Schema fields
+ * name 为 COPY；resultArity 为 1u；operandArity 为 1u。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE。
+ *
+ * ## Constraints and lifecycle
+ * schema COPY 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。单结果形状不证明类型兼容、拥有者复制是否合法或源值可再次消费；所有权和可用性由独立分析验证。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:19
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:319
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:417
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_MOVE
+ * @par Schema record: ZR_EXEC_IR_OP(MOVE, ...)
+ *
+ * ## Summary
+ * 描述移动样式的一输入一结果指令，供拥有者分析和实际消费路径识别。
+ *
+ * ## Schema fields
+ * name 为 MOVE；resultArity 为 1u；operandArity 为 1u。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE。
+ *
+ * ## Constraints and lifecycle
+ * schema MOVE 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。memory masks 为零仍不表示没有拥有状态变化；OwnerAnalysis/执行层对 MOVE 的消费处理不由此行完整定义。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:20
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:275
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:319
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_ADD
+ * @par Schema record: ZR_EXEC_IR_OP(ADD, ...)
+ *
+ * ## Summary
+ * 为加法样式的二输入一结果指令提供稳定的结构和元数据身份。
+ *
+ * ## Schema fields
+ * name 为 ADD；resultArity 为 1u；operandArity 为 2u。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE。
+ *
+ * ## Constraints and lifecycle
+ * schema ADD 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。该行不携带溢出策略、类型或常量折叠许可；未设置 MAY_THROW 不等于任意类型或所有后端均不会失败。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:21
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:141
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:169
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_SUB
+ * @par Schema record: ZR_EXEC_IR_OP(SUB, ...)
+ *
+ * ## Summary
+ * 为减法样式的二输入一结果指令提供结构和元数据身份。
+ *
+ * ## Schema fields
+ * name 为 SUB；resultArity 为 1u；operandArity 为 2u。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE。
+ *
+ * ## Constraints and lifecycle
+ * schema SUB 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。该行不定义数值域、溢出策略或优化许可，不能代替数值合同与后端能力检查。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:22
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:145
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:170
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_MUL
+ * @par Schema record: ZR_EXEC_IR_OP(MUL, ...)
+ *
+ * ## Summary
+ * 为乘法样式的二输入一结果指令提供结构和元数据身份。
+ *
+ * ## Schema fields
+ * name 为 MUL；resultArity 为 1u；operandArity 为 2u。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE。
+ *
+ * ## Constraints and lifecycle
+ * schema MUL 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。该行不保证运算已实现、类型合法或结果不会溢出；数值及优化前提由具体消费端验证。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:23
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:148
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:171
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_DIV
+ * @par Schema record: ZR_EXEC_IR_OP(DIV, ...)
+ *
+ * ## Summary
+ * 为除法样式的二输入一结果指令声明可能抛出，使效果和恢复边界能保守处理异常。
+ *
+ * ## Schema fields
+ * name 为 DIV；resultArity 为 1u；operandArity 为 2u。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE | ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW。
+ *
+ * ## Constraints and lifecycle
+ * schema DIV 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。MAY_THROW 是 opcode schema 属性；具体指令所需动态 flags 由效果验证核对，除零、数值域和后端失败语义仍在实现层。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:24
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:153
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:172
+ * - tests/parser/test_ssa_effects_verifier.c:356
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_NEG
+ * @par Schema record: ZR_EXEC_IR_OP(NEG, ...)
+ *
+ * ## Summary
+ * 为一元取负样式的单输入单结果指令提供结构身份。
+ *
+ * ## Schema fields
+ * name 为 NEG；resultArity 为 1u；operandArity 为 1u。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE。
+ *
+ * ## Constraints and lifecycle
+ * schema NEG 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。此处不限定整数/浮点表示、溢出和符号零规则；未设置内存及异常 schema 位不扩展成所有执行语义保证。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:25
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:321
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:452
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_COMPARE
+ * @par Schema record: ZR_EXEC_IR_OP(COMPARE, ...)
+ *
+ * ## Summary
+ * 为比较提供两输入、一逻辑结果的结构身份，供选择器校验和比较后端分派。
+ *
+ * ## Schema fields
+ * name 为 COMPARE；resultArity 为 1u；operandArity 为 2u。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE。
+ *
+ * ## Constraints and lifecycle
+ * schema COMPARE 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。具体比较种类通过 instruction.typeToken 的比较选择器域表示；该字段在 COMPARE 不能按通常 canonical TypeId 解释，验证层另拒绝未知选择器。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:26
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:321
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:459
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_PLACE_BASE
+ * @par Schema record: ZR_EXEC_IR_OP(PLACE_BASE, ...)
+ *
+ * ## Summary
+ * 为位置基址表示提供单输入单结果的结构身份，供地址来源及位置 provider 协作。
+ *
+ * ## Schema fields
+ * name 为 PLACE_BASE；resultArity 为 1u；operandArity 为 1u。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE。
+ *
+ * ## Constraints and lifecycle
+ * schema PLACE_BASE 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。该行不认证地址、存储布局或 provider；Oracle 的实际位置操作仍要求 place 回调，零内存 mask 不等于无需运行时协作。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:27
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:296
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:490
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_PLACE_PROJECT
+ * @par Schema record: ZR_EXEC_IR_OP(PLACE_PROJECT, ...)
+ *
+ * ## Summary
+ * 为从位置及投影信息计算位置结果提供二输入单结果结构身份。
+ *
+ * ## Schema fields
+ * name 为 PLACE_PROJECT；resultArity 为 1u；operandArity 为 2u。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE。
+ *
+ * ## Constraints and lifecycle
+ * schema PLACE_PROJECT 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。schema 不验证投影范围、布局、地址可访问性或 provider；后端位置实现及调用方的来源约束独立成立。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:28
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:297
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:491
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_LOAD
+ * @par Schema record: ZR_EXEC_IR_OP(LOAD, ...)
+ *
+ * ## Summary
+ * 声明从 managed-heap 内存域读取的一输入一结果形状，使 memory SSA 能要求相应输入 token。
+ *
+ * ## Schema fields
+ * name 为 LOAD；resultArity 为 1u；operandArity 为 1u。memoryReads 为 (1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP)；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE。
+ *
+ * ## Constraints and lifecycle
+ * schema LOAD 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。内存域 mask 是 token 类别元数据，不是可读地址/长度或执行权限证明；Oracle 另要求 memory provider，结果类型与实际读取失败由后端负责。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:29
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:305
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:539
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_STORE
+ * @par Schema record: ZR_EXEC_IR_OP(STORE, ...)
+ *
+ * ## Summary
+ * 声明写 managed-heap 的二输入、零结果指令，并保守标记可能抛出。
+ *
+ * ## Schema fields
+ * name 为 STORE；resultArity 为 0u；operandArity 为 2u。memoryReads 为 0u；memoryWrites 为 (1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP)；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW。
+ *
+ * ## Constraints and lifecycle
+ * schema STORE 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。schema 不认证目标地址、元素类型、写屏障或事务性；memory/effect 合成及验证读取该声明，实际写入与失败状态由执行层定义。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:30
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:322
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:561
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_CALL
+ * @par Schema record: ZR_EXEC_IR_OP(CALL, ...)
+ *
+ * ## Summary
+ * 为普通调用保留单结果、可变操作数及 heap/FFI 读写声明，并标记可能抛出和分配。
+ *
+ * ## Schema fields
+ * name 为 CALL；resultArity 为 1u；operandArity 为 ZR_EXEC_IR_VARIADIC。memoryReads 为 ((1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP) | (1u << ZR_EXEC_IR_MEMORY_NATIVE_FFI))；memoryWrites 为 ((1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP) | (1u << ZR_EXEC_IR_MEMORY_NATIVE_FFI))；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW | ZR_EXEC_IR_SCHEMA_FLAG_MAY_ALLOCATE。
+ *
+ * ## Constraints and lifecycle
+ * schema CALL 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。本行没有 PRODUCES_VALUE 位但 resultArity 仍为 1；标志和 arity 是独立字段。变长不表示任意调用合同有效，binding rows、实参及回调能力另验。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:31
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:285
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:363
+ * - tests/parser/test_ssa_effects_verifier_invoke.inc:90
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_ALLOC
+ * @par Schema record: ZR_EXEC_IR_OP(ALLOC, ...)
+ *
+ * ## Summary
+ * 为分配提供单结果、可变操作数形状，声明 heap/GC 写和可能分配、可能 GC。
+ *
+ * ## Schema fields
+ * name 为 ALLOC；resultArity 为 1u；operandArity 为 ZR_EXEC_IR_VARIADIC。memoryReads 为 0u；memoryWrites 为 ((1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP) | (1u << ZR_EXEC_IR_MEMORY_GC))；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE | ZR_EXEC_IR_SCHEMA_FLAG_MAY_ALLOCATE | ZR_EXEC_IR_SCHEMA_FLAG_MAY_GC。
+ *
+ * ## Constraints and lifecycle
+ * schema ALLOC 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。未设置某个 schema 位不保证实际分配成功或无异常；该行不分配对象、不提供根注册或回收时序，后端与动态 flags 验证另负责。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:32
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:308
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:514
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_BARRIER
+ * @par Schema record: ZR_EXEC_IR_OP(BARRIER, ...)
+ *
+ * ## Summary
+ * 为写屏障类动作提供一输入、零结果形状，声明 heap 读、heap/GC 写和可能 GC。
+ *
+ * ## Schema fields
+ * name 为 BARRIER；resultArity 为 0u；operandArity 为 1u。memoryReads 为 (1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP)；memoryWrites 为 ((1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP) | (1u << ZR_EXEC_IR_MEMORY_GC))；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_MAY_GC。
+ *
+ * ## Constraints and lifecycle
+ * schema BARRIER 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。此处只是类别与形状合同，不执行屏障、不证明对象属于某 GC 或已被 pin，也不替代实际写屏障和根生命周期。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:33
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:322
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:583
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_DROP
+ * @par Schema record: ZR_EXEC_IR_OP(DROP, ...)
+ *
+ * ## Summary
+ * 为确定消费的释放动作提供一输入、零结果形状，声明 ownership 域读写及 DROP 效果。
+ *
+ * ## Schema fields
+ * name 为 DROP；resultArity 为 0u；operandArity 为 1u。memoryReads 为 (1u << ZR_EXEC_IR_MEMORY_OWNERSHIP)；memoryWrites 为 (1u << ZR_EXEC_IR_MEMORY_OWNERSHIP)；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_MAY_DROP。
+ *
+ * ## Constraints and lifecycle
+ * schema DROP 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。schema 的 ownership mask 不表示 C 内存释放已经发生；值当前是否初始化、仍拥有以及实际 drop 行为须由拥有者验证与执行层判定。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:34
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:322
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:572
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_BRANCH
+ * @par Schema record: ZR_EXEC_IR_OP(BRANCH, ...)
+ *
+ * ## Summary
+ * 为无条件控制转移提供零操作数、零结果和终结指令身份。
+ *
+ * ## Schema fields
+ * name 为 BRANCH；resultArity 为 0u；operandArity 为 0u。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR。
+ *
+ * ## Constraints and lifecycle
+ * schema BRANCH 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。具体后继数量、范围、块末位置及 CFG 双向一致性由结构验证另查；没有 memory 位不表示控制流不可观察。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:35
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:324
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:719
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_CONDITIONAL_BRANCH
+ * @par Schema record: ZR_EXEC_IR_OP(CONDITIONAL_BRANCH, ...)
+ *
+ * ## Summary
+ * 为条件控制转移提供一操作数、零结果和终结指令身份。
+ *
+ * ## Schema fields
+ * name 为 CONDITIONAL_BRANCH；resultArity 为 0u；operandArity 为 1u。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR。
+ *
+ * ## Constraints and lifecycle
+ * schema CONDITIONAL_BRANCH 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。本行不编码真假分支的后继顺序或条件类型；Parser typed edges、结构验证及具体后端分别核对，不能只靠 TERMINATOR 构造合法 CFG。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:36
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:324
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:724
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_SWITCH
+ * @par Schema record: ZR_EXEC_IR_OP(SWITCH, ...)
+ *
+ * ## Summary
+ * 为多路控制转移提供可变操作数、零结果和终结身份。
+ *
+ * ## Schema fields
+ * name 为 SWITCH；resultArity 为 0u；operandArity 为 ZR_EXEC_IR_VARIADIC。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR。
+ *
+ * ## Constraints and lifecycle
+ * schema SWITCH 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。VARIADIC 使通用 arity 下界为 0、上界为 UINT32_MAX；这不取消后端对选择器和后继的额外要求，也不保证零操作数 SWITCH 可执行。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:37
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:324
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:730
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_INVOKE
+ * @par Schema record: ZR_EXEC_IR_OP(INVOKE, ...)
+ *
+ * ## Summary
+ * 为带控制后继的调用提供单结果、可变操作数及 heap/FFI 读写，并标记终结、可能抛出和分配。
+ *
+ * ## Schema fields
+ * name 为 INVOKE；resultArity 为 1u；operandArity 为 ZR_EXEC_IR_VARIADIC。memoryReads 为 ((1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP) | (1u << ZR_EXEC_IR_MEMORY_NATIVE_FFI))；memoryWrites 为 ((1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP) | (1u << ZR_EXEC_IR_MEMORY_NATIVE_FFI))；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR | ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW | ZR_EXEC_IR_SCHEMA_FLAG_MAY_ALLOCATE。
+ *
+ * ## Constraints and lifecycle
+ * schema INVOKE 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。schema 与 CALL 的内存类别相同；正常/异常后继顺序、结果在哪条边可用及 binding 合同由 CFG/SSA/调用验证另查，不以元数据存在证明。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:38
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:288
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:363
+ * - tests/parser/test_ssa_effects_verifier_invoke.inc:90
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_THROW
+ * @par Schema record: ZR_EXEC_IR_OP(THROW, ...)
+ *
+ * ## Summary
+ * 为显式抛出提供一操作数、零结果的终结身份，并声明 scheduler/task 写和可能抛出。
+ *
+ * ## Schema fields
+ * name 为 THROW；resultArity 为 0u；operandArity 为 1u。memoryReads 为 0u；memoryWrites 为 (1u << ZR_EXEC_IR_MEMORY_SCHEDULER_TASK)；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR | ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW。
+ *
+ * ## Constraints and lifecycle
+ * schema THROW 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。具体异常值、目标 handler、清理链与运行时发布并非本行执行；不得由无 memoryReads 推断没有状态变化。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:39
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:325
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:736
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_SUSPEND
+ * @par Schema record: ZR_EXEC_IR_OP(SUSPEND, ...)
+ *
+ * ## Summary
+ * 为挂起提供单结果、可变操作数的终结形状，声明 scheduler/task 读写及可能挂起。
+ *
+ * ## Schema fields
+ * name 为 SUSPEND；resultArity 为 1u；operandArity 为 ZR_EXEC_IR_VARIADIC。memoryReads 为 (1u << ZR_EXEC_IR_MEMORY_SCHEDULER_TASK)；memoryWrites 为 (1u << ZR_EXEC_IR_MEMORY_SCHEDULER_TASK)；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR | ZR_EXEC_IR_SCHEMA_FLAG_MAY_SUSPEND。
+ *
+ * ## Constraints and lifecycle
+ * schema SUSPEND 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。该行不持有 continuation、不保存调用者对象、不保证恢复点存在；恢复状态与帧、所有权、state map 和后端约束另验。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:40
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:325
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:741
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_RETURN
+ * @par Schema record: ZR_EXEC_IR_OP(RETURN, ...)
+ *
+ * ## Summary
+ * 为返回提供零结果、最多一操作数和终结身份，兼容无返回值的零操作数形式。
+ *
+ * ## Schema fields
+ * name 为 RETURN；resultArity 为 0u；operandArity 为 1u。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR。
+ *
+ * ## Constraints and lifecycle
+ * schema RETURN 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。物理 operandArity 为 1，但 Core 元数据宏专门把 RETURN.minimumOperands 设为 0；通用验证接受 0..1，返回类型/CFG/执行结果合同另验。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:41
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:325
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:731
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_PHI
+ * @par Schema record: ZR_EXEC_IR_OP(PHI, ...)
+ *
+ * ## Summary
+ * 为显式 PHI opcode 保留单结果、可变操作数及值产生身份，供流分析和后端识别。
+ *
+ * ## Schema fields
+ * name 为 PHI；resultArity 为 1u；operandArity 为 ZR_EXEC_IR_VARIADIC。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE。
+ *
+ * ## Constraints and lifecycle
+ * schema PHI 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。本行不替代 block/phiIncoming 专用表示、平行边 occurrence、支配和类型验证；VARIADIC 不认证任意输入序列合法。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:42
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:326
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:748
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_ITER_INIT
+ * @par Schema record: ZR_EXEC_IR_OP(ITER_INIT, ...)
+ *
+ * ## Summary
+ * 为迭代器初始化保留一输入一结果的调用式终结身份，声明 heap/FFI 读写及可能抛出、分配。
+ *
+ * ## Schema fields
+ * name 为 ITER_INIT；resultArity 为 1u；operandArity 为 1u。memoryReads 为 ((1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP) | (1u << ZR_EXEC_IR_MEMORY_NATIVE_FFI))；memoryWrites 为 ((1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP) | (1u << ZR_EXEC_IR_MEMORY_NATIVE_FFI))；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR | ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW | ZR_EXEC_IR_SCHEMA_FLAG_MAY_ALLOCATE。
+ *
+ * ## Constraints and lifecycle
+ * schema ITER_INIT 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。虽然结果为 1，本行未设置 PRODUCES_VALUE；正常/异常边顺序和结果可用性另验，Oracle 要求 iterator provider，不保证任何容器都可迭代。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:43
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:291
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:643
+ * - tests/parser/test_ssa_builder_iterator_invokes.c:94
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_ITER_MOVE_NEXT
+ * @par Schema record: ZR_EXEC_IR_OP(ITER_MOVE_NEXT, ...)
+ *
+ * ## Summary
+ * 为推进迭代器保留一输入一结果的调用式终结身份，声明 heap/FFI 读写及可能抛出、分配。
+ *
+ * ## Schema fields
+ * name 为 ITER_MOVE_NEXT；resultArity 为 1u；operandArity 为 1u。memoryReads 为 ((1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP) | (1u << ZR_EXEC_IR_MEMORY_NATIVE_FFI))；memoryWrites 为 ((1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP) | (1u << ZR_EXEC_IR_MEMORY_NATIVE_FFI))；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR | ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW | ZR_EXEC_IR_SCHEMA_FLAG_MAY_ALLOCATE。
+ *
+ * ## Constraints and lifecycle
+ * schema ITER_MOVE_NEXT 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。本行不定义结束状态的具体值表示或实际迭代器资源释放；后继、拥有者、异常路径与 provider 合同由上游和后端配合。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:44
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:292
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:644
+ * - tests/parser/test_ssa_builder_iterator_invokes.c:94
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_ITER_CURRENT
+ * @par Schema record: ZR_EXEC_IR_OP(ITER_CURRENT, ...)
+ *
+ * ## Summary
+ * 为读取迭代当前值保留一输入一结果的调用式终结身份，声明 heap/FFI 读写及可能抛出、分配。
+ *
+ * ## Schema fields
+ * name 为 ITER_CURRENT；resultArity 为 1u；operandArity 为 1u。memoryReads 为 ((1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP) | (1u << ZR_EXEC_IR_MEMORY_NATIVE_FFI))；memoryWrites 为 ((1u << ZR_EXEC_IR_MEMORY_MANAGED_HEAP) | (1u << ZR_EXEC_IR_MEMORY_NATIVE_FFI))；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_TERMINATOR | ZR_EXEC_IR_SCHEMA_FLAG_MAY_THROW | ZR_EXEC_IR_SCHEMA_FLAG_MAY_ALLOCATE。
+ *
+ * ## Constraints and lifecycle
+ * schema ITER_CURRENT 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。本行不保证推进已成功或当前值可访问；正常/异常边与结果可用性仍由独立验证和 iterator provider 约束。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:45
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:293
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:645
+ * - tests/parser/test_ssa_builder_iterator_invokes.c:94
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_EXCEPTION_PAYLOAD
+ * @par Schema record: ZR_EXEC_IR_OP(EXCEPTION_PAYLOAD, ...)
+ *
+ * ## Summary
+ * 为异常处理块中的局部异常值提供零操作数、单结果及值产生身份。
+ *
+ * ## Schema fields
+ * name 为 EXCEPTION_PAYLOAD；resultArity 为 1u；operandArity 为 0u。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE。
+ *
+ * ## Constraints and lifecycle
+ * schema EXCEPTION_PAYLOAD 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。schema 自身不验证当前块是否仅从合法异常边进入；通用验证另查 handler 入口和位置，Oracle 另要求 exceptionPayload provider。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:46
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:314
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:698
+ * - tests/parser/test_ssa_builder_control_edges.c:647
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_TYPE_TEST
+ * @par Schema record: ZR_EXEC_IR_OP(TYPE_TEST, ...)
+ *
+ * ## Summary
+ * 为类型匹配谓词提供一输入单结果和值产生身份，供异常分派及具体类型测试协作。
+ *
+ * ## Schema fields
+ * name 为 TYPE_TEST；resultArity 为 1u；operandArity 为 1u。memoryReads 为 0u；memoryWrites 为 0u；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE。
+ *
+ * ## Constraints and lifecycle
+ * schema TYPE_TEST 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。instruction.matchTypeToken 对 TYPE_TEST 必须非零，其余 opcode 必须为零；该约束来自验证器，不是本行的额外字段。Oracle 另要求 typeTest provider。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:47
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:311
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:684
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_DROP_IF_INITIALIZED
+ * @par Schema record: ZR_EXEC_IR_OP(DROP_IF_INITIALIZED, ...)
+ *
+ * ## Summary
+ * 为有初始化见证的条件清理提供一输入、零结果和 ownership 域读写及 DROP 效果。
+ *
+ * ## Schema fields
+ * name 为 DROP_IF_INITIALIZED；resultArity 为 0u；operandArity 为 1u。memoryReads 为 (1u << ZR_EXEC_IR_MEMORY_OWNERSHIP)；memoryWrites 为 (1u << ZR_EXEC_IR_MEMORY_OWNERSHIP)；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_MAY_DROP。
+ *
+ * ## Constraints and lifecycle
+ * schema DROP_IF_INITIALIZED 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。schema 与普通 DROP 的形状相同但不省略 ConditionalCleanupValid、SSA 见证及 payload 校验；未初始化路径是否读取 payload 由具体实现和测试另证。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:48
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:323
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:375
+ */
+
+/**
+ * @anchor zr_exec_ir_opcode_schema_WAKE
+ * @par Schema record: ZR_EXEC_IR_OP(WAKE, ...)
+ *
+ * ## Summary
+ * 为显式 WAKE 的一输入一结果保留 ownership 域读写和值产生身份，使源级映射不会悄然丢失 opcode 身份。
+ *
+ * ## Schema fields
+ * name 为 WAKE；resultArity 为 1u；operandArity 为 1u。memoryReads 为 (1u << ZR_EXEC_IR_MEMORY_OWNERSHIP)；memoryWrites 为 (1u << ZR_EXEC_IR_MEMORY_OWNERSHIP)；schemaFlags 为 ZR_EXEC_IR_SCHEMA_FLAG_PRODUCES_VALUE。
+ *
+ * ## Constraints and lifecycle
+ * schema WAKE 只声明形状与保守类别，不分配或释放资源，不验证实际操作数/结果池和目标后端支持。该记录存在不等于后端支持；Oracle 的支持筛选当前直接返回 FALSE。ownership mask 也不定义调度唤醒协议或所有权转移完整语义。 所有字段在预处理展开时使用；运行期元数据表/名称是实现持有的 const 借用，实际指令及其关联池须遵守消费端同步和生命周期。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def:49
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:198
+ * - zr_vm_core/include/zr_vm_core/exec_ir.h:200
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1034
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1046
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:1053
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:551
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:605
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:621
+ * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c:282
+ * - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_lowering.c:19
+ */
