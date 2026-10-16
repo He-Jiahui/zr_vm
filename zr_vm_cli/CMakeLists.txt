@@ -61,8 +61,8 @@ if (TARGET zr_vm_lib_network_shared OR TARGET zr_vm_lib_network_static)
     )
 endif ()
 
-if (TARGET zr_vm_lib_thread_shared OR TARGET zr_vm_lib_thread_static)
-    zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_lib_thread")
+if (TARGET zr_vm_thread_shared OR TARGET zr_vm_thread_static)
+    zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_thread")
     target_compile_definitions(${zr_curr_module_exec} PRIVATE
             ZR_VM_HAS_THREAD_MODULE=1
     )

@@ -73,11 +73,11 @@ CLI 的普通首方链接同开两种库时选择 static；生成外部产物使
 
 `BUG:` 对一个已声明 executable 先调用首方 plain `target_link_libraries` 入口，再调用已注册第三方的 PRIVATE 签名入口，CMake 会拒绝签名混用。两个入口的合法组合前提包含目标创建、首方变体存在及第三方注册。当前产品 CLI 的相关调用均为 plain，已有标签记录的是 API 组合缺陷。
 
-### thread 调用方使用了目录名
+### thread 调用方查询逻辑目标
 
-`BUG:` 启用 `BUILD_THREAD_LIB` 后，thread 配置用逻辑名 `zr_vm_thread` 创建库目标。CLI 的可选依赖分支与 Rust binding 的能力宏、链接分支却查询 `zr_vm_lib_thread_static/shared`；这些目标不存在，因此分支跳过。CLI project support 随后按 `ZR_VM_HAS_THREAD_MODULE` 控制头文件和 `ZrVmThread_Register`，所以构建成功仍会省略 thread 模块注册。LSP 查询 `zr_vm_thread_*`，与实际目标一致。
+thread 配置用逻辑名 `zr_vm_thread` 创建库目标，源码目录是 `zr_vm_lib_thread`。CLI 按 `zr_vm_thread_static/shared` 是否存在选择链接，并设置 `ZR_VM_HAS_THREAD_MODULE=1`，使 project support 编入 `ZrVmThread_Register`。模块禁用时不添加链接和能力宏。当前 Rust binding 与 LSP 也查询该逻辑目标；旧审查中对 Rust binding 的问题描述已不适用于当前源码。
 
-证据入口为 `zr_vm_lib_thread/CMakeLists.txt:2/:4`、`zr_vm_cli/CMakeLists.txt:64/:65/:67`、`zr_vm_rust_binding/CMakeLists.txt:27/:29/:65/:66` 和 `zr_vm_cli/src/zr_vm_cli/project/project.c:26/:370/:371`。`TODO:` 后续审查 CLI、Rust binding 及 tests 的相关调用块时，在各自调用位置补充同一触发条件的标签；目标名与能力宏的行为修复另行处理。此批源码注释只涉及已独立审查的 CommonMacros 文件。
+2026-10-16 实际 checkout 的 Windows 双库配置已复现 CLI 漏注册：thread 目标存在，但 CLI 的21个编译单元均没有线程能力宏，链接规则也没有 thread 归档。修复把 CLI 的目标查询和逻辑依赖名同步改为 `zr_vm_thread`；定向配置复测中21个编译单元均带能力宏，链接规则包含实际 thread 归档；随后统一批次实际重编 CLI 并运行 hello_world，均退出0。配置复测与统一批次输入哈希均稳定，收据分别为 cli-thread-green-receipt.json 与 integrated-support-batch-3-red-receipt.json。此修改没有改变 Rust binding 配置。
 
 ### 其他边界
 
