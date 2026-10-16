@@ -170,3 +170,5 @@ doc_type: category-index
 - [Native plugin allocation and I/O](../library/native-registry-allocation-lifecycle.md)：注册回滚、影子副本复制与加载失败清理。
 
 - [Thread transport string bytes](thread-transport-string-bytes.md)：显式长度、clone 和 decode 的内嵌 NUL 保真。
+
+- [文件路径、复制与移动](../library/file-path-operations.md)：join 截断、Windows 根路径及覆盖前的源与路径关系检查。
