@@ -5,6 +5,8 @@
 #include "fs/fs_internal.h"
 
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/exception.h"
+#include "zr_vm_core/string.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/value.h"
 
@@ -125,46 +127,82 @@ static TZrBool system_fs_write_all(TZrLibrary_File_Handle handle, const unsigned
     return ZR_TRUE;
 }
 
-/* 把 File.open 刚创建的句柄绑定为一个 owned wrapper，同时提供 FFI 所需的整数视图。 */
+/* Caller-owned state survives Throw; only a published hidden owner may finalize data. */
+typedef struct ZrSystemFsStreamConstruction {
+    const TZrChar *path;
+    const SZrLibrary_File_StreamOpenResult *openResult;
+    ZrLibTempValueRoot root;
+    TZrBool rootStarted;
+    TZrBool transferred;
+    ZrSystemFsStreamData *data;
+    SZrObject *result;
+} ZrSystemFsStreamConstruction;
+
+static SZrObject *system_fs_stream_construction_object(ZrSystemFsStreamConstruction *context) {
+    SZrTypeValue *value = ZrLib_TempValueRoot_Value(&context->root);
+    return value != ZR_NULL ? (SZrObject *)ZrCore_Value_GetRawObject(value) : ZR_NULL;
+}
+
+static void system_fs_construct_stream(SZrState *state, TZrPtr arguments) {
+    ZrSystemFsStreamConstruction *context = arguments;
+    SZrObject *object;
+    if (!ZrLib_TempValueRoot_Begin(state, &context->root)) {
+        return;
+    }
+    context->rootStarted = ZR_TRUE;
+    object = ZrLib_Type_NewInstance(state, "FileStream");
+    if (object == ZR_NULL || !ZrLib_TempValueRoot_SetObject(&context->root, object, ZR_VALUE_TYPE_OBJECT)) {
+        return;
+    }
+    context->data = (ZrSystemFsStreamData *)malloc(sizeof(*context->data));
+    if (context->data == ZR_NULL) {
+        return;
+    }
+    memset(context->data, 0, sizeof(*context->data));
+    context->data->handle = context->openResult->handle;
+    context->data->readable = context->openResult->readable;
+    context->data->writable = context->openResult->writable;
+    context->data->append = context->openResult->append;
+    object->super.scanMarkGcFunction = ZrSystem_Fs_StreamFinalize;
+    system_fs_set_hidden_native_pointer(state, object, ZR_SYSTEM_FS_HIDDEN_STREAM_FIELD, context->data);
+    /* No fallible work between field publication and ownership bookkeeping. */
+    context->transferred = ZR_TRUE;
+    object = system_fs_stream_construction_object(context);
+    ZrSystem_Fs_WriteIntField(state, object, ZR_SYSTEM_FS_HIDDEN_HANDLE_ID_FIELD, context->openResult->handle);
+    object = system_fs_stream_construction_object(context);
+    ZrSystem_Fs_WriteStringField(state, object, "path", context->path);
+    object = system_fs_stream_construction_object(context);
+    ZrSystem_Fs_WriteStringField(state, object, "mode", context->openResult->normalizedMode);
+    object = system_fs_stream_construction_object(context);
+    ZrSystem_Fs_WriteBoolField(state, object, "closed", ZR_FALSE);
+    object = system_fs_stream_construction_object(context);
+    ZrSystem_Fs_StreamSyncFields(state, object, context->data);
+    context->result = system_fs_stream_construction_object(context);
+}
+
+/* Return captured status so File.open can close its untransferred handle before Throw. */
 SZrObject *ZrSystem_Fs_NewStreamObject(SZrState *state,
                                        const TZrChar *path,
-                                       const SZrLibrary_File_StreamOpenResult *openResult) {
-    SZrObject *object;
-    ZrSystemFsStreamData *data;
-    ZrLibTempValueRoot root;
-
-    if (state == ZR_NULL || path == ZR_NULL || openResult == ZR_NULL) {
+                                       const SZrLibrary_File_StreamOpenResult *openResult,
+                                       TZrBool *outHandleTransferred,
+                                       EZrThreadStatus *outStatus) {
+    ZrSystemFsStreamConstruction context;
+    EZrThreadStatus status;
+    if (outHandleTransferred != ZR_NULL) *outHandleTransferred = ZR_FALSE;
+    if (outStatus != ZR_NULL) *outStatus = ZR_THREAD_STATUS_FINE;
+    if (state == ZR_NULL || path == ZR_NULL || openResult == ZR_NULL ||
+        outHandleTransferred == ZR_NULL || outStatus == ZR_NULL) {
         return ZR_NULL;
     }
-
-    if (!ZrLib_TempValueRoot_Begin(state, &root)) {
-        return ZR_NULL;
-    }
-
-    object = ZrLib_Type_NewInstance(state, "FileStream");
-    data = (ZrSystemFsStreamData *)malloc(sizeof(*data));
-    if (object == ZR_NULL || data == ZR_NULL) {
-        free(data);
-        ZrLib_TempValueRoot_End(&root);
-        return ZR_NULL;
-    }
-
-    memset(data, 0, sizeof(*data));
-    data->handle = openResult->handle;
-    data->readable = openResult->readable;
-    data->writable = openResult->writable;
-    data->append = openResult->append;
-    ZrLib_TempValueRoot_SetObject(&root, object, ZR_VALUE_TYPE_OBJECT);
-
-    object->super.scanMarkGcFunction = ZrSystem_Fs_StreamFinalize;
-    system_fs_set_hidden_native_pointer(state, object, ZR_SYSTEM_FS_HIDDEN_STREAM_FIELD, data);
-    ZrSystem_Fs_WriteIntField(state, object, ZR_SYSTEM_FS_HIDDEN_HANDLE_ID_FIELD, openResult->handle);
-    ZrSystem_Fs_WriteStringField(state, object, "path", path);
-    ZrSystem_Fs_WriteStringField(state, object, "mode", openResult->normalizedMode);
-    ZrSystem_Fs_WriteBoolField(state, object, "closed", ZR_FALSE);
-    ZrSystem_Fs_StreamSyncFields(state, object, data);
-    ZrLib_TempValueRoot_End(&root);
-    return object;
+    memset(&context, 0, sizeof(context));
+    context.path = path;
+    context.openResult = openResult;
+    status = ZrCore_Exception_TryRun(state, system_fs_construct_stream, &context);
+    *outHandleTransferred = context.transferred;
+    *outStatus = status;
+    if (!context.transferred) free(context.data);
+    if (context.rootStarted) ZrLib_TempValueRoot_End(&context.root);
+    return status == ZR_THREAD_STATUS_FINE ? context.result : ZR_NULL;
 }
 
 ZrSystemFsStreamData *ZrSystem_Fs_GetStreamData(SZrState *state, SZrObject *object) {
@@ -310,6 +348,22 @@ TZrBool ZrSystem_Fs_ReadBytesFromHandle(SZrState *state,
     return ZR_TRUE;
 }
 
+typedef struct ZrSystemFsTextPublication {
+    TZrNativeString text;
+    TZrSize size;
+    SZrTypeValue *result;
+} ZrSystemFsTextPublication;
+
+static void system_fs_publish_text(SZrState *state, TZrPtr arguments) {
+    ZrSystemFsTextPublication *context = arguments;
+    SZrString *string = ZrCore_String_Create(state, context->text, context->size);
+    if (string == ZR_NULL) {
+        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+        return;
+    }
+    ZrLib_Value_SetStringObject(state, context->result, string);
+}
+
 TZrBool ZrSystem_Fs_ReadTextFromHandle(SZrState *state,
                                        TZrLibrary_File_Handle handle,
                                        TZrInt64 count,
@@ -341,14 +395,17 @@ TZrBool ZrSystem_Fs_ReadTextFromHandle(SZrState *state,
     }
     text[size] = '\0';
     free(bytes);
-    /* BUG: 含 U+0000 时句柄消费完整 size，但 C-string SetString 按 strlen 截断结果。
-     * 短串 HASH_BUCKET 软分配失败也会令 void SetString 不写 null 结果槽，而本函数仍返回 true。
-     * 两种情况均不回滚已读数据；短串分配和 NUL 行为分别见 leaf 的 BUG 记录。 */
-    ZrLib_Value_SetString(state, result, text);
+    /* Preserve byte count, and release caller-owned bytes before propagating Throw. */
+    ZrSystemFsTextPublication publication = {text, size, result};
+    EZrThreadStatus status = ZrCore_Exception_TryRun(state, system_fs_publish_text, &publication);
+    free(text);
+    if (status != ZR_THREAD_STATUS_FINE) {
+        ZrCore_Exception_Throw(state, status);
+        return ZR_FALSE;
+    }
     if (outReadCount != ZR_NULL) {
         *outReadCount = (TZrInt64)size;
     }
-    free(text);
     return ZR_TRUE;
 }
 
@@ -667,26 +724,14 @@ TZrBool ZrSystem_Fs_Stream_Close(ZrLibCallContext *context, SZrTypeValue *result
  */
 
 /**
- * @fn SZrObject *ZrSystem_Fs_NewStreamObject(SZrState *state, const TZrChar *path, const SZrLibrary_File_StreamOpenResult *openResult)
- * ## Summary
- * 为已打开句柄建立 `FileStream` wrapper，复制打开模式快照并注册 GC 清理回调。
- * ## Parameters
- * @param[in] state 有效 VM state；构造期间可能分配、触发 GC。
- * @param[in] path 已规范化路径的 C 字符串借用至构造完成；不由本函数释放。
- * @param[in] openResult 成功打开的句柄及 readable/writable/append 快照；句柄所有权在 wrapper 成功交付后转移。
- * ## Returns
- * @return 成功时返回新的 wrapper；输入、对象/记录普通分配失败时返回 NULL；VM 异常可非局部退出，原句柄仍需清理。
- * ## Constraints and lifecycle
- * `TempValueRoot_Begin` 建立临时根；对象在 `Type_NewInstance` 和 `data` malloc 成功后才于 :157 放入该根，
- * 随后字段写入期间保持可追踪。`data` 由 malloc 创建并由 finalizer 释放。BUG: 受限软失败链为：自定义 allocator
- * 令 ignored-root 表已满时唯一一次 `RawMallocWithType(ARRAY)` 扩容失败；`Object_SetFieldCString` 对字段名
- * string 调 `native_binding_pin_raw_object` 后静默返回，隐藏 owner 未写入，而本函数仍返回 wrapper。`File_Open`
- * 因非 NULL 结果交付对象，之后 GetStreamData/finalizer 无法找到 record。该路径未故障注入，不泛化为所有 OOM。
- * BUG: Type_NewInstance 的 VM 分配异常非局部跳出时，尚未包装的句柄越过 File_Open 的 NULL-only CloseHandle；Exception_Throw/TryRun 仅恢复 VM 根与 scopes，不释放此 C 局部句柄。
- * path 只在同步构造窗口借用，File_Open 的跨分配有效期另有 TODO。TODO: :165 忽略初始 StreamSyncFields 的 false；开放句柄位置或长度查询失败时仍返回 wrapper，position/length 未发布。需核初始查询失败应拒绝构造还是如何表示未知快照（:202-204）。
- * ## References
- * `fs_entry.c:394` 的 `File_Open`、`system_fs_set_hidden_native_pointer` :160、
- * `ZrSystem_Fs_StreamFinalize`、`ZrSystem_Fs_GetStreamData`。
+ * @fn SZrObject *ZrSystem_Fs_NewStreamObject(SZrState *, const TZrChar *, const SZrLibrary_File_StreamOpenResult *, TZrBool *, EZrThreadStatus *)
+ * @brief 为已打开句柄建立 wrapper；捕获异常供 File.open 完成句柄清理后传播。
+ * @param[out] outHandleTransferred hidden owner 字段成功发布后为真，与最终返回对象是否为空无关。
+ * @param[out] outStatus 局部 TryRun 捕获状态；普通失败为 FINE，不伪造 MemoryError。
+ * @return 成功交付 wrapper；普通失败或捕获异常返回 NULL。
+ * @note root/data/transfer 均属于 TryRun 调用方 context。未提交 data 在返回前释放，临时根必配对结束；
+ * 已提交 data/handle 归 wrapper finalizer，调用方不得重复 free/close。path 同步借用。
+ * @note 初始 StreamSyncFields 普通 false 仍沿用既有忽略行为；此独立问题不在本组证据范围。
  */
 
 /**
@@ -800,24 +845,14 @@ TZrBool ZrSystem_Fs_Stream_Close(ZrLibCallContext *context, SZrTypeValue *result
  */
 
 /**
- * @fn TZrBool ZrSystem_Fs_ReadTextFromHandle(SZrState *state, TZrLibrary_File_Handle handle, TZrInt64 count, SZrTypeValue *result, TZrInt64 *outReadCount)
- * ## Summary
- * 从句柄读取字节并尝试建立 VM string，供 File 与 FileStream 的 text read aliases 复用。
- * ## Parameters
- * @param[in] state 有效 VM state；字符串分配在其中完成。
- * @param[in] handle 可读宿主句柄，借用且不由本函数关闭。
- * @param[in] count 非负字节上限，负值读到 EOF。
- * @param[out] result 成功路径的 VM string 结果槽；setter 为 void，不能仅凭函数返回保证写槽成功。
- * @param[out] outReadCount 可选实际消费字节数；成功时包含首 NUL 后的全部已读字节。
- * ## Returns
- * @return 缓冲读取及 SetString 调用后返回 `ZR_TRUE`；普通原生分配或读取失败返回 `ZR_FALSE`。BUG: 短串
- * HASH_BUCKET 扩容软失败时 SetString 可能不写 dispatcher 预置的 null 槽，本函数仍报告成功；Stream 后续查询成功、或 fs_entry.c:47/276-284/419-432 的 File API 临时句柄关闭成功且其余步骤正常返回时，外层同样交付 true/null。
- * ## Constraints and lifecycle
- * text 通过 C-string `SetString`，嵌入 NUL 会截断 VM string，但句柄已消费完整 count；不验证 UTF-8，count
- * 可能切开多字节序列。缓冲在 setter 正常返回后释放；BUG: SetString 的 VM 分配异常非局部退出时跳过 free(text)，
- * Exception_Throw/TryRun 无 C 资源清理注册；一次性 File 入口还越过外层 CloseHandle，普通 false 清理不受此结论影响。
- * ## References
- * `Stream_ReadText` :471、`fs_entry.c:47/425`、`ZrLib_Value_SetString`、既有首 NUL BUG 注释 :344-346。
+ * @fn TZrBool ZrSystem_Fs_ReadTextFromHandle(SZrState *, TZrLibrary_File_Handle, TZrInt64, SZrTypeValue *, TZrInt64 *)
+ * @brief 按字节上限读取文本并使用实际 size 创建 VM String，保留内嵌 NUL。
+ * @param[in] handle 借用句柄；不由本函数关闭。
+ * @param[in] count 非负为字节上限，负值读到 EOF；不验证 UTF-8 边界。
+ * @param[out] outReadCount 成功才写实际消费字节数；失败保持初始零。
+ * @return 读取和发布成功为真；普通宿主分配/I/O失败为假，VM失败释放 text 后传播原异常。
+ * @note 失败不回滚已消费句柄位置；一次性 file helper 的异常关闭不由本叶函数提供。
+ * @note 本组实际回归覆盖 NUL 与正常文本，不授予 CRT malloc OOM 清理的独立动态信用。
  */
 
 /**

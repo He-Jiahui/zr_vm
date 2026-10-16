@@ -182,3 +182,5 @@ the full type-inference runner under Clang ASan/UBSan; see
 - [Benchmark 对比页面的数据入口](benchmark-compare-viewer.md)：报告格式、bundle 自动加载、UTF-8、实现分类与文本转义的实际页面回归。
 
 - [Object write allocation failures](object-write-allocation-failure.md)：Core、Library 与 Reflection 写入失败、结构体复制及临时根清理。
+
+- [FS 文本及包装失败](system-fs-failures.md)：内嵌零字节长度与指定文件句柄的失败清理。

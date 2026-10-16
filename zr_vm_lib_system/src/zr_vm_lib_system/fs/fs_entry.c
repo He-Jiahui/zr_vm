@@ -3,6 +3,7 @@
 //
 
 #include "fs/fs_internal.h"
+#include "zr_vm_core/exception.h"
 
 #include <errno.h>
 #include <string.h>
@@ -380,6 +381,8 @@ TZrBool ZrSystem_Fs_File_Open(ZrLibCallContext *context, SZrTypeValue *result) {
     TZrChar modeBuffer[ZR_LIBRARY_FILE_STREAM_MODE_MAX];
     SZrLibrary_File_StreamOpenResult openResult;
     SZrObject *streamObject;
+    TZrBool handleTransferred = ZR_FALSE;
+    EZrThreadStatus constructionStatus = ZR_THREAD_STATUS_FINE;
     if (self == ZR_NULL || result == ZR_NULL ||
         !system_fs_self_full_path(context->state, self, &fullPath) ||
         !ZrSystem_Fs_ReadOptionalStringArgument(context, 0, "r", modeBuffer, sizeof(modeBuffer))) {
@@ -391,9 +394,13 @@ TZrBool ZrSystem_Fs_File_Open(ZrLibCallContext *context, SZrTypeValue *result) {
     }
     /* TODO: fullPath 借自 self 的字符串；NewStreamObject 会先分配对象和字段再写 path。
      * 需以 GC 压力验证路径指针有效期，并核对包装失败时仍由本层关闭句柄。 */
-    streamObject = ZrSystem_Fs_NewStreamObject(context->state, fullPath, &openResult);
+    streamObject = ZrSystem_Fs_NewStreamObject(context->state, fullPath, &openResult,
+                                              &handleTransferred, &constructionStatus);
     if (streamObject == ZR_NULL) {
-        ZrLibrary_File_CloseHandle(openResult.handle);
+        if (!handleTransferred) ZrLibrary_File_CloseHandle(openResult.handle);
+        if (constructionStatus != ZR_THREAD_STATUS_FINE) {
+            ZrCore_Exception_Throw(context->state, constructionStatus);
+        }
         return ZR_FALSE;
     }
     return ZrSystem_Fs_FinishObjectResult(context->state, result, streamObject);
@@ -1155,10 +1162,10 @@ TZrBool ZrSystem_Fs_Folder_Delete(ZrLibCallContext *context, SZrTypeValue *resul
  * @param[out] result 成功时接收 FileStream VM 对象。
  *
  * ## Returns
- * @return 打开及 wrapper 交付成功返回 ZR_TRUE；OpenHandle 的模式解析、宿主打开或 append 定位失败均转入 RaiseErrnoIOException（短而非法 mode 如空串/q 设 EINVAL）。receiver/result/fullPath 前置校验、mode 首 NUL 前缀超过 7 字节或 wrapper 普通构造失败返回 ZR_FALSE。省略 mode 用 r；显式非 string mode 由 ReadString 抛 TypeError。打开后 NewStreamObject 非局部 VM 异常越过本地 CloseHandle，见共享资源 BUG。
+ * @return 打开及 wrapper 交付成功返回 ZR_TRUE；OpenHandle 的模式解析、宿主打开或 append 定位失败均转入 RaiseErrnoIOException（短而非法 mode 如空串/q 设 EINVAL）。receiver/result/fullPath 前置校验、mode 首 NUL 前缀超过 7 字节或 wrapper 普通构造失败返回 ZR_FALSE。省略 mode 用 r；显式非 string mode 由 ReadString 抛 TypeError。包装异常通过私有 outStatus 返回；本 callback 先关闭未转移句柄，再按原状态传播。
  *
  * ## Constraints and lifecycle
- * 完整 owner 字段发布成功后句柄由 FileStream 接管；包装构造返回 null 时本 callback 尝试 CloseHandle，但忽略该次 close 的返回值。TODO: 沿 ZrLibrary_File_CloseHandle 与平台 close 实现核实此处失败后的 handle 是否仍可重试。BUG: 若 NewStreamObject 的 owner setter 遇到其已证窄化的 ARRAY pin 扩容软失败而仍返回 wrapper，本 callback 将其视为成功且不会关闭句柄，详见 fs_stream 批次。TODO: fullPath 来自 self 的 VM 字符串，在 NewStreamObject 分配和写字段期间仍被使用，GC/lane 地址有效期待核。 w/a/x 模式的宿主 open 成功后已可能截断或创建文件；之后 append seek 失败、wrapper 普通 NULL 或非局部 VM 异常均不恢复文件内容。wrapper 普通 NULL 只触发 CloseHandle 尝试，关闭句柄不等于回滚路径副作用。
+ * hidden owner 字段发布成功即由 FileStream 接管，即使后续构造失败也不重复关闭；提交前失败尝试 CloseHandle，忽略关闭返回值且不改捕获状态。关闭失败后的可重试性不在本组保证内。TODO: fullPath 来自 self 的 VM 字符串，在 NewStreamObject 分配和写字段期间仍被使用，GC/lane 地址有效期待核。 w/a/x 模式的宿主 open 成功后已可能截断或创建文件；之后 append seek 失败、wrapper 普通 NULL 或非局部 VM 异常均不恢复文件内容。未转移 owner 的失败只触发 CloseHandle 尝试，关闭句柄不等于回滚路径副作用。
  *
  * ## References
  * fs_registry.c:135 绑定 File.open；调用 system_fs_self_full_path、ZrLibrary_File_OpenHandle、ZrSystem_Fs_NewStreamObject 和 FinishObjectResult。

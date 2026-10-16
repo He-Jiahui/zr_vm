@@ -26,7 +26,7 @@
  * ## Fields
  * handle 是当前宿主句柄；readable/writable/append 是打开模式快照。closed 在显式 close 成功后置位，finalizer 则在尝试 close 后忽略结果并置位，不能据此推断 OS 状态；finalized 保护 native 记录释放流程。
  * ## Invariants and lifecycle
- * 记录由 NewStreamObject 的 malloc 创建，经隐藏 native-pointer 字段交给 wrapper；StreamFinalize 尝试关闭后释放记录，关闭失败后的 OS 状态未知。隐藏 owner 写入软失败可发布不持有记录的 wrapper，见 NewStreamObject。
+ * 记录由 NewStreamObject 的 malloc 创建，经隐藏 native-pointer 字段交给 wrapper；StreamFinalize 尝试关闭后释放记录，关闭失败后的 OS 状态未知。隐藏 owner 字段成功发布即转移所有权；提交前失败由包装事务和 File.open 各清理其拥有的资源。
  * ## References
  * `fs_stream.c` 的 `NewStreamObject`、`GetStreamData`、`StreamCloseInternal` 与 `StreamFinalize`。
  */
@@ -452,17 +452,19 @@ TZrBool ZrSystem_Fs_RefreshEntryObject(SZrState *state,
  * ## Parameters
  * @param[in] state 当前 VM state。
  * @param[in] path 构造包装所用路径字符串，调用期间须有效。
- * @param[in] openResult 已打开句柄及权限/模式快照；完整 owner 发布成功时由新对象接管，当前非 NULL 软失败例外见 Constraints。
+ * @param[in] openResult 已打开句柄及权限/模式快照；hidden owner 字段发布成功时由新对象接管。
  * ## Returns
- * @return wrapper 进入发布路径时返回对象；输入/根或普通分配失败时为 NULL，由 caller 管理原句柄。BUG: File_Open 已打开句柄且 Type_NewInstance VM 分配异常非局部退出时，越过 NULL-only CloseHandle；TryRun 仅恢复 VM roots/scopes，不释放尚未包装的 C 局部句柄。
+ * @return 成功返回 wrapper；普通失败或捕获异常返回 NULL；outStatus 传递捕获状态。outHandleTransferred 精确记录 hidden owner 提交，调用方只关闭尚未转移的原句柄。
  * ## Constraints and lifecycle
- * `NewStreamObject` 设置 finalizer 后以 void setter 写隐藏 owner；若 owner 字段的 key/string 或 pin 软失败，它仍可返回非 NULL。BUG: 在打开句柄后仅此 owner 写入失败时，File_Open 视为成功并不关闭句柄；后续 `GetStreamData`/finalizer 因字段缺失而无法释放 malloc 记录或关闭句柄。确切条件与证据在本批台账；该失败未做 fault injection。
+ * `NewStreamObject` 在 caller-owned TryRun context 中建立临时根、data 和 owner 字段。未提交 data 返回前释放；已提交 data/handle 由 finalizer 拥有，不能因后续失败重复关闭。所有成功 Begin 均在返回前 End。
  * ## References
  * `fs_entry.c` 的 File_Open；`fs_stream.c` 的 `GetStreamData`、`StreamFinalize`；`ZR_SYSTEM_FS_HIDDEN_STREAM_FIELD`。
  */
 SZrObject *ZrSystem_Fs_NewStreamObject(SZrState *state,
                                        const TZrChar *path,
-                                       const SZrLibrary_File_StreamOpenResult *openResult);
+                                       const SZrLibrary_File_StreamOpenResult *openResult,
+                                       TZrBool *outHandleTransferred,
+                                       EZrThreadStatus *outStatus);
 
 /**
  * ## Summary
