@@ -79,7 +79,7 @@ add_test(NAME ssa_loops_specialization COMMAND zr_vm_ssa_loops_specialization_te
 set(_zr_backend "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/backend_aot")
 add_executable(zr_vm_ssa_aot_scalar_text_test
         "${ZR_SSA_SOURCE_ROOT}/tests/parser/test_ssa_aot_scalar_text.c"
-        "${_zr_core}/aot_ir.c"
+        "${_zr_core}/aot/aot_ir.c"
         "${_zr_core}/exec_ir/exec_ir_state_map_storage.c"
         "${_zr_backend}/backend_aot_ir_scalar_text.c"
         "${_zr_backend}/backend_aot_ir_scalar_c.c"

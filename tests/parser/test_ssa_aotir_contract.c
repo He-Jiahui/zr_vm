@@ -1,4 +1,6 @@
 #include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "zr_vm_core/aot_ir.h"
@@ -18,6 +20,114 @@ static void fill_contract(SZrExecutionContract *contract,
     contract->signatureHash = signatureHash;
     contract->layoutHash = layoutHash;
     contract->moduleHash = moduleHash;
+}
+
+static void reserved_expect(int condition, const char *message) {
+    if (!condition) {
+        fprintf(stderr, "FAIL: AOTIR reserved %s\n", message);
+        exit(EXIT_FAILURE);
+    }
+}
+
+static void expect_reserved_validation(SZrAotIrDiagnostic *diagnostic,
+                                       const SZrAotIrModule *module,
+                                       EZrAotIrStatus wanted,
+                                       TZrUInt32 functionId,
+                                       TZrUInt64 expected,
+                                       TZrUInt64 actual) {
+    unsigned char moduleBefore[sizeof(*module)];
+    unsigned char functionBefore[sizeof(*module->functions)];
+    memcpy(moduleBefore, module, sizeof(moduleBefore));
+    memcpy(functionBefore, module->functions, sizeof(functionBefore));
+    reserved_expect(ZrCore_AotIr_ValidateModule(module, diagnostic) == wanted, "validation status differs");
+    reserved_expect(diagnostic->status == wanted, "diagnostic status differs");
+    reserved_expect(diagnostic->functionId == functionId, "diagnostic functionId differs");
+    reserved_expect(diagnostic->blockId == 0u, "diagnostic blockId differs");
+    reserved_expect(diagnostic->instructionId == 0u, "diagnostic instructionId differs");
+    reserved_expect(diagnostic->index == 0u, "diagnostic index differs");
+    reserved_expect(diagnostic->expected == expected, "diagnostic expected differs");
+    reserved_expect(diagnostic->actual == actual, "diagnostic actual differs");
+    reserved_expect(memcmp(moduleBefore, module, sizeof(moduleBefore)) == 0, "validation/hash modified module input");
+    reserved_expect(memcmp(functionBefore, module->functions, sizeof(functionBefore)) == 0, "validation/hash modified function input");
+    reserved_expect(ZrCore_AotIr_ValidateModule(module, ZR_NULL) == wanted, "validation status differs");
+    reserved_expect(memcmp(moduleBefore, module, sizeof(moduleBefore)) == 0, "validation/hash modified module input");
+    reserved_expect(memcmp(functionBefore, module->functions, sizeof(functionBefore)) == 0, "validation/hash modified function input");
+}
+
+static void expect_reserved_hash(const SZrAotIrModule *module,
+                                TZrUInt64 expected) {
+    unsigned char moduleBefore[sizeof(*module)];
+    unsigned char functionBefore[sizeof(*module->functions)];
+
+    memcpy(moduleBefore, module, sizeof(moduleBefore));
+    memcpy(functionBefore, module->functions, sizeof(functionBefore));
+    reserved_expect(ZrCore_AotIr_HashModule(module) == expected, "hash differs");
+    reserved_expect(memcmp(moduleBefore, module, sizeof(moduleBefore)) == 0, "validation/hash modified module input");
+    reserved_expect(memcmp(functionBefore, module->functions, sizeof(functionBefore)) == 0, "validation/hash modified function input");
+}
+
+static void test_reserved_contract_fields(const SZrAotIrModule *baseline,
+                                          TZrUInt64 baselineHash) {
+    static const TZrUInt32 values[] = {1u, UINT32_MAX};
+    SZrAotIrDiagnostic diagnostic;
+    unsigned int owner, field;
+    size_t valueIndex;
+
+    memset(&diagnostic, 0xff, sizeof(diagnostic));
+    for (owner = 0u; owner < 2u; ++owner) {
+        for (field = 0u; field < 2u; ++field) {
+            for (valueIndex = 0u;
+                 valueIndex < sizeof(values) / sizeof(values[0]); ++valueIndex) {
+                SZrAotIrFunction function = baseline->functions[0];
+                SZrAotIrModule module = *baseline;
+                SZrExecutionContract *contract;
+                TZrUInt32 *reserved;
+                TZrUInt32 functionId = owner == 0u ? 0u : function.id;
+
+                module.functions = &function;
+                contract = owner == 0u ? &module.contract : &function.contract;
+                reserved = field == 0u ? &contract->reserved0 : &contract->reserved1;
+                expect_reserved_validation(&diagnostic, &module, ZR_AOT_IR_OK, 0u, 0u, 0u);
+                expect_reserved_hash(&module, baselineHash);
+                *reserved = values[valueIndex];
+                expect_reserved_validation(&diagnostic, &module, ZR_AOT_IR_INVALID_CONTRACT,
+                                           functionId, 0u, values[valueIndex]);
+                expect_reserved_hash(&module, 0u);
+
+                /* Version checks keep their existing priority over reserved data. */
+                module.schemaVersion++;
+                expect_reserved_validation(&diagnostic, &module, ZR_AOT_IR_VERSION_MISMATCH,
+                                           0u, ZR_AOT_IR_SCHEMA_VERSION,
+                                           module.schemaVersion);
+                module.schemaVersion = baseline->schemaVersion;
+                contract->schemaVersion++;
+                expect_reserved_validation(&diagnostic, &module, ZR_AOT_IR_VERSION_MISMATCH,
+                                           functionId,
+                                           ZR_EXECUTION_CONTRACT_SCHEMA_VERSION,
+                                           contract->schemaVersion);
+                contract->schemaVersion = ZR_EXECUTION_CONTRACT_SCHEMA_VERSION;
+                contract->abiVersion++;
+                expect_reserved_validation(&diagnostic, &module, ZR_AOT_IR_VERSION_MISMATCH,
+                                           functionId,
+                                           ZR_EXECUTION_CONTRACT_ABI_VERSION,
+                                           contract->abiVersion);
+                contract->abiVersion = ZR_EXECUTION_CONTRACT_ABI_VERSION;
+                contract->logicalVersion++;
+                expect_reserved_validation(&diagnostic, &module, ZR_AOT_IR_INVALID_CONTRACT,
+                                           functionId,
+                                           ZR_EXECUTION_CONTRACT_LOGICAL_VERSION,
+                                           contract->logicalVersion);
+                contract->logicalVersion = ZR_EXECUTION_CONTRACT_LOGICAL_VERSION;
+
+                /* The same input can fail again, then recover without normalization. */
+                expect_reserved_validation(&diagnostic, &module, ZR_AOT_IR_INVALID_CONTRACT,
+                                           functionId, 0u, values[valueIndex]);
+                *reserved = 0u;
+                expect_reserved_validation(&diagnostic, &module, ZR_AOT_IR_OK, 0u, 0u, 0u);
+                expect_reserved_hash(&module, baselineHash);
+            }
+        }
+    }
 }
 
 int main(void) {
@@ -148,6 +258,7 @@ int main(void) {
     hash = ZrCore_AotIr_HashModule(&module);
     assert(hash != 0u);
     assert(hash == ZrCore_AotIr_HashModule(&module));
+    test_reserved_contract_fields(&module, hash);
     {
         SZrAotIrSourceMap changedSource = sourceMaps[0];
         SZrAotIrFunction changedFunction = function;
