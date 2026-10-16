@@ -8823,3 +8823,5 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/native-math-tests.cmake")
 
 # Audited private include roots for consumers of moved implementation files.
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/source-layout-private-consumers.cmake")
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/benchmark-scope-types-tests.cmake")

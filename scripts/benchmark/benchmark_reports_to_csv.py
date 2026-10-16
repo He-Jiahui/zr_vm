@@ -68,11 +68,12 @@ def _implementation_contract_valid(implementation: Any) -> bool:
         return False
     if any(field not in implementation for field in MEASUREMENT_FIELDS):
         return False
-    # BUG: 五字段齐全但 measurement_scope 为 JSON 数组或对象时，此处抛 TypeError；
-    # main 经 _write_benchmark_timings 到达此处，CSV 导出中断而非留空比值。复现：五字段齐全且 measurement_scope=[]。
-    if implementation.get("measurement_scope") not in VALID_MEASUREMENT_SCOPES:
+    # 先核 JSON 类型再查询合法值，非法容器字段只使比值留空。
+    measurement_scope = implementation.get("measurement_scope")
+    if not isinstance(measurement_scope, str) or measurement_scope not in VALID_MEASUREMENT_SCOPES:
         return False
-    if implementation.get("prepare_scope") not in VALID_PREPARE_SCOPES:
+    prepare_scope = implementation.get("prepare_scope")
+    if not isinstance(prepare_scope, str) or prepare_scope not in VALID_PREPARE_SCOPES:
         return False
     return all(
         type(implementation.get(field)) is bool

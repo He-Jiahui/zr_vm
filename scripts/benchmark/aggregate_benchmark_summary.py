@@ -86,14 +86,17 @@ def _implementation_contract_issue(implementation: Any, location: str) -> list[s
         if field not in implementation:
             issues.append(f"{location}: missing {field}")
 
-    # BUG: JSON 数组或对象作为 measurement_scope 时，集合成员检查抛出 TypeError；
-    # _build_summary 的合法性诊断因此中断，无法输出应清空比值的汇总。复现：设 measurement_scope=[] 调用本函数。
+    # JSON 数组和对象不可哈希；先核类型，保留诊断并让上层撤销无效比值。
     measurement_scope = implementation.get("measurement_scope")
-    if "measurement_scope" in implementation and measurement_scope not in VALID_MEASUREMENT_SCOPES:
+    if "measurement_scope" in implementation and (
+        not isinstance(measurement_scope, str) or measurement_scope not in VALID_MEASUREMENT_SCOPES
+    ):
         issues.append(f"{location}: invalid measurement_scope {measurement_scope!r}")
 
     prepare_scope = implementation.get("prepare_scope")
-    if "prepare_scope" in implementation and prepare_scope not in VALID_PREPARE_SCOPES:
+    if "prepare_scope" in implementation and (
+        not isinstance(prepare_scope, str) or prepare_scope not in VALID_PREPARE_SCOPES
+    ):
         issues.append(f"{location}: invalid prepare_scope {prepare_scope!r}")
 
     for field in ("runtime_reused", "compiler_reused", "jit_state_reused"):
