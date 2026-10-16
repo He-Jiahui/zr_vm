@@ -4,6 +4,10 @@
 #include "zr_vm_core/exec_ir_interpreter.h"
 
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#include <crtdbg.h>
+#endif
 
 typedef struct SCleanupFixture {
     TZrExecIrValueId owner;
@@ -25,7 +29,7 @@ static SZrExecIrOracleValue scalar(TZrInt64 number) {
     return result;
 }
 
-static SZrExecIrOracleValue boolean(TZrBool flag) {
+static SZrExecIrOracleValue oracle_boolean(TZrBool flag) {
     SZrExecIrOracleValue result = {0};
     result.kind = ZR_EXEC_IR_ORACLE_VALUE_BOOL;
     result.as.boolean = flag;
@@ -202,7 +206,7 @@ static void same_trace(const SZrExecIrOracleExecutionResult *expected,
 
 static void compare_diamond(TZrBool takeTrue, TZrBool moved) {
     SCleanupFixture fixture = diamond(moved);
-    SZrExecIrOracleValue initial[3] = {boolean(takeTrue), scalar(91), scalar(73)};
+    SZrExecIrOracleValue initial[3] = {oracle_boolean(takeTrue), scalar(91), scalar(73)};
     SZrExecIrOracleExecutionResult uninterrupted, resumed;
     SZrExecIrOracleInput input = {0};
     TZrUInt32 which;
@@ -310,7 +314,7 @@ static void test_missing_or_impossible_witness_preserves_target(void) {
 
 static void test_forged_paused_owner_does_not_consume_cursor(void) {
     SCleanupFixture fixture = diamond(ZR_FALSE);
-    SZrExecIrOracleValue initial[2] = {boolean(ZR_FALSE), scalar(91)};
+    SZrExecIrOracleValue initial[2] = {oracle_boolean(ZR_FALSE), scalar(91)};
     SZrExecIrOracleExecutionResult result, saved;
     SZrExecIrOracleInput input = {0};
     SZrExecIrOracleCheckpoint stop = stop_at(fixture.poll, ZR_EXEC_IR_STATE_BEFORE_EFFECT);
@@ -343,7 +347,7 @@ static void test_ordinary_use_is_not_relaxed_by_conditional_cleanup(void) {
 
 static void test_resume_allocation_failures_preserve_owner_and_cursor(void) {
     SCleanupFixture fixture = diamond(ZR_TRUE);
-    SZrExecIrOracleValue initial[3] = {boolean(ZR_TRUE), scalar(91), scalar(73)};
+    SZrExecIrOracleValue initial[3] = {oracle_boolean(ZR_TRUE), scalar(91), scalar(73)};
     SZrExecIrOracleExecutionResult result, saved;
     SZrExecIrOracleInput input = {0};
     SZrExecIrOracleCheckpoint stop = stop_at(fixture.poll, ZR_EXEC_IR_STATE_BEFORE_EFFECT);
@@ -464,7 +468,7 @@ static TZrBool loop_call(void *data, const SZrExecIrInstruction *instruction,
         ++state->iterations;
         *result = scalar(1000 + state->iterations);
     } else {
-        *result = boolean(state->iterations < 257u);
+        *result = oracle_boolean(state->iterations < 257u);
     }
     return ZR_TRUE;
 }
@@ -597,7 +601,7 @@ static void test_ordinary_double_drop_still_fails(void) {
 static void test_clone_preserves_independent_cleanup_metadata(void) {
     SCleanupFixture fixture = diamond(ZR_FALSE);
     SZrExecIrFunction clone;
-    SZrExecIrOracleValue initial[2] = {boolean(ZR_FALSE), scalar(91)};
+    SZrExecIrOracleValue initial[2] = {oracle_boolean(ZR_FALSE), scalar(91)};
     SZrExecIrOracleExecutionResult result;
     SZrExecIrOracleInput input = {0};
     SZrExecIrOracleCheckpoint stop = stop_at(fixture.poll, ZR_EXEC_IR_STATE_BEFORE_EFFECT);
@@ -643,6 +647,13 @@ static void test_elaboration_owner_analysis_oom_is_transactional(void) {
     SZrExecIrFunction saved;
     size_t ordinal;
     function.instructions[fixture.drop - 1u].opcode = ZR_EXEC_IR_OPCODE_DROP;
+    /* diamond() already lowered and mapped guarded DROP. The source for this
+     * test is pre-lowering IR; discard metadata for the previous instruction. */
+    ZrCore_ExecIr_StateMapFree(function.stateMap);
+    free(function.stateMap);
+    function.stateMap = ZR_NULL;
+    TEST_ASSERT_TRUE(ZrCore_ExecIr_VerifyFunction(&function,
+            ZR_EXEC_IR_VERIFY_STRUCTURE | ZR_EXEC_IR_VERIFY_EFFECT, &diagnostic));
     saved = function;
     for (ordinal = 1u; ordinal < 64u; ++ordinal) {
         TZrBool ok;
@@ -669,7 +680,7 @@ static void test_elaboration_owner_analysis_oom_is_transactional(void) {
 
 static void test_forged_initialized_witness_requires_valid_payload(void) {
     SCleanupFixture fixture = diamond(ZR_FALSE);
-    SZrExecIrOracleValue initial[2] = {boolean(ZR_FALSE), scalar(91)};
+    SZrExecIrOracleValue initial[2] = {oracle_boolean(ZR_FALSE), scalar(91)};
     SZrExecIrOracleExecutionResult result, saved;
     SZrExecIrOracleInput input = {0};
     SZrExecIrOracleCheckpoint stop = stop_at(fixture.poll, ZR_EXEC_IR_STATE_BEFORE_EFFECT);
@@ -693,7 +704,7 @@ static void test_forged_initialized_witness_requires_valid_payload(void) {
 
 static void test_shared_owner_uses_same_conditional_cleanup_contract(void) {
     SCleanupFixture fixture = diamond(ZR_FALSE);
-    SZrExecIrOracleValue initial[2] = {boolean(ZR_TRUE), scalar(91)};
+    SZrExecIrOracleValue initial[2] = {oracle_boolean(ZR_TRUE), scalar(91)};
     SZrExecIrOracleExecutionResult result;
     SZrExecIrOracleInput input = {0};
     SZrExecIrOracleCheckpoint stop;
@@ -827,6 +838,13 @@ static void test_paused_owner_buffer_cannot_own_function_map_storage(void) {
 }
 
 int main(void) {
+#ifdef _WIN32
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+    _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+#endif
+    setvbuf(stdout, NULL, _IONBF, 0);
     UNITY_BEGIN();
     RUN_TEST(test_defined_arm_cleanup_survives_every_phase);
     RUN_TEST(test_uninitialized_arm_skips_cleanup_at_every_phase);
@@ -1445,18 +1463,28 @@ int main(void) {
  * @fn void test_elaboration_owner_analysis_oom_is_transactional(void)
  *
  * ## Summary
- * 该用例意图逐 ordinal 注入 owner-analysis 分配失败，并检查 cleanup lowering 失败时原 function 保持不变；当前测试实际未能完成预期注入遍历。
+ * 逐 ordinal 注入 owner-analysis 分配失败，验证 cleanup lowering 的失败事务性及最终成功。
  *
  * ## Returns
- * 断言全部通过才正常返回；当前 R2 基线在 line 659 的 injected 断言失败，Unity 记录结果并 longjmp 跳出当前用例，随后继续 runner。
+ * 断言全部通过才正常返回；Unity 记录失败并 longjmp 跳出当前用例，随后执行 tearDown。
  *
  * ## Constraints and lifecycle
- * diamond(ZR_FALSE) 已经完成 cleanup lowering 并生成 guarded-DROP map；测试随后只把 opcode 改回普通 DROP，保留了描述旧 IR 的 map。故障 wrapper 仅拦截 owner-state allocation，不能把本用例解释为 clone、候选 OwnerAnalysis 或 map 分配的完整 OOM 覆盖。Unity 断言早退会跳过后续局部清理，tearDown 只释放 fixture 全局 function。
+ * diamond(ZR_FALSE) 已完成 cleanup lowering 并生成 guarded-DROP map。测试还原普通 DROP 后，
+ * 释放旧 map 的内部池与外壳并置 NULL，再以 STRUCTURE|EFFECT 验证待 lowering 的输入。
+ * saved 在该前置处理后取得。故障 wrapper 仅拦截 owner-state allocation；本用例不代表
+ * clone、候选 OwnerAnalysis 或 map 分配的完整 OOM 覆盖。每次失败仍检查 OOM diagnostic、
+ * 原 function/普通 DROP 不变以及零 outstanding allocation，最终必须得到 guarded DROP。
  *
- * BUG: 旧 stateMap 与恢复后的普通 DROP 不一致。Elaborate 在 clone 前以 STRUCTURE|EFFECT 校验 source；Core Verify 对非空 map 仍调用 ValidateStateMap。最早的静态不匹配位于 poll 的 BEFORE_EFFECT map：普通 DROP 作为 semantic use 使 owner semantic-live，但旧 guarded-DROP map 的条件 owner mask 无法表达该状态，StateMapOwnerAt 可返回 OWNER_STATE_COUNT 并由 owners_valid 拒绝。因此当注入 ordinal 未在预校验分配中触发时，输入会在到达候选 clone/pass 前被拒绝；R2 实测为 cleanup 23/24，在 tests/parser/test_ssa_conditional_cleanup.c:659 的断言报告 Expected TRUE Was FALSE，direct 与 CTest 均失败。该 map 不匹配和拒绝位置是源码路径推断，基线日志本身只记录断言失败，没有记录 diagnostic、entry 或 ordinal。修复测试前置状态属于后续行为工作，本批只记录，不改变测试。
+ * ## Regression evidence
+ * 历史 R2 基线保留了与普通 DROP 不一致的旧 map，输入可在预校验中被拒绝而未触发注入；
+ * 当时 cleanup 为 23/24，injected 断言失败。历史日志仅记录断言，不记录 entry 或 ordinal。
+ * 本修复移除失效元数据，保留原事务性断言；最终通过情况以固定输入的集成收据为准。
  *
  * ## References
- * 触发与断言位于本函数 line 642、645、651、659；preflight 路径见 zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c:909、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize.c:556、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_owners.c:64、zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_owners.c:72 和 zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_liveness.c:290。Unity main 注册于 tests/parser/test_ssa_conditional_cleanup.c:849；基线为 parser-conditional-cleanup-preedit-native-r2-summary.json（SHA-256 fd0b2a1e766535900c34ce813e811056680176d3c88f591f2dca895c27cb3c72）。
+ * 预校验见 ZrCore_ExecIr_VerifyFunction 与 ValidateStateMap；状态映射的两级释放遵循
+ * ZrCore_ExecIr_FreeFunction。历史基线 parser-conditional-cleanup-preedit-native-r2-summary.json
+ * SHA-256 fd0b2a1e766535900c34ce813e811056680176d3c88f591f2dca895c27cb3c72。
+ * 本任务红绿证据位于 E:/cargo-targets/zr_vm/reports/review-bugfix-20261016/。
  */
 
 /**
