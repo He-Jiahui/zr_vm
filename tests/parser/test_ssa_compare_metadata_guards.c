@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 enum { FUNCTION_TOKEN = 0xC041u, LEFT = 1u, RIGHT = 2u, RESULT = 3u,
        COMPARE_ID = 3u, BRANCH_ID = 4u, FIXTURE_INSTRUCTIONS = 6u };

@@ -1,4 +1,5 @@
 #include "exec_ir_effects_internal.h"
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 #include <limits.h>
 #include <stdlib.h>

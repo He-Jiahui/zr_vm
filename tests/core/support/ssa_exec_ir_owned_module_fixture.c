@@ -1,6 +1,7 @@
 #include "ssa_exec_ir_owned_module_fixture.h"
 #include <string.h>
 #include "unity.h"
+#include "exec_ir/exec_ir_mutation_internal.h"
 SZrExecIrModule g_ownerModules[ZR_OWNER_MODULE_SLOTS];
 SZrExecIrOwnedModule *g_execOwners[ZR_OWNER_SLOTS];
 static unsigned g_producerFirst[ZR_OWNER_MODULE_SLOTS],g_producerLast[ZR_OWNER_MODULE_SLOTS];

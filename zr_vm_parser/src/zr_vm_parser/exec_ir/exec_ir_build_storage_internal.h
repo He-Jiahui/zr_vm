@@ -3,6 +3,7 @@
 
 #include "zr_vm_parser/exec_ir_builder.h"
 #include "zr_vm_parser/semantic_ir.h"
+#include "exec_ir/exec_ir_mutation_internal.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>

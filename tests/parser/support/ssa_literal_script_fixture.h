@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include "zr_vm_core/exec_ir_interpreter.h"
 #include "zr_vm_parser/compiler.h"
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 typedef enum EZrSsaLiteralScriptSource {
     ZR_TEST_SSA_LITERAL_SCRIPT_NINE = 0,

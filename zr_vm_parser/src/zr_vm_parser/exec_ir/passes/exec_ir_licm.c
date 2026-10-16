@@ -1,4 +1,5 @@
 #include "zr_vm_parser/exec_ir_loops.h"
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 #include "zr_vm_parser/exec_ir_pass_manager.h"
 

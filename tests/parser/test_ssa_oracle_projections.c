@@ -9,6 +9,7 @@
 #include <assert.h>
 #include <limits.h>
 #include <string.h>
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 static SZrExecIrRange range(TZrUInt32 start, TZrUInt32 count) {
     SZrExecIrRange result;

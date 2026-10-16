@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 typedef struct SZrIteratorFixture {
     EZrExecIrOpcode opcode;

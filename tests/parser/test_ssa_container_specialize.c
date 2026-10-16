@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 static void make_function(SZrExecIrFunction *function) {
     memset(function, 0, sizeof(*function));

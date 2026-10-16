@@ -1,4 +1,5 @@
 #include "zr_vm_core/exec_ir.h"
+#include "exec_ir/exec_ir_mutation_internal.h"
 #include "zr_vm_core/exec_ir_state_map.h"
 
 #include <limits.h>

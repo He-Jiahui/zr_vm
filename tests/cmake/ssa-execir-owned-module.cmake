@@ -38,6 +38,9 @@ foreach (_zr_execir_owner_target IN ITEMS zr_vm_ssa_execir_owner_private_core
         zr_ssa_execir_owner_apply_settings(${_zr_execir_owner_target})
     endif ()
 endforeach ()
+target_include_directories(zr_vm_ssa_exec_ir_owned_module_test PRIVATE
+        "${_zr_execir_owner_root}/zr_vm_core/src/zr_vm_core")
+
 target_compile_definitions(zr_vm_ssa_execir_owner_private_core PRIVATE
         ZR_CURRENT_MODULE="zr_vm_core")
 target_compile_definitions(zr_vm_ssa_exec_ir_owned_module_test PRIVATE

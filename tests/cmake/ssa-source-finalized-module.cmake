@@ -30,6 +30,7 @@ add_executable(zr_vm_ssa_source_finalized_module_test
 foreach (_target IN ITEMS zr_vm_ssa_source_finalized_module_private
         zr_vm_ssa_source_finalized_module_test)
     target_include_directories(${_target} PRIVATE
+            "${_zr_finalized_root}/zr_vm_core/src/zr_vm_core"
             "${_zr_finalized_root}/zr_vm_parser/src/zr_vm_parser"
             "${_zr_finalized_root}/zr_vm_common/include"
             "${_zr_finalized_root}/zr_vm_core/include"

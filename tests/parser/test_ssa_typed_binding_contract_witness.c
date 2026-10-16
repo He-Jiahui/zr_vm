@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "zr_vm_parser/exec_ir_binding_facts.h"
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 void setUp(void) {}
 void tearDown(void) {}

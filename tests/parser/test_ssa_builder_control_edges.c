@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 static void check(TZrBool condition, const char *message) {
     if (!condition) {

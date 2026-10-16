@@ -1,4 +1,5 @@
 #include "exec_ir_internal.h"
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 #include <stdlib.h>
 #include <string.h>

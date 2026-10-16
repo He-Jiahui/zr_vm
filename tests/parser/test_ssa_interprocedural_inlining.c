@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 static SZrExecIrRange empty_range(void) {
     SZrExecIrRange range;

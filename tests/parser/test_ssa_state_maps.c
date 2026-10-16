@@ -8,6 +8,7 @@
 #include "zr_vm_parser/exec_ir_builder.h"
 
 #include "ssa_state_map_clone_fault_allocator.h"
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 void setUp(void) {}
 void tearDown(void) {}

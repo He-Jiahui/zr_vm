@@ -61,6 +61,9 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 enable_testing()
+include("${ZR_SSA_SOURCE_ROOT}/tests/cmake/ssa-execir-mutation-boundary.cmake")
+zr_ssa_register_execir_mutation_boundary("${ZR_SSA_SOURCE_ROOT}")
+
 
 set(_zr_public_includes
         "${ZR_SSA_SOURCE_ROOT}"
@@ -122,6 +125,7 @@ foreach (_module IN ITEMS zr_vm_common zr_vm_core zr_vm_library zr_vm_parser)
     zr_ssa_source_add_module(${_module})
 endforeach ()
 target_include_directories(ssa_source_zr_vm_parser PRIVATE
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_core/src/zr_vm_core"
         "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/compiler"
         "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/parser"
         "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/type_inference"
@@ -611,6 +615,29 @@ set(_zr_targets ssa_source_zr_vm_parser ssa_source_zr_vm_core ssa_source_zr_vm_l
         zr_vm_ssa_primitive_source_frame_storage_test
         zr_vm_ssa_primitive_source_frame_oom_test
         zr_vm_ssa_typed_binding_contract_test)
+foreach (_zr_mutation_target IN ITEMS
+        zr_vm_ssa_compare_metadata_guards_test
+        zr_vm_ssa_dead_source_places_test
+        zr_vm_ssa_host_primitive_layout_test
+        zr_vm_ssa_host_noargs_i64_aot_target_test
+        zr_vm_ssa_source_aot_descriptor_test
+        zr_vm_ssa_source_aot_scalar_text_test
+        zr_vm_ssa_source_aot_owned_module_test
+        zr_vm_ssa_aot_owned_module_faults_test
+        zr_vm_ssa_primitive_source_frame_test
+        zr_vm_ssa_primitive_source_frame_storage_test
+        zr_vm_ssa_primitive_source_frame_oom_test
+        zr_vm_ssa_typed_binding_contract_test
+        zr_vm_ssa_dominator_cfg_test
+        zr_vm_ssa_source_scalar_constant_test
+        zr_vm_ssa_metadata_string_heap_owner_test
+        zr_vm_ssa_source_descriptor_oom_test
+)
+    target_include_directories(${_zr_mutation_target} PRIVATE
+            "${ZR_SSA_SOURCE_ROOT}/zr_vm_core/src/zr_vm_core")
+endforeach ()
+unset(_zr_mutation_target)
+
 set(_zr_graph "target\tabsolute_source\tsha256\n")
 set(_zr_settings "compiler\t${CMAKE_C_COMPILER}\ncompiler_id\t${CMAKE_C_COMPILER_ID}\ncompiler_version\t${CMAKE_C_COMPILER_VERSION}\ntoolchain_file\t${CMAKE_TOOLCHAIN_FILE}\nmake_rules_override_c\t${CMAKE_USER_MAKE_RULES_OVERRIDE_C}\narchive_tool\t${CMAKE_AR}\narchive_rule\t${CMAKE_C_CREATE_STATIC_LIBRARY}\nlink_rule\t${CMAKE_C_LINK_EXECUTABLE}\n")
 foreach (_target IN LISTS _zr_targets)

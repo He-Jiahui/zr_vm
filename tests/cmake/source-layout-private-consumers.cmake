@@ -36,10 +36,12 @@ set(_zr_vm_layout_consumers_2
         zr_vm_ssa_cfg_effects_faults_test
         zr_vm_ssa_cleanup_exception_state_test
         zr_vm_ssa_compare_predicate_domain_test
+        zr_vm_container_specialization_test
         zr_vm_ssa_core_model_test
         zr_vm_ssa_dce_phi_liveness_test
         zr_vm_ssa_dominator_cfg_test
         zr_vm_ssa_effects_verifier_test
+        zr_vm_ssa_exec_ir_artifact_v6_test
         zr_vm_ssa_escape_ownership_test
         zr_vm_ssa_frame_layout_test
         zr_vm_ssa_function_aot_owner_test

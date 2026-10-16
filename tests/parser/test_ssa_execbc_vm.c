@@ -15,6 +15,7 @@
 #include "exec_ir/exec_ir_projections.h"
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/semantic.h"
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 void setUp(void) {}
 void tearDown(void) {}

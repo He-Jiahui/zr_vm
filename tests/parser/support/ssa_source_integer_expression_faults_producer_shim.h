@@ -7,6 +7,7 @@
 #include "exec_ir/exec_ir_dead_source_places.h"
 #include "exec_ir/source/exec_ir_source_frame.h"
 #include "exec_ir/source/exec_ir_source_finalized_module_internal.h"
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 TZrBool ZrTests_IntegerExpr_Prepare(const struct SZrCompilerState *compiler,
         SSourceIntegerProof *output, SZrExecIrDiagnostic *diagnostic);

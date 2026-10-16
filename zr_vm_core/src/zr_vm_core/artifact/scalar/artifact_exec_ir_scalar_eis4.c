@@ -1,4 +1,5 @@
 #include "artifact/scalar/artifact_exec_ir_scalar_eis4.h"
+#include "exec_ir/exec_ir_mutation_internal.h"
 #include "zr_vm_common/zr_type_conf.h"
 
 #include <string.h>

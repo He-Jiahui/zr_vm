@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 static void ok(TZrBool value, const char *message) {
     if (!value) { fprintf(stderr, "FAIL: %s\n", message); exit(EXIT_FAILURE); }

@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 static void fail_with_exec_ir_diagnostic(const char *site,
                                          const SZrExecIrDiagnostic *diagnostic) {

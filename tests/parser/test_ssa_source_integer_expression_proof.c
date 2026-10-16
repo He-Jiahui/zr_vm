@@ -12,6 +12,7 @@
 #include "exec_ir/exec_ir_frame_layout.h"
 #include "exec_ir/source/exec_ir_source_frame.h"
 #include "zr_vm_core/function_exec_ir.h"
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 static const char g_subject[] = "return 2 + 3 * 4;";
 static const SZrSourceCompileOptions g_exec = {ZR_SOURCE_RETENTION_REQUIRE_SCALAR_EXECIR};

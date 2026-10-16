@@ -2,6 +2,9 @@
 # Keep these targets independent from the large legacy test list so an SSA
 # milestone can be built and validated without changing existing suites.
 
+include("${CMAKE_SOURCE_DIR}/tests/cmake/ssa-execir-mutation-boundary.cmake")
+zr_ssa_register_execir_mutation_boundary("${CMAKE_SOURCE_DIR}")
+
 if (NOT TARGET zr_vm_ssa_baseline_metrics_test)
     add_executable(
             zr_vm_ssa_baseline_metrics_test

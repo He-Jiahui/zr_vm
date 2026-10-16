@@ -22,6 +22,7 @@ add_executable(zr_vm_ssa_exec_ir_module_copy_test
 foreach (_target IN ITEMS zr_vm_ssa_execir_module_copy_private
         zr_vm_ssa_exec_ir_module_copy_test)
     target_include_directories(${_target} PRIVATE
+            "${_zr_module_copy_root}/zr_vm_core/src/zr_vm_core"
             "${_zr_module_copy_root}/zr_vm_common/include"
             "${_zr_module_copy_root}/zr_vm_core/include"
             "${_zr_module_copy_root}/tests"

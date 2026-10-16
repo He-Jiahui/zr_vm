@@ -3,6 +3,7 @@
 #include <string.h>
 #include "unity.h"
 #include "exec_ir/source/exec_ir_source_callable_query_internal.h"
+#include "exec_ir/exec_ir_mutation_internal.h"
 SFmFixture g_fm;
 SZrExecIrModule g_fmModuleOwner;
 SZrExecIrFunction g_fmFunctionOwner;

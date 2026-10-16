@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 #define CHECK(condition) do { \
     if (!(condition)) { \

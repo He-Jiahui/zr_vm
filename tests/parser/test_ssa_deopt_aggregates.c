@@ -9,6 +9,7 @@
 #include "zr_vm_parser/exec_ir_state_maps.h"
 #include "zr_vm_parser/exec_ir_pass_manager.h"
 #include "exec_ir/exec_ir_pass_internal.h"
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 static SZrExecIrFunction function;
 static SZrExecIrDiagnostic diagnostic;

@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "unity.h"
+#include "exec_ir/exec_ir_mutation_internal.h"
 SZrExecIrFunction g_pfFunctions[2];
 SZrSemanticContext g_pfContext;
 SZrCanonicalTypeNode g_pfNodes[2];

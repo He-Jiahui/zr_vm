@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 void test_oracle_execbc_suspend_differential(void);
 

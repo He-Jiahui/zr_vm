@@ -4,6 +4,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 /* One heap allocation owns every producer view, including nested edge arrays.
  * None of this storage is copied into a fabricated ExecIR graph by the test. */

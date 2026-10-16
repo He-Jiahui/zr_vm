@@ -1,3 +1,4 @@
+#include "exec_ir/exec_ir_mutation_internal.h"
 #include "test_ssa_execbc_vm_dead_place_support.inc"
 
 static void test_shared_external_provenance_for_dead_bases_materializes_as_nops(void) {

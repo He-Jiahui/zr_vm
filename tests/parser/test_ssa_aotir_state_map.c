@@ -5,6 +5,7 @@
 #include "zr_vm_parser/exec_ir_state_maps.h"
 
 #include <stdlib.h>
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 void test_aotir_owns_state_map(void);
 void test_aotir_moves_frame_layout_metadata(void);

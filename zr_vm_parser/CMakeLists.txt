@@ -4,6 +4,7 @@ set(zr_curr_module_name "zr_vm_parser")
 zr_declare_module(${zr_curr_module_name} ON)
 
 set(_zr_vm_parser_private_include_dirs
+        ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core
         ${CMAKE_CURRENT_SOURCE_DIR}/src/zr_vm_parser/compiler
         ${CMAKE_CURRENT_SOURCE_DIR}/src/zr_vm_parser/parser
         ${CMAKE_CURRENT_SOURCE_DIR}/src/zr_vm_parser/type_inference

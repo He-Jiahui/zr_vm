@@ -3,6 +3,7 @@
 #include "ssa_source_returned_execir_fixture.h"
 #include "exec_ir/source/exec_ir_source_finalized_module_internal.h"
 #include "exec_ir/source/exec_ir_source_frame.h"
+#include "exec_ir/exec_ir_mutation_internal.h"
 /* Identical typed inputs to the private helper. The observer never reconstructs
  * a runtime Function from its output slot or substitutes a producer graph. */
 TZrBool ZrTests_ReturnedExec_Finalized(

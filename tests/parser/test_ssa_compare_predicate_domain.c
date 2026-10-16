@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 enum { FUNCTION_TOKEN = 43u, COMPARE_SOURCE = 501u, RETURN_SOURCE = 502u,
        LEFT_VALUE = 1u, RIGHT_VALUE = 2u, BOOL_VALUE = 3u };

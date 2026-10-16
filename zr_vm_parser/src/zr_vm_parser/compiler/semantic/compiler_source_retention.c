@@ -1,4 +1,5 @@
 #include "compiler/semantic/compiler_source_retention_internal.h"
+#include "exec_ir/exec_ir_mutation_internal.h"
 #include "exec_ir/source/exec_ir_source_finalized_module_internal.h"
 
 #include <stdint.h>

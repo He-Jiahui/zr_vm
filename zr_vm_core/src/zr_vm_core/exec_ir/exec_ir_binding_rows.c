@@ -1,4 +1,5 @@
 #include "zr_vm_core/exec_ir.h"
+#include "exec_ir/exec_ir_mutation_internal.h"
 #include "call/call_binding_contract_internal.h"
 
 #include <limits.h>

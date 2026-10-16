@@ -1,5 +1,12 @@
 ---
 related_code:
+  - zr_vm_core/include/zr_vm_core/exec_ir.h
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_mutation_internal.h
+  - tests/parser/test_ssa_exec_ir_header_boundary.c
+  - tests/cmake/ssa-execir-mutation-boundary.cmake
+  - tests/cmake/ssa-execir-mutation-boundary-check.cmake
+  - tests/parser/support/ssa_source_returned_execir_owner_shim.h
+  - tests/parser/support/ssa_source_integer_expression_faults_producer_shim.h
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h
   - zr_vm_core/CMakeLists.txt
@@ -7,6 +14,7 @@ related_code:
   - zr_vm_core/include/zr_vm_core/function_aot_ir.h
   - zr_vm_parser/include/zr_vm_parser/compiler_source_retention.h
 implementation_files:
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_mutation_internal.h
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
   - zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h
   - zr_vm_core/CMakeLists.txt
@@ -18,6 +26,10 @@ plan_sources:
   - docs/plans/ssa/index.md
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
 tests:
+  - tests/parser/test_ssa_exec_ir_header_boundary.c
+  - tests/cmake/ssa-execir-mutation-boundary.cmake
+  - tests/cmake/ssa-execir-mutation-boundary-check.cmake
+  - tests/acceptance/ssa-execir-mutation-boundary.md
   - tests/parser/test_ssa_core_model.c
   - tests/core/test_ssa_function_aot_owner.c
   - tests/parser/test_ssa_source_returned_retention.c
@@ -185,6 +197,32 @@ ExecIR 所有权已分别有限交付：
 这些故障子观察属于各自有限 fixture 的 Unity 用例，不增加用例总数。普通默认
 输出的接入及当前 Source finalized 返回链路仍须分别取得自己的验收证据。整叶
 仍须完整核对所有记录及 side arrays 的所有者、Init/Free/Clone 和销毁路径，
-验证跨函数局部 ID 重映射与稳定 token 保持，并将构建器私有 mutation helper
-（含 Reserve）从公共头收敛到内部接口。全模块故障覆盖仍须按实际 profile
-建立；上述有限交付不勾选本计划任务或整叶退出门禁。
+验证跨函数局部 ID 重映射与稳定 token 保持。构建器 mutation 声明边界本批已收敛：
+30 项声明（含十项 Reserve、两个可变访问器与 SetBindingRows）已移到 Core 私有
+`exec_ir/exec_ir_mutation_internal.h`，见[有限验收](../../../../tests/acceptance/ssa-execir-mutation-boundary.md)。
+GC-map 基数、operation-specific local-ID 映射和全模块故障覆盖仍须按实际 profile
+取得专项证据；这些有限交付不勾选本计划任务或整叶退出门禁。
+
+## 本批有限 API visibility checkpoint
+
+公开头保留 model、生命周期、const/query 与 verify；Core/Parser/test 显式 include
+私有头并仅配置 PRIVATE 目录，无公开头反向 include 或兼容别名。原签名、
+ZR_CORE_API、实现与布局保持，C structs 本身仍可写，未授 shared DLL 符号隐藏信用。
+
+实际 Windows header syntax 门禁为 RED r2 64 进程、GREEN r1 66 进程，均 W0；
+RED 的两编译器各 30 个 mutation 公头探针全部编译成功，GREEN 的 public/private
+正例全部成功，60 个负例均因所选符号未声明且恰一条主错误拒绝。两轮分别
+195/196 个输入 pin 在各自 before/after 一致；每轮两个 discovery 不计门禁信用。
+对应证据为 `reports/ssa-execir-mutation-boundary-01a0fe2b/` 下的
+`red-header-r2-receipt.json`、`green-header-r1-receipt.json` 和
+`header-validation-review.json`。永久 clang-cl CTest r4 已通过 32 个 syntax 模式，
+核实 129 个输出、176 个实际头文件与 206 个 before/after pin，限此门禁 W0。
+独立验收的 Source r3 为 820 TU、550 实际编译加 270 exact-cache、5 个 CTest
+通过、55 条 warning；Lower r3 为 59 TU、55 实际编译加 4 缓存、4 个 CTest
+通过，仅增量 W0。这两组包含实际 object、link 与受限元数据测试信用。
+Caller r5 的 78 个实际配置 syntax 检查全部通过（Source 20、Lower 3、root 55），
+873 个实际输入 before/after 一致，150 条 warning，不能称 W0。
+新验收记录区分原始运行身份、两文件精确 EOF-comment 等价桥与共享 checkout
+输入；候选提交仅纳入本批自有修改，不宣称 clean-HEAD 单独全量构建通过。
+当前状态为有限边界已核验、可供发布，提交及清理由各自真实外部收据确认；
+GC-map 基数、operation-specific 跨函数 local-ID 映射及完整 01.01/47 叶出口仍开放。

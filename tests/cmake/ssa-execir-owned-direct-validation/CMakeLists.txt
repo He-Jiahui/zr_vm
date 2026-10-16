@@ -35,6 +35,9 @@ foreach (_zr_execir_owner_driver_flag IN ITEMS
     endif ()
 endforeach ()
 enable_testing()
+include("${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/tests/cmake/ssa-execir-mutation-boundary.cmake")
+zr_ssa_register_execir_mutation_boundary("${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}")
+
 function(zr_ssa_execir_owner_apply_settings target)
     target_compile_definitions(${target} PRIVATE
             ZR_PLATFORM_WIN=1 ZR_PLATFORM_WIN_USE_MSVC=1 ZR_DEBUG=1)
@@ -49,6 +52,7 @@ add_executable(zr_vm_ssa_core_model_test
         "${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/tests/parser/exec_ir_clone_test_allocator.c"
         ${_zr_execir_owner_core_sources})
 target_include_directories(zr_vm_ssa_core_model_test PRIVATE
+        "${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/zr_vm_core/src/zr_vm_core"
         "${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/zr_vm_common/include"
         "${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/zr_vm_core/include")
 target_compile_definitions(zr_vm_ssa_core_model_test PRIVATE

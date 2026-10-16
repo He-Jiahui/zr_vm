@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 #if defined(ZR_TEST_EIS6_FAULT_INJECTION)
 #include "ssa_eis6_fault_allocator.h"

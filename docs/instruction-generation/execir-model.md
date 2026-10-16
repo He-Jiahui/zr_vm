@@ -1,6 +1,7 @@
 ---
 related_code:
   - zr_vm_core/include/zr_vm_core/exec_ir.h
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_mutation_internal.h
   - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
@@ -35,7 +36,13 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_lowering.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
   - zr_vm_parser/include/zr_vm_parser/exec_ir_execbc.h
+  - tests/parser/test_ssa_exec_ir_header_boundary.c
+  - tests/cmake/ssa-execir-mutation-boundary.cmake
+  - tests/cmake/ssa-execir-mutation-boundary-check.cmake
+  - tests/parser/support/ssa_source_returned_execir_owner_shim.h
+  - tests/parser/support/ssa_source_integer_expression_faults_producer_shim.h
 implementation_files:
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_mutation_internal.h
   - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
@@ -75,6 +82,12 @@ plan_sources:
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
   - docs/plans/ssa/01-execir-ssa/05-oracle-projections.md
 tests:
+  - tests/parser/test_ssa_exec_ir_header_boundary.c
+  - tests/cmake/ssa-execir-mutation-boundary.cmake
+  - tests/cmake/ssa-execir-mutation-boundary-check.cmake
+  - tests/acceptance/ssa-execir-mutation-boundary.md
+  - tests/parser/support/ssa_source_returned_execir_owner_shim.h
+  - tests/parser/support/ssa_source_integer_expression_faults_producer_shim.h
   - tests/parser/test_ssa_core_model.c
   - tests/parser/test_ssa_value_validation.c
   - tests/parser/test_ssa_place_eligibility.c
@@ -146,6 +159,9 @@ Core owns scalar IDs, opcode metadata, ranges, lifecycle, structural checks,
 and deep cloning.  Parser construction is declared separately in
 `zr_vm_parser/include/zr_vm_parser/exec_ir_builder.h`; the core header does
 not include parser AST or the private AOT ExecIR header.
+Core construction and mutable-access declarations are owned by the Core-private
+`zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_mutation_internal.h`; Parser builders
+consume that header explicitly through a private include directory.
 
 IDs are function-local and start at one.  Zero is the explicit invalid
 sentinel; block one is reserved for an explicitly flagged entry block.  The
@@ -756,3 +772,40 @@ The direct reference execution boundary is documented separately in
 [`execir-oracle-memory.md`](execir-oracle-memory.md). Its memory callback is
 caller-owned and deterministic, as is the pointer-free allocation callback;
 neither boundary is represented as a host-pointer field inside ExecIR.
+
+## API visibility checkpoint
+
+The public `exec_ir.h` retains model records, lifecycle and cloning interfaces,
+const queries, validation and verification. Thirty construction declarations
+now live in Core-private `exec_ir/exec_ir_mutation_internal.h`: these include
+all ten `Reserve` declarations, the mutable `ModuleFunctionAt` and
+`FunctionBlockAt` accessors, and `FunctionSetBindingRows`. Their original
+signatures, `ZR_CORE_API`, implementations and record layouts are preserved.
+
+Core, Parser and test consumers include the private header explicitly and use
+target `PRIVATE` include roots. The public header has no reverse private include
+or compatibility aliases. Both returned-owner and integer-fault producer shims
+load the real declarations before their `ModuleAppendLayout` redirect macros.
+Public C structs remain writable; shared-DLL symbol hiding and runtime behavior
+are outside this declaration checkpoint.
+
+The [focused acceptance record](../../tests/acceptance/ssa-execir-mutation-boundary.md)
+records actual Windows header syntax evidence: RED r2 used 64 compiler processes
+(the 60 public mutation probes still compiled), and GREEN r1 used 66 processes
+(public/private positives and all 60 selected-symbol undeclared rejections).
+Both runs had zero warnings; their 195/196 input pins matched before and after
+each run. Two discovery processes in each run receive no boundary-check credit.
+The permanent clang-cl CTest r4 gate also passes all 32 syntax modes (129
+outputs, 176 actual headers and 206 before/after pins; W0 for this gate).
+Separate metadata regressions pass Source r3's five CTests (820 translation
+units, 550 compiled and 270 exact-cache objects; 55 warnings) and Lower r3's
+four CTests (59 translation units, 55 compiled and four cached objects;
+incremental W0). These regressions exercise actual objects and linked metadata
+test executables. Caller r5 accepts all 78 configured syntax checks (20 Source,
+three Lower and 55 root), with 873 stable actual inputs and 150 warnings.
+The acceptance record preserves failed attempts, the exact EOF-comment identity
+bridge and the shared-checkout publication limits; it does not claim a clean-HEAD
+standalone build. GC-map cardinality and operation-specific cross-function
+local-ID mapping remain open acceptance gates; this checkpoint does not close
+01.01 or the full 47-leaf goal. Publication and cleanup require their actual
+external receipts.

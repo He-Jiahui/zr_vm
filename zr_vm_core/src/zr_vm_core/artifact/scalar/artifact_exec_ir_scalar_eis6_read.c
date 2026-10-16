@@ -1,4 +1,5 @@
 #include "artifact/scalar/artifact_exec_ir_scalar_eis6_internal.h"
+#include "exec_ir/exec_ir_mutation_internal.h"
 
 #include <stdlib.h>
 #include <string.h>
