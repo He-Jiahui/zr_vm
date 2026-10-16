@@ -7,7 +7,7 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/string.h"
-#include "../../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_string_heap.h"
+#include "compiler/metadata/compiler_metadata_string_heap.h"
 
 enum { RECORDS = 8192, DIAGNOSTICS = 64, RESERVE_ROWS = 8 };
 typedef struct SRecord {

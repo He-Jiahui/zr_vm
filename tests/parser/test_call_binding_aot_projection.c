@@ -12,7 +12,7 @@
 #include "zr_vm_core/module.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
-#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_call_bindings.h"
+#include "backend_aot/backend_aot_c_call_bindings.h"
 
 /* Unity 单用例 VM，由 tearDown 释放；测试局部 malloc 缓冲区不归此状态管理。 */
 static SZrState *g_state;

@@ -189,15 +189,15 @@ static void test_aot_c_source_lowers_typed_power_to_direct_c(void) {
             "ZrLibrary_AotRuntime_PowFloat(state, &frame",
     };
     char *headerText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *emitterText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
     char *moduleText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_power.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_power.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *scalarLocalsText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
 
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(emitterText);
@@ -227,7 +227,7 @@ static void test_aot_c_source_lowers_generic_power_meta_boundary_to_boundary_hel
             "const SZrAotExecIrFunction *functionIr",
     };
     static const char *const moduleNeedles[] = {
-            "#include \"backend_aot_c_scalar_locals.h\"",
+            "#include \"backend_aot/backend_aot_c_scalar_locals.h\"",
             "backend_aot_write_c_direct_pow(",
             "const SZrAotExecIrFunction *functionIr",
             "zr_aot_generic_power_boundary",
@@ -271,11 +271,11 @@ static void test_aot_c_source_lowers_generic_power_meta_boundary_to_boundary_hel
             "ZrLibrary_AotRuntime_Pow(state, &frame",
     };
     char *headerText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *moduleText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_generic_power.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_generic_power.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
     char *runtimeSourceText = read_repo_text_file_owned(
             "zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_values.c");

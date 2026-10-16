@@ -51,4 +51,4 @@ static void owner_free(void *memory) {
 #define malloc owner_malloc
 #define calloc owner_calloc
 #define free owner_free
-#include "../../zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_owner_state.c"
+#include "exec_ir/exec_ir_owner_state.c"

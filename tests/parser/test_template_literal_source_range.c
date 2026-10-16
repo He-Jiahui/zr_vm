@@ -7,7 +7,7 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/parser.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/parser/parser_internal.h"
+#include "parser/parser_internal.h"
 
 /* Parser-only contract: fixed raw byte ranges include both backticks. */
 enum { TEMPLATE_PARSE_STATE = 0, TEMPLATE_SCAN_STATE = 1, TEMPLATE_STATE_COUNT = 2 };

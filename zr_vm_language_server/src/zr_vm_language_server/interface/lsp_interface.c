@@ -3,16 +3,16 @@
 //
 
 #include "interface/lsp_interface_internal.h"
-#include "lsp_canonical_signature_help.h"
-#include "lsp_virtual_documents.h"
+#include "features/lsp_canonical_signature_help.h"
+#include "features/lsp_virtual_documents.h"
 #include "metadata/lsp_native_declaration_projection.h"
 #include "metadata/lsp_virtual_document_identity.h"
 #include "project/lsp_project_internal.h"
 #include "project/lsp_workspace.h"
-#include "semantic/lsp_local_semantic_query.h"
-#include "semantic/lsp_semantic_reference_query.h"
-#include "semantic/lsp_semantic_query.h"
-#include "semantic/semantic_analyzer_internal.h"
+#include "semantic/query/lsp_local_semantic_query.h"
+#include "semantic/query/lsp_semantic_reference_query.h"
+#include "semantic/query/lsp_semantic_query.h"
+#include "semantic/analyzer/semantic_analyzer_internal.h"
 
 #include <ctype.h>
 #include <stdio.h>

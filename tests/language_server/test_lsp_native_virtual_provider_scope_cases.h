@@ -1,7 +1,7 @@
 #ifndef ZR_TEST_LSP_NATIVE_VIRTUAL_PROVIDER_SCOPE_CASES_H
 #define ZR_TEST_LSP_NATIVE_VIRTUAL_PROVIDER_SCOPE_CASES_H
 
-#include "../../zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.h"
+#include "features/lsp_virtual_documents.h"
 
 /* 虚拟声明 URI 的 provider 身份必须随定义与引用查询保留，避免不同 provider 同名声明串线。 */
 static void test_lsp_native_virtual_documents_preserve_provider_scope(SZrState *state) {

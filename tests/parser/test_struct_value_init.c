@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include "harness/runtime_support.h"
-#include "zr_vm_parser/bound_expression.h"
+#include "semantic/bound_expression.h"
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"

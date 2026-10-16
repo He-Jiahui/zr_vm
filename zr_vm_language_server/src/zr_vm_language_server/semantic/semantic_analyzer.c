@@ -2,8 +2,8 @@
 // Created by Auto on 2025/01/XX.
 //
 
-#include "semantic/semantic_analyzer_internal.h"
-#include "semantic/semantic_analyzer_query_source.h"
+#include "semantic/analyzer/semantic_analyzer_internal.h"
+#include "semantic/analyzer/semantic_analyzer_query_source.h"
 #include "module/lsp_module_metadata.h"
 #include "semantic/lsp_stable_slot_contract.h"
 

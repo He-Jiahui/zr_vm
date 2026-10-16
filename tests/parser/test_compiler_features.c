@@ -27,7 +27,7 @@
 #include "zr_vm_lib_system/module.h"
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/writer.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
+#include "compiler/compiler_internal.h"
 
 #pragma pack(push, 1)
 typedef struct SZrCompiledPrototypeInfoView {

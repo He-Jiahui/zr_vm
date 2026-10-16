@@ -1,7 +1,7 @@
 #ifndef ZR_EXEC_IR_CALL_TARGET_H
 #define ZR_EXEC_IR_CALL_TARGET_H
 
-#include "zr_vm_parser/exec_ir_interprocedural.h"
+#include "exec_ir/exec_ir_interprocedural.h"
 
 /* Private scalar graph consumer.  The caller owns instruction/row identity;
  * this helper never invokes a provider or changes ExecIR/graph storage. */

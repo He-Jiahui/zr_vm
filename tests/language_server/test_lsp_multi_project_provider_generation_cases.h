@@ -2,7 +2,7 @@
 #define ZR_VM_TEST_LSP_MULTI_PROJECT_PROVIDER_GENERATION_CASES_H
 
 #include "zr_vm_language_server/lsp_semantic_snapshot.h"
-#include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h"
+#include "semantic/query/lsp_local_semantic_query.h"
 
 /* 查询 API 将 Location 对象交给调用方；矩阵测试在每轮释放它们，以免缓存预算检查掺入测试自身的残留。 */
 static void provider_matrix_free_locations(SZrState *state, SZrArray *locations) {

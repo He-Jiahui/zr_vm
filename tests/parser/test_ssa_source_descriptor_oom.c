@@ -11,11 +11,11 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/canonical_type.h"
-#include "zr_vm_parser/exec_ir_dead_source_places.h"
-#include "zr_vm_parser/exec_ir_source_module_contract.h"
-#include "zr_vm_parser/exec_ir_host_primitive_layout.h"
-#include "zr_vm_parser/exec_ir_source_frame.h"
-#include "zr_vm_parser/exec_ir_host_aot_target.h"
+#include "exec_ir/exec_ir_dead_source_places.h"
+#include "exec_ir/source/exec_ir_source_module_contract.h"
+#include "exec_ir/exec_ir_host_primitive_layout.h"
+#include "exec_ir/source/exec_ir_source_frame.h"
+#include "exec_ir/exec_ir_host_aot_target.h"
 
 enum { RECORDS = 256, VM_RECORDS = 8192, SITES = 6, SOURCES = 2 };
 typedef struct SRecord {

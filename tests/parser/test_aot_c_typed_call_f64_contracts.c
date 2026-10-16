@@ -182,21 +182,21 @@ void test_aot_c_source_lowers_static_f64_calls_to_typed_thunks(void) {
             "backend_aot_try_write_c_static_direct_typed_no_arg_function_call(file,",
     };
     char *emitterHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *emitterSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_f64_thunks.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_f64_thunks.c");
     char *f64ThunkShapeText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_f64_thunk_shapes.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_f64_thunk_shapes.c");
     char *f64ThreeArgShapeText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_f64_three_arg_shapes.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_f64_three_arg_shapes.c");
     char *callLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c");
     char *typedDirectCallText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_calls.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_calls.c");
     char *typedDirectF64CallText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_f64_calls.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_f64_calls.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     assert_text_contains_all(emitterHeaderText, emitterHeaderNeedles, ARRAY_COUNT(emitterHeaderNeedles));

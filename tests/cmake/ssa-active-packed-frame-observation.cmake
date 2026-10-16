@@ -32,6 +32,7 @@ add_executable(zr_vm_ssa_active_packed_frame_observation_test
         "${_zr_active_frame_root}/zr_vm_core/src/zr_vm_core/runtime/execution_contract.c"
         "${_zr_active_frame_root}/tests/third_party/zr_unity/Unity/src/unity.c")
 target_include_directories(zr_vm_ssa_active_packed_frame_observation_test PRIVATE
+        "${_zr_active_frame_root}/zr_vm_parser/src/zr_vm_parser"
         "${_zr_active_frame_root}/tests"
         "${_zr_active_frame_root}/tests/third_party/zr_unity/Unity/src"
         "${_zr_active_frame_root}/zr_vm_common/include"

@@ -74,23 +74,23 @@ TZrBool ZrSystem_Assembly_ResourceExists(ZrLibCallContext *context, SZrTypeValue
  * 资源名只定位当前项目的输出归档，不选择另一磁盘文件。文本 setter 使用 NUL 终止语义。
  * BUG: 合法资源可含 `41 00 42`，但本路径经 C 字符串长度只交付 `A`，丢失 NUL 后内容。
  *      `zr_vm_library/src/zr_vm_library/zrm.c:746` 按原始文件读取资源，`zr_vm_library/src/zr_vm_library/zrm.c:845` 按显式长度入包，
- *      `zr_vm_library/src/zr_vm_library/zrm.c:1328` 返回解压字节数；`zr_vm_core/src/zr_vm_core/string.c:973` 按 NUL 文本长度建 VM 字符串。
+ *      `zr_vm_library/src/zr_vm_library/zrm.c:1328` 返回解压字节数；`zr_vm_core/src/zr_vm_core/string/string.c:973` 按 NUL 文本长度建 VM 字符串。
  * BUG: 已找到条目仍可能读取失败；zr_vm_library/third_party/zr_miniz/miniz/miniz_zip.c:1640 先清输出长度，
  *      zr_vm_library/third_party/zr_miniz/miniz/miniz_zip.c:1655 和 zr_vm_library/third_party/zr_miniz/miniz/miniz_zip.c:1661 在分配或解压失败时返回 NULL。
  *      zr_vm_library/src/zr_vm_library/zrm.c:1322 仅拒绝 NULL 且长度非零，故 NULL/0 被误报成功，
  *      本回调可把失败误交付为空结果；此处是静态失败链证据，未执行故障注入。
  * BUG: 合法资源已读且临时文本 malloc 成功时，若未驻留的短文本发生 API cache miss，
  *      先前 VM 对象创建成功，而驻留表达到扩容阈值后 HASH_BUCKET 申请失败并保留旧桶，
- *      zr_vm_core/src/zr_vm_core/hash_set.c:181 与 zr_vm_core/include/zr_vm_core/hash_set.h:537 正常返回失败，
- *      zr_vm_core/src/zr_vm_core/string.c:808、zr_vm_core/src/zr_vm_core/string.c:974 传递 NULL；
+ *      zr_vm_core/src/zr_vm_core/base/hash_set.c:181 与 zr_vm_core/include/zr_vm_core/hash_set.h:537 正常返回失败，
+ *      zr_vm_core/src/zr_vm_core/string/string.c:808、zr_vm_core/src/zr_vm_core/string/string.c:974 传递 NULL；
  *      zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1313 不写结果，而 zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c:191 仍报告成功。
  *      短串上限由 zr_vm_common/include/zr_vm_common/zr_string_conf.h:16 定为 127 字节；这是完整静态失败链，未执行故障注入。
- * TODO: 沿 zr_vm_core/src/zr_vm_core/memory.c:46 的异常入口与 zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c:195 的普通收尾核查非局部退出时 text/bytes/archive 的清理责任。
+ * TODO: 沿 zr_vm_core/src/zr_vm_core/base/memory.c:46 的异常入口与 zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c:195 的普通收尾核查非局部退出时 text/bytes/archive 的清理责任。
  *
  * ## References
  * - `zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly_registry.c:21` 登记文本导出；`tests/system/test_system_assembly_module.c:257` 是正常文本资源的实际调用。
  * - `zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c:174` 和 `zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c:179` 进入资源错误报告；
- *   `zr_vm_core/src/zr_vm_core/debug.c:1080` 声明 `RunError` 不返回。
+ *   `zr_vm_core/src/zr_vm_core/debug/debug.c:1080` 声明 `RunError` 不返回。
  * - `zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c:190` 交付文本，`zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c:195` 和 `zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c:196` 清理普通返回路径。
  */
 TZrBool ZrSystem_Assembly_ReadResourceText(ZrLibCallContext *context, SZrTypeValue *result);
@@ -125,7 +125,7 @@ TZrBool ZrSystem_Assembly_ReadResourceText(ZrLibCallContext *context, SZrTypeVal
  * - `zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly_registry.c:24` 注册字节导出；`tests/system/test_system_assembly_module.c:267` 调用，`tests/system/test_system_assembly_module.c:273` 核对内容。
  * - `zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c:114` 保留每个 byte 的整数值；`zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c:120` 交付 VM 数组。
  * - `zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c:224` 构造结果，`zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c:225` 和 `zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c:226` 清理普通返回路径。
- * - `zr_vm_core/src/zr_vm_core/debug.c:1080` 是资源错误使用的不返回入口。
+ * - `zr_vm_core/src/zr_vm_core/debug/debug.c:1080` 是资源错误使用的不返回入口。
  */
 TZrBool ZrSystem_Assembly_ReadResourceBytes(ZrLibCallContext *context, SZrTypeValue *result);
 

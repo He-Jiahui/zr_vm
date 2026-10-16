@@ -16,7 +16,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/writer.h"
-#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.h"
+#include "backend_aot/backend_aot_exec_ir_frame.h"
 
 typedef struct SZrBinaryFixtureReader {
     const TZrByte *bytes;
@@ -846,23 +846,23 @@ static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
 
     {
         char *execIrHeaderText = read_repo_text_file_owned(
-                "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h");
+                "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h");
         char *execIrSourceText = read_repo_text_file_owned(
-                "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c");
+                "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c");
         char *execIrReturnLayoutSourceText = read_repo_text_file_owned(
-                "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_return_layout.c");
+                "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_return_layout.c");
         char *execIrFrameSourceText = read_repo_text_file_owned(
-                "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.c");
+                "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.c");
         char *functionHeaderText = read_repo_text_file_owned(
                 "zr_vm_core/include/zr_vm_core/function.h");
         char *typedMetadataSourceText = read_repo_text_file_owned(
                 "zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c");
         char *valueSemIrCallSourceText = read_repo_text_file_owned(
-                "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.c");
+                "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.c");
         char *methodMetadataSourceText = read_repo_text_file_owned(
-                "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c");
+                "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c");
         char *scalarLocalsSourceText = read_repo_text_file_owned(
-                "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
+                "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
 
         TEST_ASSERT_NOT_NULL(execIrHeaderText);
         TEST_ASSERT_NOT_NULL(execIrSourceText);

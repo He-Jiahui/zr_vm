@@ -1,9 +1,9 @@
 #ifndef ZR_TEST_PRIMITIVE_FRAME_VALIDATION_FIXTURE_H
 #define ZR_TEST_PRIMITIVE_FRAME_VALIDATION_FIXTURE_H
-#include "../../core/support/ssa_exec_ir_owned_module_allocator.h"
+#include "tests/core/support/ssa_exec_ir_owned_module_allocator.h"
 #include "zr_vm_parser/canonical_type.h"
-#include "zr_vm_parser/exec_ir_frame_layout.h"
-#include "zr_vm_parser/exec_ir_source_frame.h"
+#include "exec_ir/exec_ir_frame_layout.h"
+#include "exec_ir/source/exec_ir_source_frame.h"
 enum { PF_BYTES = 8192 };
 typedef struct SPfObservation {
     unsigned char bytes[PF_BYTES];

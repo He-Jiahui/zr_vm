@@ -43,6 +43,7 @@ endif()
 zr_link_third_party_for_module(${zr_curr_module_name} "zr_c_json")
 # LSP 查询借用 parser 内部设施；这些私有目录只授予本模块目标和下方 WASM 目标。
 set(_zr_vm_ls_parser_private_includes
+        ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser
         ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/compiler
         ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/backend_aot
         ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/parser
@@ -175,6 +176,8 @@ if(BUILD_WASM)
         file(GLOB_RECURSE zr_vm_parser_src
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/**/*.c
         )
+        # Preserve the pre-layout WASM parser source pool.
+        list(FILTER zr_vm_parser_src EXCLUDE REGEX ".*/backend_aot/.*[.]c$")
 
         file(GLOB_RECURSE zr_vm_library_src
             ${CMAKE_SOURCE_DIR}/zr_vm_library/src/*.c

@@ -2,7 +2,7 @@
 #define ZR_TEST_SSA_SOURCE_RETURNED_EXECIR_CLEANUP_H
 
 #include "ssa_source_returned_crt_ledger.h"
-#include "../../core/support/ssa_exec_ir_owned_module_allocator.h"
+#include "tests/core/support/ssa_exec_ir_owned_module_allocator.h"
 
 enum { ZR_RETURNED_EXEC_CLEANUP_CRT_KINDS = ZR_RETURNED_OWNER + 1 };
 

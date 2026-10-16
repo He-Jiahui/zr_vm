@@ -1,4 +1,4 @@
-#include "zr_vm_parser/iteration_contract.h"
+#include "compiler/statement/iteration_contract.h"
 
 #include "type_inference_internal.h"
 

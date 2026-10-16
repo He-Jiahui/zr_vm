@@ -1,6 +1,6 @@
 #include "interface/lsp_interface_internal.h"
 #include "interface/lsp_semantic_cache_lru.h"
-#include "semantic/semantic_analyzer_internal.h"
+#include "semantic/analyzer/semantic_analyzer_internal.h"
 
 #include <string.h>
 

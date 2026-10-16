@@ -117,8 +117,8 @@ static void test_aot_c_type_layouts_emit_generated_struct_static_asserts(void) {
             "backend_aot_c_type_layout_metadata_field_token_roots(",
     };
     static const char *const sourceNeedles[] = {
-            "#include \"backend_aot_c_type_layouts.h\"",
-            "#include \"backend_aot_c_type_layout_metadata_roots.h\"",
+            "#include \"backend_aot/backend_aot_c_type_layouts.h\"",
+            "#include \"backend_aot/backend_aot_c_type_layout_metadata_roots.h\"",
             "ZrCore_Function_ResolvePrototypeFrameTypeLayout(",
             "ZrCore_Function_VisitPrototypeFrameFieldLayouts(",
             "#define ZR_AOT_C_LAYOUT_STRUCT(name, bytes)",
@@ -149,7 +149,7 @@ static void test_aot_c_type_layouts_emit_generated_struct_static_asserts(void) {
             "typeLayout->gcFieldCount == 0u",
     };
     static const char *const metadataRootSourceNeedles[] = {
-            "#include \"backend_aot_c_type_layout_metadata_roots.h\"",
+            "#include \"backend_aot/backend_aot_c_type_layout_metadata_roots.h\"",
             "backend_aot_c_type_layout_metadata_type_token_roots(",
             "backend_aot_c_type_layout_metadata_field_token_roots(",
             "ZR_METADATA_TOKEN_TABLE(typeToken) == ZR_METADATA_TABLE_TYPE_REF",
@@ -164,7 +164,7 @@ static void test_aot_c_type_layouts_emit_generated_struct_static_asserts(void) {
             "fieldRow->typeLayoutId",
     };
     static const char *const tokenNeedles[] = {
-            "#include \"backend_aot_c_type_layouts.h\"",
+            "#include \"backend_aot/backend_aot_c_type_layouts.h\"",
             "#include \"zr_vm_core/metadata_token.h\"",
             "#include \"zr_vm_core/zrp_metadata.h\"",
             "backend_aot_c_type_layout_token_from_table(",
@@ -181,7 +181,7 @@ static void test_aot_c_type_layouts_emit_generated_struct_static_asserts(void) {
             "0x%08xu",
     };
     static const char *const emitterNeedles[] = {
-            "#include \"backend_aot_c_type_layouts.h\"",
+            "#include \"backend_aot/backend_aot_c_type_layouts.h\"",
             "#include <stddef.h>",
             "TZrUInt32 gcDescriptorIndexSpace;",
             "gcDescriptorIndexSpace = backend_aot_c_type_layout_gc_descriptor_index_space(state,",
@@ -190,17 +190,17 @@ static void test_aot_c_type_layouts_emit_generated_struct_static_asserts(void) {
             "gcDescriptorIndexSpace > 0u ? \"zr_aot_gc_descriptors\" : \"ZR_NULL\"",
     };
     char *headerText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.h");
     char *sourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.c");
     char *metadataRootHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_metadata_roots.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_metadata_roots.h");
     char *metadataRootSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_metadata_roots.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_metadata_roots.c");
     char *tokenText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_tokens.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_tokens.c");
     char *emitterText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
 
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(sourceText);

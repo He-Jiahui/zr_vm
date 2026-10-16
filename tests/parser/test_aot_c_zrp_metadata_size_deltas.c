@@ -1,6 +1,6 @@
 #include "unity.h"
 
-#include "backend_aot_c_zrp_metadata_size.h"
+#include "backend_aot/backend_aot_c_zrp_metadata_size.h"
 
 #include <stdio.h>
 #include <string.h>

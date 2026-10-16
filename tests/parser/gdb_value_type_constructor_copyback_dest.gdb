@@ -4,7 +4,7 @@
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test
-break /mnt/e/Git/zr_vm/zr_vm_core/src/zr_vm_core/function.c:2021
+break /mnt/e/Git/zr_vm/zr_vm_core/src/zr_vm_core/function/function.c:2021
 commands
 silent
 set $calleeFn = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, (SZrCallInfo *)callInfo)

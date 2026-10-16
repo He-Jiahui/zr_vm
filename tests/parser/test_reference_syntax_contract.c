@@ -9,7 +9,7 @@
 #include "zr_vm_parser/lexer.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic.h"
-#include "zr_vm_parser/syntax_contract.h"
+#include "contract/syntax_contract.h"
 
 /* Unity 每个用例独占 state；semantic context 借用该 state，销毁时先释放 context。 */
 static SZrState *g_state;

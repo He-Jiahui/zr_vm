@@ -17,8 +17,8 @@
 #include "path_support.h"
 #include "lsp_query_result_cleanup.h"
 
-#include "../../zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h"
-#include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.h"
+#include "interface/lsp_interface_internal.h"
+#include "semantic/query/lsp_semantic_query.h"
 
 /* 对照场景独立计时；时长不影响查询身份比较。 */
 typedef struct SZrParityTimer {

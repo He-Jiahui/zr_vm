@@ -1,4 +1,4 @@
-#include "zr_vm_parser/artifact_exec_ir.h"
+#include "artifact/artifact_exec_ir.h"
 #include "zr_vm_core/artifact_schema.h"
 #include "zr_vm_core/artifact_exec_ir_scalar.h"
 #include "zr_vm_common/zr_aot_abi.h"

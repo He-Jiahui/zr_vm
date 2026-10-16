@@ -1,9 +1,9 @@
 #ifndef ZR_TEST_LSP_VIRTUAL_DOCUMENT_IDENTITY_CASES_H
 #define ZR_TEST_LSP_VIRTUAL_DOCUMENT_IDENTITY_CASES_H
 
-#include "../../zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_virtual_document_identity.h"
-#include "../../zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.h"
-#include "../../zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_internal.h"
+#include "metadata/lsp_virtual_document_identity.h"
+#include "metadata/lsp_metadata_provider.h"
+#include "project/lsp_project_internal.h"
 #include <stdint.h>
 
 /* 合法虚拟 URI 的 provider、模块和声明身份经编码/解析后必须不变。 */

@@ -4,7 +4,7 @@
 /* Forced include for the independent source-frame OBJECT target only. Read
  * the real CRT and packed-helper declarations before redirecting call sites. */
 #include <stdlib.h>
-#include "zr_vm_parser/exec_ir_frame_layout.h"
+#include "exec_ir/exec_ir_frame_layout.h"
 
 void *ZrTests_PrimitiveSourceFrame_Calloc(size_t count, size_t width);
 void *ZrTests_PrimitiveSourceFrame_Malloc(size_t size);

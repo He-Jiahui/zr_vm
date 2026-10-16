@@ -8,9 +8,9 @@ static void test_semantic_analyzer_has_no_unstructured_diagnostic_escape_hatch(v
     char *source = read_repo_text_file_owned(
             "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c");
     char *analysisSource = read_repo_text_file_owned(
-            "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_analysis.c");
+            "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_analysis.c");
     char *typecheckSource = read_repo_text_file_owned(
-            "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
+            "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_typecheck.c");
 
     if (header == NULL || source == NULL || analysisSource == NULL ||
         typecheckSource == NULL) {
@@ -51,20 +51,20 @@ static void test_semantic_analyzer_has_no_unstructured_diagnostic_escape_hatch(v
 /* 逐个规则源排除临时诊断构造，保留查询物化到协议对象的唯一通道。 */
 static void test_semantic_analyzer_rules_only_publish_structured_query_diagnostics(void) {
     static const char *ruleSourcePaths[] = {
-            "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_analysis.c",
-            "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_constant_condition.c",
-            "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_extern_bindings.c",
-            "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_reachability.c",
-            "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c",
-            "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c",
-            "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c",
-            "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck_bindings.c",
-            "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_union_patterns.c",
+            "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_analysis.c",
+            "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_constant_condition.c",
+            "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_extern_bindings.c",
+            "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_reachability.c",
+            "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_support.c",
+            "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_symbols.c",
+            "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_typecheck.c",
+            "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_typecheck_bindings.c",
+            "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_union_patterns.c",
     };
     char *queryProjection = read_repo_text_file_owned(
-            "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_query_diagnostics.c");
+            "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_query_diagnostics.c");
     char *protocolProjection = read_repo_text_file_owned(
-            "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_diagnostic_projection.c");
+            "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_diagnostic_projection.c");
 
     if (queryProjection == NULL || protocolProjection == NULL) {
         printf("FAIL: could not read semantic diagnostic projection sources\n");

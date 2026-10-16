@@ -1,6 +1,6 @@
 #include "module/lsp_module_metadata.h"
 #include "module/lsp_compile_tool_projection.h"
-#include "lsp_virtual_documents.h"
+#include "features/lsp_virtual_documents.h"
 
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/native_registry.h"

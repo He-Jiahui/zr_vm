@@ -4,8 +4,8 @@
 
 #include "compiler_internal.h"
 #include "compiler_typed_call_binding.h"
-#include "compile_time_executor_internal.h"
-#include "compiler_attribute_binding.h"
+#include "compiler/compile_time/compile_time_executor_internal.h"
+#include "compiler/declaration/compiler_attribute_binding.h"
 #include "compiler_source_callable_identity.h"
 
 void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {

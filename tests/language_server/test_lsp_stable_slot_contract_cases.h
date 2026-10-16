@@ -1,7 +1,7 @@
 #ifndef ZR_VM_TEST_LSP_STABLE_SLOT_CONTRACT_CASES_H
 #define ZR_VM_TEST_LSP_STABLE_SLOT_CONTRACT_CASES_H
 
-#include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_stable_slot_contract.h"
+#include "semantic/lsp_stable_slot_contract.h"
 
 /* 仅靠协议位与成员角色识别池句柄/读写引用，不让重命名改变能力分类。 */
 static void test_lsp_stable_slot_contract_classification_is_name_independent(

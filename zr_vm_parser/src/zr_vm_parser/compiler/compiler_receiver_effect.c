@@ -1,6 +1,6 @@
 #include "compiler_internal.h"
-#include "zr_vm_parser/receiver_call.h"
-#include "zr_vm_parser/syntax_contract.h"
+#include "semantic/receiver_call.h"
+#include "contract/syntax_contract.h"
 
 SZrTypePrototypeInfo *find_compiler_type_prototype(
         SZrCompilerState *cs,

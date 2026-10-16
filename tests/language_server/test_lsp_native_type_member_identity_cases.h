@@ -1,7 +1,7 @@
 #ifndef ZR_TESTS_LSP_NATIVE_TYPE_MEMBER_IDENTITY_CASES_H
 #define ZR_TESTS_LSP_NATIVE_TYPE_MEMBER_IDENTITY_CASES_H
 
-#include "../../zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_metadata_provider.h"
+#include "metadata/lsp_metadata_provider.h"
 
 /* 原生类型成员的虚拟声明与 metadata provider 投影应保持同一 descriptor 身份供导航复用。 */
 static void test_native_type_member_projection_preserves_descriptor_identity(

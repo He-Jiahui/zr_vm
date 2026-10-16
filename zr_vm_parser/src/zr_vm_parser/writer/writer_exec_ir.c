@@ -1,4 +1,4 @@
-#include "zr_vm_parser/artifact_exec_ir.h"
+#include "artifact/artifact_exec_ir.h"
 
 TZrBool ZrParser_ExecIr_Read(SZrExecIrReader *reader,
                              SZrArtifactExecIrView *module,

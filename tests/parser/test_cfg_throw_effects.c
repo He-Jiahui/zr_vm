@@ -8,7 +8,7 @@
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
+#include "compiler/compiler_internal.h"
 
 /* 同一套 CFG 事实查询覆盖 lambda 调用、catch 类型匹配与 receiver guard 抛出边。 */
 static SZrState *g_state;

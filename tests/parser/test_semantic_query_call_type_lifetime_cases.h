@@ -3,7 +3,7 @@
 
 #include "zr_vm_core/global.h"
 #include "zr_vm_parser/type_inference.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_semantic_facts.h"
+#include "type_inference/type_inference_semantic_facts.h"
 
 static struct {
     FZrAllocator original;

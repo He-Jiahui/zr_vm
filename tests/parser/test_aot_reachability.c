@@ -4,9 +4,9 @@
 
 #include "unity.h"
 
-#include "backend_aot_function_table.h"
-#include "backend_aot_reachability.h"
-#include "backend_aot_reachability_function_graph.h"
+#include "backend_aot/backend_aot_function_table.h"
+#include "backend_aot/backend_aot_reachability.h"
+#include "backend_aot/backend_aot_reachability_function_graph.h"
 #include "zr_vm_core/constant_reference.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/object.h"

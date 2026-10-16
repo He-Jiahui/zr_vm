@@ -1,7 +1,7 @@
 #include "interface/lsp_interface_internal.h"
 #include "interface/lsp_canonical_symbol_display.h"
 #include "semantic/lsp_numeric_range_text.h"
-#include "semantic/semantic_analyzer_internal.h"
+#include "semantic/analyzer/semantic_analyzer_internal.h"
 #include "zr_vm_parser/semantic_display.h"
 #include <stdarg.h>
 #include <stdio.h>

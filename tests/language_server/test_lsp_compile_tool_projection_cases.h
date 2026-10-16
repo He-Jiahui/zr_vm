@@ -1,8 +1,8 @@
 #ifndef ZR_VM_TEST_LSP_COMPILE_TOOL_PROJECTION_CASES_H
 #define ZR_VM_TEST_LSP_COMPILE_TOOL_PROJECTION_CASES_H
 
-#include "../../zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.h"
-#include "../../zr_vm_language_server/src/zr_vm_language_server/module/lsp_compile_tool_projection.h"
+#include "features/lsp_virtual_documents.h"
+#include "module/lsp_compile_tool_projection.h"
 
 /* 在投影描述符中借用指定类型，供下方与 parser 规范契约比对。 */
 static const ZrLibTypeDescriptor *lsp_compile_tool_find_type(

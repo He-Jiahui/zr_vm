@@ -4,7 +4,7 @@
 #include "runtime_support.h"
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/native_registry.h"
-#include "../../zr_vm_library/src/zr_vm_library/native_binding/native_binding_internal.h"
+#include "native_binding/native_binding_internal.h"
 
 #include <stdio.h>
 #include <stdlib.h>

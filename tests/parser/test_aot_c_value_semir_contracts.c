@@ -127,7 +127,7 @@ static void test_aot_c_value_semir_field_lowering_lives_in_focused_module(void) 
             "backend_aot_try_write_c_value_semir_field_store_exec(",
     };
     static const char *const fieldSourceNeedles[] = {
-            "#include \"backend_aot_c_value_semir_fields.h\"",
+            "#include \"backend_aot/backend_aot_c_value_semir_fields.h\"",
             "backend_aot_c_value_field_resolve_layout(",
             "backend_aot_c_value_field_layout_can_primitive_exec(",
             "backend_aot_c_value_field_layout_can_value_slot_exec(",
@@ -148,7 +148,7 @@ static void test_aot_c_value_semir_field_lowering_lives_in_focused_module(void) 
             "unsupported AOT value SemIR field store",
     };
     static const char *const orchestratorNeedles[] = {
-            "#include \"backend_aot_c_value_semir_fields.h\"",
+            "#include \"backend_aot/backend_aot_c_value_semir_fields.h\"",
             "backend_aot_write_c_value_semir_field_addr(file, state, functionIr, frameLayout, instruction);",
             "backend_aot_write_c_value_semir_load(file, state, functionIr, frameLayout, instruction);",
             "backend_aot_write_c_value_semir_store(file, state, functionIr, frameLayout, instruction);",
@@ -170,11 +170,11 @@ static void test_aot_c_value_semir_field_lowering_lives_in_focused_module(void) 
             "static TZrBool backend_aot_try_write_c_value_field_store_exec(",
     };
     char *fieldHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.h");
     char *fieldSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.c");
     char *orchestratorText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.c");
 
     TEST_ASSERT_NOT_NULL(fieldHeaderText);
     TEST_ASSERT_NOT_NULL(fieldSourceText);
@@ -209,7 +209,7 @@ static void test_aot_c_value_semir_inline_struct_field_transfer_uses_layout_copy
             "ZrCore_TypeLayout_CopyInline(state,",
     };
     char *fieldSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.c");
 
     TEST_ASSERT_NOT_NULL(fieldSourceText);
     assert_text_contains_all(fieldSourceText, fieldSourceNeedles, ARRAY_COUNT(fieldSourceNeedles));
@@ -227,7 +227,7 @@ static void test_aot_c_value_semir_field_resolver_uses_stable_member_entries(voi
             "memberEntryIndex >= function->memberEntryLength",
     };
     char *fieldSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.c");
 
     TEST_ASSERT_NOT_NULL(fieldSourceText);
     assert_text_contains_all(fieldSourceText, fieldSourceNeedles, ARRAY_COUNT(fieldSourceNeedles));
@@ -251,7 +251,7 @@ static void test_aot_c_type_layout_descriptor_preserves_canonical_identity_and_m
             ".reserved0 =",
     };
     char *typeLayoutSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.c");
 
     TEST_ASSERT_NOT_NULL(typeLayoutSourceText);
     assert_text_contains_all(typeLayoutSourceText,
@@ -285,13 +285,13 @@ static void test_aot_c_frame_alias_preserves_addressing_without_duplicate_lifecy
             "ZrCore_TypeLayout_DropInline(state,",
     };
     char *execIrSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.c");
     char *cleanupSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_cleanup.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_cleanup.c");
     char *methodMetadataSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c");
     char *valueSemIrSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.c");
 
     TEST_ASSERT_NOT_NULL(execIrSourceText);
     TEST_ASSERT_NOT_NULL(cleanupSourceText);
@@ -333,11 +333,11 @@ static void test_aot_c_indirect_alias_field_access_uses_canonical_frame_member_t
             "ZrCore_Function_SetFrameSlotInlineMember(",
     };
     char *fieldSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.c");
     char *coreHeaderText = read_repo_text_file_owned(
             "zr_vm_core/include/zr_vm_core/function.h");
     char *rootRuntimeText = read_repo_text_file_owned(
-            "zr_vm_library/src/zr_vm_library/aot_runtime.c");
+            "zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c");
     char *aotRuntimeText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_library/src/zr_vm_library/aot_runtime.c");
 
@@ -365,7 +365,7 @@ static void test_aot_c_value_semir_typed_call_return_lives_in_focused_module(voi
             "backend_aot_try_write_c_value_semir_return_typed_exec(",
     };
     static const char *const callSourceNeedles[] = {
-            "#include \"backend_aot_c_value_semir_calls.h\"",
+            "#include \"backend_aot/backend_aot_c_value_semir_calls.h\"",
             "backend_aot_c_value_call_find_frame_slot_layout(",
             "backend_aot_c_value_call_layout_can_inline_struct(",
             "backend_aot_exec_ir_direct_inline_return_type_layout_id(calleeFunctionIr)",
@@ -410,7 +410,7 @@ static void test_aot_c_value_semir_typed_call_return_lives_in_focused_module(voi
             "functionIr->function->callableReturnType",
     };
     static const char *const orchestratorNeedles[] = {
-            "#include \"backend_aot_c_value_semir_calls.h\"",
+            "#include \"backend_aot/backend_aot_c_value_semir_calls.h\"",
             "backend_aot_exec_ir_find_function(module, calleeFunctionIndex)",
             "backend_aot_write_c_value_semir_call_typed(file, frameLayout, instruction);",
             "backend_aot_write_c_value_semir_return_typed(file, frameLayout, instruction);",
@@ -425,11 +425,11 @@ static void test_aot_c_value_semir_typed_call_return_lives_in_focused_module(voi
             "static void backend_aot_write_c_value_return_typed(",
     };
     char *callHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.h");
     char *callSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.c");
     char *orchestratorText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.c");
 
     TEST_ASSERT_NOT_NULL(callHeaderText);
     TEST_ASSERT_NOT_NULL(callSourceText);
@@ -461,9 +461,9 @@ static void test_aot_c_constructor_failure_uses_partial_inline_frame_cleanup(voi
             "registerFrameBytes",
     };
     char *cleanupText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_cleanup.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_cleanup.c");
     char *setupText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_setup.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_setup.c");
 
     TEST_ASSERT_NOT_NULL(cleanupText);
     TEST_ASSERT_NOT_NULL(setupText);

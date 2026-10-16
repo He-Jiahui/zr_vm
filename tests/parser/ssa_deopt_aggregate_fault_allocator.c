@@ -30,4 +30,4 @@ static void *aggregate_malloc(size_t size) {
 /* 重编译真实 aggregate 准备模块，而非替换其算法；仅本 TU 的 malloc 经钩子。
  * 已获得的存储仍来自 libc，普通 storage 模块继续承担失败清理和旧目标释放。 */
 #define malloc aggregate_malloc
-#include "../../zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_deopt_aggregate.c"
+#include "exec_ir/exec_ir_deopt_aggregate.c"

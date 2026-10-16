@@ -83,7 +83,7 @@ typedef enum EZrTestingAssertionKind {
  *
  * ## Invariants and lifecycle
  * 全部字段按值复制，无 VM 指针或 GC 根；保存副本无需保留原 GlobalState。
- * formatterFaulted 时 text 为 <format-error>，不能将该文本作为参与相等比较的实际值。BUG: 调试格式化含长字符串字段的对象可使core snprintf累计offset越界；入口zr_vm_core/src/zr_vm_core/value.c:604、zr_vm_core/src/zr_vm_core/value.c:628、zr_vm_core/src/zr_vm_core/value.c:695，TLS裁剪不能隔离此core写越界。
+ * formatterFaulted 时 text 为 <format-error>，不能将该文本作为参与相等比较的实际值。BUG: 调试格式化含长字符串字段的对象可使core snprintf累计offset越界；入口zr_vm_core/src/zr_vm_core/value/value.c:604、zr_vm_core/src/zr_vm_core/value/value.c:628、zr_vm_core/src/zr_vm_core/value/value.c:695，TLS裁剪不能隔离此core写越界。
  * BUG: 文本和诊断类型名按字节截断，可能以不完整 UTF-8 字符结束；见 testing_copy_bounded。
  *
  * ## References
@@ -126,7 +126,7 @@ typedef struct SZrTestingValueSnapshot {
  * ## Invariants and lifecycle
  * 内联字符数组和整数可按值保存，不借用 Function、String 或 CallInfo；不会保持调试元数据可达。
  * TODO: endColumn 的包含/排除边界需沿执行位置记录生产者核对，宿主不要仅凭字段名推定切片规则。
- * 核查入口为 zr_vm_core/src/zr_vm_core/io_runtime.c:695 的位置生产者及 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:439 的消费者。
+ * 核查入口为 zr_vm_core/src/zr_vm_core/io/io_runtime.c:695 的位置生产者及 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:439 的消费者。
  *
  * ## References
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:399 至 zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:440 投影最近 VM 帧；
@@ -291,7 +291,7 @@ ZR_VM_LIB_TESTING_API TZrBool ZrVmLibTesting_GetLastFailure(SZrTestingAssertionF
  *
  * ## Constraints and lifecycle
  * context/参数仅在 native 调用期间有效，异常须由正常 VM/宿主异常边界处理。
- * 断言失败先保存 TLS 再构造 AssertionFailure；仅软返回失败走 VM 运行错误回退，GC分配OOM可直接抛错。BUG: Normalize把脚本exception快照字段覆为self，宿主TLS仍为快照；入口zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:243、zr_vm_core/src/zr_vm_core/exception.c:407、zr_vm_core/src/zr_vm_core/exception.c:684。
+ * 断言失败先保存 TLS 再构造 AssertionFailure；仅软返回失败走 VM 运行错误回退，GC分配OOM可直接抛错。BUG: Normalize把脚本exception快照字段覆为self，宿主TLS仍为快照；入口zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:243、zr_vm_core/src/zr_vm_core/exception/exception.c:407、zr_vm_core/src/zr_vm_core/exception/exception.c:684。
  * 注册/物化仍遵循 Test phase，成功清理 TLS 不清理其它线程记录。
  *
  * ## References

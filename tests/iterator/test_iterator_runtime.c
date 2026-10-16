@@ -5,7 +5,7 @@
 #include "harness/runtime_support.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/gc_domain.h"
-#include "zr_vm_core/iterator_runtime.h"
+#include "iterator/iterator_runtime.h"
 #include "zr_vm_core/object.h"
 
 /* 生产器的游标只由 MoveNext 回调推进，终止后不再发布 current。 */

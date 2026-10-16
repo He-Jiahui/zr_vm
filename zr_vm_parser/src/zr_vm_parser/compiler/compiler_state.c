@@ -5,8 +5,8 @@
 #include "compiler_internal.h"
 
 #include "zr_vm_library/native_registry.h"
-#include "compile_tool_project_provider.h"
-#include "comptime_runtime_contract.h"
+#include "compiler/tool/compile_tool_project_provider.h"
+#include "compiler/compile_time/comptime_runtime_contract.h"
 #include "zr_vm_parser/parser.h"
 
 static void compiler_free_type_environment_chain(SZrState *state, SZrTypeEnvironment *env) {

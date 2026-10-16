@@ -1,5 +1,5 @@
 #include "metadata/lsp_virtual_document_identity.h"
-#include "lsp_virtual_documents.h"
+#include "features/lsp_virtual_documents.h"
 #include "zr_vm_core/string_builder.h"
 #include "zr_vm_library/native_registry.h"
 #include "cJSON/cJSON.h"

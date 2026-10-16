@@ -13,7 +13,7 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/writer.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
+#include "compiler/compiler_internal.h"
 
 #ifndef ZR_VM_TESTS_REPO_ROOT
 #define ZR_VM_TESTS_REPO_ROOT "."

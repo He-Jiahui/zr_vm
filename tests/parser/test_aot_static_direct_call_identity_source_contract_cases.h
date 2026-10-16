@@ -16,7 +16,7 @@ static void test_aot_static_direct_call_checks_frame_identity_before_preparation
     char *helperText = read_repo_text_file_owned(
             "zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_internal.h");
     char *runtimeText = read_repo_text_file_owned(
-            "zr_vm_library/src/zr_vm_library/aot_runtime.c");
+            "zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c");
     const char *functionStart;
     const char *directCallReset;
     const char *identityCheck;

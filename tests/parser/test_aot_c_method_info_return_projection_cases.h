@@ -2,12 +2,12 @@
 #define ZR_TEST_AOT_C_METHOD_INFO_RETURN_PROJECTION_CASES_H
 /* 返回类型投影案例由 method_info_signature 翻译单元包含，区分原始 callable 元数据和写入器采用的 ExecIR 快照。 */
 
-#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h"
+#include "backend_aot/backend_aot_exec_ir.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 
 #if defined(ZR_PLATFORM_UNIX)
-#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.h"
-#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_function_table.h"
+#include "backend_aot/backend_aot_c_method_metadata.h"
+#include "backend_aot/backend_aot_function_table.h"
 #endif
 
 /* 验证 callable 返回类型 accessor 只暴露规范投影字段。 */

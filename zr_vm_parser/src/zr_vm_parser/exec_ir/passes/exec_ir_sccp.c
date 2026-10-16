@@ -1,4 +1,4 @@
-#include "../exec_ir_pass_internal.h"
+#include "exec_ir/exec_ir_pass_internal.h"
 #include "exec_ir_copy_aliases.h"
 #include "zr_vm_common/zr_type_conf.h"
 

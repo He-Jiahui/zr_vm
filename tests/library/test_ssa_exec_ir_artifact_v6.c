@@ -3,7 +3,7 @@
 #include "zr_vm_core/artifact_exec_ir_scalar.h"
 #include "zr_vm_core/exec_ir_interpreter.h"
 #include "zr_vm_core/module.h"
-#include "zr_vm_parser/artifact_exec_ir.h"
+#include "artifact/artifact_exec_ir.h"
 #include "zr_vm_common/zr_type_conf.h"
 
 #include <stdio.h>

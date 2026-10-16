@@ -1,8 +1,8 @@
 #include "zr_vm_core/artifact_exec_ir_scalar.h"
 #include "zr_vm_core/exec_ir.h"
-#include "artifact_exec_ir_scalar_eis3.h"
-#include "artifact_exec_ir_scalar_eis4.h"
-#include "artifact_exec_ir_scalar_eis5.h"
+#include "artifact/scalar/artifact_exec_ir_scalar_eis3.h"
+#include "artifact/scalar/artifact_exec_ir_scalar_eis4.h"
+#include "artifact/scalar/artifact_exec_ir_scalar_eis5.h"
 
 #include <stdint.h>
 #include <stdio.h>

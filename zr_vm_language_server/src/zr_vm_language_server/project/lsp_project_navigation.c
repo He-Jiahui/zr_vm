@@ -1,7 +1,7 @@
 #include "module/lsp_module_metadata.h"
 #include "project/lsp_project_internal.h"
-#include "semantic/lsp_semantic_import_chain.h"
-#include "lsp_virtual_documents.h"
+#include "semantic/query/lsp_semantic_import_chain.h"
+#include "features/lsp_virtual_documents.h"
 #include "metadata/lsp_virtual_document_identity.h"
 #include "zr_vm_language_server/lsp_uri.h"
 

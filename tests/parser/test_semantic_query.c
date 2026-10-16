@@ -7,7 +7,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/diagnostic_builder.h"
-#include "zr_vm_parser/diagnostic_messages.h"
+#include "diagnostics/diagnostic_messages.h"
 #include "zr_vm_parser/diagnostic_registry.h"
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"

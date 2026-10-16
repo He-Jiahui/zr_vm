@@ -4,7 +4,7 @@
 /* extern struct 布局装饰器由 parser 校验，防止 LSP 与编译结果分歧。 */
 static void test_extern_struct_decorators_use_parser_diagnostic_projection(void) {
     char *typecheck = read_repo_text_file_owned(
-        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_typecheck.c");
 
     if (typecheck == NULL) {
         printf("FAIL: could not read semantic analyzer typecheck source\n");

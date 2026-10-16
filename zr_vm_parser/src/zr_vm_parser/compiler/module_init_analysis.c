@@ -1,5 +1,5 @@
 #include "module_init_analysis.h"
-#include "compiler_script_entry_metadata.h"
+#include "compiler/metadata/compiler_script_entry_metadata.h"
 
 #include "type_inference_internal.h"
 #include "zr_vm_core/io.h"

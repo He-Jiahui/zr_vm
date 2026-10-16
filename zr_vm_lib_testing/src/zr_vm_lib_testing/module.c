@@ -42,7 +42,7 @@ const ZrLibModuleDescriptor *ZrVmLibTesting_GetModuleDescriptor(void) {
  *
  * ## References
  * zr_vm_cli/src/zr_vm_cli/commands/test_command.c:83 bootstrap调用，zr_vm_cli/src/zr_vm_cli/commands/test_command.c:98 清理失败global，zr_vm_cli/src/zr_vm_cli/commands/test_command.c:101 后置phase；
- * zr_vm_library/src/zr_vm_library/task_runtime.c:1389 与 zr_vm_library/src/zr_vm_library/task_runtime.c:1393 先建立task provider；tests/testing/test_assertions.c:25 直接测试宿主调用。
+ * zr_vm_library/src/zr_vm_library/task/task_runtime.c:1389 与 zr_vm_library/src/zr_vm_library/task/task_runtime.c:1393 先建立task provider；tests/testing/test_assertions.c:25 直接测试宿主调用。
  */
 TZrBool ZrVmLibTesting_Register(SZrGlobalState *global) {
     return global != ZR_NULL &&

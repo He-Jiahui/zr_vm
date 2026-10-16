@@ -17,7 +17,7 @@
  * ## Constraints and lifecycle
  * 状态/Global或builtins注册失败会销毁已得状态并返回NULL。Parser注册是void设置compileSource回调，不执行源代码；成功状态仍由每个用例最终Destroy。
  * ## References
- * tests/task/test_task_job_scheduler.c:23；tests/task/test_task_job_scheduler.c:28；tests/task/test_task_job_scheduler.c:29；tests/task/test_task_job_scheduler.c:33；tests/task/test_task_job_scheduler.c:35；zr_vm_library/src/zr_vm_library/task_runtime.c:1389；zr_vm_library/src/zr_vm_library/task_runtime.c:1393；zr_vm_parser/src/zr_vm_parser/compiler.c:1458；tests/harness/runtime_support.c:410
+ * tests/task/test_task_job_scheduler.c:23；tests/task/test_task_job_scheduler.c:28；tests/task/test_task_job_scheduler.c:29；tests/task/test_task_job_scheduler.c:33；tests/task/test_task_job_scheduler.c:35；zr_vm_library/src/zr_vm_library/task/task_runtime.c:1389；zr_vm_library/src/zr_vm_library/task/task_runtime.c:1393；zr_vm_parser/src/zr_vm_parser/compiler.c:1458；tests/harness/runtime_support.c:410
  */
 static SZrState *create_task_job_scheduler_test_state(void) {
     SZrState *state = ZrTests_State_Create(ZR_NULL);
@@ -47,7 +47,7 @@ static SZrState *create_task_job_scheduler_test_state(void) {
  * ## Constraints and lifecycle
  * 容器或名称NULL返回NULL；调用者须提供有效types/typeCount表，本函数不验证指针与计数一致性。返回值借用原表，当前builtins为静态表；查找不验证完整ABI，也不创建GC根。
  * ## References
- * tests/task/test_task_job_scheduler.c:52；tests/task/test_task_job_scheduler.c:60；tests/task/test_task_job_scheduler.c:61；tests/task/test_task_job_scheduler.c:62；zr_vm_library/src/zr_vm_library/task_runtime.c:1367；zr_vm_library/src/zr_vm_library/task_runtime.c:1369
+ * tests/task/test_task_job_scheduler.c:52；tests/task/test_task_job_scheduler.c:60；tests/task/test_task_job_scheduler.c:61；tests/task/test_task_job_scheduler.c:62；zr_vm_library/src/zr_vm_library/task/task_runtime.c:1367；zr_vm_library/src/zr_vm_library/task/task_runtime.c:1369
  */
 static const ZrLibTypeDescriptor *find_type_descriptor(const ZrLibModuleDescriptor *module,
                                                         const char *typeName) {
@@ -108,7 +108,7 @@ static SZrFunction *compile_task_job_scheduler_source(SZrState *state, const cha
  * ## Constraints and lifecycle
  * 容器或名称NULL返回NULL；调用者须提供有效methods/methodCount表，本函数不验证指针与计数一致性。返回值借用原表，当前builtins为静态表；查找不验证完整ABI，也不创建GC根。
  * ## References
- * tests/task/test_task_job_scheduler.c:113；tests/task/test_task_job_scheduler.c:121；tests/task/test_task_job_scheduler.c:122；tests/task/test_task_job_scheduler.c:123；zr_vm_library/src/zr_vm_library/task_runtime.c:1367；zr_vm_library/src/zr_vm_library/task_runtime.c:1369
+ * tests/task/test_task_job_scheduler.c:113；tests/task/test_task_job_scheduler.c:121；tests/task/test_task_job_scheduler.c:122；tests/task/test_task_job_scheduler.c:123；zr_vm_library/src/zr_vm_library/task/task_runtime.c:1367；zr_vm_library/src/zr_vm_library/task/task_runtime.c:1369
  */
 static const ZrLibMethodDescriptor *find_method_descriptor(const ZrLibTypeDescriptor *type,
                                                             const char *methodName) {
@@ -139,7 +139,7 @@ static const ZrLibMethodDescriptor *find_method_descriptor(const ZrLibTypeDescri
  * ## Constraints and lifecycle
  * 容器或名称NULL返回NULL；调用者须提供有效functions/functionCount表，本函数不验证指针与计数一致性。返回值借用原表，当前builtins为静态表；查找不验证完整ABI，也不创建GC根。
  * ## References
- * tests/task/test_task_job_scheduler.c:144；tests/task/test_task_job_scheduler.c:152；tests/task/test_task_job_scheduler.c:153；tests/task/test_task_job_scheduler.c:154；zr_vm_library/src/zr_vm_library/task_runtime.c:1367；zr_vm_library/src/zr_vm_library/task_runtime.c:1369
+ * tests/task/test_task_job_scheduler.c:144；tests/task/test_task_job_scheduler.c:152；tests/task/test_task_job_scheduler.c:153；tests/task/test_task_job_scheduler.c:154；zr_vm_library/src/zr_vm_library/task/task_runtime.c:1367；zr_vm_library/src/zr_vm_library/task/task_runtime.c:1369
  */
 static const ZrLibFunctionDescriptor *find_function_descriptor(const ZrLibModuleDescriptor *module,
                                                                 const char *functionName) {
@@ -171,7 +171,7 @@ static const ZrLibFunctionDescriptor *find_function_descriptor(const ZrLibModule
  * ## Constraints and lifecycle
  * BUG: 局部result未初始化即交给Task.result；正常COMPLETED包含typed-null字段，仍走Value_Copy，覆盖前读取目标ownership元数据，可能误释资源或崩溃。返回后的bool/type断言无法保护回调内读取；需在回调前初始化槽，本轮保留代码。
  * ## References
- * tests/task/test_task_job_scheduler.c:183；tests/task/test_task_job_scheduler.c:191；tests/task/test_task_job_scheduler.c:192；zr_vm_library/src/zr_vm_library/task_runtime.c:795；zr_vm_library/src/zr_vm_library/task_runtime.c:710；zr_vm_library/src/zr_vm_library/task_runtime.c:713；zr_vm_library/src/zr_vm_library/task_runtime.c:1162；zr_vm_library/src/zr_vm_library/task_runtime.c:835；zr_vm_library/src/zr_vm_library/task_runtime.c:836；zr_vm_library/src/zr_vm_library/task_runtime.c:837；zr_vm_library/src/zr_vm_library/task_runtime.c:216；zr_vm_library/src/zr_vm_library/task_runtime.c:217；zr_vm_core/include/zr_vm_core/value.h:151；zr_vm_core/include/zr_vm_core/value.h:161；zr_vm_core/include/zr_vm_core/value.h:229
+ * tests/task/test_task_job_scheduler.c:183；tests/task/test_task_job_scheduler.c:191；tests/task/test_task_job_scheduler.c:192；zr_vm_library/src/zr_vm_library/task/task_runtime.c:795；zr_vm_library/src/zr_vm_library/task/task_runtime.c:710；zr_vm_library/src/zr_vm_library/task/task_runtime.c:713；zr_vm_library/src/zr_vm_library/task/task_runtime.c:1162；zr_vm_library/src/zr_vm_library/task/task_runtime.c:835；zr_vm_library/src/zr_vm_library/task/task_runtime.c:836；zr_vm_library/src/zr_vm_library/task/task_runtime.c:837；zr_vm_library/src/zr_vm_library/task/task_runtime.c:216；zr_vm_library/src/zr_vm_library/task/task_runtime.c:217；zr_vm_core/include/zr_vm_core/value.h:151；zr_vm_core/include/zr_vm_core/value.h:161；zr_vm_core/include/zr_vm_core/value.h:229
  */
 static void assert_task_completes_with_void(SZrState *state,
                                             const ZrLibMethodDescriptor *resultMethod,
@@ -271,7 +271,7 @@ static void test_zr_task_descriptor_publishes_job_scheduler_contract(void) {
  * ## Constraints and lifecycle
  * yieldNow使用一个cooperative轮次，delay输入整数0；不是Duration转换/墙钟/OS worker验证。Task对象输出槽由SetObject初始化，但assert helper的完成值目标槽未初始化，存在已证BUG；两者不可混淆。
  * ## References
- * tests/task/test_task_job_scheduler.c:304；tests/task/test_task_job_scheduler.c:305；tests/task/test_task_job_scheduler.c:310；tests/task/test_task_job_scheduler.c:314；tests/task/test_task_job_scheduler.c:315；tests/task/test_task_job_scheduler.c:317；zr_vm_library/src/zr_vm_library/task_runtime.c:795；zr_vm_library/src/zr_vm_library/task_runtime.c:710；zr_vm_library/src/zr_vm_library/task_runtime.c:713；zr_vm_library/src/zr_vm_library/task_runtime.c:1162；zr_vm_library/src/zr_vm_library/task_runtime.c:835；zr_vm_library/src/zr_vm_library/task_runtime.c:836；zr_vm_library/src/zr_vm_library/task_runtime.c:837；zr_vm_library/src/zr_vm_library/task_runtime.c:216；zr_vm_library/src/zr_vm_library/task_runtime.c:217；zr_vm_core/include/zr_vm_core/value.h:151；zr_vm_core/include/zr_vm_core/value.h:161；zr_vm_core/include/zr_vm_core/value.h:229
+ * tests/task/test_task_job_scheduler.c:304；tests/task/test_task_job_scheduler.c:305；tests/task/test_task_job_scheduler.c:310；tests/task/test_task_job_scheduler.c:314；tests/task/test_task_job_scheduler.c:315；tests/task/test_task_job_scheduler.c:317；zr_vm_library/src/zr_vm_library/task/task_runtime.c:795；zr_vm_library/src/zr_vm_library/task/task_runtime.c:710；zr_vm_library/src/zr_vm_library/task/task_runtime.c:713；zr_vm_library/src/zr_vm_library/task/task_runtime.c:1162；zr_vm_library/src/zr_vm_library/task/task_runtime.c:835；zr_vm_library/src/zr_vm_library/task/task_runtime.c:836；zr_vm_library/src/zr_vm_library/task/task_runtime.c:837；zr_vm_library/src/zr_vm_library/task/task_runtime.c:216；zr_vm_library/src/zr_vm_library/task/task_runtime.c:217；zr_vm_core/include/zr_vm_core/value.h:151；zr_vm_core/include/zr_vm_core/value.h:161；zr_vm_core/include/zr_vm_core/value.h:229
  */
 static void test_yield_now_and_delay_complete_through_task_result_abi(void) {
     SZrState *state = create_task_job_scheduler_test_state();
@@ -347,7 +347,7 @@ static void test_scheduler_consumes_job_at_source_call_boundary(void) {
      * ## Constraints and lifecycle
      * 无捕获和额外资源；负测源不执行该fn，正常源只有返回值断言，不能由纯结果推断次数。注释位于字符串外，不改变解析输入。
      * ## References
-     * tests/task/test_task_job_scheduler.c:352；tests/task/test_task_job_scheduler.c:359；zr_vm_library/src/zr_vm_library/task_runtime.c:1148；zr_vm_library/src/zr_vm_library/task_runtime.c:1152
+     * tests/task/test_task_job_scheduler.c:352；tests/task/test_task_job_scheduler.c:359；zr_vm_library/src/zr_vm_library/task/task_runtime.c:1148；zr_vm_library/src/zr_vm_library/task/task_runtime.c:1152
      */
             "var job = init task.Job<int>(fn() => { return 7; });\n"
             "var first = task.currentScheduler.schedule<int>(job);\n"
@@ -426,7 +426,7 @@ static void test_job_constructor_and_current_scheduler_schedule_complete_callabl
      * ## Constraints and lifecycle
      * 无捕获和额外资源；负测源不执行该fn，正常源只有返回值断言，不能由纯结果推断次数。注释位于字符串外，不改变解析输入。
      * ## References
-     * tests/task/test_task_job_scheduler.c:431；tests/task/test_task_job_scheduler.c:443；zr_vm_library/src/zr_vm_library/task_runtime.c:1148；zr_vm_library/src/zr_vm_library/task_runtime.c:1152
+     * tests/task/test_task_job_scheduler.c:431；tests/task/test_task_job_scheduler.c:443；zr_vm_library/src/zr_vm_library/task/task_runtime.c:1148；zr_vm_library/src/zr_vm_library/task/task_runtime.c:1152
      */
             "var job = init task.Job<int>(fn() => { return 7; });\n"
             "var completion = task.currentScheduler.schedule<int>(job);\n"

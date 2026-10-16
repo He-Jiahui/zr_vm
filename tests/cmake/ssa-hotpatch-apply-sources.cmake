@@ -7,5 +7,5 @@ endif ()
 
 if (TARGET zr_vm_ssa_rollback_restricted_test)
     target_sources(zr_vm_ssa_rollback_restricted_test PRIVATE
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/artifact_exec_ir.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/artifact/artifact_exec_ir.c)
 endif ()

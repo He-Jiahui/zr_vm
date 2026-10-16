@@ -150,13 +150,13 @@ static void test_aot_c_source_lowers_scope_lifecycle_to_boundary_helpers(void) {
             "ZrCore_Stack_LoadOffsetToPointer(state, zr_aot_saved_stack_top_offset)",
     };
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
-    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
+    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c");
     char *emitterHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *loweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_scope.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_scope.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
     TEST_ASSERT_NOT_NULL(runtimeHeaderText);
     TEST_ASSERT_NOT_NULL(runtimeSourceText);

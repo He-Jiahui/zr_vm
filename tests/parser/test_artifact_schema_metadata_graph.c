@@ -5,7 +5,7 @@
 #include "zr_vm_core/artifact_schema.h"
 #include "zr_vm_core/reflection.h"
 #include "zr_vm_library/native_binding.h"
-#include "zr_vm_parser/artifact_projection.h"
+#include "artifact/artifact_projection.h"
 
 // 同一组类型身份与哈希贯穿状态、记录、布局图和二进制节，便于定位单字段损坏。
 #define GRAPH_TYPE_ID ((TZrUInt32)0x2042u)

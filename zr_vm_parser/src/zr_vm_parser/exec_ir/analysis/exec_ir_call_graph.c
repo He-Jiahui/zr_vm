@@ -1,4 +1,4 @@
-#include "zr_vm_parser/exec_ir_interprocedural.h"
+#include "exec_ir/exec_ir_interprocedural.h"
 #include "zr_vm_core/exec_ir_state_map.h"
 #include "exec_ir_call_target.h"
 

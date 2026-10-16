@@ -318,7 +318,7 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "TZrBool includeGcRootFrame",
     };
     static const char *const frameSetupSourceNeedles[] = {
-            "#include \"backend_aot_c_frame_setup.h\"",
+            "#include \"backend_aot/backend_aot_c_frame_setup.h\"",
             "backend_aot_c_frame_setup_register_frame_bytes(",
             "ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT",
             "TZrBool includeStackFrameSetup",
@@ -364,7 +364,7 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
             "frame.generatedFrameSlotCount = zr_aot_context.generatedFrameSlotCount;",
     };
     static const char *const functionBodyNeedles[] = {
-            "#include \"backend_aot_c_frame_setup.h\"",
+            "#include \"backend_aot/backend_aot_c_frame_setup.h\"",
             "backend_aot_write_c_frame_setup(file,",
             "functionIr != ZR_NULL ? &functionIr->frameLayout : ZR_NULL",
             "entry->flatIndex,",
@@ -835,38 +835,38 @@ static void test_aot_c_source_emits_direct_generated_frame_setup(void) {
     const char *moduleAssignment;
     const char *codeRegistrationAssignment;
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
-    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
+    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c");
     char *abiHeaderText = read_repo_text_file_owned("zr_vm_common/include/zr_vm_common/zr_aot_abi.h");
     char *stateHeaderText = read_repo_text_file_owned("zr_vm_core/include/zr_vm_core/state.h");
     char *gcHeaderText = read_repo_text_file_owned("zr_vm_core/include/zr_vm_core/gc.h");
     char *frameSetupHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_setup.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_setup.h");
     char *frameSetupSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_setup.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_setup.c");
     char *frameCleanupSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_cleanup.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_cleanup.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *frameDescriptorSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_descriptor.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_descriptor.c");
     char *scalarLocalsText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
     char *scalarStackCopyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.c");
     char *emitterSourceText =
-            read_repo_text_file_owned("zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+            read_repo_text_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
     char *methodMetadataSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c");
     char *reflectionInvokersSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_reflection_invokers.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_reflection_invokers.c");
     char *reflectionBoolNumericInvokersSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/"
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/"
             "backend_aot_c_reflection_bool_numeric_invokers.c");
     char *reflectionNumericThreeArgInvokersSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/"
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/"
             "backend_aot_c_reflection_numeric_three_arg_invokers.c");
     char *reflectionBoolThreeArgInvokersSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/"
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/"
             "backend_aot_c_reflection_bool_three_arg_invokers.c");
 
     TEST_ASSERT_NOT_NULL(runtimeHeaderText);

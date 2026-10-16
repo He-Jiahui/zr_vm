@@ -3,7 +3,7 @@
 #include <stdio.h>
 
 #define ZR_TEST_SSA_AOT_OWNED_MODULE_NO_REDIRECT
-#include "../parser/support/ssa_aot_owned_module_fault_shim.h"
+#include "tests/parser/support/ssa_aot_owned_module_fault_shim.h"
 #include "support/ssa_function_aot_owner_fixture.h"
 #include "unity.h"
 #include "zr_vm_core/function_aot_ir.h"

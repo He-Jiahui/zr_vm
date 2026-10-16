@@ -143,15 +143,15 @@ static void test_aot_c_source_lowers_get_global_to_runtime_boundary(void) {
             "ZrLibrary_AotRuntime_GetGlobal(state, &frame",
     };
     char *headerText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *emitterText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
-    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
+    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c");
     char *valueLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(emitterText);
@@ -227,15 +227,15 @@ static void test_aot_c_source_lowers_object_array_creation_to_runtime_boundary(v
             "ZrLibrary_AotRuntime_CreateArray(state, &frame",
     };
     char *headerText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *emitterText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
-    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
+    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c");
     char *valueLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(emitterText);
@@ -298,15 +298,15 @@ static void test_aot_c_source_lowers_typeof_to_runtime_boundary(void) {
             "ZrLibrary_AotRuntime_TypeOf(state, &frame",
     };
     char *headerText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *emitterText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
-    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
+    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c");
     char *valueLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(emitterText);
@@ -398,17 +398,17 @@ static void test_aot_c_source_lowers_object_struct_conversions_to_runtime_bounda
             "ZrLibrary_AotRuntime_ToStruct(state, &frame",
     };
     char *headerText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *emitterText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
-    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
+    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c");
     char *bridgeHeaderText = read_repo_text_file_owned("zr_vm_core/include/zr_vm_core/bridge.h");
-    char *bridgeSourceText = read_repo_text_file_owned("zr_vm_core/src/zr_vm_core/bridge.c");
+    char *bridgeSourceText = read_repo_text_file_owned("zr_vm_core/src/zr_vm_core/aot/bridge.c");
     char *valueLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(emitterText);
@@ -486,15 +486,15 @@ static void test_aot_c_source_lowers_to_string_to_runtime_boundary(void) {
             "ZrLibrary_AotRuntime_ToString(state, &frame",
     };
     char *headerText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *emitterText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
-    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
+    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c");
     char *valueLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(emitterText);
@@ -610,16 +610,16 @@ static void test_aot_c_source_makes_dynamic_member_index_access_explicit_boundar
             "ZrLibrary_AotRuntime_UnsupportedDynamicValueAccess(state,",
     };
     char *headerText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
     char *runtimeReturnText = read_repo_text_file_owned(
             "zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_return.c");
     char *valueAccessBoundaryText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_access_boundaries.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_access_boundaries.c");
     char *valueLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(runtimeHeaderText);
@@ -683,10 +683,10 @@ static void test_aot_c_member_index_heap_stores_use_public_gc_write_barrier(void
             "ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &pair->value);",
     };
     char *valueAccessBoundaryText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_access_boundaries.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_access_boundaries.c");
     char *superArrayLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_super_array.c");
-    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_super_array.c");
+    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c");
     char *objectSourceText = read_repo_text_file_owned("zr_vm_core/src/zr_vm_core/object/object.c");
     char *objectInternalText = read_repo_text_file_owned("zr_vm_core/src/zr_vm_core/object/object_internal.h");
 
@@ -773,15 +773,15 @@ static void test_aot_c_new_owner_heap_stores_use_no_write_barrier_boundary(void)
             "skipWriteBarrier",
     };
     char *headerText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *valueAccessBoundaryText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_access_boundaries.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_access_boundaries.c");
     char *superArrayLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_super_array.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_super_array.c");
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
-    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
+    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c");
     char *objectHeaderText = read_repo_text_file_owned("zr_vm_core/include/zr_vm_core/object.h");
     char *objectSourceText = read_repo_text_file_owned("zr_vm_core/src/zr_vm_core/object/object.c");
     char *superArraySourceText = read_repo_text_file_owned("zr_vm_core/src/zr_vm_core/object/object_super_array.c");
@@ -875,16 +875,16 @@ static void test_aot_c_source_makes_meta_value_access_explicit_boundary(void) {
             "ZrLibrary_AotRuntime_MetaSetStaticCached(state, &frame",
     };
     char *headerText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *emitterText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
     char *valueAccessBoundaryText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_access_boundaries.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_access_boundaries.c");
     char *valueLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
     TEST_ASSERT_NOT_NULL(headerText);
     TEST_ASSERT_NOT_NULL(emitterText);

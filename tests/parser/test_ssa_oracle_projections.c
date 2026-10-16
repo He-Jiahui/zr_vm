@@ -1,8 +1,8 @@
 #include "zr_vm_core/exec_ir.h"
 #include "zr_vm_core/exec_ir_interpreter.h"
-#include "zr_vm_parser/exec_ir_projections.h"
-#include "zr_vm_parser/exec_ir_execbc.h"
-#include "zr_vm_parser/exec_ir_oracle.h"
+#include "exec_ir/exec_ir_projections.h"
+#include "exec_ir/execbc/exec_ir_execbc.h"
+#include "exec_ir/exec_ir_oracle.h"
 #include "zr_vm_parser/exec_ir_builder.h"
 #include "zr_vm_common/zr_type_conf.h"
 

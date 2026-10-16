@@ -6,7 +6,7 @@ static void test_lexical_completion_uses_parser_visible_symbol_query(void) {
     char *projector = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_canonical_completion.c");
     char *consumer = read_repo_text_file_owned(
-        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/query/lsp_semantic_query.c");
     char *analyzerHeader = read_repo_text_file_owned(
         "zr_vm_language_server/include/zr_vm_language_server/semantic_analyzer.h");
     char *analyzerSource = read_repo_text_file_owned(
@@ -14,7 +14,7 @@ static void test_lexical_completion_uses_parser_visible_symbol_query(void) {
     char *symbolTableHeader = read_repo_text_file_owned(
         "zr_vm_language_server/include/zr_vm_language_server/symbol_table.h");
     char *symbolTableSource = read_repo_text_file_owned(
-        "zr_vm_language_server/src/zr_vm_language_server/symbol_table.c");
+        "zr_vm_language_server/src/zr_vm_language_server/index/symbol_table.c");
 
     if (projector == NULL || consumer == NULL || analyzerHeader == NULL || analyzerSource == NULL ||
         symbolTableHeader == NULL || symbolTableSource == NULL) {
@@ -71,7 +71,7 @@ static void test_lexical_completion_uses_parser_visible_symbol_query(void) {
 /* 补全消费者不为一次请求重新构造分析器，避免快照与缓存状态分叉。 */
 static void test_completion_consumer_does_not_materialize_scoped_analyzer(void) {
     char *consumer = read_repo_text_file_owned(
-        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/query/lsp_semantic_query.c");
     const char *completionStart;
     const char *completionEnd;
 
@@ -128,7 +128,7 @@ static void test_source_hover_uses_parser_symbol_query(void) {
     char *projector = read_repo_text_file_owned(
         "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_canonical_hover.c");
     char *consumer = read_repo_text_file_owned(
-        "zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.c");
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/query/lsp_semantic_query.c");
 
     if (projector == NULL || consumer == NULL) {
         printf("FAIL: could not read canonical hover sources\n");

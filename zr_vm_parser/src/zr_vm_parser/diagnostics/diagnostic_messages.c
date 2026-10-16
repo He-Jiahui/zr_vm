@@ -1,4 +1,4 @@
-#include "zr_vm_parser/diagnostic_messages.h"
+#include "diagnostics/diagnostic_messages.h"
 
 #include <string.h>
 

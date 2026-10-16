@@ -26,7 +26,7 @@
 #include "unity.h"
 #include "zr_test_log_macros.h"
 #include "zr_vm_parser.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/parser/parser_internal.h"
+#include "parser/parser_internal.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/global.h"

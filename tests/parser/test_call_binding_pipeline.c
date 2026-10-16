@@ -9,7 +9,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
+#include "compiler/compiler_internal.h"
 
 /* 每例运行时持有编译函数图；GC 终结时释放函数的原生绑定缓存。 */
 static SZrState *state;

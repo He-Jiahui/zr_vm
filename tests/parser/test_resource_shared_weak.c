@@ -16,7 +16,7 @@
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic.h"
 
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
+#include "compiler/compiler_internal.h"
 
 static SZrState *g_state;
 static SZrTypeValue *g_drop_time_weak;

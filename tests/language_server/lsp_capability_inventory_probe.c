@@ -110,7 +110,7 @@ INVENTORY_HANDLER(handle_project_modules_request)
 
 /* 头文件须在替换 strcmp 前载入，保证仅生产分派链被观测，探针自身的比较不受影响。 */
 #define strcmp inventory_method_compare
-#include "../../zr_vm_language_server/stdio/stdio_request_dispatch.c"
+#include "zr_vm_language_server/stdio/stdio_request_dispatch.c"
 #undef strcmp
 
 /* 对一次生产分派同时核对状态、返回节点和唯一替身命中；返回值保留 0/1/-1 三态。

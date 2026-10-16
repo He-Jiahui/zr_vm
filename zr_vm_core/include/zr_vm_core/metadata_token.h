@@ -45,7 +45,7 @@ struct SZrString;
  * 当前 artifact 谓词另核要求表及非零 RID；查询返回所属数组行的借用地址。未知仓外 C 消费者须自行核域与生命周期，不能由当前搜索排除。
  *
  * ## References
- * `artifact_token_is`（zr_vm_core/src/zr_vm_core/artifact_schema.c:22）：表号门禁与 RID 非零门禁共同验证输入，不查找执行地址。
+ * `artifact_token_is`（zr_vm_core/src/zr_vm_core/artifact/artifact_schema.c:22）：表号门禁与 RID 非零门禁共同验证输入，不查找执行地址。
  * `compiler_metadata_module_record_emit`（zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_module_record.c:121）：在所属模块 metadata 域构造 MODULE RID 1。
  */
 typedef TZrUInt32 TZrMetadataToken;
@@ -64,7 +64,7 @@ typedef TZrUInt32 TZrMetadataToken;
  *
  * ## References
  * `compiler_metadata_module_record_emit`（zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_module_record.c:121）：MODULE 的实际 token 生产。
- * `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:910）：TypeRef 扫描按表号筛选适用记录。
+ * `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:910）：TypeRef 扫描按表号筛选适用记录。
  */
 typedef enum EZrMetadataTableTag {
     /** @brief 提供方模块身份，编译器从 RID 1 建立模块与配对签名；AssemblyRef 链接可映射到此表；模块 token 不表示入口调用。 */
@@ -169,8 +169,8 @@ typedef enum EZrMetadataTableTag {
  * TOKEN 求值一次；零 token 得零标签；不验证实体；表达式只计算值，不取得资源；结果需由实际消费者按所属域继续核验。
  *
  * ## References
- * `artifact_token_is`（zr_vm_core/src/zr_vm_core/artifact_schema.c:22）：检查 token 属于要求表。
- * `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:910）：TypeRef 适用项分类。
+ * `artifact_token_is`（zr_vm_core/src/zr_vm_core/artifact/artifact_schema.c:22）：检查 token 属于要求表。
+ * `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:910）：TypeRef 适用项分类。
  */
 #define ZR_METADATA_TOKEN_TABLE(TOKEN)                                                                                \
     (((TZrUInt32)(TOKEN) >> ZR_METADATA_TOKEN_TABLE_SHIFT) & ZR_METADATA_TOKEN_TABLE_MASK)
@@ -188,7 +188,7 @@ typedef enum EZrMetadataTableTag {
  * TOKEN 求值一次；0 RID 需由适用读取器拒绝；表达式只计算值，不取得资源；结果需由实际消费者按所属域继续核验。
  *
  * ## References
- * `artifact_token_is`（zr_vm_core/src/zr_vm_core/artifact_schema.c:23）：拒绝 RID0 编码。
+ * `artifact_token_is`（zr_vm_core/src/zr_vm_core/artifact/artifact_schema.c:23）：拒绝 RID0 编码。
  * `binding_next_rid`（zr_vm_parser/src/zr_vm_parser/compiler/compiler_call_binding.c:192）：生产者求现有最大 RID 并分配下一身份。
  */
 #define ZR_METADATA_TOKEN_RID(TOKEN) ((TZrUInt32)(TOKEN) & ZR_METADATA_TOKEN_RID_MASK)
@@ -207,7 +207,7 @@ typedef enum EZrMetadataTableTag {
  * 结构 reader 验递归边界、允许节点和完整根消费；不能据枚举存在宣称源编译器会产生 TUPLE 或预留 FUNC。
  *
  * ## References
- * `zrp_metadata_validate_signature_type_node`（zr_vm_core/src/zr_vm_core/zrp_metadata.c:265）：字节节点转枚举后按适用 payload 分支验证。
+ * `zrp_metadata_validate_signature_type_node`（zr_vm_core/src/zr_vm_core/artifact/zrp_metadata.c:265）：字节节点转枚举后按适用 payload 分支验证。
  * `metadata_token_write_type_ref_signature`（zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_signature.c:360）：类型签名 writer 输出节点字节。
  */
 typedef enum EZrMetadataSignatureNode {
@@ -254,23 +254,23 @@ typedef enum EZrMetadataSignatureNode {
  * ## Fields
  * | 成员 | 对调用方的用途 | 实际生产或消费引用 |
  * | --- | --- | --- |
- * | `token` | 在函数元数据域内定位该实体或签名记录 | `metadata_query_find_token_record`（zr_vm_core/src/zr_vm_core/function_metadata_query.c:13）：按完整 token 找首项，借出所属记录数组中的行。 |
- * | `relatedToken` | 普通实体与 SIGNATURE 记录的双向配对身份 | `metadata_find_signature_record`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:91）：验证签名行 relatedToken 回指当前实体。 |
- * | `ownerToken` | 记录实体归属或签名行回指的实体身份 | `metadata_find_signature_record`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:92）：核签名行 owner 回指实体而非只核表号。 |
- * | `ownerIndex` | 按记录用途定位 export/effect、常量、prototype、child 或模块重定位槽 | `ZrCore_Function_FindConstantChildAlias`（zr_vm_core/src/zr_vm_core/function_identity.c:87）：显式 child 别名读取前核索引属于该函数 child 数组。 |
- * | `signatureBlobOffset` | 定位所属 function.signatureBlobHeap 中的签名切片起点 | `metadata_record_blob_is_valid`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:19）：确认偏移在所属函数 heap 内，随后核长度余量。 |
- * | `signatureBlobLength` | 声明签名切片的 UInt32 字节长度 | `metadata_record_blob_is_valid`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:18）：拒绝缺失 blob 并核非溢出切片长度。 |
- * | `signatureHash` | 保存本记录所属协议的签名或 owner guard 哈希 | `function_find_matching_type_spec_record`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:132）：用同域 hash 筛选 TypeSpec，再由完整 blob 比较确认。 |
- * | `layoutVersion` | 保存类型定义或调用 owner 的布局协议版本 | `function_find_targeted_type_ref_provider_type_def`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:419）：核 TypeRef caller/provider 布局版本与哈希。 |
- * | `reserved0` | 区别普通 token pair 与六类 callable/script 元数据用途 | `link_function`（zr_vm_core/src/zr_vm_core/call_binding_link.c:177）：依重定位种类核本地常量或模块定义标记。 |
- * | `layoutHash` | 记录 union 或 callable owner 的物理布局身份 | `function_find_targeted_type_ref_provider_type_def`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:420）：布局参与时核双方 hash，而非复用签名 hash。 |
- * | `targetMetadataToken` | 保存提供方目标约束或局部常量到 child 的显式边 | `ZrCore_Function_FindConstantChildAlias`（zr_vm_core/src/zr_vm_core/function_identity.c:85）：按常量记录的显式目标找到局部 child 行。 |
- * | `targetSignatureToken` | 保存引用所要求的提供方配对签名身份 | `function_find_targeted_type_ref_provider_type_def`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:403）：目标 signature token 非零才核 provider 配对。 |
- * | `targetSignatureHash` | 保存导入目标定义的预期 hash | `function_find_targeted_type_ref_provider_type_def`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:396）：TypeRef 稳定绑定要求非零目标签名约束且匹配。 |
- * | `targetModuleSignatureHash` | 保存提供方模块 ABI 约束 | `function_find_targeted_type_ref_provider_type_def`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:410）：TypeRef 声明模块约束时核 provider ABI hash。 |
+ * | `token` | 在函数元数据域内定位该实体或签名记录 | `metadata_query_find_token_record`（zr_vm_core/src/zr_vm_core/function/function_metadata_query.c:13）：按完整 token 找首项，借出所属记录数组中的行。 |
+ * | `relatedToken` | 普通实体与 SIGNATURE 记录的双向配对身份 | `metadata_find_signature_record`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:91）：验证签名行 relatedToken 回指当前实体。 |
+ * | `ownerToken` | 记录实体归属或签名行回指的实体身份 | `metadata_find_signature_record`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:92）：核签名行 owner 回指实体而非只核表号。 |
+ * | `ownerIndex` | 按记录用途定位 export/effect、常量、prototype、child 或模块重定位槽 | `ZrCore_Function_FindConstantChildAlias`（zr_vm_core/src/zr_vm_core/function/function_identity.c:87）：显式 child 别名读取前核索引属于该函数 child 数组。 |
+ * | `signatureBlobOffset` | 定位所属 function.signatureBlobHeap 中的签名切片起点 | `metadata_record_blob_is_valid`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:19）：确认偏移在所属函数 heap 内，随后核长度余量。 |
+ * | `signatureBlobLength` | 声明签名切片的 UInt32 字节长度 | `metadata_record_blob_is_valid`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:18）：拒绝缺失 blob 并核非溢出切片长度。 |
+ * | `signatureHash` | 保存本记录所属协议的签名或 owner guard 哈希 | `function_find_matching_type_spec_record`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:132）：用同域 hash 筛选 TypeSpec，再由完整 blob 比较确认。 |
+ * | `layoutVersion` | 保存类型定义或调用 owner 的布局协议版本 | `function_find_targeted_type_ref_provider_type_def`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:419）：核 TypeRef caller/provider 布局版本与哈希。 |
+ * | `reserved0` | 区别普通 token pair 与六类 callable/script 元数据用途 | `link_function`（zr_vm_core/src/zr_vm_core/call/call_binding_link.c:177）：依重定位种类核本地常量或模块定义标记。 |
+ * | `layoutHash` | 记录 union 或 callable owner 的物理布局身份 | `function_find_targeted_type_ref_provider_type_def`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:420）：布局参与时核双方 hash，而非复用签名 hash。 |
+ * | `targetMetadataToken` | 保存提供方目标约束或局部常量到 child 的显式边 | `ZrCore_Function_FindConstantChildAlias`（zr_vm_core/src/zr_vm_core/function/function_identity.c:85）：按常量记录的显式目标找到局部 child 行。 |
+ * | `targetSignatureToken` | 保存引用所要求的提供方配对签名身份 | `function_find_targeted_type_ref_provider_type_def`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:403）：目标 signature token 非零才核 provider 配对。 |
+ * | `targetSignatureHash` | 保存导入目标定义的预期 hash | `function_find_targeted_type_ref_provider_type_def`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:396）：TypeRef 稳定绑定要求非零目标签名约束且匹配。 |
+ * | `targetModuleSignatureHash` | 保存提供方模块 ABI 约束 | `function_find_targeted_type_ref_provider_type_def`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:410）：TypeRef 声明模块约束时核 provider ABI hash。 |
  * | `requestedModuleVersion` | 提供 AssemblyRef 的可选请求版本给导入 effect 回退 | `module_import_signature_effect_with_assembly_version`（zr_vm_core/src/zr_vm_core/module/module_import_signature.c:781）：仅为缺请求版本的 effect 补齐 AssemblyRef 借用值。 |
- * | `minModuleVersionInclusive` | 提供可选版本区间的含端点下界 | `metadata_runtime_version_range_matches`（zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c:154）：完整可解析区间比较实际版本与包含下界。 |
- * | `maxModuleVersionExclusive` | 提供可选版本区间的不含端点上界 | `metadata_runtime_version_range_matches`（zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c:155）：完整可解析区间比较实际版本与排除上界。 |
+ * | `minModuleVersionInclusive` | 提供可选版本区间的含端点下界 | `metadata_runtime_version_range_matches`（zr_vm_core/src/zr_vm_core/metadata/metadata_runtime_binding_compatibility.c:154）：完整可解析区间比较实际版本与包含下界。 |
+ * | `maxModuleVersionExclusive` | 提供可选版本区间的不含端点上界 | `metadata_runtime_version_range_matches`（zr_vm_core/src/zr_vm_core/metadata/metadata_runtime_binding_compatibility.c:155）：完整可解析区间比较实际版本与排除上界。 |
  *
  * ## Invariants and lifecycle
  * 普通实体/SIGNATURE pair 互指 relatedToken，签名 ownerToken 回指实体，SIGNATURE 继承对应 export/effect ownerIndex；hash-only CALLABLE_SIGNATURE 才单独使用无槽且无 blob。
@@ -366,7 +366,7 @@ typedef struct SZrMetadataTokenRecord {
  *
  * ## References
  * `binding_finalize_function`（zr_vm_parser/src/zr_vm_parser/compiler/compiler_call_binding.c:371）：本地常量 relocation 标记生产。
- * `ZrCore_Function_FindConstantChildAlias`（zr_vm_core/src/zr_vm_core/function_identity.c:76）：按 constantIndex 找唯一常量 MEMBER_DEF。
+ * `ZrCore_Function_FindConstantChildAlias`（zr_vm_core/src/zr_vm_core/function/function_identity.c:76）：按 constantIndex 找唯一常量 MEMBER_DEF。
  */
 #define ZR_METADATA_TOKEN_RECORD_CALLABLE_CONSTANT ((TZrUInt32)1u)
 /**
@@ -381,7 +381,7 @@ typedef struct SZrMetadataTokenRecord {
  *
  * ## References
  * `binding_publish_owner`（zr_vm_parser/src/zr_vm_parser/compiler/compiler_call_binding.c:306）：prototype owner 标记生产。
- * `link_owner`（zr_vm_core/src/zr_vm_core/call_binding_link.c:42）：owner guard 入口核 TYPE_DEF owner 标记。
+ * `link_owner`（zr_vm_core/src/zr_vm_core/call/call_binding_link.c:42）：owner guard 入口核 TYPE_DEF owner 标记。
  */
 #define ZR_METADATA_TOKEN_RECORD_CALLABLE_OWNER ((TZrUInt32)2u)
 /**
@@ -396,7 +396,7 @@ typedef struct SZrMetadataTokenRecord {
  *
  * ## References
  * `binding_finalize_function`（zr_vm_parser/src/zr_vm_parser/compiler/compiler_call_binding.c:375）：模块 relocation targetIndex 标记生产。
- * `link_function`（zr_vm_core/src/zr_vm_core/call_binding_link.c:179）：模块 relocation 核对应定义标记。
+ * `link_function`（zr_vm_core/src/zr_vm_core/call/call_binding_link.c:179）：模块 relocation 核对应定义标记。
  */
 #define ZR_METADATA_TOKEN_RECORD_CALLABLE_MODULE ((TZrUInt32)3u)
 /**
@@ -452,8 +452,8 @@ typedef struct SZrMetadataTokenRecord {
  * ## Fields
  * | 成员 | 对调用方的用途 | 实际生产或消费引用 |
  * | --- | --- | --- |
- * | `stringIndex` | 把签名字节中的内容稳定编号映射到字符串对象 | `function_metadata_string_heap_lookup`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:156）：遍历所属函数字符串堆按稳定编号匹配。 |
- * | `value` | 借用 metadata 字符串对象并按稳定编号返回其指针 | `function_metadata_string_heap_lookup`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:157）：命中编号后借出该 GC 字符串指针。 |
+ * | `stringIndex` | 把签名字节中的内容稳定编号映射到字符串对象 | `function_metadata_string_heap_lookup`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:156）：遍历所属函数字符串堆按稳定编号匹配。 |
+ * | `value` | 借用 metadata 字符串对象并按稳定编号返回其指针 | `function_metadata_string_heap_lookup`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:157）：命中编号后借出该 GC 字符串指针。 |
  *
  * ## Invariants and lifecycle
  * stringIndex 由内容 stable hash 低 31 位加一产生，非空编号非零；空字符串不加入；同编号异内容在 add 拒绝。编号不是 entries 下标。
@@ -461,7 +461,7 @@ typedef struct SZrMetadataTokenRecord {
  *
  * ## References
  * `metadata_token_string_heap_add`（zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_token.c:142）：检查 stable 编号冲突/去重后发布 entries.stringIndex。
- * `function_metadata_string_heap_lookup`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:157）：lookup 只借出数组项内 GC 字符串指针。
+ * `function_metadata_string_heap_lookup`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:157）：lookup 只借出数组项内 GC 字符串指针。
  */
 typedef struct SZrMetadataStringHeapEntry {
     /** @brief 把签名字节中的内容稳定编号映射到字符串对象。
@@ -481,23 +481,23 @@ typedef struct SZrMetadataStringHeapEntry {
  * ## Fields
  * | 成员 | 对调用方的用途 | 实际生产或消费引用 |
  * | --- | --- | --- |
- * | `refToken` | 以 caller 引用身份查找或复用函数 sidecar | `ZrCore_Function_FindModuleMetadataBinding`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:606）：按 caller ref 键返回 sidecar。 |
- * | `refSignatureToken` | 保留 caller 引用的配对签名身份 | `ZrCore_Reflection_ResolveBoundGenericTypeInstanceFromProvider`（zr_vm_core/src/zr_vm_core/reflection_generic_instance.c:103）：核 requester 现有签名仍对应记录的 ref 身份。 |
- * | `refSignatureHash` | 保留 caller 引用正文的 hash | `ZrCore_Reflection_ResolveBoundGenericTypeInstanceFromProvider`（zr_vm_core/src/zr_vm_core/reflection_generic_instance.c:104）：核 requester 正文 hash 与 ref 快照一致。 |
- * | `expectedMetadataToken` | 记录 caller 规范身份或声明的目标约束 | `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c:279）：在非映射例外路径应用可选 metadata token 约束。 |
- * | `expectedSignatureToken` | 记录 caller 规范签名或可选目标签名约束 | `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c:284）：非零且非映射例外时核目标签名 token。 |
- * | `expectedSignatureHash` | 保存适用路径的 caller 预期签名 hash | `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c:288）：声明非零签名约束时核 resolved hash。 |
- * | `expectedModuleSignatureHash` | 记录 caller 所要求的 provider 模块 ABI | `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c:273）：先于 token 比较执行可选模块 ABI 门禁。 |
- * | `expectedLayoutVersion` | 保存 caller 布局契约的版本侧 | `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c:293）：布局身份参与时核双方版本。 |
- * | `reserved0` | 保存预期侧 UInt32 source 布局保留值 | `io_read_module_metadata_binding_list`（zr_vm_core/src/zr_vm_core/io.c:711）：按 layout identity 版本读取 UInt32 保留值，旧 source 版本置零。 |
- * | `expectedLayoutHash` | 保存 caller 布局契约的 hash 侧 | `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c:296）：布局身份参与时核双方 hash。 |
- * | `resolvedMetadataToken` | 保存 provider 域中解析得到的实体身份 | `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c:280）：对非映射例外的非零期望检查提供方实体。 |
- * | `resolvedSignatureToken` | 保存 provider 签名身份的快照 | `ZrCore_Reflection_ResolveBoundGenericTypeInstanceFromProvider`（zr_vm_core/src/zr_vm_core/reflection_generic_instance.c:125）：重新核 provider 实体指向记录的签名 token。 |
- * | `resolvedSignatureHash` | 保存 provider 当前路径产生的签名 hash | `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c:289）：对已声明期望核提供方签名 hash 快照。 |
- * | `resolvedModuleSignatureHash` | 保存提供方函数的 moduleSignatureHash 快照 | `ZrCore_Reflection_ResolveBoundGenericTypeInstanceFromProvider`（zr_vm_core/src/zr_vm_core/reflection_generic_instance.c:113）：重新核提供方当前模块 ABI 与绑定快照一致。 |
- * | `resolvedLayoutVersion` | 保存 provider 布局身份的版本侧 | `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c:293）：核提供方布局版本与期望版本。 |
- * | `reserved1` | 保存实际侧 UInt32 source 布局保留值 | `io_read_module_metadata_binding_list`（zr_vm_core/src/zr_vm_core/io.c:724）：按 layout identity 版本读取 UInt32 保留值，旧 source 版本置零。 |
- * | `resolvedLayoutHash` | 保存 provider 布局身份的 hash 侧 | `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c:296）：核提供方布局 hash 与期望值。 |
+ * | `refToken` | 以 caller 引用身份查找或复用函数 sidecar | `ZrCore_Function_FindModuleMetadataBinding`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:606）：按 caller ref 键返回 sidecar。 |
+ * | `refSignatureToken` | 保留 caller 引用的配对签名身份 | `ZrCore_Reflection_ResolveBoundGenericTypeInstanceFromProvider`（zr_vm_core/src/zr_vm_core/reflection/generic/reflection_generic_instance.c:103）：核 requester 现有签名仍对应记录的 ref 身份。 |
+ * | `refSignatureHash` | 保留 caller 引用正文的 hash | `ZrCore_Reflection_ResolveBoundGenericTypeInstanceFromProvider`（zr_vm_core/src/zr_vm_core/reflection/generic/reflection_generic_instance.c:104）：核 requester 正文 hash 与 ref 快照一致。 |
+ * | `expectedMetadataToken` | 记录 caller 规范身份或声明的目标约束 | `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata/metadata_runtime_binding_compatibility.c:279）：在非映射例外路径应用可选 metadata token 约束。 |
+ * | `expectedSignatureToken` | 记录 caller 规范签名或可选目标签名约束 | `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata/metadata_runtime_binding_compatibility.c:284）：非零且非映射例外时核目标签名 token。 |
+ * | `expectedSignatureHash` | 保存适用路径的 caller 预期签名 hash | `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata/metadata_runtime_binding_compatibility.c:288）：声明非零签名约束时核 resolved hash。 |
+ * | `expectedModuleSignatureHash` | 记录 caller 所要求的 provider 模块 ABI | `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata/metadata_runtime_binding_compatibility.c:273）：先于 token 比较执行可选模块 ABI 门禁。 |
+ * | `expectedLayoutVersion` | 保存 caller 布局契约的版本侧 | `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata/metadata_runtime_binding_compatibility.c:293）：布局身份参与时核双方版本。 |
+ * | `reserved0` | 保存预期侧 UInt32 source 布局保留值 | `io_read_module_metadata_binding_list`（zr_vm_core/src/zr_vm_core/io/io.c:711）：按 layout identity 版本读取 UInt32 保留值，旧 source 版本置零。 |
+ * | `expectedLayoutHash` | 保存 caller 布局契约的 hash 侧 | `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata/metadata_runtime_binding_compatibility.c:296）：布局身份参与时核双方 hash。 |
+ * | `resolvedMetadataToken` | 保存 provider 域中解析得到的实体身份 | `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata/metadata_runtime_binding_compatibility.c:280）：对非映射例外的非零期望检查提供方实体。 |
+ * | `resolvedSignatureToken` | 保存 provider 签名身份的快照 | `ZrCore_Reflection_ResolveBoundGenericTypeInstanceFromProvider`（zr_vm_core/src/zr_vm_core/reflection/generic/reflection_generic_instance.c:125）：重新核 provider 实体指向记录的签名 token。 |
+ * | `resolvedSignatureHash` | 保存 provider 当前路径产生的签名 hash | `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata/metadata_runtime_binding_compatibility.c:289）：对已声明期望核提供方签名 hash 快照。 |
+ * | `resolvedModuleSignatureHash` | 保存提供方函数的 moduleSignatureHash 快照 | `ZrCore_Reflection_ResolveBoundGenericTypeInstanceFromProvider`（zr_vm_core/src/zr_vm_core/reflection/generic/reflection_generic_instance.c:113）：重新核提供方当前模块 ABI 与绑定快照一致。 |
+ * | `resolvedLayoutVersion` | 保存 provider 布局身份的版本侧 | `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata/metadata_runtime_binding_compatibility.c:293）：核提供方布局版本与期望版本。 |
+ * | `reserved1` | 保存实际侧 UInt32 source 布局保留值 | `io_read_module_metadata_binding_list`（zr_vm_core/src/zr_vm_core/io/io.c:724）：按 layout identity 版本读取 UInt32 保留值，旧 source 版本置零。 |
+ * | `resolvedLayoutHash` | 保存 provider 布局身份的 hash 侧 | `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata/metadata_runtime_binding_compatibility.c:296）：核提供方布局 hash 与期望值。 |
  *
  * ## Invariants and lifecycle
  * 非零 refToken 是 caller 函数的 Upsert/Find 键。同键 Upsert 复用现有行而不重置；扩容复制旧行并释放旧 native 数组，旧借用 binding 地址失效。
@@ -506,8 +506,8 @@ typedef struct SZrMetadataStringHeapEntry {
  * 解析快照不保证 provider 后来仍兼容；泛型入口重新核 requester/ref 与 provider pair/hash/blob。三版本值填缺失 effect 后，区间门禁仅对完整可解析 min/max/actual 生效，缺值或解析失败当前放行。
  *
  * ## References
- * `function_record_type_spec_binding`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:480）：Upsert 借用 sidecar 后填 caller/provider 快照。
- * `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata_runtime_binding_compatibility.c:273）：实际执行模块 ABI 与后续 token/hash/layout 判定。
+ * `function_record_type_spec_binding`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:480）：Upsert 借用 sidecar 后填 caller/provider 快照。
+ * `metadata_runtime_check_binding_status`（zr_vm_core/src/zr_vm_core/metadata/metadata_runtime_binding_compatibility.c:273）：实际执行模块 ABI 与后续 token/hash/layout 判定。
  */
 typedef struct SZrMetadataTokenBinding {
     /** @brief 以 caller 引用身份查找或复用函数 sidecar。
@@ -587,21 +587,21 @@ typedef struct SZrMetadataTokenBinding {
  * ## Fields
  * | 成员 | 对调用方的用途 | 实际生产或消费引用 |
  * | --- | --- | --- |
- * | `callerTypeSpecCount` | 累计本扫描器适用 caller 记录数 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:744）：本扫描器按上述专属分支更新 callerTypeSpecCount。 |
- * | `matchedTypeSpecCount` | 累计成功留下绑定结果的适用记录数 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:842）：本扫描器按上述专属分支更新 matchedTypeSpecCount。 |
- * | `unmatchedTypeSpecCount` | 累计没有 provider 对应记录的项数 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:753）：本扫描器按上述专属分支更新 unmatchedTypeSpecCount。 |
- * | `definitionMismatchCount` | 累计该扫描器的定义身份失配 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:773）：本扫描器按上述专属分支更新 definitionMismatchCount。 |
- * | `layoutMismatchCount` | 累计该扫描器的布局身份失配 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:802）：本扫描器按上述专属分支更新 layoutMismatchCount。 |
- * | `firstUnmatchedTypeSpecToken` | 保存首个未匹配 caller 身份 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:754）：本扫描器按上述专属分支更新 firstUnmatchedTypeSpecToken。 |
- * | `firstUnmatchedSignatureHash` | 保存首个未匹配项的签名样本 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:756）：本扫描器按上述专属分支更新 firstUnmatchedSignatureHash。 |
- * | `firstDefinitionMismatchTypeSpecToken` | 保存首个定义失配 caller 身份 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:774）：本扫描器按上述专属分支更新 firstDefinitionMismatchTypeSpecToken。 |
- * | `firstExpectedDefinitionSignatureHash` | 保存首个定义失配的 caller 预期样本 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:776）：本扫描器按上述专属分支更新 firstExpectedDefinitionSignatureHash。 |
- * | `firstActualDefinitionSignatureHash` | 保存首个定义失配的 provider 样本 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:778）：本扫描器按上述专属分支更新 firstActualDefinitionSignatureHash。 |
- * | `firstLayoutMismatchTypeSpecToken` | 保存首个布局失配 caller 身份 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:803）：本扫描器按上述专属分支更新 firstLayoutMismatchTypeSpecToken。 |
- * | `firstExpectedLayoutVersion` | 保存首个布局失配的 caller 版本 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:805）：本扫描器按上述专属分支更新 firstExpectedLayoutVersion。 |
- * | `firstActualLayoutVersion` | 保存首个布局失配的 provider 版本 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:807）：本扫描器按上述专属分支更新 firstActualLayoutVersion。 |
- * | `firstExpectedLayoutHash` | 保存首个布局失配的 caller hash | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:806）：本扫描器按上述专属分支更新 firstExpectedLayoutHash。 |
- * | `firstActualLayoutHash` | 保存首个布局失配的 provider hash | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:808）：本扫描器按上述专属分支更新 firstActualLayoutHash。 |
+ * | `callerTypeSpecCount` | 累计本扫描器适用 caller 记录数 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:744）：本扫描器按上述专属分支更新 callerTypeSpecCount。 |
+ * | `matchedTypeSpecCount` | 累计成功留下绑定结果的适用记录数 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:842）：本扫描器按上述专属分支更新 matchedTypeSpecCount。 |
+ * | `unmatchedTypeSpecCount` | 累计没有 provider 对应记录的项数 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:753）：本扫描器按上述专属分支更新 unmatchedTypeSpecCount。 |
+ * | `definitionMismatchCount` | 累计该扫描器的定义身份失配 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:773）：本扫描器按上述专属分支更新 definitionMismatchCount。 |
+ * | `layoutMismatchCount` | 累计该扫描器的布局身份失配 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:802）：本扫描器按上述专属分支更新 layoutMismatchCount。 |
+ * | `firstUnmatchedTypeSpecToken` | 保存首个未匹配 caller 身份 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:754）：本扫描器按上述专属分支更新 firstUnmatchedTypeSpecToken。 |
+ * | `firstUnmatchedSignatureHash` | 保存首个未匹配项的签名样本 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:756）：本扫描器按上述专属分支更新 firstUnmatchedSignatureHash。 |
+ * | `firstDefinitionMismatchTypeSpecToken` | 保存首个定义失配 caller 身份 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:774）：本扫描器按上述专属分支更新 firstDefinitionMismatchTypeSpecToken。 |
+ * | `firstExpectedDefinitionSignatureHash` | 保存首个定义失配的 caller 预期样本 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:776）：本扫描器按上述专属分支更新 firstExpectedDefinitionSignatureHash。 |
+ * | `firstActualDefinitionSignatureHash` | 保存首个定义失配的 provider 样本 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:778）：本扫描器按上述专属分支更新 firstActualDefinitionSignatureHash。 |
+ * | `firstLayoutMismatchTypeSpecToken` | 保存首个布局失配 caller 身份 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:803）：本扫描器按上述专属分支更新 firstLayoutMismatchTypeSpecToken。 |
+ * | `firstExpectedLayoutVersion` | 保存首个布局失配的 caller 版本 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:805）：本扫描器按上述专属分支更新 firstExpectedLayoutVersion。 |
+ * | `firstActualLayoutVersion` | 保存首个布局失配的 provider 版本 | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:807）：本扫描器按上述专属分支更新 firstActualLayoutVersion。 |
+ * | `firstExpectedLayoutHash` | 保存首个布局失配的 caller hash | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:806）：本扫描器按上述专属分支更新 firstExpectedLayoutHash。 |
+ * | `firstActualLayoutHash` | 保存首个布局失配的 provider hash | `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:808）：本扫描器按上述专属分支更新 firstActualLayoutHash。 |
  *
  * ## Invariants and lifecycle
  * status 非空时入口清零；只统计 caller TYPE_SPEC。缺配对签名或 sidecar 分配失败可提前返回，计数为已处理前缀，先前成功 sidecar 不回滚。当前项先写 TypeSpec、再写适用 union TypeDef；后者失败不回滚已写 TypeSpec，且不增加 matched 计数。
@@ -609,7 +609,7 @@ typedef struct SZrMetadataTokenBinding {
  * 无状态 wrapper 容忍单纯 unmatched；不能用计数相等或此策略推断未发生后续硬失败。status 是 caller 提供的纯标量聚合，无资源取得/转移；诊断只读对应类型。
  *
  * ## References
- * `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:744）：TYPE_SPEC 过滤后累加 caller 计数。
+ * `ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:744）：TYPE_SPEC 过滤后累加 caller 计数。
  * `module_import_signature_record_type_spec_diagnostic`（zr_vm_core/src/zr_vm_core/module/module_import_signature_binding.c:155）：TypeSpec 专属诊断读取该类型的 caller 计数。
  */
 typedef struct SZrMetadataTypeSpecBindStatus {
@@ -682,21 +682,21 @@ typedef struct SZrMetadataTypeSpecBindStatus {
  * ## Fields
  * | 成员 | 对调用方的用途 | 实际生产或消费引用 |
  * | --- | --- | --- |
- * | `callerTypeRefCount` | 累计本扫描器适用 caller 记录数 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:915）：本扫描器按上述专属分支更新 callerTypeRefCount。 |
- * | `matchedTypeRefCount` | 累计成功留下绑定结果的适用记录数 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:973）：本扫描器按上述专属分支更新 matchedTypeRefCount。 |
- * | `unmatchedTypeRefCount` | 累计没有 provider 对应记录的项数 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:926）：本扫描器按上述专属分支更新 unmatchedTypeRefCount。 |
- * | `definitionMismatchCount` | 累计该扫描器的定义身份失配 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:936）：本扫描器按上述专属分支更新 definitionMismatchCount。 |
- * | `layoutMismatchCount` | 累计该扫描器的布局身份失配 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:948）：本扫描器按上述专属分支更新 layoutMismatchCount。 |
- * | `firstUnmatchedTypeRefToken` | 保存首个未匹配 caller 身份 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:927）：本扫描器按上述专属分支更新 firstUnmatchedTypeRefToken。 |
- * | `firstUnmatchedSignatureHash` | 保存首个未匹配项的签名样本 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:929）：本扫描器按上述专属分支更新 firstUnmatchedSignatureHash。 |
- * | `firstDefinitionMismatchTypeRefToken` | 保存首个定义失配 caller 身份 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:937）：本扫描器按上述专属分支更新 firstDefinitionMismatchTypeRefToken。 |
- * | `firstExpectedDefinitionSignatureHash` | 保存首个定义失配的 caller 预期样本 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:939）：本扫描器按上述专属分支更新 firstExpectedDefinitionSignatureHash。 |
- * | `firstActualDefinitionSignatureHash` | 保存首个定义失配的 provider 样本 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:940）：本扫描器按上述专属分支更新 firstActualDefinitionSignatureHash。 |
- * | `firstLayoutMismatchTypeRefToken` | 保存首个布局失配 caller 身份 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:949）：本扫描器按上述专属分支更新 firstLayoutMismatchTypeRefToken。 |
- * | `firstExpectedLayoutVersion` | 保存首个布局失配的 caller 版本 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:951）：本扫描器按上述专属分支更新 firstExpectedLayoutVersion。 |
- * | `firstActualLayoutVersion` | 保存首个布局失配的 provider 版本 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:953）：本扫描器按上述专属分支更新 firstActualLayoutVersion。 |
- * | `firstExpectedLayoutHash` | 保存首个布局失配的 caller hash | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:952）：本扫描器按上述专属分支更新 firstExpectedLayoutHash。 |
- * | `firstActualLayoutHash` | 保存首个布局失配的 provider hash | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:954）：本扫描器按上述专属分支更新 firstActualLayoutHash。 |
+ * | `callerTypeRefCount` | 累计本扫描器适用 caller 记录数 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:915）：本扫描器按上述专属分支更新 callerTypeRefCount。 |
+ * | `matchedTypeRefCount` | 累计成功留下绑定结果的适用记录数 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:973）：本扫描器按上述专属分支更新 matchedTypeRefCount。 |
+ * | `unmatchedTypeRefCount` | 累计没有 provider 对应记录的项数 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:926）：本扫描器按上述专属分支更新 unmatchedTypeRefCount。 |
+ * | `definitionMismatchCount` | 累计该扫描器的定义身份失配 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:936）：本扫描器按上述专属分支更新 definitionMismatchCount。 |
+ * | `layoutMismatchCount` | 累计该扫描器的布局身份失配 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:948）：本扫描器按上述专属分支更新 layoutMismatchCount。 |
+ * | `firstUnmatchedTypeRefToken` | 保存首个未匹配 caller 身份 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:927）：本扫描器按上述专属分支更新 firstUnmatchedTypeRefToken。 |
+ * | `firstUnmatchedSignatureHash` | 保存首个未匹配项的签名样本 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:929）：本扫描器按上述专属分支更新 firstUnmatchedSignatureHash。 |
+ * | `firstDefinitionMismatchTypeRefToken` | 保存首个定义失配 caller 身份 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:937）：本扫描器按上述专属分支更新 firstDefinitionMismatchTypeRefToken。 |
+ * | `firstExpectedDefinitionSignatureHash` | 保存首个定义失配的 caller 预期样本 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:939）：本扫描器按上述专属分支更新 firstExpectedDefinitionSignatureHash。 |
+ * | `firstActualDefinitionSignatureHash` | 保存首个定义失配的 provider 样本 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:940）：本扫描器按上述专属分支更新 firstActualDefinitionSignatureHash。 |
+ * | `firstLayoutMismatchTypeRefToken` | 保存首个布局失配 caller 身份 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:949）：本扫描器按上述专属分支更新 firstLayoutMismatchTypeRefToken。 |
+ * | `firstExpectedLayoutVersion` | 保存首个布局失配的 caller 版本 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:951）：本扫描器按上述专属分支更新 firstExpectedLayoutVersion。 |
+ * | `firstActualLayoutVersion` | 保存首个布局失配的 provider 版本 | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:953）：本扫描器按上述专属分支更新 firstActualLayoutVersion。 |
+ * | `firstExpectedLayoutHash` | 保存首个布局失配的 caller hash | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:952）：本扫描器按上述专属分支更新 firstExpectedLayoutHash。 |
+ * | `firstActualLayoutHash` | 保存首个布局失配的 provider hash | `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:954）：本扫描器按上述专属分支更新 firstActualLayoutHash。 |
  *
  * ## Invariants and lifecycle
  * status 非空时入口清零；仅 TYPE_REF 且 targetMetadataToken 表为 TYPE_DEF 进入计数。目标查找按 token/hash、可选 signature/module、layout、基本名依次分类。
@@ -704,7 +704,7 @@ typedef struct SZrMetadataTypeSpecBindStatus {
  * 缺签名或 sidecar 写入失败提前返回，计数可为前缀，先前成功项不回滚；无该失败类别保持零值。纯标量聚合由调用者持有，无释放动作，不能把本类型同名字段与 TypeSpec 混用。
  *
  * ## References
- * `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function_metadata_binding.c:915）：TYPE_REF+目标 TYPE_DEF 过滤后累加 caller 计数。
+ * `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:915）：TYPE_REF+目标 TYPE_DEF 过滤后累加 caller 计数。
  * `module_import_signature_record_type_ref_diagnostic`（zr_vm_core/src/zr_vm_core/module/module_import_signature_binding.c:195）：TypeRef 专属诊断读取该类型的 caller 计数。
  */
 typedef struct SZrMetadataTypeRefBindStatus {

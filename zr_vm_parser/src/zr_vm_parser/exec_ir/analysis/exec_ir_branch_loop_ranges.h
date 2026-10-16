@@ -1,7 +1,7 @@
 #ifndef ZR_VM_PARSER_EXEC_IR_BRANCH_LOOP_RANGES_H
 #define ZR_VM_PARSER_EXEC_IR_BRANCH_LOOP_RANGES_H
 
-#include "zr_vm_parser/exec_ir_branch_facts.h"
+#include "exec_ir/exec_ir_branch_facts.h"
 
 /* Private operations from the already validated DAG producer. All vectors are
  * caller-owned scratch; no hook owns/freezes a result or executes the IR. */

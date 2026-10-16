@@ -11,8 +11,8 @@
 #include "zr_vm_core/array.h"
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/exec_ir_builder.h"
-#include "zr_vm_parser/exec_ir_source_module_contract.h"
-#include "zr_vm_parser/exec_ir_source_scalar_constant.h"
+#include "exec_ir/source/exec_ir_source_module_contract.h"
+#include "exec_ir/source/exec_ir_source_scalar_constant.h"
 
 enum { VM_RECORDS = 8192, VM_DIAGNOSTICS = 64, SOURCES = 2 };
 typedef struct SAllocation { void *pointer; size_t bytes; TZrInt64 flag; } SAllocation;

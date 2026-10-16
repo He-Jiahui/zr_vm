@@ -1,5 +1,5 @@
 #include "exec_ir_internal.h"
-#include "../semantic_ir_scalar_scratch_internal.h"
+#include "semantic_ir/semantic_ir_scalar_scratch_internal.h"
 
 #include <stdint.h>
 #include <string.h>

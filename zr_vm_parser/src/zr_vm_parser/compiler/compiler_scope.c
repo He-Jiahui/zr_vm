@@ -3,7 +3,7 @@
 //
 
 #include "compiler_internal.h"
-#include "compile_expression_internal.h"
+#include "compiler/expression/compile_expression_internal.h"
 
 void compiler_register_scope_cleanup_slot(
         SZrCompilerState *cs,

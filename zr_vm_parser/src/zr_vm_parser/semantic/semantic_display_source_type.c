@@ -1,6 +1,6 @@
 #include "zr_vm_parser/semantic_display.h"
 
-#include "canonical_type_format_internal.h"
+#include "types/canonical_type_format_internal.h"
 
 /* 由精确 owner symbol 的 declaration AST 取得其所属 generic 列表。 */
 static const SZrGenericDeclaration *semantic_display_source_generic_declaration(

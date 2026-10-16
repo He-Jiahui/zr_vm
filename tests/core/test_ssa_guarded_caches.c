@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-#include "zr_vm_core/execution_binding_guard.h"
+#include "execution/execution_binding_guard.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/object.h"
 

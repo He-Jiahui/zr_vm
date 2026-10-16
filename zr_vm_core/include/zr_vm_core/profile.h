@@ -76,7 +76,7 @@ struct SZrState;
  *
  * ## References
  * 平台线程局部修饰符用于保存当前线程的画像借用指针。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/profile.c:32`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/profile.c:32`。
  * - 真实用途位置：`zr_vm_core/include/zr_vm_core/profile.h:422`。
  *
  */
@@ -97,7 +97,7 @@ struct SZrState;
  * 记录入口、名称转换和报告数组使用同一事件编号。
  * - 真实用途位置：`zr_vm_core/src/zr_vm_core/object/object.c:511`。
  * - 真实用途位置：`zr_vm_core/src/zr_vm_core/execution/execution_member_access.c:91`。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/profile.c:336`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/profile.c:336`。
  * - [Profile内存与GC指标模块文档](../../../docs/core-runtime/profile-memory-metrics.md)：计量范围、画像归属和GC暂停限制。
  *
  */
@@ -159,8 +159,8 @@ typedef enum EZrProfileHelperKind {
  *
  * ## References
  * 记录入口、名称转换和报告数组使用同一事件编号。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/profile.c:359`。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/profile.c:772`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/profile.c:359`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/profile.c:772`。
  * - 真实用途位置：`zr_vm_core/include/zr_vm_core/profile.h:572`。
  * - [Profile内存与GC指标模块文档](../../../docs/core-runtime/profile-memory-metrics.md)：计量范围、画像归属和GC暂停限制。
  *
@@ -197,8 +197,8 @@ typedef enum EZrProfileSlowPathKind {
  *
  * ## References
  * 记录入口、名称转换和报告数组使用同一事件编号。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/profile.c:382`。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/profile.c:795`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/profile.c:382`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/profile.c:795`。
  * - 真实用途位置：`zr_vm_core/include/zr_vm_core/profile.h:592`。
  * - [Profile内存与GC指标模块文档](../../../docs/core-runtime/profile-memory-metrics.md)：计量范围、画像归属和GC暂停限制。
  *
@@ -226,8 +226,8 @@ typedef enum EZrProfileQuickeningProbeKind {
  * ## References
  * 记录入口、名称转换和报告数组使用同一事件编号。
  * - 真实用途位置：`zr_vm_core/src/zr_vm_core/execution/execution_member_access.c:73`。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/profile.c:405`。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/profile.c:820`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/profile.c:405`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/profile.c:820`。
  * - [Profile内存与GC指标模块文档](../../../docs/core-runtime/profile-memory-metrics.md)：计量范围、画像归属和GC暂停限制。
  *
  */
@@ -288,8 +288,8 @@ typedef enum EZrProfileMemoryMetricKind {
  *
  * ## References
  * 暂停累计量和最近样本环使用同一个固定容量。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/profile.c:452`。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/profile.c:462`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/profile.c:452`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/profile.c:462`。
  * - 真实用途位置：`tests/core/test_value_construction_profile.c:179`。
  *
  */
@@ -395,8 +395,8 @@ typedef struct SZrProfileRuntime {
  *
  * ## References
  * 当前线程画像指针由此声明或定义，Current和记录inline读取它。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/profile.c:637`。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/profile.c:701`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/profile.c:637`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/profile.c:701`。
  * - 真实用途位置：`zr_vm_core/include/zr_vm_core/profile.h:702`。
  *
  */
@@ -414,8 +414,8 @@ extern ZR_PROFILE_THREAD_LOCAL SZrProfileRuntime *g_zr_profile_current;
  *
  * ## References
  * 当前线程画像指针由此声明或定义，Current和记录inline读取它。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/profile.c:637`。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/profile.c:701`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/profile.c:637`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/profile.c:701`。
  * - 真实用途位置：`zr_vm_core/include/zr_vm_core/profile.h:702`。
  *
  */
@@ -437,7 +437,7 @@ ZR_CORE_API ZR_PROFILE_THREAD_LOCAL SZrProfileRuntime *g_zr_profile_current;
  *
  * ## References
  * global创建后在此初始化可选画像及其环境文本。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/global.c:394`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/global.c:394`。
  * - [Profile内存与GC指标模块文档](../../../docs/core-runtime/profile-memory-metrics.md)：计量范围、画像归属和GC暂停限制。
  *
  */
@@ -457,7 +457,7 @@ ZR_CORE_API void ZrCore_Profile_GlobalInit(struct SZrGlobalState *global); /**< 
  *
  * ## References
  * global退出在此触发报告并释放画像所有权。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/global.c:756`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/global.c:756`。
  * - [Profile内存与GC指标模块文档](../../../docs/core-runtime/profile-memory-metrics.md)：计量范围、画像归属和GC暂停限制。
  *
  */
@@ -499,8 +499,8 @@ ZR_CORE_API void ZrCore_Profile_SetCurrentState(struct SZrState *state); /**< @b
  *
  * ## References
  * 参数暂存和inline埋点在此读取当前线程画像。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/function_argument_staging.c:51`。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/function_argument_staging.c:177`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/function/function_argument_staging.c:51`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/function/function_argument_staging.c:177`。
  * - 真实用途位置：`zr_vm_core/include/zr_vm_core/profile.h:700`。
  * - [Profile内存与GC指标模块文档](../../../docs/core-runtime/profile-memory-metrics.md)：计量范围、画像归属和GC暂停限制。
  *
@@ -543,7 +543,7 @@ ZR_CORE_API SZrProfileRuntime *ZrCore_Profile_FromState(struct SZrState *state);
  *
  * ## References
  * 报告写入和测试通过此函数把helper事件编号转换为静态名称。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/profile.c:336`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/profile.c:336`。
  * - 真实用途位置：`tests/core/test_value_construction_profile.c:48`。
  * - 真实用途位置：`tests/core/test_frame_slot_layout_lookup.c:360`。
  * - [Profile内存与GC指标模块文档](../../../docs/core-runtime/profile-memory-metrics.md)：计量范围、画像归属和GC暂停限制。
@@ -565,7 +565,7 @@ ZR_CORE_API const TZrChar *ZrCore_Profile_HelperKindName(EZrProfileHelperKind ki
  *
  * ## References
  * 报告写入通过此函数把slowpath事件编号转换为静态名称。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/profile.c:359`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/profile.c:359`。
  * - [Profile内存与GC指标模块文档](../../../docs/core-runtime/profile-memory-metrics.md)：计量范围、画像归属和GC暂停限制。
  *
  */
@@ -585,7 +585,7 @@ ZR_CORE_API const TZrChar *ZrCore_Profile_SlowPathKindName(EZrProfileSlowPathKin
  *
  * ## References
  * 报告写入通过此函数把quickening探针编号转换为静态名称。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/profile.c:382`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/profile.c:382`。
  * - [Profile内存与GC指标模块文档](../../../docs/core-runtime/profile-memory-metrics.md)：计量范围、画像归属和GC暂停限制。
  *
  */
@@ -605,7 +605,7 @@ ZR_CORE_API const TZrChar *ZrCore_Profile_QuickeningProbeKindName(EZrProfileQuic
  *
  * ## References
  * 报告写入和测试通过此函数把memory事件编号转换为静态名称。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/profile.c:405`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/profile.c:405`。
  * - 真实用途位置：`tests/core/test_value_construction_profile.c:142`。
  * - [Profile内存与GC指标模块文档](../../../docs/core-runtime/profile-memory-metrics.md)：计量范围、画像归属和GC暂停限制。
  *
@@ -626,8 +626,8 @@ ZR_CORE_API const TZrChar *ZrCore_Profile_MemoryMetricKindName(EZrProfileMemoryM
  *
  * ## References
  * 反汇编和报告写入通过此函数把opcode转换为静态名称。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/debug.c:786`。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/profile.c:428`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/debug/debug.c:786`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/runtime/profile.c:428`。
  * - [Profile内存与GC指标模块文档](../../../docs/core-runtime/profile-memory-metrics.md)：计量范围、画像归属和GC暂停限制。
  *
  */
@@ -691,7 +691,7 @@ static ZR_FORCE_INLINE void ZrCore_Profile_AtomicAdd(TZrUInt64 *value, TZrUInt64
  * 对象值、栈和帧路径在此记录helper事件。
  * - 真实用途位置：`zr_vm_core/include/zr_vm_core/value.h:74`。
  * - 真实用途位置：`zr_vm_core/include/zr_vm_core/stack.h:128`。
- * - 真实用途位置：`zr_vm_core/src/zr_vm_core/function_argument_staging.c:159`。
+ * - 真实用途位置：`zr_vm_core/src/zr_vm_core/function/function_argument_staging.c:159`。
  * - [Profile内存与GC指标模块文档](../../../docs/core-runtime/profile-memory-metrics.md)：计量范围、画像归属和GC暂停限制。
  *
  */

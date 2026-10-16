@@ -11,7 +11,7 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/project_imports.h"
-#include "compiler/compile_time_import.h"
+#include "compiler/compile_time/compile_time_import.h"
 #include "compiler/module_init_analysis.h"
 
 #include <stdio.h>

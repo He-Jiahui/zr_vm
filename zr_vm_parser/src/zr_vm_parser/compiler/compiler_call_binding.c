@@ -1,7 +1,7 @@
 #include "compiler_call_binding.h"
 
 #include "compiler_internal.h"
-#include "compile_expression_internal.h"
+#include "compiler/expression/compile_expression_internal.h"
 
 #include <string.h>
 

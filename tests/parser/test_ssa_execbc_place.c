@@ -1,4 +1,4 @@
-#include "zr_vm_parser/exec_ir_execbc.h"
+#include "exec_ir/execbc/exec_ir_execbc.h"
 
 #include <assert.h>
 #include <stdio.h>

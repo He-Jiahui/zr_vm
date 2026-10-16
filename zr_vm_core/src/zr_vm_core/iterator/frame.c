@@ -1,6 +1,6 @@
 #include <string.h>
 
-#include "zr_vm_core/iterator_runtime.h"
+#include "iterator/iterator_runtime.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
 

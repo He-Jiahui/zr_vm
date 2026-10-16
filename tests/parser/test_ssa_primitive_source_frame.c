@@ -6,10 +6,10 @@
 #include "harness/runtime_support.h"
 #include "zr_vm_core/exec_ir_state_map.h"
 #include "zr_vm_parser/canonical_type.h"
-#include "zr_vm_parser/exec_ir_dead_source_places.h"
-#include "zr_vm_parser/exec_ir_host_primitive_layout.h"
-#include "zr_vm_parser/exec_ir_projections.h"
-#include "zr_vm_parser/exec_ir_source_frame.h"
+#include "exec_ir/exec_ir_dead_source_places.h"
+#include "exec_ir/exec_ir_host_primitive_layout.h"
+#include "exec_ir/exec_ir_projections.h"
+#include "exec_ir/source/exec_ir_source_frame.h"
 #include "support/ssa_literal_script_fixture.h"
 
 static SZrState *g_state;

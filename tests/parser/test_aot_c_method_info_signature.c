@@ -15,7 +15,7 @@
 #include "zr_vm_parser/writer.h"
 /* 将函数参数与返回类型投影到公开 AOT 签名，并包含独立头文件中的返回布局与调用结果案例。 */
 
-#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h"
+#include "backend_aot/backend_aot_exec_ir.h"
 
 /* 以来源名编译签名夹具，函数由调用方释放。 */
 static SZrFunction *compile_source(SZrState *state, const char *source, const char *sourceNameText) {

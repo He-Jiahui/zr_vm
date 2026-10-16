@@ -13,8 +13,8 @@
 #include "zr_vm_lib_thread/runtime.h"
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/compiler.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_internal.h"
+#include "compiler/compiler_internal.h"
+#include "type_inference/type_inference_internal.h"
 
 static SZrState *create_thread_test_state(void) {
     SZrState *state = ZrTests_State_Create(ZR_NULL);

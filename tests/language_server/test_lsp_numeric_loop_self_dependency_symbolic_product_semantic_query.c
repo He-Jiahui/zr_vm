@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "semantic/lsp_local_semantic_query.h"
+#include "semantic/query/lsp_local_semantic_query.h"
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_common/zr_type_conf.h"
 #include "zr_vm_core/callback.h"

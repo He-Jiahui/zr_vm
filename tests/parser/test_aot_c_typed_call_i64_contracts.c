@@ -207,7 +207,7 @@ void test_aot_c_source_lowers_static_no_arg_i64_calls_to_typed_thunks(void) {
             "zr_aot_static_i64_three_arg_direct_call_sync_stack_slot",
     };
     static const char *const typedDirectCallNeedles[] = {
-            "#include \"backend_aot_c_typed_direct_i64_calls.h\"",
+            "#include \"backend_aot/backend_aot_c_typed_direct_i64_calls.h\"",
             "backend_aot_try_write_c_static_direct_typed_function_call(",
             "backend_aot_try_write_c_static_direct_typed_no_arg_function_call(",
             "backend_aot_can_write_c_static_direct_i64_no_arg_call(",
@@ -236,9 +236,9 @@ void test_aot_c_source_lowers_static_no_arg_i64_calls_to_typed_thunks(void) {
             "backend_aot_can_write_c_static_direct_i64_three_arg_call(",
     };
     static const char *const typedDirectI64CallNeedles[] = {
-            "#include \"backend_aot_c_typed_direct_i64_calls.h\"",
-            "#include \"backend_aot_c_emitter.h\"",
-            "#include \"backend_aot_c_scalar_locals.h\"",
+            "#include \"backend_aot/backend_aot_c_typed_direct_i64_calls.h\"",
+            "#include \"backend_aot/backend_aot_c_emitter.h\"",
+            "#include \"backend_aot/backend_aot_c_scalar_locals.h\"",
             "backend_aot_typed_direct_i64_call_find_function_entry_by_flat_index(",
             "backend_aot_can_write_c_static_direct_i64_no_arg_call(",
             "backend_aot_can_write_c_static_direct_i64_one_arg_call(",
@@ -272,21 +272,21 @@ void test_aot_c_source_lowers_static_no_arg_i64_calls_to_typed_thunks(void) {
             "backend_aot_try_write_c_static_direct_typed_no_arg_function_call(file,",
     };
     char *emitterHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *emitterSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_i64_thunks.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_i64_thunks.c");
     char *i64ThunkShapesText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_i64_thunk_shapes.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_i64_thunk_shapes.c");
     char *callLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c");
     char *typedDirectCallText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_calls.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_calls.c");
     char *typedDirectI64CallHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_i64_calls.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_i64_calls.h");
     char *typedDirectI64CallText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_i64_calls.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_i64_calls.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     TEST_ASSERT_NOT_NULL(emitterSourceText);

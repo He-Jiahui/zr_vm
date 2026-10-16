@@ -78,8 +78,8 @@ impl ProjectSession {
     ///   因此没有额外生命周期要求。
     /// - TODO: `zr_vm_core/src/zr_vm_core/gc/gc.c:887` 的分代路径可进入
     ///   `zr_vm_core/src/zr_vm_core/gc/gc_cycle.c:2380` 的 `Exception_Throw`；
-    ///   `zr_vm_core/src/zr_vm_core/exception.c:570` 的非局部跳转及
-    ///   `zr_vm_core/src/zr_vm_core/exception.c:594` 的 abort 不由本入口的 status 表达。
+    ///   `zr_vm_core/src/zr_vm_core/exception/exception.c:570` 的非局部跳转及
+    ///   `zr_vm_core/src/zr_vm_core/exception/exception.c:594` 的 abort 不由本入口的 status 表达。
     ///   下一步沿 `zr_vm_rust_binding/src/zr_vm_rust_binding/api.c:1123` 的线程重置、
     ///   当前恢复点与 GC 收尾核查异常是否跨过 Rust FFI、session 是否还能继续使用；
     ///   现有普通成功与重入拒绝测试不能证明这一故障路径会返回 Rust `Error`。

@@ -1,6 +1,6 @@
 #include "zr_vm_core/exec_ir.h"
 #include "zr_vm_core/call_binding.h"
-#include "zr_vm_parser/exec_ir_interprocedural.h"
+#include "exec_ir/exec_ir_interprocedural.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

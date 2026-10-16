@@ -1,7 +1,7 @@
 #ifndef ZR_VM_LANGUAGE_SERVER_LSP_NATIVE_DECLARATION_PROJECTION_H
 #define ZR_VM_LANGUAGE_SERVER_LSP_NATIVE_DECLARATION_PROJECTION_H
 
-#include "lsp_virtual_documents.h"
+#include "features/lsp_virtual_documents.h"
 
 /**
  * 只读虚拟文档中一个可导航名字的描述符身份与源码坐标。

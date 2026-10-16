@@ -9,7 +9,7 @@
 #define calloc ZrEis6Test_Calloc
 #define realloc ZrEis6Test_Realloc
 #define free ZrEis6Test_Free
-#include "../../zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_binding_rows.c"
+#include "exec_ir/exec_ir_binding_rows.c"
 #undef free
 #undef realloc
 #undef calloc

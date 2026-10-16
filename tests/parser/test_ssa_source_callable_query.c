@@ -4,7 +4,7 @@
 #define ZR_TEST_SOURCE_CALLABLE_NO_REDIRECT
 #include "support/ssa_source_callable_query_shim.h"
 #include "unity.h"
-#include "zr_vm_parser/exec_ir/exec_ir_source_callable_query_internal.h"
+#include "exec_ir/source/exec_ir_source_callable_query_internal.h"
 #include "zr_vm_parser/semantic.h"
 
 enum { CALLABLE_ID = 271u, RETURN_ID = 113u, TOKEN = 0x06000031u };

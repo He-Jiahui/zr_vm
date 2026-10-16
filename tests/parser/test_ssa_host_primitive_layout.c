@@ -6,7 +6,7 @@
 #include "harness/runtime_support.h"
 #include "zr_vm_core/hash.h"
 #include "zr_vm_parser/canonical_type.h"
-#include "zr_vm_parser/exec_ir_host_primitive_layout.h"
+#include "exec_ir/exec_ir_host_primitive_layout.h"
 #include "support/ssa_literal_script_fixture.h"
 
 static SZrState *g_state;

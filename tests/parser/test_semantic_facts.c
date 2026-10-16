@@ -10,9 +10,9 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
 
-#include "../../zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_moves.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_regions.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/type_inference/dataflow_ownership_statements.h"
+#include "type_inference/dataflow/dataflow_ownership_moves.h"
+#include "type_inference/dataflow/dataflow_ownership_regions.h"
+#include "type_inference/dataflow/dataflow_ownership_statements.h"
 
 static SZrState *g_state;
 

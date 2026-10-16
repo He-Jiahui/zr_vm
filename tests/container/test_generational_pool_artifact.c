@@ -9,7 +9,7 @@
 #include "zr_vm_core/reflection.h"
 #include "zr_vm_lib_container/generational_pool.h"
 #include "zr_vm_lib_container/module.h"
-#include "zr_vm_parser/artifact_projection.h"
+#include "artifact/artifact_projection.h"
 
 #define POOL_TYPE_ID ((TZrUInt32)91u)
 #define POOL_TYPE_DEF_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 1u)

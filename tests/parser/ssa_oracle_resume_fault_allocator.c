@@ -44,4 +44,4 @@ static void *resume_calloc(size_t count, size_t size) {
  * 故障后其余尝试仍可成功，普通 ResultFree 与本 TU 的 free 保持 libc 配对。 */
 #define malloc resume_malloc
 #define calloc resume_calloc
-#include "../../zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_resume.c"
+#include "exec_ir/exec_ir_interpreter_resume.c"

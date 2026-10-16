@@ -12,7 +12,7 @@
 #include "zr_vm_parser/semantic_display.h"
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/type_inference.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_binding.h"
+#include "compiler/tool/compile_tool_binding.h"
 
 static SZrState *g_state;
 

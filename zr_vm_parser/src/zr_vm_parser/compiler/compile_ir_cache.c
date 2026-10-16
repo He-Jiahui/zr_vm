@@ -1,6 +1,6 @@
 #include "zr_vm_parser/compile_ir_cache.h"
 
-#include "compile_tool_content_hash.h"
+#include "compiler/tool/compile_tool_content_hash.h"
 
 #include <stdint.h>
 #include <stdlib.h>

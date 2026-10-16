@@ -5,7 +5,7 @@
 #include <string.h>
 
 #include "gc/gc_domain_internal.h"
-#include "ownership_transfer_internal.h"
+#include "ownership/ownership_transfer_internal.h"
 #include "harness/runtime_support.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/gc.h"

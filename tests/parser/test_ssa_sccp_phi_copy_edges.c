@@ -1,7 +1,7 @@
 #include "zr_vm_core/exec_ir.h"
 #include "zr_vm_core/exec_ir_interpreter.h"
 #include "zr_vm_parser/exec_ir_builder.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_internal.h"
+#include "exec_ir/exec_ir_pass_internal.h"
 
 #include <stdio.h>
 #include <string.h>

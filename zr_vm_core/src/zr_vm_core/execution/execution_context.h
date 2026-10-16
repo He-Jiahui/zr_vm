@@ -6,6 +6,6 @@
  * execution_safepoint/cold 消费此桥；PC/栈缓存的发布与暂停后重载由边界实现完成。
  * context 借用 state/帧，不能把缓存地址当作跨栈移动或 GC 边界持续有效的拥有指针。
  */
-#include "zr_vm_core/execution_context.h"
+#include "runtime/execution_context.h"
 
 #endif

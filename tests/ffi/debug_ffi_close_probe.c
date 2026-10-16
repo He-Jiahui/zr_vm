@@ -139,7 +139,7 @@ typedef struct ZrProbeExecuteCaptureRequest {
  * ## Constraints and lifecycle
  * arguments 只在同步回调内借用。临时 ignore 在栈准备和 callee 值发布期间保留，成功登记的 ignore 在值入栈后解除。CheckStackAndAnchor 在栈发布及 unignore 之前；不得据名字声称它一定触发 GC。
  * ## References
- * tests/ffi/debug_ffi_close_probe.c:144-190；tests/ffi/debug_ffi_close_probe.c:226；zr_vm_core/src/zr_vm_core/function.c:1847-1860
+ * tests/ffi/debug_ffi_close_probe.c:144-190；tests/ffi/debug_ffi_close_probe.c:226；zr_vm_core/src/zr_vm_core/function/function.c:1847-1860
  */
 static void probe_execute_capture_body(SZrState *state, TZrPtr arguments) {
     ZrProbeExecuteCaptureRequest *request = (ZrProbeExecuteCaptureRequest *)arguments;
@@ -160,7 +160,7 @@ static void probe_execute_capture_body(SZrState *state, TZrPtr arguments) {
      * ignore 成功时跨栈准备保留至 callee 发布；结果槽随后只给外层立即读取，不是异步存储。
      * TODO: 对照共享 runtime helper，核查 Closure_New 分配前 function 的 GC 根，以及 IgnoreObject 失败或栈准备抛错时的临时保活与解除；当前零捕获 InitValue 不产生捕获单元分配。
      * ## References
-     * tests/ffi/debug_ffi_close_probe.c:165-189；tests/harness/runtime_support.c:328；tests/harness/runtime_support.c:347；tests/ffi/test_ffi_module.c:376；zr_vm_core/src/zr_vm_core/closure.c:270；zr_vm_core/src/zr_vm_core/closure.c:285；zr_vm_core/src/zr_vm_core/gc/gc.c:696
+     * tests/ffi/debug_ffi_close_probe.c:165-189；tests/harness/runtime_support.c:328；tests/harness/runtime_support.c:347；tests/ffi/test_ffi_module.c:376；zr_vm_core/src/zr_vm_core/closure/closure.c:270；zr_vm_core/src/zr_vm_core/closure/closure.c:285；zr_vm_core/src/zr_vm_core/gc/gc.c:696
      */
     closure = ZrCore_Closure_New(state, 0);
     if (closure == ZR_NULL) {

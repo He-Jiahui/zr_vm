@@ -15,9 +15,9 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_query.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/semantic/semantic_scope_facts.h"
+#include "semantic/semantic_scope_facts.h"
 
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
+#include "compiler/compiler_internal.h"
 
 static SZrState *g_state;
 

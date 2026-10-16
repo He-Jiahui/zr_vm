@@ -210,7 +210,7 @@ static void test_aot_c_source_lowers_export_return_to_boundary_publication_then_
             "ZrLibrary_AotRuntime_ReturnF64(state, zr_aot_f%u)",
     };
     static const char *const functionBodyNeedles[] = {
-            "#include \"backend_aot_c_typed_return.h\"",
+            "#include \"backend_aot/backend_aot_c_typed_return.h\"",
             "backend_aot_try_write_c_typed_return(file,",
             "if (publishExports) {\n                    backend_aot_write_c_publish_exports(file);\n                }\n                backend_aot_write_c_direct_return(file, operandA1);",
     };
@@ -222,9 +222,9 @@ static void test_aot_c_source_lowers_export_return_to_boundary_publication_then_
             "TZrBool publishExports);",
     };
     static const char *const typedReturnSourceNeedles[] = {
-            "#include \"backend_aot_c_typed_return.h\"",
-            "#include \"backend_aot_c_emitter.h\"",
-            "#include \"backend_aot_c_scalar_locals.h\"",
+            "#include \"backend_aot/backend_aot_c_typed_return.h\"",
+            "#include \"backend_aot/backend_aot_c_emitter.h\"",
+            "#include \"backend_aot/backend_aot_c_scalar_locals.h\"",
             "backend_aot_c_scalar_locals_can_direct_return_i64_local(",
             "backend_aot_write_c_direct_return_i64_local(file, sourceSlot);",
             "backend_aot_c_scalar_locals_can_direct_return_bool_local(",
@@ -327,27 +327,27 @@ static void test_aot_c_source_lowers_export_return_to_boundary_publication_then_
             "TZrBool ZrLibrary_AotRuntime_ReturnF64(SZrState *state, TZrFloat64 value)",
     };
     char *emitterHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
-    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
+    char *runtimeSourceText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c");
     char *runtimeInternalHeaderText = read_repo_text_file_owned(
             "zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_internal.h");
     char *runtimeReturnSourceText = read_repo_text_file_owned(
             "zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_return.c");
     char *controlText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c");
     char *exportText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_exports.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_exports.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *typedReturnHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_return.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_return.h");
     char *typedReturnSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_return.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_return.c");
     char *scalarHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.h");
     char *scalarSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
 
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     TEST_ASSERT_NOT_NULL(runtimeHeaderText);

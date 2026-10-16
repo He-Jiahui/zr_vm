@@ -1,4 +1,4 @@
-#include "zr_vm_core/exec_ir_runtime.h"
+#include "exec_ir/exec_ir_runtime.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/gc_domain.h"
@@ -6,9 +6,9 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_common/zr_aot_abi.h"
-#include "../gc/gc_domain_internal.h"
-#include "../gc/gc_internal.h"
-#include "../ownership_resource_internal.h"
+#include "gc/gc_domain_internal.h"
+#include "gc/gc_internal.h"
+#include "ownership/ownership_resource_internal.h"
 
 #include <stddef.h>
 #include <stdint.h>

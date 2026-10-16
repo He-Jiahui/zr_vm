@@ -6,7 +6,7 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/parser.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/parser/parser_internal.h"
+#include "parser/parser_internal.h"
 
 /*
  * Parse-only source range contract. Expected positions come from the actual

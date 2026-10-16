@@ -5,7 +5,7 @@
 #if defined(ZR_FACT_CAPACITY_ORIGINAL) && defined(ZR_FACT_CAPACITY_UNCHECKED)
 #error Select exactly one source epoch
 #endif
-#include "../../zr_vm_parser/src/zr_vm_parser/exec_ir/analysis/exec_ir_ranges.c"
+#include "exec_ir/analysis/exec_ir_ranges.c"
 
 typedef enum EFactKind { FACT_RANGE, FACT_SHAPE, FACT_NULL } EFactKind;
 typedef union UFact {

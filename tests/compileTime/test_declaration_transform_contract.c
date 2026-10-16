@@ -1,7 +1,7 @@
 /* 直接验证声明补丁的阶段、目标、数量与诊断形状约束，阻止无效补丁进入提交路径。 */
 #include "unity.h"
 
-#include "zr_vm_parser/declaration_transform_contract.h"
+#include "contract/declaration_transform_contract.h"
 
 #include <stdio.h>
 #include <stdlib.h>

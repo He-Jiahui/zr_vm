@@ -6,7 +6,7 @@
 
 #include "harness/module_fixture_support.h"
 #include "harness/runtime_support.h"
-#include "zr_vm_core/typed_call_binding.h"
+#include "call/typed_call_binding.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_library/native_registry.h"

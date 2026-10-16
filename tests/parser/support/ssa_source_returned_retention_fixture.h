@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include "ssa_source_returned_crt_ledger.h"
 #include "zr_vm_parser/compiler.h"
-#include "zr_vm_parser/compiler_source_retention.h"
+#include "compiler/semantic/compiler_source_retention.h"
 #include "zr_vm_core/function_aot_ir.h"
 
 void ZrTests_Returned_Init(void);

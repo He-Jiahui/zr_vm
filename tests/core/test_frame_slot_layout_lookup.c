@@ -12,7 +12,7 @@
 #include "zr_vm_core/io.h"
 #include "zr_vm_core/profile.h"
 #include "zr_vm_core/state.h"
-#include "zr_vm_core/src/zr_vm_core/function_precall_internal.h"
+#include "function/function_precall_internal.h"
 #include "zr_vm_core/src/zr_vm_core/execution/execution_frame_value_slot_fast.h"
 #include "zr_vm_core/src/zr_vm_core/execution/execution_inline_frame_copy_fast.h"
 

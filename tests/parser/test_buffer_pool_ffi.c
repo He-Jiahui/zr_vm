@@ -7,7 +7,7 @@
 
 #include "container_test_common.h"
 #include "runtime_support.h"
-#include "backend_aot_canonical_artifact.h"
+#include "backend_aot/backend_aot_canonical_artifact.h"
 #include "zr_vm_common/zr_contract_conf.h"
 #include "zr_vm_common/zr_meta_conf.h"
 #include "zr_vm_core/artifact_schema.h"

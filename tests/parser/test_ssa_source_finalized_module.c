@@ -3,7 +3,7 @@
 #include <string.h>
 #include "support/ssa_source_finalized_module_fixture.h"
 #include "unity.h"
-#include "zr_vm_parser/exec_ir/exec_ir_source_callable_query_internal.h"
+#include "exec_ir/source/exec_ir_source_callable_query_internal.h"
 void setUp(void) { Fm_SetUp(); }
 void tearDown(void) { Fm_TearDown(); }
 static SZrExecIrDiagnostic version(EZrExecutionDiagnosticCode code, TZrUInt32 expected, TZrUInt32 actual) {

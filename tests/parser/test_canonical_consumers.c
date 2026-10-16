@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-#include "backend_aot_canonical_artifact.h"
+#include "backend_aot/backend_aot_canonical_artifact.h"
 #include "harness/runtime_support.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/canonical_consumer.h"
@@ -10,14 +10,14 @@
 #include "zr_vm_core/metadata_token.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/reflection.h"
-#include "zr_vm_parser/artifact_projection.h"
+#include "artifact/artifact_projection.h"
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/semantic_query.h"
 
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
+#include "compiler/compiler_internal.h"
 
 #define CONSUMER_TYPE_ID ((TZrUInt32)41u)
 #define CONSUMER_TYPE_DEF_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_DEF, 41u)

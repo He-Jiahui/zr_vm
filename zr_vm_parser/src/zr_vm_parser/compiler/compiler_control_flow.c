@@ -1,4 +1,4 @@
-#include "compile_expression_internal.h"
+#include "compiler/expression/compile_expression_internal.h"
 
 /** @brief 为 if、循环、条件表达式和短路逻辑的退出边统一选择“条件为假”跳转指令。
  *  @pre conditionExpression 与 conditionSlot 指向同一次已编译条件；conditionSlot 可用 16 位编码，调用方随后发布指令并补跳转目标。

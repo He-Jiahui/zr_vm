@@ -18,8 +18,8 @@ void test_aot_c_source_lowers_static_no_arg_u64_calls_to_typed_thunks(void) {
             "backend_aot_write_c_static_direct_u64_three_arg_function_call(FILE *file,",
     };
     static const char *const emitterSourceNeedles[] = {
-            "#include \"backend_aot_c_typed_u64_thunk_shapes.h\"",
-            "#include \"backend_aot_c_typed_u64_three_arg_thunks.h\"",
+            "#include \"backend_aot/backend_aot_c_typed_u64_thunk_shapes.h\"",
+            "#include \"backend_aot/backend_aot_c_typed_u64_three_arg_thunks.h\"",
             "backend_aot_c_type_ref_is_u64(",
             "backend_aot_c_try_get_u64_constant_return(",
             "backend_aot_c_try_get_u64_identity_return(",
@@ -102,8 +102,8 @@ void test_aot_c_source_lowers_static_no_arg_u64_calls_to_typed_thunks(void) {
             "backend_aot_c_try_write_u64_three_arg_thunk_definition(FILE *file, const SZrAotFunctionEntry *entry)",
     };
     static const char *const u64ThreeArgThunkNeedles[] = {
-            "#include \"backend_aot_c_typed_u64_three_arg_thunks.h\"",
-            "#include \"backend_aot_c_typed_u64_thunk_shapes.h\"",
+            "#include \"backend_aot/backend_aot_c_typed_u64_three_arg_thunks.h\"",
+            "#include \"backend_aot/backend_aot_c_typed_u64_thunk_shapes.h\"",
             "backend_aot_c_can_emit_typed_u64_three_arg_thunk(const SZrFunction *function)",
             "backend_aot_c_can_emit_typed_u64_three_arg_state_free_thunk(const SZrFunction *function)",
             "backend_aot_c_write_u64_three_arg_thunk_forward_decl(FILE *file, TZrUInt32 flatIndex)",
@@ -243,23 +243,23 @@ void test_aot_c_source_lowers_static_no_arg_u64_calls_to_typed_thunks(void) {
             "backend_aot_try_write_c_static_direct_typed_no_arg_function_call(file,",
     };
     char *emitterHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *emitterSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_u64_thunks.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_u64_thunks.c");
     char *u64ThreeArgThunkHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_u64_three_arg_thunks.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_u64_three_arg_thunks.h");
     char *u64ThreeArgThunkText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_u64_three_arg_thunks.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_u64_three_arg_thunks.c");
     char *u64ThunkShapeText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_u64_thunk_shapes.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_u64_thunk_shapes.c");
     char *callLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c");
     char *typedDirectCallText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_calls.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_calls.c");
     char *typedDirectU64CallText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_u64_calls.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_u64_calls.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     assert_text_contains_all(emitterHeaderText, emitterHeaderNeedles, ARRAY_COUNT(emitterHeaderNeedles));

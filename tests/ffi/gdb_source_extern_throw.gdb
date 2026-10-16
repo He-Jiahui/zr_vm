@@ -10,7 +10,7 @@ break test_zr_ffi_source_extern_can_bind_and_call_symbol
 run
 
 # TODO: 使用前按当前异常抛出入口重定位旧绝对路径与行号。
-break /mnt/d/Git/Github/zr_vm_mig/zr_vm/zr_vm_core/src/zr_vm_core/exception.c:461
+break /mnt/d/Git/Github/zr_vm_mig/zr_vm/zr_vm_core/src/zr_vm_core/exception/exception.c:461
 continue
 
 printf "threadStatus=%d recover=%p\n", state->threadStatus, state->exceptionRecoverPoint

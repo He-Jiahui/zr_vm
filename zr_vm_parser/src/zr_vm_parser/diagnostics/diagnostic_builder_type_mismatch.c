@@ -1,5 +1,5 @@
 #include "zr_vm_parser/diagnostic_builder.h"
-#include "zr_vm_parser/diagnostic_messages.h"
+#include "diagnostics/diagnostic_messages.h"
 #include "zr_vm_parser/diagnostic_registry.h"
 
 #include <stdio.h>

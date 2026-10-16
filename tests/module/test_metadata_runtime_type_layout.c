@@ -441,7 +441,7 @@ static void test_reflection_layout_source_consumes_metadata_runtime_registry(voi
             "\"layoutHash\", typeLayout->layoutHash",
             "\"gcScanKind\", typeLayout->gcScanKind",
             "\"refFieldCount\", typeLayout->refFieldCount"};
-    char *reflectionText = read_repo_text_file_owned("zr_vm_core/src/zr_vm_core/reflection.c");
+    char *reflectionText = read_repo_text_file_owned("zr_vm_core/src/zr_vm_core/reflection/reflection.c");
 
     TEST_ASSERT_NOT_NULL(reflectionText);
     assert_text_contains_all(reflectionText, needles, ARRAY_COUNT(needles));

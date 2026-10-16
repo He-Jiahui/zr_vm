@@ -100,6 +100,10 @@ function(zr_ssa_source_add_module module_name)
     else ()
         file(GLOB_RECURSE _sources CONFIGURE_DEPENDS "${ZR_SSA_SOURCE_ROOT}/${module_name}/src/*.c")
     endif ()
+    if (module_name STREQUAL "zr_vm_parser")
+        # Scalar backend support remains an explicit, separate target below.
+        list(FILTER _sources EXCLUDE REGEX ".*/backend_aot/.*[.]c$")
+    endif ()
     list(REMOVE_DUPLICATES _sources)
     list(SORT _sources)
     if (NOT _sources)
@@ -182,8 +186,10 @@ add_executable(zr_vm_ssa_source_execbc_vm_test
 add_executable(zr_vm_ssa_compare_metadata_guards_test
         "${ZR_SSA_SOURCE_ROOT}/tests/parser/test_ssa_compare_metadata_guards.c")
 target_include_directories(zr_vm_ssa_source_execbc_vm_test PRIVATE
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser"
         ${_zr_public_includes} ${_zr_vendor_includes} ${_zr_test_includes})
 target_include_directories(zr_vm_ssa_compare_metadata_guards_test PRIVATE
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser"
         ${_zr_public_includes} ${_zr_vendor_includes} ${_zr_test_includes}
         "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/compiler")
 target_compile_definitions(zr_vm_ssa_source_execbc_vm_test PRIVATE
@@ -240,7 +246,7 @@ target_compile_options(ssa_source_primitive_frame_oom_object PRIVATE
 
 # Compile the actual Core owner separately; only this object redirects malloc/free.
 add_library(ssa_source_aot_owned_module_fault_object OBJECT
-        "${ZR_SSA_SOURCE_ROOT}/zr_vm_core/src/zr_vm_core/aot_ir_owned_module.c")
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_core/src/zr_vm_core/aot/aot_ir_owned_module.c")
 target_include_directories(ssa_source_aot_owned_module_fault_object PRIVATE
         ${_zr_public_includes} ${_zr_vendor_includes}
         "${ZR_SSA_SOURCE_ROOT}/zr_vm_core/src/zr_vm_core")
@@ -259,7 +265,7 @@ if (NOT ZR_SSA_AOT_OWNER_FAULT_MAP_NAME MATCHES "^[A-Za-z0-9][A-Za-z0-9_.-]*\\.m
 endif ()
 
 # Compile the existing buffer-only scalar emitters from their actual checkout.
-set(_zr_scalar_backend "${ZR_SSA_SOURCE_ROOT}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot")
+set(_zr_scalar_backend "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/backend_aot")
 add_library(ssa_source_aot_scalar_text_support STATIC
         "${_zr_scalar_backend}/backend_aot_ir_scalar_text.c"
         "${_zr_scalar_backend}/backend_aot_ir_scalar_c.c"
@@ -267,6 +273,7 @@ add_library(ssa_source_aot_scalar_text_support STATIC
         "${_zr_scalar_backend}/backend_aot_ir_scalar_arithmetic.c"
         "${_zr_scalar_backend}/backend_aot_ir_scalar_conditional.c")
 target_include_directories(ssa_source_aot_scalar_text_support PRIVATE
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser"
         ${_zr_public_includes} ${_zr_vendor_includes})
 target_compile_definitions(ssa_source_aot_scalar_text_support PRIVATE
         ZR_CURRENT_MODULE="zr_vm_parser"
@@ -656,9 +663,9 @@ foreach (_header IN ITEMS
         zr_vm_core/include/zr_vm_core/function_aot_ir.h
         zr_vm_core/include/zr_vm_core/function_exec_ir.h
         zr_vm_core/include/zr_vm_core/exec_ir_owned_module.h
-        zr_vm_core/src/zr_vm_core/function_ir_owners_internal.h
-        zr_vm_core/src/zr_vm_core/function_aot_ir_internal.h
-        zr_vm_core/include/zr_vm_core/aot_ir_owned_module.h
+        zr_vm_core/src/zr_vm_core/function/function_ir_owners_internal.h
+        zr_vm_core/src/zr_vm_core/function/function_aot_ir_internal.h
+        zr_vm_core/src/zr_vm_core/aot/aot_ir_owned_module.h
         zr_vm_core/include/zr_vm_core/aot_ir.h
         zr_vm_core/include/zr_vm_core/exec_ir.h
         zr_vm_core/include/zr_vm_core/exec_ir_state_map.h
@@ -668,8 +675,8 @@ foreach (_header IN ITEMS
         zr_vm_parser/include/zr_vm_parser/exec_ir_host_aot_target.h
         zr_vm_parser/include/zr_vm_parser/exec_ir_source_module_contract.h
         zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_string_heap.h
-        zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_text.h
-        zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_text_internal.h
+        zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_text.h
+        zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_text_internal.h
         zr_vm_parser/include/zr_vm_parser/exec_ir_source_frame.h
         zr_vm_library/third_party/zr_miniz/miniz/miniz_export.h)
     file(SHA256 "${ZR_SSA_SOURCE_ROOT}/${_header}" _hash)

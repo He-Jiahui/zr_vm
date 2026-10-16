@@ -3,7 +3,7 @@
 //
 
 #include "zr_vm_parser/type_inference.h"
-#include "zr_vm_parser/receiver_call.h"
+#include "semantic/receiver_call.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/diagnostic_builder.h"

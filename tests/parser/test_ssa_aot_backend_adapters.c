@@ -1,9 +1,9 @@
 #include <assert.h>
 #include <string.h>
 
-#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_adapter.h"
-#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_coverage.h"
-#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_link_profile.h"
+#include "backend_aot/backend_aot_ir_adapter.h"
+#include "backend_aot/backend_aot_ir_coverage.h"
+#include "backend_aot/backend_aot_link_profile.h"
 
 static void fill_contract(SZrExecutionContract *contract,
                           TZrMetadataToken token,

@@ -14,7 +14,7 @@
 #include "zr_vm_parser/exec_ir_builder.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/project_imports.h"
-#include "../../../zr_vm_parser/src/zr_vm_parser/compiler/module_init_analysis.h"
+#include "compiler/module_init_analysis.h"
 
 #include "ssa_literal_script_fixture.h"
 

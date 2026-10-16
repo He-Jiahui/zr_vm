@@ -224,8 +224,8 @@ static const ZrLibFieldDescriptor g_skip_fields[] = {
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:809
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_call_binding_hash.c:151
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:701
- * zr_vm_core/src/zr_vm_core/exception.c:407
- * zr_vm_core/src/zr_vm_core/exception.c:684
+ * zr_vm_core/src/zr_vm_core/exception/exception.c:407
+ * zr_vm_core/src/zr_vm_core/exception/exception.c:684
  * zr_vm_core/src/zr_vm_core/object/object.c:2393
  */
 static const ZrLibFieldDescriptor g_assertion_failure_fields[] = {
@@ -261,7 +261,7 @@ static const ZrLibFieldDescriptor g_assertion_failure_fields[] = {
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:429
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:436
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:616
- * zr_vm_core/src/zr_vm_core/io_runtime.c:695
+ * zr_vm_core/src/zr_vm_core/io/io_runtime.c:695
  * tests/testing/test_assertions.c:503
  */
 static const ZrLibFieldDescriptor g_source_span_fields[] = {
@@ -449,8 +449,8 @@ static const ZrLibTypeDescriptor g_testing_types[] = {
  *
  * ## References
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:701
- * zr_vm_core/src/zr_vm_core/exception.c:407
- * zr_vm_core/src/zr_vm_core/exception.c:684
+ * zr_vm_core/src/zr_vm_core/exception/exception.c:407
+ * zr_vm_core/src/zr_vm_core/exception/exception.c:684
  */
         ZR_LIB_TYPE_DESCRIPTOR_INIT("AssertionFailure", ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
                                     g_assertion_failure_fields,
@@ -514,7 +514,7 @@ static const ZrLibAttributeRoleDescriptor g_testing_roles[] = {
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:1142
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_call_binding_hash.c:214
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:1153
- * zr_vm_library/src/zr_vm_library/task_runtime.c:1393
+ * zr_vm_library/src/zr_vm_library/task/task_runtime.c:1393
  */
 static const ZrLibModuleLinkDescriptor g_testing_links[] = {
 /* task 别名解析 zr.task 的完整module export；宿主须先让规范Task provider可解析，不创建Task实例。 */

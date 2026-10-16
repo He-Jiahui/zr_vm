@@ -7,7 +7,7 @@
 #include "zr_vm_parser/project_imports.h"
 #include "zr_vm_parser/semantic_ir.h"
 #include "zr_vm_parser/type_inference.h"
-#include "compiler_property.h"
+#include "compiler/declaration/compiler_property.h"
 
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/closure.h"

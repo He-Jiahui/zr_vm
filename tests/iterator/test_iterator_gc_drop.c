@@ -6,7 +6,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/gc_domain.h"
-#include "zr_vm_core/iterator_runtime.h"
+#include "iterator/iterator_runtime.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/ownership.h"
 

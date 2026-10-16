@@ -1,0 +1,2 @@
+/* Compatibility include retained for the original guide spelling. */
+#include "exec_ir/execbc/execbc_patterns.def"

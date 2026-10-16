@@ -15,8 +15,8 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/exec_ir_builder.h"
-#include "zr_vm_parser/exec_ir_execbc_vm.h"
-#include "zr_vm_parser/exec_ir_projections.h"
+#include "exec_ir/execbc/exec_ir_execbc_vm.h"
+#include "exec_ir/exec_ir_projections.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic_ir.h"
 

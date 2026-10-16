@@ -2,8 +2,8 @@
 #define ZR_VM_TEST_LSP_VIRTUAL_DECLARATION_PROJECTION_CASES_H
 
 #include "zr_vm_library/native_registry.h"
-#include "../../zr_vm_language_server/src/zr_vm_language_server/lsp_virtual_documents.h"
-#include "../../zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_native_declaration_projection.h"
+#include "features/lsp_virtual_documents.h"
+#include "metadata/lsp_native_declaration_projection.h"
 
 /* definition 返回的虚拟目标必须落在实际渲染的声明区间，不能只凭原生 descriptor 猜测文本位置。 */
 static void test_native_virtual_definition_selects_rendered_declaration(

@@ -1,5 +1,5 @@
 #include "interface/lsp_canonical_symbol_display.h"
-#include "semantic/semantic_analyzer_internal.h"
+#include "semantic/analyzer/semantic_analyzer_internal.h"
 
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/semantic_facts.h"

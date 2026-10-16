@@ -251,7 +251,7 @@ if (NOT TARGET zr_vm_ssa_source_aot_scalar_text_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/compiler
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot)
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/backend_aot)
     zr_vm_link_parser_core_plus_library(zr_vm_ssa_source_aot_scalar_text_test)
     if (MSVC)
         target_link_options(zr_vm_ssa_source_aot_scalar_text_test PRIVATE /STACK:8388608)
@@ -272,7 +272,7 @@ if (NOT TARGET zr_vm_ssa_source_aot_owned_module_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/compiler
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot)
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/backend_aot)
     zr_vm_link_parser_core_plus_library(zr_vm_ssa_source_aot_owned_module_test)
     if (MSVC)
         target_link_options(zr_vm_ssa_source_aot_owned_module_test PRIVATE /STACK:8388608)
@@ -284,8 +284,9 @@ endif ()
 # One actual Core arena allocation and the real private geometry helper.
 if (NOT TARGET zr_vm_ssa_aot_owned_module_faults_test)
     add_library(zr_vm_ssa_aot_owned_module_fault_object OBJECT
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot_ir_owned_module.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot/aot_ir_owned_module.c)
     target_include_directories(zr_vm_ssa_aot_owned_module_fault_object PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include)
     target_compile_definitions(zr_vm_ssa_aot_owned_module_fault_object PRIVATE
@@ -435,6 +436,7 @@ if (NOT TARGET zr_vm_ssa_primitive_source_frame_oom_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame_validation.c)
     target_include_directories(zr_vm_ssa_primitive_source_frame_oom_object PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include

@@ -3,7 +3,7 @@
 set pagination off
 set breakpoint pending on
 file ./build/codex-wsl-clang-debug/bin/zr_vm_value_type_runtime_test
-break zr_vm_core/src/zr_vm_core/closure.c:385
+break zr_vm_core/src/zr_vm_core/closure/closure.c:385
 break ZrCore_Closure_FindOrCreateValue
 commands 2
     silent

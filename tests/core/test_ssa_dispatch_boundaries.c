@@ -10,7 +10,7 @@
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/execution.h"
 #include "zr_vm_core/execution_budget.h"
-#include "zr_vm_core/execution_context.h"
+#include "runtime/execution_context.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"

@@ -3,9 +3,9 @@
 //
 
 #include "compiler_internal.h"
-#include "compile_expression_internal.h"
+#include "compiler/expression/compile_expression_internal.h"
 #include "type_inference_internal.h"
-#include "compiler_attribute_binding.h"
+#include "compiler/declaration/compiler_attribute_binding.h"
 #include "zr_vm_core/reflection.h"
 #include "zr_vm_parser/compile_tool.h"
 #include "zr_vm_parser/project_imports.h"

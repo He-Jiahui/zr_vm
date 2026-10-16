@@ -1,7 +1,7 @@
 #include "unity.h"
 
 #include "zr_vm_core/exec_ir_state_map.h"
-#include "zr_vm_parser/exec_ir_projections.h"
+#include "exec_ir/exec_ir_projections.h"
 #include "zr_vm_parser/exec_ir_state_maps.h"
 
 #include <stdlib.h>

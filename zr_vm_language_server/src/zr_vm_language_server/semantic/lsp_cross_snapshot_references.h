@@ -1,7 +1,7 @@
 #ifndef ZR_VM_LANGUAGE_SERVER_LSP_CROSS_SNAPSHOT_REFERENCES_H
 #define ZR_VM_LANGUAGE_SERVER_LSP_CROSS_SNAPSHOT_REFERENCES_H
 
-#include "semantic/lsp_semantic_query.h"
+#include "semantic/query/lsp_semantic_query.h"
 
 /**
  * @brief 为本地声明搜索项目中其他语义快照里的外部引用。

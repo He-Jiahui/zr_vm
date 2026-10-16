@@ -11,7 +11,7 @@ commands
     continue
 end
 
-break zr_vm_core/src/zr_vm_core/hash_set.c:196 if newCapacity>=8
+break zr_vm_core/src/zr_vm_core/base/hash_set.c:196 if newCapacity>=8
 commands
     silent
     printf "grow set=%p old=%zu new=%zu elem=%zu threshold=%zu pairPoolCap=%zu pairPoolUsed=%zu\n", set, set->capacity, newCapacity, set->elementCount, set->resizeThreshold, set->pairPoolCapacity, set->pairPoolUsed

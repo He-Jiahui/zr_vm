@@ -4,7 +4,7 @@
 /* CodeLens 的声明与引用数量由 parser 身份查询给出，拒绝旧作用域或名称扫描。 */
 static void test_code_lens_uses_canonical_declaration_and_reference_queries(void) {
     char *codeLensSource = read_repo_text_file_owned(
-            "zr_vm_language_server/src/zr_vm_language_server/lsp_code_lens.c");
+            "zr_vm_language_server/src/zr_vm_language_server/features/lsp_code_lens.c");
 
     if (codeLensSource == NULL) {
         printf("FAIL: could not read canonical CodeLens source\n");

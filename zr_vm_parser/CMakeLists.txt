@@ -11,13 +11,7 @@ set(_zr_vm_parser_private_include_dirs
 )
 
 set(_zr_vm_parser_aot_backend_dir
-        ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot
-)
-file(GLOB _zr_vm_parser_aot_backend_sources CONFIGURE_DEPENDS
-        "${_zr_vm_parser_aot_backend_dir}/*.c"
-)
-list(REMOVE_ITEM _zr_vm_parser_aot_backend_sources
-        "${_zr_vm_parser_aot_backend_dir}/backend_aot_disabled_stub.c"
+        ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/backend_aot
 )
 
 if (TARGET zr_vm_parser_static)
@@ -25,14 +19,22 @@ if (TARGET zr_vm_parser_static)
     target_include_directories(zr_vm_parser_static PUBLIC ${CMAKE_SOURCE_DIR}/zr_vm_library/include)
     target_include_directories(zr_vm_parser_static PRIVATE ${_zr_vm_parser_private_include_dirs})
     target_include_directories(zr_vm_parser_static PRIVATE ${_zr_vm_parser_aot_backend_dir})
-    target_sources(zr_vm_parser_static PRIVATE ${_zr_vm_parser_aot_backend_sources})
+    # Recursive discovery now owns the backend; keep its historical stub excluded.
+    get_target_property(_zr_vm_parser_sources zr_vm_parser_static SOURCES)
+    list(REMOVE_ITEM _zr_vm_parser_sources
+            "${_zr_vm_parser_aot_backend_dir}/backend_aot_disabled_stub.c")
+    set_property(TARGET zr_vm_parser_static PROPERTY SOURCES "${_zr_vm_parser_sources}")
 endif ()
 if (TARGET zr_vm_parser_shared)
     # compile_tool.h exposes EZrLibrary_ProviderPhase from zrm.h.
     target_include_directories(zr_vm_parser_shared PUBLIC ${CMAKE_SOURCE_DIR}/zr_vm_library/include)
     target_include_directories(zr_vm_parser_shared PRIVATE ${_zr_vm_parser_private_include_dirs})
     target_include_directories(zr_vm_parser_shared PRIVATE ${_zr_vm_parser_aot_backend_dir})
-    target_sources(zr_vm_parser_shared PRIVATE ${_zr_vm_parser_aot_backend_sources})
+    # Recursive discovery now owns the backend; keep its historical stub excluded.
+    get_target_property(_zr_vm_parser_sources zr_vm_parser_shared SOURCES)
+    list(REMOVE_ITEM _zr_vm_parser_sources
+            "${_zr_vm_parser_aot_backend_dir}/backend_aot_disabled_stub.c")
+    set_property(TARGET zr_vm_parser_shared PROPERTY SOURCES "${_zr_vm_parser_sources}")
 endif ()
 
 zr_link_library_for_module(${zr_curr_module_name} "zr_vm_core")

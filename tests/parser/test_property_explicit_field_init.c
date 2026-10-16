@@ -6,7 +6,7 @@
 
 #include "harness/module_fixture_support.h"
 #include "harness/runtime_support.h"
-#include "../../zr_vm_core/src/zr_vm_core/object/object_internal.h"
+#include "object/object_internal.h"
 #include "zr_vm_core/io.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/object.h"

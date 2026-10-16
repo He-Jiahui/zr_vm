@@ -21,6 +21,7 @@ add_executable(zr_vm_ssa_primitive_frame_validation_test
 foreach (_target IN ITEMS zr_vm_ssa_primitive_frame_validation_private
         zr_vm_ssa_primitive_frame_validation_test)
     target_include_directories(${_target} PRIVATE
+            "${_zr_frame_validation_root}/zr_vm_parser/src/zr_vm_parser"
             "${_zr_frame_validation_root}/zr_vm_common/include"
             "${_zr_frame_validation_root}/zr_vm_core/include"
             "${_zr_frame_validation_root}/zr_vm_parser/include"

@@ -2,7 +2,7 @@
 #include "metadata/lsp_virtual_document_identity.h"
 #include "interface/lsp_canonical_symbol_display.h"
 #include "interface/lsp_interface_internal.h"
-#include "lsp_virtual_documents.h"
+#include "features/lsp_virtual_documents.h"
 #include "metadata/lsp_native_declaration_projection.h"
 #include "semantic/lsp_external_callable_contract.h"
 #include "semantic/lsp_property_contract.h"

@@ -1,7 +1,7 @@
 #ifndef ZR_TEST_AOT_C_OWNERSHIP_CALL_RESULT_PROJECTION_CASES_H
 #define ZR_TEST_AOT_C_OWNERSHIP_CALL_RESULT_PROJECTION_CASES_H
 
-#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.h"
+#include "backend_aot/backend_aot_c_scalar_locals.h"
 
 /* 定位 caller 的 returned 栈拷贝，防止所有权结果继承复用槽的 typed 标量类别。 */
 static void assert_call_result_copy_is_not_scalar(SZrState *state,

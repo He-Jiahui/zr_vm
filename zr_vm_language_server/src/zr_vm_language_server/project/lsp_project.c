@@ -1,9 +1,9 @@
 #include "interface/lsp_interface_internal.h"
 #include "project/lsp_project_internal.h"
-#include "semantic/semantic_analyzer_internal.h"
+#include "semantic/analyzer/semantic_analyzer_internal.h"
 #include "zr_vm_language_server/lsp_semantic_snapshot.h"
 #include "zr_vm_language_server/lsp_uri.h"
-#include "lsp_virtual_documents.h"
+#include "features/lsp_virtual_documents.h"
 #include "metadata/lsp_metadata_provider.h"
 #include "metadata/lsp_virtual_document_identity.h"
 

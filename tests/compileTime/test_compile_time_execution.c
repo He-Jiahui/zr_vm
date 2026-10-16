@@ -30,13 +30,13 @@
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser/compile_tool.h"
-#include "zr_vm_parser/declaration_transform_contract.h"
+#include "contract/declaration_transform_contract.h"
 #include "zr_vm_core/reflection.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_attributes.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_interfaces.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compile_time_declaration_patch_transaction.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/module_init_analysis.h"
+#include "compiler/compiler_internal.h"
+#include "compiler/compile_time/compile_time_declaration_patch_attributes.h"
+#include "compiler/compile_time/compile_time_declaration_patch_interfaces.h"
+#include "compiler/compile_time/compile_time_declaration_patch_transaction.h"
+#include "compiler/module_init_analysis.h"
 
 #define TEST_MODULE_DIVIDER() ZR_TEST_MODULE_DIVIDER()
 

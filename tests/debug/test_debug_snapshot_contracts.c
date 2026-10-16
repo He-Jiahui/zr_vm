@@ -140,7 +140,7 @@ static void test_debug_snapshot_stack_reads_use_core_introspection(void) {
             "agent->state->callInfoList",
             "ZrCore_Closure_GetMetadataFunctionFromCallInfo(agent->state, callInfo)",
     };
-    char *sourceText = read_repo_text_file_owned("zr_vm_lib_debug/src/zr_vm_lib_debug/debug_snapshot.c");
+    char *sourceText = read_repo_text_file_owned("zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c");
     char *findFrameSection;
     char *readStackSection;
 
@@ -178,7 +178,7 @@ static void test_debug_snapshot_variables_use_core_local_and_upvalue_apis(void) 
     static const char *const forbiddenClosureNeedles[] = {
             "ZrCore_ClosureValue_GetValue(upvalueId)",
     };
-    char *sourceText = read_repo_text_file_owned("zr_vm_lib_debug/src/zr_vm_lib_debug/debug_snapshot.c");
+    char *sourceText = read_repo_text_file_owned("zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c");
     char *variablesSection;
     char *localSection;
     char *closureSection;
@@ -213,7 +213,7 @@ static void test_debug_snapshot_loaded_module_count_uses_logical_array_length(vo
     static const char *const forbiddenSourceNeedles[] = {
             "loadedModulesRegistry.value.object)->nodeMap.elementCount",
     };
-    char *sourceText = read_repo_text_file_owned("zr_vm_lib_debug/src/zr_vm_lib_debug/debug_snapshot.c");
+    char *sourceText = read_repo_text_file_owned("zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c");
     char *loadedModuleSection;
 
     TEST_ASSERT_NOT_NULL(sourceText);

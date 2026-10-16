@@ -1,6 +1,6 @@
 #include "stdio_inline_value_semantic_text.h"
 
-#include "semantic/lsp_local_semantic_query.h"
+#include "semantic/query/lsp_local_semantic_query.h"
 
 #include <stdio.h>
 #include <string.h>

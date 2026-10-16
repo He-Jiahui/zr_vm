@@ -3,7 +3,7 @@
 #include "zr_vm_core/exec_ir_interpreter.h"
 #include "zr_vm_core/exec_ir_state_map.h"
 #include "zr_vm_common/zr_type_conf.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_internal.h"
+#include "exec_ir/execbc/exec_ir_fusion_internal.h"
 
 #include <assert.h>
 #include <stdint.h>

@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include "harness/runtime_support.h"
-#include "zr_vm_parser/aot_ir_projection_descriptor.h"
+#include "exec_ir/aot_ir_projection_descriptor.h"
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/semantic.h"
 

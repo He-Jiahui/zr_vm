@@ -2,8 +2,8 @@
 
 #include <string.h>
 
-#include "dataflow.h"
-#include "dataflow_definite_assignment.h"
+#include "type_inference/dataflow/dataflow.h"
+#include "type_inference/dataflow/dataflow_definite_assignment.h"
 #include "harness/runtime_support.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"

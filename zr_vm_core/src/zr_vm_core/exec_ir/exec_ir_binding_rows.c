@@ -1,5 +1,5 @@
 #include "zr_vm_core/exec_ir.h"
-#include "../call_binding_contract_internal.h"
+#include "call/call_binding_contract_internal.h"
 
 #include <limits.h>
 #include <stdlib.h>

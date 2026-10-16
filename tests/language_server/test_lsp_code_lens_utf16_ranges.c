@@ -13,7 +13,7 @@
 #include "zr_vm_language_server.h"
 #include "zr_vm_language_server/semantic_analyzer.h"
 
-#include "../../zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h"
+#include "interface/lsp_interface_internal.h"
 
 /* CMake 测试入口将此回调交给 VM state，所有 CodeLens 会话都在该状态内释放。 */
 static TZrPtr test_allocator(TZrPtr userData,

@@ -5,7 +5,7 @@
 #include "harness/runtime_support.h"
 #include "zr_vm_core/artifact_schema.h"
 #include "zr_vm_core/metadata_token.h"
-#include "zr_vm_parser/artifact_projection.h"
+#include "artifact/artifact_projection.h"
 #include "zr_vm_parser/semantic.h"
 
 // 这些固定 token 与哈希贯穿公开身份和节行，变异测试一次只改变一个契约字段。

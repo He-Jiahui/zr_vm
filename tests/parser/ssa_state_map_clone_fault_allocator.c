@@ -63,4 +63,4 @@ static void state_map_clone_free(void *memory) {
  * executable. Other targets compile the ordinary production translation unit. */
 #define malloc state_map_clone_malloc
 #define free state_map_clone_free
-#include "../../zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c"
+#include "exec_ir/exec_ir_state_map_storage.c"

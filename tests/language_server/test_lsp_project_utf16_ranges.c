@@ -16,7 +16,7 @@
 #include "zr_vm_parser/writer.h"
 #include "zr_vm_language_server.h"
 #include "interface/lsp_interface_internal.h"
-#include "semantic/lsp_semantic_query.h"
+#include "semantic/query/lsp_semantic_query.h"
 
 /* 两个 UTF-16 回归场景共享独立 VM；此回调只服务测试进程的全局状态和临时语义对象。 */
 static TZrPtr test_allocator(TZrPtr userData,

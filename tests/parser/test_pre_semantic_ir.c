@@ -13,7 +13,7 @@
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_ir.h"
 #define emit_instruction compiler_internal_emit_instruction
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
+#include "compiler/compiler_internal.h"
 #undef emit_instruction
 
 ZR_PARSER_API void ZrParser_Compiler_PredeclareFunctionBindings(

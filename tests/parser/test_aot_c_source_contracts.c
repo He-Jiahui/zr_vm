@@ -120,8 +120,8 @@ static void test_aot_c_source_lowers_value_semir_with_frame_layout(void) {
             "backend_aot_try_write_c_value_semir_for_exec_instruction(",
     };
     static const char *const sourceNeedles[] = {
-            "#include \"backend_aot_c_value_semir_calls.h\"",
-            "#include \"backend_aot_c_value_semir_fields.h\"",
+            "#include \"backend_aot/backend_aot_c_value_semir_calls.h\"",
+            "#include \"backend_aot/backend_aot_c_value_semir_fields.h\"",
             "backend_aot_c_find_frame_slot_layout(",
             "backend_aot_c_value_semir_register_frame_bytes(",
             "frameLayout->slotLayouts",
@@ -257,7 +257,7 @@ static void test_aot_c_source_lowers_value_semir_with_frame_layout(void) {
             "ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function",
     };
     static const char *const functionBodyNeedles[] = {
-            "#include \"backend_aot_c_value_semir.h\"",
+            "#include \"backend_aot/backend_aot_c_value_semir.h\"",
             "backend_aot_write_c_value_semir_for_function(",
             "backend_aot_write_c_value_semir_for_function(file, state, module",
             "&functionIr->frameLayout",
@@ -275,19 +275,19 @@ static void test_aot_c_source_lowers_value_semir_with_frame_layout(void) {
             "case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):",
     };
     char *valueLoweringHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.h");
     char *valueLoweringSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.c");
     char *callLoweringHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.h");
     char *callLoweringSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.c");
     char *fieldLoweringHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.h");
     char *fieldLoweringSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_fields.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
     TEST_ASSERT_NOT_NULL(valueLoweringHeaderText);
     TEST_ASSERT_NOT_NULL(valueLoweringSourceText);
@@ -331,7 +331,7 @@ static void test_aot_c_source_lowers_primitive_constants_to_direct_value_writes(
             "backend_aot_write_c_direct_set_constant",
     };
     static const char *const valueSourceNeedles[] = {
-            "#include \"backend_aot_c_scalar_locals.h\"",
+            "#include \"backend_aot/backend_aot_c_scalar_locals.h\"",
             "zr_aot_value_exec_primitive_constant",
             "backend_aot_c_write_direct_null_value",
             "backend_aot_c_write_direct_plain_value_replace_guard",
@@ -459,11 +459,11 @@ static void test_aot_c_source_lowers_primitive_constants_to_direct_value_writes(
             "ZrLibrary_AotRuntime_SetConstant(state, &frame",
     };
     char *emitterHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *valueLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
     char *runtimeSourceText = read_repo_text_file_owned(
             "zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_values.c");
@@ -530,11 +530,11 @@ static void test_aot_c_source_lowers_legacy_int_arithmetic_to_direct_c_expressio
             "ZrLibrary_AotRuntime_SubIntConst(state, &frame",
     };
     char *emitterHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *legacyIntLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_legacy_int_arithmetic.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_legacy_int_arithmetic.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     TEST_ASSERT_NOT_NULL(legacyIntLoweringText);
@@ -705,14 +705,14 @@ static void test_aot_c_source_lowers_generic_numeric_arithmetic_to_boundary_help
             "-zr_aot_source->value.nativeObject.nativeInt64",
     };
     char *emitterHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *genericNumericLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_generic_numeric_arithmetic.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_generic_numeric_arithmetic.c");
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
     char *runtimeValuesText = read_repo_text_file_owned(
             "zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_values.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     TEST_ASSERT_NOT_NULL(genericNumericLoweringText);
@@ -749,7 +749,7 @@ static void test_aot_c_source_lowers_generic_primitive_conversions_to_boundary_h
     };
     static const char *const genericConversionNeedles[] = {
             "backend_aot_c_lowering_generic_conversion.c",
-            "#include \"backend_aot_c_scalar_locals.h\"",
+            "#include \"backend_aot/backend_aot_c_scalar_locals.h\"",
             "backend_aot_write_c_scalar_to_bool(",
             "backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(",
             "backend_aot_c_scalar_locals_i64_written_before(functionIr, sourceSlot, execInstructionIndex)",
@@ -826,13 +826,13 @@ static void test_aot_c_source_lowers_generic_primitive_conversions_to_boundary_h
             "ZrCore_Value_Copy(state, zr_aot_destination, zr_aot_source)",
     };
     char *emitterHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *genericConversionLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_generic_conversion.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_generic_conversion.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *scalarLocalsText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
     char *runtimeHeaderText = read_repo_text_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
     char *runtimeValuesText =
             read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_values.c");
@@ -876,7 +876,7 @@ static void test_aot_c_source_parenthesizes_generic_logical_bool_sync_expression
             "zr_aot_b%u = (TZrBool)(%s != 0u);",
     };
     char *genericLogicalText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_generic_logical.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_generic_logical.c");
 
     TEST_ASSERT_NOT_NULL(genericLogicalText);
     assert_text_contains_all(genericLogicalText, genericLogicalNeedles, ARRAY_COUNT(genericLogicalNeedles));
@@ -933,7 +933,7 @@ static void test_aot_c_source_lowers_typed_arithmetic_to_c_expressions(void) {
             "backend_aot_write_c_direct_logical_less_equal_float",
     };
     static const char *const sourceNeedles[] = {
-            "#include \"backend_aot_c_scalar_locals.h\"",
+            "#include \"backend_aot/backend_aot_c_scalar_locals.h\"",
             "zr_aot_arith_exec_signed",
             "zr_aot_arith_exec_unsigned",
             "zr_aot_arith_exec_float",
@@ -1088,8 +1088,8 @@ static void test_aot_c_source_lowers_typed_arithmetic_to_c_expressions(void) {
             "ZrLibrary_AotRuntime_LogicalLessEqualFloat(state, &frame",
     };
     static const char *const scalarSemirNeedles[] = {
-            "#include \"backend_aot_c_scalar_binary.h\"",
-            "#include \"backend_aot_c_scalar_locals.h\"",
+            "#include \"backend_aot/backend_aot_c_scalar_binary.h\"",
+            "#include \"backend_aot/backend_aot_c_scalar_locals.h\"",
             "backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot)",
             "backend_aot_c_scalar_locals_has_i64_slot(functionIr, leftSlot)",
             "backend_aot_c_scalar_locals_has_i64_slot(functionIr, rightSlot)",
@@ -1122,8 +1122,8 @@ static void test_aot_c_source_lowers_typed_arithmetic_to_c_expressions(void) {
             "zr_aot_u%u = zr_aot_u_right;",
     };
     static const char *const scalarBinaryNeedles[] = {
-            "#include \"backend_aot_c_scalar_binary.h\"",
-            "#include \"backend_aot_c_scalar_locals.h\"",
+            "#include \"backend_aot/backend_aot_c_scalar_binary.h\"",
+            "#include \"backend_aot/backend_aot_c_scalar_locals.h\"",
             "backend_aot_try_write_c_scalar_binary(FILE *file,",
             "backend_aot_c_scalar_locals_has_f64_slot(functionIr, destinationSlot)",
             "backend_aot_c_scalar_locals_has_f64_slot(functionIr, leftSlot)",
@@ -1188,17 +1188,17 @@ static void test_aot_c_source_lowers_typed_arithmetic_to_c_expressions(void) {
              "                    functionIr, instruction->instruction.operand.operand0[0]);"),
     };
     char *emitterHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *typedArithmeticLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_arithmetic.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_arithmetic.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *scalarSemirText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_semir.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_semir.c");
     char *scalarBinaryText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_binary.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_binary.c");
     char *scalarLocalsText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
 
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     TEST_ASSERT_NOT_NULL(typedArithmeticLoweringText);
@@ -1270,13 +1270,13 @@ static void test_aot_c_source_lowers_typed_signed_load_const_arithmetic_to_c_exp
             "case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_CONST):",
     };
     char *emitterHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *loadConstLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_arithmetic_load_const.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_arithmetic_load_const.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *backendSupportText =
-            read_repo_text_file_owned("zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c");
+            read_repo_text_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c");
 
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     TEST_ASSERT_NOT_NULL(loadConstLoweringText);
@@ -1336,13 +1336,13 @@ static void test_aot_c_source_lowers_typed_signed_load_stack_const_arithmetic_to
             "case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST):",
     };
     char *emitterHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *loadConstLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_arithmetic_load_const.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_arithmetic_load_const.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *backendSupportText =
-            read_repo_text_file_owned("zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c");
+            read_repo_text_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c");
 
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     TEST_ASSERT_NOT_NULL(loadConstLoweringText);
@@ -1382,13 +1382,13 @@ static void test_aot_c_source_lowers_typed_signed_load_stack_load_const_arithmet
             "case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST):",
     };
     char *emitterHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *loadConstLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_arithmetic_load_const.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_arithmetic_load_const.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *backendSupportText =
-            read_repo_text_file_owned("zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c");
+            read_repo_text_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c");
 
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     TEST_ASSERT_NOT_NULL(loadConstLoweringText);
@@ -1431,13 +1431,13 @@ static void test_aot_c_source_lowers_typed_signed_load_stack_arithmetic_to_c_exp
             "case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):",
     };
     char *emitterHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *loadStackLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_arithmetic_load_stack.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_arithmetic_load_stack.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *backendSupportText =
-            read_repo_text_file_owned("zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c");
+            read_repo_text_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c");
 
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     TEST_ASSERT_NOT_NULL(loadStackLoweringText);
@@ -1501,7 +1501,7 @@ static void test_aot_c_source_lowers_typed_bitwise_to_c_expressions(void) {
             "ZrLibrary_AotRuntime_ShiftRightInt(state, &frame",
     };
     static const char *const scalarBitwiseNeedles[] = {
-            "#include \"backend_aot_c_scalar_locals.h\"",
+            "#include \"backend_aot/backend_aot_c_scalar_locals.h\"",
             "const SZrAotExecIrFunction *functionIr",
             "backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot)",
             "backend_aot_c_scalar_locals_has_i64_slot(functionIr, leftSlot)",
@@ -1539,13 +1539,13 @@ static void test_aot_c_source_lowers_typed_bitwise_to_c_expressions(void) {
             "zr_aot_s%u = zr_aot_s_source;",
     };
     char *emitterHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *typedBitwiseLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_bitwise.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_bitwise.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *scalarBitwiseText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_bitwise.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_bitwise.c");
 
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     TEST_ASSERT_NOT_NULL(typedBitwiseLoweringText);
@@ -1570,7 +1570,7 @@ static void test_aot_c_source_lowers_typed_bitwise_to_c_expressions(void) {
 /* 检查标量栈复制同步 C 局部变量，同时保留通用值槽回退。 */
 static void test_aot_c_source_mirrors_scalar_stack_copy_to_c_locals(void) {
     static const char *const stackCopyNeedles[] = {
-            "#include \"backend_aot_c_scalar_locals.h\"",
+            "#include \"backend_aot/backend_aot_c_scalar_locals.h\"",
             "backend_aot_c_scalar_locals_has_bool_slot(functionIr, sourceSlot)",
             "backend_aot_c_scalar_locals_has_bool_slot(functionIr, destinationSlot)",
             "backend_aot_c_scalar_locals_has_i64_slot(functionIr, sourceSlot)",
@@ -1680,13 +1680,13 @@ static void test_aot_c_source_mirrors_scalar_stack_copy_to_c_locals(void) {
             "backend_aot_c_scalar_locals_has_i64_slot(functionIr, rightSlot)",
     };
     char *stackCopyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_stack_copy.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *scalarLocalsText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
     char *frameDescriptorText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_descriptor.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_descriptor.c");
 
     TEST_ASSERT_NOT_NULL(stackCopyText);
     TEST_ASSERT_NOT_NULL(functionBodyText);
@@ -1715,7 +1715,7 @@ static void test_aot_c_source_lowers_typed_bool_equality_to_c_expressions(void) 
             "backend_aot_write_c_direct_jump_if_bool_false",
     };
     static const char *const sourceNeedles[] = {
-            "#include \"backend_aot_c_scalar_locals.h\"",
+            "#include \"backend_aot/backend_aot_c_scalar_locals.h\"",
             "zr_aot_bool_compare_exec",
             "zr_aot_bool_not_exec",
             "zr_aot_bool_compare_scalar_local",
@@ -1800,15 +1800,15 @@ static void test_aot_c_source_lowers_typed_bool_equality_to_c_expressions(void) 
             "zr_aot_b%u = (TZrBool)(zr_aot_condition->value.nativeObject.nativeBool != 0u);",
     };
     char *emitterHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *typedLogicalLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_logical.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_logical.c");
     char *controlLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *scalarLocalsText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
 
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     TEST_ASSERT_NOT_NULL(typedLogicalLoweringText);
@@ -1842,7 +1842,7 @@ static void test_aot_c_source_lowers_typed_signed_branch_to_c_comparisons(void) 
             "backend_aot_write_c_direct_jump_if_not_equal_signed_const",
     };
     static const char *const controlNeedles[] = {
-            "#include \"backend_aot_c_scalar_locals.h\"",
+            "#include \"backend_aot/backend_aot_c_scalar_locals.h\"",
             "zr_aot_jump_if_signed_compare",
             "zr_aot_left = &frame.slotBase[%u].value",
             "zr_aot_right = &frame.slotBase[%u].value",
@@ -1876,7 +1876,7 @@ static void test_aot_c_source_lowers_typed_signed_branch_to_c_comparisons(void) 
             "case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):",
     };
     static const char *const execIrNeedles[] = {
-            "#include \"backend_aot_exec_ir_source_location.h\"",
+            "#include \"backend_aot/backend_aot_exec_ir_source_location.h\"",
             "case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):",
             "case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):",
             "case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):",
@@ -1902,17 +1902,17 @@ static void test_aot_c_source_lowers_typed_signed_branch_to_c_comparisons(void) 
             "zr_aot_s%u = zr_aot_right->value.nativeObject.nativeInt64;",
     };
     char *emitterHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *controlLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *backendSupportText =
-            read_repo_text_file_owned("zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c");
+            read_repo_text_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c");
     char *execIrText =
-            read_repo_text_file_owned("zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c");
+            read_repo_text_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c");
     char *execIrSourceLocationText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_source_location.c");
 
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     TEST_ASSERT_NOT_NULL(controlLoweringText);
@@ -1976,7 +1976,7 @@ static void test_aot_c_source_lowers_typed_numeric_conversion_to_c_casts(void) {
             "backend_aot_write_c_direct_to_uint_signed(file, destinationSlot, operandA1);",
     };
     static const char *const scalarConversionNeedles[] = {
-            "#include \"backend_aot_c_scalar_locals.h\"",
+            "#include \"backend_aot/backend_aot_c_scalar_locals.h\"",
             "backend_aot_try_write_c_scalar_conversion(FILE *file,",
             "backend_aot_write_c_scalar_to_u64(FILE *file,",
             "const SZrAotExecIrFunction *functionIr",
@@ -2006,13 +2006,13 @@ static void test_aot_c_source_lowers_typed_numeric_conversion_to_c_casts(void) {
             "zr_aot_f%u = zr_aot_f_result;",
     };
     char *emitterHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *typedConversionLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_conversion.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_conversion.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *scalarConversionText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_conversion.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_conversion.c");
 
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     TEST_ASSERT_NOT_NULL(typedConversionLoweringText);
@@ -2116,15 +2116,15 @@ static void test_aot_c_source_emits_typed_scalar_local_declarations(void) {
             "ZR_VALUE_FAST_SET(",
     };
     static const char *const emitterNeedles[] = {
-            "#include \"backend_aot_c_reference_locals.h\"",
+            "#include \"backend_aot/backend_aot_c_reference_locals.h\"",
             "backend_aot_write_c_function_forward_decls(file, &functionTable);",
             "backend_aot_write_c_reference_local_structs(file, &functionTable);",
             "backend_aot_write_c_reference_local_root_maps(file, &functionTable);",
             "backend_aot_write_c_generic_monomorphization_entries(file, &functionTable, stripGeneratedSymbols);",
     };
     static const char *const functionBodyNeedles[] = {
-            "#include \"backend_aot_c_scalar_locals.h\"",
-            "#include \"backend_aot_c_reference_locals.h\"",
+            "#include \"backend_aot/backend_aot_c_scalar_locals.h\"",
+            "#include \"backend_aot/backend_aot_c_reference_locals.h\"",
             "needsReferenceLocalRootFrame",
             "backend_aot_c_reference_locals_has_locals(functionIr)",
             "backend_aot_write_c_reference_local_root_frame_declaration(file);",
@@ -2135,17 +2135,17 @@ static void test_aot_c_source_emits_typed_scalar_local_declarations(void) {
             "backend_aot_write_c_reference_local_root_frame_cleanup(file);",
     };
     char *scalarLocalsHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.h");
     char *scalarLocalsSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_scalar_locals.c");
     char *referenceLocalsHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_reference_locals.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_reference_locals.h");
     char *referenceLocalsSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_reference_locals.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_reference_locals.c");
     char *emitterText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
 
     TEST_ASSERT_NOT_NULL(scalarLocalsHeaderText);
     TEST_ASSERT_NOT_NULL(scalarLocalsSourceText);
@@ -2202,7 +2202,7 @@ static void test_aot_c_source_emits_value_frame_cleanup_exit(void) {
             "const SZrAotExecIrFunction *functionIr",
     };
     static const char *const cleanupSourceNeedles[] = {
-            "#include \"backend_aot_c_frame_cleanup.h\"",
+            "#include \"backend_aot/backend_aot_c_frame_cleanup.h\"",
             "backend_aot_c_frame_cleanup_resolve_layout(",
             "ZrCore_Function_ResolvePrototypeFrameTypeLayout(functionIr->function,",
             "typeLayout->dropKind != (TZrUInt8)ZR_TYPE_LAYOUT_DROP_KIND_NONE",
@@ -2218,7 +2218,7 @@ static void test_aot_c_source_emits_value_frame_cleanup_exit(void) {
             "ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function",
     };
     static const char *const functionBodyNeedles[] = {
-            "#include \"backend_aot_c_frame_cleanup.h\"",
+            "#include \"backend_aot/backend_aot_c_frame_cleanup.h\"",
             "ZrAotGeneratedFrame frame = {0};",
             "const TZrUInt32 zr_aot_function_index = %uu;",
             "const ZrAotGeneratedFrame *zr_aot_failure_frame = %s;",
@@ -2357,19 +2357,19 @@ static void test_aot_c_source_emits_value_frame_cleanup_exit(void) {
             "*frame.moduleExecuted = ZR_TRUE;",
     };
     char *emitterText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
     char *cleanupHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_cleanup.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_cleanup.h");
     char *cleanupSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_cleanup.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_frame_cleanup.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *controlText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c");
     char *exportText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_exports.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_exports.c");
     char *valueSemirCallText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.c");
 
     TEST_ASSERT_NOT_NULL(emitterText);
     TEST_ASSERT_NOT_NULL(cleanupHeaderText);
@@ -2418,8 +2418,8 @@ static void test_aot_c_source_emits_value_frame_cleanup_exit(void) {
 /* 核对 ZRP 元数据大小统计与二进制布局的源码职责分离。 */
 static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
     static const char *const emitterNeedles[] = {
-            "#include \"backend_aot_c_zrp_metadata_prune.h\"",
-            "#include \"backend_aot_c_zrp_metadata_size.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_prune.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_size.h\"",
             "SZrAotCEmbeddedZrpMetadata embeddedZrpMetadata;",
             "backend_aot_collect_zrp_metadata_size_stats(options, &zrpMetadataSizeBeforeStripping);",
             "backend_aot_c_prepare_embedded_zrp_metadata(options,",
@@ -2448,7 +2448,7 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
             "backend_aot_write_code_stripping_zrp_metadata_size_deltas(",
     };
     static const char *const metadataSourceNeedles[] = {
-            "#include \"backend_aot_c_zrp_metadata_size.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_size.h\"",
             "#include \"zr_vm_core/zrp_metadata.h\"",
             "ZrCore_ZrpMetadata_ReadHeader(",
             "backend_aot_zrp_section_bytes(",
@@ -2480,16 +2480,16 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
             "backend_aot_c_release_embedded_zrp_metadata(",
     };
     static const char *const pruneSourceNeedles[] = {
-            "#include \"backend_aot_c_zrp_metadata_prune.h\"",
-            "#include \"backend_aot_c_zrp_metadata_constant_pool.h\"",
-            "#include \"backend_aot_c_zrp_metadata_member_token.h\"",
-            "#include \"backend_aot_c_zrp_metadata_module_ref.h\"",
-            "#include \"backend_aot_c_zrp_metadata_remap.h\"",
-            "#include \"backend_aot_c_zrp_metadata_sections.h\"",
-            "#include \"backend_aot_c_zrp_metadata_signature.h\"",
-            "#include \"backend_aot_c_zrp_metadata_string_pool.h\"",
-            "#include \"backend_aot_c_zrp_metadata_type_def.h\"",
-            "#include \"backend_aot_c_zrp_metadata_type_spec.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_prune.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_constant_pool.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_member_token.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_module_ref.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_remap.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_sections.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_signature.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_string_pool.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_type_def.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_type_spec.h\"",
             "#include \"zr_vm_core/zrp_metadata.h\"",
             "backend_aot_c_zrp_can_prune_method_defs(",
             "backend_aot_c_zrp_build_pruned_header(",
@@ -2548,9 +2548,9 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
             "backend_aot_c_zrp_adjust_type_def_method_range(",
     };
     static const char *const remapSourceNeedles[] = {
-            "#include \"backend_aot_c_zrp_metadata_remap.h\"",
-            "#include \"backend_aot_c_zrp_metadata_type_def.h\"",
-            "#include \"backend_aot_internal.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_remap.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_type_def.h\"",
+            "#include \"backend_aot/backend_aot_internal.h\"",
             "backend_aot_c_function_table_contains_flat_index(",
             "backend_aot_c_zrp_find_field_def_index_for_token(",
             "backend_aot_c_zrp_retained_method_def_count_matches(",
@@ -2585,8 +2585,8 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
             "backend_aot_c_zrp_manifest_export_table_destroy(",
     };
     static const char *const memberTokenSourceNeedles[] = {
-            "#include \"backend_aot_c_zrp_metadata_member_token.h\"",
-            "#include \"backend_aot_c_zrp_metadata_remap.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_member_token.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_remap.h\"",
             "backend_aot_c_zrp_member_token_remap_append(",
             "ZR_METADATA_TOKEN_RID(token) != 0u",
             "!backend_aot_c_zrp_member_token_is_member_def(sourceToken)",
@@ -2611,7 +2611,7 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
             "backend_aot_c_zrp_copy_section_if_needed(",
     };
     static const char *const sectionsSourceNeedles[] = {
-            "#include \"backend_aot_c_zrp_metadata_sections.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_sections.h\"",
             "case ZR_ZRP_METADATA_SECTION_TOKEN_RECORDS:",
             "case ZR_ZRP_METADATA_SECTION_STRING_POOL:",
             "case ZR_ZRP_METADATA_SECTION_CONSTANT_POOL:",
@@ -2628,7 +2628,7 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
             "backend_aot_c_zrp_remap_field_def_default_value_constant_pool_slice(",
     };
     static const char *const constantPoolSourceNeedles[] = {
-            "#include \"backend_aot_c_zrp_metadata_constant_pool.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_constant_pool.h\"",
             "backend_aot_c_zrp_constant_pool_remap_add(",
             "backend_aot_c_zrp_constant_pool_remap_lookup(",
             "defaultValueConstantPoolOffset",
@@ -2650,10 +2650,10 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
             "backend_aot_c_zrp_recomputed_signature_hash(",
     };
     static const char *const signatureSourceNeedles[] = {
-            "#include \"backend_aot_c_zrp_metadata_signature.h\"",
-            "#include \"backend_aot_c_zrp_metadata_module_ref.h\"",
-            "#include \"backend_aot_c_zrp_metadata_remap.h\"",
-            "#include \"backend_aot_c_zrp_metadata_type_spec.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_signature.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_module_ref.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_remap.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_type_spec.h\"",
             "#include \"zr_vm_core/hash.h\"",
             "CZrAotCZrpSignatureHashV1Prefix",
             "backend_aot_c_zrp_signature_blob_remap_add(",
@@ -2686,10 +2686,10 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
             "backend_aot_c_zrp_remap_module_ref_string_offsets(",
     };
     static const char *const stringPoolSourceNeedles[] = {
-            "#include \"backend_aot_c_zrp_metadata_string_pool.h\"",
-            "#include \"backend_aot_c_zrp_metadata_manifest_export.h\"",
-            "#include \"backend_aot_c_zrp_metadata_module_ref.h\"",
-            "#include \"backend_aot_c_zrp_metadata_remap.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_string_pool.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_manifest_export.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_module_ref.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_remap.h\"",
             "backend_aot_c_zrp_string_pool_slice_length(",
             "backend_aot_c_zrp_string_pool_remap_add(",
             "backend_aot_c_zrp_add_string_offset(",
@@ -2708,10 +2708,10 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
             "backend_aot_c_zrp_remap_module_ref_tokens_in_record(",
     };
     static const char *const moduleRefSourceNeedles[] = {
-            "#include \"backend_aot_c_zrp_metadata_module_ref.h\"",
-            "#include \"backend_aot_c_zrp_metadata_remap.h\"",
-            "#include \"backend_aot_c_zrp_metadata_signature.h\"",
-            "#include \"backend_aot_c_zrp_metadata_type_spec.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_module_ref.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_remap.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_signature.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_type_spec.h\"",
             "ZR_METADATA_TABLE_ASSEMBLY_REF",
             "ZR_METADATA_SIGNATURE_NODE_ASSEMBLY_REF",
             "backend_aot_c_zrp_token_record_is_import_ref_root(",
@@ -2724,8 +2724,8 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
             "backend_aot_c_zrp_count_retained_type_defs(",
     };
     static const char *const typeDefSourceNeedles[] = {
-            "#include \"backend_aot_c_zrp_metadata_type_def.h\"",
-            "#include \"backend_aot_c_zrp_metadata_remap.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_type_def.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_remap.h\"",
             "ZR_METADATA_TABLE_TYPE_DEF",
             "backend_aot_c_zrp_token_record_references_type_def(",
             "backend_aot_c_zrp_retained_token_record_references_type_def(",
@@ -2742,8 +2742,8 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
             "backend_aot_c_zrp_copy_type_specs(",
     };
     static const char *const typeSpecSourceNeedles[] = {
-            "#include \"backend_aot_c_zrp_metadata_type_spec.h\"",
-            "#include \"backend_aot_c_zrp_metadata_remap.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_type_spec.h\"",
+            "#include \"backend_aot/backend_aot_c_zrp_metadata_remap.h\"",
             "ZR_METADATA_TABLE_TYPE_SPEC",
             "backend_aot_c_zrp_remap_retained_token_record(",
             "backend_aot_c_zrp_remap_generic_param_constraint_row(&constraintRow,",
@@ -2752,51 +2752,51 @@ static void test_aot_c_source_separates_zrp_metadata_size_accounting(void) {
             "backend_aot_c_zrp_recomputed_signature_hash(",
     };
     char *emitterText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
     char *metadataHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_size.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_size.h");
     char *metadataSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_size.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_size.c");
     char *pruneHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.h");
     char *pruneSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_prune.c");
     char *remapHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.h");
     char *remapSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_remap.c");
     char *memberTokenHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_member_token.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_member_token.h");
     char *memberTokenSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_member_token.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_member_token.c");
     char *sectionsHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.h");
     char *sectionsSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_sections.c");
     char *constantPoolHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_constant_pool.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_constant_pool.h");
     char *constantPoolSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_constant_pool.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_constant_pool.c");
     char *signatureHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.h");
     char *signatureSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_signature.c");
     char *stringPoolHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.h");
     char *stringPoolSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_string_pool.c");
     char *moduleRefHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_module_ref.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_module_ref.h");
     char *moduleRefSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_module_ref.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_module_ref.c");
     char *typeDefHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_def.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_def.h");
     char *typeDefSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_def.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_def.c");
     char *typeSpecHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_spec.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_spec.h");
     char *typeSpecSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_spec.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_zrp_metadata_type_spec.c");
 
     TEST_ASSERT_NOT_NULL(emitterText);
     TEST_ASSERT_NOT_NULL(metadataHeaderText);
@@ -2906,11 +2906,11 @@ static void test_aot_c_source_tracks_method_metadata_generated_byte_deltas(void)
             "backend_aot_write_c_method_infos(scratchFile, state, table, module, reflectionMetadataLevel);",
     };
     char *emitterText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
     char *methodMetadataHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.h");
     char *methodMetadataSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_method_metadata.c");
 
     TEST_ASSERT_NOT_NULL(emitterText);
     TEST_ASSERT_NOT_NULL(methodMetadataHeaderText);
@@ -3056,8 +3056,8 @@ static void test_aot_c_generated_abi_header_is_public(void) {
     };
     char *abiHeaderText = read_repo_text_file_owned("zr_vm_common/include/zr_vm_common/zr_aot_abi.h");
     char *emitterText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
-    char *runtimeText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+    char *runtimeText = read_repo_text_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c");
     char *aotRuntimeText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_library/src/zr_vm_library/aot_runtime.c");
 
@@ -3140,11 +3140,11 @@ static void test_aot_c_writer_options_are_public(void) {
     };
     char *writerHeaderText = read_repo_text_file_owned("zr_vm_parser/include/zr_vm_parser/writer.h");
     char *internalHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_internal.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_internal.h");
     char *emitterText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
     char *annotationWarningText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_annotation_warnings.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_annotation_warnings.c");
 
     TEST_ASSERT_NOT_NULL(writerHeaderText);
     TEST_ASSERT_NOT_NULL(internalHeaderText);
@@ -3189,7 +3189,7 @@ static void test_aot_c_dynamic_dependency_method_token_roots_are_source_guarded(
             "backend_aot_find_function_table_index(table, childFunction)",
     };
     char *reachabilityText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability_function_graph.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_reachability_function_graph.c");
 
     TEST_ASSERT_NOT_NULL(reachabilityText);
     assert_text_contains_all(reachabilityText, reachabilityNeedles, ARRAY_COUNT(reachabilityNeedles));
@@ -3220,7 +3220,7 @@ static void test_aot_c_dynamic_dependency_type_layout_roots_are_source_guarded(v
             "TZrUInt32 typeLayoutRootCount",
     };
     static const char *const typeLayoutSourceNeedles[] = {
-            "#include \"backend_aot_c_type_layout_metadata_roots.h\"",
+            "#include \"backend_aot/backend_aot_c_type_layout_metadata_roots.h\"",
             "#include \"zr_vm_core/object.h\"",
             "#include \"zr_vm_core/string.h\"",
             "\"dynamicDependencyTypeLayoutId\"",
@@ -3238,7 +3238,7 @@ static void test_aot_c_dynamic_dependency_type_layout_roots_are_source_guarded(v
             "backend_aot_c_type_layout_root_seen_before(typeLayoutRoots, rootIndex, typeLayoutId)",
     };
     static const char *const metadataRootSourceNeedles[] = {
-            "#include \"backend_aot_c_type_layout_metadata_roots.h\"",
+            "#include \"backend_aot/backend_aot_c_type_layout_metadata_roots.h\"",
             "#include \"zr_vm_core/metadata_token.h\"",
             "#include \"zr_vm_core/zrp_metadata.h\"",
             "ZR_AOT_C_TYPE_LAYOUT_METADATA_ROOT_CAPACITY",
@@ -3260,13 +3260,13 @@ static void test_aot_c_dynamic_dependency_type_layout_roots_are_source_guarded(v
             "fieldRowIndex - row->firstFieldDefIndex >= row->fieldDefCount",
     };
     char *emitterText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
     char *typeLayoutHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.h");
     char *typeLayoutSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layouts.c");
     char *metadataRootSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_metadata_roots.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_type_layout_metadata_roots.c");
 
     TEST_ASSERT_NOT_NULL(emitterText);
     TEST_ASSERT_NOT_NULL(typeLayoutHeaderText);

@@ -1,5 +1,5 @@
 #include "exec_ir_build_compare.h"
-#include "../semantic_ir_compare_internal.h"
+#include "semantic_ir/semantic_ir_compare_internal.h"
 
 #include <string.h>
 

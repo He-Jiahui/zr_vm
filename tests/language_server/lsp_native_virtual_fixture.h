@@ -1,7 +1,7 @@
 #ifndef ZR_TEST_LSP_NATIVE_VIRTUAL_FIXTURE_H
 #define ZR_TEST_LSP_NATIVE_VIRTUAL_FIXTURE_H
 
-#include "../../zr_vm_language_server/src/zr_vm_language_server/metadata/lsp_virtual_document_identity.h"
+#include "metadata/lsp_virtual_document_identity.h"
 
 /** @brief 按打开的项目和 provider 代次重建原生插件声明的预期虚拟 URI。
  *  @pre context、mainUri、originUri 有效，mainUri 已归属已索引项目；

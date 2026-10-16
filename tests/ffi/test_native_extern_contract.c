@@ -22,7 +22,7 @@
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_system/module.h"
 #include "zr_vm_parser.h"
-#include "zr_vm_parser/ffi_contract.h"
+#include "compiler/extern/ffi_contract.h"
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/writer.h"
 

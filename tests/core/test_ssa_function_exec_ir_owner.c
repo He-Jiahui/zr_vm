@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include <string.h>
 #include "unity.h"
-#include "zr_vm_core/aot_ir_owned_module.h"
+#include "aot/aot_ir_owned_module.h"
 #include "support/ssa_function_exec_ir_owner_fixture.h"
 void setUp(void){ZrTests_FnExec_SetUp();}
 void tearDown(void){ZrTests_FnExec_TearDown();}

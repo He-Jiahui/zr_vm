@@ -4,7 +4,7 @@
 
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/semantic.h"
-#include "zr_vm_parser/syntax_contract.h"
+#include "contract/syntax_contract.h"
 #include "zr_vm_parser/type_inference.h"
 
 #include "type_inference_internal.h"

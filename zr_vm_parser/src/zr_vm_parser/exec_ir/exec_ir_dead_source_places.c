@@ -1,4 +1,4 @@
-#include "zr_vm_parser/exec_ir_dead_source_places.h"
+#include "exec_ir/exec_ir_dead_source_places.h"
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_core/exec_ir_state_map.h"
 

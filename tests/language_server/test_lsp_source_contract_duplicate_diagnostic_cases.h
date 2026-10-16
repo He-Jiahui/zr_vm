@@ -4,7 +4,7 @@
 /* 重复类型诊断由 parser 注册绑定时产生，LSP 不维护第二个诊断生产者。 */
 static void test_duplicate_type_uses_parser_diagnostic_projection(void) {
     char *symbols = read_repo_text_file_owned(
-            "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c");
+            "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_symbols.c");
     char *parserDiagnostics = read_repo_text_file_owned(
             "zr_vm_parser/src/zr_vm_parser/compiler/compiler_diagnostics.c");
     char *legacyProducer = read_repo_text_file_owned(

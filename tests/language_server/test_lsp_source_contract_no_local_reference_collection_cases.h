@@ -4,13 +4,13 @@
 /* analyzer 不应私建引用列表；引用由 parser canonical 符号查询统一供应。 */
 static void test_semantic_analyzer_uses_canonical_symbol_query_for_references(void) {
     char *analysis = read_repo_text_file_owned(
-            "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_analysis.c");
+            "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_analysis.c");
     char *analyzer = read_repo_text_file_owned(
             "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c");
     char *internalHeader = read_repo_text_file_owned(
-            "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_internal.h");
+            "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_internal.h");
     char *symbolTable = read_repo_text_file_owned(
-            "zr_vm_language_server/src/zr_vm_language_server/symbol_table.c");
+            "zr_vm_language_server/src/zr_vm_language_server/index/symbol_table.c");
 
     if (analysis == NULL || analyzer == NULL || internalHeader == NULL || symbolTable == NULL) {
         printf("FAIL: could not read semantic reference collection sources\n");

@@ -23,7 +23,7 @@
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/semantic_ir.h"
-#include "zr_vm_parser/syntax_contract.h"
+#include "contract/syntax_contract.h"
 #include "zr_vm_parser/type_inference.h"
 #include "zr_vm_parser/writer.h"
 

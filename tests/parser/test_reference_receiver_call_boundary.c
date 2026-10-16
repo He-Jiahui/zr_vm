@@ -6,7 +6,7 @@
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/parser.h"
-#include "zr_vm_parser/receiver_call.h"
+#include "semantic/receiver_call.h"
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_core/constant_reference.h"
 #include "zr_vm_library/native_binding.h"

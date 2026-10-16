@@ -9,7 +9,7 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/exec_ir_builder.h"
-#include "zr_vm_parser/exec_ir_oracle.h"
+#include "exec_ir/exec_ir_oracle.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic_ir.h"
 

@@ -1,4 +1,4 @@
-#include "zr_vm_parser/exec_ir_oracle.h"
+#include "exec_ir/exec_ir_oracle.h"
 
 TZrBool ZrParser_ExecIr_Interpret(
         const SZrExecIrOracleInput *input,

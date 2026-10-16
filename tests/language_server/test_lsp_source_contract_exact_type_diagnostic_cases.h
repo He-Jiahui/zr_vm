@@ -4,12 +4,12 @@
 /* 无法推断精确类型的报错由 parser 产出，再由 LSP 查询诊断统一投影。 */
 static void test_cannot_infer_exact_type_uses_parser_diagnostic_projection(void) {
     const char *lspPaths[] = {
-        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c",
-        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c",
-        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c"
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_support.c",
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_symbols.c",
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_typecheck.c"
     };
     char *queryDiagnostics = read_repo_text_file_owned(
-            "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_query_diagnostics.c");
+            "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_query_diagnostics.c");
     char *parserDiagnostics = read_repo_text_file_owned(
             "zr_vm_parser/src/zr_vm_parser/compiler/compiler_diagnostics.c");
     size_t index;

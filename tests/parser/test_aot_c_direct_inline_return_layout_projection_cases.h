@@ -2,15 +2,15 @@
 #define ZR_TEST_AOT_C_DIRECT_INLINE_RETURN_LAYOUT_PROJECTION_CASES_H
 /* 直接内联返回布局案例由 method_info_signature 测试翻译单元包含；同时覆盖 ExecIR 投影、不可达坏元数据预检与 C 值 SemIR 消费。 */
 
-#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h"
+#include "backend_aot/backend_aot_exec_ir.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/type_layout.h"
 
 #define ZR_AOT_TEST_TYPE_LAYOUT_CACHE_READY ((TZrUInt8)2u)
 
 #if defined(ZR_PLATFORM_UNIX)
-#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir.h"
-#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.h"
+#include "backend_aot/backend_aot_c_value_semir.h"
+#include "backend_aot/backend_aot_c_value_semir_calls.h"
 #endif
 
 /* 验证布局 accessor 仅读取投影 sidecar，不依赖可变的原始函数元数据。 */

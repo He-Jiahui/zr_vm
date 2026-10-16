@@ -9,7 +9,7 @@
 #include "zr_vm_lib_iteration/module.h"
 #include "zr_vm_library/native_binding.h"
 #include "zr_vm_parser/compiler.h"
-#include "zr_vm_parser/iteration_contract.h"
+#include "compiler/statement/iteration_contract.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/type_system.h"
 

@@ -2,7 +2,7 @@
 #define ZR_TEST_SSA_SOURCE_RETURNED_OWNER_SHIM_H
 #include <stddef.h>
 #include <stdlib.h>
-#include "zr_vm_core/aot_ir_owned_module.h"
+#include "aot/aot_ir_owned_module.h"
 
 void *ZrTests_ReturnedOwner_Malloc(size_t bytes);
 void ZrTests_ReturnedOwner_Free(void *pointer);

@@ -2,7 +2,7 @@
 #define ZR_TEST_SSA_SOURCE_DESCRIPTOR_OOM_SHIM_H
 #include <stddef.h>
 #include <stdlib.h>
-#include "zr_vm_parser/aot_ir_projection_descriptor.h"
+#include "exec_ir/aot_ir_projection_descriptor.h"
 
 void *ZrTests_SourceDescriptor_Calloc(size_t count, size_t width);
 void ZrTests_SourceDescriptor_Free(void *pointer);

@@ -1,4 +1,4 @@
-#include "zr_vm_parser/aot_ir_projection_descriptor.h"
+#include "exec_ir/aot_ir_projection_descriptor.h"
 
 #include <stdint.h>
 #include <stdlib.h>

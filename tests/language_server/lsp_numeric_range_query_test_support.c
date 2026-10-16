@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "semantic/lsp_local_semantic_query.h"
+#include "semantic/query/lsp_local_semantic_query.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
 

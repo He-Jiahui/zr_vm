@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "unity.h"
-#include "zr_vm_parser/exec_ir/exec_ir_source_callable_query_internal.h"
+#include "exec_ir/source/exec_ir_source_callable_query_internal.h"
 SFmFixture g_fm;
 SZrExecIrModule g_fmModuleOwner;
 SZrExecIrFunction g_fmFunctionOwner;

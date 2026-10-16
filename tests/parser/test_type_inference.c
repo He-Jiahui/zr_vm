@@ -27,9 +27,9 @@
 #include "zr_vm_parser/type_inference.h"
 #include "zr_vm_library/native_registry.h"
 #include "test_support.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_binding.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_internal.h"
+#include "compiler/tool/compile_tool_binding.h"
+#include "compiler/compiler_internal.h"
+#include "type_inference/type_inference_internal.h"
 
 extern void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode *node);
 extern void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *node);

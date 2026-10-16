@@ -16,7 +16,7 @@
 #include "zr_vm_language_server.h"
 #include "zr_vm_parser/diagnostic_builder.h"
 #include "zr_vm_parser/semantic_facts.h"
-#include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_internal.h"
+#include "semantic/analyzer/semantic_analyzer_internal.h"
 
 typedef struct SZrTestTimer {
     clock_t startTime;

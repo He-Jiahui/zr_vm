@@ -9,7 +9,7 @@
 #include <zr_vm_core/stack.h>
 #include <zr_vm_core/value.h>
 #if defined(ZR_ARGUMENT_STAGING_TEST_CANDIDATE)
-#include "function_argument_staging.h"
+#include "function/function_argument_staging.h"
 #endif
 
 typedef struct Fixture {

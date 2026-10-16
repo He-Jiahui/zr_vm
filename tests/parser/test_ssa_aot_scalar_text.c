@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "backend_aot_ir_scalar_text.h"
+#include "backend_aot/backend_aot_ir_scalar_text.h"
 
 static void fill_contract(SZrExecutionContract *contract,
                           TZrMetadataToken token, TZrUInt64 moduleHash,

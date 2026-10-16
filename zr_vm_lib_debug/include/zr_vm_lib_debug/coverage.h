@@ -109,7 +109,7 @@ typedef struct ZrDebugCoverageLine {
  * TODO: `zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:12` 的全局活动表无锁，需用多 state 并发采集测试核对同步模型。
  * TODO: `zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:391` 的外部 SetHook 冲突需核对宿主允许策略。
  * TODO: `zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:249` 的 LINE 扩容失败没有 incomplete 标记，需沿 CLI 报告 `zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:201` 和可控 OOM 测试核对。
- * TODO: `zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:119`、`zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:124` 的倍增/字节乘法、`zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:173` 的计数加一及 `zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:309` 的静态行号数组乘法未查上界；沿 `zr_vm_common/include/zr_vm_common/zr_common_conf.h:35`、`zr_vm_core/include/zr_vm_core/function.h:646`、`zr_vm_core/src/zr_vm_core/debug.c:744` 核实各宽度和可达规模，尚不足以标 BUG。
+ * TODO: `zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:119`、`zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:124` 的倍增/字节乘法、`zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:173` 的计数加一及 `zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:309` 的静态行号数组乘法未查上界；沿 `zr_vm_common/include/zr_vm_common/zr_common_conf.h:35`、`zr_vm_core/include/zr_vm_core/function.h:646`、`zr_vm_core/src/zr_vm_core/debug/debug.c:744` 核实各宽度和可达规模，尚不足以标 BUG。
  * `Destroy` 会先 Stop（若仍活动）、释放 `lines` 并恢复为可重新 Init 的空对象。
  *
  * ## References
@@ -205,7 +205,7 @@ ZR_DEBUG_API void ZrDebug_Coverage_Reset(ZrDebugCoverage *coverage);
  * ## References
  * `zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:333` calls this function for each tree node; CLI begins registration at
  * `zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:102`; core line enumeration is implemented at
- * `zr_vm_core/src/zr_vm_core/debug.c:744`.
+ * `zr_vm_core/src/zr_vm_core/debug/debug.c:744`.
  */
 ZR_DEBUG_API TZrBool ZrDebug_Coverage_RegisterFunction(ZrDebugCoverage *coverage, const struct SZrFunction *function);
 /**
@@ -258,7 +258,7 @@ ZR_DEBUG_API TZrBool ZrDebug_Coverage_RegisterFunctionTree(ZrDebugCoverage *cove
  *
  * ## References
  * zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c:374 installs the wrapper; core hook state is updated at
- * zr_vm_core/src/zr_vm_core/debug.c:663.
+ * zr_vm_core/src/zr_vm_core/debug/debug.c:663.
  */
 ZR_DEBUG_API TZrBool ZrDebug_Coverage_Start(ZrDebugCoverage *coverage, struct SZrState *state);
 /**

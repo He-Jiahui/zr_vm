@@ -1,5 +1,5 @@
 #include "zr_vm_core/exec_ir_interpreter.h"
-#include "zr_vm_parser/exec_ir_execbc.h"
+#include "exec_ir/execbc/exec_ir_execbc.h"
 #include "ssa_differential_support.h"
 
 #include <stdio.h>

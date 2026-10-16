@@ -819,10 +819,10 @@ endif ()
 if (NOT TARGET zr_vm_ssa_native_abi_test)
     add_executable(zr_vm_ssa_native_abi_test
             ${CMAKE_SOURCE_DIR}/tests/ffi/test_ssa_native_abi.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/native_call_contract.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/native_call_lease.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/native_call_marshalling.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/native_call_callback.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/native_call/native_call_contract.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/native_call/native_call_lease.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/native_call/native_call_marshalling.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/native_call/native_call_callback.c)
     target_include_directories(zr_vm_ssa_native_abi_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
@@ -835,7 +835,7 @@ endif ()
 if (NOT TARGET zr_vm_ssa_aotir_contract_test)
     add_executable(zr_vm_ssa_aotir_contract_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_aotir_contract.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot/aot_ir.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c)
     target_include_directories(zr_vm_ssa_aotir_contract_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
@@ -848,17 +848,17 @@ endif ()
 if (NOT TARGET zr_vm_ssa_aot_projection_descriptor_test)
     add_executable(zr_vm_ssa_aot_projection_descriptor_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_aot_projection_descriptor.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot/aot_ir.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_projection_descriptor.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_lowering.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_adapter.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_adapter.c)
     target_include_directories(zr_vm_ssa_aot_projection_descriptor_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
     target_include_directories(zr_vm_ssa_aot_projection_descriptor_test PRIVATE
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot)
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/backend_aot)
     zr_vm_apply_common_test_settings(zr_vm_ssa_aot_projection_descriptor_test)
     add_test(NAME ssa_aot_projection_descriptor
             COMMAND zr_vm_ssa_aot_projection_descriptor_test)
@@ -881,16 +881,16 @@ endif ()
 if (NOT TARGET zr_vm_ssa_aot_callable_abi_test)
     add_executable(zr_vm_ssa_aot_callable_abi_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_aot_callable_abi.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot/aot_ir.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_projection_descriptor.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_lowering.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_adapter.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_adapter.c)
     target_include_directories(zr_vm_ssa_aot_callable_abi_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot)
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/backend_aot)
     zr_vm_apply_common_test_settings(zr_vm_ssa_aot_callable_abi_test)
     add_test(NAME ssa_aot_callable_abi COMMAND zr_vm_ssa_aot_callable_abi_test)
     set_tests_properties(ssa_aot_callable_abi PROPERTIES LABELS "ssa")
@@ -915,16 +915,16 @@ endif ()
 if (NOT TARGET zr_vm_ssa_aot_scalar_text_test)
     add_executable(zr_vm_ssa_aot_scalar_text_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_aot_scalar_text.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot/aot_ir.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_text.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_c.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_llvm.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_text.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_c.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_llvm.c)
     target_include_directories(zr_vm_ssa_aot_scalar_text_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot)
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/backend_aot)
     target_compile_definitions(zr_vm_ssa_aot_scalar_text_test PRIVATE
             _CRT_SECURE_NO_WARNINGS)
     zr_vm_apply_common_test_settings(zr_vm_ssa_aot_scalar_text_test)
@@ -935,7 +935,7 @@ endif ()
 if (NOT TARGET zr_vm_ssa_c_llvm_lowering_test)
     add_executable(zr_vm_ssa_c_llvm_lowering_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_c_llvm_lowering.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/aot/aot_ir.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_lowering.c)
     target_include_directories(zr_vm_ssa_c_llvm_lowering_test PRIVATE
@@ -991,10 +991,11 @@ endif ()
 if (NOT TARGET zr_vm_ssa_schema_relocation_test)
     add_executable(zr_vm_ssa_schema_relocation_test
             ${CMAKE_SOURCE_DIR}/tests/library/test_ssa_schema_relocation.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/artifact_exec_ir.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/artifact/artifact_exec_ir.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/execbc_verify.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/writer/writer_exec_ir.c)
     target_include_directories(zr_vm_ssa_schema_relocation_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
@@ -1008,6 +1009,7 @@ if (NOT TARGET zr_vm_ssa_exec_ir_artifact_v6_test)
             ${CMAKE_SOURCE_DIR}/tests/library/test_ssa_exec_ir_artifact_v6.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/writer/writer_exec_ir_artifact.c)
     target_include_directories(zr_vm_ssa_exec_ir_artifact_v6_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
@@ -1233,7 +1235,7 @@ endif ()
 if (NOT TARGET zr_vm_ssa_batch_vectorization_test)
     add_executable(zr_vm_ssa_batch_vectorization_test
             ${CMAKE_SOURCE_DIR}/tests/library/test_ssa_batch_vectorization.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/batch_contract.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/runtime/batch_contract.c
             ${CMAKE_SOURCE_DIR}/zr_vm_library/src/zr_vm_library/batch_protocol.c)
     target_include_directories(zr_vm_ssa_batch_vectorization_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
@@ -1372,8 +1374,8 @@ if (NOT TARGET zr_vm_ssa_generated_fusion_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_resume.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_phi.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/runtime/execution_contract.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/call_binding.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/call_binding_graph.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/call/call_binding.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/call/call_binding_graph.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_binding_facts.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_contract.c
@@ -1459,13 +1461,13 @@ endif ()
 if (NOT TARGET zr_vm_ssa_aot_backend_adapters_test)
     add_executable(zr_vm_ssa_aot_backend_adapters_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_aot_backend_adapters.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_adapter.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_c.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_llvm.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_coverage.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_link_profile.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_adapter.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_c.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_llvm.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_coverage.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_link_profile.c)
     target_include_directories(zr_vm_ssa_aot_backend_adapters_test PRIVATE
-            ${CMAKE_SOURCE_DIR}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/backend_aot
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
@@ -1515,7 +1517,7 @@ endif ()
 if (NOT TARGET zr_vm_ssa_optimization_remarks_test)
     add_executable(zr_vm_ssa_optimization_remarks_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_optimization_remarks.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/optimization_remark.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/runtime/optimization_remark.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/diagnostics/optimization_remarks.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_registry.c)
     target_include_directories(zr_vm_ssa_optimization_remarks_test PRIVATE
@@ -1535,7 +1537,7 @@ endif ()
 if (NOT TARGET zr_vm_optimization_remarks_projection_test)
     add_executable(zr_vm_optimization_remarks_projection_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_optimization_remarks_projection.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/optimization_remark.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/runtime/optimization_remark.c
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/commands/explain_optimize_command.c
             ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_optimization_remarks.c
             ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server/interface/lsp_diagnostic_projection.c)

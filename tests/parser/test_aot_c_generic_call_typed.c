@@ -17,9 +17,9 @@
 #include "zr_vm_parser/writer.h"
 /* 比较值泛型单态化与引用泛型共享代码的生成路径，并通过项目 loader 核对缺失实例时的 full AOT 与 deopt 行为；后续三个头文件提供追加案例。 */
 
-#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.h"
-#include "../../zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir_frame.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
+#include "backend_aot/backend_aot_c_value_semir_calls.h"
+#include "backend_aot/backend_aot_exec_ir_frame.h"
+#include "compiler/compiler_internal.h"
 
 #ifndef ZR_VM_TESTS_C_COMPILER
 #define ZR_VM_TESTS_C_COMPILER "cc"

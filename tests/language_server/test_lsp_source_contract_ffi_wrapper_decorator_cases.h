@@ -4,7 +4,7 @@
 /* FFI wrapper 装饰器的合法性由 parser 维护，LSP 仅映射诊断。 */
 static void test_ffi_wrapper_decorators_use_parser_diagnostic_projection(void) {
     char *typecheck = read_repo_text_file_owned(
-        "zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c");
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_typecheck.c");
     char *compilerClass = read_repo_text_file_owned(
         "zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c");
 

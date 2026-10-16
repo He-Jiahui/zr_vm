@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <stdint.h>
-#include "zr_vm_core/aot_ir_owned_module.h"
+#include "aot/aot_ir_owned_module.h"
 
 void *ZrTests_AotOwnedModule_Malloc(size_t bytes);
 void ZrTests_AotOwnedModule_Free(void *pointer);

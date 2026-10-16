@@ -22,8 +22,8 @@ void test_aot_c_source_lowers_static_no_arg_bool_calls_to_typed_thunks(void) {
             "backend_aot_write_c_static_direct_f64_bool_two_arg_function_call(FILE *file,",
     };
     static const char *const emitterSourceNeedles[] = {
-            "#include \"backend_aot_c_typed_bool_two_arg_thunks.h\"",
-            "#include \"backend_aot_c_typed_bool_three_arg_thunks.h\"",
+            "#include \"backend_aot/backend_aot_c_typed_bool_two_arg_thunks.h\"",
+            "#include \"backend_aot/backend_aot_c_typed_bool_three_arg_thunks.h\"",
             "backend_aot_c_type_ref_is_bool(",
             "backend_aot_c_type_ref_is_i64(",
             "backend_aot_c_type_ref_is_u64(",
@@ -118,7 +118,7 @@ void test_aot_c_source_lowers_static_no_arg_bool_calls_to_typed_thunks(void) {
             "backend_aot_c_try_write_bool_two_arg_thunk_definition(FILE *file, const SZrAotFunctionEntry *entry)",
     };
     static const char *const boolTwoArgThunkNeedles[] = {
-            "#include \"backend_aot_c_typed_bool_two_arg_thunks.h\"",
+            "#include \"backend_aot/backend_aot_c_typed_bool_two_arg_thunks.h\"",
             "backend_aot_c_try_get_bool_arg0_arg1_equal_return(",
             "backend_aot_c_try_get_bool_arg0_arg1_not_equal_return(",
             "backend_aot_c_try_get_bool_arg0_arg1_logical_and_return(",
@@ -161,7 +161,7 @@ void test_aot_c_source_lowers_static_no_arg_bool_calls_to_typed_thunks(void) {
             "return (TZrBool)(zr_aot_arg0 || zr_aot_arg1 || zr_aot_arg2);",
     };
     static const char *const boolCallLoweringNeedles[] = {
-            "#include \"backend_aot_c_emitter.h\"",
+            "#include \"backend_aot/backend_aot_c_emitter.h\"",
             "backend_aot_write_c_static_direct_bool_no_arg_function_call(FILE *file,",
             "zr_aot_static_bool_no_arg_direct_call",
             "zr_aot_b%u = zr_aot_typed_bool_fn_%u();",
@@ -199,7 +199,7 @@ void test_aot_c_source_lowers_static_no_arg_bool_calls_to_typed_thunks(void) {
             "zr_aot_static_f64_bool_two_arg_direct_call_sync_stack_slot",
     };
     static const char *const typedDirectCallNeedles[] = {
-            "#include \"backend_aot_c_typed_direct_bool_calls.h\"",
+            "#include \"backend_aot/backend_aot_c_typed_direct_bool_calls.h\"",
             "backend_aot_can_write_c_static_direct_bool_no_arg_call(",
             "backend_aot_can_write_c_static_direct_bool_one_arg_call(",
             "backend_aot_can_write_c_static_direct_bool_two_arg_call(",
@@ -228,9 +228,9 @@ void test_aot_c_source_lowers_static_no_arg_bool_calls_to_typed_thunks(void) {
             "backend_aot_can_write_c_static_direct_i64_bool_two_arg_call(",
     };
     static const char *const typedDirectBoolCallNeedles[] = {
-            "#include \"backend_aot_c_typed_direct_bool_calls.h\"",
-            "#include \"backend_aot_c_emitter.h\"",
-            "#include \"backend_aot_c_scalar_locals.h\"",
+            "#include \"backend_aot/backend_aot_c_typed_direct_bool_calls.h\"",
+            "#include \"backend_aot/backend_aot_c_emitter.h\"",
+            "#include \"backend_aot/backend_aot_c_scalar_locals.h\"",
             "backend_aot_typed_direct_bool_call_find_function_entry_by_flat_index(",
             "backend_aot_can_write_c_static_direct_bool_no_arg_call(",
             "backend_aot_can_write_c_static_direct_bool_one_arg_call(",
@@ -299,31 +299,31 @@ void test_aot_c_source_lowers_static_no_arg_bool_calls_to_typed_thunks(void) {
             "ZR_INSTRUCTION_ENUM(GET_CLOSURE)",
     };
     char *emitterHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
     char *emitterSourceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_bool_thunks.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_bool_thunks.c");
     char *boolTwoArgThunkHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_bool_two_arg_thunks.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_bool_two_arg_thunks.h");
     char *boolTwoArgThunkText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_bool_two_arg_thunks.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_bool_two_arg_thunks.c");
     char *boolThreeArgThunkText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_bool_three_arg_thunks.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_bool_three_arg_thunks.c");
     char *boolCallLoweringText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_bool_calls.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_typed_bool_calls.c");
     char *typedDirectCallText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_calls.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_calls.c");
     char *typedDirectBoolCallHeaderText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_bool_calls.h");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_bool_calls.h");
     char *typedDirectBoolCallText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_bool_calls.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_bool_calls.c");
     char *typedDirectU64CallText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_u64_calls.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_u64_calls.c");
     char *typedDirectF64CallText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_f64_calls.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_typed_direct_f64_calls.c");
     char *functionBodyText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     char *callableProvenanceText = read_repo_text_file_owned(
-            "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_callable_provenance.c");
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_callable_provenance.c");
 
     TEST_ASSERT_NOT_NULL(emitterHeaderText);
     assert_text_contains_all(emitterHeaderText, emitterHeaderNeedles, ARRAY_COUNT(emitterHeaderNeedles));

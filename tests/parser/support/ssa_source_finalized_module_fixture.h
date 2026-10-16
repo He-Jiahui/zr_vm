@@ -2,11 +2,11 @@
 #define ZR_TEST_SOURCE_FINALIZED_MODULE_FIXTURE_H
 #include <stddef.h>
 #include <stdint.h>
-#include "../../core/support/ssa_exec_ir_owned_module_fixture.h"
+#include "tests/core/support/ssa_exec_ir_owned_module_fixture.h"
 #include "zr_vm_core/exec_ir_module_copy.h"
 #include "zr_vm_core/state.h"
-#include "zr_vm_parser/exec_ir/exec_ir_source_finalized_module_internal.h"
-#include "zr_vm_parser/exec_ir_source_frame.h"
+#include "exec_ir/source/exec_ir_source_finalized_module_internal.h"
+#include "exec_ir/source/exec_ir_source_frame.h"
 enum { FM_BYTES = 65536, FM_LIVE = 256, FM_RETURN = 113, FM_CALLABLE = 271 };
 /* Declared readable lower consistency witnesses; no VM or semantic producer history. */
 typedef struct SFmFixture {

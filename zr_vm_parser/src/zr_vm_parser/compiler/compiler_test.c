@@ -1,5 +1,5 @@
 #include "compiler_internal.h"
-#include "compiler_attribute_binding.h"
+#include "compiler/declaration/compiler_attribute_binding.h"
 
 #include <string.h>
 

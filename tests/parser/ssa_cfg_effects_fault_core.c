@@ -37,5 +37,5 @@ static void *ssa_cfg_effects_fault_realloc(void *storage, size_t bytes) {
 /* 替换 exec_ir.c 的全部 realloc 调用；当前 CFG 用例观察 phiIncoming 与 memoryToken 池。
  * 构建从源列表移除普通 exec_ir.c，以这份 TU 提供同一组 Core 符号。 */
 #define realloc ssa_cfg_effects_fault_realloc
-#include "../../zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c"
+#include "exec_ir/exec_ir.c"
 #undef realloc

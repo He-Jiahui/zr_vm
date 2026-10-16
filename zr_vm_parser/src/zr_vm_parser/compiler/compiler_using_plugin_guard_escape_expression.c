@@ -1,6 +1,6 @@
 #include "compiler_using_plugin_guard_escape_internal.h"
 
-#include "compile_expression_internal.h"
+#include "compiler/expression/compile_expression_internal.h"
 #include "type_inference_internal.h"
 
 static TZrBool plugin_guard_member_type_is_callable(EZrAstNodeType memberType) {

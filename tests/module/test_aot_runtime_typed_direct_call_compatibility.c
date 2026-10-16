@@ -8,7 +8,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/metadata_runtime.h"
 #include "zr_vm_library/aot_runtime.h"
-#include "../../zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime_internal.h"
+#include "aot_runtime/aot_runtime_internal.h"
 
 #define TEST_REF_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_REF, 1u)
 #define TEST_REF_SIGNATURE_TOKEN ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, 1u)

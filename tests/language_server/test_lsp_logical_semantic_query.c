@@ -8,7 +8,7 @@
 #include <time.h>
 
 #include "interface/lsp_interface_internal.h"
-#include "semantic/lsp_local_semantic_query.h"
+#include "semantic/query/lsp_local_semantic_query.h"
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"

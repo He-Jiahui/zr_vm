@@ -18,9 +18,9 @@
 #include "zr_vm_parser/writer.h"
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_library/file.h"
-#include "../../zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h"
-#include "../../zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_internal.h"
-#include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.h"
+#include "interface/lsp_interface_internal.h"
+#include "project/lsp_project_internal.h"
+#include "semantic/query/lsp_semantic_query.h"
 #include "path_support.h"
 
 /* 构建目标可注入两种真实描述符插件路径；缺失时相关测试应按准备失败报告。 */

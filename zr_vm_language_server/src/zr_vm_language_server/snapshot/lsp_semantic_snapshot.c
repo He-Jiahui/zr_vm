@@ -1,8 +1,8 @@
 #include "interface/lsp_interface_internal.h"
 
 #include "project/lsp_project_internal.h"
-#include "semantic/lsp_semantic_query.h"
-#include "semantic/semantic_analyzer_internal.h"
+#include "semantic/query/lsp_semantic_query.h"
+#include "semantic/analyzer/semantic_analyzer_internal.h"
 
 #include <string.h>
 

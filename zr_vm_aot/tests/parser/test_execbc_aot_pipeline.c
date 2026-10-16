@@ -20,7 +20,7 @@
 #include "zr_vm_library/aot_runtime.h"
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
+#include "compiler/compiler_internal.h"
 #include "zr_vm_parser/writer.h"
 #include "test_support.h"
 
@@ -4679,7 +4679,7 @@ static void test_aot_runtime_source_removes_backend_specific_true_aot_descriptor
                  "Testing that runtime descriptor strict validation for true AOT payload no longer special-cases C only, so LLVM must satisfy the same embedded-module and thunk-table contract");
 
     {
-        char *runtimeText = read_repo_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
+        char *runtimeText = read_repo_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c");
 
         TEST_ASSERT_NOT_NULL(runtimeText);
         TEST_ASSERT_NULL(strstr(runtimeText, "if (backendKind == ZR_AOT_BACKEND_KIND_C &&"));
@@ -9722,7 +9722,7 @@ static void test_aot_source_sync_keeps_extended_opcode_surfaces_aligned(void) {
                                              (TZrSize)(sizeof(llvmLoweringPaths) / sizeof(llvmLoweringPaths[0])));
     llvmPreludeText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_prelude.c");
     runtimeHeaderText = read_repo_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
-    runtimeSourceText = read_repo_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
+    runtimeSourceText = read_repo_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c");
 
     TEST_ASSERT_NOT_NULL(backendSupportText);
     TEST_ASSERT_NOT_NULL(cLoweringText);

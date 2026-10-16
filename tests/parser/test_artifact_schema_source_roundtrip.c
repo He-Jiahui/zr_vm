@@ -11,7 +11,7 @@
 #include "zr_vm_core/metadata_token.h"
 #include "zr_vm_lib_thread/module.h"
 #include "zr_vm_lib_thread/runtime.h"
-#include "zr_vm_parser/artifact_projection.h"
+#include "artifact/artifact_projection.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/type_inference.h"

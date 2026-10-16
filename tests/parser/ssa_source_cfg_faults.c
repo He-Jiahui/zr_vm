@@ -157,7 +157,7 @@ static TZrBool source_cfg_bind_block_range(
 #define compiler_semantic_cfg_restore_slots ssa_test_compiler_semantic_cfg_restore_slots
 #define compiler_semantic_cfg_free_slots ssa_test_compiler_semantic_cfg_free_slots
 #define compiler_semantic_cfg_finish ssa_test_compiler_semantic_cfg_finish
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg.c"
+#include "compiler/semantic/compiler_semantic_cfg.c"
 #undef ZrParser_Cfg_AppendBlock
 #undef ZrParser_Cfg_Connect
 #undef ZrParser_SemanticIr_Emit
@@ -226,7 +226,7 @@ static void source_cfg_free(void *memory) {
 #define compiler_semantic_cfg_finish source_cfg_finish
 #define realloc source_cfg_realloc
 #define free source_cfg_free
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_cfg_finalize.c"
+#include "compiler/semantic/compiler_semantic_cfg_finalize.c"
 #undef compiler_semantic_cfg_finalize
 #undef compiler_semantic_cfg_ensure_active
 #undef compiler_semantic_cfg_finish

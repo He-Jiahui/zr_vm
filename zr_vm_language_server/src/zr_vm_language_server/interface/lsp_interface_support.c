@@ -8,9 +8,9 @@
 #include "metadata/lsp_metadata_provider.h"
 #include "module/lsp_module_metadata.h"
 #include "project/lsp_project_internal.h"
-#include "semantic/lsp_semantic_import_chain.h"
+#include "semantic/query/lsp_semantic_import_chain.h"
 #include "semantic/lsp_property_contract.h"
-#include "semantic/semantic_analyzer_internal.h"
+#include "semantic/analyzer/semantic_analyzer_internal.h"
 #include "zr_vm_language_server/lsp_uri.h"
 
 #include "zr_vm_parser/type_inference.h"

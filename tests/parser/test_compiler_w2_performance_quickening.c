@@ -17,7 +17,7 @@
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
+#include "compiler/compiler_internal.h"
 
 typedef struct SZrRegressionTestTimer {
     clock_t startTime;

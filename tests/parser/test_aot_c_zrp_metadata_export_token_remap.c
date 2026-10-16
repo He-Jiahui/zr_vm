@@ -1,7 +1,7 @@
 #include "unity.h"
 
-#include "backend_aot_c_zrp_metadata_member_token.h"
-#include "backend_aot_c_zrp_metadata_remap.h"
+#include "backend_aot/backend_aot_c_zrp_metadata_member_token.h"
+#include "backend_aot/backend_aot_c_zrp_metadata_remap.h"
 
 #include "zr_vm_core/metadata_token.h"
 #include "zr_vm_core/zrp_metadata.h"

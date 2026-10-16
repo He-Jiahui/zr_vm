@@ -13,7 +13,7 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
-#include "semantic/lsp_semantic_query.h"
+#include "semantic/query/lsp_semantic_query.h"
 
 /* 导航测试按场景计时；时间不参与目标范围断言。 */
 typedef struct SZrTestTimer {

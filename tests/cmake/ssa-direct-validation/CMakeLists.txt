@@ -34,6 +34,8 @@ endif ()
 # CommonMacros currently assumes the full repository CMAKE_SOURCE_DIR.
 function(zr_vm_apply_common_test_settings target_name)
     target_include_directories(${target_name} PRIVATE
+            "${ZR_SSA_SOURCE_ROOT}/zr_vm_core/src/zr_vm_core"
+            "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser"
             "${ZR_SSA_SOURCE_ROOT}/tests"
             "${ZR_SSA_SOURCE_ROOT}/tests/harness"
             "${ZR_SSA_SOURCE_ROOT}/zr_vm_common/include")
@@ -74,7 +76,7 @@ add_test(NAME ssa_loops_specialization COMMAND zr_vm_ssa_loops_specialization_te
 
 # Register the original scalar-text consumer before the conditional fragment;
 # that owned fragment adds the arithmetic and conditional helper TUs exactly once.
-set(_zr_backend "${ZR_SSA_SOURCE_ROOT}/zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot")
+set(_zr_backend "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/backend_aot")
 add_executable(zr_vm_ssa_aot_scalar_text_test
         "${ZR_SSA_SOURCE_ROOT}/tests/parser/test_ssa_aot_scalar_text.c"
         "${_zr_core}/aot_ir.c"
@@ -83,6 +85,8 @@ add_executable(zr_vm_ssa_aot_scalar_text_test
         "${_zr_backend}/backend_aot_ir_scalar_c.c"
         "${_zr_backend}/backend_aot_ir_scalar_llvm.c")
 target_include_directories(zr_vm_ssa_aot_scalar_text_test PRIVATE
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_core/src/zr_vm_core"
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser"
         "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/include"
         "${ZR_SSA_SOURCE_ROOT}/zr_vm_core/include"
         "${ZR_SSA_SOURCE_ROOT}/zr_vm_common/include"

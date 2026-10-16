@@ -13,8 +13,8 @@
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
-#include "zr_vm_parser/syntax_contract.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
+#include "contract/syntax_contract.h"
+#include "compiler/compiler_internal.h"
 
 /* parser 回调只保存首条诊断，避免错误恢复覆盖预期拒绝原因。 */
 typedef struct {

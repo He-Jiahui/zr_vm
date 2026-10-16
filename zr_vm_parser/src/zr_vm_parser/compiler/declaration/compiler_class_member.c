@@ -1,0 +1,1015 @@
+//
+// Created by Auto on 2025/01/XX.
+//
+
+#include "compiler/compiler_internal.h"
+#include "compiler/compiler_typed_call_binding.h"
+#include "type_inference/type_inference_semantic_facts.h"
+
+static TZrBool compiler_member_try_infer_expression_type_soft(SZrCompilerState *cs,
+                                                              SZrAstNode *expr,
+                                                              SZrInferredType *result) {
+    TZrBool savedHasError;
+    TZrBool savedHadRecoverableError;
+    TZrBool savedHasFatalError;
+    TZrBool savedHasCompileTimeError;
+    SZrFileRange savedErrorLocation;
+    const TZrChar *savedErrorMessage;
+
+    if (cs == ZR_NULL || expr == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    savedHasError = cs->hasError;
+    savedHadRecoverableError = cs->hadRecoverableError;
+    savedHasFatalError = cs->hasFatalError;
+    savedHasCompileTimeError = cs->hasCompileTimeError;
+    savedErrorLocation = cs->errorLocation;
+    savedErrorMessage = cs->errorMessage;
+
+    cs->hasError = ZR_FALSE;
+    cs->hadRecoverableError = ZR_FALSE;
+    cs->hasFatalError = ZR_FALSE;
+
+    if (ZrParser_ExpressionType_Infer(cs, expr, result)) {
+        cs->hasCompileTimeError = savedHasCompileTimeError;
+        cs->errorLocation = savedErrorLocation;
+        cs->errorMessage = savedErrorMessage;
+        return ZR_TRUE;
+    }
+
+    cs->hasError = savedHasError;
+    cs->hadRecoverableError = savedHadRecoverableError;
+    cs->hasFatalError = savedHasFatalError;
+    cs->hasCompileTimeError = savedHasCompileTimeError;
+    cs->errorLocation = savedErrorLocation;
+    cs->errorMessage = savedErrorMessage;
+    return ZR_FALSE;
+}
+
+static void compiler_member_merge_callable_return_type(SZrCompilerState *cs,
+                                                       const SZrInferredType *candidateType,
+                                                       TZrBool *hasReturnType,
+                                                       SZrInferredType *accumulatedType) {
+    SZrInferredType mergedType;
+
+    if (cs == ZR_NULL || candidateType == ZR_NULL || hasReturnType == ZR_NULL || accumulatedType == ZR_NULL) {
+        return;
+    }
+
+    if (!*hasReturnType) {
+        ZrParser_InferredType_Copy(cs->state, accumulatedType, candidateType);
+        *hasReturnType = ZR_TRUE;
+        return;
+    }
+
+    if (ZrParser_InferredType_Equal(accumulatedType, candidateType)) {
+        return;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &mergedType, ZR_VALUE_TYPE_OBJECT);
+    if (ZrParser_InferredType_GetCommonType(cs->state, &mergedType, accumulatedType, candidateType)) {
+        ZrParser_InferredType_Free(cs->state, accumulatedType);
+        ZrParser_InferredType_Copy(cs->state, accumulatedType, &mergedType);
+    } else {
+        ZrParser_InferredType_Free(cs->state, accumulatedType);
+        ZrParser_InferredType_Init(cs->state, accumulatedType, ZR_VALUE_TYPE_OBJECT);
+    }
+    ZrParser_InferredType_Free(cs->state, &mergedType);
+}
+
+static void compiler_member_collect_function_like_return_type(SZrCompilerState *cs,
+                                                              SZrAstNode *node,
+                                                              TZrBool *hasReturnType,
+                                                              SZrInferredType *accumulatedType) {
+    if (cs == ZR_NULL || node == ZR_NULL || hasReturnType == ZR_NULL || accumulatedType == ZR_NULL) {
+        return;
+    }
+
+    switch (node->type) {
+        case ZR_AST_BLOCK: {
+            SZrBlock *block = &node->data.block;
+            if (block->body == ZR_NULL) {
+                return;
+            }
+
+            for (TZrSize index = 0; index < block->body->count; index++) {
+                compiler_member_collect_function_like_return_type(cs,
+                                                                  block->body->nodes[index],
+                                                                  hasReturnType,
+                                                                  accumulatedType);
+                if (cs->hasError) {
+                    return;
+                }
+            }
+            return;
+        }
+
+        case ZR_AST_RETURN_STATEMENT: {
+            SZrReturnStatement *returnStatement = &node->data.returnStatement;
+            SZrInferredType candidateType;
+
+            ZrParser_InferredType_Init(cs->state, &candidateType, ZR_VALUE_TYPE_NULL);
+            if (returnStatement->expr != ZR_NULL &&
+                !compiler_member_try_infer_expression_type_soft(cs, returnStatement->expr, &candidateType)) {
+                ZrParser_InferredType_Free(cs->state, &candidateType);
+                ZrParser_InferredType_Init(cs->state, &candidateType, ZR_VALUE_TYPE_OBJECT);
+            }
+
+            compiler_member_merge_callable_return_type(cs, &candidateType, hasReturnType, accumulatedType);
+            ZrParser_InferredType_Free(cs->state, &candidateType);
+            return;
+        }
+
+        case ZR_AST_IF_EXPRESSION: {
+            SZrIfExpression *ifExpression = &node->data.ifExpression;
+            compiler_member_collect_function_like_return_type(cs,
+                                                              ifExpression->thenExpr,
+                                                              hasReturnType,
+                                                              accumulatedType);
+            if (cs->hasError) {
+                return;
+            }
+            compiler_member_collect_function_like_return_type(cs,
+                                                              ifExpression->elseExpr,
+                                                              hasReturnType,
+                                                              accumulatedType);
+            return;
+        }
+
+        case ZR_AST_WHILE_LOOP:
+            compiler_member_collect_function_like_return_type(cs,
+                                                              node->data.whileLoop.block,
+                                                              hasReturnType,
+                                                              accumulatedType);
+            return;
+
+        case ZR_AST_FOR_LOOP:
+            compiler_member_collect_function_like_return_type(cs,
+                                                              node->data.forLoop.block,
+                                                              hasReturnType,
+                                                              accumulatedType);
+            return;
+
+        case ZR_AST_FOREACH_LOOP:
+            compiler_member_collect_function_like_return_type(cs,
+                                                              node->data.foreachLoop.block,
+                                                              hasReturnType,
+                                                              accumulatedType);
+            return;
+
+        case ZR_AST_TRY_CATCH_FINALLY_STATEMENT: {
+            SZrTryCatchFinallyStatement *tryStatement = &node->data.tryCatchFinallyStatement;
+            compiler_member_collect_function_like_return_type(cs,
+                                                              tryStatement->block,
+                                                              hasReturnType,
+                                                              accumulatedType);
+            if (cs->hasError) {
+                return;
+            }
+
+            if (tryStatement->catchClauses != ZR_NULL) {
+                for (TZrSize index = 0; index < tryStatement->catchClauses->count; index++) {
+                    SZrAstNode *catchNode = tryStatement->catchClauses->nodes[index];
+                    if (catchNode == ZR_NULL || catchNode->type != ZR_AST_CATCH_CLAUSE) {
+                        continue;
+                    }
+
+                    compiler_member_collect_function_like_return_type(cs,
+                                                                      catchNode->data.catchClause.block,
+                                                                      hasReturnType,
+                                                                      accumulatedType);
+                    if (cs->hasError) {
+                        return;
+                    }
+                }
+            }
+
+            compiler_member_collect_function_like_return_type(cs,
+                                                              tryStatement->finallyBlock,
+                                                              hasReturnType,
+                                                              accumulatedType);
+            return;
+        }
+
+        case ZR_AST_FUNCTION_DECLARATION:
+        case ZR_AST_LAMBDA_EXPRESSION:
+        case ZR_AST_CLASS_DECLARATION:
+        case ZR_AST_STRUCT_DECLARATION:
+        case ZR_AST_INTERFACE_DECLARATION:
+            return;
+
+        default:
+            return;
+    }
+}
+
+static TZrBool compiler_member_infer_return_type_name(SZrCompilerState *cs,
+                                                      SZrAstNode *body,
+                                                      SZrString **outReturnTypeName) {
+    TZrBool savedHasError;
+    TZrBool savedHadRecoverableError;
+    TZrBool savedHasFatalError;
+    TZrBool savedHasCompileTimeError;
+    SZrFileRange savedErrorLocation;
+    const TZrChar *savedErrorMessage;
+    TZrBool hasReturnType = ZR_FALSE;
+    SZrInferredType returnType;
+
+    if (outReturnTypeName != ZR_NULL) {
+        *outReturnTypeName = ZR_NULL;
+    }
+    if (cs == ZR_NULL || body == ZR_NULL || outReturnTypeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    savedHasError = cs->hasError;
+    savedHadRecoverableError = cs->hadRecoverableError;
+    savedHasFatalError = cs->hasFatalError;
+    savedHasCompileTimeError = cs->hasCompileTimeError;
+    savedErrorLocation = cs->errorLocation;
+    savedErrorMessage = cs->errorMessage;
+
+    ZrParser_InferredType_Init(cs->state, &returnType, ZR_VALUE_TYPE_NULL);
+    compiler_member_collect_function_like_return_type(cs, body, &hasReturnType, &returnType);
+    if (hasReturnType) {
+        *outReturnTypeName = get_type_name_from_inferred_type(cs, &returnType);
+    }
+    ZrParser_InferredType_Free(cs->state, &returnType);
+
+    cs->hasError = savedHasError;
+    cs->hadRecoverableError = savedHadRecoverableError;
+    cs->hasFatalError = savedHasFatalError;
+    cs->hasCompileTimeError = savedHasCompileTimeError;
+    cs->errorLocation = savedErrorLocation;
+    cs->errorMessage = savedErrorMessage;
+    return ZR_TRUE;
+}
+
+static SZrFunction *compile_type_member_function(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        SZrAstNode *propertyAccessorNode,
+        SZrString *superTypeName,
+        TZrBool injectThis,
+        EZrCanonicalReceiverEffect receiverEffectOverride,
+        TZrUInt32 *outParameterCount,
+        SZrString **outInferredReturnTypeName) {
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
+        return ZR_NULL;
+    }
+
+    SZrAstNodeArray *params = ZR_NULL;
+    SZrAstNode *body = ZR_NULL;
+    SZrString *functionName = ZR_NULL;
+    TZrBool isConstructor = ZR_FALSE;
+    SZrString *manualParamName = ZR_NULL;
+    SZrType *manualParamType = ZR_NULL;
+    SZrType *declaredReturnType = ZR_NULL;
+    SZrStructMethod *structMethod = ZR_NULL;
+    SZrStructMetaFunction *structMetaFunc = ZR_NULL;
+    TZrBool isPropertyExpressionBody = ZR_FALSE;
+    TZrBool isPropertyInitializer = ZR_FALSE;
+    EZrCanonicalReceiverEffect receiverEffect = get_member_receiver_effect(node);
+
+    if (propertyAccessorNode != ZR_NULL) {
+        SZrPropertyDeclaration *property;
+        SZrPropertyAccessor *accessor;
+
+        if (node->type != ZR_AST_PROPERTY_DECLARATION ||
+            propertyAccessorNode->type != ZR_AST_PROPERTY_ACCESSOR) {
+            ZrParser_Compiler_Error(
+                    cs, "Expected unified property declaration and accessor", node->location);
+            return ZR_NULL;
+        }
+        property = &node->data.propertyDeclaration;
+        accessor = &propertyAccessorNode->data.propertyAccessor;
+        body = accessor->body;
+        isPropertyExpressionBody =
+                accessor->bodyKind == ZR_PROPERTY_ACCESSOR_BODY_EXPRESSION;
+        isPropertyInitializer = accessor->kind == ZR_PROPERTY_ACCESSOR_INIT;
+        functionName = compiler_create_hidden_property_accessor_name(
+                cs,
+                property->name != ZR_NULL ? property->name->name : ZR_NULL,
+                accessor->kind != ZR_PROPERTY_ACCESSOR_GET);
+        receiverEffect = receiverEffectOverride;
+        if (accessor->kind == ZR_PROPERTY_ACCESSOR_GET) {
+            declaredReturnType = property->typeInfo;
+        } else {
+            manualParamName = ZrCore_String_CreateFromNative(cs->state, "value");
+            manualParamType = property->typeInfo;
+        }
+    } else if (node->type == ZR_AST_CLASS_METHOD) {
+        SZrClassMethod *method = &node->data.classMethod;
+        params = method->params;
+        body = method->body;
+        declaredReturnType = method->returnType;
+        functionName = method->name != ZR_NULL ? method->name->name : ZR_NULL;
+    } else if (node->type == ZR_AST_STRUCT_METHOD) {
+        structMethod = &node->data.structMethod;
+        params = structMethod->params;
+        body = structMethod->body;
+        declaredReturnType = structMethod->returnType;
+        functionName = structMethod->name != ZR_NULL ? structMethod->name->name : ZR_NULL;
+    } else if (node->type == ZR_AST_CLASS_META_FUNCTION) {
+        SZrClassMetaFunction *metaFunc = &node->data.classMetaFunction;
+        params = metaFunc->params;
+        body = metaFunc->body;
+        declaredReturnType = metaFunc->returnType;
+        functionName = metaFunc->meta != ZR_NULL ? metaFunc->meta->name : ZR_NULL;
+        if (metaFunc->meta != ZR_NULL) {
+            TZrNativeString metaName = ZrCore_String_GetNativeStringShort(metaFunc->meta->name);
+            if (metaName != ZR_NULL && strcmp(metaName, "constructor") == 0) {
+                isConstructor = ZR_TRUE;
+            }
+        }
+    } else if (node->type == ZR_AST_STRUCT_META_FUNCTION) {
+        structMetaFunc = &node->data.structMetaFunction;
+        params = structMetaFunc->params;
+        body = structMetaFunc->body;
+        declaredReturnType = structMetaFunc->returnType;
+        functionName = structMetaFunc->meta != ZR_NULL ? structMetaFunc->meta->name : ZR_NULL;
+        if (structMetaFunc->meta != ZR_NULL) {
+            TZrNativeString metaName = ZrCore_String_GetNativeStringShort(structMetaFunc->meta->name);
+            if (metaName != ZR_NULL && strcmp(metaName, "constructor") == 0) {
+                isConstructor = ZR_TRUE;
+            }
+        }
+    } else if (node->type == ZR_AST_CLASS_PROPERTY) {
+        SZrClassProperty *property = &node->data.classProperty;
+        if (property->modifier == ZR_NULL) {
+            ZrParser_Compiler_Error(cs, "Class property modifier is null", node->location);
+            return ZR_NULL;
+        }
+
+        if (property->modifier->type == ZR_AST_PROPERTY_GET) {
+            SZrPropertyGet *getter = &property->modifier->data.propertyGet;
+            body = getter->body;
+            declaredReturnType = getter->targetType;
+            if (getter->name != ZR_NULL) {
+                functionName = compiler_create_hidden_property_accessor_name(cs, getter->name->name, ZR_FALSE);
+            }
+        } else if (property->modifier->type == ZR_AST_PROPERTY_SET) {
+            SZrPropertySet *setter = &property->modifier->data.propertySet;
+            body = setter->body;
+            declaredReturnType = ZR_NULL;
+            if (setter->name != ZR_NULL) {
+                functionName = compiler_create_hidden_property_accessor_name(cs, setter->name->name, ZR_TRUE);
+            }
+            if (setter->param != ZR_NULL) {
+                manualParamName = setter->param->name;
+            }
+            manualParamType = setter->targetType;
+        } else {
+            ZrParser_Compiler_Error(cs, "Unsupported class property modifier", node->location);
+            return ZR_NULL;
+        }
+    } else {
+        ZrParser_Compiler_Error(cs,
+                                "Expected type member function, property or meta function",
+                                node->location);
+        return ZR_NULL;
+    }
+
+    SZrFunction *oldFunction = cs->currentFunction;
+    TZrSize oldInstructionCount = cs->instructionCount;
+    TZrSize oldStackSlotCount = cs->stackSlotCount;
+    TZrSize oldMaxStackSlotCount = cs->maxStackSlotCount;
+    TZrUInt32 oldLastExpressionSlot = cs->lastExpressionSlot;
+    TZrSize oldLocalVarCount = cs->localVarCount;
+    TZrSize oldConstantCount = cs->constantCount;
+    TZrSize oldClosureVarCount = cs->closureVarCount;
+    TZrUInt32 oldCachedNullConstantIndex = cs->cachedNullConstantIndex;
+    TZrBool oldHasCachedNullConstantIndex = cs->hasCachedNullConstantIndex;
+    TZrSize oldInstructionLength = cs->instructions.length;
+    TZrSize oldLocalVarLength = cs->localVars.length;
+    TZrSize oldConstantLength = cs->constants.length;
+    TZrSize oldClosureVarLength = cs->closureVars.length;
+    TZrSize oldExecutionLocationLength = cs->executionLocations.length;
+    TZrSize oldCatchClauseInfoLength = cs->catchClauseInfos.length;
+    TZrSize oldExceptionHandlerInfoLength = cs->exceptionHandlerInfos.length;
+    TZrSize oldTryContextLength = cs->tryContextStack.length;
+    TZrSize oldChildFunctionLength = cs->childFunctions.length;
+    TZrSize oldChildFunctionNameMapLength = cs->childFunctionNameMap.length;
+    TZrBool oldIsInConstructor = cs->isInConstructor;
+    EZrCompilerInitializationPhase oldInitializationPhase =
+            cs->initializationPhase;
+    SZrAstNode *oldFunctionNode = cs->currentFunctionNode;
+    EZrCanonicalReceiverEffect oldFunctionReceiverEffect =
+            cs->currentFunctionReceiverEffect;
+    TZrInstruction *savedParentInstructions = ZR_NULL;
+    SZrFunctionLocalVariable *savedParentLocalVars = ZR_NULL;
+    SZrTypeValue *savedParentConstants = ZR_NULL;
+    SZrFunctionClosureVariable *savedParentClosureVars = ZR_NULL;
+    SZrCompilerSemanticIrIsolation semanticIrIsolation = {0};
+    SZrCompilerCallableTypeScope callableTypeScope = {0};
+    TZrBool hasSemanticIrIsolation = ZR_FALSE;
+    TZrSize oldStackSlotTypeHintScopeStart = 0;
+    TZrSize savedParentInstructionsSize = oldInstructionLength * sizeof(TZrInstruction);
+    TZrSize savedParentLocalVarsSize = oldLocalVarLength * sizeof(SZrFunctionLocalVariable);
+    TZrSize savedParentConstantsSize = oldConstantLength * sizeof(SZrTypeValue);
+    TZrSize savedParentClosureVarsSize = oldClosureVarLength * sizeof(SZrFunctionClosureVariable);
+
+    if (savedParentInstructionsSize > 0) {
+        savedParentInstructions = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
+                cs->state->global, savedParentInstructionsSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (savedParentInstructions == ZR_NULL) {
+            ZrParser_Compiler_Error(cs, "Failed to backup parent instructions for class member compilation", node->location);
+            return ZR_NULL;
+        }
+        memcpy(savedParentInstructions, cs->instructions.head, savedParentInstructionsSize);
+    }
+
+    if (savedParentLocalVarsSize > 0) {
+        savedParentLocalVars = (SZrFunctionLocalVariable *)ZrCore_Memory_RawMallocWithType(
+                cs->state->global, savedParentLocalVarsSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (savedParentLocalVars == ZR_NULL) {
+            if (savedParentInstructions != ZR_NULL) {
+                ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentInstructions, savedParentInstructionsSize,
+                                        ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            }
+            ZrParser_Compiler_Error(cs, "Failed to backup parent locals for class member compilation", node->location);
+            return ZR_NULL;
+        }
+        memcpy(savedParentLocalVars, cs->localVars.head, savedParentLocalVarsSize);
+    }
+
+    if (savedParentConstantsSize > 0) {
+        savedParentConstants = (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(
+                cs->state->global, savedParentConstantsSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (savedParentConstants == ZR_NULL) {
+            if (savedParentInstructions != ZR_NULL) {
+                ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentInstructions, savedParentInstructionsSize,
+                                        ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            }
+            if (savedParentLocalVars != ZR_NULL) {
+                ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentLocalVars, savedParentLocalVarsSize,
+                                        ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            }
+            ZrParser_Compiler_Error(cs, "Failed to backup parent constants for class member compilation", node->location);
+            return ZR_NULL;
+        }
+        memcpy(savedParentConstants, cs->constants.head, savedParentConstantsSize);
+    }
+
+    if (savedParentClosureVarsSize > 0) {
+        savedParentClosureVars = (SZrFunctionClosureVariable *)ZrCore_Memory_RawMallocWithType(
+                cs->state->global, savedParentClosureVarsSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (savedParentClosureVars == ZR_NULL) {
+            if (savedParentInstructions != ZR_NULL) {
+                ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentInstructions, savedParentInstructionsSize,
+                                        ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            }
+            if (savedParentLocalVars != ZR_NULL) {
+                ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentLocalVars, savedParentLocalVarsSize,
+                                        ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            }
+            if (savedParentConstants != ZR_NULL) {
+                ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentConstants, savedParentConstantsSize,
+                                        ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            }
+            ZrParser_Compiler_Error(cs, "Failed to backup parent closures for class member compilation", node->location);
+            return ZR_NULL;
+        }
+        memcpy(savedParentClosureVars, cs->closureVars.head, savedParentClosureVarsSize);
+    }
+
+    oldStackSlotTypeHintScopeStart = compiler_enter_stack_slot_type_hint_scope(cs);
+
+    cs->isInConstructor = isConstructor ? ZR_TRUE : ZR_FALSE;
+    cs->initializationPhase = isConstructor
+                                      ? ZR_COMPILER_INITIALIZATION_CONSTRUCTOR
+                                      : (isPropertyInitializer
+                                                 ? ZR_COMPILER_INITIALIZATION_PROPERTY_INIT
+                                                 : ZR_COMPILER_INITIALIZATION_NONE);
+    cs->currentFunctionNode = node;
+    cs->currentFunctionReceiverEffect = receiverEffect;
+    cs->constLocalVars.length = 0;
+    cs->constParameters.length = 0;
+    compiler_end_constructor_const_field_tracking(cs);
+    if (isConstructor) {
+        compiler_begin_constructor_const_field_tracking(cs);
+    }
+
+    cs->currentFunction = ZrCore_Function_New(cs->state);
+    if (cs->currentFunction == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Failed to create class member function object", node->location);
+        cs->isInConstructor = oldIsInConstructor;
+        cs->initializationPhase = oldInitializationPhase;
+        cs->currentFunctionNode = oldFunctionNode;
+        cs->currentFunctionReceiverEffect = oldFunctionReceiverEffect;
+        compiler_end_constructor_const_field_tracking(cs);
+        compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
+        return ZR_NULL;
+    }
+
+    cs->instructionCount = 0;
+    cs->stackSlotCount = 0;
+    cs->maxStackSlotCount = 0;
+    cs->lastExpressionSlot = ZR_PARSER_SLOT_NONE;
+    cs->localVarCount = 0;
+    cs->constantCount = 0;
+    cs->closureVarCount = 0;
+    cs->instructions.length = 0;
+    cs->localVars.length = 0;
+    cs->constants.length = 0;
+    cs->closureVars.length = 0;
+    cs->childFunctions.length = 0;
+    cs->childFunctionNameMap.length = 0;
+    cs->cachedNullConstantIndex = 0;
+    cs->hasCachedNullConstantIndex = ZR_FALSE;
+
+    TZrUInt32 parameterCount = 0;
+    enter_scope(cs);
+    if (!compiler_callable_type_scope_begin(cs, &callableTypeScope)) {
+        ZrParser_Compiler_Error(
+                cs, "Failed to isolate class member parameter types", node->location);
+        goto class_member_type_scope_cleanup;
+    }
+    if (!compiler_semantic_ir_isolation_begin(cs, &semanticIrIsolation)) {
+        if (semanticIrIsolation.isActive) {
+            compiler_semantic_ir_isolation_end(cs, &semanticIrIsolation);
+        }
+        ZrParser_Compiler_Error(
+                cs, "Failed to isolate class member Semantic IR", node->location);
+        goto class_member_type_scope_cleanup;
+    } else {
+        hasSemanticIrIsolation = ZR_TRUE;
+    }
+
+    if (injectThis) {
+        EZrOwnershipQualifier thisOwnershipQualifier =
+                get_implicit_this_ownership_qualifier(get_member_receiver_qualifier(node));
+        SZrString *thisName = ZrCore_String_CreateFromNative(cs->state, "this");
+        if (thisName != ZR_NULL) {
+            allocate_local_var(cs, thisName);
+            parameterCount++;
+            if (cs->typeEnv != ZR_NULL) {
+                SZrInferredType thisType;
+                if (cs->currentTypeName != ZR_NULL) {
+                    ZrParser_InferredType_InitFull(cs->state, &thisType, ZR_VALUE_TYPE_OBJECT, ZR_FALSE,
+                                           cs->currentTypeName);
+                } else {
+                    ZrParser_InferredType_Init(cs->state, &thisType, ZR_VALUE_TYPE_OBJECT);
+                }
+                thisType.ownershipQualifier = thisOwnershipQualifier;
+                thisType.isReadonlyView =
+                        receiverEffect == ZR_CANONICAL_RECEIVER_READONLY;
+                ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, thisName, &thisType);
+                ZrParser_InferredType_Free(cs->state, &thisType);
+            }
+        }
+
+        if (cs->typeEnv != ZR_NULL && !isConstructor && superTypeName != ZR_NULL) {
+            SZrString *superName = ZrCore_String_CreateFromNative(cs->state, "super");
+            if (superName != ZR_NULL) {
+                SZrInferredType superType;
+                ZrParser_InferredType_InitFull(cs->state, &superType, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, superTypeName);
+                superType.ownershipQualifier = thisOwnershipQualifier;
+                superType.isReadonlyView =
+                        receiverEffect == ZR_CANONICAL_RECEIVER_READONLY;
+                ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, superName, &superType);
+                ZrParser_InferredType_Free(cs->state, &superType);
+            }
+        }
+    }
+
+    if (params != ZR_NULL) {
+        for (TZrSize i = 0; i < params->count; i++) {
+            SZrAstNode *paramNode = params->nodes[i];
+            if (paramNode != ZR_NULL && paramNode->type == ZR_AST_PARAMETER) {
+                SZrParameter *param = &paramNode->data.parameter;
+                if (param->name != ZR_NULL && param->name->name != ZR_NULL) {
+                    SZrString *paramName = param->name->name;
+                    TZrUInt32 parameterSlot = allocate_local_var(cs, paramName);
+                    parameterCount++;
+                    compiler_register_typed_owner_cleanup_slot(
+                            cs, parameterSlot, param->typeInfo);
+
+                    compiler_register_readonly_parameter_name(cs, param, paramName);
+
+                    if (cs->typeEnv != ZR_NULL) {
+                        SZrInferredType paramType;
+                        if (param->typeInfo != ZR_NULL &&
+                            ZrParser_AstTypeToInferredType_Convert(cs, param->typeInfo, &paramType)) {
+                            ZrParser_TypeEnvironment_RegisterVariableEx(
+                                    cs->state,
+                                    cs->typeEnv,
+                                    paramName,
+                                    &paramType,
+                                    paramNode,
+                                    paramNode->location);
+                            ZrParser_InferredType_Free(cs->state, &paramType);
+                            if (!compiler_register_typed_callable_parameter(cs, paramName, param->typeInfo))
+                                ZrParser_Compiler_Error(cs, "Cannot register typed callable parameter", paramNode->location);
+                        } else {
+                            ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
+                            ZrParser_TypeEnvironment_RegisterVariableEx(
+                                    cs->state,
+                                    cs->typeEnv,
+                                    paramName,
+                                    &paramType,
+                                    paramNode,
+                                    paramNode->location);
+                            ZrParser_InferredType_Free(cs->state, &paramType);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (manualParamName != ZR_NULL) {
+        TZrUInt32 manualParamSlot = allocate_local_var(cs, manualParamName);
+        parameterCount++;
+        if (propertyAccessorNode != ZR_NULL) {
+            ZrCore_Array_Push(cs->state, &cs->constParameters, &manualParamName);
+        }
+        compiler_register_typed_owner_cleanup_slot(
+                cs, manualParamSlot, manualParamType);
+
+        if (cs->typeEnv != ZR_NULL) {
+            SZrInferredType paramType;
+            if (manualParamType != ZR_NULL && ZrParser_AstTypeToInferredType_Convert(cs, manualParamType, &paramType)) {
+                ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, manualParamName, &paramType);
+                ZrParser_InferredType_Free(cs->state, &paramType);
+            } else {
+                ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
+                ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, manualParamName, &paramType);
+                ZrParser_InferredType_Free(cs->state, &paramType);
+            }
+        }
+    }
+
+    if (!cs->hasError && outInferredReturnTypeName != ZR_NULL && body != ZR_NULL) {
+        compiler_member_infer_return_type_name(cs, body, outInferredReturnTypeName);
+    }
+
+    if (!cs->hasError && isConstructor && injectThis && node->type == ZR_AST_CLASS_META_FUNCTION &&
+        superTypeName != ZR_NULL) {
+        SZrClassMetaFunction *metaFunc = &node->data.classMetaFunction;
+        if (metaFunc->hasSuperCall && compiler_type_has_constructor(cs, superTypeName)) {
+            type_inference_record_super_constructor_call_facts(
+                    cs, node, superTypeName, metaFunc->superArgs);
+            emit_super_constructor_call(cs, superTypeName, metaFunc->superArgs);
+        }
+    }
+
+    if (body != ZR_NULL && isPropertyExpressionBody &&
+        propertyAccessorNode != ZR_NULL &&
+        propertyAccessorNode->data.propertyAccessor.kind ==
+                ZR_PROPERTY_ACCESSOR_GET) {
+        SZrAstNode returnNode;
+
+        memset(&returnNode, 0, sizeof(returnNode));
+        returnNode.type = ZR_AST_RETURN_STATEMENT;
+        returnNode.location = body->location;
+        returnNode.data.returnStatement.expr = body;
+        returnNode.data.returnStatement.isReferenceReturn =
+                propertyAccessorNode->data.propertyAccessor.isReferenceResult;
+        returnNode.data.returnStatement.referenceLocation =
+                propertyAccessorNode->data.propertyAccessor.referenceLocation;
+        ZrParser_Statement_Compile(cs, &returnNode);
+    } else if (body != ZR_NULL && isPropertyExpressionBody) {
+        SZrAstNode expressionStatement;
+
+        memset(&expressionStatement, 0, sizeof(expressionStatement));
+        expressionStatement.type = ZR_AST_EXPRESSION_STATEMENT;
+        expressionStatement.location = body->location;
+        expressionStatement.data.expressionStatement.expr = body;
+        ZrParser_Statement_Compile(cs, &expressionStatement);
+    } else if (body != ZR_NULL) {
+        ZrParser_Statement_Compile(cs, body);
+    }
+
+    if (!cs->hasError && isConstructor &&
+        !compiler_validate_constructor_const_field_initialization(cs, body, node->location)) {
+        cs->hasError = ZR_TRUE;
+    } else if (!cs->hasError && isPropertyInitializer &&
+               !compiler_validate_init_accessor_const_field_writes(
+                       cs, body, propertyAccessorNode->location)) {
+        cs->hasError = ZR_TRUE;
+    }
+
+    if (!cs->hasError && body != ZR_NULL) {
+        compiler_validate_out_parameter_definite_assignment(cs, params, body, node->location);
+    }
+
+    if (!cs->hasError) {
+        if (cs->instructions.length == 0) {
+            compiler_emit_active_scope_ownership_cleanups(cs);
+            TZrUInt32 resultSlot = allocate_stack_slot(cs);
+            SZrTypeValue nullValue;
+            ZrCore_Value_ResetAsNull(&nullValue);
+            TZrUInt32 constantIndex = add_constant(cs, &nullValue);
+            TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TZrUInt16)resultSlot,
+                                                       (TZrInt32)constantIndex);
+            emit_instruction(cs, inst);
+            TZrInstruction returnInst =
+                    create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1, (TZrUInt16)resultSlot, 0);
+            emit_instruction(cs, returnInst);
+        } else {
+            TZrInstruction *lastInst =
+                    (TZrInstruction *)ZrCore_Array_Get(&cs->instructions, cs->instructions.length - 1);
+            if (lastInst != ZR_NULL &&
+                (EZrInstructionCode)lastInst->instruction.operationCode != ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)) {
+                compiler_emit_active_scope_ownership_cleanups(cs);
+                TZrUInt32 resultSlot = allocate_stack_slot(cs);
+                SZrTypeValue nullValue;
+                ZrCore_Value_ResetAsNull(&nullValue);
+                TZrUInt32 constantIndex = add_constant(cs, &nullValue);
+                TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), (TZrUInt16)resultSlot,
+                                                           (TZrInt32)constantIndex);
+                emit_instruction(cs, inst);
+                TZrInstruction returnInst =
+                        create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1, (TZrUInt16)resultSlot, 0);
+                emit_instruction(cs, returnInst);
+            }
+        }
+    }
+
+class_member_type_scope_cleanup:
+    exit_scope(cs);
+    if (!cs->hasError) {
+        if (!compiler_build_callable_return_type_metadata(cs,
+                                                          declaredReturnType,
+                                                          body,
+                                                          &cs->currentFunction->callableReturnType,
+                                                          &cs->currentFunction->hasCallableReturnType)) {
+            ZrParser_Compiler_Error(cs, "Failed to build callable return metadata for class member", node->location);
+        }
+    }
+    if (!cs->hasError) {
+        TZrUInt32 typedLocalBindingCount = 0;
+        if (!compiler_build_typed_local_bindings(cs, &cs->currentFunction->typedLocalBindings, &typedLocalBindingCount)) {
+            ZrParser_Compiler_Error(cs, "Failed to build typed local metadata for class member", node->location);
+        } else {
+            cs->currentFunction->typedLocalBindingLength = typedLocalBindingCount;
+        }
+    }
+    if (!cs->hasError) {
+        TZrUInt32 typedClosureBindingCount = 0;
+        if (!compiler_build_typed_closure_bindings(cs,
+                                                   &cs->currentFunction->typedClosureBindings,
+                                                   &typedClosureBindingCount)) {
+            ZrParser_Compiler_Error(cs, "Failed to build typed closure metadata for class member", node->location);
+        } else {
+            cs->currentFunction->typedClosureBindingLength = typedClosureBindingCount;
+        }
+    }
+    if (hasSemanticIrIsolation) {
+        compiler_semantic_ir_isolation_end(cs, &semanticIrIsolation);
+    }
+    if (callableTypeScope.child != ZR_NULL &&
+        !compiler_callable_type_scope_end(cs, &callableTypeScope)) {
+        ZrParser_Compiler_Error(
+                cs, "Failed to restore class member parameter type scope", node->location);
+    }
+
+    if (cs->hasError) {
+        if (cs->currentFunction != ZR_NULL) {
+            ZrCore_Function_Free(cs->state, cs->currentFunction);
+        }
+        if (savedParentInstructions != ZR_NULL && savedParentInstructionsSize > 0) {
+            memcpy(cs->instructions.head, savedParentInstructions, savedParentInstructionsSize);
+            ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentInstructions, savedParentInstructionsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        if (savedParentLocalVars != ZR_NULL && savedParentLocalVarsSize > 0) {
+            memcpy(cs->localVars.head, savedParentLocalVars, savedParentLocalVarsSize);
+            ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentLocalVars, savedParentLocalVarsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        if (savedParentConstants != ZR_NULL) {
+            memcpy(cs->constants.head, savedParentConstants, savedParentConstantsSize);
+            ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentConstants, savedParentConstantsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        if (savedParentClosureVars != ZR_NULL && savedParentClosureVarsSize > 0) {
+            memcpy(cs->closureVars.head, savedParentClosureVars, savedParentClosureVarsSize);
+            ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentClosureVars, savedParentClosureVarsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        cs->currentFunction = oldFunction;
+        cs->instructionCount = oldInstructionCount;
+        cs->stackSlotCount = oldStackSlotCount;
+        cs->maxStackSlotCount = oldMaxStackSlotCount;
+        cs->lastExpressionSlot = oldLastExpressionSlot;
+        cs->localVarCount = oldLocalVarCount;
+        cs->constantCount = oldConstantCount;
+        cs->closureVarCount = oldClosureVarCount;
+        cs->cachedNullConstantIndex = oldCachedNullConstantIndex;
+        cs->hasCachedNullConstantIndex = oldHasCachedNullConstantIndex;
+        cs->instructions.length = oldInstructionLength;
+        cs->localVars.length = oldLocalVarLength;
+        cs->constants.length = oldConstantLength;
+        cs->closureVars.length = oldClosureVarLength;
+        cs->executionLocations.length = oldExecutionLocationLength;
+        cs->catchClauseInfos.length = oldCatchClauseInfoLength;
+        cs->exceptionHandlerInfos.length = oldExceptionHandlerInfoLength;
+        cs->tryContextStack.length = oldTryContextLength;
+        cs->childFunctions.length = oldChildFunctionLength;
+        cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
+        cs->isInConstructor = oldIsInConstructor;
+        cs->initializationPhase = oldInitializationPhase;
+        cs->currentFunctionNode = oldFunctionNode;
+        cs->currentFunctionReceiverEffect = oldFunctionReceiverEffect;
+        cs->constLocalVars.length = 0;
+        cs->constParameters.length = 0;
+        compiler_end_constructor_const_field_tracking(cs);
+        compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
+        return ZR_NULL;
+    }
+
+    SZrFunction *newFunc = cs->currentFunction;
+    SZrGlobalState *global = cs->state->global;
+    optimize_instructions(cs);
+
+    if (cs->instructions.length > 0) {
+        TZrSize instSize = cs->instructions.length * sizeof(TZrInstruction);
+        newFunc->instructionsList =
+                (TZrInstruction *)ZrCore_Memory_RawMallocWithType(global, instSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->instructionsList != ZR_NULL) {
+            memcpy(newFunc->instructionsList, cs->instructions.head, instSize);
+            newFunc->instructionsLength = (TZrUInt32)cs->instructions.length;
+        }
+    }
+
+    if (cs->constants.length > 0) {
+        TZrSize constSize = cs->constants.length * sizeof(SZrTypeValue);
+        newFunc->constantValueList =
+                (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(global, constSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->constantValueList != ZR_NULL) {
+            memcpy(newFunc->constantValueList, cs->constants.head, constSize);
+            newFunc->constantValueLength = (TZrUInt32)cs->constants.length;
+        }
+    }
+
+    if (cs->localVars.length > 0) {
+        TZrSize localVarSize = cs->localVars.length * sizeof(SZrFunctionLocalVariable);
+        newFunc->localVariableList = (SZrFunctionLocalVariable *)ZrCore_Memory_RawMallocWithType(
+                global, localVarSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->localVariableList != ZR_NULL) {
+            memcpy(newFunc->localVariableList, cs->localVars.head, localVarSize);
+            newFunc->localVariableLength = (TZrUInt32)cs->localVars.length;
+        }
+    }
+
+    if (cs->closureVarCount > 0) {
+        TZrSize closureVarSize = cs->closureVarCount * sizeof(SZrFunctionClosureVariable);
+        newFunc->closureValueList = (SZrFunctionClosureVariable *)ZrCore_Memory_RawMallocWithType(
+                global, closureVarSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->closureValueList != ZR_NULL) {
+            memcpy(newFunc->closureValueList, cs->closureVars.head, closureVarSize);
+            newFunc->closureValueLength = (TZrUInt32)cs->closureVarCount;
+        }
+    }
+
+    if (cs->childFunctions.length > 0) {
+        TZrSize childFuncSize = cs->childFunctions.length * sizeof(SZrFunction);
+        newFunc->childFunctionList =
+                (struct SZrFunction *)ZrCore_Memory_RawMallocWithType(global, childFuncSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (newFunc->childFunctionList != ZR_NULL) {
+            SZrFunction **srcArray = (SZrFunction **)cs->childFunctions.head;
+            for (TZrSize i = 0; i < cs->childFunctions.length; i++) {
+                if (srcArray[i] != ZR_NULL) {
+                    newFunc->childFunctionList[i] = *srcArray[i];
+                }
+            }
+            newFunc->childFunctionLength = (TZrUInt32)cs->childFunctions.length;
+            ZrCore_Function_RebindConstantFunctionValuesToChildren(newFunc);
+            for (TZrSize i = 0; i < cs->childFunctions.length; i++) {
+                if (srcArray[i] != ZR_NULL) {
+                    ZrCore_Function_DetachOwnedBuffers(srcArray[i]);
+                }
+            }
+        }
+    }
+
+    newFunc->stackSize = (TZrUInt32)cs->maxStackSlotCount;
+    newFunc->parameterCount = (TZrUInt16)parameterCount;
+    newFunc->hasVariableArguments = ZR_FALSE;
+    newFunc->lineInSourceStart = (node->location.start.line > 0) ? (TZrUInt32)node->location.start.line : 0;
+    newFunc->lineInSourceEnd = (node->location.end.line > 0) ? (TZrUInt32)node->location.end.line : 0;
+    if (!compiler_build_function_parameter_metadata(
+                cs,
+                params,
+                ZR_FALSE,
+                &newFunc->parameterMetadata,
+                &newFunc->parameterMetadataCount)) {
+        ZrParser_Compiler_Error(
+                cs,
+                "Failed to build member function parameter metadata",
+                node->location);
+    }
+    if (!compiler_build_function_frame_layout_metadata(cs, newFunc)) {
+        ZrParser_Compiler_Error(cs, "Failed to build class member frame layout metadata", node->location);
+    }
+    if (!compiler_copy_function_exception_metadata_slice(cs,
+                                                         newFunc,
+                                                         oldExecutionLocationLength,
+                                                         oldCatchClauseInfoLength,
+                                                         oldExceptionHandlerInfoLength,
+                                                         node)) {
+        ZrParser_Compiler_Error(cs, "Failed to copy class member debug metadata", node->location);
+    }
+    newFunc->functionName = functionName;
+
+    if (savedParentInstructions != ZR_NULL && savedParentInstructionsSize > 0) {
+        memcpy(cs->instructions.head, savedParentInstructions, savedParentInstructionsSize);
+        ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentInstructions, savedParentInstructionsSize,
+                                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+
+    if (savedParentLocalVars != ZR_NULL && savedParentLocalVarsSize > 0) {
+        memcpy(cs->localVars.head, savedParentLocalVars, savedParentLocalVarsSize);
+        ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentLocalVars, savedParentLocalVarsSize,
+                                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+
+    if (savedParentConstants != ZR_NULL && savedParentConstantsSize > 0) {
+        memcpy(cs->constants.head, savedParentConstants, savedParentConstantsSize);
+        ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentConstants, savedParentConstantsSize,
+                                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+
+    if (savedParentClosureVars != ZR_NULL && savedParentClosureVarsSize > 0) {
+        memcpy(cs->closureVars.head, savedParentClosureVars, savedParentClosureVarsSize);
+        ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentClosureVars, savedParentClosureVarsSize,
+                                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+
+    cs->currentFunction = oldFunction;
+    cs->instructionCount = oldInstructionCount;
+    cs->stackSlotCount = oldStackSlotCount;
+    cs->maxStackSlotCount = oldMaxStackSlotCount;
+    cs->lastExpressionSlot = oldLastExpressionSlot;
+    cs->localVarCount = oldLocalVarCount;
+    cs->constantCount = oldConstantCount;
+    cs->closureVarCount = oldClosureVarCount;
+    cs->cachedNullConstantIndex = oldCachedNullConstantIndex;
+    cs->hasCachedNullConstantIndex = oldHasCachedNullConstantIndex;
+    cs->instructions.length = oldInstructionLength;
+    cs->localVars.length = oldLocalVarLength;
+    cs->constants.length = oldConstantLength;
+    cs->closureVars.length = oldClosureVarLength;
+    cs->executionLocations.length = oldExecutionLocationLength;
+    cs->catchClauseInfos.length = oldCatchClauseInfoLength;
+    cs->exceptionHandlerInfos.length = oldExceptionHandlerInfoLength;
+    cs->tryContextStack.length = oldTryContextLength;
+    cs->childFunctions.length = oldChildFunctionLength;
+    cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
+    cs->isInConstructor = oldIsInConstructor;
+    cs->initializationPhase = oldInitializationPhase;
+    cs->currentFunctionNode = oldFunctionNode;
+    cs->currentFunctionReceiverEffect = oldFunctionReceiverEffect;
+    cs->constLocalVars.length = 0;
+    cs->constParameters.length = 0;
+    compiler_end_constructor_const_field_tracking(cs);
+    compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
+
+    if (outParameterCount != ZR_NULL) {
+        *outParameterCount = parameterCount;
+    }
+
+    return newFunc;
+}
+
+SZrFunction *compile_class_member_function(
+        SZrCompilerState *cs,
+        SZrAstNode *node,
+        SZrString *superTypeName,
+        TZrBool injectThis,
+        TZrUInt32 *outParameterCount,
+        SZrString **outInferredReturnTypeName) {
+    return compile_type_member_function(
+            cs,
+            node,
+            ZR_NULL,
+            superTypeName,
+            injectThis,
+            ZR_CANONICAL_RECEIVER_NONE,
+            outParameterCount,
+            outInferredReturnTypeName);
+}
+
+SZrFunction *compile_property_accessor_function(
+        SZrCompilerState *cs,
+        SZrAstNode *propertyNode,
+        SZrAstNode *accessorNode,
+        SZrString *superTypeName,
+        TZrBool injectThis,
+        EZrCanonicalReceiverEffect receiverEffect,
+        TZrUInt32 *outParameterCount) {
+    return compile_type_member_function(
+            cs,
+            propertyNode,
+            accessorNode,
+            superTypeName,
+            injectThis,
+            receiverEffect,
+            outParameterCount,
+            ZR_NULL);
+}
+
+// 编译 class 声明

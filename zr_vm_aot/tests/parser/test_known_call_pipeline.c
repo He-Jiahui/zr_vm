@@ -15,7 +15,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/writer.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
+#include "compiler/compiler_internal.h"
 
 // 已知调用矩阵的局部计时状态；时间值不参与 opcode 正确性判断。
 typedef struct {

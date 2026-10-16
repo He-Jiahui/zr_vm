@@ -7,7 +7,7 @@
 #include "compiler_internal.h"
 #include "type_inference_internal.h"
 #include "type_inference_call_diagnostics.h"
-#include "zr_vm_parser/iteration_contract.h"
+#include "compiler/statement/iteration_contract.h"
 #include "type_inference_semantic_facts.h"
 #include "zr_vm_parser/ast.h"
 

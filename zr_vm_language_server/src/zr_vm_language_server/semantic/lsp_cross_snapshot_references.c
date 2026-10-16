@@ -4,7 +4,7 @@
 #include "metadata/lsp_virtual_document_identity.h"
 #include "semantic/lsp_external_target_identity.h"
 #include "project/lsp_project_internal.h"
-#include "semantic/lsp_semantic_reference_query.h"
+#include "semantic/query/lsp_semantic_reference_query.h"
 
 #include "zr_vm_parser/semantic_query.h"
 

@@ -5,7 +5,7 @@
 #include "zr_vm_core/artifact_schema.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/canonical_consumer.h"
-#include "zr_vm_parser/artifact_projection.h"
+#include "artifact/artifact_projection.h"
 
 void setUp(void) {}
 void tearDown(void) {}

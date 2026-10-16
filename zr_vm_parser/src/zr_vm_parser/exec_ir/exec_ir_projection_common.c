@@ -1,4 +1,4 @@
-#include "zr_vm_parser/exec_ir_projections.h"
+#include "exec_ir/exec_ir_projections.h"
 #include "exec_ir_projection_phi.h"
 
 #include <limits.h>

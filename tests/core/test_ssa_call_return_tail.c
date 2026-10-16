@@ -1,7 +1,7 @@
 #include "unity.h"
 
 #include "zr_vm_core/execution_call_transfer.h"
-#include "zr_vm_parser/exec_ir_call_transfer.h"
+#include "exec_ir/exec_ir_call_transfer.h"
 #include <string.h>
 
 void setUp(void) {}

@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "zr_vm_parser/aot_ir_projection_descriptor.h"
+#include "exec_ir/aot_ir_projection_descriptor.h"
 
 static void fill_contract(SZrExecutionContract *contract,
                           TZrMetadataToken token, TZrUInt64 signatureHash,

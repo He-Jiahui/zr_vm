@@ -1,4 +1,4 @@
-#include "../exec_ir_pass_internal.h"
+#include "exec_ir/exec_ir_pass_internal.h"
 
 #include "zr_vm_core/exec_ir_state_map.h"
 

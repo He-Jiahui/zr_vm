@@ -6,8 +6,8 @@
 #include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/state.h"
-#include "../../zr_vm_core/src/zr_vm_core/gc/gc_internal.h"
-#include "../../zr_vm_core/src/zr_vm_core/gc/gc_domain_internal.h"
+#include "gc/gc_internal.h"
+#include "gc/gc_domain_internal.h"
 
 static TZrUInt32 failObjectOrdinal, objectCount, reserveCount, failReserveOrdinal;
 static TZrUInt32 invalidMutationEndCount;
@@ -128,4 +128,4 @@ static void test_mutation_end(SZrState *state, TZrBool locked) {
 #define ZrCore_RawObject_Barrier test_barrier
 #define ZrCore_GcDomain_MutationEnd test_mutation_end
 #define calloc test_calloc
-#include "../../zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_materialize_objects.c"
+#include "exec_ir/exec_ir_materialize_objects.c"

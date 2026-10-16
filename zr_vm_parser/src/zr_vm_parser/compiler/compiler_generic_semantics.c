@@ -3,7 +3,7 @@
 //
 
 #include "compiler_internal.h"
-#include "compile_expression_internal.h"
+#include "compiler/expression/compile_expression_internal.h"
 #include "zr_vm_parser/place.h"
 #include "zr_vm_parser/variance.h"
 

@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include "module/module_internal.h"
-#include "call_binding_site.h"
+#include "call/call_binding_site.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/function_identity.h"
 

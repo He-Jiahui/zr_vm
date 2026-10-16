@@ -12,7 +12,7 @@
  * ## Constraints and lifecycle
  * 静态只读 C 字符串；必须先于 private include 定义。它是当前实现细节，不是对外 Scheduler ABI。
  * ## References
- * tests/task/task_scheduler_queue_reuse_cases.inc:17；tests/task/task_scheduler_queue_reuse_cases.inc:35；zr_vm_library/src/zr_vm_library/task_runtime_scheduler_queue.inc:30；zr_vm_library/src/zr_vm_library/task_runtime.c:44
+ * tests/task/task_scheduler_queue_reuse_cases.inc:17；tests/task/task_scheduler_queue_reuse_cases.inc:35；zr_vm_library/src/zr_vm_library/task/task_runtime_scheduler_queue.inc:30；zr_vm_library/src/zr_vm_library/task/task_runtime.c:44
  */
 static const TZrChar *kTaskQueueField = "__zr_task_queue";
 /**
@@ -21,7 +21,7 @@ static const TZrChar *kTaskQueueField = "__zr_task_queue";
  * ## Constraints and lifecycle
  * 静态借用字符串；head 的5→0和 memberVersion 变化由真实核心 setter 观察，不直接写 pair 值。
  * ## References
- * tests/task/task_scheduler_queue_reuse_cases.inc:26；tests/task/task_scheduler_queue_reuse_cases.inc:663；zr_vm_library/src/zr_vm_library/task_runtime_scheduler_queue.inc:133；zr_vm_library/src/zr_vm_library/task_runtime_scheduler_queue.inc:153
+ * tests/task/task_scheduler_queue_reuse_cases.inc:26；tests/task/task_scheduler_queue_reuse_cases.inc:663；zr_vm_library/src/zr_vm_library/task/task_runtime_scheduler_queue.inc:133；zr_vm_library/src/zr_vm_library/task/task_runtime_scheduler_queue.inc:153
  */
 static const TZrChar *kTaskQueueHeadField = "__zr_task_queue_head";
 /**
@@ -30,9 +30,9 @@ static const TZrChar *kTaskQueueHeadField = "__zr_task_queue_head";
  * ## Constraints and lifecycle
  * 依赖父 TU 已包含的 core/native API 及前置 key 定义；此处不是另一套 queue provider，生产片段保持原样。
  * ## References
- * tests/task/task_scheduler_queue_reuse_cases.inc:17；tests/task/task_scheduler_queue_reuse_cases.inc:26；tests/task/task_scheduler_queue_reuse_cases.inc:35；zr_vm_library/src/zr_vm_library/task_runtime_scheduler_queue.inc:11；zr_vm_library/src/zr_vm_library/task_runtime_scheduler_queue.inc:132；tests/task/test_task_job_scheduler.c:459
+ * tests/task/task_scheduler_queue_reuse_cases.inc:17；tests/task/task_scheduler_queue_reuse_cases.inc:26；tests/task/task_scheduler_queue_reuse_cases.inc:35；zr_vm_library/src/zr_vm_library/task/task_runtime_scheduler_queue.inc:11；zr_vm_library/src/zr_vm_library/task/task_runtime_scheduler_queue.inc:132；tests/task/test_task_job_scheduler.c:459
  */
-#include "../../zr_vm_library/src/zr_vm_library/task_runtime_scheduler_queue.inc"
+#include "task/task_runtime_scheduler_queue.inc"
 
 /** 跨多次源执行保存旧 Task 的独立 GC 根，供 completed 结果和重入 inner 结果再读。
  * 仅在 queue_reuse_task_saved 为真时 Resolve/Release；不得把借用对象地址当根，也不得覆盖尚未释放的句柄。
@@ -161,7 +161,7 @@ static TZrInt64 queue_reuse_saved_status(SZrState *state);
  * ## Constraints and lifecycle
  * Job/Scheduler 根由上游 captureJob 建立；本测试保证 Task 槽为空。ScheduleJob 可能已消费 Job，后续 Task 根失败不撤销提交。
  * ## References
- * tests/task/task_scheduler_queue_reuse_cases.inc:170；tests/task/task_scheduler_queue_reuse_cases.inc:172；tests/task/task_scheduler_queue_reuse_cases.inc:177；tests/task/task_scheduler_queue_reuse_cases.inc:178；tests/task/task_scheduler_queue_reuse_cases.inc:180；zr_vm_library/src/zr_vm_library/task_runtime.c:731；zr_vm_library/src/zr_vm_library/task_runtime.c:1066
+ * tests/task/task_scheduler_queue_reuse_cases.inc:170；tests/task/task_scheduler_queue_reuse_cases.inc:172；tests/task/task_scheduler_queue_reuse_cases.inc:177；tests/task/task_scheduler_queue_reuse_cases.inc:178；tests/task/task_scheduler_queue_reuse_cases.inc:180；zr_vm_library/src/zr_vm_library/task/task_runtime.c:731；zr_vm_library/src/zr_vm_library/task/task_runtime.c:1066
  */
 static TZrBool queue_reuse_enqueue_inner(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrRawObject *job = ZR_NULL;
@@ -430,7 +430,7 @@ static void test_scheduler_reuse_preserves_completed_job_result(void) {
  * ## Constraints and lifecycle
  * 同Scheduler非递归pump的时序由 queued快照观察，三根独立清理在断言前完成；不把最终inner结果当作提交时已完成。
  * ## References
- * tests/task/task_scheduler_queue_reuse_cases.inc:508；tests/task/task_scheduler_queue_reuse_cases.inc:511；tests/task/task_scheduler_queue_reuse_cases.inc:513；tests/task/task_scheduler_queue_reuse_cases.inc:515；tests/task/task_scheduler_queue_reuse_cases.inc:522；tests/task/task_scheduler_queue_reuse_cases.inc:524；tests/task/task_scheduler_queue_reuse_cases.inc:527；tests/task/task_scheduler_queue_reuse_cases.inc:529；zr_vm_library/src/zr_vm_library/task_runtime.c:731
+ * tests/task/task_scheduler_queue_reuse_cases.inc:508；tests/task/task_scheduler_queue_reuse_cases.inc:511；tests/task/task_scheduler_queue_reuse_cases.inc:513；tests/task/task_scheduler_queue_reuse_cases.inc:515；tests/task/task_scheduler_queue_reuse_cases.inc:522；tests/task/task_scheduler_queue_reuse_cases.inc:524；tests/task/task_scheduler_queue_reuse_cases.inc:527；tests/task/task_scheduler_queue_reuse_cases.inc:529；zr_vm_library/src/zr_vm_library/task/task_runtime.c:731
  */
 static void test_scheduler_keeps_reentrant_enqueue_until_outer_job_returns(void) {
     /**
@@ -539,7 +539,7 @@ static void test_scheduler_keeps_reentrant_enqueue_until_outer_job_returns(void)
  * ## Constraints and lifecycle
  * turns为本地重新入队次数；不是计时器或OS worker验证。BUG: 原生Task.result收到未初始化result槽，正常COMPLETED的typed-null字段仍经Value_Copy读取目标ownership元数据，可能误释资源或崩溃；仅静态证明，字符串和程序未修复。
  * ## References
- * tests/task/task_scheduler_queue_reuse_cases.inc:593；tests/task/task_scheduler_queue_reuse_cases.inc:602；tests/task/task_scheduler_queue_reuse_cases.inc:604；tests/task/task_scheduler_queue_reuse_cases.inc:612；tests/task/task_scheduler_queue_reuse_cases.inc:616；tests/task/task_scheduler_queue_reuse_cases.inc:619；tests/task/task_scheduler_queue_reuse_cases.inc:621；tests/task/task_scheduler_queue_reuse_cases.inc:623；tests/task/task_scheduler_queue_reuse_cases.inc:626；zr_vm_library/src/zr_vm_library/task_runtime.c:795；zr_vm_library/src/zr_vm_library/task_runtime.c:812；zr_vm_library/src/zr_vm_library/task_runtime.c:813；zr_vm_library/src/zr_vm_library/task_runtime.c:710；zr_vm_library/src/zr_vm_library/task_runtime.c:713；zr_vm_library/src/zr_vm_library/task_runtime.c:1162；zr_vm_library/src/zr_vm_library/task_runtime.c:835；zr_vm_library/src/zr_vm_library/task_runtime.c:836；zr_vm_library/src/zr_vm_library/task_runtime.c:837；zr_vm_library/src/zr_vm_library/task_runtime.c:216；zr_vm_library/src/zr_vm_library/task_runtime.c:217；zr_vm_core/include/zr_vm_core/value.h:151；zr_vm_core/include/zr_vm_core/value.h:161；zr_vm_core/include/zr_vm_core/value.h:229
+ * tests/task/task_scheduler_queue_reuse_cases.inc:593；tests/task/task_scheduler_queue_reuse_cases.inc:602；tests/task/task_scheduler_queue_reuse_cases.inc:604；tests/task/task_scheduler_queue_reuse_cases.inc:612；tests/task/task_scheduler_queue_reuse_cases.inc:616；tests/task/task_scheduler_queue_reuse_cases.inc:619；tests/task/task_scheduler_queue_reuse_cases.inc:621；tests/task/task_scheduler_queue_reuse_cases.inc:623；tests/task/task_scheduler_queue_reuse_cases.inc:626；zr_vm_library/src/zr_vm_library/task/task_runtime.c:795；zr_vm_library/src/zr_vm_library/task/task_runtime.c:812；zr_vm_library/src/zr_vm_library/task/task_runtime.c:813；zr_vm_library/src/zr_vm_library/task/task_runtime.c:710；zr_vm_library/src/zr_vm_library/task/task_runtime.c:713；zr_vm_library/src/zr_vm_library/task/task_runtime.c:1162；zr_vm_library/src/zr_vm_library/task/task_runtime.c:835；zr_vm_library/src/zr_vm_library/task/task_runtime.c:836；zr_vm_library/src/zr_vm_library/task/task_runtime.c:837；zr_vm_library/src/zr_vm_library/task/task_runtime.c:216；zr_vm_library/src/zr_vm_library/task/task_runtime.c:217；zr_vm_core/include/zr_vm_core/value.h:151；zr_vm_core/include/zr_vm_core/value.h:161；zr_vm_core/include/zr_vm_core/value.h:229
  */
 static void test_scheduler_reuses_queue_for_cooperative_turns(void) {
     /**

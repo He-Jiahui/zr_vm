@@ -93,7 +93,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core io source patch feature gates",
-        path="zr_vm_core/src/zr_vm_core/io.c",
+        path="zr_vm_core/src/zr_vm_core/io/io.c",
         pattern=r"sourceVersionPatch\s*>=\s*(2|3|4|5|7)\b",
         target="ZR_IO_SOURCE_PATCH_HAS_*",
         layer="common",
@@ -364,7 +364,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp signature-help location packing literal",
-        path="zr_vm_language_server/src/zr_vm_language_server/lsp_signature_help.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/features/lsp_signature_help.c",
         pattern=r"\*\s*4096\s*\+",
         target="ZR_LSP_SIGNATURE_RANGE_PACK_BASE",
         layer="module",
@@ -372,7 +372,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp reference-tracker location packing literal",
-        path="zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/index/reference_tracker.c",
         pattern=r"\*\s*4096\s*\+",
         target="ZR_LSP_SIGNATURE_RANGE_PACK_BASE",
         layer="module",
@@ -380,7 +380,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp reference-tracker local invalid span sentinel",
-        path="zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/index/reference_tracker.c",
         pattern=r"return\s*\(TZrSize\)-1;",
         target="ZR_LSP_RANGE_SPAN_SCORE_INVALID",
         layer="module",
@@ -396,7 +396,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp incremental parser local sizes and hash multiplier",
-        path="zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/incremental/incremental_parser.c",
         pattern=r"ZrCore_Array_Init\(state,\s*&fileVersion->parserDiagnostics,\s*sizeof\(SZrDiagnostic \*\),\s*4\)|"
         r"ZrCore_HashSet_Init\(state,\s*&parser->uriToFileMap,\s*4\)|hashValue\s*=\s*hashValue\s*\*\s*31",
         target="zr_vm_language_server/conf.h",
@@ -416,7 +416,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp semantic analyzer support hash multiplier",
-        path="zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_support.c",
         pattern=r"hash\s*=\s*hash\s*\*\s*31",
         target="ZR_LSP_HASH_MULTIPLIER",
         layer="module",
@@ -424,7 +424,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp symbol table local sizes and hash geometry",
-        path="zr_vm_language_server/src/zr_vm_language_server/symbol_table.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/index/symbol_table.c",
         pattern=r"ZrCore_Array_Init\(state,\s*&table->scopeStack,\s*sizeof\(SZrSymbolScope \*\),\s*8\)|"
         r"ZrCore_Array_Init\(state,\s*&table->allScopes,\s*sizeof\(SZrSymbolScope \*\),\s*8\)|"
         r"ZrCore_HashSet_Init\(state,\s*&table->nameToSymbolsHashSet,\s*4\)|"
@@ -439,7 +439,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp symbol table local position compare tri-state",
-        path="zr_vm_language_server/src/zr_vm_language_server/symbol_table.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/index/symbol_table.c",
         pattern=r"return\s+-1;|return\s+1;",
         target="ZR_LSP_SYMBOL_POSITION_COMPARE_LESS / ZR_LSP_SYMBOL_POSITION_COMPARE_GREATER",
         layer="module",
@@ -447,7 +447,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp reference tracker local sizes and hash geometry",
-        path="zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/index/reference_tracker.c",
         pattern=r"ZrCore_Array_Init\(state,\s*&tracker->allReferences,\s*sizeof\(SZrReference \*\),\s*16\)|"
         r"ZrCore_HashSet_Init\(state,\s*&tracker->symbolToReferencesMap,\s*4\)|"
         r"ZrCore_Array_Init\(state,\s*refArray,\s*sizeof\(SZrReference \*\),\s*4\)|"
@@ -503,7 +503,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp semantic token helper array capacity",
-        path="zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/semantic/query/lsp_semantic_tokens.c",
         pattern=r"ZrCore_Array_Init\(state,\s*&bindings,\s*sizeof\(SZrLspImportBinding \*\),\s*4\)",
         target="zr_vm_language_server/conf.h",
         layer="module",
@@ -622,7 +622,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core debug runtime error buffer",
-        path="zr_vm_core/src/zr_vm_core/debug.c",
+        path="zr_vm_core/src/zr_vm_core/debug/debug.c",
         pattern=r"errorBuffer\s*\[\s*1024\s*\]",
         target="ZR_RUNTIME_ERROR_BUFFER_LENGTH",
         layer="common",
@@ -638,7 +638,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core meta small text buffer",
-        path="zr_vm_core/src/zr_vm_core/meta.c",
+        path="zr_vm_core/src/zr_vm_core/value/meta.c",
         pattern=r"buffer\s*\[\s*64\s*\]",
         target="ZR_RUNTIME_SMALL_TEXT_BUFFER_LENGTH",
         layer="common",
@@ -679,7 +679,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core meta self/other slot literals",
-        path="zr_vm_core/src/zr_vm_core/meta.c",
+        path="zr_vm_core/src/zr_vm_core/value/meta.c",
         pattern=r"ZrCore_Stack_GetValue\(base \+ 1\)|ZrCore_Stack_GetValue\(base \+ 2\)|"
         r"ZrCore_Stack_CopyValue\(state,\s*base \+ 1,\s*&stableSelf\)|stackTop\.valuePointer\s*=\s*base \+ 2;",
         target="ZR_META_CALL_SELF_SLOT / ZR_META_CALL_SECOND_ARGUMENT_SLOT / ZR_META_CALL_STACK_TOP",
@@ -688,7 +688,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core value small text buffer",
-        path="zr_vm_core/src/zr_vm_core/value.c",
+        path="zr_vm_core/src/zr_vm_core/value/value.c",
         pattern=r"buffer\s*\[\s*64\s*\]",
         target="ZR_RUNTIME_SMALL_TEXT_BUFFER_LENGTH",
         layer="common",
@@ -696,7 +696,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core reflection formatting buffers",
-        path="zr_vm_core/src/zr_vm_core/reflection.c",
+        path="zr_vm_core/src/zr_vm_core/reflection/reflection.c",
         pattern=r"paramName\s*\[\s*32\s*\]|fallbackName\s*\[\s*32\s*\]|typeNameBuffer\s*\[\s*128\s*\]|"
         r"returnTypeBuffer\s*\[\s*128\s*\]|metaName\s*\[\s*128\s*\]|qualified(Name|MemberName)\s*\[\s*512\s*\]|"
         r"entryQualifiedName\s*\[\s*512\s*\]|buffer\s*\[\s*8192\s*\]",
@@ -752,7 +752,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp semantic-analyzer support recursion depth",
-        path="zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_support.c",
         pattern=r"depth\s*>\s*32\b",
         target="ZR_LSP_AST_RECURSION_MAX_DEPTH",
         layer="module",
@@ -760,7 +760,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp signature-help buffers and recursion depth",
-        path="zr_vm_language_server/src/zr_vm_language_server/lsp_signature_help.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/features/lsp_signature_help.c",
         pattern=r"typeBuffer\s*\[\s*128\s*\]|buffer\s*\[\s*256\s*\]|integerBuffer\s*\[\s*64\s*\]|"
         r"labelBuffer\s*\[\s*512\s*\]|depth\s*>\s*32\b",
         target="zr_vm_language_server/conf.h",
@@ -769,7 +769,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp signature-help local binding-index sentinel",
-        path="zr_vm_language_server/src/zr_vm_language_server/lsp_signature_help.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/features/lsp_signature_help.c",
         pattern=r"return\s+-1;|bindingIndex\s*>=\s*0",
         target="ZR_LSP_SIGNATURE_BINDING_INDEX_NONE",
         layer="module",
@@ -777,7 +777,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp incremental-parser hash buffer",
-        path="zr_vm_language_server/src/zr_vm_language_server/incremental_parser.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/incremental/incremental_parser.c",
         pattern=r"hashStr\s*\[\s*32\s*\]",
         target="ZR_LSP_SHORT_TEXT_BUFFER_LENGTH",
         layer="module",
@@ -785,7 +785,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp semantic-token local capacities",
-        path="zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/semantic/query/lsp_semantic_tokens.c",
         pattern=r"ZrCore_Array_Init\(state,\s*(result|&entries),\s*sizeof\([^)]+\),\s*32\)",
         target="ZR_LSP_SEMANTIC_TOKEN_INITIAL_CAPACITY",
         layer="module",
@@ -793,7 +793,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp semantic-token local unknown and compare sentinels",
-        path="zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/semantic/query/lsp_semantic_tokens.c",
         pattern=r"return\s+left->line\s*<\s*right->line\s*\?\s*-1\s*:\s*1;|"
         r"return\s+left->character\s*<\s*right->character\s*\?\s*-1\s*:\s*1;|"
         r"return\s+left->length\s*<\s*right->length\s*\?\s*-1\s*:\s*1;|"
@@ -805,7 +805,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp semantic-analyzer typecheck buffers",
-        path="zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_typecheck.c",
         pattern=r"buffer\s*\[\s*(128|256)\s*\]",
         target="ZR_LSP_TYPE_BUFFER_LENGTH / ZR_LSP_TEXT_BUFFER_LENGTH",
         layer="module",
@@ -813,7 +813,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp semantic-analyzer symbols error buffer",
-        path="zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_symbols.c",
         pattern=r"errorMsg\s*\[\s*256\s*\]",
         target="ZR_LSP_TEXT_BUFFER_LENGTH",
         layer="module",
@@ -839,7 +839,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core duplicated constant-reference step sentinels",
-        path="zr_vm_core/src/zr_vm_core/constant_reference.c",
+        path="zr_vm_core/src/zr_vm_core/value/constant_reference.c",
         pattern=r"#define\s+ZR_CONSTANT_REF_STEP_PARENT\b|#define\s+ZR_CONSTANT_REF_STEP_CONSTANT_POOL\b|"
         r"#define\s+ZR_CONSTANT_REF_STEP_MODULE\b|#define\s+ZR_CONSTANT_REF_STEP_PROTOTYPE_INDEX\b|"
         r"#define\s+ZR_CONSTANT_REF_STEP_CHILD_FUNC_INDEX\b",
@@ -873,7 +873,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core invalid-pointer low-bound guard in state teardown",
-        path="zr_vm_core/src/zr_vm_core/state.c",
+        path="zr_vm_core/src/zr_vm_core/runtime/state.c",
         pattern=r"0x1000",
         target="ZR_RUNTIME_INVALID_POINTER_GUARD_LOW_BOUND",
         layer="common",
@@ -881,7 +881,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core reflection entry hash salt",
-        path="zr_vm_core/src/zr_vm_core/reflection.c",
+        path="zr_vm_core/src/zr_vm_core/reflection/reflection.c",
         pattern=r"0xE177u",
         target="ZR_RUNTIME_REFLECTION_ENTRY_HASH_SALT",
         layer="common",
@@ -889,7 +889,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core reflection member hash-band literals",
-        path="zr_vm_core/src/zr_vm_core/reflection.c",
+        path="zr_vm_core/src/zr_vm_core/reflection/reflection.c",
         pattern=r"\+\s*1u\)|\+\s*100u\)",
         target="ZR_RUNTIME_REFLECTION_MEMBER_HASH_BASE / ZR_RUNTIME_REFLECTION_METHOD_HASH_BASE",
         layer="common",
@@ -921,7 +921,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core native-call error-handler overflow ratio",
-        path="zr_vm_core/src/zr_vm_core/function.c",
+        path="zr_vm_core/src/zr_vm_core/function/function.c",
         pattern=r"ZR_VM_MAX_NATIVE_CALL_STACK\s*\)\s*/\s*10\s*\*\s*11",
         target="ZR_NATIVE_CALL_STACK_ERROR_HANDLER_GUARD_DIVISOR / ZR_NATIVE_CALL_STACK_ERROR_HANDLER_GUARD_MULTIPLIER",
         layer="common",
@@ -1320,7 +1320,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core value debug string limits",
-        path="zr_vm_core/src/zr_vm_core/value.c",
+        path="zr_vm_core/src/zr_vm_core/value/value.c",
         pattern=r"#define\s+MAX_DEBUG_BUFFER_SIZE\b|MAX_ELEMENTS_TO_SHOW\s*=\s*10\b|buffer\s*\[\s*2048\s*\]",
         target="ZR_RUNTIME_DEBUG_STRING_BUFFER_LENGTH / ZR_RUNTIME_DEBUG_COLLECTION_PREVIEW_MAX",
         layer="common",
@@ -1412,7 +1412,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core function debug-hook no-line sentinel",
-        path="zr_vm_core/src/zr_vm_core/function.c",
+        path="zr_vm_core/src/zr_vm_core/function/function.c",
         pattern=r"ZR_DEBUG_HOOK_EVENT_CALL,\s*\(TZrUInt32\)-1",
         target="ZR_RUNTIME_DEBUG_HOOK_LINE_NONE",
         layer="common",
@@ -1420,7 +1420,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core debug-hook return no-line sentinel",
-        path="zr_vm_core/src/zr_vm_core/debug.c",
+        path="zr_vm_core/src/zr_vm_core/debug/debug.c",
         pattern=r"ZR_DEBUG_HOOK_EVENT_RETURN,\s*\(TZrUInt32\)-1",
         target="ZR_RUNTIME_DEBUG_HOOK_LINE_NONE",
         layer="common",
@@ -1428,7 +1428,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core debug trace raw none signal",
-        path="zr_vm_core/src/zr_vm_core/debug.c",
+        path="zr_vm_core/src/zr_vm_core/debug/debug.c",
         pattern=r"ZrCore_Debug_TraceExecution\s*\([^)]*\)\s*\{[\s\S]*?return\s+0\s*;",
         target="ZR_DEBUG_SIGNAL_NONE",
         layer="common",
@@ -1436,7 +1436,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core exception invalid thread-status sentinel",
-        path="zr_vm_core/src/zr_vm_core/exception.c",
+        path="zr_vm_core/src/zr_vm_core/exception/exception.c",
         pattern=r"\(context\)->status\s*=\s*-1;",
         target="ZR_THREAD_STATUS_INVALID",
         layer="common",
@@ -1444,7 +1444,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core exception raw source-line none sentinel",
-        path="zr_vm_core/src/zr_vm_core/exception.c",
+        path="zr_vm_core/src/zr_vm_core/exception/exception.c",
         pattern=r"ZrCore_Exception_FindSourceLine\s*\([^)]*\)\s*\{[\s\S]*?TZrUInt32 bestLine = 0\s*;[\s\S]*?return 0;|TZrInt64\s+sourceLine\s*=\s*0\s*;",
         target="ZR_EXCEPTION_SOURCE_LINE_NONE",
         layer="module",
@@ -1632,7 +1632,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core meta compare-float local tri-state constants",
-        path="zr_vm_core/src/zr_vm_core/meta.c",
+        path="zr_vm_core/src/zr_vm_core/value/meta.c",
         pattern=r"TZrInt64 result = 0;\s*if \(diff > 0\.0\)|result\s*=\s*1;|result\s*=\s*-1;",
         target="ZR_META_COMPARE_RESULT_LESS / ZR_META_COMPARE_RESULT_EQUAL / ZR_META_COMPARE_RESULT_GREATER",
         layer="module",
@@ -1640,7 +1640,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core closure local zero closed-count sentinel",
-        path="zr_vm_core/src/zr_vm_core/closure.c",
+        path="zr_vm_core/src/zr_vm_core/closure/closure.c",
         pattern=r"ZrCore_Closure_CloseRegisteredValues\s*\([^)]*\)\s*\{[\s\S]*?TZrSize\s+closedCount\s*=\s*0\s*;[\s\S]*?return\s+0\s*;",
         target="ZR_CLOSURE_CLOSED_COUNT_NONE",
         layer="module",
@@ -1664,7 +1664,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core hash-set local max-load ratio",
-        path="zr_vm_core/src/zr_vm_core/hash_set.c",
+        path="zr_vm_core/src/zr_vm_core/base/hash_set.c",
         pattern=r"newCapacity\s*\*\s*3\s*/\s*4",
         target="ZR_HASH_SET_MAX_LOAD_NUMERATOR / ZR_HASH_SET_MAX_LOAD_DENOMINATOR",
         layer="module",

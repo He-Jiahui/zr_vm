@@ -1,7 +1,7 @@
 #ifndef ZR_VM_PARSER_EXEC_IR_BRANCH_INTERVALS_H
 #define ZR_VM_PARSER_EXEC_IR_BRANCH_INTERVALS_H
 
-#include "zr_vm_parser/exec_ir_branch_facts.h"
+#include "exec_ir/exec_ir_branch_facts.h"
 #include <stdint.h>
 
 /* Private checked endpoint math. The bounds on the right are representable

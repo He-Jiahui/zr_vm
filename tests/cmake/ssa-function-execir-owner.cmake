@@ -23,7 +23,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/ssa-execir-owned-module.cmake")
 get_target_property(_zr_function_execir_excluded_sources
         zr_vm_ssa_execir_owner_private_core SOURCES)
 list(APPEND _zr_function_execir_excluded_sources
-        "${_zr_function_execir_root}/zr_vm_core/src/zr_vm_core/aot_ir_owned_module.c")
+        "${_zr_function_execir_root}/zr_vm_core/src/zr_vm_core/aot/aot_ir_owned_module.c")
 if (DEFINED ZR_SSA_SOURCE_ROOT)
     # Reuse the current ordinary objects without recompiling the whole Core.
     # Only this test links the derived binary archive; other tests keep Core.
@@ -92,7 +92,7 @@ else ()
 endif ()
 
 add_library(zr_vm_ssa_function_execir_aot_object OBJECT
-        "${_zr_function_execir_root}/zr_vm_core/src/zr_vm_core/aot_ir_owned_module.c")
+        "${_zr_function_execir_root}/zr_vm_core/src/zr_vm_core/aot/aot_ir_owned_module.c")
 add_executable(zr_vm_ssa_function_exec_ir_owner_test
         "${_zr_function_execir_root}/tests/core/test_ssa_function_exec_ir_owner.c"
         "${_zr_function_execir_root}/tests/core/support/ssa_function_exec_ir_owner_fixture.c"
@@ -104,6 +104,7 @@ add_executable(zr_vm_ssa_function_exec_ir_owner_test
 foreach (_zr_function_execir_target IN ITEMS zr_vm_ssa_function_execir_aot_object
         zr_vm_ssa_function_exec_ir_owner_test)
     target_include_directories(${_zr_function_execir_target} PRIVATE
+            "${_zr_function_execir_root}/zr_vm_core/src/zr_vm_core"
             "${_zr_function_execir_root}"
             "${_zr_function_execir_root}/zr_vm_common/include"
             "${_zr_function_execir_root}/zr_vm_core/include"

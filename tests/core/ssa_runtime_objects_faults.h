@@ -1,7 +1,7 @@
 #ifndef ZR_TEST_SSA_RUNTIME_OBJECTS_FAULTS_H
 #define ZR_TEST_SSA_RUNTIME_OBJECTS_FAULTS_H
 #include <stddef.h>
-#include "zr_vm_core/exec_ir_runtime.h"
+#include "exec_ir/exec_ir_runtime.h"
 ZR_CORE_API void ssa_runtime_objects_faults(TZrUInt32 failObject, TZrBool throwOom,
                                 TZrBool collectEachObject, TZrUInt32 failReserve);
 ZR_CORE_API TZrUInt32 ssa_runtime_objects_allocation_count(void);

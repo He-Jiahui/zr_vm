@@ -1,6 +1,6 @@
 #include "debug_internal.h"
-#include "debug_breakpoint_condition.h"
-#include "debug_breakpoint_logpoint.h"
+#include "breakpoint/debug_breakpoint_condition.h"
+#include "breakpoint/debug_breakpoint_logpoint.h"
 
 #include <ctype.h>
 

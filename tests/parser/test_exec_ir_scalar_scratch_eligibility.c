@@ -1,6 +1,6 @@
 #include "exec_ir_internal.h"
-#include "compiler_semantic_ir_scalar_scratch_rules.h"
-#include "semantic_ir_scalar_scratch_internal.h"
+#include "compiler/semantic/compiler_semantic_ir_scalar_scratch_rules.h"
+#include "semantic_ir/semantic_ir_scalar_scratch_internal.h"
 
 #include <stdio.h>
 #include <stdint.h>

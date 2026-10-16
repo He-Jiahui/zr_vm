@@ -9,7 +9,7 @@
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/place.h"
 
-#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
+#include "compiler/compiler_internal.h"
 
 static SZrState *g_state;
 

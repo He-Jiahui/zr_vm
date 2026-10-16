@@ -17,7 +17,7 @@ endif ()
 add_library(${_zr_returned_descriptor} OBJECT
         "${_zr_returned_root}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_projection_descriptor.c")
 add_library(${_zr_returned_owner} OBJECT
-        "${_zr_returned_root}/zr_vm_core/src/zr_vm_core/aot_ir_owned_module.c")
+        "${_zr_returned_root}/zr_vm_core/src/zr_vm_core/aot/aot_ir_owned_module.c")
 add_executable(zr_vm_ssa_source_returned_retention_test
         "${_zr_returned_root}/tests/parser/test_ssa_source_returned_retention.c"
         "${_zr_returned_root}/tests/parser/support/ssa_source_returned_crt_ledger.c"

@@ -1,8 +1,8 @@
 #include <assert.h>
 #include <string.h>
 
-#include "zr_vm_parser/aot_ir_projection_descriptor.h"
-#include "backend_aot_ir_adapter.h"
+#include "exec_ir/aot_ir_projection_descriptor.h"
+#include "backend_aot/backend_aot_ir_adapter.h"
 
 static void fill_contract(SZrExecutionContract *contract,
                           TZrMetadataToken token, TZrUInt64 moduleHash,

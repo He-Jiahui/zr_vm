@@ -2,10 +2,10 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_parser/canonical_type.h"
 #include "zr_vm_parser/exec_ir_builder.h"
-#include "zr_vm_parser/exec_ir_execbc_vm.h"
-#include "zr_vm_parser/exec_ir_projections.h"
+#include "exec_ir/execbc/exec_ir_execbc_vm.h"
+#include "exec_ir/exec_ir_projections.h"
 #include "zr_vm_parser/semantic_ir.h"
-#include "zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_compare.h"
+#include "compiler/semantic/compiler_semantic_compare.h"
 
 #include <stdint.h>
 #include <stdio.h>
