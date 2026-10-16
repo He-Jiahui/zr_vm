@@ -1,6 +1,7 @@
 /* Native formatting and numeric conversion. String storage/interning remains
  * in string.c; this translation unit uses the existing public String API. */
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/exception.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/value.h"
@@ -9,7 +10,16 @@
 /* 格式化片段进入值栈后才可触发后续拼接和 GC；buffer 记录该栈根的存在。 */
 static void native_string_push_string_to_stack(SZrNativeStringFormatBuffer *buffer, TZrNativeString string, TZrSize length) {
     SZrState *state = buffer->state;
-    SZrString *str = ZrCore_String_Create(state, string, length); /* BUG: 创建失败返回 null；下方栈赋值会解引用。 */
+    /* Reserve before creation: the new GC object is not rooted until published. */
+    if (!ZrCore_Stack_Grow(state, 1, ZR_TRUE)) {
+        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+        return;
+    }
+    SZrString *str = ZrCore_String_Create(state, string, length);
+    if (str == ZR_NULL) {
+        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+        return;
+    }
     ZrCore_Stack_SetRawObjectValue(buffer->state, state->stackTop.valuePointer, ZR_CAST_RAW_OBJECT_AS_SUPER(str));
     ZrCore_Stack_GetValueNoProfile(state->stackTop.valuePointer)->type = ZR_VALUE_TYPE_STRING;
     state->stackTop.valuePointer += 1;
@@ -17,6 +27,10 @@ static void native_string_push_string_to_stack(SZrNativeStringFormatBuffer *buff
         buffer->isOnStack = ZR_TRUE;
     } else {
         ZrCore_String_Concat(state, 2);
+        SZrTypeValue *result = ZrCore_Stack_GetValue(state->stackTop.valuePointer - 1);
+        if (result->type != ZR_VALUE_TYPE_STRING || ZrCore_Value_GetRawObject(result) == ZR_NULL) {
+            ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+        }
     }
 }
 
@@ -93,7 +107,15 @@ static void native_string_add_number_to_buffer(SZrNativeStringFormatBuffer *buff
 }
 
 /* 原生格式化入口；占位参数必须遵守本函数的 va_arg 类型，结果暂留栈顶。 */
-TZrNativeString ZrCore_NativeString_VFormat(struct SZrState *state, TZrNativeString format, va_list args) {
+typedef struct SZrNativeStringFormatContext {
+    TZrNativeString format;
+    va_list args;
+    TZrNativeString result;
+} SZrNativeStringFormatContext;
+
+static void native_string_format_run(SZrState *state, TZrPtr arguments) {
+    SZrNativeStringFormatContext *context = arguments;
+    TZrNativeString format = context->format;
     SZrNativeStringFormatBuffer buffer;
     buffer.isOnStack = ZR_FALSE;
     buffer.length = 0;
@@ -107,7 +129,7 @@ TZrNativeString ZrCore_NativeString_VFormat(struct SZrState *state, TZrNativeStr
         // get next char from '%'
         switch (*(e + 1)) {
             case 's': {
-                TZrNativeString string = va_arg(args, TZrNativeString);
+                TZrNativeString string = va_arg(context->args, TZrNativeString);
                 if (string == ZR_NULL) {
                     TZrNativeString nullString = ZR_STRING_NULL_STRING;
                     native_string_add_string_to_buffer(&buffer, nullString, ZrCore_NativeString_Length(nullString));
@@ -116,25 +138,25 @@ TZrNativeString ZrCore_NativeString_VFormat(struct SZrState *state, TZrNativeStr
                 }
             } break;
             case 'c': {
-                TZrChar ch = ZR_CAST_CHAR(va_arg(args, TZrInt64));
+                TZrChar ch = ZR_CAST_CHAR(va_arg(context->args, TZrInt64));
                 native_string_add_string_to_buffer(&buffer, &ch, sizeof(TZrChar));
             } break;
             case 'd': {
                 // convert integer to string
                 SZrTypeValue value;
-                ZrCore_Value_InitAsInt(state, &value, va_arg(args, TZrInt64));
+                ZrCore_Value_InitAsInt(state, &value, va_arg(context->args, TZrInt64));
                 native_string_add_number_to_buffer(&buffer, &value);
             } break;
             case 'u': {
                 // convert unsigned to string
                 SZrTypeValue value;
-                ZrCore_Value_InitAsUInt(state, &value, va_arg(args, TZrUInt64));
+                ZrCore_Value_InitAsUInt(state, &value, va_arg(context->args, TZrUInt64));
                 native_string_add_number_to_buffer(&buffer, &value);
             } break;
             case 'f': {
                 // convert float to string
                 SZrTypeValue value;
-                ZrCore_Value_InitAsFloat(state, &value, va_arg(args, TZrFloat64));
+                ZrCore_Value_InitAsFloat(state, &value, va_arg(context->args, TZrFloat64));
                 native_string_add_number_to_buffer(&buffer, &value);
             } break;
             case 'o': {
@@ -143,14 +165,14 @@ TZrNativeString ZrCore_NativeString_VFormat(struct SZrState *state, TZrNativeStr
             case 'p': {
                 // handle native pointer to string
                 SZrTypeValue value;
-                ZrCore_Value_InitAsNativePointer(state, &value, va_arg(args, TZrPtr));
+                ZrCore_Value_InitAsNativePointer(state, &value, va_arg(context->args, TZrPtr));
                 native_string_add_number_to_buffer(&buffer, &value);
             } break;
             case 'U': {
                 // handle utf8 char
                 TZrChar uCharBuffer[ZR_STRING_UTF8_SIZE];
                 TZrSize length = 0;
-                if (ZrCore_Utf8_EncodeCodePoint((TZrUInt32)ZR_CAST_UINT64(va_arg(args, TZrInt64)), uCharBuffer, &length)) {
+                if (ZrCore_Utf8_EncodeCodePoint((TZrUInt32)ZR_CAST_UINT64(va_arg(context->args, TZrInt64)), uCharBuffer, &length)) {
                     native_string_add_string_to_buffer(&buffer, uCharBuffer, length);
                 }
             } break;
@@ -170,18 +192,58 @@ TZrNativeString ZrCore_NativeString_VFormat(struct SZrState *state, TZrNativeStr
     }
     native_string_clear_format_buffer_and_push_to_stack(&buffer);
     ZR_ASSERT(buffer.isOnStack == ZR_TRUE);
-    /* BUG: 前序 Concat 失败将栈槽置 null 时，此处 CAST_STRING 仍会解引用。 */
-    return ZrCore_String_GetNativeString(
+    context->result = ZrCore_String_GetNativeString(
             ZR_CAST_STRING(state, ZrCore_Value_GetRawObject(ZrCore_Stack_GetValue(state->stackTop.valuePointer - 1))));
+}
+
+/* The context and copied va_list belong to the caller of the setjmp boundary. */
+static EZrThreadStatus native_string_format_execute(SZrState *state, TZrNativeString format,
+                                                   va_list args, TZrNativeString *result) {
+    SZrNativeStringFormatContext context;
+    TZrMemoryOffset savedTop = ZrCore_Stack_SavePointerAsOffset(state, state->stackTop.valuePointer);
+    context.format = format;
+    context.result = ZR_NULL;
+    va_copy(context.args, args);
+    EZrThreadStatus status = ZrCore_Exception_TryRun(state, native_string_format_run, &context);
+    va_end(context.args);
+    if (status != ZR_THREAD_STATUS_FINE) {
+        state->stackTop.valuePointer = ZrCore_Stack_LoadOffsetToPointer(state, savedTop);
+    }
+    *result = context.result;
+    return status;
+}
+
+TZrNativeString ZrCore_NativeString_VFormat(struct SZrState *state, TZrNativeString format, va_list args) {
+    TZrNativeString result;
+    EZrThreadStatus status = native_string_format_execute(state, format, args, &result);
+    if (status != ZR_THREAD_STATUS_FINE) {
+        ZrCore_Exception_Throw(state, status);
+    }
+    return result;
 }
 
 /* 可变参数包装入口，与 VFormat 共享栈顶结果和占位符约束。 */
 TZrNativeString ZrCore_NativeString_Format(struct SZrState *state, TZrNativeString format, ...) {
     va_list args;
     va_start(args, format);
-    TZrNativeString result = ZrCore_NativeString_VFormat(state, format, args);
+    TZrNativeString result;
+    EZrThreadStatus status = native_string_format_execute(state, format, args, &result);
     va_end(args);
+    if (status != ZR_THREAD_STATUS_FINE) {
+        ZrCore_Exception_Throw(state, status);
+    }
     return result;
+}
+
+typedef struct SZrNumberStringCreation {
+    TZrNativeString text;
+    TZrSize length;
+    SZrString *result;
+} SZrNumberStringCreation;
+
+static void native_string_create_number_run(SZrState *state, TZrPtr arguments) {
+    SZrNumberStringCreation *context = arguments;
+    context->result = ZrCore_String_Create(state, context->text, context->length);
 }
 
 /* Value_ConvertToString 和元方法的数字/指针转换入口；暂存字节由本函数释放。 */
@@ -220,7 +282,12 @@ SZrString *ZrCore_String_FromNumber(struct SZrState *state, struct SZrTypeValue 
             ZR_ASSERT(ZR_FALSE);
         } break;
     }
-    string = ZrCore_String_Create(state, nativeString, length);
+    SZrNumberStringCreation context = {nativeString, length, ZR_NULL};
+    EZrThreadStatus status = ZrCore_Exception_TryRun(state, native_string_create_number_run, &context);
     ZrCore_Memory_RawFreeWithType(global, nativeString, ZR_NUMBER_TO_STRING_LENGTH_MAX, ZR_MEMORY_NATIVE_TYPE_STRING);
+    if (status != ZR_THREAD_STATUS_FINE) {
+        ZrCore_Exception_Throw(state, status);
+    }
+    string = context.result;
     return string;
 }

@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "zr_vm_core/array.h"
+#include "zr_vm_core/exception.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/hash.h"
@@ -604,6 +605,32 @@ static SZrString *string_object_create(SZrState *state, TZrNativeString string, 
     return constantString;
 }
 
+typedef struct SZrShortStringInsertion {
+    SZrStringTable *table;
+    SZrString *candidate;
+    SZrHashKeyValuePair *result;
+} SZrShortStringInsertion;
+
+static void string_insert_short_run(SZrState *state, TZrPtr arguments) {
+    SZrShortStringInsertion *context = arguments;
+    context->result = ZrCore_HashSet_AddRawObject(state, &context->table->stringHashSet,
+                                               &context->candidate->super);
+}
+
+/* The chain roots the candidate during allocation/GC and exception normalization.
+ * Normalization may prepend valid strings, so rollback removes only our node. */
+static void string_unlink_short_candidate(SZrStringTable *table, SZrString *candidate) {
+    SZrString **link = &table->shortStringListHead;
+    while (*link != ZR_NULL && *link != candidate) {
+        link = &(*link)->nextShortString;
+    }
+    if (*link == candidate) {
+        *link = candidate->nextShortString;
+    }
+    candidate->nextShortString = ZR_NULL;
+    /* Candidate remains GC-owned; unlinking does not authorize raw free. */
+}
+
 /* 按内容驻留短串；新对象须先进入哈希表，再登记供 minor GC 扫描的桶。 */
 static SZrString *string_create_short(SZrState *state, TZrNativeString string, TZrSize length) {
     SZrGlobalState *global = state->global;
@@ -640,12 +667,16 @@ static SZrString *string_create_short(SZrState *state, TZrNativeString string, T
                      (void *)newString,
                      (unsigned long long)hash,
                      (void *)stringTable->stringHashSet.buckets);
-        if (ZrCore_HashSet_AddRawObject(state, &stringTable->stringHashSet, &newString->super) == ZR_NULL) {
-            stringTable->shortStringListHead = newString->nextShortString;
-            newString->nextShortString = ZR_NULL;
+        SZrShortStringInsertion insertion = {stringTable, newString, ZR_NULL};
+        EZrThreadStatus status = ZrCore_Exception_TryRun(state, string_insert_short_run, &insertion);
+        if (status != ZR_THREAD_STATUS_FINE || insertion.result == ZR_NULL) {
+            string_unlink_short_candidate(stringTable, newString);
             string_trace("string create short add raw object failed string=%p threadStatus=%d",
                          (void *)newString,
                          state != ZR_NULL ? (int)state->threadStatus : -1);
+            if (status != ZR_THREAD_STATUS_FINE) {
+                ZrCore_Exception_Throw(state, status);
+            }
             return ZR_NULL;
         }
         if (previousCapacity != stringTable->stringHashSet.capacity) {
