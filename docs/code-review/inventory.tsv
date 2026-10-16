@@ -516,7 +516,7 @@ tests/core/test_ssa_maps_strings.c	tests/core	test	9831e501910aabc2c8f8fd91f85f3
 tests/core/test_ssa_objects_layout_maps.c	tests/core	test	670466e851118fa1dcfc7e40f626ceb79b6a2ae900e85c5b040c9537633c7c21	pending	-
 tests/core/test_ssa_owner_arm_event.c	tests/core	test	8ca522546cd63b67f86a32eb7dc455306e8599c5e629d6ca704c31772c5ee7fd	pending	新首方文件；caller-first单元完整性待审，未修改该源码
 tests/core/test_ssa_owner_try_capture.c	tests/core	test	9584d2b54b7f2ae07b1265a235f8c016592852f8fe71d80457020b0175b37ca7	pending	新首方文件；caller-first单元完整性待审，未修改该源码
-tests/core/test_ssa_platform_matrix.c	tests/core	test	69067a14f5a10998af069a9c09c0bbfc3bd683d2d11e239013829664732b8f16	pending	-
+tests/core/test_ssa_platform_matrix.c	tests/core	test	e442c092ce27cbdd6395d3092ba2ef00b9804e25526713effddfa16964381ef6	reviewed	docs/code-review/coverage/zr_vm_common.tsv
 tests/core/test_ssa_release_acceptance.c	tests/core	test	8388b9bf9f9c9aa7e463857c334b647c23ac0b43fca82f4e500be3f6cff9a96d	pending	-
 tests/core/test_ssa_roots_observation.c	tests/core	test	a9f1f46a44df806e179ef67d69a8a23beb75d4bbeeabd14f902e5d3c6c96b3c3	reviewed	2026-10-04 current full-file caller/intention review: 26 units; validation scope recorded in batches/20261004-current-reviewed-files.md; TODO/BUG retained
 tests/core/test_ssa_runtime_objects.c	tests/core	test	07ca1ff588811bcdb385863b185105ee4febafb0b4412e73a065bd198c7113ed	reviewed	完整审查：44函数含35用例、10静态状态与1局部匿名union；有限断言、原型hook/别名、Unity早退边界；coverage/zr_vm_core_exec_ir_materialize_objects.tsv
