@@ -160,3 +160,5 @@ doc_type: category-index
   - 元数据、脚本执行与编译判据、生成路径和断言失败时的清理责任。
 
 - [Math input boundaries](../library/math-input-boundaries.md)：整数转换、Tensor 形状乘积及数值数据校验。
+
+- [Native numeric boundaries](../library/native-numeric-boundaries.md)：公开 ReadInt 的浮点范围、非有限值和诊断。

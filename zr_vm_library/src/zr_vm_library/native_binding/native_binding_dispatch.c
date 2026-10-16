@@ -1135,14 +1135,21 @@ TZrBool ZrLib_CallContext_ReadInt(const ZrLibCallContext *context, TZrSize index
                 *outValue = (TZrInt64)value->value.nativeObject.nativeUInt64;
             }
             return ZR_TRUE;
-        /* BUG: 浮点参数为 NaN、无穷或超出 int64 范围时，C 转换行为未定义；
-         * FFI Buffer/Pointer 等公开回调可直接传入此类值。 */
         case ZR_VALUE_TYPE_FLOAT:
-        case ZR_VALUE_TYPE_DOUBLE:
+        case ZR_VALUE_TYPE_DOUBLE: {
+            const TZrFloat64 number = value->value.nativeObject.nativeDouble;
+            const TZrFloat64 lowerBound = (TZrFloat64)INT64_MIN;
+            const TZrFloat64 upperBound = -lowerBound;
+            /* This ordered interval also rejects NaN and both infinities.
+             * Check even without output; +2^63 is not an int64 value. */
+            if (!(number >= lowerBound && number < upperBound)) {
+                ZrLib_CallContext_RaiseTypeError(context, index, "int");
+            }
             if (outValue != ZR_NULL) {
-                *outValue = (TZrInt64)value->value.nativeObject.nativeDouble;
+                *outValue = (TZrInt64)number;
             }
             return ZR_TRUE;
+        }
         default:
             ZrLib_CallContext_RaiseTypeError(context, index, "int");
     }

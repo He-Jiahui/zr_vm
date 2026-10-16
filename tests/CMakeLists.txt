@@ -8853,3 +8853,5 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/benchmark-viewer-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/object-write-failure-tests.cmake")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/math-input-boundary-tests.cmake")
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/native-numeric-boundary-tests.cmake")

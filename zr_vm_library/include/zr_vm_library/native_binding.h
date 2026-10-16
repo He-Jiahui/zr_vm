@@ -555,8 +555,8 @@ ZR_LIBRARY_API TZrBool ZrLib_CallContext_CheckArity(const ZrLibCallContext *cont
                                                     TZrSize minArgumentCount,
                                                     TZrSize maxArgumentCount);
 /** @brief 按 Native API 的整数契约读取实参；缺失或类型不符会抛出调用异常。
- * @note BUG: 当前实现也接受 float/double，却未检查数值范围就转 int64；
- *       超范围输入可触发 C 未定义行为，见 native_binding_dispatch.c 的 ReadInt 分支。
+ * @note float/double 须为有限值且位于 [-2^63, 2^63)，转换朝零截断。
+ *       即使 outValue 为空也校验；非法浮点不修改输出并抛出既有 int 类型诊断。
  */
 ZR_LIBRARY_API TZrBool ZrLib_CallContext_ReadInt(const ZrLibCallContext *context,
                                                  TZrSize index,
