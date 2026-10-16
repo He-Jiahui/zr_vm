@@ -82,3 +82,13 @@ Root 已完成注释后验证，实际结果与下节证据一致。R2 的 Unity
 最终 R2 在独审确认 NULL target 是无输出检查、空 function 指的是 NULL 参数后重跑：四源严格等价仍为 8,200 token；只改变这两处说明及相应台账，实际重编与逐例结果再次同基线。R1 中间验证证据保留，没有将它冒称为本最终源码的重编结果。
 
 提交前空白检查发现 cleanup C 的 EOF 文档后有一个多余空行（退出 2）。仅删除最后一个 LF 字节后，四源 R3 严格复核仍为 8,200 token，kind、spelling、StartOfLine、LeadingSpace 及原程序物理行号全部不变；其余三源哈希未变。最终源码严格证据 `cleanup-fixture-final-comment-equivalence-r3.json` SHA-256 `18a95f83c74b326ad3a2e45c10cfea6e9f7e7db02b7bf1a5b02832901859921d`；单字节修正和失败门禁记录分别为 `cleanup-fixture-eof-repair-r3.json`、`parser-conditional-cleanup-stage-r1-failure.json`。本次不重复运行原生测试：实际构建、逐例基线对比仍明确使用 R2，R3 只为文档结束后空白提供最终衔接证据。
+
+## 2026-10-16：既有 helper 文档标签与借用方向补全（零新增单元）
+
+本次仅修订 `tests/parser/test_ssa_conditional_cleanup.c` 的七个既有文档行：为 `terminal`、`diamond`、`stop_at`、`request_at`、`invoke`、`loop_call` 的原有返回说明补上六个 `@return`；将 `request_at` 的 `target` 标为 `@param[in]`，明确该 helper 只保存调用方对象的地址，后续 `ZrCore_ExecIr_MaterializeState` 才把所指对象作为可写输出借用。原有返回值、对象所有权、回调和失败路径契约保持成立。完整调用核查仍为 terminal 14 处、diamond 14 处、stop_at 10 处、request_at 2 处，以及 invoke:427、loop_call:527 两个函数指针入口；六个定义均为本测试翻译单元内的 static helper。原 46-key 叶表和原程序行号保持原样，本次不增加 canonical key、测试、缺陷标签或审查计数，历史已提交台账累计仍为 1,769，不能据此声称全仓覆盖。
+
+最终源码 SHA-256 为 `f10954b3b24e83f15e317970c9907543c3b18bf87114a92e21692d7d44d074c7`。Clang 原始 token 检查实际通过：6,503 个非注释 token 的 kind、spelling、StartOfLine、LeadingSpace 和原始行列坐标完全一致；七次精确替换可重建完整源码，LF 和 1,540 行保持原样。证据 `conditional-cleanup-returns-final-comment-equivalence-r1.json` SHA-256 `2fffeb46085c7cce928ecf612b81b464538cd4ac7cf2c991d0968c40c7238ad3`，完整字节与调用台账复核为 `conditional-cleanup-returns-final-caller-unit-audit-r1.json` SHA-256 `e8c1381e31efc5233b2c80ea340956eea9ad33c6ae809216a348445783898f24`。
+
+修改前、修改后均在同一实际 checkout、同一 E 根 Debug 目录和既有 `/DUNITY_NORETURN=_Noreturn` 配置构建 `zr_vm_ssa_conditional_cleanup_test`，两次 build 均退出 1：`lld-link: error: undefined symbol: ZrCore_Exception_Throw`，引用来自 canonical_type_index.c 的原生数组 helper 路径。修改后实际重编本测试 C 文件，随后链接失败。两次均未运行 CTest 或旧可执行文件，没有本轮运行时 PASS、逐例等价或成功构建信用；上述 line 659 的历史失败仍只是历史记录。修改后构建区间及实际结束时 3,225 项保守输入和 21 项冻结依赖稳定；前后基线之间另有原生 math 测试、LSP hygiene 测试头及 LSP declaration binding 三处其他会话改动，逐项哈希保存在比较报告，不声称完整依赖隔离。前基线 `conditional-returns-preedit-native-r2-summary.json` SHA-256 `88d427526bfd642ea2d56df2082b19552e4d660fae46be3a247df95fd0818229`；后结果摘要 `conditional-cleanup-returns-final-native-r1-summary.json` SHA-256 `db51bedc077e471bde91bd28dbf90d2d56555081e84cbf84bf41f7c74ad6bf02`；比较报告 `conditional-cleanup-returns-final-native-r1-comparison.json` SHA-256 `3e0519e4b46848b4f7a1b3b98f5c814be5afd898607f2b03b0e19d2d4f8d622d`。当前原生验证受该链接失败限制，依赖修复后仍需新鲜构建与测试；本轮只记录，不加 stub、绕过链接或修改程序行为。
+
+本批复用既有构建、缓存及审查产物，新增释放空间为 0 B；保留必要失败证据。此前自动清理被策略拒绝，未重试，产物生命周期仍开放。

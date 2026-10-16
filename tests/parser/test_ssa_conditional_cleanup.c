@@ -962,7 +962,7 @@ int main(void) {
  * @param[in] operand 按 emit 约定传入的值编号；无操作数终结可传零。
  *
  * ## Returns
- * 返回新指令的一基 ID；该 ID 只在当前 function 指令池生命周期内有效。
+ * @return 返回新指令的一基 ID；该 ID 只在当前 function 指令池生命周期内有效。
  *
  * ## Constraints and lifecycle
  * 只用于测试图构造。调用者须先建立 block 及其 successor range，且发射结果须与该块的 CFG 终结语义匹配；索引和池归全局 function 所有。
@@ -997,7 +997,7 @@ int main(void) {
  * @param[in] moveOnTrue 为真时 true arm 将 owner 移到另一个值并先 drop；为假时 true arm 以 COPY 定义 owner。该参数选择图的指令形状，不选择 oracle 后续实际走哪条分支。
  *
  * ## Returns
- * 返回当前图的 owner、poll 与 cleanup-drop 标识副本；这些编号不拥有底层池且只在本次全局 function 生命周期中有效。
+ * @return 返回当前图的 owner、poll 与 cleanup-drop 标识副本；这些编号不拥有底层池且只在本次全局 function 生命周期中有效。
  *
  * ## Constraints and lifecycle
  * 重置全局 fixture 后须重新调用。owner payload 的定义与 cleanup join 的条件义务由 CFG 共同决定；call 成员仅随 fixture 零初始化，本 helper 没有显式设置它，此翻译单元也没有读取它。
@@ -1017,7 +1017,7 @@ int main(void) {
  * @param[in] phase 该指令的有效状态 map phase。
  *
  * ## Returns
- * 返回 checkpoint 值副本，不转移 map entry 的所有权；返回值可在源 map 被释放前后独立保存其标量字段。
+ * @return 返回 checkpoint 值副本，不转移 map entry 的所有权；返回值可在源 map 被释放前后独立保存其标量字段。
  *
  * ## Constraints and lifecycle
  * 调用要求当前 function 已建好匹配的 state map；checkpoint 的指令与 phase 必须可由 checkpoint 查询到，否则 fixture helper 的断言失败。
@@ -1074,11 +1074,11 @@ int main(void) {
  *
  * ## Parameters
  * @param[in] fixture 当前 function 的标识副本，提供 poll ID 和 owner ID。
- * @param[in,out] target 可选的调用方 materialized-state 输出对象；函数只保存其地址，不获取所有权。
+ * @param[in] target 可选的调用方物化状态输出对象地址；本 helper 仅保存该地址，供后续 ZrCore_ExecIr_MaterializeState 调用作为可写输出借用，不获取对象所有权。
  * @param[in] owners 可选的 owner-state 借用数组；非空时 request.ownerStateCount 取当前 function.valueCount，为空时 count 为零。
  *
  * ## Returns
- * 返回 request 值副本；其中 function、map、target、ownerStates 都是借用指针，须由发起调用者维持有效。
+ * @return 返回 request 值副本；其中 function、map、target、ownerStates 都是借用指针，须由发起调用者维持有效。
  *
  * ## Constraints and lifecycle
  * 当前全局 function、state map 和 fixture 必须互相匹配；调用者须保证目标及 owner 数组覆盖声明长度，并让所借存储持续到同步 MaterializeState 调用返回。
@@ -1102,7 +1102,7 @@ int main(void) {
  * @param[out] threw 写入 SCleanupEffects.throwing 的选择结果。
  *
  * ## Returns
- * 返回 ZR_TRUE 表示已处理唯一 signed 参数，返回 ZR_FALSE 表示参数形状不匹配。
+ * @return 返回 ZR_TRUE 表示已处理唯一 signed 参数，返回 ZR_FALSE 表示参数形状不匹配。
  *
  * ## Constraints and lifecycle
  * operands、result、threw 与 userData 均由同步 oracle 调用方提供并借用；本函数不保留指针或分配资源。测试在调用期间保持 data 指向的栈对象有效。
@@ -1144,7 +1144,7 @@ int main(void) {
  * @param[out] result count 为零时写入 signed iteration 值或循环条件 bool。
  *
  * ## Returns
- * count 为零时返回 ZR_TRUE 并写入结果；有参数时返回 ZR_FALSE。
+ * @return count 为零时返回 ZR_TRUE 并写入结果；有参数时返回 ZR_FALSE。
  *
  * ## Constraints and lifecycle
  * data、instruction 和 result 仅在同步 callback 期间借用；迭代计数及 sourceId 规则属于本测试图协议，不是生产调用 ABI。
