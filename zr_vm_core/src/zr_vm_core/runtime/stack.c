@@ -169,13 +169,21 @@ static TZrSize stack_required_size_from_pointer(SZrState *state, TZrStackValuePo
     TZrSize requiredSize = (TZrSize) (stackPointer - state->stackBase.valuePointer) + extraSpace;
     return requiredSize > currentSize ? requiredSize : currentSize;
 }
-/* BUG: 原生分配返回 null 时仍计算尾地址；state_stack_init 忽略失败并对空基址运算、初始化槽，启动 OOM 会触发未定义行为。 */
+/* 构造失败不发布栈基址，也不对空指针计算尾地址。 */
 TZrPtr ZrCore_Stack_Construct(SZrState *state, TZrStackPointer *stack, TZrSize stackLength) {
     ZR_ASSERT(stackLength > 0);
     SZrGlobalState *global = state->global;
-    TZrSize stackByteSize = sizeof(SZrTypeValueOnStack) * stackLength;
+    TZrSize stackByteSize;
+    stack->valuePointer = ZR_NULL;
+    if (stackLength > ZR_MAX_SIZE / sizeof(SZrTypeValueOnStack)) {
+        return ZR_NULL;
+    }
+    stackByteSize = sizeof(SZrTypeValueOnStack) * stackLength;
     stack->valuePointer =
             ZR_CAST_STACK_VALUE(ZrCore_Memory_RawMallocWithType(global, stackByteSize, ZR_MEMORY_NATIVE_TYPE_STACK));
+    if (stack->valuePointer == ZR_NULL) {
+        return ZR_NULL;
+    }
     return ZR_CAST_PTR(stack->valuePointer + stackLength);
 }
 

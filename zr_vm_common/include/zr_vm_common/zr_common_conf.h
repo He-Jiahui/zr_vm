@@ -175,7 +175,9 @@ typedef union TZrNativeObject TZrNativeObject;
 #define ZR_INOUT
 
 /** @brief 宿主分配器回调；pointer/originalSize 表示旧块，newSize 为请求大小，flag 传递内存类别。
- *  返回新块由调用方依约持有；newSize 为 0 时按调用方释放协议处理。 */
+ * pointer 为 NULL 时 originalSize 必须为 0；newSize 为 0 时释放旧块。
+ * 非零请求失败返回 NULL，并保留旧块及其内容、归属和可释放性；成功重分配保留
+ * min(originalSize, newSize) 个字节。返回的新块由调用方持有，使用同一回调和类别释放。 */
 // allocator function
 typedef TZrPtr (*FZrAllocator)(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag);
 

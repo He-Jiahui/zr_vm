@@ -15,6 +15,7 @@ if (NOT TARGET zr_vm_ssa_conditional_cleanup_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
     target_compile_definitions(zr_vm_ssa_conditional_cleanup_test PRIVATE UNITY_INCLUDE_CONFIG_H)
+    zr_vm_link_core(zr_vm_ssa_conditional_cleanup_test)
     zr_link_third_party_for_target(zr_vm_ssa_conditional_cleanup_test "zr_unity")
     add_test(NAME ssa_conditional_cleanup COMMAND zr_vm_ssa_conditional_cleanup_test)
     set_tests_properties(ssa_conditional_cleanup PROPERTIES LABELS "ssa" TIMEOUT 30)

@@ -67,8 +67,9 @@ typedef union TZrStackPtr TZrStackPointer;
 
 /**
  * @brief 为 state 分配 stackLength 个栈槽，并返回数组尾后一地址。
- * @pre state 与其 global 有效，stack 非空且 stackLength 大于零；调用方记录的长度须与分配长度一致。
- * @note BUG: 原生分配失败后仍计算尾地址；state_stack_init 忽略失败并继续访问空栈，启动 OOM 会触发未定义行为。
+ * @pre state 与其 global 有效，stack 非空且未持有旧分配，stackLength 大于零；调用方记录的长度须与分配长度一致。
+ * @return 成功返回数组尾后一地址；字节尺寸不可表示或 OOM 返回 NULL，stack 的基址为空。
+ * @note 不抛异常；调用方须在建立边界或访问栈槽前检查返回值。
  */
 ZR_CORE_API TZrPtr ZrCore_Stack_Construct(struct SZrState *state, TZrStackPointer *stack, TZrSize stackLength);
 

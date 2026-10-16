@@ -8825,3 +8825,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/native-math-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/source-layout-private-consumers.cmake")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/benchmark-scope-types-tests.cmake")
+
+set(ZR_NATIVE_ARRAY_SOURCE_ROOT "${CMAKE_SOURCE_DIR}")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/native-array-tests.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/core-allocation-lifecycle-tests.cmake")

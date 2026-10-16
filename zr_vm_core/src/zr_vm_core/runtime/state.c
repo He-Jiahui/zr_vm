@@ -24,10 +24,12 @@
 static TZrBool state_trace_enabled(void);
 static void state_trace(const TZrChar *format, ...);
 
-/* 线程私有栈与入口调用帧的初始化。 */
-static void state_stack_init(SZrState *state, SZrState *mainThreadState) {
-    /* 依赖 Stack_Construct 填入有效基址后再建立边界；分配失败风险已在 stack.c:125 单独登记。 */
-    ZrCore_Stack_Construct(mainThreadState, &state->stackBase, ZR_THREAD_STACK_SIZE_BASIC + ZR_THREAD_STACK_SIZE_EXTRA);
+/* 栈分配完成后才建立边界和入口帧；失败不发布可访问的栈状态。 */
+static TZrBool state_stack_init(SZrState *state, SZrState *mainThreadState) {
+    if (ZrCore_Stack_Construct(mainThreadState, &state->stackBase,
+                             ZR_THREAD_STACK_SIZE_BASIC + ZR_THREAD_STACK_SIZE_EXTRA) == ZR_NULL) {
+        return ZR_FALSE;
+    }
     state->toBeClosedValueList.valuePointer = state->stackBase.valuePointer;
     state->stackTail.valuePointer = state->stackBase.valuePointer + ZR_THREAD_STACK_SIZE_BASIC;
     state->stackTop.valuePointer = state->stackBase.valuePointer;
@@ -53,6 +55,7 @@ static void state_stack_init(SZrState *state, SZrState *mainThreadState) {
     state->callInfoList = callInfo;
     // when native call is finished
     state->stackTop = nextTop;
+    return ZR_TRUE;
 }
 /* State 对象生命周期与线程状态复用入口。 */
 
@@ -135,7 +138,10 @@ void ZrCore_State_MainThreadLaunch(SZrState *state, TZrPtr arguments) {
     ZR_UNUSED_PARAMETER(arguments);
     SZrGlobalState *global = state->global;
     state_trace("main thread launch enter state=%p global=%p", (void *)state, (void *)global);
-    state_stack_init(state, global->mainThreadState);
+    if (!state_stack_init(state, global->mainThreadState)) {
+        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+        return;
+    }
     state_trace("main thread after stack init stackBase=%p stackTop=%p stackTail=%p",
                 (void *)state->stackBase.valuePointer,
                 (void *)state->stackTop.valuePointer,
@@ -177,7 +183,9 @@ TZrBool ZrCore_State_MutatorLaunch(SZrState *state) {
     }
 
     // 先建立次线程栈与基础帧，再登记为正在运行的 mutator。
-    state_stack_init(state, state->global->mainThreadState);
+    if (!state_stack_init(state, state->global->mainThreadState)) {
+        return ZR_FALSE;
+    }
     if (!ZrCore_GcDomain_MutatorEnter(state)) {
         ZrCore_Stack_Deconstruct(state,
                                  &state->stackBase,
@@ -241,9 +249,8 @@ void ZrCore_State_Free(SZrGlobalState *global, SZrState *state) {
 
     state_call_info_chain_free(global, state);
     
-    /* BUG: 此处检查的是字段地址而非 stackBase.valuePointer；runtime_workers.c:187/197 在线程创建失败后
-     * 回收尚未 launch 的 worker 时仍进入此分支，对空边界求差并释放未分配的栈。 */
-    if ((TZrPtr)&state->stackBase >= (TZrPtr)ZR_RUNTIME_INVALID_POINTER_GUARD_LOW_BOUND) {
+    /* 未 launch 或进入 mutator 失败的 state 没有栈，不能对空边界求差或释放。 */
+    if (state->stackBase.valuePointer != ZR_NULL) {
         ZrCore_Stack_Deconstruct(state, &state->stackBase, ZrCore_State_StackGetSize(state) + ZR_THREAD_STACK_SIZE_EXTRA);
         state->stackBase.valuePointer = ZR_NULL;
     }

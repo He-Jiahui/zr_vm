@@ -377,6 +377,16 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     global_trace("global new allocated global=%p unique=%llu", (void *)global, (unsigned long long)uniqueNumber);
     SZrState *newState = ZrCore_State_New(global);
     global->mainThreadState = newState;
+    if (newState == ZR_NULL) {
+        allocator(userAllocationArguments, global, sizeof(SZrGlobalState), 0, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+        return ZR_NULL;
+    }
+    /* 启动恢复点尚未建立；先完成可检查的原生数组分配，失败时只回收尚未 launch 的 state。 */
+    if (!ZrCore_Array_TryInit(newState, &global->importCompileInfoStack, sizeof(SZrString *), 4)) {
+        ZrCore_State_Free(global, newState);
+        allocator(userAllocationArguments, global, sizeof(SZrGlobalState), 0, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+        return ZR_NULL;
+    }
     global_trace("global new state created state=%p", (void *)newState);
     global->threadWithStackClosures = ZR_NULL;
     // todo: main thread cannot yield
@@ -422,8 +432,6 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     ZrCore_Value_ResetAsNull(&global->nullValue);
     // init global zr object
     ZrCore_Value_ResetAsNull(&global->zrObject);
-    ZrCore_Array_Construct(&global->importCompileInfoStack);
-    ZrCore_Array_Init(newState, &global->importCompileInfoStack, sizeof(SZrString *), 4);
     global_trace("global new import stack head=%p capacity=%llu length=%llu valid=%d",
                  (void *)global->importCompileInfoStack.head,
                  (unsigned long long)global->importCompileInfoStack.capacity,

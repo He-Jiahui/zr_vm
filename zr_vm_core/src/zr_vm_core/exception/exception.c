@@ -721,6 +721,12 @@ TZrBool ZrCore_Exception_NormalizeStatus(struct SZrState *state, EZrThreadStatus
         return ZR_TRUE;
     }
 
+    /* Bootstrap errors precede the string table and base Error prototype.
+     * Do not allocate lookup strings before that infrastructure is ready. */
+    if (state->global == ZR_NULL || state->global->errorPrototype == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
     throwCallInfo = state->callInfoList;
     if (state->stackTop.valuePointer != ZR_NULL && state->stackBase.valuePointer != ZR_NULL &&
         state->stackTop.valuePointer > state->stackBase.valuePointer) {

@@ -14,7 +14,7 @@
 /** @brief 把原生块的申请、扩容或释放交给 VM 的宿主分配器，并供全局预算统计观察。
  * @pre global 存活；非空旧块须与 originalSize、type 对应；释放时须提供非空旧块及非零旧大小。
  * @return 原样返回宿主分配器结果；本层不触发 GC，也不抛出内存异常。
- * TODO: FZrAllocator 契约未明确扩容失败时旧块是否保留；string_builder、hash_set 等调用方依赖保留旧块，需统一自定义分配器约束。
+ * @note FZrAllocator 的非零请求失败必须保留旧块及内容；成功重分配保留较小的新旧尺寸范围。
  */
 ZR_FORCE_INLINE TZrPtr ZrCore_Memory_Allocate(SZrGlobalState *global, TZrPtr pointer, TZrSize originalSize, TZrSize newSize,
                                         EZrMemoryNativeType type) {
