@@ -7,10 +7,12 @@ import argparse
 import json
 import re
 import subprocess
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from enum import Enum
 from pathlib import Path
 from typing import Iterable
+
+from syntax_migration_embedded import iter_embedded_string_payloads as _iter_embedded_string_payloads
 
 
 # JSON 报告中保留扫描来源，使消费方区分真实 .zr、宿主字面量与当前文档示例。
@@ -802,47 +804,6 @@ def _scan_zr_text(
     return findings
 
 
-# 供宿主 fixture 扫描逐个提取字面量；这里只处理少量转义，不能等同于宿主语言求值。
-# BUG: 解码 \\n 后仍以宿主起点直接计算位置，后续 finding 会落到不存在的宿主行；
-# 例：同一物理行的 source="%foo\\n%await" 将 %await 报为下一行第 1 列。
-# 应保留解码字符到宿主 offset 的映射；相邻字面量也须保留各自真实范围。
-def _iter_embedded_string_payloads(
-    text: str,
-) -> Iterable[tuple[str, SourcePosition, int, int]]:
-    offset = 0
-    while offset < len(text):
-        current = text[offset]
-        following = text[offset + 1] if offset + 1 < len(text) else ""
-        if current == "/" and following == "/":
-            end = text.find("\n", offset)
-            offset = len(text) if end < 0 else end + 1
-            continue
-        if current == "/" and following == "*":
-            end = text.find("*/", offset + 2)
-            offset = len(text) if end < 0 else end + 2
-            continue
-        if current not in {'"', "'", "`"}:
-            offset += 1
-            continue
-        quote = current
-        start = offset + 1
-        content: list[str] = []
-        offset = start
-        while offset < len(text):
-            current = text[offset]
-            if current == "\\" and offset + 1 < len(text):
-                escaped = text[offset + 1]
-                content.append("\n" if escaped == "n" else escaped)
-                offset += 2
-                continue
-            if current == quote:
-                break
-            content.append(current)
-            offset += 1
-        yield "".join(content), _position_at(text, start), start, offset
-        offset += 1
-
-
 # 全仓宿主文件只扫描具有 source/parse 等输入上下文且以 Zr 形式开头的字面量，
 # 防止格式化字符串和期望诊断文本成为待迁移输入。
 def _embedded_context_is_zr_input(
@@ -895,7 +856,9 @@ def _scan_path(
         findings: list[InventoryFinding] = []
         source_sequence = False
         previous_literal_end = -1
-        for payload, base, literal_start, literal_end in _iter_embedded_string_payloads(text):
+        for fragment in _iter_embedded_string_payloads(text):
+            payload = fragment.text
+            literal_start, literal_end = fragment.literal_start, fragment.literal_end
             direct_source_input = _embedded_context_is_zr_input(
                 text,
                 literal_start,
@@ -913,14 +876,12 @@ def _scan_path(
                 previous_literal_end = literal_end
                 continue
             source_sequence = direct_source_input or contiguous_source_segment
-            findings.extend(
-                _scan_zr_text(
-                    payload,
-                    file=file,
-                    source_kind=source_kind,
-                    base=base,
-                )
-            )
+            for finding in _scan_zr_text(payload, file=file, source_kind=source_kind):
+                span = finding.source_range
+                findings.append(replace(finding, source_range=SourceRange(
+                    start=_position_at(text, fragment.source_offset(span.start.line, span.start.column)),
+                    end=_position_at(text, fragment.source_offset(span.end.line, span.end.column)),
+                )))
             previous_literal_end = literal_end
         return findings
     return _scan_documentation(text, file=file)
