@@ -8877,3 +8877,5 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/exception-construction-roots-tests.cm
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/system-fs-failure-tests.cmake")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/thread-worker-count-tests.cmake")
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/thread-transport-facade-oom-tests.cmake")

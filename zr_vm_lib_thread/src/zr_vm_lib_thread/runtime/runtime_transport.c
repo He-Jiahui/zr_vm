@@ -369,10 +369,85 @@ TZrBool zr_vm_task_transport_encode_value(SZrState *state,
     return ZR_FALSE;
 }
 
+/* The caller owns this context across TryRun; callback writes survive longjmp. */
+typedef struct ZrVmTaskDecodeFacadeContext {
+    const ZrVmTaskTransportValue *value;
+    SZrTypeValue *result;
+    TZrBool created;
+} ZrVmTaskDecodeFacadeContext;
+
+static void zr_vm_task_decode_facade_run(SZrState *state, TZrPtr data) {
+    ZrVmTaskDecodeFacadeContext *context = (ZrVmTaskDecodeFacadeContext *)data;
+    const ZrVmTaskTransportValue *value = context->value;
+    if (value->kind == ZR_VM_TASK_TRANSPORT_KIND_SHARED ||
+        value->kind == ZR_VM_TASK_TRANSPORT_KIND_WEAK_SHARED) {
+        context->created = zr_vm_task_shared_make_value(state,
+                (ZrVmTaskSharedCell *)value->as.pointerValue,
+                value->kind == ZR_VM_TASK_TRANSPORT_KIND_WEAK_SHARED,
+                context->result);
+    } else {
+        context->created = zr_vm_task_mutex_make_value(state,
+                (ZrVmTaskMutexCell *)value->as.pointerValue,
+                value->kind == ZR_VM_TASK_TRANSPORT_KIND_SHARED_MUTEX
+                        ? ZR_VM_TASK_MUTEX_KIND_SHARED : ZR_VM_TASK_MUTEX_KIND_UNIQUE,
+                context->result);
+    }
+}
+
+/* Exactly one retained reference is either delivered to a facade or rolled back.
+ * Catch locally before releasing it: a plain false check cannot handle Throw. */
+static TZrBool zr_vm_task_transport_decode_facade(SZrState *state,
+                                                  const ZrVmTaskTransportValue *value,
+                                                  SZrTypeValue *result) {
+    ZrVmTaskDecodeFacadeContext context = {value, result, ZR_FALSE};
+    TZrBool retained;
+    EZrThreadStatus status;
+    EZrThreadStatus entryStatus = state->threadStatus;
+    switch ((EZrVmTaskTransportKind)value->kind) {
+        case ZR_VM_TASK_TRANSPORT_KIND_SHARED:
+            retained = zr_vm_task_shared_cell_add_strong_ref((ZrVmTaskSharedCell *)value->as.pointerValue);
+            break;
+        case ZR_VM_TASK_TRANSPORT_KIND_WEAK_SHARED:
+            retained = zr_vm_task_shared_cell_add_weak_ref((ZrVmTaskSharedCell *)value->as.pointerValue);
+            break;
+        default:
+            retained = zr_vm_task_mutex_cell_add_ref((ZrVmTaskMutexCell *)value->as.pointerValue);
+            break;
+    }
+    if (!retained) {
+        return ZR_FALSE;
+    }
+
+    status = ZrCore_Exception_TryRun(state, zr_vm_task_decode_facade_run, &context);
+    if (context.created && status == ZR_THREAD_STATUS_FINE) {
+        return ZR_TRUE;
+    }
+    /* A preexisting status must not turn a successful make into an error.
+     * For ordinary false, propagate only a status newly reported by this make. */
+    if (status == ZR_THREAD_STATUS_FINE && state->threadStatus != entryStatus) {
+        status = state->threadStatus;
+    }
+
+    switch ((EZrVmTaskTransportKind)value->kind) {
+        case ZR_VM_TASK_TRANSPORT_KIND_SHARED:
+            zr_vm_task_shared_cell_release_strong((ZrVmTaskSharedCell *)value->as.pointerValue);
+            break;
+        case ZR_VM_TASK_TRANSPORT_KIND_WEAK_SHARED:
+            zr_vm_task_shared_cell_release_weak((ZrVmTaskSharedCell *)value->as.pointerValue);
+            break;
+        default:
+            zr_vm_task_mutex_cell_release((ZrVmTaskMutexCell *)value->as.pointerValue);
+            break;
+    }
+    if (status != ZR_THREAD_STATUS_FINE) {
+        ZrCore_Exception_Throw(state, status);
+    }
+    return ZR_FALSE;
+}
+
 TZrBool zr_vm_task_transport_decode_value(SZrState *state,
                                           const ZrVmTaskTransportValue *value,
                                           SZrTypeValue *result) {
-    /* BUG: Shared/WeakShared/Mutex 分支先加 cell 引用，创建目标 VM façade 失败时未回滚该引用。 */
     if (state == ZR_NULL || value == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -412,38 +487,11 @@ TZrBool zr_vm_task_transport_decode_value(SZrState *state,
             return zr_vm_task_channel_make_value(state, (ZrVmTaskChannelTransport *)value->as.pointerValue, result);
         case ZR_VM_TASK_TRANSPORT_KIND_TRANSFER:
             return zr_vm_task_transfer_make_value(state, value, result);
-        case ZR_VM_TASK_TRANSPORT_KIND_SHARED: {
-            ZrVmTaskSharedCell *cell = (ZrVmTaskSharedCell *)value->as.pointerValue;
-
-            if (!zr_vm_task_shared_cell_add_strong_ref(cell)) {
-                return ZR_FALSE;
-            }
-            return zr_vm_task_shared_make_value(state, cell, ZR_FALSE, result);
-        }
-        case ZR_VM_TASK_TRANSPORT_KIND_WEAK_SHARED: {
-            ZrVmTaskSharedCell *cell = (ZrVmTaskSharedCell *)value->as.pointerValue;
-
-            if (!zr_vm_task_shared_cell_add_weak_ref(cell)) {
-                return ZR_FALSE;
-            }
-            return zr_vm_task_shared_make_value(state, cell, ZR_TRUE, result);
-        }
-        case ZR_VM_TASK_TRANSPORT_KIND_UNIQUE_MUTEX: {
-            ZrVmTaskMutexCell *cell = (ZrVmTaskMutexCell *)value->as.pointerValue;
-
-            if (!zr_vm_task_mutex_cell_add_ref(cell)) {
-                return ZR_FALSE;
-            }
-            return zr_vm_task_mutex_make_value(state, cell, ZR_VM_TASK_MUTEX_KIND_UNIQUE, result);
-        }
-        case ZR_VM_TASK_TRANSPORT_KIND_SHARED_MUTEX: {
-            ZrVmTaskMutexCell *cell = (ZrVmTaskMutexCell *)value->as.pointerValue;
-
-            if (!zr_vm_task_mutex_cell_add_ref(cell)) {
-                return ZR_FALSE;
-            }
-            return zr_vm_task_mutex_make_value(state, cell, ZR_VM_TASK_MUTEX_KIND_SHARED, result);
-        }
+        case ZR_VM_TASK_TRANSPORT_KIND_SHARED:
+        case ZR_VM_TASK_TRANSPORT_KIND_WEAK_SHARED:
+        case ZR_VM_TASK_TRANSPORT_KIND_UNIQUE_MUTEX:
+        case ZR_VM_TASK_TRANSPORT_KIND_SHARED_MUTEX:
+            return zr_vm_task_transport_decode_facade(state, value, result);
         case ZR_VM_TASK_TRANSPORT_KIND_NONE:
         default:
             ZrLib_Value_SetNull(result);

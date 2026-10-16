@@ -174,3 +174,5 @@ doc_type: category-index
 - [文件路径、复制与移动](../library/file-path-operations.md)：join 截断、Windows 根路径及覆盖前的源与路径关系检查。
 
 - [Native dispatcher receiver cleanup](../library/native-dispatch-self-oom.md)：参数暂存分配失败时归还 receiver 副本。
+
+- [Thread transport facade allocation](thread-transport-facade-oom.md)：解码包装失败时撤销本次预留的共享引用。
