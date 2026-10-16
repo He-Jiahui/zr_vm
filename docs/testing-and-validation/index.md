@@ -176,3 +176,5 @@ the full type-inference runner under Clang ASan/UBSan; see
 10. 后续新增语义主题时，优先复用主矩阵和 manifest 合同，而不是继续把上游参考散落在临时笔记里。
 
 - [String storage failure](string-storage-allocation-failure.md)：长载荷、数字暂存、rehash 与 API cache 提交。
+
+- [Core bootstrap support OOM](core-bootstrap-support-allocation-failure.md)：GC/StringTable 管理器和驻留桶失败的完整回滚。

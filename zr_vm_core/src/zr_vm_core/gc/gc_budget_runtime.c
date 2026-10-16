@@ -20,12 +20,7 @@ static TZrUInt64 gc_budget_sat_add(TZrUInt64 left, TZrUInt64 right) {
 
 /* GC 债务使用宿主 ptrdiff_t，预算见证转成固定宽度的有符号标量。 */
 static TZrInt64 gc_budget_debt(const SZrGarbageCollector *collector) {
-    /* TODO: 32 位宿主把 INT64_MAX 转成较窄 TZrMemoryOffset 的结果依实现而定；
-     * 需确认支持的目标位宽，并检查非负债务是否被误判为溢出。 */
-    if (collector->gcDebtSize > (TZrMemoryOffset)INT64_MAX) {
-        return INT64_MAX;
-    }
-    return (TZrInt64)collector->gcDebtSize;
+    return (TZrInt64)ZrCore_GarbageCollector_GetDebtSpace(collector);
 }
 
 /* 同步预算快照；SetBudget 在域 mutation lock 内调用，Evaluate/GetBudgetStats 仍由调用方串行化。 */

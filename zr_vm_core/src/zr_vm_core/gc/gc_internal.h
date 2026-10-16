@@ -26,7 +26,7 @@
 #define ZR_GC_FLAG_EXPLICIT_COLLECTION_REQUEST ((TZrUInt32)1u)
 /* GC 遥测使用该 elapsed-time 时钟；收集调度不能依赖此返回值设定 deadline。 */
 TZrUInt64 garbage_collector_now_us(void);
-/* BUG: IgnoreObject 无共享锁时可与并发 Ignore/Unignore 修改或替换 registry；此读取会竞争（gc.c:592; gc.c:606; gc.c:616; gc.c:625）。 */
+/* Caller owns the mutation lock, or has exclusive collector shutdown access. */
 static ZR_FORCE_INLINE TZrBool garbage_collector_ignore_registry_contains(SZrGarbageCollector *collector,
                                                                           SZrRawObject *object) {
     TZrSize index;
@@ -332,7 +332,10 @@ static ZR_FORCE_INLINE TZrBool garbage_collector_try_release_region_allocation_f
     }
     return ZR_TRUE;
 }
-/* BUG: IgnoreObject 无锁扩容并追加此共享 registry；并发登记可释放仍被读取的旧数组或丢失一个 root（gc.c:592; gc.c:612; gc.c:616）。 */
+/* Registry allocation/removal helpers require the shared mutation lock. */
+void garbage_collector_ignore_registry_remove_object(SZrGarbageCollector *collector, SZrRawObject *object);
+TZrBool garbage_collector_try_pin_object_locked(SZrState *state, SZrRawObject *object,
+                                                EZrGarbageCollectPinKind pinKind);
 TZrBool garbage_collector_ensure_ignore_registry_capacity(SZrGlobalState *global, TZrSize minCapacity);
 static ZR_FORCE_INLINE TZrBool garbage_collector_remembered_registry_contains(SZrGarbageCollector *collector,
                                                                               SZrRawObject *object) {

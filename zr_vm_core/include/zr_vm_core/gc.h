@@ -276,47 +276,42 @@ struct ZR_STRUCT_ALIGN SZrGarbageCollector {
 
 typedef struct SZrGarbageCollector SZrGarbageCollector;
 
-/** @brief 一次本地调用期间的临时保活凭据，记录该调用实际增加的 pin/ignore 状态。 */
+/** @brief Non-copyable temporary root token. Initialize empty; release exactly once.
+ * Ordinary root leases do not change storage, regions or native pin flags. */
+typedef struct SZrGcRootLease { SZrRawObject *object; } SZrGcRootLease;
+ZR_CORE_API TZrBool ZrCore_Gc_RootLeaseAcquire(struct SZrState *state, SZrRawObject *object,
+                                               SZrGcRootLease *lease);
+ZR_CORE_API void ZrCore_Gc_RootLeaseRelease(struct SZrGlobalState *global, SZrGcRootLease *lease);
+
+/** @brief Native address lease; overlapping tokens share root and native pin ownership. */
 typedef struct SZrGcNativeCallPin {
     SZrRawObject *object;
     EZrGarbageCollectPinKind pinKind;
+    /* Acquisition observations only; release uses shared object counters. */
     TZrBool ignoredAddedByCaller;
     TZrBool pinKindAddedByCaller;
 } SZrGcNativeCallPin;
 
-/** @brief 快速检查对象是否仍在该 global 的显式保活表中。
- * @pre object 在查询期间有效；调用者负责并发访问的同步。
- * BUG: NativeCallPinObject 的多 mutator 调用链未持锁，登记表扩容可使本查询读取悬垂数组。 */
+ZR_CORE_API TZrBool ZrCore_GarbageCollector_IsObjectIgnored(struct SZrGlobalState *global, SZrRawObject *object);
+/** @brief Synchronized compatibility query. Object lifetime is the caller's responsibility. */
 ZR_FORCE_INLINE TZrBool ZrCore_GarbageCollector_IsObjectIgnoredFast(struct SZrGlobalState *global,
-                                                                    SZrRawObject *object) {
-    SZrGarbageCollector *collector;
-    TZrSize index;
-
-    if (global == ZR_NULL || global->garbageCollector == ZR_NULL || object == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    collector = global->garbageCollector;
-    if (collector->ignoredObjects == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    index = object->garbageCollectMark.ignoredRegistryIndex;
-    return index < collector->ignoredObjectCount && collector->ignoredObjects[index] == object;
+                                                                   SZrRawObject *object) {
+    return ZrCore_GarbageCollector_IsObjectIgnored(global, object);
 }
-
 
 /** @brief 在全局状态构造期间安装 GC 管理器。
  * @pre global 和 mainThreadState 已建立。
- * BUG: 管理器分配失败时实现仍解引用空指针；global.c 的构造入口无法返回分配失败。 */
+ * @note 分配失败保留 global->garbageCollector 为空，构造者须检查并回收。 */
 ZR_CORE_API void ZrCore_GarbageCollector_New(struct SZrGlobalState *global);
 /** @brief 全局状态关闭时收束回收并释放管理器及其登记表。
  * @pre 无其他 mutator 继续使用该 global；collector 属于该 global。 */
 ZR_CORE_API void ZrCore_GarbageCollector_Free(struct SZrGlobalState *global, SZrGarbageCollector *collector);
 
-/** @brief 由分配和回收工作量调整待偿 GC 债务，正债务驱动后续安全点。
- * @pre 现有债务非负；本入口在此前提下将负增量扣减至零。 */
+/** @brief 原子调整待偿 GC 债务，结果饱和于零和 ZR_MAX_MEMORY_OFFSET。
+ * @pre global 的管理器已建立；支持同域多个 mutator 并发累加和抵扣。 */
 ZR_CORE_API void ZrCore_GarbageCollector_AddDebtSpace(struct SZrGlobalState *global, TZrMemoryOffset size);
+/** @brief 原子读取当前债务；不能代替管理器其他字段所需的域同步。 */
+ZR_CORE_API TZrMemoryOffset ZrCore_GarbageCollector_GetDebtSpace(const SZrGarbageCollector *collector);
 
 /** @brief 请求完整回收；关闭和分配压力路径也会调用。
  * @note 可能因跨 mutator 暂停超时而直接返回，void 结果不保证实际完成。
@@ -328,46 +323,15 @@ ZR_CORE_API void ZrCore_GarbageCollector_GcFull(struct SZrState *state, TZrBool 
  * BUG: 多 mutator 并发标记切片在锁外更新共用遥测，造成数据竞争和丢失计数。 */
 ZR_CORE_API void ZrCore_GarbageCollector_GcStep(struct SZrState *state);
 
-/** @brief 将对象暂列为外部持有的 GC 根。
- * @note 重复登记不计数；调用方只应撤销自身新增的根，非零逸出登记也会自动撤根。
- * BUG: 同一 global 的多个运行中 mutator 可无锁并行登记，竞争数组槽位并丢失根。
- * TODO: ownership.c 把已有登记视作自身所有，需核查其释放时对象是否仍有其他强根。 */
+/** @brief Add an idempotent explicit root, independently of temporary lease owners. */
 ZR_CORE_API TZrBool ZrCore_GarbageCollector_IgnoreObject(struct SZrState *state, SZrRawObject *object);
-/** @brief 撤销对象的显式保活，不验证登记者身份；调用方只应撤销自身新增的根，失败时也可能清理过期索引。
- * BUG: 多 mutator 并行增删同一登记表未同步，可能破坏索引或过早失根。 */
+/** @brief Clear explicit root ownership; active temporary leases keep their root. */
 ZR_CORE_API TZrBool ZrCore_GarbageCollector_UnignoreObject(struct SZrGlobalState *global, SZrRawObject *object);
-/** @brief 查询显式保活登记，供所有权和反射路径决定是否仍需解除。
- * BUG: 底层无锁读取登记表，多 mutator 扩容时可能读到已释放数组。 */
-ZR_CORE_API TZrBool ZrCore_GarbageCollector_IsObjectIgnored(struct SZrGlobalState *global, SZrRawObject *object);
-
-/** @brief 保活已登记对象或登记新对象，并报告是否由本次调用新增根。
- * @note 撤销时仅应解除本次新增的登记，避免移除其他持有者的根。
- * BUG: 并行 mutator 的查找与登记不构成原子操作，可重复认领或丢失根。 */
-ZR_FORCE_INLINE TZrBool ZrCore_GarbageCollector_IgnoreObjectIfNeededFast(struct SZrGlobalState *global,
-                                                                          struct SZrState *state,
-                                                                          SZrRawObject *object,
-                                                                          TZrBool *outAddedByCaller) {
-    if (outAddedByCaller != ZR_NULL) {
-        *outAddedByCaller = ZR_FALSE;
-    }
-
-    if (global == ZR_NULL || state == ZR_NULL || object == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (ZrCore_GarbageCollector_IsObjectIgnoredFast(global, object)) {
-        return ZR_TRUE;
-    }
-
-    if (!ZrCore_GarbageCollector_IgnoreObject(state, object)) {
-        return ZR_FALSE;
-    }
-
-    if (outAddedByCaller != ZR_NULL) {
-        *outAddedByCaller = ZR_TRUE;
-    }
-    return ZR_TRUE;
-}
+/** @brief Atomically borrow an existing entry or add an explicit root.
+ * Only outAddedByCaller grants permission to unignore; overlapping temporary
+ * ownership should use RootLeaseAcquire/Release instead. */
+ZR_CORE_API TZrBool ZrCore_GarbageCollector_IgnoreObjectIfNeededFast(struct SZrGlobalState *global,
+        struct SZrState *state, SZrRawObject *object, TZrBool *outAddedByCaller);
 
 /** @brief 判断回收器是否仍在标记/原子阶段，供对象写入屏障选择策略。 */
 ZR_CORE_API TZrBool ZrCore_GarbageCollector_IsInvariant(struct SZrGlobalState *global);
@@ -383,8 +347,8 @@ ZR_CORE_API void ZrCore_Gc_SafePoint(struct SZrState *state);
 ZR_CORE_API void ZrCore_Gc_WriteBarrier(struct SZrState *state,
                                         SZrRawObject *ownerObject,
                                         SZrTypeValue *value);
-/** @brief 为本地调用暂时固定对象并建立显式保活；成功后必须 Unpin。
- * BUG: 保活表扩容失败时仅撤销 pin 位，已改变的存储、区段与逸出状态未回退。 */
+/** @brief Acquire a temporary root and native address pin. Failure leaves object
+ * metadata unchanged; success requires Unpin with the same global. */
 ZR_CORE_API TZrBool ZrCore_Gc_NativeCallPinObject(struct SZrState *state,
                                                   SZrRawObject *object,
                                                   SZrGcNativeCallPin *pin);
@@ -392,7 +356,7 @@ ZR_CORE_API TZrBool ZrCore_Gc_NativeCallPinObject(struct SZrState *state,
 ZR_CORE_API TZrBool ZrCore_Gc_NativeCallPinValue(struct SZrState *state,
                                                  const SZrTypeValue *value,
                                                  SZrGcNativeCallPin *pin);
-/** @brief 结束本地调用的临时保活，只撤销该凭据新增的标记和登记。 */
+/** @brief 结束本地调用的临时保活；最后一个共享 pin 凭据才撤销临时 pin 位。 */
 ZR_CORE_API void ZrCore_Gc_NativeCallUnpin(struct SZrGlobalState *global, SZrGcNativeCallPin *pin);
 
 /** @brief 对普通对象引用执行当前回收模式的写屏障。 */

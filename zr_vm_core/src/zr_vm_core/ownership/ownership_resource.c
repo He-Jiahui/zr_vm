@@ -398,7 +398,7 @@ EZrThreadStatus ZrCore_OwnershipResource_DropProtected(
     EZrThreadStatus savedExceptionStatus;
     EZrThreadStatus savedThreadStatus;
     TZrBool hadException;
-    TZrBool addedPin;
+    SZrGcNativeCallPin pin = {0};
 
     if (state == ZR_NULL || !ZrCore_OwnershipResource_IsObject(object)) {
         return ZR_THREAD_STATUS_FINE;
@@ -438,11 +438,14 @@ EZrThreadStatus ZrCore_OwnershipResource_DropProtected(
     failure.hasException = ZR_FALSE;
     failure.exceptionStatus = ZR_THREAD_STATUS_FINE;
     ZrCore_Value_ResetAsNull(&failure.exception);
-    addedPin = (TZrBool)((object->garbageCollectMark.pinFlags &
-                         ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE) == 0u);
-    /* 保持 domain root 并增加临时 pin，覆盖析构重入、异常及字段释放。 */
-    ZrCore_GarbageCollector_PinObject(
-            state, object, ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE);
+    /* Acquire before changing resource lifecycle; roll back pending-control on failure. */
+    if (!ZrCore_Gc_NativeCallPinObject(state, object, &pin)) {
+        state->pendingControl = savedPending;
+        if (rootedValues[2] != ZR_NULL)
+            state->pendingControl.value.value.object = rootedValues[2];
+        (void)ZrCore_Gc_AotRootFramePop(state, &stateRootFrame);
+        return ZR_THREAD_STATUS_MEMORY_ERROR;
+    }
     object->resourceLifecycleState = ZR_RESOURCE_LIFECYCLE_DROPPING;
     destructor = ZrCore_Object_GetMetaRecursively(
             state->global, (SZrObject *)object, ZR_META_DESTRUCTOR);
@@ -459,10 +462,7 @@ EZrThreadStatus ZrCore_OwnershipResource_DropProtected(
     }
     object->resourceLifecycleState = ZR_RESOURCE_LIFECYCLE_DROPPED;
     ZrCore_GcDomain_UnregisterOwnershipRoot(state, object);
-    if (addedPin) {
-        object->garbageCollectMark.pinFlags &=
-                (TZrUInt32)~((TZrUInt32)ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE);
-    }
+    ZrCore_Gc_NativeCallUnpin(state->global, &pin);
     state->pendingControl = savedPending;
     if (rootedValues[2] != ZR_NULL) {
         state->pendingControl.value.value.object = rootedValues[2];

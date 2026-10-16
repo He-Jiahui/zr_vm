@@ -735,10 +735,16 @@ TZrBool garbage_collector_ensure_ignore_registry_capacity(SZrGlobalState *global
         return ZR_TRUE;
     }
 
+    if (minCapacity > ZR_MAX_SIZE / sizeof(SZrRawObject *)) return ZR_FALSE;
     newCapacity = collector->ignoredObjectCapacity > 0
                       ? collector->ignoredObjectCapacity
                       : ZR_GC_IGNORE_REGISTRY_INITIAL_CAPACITY;
     while (newCapacity < minCapacity) {
+        if (newCapacity > (ZR_MAX_SIZE / sizeof(SZrRawObject *)) /
+                          ZR_GC_IGNORE_REGISTRY_GROWTH_FACTOR) {
+            newCapacity = minCapacity;
+            break;
+        }
         newCapacity *= ZR_GC_IGNORE_REGISTRY_GROWTH_FACTOR;
     }
 
@@ -768,7 +774,7 @@ TZrBool garbage_collector_ensure_ignore_registry_capacity(SZrGlobalState *global
     return ZR_TRUE;
 }
 
-static void garbage_collector_ignore_registry_remove_object(SZrGarbageCollector *collector, SZrRawObject *object) {
+void garbage_collector_ignore_registry_remove_object(SZrGarbageCollector *collector, SZrRawObject *object) {
     TZrSize index;
     TZrSize lastIndex;
     SZrRawObject *movedObject;
@@ -1192,11 +1198,7 @@ TZrBool ZrCore_RawObject_IsUnreferenced(SZrState *state, SZrRawObject *object) {
         return ZR_FALSE;
     }
 
-    if (object->garbageCollectMark.ignoredRegistryIndex == ZR_MAX_SIZE) {
-        return ZR_TRUE;
-    }
-
-    return !garbage_collector_ignore_registry_contains(global->garbageCollector, object);
+    return !ZrCore_GarbageCollector_IsObjectIgnored(global, object);
 }
 
 void ZrCore_RawObject_MarkAsInit(SZrState *state, SZrRawObject *object) {

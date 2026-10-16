@@ -315,7 +315,7 @@ void ZrCore_GcDomain_MutationUnlock(SZrGcDomain *domain) {
 
 /* 写屏障和物化路径先过暂停边界，并仅在并发 major 活跃时借用 mutation lock。
  * 返回值是是否持锁的令牌，调用方须原样交给 MutationEnd。 */
-TZrBool ZrCore_GcDomain_MutationBegin(SZrState *state) {
+static TZrBool gc_domain_mutation_begin(SZrState *state, TZrBool forceLock) {
     SZrGcDomain *domain;
     SZrGcDomainMutatorRecord *record;
     TZrBool concurrentMajorActive;
@@ -333,9 +333,8 @@ TZrBool ZrCore_GcDomain_MutationBegin(SZrState *state) {
         ZrCore_GcDomain_Unlock(domain);
         return ZR_FALSE;
     }
-    concurrentMajorActive =
-            domain->collector != ZR_NULL &&
-            domain->collector->concurrentMajorActive;
+    concurrentMajorActive = (TZrBool)(forceLock ||
+            (domain->collector != ZR_NULL && domain->collector->concurrentMajorActive));
     if (record != ZR_NULL &&
         record->mutationDepth == ~(TZrUInt32)0u) {
         ZrCore_GcDomain_Unlock(domain);
@@ -371,6 +370,15 @@ TZrBool ZrCore_GcDomain_MutationBegin(SZrState *state) {
         ZrCore_GcDomain_MutationUnlock(domain);
     }
     return beginSucceeded;
+}
+
+/* Shared root transactions always serialize, including idle/minor phases. */
+TZrBool ZrCore_GcDomain_SharedMutationBegin(SZrState *state) {
+    return gc_domain_mutation_begin(state, ZR_TRUE);
+}
+
+TZrBool ZrCore_GcDomain_MutationBegin(SZrState *state) {
+    return gc_domain_mutation_begin(state, ZR_FALSE);
 }
 
 /* 只释放本次 Begin 确实取得的锁，使未开启并发 major 的写入无需额外同步。 */

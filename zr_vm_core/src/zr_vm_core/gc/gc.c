@@ -96,7 +96,7 @@ static void garbage_collector_refresh_pressure_snapshot(SZrGarbageCollector *col
     }
 
     collector->statsSnapshot.managedMemoryBytes = (TZrUInt64)collector->managedMemories;
-    collector->statsSnapshot.gcDebtBytes = (TZrInt64)collector->gcDebtSize;
+    collector->statsSnapshot.gcDebtBytes = (TZrInt64)ZrCore_GarbageCollector_GetDebtSpace(collector);
     collector->statsSnapshot.ignoredObjectCount = (TZrUInt32)collector->ignoredObjectCount;
 
     for (TZrSize index = 0; index < collector->regionCount; index++) {
@@ -356,8 +356,8 @@ static void garbage_collector_mark_raw_object_escaped_internal(SZrState *state,
         return;
     }
 
-    /* TODO: 任意非零逸出登记都会撤销既有 ignore 根；屏障测试预期图接管，需核查宿主持有或无持久图边时的前提。 */
-    if (object->garbageCollectMark.ignoredRegistryIndex != ZR_MAX_SIZE) {
+    /* Existing graph handoff drops explicit ownership only without active leases. */
+    if (object->garbageCollectMark.temporaryRootRefCount == 0) {
         ZrCore_GarbageCollector_UnignoreObject(state->global, object);
     }
 
@@ -401,7 +401,7 @@ static void garbage_collector_schedule_collection_internal(SZrGlobalState *globa
     } else {
         collector->gcFlags &= ~ZR_GC_FLAG_EXPLICIT_COLLECTION_REQUEST;
     }
-    if (collector->gcDebtSize <= 0) {
+    if (ZrCore_GarbageCollector_GetDebtSpace(collector) <= 0) {
         ZrCore_GarbageCollector_AddDebtSpace(global, ZR_GC_DEBT_CREDIT_BYTES);
     }
 }
@@ -412,8 +412,10 @@ void ZrCore_GarbageCollector_New(SZrGlobalState *global) {
             ZrCore_Memory_RawMallocWithType(global, sizeof(SZrGarbageCollector), ZR_MEMORY_NATIVE_TYPE_MANAGER);
     SZrState *state;
 
-    /* BUG: global.c 的构造路径无失败分支；管理器分配为 NULL 时下方首次访问 gc 即崩溃。 */
     global->garbageCollector = gc;
+    if (gc == ZR_NULL) {
+        return;
+    }
     state = global->mainThreadState;
 
     gc->managedMemories = sizeof(SZrGlobalState) + sizeof(SZrState);
@@ -653,102 +655,6 @@ void ZrCore_GarbageCollector_Free(SZrGlobalState *global, SZrGarbageCollector *c
     ZrCore_Memory_RawFreeWithType(global, collector, sizeof(SZrGarbageCollector), ZR_MEMORY_NATIVE_TYPE_MANAGER);
 }
 
-/* 分配累加、回收抵扣均落在同一债务槽；调用方须持有有效管理器。 */
-void ZrCore_GarbageCollector_AddDebtSpace(SZrGlobalState *global, TZrMemoryOffset size) {
-    TZrMemoryOffset currentDebt = global->garbageCollector->gcDebtSize;
-
-    if (size > 0) {
-        if (currentDebt > ZR_MAX_MEMORY_OFFSET - size) {
-            global->garbageCollector->gcDebtSize = ZR_MAX_MEMORY_OFFSET;
-        } else {
-            global->garbageCollector->gcDebtSize = currentDebt + size;
-        }
-    } else if (size < 0) {
-        TZrMemoryOffset newDebt = currentDebt + size;
-        if (newDebt < 0 || newDebt > currentDebt) {
-            global->garbageCollector->gcDebtSize = 0;
-        } else {
-            global->garbageCollector->gcDebtSize = newDebt;
-        }
-    }
-}
-
-/* 显式保活表承担宿主/反射临时根；重复登记不增加引用计数，扩容失败时调用方须保留其他根。
- * BUG: NativeCallPinObject 可从同域多个 RUNNING mutator 并发进入，本表的计数/数组读写未持锁。 */
-TZrBool ZrCore_GarbageCollector_IgnoreObject(SZrState *state, SZrRawObject *object) {
-    SZrGarbageCollector *collector;
-
-    if (state == ZR_NULL || state->global == ZR_NULL || object == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    collector = state->global->garbageCollector;
-    if (collector == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (object->garbageCollectMark.ignoredRegistryIndex != ZR_MAX_SIZE &&
-        garbage_collector_ignore_registry_contains(collector, object)) {
-        garbage_collector_mark_ignored_root_if_needed_fast(state, object);
-        return ZR_TRUE;
-    }
-
-    if (collector->ignoredObjectCount >= collector->ignoredObjectCapacity &&
-        !garbage_collector_ensure_ignore_registry_capacity(state->global, collector->ignoredObjectCount + 1)) {
-        return ZR_FALSE;
-    }
-
-    /* BUG: 两个首登者可写同一槽并丢根；扩容还可释放另一线程正在读取的旧表。 */
-    collector->ignoredObjects[collector->ignoredObjectCount] = object;
-    object->garbageCollectMark.ignoredRegistryIndex = collector->ignoredObjectCount;
-    collector->ignoredObjectCount++;
-    garbage_collector_mark_ignored_root_if_needed_fast(state, object);
-    return ZR_TRUE;
-}
-
-/* 撤销该 global 的保活登记；过期索引只清对象侧，不碰其他登记。
- * BUG: 与并行登记/撤销共用无锁计数和交换删除，可能破坏其他对象的索引。 */
-TZrBool ZrCore_GarbageCollector_UnignoreObject(SZrGlobalState *global, SZrRawObject *object) {
-    SZrGarbageCollector *collector;
-    TZrSize index;
-    TZrSize lastIndex;
-    SZrRawObject *movedObject;
-
-    if (global == ZR_NULL || global->garbageCollector == ZR_NULL || object == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (object->garbageCollectMark.ignoredRegistryIndex == ZR_MAX_SIZE) {
-        return ZR_FALSE;
-    }
-
-    collector = global->garbageCollector;
-    index = object->garbageCollectMark.ignoredRegistryIndex;
-    if (collector->ignoredObjects == ZR_NULL || index >= collector->ignoredObjectCount ||
-        collector->ignoredObjects[index] != object) {
-        object->garbageCollectMark.ignoredRegistryIndex = ZR_MAX_SIZE;
-        return ZR_FALSE;
-    }
-
-    lastIndex = collector->ignoredObjectCount - 1u;
-    movedObject = collector->ignoredObjects[lastIndex];
-    collector->ignoredObjects[lastIndex] = ZR_NULL;
-    collector->ignoredObjectCount = lastIndex;
-    if (index != lastIndex) {
-        collector->ignoredObjects[index] = movedObject;
-        if (movedObject != ZR_NULL) {
-            movedObject->garbageCollectMark.ignoredRegistryIndex = index;
-        }
-    }
-    object->garbageCollectMark.ignoredRegistryIndex = ZR_MAX_SIZE;
-
-    return ZR_TRUE;
-}
-
-TZrBool ZrCore_GarbageCollector_IsObjectIgnored(SZrGlobalState *global, SZrRawObject *object) {
-    return ZrCore_GarbageCollector_IsObjectIgnoredFast(global, object);
-}
-
 /* 供关闭、内存压力和宿主强制回收共用的暂停域完整回收入口。 */
 void ZrCore_GarbageCollector_GcFull(SZrState *state, TZrBool isImmediate) {
     SZrGlobalState *global;
@@ -831,12 +737,12 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
     collector = global->garbageCollector;
     ZrCore_ExecutionBudget_GcBegin(state);
     collector->gcLastStepWork = 0;
-    debtBefore = collector->gcDebtSize;
+    debtBefore = ZrCore_GarbageCollector_GetDebtSpace(collector);
     statusBefore = collector->gcRunningStatus;
     startedUs = garbage_collector_now_us();
 
     if (!gcrunning(global)) {
-        if (collector->gcDebtSize > 0) {
+        if (ZrCore_GarbageCollector_GetDebtSpace(collector) > 0) {
             collector->gcStatus = ZR_GARBAGE_COLLECT_STATUS_RUNNING;
         } else {
             ZrCore_GarbageCollector_AddDebtSpace(global, -ZR_GC_DEBT_CREDIT_BYTES);
@@ -917,8 +823,11 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
         }
 
         collector->gcLastStepWork = totalWork;
-        if (collector->gcLastStepWork > 0 && collector->gcDebtSize > 0) {
-            TZrMemoryOffset workBytes = (TZrMemoryOffset)collector->gcLastStepWork * ZR_GC_WORK_TO_MEMORY_BYTES;
+        if (collector->gcLastStepWork > 0 && ZrCore_GarbageCollector_GetDebtSpace(collector) > 0) {
+            TZrMemoryOffset workBytes = collector->gcLastStepWork >
+                    (TZrSize)ZR_MAX_MEMORY_OFFSET / ZR_GC_WORK_TO_MEMORY_BYTES
+                    ? ZR_MAX_MEMORY_OFFSET
+                    : (TZrMemoryOffset)(collector->gcLastStepWork * ZR_GC_WORK_TO_MEMORY_BYTES);
             ZrCore_GarbageCollector_AddDebtSpace(global, -workBytes);
         }
     }
@@ -930,7 +839,7 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
     }
 
     if (collector->gcLastStepWork == 0 &&
-        (statusBefore != collector->gcRunningStatus || debtBefore != collector->gcDebtSize)) {
+        (statusBefore != collector->gcRunningStatus || debtBefore != ZrCore_GarbageCollector_GetDebtSpace(collector))) {
         collector->gcLastStepWork = 1;
     }
     garbage_collector_record_step_telemetry(collector, startedUs);
@@ -981,8 +890,9 @@ void ZrCore_GarbageCollector_ScheduleCollection(SZrGlobalState *global, EZrGarba
     garbage_collector_schedule_collection_internal(global, kind, ZR_TRUE);
 }
 
-/* 调试器/宿主拉取压力与域指标；域字段只在域锁内采集。
- * BUG: 压力汇总遍历 regions 时另一 mutator 可扩容释放旧数组，产生悬垂读取。 */
+/* Root registry snapshots share the mutation lock; acquire coordination second.
+ * BUG: Other region allocation paths still need the same lock to make the
+ * entire region/pressure telemetry snapshot race-free. */
 void ZrCore_GarbageCollector_GetStatsSnapshot(SZrGlobalState *global, SZrGarbageCollectorStatsSnapshot *outSnapshot) {
     SZrGcDomain *domain;
 
@@ -990,6 +900,7 @@ void ZrCore_GarbageCollector_GetStatsSnapshot(SZrGlobalState *global, SZrGarbage
         return;
     }
 
+    ZrCore_GcDomain_MutationLock(global->gcDomain);
     global->garbageCollector->statsSnapshot.heapLimitBytes = global->garbageCollector->heapLimitBytes;
     global->garbageCollector->statsSnapshot.pauseBudgetUs = global->garbageCollector->pauseBudgetUs;
     global->garbageCollector->statsSnapshot.remarkBudgetUs = global->garbageCollector->remarkBudgetUs;
@@ -1045,6 +956,7 @@ void ZrCore_GarbageCollector_GetStatsSnapshot(SZrGlobalState *global, SZrGarbage
             global->garbageCollector->concurrentMajorActive;
     garbage_collector_refresh_cumulative_snapshot(global->garbageCollector);
     *outSnapshot = global->garbageCollector->statsSnapshot;
+    ZrCore_GcDomain_MutationUnlock(global->gcDomain);
 }
 
 /* 屏障和测试用成员查询；仅接受该 global 管理器中的对象。 */
@@ -1062,13 +974,10 @@ void ZrCore_GarbageCollector_MarkRawObjectEscaped(SZrState *state,
                                                   TZrUInt32 escapeFlags,
                                                   TZrUInt32 scopeDepth,
                                                   EZrGarbageCollectPromotionReason promotionReason) {
+    if (!ZrCore_GcDomain_SharedMutationBegin(state)) return;
     garbage_collector_mark_raw_object_escaped_internal(
-            state,
-            object,
-            escapeFlags,
-            scopeDepth,
-            promotionReason,
-            ZR_TRUE);
+            state, object, escapeFlags, scopeDepth, promotionReason, ZR_TRUE);
+    ZrCore_GcDomain_MutationEnd(state, ZR_TRUE);
 }
 
 /* 泛值入口仅把 GC 对象交给同一逸出登记逻辑。 */
@@ -1088,56 +997,58 @@ void ZrCore_GarbageCollector_MarkValueEscaped(SZrState *state,
         return;
     }
 
+    if (!ZrCore_GcDomain_SharedMutationBegin(state)) return;
     garbage_collector_mark_raw_object_escaped_internal(
-            state,
-            object,
-            escapeFlags,
-            scopeDepth,
-            promotionReason,
-            ZR_TRUE);
+            state, object, escapeFlags, scopeDepth, promotionReason, ZR_TRUE);
+    ZrCore_GcDomain_MutationEnd(state, ZR_TRUE);
 }
 
-/* 宿主和跨域资源持有的对象转入不可移动区，并记录晋升原因。 */
-void ZrCore_GarbageCollector_PinObject(SZrState *state,
-                                       SZrRawObject *object,
-                                       EZrGarbageCollectPinKind pinKind) {
+/* Caller owns the shared mutation lock. Allocate a new region before changing
+ * object metadata or releasing its old region accounting. */
+TZrBool garbage_collector_try_pin_object_locked(SZrState *state, SZrRawObject *object,
+                                                EZrGarbageCollectPinKind pinKind) {
+    TZrSize objectSize = garbage_collector_get_object_base_size_fast(object);
+    TZrSize descriptorIndex = object->garbageCollectMark.regionDescriptorIndex;
+    TZrUInt32 regionId = object->garbageCollectMark.regionId;
     TZrUInt32 escapeFlags = ZR_GARBAGE_COLLECT_ESCAPE_KIND_PINNED_REFERENCE;
-    TZrSize objectSize;
-    TZrUInt32 previousRegionId;
-
-    if (state == ZR_NULL || state->global == ZR_NULL || state->global->garbageCollector == ZR_NULL || object == ZR_NULL) {
-        return;
+    if (object->garbageCollectMark.regionKind != ZR_GARBAGE_COLLECT_REGION_KIND_PINNED || regionId == 0u) {
+        regionId = garbage_collector_allocate_region_id_cached(state->global,
+                ZR_GARBAGE_COLLECT_REGION_KIND_PINNED, objectSize, &descriptorIndex);
+        if (regionId == 0u) return ZR_FALSE;
+        garbage_collector_release_region_allocation_cached(state->global,
+                object->garbageCollectMark.regionId,
+                object->garbageCollectMark.regionDescriptorIndex, objectSize);
     }
-
-    objectSize = garbage_collector_get_object_base_size_fast(object);
-    previousRegionId = object->garbageCollectMark.regionId;
     object->garbageCollectMark.pinFlags |= (TZrUInt32)pinKind;
-    if ((pinKind & ZR_GARBAGE_COLLECT_PIN_KIND_HOST_HANDLE) != 0) {
+    if ((pinKind & ZR_GARBAGE_COLLECT_PIN_KIND_HOST_HANDLE) != 0)
         escapeFlags |= ZR_GARBAGE_COLLECT_ESCAPE_KIND_HOST_HANDLE;
-    }
-    if ((pinKind & ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE) != 0) {
+    if ((pinKind & ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE) != 0)
         escapeFlags |= ZR_GARBAGE_COLLECT_ESCAPE_KIND_NATIVE_HANDLE;
-    }
-    if ((pinKind & ZR_GARBAGE_COLLECT_PIN_KIND_PERSISTENT_ROOT) != 0) {
+    if ((pinKind & ZR_GARBAGE_COLLECT_PIN_KIND_PERSISTENT_ROOT) != 0)
         escapeFlags |= ZR_GARBAGE_COLLECT_ESCAPE_KIND_GLOBAL_ROOT;
-    }
     ZrCore_RawObject_SetStorageKind(object, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_PINNED);
     ZrCore_RawObject_SetRegionKind(object, ZR_GARBAGE_COLLECT_REGION_KIND_PINNED);
-    /* BUG: 区段登记表扩容 OOM 时重分配返回零；此 void 入口已改固定类别，
-     * 仍把零 ID 留给对象且不向调用方报告失败，区段快照会漏计该对象。 */
-    object->garbageCollectMark.regionId = garbage_collector_reassign_region_id_cached(
-            state->global,
-            previousRegionId,
-            object->garbageCollectMark.regionDescriptorIndex,
-            ZR_GARBAGE_COLLECT_REGION_KIND_PINNED,
-            objectSize,
-            &object->garbageCollectMark.regionDescriptorIndex);
-    garbage_collector_mark_raw_object_escaped_internal(state,
-                                                       object,
-                                                       escapeFlags,
-                                                       object->garbageCollectMark.anchorScopeDepth,
-                                                       ZR_GARBAGE_COLLECT_PROMOTION_REASON_PINNED,
-                                                       ZR_TRUE);
+    object->garbageCollectMark.regionId = regionId;
+    object->garbageCollectMark.regionDescriptorIndex = descriptorIndex;
+    garbage_collector_mark_raw_object_escaped_internal(state, object, escapeFlags,
+            object->garbageCollectMark.anchorScopeDepth,
+            ZR_GARBAGE_COLLECT_PROMOTION_REASON_PINNED, ZR_TRUE);
+    return ZR_TRUE;
+}
+
+void ZrCore_GarbageCollector_PinObject(SZrState *state, SZrRawObject *object,
+                                       EZrGarbageCollectPinKind pinKind) {
+    TZrBool succeeded;
+    if (state == ZR_NULL || state->global == ZR_NULL || object == ZR_NULL) return;
+    if (!ZrCore_GcDomain_SharedMutationBegin(state)) {
+        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+        return;
+    }
+    succeeded = garbage_collector_try_pin_object_locked(state, object, pinKind);
+    if (succeeded && (pinKind & ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE) != 0)
+        object->garbageCollectMark.nativeCallOwnsPinKind = ZR_FALSE;
+    ZrCore_GcDomain_MutationEnd(state, ZR_TRUE);
+    if (!succeeded) ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
 }
 
 TZrBool ZrCore_GarbageCollector_IsInvariant(SZrGlobalState *global) {
@@ -1167,7 +1078,7 @@ void ZrCore_GarbageCollector_CheckGc(SZrState *state) {
         garbage_collector_schedule_collection_internal(global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL, ZR_FALSE);
     }
 
-    if (collector->gcDebtSize > 0) {
+    if (ZrCore_GarbageCollector_GetDebtSpace(collector) > 0) {
         ZrCore_GarbageCollector_GcStep(state);
     }
 #if defined(ZR_DEBUG_GARBAGE_COLLECT_MEM_TEST)
@@ -1189,93 +1100,4 @@ void ZrCore_Gc_SafePoint(SZrState *state) {
 void ZrCore_Gc_WriteBarrier(SZrState *state, SZrRawObject *ownerObject, SZrTypeValue *value) {
     ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_WRITE_BARRIER_COUNT, 1u);
     ZrCore_Value_Barrier(state, ownerObject, value);
-}
-
-/* 凭据只记录本次调用新增的状态，避免解除其他调用方的长期保活。 */
-static void garbage_collector_reset_native_call_pin(SZrGcNativeCallPin *pin) {
-    if (pin == ZR_NULL) {
-        return;
-    }
-
-    pin->object = ZR_NULL;
-    pin->pinKind = ZR_GARBAGE_COLLECT_PIN_KIND_NONE;
-    pin->ignoredAddedByCaller = ZR_FALSE;
-    pin->pinKindAddedByCaller = ZR_FALSE;
-}
-
-/* 本地调用前取得临时固定和保活，失败时清理本次凭据。 */
-TZrBool ZrCore_Gc_NativeCallPinObject(SZrState *state, SZrRawObject *object, SZrGcNativeCallPin *pin) {
-    TZrUInt32 previousPinFlags;
-    TZrBool wasIgnored;
-    TZrBool ignoredAddedAfterPin = ZR_FALSE;
-
-    if (pin == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    garbage_collector_reset_native_call_pin(pin);
-    if (object == ZR_NULL) {
-        return ZR_TRUE;
-    }
-    if (state == ZR_NULL || state->global == ZR_NULL || state->global->garbageCollector == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    pin->object = object;
-    pin->pinKind = ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE;
-    wasIgnored = ZrCore_GarbageCollector_IsObjectIgnoredFast(state->global, object);
-    previousPinFlags = object->garbageCollectMark.pinFlags;
-    if ((previousPinFlags & ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE) == 0u) {
-        pin->pinKindAddedByCaller = ZR_TRUE;
-    }
-    ZrCore_GarbageCollector_PinObject(state, object, ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE);
-    /* BUG: 保活表扩容失败时只回退 pinFlags；PinObject 已更改 storage、region、
-     * escape 状态，失败后对象仍可能被排除老区压实。 */
-    if (!ZrCore_GarbageCollector_IgnoreObjectIfNeededFast(state->global,
-                                                          state,
-                                                          object,
-                                                          &ignoredAddedAfterPin)) {
-        if (pin->pinKindAddedByCaller) {
-            object->garbageCollectMark.pinFlags &= (TZrUInt32)~((TZrUInt32)pin->pinKind);
-        }
-        garbage_collector_reset_native_call_pin(pin);
-        return ZR_FALSE;
-    }
-    pin->ignoredAddedByCaller = !wasIgnored && ignoredAddedAfterPin;
-    return ZR_TRUE;
-}
-
-/* 值不是托管对象时不建立凭据，调用方仍可统一执行 Unpin。 */
-TZrBool ZrCore_Gc_NativeCallPinValue(SZrState *state, const SZrTypeValue *value, SZrGcNativeCallPin *pin) {
-    SZrRawObject *object;
-
-    if (pin == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    garbage_collector_reset_native_call_pin(pin);
-    if (value == ZR_NULL || !ZrCore_Value_IsGarbageCollectable(value)) {
-        return ZR_TRUE;
-    }
-
-    object = ZrCore_Value_GetRawObject(value);
-    return ZrCore_Gc_NativeCallPinObject(state, object, pin);
-}
-
-/* 本地调用结束时仅撤销凭据新增的 pin 标记和显式根。 */
-void ZrCore_Gc_NativeCallUnpin(SZrGlobalState *global, SZrGcNativeCallPin *pin) {
-    SZrRawObject *object;
-
-    if (pin == ZR_NULL || pin->object == ZR_NULL) {
-        return;
-    }
-
-    object = pin->object;
-    if (pin->pinKindAddedByCaller && pin->pinKind != ZR_GARBAGE_COLLECT_PIN_KIND_NONE) {
-        object->garbageCollectMark.pinFlags &= (TZrUInt32)~((TZrUInt32)pin->pinKind);
-    }
-    if (pin->ignoredAddedByCaller && global != ZR_NULL) {
-        ZrCore_GarbageCollector_UnignoreObject(global, object);
-    }
-
-    garbage_collector_reset_native_call_pin(pin);
 }

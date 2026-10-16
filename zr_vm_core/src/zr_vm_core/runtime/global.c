@@ -399,6 +399,12 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     global->hashSeed = ZrCore_HashSeed_Create(global, uniqueNumber);
     // gc
     ZrCore_GarbageCollector_New(global);
+    if (global->garbageCollector == ZR_NULL) {
+        ZrCore_Array_Free(newState, &global->importCompileInfoStack);
+        ZrCore_State_Free(global, newState);
+        allocator(userAllocationArguments, global, sizeof(SZrGlobalState), 0, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+        return ZR_NULL;
+    }
     global->gcDomain = ZrCore_GcDomain_New(global, global->garbageCollector);
     ZrCore_GcDomain_AttachState(global->gcDomain, newState);
     ZrCore_Profile_GlobalInit(global);
@@ -424,6 +430,10 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
 
     // init string table
     ZrCore_StringTable_New(global);
+    if (global->stringTable == ZR_NULL) {
+        ZrCore_GlobalState_Free(global);
+        return ZR_NULL;
+    }
     global_trace("global new string table=%p", (void *)global->stringTable);
 
     // init global module registry

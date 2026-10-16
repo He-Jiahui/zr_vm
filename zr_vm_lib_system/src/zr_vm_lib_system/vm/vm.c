@@ -227,7 +227,7 @@ static SZrObject *system_vm_make_state(SZrState *state, TZrInt64 loadedModuleCou
     system_vm_write_int_field(state,
                               object,
                               "garbageCollectionDebt",
-                              garbageCollector != ZR_NULL ? (TZrInt64)garbageCollector->gcDebtSize : 0);
+                              garbageCollector != ZR_NULL ? (TZrInt64)ZrCore_GarbageCollector_GetDebtSpace(garbageCollector) : 0);
     system_vm_write_int_field(state,
                               object,
                               "garbageCollectionThreshold",

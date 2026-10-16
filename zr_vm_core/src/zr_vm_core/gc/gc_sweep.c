@@ -35,12 +35,9 @@ SZrRawObject **garbage_collector_sweep_list(SZrState *state, SZrRawObject **list
             (*count)++;
 
             /* 清扫债务只扣除已释放对象大小，不让当前债务变成负数。 */
-            TZrMemoryOffset objectDebt = (TZrMemoryOffset)objectSize;
-            if (objectDebt <= global->garbageCollector->gcDebtSize) {
-                global->garbageCollector->gcDebtSize -= objectDebt;
-            } else {
-                global->garbageCollector->gcDebtSize = 0;
-            }
+            TZrMemoryOffset objectDebt = objectSize > (TZrSize)ZR_MAX_MEMORY_OFFSET
+                                                ? ZR_MAX_MEMORY_OFFSET : (TZrMemoryOffset)objectSize;
+            ZrCore_GarbageCollector_AddDebtSpace(global, -objectDebt);
         } else {
             current = &object->next;
         }

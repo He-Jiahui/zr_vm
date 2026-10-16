@@ -587,22 +587,17 @@ void execution_set_pending_control(SZrState *state,
     /* Retain before clearing, including when value aliases pending storage. */
     ZrCore_Value_ResetAsNull(&replacement);
     if (value != ZR_NULL) {
-        TZrBool addedPin;
+        SZrGcNativeCallPin pin = {0};
         copy.source = *value;
         ZrCore_Value_ResetAsNull(&copy.destination);
         roots[0] = execution_pending_root(&copy.source);
-        addedPin = roots[0] != ZR_NULL &&
-                   (roots[0]->garbageCollectMark.pinFlags &
-                    ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE) == 0u;
-        if (addedPin) {
-            ZrCore_GarbageCollector_PinObject(
-                    state, roots[0], ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE);
+        if (!ZrCore_Gc_NativeCallPinObject(state, roots[0], &pin)) {
+            (void)ZrCore_Gc_AotRootFramePop(state, &rootFrame);
+            ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+            return;
         }
         releaseStatus = ZrCore_Exception_TryRun(state, execution_copy_pending_value, &copy);
-        if (addedPin) {
-            roots[0]->garbageCollectMark.pinFlags &=
-                    (TZrUInt32)~((TZrUInt32)ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE);
-        }
+        ZrCore_Gc_NativeCallUnpin(state->global, &pin);
         if (releaseStatus != ZR_THREAD_STATUS_FINE) {
             (void)ZrCore_Gc_AotRootFramePop(state, &rootFrame);
             ZrCore_Exception_Throw(state, releaseStatus);

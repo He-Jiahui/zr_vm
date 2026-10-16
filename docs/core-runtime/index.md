@@ -227,3 +227,6 @@ identity changes; absent proof and bounds misses use the original checked
 getter. This removes repeated address resolution while retaining complete
 `SZrTypeValue` storage, so unboxed typed payload lanes and their materialization
 boundaries remain future work.
+
+- [GC allocation debt](gc-allocation-debt.md)：原子读写、饱和边界、预算与 VM 统计消费者，以及真实分配并发回归。
+- [GC root leases](gc-root-leases.md)：显式根、原生 pin 与临时根的独立所有权及失败回滚。

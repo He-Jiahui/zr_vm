@@ -234,6 +234,11 @@ struct SZrGarbageCollectionObjectMark {
     TZrUInt32 anchorScopeDepth;
     TZrUInt32 pinFlags;
     EZrGarbageCollectPromotionReason promotionReason;
+    /* Shared ignored-root ownership, protected by the domain mutation lock. */
+    TZrSize temporaryRootRefCount;
+    TZrSize nativeCallPinRefCount;
+    TZrBool explicitIgnoredRoot;
+    TZrBool nativeCallOwnsPinKind;
     TZrSize ignoredRegistryIndex;
     TZrSize rememberedRegistryIndex;
     TZrSize regionDescriptorIndex;

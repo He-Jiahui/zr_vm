@@ -69,6 +69,10 @@ ZR_FORCE_INLINE void ZrCore_RawObject_Construct(SZrRawObject *super, EZrRawObjec
     super->garbageCollectMark.anchorScopeDepth = ZR_GC_SCOPE_DEPTH_NONE;
     super->garbageCollectMark.pinFlags = ZR_GARBAGE_COLLECT_PIN_KIND_NONE;
     super->garbageCollectMark.promotionReason = ZR_GARBAGE_COLLECT_PROMOTION_REASON_NONE;
+    super->garbageCollectMark.temporaryRootRefCount = 0;
+    super->garbageCollectMark.nativeCallPinRefCount = 0;
+    super->garbageCollectMark.explicitIgnoredRoot = ZR_FALSE;
+    super->garbageCollectMark.nativeCallOwnsPinKind = ZR_FALSE;
     super->garbageCollectMark.ignoredRegistryIndex = ZR_MAX_SIZE;
     super->garbageCollectMark.rememberedRegistryIndex = ZR_MAX_SIZE;
     super->garbageCollectMark.regionDescriptorIndex = ZR_MAX_SIZE;
@@ -83,8 +87,8 @@ ZR_FORCE_INLINE void ZrCore_RawObject_Construct(SZrRawObject *super, EZrRawObjec
     super->gcDomainGeneration = 0u;
     super->ownershipRootIndex = ~(TZrUInt32)0u;
     super->ownershipRootGeneration = 0u;
-    // BUG: `&super` 是构造器形参槽而非对象地址；对象键会读取该哈希，槽复用时不同对象可能挤入同一桶。
-    super->hash = ((TZrUInt64) &super) / ZR_ALIGN_SIZE;
+    // 对象默认使用自身地址生成 identity hash；字符串构造路径随后覆盖为内容哈希。
+    super->hash = ((TZrUInt64)super) / ZR_ALIGN_SIZE;
 }
 /** @brief 覆盖默认哈希；字符串创建路径使用此入口写入内容哈希。 */
 ZR_FORCE_INLINE void ZrCore_RawObject_InitHash(SZrRawObject *super, TZrUInt64 hash) { super->hash = hash; }

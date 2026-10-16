@@ -46,11 +46,8 @@ TZrPtr ZrCore_Memory_GcMalloc(SZrState *state, EZrMemoryNativeType type, TZrSize
             ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
         }
     }
-    /* BUG: 同域多个 mutator 可同时创建对象；gcDebtSize 非原子且此处无共同锁，
-     * 并发成功分配会竞争读写，丢失债务或使后续 GC 调度依据失真。 */
-    /* BUG: AddDebtSpace 可先将债务饱和至 ZR_MAX_MEMORY_OFFSET；此时成功分配
-     * 仍用有符号加法，产生溢出未定义行为，可能使安全点跳过应执行的 GC。 */
-    global->garbageCollector->gcDebtSize += (TZrMemoryOffset) size;
+    ZrCore_GarbageCollector_AddDebtSpace(global,
+            size > (TZrSize)ZR_MAX_MEMORY_OFFSET ? ZR_MAX_MEMORY_OFFSET : (TZrMemoryOffset)size);
     return pointer;
 }
 
@@ -73,9 +70,9 @@ TZrPtr ZrCore_Memory_GcReallocate(SZrState *state,
         }
     }
     if (result != ZR_NULL && newSize > originalSize) {
-        /* TODO: 此公开扩容入口暂无仓内调用；启用前须核查这里与 GcMalloc
-         * 同样缺少并发同步和债务饱和保护的条件路径。 */
-        global->garbageCollector->gcDebtSize += (TZrMemoryOffset)(newSize - originalSize);
+        TZrSize growth = newSize - originalSize;
+        ZrCore_GarbageCollector_AddDebtSpace(global,
+                growth > (TZrSize)ZR_MAX_MEMORY_OFFSET ? ZR_MAX_MEMORY_OFFSET : (TZrMemoryOffset)growth);
     }
     return result;
 }

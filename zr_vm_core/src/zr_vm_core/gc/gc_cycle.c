@@ -2206,6 +2206,10 @@ static TZrBool garbage_collector_object_supports_evacuation(SZrState *state, SZr
         return ZR_FALSE;
     }
 
+    /* Stack/native lease tokens keep their borrowed address until Release.
+     * No storage/region change is required when acquiring an ordinary root. */
+    if (object->garbageCollectMark.temporaryRootRefCount != 0) return ZR_FALSE;
+
     switch (object->type) {
         case ZR_RAW_OBJECT_TYPE_STRING:
         case ZR_RAW_OBJECT_TYPE_OBJECT:
@@ -3149,7 +3153,7 @@ int garbage_collector_sweep_step(SZrState *state,
     int sweepBudget;
 
     if (collector->gcObjectListSweeper) {
-        TZrMemoryOffset olddebt = global->garbageCollector->gcDebtSize;
+        TZrMemoryOffset olddebt = ZrCore_GarbageCollector_GetDebtSpace(collector);
         TZrUInt64 maxSweepSliceBudget = (TZrUInt64)ZR_GC_SWEEP_SLICE_BUDGET_MAX;
         int count;
 
@@ -3160,7 +3164,7 @@ int garbage_collector_sweep_step(SZrState *state,
                                          : (int)collector->gcSweepSliceBudget);
         collector->gcObjectListSweeper =
                 garbage_collector_sweep_list(state, collector->gcObjectListSweeper, sweepBudget, &count);
-        collector->managedMemories += global->garbageCollector->gcDebtSize - olddebt;
+        collector->managedMemories += ZrCore_GarbageCollector_GetDebtSpace(collector) - olddebt;
         if (collector->gcObjectListSweeper != ZR_NULL && *collector->gcObjectListSweeper == ZR_NULL) {
             collector->gcRunningStatus = nextstate;
             collector->gcObjectListSweeper = nextlist;
