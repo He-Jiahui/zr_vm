@@ -173,20 +173,22 @@ ZR_CORE_API TZrNativeString ZrCore_NativeString_VFormat(struct SZrState *state, 
 /** @brief VFormat 的可变参数入口；支持的占位符须与实现的 va_arg 类型一致。 */
 ZR_CORE_API TZrNativeString ZrCore_NativeString_Format(struct SZrState *state, TZrNativeString format, ...);
 
-/** @brief 全局状态启动时建立短串驻留表；须先于主线程字符串初始化。 */
+/** @brief 全局状态启动时建立短串驻留表；分配失败保留 global->stringTable 为空。 */
 ZR_CORE_API void ZrCore_StringTable_New(struct SZrGlobalState *global);
 
 /** @brief 全局状态关闭时回收驻留表索引；GC 对象由 GC 生命周期处理。 */
 ZR_CORE_API void ZrCore_StringTable_Free(struct SZrGlobalState *global, SZrStringTable *stringTable);
 
-/** @brief 主线程启动时初始化驻留桶和永久内存错误字符串。 */
+/** @brief 主线程启动时初始化驻留桶和永久内存错误字符串；桶分配失败抛内存异常。 */
 ZR_CORE_API void ZrCore_StringTable_Init(struct SZrState *state);
 /** @brief 哈希表扩容后同步 minor GC 的年轻代桶索引；失败返回 false 供调用方决定是否继续。 */
 ZR_CORE_API TZrBool ZrCore_StringTable_SyncMinorYoungBucketFlags(struct SZrGlobalState *global);
 
 
 /** @brief 按显式字节长度创建 GC 字符串；短串驻留，长串单独保存缓冲区。
- * @pre state 的 stringTable 已建立，短串路径的哈希桶已初始化；string 非空且至少有 length 个可读字节。 */
+ * @pre state 的 stringTable 已建立，短串路径的哈希桶已初始化；string 非空且至少有 length 个可读字节。
+ * @return 成功对象；长串原生载荷或短串 rehash 普通分配失败返回 NULL。
+ * GC 对象／pair 分配仍可能抛出内存异常；失败候选由 GC 回收，调用方不得释放。 */
 ZR_CORE_API SZrString *ZrCore_String_Create(struct SZrState *state, TZrNativeString string, TZrSize length);
 
 /** 从 NUL 文本创建字符串；含内嵌零字节的输入需改用显式长度入口。 */
@@ -194,7 +196,9 @@ ZR_FORCE_INLINE SZrString *ZrCore_String_CreateFromNative(struct SZrState *state
     return ZrCore_String_Create(state, string, ZrCore_NativeString_Length(string));
 }
 
-/** @brief 项目清单等重复原生文本的创建入口；先查询全局 API 字符串缓存。 */
+/** @brief 项目清单等重复原生文本的创建入口；先查询全局 API 字符串缓存。
+ * @return 命中或新建对象，普通创建失败返回 NULL；创建抛出的异常向上传播。
+ * @note 候选创建成功后才移动并提交缓存；失败保留原有条目及顺序。 */
 ZR_CORE_API SZrString *ZrCore_String_CreateTryHitCache(struct SZrState *state, TZrNativeString string);
 
 
@@ -273,7 +277,8 @@ ZR_CORE_API SZrString *ZrCore_String_ConcatStringAndNative(struct SZrState *stat
                                                            TZrBool stringOnLeft);
 
 
-/** @brief 数字或原生指针转换成 GC 字符串，供 Value_ConvertToString 和元方法使用。 */
+/** @brief 数字或原生指针转换成 GC 字符串，供 Value_ConvertToString 和元方法使用。
+ * @return 格式暂存区或字符串普通分配失败返回 NULL；后续 GC 分配仍可能抛出。 */
 ZR_CORE_API SZrString *ZrCore_String_FromNumber(struct SZrState *state, struct SZrTypeValue *value);
 // 对象转文本的入口位于 ZrCore_Value_ConvertToString。
 

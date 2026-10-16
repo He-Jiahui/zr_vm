@@ -174,3 +174,5 @@ the full type-inference runner under Clang ASan/UBSan; see
 9. 再沿 frontmatter 的 `tests` 字段定位具体 C 测试、manifest 和 fixture 文件。
 10. 需要跑快速回归时优先走 `smoke/core/stress` 过滤；AOT 归档资产已移到 `zr_vm_aot/`，不再属于主仓测试入口。
 10. 后续新增语义主题时，优先复用主矩阵和 manifest 合同，而不是继续把上游参考散落在临时笔记里。
+
+- [String storage failure](string-storage-allocation-failure.md)：长载荷、数字暂存、rehash 与 API cache 提交。

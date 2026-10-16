@@ -3,11 +3,13 @@ related_code:
   - zr_vm_core/include/zr_vm_core/conversion.h
   - zr_vm_core/include/zr_vm_core/string.h
   - zr_vm_core/src/zr_vm_core/string/string.c
+  - zr_vm_core/src/zr_vm_core/string/string_format.c
   - tests/core/test_string_native_layout.c
   - tests/cmake/string-native-layout-tests.cmake
 implementation_files:
   - zr_vm_core/include/zr_vm_core/conversion.h
   - zr_vm_core/src/zr_vm_core/string/string.c
+  - zr_vm_core/src/zr_vm_core/string/string_format.c
 plan_sources:
   - "user: 2026-10-16 支撑层现役 BUG 修复与真实回归"
 tests:
@@ -28,4 +30,6 @@ doc_type: testing-guide
 
 现有 `test_string_layout.c` 的长串测试只检查 native 指针槽对齐，还包含 Function、Module 析构用例；本回归单独成组，以便分别记录格式化与缓存的 RED/GREEN。`support-oom-string-red-r2` 已记录两个真实失败：格式化返回地址不等于 payload；缓存每次创建新对象，但内容保持完整。生产修复将这两处文本访问改用已有的 `ZrCore_String_GetNativeString`，不改变仅供短串使用的转换宏，不引入头文件依赖或宏实参重复求值。全仓自有代码的该宏调用点仅此两处。
 
-`string.c` 目前超过 1100 行；此次仅替换两处既有文本访问，没有增加职责或控制流，因此保留文件布局。格式化及缓存的 OOM 清理是独立缺陷，本回归不授予其验证信用。修复后的两项已在 `integrated-support-batch-green` 的真实 Core 构建中通过，含短串控制；同轮 53 项 CTest、pool 14 项与 CLI hello-world 均通过，收据 `changed_inputs=[]`。独立复核 ACCEPT。实际构建和运行收据保存在 `E:/cargo-targets/zr_vm/reports/review-bugfix-20261016/`。
+上述两处访问修复最初仅改既有表达式，保留文件布局。后续存储 OOM 修复将完整原生格式化职责机械移至 `string_format.c`，缓存仍在 `string.c`；格式化的布局访问继续使用同一 accessor。格式化及缓存的 OOM 清理有独立证据范围，见 [字符串存储分配失败](string-storage-allocation-failure.md)，本长布局回归不授予其验证信用。
+
+提取前的两项已在 `integrated-support-batch-green` 的真实 Core 构建中通过，含短串控制；同轮 53 项 CTest、pool 14 项与 CLI hello-world 均通过，收据 `changed_inputs=[]`，独立复核 ACCEPT。新增格式化单元提取后，integrated-support-batch-3-red 已实际重编并再次通过这两项，含短串控制，输入哈希稳定。实际构建和运行收据保存在 `E:/cargo-targets/zr_vm/reports/review-bugfix-20261016/`。

@@ -8841,3 +8841,5 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/core-exception-oom-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/string-native-layout-tests.cmake")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/artifact-row-boundary-tests.cmake")
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/string-storage-oom-tests.cmake")
