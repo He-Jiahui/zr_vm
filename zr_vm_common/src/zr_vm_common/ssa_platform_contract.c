@@ -1142,3 +1142,438 @@ TZrBool ZrTests_Ssa_CheckPlatform(
     return ZrCommon_SsaPlatform_Check(declared, observed, &diagnostic) ==
            ZR_SSA_PLATFORM_STATUS_OK;
 }
+
+/**
+ * @fn TZrUInt64 ssa_platform_hash_u32(TZrUInt64 hash, TZrUInt32 value)
+ *
+ * ## Summary
+ * 将一个32位字段按低字节在前的固定顺序混入ABI摘要，使摘要不依赖宿主字节序或结构体填充。
+ *
+ * ## Parameters
+ * @param[in] hash 任意现有64位摘要状态。
+ * @param[in] value 待编码的32位字段。
+ *
+ * ## Returns
+ * @return 返回混入四个字节后的64位摘要；无错误码，摘要可碰撞且不承诺非零。
+ *
+ * ## Constraints and lifecycle
+ * - 索引只取0..3，右移只取0/8/16/24；无移位越界。64位无符号乘法按模2^64回绕。
+ * - 当前偏移和乘数属于本schema编码，不声称是标准FNV参数、加密或真实性证明。
+ * - 不分配、不释放、不保存指针或调用设备/回调；输入在本次读取期间须保持存活且不被并发修改。
+ *
+ * ## References
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:11
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:7
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:8
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:14
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:35
+ */
+
+/**
+ * @fn TZrUInt64 ssa_platform_hash_u64(TZrUInt64 hash, TZrUInt64 value)
+ *
+ * ## Summary
+ * 将回调ABI字段的64位值接入同一字节序明确的摘要编码。
+ *
+ * ## Parameters
+ * @param[in] hash 已有64位摘要。
+ * @param[in] value 待混入的64位字段。
+ *
+ * ## Returns
+ * @return 返回八个字节更新后的摘要；无有效性判断、非零或无碰撞保证。
+ *
+ * ## Constraints and lifecycle
+ * - 索引0..7对应右移0..56；移位未超出位宽，乘法为无符号模运算。
+ * - 不分配、不释放、不保存指针或调用设备/回调；输入在本次读取期间须保持存活且不被并发修改。
+ *
+ * ## References
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:21
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:24
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:392
+ */
+
+/**
+ * @fn TZrUInt64 ssa_platform_hash_abi_without_callback( const SZrSsaPlatformAbi *abi)
+ *
+ * ## Summary
+ * 按固定字段次序编码ABI的通用部分，供完整ABI哈希及宿主回调占位见证复用。
+ *
+ * ## Parameters
+ * @param[in] abi 非空、稳定可读的ABI记录；本助手不验证字段合法性。
+ *
+ * ## Returns
+ * @return 返回尚未混入nativeCallbackAbiHash的通用字段摘要。
+ *
+ * ## Constraints and lifecycle
+ * - 依次编码指针宽度、端序、对齐、四种整数宽度、两种浮点宽度和聚合返回类别；不编码target、triple或结构体填充。
+ * - 枚举转换为32位值后编码，不从摘要推导目标ABI是否真实。
+ * - 不分配、不释放、不保存指针或调用设备/回调；输入在本次读取期间须保持存活且不被并发修改。
+ *
+ * ## References
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:31
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:35
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:44
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:378
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:391
+ */
+
+/**
+ * @fn TZrBool ssa_platform_target_architecture_compatible( EZrSsaPlatformTarget target, EZrSsaPlatformArchitecture architecture)
+ *
+ * ## Summary
+ * 在身份解析中排除本模型不接受的目标/架构组合。
+ *
+ * ## Parameters
+ * @param[in] target 调用方已另行验证的目标枚举。
+ * @param[in] architecture 调用方已另行验证的架构枚举。
+ *
+ * ## Returns
+ * @return iOS仅AArch64、WASM仅WASM32/64、其余分支仅x86_64/AArch64时返回真。
+ *
+ * ## Constraints and lifecycle
+ * - 本助手不独立拒绝未知target；所有当前调用均先做枚举有效性检查。
+ * - 非WASM指针宽度仍由显式ABI记录给出；此组合检查不是完整机器ABI或三元组解析。
+ * - 不分配、不释放、不保存指针或调用设备/回调；输入在本次读取期间须保持存活且不被并发修改。
+ *
+ * ## References
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:83
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:86
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:89
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:171
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:957
+ */
+
+/**
+ * @fn TZrBool ssa_platform_string_present(const TZrChar *value, TZrSize capacity)
+ *
+ * ## Summary
+ * 在固定容量记录内检查三元组是否非空且以NUL结束，使后续strcmp仅用于已结束的字符串。
+ *
+ * ## Parameters
+ * @param[in] value 可空指针；非空时须能读取直到首个NUL或capacity界内的字节。
+ * @param[in] capacity 可读上界；当前身份调用使用96字节固定容量。
+ *
+ * ## Returns
+ * @return NULL、零容量、首字符NUL或容量内无NUL返回假；存在非首位NUL返回真。
+ *
+ * ## Constraints and lifecycle
+ * - 仅检查存在和边界内结束，不解析语法、架构或目标含义，不认证底层地址及分配来源。
+ * - 不分配、不释放、不保存指针或调用设备/回调；输入在本次读取期间须保持存活且不被并发修改。
+ *
+ * ## References
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:98
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:102
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:105
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:179
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:959
+ */
+
+/**
+ * @fn void ssa_platform_set_status(SZrSsaPlatformDiagnostic *diagnostic, EZrSsaPlatformStatus status)
+ *
+ * ## Summary
+ * 向可选诊断发布当前校验阶段的状态，同时保留已收集的来源和细分字段。
+ *
+ * ## Parameters
+ * @param[in,out] diagnostic 可空的诊断对象；非空须独占写status成员。
+ * @param[in] status 本次要发布的状态值。
+ *
+ * ## Returns
+ * void：完成可选status赋值；没有失败返回码或资源返回。
+ *
+ * ## Constraints and lifecycle
+ * - 此函数不是DiagnosticInit，不清理旧abiField、expected/actual、witness或上下文。
+ * - 只写status；其余字段的初始化和意义由具体调用分支承担。
+ *
+ * ## References
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:113
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:158
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:482
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:946
+ */
+
+/**
+ * @fn void ssa_platform_copy_observation_context( SZrSsaPlatformDiagnostic *diagnostic, const SZrSsaPlatformObservation *observation)
+ *
+ * ## Summary
+ * 在完整验证前把原始观察的来源坐标复制到诊断，支持早退定位。
+ *
+ * ## Parameters
+ * @param[in,out] diagnostic 可空诊断输出；非空与observation不得重叠。
+ * @param[in] observation 可空、可读的观察；字段尚未被验证。
+ *
+ * ## Returns
+ * void：任一指针为空则不写；否则仅复制target/architecture/backend/runner、需求/不支持位及sourceId/instructionId。
+ *
+ * ## Constraints and lifecycle
+ * - 不复制字符串或保存观察指针；复制的上下文仍可能是畸形输入，不能当作身份已验证。
+ * - 不设置status或清空其余诊断；当前Check先DiagnosticInit。
+ * - 不分配、不释放、不保存指针或调用设备/回调；输入在本次读取期间须保持存活且不被并发修改。
+ *
+ * ## References
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:121
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:124
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:127
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:134
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:702
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:703
+ */
+
+/**
+ * @fn void ssa_platform_copy_artifact_context( SZrSsaPlatformDiagnostic *diagnostic, const SZrSsaPlatformArtifactContract *artifact)
+ *
+ * ## Summary
+ * 为产物预校验的早退诊断保留原始目标、架构和需求位。
+ *
+ * ## Parameters
+ * @param[in,out] diagnostic 可空、独占写入且与artifact不重叠的诊断。
+ * @param[in] artifact 可空、稳定可读的产物值对象。
+ *
+ * ## Returns
+ * void：任一指针为空则不写；否则只复制三个上下文字段。
+ *
+ * ## Constraints and lifecycle
+ * - 尚未验证被复制值，不修改status、不清空其余字段或保留artifact指针。
+ * - 当前ValidateArtifact在本助手前先清空整份诊断。
+ * - 不分配、不释放、不保存指针或调用设备/回调；输入在本次读取期间须保持存活且不被并发修改。
+ *
+ * ## References
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:137
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:143
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:1011
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:1012
+ */
+
+/**
+ * @fn EZrSsaPlatformStatus ssa_platform_validate_identity( TZrUInt32 magic, TZrUInt32 schemaVersion, EZrSsaPlatformTarget target, EZrSsaPlatformArchitecture architecture, const TZrChar *targetTriple, SZrSsaPlatformDiagnostic *diagnostic)
+ *
+ * ## Summary
+ * 把能力、观察和产物的版本身份及目标组合按同一顺序解释，阻止无效记录进入字段比较。
+ *
+ * ## Parameters
+ * @param[in] magic 记录魔数。
+ * @param[in] schemaVersion 记录schema版本。
+ * @param[in] target 声明的目标枚举。
+ * @param[in] architecture 声明的架构枚举。
+ * @param[in] targetTriple 可空的三元组地址；非空时需满足96字节有界读取前提。
+ * @param[in,out] diagnostic 可空诊断；仅更新本次状态，不能与被读字符串重叠。
+ *
+ * ## Returns
+ * @return 依次返回SCHEMA_MISMATCH、TARGET_INVALID、ARCHITECTURE_INVALID或TARGET_TRIPLE_MISSING；全部通过返回OK。
+ *
+ * ## Constraints and lifecycle
+ * - diagnostic 可空；非空输出须与所有被读输入记录及其内嵌数组不重叠。低层函数不清空整份诊断，仅更新当前分支字段和status，调用前可先 DiagnosticInit，返回后只解释本次status对应字段。
+ * - 目标组合仅按iOS/WASM/其它三分支检查，三元组只要求非空且界内NUL结束。
+ * - TODO: zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:176 此入口不比对triple文本与target/architecture的语义；现有tests/core/test_ssa_platform_matrix.c:38 等为人工固定字符串，须核查目标适配器注册/规范化责任后再决定更强合同。
+ * - 不分配、不释放、不保存指针或调用设备/回调；输入在本次读取期间须保持存活且不被并发修改。
+ *
+ * ## References
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:149
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:156
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:171
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:176
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:179
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:599
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:713
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:1022
+ */
+
+/**
+ * @fn TZrBool ssa_platform_is_machine_code_forbidden( EZrSsaPlatformTarget target)
+ *
+ * ## Summary
+ * 集中表达本值契约将Android、iOS与WASM列为机器码JIT禁用目标的策略。
+ *
+ * ## Parameters
+ * @param[in] target 待查询的目标；本助手不单独验证枚举。
+ *
+ * ## Returns
+ * @return 仅三个列举目标返回真，其余值返回假。
+ *
+ * ## Constraints and lifecycle
+ * - 是本模块固定策略，不是查询系统权限、驱动或宿主可执行内存状态。
+ * - 不分配、不释放、不保存指针或调用设备/回调；输入在本次读取期间须保持存活且不被并发修改。
+ *
+ * ## References
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:190
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:200
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:218
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:1112
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:1118
+ */
+
+/**
+ * @fn EZrSsaPlatformStatus ssa_platform_validate_observation_policy( const SZrSsaPlatformObservation *observation)
+ *
+ * ## Summary
+ * 使完整声明比对与单观察验收共享来源约束，拒绝交叉编译冒充运行及受限目标的JIT触发。
+ *
+ * ## Parameters
+ * @param[in] observation 非空、稳定可读的观察；当前两调用方已处理各自更早的记录门禁。
+ *
+ * ## Returns
+ * @return 受限目标出现HOST_JIT、machineCodeJitExecuted或JIT需求位时先返回MACHINE_CODE_JIT_FORBIDDEN；随后CROSS_COMPILE携带executed、semanticPassed或PASSED时返回OBSERVATION_INVALID；其余返回OK。
+ *
+ * ## Constraints and lifecycle
+ * - 不写诊断；Check负责把本返回值写入诊断。
+ * - 自身不验证magic/schema、枚举、ABI、声明能力或哈希，不把记录当成实际设备执行证据。
+ * - IsRuntimeAcceptance使用短路&&，只有更早阶段条件均为真才会调用本助手；某些无效观察可更早返回假。
+ * - 不分配、不释放、不保存指针或调用设备/回调；输入在本次读取期间须保持存活且不被并发修改。
+ *
+ * ## References
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:198
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:200
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:207
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:815
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:988
+ * - tests/core/test_ssa_platform_matrix.c:193
+ * - tests/core/test_ssa_platform_matrix.c:200
+ * - tests/core/test_ssa_platform_matrix.c:209
+ * - tests/core/test_ssa_platform_matrix.c:246
+ * - tests/core/test_ssa_platform_matrix.c:260
+ * - tests/core/test_ssa_platform_matrix.c:266
+ */
+
+/**
+ * @fn TZrBool ssa_platform_feature_allowed( EZrSsaPlatformTarget target, TZrUInt64 feature)
+ *
+ * ## Summary
+ * 向能力校验与单特性查询提供目标特定的两个禁用规则。
+ *
+ * ## Parameters
+ * @param[in] target 已由上层解释的目标枚举。
+ * @param[in] feature 当前调用方传入的单个能力位。
+ *
+ * ## Returns
+ * @return Android/iOS/WASM的机器码JIT位或WASM的PMU位返回假，其余组合返回真。
+ *
+ * ## Constraints and lifecycle
+ * - 不检查feature是否单比特、已知或已声明；这些检查分别由CapabilitySupports或ValidateCapability承担。
+ * - 不从WASM目标名推定线程支持，也不检测实际PMU/线程环境。
+ * - 不分配、不释放、不保存指针或调用设备/回调；输入在本次读取期间须保持存活且不被并发修改。
+ *
+ * ## References
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:215
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:218
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:225
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:642
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:650
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:676
+ */
+
+/**
+ * @fn TZrUInt64 ssa_platform_backend_feature(EZrSsaPlatformBackend backend)
+ *
+ * ## Summary
+ * 把已识别的四种执行后端映射到声明能力位，供Check独立核验后端可用性。
+ *
+ * ## Parameters
+ * @param[in] backend 待映射的后端枚举。
+ *
+ * ## Returns
+ * @return EXECBC/AOT_C/AOT_LLVM/HOST_JIT返回对应单能力位，其余返回零。
+ *
+ * ## Constraints and lifecycle
+ * - Check在本调用前已拒绝无效backend；零不是已支持后端证明。
+ * - 不分配、不释放、不保存指针或调用设备/回调；输入在本次读取期间须保持存活且不被并发修改。
+ *
+ * ## References
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:233
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:235
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:241
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:719
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:823
+ */
+
+/**
+ * @anchor ssa_platform_contract_ZrCommon_SsaPlatform_Check_backend_feature_dispatch
+ *
+ * ## Summary
+ * 在观察身份/ABI/来源策略已通过后，独立检查后端能力、显式需求和分派许可。
+ *
+ * ## Constraints and lifecycle
+ * - 顺序是backendFeature缺失、requiredFeatures缺失、观察dispatchFlags超出声明，首个失败即返回。
+ * - 不把后端bit存在等同真实实现或执行；声明与观察的读取/诊断别名及生命周期沿用Check。
+ *
+ * ## References
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:822
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:815
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:824
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:832
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:840
+ * - tests/core/test_ssa_platform_matrix.c:365
+ * - tests/core/test_ssa_platform_matrix.c:367
+ */
+
+/**
+ * @anchor ssa_platform_contract_ZrCommon_SsaPlatform_Check_outcome_stages
+ *
+ * ## Summary
+ * 在能力集合通过后，把不可用、不支持及各阶段未成功保留为不同状态。
+ *
+ * ## Constraints and lifecycle
+ * - UNAVAILABLE携带executed或semanticPassed时拒为OBSERVATION_INVALID，否则RUNTIME_UNAVAILABLE；UNSUPPORTED须有不支持位。
+ * - PASSED不能携带不支持位；随后分别检查compiled、executed、semanticPassed。更早需求缺失可先拒绝，不能仅按case名归到本块。
+ * - 不执行编译或后端，不为失败记录修复字段；只写本分支诊断。
+ *
+ * ## References
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:850
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:860
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:875
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:884
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:889
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:894
+ * - tests/core/test_ssa_platform_matrix.c:96
+ * - tests/core/test_ssa_platform_matrix.c:142
+ * - tests/core/test_ssa_platform_matrix.c:180
+ * - tests/core/test_ssa_platform_matrix.c:382
+ */
+
+/**
+ * @anchor ssa_platform_contract_ZrCommon_SsaPlatform_Check_semantic_witness
+ *
+ * ## Summary
+ * 在所有运行阶段均满足后按结果、异常、源码映射次序比较可选语义见证。
+ *
+ * ## Constraints and lifecycle
+ * - 每个维度双方都零时可跳过；任一非零则要求完全相同，先失败维度决定witnessField和expected/actual。
+ * - 仅比较提供的64位摘要，不生成见证、认证真实执行或保证无碰撞。
+ *
+ * ## References
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:900
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:912
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:925
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:946
+ * - tests/core/test_ssa_platform_matrix.c:418
+ * - tests/core/test_ssa_platform_matrix.c:427
+ * - tests/core/test_ssa_platform_matrix.c:433
+ * - tests/core/test_ssa_platform_matrix.c:434
+ * - tests/core/test_ssa_platform_matrix.c:437
+ */
+
+/**
+ * @anchor ssa_platform_contract_ZrCommon_SsaPlatform_ValidateArtifact_preload_policy
+ *
+ * ## Summary
+ * 在装载前只用声明值检查产物绑定及受限补丁/JIT策略，避免把构建产物误当运行观察。
+ *
+ * ## Constraints and lifecycle
+ * - 从诊断初始化、声明/身份开始，逐一比对目标、三元组、ABI及三个外层哈希，然后检查需求和目标策略。
+ * - 需求子集检查1094先于JIT策略1110；受限目标的JIT需求若不在声明中，先返回REQUIRED_FEATURE_UNSUPPORTED，不能把后面的FORBIDDEN分支承诺为首拒绝。
+ * - iOS受限补丁新增导入与机器码JIT各有独立条件；无真实装载、导入、执行或资源取得。
+ * - 失败只更新诊断，const输入保留；诊断须独立，按ValidateArtifact约束串行写入。
+ *
+ * ## References
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:1011
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:1018
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:1046
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:1055
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:1061
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:1094
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:1103
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:1110
+ * - zr_vm_common/src/zr_vm_common/ssa_platform_contract.c:1123
+ * - tests/core/test_ssa_platform_matrix.c:110
+ * - tests/core/test_ssa_platform_matrix.c:118
+ * - tests/core/test_ssa_platform_matrix.c:283
+ */
