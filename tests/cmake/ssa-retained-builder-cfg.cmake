@@ -36,7 +36,7 @@ set(_zr_retained_cfg_production_sources
     "${_zr_retained_cfg_root}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_deopt_aggregate.c"
     "${_zr_retained_cfg_root}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c"
     "${_zr_retained_cfg_root}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_owner_state.c"
-    "${_zr_retained_cfg_root}/zr_vm_core/src/zr_vm_core/execution_contract.c"
+    "${_zr_retained_cfg_root}/zr_vm_core/src/zr_vm_core/runtime/execution_contract.c"
     "${_zr_retained_cfg_root}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_owned_module.c")
 list(LENGTH _zr_retained_cfg_production_sources _zr_retained_cfg_production_count)
 if (NOT _zr_retained_cfg_production_count EQUAL 29)

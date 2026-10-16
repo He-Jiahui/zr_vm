@@ -42,8 +42,7 @@ EZrExecutionContractStatus ZrCore_ExecutionContract_Check(
         return ZR_EXECUTION_CONTRACT_INVALID_ARGUMENT;
     }
     if (expected->schemaVersion != actual->schemaVersion ||
-        expected->abiVersion != actual->abiVersion ||
-        expected->logicalVersion != actual->logicalVersion) {
+        expected->abiVersion != actual->abiVersion) {
         return zr_execution_contract_fail(
                 ZR_EXECUTION_CONTRACT_RECOMPILE_REQUIRED,
                 ZR_EXECUTION_DIAGNOSTIC_VERSION_MISMATCH,
@@ -53,6 +52,18 @@ EZrExecutionContractStatus ZrCore_ExecutionContract_Check(
                 actual->schemaVersion,
                 expected->abiVersion,
                 actual->abiVersion,
+                diagnostic);
+    }
+    if (expected->logicalVersion != actual->logicalVersion) {
+        return zr_execution_contract_fail(
+                ZR_EXECUTION_CONTRACT_RECOMPILE_REQUIRED,
+                ZR_EXECUTION_DIAGNOSTIC_VERSION_MISMATCH,
+                expected,
+                actual,
+                expected->logicalVersion,
+                actual->logicalVersion,
+                0u,
+                0u,
                 diagnostic);
     }
     if (expected->targetToken != actual->targetToken) {

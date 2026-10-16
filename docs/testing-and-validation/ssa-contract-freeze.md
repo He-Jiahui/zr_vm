@@ -111,7 +111,8 @@ resolution, hash recomputation, allocation, artifact loading, or publication.
 | Order / input | Current result | Diagnostic payload beyond the code |
 | --- | --- | --- |
 | 1. Either contract is NULL | `INVALID_ARGUMENT` | Other fields remain zero |
-| 2. Schema, ABI, or logical version differs | `RECOMPILE_REQUIRED` | Schema pair in `expectedVersion/actualVersion`; ABI pair in `expectedHash/actualHash` |
+| 2a. Schema or ABI version differs, including a simultaneous logical mismatch | `RECOMPILE_REQUIRED` | Legacy payload: schema pair in `expectedVersion/actualVersion`; ABI pair in `expectedHash/actualHash` |
+| 2b. Schema and ABI match, but logical version differs | `RECOMPILE_REQUIRED` | Logical pair in `expectedVersion/actualVersion`; both hash fields zero |
 | 3. Target token differs | `TARGET_MISMATCH` | Token pair in the version fields |
 | 4. Generation differs | `STALE_GENERATION` | Generation pair in the hash fields |
 | 5. Signature hash differs | `SIGNATURE_MISMATCH` | Signature pair in the hash fields |
@@ -128,15 +129,19 @@ A NULL diagnostic is permitted. Capability and effect checks compare masks;
 they do not infer capability authorization from effects or validate a host
 allowlist.
 
+Both version branches use `VERSION_MISMATCH`. The logical-only branch reports
+all nine diagnostic fields: code, expected function token, logical version
+pair, zero block/instruction/source IDs, and zero hash pair. Schema/ABI failure
+keeps its earlier priority and payload. This change does not alter the accepted
+contract set or require the current logical macro value: the test baseline uses
+equal logical versions of 11, while the current producer macro remains 1.
+
 ### Decisions still open
 
 - **Equal unsupported versions:** the checker tests equality, not membership
   in supported versions. Equal arbitrary schema/ABI/logical versions can pass
   when the other checks pass. The admission owner and rejection policy remain
   to be assigned; `OK` here is not artifact compatibility acceptance.
-- **Logical-version diagnostics:** a logical-only mismatch is rejected, but
-  its expected/actual logical values are not represented by this failure
-  payload. The reporting policy remains open.
 - **Reserved fields:** `reserved0` and `reserved1` are not checked. Whether
   they must be zero, and which boundary enforces that, remains open.
 - **Generation lifecycle and hash authority:** equality checks do not establish
@@ -146,7 +151,7 @@ allowlist.
   ABI 2 header coexist. The include-route evidence above does not close the
   repository-wide owner and consumer boundary.
 
-## Existing focused test and evidence limits
+## Focused tests and finite RED/GREEN evidence
 
 [`test_ssa_contract_freeze.c`](../../tests/parser/test_ssa_contract_freeze.c)
 contains these focused checks:
@@ -157,16 +162,67 @@ contains these focused checks:
 | `test_signature_and_layout_mismatch_are_structured` | Signature/layout status; expected/actual signature hashes |
 | `test_version_and_generation_fail_before_identity_resolution` | Schema/generation status; expected/actual schema versions |
 | `test_capability_is_not_inferred_from_effects` | Added capability and added effect are classified separately |
+| `test_logical_mismatch_reports_logical_versions` | Logical-only status and all nine diagnostic fields |
+| `test_logical_version_diagnostic_preserves_uint32_boundaries` | Logical 0 / `UINT32_MAX` in both mismatch directions |
+| `test_schema_and_abi_diagnostics_take_priority_over_logical` | Simultaneous schema/ABI/logical and ABI/logical mismatches preserve the legacy payload |
+| `test_logical_diagnostic_precedes_identity_checks` | Logical mismatch wins over token, generation, hashes, capabilities and effects |
+| `test_logical_checks_allow_null_diagnostic` | Logical mismatch and equal contracts permit NULL diagnostic |
+| `test_repeated_logical_failure_then_success_clears_diagnostic` | Repeated failure/success cycles clear all nine fields on success |
+
+The original four groups are retained; six logical diagnostic groups were added.
+The new groups compare both input structs byte-for-byte before and after each
+check. Poisoned diagnostics expose stale fields, while equal logical version 11
+remains accepted. These cases do not establish supported-version membership,
+reserved-field policy or every branch of the full interface matrix.
 
 The existing CMake target `zr_vm_ssa_contract_freeze_test` compiles only this
 test and `runtime/execution_contract.c`; CTest registers `ssa_contract_freeze`
 in [`ssa-tests.cmake`](../../tests/cmake/ssa-tests.cmake). Its function names do
 not supply a resolver-order trace: the checker itself contains no resolver.
-The test does not cover every branch, complete nine-field diagnostics,
-multiple simultaneous mismatches, or the open policies above.
+The registered CTest was not invoked in the finite validation below.
 
-This documentation change was checked against current declarations,
-implementation, test source, and registration using read-only searches and
-Markdown diff checks. No compilation or test execution was performed for this
-update, and no runtime, security, network, FFI, or whole-plan acceptance is
-claimed.
+### Windows standalone RED/GREEN evidence
+
+Execution date: 2026-10-15 Pacific / 2026-10-16 UTC.
+
+Both RED and GREEN compiled the test and the real checker as two C11
+translation units, linked and directly ran separate Windows x64 executables
+with Clang-cl 19.1.5 and MSVC cl 19.44.35229.0. The imported VC toolset was
+14.44.35207 with Windows SDK 10.0.26100.0. Each invocation recorded exactly
+12 naturally terminal phases with both streams drained and zero warnings.
+
+| Evidence | Actual result | Receipt SHA256 |
+| --- | --- | --- |
+| RED7, unchanged production D7D | Run children 33676 / 40336 each exited 1, stdout empty, stderr exactly `FAIL: diagnostic expected version differs\r\n`; other phases exited 0 | `5850DC2E7FD275C8859E65EF568A5EC0E997F0030BD89246E3B6B42EFFD4F4B9` |
+| GREEN, minimal production D82 | Run children 7240 / 3780 each exited 0, stdout exactly `ssa contract freeze PASS\r\n`, stderr empty; all phases exited 0 | `53E4C6111EC3A365E2377AA6F15AA8042FF124B1EE39507C0407C9B52F12DC31` |
+
+Receipts are under
+`E:/cargo-targets/zr_vm/reports/ssa-20261005-01a0fe2b/`, named
+`contract-freeze-logical-red-receipt.json` and
+`contract-freeze-logical-green-receipt.json`. Their sibling `*-stdout.log` and
+`*-stderr.log` preserve the original bytes. Both aggregate log hashes and all
+24 phase-range hashes were independently checked for each invocation.
+RED controller 33320 completed naturally with code 0 (unified 76600,
+terminal `e81e37`); GREEN controller 20988 did likewise (unified 61894,
+terminal `ea2ca7`). GREEN ran from `2026-10-16T01:54:17.5162977Z` to
+`2026-10-16T02:07:05.5649903Z`.
+
+| Physical input | SHA256 |
+| --- | --- |
+| Test, unchanged across RED/GREEN | `D8621163693F2ED919F1265806E0A0BA950D26768DD9A1BCA4B2D0F02CC9DE55` |
+| Production before logical payload fix | `D7D5240BE5EC2DE58EE4A45FB277D9BFC135D0C9C7F1FC3A806A603C5EF369C2` |
+| Production after logical payload fix | `D82E8233679CF18697FA5422545AC3AB99C93CCE058D857BB27FD62619C889AC` |
+
+RED bound HEAD `619c9eebfe9ed9a3ed86b613b6fc6eb69981b4d3`; GREEN bound
+`67a3fed011c3dc971560a772b293d25f7b7d1edc`. Each remained unchanged within
+its invocation. The selected tracked diff SHA was
+`143C5D6AAFE91E6AAEA4D5809C6BB94BEF87E6BF8405E4C4B6F4599D6001A1C3`
+in both receipts; this tracked-only view does not cover untracked production
+or layout files, so the separate physical hashes above bind the actual
+checker change. Neither selected diff supplies a complete dirty-tree digest.
+
+This accepts only the focused logical diagnostic repair. No CTest, Linux,
+UBSan, Source, VM, Oracle, Global initialization, network or FFI execution
+is credited. Supported-version admission, reserved fields, historical ABI 2
+consumers and the full interface-family matrix remain open; plan 00.02 and
+whole-leaf acceptance remain open.

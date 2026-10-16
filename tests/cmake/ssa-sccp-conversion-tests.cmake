@@ -16,7 +16,7 @@ if (NOT TARGET zr_vm_ssa_sccp_conversion_test)
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_deopt_aggregate.c
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_owner_state.c
-            ${ZR_SSA_SOURCE_ROOT}/zr_vm_core/src/zr_vm_core/execution_contract.c
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_core/src/zr_vm_core/runtime/execution_contract.c
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effects.c
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effects_linear.c
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effect_loops.c

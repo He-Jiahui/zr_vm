@@ -16,7 +16,7 @@ if (NOT TARGET zr_vm_ssa_invoke_result_availability_test)
             ${zr_invoke_result_core}/exec_ir/exec_ir_deopt_aggregate.c
             ${zr_invoke_result_core}/exec_ir/exec_ir_state_map_storage.c
             ${zr_invoke_result_core}/exec_ir/exec_ir_owner_state.c
-            ${zr_invoke_result_core}/execution_contract.c)
+            ${zr_invoke_result_core}/runtime/execution_contract.c)
     target_include_directories(zr_vm_ssa_invoke_result_availability_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)

@@ -63,7 +63,7 @@ compiler_semir.c 明确是 ExecBC 之后的兼容投影，而 compiler.h 的 pre
 | 现有，修改/复用 | `zr_vm_parser/CMakeLists.txt` | 确认后端源码所有权与低层依赖 |
 | 现有，修改/复用 | `zr_vm_core/include/zr_vm_core/exec_ir.h` | 低层无 AST 依赖的 IR 定义，细节归 01.01；本叶不另建平行定义 |
 | 现有，修改/复用 | `zr_vm_core/include/zr_vm_core/execution_backend.h` | 后端状态与运行期 handle 接口，细节归 10.01 |
-| 现有测试，覆盖有限 | `tests/parser/test_ssa_contract_freeze.c` | 已有契约相等、部分失配分类和版本常量断言；完整覆盖仍待补齐 |
+| 现有测试，覆盖有限 | `tests/parser/test_ssa_contract_freeze.c` | 原 4 组保留，新增 6 组覆盖 logical 诊断九字段、边界、优先级与重试；完整接口矩阵仍待补齐 |
 
 `tests/cmake/ssa-tests.cmake` 已登记 `zr_vm_ssa_contract_freeze_test` 与 `ssa_contract_freeze`，目标只编译该测试和 `runtime/execution_contract.c`。后续新增文件仍须登记到所属模块 CMake；不得重复登记既有目标。先迁移职责并保持行为，再接入新 contract；不要把新分析或慢路径追加到巨型 dispatch/quickening 文件。
 
@@ -77,7 +77,13 @@ compiler_semir.c 明确是 ExecBC 之后的兼容投影，而 compiler.h 的 pre
 
 - [ ] **4. 冻结版本与接口归属** 当前值、顶层 canonical 所有者及历史同名 AOT 宏冲突已作有限登记；后续变更按所属版本域评审，不能把当前 6/17 再当作待发布候选或直接推导下一版本。磁盘 generation 与本进程 load epoch 的生产/消费映射仍待冻结，不能从 checker 的相等比较推导已经实现。返回状态仍须覆盖各接口族的 invalid IR/link/capability/deopt/unsupported/compile pending。
 
-本轮边界登记仅描述现有纯 checker：NULL → version 三元组 → target → generation → signature → layout → module → capabilities → effects，首个失败返回；无解析、hash 重算、分配或发布。相等但不受支持的版本未被该入口拒绝、logical-only 失配诊断不携带 logical expected/actual、reserved 字段未校验；对应准入所有者、诊断与保留字段策略均仍待决。具体字段载荷与既有测试覆盖见上述矩阵，不据此勾选完整退出门禁。
+本轮纯 checker 顺序为 NULL → schema/ABI → logical → target → generation → signature → layout → module → capabilities → effects，首个失败返回；无解析、hash 重算、分配或发布。schema/ABI 失配继续使用原 schema version pair 与 ABI hash pair 载荷，并优先于同时存在的 logical 失配；仅 logical 不同时，VERSION_MISMATCH 现携带 logical expected/actual、expected functionToken，其余位置及 hash 字段为零。接受集合不变，logical 不强制等于当前宏 1，测试仍接受相等的任意值 11。相等但不受支持的版本准入、reserved 字段、历史 ABI 2 消费者与全接口矩阵仍待闭合，不据此勾选完整退出门禁。
+
+### 有限 logical 诊断 RED/GREEN（2026-10-15 Pacific）
+
+真实测试与 production checker 两个 TU 已由 Windows x64 Clang-cl 19.1.5 和 MSVC 19.44.35229.0 分别 standalone 编译、链接及直接运行。原 4 组保留，新增 6 组验证 logical-only 九字段、0/UINT32_MAX 双向边界、schema/ABI 优先、后续身份失配优先级、NULL diagnostic 与重复失败后成功清空；新增组同时验证输入字节不变。RED7 在原 D7D production 上的两个 run 均精确 exit 1、stdout 空、stderr 为 `FAIL: diagnostic expected version differs\r\n`；最小 D82 logical payload 修正后，GREEN 两个 run 均 exit 0、精确输出 `ssa contract freeze PASS\r\n` 且 stderr 空。两次各 12 个实际阶段自然终态、双流排空、warning 为 0。
+
+RED 收据 SHA256：`5850DC2E7FD275C8859E65EF568A5EC0E997F0030BD89246E3B6B42EFFD4F4B9`；GREEN：`53E4C6111EC3A365E2377AA6F15AA8042FF124B1EE39507C0407C9B52F12DC31`。实际输入 SHA、完整收据及日志路径见[有限 Windows RED/GREEN 证据](../../../testing-and-validation/ssa-contract-freeze.md#windows-standalone-redgreen-evidence)。本次不计 CTest、Linux、UBSan、Source、VM、Oracle、Global、network 或 FFI 信用，也没有完整 dirty-tree digest；00.02 整叶与 release acceptance 均保持 open。
 
 ## 核心算法与接口指导
 

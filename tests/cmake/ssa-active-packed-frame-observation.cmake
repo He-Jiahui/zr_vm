@@ -29,7 +29,7 @@ add_executable(zr_vm_ssa_active_packed_frame_observation_test
         "${_zr_active_frame_root}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_deopt_aggregate.c"
         "${_zr_active_frame_root}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_state_map_storage.c"
         "${_zr_active_frame_root}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_owner_state.c"
-        "${_zr_active_frame_root}/zr_vm_core/src/zr_vm_core/execution_contract.c"
+        "${_zr_active_frame_root}/zr_vm_core/src/zr_vm_core/runtime/execution_contract.c"
         "${_zr_active_frame_root}/tests/third_party/zr_unity/Unity/src/unity.c")
 target_include_directories(zr_vm_ssa_active_packed_frame_observation_test PRIVATE
         "${_zr_active_frame_root}/tests"
@@ -89,7 +89,7 @@ if (DEFINED ZR_SSA_ACTIVE_PACKED_FRAME_SOURCE_ROOT)
                 "${_zr_active_frame_root}/zr_vm_core/src/zr_vm_core/exec_ir/${_name}.c")
     endforeach ()
     list(APPEND _zr_active_frame_core_sources
-            "${_zr_active_frame_root}/zr_vm_core/src/zr_vm_core/execution_contract.c")
+            "${_zr_active_frame_root}/zr_vm_core/src/zr_vm_core/runtime/execution_contract.c")
     add_executable(zr_vm_ssa_active_frame_legacy_layout_test
             "${_zr_active_frame_root}/tests/parser/test_ssa_frame_layout.c"
             "${_zr_active_frame_root}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_frame_layout.c"

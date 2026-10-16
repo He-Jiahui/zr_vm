@@ -15,7 +15,7 @@ set(_zr_execir_owner_core_sources
 list(TRANSFORM _zr_execir_owner_core_sources PREPEND
         "${_zr_execir_owner_root}/zr_vm_core/src/zr_vm_core/exec_ir/")
 list(APPEND _zr_execir_owner_core_sources
-        "${_zr_execir_owner_root}/zr_vm_core/src/zr_vm_core/execution_contract.c")
+        "${_zr_execir_owner_root}/zr_vm_core/src/zr_vm_core/runtime/execution_contract.c")
 add_library(zr_vm_ssa_execir_owner_private_core OBJECT
         ${_zr_execir_owner_core_sources}
         "${_zr_execir_owner_root}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_owned_module.c")

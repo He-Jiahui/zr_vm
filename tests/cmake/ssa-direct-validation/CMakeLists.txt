@@ -55,7 +55,7 @@ foreach (_source IN ITEMS
     list(APPEND _zr_loop_support "${_zr_core}/exec_ir/${_source}.c")
 endforeach ()
 list(APPEND _zr_loop_support
-        "${_zr_core}/execution_contract.c"
+        "${_zr_core}/runtime/execution_contract.c"
         "${_zr_parser}/analysis/exec_ir_loops.c"
         "${_zr_parser}/exec_ir_effects.c"
         "${_zr_parser}/exec_ir_effects_linear.c"

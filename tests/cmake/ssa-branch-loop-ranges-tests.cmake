@@ -25,7 +25,7 @@ if (NOT TARGET zr_vm_ssa_branch_loop_ranges_test)
             ${_zr_branch_loop_core}/exec_ir/exec_ir_interpreter_run.c
             ${_zr_branch_loop_core}/exec_ir/exec_ir_interpreter_phi.c
             ${_zr_branch_loop_core}/exec_ir/exec_ir_interpreter_resume.c
-            ${_zr_branch_loop_core}/execution_contract.c)
+            ${_zr_branch_loop_core}/runtime/execution_contract.c)
     target_include_directories(zr_vm_ssa_branch_loop_ranges_test PRIVATE
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/include
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_core/include
