@@ -25,4 +25,10 @@ struct SZrState;
 /* 只接收由当前活动 TryRun 建立的首成员恢复点；先还原 AOT 根链再让 GC scopes 发布 mutator 状态。 */
 void ZrCore_Exception_RestoreLocalTryRunScopes(struct SZrState *state);
 
+/* Only active runtime-owned TryRun recovery points may be passed. Begin returns
+ * false on normalization reentry. End is needed only after ordinary return;
+ * a nonlocal exit discards the owning TryRun context, including this guard. */
+TZrBool ZrCore_Exception_BeginStatusNormalization(SZrExceptionLongJump *recoverPoint);
+void ZrCore_Exception_EndStatusNormalization(SZrExceptionLongJump *recoverPoint);
+
 #endif

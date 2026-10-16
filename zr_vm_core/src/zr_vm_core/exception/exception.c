@@ -546,6 +546,7 @@ static void exception_throw_on_state(SZrState *state, EZrThreadStatus errorCode)
 static void exception_throw_impl(
         SZrState *state, EZrThreadStatus errorCode, TZrBool restoreLocalRootSnapshot) {
     if (state->exceptionRecoverPoint != ZR_NULL) {
+        SZrExceptionLongJump *recoverPoint = state->exceptionRecoverPoint;
         /*
          * Some native paths (for example legacy IO helpers) longjmp with a thread status without
          * first materializing currentException. Test harness and VM diagnostics assume
@@ -553,11 +554,16 @@ static void exception_throw_impl(
          * Debug_RunError already normalizes; this covers raw Throw sites and keeps threadStatus
          * consistent with exceptionLongJump.status.
          */
-        /* BUG: 已初始化 Error 原型且无当前异常时，持续 OOM 经 GcMalloc -> Throw(MEMORY_ERROR) -> NormalizeStatus -> Error/键分配重入 Throw；恢复点尚未跳转，递归可耗尽宿主栈。 */
+        /* Error construction may itself throw MEMORY_ERROR. Reentry must reach
+         * this recovery point without allocating another Error. Keep status
+         * untouched until the actual throw so foreign C++ exceptions retain
+         * the catch-all's INVALID fallback. */
         if (!state->hasCurrentException &&
             (errorCode == ZR_THREAD_STATUS_RUNTIME_ERROR || errorCode == ZR_THREAD_STATUS_EXCEPTION_ERROR ||
-             errorCode == ZR_THREAD_STATUS_MEMORY_ERROR)) {
+             errorCode == ZR_THREAD_STATUS_MEMORY_ERROR) &&
+            ZrCore_Exception_BeginStatusNormalization(recoverPoint)) {
             (void)ZrCore_Exception_NormalizeStatus(state, errorCode);
+            ZrCore_Exception_EndStatusNormalization(recoverPoint);
         }
 /* 入口域注册与外层scope必须存活；转发分支不读取主state私有快照 */
         state->threadStatus = errorCode;

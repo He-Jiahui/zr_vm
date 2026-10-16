@@ -7,6 +7,8 @@
 typedef struct SZrExceptionTryRunContext {
 /* 首成员地址与context起址一致，不可独立分配后交恢复helper */
     SZrExceptionLongJump recoverPoint;
+/* 仅保护本恢复点的状态规范化；不能借用 status，否则外来 C++ 异常失去 INVALID 语义。 */
+    TZrBool statusNormalizationInProgress;
 /* 不遍历被放弃的回调C栈节点；外层节点必须活到TryRun返回 */
     SZrAotGcRootFrame *savedAotGcRootFrameTop;
 /* 与top一并恢复；不凭该数修复正常返回回调的根泄漏 */
@@ -14,6 +16,23 @@ typedef struct SZrExceptionTryRunContext {
 /* 不拥有注册指针；恢复要求域identity、mutatorId仍匹配且外层mutation未被释放 */
     SZrGcDomainScopeSnapshot savedGcScopes;
 } SZrExceptionTryRunContext;
+
+/* 与恢复快照相同，仅接受活动 TryRun context 的首成员恢复点。 */
+TZrBool ZrCore_Exception_BeginStatusNormalization(SZrExceptionLongJump *recoverPoint) {
+    volatile SZrExceptionTryRunContext *context =
+            (volatile SZrExceptionTryRunContext *)recoverPoint;
+    if (context->statusNormalizationInProgress) {
+        return ZR_FALSE;
+    }
+    context->statusNormalizationInProgress = ZR_TRUE;
+    return ZR_TRUE;
+}
+
+void ZrCore_Exception_EndStatusNormalization(SZrExceptionLongJump *recoverPoint) {
+    volatile SZrExceptionTryRunContext *context =
+            (volatile SZrExceptionTryRunContext *)recoverPoint;
+    context->statusNormalizationInProgress = ZR_FALSE;
+}
 
 /* 只接收由当前活动 TryRun 建立的首成员恢复点；先还原 AOT 根链再让 GC scopes 发布 mutator 状态。 */
 void ZrCore_Exception_RestoreLocalTryRunScopes(SZrState *state) {
@@ -40,6 +59,7 @@ EZrThreadStatus ZrCore_Exception_TryRun(
 /* 回调只看到栈上recoverPoint；GC注册变化不会被快照凭空修复 */
     context.recoverPoint.status = ZR_THREAD_STATUS_FINE;
     context.recoverPoint.previous = state->exceptionRecoverPoint;
+    context.statusNormalizationInProgress = ZR_FALSE;
     context.savedAotGcRootFrameTop = state->aotGcRootFrameStack;
     context.savedAotGcRootFrameDepth = state->aotGcRootFrameDepth;
     ZrCore_GcDomain_CaptureScopes(state, &snapshot);

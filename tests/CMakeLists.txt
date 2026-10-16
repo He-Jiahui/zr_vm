@@ -8835,3 +8835,5 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/native-registry-oom-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/lsp-array-oom-tests.cmake")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/syntax-embedded-positions-tests.cmake")
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/core-exception-oom-tests.cmake")
