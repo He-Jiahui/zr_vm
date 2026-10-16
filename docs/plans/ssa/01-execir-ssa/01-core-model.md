@@ -175,6 +175,16 @@ descriptor OOM 的 16 项和 metadata heap 的 6 项，在当前依赖回放中�
 CompilerState/AST 释放后有效，两个 owner 独立、实际释放一次，七项分配失败
 清理后可重试。详见[验收记录](../../../acceptance/ssa-source-returned-retention.md)。
 
-此 owner 保存 AOTIR 元数据，producer 清理仍释放 original/compacted ExecIR；
-独立 canonical ExecIR owner 与普通默认输出尚待实现。完整 side arrays、跨函数
-重编号和全模块失败分母继续按本计划推进，以上有限证明不勾选任何完整任务。
+上述显式返回路径的 AOTIR owner 本身不保留 original/compacted ExecIR。后继独立
+ExecIR 所有权已分别有限交付：
+
+- `3496923f58c6f4be2bb61c82c51a7743bef9fba4`：通用独立 module owner，14 PASS；普通 source 与 old-view source 两组各 61 处故障，共 122 处，详见[验收记录](../../../acceptance/ssa-execir-owned-module.md)。
+- `112cbf4256a819d554659c7bdfd9d77eb8a04610`：Function 独立 ExecIR 关联与生命周期，20 PASS；首次附加与替换各 61 处故障，详见[验收记录](../../../acceptance/ssa-function-exec-ir-owner.md)。
+- `238fb35d160bad6142acee08da910742b0f1d2c9`：module copy 替换选定 Function，20 PASS；独立测量 module 60 与 replacement 28，共 88 处故障，详见[验收记录](../../../acceptance/exec-ir-module-copy.md)。
+
+这些故障子观察属于各自有限 fixture 的 Unity 用例，不增加用例总数。普通默认
+输出的接入及当前 Source finalized 返回链路仍须分别取得自己的验收证据。整叶
+仍须完整核对所有记录及 side arrays 的所有者、Init/Free/Clone 和销毁路径，
+验证跨函数局部 ID 重映射与稳定 token 保持，并将构建器私有 mutation helper
+（含 Reserve）从公共头收敛到内部接口。全模块故障覆盖仍须按实际 profile
+建立；上述有限交付不勾选本计划任务或整叶退出门禁。
