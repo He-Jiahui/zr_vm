@@ -466,9 +466,10 @@ TZrBool zr_ffi_struct_to_object(SZrState *state, ZrFfiTypeLayout *type, const un
             ZrLib_TempValueRoot_End(&objectRoot);
             return ZR_FALSE;
         }
-        /* BUG: SetFieldCString 在分配/pin 失败时静默返回，此处仍交付缺字段的聚合对象；
-         * struct 返回、ref/out 写回及回调形参均受影响，须用分配失败注入核验错误传播。 */
-        ZrLib_Object_SetFieldCString(state, object, field->name, &fieldValue);
+        if (!ZrLib_Object_TrySetFieldCString(state, object, field->name, &fieldValue)) {
+            ZrLib_TempValueRoot_End(&objectRoot);
+            return ZR_FALSE;
+        }
     }
 
     ZrLib_Value_SetObject(state, result, object, ZR_VALUE_TYPE_OBJECT);

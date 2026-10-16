@@ -164,3 +164,5 @@ doc_type: category-index
 - [Native numeric boundaries](../library/native-numeric-boundaries.md)：公开 ReadInt 的浮点范围、非有限值和诊断。
 
 - [Native string publication](native-string-publication.md)：短串与长串创建失败的异常和原槽位保持。
+
+- [Setter caller cleanup](setter-caller-cleanup.md)：FFI 聚合写入与 Reflection 泛型字段调用的临时根清理。

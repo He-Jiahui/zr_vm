@@ -111,9 +111,7 @@ static SZrObject *generic_type_object_new_array(SZrState *state) {
 /**
  * @brief 将一个已构造的对象追加到本模块的 nodeMap 数组末尾。
  * @pre array 是本模块刚初始化的数组且调用期间保持有效；object 与 array 来自 state 的 GC 域。
- * @return 参数或临时 pin 失败时返回 false，其余路径返回 true。
- * BUG: Object_SetValue 返回 void；遇到对象存储写入早退或 HashSet_Add 失败时这里仍返回
- * true（object.c:1863-1870, 1886-1887），上层会继续使用未实际追加的数组元素。
+ * @return 参数、临时 pin 或数组写入失败时返回 false；返回前释放本次新增的显式根。
  * @note 所有调用点先 pin 宿主数组；刚生成的 object 在此 helper pin 前不会经过会触发 GC 的分配。
  *       新数组不启用 raw-int storage，materialize 在该路径直接返回
  *       （object_super_array_internal.h:200-204, 454-456, 515-520）。
@@ -125,6 +123,7 @@ static TZrBool generic_type_object_array_push(SZrState *state,
     SZrTypeValue value;
     TZrBool arrayPinned = ZR_FALSE;
     TZrBool objectPinned = ZR_FALSE;
+    TZrBool succeeded;
 
     if (state == ZR_NULL || array == ZR_NULL || object == ZR_NULL ||
         array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
@@ -143,10 +142,10 @@ static TZrBool generic_type_object_array_push(SZrState *state,
     }
     ZrCore_Value_InitAsInt(
             state, &key, (TZrInt64)ZrCore_Object_SuperArrayLength(array));
-    ZrCore_Object_SetValue(state, array, &key, &value);
+    succeeded = ZrCore_Object_TrySetValue(state, array, &key, &value);
     generic_type_object_unpin_value(state->global, &value, objectPinned);
     generic_type_object_unpin_raw(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(array), arrayPinned);
-    return ZR_TRUE;
+    return succeeded;
 }
 
 /**
