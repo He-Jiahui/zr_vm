@@ -8863,3 +8863,5 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/meta-string-oom-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/native-string-publication-tests.cmake")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/setter-caller-cleanup-tests.cmake")
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/native-plugin-shadow-io-tests.cmake")

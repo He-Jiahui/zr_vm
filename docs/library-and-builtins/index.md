@@ -166,3 +166,5 @@ doc_type: category-index
 - [Native string publication](native-string-publication.md)：短串与长串创建失败的异常和原槽位保持。
 
 - [Setter caller cleanup](setter-caller-cleanup.md)：FFI 聚合写入与 Reflection 泛型字段调用的临时根清理。
+
+- [Native plugin allocation and I/O](../library/native-registry-allocation-lifecycle.md)：注册回滚、影子副本复制与加载失败清理。

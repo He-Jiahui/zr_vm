@@ -4,20 +4,28 @@ related_code:
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_plugin_shadow_io.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_plugin_shadow_io.h
   - zr_vm_core/include/zr_vm_core/array.h
   - tests/library/test_native_registry_oom.c
   - tests/cmake/native-registry-oom-tests.cmake
+  - tests/library/test_native_plugin_shadow_io.c
+  - tests/cmake/native-plugin-shadow-io-tests.cmake
 implementation_files:
   - zr_vm_library/src/zr_vm_library/common_state.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_plugin_shadow_io.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_plugin_shadow_io.h
 plan_sources:
   - user: 2026-10-15 修复现役 BUG 注释并验证分配失败清理
 tests:
   - tests/library/test_native_registry_oom.c
   - tests/cmake/native-registry-oom-tests.cmake
   - tests/language_server/descriptor_plugin_fixture_int.c
+  - tests/library/test_native_plugin_shadow_io.c
+  - tests/cmake/native-plugin-shadow-io-tests.cmake
 doc_type: module-detail
 ---
 
@@ -93,9 +101,34 @@ GLOBAL 分配块数回到基线；未实际执行旧代际回调。因此旧回�
 句柄保留顺序的代码审查结论，不能宣称已被该用例运行验证。构造失败时宿主钩子
 保持原值同样由发布顺序审查支撑，当前 Attach 用例直接断言 registry/cleanup 未发布。
 
-影子文件的另外两个已知问题仍待后续独立红绿验证：影子复制成功但系统 open_library
-失败时，当前路径未删除副本；copy_binary_file 忽略目标 fclose 失败，可能误报复制成功。
-本次九项 OOM 测试未覆盖这些 I/O 故障，也未逐文件枚举验证影子目录没有残留。
+## 影子副本 I/O 与失败清理
+
+目录、临时缓存路径、二进制复制和影子文件命名已提取到私有
+`native_binding_plugin_shadow_io.c/.h`。加载编排继续留在 registry_plugin 中，
+避免超过千行的文件继续积累 I/O 职责；模块已有源码 GLOB 收集新增实现，无公开 API。
+提取先保留原行为，在真实 Library 构建中取得两项行为 RED 后才修复。
+
+`native_registry_copy_plugin_streams` 接管两个有效且不同的流。复制循环检测短写、
+源和目标错误标志，随后分别检查源关闭与目标关闭结果，任一步失败返回 false。
+两次关闭是独立语句，源关闭失败也不能跳过目标关闭。路径 wrapper 在失败后仅删除
+目标不完整副本，保留诊断所指向的源插件。成功复制但 open_library 失败时，加载器
+在记录源路径诊断后，只在 loadedFromShadow 为真时删除本次 loadPath。
+
+独立测试 `native_plugin_shadow_io_open_failure` 重复加载真实无效映像三次，枚举
+专属缓存目录并检查源文件内容、模块和句柄数量。未修复输入得到 before=0、after=3。
+`native_plugin_shadow_io_target_close_failure` 使用 Windows CreatePipe 写端的真实
+全缓冲 FILE 流；关闭读端后先证明小块 fwrite 成功、fclose 返回 EOF，再调用生产
+owning-stream helper。未修复 helper 仍报告成功，因此测试真实失败。这些用例未替换
+生产实现或伪造 fclose 返回值；Linux 分支使用 pipe 并忽略 SIGPIPE 以检查 stdio 返回。
+
+证据在 `integrated-support-batch-2-red-receipt.json` 与同目录 `-2.log`，
+收据记录 changed_inputs=[]。修复后 root 在实际 checkout 统一重编，integrated-support-batch-3-red 中两项均通过，输入哈希稳定；源 fclose 失败、
+短写及读错误分支本轮为代码审查覆盖，不能称为各自已运行故障注入。
+测试 TMP/TEMP/TMPDIR 指向 `${CMAKE_CURRENT_BINARY_DIR}/native-plugin-shadow-io-tmp/`
+下的各 case 专属目录。RED 留下的旧影子副本由 root 按指纹清理；GREEN 的前后数量比较
+允许已登记的基线残留存在，不意味着历史残留已清空。
+
+## 构建证据与产物
 
 实际构建由 root 在共享 top-clangcl 目录串行驱动。证据及源码身份见
 `E:/cargo-targets/zr_vm/reports/review-bugfix-20261016/integrated-baseline-red-r3-receipt.json`
