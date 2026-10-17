@@ -3579,7 +3579,10 @@ translate_module_info:
                                                         &nativeSignatureRidCursor,
                                                         &identity);
                 if (nativeDescriptor != ZR_NULL && i < nativeDescriptor->typeCount &&
-                    methodIndex < nativeDescriptor->types[i].methodCount) {
+                    methodIndex < nativeDescriptor->types[i].methodCount &&
+                    nativeDescriptor->types[i].methods[methodIndex].callback != ZR_NULL) {
+                    /* Abstract native declarations have no provider target.
+                     * Keep receiver-based member lookup for their implementations. */
                     (void)ZrLibrary_NativeCallBinding_GetDescriptorContract(
                             nativeDescriptor, &nativeDescriptor->types[i],
                             ZR_NATIVE_CALL_BINDING_METHOD, &nativeDescriptor->types[i].methods[methodIndex],
