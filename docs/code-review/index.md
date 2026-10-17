@@ -248,3 +248,12 @@ doc_type: category-index
 
 
 - [Layout 辅助模块既有注释引用更正](batches/20261017-layout-borrowed-comment-references.md)：四份已审源码的 22 处引用数字、11 个既有单元，0 新单元；现有测试前后各 18 通过、1 Windows 权限跳过，程序和源码行数保持不变。
+
+
+## 人工测试样例补充审查
+
+- manual-fixtures.tsv：主 scanner 后缀之外经逐文件核实的人工 fixture 六列补充清单，只列显式路径。
+- manual-fixture-ledgers/：手工域独立九列台账，不放入当前只认识主 scanner known 集合的 coverage/ 全局检查。
+主清单与手工补充清单的并集构成审查范围；分别 fresh 重扫且交集为空。两个域互不代授完成信用，不改变 scanner 分类行为。
+
+- [fixturedep JSON 占位元数据合同](batches/20261017-fixturedep-json-placeholder-contracts.md)：[1个 metadata-interface](manual-fixture-ledgers/fixturedep_placeholder.tsv)，原 JSON 169B保持不变；手工域独立静态核验，不重复计入原 fixtureArtifact 单元。

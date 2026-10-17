@@ -1,0 +1,2 @@
+file	module	kind	sha256	status	note
+tests/fixtures/projects/syntax_reference_v1/artifacts/fixturedep.zrm	tests/fixtures	fixture	7a38a45c8fe27980c4e7febec4a5f2cca6aadc120441b45d5455aa2c6a4c6de3	reviewed	人工 UTF-8 JSON 占位元数据；独立复核1个 metadata-interface、no-comment；职责/四字段/生命周期见 batches/20261017-fixturedep-json-placeholder-contracts.md；原169B不变，当前仅路径存在与 .zr 语法证据。
