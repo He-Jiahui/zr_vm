@@ -6,6 +6,8 @@
 
 void type_inference_record_identifier_reference_fact(
         SZrCompilerState *cs, SZrAstNode *node, const SZrTypeBinding *binding);
+void type_inference_record_function_value_reference_fact(
+        SZrCompilerState *cs, SZrAstNode *node, const SZrFunctionTypeInfo *function);
 #include "zr_vm_parser/semantic_facts.h"
 
 typedef struct SZrResolvedCallSignature SZrResolvedCallSignature;

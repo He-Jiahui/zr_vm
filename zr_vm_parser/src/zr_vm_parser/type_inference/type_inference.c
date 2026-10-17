@@ -1393,6 +1393,7 @@ TZrBool ZrParser_IdentifierType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
 
         if (ZrParser_TypeEnvironment_LookupFunction(cs->typeEnv, name, &funcTypeInfo) &&
             infer_identifier_callable_type(cs, funcTypeInfo, result)) {
+            type_inference_record_function_value_reference_fact(cs, node, funcTypeInfo);
             return ZR_TRUE;
         }
     }
@@ -1400,6 +1401,7 @@ TZrBool ZrParser_IdentifierType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
     if (cs->compileTimeTypeEnv != ZR_NULL &&
         ZrParser_TypeEnvironment_LookupFunction(cs->compileTimeTypeEnv, name, &funcTypeInfo) &&
         infer_identifier_callable_type(cs, funcTypeInfo, result)) {
+        type_inference_record_function_value_reference_fact(cs, node, funcTypeInfo);
         return ZR_TRUE;
     }
 

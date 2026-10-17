@@ -71,3 +71,16 @@ void type_inference_record_identifier_write_reference_fact(SZrCompilerState *cs,
                                                            const SZrTypeBinding *binding) {
     type_inference_record_identifier_fact(cs, node, binding, ZR_SEMANTIC_REFERENCE_WRITE);
 }
+
+void type_inference_record_function_value_reference_fact(
+        SZrCompilerState *cs, SZrAstNode *node, const SZrFunctionTypeInfo *function) {
+    SZrTypeBinding binding = {0};
+    if (function == ZR_NULL || function->isExternalCallable) return;
+    binding.name = function->name;
+    binding.typeId = function->typeId;
+    binding.symbolId = function->symbolId;
+    binding.declarationRange = function->declarationRange;
+    binding.hasDeclarationRange = function->hasDeclarationRange;
+    binding.originKind = ZR_SEMANTIC_REFERENCE_ORIGIN_SOURCE_DECLARATION;
+    type_inference_record_identifier_reference_fact(cs, node, &binding);
+}
