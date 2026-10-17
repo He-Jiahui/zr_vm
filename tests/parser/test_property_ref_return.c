@@ -606,12 +606,11 @@ static void test_ref_argument_preserves_property_reference_identity(void) {
 static void test_static_ref_property_mutates_static_place(void) {
     static const char source[] =
             "class Counter {\n"
-            "  pri static var stored: int;\n"
+            "  pri static var stored: int = 2;\n"
             "  pub static property value: ref int {\n"
             "    get { return ref Counter.stored; }\n"
             "  }\n"
             "}\n"
-            "Counter.stored = 2;\n"
             "Counter.value += 3;\n"
             "var observed = Counter.value;\n"
             "return observed;\n";
