@@ -93,3 +93,4 @@ include("${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/tests/cmake/ssa-primitive-frame-vali
 include("${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/tests/cmake/ssa-source-callable-query.cmake")
 include("${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/tests/cmake/ssa-source-finalized-module.cmake")
 include("${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/tests/cmake/ssa-gc-map-metadata-consumers.cmake")
+include("${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/tests/cmake/ssa-gc-map-parser-consumers.cmake")

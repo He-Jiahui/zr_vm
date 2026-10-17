@@ -3,34 +3,42 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/exec_ir_fusion.h
   - zr_vm_parser/include/zr_vm_parser/exec_ir_binding_facts.h
   - zr_vm_parser/include/zr_vm_parser/execbc_fusion_patterns_generated.h
-  - zr_vm_parser/src/zr_vm_parser/exec_ir/execbc_patterns.def
-  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion.c
-  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_contract.c
-  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_match.c
-  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_match_types.c
-  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_lifecycle.c
-  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_internal.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/execbc_patterns.def
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_fusion.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_fusion_contract.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_fusion_match.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_fusion_match_types.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_fusion_lifecycle.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_fusion_internal.h
   - scripts/codegen/generate_execbc_patterns.py
   - tests/cmake/ssa-tests.cmake
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_gc_map_internal.h
+  - tests/parser/test_ssa_gc_map_parser_consumers.c
+  - tests/parser/support/ssa_gc_map_parser_consumers_fixture.h
+  - tests/cmake/ssa-gc-map-parser-consumers.cmake
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/exec_ir_fusion.h
   - zr_vm_parser/include/zr_vm_parser/exec_ir_binding_facts.h
   - zr_vm_parser/include/zr_vm_parser/execbc_fusion_patterns_generated.h
-  - zr_vm_parser/src/zr_vm_parser/exec_ir/execbc_patterns.def
-  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion.c
-  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_contract.c
-  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_match.c
-  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_match_types.c
-  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_lifecycle.c
-  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_internal.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/execbc_patterns.def
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_fusion.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_fusion_contract.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_fusion_match.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_fusion_match_types.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_fusion_lifecycle.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_fusion_internal.h
   - scripts/codegen/generate_execbc_patterns.py
 plan_sources:
+  - .codex/plans/20261016-ssa-gc-map-parser-consumers.md
   - docs/plans/ssa/03-interpreter-binding/04-generated-fusion.md
   - docs/plans/ssa/guides/E-projections-fusion-aot.md
   - docs/plans/ssa/guides/C-interpreter-frame-runtime.md
   - docs/plans/ssa/architecture-design.md
   - "user: 2026-09-13 implement 03.04 generated fusion contract"
 tests:
+  - tests/parser/test_ssa_gc_map_parser_consumers.c
+  - tests/parser/support/ssa_gc_map_parser_consumers_fixture.h
+  - tests/cmake/ssa-gc-map-parser-consumers.cmake
   - tests/parser/test_ssa_generated_fusion.c
   - tests/parser/test_ssa_generated_fusion_compare_branch.inc
   - tests/parser/test_ssa_generated_fusion_increment_branch.inc
@@ -179,6 +187,26 @@ fixed-width sequence, clears derived side/source/fallback arrays, marks the
 plan invalid, and records the reason.  No stale generated handler is silently
 reused.
 
+## Input-hash GC-map admission
+
+`ZrParser_ExecBcFusion_InputHash` rejects a malformed GC-map envelope by returning
+zero through its existing function-storage checker. The shared Core private
+predicate admits only NULL/0/0 or one non-NULL header with count/capacity 1/1.
+A header may be empty or contain multiple entries and independent slot-index
+and inline-reference-offset pools. Existing inner validation and hash contents
+remain unchanged; no hash redesign or new wrapper guard is introduced.
+
+The aggregate/binding hashes and original sealed/BindingRows checks retain their
+order. They do not follow GC-header pools or allocate on this metadata path.
+The canonical outer check precedes the first GC-header dereference; a healthy
+fixture still has a nonzero input hash. Readable, live storage and proper
+ownership remain caller preconditions.
+
+The [Parser GC-map validation record](../testing-and-validation/ssa-gc-map-parser-consumers.md)
+separately records the six InputHash malformed cases and three legal shapes.
+Its actual RED, accepted 99-case GREEN, and finite MSVC evidence add no execution
+or generated handler credit to the historical fusion tests below.
+
 ## Ownership and lifecycle
 
 `Init` is safe on a zeroed record.  `Free` is idempotent and frees arrays only
@@ -228,8 +256,7 @@ would widen or duplicate the local matcher context.
 
 This stage does not rewrite the legacy quickening compiler or core dispatch
 table, does not emit executable handlers, and does not mutate `SZrExecIrFunction`.
-The focused target is registered in `tests/cmake/ssa-tests.cmake`: the target
-starts at line 1350, the contract source is listed at line 1376, and
-`ssa_generated_fusion` is registered by `add_test` at line 1385 with the `ssa`
-label at line 1386. Registration does not establish a current fixture run.
+The `zr_vm_ssa_generated_fusion_test` target and `ssa_generated_fusion` CTest
+are registered in `tests/cmake/ssa-tests.cmake` with the `ssa` label.
+Registration does not establish a current fixture run.
 Integration into the shared dispatch build remains outside this stage.

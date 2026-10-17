@@ -1,4 +1,5 @@
 #include "exec_ir/exec_ir_pass_internal.h"
+#include "exec_ir/exec_ir_gc_map_internal.h"
 
 #include "zr_vm_core/exec_ir_state_map.h"
 
@@ -37,7 +38,7 @@ static TZrBool zr_dce_storage_valid(const SZrExecIrFunction *function,
         function->predecessorCount > function->predecessorCapacity ||
         function->successorCount > function->successorCapacity ||
         function->sourceMapCount > function->sourceMapCapacity ||
-        function->gcMapCount > function->gcMapCapacity ||
+        !zr_exec_ir_gc_map_outer_shape_is_valid(function) ||
         (function->valueCount != 0u && function->values == ZR_NULL) ||
         (function->instructionCount != 0u && function->instructions == ZR_NULL) ||
         (function->operandCount != 0u && function->operands == ZR_NULL) ||

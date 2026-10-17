@@ -1,4 +1,5 @@
 #include "exec_ir/exec_ir_pass_internal.h"
+#include "exec_ir/exec_ir_gc_map_internal.h"
 #include "exec_ir_copy_aliases.h"
 #include "zr_vm_common/zr_type_conf.h"
 
@@ -48,7 +49,7 @@ static TZrBool zr_sccp_storage_valid(const SZrExecIrFunction *function,
         function->predecessorCount > function->predecessorCapacity ||
         function->successorCount > function->successorCapacity ||
         function->sourceMapCount > function->sourceMapCapacity ||
-        function->gcMapCount > function->gcMapCapacity ||
+        !zr_exec_ir_gc_map_outer_shape_is_valid(function) ||
         (function->valueCount != 0u && function->values == ZR_NULL) ||
         (function->instructionCount != 0u && function->instructions == ZR_NULL) ||
         (function->blockCount != 0u && function->blocks == ZR_NULL) ||

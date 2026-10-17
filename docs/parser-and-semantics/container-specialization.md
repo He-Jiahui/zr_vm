@@ -4,12 +4,20 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_container_specialize.c
   - zr_vm_core/include/zr_vm_core/container_storage_contract.h
   - zr_vm_core/src/zr_vm_core/object/container_storage_contract.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_gc_map_internal.h
+  - tests/parser/test_ssa_gc_map_parser_consumers.c
+  - tests/parser/support/ssa_gc_map_parser_consumers_fixture.h
+  - tests/cmake/ssa-gc-map-parser-consumers.cmake
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/exec_ir_container_specialize.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_container_specialize.c
 plan_sources:
+  - .codex/plans/20261016-ssa-gc-map-parser-consumers.md
   - docs/plans/ssa/05-data-layout/03-maps-strings.md
 tests:
+  - tests/parser/test_ssa_gc_map_parser_consumers.c
+  - tests/parser/support/ssa_gc_map_parser_consumers_fixture.h
+  - tests/cmake/ssa-gc-map-parser-consumers.cmake
   - tests/parser/test_ssa_container_specialize.c
 doc_type: module-detail
 status: implemented-subset
@@ -64,6 +72,37 @@ hash, preventing a nested candidate from being forged independently of its
 facts.  Since this slice has no ownership transfer or allocation entry point,
 failure has no partial object to roll back and leaves the generic runtime
 path untouched.
+
+## GC-map admission and output initialization
+
+The function storage check uses the Core private canonical envelope: NULL/0/0
+for absence, or one non-NULL GC header with count/capacity 1/1. Entries and the
+slot-index and inline-reference-offset pools may independently contain multiple
+records. Their geometry and the function hash algorithm are unchanged.
+
+`BuildContainerSpecialization` first initializes the diagnostic, checks required
+arguments, and initializes a supplied plan with `ContainerSpecializationPlanInit`.
+It then checks the facts envelope before function storage. Invalid GC storage
+returns false with FUNCTION_INVALID, kind NONE, and execution UNSUPPORTED;
+the output plan remains in its initialized state. Binding-row, typed-schema,
+sealed-function, scope, and generation checks keep their existing order.
+`ValidateContainerSpecializationPlan` checks facts and function before the old
+plan, and leaves that plan unchanged on refusal. `SpecializeContainers` continues
+to delegate to Build and copy its execution diagnostic, including NULL-diagnostic
+support. No wrapper-specific duplicate storage check is added.
+
+The existing diagnostic setter preserves the function token and facts-provided
+block/instruction/source IDs; other fields start at zero unless the original
+status supplies version/hash detail. The finite fixture uses zero location IDs.
+A legal generic Build can return true with UNKNOWN_LAYOUT/UNSUPPORTED, and a
+legal generic-only Specialize can return false. Its positive fixture therefore
+uses a real stable compact-map candidate, making false on malformed storage
+observable even without a diagnostic. All are metadata planning calls.
+
+See the [Parser GC-map validation record](../testing-and-validation/ssa-gc-map-parser-consumers.md)
+for actual RED and accepted 99-case GREEN results, the distinct 30-TU provider
+closure, and finite MSVC evidence. The older two-contract fixture below retains its own
+historical scope.
 
 ## Focused evidence
 

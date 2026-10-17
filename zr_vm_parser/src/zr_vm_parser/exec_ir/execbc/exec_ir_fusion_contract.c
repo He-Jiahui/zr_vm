@@ -1,4 +1,5 @@
 #include "exec_ir/execbc/exec_ir_fusion_internal.h"
+#include "exec_ir/exec_ir_gc_map_internal.h"
 
 #include <limits.h>
 #include <stddef.h>
@@ -228,8 +229,7 @@ static TZrUInt64 zr_fusion_hash_instruction(TZrUInt64 hash,
 static TZrBool zr_fusion_gc_map_is_valid(const SZrExecIrFunction *function) {
     const SZrExecIrGcMap *map;
     TZrUInt32 index;
-    if (function == ZR_NULL || function->gcMapCount > function->gcMapCapacity ||
-        (function->gcMapCount != 0u && function->gcMap == ZR_NULL)) {
+    if (!zr_exec_ir_gc_map_outer_shape_is_valid(function)) {
         return ZR_FALSE;
     }
     map = function->gcMap;

@@ -1,4 +1,5 @@
 #include "zr_vm_parser/exec_ir_container_specialize.h"
+#include "exec_ir/exec_ir_gc_map_internal.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -299,7 +300,6 @@ static TZrBool zr_container_function_storage_valid(
         function->phiIncomingCount > function->phiIncomingCapacity ||
         function->predecessorCount > function->predecessorCapacity ||
         function->successorCount > function->successorCapacity ||
-        function->gcMapCount > function->gcMapCapacity ||
         function->gcRootCount > function->gcRootCapacity ||
         function->deoptStateCount > function->deoptStateCapacity ||
         function->deoptValueCount > function->deoptValueCapacity ||
@@ -320,7 +320,7 @@ static TZrBool zr_container_function_storage_valid(
         (function->sourceMapCount != 0u && function->sourceMaps == ZR_NULL)) {
         return ZR_FALSE;
     }
-    if ((function->gcMapCount != 0u && function->gcMap == ZR_NULL) ||
+    if (!zr_exec_ir_gc_map_outer_shape_is_valid(function) ||
         !ZrCore_ExecIr_FunctionValidateBindingRows(function, ZR_NULL)) {
         return ZR_FALSE;
     }

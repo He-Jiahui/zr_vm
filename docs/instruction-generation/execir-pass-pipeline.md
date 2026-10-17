@@ -5,21 +5,29 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
-  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_execbc.c
   - tests/parser/test_ssa_sccp_conversion.c
   - tests/parser/test_ssa_dce_phi_liveness.c
   - tests/parser/ssa_dce_phi_liveness_cases.inc
   - tests/cmake/ssa-sccp-conversion-tests.cmake
   - tests/CMakeLists.txt
   - tests/cmake/ssa-tests.cmake
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_gc_map_internal.h
+  - tests/parser/test_ssa_gc_map_parser_consumers.c
+  - tests/parser/support/ssa_gc_map_parser_consumers_fixture.h
+  - tests/cmake/ssa-gc-map-parser-consumers.cmake
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_manager.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
 plan_sources:
+  - .codex/plans/20261016-ssa-gc-map-parser-consumers.md
   - docs/plans/ssa/01-execir-ssa/03-effects-verifier.md
   - docs/plans/ssa/02-automatic-optimization/01-pass-manager-scalar.md
 tests:
+  - tests/parser/test_ssa_gc_map_parser_consumers.c
+  - tests/parser/support/ssa_gc_map_parser_consumers_fixture.h
+  - tests/cmake/ssa-gc-map-parser-consumers.cmake
   - tests/parser/test_ssa_pass_manager_scalar.c
   - tests/parser/test_ssa_sccp_conversion.c
   - tests/parser/test_ssa_deopt_aggregates.c
@@ -44,6 +52,29 @@ verifier.  The initial registry is deliberately small and deterministic:
    integer results.
 2. `dce` completes a bounded fixed-point liveness walk before turning unused,
    side-effect-free definitions into `NOP` tombstones.
+
+## Direct DCE/SCCP GC-map admission
+
+Direct `ZrParser_ExecIr_RunDcePass`, `ZrParser_ExecIr_ComputeSccp`, and
+`ZrParser_ExecIr_RunSccpPass` share the Core private outer-shape predicate through
+their existing storage checks. An absent map is exactly NULL/0/0; a present map
+is one non-NULL header with count/capacity 1/1. Multiple entries, slot indices,
+and inline-reference offsets belong to the header's independent inner pools.
+The predicate checks the envelope only; callers still supply readable, live,
+properly owned storage, and existing inner checks retain their responsibilities.
+
+Each direct entry initializes a supplied `changed` to false before storage
+validation. A malformed envelope follows the existing INVALID_ARGUMENT path
+before any GC-header dereference or pass allocation. The diagnostic is reset
+and carries the function token; the other seven fields are zero. Rejection
+preserves the function and supplied analysis cache/context. `RunSccpPass`
+continues to delegate to `ComputeSccp` with rewrite enabled. Healthy DCE/SCCP
+calls may allocate; zero allocation is required for malformed outer rejection.
+The manager's verification, budget, rollback, and hash protocols are unchanged.
+
+The independent [Parser GC-map validation record](../testing-and-validation/ssa-gc-map-parser-consumers.md)
+records the actual RED matrix, accepted 99-case GREEN results, and finite
+MSVC evidence for this direct metadata path. Historical pass execution fixtures below have separate scope.
 
 ## DCE PHI Liveness And Publication
 
@@ -174,13 +205,14 @@ shares the compile budget across functions, supplies the module constant view,
 and reports an aggregate module hash.  Individual passes can be disabled for
 binary diagnosis without changing legality checks.
 
-Focused validation (from the repository root):
+Focused validation examples (from the repository root, using separately
+registered physical output directories; these examples are not new run evidence):
 
 ```bash
-cmake --build build/ssa-gcc-debug --target zr_vm_ssa_pass_manager_scalar_test -j 4
-ctest --test-dir build/ssa-gcc-debug -R '^ssa_pass_manager_scalar$' --output-on-failure --no-tests=error
-cmake --build build/ssa-clang-debug --target zr_vm_ssa_pass_manager_scalar_test -j 4
-ctest --test-dir build/ssa-clang-debug -R '^ssa_pass_manager_scalar$' --output-on-failure --no-tests=error
+cmake --build E:/cargo-targets/zr_vm/build/ssa-gcc-debug --target zr_vm_ssa_pass_manager_scalar_test -j 4
+ctest --test-dir E:/cargo-targets/zr_vm/build/ssa-gcc-debug -R '^ssa_pass_manager_scalar$' --output-on-failure --no-tests=error
+cmake --build E:/cargo-targets/zr_vm/build/ssa-clang-debug --target zr_vm_ssa_pass_manager_scalar_test -j 4
+ctest --test-dir E:/cargo-targets/zr_vm/build/ssa-clang-debug -R '^ssa_pass_manager_scalar$' --output-on-failure --no-tests=error
 ```
 
 The focused fixture covers fixed-point idempotence, checked division and
@@ -202,6 +234,6 @@ also cover explicit/fallback same-token typed immediates, every canonical
 signed width, conservative custom tokens, FLOAT pool COPY/NEG retagging,
 signed COPY propagation, and loop PHIs whose late backedge either retains
 SIGNED proof or loses it through a BOOL-producing comparison with equal bits.
-Run with `ctest --test-dir <build> -R '^ssa_sccp_conversion$'
+Run with `ctest --test-dir E:/cargo-targets/zr_vm/build/<registered-config> -R '^ssa_sccp_conversion$'
 --output-on-failure --no-tests=error`. The acceptance record contains the
 concrete build paths, commands, and observed results.
