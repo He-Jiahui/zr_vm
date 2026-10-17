@@ -3973,7 +3973,7 @@ tests/cli/test_cli_command_boundaries.c	tests/cli	test	447d234ee77b27d6dd8bb1418
 tests/cli/test_cli_repl_physical_lines.py	tests/cli	test	288e495cab3974942c05755a192bc72229a245884ddae303b735a82a75477233	pending	新首方现存文件；调用链与逐单元契约待审；仅文件级清点，无新增审查信用
 tests/cmake/artifact-row-boundary-tests.cmake	tests/cmake	config	9ac75780a5b96fabdaf8cdeb396af63fbd67fcdf3be164a14dec65a6929811d8	pending	新首方现存文件；调用链与逐单元契约待审；仅文件级清点，无新增审查信用
 tests/cmake/benchmark-scope-types-tests.cmake	tests/cmake	config	809643a6a85d5b6c987529a72a97e11a485009b145530ced4a6a6da323481f19	reviewed	Benchmark消费者合同：逐项1单元；全批50=旧37复核+新13，新增静态BUG1为环境撤销后路径漏记，仅标记不修复；3现有unittest前后PASS，原token/AST/docstrings/字节码保持；详见20261017-benchmark-report-consumers-contracts
-tests/cmake/benchmark-viewer-tests.cmake	tests/cmake	config	3f4fbc15539955ba703fe9ce70ae7fa86268564cba6a0dc7e12de024047a3b3a	pending	新首方现存文件；调用链与逐单元契约待审；仅文件级清点，无新增审查信用
+tests/cmake/benchmark-viewer-tests.cmake	tests/cmake	config	33424005f34522f14bcba6f6bea30526b399bc84f42534702319c69e0433d54b	reviewed	Viewer CTest登记配置块1新键逐项审查；中文职责/调用时机/缓存与三层超时/生命周期文档，原11行命令不变；透明复用历史9基线，本轮原9均通过、Node--check0；非freshCTest验证。见docs/code-review/batches/20261016-benchmark-viewer-cmake-contracts.md
 tests/cmake/cli-command-boundary-tests.cmake	tests/cmake	config	68d45286366997e7cea1692b7a10956215547977fb4e3ad7e3adadb08115857a	pending	新首方现存文件；调用链与逐单元契约待审；仅文件级清点，无新增审查信用
 tests/cmake/cli-repl-physical-line-tests.cmake	tests/cmake	config	2b87f0ead2e3a7469c3c4731b9d617be5ec2547b5a0e5ddc2f3ce2bb25880114	pending	新首方现存文件；调用链与逐单元契约待审；仅文件级清点，无新增审查信用
 tests/cmake/core-allocation-lifecycle-tests.cmake	tests/cmake	config	13492cfb83b80ba698f0244a0cf24ced4e2118d84bbee9cda19277d516d28832	pending	新首方现存文件；调用链与逐单元契约待审；仅文件级清点，无新增审查信用
