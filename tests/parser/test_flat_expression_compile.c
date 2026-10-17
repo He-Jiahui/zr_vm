@@ -55,12 +55,12 @@ static double time_chain(size_t terms, int identifiers) {
 }
 
 static void expect_scaling(int identifiers) {
-    double small = time_chain(200, identifiers);
-    double large = time_chain(600, identifiers);
+    double smallElapsed = time_chain(200, identifiers);
+    double largeElapsed = time_chain(600, identifiers);
     /* Generous slack for sanitizer builds and timer granularity. Previously
      * 200 literal terms took ~10s and 400 exceeded 15s in Release. */
-    TEST_ASSERT_TRUE_MESSAGE(large < 5.0, "flat expression compilation exceeded five CPU seconds");
-    TEST_ASSERT_TRUE_MESSAGE(large < small * 32.0 + 0.25,
+    TEST_ASSERT_TRUE_MESSAGE(largeElapsed < 5.0, "flat expression compilation exceeded five CPU seconds");
+    TEST_ASSERT_TRUE_MESSAGE(largeElapsed < smallElapsed * 32.0 + 0.25,
                              "flat expression compilation growth regressed");
 }
 
