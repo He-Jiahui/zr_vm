@@ -8881,3 +8881,12 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/system-fs-failure-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/thread-worker-count-tests.cmake")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/thread-transport-facade-oom-tests.cmake")
+
+if(TARGET zr_vm_cli_executable)
+    add_test(NAME compiler_constructor_prototype_growth
+            COMMAND ${CMAKE_COMMAND}
+            "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
+            "-DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/parser/constructor_prototype_growth.zr"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_constructor_prototype_growth.cmake")
+    set_tests_properties(compiler_constructor_prototype_growth PROPERTIES TIMEOUT 40)
+endif()

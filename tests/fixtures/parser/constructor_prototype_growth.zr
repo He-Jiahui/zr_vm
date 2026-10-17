@@ -1,0 +1,5 @@
+var task = import("zr.task");
+var sys = import("zr.system");
+var job = init task.Job<int>(fn() => { var v = sys.vm; return 7; });
+var t = task.currentScheduler.schedule<int>(job);
+return t.result();
