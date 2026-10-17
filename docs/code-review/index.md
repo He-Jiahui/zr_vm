@@ -234,3 +234,6 @@ doc_type: category-index
 - [本地 Scheduler 队列复用测试的调用契约](../testing-and-validation/task-scheduler-queue-reuse-caller-contract.md)：59 个单元、重入与根清理、只读拒写和限定 OOM 的真实观察范围。
 
 - [Job/Scheduler 父测试的调用契约](../testing-and-validation/task-job-scheduler-caller-contract.md)：27 项完整审查、描述符和源调用边界、完成值目标槽 BUG 与诊断/次数 TODO。
+
+
+- [Math 输入边界测试的调用与生命周期契约](batches/20261017-math-input-boundaries-tests-contracts.md)：[28 个完整单元](coverage/math_input_boundaries_tests.tsv)，覆盖数值拒绝、数组/裸 Tensor 外壳、继续执行与普通清理边界；同配置目标和九个原 selector 修改前后均退出 0，限本批有界验证。
