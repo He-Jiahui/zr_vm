@@ -452,10 +452,10 @@ if (NOT TARGET zr_vm_ssa_oracle_resume_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_phi.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_consumer.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/canonical_type_lookup.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/canonical_type_index.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_execbc.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_lower_execbc.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/types/canonical_type_lookup.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/types/canonical_type_index.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c)
     zr_vm_apply_common_test_settings(zr_vm_ssa_oracle_resume_test)
     target_include_directories(zr_vm_ssa_oracle_resume_test PRIVATE
@@ -510,11 +510,11 @@ if (NOT TARGET zr_vm_ssa_oracle_projections_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_phi.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_consumer.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_execbc.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_oracle.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/canonical_type_lookup.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/canonical_type_index.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_lower_execbc.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/types/canonical_type_lookup.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/types/canonical_type_index.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c)
     target_include_directories(zr_vm_ssa_oracle_projections_test PRIVATE
             ${CMAKE_SOURCE_DIR}/tests/harness
@@ -553,10 +553,10 @@ if (NOT TARGET zr_vm_ssa_oracle_parallel_edges_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_phi.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_consumer.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_execbc.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/canonical_type_lookup.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/canonical_type_index.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_execbc.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_lower_execbc.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/types/canonical_type_lookup.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/types/canonical_type_index.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_lower_aot.c)
     target_include_directories(zr_vm_ssa_oracle_parallel_edges_test PRIVATE
             ${CMAKE_SOURCE_DIR}/tests/harness
@@ -952,7 +952,7 @@ if (NOT TARGET zr_vm_ssa_build_profiles_test)
             ${CMAKE_SOURCE_DIR}/tests/parser/test_ssa_build_profiles.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/compiler/compile_optimization_profile.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/compiler/compile_ir_cache.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_content_hash.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/compiler/tool/compile_tool_content_hash.c)
     target_include_directories(zr_vm_ssa_build_profiles_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/compiler
@@ -1376,11 +1376,11 @@ if (NOT TARGET zr_vm_ssa_generated_fusion_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/call/call_binding.c
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/call/call_binding_graph.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_binding_facts.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_contract.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_match.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_match_types.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_fusion_lifecycle.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_fusion.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_fusion_contract.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_fusion_match.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_fusion_match_types.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/execbc/exec_ir_fusion_lifecycle.c)
     target_include_directories(zr_vm_ssa_generated_fusion_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include

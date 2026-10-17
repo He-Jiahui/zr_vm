@@ -8,7 +8,7 @@ else ()
     set(_zr_lookup_root "${CMAKE_SOURCE_DIR}")
 endif ()
 add_library(zr_vm_ssa_canonical_lookup_private OBJECT
-        "${_zr_lookup_root}/zr_vm_parser/src/zr_vm_parser/canonical_type_lookup.c")
+        "${_zr_lookup_root}/zr_vm_parser/src/zr_vm_parser/types/canonical_type_lookup.c")
 add_executable(zr_vm_ssa_canonical_type_lookup_test
         "${_zr_lookup_root}/tests/parser/test_ssa_canonical_type_lookup.c"
         "${_zr_lookup_root}/tests/third_party/zr_unity/Unity/src/unity.c")
