@@ -4,8 +4,7 @@
 /* 本地语义查询只读取已发布快照事实，不在请求线程补做推断。 */
 static void test_local_semantic_query_is_snapshot_read_only(void) {
     char *source = read_repo_text_file_owned(
-            "zr_vm_language_server/src/zr_vm_language_server/semantic/"
-            "lsp_local_semantic_query.c");
+        "zr_vm_language_server/src/zr_vm_language_server/semantic/query/lsp_local_semantic_query.c");
 
     if (source == NULL) {
         printf("FAIL: could not read lsp_local_semantic_query.c\n");

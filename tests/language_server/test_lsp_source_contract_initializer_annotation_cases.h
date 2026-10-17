@@ -10,7 +10,7 @@ static void test_initializer_annotation_uses_parser_diagnostic_projection(void) 
     char *parserDiagnostics = read_repo_text_file_owned(
             "zr_vm_parser/src/zr_vm_parser/compiler/compiler_diagnostics.c");
     char *compileStatement = read_repo_text_file_owned(
-            "zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c");
+        "zr_vm_parser/src/zr_vm_parser/compiler/statement/compile_statement.c");
 
     if (symbols == NULL || typecheck == NULL ||
         parserDiagnostics == NULL || compileStatement == NULL) {

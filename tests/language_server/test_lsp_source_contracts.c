@@ -2380,7 +2380,7 @@ static void test_semantic_analyzer_type_resolution_uses_canonical_query(void) {
     resolveEnd = resolveStart != NULL
                      ? strstr(
                            resolveStart + 1,
-                           "// 获取悬停信息")
+                           "TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(")
                      : NULL;
     assert_text_section_contains(
         "SemanticAnalyzer_ResolveTypeAtPosition canonical query",
