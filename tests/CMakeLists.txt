@@ -73,6 +73,7 @@ function(zr_vm_apply_common_test_settings target_name)
             UNITY_USE_FLUSH_STDOUT
             ZR_VM_TESTS_SOURCE_DIR="${ZR_VM_TESTS_SOURCE_DIR_NORMALIZED}"
             ZR_VM_TESTS_BINARY_DIR="${ZR_VM_TESTS_BINARY_DIR_NORMALIZED}"
+            ZR_VM_TESTS_C_FLAGS="${CMAKE_C_FLAGS}"
     )
 endfunction()
 
