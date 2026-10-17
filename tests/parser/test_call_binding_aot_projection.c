@@ -408,6 +408,31 @@ static void test_generated_llvm_registers_binding_bytes_with_current_abi(void) {
     free(bytes);
 }
 
+static void test_erased_and_typed_parameters_project_together(void) {
+    const char *sources[] = {
+        "fn apply(callable, value: int): int { return callable(value); }",
+        "fn apply(value: int, callable): int { return callable(value); }"
+    };
+    for (TZrSize index = 0; index < ZR_ARRAY_COUNT(sources); index++) {
+        SZrFunction *function = ZrParser_Source_Compile(g_state, sources[index], strlen(sources[index]),
+                ZrCore_String_CreateFromNative(g_state, "mixed_parameter_identity.zr"));
+        SZrAotExecIrModule module = {0};
+        TEST_ASSERT_NOT_NULL(function);
+        const SZrFunction *child = &function->childFunctionList[0];
+        const SZrFunctionTypedLocalBinding *typed = &child->typedLocalBindings[index == 0 ? 1 : 0];
+        const SZrFunctionTypedLocalBinding *erased = &child->typedLocalBindings[index == 0 ? 0 : 1];
+        TEST_ASSERT_NOT_EQUAL(0u, typed->symbolId);
+        TEST_ASSERT_NOT_EQUAL(0u, typed->typeId);
+        TEST_ASSERT_NOT_EQUAL(0u, typed->placeId);
+        TEST_ASSERT_EQUAL_UINT32(0u, erased->symbolId);
+        TEST_ASSERT_EQUAL_UINT32(0u, erased->typeId);
+        TEST_ASSERT_EQUAL_UINT32(0u, erased->placeId);
+        TEST_ASSERT_TRUE(backend_aot_exec_ir_build_module(g_state, function, &module));
+        backend_aot_exec_ir_release_module(g_state, &module);
+        ZrCore_Function_Free(g_state, function);
+    }
+}
+
 static void test_unused_parameters_have_complete_declaration_identity(void) {
     const char *source = "fn ignore(a: int, b: int): int { return 1; } return ignore(3, 4);";
     SZrFunction *function = ZrParser_Source_Compile(g_state, source, strlen(source),
@@ -431,6 +456,7 @@ static void test_unused_parameters_have_complete_declaration_identity(void) {
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_unused_parameters_have_complete_declaration_identity);
+    RUN_TEST(test_erased_and_typed_parameters_project_together);
     RUN_TEST(test_aot_projection_preserves_contract_and_resolves_index);
     RUN_TEST(test_aot_projection_rejects_missing_target_after_stripping);
     RUN_TEST(test_aot_runtime_links_pointer_free_rows_and_preserves_interpreter_callable);

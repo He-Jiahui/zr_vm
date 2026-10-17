@@ -178,8 +178,6 @@ static TZrBool backend_aot_exec_ir_validate_required_borrowed_parameter_rows(
 static TZrBool backend_aot_exec_ir_validate_parameter_bindings(
         const SZrFunction *function) {
     TZrUInt32 parameterBindingCount = 0u;
-    TZrBool identityAvailabilityKnown = ZR_FALSE;
-    TZrBool parametersHaveIdentity = ZR_FALSE;
     TZrBool passingFormAvailabilityKnown = ZR_FALSE;
     TZrBool explicitParametersHavePassingForm = ZR_FALSE;
 
@@ -259,14 +257,9 @@ static TZrBool backend_aot_exec_ir_validate_parameter_bindings(
                     hasCompleteIdentity) {
             return ZR_FALSE;
         }
-        if (!isReceiver) {
-            if (identityAvailabilityKnown &&
-                parametersHaveIdentity != hasCompleteIdentity) {
-                return ZR_FALSE;
-            }
-            identityAvailabilityKnown = ZR_TRUE;
-            parametersHaveIdentity = hasCompleteIdentity;
-        }
+        /* An erased parameter can lack canonical identity alongside a typed
+         * parameter that has one. Each row must be complete or absent; their
+         * availability need not match across different parameters. */
 
         for (TZrUInt32 previous = 0u; previous < index; previous++) {
             const SZrFunctionTypedLocalBinding *previousBinding =
