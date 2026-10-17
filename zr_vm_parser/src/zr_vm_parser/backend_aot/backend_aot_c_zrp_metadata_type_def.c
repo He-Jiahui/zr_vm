@@ -1,3 +1,4 @@
+#include "backend_aot/backend_aot_c_zrp_metadata_unaligned.h"
 #include "backend_aot/backend_aot_c_zrp_metadata_type_def.h"
 
 #include "backend_aot/backend_aot_c_zrp_metadata_prune.h"
@@ -968,7 +969,7 @@ TZrMetadataToken backend_aot_c_zrp_compacted_type_def_token(
 }
 
 TZrBool backend_aot_c_zrp_remap_type_def_token(
-        TZrMetadataToken *token,
+        void *tokenStorage,
         const SZrZrpMetadataTypeDefRow *rows,
         TZrUInt32 count,
         const SZrMetadataTokenRecord *tokenRecords,
@@ -983,15 +984,17 @@ TZrBool backend_aot_c_zrp_remap_type_def_token(
         TZrUInt32 genericParamConstraintCount,
         const SZrAotFunctionTable *functionTable,
         TZrUInt32 retainedMethodDefCount) {
+    SZrAotCZrpUInt32Field *token = (SZrAotCZrpUInt32Field *)tokenStorage;
+
     TZrUInt32 typeDefIndex;
 
     if (token == ZR_NULL) {
         return ZR_FALSE;
     }
-    if (*token == 0u || !backend_aot_c_zrp_token_is_type_def(*token)) {
+    if (token->value == 0u || !backend_aot_c_zrp_token_is_type_def(token->value)) {
         return ZR_TRUE;
     }
-    if (!backend_aot_c_zrp_find_type_def_index_for_token(rows, count, *token, &typeDefIndex) ||
+    if (!backend_aot_c_zrp_find_type_def_index_for_token(rows, count, token->value, &typeDefIndex) ||
         !backend_aot_c_zrp_type_def_row_is_retained(&rows[typeDefIndex],
                                                     rows,
                                                     count,
@@ -1010,7 +1013,7 @@ TZrBool backend_aot_c_zrp_remap_type_def_token(
         return ZR_FALSE;
     }
 
-    *token = backend_aot_c_zrp_compacted_type_def_token(rows,
+    token->value = backend_aot_c_zrp_compacted_type_def_token(rows,
                                                        count,
                                                        typeDefIndex,
                                                        tokenRecords,

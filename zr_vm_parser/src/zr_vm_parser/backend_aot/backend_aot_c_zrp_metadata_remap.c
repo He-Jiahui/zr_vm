@@ -1,3 +1,4 @@
+#include "backend_aot/backend_aot_c_zrp_metadata_unaligned.h"
 #include "backend_aot/backend_aot_c_zrp_metadata_remap.h"
 
 #include "backend_aot/backend_aot_c_zrp_metadata_type_def.h"
@@ -146,55 +147,59 @@ static TZrBool backend_aot_c_zrp_retained_method_def_count_matches(
     return (TZrBool)(actualRetainedMethodDefCount == retainedMethodDefCount);
 }
 
-static TZrBool backend_aot_c_zrp_remap_member_def_token(TZrMetadataToken *token,
+static TZrBool backend_aot_c_zrp_remap_member_def_token(void *tokenStorage,
                                                         const SZrZrpMetadataMethodDefRow *methodRows,
                                                         TZrUInt32 methodCount,
                                                         const SZrZrpMetadataFieldDefRow *fieldRows,
                                                         TZrUInt32 fieldCount,
                                                         const SZrAotFunctionTable *functionTable,
                                                         TZrUInt32 retainedMethodDefCount) {
+    SZrAotCZrpUInt32Field *token = (SZrAotCZrpUInt32Field *)tokenStorage;
+
     TZrUInt32 methodIndex;
     TZrUInt32 fieldIndex;
 
-    if (token == ZR_NULL || *token == 0u || !backend_aot_c_zrp_token_is_member_def(*token)) {
+    if (token == ZR_NULL || token->value == 0u || !backend_aot_c_zrp_token_is_member_def(token->value)) {
         return ZR_TRUE;
     }
-    if (backend_aot_c_zrp_find_method_def_index_for_token(methodRows, methodCount, *token, &methodIndex)) {
+    if (backend_aot_c_zrp_find_method_def_index_for_token(methodRows, methodCount, token->value, &methodIndex)) {
         if (!backend_aot_c_zrp_method_def_row_is_retained(&methodRows[methodIndex], functionTable)) {
             return ZR_FALSE;
         }
 
-        *token = backend_aot_c_zrp_compacted_method_def_token(methodRows, methodCount, methodIndex, functionTable);
+        token->value = backend_aot_c_zrp_compacted_method_def_token(methodRows, methodCount, methodIndex, functionTable);
         return ZR_TRUE;
     }
-    if (backend_aot_c_zrp_find_field_def_index_for_token(fieldRows, fieldCount, *token, &fieldIndex)) {
-        *token = backend_aot_c_zrp_compacted_field_def_token(retainedMethodDefCount, fieldIndex);
+    if (backend_aot_c_zrp_find_field_def_index_for_token(fieldRows, fieldCount, token->value, &fieldIndex)) {
+        token->value = backend_aot_c_zrp_compacted_field_def_token(retainedMethodDefCount, fieldIndex);
         return ZR_TRUE;
     }
 
     return ZR_FALSE;
 }
 
-static TZrBool backend_aot_c_zrp_remap_method_def_token(TZrMetadataToken *token,
+static TZrBool backend_aot_c_zrp_remap_method_def_token(void *tokenStorage,
                                                         const SZrZrpMetadataMethodDefRow *methodRows,
                                                         TZrUInt32 methodCount,
                                                         const SZrAotFunctionTable *functionTable) {
+    SZrAotCZrpUInt32Field *token = (SZrAotCZrpUInt32Field *)tokenStorage;
+
     TZrUInt32 methodIndex;
 
-    if (token == ZR_NULL || *token == 0u || !backend_aot_c_zrp_token_is_member_def(*token)) {
+    if (token == ZR_NULL || token->value == 0u || !backend_aot_c_zrp_token_is_member_def(token->value)) {
         return ZR_FALSE;
     }
-    if (!backend_aot_c_zrp_find_method_def_index_for_token(methodRows, methodCount, *token, &methodIndex) ||
+    if (!backend_aot_c_zrp_find_method_def_index_for_token(methodRows, methodCount, token->value, &methodIndex) ||
         !backend_aot_c_zrp_method_def_row_is_retained(&methodRows[methodIndex], functionTable)) {
         return ZR_FALSE;
     }
 
-    *token = backend_aot_c_zrp_compacted_method_def_token(methodRows, methodCount, methodIndex, functionTable);
+    token->value = backend_aot_c_zrp_compacted_method_def_token(methodRows, methodCount, methodIndex, functionTable);
     return ZR_TRUE;
 }
 
 static TZrBool backend_aot_c_zrp_remap_retained_member_def_token(
-        TZrMetadataToken *token,
+        void *tokenStorage,
         const SZrZrpMetadataMethodDefRow *methodRows,
         TZrUInt32 methodCount,
         const SZrZrpMetadataFieldDefRow *fieldRows,
@@ -209,21 +214,23 @@ static TZrBool backend_aot_c_zrp_remap_retained_member_def_token(
         TZrUInt32 genericParamConstraintCount,
         const SZrAotFunctionTable *functionTable,
         TZrUInt32 retainedMethodDefCount) {
+    SZrAotCZrpUInt32Field *token = (SZrAotCZrpUInt32Field *)tokenStorage;
+
     TZrUInt32 methodIndex;
     TZrUInt32 fieldIndex;
 
-    if (token == ZR_NULL || *token == 0u || !backend_aot_c_zrp_token_is_member_def(*token)) {
+    if (token == ZR_NULL || token->value == 0u || !backend_aot_c_zrp_token_is_member_def(token->value)) {
         return ZR_TRUE;
     }
-    if (backend_aot_c_zrp_find_method_def_index_for_token(methodRows, methodCount, *token, &methodIndex)) {
+    if (backend_aot_c_zrp_find_method_def_index_for_token(methodRows, methodCount, token->value, &methodIndex)) {
         if (!backend_aot_c_zrp_method_def_row_is_retained(&methodRows[methodIndex], functionTable)) {
             return ZR_FALSE;
         }
 
-        *token = backend_aot_c_zrp_compacted_method_def_token(methodRows, methodCount, methodIndex, functionTable);
+        token->value = backend_aot_c_zrp_compacted_method_def_token(methodRows, methodCount, methodIndex, functionTable);
         return ZR_TRUE;
     }
-    if (backend_aot_c_zrp_find_field_def_index_for_token(fieldRows, fieldCount, *token, &fieldIndex)) {
+    if (backend_aot_c_zrp_find_field_def_index_for_token(fieldRows, fieldCount, token->value, &fieldIndex)) {
         if (!backend_aot_c_zrp_field_def_row_is_retained(&fieldRows[fieldIndex],
                                                          typeRows,
                                                          typeCount,
@@ -242,7 +249,7 @@ static TZrBool backend_aot_c_zrp_remap_retained_member_def_token(
             return ZR_FALSE;
         }
 
-        *token = backend_aot_c_zrp_compacted_retained_field_def_token(retainedMethodDefCount,
+        token->value = backend_aot_c_zrp_compacted_retained_field_def_token(retainedMethodDefCount,
                                                                       fieldRows,
                                                                       fieldCount,
                                                                       fieldIndex,
@@ -636,14 +643,16 @@ static TZrBool backend_aot_c_zrp_member_ref_references_have_retained_token_recor
                                                                                       retainedMethodDefCount));
 }
 
-TZrBool backend_aot_c_zrp_remap_export_member_token(TZrMetadataToken *token,
+TZrBool backend_aot_c_zrp_remap_export_member_token(void *tokenStorage,
                                                     const SZrZrpMetadataMethodDefRow *methodRows,
                                                     TZrUInt32 methodCount,
                                                     const SZrZrpMetadataFieldDefRow *fieldRows,
                                                     TZrUInt32 fieldCount,
                                                     const SZrAotFunctionTable *functionTable,
                                                     TZrUInt32 retainedMethodDefCount) {
-    if (token == ZR_NULL || !backend_aot_c_zrp_token_is_member_def(*token)) {
+    SZrAotCZrpUInt32Field *token = (SZrAotCZrpUInt32Field *)tokenStorage;
+
+    if (token == ZR_NULL || !backend_aot_c_zrp_token_is_member_def(token->value)) {
         return ZR_FALSE;
     }
     if (!backend_aot_c_zrp_retained_method_def_count_matches(methodRows,
@@ -663,7 +672,7 @@ TZrBool backend_aot_c_zrp_remap_export_member_token(TZrMetadataToken *token,
 }
 
 TZrBool backend_aot_c_zrp_remap_retained_export_member_token(
-        TZrMetadataToken *token,
+        void *tokenStorage,
         const SZrZrpMetadataMethodDefRow *methodRows,
         TZrUInt32 methodCount,
         const SZrZrpMetadataFieldDefRow *fieldRows,
@@ -678,7 +687,9 @@ TZrBool backend_aot_c_zrp_remap_retained_export_member_token(
         TZrUInt32 genericParamConstraintCount,
         const SZrAotFunctionTable *functionTable,
         TZrUInt32 retainedMethodDefCount) {
-    if (token == ZR_NULL || !backend_aot_c_zrp_token_is_member_def(*token)) {
+    SZrAotCZrpUInt32Field *token = (SZrAotCZrpUInt32Field *)tokenStorage;
+
+    if (token == ZR_NULL || !backend_aot_c_zrp_token_is_member_def(token->value)) {
         return ZR_FALSE;
     }
     if (!backend_aot_c_zrp_retained_method_def_count_matches(methodRows,
@@ -982,7 +993,7 @@ TZrUInt32 backend_aot_c_zrp_count_retained_method_specs(const SZrZrpMetadataMeth
     return retainedCount;
 }
 
-TZrBool backend_aot_c_zrp_remap_generic_param_owner_token(TZrMetadataToken *token,
+TZrBool backend_aot_c_zrp_remap_generic_param_owner_token(void *tokenStorage,
                                                           const SZrZrpMetadataTypeDefRow *typeRows,
                                                           TZrUInt32 typeCount,
                                                           const SZrMetadataTokenRecord *tokenRecords,
@@ -997,10 +1008,12 @@ TZrBool backend_aot_c_zrp_remap_generic_param_owner_token(TZrMetadataToken *toke
                                                           TZrUInt32 genericParamConstraintCount,
                                                           const SZrAotFunctionTable *functionTable,
                                                           TZrUInt32 retainedMethodDefCount) {
-    if (token == ZR_NULL || *token == 0u) {
+    SZrAotCZrpUInt32Field *token = (SZrAotCZrpUInt32Field *)tokenStorage;
+
+    if (token == ZR_NULL || token->value == 0u) {
         return ZR_FALSE;
     }
-    if (backend_aot_c_zrp_token_is_type_def(*token)) {
+    if (backend_aot_c_zrp_token_is_type_def(token->value)) {
         return backend_aot_c_zrp_remap_type_def_token(token,
                                                       typeRows,
                                                       typeCount,
@@ -1017,7 +1030,7 @@ TZrBool backend_aot_c_zrp_remap_generic_param_owner_token(TZrMetadataToken *toke
                                                       functionTable,
                                                       retainedMethodDefCount);
     }
-    if (backend_aot_c_zrp_token_is_member_def(*token)) {
+    if (backend_aot_c_zrp_token_is_member_def(token->value)) {
         return backend_aot_c_zrp_remap_method_def_token(token,
                                                         methodRows,
                                                         methodCount,
@@ -1334,8 +1347,8 @@ static TZrUInt32 backend_aot_c_zrp_count_retained_generic_param_constraints_befo
                                                                       retainedMethodDefCount);
 }
 
-void backend_aot_c_zrp_adjust_generic_param_range(TZrUInt32 *firstGenericParamIndex,
-                                                  TZrUInt32 *genericParamCount,
+void backend_aot_c_zrp_adjust_generic_param_range(void *firstGenericParamIndexStorage,
+                                                  void *genericParamCountStorage,
                                                   const SZrZrpMetadataGenericParamRow *genericParamRows,
                                                   TZrUInt32 genericParamRowCount,
                                                   const SZrZrpMetadataTypeDefRow *typeRows,
@@ -1350,6 +1363,9 @@ void backend_aot_c_zrp_adjust_generic_param_range(TZrUInt32 *firstGenericParamIn
                                                   TZrUInt32 genericParamConstraintCount,
                                                   const SZrAotFunctionTable *functionTable,
                                                   TZrUInt32 retainedMethodDefCount) {
+    SZrAotCZrpUInt32Field *firstGenericParamIndex = (SZrAotCZrpUInt32Field *)firstGenericParamIndexStorage;
+    SZrAotCZrpUInt32Field *genericParamCount = (SZrAotCZrpUInt32Field *)genericParamCountStorage;
+
     TZrUInt32 firstIndex;
     TZrUInt32 endIndex;
     TZrUInt32 firstRetainedIndex = ZR_AOT_INVALID_FUNCTION_INDEX;
@@ -1358,18 +1374,18 @@ void backend_aot_c_zrp_adjust_generic_param_range(TZrUInt32 *firstGenericParamIn
     if (firstGenericParamIndex == ZR_NULL ||
         genericParamCount == ZR_NULL ||
         genericParamRows == ZR_NULL ||
-        *genericParamCount == 0u) {
+        genericParamCount->value == 0u) {
         return;
     }
 
-    firstIndex = *firstGenericParamIndex;
+    firstIndex = firstGenericParamIndex->value;
     if (firstIndex >= genericParamRowCount) {
-        *firstGenericParamIndex = 0u;
-        *genericParamCount = 0u;
+        firstGenericParamIndex->value = 0u;
+        genericParamCount->value = 0u;
         return;
     }
 
-    endIndex = firstIndex + *genericParamCount;
+    endIndex = firstIndex + genericParamCount->value;
     if (endIndex < firstIndex || endIndex > genericParamRowCount) {
         endIndex = genericParamRowCount;
     }
@@ -1416,17 +1432,17 @@ void backend_aot_c_zrp_adjust_generic_param_range(TZrUInt32 *firstGenericParamIn
     }
 
     if (retainedCount == 0u) {
-        *firstGenericParamIndex = 0u;
-        *genericParamCount = 0u;
+        firstGenericParamIndex->value = 0u;
+        genericParamCount->value = 0u;
     } else {
-        *firstGenericParamIndex = firstRetainedIndex;
-        *genericParamCount = retainedCount;
+        firstGenericParamIndex->value = firstRetainedIndex;
+        genericParamCount->value = retainedCount;
     }
 }
 
 void backend_aot_c_zrp_adjust_generic_param_constraint_range(
-        TZrUInt32 *firstConstraintIndex,
-        TZrUInt32 *constraintCount,
+        void *firstConstraintIndexStorage,
+        void *constraintCountStorage,
         const SZrZrpMetadataGenericParamConstraintRow *constraintRows,
         TZrUInt32 constraintRowCount,
         const SZrZrpMetadataGenericParamRow *genericParamRows,
@@ -1441,6 +1457,9 @@ void backend_aot_c_zrp_adjust_generic_param_constraint_range(
         TZrUInt32 fieldCount,
         const SZrAotFunctionTable *functionTable,
         TZrUInt32 retainedMethodDefCount) {
+    SZrAotCZrpUInt32Field *firstConstraintIndex = (SZrAotCZrpUInt32Field *)firstConstraintIndexStorage;
+    SZrAotCZrpUInt32Field *constraintCount = (SZrAotCZrpUInt32Field *)constraintCountStorage;
+
     TZrUInt32 firstIndex;
     TZrUInt32 endIndex;
     TZrUInt32 firstRetainedIndex = ZR_AOT_INVALID_FUNCTION_INDEX;
@@ -1449,18 +1468,18 @@ void backend_aot_c_zrp_adjust_generic_param_constraint_range(
     if (firstConstraintIndex == ZR_NULL ||
         constraintCount == ZR_NULL ||
         constraintRows == ZR_NULL ||
-        *constraintCount == 0u) {
+        constraintCount->value == 0u) {
         return;
     }
 
-    firstIndex = *firstConstraintIndex;
+    firstIndex = firstConstraintIndex->value;
     if (firstIndex >= constraintRowCount) {
-        *firstConstraintIndex = 0u;
-        *constraintCount = 0u;
+        firstConstraintIndex->value = 0u;
+        constraintCount->value = 0u;
         return;
     }
 
-    endIndex = firstIndex + *constraintCount;
+    endIndex = firstIndex + constraintCount->value;
     if (endIndex < firstIndex || endIndex > constraintRowCount) {
         endIndex = constraintRowCount;
     }
@@ -1508,11 +1527,11 @@ void backend_aot_c_zrp_adjust_generic_param_constraint_range(
     }
 
     if (retainedCount == 0u) {
-        *firstConstraintIndex = 0u;
-        *constraintCount = 0u;
+        firstConstraintIndex->value = 0u;
+        constraintCount->value = 0u;
     } else {
-        *firstConstraintIndex = firstRetainedIndex;
-        *constraintCount = retainedCount;
+        firstConstraintIndex->value = firstRetainedIndex;
+        constraintCount->value = retainedCount;
     }
 }
 

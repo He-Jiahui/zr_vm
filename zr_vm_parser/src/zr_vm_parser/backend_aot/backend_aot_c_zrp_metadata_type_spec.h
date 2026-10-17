@@ -40,7 +40,7 @@ TZrMetadataToken backend_aot_c_zrp_compacted_type_spec_token(const SZrZrpMetadat
                                                             TZrUInt32 genericParamConstraintCount,
                                                             const SZrAotFunctionTable *functionTable,
                                                             TZrUInt32 retainedMethodDefCount);
-TZrBool backend_aot_c_zrp_remap_type_spec_token(TZrMetadataToken *token,
+TZrBool backend_aot_c_zrp_remap_type_spec_token(void *token,
                                                 const SZrZrpMetadataTypeSpecRow *rows,
                                                 TZrUInt32 count,
                                                 const SZrMetadataTokenRecord *tokenRecords,

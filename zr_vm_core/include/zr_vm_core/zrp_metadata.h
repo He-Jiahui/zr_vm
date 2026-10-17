@@ -30,8 +30,6 @@ typedef enum EZrZrpMetadataSectionKind {
 /** @brief 单个 section 在 blob 内的字节范围及行数/行宽。
  * InitHeader 和 AOT 排版将空节四字段归零；验证器也接受合法非零 offset 的零长度节。
  */
-/* BUG: 即使 blob 基址按 8 字节对齐，验证仍允许 TypeSpec 行从偏移 228 开始；
- * AttachZrpMetadata 的定义表校验将其强转为行指针并读取，产生未对齐访问。 */
 typedef struct SZrZrpMetadataSection {
     TZrUInt32 offset;
     TZrUInt32 byteLength;
@@ -59,6 +57,11 @@ typedef struct SZrZrpMetadataStringView {
     const char *data;
     TZrSize byteLength;
 } SZrZrpMetadataStringView;
+
+/* Wire tables follow byte pools without alignment padding. Keep their existing
+ * field offsets and sizes, but allow borrowed rows at any byte address. Do not
+ * dereference a row member through a naturally aligned scalar pointer. */
+#pragma pack(push, 1)
 
 /** @brief 类型定义及其方法、字段和泛型参数的连续行区间。 */
 typedef struct SZrZrpMetadataTypeDefRow {
@@ -157,6 +160,8 @@ typedef struct SZrZrpMetadataManifestExportRow {
     TZrMetadataToken typeToken;
     TZrMetadataToken memberToken;
 } SZrZrpMetadataManifestExportRow;
+
+#pragma pack(pop)
 
 /** @brief 内存中的头部投影；WriteHeader/ReadHeader 按固定小端字段编码，非原样复制。
  * 13 个 section 与枚举顺序一一对应，ValidateHeader 负责单段边界和行宽检查。

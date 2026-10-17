@@ -78,7 +78,7 @@ TZrBool backend_aot_c_zrp_remap_generic_param_string_offsets(SZrZrpMetadataGener
                                                             const SZrAotCZrpStringPoolRemap *stringRemap);
 TZrBool backend_aot_c_zrp_remap_module_ref_string_offsets(SZrZrpMetadataModuleRefRow *row,
                                                           const SZrAotCZrpStringPoolRemap *stringRemap);
-TZrBool backend_aot_c_zrp_remap_string_offset(TZrUInt32 *stringOffset,
+TZrBool backend_aot_c_zrp_remap_string_offset(void *stringOffset,
                                               const SZrAotCZrpStringPoolRemap *stringRemap);
 
 #endif

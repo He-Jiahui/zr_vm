@@ -1697,6 +1697,7 @@ static TZrSize build_signature_member_ref_token_rewrite_fixture(TZrByte *buffer,
 // 删除不可达方法后，相关 token record 一并移除，保留记录使用新 RID。
 static void test_aot_c_zrp_metadata_pruning_prunes_token_records_for_removed_method_defs(void) {
     TZrByte blob[768];
+    _Alignas(8) TZrByte unalignedBlob[sizeof(blob) + 1u];
     TZrSize expectedPrunedLength;
     TZrSize originalLength;
     SZrAotWriterOptions options;
@@ -1712,7 +1713,8 @@ static void test_aot_c_zrp_metadata_pruning_prunes_token_records_for_removed_met
     originalLength = build_method_def_token_pruning_fixture(blob, sizeof(blob), &expectedPrunedLength);
 
     memset(&options, 0, sizeof(options));
-    options.embeddedModuleBlob = blob;
+    memcpy(unalignedBlob + 1u, blob, originalLength);
+    options.embeddedModuleBlob = unalignedBlob + 1u;
     options.embeddedModuleBlobLength = originalLength;
 
     retainedEntry.function = ZR_NULL;
@@ -2302,6 +2304,7 @@ static void test_aot_c_zrp_metadata_pruning_drops_typespec_rooted_only_by_pruned
 // 绑定导出行跟随方法 RID 重映射，目标字符串仍须可寻址。
 static void test_aot_c_zrp_metadata_pruning_remaps_manifest_export_rows_after_method_pruning(void) {
     TZrByte blob[2048];
+    _Alignas(8) TZrByte unalignedBlob[sizeof(blob) + 1u];
     TZrSize expectedPrunedLength;
     TZrUInt32 expectedStringPoolBytes;
     TZrUInt32 expectedKeptNameOffset;
@@ -2326,7 +2329,8 @@ static void test_aot_c_zrp_metadata_pruning_remaps_manifest_export_rows_after_me
                                                                     &expectedFieldNameOffset);
 
     memset(&options, 0, sizeof(options));
-    options.embeddedModuleBlob = blob;
+    memcpy(unalignedBlob + 1u, blob, originalLength);
+    options.embeddedModuleBlob = unalignedBlob + 1u;
     options.embeddedModuleBlobLength = originalLength;
 
     retainedEntry.function = ZR_NULL;

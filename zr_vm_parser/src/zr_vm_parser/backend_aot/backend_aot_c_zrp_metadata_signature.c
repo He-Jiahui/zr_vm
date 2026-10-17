@@ -1,3 +1,4 @@
+#include "backend_aot/backend_aot_c_zrp_metadata_unaligned.h"
 #include "backend_aot/backend_aot_c_zrp_metadata_signature.h"
 
 #include "backend_aot/backend_aot_c_zrp_metadata_module_ref.h"
@@ -154,22 +155,24 @@ static TZrBool backend_aot_c_zrp_signature_blob_remap_lookup(const SZrAotCZrpSig
     return ZR_FALSE;
 }
 
-TZrBool backend_aot_c_zrp_remap_signature_blob_offset(TZrUInt32 *signatureBlobOffset,
+TZrBool backend_aot_c_zrp_remap_signature_blob_offset(void *signatureBlobOffsetStorage,
                                                       TZrUInt32 signatureBlobLength,
                                                       const SZrAotCZrpSignatureBlobRemap *remap) {
+    SZrAotCZrpUInt32Field *signatureBlobOffset = (SZrAotCZrpUInt32Field *)signatureBlobOffsetStorage;
+
     TZrUInt32 newOffset;
 
     if (signatureBlobOffset == ZR_NULL) {
         return ZR_FALSE;
     }
     if (!backend_aot_c_zrp_signature_blob_remap_lookup(remap,
-                                                       *signatureBlobOffset,
+                                                       signatureBlobOffset->value,
                                                        signatureBlobLength,
                                                        &newOffset)) {
         return ZR_FALSE;
     }
 
-    *signatureBlobOffset = newOffset;
+    signatureBlobOffset->value = newOffset;
     return ZR_TRUE;
 }
 
@@ -271,7 +274,7 @@ static TZrBool backend_aot_c_zrp_token_is_signature(TZrMetadataToken token) {
 }
 
 TZrBool backend_aot_c_zrp_remap_retained_signature_token(
-        TZrMetadataToken *token,
+        void *tokenStorage,
         const SZrMetadataTokenRecord *tokenRecords,
         TZrUInt32 tokenRecordCount,
         const SZrZrpMetadataTypeDefRow *typeRows,
@@ -290,12 +293,14 @@ TZrBool backend_aot_c_zrp_remap_retained_signature_token(
         TZrUInt32 genericParamConstraintCount,
         const SZrAotFunctionTable *functionTable,
         TZrUInt32 retainedMethodDefCount) {
+    SZrAotCZrpUInt32Field *token = (SZrAotCZrpUInt32Field *)tokenStorage;
+
     TZrUInt32 retainedSignatureRid = 0u;
 
     if (token == ZR_NULL) {
         return ZR_FALSE;
     }
-    if (!backend_aot_c_zrp_token_is_signature(*token)) {
+    if (!backend_aot_c_zrp_token_is_signature(token->value)) {
         return ZR_TRUE;
     }
     if (tokenRecords == ZR_NULL) {
@@ -328,8 +333,8 @@ TZrBool backend_aot_c_zrp_remap_retained_signature_token(
         }
 
         retainedSignatureRid++;
-        if (record.token == *token) {
-            *token = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, retainedSignatureRid);
+        if (record.token == token->value) {
+            token->value = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, retainedSignatureRid);
             return ZR_TRUE;
         }
     }

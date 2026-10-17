@@ -152,14 +152,14 @@ static TZrBool backend_aot_c_zrp_copy_token_records(TZrByte *targetBlob,
                                                     const TZrByte *sourceSignatureBlobPool,
                                                     TZrUInt32 sourceSignatureBlobPoolBytes,
                                                     const SZrAotCZrpSignatureBlobRemap *signatureRemap) {
-    SZrMetadataTokenRecord *targetRows;
+    TZrByte *targetRows;
     TZrUInt32 writeIndex = 0u;
 
     if (targetHeader->tokenRecords.byteLength == 0u) {
         return ZR_TRUE;
     }
 
-    targetRows = (SZrMetadataTokenRecord *)(void *)(targetBlob + targetHeader->tokenRecords.offset);
+    targetRows = targetBlob + targetHeader->tokenRecords.offset;
     for (TZrUInt32 readIndex = 0u; readIndex < tokenRecordCount; readIndex++) {
         SZrMetadataTokenRecord record = tokenRecords[readIndex];
         if (!backend_aot_c_zrp_remap_retained_token_record(&record,
@@ -269,7 +269,7 @@ static TZrBool backend_aot_c_zrp_copy_token_records(TZrByte *targetBlob,
                                                                            targetHeader,
                                                                            record.signatureBlobOffset,
                                                                            record.signatureBlobLength);
-        targetRows[writeIndex] = record;
+        memcpy(targetRows + writeIndex * sizeof(record), &record, sizeof(record));
         writeIndex++;
     }
 
@@ -910,7 +910,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
     SZrZrpMetadataSectionView stringPoolView;
     SZrZrpMetadataSectionView signatureBlobView;
     SZrZrpMetadataSectionView manifestExportView;
-    const SZrMetadataTokenRecord *tokenRecords;
+    SZrMetadataTokenRecord *tokenRecords;
     const SZrZrpMetadataTypeDefRow *typeRows;
     const SZrZrpMetadataMethodDefRow *methodRows;
     const SZrZrpMetadataFieldDefRow *fieldRows;
@@ -1008,7 +1008,14 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
         return ZR_TRUE;
     }
 
-    tokenRecords = (const SZrMetadataTokenRecord *)(const void *)tokenRecordView.data;
+    tokenRecords = ZR_NULL;
+    if (tokenRecordView.byteLength > 0u) {
+        tokenRecords = (SZrMetadataTokenRecord *)malloc(tokenRecordView.byteLength);
+        if (tokenRecords == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        memcpy(tokenRecords, tokenRecordView.data, tokenRecordView.byteLength);
+    }
     typeRows = (const SZrZrpMetadataTypeDefRow *)(const void *)typeView.data;
     methodRows = (const SZrZrpMetadataMethodDefRow *)(const void *)methodView.data;
     fieldRows = (const SZrZrpMetadataFieldDefRow *)(const void *)fieldView.data;
@@ -1150,6 +1157,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
     if (!backend_aot_c_zrp_signature_blob_remap_init(&signatureRemap,
                                                      signatureRemapCapacity,
                                                      (TZrUInt32)signatureBlobView.byteLength)) {
+        free(tokenRecords);
         return ZR_FALSE;
     }
     if (!backend_aot_c_zrp_build_signature_blob_remap(&signatureRemap,
@@ -1175,6 +1183,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                       functionTable,
                                                       retainedMethodDefCount)) {
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        free(tokenRecords);
         return ZR_FALSE;
     }
     retainedModuleRefCount =
@@ -1205,6 +1214,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                     constantPoolRemapCapacity,
                                                     sourceHeader.constantPool.byteLength)) {
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        free(tokenRecords);
         return ZR_FALSE;
     }
     if (!backend_aot_c_zrp_build_constant_pool_remap(&constantPoolRemap,
@@ -1224,6 +1234,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                      retainedMethodDefCount)) {
         backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        free(tokenRecords);
         return ZR_FALSE;
     }
 
@@ -1238,6 +1249,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                                                   (TZrUInt32)stringPoolView.byteLength)) {
         backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        free(tokenRecords);
         return ZR_FALSE;
     }
     if (!backend_aot_c_zrp_build_string_pool_remap(&stringRemap,
@@ -1270,6 +1282,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
         backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
         backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        free(tokenRecords);
         return ZR_FALSE;
     }
 
@@ -1289,6 +1302,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
         backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
         backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        free(tokenRecords);
         return ZR_TRUE;
     }
 
@@ -1310,6 +1324,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
         backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
         backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        free(tokenRecords);
         return ZR_FALSE;
     }
 
@@ -1318,6 +1333,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
         backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
         backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        free(tokenRecords);
         return ZR_FALSE;
     }
     memset(prunedBlob, 0, prunedLength);
@@ -1326,6 +1342,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
         backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
         backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        free(tokenRecords);
         return ZR_FALSE;
     }
     /* 池先于行写入：签名重写后的字节决定各行最终 signatureHash。 */
@@ -1348,6 +1365,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
         backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
         backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        free(tokenRecords);
         return ZR_FALSE;
     }
     if (!backend_aot_c_zrp_rewrite_retained_signature_type_def_tokens(prunedBlob,
@@ -1378,6 +1396,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
         backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
         backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        free(tokenRecords);
         return ZR_FALSE;
     }
     if (!backend_aot_c_zrp_rewrite_retained_method_spec_signature_blobs(prunedBlob,
@@ -1403,6 +1422,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
         backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
         backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        free(tokenRecords);
         return ZR_FALSE;
     }
 
@@ -1435,6 +1455,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                 backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
                 backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+                free(tokenRecords);
                 return ZR_FALSE;
             }
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_TYPE_DEFS) {
@@ -1460,6 +1481,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                 backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
                 backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+                free(tokenRecords);
                 return ZR_FALSE;
             }
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_METHOD_DEFS) {
@@ -1485,6 +1507,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                 backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
                 backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+                free(tokenRecords);
                 return ZR_FALSE;
             }
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_FIELD_DEFS) {
@@ -1511,6 +1534,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                 backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
                 backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+                free(tokenRecords);
                 return ZR_FALSE;
             }
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_GENERIC_PARAMS) {
@@ -1535,6 +1559,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                 backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
                 backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+                free(tokenRecords);
                 return ZR_FALSE;
             }
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_GENERIC_PARAM_CONSTRAINTS) {
@@ -1561,6 +1586,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                 backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
                 backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+                free(tokenRecords);
                 return ZR_FALSE;
             }
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_TYPE_SPECS) {
@@ -1587,6 +1613,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                 backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
                 backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+                free(tokenRecords);
                 return ZR_FALSE;
             }
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_METHOD_SPECS) {
@@ -1617,6 +1644,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                 backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
                 backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+                free(tokenRecords);
                 return ZR_FALSE;
             }
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_MODULE_REFS) {
@@ -1650,6 +1678,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                 backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
                 backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+                free(tokenRecords);
                 return ZR_FALSE;
             }
         } else if (sectionKind == (TZrUInt32)ZR_ZRP_METADATA_SECTION_STRING_POOL) {
@@ -1682,6 +1711,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
                 backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
                 backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
                 backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+                free(tokenRecords);
                 return ZR_FALSE;
             }
         } else {
@@ -1713,6 +1743,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
         backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
         backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        free(tokenRecords);
         return ZR_FALSE;
     }
     if (!backend_aot_c_zrp_type_def_token_remap_build(outMetadata,
@@ -1736,6 +1767,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
         backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
         backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
         backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+        free(tokenRecords);
         return ZR_FALSE;
     }
 
@@ -1745,6 +1777,7 @@ static TZrBool backend_aot_c_prune_method_def_metadata_blob(const SZrAotWriterOp
     backend_aot_c_zrp_string_pool_remap_destroy(&stringRemap);
     backend_aot_c_zrp_constant_pool_remap_destroy(&constantPoolRemap);
     backend_aot_c_zrp_signature_blob_remap_destroy(&signatureRemap);
+    free(tokenRecords);
     return ZR_TRUE;
 }
 
