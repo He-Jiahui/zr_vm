@@ -327,7 +327,9 @@ files totaling17409863B and required raw evidence remain. Completed outcomes
 are37 (17features/10fixes/5validation/5docs). This documentation synchronization
 adds no outcome; full02.01/SSA47 and global unknown ownership remain open.
 
-## Branch-sensitive nonempty owner analysis (Source38, validation in progress)
+<a id="branch-sensitive-nonempty-owner-analysis-source38-validation-in-progress"></a>
+
+## Branch-sensitive nonempty owner analysis (Source38, finite delivery closed)
 
 The implementation is split across three production files. `exec_ir_sccp.c`
 keeps public/owner dispatch, scratch lifetime, cache publication and the existing
@@ -366,7 +368,7 @@ RED history and one link, with fresh compile warnings/errors zero. After the mai
 counter type was changed to UNITY_UINT, focused r2 reran configure/build/test:
 one fresh main compile, 30 exact GREEN-r1 cached objects and one link; warnings
 zero and the same 22/47, 452 cutoffs and 746 faults passed. The focused-r2 final
-independent review is pending at this documentation update.
+independent review is accepted (D9532A0D6DDB0A74F7594B685681EFB2286EA134577B01CDA35939CB2E139835).
 
 Current-production regressions are independently accepted: 31 natural-zero
 phases (25 compiles, 26 exact GREEN cached objects, three links and three CTests),
@@ -377,9 +379,15 @@ retains its one main C4244 as historical evidence. After the type repair, one
 fresh main /W4 /Zs phase plus four unchanged actual syntax phases cover five
 current C files, 96 actual headers and 35 protected build products unchanged,
 with warning/error/unknown output zero. Its supplemental independent review is
-pending. This is finite syntax only, not full MSVC/full-build W0 or Linux.
-Source38 actual validation has passed; final focused/MSVC reviews and commit/cleanup
-remain pending. Completed outcomes remain 37, with no full 02.01/SSA47 closure.
+accepted (334CA90113E2EC69D890C5049676FF5DC736068B6D2F46D347496F3F733AF786).
+This is finite syntax only, not full MSVC/full-build W0 or Linux. Source38 is
+committed as `c90666fa38ef4eff3d5b4ceaed54744e9cad8eaf`; independent postcommit review
+and finite-close are accepted. Exact standard cleanup released five owned files,
+2026503B; 610 required preserved pins match and the owned task tmp is empty.
+The retained build inventory (390 files/69825703B) includes other/unknown items
+and is not a claim that all belong to Source38 or are independently validated.
+Completed outcomes are 38 (18 features/10 fixes/5 validation/5 docs); this closure
+document update adds zero. Full 02.01/SSA47 and global unknown ownership remain active.
 
 Focused validation examples (from the repository root, using separately
 registered physical output directories; these examples are not new run evidence):

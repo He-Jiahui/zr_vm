@@ -120,7 +120,7 @@ compiler_quickening.c 包含大量后期 opcode 选择，不能继续承载 SSA 
 
 详见[实现合同](../../../instruction-generation/execir-pass-pipeline.md#nonempty-pooled-int64-writeback-and-module-transaction)与[验证记录](../../../testing-and-validation/ssa-sccp-pooled-int64.md)。实际报告根为`E:/cargo-targets/zr_vm/reports/ssa-sccp-pooled-int64-01a0fe2b/`。
 
-## Source38 有限进展：分支敏感 pooled SCCP（验证中）
+## Source38 有限进展：分支敏感 pooled SCCP（已提交与有限关闭）
 
 本轮在非空模块池的私有 owner 路径实现单调 typed lattice：外部/不支持来源为 TOP，支持但未求解的定义为 BOTTOM；canonical BOOL 仅 bits0/1、六种 strict Int64 比较及合法 COPY/PHI 能证明分支。已知条件选择真实 successor 槽，TOP 两边可达；BOTTOM 先暂缓，停滞后保守升 TOP 并展开残余边，再求固定点。PHI 按 predecessor occurrence 精确匹配实际边槽，覆盖 duplicate successor 和依赖先前剪边后 BOOL PHI 的 nested 条件；不会把 external UNKNOWN 当作常量证明。CFG/PHI 存储本身不压缩。
 
@@ -128,9 +128,9 @@ compiler_quickening.c 包含大量后期 opcode 选择，不能继续承载 SSA 
 
 实际 GREEN 22/47 全 PASS，39 FOLD；direct/pipeline×NULL/writable diag 四组各独立测 W=113，fresh 1..113 共452边界。故障125/125/248/248合计746/746，prefix27/52、remarks站109/134，late-function 与 remark 真实见证通过；388768 attempts/live0/errors0。31TU中4次fresh compile+27单一RED历史精确缓存+1link，fresh compile warning/error0。旧 failed RED 与离线 reconciliation 原样保留，不重复 native 或升级原失败收据。
 
-当前实际验证已通过，待focused-r2/有限MSVC补证独审与提交/清理。main计数类型按Unity字段改为UNITY_UINT后，focused configure/build/test r2实际通过：1fresh main compile+30 exact GREEN-r1 cache+1link，fresh warning0；22/47、452预算边界、746故障与388768/live0/errors0保持。
+当前focused-r2、三项回归及有限MSVC补证独审均已接受，实际提交与有限关闭完成。main计数类型按Unity字段改为UNITY_UINT后，focused configure/build/test r2实际通过：1fresh main compile+30 exact GREEN-r1 cache+1link，fresh warning0；22/47、452预算边界、746故障与388768/live0/errors0保持。
 
-三项当前生产回归已独审：31自然0phase=25compile+26精确GREEN cache+3link+3CTest，强53/113 PASS、239fault、四W=51共204边界、117024attempts/live0/errors0，metadata15/GC99全部PASS。GC日志99 LEGAL=21 standalone+78 fresh baseline，另有78 MALFORMED，不能把原case分类当成日志行数。原MSVC r2一C4244记录保持；修复后1fresh main /W4/Zs+4 unchanged实际syntax复用=5currentC，96actualheaders/35protected保持、warning/error/unknown0，补证独审pending；只有限syntax零警告，不授fullMSVC/W0/Linux信用。历史完成数37=17功能/10修正/5验证/5文档不变，不勾本叶任何完整出口；不授 VM/Oracle/FFI、Linux/fullW0 或完整47信用。详见[实现合同](../../../instruction-generation/execir-pass-pipeline.md#branch-sensitive-nonempty-owner-analysis-source38-validation-in-progress)与[Source38验证记录](../../../testing-and-validation/ssa-sccp-branch-sensitive-pool.md)。
+三项当前生产回归已独审：31自然0phase=25compile+26精确GREEN cache+3link+3CTest，强53/113 PASS、239fault、四W=51共204边界、117024attempts/live0/errors0，metadata15/GC99全部PASS。GC日志99 LEGAL=21 standalone+78 fresh baseline，另有78 MALFORMED，不能把原case分类当成日志行数。原MSVC r2一C4244记录保持；修复后1fresh main /W4/Zs+4 unchanged实际syntax复用=5currentC，96actualheaders/35protected保持、warning/error/unknown0，补证独审334CA901接受；focused-r2独审D9532A0D接受。实际提交`c90666fa38ef4eff3d5b4ceaed54744e9cad8eaf`，postcommit独审63B71E82与finite-close A0DBE118接受。标准清理5个自有文件释放2026503B，610必保pins复核一致且task tmp为空；保留build inventory390文件/69825703B包含other/unknown，不宣称全属Source38或全已验。当前完成38=18功能/10修正/5验证/5文档，本次文档同步adds0；只有限syntax零警告，不授fullMSVC/W0/Linux信用，不勾本叶任何完整出口；不授 VM/Oracle/FFI、Linux/fullW0 或完整47信用。详见[实现合同](../../../instruction-generation/execir-pass-pipeline.md#branch-sensitive-nonempty-owner-analysis-source38-validation-in-progress)与[Source38验证记录](../../../testing-and-validation/ssa-sccp-branch-sensitive-pool.md)。
 
 ## 可逐项执行的重构任务
 

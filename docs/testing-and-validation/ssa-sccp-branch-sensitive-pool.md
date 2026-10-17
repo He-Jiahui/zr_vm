@@ -42,7 +42,7 @@ status: in-progress
 
 本轮只通过真实 IR 构造、Core Verify 和实际公开 Optimize/私有 owner SCCP/pipeline 验证非空模块池的分支敏感传播。不是运行 VM、Oracle、Interpret、FFI、网络或 MaterializeState；分支指令与 CFG/PHI 存储保持，观察点是选择边后的 PHI40/50→纯 ADD2 能否物化42/52，以及未知路径是否仍不折叠。
 
-当前 **实际验证已通过，待focused-r2/有限MSVC补证独审及提交/清理**。Source38 focused r2、当前生产的强Source37 53/113、metadata15、GC99回归及当前五C有限MSVC syntax已有真实通过证据；三项回归独审已接受，focused-r2与MSVC补证独审在本次更新时仍pending。不是Linux/fullW0、完整MSVC或02.01/SSA47签收。历史完成数仍37=17功能/10修正/5验证/5文档，本次文档维护增加0成果。
+当前 **已提交并有限关闭**。Source38 focused r2、当前生产的强Source37 53/113、metadata15、GC99回归及当前五C有限MSVC syntax均已实际通过并独审接受；postcommit及finite-close接受。不是Linux/fullW0、完整MSVC或02.01/SSA47签收。当前完成数38=18功能/10修正/5验证/5文档，历史Source37证据保留，本次文档维护增加0成果。
 
 实现合同见[pass pipeline](../instruction-generation/execir-pass-pipeline.md#branch-sensitive-nonempty-owner-analysis-source38-validation-in-progress)，完整未勾出口见[02.01计划](../plans/ssa/02-automatic-optimization/01-pass-manager-scalar.md)。Source37已关闭证据见[pooled Int64记录](ssa-sccp-pooled-int64.md)，不将其旧结果冒充本次新生产回归。
 
@@ -72,13 +72,13 @@ canonical BOOL仅0/1能证明条件；其他编码保守TOP，不宣告全局不
 | --- | --- |
 | Unity / profiles | 22 PASS / 0 FAIL / 0 ignored；47/47 profiles PASS，39 FOLD |
 | 初始r1配置与构建（历史保留） | 31TU；4实际fresh compile+27来自单一actual RED历史的精确缓存+1link；5 build phases自然0、streams关闭、handles释放 |
-| 消警后focused r2 | main唯一unsigned→UNITY_UINT匹配Unity.TestFailures计数类型；fresh configure，1fresh main compile+30 exact GREEN-r1 cache+1link，fresh warning0；22/47与预算/故障/ledger指标保持，补证独审pending |
+| 消警后focused r2 | main唯一unsigned→UNITY_UINT匹配Unity.TestFailures计数类型；fresh configure，1fresh main compile+30 exact GREEN-r1 cache+1link，fresh warning0；22/47与预算/故障/ledger指标保持，补证独审D9532A0D接受 |
 | 编译诊断 | 四处fixture消警后的fresh编译warning/error0；非全仓W0 |
 | 私有预算 | entry0=direct RunModuleSccpPass，entry1=实际注册单SCCP RunModulePassPipeline；各×NULL/writable diag独立测W=113，fresh扫1..113，共452边界 |
 | 故障 | TRACE125/125/248/248，共746/746完成；prefix27/52，remark站109/134；可写diag组具有真实late-function及remark见证 |
 | ledger | 388768 allocation attempts；live0/errors0 |
 | 三项实际回归（已独审） | 31自然0phase：25compile+26精确GREEN cache+3link+3CTest；强53/113、239fault、四W51共204cutoffs、117024attempts/ledger0；metadata15及GC99全PASS |
-| 当前有限MSVC | 1fresh main /W4/Zs+4 unchanged C actual syntax复用=5currentC；96actualheaders/35protected保持，warning/error/unknown0；原r2一C4244保持历史，补证独审pending |
+| 当前有限MSVC | 1fresh main /W4/Zs+4 unchanged C actual syntax复用=5currentC；96actualheaders/35protected保持，warning/error/unknown0；原r2一C4244保持历史，补证独审334CA901接受 |
 | 当前输入 | 独审首尾378去重pins匹配，215actual headers、31objects、4products；实际argv仅增加/showIncludes观察依赖 |
 
 四组W来自本轮真实私有entry/context，不拿公开Optimize不可见workUsed冒称精确上限。公共maxWork1只作每diag一次partial-success见证；budgetExhausted成功不是失败回滚，最终Verify且无孤立新增常量。不同入口或未来生产的W需重新实测，不固定113为算法合同。
@@ -100,10 +100,14 @@ canonical BOOL仅0/1能证明条件；其他编码保守TOP，不宣告全局不
 - `regression-r1-receipt.json`：2883187B，SHA `3C9C59154D365447934E3D9B10988CADB623BE9EBC9E0C2F9F54C6AD7EDEFB04`；`regression-independent-review.json`：14905B，SHA `33D43DBEF2DDBE18449A615FEA9BBA718D0CF0FB77B8B036E0AE0D90315B58FD`，accepted。
 - `msvc-syntax-main-r1-receipt.json`：152159B，SHA `CBF86DFA835E8C2427B009CDE9C48B453D01517746446CA7A2A92EF909C6CC45`；只表示1次fresh main语法验证加4个未变C的既有actual syntax身份复用，不能称5次重编。
 
-focused-r2和MSVC补证独审尚待最终报告，不预填其SHA或接受结论。GC99的实际事件包括21个独立合法case与每个畸形case之前的78个fresh kind0合法baseline，因此是99 LEGAL行和78 MALFORMED行；Unity仍99case全PASS。旧Source37 W25/236fault与本次强回归W51/239fault分别保留，不混作同一次测量。
+focused-r2补证独审 `green-main-warning-independent-review.json`：10499B，SHA `D9532A0D6DDB0A74F7594B685681EFB2286EA134577B01CDA35939CB2E139835`；MSVC补证独审 `msvc-main-independent-review.json`：14003B，SHA `334CA90113E2EC69D890C5049676FF5DC736068B6D2F46D347496F3F733AF786`，均accepted。GC99的实际事件包括21个独立合法case与每个畸形case之前的78个fresh kind0合法baseline，因此是99 LEGAL行和78 MALFORMED行；Unity仍99case全PASS。旧Source37 W25/236fault与本次强回归W51/239fault分别保留，不混作同一次测量。
 
 `red-test-r1-receipt.json`因标准CTest失败stderr通知而保留accepted=false；`red-reconciliation-receipt.json`在不重复native前提下接受原始功能RED，原failed收据不升级。此前configure/build原始失败证据也保留。27缓存对象逐项匹配同一 `red-build-r1-receipt.json` 的source/argv/tool/env/dependencies/object，未将同源foreign对象或mtime当作cache来源。
 
-## 待补证独审与发布清理
+## 实际提交、清理与有限关闭
 
-三项当前生产回归已实际通过并独审；metadata15明确排除旧checkpoint MaterializeState例。focused-r2与有限MSVC当前证据已通过，补证独审仍pending。Git发布、独立postcommit、清理与finite-close尚未完成；当前仍37项完成成果。没有全叶勾选、完整MSVC/fullW0/Linux或执行后端信用；后续仅依实际新证据补充本节。
+三项当前生产回归、focused-r2和有限MSVC均通过独审；metadata15明确排除旧checkpoint MaterializeState例。实际提交 `c90666fa38ef4eff3d5b4ceaed54744e9cad8eaf` 的 `commit-independent-review.json`：19774B，SHA `63B71E8258BD22771DDBACA1322D29279E349E8C6E6B7E2BD304B0D72F885B15`，accepted。
+
+标准Apply已实际清理5个自有文件，释放2026503B；`cleanup-receipt.json`：2971B，SHA `32D28CFC4EB16D3C17FF1391FA83423A77C95E30B22ADD200F15DDC18B734446`。610必保pins再次匹配，task tmp已空。保留build inventory390文件/69825703B包含既有other/unknown，不能将390文件全部归属Source38或称全部已验；全局unknown仍needs-review。没有预报后续文档提交私有index清理或额外释放空间。
+
+`finite-close.json`：3764B，SHA `A0DBE1189C8BCBE0DEFFC4AC496482FEC917D66DBA7F62A0AAAE6E8B2BDBEA34`，accepted；只关闭Source38有限交付。当前完成38=18功能/10修正/5验证/5文档，本次closure文档同步adds0，不是第39项。没有全叶勾选、完整MSVC/fullW0/Linux或VM/执行后端信用，完整47目标保持active。
