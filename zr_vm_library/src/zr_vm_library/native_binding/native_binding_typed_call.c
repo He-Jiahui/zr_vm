@@ -2,13 +2,21 @@
 
 /* typed call 只把可精确映射到 VM 标量的 descriptor 类型作为签名证据。 */
 static TZrBool typed_native_type(const TZrChar *name, SZrFunctionTypedTypeRef *type) {
-    static const struct { const TZrChar *name; EZrValueType type; } primitives[] = {
-        {"null", ZR_VALUE_TYPE_NULL}, {"bool", ZR_VALUE_TYPE_BOOL}, {"i8", ZR_VALUE_TYPE_INT8},
-        {"i16", ZR_VALUE_TYPE_INT16}, {"i32", ZR_VALUE_TYPE_INT32}, {"int", ZR_VALUE_TYPE_INT64},
-        {"u8", ZR_VALUE_TYPE_UINT8}, {"u16", ZR_VALUE_TYPE_UINT16}, {"u32", ZR_VALUE_TYPE_UINT32},
-        {"uint", ZR_VALUE_TYPE_UINT64},
-        {"float", ZR_VALUE_TYPE_FLOAT}, {"double", ZR_VALUE_TYPE_DOUBLE}, {"string", ZR_VALUE_TYPE_STRING},
-        {"object", ZR_VALUE_TYPE_OBJECT}
+    static const struct { const TZrChar *name; EZrValueType type; EZrStaticCType staticCType; } primitives[] = {
+        {"null", ZR_VALUE_TYPE_NULL, ZR_STATIC_C_TYPE_DYNAMIC},
+        {"bool", ZR_VALUE_TYPE_BOOL, ZR_STATIC_C_TYPE_BOOL},
+        {"i8", ZR_VALUE_TYPE_INT8, ZR_STATIC_C_TYPE_I8},
+        {"i16", ZR_VALUE_TYPE_INT16, ZR_STATIC_C_TYPE_I16},
+        {"i32", ZR_VALUE_TYPE_INT32, ZR_STATIC_C_TYPE_I32},
+        {"int", ZR_VALUE_TYPE_INT64, ZR_STATIC_C_TYPE_I64},
+        {"u8", ZR_VALUE_TYPE_UINT8, ZR_STATIC_C_TYPE_U8},
+        {"u16", ZR_VALUE_TYPE_UINT16, ZR_STATIC_C_TYPE_U16},
+        {"u32", ZR_VALUE_TYPE_UINT32, ZR_STATIC_C_TYPE_U32},
+        {"uint", ZR_VALUE_TYPE_UINT64, ZR_STATIC_C_TYPE_U64},
+        {"float", ZR_VALUE_TYPE_FLOAT, ZR_STATIC_C_TYPE_F32},
+        {"double", ZR_VALUE_TYPE_DOUBLE, ZR_STATIC_C_TYPE_F64},
+        {"string", ZR_VALUE_TYPE_STRING, ZR_STATIC_C_TYPE_DYNAMIC},
+        {"object", ZR_VALUE_TYPE_OBJECT, ZR_STATIC_C_TYPE_DYNAMIC}
     };
     memset(type, 0, sizeof(*type));
     type->elementBaseType = ZR_VALUE_TYPE_OBJECT;
@@ -16,6 +24,7 @@ static TZrBool typed_native_type(const TZrChar *name, SZrFunctionTypedTypeRef *t
     for (TZrSize index = 0u; index < ZR_ARRAY_COUNT(primitives); ++index) {
         if (strcmp(name, primitives[index].name) == 0) {
             type->baseType = primitives[index].type;
+            type->staticCType = primitives[index].staticCType;
             return ZR_TRUE;
         }
     }
