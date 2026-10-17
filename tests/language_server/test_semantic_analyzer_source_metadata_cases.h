@@ -87,6 +87,39 @@ static void test_semantic_analyzer_source_metadata_survives_cached_and_forced_an
     TEST_PASS(timer, summary);
 }
 
+/* Project canonicalization mutates import strings without changing the AST or its ranges. */
+static void test_semantic_analyzer_import_target_change_invalidates_cache(SZrState *state) {
+    static const char source[] = "let library = import(\"zr.math\");";
+    const char *summary = "Semantic Analyzer Import Target Change Invalidates Cache";
+    SZrTestTimer timer;
+    SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+    SZrString *sourceName = ZrCore_String_CreateFromNative(state, "import_cache.zr");
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    TZrBool passed = analyzer != ZR_NULL && ast != ZR_NULL;
+    TEST_START(summary);
+    if (passed) {
+        SZrAstNode *literal = ast->data.script.statements->nodes[0]
+                ->data.variableDeclaration.value->data.importExpression.modulePath;
+        SZrParserSemanticImportOriginQuery origin;
+        ZrLanguageServer_SemanticAnalyzer_SetCacheEnabled(analyzer, ZR_TRUE);
+        passed = ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast);
+        literal->data.stringLiteral.value = ZrCore_String_CreateFromNative(state, "zr.system");
+        passed = passed && ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast) &&
+                 ZrParser_SemanticQuery_ImportOriginAt(
+                         analyzer->semanticContext, literal->location, ZR_NULL, &origin) ==
+                         ZR_PARSER_SEMANTIC_IMPORT_ORIGIN_RESOLVED &&
+                 origin.externalOriginUri != ZR_NULL &&
+                 strcmp(ZrCore_String_GetNativeString(origin.externalOriginUri), "zr.system") == 0;
+    }
+    ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    ZrParser_Ast_Free(state, ast);
+    if (!passed) {
+        TEST_FAIL(timer, summary, "Import origin retained the previous module after in-place canonicalization");
+        return;
+    }
+    TEST_PASS(timer, summary);
+}
+
 /** 按固定样例索引取不同语法容器中的模板节点，供后续断言以 AST 身份验证插值；只接受该测试表中的形状。 */
 static SZrAstNode *source_metadata_nested_template_at(SZrAstNode *ast, TZrSize index) {
     SZrAstNode *node = ast->data.script.statements->nodes[index == 6 || index == 7 ? 1 : 0];

@@ -207,6 +207,21 @@ static TZrUInt64 compute_node_hash_recursive(SZrAstNode *node, TZrSize depth) {
             break;
         }
         
+        case ZR_AST_IMPORT_EXPRESSION:
+            hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(
+                    node->data.importExpression.modulePath, depth + 1);
+            break;
+
+        case ZR_AST_STRING_LITERAL: {
+            SZrString *value = node->data.stringLiteral.value;
+            const TZrChar *bytes = value != ZR_NULL ? ZrCore_String_GetNativeString(value) : ZR_NULL;
+            TZrSize length = value != ZR_NULL ? ZrCore_String_GetByteLength(value) : 0U;
+            for (TZrSize index = 0U; index < length; ++index) {
+                hash = hash * ZR_LSP_HASH_MULTIPLIER + (TZrUInt8)bytes[index];
+            }
+            break;
+        }
+
         case ZR_AST_VARIABLE_DECLARATION: {
             SZrVariableDeclaration *varDecl = &node->data.variableDeclaration;
             hash = hash * ZR_LSP_HASH_MULTIPLIER + compute_node_hash_recursive(varDecl->pattern, depth + 1);
