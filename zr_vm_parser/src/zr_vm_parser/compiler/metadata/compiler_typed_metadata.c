@@ -1362,20 +1362,34 @@ TZrBool compiler_build_typed_local_bindings(SZrCompilerState *cs,
             bindings[index].declarationEndColumn =
                     semanticIdentity.declarationRange.end.column;
         }
-        /* 参数在进入函数体前就登记了声明符号，但未必形成可执行 Semantic IR 槽。
-         * 元数据仍要带上该声明的规范符号，同名参数在不同函数里不能共用一个 id。 */
+        /* Unused parameters still need a complete declaration identity. Their
+         * local place belongs to the source declaration even when no executable
+         * Semantic IR instruction materialized that slot. */
         if (bindings[index].symbolId == ZR_SEMANTIC_ID_INVALID &&
-            localVar->name != ZR_NULL &&
-            cs->typeEnv != ZR_NULL) {
+            localVar->name != ZR_NULL && cs->typeEnv != ZR_NULL &&
+            cs->preSemanticIrInitialized) {
             const SZrTypeBinding *typeBinding =
-                    ZrParser_TypeEnvironment_FindVariableBinding(
-                            cs->typeEnv, localVar->name);
-            if (typeBinding != ZR_NULL &&
-                typeBinding->symbolId != ZR_SEMANTIC_ID_INVALID) {
-                bindings[index].symbolId = typeBinding->symbolId;
-                if (bindings[index].typeId == ZR_SEMANTIC_ID_INVALID) {
-                    bindings[index].typeId = typeBinding->typeId;
+                    ZrParser_TypeEnvironment_FindVariableBinding(cs->typeEnv, localVar->name);
+            if (typeBinding != ZR_NULL && typeBinding->symbolId != ZR_SEMANTIC_ID_INVALID &&
+                typeBinding->typeId != ZR_SEMANTIC_ID_INVALID) {
+                SZrParserPlaceBase base = {0};
+                base.kind = ZR_PARSER_PLACE_BASE_LOCAL;
+                base.identity = localVar->stackSlot;
+                TZrPlaceId placeId = ZrParser_PlaceGraph_AddBase(
+                        &cs->preSemanticIr.places, &base, typeBinding->typeId,
+                        typeBinding->declarationRange);
+                if (placeId == ZR_PLACE_ID_INVALID) {
+                    ZrCore_Memory_RawFreeWithType(cs->state->global, bindings,
+                            sizeof(*bindings) * localCount, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+                    return ZR_FALSE;
                 }
+                bindings[index].symbolId = typeBinding->symbolId;
+                bindings[index].typeId = typeBinding->typeId;
+                bindings[index].placeId = placeId;
+                bindings[index].declarationStartLine = typeBinding->declarationRange.start.line;
+                bindings[index].declarationStartColumn = typeBinding->declarationRange.start.column;
+                bindings[index].declarationEndLine = typeBinding->declarationRange.end.line;
+                bindings[index].declarationEndColumn = typeBinding->declarationRange.end.column;
             }
         }
 
