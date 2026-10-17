@@ -235,7 +235,6 @@ static void io_read_value(SZrIo *io, EZrValueType type, TZrPureValue *value) {
         case ZR_VALUE_TYPE_ARRAY: {
             TZrSize elementCount = 0;
             SZrObject *arrayObject;
-            SZrTypeValue receiver;
 
             ZR_IO_READ_NATIVE_TYPE(io, elementCount, TZrSize);
             arrayObject = ZrCore_Object_NewCustomized(state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_ARRAY);
@@ -245,15 +244,13 @@ static void io_read_value(SZrIo *io, EZrValueType type, TZrPureValue *value) {
             }
             ZrCore_Object_Init(state, arrayObject);
 
-            ZrCore_Value_InitAsRawObject(state, &receiver, ZR_CAST_RAW_OBJECT_AS_SUPER(arrayObject));
-            receiver.type = ZR_VALUE_TYPE_ARRAY;
             for (TZrSize index = 0; index < elementCount; index++) {
                 SZrTypeValue indexValue;
                 SZrTypeValue elementValue;
 
                 io_read_typed_value(io, &elementValue);
                 ZrCore_Value_InitAsInt(state, &indexValue, (TZrInt64)index);
-                ZrCore_Object_SetByIndex(state, &receiver, &indexValue, &elementValue);
+                ZrCore_Object_SetValue(state, arrayObject, &indexValue, &elementValue);
             }
 
             value->object = ZR_CAST_RAW_OBJECT_AS_SUPER(arrayObject);

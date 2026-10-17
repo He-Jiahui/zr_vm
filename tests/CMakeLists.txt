@@ -8889,4 +8889,8 @@ if(TARGET zr_vm_cli_executable)
             "-DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/parser/constructor_prototype_growth.zr"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_constructor_prototype_growth.cmake")
     set_tests_properties(compiler_constructor_prototype_growth PROPERTIES TIMEOUT 40)
+    add_test(NAME runtime_array_bounds
+            COMMAND ${CMAKE_COMMAND} "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_array_bounds.cmake")
+    set_tests_properties(runtime_array_bounds PROPERTIES TIMEOUT 90)
 endif()

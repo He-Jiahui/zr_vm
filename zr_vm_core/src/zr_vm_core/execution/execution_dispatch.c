@@ -5636,7 +5636,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         if (ZR_LIKELY(zr_super_array_try_resolve_items_cached_only_assume_fast(                                        \
                     state, receiverValue__, ZR_NULL, &itemsObject__))) {                                               \
             zr_super_array_store_plain_get_from_items_object_assume_fast(                                              \
-                    itemsObject__, (TZrUInt64)indexInt__, plainDestination__);                                         \
+                    state, itemsObject__, (TZrUInt64)indexInt__, plainDestination__);                                  \
         } else if (ZR_UNLIKELY(!ZrCore_Object_SuperArrayGetIntByValueInlineAssumeFastPlainDestination(                 \
                                    state, receiverValue__, indexInt__, plainDestination__))) {                        \
             ZrCore_Debug_RunError(state,                                                                               \
@@ -5658,7 +5658,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         ZR_ASSERT(zr_super_array_value_is_normalized_plain(plainDestination__));                                        \
         itemsObject__ = zr_super_array_bound_items_object_from_value_assume_fast(itemsValue__);                         \
         zr_super_array_store_plain_get_from_items_object_assume_fast(                                                   \
-                itemsObject__, (TZrUInt64)indexInt__, plainDestination__);                                              \
+                state, itemsObject__, (TZrUInt64)indexInt__, plainDestination__);                                       \
     } while (0)
 #define EXECUTE_SUPER_ARRAY_SET_INT_BODY()                                                                             \
     do {                                                                                                               \
@@ -9307,13 +9307,16 @@ LZrFastInstruction_JUMP_IF_NULL: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(CREATE_ARRAY) {
-                // 创建空数组对象
+                // The operand is the initial length; zero preserves empty-array bytecode.
                 SZrObject *array = ZrCore_Object_NewCustomized(state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_ARRAY);
                 destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 execution_prepare_destination_for_direct_store_no_profile(state, destination);
                 if (array != ZR_NULL) {
                     ZrCore_Object_Init(state, array);
                     ZrCore_Value_InitAsRawObject(state, destination, ZR_CAST_RAW_OBJECT_AS_SUPER(array));
+                    PROTECT_E(state, callInfo, {
+                        ZrCore_Object_InitializeArrayElements(state, array, (TZrUInt32)A2(instruction));
+                    });
                 } else {
                     ZrCore_Value_ResetAsNull(destination);
                 }

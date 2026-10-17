@@ -4075,6 +4075,13 @@ TZrBool ZrLibrary_AotRuntime_CreateObject(SZrState *state,
 TZrBool ZrLibrary_AotRuntime_CreateArray(SZrState *state,
                                          ZrAotGeneratedFrame *frame,
                                          TZrUInt32 destinationSlot) {
+    return ZrLibrary_AotRuntime_CreateArrayWithLength(state, frame, destinationSlot, 0u);
+}
+
+TZrBool ZrLibrary_AotRuntime_CreateArrayWithLength(SZrState *state,
+                                                   ZrAotGeneratedFrame *frame,
+                                                   TZrUInt32 destinationSlot,
+                                                   TZrUInt32 length) {
     SZrLibraryAotRuntimeState *runtimeState;
     TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
     SZrTypeValue *destinationValue;
@@ -4099,6 +4106,7 @@ TZrBool ZrLibrary_AotRuntime_CreateArray(SZrState *state,
         ZrCore_Object_Init(state, arrayValue);
         ZrCore_Value_InitAsRawObject(state, destinationValue, ZR_CAST_RAW_OBJECT_AS_SUPER(arrayValue));
         destinationValue->type = ZR_VALUE_TYPE_ARRAY;
+        ZrCore_Object_InitializeArrayElements(state, arrayValue, length);
     } else {
         ZrCore_Value_ResetAsNull(destinationValue);
     }

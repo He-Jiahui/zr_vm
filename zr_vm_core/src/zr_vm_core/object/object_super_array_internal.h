@@ -544,6 +544,7 @@ static ZR_FORCE_INLINE SZrObject *zr_super_array_resolve_items_object_only_cache
 }
 
 static ZR_FORCE_INLINE void zr_super_array_store_plain_get_from_items_object_assume_fast(
+        SZrState *state,
         const SZrObject *itemsObject,
         TZrUInt64 unsignedIndex,
         SZrTypeValue *result) {
@@ -562,7 +563,7 @@ static ZR_FORCE_INLINE void zr_super_array_store_plain_get_from_items_object_ass
 
     nodeMap = &itemsObject->nodeMap;
     if (ZR_UNLIKELY(unsignedIndex >= (TZrUInt64)nodeMap->elementCount)) {
-        zr_super_array_store_plain_null_assume_normalized(result);
+        ZrCore_Debug_RunError(state, "Array index out of range");
         return;
     }
 
@@ -592,7 +593,7 @@ static ZR_FORCE_INLINE void zr_super_array_get_from_items_object_assume_fast(SZr
 
     nodeMap = &itemsObject->nodeMap;
     if (ZR_UNLIKELY((TZrUInt64)indexValue >= (TZrUInt64)nodeMap->elementCount)) {
-        zr_super_array_assign_null_or_copy(state, result);
+        ZrCore_Debug_RunError(state, "Array index out of range");
         return;
     }
 
@@ -707,11 +708,7 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Object_SuperArrayGetIntByValueInlineAssume
 
         nodeMap = &itemsObject->nodeMap;
         if (ZR_UNLIKELY((TZrUInt64)indexValue >= (TZrUInt64)nodeMap->elementCount)) {
-            if (zr_super_array_value_is_normalized_plain(result)) {
-                zr_super_array_store_plain_null_assume_normalized(result);
-            } else {
-                zr_super_array_store_plain_null_reuse(result);
-            }
+            ZrCore_Debug_RunError(state, "Array index out of range");
             return ZR_TRUE;
         }
 
@@ -734,7 +731,7 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Object_SuperArrayGetIntByValueInlineAssume
 
     nodeMap = &itemsObject->nodeMap;
     if (ZR_UNLIKELY((TZrUInt64)indexValue >= (TZrUInt64)nodeMap->elementCount)) {
-        zr_super_array_assign_null_or_copy(state, result);
+        ZrCore_Debug_RunError(state, "Array index out of range");
         return ZR_TRUE;
     }
 
@@ -765,7 +762,7 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Object_SuperArrayGetIntByValueInlineAssume
     }
 
     unsignedIndex = (TZrUInt64)indexValue;
-    zr_super_array_store_plain_get_from_items_object_assume_fast(itemsObject, unsignedIndex, result);
+    zr_super_array_store_plain_get_from_items_object_assume_fast(state, itemsObject, unsignedIndex, result);
     return ZR_TRUE;
 }
 

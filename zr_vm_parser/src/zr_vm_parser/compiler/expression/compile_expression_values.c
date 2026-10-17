@@ -545,9 +545,15 @@ void compile_array_literal(SZrCompilerState *cs, SZrAstNode *node) {
     
     SZrArrayLiteral *arrayLiteral = &node->data.arrayLiteral;
     
-    // 1. 创建空数组对象
+    // Allocate the literal's length before emitting checked indexed stores.
     TZrUInt32 destSlot = allocate_stack_slot(cs);
-    TZrInstruction createArrayInst = create_instruction_0(ZR_INSTRUCTION_ENUM(CREATE_ARRAY), (TZrUInt16)destSlot);
+    TZrSize length = arrayLiteral->elements != ZR_NULL ? arrayLiteral->elements->count : 0u;
+    if (length > INT32_MAX) {
+        ZrParser_Compiler_Error(cs, "Array literal exceeds the VM length limit", node->location);
+        return;
+    }
+    TZrInstruction createArrayInst = create_instruction_1(ZR_INSTRUCTION_ENUM(CREATE_ARRAY),
+                                                          (TZrUInt16)destSlot, (TZrInt32)length);
     emit_instruction(cs, createArrayInst);
     
     // 2. 编译每个元素并设置到数组中

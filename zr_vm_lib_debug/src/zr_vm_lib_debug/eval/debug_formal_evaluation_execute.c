@@ -334,7 +334,7 @@ static TZrBool zr_debug_formal_evaluate_array_literal(
             return ZR_TRUE;
         }
         ZrCore_Value_InitAsInt(agent->state, &indexValue, (TZrInt64)index);
-        if (!ZrCore_Object_SetByIndex(agent->state, &arrayValue, &indexValue, &elementValue)) {
+        if (!ZrCore_Object_TrySetValue(agent->state, array, &indexValue, &elementValue)) {
             *outSupported = ZR_FALSE;
             return ZR_TRUE;
         }

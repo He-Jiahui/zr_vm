@@ -1776,9 +1776,13 @@ static void compile_default_fixed_array_initialization(SZrCompilerState *cs,
         }
     }
 
+    if (fixedSize > INT32_MAX) {
+        ZrParser_Compiler_Error(cs, "Array size exceeds the VM length limit", location);
+        return;
+    }
     emit_instruction(cs,
-                     create_instruction_0(ZR_INSTRUCTION_ENUM(CREATE_ARRAY),
-                                          (TZrUInt16)arraySlot));
+                     create_instruction_1(ZR_INSTRUCTION_ENUM(CREATE_ARRAY),
+                                          (TZrUInt16)arraySlot, (TZrInt32)fixedSize));
 
     ZrCore_Value_ResetAsNull(&nullValue);
     nullConstantIndex = add_constant(cs, &nullValue);

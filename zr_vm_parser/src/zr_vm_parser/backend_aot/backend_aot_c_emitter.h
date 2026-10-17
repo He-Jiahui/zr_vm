@@ -351,7 +351,7 @@ void backend_aot_write_c_direct_sub_float(FILE *file,
                                           TZrUInt32 rightSlot);
 void backend_aot_write_c_direct_get_global(FILE *file, TZrUInt32 destinationSlot);
 void backend_aot_write_c_direct_create_object(FILE *file, TZrUInt32 destinationSlot);
-void backend_aot_write_c_direct_create_array(FILE *file, TZrUInt32 destinationSlot);
+void backend_aot_write_c_direct_create_array(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 length);
 void backend_aot_write_c_direct_create_inline_array(FILE *file,
                                                     TZrUInt32 destinationSlot,
                                                     TZrUInt32 elementTypeLayoutId,

@@ -817,7 +817,7 @@ static void test_aot_c_generated_shared_library_compiles_object_array_creation_r
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_create_object"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_create_array"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CreateObject(state, &frame, 0)"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CreateArray(state, &frame, 1)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CreateArrayWithLength(state, &frame, 1, 0)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Object_New(state, ZR_NULL)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrCore_Object_NewCustomized(state,"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_destination->type = ZR_VALUE_TYPE_ARRAY;"));

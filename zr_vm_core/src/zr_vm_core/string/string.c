@@ -885,7 +885,6 @@ TZrBool ZrCore_String_ToByteArray(SZrState *state,
                                   const SZrString *string,
                                   SZrObject **outArray) {
     SZrObject *array;
-    SZrTypeValue receiver;
     TZrNativeString nativeString;
     TZrSize byteLength;
     const TZrUInt8 *bytes;
@@ -908,11 +907,7 @@ TZrBool ZrCore_String_ToByteArray(SZrState *state,
     if (array == ZR_NULL) {
         return ZR_FALSE;
     }
-    /* BUG: 哈希插入失败时 SetByIndex 仍可报成功，最终把缺字节数组作为成功结果交出。 */
     ZrCore_Object_Init(state, array);
-
-    ZrCore_Value_InitAsRawObject(state, &receiver, ZR_CAST_RAW_OBJECT_AS_SUPER(array));
-    receiver.type = ZR_VALUE_TYPE_ARRAY;
     bytes = (const TZrUInt8 *)nativeString;
     for (TZrSize index = 0; index < byteLength; index++) {
         SZrTypeValue indexValue;
@@ -920,7 +915,7 @@ TZrBool ZrCore_String_ToByteArray(SZrState *state,
 
         ZrCore_Value_InitAsInt(state, &indexValue, (TZrInt64)index);
         ZrCore_Value_InitAsUInt(state, &elementValue, (TZrUInt64)bytes[index]);
-        if (!ZrCore_Object_SetByIndex(state, &receiver, &indexValue, &elementValue)) {
+        if (!ZrCore_Object_TrySetValue(state, array, &indexValue, &elementValue)) {
             return ZR_FALSE;
         }
     }
