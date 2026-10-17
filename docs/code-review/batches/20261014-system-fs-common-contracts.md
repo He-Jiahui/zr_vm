@@ -30,6 +30,8 @@ doc_type: workflow-detail
 
 # System.Fs common helpers 契约审查
 
+> 2026-10-17复审：本页保留当时73键快照与验证历史。当前fs_common.c的29键以[本轮运行时助手复审](20261017-system-fs-common-runtime-contracts.md)为准；下文void setter“软失败”等旧论断不能直接用于当前实现。fs_internal.h当前有外部改动且仍pending，本批未追认其余44个头文件键或Stream实现的历史缺陷。
+
 ## 范围与清点
 
 本批覆盖 fs_common.c 与 fs_internal.h；fs_entry.c、fs_stream.c、Core、Library dispatcher 和测试仅作只读调用链证据。coverage leaf 有 73 个唯一 unit key：fs_internal.h 44 项（文件说明、include guard、2 个宏、stream 结构及 6 字段、33 个共享声明），fs_common.c 29 项（文件职责和 28 个函数定义）。本批未发现未登记的静态数据表或独立配置块；两个字符串 setter 缺陷、path 借用 TODO 和无调用 getter 都记录在所属函数单元，未重复拆成同一语义的伪单元。
