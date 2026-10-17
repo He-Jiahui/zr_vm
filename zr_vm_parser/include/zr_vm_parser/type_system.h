@@ -117,6 +117,7 @@ typedef struct SZrFunctionTypeInfo {
     SZrString *signatureDisplay;     // metadata-backed canonical call label（可选）
     TZrBool isExternalCallable;      // no source declaration/SymbolId is available
     TZrBool isCallableValueBinding;  // callable metadata bound to a lexical value
+    TZrBool hasInferredReturnType;   // declaration return contract has been refined
 } SZrFunctionTypeInfo;
 
 // 类型环境结构体

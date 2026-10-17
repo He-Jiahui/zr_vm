@@ -105,7 +105,8 @@ TZrBool compiler_refine_function_type_binding_return(
             TZrSize genericIndex;
 
             if (entry == ZR_NULL || *entry == ZR_NULL ||
-                (*entry)->declarationNode != declarationNode) {
+                (*entry)->declarationNode != declarationNode ||
+                (*entry)->isCallableValueBinding) {
                 continue;
             }
             functionInfo = *entry;
@@ -115,6 +116,7 @@ TZrBool compiler_refine_function_type_binding_return(
                 /* 没有可用于 canonical 重建的上下文或类型身份，只保留本地推断返回类型。 */
                 ZrParser_InferredType_Free(cs->state, &functionInfo->returnType);
                 ZrParser_InferredType_Copy(cs->state, &functionInfo->returnType, returnType);
+                functionInfo->hasInferredReturnType = ZR_TRUE;
                 return ZR_TRUE;
             }
 
@@ -192,6 +194,7 @@ TZrBool compiler_refine_function_type_binding_return(
             ZrParser_InferredType_Free(cs->state, &functionInfo->returnType);
             ZrParser_InferredType_Copy(cs->state, &functionInfo->returnType, returnType);
             functionInfo->typeId = refinedTypeId;
+            functionInfo->hasInferredReturnType = ZR_TRUE;
             compiler_rebind_reference_fact_types(semanticContext,
                                                  functionInfo->symbolId,
                                                  refinedTypeId);

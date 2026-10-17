@@ -372,7 +372,7 @@ static void compiler_register_lambda_callable_binding(SZrCompilerState *cs,
     ZrParser_TypeEnvironment_Free(cs->state, lambdaEnv);
 }
 
-/* 别名注册发生在函数作用域结束后。补上形参类型，return 推断才能解析形参，而不是把它们当成 object。 */
+/* Bind parameters before inferring a forward declaration's return contract. */
 static void compiler_bind_function_parameters_for_return_inference(
         SZrCompilerState *cs,
         SZrAstNodeArray *params) {
@@ -419,6 +419,68 @@ static void compiler_bind_function_parameters_for_return_inference(
     }
 }
 
+static void compiler_infer_unresolved_function_binding_return(
+        SZrCompilerState *cs,
+        SZrFunctionTypeInfo *functionInfo) {
+    SZrTypeEnvironment *declarationEnv;
+    SZrTypeEnvironment *savedEnv = cs->typeEnv;
+    SZrTypeEnvironment *paramEnv;
+    SZrAstNode *savedFunctionNode = cs->currentFunctionNode;
+    SZrFunctionDeclaration *declaration;
+    SZrFunctionTypedTypeRef returnMetadata;
+    SZrInferredType inferredReturnType;
+    TZrBool hasReturnType = ZR_FALSE;
+    TZrBool built;
+
+    /* A compiled declaration owns its scoped contract, including weak Object
+     * results. Aliases must never re-infer it in the alias's lexical scope. */
+    if (cs->hasError || functionInfo->hasInferredReturnType ||
+        functionInfo->isCallableValueBinding ||
+        functionInfo->declarationNode == ZR_NULL ||
+        functionInfo->declarationNode->type != ZR_AST_FUNCTION_DECLARATION ||
+        functionInfo->declarationNode->data.functionDeclaration.returnType != ZR_NULL) {
+        return;
+    }
+
+    /* Forward declarations still need parameter-aware inference. Use the
+     * environment that owns the declaration, excluding alias-site shadows. */
+    for (declarationEnv = savedEnv; declarationEnv != ZR_NULL;
+         declarationEnv = declarationEnv->parent) {
+        for (TZrSize index = 0; index < declarationEnv->functionReturnTypes.length; index++) {
+            SZrFunctionTypeInfo **entry = (SZrFunctionTypeInfo **)ZrCore_Array_Get(
+                    &declarationEnv->functionReturnTypes, index);
+            if (entry != ZR_NULL && *entry == functionInfo) {
+                goto declaration_found;
+            }
+        }
+    }
+    return;
+
+declaration_found:
+    paramEnv = ZrParser_TypeEnvironment_New(cs->state);
+    if (paramEnv == ZR_NULL) {
+        return;
+    }
+    declaration = &functionInfo->declarationNode->data.functionDeclaration;
+    paramEnv->parent = declarationEnv;
+    paramEnv->semanticContext = declarationEnv->semanticContext;
+    cs->typeEnv = paramEnv;
+    cs->currentFunctionNode = functionInfo->declarationNode;
+    compiler_bind_function_parameters_for_return_inference(cs, declaration->params);
+    ZrParser_InferredType_Init(cs->state, &inferredReturnType, ZR_VALUE_TYPE_OBJECT);
+    built = compiler_build_callable_return_type_metadata_with_inferred(
+            cs, ZR_NULL, declaration->body, &returnMetadata,
+            &hasReturnType, &inferredReturnType);
+    if (built && !cs->hasError && hasReturnType) {
+        (void)compiler_refine_function_type_binding_return(
+                cs, functionInfo->declarationNode, &inferredReturnType);
+    }
+    ZrParser_InferredType_Free(cs->state, &inferredReturnType);
+    cs->typeEnv = savedEnv;
+    cs->currentFunctionNode = savedFunctionNode;
+    ZrParser_TypeEnvironment_Free(cs->state, paramEnv);
+}
+
 static void compiler_register_identifier_callable_binding(SZrCompilerState *cs,
                                                           SZrString *name,
                                                           SZrString *sourceName) {
@@ -440,53 +502,10 @@ static void compiler_register_identifier_callable_binding(SZrCompilerState *cs,
             continue;
         }
 
-        if ((*candidatePtr)->declarationNode != ZR_NULL &&
-            (*candidatePtr)->declarationNode->type == ZR_AST_FUNCTION_DECLARATION &&
-            (*candidatePtr)->declarationNode->data.functionDeclaration.returnType == ZR_NULL) {
-            SZrFunctionDeclaration *declaration =
-                    &(*candidatePtr)->declarationNode->data.functionDeclaration;
-            SZrFunctionTypedTypeRef returnMetadata;
-            SZrInferredType inferredReturnType;
-            TZrBool hasReturnType = ZR_FALSE;
-            SZrAstNode *savedFunctionNode = cs->currentFunctionNode;
-            SZrTypeEnvironment *savedEnv = cs->typeEnv;
-            SZrTypeEnvironment *paramEnv = ZrParser_TypeEnvironment_New(cs->state);
-            TZrBool built = ZR_FALSE;
-
-            if (paramEnv == ZR_NULL) {
-                continue;
-            }
-            paramEnv->parent = savedEnv;
-            paramEnv->semanticContext =
-                    savedEnv != ZR_NULL ? savedEnv->semanticContext : ZR_NULL;
-            cs->typeEnv = paramEnv;
-            cs->currentFunctionNode = (*candidatePtr)->declarationNode;
-            compiler_bind_function_parameters_for_return_inference(
-                    cs, declaration->params);
-            built = compiler_build_callable_return_type_metadata_with_inferred(
-                    cs,
-                    ZR_NULL,
-                    declaration->body,
-                    &returnMetadata,
-                    &hasReturnType,
-                    &inferredReturnType);
-            cs->typeEnv = savedEnv;
-            cs->currentFunctionNode = savedFunctionNode;
-            ZrParser_TypeEnvironment_Free(cs->state, paramEnv);
-            if (!built) {
-                continue;
-            }
-            if (!hasReturnType ||
-                !compiler_refine_function_type_binding_return(
-                        cs,
-                        (*candidatePtr)->declarationNode,
-                        &inferredReturnType)) {
-                ZrParser_InferredType_Free(cs->state, &inferredReturnType);
-                continue;
-            }
-            ZrParser_InferredType_Free(cs->state, &inferredReturnType);
+        compiler_infer_unresolved_function_binding_return(cs, *candidatePtr);
+        if (cs->hasError) {
+            break;
         }
-
         ZrParser_TypeEnvironment_RegisterCallableValueFunction(
                 cs->state,
                 cs->typeEnv,

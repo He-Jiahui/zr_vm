@@ -1549,6 +1549,7 @@ static TZrBool type_environment_register_function_ex(
     funcInfo->signatureDisplay = ZR_NULL;
     funcInfo->isExternalCallable = ZR_FALSE;
     funcInfo->isCallableValueBinding = isCallableValueBinding;
+    funcInfo->hasInferredReturnType = ZR_FALSE;
     
     // Deep-copy parameter type array values.
     if (paramTypes != ZR_NULL && paramTypes->isValid && paramTypes->capacity > 0 && paramTypes->length > 0) {
