@@ -98,7 +98,8 @@ static TZrPtr test_allocator(TZrPtr userData,
 /* TODO: needle 缺失时当前返回源首位置；需在调用夹具变更后核对是否会掩盖事实定位退化。 */
 static SZrFileRange file_range_for_nth_substring(const TZrChar *content,
                                                  const TZrChar *needle,
-                                                 TZrSize occurrence) {
+                                                 TZrSize occurrence,
+                                                 SZrString *sourceName) {
     const TZrChar *cursor = content;
     const TZrChar *found = ZR_NULL;
     TZrSize remaining = occurrence;
@@ -128,7 +129,7 @@ static SZrFileRange file_range_for_nth_substring(const TZrChar *content,
         }
     }
 
-    return ZrParser_FileRange_Create(position, position, ZR_NULL);
+    return ZrParser_FileRange_Create(position, position, sourceName);
 }
 
 /* 消息和建议允许追加上下文，断言仅要求关键诊断含义仍可读。 */
@@ -328,7 +329,7 @@ static void test_semantic_analyzer_reports_loaned_return_escape(SZrState *state)
 
         fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "resource;", 0));
+            file_range_for_nth_substring(testCode, "resource;", 0, sourceName));
         if (fact == ZR_NULL ||
             fact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
             fact->qualifier != ZR_OWNERSHIP_QUALIFIER_LOANED ||
@@ -582,10 +583,10 @@ static void test_semantic_analyzer_reports_use_after_unique_move(SZrState *state
 
     moveFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "resource", 2));
+            file_range_for_nth_substring(testCode, "resource", 2, sourceName));
     violationFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "resource", 3));
+            file_range_for_nth_substring(testCode, "resource", 3, sourceName));
     if (moveFact == ZR_NULL ||
         moveFact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_MOVE ||
         moveFact->qualifier != ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
@@ -794,7 +795,7 @@ static void test_semantic_analyzer_does_not_move_unique_ref_argument(SZrState *s
     diagnostic = find_diagnostic_by_code_and_line(analyzer, "use_after_move", 6);
     fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "resource", 1));
+            file_range_for_nth_substring(testCode, "resource", 1, sourceName));
     if (diagnostic != ZR_NULL ||
         (fact != ZR_NULL && fact->kind == ZR_SEMANTIC_OWNERSHIP_FACT_MOVE)) {
         ZrParser_Ast_Free(state, ast);

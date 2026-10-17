@@ -843,6 +843,19 @@ TZrBool ZrParser_SemanticFacts_AppendReceiverGuard(
     copy = *fact;
     ZrParser_InferredType_Copy(context->state, &copy.receiverType, &fact->receiverType);
     ZrParser_InferredType_Copy(context->state, &copy.guardedType, &fact->guardedType);
+    /* LSP type checking may infer the same access more than once. Keep one
+     * current guard per segment, including its final inferred type. */
+    for (TZrSize index = 0; index < context->receiverGuardFacts.length; index++) {
+        SZrReceiverGuardFact *existing =
+                (SZrReceiverGuardFact *)ZrCore_Array_Get(
+                        &context->receiverGuardFacts, index);
+        if (existing->node == fact->node) {
+            ZrParser_InferredType_Free(context->state, &existing->receiverType);
+            ZrParser_InferredType_Free(context->state, &existing->guardedType);
+            *existing = copy;
+            return ZR_TRUE;
+        }
+    }
     ZrCore_Array_Push(context->state, &context->receiverGuardFacts, &copy);
     return ZR_TRUE;
 }

@@ -386,6 +386,29 @@ static TZrBool ownership_weak_primary_has_receiver_guard(
     return guard != ZR_NULL && guard->kind == ZR_RECEIVER_GUARD_WEAK_WAKE;
 }
 
+/* Invalid weak arguments can stop binding before a CALL fact is published.
+ * Reuse that type-checking decision for this read when adding release evidence. */
+static TZrBool ownership_weak_read_has_error(
+        const SZrSemanticContext *context,
+        const SZrSemanticReferenceFact *fact) {
+    if (context == ZR_NULL || fact == ZR_NULL ||
+        !context->ownershipFacts.isValid) {
+        return ZR_FALSE;
+    }
+    for (TZrSize index = 0; index < context->ownershipFacts.length; index++) {
+        const SZrSemanticOwnershipFact *error =
+                (const SZrSemanticOwnershipFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->ownershipFacts, index);
+        if (error->node == fact->node &&
+            error->kind == ZR_SEMANTIC_OWNERSHIP_FACT_ERROR &&
+            error->qualifier == ZR_OWNERSHIP_QUALIFIER_WEAK &&
+            error->isViolation) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 /* 未受 guard 的 weak receiver 调用和传给借用形参的 weak 实参都要求 wake。 */
 static TZrBool ownership_weak_primary_requires_wake(
         const SZrSemanticContext *context,
@@ -420,10 +443,11 @@ static TZrBool ownership_weak_primary_requires_wake(
              argumentIndex++) {
             SZrAstNode *argument = call->args->nodes[argumentIndex];
             if (ownership_move_expression_is_direct_reference(argument, fact) &&
-                ownership_move_argument_requires_weak_wake(context,
-                                                              primaryNode,
-                                                              call,
-                                                              argumentIndex)) {
+                (ownership_move_argument_requires_weak_wake(context,
+                                                            primaryNode,
+                                                            call,
+                                                            argumentIndex) ||
+                 ownership_weak_read_has_error(context, fact))) {
                 return ZR_TRUE;
             }
             if (ownership_weak_expression_requires_wake(context, argument, fact)) {
