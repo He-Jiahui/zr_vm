@@ -189,31 +189,7 @@ static void compiler_callable_type_ref_init_unknown(
 static void compiler_callable_type_ref_from_inferred(
         SZrFunctionTypedTypeRef *dest,
         const SZrInferredType *src) {
-    if (dest == ZR_NULL) {
-        return;
-    }
-
-    compiler_callable_type_ref_init_unknown(dest);
-    if (src == ZR_NULL) {
-        return;
-    }
-
-    dest->baseType = src->baseType;
-    dest->isNullable = src->isNullable;
-    dest->ownershipQualifier = src->ownershipQualifier;
-    dest->typeName = src->typeName;
-    if (src->baseType == ZR_VALUE_TYPE_ARRAY) {
-        dest->isArray = ZR_TRUE;
-        if (src->elementTypes.length > 0U) {
-            const SZrInferredType *elementType =
-                    (const SZrInferredType *)ZrCore_Array_Get(
-                            (SZrArray *)&src->elementTypes, 0U);
-            if (elementType != ZR_NULL) {
-                dest->elementBaseType = elementType->baseType;
-                dest->elementTypeName = elementType->typeName;
-            }
-        }
-    }
+    compiler_typed_type_ref_from_inferred(dest, src);
 }
 
 /**

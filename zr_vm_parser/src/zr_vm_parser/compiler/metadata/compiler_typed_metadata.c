@@ -34,6 +34,22 @@ static void typed_type_ref_from_inferred(SZrFunctionTypedTypeRef *dest, const SZ
     dest->isNullable = src->isNullable;
     dest->ownershipQualifier = src->ownershipQualifier;
     dest->typeName = src->typeName;
+    if (!src->isNullable && src->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_NONE) {
+        switch (src->baseType) {
+            case ZR_VALUE_TYPE_BOOL: dest->staticCType = ZR_STATIC_C_TYPE_BOOL; break;
+            case ZR_VALUE_TYPE_INT8: dest->staticCType = ZR_STATIC_C_TYPE_I8; break;
+            case ZR_VALUE_TYPE_INT16: dest->staticCType = ZR_STATIC_C_TYPE_I16; break;
+            case ZR_VALUE_TYPE_INT32: dest->staticCType = ZR_STATIC_C_TYPE_I32; break;
+            case ZR_VALUE_TYPE_INT64: dest->staticCType = ZR_STATIC_C_TYPE_I64; break;
+            case ZR_VALUE_TYPE_UINT8: dest->staticCType = ZR_STATIC_C_TYPE_U8; break;
+            case ZR_VALUE_TYPE_UINT16: dest->staticCType = ZR_STATIC_C_TYPE_U16; break;
+            case ZR_VALUE_TYPE_UINT32: dest->staticCType = ZR_STATIC_C_TYPE_U32; break;
+            case ZR_VALUE_TYPE_UINT64: dest->staticCType = ZR_STATIC_C_TYPE_U64; break;
+            case ZR_VALUE_TYPE_FLOAT: dest->staticCType = ZR_STATIC_C_TYPE_F32; break;
+            case ZR_VALUE_TYPE_DOUBLE: dest->staticCType = ZR_STATIC_C_TYPE_F64; break;
+            default: break;
+        }
+    }
     if (src->baseType == ZR_VALUE_TYPE_ARRAY) {
         dest->isArray = ZR_TRUE;
         if (src->elementTypes.length > 0) {
