@@ -1159,6 +1159,49 @@ static SZrFunction *create_test_function(SZrState *state, TZrInstruction *instru
     return function;
 }
 
+/* The GC scenarios below use two named hot receivers. Fill the remaining PIC
+ * ways with permanent receivers before requesting replacement, so eviction is
+ * exercised at the production capacity. Original constant indices stay fixed. */
+static SZrFunction *create_pic_replacement_test_function(
+        SZrState *state, TZrInstruction *instructions, TZrSize instructionCount,
+        SZrTypeValue *constants, TZrSize constantCount, TZrSize stackSize,
+        SZrString *memberName) {
+    const TZrSize paddingCount = ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY - 2u;
+    const TZrBool isSet = instructions[1].instruction.operationCode == ZR_INSTRUCTION_ENUM(GET_CONSTANT);
+    const TZrSize stride = isSet ? 3u : 2u;
+    const TZrSize insertAt = 2u * stride;
+    TZrInstruction *paddedInstructions = malloc(sizeof(*paddedInstructions) *
+                                                (instructionCount + paddingCount * stride));
+    SZrTypeValue *paddedConstants = malloc(sizeof(*paddedConstants) * (constantCount + paddingCount));
+    SZrFunction *function;
+    TEST_ASSERT_NOT_NULL(paddedInstructions);
+    TEST_ASSERT_NOT_NULL(paddedConstants);
+    TEST_ASSERT_TRUE(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY >= 2u);
+    memcpy(paddedInstructions, instructions, sizeof(*instructions) * insertAt);
+    memcpy(paddedConstants, constants, sizeof(*constants) * constantCount);
+    for (TZrSize index = 0u; index < paddingCount; ++index) {
+        TZrChar typeName[48];
+        SZrObjectPrototype *prototype;
+        SZrObject *instance;
+        snprintf(typeName, sizeof(typeName), "PermanentPicPadding%u", (unsigned)index);
+        init_object_constant_with_shared_field(state, typeName, memberName, 0,
+                                               &prototype, &instance, &paddedConstants[constantCount + index]);
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(prototype));
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(instance));
+        memcpy(&paddedInstructions[insertAt + index * stride], instructions, sizeof(*instructions) * stride);
+        paddedInstructions[insertAt + index * stride] = create_instruction_1(
+                ZR_INSTRUCTION_ENUM(GET_CONSTANT), instructions[0].instruction.operandExtra,
+                (TZrInt32)(constantCount + index));
+    }
+    memcpy(&paddedInstructions[insertAt + paddingCount * stride], &instructions[insertAt],
+           sizeof(*instructions) * (instructionCount - insertAt));
+    function = create_test_function(state, paddedInstructions, instructionCount + paddingCount * stride,
+                                     paddedConstants, constantCount + paddingCount, stackSize);
+    free(paddedInstructions);
+    free(paddedConstants);
+    return function;
+}
+
 // 执行测试函数的辅助函数
 static TZrBool execute_test_function(SZrState *state, SZrFunction *function) {
     // 创建闭包
@@ -2944,7 +2987,7 @@ static void test_get_member_slot_instruction_pic_replacement_keeps_single_rememb
         instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 2);
         instructions[5] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 1, 0, 0);
 
-        function = create_test_function(state, instructions, 6, constants, 3, 2);
+        function = create_pic_replacement_test_function(state, instructions, 6, constants, 3, 2, memberName);
         TEST_ASSERT_NOT_NULL(function);
 
         function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
@@ -3171,7 +3214,7 @@ static void test_get_member_slot_instruction_pic_replacement_stays_out_of_rememb
         instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 2);
         instructions[5] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 1, 0, 0);
 
-        function = create_test_function(state, instructions, 6, constants, 3, 2);
+        function = create_pic_replacement_test_function(state, instructions, 6, constants, 3, 2, memberName);
         TEST_ASSERT_NOT_NULL(function);
 
         function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
@@ -3283,7 +3326,7 @@ static void test_get_member_slot_instruction_minor_gc_prunes_remembered_set_afte
         instructions[6] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 3);
         instructions[7] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 1, 0, 0);
 
-        function = create_test_function(state, instructions, 8, constants, 4, 2);
+        function = create_pic_replacement_test_function(state, instructions, 8, constants, 4, 2, memberName);
         TEST_ASSERT_NOT_NULL(function);
 
         function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
@@ -3420,7 +3463,7 @@ test_get_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair
         instructions[6] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 6, 3);
         instructions[7] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 7, 6, 0);
 
-        function = create_test_function(state, instructions, 8, initialConstants, 4, 8);
+        function = create_pic_replacement_test_function(state, instructions, 8, initialConstants, 4, 8, memberName);
         TEST_ASSERT_NOT_NULL(function);
 
         function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
@@ -3459,7 +3502,7 @@ test_get_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair
         TEST_ASSERT_NOT_NULL(lastResult);
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(lastResult->type));
         TEST_ASSERT_EQUAL_INT64(4, lastResult->value.nativeObject.nativeInt64);
-        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].runtimeMissCount);
         TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeHitCount);
         TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
         TEST_ASSERT_EQUAL_UINT32(0u, function->callSiteCaches[0].picNextInsertIndex);
@@ -3503,8 +3546,8 @@ test_get_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair
         TEST_ASSERT_NOT_NULL(lastResult);
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(lastResult->type));
         TEST_ASSERT_EQUAL_INT64(4, lastResult->value.nativeObject.nativeInt64);
-        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
-        TEST_ASSERT_EQUAL_UINT32(6u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY + 4u, function->callSiteCaches[0].runtimeHitCount);
         TEST_ASSERT_EQUAL_PTR(forwardedInstanceE, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
         TEST_ASSERT_EQUAL_PTR(forwardedInstanceE->cachedStringLookupPair,
                               function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
@@ -3523,8 +3566,8 @@ test_get_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair
         TEST_ASSERT_NOT_NULL(lastResult);
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(lastResult->type));
         TEST_ASSERT_EQUAL_INT64(4, lastResult->value.nativeObject.nativeInt64);
-        TEST_ASSERT_EQUAL_UINT32(3u, function->callSiteCaches[0].runtimeMissCount);
-        TEST_ASSERT_EQUAL_UINT32(9u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY + 1u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(2u * ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY + 5u, function->callSiteCaches[0].runtimeHitCount);
         TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].picNextInsertIndex);
         TEST_ASSERT_EQUAL_PTR(prototypeC, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
         TEST_ASSERT_EQUAL_PTR(instanceC, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
@@ -4172,7 +4215,7 @@ static void test_set_member_slot_instruction_pic_replacement_keeps_single_rememb
         instructions[7] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 5, 5);
         instructions[8] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 5, 4, 0);
 
-        function = create_test_function(state, instructions, 9, constants, 6, 6);
+        function = create_pic_replacement_test_function(state, instructions, 9, constants, 6, 6, memberName);
         TEST_ASSERT_NOT_NULL(function);
 
         function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
@@ -4297,7 +4340,7 @@ static void test_set_member_slot_instruction_pic_replacement_records_remembered_
         instructions[7] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 5, 5);
         instructions[8] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 5, 4, 0);
 
-        function = create_test_function(state, instructions, 9, constants, 6, 6);
+        function = create_pic_replacement_test_function(state, instructions, 9, constants, 6, 6, memberName);
         TEST_ASSERT_NOT_NULL(function);
 
         function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
@@ -4422,7 +4465,7 @@ static void test_set_member_slot_instruction_pic_replacement_stays_out_of_rememb
         instructions[7] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 5, 5);
         instructions[8] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 5, 4, 0);
 
-        function = create_test_function(state, instructions, 9, constants, 6, 6);
+        function = create_pic_replacement_test_function(state, instructions, 9, constants, 6, 6, memberName);
         TEST_ASSERT_NOT_NULL(function);
 
         function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
@@ -4551,7 +4594,7 @@ static void test_set_member_slot_instruction_minor_gc_prunes_remembered_set_afte
         instructions[10] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 7, 7);
         instructions[11] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 7, 6, 0);
 
-        function = create_test_function(state, instructions, 12, constants, 8, 8);
+        function = create_pic_replacement_test_function(state, instructions, 12, constants, 8, 8, memberName);
         TEST_ASSERT_NOT_NULL(function);
 
         function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
@@ -4700,7 +4743,7 @@ static void test_set_member_slot_instruction_minor_gc_readds_and_reprunes_rememb
         instructions[10] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 7, 7);
         instructions[11] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 7, 6, 0);
 
-        function = create_test_function(state, instructions, 12, constants, 8, 8);
+        function = create_pic_replacement_test_function(state, instructions, 12, constants, 8, 8, memberName);
         TEST_ASSERT_NOT_NULL(function);
 
         function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
@@ -4735,7 +4778,7 @@ static void test_set_member_slot_instruction_minor_gc_readds_and_reprunes_rememb
         success = execute_test_function(state, function);
         TEST_ASSERT_TRUE(success);
         TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
-        TEST_ASSERT_EQUAL_UINT32(0u, function->callSiteCaches[0].picNextInsertIndex);
+        TEST_ASSERT_EQUAL_UINT32(2u % ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picNextInsertIndex);
         TEST_ASSERT_EQUAL_PTR(prototypeC, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
         TEST_ASSERT_EQUAL_PTR(instanceC, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
         TEST_ASSERT_EQUAL_PTR(prototypeD, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
@@ -4802,9 +4845,9 @@ static void test_set_member_slot_instruction_minor_gc_readds_and_reprunes_rememb
         TEST_ASSERT_EQUAL_INT64(606, updatedValueE->value.nativeObject.nativeInt64);
         TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
         TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].picNextInsertIndex);
-        TEST_ASSERT_EQUAL_PTR(prototypeE, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
-        TEST_ASSERT_EQUAL_PTR(instanceE, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
-        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_EQUAL_PTR(prototypeE, function->callSiteCaches[0].picSlots[2u % ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceE, function->callSiteCaches[0].picSlots[2u % ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[2u % ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY].cachedReceiverPair);
         TEST_ASSERT_EQUAL_PTR(prototypeD, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
         TEST_ASSERT_EQUAL_PTR(instanceD, function->callSiteCaches[0].picSlots[1].cachedReceiverObject);
         TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[1].cachedReceiverPair);
@@ -4833,9 +4876,9 @@ static void test_set_member_slot_instruction_minor_gc_readds_and_reprunes_rememb
         success = execute_test_function(state, function);
         TEST_ASSERT_TRUE(success);
         TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
-        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].picNextInsertIndex);
-        TEST_ASSERT_EQUAL_PTR(prototypeD, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
-        TEST_ASSERT_EQUAL_PTR(instanceD, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_EQUAL_UINT32(3u % ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picNextInsertIndex);
+        TEST_ASSERT_EQUAL_PTR(prototypeD, function->callSiteCaches[0].picSlots[2u % ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceD, function->callSiteCaches[0].picSlots[2u % ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY].cachedReceiverObject);
         TEST_ASSERT_EQUAL_PTR(prototypeC, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
         TEST_ASSERT_EQUAL_PTR(instanceC, function->callSiteCaches[0].picSlots[1].cachedReceiverObject);
         TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
@@ -4959,7 +5002,7 @@ test_set_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair
         instructions[10] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 7, 7);
         instructions[11] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 7, 6, 0);
 
-        function = create_test_function(state, instructions, 12, initialConstants, 8, 8);
+        function = create_pic_replacement_test_function(state, instructions, 12, initialConstants, 8, 8, memberName);
         TEST_ASSERT_NOT_NULL(function);
 
         function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
@@ -4999,7 +5042,7 @@ test_set_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair
         TEST_ASSERT_NOT_NULL(updatedValueE);
         TEST_ASSERT_EQUAL_INT64(404, updatedValueD->value.nativeObject.nativeInt64);
         TEST_ASSERT_EQUAL_INT64(303, updatedValueE->value.nativeObject.nativeInt64);
-        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].runtimeMissCount);
         TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeHitCount);
         TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
         TEST_ASSERT_EQUAL_UINT32(0u, function->callSiteCaches[0].picNextInsertIndex);
@@ -5052,8 +5095,8 @@ test_set_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair
         TEST_ASSERT_NOT_NULL(updatedValueE);
         TEST_ASSERT_EQUAL_INT64(808, updatedValueD->value.nativeObject.nativeInt64);
         TEST_ASSERT_EQUAL_INT64(707, updatedValueE->value.nativeObject.nativeInt64);
-        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
-        TEST_ASSERT_EQUAL_UINT32(6u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY + 4u, function->callSiteCaches[0].runtimeHitCount);
         TEST_ASSERT_EQUAL_PTR(forwardedInstanceE, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
         TEST_ASSERT_EQUAL_PTR(forwardedInstanceE->cachedStringLookupPair,
                               function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
@@ -5077,8 +5120,8 @@ test_set_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair
         TEST_ASSERT_NOT_NULL(updatedValueD);
         TEST_ASSERT_EQUAL_INT64(1503, updatedValueC->value.nativeObject.nativeInt64);
         TEST_ASSERT_EQUAL_INT64(1604, updatedValueD->value.nativeObject.nativeInt64);
-        TEST_ASSERT_EQUAL_UINT32(3u, function->callSiteCaches[0].runtimeMissCount);
-        TEST_ASSERT_EQUAL_UINT32(9u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY + 1u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(2u * ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY + 5u, function->callSiteCaches[0].runtimeHitCount);
         TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].picNextInsertIndex);
         TEST_ASSERT_EQUAL_PTR(prototypeC, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
         TEST_ASSERT_EQUAL_PTR(instanceC, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
