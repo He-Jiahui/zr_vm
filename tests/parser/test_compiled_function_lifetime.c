@@ -30,6 +30,11 @@ static void expect_answer(SZrFunction *function) {
     TEST_ASSERT_EQUAL_INT64(42, answer);
 }
 
+static void test_null_function_super_conversion_is_safe(void) {
+    SZrFunction *volatile missing = ZR_NULL;
+    TEST_ASSERT_NULL(ZR_CAST_RAW_OBJECT_AS_SUPER(missing));
+}
+
 static void test_compiled_functions_survive_gc_before_and_between_executions(void) {
     SZrFunction *first = compile_answer();
     SZrFunction *second = compile_answer();
@@ -148,6 +153,7 @@ static void test_compilation_failure_releases_temporary_function_roots(void) {
 
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_null_function_super_conversion_is_safe);
     RUN_TEST(test_compiled_functions_survive_gc_before_and_between_executions);
     RUN_TEST(test_host_ownership_and_explicit_roots_are_independent);
     RUN_TEST(test_host_root_can_transfer_to_a_vm_closure);
