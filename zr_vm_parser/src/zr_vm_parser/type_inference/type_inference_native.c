@@ -3525,13 +3525,27 @@ translate_module_info:
             TZrUInt32 contractRole =
                     (TZrUInt32)native_module_info_get_int_field(cs->state, fieldEntry, "contractRole", 0);
             if (fieldName != ZR_NULL && !runtimeOnly) {
-                native_module_info_add_field_member(cs->state,
+                SZrNativeModuleMemberIdentity identity;
+                native_module_info_next_member_identity(cs->state,
+                                                        ZR_METADATA_SIGNATURE_NODE_FIELD_SIG,
+                                                        fieldMemberType,
+                                                        typePrototype.name,
+                                                        fieldName,
+                                                        fieldTypeName,
+                                                        0u,
+                                                        0u,
+                                                        ZR_NULL,
+                                                        &nativeMemberRidCursor,
+                                                        &nativeSignatureRidCursor,
+                                                        &identity);
+                native_module_info_add_field_member_with_identity(cs->state,
                                                     &typePrototype,
                                                     fieldMemberType,
                                                     fieldName,
                                                     fieldTypeName,
                                                     ZR_FALSE,
-                                                    contractRole);
+                                                    contractRole,
+                                                    &identity);
             }
         }
 
