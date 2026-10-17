@@ -8921,6 +8921,11 @@ if (TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static)
 endif()
 
 if(TARGET zr_vm_cli_executable)
+    add_test(NAME cli_binary_freshness
+            COMMAND ${CMAKE_COMMAND} "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
+            "-DTEST_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_binary_freshness.cmake")
+    set_tests_properties(cli_binary_freshness PROPERTIES TIMEOUT 120)
     add_test(NAME compiler_constructor_prototype_growth
             COMMAND ${CMAKE_COMMAND}
             "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
