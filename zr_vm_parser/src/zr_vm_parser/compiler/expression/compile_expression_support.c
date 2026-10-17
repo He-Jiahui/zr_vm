@@ -306,6 +306,11 @@ TZrBool emit_known_vm_member_call_cached(SZrCompilerState *cs,
 TZrBool compiler_record_known_call_binding(SZrCompilerState *cs,
         const SZrTypeMemberInfo *memberInfo, TZrUInt32 argumentCount, SZrFileRange location) {
     TZrUInt16 cacheIndex;
+    /* Imported instance methods carry their owner/receiver contract on the
+     * bound GET_MEMBER_SLOT. A second static call binding would lose it. */
+    if (memberInfo != ZR_NULL && !memberInfo->isStatic &&
+        memberInfo->callBindingLocationKind == ZR_CALL_BINDING_RELOCATION_VM_MODULE)
+        return ZR_TRUE;
     if (memberInfo == ZR_NULL ||
         (memberInfo->callBindingLocationKind != ZR_CALL_BINDING_RELOCATION_VM_MODULE &&
          !compiler_native_call_binding_is_provider_contract(&memberInfo->callBindingFact) &&

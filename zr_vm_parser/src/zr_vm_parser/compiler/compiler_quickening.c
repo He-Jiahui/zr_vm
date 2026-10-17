@@ -2330,6 +2330,13 @@ static SZrFunction *compiler_quickening_resolve_bound_member_callable_metadata_f
     }
 
     cacheIndex = (TZrUInt32)writer->instruction.operand.operand1[1];
+    if (function->callSiteCaches != ZR_NULL && cacheIndex < function->callSiteCacheLength &&
+        function->callSiteCaches[cacheIndex].bindingLocation.kind == ZR_CALL_BINDING_RELOCATION_VM_MODULE) {
+        /* Imported prototypes may contain native signature placeholders. The
+         * provider linker selects the real VM/AOT callable at runtime, so a
+         * placeholder cannot prove which specialized call opcode is valid. */
+        return ZR_NULL;
+    }
     resolvedFunction = compiler_quickening_resolve_bound_member_callable_metadata_function_from_cache(
             state,
             function,
@@ -9903,6 +9910,7 @@ static TZrUInt32 compiler_quickening_find_deopt_id(const SZrFunction *function, 
 
 static TZrBool compiler_quicken_known_calls(SZrState *state, SZrFunction *function) {
     TZrBool *blockStarts = ZR_NULL;
+    TZrBool *importedCalls = ZR_NULL;
     TZrUInt32 index;
     TZrBool success = ZR_FALSE;
 
@@ -9911,13 +9919,24 @@ static TZrBool compiler_quicken_known_calls(SZrState *state, SZrFunction *functi
     }
 
     blockStarts = (TZrBool *)malloc(sizeof(*blockStarts) * function->instructionsLength);
-    if (blockStarts == ZR_NULL) {
+    importedCalls = (TZrBool *)calloc(function->instructionsLength, sizeof(*importedCalls));
+    if (blockStarts == ZR_NULL || importedCalls == ZR_NULL) {
+        free(importedCalls);
+        free(blockStarts);
         return ZR_FALSE;
     }
 
     if (!compiler_quickening_build_block_starts(function, blockStarts)) {
+        free(importedCalls);
         free(blockStarts);
         return ZR_FALSE;
+    }
+
+    for (index = 0u; index < function->callSiteCacheLength; ++index) {
+        const SZrFunctionCallSiteCacheEntry *entry = &function->callSiteCaches[index];
+        if (entry->instructionIndex < function->instructionsLength &&
+            entry->bindingLocation.kind == ZR_CALL_BINDING_RELOCATION_VM_MODULE)
+            importedCalls[entry->instructionIndex] = ZR_TRUE;
     }
 
     for (index = 0; index < function->instructionsLength; index++) {
@@ -9943,6 +9962,8 @@ static TZrBool compiler_quicken_known_calls(SZrState *state, SZrFunction *functi
                 continue;
         }
 
+        if (importedCalls[index]) continue;
+
         provenance = compiler_quickening_resolve_callable_provenance_before_instruction(
                 state,
                 function,
@@ -9963,6 +9984,7 @@ static TZrBool compiler_quicken_known_calls(SZrState *state, SZrFunction *functi
     }
 
     success = ZR_TRUE;
+    free(importedCalls);
     free(blockStarts);
     return success;
 }

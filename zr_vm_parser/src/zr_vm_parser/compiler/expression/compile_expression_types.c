@@ -3291,6 +3291,8 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                     nextIsFunctionCall &&
                                     pendingReceiverRequiresBinding &&
                                     !memberUsesSuperLookup &&
+                                    typeMember != ZR_NULL &&
+                                    typeMember->callBindingLocationKind != ZR_CALL_BINDING_RELOCATION_VM_MODULE &&
                                     (memberEntryBoundAtCompileTime ||
                                      (typeMember != ZR_NULL && compiler_native_call_binding_is_provider_contract(
                                              &typeMember->callBindingFact))) &&
@@ -3463,6 +3465,16 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                                 member->location);
                                         goto cleanup;
                                     }
+                                } else if (nextIsFunctionCall && typeMember != ZR_NULL &&
+                                           typeMember->callBindingLocationKind == ZR_CALL_BINDING_RELOCATION_VM_MODULE) {
+                                    TZrUInt16 providerCacheIndex;
+                                    if (!reserve_member_slot_get_cache(cs, memberId, typeMember, 0u,
+                                                                      &providerCacheIndex, member->location))
+                                        goto cleanup;
+                                    emit_instruction(cs, create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT),
+                                                                             (TZrUInt16)resultSlot,
+                                                                             (TZrUInt16)currentSlot,
+                                                                             providerCacheIndex));
                                 } else if (!emit_member_slot_get(cs,
                                                                  resultSlot,
                                                                  currentSlot,
@@ -4320,6 +4332,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                 TZrBool useKnownVmMemberCallOpcode =
                         activeCallMemberInfo != ZR_NULL &&
                         !useMetaCallOpcode &&
+                        activeCallMemberInfo->callBindingLocationKind != ZR_CALL_BINDING_RELOCATION_VM_MODULE &&
                         activeCallMemberInfo->compiledFunction != ZR_NULL;
                 TZrBool emitMetaCallOpcode = useMetaCallOpcode || useResolvedFunctionMetaCallOpcode;
                 if (emitMetaCallOpcode && !hasSpreadArgument &&
