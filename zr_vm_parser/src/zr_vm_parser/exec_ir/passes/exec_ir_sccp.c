@@ -14,6 +14,7 @@ typedef struct SZrSccpLattice {
     TZrExecIrTypeToken typeToken;
     /* Type annotations can differ from the runner's actual value kind. */
     TZrBool signedRepresentation;
+    TZrBool strictInt64;
 } SZrSccpLattice;
 
 static TZrBool zr_sccp_size_mul_overflow(TZrUInt64 count, size_t elementSize) {
@@ -189,6 +190,7 @@ static SZrSccpLattice zr_sccp_unknown(void) {
     value.bits = 0u;
     value.typeToken = 0u;
     value.signedRepresentation = ZR_FALSE;
+    value.strictInt64 = ZR_FALSE;
     return value;
 }
 
@@ -198,6 +200,7 @@ static SZrSccpLattice zr_sccp_overdefined(TZrExecIrTypeToken typeToken) {
     value.bits = 0u;
     value.typeToken = typeToken;
     value.signedRepresentation = ZR_FALSE;
+    value.strictInt64 = ZR_FALSE;
     return value;
 }
 
@@ -207,6 +210,7 @@ static SZrSccpLattice zr_sccp_must_throw(TZrExecIrTypeToken typeToken) {
     value.bits = 0u;
     value.typeToken = typeToken;
     value.signedRepresentation = ZR_FALSE;
+    value.strictInt64 = ZR_FALSE;
     return value;
 }
 
@@ -218,6 +222,7 @@ static SZrSccpLattice zr_sccp_constant(TZrUInt64 bits,
     value.bits = bits;
     value.typeToken = typeToken;
     value.signedRepresentation = signedRepresentation;
+    value.strictInt64 = ZR_FALSE;
     return value;
 }
 
@@ -430,6 +435,63 @@ static SZrSccpLattice zr_sccp_instruction_value(
     }
 }
 
+/* Numeric lattice behavior stays legacy. Owner proofs require exact runtime
+ * Int64 provenance, independently of annotations and signedRepresentation. */
+static SZrSccpLattice zr_sccp_owner_value(
+        const SZrExecIrFunction *function, const SZrExecIrPassContext *context,
+        const SZrSccpLattice *lattice, const SZrExecIrInstruction *instruction,
+        TZrExecIrTypeToken typeToken) {
+    SZrSccpLattice value = zr_sccp_instruction_value(
+            function, context, lattice, instruction, typeToken);
+    TZrUInt32 at;
+    if (value.kind != ZR_EXEC_IR_SCCP_CONSTANT ||
+        typeToken != ZR_VALUE_TYPE_INT64 ||
+        (instruction->typeToken != 0u &&
+         instruction->typeToken != ZR_VALUE_TYPE_INT64)) return value;
+    if (instruction->opcode == ZR_EXEC_IR_OPCODE_CONSTANT) {
+        if (context != ZR_NULL && context->constants != ZR_NULL &&
+            instruction->layoutId < context->constantCount) {
+            const SZrExecIrConstant *constant = &context->constants[instruction->layoutId];
+            value.strictInt64 = (TZrBool)(constant->typeToken == ZR_VALUE_TYPE_INT64 &&
+                                          constant->flags == 0u);
+        }
+        return value;
+    }
+    switch (instruction->opcode) {
+        case ZR_EXEC_IR_OPCODE_COPY: case ZR_EXEC_IR_OPCODE_MOVE:
+        case ZR_EXEC_IR_OPCODE_CONVERT: case ZR_EXEC_IR_OPCODE_ADD:
+        case ZR_EXEC_IR_OPCODE_ARITHMETIC: case ZR_EXEC_IR_OPCODE_SUB:
+        case ZR_EXEC_IR_OPCODE_MUL: case ZR_EXEC_IR_OPCODE_NEG:
+        case ZR_EXEC_IR_OPCODE_DIV: break;
+        default: return value;
+    }
+    value.strictInt64 = (TZrBool)(instruction->operands.count != 0u);
+    for (at = 0u; at < instruction->operands.count; ++at) {
+        SZrSccpLattice operand;
+        if (!zr_sccp_operand(function, lattice, instruction, at, &operand) ||
+            operand.kind != ZR_EXEC_IR_SCCP_CONSTANT || !operand.strictInt64 ||
+            operand.typeToken != ZR_VALUE_TYPE_INT64) value.strictInt64 = ZR_FALSE;
+    }
+    return value;
+}
+
+static TZrBool zr_sccp_update(SZrSccpLattice *old, SZrSccpLattice transfer,
+                              TZrBool ownerMode) {
+    SZrSccpLattice joined = zr_sccp_join(*old, transfer);
+    TZrBool changed;
+    if (ownerMode) {
+        /* Recompute proof from the current transfer, allowing both promotion
+         * and erasure. UNKNOWN is a numeric join unit, never a proof. */
+        joined.strictInt64 = (TZrBool)(joined.kind == ZR_EXEC_IR_SCCP_CONSTANT &&
+                transfer.kind == ZR_EXEC_IR_SCCP_CONSTANT && transfer.strictInt64 &&
+                joined.bits == transfer.bits && joined.typeToken == transfer.typeToken);
+        changed = (TZrBool)(!zr_sccp_equal(*old, joined) ||
+                            old->strictInt64 != joined.strictInt64);
+    } else changed = (TZrBool)!zr_sccp_equal(*old, transfer);
+    if (changed) *old = joined;
+    return changed;
+}
+
 static TZrBool zr_sccp_edge_is_executable(const SZrExecIrFunction *function,
                                           TZrUInt32 *edgeExecutable,
                                           TZrExecIrBlockId predecessor,
@@ -474,14 +536,14 @@ static void zr_sccp_mark_successors(const SZrExecIrFunction *function,
                                     TZrExecIrBlockId blockId,
                                     TZrUInt32 *edgeExecutable,
                                     TZrUInt8 *blockExecutable,
-                                    TZrBool *changed) {
+                                    TZrBool *changed, TZrBool ownerMode) {
     TZrUInt32 index;
     TZrUInt32 first = instruction->successorRange.start;
     TZrUInt32 count = instruction->successorRange.count;
     TZrBool conditional = (TZrBool)(instruction->opcode == ZR_EXEC_IR_OPCODE_CONDITIONAL_BRANCH);
     TZrBool known = ZR_FALSE;
     TZrBool takeTrue = ZR_FALSE;
-    if (conditional && instruction->operands.count != 0u) {
+    if (!ownerMode && conditional && instruction->operands.count != 0u) {
         TZrExecIrValueId condition = function->operands[instruction->operands.start];
         if (condition != ZR_EXEC_IR_VALUE_ID_INVALID && condition <= function->valueCount &&
             lattice[condition].kind == ZR_EXEC_IR_SCCP_CONSTANT) {
@@ -549,7 +611,7 @@ static TZrBool zr_sccp_compute(SZrExecIrFunction *function,
                                SZrSccpLattice *lattice,
                                TZrUInt8 *blockExecutable,
                                TZrUInt32 *edgeExecutable,
-                               SZrExecIrDiagnostic *diagnostic) {
+                               SZrExecIrDiagnostic *diagnostic, TZrBool ownerMode) {
     TZrUInt64 rounds, round;
     TZrUInt32 index;
     TZrBool changed;
@@ -587,14 +649,12 @@ static TZrBool zr_sccp_compute(SZrExecIrFunction *function,
                                                    function->valueCount, valueId);
                     return ZR_FALSE;
                 }
-                next = zr_sccp_instruction_value(function, context, lattice, instruction,
+                next = (ownerMode ? zr_sccp_owner_value : zr_sccp_instruction_value)(
+                        function, context, lattice, instruction,
                                                  function->values[valueId - 1u].typeToken);
                 if (context != ZR_NULL && next.kind == ZR_EXEC_IR_SCCP_MUST_THROW)
                     context->lastReasonCode = ZR_EXEC_IR_PASS_REASON_WILL_THROW;
-                if (!zr_sccp_equal(lattice[valueId], next)) {
-                    lattice[valueId] = zr_sccp_join(lattice[valueId], next);
-                    changed = ZR_TRUE;
-                }
+                if (zr_sccp_update(&lattice[valueId], next, ownerMode)) changed = ZR_TRUE;
             }
         } else {
             for (index = 0u; index < function->blockCount; ++index) {
@@ -606,6 +666,7 @@ static TZrBool zr_sccp_compute(SZrExecIrFunction *function,
                     const SZrExecIrPhi *phi = &function->phiPool[phiIndex];
                     SZrSccpLattice merged = zr_sccp_unknown();
                     TZrUInt32 incomingIndex;
+                    TZrBool seen = ZR_FALSE, allStrict = ZR_TRUE;
                     if (!ZrParser_ExecIr_PassConsumeBudget(function, context, 1u))
                         return ZR_TRUE;
                     for (incomingIndex = 0u;
@@ -616,8 +677,15 @@ static TZrBool zr_sccp_compute(SZrExecIrFunction *function,
                         if (zr_sccp_edge_is_executable(function, edgeExecutable, predecessor,
                                                        block->id) &&
                             incoming->value != ZR_EXEC_IR_VALUE_ID_INVALID &&
-                            incoming->value <= function->valueCount)
-                            merged = zr_sccp_join(merged, lattice[incoming->value]);
+                            incoming->value <= function->valueCount) {
+                            SZrSccpLattice incomingValue = lattice[incoming->value];
+                            seen = ZR_TRUE;
+                            if (incomingValue.kind != ZR_EXEC_IR_SCCP_CONSTANT ||
+                                !incomingValue.strictInt64 ||
+                                incomingValue.typeToken != ZR_VALUE_TYPE_INT64)
+                                allStrict = ZR_FALSE;
+                            merged = zr_sccp_join(merged, incomingValue);
+                        }
                     }
                     if (phi->result == ZR_EXEC_IR_VALUE_ID_INVALID ||
                         phi->result > function->valueCount) {
@@ -626,10 +694,11 @@ static TZrBool zr_sccp_compute(SZrExecIrFunction *function,
                                                        function->valueCount, phi->result);
                         return ZR_FALSE;
                     }
-                    if (!zr_sccp_equal(lattice[phi->result], merged)) {
-                        lattice[phi->result] = zr_sccp_join(lattice[phi->result], merged);
-                        changed = ZR_TRUE;
-                    }
+                    merged.strictInt64 = (TZrBool)(seen && allStrict &&
+                            merged.kind == ZR_EXEC_IR_SCCP_CONSTANT &&
+                            merged.typeToken == ZR_VALUE_TYPE_INT64 &&
+                            function->values[phi->result - 1u].typeToken == ZR_VALUE_TYPE_INT64);
+                    if (zr_sccp_update(&lattice[phi->result], merged, ownerMode)) changed = ZR_TRUE;
                 }
                 for (instructionIndex = block->instructions.start;
                      instructionIndex < block->instructions.start + block->instructions.count;
@@ -645,23 +714,25 @@ static TZrBool zr_sccp_compute(SZrExecIrFunction *function,
                                                            function->valueCount, valueId);
                             return ZR_FALSE;
                         }
-                        next = zr_sccp_instruction_value(function, context, lattice, instruction,
+                        next = (ownerMode ? zr_sccp_owner_value : zr_sccp_instruction_value)(
+                        function, context, lattice, instruction,
                                                          function->values[valueId - 1u].typeToken);
                         if (context != ZR_NULL && next.kind == ZR_EXEC_IR_SCCP_MUST_THROW)
                             context->lastReasonCode = ZR_EXEC_IR_PASS_REASON_WILL_THROW;
-                        if (!zr_sccp_equal(lattice[valueId], next)) {
-                            lattice[valueId] = zr_sccp_join(lattice[valueId], next);
-                            changed = ZR_TRUE;
-                        }
+                        if (zr_sccp_update(&lattice[valueId], next, ownerMode)) changed = ZR_TRUE;
                     }
                     if (instructionIndex + 1u == block->instructions.start + block->instructions.count)
                         zr_sccp_mark_successors(function, lattice, instruction, block->id,
-                                                edgeExecutable, blockExecutable, &changed);
+                                                edgeExecutable, blockExecutable, &changed, ownerMode);
                 }
             }
         }
         if (!changed) break;
     }
+    /* A round cap is not a fixed point. No owner writeback may rely on it. */
+    if (ownerMode && changed)
+        for (index = 0u; index <= function->valueCount; ++index)
+            lattice[index].strictInt64 = ZR_FALSE;
     return ZR_TRUE;
 }
 
@@ -676,7 +747,8 @@ static TZrBool zr_sccp_rewrite(SZrExecIrFunction *function,
                                SZrExecIrPassContext *context,
                                const SZrSccpLattice *lattice,
                                TZrBool *changed,
-                               SZrExecIrDiagnostic *diagnostic) {
+                               SZrExecIrDiagnostic *diagnostic,
+                               SZrExecIrModule *owner) {
     TZrUInt32 index;
     if (!ZrParser_ExecIr_RewriteCopyAliases(function, context, changed, diagnostic))
         return ZR_FALSE;
@@ -687,8 +759,44 @@ static TZrBool zr_sccp_rewrite(SZrExecIrFunction *function,
         if (instruction->results.count != 1u) continue;
         result = function->results[instruction->results.start];
         if (result == ZR_EXEC_IR_VALUE_ID_INVALID || result > function->valueCount ||
-            lattice[result].kind != ZR_EXEC_IR_SCCP_CONSTANT || lattice[result].bits > UINT32_MAX)
+            lattice[result].kind != ZR_EXEC_IR_SCCP_CONSTANT)
             continue;
+        if (owner != ZR_NULL) {
+            TZrUInt32 poolIndex;
+            TZrBool ready;
+            if (!lattice[result].strictInt64 ||
+                function->values[result - 1u].typeToken != ZR_VALUE_TYPE_INT64 ||
+                (instruction->typeToken != 0u &&
+                 instruction->typeToken != ZR_VALUE_TYPE_INT64) ||
+                (instruction->opcode != ZR_EXEC_IR_OPCODE_ADD &&
+                 instruction->opcode != ZR_EXEC_IR_OPCODE_ARITHMETIC &&
+                 instruction->opcode != ZR_EXEC_IR_OPCODE_SUB &&
+                 instruction->opcode != ZR_EXEC_IR_OPCODE_MUL &&
+                 instruction->opcode != ZR_EXEC_IR_OPCODE_NEG) ||
+                instruction->flags != 0u ||
+                instruction->effectIn != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID ||
+                instruction->effectOut != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID ||
+                instruction->memoryIn.count != 0u || instruction->memoryOut.count != 0u)
+                continue;
+            if (!ZrParser_ExecIr_MaterializeInt64Constant(owner, function, context,
+                    index + 1u, lattice[result].bits, &poolIndex, &ready, diagnostic))
+                return ZR_FALSE;
+            if (!ready) break;
+            /* Materializer prepaid rewrite; no allocation or failure follows. */
+            instruction->opcode = (TZrUInt16)ZR_EXEC_IR_OPCODE_CONSTANT;
+            instruction->flags = 0u;
+            instruction->operands = zr_sccp_empty_range();
+            instruction->phiRange = zr_sccp_empty_range();
+            instruction->successorRange = zr_sccp_empty_range();
+            instruction->memoryIn = zr_sccp_empty_range();
+            instruction->memoryOut = zr_sccp_empty_range();
+            instruction->effectIn = ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
+            instruction->effectOut = ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID;
+            instruction->layoutId = poolIndex;
+            zr_sccp_set_changed(context, changed, instruction->sourceId);
+            continue;
+        }
+        if (lattice[result].bits > UINT32_MAX) continue;
         /* layoutId is an index when a module constant pool is present.  A
          * folded immediate cannot be encoded in that same field without
          * risking an accidental lookup of a different pool entry; retain the
@@ -734,11 +842,12 @@ static TZrBool zr_sccp_rewrite(SZrExecIrFunction *function,
     return ZR_TRUE;
 }
 
-TZrBool ZrParser_ExecIr_ComputeSccp(SZrExecIrFunction *function,
+static TZrBool zr_sccp_worker(SZrExecIrFunction *function,
                                     SZrExecIrPassContext *context,
                                     TZrBool rewrite,
                                     TZrBool *changed,
-                                    SZrExecIrDiagnostic *diagnostic) {
+                                    SZrExecIrDiagnostic *diagnostic,
+                                    SZrExecIrModule *owner) {
     SZrSccpLattice *lattice = ZR_NULL;
     TZrUInt8 *blockExecutable = ZR_NULL;
     TZrUInt32 *edgeExecutable = ZR_NULL;
@@ -756,7 +865,8 @@ TZrBool ZrParser_ExecIr_ComputeSccp(SZrExecIrFunction *function,
         free(edgeExecutable);
         return ZR_FALSE;
     }
-    if (!zr_sccp_compute(function, context, lattice, blockExecutable, edgeExecutable, diagnostic)) {
+    if (!zr_sccp_compute(function, context, lattice, blockExecutable, edgeExecutable, diagnostic,
+                         (TZrBool)(owner != ZR_NULL))) {
         free(lattice);
         free(blockExecutable);
         free(edgeExecutable);
@@ -801,14 +911,16 @@ TZrBool ZrParser_ExecIr_ComputeSccp(SZrExecIrFunction *function,
         context->cache->validMask |= ZR_EXEC_IR_ANALYSIS_SCCP;
     }
     if (rewrite) {
-        if (!zr_sccp_rewrite(function, context, lattice, changed, diagnostic)) {
+        TZrBool localChanged = ZR_FALSE;
+        TZrBool *actualChanged = owner != ZR_NULL && changed == ZR_NULL ? &localChanged : changed;
+        if (!zr_sccp_rewrite(function, context, lattice, actualChanged, diagnostic, owner)) {
             free(lattice);
             free(blockExecutable);
             free(edgeExecutable);
             return ZR_FALSE;
         }
         if (context != ZR_NULL && context->cache != ZR_NULL &&
-            changed != ZR_NULL && *changed) {
+            actualChanged != ZR_NULL && *actualChanged) {
             /* The cache describes the pre-rewrite value graph.  Do not leave
              * it marked valid for a caller that invokes this helper directly
              * (the manager also performs the broader invalidation protocol). */
@@ -822,6 +934,38 @@ TZrBool ZrParser_ExecIr_ComputeSccp(SZrExecIrFunction *function,
     free(blockExecutable);
     free(edgeExecutable);
     return ZR_TRUE;
+}
+
+TZrBool ZrParser_ExecIr_ComputeSccp(SZrExecIrFunction *function,
+                                    SZrExecIrPassContext *context,
+                                    TZrBool rewrite, TZrBool *changed,
+                                    SZrExecIrDiagnostic *diagnostic) {
+    return zr_sccp_worker(function, context, rewrite, changed, diagnostic, ZR_NULL);
+}
+
+TZrBool ZrParser_ExecIr_RunModuleSccpPass(SZrExecIrModule *owner,
+        SZrExecIrFunction *function, SZrExecIrPassContext *context,
+        TZrBool *changed, SZrExecIrDiagnostic *diagnostic) {
+    TZrUInt32 at;
+    if (changed != ZR_NULL) *changed = ZR_FALSE;
+    if (owner == ZR_NULL)
+        return ZrParser_ExecIr_ComputeSccp(function, context, ZR_TRUE, changed, diagnostic);
+    if (function == ZR_NULL || context == ZR_NULL ||
+        owner->functionCount > owner->functionCapacity ||
+        owner->constantCount > owner->constantCapacity ||
+        (owner->functionCount != 0u && owner->functions == ZR_NULL) ||
+        (owner->constantCount != 0u && owner->constants == ZR_NULL)) goto invalid;
+    for (at = 0u; at < owner->functionCount; ++at)
+        if (&owner->functions[at] == function) break;
+    if (at == owner->functionCount) goto invalid;
+    context->constants = owner->constants;
+    context->constantCount = owner->constantCount;
+    return zr_sccp_worker(function, context, ZR_TRUE, changed, diagnostic,
+                          owner->constantCount == 0u ? ZR_NULL : owner);
+invalid:
+    ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
+                                   function, 0u, 0u, 0u, 0u);
+    return ZR_FALSE;
 }
 
 TZrBool ZrParser_ExecIr_RunSccpPass(SZrExecIrFunction *function,

@@ -1,5 +1,13 @@
 ---
 related_code:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_internal.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_constant_materialize.c
+  - tests/parser/test_ssa_sccp_pooled_int64.c
+  - tests/parser/support/ssa_sccp_pooled_int64_fixture.h
+  - tests/parser/support/ssa_sccp_pooled_int64_fixture.c
+  - tests/parser/support/ssa_sccp_pooled_int64_faults.c
+  - tests/cmake/ssa-sccp-pooled-int64.cmake
+  - tests/parser/test_ssa_pass_manager_scalar_metadata.c
   - zr_vm_parser/include/zr_vm_parser/exec_ir_pass_manager.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_manager.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
@@ -17,14 +25,23 @@ related_code:
   - tests/parser/support/ssa_gc_map_parser_consumers_fixture.h
   - tests/cmake/ssa-gc-map-parser-consumers.cmake
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_internal.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_constant_materialize.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_manager.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
 plan_sources:
+  - .codex/plans/20261017-ssa-sccp-pooled-int64.md
   - .codex/plans/20261016-ssa-gc-map-parser-consumers.md
   - docs/plans/ssa/01-execir-ssa/03-effects-verifier.md
   - docs/plans/ssa/02-automatic-optimization/01-pass-manager-scalar.md
 tests:
+  - tests/parser/test_ssa_sccp_pooled_int64.c
+  - tests/parser/support/ssa_sccp_pooled_int64_fixture.h
+  - tests/parser/support/ssa_sccp_pooled_int64_fixture.c
+  - tests/parser/support/ssa_sccp_pooled_int64_faults.c
+  - tests/cmake/ssa-sccp-pooled-int64.cmake
+  - tests/parser/test_ssa_pass_manager_scalar_metadata.c
   - tests/parser/test_ssa_gc_map_parser_consumers.c
   - tests/parser/support/ssa_gc_map_parser_consumers_fixture.h
   - tests/cmake/ssa-gc-map-parser-consumers.cmake
@@ -125,12 +142,14 @@ analyses and is visible to pass-change accounting.  The hash excludes the
 derived immediate dominator, which is an analysis result rather than IR.
 
 SCCP uses `unknown`, `constant`, `overdefined`, and `must-throw` states.  Add,
-subtract, multiply, negate, and divide use checked signed-64-bit helpers;
-overflow, divide-by-zero, and the `INT64_MIN / -1` case become `must-throw`
-and remain executable instructions.  A module constant pool is read through
-the pass context.  Because `layoutId` is a pool index in that mode, arithmetic
-rewrites are retained until a module-aware constant materializer can allocate
-an unambiguous pool entry; copy propagation is still allowed.
+subtract, multiply, negate, and divide use checked signed-64-bit helpers.
+Binary overflow, divide-by-zero, and `INT64_MIN / -1` become `must-throw`;
+NEG of `INT64_MIN` retains its existing `overdefined` result. These operations
+remain executable when their results cannot be safely folded. A module pool
+is read through the pass context. In the public function-only path, pooled
+arithmetic remains unchanged because `layoutId` is a pool index. The private
+module-owner path now supplies the typed materializer described below; copy
+propagation keeps its existing dominance and ownership checks.
 
 `CONVERT` allows unchanged constant bits only when source and result have the
 same canonical signed integer token, any explicit instruction target agrees,
@@ -152,16 +171,20 @@ and cross-type conversions remain executable. In particular, a no-pool CONST
 annotated DOUBLE still stores SIGNED7, so DOUBLE-to-DOUBLE must run to produce
 FLOAT7. A DOUBLE pool identity preserves its FLOAT runtime value without
 claiming its encoded payload is a signed lattice identity. SCCP does not
-simulate floating conversions or allocate new typed pool entries.
+simulate floating conversions. CONVERT itself does not use the new owner-aware
+Int64 materialization path; its existing signed-representation contract remains.
 
-Pool mode still reads encoded payload bits into the existing scalar lattice.
-For example, a direct DOUBLE negative-zero branch has nonzero encoded bits
+The legacy public/function-only pool mode still reads encoded payload bits
+into the existing scalar lattice. For example, a direct DOUBLE negative-zero branch has nonzero encoded bits
 but false runtime truth: SCCP can mark the false arm nonexecutable even though
 both runners execute it. The current branch instruction remains unchanged,
 so this diagnostic demonstrates incorrect analysis facts rather than a changed
 runtime return. The CONVERT guard stops that fact from propagating through a
 DOUBLE identity conversion; direct pooled branch/arithmetic interpretation
-requires a separate typed-lattice repair. See the
+requires a separate typed-lattice repair in that legacy path. The new nonempty
+owner path conservatively marks every normal conditional successor executable,
+so an unproven BOOL condition cannot hide a PHI input and create a strict Int64
+proof downstream. This does not repair or change legacy numeric branch facts. See the
 [representation acceptance record](../../tests/acceptance/2026-10-02-ssa-sccp-representation.md).
 
 Copy propagation never substitutes a definition across a non-dominating
@@ -189,7 +212,9 @@ Callers may provide an initialized `SZrExecIrPassFailure` in the pass context
 or module optimization options.  On a named pass failure, the manager transfers
 that function's failed IR, a copy of the pass name, and its diagnostic into
 the record before restoring the original function/module.  This is the
-smallest self-contained replayable unit; the caller owns it and frees it with
+function-level failure record; it does not own the module constant pool, so a
+pooled function capture alone is not a self-contained module replay artifact.
+The caller owns it and frees it with
 `ZrParser_ExecIr_PassFailureFree`.  The next pipeline call clears an older
 record.  Invalid input rejected before a pass starts has a diagnostic but no
 pass-failure record.  Allocation failure while copying the name cannot
@@ -202,8 +227,73 @@ does not affect work budgets or optimization decisions.
 
 `ZrParser_ExecIr_Optimize` applies the same registry to every module function,
 shares the compile budget across functions, supplies the module constant view,
-and reports an aggregate module hash.  Individual passes can be disabled for
+and reports an aggregate module hash. Individual passes can be disabled for
 binary diagnosis without changing legality checks.
+
+## Nonempty pooled Int64 writeback and module transaction
+
+The new private `RunModulePassPipeline(owner, function, ...)` and
+`RunModuleSccpPass(owner, function, ...)` take an explicit mutable candidate
+owner. They check function membership with pointer equality after count,
+capacity and NULL guards, and refresh the context's constant view at entry,
+before passes, after pool growth and before the next function. The public
+PassContext and cache layouts are unchanged; no const cast or scratchArena
+ownership channel is used. NULL owner and an empty pool retain the legacy
+numeric transfer, branch and immediate-constant protocol.
+
+The owner path maintains a separate strict Int64 provenance bit. A canonical
+Int64 pool tuple with flags=0 and a canonical Int64 result seeds it. An absent
+instruction type annotation (0) or explicit Int64 annotation is accepted;
+other explicit annotations are rejected. COPY/MOVE and identity CONVERT cannot
+launder an unproven or retagged operand. Arithmetic requires every input and
+the actual result to be canonical Int64. PHIs require at least one executable
+input and proof from every such input, including external UNKNOWN inputs.
+Compatible constant joins take the current transfer proof, allowing both
+promotion and erasure; UNKNOWN erases proof even when legacy numeric join
+retains constant bits. Owner convergence compares the actual joined value and
+proof; a round cap without convergence clears all strict proofs before rewrite.
+
+Only pure flags=0 ADD/ARITHMETIC, SUB, MUL and NEG with no effect or memory
+boundary become pooled CONSTANT instructions. Normal DIV retains MAY_THROW,
+effect tokens and its instruction; its safely evaluated quotient may feed a
+pure ADD/NEG consumer. Zero, MIN/-1, overflow, non-Int64 origins and independent
+observable boundaries do not gain a writeback proof. Negative values and
+results above UINT32_MAX use full 64-bit bits in the pool, never an immediate
+truncated into layoutId.
+
+`MaterializeInt64Constant` deduplicates exactly `(Int64, flags=0, bits)`. Each
+scanned tuple consumes one work unit; reuse reserves one rewrite unit and a
+new append reserves two units for append plus rewrite before changing the
+pool. Instruction IDs are one based and returned pool indices zero based.
+TRUE/not-ready means budget exhaustion without an append. TRUE/ready is
+followed immediately by a non-failing instruction rewrite with no intervening
+allocation or budget check. The helper distinguishes guarded capacity overflow
+from allocator OOM. A private FALSE requires discarding the whole candidate;
+it does not promise local constant-pool rollback.
+
+Public Optimize first runs real module verification, clones an independent
+candidate, optimizes its functions and pool, then verifies the whole candidate
+again before publishing it and freeing the previous owner. FALSE frees only
+the candidate, restores the caller's remark count and zeros the result; the
+original module's content and owner identities remain intact. Budget exhaustion
+is a successful, verified partial optimization and may publish that valid
+candidate; it is not a failure rollback. Public function-only pipeline rollback
+retains its historical function/cache/context contract.
+
+The [pooled Int64 validation record](../testing-and-validation/ssa-sccp-pooled-int64.md)
+retains actual RED53/107 with25 registered feature failures and212 completed
+fault observations. Actual GREEN independently passes53cases/113profiles,
+492metrics,236/236 measured faults and100 owner-budget cutoffs (four W=25),
+with108726 allocation attempts and live/errors0. Independently reconciled
+metadata15 and GC-parser99 pass from24 original natural-zero phases:
+19 compiles,25 exact-cache objects, two links and two CTests. The original
+failed controller receipt stays false; repaired strict parsing reconciles its
+preserved raw evidence without repeating native execution. Independent MSVC
+acceptance covers seven /Zs C syntax checks, eight phases including environment,
+99 headers/106 consumed inputs and34 protected build products unchanged,
+with zero warnings/errors/unknown output. This is finite syntax W0, with no
+MSVC object/link/runtime/full-build W0 or Linux credit. Publication and cleanup
+remain pending; completed outcomes stay36 and full02.01/SSA47 remains open.
 
 Focused validation examples (from the repository root, using separately
 registered physical output directories; these examples are not new run evidence):

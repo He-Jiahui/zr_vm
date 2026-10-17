@@ -483,11 +483,10 @@ static TZrBool zr_verify_pass_boundary(const SZrExecIrFunction *function,
     return valid;
 }
 
-TZrBool ZrParser_ExecIr_RunPassPipeline(SZrExecIrFunction *function,
-                                        const SZrExecIrPassInfo *passes,
-                                        TZrUInt32 passCount,
-                                        SZrExecIrPassContext *context,
-                                        SZrExecIrDiagnostic *diagnostic) {
+TZrBool ZrParser_ExecIr_RunModulePassPipeline(
+        SZrExecIrModule *owner, SZrExecIrFunction *function,
+        const SZrExecIrPassInfo *passes, TZrUInt32 passCount,
+        SZrExecIrPassContext *context, SZrExecIrDiagnostic *diagnostic) {
     SZrExecIrFunction snapshot;
     SZrExecIrAnalysisCache cacheSnapshot;
     TZrUInt32 index;
@@ -506,6 +505,19 @@ TZrBool ZrParser_ExecIr_RunPassPipeline(SZrExecIrFunction *function,
         ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
                                        function, 0u, 0u, 0u, 0u);
         return ZR_FALSE;
+    }
+    if (owner != ZR_NULL) {
+        if (owner->functionCount > owner->functionCapacity ||
+            owner->functions == ZR_NULL ||
+            owner->constantCount > owner->constantCapacity ||
+            (owner->constantCount != 0u && owner->constants == ZR_NULL))
+            goto invalid_owner;
+        for (index = 0u; index < owner->functionCount; ++index) {
+            if (&owner->functions[index] == function) break;
+        }
+        if (index == owner->functionCount) goto invalid_owner;
+        context->constants = owner->constants;
+        context->constantCount = owner->constantCount;
     }
     ZrParser_ExecIr_PassFailureFree(context->failure);
     if (function->sealed) {
@@ -543,6 +555,10 @@ TZrBool ZrParser_ExecIr_RunPassPipeline(SZrExecIrFunction *function,
         SZrExecIrOptimizationRemark remark;
         SZrExecIrFunction outputView;
 
+        if (owner != ZR_NULL) {
+            context->constants = owner->constants;
+            context->constantCount = owner->constantCount;
+        }
         if (!ZrCore_ExecIr_CloneFunction(function, &passSnapshot, diagnostic))
             goto rollback;
         passSnapshotReady = ZR_TRUE;
@@ -567,9 +583,14 @@ TZrBool ZrParser_ExecIr_RunPassPipeline(SZrExecIrFunction *function,
             goto rollback;
         started = clock();
         ++context->passesRun;
-        if (!context->budgetExhausted &&
-            !passes[index].run(function, context, &changed, diagnostic))
-            goto rollback;
+        if (!context->budgetExhausted) {
+            TZrBool ok = owner != ZR_NULL &&
+                         passes[index].run == ZrParser_ExecIr_RunSccpPass
+                    ? ZrParser_ExecIr_RunModuleSccpPass(
+                            owner, function, context, &changed, diagnostic)
+                    : passes[index].run(function, context, &changed, diagnostic);
+            if (!ok) goto rollback;
+        }
         ended = clock();
         /* Check transformed storage before any hash traversal. Its attached
          * map still describes the input revision until the refresh below. */
@@ -657,6 +678,20 @@ rollback:
     context->passesRun = savedPasses;
     ZrParser_ExecIr_AnalysisCacheFree(&cacheSnapshot);
     return ZR_FALSE;
+
+invalid_owner:
+    ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
+                                   function, 0u, 0u, 0u, 0u);
+    return ZR_FALSE;
+}
+
+TZrBool ZrParser_ExecIr_RunPassPipeline(SZrExecIrFunction *function,
+                                        const SZrExecIrPassInfo *passes,
+                                        TZrUInt32 passCount,
+                                        SZrExecIrPassContext *context,
+                                        SZrExecIrDiagnostic *diagnostic) {
+    return ZrParser_ExecIr_RunModulePassPipeline(
+            ZR_NULL, function, passes, passCount, context, diagnostic);
 }
 
 TZrBool ZrParser_ExecIr_OptimizeScalar(SZrExecIrFunction *function,
@@ -685,7 +720,8 @@ TZrBool ZrParser_ExecIr_Optimize(SZrExecIrModule *module,
                                  const SZrExecIrOptimizeOptions *options,
                                  SZrExecIrOptimizationResult *result,
                                  SZrExecIrDiagnostic *diagnostic) {
-    SZrExecIrModule snapshot;
+    SZrExecIrModule candidate;
+    SZrExecIrModule previous;
     SZrExecIrPassInfo selected[2];
     TZrUInt32 selectedCount = 0u;
     TZrUInt32 index;
@@ -707,36 +743,37 @@ TZrBool ZrParser_ExecIr_Optimize(SZrExecIrModule *module,
         (options->disabledPassMask & ZR_EXEC_IR_OPTIMIZE_DISABLE_DCE) == 0u)
         selected[selectedCount++] = zr_scalar_passes[1];
 
-    ZrCore_ExecIr_ModuleInit(&snapshot);
-    if (!ZrCore_ExecIr_CloneModule(module, &snapshot, diagnostic)) return ZR_FALSE;
+    ZrCore_ExecIr_ModuleInit(&candidate);
+    if (!ZrCore_ExecIr_CloneModule(module, &candidate, diagnostic)) return ZR_FALSE;
     beforeModuleHash = zr_module_hash(module);
     if (options != ZR_NULL && options->remarks != ZR_NULL)
         remarkCount = options->remarks->count;
-    for (index = 0u; index < module->functionCount; ++index) {
+    for (index = 0u; index < candidate.functionCount; ++index) {
         SZrExecIrAnalysisCache cache;
         SZrExecIrPassContext context;
-        TZrUInt64 before = ZrParser_ExecIr_FunctionHash(&module->functions[index]);
+        TZrUInt64 before = ZrParser_ExecIr_FunctionHash(&candidate.functions[index]);
         ZrParser_ExecIr_AnalysisCacheInit(&cache);
         memset(&context, 0, sizeof(context));
         context.cache = &cache;
         context.workUsed = workUsed;
         context.budgetExhausted = budgetExhausted;
-        context.constants = module->constants;
-        context.constantCount = module->constantCount;
+        context.constants = candidate.constants;
+        context.constantCount = candidate.constantCount;
         if (options != ZR_NULL) {
             context.budget = options->budget;
             context.remarks = options->remarks;
             context.failure = options->failure;
         }
-        if (!ZrParser_ExecIr_RunPassPipeline(&module->functions[index], selected,
-                                             selectedCount, &context, diagnostic)) {
+        if (!ZrParser_ExecIr_RunModulePassPipeline(
+                    &candidate, &candidate.functions[index], selected,
+                    selectedCount, &context, diagnostic)) {
             ZrParser_ExecIr_AnalysisCacheFree(&cache);
             goto module_rollback;
         }
         workUsed = context.workUsed;
         budgetExhausted = (TZrBool)(budgetExhausted || context.budgetExhausted);
         if (result != ZR_NULL) {
-            TZrUInt64 after = ZrParser_ExecIr_FunctionHash(&module->functions[index]);
+            TZrUInt64 after = ZrParser_ExecIr_FunctionHash(&candidate.functions[index]);
             ++result->functionsVisited;
             result->passesRun += context.passesRun;
             result->budgetExhausted = budgetExhausted;
@@ -745,18 +782,22 @@ TZrBool ZrParser_ExecIr_Optimize(SZrExecIrModule *module,
         ZrParser_ExecIr_AnalysisCacheFree(&cache);
         if (budgetExhausted) break;
     }
+    /* Verify the complete candidate, including new pool references, before
+     * publishing.  Every failing operation leaves the original owner intact. */
+    if (!ZrParser_ExecIr_Verify(&candidate, diagnostic)) goto module_rollback;
     if (result != ZR_NULL) {
         result->beforeHash = beforeModuleHash;
-        result->afterHash = zr_module_hash(module);
+        result->afterHash = zr_module_hash(&candidate);
         result->budgetExhausted = budgetExhausted;
     }
-    ZrCore_ExecIr_FreeModule(&snapshot);
+    previous = *module;
+    *module = candidate;
+    ZrCore_ExecIr_ModuleInit(&candidate);
+    ZrCore_ExecIr_FreeModule(&previous);
     return ZR_TRUE;
 
 module_rollback:
-    ZrCore_ExecIr_FreeModule(module);
-    *module = snapshot;
-    ZrCore_ExecIr_ModuleInit(&snapshot);
+    ZrCore_ExecIr_FreeModule(&candidate);
     if (options != ZR_NULL && options->remarks != ZR_NULL)
         options->remarks->count = remarkCount;
     if (result != ZR_NULL) memset(result, 0, sizeof(*result));

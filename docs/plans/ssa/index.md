@@ -123,8 +123,11 @@ postcommit独审接受，7365条范围外索引记录及8条外来暂存记录�
 均已有限验收提交和清理。第33至36项子清单均closed，完整SSA及Parent未知项仍active。
 第34项GC-map outer shape已按有限证据验收，见[专门验收](../../../tests/acceptance/ssa-gc-map-outer-shape.md)。
 当前进入[02.01 SCCP与标量优化](02-automatic-optimization/01-pass-manager-scalar.md)：
-非空模块常量池的signed Int64写回缺口已在实际源码确认，设计与53个拟议测试正独立审查；
-尚无本批实际RED、生产修复或GREEN结果，不计第37项已完成成果。余项见
+非空模块常量池的signed Int64写回已完成实际RED复核：53用例中28 PASS、25个已知缺口FAIL；
+生产修复已取得独审接受的实际GREEN53PASS/113profiles、236/236故障、100个owner预算边界和ledger0；
+metadata15/GC-parser99原始运行经离线reconciliation接受（旧控制器失败保持，未重复native），
+MSVC七次有限syntax W0也已独审；当前待提交和清理，完成计数仍36，
+不计第37项已完成成果。余项见
 [ExecIR模型剩余工作](01-execir-ssa/01-core-model.md)。
 
 ### 到完整验收的推进顺序
@@ -137,7 +140,7 @@ postcommit独审接受，7365条范围外索引记录及8条外来暂存记录�
 | 1. 当前Source与准入链 | 第36项已交付 | 完整表达式与控制流、GC消费者链、全量W0、Linux及完整MSVC证据 |
 | 2. IR、SSA与状态映射 | 部分已交付 | 契约、模型、verifier、facts与四后端语义门禁闭合 |
 | 3. 生命周期与运行时状态 | 部分已交付 | frame与roots、异常、GC搬迁、并发、恢复、取消和预算压力证据 |
-| 4. 优化与数据布局 | SCCP常量池写回设计中 | 各pass差分、分析失效、预算、布局语义与可靠性能证据 |
+| 4. 优化与数据布局 | SCCP池写回有限验证通过，待提交清理 | 各pass差分、分析失效、预算、布局语义与可靠性能证据 |
 | 5. AOT与持久产物 | 部分元数据已交付 | 唯一producer、sections与relocation、真实C/LLVM runner、coverage与fallback成本 |
 | 6. 版本、语言与平台 | 部分契约checker已交付 | lease与回滚、能力和数值、向量化、JIT生命周期及实际平台矩阵 |
 | 7. 47项整体收口 | 未完成 | 逐项需求→实现→实测→提交签收；回归、平台、性能、旧路径退出和文档齐备 |

@@ -1,17 +1,36 @@
 ---
 related_code:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_manager.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_internal.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_constant_materialize.c
+  - tests/parser/test_ssa_sccp_pooled_int64.c
+  - tests/parser/support/ssa_sccp_pooled_int64_fixture.h
+  - tests/parser/support/ssa_sccp_pooled_int64_fixture.c
+  - tests/parser/support/ssa_sccp_pooled_int64_faults.c
+  - tests/cmake/ssa-sccp-pooled-int64.cmake
+  - tests/parser/test_ssa_pass_manager_scalar_metadata.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
-  - zr_vm_parser/include/zr_vm_parser/exec_ir_dead_source_places.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_dead_source_places.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_dead_source_places.c
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_internal.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_constant_materialize.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_manager.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
 plan_sources:
+  - .codex/plans/20261017-ssa-sccp-pooled-int64.md
   - docs/plans/ssa/index.md
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
 tests:
+  - tests/parser/test_ssa_sccp_pooled_int64.c
+  - tests/parser/support/ssa_sccp_pooled_int64_fixture.h
+  - tests/parser/support/ssa_sccp_pooled_int64_fixture.c
+  - tests/parser/support/ssa_sccp_pooled_int64_faults.c
+  - tests/cmake/ssa-sccp-pooled-int64.cmake
+  - tests/parser/test_ssa_pass_manager_scalar_metadata.c
   - tests/parser/test_ssa_pass_manager_scalar.c
   - tests/parser/test_ssa_dead_source_places.c
   - tests/parser/ssa_dead_source_places_edges.inc
@@ -64,6 +83,18 @@ compiler_quickening.c 包含大量后期 opcode 选择，不能继续承载 SSA 
 | 计划新增测试 | `tests/parser/test_ssa_pass_manager_scalar.c` | 下述正向、失败与状态转换断言；复用既有 harness。 |
 
 新增文件登记到所属模块 CMake；测试登记到计划新增的 `tests/cmake/ssa-tests.cmake`，由 `tests/CMakeLists.txt` 单点 include。先迁移职责并保持行为，再接入新 contract；不要把新分析或慢路径追加到巨型 dispatch/quickening 文件。
+
+## Source37 有限进展：非空池 Int64 写回（验证通过，待提交与清理）
+
+实际RED保留53主案/107profiles、25已知功能FAIL与28PASS、212故障及live/errors0的历史证据。私有owner通道、typed Int64 materializer及candidate事务已取得实际GREEN及独审：53PASS/113profiles/492metrics、236/236故障完成、108726 allocation attempts、live/errors=0。基线池不写回及失败owner替换仍是历史RED事实，不升级旧失败收据。
+
+本批只优化IR并真实Verify：canonical Int64池来源及result/operands proof，指令type可为0或Int64，生成tuple按(Int64, flags0, bits)去重；ADD/ARITHMETIC、SUB、MUL、NEG纯操作可写回。DIV的MAY_THROW/effect保留，正常商仅供后续纯consumer；危险DIV/溢出/非Int64/可观察边界保持。PHI对全部可执行incoming合取，UNKNOWN清proof；owner分支保守覆盖正常后继并在未收敛cap清proof。Legacy CONVERT/signedRepresentation、NEG MIN overdefined、NULL owner及空池协议保留。
+
+公开Optimize先Verify并Clone candidate，所有函数与pool最终Verify后发布；FALSE只丢candidate并恢复remarks/result，原owner身份保持。私有FALSE要求调用方丢whole candidate，不承诺局部pool回滚。扫描每tuple1work、reuse预付rewrite1work、append预付append+rewrite2work，ready后立即无失败改指令，预算成功部分提交不得留下孤立常量。函数失败capture不自带独立module pool。
+
+实际GREEN覆盖case30两真实UNKNOWN CFG反例；case47两私有入口×两diag各测W=25，fresh扫1..25共100边界全PASS。metadata15（排除MaterializeState）及GC-parser99经原24phase离线reconciliation接受：19编译、25精确cache、2link/2CTest、Unity15/99全PASS；原控制器failed收据保持false，未重复native。有限MSVC7C/8phase语法独审通过，99headers/106 consumed、34protected保持，仅syntax W0。commit和cleanup仍PENDING，完成计数保持36；不勾下方整叶出口，不授fullW0/Linux/VM或完整02.01/SSA47信用。
+
+详见[实现合同](../../../instruction-generation/execir-pass-pipeline.md#nonempty-pooled-int64-writeback-and-module-transaction)与[验证记录](../../../testing-and-validation/ssa-sccp-pooled-int64.md)。实际报告根为`E:/cargo-targets/zr_vm/reports/ssa-sccp-pooled-int64-01a0fe2b/`。
 
 ## 可逐项执行的重构任务
 
