@@ -4460,9 +4460,7 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                             memberInfo,
                             &nextType,
                             ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS);
-                    if (memberInfo->declarationNode == ZR_NULL &&
-                        type_name_is_module_prototype_inference(
-                                cs, currentType.typeName)) {
+                    if (memberInfo->declarationNode == ZR_NULL) {
                         EZrSemanticExternalTargetKind externalTargetKind =
                                 ZR_SEMANTIC_EXTERNAL_TARGET_UNKNOWN;
 
@@ -4478,7 +4476,9 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                             externalTargetKind = ZR_SEMANTIC_EXTERNAL_TARGET_PROPERTY;
                         } else if (memberInfo->memberType == ZR_AST_CLASS_FIELD ||
                                    memberInfo->memberType == ZR_AST_STRUCT_FIELD) {
-                            externalTargetKind = ZR_SEMANTIC_EXTERNAL_TARGET_VALUE;
+                            externalTargetKind = type_name_is_module_prototype_inference(cs, currentType.typeName)
+                                    ? ZR_SEMANTIC_EXTERNAL_TARGET_VALUE
+                                    : ZR_SEMANTIC_EXTERNAL_TARGET_FIELD;
                         }
                         type_inference_record_external_member_reference_fact(
                                 cs,
