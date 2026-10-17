@@ -53,7 +53,7 @@ AOT25、CTest2 全部通过。整数表达式 ExecIR 保留已提交 `7adc0e22`�
 
 ### 已完成有限交付（2026-10-17）
 
-已核实 **35 项有限交付：16 项功能、9 项代码修正、5 项专项验证、5 项文档**。
+已核实 **36 项有限交付：16 项功能、10 项代码修正、5 项专项验证、5 项文档**。
 原32项的逐项验收与提交证明保留；第33项为
 `150f641f4b5d50d67e888fb8b34987d264a18ac1`，父提交
 `3f7d8d8cbc7601c292afefb594de0e05969b2b17`，精确98路径、双He身份，
@@ -68,8 +68,16 @@ He-Jiahui。四处guard覆盖七个公开元数据入口，GREEN 99项全部通�
 （21合法、78畸形），MSVC七次有限语法检查通过；提交、索引恢复与自有清理
 均经独立验收，清理六个废弃文件，实际释放2048911B。此有限子任务已关闭。
 
+第36项SourceFrame/Finalized GC-map外层准入已提交为
+`5842d412a074bcc73400ae2d29b737104e70ff7e`，精确10路径、双He身份。
+GREEN110及既有18/24回归全PASS，MSVC四次有限语法检查通过；
+postcommit独审接受，7365条范围外索引记录及8条外来暂存记录保持。
+已清理4个临时脚本和2个私有Git索引，共2068379B；59个可复用构建文件
+18687966B及必要成功/失败证据保留，finite-close accepted=true。
+
 | 已完成有限子任务 | 完整提交 SHA | 已验收有限范围 |
 | --- | --- | --- |
+| [SourceFrame/Finalized GC-map外层准入](../../testing-and-validation/ssa-gc-map-source-preflight.md) | `5842d412a074bcc73400ae2d29b737104e70ff7e` | 两处guard复用canonical谓词并保留前置检查优先级；GREEN110全PASS、ledger24255 attempts/live0/errors0，既有18/24回归全PASS。34次主编译/2link，13次回归补编/24个provider精确复用/2link；MSVC4次syntax/4C/3roles、139实际headers、156输入，仅有限语法W0。精确10路径、双He、7365范围外index及8条foreign cached原raw保持，shared CMake仅提交freshHEAD+自有92B。postcommit独审和自有清理接受：6文件2068379B，59构建文件18687966B及必要raw保留；未知归属边界保留，完整47叶仍active。 |
 | [Parser GC-map消费者外层准入](../../testing-and-validation/ssa-gc-map-parser-consumers.md) | `193f46439fa2025bc9eff4a50ef264bb30a2ea5f` | 四处guard、七个公开元数据入口；GREEN99全PASS（21合法、78畸形），30唯一TU、219实际headers、0cache；MSVC7次syntax/7唯一C/2roles，仅有限语法W0。精确12路径、双He；二进制index恢复及postcommit双审接受，发布时7333范围外index和4条foreign cached保持。后续外来提交与工作区变化原位保留；清理6文件2048911B、280必保pins匹配，3个复用builds及必要成功/失败证据保留，finite-close accepted=true。完整consumer链/Core几何/47叶及Linux/fullW0/VM仍待验收。 |
 | [ExecIR构造接口收敛Core私有边界](../../instruction-generation/execir-model.md) | `150f641f4b5d50d67e888fb8b34987d264a18ac1` | 30个构建期声明（含10 Reserve、2 mutable及SetBindingRows）迁入Core私有头；Source5/Lower4项元数据CTest、永久头32模式及78 caller syntax均实际通过并独审。精确98路径、双He、4外来cached保持；自有8文件清理2076206B，现用构建与必要证据保留。仅有限代码修正，不授VM/Linux/fullW0或整叶信用。 |
 | [Source I64整数表达式ExecIR保留](../../testing-and-validation/ssa-source-integer-expression-retention.md) | `7adc0e22418b675caa16190c39af838bb196ad3c` | Source r10：direct22/26/25/2/4、CTest5；423故障站/424健康生命周期、proof22 mutations、storage32+32+5/P0及真实span故障恢复。lower24/89/16；MSVC15phase/13C有限W0编译。Root及独立Sol验收；精确36路径、双He身份，7272范围外index条目及10条foreign cached raw保持。不计VM/Linux/fullW0或整叶完成。 |
@@ -107,17 +115,32 @@ He-Jiahui。四处guard覆盖七个公开元数据入口，GREEN 99项全部通�
 | [GC-map outer-shape有限准入](../../../tests/acceptance/ssa-gc-map-outer-shape.md) | `403e8d474d9e1f2001edff261594fa50ae8385ec` | main GREEN-r2四项CTest/50TU；primitive-r3一项CTest内18项Unity、18/18故障；Try原12-case协议11PASS加一次intentional prior-failure FAIL、90/90/live0；MSVC-r3为16次syntax/12唯一C/10roles、有限syntax W0。68 Git commands/121 raw records/20 blobs核对，7320范围外index及4条foreign cached保持；标准清理7文件（3helpers、4私有indexes）4032562B，24必保pins匹配，3个复用builds及原成功/失败证据保留；finite-close accepted=true。仅此子清单closed，完整consumer链/GC/01.01/47叶、fullW0/Linux/VM仍开放。 |
 
 上述有意失败验证 prior-failure 与清理协议，检查器按精确预期验收；非预期失败不计通过。
-上述35项均有实际验收和提交；本次索引维护不增加成果数量。
+上述36项均有实际验收和提交；本次索引维护不增加成果数量。
 47个叶计划仍须分别闭合完整退出门禁，有限交付数量不能用于计算整体完成率。
-43 planned/4 in-progress及complete=0是此前的整叶文档登记状态；已有35项子任务完成，
+43 planned/4 in-progress及complete=0是此前的整叶文档登记状态；已有36项子任务完成，
 整叶尚无完整出口签收记录。这两个进度口径应分别记录。
 旧整数表达式11失败保留为历史RED；整数表达式7adc0e22及私有接口边界150f641f
-均已有限验收提交和清理。第33、34、35项子清单均closed，完整SSA及Parent未知项仍active。
+均已有限验收提交和清理。第33至36项子清单均closed，完整SSA及Parent未知项仍active。
 第34项GC-map outer shape已按有限证据验收，见[专门验收](../../../tests/acceptance/ssa-gc-map-outer-shape.md)。
-当前继续SourceFrame/Finalized GC-map外层preflight：具体计划已双审接受，
-两名gpt-6-sol分别编写测试夹具与验证脚本；尚未进行该项实际RED验证和生产代码修正，
-不计为第36项已完成成果。余项见
+当前进入[02.01 SCCP与标量优化](02-automatic-optimization/01-pass-manager-scalar.md)：
+非空模块常量池的signed Int64写回缺口已在实际源码确认，设计与53个拟议测试正独立审查；
+尚无本批实际RED、生产修复或GREEN结果，不计第37项已完成成果。余项见
 [ExecIR模型剩余工作](01-execir-ssa/01-core-model.md)。
+
+### 到完整验收的推进顺序
+
+以下顺序按依赖列出剩余门禁。已提交子项与47份计划的完整退出条件分别验收，
+不按36/47计算完成率。
+
+| 阶段 | 当前状态 | 完整完成还需满足 |
+| --- | --- | --- |
+| 1. 当前Source与准入链 | 第36项已交付 | 完整表达式与控制流、GC消费者链、全量W0、Linux及完整MSVC证据 |
+| 2. IR、SSA与状态映射 | 部分已交付 | 契约、模型、verifier、facts与四后端语义门禁闭合 |
+| 3. 生命周期与运行时状态 | 部分已交付 | frame与roots、异常、GC搬迁、并发、恢复、取消和预算压力证据 |
+| 4. 优化与数据布局 | SCCP常量池写回设计中 | 各pass差分、分析失效、预算、布局语义与可靠性能证据 |
+| 5. AOT与持久产物 | 部分元数据已交付 | 唯一producer、sections与relocation、真实C/LLVM runner、coverage与fallback成本 |
+| 6. 版本、语言与平台 | 部分契约checker已交付 | lease与回滚、能力和数值、向量化、JIT生命周期及实际平台矩阵 |
+| 7. 47项整体收口 | 未完成 | 逐项需求→实现→实测→提交签收；回归、平台、性能、旧路径退出和文档齐备 |
 
 ### 测量与基础契约（00-measurement-contracts）
 
