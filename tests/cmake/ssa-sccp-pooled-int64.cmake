@@ -13,6 +13,7 @@ target_include_directories(zr_vm_ssa_execir_owner_private_core PRIVATE
 set(_zr_pool_providers
         exec_ir/exec_ir_pass_manager.c
         exec_ir/passes/exec_ir_sccp.c
+        exec_ir/passes/exec_ir_sccp_owner.c
         exec_ir/passes/exec_ir_copy_aliases.c
         exec_ir/passes/exec_ir_dce.c
         exec_ir/exec_ir_cfg.c

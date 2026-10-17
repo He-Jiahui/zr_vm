@@ -1,5 +1,12 @@
 ---
 related_code:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_internal.h
+  - tests/parser/test_ssa_sccp_branch_sensitive_pool.c
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.h
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.c
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_faults.c
+  - tests/cmake/ssa-sccp-branch-sensitive-pool.cmake
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semantic_ir.c
   - zr_vm_core/include/zr_vm_core/call_binding.h
@@ -8,15 +15,34 @@ related_code:
   - zr_vm_core/include/zr_vm_core/function_aot_ir.h
   - zr_vm_parser/include/zr_vm_parser/compiler_source_retention.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_source_retention.c
-implementation_files: []
+implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_internal.h
+
 plan_sources:
+  - .codex/plans/20261017-ssa-sccp-bool-edges.md
   - "user: 2026-09-12 SSA 全栈自动优化计划拆分与详细重构指导"
 tests:
+  - tests/parser/test_ssa_sccp_branch_sensitive_pool.c
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.h
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.c
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_faults.c
+  - tests/cmake/ssa-sccp-branch-sensitive-pool.cmake
   - tests/parser/test_call_binding_pipeline.c
   - tests/core/test_call_binding_runtime.c
   - tests/library/test_call_binding_relocation.c
   - tests/core/test_ssa_function_aot_owner.c
   - tests/parser/test_ssa_source_returned_retention.c
+source_refs:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_internal.h
+  - tests/parser/test_ssa_sccp_branch_sensitive_pool.c
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.h
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.c
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_faults.c
+  - tests/cmake/ssa-sccp-branch-sensitive-pool.cmake
 doc_type: category-index
 status: planned
 ---
@@ -134,6 +160,15 @@ finite-close accepted=true，仅本批closed，完整47目标与全局未知归�
 metadata15/GC-parser99原始运行经离线reconciliation接受（旧控制器失败保持，未重复native），
 MSVC七次有限syntax W0也已独审；第37项已提交并有限关闭，本次文档同步不再新增成果。余项见
 [ExecIR模型剩余工作](01-execir-ssa/01-core-model.md)。
+
+Source38 [分支敏感 pooled SCCP](../../testing-and-validation/ssa-sccp-branch-sensitive-pool.md)实际验证已通过，待最终补证独审与提交/清理：
+main UNITY_UINT消警后focused r2为1fresh compile+30 exact GREEN-r1 cache+1link、fresh warning0，
+GREEN22/47、四W=113共452预算边界、746/746故障、388768attempts/live0/errors0保持。
+三项回归已独审：31phase、25compile/26精确cache/3link/3CTest，强53/113、239fault、四W51共204边界、
+117024attempts/ledger0，metadata15/GC99全PASS（GC日志99legal含78fresh baselines，另78malformed）。
+有限MSVC为1fresh main syntax+4unchanged actual syntax=5currentC，96headers/35protected保持、诊断0；
+原r2一C4244保留，focused-r2及MSVC补证独审pending，不授fullMSVC/fullW0/Linux。当前不新增第38项完成成果，
+历史37=17功能/10修正/5验证/5文档、完整推进顺序及47叶出口保持。
 
 ### 到完整验收的推进顺序
 

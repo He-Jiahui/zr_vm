@@ -1,5 +1,12 @@
 ---
 related_code:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_internal.h
+  - tests/parser/test_ssa_sccp_branch_sensitive_pool.c
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.h
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.c
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_faults.c
+  - tests/cmake/ssa-sccp-branch-sensitive-pool.cmake
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_internal.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_constant_materialize.c
   - tests/parser/test_ssa_sccp_pooled_int64.c
@@ -25,17 +32,25 @@ related_code:
   - tests/parser/support/ssa_gc_map_parser_consumers_fixture.h
   - tests/cmake/ssa-gc-map-parser-consumers.cmake
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_internal.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_internal.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_constant_materialize.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_manager.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
 plan_sources:
+  - .codex/plans/20261017-ssa-sccp-bool-edges.md
   - .codex/plans/20261017-ssa-sccp-pooled-int64.md
   - .codex/plans/20261016-ssa-gc-map-parser-consumers.md
   - docs/plans/ssa/01-execir-ssa/03-effects-verifier.md
   - docs/plans/ssa/02-automatic-optimization/01-pass-manager-scalar.md
 tests:
+  - tests/parser/test_ssa_sccp_branch_sensitive_pool.c
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.h
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.c
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_faults.c
+  - tests/cmake/ssa-sccp-branch-sensitive-pool.cmake
   - tests/parser/test_ssa_sccp_pooled_int64.c
   - tests/parser/support/ssa_sccp_pooled_int64_fixture.h
   - tests/parser/support/ssa_sccp_pooled_int64_fixture.c
@@ -55,6 +70,15 @@ tests:
   - tests/parser/test_ssa_dce_phi_liveness.c
   - tests/parser/ssa_dce_phi_liveness_cases.inc
   - tests/acceptance/2026-10-02-ssa-dce-phi-liveness.md
+source_refs:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_internal.h
+  - tests/parser/test_ssa_sccp_branch_sensitive_pool.c
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.h
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.c
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_faults.c
+  - tests/cmake/ssa-sccp-branch-sensitive-pool.cmake
 doc_type: implementation
 status: active
 ---
@@ -181,10 +205,11 @@ both runners execute it. The current branch instruction remains unchanged,
 so this diagnostic demonstrates incorrect analysis facts rather than a changed
 runtime return. The CONVERT guard stops that fact from propagating through a
 DOUBLE identity conversion; direct pooled branch/arithmetic interpretation
-requires a separate typed-lattice repair in that legacy path. The new nonempty
-owner path conservatively marks every normal conditional successor executable,
-so an unproven BOOL condition cannot hide a PHI input and create a strict Int64
-proof downstream. This does not repair or change legacy numeric branch facts. See the
+requires a separate typed-lattice repair in that legacy path. The nonempty
+owner path now uses the separate typed analysis described below: an exact BOOL
+selects one successor slot, TOP admits both, and unresolved BOTTOM is deferred
+until the residual fallback. This does not repair or change legacy numeric
+branch facts. See the
 [representation acceptance record](../../tests/acceptance/2026-10-02-ssa-sccp-representation.md).
 
 Copy propagation never substitutes a definition across a non-dominating
@@ -241,17 +266,20 @@ PassContext and cache layouts are unchanged; no const cast or scratchArena
 ownership channel is used. NULL owner and an empty pool retain the legacy
 numeric transfer, branch and immediate-constant protocol.
 
-The owner path maintains a separate strict Int64 provenance bit. A canonical
-Int64 pool tuple with flags=0 and a canonical Int64 result seeds it. An absent
-instruction type annotation (0) or explicit Int64 annotation is accepted;
-other explicit annotations are rejected. COPY/MOVE and identity CONVERT cannot
-launder an unproven or retagged operand. Arithmetic requires every input and
-the actual result to be canonical Int64. PHIs require at least one executable
-input and proof from every such input, including external UNKNOWN inputs.
-Compatible constant joins take the current transfer proof, allowing both
-promotion and erasure; UNKNOWN erases proof even when legacy numeric join
-retains constant bits. Owner convergence compares the actual joined value and
-proof; a round cap without convergence clears all strict proofs before rewrite.
+The nonempty owner path uses a private monotone typed lattice, separate from
+the legacy numeric lattice and public cache: BOTTOM rises to one exact typed
+constant and then to TOP on conflict. Canonical Int64 pool tuples with flags=0
+and matching result types establish strict Int64 facts. A missing instruction
+type annotation (0) or matching canonical annotation is accepted. External
+values and unsupported definitions seed TOP; supported, unresolved definitions
+seed BOTTOM. Retagged COPY/MOVE and CONVERT do not manufacture typed proof.
+Only canonical BOOL bits 0 or 1 establish a condition; other BOOL encodings
+remain TOP, without declaring those encodings globally invalid. Arithmetic
+requires canonical Int64 operands and results. PHIs merge only executable
+predecessor occurrences, with exact incoming-slot/edge-occurrence matching;
+an executable external input is TOP and prevents a false constant proof.
+Budget interruption or a defensive convergence cap returns incomplete facts;
+the caller skips cache publication and rewrite and invalidates old SCCP facts.
 
 Only pure flags=0 ADD/ARITHMETIC, SUB, MUL and NEG with no effect or memory
 boundary become pooled CONSTANT instructions. Normal DIV retains MAY_THROW,
@@ -298,6 +326,60 @@ Finite cleanup is closed: six owned files released2080877B;91 reusable build
 files totaling17409863B and required raw evidence remain. Completed outcomes
 are37 (17features/10fixes/5validation/5docs). This documentation synchronization
 adds no outcome; full02.01/SSA47 and global unknown ownership remain open.
+
+## Branch-sensitive nonempty owner analysis (Source38, validation in progress)
+
+The implementation is split across three production files. `exec_ir_sccp.c`
+keeps public/owner dispatch, scratch lifetime, cache publication and the existing
+pure rewrite gate. `passes/exec_ir_sccp_owner.c` solves typed values and executable
+edge slots; `passes/exec_ir_sccp_internal.h` shares only private facts, checked
+Int64 arithmetic helpers and the complete/incomplete analysis interface. Public
+PassContext/cache ABI and NULL-owner/empty-pool legacy semantics are unchanged.
+
+Exact BOOL constants and the six strict Int64 comparisons (EQ, NE, LT, LE, GT,
+GE) can prove a condition. COPY and PHI preserve only matching canonical facts.
+A known condition admits its true slot (ordinal 0) or false slot (ordinal 1);
+TOP admits both. BOTTOM initially admits neither, allowing a nested condition
+to become known after an earlier branch selects a BOOL PHI. At a stalled fixed
+point, executable residual BOTTOM conditions rise to TOP and both slots are
+added before solving again. Facts and edge marks only rise; loop and duplicate
+successor slots do not rely on a frozen all-successors certificate. PHI matching
+counts predecessor occurrences, not just equal source/target block IDs, and
+checks the terminator's ordered successor contents even when its flat row is
+distinct from the block row. Branch/PHI instructions and CFG storage are retained;
+this slice improves facts and folds eligible pure consumers, not structural CFG
+compaction or arbitrary BOOL/foreign numeric truthiness.
+
+Analysis traversal consumes the existing work budget. Incomplete/budget-stopped
+owner facts are never exported to the cache or used for rewriting. A real rewrite
+invalidates pre-rewrite SCCP cache values even if the caller supplies no `changed`
+output. The existing Int64 materializer, tuple deduplication, pre-paid append and
+rewrite work, public module candidate transaction, Verify-before-publication and
+private whole-candidate failure rule above remain in force. DIV keeps its throwing
+effect; dead or unknown arms do not authorize deleting observable instructions.
+
+[Source38 validation](../testing-and-validation/ssa-sccp-branch-sensitive-pool.md)
+records accepted actual GREEN: 22 cases/47 profiles, four independently measured
+W=113 sweeps (452 cutoffs), 746/746 fault sites, 388768 attempts and live/errors=0.
+The initial 31-TU build used four actual compiles plus 27 exact objects from one
+RED history and one link, with fresh compile warnings/errors zero. After the main
+counter type was changed to UNITY_UINT, focused r2 reran configure/build/test:
+one fresh main compile, 30 exact GREEN-r1 cached objects and one link; warnings
+zero and the same 22/47, 452 cutoffs and 746 faults passed. The focused-r2 final
+independent review is pending at this documentation update.
+
+Current-production regressions are independently accepted: 31 natural-zero
+phases (25 compiles, 26 exact GREEN cached objects, three links and three CTests),
+strong53/113 with 239 faults, four W=51 sweeps (204 cutoffs), 117024 attempts
+and live/errors zero; metadata15 and GC99 also pass. GC emits 99 LEGAL rows
+(21 standalone plus 78 fresh baselines) and 78 MALFORMED rows. MSVC syntax r2
+retains its one main C4244 as historical evidence. After the type repair, one
+fresh main /W4 /Zs phase plus four unchanged actual syntax phases cover five
+current C files, 96 actual headers and 35 protected build products unchanged,
+with warning/error/unknown output zero. Its supplemental independent review is
+pending. This is finite syntax only, not full MSVC/full-build W0 or Linux.
+Source38 actual validation has passed; final focused/MSVC reviews and commit/cleanup
+remain pending. Completed outcomes remain 37, with no full 02.01/SSA47 closure.
 
 Focused validation examples (from the repository root, using separately
 registered physical output directories; these examples are not new run evidence):

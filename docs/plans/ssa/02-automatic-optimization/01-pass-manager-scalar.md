@@ -1,5 +1,12 @@
 ---
 related_code:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_internal.h
+  - tests/parser/test_ssa_sccp_branch_sensitive_pool.c
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.h
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.c
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_faults.c
+  - tests/cmake/ssa-sccp-branch-sensitive-pool.cmake
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_manager.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_internal.h
@@ -14,6 +21,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_dead_source_places.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_dead_source_places.c
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_internal.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_internal.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_constant_materialize.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
@@ -21,10 +30,16 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
 plan_sources:
+  - .codex/plans/20261017-ssa-sccp-bool-edges.md
   - .codex/plans/20261017-ssa-sccp-pooled-int64.md
   - docs/plans/ssa/index.md
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
 tests:
+  - tests/parser/test_ssa_sccp_branch_sensitive_pool.c
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.h
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.c
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_faults.c
+  - tests/cmake/ssa-sccp-branch-sensitive-pool.cmake
   - tests/parser/test_ssa_sccp_pooled_int64.c
   - tests/parser/support/ssa_sccp_pooled_int64_fixture.h
   - tests/parser/support/ssa_sccp_pooled_int64_fixture.c
@@ -35,6 +50,15 @@ tests:
   - tests/parser/test_ssa_dead_source_places.c
   - tests/parser/ssa_dead_source_places_edges.inc
   - docs/acceptance/ssa-dead-source-places.md
+source_refs:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_internal.h
+  - tests/parser/test_ssa_sccp_branch_sensitive_pool.c
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.h
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.c
+  - tests/parser/support/ssa_sccp_branch_sensitive_pool_faults.c
+  - tests/cmake/ssa-sccp-branch-sensitive-pool.cmake
 doc_type: milestone-detail
 status: planned
 ---
@@ -88,13 +112,25 @@ compiler_quickening.c 包含大量后期 opcode 选择，不能继续承载 SSA 
 
 实际RED保留53主案/107profiles、25已知功能FAIL与28PASS、212故障及live/errors0的历史证据。私有owner通道、typed Int64 materializer及candidate事务已取得实际GREEN及独审：53PASS/113profiles/492metrics、236/236故障完成、108726 allocation attempts、live/errors=0。基线池不写回及失败owner替换仍是历史RED事实，不升级旧失败收据。
 
-本批只优化IR并真实Verify：canonical Int64池来源及result/operands proof，指令type可为0或Int64，生成tuple按(Int64, flags0, bits)去重；ADD/ARITHMETIC、SUB、MUL、NEG纯操作可写回。DIV的MAY_THROW/effect保留，正常商仅供后续纯consumer；危险DIV/溢出/非Int64/可观察边界保持。PHI对全部可执行incoming合取，UNKNOWN清proof；owner分支保守覆盖正常后继并在未收敛cap清proof。Legacy CONVERT/signedRepresentation、NEG MIN overdefined、NULL owner及空池协议保留。
+本批只优化IR并真实Verify：canonical Int64池来源及result/operands proof，指令type可为0或Int64，生成tuple按(Int64, flags0, bits)去重；ADD/ARITHMETIC、SUB、MUL、NEG纯操作可写回。DIV的MAY_THROW/effect保留，正常商仅供后续纯consumer；危险DIV/溢出/非Int64/可观察边界保持。PHI对全部可执行incoming合取，UNKNOWN清proof；Source37历史owner实现保守覆盖正常后继并在未收敛cap清proof；当前Source38 typed求解替代规则见下一节。Legacy CONVERT/signedRepresentation、NEG MIN overdefined、NULL owner及空池协议保留。
 
 公开Optimize先Verify并Clone candidate，所有函数与pool最终Verify后发布；FALSE只丢candidate并恢复remarks/result，原owner身份保持。私有FALSE要求调用方丢whole candidate，不承诺局部pool回滚。扫描每tuple1work、reuse预付rewrite1work、append预付append+rewrite2work，ready后立即无失败改指令，预算成功部分提交不得留下孤立常量。函数失败capture不自带独立module pool。
 
 实际GREEN覆盖case30两真实UNKNOWN CFG反例；case47两私有入口×两diag各测W=25，fresh扫1..25共100边界全PASS。metadata15（排除MaterializeState）及GC-parser99经原24phase离线reconciliation接受：19编译、25精确cache、2link/2CTest、Unity15/99全PASS；原控制器failed收据保持false，未重复native。有限MSVC7C/8phase语法独审通过，99headers/106 consumed、34protected保持，仅syntax W0。实际提交`729c950d969663230e0171d60592939aabd60a00`及postcommit独审接受；6个自有文件清理释放2080877B，91个复用构建文件17409863B与必要raw保留，finite-close及post-cleanup接受。完成计数37=17功能/10修正/5验证/5文档，本次同步增加0；不勾下方整叶出口，不授fullW0/Linux/VM或完整02.01/SSA47信用，完整目标与未知归属边界仍active。
 
 详见[实现合同](../../../instruction-generation/execir-pass-pipeline.md#nonempty-pooled-int64-writeback-and-module-transaction)与[验证记录](../../../testing-and-validation/ssa-sccp-pooled-int64.md)。实际报告根为`E:/cargo-targets/zr_vm/reports/ssa-sccp-pooled-int64-01a0fe2b/`。
+
+## Source38 有限进展：分支敏感 pooled SCCP（验证中）
+
+本轮在非空模块池的私有 owner 路径实现单调 typed lattice：外部/不支持来源为 TOP，支持但未求解的定义为 BOTTOM；canonical BOOL 仅 bits0/1、六种 strict Int64 比较及合法 COPY/PHI 能证明分支。已知条件选择真实 successor 槽，TOP 两边可达；BOTTOM 先暂缓，停滞后保守升 TOP 并展开残余边，再求固定点。PHI 按 predecessor occurrence 精确匹配实际边槽，覆盖 duplicate successor 和依赖先前剪边后 BOOL PHI 的 nested 条件；不会把 external UNKNOWN 当作常量证明。CFG/PHI 存储本身不压缩。
+
+`exec_ir_sccp.c` 保留调度、scratch/cache/纯 consumer 写回；新增 `passes/exec_ir_sccp_owner.c` 负责 owner facts/edge 求解，`passes/exec_ir_sccp_internal.h` 共享私有 facts/checked 算术与 complete 接口。预算或防御 cap 导致 incomplete 时跳过 cache/rewrite 并清旧 SCCP facts；真实改写仍失效旧 cache，包括 changed=NULL。Source37 materializer 的 tuple(flags0)、预付预算、DIV/effect 保留、公有 candidate 原子发布及私有 FALSE 丢 whole candidate 规则继续成立；NULL owner/空池 legacy 不改。
+
+实际 GREEN 22/47 全 PASS，39 FOLD；direct/pipeline×NULL/writable diag 四组各独立测 W=113，fresh 1..113 共452边界。故障125/125/248/248合计746/746，prefix27/52、remarks站109/134，late-function 与 remark 真实见证通过；388768 attempts/live0/errors0。31TU中4次fresh compile+27单一RED历史精确缓存+1link，fresh compile warning/error0。旧 failed RED 与离线 reconciliation 原样保留，不重复 native 或升级原失败收据。
+
+当前实际验证已通过，待focused-r2/有限MSVC补证独审与提交/清理。main计数类型按Unity字段改为UNITY_UINT后，focused configure/build/test r2实际通过：1fresh main compile+30 exact GREEN-r1 cache+1link，fresh warning0；22/47、452预算边界、746故障与388768/live0/errors0保持。
+
+三项当前生产回归已独审：31自然0phase=25compile+26精确GREEN cache+3link+3CTest，强53/113 PASS、239fault、四W=51共204边界、117024attempts/live0/errors0，metadata15/GC99全部PASS。GC日志99 LEGAL=21 standalone+78 fresh baseline，另有78 MALFORMED，不能把原case分类当成日志行数。原MSVC r2一C4244记录保持；修复后1fresh main /W4/Zs+4 unchanged实际syntax复用=5currentC，96actualheaders/35protected保持、warning/error/unknown0，补证独审pending；只有限syntax零警告，不授fullMSVC/W0/Linux信用。历史完成数37=17功能/10修正/5验证/5文档不变，不勾本叶任何完整出口；不授 VM/Oracle/FFI、Linux/fullW0 或完整47信用。详见[实现合同](../../../instruction-generation/execir-pass-pipeline.md#branch-sensitive-nonempty-owner-analysis-source38-validation-in-progress)与[Source38验证记录](../../../testing-and-validation/ssa-sccp-branch-sensitive-pool.md)。
 
 ## 可逐项执行的重构任务
 

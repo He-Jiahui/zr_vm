@@ -96,3 +96,5 @@ include("${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/tests/cmake/ssa-gc-map-metadata-cons
 include("${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/tests/cmake/ssa-gc-map-parser-consumers.cmake")
 include("${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/tests/cmake/ssa-gc-map-source-preflight.cmake")
 include("${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/tests/cmake/ssa-sccp-pooled-int64.cmake")
+
+include("${ZR_SSA_EXECIR_OWNER_SOURCE_ROOT}/tests/cmake/ssa-sccp-branch-sensitive-pool.cmake")
