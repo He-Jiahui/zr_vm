@@ -213,6 +213,14 @@ TZrBool reserve_member_slot_get_cache(SZrCompilerState *cs,
                                                 argumentCount,
                                                 outCacheIndex,
                                                 location)) return ZR_FALSE;
+    if (memberInfo != ZR_NULL && !memberInfo->isStatic &&
+        compiler_native_call_binding_is_provider_contract(&memberInfo->callBindingFact)) {
+        SZrTypePrototypeInfo *owner = find_compiler_type_prototype(cs, memberInfo->ownerTypeName);
+        /* Native interfaces have no VM dispatch table. Resolve the member on
+         * the concrete receiver instead of binding the interface as its class. */
+        if (owner != ZR_NULL && owner->type == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE)
+            return ZR_TRUE;
+    }
     if (memberInfo != ZR_NULL &&
         (memberInfo->compiledFunction != ZR_NULL ||
          memberInfo->callBindingFact.bindingKind != ZR_CALL_BINDING_NONE ||
