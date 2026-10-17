@@ -561,7 +561,7 @@ TZrBool try_builtin_add(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (execution_try_builtin_add_exact_numeric_fast(outResult, opA, opB)) {
+    if (execution_try_builtin_add_exact_numeric_fast(state, outResult, opA, opB)) {
         return ZR_TRUE;
     }
 
@@ -592,8 +592,9 @@ TZrBool try_builtin_add(SZrState *state,
                    ZR_VALUE_IS_TYPE_BOOL(typeA) || ZR_VALUE_IS_TYPE_BOOL(typeB)) {
             ZrCore_Value_InitAsInt(state,
                                    outResult,
-                                   execution_value_to_int64_known_integral_or_bool_type(opA, typeA) +
-                                           execution_value_to_int64_known_integral_or_bool_type(opB, typeB));
+                                   ZrCore_Integer_Add(state,
+                                           execution_value_to_int64_known_integral_or_bool_type(opA, typeA),
+                                           execution_value_to_int64_known_integral_or_bool_type(opB, typeB)));
         } else {
             ZrCore_Value_InitAsUInt(state,
                                     outResult,
@@ -655,7 +656,7 @@ TZrBool execution_try_builtin_sub(SZrState *state,
     }
 
     if (ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type)) {
-        TZrInt64 result = opA->value.nativeObject.nativeInt64 - opB->value.nativeObject.nativeInt64;
+        TZrInt64 result = ZrCore_Integer_Subtract(state, opA->value.nativeObject.nativeInt64, opB->value.nativeObject.nativeInt64);
         ZrCore_Value_InitAsInt(state, outResult, result);
         return ZR_TRUE;
     }
@@ -795,7 +796,7 @@ TZrBool ZrCore_Execution_Add(SZrState *state,
         hasDestinationAnchor = ZR_TRUE;
     }
 
-    if (execution_try_builtin_add_exact_numeric_fast(destination, opA, opB)) {
+    if (execution_try_builtin_add_exact_numeric_fast(state, destination, opA, opB)) {
         return ZR_TRUE;
     }
 

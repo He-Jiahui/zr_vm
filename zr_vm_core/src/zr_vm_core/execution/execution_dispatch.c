@@ -4842,7 +4842,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         opB = FRAME_VALUE_SLOT(B1(instruction));                                                                       \
         if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {                                     \
             if (ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type)) {                                                              \
-                ALGORITHM_2(nativeInt64, +, opA->type);                                                                \
+                EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_Add(state, opA->value.nativeObject.nativeInt64, opB->value.nativeObject.nativeInt64), opA->type);                                                                \
             } else {                                                                                                   \
                 ALGORITHM_2(nativeUInt64, +, opA->type);                                                               \
             }                                                                                                          \
@@ -4860,8 +4860,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             if (ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue__->type)) {                                                      \
                 EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                    \
                                                 nativeInt64,                                                           \
-                                                leftValue__->value.nativeObject.nativeInt64 +                         \
-                                                        rightValue__->value.nativeObject.nativeInt64,                 \
+                                                ZrCore_Integer_Add(state, leftValue__->value.nativeObject.nativeInt64, rightValue__->value.nativeObject.nativeInt64),                 \
                                                 leftValue__->type);                                                   \
             } else {                                                                                                   \
                 EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                    \
@@ -4883,7 +4882,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
         if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
             if (ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type)) {                                                              \
-                ALGORITHM_CONST_2(nativeInt64, +, opA->type, constOpB->value.nativeObject.nativeInt64);               \
+                EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_Add(state, opA->value.nativeObject.nativeInt64, constOpB->value.nativeObject.nativeInt64), opA->type);               \
             } else {                                                                                                   \
                 ALGORITHM_CONST_2(nativeUInt64, +, opA->type, constOpB->value.nativeObject.nativeUInt64);             \
             }                                                                                                          \
@@ -4902,8 +4901,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             if (ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue__->type)) {                                                      \
                 EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                    \
                                                 nativeInt64,                                                           \
-                                                leftValue__->value.nativeObject.nativeInt64 +                         \
-                                                        constOpB->value.nativeObject.nativeInt64,                     \
+                                                ZrCore_Integer_Add(state, leftValue__->value.nativeObject.nativeInt64, constOpB->value.nativeObject.nativeInt64),                     \
                                                 leftValue__->type);                                                   \
             } else {                                                                                                   \
                 EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                    \
@@ -4923,7 +4921,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
         opB = FRAME_VALUE_SLOT(B1(instruction));                                                                           \
         if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {                                     \
-            ALGORITHM_2(nativeInt64, -, opA->type);                                                                    \
+            EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_Subtract(state, opA->value.nativeObject.nativeInt64, opB->value.nativeObject.nativeInt64), opA->type);                                                                    \
         } else {                                                                                                       \
             execution_try_binary_numeric_float_fallback_or_raise(                                                      \
                     state, ZR_EXEC_NUMERIC_FALLBACK_SUB, destination, opA, opB, "SUB_INT");                           \
@@ -4937,8 +4935,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         if (ZR_VALUE_IS_TYPE_INT(leftValue__->type) && ZR_VALUE_IS_TYPE_INT(rightValue__->type)) {                    \
             EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                        \
                                             nativeInt64,                                                               \
-                                            leftValue__->value.nativeObject.nativeInt64 -                             \
-                                                    rightValue__->value.nativeObject.nativeInt64,                     \
+                                            ZrCore_Integer_Subtract(state, leftValue__->value.nativeObject.nativeInt64, rightValue__->value.nativeObject.nativeInt64),                     \
                                             leftValue__->type);                                                       \
         } else {                                                                                                       \
             destination = plainDestination__;                                                                          \
@@ -4952,7 +4949,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
         if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
-            ALGORITHM_CONST_2(nativeInt64, -, opA->type, constOpB->value.nativeObject.nativeInt64);                   \
+            EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_Subtract(state, opA->value.nativeObject.nativeInt64, constOpB->value.nativeObject.nativeInt64), opA->type);                   \
         } else {                                                                                                       \
             execution_try_binary_numeric_float_fallback_or_raise(                                                      \
                     state, ZR_EXEC_NUMERIC_FALLBACK_SUB, destination, opA, constOpB, "SUB_INT_CONST");                \
@@ -4967,8 +4964,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         if (ZR_VALUE_IS_TYPE_INT(leftValue__->type)) {                                                                 \
             EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                        \
                                             nativeInt64,                                                               \
-                                            leftValue__->value.nativeObject.nativeInt64 -                             \
-                                                    constOpB->value.nativeObject.nativeInt64,                         \
+                                            ZrCore_Integer_Subtract(state, leftValue__->value.nativeObject.nativeInt64, constOpB->value.nativeObject.nativeInt64),                         \
                                             leftValue__->type);                                                       \
         } else {                                                                                                       \
             destination = plainDestination__;                                                                          \
@@ -4981,7 +4977,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         opA = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                                                \
         opB = SIGNED_FRAME_VALUE_SLOT(B1(instruction));                                                                \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type));                  \
-        ALGORITHM_2(nativeInt64, OP, opA->type);                                                                       \
+        EXECUTION_STORE_PLAIN_REUSE(nativeInt64, OP(state, opA->value.nativeObject.nativeInt64, opB->value.nativeObject.nativeInt64), opA->type);                                                                       \
     } while (0)
 #define EXECUTE_TYPED_SIGNED_BINARY_BODY_PLAIN_DEST(OP)                                                                \
     do {                                                                                                               \
@@ -4991,8 +4987,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue__->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(rightValue__->type)); \
         EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                            \
                                         nativeInt64,                                                                   \
-                                        leftValue__->value.nativeObject.nativeInt64 OP                                 \
-                                                rightValue__->value.nativeObject.nativeInt64,                          \
+                                        OP(state, leftValue__->value.nativeObject.nativeInt64, rightValue__->value.nativeObject.nativeInt64),                          \
                                         leftValue__->type);                                                            \
     } while (0)
 #define EXECUTE_TYPED_SIGNED_CONST_BINARY_BODY(OP)                                                                     \
@@ -5000,7 +4995,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
         opA = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                                                \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type));             \
-        ALGORITHM_CONST_2(nativeInt64, OP, opA->type, constOpB->value.nativeObject.nativeInt64);                      \
+        EXECUTION_STORE_PLAIN_REUSE(nativeInt64, OP(state, opA->value.nativeObject.nativeInt64, constOpB->value.nativeObject.nativeInt64), opA->type);                      \
     } while (0)
 #define EXECUTE_TYPED_SIGNED_CONST_BINARY_BODY_PLAIN_DEST(OP)                                                          \
     do {                                                                                                               \
@@ -5010,15 +5005,14 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue__->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type));     \
         EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                            \
                                         nativeInt64,                                                                   \
-                                        leftValue__->value.nativeObject.nativeInt64 OP                                 \
-                                                constOpB->value.nativeObject.nativeInt64,                              \
+                                        OP(state, leftValue__->value.nativeObject.nativeInt64, constOpB->value.nativeObject.nativeInt64),                              \
                                         leftValue__->type);                                                            \
     } while (0)
 #define EXECUTE_TYPED_NEG_SIGNED_BODY()                                                                                \
     do {                                                                                                               \
         opA = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                                                \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type));                                                            \
-        ZR_VALUE_FAST_SET(destination, nativeInt64, -opA->value.nativeObject.nativeInt64, opA->type);                 \
+        ZR_VALUE_FAST_SET(destination, nativeInt64, ZrCore_Integer_Negate(state, opA->value.nativeObject.nativeInt64), opA->type);                 \
     } while (0)
 #define EXECUTE_TYPED_NEG_FLOAT_BODY()                                                                                 \
     do {                                                                                                               \
@@ -5098,7 +5092,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         EXECUTE_MATERIALIZE_CONSTANT_SLOT(constantIndex__, instruction.instruction.operand.operand0[1]);               \
         opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[0]);                                     \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type));             \
-        ALGORITHM_CONST_2(nativeInt64, +, opA->type, constOpB->value.nativeObject.nativeInt64);                       \
+        EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_Add(state, opA->value.nativeObject.nativeInt64, constOpB->value.nativeObject.nativeInt64), opA->type);                       \
     } while (0)
 #define EXECUTE_ADD_SIGNED_LOAD_STACK_CONST_BODY()                                                                     \
     do {                                                                                                               \
@@ -5108,14 +5102,14 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                                        instruction.instruction.operand.operand0[1]);                                   \
         opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[1]);                                     \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type));             \
-        ALGORITHM_CONST_2(nativeInt64, +, opA->type, constOpB->value.nativeObject.nativeInt64);                       \
+        EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_Add(state, opA->value.nativeObject.nativeInt64, constOpB->value.nativeObject.nativeInt64), opA->type);                       \
     } while (0)
 #define EXECUTE_ADD_SIGNED_LOAD_STACK_BODY()                                                                           \
     do {                                                                                                               \
         opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[0]);                                     \
         opB = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[1]);                                     \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type));                  \
-        ALGORITHM_2(nativeInt64, +, opA->type);                                                                        \
+        EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_Add(state, opA->value.nativeObject.nativeInt64, opB->value.nativeObject.nativeInt64), opA->type);                                                                        \
     } while (0)
 #define EXECUTE_ADD_SIGNED_MOD_CONST_BODY()                                                                            \
     do {                                                                                                               \
@@ -5130,12 +5124,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             SAVE_STATE(state, callInfo);                                                                               \
             ZrCore_Debug_RunError(state, "modulo by zero");                                                           \
         }                                                                                                              \
-        if (ZR_UNLIKELY(divisor__ < 0)) {                                                                              \
-            divisor__ = -divisor__;                                                                                   \
-        }                                                                                                              \
         EXECUTION_STORE_PLAIN_REUSE(                                                                                   \
                 nativeInt64,                                                                                           \
-                (opA->value.nativeObject.nativeInt64 + opB->value.nativeObject.nativeInt64) % divisor__,               \
+                ZrCore_Integer_Modulo(state, ZrCore_Integer_Add(state, opA->value.nativeObject.nativeInt64, opB->value.nativeObject.nativeInt64), divisor__),               \
                 ZR_VALUE_TYPE_INT64);                                                                                  \
     } while (0)
 #define EXECUTE_ADD_SIGNED_LOAD_STACK_LOAD_CONST_BODY()                                                                \
@@ -5147,7 +5138,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         EXECUTE_MATERIALIZE_CONSTANT_SLOT(constantIndex__, instruction.instruction.operand.operand0[2]);               \
         opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[1]);                                     \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type));             \
-        ALGORITHM_CONST_2(nativeInt64, +, opA->type, constOpB->value.nativeObject.nativeInt64);                       \
+        EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_Add(state, opA->value.nativeObject.nativeInt64, constOpB->value.nativeObject.nativeInt64), opA->type);                       \
     } while (0)
 #define EXECUTE_SUB_SIGNED_LOAD_CONST_BODY()                                                                           \
     do {                                                                                                               \
@@ -5156,7 +5147,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         EXECUTE_MATERIALIZE_CONSTANT_SLOT(constantIndex__, instruction.instruction.operand.operand0[1]);               \
         opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[0]);                                     \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type));             \
-        ALGORITHM_CONST_2(nativeInt64, -, opA->type, constOpB->value.nativeObject.nativeInt64);                       \
+        EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_Subtract(state, opA->value.nativeObject.nativeInt64, constOpB->value.nativeObject.nativeInt64), opA->type);                       \
     } while (0)
 #define EXECUTE_SUB_SIGNED_LOAD_STACK_CONST_BODY()                                                                     \
     do {                                                                                                               \
@@ -5166,7 +5157,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                                        instruction.instruction.operand.operand0[1]);                                   \
         opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[1]);                                     \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type));             \
-        ALGORITHM_CONST_2(nativeInt64, -, opA->type, constOpB->value.nativeObject.nativeInt64);                       \
+        EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_Subtract(state, opA->value.nativeObject.nativeInt64, constOpB->value.nativeObject.nativeInt64), opA->type);                       \
     } while (0)
 #define EXECUTE_TYPED_UNSIGNED_BINARY_BODY(OP)                                                                         \
     do {                                                                                                               \
@@ -6514,7 +6505,7 @@ LZrFastInstruction_ADD: {
 
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                if (execution_try_builtin_add_exact_numeric_fast(destination, opA, opB)) {
+                if (execution_try_builtin_add_exact_numeric_fast(state, destination, opA, opB)) {
                     // 精确数值对直接命中内联 fast path。
                 } else {
                     builtinNeedsTemporaryResult = execution_builtin_add_requires_temporary_result(opA, opB);
@@ -6696,43 +6687,43 @@ LZrFastInstruction_ADD_INT_CONST_PLAIN_DEST: {
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 LZrFastInstruction_ADD_SIGNED: {
                 FAST_PREPARE_SIGNED_DESTINATION();
-                EXECUTE_TYPED_SIGNED_BINARY_BODY(+);
+                EXECUTE_TYPED_SIGNED_BINARY_BODY(ZrCore_Integer_Add);
             }
             DONE_FAST(1);
 #endif
             ZR_INSTRUCTION_LABEL(ADD_SIGNED) {
-                EXECUTE_TYPED_SIGNED_BINARY_BODY(+);
+                EXECUTE_TYPED_SIGNED_BINARY_BODY(ZrCore_Integer_Add);
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 LZrFastInstruction_ADD_SIGNED_PLAIN_DEST: {
-                EXECUTE_TYPED_SIGNED_BINARY_BODY_PLAIN_DEST(+);
+                EXECUTE_TYPED_SIGNED_BINARY_BODY_PLAIN_DEST(ZrCore_Integer_Add);
             }
             DONE_FAST(1);
 #endif
             ZR_INSTRUCTION_LABEL(ADD_SIGNED_PLAIN_DEST) {
-                EXECUTE_TYPED_SIGNED_BINARY_BODY_PLAIN_DEST(+);
+                EXECUTE_TYPED_SIGNED_BINARY_BODY_PLAIN_DEST(ZrCore_Integer_Add);
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 LZrFastInstruction_ADD_SIGNED_CONST: {
                 FAST_PREPARE_SIGNED_DESTINATION();
-                EXECUTE_TYPED_SIGNED_CONST_BINARY_BODY(+);
+                EXECUTE_TYPED_SIGNED_CONST_BINARY_BODY(ZrCore_Integer_Add);
             }
             DONE_FAST(1);
 #endif
             ZR_INSTRUCTION_LABEL(ADD_SIGNED_CONST) {
-                EXECUTE_TYPED_SIGNED_CONST_BINARY_BODY(+);
+                EXECUTE_TYPED_SIGNED_CONST_BINARY_BODY(ZrCore_Integer_Add);
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 LZrFastInstruction_ADD_SIGNED_CONST_PLAIN_DEST: {
-                EXECUTE_TYPED_SIGNED_CONST_BINARY_BODY_PLAIN_DEST(+);
+                EXECUTE_TYPED_SIGNED_CONST_BINARY_BODY_PLAIN_DEST(ZrCore_Integer_Add);
             }
             DONE_FAST(1);
 #endif
             ZR_INSTRUCTION_LABEL(ADD_SIGNED_CONST_PLAIN_DEST) {
-                EXECUTE_TYPED_SIGNED_CONST_BINARY_BODY_PLAIN_DEST(+);
+                EXECUTE_TYPED_SIGNED_CONST_BINARY_BODY_PLAIN_DEST(ZrCore_Integer_Add);
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
@@ -6934,43 +6925,43 @@ LZrFastInstruction_SUB_INT_CONST_PLAIN_DEST: {
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 LZrFastInstruction_SUB_SIGNED: {
                 FAST_PREPARE_SIGNED_DESTINATION();
-                EXECUTE_TYPED_SIGNED_BINARY_BODY(-);
+                EXECUTE_TYPED_SIGNED_BINARY_BODY(ZrCore_Integer_Subtract);
             }
             DONE_FAST(1);
 #endif
             ZR_INSTRUCTION_LABEL(SUB_SIGNED) {
-                EXECUTE_TYPED_SIGNED_BINARY_BODY(-);
+                EXECUTE_TYPED_SIGNED_BINARY_BODY(ZrCore_Integer_Subtract);
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 LZrFastInstruction_SUB_SIGNED_PLAIN_DEST: {
-                EXECUTE_TYPED_SIGNED_BINARY_BODY_PLAIN_DEST(-);
+                EXECUTE_TYPED_SIGNED_BINARY_BODY_PLAIN_DEST(ZrCore_Integer_Subtract);
             }
             DONE_FAST(1);
 #endif
             ZR_INSTRUCTION_LABEL(SUB_SIGNED_PLAIN_DEST) {
-                EXECUTE_TYPED_SIGNED_BINARY_BODY_PLAIN_DEST(-);
+                EXECUTE_TYPED_SIGNED_BINARY_BODY_PLAIN_DEST(ZrCore_Integer_Subtract);
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 LZrFastInstruction_SUB_SIGNED_CONST: {
                 FAST_PREPARE_SIGNED_DESTINATION();
-                EXECUTE_TYPED_SIGNED_CONST_BINARY_BODY(-);
+                EXECUTE_TYPED_SIGNED_CONST_BINARY_BODY(ZrCore_Integer_Subtract);
             }
             DONE_FAST(1);
 #endif
             ZR_INSTRUCTION_LABEL(SUB_SIGNED_CONST) {
-                EXECUTE_TYPED_SIGNED_CONST_BINARY_BODY(-);
+                EXECUTE_TYPED_SIGNED_CONST_BINARY_BODY(ZrCore_Integer_Subtract);
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 LZrFastInstruction_SUB_SIGNED_CONST_PLAIN_DEST: {
-                EXECUTE_TYPED_SIGNED_CONST_BINARY_BODY_PLAIN_DEST(-);
+                EXECUTE_TYPED_SIGNED_CONST_BINARY_BODY_PLAIN_DEST(ZrCore_Integer_Subtract);
             }
             DONE_FAST(1);
 #endif
             ZR_INSTRUCTION_LABEL(SUB_SIGNED_CONST_PLAIN_DEST) {
-                EXECUTE_TYPED_SIGNED_CONST_BINARY_BODY_PLAIN_DEST(-);
+                EXECUTE_TYPED_SIGNED_CONST_BINARY_BODY_PLAIN_DEST(ZrCore_Integer_Subtract);
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
@@ -7262,10 +7253,10 @@ LZrFastInstruction_NEG_FLOAT: {
                 if (ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type)) {
                     ZR_VALUE_FAST_SET(destination,
                                       nativeInt64,
-                                      -opA->value.nativeObject.nativeInt64,
+                                      ZrCore_Integer_Negate(state, opA->value.nativeObject.nativeInt64),
                                       opA->type);
                 } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type)) {
-                    ZrCore_Value_InitAsInt(state, destination, -(TZrInt64)opA->value.nativeObject.nativeUInt64);
+                    ZrCore_Value_InitAsInt(state, destination, ZrCore_Integer_NegateUnsigned(state, opA->value.nativeObject.nativeUInt64));
                 } else if (ZR_VALUE_IS_TYPE_FLOAT(opA->type)) {
                     ZR_VALUE_FAST_SET(destination,
                                       nativeDouble,
@@ -7738,7 +7729,7 @@ LZrFastInstruction_MOD_UNSIGNED_CONST_PLAIN_DEST: {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                ALGORITHM_2(nativeInt64, <<, ZR_VALUE_TYPE_INT64);
+                EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_ShiftLeft(opA->value.nativeObject.nativeInt64, opB->value.nativeObject.nativeUInt64), ZR_VALUE_TYPE_INT64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SHIFT_RIGHT) {
@@ -7782,7 +7773,7 @@ LZrFastInstruction_MOD_UNSIGNED_CONST_PLAIN_DEST: {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
-                ALGORITHM_2(nativeInt64, >>, ZR_VALUE_TYPE_INT64);
+                EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_ShiftRight(opA->value.nativeObject.nativeInt64, opB->value.nativeObject.nativeUInt64), ZR_VALUE_TYPE_INT64);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_NOT) {
@@ -8087,11 +8078,33 @@ LZrFastInstruction_BITWISE_XOR: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(BITWISE_SHIFT_LEFT) {
-                EXECUTE_BITWISE_BINARY_BODY(<<);
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
+                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(opB->type)) {
+                    EXECUTION_STORE_PLAIN_REUSE(nativeUInt64,
+                            EXECUTION_INTEGRAL_VALUE_AS_U64(opA) << (EXECUTION_INTEGRAL_VALUE_AS_U64(opB) & 63u),
+                            ZR_VALUE_TYPE_UINT64);
+                } else {
+                    EXECUTION_STORE_PLAIN_REUSE(nativeInt64,
+                            ZrCore_Integer_ShiftLeft(opA->value.nativeObject.nativeInt64, (TZrUInt64)opB->value.nativeObject.nativeInt64),
+                            ZR_VALUE_TYPE_INT64);
+                }
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(BITWISE_SHIFT_RIGHT) {
-                EXECUTE_BITWISE_BINARY_BODY(>>);
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = FRAME_VALUE_SLOT(B1(instruction));
+                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(opB->type)) {
+                    EXECUTION_STORE_PLAIN_REUSE(nativeUInt64,
+                            EXECUTION_INTEGRAL_VALUE_AS_U64(opA) >> (EXECUTION_INTEGRAL_VALUE_AS_U64(opB) & 63u),
+                            ZR_VALUE_TYPE_UINT64);
+                } else {
+                    EXECUTION_STORE_PLAIN_REUSE(nativeInt64,
+                            ZrCore_Integer_ShiftRight(opA->value.nativeObject.nativeInt64, (TZrUInt64)opB->value.nativeObject.nativeInt64),
+                            ZR_VALUE_TYPE_INT64);
+                }
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED

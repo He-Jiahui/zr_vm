@@ -8882,6 +8882,14 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/thread-worker-count-tests.cmake")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/thread-transport-facade-oom-tests.cmake")
 
+if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
+    zr_vm_add_unity_test_target(zr_vm_execution_integer_boundaries_test
+        ${CMAKE_SOURCE_DIR}/tests/core/test_execution_integer_boundaries.c)
+    target_include_directories(zr_vm_execution_integer_boundaries_test PRIVATE ${CMAKE_SOURCE_DIR})
+    zr_vm_link_core(zr_vm_execution_integer_boundaries_test)
+    add_test(NAME execution_integer_boundaries COMMAND zr_vm_execution_integer_boundaries_test)
+endif()
+
 if(TARGET zr_vm_cli_executable)
     add_test(NAME compiler_constructor_prototype_growth
             COMMAND ${CMAKE_COMMAND}
