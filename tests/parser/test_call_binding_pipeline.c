@@ -430,6 +430,31 @@ static void test_meta_call_rejects_stale_binding_generation(void) {
     TEST_ASSERT_EQUAL_INT(ZR_CALL_BINDING_STALE_GENERATION, state->lastCallBindingError.status);
 }
 
+/* Methods compile before meta bodies, so this() must still select the derived
+ * receiver while super.call() invokes the explicitly selected base function. */
+static void test_virtual_meta_call_from_method_preserves_override_and_super(void) {
+    static const char *sources[] = {
+        "class Base { pub virtual @call(): int { return 20; } } "
+        "class Derived: Base { "
+        "pub fn read(): int { return this(); } "
+        "pub override @call(): int { return super.call() + 22; } } "
+        "var value = new Derived(); return value.read();",
+        "class Base { pub virtual @call(x: int): int { return x + 10; } } "
+        "class Derived: Base { "
+        "pub fn read(): int { return this(12); } "
+        "pub override @call(x: int): int { return super.call(x) + 20; } } "
+        "var value = new Derived(); return value.read();"
+    };
+    for (TZrSize index = 0u; index < ZR_ARRAY_COUNT(sources); ++index) {
+        SZrFunction *function = compile_source(sources[index]);
+        TZrInt64 result = 0;
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(42, result);
+        ZrCore_Function_Free(state, function);
+    }
+}
+
 /* 子方法内的绑定也应执行正常，并随整个函数图的代际推进失效。 */
 static void test_nested_method_body_is_linked_and_invalidated(void) {
     SZrFunction *function = compile_source(
@@ -504,6 +529,7 @@ int main(void) {
     RUN_TEST(test_meta_call_consumes_bound_target_with_and_without_arguments);
     RUN_TEST(test_dynamic_tail_meta_call_preserves_last_argument_after_reuse_declines);
     RUN_TEST(test_meta_call_rejects_stale_binding_generation);
+    RUN_TEST(test_virtual_meta_call_from_method_preserves_override_and_super);
     RUN_TEST(test_nested_method_body_is_linked_and_invalidated);
     RUN_TEST(test_interface_implementation_layout_change_is_rejected);
     RUN_TEST(test_bound_graph_survives_full_collection);

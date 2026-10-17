@@ -262,6 +262,20 @@ TZrBool reserve_meta_call_binding_cache(SZrCompilerState *cs,
                                         SZrFileRange location) {
     SZrFunctionCallSiteCacheEntry *entry;
 
+    /* Virtual @call lives in the receiver's meta table, outside the ordinary
+     * descriptor slots. Resolve it through the runtime meta cache; the base
+     * declaration may be all that is compiled while a derived body is built. */
+    if (memberInfo != ZR_NULL &&
+        memberInfo->virtualSlotIndex != ZR_CALL_BINDING_SLOT_NONE &&
+        (memberInfo->modifierFlags & (ZR_DECLARATION_MODIFIER_VIRTUAL |
+                                     ZR_DECLARATION_MODIFIER_OVERRIDE |
+                                     ZR_DECLARATION_MODIFIER_ABSTRACT)) != 0u) {
+        return compiler_append_callsite_cache_entry(cs,
+                ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL,
+                (TZrUInt32)cs->instructionCount, memberEntryIndex,
+                argumentCount, outCacheIndex, location);
+    }
+
     /* Reuse the same contract construction as a bound member call.  META_CALL
      * has a distinct cache kind because the interpreter prepares the callable
      * from the receiver slot before entering the call frame. */
@@ -319,6 +333,9 @@ TZrBool compiler_record_known_call_binding(SZrCompilerState *cs,
     if (!reserve_member_slot_get_cache(cs, ZR_PARSER_MEMBER_ID_NONE, memberInfo,
                                       argumentCount, &cacheIndex, location)) return ZR_FALSE;
     cs->currentFunction->callSiteCaches[cacheIndex].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_KNOWN_CALL;
+    /* An explicitly selected super meta method is loaded as a function
+     * constant. Its invocation uses CALL, even though the declaration is @call. */
+    cs->currentFunction->callSiteCaches[cacheIndex].binding.contract.operation = ZR_CALL_BINDING_OPERATION_CALL;
     return ZR_TRUE;
 }
 
