@@ -2674,7 +2674,7 @@ static void test_aot_llvm_backend_lowers_meta_tail_calls_with_direct_call_frames
 
         function = compile_zero_arg_tail_quickening_fixture(state);
         TEST_ASSERT_NOT_NULL(function);
-        TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_NO_ARGS)));
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED)));
         TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_TAIL_CALL, ZR_FALSE));
 
         remove(llvmPath);
@@ -2687,7 +2687,7 @@ static void test_aot_llvm_backend_lowers_meta_tail_calls_with_direct_call_frames
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "%resume_instruction"));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i64 @ZrLibrary_AotRuntime_Return("));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText,
-                                                                    ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_NO_ARGS)));
+                                                                    ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED)));
         TEST_ASSERT_NULL(strstr(llvmText, "call i64 @ZrLibrary_AotRuntime_InvokeActiveShim("));
 
         free(llvmText);
@@ -5778,7 +5778,7 @@ static void test_execbc_quickens_zero_arg_call_sites_without_changing_semir_cont
         TEST_ASSERT_NOT_NULL(func);
 
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(SUPER_META_CALL_NO_ARGS)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED)));
         TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(META_CALL)));
         TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(func, ZR_SEMIR_OPCODE_META_CALL, ZR_FALSE));
 
@@ -5789,7 +5789,7 @@ static void test_execbc_quickens_zero_arg_call_sites_without_changing_semir_cont
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SEMIR"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "META_CALL"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUPER_KNOWN_VM_CALL_NO_ARGS"));
-        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUPER_META_CALL_NO_ARGS"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUPER_META_CALL_CACHED"));
 
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result));
         TEST_ASSERT_EQUAL_INT64(19, result);
@@ -6923,7 +6923,7 @@ static SZrFunction *compile_zero_arg_tail_quickening_fixture(SZrState *state) {
             "fn callMetaTail(counter: Counter): int {\n"
             "    return counter();\n"
             "}\n"
-            "fn callDynTail(callable: fn() -> int): int {\n"
+            "fn callDynTail(callable): int {\n"
             "    return callable();\n"
             "}\n"
             "var counter = new Counter(7);\n"
@@ -7576,9 +7576,9 @@ static void test_meta_access_semir_and_true_aot_c_preserve_dedicated_meta_get_se
         {
             char *cText = read_text_file_owned(cPath);
             TEST_ASSERT_NOT_NULL(cText);
-            TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_UnsupportedMetaValueAccess(state,"));
-            TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaGetCached(state, &frame,"));
-            TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaSetCached(state, &frame,"));
+            TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_UnsupportedMetaValueAccess(state,"));
+            TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaGetCached(state, &frame,"));
+            TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaSetCached(state, &frame,"));
             TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
             free(cText);
         }
@@ -7726,9 +7726,9 @@ static void test_static_meta_access_quickens_to_static_callsite_cache_variants(v
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUPER_META_SET_STATIC_CACHED"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "META_GET"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "META_SET"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_UnsupportedMetaValueAccess(state,"));
-        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaGetStaticCached(state, &frame,"));
-        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaSetStaticCached(state, &frame,"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_UnsupportedMetaValueAccess(state,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaGetStaticCached(state, &frame,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaSetStaticCached(state, &frame,"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_MetaGetStaticCached("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_MetaSetStaticCached("));
@@ -8296,9 +8296,9 @@ static void test_reference_property_fixture_preserves_meta_access_artifacts_with
         {
             char *cText = read_text_file_owned(cPath);
             TEST_ASSERT_NOT_NULL(cText);
-            TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_UnsupportedMetaValueAccess(state,"));
-            TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaGetCached(state, &frame,"));
-            TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaSetCached(state, &frame,"));
+            TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_UnsupportedMetaValueAccess(state,"));
+            TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaGetCached(state, &frame,"));
+            TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MetaSetCached(state, &frame,"));
             TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
             free(cText);
         }
@@ -8463,7 +8463,7 @@ static void test_execbc_quickens_zero_arg_tail_call_sites_without_changing_semir
         TEST_ASSERT_NOT_NULL(function);
         TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_TAIL_CALL_NO_ARGS)));
         TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_NO_ARGS)));
-        TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_NO_ARGS)));
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED)));
         TEST_ASSERT_FALSE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL)));
         TEST_ASSERT_FALSE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(META_TAIL_CALL)));
         TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_DYN_TAIL_CALL, ZR_FALSE));
@@ -8475,7 +8475,7 @@ static void test_execbc_quickens_zero_arg_tail_call_sites_without_changing_semir
 
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUPER_FUNCTION_TAIL_CALL_NO_ARGS"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUPER_DYN_TAIL_CALL_NO_ARGS"));
-        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUPER_META_TAIL_CALL_NO_ARGS"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUPER_META_TAIL_CALL_CACHED"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "DYN_TAIL_CALL"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "META_TAIL_CALL"));
 
