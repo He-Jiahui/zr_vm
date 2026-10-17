@@ -205,10 +205,13 @@ static void test_unsupported_body_profiles_are_refused(void) {
     Pf_Refused(&r, &e);
     SZrExecIrGcMap declared = {0};
     SZrExecIrGcMap *saved = function()->gcMap;
+    TZrUInt32 savedGcCount = function()->gcMapCount, savedGcCapacity = function()->gcMapCapacity;
     function()->gcMap = &declared;
+    function()->gcMapCount = function()->gcMapCapacity = 1u;
     e = Pf_Error(ZR_EXEC_IR_DIAGNOSTIC_UNSUPPORTED);
     r = lower_first(&e, 0u);
     function()->gcMap = saved;
+    function()->gcMapCount = savedGcCount; function()->gcMapCapacity = savedGcCapacity;
     Pf_Refused(&r, &e);
     SZrExecIrGcMap zero = {0};
     TEST_ASSERT_EQUAL_MEMORY(&zero, &declared, sizeof(zero));

@@ -158,6 +158,7 @@ static void test_side_arrays_clone_without_aliasing(void) {
     expect_true(function->frameLayout->slots != ZR_NULL, "frame slot allocation failed");
     function->gcMap = (SZrExecIrGcMap *)calloc(1u, sizeof(*function->gcMap));
     expect_true(function->gcMap != ZR_NULL, "gc map allocation failed");
+    function->gcMapCount = function->gcMapCapacity = 1u;
     function->gcMap->entryCount = 1u;
     function->gcMap->entryCapacity = 1u;
     function->gcMap->entries = (SZrExecIrGcMapEntry *)calloc(1u, sizeof(*function->gcMap->entries));
@@ -860,6 +861,7 @@ static void test_clone_rejects_side_array_count_beyond_capacity(void) {
     source.valueCapacity = 0u;
     source.gcMap = (SZrExecIrGcMap *)calloc(1u, sizeof(*source.gcMap));
     expect_true(source.gcMap != ZR_NULL, "malformed GC-map fixture allocation failed");
+    source.gcMapCount = source.gcMapCapacity = 1u;
     source.gcMap->entries = (SZrExecIrGcMapEntry *)calloc(
             2u, sizeof(*source.gcMap->entries));
     expect_true(source.gcMap->entries != ZR_NULL,
@@ -903,6 +905,7 @@ static void test_clone_rejects_side_array_count_beyond_capacity(void) {
 #if defined(ZR_EXEC_IR_TEST_ALLOCATOR)
 #include "exec_ir_clone_test_allocator_cases.inc"
 #endif
+#include "support/ssa_execir_gc_map_outer_shape_cases.inc"
 
 int main(int argc, char **argv) {
 #if defined(ZR_EXEC_IR_TEST_ALLOCATOR)
@@ -944,7 +947,10 @@ int main(int argc, char **argv) {
     test_structure_rejects_zero_value_phi_incoming();
     test_structure_rejects_early_terminator();
     test_clone_rejects_side_array_count_beyond_capacity();
+    test_gc_map_outer_shape_rejections();
+    test_gc_map_legal_lifecycle();
 #if defined(ZR_EXEC_IR_TEST_ALLOCATOR)
+    test_gc_map_clone_allocation_sweep();
     test_function_clone_reports_allocation_failures_atomically();
     test_module_clone_reports_allocation_failures_atomically();
     test_clone_distinguishes_invalid_input_from_capacity_overflow();

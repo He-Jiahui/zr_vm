@@ -1,5 +1,6 @@
 #include "exec_ir/exec_ir_projections.h"
 #include "exec_ir_projection_phi.h"
+#include "exec_ir/exec_ir_gc_map_internal.h"
 
 #include <limits.h>
 #include <stddef.h>
@@ -104,7 +105,7 @@ static TZrBool zr_projection_validate(const SZrExecIrFunction *f,
         f->predecessorCount > f->predecessorCapacity || f->successorCount > f->successorCapacity ||
         f->memoryTokenCount > f->memoryTokenCapacity ||
         f->phiCount > f->phiCapacity || f->phiIncomingCount > f->phiIncomingCapacity ||
-        f->gcMapCount > f->gcMapCapacity || f->gcRootCount > f->gcRootCapacity ||
+        !zr_exec_ir_gc_map_outer_shape_is_valid(f) || f->gcRootCount > f->gcRootCapacity ||
         f->deoptStateCount > f->deoptStateCapacity || f->deoptValueCount > f->deoptValueCapacity ||
         f->sourceMapCount > f->sourceMapCapacity ||
         (f->instructionCount != 0u && f->instructions == ZR_NULL) ||
@@ -117,7 +118,6 @@ static TZrBool zr_projection_validate(const SZrExecIrFunction *f,
         (f->successorCount != 0u && f->successors == ZR_NULL) ||
         (f->phiCount != 0u && f->phiPool == ZR_NULL) ||
         (f->phiIncomingCount != 0u && f->phiIncoming == ZR_NULL) ||
-        (f->gcMapCount != 0u && f->gcMap == ZR_NULL) ||
         (f->gcRootCount != 0u && f->gcRoots == ZR_NULL) ||
         (f->deoptStateCount != 0u && f->deoptStates == ZR_NULL) ||
         (f->deoptValueCount != 0u && f->deoptValues == ZR_NULL) ||

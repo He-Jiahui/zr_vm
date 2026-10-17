@@ -57,13 +57,27 @@ static void test_selected_copy_preserves_module_and_other_function(void){feature
 static void test_all_reachable_side_arrays_are_independent(void){feature();
     ZrTests_ExecOwner_Independent(source(),&g_copyOutputs[0]);ZrTests_ExecOwner_Independent(&g_ownerModules[1],&g_copyOutputs[0]);
     TEST_ASSERT_NOT_NULL(g_copyOutputs[0].functions[0].gcMap);TEST_ASSERT_NOT_NULL(g_copyOutputs[0].functions[0].stateMap);
+    TEST_ASSERT_EQUAL_UINT32(1u,g_copyOutputs[0].functions[0].gcMapCount);
+    TEST_ASSERT_EQUAL_UINT32(1u,g_copyOutputs[0].functions[0].gcMapCapacity);
+    TEST_ASSERT_EQUAL_UINT32(2u,g_copyOutputs[0].functions[0].gcMap->entryCount);
     TEST_ASSERT_NOT_NULL(g_copyOutputs[0].functions[0].frameLayout);TEST_ASSERT_EQUAL_UINT32(1u,g_copyOutputs[0].functions[0].bindingRowCount);}
 static void test_present_empty_headers_preserve_clone_capacity_policy(void){ZrTests_ModuleCopy_Inputs(1u);feature();
     const SZrExecIrFunction *f=&g_copyOutputs[0].functions[0];TEST_ASSERT_NOT_NULL(f->gcMap);TEST_ASSERT_NOT_NULL(f->stateMap);TEST_ASSERT_NOT_NULL(f->frameLayout);
     TEST_ASSERT_EQUAL_UINT32(0u,f->gcMap->entryCount);TEST_ASSERT_EQUAL_UINT32(0u,f->stateMap->entryCount);TEST_ASSERT_EQUAL_UINT32(0u,f->frameLayout->slotCount);
+    TEST_ASSERT_EQUAL_UINT32(1u,f->gcMapCount);TEST_ASSERT_EQUAL_UINT32(1u,f->gcMapCapacity);
     TEST_ASSERT_EQUAL_UINT32(f->stateMap->entryCount,f->stateMap->entryCapacity);
     TEST_ASSERT_TRUE(f->valueCapacity>=f->valueCount);TEST_ASSERT_TRUE(f->instructionCapacity>=f->instructionCount);}
 static void test_replacement_from_selected_source_slot(void){ZrTests_ModuleCopy_Require(source(),1u,&source()->functions[0],0u);}
+static void test_absent_gc_maps_survive_module_replacement(void){ZrTests_ModuleCopy_Inputs(2u);feature();
+    for(unsigned i=0u;i<g_copyOutputs[0].functionCount;++i){const SZrExecIrFunction *f=&g_copyOutputs[0].functions[i];
+        TEST_ASSERT_NULL(f->gcMap);TEST_ASSERT_EQUAL_UINT32(0u,f->gcMapCount);TEST_ASSERT_EQUAL_UINT32(0u,f->gcMapCapacity);}}
+static void test_malformed_gc_outer_replacement_cleans_candidate(void){SBefore b;SZrExecIrDiagnostic d,e={0};TZrBool ok;
+    feature();before(&b);replacement()->gcMapCount=replacement()->gcMapCapacity=0u;memset(&d,0xA5,sizeof(d));
+    ok=ZrCore_ExecIr_CloneModuleReplacingFunction(source(),1u,replacement(),&g_copyOutputs[0],&d);
+    ZrTests_ExecOwner_Disarm();replacement()->gcMapCount=replacement()->gcMapCapacity=1u;
+    e.code=ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT;e.functionToken=replacement()->functionToken;
+    /* failed() checks refusal before reading the potentially replaced output. */
+    failed(&b,ok,&d,&e);feature();}
 static void test_replacement_borrowed_from_old_output(void){SZrExecIrDiagnostic d;unsigned first=ZrTests_ExecOwner_Stats().records;
     TEST_ASSERT_TRUE(ZrCore_ExecIr_CloneModule(source(),&g_copyOutputs[0],&d));ZrTests_ModuleCopy_ZeroDiagnostic(&d);
     ZrTests_ModuleCopy_SetOutputRange(0u,first,ZrTests_ExecOwner_Stats().records);g_copyOutputs[0].functions[0].values[0].flags^=4u;
@@ -193,6 +207,8 @@ int main(void){UNITY_BEGIN();
     RUN_TEST(test_selected_copy_preserves_module_and_other_function);
     RUN_TEST(test_all_reachable_side_arrays_are_independent);
     RUN_TEST(test_present_empty_headers_preserve_clone_capacity_policy);
+    RUN_TEST(test_absent_gc_maps_survive_module_replacement);
+    RUN_TEST(test_malformed_gc_outer_replacement_cleans_candidate);
     RUN_TEST(test_replacement_from_selected_source_slot);
     RUN_TEST(test_replacement_borrowed_from_old_output);
     RUN_TEST(test_slot_and_function_identity_first_errors);

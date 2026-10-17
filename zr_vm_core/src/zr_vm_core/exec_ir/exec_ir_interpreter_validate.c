@@ -1,5 +1,6 @@
 #include "exec_ir_interpreter_internal.h"
 #include "exec_ir_edge_identity.h"
+#include "exec_ir_gc_map_internal.h"
 
 static TZrBool zr_oracle_range(SZrExecIrRange range, TZrUInt32 count) {
     return (TZrBool)(range.start <= count && range.count <= count - range.start);
@@ -53,7 +54,7 @@ TZrBool zr_oracle_validate(const SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
         f->successorCount > f->successorCapacity || f->predecessorCount > f->predecessorCapacity ||
         f->phiCount > f->phiCapacity || f->phiIncomingCount > f->phiIncomingCapacity ||
         f->memoryTokenCount > f->memoryTokenCapacity ||
-        f->gcMapCount > f->gcMapCapacity || f->gcRootCount > f->gcRootCapacity ||
+        !zr_exec_ir_gc_map_outer_shape_is_valid(f) || f->gcRootCount > f->gcRootCapacity ||
         f->deoptStateCount > f->deoptStateCapacity || f->deoptValueCount > f->deoptValueCapacity ||
         f->sourceMapCount > f->sourceMapCapacity ||
         (f->valueCount && f->values == ZR_NULL) ||
@@ -66,7 +67,6 @@ TZrBool zr_oracle_validate(const SZrExecIrFunction *f, SZrExecIrDiagnostic *d) {
         (f->phiCount && f->phiPool == ZR_NULL) ||
         (f->phiIncomingCount && f->phiIncoming == ZR_NULL) ||
         (f->memoryTokenCount && f->memoryTokenPool == ZR_NULL) ||
-        (f->gcMapCount && f->gcMap == ZR_NULL) ||
         (f->gcRootCount && f->gcRoots == ZR_NULL) ||
         (f->deoptStateCount && f->deoptStates == ZR_NULL) ||
         (f->deoptValueCount && f->deoptValues == ZR_NULL) ||

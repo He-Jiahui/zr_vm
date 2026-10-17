@@ -1,5 +1,6 @@
 #include "zr_vm_core/exec_ir.h"
 #include "exec_ir/exec_ir_mutation_internal.h"
+#include "exec_ir/exec_ir_gc_map_internal.h"
 #include "zr_vm_core/exec_ir_state_map.h"
 
 #include <limits.h>
@@ -292,9 +293,7 @@ static TZrBool zr_exec_ir_clone_array_shape_is_valid(
 
 static TZrBool zr_exec_ir_clone_function_shape_is_valid(
         const SZrExecIrFunction *source, SZrExecIrDiagnostic *diagnostic) {
-    if (source == ZR_NULL ||
-        source->gcMapCount > source->gcMapCapacity ||
-        (source->gcMapCount != 0u && source->gcMap == ZR_NULL)) {
+    if (!zr_exec_ir_gc_map_outer_shape_is_valid(source)) {
         zr_exec_ir_set_diagnostic(diagnostic, ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
                                   source, 0u, 0u, 0u, 0u);
         return ZR_FALSE;
@@ -386,8 +385,6 @@ static TZrBool zr_exec_ir_clone_function_into(const SZrExecIrFunction *source,
     ZR_EXEC_IR_CLONE_FIELD(phiIncoming, phiIncomingCount, phiIncomingCapacity);
     ZR_EXEC_IR_CLONE_FIELD(predecessors, predecessorCount, predecessorCapacity);
     ZR_EXEC_IR_CLONE_FIELD(successors, successorCount, successorCapacity);
-    destination->gcMapCount = source->gcMapCount;
-    destination->gcMapCapacity = source->gcMapCapacity;
     if (source->gcMap != ZR_NULL) {
         destination->gcMap = (SZrExecIrGcMap *)calloc(1u, sizeof(*destination->gcMap));
         if (destination->gcMap == ZR_NULL) {
@@ -395,6 +392,8 @@ static TZrBool zr_exec_ir_clone_function_into(const SZrExecIrFunction *source,
                                       source, 0u, 0u, 1u, 0u);
             return ZR_FALSE;
         }
+        destination->gcMapCount = 1u;
+        destination->gcMapCapacity = 1u;
         *destination->gcMap = *source->gcMap;
         destination->gcMap->entries = ZR_NULL;
         destination->gcMap->slotIndexPool = ZR_NULL;
@@ -1683,7 +1682,7 @@ TZrBool ZrCore_ExecIr_CloneModule(const SZrExecIrModule *source,
  * @return TRUE表示本函数列出的形状检查及存在stateMap时的StateMapStorageValid通过；FALSE报告INVALID_ARGUMENT或CAPACITY_OVERFLOW。源和拥有池不被修改。
  *
  * ## Constraints and lifecycle
- * gcMapCount只检查<=gcMapCapacity及非零count必须有单个gcMap指针，不将其认证为多map数组。宏逐一校验17个函数池、GC三池、帧slots及stateMap四个逻辑池；StateMapStorageValid进一步检查其拥有容量区间等。count=0/capacity>0/NULL的普通池在此层可通过，不据此证明任意池完整性。没有完整CFG/SSA/效果、绑定表或恢复语义验证；绑定表随后由clone_function_into单独验证。诊断不得别名输入；不分配、不持有借用、无同步。
+ * gcMap外层只接受NULL/count=0/capacity=0，或非NULL/count=1/capacity=1；多条GC记录位于单个header的entries内。宏逐一校验17个函数池、GC三池、帧slots及stateMap四个逻辑池；StateMapStorageValid进一步检查其拥有容量区间等。count=0/capacity>0/NULL的普通池在此层可通过，不据此证明任意池完整性。没有完整CFG/SSA/效果、绑定表或恢复语义验证；绑定表随后由clone_function_into单独验证。诊断不得别名输入；不分配、不持有借用、无同步。
  *
  * ## References
  * - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c:292

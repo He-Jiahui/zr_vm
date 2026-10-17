@@ -13,6 +13,11 @@ related_code:
   - zr_vm_core/include/zr_vm_core/aot_ir_owned_module.h
   - zr_vm_core/include/zr_vm_core/function_aot_ir.h
   - zr_vm_parser/include/zr_vm_parser/compiler_source_retention.h
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_gc_map_internal.h
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_validate.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
 implementation_files:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_mutation_internal.h
   - zr_vm_parser/include/zr_vm_parser/semantic_ir.h
@@ -22,7 +27,12 @@ implementation_files:
   - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
   - zr_vm_parser/include/zr_vm_parser/exec_ir_builder.h
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_gc_map_internal.h
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_verify.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_validate.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_projection_common.c
 plan_sources:
+  - .codex/plans/20261016-ssa-gc-map-outer-shape.md
   - docs/plans/ssa/index.md
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
 tests:
@@ -33,6 +43,17 @@ tests:
   - tests/parser/test_ssa_core_model.c
   - tests/core/test_ssa_function_aot_owner.c
   - tests/parser/test_ssa_source_returned_retention.c
+  - tests/parser/support/ssa_execir_gc_map_outer_shape_cases.inc
+  - tests/core/support/ssa_exec_ir_owned_module_fixture.c
+  - tests/core/test_ssa_exec_ir_owned_module.c
+  - tests/core/test_ssa_exec_ir_module_copy.c
+  - tests/parser/test_ssa_gc_map_metadata_consumers.c
+  - tests/core/test_ssa_owner_try_capture.c
+  - tests/parser/test_ssa_primitive_frame_validation.c
+  - tests/parser/test_ssa_deopt_aggregates.c
+  - tests/cmake/ssa-gc-map-metadata-consumers.cmake
+  - tests/cmake/ssa-execir-owned-direct-validation/CMakeLists.txt
+  - tests/acceptance/ssa-gc-map-outer-shape.md
 doc_type: milestone-detail
 status: planned
 ---
@@ -200,8 +221,9 @@ ExecIR 所有权已分别有限交付：
 验证跨函数局部 ID 重映射与稳定 token 保持。构建器 mutation 声明边界本批已收敛：
 30 项声明（含十项 Reserve、两个可变访问器与 SetBindingRows）已移到 Core 私有
 `exec_ir/exec_ir_mutation_internal.h`，见[有限验收](../../../../tests/acceptance/ssa-execir-mutation-boundary.md)。
-GC-map 基数、operation-specific local-ID 映射和全模块故障覆盖仍须按实际 profile
-取得专项证据；这些有限交付不勾选本计划任务或整叶退出门禁。
+单 owned GC-map header 的 canonical 外层基数已有独立有限 GREEN-r2 证据，见下文；
+operation-specific local-ID 映射和全模块故障覆盖仍须按实际 profile 取得专项证据。
+这些有限交付不勾选本计划任务或整叶退出门禁。
 
 ## 本批有限 API visibility checkpoint
 
@@ -225,4 +247,40 @@ Caller r5 的 78 个实际配置 syntax 检查全部通过（Source 20、Lower 3
 新验收记录区分原始运行身份、两文件精确 EOF-comment 等价桥与共享 checkout
 输入；候选提交仅纳入本批自有修改，不宣称 clean-HEAD 单独全量构建通过。
 当前状态为有限边界已核验、可供发布，提交及清理由各自真实外部收据确认；
-GC-map 基数、operation-specific 跨函数 local-ID 映射及完整 01.01/47 叶出口仍开放。
+该历史 declaration checkpoint 不提供 GC-map 基数信用；后续有限证据见下节。
+operation-specific 跨函数 local-ID 映射及完整 01.01/47 叶出口仍开放。
+
+## 有限 GC-map outer-shape checkpoint
+
+每函数一个可选 owned header：NULL/0/0，或非NULL/1/1。present-empty 合法，
+多条记录位于单 header 的 entries 内；entries、slot-index pool 和
+inline-reference-offset pool 三池保持独立容量与所有权约束。公共 layout、
+签名、gcMap/gcMaps alias、schema 和 hash 算法保持。私有 predicate 不证明任意
+pointer 有效，也不适用于其他表示的 AOTIR、projection embedded map 或 GC descriptor。
+
+Clone、Core structure/storage verify、纯 interpreter validator 和 Parser projection
+四入口复用原 storage guard，保留早期拒绝与九字段诊断优先级；Parser binding rows
+仍更早。Clone 保留 temporary candidate、三池 allocation order、overflow、
+pointer-based Free 和最后替换旧 destination 的事务。模块失败可能已分配前序
+candidate，证据是清理与旧 owner 不变，不授全模块零 allocation 信用。
+
+[专项验收](../../../../tests/acceptance/ssa-gc-map-outer-shape.md)记录实际 RED/GREEN。
+RED 仅首个真实两-header (2,2) Core Clone 及 owner/copy/两个 consumer 新断言失败，
+不授 24-call RED 或 Verify RED。GREEN-r2 四项 exact CTest PASS，含24个 Core
+malformed calls、三类合法生命周期、7个 GC Clone OOM stations、owner61+61 和
+copy88 sweeps；OOM八字段精确，expectedVersion仅检查{1,2} domain。
+两实际 consumer 覆盖 six malformed × NULL/poison diagnostics 及三类合法 projection。
+
+Accepted auxiliary metadata gates: primitive-r3 has one CTest with 18 passing Unity cases,
+18/18 allocation faults, 23 TUs, 11 compile events across eight unique TUs,
+15 exact-cache objects and incremental W0. TryCapture-r1 passes the original
+12-case direct protocol: 11 PASS plus one intentional prior-failure FAIL,
+acquired90/freed90/live0. MSVC-r3 accepts 16 syntax phases, 12 unique C sources,
+10 roles and zero warnings/errors/unknown output; finite syntax W0 only,
+with no object/link/runtime/full-build W0/Linux credit. Earlier failed
+auxiliary attempts remain preserved; no failed receipt is upgraded.
+publication/cleanup待真实收据，历史 completed outcomes仍33。全 consumer admission、
+完整GC payload hash、跨函数local-ID、liveness、reserved safepoint semantics、
+完整GC/collector/barrier、VM/FFI/network/security/Linux、full-build W0 和
+完整01.01/47叶出口仍开放。
+

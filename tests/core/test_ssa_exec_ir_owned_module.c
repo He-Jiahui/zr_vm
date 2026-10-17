@@ -60,6 +60,10 @@ static void test_owned_two_functions_preserve_local_value_ids(void) {
     TEST_ASSERT_EQUAL_UINT32(2u,view->functionCount);
     TEST_ASSERT_EQUAL_UINT32(1u,view->functions[0].values[0].id);
     TEST_ASSERT_EQUAL_UINT32(1u,view->functions[1].values[0].id);
+    TEST_ASSERT_EQUAL_UINT32(1u,view->functions[0].gcMapCount);
+    TEST_ASSERT_EQUAL_UINT32(1u,view->functions[0].gcMapCapacity);
+    TEST_ASSERT_EQUAL_UINT32(2u,view->functions[0].gcMap->entryCount);
+    TEST_ASSERT_EQUAL_UINT32(1u,view->functions[0].gcMap->entries[1].liveRefSlots.start);
     TEST_ASSERT_TRUE(view->functions[0].values != view->functions[1].values);
     TEST_ASSERT_NOT_EQUAL_UINT32(view->functions[0].functionToken,view->functions[1].functionToken);
 }
@@ -76,12 +80,15 @@ static void test_present_empty_maps_preserve_header_identity(void) {
     TEST_ASSERT_NOT_NULL(f->stateMap);TEST_ASSERT_NOT_NULL(f->gcMap);TEST_ASSERT_NOT_NULL(f->frameLayout);
     TEST_ASSERT_EQUAL_UINT32(0u,f->stateMap->entryCount);TEST_ASSERT_NULL(f->stateMap->entries);
     TEST_ASSERT_EQUAL_UINT32(0u,f->gcMap->entryCount);TEST_ASSERT_NULL(f->gcMap->entries);
+    TEST_ASSERT_EQUAL_UINT32(1u,f->gcMapCount);TEST_ASSERT_EQUAL_UINT32(1u,f->gcMapCapacity);
     TEST_ASSERT_EQUAL_UINT32(0u,f->frameLayout->slotCount);TEST_ASSERT_NULL(f->frameLayout->slots);
     TEST_ASSERT_EQUAL_UINT32(f->functionToken,f->stateMap->functionToken);
     TEST_ASSERT_EQUAL_UINT64(f->signatureHash,f->stateMap->signatureHash);
     TEST_ASSERT_EQUAL_UINT64(f->contract.generation,f->stateMap->generation);
     view=owned(1u,ZrTests_ExecOwner_Build(1u,7u,1u,2u));
     TEST_ASSERT_NULL(view->functions[0].stateMap);TEST_ASSERT_NULL(view->functions[0].gcMap);
+    TEST_ASSERT_EQUAL_UINT32(0u,view->functions[0].gcMapCount);
+    TEST_ASSERT_EQUAL_UINT32(0u,view->functions[0].gcMapCapacity);
     TEST_ASSERT_NULL(view->functions[0].frameLayout);
 }
 static void test_two_owned_modules_release_independently(void) {
@@ -98,6 +105,30 @@ static void test_successful_replacement_releases_prior_owner_once(void) {
     unsigned first=ZrTests_ExecOwner_Stats().records,last;
     (void)owned(0u,a);last=ZrTests_ExecOwner_Stats().records;(void)owned(0u,b);
     ZrTests_ExecOwner_AssertReleased(first,last);
+    (void)owned(0u,ZrTests_ExecOwner_Build(2u,7u,1u,1u));
+    (void)owned(0u,ZrTests_ExecOwner_Build(3u,6u,1u,2u));
+}
+static void test_malformed_gc_outer_after_prior_function_preserves_owner(void) {
+    SZrExecIrModule *source=ZrTests_ExecOwner_Build(0u,9u,2u,0u);
+    const SZrExecIrModule *view=owned(0u,source);
+    SZrOwnerContents expected;SZrExecIrDiagnostic d,e={0};SZrOwnerHeapStats start,end;
+    TZrUInt64 sourceDigest,keeperDigest;TZrBool ok;
+    ZrTests_ExecOwner_Capture(view,&expected);keeperDigest=ZrTests_ExecOwner_LiveDigest(view);
+    source->functions[1].gcMapCount=source->functions[1].gcMapCapacity=0u;
+    sourceDigest=ZrTests_ExecOwner_LiveDigest(source);start=ZrTests_ExecOwner_Stats();
+    memset(&d,0xA5,sizeof(d));ok=ZrCore_ExecIr_CloneOwnedModule(source,&g_execOwners[0],&d);
+    end=ZrTests_ExecOwner_Stats();
+    int unchanged=sourceDigest==ZrTests_ExecOwner_LiveDigest(source);
+    /* Successful replacement invalidates view: follow it only on refusal. */
+    int keeperUnchanged=ok?0:keeperDigest==ZrTests_ExecOwner_LiveDigest(view);
+    source->functions[1].gcMapCount=source->functions[1].gcMapCapacity=1u;
+    e.code=ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT;e.functionToken=source->functions[1].functionToken;
+    TEST_ASSERT_FALSE(ok);TEST_ASSERT_TRUE(unchanged);TEST_ASSERT_TRUE(keeperUnchanged);
+    ZrTests_ExecOwner_Diagnostic(&e,&d);ZrTests_ExecOwner_Equal(&expected,view);
+    ZrTests_ExecOwner_AssertReleased(start.records,end.records);
+    TEST_ASSERT_EQUAL_UINT(start.live,end.live);TEST_ASSERT_EQUAL_UINT(0u,end.errors);
+    /* Earlier candidate allocations are allowed; cleanup is the contract. */
+    (void)owned(0u,source);
 }
 static void test_old_view_self_source_replacement_is_atomic(void) {
     SZrOwnerContents expected;SZrExecIrDiagnostic d={0};TZrBool ok;
@@ -237,6 +268,7 @@ int main(void) {
     RUN_TEST(test_present_empty_maps_preserve_header_identity);
     RUN_TEST(test_two_owned_modules_release_independently);
     RUN_TEST(test_successful_replacement_releases_prior_owner_once);
+    RUN_TEST(test_malformed_gc_outer_after_prior_function_preserves_owner);
     RUN_TEST(test_old_view_self_source_replacement_is_atomic);
     RUN_TEST(test_null_arguments_preserve_existing_owner);
     RUN_TEST(test_null_diagnostic_supports_success_and_refusal);

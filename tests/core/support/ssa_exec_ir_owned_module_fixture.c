@@ -66,6 +66,7 @@ static void build_function(SZrExecIrFunction *f, unsigned id, unsigned seed, uns
     TEST_ASSERT_TRUE(ZrCore_ExecIr_FunctionSetBindingRows(f, &row, 1u, &d));
     if(mode==2u){f->sealed=ZR_TRUE;return;}
     f->gcMap = ZrTests_ExecOwner_Calloc(1u,sizeof(*f->gcMap)); TEST_ASSERT_NOT_NULL(f->gcMap);
+    f->gcMapCount = f->gcMapCapacity = 1u;
     f->stateMap = ZrTests_ExecOwner_Calloc(1u,sizeof(*f->stateMap)); TEST_ASSERT_NOT_NULL(f->stateMap);
     f->frameLayout = ZrTests_ExecOwner_Calloc(1u,sizeof(*f->frameLayout)); TEST_ASSERT_NOT_NULL(f->frameLayout);
     f->gcMap->safepointId = seed + 8u; f->gcMap->sourceId = seed + 17u;
@@ -74,8 +75,14 @@ static void build_function(SZrExecIrFunction *f, unsigned id, unsigned seed, uns
     if (mode == 0u) {
 #define NEST(obj,field,count,capacity) do { f->obj->field = ZrTests_ExecOwner_Calloc(1u,sizeof(*f->obj->field)); \
     if(f->obj->field != ZR_NULL){f->obj->count=1u;f->obj->capacity=1u;} TEST_ASSERT_NOT_NULL(f->obj->field); } while(0)
-        NEST(gcMap,entries,entryCount,entryCapacity); NEST(gcMap,slotIndexPool,slotIndexCount,slotIndexCapacity);
-        NEST(gcMap,inlineRefOffsetPool,inlineRefOffsetCount,inlineRefOffsetCapacity);
+        f->gcMap->entries = ZrTests_ExecOwner_Calloc(2u,sizeof(*f->gcMap->entries));
+        f->gcMap->slotIndexPool = ZrTests_ExecOwner_Calloc(2u,sizeof(*f->gcMap->slotIndexPool));
+        f->gcMap->inlineRefOffsetPool = ZrTests_ExecOwner_Calloc(2u,sizeof(*f->gcMap->inlineRefOffsetPool));
+        TEST_ASSERT_NOT_NULL(f->gcMap->entries); TEST_ASSERT_NOT_NULL(f->gcMap->slotIndexPool);
+        TEST_ASSERT_NOT_NULL(f->gcMap->inlineRefOffsetPool);
+        f->gcMap->entryCount = f->gcMap->entryCapacity = 2u;
+        f->gcMap->slotIndexCount = f->gcMap->slotIndexCapacity = 2u;
+        f->gcMap->inlineRefOffsetCount = f->gcMap->inlineRefOffsetCapacity = 2u;
         NEST(stateMap,entries,entryCount,entryCapacity); NEST(stateMap,valuePool,valueCount,valueCapacity);
         NEST(stateMap,rootPool,rootCount,rootCapacity); NEST(stateMap,ownerStatePool,ownerStateCount,ownerStateCapacity);
         NEST(frameLayout,slots,slotCount,slotCapacity);
@@ -83,6 +90,12 @@ static void build_function(SZrExecIrFunction *f, unsigned id, unsigned seed, uns
         f->gcMapCount = f->gcMapCapacity = 1u; f->gcMap->entries[0].site = 1u;
         f->gcMap->entries[0].liveRefSlots.count = 1u; f->gcMap->entries[0].inlineRefOffsets.count = 1u;
         f->gcMap->slotIndexPool[0] = 0u; f->gcMap->inlineRefOffsetPool[0] = seed + 4u;
+        /* Two entries share the existing real instruction site; distinct inner
+         * ranges carry independent roots without inventing another outer map. */
+        f->gcMap->entries[1].site = 1u;
+        f->gcMap->entries[1].liveRefSlots.start = 1u; f->gcMap->entries[1].liveRefSlots.count = 1u;
+        f->gcMap->entries[1].inlineRefOffsets.start = 1u; f->gcMap->entries[1].inlineRefOffsets.count = 1u;
+        f->gcMap->slotIndexPool[1] = 0u; f->gcMap->inlineRefOffsetPool[1] = seed + 12u;
         f->stateMap->entries[0].sourceId = seed + 17u; f->stateMap->entries[0].instructionId = 1u;
         f->stateMap->entries[0].phase = ZR_EXEC_IR_STATE_BEFORE_EFFECT;
         f->stateMap->entries[0].liveValues.count = f->stateMap->entries[0].rootValues.count = 1u;

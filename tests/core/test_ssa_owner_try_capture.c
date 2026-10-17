@@ -216,7 +216,8 @@ static void optional_maps(SZrExecIrFunction *f) {
     f->gcMap=pool(1u,sizeof(*f->gcMap));f->stateMap=pool(1u,sizeof(*f->stateMap));
     f->frameLayout=pool(1u,sizeof(*f->frameLayout));if(!g_support)return;
     SZrExecIrGcMap *gc=f->gcMap;SZrExecIrStateMap *sm=f->stateMap;SZrExecIrFrameLayout *fr=f->frameLayout;
-    /* Optional GC object with count/capacity zero is still genuine present storage. */
+    /* The optional owned GC header has canonical outer cardinality. */
+    f->gcMapCount=f->gcMapCapacity=1u;
     gc->entries=pool(1u,sizeof(*gc->entries));gc->slotIndexPool=pool(1u,sizeof(*gc->slotIndexPool));
     gc->inlineRefOffsetPool=pool(1u,sizeof(*gc->inlineRefOffsetPool));
     sm->entries=pool(1u,sizeof(*sm->entries));sm->valuePool=pool(1u,sizeof(*sm->valuePool));
@@ -250,6 +251,8 @@ static const TZrUInt64 optionalExpected[] = {
 };
 static void populated_expected(void) {
     ordinary_expected(1);g_expectedCount-=3u;
+    /* Module prefix is 35 words; function's seventh word is gcMapCount. */
+    g_expected[35u+6u]=1u;
     support(sizeof(optionalExpected)/sizeof(*optionalExpected)==60u);
     memcpy(g_expected+g_expectedCount,optionalExpected,sizeof(optionalExpected));
     g_expectedCount+=60u;g_witness.expectedWords=g_expectedCount;support(g_expectedCount==255u);
@@ -365,7 +368,7 @@ static void test_capture_structural_refusal(void) {
 #undef REFUSE
         f->gcMapCount=1u;f->gcMapCapacity=0u;(void)observe(m,0);
         SZrExecIrGcMap *saved=f->gcMap;f->gcMap=NULL;f->gcMapCount=f->gcMapCapacity=1u;
-        (void)observe(m,0);f->gcMap=saved;f->gcMapCount=f->gcMapCapacity=0u;
+        (void)observe(m,0);f->gcMap=saved;f->gcMapCount=f->gcMapCapacity=1u;
     }
     support(g_witness.calls==60u);finish();
 }

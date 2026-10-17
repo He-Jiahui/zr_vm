@@ -478,6 +478,9 @@ typedef struct SZrExecIrFunction {
     TZrUInt32 successorCapacity;
 
     SZrExecIrFrameLayout *frameLayout;
+    /* One optional owned GC-map header: NULL requires count/capacity 0/0;
+     * a present header requires 1/1, including an empty header. Multiple GC
+     * records belong in its entries; outer capacity does not reserve headers. */
     union {
         SZrExecIrGcMap *gcMap;
         /* Compatibility spelling retained for the first model prototype. */

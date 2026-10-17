@@ -41,6 +41,9 @@ related_code:
   - tests/cmake/ssa-execir-mutation-boundary-check.cmake
   - tests/parser/support/ssa_source_returned_execir_owner_shim.h
   - tests/parser/support/ssa_source_integer_expression_faults_producer_shim.h
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_gc_map_internal.h
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_validate.c
 implementation_files:
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_mutation_internal.h
   - zr_vm_core/include/zr_vm_core/exec_ir_opcode.def
@@ -77,7 +80,11 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_aot_lowering.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_execbc.c
   - zr_vm_parser/include/zr_vm_parser/exec_ir_execbc.h
+  - zr_vm_core/include/zr_vm_core/exec_ir.h
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_gc_map_internal.h
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter_validate.c
 plan_sources:
+  - .codex/plans/20261016-ssa-gc-map-outer-shape.md
   - docs/plans/ssa/01-execir-ssa/01-core-model.md
   - docs/plans/ssa/01-execir-ssa/02-ssa-construction.md
   - docs/plans/ssa/01-execir-ssa/05-oracle-projections.md
@@ -148,6 +155,17 @@ tests:
   - tests/acceptance/ssa-source-multiple-catch-cfg.md
   - tests/acceptance/ssa-source-cleanup-cfg.md
   - tests/acceptance/ssa-cleanup-exception-state.md
+  - tests/parser/support/ssa_execir_gc_map_outer_shape_cases.inc
+  - tests/core/support/ssa_exec_ir_owned_module_fixture.c
+  - tests/core/test_ssa_exec_ir_owned_module.c
+  - tests/core/test_ssa_exec_ir_module_copy.c
+  - tests/parser/test_ssa_gc_map_metadata_consumers.c
+  - tests/core/test_ssa_owner_try_capture.c
+  - tests/parser/test_ssa_primitive_frame_validation.c
+  - tests/parser/test_ssa_deopt_aggregates.c
+  - tests/cmake/ssa-gc-map-metadata-consumers.cmake
+  - tests/cmake/ssa-execir-owned-direct-validation/CMakeLists.txt
+  - tests/acceptance/ssa-gc-map-outer-shape.md
 doc_type: module-detail
 ---
 
@@ -773,6 +791,59 @@ The direct reference execution boundary is documented separately in
 caller-owned and deterministic, as is the pointer-free allocation callback;
 neither boundary is represented as a host-pointer field inside ExecIR.
 
+## GC-map outer shape and clone ownership
+
+Each function owns one optional SZrExecIrGcMap header. Public record layout,
+signatures, gcMap/gcMaps aliases, schema and payload hash algorithms are unchanged.
+
+| gcMap | gcMapCount | gcMapCapacity | Meaning |
+| --- | ---: | ---: | --- |
+| NULL | 0 | 0 | Absent |
+| non-NULL | 1 | 1 | One owned header, including present-empty |
+
+All other outer shapes are malformed. Multiple safepoints are entries inside
+one header. Entries, slot-index pool and inline-reference-offset pool retain
+independent checked count/capacity and ownership rules. A header may have zero
+or multiple entries. Readable, live, properly owned storage remains a caller
+precondition; the private pure predicate does not prove arbitrary pointer validity.
+Embedded projection maps, AOTIR maps and GC descriptors have other representations
+and do not inherit this Core outer contract.
+
+The private exec_ir_gc_map_internal.h predicate is used at the existing storage
+guards for CloneFunction, Core structural/storage verification, interpreter
+metadata validation and Parser projection validation. Existing earlier refusal
+order, diagnostic categories and nine-field storage diagnostics remain; Parser
+binding-row refusal still precedes its storage guard. These four entries do not
+establish whole-consumer admission.
+
+Clone rejects malformed outer storage before its own allocations. Absent output
+stays NULL/0/0; a present candidate publishes 1/1 after header allocation succeeds.
+The temporary candidate, three inner-pool allocation order, overflow checks,
+partial cleanup and final destination replacement remain transactional.
+Free follows the owned pointer, including partial candidates, rather than outer
+count iteration. Module failures may follow earlier candidate allocations;
+their evidence is cleanup and old-owner stability, not zero whole-module attempts.
+
+The [finite acceptance record](../../tests/acceptance/ssa-gc-map-outer-shape.md)
+records actual RED and GREEN-r2: 24 Core malformed calls in GREEN, three legal
+lifecycle shapes, seven GC Clone OOM stations, owner61+61 and copy88 sweeps.
+The OOM fixture checks eight diagnostic fields exactly and expectedVersion
+within {1,2}, without an exact per-site oracle for that field. Each actual
+consumer covers six malformed shapes with NULL/poisoned diagnostics and three
+legal projection shapes. RED stops at the first real two-header (2,2) Clone;
+it does not provide all-24 or Verify RED credit. Separately accepted auxiliary
+metadata gates cover primitive-r3's one CTest with 18 passing Unity cases and 18/18 allocation faults
+(23 TUs; 11 compile events across eight unique TUs; 15 exact-cache objects,
+incremental W0), and TryCapture-r1's original 12-case direct protocol
+(11 PASS plus one intentional prior-failure FAIL; acquired90/freed90/live0).
+MSVC-r3 accepts 16 syntax phases over 12 unique C sources and 10 roles,
+with zero warnings/errors/unknown output. This is finite syntax W0, without
+object, link, runtime, full-build W0 or Linux credit. Failed earlier auxiliary
+attempts remain preserved. Publication and cleanup are PENDING.
+Payload hashing, operation-specific local-ID remapping,
+reserved fields, liveness, collector integration, 01.01 and the full47 goal
+remain separate acceptance work.
+
 ## API visibility checkpoint
 
 The public `exec_ir.h` retains model records, lifecycle and cloning interfaces,
@@ -805,7 +876,8 @@ test executables. Caller r5 accepts all 78 configured syntax checks (20 Source,
 three Lower and 55 root), with 873 stable actual inputs and 150 warnings.
 The acceptance record preserves failed attempts, the exact EOF-comment identity
 bridge and the shared-checkout publication limits; it does not claim a clean-HEAD
-standalone build. GC-map cardinality and operation-specific cross-function
-local-ID mapping remain open acceptance gates; this checkpoint does not close
-01.01 or the full 47-leaf goal. Publication and cleanup require their actual
-external receipts.
+standalone build. This historical declaration checkpoint supplies no GC-map
+cardinality credit; the later finite outer-shape section records separate evidence.
+Operation-specific cross-function local-ID mapping and complete ownership
+acceptance remain open; neither checkpoint closes 01.01 or the full 47-leaf goal.
+Publication and cleanup require their actual external receipts.

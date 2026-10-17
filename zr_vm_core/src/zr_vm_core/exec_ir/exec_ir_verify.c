@@ -6,6 +6,7 @@
 #include "exec_ir_deopt_aggregate.h"
 #include "exec_ir_edge_identity.h"
 #include "exec_ir_verify_constants.h"
+#include "exec_ir_gc_map_internal.h"
 
 #include <string.h>
 
@@ -328,7 +329,7 @@ static TZrBool zr_exec_ir_validate_function(const SZrExecIrFunction *function,
         function->phiIncomingCount > function->phiIncomingCapacity ||
         function->predecessorCount > function->predecessorCapacity ||
         function->successorCount > function->successorCapacity ||
-        function->gcMapCount > function->gcMapCapacity ||
+        !zr_exec_ir_gc_map_outer_shape_is_valid(function) ||
         function->gcRootCount > function->gcRootCapacity ||
         function->deoptStateCount > function->deoptStateCapacity ||
         function->deoptValueCount > function->deoptValueCapacity ||
@@ -345,7 +346,6 @@ static TZrBool zr_exec_ir_validate_function(const SZrExecIrFunction *function,
         (function->phiIncomingCount != 0u && function->phiIncoming == ZR_NULL) ||
         (function->predecessorCount != 0u && function->predecessors == ZR_NULL) ||
         (function->successorCount != 0u && function->successors == ZR_NULL) ||
-        (function->gcMapCount != 0u && function->gcMaps == ZR_NULL) ||
         (function->gcRootCount != 0u && function->gcRoots == ZR_NULL) ||
         (function->deoptStateCount != 0u && function->deoptStates == ZR_NULL) ||
         (function->deoptValueCount != 0u && function->deoptValues == ZR_NULL) ||

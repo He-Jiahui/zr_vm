@@ -359,6 +359,7 @@ static void test_target_cannot_own_function_gc_slots(void) {
     build();
     function.gcMap = calloc(1u, sizeof(*function.gcMap));
     TEST_ASSERT_NOT_NULL(function.gcMap);
+    function.gcMapCount = function.gcMapCapacity = 1u;
     function.gcMap->slotIndexPool = calloc(1u, sizeof(*function.gcMap->slotIndexPool));
     TEST_ASSERT_NOT_NULL(function.gcMap->slotIndexPool);
     function.gcMap->slotIndexCount = function.gcMap->slotIndexCapacity = 1u;
