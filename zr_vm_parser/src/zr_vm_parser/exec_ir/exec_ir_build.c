@@ -646,6 +646,15 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                     in->scalarConversionTypeToken != 0u)
                     x.typeToken = (TZrExecIrTypeToken)in->scalarConversionTypeToken;
                 x.matchTypeToken = (TZrExecIrTypeToken)in->matchTypeId;
+                /* Validate side-pool ranges before opcode-specific readers so
+                 * malformed operands retain their range diagnostic. */
+                if (in->operandStart > s->valueOperands.length ||
+                    in->operandCount > s->valueOperands.length - in->operandStart) {
+                    diag_missing(diagnostic, output, db->id, in->id);
+                    if (diagnostic != ZR_NULL) diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
+                    ZrCore_ExecIr_FreeFunction(output);
+                    return ZR_FALSE;
+                }
                 if (!zr_parser_exec_ir_lower_compare_metadata(
                             s, in, &x, output, db->id, diagnostic)) {
                     ZrCore_ExecIr_FreeFunction(output);
@@ -662,13 +671,6 @@ static TZrBool build_impl(const struct SZrSemanticIrFunction *semanticFunction,
                                 in->opcode == ZR_SEMANTIC_IR_TYPE_TEST ? 1u : 0u;
                         diagnostic->actualVersion = in->matchTypeId;
                     }
-                    ZrCore_ExecIr_FreeFunction(output);
-                    return ZR_FALSE;
-                }
-                if (in->operandStart > s->valueOperands.length ||
-                    in->operandCount > s->valueOperands.length - in->operandStart) {
-                    diag_missing(diagnostic, output, db->id, in->id);
-                    if (diagnostic != ZR_NULL) diagnostic->code = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
                     ZrCore_ExecIr_FreeFunction(output);
                     return ZR_FALSE;
                 }
