@@ -33,6 +33,10 @@
     #define ZR_VM_TESTS_C_COMPILER "cc"
 #endif
 
+#ifndef ZR_VM_TESTS_C_FLAGS
+    #define ZR_VM_TESTS_C_FLAGS ""
+#endif
+
 #ifndef ZR_VM_TESTS_REPO_ROOT
     #define ZR_VM_TESTS_REPO_ROOT "."
 #endif
@@ -65,8 +69,8 @@ static const char *const CZrAotGeneralLoopSource =
         "return sum;";
 
 #if defined(ZR_PLATFORM_UNIX)
-typedef TZrInt64 (*TZrAotValueConstructionProbe)(void);
-typedef TZrInt64 (*TZrAotTypedLoopProbe)(TZrInt64 limit);
+typedef TZrInt64 (*TZrAotValueConstructionProbe)(SZrState *state);
+typedef TZrInt64 (*TZrAotTypedLoopProbe)(SZrState *state, TZrInt64 limit);
 
 #define ZR_AOT_SCALAR_PERF_AOT_ITERATIONS 2000000u
 #define ZR_AOT_SCALAR_PERF_INTERPRETER_ITERATIONS 4096u
@@ -95,7 +99,7 @@ static double monotonic_time_ns(void) {
 }
 
 /* 逐次核对直接 thunk 返回值并累计校验和。 */
-static double benchmark_aot_probe_ns_per_call(TZrAotValueConstructionProbe probe,
+static double benchmark_aot_probe_ns_per_call(SZrState *state, TZrAotValueConstructionProbe probe,
                                                TZrUInt32 iterations,
                                                TZrInt64 *outChecksum) {
     double startNs;
@@ -112,7 +116,7 @@ static double benchmark_aot_probe_ns_per_call(TZrAotValueConstructionProbe probe
         return -1.0;
     }
     for (index = 0u; index < iterations; index++) {
-        TZrInt64 result = probe();
+        TZrInt64 result = probe(state);
         if (result != ZR_AOT_SCALAR_PERF_EXPECTED_RESULT) {
             return -1.0;
         }
@@ -163,7 +167,7 @@ static double benchmark_interpreter_ns_per_call(SZrState *state,
 }
 
 /* 测 typed 循环 thunk 的单次调用成本并核对结果。 */
-static double benchmark_typed_loop_probe_ns_per_call(TZrAotTypedLoopProbe probe,
+static double benchmark_typed_loop_probe_ns_per_call(SZrState *state, TZrAotTypedLoopProbe probe,
                                                        TZrUInt32 iterations,
                                                        TZrInt64 *outChecksum) {
     double startNs;
@@ -180,7 +184,7 @@ static double benchmark_typed_loop_probe_ns_per_call(TZrAotTypedLoopProbe probe,
         return -1.0;
     }
     for (index = 0u; index < iterations; index++) {
-        TZrInt64 result = probe(ZR_AOT_LOOP_LIMIT);
+        TZrInt64 result = probe(state, ZR_AOT_LOOP_LIMIT);
         if (result != ZR_AOT_LOOP_EXPECTED_RESULT) {
             return -1.0;
         }
@@ -399,8 +403,8 @@ static void test_full_aot_typed_i64_thunk_constructs_no_type_values(void) {
             "}\n"
             "return add(19, 23);";
     static const char *const probeSource =
-            "\nZR_VM_AOT_EXPORT TZrInt64 ZrVm_Test_RunTypedValueConstructionProbe(void) {\n"
-            "    return zr_aot_typed_i64_fn_1((TZrInt64)19, (TZrInt64)23);\n"
+            "\nZR_VM_AOT_EXPORT TZrInt64 ZrVm_Test_RunTypedValueConstructionProbe(SZrState *state) {\n"
+            "    return zr_aot_typed_i64_fn_1(state, (TZrInt64)19, (TZrInt64)23);\n"
             "}\n";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -472,14 +476,14 @@ static void test_full_aot_typed_i64_thunk_constructs_no_type_values(void) {
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1)"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return (TZrInt64)(zr_aot_arg0 + zr_aot_arg1);"));
+                                "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0, TZrInt64 zr_aot_arg1)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "return ZrCore_Integer_Add(state, zr_aot_arg0, zr_aot_arg1);"));
     free(generatedCText);
     append_text_file_or_fail(generatedCPath, probeSource);
 
     snprintf(command,
              sizeof(command),
-             "\"%s\" -std=c11 -O2 -g -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
+             "\"%s\" %s -std=c11 -O2 -g -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
              "-I\"%s/zr_vm_common/include\" "
              "-I\"%s/zr_vm_core/include\" "
              "-I\"%s/zr_vm_library/include\" "
@@ -488,6 +492,7 @@ static void test_full_aot_typed_i64_thunk_constructs_no_type_values(void) {
              ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
+             ZR_VM_TESTS_C_FLAGS,
              ZR_VM_TESTS_REPO_ROOT,
              ZR_VM_TESTS_REPO_ROOT,
              ZR_VM_TESTS_REPO_ROOT,
@@ -511,7 +516,7 @@ static void test_full_aot_typed_i64_thunk_constructs_no_type_values(void) {
     state->global->profileRuntime = &profileRuntime;
     ZrCore_Profile_SetCurrentState(state);
 
-    result = probe();
+    result = probe(state);
     TEST_ASSERT_EQUAL_INT64(42, result);
     TEST_ASSERT_EQUAL_UINT64(0u,
                              profileRuntime.helperCounts[ZR_PROFILE_HELPER_VALUE_CONSTRUCT]);
@@ -528,12 +533,12 @@ static void test_full_aot_typed_i64_thunk_constructs_no_type_values(void) {
     ZrCore_Profile_SetCurrentState(ZR_NULL);
 
     for (sampleIndex = 0u; sampleIndex < 32u; sampleIndex++) {
-        TEST_ASSERT_EQUAL_INT64(ZR_AOT_SCALAR_PERF_EXPECTED_RESULT, probe());
+        TEST_ASSERT_EQUAL_INT64(ZR_AOT_SCALAR_PERF_EXPECTED_RESULT, probe(state));
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
         TEST_ASSERT_EQUAL_INT64(ZR_AOT_SCALAR_PERF_EXPECTED_RESULT, result);
     }
     for (sampleIndex = 0u; sampleIndex < ZR_AOT_SCALAR_PERF_SAMPLE_COUNT; sampleIndex++) {
-        aotSamples[sampleIndex] = benchmark_aot_probe_ns_per_call(probe,
+        aotSamples[sampleIndex] = benchmark_aot_probe_ns_per_call(state, probe,
                                                                  ZR_AOT_SCALAR_PERF_AOT_ITERATIONS,
                                                                  &aotChecksum);
         interpreterSamples[sampleIndex] = benchmark_interpreter_ns_per_call(
@@ -570,9 +575,9 @@ static void test_full_aot_typed_i64_thunk_constructs_no_type_values(void) {
 #endif
 }
 
-/* 验证 typed 循环发射无 state 参数的直接 thunk 与 C 局部变量。 */
+/* 验证 typed 循环保留溢出检查并使用 C 局部变量。 */
 /* BUG: 失败断言会跳过本用例末尾的 state 清理。 */
-static void test_full_aot_typed_i64_counting_loop_emits_state_free_thunk(void) {
+static void test_full_aot_typed_i64_counting_loop_emits_checked_thunk(void) {
     static const TZrByte embeddedBlob[] = {0x7a};
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -606,17 +611,17 @@ static void test_full_aot_typed_i64_counting_loop_emits_state_free_thunk(void) {
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "static TZrInt64 zr_aot_typed_i64_fn_1(TZrInt64 zr_aot_arg0) {"));
+                                "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state, TZrInt64 zr_aot_arg0) {"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "    TZrInt64 zr_aot_loop_index = 0;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "    TZrInt64 zr_aot_loop_accumulator = 0;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "    while (zr_aot_loop_index < zr_aot_arg0) {"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "        zr_aot_loop_accumulator = (TZrInt64)(zr_aot_loop_accumulator + zr_aot_loop_index);"));
+                                "        zr_aot_loop_accumulator = ZrCore_Integer_Add(state, zr_aot_loop_accumulator, zr_aot_loop_index);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "        zr_aot_loop_index = (TZrInt64)(zr_aot_loop_index + 1);"));
+                                "        zr_aot_loop_index = ZrCore_Integer_Add(state, zr_aot_loop_index, 1);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "    return zr_aot_loop_accumulator;"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_one_arg_direct_call_full_aot */"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = zr_aot_typed_i64_fn_1(zr_aot_s3);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_direct_static_function_call */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_static_direct_succeeded = (TZrBool)(zr_aot_fn_1(state) != 0);"));
     free(generatedCText);
 
     ZrCore_Function_Free(state, function);
@@ -631,8 +636,8 @@ static void test_full_aot_typed_i64_counting_loop_runtime_and_performance_gate(v
     TEST_IGNORE_MESSAGE("AOT C typed-loop performance guardrail executes the Unix shared-library path");
 #else
     static const char *const typedProbeSource =
-            "\nZR_VM_AOT_EXPORT TZrInt64 ZrVm_Test_RunTypedLoopProbe(TZrInt64 limit) {\n"
-            "    return zr_aot_typed_i64_fn_1(limit);\n"
+            "\nZR_VM_AOT_EXPORT TZrInt64 ZrVm_Test_RunTypedLoopProbe(SZrState *state, TZrInt64 limit) {\n"
+            "    return zr_aot_typed_i64_fn_1(state, limit);\n"
             "}\n";
     static const char *const projectJson =
             "{"
@@ -719,7 +724,7 @@ static void test_full_aot_typed_i64_counting_loop_runtime_and_performance_gate(v
     append_text_file_or_fail(typedGeneratedCPath, typedProbeSource);
     snprintf(command,
              sizeof(command),
-             "\"%s\" -std=c11 -O2 -g -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
+             "\"%s\" %s -std=c11 -O2 -g -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
              "-I\"%s/zr_vm_common/include\" "
              "-I\"%s/zr_vm_core/include\" "
              "-I\"%s/zr_vm_library/include\" "
@@ -728,6 +733,7 @@ static void test_full_aot_typed_i64_counting_loop_runtime_and_performance_gate(v
              ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
+             ZR_VM_TESTS_C_FLAGS,
              ZR_VM_TESTS_REPO_ROOT,
              ZR_VM_TESTS_REPO_ROOT,
              ZR_VM_TESTS_REPO_ROOT,
@@ -750,7 +756,7 @@ static void test_full_aot_typed_i64_counting_loop_runtime_and_performance_gate(v
     profileRuntime.recordHelpers = ZR_TRUE;
     state->global->profileRuntime = &profileRuntime;
     ZrCore_Profile_SetCurrentState(state);
-    result = typedProbe(ZR_AOT_LOOP_LIMIT);
+    result = typedProbe(state, ZR_AOT_LOOP_LIMIT);
     TEST_ASSERT_EQUAL_INT64(ZR_AOT_LOOP_EXPECTED_RESULT, result);
     TEST_ASSERT_EQUAL_UINT64(0u, profileRuntime.helperCounts[ZR_PROFILE_HELPER_VALUE_CONSTRUCT]);
     TEST_ASSERT_EQUAL_UINT64(0u, profileRuntime.helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]);
@@ -828,7 +834,7 @@ static void test_full_aot_typed_i64_counting_loop_runtime_and_performance_gate(v
 
     snprintf(command,
              sizeof(command),
-             "\"%s\" -std=c11 -O2 -g -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
+             "\"%s\" %s -std=c11 -O2 -g -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
              "-I\"%s/zr_vm_common/include\" "
              "-I\"%s/zr_vm_core/include\" "
              "-I\"%s/zr_vm_library/include\" "
@@ -837,6 +843,7 @@ static void test_full_aot_typed_i64_counting_loop_runtime_and_performance_gate(v
              ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
+             ZR_VM_TESTS_C_FLAGS,
              ZR_VM_TESTS_REPO_ROOT,
              ZR_VM_TESTS_REPO_ROOT,
              ZR_VM_TESTS_REPO_ROOT,
@@ -873,7 +880,7 @@ static void test_full_aot_typed_i64_counting_loop_runtime_and_performance_gate(v
     ZrCore_Profile_SetCurrentState(ZR_NULL);
 
     for (sampleIndex = 0u; sampleIndex < 3u; sampleIndex++) {
-        TEST_ASSERT_EQUAL_INT64(ZR_AOT_LOOP_EXPECTED_RESULT, typedProbe(ZR_AOT_LOOP_LIMIT));
+        TEST_ASSERT_EQUAL_INT64(ZR_AOT_LOOP_EXPECTED_RESULT, typedProbe(state, ZR_AOT_LOOP_LIMIT));
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
         TEST_ASSERT_EQUAL_INT64(ZR_AOT_LOOP_EXPECTED_RESULT, result);
         TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_ExecuteEntry(generalAotState,
@@ -885,7 +892,7 @@ static void test_full_aot_typed_i64_counting_loop_runtime_and_performance_gate(v
 
     for (sampleIndex = 0u; sampleIndex < ZR_AOT_LOOP_PERF_SAMPLE_COUNT; sampleIndex++) {
         typedSamples[sampleIndex] = benchmark_typed_loop_probe_ns_per_call(
-                typedProbe,
+                state, typedProbe,
                 ZR_AOT_LOOP_PERF_AOT_ITERATIONS,
                 &typedChecksum);
         interpreterSamples[sampleIndex] = benchmark_loop_interpreter_ns_per_call(
@@ -952,7 +959,7 @@ void tearDown(void) {}
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_full_aot_typed_i64_thunk_constructs_no_type_values);
-    RUN_TEST(test_full_aot_typed_i64_counting_loop_emits_state_free_thunk);
+    RUN_TEST(test_full_aot_typed_i64_counting_loop_emits_checked_thunk);
     RUN_TEST(test_full_aot_typed_i64_counting_loop_runtime_and_performance_gate);
     return UNITY_END();
 }
