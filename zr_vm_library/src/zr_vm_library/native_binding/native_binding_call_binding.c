@@ -546,7 +546,8 @@ TZrBool native_registry_link_call_binding(SZrState *state, SZrFunction *function
         guard->cachedIsStatic = entry->bindingKind == ZR_LIB_RESOLVED_BINDING_METHOD &&
                                 entry->descriptor.methodDescriptor->isStatic;
         for (TZrUInt32 index = 0u; index < owner->memberDescriptorCount; ++index) {
-            if (ZR_CAST_RAW_OBJECT_AS_SUPER(owner->memberDescriptors[index].methodFunction) == target.callableObject) {
+            if (owner->memberDescriptors[index].methodFunction != ZR_NULL &&
+                ZR_CAST_RAW_OBJECT_AS_SUPER(owner->memberDescriptors[index].methodFunction) == target.callableObject) {
                 guard->cachedDescriptorIndex = index;
                 break;
             }

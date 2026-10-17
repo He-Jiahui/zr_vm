@@ -766,7 +766,7 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
-                backend_aot_write_c_direct_create_array(file, destinationSlot);
+                backend_aot_write_c_direct_create_array(file, destinationSlot, (TZrUInt32)operandA2);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,

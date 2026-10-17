@@ -10,6 +10,7 @@ SZrAstNode *ZrParser_ParseExpressionWithState(SZrParserState *ps) {
     }
 
     expression = parse_expression(ps);
+    parser_report_nesting_error(ps);
     if (expression == ZR_NULL || ps->hasError) {
         if (expression != ZR_NULL) {
             ZrParser_Ast_Free(ps->state, expression);

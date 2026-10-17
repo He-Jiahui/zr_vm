@@ -482,21 +482,21 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
             generatedCText,
             "zr_aot_s0 = frame.slotBase[0].value.value.nativeObject.nativeInt64;\n"
             "        zr_aot_s1 = frame.slotBase[1].value.value.nativeObject.nativeInt64;\n"
-            "        zr_aot_s2 = zr_aot_s0 * zr_aot_s1;");
+            "        zr_aot_s2 = ZrCore_Integer_Multiply(state, zr_aot_s0, zr_aot_s1);");
     assert_text_does_not_contain(
             generatedCText,
             "!ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[0].value.type) ||\n"
             "            !ZR_VALUE_IS_TYPE_SIGNED_INT(frame.slotBase[1].value.type)");
-    assert_text_contains(generatedCText, "zr_aot_s2 = zr_aot_s0 * zr_aot_s1;");
+    assert_text_contains(generatedCText, "zr_aot_s2 = ZrCore_Integer_Multiply(state, zr_aot_s0, zr_aot_s1);");
     assert_text_does_not_contain(
             generatedCText,
             "/* zr_aot_scalar_exec_i64_binary semirOpcode=29 dstSlot=2 leftSlot=0 rightSlot=1 */\n"
             "        SZrTypeValue *zr_aot_destination = ZR_NULL;");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_destination = &frame.slotBase[2].value;\n"
-                                 "        zr_aot_s2 = zr_aot_s0 * zr_aot_s1;");
+                                 "        zr_aot_s2 = ZrCore_Integer_Multiply(state, zr_aot_s0, zr_aot_s1);");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_s2 = zr_aot_s0 * zr_aot_s1;\n"
+                                 "zr_aot_s2 = ZrCore_Integer_Multiply(state, zr_aot_s0, zr_aot_s1);\n"
                                  "        zr_aot_s_result = zr_aot_s2;");
     assert_text_does_not_contain(generatedCText, "zr_aot_s2 = zr_aot_s_left;");
     assert_text_does_not_contain(generatedCText, "zr_aot_s4 = zr_aot_s_right;");
@@ -536,7 +536,7 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
             generatedCText,
             "zr_aot_s2 = frame.slotBase[2].value.value.nativeObject.nativeInt64;\n"
             "        zr_aot_s3 = frame.slotBase[3].value.value.nativeObject.nativeInt64;\n"
-            "        zr_aot_s6 = zr_aot_s2 + zr_aot_s3;");
+            "        zr_aot_s6 = ZrCore_Integer_Add(state, zr_aot_s2, zr_aot_s3);");
     assert_text_contains(generatedCText, "zr_aot_b7 = (TZrBool)(zr_aot_s2 > zr_aot_s4);");
     assert_text_does_not_contain(
             generatedCText,
@@ -620,7 +620,7 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_s16 = zr_aot_s12 & zr_aot_s0;\n"
                                  "        zr_aot_s_result = zr_aot_s16;");
-    assert_text_contains(generatedCText, "zr_aot_s19 = (TZrInt64)((TZrUInt64)zr_aot_s15 << zr_aot_s1);");
+    assert_text_contains(generatedCText, "zr_aot_s19 = ZrCore_Integer_ShiftLeft(zr_aot_s15, (TZrUInt64)zr_aot_s1);");
     assert_text_does_not_contain(
             generatedCText,
             "/* zr_aot_scalar_exec_i64_shift semirOpcode=45 dstSlot=19 leftSlot=15 rightSlot=1 */\n"
@@ -629,7 +629,7 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
                                  "zr_aot_destination = &frame.slotBase[19].value;\n"
                                  "        if (ZR_UNLIKELY(zr_aot_s1 < 0 || zr_aot_s1 >= 64))");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_s19 = (TZrInt64)((TZrUInt64)zr_aot_s15 << zr_aot_s1);\n"
+                                 "zr_aot_s19 = ZrCore_Integer_ShiftLeft(zr_aot_s15, (TZrUInt64)zr_aot_s1);\n"
                                  "        zr_aot_s_result = zr_aot_s19;");
     assert_text_contains(generatedCText, "zr_aot_s19 = ~zr_aot_s1;");
     assert_text_does_not_contain(
@@ -786,7 +786,7 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
             "zr_aot_u8 = frame.slotBase[8].value.value.nativeObject.nativeUInt64;\n"
             "        zr_aot_s1 = frame.slotBase[1].value.value.nativeObject.nativeInt64;\n"
             "        if (ZR_UNLIKELY(zr_aot_s1 < 0 || zr_aot_s1 >= 64)) {");
-    assert_text_contains(generatedCText, "zr_aot_u13 = zr_aot_u8 << zr_aot_s1;");
+    assert_text_contains(generatedCText, "zr_aot_u13 = zr_aot_u8 << ((TZrUInt64)zr_aot_s1 & 63u);");
     assert_text_does_not_contain(generatedCText,
                                  "/* zr_aot_scalar_exec_u64_shift semirOpcode=45 dstSlot=13 leftSlot=8 rightSlot=1 */\n"
                                  "        SZrTypeValue *zr_aot_destination = ZR_NULL;");
@@ -794,7 +794,7 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
                                  "zr_aot_destination = &frame.slotBase[13].value;\n"
                                  "        if (ZR_UNLIKELY(zr_aot_s1 < 0 || zr_aot_s1 >= 64)) {");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_u13 = zr_aot_u8 << zr_aot_s1;\n"
+                                 "zr_aot_u13 = zr_aot_u8 << ((TZrUInt64)zr_aot_s1 & 63u);\n"
                                  "        zr_aot_u_result = zr_aot_u13;");
     assert_text_does_not_contain(generatedCText,
                                  "!ZR_VALUE_IS_TYPE_UNSIGNED_INT(frame.slotBase[10].value.type) ||\n"
@@ -804,7 +804,7 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
             "zr_aot_u10 = frame.slotBase[10].value.value.nativeObject.nativeUInt64;\n"
             "        zr_aot_s1 = frame.slotBase[1].value.value.nativeObject.nativeInt64;\n"
             "        if (ZR_UNLIKELY(zr_aot_s1 < 0 || zr_aot_s1 >= 64)) {");
-    assert_text_contains(generatedCText, "zr_aot_u14 = zr_aot_u10 >> zr_aot_s1;");
+    assert_text_contains(generatedCText, "zr_aot_u14 = zr_aot_u10 >> ((TZrUInt64)zr_aot_s1 & 63u);");
     assert_text_does_not_contain(generatedCText,
                                  "/* zr_aot_scalar_exec_u64_shift semirOpcode=46 dstSlot=14 leftSlot=10 rightSlot=1 */\n"
                                  "        SZrTypeValue *zr_aot_destination = ZR_NULL;");
@@ -812,7 +812,7 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
                                  "zr_aot_destination = &frame.slotBase[14].value;\n"
                                  "        if (ZR_UNLIKELY(zr_aot_s1 < 0 || zr_aot_s1 >= 64)) {");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_u14 = zr_aot_u10 >> zr_aot_s1;\n"
+                                 "zr_aot_u14 = zr_aot_u10 >> ((TZrUInt64)zr_aot_s1 & 63u);\n"
                                  "        zr_aot_u_result = zr_aot_u14;");
     assert_text_contains(generatedCText, "zr_aot_b14 = (TZrBool)(zr_aot_u8 > zr_aot_u7);");
     assert_text_does_not_contain(generatedCText,
@@ -867,12 +867,12 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
                                  "zr_aot_s16 = frame.slotBase[16].value.value.nativeObject.nativeInt64;\n"
                                  "        zr_aot_s1 = frame.slotBase[1].value.value.nativeObject.nativeInt64;\n"
                                  "        if (ZR_UNLIKELY(zr_aot_s1 < 0 || zr_aot_s1 >= 64)) {");
-    assert_text_contains(generatedCText, "if (ZR_UNLIKELY(zr_aot_s1 < 0 || zr_aot_s1 >= 64)) {");
+    assert_text_does_not_contain(generatedCText, "shift count out of range");
     assert_text_does_not_contain(generatedCText, "zr_aot_s15 = zr_aot_s_left;");
     assert_text_does_not_contain(generatedCText, "zr_aot_s16 = zr_aot_s_left;");
     assert_text_does_not_contain(generatedCText, "zr_aot_s1 = zr_aot_s_shift;");
-    assert_text_contains(generatedCText, "zr_aot_s19 = (TZrInt64)((TZrUInt64)zr_aot_s15 << zr_aot_s1);");
-    assert_text_contains(generatedCText, "zr_aot_s20 = zr_aot_s16 >> zr_aot_s1;");
+    assert_text_contains(generatedCText, "zr_aot_s19 = ZrCore_Integer_ShiftLeft(zr_aot_s15, (TZrUInt64)zr_aot_s1);");
+    assert_text_contains(generatedCText, "zr_aot_s20 = ZrCore_Integer_ShiftRight(zr_aot_s16, (TZrUInt64)zr_aot_s1);");
     assert_text_does_not_contain(generatedCText, "zr_aot_s1 = zr_aot_s_source;");
     assert_text_contains(generatedCText, "zr_aot_s19 = ~zr_aot_s1;");
     assert_text_contains(generatedCText, "zr_aot_u30 = ~zr_aot_u7;");
@@ -1017,17 +1017,17 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
                                  "            ZrCore_NativeString_Compare(ZrCore_String_GetNativeString(frame.function->functionName), \"constructor\") != 0)");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_destination = &frame.slotBase[23].value;\n"
-                                 "        zr_aot_s23 = zr_aot_s2 - zr_aot_s0;");
+                                 "        zr_aot_s23 = ZrCore_Integer_Subtract(state, zr_aot_s2, zr_aot_s0);");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_s23 = zr_aot_s2 - zr_aot_s0;\n"
+                                 "zr_aot_s23 = ZrCore_Integer_Subtract(state, zr_aot_s2, zr_aot_s0);\n"
                                  "        zr_aot_s_result = zr_aot_s23;");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_result_slot = frame.slotBase + 23;");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_destination = &frame.slotBase[24].value;\n"
-                                 "        zr_aot_s24 = zr_aot_s25 + zr_aot_s23;");
+                                 "        zr_aot_s24 = ZrCore_Integer_Add(state, zr_aot_s25, zr_aot_s23);");
     assert_text_does_not_contain(generatedCText,
-                                 "zr_aot_s24 = zr_aot_s25 + zr_aot_s23;\n"
+                                 "zr_aot_s24 = ZrCore_Integer_Add(state, zr_aot_s25, zr_aot_s23);\n"
                                  "        zr_aot_s_result = zr_aot_s24;");
     assert_text_does_not_contain(generatedCText,
                                  "zr_aot_result_slot = frame.slotBase + 24;");

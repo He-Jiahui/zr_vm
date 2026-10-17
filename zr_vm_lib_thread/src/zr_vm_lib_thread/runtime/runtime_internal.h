@@ -146,6 +146,7 @@ typedef struct ZrVmTaskSchedulerRuntime {
 typedef struct ZrVmAttachedDomainRequest {
     ZrLibraryTaskRuntimeWorkItem workItem;
     struct ZrVmAttachedDomainRequest *next;
+    struct ZrVmAttachedDomainRequest *pendingNext;
 } ZrVmAttachedDomainRequest;
 
 typedef struct ZrVmAttachedDomainRuntime {
@@ -154,9 +155,11 @@ typedef struct ZrVmAttachedDomainRuntime {
     ZrVmTaskCondition condition;
     ZrVmAttachedDomainRequest *head;
     ZrVmAttachedDomainRequest *tail;
+    ZrVmAttachedDomainRequest *pending;
     struct SZrGlobalState *global;
     TZrUInt32 workerLimit;
     TZrUInt32 liveWorkerCount;
+    TZrUInt32 activeWorkerCount;
     TZrUInt32 queuedRequestCount;
     TZrBool accepting;
     ZrLibraryTaskRuntimeAwaitRegistration awaitRegistration;

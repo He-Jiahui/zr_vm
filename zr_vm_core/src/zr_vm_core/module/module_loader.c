@@ -1106,6 +1106,7 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
 
     module = ZrCore_Module_Create(state);
     if (module == ZR_NULL) {
+        ZrCore_Function_ReleaseHostRoot(state, func);
         return ZR_NULL;
     }
 
@@ -1120,6 +1121,7 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
     }
 
     if (!module_loader_register_export_descriptors(state, module, func)) {
+        ZrCore_Function_ReleaseHostRoot(state, func);
         return ZR_NULL;
     }
 
@@ -1165,6 +1167,7 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
 
     if (!module_loader_preinstall_top_level_callables(state, module, func, callBase + 1)) {
         state->stackTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
+        ZrCore_Function_ReleaseHostRoot(state, func);
         return ZR_NULL;
     }
 
@@ -1181,6 +1184,7 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
         if (status != ZR_THREAD_STATUS_FINE) {
             ZrCore_Module_SetInitializationState(module, ZR_MODULE_INIT_STATE_FAILED);
             state->stackTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
+            ZrCore_Function_ReleaseHostRoot(state, func);
             ZrCore_Exception_Throw(state, status);
             return ZR_NULL;
         }
@@ -1191,6 +1195,7 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
     if (!module_loader_refresh_declaration_exports(state, module, func, callBase)) {
         ZrCore_Module_SetInitializationState(module, ZR_MODULE_INIT_STATE_FAILED);
         state->stackTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
+        ZrCore_Function_ReleaseHostRoot(state, func);
         return ZR_NULL;
     }
     module_loader_backfill_entry_exports(state, module, func, callBase);
@@ -1216,5 +1221,6 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
     ZrCore_Module_SetInitializationState(module, ZR_MODULE_INIT_STATE_READY);
 
     state->stackTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
+    ZrCore_Function_ReleaseHostRoot(state, func);
     return module;
 }

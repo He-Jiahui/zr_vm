@@ -1285,7 +1285,7 @@ static void test_aot_c_generated_shared_library_executes_primitive_constant_writ
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_constant_i64_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s0 = (TZrInt64)7;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_exec_i64_binary"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, " + (TZrInt64)5;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Integer_Add(state, zr_aot_s0, (TZrInt64)5)"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_return_i64_local"));
     TEST_ASSERT_NULL(strstr(generatedCText, "/* zr_aot_generated_frame_setup */"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrAotGeneratedFrame frame = {0};"));
@@ -1730,11 +1730,11 @@ static void test_aot_c_generated_shared_library_executes_numeric_arithmetic_dire
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, " + "));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, " - "));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, " * "));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, " / "));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, " % "));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Integer_Add(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Integer_Subtract(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Integer_Multiply(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Integer_Divide(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Integer_Modulo(state,"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncSignedIntLocal(state,"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_static_i64_no_arg_direct_call"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_i64 dstSlot=7 srcSlot=8"));

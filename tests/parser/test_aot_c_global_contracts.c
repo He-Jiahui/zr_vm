@@ -183,7 +183,7 @@ static void test_aot_c_source_lowers_get_global_to_runtime_boundary(void) {
 static void test_aot_c_source_lowers_object_array_creation_to_runtime_boundary(void) {
     static const char *const headerNeedles[] = {
             "backend_aot_write_c_direct_create_object(FILE *file, TZrUInt32 destinationSlot);",
-            "backend_aot_write_c_direct_create_array(FILE *file, TZrUInt32 destinationSlot);",
+            "backend_aot_write_c_direct_create_array(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 length);",
     };
     static const char *const emitterNeedles[] = {
             "#include \\\"zr_vm_library/aot_runtime.h\\\"\\n",
@@ -208,13 +208,13 @@ static void test_aot_c_source_lowers_object_array_creation_to_runtime_boundary(v
             "zr_aot_value_exec_create_object",
             "zr_aot_value_exec_create_array",
             "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CreateObject(state, &frame, %u));",
-            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CreateArray(state, &frame, %u));",
+            "ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CreateArrayWithLength(state, &frame, %u, %u));",
     };
     static const char *const functionBodyNeedles[] = {
             "case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):",
             "backend_aot_write_c_direct_create_object(file, destinationSlot);",
             "case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):",
-            "backend_aot_write_c_direct_create_array(file, destinationSlot);",
+            "backend_aot_write_c_direct_create_array(file, destinationSlot, (TZrUInt32)operandA2);",
     };
     static const char *const forbiddenValueLoweringNeedles[] = {
             "SZrObject *zr_aot_object = ZrCore_Object_New(state, ZR_NULL);",
@@ -224,7 +224,7 @@ static void test_aot_c_source_lowers_object_array_creation_to_runtime_boundary(v
     };
     static const char *const forbiddenFunctionBodyNeedles[] = {
             "ZrLibrary_AotRuntime_CreateObject(state, &frame",
-            "ZrLibrary_AotRuntime_CreateArray(state, &frame",
+            "ZrLibrary_AotRuntime_CreateArrayWithLength(state, &frame",
     };
     char *headerText = read_repo_text_file_owned(
             "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");

@@ -172,6 +172,13 @@ ZR_CORE_API void ZrCore_GcDomain_GetMutatorSnapshot(
 /** @brief 通知域条件变量上的等待者重新检查状态；本身不解除暂停。 */
 ZR_CORE_API void ZrCore_GcDomain_WakeMutators(struct SZrState *state);
 
+/** @brief Serialize shared heap access, including idle/minor GC phases.
+ * @note Recursive on the current native thread. Pair a successful Begin with
+ * End(state, true); local protected throws restore the entry lock depth.
+ */
+ZR_CORE_API TZrBool ZrCore_GcDomain_SharedMutationBegin(struct SZrState *state);
+ZR_CORE_API void ZrCore_GcDomain_MutationEnd(struct SZrState *state, TZrBool locked);
+
 /**
  * @brief 为本域对象创建独立 GC 根，并将根的释放责任交给输出句柄持有者。
  * @pre outHandle 尚未持有根；入口会覆盖该槽，复用前应先 Release。

@@ -230,8 +230,8 @@ target_link_options(zr_vm_ssa_compare_metadata_guards_test PRIVATE
 
 # Instrument both production TUs for the two direct Attach allocation sites.
 add_library(ssa_source_primitive_frame_oom_object OBJECT
-        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame.c"
-        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame_validation.c")
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_frame.c"
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_frame_validation.c")
 target_include_directories(ssa_source_primitive_frame_oom_object PRIVATE
         ${_zr_public_includes} ${_zr_vendor_includes}
         "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser")
@@ -446,7 +446,7 @@ set_tests_properties(ssa_function_aot_owner PROPERTIES
 # Production constant extraction uses the actual bridge TU with isolated CRT
 # observation. Its real source fixture needs Parser's compile metadata closure.
 add_library(ssa_source_source_scalar_constant_noalloc_object OBJECT
-        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_scalar_constant.c")
+        "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_scalar_constant.c")
 target_include_directories(ssa_source_source_scalar_constant_noalloc_object PRIVATE
         ${_zr_public_includes} ${_zr_vendor_includes}
         "${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser")
@@ -663,12 +663,12 @@ foreach (_header IN ITEMS
         tests/parser/support/ssa_source_returned_execir_owner_shim.h
         tests/parser/support/ssa_source_returned_descriptor_shim.h
         tests/parser/support/ssa_source_returned_owner_shim.h
-        zr_vm_parser/include/zr_vm_parser/compiler_source_retention.h
-        zr_vm_parser/src/zr_vm_parser/compiler/compiler_source_retention_internal.h
+        zr_vm_parser/src/zr_vm_parser/compiler/semantic/compiler_source_retention.h
+        zr_vm_parser/src/zr_vm_parser/compiler/semantic/compiler_source_retention_internal.h
         zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_finalized_module_internal.h
         zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_callable_query_internal.h
-        zr_vm_parser/include/zr_vm_parser/aot_ir_projection_descriptor.h
-        zr_vm_parser/include/zr_vm_parser/exec_ir_source_scalar_constant.h
+        zr_vm_parser/src/zr_vm_parser/exec_ir/aot_ir_projection_descriptor.h
+        zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_scalar_constant.h
         zr_vm_core/include/zr_vm_core/function.h
         zr_vm_core/include/zr_vm_core/function_aot_ir.h
         zr_vm_core/include/zr_vm_core/function_exec_ir.h
@@ -681,14 +681,14 @@ foreach (_header IN ITEMS
         zr_vm_core/include/zr_vm_core/exec_ir.h
         zr_vm_core/include/zr_vm_core/exec_ir_state_map.h
         zr_vm_core/include/zr_vm_core/execution_contract.h
-        zr_vm_parser/include/zr_vm_parser/exec_ir_dead_source_places.h
-        zr_vm_parser/include/zr_vm_parser/exec_ir_host_primitive_layout.h
-        zr_vm_parser/include/zr_vm_parser/exec_ir_host_aot_target.h
-        zr_vm_parser/include/zr_vm_parser/exec_ir_source_module_contract.h
-        zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_string_heap.h
+        zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_dead_source_places.h
+        zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_host_primitive_layout.h
+        zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_host_aot_target.h
+        zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_module_contract.h
+        zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_metadata_string_heap.h
         zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_text.h
         zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_ir_scalar_text_internal.h
-        zr_vm_parser/include/zr_vm_parser/exec_ir_source_frame.h
+        zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_frame.h
         zr_vm_library/third_party/zr_miniz/miniz/miniz_export.h)
     file(SHA256 "${ZR_SSA_SOURCE_ROOT}/${_header}" _hash)
     string(APPEND _zr_header_hashes "${ZR_SSA_SOURCE_ROOT}/${_header}\t${_hash}\n")

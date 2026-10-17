@@ -201,12 +201,22 @@ SZrAstNode *parse_embedded_expression(SZrParserState *ps, const TZrChar *source,
 
     ZrParser_State_Init(&nestedParser, ps->state, sourceCopy, sourceLength,
                         ps->lexer != ZR_NULL ? ps->lexer->sourceName : ZR_NULL);
+    nestedParser.recursionDepth = ps->recursionDepth;
+    nestedParser.errorCallback = ps->errorCallback;
+    nestedParser.structuredErrorCallback = ps->structuredErrorCallback;
+    nestedParser.errorUserData = ps->errorUserData;
+    nestedParser.suppressErrorOutput = ps->suppressErrorOutput;
     if (!nestedParser.hasError) {
         expression = parse_expression(&nestedParser);
         if (nestedParser.hasError || expression == ZR_NULL || nestedParser.lexer->t.token != ZR_TK_EOS) {
-            // BUG: 解析已返回 AST 但仍有余 token/错误时直接丢指针；State_Free 只释放 lexer，不回收该子树。
+            ZrParser_Ast_Free(ps->state, expression);
             expression = ZR_NULL;
         }
+    }
+    if (nestedParser.hasNestingError) {
+        ps->hasNestingError = ps->hasFatalError = ps->hasError = ZR_TRUE;
+        ps->errorMessage = nestedParser.errorMessage;
+        ps->nestingErrorReported = nestedParser.nestingErrorReported;
     }
 
     ZrParser_State_Free(&nestedParser);
@@ -340,8 +350,7 @@ SZrAstNode *parse_template_string_literal(SZrParserState *ps, SZrString *rawValu
 
                 if (expression == ZR_NULL) {
                     report_error(ps, "Failed to parse template string interpolation");
-                    // BUG: 插值解析失败只浅释放 segments，先前片段 AST 泄漏。
-                    ZrParser_AstNodeArray_Free(ps->state, segments);
+                    free_ast_node_array_with_elements(ps->state, segments);
                     return ZR_NULL;
                 }
 

@@ -1049,7 +1049,7 @@ static SZrFunction *zr_parser_compiler_compile_mode_active(
     zr_parser_compile_trace("compiler validate task effects ok ast=%p", (void *)ast);
 
     // 创建新函数
-    cs.currentFunction = ZrCore_Function_New(state);
+    cs.currentFunction = compiler_new_function(&cs);
     if (cs.currentFunction == ZR_NULL) {
         ZrParser_CompilerState_Free(&cs);
         return ZR_NULL;
@@ -1149,6 +1149,11 @@ static SZrFunction *zr_parser_compiler_compile_mode_active(
         return ZR_NULL;
     }
 
+    if (!ZrCore_Function_AcquireHostRoot(state, func)) {
+        ZrCore_Function_Free(state, func);
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_NULL;
+    }
     ZrParser_CompilerState_Free(&cs);
     return func;
 }

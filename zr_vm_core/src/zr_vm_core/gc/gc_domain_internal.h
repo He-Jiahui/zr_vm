@@ -147,9 +147,6 @@ void ZrCore_GcDomain_RecordTransferTelemetry(
         TZrUInt64 byteCount);
 /* Begin 返回是否获得 mutationLock，而非请求是否有效；End 必须接收同一令牌。 */
 TZrBool ZrCore_GcDomain_MutationBegin(struct SZrState *state);
-/* Always lock shared registries, with the same exception-restorable depth. */
-TZrBool ZrCore_GcDomain_SharedMutationBegin(struct SZrState *state);
-void ZrCore_GcDomain_MutationEnd(struct SZrState *state, TZrBool locked);
 /* Local protected throws restore entry scopes on their owning native thread. */
 void ZrCore_GcDomain_CaptureScopes(
         struct SZrState *state, SZrGcDomainScopeSnapshot *snapshot);

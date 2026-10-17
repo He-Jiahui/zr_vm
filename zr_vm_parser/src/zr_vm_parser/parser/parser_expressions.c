@@ -163,7 +163,17 @@ static SZrAstNode *parse_required_right_operand(SZrParserState *ps,
 }
 
 // 处理 type query、await/ref、构造、显式类型转换和前缀运算，再下沉到主表达式。
+static SZrAstNode *parse_unary_expression_impl(SZrParserState *ps);
+
 SZrAstNode *parse_unary_expression(SZrParserState *ps) {
+    SZrAstNode *node;
+    if (!parser_enter_recursion(ps)) return ZR_NULL;
+    node = parse_unary_expression_impl(ps);
+    --ps->recursionDepth;
+    return node;
+}
+
+static SZrAstNode *parse_unary_expression_impl(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
 
     if (token == ZR_TK_TYPEID || token == ZR_TK_TYPEOF) {
@@ -709,7 +719,17 @@ SZrAstNode *parse_logical_or_expression(SZrParserState *ps) {
 // 解析条件表达式（三元运算符）
 
 // 条件分支的 consequent 允许完整表达式，alternate 递归本层保证右结合。
+static SZrAstNode *parse_conditional_expression_impl(SZrParserState *ps);
+
 SZrAstNode *parse_conditional_expression(SZrParserState *ps) {
+    SZrAstNode *node;
+    if (!parser_enter_recursion(ps)) return ZR_NULL;
+    node = parse_conditional_expression_impl(ps);
+    --ps->recursionDepth;
+    return node;
+}
+
+static SZrAstNode *parse_conditional_expression_impl(SZrParserState *ps) {
     SZrAstNode *test = parse_logical_or_expression(ps);
     if (test == ZR_NULL) {
         return ZR_NULL;
@@ -780,7 +800,17 @@ SZrAstNode *parse_conditional_expression(SZrParserState *ps) {
 // 解析赋值表达式
 
 // 赋值右侧递归本层形成右结合 AST，并在缺右侧时释放左树。
+static SZrAstNode *parse_assignment_expression_impl(SZrParserState *ps);
+
 SZrAstNode *parse_assignment_expression(SZrParserState *ps) {
+    SZrAstNode *node;
+    if (!parser_enter_recursion(ps)) return ZR_NULL;
+    node = parse_assignment_expression_impl(ps);
+    --ps->recursionDepth;
+    return node;
+}
+
+static SZrAstNode *parse_assignment_expression_impl(SZrParserState *ps) {
     SZrAstNode *left = parse_conditional_expression(ps);
     if (left == ZR_NULL) {
         return ZR_NULL;
@@ -820,4 +850,10 @@ SZrAstNode *parse_assignment_expression(SZrParserState *ps) {
 // 解析表达式（入口函数）
 
 // 完整表达式从最低优先级的赋值层进入，由各层逐级收紧操作数。
-SZrAstNode *parse_expression(SZrParserState *ps) { return parse_assignment_expression(ps); }
+SZrAstNode *parse_expression(SZrParserState *ps) {
+    SZrAstNode *node;
+    if (!parser_enter_recursion(ps)) return ZR_NULL;
+    node = parse_assignment_expression(ps);
+    --ps->recursionDepth;
+    return node;
+}

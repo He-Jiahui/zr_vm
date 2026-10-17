@@ -113,7 +113,10 @@ static void task_runtime_set_value_field(SZrState *state,
 
     /* BUG: ignore registry 已满且宿主 ARRAY 扩容分配返回 null 时，底层 pin 失败
      * 会跳过字段写入；此 void 包装不回传失败，登记 hook 等调用者仍可报告成功。 */
-    ZrLib_Object_SetFieldCString(state, object, fieldName, value);
+    if (ZrCore_GcDomain_SharedMutationBegin(state)) {
+        ZrLib_Object_SetFieldCString(state, object, fieldName, value);
+        ZrCore_GcDomain_MutationEnd(state, ZR_TRUE);
+    }
 }
 
 /* 解除私有字段保存的 callable/result/error 等引用。
@@ -154,7 +157,12 @@ static const SZrTypeValue *task_runtime_get_field_value(SZrState *state, SZrObje
         return ZR_NULL;
     }
 
-    return ZrLib_Object_GetFieldCString(state, object, fieldName);
+    if (ZrCore_GcDomain_SharedMutationBegin(state)) {
+        const SZrTypeValue *value = ZrLib_Object_GetFieldCString(state, object, fieldName);
+        ZrCore_GcDomain_MutationEnd(state, ZR_TRUE);
+        return value;
+    }
+    return ZR_NULL;
 }
 
 /* 从私有字段提取 queue、scheduler 等对象引用。
@@ -191,19 +199,19 @@ static TZrInt64 task_runtime_get_int_field(SZrState *state,
                                            SZrObject *object,
                                            const TZrChar *fieldName,
                                            TZrInt64 defaultValue) {
-    const SZrTypeValue *value = task_runtime_get_field_value(state, object, fieldName);
-
-    if (value == ZR_NULL) {
-        return defaultValue;
+    TZrInt64 result = defaultValue;
+    if (ZrCore_GcDomain_SharedMutationBegin(state)) {
+        const SZrTypeValue *value = task_runtime_get_field_value(state, object, fieldName);
+        if (value != ZR_NULL) {
+            if (ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)) {
+                result = value->value.nativeObject.nativeInt64;
+            } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type)) {
+                result = (TZrInt64)value->value.nativeObject.nativeUInt64;
+            }
+        }
+        ZrCore_GcDomain_MutationEnd(state, ZR_TRUE);
     }
-
-    if (ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)) {
-        return value->value.nativeObject.nativeInt64;
-    }
-    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type)) {
-        return (TZrInt64)value->value.nativeObject.nativeUInt64;
-    }
-    return defaultValue;
+    return result;
 }
 
 /* 向结果槽交付已有完成值，缺失值以 null 表示。
@@ -816,12 +824,10 @@ static TZrBool task_runtime_create_cooperative_task(SZrState *state,
 }
 
 /**
- * @brief Task.result 的等待路径：先处理终态，再尝试所属 scheduler 的 provider hook，最后推进本地队列。
- * @note hook 声明已接管且成功返回后递归复查终态；provider 应使 Task 能继续结算。
+ * @brief Task.result first lets its provider finish the handoff, then reads
+ * the terminal result or pumps the local scheduler.
  * 正在 pump 的本地 frame 不递归 pump pending Task，无法完成时报告运行错误。
  */
-/* 消费 terminal Task，或通过所属 provider/本地 queue 推进到可读完成值。
- * provider hook 先接管并可按其策略同步等待；handled 后递归重查，hook 必须真正推进；无 hook 的本地队列在 pumping 时不递归推进 pending Task；完成值可重复复制。 */
 static TZrBool task_runtime_wait_for_task(SZrState *state, SZrObject *handle, SZrTypeValue *result) {
     TZrInt64 status;
     SZrObject *scheduler;
@@ -831,6 +837,17 @@ static TZrBool task_runtime_wait_for_task(SZrState *state, SZrObject *handle, SZ
         return ZR_FALSE;
     }
 
+    scheduler = task_runtime_get_object_field(state, handle, kTaskSchedulerOwnerField);
+    if (scheduler == ZR_NULL) {
+        scheduler = task_runtime_ensure_current_scheduler(state);
+    }
+    if (scheduler != ZR_NULL) {
+        if (!ZrLibrary_TaskRuntime_AwaitProviderTask(state, scheduler, handle, ZR_NULL)) {
+            return ZR_FALSE;
+        }
+    }
+    /* Provider completion must fence its cleanup even if the terminal status
+     * was already visible when result() was called. */
     status = task_runtime_get_int_field(state, handle, kTaskStatusField, ZR_VM_TASK_STATUS_CREATED);
     if (status == ZR_VM_TASK_STATUS_COMPLETED) {
         value = task_runtime_get_field_value(state, handle, kTaskResultField);
@@ -838,23 +855,6 @@ static TZrBool task_runtime_wait_for_task(SZrState *state, SZrObject *handle, SZ
     }
     if (status == ZR_VM_TASK_STATUS_FAULTED) {
         task_runtime_raise_fault(state, task_runtime_get_field_value(state, handle, kTaskErrorField));
-    }
-
-    scheduler = task_runtime_get_object_field(state, handle, kTaskSchedulerOwnerField);
-    if (scheduler == ZR_NULL) {
-        scheduler = task_runtime_ensure_current_scheduler(state);
-    }
-    if (scheduler != ZR_NULL) {
-    /* provider hook 负责外部推进，无 hook 时本地等待只在非 pumping 状态推进。
-     * handled hook 返回后递归重查；hook 需真实推进以终结等待。 */
-        TZrBool providerHandled = ZR_FALSE;
-
-        if (!ZrLibrary_TaskRuntime_AwaitProviderTask(state, scheduler, handle, &providerHandled)) {
-            return ZR_FALSE;
-        }
-        if (providerHandled) {
-            return task_runtime_wait_for_task(state, handle, result);
-        }
     }
     if (scheduler != ZR_NULL && !task_runtime_get_bool_field(state, scheduler, kTaskIsPumpingField, ZR_FALSE)) {
         while (ZR_TRUE) {

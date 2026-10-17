@@ -26,6 +26,7 @@
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/integer.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/object.h"
@@ -3301,15 +3302,31 @@ static TZrBool ct_eval_binary(SZrCompilerState *cs, SZrAstNode *node, SZrCompile
         if (ZR_VALUE_IS_TYPE_INT(leftValue.type) && ZR_VALUE_IS_TYPE_INT(rightValue.type)) {
             TZrInt64 left = leftValue.value.nativeObject.nativeInt64;
             TZrInt64 right = rightValue.value.nativeObject.nativeInt64;
-            if (strcmp(op, "+") == 0) {
-                ZrCore_Value_InitAsInt(cs->state, result, left + right);
-            } else if (strcmp(op, "-") == 0) {
-                ZrCore_Value_InitAsInt(cs->state, result, left - right);
-            } else if (strcmp(op, "*") == 0) {
-                ZrCore_Value_InitAsInt(cs->state, result, left * right);
-            } else {
-                ZrCore_Value_InitAsInt(cs->state, result, left / right);
+            TZrInt64 value = 0;
+            TZrBool valid;
+            if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue.type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightValue.type)) {
+                TZrUInt64 a = leftValue.value.nativeObject.nativeUInt64;
+                TZrUInt64 b = rightValue.value.nativeObject.nativeUInt64;
+                TZrUInt64 unsignedValue = op[0] == '+' ? a + b : op[0] == '-' ? a - b : op[0] == '*' ? a * b : a / b;
+                ZrCore_Value_InitAsUInt(cs->state, result, unsignedValue);
+                return ZR_TRUE;
             }
+            if (strcmp(op, "+") == 0) {
+                valid = ZrCore_Integer_TryAdd(left, right, &value);
+            } else if (strcmp(op, "-") == 0) {
+                valid = ZrCore_Integer_TrySubtract(left, right, &value);
+            } else if (strcmp(op, "*") == 0) {
+                valid = ZrCore_Integer_TryMultiply(left, right, &value);
+            } else {
+                valid = !(left == INT64_MIN && right == -1);
+                if (valid) value = left / right;
+            }
+            if (!valid) {
+                ZrParser_CompileTime_Error(cs, ZR_COMPILE_TIME_ERROR_ERROR,
+                                          "Signed integer overflow in compile-time expression", node->location);
+                return ZR_FALSE;
+            }
+            ZrCore_Value_InitAsInt(cs->state, result, value);
             return ZR_TRUE;
         }
 
@@ -3336,7 +3353,8 @@ static TZrBool ct_eval_binary(SZrCompilerState *cs, SZrAstNode *node, SZrCompile
             ZrParser_CompileTime_Error(cs, ZR_COMPILE_TIME_ERROR_ERROR, "Modulo by zero in compile-time expression", node->location);
             return ZR_FALSE;
         }
-        ZrCore_Value_InitAsInt(cs->state, result, leftValue.value.nativeObject.nativeInt64 % rightValue.value.nativeObject.nativeInt64);
+        ZrCore_Value_InitAsInt(cs->state, result, ZrCore_Integer_Modulo(cs->state,
+                leftValue.value.nativeObject.nativeInt64, rightValue.value.nativeObject.nativeInt64));
         return ZR_TRUE;
     }
 
@@ -3443,7 +3461,21 @@ static TZrBool ct_eval_unary(SZrCompilerState *cs, SZrAstNode *node, SZrCompileT
     }
     if (strcmp(expr->op.op, "-") == 0) {
         if (ZR_VALUE_IS_TYPE_INT(argValue.type)) {
-            ZrCore_Value_InitAsInt(cs->state, result, -argValue.value.nativeObject.nativeInt64);
+            TZrInt64 value;
+            TZrBool valid;
+            if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(argValue.type)) {
+                TZrUInt64 bits = argValue.value.nativeObject.nativeUInt64;
+                valid = bits <= ((TZrUInt64)1u << 63u);
+                value = ZrCore_Integer_FromBits((TZrUInt64)0u - bits);
+            } else {
+                valid = ZrCore_Integer_TrySubtract(0, argValue.value.nativeObject.nativeInt64, &value);
+            }
+            if (!valid) {
+                ZrParser_CompileTime_Error(cs, ZR_COMPILE_TIME_ERROR_ERROR,
+                                          "Signed integer negation overflow in compile-time expression", node->location);
+                return ZR_FALSE;
+            }
+            ZrCore_Value_InitAsInt(cs->state, result, value);
             return ZR_TRUE;
         }
         if (ZR_VALUE_IS_TYPE_FLOAT(argValue.type)) {

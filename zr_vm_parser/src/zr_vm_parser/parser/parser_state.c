@@ -1,5 +1,30 @@
 #include "parser_internal.h"
 
+void parser_report_nesting_error(SZrParserState *ps) {
+    if (ps->hasNestingError && !ps->nestingErrorReported &&
+        (ps->errorCallback != ZR_NULL || !ps->suppressErrorOutput)) {
+        /* A speculative syntax probe may have suppressed the first report. */
+        ps->hasNestingError = ZR_FALSE;
+        report_error(ps, "Source nesting exceeds the parser recursion limit");
+        ps->hasNestingError = ZR_TRUE;
+        ps->nestingErrorReported = ZR_TRUE;
+    }
+}
+
+TZrBool parser_enter_recursion(SZrParserState *ps) {
+    if (ps == ZR_NULL || ps->hasNestingError) return ZR_FALSE;
+    if (ps->recursionDepth >= ZR_PARSER_MAX_RECURSION_DEPTH) {
+        ps->hasError = ZR_TRUE;
+        ps->hasNestingError = ZR_TRUE;
+        ps->hasFatalError = ZR_TRUE;
+        ps->errorMessage = "Source nesting exceeds the parser recursion limit";
+        parser_report_nesting_error(ps);
+        return ZR_FALSE;
+    }
+    ++ps->recursionDepth;
+    return ZR_TRUE;
+}
+
 void expect_token(SZrParserState *ps, EZrToken expected) {
     if (ps->lexer->t.token != expected) {
         const TZrChar *expectedStr = ZrParser_Lexer_TokenToString(ps->lexer, expected);
@@ -76,9 +101,10 @@ void restore_parser_cursor(SZrParserState *ps, const SZrParserCursor *cursor) {
     ps->lexer->lookaheadTokenStartOffset = cursor->lookaheadTokenStartOffset;
     ps->lexer->lookaheadTokenStartLineStart = cursor->lookaheadTokenStartLineStart;
     ps->lexer->lookaheadTokenStartLine = cursor->lookaheadTokenStartLine;
-    ps->hasError = cursor->hasError;
-    ps->hasFatalError = cursor->hasFatalError;
-    ps->errorMessage = cursor->errorMessage;
+    /* Speculative syntax probes must not erase a resource-limit failure. */
+    ps->hasError = (TZrBool)(cursor->hasError || ps->hasNestingError);
+    ps->hasFatalError = (TZrBool)(cursor->hasFatalError || ps->hasNestingError);
+    if (!ps->hasNestingError) ps->errorMessage = cursor->errorMessage;
 }
 
 TZrBool current_identifier_equals(SZrParserState *ps, const TZrChar *text) {
@@ -844,6 +870,8 @@ void get_line_snippet(SZrParserState *ps, TZrChar *buffer, TZrSize bufferSize, T
 void report_error_with_token(SZrParserState *ps, const TZrChar *msg, EZrToken token) {
     SZrFileRange errorRange;
 
+    /* Report the resource limit once; unwinding must preserve that diagnostic. */
+    if (ps->hasNestingError) return;
     ps->hasError = ZR_TRUE;
     /* BUG: expect_token 或模块路径错误会传入栈上 errorMsg；公开的单语句
      * 解析入口返回后仍可读取 ps->errorMessage，该指针已悬空，文本可能损坏。 */
@@ -948,6 +976,7 @@ TZrBool report_reserved_ownership_intrinsic_name(SZrParserState *ps) {
 }
 
 void report_error(SZrParserState *ps, const TZrChar *msg) {
+    if (ps->hasNestingError) return;
     ps->hasError = ZR_TRUE;
     ps->errorMessage = msg;
 
@@ -966,7 +995,7 @@ void report_structured_parser_error(SZrParserState *ps,
     const TZrChar *suggestion = ZR_NULL;
     TZrChar formattedMessage[ZR_PARSER_ERROR_BUFFER_LENGTH];
 
-    if (ps == ZR_NULL || diagnostic == ZR_NULL || diagnostic->message == ZR_NULL) {
+    if (ps == ZR_NULL || ps->hasNestingError || diagnostic == ZR_NULL || diagnostic->message == ZR_NULL) {
         return;
     }
 

@@ -51,10 +51,14 @@ static ZR_FORCE_INLINE TZrBool zr_super_array_try_resolve_items_cached_only_assu
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(receiver != ZR_NULL);
     ZR_ASSERT(outItemsObject != ZR_NULL);
-    ZR_ASSERT(receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY);
+    if (ZR_UNLIKELY(receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY)) {
+        return ZR_FALSE;
+    }
 
     receiverObject = ZR_CAST_OBJECT(state, receiver->value.object);
-    ZR_ASSERT(receiverObject != ZR_NULL);
+    if (ZR_UNLIKELY(receiverObject == ZR_NULL)) {
+        return ZR_FALSE;
+    }
 
     itemsObject = zr_super_array_cached_items_object_assume_fast(receiverObject);
     if (ZR_UNLIKELY(itemsObject == ZR_NULL)) {
@@ -91,19 +95,6 @@ static ZR_FORCE_INLINE TZrBool zr_super_array_items_object_from_value_assume_fas
 
     *outItemsObject = itemsObject;
     return ZR_TRUE;
-}
-
-static ZR_FORCE_INLINE SZrObject *zr_super_array_bound_items_object_from_value_assume_fast(
-        const SZrTypeValue *itemsValue) {
-    SZrObject *itemsObject;
-
-    ZR_ASSERT(itemsValue != ZR_NULL);
-    ZR_ASSERT(itemsValue->type == ZR_VALUE_TYPE_OBJECT || itemsValue->type == ZR_VALUE_TYPE_ARRAY);
-    ZR_ASSERT(itemsValue->value.object != ZR_NULL);
-
-    itemsObject = ZR_CAST(SZrObject *, itemsValue->value.object);
-    ZR_ASSERT(itemsObject->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY);
-    return itemsObject;
 }
 
 static ZR_FORCE_INLINE void zr_super_array_store_plain_int_reuse(SZrTypeValue *destination, TZrInt64 value) {
@@ -544,6 +535,7 @@ static ZR_FORCE_INLINE SZrObject *zr_super_array_resolve_items_object_only_cache
 }
 
 static ZR_FORCE_INLINE void zr_super_array_store_plain_get_from_items_object_assume_fast(
+        SZrState *state,
         const SZrObject *itemsObject,
         TZrUInt64 unsignedIndex,
         SZrTypeValue *result) {
@@ -562,13 +554,14 @@ static ZR_FORCE_INLINE void zr_super_array_store_plain_get_from_items_object_ass
 
     nodeMap = &itemsObject->nodeMap;
     if (ZR_UNLIKELY(unsignedIndex >= (TZrUInt64)nodeMap->elementCount)) {
-        zr_super_array_store_plain_null_assume_normalized(result);
+        ZrCore_Debug_RunError(state, "Array index out of range");
         return;
     }
 
     pair = nodeMap->buckets[(TZrSize)unsignedIndex];
-    ZR_ASSERT(pair != ZR_NULL);
-    ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(pair->value.type));
+    if (ZR_UNLIKELY(pair == ZR_NULL || !ZR_VALUE_IS_TYPE_SIGNED_INT(pair->value.type))) {
+        ZrCore_Debug_RunError(state, "Typed integer array instruction requires an int element");
+    }
     zr_super_array_store_plain_int_assume_normalized(result, pair->value.value.nativeObject.nativeInt64);
 }
 
@@ -592,13 +585,14 @@ static ZR_FORCE_INLINE void zr_super_array_get_from_items_object_assume_fast(SZr
 
     nodeMap = &itemsObject->nodeMap;
     if (ZR_UNLIKELY((TZrUInt64)indexValue >= (TZrUInt64)nodeMap->elementCount)) {
-        zr_super_array_assign_null_or_copy(state, result);
+        ZrCore_Debug_RunError(state, "Array index out of range");
         return;
     }
 
     pair = nodeMap->buckets[(TZrSize)indexValue];
-    ZR_ASSERT(pair != ZR_NULL);
-    ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(pair->value.type));
+    if (ZR_UNLIKELY(pair == ZR_NULL || !ZR_VALUE_IS_TYPE_SIGNED_INT(pair->value.type))) {
+        ZrCore_Debug_RunError(state, "Typed integer array instruction requires an int element");
+    }
     zr_super_array_assign_int_or_copy(state, result, pair->value.value.nativeObject.nativeInt64);
 }
 
@@ -628,8 +622,9 @@ static ZR_FORCE_INLINE TZrBool zr_super_array_set_int_in_items_object_assume_fas
     }
 
     pair = nodeMap->buckets[(TZrSize)indexValue];
-    ZR_ASSERT(pair != ZR_NULL);
-    ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(pair->value.type));
+    if (ZR_UNLIKELY(pair == ZR_NULL || !ZR_VALUE_IS_TYPE_SIGNED_INT(pair->value.type))) {
+        ZrCore_Debug_RunError(state, "Typed integer array instruction requires an int element");
+    }
     ZR_ASSERT(zr_super_array_value_can_overwrite_without_release(&pair->value));
     ZR_ASSERT(zr_super_array_value_is_normalized_plain(&pair->value));
     zr_super_array_store_plain_int_assume_normalized(&pair->value, value);
@@ -660,8 +655,9 @@ static ZR_FORCE_INLINE void zr_super_array_set_int_in_bound_items_object_assume_
     }
 
     pair = nodeMap->buckets[(TZrSize)indexValue];
-    ZR_ASSERT(pair != ZR_NULL);
-    ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(pair->value.type));
+    if (ZR_UNLIKELY(pair == ZR_NULL || !ZR_VALUE_IS_TYPE_SIGNED_INT(pair->value.type))) {
+        ZrCore_Debug_RunError(state, "Typed integer array instruction requires an int element");
+    }
     ZR_ASSERT(zr_super_array_value_can_overwrite_without_release(&pair->value));
     ZR_ASSERT(zr_super_array_value_is_normalized_plain(&pair->value));
     zr_super_array_store_plain_int_assume_normalized(&pair->value, value);
@@ -707,17 +703,14 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Object_SuperArrayGetIntByValueInlineAssume
 
         nodeMap = &itemsObject->nodeMap;
         if (ZR_UNLIKELY((TZrUInt64)indexValue >= (TZrUInt64)nodeMap->elementCount)) {
-            if (zr_super_array_value_is_normalized_plain(result)) {
-                zr_super_array_store_plain_null_assume_normalized(result);
-            } else {
-                zr_super_array_store_plain_null_reuse(result);
-            }
+            ZrCore_Debug_RunError(state, "Array index out of range");
             return ZR_TRUE;
         }
 
         pair = nodeMap->buckets[(TZrSize)indexValue];
-        ZR_ASSERT(pair != ZR_NULL);
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(pair->value.type));
+        if (ZR_UNLIKELY(pair == ZR_NULL || !ZR_VALUE_IS_TYPE_SIGNED_INT(pair->value.type))) {
+            ZrCore_Debug_RunError(state, "Typed integer array instruction requires an int element");
+        }
         if (zr_super_array_value_is_normalized_plain(result)) {
             zr_super_array_store_plain_int_assume_normalized(result, pair->value.value.nativeObject.nativeInt64);
         } else {
@@ -734,13 +727,14 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Object_SuperArrayGetIntByValueInlineAssume
 
     nodeMap = &itemsObject->nodeMap;
     if (ZR_UNLIKELY((TZrUInt64)indexValue >= (TZrUInt64)nodeMap->elementCount)) {
-        zr_super_array_assign_null_or_copy(state, result);
+        ZrCore_Debug_RunError(state, "Array index out of range");
         return ZR_TRUE;
     }
 
     pair = nodeMap->buckets[(TZrSize)indexValue];
-    ZR_ASSERT(pair != ZR_NULL);
-    ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(pair->value.type));
+    if (ZR_UNLIKELY(pair == ZR_NULL || !ZR_VALUE_IS_TYPE_SIGNED_INT(pair->value.type))) {
+        ZrCore_Debug_RunError(state, "Typed integer array instruction requires an int element");
+    }
     zr_super_array_assign_int_or_copy(state, result, pair->value.value.nativeObject.nativeInt64);
     return ZR_TRUE;
 }
@@ -765,7 +759,7 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Object_SuperArrayGetIntByValueInlineAssume
     }
 
     unsignedIndex = (TZrUInt64)indexValue;
-    zr_super_array_store_plain_get_from_items_object_assume_fast(itemsObject, unsignedIndex, result);
+    zr_super_array_store_plain_get_from_items_object_assume_fast(state, itemsObject, unsignedIndex, result);
     return ZR_TRUE;
 }
 
@@ -801,8 +795,9 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Object_SuperArraySetIntByValueInlineAssume
     }
 
     pair = nodeMap->buckets[(TZrSize)indexValue];
-    ZR_ASSERT(pair != ZR_NULL);
-    ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(pair->value.type));
+    if (ZR_UNLIKELY(pair == ZR_NULL || !ZR_VALUE_IS_TYPE_SIGNED_INT(pair->value.type))) {
+        ZrCore_Debug_RunError(state, "Typed integer array instruction requires an int element");
+    }
     ZR_ASSERT(zr_super_array_value_can_overwrite_without_release(&pair->value));
     ZR_ASSERT(zr_super_array_value_is_normalized_plain(&pair->value));
     zr_super_array_store_plain_int_assume_normalized(&pair->value, value);

@@ -2544,6 +2544,7 @@ EZrThreadStatus ZrLibrary_Project_Run(SZrState *state, SZrTypeValue *result) {
                                                           state,
                                                           ZR_CAST_RAW_OBJECT_AS_SUPER(function),
                                                           &ignoredFunction)) {
+        ZrCore_Function_ReleaseHostRoot(state, function);
         return library_project_normalize_failure(state, state->threadStatus);
     }
 
@@ -2563,6 +2564,7 @@ EZrThreadStatus ZrLibrary_Project_Run(SZrState *state, SZrTypeValue *result) {
     if (ignoredFunction) {
         ZrCore_GarbageCollector_UnignoreObject(global, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
     }
+    ZrCore_Function_ReleaseHostRoot(state, function);
     return status;
 }
 

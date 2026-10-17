@@ -325,6 +325,11 @@ static TZrBool backend_aot_llvm_lower_add_integer_family_instruction(
         const SZrAotLlvmLoweringContext *context,
         const SZrAotLlvmInstructionContext *instruction,
         EZrAotLlvmIntegerFamilyKind familyKind) {
+    if (familyKind != ZR_AOT_LLVM_INTEGER_FAMILY_UNSIGNED) {
+        return backend_aot_llvm_lower_binary_value_instruction(context, instruction,
+                backend_aot_llvm_add_integer_family_helper_name(familyKind, ZR_FALSE));
+    }
+
     TZrUInt32 destinationValueTemp;
     TZrUInt32 leftValueTemp;
     TZrUInt32 rightValueTemp;
@@ -403,6 +408,11 @@ static TZrBool backend_aot_llvm_lower_add_integer_const_family_instruction(
         const SZrAotLlvmLoweringContext *context,
         const SZrAotLlvmInstructionContext *instruction,
         EZrAotLlvmIntegerFamilyKind familyKind) {
+    if (familyKind != ZR_AOT_LLVM_INTEGER_FAMILY_UNSIGNED) {
+        return backend_aot_llvm_lower_binary_value_instruction(context, instruction,
+                backend_aot_llvm_add_integer_family_helper_name(familyKind, ZR_TRUE));
+    }
+
     TZrUInt32 destinationValueTemp;
     TZrUInt32 leftValueTemp;
     TZrUInt32 leftTypeTemp;
@@ -531,273 +541,7 @@ static TZrBool backend_aot_llvm_lower_add_unsigned_const_instruction(const SZrAo
 
 static TZrBool backend_aot_llvm_lower_add_instruction(const SZrAotLlvmLoweringContext *context,
                                                       const SZrAotLlvmInstructionContext *instruction) {
-    TZrUInt32 destinationValueTemp;
-    TZrUInt32 leftValueTemp;
-    TZrUInt32 rightValueTemp;
-    TZrUInt32 leftTypeTemp;
-    TZrUInt32 rightTypeTemp;
-    TZrUInt32 leftBitsTemp;
-    TZrUInt32 rightBitsTemp;
-    TZrUInt32 leftSignedTemp;
-    TZrUInt32 leftUnsignedTemp;
-    TZrUInt32 leftFloatTemp;
-    TZrUInt32 leftBoolTemp;
-    TZrUInt32 leftIntTemp;
-    TZrUInt32 leftNumericTemp;
-    TZrUInt32 leftNumericOrBoolTemp;
-    TZrUInt32 rightSignedTemp;
-    TZrUInt32 rightUnsignedTemp;
-    TZrUInt32 rightFloatTemp;
-    TZrUInt32 rightBoolTemp;
-    TZrUInt32 rightIntTemp;
-    TZrUInt32 rightNumericTemp;
-    TZrUInt32 rightNumericOrBoolTemp;
-    TZrUInt32 bothNumericOrBoolTemp;
-    TZrUInt32 anyFloatTemp;
-    TZrUInt32 anySignedTemp;
-    TZrUInt32 anyBoolTemp;
-    TZrUInt32 anySignedOrBoolTemp;
-    TZrUInt32 leftDoubleTemp;
-    TZrUInt32 rightDoubleTemp;
-    TZrUInt32 floatSumTemp;
-    TZrUInt32 floatBitsTemp;
-    TZrUInt32 leftBoolIntTemp;
-    TZrUInt32 rightBoolIntTemp;
-    TZrUInt32 leftIntValueTemp;
-    TZrUInt32 rightIntValueTemp;
-    TZrUInt32 intSumTemp;
-    TZrUInt32 labelSeed;
-    TZrChar fastLabel[96];
-    TZrChar floatLabel[96];
-    TZrChar intLabel[96];
-    TZrChar signedResultLabel[96];
-    TZrChar unsignedResultLabel[96];
-    TZrChar fallbackLabel[96];
-    TZrChar argsBuffer[256];
-    TZrChar floatBitsBuffer[32];
-    TZrChar intSumBuffer[32];
-
-    if (context == ZR_NULL || instruction == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    backend_aot_set_callable_slot_function_index(context->callableSlotFunctionIndices,
-                                                 context->entry->function,
-                                                 instruction->destinationSlot,
-                                                 ZR_AOT_INVALID_FUNCTION_INDEX);
-    destinationValueTemp = backend_aot_llvm_emit_stack_value_pointer(context->file,
-                                                                     context->tempCounter,
-                                                                     instruction->destinationSlot);
-    leftValueTemp = backend_aot_llvm_emit_stack_value_pointer(context->file,
-                                                              context->tempCounter,
-                                                              instruction->operandA1);
-    rightValueTemp = backend_aot_llvm_emit_stack_value_pointer(context->file,
-                                                               context->tempCounter,
-                                                               instruction->operandB1);
-    leftTypeTemp = backend_aot_llvm_emit_load_value_type(context->file, context->tempCounter, leftValueTemp);
-    rightTypeTemp = backend_aot_llvm_emit_load_value_type(context->file, context->tempCounter, rightValueTemp);
-    leftBitsTemp = backend_aot_llvm_emit_load_value_bits(context->file, context->tempCounter, leftValueTemp);
-    rightBitsTemp = backend_aot_llvm_emit_load_value_bits(context->file, context->tempCounter, rightValueTemp);
-
-    leftSignedTemp = backend_aot_llvm_emit_type_range_check(context->file,
-                                                            context->tempCounter,
-                                                            leftTypeTemp,
-                                                            ZR_VALUE_TYPE_INT8,
-                                                            ZR_VALUE_TYPE_INT64);
-    leftUnsignedTemp = backend_aot_llvm_emit_type_range_check(context->file,
-                                                              context->tempCounter,
-                                                              leftTypeTemp,
-                                                              ZR_VALUE_TYPE_UINT8,
-                                                              ZR_VALUE_TYPE_UINT64);
-    leftFloatTemp = backend_aot_llvm_emit_type_range_check(context->file,
-                                                           context->tempCounter,
-                                                           leftTypeTemp,
-                                                           ZR_VALUE_TYPE_FLOAT,
-                                                           ZR_VALUE_TYPE_DOUBLE);
-    leftBoolTemp = backend_aot_llvm_emit_type_equal_check(context->file,
-                                                          context->tempCounter,
-                                                          leftTypeTemp,
-                                                          ZR_VALUE_TYPE_BOOL);
-    leftIntTemp = backend_aot_llvm_emit_or_condition(context->file,
-                                                     context->tempCounter,
-                                                     leftSignedTemp,
-                                                     leftUnsignedTemp);
-    leftNumericTemp = backend_aot_llvm_emit_or_condition(context->file,
-                                                         context->tempCounter,
-                                                         leftIntTemp,
-                                                         leftFloatTemp);
-    leftNumericOrBoolTemp = backend_aot_llvm_emit_or_condition(context->file,
-                                                               context->tempCounter,
-                                                               leftNumericTemp,
-                                                               leftBoolTemp);
-
-    rightSignedTemp = backend_aot_llvm_emit_type_range_check(context->file,
-                                                             context->tempCounter,
-                                                             rightTypeTemp,
-                                                             ZR_VALUE_TYPE_INT8,
-                                                             ZR_VALUE_TYPE_INT64);
-    rightUnsignedTemp = backend_aot_llvm_emit_type_range_check(context->file,
-                                                               context->tempCounter,
-                                                               rightTypeTemp,
-                                                               ZR_VALUE_TYPE_UINT8,
-                                                               ZR_VALUE_TYPE_UINT64);
-    rightFloatTemp = backend_aot_llvm_emit_type_range_check(context->file,
-                                                            context->tempCounter,
-                                                            rightTypeTemp,
-                                                            ZR_VALUE_TYPE_FLOAT,
-                                                            ZR_VALUE_TYPE_DOUBLE);
-    rightBoolTemp = backend_aot_llvm_emit_type_equal_check(context->file,
-                                                           context->tempCounter,
-                                                           rightTypeTemp,
-                                                           ZR_VALUE_TYPE_BOOL);
-    rightIntTemp = backend_aot_llvm_emit_or_condition(context->file,
-                                                      context->tempCounter,
-                                                      rightSignedTemp,
-                                                      rightUnsignedTemp);
-    rightNumericTemp = backend_aot_llvm_emit_or_condition(context->file,
-                                                          context->tempCounter,
-                                                          rightIntTemp,
-                                                          rightFloatTemp);
-    rightNumericOrBoolTemp = backend_aot_llvm_emit_or_condition(context->file,
-                                                                context->tempCounter,
-                                                                rightNumericTemp,
-                                                                rightBoolTemp);
-
-    bothNumericOrBoolTemp = backend_aot_llvm_emit_and_condition(context->file,
-                                                                context->tempCounter,
-                                                                leftNumericOrBoolTemp,
-                                                                rightNumericOrBoolTemp);
-    anyFloatTemp = backend_aot_llvm_emit_or_condition(context->file,
-                                                      context->tempCounter,
-                                                      leftFloatTemp,
-                                                      rightFloatTemp);
-    anySignedTemp = backend_aot_llvm_emit_or_condition(context->file,
-                                                       context->tempCounter,
-                                                       leftSignedTemp,
-                                                       rightSignedTemp);
-    anyBoolTemp = backend_aot_llvm_emit_or_condition(context->file,
-                                                     context->tempCounter,
-                                                     leftBoolTemp,
-                                                     rightBoolTemp);
-    anySignedOrBoolTemp = backend_aot_llvm_emit_or_condition(context->file,
-                                                             context->tempCounter,
-                                                             anySignedTemp,
-                                                             anyBoolTemp);
-
-    labelSeed = backend_aot_llvm_next_temp(context->tempCounter);
-    snprintf(fastLabel, sizeof(fastLabel), "zr_aot_add_fast_%u", (unsigned)labelSeed);
-    snprintf(floatLabel, sizeof(floatLabel), "zr_aot_add_float_%u", (unsigned)labelSeed);
-    snprintf(intLabel, sizeof(intLabel), "zr_aot_add_int_%u", (unsigned)labelSeed);
-    snprintf(signedResultLabel, sizeof(signedResultLabel), "zr_aot_add_signed_%u", (unsigned)labelSeed);
-    snprintf(unsignedResultLabel, sizeof(unsignedResultLabel), "zr_aot_add_unsigned_%u", (unsigned)labelSeed);
-    snprintf(fallbackLabel, sizeof(fallbackLabel), "zr_aot_add_fallback_%u", (unsigned)labelSeed);
-
-    /* 动态 ADD 只在两侧均为数值或布尔值时内联；字符串和重载加法保留运行时语义。 */
-    fprintf(context->file,
-            "  br i1 %%t%u, label %%%s, label %%%s\n",
-            (unsigned)bothNumericOrBoolTemp,
-            fastLabel,
-            fallbackLabel);
-
-    fprintf(context->file, "%s:\n", fastLabel);
-    fprintf(context->file,
-            "  br i1 %%t%u, label %%%s, label %%%s\n",
-            (unsigned)anyFloatTemp,
-            floatLabel,
-            intLabel);
-
-    fprintf(context->file, "%s:\n", floatLabel);
-    leftDoubleTemp = backend_aot_llvm_emit_numeric_bits_as_double(context->file,
-                                                                  context->tempCounter,
-                                                                  leftBitsTemp,
-                                                                  leftFloatTemp,
-                                                                  leftUnsignedTemp,
-                                                                  leftBoolTemp);
-    rightDoubleTemp = backend_aot_llvm_emit_numeric_bits_as_double(context->file,
-                                                                   context->tempCounter,
-                                                                   rightBitsTemp,
-                                                                   rightFloatTemp,
-                                                                   rightUnsignedTemp,
-                                                                   rightBoolTemp);
-    floatSumTemp = backend_aot_llvm_next_temp(context->tempCounter);
-    floatBitsTemp = backend_aot_llvm_next_temp(context->tempCounter);
-    fprintf(context->file,
-            "  %%t%u = fadd double %%t%u, %%t%u\n",
-            (unsigned)floatSumTemp,
-            (unsigned)leftDoubleTemp,
-            (unsigned)rightDoubleTemp);
-    fprintf(context->file,
-            "  %%t%u = bitcast double %%t%u to i64\n",
-            (unsigned)floatBitsTemp,
-            (unsigned)floatSumTemp);
-    backend_aot_llvm_format_temp_ref(floatBitsBuffer, sizeof(floatBitsBuffer), floatBitsTemp);
-    backend_aot_llvm_emit_fast_set_bits(context->file,
-                                        context->tempCounter,
-                                        destinationValueTemp,
-                                        floatBitsBuffer,
-                                        ZR_VALUE_TYPE_DOUBLE);
-    fprintf(context->file, "  br label %%%s\n", instruction->nextLabel);
-
-    fprintf(context->file, "%s:\n", intLabel);
-    leftBoolIntTemp = backend_aot_llvm_emit_bool_bits_to_i64(context->file, context->tempCounter, leftBitsTemp);
-    rightBoolIntTemp = backend_aot_llvm_emit_bool_bits_to_i64(context->file, context->tempCounter, rightBitsTemp);
-    leftIntValueTemp = backend_aot_llvm_next_temp(context->tempCounter);
-    rightIntValueTemp = backend_aot_llvm_next_temp(context->tempCounter);
-    intSumTemp = backend_aot_llvm_next_temp(context->tempCounter);
-    fprintf(context->file,
-            "  %%t%u = select i1 %%t%u, i64 %%t%u, i64 %%t%u\n",
-            (unsigned)leftIntValueTemp,
-            (unsigned)leftBoolTemp,
-            (unsigned)leftBoolIntTemp,
-            (unsigned)leftBitsTemp);
-    fprintf(context->file,
-            "  %%t%u = select i1 %%t%u, i64 %%t%u, i64 %%t%u\n",
-            (unsigned)rightIntValueTemp,
-            (unsigned)rightBoolTemp,
-            (unsigned)rightBoolIntTemp,
-            (unsigned)rightBitsTemp);
-    fprintf(context->file,
-            "  %%t%u = add i64 %%t%u, %%t%u\n",
-            (unsigned)intSumTemp,
-            (unsigned)leftIntValueTemp,
-            (unsigned)rightIntValueTemp);
-    fprintf(context->file,
-            "  br i1 %%t%u, label %%%s, label %%%s\n",
-            (unsigned)anySignedOrBoolTemp,
-            signedResultLabel,
-            unsignedResultLabel);
-
-    fprintf(context->file, "%s:\n", signedResultLabel);
-    backend_aot_llvm_format_temp_ref(intSumBuffer, sizeof(intSumBuffer), intSumTemp);
-    backend_aot_llvm_emit_fast_set_bits(context->file,
-                                        context->tempCounter,
-                                        destinationValueTemp,
-                                        intSumBuffer,
-                                        ZR_VALUE_TYPE_INT64);
-    fprintf(context->file, "  br label %%%s\n", instruction->nextLabel);
-
-    fprintf(context->file, "%s:\n", unsignedResultLabel);
-    backend_aot_llvm_emit_fast_set_bits(context->file,
-                                        context->tempCounter,
-                                        destinationValueTemp,
-                                        intSumBuffer,
-                                        ZR_VALUE_TYPE_UINT64);
-    fprintf(context->file, "  br label %%%s\n", instruction->nextLabel);
-
-    fprintf(context->file, "%s:\n", fallbackLabel);
-    snprintf(argsBuffer,
-             sizeof(argsBuffer),
-             "ptr %%state, ptr %%frame, i32 %u, i32 %u, i32 %u",
-             (unsigned)instruction->destinationSlot,
-             (unsigned)instruction->operandA1,
-             (unsigned)instruction->operandB1);
-    backend_aot_llvm_write_guarded_call_text(context->file,
-                                             context->tempCounter,
-                                             "ZrLibrary_AotRuntime_Add",
-                                             argsBuffer,
-                                             instruction->nextLabel,
-                                             context->failLabel);
-    return ZR_TRUE;
+    return backend_aot_llvm_lower_binary_value_instruction(context, instruction, "ZrLibrary_AotRuntime_Add");
 }
 
 static const TZrChar *backend_aot_llvm_binary_value_helper_name(TZrUInt32 opcode) {

@@ -247,7 +247,7 @@ static SZrAstNode *try_parse_function_declaration_from_current(SZrParserState *p
 
 // 块解析是语句递归入口；declarationKind 仅改变缺失右花括号的诊断上下文。
 // 成功返回的块节点持有已加入的语句数组及其所有元素。
-static SZrAstNode *parse_block_impl(SZrParserState *ps, const TZrChar *declarationKind) {
+static SZrAstNode *parse_block_contents(SZrParserState *ps, const TZrChar *declarationKind) {
     SZrFileRange startLoc = get_current_token_location(ps);
     SZrFileRange endLoc;
     expect_token(ps, ZR_TK_LBRACE);
@@ -278,8 +278,7 @@ static SZrAstNode *parse_block_impl(SZrParserState *ps, const TZrChar *declarati
         } else {
             expect_token(ps, ZR_TK_RBRACE);
         }
-        // BUG: 至少一个语句已加入时，普通数组 Free 不释放元素 AST，缺失 } 会泄漏它们。
-        ZrParser_AstNodeArray_Free(ps->state, statements);
+        free_ast_node_array_with_elements(ps->state, statements);
         return ZR_NULL;
     }
 
@@ -289,13 +288,20 @@ static SZrAstNode *parse_block_impl(SZrParserState *ps, const TZrChar *declarati
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_BLOCK, blockLoc);
     if (node == ZR_NULL) {
-        // BUG: 节点分配失败时只释放数组容器，已解析语句仍悬空。
-        ZrParser_AstNodeArray_Free(ps->state, statements);
+        free_ast_node_array_with_elements(ps->state, statements);
         return ZR_NULL;
     }
 
     node->data.block.body = statements;
     node->data.block.isStatement = ZR_TRUE;
+    return node;
+}
+
+static SZrAstNode *parse_block_impl(SZrParserState *ps, const TZrChar *declarationKind) {
+    SZrAstNode *node;
+    if (!parser_enter_recursion(ps)) return ZR_NULL;
+    node = parse_block_contents(ps, declarationKind);
+    --ps->recursionDepth;
     return node;
 }
 
@@ -557,7 +563,17 @@ SZrAstNode *parse_switch_expression(SZrParserState *ps) {
 // 解析 if 表达式/语句
 
 // if 与 else if 共享 AST 形态；块为必需，条件/两个分支在成功时移交给 if 节点。
+static SZrAstNode *parse_if_expression_impl(SZrParserState *ps);
+
 SZrAstNode *parse_if_expression(SZrParserState *ps) {
+    SZrAstNode *node;
+    if (!parser_enter_recursion(ps)) return ZR_NULL;
+    node = parse_if_expression_impl(ps);
+    --ps->recursionDepth;
+    return node;
+}
+
+static SZrAstNode *parse_if_expression_impl(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     expect_token(ps, ZR_TK_IF);
     ZrParser_Lexer_Next(ps->lexer);
@@ -592,7 +608,7 @@ SZrAstNode *parse_if_expression(SZrParserState *ps) {
 
     SZrAstNode *thenExpr = parse_block(ps);
     if (thenExpr == ZR_NULL) {
-        // BUG: 条件 AST 已分配，then 块失败后未释放。
+        ZrParser_Ast_Free(ps->state, condition);
         return ZR_NULL;
     }
 
@@ -610,6 +626,13 @@ SZrAstNode *parse_if_expression(SZrParserState *ps) {
             elseExpr = parse_block(ps);
             // TODO: else 块失败仍可返回无 else 的 AST；核对脚本错误恢复是否禁止编译此残缺节点。
         }
+    }
+
+    if (ps->hasNestingError) {
+        ZrParser_Ast_Free(ps->state, condition);
+        ZrParser_Ast_Free(ps->state, thenExpr);
+        ZrParser_Ast_Free(ps->state, elseExpr);
+        return ZR_NULL;
     }
 
     SZrFileRange endLoc = get_current_location(ps);

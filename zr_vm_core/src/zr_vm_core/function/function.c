@@ -228,6 +228,7 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     SZrFunction *function = ZR_CAST_FUNCTION(state, newObject);
     function->ownedAotIr = ZR_NULL;
     function->ownedExecIr = ZR_NULL;
+    function->hostRootOwner = ZR_NULL;
     function->constantValueList = ZR_NULL;
     function->constantValueLength = 0;
     function->childFunctionList = ZR_NULL;
@@ -1303,6 +1304,17 @@ static void function_reset_to_tombstone(SZrFunction *function) {
     function->cachedStatelessClosure = ZR_NULL;
 }
 
+void ZrCore_Function_CopyToInline(SZrFunction *destination, const SZrFunction *source) {
+    *destination = *source;
+    /* Registry slots and reference counts belong to the original allocation. */
+    destination->super.garbageCollectMark.temporaryRootRefCount = 0;
+    destination->super.garbageCollectMark.nativeCallPinRefCount = 0;
+    destination->super.garbageCollectMark.explicitIgnoredRoot = ZR_FALSE;
+    destination->super.garbageCollectMark.nativeCallOwnsPinKind = ZR_FALSE;
+    destination->super.garbageCollectMark.ignoredRegistryIndex = ZR_MAX_SIZE;
+    destination->hostRootOwner = ZR_NULL;
+}
+
 void ZrCore_Function_DetachOwnedBuffers(SZrFunction *function) {
     function_reset_to_tombstone(function);
 }
@@ -1322,6 +1334,23 @@ const SZrFunctionSchedulerSourceFact *ZrCore_Function_FindSchedulerSourceFact(
         }
     }
     return ZR_NULL;
+}
+
+TZrBool ZrCore_Function_AcquireHostRoot(SZrState *state, SZrFunction *function) {
+    SZrGcRootLease root = {ZR_NULL};
+    if (state == ZR_NULL || function == ZR_NULL) return ZR_FALSE;
+    if (function->hostRootOwner == function) return ZR_TRUE;
+    if (!ZrCore_Gc_RootLeaseAcquire(state, &function->super, &root)) return ZR_FALSE;
+    function->hostRootOwner = function;
+    return ZR_TRUE;
+}
+
+void ZrCore_Function_ReleaseHostRoot(SZrState *state, SZrFunction *function) {
+    SZrGcRootLease root;
+    if (state == ZR_NULL || function == ZR_NULL || function->hostRootOwner != function) return;
+    root.object = &function->super;
+    function->hostRootOwner = ZR_NULL;
+    ZrCore_Gc_RootLeaseRelease(state->global, &root);
 }
 
 void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
@@ -1634,6 +1663,8 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
     // The prototype objects are GC-managed; only their raw pointer storage is owned here.
     // Reset the function to a GC-safe tombstone because the raw object itself
     // stays on the GC list until the collector later reclaims it.
+    ZrCore_Function_ReleaseHostRoot(state, function);
+    function->hostRootOwner = ZR_NULL;
     function_reset_to_tombstone(function);
 
     // ZrCore_Memory_RawFreeWithType(global, function, sizeof(SZrFunction), ZR_MEMORY_NATIVE_TYPE_FUNCTION);

@@ -236,7 +236,7 @@ static void test_aot_c_source_inserts_gc_safepoints_at_controlled_boundaries(voi
             "ZrLibrary_AotRuntime_CreateObject(state, &frame, %u)",
             "backend_aot_write_c_gc_safepoint(file, \"        \", \"zr_aot_gc_safepoint_allocation\");",
             "zr_aot_value_exec_create_array",
-            "ZrLibrary_AotRuntime_CreateArray(state, &frame, %u)",
+            "ZrLibrary_AotRuntime_CreateArrayWithLength(state, &frame, %u, %u)",
     };
     static const char *const logicalNeedles[] = {
             "backend_aot_write_c_direct_jump_if(FILE *file,",

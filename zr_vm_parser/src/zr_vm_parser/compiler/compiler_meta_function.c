@@ -54,7 +54,7 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     cs->constParameters.length = 0;
     
     // 创建新的函数对象
-    cs->currentFunction = ZrCore_Function_New(cs->state);
+    cs->currentFunction = compiler_new_function(cs);
     if (cs->currentFunction == ZR_NULL) {
         ZrParser_Compiler_Error(cs, "Failed to create meta function object", node->location);
         cs->isInConstructor = oldIsInConstructor;
@@ -307,7 +307,7 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
             SZrFunction **srcArray = (SZrFunction **) cs->childFunctions.head;
             for (TZrSize i = 0; i < cs->childFunctions.length; i++) {
                 if (srcArray[i] != ZR_NULL) {
-                    newFunc->childFunctionList[i] = *srcArray[i];
+                    ZrCore_Function_CopyToInline(&newFunc->childFunctionList[i], srcArray[i]);
                 }
             }
             newFunc->childFunctionLength = (TZrUInt32) cs->childFunctions.length;

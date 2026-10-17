@@ -176,7 +176,8 @@ ZR_CORE_API SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPt
 
 ZR_CORE_API void ZrCore_GlobalState_InitRegistry(struct SZrState *state, SZrGlobalState *global);
 
-// 设置 compileSource 函数指针（由 parser 模块调用）
+/* compileSource results own a host root, released by Function_Free or by
+ * Function_ReleaseHostRoot after establishing a VM reference. */
 ZR_CORE_API void ZrCore_GlobalState_SetCompileSource(SZrGlobalState *global, 
     struct SZrFunction *(*compileSource)(struct SZrState *state, const TZrChar *source, TZrSize sourceLength, struct SZrString *sourceName));
 

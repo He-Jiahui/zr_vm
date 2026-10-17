@@ -1513,6 +1513,19 @@ void ZrCore_Object_Init(struct SZrState *state, SZrObject *object) {
                  object != ZR_NULL ? (unsigned long long)object->nodeMap.elementCount : 0ull);
 }
 
+void ZrCore_Object_InitializeArrayElements(SZrState *state, SZrObject *array, TZrUInt32 length) {
+    SZrTypeValue key;
+    SZrTypeValue value;
+
+    ZR_ASSERT(array != ZR_NULL && array->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY);
+    ZR_ASSERT(array->nodeMap.elementCount == 0u);
+    ZrCore_Value_ResetAsNull(&value);
+    for (TZrUInt32 i = 0; i < length; ++i) {
+        ZrCore_Value_InitAsInt(state, &key, (TZrInt64)i);
+        ZrCore_Object_SetValue(state, array, &key, &value);
+    }
+}
+
 void ZrCore_Object_Deconstruct(SZrState *state, SZrObject *object) {
     SZrGlobalState *global;
 
@@ -3453,6 +3466,11 @@ static ZR_FORCE_INLINE TZrBool object_get_by_index_unchecked_core(SZrState *stat
     if (object == ZR_NULL) {
         return ZR_FALSE;
     }
+    if (object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY && ZR_VALUE_IS_TYPE_INT(key->type) &&
+        (TZrUInt64)key->value.nativeObject.nativeInt64 >=
+                (TZrUInt64)zr_super_array_raw_int_length_or_node_count(object)) {
+        ZrCore_Debug_RunError(state, "Array index out of range");
+    }
     if (stackOperandsGuaranteed && !ZR_VALUE_IS_TYPE_INT(key->type)) {
         if (object_try_call_hot_cached_known_native_get_by_index_readonly_inline_stack_operands(
                     state,
@@ -3564,6 +3582,9 @@ static ZR_FORCE_INLINE TZrBool object_get_by_index_unchecked_core(SZrState *stat
 
     resolvedValue = object_get_own_value_unchecked(state, object, key);
     if (resolvedValue == ZR_NULL) {
+        if (object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY && ZR_VALUE_IS_TYPE_INT(key->type)) {
+            ZrCore_Debug_RunError(state, "Array index out of range");
+        }
         if (key->type == ZR_VALUE_TYPE_STRING && key->value.object != ZR_NULL) {
             if (object_module_guard_pending_export(state, object, ZR_CAST_STRING(state, key->value.object))) {
                 return state->threadStatus != ZR_THREAD_STATUS_FINE ? ZR_TRUE : ZR_FALSE;
@@ -3678,6 +3699,11 @@ static ZR_FORCE_INLINE TZrBool object_set_by_index_unchecked_core(SZrState *stat
     object = ZR_CAST_OBJECT(state, receiver->value.object);
     if (object == ZR_NULL) {
         return ZR_FALSE;
+    }
+    if (object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY && ZR_VALUE_IS_TYPE_INT(key->type) &&
+        (TZrUInt64)key->value.nativeObject.nativeInt64 >=
+                (TZrUInt64)zr_super_array_raw_int_length_or_node_count(object)) {
+        ZrCore_Debug_RunError(state, "Array index out of range");
     }
     if (!ZrCore_GcDomain_ValidateValueWrite(
                 state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), key) ||

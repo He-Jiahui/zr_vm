@@ -89,7 +89,9 @@ static const union {
 #define ZR_IO_SOURCE_PATCH_HAS_CALL_BINDING 43U
 #define ZR_IO_SOURCE_PATCH_HAS_MARK_CLOSE_PROXY 44U
 /* 当前 writer 输出的 patch；reader 拒绝更高版本，并按历史门槛解析可选字段。 */
-#define ZR_IO_SOURCE_PATCH_CURRENT ZR_IO_SOURCE_PATCH_HAS_MARK_CLOSE_PROXY
+/* CREATE_ARRAY operand2[0] is the initial length for checked literal stores. */
+#define ZR_IO_SOURCE_PATCH_HAS_ARRAY_INITIAL_LENGTH 45U
+#define ZR_IO_SOURCE_PATCH_CURRENT ZR_IO_SOURCE_PATCH_HAS_ARRAY_INITIAL_LENGTH
 
 /* .MODULE:
  * NAME [string]
