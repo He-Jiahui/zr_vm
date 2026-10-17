@@ -167,9 +167,57 @@
   <p class="hint">数值来源：<code>benchmark_report.json</code> 中 <code>summary.mean_wall_ms</code>；SKIP/FAIL 显示为 “—”。全量表与各分组表使用同一数据源，分组列由实现名称归类（见各节说明）。</p>
 
   <script>
+/**
+ * ## Summary
+ * 隔离查看器私有函数，在固定 DOM 已解析后安装文件选择器并尝试自动加载嵌入摘要。
+ *
+ * ## Parameters
+ * 无参数；脚本由页面解析器执行一次。
+ *
+ * ## Returns
+ * void；安装在 file-input 上的闭包继续存活至页面销毁。
+ *
+ * ## Constraints and lifecycle
+ * 固定 id 必须先于此 script 出现。先装 change listener 再读 bundle；仅 meta 仍为空时显示提示，避免覆盖成功渲染。
+ *
+ * ## References
+ * tests/benchmarks/benchmark_compare_viewer_harness.js:32；同文件:41
+ */
 (function () {
+  /**
+   * ## Summary
+   * 按模板约定取得一个展示或控制元素，供同步渲染和页面事件共享访问。
+   *
+   * ## Parameters
+   * {string} id 模板中的元素 id。
+   *
+   * ## Returns
+   * {HTMLElement|null} 当前 document 内的元素；不创建或缓存节点。
+   *
+   * ## Constraints and lifecycle
+   * 仅 renderFilteredMatrix 对可选容器判空；其余调用依赖模板的固定 DOM，调用方负责其存在。
+   *
+   * ## References
+   * 本文件的固定 id 区域；renderAll；showError
+   */
   const $ = function (id) { return document.getElementById(id); };
 
+  /**
+   * ## Summary
+   * 把加载或渲染入口捕获的消息显示在错误区；成功渲染先用空串清除此区。
+   *
+   * ## Parameters
+   * {string} msg 原样作为 textContent 的消息；空串隐藏错误区。
+   *
+   * ## Returns
+   * {void} 修改 error 节点的文本与 hidden，不清空已渲染报告。
+   *
+   * ## Constraints and lifecycle
+   * 使用 textContent 保留消息为文本。入口异步完成时，该消息同样受文件读取完成顺序影响。
+   *
+   * ## References
+   * renderAll；parseMaybeBundle；FileReader.onload；tests/benchmarks/test_benchmark_compare_viewer.py:126
+   */
   function showError(msg) {
     const el = $("error");
     el.textContent = msg;
@@ -177,6 +225,22 @@
   }
 
   // 文件选择器和嵌入页共用此入口；兼容聚合摘要与旧版单份报告。
+  /**
+   * ## Summary
+   * 统一聚合摘要与两种旧 suite 报告的外层形状，供 bundle 和本地文件入口共用。
+   *
+   * ## Parameters
+   * {unknown} root JSON.parse 的结果。
+   *
+   * ## Returns
+   * {object|null} 聚合对象原引用、共享旧报告的浅包装，或不识别时的 null。
+   *
+   * ## Constraints and lifecycle
+   * 只识别 truthy schema_version/reports 与指定 suite，不校验嵌套记录或测量契约；comparison-only 聚合摘要也合法。返回值的 reports 仍借用原输入。
+   *
+   * ## References
+   * scripts/benchmark/aggregate_benchmark_summary.py:315；tests/benchmarks/test_benchmark_compare_viewer.py:68；同文件:107
+   */
   function normalizePayload(root) {
     if (!root || typeof root !== "object") return null;
     if (root.schema_version && root.reports &&
@@ -203,6 +267,22 @@
   }
 
   // 聚合脚本把 UTF-8 JSON 编码后嵌入模板；仅生成的单文件页应自动展示。
+  /**
+   * ## Summary
+   * 在生成的单文件页面中，把 data script 的 base64 字节按 UTF-8 解码并自动展示。
+   *
+   * ## Parameters
+   * 无参数；读取 zr-bench-embed 的 textContent。
+   *
+   * ## Returns
+   * {void} 无数据或仍含模板标记时保持等待；解析或渲染异常交给 showError。
+   *
+   * ## Constraints and lifecycle
+   * atob 的字符代表字节，必须先转 Uint8Array 再用 fatal UTF-8 TextDecoder；数据和临时数组不保留。打包器只替换第一个标记，后面的 guard 字面量须保留；此处不写文件。
+   *
+   * ## References
+   * scripts/benchmark/aggregate_benchmark_summary.py:399；tests/benchmarks/test_benchmark_compare_viewer.py:79；同文件:85；同文件:120
+   */
   function parseMaybeBundle() {
     const embed = document.getElementById("zr-bench-embed");
     if (!embed) return;
@@ -219,6 +299,22 @@
     }
   }
 
+  /**
+   * ## Summary
+   * 把各视图计算的相对耗时比例映射成由绿到红的 HSL 文本。
+   *
+   * ## Parameters
+   * {number} ratio 调用方的归一化相对值。
+   *
+   * ## Returns
+   * {string} 夹到 0..1 后计算的 HSL 色值；不读写 DOM。
+   *
+   * ## Constraints and lifecycle
+   * 函数只作 Math 范围夹取，不验证 finite；NaN 会传播到色值。数值有效性属于输入报告及调用者约束。
+   *
+   * ## References
+   * renderFilteredMatrix；renderMatrix；renderBars
+   */
   function ratioColor(ratio) {
     const x = Math.max(0, Math.min(1, ratio));
     const h = 120 - x * 120;
@@ -229,6 +325,22 @@
    * interp: 解释器 / 脚本 VM（与同类比较）
    * native: 静态原生、JIT 机器码、ZR 预编译产物（与同类比较）
    * other: 不参与上述两表
+   */
+  /**
+   * ## Summary
+   * 用固定实现名把性能记录分到解释器、原生/JIT 或未归类组。
+   *
+   * ## Parameters
+   * {string} implName 实现名；比较前 trim，名称匹配区分大小写。
+   *
+   * ## Returns
+   * {string} interp、native 或 other；只用于分组表选择列。
+   *
+   * ## Constraints and lifecycle
+   * C#/.NET 和 .NET 均归 native。白名单与生产者命名协作；未知名称仍可出现在全量表和条形图。不是执行引擎能力检测。
+   *
+   * ## References
+   * tests/cmake/run_performance_suite.cmake:907；tests/benchmarks/test_benchmark_compare_viewer.py:93；同文件:107
    */
   function implCategory(implName) {
     const n = (implName || "").trim();
@@ -255,6 +367,22 @@
   }
 
   // 按展示组筛选实现，再以组内每行最快值着色；全量报告仍由 renderMatrix 展示。
+  /**
+   * ## Summary
+   * 为一个实现分组重建耗时矩阵，使组内最快值决定本组着色和条宽。
+   *
+   * ## Parameters
+   * {object} br 性能报告；{string} category 分组名；{string} containerId 输出容器 id。
+   *
+   * ## Returns
+   * {void} 同步替换该容器 innerHTML；容器缺失则返回，空分组写提示。
+   *
+   * ## Constraints and lifecycle
+   * 输入应有可遍历 cases/implementations。新建行/列索引，不改报告；仅 PASS 且 mean_wall_ms 为 number 才参与，缺值留横线。minV 属于当前行当前组，避免拿组外实现作分母。动态文本先 escapeHtml。
+   *
+   * ## References
+   * renderAll；implCategory；tests/benchmarks/test_benchmark_compare_viewer.py:93；同文件:107
+   */
   function renderFilteredMatrix(br, category, containerId) {
     const implSet = {};
     for (const c of br.cases || []) {
@@ -321,6 +449,22 @@
   }
 
   // 聚合摘要允许缺少任一报告；重置对应区域，避免文件选择器保留上次数据。
+  /**
+   * ## Summary
+   * 按摘要中可用的两类报告刷新元数据及各区域，并清除缺失报告对应的旧展示。
+   *
+   * ## Parameters
+   * {object} payload normalizePayload 识别的对象，嵌套记录须满足各 renderer 的输入形状。
+   *
+   * ## Returns
+   * {void} 依次修改 DOM；异常向 bundle 或 FileReader 入口传播，已写区域不回滚。
+   *
+   * ## Constraints and lifecycle
+   * 先清错误再写 meta，随后渲染或清理各报告区，避免连续加载 comparison-only 时保留旧性能数据。时间、目录和 present 文本均需 escapeHtml 后放入 innerHTML。
+   *
+   * ## References
+   * tests/benchmarks/test_benchmark_compare_viewer.py:68；同文件:99；parseMaybeBundle；FileReader.onload
+   */
   function renderAll(payload) {
     showError("");
     const br = payload.reports && payload.reports.benchmark_report;
@@ -351,6 +495,22 @@
     }
   }
 
+  /**
+   * ## Summary
+   * 为模板中的 HTML 文本位置转换动态值并转义特殊字符。
+   *
+   * ## Parameters
+   * {unknown} s 先经 String 转换的展示值。
+   *
+   * ## Returns
+   * {string} 转义 &、<、>、双引号后的文本；无 DOM 或报告修改。
+   *
+   * ## Constraints and lifecycle
+   * 当前调用将输出拼入 HTML 文本位置。此函数不承担 URL、JavaScript 或任意属性语境的编码；字符串转换异常由外层加载入口捕获。
+   *
+   * ## References
+   * renderAll；renderFilteredMatrix；renderMatrix；renderBars；renderZrVs；tests/benchmarks/test_benchmark_compare_viewer.py:99
+   */
   function escapeHtml(s) {
     return String(s)
       .replace(/&/g, "&amp;")
@@ -359,6 +519,22 @@
       .replace(/"/g, "&quot;");
   }
 
+  /**
+   * ## Summary
+   * 收集各 case 的实现列，重建全量耗时表，并用每行最小数值作着色基准。
+   *
+   * ## Parameters
+   * {object} br 性能报告；cases/implementations 应可遍历。
+   *
+   * ## Returns
+   * {void} 替换 matrix-container 的 innerHTML；不修改源报告。
+   *
+   * ## Constraints and lifecycle
+   * 列名排序后跨行复用；仅 PASS 数值入表，缺值显示横线。BUG: 实现名为 __proto__ 时，普通对象 implSet 的该键赋值不会产生可枚举自有列，Object.keys 丢列；同一输入的条形图仍显示它。证据为 baseline-before-r1 的现有 harness probe（error hidden、C 列存在、__proto__ 列缺失而 bars 存在），完整入口为 change→normalizePayload→renderAll→本函数；本轮只记录。
+   *
+   * ## References
+   * tests/benchmarks/benchmark_compare_viewer_harness.js:45；本任务 benchmark-viewer-baseline-before-r1-results.json；renderBars
+   */
   function renderMatrix(br) {
     const implSet = {};
     const rows = [];
@@ -409,6 +585,22 @@
     $("matrix-container").innerHTML = html;
   }
 
+  /**
+   * ## Summary
+   * 按 case 收集 PASS 数值耗时，排序后生成全量条形比较。
+   *
+   * ## Parameters
+   * {object} br 性能报告；只读取 case 名及实现名、status、mean_wall_ms。
+   *
+   * ## Returns
+   * {void} 替换 bars-container 的 innerHTML；无 PASS 项时仍可保留 case 外壳。
+   *
+   * ## Constraints and lifecycle
+   * items 是新数组，排序不改输入 implementations。每个 case 以最大 ms 作条宽分母；零/负或非有限输入不作测量合法性保证。文本经 escapeHtml，数值来自 number 分支。
+   *
+   * ## References
+   * renderAll；ratioColor；tests/benchmarks/test_benchmark_compare_viewer.py:107；本任务 prototype-name probe
+   */
   function renderBars(br) {
     let html = "";
     for (const c of br.cases || []) {
@@ -435,6 +627,22 @@
     $("bars-container").innerHTML = html || "<p class=\"cell-skip\">无 PASS 数据</p>";
   }
 
+  /**
+   * ## Summary
+   * 按固定语言顺序展示 comparison_report 已给出的 ZR interp 比值。
+   *
+   * ## Parameters
+   * {object} cr 带 cases 和 relative_to 的比较报告。
+   *
+   * ## Returns
+   * {void} 重建 zr-vs-container；不重新计算、校准或校验跨报告可比性。
+   *
+   * ## Constraints and lifecycle
+   * langs 的键与 labels 显示名须配对；null、空串和 '-' 显示横线，其余值作为转义文本加倍数标记。测量契约和比值门控由上游聚合器负责。
+   *
+   * ## References
+   * scripts/benchmark/aggregate_benchmark_summary.py:301；tests/benchmarks/test_benchmark_compare_viewer.py:68；同文件:115
+   */
   function renderZrVs(cr) {
     const langs = ["c", "lua", "qjs", "node", "python", "dotnet", "java", "rust"];
     const labels = { c: "C", lua: "Lua", qjs: "QuickJS", node: "Node", python: "Python", dotnet: ".NET", java: "Java", rust: "Rust" };
@@ -462,10 +670,42 @@
     $("zr-vs-container").innerHTML = html;
   }
 
+  /**
+   * ## Summary
+   * 为本次选择创建独立 FileReader，以 UTF-8 读取第一个文件并安装完成处理。
+   *
+   * ## Parameters
+   * {Event} ev file-input 的 change 事件；没有首文件时保持原展示。
+   *
+   * ## Returns
+   * {void} 发起读取；reader 由本次 onload 闭包持有，完成后交给页面/GC 管理。
+   *
+   * ## Constraints and lifecycle
+   * 不取消此前 reader，也不设置 onerror/onabort，底层读取失败没有额外展示处理。TODO: 核实连续选择文件时是否要求“最后选择优先”；当前 onload 直接覆盖共享 DOM，完成顺序可能不同于选择顺序。沿本回调和 FileReader.onload 用真实异步读取核查，现有 harness 的 readAsText 同步调用 onload（:20–23），九项用例不能证明错序策略。
+   *
+   * ## References
+   * tests/benchmarks/benchmark_compare_viewer_harness.js:19；tests/benchmarks/test_benchmark_compare_viewer.py:52；FileReader.onload
+   */
   $("file-input").addEventListener("change", function (ev) {
     const f = ev.target.files && ev.target.files[0];
     if (!f) return;
     const reader = new FileReader();
+    /**
+     * ## Summary
+     * 在当前 reader 完成后解析 JSON、识别外层报告并刷新展示；将解析/渲染异常显示为错误。
+     *
+     * ## Parameters
+     * 无回调参数使用；闭包读取本次 reader.result。
+     *
+     * ## Returns
+     * {void} 有效报告调用 renderAll；未知结构或异常仅调用 showError，不清空此前报告。
+     *
+     * ## Constraints and lifecycle
+     * 此闭包属于单个 reader，不能协调其他读取；具体完成顺序约束由 change 回调的 TODO 跟踪。renderAll 异常前可能已部分写 DOM，catch 不提供事务恢复。
+     *
+     * ## References
+     * normalizePayload；renderAll；showError；tests/benchmarks/test_benchmark_compare_viewer.py:126
+     */
     reader.onload = function () {
       try {
         const raw = JSON.parse(reader.result);

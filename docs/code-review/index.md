@@ -239,3 +239,6 @@ doc_type: category-index
 - [Math 输入边界测试的调用与生命周期契约](batches/20261017-math-input-boundaries-tests-contracts.md)：[28 个完整单元](coverage/math_input_boundaries_tests.tsv)，覆盖数值拒绝、数组/裸 Tensor 外壳、继续执行与普通清理边界；同配置目标和九个原 selector 修改前后均退出 0，限本批有界验证。
 
 - [首方范围与内容摘要校正](batches/20261017-scope-inventory-reconciliation.md)：补登 102 个 pending 文件、撤回 59 个内容已变文件的完成状态，保留外来清单差异；本批新增代码审查单元 0，全仓验收尚未完成。
+
+
+- [Benchmark 查看器的当前调用与生命周期契约](batches/20261017-benchmark-viewer-current-contracts.md)：[25 个完整单元](coverage/scripts_remaining.tsv)，15 段 JSDoc、9 个现有测试前后通过；记录已复现的 __proto__ 矩阵漏列与 FileReader 时序 TODO，限 Node VM 验证。
