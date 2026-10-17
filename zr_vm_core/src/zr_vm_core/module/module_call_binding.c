@@ -151,23 +151,33 @@ static TZrBool imported_owner(SZrImportedBindingContext *context, SZrFunction *c
     guard->cachedReceiverVersion = prototype->super.memberVersion;
     guard->cachedFunction = candidate->target.vm.function;
     guard->cachedDescriptorIndex = ZR_CALL_BINDING_SLOT_NONE;
-    for (TZrUInt32 index = 0u; index < prototype->memberDescriptorCount; ++index) {
-        const SZrMemberDescriptor *descriptor = &prototype->memberDescriptors[index];
-        if (descriptor->methodFunction != candidate->target.vm.function) continue;
-        /* TODO: 同一函数体若由多个成员描述符共享，首个身份不匹配就拒绝会错过后续匹配；
-         * 当前编译器对调用目标拒绝重复描述符，需检查载入或程序构造的 provider 可达性。 */
-        if (!zr_call_binding_descriptor_matches(consumer, entry, descriptor))
-            return imported_fail(context, entry, ZR_CALL_BINDING_INVALID_RELOCATION);
-        if (guard->cachedDescriptorIndex != ZR_CALL_BINDING_SLOT_NONE)
-            return imported_fail(context, entry, ZR_CALL_BINDING_AMBIGUOUS_TARGET);
-        guard->cachedDescriptorIndex = index;
-        guard->cachedIsStatic = descriptor->isStatic;
-        if (entry->binding.contract.bindingKind == ZR_CALL_BINDING_VIRTUAL &&
-            entry->binding.contract.dispatchSlot != descriptor->virtualSlotIndex)
-            return imported_fail(context, entry, ZR_CALL_BINDING_INVALID_SLOT);
+    if (candidate->contract.operation == ZR_CALL_BINDING_OPERATION_META) {
+        /* META_CALL sites bind @call, which is installed in the meta table
+         * rather than the ordinary member descriptor array. Keep the exact
+         * provider function check for that slot as well. */
+        const SZrMeta *meta = prototype->metaTable.metas[ZR_META_CALL];
+        if (meta == ZR_NULL || meta->metaType != ZR_META_CALL ||
+            meta->function != candidate->target.vm.function)
+            return imported_fail(context, entry, ZR_CALL_BINDING_TARGET_NOT_FOUND);
+    } else {
+        for (TZrUInt32 index = 0u; index < prototype->memberDescriptorCount; ++index) {
+            const SZrMemberDescriptor *descriptor = &prototype->memberDescriptors[index];
+            if (descriptor->methodFunction != candidate->target.vm.function) continue;
+            /* TODO: 同一函数体若由多个成员描述符共享，首个身份不匹配就拒绝会错过后续匹配；
+             * 当前编译器对调用目标拒绝重复描述符，需检查载入或程序构造的 provider 可达性。 */
+            if (!zr_call_binding_descriptor_matches(consumer, entry, descriptor))
+                return imported_fail(context, entry, ZR_CALL_BINDING_INVALID_RELOCATION);
+            if (guard->cachedDescriptorIndex != ZR_CALL_BINDING_SLOT_NONE)
+                return imported_fail(context, entry, ZR_CALL_BINDING_AMBIGUOUS_TARGET);
+            guard->cachedDescriptorIndex = index;
+            guard->cachedIsStatic = descriptor->isStatic;
+            if (entry->binding.contract.bindingKind == ZR_CALL_BINDING_VIRTUAL &&
+                entry->binding.contract.dispatchSlot != descriptor->virtualSlotIndex)
+                return imported_fail(context, entry, ZR_CALL_BINDING_INVALID_SLOT);
+        }
+        if (guard->cachedDescriptorIndex == ZR_CALL_BINDING_SLOT_NONE)
+            return imported_fail(context, entry, ZR_CALL_BINDING_TARGET_NOT_FOUND);
     }
-    if (guard->cachedDescriptorIndex == ZR_CALL_BINDING_SLOT_NONE)
-        return imported_fail(context, entry, ZR_CALL_BINDING_TARGET_NOT_FOUND);
     entry->picSlotCount = 1u;
     candidate->target.ownerLayoutGeneration = prototype->layoutGeneration;
     candidate->target.dispatchSlotCount = prototype->nextVirtualSlotIndex;
