@@ -4049,6 +4049,14 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
         target_link_libraries(zr_vm_compiler_call_lowering_focus_test PRIVATE zr_vm_lib_network_static)
     endif ()
 
+    zr_vm_add_unity_test_target(zr_vm_numeric_literals_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_literals.c)
+    target_include_directories(zr_vm_numeric_literals_test PRIVATE
+            ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include)
+    zr_vm_link_parser_core(zr_vm_numeric_literals_test)
+    add_test(NAME numeric_literals COMMAND zr_vm_numeric_literals_test)
+
     zr_vm_add_unity_test_target(
             zr_vm_literal_surface_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_prototype.c

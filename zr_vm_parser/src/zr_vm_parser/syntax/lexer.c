@@ -9,6 +9,10 @@
 #include "zr_vm_core/string.h"
 
 #include <ctype.h>
+#include <errno.h>
+#include <float.h>
+#include <math.h>
+#include <stdint.h>
 #include <string.h>
 
 // token 拼写与编号的配对项；TokenToString 按编号查找，不依赖表顺序。
@@ -290,33 +294,20 @@ static EZrToken read_identifier(SZrLexState *ls, TZrSemInfo *seminfo) {
 static EZrToken read_number(SZrLexState *ls, TZrSemInfo *seminfo) {
     TZrBool isFloat = ZR_FALSE;
     TZrBool isHex = ZR_FALSE;
-    TZrSize start = ls->currentPos - 1;
+    TZrBool isOctal = ZR_FALSE;
 
     if (ls->currentChar == '0') {
-        save_char(ls, (TZrChar) ls->currentChar);
+        save_char(ls, (TZrChar)ls->currentChar);
         next_char(ls);
-        // BUG: 0x 后未要求至少一位十六进制数字；`0x;` 被转为正常 INTEGER 0。
         if (ls->currentChar == 'x' || ls->currentChar == 'X') {
             isHex = ZR_TRUE;
-            save_char(ls, (TZrChar) ls->currentChar);
+            save_char(ls, (TZrChar)ls->currentChar);
             next_char(ls);
+            if (!isxdigit(ls->currentChar)) {
+                ZrParser_Lexer_SyntaxError(ls, "Hexadecimal literal requires a digit");
+            }
         } else if (ls->currentChar >= '0' && ls->currentChar <= '7') {
-            // 八进制
-            while (ls->currentChar >= '0' && ls->currentChar <= '7') {
-                save_char(ls, (TZrChar) ls->currentChar);
-                next_char(ls);
-            }
-            // 解析八进制
-            TZrInt64 value = 0;
-            // BUG: `07` 恰在 sourceLength 结束时末位被排除而得 0；`07\r\n` 中
-            // next_char 一次跨过 CRLF，循环反而把 CR 当数字计入，得到 21。
-            // BUG: 足够长的八进制字面量没有范围检查，value * 8 会发生有符号溢出。
-            for (TZrSize i = start; i < ls->currentPos - 1; i++) {
-                value = value * 8 + (ls->source[i] - '0');
-            }
-            seminfo->intValue = value;
-            seminfo->stringValue = ZrCore_String_Create(ls->state, ls->buffer, ls->bufferLength);
-            return ZR_TK_INTEGER;
+            isOctal = ZR_TRUE;
         }
     }
 
@@ -337,7 +328,6 @@ static EZrToken read_number(SZrLexState *ls, TZrSemInfo *seminfo) {
         }
     }
 
-    // BUG: e 或 e+ 后未要求至少一位数字；`1e;` 和 `1e+;` 被转为正常 FLOAT 1。
     // 检查是否有指数
     if ((ls->currentChar == 'e' || ls->currentChar == 'E') && !isHex) {
         isFloat = ZR_TRUE;
@@ -347,6 +337,9 @@ static EZrToken read_number(SZrLexState *ls, TZrSemInfo *seminfo) {
             save_char(ls, (TZrChar) ls->currentChar);
             next_char(ls);
         }
+        if (!isdigit(ls->currentChar)) {
+            ZrParser_Lexer_SyntaxError(ls, "Numeric exponent requires a digit");
+        }
         while (isdigit(ls->currentChar)) {
             save_char(ls, (TZrChar) ls->currentChar);
             next_char(ls);
@@ -354,28 +347,52 @@ static EZrToken read_number(SZrLexState *ls, TZrSemInfo *seminfo) {
     }
 
     // 检查是否有类型后缀
-    if (ls->currentChar == 'f' || ls->currentChar == 'F' || ls->currentChar == 'd' || ls->currentChar == 'D') {
+    if (!isHex && (ls->currentChar == 'f' || ls->currentChar == 'F' || ls->currentChar == 'd' || ls->currentChar == 'D')) {
         isFloat = ZR_TRUE;
         save_char(ls, (TZrChar) ls->currentChar);
         next_char(ls);
     }
 
-    // BUG: 公开接口只保证 sourceLength 字节可读；若数字恰在无 NUL 的源切片末端，
-    // strtod/strtoull/strtoll 仍按 C 字符串向后找终止符，可读过调用方缓冲边界。
-    // 解析数字
+    /* Conversion must use the terminated token buffer, never the borrowed source slice. */
+    seminfo->stringValue = ZrCore_String_Create(ls->state, ls->buffer, ls->bufferLength);
     if (isFloat) {
-        seminfo->floatValue = strtod(&ls->source[start], ZR_NULL);
-        seminfo->stringValue = ZrCore_String_Create(ls->state, ls->buffer, ls->bufferLength);
-        return ZR_TK_FLOAT;
-    } else {
-        if (isHex) {
-            seminfo->intValue = (TZrInt64) strtoull(&ls->source[start], ZR_NULL, 16);
-        } else {
-            seminfo->intValue = (TZrInt64) strtoll(&ls->source[start], ZR_NULL, 10);
+        char *end = ZR_NULL;
+        errno = 0;
+        seminfo->floatValue = strtod(ls->buffer, &end);
+        if (errno == ERANGE || !isfinite(seminfo->floatValue) ||
+            ((ls->buffer[ls->bufferLength - 1] == 'f' ||
+              ls->buffer[ls->bufferLength - 1] == 'F') &&
+             fabs(seminfo->floatValue) > FLT_MAX)) {
+            ZrParser_Lexer_SyntaxError(ls, "Floating-point literal is out of range");
         }
-        seminfo->stringValue = ZrCore_String_Create(ls->state, ls->buffer, ls->bufferLength);
-        return ZR_TK_INTEGER;
+        if (end == ls->buffer || (*end != '\0' &&
+            !((*end == 'f' || *end == 'F' || *end == 'd' || *end == 'D') && end[1] == '\0'))) {
+            ZrParser_Lexer_SyntaxError(ls, "Invalid floating-point literal");
+        }
+        return ZR_TK_FLOAT;
     }
+
+    /* Hex and octal retain the existing 64-bit bit-pattern spelling. Decimal is signed. */
+    TZrUInt64 value = 0;
+    TZrUInt64 limit = (isHex || isOctal) ? UINT64_MAX : INT64_MAX;
+    unsigned base = isHex ? 16u : (isOctal ? 8u : 10u);
+    for (TZrSize i = isHex ? 2 : 0; i < ls->bufferLength; ++i) {
+        unsigned char c = (unsigned char)ls->buffer[i];
+        unsigned digit = c >= '0' && c <= '9' ? (unsigned)(c - '0') :
+                         (unsigned)(tolower(c) - 'a' + 10);
+        if (digit >= base) {
+            ZrParser_Lexer_SyntaxError(ls, "Invalid digit in integer literal");
+            break;
+        }
+        if (value > (limit - digit) / base) {
+            ZrParser_Lexer_SyntaxError(ls, "Integer literal is out of range");
+            break;
+        }
+        value = value * base + digit;
+    }
+    seminfo->intValue = value <= INT64_MAX ? (TZrInt64)value :
+                       -1 - (TZrInt64)(UINT64_MAX - value);
+    return ZR_TK_INTEGER;
 }
 
 // 解码普通字符串转义；词法错误保存在当前 token 并由 parser 继续处理。

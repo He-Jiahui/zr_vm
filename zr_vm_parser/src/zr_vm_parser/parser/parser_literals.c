@@ -393,6 +393,13 @@ SZrAstNode *parse_literal(SZrParserState *ps) {
     SZrFileRange literalLoc = get_current_token_location(ps);
     SZrAstNode *node;
 
+    if ((token == ZR_TK_INTEGER || token == ZR_TK_FLOAT) && ps->lexer->t.hasLexError) {
+        report_error(ps, ps->lexer->t.lexErrorMessage != ZR_NULL
+                         ? ps->lexer->t.lexErrorMessage : "Invalid numeric literal");
+        ZrParser_Lexer_Next(ps->lexer);
+        return ZR_NULL;
+    }
+
     switch (token) {
         case ZR_TK_BOOLEAN: {
             TZrBool value = ps->lexer->t.seminfo.booleanValue;
