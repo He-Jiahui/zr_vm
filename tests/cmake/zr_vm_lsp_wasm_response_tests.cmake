@@ -1,6 +1,11 @@
-# 本文件也编译 wasm_exports.cpp 的宿主测试；仅在测试目录尚无 C++ 编译器时启用语言。
+# 本文件也编译 wasm_exports.cpp 的宿主测试；只在探测到 C++ 编译器时启用语言，
+# 纯 C 工具链仍注册下面的响应封装测试，并跳过需要 C++ 的导出测试。
 if (NOT CMAKE_CXX_COMPILER_LOADED)
-    enable_language(CXX)
+    include(CheckLanguage)
+    check_language(CXX)
+    if (CMAKE_CXX_COMPILER)
+        enable_language(CXX)
+    endif ()
 endif ()
 
 # 响应封装先用小型 C 可执行文件检查 JSON 所有权与分配失败，不需要启动浏览器 worker。
@@ -17,6 +22,11 @@ zr_link_third_party_for_target(zr_vm_language_server_wasm_response_test "zr_c_js
 # 与含 VM 的导出测试分开报告，便于定位 JSON 封装层的退化。
 add_test(NAME language_server_wasm_response
         COMMAND $<TARGET_FILE:zr_vm_language_server_wasm_response_test>)
+
+if (NOT CMAKE_CXX_COMPILER_LOADED)
+    message(STATUS "Skipping zr_vm_language_server_wasm_exports_test: no C++ compiler is available")
+    return()
+endif ()
 
 # 宿主测试把 WASM 导出和诊断投影直接编入可执行文件，以检查文档快照与 JSON 响应契约。
 zr_vm_add_support_target(zr_vm_language_server_wasm_exports_test
