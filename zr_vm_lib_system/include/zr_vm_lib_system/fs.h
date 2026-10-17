@@ -825,3 +825,292 @@ TZrBool ZrSystem_Fs_Stream_SetLength(ZrLibCallContext *context, SZrTypeValue *re
 TZrBool ZrSystem_Fs_Stream_Close(ZrLibCallContext *context, SZrTypeValue *result);
 
 #endif // ZR_VM_LIB_SYSTEM_FS_H
+
+/**
+ * @fn TZrBool ZrSystem_Fs_File_CopyTo(ZrLibCallContext *context, SZrTypeValue *result);
+ *
+ * ## Summary
+ * 供 System.Fs.File.copyTo 的 native descriptor 使用；完成宿主复制后，刷新原 receiver 的元数据并发布绑定目标路径的新 File。
+ *
+ * ## Parameters
+ * @param[in] context 有效且属于当前 VM/native 调用线程的上下文与 state；receiver 和实参在框架约定的调用期间借用，不由本接口释放。
+ * @param[in,out] result 框架提供的可写 VM 结果槽；正常成功发布目标对象，失败不承诺统一清零或恢复旧槽值；对象和槽由 VM 管理。
+ *
+ * ## Returns
+ * @return 正常返回 ZR_TRUE 仅在宿主 Copy、目标 File 创建及结果发布成功时发生；前置检查、宿主失败后的异常状态建立、创建/发布的普通失败返回 ZR_FALSE。分配/异常传播还可能不经普通返回离开。
+ *
+ * ## Constraints and lifecycle
+ * 脚本签名为 copyTo/moveTo(targetPath: string, overwrite?: bool)，overwrite 缺省 false。descriptor 接受 1..2 个显式实参；回调还按 receiver、result、源 fullPath、必需字符串、可选 bool 的顺序短路检查。更早失败时后续类型/参数诊断不一定到达。
+ * targetPath 指向 ReadStringArgument 返回的 VM 字符串存储；不是新分配给 C 调用者的缓冲区。没有可由调用者 free 的返回对象；目标对象由 VM/GC 管理，持久保留须使用框架的根/引用规则。
+ * 宿主 Copy/Move 为 false 时立即消费 errno 建立 IOException/线程异常状态，普通路径返回 false；它不是保证每种失败均以普通 C 返回交付的接口。内存错误可 Throw/longjmp/C++ throw 或最终终止，不能概括为全部返回 false。
+ * 宿主操作与随后 VM 包装/发布不是同一事务；后续分配或结果发布失败不会撤销已经复制/移动的磁盘内容。原 receiver 的路径字段不改绑目标；result 失败状态没有统一清零/回滚保证。
+ * File/Folder 是包装类型；本回调没有先按宿主 stat 检查对应类型再调用库层。词法重叠保护、覆盖和部分完成范围继承库 Copy/Move，仍不提供物理别名、并发路径或持久化保证。
+ * context/state、receiver、实参及结果槽必须满足 VM 的有效性和调用线程约束；少数 NULL/type 检查不验证任意非 NULL 地址。不得无同步地把同一 VM/结果槽作为并发调用资源使用。
+ * 宿主成功后调用 RefreshEntryObject，但忽略其普通 false 返回，再创建目标 File；因此成功返回不保证原 receiver 的 fileInfo 已刷新。刷新自身也可能分配或沿异常路径离开。
+ * TODO: zr_vm_lib_system/include/zr_vm_lib_system/fs.h:476、zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:254：targetPath 是 VM 实参字符串借用；File 回调的 RefreshEntryObject 可能分配，随后同一裸指针还用于 NewEntryObject。需沿 fast/inline/generic lane 的 argument pin、minor/major GC 迁移及两次分配窗口核实其有效期；当前静态链不构成已复现悬空 BUG。
+ *
+ * ## References
+ * zr_vm_lib_system/include/zr_vm_lib_system/fs.h:463
+ * zr_vm_lib_system/include/zr_vm_lib_system/fs.h:476
+ * zr_vm_lib_system/include/zr_vm_lib_system/fs.h:481
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:238
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:244
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:245
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:246
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:247
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:250
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:251
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:253
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:254
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:256
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:257
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_registry.c:49
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_registry.c:50
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_registry.c:51
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_registry.c:157
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:234
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:269
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:277
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:282
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:286
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:315
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:323
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:327
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:357
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:389
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:467
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:475
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:482
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:584
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:612
+ * zr_vm_library/include/zr_vm_library/native_binding.h:355
+ * zr_vm_library/include/zr_vm_library/native_binding.h:360
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_internal.h:237
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_internal.h:246
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:202
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:272
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:277
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:278
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:620
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1216
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1219
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1223
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1315
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1320
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1322
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1325
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c:320
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c:324
+ * zr_vm_core/src/zr_vm_core/exception/exception.c:31
+ * zr_vm_core/src/zr_vm_core/exception/exception.c:61
+ * zr_vm_core/src/zr_vm_core/exception/exception.c:85
+ * zr_vm_core/src/zr_vm_core/exception/exception.c:99
+ * zr_vm_core/src/zr_vm_core/exception/exception.c:100
+ * zr_vm_core/src/zr_vm_core/exception/exception_internal.h:9
+ * zr_vm_core/src/zr_vm_core/exception/exception_internal.h:18
+ * tests/system/test_system_fs_module.c:733
+ * tests/system/test_system_fs_module.c:757
+ * tests/system/test_system_fs_module.c:759
+ * tests/system/test_system_fs_module.c:843
+ * tests/system/test_system_fs_module.c:846
+ * tests/system/test_system_fs_module.c:848
+ * tests/system/test_system_fs_module.c:849
+ * tests/system/test_system_fs_module.c:851
+ * tests/system/test_system_fs_module.c:852
+ * tests/system/test_system_fs_module.c:873
+ * tests/system/test_system_fs_module.c:882
+ * tests/system/test_system_fs_module.c:1519
+ * tests/system/test_system_fs_module.c:1523
+ * tests/system/test_system_fs_module.c:1524
+ */
+
+/**
+ * @fn TZrBool ZrSystem_Fs_File_MoveTo(ZrLibCallContext *context, SZrTypeValue *result);
+ *
+ * ## Summary
+ * 供 System.Fs.File.moveTo 的 native descriptor 使用；完成宿主移动后，刷新原 receiver 的元数据并发布绑定目标路径的新 File，原 receiver 不改绑。
+ *
+ * ## Parameters
+ * @param[in] context 有效且属于当前 VM/native 调用线程的上下文与 state；receiver 和实参在框架约定的调用期间借用，不由本接口释放。
+ * @param[in,out] result 框架提供的可写 VM 结果槽；正常成功发布目标对象，失败不承诺统一清零或恢复旧槽值；对象和槽由 VM 管理。
+ *
+ * ## Returns
+ * @return 正常返回 ZR_TRUE 仅在宿主 Move、目标 File 创建及结果发布成功时发生；前置检查或创建/发布的普通失败返回 ZR_FALSE，宿主 Move 失败交给 IOException 路径。异常传播可能不普通返回。
+ *
+ * ## Constraints and lifecycle
+ * 脚本签名为 copyTo/moveTo(targetPath: string, overwrite?: bool)，overwrite 缺省 false。descriptor 接受 1..2 个显式实参；回调还按 receiver、result、源 fullPath、必需字符串、可选 bool 的顺序短路检查。更早失败时后续类型/参数诊断不一定到达。
+ * targetPath 指向 ReadStringArgument 返回的 VM 字符串存储；不是新分配给 C 调用者的缓冲区。没有可由调用者 free 的返回对象；目标对象由 VM/GC 管理，持久保留须使用框架的根/引用规则。
+ * 宿主 Copy/Move 为 false 时立即消费 errno 建立 IOException/线程异常状态，普通路径返回 false；它不是保证每种失败均以普通 C 返回交付的接口。内存错误可 Throw/longjmp/C++ throw 或最终终止，不能概括为全部返回 false。
+ * 宿主操作与随后 VM 包装/发布不是同一事务；后续分配或结果发布失败不会撤销已经复制/移动的磁盘内容。原 receiver 的路径字段不改绑目标；result 失败状态没有统一清零/回滚保证。
+ * File/Folder 是包装类型；本回调没有先按宿主 stat 检查对应类型再调用库层。词法重叠保护、覆盖和部分完成范围继承库 Copy/Move，仍不提供物理别名、并发路径或持久化保证。
+ * context/state、receiver、实参及结果槽必须满足 VM 的有效性和调用线程约束；少数 NULL/type 检查不验证任意非 NULL 地址。不得无同步地把同一 VM/结果槽作为并发调用资源使用。
+ * 宿主成功后调用 RefreshEntryObject，但忽略其普通 false 返回，再创建目标 File；因此成功返回不保证原 receiver 的 fileInfo 已刷新。刷新自身也可能分配或沿异常路径离开。
+ * 移动后原 receiver 仍描述旧路径，旧路径可以已消失；返回的新 File 才绑定目标路径。
+ * TODO: zr_vm_lib_system/include/zr_vm_lib_system/fs.h:495、zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:277：targetPath 是 VM 实参字符串借用；File 回调的 RefreshEntryObject 可能分配，随后同一裸指针还用于 NewEntryObject。需沿 fast/inline/generic lane 的 argument pin、minor/major GC 迁移及两次分配窗口核实其有效期；当前静态链不构成已复现悬空 BUG。
+ *
+ * ## References
+ * zr_vm_lib_system/include/zr_vm_lib_system/fs.h:482
+ * zr_vm_lib_system/include/zr_vm_lib_system/fs.h:495
+ * zr_vm_lib_system/include/zr_vm_lib_system/fs.h:500
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:261
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:267
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:268
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:269
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:270
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:273
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:274
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:276
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:277
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:279
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:280
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_registry.c:49
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_registry.c:160
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:269
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:277
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:315
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:389
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:467
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:475
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:482
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:584
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:612
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:277
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1320
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1322
+ * zr_vm_core/src/zr_vm_core/exception/exception.c:61
+ * zr_vm_core/src/zr_vm_core/exception/exception.c:85
+ * tests/system/test_system_fs_module.c:759
+ * tests/system/test_system_fs_module.c:760
+ * tests/system/test_system_fs_module.c:843
+ * tests/system/test_system_fs_module.c:848
+ * tests/system/test_system_fs_module.c:849
+ * tests/system/test_system_fs_module.c:1523
+ */
+
+/**
+ * @fn TZrBool ZrSystem_Fs_Folder_CopyTo(ZrLibCallContext *context, SZrTypeValue *result);
+ *
+ * ## Summary
+ * 供 System.Fs.Folder.copyTo 的 native descriptor 使用；完成宿主复制后发布目标 Folder，本入口不刷新原 Folder 的快照。
+ *
+ * ## Parameters
+ * @param[in] context 有效且属于当前 VM/native 调用线程的上下文与 state；receiver 和实参在框架约定的调用期间借用，不由本接口释放。
+ * @param[in,out] result 框架提供的可写 VM 结果槽；正常成功发布目标对象，失败不承诺统一清零或恢复旧槽值；对象和槽由 VM 管理。
+ *
+ * ## Returns
+ * @return 正常返回 ZR_TRUE 仅在宿主 Copy 与目标 Folder 创建/发布成功时发生；前置检查、宿主 I/O 错误或普通包装失败返回 ZR_FALSE，VM 分配/异常仍可能非局部离开。
+ *
+ * ## Constraints and lifecycle
+ * 脚本签名为 copyTo/moveTo(targetPath: string, overwrite?: bool)，overwrite 缺省 false。descriptor 接受 1..2 个显式实参；回调还按 receiver、result、源 fullPath、必需字符串、可选 bool 的顺序短路检查。更早失败时后续类型/参数诊断不一定到达。
+ * targetPath 指向 ReadStringArgument 返回的 VM 字符串存储；不是新分配给 C 调用者的缓冲区。没有可由调用者 free 的返回对象；目标对象由 VM/GC 管理，持久保留须使用框架的根/引用规则。
+ * 宿主 Copy/Move 为 false 时立即消费 errno 建立 IOException/线程异常状态，普通路径返回 false；它不是保证每种失败均以普通 C 返回交付的接口。内存错误可 Throw/longjmp/C++ throw 或最终终止，不能概括为全部返回 false。
+ * 宿主操作与随后 VM 包装/发布不是同一事务；后续分配或结果发布失败不会撤销已经复制/移动的磁盘内容。原 receiver 的路径字段不改绑目标；result 失败状态没有统一清零/回滚保证。
+ * File/Folder 是包装类型；本回调没有先按宿主 stat 检查对应类型再调用库层。词法重叠保护、覆盖和部分完成范围继承库 Copy/Move，仍不提供物理别名、并发路径或持久化保证。
+ * context/state、receiver、实参及结果槽必须满足 VM 的有效性和调用线程约束；少数 NULL/type 检查不验证任意非 NULL 地址。不得无同步地把同一 VM/结果槽作为并发调用资源使用。
+ * 此回调没有 RefreshEntryObject 步骤；复制后原 Folder 仍保留源路径/快照描述，不由本回调刷新。仅创建新的目标 Folder 包装对象。
+ * TODO: zr_vm_lib_system/include/zr_vm_lib_system/fs.h:629、zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:475：targetPath 借自 VM 实参；NewEntryObject 在 PopulateEntryObject 使用 originalPath 前先经 Type_NewInstance 分配。需核实各调用 lane 的 pin、GC 迁移及分配窗口有效期；尚未用强制 GC 或 fault injection 证实悬空。
+ *
+ * ## References
+ * zr_vm_lib_system/include/zr_vm_lib_system/fs.h:616
+ * zr_vm_lib_system/include/zr_vm_lib_system/fs.h:629
+ * zr_vm_lib_system/include/zr_vm_lib_system/fs.h:634
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:315
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:321
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:322
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:323
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:324
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:327
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:328
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:330
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:331
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_registry.c:49
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_registry.c:180
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:269
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:277
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:315
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:389
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:467
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:475
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:482
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:486
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:496
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:509
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:513
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:523
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:539
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:573
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:579
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:277
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1320
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1322
+ * zr_vm_core/src/zr_vm_core/exception/exception.c:61
+ * zr_vm_core/src/zr_vm_core/exception/exception.c:85
+ * tests/system/test_system_fs_module.c:776
+ * tests/system/test_system_fs_module.c:777
+ * tests/system/test_system_fs_module.c:843
+ * tests/system/test_system_fs_module.c:848
+ * tests/system/test_system_fs_module.c:849
+ * tests/system/test_system_fs_module.c:1523
+ */
+
+/**
+ * @fn TZrBool ZrSystem_Fs_Folder_MoveTo(ZrLibCallContext *context, SZrTypeValue *result);
+ *
+ * ## Summary
+ * 供 System.Fs.Folder.moveTo 的 native descriptor 使用；完成宿主移动后发布目标 Folder，本入口不改绑或刷新原 Folder。
+ *
+ * ## Parameters
+ * @param[in] context 有效且属于当前 VM/native 调用线程的上下文与 state；receiver 和实参在框架约定的调用期间借用，不由本接口释放。
+ * @param[in,out] result 框架提供的可写 VM 结果槽；正常成功发布目标对象，失败不承诺统一清零或恢复旧槽值；对象和槽由 VM 管理。
+ *
+ * ## Returns
+ * @return 正常返回 ZR_TRUE 仅在宿主 Move 与目标 Folder 创建/发布成功时发生；普通失败返回 ZR_FALSE 或沿 VM 异常路径离开，返回失败不表示宿主操作未发生。
+ *
+ * ## Constraints and lifecycle
+ * 脚本签名为 copyTo/moveTo(targetPath: string, overwrite?: bool)，overwrite 缺省 false。descriptor 接受 1..2 个显式实参；回调还按 receiver、result、源 fullPath、必需字符串、可选 bool 的顺序短路检查。更早失败时后续类型/参数诊断不一定到达。
+ * targetPath 指向 ReadStringArgument 返回的 VM 字符串存储；不是新分配给 C 调用者的缓冲区。没有可由调用者 free 的返回对象；目标对象由 VM/GC 管理，持久保留须使用框架的根/引用规则。
+ * 宿主 Copy/Move 为 false 时立即消费 errno 建立 IOException/线程异常状态，普通路径返回 false；它不是保证每种失败均以普通 C 返回交付的接口。内存错误可 Throw/longjmp/C++ throw 或最终终止，不能概括为全部返回 false。
+ * 宿主操作与随后 VM 包装/发布不是同一事务；后续分配或结果发布失败不会撤销已经复制/移动的磁盘内容。原 receiver 的路径字段不改绑目标；result 失败状态没有统一清零/回滚保证。
+ * File/Folder 是包装类型；本回调没有先按宿主 stat 检查对应类型再调用库层。词法重叠保护、覆盖和部分完成范围继承库 Copy/Move，仍不提供物理别名、并发路径或持久化保证。
+ * context/state、receiver、实参及结果槽必须满足 VM 的有效性和调用线程约束；少数 NULL/type 检查不验证任意非 NULL 地址。不得无同步地把同一 VM/结果槽作为并发调用资源使用。
+ * 此回调没有 RefreshEntryObject 步骤；原 Folder 的路径/快照保留原描述，移动后该路径可以已不存在。仅创建新的目标 Folder 包装对象。
+ * TODO: zr_vm_lib_system/include/zr_vm_lib_system/fs.h:648、zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:475：targetPath 借自 VM 实参；NewEntryObject 在 PopulateEntryObject 使用 originalPath 前先经 Type_NewInstance 分配。需核实各调用 lane 的 pin、GC 迁移及分配窗口有效期；尚未用强制 GC 或 fault injection 证实悬空。
+ *
+ * ## References
+ * zr_vm_lib_system/include/zr_vm_lib_system/fs.h:635
+ * zr_vm_lib_system/include/zr_vm_lib_system/fs.h:648
+ * zr_vm_lib_system/include/zr_vm_lib_system/fs.h:653
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:334
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:340
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:341
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:342
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:343
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:346
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:347
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:349
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c:350
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_registry.c:49
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_registry.c:183
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:269
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:277
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:315
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:389
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:467
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:475
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:482
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:486
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:513
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:539
+ * zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c:579
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:277
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1320
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1322
+ * zr_vm_core/src/zr_vm_core/exception/exception.c:61
+ * zr_vm_core/src/zr_vm_core/exception/exception.c:85
+ * tests/system/test_system_fs_module.c:778
+ * tests/system/test_system_fs_module.c:779
+ * tests/system/test_system_fs_module.c:843
+ * tests/system/test_system_fs_module.c:848
+ * tests/system/test_system_fs_module.c:849
+ * tests/system/test_system_fs_module.c:1523
+ */
