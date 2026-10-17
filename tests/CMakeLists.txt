@@ -57,6 +57,22 @@ set(ZR_VM_PERFORMANCE_RUNNER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_perfor
 find_program(ZR_VM_NODE_EXECUTABLE node)
 find_program(ZR_VM_BENCHMARK_PYTHON_EXECUTABLE NAMES python3 python)
 
+# LLVM 14 needs an opt-in for ptr IR; newer Clang releases removed that flag.
+# Probe the IR dialect instead of passing a removed backend option everywhere.
+find_program(ZR_VM_TESTS_CLANG_EXECUTABLE NAMES clang)
+set(ZR_VM_TESTS_LLVM_POINTER_FLAGS "")
+if (ZR_VM_TESTS_CLANG_EXECUTABLE)
+    set(_zr_pointer_probe "${ZR_VM_TESTS_BINARY_DIR_NORMALIZED}/llvm-pointer-probe")
+    file(WRITE "${_zr_pointer_probe}.ll" "define ptr @identity(ptr %p) { ret ptr %p }\n")
+    execute_process(COMMAND "${ZR_VM_TESTS_CLANG_EXECUTABLE}"
+            -Wno-override-module -c "${_zr_pointer_probe}.ll" -o "${_zr_pointer_probe}.o"
+            RESULT_VARIABLE _zr_pointer_result OUTPUT_QUIET ERROR_QUIET)
+    if (NOT _zr_pointer_result EQUAL 0)
+        set(ZR_VM_TESTS_LLVM_POINTER_FLAGS "-mllvm -opaque-pointers")
+    endif ()
+endif ()
+add_compile_definitions(ZR_VM_TESTS_LLVM_POINTER_FLAGS="${ZR_VM_TESTS_LLVM_POINTER_FLAGS}")
+
 function(zr_vm_apply_common_test_settings target_name)
     target_include_directories(${target_name} PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core

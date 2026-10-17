@@ -461,7 +461,7 @@ static void execute_source_backend(const char *source,
                                                                     &aotOptions));
         snprintf(command,
                  sizeof(command),
-                 "\"%s\" -mllvm -opaque-pointers -fPIC -shared \"%s\" "
+                 "\"%s\" " ZR_VM_TESTS_LLVM_POINTER_FLAGS " -fPIC -shared \"%s\" "
                  "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
                  ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
                  "-lzr_xx_hash -lzr_utf8proc -lm -o \"%s\"",

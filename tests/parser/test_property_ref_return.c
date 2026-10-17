@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "harness/runtime_support.h"
+#include "harness/aot_c_link_support.h"
 #include "harness/module_fixture_support.h"
 #include "zr_vm_core/io.h"
 #include "zr_vm_core/function.h"
@@ -1089,7 +1090,7 @@ static void test_ref_property_aot_writers_keep_managed_reference_helpers(void) {
     TEST_ASSERT_EQUAL_INT(
             0,
             system(
-                    "clang -mllvm -opaque-pointers "
+                    "clang " ZR_VM_TESTS_LLVM_POINTER_FLAGS " "
                     "-c property_ref_return_aot.ll "
                     "-o property_ref_return_aot_llvm.o"));
 #endif

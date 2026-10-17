@@ -7,6 +7,10 @@
 #define ZR_VM_TESTS_C_FLAGS ""
 #endif
 
+#ifndef ZR_VM_TESTS_LLVM_POINTER_FLAGS
+#define ZR_VM_TESTS_LLVM_POINTER_FLAGS ""
+#endif
+
 /* Generated shared libraries link the same instrumented static runtime. */
 /* AOT C 冒烟测试直接调用宿主链接器；库顺序和平台依赖须与 CMake 构建保持一致。 */
 #if defined(ZR_PLATFORM_UNIX)
