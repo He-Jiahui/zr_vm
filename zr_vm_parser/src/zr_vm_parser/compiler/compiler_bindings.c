@@ -422,7 +422,6 @@ static void compiler_bind_function_parameters_for_return_inference(
 static void compiler_infer_unresolved_function_binding_return(
         SZrCompilerState *cs,
         SZrFunctionTypeInfo *functionInfo) {
-    SZrTypeEnvironment *declarationEnv;
     SZrTypeEnvironment *savedEnv = cs->typeEnv;
     SZrTypeEnvironment *paramEnv;
     SZrAstNode *savedFunctionNode = cs->currentFunctionNode;
@@ -430,6 +429,7 @@ static void compiler_infer_unresolved_function_binding_return(
     SZrFunctionTypedTypeRef returnMetadata;
     SZrInferredType inferredReturnType;
     TZrBool hasReturnType = ZR_FALSE;
+    TZrBool isLocalDeclaration = ZR_FALSE;
     TZrBool built;
 
     /* A compiled declaration owns its scoped contract, including weak Object
@@ -442,28 +442,27 @@ static void compiler_infer_unresolved_function_binding_return(
         return;
     }
 
-    /* Forward declarations still need parameter-aware inference. Use the
-     * environment that owns the declaration, excluding alias-site shadows. */
-    for (declarationEnv = savedEnv; declarationEnv != ZR_NULL;
-         declarationEnv = declarationEnv->parent) {
-        for (TZrSize index = 0; index < declarationEnv->functionReturnTypes.length; index++) {
-            SZrFunctionTypeInfo **entry = (SZrFunctionTypeInfo **)ZrCore_Array_Get(
-                    &declarationEnv->functionReturnTypes, index);
-            if (entry != ZR_NULL && *entry == functionInfo) {
-                goto declaration_found;
-            }
+    /* Infer forward declarations only in their owning lexical environment.
+     * Nested alias scopes may shadow captures and cannot reconstruct it. */
+    for (TZrSize index = 0; index < savedEnv->functionReturnTypes.length; index++) {
+        SZrFunctionTypeInfo **entry = (SZrFunctionTypeInfo **)ZrCore_Array_Get(
+                &savedEnv->functionReturnTypes, index);
+        if (entry != ZR_NULL && *entry == functionInfo) {
+            isLocalDeclaration = ZR_TRUE;
+            break;
         }
     }
-    return;
+    if (!isLocalDeclaration) {
+        return;
+    }
 
-declaration_found:
     paramEnv = ZrParser_TypeEnvironment_New(cs->state);
     if (paramEnv == ZR_NULL) {
         return;
     }
     declaration = &functionInfo->declarationNode->data.functionDeclaration;
-    paramEnv->parent = declarationEnv;
-    paramEnv->semanticContext = declarationEnv->semanticContext;
+    paramEnv->parent = savedEnv;
+    paramEnv->semanticContext = savedEnv->semanticContext;
     cs->typeEnv = paramEnv;
     cs->currentFunctionNode = functionInfo->declarationNode;
     compiler_bind_function_parameters_for_return_inference(cs, declaration->params);
@@ -474,6 +473,9 @@ declaration_found:
     if (built && !cs->hasError && hasReturnType) {
         (void)compiler_refine_function_type_binding_return(
                 cs, functionInfo->declarationNode, &inferredReturnType);
+        /* Only body compilation finalizes the scoped contract. A forward
+         * result may improve as declarations in this environment are bound. */
+        functionInfo->hasInferredReturnType = ZR_FALSE;
     }
     ZrParser_InferredType_Free(cs->state, &inferredReturnType);
     cs->typeEnv = savedEnv;
