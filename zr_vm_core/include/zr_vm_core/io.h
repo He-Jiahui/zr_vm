@@ -51,6 +51,10 @@ struct ZR_STRUCT_ALIGN SZrIo {
     TZrBool isBinary;
     TZrBool hasReadError;
     TZrUInt32 sourceVersionPatch;
+    /* Private decoder state; initialized by Io_Init and scoped to ReadSourceNew. */
+    TZrBool boundedBinaryInput;
+    TZrSize decodeAllocationBudget;
+    TZrUInt32 decodeDepth;
 };
 
 typedef struct SZrIo SZrIo;
@@ -698,7 +702,7 @@ ZR_CORE_API TZrSize ZrCore_Io_Read(SZrIo *io, TZrBytePtr buffer, TZrSize size);
 
 /** @brief 解析二进制源树供模块加载或 AOT 转换；成功返回值由调用方用 ReadSourceFree 回收。 */
 /** @pre io 已初始化，且 io->state、state->global 和 io->read 有效。 */
-/** @note BUG: 当前失败路径不释放已分配的半成品源树；不可信输入还可触发长度溢出，见实现注释。 */
+/** @note Rejects truncated/incompatible input and frees partial native storage on failure. */
 ZR_CORE_API SZrIoSource *ZrCore_Io_ReadSourceNew(SZrIo *io);
 
 /** @brief 递归回收源树的原生数组；源树中的 GC 字符串和值不由此接口释放。 */

@@ -8905,6 +8905,15 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND UNIX AND NOT 
     set_tests_properties(aot_integer_boundaries PROPERTIES TIMEOUT 120)
 endif()
 
+if (TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static)
+    zr_vm_add_unity_test_target(zr_vm_binary_loader_rejection_test
+        ${CMAKE_SOURCE_DIR}/tests/parser/test_binary_loader_rejection.c)
+    target_include_directories(zr_vm_binary_loader_rejection_test PRIVATE ${CMAKE_SOURCE_DIR}/tests)
+    zr_vm_link_parser_core(zr_vm_binary_loader_rejection_test)
+    add_test(NAME binary_loader_rejection COMMAND zr_vm_binary_loader_rejection_test)
+    set_tests_properties(binary_loader_rejection PROPERTIES TIMEOUT 60)
+endif()
+
 if(TARGET zr_vm_cli_executable)
     add_test(NAME compiler_constructor_prototype_growth
             COMMAND ${CMAKE_COMMAND}
