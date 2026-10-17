@@ -201,8 +201,8 @@ if __name__ == "__main__":
 # - tests/tooling/test_layout_generated_includes.py:16
 # - tests/tooling/test_layout_generated_includes.py:17
 # - tests/tooling/test_layout_generated_includes.py:41
-# - scripts/layout/apply_moves.py:75
-# - scripts/layout/apply_moves.py:82
+# - scripts/layout/apply_moves.py:215
+# - scripts/layout/apply_moves.py:222
 
 # @unit FIXTURE_ROOT
 # ## Summary
@@ -214,8 +214,8 @@ if __name__ == "__main__":
 # - tests/tooling/test_layout_generated_includes.py:25
 # - tests/tooling/test_layout_generated_includes.py:26
 # - tests/tooling/test_layout_generated_includes.py:38
-# - scripts/layout/apply_moves.py:41
-# - scripts/layout/apply_moves.py:43
+# - scripts/layout/apply_moves.py:107
+# - scripts/layout/apply_moves.py:109
 
 # @unit REAL_BUILD
 # ## Summary
@@ -424,8 +424,8 @@ if __name__ == "__main__":
 # - tests/tooling/test_layout_generated_includes.py:132
 # - scripts/layout/generated_includes.py:127
 # - scripts/layout/generated_includes.py:180
-# - scripts/layout/apply_moves.py:922
-# - scripts/layout/apply_moves.py:927
+# - scripts/layout/apply_moves.py:2143
+# - scripts/layout/apply_moves.py:2148
 
 # @unit GeneratedIncludeTests.test_acceptance_snapshot_and_vendor_paths_are_rejected
 # ## Summary

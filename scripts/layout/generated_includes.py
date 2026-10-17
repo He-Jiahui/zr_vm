@@ -349,8 +349,8 @@ def classify_include(
 # ## References
 # - scripts/layout/generated_includes.py:130
 # - scripts/layout/generated_includes.py:184
-# - scripts/layout/apply_moves.py:919
-# - scripts/layout/apply_moves.py:927
+# - scripts/layout/apply_moves.py:2140
+# - scripts/layout/apply_moves.py:2148
 # - tests/tooling/test_layout_generated_includes.py:48
 # - tests/tooling/test_layout_generated_includes.py:93
 # - tests/tooling/test_layout_generated_includes.py:145

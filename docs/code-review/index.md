@@ -245,3 +245,6 @@ doc_type: category-index
 
 
 - [Layout 迁移工具与测试的调用及生命周期契约](batches/20261017-layout-move-script-contracts.md)：[118 个完整单元](coverage/layout_move_script.tsv)，107 份中文注释、36 项现有测试前后通过；保留非 ASCII 别名字符域 TODO。
+
+
+- [Layout 辅助模块既有注释引用更正](batches/20261017-layout-borrowed-comment-references.md)：四份已审源码的 22 处引用数字、11 个既有单元，0 新单元；现有测试前后各 18 通过、1 Windows 权限跳过，程序和源码行数保持不变。

@@ -276,8 +276,8 @@ if __name__ == "__main__":
 # - tests/tooling/test_layout_dormant_contexts.py:16
 # - tests/tooling/test_layout_dormant_contexts.py:20
 # - tests/tooling/test_layout_dormant_contexts.py:21
-# - scripts/layout/apply_moves.py:39
-# - scripts/layout/apply_moves.py:60
+# - scripts/layout/apply_moves.py:105
+# - scripts/layout/apply_moves.py:143
 
 # @unit tests/tooling/test_layout_dormant_contexts.py::module::apply_moves_import [block]
 # ## Summary
@@ -291,7 +291,7 @@ if __name__ == "__main__":
 # - tests/tooling/test_layout_dormant_contexts.py:19
 # - tests/tooling/test_layout_dormant_contexts.py:20
 # - tests/tooling/test_layout_dormant_contexts.py:21
-# - scripts/layout/apply_moves.py:60
+# - scripts/layout/apply_moves.py:143
 # - tests/tooling/test_layout_dormant_contexts.py:247
 
 # @unit tests/tooling/test_layout_dormant_contexts.py::APPLY_SPEC [state]
@@ -327,9 +327,9 @@ if __name__ == "__main__":
 # - tests/tooling/test_layout_dormant_contexts.py:31
 # - tests/tooling/test_layout_dormant_contexts.py:32
 # - tests/tooling/test_layout_dormant_contexts.py:39
-# - scripts/layout/apply_moves.py:41
-# - scripts/layout/apply_moves.py:44
-# - scripts/layout/apply_moves.py:54
+# - scripts/layout/apply_moves.py:107
+# - scripts/layout/apply_moves.py:110
+# - scripts/layout/apply_moves.py:120
 
 # @unit tests/tooling/test_layout_dormant_contexts.py::module::dormant_import [block]
 # ## Summary
