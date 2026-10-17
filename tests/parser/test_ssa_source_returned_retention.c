@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "unity.h"
+#include "support/ssa_host_aot_support.h"
 #include "support/ssa_source_returned_retention_fixture.h"
 #include "zr_vm_core/exec_ir_state_map.h"
 #include "zr_vm_core/metadata_token.h"
@@ -311,6 +312,20 @@ static void test_returned_descriptor_source_map_oom_cleanup_retry(void) { integr
 static void test_returned_descriptor_constant_oom_cleanup_retry(void) { integrated_fault(5u, ZR_FALSE); }
 static void test_returned_descriptor_layout_oom_cleanup_retry(void) { integrated_fault(6u, ZR_FALSE); }
 static void test_returned_owner_oom_cleanup_retry(void) { integrated_fault(0u, ZR_TRUE); }
+#if !ZR_TESTS_HOST_SCALAR_AOT_SUPPORTED
+static void test_required_aot_reports_unsupported_host_without_owners(void) {
+    const char *sources[] = {g_nine, g_eight};
+    for (unsigned index = 0u; index < 2u; ++index) {
+        SZrSourceCompileDiagnostic d = {0};
+        TEST_ASSERT_NULL(ZrTests_Returned_Compile(index, sources[index], ZR_FALSE, &g_require, &d));
+        TEST_ASSERT_EQUAL_INT(ZR_SOURCE_STAGE_TARGET, d.stage);
+        TEST_ASSERT_EQUAL_INT(ZR_SOURCE_RESULT_UNSUPPORTED, d.result);
+        TEST_ASSERT_TRUE(d.hasAotIr);
+        TEST_ASSERT_EQUAL_INT(ZR_AOT_IR_UNSUPPORTED, d.aotIr.status);
+        no_crt_allocations();
+    }
+}
+#endif
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_ordinary_none_nine_returns_no_owner);
@@ -319,14 +334,19 @@ int main(void) {
     RUN_TEST(test_ordinary_bool_literal_prerequisite);
     RUN_TEST(test_ordinary_float_literal_prerequisite);
     RUN_TEST(test_incomplete_expression_parse_refusal_prerequisite);
+#if ZR_TESTS_HOST_SCALAR_AOT_SUPPORTED
     RUN_TEST(test_require_nine_retains_metadata_after_wrapper_cleanup);
     RUN_TEST(test_require_eight_retains_metadata_after_wrapper_cleanup);
+#else
+    RUN_TEST(test_required_aot_reports_unsupported_host_without_owners);
+#endif
     RUN_TEST(test_unknown_retention_option_is_rejected_before_parse);
     RUN_TEST(test_null_required_state_is_rejected);
     RUN_TEST(test_null_required_source_is_rejected);
     RUN_TEST(test_require_incomplete_expression_reports_parse_failure);
     RUN_TEST(test_require_bool_literal_is_refused);
     RUN_TEST(test_require_float_literal_is_refused);
+#if ZR_TESTS_HOST_SCALAR_AOT_SUPPORTED
     RUN_TEST(test_require_without_diagnostic_retains_metadata);
     RUN_TEST(test_two_live_returned_owners_remain_independent);
     RUN_TEST(test_explicit_free_and_global_shutdown_release_once);
@@ -338,5 +358,6 @@ int main(void) {
     RUN_TEST(test_returned_descriptor_constant_oom_cleanup_retry);
     RUN_TEST(test_returned_descriptor_layout_oom_cleanup_retry);
     RUN_TEST(test_returned_owner_oom_cleanup_retry);
+#endif
     return UNITY_END();
 }
