@@ -372,6 +372,53 @@ static void compiler_register_lambda_callable_binding(SZrCompilerState *cs,
     ZrParser_TypeEnvironment_Free(cs->state, lambdaEnv);
 }
 
+/* 别名注册发生在函数作用域结束后。补上形参类型，return 推断才能解析形参，而不是把它们当成 object。 */
+static void compiler_bind_function_parameters_for_return_inference(
+        SZrCompilerState *cs,
+        SZrAstNodeArray *params) {
+    if (cs == ZR_NULL || cs->state == ZR_NULL || cs->typeEnv == ZR_NULL || params == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < params->count; index++) {
+        SZrAstNode *paramNode = params->nodes[index];
+        SZrParameter *parameter;
+        SZrInferredType paramType;
+
+        if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
+            continue;
+        }
+
+        parameter = &paramNode->data.parameter;
+        if (parameter->name == ZR_NULL || parameter->name->name == ZR_NULL) {
+            continue;
+        }
+
+        if (parameter->typeInfo != ZR_NULL &&
+            ZrParser_AstTypeToInferredType_Convert(cs, parameter->typeInfo, &paramType)) {
+            ZrParser_TypeEnvironment_RegisterVariableEx(
+                    cs->state,
+                    cs->typeEnv,
+                    parameter->name->name,
+                    &paramType,
+                    paramNode,
+                    paramNode->location);
+            ZrParser_InferredType_Free(cs->state, &paramType);
+            continue;
+        }
+
+        ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
+        ZrParser_TypeEnvironment_RegisterVariableEx(
+                cs->state,
+                cs->typeEnv,
+                parameter->name->name,
+                &paramType,
+                paramNode,
+                paramNode->location);
+        ZrParser_InferredType_Free(cs->state, &paramType);
+    }
+}
+
 static void compiler_register_identifier_callable_binding(SZrCompilerState *cs,
                                                           SZrString *name,
                                                           SZrString *sourceName) {
@@ -401,14 +448,32 @@ static void compiler_register_identifier_callable_binding(SZrCompilerState *cs,
             SZrFunctionTypedTypeRef returnMetadata;
             SZrInferredType inferredReturnType;
             TZrBool hasReturnType = ZR_FALSE;
+            SZrAstNode *savedFunctionNode = cs->currentFunctionNode;
+            SZrTypeEnvironment *savedEnv = cs->typeEnv;
+            SZrTypeEnvironment *paramEnv = ZrParser_TypeEnvironment_New(cs->state);
+            TZrBool built = ZR_FALSE;
 
-            if (!compiler_build_callable_return_type_metadata_with_inferred(
-                        cs,
-                        ZR_NULL,
-                        declaration->body,
-                        &returnMetadata,
-                        &hasReturnType,
-                        &inferredReturnType)) {
+            if (paramEnv == ZR_NULL) {
+                continue;
+            }
+            paramEnv->parent = savedEnv;
+            paramEnv->semanticContext =
+                    savedEnv != ZR_NULL ? savedEnv->semanticContext : ZR_NULL;
+            cs->typeEnv = paramEnv;
+            cs->currentFunctionNode = (*candidatePtr)->declarationNode;
+            compiler_bind_function_parameters_for_return_inference(
+                    cs, declaration->params);
+            built = compiler_build_callable_return_type_metadata_with_inferred(
+                    cs,
+                    ZR_NULL,
+                    declaration->body,
+                    &returnMetadata,
+                    &hasReturnType,
+                    &inferredReturnType);
+            cs->typeEnv = savedEnv;
+            cs->currentFunctionNode = savedFunctionNode;
+            ZrParser_TypeEnvironment_Free(cs->state, paramEnv);
+            if (!built) {
                 continue;
             }
             if (!hasReturnType ||
