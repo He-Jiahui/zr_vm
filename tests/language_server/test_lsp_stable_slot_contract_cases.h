@@ -138,9 +138,20 @@ static void test_lsp_pooling_hover_completion_and_projection_expose_guard_contra
     success = ZR_TRUE;
 
 cleanup:
-    /* BUG: GetCompletion 的原生项和四个 GetHover 的外壳/contents 均需
-     * 逐项归还；Array_Free 只释放指针缓冲区，正常场景也会泄漏。 */
+    for (TZrSize index = 0u; index < completions.length; ++index) {
+        SZrLspCompletionItem **item = ZrCore_Array_Get(&completions, index);
+        if (item != ZR_NULL && *item != ZR_NULL) {
+            ZrCore_Memory_RawFree(state->global, *item, sizeof(SZrLspCompletionItem));
+        }
+    }
     ZrCore_Array_Free(state, &completions);
+    SZrLspHover *hovers[] = {handleHover, sourceHover, refHover, propertyHover};
+    for (TZrSize index = 0u; index < ZR_ARRAY_COUNT(hovers); ++index) {
+        if (hovers[index] != ZR_NULL) {
+            ZrCore_Array_Free(state, &hovers[index]->contents);
+            ZrCore_Memory_RawFree(state->global, hovers[index], sizeof(SZrLspHover));
+        }
+    }
     if (context != ZR_NULL) {
         ZrLanguageServer_LspContext_Free(state, context);
     }

@@ -6,6 +6,8 @@
 #include "semantic/query/lsp_semantic_definition_query.h"
 #include "semantic/lsp_canonical_completion.h"
 #include "semantic/lsp_canonical_hover.h"
+#include "semantic/lsp_stable_slot_contract.h"
+#include "module/lsp_module_metadata.h"
 #include "semantic/query/lsp_semantic_import_chain.h"
 #include "semantic/query/lsp_semantic_relation_query.h"
 #include "semantic/query/lsp_semantic_reference_query.h"
@@ -2781,6 +2783,41 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     return semantic_query_capture_document_version(state, context, query);
 }
 
+/* Enrich a local hover from the canonical type in the same semantic snapshot. */
+static void semantic_query_append_stable_slot_hover(
+        SZrState *state, const SZrLspSemanticQuery *query, SZrLspHover *hover) {
+    const SZrTypePrototypeInfo *prototype;
+    SZrString **content;
+    TZrChar typeName[ZR_LSP_TYPE_BUFFER_LENGTH];
+    TZrChar buffer[ZR_LSP_HOVER_BUFFER_LENGTH];
+    TZrSize length;
+
+    if (hover == ZR_NULL ||
+        !semantic_query_type_id_is_available(
+                query->analyzer->semanticContext, query->canonicalSymbol.typeId) ||
+        !ZrParser_CanonicalType_Format(
+                query->analyzer->semanticContext, query->canonicalSymbol.typeId,
+                typeName, sizeof(typeName))) {
+        return;
+    }
+    prototype = ZrLanguageServer_LspModuleMetadata_FindTypePrototype(
+            query->analyzer, typeName);
+    content = (SZrString **)ZrCore_Array_Get(&hover->contents, 0U);
+    if (content == ZR_NULL || *content == ZR_NULL) {
+        return;
+    }
+    length = ZrCore_String_GetByteLength(*content);
+    if (length >= sizeof(buffer)) {
+        return;
+    }
+    memcpy(buffer, ZrCore_String_GetNativeString(*content), length);
+    buffer[length] = '\0';
+    if (ZrLanguageServer_LspStableSlotContract_AppendPrototypeHover(
+                prototype, buffer, sizeof(buffer))) {
+        *content = ZrCore_String_Create(state, buffer, strlen(buffer));
+    }
+}
+
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(SZrState *state,
                                                                             SZrLspContext *context,
                                                                             SZrLspSemanticQuery *query,
@@ -2845,6 +2882,9 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(SZrS
                 query->analyzer->ast,
                 sourceSymbol,
                 result);
+        if (built) {
+            semantic_query_append_stable_slot_hover(state, query, *result);
+        }
         return built;
     }
 
