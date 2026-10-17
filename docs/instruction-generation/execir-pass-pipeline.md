@@ -292,8 +292,12 @@ preserved raw evidence without repeating native execution. Independent MSVC
 acceptance covers seven /Zs C syntax checks, eight phases including environment,
 99 headers/106 consumed inputs and34 protected build products unchanged,
 with zero warnings/errors/unknown output. This is finite syntax W0, with no
-MSVC object/link/runtime/full-build W0 or Linux credit. Publication and cleanup
-remain pending; completed outcomes stay36 and full02.01/SSA47 remains open.
+MSVC object/link/runtime/full-build W0 or Linux credit. Source37 is committed as
+`729c950d969663230e0171d60592939aabd60a00` with independent publication acceptance.
+Finite cleanup is closed: six owned files released2080877B;91 reusable build
+files totaling17409863B and required raw evidence remain. Completed outcomes
+are37 (17features/10fixes/5validation/5docs). This documentation synchronization
+adds no outcome; full02.01/SSA47 and global unknown ownership remain open.
 
 Focused validation examples (from the repository root, using separately
 registered physical output directories; these examples are not new run evidence):

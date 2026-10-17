@@ -35,7 +35,7 @@ status: draft
 
 Source37 已观测真实 RED：53 个主 case、107 个有序 profile，25 个已登记功能失败、28 个主 case 通过；212 个实测故障观测全部完成，allocator live/errors 均为0。未知 fixture、诊断、链接或 ledger 错误不计功能 RED。基线非空池不写回及失败回滚 owner 替换保持为历史事实，原失败收据不升级为修复后结果。
 
-实际RED后，生产修复已取得实际GREEN及独审：53主案全部PASS、113有序profiles、492条metrics、236/236实测故障完成，108726分配attempts且live/errors=0。四个owner预算测量各W=25，fresh完整扫1..25共100边界全PASS。metadata15与GC-parser99原始运行经离线reconciliation接受，有限MSVC七次syntax也已独审。提交和cleanup仍PENDING，完成计数保持36，不计第37项完成成果，不关闭完整02.01/SSA47。
+实际RED后，生产修复已取得实际GREEN及独审：53主案全部PASS、113有序profiles、492条metrics、236/236实测故障完成，108726分配attempts且live/errors=0。四个owner预算测量各W=25，fresh完整扫1..25共100边界全PASS。metadata15与GC-parser99原始运行经离线reconciliation接受，有限MSVC七次syntax也已独审。Source37实际提交与自有清理均已独审接受，计为第37项有限功能交付；当前37=17功能/10修正/5验证/5文档。本次文档同步不新增成果，不关闭完整02.01/SSA47。
 
 历史缺口位于 SCCP rewrite：非空池直接跳过结果物化；空池 layoutId 是立即数，非空池 layoutId 是池索引，不能混用。旧模块 Optimize 失败后释放原模块并赋回 snapshot，会改变 owner 身份；新实现先克隆独立 candidate，整模块优化并真实 Verify 后才发布。FALSE只丢 candidate，恢复remarks count、清零result，保留原模块内容和各owner身份；预算耗尽的合法true可提交已验证部分优化。
 
@@ -96,6 +96,10 @@ RED 包含两类已知功能缺口：结果未物化，以及模块失败回滚�
 MSVC实际七次/Zs语法检查、7唯一C、含环境共8phase均自然0且双流关闭；99实际headers/106 consumed的BEFORE/AFTER匹配，34受保护构建产物保持，warnings/errors/unknown均0。仅有限syntax W0，没有MSVC对象/链接/运行时/fullW0或Linux信用。
 
 本批不执行 VM、SourceExecute、FunctionExecute、Oracle、Interpret、FFI、network/security、运行时 materialization 或 resume。私有“常量物化”只生成 IR 池项，不执行运行时值恢复。本轮不授 Linux、全量 W0、完整后端或整叶完成信用。
+
+## Source37 有限关闭
+
+实际提交`729c950d969663230e0171d60592939aabd60a00`已独审接受。finite-close.json和post-cleanup-verification.json接受本批有限关闭；cleanup-receipt.json记录清理6个自有文件、实际释放2080877B，保留91个可复用构建文件17409863B及必要成功/失败raw。历史RED、原failed回归收据和无native重复的reconciliation均保留。仅关闭本批子清单；全47目标active，B11/Parent1未知归属、共享缓存及其他会话原位保留，不宣称全局清理或整叶关闭。
 
 ## 证据与产物归属
 
