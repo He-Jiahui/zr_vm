@@ -1686,7 +1686,9 @@ void ZrCore_GarbageCollector_Barrier(SZrState *state, SZrRawObject *object, SZrR
     if (global == ZR_NULL || global->garbageCollector == ZR_NULL) {
         return;
     }
-    mutationLocked = ZrCore_GcDomain_MutationBegin(state);
+    /* Root leases can update registry indices on any object, including interned
+     * keys, while attached mutators run between collection phases. */
+    mutationLocked = ZrCore_GcDomain_SharedMutationBegin(state);
     if (global->garbageCollector->concurrentMajorActive) {
         global->garbageCollector->statsSnapshot.concurrentBarrierCount++;
     }
