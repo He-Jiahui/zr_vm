@@ -9749,6 +9749,19 @@ static TZrBool compiler_quicken_array_int_index_accesses(SZrState *state, SZrFun
         compiler_quickening_try_fold_dead_super_array_add_setup(function, blockStarts, index);
     }
 
+    /* Direct native member calls have no legacy callee staging to fold. Wait
+     * until all adds are lowered so subsequent calls no longer conservatively
+     * read the result slot when proving that an ignored add result is dead. */
+    for (index = 0; index < function->instructionsLength; index++) {
+        TZrInstruction *instruction = &function->instructionsList[index];
+        if ((EZrInstructionCode)instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT) &&
+            instruction->instruction.operandExtra != ZR_INSTRUCTION_USE_RET_FLAG &&
+            compiler_quickening_temp_slot_is_dead_after_instruction_cfg(
+                    function, blockStarts, index, instruction->instruction.operandExtra)) {
+            instruction->instruction.operandExtra = ZR_INSTRUCTION_USE_RET_FLAG;
+        }
+    }
+
     if (constantSlotsValid != ZR_NULL && constantSlotIndices != ZR_NULL && aliasCount > 0) {
         memset(constantSlotsValid, 0, sizeof(*constantSlotsValid) * aliasCount);
         memset(constantSlotIndices, 0, sizeof(*constantSlotIndices) * aliasCount);
@@ -11004,6 +11017,16 @@ static TZrBool compiler_quicken_child_functions(SZrState *state,
     ZR_QUICKENING_RUN_PASS("known_native_member_call_recv_u8_after_compact",
                            compiler_quickening_fuse_known_native_member_call_recv_u8(function));
     ZR_QUICKENING_RUN_PASS("compact_nops_12b", compiler_quickening_compact_nops(state, function));
+    /* Late copy forwarding exposes the consecutive array receiver slots. */
+    ZR_QUICKENING_RUN_PASS("fold_super_array_add_int4_bursts_final",
+                           compiler_quickening_fold_super_array_add_int4_bursts(function));
+    ZR_QUICKENING_RUN_PASS("compact_add_bursts_final", compiler_quickening_compact_nops(state, function));
+    ZR_QUICKENING_RUN_PASS("fold_super_array_add_int4_const_bursts_final",
+                           compiler_quickening_fold_super_array_add_int4_const_bursts(function));
+    ZR_QUICKENING_RUN_PASS("compact_const_add_bursts_final", compiler_quickening_compact_nops(state, function));
+    ZR_QUICKENING_RUN_PASS("fold_super_array_fill_int4_const_loops_final",
+                           compiler_quickening_fold_super_array_fill_int4_const_loops(function));
+    ZR_QUICKENING_RUN_PASS("compact_fill_loops_final", compiler_quickening_compact_nops(state, function));
     ZR_QUICKENING_RUN_PASS("super_array_items_cache_bindings",
                            compiler_quickening_insert_super_array_items_cache_bindings(state, function));
     ZR_QUICKENING_RUN_PASS("promote_plain_destination_after_items_cache",
