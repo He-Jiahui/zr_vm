@@ -243,9 +243,7 @@ static void test_direct_module_export_succeeds_for_source_module_function(void) 
     ZrTests_Runtime_State_Destroy(state);
 }
 
-/* BUG: 本例只让导出函数体抛错，模块顶层仍成功；首次导入的顶层异常发生在
- * CallModuleExport 安装 panic 恢复点之前，当前会走 Exception_Throw 的宿主 abort。
- * 需增加顶层失败用例，区分导出调用与导入阶段的错误边界。 */
+/* Export exceptions must leave native call accounting at the host boundary. */
 static void test_direct_module_export_runtime_error_returns_false_instead_of_aborting(void) {
     static const ZrTestsModuleFixtureSource kFixtures[] = {
             MODULE_FIXTURE_SOURCE_TEXT(
@@ -270,6 +268,8 @@ static void test_direct_module_export_runtime_error_returns_false_instead_of_abo
     TEST_ASSERT_FALSE(ZrLib_CallModuleExport(state, "broken_direct_export", "broken", ZR_NULL, 0, &result));
     TEST_ASSERT_NOT_EQUAL_INT(ZR_THREAD_STATUS_FINE, state->threadStatus);
     TEST_ASSERT_TRUE(state->hasCurrentException);
+    TEST_ASSERT_EQUAL_UINT32(0u, state->nestedNativeCalls);
+    TEST_ASSERT_EQUAL_UINT32(0u, state->nestedNativeCallYieldFlag);
     message = current_exception_message(state);
     TEST_ASSERT_NOT_NULL(message);
     TEST_ASSERT_NOT_NULL(strstr(message, "receiver must be an object"));
