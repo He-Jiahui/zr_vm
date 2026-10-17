@@ -2003,7 +2003,7 @@ static void test_aot_c_backend_directly_lowers_static_slot_and_int_ops(void) {
         TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_scalar_constant_i64_local */"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_scalar_stack_copy_i64"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_scalar_exec_i64_binary"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_s4 = zr_aot_s1 + (TZrInt64)2;"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_s4 = ZrCore_Integer_Add(state, zr_aot_s1, (TZrInt64)2);"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CopyConstant"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CopyStack"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_AddInt("));
@@ -2140,7 +2140,7 @@ static void test_aot_c_backend_lowers_generic_add_with_fast_path_and_helper_fall
 
         TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_typed_i64_fn_1"));
         TEST_ASSERT_NOT_NULL(strstr(cText,
-                                    "zr_aot_result = zr_aot_left_scalar + zr_aot_right_scalar;"));
+                                    "zr_aot_result = ZrCore_Integer_Add(state, zr_aot_left_scalar, zr_aot_right_scalar);"));
         TEST_ASSERT_NULL(strstr(cText, "aot_c lowering unsupported"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
 
@@ -2208,13 +2208,13 @@ static void test_aot_llvm_backend_directly_lowers_static_slot_and_int_ops(void) 
         assert_generated_aot_llvm_text_uses_aligned_stack_value_layout(llvmText);
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "store i64 40"));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "load %SZrTypeValue, ptr"));
-        TEST_ASSERT_NOT_NULL(strstr(llvmText, "add i64"));
+        TEST_ASSERT_NULL(strstr(llvmText, " = add i64"));
         TEST_ASSERT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_CopyConstant("));
         TEST_ASSERT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_CopyStack("));
         TEST_ASSERT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_AddInt("));
         TEST_ASSERT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_AddIntConst("));
         TEST_ASSERT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_AddSigned("));
-        TEST_ASSERT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_AddSignedConst("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_AddSignedConst("));
         TEST_ASSERT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_AddUnsigned("));
         TEST_ASSERT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_AddUnsignedConst("));
 
@@ -2276,7 +2276,8 @@ static void test_aot_llvm_backend_lowers_generic_add_with_fast_path_and_helper_f
         llvmText = read_text_file_owned(llvmPath);
         TEST_ASSERT_NOT_NULL(llvmText);
 
-        TEST_ASSERT_NOT_NULL(strstr(llvmText, "add i64"));
+        TEST_ASSERT_NULL(strstr(llvmText, " = add i64"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_AddSigned("));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(
                 llvmText, ZR_INSTRUCTION_ENUM(ADD_SIGNED)));
 
@@ -2435,7 +2436,7 @@ static void test_aot_c_backend_statically_lowers_proven_local_aot_function_calls
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume("));
         TEST_ASSERT_NOT_NULL(strstr(cText, "goto zr_aot_fn_0_dispatch;"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_gc_safepoint_call */"));
-        TEST_ASSERT_NULL(strstr(cText, "ZR_AOT_GENERATED_STEP_FLAG_CALL"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "frame.observationMask & (ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW | ZR_AOT_GENERATED_STEP_FLAG_CALL | ZR_AOT_GENERATED_STEP_FLAG_RETURN)"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareDirectCall(state,"));
         TEST_ASSERT_NULL(strstr(cText, "zr_aot_direct_call.nativeFunction(state)"));
         TEST_ASSERT_NULL(strstr(cText, "if (!zr_aot_fn_1(state))"));
@@ -4999,7 +5000,7 @@ static void test_backend_aot_source_split_moves_aot_llvm_lowering_families_out_o
 
         TEST_ASSERT_NOT_NULL(strstr(llvmFunctionBodyHeaderText, "backend_aot_write_llvm_function_body("));
         TEST_ASSERT_NOT_NULL(strstr(llvmFunctionBodyText, "backend_aot_write_llvm_function_body("));
-        TEST_ASSERT_NOT_NULL(strstr(llvmModuleArtifactsHeaderText, "#include \"backend_aot_llvm_module_prelude.h\""));
+        TEST_ASSERT_NOT_NULL(strstr(llvmModuleArtifactsHeaderText, "#include \"backend_aot/backend_aot_llvm_module_prelude.h\""));
         TEST_ASSERT_NOT_NULL(strstr(llvmModuleArtifactsHeaderText, "backend_aot_llvm_write_module_exports("));
         TEST_ASSERT_NULL(strstr(llvmModuleArtifactsText, "backend_aot_llvm_write_module_prelude("));
         TEST_ASSERT_NOT_NULL(strstr(llvmModuleArtifactsText, "backend_aot_llvm_write_function_thunk_table("));
@@ -5343,8 +5344,8 @@ static void test_backend_aot_source_split_moves_aot_llvm_text_emit_helpers_out_o
         TEST_ASSERT_NULL(strstr(llvmTextEmitHeaderText, "backend_aot_llvm_write_guarded_call_text("));
         TEST_ASSERT_NULL(strstr(llvmTextEmitHeaderText, "backend_aot_llvm_write_resume_dispatch("));
         TEST_ASSERT_NULL(strstr(llvmTextEmitHeaderText, "backend_aot_llvm_write_return_call("));
-        TEST_ASSERT_NOT_NULL(strstr(llvmTextFlowHeaderText, "#include \"backend_aot_llvm_text_call_result.h\""));
-        TEST_ASSERT_NOT_NULL(strstr(llvmTextFlowHeaderText, "#include \"backend_aot_llvm_text_terminal.h\""));
+        TEST_ASSERT_NOT_NULL(strstr(llvmTextFlowHeaderText, "#include \"backend_aot/backend_aot_llvm_text_call_result.h\""));
+        TEST_ASSERT_NOT_NULL(strstr(llvmTextFlowHeaderText, "#include \"backend_aot/backend_aot_llvm_text_terminal.h\""));
         TEST_ASSERT_NOT_NULL(strstr(llvmTextFlowHeaderText, "backend_aot_llvm_write_resume_dispatch("));
         TEST_ASSERT_NOT_NULL(strstr(llvmTextEmitText, "TZrUInt32 backend_aot_llvm_next_temp("));
         TEST_ASSERT_NOT_NULL(strstr(llvmTextEmitText, "void backend_aot_llvm_make_instruction_label("));
@@ -5405,7 +5406,7 @@ static void test_backend_aot_source_split_moves_aot_llvm_module_artifacts_out_of
         TEST_ASSERT_NULL(strstr(llvmEmitterText, "@zr_aot_function_thunks = private constant"));
         TEST_ASSERT_NULL(strstr(llvmEmitterText, "@zr_aot_module = private constant"));
 
-        TEST_ASSERT_NOT_NULL(strstr(llvmModuleArtifactsHeaderText, "#include \"backend_aot_llvm_module_prelude.h\""));
+        TEST_ASSERT_NOT_NULL(strstr(llvmModuleArtifactsHeaderText, "#include \"backend_aot/backend_aot_llvm_module_prelude.h\""));
         TEST_ASSERT_NOT_NULL(strstr(llvmModuleArtifactsHeaderText, "backend_aot_llvm_write_module_exports("));
         TEST_ASSERT_NULL(strstr(llvmModuleArtifactsText, "backend_aot_llvm_write_module_prelude("));
         TEST_ASSERT_NOT_NULL(strstr(llvmModuleArtifactsText, "backend_aot_llvm_write_function_thunk_table("));
@@ -5459,7 +5460,7 @@ static void test_backend_aot_source_split_moves_aot_llvm_module_prelude_helpers_
         TEST_ASSERT_NOT_NULL(llvmModulePreludeText);
         TEST_ASSERT_NOT_NULL(llvmModulePreludeHeaderText);
 
-        TEST_ASSERT_NOT_NULL(strstr(llvmModuleArtifactsHeaderText, "#include \"backend_aot_llvm_module_prelude.h\""));
+        TEST_ASSERT_NOT_NULL(strstr(llvmModuleArtifactsHeaderText, "#include \"backend_aot/backend_aot_llvm_module_prelude.h\""));
         TEST_ASSERT_NULL(strstr(llvmModuleArtifactsText, "void backend_aot_write_llvm_contracts("));
         TEST_ASSERT_NULL(strstr(llvmModuleArtifactsText, "void backend_aot_write_runtime_contract_array_llvm("));
         TEST_ASSERT_NULL(strstr(llvmModuleArtifactsText, "void backend_aot_write_runtime_contract_globals_llvm("));
@@ -5532,8 +5533,8 @@ static void test_backend_aot_source_split_moves_aot_llvm_flow_text_helpers_out_o
         TEST_ASSERT_NULL(strstr(llvmTextEmitHeaderText, "backend_aot_llvm_write_begin_instruction("));
         TEST_ASSERT_NULL(strstr(llvmTextEmitHeaderText, "backend_aot_llvm_write_resume_dispatch("));
         TEST_ASSERT_NULL(strstr(llvmTextEmitHeaderText, "backend_aot_llvm_write_return_call("));
-        TEST_ASSERT_NOT_NULL(strstr(llvmTextFlowHeaderText, "#include \"backend_aot_llvm_text_call_result.h\""));
-        TEST_ASSERT_NOT_NULL(strstr(llvmTextFlowHeaderText, "#include \"backend_aot_llvm_text_terminal.h\""));
+        TEST_ASSERT_NOT_NULL(strstr(llvmTextFlowHeaderText, "#include \"backend_aot/backend_aot_llvm_text_call_result.h\""));
+        TEST_ASSERT_NOT_NULL(strstr(llvmTextFlowHeaderText, "#include \"backend_aot/backend_aot_llvm_text_terminal.h\""));
         TEST_ASSERT_NULL(strstr(llvmTextFlowHeaderText, "backend_aot_llvm_write_guarded_call_text("));
         TEST_ASSERT_NOT_NULL(strstr(llvmTextFlowHeaderText, "backend_aot_llvm_write_begin_instruction("));
         TEST_ASSERT_NOT_NULL(strstr(llvmTextFlowHeaderText, "backend_aot_llvm_write_resume_dispatch("));
@@ -5597,8 +5598,8 @@ static void test_backend_aot_source_split_moves_aot_llvm_flow_subfamilies_out_of
         TEST_ASSERT_NOT_NULL(llvmTextTerminalText);
         TEST_ASSERT_NOT_NULL(llvmTextTerminalHeaderText);
 
-        TEST_ASSERT_NOT_NULL(strstr(llvmTextFlowHeaderText, "#include \"backend_aot_llvm_text_call_result.h\""));
-        TEST_ASSERT_NOT_NULL(strstr(llvmTextFlowHeaderText, "#include \"backend_aot_llvm_text_terminal.h\""));
+        TEST_ASSERT_NOT_NULL(strstr(llvmTextFlowHeaderText, "#include \"backend_aot/backend_aot_llvm_text_call_result.h\""));
+        TEST_ASSERT_NOT_NULL(strstr(llvmTextFlowHeaderText, "#include \"backend_aot/backend_aot_llvm_text_terminal.h\""));
         TEST_ASSERT_NULL(strstr(llvmTextFlowText, "void backend_aot_llvm_write_guarded_call_text("));
         TEST_ASSERT_NULL(strstr(llvmTextFlowText, "void backend_aot_llvm_write_nonzero_call_text("));
         TEST_ASSERT_NOT_NULL(strstr(llvmTextFlowText, "void backend_aot_llvm_write_begin_instruction("));
