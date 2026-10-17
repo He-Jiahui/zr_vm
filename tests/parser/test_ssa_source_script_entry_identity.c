@@ -83,7 +83,7 @@ static void assert_i64_return_metadata(const SZrFunction *entry) {
     TEST_ASSERT_NULL(type->typeName);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, type->elementBaseType);
     TEST_ASSERT_NULL(type->elementTypeName);
-    TEST_ASSERT_EQUAL_INT(ZR_STATIC_C_TYPE_DYNAMIC, type->staticCType);
+    TEST_ASSERT_EQUAL_INT(ZR_STATIC_C_TYPE_I64, type->staticCType);
     TEST_ASSERT_EQUAL_UINT32(0u, type->staticCTypeId);
     TEST_ASSERT_NULL(entry->moduleVersion);
     TEST_ASSERT_EQUAL_UINT32(0u, entry->exportedVariableLength);
