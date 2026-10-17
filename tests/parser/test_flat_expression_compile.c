@@ -4,6 +4,7 @@
 #include <time.h>
 #include "unity.h"
 #include "harness/runtime_support.h"
+#include "harness/windows_crash_diagnostics.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/compiler.h"
 
@@ -74,6 +75,8 @@ static void test_cache_does_not_cross_assignments_or_function_scopes(void) {
 }
 
 int main(void) {
+    ZrTests_WindowsCrashDiagnostics_Install();
+    setvbuf(stdout, ZR_NULL, _IONBF, 0);
     UNITY_BEGIN();
     RUN_TEST(test_literal_chain_compile_time);
     RUN_TEST(test_identifier_chain_compile_time);
