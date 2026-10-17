@@ -502,3 +502,120 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+# @unit MEASUREMENT_FIELDS
+# Summary: 定义两个报告消费者的五字段协议、合法scope集合和八种runtime到实现名称的精确映射。
+#
+# Covered units: MEASUREMENT_FIELDS; VALID_MEASUREMENT_SCOPES; VALID_PREPARE_SCOPES; COMPARISON_IMPLEMENTATION_NAMES
+# Constraints and lifecycle: tuple/set/dict是模块级共享对象；本模块仅查询，不冻结set/dict，也不自动同步另一个消费者。字段存在、字符串合法及三个flag为精确bool是独立检查；名称/数字ratio不在此表验证。
+# References: scripts/benchmark/aggregate_benchmark_summary.py:20
+
+# @unit _record_name_is_valid
+# Summary: 确认dict记录具有去空白后非空的字符串name。
+#
+# @param[in] record 任意借用对象；不修改。
+# @return bool，缺失/非dict/非法name为False。
+# Constraints and lifecycle: 只用strip判空，不修改或trim身份值；Mapping非dict不获接受。
+# References: scripts/benchmark/aggregate_benchmark_summary.py:50;scripts/benchmark/aggregate_benchmark_summary.py:54
+
+# @unit _duplicate_record_names
+# Summary: 收集list中合法name的重复原字符串。
+#
+# @param[in] records 借用候选记录集合；非list返回空set。
+# @return 新set[str]，精确name重复而非规范化身份。
+# Constraints and lifecycle: 只接受list；无效记录忽略；Counter/set新建且不改输入、不排序结果。
+# References: scripts/benchmark/aggregate_benchmark_summary.py:58;scripts/benchmark/aggregate_benchmark_summary.py:63
+
+# @unit _read_json_optional
+# Summary: 读取一个可选UTF-8 JSON文件并将常见读取/语法失败降为缺失。
+#
+# @param[in] path 借用Path；文件可缺失。
+# @return 任意JSON值或None；并非保证dict。
+# Constraints and lifecycle: is_file在try外；文件上下文退出关闭。捕获OSError/JSONDecodeError并写stderr；UnicodeDecodeError及其它异常继续传播。JSON null也成为None，不能与缺失区分；无写入。
+# References: scripts/benchmark/aggregate_benchmark_summary.py:69;scripts/benchmark/aggregate_benchmark_summary.py:70;scripts/benchmark/aggregate_benchmark_summary.py:73;scripts/benchmark/aggregate_benchmark_summary.py:75
+
+# @unit _implementation_contract_issue
+# Summary: 逐项验证五个测量字段并返回具体字段诊断。
+#
+# Covered units: _implementation_contract_issue; _implementation_contract_issue/measurement_scope集合检查
+# @param[in] implementation 借用任意值。
+# @param[in] location 只用于诊断前缀的字符串。
+# @return 新list[str]；空表仅表示五字段有效。
+# Constraints and lifecycle: 非dict立即一个问题；字符串类型先于set成员检查，数组/对象不会在该入口触发unhashable。缺字段只报missing；三个重用字段用type(v)is bool，1不等同True。此函数不检验status/name/ratio，也不改变对象。
+# References: scripts/benchmark/aggregate_benchmark_summary.py:80;scripts/benchmark/aggregate_benchmark_summary.py:84;scripts/benchmark/aggregate_benchmark_summary.py:90;scripts/benchmark/aggregate_benchmark_summary.py:94;scripts/benchmark/aggregate_benchmark_summary.py:102
+
+# @unit _validate_benchmark_measurement_contract
+# Summary: 校验benchmark cases/implementations结构、精确身份唯一性及五字段测量契约。
+#
+# @param[in] report 借用外部JSON值。
+# @return 新问题list；不执行ratio撤销。
+# Constraints and lifecycle: 非dict或cases非list先拒绝。逐项收集错误、不修复记录；空list没有必需case约束。名称只strip判空，重复判断使用原值；不验证比值数值类型、统计量或环境。
+# References: scripts/benchmark/aggregate_benchmark_summary.py:108;scripts/benchmark/aggregate_benchmark_summary.py:112;scripts/benchmark/aggregate_benchmark_summary.py:118;scripts/benchmark/aggregate_benchmark_summary.py:145;scripts/benchmark/aggregate_benchmark_summary.py:151
+
+# @unit _validate_comparison_identity_contract
+# Summary: 校验可选comparison报告的case身份与relative_to对象形状。
+#
+# @param[in] report 借用任意comparison JSON或None。
+# @return 新问题list；None返回空表。
+# Constraints and lifecycle: None被当作未提供；cases非list先拒绝，记录须dict、name须非空字符串，relative_to须dict。此入口不验证measurement_scope或各ratio数值。输入保持不变。
+# References: scripts/benchmark/aggregate_benchmark_summary.py:156;scripts/benchmark/aggregate_benchmark_summary.py:157;scripts/benchmark/aggregate_benchmark_summary.py:159;scripts/benchmark/aggregate_benchmark_summary.py:173;scripts/benchmark/aggregate_benchmark_summary.py:179
+
+# @unit _task3_record_is_comparable
+# Summary: 遵守可选Task3稳定性、可比性及门控拒绝标记。
+#
+# @param[in] record 借用dict。
+# @return bool；缺三标记可以为True。
+# Constraints and lifecycle: 传入可查询dict；未出现的标记保留旧报告兼容性。出现时stability须STABLE，comparable/gate_eligible须is True；不推断测量有效性或数值范围。
+# References: scripts/benchmark/aggregate_benchmark_summary.py:184;scripts/benchmark/aggregate_benchmark_summary.py:185;scripts/benchmark/aggregate_benchmark_summary.py:187;scripts/benchmark/aggregate_benchmark_summary.py:189
+
+# @unit _contract_is_comparable
+# Summary: 在两记录五字段有效、PASS且Task3门槛满足时要求相同scope。
+#
+# @param[in] left 借用任意左实现。
+# @param[in] right 借用任意右实现。
+# @return bool；两边scope字符串必须相等且非空。
+# Constraints and lifecycle: 验证失败短路，不读取未通过形状的后续字段；prepare_scope和三个重用flag各自合法即可，不要求两边相等。仅验证scope/门控，不验证ratio/median/环境。对象不变。
+# References: scripts/benchmark/aggregate_benchmark_summary.py:194;scripts/benchmark/aggregate_benchmark_summary.py:195;scripts/benchmark/aggregate_benchmark_summary.py:198;scripts/benchmark/aggregate_benchmark_summary.py:200;scripts/benchmark/aggregate_benchmark_summary.py:202
+
+# @unit _gate_benchmark_relative_to_c
+# Summary: 复制benchmark并撤销无法唯一对应合法C基线的已有relative_to_c。
+#
+# @param[in] benchmark_report 借用可deepcopy的JSON式对象。
+# @return (深副本,已撤销非None路径list)；深拷贝异常不捕获。
+# Constraints and lifecycle: 首先deepcopy，因此嵌套benchmark结果与输入隔离；只处理dict/cases list及各impl dict，结构坏项由validator另报。case或任一impl身份不合法/重复使整case比值不可信。只将原非None比值设None并记录路径，绝不重算或填回；保留原顺序及其它字段。
+# References: scripts/benchmark/aggregate_benchmark_summary.py:205;scripts/benchmark/aggregate_benchmark_summary.py:207;scripts/benchmark/aggregate_benchmark_summary.py:216;scripts/benchmark/aggregate_benchmark_summary.py:225;scripts/benchmark/aggregate_benchmark_summary.py:233;scripts/benchmark/aggregate_benchmark_summary.py:239
+
+# @unit _gate_comparison_ratios
+# Summary: 复制comparison并按benchmark唯一case/实现及comparison自身scope撤销不可信比例。
+#
+# @param[in] benchmark_report 借用benchmark值，只读。
+# @param[in] comparison_report 借用可deepcopy值。
+# @return (comparison深副本,原非None被清空路径list)。
+# Constraints and lifecycle: 只深拷贝comparison，benchmark只读。benchmark重复case排除，重复/坏impl使case拒绝；runtime采用固定映射，未知runtime拒绝。comparison scope须str非空且等于ZR interp scope；不自动补scope、不重算/验证ratio数值。迭代dict快照便于写副本；只对原非None撤销记录路径，保留列表和映射顺序。
+# References: scripts/benchmark/aggregate_benchmark_summary.py:243;scripts/benchmark/aggregate_benchmark_summary.py:246;scripts/benchmark/aggregate_benchmark_summary.py:255;scripts/benchmark/aggregate_benchmark_summary.py:280;scripts/benchmark/aggregate_benchmark_summary.py:293;scripts/benchmark/aggregate_benchmark_summary.py:304;scripts/benchmark/aggregate_benchmark_summary.py:311
+
+# @unit _build_summary
+# Summary: 读取五份可选JSON，诊断测量协议、在副本上门控并组装schema-2汇总。
+#
+# @param[in] tests_generated 借用根Path，调用者选定可读目录。
+# @param[in] performance_subdir 性能子目录字符串，可被Path绝对路径覆盖规则解释。
+# @param[in] baseline_summary 可选基线Path或None。
+# @return 新汇总dict，schema_version=2；measurement_contract.valid只反映所收集测量/身份问题；baseline缺失返回INCOMPARABLE记录。
+# Constraints and lifecycle: 本函数读文件但不写报告；UTC时间使结果非纯函数。present按固定五名称顺序，只列非None；relative_paths仍列全部五名称。缺benchmark也报测量问题，缺comparison无问题。仅benchmark/comparison深拷贝；其它已读JSON按引用放进结果，mock reader若复用对象则仍共享。performance_subdir只用于Path拼接，绝对路径/..未做containment检查，展示路径的斜线处理不改变实际读取路径。可选baseline调用Task4比较器，可能计算新的baseline speedup，不能将整个汇总称为永不计算比值。BUG: 当 benchmark_report.environment 为 dict 且 status != COMPARABLE 时，scripts/benchmark/aggregate_benchmark_summary.py:356 调用 scripts/benchmark/benchmark_task4_contract.py:55 递归撤销比值；scripts/benchmark/aggregate_benchmark_summary.py:357 却只收集343行先前scope门控返回的路径，使 measurement_contract.ratios_removed 漏记仅由环境撤销的字段；比值已清除，违反 tests/benchmarks/README.md:268 的完整路径记录约定。此为静态路径证据，未运行该反例。
+# References: scripts/benchmark/aggregate_benchmark_summary.py:315;scripts/benchmark/aggregate_benchmark_summary.py:332;scripts/benchmark/aggregate_benchmark_summary.py:337;scripts/benchmark/aggregate_benchmark_summary.py:343;scripts/benchmark/aggregate_benchmark_summary.py:352;scripts/benchmark/aggregate_benchmark_summary.py:356;scripts/benchmark/aggregate_benchmark_summary.py:357;scripts/benchmark/aggregate_benchmark_summary.py:366;scripts/benchmark/aggregate_benchmark_summary.py:383;scripts/benchmark/aggregate_benchmark_summary.py:392
+
+# @unit _inject_bundle
+# Summary: 把UTF-8汇总JSON编码为base64并替换模板的首个嵌入占位符。
+#
+# @param[in] html_template 借用HTML模板字符串。
+# @param[in] summary 可json.dumps的汇总dict。
+# @return 新字符串；缺占位符不返回。
+# Constraints and lifecycle: 输入str不变；序列化ensure_ascii=False且紧凑；仅replace(...,1)，后续同字面量保留。缺marker抛ValueError；不可序列化对象等异常传播。此helper无文件写入，模板读写由main负责。
+# References: scripts/benchmark/aggregate_benchmark_summary.py:399;scripts/benchmark/aggregate_benchmark_summary.py:400;scripts/benchmark/aggregate_benchmark_summary.py:402;scripts/benchmark/aggregate_benchmark_summary.py:404;scripts/benchmark/aggregate_benchmark_summary.py:406
+
+# @unit main
+# Summary: 解析聚合CLI并顺序写汇总、可选viewer JSON与可选bundle HTML。
+#
+# @return int 0正常完成；根目录或显式模板缺失为1；其它异常/argparse退出不统一转换。
+# Constraints and lifecycle: --tests-generated必需且resolve后须目录，否则return1在写前。默认performance输出根下benchmark_suite_summary.json及benchmark_html_viewer.json；自定义subdir改变汇总文件名且不自动写viewer。显式out-json可相对cwd；bundle先resolve，输出父目录mkdir。每个文件直接open(w)/write_text，无临时文件、原子替换或回滚，允许路径碰撞；后续模板缺失return1仍保留已写JSON，IO/序列化/模板错误可传播。out/viewer仅用resolve避免二者同路径；不全面防输入/输出别名。argparse可SystemExit(2)，脚本guard将整数变进程状态。
+# References: scripts/benchmark/aggregate_benchmark_summary.py:409;scripts/benchmark/aggregate_benchmark_summary.py:454;scripts/benchmark/aggregate_benchmark_summary.py:459;scripts/benchmark/aggregate_benchmark_summary.py:461;scripts/benchmark/aggregate_benchmark_summary.py:470;scripts/benchmark/aggregate_benchmark_summary.py:479;scripts/benchmark/aggregate_benchmark_summary.py:487;scripts/benchmark/aggregate_benchmark_summary.py:492;scripts/benchmark/aggregate_benchmark_summary.py:500
