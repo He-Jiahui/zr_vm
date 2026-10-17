@@ -14,6 +14,7 @@
  */
 typedef struct SZrSemanticDaSymbolMap {
     SZrArray symbolIds;
+    SZrArray lambdas;
 } SZrSemanticDaSymbolMap;
 
 /**
@@ -26,6 +27,7 @@ typedef struct SZrSemanticDaAnalysis {
     EZrParserDefiniteAssignmentState *readStates;
     TZrBool *readStateSeen;
     TZrSize readStateCount;
+    SZrAstNode *root;
 } SZrSemanticDaAnalysis;
 
 /** @brief 以指针身份或字符串值比较两个 source 名称；两个空名称不匹配。 */
@@ -159,7 +161,6 @@ static TZrBool semantic_da_symbol_map_add(SZrState *state,
 /**
  * @brief 从整个 semantic context 的 resolved declaration/read/write facts 建立共享状态槽表。
  * @note 初始容量按事实总数预留，去重后槽数不超过事实数。
- * BUG: Array_Init 分配失败仍留下 valid 且正 capacity；若有至少一个有效符号，后续 Push 会断言或向空缓冲写入。
  */
 static TZrBool semantic_da_build_symbol_map(SZrSemanticContext *context,
                                             SZrSemanticDaSymbolMap *map) {
@@ -176,7 +177,25 @@ static TZrBool semantic_da_build_symbol_map(SZrSemanticContext *context,
     capacity = context->referenceFacts.length > 0
                        ? context->referenceFacts.length
                        : ZR_PARSER_INITIAL_CAPACITY_TINY;
-    ZrCore_Array_Init(context->state, &map->symbolIds, sizeof(TZrSymbolId), capacity);
+    if (!ZrCore_Array_TryInit(context->state, &map->symbolIds,
+                             sizeof(TZrSymbolId), capacity)) return ZR_FALSE;
+
+    /* Expression facts retain lambda identity even when nested in a call,
+     * object literal, or initializer rather than a statement list. */
+    capacity = 0;
+    for (index = 0; index < context->expressionFacts.length; index++) {
+        const SZrSemanticExpressionFact *fact = ZrCore_Array_Get(&context->expressionFacts, index);
+        if (fact->node != ZR_NULL && fact->node->type == ZR_AST_LAMBDA_EXPRESSION) capacity++;
+    }
+    if (capacity != 0) {
+        if (!ZrCore_Array_TryInit(context->state, &map->lambdas,
+                                 sizeof(SZrAstNode *), capacity)) return ZR_FALSE;
+        for (index = 0; index < context->expressionFacts.length; index++) {
+            SZrSemanticExpressionFact *fact = ZrCore_Array_Get(&context->expressionFacts, index);
+            if (fact->node != ZR_NULL && fact->node->type == ZR_AST_LAMBDA_EXPRESSION)
+                ZrCore_Array_Push(context->state, &map->lambdas, &fact->node);
+        }
+    }
 
     for (index = 0; index < context->referenceFacts.length; index++) {
         SZrSemanticReferenceFact *fact =
@@ -205,6 +224,7 @@ static void semantic_da_free_symbol_map(SZrSemanticContext *context,
         return;
     }
     ZrCore_Array_Free(context->state, &map->symbolIds);
+    ZrCore_Array_Free(context->state, &map->lambdas);
 }
 
 /** @brief 比较用于变量声明槽回查的非空名称，优先利用相同字符串对象身份。 */
@@ -460,12 +480,23 @@ static TZrBool semantic_da_variable_declaration_slot(SZrAstNode *statement,
 /**
  * @brief 按 statement 的已知表达式子节点或节点范围筛选本次 transfer 应消费的事实。
  * @note block、catch、switch-default 与 try 语句不直接归属事实；其他未列类型走节点/范围回退。
- * TODO: parser 将 lambda body 保存在 initializer 内，compiler 会编译 block 并产生 READ facts；resolver 只为 SCRIPT/FUNCTION/BLOCK 建 CFG root 且 default 直接返回，range fallback 可能把嵌套 body fact 归入外层 statement。先定闭包创建/调用的 DA 语义，再用合法嵌套 lambda fixture 核对 fact/query 边界。
  */
-static TZrBool semantic_da_fact_in_statement(SZrAstNode *statement,
+static TZrBool semantic_da_fact_in_statement(const SZrSemanticDaAnalysis *analysis,
+                                             SZrAstNode *statement,
                                              const SZrSemanticReferenceFact *fact) {
     if (statement == ZR_NULL || fact == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < analysis->symbols->lambdas.length; index++) {
+        SZrAstNode *lambda = *(SZrAstNode **)ZrCore_Array_Get(
+                (SZrArray *)&analysis->symbols->lambdas, index);
+        if (semantic_da_range_contains_range(&analysis->root->location, &lambda->location) &&
+            semantic_da_node_contains_fact(lambda, fact)) {
+            /* Creating a closure does not execute its body or declare its
+             * parameters in the enclosing CFG. */
+            return ZR_FALSE;
+        }
     }
 
     switch (statement->type) {
@@ -540,7 +571,7 @@ static void semantic_da_transfer_statement(SZrAstNode *statement, void *state, v
         if (fact == ZR_NULL ||
             !fact->isResolved ||
             fact->symbolId == ZR_SEMANTIC_ID_INVALID ||
-            !semantic_da_fact_in_statement(statement, fact)) {
+            !semantic_da_fact_in_statement(analysis, statement, fact)) {
             continue;
         }
 
@@ -626,6 +657,7 @@ static TZrBool semantic_da_run_cfg_for_root(SZrSemanticContext *context,
 
     semanticAnalysis.context = context;
     semanticAnalysis.symbols = symbols;
+    semanticAnalysis.root = root;
     semanticAnalysis.readStateCount = context->referenceFacts.length;
     semanticAnalysis.readStates = ZR_NULL;
     semanticAnalysis.readStateSeen = ZR_NULL;
@@ -774,7 +806,7 @@ static TZrBool semantic_da_resolve_node(SZrSemanticContext *context,
 /**
  * @brief 用 AST 的前向 CFG 合并 resolved reference facts 的 definite-assignment 状态。
  * @pre context、referenceFacts 与 root 在整个调用期间保持有效；函数借用它们，并会修改匹配 fact 的状态字段。
- * @return 输入无效或实现显式检测到的 helper/CFG/dataflow 失败时返回 FALSE；未检测的 Array_Init 分配失败不保证在此返回，见上文 BUG。
+ * @return 输入无效或 helper/CFG/dataflow 失败时返回 FALSE。
  */
 TZrBool ZrParser_SemanticFacts_ResolveControlFlowDefiniteAssignments(
         SZrSemanticContext *context,
@@ -790,12 +822,30 @@ TZrBool ZrParser_SemanticFacts_ResolveControlFlowDefiniteAssignments(
     }
 
     ZrCore_Array_Construct(&symbols.symbolIds);
+    ZrCore_Array_Construct(&symbols.lambdas);
     if (!semantic_da_build_symbol_map(context, &symbols)) {
         semantic_da_free_symbol_map(context, &symbols);
         return ZR_FALSE;
     }
 
     ok = semantic_da_resolve_node(context, &symbols, root);
+    for (TZrSize index = 0; ok && index < symbols.lambdas.length; index++) {
+        SZrAstNode *lambda = *(SZrAstNode **)ZrCore_Array_Get(&symbols.lambdas, index);
+        SZrAstNode *body = lambda->data.lambdaExpression.block;
+        if (body == ZR_NULL) continue;
+        if (body->type == ZR_AST_BLOCK) {
+            ok = semantic_da_run_cfg_for_root(context, &symbols, body);
+        } else {
+            SZrAstNode wrapper = {0};
+            SZrAstNodeArray statements = {0};
+            statements.nodes = &body;
+            statements.count = 1;
+            wrapper.type = ZR_AST_SCRIPT;
+            wrapper.location = body->location;
+            wrapper.data.script.statements = &statements;
+            ok = semantic_da_run_cfg_for_root(context, &symbols, &wrapper);
+        }
+    }
     semantic_da_free_symbol_map(context, &symbols);
     return ok;
 }
