@@ -160,6 +160,48 @@ static void test_generic_member_access_exec_opcodes_become_dynamic_deopt_boundar
     assert_dynamic_member_boundary(ZR_INSTRUCTION_ENUM(SET_MEMBER), ZR_SEMIR_OPCODE_META_SET, 4u, 1u, 2u);
 }
 
+static void test_bound_cached_accessors_preserve_semantic_operations_and_member_identity(void) {
+    const EZrInstructionCode opcodes[] = {
+        ZR_INSTRUCTION_ENUM(SUPER_META_GET_CACHED),
+        ZR_INSTRUCTION_ENUM(SUPER_META_GET_STATIC_CACHED),
+        ZR_INSTRUCTION_ENUM(SUPER_META_SET_CACHED),
+        ZR_INSTRUCTION_ENUM(SUPER_META_SET_STATIC_CACHED)
+    };
+    const EZrFunctionCallSiteCacheKind kinds[] = {
+        ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET,
+        ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET_STATIC,
+        ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET,
+        ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET_STATIC
+    };
+    for (TZrSize index = 0; index < ZR_ARRAY_COUNT(opcodes); index++) {
+        SZrState *state = create_test_state();
+        TEST_ASSERT_NOT_NULL(state);
+        SZrFunction *function = create_single_member_instruction_function(state, opcodes[index], 3u, 1u, 0u);
+        TEST_ASSERT_NOT_NULL(function);
+        function->callSiteCaches = ZrCore_Memory_RawMallocWithType(state->global,
+                sizeof(*function->callSiteCaches), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        function->callSiteCacheLength = 1u;
+        ZrCore_Memory_RawSet(function->callSiteCaches, 0, sizeof(*function->callSiteCaches));
+        function->callSiteCaches[0].kind = kinds[index];
+        function->callSiteCaches[0].memberEntryIndex = 2u;
+
+        TEST_ASSERT_TRUE(compiler_build_function_semir_metadata(state, function));
+        const SZrSemIrInstruction *instruction = find_semir_opcode(function,
+                index < 2 ? ZR_SEMIR_OPCODE_META_GET : ZR_SEMIR_OPCODE_META_SET);
+        TEST_ASSERT_NOT_NULL(instruction);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->semIrInstructionLength);
+        TEST_ASSERT_EQUAL_UINT32(2u, instruction->operand1);
+        TEST_ASSERT_EQUAL_UINT32(3u, instruction->destinationSlot);
+        TEST_ASSERT_EQUAL_UINT32(index < 2 ? 1u : 3u, instruction->operand0);
+        TEST_ASSERT_NOT_EQUAL_UINT32(ZR_RUNTIME_SEMIR_DEOPT_ID_NONE, instruction->deoptId);
+        TEST_ASSERT_EQUAL_UINT32(instruction->deoptId, function->semIrDeoptTable[0].deoptId);
+        TEST_ASSERT_EQUAL_UINT32(0u, function->semIrDeoptTable[0].execInstructionIndex);
+        ZrCore_Function_Free(state, function);
+        destroy_test_state(state);
+    }
+}
+
 /* Unity 要求的用例前钩子；夹具在测试函数内创建。 */
 void setUp(void) {}
 
@@ -172,5 +214,6 @@ void tearDown(void) {}
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_generic_member_access_exec_opcodes_become_dynamic_deopt_boundaries);
+    RUN_TEST(test_bound_cached_accessors_preserve_semantic_operations_and_member_identity);
     return UNITY_END();
 }
