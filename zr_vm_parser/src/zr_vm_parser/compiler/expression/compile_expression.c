@@ -445,7 +445,8 @@ static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node)
 }
 
 // 编译二元表达式
-static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
+static void compile_binary_expression_from_slots(SZrCompilerState *cs, SZrAstNode *node,
+                                                   TZrUInt32 leftSlot, TZrUInt32 rightSlot) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
     }
@@ -499,16 +500,20 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     }
     
     // 编译左操作数
-    compile_expression_non_tail(cs, left);
-    TZrUInt32 leftSlot = cs->lastExpressionSlot;
+    if (leftSlot == ZR_PARSER_SLOT_NONE) {
+        compile_expression_non_tail(cs, left);
+        leftSlot = cs->lastExpressionSlot;
+    }
     if (leftSlot == ZR_PARSER_SLOT_NONE) {
         ZrParser_Compiler_Error(cs, "Failed to compile left operand", node->location);
         return;
     }
     
     // 编译右操作数
-    compile_expression_non_tail(cs, right);
-    TZrUInt32 rightSlot = cs->lastExpressionSlot;
+    if (rightSlot == ZR_PARSER_SLOT_NONE) {
+        compile_expression_non_tail(cs, right);
+        rightSlot = cs->lastExpressionSlot;
+    }
     if (rightSlot == ZR_PARSER_SLOT_NONE) {
         ZrParser_Compiler_Error(cs, "Failed to compile right operand", node->location);
         return;
@@ -729,6 +734,27 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
         }
         ZrParser_InferredType_Free(cs->state, &resultType);
     }
+}
+
+/* Cached pure operator trees have already been inferred. Compile operands in
+ * a small frame before retaining the three large inferred types for emission. */
+static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
+    TZrUInt32 leftSlot;
+    TZrUInt32 rightSlot;
+
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) return;
+    if (cs->expressionTypeCache == ZR_NULL ||
+        cs->expressionTypeCache->environment != cs->typeEnv) {
+        compile_binary_expression_from_slots(cs, node, ZR_PARSER_SLOT_NONE, ZR_PARSER_SLOT_NONE);
+        return;
+    }
+    compile_expression_non_tail(cs, node->data.binaryExpression.left);
+    leftSlot = cs->lastExpressionSlot;
+    if (cs->hasError || leftSlot == ZR_PARSER_SLOT_NONE) return;
+    compile_expression_non_tail(cs, node->data.binaryExpression.right);
+    rightSlot = cs->lastExpressionSlot;
+    if (cs->hasError || rightSlot == ZR_PARSER_SLOT_NONE) return;
+    compile_binary_expression_from_slots(cs, node, leftSlot, rightSlot);
 }
 
 // 辅助函数：检查变量名是否在 const 数组中

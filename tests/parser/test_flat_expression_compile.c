@@ -69,6 +69,7 @@ static void test_identifier_chain_compile_time(void) { expect_scaling(1); }
 
 static void test_cache_does_not_cross_assignments_or_function_scopes(void) {
     compile_and_expect("var x: int = 1; var first = x+x; x = 5; return x+x+first;", 12);
+    compile_and_expect("var x: int = 1; return (x = 2) + x;", 4);
     compile_and_expect("fn twice(x: int): int { return x+x; } return twice(3)+twice(5);", 16);
     compile_and_expect("fn sum(x: int): int { if (x > 0 && x < 4) { return x+x; }"
                        "return x+x; } return sum(-5)+sum(2);", -6);
