@@ -42,6 +42,18 @@ static char *read_text_file_owned(const char *path) {
 
     buffer[fileSize] = '\0';
     fclose(file);
+    /* Git checkouts may use CRLF; source contracts compare logical lines. */
+    {
+        size_t readIndex;
+        size_t writeIndex = 0;
+        for (readIndex = 0; readIndex < (size_t)fileSize; ++readIndex) {
+            if (buffer[readIndex] == '\r' && buffer[readIndex + 1u] == '\n') {
+                continue;
+            }
+            buffer[writeIndex++] = buffer[readIndex];
+        }
+        buffer[writeIndex] = '\0';
+    }
     return buffer;
 }
 
