@@ -40,8 +40,7 @@ static TZrBool zr_loop_storage_valid(const SZrExecIrLoopInfo *info) {
     SZrExecIrInduction *inductions = ZR_NULL;
 
     if (info == ZR_NULL) return ZR_FALSE;
-    /* LoopInfoInit is allowed on first-use stack storage.  Do not evaluate
-     * indeterminate fields until the lifecycle marker has been established. */
+    /* Validate an initialized analysis before releasing its owned arrays. */
     memcpy(&magic, &info->magic, sizeof(magic));
     if (magic != ZR_EXEC_IR_LOOP_INFO_MAGIC) return ZR_FALSE;
     memcpy(&loopCount, &info->loopCount, sizeof(loopCount));
@@ -78,7 +77,8 @@ static void zr_loop_release(SZrExecIrLoopInfo *info) {
 
 void ZrParser_ExecIr_LoopInfoInit(SZrExecIrLoopInfo *info) {
     if (info == ZR_NULL) return;
-    zr_loop_release(info);
+    /* First-use stack storage is indeterminate, including its lifecycle marker.
+     * Existing arrays must be released with LoopInfoFree before reinitializing. */
     memset(info, 0, sizeof(*info));
     info->magic = ZR_EXEC_IR_LOOP_INFO_MAGIC;
     info->schemaVersion = ZR_EXEC_IR_LOOP_SCHEMA_VERSION;
