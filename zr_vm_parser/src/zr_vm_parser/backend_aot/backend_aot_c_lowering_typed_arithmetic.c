@@ -91,8 +91,7 @@ static TZrBool backend_aot_c_direct_signed_binary_can_use_scalar_operands(
 
 /* 有符号算术对可省略值槽的 ExecIR 使用标量局部值，其余路径回写现役 VM 栈；
  * 两条路径均保留运行时零除数检查，只有可观察的目的值槽才需物化。 */
-/* TODO: 直接生成的有符号加减乘及 INT64_MIN / -1 可能触发 C 有符号溢出；
- * 核对解释器 execution_dispatch.c 的溢出语义，并以边界值比较解释器、C AOT、LLVM AOT。 */
+/* Signed add/subtract/multiply expressions call the shared checked helpers. */
 static void backend_aot_write_c_direct_signed_binary(FILE *file,
                                                      const SZrAotExecIrFunction *functionIr,
                                                      const char *expressionText,
@@ -200,8 +199,7 @@ static void backend_aot_write_c_direct_signed_binary(FILE *file,
 }
 
 /* 常量算术可复用已初始化的左标量值，但当前结果仍写回目的值槽，供后续非标量路径读取。 */
-/* TODO: 常量加减乘、INT64_MIN / -1 仍可能导致 C 有符号溢出；
- * 需核对解释器同名 const opcode 并补边界测试。 */
+/* Constant arithmetic uses the same checked helpers as slot operands. */
 static void backend_aot_write_c_direct_signed_const_binary(FILE *file,
                                                            const SZrAotExecIrFunction *functionIr,
                                                            const SZrFunction *function,
@@ -615,7 +613,7 @@ void backend_aot_write_c_direct_add_signed(FILE *file,
                                            TZrUInt32 execInstructionIndex) {
     backend_aot_write_c_direct_signed_binary(file,
                                              functionIr,
-                                             "zr_aot_left_scalar + zr_aot_right_scalar",
+                                             "ZrCore_Integer_Add(state, zr_aot_left_scalar, zr_aot_right_scalar)",
                                              destinationSlot,
                                              leftSlot,
                                              rightSlot,
@@ -645,7 +643,7 @@ void backend_aot_write_c_direct_add_signed_const(FILE *file,
     backend_aot_write_c_direct_signed_const_binary(file,
                                                    functionIr,
                                                    function,
-                                                   "zr_aot_left_scalar + zr_aot_right_literal",
+                                                   "ZrCore_Integer_Add(state, zr_aot_left_scalar, zr_aot_right_literal)",
                                                    destinationSlot,
                                                    leftSlot,
                                                    constantIndex,
@@ -675,7 +673,7 @@ void backend_aot_write_c_direct_sub_signed(FILE *file,
                                            TZrUInt32 execInstructionIndex) {
     backend_aot_write_c_direct_signed_binary(file,
                                              functionIr,
-                                             "zr_aot_left_scalar - zr_aot_right_scalar",
+                                             "ZrCore_Integer_Subtract(state, zr_aot_left_scalar, zr_aot_right_scalar)",
                                              destinationSlot,
                                              leftSlot,
                                              rightSlot,
@@ -705,7 +703,7 @@ void backend_aot_write_c_direct_sub_signed_const(FILE *file,
     backend_aot_write_c_direct_signed_const_binary(file,
                                                    functionIr,
                                                    function,
-                                                   "zr_aot_left_scalar - zr_aot_right_literal",
+                                                   "ZrCore_Integer_Subtract(state, zr_aot_left_scalar, zr_aot_right_literal)",
                                                    destinationSlot,
                                                    leftSlot,
                                                    constantIndex,
@@ -735,7 +733,7 @@ void backend_aot_write_c_direct_mul_signed(FILE *file,
                                            TZrUInt32 execInstructionIndex) {
     backend_aot_write_c_direct_signed_binary(file,
                                              functionIr,
-                                             "zr_aot_left_scalar * zr_aot_right_scalar",
+                                             "ZrCore_Integer_Multiply(state, zr_aot_left_scalar, zr_aot_right_scalar)",
                                              destinationSlot,
                                              leftSlot,
                                              rightSlot,
@@ -765,7 +763,7 @@ void backend_aot_write_c_direct_mul_signed_const(FILE *file,
     backend_aot_write_c_direct_signed_const_binary(file,
                                                    functionIr,
                                                    function,
-                                                   "zr_aot_left_scalar * zr_aot_right_literal",
+                                                   "ZrCore_Integer_Multiply(state, zr_aot_left_scalar, zr_aot_right_literal)",
                                                    destinationSlot,
                                                    leftSlot,
                                                    constantIndex,
@@ -903,15 +901,14 @@ void backend_aot_write_c_direct_mod_signed_const(FILE *file,
 }
 
 /* ADD_SIGNED_MOD_CONST 是融合 opcode；保持单一目的槽写回与常量除数检查。 */
-/* TODO: 常量为 INT64_MIN 时的除数取反，以及两数之和越界时的 C 行为需核对；
- * 对照 execution_dispatch.c 的融合 opcode 与 tests/parser 中的边界覆盖。 */
+/* Check the intermediate sum before computing the fused remainder. */
 void backend_aot_write_c_direct_add_signed_mod_const(FILE *file,
                                                      const SZrFunction *function,
                                                      TZrUInt32 destinationSlot,
                                                      TZrUInt32 leftSlot,
                                                      TZrUInt32 rightSlot,
                                                      TZrUInt32 constantIndex) {
-    const char *expressionText = "(zr_aot_left_scalar + zr_aot_right_scalar) % zr_aot_mod_literal";
+    const char *expressionText = "ZrCore_Integer_Modulo(state, ZrCore_Integer_Add(state, zr_aot_left_scalar, zr_aot_right_scalar), zr_aot_mod_literal)";
     const SZrTypeValue *constantValue;
     char modLiteral[64];
 
@@ -943,9 +940,6 @@ void backend_aot_write_c_direct_add_signed_mod_const(FILE *file,
             "        if (ZR_UNLIKELY(zr_aot_mod_literal == 0)) {\n"
             "            ZrCore_Debug_RunError(state, \"modulo by zero\");\n"
             "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        if (ZR_UNLIKELY(zr_aot_mod_literal < 0)) {\n"
-            "            zr_aot_mod_literal = -zr_aot_mod_literal;\n"
             "        }\n"
             "        zr_aot_left_scalar = zr_aot_left->value.nativeObject.nativeInt64;\n"
             "        zr_aot_right_scalar = zr_aot_right->value.nativeObject.nativeInt64;\n"
@@ -1027,8 +1021,7 @@ void backend_aot_write_c_direct_div_float(FILE *file,
 }
 
 /* NEG_SIGNED/NEG_FLOAT 有可省略值槽的专用标量路径，其他情况借助通用一元发射器。 */
-/* TODO: NEG_SIGNED 的源值为 INT64_MIN 时生成 C 直接取负会溢出；
- * 核对解释器 EXECUTE_TYPED_NEG_SIGNED_BODY 及 AOT 边界值测试的语义。 */
+/* Scalar and boxed negation both preserve checked int64 semantics. */
 void backend_aot_write_c_direct_neg_signed(FILE *file,
                                            const SZrAotExecIrFunction *functionIr,
                                            TZrUInt32 destinationSlot,
@@ -1042,7 +1035,7 @@ void backend_aot_write_c_direct_neg_signed(FILE *file,
         fprintf(file,
                 "    {\n"
                 "        /* zr_aot_scalar_exec_i64_unary dstSlot=%u sourceSlot=%u */\n"
-                "        zr_aot_s%u = -zr_aot_s%u;\n"
+                "        zr_aot_s%u = ZrCore_Integer_Negate(state, zr_aot_s%u);\n"
                 "    }\n",
                 (unsigned)destinationSlot,
                 (unsigned)sourceSlot,
@@ -1053,7 +1046,7 @@ void backend_aot_write_c_direct_neg_signed(FILE *file,
 
     backend_aot_write_c_direct_signed_unary(file,
                                             functionIr,
-                                            "-zr_aot_source_scalar",
+                                            "ZrCore_Integer_Negate(state, zr_aot_source_scalar)",
                                             destinationSlot,
                                             sourceSlot);
 }

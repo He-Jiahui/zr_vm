@@ -656,13 +656,13 @@ static TZrBool aot_runtime_generic_numeric_binary(SZrState *state,
 
         switch (operation) {
             case ZR_AOT_RUNTIME_GENERIC_NUMERIC_ADD:
-                resultInt = leftInt + rightInt;
+                resultInt = ZrCore_Integer_Add(state, leftInt, rightInt);
                 break;
             case ZR_AOT_RUNTIME_GENERIC_NUMERIC_SUB:
-                resultInt = leftInt - rightInt;
+                resultInt = ZrCore_Integer_Subtract(state, leftInt, rightInt);
                 break;
             case ZR_AOT_RUNTIME_GENERIC_NUMERIC_MUL:
-                resultInt = leftInt * rightInt;
+                resultInt = ZrCore_Integer_Multiply(state, leftInt, rightInt);
                 break;
             case ZR_AOT_RUNTIME_GENERIC_NUMERIC_DIV:
                 resultInt = leftInt / rightInt;
@@ -773,12 +773,12 @@ TZrBool ZrLibrary_AotRuntime_GenericNumericNeg(SZrState *state,
     if (ZR_VALUE_IS_TYPE_SIGNED_INT(sourceValue->type)) {
         ZR_VALUE_FAST_SET(destinationValue,
                           nativeInt64,
-                          -sourceValue->value.nativeObject.nativeInt64,
+                          ZrCore_Integer_Negate(state, sourceValue->value.nativeObject.nativeInt64),
                           sourceValue->type);
     } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(sourceValue->type)) {
         ZR_VALUE_FAST_SET(destinationValue,
                           nativeInt64,
-                          -(TZrInt64)sourceValue->value.nativeObject.nativeUInt64,
+                          ZrCore_Integer_NegateUnsigned(state, sourceValue->value.nativeObject.nativeUInt64),
                           ZR_VALUE_TYPE_INT64);
     } else if (ZR_VALUE_IS_TYPE_FLOAT(sourceValue->type)) {
         ZR_VALUE_FAST_SET(destinationValue,

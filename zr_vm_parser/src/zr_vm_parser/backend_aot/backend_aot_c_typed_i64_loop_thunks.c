@@ -123,20 +123,19 @@ TZrBool backend_aot_c_can_emit_typed_i64_counting_sum_loop_thunk(const SZrFuncti
     return ZR_TRUE;
 }
 
-/* BUG: 输入足够大时累加器使用原生 signed 加法，求和溢出触发 C 未定义行为；
- * 该路径由 i64 单参数形状识别进入，尚无范围守卫。 */
+/* Preserve the checked intermediate sums of the original counting loop. */
 void backend_aot_c_write_typed_i64_counting_sum_loop_thunk(FILE *file, TZrUInt32 flatIndex) {
     if (file == ZR_NULL) {
         return;
     }
 
     fprintf(file,
-            "static TZrInt64 zr_aot_typed_i64_fn_%u(TZrInt64 zr_aot_arg0) {\n"
+            "static TZrInt64 zr_aot_typed_i64_fn_%u(struct SZrState *state, TZrInt64 zr_aot_arg0) {\n"
             "    TZrInt64 zr_aot_loop_index = 0;\n"
             "    TZrInt64 zr_aot_loop_accumulator = 0;\n"
             "    while (zr_aot_loop_index < zr_aot_arg0) {\n"
-            "        zr_aot_loop_accumulator = (TZrInt64)(zr_aot_loop_accumulator + zr_aot_loop_index);\n"
-            "        zr_aot_loop_index = (TZrInt64)(zr_aot_loop_index + 1);\n"
+            "        zr_aot_loop_accumulator = ZrCore_Integer_Add(state, zr_aot_loop_accumulator, zr_aot_loop_index);\n"
+            "        zr_aot_loop_index = ZrCore_Integer_Add(state, zr_aot_loop_index, 1);\n"
             "    }\n"
             "    return zr_aot_loop_accumulator;\n"
             "}\n",

@@ -582,26 +582,20 @@ static void backend_aot_write_c_scalar_i64_shift(FILE *file,
     if (canSkipValueSlot) {
         fprintf(file,
                 "    {\n"
-                "        /* zr_aot_scalar_exec_i64_shift semirOpcode=%u dstSlot=%u leftSlot=%u rightSlot=%u */\n"
-                "        if (ZR_UNLIKELY(zr_aot_s%u < 0 || zr_aot_s%u >= 64)) {\n"
-                "            ZrCore_Debug_RunError(state, \"generated AOT scalar shift count out of range\");\n"
-                "            ZR_AOT_C_FAIL();\n"
-                "        }\n",
+                "        /* zr_aot_scalar_exec_i64_shift semirOpcode=%u dstSlot=%u leftSlot=%u rightSlot=%u */\n",
                 (unsigned)semIrInstruction->semIrOpcode,
                 (unsigned)destinationSlot,
                 (unsigned)leftSlot,
-                (unsigned)rightSlot,
-                (unsigned)rightSlot,
                 (unsigned)rightSlot);
         if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_SHL) {
             fprintf(file,
-                    "        zr_aot_s%u = (TZrInt64)((TZrUInt64)zr_aot_s%u << zr_aot_s%u);\n",
+                    "        zr_aot_s%u = ZrCore_Integer_ShiftLeft(zr_aot_s%u, (TZrUInt64)zr_aot_s%u);\n",
                     (unsigned)destinationSlot,
                     (unsigned)leftSlot,
                     (unsigned)rightSlot);
         } else {
             fprintf(file,
-                    "        zr_aot_s%u = zr_aot_s%u >> zr_aot_s%u;\n",
+                    "        zr_aot_s%u = ZrCore_Integer_ShiftRight(zr_aot_s%u, (TZrUInt64)zr_aot_s%u);\n",
                     (unsigned)destinationSlot,
                     (unsigned)leftSlot,
                     (unsigned)rightSlot);
@@ -662,23 +656,16 @@ static void backend_aot_write_c_scalar_i64_shift(FILE *file,
                     (unsigned)rightSlot,
                     (unsigned)rightSlot);
         }
-        fprintf(file,
-                "        if (ZR_UNLIKELY(zr_aot_s%u < 0 || zr_aot_s%u >= 64)) {\n"
-                "            ZrCore_Debug_RunError(state, \"generated AOT scalar shift count out of range\");\n"
-                "            ZR_AOT_C_FAIL();\n"
-                "        }\n",
-                (unsigned)rightSlot,
-                (unsigned)rightSlot);
         if (useScalarDestination) {
             if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_SHL) {
                 fprintf(file,
-                        "        zr_aot_s%u = (TZrInt64)((TZrUInt64)zr_aot_s%u << zr_aot_s%u);\n",
+                        "        zr_aot_s%u = ZrCore_Integer_ShiftLeft(zr_aot_s%u, (TZrUInt64)zr_aot_s%u);\n",
                         (unsigned)destinationSlot,
                         (unsigned)leftSlot,
                         (unsigned)rightSlot);
             } else {
                 fprintf(file,
-                        "        zr_aot_s%u = zr_aot_s%u >> zr_aot_s%u;\n",
+                        "        zr_aot_s%u = ZrCore_Integer_ShiftRight(zr_aot_s%u, (TZrUInt64)zr_aot_s%u);\n",
                         (unsigned)destinationSlot,
                         (unsigned)leftSlot,
                         (unsigned)rightSlot);
@@ -688,12 +675,12 @@ static void backend_aot_write_c_scalar_i64_shift(FILE *file,
                     (unsigned)destinationSlot);
         } else if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_SHL) {
             fprintf(file,
-                    "        zr_aot_s_result = (TZrInt64)((TZrUInt64)zr_aot_s%u << zr_aot_s%u);\n",
+                    "        zr_aot_s_result = ZrCore_Integer_ShiftLeft(zr_aot_s%u, (TZrUInt64)zr_aot_s%u);\n",
                     (unsigned)leftSlot,
                     (unsigned)rightSlot);
         } else {
             fprintf(file,
-                    "        zr_aot_s_result = zr_aot_s%u >> zr_aot_s%u;\n",
+                    "        zr_aot_s_result = ZrCore_Integer_ShiftRight(zr_aot_s%u, (TZrUInt64)zr_aot_s%u);\n",
                     (unsigned)leftSlot,
                     (unsigned)rightSlot);
         }
@@ -702,17 +689,13 @@ static void backend_aot_write_c_scalar_i64_shift(FILE *file,
                 "        TZrInt64 zr_aot_s_left;\n"
                 "        TZrInt64 zr_aot_s_shift;\n"
                 "        zr_aot_s_left = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n"
-                "        zr_aot_s_shift = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n"
-                "        if (ZR_UNLIKELY(zr_aot_s_shift < 0 || zr_aot_s_shift >= 64)) {\n"
-                "            ZrCore_Debug_RunError(state, \"generated AOT scalar shift count out of range\");\n"
-                "            ZR_AOT_C_FAIL();\n"
-                "        }\n",
+                "        zr_aot_s_shift = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n",
                 (unsigned)leftSlot,
                 (unsigned)rightSlot);
         if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_SHL) {
-            fprintf(file, "        zr_aot_s_result = (TZrInt64)((TZrUInt64)zr_aot_s_left << zr_aot_s_shift);\n");
+            fprintf(file, "        zr_aot_s_result = ZrCore_Integer_ShiftLeft(zr_aot_s_left, (TZrUInt64)zr_aot_s_shift);\n");
         } else {
-            fprintf(file, "        zr_aot_s_result = zr_aot_s_left >> zr_aot_s_shift;\n");
+            fprintf(file, "        zr_aot_s_result = ZrCore_Integer_ShiftRight(zr_aot_s_left, (TZrUInt64)zr_aot_s_shift);\n");
         }
     }
     if (!useScalarOperands && useScalarDestination) {
@@ -754,26 +737,20 @@ static void backend_aot_write_c_scalar_u64_shift(FILE *file,
     if (canSkipValueSlot) {
         fprintf(file,
                 "    {\n"
-                "        /* zr_aot_scalar_exec_u64_shift semirOpcode=%u dstSlot=%u leftSlot=%u rightSlot=%u */\n"
-                "        if (ZR_UNLIKELY(zr_aot_s%u < 0 || zr_aot_s%u >= 64)) {\n"
-                "            ZrCore_Debug_RunError(state, \"generated AOT scalar shift count out of range\");\n"
-                "            ZR_AOT_C_FAIL();\n"
-                "        }\n",
+                "        /* zr_aot_scalar_exec_u64_shift semirOpcode=%u dstSlot=%u leftSlot=%u rightSlot=%u */\n",
                 (unsigned)semIrInstruction->semIrOpcode,
                 (unsigned)destinationSlot,
                 (unsigned)leftSlot,
-                (unsigned)rightSlot,
-                (unsigned)rightSlot,
                 (unsigned)rightSlot);
         if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_SHL) {
             fprintf(file,
-                    "        zr_aot_u%u = zr_aot_u%u << zr_aot_s%u;\n",
+                    "        zr_aot_u%u = zr_aot_u%u << ((TZrUInt64)zr_aot_s%u & 63u);\n",
                     (unsigned)destinationSlot,
                     (unsigned)leftSlot,
                     (unsigned)rightSlot);
         } else {
             fprintf(file,
-                    "        zr_aot_u%u = zr_aot_u%u >> zr_aot_s%u;\n",
+                    "        zr_aot_u%u = zr_aot_u%u >> ((TZrUInt64)zr_aot_s%u & 63u);\n",
                     (unsigned)destinationSlot,
                     (unsigned)leftSlot,
                     (unsigned)rightSlot);
@@ -834,23 +811,16 @@ static void backend_aot_write_c_scalar_u64_shift(FILE *file,
                     (unsigned)rightSlot,
                     (unsigned)rightSlot);
         }
-        fprintf(file,
-                "        if (ZR_UNLIKELY(zr_aot_s%u < 0 || zr_aot_s%u >= 64)) {\n"
-                "            ZrCore_Debug_RunError(state, \"generated AOT scalar shift count out of range\");\n"
-                "            ZR_AOT_C_FAIL();\n"
-                "        }\n",
-                (unsigned)rightSlot,
-                (unsigned)rightSlot);
         if (useScalarDestination) {
             if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_SHL) {
                 fprintf(file,
-                        "        zr_aot_u%u = zr_aot_u%u << zr_aot_s%u;\n",
+                        "        zr_aot_u%u = zr_aot_u%u << ((TZrUInt64)zr_aot_s%u & 63u);\n",
                         (unsigned)destinationSlot,
                         (unsigned)leftSlot,
                         (unsigned)rightSlot);
             } else {
                 fprintf(file,
-                        "        zr_aot_u%u = zr_aot_u%u >> zr_aot_s%u;\n",
+                        "        zr_aot_u%u = zr_aot_u%u >> ((TZrUInt64)zr_aot_s%u & 63u);\n",
                         (unsigned)destinationSlot,
                         (unsigned)leftSlot,
                         (unsigned)rightSlot);
@@ -860,12 +830,12 @@ static void backend_aot_write_c_scalar_u64_shift(FILE *file,
                     (unsigned)destinationSlot);
         } else if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_SHL) {
             fprintf(file,
-                    "        zr_aot_u_result = zr_aot_u%u << zr_aot_s%u;\n",
+                    "        zr_aot_u_result = zr_aot_u%u << ((TZrUInt64)zr_aot_s%u & 63u);\n",
                     (unsigned)leftSlot,
                     (unsigned)rightSlot);
         } else {
             fprintf(file,
-                    "        zr_aot_u_result = zr_aot_u%u >> zr_aot_s%u;\n",
+                    "        zr_aot_u_result = zr_aot_u%u >> ((TZrUInt64)zr_aot_s%u & 63u);\n",
                     (unsigned)leftSlot,
                     (unsigned)rightSlot);
         }
@@ -874,17 +844,13 @@ static void backend_aot_write_c_scalar_u64_shift(FILE *file,
                 "        TZrUInt64 zr_aot_u_left;\n"
                 "        TZrInt64 zr_aot_s_shift;\n"
                 "        zr_aot_u_left = frame.slotBase[%u].value.value.nativeObject.nativeUInt64;\n"
-                "        zr_aot_s_shift = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n"
-                "        if (ZR_UNLIKELY(zr_aot_s_shift < 0 || zr_aot_s_shift >= 64)) {\n"
-                "            ZrCore_Debug_RunError(state, \"generated AOT scalar shift count out of range\");\n"
-                "            ZR_AOT_C_FAIL();\n"
-                "        }\n",
+                "        zr_aot_s_shift = frame.slotBase[%u].value.value.nativeObject.nativeInt64;\n",
                 (unsigned)leftSlot,
                 (unsigned)rightSlot);
         if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_SHL) {
-            fprintf(file, "        zr_aot_u_result = zr_aot_u_left << zr_aot_s_shift;\n");
+            fprintf(file, "        zr_aot_u_result = zr_aot_u_left << ((TZrUInt64)zr_aot_s_shift & 63u);\n");
         } else {
-            fprintf(file, "        zr_aot_u_result = zr_aot_u_left >> zr_aot_s_shift;\n");
+            fprintf(file, "        zr_aot_u_result = zr_aot_u_left >> ((TZrUInt64)zr_aot_s_shift & 63u);\n");
         }
     }
     if (!useScalarOperands && useScalarDestination) {

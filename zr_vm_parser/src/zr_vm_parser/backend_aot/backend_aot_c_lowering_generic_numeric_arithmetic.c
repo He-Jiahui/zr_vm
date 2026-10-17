@@ -235,17 +235,19 @@ static TZrBool backend_aot_c_write_generic_numeric_mixed_i64_u64_binary_scalar_l
         return ZR_FALSE;
     }
 
+    const char *checkedOperator = operatorToken[0] == '+' ? "ZrCore_Integer_Add" :
+                                  operatorToken[0] == '-' ? "ZrCore_Integer_Subtract" : "ZrCore_Integer_Multiply";
     fprintf(file,
             "    {\n"
             "        /* zr_aot_arith_exec_generic_numeric_binary */\n"
             "        /* %s */\n"
-            "        zr_aot_s%u = %s%u %s %s%u;\n"
+            "        zr_aot_s%u = %s(state, %s%u, %s%u);\n"
             "    }\n",
             marker,
             (unsigned)destinationSlot,
+            checkedOperator,
             leftPrefix,
             (unsigned)leftSlot,
-            operatorToken,
             rightPrefix,
             (unsigned)rightSlot);
     return ZR_TRUE;
@@ -522,8 +524,7 @@ static TZrBool backend_aot_c_write_generic_numeric_mixed_f64_mod_scalar_local(
 }
 
 /* signed 快路径绕过 runtime；结果及输入仅在静态缓存活性条件下成立。 */
-/* BUG: ADD/SUB/MUL 的 signed 溢出未经检查直接进入生成 C 表达式，触发
- * 未定义行为；运行时退路也有同类问题，需统一极值语义与 UBSan 回归。 */
+/* Signed scalar arithmetic shares the runtime overflow checks. */
 static TZrBool backend_aot_c_write_generic_numeric_i64_binary_scalar_local(
         FILE *file,
         const SZrAotExecIrFunction *functionIr,
@@ -547,16 +548,18 @@ static TZrBool backend_aot_c_write_generic_numeric_i64_binary_scalar_local(
         return ZR_FALSE;
     }
 
+    const char *checkedOperator = operatorToken[0] == '+' ? "ZrCore_Integer_Add" :
+                                  operatorToken[0] == '-' ? "ZrCore_Integer_Subtract" : "ZrCore_Integer_Multiply";
     fprintf(file,
             "    {\n"
             "        /* zr_aot_arith_exec_generic_numeric_binary */\n"
             "        /* %s */\n"
-            "        zr_aot_s%u = zr_aot_s%u %s zr_aot_s%u;\n"
+            "        zr_aot_s%u = %s(state, zr_aot_s%u, zr_aot_s%u);\n"
             "    }\n",
             marker,
             (unsigned)destinationSlot,
+            checkedOperator,
             (unsigned)leftSlot,
-            operatorToken,
             (unsigned)rightSlot);
     return ZR_TRUE;
 }
@@ -600,7 +603,7 @@ static TZrBool backend_aot_c_write_generic_numeric_u64_binary_scalar_local(
 }
 
 /* signed 取负保留在标量局部变量中以继续传播至下一个数值操作。 */
-/* BUG: 源为 INT64_MIN 时生成 C 取负溢出；此快路径和 runtime 退路均未防护。 */
+/* Negation checks INT64_MIN before evaluating the host operation. */
 static TZrBool backend_aot_c_write_generic_numeric_i64_neg_scalar_local(
         FILE *file,
         const SZrAotExecIrFunction *functionIr,
@@ -623,7 +626,7 @@ static TZrBool backend_aot_c_write_generic_numeric_i64_neg_scalar_local(
             "    {\n"
             "        /* zr_aot_arith_exec_generic_numeric_unary */\n"
             "        /* zr_aot_generic_numeric_i64_neg_scalar_local */\n"
-            "        zr_aot_s%u = -zr_aot_s%u;\n"
+            "        zr_aot_s%u = ZrCore_Integer_Negate(state, zr_aot_s%u);\n"
             "    }\n",
             (unsigned)destinationSlot,
             (unsigned)sourceSlot);
@@ -631,8 +634,7 @@ static TZrBool backend_aot_c_write_generic_numeric_i64_neg_scalar_local(
 }
 
 /* unsigned 负号的目标改用 signed 缓存，匹配 runtime 的结果类型。 */
-/* TODO: UINT64 高位值先强转 signed 再取负；需确认语言期望的边界结果，
- * 并与解释器及 runtime 的同一路径做极值对照。 */
+/* Unsigned negation must produce a representable signed result. */
 static TZrBool backend_aot_c_write_generic_numeric_u64_neg_to_i64_scalar_local(
         FILE *file,
         const SZrAotExecIrFunction *functionIr,
@@ -655,7 +657,7 @@ static TZrBool backend_aot_c_write_generic_numeric_u64_neg_to_i64_scalar_local(
             "    {\n"
             "        /* zr_aot_arith_exec_generic_numeric_unary */\n"
             "        /* zr_aot_generic_numeric_u64_neg_to_i64_scalar_local */\n"
-            "        zr_aot_s%u = -(TZrInt64)zr_aot_u%u;\n"
+            "        zr_aot_s%u = ZrCore_Integer_NegateUnsigned(state, zr_aot_u%u);\n"
             "    }\n",
             (unsigned)destinationSlot,
             (unsigned)sourceSlot);

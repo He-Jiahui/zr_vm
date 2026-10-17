@@ -296,12 +296,12 @@ static void test_aot_c_signed_load_const_fusion_elides_frame_and_value_materiali
     assert_text_contains(generatedCText, "TZrInt64 zr_aot_s6 = (TZrInt64)0;");
     assert_text_contains(generatedCText, "TZrInt64 zr_aot_s7 = (TZrInt64)0;");
     assert_text_contains(generatedCText, "zr_aot_s0 = (TZrInt64)10;");
-    assert_text_contains(generatedCText, "zr_aot_s1 = zr_aot_s0 + (TZrInt64)5;");
+    assert_text_contains(generatedCText, "zr_aot_s1 = ZrCore_Integer_Add(state, zr_aot_s0, (TZrInt64)5);");
     assert_text_contains(generatedCText, "/* zr_aot_scalar_stack_copy_i64 dstSlot=3 srcSlot=1 */");
-    assert_text_contains(generatedCText, "zr_aot_s4 = zr_aot_s1 - (TZrInt64)3;");
+    assert_text_contains(generatedCText, "zr_aot_s4 = ZrCore_Integer_Subtract(state, zr_aot_s1, (TZrInt64)3);");
     assert_text_contains(generatedCText, "/* zr_aot_scalar_stack_copy_i64 dstSlot=5 srcSlot=4 */");
     assert_text_contains(generatedCText, "zr_aot_s6 = (TZrInt64)7;");
-    assert_text_contains(generatedCText, "zr_aot_s7 = zr_aot_s4 + (TZrInt64)7;");
+    assert_text_contains(generatedCText, "zr_aot_s7 = ZrCore_Integer_Add(state, zr_aot_s4, (TZrInt64)7);");
     assert_text_contains(generatedCText, "/* zr_aot_direct_return_i64_local */");
     assert_text_contains(generatedCText, "ZrLibrary_AotRuntime_ReturnI64(state, zr_aot_s7)");
     free(generatedCText);

@@ -6,20 +6,38 @@
 
 /* Shared interpreter/AOT integer semantics. Check before evaluating a signed
  * operation; neither compiler overflow flags nor host shift rules are needed. */
-static inline TZrInt64 ZrCore_Integer_Add(struct SZrState *state, TZrInt64 left, TZrInt64 right) {
-    if ((right > 0 && left > INT64_MAX - right) ||
+static inline TZrBool ZrCore_Integer_TryAdd(TZrInt64 left, TZrInt64 right, TZrInt64 *result) {
+    if (result == ZR_NULL || (right > 0 && left > INT64_MAX - right) ||
         (right < 0 && left < INT64_MIN - right)) {
+        return ZR_FALSE;
+    }
+    *result = left + right;
+    return ZR_TRUE;
+}
+
+static inline TZrInt64 ZrCore_Integer_Add(struct SZrState *state, TZrInt64 left, TZrInt64 right) {
+    TZrInt64 result;
+    if (!ZrCore_Integer_TryAdd(left, right, &result)) {
         ZrCore_Debug_RunError(state, "signed integer addition overflow");
     }
-    return left + right;
+    return result;
+}
+
+static inline TZrBool ZrCore_Integer_TrySubtract(TZrInt64 left, TZrInt64 right, TZrInt64 *result) {
+    if (result == ZR_NULL || (right < 0 && left > INT64_MAX + right) ||
+        (right > 0 && left < INT64_MIN + right)) {
+        return ZR_FALSE;
+    }
+    *result = left - right;
+    return ZR_TRUE;
 }
 
 static inline TZrInt64 ZrCore_Integer_Subtract(struct SZrState *state, TZrInt64 left, TZrInt64 right) {
-    if ((right < 0 && left > INT64_MAX + right) ||
-        (right > 0 && left < INT64_MIN + right)) {
+    TZrInt64 result;
+    if (!ZrCore_Integer_TrySubtract(left, right, &result)) {
         ZrCore_Debug_RunError(state, "signed integer subtraction overflow");
     }
-    return left - right;
+    return result;
 }
 
 static inline TZrInt64 ZrCore_Integer_Negate(struct SZrState *state, TZrInt64 value) {
@@ -27,6 +45,37 @@ static inline TZrInt64 ZrCore_Integer_Negate(struct SZrState *state, TZrInt64 va
         ZrCore_Debug_RunError(state, "signed integer negation overflow");
     }
     return -value;
+}
+
+static inline TZrBool ZrCore_Integer_TryMultiply(TZrInt64 left, TZrInt64 right, TZrInt64 *result) {
+    if (result == ZR_NULL) return ZR_FALSE;
+    if (left != 0 && right != 0 &&
+        ((left > 0 && ((right > 0 && left > INT64_MAX / right) ||
+                       (right < 0 && right < INT64_MIN / left))) ||
+         (left < 0 && ((right > 0 && left < INT64_MIN / right) ||
+                       (right < 0 && left < INT64_MAX / right))))) {
+        return ZR_FALSE;
+    }
+    *result = left * right;
+    return ZR_TRUE;
+}
+
+static inline TZrInt64 ZrCore_Integer_Multiply(struct SZrState *state, TZrInt64 left, TZrInt64 right) {
+    TZrInt64 result;
+    if (!ZrCore_Integer_TryMultiply(left, right, &result)) {
+        ZrCore_Debug_RunError(state, "signed integer multiplication overflow");
+    }
+    return result;
+}
+
+static inline TZrInt64 ZrCore_Integer_Divide(struct SZrState *state, TZrInt64 left, TZrInt64 right) {
+    if (right == 0) {
+        ZrCore_Debug_RunError(state, "divide by zero");
+    }
+    if (left == INT64_MIN && right == -1) {
+        ZrCore_Debug_RunError(state, "signed integer division overflow");
+    }
+    return left / right;
 }
 
 /* Convert two's-complement bits without an out-of-range unsigned-to-signed cast. */

@@ -172,7 +172,7 @@ void backend_aot_write_c_static_direct_i64_one_arg_function_call(FILE *file,
             (unsigned)destinationSlot);
     }
     fprintf(file,
-            "            zr_aot_s%u = zr_aot_typed_i64_fn_%u(zr_aot_s%u);\n",
+            "            zr_aot_s%u = zr_aot_typed_i64_fn_%u(state, zr_aot_s%u);\n",
             (unsigned)destinationSlot,
             (unsigned)calleeFlatIndex,
             (unsigned)argumentSlot);

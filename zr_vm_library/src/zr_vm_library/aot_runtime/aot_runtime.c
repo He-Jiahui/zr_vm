@@ -5834,7 +5834,7 @@ TZrBool ZrLibrary_AotRuntime_Sub(SZrState *state,
     if (ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(rightValue->type)) {
         leftInt = leftValue->value.nativeObject.nativeInt64;
         rightInt = rightValue->value.nativeObject.nativeInt64;
-        ZrCore_Value_InitAsInt(state, destinationValue, leftInt - rightInt);
+        ZrCore_Value_InitAsInt(state, destinationValue, ZrCore_Integer_Subtract(state, leftInt, rightInt));
         return ZR_TRUE;
     }
 
@@ -5899,7 +5899,7 @@ TZrBool ZrLibrary_AotRuntime_Mul(SZrState *state,
     if (ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(rightValue->type)) {
         leftInt = leftValue->value.nativeObject.nativeInt64;
         rightInt = rightValue->value.nativeObject.nativeInt64;
-        ZrCore_Value_InitAsInt(state, destinationValue, leftInt * rightInt);
+        ZrCore_Value_InitAsInt(state, destinationValue, ZrCore_Integer_Multiply(state, leftInt, rightInt));
         return ZR_TRUE;
     }
 
@@ -5914,7 +5914,7 @@ TZrBool ZrLibrary_AotRuntime_Mul(SZrState *state,
         aot_runtime_extract_integer_like_value(rightValue, &rightInt) &&
         !ZR_VALUE_IS_TYPE_FLOAT(leftValue->type) &&
         !ZR_VALUE_IS_TYPE_FLOAT(rightValue->type)) {
-        ZrCore_Value_InitAsInt(state, destinationValue, leftInt * rightInt);
+        ZrCore_Value_InitAsInt(state, destinationValue, ZrCore_Integer_Multiply(state, leftInt, rightInt));
         return ZR_TRUE;
     }
 
@@ -6508,8 +6508,6 @@ static TZrBool aot_runtime_invoke_binary_meta(SZrState *state,
     return aot_runtime_call_temp_base_without_yield(state, frame, destinationSlot, callBase, 2);
 }
 
-/* TODO: 核查 两整数标签载荷的 int64 加法结果越界 的输入边界：沿合法编译输入、当前 LLVM opcode 选择及实际发射到此入口，确认 frame/tag/slot 或常量来源能否满足极值组合，并定义失败或数值契约；当前原始 C 运算未给出对应门禁，但尚无完整合法触发链或实测证明。 */
-
 TZrBool ZrLibrary_AotRuntime_AddInt(SZrState *state,
                                     ZrAotGeneratedFrame *frame,
                                     TZrUInt32 destinationSlot,
@@ -6549,7 +6547,7 @@ TZrBool ZrLibrary_AotRuntime_AddInt(SZrState *state,
         return ZR_FALSE;
     }
 
-    ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(destinationPointer), leftInt + rightInt);
+    ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(destinationPointer), ZrCore_Integer_Add(state, leftInt, rightInt));
     return ZR_TRUE;
 }
 
@@ -6581,11 +6579,9 @@ TZrBool ZrLibrary_AotRuntime_AddIntConst(SZrState *state,
         return ZR_FALSE;
     }
 
-    ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(destinationPointer), leftInt + rightInt);
+    ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(destinationPointer), ZrCore_Integer_Add(state, leftInt, rightInt));
     return ZR_TRUE;
 }
-
-/* TODO: 核查 signed 值的 int64 加法结果越界 的输入边界：沿合法编译输入、当前 LLVM opcode 选择及实际发射到此入口，确认 frame/tag/slot 或常量来源能否满足极值组合，并定义失败或数值契约；当前原始 C 运算未给出对应门禁，但尚无完整合法触发链或实测证明。 */
 
 TZrBool ZrLibrary_AotRuntime_AddSigned(SZrState *state,
                                        ZrAotGeneratedFrame *frame,
@@ -6611,7 +6607,7 @@ TZrBool ZrLibrary_AotRuntime_AddSigned(SZrState *state,
 
     ZrCore_Value_InitAsInt(state,
                            ZrCore_Stack_GetValue(destinationPointer),
-                           leftValue->value.nativeObject.nativeInt64 + rightValue->value.nativeObject.nativeInt64);
+                           ZrCore_Integer_Add(state, leftValue->value.nativeObject.nativeInt64, rightValue->value.nativeObject.nativeInt64));
     return ZR_TRUE;
 }
 
@@ -6639,7 +6635,7 @@ TZrBool ZrLibrary_AotRuntime_AddSignedConst(SZrState *state,
 
     ZrCore_Value_InitAsInt(state,
                            ZrCore_Stack_GetValue(destinationPointer),
-                           leftValue->value.nativeObject.nativeInt64 + rightValue->value.nativeObject.nativeInt64);
+                           ZrCore_Integer_Add(state, leftValue->value.nativeObject.nativeInt64, rightValue->value.nativeObject.nativeInt64));
     return ZR_TRUE;
 }
 
@@ -6697,8 +6693,6 @@ TZrBool ZrLibrary_AotRuntime_AddUnsignedConst(SZrState *state,
     return ZR_TRUE;
 }
 
-/* TODO: 核查 整数载荷的 int64 减法结果越界 的输入边界：沿合法编译输入、当前 LLVM opcode 选择及实际发射到此入口，确认 frame/tag/slot 或常量来源能否满足极值组合，并定义失败或数值契约；当前原始 C 运算未给出对应门禁，但尚无完整合法触发链或实测证明。 */
-
 TZrBool ZrLibrary_AotRuntime_SubInt(SZrState *state,
                                     ZrAotGeneratedFrame *frame,
                                     TZrUInt32 destinationSlot,
@@ -6743,7 +6737,7 @@ TZrBool ZrLibrary_AotRuntime_SubInt(SZrState *state,
     if (ZR_VALUE_IS_TYPE_INT(leftValue->type) && ZR_VALUE_IS_TYPE_INT(rightValue->type)) {
         ZR_VALUE_FAST_SET(ZrCore_Stack_GetValue(destinationPointer),
                           nativeInt64,
-                          leftInt - rightInt,
+                          ZrCore_Integer_Subtract(state, leftInt, rightInt),
                           leftValue->type);
         return ZR_TRUE;
     }
@@ -6801,7 +6795,7 @@ TZrBool ZrLibrary_AotRuntime_SubIntConst(SZrState *state,
     if (ZR_VALUE_IS_TYPE_INT(leftValue->type) && ZR_VALUE_IS_TYPE_INT(rightValue->type)) {
         ZR_VALUE_FAST_SET(ZrCore_Stack_GetValue(destinationPointer),
                           nativeInt64,
-                          leftInt - rightInt,
+                          ZrCore_Integer_Subtract(state, leftInt, rightInt),
                           leftValue->type);
         return ZR_TRUE;
     }
@@ -6814,8 +6808,6 @@ TZrBool ZrLibrary_AotRuntime_SubIntConst(SZrState *state,
     ZrCore_Value_InitAsFloat(state, ZrCore_Stack_GetValue(destinationPointer), leftDouble - rightDouble);
     return ZR_TRUE;
 }
-
-/* TODO: 核查 signed 值的 int64 减法结果越界 的输入边界：沿合法编译输入、当前 LLVM opcode 选择及实际发射到此入口，确认 frame/tag/slot 或常量来源能否满足极值组合，并定义失败或数值契约；当前原始 C 运算未给出对应门禁，但尚无完整合法触发链或实测证明。 */
 
 TZrBool ZrLibrary_AotRuntime_SubSigned(SZrState *state,
                                        ZrAotGeneratedFrame *frame,
@@ -6841,7 +6833,7 @@ TZrBool ZrLibrary_AotRuntime_SubSigned(SZrState *state,
 
     ZrCore_Value_InitAsInt(state,
                            ZrCore_Stack_GetValue(destinationPointer),
-                           leftValue->value.nativeObject.nativeInt64 - rightValue->value.nativeObject.nativeInt64);
+                           ZrCore_Integer_Subtract(state, leftValue->value.nativeObject.nativeInt64, rightValue->value.nativeObject.nativeInt64));
     return ZR_TRUE;
 }
 
@@ -6869,7 +6861,7 @@ TZrBool ZrLibrary_AotRuntime_SubSignedConst(SZrState *state,
 
     ZrCore_Value_InitAsInt(state,
                            ZrCore_Stack_GetValue(destinationPointer),
-                           leftValue->value.nativeObject.nativeInt64 - rightValue->value.nativeObject.nativeInt64);
+                           ZrCore_Integer_Subtract(state, leftValue->value.nativeObject.nativeInt64, rightValue->value.nativeObject.nativeInt64));
     return ZR_TRUE;
 }
 
@@ -7147,7 +7139,7 @@ TZrBool ZrLibrary_AotRuntime_MulSigned(SZrState *state,
     if (ZR_VALUE_IS_TYPE_INT(leftValue->type) && ZR_VALUE_IS_TYPE_INT(rightValue->type)) {
         ZrCore_Value_InitAsInt(state,
                                ZrCore_Stack_GetValue(destinationPointer),
-                               leftValue->value.nativeObject.nativeInt64 * rightValue->value.nativeObject.nativeInt64);
+                               ZrCore_Integer_Multiply(state, leftValue->value.nativeObject.nativeInt64, rightValue->value.nativeObject.nativeInt64));
         return ZR_TRUE;
     }
 
@@ -7212,7 +7204,7 @@ TZrBool ZrLibrary_AotRuntime_MulSignedConst(SZrState *state,
     if (ZR_VALUE_IS_TYPE_INT(leftValue->type) && ZR_VALUE_IS_TYPE_INT(rightValue->type)) {
         ZrCore_Value_InitAsInt(state,
                                ZrCore_Stack_GetValue(destinationPointer),
-                               leftValue->value.nativeObject.nativeInt64 * rightValue->value.nativeObject.nativeInt64);
+                               ZrCore_Integer_Multiply(state, leftValue->value.nativeObject.nativeInt64, rightValue->value.nativeObject.nativeInt64));
         return ZR_TRUE;
     }
 
@@ -7224,8 +7216,6 @@ TZrBool ZrLibrary_AotRuntime_MulSignedConst(SZrState *state,
     ZrCore_Value_InitAsFloat(state, ZrCore_Stack_GetValue(destinationPointer), leftDouble * rightDouble);
     return ZR_TRUE;
 }
-
-/* TODO: 核查 INT64_MIN 的取负 的输入边界：沿合法编译输入、当前 LLVM opcode 选择及实际发射到此入口，确认 frame/tag/slot 或常量来源能否满足极值组合，并定义失败或数值契约；当前原始 C 运算未给出对应门禁，但尚无完整合法触发链或实测证明。 */
 
 TZrBool ZrLibrary_AotRuntime_Neg(SZrState *state,
                                  ZrAotGeneratedFrame *frame,
@@ -7250,12 +7240,12 @@ TZrBool ZrLibrary_AotRuntime_Neg(SZrState *state,
     if (ZR_VALUE_IS_TYPE_SIGNED_INT(sourceValue->type)) {
         ZR_VALUE_FAST_SET(destinationValue,
                           nativeInt64,
-                          -sourceValue->value.nativeObject.nativeInt64,
+                          ZrCore_Integer_Negate(state, sourceValue->value.nativeObject.nativeInt64),
                           sourceValue->type);
         return ZR_TRUE;
     }
     if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(sourceValue->type)) {
-        ZrCore_Value_InitAsInt(state, destinationValue, -(TZrInt64)sourceValue->value.nativeObject.nativeUInt64);
+        ZrCore_Value_InitAsInt(state, destinationValue, ZrCore_Integer_NegateUnsigned(state, sourceValue->value.nativeObject.nativeUInt64));
         return ZR_TRUE;
     }
     if (ZR_VALUE_IS_TYPE_FLOAT(sourceValue->type)) {
@@ -10380,8 +10370,6 @@ TZrBool ZrLibrary_AotRuntime_ShiftLeft(SZrState *state,
     return aot_runtime_invoke_binary_meta(state, frame, destinationSlot, leftValue, rightValue, metaValue->function);
 }
 
-/* TODO: 核查 整数左移的位移量越界、负操作数或结果超 int64 范围 的输入边界：沿合法编译输入、当前 LLVM opcode 选择及实际发射到此入口，确认 frame/tag/slot 或常量来源能否满足极值组合，并定义失败或数值契约；当前原始 C 运算未给出对应门禁，但尚无完整合法触发链或实测证明。 */
-
 TZrBool ZrLibrary_AotRuntime_ShiftLeftInt(SZrState *state,
                                           ZrAotGeneratedFrame *frame,
                                           TZrUInt32 destinationSlot,
@@ -10418,7 +10406,7 @@ TZrBool ZrLibrary_AotRuntime_ShiftLeftInt(SZrState *state,
         return ZR_FALSE;
     }
 
-    ZR_VALUE_FAST_SET(destinationValue, nativeInt64, leftInt << rightInt, ZR_VALUE_TYPE_INT64);
+    ZR_VALUE_FAST_SET(destinationValue, nativeInt64, ZrCore_Integer_ShiftLeft(leftInt, (TZrUInt64)rightInt), ZR_VALUE_TYPE_INT64);
     return ZR_TRUE;
 }
 
@@ -10461,8 +10449,6 @@ TZrBool ZrLibrary_AotRuntime_ShiftRight(SZrState *state,
     return aot_runtime_invoke_binary_meta(state, frame, destinationSlot, leftValue, rightValue, metaValue->function);
 }
 
-/* TODO: 核查 整数右移的位移量不属于 [0,63] 的输入边界：沿合法编译输入、当前 LLVM opcode 选择及实际发射到此入口，确认 frame/tag/slot 或常量来源能否满足极值组合，并定义失败或数值契约；当前原始 C 运算未给出对应门禁，但尚无完整合法触发链或实测证明。 */
-
 TZrBool ZrLibrary_AotRuntime_ShiftRightInt(SZrState *state,
                                            ZrAotGeneratedFrame *frame,
                                            TZrUInt32 destinationSlot,
@@ -10499,7 +10485,7 @@ TZrBool ZrLibrary_AotRuntime_ShiftRightInt(SZrState *state,
         return ZR_FALSE;
     }
 
-    ZR_VALUE_FAST_SET(destinationValue, nativeInt64, leftInt >> rightInt, ZR_VALUE_TYPE_INT64);
+    ZR_VALUE_FAST_SET(destinationValue, nativeInt64, ZrCore_Integer_ShiftRight(leftInt, (TZrUInt64)rightInt), ZR_VALUE_TYPE_INT64);
     return ZR_TRUE;
 }
 
@@ -10953,8 +10939,6 @@ TZrBool ZrLibrary_AotRuntime_BitwiseOr(SZrState *state,
     return ZR_TRUE;
 }
 
-/* TODO: 核查 有符号左移的位移量越界、负操作数或结果超 int64 范围 的输入边界：沿合法编译输入、当前 LLVM opcode 选择及实际发射到此入口，确认 frame/tag/slot 或常量来源能否满足极值组合，并定义失败或数值契约；当前原始 C 运算未给出对应门禁，但尚无完整合法触发链或实测证明。 */
-
 TZrBool ZrLibrary_AotRuntime_BitwiseShiftLeft(SZrState *state,
                                               ZrAotGeneratedFrame *frame,
                                               TZrUInt32 destinationSlot,
@@ -10991,11 +10975,15 @@ TZrBool ZrLibrary_AotRuntime_BitwiseShiftLeft(SZrState *state,
         return ZR_FALSE;
     }
 
-    ZR_VALUE_FAST_SET(destinationValue, nativeInt64, leftInt << rightInt, ZR_VALUE_TYPE_INT64);
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue->type) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightValue->type)) {
+        ZR_VALUE_FAST_SET(destinationValue, nativeUInt64,
+                         (TZrUInt64)leftInt << ((TZrUInt64)rightInt & 63u), ZR_VALUE_TYPE_UINT64);
+    } else {
+        ZR_VALUE_FAST_SET(destinationValue, nativeInt64,
+                         ZrCore_Integer_ShiftLeft(leftInt, (TZrUInt64)rightInt), ZR_VALUE_TYPE_INT64);
+    }
     return ZR_TRUE;
 }
-
-/* TODO: 核查 uint64 逻辑右移的位移量不属于 [0,63] 的输入边界：沿合法编译输入、当前 LLVM opcode 选择及实际发射到此入口，确认 frame/tag/slot 或常量来源能否满足极值组合，并定义失败或数值契约；当前原始 C 运算未给出对应门禁，但尚无完整合法触发链或实测证明。 */
 
 TZrBool ZrLibrary_AotRuntime_BitwiseShiftRight(SZrState *state,
                                                ZrAotGeneratedFrame *frame,
@@ -11033,7 +11021,12 @@ TZrBool ZrLibrary_AotRuntime_BitwiseShiftRight(SZrState *state,
         return ZR_FALSE;
     }
 
-    ZR_VALUE_FAST_SET(destinationValue, nativeInt64, (TZrInt64)(leftUInt >> rightUInt), ZR_VALUE_TYPE_INT64);
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue->type) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightValue->type)) {
+        ZR_VALUE_FAST_SET(destinationValue, nativeUInt64, leftUInt >> (rightUInt & 63u), ZR_VALUE_TYPE_UINT64);
+    } else {
+        ZR_VALUE_FAST_SET(destinationValue, nativeInt64,
+                         ZrCore_Integer_ShiftRight(ZrCore_Integer_FromBits(leftUInt), rightUInt), ZR_VALUE_TYPE_INT64);
+    }
     return ZR_TRUE;
 }
 

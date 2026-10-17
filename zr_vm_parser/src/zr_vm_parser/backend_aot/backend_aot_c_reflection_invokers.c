@@ -85,7 +85,7 @@ static void backend_aot_write_c_reflection_i64_one_arg_cases(FILE *file,
         fprintf(file,
                 "        case %uu: {\n"
                 "            TZrInt64 zr_aot_arg0 = args[0].value.nativeObject.nativeInt64;\n"
-                "            TZrInt64 zr_aot_return_value = zr_aot_typed_i64_fn_%u(zr_aot_arg0);\n"
+                "            TZrInt64 zr_aot_return_value = zr_aot_typed_i64_fn_%u(state, zr_aot_arg0);\n"
                 "            ZrCore_Value_InitAsInt(state, outReturn, zr_aot_return_value);\n"
                 "            return ZR_TRUE;\n"
                 "        }\n",

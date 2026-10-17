@@ -3,6 +3,7 @@
 
 #include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_core/state.h"
+#include "zr_vm_core/integer.h"
 #include "zr_vm_library/conf.h"
 
 struct SZrGlobalState;

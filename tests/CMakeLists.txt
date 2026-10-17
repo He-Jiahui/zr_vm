@@ -8890,6 +8890,21 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
     add_test(NAME execution_integer_boundaries COMMAND zr_vm_execution_integer_boundaries_test)
 endif()
 
+if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND UNIX AND NOT APPLE)
+    zr_vm_add_unity_test_target(zr_vm_aot_integer_boundaries_test
+        ${CMAKE_SOURCE_DIR}/tests/parser/test_aot_integer_boundaries.c)
+    target_include_directories(zr_vm_aot_integer_boundaries_test PRIVATE ${CMAKE_SOURCE_DIR}/tests)
+    target_compile_definitions(zr_vm_aot_integer_boundaries_test PRIVATE
+        ZR_VM_TESTS_C_COMPILER="${CMAKE_C_COMPILER}"
+        ZR_VM_TESTS_C_FLAGS="${CMAKE_C_FLAGS}"
+        ZR_VM_TESTS_REPO_ROOT="${ZR_VM_TESTS_REPO_ROOT_NORMALIZED}"
+        ZR_VM_TESTS_BUILD_LIB_DIR="${ZR_VM_TESTS_BUILD_LIB_DIR_NORMALIZED}")
+    zr_vm_link_parser_core_plus_library(zr_vm_aot_integer_boundaries_test)
+    target_link_libraries(zr_vm_aot_integer_boundaries_test PRIVATE dl)
+    add_test(NAME aot_integer_boundaries COMMAND zr_vm_aot_integer_boundaries_test)
+    set_tests_properties(aot_integer_boundaries PROPERTIES TIMEOUT 120)
+endif()
+
 if(TARGET zr_vm_cli_executable)
     add_test(NAME compiler_constructor_prototype_growth
             COMMAND ${CMAKE_COMMAND}
