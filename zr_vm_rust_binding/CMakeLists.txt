@@ -206,6 +206,13 @@ set_property(GLOBAL PROPERTY ZR_VM_RUST_BINDING_SEEN_STATIC_TARGETS "")
 set_property(GLOBAL PROPERTY ZR_VM_RUST_BINDING_STATIC_LINK_LIBRARIES "")
 set_property(GLOBAL PROPERTY ZR_VM_RUST_BINDING_STATIC_SYSTEM_LIBRARIES "")
 if (zr_vm_rust_binding_link_kind STREQUAL "static")
+    # Rust links with -nodefaultlibs, so the C driver's implicit runtimes are
+    # also part of the static SDK contract (including ASan/UBSan when enabled).
+    # Keep them first: the ASan runtime must precede other shared libraries.
+    foreach (zr_vm_rust_binding_runtime IN LISTS CMAKE_C_IMPLICIT_LINK_LIBRARIES)
+        zr_vm_rust_binding_collect_static_link_item(
+                "${zr_vm_rust_binding_runtime}")
+    endforeach ()
     get_target_property(zr_vm_rust_binding_static_target_links
             zr_vm_rust_binding_static LINK_LIBRARIES)
     foreach (zr_vm_rust_binding_static_target_link IN LISTS
@@ -253,6 +260,23 @@ if (zr_vm_rust_binding_link_kind STREQUAL "static")
     list(APPEND zr_vm_rust_binding_cargo_link_environment
             "ZR_VM_RUST_BINDING_STATIC_LINK_LIBRARIES=${zr_vm_rust_binding_static_link_libraries_csv}"
             "ZR_VM_RUST_BINDING_STATIC_SYSTEM_LIBRARIES=${zr_vm_rust_binding_static_system_libraries_csv}")
+    if ("asan" IN_LIST zr_vm_rust_binding_static_system_libraries)
+        # rustc can place std's libc before transitive build-script libraries.
+        # A command-line native library takes precedence, keeping ASan first.
+        if (DEFINED ENV{CARGO_ENCODED_RUSTFLAGS})
+            string(ASCII 31 zr_vm_rust_binding_rustflag_separator)
+            set(zr_vm_rust_binding_rustflags "-lasan")
+            if (NOT "$ENV{CARGO_ENCODED_RUSTFLAGS}" STREQUAL "")
+                string(APPEND zr_vm_rust_binding_rustflags
+                        "${zr_vm_rust_binding_rustflag_separator}$ENV{CARGO_ENCODED_RUSTFLAGS}")
+            endif ()
+            list(APPEND zr_vm_rust_binding_cargo_link_environment
+                    "CARGO_ENCODED_RUSTFLAGS=${zr_vm_rust_binding_rustflags}")
+        else ()
+            list(APPEND zr_vm_rust_binding_cargo_link_environment
+                    "RUSTFLAGS=-lasan $ENV{RUSTFLAGS}")
+        endif ()
+    endif ()
 endif ()
 
 if (ZR_VM_RUST_BINDING_CARGO_EXECUTABLE AND zr_vm_rust_binding_cargo_target)
