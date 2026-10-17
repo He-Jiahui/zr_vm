@@ -690,7 +690,7 @@ static void test_local_expression_query_returns_float_numeric_range_fact(SZrStat
     const TZrChar *summary = "LSP Local Expression Query Returns Float Numeric Range Fact";
     const TZrChar *uriText = "file:///local_float_numeric_range_fact.zr";
     const TZrChar *content =
-        "fn calc(): double {\n"
+        "fn calc(): float {\n"
         "    return 1.5 + 2.25;\n"
         "}\n";
     SZrTestTimer timer;
@@ -1752,7 +1752,7 @@ int main(void) {
     TEST_DIVIDER();
     test_inferred_method_body_edit_invalidates_resolved_direct_caller(state);
     TEST_DIVIDER();
-    test_completion_fallback_reuses_scoped_query_analyzer_cache(state);
+    test_completion_reuses_published_snapshot_without_reanalysis(state);
     TEST_DIVIDER();
     test_analysis_root_resolver_rejects_non_callable_wrappers(state);
     TEST_DIVIDER();
