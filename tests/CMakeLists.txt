@@ -8939,6 +8939,10 @@ if (TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static)
 endif()
 
 if(TARGET zr_vm_cli_executable)
+    add_test(NAME native_lambda_loops
+            COMMAND ${CMAKE_COMMAND} "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_native_lambda_loops.cmake")
+    set_tests_properties(native_lambda_loops PROPERTIES TIMEOUT 60)
     add_test(NAME cli_binary_freshness
             COMMAND ${CMAKE_COMMAND} "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
             "-DTEST_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}"
