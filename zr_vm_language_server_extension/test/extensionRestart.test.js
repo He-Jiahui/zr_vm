@@ -201,3 +201,13 @@ test(`native transport acquired after ${retirement} is released without waiting 
     await within(host.deactivate());
 });
 }
+
+// Even forced activation in Restricted Mode must not resolve or spawn native tools.
+test('native activation in an untrusted workspace acquires no process resources', async () => {
+    const host = loadExtensionHost('native', { isTrusted: false });
+    await host.activate(host.extensionContext);
+    assert.equal(host.clients.length, 0);
+    assert.equal(host.extensionContext.subscriptions.length, 0);
+    assert.equal(host.requestClient(), undefined);
+    await host.deactivate();
+});

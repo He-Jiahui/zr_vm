@@ -105,6 +105,7 @@ function refreshStructureViewsAsync(): void {
  * 再排队首次启动，使失败后的手动重启仍有可调用入口。
  */
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+    if (!vscode.workspace.isTrusted) { return; }
     context.subscriptions.push(registerZrpJsonSupport());
     context.subscriptions.push(...registerDesktopDebugSupport(context));
     context.subscriptions.push(...registerDesktopProjectActions(context));
@@ -187,7 +188,7 @@ async function startClient(
     const enabled = config.get<boolean>('enable', true);
     const mode = config.get<LanguageServerMode>('mode', 'auto');
 
-    if (!enabled) {
+    if (!vscode.workspace.isTrusted || !enabled) {
         return;
     }
 

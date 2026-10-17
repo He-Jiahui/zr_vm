@@ -264,7 +264,7 @@
         },
         {
           "id": "zrBuiltinModules",
-          "name": "可用模块库"
+          "name": "\u53ef\u7528\u6a21\u5757\u5e93"
         },
         {
           "id": "zrRichHover",
@@ -351,7 +351,8 @@
         "zr.executablePath": {
           "type": "string",
           "default": "",
-          "description": "Path to the default zr_vm_cli executable used for running and debugging .zrp projects. Relative paths resolve against the active workspace folder, then the extension install."
+          "description": "Path to the default zr_vm_cli executable used for running and debugging .zrp projects. Relative paths resolve against the active workspace folder, then the extension install.",
+          "restricted": true
         },
         "zr.languageServer.enable": {
           "type": "boolean",
@@ -381,13 +382,15 @@
         "zr.languageServer.native.path": {
           "type": "string",
           "default": "",
-          "description": "Path to a custom zr_vm_language_server_stdio executable. Relative paths resolve against the active workspace folder, then the extension install."
+          "description": "Path to a custom zr_vm_language_server_stdio executable. Relative paths resolve against the active workspace folder, then the extension install.",
+          "restricted": true
         },
         "zr.debug.cli.path": {
           "type": "string",
           "default": "",
           "description": "Path to a custom zr_vm_cli executable used for ZR desktop debugging. Relative paths resolve against the active workspace folder, then the extension install.",
-          "deprecationMessage": "Use zr.executablePath instead. This setting remains as a backward-compatible fallback."
+          "deprecationMessage": "Use zr.executablePath instead. This setting remains as a backward-compatible fallback.",
+          "restricted": true
         }
       }
     }
@@ -427,5 +430,11 @@
     "vscode-languageclient": "^8.1.0",
     "vscode-languageserver": "^9.0.1",
     "vscode-languageserver-protocol": "^3.17.0"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Zr language services and project tools can execute workspace code and require a trusted workspace."
+    }
   }
 }

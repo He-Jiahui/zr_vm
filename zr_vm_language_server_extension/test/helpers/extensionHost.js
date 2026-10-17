@@ -40,6 +40,7 @@ function loadExtensionHost(host, options = {}) {
             registerCommand: (name, handler) => { commands.set(name, handler); return resource('command'); }, // 测试从 Map 调用真实入口注册的重启命令。
         },
         workspace: {
+            isTrusted: options.isTrusted ?? true,
             getConfiguration: () => configuration,
             createFileSystemWatcher: () => resource('watcher'),
             onDidChangeConfiguration: () => resource('configuration-listener'),
