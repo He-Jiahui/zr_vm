@@ -1915,10 +1915,10 @@ static void test_container_linked_list_runtime_remove_first_preserves_pair_value
     const char *source =
             "let container = import(\"zr.container\");\n"
             "let {Pair} = import(\"zr.container\");\n"
-            "fn labelThrough(value) {\n"
+            "fn labelThrough<T>(value: T): T {\n"
             "    return value;\n"
             "}\n"
-            "fn numberThrough(value) {\n"
+            "fn numberThrough<T>(value: T): T {\n"
             "    return value;\n"
             "}\n"
             "var queue = new container.LinkedList<Pair<string, int>>();\n"
