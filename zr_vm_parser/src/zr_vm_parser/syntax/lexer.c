@@ -1057,105 +1057,6 @@ EZrToken ZrParser_Lexer_Lookahead(SZrLexState *ls) {
     return ls->lookahead.token;
 }
 
-// 诊断位置的列号回溯；与主扫描器的换行标准必须一致。
-static TZrInt32 calculate_column(SZrLexState *ls) {
-    if (ls->source == ZR_NULL || ls->currentPos == 0) {
-        return 1;
-    }
-
-    // BUG: next_char 将裸 CR 当作换行，此处只认 LF；裸 CR 后的词法诊断列号跨前一行。
-    // 从当前位置向前查找，直到找到行首或换行符
-    TZrSize pos = ls->currentPos - 1;
-    TZrInt32 column = 1;
-    while (pos > 0 && ls->source[pos] != '\n') {
-        pos--;
-        column++;
-    }
-    return column;
-}
-
-// 为词法错误摘取有限长度的行片段及插入符列位。
-static void get_line_snippet_lexer(SZrLexState *ls, TZrChar *buffer, TZrSize bufferSize, TZrInt32 *errorColumn) {
-    if (ls == ZR_NULL || ls->source == ZR_NULL || bufferSize == 0) {
-        buffer[0] = '\0';
-        *errorColumn = 1;
-        return;
-    }
-
-    // 计算列号并找到行首
-    TZrSize pos = ls->currentPos;
-    TZrInt32 column = 1;
-    TZrSize lineStart = pos;
-
-    // BUG: 主扫描器将裸 CR 当换行，此处只认 LF；裸 CR 后的错误片段会混入上一行。
-    // 向前查找行首
-    while (lineStart > 0 && ls->source[lineStart - 1] != '\n') {
-        lineStart--;
-        column++;
-    }
-
-    // 向后查找行尾
-    TZrSize lineEnd = pos;
-    while (lineEnd < ls->sourceLength && ls->source[lineEnd] != '\n') {
-        lineEnd++;
-    }
-
-    // 计算要显示的起始和结束位置（前后各固定上下文字符）
-    TZrSize snippetStart = lineStart;
-    TZrSize snippetEnd = lineEnd;
-    TZrInt32 displayColumn = column;
-
-    // 如果列号大于上下文半径，向前移动起始位置
-    if (column > (TZrInt32)ZR_PARSER_ERROR_SNIPPET_CONTEXT_RADIUS) {
-        snippetStart = pos - ZR_PARSER_ERROR_SNIPPET_CONTEXT_RADIUS;
-        displayColumn = (TZrInt32)ZR_PARSER_ERROR_SNIPPET_FOCUS_COLUMN;
-    }
-
-    // 如果剩余字符少于上下文半径，向后扩展
-    if (lineEnd - pos < ZR_PARSER_ERROR_SNIPPET_CONTEXT_RADIUS) {
-        TZrSize needed = ZR_PARSER_ERROR_SNIPPET_CONTEXT_RADIUS - (lineEnd - pos);
-        if (snippetStart >= needed) {
-            snippetStart -= needed;
-            displayColumn += (TZrInt32)needed;
-        } else {
-            snippetStart = 0;
-            displayColumn = column;
-        }
-    }
-
-    // BUG: 长行中先将片段起点移到错误附近，随后又退回行首并截为 127 字节；
-    // 第 128 列后的错误位置不在片段内，^ 仍按原始列号打印。
-    // 确保不越界
-    if (snippetStart > lineStart) {
-        snippetStart = lineStart;
-        displayColumn = column;
-    }
-    if (snippetEnd > ls->sourceLength) {
-        snippetEnd = ls->sourceLength;
-    }
-
-    // 复制代码片段
-    TZrSize snippetLen = snippetEnd - snippetStart;
-    if (snippetLen >= bufferSize) {
-        snippetLen = bufferSize - 1;
-    }
-
-    for (TZrSize i = 0; i < snippetLen; i++) {
-        TZrChar c = ls->source[snippetStart + i];
-        // 将制表符和换行符替换为空格以便显示
-        if (c == '\t') {
-            buffer[i] = ' ';
-        } else if (c == '\n' || c == '\r') {
-            buffer[i] = ' ';
-        } else {
-            buffer[i] = c;
-        }
-    }
-    buffer[snippetLen] = '\0';
-
-    *errorColumn = displayColumn;
-}
-
 // 记录本 token 的第一条错误，供 t.hasLexError 与后续 parser 诊断消费。
 void ZrParser_Lexer_SyntaxError(SZrLexState *ls, const TZrChar *msg) {
     if (ls == ZR_NULL || msg == ZR_NULL) {
@@ -1167,37 +1068,7 @@ void ZrParser_Lexer_SyntaxError(SZrLexState *ls, const TZrChar *msg) {
         ls->currentTokenErrorMessage = msg;
     }
 
-    // 获取文件名
-    const TZrChar *fileName = "<unknown>";
-    if (ls->sourceName != ZR_NULL) {
-        TZrNativeString nameStr = ZrCore_String_GetNativeString(ls->sourceName);
-        if (nameStr != ZR_NULL) {
-            fileName = nameStr;
-        }
-    }
 
-    // 计算列号
-    TZrInt32 column = calculate_column(ls);
-
-    // 获取代码片段
-    TZrChar snippet[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
-    TZrInt32 displayColumn = 1;
-    get_line_snippet_lexer(ls, snippet, sizeof(snippet), &displayColumn);
-
-    // BUG: 未闭合字符串可从 LSP 文档解析到达此处；无条件 printf 污染 JSON-RPC
-    // 共用的 stdout，且忽略 parserState.suppressErrorOutput（见 stdio_transport.c）。
-    // 输出错误信息
-    printf("  [%s:%d:%d] %s\n", fileName, ls->lineNumber, column, msg);
-
-    // 输出代码片段和错误位置标记
-    if (snippet[0] != '\0') {
-        printf("    %s\n", snippet);
-        // 输出错误位置标记（^）
-        for (TZrInt32 i = 0; i < displayColumn - 1; i++) {
-            printf(" ");
-        }
-        printf("^\n");
-    }
 }
 
 // 保留 token 用表中常量；单字符 token 用共享缓冲，只能在下次同类调用前借用。
