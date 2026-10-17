@@ -408,6 +408,10 @@ static TZrBool compiler_slot_resolves_to_native_callback_factory_before_instruct
 
     opcode = (EZrInstructionCode)writer->instruction.operationCode;
     switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(GETUPVAL):
+            /* The caller has proved a CallbackHandle result. A captured
+             * factory may retain any callable argument through that handle. */
+            return ZR_TRUE;
         case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
             return compiler_function_constant_is_native_callable(
                     function,
