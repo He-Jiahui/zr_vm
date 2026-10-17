@@ -2701,7 +2701,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define FAST_PREPARE_STACK_DESTINATION_FROM_OFFSET(DESTINATION_OFFSET)                                                  \
     do {                                                                                                               \
         TZrUInt16 fastDestinationOffset__ = (DESTINATION_OFFSET);                                                      \
-        ZR_ASSERT(fastDestinationOffset__ != ZR_INSTRUCTION_USE_RET_FLAG);                                             \
+        EXECUTION_REQUIRE_OPERANDS(fastDestinationOffset__ != ZR_INSTRUCTION_USE_RET_FLAG);                           \
         destination = FRAME_VALUE_SLOT(fastDestinationOffset__);                                                       \
     } while (0)
 #define FAST_PREPARE_STACK_DESTINATION() FAST_PREPARE_STACK_DESTINATION_FROM_OFFSET(E(instruction))
@@ -2841,6 +2841,16 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             profileRuntime,                                                                         \
             recordHelpers)
 #define CONST(OFFSET) (constants + (OFFSET))
+/* Operand types and plain-slot contracts are bytecode input, even after the
+ * structural verifier has checked the instruction's offsets. */
+#define EXECUTION_REQUIRE_OPERANDS(CONDITION)                                                                         \
+    do {                                                                                                               \
+        if (ZR_UNLIKELY(!(CONDITION))) {                                                                               \
+            SAVE_STATE(state, callInfo);                                                                               \
+            ZrCore_Debug_RunError(state, "invalid operand for bytecode instruction %u",                               \
+                                  (unsigned)ZR_INSTRUCTION_OPCODE(instruction));                                       \
+        }                                                                                                              \
+    } while (0)
 #define CLOSURE(OFFSET) (closure->closureValuesExtend[OFFSET])
 #define ZrCore_Value_Copy(STATE, DESTINATION, SOURCE)                                                                  \
     execution_copy_value_fast((STATE), (DESTINATION), (SOURCE), profileRuntime, recordHelpers)
@@ -2876,9 +2886,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         if (executionPlainDestinationAllowsMetadata__) {                                                               \
             execution_prepare_stack_destination_for_overwrite_no_profile(state, executionPlainDestination__);           \
         } else {                                                                                                       \
-            ZR_ASSERT(executionPlainDestination__->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE);                     \
-            ZR_ASSERT(executionPlainDestination__->ownershipControl == ZR_NULL &&                                      \
-                      executionPlainDestination__->ownershipWeakRef == ZR_NULL);                                       \
+            EXECUTION_REQUIRE_OPERANDS(!executionPlainDestinationHasDirtyMetadata__);                                 \
         }                                                                                                              \
         executionPlainDestination__->type = (TYPE);                                                                    \
         executionPlainDestination__->value.nativeObject.REGION = (DATA);                                               \
@@ -2916,7 +2924,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_BITWISE_NOT_BODY()                                                                                     \
     do {                                                                                                               \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type));                                                                    \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(opA->type));                                                  \
         if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type)) {                                                                \
             ALGORITHM_1(nativeUInt64, ~, ZR_VALUE_TYPE_UINT64);                                                        \
         } else {                                                                                                       \
@@ -2927,7 +2935,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     do {                                                                                                               \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
         opB = FRAME_VALUE_SLOT(B1(instruction));                                                                       \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));                                \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));               \
         if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(opB->type)) {                  \
             EXECUTION_STORE_PLAIN_REUSE(                                                                               \
                     nativeUInt64,                                                                                      \
@@ -3551,7 +3559,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrCallInfo *nextCallInfo__;                                                                                   \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
-        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in KNOWN_VM_CALL");                   \
+        EXECUTION_REQUIRE_OPERANDS(!ZR_VALUE_IS_TYPE_NULL(opA->type));                                                \
         ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
                 (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                         \
@@ -3598,7 +3606,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrFunctionStackAnchor callWindowAnchor__;                                                                     \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
-        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in KNOWN_NATIVE_CALL");               \
+        EXECUTION_REQUIRE_OPERANDS(!ZR_VALUE_IS_TYPE_NULL(opA->type));                                                \
         ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
                 (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                        \
@@ -3727,8 +3735,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrStackValuePointer callWindow__;                                                                             \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
-        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
-                  "Function value is NULL in SUPER_FUNCTION_CALL_NO_ARGS");                                           \
+        EXECUTION_REQUIRE_OPERANDS(!ZR_VALUE_IS_TYPE_NULL(opA->type));                                                \
         ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
                 (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                        \
@@ -3774,8 +3781,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             execution_stage_frame_layout_call_values(state, currentFunction, base, (TZrUInt32)functionSlot__, 0u);     \
             callWindow__ = BASE(functionSlot__);                                                                       \
         }                                                                                                              \
-        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
-                  "Function value is NULL in SUPER_KNOWN_VM_CALL_NO_ARGS");                                          \
+        EXECUTION_REQUIRE_OPERANDS(!ZR_VALUE_IS_TYPE_NULL(opA->type));                                                \
         ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
                 (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                        \
@@ -3804,8 +3810,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrFunctionStackAnchor callWindowAnchor__;                                                                     \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
-        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
-                  "Function value is NULL in SUPER_KNOWN_NATIVE_CALL_NO_ARGS");                                      \
+        EXECUTION_REQUIRE_OPERANDS(!ZR_VALUE_IS_TYPE_NULL(opA->type));                                                \
         ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
                 (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                        \
@@ -3842,7 +3847,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrStackValuePointer callWindow__;                                                                             \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
-        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in FUNCTION_CALL");                   \
+        EXECUTION_REQUIRE_OPERANDS(!ZR_VALUE_IS_TYPE_NULL(opA->type));                                                \
         ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
                 (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                        \
@@ -3876,8 +3881,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrStackValuePointer callWindow__;                                                                             \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
-        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                 \
-                  "Function value is NULL in FUNCTION_CALL_SPREAD");                                                 \
+        EXECUTION_REQUIRE_OPERANDS(!ZR_VALUE_IS_TYPE_NULL(opA->type));                                                \
         ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
                 (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
@@ -3909,7 +3913,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrStackValuePointer callWindow__;                                                                             \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
-        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in SUPER_DYN_CALL_NO_ARGS");         \
+        EXECUTION_REQUIRE_OPERANDS(!ZR_VALUE_IS_TYPE_NULL(opA->type));                                                \
         REQUIRE_DYNAMIC_CALLABLE(opA);                                                                                \
                                                                                                                        \
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
@@ -4008,7 +4012,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrStackValuePointer callWindow__;                                                                             \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
-        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in DYN_CALL");                       \
+        EXECUTION_REQUIRE_OPERANDS(!ZR_VALUE_IS_TYPE_NULL(opA->type));                                                \
         REQUIRE_DYNAMIC_CALLABLE(opA);                                                                                \
                                                                                                                         \
         callInfo->context.context.programCounter = programCounter + 1;                                                 \
@@ -4151,7 +4155,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrCallInfo *nextCallInfo__;                                                                                   \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
-        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in FUNCTION_CALL");                   \
+        EXECUTION_REQUIRE_OPERANDS(!ZR_VALUE_IS_TYPE_NULL(opA->type));                                                \
         ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
                 (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                        \
@@ -4237,7 +4241,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrStackValuePointer callWindow__;                                                                             \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
-        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in KNOWN_NATIVE_TAIL_CALL");         \
+        EXECUTION_REQUIRE_OPERANDS(!ZR_VALUE_IS_TYPE_NULL(opA->type));                                                \
         ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
                 (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                        \
@@ -4278,8 +4282,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrCallInfo *nextCallInfo__;                                                                                   \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
-        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
-                  "Function value is NULL in SUPER_FUNCTION_TAIL_CALL_NO_ARGS");                                      \
+        EXECUTION_REQUIRE_OPERANDS(!ZR_VALUE_IS_TYPE_NULL(opA->type));                                                \
         ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
                 (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                        \
@@ -4318,8 +4321,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrCallInfo *nextCallInfo__;                                                                                   \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
-        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
-                  "Function value is NULL in SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS");                                     \
+        EXECUTION_REQUIRE_OPERANDS(!ZR_VALUE_IS_TYPE_NULL(opA->type));                                                \
         ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
                 (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                        \
@@ -4364,8 +4366,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrStackValuePointer callWindow__;                                                                             \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
-        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
-                  "Function value is NULL in SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS");                                 \
+        EXECUTION_REQUIRE_OPERANDS(!ZR_VALUE_IS_TYPE_NULL(opA->type));                                                \
         ZrCore_CallBinding_PrepareKnownCall(state, currentFunction,                                                  \
                 (TZrUInt32)(programCounter - currentFunction->instructionsList), opA);                               \
                                                                                                                        \
@@ -4405,8 +4406,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrCallInfo *nextCallInfo__;                                                                                   \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
-        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
-                  "Function value is NULL in SUPER_DYN_TAIL_CALL_NO_ARGS");                                          \
+        EXECUTION_REQUIRE_OPERANDS(!ZR_VALUE_IS_TYPE_NULL(opA->type));                                                \
         REQUIRE_DYNAMIC_CALLABLE(opA);                                                                                \
                                                                                                                        \
         callWindow__ = execution_prepare_frame_layout_call_window(                                                     \
@@ -4494,7 +4494,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrCallInfo *nextCallInfo__;                                                                                   \
                                                                                                                        \
         opA = FRAME_VALUE_SLOT(functionSlot__);                                                                        \
-        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in DYN_TAIL_CALL");                  \
+        EXECUTION_REQUIRE_OPERANDS(!ZR_VALUE_IS_TYPE_NULL(opA->type));                                                \
         REQUIRE_DYNAMIC_CALLABLE(opA);                                                                                \
                                                                                                                        \
         execution_stage_frame_layout_call_values(                                                                      \
@@ -4879,7 +4879,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     do {                                                                                                               \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                             \
         if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
             if (ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type)) {                                                              \
                 EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_Add(state, opA->value.nativeObject.nativeInt64, constOpB->value.nativeObject.nativeInt64), opA->type);               \
@@ -4896,7 +4896,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrTypeValue *plainDestination__ = FRAME_VALUE_SLOT(E(instruction));                                           \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
         const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));                                           \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                             \
         if (ZR_VALUE_IS_TYPE_INT(leftValue__->type)) {                                                                 \
             if (ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue__->type)) {                                                      \
                 EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                    \
@@ -4947,7 +4947,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     do {                                                                                                               \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                             \
         if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
             EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_Subtract(state, opA->value.nativeObject.nativeInt64, constOpB->value.nativeObject.nativeInt64), opA->type);                   \
         } else {                                                                                                       \
@@ -4960,7 +4960,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrTypeValue *plainDestination__ = FRAME_VALUE_SLOT(E(instruction));                                           \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
         const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                             \
         if (ZR_VALUE_IS_TYPE_INT(leftValue__->type)) {                                                                 \
             EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                        \
                                             nativeInt64,                                                               \
@@ -4976,7 +4976,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     do {                                                                                                               \
         opA = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                                                \
         opB = SIGNED_FRAME_VALUE_SLOT(B1(instruction));                                                                \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type));                  \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type)); \
         EXECUTION_STORE_PLAIN_REUSE(nativeInt64, OP(state, opA->value.nativeObject.nativeInt64, opB->value.nativeObject.nativeInt64), opA->type);                                                                       \
     } while (0)
 #define EXECUTE_TYPED_SIGNED_BINARY_BODY_PLAIN_DEST(OP)                                                                \
@@ -4984,7 +4984,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrTypeValue *plainDestination__ = SIGNED_FRAME_VALUE_SLOT(E(instruction));                                    \
         const SZrTypeValue *leftValue__ = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                    \
         const SZrTypeValue *rightValue__ = SIGNED_FRAME_VALUE_SLOT(B1(instruction));                                   \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue__->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(rightValue__->type)); \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue__->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(rightValue__->type)); \
         EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                            \
                                         nativeInt64,                                                                   \
                                         OP(state, leftValue__->value.nativeObject.nativeInt64, rightValue__->value.nativeObject.nativeInt64),                          \
@@ -4994,7 +4994,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     do {                                                                                                               \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
         opA = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                                                \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type));             \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type)); \
         EXECUTION_STORE_PLAIN_REUSE(nativeInt64, OP(state, opA->value.nativeObject.nativeInt64, constOpB->value.nativeObject.nativeInt64), opA->type);                      \
     } while (0)
 #define EXECUTE_TYPED_SIGNED_CONST_BINARY_BODY_PLAIN_DEST(OP)                                                          \
@@ -5002,7 +5002,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrTypeValue *plainDestination__ = SIGNED_FRAME_VALUE_SLOT(E(instruction));                                    \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
         const SZrTypeValue *leftValue__ = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                    \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue__->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type));     \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue__->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type)); \
         EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                            \
                                         nativeInt64,                                                                   \
                                         OP(state, leftValue__->value.nativeObject.nativeInt64, constOpB->value.nativeObject.nativeInt64),                              \
@@ -5011,19 +5011,19 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_TYPED_NEG_SIGNED_BODY()                                                                                \
     do {                                                                                                               \
         opA = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                                                \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type));                                                            \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type));                                           \
         ZR_VALUE_FAST_SET(destination, nativeInt64, ZrCore_Integer_Negate(state, opA->value.nativeObject.nativeInt64), opA->type);                 \
     } while (0)
 #define EXECUTE_TYPED_NEG_FLOAT_BODY()                                                                                 \
     do {                                                                                                               \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type));                                                                 \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_FLOAT(opA->type));                                                \
         ZR_VALUE_FAST_SET(destination, nativeDouble, -opA->value.nativeObject.nativeDouble, opA->type);               \
     } while (0)
 #define EXECUTE_TYPED_TO_FLOAT_SIGNED_BODY()                                                                           \
     do {                                                                                                               \
         opA = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                                                \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type));                                                            \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type));                                           \
         ZR_VALUE_FAST_SET(destination,                                                                                 \
                           nativeDouble,                                                                                \
                           (TZrFloat64)opA->value.nativeObject.nativeInt64,                                            \
@@ -5032,7 +5032,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_TYPED_TO_FLOAT_UNSIGNED_BODY()                                                                         \
     do {                                                                                                               \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type));                                                          \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type));                                         \
         ZR_VALUE_FAST_SET(destination,                                                                                 \
                           nativeDouble,                                                                                \
                           (TZrFloat64)opA->value.nativeObject.nativeUInt64,                                           \
@@ -5041,7 +5041,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_TYPED_TO_INT_FLOAT_BODY()                                                                              \
     do {                                                                                                               \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type));                                                                 \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_FLOAT(opA->type));                                                \
         ZR_VALUE_FAST_SET(destination,                                                                                 \
                           nativeInt64,                                                                                 \
                           (TZrInt64)opA->value.nativeObject.nativeDouble,                                             \
@@ -5053,7 +5053,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrUInt64 zr_vm_unsigned_to_signed_limit__;                                                                    \
         TZrInt64 zr_vm_converted_scalar__;                                                                             \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type));                                                          \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type));                                         \
         zr_vm_source_scalar__ = opA->value.nativeObject.nativeUInt64;                                                  \
         zr_vm_unsigned_to_signed_limit__ = (TZrUInt64)ZR_TYPE_RANGE_INT64_MAX + (TZrUInt64)1u;                        \
         if (zr_vm_source_scalar__ >= zr_vm_unsigned_to_signed_limit__) {                                               \
@@ -5070,7 +5070,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_TYPED_TO_UINT_FLOAT_BODY()                                                                             \
     do {                                                                                                               \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type));                                                                 \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_FLOAT(opA->type));                                                \
         ZR_VALUE_FAST_SET(destination,                                                                                 \
                           nativeUInt64,                                                                                \
                           (TZrUInt64)opA->value.nativeObject.nativeDouble,                                            \
@@ -5079,7 +5079,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_TYPED_TO_UINT_SIGNED_BODY()                                                                            \
     do {                                                                                                               \
         opA = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                                                \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type));                                                            \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type));                                           \
         ZR_VALUE_FAST_SET(destination,                                                                                 \
                           nativeUInt64,                                                                                \
                           (TZrUInt64)opA->value.nativeObject.nativeInt64,                                             \
@@ -5091,7 +5091,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         const SZrTypeValue *constOpB = CONST(constantIndex__);                                                         \
         EXECUTE_MATERIALIZE_CONSTANT_SLOT(constantIndex__, instruction.instruction.operand.operand0[1]);               \
         opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[0]);                                     \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type));             \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type)); \
         EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_Add(state, opA->value.nativeObject.nativeInt64, constOpB->value.nativeObject.nativeInt64), opA->type);                       \
     } while (0)
 #define EXECUTE_ADD_SIGNED_LOAD_STACK_CONST_BODY()                                                                     \
@@ -5101,14 +5101,14 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         EXECUTE_MATERIALIZE_STACK_SLOT(instruction.instruction.operand.operand0[0],                                    \
                                        instruction.instruction.operand.operand0[1]);                                   \
         opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[1]);                                     \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type));             \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type)); \
         EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_Add(state, opA->value.nativeObject.nativeInt64, constOpB->value.nativeObject.nativeInt64), opA->type);                       \
     } while (0)
 #define EXECUTE_ADD_SIGNED_LOAD_STACK_BODY()                                                                           \
     do {                                                                                                               \
         opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[0]);                                     \
         opB = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[1]);                                     \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type));                  \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type)); \
         EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_Add(state, opA->value.nativeObject.nativeInt64, opB->value.nativeObject.nativeInt64), opA->type);                                                                        \
     } while (0)
 #define EXECUTE_ADD_SIGNED_MOD_CONST_BODY()                                                                            \
@@ -5117,8 +5117,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrInt64 divisor__;                                                                                            \
         opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[0]);                                     \
         opB = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[1]);                                     \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type));                  \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpC__->type));                                                             \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type)); \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(constOpC__->type));                                           \
         divisor__ = constOpC__->value.nativeObject.nativeInt64;                                                        \
         if (ZR_UNLIKELY(divisor__ == 0)) {                                                                             \
             SAVE_STATE(state, callInfo);                                                                               \
@@ -5137,7 +5137,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                                        instruction.instruction.operand.operand0[1]);                                   \
         EXECUTE_MATERIALIZE_CONSTANT_SLOT(constantIndex__, instruction.instruction.operand.operand0[2]);               \
         opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[1]);                                     \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type));             \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type)); \
         EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_Add(state, opA->value.nativeObject.nativeInt64, constOpB->value.nativeObject.nativeInt64), opA->type);                       \
     } while (0)
 #define EXECUTE_SUB_SIGNED_LOAD_CONST_BODY()                                                                           \
@@ -5146,7 +5146,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         const SZrTypeValue *constOpB = CONST(constantIndex__);                                                         \
         EXECUTE_MATERIALIZE_CONSTANT_SLOT(constantIndex__, instruction.instruction.operand.operand0[1]);               \
         opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[0]);                                     \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type));             \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type)); \
         EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_Subtract(state, opA->value.nativeObject.nativeInt64, constOpB->value.nativeObject.nativeInt64), opA->type);                       \
     } while (0)
 #define EXECUTE_SUB_SIGNED_LOAD_STACK_CONST_BODY()                                                                     \
@@ -5156,14 +5156,14 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         EXECUTE_MATERIALIZE_STACK_SLOT(instruction.instruction.operand.operand0[0],                                    \
                                        instruction.instruction.operand.operand0[1]);                                   \
         opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[1]);                                     \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type));             \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type)); \
         EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_Subtract(state, opA->value.nativeObject.nativeInt64, constOpB->value.nativeObject.nativeInt64), opA->type);                       \
     } while (0)
 #define EXECUTE_TYPED_UNSIGNED_BINARY_BODY(OP)                                                                         \
     do {                                                                                                               \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
         opB = FRAME_VALUE_SLOT(B1(instruction));                                                                       \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(opB->type));              \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(opB->type)); \
         ALGORITHM_2(nativeUInt64, OP, opA->type);                                                                      \
     } while (0)
 #define EXECUTE_TYPED_UNSIGNED_BINARY_BODY_PLAIN_DEST(OP)                                                              \
@@ -5171,7 +5171,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrTypeValue *plainDestination__ = FRAME_VALUE_SLOT(E(instruction));                                           \
         const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
         const SZrTypeValue *rightValue__ = FRAME_VALUE_SLOT(B1(instruction));                                              \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&                                                  \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&                                \
                   ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightValue__->type));                                                   \
         EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                            \
                                         nativeUInt64,                                                                  \
@@ -5183,7 +5183,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     do {                                                                                                               \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type));         \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type)); \
         ALGORITHM_CONST_2(nativeUInt64, OP, opA->type, constOpB->value.nativeObject.nativeUInt64);                    \
     } while (0)
 #define EXECUTE_TYPED_UNSIGNED_CONST_BINARY_BODY_PLAIN_DEST(OP)                                                        \
@@ -5191,7 +5191,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrTypeValue *plainDestination__ = FRAME_VALUE_SLOT(E(instruction));                                           \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
         const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&                                                  \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&                                \
                   ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type));                                                       \
         EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                            \
                                         nativeUInt64,                                                                  \
@@ -5204,7 +5204,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrBool equalityResult__;                                                                                      \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
         opB = FRAME_VALUE_SLOT(B1(instruction));                                                                       \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_BOOL(opA->type) && ZR_VALUE_IS_TYPE_BOOL(opB->type));                              \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_BOOL(opA->type) && ZR_VALUE_IS_TYPE_BOOL(opB->type));             \
         equalityResult__ =                                                                                             \
                 ((opA->value.nativeObject.nativeBool == opB->value.nativeObject.nativeBool) ? ZR_TRUE : ZR_FALSE) ^  \
                 ((NEGATE) ? ZR_TRUE : ZR_FALSE);                                                                       \
@@ -5216,7 +5216,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_TYPED_LOGICAL_NOT_BOOL_BODY()                                                                          \
     do {                                                                                                               \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_BOOL(opA->type));                                                                   \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_BOOL(opA->type));                                                 \
         ZR_VALUE_FAST_SET(destination,                                                                                  \
                           nativeBool,                                                                                   \
                           !opA->value.nativeObject.nativeBool,                                                          \
@@ -5227,7 +5227,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrBool equalityResult__;                                                                                      \
         opA = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                                                \
         opB = SIGNED_FRAME_VALUE_SLOT(B1(instruction));                                                                \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type));                  \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type)); \
         equalityResult__ =                                                                                             \
                 ((opA->value.nativeObject.nativeInt64 == opB->value.nativeObject.nativeInt64) ? ZR_TRUE : ZR_FALSE) ^\
                 ((NEGATE) ? ZR_TRUE : ZR_FALSE);                                                                       \
@@ -5241,7 +5241,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrBool equalityResult__;                                                                                      \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
         opA = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                                                \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type));             \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(constOpB->type)); \
         equalityResult__ =                                                                                             \
                 ((opA->value.nativeObject.nativeInt64 == constOpB->value.nativeObject.nativeInt64) ? ZR_TRUE          \
                                                                                                  : ZR_FALSE) ^        \
@@ -5253,7 +5253,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrBool equalityResult__;                                                                                      \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
         opB = FRAME_VALUE_SLOT(B1(instruction));                                                                       \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(opB->type));              \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(opB->type)); \
         equalityResult__ =                                                                                             \
                 ((opA->value.nativeObject.nativeUInt64 == opB->value.nativeObject.nativeUInt64) ?                     \
                          ZR_TRUE : ZR_FALSE) ^                                                                         \
@@ -5268,7 +5268,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrBool equalityResult__;                                                                                      \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
         opB = FRAME_VALUE_SLOT(B1(instruction));                                                                       \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));                            \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type));           \
         equalityResult__ =                                                                                             \
                 ((opA->value.nativeObject.nativeDouble == opB->value.nativeObject.nativeDouble) ? ZR_TRUE : ZR_FALSE) \
                 ^ ((NEGATE) ? ZR_TRUE : ZR_FALSE);                                                                     \
@@ -5282,7 +5282,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrBool equalityResult__;                                                                                      \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
         opB = FRAME_VALUE_SLOT(B1(instruction));                                                                       \
-        ZR_ASSERT(opA->type == ZR_VALUE_TYPE_STRING && opB->type == ZR_VALUE_TYPE_STRING);                            \
+        EXECUTION_REQUIRE_OPERANDS(opA->type == ZR_VALUE_TYPE_STRING && opB->type == ZR_VALUE_TYPE_STRING &&          \
+                                   opA->value.object != ZR_NULL && opB->value.object != ZR_NULL);                       \
         equalityResult__ = execution_string_values_equal_fast(state, opA, opB) ^                                      \
                           ((NEGATE) ? ZR_TRUE : ZR_FALSE);                                                             \
         ZR_VALUE_FAST_SET(destination,                                                                                  \
@@ -5296,7 +5297,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     do {                                                                                                               \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
         opA = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                                                \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                             \
         if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
             TZrInt64 divisor = constOpB->value.nativeObject.nativeInt64;                                               \
             if (ZR_UNLIKELY(divisor == 0)) {                                                                           \
@@ -5322,7 +5323,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrTypeValue *plainDestination__ = SIGNED_FRAME_VALUE_SLOT(E(instruction));                                    \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
         const SZrTypeValue *leftValue__ = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                    \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                             \
         if (ZR_VALUE_IS_TYPE_INT(leftValue__->type)) {                                                                 \
             TZrInt64 divisor = constOpB->value.nativeObject.nativeInt64;                                               \
             if (ZR_UNLIKELY(divisor == 0)) {                                                                           \
@@ -5353,7 +5354,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         const SZrTypeValue *constOpB = CONST(constantIndex__);                                                         \
         EXECUTE_MATERIALIZE_CONSTANT_SLOT(constantIndex__, instruction.instruction.operand.operand0[1]);               \
         opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[0]);                                     \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                             \
         if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
             TZrInt64 divisor = constOpB->value.nativeObject.nativeInt64;                                               \
             if (ZR_UNLIKELY(divisor == 0)) {                                                                           \
@@ -5381,7 +5382,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         EXECUTE_MATERIALIZE_STACK_SLOT(instruction.instruction.operand.operand0[0],                                    \
                                        instruction.instruction.operand.operand0[1]);                                   \
         opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[1]);                                     \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                             \
         if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
             TZrInt64 divisor = constOpB->value.nativeObject.nativeInt64;                                               \
             if (ZR_UNLIKELY(divisor == 0)) {                                                                           \
@@ -5406,7 +5407,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     do {                                                                                                               \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                           \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type));         \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type)); \
         ALGORITHM_CONST_2(nativeUInt64, *, opA->type, constOpB->value.nativeObject.nativeUInt64);                     \
     } while (0)
 #define EXECUTE_MUL_UNSIGNED_CONST_BODY_PLAIN_DEST()                                                                   \
@@ -5414,7 +5415,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrTypeValue *plainDestination__ = FRAME_VALUE_SLOT(E(instruction));                                           \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
         const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&                                                  \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&                                \
                   ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type));                                                       \
         EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                            \
                                         nativeUInt64,                                                                  \
@@ -5427,7 +5428,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                           \
         TZrUInt64 divisor;                                                                                             \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type));         \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type)); \
         divisor = constOpB->value.nativeObject.nativeUInt64;                                                           \
         if (ZR_UNLIKELY(divisor == 0)) {                                                                               \
             SAVE_STATE(state, callInfo);                                                                               \
@@ -5441,7 +5442,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
         const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
         TZrUInt64 divisor;                                                                                             \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&                                                  \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&                                \
                   ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type));                                                       \
         divisor = constOpB->value.nativeObject.nativeUInt64;                                                           \
         if (ZR_UNLIKELY(divisor == 0)) {                                                                               \
@@ -5458,7 +5459,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                           \
         TZrUInt64 divisor;                                                                                             \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type));         \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type)); \
         divisor = constOpB->value.nativeObject.nativeUInt64;                                                           \
         if (ZR_UNLIKELY(divisor == 0)) {                                                                               \
             SAVE_STATE(state, callInfo);                                                                               \
@@ -5472,7 +5473,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
         const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
         TZrUInt64 divisor;                                                                                             \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&                                                  \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&                                \
                   ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type));                                                       \
         divisor = constOpB->value.nativeObject.nativeUInt64;                                                           \
         if (ZR_UNLIKELY(divisor == 0)) {                                                                               \
@@ -5488,14 +5489,14 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     do {                                                                                                               \
         opA = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                                                \
         opB = SIGNED_FRAME_VALUE_SLOT(B1(instruction));                                                                \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));                                \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));               \
         ALGORITHM_CVT_2(nativeBool, nativeInt64, <=, ZR_VALUE_TYPE_BOOL);                                             \
     } while (0)
 #define EXECUTE_JUMP_IF_GREATER_SIGNED_BODY(JUMP_IMPL, CALL_INFO)                                                     \
     do {                                                                                                               \
         const SZrTypeValue *leftValue__ = SIGNED_FRAME_VALUE_SLOT(E(instruction));                                     \
         const SZrTypeValue *rightValue__ = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                   \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(leftValue__->type) && ZR_VALUE_IS_TYPE_INT(rightValue__->type));               \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(leftValue__->type) && ZR_VALUE_IS_TYPE_INT(rightValue__->type)); \
         if (leftValue__->value.nativeObject.nativeInt64 > rightValue__->value.nativeObject.nativeInt64) {             \
             JUMP_IMPL(CALL_INFO, instruction, 0);                                                                      \
         }                                                                                                              \
@@ -5504,7 +5505,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     do {                                                                                                               \
         const SZrTypeValue *leftValue__ = SIGNED_FRAME_VALUE_SLOT(E(instruction));                                     \
         const SZrTypeValue *rightValue__ = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                   \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(leftValue__->type) && ZR_VALUE_IS_TYPE_INT(rightValue__->type));               \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(leftValue__->type) && ZR_VALUE_IS_TYPE_INT(rightValue__->type)); \
         if (leftValue__->value.nativeObject.nativeInt64 <= rightValue__->value.nativeObject.nativeInt64) {            \
             JUMP_IMPL(CALL_INFO, instruction, 0);                                                                      \
         }                                                                                                              \
@@ -5513,7 +5514,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     do {                                                                                                               \
         const SZrTypeValue *leftValue__ = SIGNED_FRAME_VALUE_SLOT(E(instruction));                                     \
         const SZrTypeValue *rightValue__ = SIGNED_FRAME_VALUE_SLOT(A1(instruction));                                   \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue__->type) &&                                                    \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue__->type) &&                                  \
                   ZR_VALUE_IS_TYPE_SIGNED_INT(rightValue__->type));                                                    \
         if (leftValue__->value.nativeObject.nativeInt64 != rightValue__->value.nativeObject.nativeInt64) {             \
             JUMP_IMPL(CALL_INFO, instruction, 0);                                                                      \
@@ -5523,7 +5524,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     do {                                                                                                               \
         const SZrTypeValue *leftValue__ = SIGNED_FRAME_VALUE_SLOT(E(instruction));                                     \
         const SZrTypeValue *constValue__ = CONST(A1(instruction));                                                     \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue__->type) &&                                                    \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue__->type) &&                                  \
                   ZR_VALUE_IS_TYPE_SIGNED_INT(constValue__->type));                                                    \
         if (leftValue__->value.nativeObject.nativeInt64 != constValue__->value.nativeObject.nativeInt64) {             \
             JUMP_IMPL(CALL_INFO, instruction, 0);                                                                      \
@@ -5539,7 +5540,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_JUMP_IF_BOOL_FALSE_BODY(JUMP_IMPL, CALL_INFO)                                                         \
     do {                                                                                                               \
         const SZrTypeValue *conditionValue__ = FRAME_VALUE_SLOT(E(instruction));                                       \
-        ZR_ASSERT(conditionValue__ != ZR_NULL && ZR_VALUE_IS_TYPE_BOOL(conditionValue__->type));                      \
+        EXECUTION_REQUIRE_OPERANDS(conditionValue__ != ZR_NULL && ZR_VALUE_IS_TYPE_BOOL(conditionValue__->type));     \
         if (!conditionValue__->value.nativeObject.nativeBool) {                                                        \
             JUMP_IMPL(CALL_INFO, instruction, 0);                                                                      \
         }                                                                                                              \
@@ -5549,7 +5550,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrTypeValue *itemsDestination__ = FRAME_VALUE_SLOT(E(instruction));                                            \
         SZrTypeValue *receiverValue__ = FRAME_VALUE_SLOT(A2(instruction));                                                  \
         SZrObject *itemsObject__ = ZR_NULL;                                                                             \
-        ZR_ASSERT(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                                       \
+        EXECUTION_REQUIRE_OPERANDS(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                    \
         if (ZR_UNLIKELY(!zr_super_array_try_resolve_items_cached_only_assume_fast(                                      \
                     state, receiverValue__, ZR_NULL, &itemsObject__) &&                                                 \
                 !ZrCore_Object_SuperArrayResolveItemsAssumeFastSlow(                                                    \
@@ -5570,8 +5571,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrTypeValue *resultValue = inlineStructDestination__ ? &stableResult__ : FRAME_VALUE_SLOT(E(instruction));   \
         SZrTypeValue *receiverValue = FRAME_VALUE_SLOT(A1(instruction));                                                   \
         const SZrTypeValue *indexValue = FRAME_VALUE_SLOT(B1(instruction));                                                \
-        ZR_ASSERT(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                                      \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(indexValue->type));                                                      \
+        EXECUTION_REQUIRE_OPERANDS(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                    \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(indexValue->type));                                    \
         if (inlineStructDestination__) {                                                                               \
             ZrCore_Value_ResetAsNullNoProfile(&stableResult__);                                                        \
         }                                                                                                              \
@@ -5598,12 +5599,13 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         const SZrTypeValue *itemsValue__ = FRAME_VALUE_SLOT(A1(instruction));                                               \
         const SZrTypeValue *indexValue__ = FRAME_VALUE_SLOT(B1(instruction));                                              \
         SZrObject *itemsObject__;                                                                                       \
-        ZR_ASSERT(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                                       \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(indexValue__->type));                                                     \
+        EXECUTION_REQUIRE_OPERANDS(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                    \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(indexValue__->type));                                  \
         if (inlineStructDestination__) {                                                                               \
             ZrCore_Value_ResetAsNullNoProfile(&stableResult__);                                                        \
         }                                                                                                              \
-        itemsObject__ = zr_super_array_bound_items_object_from_value_assume_fast(itemsValue__);                         \
+        EXECUTION_REQUIRE_OPERANDS(zr_super_array_items_object_from_value_assume_fast(                                \
+                state, itemsValue__, &itemsObject__));                                                                 \
         zr_super_array_get_from_items_object_assume_fast(                                                               \
                 state, itemsObject__, indexValue__->value.nativeObject.nativeInt64, resultValue__);                     \
         if (inlineStructDestination__ &&                                                                               \
@@ -5620,10 +5622,10 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         const SZrTypeValue *indexValue__ = FRAME_VALUE_SLOT(B1(instruction));                                              \
         SZrObject *itemsObject__ = ZR_NULL;                                                                            \
         TZrInt64 indexInt__ = indexValue__->value.nativeObject.nativeInt64;                                            \
-        ZR_ASSERT(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                                      \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(indexValue__->type));                                                    \
-        ZR_ASSERT(zr_super_array_value_can_overwrite_without_release(plainDestination__));                             \
-        ZR_ASSERT(zr_super_array_value_is_normalized_plain(plainDestination__));                                       \
+        EXECUTION_REQUIRE_OPERANDS(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                    \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(indexValue__->type));                                  \
+        EXECUTION_REQUIRE_OPERANDS(zr_super_array_value_can_overwrite_without_release(plainDestination__));           \
+        EXECUTION_REQUIRE_OPERANDS(zr_super_array_value_is_normalized_plain(plainDestination__));                     \
         if (ZR_LIKELY(zr_super_array_try_resolve_items_cached_only_assume_fast(                                        \
                     state, receiverValue__, ZR_NULL, &itemsObject__))) {                                               \
             zr_super_array_store_plain_get_from_items_object_assume_fast(                                              \
@@ -5643,11 +5645,12 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         const SZrTypeValue *indexValue__ = FRAME_VALUE_SLOT(B1(instruction));                                              \
         SZrObject *itemsObject__;                                                                                       \
         TZrInt64 indexInt__ = indexValue__->value.nativeObject.nativeInt64;                                             \
-        ZR_ASSERT(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                                       \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(indexValue__->type));                                                     \
-        ZR_ASSERT(zr_super_array_value_can_overwrite_without_release(plainDestination__));                              \
-        ZR_ASSERT(zr_super_array_value_is_normalized_plain(plainDestination__));                                        \
-        itemsObject__ = zr_super_array_bound_items_object_from_value_assume_fast(itemsValue__);                         \
+        EXECUTION_REQUIRE_OPERANDS(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                    \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(indexValue__->type));                                  \
+        EXECUTION_REQUIRE_OPERANDS(zr_super_array_value_can_overwrite_without_release(plainDestination__));           \
+        EXECUTION_REQUIRE_OPERANDS(zr_super_array_value_is_normalized_plain(plainDestination__));                     \
+        EXECUTION_REQUIRE_OPERANDS(zr_super_array_items_object_from_value_assume_fast(                                \
+                state, itemsValue__, &itemsObject__));                                                                 \
         zr_super_array_store_plain_get_from_items_object_assume_fast(                                                   \
                 state, itemsObject__, (TZrUInt64)indexInt__, plainDestination__);                                       \
     } while (0)
@@ -5656,9 +5659,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         SZrTypeValue *receiverValue = FRAME_VALUE_SLOT(A1(instruction));                                                   \
         const SZrTypeValue *indexValue = FRAME_VALUE_SLOT(B1(instruction));                                                \
         const SZrTypeValue *storedValue = FRAME_VALUE_SLOT(E(instruction));                                            \
-        ZR_ASSERT(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                                      \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(indexValue->type));                                                      \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(storedValue->type));                                                     \
+        EXECUTION_REQUIRE_OPERANDS(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                    \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(indexValue->type));                                    \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(storedValue->type));                                   \
         if (ZR_UNLIKELY(!ZrCore_Object_SuperArraySetIntByValueInlineAssumeFast(                                        \
                     state,                                                                                              \
                     receiverValue,                                                                                      \
@@ -5674,10 +5677,11 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         const SZrTypeValue *indexValue__ = FRAME_VALUE_SLOT(B1(instruction));                                              \
         const SZrTypeValue *storedValue__ = FRAME_VALUE_SLOT(E(instruction));                                           \
         SZrObject *itemsObject__;                                                                                       \
-        ZR_ASSERT(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                                       \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(indexValue__->type));                                                     \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(storedValue__->type));                                                    \
-        itemsObject__ = zr_super_array_bound_items_object_from_value_assume_fast(itemsValue__);                         \
+        EXECUTION_REQUIRE_OPERANDS(E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG);                                    \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(indexValue__->type));                                  \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(storedValue__->type));                                 \
+        EXECUTION_REQUIRE_OPERANDS(zr_super_array_items_object_from_value_assume_fast(                                \
+                state, itemsValue__, &itemsObject__));                                                                 \
         zr_super_array_set_int_in_bound_items_object_assume_fast(                                                       \
                 state,                                                                                                  \
                 itemsObject__,                                                                                          \
@@ -5688,6 +5692,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     do {                                                                                                               \
         opA = FRAME_VALUE_SLOT(A1(instruction));                                                                           \
         opB = FRAME_VALUE_SLOT(B1(instruction));                                                                           \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type));                                           \
         if (ZR_UNLIKELY(!(E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG                                               \
                                   ? ZrCore_Object_SuperArrayAddIntDiscardResultAssumeFast(state, opA, opB)            \
                                   : ZrCore_Object_SuperArrayAddIntAssumeFast(state, opA, opB, destination)))) {       \
@@ -5704,7 +5709,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             FRAME_VALUE_SLOT(A1(instruction) + 3)                                                                      \
         };                                                                                                             \
         opB = FRAME_VALUE_SLOT(B1(instruction));                                                                           \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type));                                                             \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type));                                           \
         if (ZR_UNLIKELY(!ZrCore_Object_SuperArrayAddInt4ValuesAssumeFast(                                              \
                     state, receiverValues__, opB->value.nativeObject.nativeInt64))) {                                  \
             ZrCore_Debug_RunError(state,                                                                               \
@@ -5721,8 +5726,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             FRAME_VALUE_SLOT(A1(instruction) + 3)                                                                      \
         };                                                                                                             \
         const SZrTypeValue *constantValue = CONST(B1(instruction));                                                    \
-        ZR_ASSERT(constantValue != ZR_NULL);                                                                           \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(constantValue->type));                                                   \
+        EXECUTION_REQUIRE_OPERANDS(constantValue != ZR_NULL);                                                         \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(constantValue->type));                                 \
         if (ZR_UNLIKELY(!ZrCore_Object_SuperArrayAddInt4ValuesAssumeFast(                                              \
                     state, receiverValues__, constantValue->value.nativeObject.nativeInt64))) {                        \
             ZrCore_Debug_RunError(state,                                                                               \
@@ -5740,10 +5745,10 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         };                                                                                                             \
         const SZrTypeValue *countValue = FRAME_VALUE_SLOT(B1(instruction));                                                \
         const SZrTypeValue *constantValue = CONST(E(instruction));                                                     \
-        ZR_ASSERT(countValue != ZR_NULL);                                                                              \
-        ZR_ASSERT(constantValue != ZR_NULL);                                                                           \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(countValue->type));                                                      \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(constantValue->type));                                                   \
+        EXECUTION_REQUIRE_OPERANDS(countValue != ZR_NULL);                                                            \
+        EXECUTION_REQUIRE_OPERANDS(constantValue != ZR_NULL);                                                         \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(countValue->type));                                    \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(constantValue->type));                                 \
         if (ZR_UNLIKELY(!ZrCore_Object_SuperArrayFillInt4ValuesAssumeFast(                                             \
                     state,                                                                                              \
                     receiverValues__,                                                                                   \
@@ -6833,7 +6838,7 @@ LZrFastInstruction_ADD_UNSIGNED_CONST_PLAIN_DEST: {
             ZR_INSTRUCTION_LABEL(ADD_STRING) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_STRING(opA->type) && ZR_VALUE_IS_TYPE_STRING(opB->type));
+                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_STRING(opA->type) && ZR_VALUE_IS_TYPE_STRING(opB->type));
                 if (!execution_try_concat_exact_strings(state, destination, opA, opB)) {
                     UPDATE_BASE(callInfo);
                     destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
@@ -7175,7 +7180,7 @@ LZrFastInstruction_MUL_UNSIGNED_PLAIN_DEST: {
                 const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));
                 const SZrTypeValue *rightValue__ = FRAME_VALUE_SLOT(B1(instruction));
                 SZrTypeValue *plainDestination__ = FRAME_VALUE_SLOT(E(instruction));
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&
+                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&
                           ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightValue__->type));
                 EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,
                                                 nativeUInt64,
@@ -7189,7 +7194,7 @@ LZrFastInstruction_MUL_UNSIGNED_PLAIN_DEST: {
                 const SZrTypeValue *leftValue__ = FRAME_VALUE_SLOT(A1(instruction));
                 const SZrTypeValue *rightValue__ = FRAME_VALUE_SLOT(B1(instruction));
                 SZrTypeValue *plainDestination__ = FRAME_VALUE_SLOT(E(instruction));
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&
+                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&
                           ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightValue__->type));
                 EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,
                                                 nativeUInt64,
@@ -7728,7 +7733,7 @@ LZrFastInstruction_MOD_UNSIGNED_CONST_PLAIN_DEST: {
             ZR_INSTRUCTION_LABEL(SHIFT_LEFT_INT) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_ShiftLeft(opA->value.nativeObject.nativeInt64, opB->value.nativeObject.nativeUInt64), ZR_VALUE_TYPE_INT64);
             }
             DONE(1);
@@ -7772,7 +7777,7 @@ LZrFastInstruction_MOD_UNSIGNED_CONST_PLAIN_DEST: {
             ZR_INSTRUCTION_LABEL(SHIFT_RIGHT_INT) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 EXECUTION_STORE_PLAIN_REUSE(nativeInt64, ZrCore_Integer_ShiftRight(opA->value.nativeObject.nativeInt64, opB->value.nativeObject.nativeUInt64), ZR_VALUE_TYPE_INT64);
             }
             DONE(1);
@@ -7811,28 +7816,28 @@ LZrFastInstruction_LOGICAL_NOT_BOOL: {
             ZR_INSTRUCTION_LABEL(LOGICAL_AND) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_BOOL(opA->type) && ZR_VALUE_IS_TYPE_BOOL(opB->type));
+                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_BOOL(opA->type) && ZR_VALUE_IS_TYPE_BOOL(opB->type));
                 ALGORITHM_2(nativeBool, &&, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_OR) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_BOOL(opA->type) && ZR_VALUE_IS_TYPE_BOOL(opB->type));
+                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_BOOL(opA->type) && ZR_VALUE_IS_TYPE_BOOL(opB->type));
                 ALGORITHM_2(nativeBool, ||, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_SIGNED) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeInt64, >, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_UNSIGNED) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeUInt64, >, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
@@ -7846,14 +7851,14 @@ LZrFastInstruction_LOGICAL_NOT_BOOL: {
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_SIGNED) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeInt64, <, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_UNSIGNED) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeUInt64, <, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
@@ -8002,14 +8007,14 @@ LZrFastInstruction_LOGICAL_NOT_EQUAL_STRING: {
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_EQUAL_SIGNED) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeInt64, >=, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_EQUAL_UNSIGNED) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeUInt64, >=, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
@@ -8039,7 +8044,7 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_EQUAL_UNSIGNED) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeUInt64, <=, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
@@ -8080,7 +8085,7 @@ LZrFastInstruction_BITWISE_XOR: {
             ZR_INSTRUCTION_LABEL(BITWISE_SHIFT_LEFT) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(opB->type)) {
                     EXECUTION_STORE_PLAIN_REUSE(nativeUInt64,
                             EXECUTION_INTEGRAL_VALUE_AS_U64(opA) << (EXECUTION_INTEGRAL_VALUE_AS_U64(opB) & 63u),
@@ -8095,7 +8100,7 @@ LZrFastInstruction_BITWISE_XOR: {
             ZR_INSTRUCTION_LABEL(BITWISE_SHIFT_RIGHT) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
                 if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(opB->type)) {
                     EXECUTION_STORE_PLAIN_REUSE(nativeUInt64,
                             EXECUTION_INTEGRAL_VALUE_AS_U64(opA) >> (EXECUTION_INTEGRAL_VALUE_AS_U64(opB) & 63u),
@@ -9988,5 +9993,6 @@ LZrExecutionDone:
 #undef ZrCore_Stack_GetValue
 #undef ZrCore_Value_Copy
 #undef ZrCore_Debug_RunError
+#undef EXECUTION_REQUIRE_OPERANDS
 #undef REQUIRE_DYNAMIC_CALLABLE
 }

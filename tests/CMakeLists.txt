@@ -8888,6 +8888,12 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
     target_include_directories(zr_vm_execution_integer_boundaries_test PRIVATE ${CMAKE_SOURCE_DIR})
     zr_vm_link_core(zr_vm_execution_integer_boundaries_test)
     add_test(NAME execution_integer_boundaries COMMAND zr_vm_execution_integer_boundaries_test)
+    zr_vm_add_unity_test_target(zr_vm_typed_opcode_operands_test
+        ${CMAKE_SOURCE_DIR}/tests/core/test_typed_opcode_operands.c)
+    target_include_directories(zr_vm_typed_opcode_operands_test PRIVATE ${CMAKE_SOURCE_DIR})
+    zr_vm_link_core(zr_vm_typed_opcode_operands_test)
+    add_test(NAME typed_opcode_operands COMMAND zr_vm_typed_opcode_operands_test)
+    set_tests_properties(typed_opcode_operands PROPERTIES TIMEOUT 30)
 endif()
 
 if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND UNIX AND NOT APPLE)

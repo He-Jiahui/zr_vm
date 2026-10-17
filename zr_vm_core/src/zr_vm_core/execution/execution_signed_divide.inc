@@ -35,7 +35,7 @@
     do { \
         const SZrTypeValue *constOpB = CONST(B1(instruction)); \
         opA = SIGNED_FRAME_VALUE_SLOT(A1(instruction)); \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type)); \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                             \
         if (ZR_VALUE_IS_TYPE_INT(opA->type)) { \
             EXECUTION_CHECKED_DIV_STORE(opA->value.nativeObject.nativeInt64, \
                     constOpB->value.nativeObject.nativeInt64); \
@@ -49,7 +49,7 @@
         SZrTypeValue *plainDestination__ = SIGNED_FRAME_VALUE_SLOT(E(instruction)); \
         const SZrTypeValue *constOpB = CONST(B1(instruction)); \
         const SZrTypeValue *leftValue__ = SIGNED_FRAME_VALUE_SLOT(A1(instruction)); \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type)); \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                             \
         if (ZR_VALUE_IS_TYPE_INT(leftValue__->type)) { \
             EXECUTION_CHECKED_DIV_STORE_DIRECT(plainDestination__, \
                     leftValue__->value.nativeObject.nativeInt64, \
@@ -66,7 +66,7 @@
         const SZrTypeValue *constOpB = CONST(constantIndex__); \
         EXECUTE_MATERIALIZE_CONSTANT_SLOT(constantIndex__, instruction.instruction.operand.operand0[1]); \
         opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[0]); \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type)); \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                             \
         if (ZR_VALUE_IS_TYPE_INT(opA->type)) { \
             EXECUTION_CHECKED_DIV_STORE(opA->value.nativeObject.nativeInt64, \
                     constOpB->value.nativeObject.nativeInt64); \
@@ -82,7 +82,7 @@
         EXECUTE_MATERIALIZE_STACK_SLOT(instruction.instruction.operand.operand0[0], \
                 instruction.instruction.operand.operand0[1]); \
         opA = SIGNED_FRAME_VALUE_SLOT(instruction.instruction.operand.operand0[1]); \
-        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type)); \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                             \
         if (ZR_VALUE_IS_TYPE_INT(opA->type)) { \
             EXECUTION_CHECKED_DIV_STORE(opA->value.nativeObject.nativeInt64, \
                     constOpB->value.nativeObject.nativeInt64); \
