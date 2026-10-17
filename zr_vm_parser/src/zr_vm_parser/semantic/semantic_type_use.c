@@ -149,17 +149,25 @@ TZrBool ZrParser_SemanticTypeUse_Publish(
         TZrTypeId typeId,
         TZrBool isResolved) {
     SZrSemanticReferenceFact fact;
+    const SZrType *terminal;
 
     if (context == ZR_NULL || typeUse == ZR_NULL || typeUse->name == ZR_NULL ||
         ZrParser_CanonicalType_Find(context, typeId) == ZR_NULL) {
         return ZR_FALSE;
     }
+    terminal = typeUse;
+    while (terminal->subType != ZR_NULL) {
+        terminal = terminal->subType;
+    }
+    if (terminal->name == ZR_NULL) {
+        return ZR_FALSE;
+    }
     memset(&fact, 0, sizeof(fact));
-    fact.node = typeUse->name;
+    fact.node = terminal->name;
     fact.typeId = typeId;
     fact.kind = ZR_SEMANTIC_REFERENCE_TYPE;
     fact.isResolved = isResolved;
-    if (!type_use_reference_range(typeUse, &fact.range, &fact.name)) {
+    if (!type_use_reference_range(terminal, &fact.range, &fact.name)) {
         return ZR_FALSE;
     }
     type_use_bind_declaration(context, typeUse, &fact);
@@ -180,12 +188,12 @@ TZrBool ZrParser_SemanticTypeUse_Publish(
         existing->declarationRange = fact.declarationRange;
         existing->definitionRange = fact.definitionRange;
         existing->hasDefinitionRange = fact.hasDefinitionRange;
-        type_use_publish_arguments(context, typeUse, typeId, isResolved);
+        type_use_publish_arguments(context, terminal, typeId, isResolved);
         return ZR_TRUE;
     }
     if (!ZrParser_SemanticFacts_AppendReference(context, &fact)) {
         return ZR_FALSE;
     }
-    type_use_publish_arguments(context, typeUse, typeId, isResolved);
+    type_use_publish_arguments(context, terminal, typeId, isResolved);
     return ZR_TRUE;
 }

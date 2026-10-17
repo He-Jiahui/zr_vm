@@ -2688,6 +2688,10 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     if (query->hasCanonicalSymbol ||
         semantic_query_try_resolve_canonical_symbol(
                 state, analyzer, query, ZR_FALSE)) {
+        /* External members must pass their provider/receiver validation above. */
+        if (query->canonicalSymbol.hasExternalTarget) {
+            return ZR_FALSE;
+        }
         query->kind = ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL;
         query->resolvedTypeInfo.origin = ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE;
         return semantic_query_capture_document_version(state, context, query);

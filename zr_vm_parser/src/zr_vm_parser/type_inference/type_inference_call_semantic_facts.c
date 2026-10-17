@@ -847,7 +847,11 @@ static SZrAstNode *type_inference_construct_call_target(SZrAstNode *node) {
     }
     if (node->type == ZR_AST_STRUCT_INIT_EXPRESSION &&
         node->data.structInitExpression.typeInfo != ZR_NULL) {
-        return node->data.structInitExpression.typeInfo->name;
+        SZrType *type = node->data.structInitExpression.typeInfo;
+        while (type->subType != ZR_NULL) {
+            type = type->subType;
+        }
+        return type->name;
     }
     return ZR_NULL;
 }
@@ -935,8 +939,13 @@ void type_inference_record_construct_call_facts(
     target = type_inference_construct_call_target(node);
     constructor = type_inference_construct_call_member(
             cs, target, constructedType->typeName, &temporaryConstructor);
-    if (target != ZR_NULL && constructor == ZR_NULL &&
-        target->type == ZR_AST_IDENTIFIER_LITERAL) {
+    if (node->type == ZR_AST_STRUCT_INIT_EXPRESSION) {
+        (void)ZrParser_SemanticTypeUse_Publish(
+                cs->semanticContext, node->data.structInitExpression.typeInfo,
+                ZrParser_CanonicalType_FromInferred(cs->semanticContext, constructedType),
+                ZR_TRUE);
+    } else if (target != ZR_NULL && constructor == ZR_NULL &&
+               target->type == ZR_AST_IDENTIFIER_LITERAL) {
         SZrType typeUse;
         memset(&typeUse, 0, sizeof(typeUse));
         typeUse.name = target;
