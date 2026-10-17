@@ -2150,7 +2150,7 @@ async function main() {
     const redactCompletion = Array.isArray(canonicalDisplayCompletions) ?
         canonicalDisplayCompletions.find((item) => item && item.label === 'redact') : undefined;
     assert(redactCompletion && redactCompletion.kind === 3 &&
-        redactCompletion.detail === 'cannot infer exact type' &&
+        redactCompletion.detail === 'redact(value: cannot infer exact type): cannot infer exact type' &&
         !redactCompletion.detail.includes('MissingType'),
     `completion must fail closed when an explicit declaration type lacks a resolved canonical fact: ${JSON.stringify(redactCompletion)}`);
     const canonicalDisplayHover = await client.request('textDocument/hover', {
