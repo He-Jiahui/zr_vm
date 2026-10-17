@@ -242,3 +242,6 @@ doc_type: category-index
 
 
 - [Benchmark 查看器的当前调用与生命周期契约](batches/20261017-benchmark-viewer-current-contracts.md)：[25 个完整单元](coverage/scripts_remaining.tsv)，15 段 JSDoc、9 个现有测试前后通过；记录已复现的 __proto__ 矩阵漏列与 FileReader 时序 TODO，限 Node VM 验证。
+
+
+- [Layout 迁移工具与测试的调用及生命周期契约](batches/20261017-layout-move-script-contracts.md)：[118 个完整单元](coverage/layout_move_script.tsv)，107 份中文注释、36 项现有测试前后通过；保留非 ASCII 别名字符域 TODO。
