@@ -51,10 +51,10 @@ AOT25、CTest2 全部通过。整数表达式 ExecIR 保留已提交 `7adc0e22`�
 这些测试覆盖 SourceCompile/CoreGlobal 元数据和所有权，不含VM执行。
 完整表达式家族、状态恢复、后端及Linux/完整MSVC仍按47叶出口推进。
 
-### 已完成有限交付（2026-10-16）
+### 已完成有限交付（2026-10-17）
 
-已核实 **34 项有限交付：16 项功能、8 项代码修正、5 项专项验证、5 项文档**。
-原32项的逐项验收与提交证明保留；最新第33项为
+已核实 **35 项有限交付：16 项功能、9 项代码修正、5 项专项验证、5 项文档**。
+原32项的逐项验收与提交证明保留；第33项为
 `150f641f4b5d50d67e888fb8b34987d264a18ac1`，父提交
 `3f7d8d8cbc7601c292afefb594de0e05969b2b17`，精确98路径、双He身份，
 postcommit独审接受且4条foreign cached保持。按交付目的分类，功能数量含测试
@@ -62,8 +62,15 @@ postcommit独审接受且4条foreign cached保持。按交付目的分类，功�
 `403e8d474d9e1f2001edff261594fa50ae8385ec`，父提交`122fdb317089ebb52895ef5c1f46ecebd13b891a`，精确20路径、双He身份；
 Root与独立postcommit审查接受，标准清理7文件（3helpers、4私有indexes）4032562B，24必保pins匹配，3个复用builds及原成功/失败证据保留；finite-close accepted=true。
 
+第35项Parser GC-map消费者外层准入修正已提交为
+`193f46439fa2025bc9eff4a50ef264bb30a2ea5f`，精确12路径，作者与提交者均为
+He-Jiahui。四处guard覆盖七个公开元数据入口，GREEN 99项全部通过
+（21合法、78畸形），MSVC七次有限语法检查通过；提交、索引恢复与自有清理
+均经独立验收，清理六个废弃文件，实际释放2048911B。此有限子任务已关闭。
+
 | 已完成有限子任务 | 完整提交 SHA | 已验收有限范围 |
 | --- | --- | --- |
+| [Parser GC-map消费者外层准入](../../testing-and-validation/ssa-gc-map-parser-consumers.md) | `193f46439fa2025bc9eff4a50ef264bb30a2ea5f` | 四处guard、七个公开元数据入口；GREEN99全PASS（21合法、78畸形），30唯一TU、219实际headers、0cache；MSVC7次syntax/7唯一C/2roles，仅有限语法W0。精确12路径、双He；二进制index恢复及postcommit双审接受，发布时7333范围外index和4条foreign cached保持。后续外来提交与工作区变化原位保留；清理6文件2048911B、280必保pins匹配，3个复用builds及必要成功/失败证据保留，finite-close accepted=true。完整consumer链/Core几何/47叶及Linux/fullW0/VM仍待验收。 |
 | [ExecIR构造接口收敛Core私有边界](../../instruction-generation/execir-model.md) | `150f641f4b5d50d67e888fb8b34987d264a18ac1` | 30个构建期声明（含10 Reserve、2 mutable及SetBindingRows）迁入Core私有头；Source5/Lower4项元数据CTest、永久头32模式及78 caller syntax均实际通过并独审。精确98路径、双He、4外来cached保持；自有8文件清理2076206B，现用构建与必要证据保留。仅有限代码修正，不授VM/Linux/fullW0或整叶信用。 |
 | [Source I64整数表达式ExecIR保留](../../testing-and-validation/ssa-source-integer-expression-retention.md) | `7adc0e22418b675caa16190c39af838bb196ad3c` | Source r10：direct22/26/25/2/4、CTest5；423故障站/424健康生命周期、proof22 mutations、storage32+32+5/P0及真实span故障恢复。lower24/89/16；MSVC15phase/13C有限W0编译。Root及独立Sol验收；精确36路径、双He身份，7272范围外index条目及10条foreign cached raw保持。不计VM/Linux/fullW0或整叶完成。 |
 | [Arm/Event 非断言观察接口](../../acceptance/ssa-owner-arm-event.md) | 4d6ff9f83886fcd428ff0db71de74c44ca26c74b | RED 8 FAIL / 4 PASS；GREEN 11 PASS / 1 故意 prior-failure，由检查器验收；MSVC 3 TU。 |
@@ -100,13 +107,16 @@ Root与独立postcommit审查接受，标准清理7文件（3helpers、4私有in
 | [GC-map outer-shape有限准入](../../../tests/acceptance/ssa-gc-map-outer-shape.md) | `403e8d474d9e1f2001edff261594fa50ae8385ec` | main GREEN-r2四项CTest/50TU；primitive-r3一项CTest内18项Unity、18/18故障；Try原12-case协议11PASS加一次intentional prior-failure FAIL、90/90/live0；MSVC-r3为16次syntax/12唯一C/10roles、有限syntax W0。68 Git commands/121 raw records/20 blobs核对，7320范围外index及4条foreign cached保持；标准清理7文件（3helpers、4私有indexes）4032562B，24必保pins匹配，3个复用builds及原成功/失败证据保留；finite-close accepted=true。仅此子清单closed，完整consumer链/GC/01.01/47叶、fullW0/Linux/VM仍开放。 |
 
 上述有意失败验证 prior-failure 与清理协议，检查器按精确预期验收；非预期失败不计通过。
-上述34项均有实际验收和提交；本次索引维护不另计第35项成果。
-47个叶计划仍须分别闭合完整退出门禁，不能用34/47表示整体完成率，
-也不能从43 planned/4 in-progress或complete=0标签推导没有完成项目。
+上述35项均有实际验收和提交；本次索引维护不增加成果数量。
+47个叶计划仍须分别闭合完整退出门禁，有限交付数量不能用于计算整体完成率。
+43 planned/4 in-progress及complete=0是此前的整叶文档登记状态；已有35项子任务完成，
+整叶尚无完整出口签收记录。这两个进度口径应分别记录。
 旧整数表达式11失败保留为历史RED；整数表达式7adc0e22及私有接口边界150f641f
-均已有限验收提交和清理。第33项及第34项子清单closed，完整SSA及Parent未知项仍active。
+均已有限验收提交和清理。第33、34、35项子清单均closed，完整SSA及Parent未知项仍active。
 第34项GC-map outer shape已按有限证据验收，见[专门验收](../../../tests/acceptance/ssa-gc-map-outer-shape.md)。
-下一项Parser消费者99个fixture及standalone runner已静态接受；实际RED、production GO及native GO仍为false，不预计第35项。 余项见
+当前继续SourceFrame/Finalized GC-map外层preflight：具体计划已双审接受，
+两名gpt-6-sol分别编写测试夹具与验证脚本；尚未进行该项实际RED验证和生产代码修正，
+不计为第36项已完成成果。余项见
 [ExecIR模型剩余工作](01-execir-ssa/01-core-model.md)。
 
 ### 测量与基础契约（00-measurement-contracts）
