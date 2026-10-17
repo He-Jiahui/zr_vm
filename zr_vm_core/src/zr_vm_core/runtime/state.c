@@ -312,6 +312,14 @@ TZrInt32 ZrCore_State_ResetThread(SZrState *state, EZrThreadStatus status) {
         state->stackTop.valuePointer = state->stackBase.valuePointer + 1;
     }
     callInfo->functionTop.valuePointer = state->stackTop.valuePointer + ZR_STACK_NATIVE_CALL_RESERVED_MIN;
+    /* A host call uses scratch slots above functionTop, making this reserved
+     * window visible to GC. Retired packed frames can leave non-value bytes
+     * here, so initialize slots without interpreting their old ownership. */
+    for (TZrStackValuePointer slot = state->stackTop.valuePointer;
+         slot < callInfo->functionTop.valuePointer; ++slot) {
+        ZrCore_Value_ResetAsNull(&slot->value);
+        slot->toBeClosedValueOffset = 0u;
+    }
 
     // TODO: 对照 CLI/REPL、task 与 Rust 重用入口，确认 provider/debug/AOT 配置哪些应跨轮保留或清除。
 
