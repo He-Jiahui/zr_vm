@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "harness/path_support.h"
+#include "harness/windows_crash_diagnostics.h"
 #include "zr_vm_rust_binding.h"
 
 static ZrRustBindingRuntime *g_checkpointReplayRuntime;
@@ -1878,6 +1879,7 @@ static void test_rust_binding_selected_native_link_contract(void) {
 #include "execution_budget_cases.h"
 
 int main(void) {
+    ZrTests_WindowsCrashDiagnostics_Install();
     UNITY_BEGIN();
 
     RUN_FILTERED_TEST(test_rust_binding_scaffold_compile_and_run_round_trip);
