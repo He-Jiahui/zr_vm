@@ -430,13 +430,23 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         }
     }
 
-    if (!cs->hasError &&
-        !compiler_build_callable_return_type_metadata(cs,
-                                                      funcDecl->returnType,
-                                                      funcDecl->body,
-                                                      &cs->currentFunction->callableReturnType,
-                                                      &cs->currentFunction->hasCallableReturnType)) {
-        ZrParser_Compiler_Error(cs, "Failed to build callable return metadata for function declaration", node->location);
+    if (!cs->hasError) {
+        SZrInferredType inferredReturnType;
+        ZrParser_InferredType_Init(cs->state, &inferredReturnType, ZR_VALUE_TYPE_OBJECT);
+        if (!compiler_build_callable_return_type_metadata_with_inferred(
+                    cs,
+                    funcDecl->returnType,
+                    funcDecl->body,
+                    &cs->currentFunction->callableReturnType,
+                    &cs->currentFunction->hasCallableReturnType,
+                    &inferredReturnType)) {
+            ZrParser_Compiler_Error(cs, "Failed to build callable return metadata for function declaration", node->location);
+        } else if (!cs->hasError && funcDecl->returnType == ZR_NULL &&
+                   cs->currentFunction->hasCallableReturnType &&
+                   !compiler_refine_function_type_binding_return(cs, node, &inferredReturnType)) {
+            ZrParser_Compiler_Error(cs, "Failed to publish inferred function return type", node->location);
+        }
+        ZrParser_InferredType_Free(cs->state, &inferredReturnType);
     }
 
     // 退出函数作用域

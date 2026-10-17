@@ -2189,7 +2189,14 @@ static void test_unannotated_compatible_returns_keep_exact_inference(void) {
             "        return 1;\n"
             "    }\n"
             "    return 2;\n"
-            "}\n";
+            "}\n"
+            "var result: int = probe(true);\n"
+            "fn labelFor(value: int) {\n"
+            "    if (value % 2 == 0) { return \"even\"; }\n"
+            "    if (value > 2) { return \"odd_hi\"; }\n"
+            "    return \"odd_lo\";\n"
+            "}\n"
+            "var label: string = labelFor(3);\n";
     SZrCompilerState cs;
     SZrString *sourceName;
     SZrAstNode *ast;
