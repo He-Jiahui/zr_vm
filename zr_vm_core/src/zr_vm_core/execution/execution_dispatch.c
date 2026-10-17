@@ -5981,7 +5981,9 @@ LZrReturning: {
                 constants = currentFunction->constantValueList;
                 instructionsEnd = currentFunction->instructionsList + currentFunction->instructionsLength;
                 instructionsEndFast1 = instructionsEnd - 1;
-                programCounter = callInfo->context.context.programCounter - 1;
+                /* Synchronous calls can move the stack while SAVE_PC still names
+                 * the current instruction. Preserve our progress when refreshing
+                 * a relocated frame; actual frame transitions use LZrReturning. */
                 base = currentFunctionBase + 1;
                 profilePreviousProgramCounter = ZR_NULL;
                 profilePreviousFrameFunction = ZR_NULL;
