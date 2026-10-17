@@ -1165,6 +1165,10 @@ ZrRustBindingStatus ZrRustBinding_ProjectSession_CallModuleExport(ZrRustBindingP
                                                          argumentCount,
                                                          outResult,
                                                          ZR_NULL);
+    /* The error message has been copied to the binding error record. Close
+     * abandoned VM frames now so rollback sees a quiescent session boundary. */
+    if (status != ZR_RUST_BINDING_STATUS_OK)
+        zr_rust_binding_reset_host_export_thread(session->owner->global->mainThreadState);
     session->owner->activeCall = ZR_FALSE;
     return status;
 }
