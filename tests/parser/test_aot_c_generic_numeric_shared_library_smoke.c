@@ -1993,11 +1993,11 @@ static void test_aot_c_generated_shared_library_compiles_generic_numeric_result_
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_constant_i64_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_i64_add_scalar_local"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = zr_aot_s0 + zr_aot_s1;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = ZrCore_Integer_Add(state, zr_aot_s0, zr_aot_s1);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_i64 dstSlot=4 srcSlot=2"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s4 = zr_aot_s2;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_i64_mul_scalar_local"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s5 = zr_aot_s4 * zr_aot_s3;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s5 = ZrCore_Integer_Multiply(state, zr_aot_s4, zr_aot_s3);"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CopyStack(state, &frame, 4, 2)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GenericNumericMul(state, &frame, 5, 4, 3)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_sync_i64_local_boundary"));
@@ -2071,7 +2071,7 @@ static void test_aot_c_generated_shared_library_compiles_generic_numeric_result_
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_constant_i64_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_i64_add_scalar_local"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = zr_aot_s0 + zr_aot_s1;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = ZrCore_Integer_Add(state, zr_aot_s0, zr_aot_s1);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_i64 dstSlot=4 srcSlot=2"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s4 = zr_aot_s2;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_i64_mod_scalar_local"));
@@ -2152,7 +2152,7 @@ static void test_aot_c_generated_shared_library_compiles_generic_numeric_result_
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_constant_i64_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_i64_add_scalar_local"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = zr_aot_s0 + zr_aot_s1;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = ZrCore_Integer_Add(state, zr_aot_s0, zr_aot_s1);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_i64 dstSlot=4 srcSlot=2"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s4 = zr_aot_s2;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_i64_mod_scalar_local"));
@@ -2244,7 +2244,7 @@ static void assert_aot_c_generated_shared_library_compiles_generic_numeric_resul
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_constant_i64_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_i64_add_scalar_local"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = zr_aot_s0 + zr_aot_s1;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = ZrCore_Integer_Add(state, zr_aot_s0, zr_aot_s1);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_i64 dstSlot=4 srcSlot=2"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s4 = zr_aot_s2;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, operationMarkerNeedle));
@@ -2443,11 +2443,11 @@ static void test_aot_c_generated_shared_library_compiles_generic_numeric_result_
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_constant_i64_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_constant_u64_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_mixed_i64_u64_add_scalar_local"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = zr_aot_s0 + (TZrInt64)zr_aot_u1;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = ZrCore_Integer_Add(state, zr_aot_s0, (TZrInt64)zr_aot_u1);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_i64 dstSlot=4 srcSlot=2"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s4 = zr_aot_s2;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_mixed_i64_u64_mul_scalar_local"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s5 = zr_aot_s4 * (TZrInt64)zr_aot_u3;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s5 = ZrCore_Integer_Multiply(state, zr_aot_s4, (TZrInt64)zr_aot_u3);"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CopyStack(state, &frame, 4, 2)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GenericNumericMul(state, &frame, 5, 4, 3)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_sync_i64_local_boundary"));
@@ -2681,7 +2681,7 @@ static void test_aot_c_generated_shared_library_compiles_generic_numeric_add_sig
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_constant_i64_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_i64_add_scalar_local"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = zr_aot_s0 + zr_aot_s1;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = ZrCore_Integer_Add(state, zr_aot_s0, zr_aot_s1);"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_arith_exec_generic_numeric_binary_boundary"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GenericNumericAdd(state, &frame, 2, 0, 1)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_sync_i64_local_boundary"));
@@ -2829,7 +2829,7 @@ static void test_aot_c_generated_shared_library_compiles_generic_numeric_add_sig
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_constant_i64_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_constant_u64_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_mixed_i64_u64_add_scalar_local"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = zr_aot_s0 + (TZrInt64)zr_aot_u1;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = ZrCore_Integer_Add(state, zr_aot_s0, (TZrInt64)zr_aot_u1);"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_arith_exec_generic_numeric_binary_boundary"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GenericNumericAdd(state, &frame, 2, 0, 1)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_sync_i64_local_boundary"));
@@ -2904,7 +2904,7 @@ static void test_aot_c_generated_shared_library_compiles_generic_numeric_sub_sig
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_constant_i64_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_constant_u64_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_mixed_i64_u64_sub_scalar_local"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = zr_aot_s0 - (TZrInt64)zr_aot_u1;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = ZrCore_Integer_Subtract(state, zr_aot_s0, (TZrInt64)zr_aot_u1);"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_arith_exec_generic_numeric_binary_boundary"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GenericNumericSub(state, &frame, 2, 0, 1)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_sync_i64_local_boundary"));
@@ -2979,7 +2979,7 @@ static void test_aot_c_generated_shared_library_compiles_generic_numeric_mul_sig
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_constant_i64_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_constant_u64_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_mixed_i64_u64_mul_scalar_local"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = zr_aot_s0 * (TZrInt64)zr_aot_u1;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = ZrCore_Integer_Multiply(state, zr_aot_s0, (TZrInt64)zr_aot_u1);"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_arith_exec_generic_numeric_binary_boundary"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GenericNumericMul(state, &frame, 2, 0, 1)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_sync_i64_local_boundary"));
@@ -4045,7 +4045,7 @@ static void test_aot_c_generated_shared_library_compiles_generic_numeric_sub_sig
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_constant_i64_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_i64_sub_scalar_local"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = zr_aot_s0 - zr_aot_s1;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = ZrCore_Integer_Subtract(state, zr_aot_s0, zr_aot_s1);"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_arith_exec_generic_numeric_binary_boundary"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GenericNumericSub(state, &frame, 2, 0, 1)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_sync_i64_local_boundary"));
@@ -4118,7 +4118,7 @@ static void test_aot_c_generated_shared_library_compiles_generic_numeric_mul_sig
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_constant_i64_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_i64_mul_scalar_local"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = zr_aot_s0 * zr_aot_s1;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = ZrCore_Integer_Multiply(state, zr_aot_s0, zr_aot_s1);"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_arith_exec_generic_numeric_binary_boundary"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GenericNumericMul(state, &frame, 2, 0, 1)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_sync_i64_local_boundary"));
@@ -4341,7 +4341,7 @@ static void test_aot_c_generated_shared_library_compiles_generic_numeric_neg_sig
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_constant_i64_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_i64_neg_scalar_local"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s1 = -zr_aot_s0;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s1 = ZrCore_Integer_Negate(state, zr_aot_s0);"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_arith_exec_generic_numeric_unary_boundary"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GenericNumericNeg(state, &frame, 1, 0)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_sync_i64_local_boundary"));
@@ -4414,7 +4414,7 @@ static void test_aot_c_generated_shared_library_compiles_generic_numeric_neg_uns
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_constant_u64_local"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_u64_neg_to_i64_scalar_local"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s1 = -(TZrInt64)zr_aot_u0;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s1 = ZrCore_Integer_NegateUnsigned(state, zr_aot_u0);"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_arith_exec_generic_numeric_unary_boundary"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_GenericNumericNeg(state, &frame, 1, 0)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_generic_numeric_sync_i64_local_boundary"));

@@ -51,7 +51,7 @@ static void backend_aot_write_c_static_direct_typed_bool_two_arg_full_aot_functi
         TZrUInt32 secondArgumentSlot);
 
 /* full-AOT 只使用标量局部变量；其他模式按使用情况同步值槽并保留失效回退。 */
-TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
+EZrAotTypedCallResult backend_aot_try_write_c_static_direct_typed_function_call(
         FILE *file,
         const SZrAotFunctionTable *functionTable,
         const SZrAotExecIrFunction *functionIr,
@@ -76,7 +76,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
     TZrBool typedF64ThreeArgCallPassState = ZR_TRUE;
 
     if (file == ZR_NULL || calleeFunctionIndex == ZR_AOT_INVALID_FUNCTION_INDEX) {
-        return ZR_FALSE;
+        return ZR_AOT_TYPED_CALL_NONE;
     }
 
     if (backend_aot_can_write_c_static_direct_bool_no_arg_call(functionTable,
@@ -91,7 +91,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                                   "b",
                                                                                   destinationSlot,
                                                                                   calleeFunctionIndex);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_BOOL;
         }
         TZrBool syncBoolStackSlot = (TZrBool)!backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
@@ -100,7 +100,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                     functionSlot,
                                                                     calleeFunctionIndex,
                                                                     syncBoolStackSlot);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_BOOL;
     }
 
     if (backend_aot_can_write_c_static_direct_bool_one_arg_call(functionTable,
@@ -118,7 +118,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                                    destinationSlot,
                                                                                    calleeFunctionIndex,
                                                                                    typedArgumentSlot);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_BOOL;
         }
         TZrBool syncBoolStackSlot = (TZrBool)!backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
@@ -128,7 +128,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                      calleeFunctionIndex,
                                                                      typedArgumentSlot,
                                                                     syncBoolStackSlot);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_BOOL;
     }
 
     if (backend_aot_can_write_c_static_direct_bool_two_arg_call(functionTable,
@@ -149,7 +149,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                                    typedFirstArgumentSlot,
                                                                                    typedSecondArgumentSlot,
                                                                                    ZR_FALSE);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_BOOL;
         }
         TZrBool syncBoolStackSlot = (TZrBool)!backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
@@ -160,7 +160,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                      typedFirstArgumentSlot,
                                                                     typedSecondArgumentSlot,
                                                                     syncBoolStackSlot);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_BOOL;
     }
 
     if (backend_aot_can_write_c_static_direct_bool_three_arg_call(functionTable,
@@ -183,7 +183,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                                      typedSecondArgumentSlot,
                                                                                      typedThirdArgumentSlot,
                                                                                      ZR_FALSE);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_BOOL;
         }
         TZrBool syncBoolStackSlot = (TZrBool)!backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
@@ -195,7 +195,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                       typedSecondArgumentSlot,
                                                                       typedThirdArgumentSlot,
                                                                       syncBoolStackSlot);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_BOOL;
     }
 
     if (backend_aot_can_write_c_static_direct_i64_bool_two_arg_call(functionTable,
@@ -215,7 +215,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                                         calleeFunctionIndex,
                                                                                         typedFirstArgumentSlot,
                                                                                         typedSecondArgumentSlot);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_BOOL;
         }
         TZrBool syncBoolStackSlot = (TZrBool)!backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
@@ -226,7 +226,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                          typedFirstArgumentSlot,
                                                                         typedSecondArgumentSlot,
                                                                         syncBoolStackSlot);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_BOOL;
     }
 
     if (backend_aot_can_write_c_static_direct_u64_bool_two_arg_call(functionTable,
@@ -246,7 +246,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                                         calleeFunctionIndex,
                                                                                         typedFirstArgumentSlot,
                                                                                         typedSecondArgumentSlot);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_BOOL;
         }
         TZrBool syncBoolStackSlot = (TZrBool)!backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
@@ -257,7 +257,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                          typedFirstArgumentSlot,
                                                                         typedSecondArgumentSlot,
                                                                         syncBoolStackSlot);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_BOOL;
     }
 
     if (backend_aot_can_write_c_static_direct_f64_bool_two_arg_call(functionTable,
@@ -277,7 +277,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                                         calleeFunctionIndex,
                                                                                         typedFirstArgumentSlot,
                                                                                         typedSecondArgumentSlot);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_BOOL;
         }
         TZrBool syncBoolStackSlot = (TZrBool)!backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
@@ -288,7 +288,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                          typedFirstArgumentSlot,
                                                                         typedSecondArgumentSlot,
                                                                         syncBoolStackSlot);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_BOOL;
     }
 
     if (backend_aot_can_write_c_static_direct_u64_no_arg_call(functionTable,
@@ -302,7 +302,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                                   "u",
                                                                                   destinationSlot,
                                                                                   calleeFunctionIndex);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_U64;
         }
         syncU64StackSlot = (TZrBool)!backend_aot_c_scalar_locals_u64_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
@@ -311,7 +311,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                   functionSlot,
                                                                   calleeFunctionIndex,
                                                                   syncU64StackSlot);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_U64;
     }
 
     if (backend_aot_can_write_c_static_direct_u64_one_arg_call(functionTable,
@@ -329,7 +329,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                                    destinationSlot,
                                                                                    calleeFunctionIndex,
                                                                                    typedArgumentSlot);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_U64;
         }
         syncU64StackSlot = (TZrBool)!backend_aot_c_scalar_locals_u64_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
@@ -339,7 +339,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                    calleeFunctionIndex,
                                                                    typedArgumentSlot,
                                                                    syncU64StackSlot);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_U64;
     }
 
     if (backend_aot_can_write_c_static_direct_u64_two_arg_call(functionTable,
@@ -361,7 +361,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                                    typedFirstArgumentSlot,
                                                                                    typedSecondArgumentSlot,
                                                                                    typedU64TwoArgCallPassState);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_U64;
         }
         syncU64StackSlot = (TZrBool)!backend_aot_c_scalar_locals_u64_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
@@ -373,7 +373,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                    typedSecondArgumentSlot,
                                                                    syncU64StackSlot,
                                                                    typedU64TwoArgCallPassState);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_U64;
     }
 
     if (backend_aot_can_write_c_static_direct_u64_three_arg_call(functionTable,
@@ -397,7 +397,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                                      typedSecondArgumentSlot,
                                                                                      typedThirdArgumentSlot,
                                                                                      typedU64ThreeArgCallPassState);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_U64;
         }
         syncU64StackSlot = (TZrBool)!backend_aot_c_scalar_locals_u64_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
@@ -410,7 +410,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                      typedThirdArgumentSlot,
                                                                      syncU64StackSlot,
                                                                      typedU64ThreeArgCallPassState);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_U64;
     }
 
     if (backend_aot_can_write_c_static_direct_f64_no_arg_call(functionTable,
@@ -424,7 +424,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                                   "f",
                                                                                   destinationSlot,
                                                                                   calleeFunctionIndex);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_F64;
         }
         syncF64StackSlot = (TZrBool)!backend_aot_c_scalar_locals_f64_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
@@ -433,7 +433,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                    functionSlot,
                                                                    calleeFunctionIndex,
                                                                    syncF64StackSlot);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_F64;
     }
 
     if (backend_aot_can_write_c_static_direct_f64_one_arg_call(functionTable,
@@ -451,7 +451,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                                    destinationSlot,
                                                                                    calleeFunctionIndex,
                                                                                    typedArgumentSlot);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_F64;
         }
         syncF64StackSlot = (TZrBool)!backend_aot_c_scalar_locals_f64_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
@@ -461,7 +461,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                     calleeFunctionIndex,
                                                                     typedArgumentSlot,
                                                                     syncF64StackSlot);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_F64;
     }
 
     if (backend_aot_can_write_c_static_direct_f64_two_arg_call(functionTable,
@@ -483,7 +483,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                                    typedFirstArgumentSlot,
                                                                                    typedSecondArgumentSlot,
                                                                                    typedF64TwoArgCallPassState);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_F64;
         }
         syncF64StackSlot = (TZrBool)!backend_aot_c_scalar_locals_f64_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
@@ -495,7 +495,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                     typedSecondArgumentSlot,
                                                                    syncF64StackSlot,
                                                                    typedF64TwoArgCallPassState);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_F64;
     }
 
     if (backend_aot_can_write_c_static_direct_f64_three_arg_call(functionTable,
@@ -519,7 +519,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                                      typedSecondArgumentSlot,
                                                                                      typedThirdArgumentSlot,
                                                                                      typedF64ThreeArgCallPassState);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_F64;
         }
         syncF64StackSlot = (TZrBool)!backend_aot_c_scalar_locals_f64_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
@@ -532,7 +532,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                      typedThirdArgumentSlot,
                                                                      syncF64StackSlot,
                                                                      typedF64ThreeArgCallPassState);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_F64;
     }
 
     syncI64StackSlot = (TZrBool)!backend_aot_c_scalar_locals_i64_result_can_skip_value_slot(
@@ -559,7 +559,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                                      typedSecondArgumentSlot,
                                                                                      typedThirdArgumentSlot,
                                                                                      typedI64ThreeArgCallPassState);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_I64;
         }
         backend_aot_write_c_static_direct_i64_three_arg_function_call(file,
                                                                      destinationSlot,
@@ -570,7 +570,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                      typedThirdArgumentSlot,
                                                                      syncI64StackSlot,
                                                                      typedI64ThreeArgCallPassState);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_I64;
     }
 
     if (backend_aot_can_write_c_static_direct_i64_two_arg_call(functionTable,
@@ -592,7 +592,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                                    typedFirstArgumentSlot,
                                                                                    typedSecondArgumentSlot,
                                                                                    typedI64TwoArgCallPassState);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_I64;
         }
         backend_aot_write_c_static_direct_i64_two_arg_function_call(file,
                                                                    destinationSlot,
@@ -602,7 +602,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                    typedSecondArgumentSlot,
                                                                    syncI64StackSlot,
                                                                    typedI64TwoArgCallPassState);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_I64;
     }
 
     if (backend_aot_can_write_c_static_direct_i64_one_arg_call(functionTable,
@@ -620,7 +620,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                                    destinationSlot,
                                                                                    calleeFunctionIndex,
                                                                                    typedArgumentSlot);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_I64;
         }
         backend_aot_write_c_static_direct_i64_one_arg_function_call(file,
                                                                    destinationSlot,
@@ -628,7 +628,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                    calleeFunctionIndex,
                                                                    typedArgumentSlot,
                                                                    syncI64StackSlot);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_I64;
     }
 
     if (backend_aot_can_write_c_static_direct_f64_no_arg_call(functionTable,
@@ -642,7 +642,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                                   "f",
                                                                                   destinationSlot,
                                                                                   calleeFunctionIndex);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_F64;
         }
         TZrBool syncStackSlot = (TZrBool)!backend_aot_c_scalar_locals_f64_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
@@ -651,7 +651,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                    functionSlot,
                                                                    calleeFunctionIndex,
                                                                    syncStackSlot);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_F64;
     }
 
     if (backend_aot_can_write_c_static_direct_i64_no_arg_call(functionTable,
@@ -665,17 +665,17 @@ TZrBool backend_aot_try_write_c_static_direct_typed_function_call(
                                                                                   "s",
                                                                                   destinationSlot,
                                                                                   calleeFunctionIndex);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_I64;
         }
         backend_aot_write_c_static_direct_i64_no_arg_function_call(file,
                                                                   destinationSlot,
                                                                   functionSlot,
                                                                   calleeFunctionIndex,
                                                                   syncI64StackSlot);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_I64;
     }
 
-    return ZR_FALSE;
+    return ZR_AOT_TYPED_CALL_NONE;
 }
 
 static void backend_aot_write_c_static_direct_typed_no_arg_full_aot_function_call(
@@ -723,7 +723,7 @@ static void backend_aot_write_c_static_direct_typed_one_arg_full_aot_function_ca
             "    {\n"
             "        /* zr_aot_static_%s_one_arg_direct_call */\n"
             "        /* zr_aot_static_%s_one_arg_direct_call_full_aot */\n"
-            "        zr_aot_%s%u = zr_aot_typed_%s_fn_%u(zr_aot_%s%u);\n"
+            "        zr_aot_%s%u = zr_aot_typed_%s_fn_%u(%szr_aot_%s%u);\n"
             "    }\n",
             kindName,
             kindName,
@@ -731,6 +731,7 @@ static void backend_aot_write_c_static_direct_typed_one_arg_full_aot_function_ca
             (unsigned)destinationSlot,
             kindName,
             (unsigned)calleeFunctionIndex,
+            strcmp(kindName, "i64") == 0 ? "state, " : "",
             localPrefix,
             (unsigned)argumentSlot);
 }
@@ -869,7 +870,7 @@ static void backend_aot_write_c_static_direct_typed_bool_two_arg_full_aot_functi
 }
 
 /* 零参数路径单独服务无参数调用点，同样保持 full-AOT 与值槽同步语义。 */
-TZrBool backend_aot_try_write_c_static_direct_typed_no_arg_function_call(
+EZrAotTypedCallResult backend_aot_try_write_c_static_direct_typed_no_arg_function_call(
         FILE *file,
         const SZrAotFunctionTable *functionTable,
         const SZrAotExecIrFunction *functionIr,
@@ -879,7 +880,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_no_arg_function_call(
         TZrUInt32 calleeFunctionIndex,
         TZrBool requireFullAot) {
     if (file == ZR_NULL || calleeFunctionIndex == ZR_AOT_INVALID_FUNCTION_INDEX) {
-        return ZR_FALSE;
+        return ZR_AOT_TYPED_CALL_NONE;
     }
 
     if (backend_aot_can_write_c_static_direct_bool_no_arg_call(functionTable,
@@ -893,7 +894,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_no_arg_function_call(
                                                                                   "b",
                                                                                   destinationSlot,
                                                                                   calleeFunctionIndex);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_BOOL;
         }
         TZrBool syncStackSlot = (TZrBool)!backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
@@ -902,7 +903,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_no_arg_function_call(
                                                                     functionSlot,
                                                                     calleeFunctionIndex,
                                                                     syncStackSlot);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_BOOL;
     }
 
     if (backend_aot_can_write_c_static_direct_u64_no_arg_call(functionTable,
@@ -916,7 +917,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_no_arg_function_call(
                                                                                   "u",
                                                                                   destinationSlot,
                                                                                   calleeFunctionIndex);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_U64;
         }
         TZrBool syncStackSlot = (TZrBool)!backend_aot_c_scalar_locals_u64_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
@@ -925,7 +926,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_no_arg_function_call(
                                                                   functionSlot,
                                                                   calleeFunctionIndex,
                                                                   syncStackSlot);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_U64;
     }
 
     if (backend_aot_can_write_c_static_direct_f64_no_arg_call(functionTable,
@@ -939,7 +940,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_no_arg_function_call(
                                                                                   "f",
                                                                                   destinationSlot,
                                                                                   calleeFunctionIndex);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_F64;
         }
         TZrBool syncStackSlot = (TZrBool)!backend_aot_c_scalar_locals_f64_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
@@ -948,7 +949,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_no_arg_function_call(
                                                                    functionSlot,
                                                                    calleeFunctionIndex,
                                                                    syncStackSlot);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_F64;
     }
 
     if (backend_aot_can_write_c_static_direct_i64_no_arg_call(functionTable,
@@ -962,7 +963,7 @@ TZrBool backend_aot_try_write_c_static_direct_typed_no_arg_function_call(
                                                                                   "s",
                                                                                   destinationSlot,
                                                                                   calleeFunctionIndex);
-            return ZR_TRUE;
+            return ZR_AOT_TYPED_CALL_I64;
         }
         TZrBool syncStackSlot = (TZrBool)!backend_aot_c_scalar_locals_i64_result_can_skip_value_slot(
                 functionIr, destinationSlot, execInstructionIndex);
@@ -971,8 +972,8 @@ TZrBool backend_aot_try_write_c_static_direct_typed_no_arg_function_call(
                                                                   functionSlot,
                                                                   calleeFunctionIndex,
                                                                   syncStackSlot);
-        return ZR_TRUE;
+        return ZR_AOT_TYPED_CALL_I64;
     }
 
-    return ZR_FALSE;
+    return ZR_AOT_TYPED_CALL_NONE;
 }

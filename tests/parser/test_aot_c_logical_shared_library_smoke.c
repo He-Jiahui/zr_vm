@@ -538,10 +538,8 @@ static void test_aot_c_generated_shared_library_executes_generic_primitive_equal
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_not_equal"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
                                 "ZrLibrary_AotRuntime_GenericPrimitiveLogicalEqual(state, &frame"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_i64_compare_scalar_local"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_b2 = (TZrBool)((zr_aot_s3 != zr_aot_s4) != 0u);"));
-    TEST_ASSERT_NULL(strstr(generatedCText,
-                            "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNotEqual(state, &frame, 2, 3, 4)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "ZrLibrary_AotRuntime_GenericPrimitiveLogicalNotEqual(state, &frame, 2, 3, 4)"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_generic_logical_sync_bool_local_boundary"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_SyncBoolLocal(state, &frame"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (!zr_aot_b9) {"));

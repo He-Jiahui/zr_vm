@@ -390,7 +390,7 @@ static void test_reference_named_arguments_fixture_executes(void) {
     source = read_reference_file("core_semantics/calls/named_arguments_defaults_pass.zr", &sourceLength);
     TEST_ASSERT_NOT_NULL(source);
 
-    sourceName = ZrCore_String_Create(state, "reference_named_arguments_defaults_pass.zr", 42);
+    sourceName = ZrCore_String_CreateFromNative(state, "reference_named_arguments_defaults_pass.zr");
     ast = ZrParser_Parse(state, source, sourceLength, sourceName);
     TEST_ASSERT_NOT_NULL(ast);
     TEST_ASSERT_TRUE(compile_fixture_with_entry(state, ast, &compileResult));
@@ -635,7 +635,7 @@ static void test_named_arguments_basic(void) {
         "}\n"
         "return __fixture();\n";
     
-    SZrString* sourceName = ZrCore_String_Create(state, "test_named_args.zr", 20);
+    SZrString* sourceName = ZrCore_String_CreateFromNative(state, "test_named_args.zr");
     
     printf("  [DEBUG] Starting parsing...\n");
     fflush(stdout);
@@ -713,7 +713,7 @@ static void test_named_arguments_mixed(void) {
         "}\n"
         "return __fixture();\n";
     
-    SZrString* sourceName = ZrCore_String_Create(state, "test_mixed_args.zr", 20);
+    SZrString* sourceName = ZrCore_String_CreateFromNative(state, "test_mixed_args.zr");
     SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast == ZR_NULL) {
@@ -774,7 +774,7 @@ static void test_named_arguments_with_defaults(void) {
         "}\n"
         "return __fixture();\n";
     
-    SZrString* sourceName = ZrCore_String_Create(state, "test_default_args.zr", 22);
+    SZrString* sourceName = ZrCore_String_CreateFromNative(state, "test_default_args.zr");
     SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast == ZR_NULL) {
@@ -833,7 +833,7 @@ static void test_named_arguments_order_independent(void) {
         "}\n"
         "return __fixture();\n";
     
-    SZrString* sourceName = ZrCore_String_Create(state, "test_order.zr", 14);
+    SZrString* sourceName = ZrCore_String_CreateFromNative(state, "test_order.zr");
     SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast == ZR_NULL) {
@@ -892,7 +892,7 @@ static void test_named_arguments_complex(void) {
         "}\n"
         "return __fixture();\n";
     
-    SZrString* sourceName = ZrCore_String_Create(state, "test_complex.zr", 16);
+    SZrString* sourceName = ZrCore_String_CreateFromNative(state, "test_complex.zr");
     SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
     
     if (ast == ZR_NULL) {

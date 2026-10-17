@@ -27,6 +27,10 @@ if(WIN32)
 endif()
 foreach(case IN LISTS file_path_cases)
     add_test(NAME library_file_path_${case}
-            COMMAND zr_vm_file_path_operations_test ${case} "${ZR_VM_FILE_PATH_FIXTURE_ROOT}/${case}")
+            COMMAND ${CMAKE_COMMAND}
+            "-DTEST_EXECUTABLE=$<TARGET_FILE:zr_vm_file_path_operations_test>"
+            "-DTEST_CASE=${case}"
+            "-DFIXTURE_PARENT=${ZR_VM_FILE_PATH_FIXTURE_ROOT}/${case}"
+            -P "${CMAKE_SOURCE_DIR}/tests/cmake/run_fresh_filesystem_fixture.cmake")
     set_tests_properties(library_file_path_${case} PROPERTIES TIMEOUT 30)
 endforeach()

@@ -1,7 +1,5 @@
 #include "native_binding/native_binding_internal.h"
 
-#include <setjmp.h>
-
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/ownership.h"
@@ -27,8 +25,6 @@
 #define native_binding_can_use_fast_lane native_binding_can_use_fast_lane_inline
 #define native_binding_can_use_inline_pinned_lane native_binding_can_use_inline_pinned_lane_inline
 #define native_binding_context_adopt_inline_frame_anchor native_binding_context_adopt_inline_frame_anchor_inline
-
-#define ZR_LIB_THREAD_LOCAL ZR_THREAD_LOCAL
 
 /* 由通用分派入口消费描述符的参数范围；回调只接收通过声明约束的调用。 */
 TZrBool native_binding_auto_check_arity(const ZrLibCallContext *context) {
@@ -1691,19 +1687,6 @@ const SZrTypeValue *ZrLib_Module_GetExport(SZrState *state,
     return ZrCore_Module_GetPubExport(state, module, exportString);
 }
 
-/* 宿主调用模块导出时的线程局部 panic 边界，支持同线程嵌套恢复。 */
-typedef struct ZrLibPanicRecoverContext {
-    jmp_buf jumpBuffer;
-    FZrPanicHandlingFunction previousHandler;
-    SZrState *state;
-    EZrThreadStatus status;
-    struct ZrLibPanicRecoverContext *previous;
-    TZrBool triggered;
-} ZrLibPanicRecoverContext;
-
-/* 仅当前线程可见；恢复时必须连同 global 的 handler 一起还原。 */
-static ZR_LIB_THREAD_LOCAL ZrLibPanicRecoverContext *g_zr_lib_panic_recover_context = ZR_NULL;
-
 /* 宿主 API 将无异常的失败转换成规范化 VM 错误，避免只返回 false 丢失诊断。 */
 static EZrThreadStatus native_binding_call_normalize_failure(SZrState *state, EZrThreadStatus status) {
     EZrThreadStatus effectiveStatus;
@@ -1725,27 +1708,6 @@ static EZrThreadStatus native_binding_call_normalize_failure(SZrState *state, EZ
     }
     state->threadStatus = effectiveStatus;
     return effectiveStatus;
-}
-
-/* 只截获属于当前 state 的未处理 panic；其他状态转交原宿主 handler。 */
-static void native_binding_call_panic_handler(SZrState *state) {
-    ZrLibPanicRecoverContext *context = g_zr_lib_panic_recover_context;
-
-    if (context == ZR_NULL || context->state != state) {
-        if (state != ZR_NULL && state->global != ZR_NULL &&
-            state->global->panicHandlingFunction != native_binding_call_panic_handler &&
-            state->global->panicHandlingFunction != ZR_NULL) {
-            state->global->panicHandlingFunction(state);
-        }
-        return;
-    }
-
-    context->triggered = ZR_TRUE;
-    context->status = (state != ZR_NULL && state->threadStatus != ZR_THREAD_STATUS_FINE)
-                              ? state->threadStatus
-                              : (state != ZR_NULL && state->hasCurrentException) ? state->currentExceptionStatus
-                                                                                 : ZR_THREAD_STATUS_RUNTIME_ERROR;
-    longjmp(context->jumpBuffer, 1);
 }
 
 /* 从 C 回调同步调用任意 VM 可调用值；借用参数先搬入受 VM 扫描的 scratch 栈。 */
@@ -1924,52 +1886,44 @@ TZrBool ZrLib_CallValue(SZrState *state,
     return ZR_FALSE;
 }
 
-/* 宿主按模块/导出调用 VM；临时 panic 边界将未处理异常转为 false 与状态。 */
-/* TODO: panic handler 用 longjmp 穿过可能仍活动的 native GC 域和临时 pin；
- * 核查 VM 未处理异常的展开路径是否已在进入 handler 前释放这些资源。 */
+/* Use the Core recovery boundary so exceptions restore native-call counters,
+ * AOT roots and GC domain scopes before returning to the host. */
+typedef struct ZrLibExportCallContext {
+    const TZrChar *moduleName;
+    const TZrChar *exportName;
+    const SZrTypeValue *arguments;
+    TZrSize argumentCount;
+    SZrTypeValue *result;
+    TZrBool completed;
+} ZrLibExportCallContext;
+
+static void native_binding_call_export(SZrState *state, TZrPtr data) {
+    ZrLibExportCallContext *context = data;
+    const SZrTypeValue *exportValue = ZrLib_Module_GetExport(
+            state, context->moduleName, context->exportName);
+    if (exportValue != ZR_NULL) {
+        context->completed = ZrLib_CallValue(state, exportValue, ZR_NULL,
+                context->arguments, context->argumentCount, context->result);
+    }
+}
+
 TZrBool ZrLib_CallModuleExport(SZrState *state,
                                const TZrChar *moduleName,
                                const TZrChar *exportName,
                                const SZrTypeValue *arguments,
                                TZrSize argumentCount,
                                SZrTypeValue *result) {
-    const SZrTypeValue *exportValue = ZrLib_Module_GetExport(state, moduleName, exportName);
-    ZrLibPanicRecoverContext context;
-    EZrThreadStatus status = ZR_THREAD_STATUS_FINE;
-    TZrBool callCompleted = ZR_FALSE;
-
-    if (exportValue == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    memset(&context, 0, sizeof(context));
-    context.state = state;
-    context.previousHandler = state != ZR_NULL && state->global != ZR_NULL ? state->global->panicHandlingFunction : ZR_NULL;
-    context.previous = g_zr_lib_panic_recover_context;
-    g_zr_lib_panic_recover_context = &context;
-    if (state != ZR_NULL && state->global != ZR_NULL) {
-        state->global->panicHandlingFunction = native_binding_call_panic_handler;
-    }
-
-    if (setjmp(context.jumpBuffer) == 0) {
-        callCompleted = ZrLib_CallValue(state, exportValue, ZR_NULL, arguments, argumentCount, result);
-        if (state != ZR_NULL) {
-            status = state->threadStatus;
-        }
-    } else {
-        status = context.status;
-    }
-
-    if (state != ZR_NULL && state->global != ZR_NULL) {
-        state->global->panicHandlingFunction = context.previousHandler;
-    }
-    g_zr_lib_panic_recover_context = context.previous;
-
-    if (context.triggered || !callCompleted || status != ZR_THREAD_STATUS_FINE) {
+    ZrLibExportCallContext context = {
+        moduleName, exportName, arguments, argumentCount, result, ZR_FALSE
+    };
+    EZrThreadStatus status;
+    if (state == ZR_NULL) return ZR_FALSE;
+    status = ZrCore_Exception_TryRun(state, native_binding_call_export, &context);
+    if (!context.completed || status != ZR_THREAD_STATUS_FINE ||
+        state->threadStatus != ZR_THREAD_STATUS_FINE) {
         (void)native_binding_call_normalize_failure(state, status);
         return ZR_FALSE;
     }
-
     state->threadStatus = ZR_THREAD_STATUS_FINE;
     return ZR_TRUE;
 }

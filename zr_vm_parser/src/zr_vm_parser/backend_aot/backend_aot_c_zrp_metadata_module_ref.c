@@ -1,3 +1,4 @@
+#include "backend_aot/backend_aot_c_zrp_metadata_unaligned.h"
 #include "backend_aot/backend_aot_c_zrp_metadata_module_ref.h"
 
 #include "backend_aot/backend_aot_c_zrp_metadata_remap.h"
@@ -624,7 +625,7 @@ TZrMetadataToken backend_aot_c_zrp_compacted_module_ref_token(
 }
 
 TZrBool backend_aot_c_zrp_remap_module_ref_token(
-        TZrMetadataToken *token,
+        void *tokenStorage,
         const SZrZrpMetadataModuleRefRow *rows,
         TZrUInt32 count,
         const SZrMetadataTokenRecord *tokenRecords,
@@ -646,15 +647,17 @@ TZrBool backend_aot_c_zrp_remap_module_ref_token(
         const TZrByte *signatureBlobPool,
         TZrUInt32 signatureBlobPoolBytes,
         const SZrAotCZrpSignatureBlobRemap *signatureRemap) {
+    SZrAotCZrpUInt32Field *token = (SZrAotCZrpUInt32Field *)tokenStorage;
+
     TZrUInt32 moduleRefIndex;
 
     if (token == ZR_NULL) {
         return ZR_FALSE;
     }
-    if (*token == 0u || !backend_aot_c_zrp_token_is_assembly_ref(*token)) {
+    if (token->value == 0u || !backend_aot_c_zrp_token_is_assembly_ref(token->value)) {
         return ZR_TRUE;
     }
-    if (!backend_aot_c_zrp_find_module_ref_index_for_token(rows, count, *token, &moduleRefIndex) ||
+    if (!backend_aot_c_zrp_find_module_ref_index_for_token(rows, count, token->value, &moduleRefIndex) ||
         !backend_aot_c_zrp_module_ref_row_is_retained(&rows[moduleRefIndex],
                                                       tokenRecords,
                                                       tokenRecordCount,
@@ -678,7 +681,7 @@ TZrBool backend_aot_c_zrp_remap_module_ref_token(
         return ZR_FALSE;
     }
 
-    *token = backend_aot_c_zrp_compacted_module_ref_token(rows,
+    token->value = backend_aot_c_zrp_compacted_module_ref_token(rows,
                                                          count,
                                                          moduleRefIndex,
                                                          tokenRecords,

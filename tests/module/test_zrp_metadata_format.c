@@ -639,7 +639,7 @@ static void test_zrp_metadata_definition_table_rows_validate_token_tags(void) {
     TZrByte bytes[ZR_ZRP_METADATA_HEADER_SIZE + 1024u] = {0};
 
     ZrCore_ZrpMetadata_InitHeader(&header);
-    nextOffset = ZR_ZRP_METADATA_HEADER_SIZE;
+    nextOffset = ZR_ZRP_METADATA_HEADER_SIZE + 1u;
     set_counted_section(&header.typeDefs,
                         &nextOffset,
                         1u,
@@ -994,8 +994,21 @@ static void test_zrp_metadata_header_rejects_invalid_mmap_view(void) {
     TEST_ASSERT_FALSE(ZrCore_ZrpMetadata_ValidateHeader(&header, sizeof(bytes)));
 }
 
+static void test_zrp_metadata_wire_row_sizes_remain_compatible(void) {
+    TEST_ASSERT_EQUAL_UINT32(52u, sizeof(SZrZrpMetadataTypeDefRow));
+    TEST_ASSERT_EQUAL_UINT32(36u, sizeof(SZrZrpMetadataMethodDefRow));
+    TEST_ASSERT_EQUAL_UINT32(40u, sizeof(SZrZrpMetadataFieldDefRow));
+    TEST_ASSERT_EQUAL_UINT32(24u, sizeof(SZrZrpMetadataGenericParamRow));
+    TEST_ASSERT_EQUAL_UINT32(16u, sizeof(SZrZrpMetadataGenericParamConstraintRow));
+    TEST_ASSERT_EQUAL_UINT32(24u, sizeof(SZrZrpMetadataTypeSpecRow));
+    TEST_ASSERT_EQUAL_UINT32(24u, sizeof(SZrZrpMetadataMethodSpecRow));
+    TEST_ASSERT_EQUAL_UINT32(24u, sizeof(SZrZrpMetadataModuleRefRow));
+    TEST_ASSERT_EQUAL_UINT32(20u, sizeof(SZrZrpMetadataManifestExportRow));
+}
+
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_zrp_metadata_wire_row_sizes_remain_compatible);
     RUN_TEST(test_zrp_metadata_header_roundtrips_tables_and_pools);
     RUN_TEST(test_zrp_metadata_header_rejects_wrong_definition_table_element_size);
     RUN_TEST(test_zrp_metadata_section_view_resolves_mmap_payloads);

@@ -182,7 +182,10 @@ static void other(unsigned n) {
         REQUIRE(analyze(&f)); a = edge(&f, 0u); REQUIRE(a && !a->hasUpper); break;
     case 8: /* Unsupported selector. */
         f.instructions[0].typeToken = 99u;
-        REQUIRE(analyze(&f)); a = edge(&f, 0u); REQUIRE(a && !a->hasUpper); break;
+        REQUIRE(!analyze(&f));
+        REQUIRE(f.diagnostic.code == ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE);
+        REQUIRE(f.diagnostic.instructionId == 1u);
+        break;
     case 9: /* NULLABLE is not NULL. */
         f.values[0].nullability = ZR_EXEC_IR_NULLABILITY_NULLABLE;
         REQUIRE(analyze(&f)); a = edge(&f, 0u);

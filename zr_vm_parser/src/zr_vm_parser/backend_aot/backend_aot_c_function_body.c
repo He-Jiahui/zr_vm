@@ -15,6 +15,24 @@
 #include "backend_aot/backend_aot_internal.h"
 #include "zr_vm_common/zr_runtime_sentinel_conf.h"
 
+/* Typed direct calls may keep their result only in a C scalar local. The
+ * implicit return of a tail call must consume that same result representation. */
+static void backend_aot_write_c_call_tail_return(FILE *file,
+        EZrAotTypedCallResult result, TZrUInt32 slot, TZrBool publishExports) {
+    if (result == ZR_AOT_TYPED_CALL_NONE) {
+        backend_aot_write_c_tail_return(file, slot, publishExports);
+        return;
+    }
+    if (publishExports) backend_aot_write_c_publish_exports(file);
+    switch (result) {
+        case ZR_AOT_TYPED_CALL_I64: backend_aot_write_c_direct_return_i64_local(file, slot); break;
+        case ZR_AOT_TYPED_CALL_U64: backend_aot_write_c_direct_return_u64_local(file, slot); break;
+        case ZR_AOT_TYPED_CALL_F64: backend_aot_write_c_direct_return_f64_local(file, slot); break;
+        case ZR_AOT_TYPED_CALL_BOOL: backend_aot_write_c_direct_return_bool_local(file, slot); break;
+        default: break;
+    }
+}
+
 static const SZrAotExecIrInstruction *backend_aot_find_exec_ir_instruction(
         const SZrAotExecIrModule *module,
         const SZrAotExecIrFunction *functionIr,
@@ -2572,16 +2590,13 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                  ZR_AOT_INVALID_FUNCTION_INDEX);
                     break;
                 }
+                EZrAotTypedCallResult typedResult = ZR_AOT_TYPED_CALL_NONE;
                 if (calleeFunctionIndex != ZR_AOT_INVALID_FUNCTION_INDEX) {
-                    if (!backend_aot_try_write_c_static_direct_typed_function_call(file,
-                                                                                   functionTable,
-                                                                                   functionIr,
-                                                                                   destinationSlot,
-                                                                   operandA1,
-                                                                   operandB1,
-                                                                   instructionIndex,
-                                                                   calleeFunctionIndex,
-                                                                   requireFullAot)) {
+                    typedResult = backend_aot_try_write_c_static_direct_typed_function_call(file,
+                            functionTable, functionIr, destinationSlot,
+                            operandA1, operandB1, instructionIndex,
+                            calleeFunctionIndex, requireFullAot);
+                    if (typedResult == ZR_AOT_TYPED_CALL_NONE) {
                         backend_aot_write_c_static_direct_function_call(file,
                                                                         functionIr,
                                                                         destinationSlot,
@@ -2606,7 +2621,7 @@ void backend_aot_write_c_function_body(FILE *file,
                     instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL) ||
                     instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL) ||
                     instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL)) {
-                    backend_aot_write_c_tail_return(file, destinationSlot, publishExports);
+                    backend_aot_write_c_call_tail_return(file, typedResult, destinationSlot, publishExports);
                 }
                 break;
             }
@@ -2702,15 +2717,12 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                  ZR_AOT_INVALID_FUNCTION_INDEX);
                     break;
                 }
+                EZrAotTypedCallResult typedResult = ZR_AOT_TYPED_CALL_NONE;
                 if (calleeFunctionIndex != ZR_AOT_INVALID_FUNCTION_INDEX) {
-                    if (!backend_aot_try_write_c_static_direct_typed_no_arg_function_call(file,
-                                                                                          functionTable,
-                                                                                          functionIr,
-                                                                                          destinationSlot,
-                                                                                          operandA1,
-                                                                                          instructionIndex,
-                                                                                          calleeFunctionIndex,
-                                                                                          requireFullAot)) {
+                    typedResult = backend_aot_try_write_c_static_direct_typed_no_arg_function_call(file,
+                            functionTable, functionIr, destinationSlot,
+                            operandA1, instructionIndex, calleeFunctionIndex, requireFullAot);
+                    if (typedResult == ZR_AOT_TYPED_CALL_NONE) {
                         backend_aot_write_c_static_direct_function_call(file,
                                                                         functionIr,
                                                                         destinationSlot,
@@ -2733,7 +2745,7 @@ void backend_aot_write_c_function_body(FILE *file,
                     instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS) ||
                     instruction->instruction.operationCode ==
                             ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS)) {
-                    backend_aot_write_c_tail_return(file, destinationSlot, publishExports);
+                    backend_aot_write_c_call_tail_return(file, typedResult, destinationSlot, publishExports);
                 }
                 break;
             }

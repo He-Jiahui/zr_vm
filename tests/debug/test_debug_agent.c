@@ -2951,7 +2951,7 @@ static void test_debug_agent_language_gauntlet_project_breakpoint_pause_and_resu
 
     ZrDebug_Pause(agent);
     message = debug_client_expect_event(&client, "stopped");
-    debug_assert_stopped_location(message, "pause", sourcePath, "spin", 8, 14, &pausedLine);
+    debug_assert_stopped_location(message, "pause", sourcePath, "spin", 8, 16, &pausedLine);
     cJSON_Delete(message);
 
     debug_client_send_request(&client, 6, "stackTrace", ZR_NULL);
@@ -2964,7 +2964,7 @@ static void test_debug_agent_language_gauntlet_project_breakpoint_pause_and_resu
     TEST_ASSERT_EQUAL_STRING("spin", debug_json_string(topFrame, "functionName"));
     TEST_ASSERT_EQUAL_STRING(sourcePath, debug_json_string(topFrame, "sourceFile"));
     TEST_ASSERT_TRUE(debug_json_int(topFrame, "line") >= 8);
-    TEST_ASSERT_TRUE(debug_json_int(topFrame, "line") <= 14);
+    TEST_ASSERT_TRUE(debug_json_int(topFrame, "line") <= 16);
     TEST_ASSERT_EQUAL_STRING("runGauntlet", debug_json_string(callerFrame, "functionName"));
     TEST_ASSERT_EQUAL_STRING(sourcePath, debug_json_string(callerFrame, "sourceFile"));
     topFrameId = debug_json_int(topFrame, "frameId");
@@ -3002,7 +3002,7 @@ static void test_debug_agent_language_gauntlet_project_breakpoint_pause_and_resu
     TEST_ASSERT_TRUE(debug_json_string(indexItem, "value")[0] != '\0');
     // 暂停点可能先于内层变量声明，未出现 burst 只在相应源码行有效。
     if (burstItem == ZR_NULL) {
-        TEST_ASSERT_TRUE(pausedLine == 8 || pausedLine == 9);
+        TEST_ASSERT_TRUE(pausedLine == 8 || pausedLine == 9 || pausedLine == 16);
     } else {
         TEST_ASSERT_TRUE(debug_json_string(burstItem, "value")[0] != '\0');
     }

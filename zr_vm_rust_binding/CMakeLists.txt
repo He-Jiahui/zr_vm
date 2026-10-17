@@ -1,54 +1,7 @@
 include(${CMAKE_SOURCE_DIR}/zr_vm_common/CommonMacros.cmake)
 set(zr_curr_module_name "zr_vm_rust_binding")
 
-# Cargo 输出策略只接受 D:/、E:/、F: 的 cargo-targets 根。GitHub Ubuntu 的工作目录
-# 和 Windows 短路径 D:/b 都不在该根下；可选绑定应跳过，而不是让整个 VM 配置失败。
-function(zr_vm_rust_binding_binary_dir_approved result_name)
-    set(${result_name} OFF PARENT_SCOPE)
-    if (NOT IS_ABSOLUTE "${CMAKE_BINARY_DIR}" OR NOT IS_DIRECTORY "${CMAKE_BINARY_DIR}")
-        return()
-    endif ()
-    get_filename_component(zr_vm_rust_binding_binary_real "${CMAKE_BINARY_DIR}" REALPATH)
-    file(TO_CMAKE_PATH "${zr_vm_rust_binding_binary_real}" zr_vm_rust_binding_binary_real)
-    string(TOLOWER "${zr_vm_rust_binding_binary_real}" zr_vm_rust_binding_binary_lower)
-    if ("${zr_vm_rust_binding_binary_lower}" MATCHES "^[def]:/cargo-targets(/|$)")
-        set(${result_name} ON PARENT_SCOPE)
-    endif ()
-endfunction()
-
-zr_vm_rust_binding_binary_dir_approved(zr_vm_rust_binding_binary_dir_ok)
-if (NOT zr_vm_rust_binding_binary_dir_ok)
-    message(STATUS
-            "Skipping zr_vm_rust_binding: CMAKE_BINARY_DIR is outside D:/cargo-targets, E:/cargo-targets, or F:/cargo-targets (${CMAKE_BINARY_DIR})")
-    return()
-endif ()
-
 zr_declare_module(${zr_curr_module_name} ON)
-
-# Native and Cargo products must use a physical approved drive-root.  Resolve
-# the configured path before accepting it so junctions, symlinks, aliases, and
-# nested lookalike roots cannot bypass the output policy.
-function(zr_vm_rust_binding_validate_output_path path_value path_label)
-    if (NOT IS_ABSOLUTE "${path_value}" OR NOT IS_DIRECTORY "${path_value}")
-        message(FATAL_ERROR
-                "${path_label} must be an existing absolute directory under D:/cargo-targets, E:/cargo-targets, or F:/cargo-targets")
-    endif ()
-    file(TO_CMAKE_PATH "${path_value}" zr_vm_rust_binding_input_path)
-    get_filename_component(zr_vm_rust_binding_real_path "${path_value}" REALPATH)
-    file(TO_CMAKE_PATH "${zr_vm_rust_binding_real_path}" zr_vm_rust_binding_real_path)
-    string(TOLOWER "${zr_vm_rust_binding_input_path}" zr_vm_rust_binding_input_lower)
-    string(TOLOWER "${zr_vm_rust_binding_real_path}" zr_vm_rust_binding_real_lower)
-    if (NOT "${zr_vm_rust_binding_input_lower}" STREQUAL "${zr_vm_rust_binding_real_lower}")
-        message(FATAL_ERROR
-                "${path_label} must not use a symlink, junction, reparse point, or path alias: ${path_value}")
-    endif ()
-    if (NOT "${zr_vm_rust_binding_real_lower}" MATCHES "^[def]:/cargo-targets(/|$)")
-        message(FATAL_ERROR
-                "${path_label} must remain below the direct approved drive root D:/cargo-targets, E:/cargo-targets, or F:/cargo-targets: ${path_value}")
-    endif ()
-endfunction()
-
-zr_vm_rust_binding_validate_output_path("${CMAKE_BINARY_DIR}" "CMAKE_BINARY_DIR")
 
 # Rust ABI 的项目编译/执行复用 CLI 原有管线；native callback 也进入相同模块目标，避免宿主行为分叉。
 set(zr_vm_rust_binding_cli_support_sources
@@ -137,130 +90,27 @@ else ()
     unset(ZR_VM_RUST_BINDING_CARGO_EXECUTABLE CACHE)
     find_program(ZR_VM_RUST_BINDING_CARGO_EXECUTABLE NAMES cargo cargo.exe)
 endif ()
-# Cargo 的 sys build.rs 可独立构建 native；CMake 入口为当前 shared/static 目标显式提供已建库目录，防止重复构建。
-# The root is explicit so managed validation can receipt the physical output
-# location instead of silently inheriting CMAKE_BINARY_DIR or a repository tree.
-set(zr_vm_rust_binding_cargo_root
-        "$ENV{ZR_VM_CARGO_TARGET_ROOT}"
-        CACHE PATH "Approved physical D:/cargo-targets, E:/cargo-targets, or F:/cargo-targets root")
+# Keep Cargo products beside this native build by default. Callers may select
+# an absolute output root on any platform; no machine-specific drive is required.
+set(zr_vm_rust_binding_cargo_root "$ENV{ZR_VM_CARGO_TARGET_ROOT}"
+        CACHE PATH "Cargo output root (defaults to the native build directory)")
 if (NOT zr_vm_rust_binding_cargo_root)
-    message(FATAL_ERROR
-            "ZR_VM_CARGO_TARGET_ROOT must name an existing physical D:/cargo-targets, E:/cargo-targets, or F:/cargo-targets directory")
+    set(zr_vm_rust_binding_cargo_root "${CMAKE_CURRENT_BINARY_DIR}/cargo")
 endif ()
-get_filename_component(zr_vm_rust_binding_cargo_root_real
-        "${zr_vm_rust_binding_cargo_root}" REALPATH)
-file(TO_CMAKE_PATH "${zr_vm_rust_binding_cargo_root_real}" zr_vm_rust_binding_cargo_root_normalized)
-string(TOLOWER "${zr_vm_rust_binding_cargo_root_normalized}" zr_vm_rust_binding_cargo_root_lower)
-if (NOT "${zr_vm_rust_binding_cargo_root_lower}" MATCHES "^[def]:/cargo-targets$")
-    message(FATAL_ERROR
-            "ZR_VM_CARGO_TARGET_ROOT must be exactly D:/cargo-targets, E:/cargo-targets, or F:/cargo-targets; nested lookalike roots are rejected")
-endif ()
-zr_vm_rust_binding_validate_output_path(
-        "${zr_vm_rust_binding_cargo_root}"
-        "ZR_VM_CARGO_TARGET_ROOT"
-)
-# Ordinary users retain the direct-root default. Validation prep can set
-# ZR_VM_CARGO_OUTPUT_ROOT to an explicitly owned mode leaf below that root;
-# every derived target/home/cache/temp directory is then validated physically.
-# Validate the nearest existing physical ancestor before any MAKE_DIRECTORY.
-function(zr_vm_rust_binding_validate_creation_path path_value path_label)
-    set(zr_vm_rust_binding_probe "${path_value}")
-    if (EXISTS "${zr_vm_rust_binding_probe}" OR
-            IS_DIRECTORY "${zr_vm_rust_binding_probe}")
-        zr_vm_rust_binding_validate_output_path(
-                "${zr_vm_rust_binding_probe}"
-                "${path_label}")
-        return()
-    endif ()
-    while (NOT IS_DIRECTORY "${zr_vm_rust_binding_probe}")
-        get_filename_component(zr_vm_rust_binding_parent
-                "${zr_vm_rust_binding_probe}" DIRECTORY)
-        if (NOT zr_vm_rust_binding_parent OR
-                "${zr_vm_rust_binding_parent}" STREQUAL
-                "${zr_vm_rust_binding_probe}")
-            message(FATAL_ERROR
-                    "${path_label} has no existing physical ancestor below an approved cargo-targets root: ${path_value}")
-        endif ()
-        set(zr_vm_rust_binding_probe "${zr_vm_rust_binding_parent}")
-    endwhile ()
-    zr_vm_rust_binding_validate_output_path(
-            "${zr_vm_rust_binding_probe}"
-            "${path_label} existing ancestor")
-endfunction()
-
-function(zr_vm_rust_binding_validate_owned_root_input path_value path_label)
-    if (NOT IS_ABSOLUTE "${path_value}")
-        message(FATAL_ERROR
-                "${path_label} must be an absolute directory below D:/cargo-targets, E:/cargo-targets, or F:/cargo-targets")
-    endif ()
-    file(TO_CMAKE_PATH "${path_value}" zr_vm_rust_binding_owned_input_path)
-    string(TOLOWER "${zr_vm_rust_binding_owned_input_path}" zr_vm_rust_binding_owned_input_lower)
-    if (NOT "${zr_vm_rust_binding_owned_input_lower}" MATCHES "^[def]:/cargo-targets/.+")
-        message(FATAL_ERROR
-                "${path_label} must remain below a direct approved drive-root cargo-targets directory: ${path_value}")
-    endif ()
-    string(FIND "${zr_vm_rust_binding_owned_input_lower}" ".." zr_vm_rust_binding_parent_index)
-    string(FIND "${zr_vm_rust_binding_owned_input_lower}" "//" zr_vm_rust_binding_empty_component_index)
-    if (zr_vm_rust_binding_parent_index GREATER -1 OR
-            zr_vm_rust_binding_empty_component_index GREATER -1)
-        message(FATAL_ERROR
-                "${path_label} must not contain parent traversal or an empty path component: ${path_value}")
-    endif ()
-    zr_vm_rust_binding_validate_creation_path(
-            "${path_value}"
-            "${path_label}")
-endfunction()
-
-set(zr_vm_rust_binding_cargo_output_root
-        "$ENV{ZR_VM_CARGO_OUTPUT_ROOT}"
-        CACHE PATH "Optional explicitly owned mode output root below the approved cargo-targets root")
+set(zr_vm_rust_binding_cargo_output_root "$ENV{ZR_VM_CARGO_OUTPUT_ROOT}"
+        CACHE PATH "Optional Cargo output directory override")
 if (zr_vm_rust_binding_cargo_output_root)
-    zr_vm_rust_binding_validate_owned_root_input(
-            "${zr_vm_rust_binding_cargo_output_root}"
-            "ZR_VM_CARGO_OUTPUT_ROOT")
-    # The existing ancestor check above precedes this creation.
-    file(MAKE_DIRECTORY "${zr_vm_rust_binding_cargo_output_root}")
-    zr_vm_rust_binding_validate_output_path(
-            "${zr_vm_rust_binding_cargo_output_root}"
-            "ZR_VM_CARGO_OUTPUT_ROOT")
-    set(zr_vm_rust_binding_cargo_target_dir
-            "${zr_vm_rust_binding_cargo_output_root}/cargo-target")
-    set(zr_vm_rust_binding_cargo_home
-            "${zr_vm_rust_binding_cargo_output_root}/cargo-home")
-    set(zr_vm_rust_binding_sccache_dir
-            "${zr_vm_rust_binding_cargo_output_root}/sccache")
-    set(zr_vm_rust_binding_temp_dir
-            "${zr_vm_rust_binding_cargo_output_root}/tmp")
-else ()
-    set(zr_vm_rust_binding_cargo_target_dir
-            "${zr_vm_rust_binding_cargo_root}/zr_vm_rust_binding")
-    set(zr_vm_rust_binding_cargo_home
-            "${zr_vm_rust_binding_cargo_root}/cargo-home")
-    set(zr_vm_rust_binding_sccache_dir
-            "${zr_vm_rust_binding_cargo_root}/sccache")
-    set(zr_vm_rust_binding_temp_dir
-            "${zr_vm_rust_binding_cargo_root}/tmp")
+    set(zr_vm_rust_binding_cargo_root "${zr_vm_rust_binding_cargo_output_root}")
 endif ()
-# Validate every derived leaf before creating missing output directories.
-foreach (zr_vm_rust_binding_owned_output_path IN ITEMS
-        "${zr_vm_rust_binding_cargo_target_dir}"
-        "${zr_vm_rust_binding_cargo_home}"
-        "${zr_vm_rust_binding_sccache_dir}"
+get_filename_component(zr_vm_rust_binding_cargo_root
+        "${zr_vm_rust_binding_cargo_root}" ABSOLUTE BASE_DIR "${CMAKE_BINARY_DIR}")
+set(zr_vm_rust_binding_cargo_target_dir "${zr_vm_rust_binding_cargo_root}/cargo-target")
+set(zr_vm_rust_binding_cargo_home "${zr_vm_rust_binding_cargo_root}/cargo-home")
+set(zr_vm_rust_binding_sccache_dir "${zr_vm_rust_binding_cargo_root}/sccache")
+set(zr_vm_rust_binding_temp_dir "${zr_vm_rust_binding_cargo_root}/tmp")
+file(MAKE_DIRECTORY "${zr_vm_rust_binding_cargo_target_dir}"
+        "${zr_vm_rust_binding_cargo_home}" "${zr_vm_rust_binding_sccache_dir}"
         "${zr_vm_rust_binding_temp_dir}")
-    zr_vm_rust_binding_validate_creation_path(
-            "${zr_vm_rust_binding_owned_output_path}"
-            "owned Cargo output path")
-endforeach ()
-file(MAKE_DIRECTORY
-        "${zr_vm_rust_binding_cargo_target_dir}"
-        "${zr_vm_rust_binding_cargo_home}"
-        "${zr_vm_rust_binding_sccache_dir}"
-        "${zr_vm_rust_binding_temp_dir}"
-)
-zr_vm_rust_binding_validate_output_path("${zr_vm_rust_binding_cargo_target_dir}" "CARGO_TARGET_DIR")
-zr_vm_rust_binding_validate_output_path("${zr_vm_rust_binding_cargo_home}" "CARGO_HOME")
-zr_vm_rust_binding_validate_output_path("${zr_vm_rust_binding_sccache_dir}" "SCCACHE_DIR")
-zr_vm_rust_binding_validate_output_path("${zr_vm_rust_binding_temp_dir}" "TEMP")
 set(zr_vm_rust_binding_cargo_environment
         "CARGO_TARGET_DIR=${zr_vm_rust_binding_cargo_target_dir}"
         "CARGO_HOME=${zr_vm_rust_binding_cargo_home}"
@@ -328,9 +178,9 @@ function(zr_vm_rust_binding_collect_static_link_item item_name)
 
     if (NOT "${item_name}" STREQUAL "")
         if (IS_ABSOLUTE "${item_name}")
-            if (NOT "${item_name}" MATCHES "\\.(a|lib)$")
+            if (NOT "${item_name}" MATCHES "\\.(a|lib|so(\\.[0-9]+)*|dylib)$")
                 message(FATAL_ERROR
-                        "static Rust binding requires an archive dependency, got shared/native path: ${item_name}")
+                        "static Rust binding cannot map this system library path: ${item_name}")
             endif ()
             get_filename_component(zr_vm_rust_binding_system_name
                     "${item_name}" NAME_WE)
@@ -356,6 +206,13 @@ set_property(GLOBAL PROPERTY ZR_VM_RUST_BINDING_SEEN_STATIC_TARGETS "")
 set_property(GLOBAL PROPERTY ZR_VM_RUST_BINDING_STATIC_LINK_LIBRARIES "")
 set_property(GLOBAL PROPERTY ZR_VM_RUST_BINDING_STATIC_SYSTEM_LIBRARIES "")
 if (zr_vm_rust_binding_link_kind STREQUAL "static")
+    # Rust links with -nodefaultlibs, so the C driver's implicit runtimes are
+    # also part of the static SDK contract (including ASan/UBSan when enabled).
+    # Keep them first: the ASan runtime must precede other shared libraries.
+    foreach (zr_vm_rust_binding_runtime IN LISTS CMAKE_C_IMPLICIT_LINK_LIBRARIES)
+        zr_vm_rust_binding_collect_static_link_item(
+                "${zr_vm_rust_binding_runtime}")
+    endforeach ()
     get_target_property(zr_vm_rust_binding_static_target_links
             zr_vm_rust_binding_static LINK_LIBRARIES)
     foreach (zr_vm_rust_binding_static_target_link IN LISTS
@@ -403,6 +260,23 @@ if (zr_vm_rust_binding_link_kind STREQUAL "static")
     list(APPEND zr_vm_rust_binding_cargo_link_environment
             "ZR_VM_RUST_BINDING_STATIC_LINK_LIBRARIES=${zr_vm_rust_binding_static_link_libraries_csv}"
             "ZR_VM_RUST_BINDING_STATIC_SYSTEM_LIBRARIES=${zr_vm_rust_binding_static_system_libraries_csv}")
+    if ("asan" IN_LIST zr_vm_rust_binding_static_system_libraries)
+        # rustc can place std's libc before transitive build-script libraries.
+        # A command-line native library takes precedence, keeping ASan first.
+        if (DEFINED ENV{CARGO_ENCODED_RUSTFLAGS})
+            string(ASCII 31 zr_vm_rust_binding_rustflag_separator)
+            set(zr_vm_rust_binding_rustflags "-lasan")
+            if (NOT "$ENV{CARGO_ENCODED_RUSTFLAGS}" STREQUAL "")
+                string(APPEND zr_vm_rust_binding_rustflags
+                        "${zr_vm_rust_binding_rustflag_separator}$ENV{CARGO_ENCODED_RUSTFLAGS}")
+            endif ()
+            list(APPEND zr_vm_rust_binding_cargo_link_environment
+                    "CARGO_ENCODED_RUSTFLAGS=${zr_vm_rust_binding_rustflags}")
+        else ()
+            list(APPEND zr_vm_rust_binding_cargo_link_environment
+                    "RUSTFLAGS=-lasan $ENV{RUSTFLAGS}")
+        endif ()
+    endif ()
 endif ()
 
 if (ZR_VM_RUST_BINDING_CARGO_EXECUTABLE AND zr_vm_rust_binding_cargo_target)

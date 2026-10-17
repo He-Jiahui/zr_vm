@@ -65,4 +65,14 @@ static void test_callable_display_replaces_unresolved_snapshot_state(void) {
     assert_closed_hover(resolved, "redact(null)", "redact(value: MissingType): MissingType");
 }
 
+static void test_partial_callable_display_keeps_resolved_annotations(void) {
+    const char *source =
+            "fn redact(count: int, value: MissingType): MissingType { return value; }\n"
+            "fn use(): void { redact(1, null); }\n";
+    TEST_ASSERT_TRUE(ZrLanguageServer_Lsp_UpdateDocument(
+            g_state, g_context, g_uri, source, strlen(source), 2U));
+    assert_closed_hover(source, "redact(1, null)",
+            "redact(count: int, value: cannot infer exact type): cannot infer exact type");
+}
+
 #endif

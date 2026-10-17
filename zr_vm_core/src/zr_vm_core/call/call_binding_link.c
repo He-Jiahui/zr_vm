@@ -138,7 +138,10 @@ static TZrBool link_function(SZrFunction *function, void *data) {
 
         /* 导入 provider 尚未到位，只检查静态事实并留待模块加载后按 token 补目标。 */
         if (entry->bindingLocation.kind == ZR_CALL_BINDING_RELOCATION_VM_MODULE) {
-            if (entry->bindingLocation.targetIndex != 0u ||
+            if (entry->bindingLocation.targetIndex >= function->constantValueLength ||
+                function->constantValueList == ZR_NULL ||
+                function->constantValueList[entry->bindingLocation.targetIndex].type != ZR_VALUE_TYPE_STRING ||
+                function->constantValueList[entry->bindingLocation.targetIndex].value.object == ZR_NULL ||
                 ZrCore_CallBinding_CheckContract(&entry->binding.contract, diagnostic) != ZR_CALL_BINDING_OK)
                 return link_fail(diagnostic, entry, ZR_CALL_BINDING_INVALID_RELOCATION);
             memset(&entry->binding.target, 0, sizeof(entry->binding.target));

@@ -1812,6 +1812,10 @@ static TZrBool project_reanalyze_loaded_document(SZrState *state,
     TZrBool analyzeSuccess;
     TZrSize currentAstHash;
     TZrBool sameAstAsCachedAnalysis;
+    TZrChar pathBuffer[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar importError[ZR_PARSER_ERROR_BUFFER_LENGTH];
+    SZrFileRange importErrorLocation;
+    SZrString *currentModuleKey = ZR_NULL;
 
     if (state == ZR_NULL || context == ZR_NULL || projectIndex == ZR_NULL || uri == ZR_NULL) {
         return ZR_FALSE;
@@ -1832,6 +1836,13 @@ static TZrBool project_reanalyze_loaded_document(SZrState *state,
         return ZR_FALSE;
     }
 
+    /* Refreshes can analyze an open document before ProjectAnalyzeDocument runs. */
+    if (ZrLanguageServer_LspUri_FileToNativePath(uri, pathBuffer, sizeof(pathBuffer)) &&
+        !project_canonicalize_ast_for_path(
+                state, projectIndex, fileVersion->ast, pathBuffer,
+                &currentModuleKey, importError, sizeof(importError), &importErrorLocation)) {
+        return ZR_FALSE;
+    }
     currentAstHash = ZrLanguageServer_SemanticAnalyzer_ComputeAstHash(fileVersion->ast);
     sameAstAsCachedAnalysis = analyzer->enableCache && analyzer->cache != ZR_NULL && analyzer->cache->isValid &&
                               analyzer->cache->astHash == currentAstHash;
@@ -1857,6 +1868,9 @@ static TZrBool project_reanalyze_loaded_document(SZrState *state,
         state->global->sourceLoader = project_source_loader;
     }
     analyzeSuccess = ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, fileVersion->ast);
+    if (analyzeSuccess && analyzer->compilerState != ZR_NULL && currentModuleKey != ZR_NULL) {
+        analyzer->compilerState->currentModuleKey = currentModuleKey;
+    }
     ZrLanguageServer_SemanticAnalyzer_SetVirtualDeclarationUriResolver(
             analyzer, ZR_NULL, ZR_NULL);
     if (state->global != ZR_NULL) {

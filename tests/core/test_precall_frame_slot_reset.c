@@ -8,6 +8,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/value.h"
 
@@ -1250,8 +1251,38 @@ static void test_resolved_vm_precall_preserves_multiple_explicit_arguments_acros
     ZrCore_GlobalState_Free(state->global);
 }
 
+/* A reset can reuse bytes from a packed frame as native scratch roots. */
+static void test_reset_thread_initializes_native_reserved_roots(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TZrStackValuePointer reservedEnd;
+
+    TEST_ASSERT_NOT_NULL(state);
+    reservedEnd = state->stackBase.valuePointer + 1 + ZR_STACK_NATIVE_CALL_RESERVED_MIN;
+    TEST_ASSERT_TRUE(reservedEnd <= state->stackTail.valuePointer);
+    /* Retired byte frames need not contain valid tagged values at slot boundaries. */
+    memset(state->stackBase.valuePointer + 1, 0xa5,
+           ZR_STACK_NATIVE_CALL_RESERVED_MIN * sizeof(SZrTypeValueOnStack));
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE,
+                          ZrCore_State_ResetThread(state, ZR_THREAD_STATUS_FINE));
+    TEST_ASSERT_EQUAL_PTR(reservedEnd, state->callInfoList->functionTop.valuePointer);
+    for (TZrStackValuePointer slot = state->stackTop.valuePointer; slot < reservedEnd; ++slot) {
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_NULL, slot->value.type);
+        TEST_ASSERT_FALSE(slot->value.isGarbageCollectable);
+        TEST_ASSERT_TRUE(slot->value.isNative);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_NONE, slot->value.ownershipKind);
+        TEST_ASSERT_NULL(slot->value.ownershipControl);
+        TEST_ASSERT_NULL(slot->value.ownershipWeakRef);
+        TEST_ASSERT_EQUAL_UINT32(0u, slot->toBeClosedValueOffset);
+    }
+    /* A host call above functionTop exposes the entire reserved gap to GC. */
+    state->stackTop.valuePointer = reservedEnd;
+    ZrCore_GarbageCollector_GcFull(state, ZR_FALSE);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_reset_thread_initializes_native_reserved_roots);
 
     RUN_TEST(test_call_info_frame_storage_cache_uses_legacy_padding);
     RUN_TEST(test_precall_clears_reused_frame_slot_metadata);

@@ -157,6 +157,27 @@ static TZrBool compiler_copy_function_closures(SZrCompilerState *cs, SZrFunction
     return ZR_TRUE;
 }
 
+/* The move has an exact source-to-child map, including functions with no
+ * bytecode. Publish those aliases before the source buffers are detached. */
+void compiler_rebind_moved_child_constants(SZrFunction *function,
+                                           SZrFunction *const *sourceChildren) {
+    for (TZrUInt32 constantIndex = 0; constantIndex < function->constantValueLength; ++constantIndex) {
+        SZrTypeValue *constant = &function->constantValueList[constantIndex];
+        if (constant->isNative) continue;
+        for (TZrUInt32 childIndex = 0; childIndex < function->childFunctionLength; ++childIndex) {
+            if (!compiler_constant_refs_function(constant, sourceChildren[childIndex])) continue;
+            SZrFunction *child = &function->childFunctionList[childIndex];
+            if (constant->type == ZR_VALUE_TYPE_FUNCTION) {
+                constant->value.object = ZR_CAST_RAW_OBJECT_AS_SUPER(child);
+            } else {
+                ZR_CAST(SZrClosure *, constant->value.object)->function = child;
+            }
+            break;
+        }
+    }
+    ZrCore_Function_RebindConstantFunctionValuesToChildren(function);
+}
+
 static TZrBool compiler_copy_function_children(SZrCompilerState *cs, SZrFunction *function) {
     SZrGlobalState *global = cs->state->global;
 
@@ -182,8 +203,8 @@ static TZrBool compiler_copy_function_children(SZrCompilerState *cs, SZrFunction
     }
 
     function->childFunctionLength = (TZrUInt32) cs->childFunctions.length;
-    ZrCore_Function_RebindConstantFunctionValuesToChildren(function);
-    ZrCore_Function_ClearChildOwnerLinks(function);
+    compiler_rebind_moved_child_constants(function, sourceChildren);
+    /* Embedded children must retain the allocation that owns their storage. */
     for (TZrSize index = 0; index < cs->childFunctions.length; index++) {
         if (sourceChildren[index] != ZR_NULL) {
             ZrCore_Function_DetachOwnedBuffers(sourceChildren[index]);
@@ -408,6 +429,10 @@ static TZrBool compiler_slot_resolves_to_native_callback_factory_before_instruct
 
     opcode = (EZrInstructionCode)writer->instruction.operationCode;
     switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(GETUPVAL):
+            /* The caller has proved a CallbackHandle result. A captured
+             * factory may retain any callable argument through that handle. */
+            return ZR_TRUE;
         case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
             return compiler_function_constant_is_native_callable(
                     function,

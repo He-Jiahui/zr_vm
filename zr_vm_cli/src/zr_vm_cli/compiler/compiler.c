@@ -223,8 +223,6 @@ static SZrCliModuleRecord *zr_cli_append_module(SZrCliModuleCollection *collecti
     if (collection->count == collection->capacity) {
         newCapacity = collection->capacity == 0 ? ZR_CLI_COLLECTION_INITIAL_CAPACITY
                                                 : collection->capacity * ZR_CLI_COLLECTION_GROWTH_FACTOR;
-        /* BUG: 此处扩容会使 collect_module_recursive 的祖先栈帧所持
-         * recordSlot 悬空；拥有者在递归返回后仍访问该指针。 */
         newRecords = (SZrCliModuleRecord *) realloc(collection->records, newCapacity * sizeof(*newRecords));
         if (newRecords == ZR_NULL) {
             return ZR_NULL;
@@ -718,6 +716,7 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
     SZrCliModuleRecord record;
     TZrUInt64 sourceHash;
     SZrCliModuleRecord *recordSlot;
+    TZrSize recordIndex;
     TZrBool sourceExists;
     TZrBool binaryExists;
 
@@ -755,6 +754,7 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
     record.hasSourceInput = sourceExists;
     record.hasBinaryInput = binaryExists;
 
+    recordIndex = collection->count;
     recordSlot = zr_cli_append_module(collection, &record);
     if (recordSlot == ZR_NULL) {
         snprintf(errorBuffer, errorBufferSize, "out of memory while collecting modules");
@@ -807,12 +807,12 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
 
         ZrParser_Ast_Free(state, ast);
 
-        /* BUG: 递归追加模块可能使 collection->records 在第 9 个节点扩容；
-         * 本层 recordSlot 随之悬空，下次循环条件仍解引用它。 */
-        for (TZrSize index = 0; index < recordSlot->imports.count; index++) {
+        /* Recursive collection can move records; retain the index and fetch
+         * the current record again before reading the next import. */
+        for (TZrSize index = 0; index < collection->records[recordIndex].imports.count; index++) {
             TZrChar resolvedSourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
             TZrChar resolvedBinaryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-            const TZrChar *importName = recordSlot->imports.items[index];
+            const TZrChar *importName = collection->records[recordIndex].imports.items[index];
             TZrBool importHasSource = ZR_FALSE;
             TZrBool importHasBinary = ZR_FALSE;
 

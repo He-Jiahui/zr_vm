@@ -8,6 +8,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/state.h"
+#include "zr_vm_core/string.h"
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -212,6 +213,8 @@ static TZrBool link_deferred_site(TZrUInt32 kind, EZrInstructionCode opcode,
     SZrFunction function = {0};
     SZrFunctionCallSiteCacheEntry entry = {0};
     TZrInstruction instructions[2] = {0};
+    SZrString moduleName = {0};
+    SZrTypeValue moduleConstant = {0};
     TZrBool linked;
     global.allocator = site_allocator;
     state.global = &global;
@@ -219,6 +222,10 @@ static TZrBool link_deferred_site(TZrUInt32 kind, EZrInstructionCode opcode,
     function.instructionsLength = 2u;
     function.callSiteCaches = &entry;
     function.callSiteCacheLength = 1u;
+    moduleConstant.type = ZR_VALUE_TYPE_STRING;
+    moduleConstant.value.object = ZR_CAST_RAW_OBJECT_AS_SUPER(&moduleName);
+    function.constantValueList = &moduleConstant;
+    function.constantValueLength = 1u;
     entry.kind = kind;
     entry.instructionIndex = 1u;
     entry.memberEntryIndex = ZR_CALL_BINDING_SLOT_NONE;

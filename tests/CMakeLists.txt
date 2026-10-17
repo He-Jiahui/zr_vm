@@ -57,6 +57,22 @@ set(ZR_VM_PERFORMANCE_RUNNER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_perfor
 find_program(ZR_VM_NODE_EXECUTABLE node)
 find_program(ZR_VM_BENCHMARK_PYTHON_EXECUTABLE NAMES python3 python)
 
+# LLVM 14 needs an opt-in for ptr IR; newer Clang releases removed that flag.
+# Probe the IR dialect instead of passing a removed backend option everywhere.
+find_program(ZR_VM_TESTS_CLANG_EXECUTABLE NAMES clang)
+set(ZR_VM_TESTS_LLVM_POINTER_FLAGS "")
+if (ZR_VM_TESTS_CLANG_EXECUTABLE)
+    set(_zr_pointer_probe "${ZR_VM_TESTS_BINARY_DIR_NORMALIZED}/llvm-pointer-probe")
+    file(WRITE "${_zr_pointer_probe}.ll" "define ptr @identity(ptr %p) { ret ptr %p }\n")
+    execute_process(COMMAND "${ZR_VM_TESTS_CLANG_EXECUTABLE}"
+            -Wno-override-module -c "${_zr_pointer_probe}.ll" -o "${_zr_pointer_probe}.o"
+            RESULT_VARIABLE _zr_pointer_result OUTPUT_QUIET ERROR_QUIET)
+    if (NOT _zr_pointer_result EQUAL 0)
+        set(ZR_VM_TESTS_LLVM_POINTER_FLAGS "-mllvm -opaque-pointers")
+    endif ()
+endif ()
+add_compile_definitions(ZR_VM_TESTS_LLVM_POINTER_FLAGS="${ZR_VM_TESTS_LLVM_POINTER_FLAGS}")
+
 function(zr_vm_apply_common_test_settings target_name)
     target_include_directories(${target_name} PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core
@@ -73,6 +89,7 @@ function(zr_vm_apply_common_test_settings target_name)
             UNITY_USE_FLUSH_STDOUT
             ZR_VM_TESTS_SOURCE_DIR="${ZR_VM_TESTS_SOURCE_DIR_NORMALIZED}"
             ZR_VM_TESTS_BINARY_DIR="${ZR_VM_TESTS_BINARY_DIR_NORMALIZED}"
+            ZR_VM_TESTS_C_FLAGS="${CMAKE_C_FLAGS}"
     )
 endfunction()
 
@@ -2582,6 +2599,7 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     )
     target_compile_definitions(zr_vm_aot_c_typed_scalar_test PRIVATE
             ZR_VM_TESTS_C_COMPILER="${CMAKE_C_COMPILER}"
+            ZR_VM_TESTS_C_FLAGS="${CMAKE_C_FLAGS}"
             ZR_VM_TESTS_REPO_ROOT="${ZR_VM_TESTS_REPO_ROOT_NORMALIZED}"
             ZR_VM_TESTS_BUILD_LIB_DIR="${ZR_VM_TESTS_BUILD_LIB_DIR_NORMALIZED}"
     )
@@ -2992,6 +3010,7 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     )
     target_compile_definitions(zr_vm_aot_c_value_construction_guardrail_test PRIVATE
             ZR_VM_TESTS_C_COMPILER="${CMAKE_C_COMPILER}"
+            ZR_VM_TESTS_C_FLAGS="${CMAKE_C_FLAGS}"
             ZR_VM_TESTS_REPO_ROOT="${ZR_VM_TESTS_REPO_ROOT_NORMALIZED}"
             ZR_VM_TESTS_BUILD_LIB_DIR="${ZR_VM_TESTS_BUILD_LIB_DIR_NORMALIZED}"
     )
@@ -4049,6 +4068,23 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
         target_link_libraries(zr_vm_compiler_call_lowering_focus_test PRIVATE zr_vm_lib_network_static)
     endif ()
 
+    zr_vm_add_unity_test_target(zr_vm_numeric_literals_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_numeric_literals.c)
+    target_include_directories(zr_vm_numeric_literals_test PRIVATE
+            ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include)
+    zr_vm_link_parser_core(zr_vm_numeric_literals_test)
+    add_test(NAME numeric_literals COMMAND zr_vm_numeric_literals_test)
+
+    zr_vm_add_unity_test_target(zr_vm_lexer_diagnostics_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_lexer_diagnostics.c)
+    target_include_directories(zr_vm_lexer_diagnostics_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include ${CMAKE_SOURCE_DIR}/zr_vm_core/include)
+    zr_vm_link_parser_core(zr_vm_lexer_diagnostics_test)
+    add_test(NAME lexer_diagnostics COMMAND ${CMAKE_COMMAND}
+            -DTEST_EXECUTABLE=$<TARGET_FILE:zr_vm_lexer_diagnostics_test>
+            -P ${CMAKE_SOURCE_DIR}/tests/cmake/run_lexer_diagnostics.cmake)
+
     zr_vm_add_unity_test_target(
             zr_vm_literal_surface_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_prototype.c
@@ -4478,6 +4514,7 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
                 ${CMAKE_SOURCE_DIR}/zr_vm_core/include
                 ${CMAKE_SOURCE_DIR}/zr_vm_library/include
                 ${CMAKE_SOURCE_DIR}/zr_vm_rust_binding/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_rust_binding/src/zr_vm_rust_binding
         )
         if (BUILD_SHARED_LIB)
             target_compile_definitions(zr_vm_rust_binding_api_test PRIVATE
@@ -8939,6 +8976,10 @@ if (TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static)
 endif()
 
 if(TARGET zr_vm_cli_executable)
+    add_test(NAME native_lambda_loops
+            COMMAND ${CMAKE_COMMAND} "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_native_lambda_loops.cmake")
+    set_tests_properties(native_lambda_loops PROPERTIES TIMEOUT 60)
     add_test(NAME cli_binary_freshness
             COMMAND ${CMAKE_COMMAND} "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
             "-DTEST_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}"

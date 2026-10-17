@@ -1071,7 +1071,18 @@ TZrBool checkpoint_prepare_restore_plan(
             }
         } else if (snapshot->type == ZR_RAW_OBJECT_TYPE_CLOSURE) {
             SZrClosure *closure = (SZrClosure *)prepared->object;
-            if (!closure->super.isNative) {
+            if (closure->super.isNative) {
+                SZrRawObject *owner = ZR_NULL;
+                if (!checkpoint_native_closure_is_immortal_stateless(prepared->object)) goto failure;
+                if (snapshot->nativeBindingOwnerIndex != ZR_CHECKPOINT_NO_INDEX) {
+                    if (!checkpoint_resolve_plan_object(plan, checkpoint->objectCount,
+                            snapshot->nativeBindingOwnerIndex, &owner) ||
+                        owner->type != ZR_RAW_OBJECT_TYPE_OBJECT || owner->isNative ||
+                        ((SZrObject *)owner)->internalType != ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE)
+                        goto failure;
+                    prepared->nativeBindingOwner = (SZrObjectPrototype *)owner;
+                }
+            } else {
                 if (closure->closureValueCount != snapshot->captureCount ||
                     (snapshot->captureCount > 0u &&
                      (closure->closureValuesExtend == ZR_NULL || prepared->closureCaptures == ZR_NULL))) {

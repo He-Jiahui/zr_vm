@@ -40,17 +40,19 @@ TZrBool ZrCore_Function_HasSameDefinition(const SZrFunction *left, const SZrFunc
         left->instructionsLength == right->instructionsLength &&
         memcmp(left->instructionsList, right->instructionsList,
                (TZrSize)left->instructionsLength * sizeof(*left->instructionsList)) != 0) return ZR_FALSE;
-    /* TODO: 共享指令与常量缓冲会提前判等，跳过名称、源码与位置检查。
-     * 当前调用方用于去重和绑定；需查加载/复制路径是否可能共享缓冲却保留不同定义身份。 */
-    if (left->instructionsList != ZR_NULL && left->instructionsList == right->instructionsList &&
-        left->constantValueList == right->constantValueList) return ZR_TRUE;
-    if (!same_constant_pool(left, right)) return ZR_FALSE;
     if (!same_string(left->functionName, right->functionName) ||
         !same_string(left->sourceCodeList, right->sourceCodeList) ||
         !same_string(left->sourceHash, right->sourceHash) ||
         left->parameterCount != right->parameterCount || left->instructionsLength != right->instructionsLength ||
-        left->lineInSourceStart != right->lineInSourceStart || left->lineInSourceEnd != right->lineInSourceEnd ||
-        left->executionLocationInfoLength == 0u ||
+        left->lineInSourceStart != right->lineInSourceStart || left->lineInSourceEnd != right->lineInSourceEnd)
+        return ZR_FALSE;
+    /* Shared storage proves an alias only after declaration identity agrees.
+     * A copied body at another source location is still a separate function. */
+    if (left->instructionsList != ZR_NULL && left->instructionsList == right->instructionsList &&
+        left->constantValueList == right->constantValueList &&
+        left->constantValueLength == right->constantValueLength) return ZR_TRUE;
+    if (!same_constant_pool(left, right)) return ZR_FALSE;
+    if (left->executionLocationInfoLength == 0u ||
         left->executionLocationInfoLength != right->executionLocationInfoLength ||
         left->executionLocationInfoList == ZR_NULL || right->executionLocationInfoList == ZR_NULL) return ZR_FALSE;
     /* Before metadata publication, source spans distinguish same-line methods.

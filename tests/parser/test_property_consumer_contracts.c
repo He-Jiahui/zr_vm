@@ -902,6 +902,24 @@ static void test_source_reflection_exposes_linked_property_accessors(void) {
     ZrCore_Function_Free(g_state, function);
 }
 
+static void test_nested_ref_getter_prefix_survives_semantic_diagnostics(void) {
+    static const char source[] =
+            "class Cell {\n"
+            "  pub var raw: int = 4;\n"
+            "}\n"
+            "class Holder {\n"
+            "  pub var cell: Cell;\n"
+            "  pub @constructor() { this.cell = new Cell(); }\n"
+            "  pub property raw: ref readonly int { get => ref this.cell.raw; }\n"
+            "}\n"
+            "return 0;\n";
+    SZrFunction *function = ZrParser_Source_Compile(
+            g_state, source, strlen(source),
+            ZrCore_String_CreateFromNative(g_state, "property_prefix_lifetime.zr"));
+    TEST_ASSERT_NOT_NULL(function);
+    ZrCore_Function_Free(g_state, function);
+}
+
 static void test_legacy_property_migrations_publish_exact_structured_edits(void) {
     const TZrChar *pairSource =
             "class Meter {\n"
@@ -1054,6 +1072,7 @@ int main(void) {
             test_public_runtime_prototype_bootstrap_preserves_property_contract);
     RUN_TEST(test_binary_import_merges_property_contract_into_placeholder);
     RUN_TEST(test_source_reflection_exposes_linked_property_accessors);
+    RUN_TEST(test_nested_ref_getter_prefix_survives_semantic_diagnostics);
     RUN_TEST(test_aot_stripping_preserves_structured_property_dispatch_roots);
     RUN_TEST(test_legacy_property_migrations_publish_exact_structured_edits);
     RUN_TEST(test_legacy_property_migration_rejects_ambiguous_pairs);

@@ -1685,6 +1685,7 @@ static TZrBool register_runtime_import_metadata(SZrCompilerState *cs,
     }
 
     import_type_prototype_init(cs->state, &modulePrototype, moduleName, ZR_OBJECT_PROTOTYPE_TYPE_MODULE);
+    modulePrototype.importModuleName = moduleName;
     import_metadata_apply_default_builtin_root(cs->state, &modulePrototype, ZR_OBJECT_PROTOTYPE_TYPE_MODULE);
     import_metadata_apply_default_builtin_root(cs->state, &modulePrototype, ZR_OBJECT_PROTOTYPE_TYPE_MODULE);
     initialTypeCount = cs->typePrototypes.length;
@@ -1720,6 +1721,7 @@ static TZrBool register_runtime_import_metadata(SZrCompilerState *cs,
     for (TZrSize index = initialTypeCount; index < cs->typePrototypes.length; index++) {
         SZrTypePrototypeInfo *info = (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, index);
         if (info != ZR_NULL && info->name != ZR_NULL && info->type != ZR_OBJECT_PROTOTYPE_TYPE_MODULE) {
+            info->importModuleName = moduleName;
             import_add_field_member(cs->state,
                                     &modulePrototype,
                                     info->name,

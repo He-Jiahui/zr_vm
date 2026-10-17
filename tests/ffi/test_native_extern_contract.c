@@ -2027,7 +2027,7 @@ static void test_native_extern_aot_uses_canonical_signature_vector(void) {
 
     snprintf(command,
              sizeof(command),
-             "clang -mllvm -opaque-pointers -fPIC -shared "
+             "clang " ZR_VM_TESTS_LLVM_POINTER_FLAGS " -fPIC -shared "
              "\"%s\" -L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
              ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
@@ -2238,7 +2238,7 @@ static void test_native_extern_llvm_aot_runtime_accepts_code_registration(void) 
             snprintf(
                     command,
                     sizeof(command),
-                    "clang -mllvm -opaque-pointers -fPIC -shared \"%s\" "
+                    "clang " ZR_VM_TESTS_LLVM_POINTER_FLAGS " -fPIC -shared \"%s\" "
                     "-L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
                     ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
                     "-o \"%s\"",

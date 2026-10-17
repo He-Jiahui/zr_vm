@@ -183,6 +183,9 @@ static void test_invalid_instruction_boundaries_are_rejected(void) {
     reject_instruction(ZR_INSTRUCTION_ENUM(JUMP), 0, UINT16_MAX, 0x7fffu);
     reject_instruction(ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED), 0, 0, (TZrUInt16)instructionCount);
     reject_instruction(ZR_INSTRUCTION_ENUM(FUNCTION_CALL), 0, (TZrUInt16)(stackSlots - 1u), 1);
+    reject_instruction(ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL), 0, UINT16_MAX, 1);
+    reject_instruction(ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT), ZR_INSTRUCTION_USE_RET_FLAG,
+                       (TZrUInt16)stackSlots, 0);
     reject_instruction(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 2, (TZrUInt16)(stackSlots - 1u), 0);
     reject_instruction(ZR_INSTRUCTION_ENUM(GET_CLOSURE), 0, UINT16_MAX, 0);
     reject_instruction(ZR_INSTRUCTION_ENUM(GETUPVAL), 0, UINT16_MAX, 0);
@@ -195,6 +198,18 @@ static void test_invalid_instruction_boundaries_are_rejected(void) {
     reject_instruction(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 0, 0, UINT16_MAX);
     reject_instruction(ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8), 0, UINT16_MAX, 0);
     TEST_ASSERT_TRUE(read_binary(encoded, encodedLength, 7u));
+}
+
+static void test_array_add_accepts_a_discarded_destination(void) {
+    TZrInstruction saved, instruction = {0};
+    memcpy(&saved, encoded + instructionsOffset, sizeof(saved));
+    instruction.instruction.operationCode = ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT);
+    instruction.instruction.operandExtra = ZR_INSTRUCTION_USE_RET_FLAG;
+    /* Structural validation accepts the discard flag but still bounds both
+     * source slots. Runtime type checks remain responsible for their values. */
+    memcpy(encoded + instructionsOffset, &instruction, sizeof(instruction));
+    TEST_ASSERT_TRUE(read_binary(encoded, encodedLength, 19u));
+    memcpy(encoded + instructionsOffset, &saved, sizeof(saved));
 }
 
 static void test_valid_nested_functions_loops_and_prototypes_are_accepted(void) {
@@ -229,6 +244,7 @@ int main(void) {
     RUN_TEST(test_all_native_allocation_failures_release_partial_tree);
     RUN_TEST(test_sticky_short_reads_initialize_destinations);
     RUN_TEST(test_invalid_instruction_boundaries_are_rejected);
+    RUN_TEST(test_array_add_accepts_a_discarded_destination);
     RUN_TEST(test_valid_nested_functions_loops_and_prototypes_are_accepted);
     return UNITY_END();
 }

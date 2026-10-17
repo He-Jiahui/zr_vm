@@ -13,8 +13,8 @@ extern void test_runtime_returned_callable_capture_marks_closed_capture_object(v
 extern void test_runtime_global_callable_capture_marks_closed_capture_object(void);
 extern void test_binary_roundtrip_runtime_returned_callable_capture_preserves_closed_capture_escape_flags(void);
 extern void test_binary_roundtrip_runtime_global_callable_capture_preserves_closed_capture_escape_flags(void);
-extern void test_runtime_compiled_child_functions_detach_owner_links(void);
-extern void test_binary_roundtrip_runtime_child_functions_detach_owner_links(void);
+extern void test_runtime_compiled_child_functions_retain_owner_links(void);
+extern void test_binary_roundtrip_runtime_child_functions_retain_owner_links(void);
 
 // 独立 escape_pipeline 目标注册全部跨编译单元用例；compiler_integration 还复用其中两例。
 /**
@@ -65,8 +65,8 @@ int main(void) {
     RUN_TEST(test_runtime_global_callable_capture_marks_closed_capture_object);
     RUN_TEST(test_binary_roundtrip_runtime_returned_callable_capture_preserves_closed_capture_escape_flags);
     RUN_TEST(test_binary_roundtrip_runtime_global_callable_capture_preserves_closed_capture_escape_flags);
-    RUN_TEST(test_runtime_compiled_child_functions_detach_owner_links);
-    RUN_TEST(test_binary_roundtrip_runtime_child_functions_detach_owner_links);
+    RUN_TEST(test_runtime_compiled_child_functions_retain_owner_links);
+    RUN_TEST(test_binary_roundtrip_runtime_child_functions_retain_owner_links);
 
     printf("\n");
     ZR_TEST_MODULE_DIVIDER();

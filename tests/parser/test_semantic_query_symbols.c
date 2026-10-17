@@ -2526,5 +2526,6 @@ int main(void) {
     RUN_TEST(test_type_use_identity_keeps_conflicting_declarations_unavailable);
     RUN_TEST(test_type_use_identity_keeps_unresolved_reference_unavailable);
     RUN_TEST(test_type_use_identity_rejects_inconsistent_whole_range);
+    RUN_TEST(test_qualified_type_use_publishes_terminal_name_only);
     return UNITY_END();
 }

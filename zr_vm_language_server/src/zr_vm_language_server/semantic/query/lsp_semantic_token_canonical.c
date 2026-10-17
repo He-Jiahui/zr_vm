@@ -94,6 +94,30 @@ TZrInt32 ZrLanguageServer_LspSemanticToken_TypeFromCanonicalSymbol(
     }
 }
 
+/* Native nominal types carry the same value/class capability as source declarations. */
+static TZrInt32 semantic_token_type_from_type_id(
+        const SZrSemanticContext *context, TZrTypeId typeId) {
+    const SZrCanonicalTypeNode *type = ZrParser_CanonicalType_Find(context, typeId);
+    if (type == ZR_NULL) {
+        return ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
+    }
+    if (type->kind == ZR_CANONICAL_TYPE_OWNER) {
+        return ZR_LSP_SEMANTIC_TOKEN_CLASS;
+    }
+    if (type->kind == ZR_CANONICAL_TYPE_NOMINAL ||
+        type->kind == ZR_CANONICAL_TYPE_GENERIC_INSTANCE) {
+        if (ZrParser_CanonicalType_HasCapabilities(
+                    context, typeId, ZR_CANONICAL_TYPE_CAPABILITY_VALUE_TYPE)) {
+            return ZR_LSP_SEMANTIC_TOKEN_STRUCT;
+        }
+        if (ZrParser_CanonicalType_HasCapabilities(
+                    context, typeId, ZR_CANONICAL_TYPE_CAPABILITY_GC_CLASS)) {
+            return ZR_LSP_SEMANTIC_TOKEN_CLASS;
+        }
+    }
+    return ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
+}
+
 TZrInt32 ZrLanguageServer_LspSemanticToken_ResolveCanonical(
         SZrSemanticAnalyzer *analyzer,
         SZrString *uri,
@@ -104,7 +128,7 @@ TZrInt32 ZrLanguageServer_LspSemanticToken_ResolveCanonical(
         TZrUInt32 *outModifiers) {
     SZrParserSemanticSymbolQuery symbol;
     SZrParserSemanticTypeQuery typeQuery;
-    const SZrCanonicalTypeNode *type;
+    const SZrSemanticReferenceFact *typeReference;
     SZrFilePosition start;
     SZrFilePosition end;
     SZrFileRange range;
@@ -122,11 +146,30 @@ TZrInt32 ZrLanguageServer_LspSemanticToken_ResolveCanonical(
     end = ZrParser_FilePosition_Create(
             startOffset + length, line, character + (TZrUInt32)length);
     range = ZrParser_FileRange_Create(start, end, uri);
+    /* A constructor token names a type while also carrying a CALL fact for signature help. */
+    typeReference = ZrParser_SemanticFacts_FindReferenceAtPositionByKind(
+            analyzer->semanticContext, range, ZR_SEMANTIC_REFERENCE_TYPE);
+    if (typeReference != ZR_NULL && typeReference->isResolved &&
+        semantic_token_ranges_equal(typeReference->range, range)) {
+        TZrInt32 tokenType = semantic_token_type_from_type_id(
+                analyzer->semanticContext, typeReference->typeId);
+        if (tokenType != ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN) {
+            return tokenType;
+        }
+    }
     if (ZrParser_SemanticQuery_SymbolAt(
                 analyzer->semanticContext, range, ZR_NULL, &symbol)) {
         if (outModifiers != ZR_NULL &&
             symbol.role == ZR_SEMANTIC_REFERENCE_DECLARATION) {
             *outModifiers = ZR_LSP_SEMANTIC_TOKEN_MODIFIER_DECLARATION;
+        }
+        if (symbol.hasExternalTarget &&
+            symbol.externalTargetKind == ZR_SEMANTIC_EXTERNAL_TARGET_TYPE) {
+            TZrInt32 tokenType = semantic_token_type_from_type_id(
+                    analyzer->semanticContext, symbol.typeId);
+            if (tokenType != ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN) {
+                return tokenType;
+            }
         }
         return ZrLanguageServer_LspSemanticToken_TypeFromCanonicalSymbol(&symbol);
     }
@@ -143,9 +186,6 @@ TZrInt32 ZrLanguageServer_LspSemanticToken_ResolveCanonical(
         return ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
     }
 
-    type = ZrParser_CanonicalType_Find(
+    return semantic_token_type_from_type_id(
             analyzer->semanticContext, typeQuery.typeId);
-    return type != ZR_NULL && type->kind == ZR_CANONICAL_TYPE_OWNER
-                   ? ZR_LSP_SEMANTIC_TOKEN_CLASS
-                   : ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN;
 }

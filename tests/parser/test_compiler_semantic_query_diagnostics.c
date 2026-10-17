@@ -2189,7 +2189,14 @@ static void test_unannotated_compatible_returns_keep_exact_inference(void) {
             "        return 1;\n"
             "    }\n"
             "    return 2;\n"
-            "}\n";
+            "}\n"
+            "var result: int = probe(true);\n"
+            "fn labelFor(value: int) {\n"
+            "    if (value % 2 == 0) { return \"even\"; }\n"
+            "    if (value > 2) { return \"odd_hi\"; }\n"
+            "    return \"odd_lo\";\n"
+            "}\n"
+            "var label: string = labelFor(3);\n";
     SZrCompilerState cs;
     SZrString *sourceName;
     SZrAstNode *ast;
@@ -2246,6 +2253,114 @@ static void test_unannotated_unresolved_return_keeps_weak_metadata_without_diagn
             0U,
             (TZrUInt32)count_query_diagnostics_by_code(
                     cs.semanticContext, "return_type_not_provable"));
+
+    release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void assert_alias_callable_return_type(
+        const TZrChar *source,
+        EZrValueType expectedReturnType) {
+    SZrCompilerState cs;
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "compiler_alias_return_contract_test.zr");
+    SZrAstNode *ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    const SZrSemanticSymbolRecord *symbol;
+    const SZrCanonicalTypeNode *callableType;
+    const SZrCanonicalTypeNode *returnType;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+
+    compile_script(&cs, ast);
+    TEST_ASSERT_FALSE_MESSAGE(cs.hasError, cs.errorMessage);
+    TEST_ASSERT_FALSE(cs.hasStructuredError);
+    symbol = ZrParser_Semantic_FindSymbolByNameAndKind(
+            cs.semanticContext,
+            ZrCore_String_CreateFromNative(g_state, "alias"),
+            ZR_SEMANTIC_SYMBOL_KIND_FUNCTION);
+    TEST_ASSERT_NOT_NULL(symbol);
+    callableType = ZrParser_CanonicalType_Find(cs.semanticContext, symbol->typeId);
+    TEST_ASSERT_NOT_NULL(callableType);
+    TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_FUNCTION, callableType->kind);
+    returnType = ZrParser_CanonicalType_Find(
+            cs.semanticContext, callableType->data.function.returnTypeId);
+    TEST_ASSERT_NOT_NULL(returnType);
+    TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_PRIMITIVE, returnType->kind);
+    TEST_ASSERT_EQUAL_INT(expectedReturnType, returnType->data.primitive.valueType);
+
+    release_compiler_function(&cs);
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_alias_preserves_return_contract_from_function_locals(void) {
+    assert_alias_callable_return_type(
+            "class Counter { pub var value: int = 7; pub fn read(): int { return this.value; } }\n"
+            "fn original(seed: int) { var counter = new Counter(); return counter.read() + seed; }\n"
+            "fn consume(): int { var counter: string = \"shadow\"; let alias = original; return alias(3); }\n",
+            ZR_VALUE_TYPE_INT64);
+}
+
+static void test_forward_alias_infers_return_with_parameter_types(void) {
+    assert_alias_callable_return_type(
+            "let alias = original;\n"
+            "fn original(value: int) { return value; }\n"
+            "var result: int = alias(7);\n",
+            ZR_VALUE_TYPE_INT64);
+}
+
+static void test_forward_alias_in_nested_scope_keeps_unresolved_contract(void) {
+    assert_alias_callable_return_type(
+            "var value: int = 7;\n"
+            "fn consume() { var value: string = \"shadow\"; let alias = original; }\n"
+            "fn original() { return value; }\n",
+            ZR_VALUE_TYPE_OBJECT);
+}
+
+static void test_forward_alias_can_refine_a_provisional_return_contract(void) {
+    assert_alias_callable_return_type(
+            "let first = original;\n"
+            "var captured: int = 7;\n"
+            "let alias = original;\n"
+            "fn original() { return captured; }\n",
+            ZR_VALUE_TYPE_INT64);
+}
+
+static void test_alias_preserves_refined_weak_return_contract(void) {
+    assert_alias_callable_return_type(
+            "fn original(value) { var local: object = value; return local; }\n"
+            "fn consume() { var local: int = 7; let alias = original; }\n",
+            ZR_VALUE_TYPE_OBJECT);
+}
+
+static void test_forward_alias_preserves_return_inference_diagnostic(void) {
+    const TZrChar *source =
+            "let alias = original;\n"
+            "fn original(flag: bool) { if (flag) { return 1; } return \"text\"; }\n";
+    SZrCompilerState cs;
+    SZrString *sourceName = ZrCore_String_CreateFromNative(
+            g_state, "compiler_forward_alias_return_diagnostic_test.zr");
+    SZrAstNode *ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+
+    TEST_ASSERT_NOT_NULL(ast);
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, g_state);
+    cs.suppressErrorOutput = ZR_TRUE;
+    cs.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(cs.currentFunction);
+
+    compile_script(&cs, ast);
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_TRUE(cs.hasStructuredError);
+    TEST_ASSERT_EQUAL_STRING(
+            "return_type_not_provable",
+            ZrCore_String_GetNativeString(cs.structuredError.code));
 
     release_compiler_function(&cs);
     ZrParser_CompilerState_Free(&cs);
@@ -3434,6 +3549,12 @@ int main(void) {
     RUN_TEST(test_unannotated_incompatible_returns_publish_not_provable_diagnostic);
     RUN_TEST(test_unannotated_compatible_returns_keep_exact_inference);
     RUN_TEST(test_unannotated_unresolved_return_keeps_weak_metadata_without_diagnostic);
+    RUN_TEST(test_alias_preserves_return_contract_from_function_locals);
+    RUN_TEST(test_forward_alias_infers_return_with_parameter_types);
+    RUN_TEST(test_forward_alias_in_nested_scope_keeps_unresolved_contract);
+    RUN_TEST(test_forward_alias_can_refine_a_provisional_return_contract);
+    RUN_TEST(test_alias_preserves_refined_weak_return_contract);
+    RUN_TEST(test_forward_alias_preserves_return_inference_diagnostic);
     RUN_TEST(test_missing_statement_semicolon_builder_publishes_machine_fix);
     RUN_TEST(test_missing_declaration_body_open_builder_publishes_machine_fix);
     RUN_TEST(test_missing_statement_body_open_builder_publishes_machine_fix);

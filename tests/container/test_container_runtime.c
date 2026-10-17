@@ -991,10 +991,10 @@ static void test_container_array_runtime_bulk_super_array_fill_grows_pair_pool_t
     TEST_DIVIDER();
 }
 
-/* 清空应保留容量且空位读取为 null，避免残留元素可见。 */
-static void test_container_array_runtime_clear_preserves_capacity_and_missing_item_returns_null(void) {
+/* 清空应保留容量，且越界读取必须报告异常。 */
+static void test_container_array_runtime_clear_preserves_capacity_and_resets_length(void) {
     SZrTestTimer timer = {0};
-    const char *summary = "Container Runtime - Array Clear Preserves Capacity And Missing Item Returns Null";
+    const char *summary = "Container Runtime - Array Clear Preserves Capacity And Resets Length";
     SZrState *state;
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
@@ -1007,9 +1007,7 @@ static void test_container_array_runtime_clear_preserves_capacity_and_missing_it
             "xs.add(30);\n"
             "before = xs.capacity;\n"
             "xs.clear();\n"
-            "if (xs[0] != null) {\n"
-            "    return -1;\n"
-            "}\n"
+            "if (xs.length != 0) { return -1; }\n"
             "return before * 10 + xs.capacity;\n";
 
     TEST_START(summary);
@@ -1169,6 +1167,7 @@ static void test_container_array_runtime_rejects_invalid_indexes(void) {
     SZrFunction *insertFunction;
     SZrFunction *setFunction;
     SZrFunction *removeFunction;
+    SZrFunction *clearedReadFunction;
     SZrTypeValue result;
     const char *insertSource =
             "let container = import(\"zr.container\");\n"
@@ -1185,6 +1184,11 @@ static void test_container_array_runtime_rejects_invalid_indexes(void) {
             "var xs = new container.Array<int>();\n"
             "xs.removeAt(0);\n";
 
+    const char *clearedReadSource =
+            "let container = import(\"zr.container\");\n"
+            "var xs = new container.Array<int>();\n"
+            "xs.add(1); xs.clear(); return xs[0];\n";
+
     TEST_START(summary);
     timer.startTime = clock();
 
@@ -1197,14 +1201,18 @@ static void test_container_array_runtime_rejects_invalid_indexes(void) {
     TEST_ASSERT_NOT_NULL(insertFunction);
     TEST_ASSERT_NOT_NULL(setFunction);
     TEST_ASSERT_NOT_NULL(removeFunction);
+    clearedReadFunction = compile_test_script(state, "container_array_cleared_read_runtime_test.zr", clearedReadSource);
+    TEST_ASSERT_NOT_NULL(clearedReadFunction);
 
     TEST_ASSERT_FALSE(ZrTests_Runtime_Function_Execute(state, insertFunction, &result));
     TEST_ASSERT_FALSE(ZrTests_Runtime_Function_Execute(state, setFunction, &result));
     TEST_ASSERT_FALSE(ZrTests_Runtime_Function_Execute(state, removeFunction, &result));
+    TEST_ASSERT_FALSE(ZrTests_Runtime_Function_Execute(state, clearedReadFunction, &result));
 
     ZrCore_Function_Free(state, insertFunction);
     ZrCore_Function_Free(state, setFunction);
     ZrCore_Function_Free(state, removeFunction);
+    ZrCore_Function_Free(state, clearedReadFunction);
     ZrContainerTests_DestroyState(state);
 
     timer.endTime = clock();
@@ -1907,10 +1915,10 @@ static void test_container_linked_list_runtime_remove_first_preserves_pair_value
     const char *source =
             "let container = import(\"zr.container\");\n"
             "let {Pair} = import(\"zr.container\");\n"
-            "fn labelThrough(value) {\n"
+            "fn labelThrough<T>(value: T): T {\n"
             "    return value;\n"
             "}\n"
-            "fn numberThrough(value) {\n"
+            "fn numberThrough<T>(value: T): T {\n"
             "    return value;\n"
             "}\n"
             "var queue = new container.LinkedList<Pair<string, int>>();\n"
@@ -2684,7 +2692,7 @@ int main(void) {
     RUN_TEST(test_container_array_runtime_raw_int_remove_at_materializes_on_generic_read);
     RUN_TEST(test_container_array_runtime_raw_int_insert_materializes_on_generic_read);
     RUN_TEST(test_container_array_runtime_raw_int_clear_reuses_storage);
-    RUN_TEST(test_container_array_runtime_clear_preserves_capacity_and_missing_item_returns_null);
+    RUN_TEST(test_container_array_runtime_clear_preserves_capacity_and_resets_length);
     RUN_TEST(test_container_array_runtime_set_item_preserves_object_payloads);
     RUN_TEST(test_container_array_runtime_accepts_unary_negation_in_constructor_arguments);
     RUN_TEST(test_container_array_runtime_rejects_negative_capacity);

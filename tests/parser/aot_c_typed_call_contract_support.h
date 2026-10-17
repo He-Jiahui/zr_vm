@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "unity.h"
+#include "aot_source_contract_match.h"
 
 #ifndef ARRAY_COUNT
 /* 供固定数组合同针脚求元素数；指针参数不适用。 */
@@ -89,14 +90,15 @@ static char *read_repo_text_file_owned(const char *relativePath) {
 /* 逐项核对生成器源码针脚，失败时指出缺失片段。 */
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
+    int missing = 0;
 
     for (index = 0; index < needleCount; index++) {
-        if (strstr(text, needles[index]) == NULL) {
-            /* BUG: Unity 失败跳转会跳过调用方末尾的源码缓冲区释放。 */
+        if (!zr_test_aot_source_contract_contains(text, needles[index])) {
             printf("Missing source contract text: %s\n", needles[index]);
-            TEST_FAIL_MESSAGE("missing required source contract text");
+            missing = 1;
         }
     }
+    TEST_ASSERT_FALSE_MESSAGE(missing, "missing required source contract text");
 }
 
 #endif

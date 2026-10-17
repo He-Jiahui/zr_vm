@@ -655,6 +655,73 @@ static void test_cfg_definite_assignment_marks_self_initializer_read_uninit(void
     ZrParser_SemanticContext_Free(context);
 }
 
+static void test_cfg_definite_assignment_separates_lambda_body_from_creation(void) {
+    const char *source =
+            "var outer: int;\n"
+            "var work = fn(p: int): int => {\n"
+            "    var inner: int;\n"
+            "    outer = 1;\n"
+            "    return p + inner;\n"
+            "};\n"
+            "return outer;\n";
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrString *sourceName = ZrCore_String_Create(g_state, "lambda_da.zr", 13);
+    SZrAstNode *ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    SZrSemanticExpressionFact expression = {0};
+    SZrAstNode reads[3] = {0};
+    SZrFileRange ranges[3];
+    SZrAstNode *lambda;
+    SZrAstNode *outerPattern;
+    SZrAstNode *innerPattern;
+    SZrAstNode *outerWrite;
+    TEST_ASSERT_NOT_NULL(context);
+    TEST_ASSERT_NOT_NULL(ast);
+    outerPattern = ast->data.script.statements->nodes[0]->data.variableDeclaration.pattern;
+    lambda = ast->data.script.statements->nodes[1]->data.variableDeclaration.value;
+    TEST_ASSERT_EQUAL_INT(ZR_AST_LAMBDA_EXPRESSION, lambda->type);
+    innerPattern = lambda->data.lambdaExpression.block->data.block.body->nodes[0]
+            ->data.variableDeclaration.pattern;
+    outerWrite = lambda->data.lambdaExpression.block->data.block.body->nodes[1]
+            ->data.expressionStatement.expr->data.assignmentExpression.left;
+    expression.node = lambda;
+    expression.range = lambda->location;
+    ZrParser_InferredType_Init(g_state, &expression.inferredType, ZR_VALUE_TYPE_CLOSURE);
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_AppendExpression(context, &expression));
+    append_reference_fact(context, outerPattern, ZR_SEMANTIC_REFERENCE_DECLARATION,
+                          201, outerPattern->location);
+    append_reference_fact(context, lambda->data.lambdaExpression.params->nodes[0],
+                          ZR_SEMANTIC_REFERENCE_DECLARATION, 202,
+                          lambda->data.lambdaExpression.params->nodes[0]->location);
+    append_reference_fact(context, innerPattern, ZR_SEMANTIC_REFERENCE_DECLARATION,
+                          203, innerPattern->location);
+    append_reference_fact(context, outerWrite, ZR_SEMANTIC_REFERENCE_WRITE,
+                          201, outerPattern->location);
+    TEST_ASSERT_TRUE(find_source_range(source, sourceName, "p + inner", 0, 0, 1, &ranges[0]));
+    TEST_ASSERT_TRUE(find_source_range(source, sourceName, "p + inner", 0, 4, 5, &ranges[1]));
+    TEST_ASSERT_TRUE(find_source_range(source, sourceName, "return outer", 0, 7, 5, &ranges[2]));
+    for (TZrSize index = 0; index < 3; index++) {
+        init_identifier_node_with_range(&reads[index], ranges[index]);
+        append_reference_fact(context, &reads[index], ZR_SEMANTIC_REFERENCE_READ,
+                              index == 0 ? 202 : index == 1 ? 203 : 201,
+                              index == 0 ? lambda->data.lambdaExpression.params->nodes[0]->location
+                                         : index == 1 ? innerPattern->location : outerPattern->location);
+    }
+    TEST_ASSERT_TRUE(ZrParser_SemanticFacts_ResolveControlFlowDefiniteAssignments(context, ast));
+    for (TZrSize index = 0; index < 3; index++) {
+        const SZrSemanticReferenceFact *fact =
+                ZrParser_SemanticFacts_FindReferenceAtPositionByKind(
+                        context, ranges[index], ZR_SEMANTIC_REFERENCE_READ);
+        TEST_ASSERT_NOT_NULL(fact);
+        TEST_ASSERT_TRUE(fact->hasDefiniteAssignmentState);
+        TEST_ASSERT_EQUAL_INT(index == 0 ? ZR_SEMANTIC_DEFINITE_ASSIGNMENT_INIT
+                                        : ZR_SEMANTIC_DEFINITE_ASSIGNMENT_UNINIT,
+                              fact->definiteAssignmentState);
+    }
+    ZrParser_InferredType_Free(g_state, &expression.inferredType);
+    ZrParser_SemanticContext_Free(context);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
 static void test_cfg_definite_assignment_joins_finally_read_from_normal_and_return_paths(void) {
     const TZrChar *source =
             "fn choose(flag: bool): int {\n"
@@ -1105,6 +1172,7 @@ int main(void) {
     RUN_TEST(test_semantic_context_reset_clears_facts);
     RUN_TEST(test_semantic_facts_resolve_linear_definite_assignment_from_reference_order);
     RUN_TEST(test_cfg_definite_assignment_marks_self_initializer_read_uninit);
+    RUN_TEST(test_cfg_definite_assignment_separates_lambda_body_from_creation);
     RUN_TEST(test_cfg_definite_assignment_joins_finally_read_from_normal_and_return_paths);
     RUN_TEST(test_cfg_definite_assignment_preserves_true_loop_break_write);
     RUN_TEST(test_cfg_dataflow_ignores_sourceless_facts_for_sourced_ast);

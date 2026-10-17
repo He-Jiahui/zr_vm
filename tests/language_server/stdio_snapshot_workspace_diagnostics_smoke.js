@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { StdioProtocolClient } = require('./stdio_protocol_client');
+const { documentUriMatches } = require('./uri_support');
 
 // 此脚本由顶层 CTest 的 snapshot workspace diagnostics 目标调用。
 // 每个请求都显式设置期限，避免 stdio 无响应时无限等待。
@@ -74,9 +75,9 @@ function createProject(rootPath, name, withProvider) {
     };
 }
 
-/** 在 workspace/diagnostic 聚合结果中按精确 URI 找报告，避免依赖服务器枚举顺序。 */
+/** Find reports by document identity without depending on enumeration order. */
 function reportForUri(workspaceReport, uri) {
-    return workspaceReport.items.find((item) => item && item.uri === uri);
+    return workspaceReport.items.find((item) => item && documentUriMatches(uri, item.uri));
 }
 
 /** 所有拉取请求共享同一协议客户端和等待期限，测试专注于报告身份而非传输细节。 */
@@ -120,7 +121,9 @@ async function main() {
         const initialProvider = reportForUri(initial, first.providerUri);
         const secondMain = reportForUri(initial, second.mainUri);
         assert(initialMain && initialProvider && secondMain,
-            'multi-root diagnostics must include both roots and the unopened provider source');
+            `multi-root diagnostics must include both roots and the unopened provider source: ${JSON.stringify({
+                expected: [first.mainUri, first.providerUri, second.mainUri], actual: initial.items,
+            })}`);
         assert.equal(initialMain.version, null,
             'unopened importer diagnostics must not claim an editor version');
         assert.equal(initialProvider.version, null,

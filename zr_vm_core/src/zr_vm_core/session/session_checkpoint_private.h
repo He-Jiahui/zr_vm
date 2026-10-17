@@ -173,6 +173,7 @@ typedef struct ZrCheckpointObject {
     TZrBool hasPrototype;
     TZrSize functionIndex;
     TZrBool hasFunction;
+    TZrSize nativeBindingOwnerIndex;
     TZrSize *captureIndexes;
     TZrSize captureCount;
     TZrSize closureValueIndex;
@@ -227,6 +228,7 @@ typedef struct ZrCheckpointRestorePlan {
     SZrString *fullPath;
     SZrFunction *metadataFunction;
     SZrFunction *closureFunction;
+    SZrObjectPrototype *nativeBindingOwner;
     SZrRawObject **closureCaptures;
     SZrTypeValue decoratorMetadata;
     SZrTypeValue *functionConstants;
@@ -271,27 +273,35 @@ struct SZrSessionCheckpoint {
 /* 未登记的可选引用不能与对象图中的零号节点混淆。 */
 #define ZR_CHECKPOINT_NO_INDEX ((TZrSize)-1)
 
-/* 内置原型持有的永久、零捕获原生 callable 只有身份需要固定。
- * 调用方创建的原生闭包、绑定描述符和捕获状态仍然不能进入对象图。 */
+/* Permanent registry callables contain immutable descriptors and no captured
+ * VM state. Their type-owner prototype is a normal graph edge captured below.
+ * Host-side effects remain outside the logical VM snapshot. */
 static ZR_FORCE_INLINE TZrBool checkpoint_native_closure_is_immortal_stateless(const SZrRawObject *raw) {
     const SZrClosureNative *closure;
-
     if (raw == ZR_NULL || raw->type != ZR_RAW_OBJECT_TYPE_CLOSURE || !raw->isNative ||
         raw->resourceLifecycleState != ZR_RESOURCE_LIFECYCLE_NONE ||
         raw->finalizerData != ZR_NULL ||
-        !ZrCore_RawObject_IsPermanent(ZR_NULL, (SZrRawObject *)raw)) {
-        return ZR_FALSE;
-    }
+        !ZrCore_RawObject_IsPermanent(ZR_NULL, (SZrRawObject *)raw)) return ZR_FALSE;
     closure = (const SZrClosureNative *)raw;
-    return (TZrBool)(closure->closureValueCount == 0u &&
-                     closure->nativeFunction != ZR_NULL &&
-                     closure->aotShimFunction == ZR_NULL &&
-                     closure->nativeBindingDescriptor == ZR_NULL &&
-                     closure->nativeBindingModuleDescriptor == ZR_NULL &&
-                     closure->nativeBindingTypeDescriptor == ZR_NULL &&
-                     closure->nativeBindingOwnerPrototype == ZR_NULL &&
-                     closure->nativeBindingKind == 0u &&
-                     closure->nativeBindingUsesReceiver == ZR_NATIVE_BINDING_RECEIVER_NONE);
+    if (closure->closureValueCount != 0u || closure->nativeFunction == ZR_NULL ||
+        closure->aotShimFunction != ZR_NULL) return ZR_FALSE;
+    if (closure->nativeBindingDescriptor == ZR_NULL) {
+        return closure->nativeBindingModuleDescriptor == ZR_NULL &&
+               closure->nativeBindingTypeDescriptor == ZR_NULL &&
+               closure->nativeBindingOwnerPrototype == ZR_NULL &&
+               closure->nativeBindingKind == 0u &&
+               closure->nativeBindingUsesReceiver == ZR_NATIVE_BINDING_RECEIVER_NONE;
+    }
+    if (closure->nativeBindingModuleDescriptor == ZR_NULL) return ZR_FALSE;
+    if (closure->nativeBindingKind == 0u) {
+        return closure->nativeBindingTypeDescriptor == ZR_NULL &&
+               closure->nativeBindingOwnerPrototype == ZR_NULL &&
+               closure->nativeBindingUsesReceiver == ZR_NATIVE_BINDING_RECEIVER_NONE;
+    }
+    return closure->nativeBindingKind <= 2u &&
+           closure->nativeBindingTypeDescriptor != ZR_NULL &&
+           closure->nativeBindingOwnerPrototype != ZR_NULL &&
+           closure->nativeBindingUsesReceiver <= ZR_NATIVE_BINDING_RECEIVER_FRAME;
 }
 
 typedef struct ZrCheckpointRestoreRoots {

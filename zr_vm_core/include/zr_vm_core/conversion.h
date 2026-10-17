@@ -45,9 +45,10 @@
 // 原始对象与哈希表、栈槽的指针别名不改变所有权或 GC 根关系。
 #define ZR_CAST_RAW_OBJECT(EXP) ZR_CAST(SZrRawObject *, (EXP))
 #define ZR_CAST_RAW_OBJECT_PTR(EXP) ZR_CAST(SZrRawObject **, (EXP))
-/** @brief 取得对象内嵌 super 成员的地址，交给 GC、值槽及对象接口。
- * @pre EXP 非空且其静态类型确有 SZrRawObject super 成员；结果借用原对象寿命。 */
-#define ZR_CAST_RAW_OBJECT_AS_SUPER(EXP) ZR_CAST(SZrRawObject *, &((EXP)->super))
+/** @brief Borrow the object's initial raw-object prefix; NULL remains NULL.
+ * @pre The static type starts with super (possibly nested), at offset zero.
+ * A direct pointer conversion avoids forming a member address through NULL. */
+#define ZR_CAST_RAW_OBJECT_AS_SUPER(EXP) ZR_CAST(SZrRawObject *, (EXP))
 #define ZR_CAST_HASH_KEY_VALUE_PAIR(EXP) ZR_CAST(SZrHashKeyValuePair *, (EXP))
 #define ZR_CAST_HASH_KEY_VALUE_PAIR_PTR(EXP) ZR_CAST(SZrHashKeyValuePair **, (EXP))
 

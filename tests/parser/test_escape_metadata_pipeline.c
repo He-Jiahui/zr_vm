@@ -25,8 +25,8 @@ void test_runtime_returned_callable_capture_marks_closed_capture_object(void);
 void test_runtime_global_callable_capture_marks_closed_capture_object(void);
 void test_binary_roundtrip_runtime_returned_callable_capture_preserves_closed_capture_escape_flags(void);
 void test_binary_roundtrip_runtime_global_callable_capture_preserves_closed_capture_escape_flags(void);
-void test_runtime_compiled_child_functions_detach_owner_links(void);
-void test_binary_roundtrip_runtime_child_functions_detach_owner_links(void);
+void test_runtime_compiled_child_functions_retain_owner_links(void);
+void test_binary_roundtrip_runtime_child_functions_retain_owner_links(void);
 
 // 闭包逃逸夹具需要容器与 FFI 提供者；两者均注册成功才可编译 native callback。
 static TZrBool register_ffi_test_modules(SZrGlobalState *global) {
@@ -318,8 +318,8 @@ static const SZrFunction *find_named_function_recursive(const SZrFunction *funct
     return ZR_NULL;
 }
 
-// 递归验证运行时子函数不保留 ownerFunction 回指，避免父函数释放后的悬空链接。
-static void assert_runtime_child_owner_links_detached_recursive(const SZrFunction *function) {
+// Embedded child functions keep their owning allocation alive during GC.
+static void assert_runtime_child_owner_links_recursive(const SZrFunction *function) {
     TZrUInt32 index;
 
     TEST_ASSERT_NOT_NULL(function);
@@ -327,8 +327,8 @@ static void assert_runtime_child_owner_links_detached_recursive(const SZrFunctio
     for (index = 0; index < function->childFunctionLength; index++) {
         const SZrFunction *childFunction = &function->childFunctionList[index];
 
-        TEST_ASSERT_NULL(childFunction->ownerFunction);
-        assert_runtime_child_owner_links_detached_recursive(childFunction);
+        TEST_ASSERT_EQUAL_PTR(function, childFunction->ownerFunction);
+        assert_runtime_child_owner_links_recursive(childFunction);
     }
 }
 
@@ -852,18 +852,18 @@ void test_binary_roundtrip_preserves_escape_metadata_summaries(void) {
     ZR_TEST_DIVIDER();
 }
 
-// 原生编译的嵌套函数在运行时形态不得保留父函数回指。
+// Compiled embedded children retain parent ownership links.
 // BUG: state/function 创建后递归断言失败会跳过尾部释放，空 Unity tearDown 无法清理。
-void test_runtime_compiled_child_functions_detach_owner_links(void) {
+void test_runtime_compiled_child_functions_retain_owner_links(void) {
     SZrTestTimer timer;
-    const TZrChar *testSummary = "Runtime Compiled Child Functions Detach Owner Links";
+    const TZrChar *testSummary = "Runtime Compiled Child Functions Retain Owner Links";
     SZrState *state;
     SZrFunction *runtimeFunction;
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("runtime child-function owner links",
-                 "Testing that runtime-compiled child function graphs clear ownerFunction back-links so nested callables do not retain stale parent pointers across GC");
+                 "Testing that embedded child functions retain ownerFunction links so closures keep their storage alive across GC");
 
     state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(state);
@@ -872,7 +872,7 @@ void test_runtime_compiled_child_functions_detach_owner_links(void) {
 
     runtimeFunction = compile_escape_metadata_fixture(state);
     TEST_ASSERT_NOT_NULL(runtimeFunction);
-    assert_runtime_child_owner_links_detached_recursive(runtimeFunction);
+    assert_runtime_child_owner_links_recursive(runtimeFunction);
 
     ZrCore_Function_Free(state, runtimeFunction);
     ZrTests_Runtime_State_Destroy(state);
@@ -882,11 +882,11 @@ void test_runtime_compiled_child_functions_detach_owner_links(void) {
     ZR_TEST_DIVIDER();
 }
 
-// ZRO 导入后的嵌套函数同样须清除 ownerFunction 回指。
+// Loaded embedded children retain the same parent ownership links.
 // BUG: 正常路径写出 escape_metadata_owner_links_roundtrip.zro 后从未 remove，CTest 工作目录留下固定名产物；断言失败还跳过局部清理。
-void test_binary_roundtrip_runtime_child_functions_detach_owner_links(void) {
+void test_binary_roundtrip_runtime_child_functions_retain_owner_links(void) {
     SZrTestTimer timer;
-    const TZrChar *testSummary = "Binary Roundtrip Runtime Child Functions Detach Owner Links";
+    const TZrChar *testSummary = "Binary Roundtrip Runtime Child Functions Retain Owner Links";
     const TZrChar *binaryPath = "escape_metadata_owner_links_roundtrip.zro";
     SZrState *state;
     SZrFunction *sourceFunction;
@@ -895,7 +895,7 @@ void test_binary_roundtrip_runtime_child_functions_detach_owner_links(void) {
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("runtime child-function owner links roundtrip",
-                 "Testing that .zro runtime loading also clears child ownerFunction back-links so imported nested callables do not keep stale parent references");
+                 "Testing that .zro runtime loading preserves ownerFunction links so embedded function storage stays alive across GC");
 
     state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(state);
@@ -908,7 +908,7 @@ void test_binary_roundtrip_runtime_child_functions_detach_owner_links(void) {
 
     runtimeFunction = load_runtime_entry_from_binary_file(state, binaryPath);
     TEST_ASSERT_NOT_NULL(runtimeFunction);
-    assert_runtime_child_owner_links_detached_recursive(runtimeFunction);
+    assert_runtime_child_owner_links_recursive(runtimeFunction);
 
     ZrCore_Function_Free(state, runtimeFunction);
     ZrCore_Function_Free(state, sourceFunction);

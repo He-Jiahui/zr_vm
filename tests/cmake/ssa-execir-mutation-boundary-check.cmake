@@ -244,7 +244,9 @@ function(_zr_boundary_analyze text symbol private_mode out_issues out_errors out
             math(EXPR _errors "${_errors}+1")
             set(_expected FALSE)
             if (NOT symbol STREQUAL "" AND
-                    _line MATCHES "test_ssa_exec_ir_header_boundary\\.c[(:]" AND
+                    (_line MATCHES "test_ssa_exec_ir_header_boundary\\.c[(:]" OR
+                     (_line MATCHES "^<command-line>:" AND
+                      text MATCHES "test_ssa_exec_ir_header_boundary\\.c[(:]")) AND
                     _line MATCHES "(^|[^A-Za-z0-9_])${symbol}([^A-Za-z0-9_]|$)")
                 if (ZR_BOUNDARY_C_COMPILER_ID STREQUAL "MSVC")
                     if (_line MATCHES "error C2065:")
@@ -274,6 +276,7 @@ function(_zr_boundary_analyze text symbol private_mode out_issues out_errors out
                  _line MATCHES "^[ ]*\\(void\\)sizeof\\(&PUBLIC_PRIVATE_SYMBOL\\);[ ]*$" OR
                  _line MATCHES "^[ ]*#define PUBLIC_PRIVATE_SYMBOL ${symbol}[ ]*$" OR
                  _line MATCHES ":[ ]*note:" OR
+                 _line MATCHES "test_ssa_exec_ir_header_boundary\\.c: In function ['‘]ZrTests_ExecIr_HeaderBoundaryProbe['’]:$" OR
                  _line MATCHES "^[0-9]+ errors? generated\\.$"))
             continue()
         endif ()

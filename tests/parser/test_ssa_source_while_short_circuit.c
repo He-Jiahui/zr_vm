@@ -302,6 +302,14 @@ static void assert_loop_execution_at(const char *source, TZrBool expectedResult,
             constants[index].as.unsignedInteger = constant->value.nativeObject.nativeUInt64;
         }
     }
+    /* These cases observe writes through the memory provider. Withhold the
+     * scalar-promotion proof so local assignments remain observable stores;
+     * the structural cases above still exercise normal SSA promotion. */
+    for (index = 0u; index < compiler.preSemanticIr.locals.length; ++index) {
+        SZrSemanticIrLocal *local = (SZrSemanticIrLocal *)ZrCore_Array_Get(
+                &compiler.preSemanticIr.locals, index);
+        local->isScalar = ZR_FALSE;
+    }
     ZrCore_ExecIr_FunctionInit(&output);
     TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(
             &compiler.preSemanticIr, ZR_NULL, &output, &diagnostic));

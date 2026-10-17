@@ -16,7 +16,8 @@ TZrBool compiler_native_call_binding_is_provider_contract(
 }
 
 /** @brief 为已识别的 provider 成员建立模块重定位缓存，保留原有签名及来源哈希。
- *  @note targetIndex 记录调用点的成员定位值；native registry 按契约 token 与哈希选择 provider，不读取该索引。 */
+ *  @note targetIndex 记录调用点的成员定位值；无成员槽的静态调用使用 provider token。
+ *  native registry 按契约 token 与哈希选择 provider，不读取该索引。 */
 TZrBool compiler_native_call_binding_prepare_cache(
         SZrFunctionCallSiteCacheEntry *entry,
         const SZrCallBindingContract *contract,
@@ -27,7 +28,8 @@ TZrBool compiler_native_call_binding_prepare_cache(
     }
     entry->binding.contract = *contract;
     entry->bindingLocation.kind = ZR_CALL_BINDING_RELOCATION_MODULE;
-    entry->bindingLocation.targetIndex = memberEntryIndex;
+    entry->bindingLocation.targetIndex = memberEntryIndex != ZR_PARSER_MEMBER_ID_NONE
+            ? memberEntryIndex : contract->targetMetadataToken;
     entry->bindingLocation.ownerDepth = 0u;
     entry->bindingLocation.flags = 0u;
     return ZR_TRUE;

@@ -155,36 +155,6 @@ static void write_u32_le(TZrByte *buffer, TZrSize offset, TZrUInt32 value) {
     buffer[offset + 3] = (TZrByte)((value >> 24) & 0xFFu);
 }
 
-static const TZrChar *current_exception_message(SZrState *state) {
-    SZrObject *errorObject;
-    SZrString *messageName;
-    SZrTypeValue key;
-    const SZrTypeValue *messageValue;
-
-    if (state == ZR_NULL || !state->hasCurrentException ||
-        state->currentException.type != ZR_VALUE_TYPE_OBJECT ||
-        state->currentException.value.object == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    errorObject = ZR_CAST_OBJECT(state, state->currentException.value.object);
-    messageName = ZrCore_String_CreateFromNative(state, "message");
-    if (errorObject == ZR_NULL || messageName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(messageName));
-    key.type = ZR_VALUE_TYPE_STRING;
-    messageValue = ZrCore_Object_GetValue(state, errorObject, &key);
-    if (messageValue == ZR_NULL ||
-        messageValue->type != ZR_VALUE_TYPE_STRING ||
-        messageValue->value.object == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    return ZrCore_String_GetNativeString(ZR_CAST_STRING(state, messageValue->value.object));
-}
-
 static SZrString *metadata_string_heap_lookup(const SZrFunction *function, TZrUInt32 stringIndex) {
     if (function == ZR_NULL || function->metadataStringHeap == ZR_NULL || stringIndex == 0u) {
         return ZR_NULL;
@@ -1397,7 +1367,7 @@ static void test_metadata_strings_are_indexed_in_shared_heap_through_binary_and_
     ZrTests_Runtime_State_Destroy(state);
 }
 
-static void test_reader_rejects_future_metadata_patch_with_version_diagnostic(void) {
+static void test_reader_rejects_future_metadata_patch(void) {
     const char *binaryPath = "metadata_token_future_patch.zro";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *function;
@@ -1407,9 +1377,6 @@ static void test_reader_rejects_future_metadata_patch_with_version_diagnostic(vo
     SZrIo io;
     SZrReadSourceTryContext readContext;
     EZrThreadStatus status;
-    const TZrChar *message;
-    char actualPatchText[64];
-    char supportedPatchText[64];
     const TZrSize versionPatchOffset = 12u;
 
     TEST_ASSERT_NOT_NULL(state);
@@ -1423,8 +1390,6 @@ static void test_reader_rejects_future_metadata_patch_with_version_diagnostic(vo
     TEST_ASSERT_EQUAL_UINT32(ZR_IO_SOURCE_PATCH_CURRENT, read_u32_le(buffer, versionPatchOffset));
 
     write_u32_le(buffer, versionPatchOffset, ZR_IO_SOURCE_PATCH_CURRENT + 1u);
-    snprintf(actualPatchText, sizeof(actualPatchText), "actualPatch=%u", (unsigned)(ZR_IO_SOURCE_PATCH_CURRENT + 1u));
-    snprintf(supportedPatchText, sizeof(supportedPatchText), "supportedPatch=%u", (unsigned)ZR_IO_SOURCE_PATCH_CURRENT);
 
     memset(&reader, 0, sizeof(reader));
     reader.bytes = buffer;
@@ -1436,13 +1401,11 @@ static void test_reader_rejects_future_metadata_patch_with_version_diagnostic(vo
     readContext.io = &io;
 
     status = ZrCore_Exception_TryRun(state, read_source_try_body, &readContext);
-    TEST_ASSERT_TRUE(ZrCore_Exception_IsStausError(status));
+    /* The checked reader reports malformed input without throwing through
+     * decoder cleanup; callers inspect NULL and the cursor error flag. */
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, status);
     TEST_ASSERT_NULL(readContext.source);
-    message = current_exception_message(state);
-    TEST_ASSERT_NOT_NULL(message);
-    TEST_ASSERT_NOT_NULL(strstr(message, "io source version patch is newer than this runtime"));
-    TEST_ASSERT_NOT_NULL(strstr(message, actualPatchText));
-    TEST_ASSERT_NOT_NULL(strstr(message, supportedPatchText));
+    TEST_ASSERT_TRUE(io.hasReadError);
 
     remove(binaryPath);
     free(buffer);
@@ -2232,7 +2195,7 @@ int main(void) {
     RUN_TEST(test_metadata_tokens_and_signature_blob_roundtrip_through_binary_and_runtime);
     RUN_TEST(test_module_metadata_binding_roundtrips_through_binary_and_runtime);
     RUN_TEST(test_metadata_strings_are_indexed_in_shared_heap_through_binary_and_runtime);
-    RUN_TEST(test_reader_rejects_future_metadata_patch_with_version_diagnostic);
+    RUN_TEST(test_reader_rejects_future_metadata_patch);
     RUN_TEST(test_signature_hash_is_stable_and_changes_with_normalized_signature);
     RUN_TEST(test_module_signature_hash_changes_with_module_version);
     RUN_TEST(test_module_signature_hash_changes_with_union_type_def_contract);

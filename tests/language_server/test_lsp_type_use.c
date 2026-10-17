@@ -221,5 +221,6 @@ int main(void) {
     RUN_TEST(test_completion_preserves_unresolved_callable_type_state);
     RUN_TEST(test_hover_preserves_unresolved_callable_type_state);
     RUN_TEST(test_callable_display_replaces_unresolved_snapshot_state);
+    RUN_TEST(test_partial_callable_display_keeps_resolved_annotations);
     return UNITY_END();
 }

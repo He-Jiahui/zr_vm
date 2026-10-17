@@ -94,7 +94,8 @@ static void check_source(unsigned caseIndex, const char *source, TZrBool expecte
              "-fsanitize=undefined -fno-sanitize-recover=undefined "
              "-I\"%s/zr_vm_common/include\" -I\"%s/zr_vm_core/include\" -I\"%s/zr_vm_library/include\" "
              "\"%s\" -L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
-             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS "-o \"%s\"",
+             /* Clang does not automatically link UBSan into shared libraries. */
+             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS "-lubsan -o \"%s\"",
              ZR_VM_TESTS_C_COMPILER, ZR_VM_TESTS_C_FLAGS,
              ZR_VM_TESTS_REPO_ROOT, ZR_VM_TESTS_REPO_ROOT, ZR_VM_TESTS_REPO_ROOT,
              cPath, ZR_VM_TESTS_BUILD_LIB_DIR, ZR_VM_TESTS_BUILD_LIB_DIR, libraryPath);

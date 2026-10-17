@@ -5,25 +5,20 @@ if (NOT DEFINED ZR_ARM_EVENT_EXECUTABLE OR NOT EXISTS "${ZR_ARM_EVENT_EXECUTABLE
         OR NOT ZR_ARM_EVENT_EXPECTED_PHASE MATCHES "^(RED|GREEN)$")
     message(FATAL_ERROR "Supply an actual owner observer executable, output directory and exact phase")
 endif ()
-set(_output_root "E:/cargo-targets/zr_vm/build")
 cmake_path(ABSOLUTE_PATH ZR_ARM_EVENT_OUTPUT_DIR NORMALIZE OUTPUT_VARIABLE _output)
-cmake_path(IS_PREFIX _output_root "${_output}" NORMALIZE _output_allowed)
 cmake_path(ABSOLUTE_PATH ZR_ARM_EVENT_EXECUTABLE NORMALIZE OUTPUT_VARIABLE _executable)
 cmake_path(IS_PREFIX _output "${_executable}" NORMALIZE _executable_allowed)
-if (NOT _output_allowed OR _output STREQUAL _output_root OR NOT _executable_allowed
+if (NOT _executable_allowed
         OR NOT IS_DIRECTORY "${_output}")
-    message(FATAL_ERROR "Use the actual executable inside a separate E build child")
+    message(FATAL_ERROR "Use the actual executable inside the configured build directory")
 endif ()
 set(_stdout_path "${_output}/owner-arm-event-${ZR_ARM_EVENT_EXPECTED_PHASE}-stdout.log")
 set(_stderr_path "${_output}/owner-arm-event-${ZR_ARM_EVENT_EXPECTED_PHASE}-stderr.log")
-if (EXISTS "${_stdout_path}" OR EXISTS "${_stderr_path}")
-    message(FATAL_ERROR "Preserve existing raw logs; use a reviewed fresh single-writer build child")
-endif ()
+
 execute_process(COMMAND "${_executable}" WORKING_DIRECTORY "${_output}"
         RESULT_VARIABLE _exit OUTPUT_VARIABLE _stdout ERROR_VARIABLE _stderr
         TIMEOUT 120 ENCODING UTF-8)
-# The Root route supplies a unique fresh child and one writer. This refuses
-# existing logs, but CMake file(WRITE) is not an OS exclusive-create operation.
+# Each CTest case owns these logs; reruns replace its previous output.
 file(WRITE "${_stdout_path}" "${_stdout}")
 file(WRITE "${_stderr_path}" "${_stderr}")
 message("OWNER_ARM_EVENT_CHILD phase=${ZR_ARM_EVENT_EXPECTED_PHASE} actual_exit=${_exit}")

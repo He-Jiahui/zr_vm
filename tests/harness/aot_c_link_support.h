@@ -3,15 +3,25 @@
 
 #include "zr_vm_common/zr_common_conf.h"
 
+#ifndef ZR_VM_TESTS_C_FLAGS
+#define ZR_VM_TESTS_C_FLAGS ""
+#endif
+
+#ifndef ZR_VM_TESTS_LLVM_POINTER_FLAGS
+#define ZR_VM_TESTS_LLVM_POINTER_FLAGS ""
+#endif
+
+/* Generated shared libraries link the same instrumented static runtime. */
 /* AOT C 冒烟测试直接调用宿主链接器；库顺序和平台依赖须与 CMake 构建保持一致。 */
 #if defined(ZR_PLATFORM_UNIX)
 #if defined(__APPLE__)
 #define ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS                                                        \
-    "-lzr_vm_library -lzr_vm_core -lzr_c_json -lzr_miniz -lzr_tiny_dir "                        \
+    ZR_VM_TESTS_C_FLAGS " -lzr_vm_library -lzr_vm_core -lzr_c_json -lzr_miniz -lzr_tiny_dir "      \
     "-lzr_xx_hash -lzr_utf8proc -lm -pthread "
 #else
 #define ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS                                                        \
-    "-Wl,--start-group -lzr_vm_library -lzr_vm_core -lzr_c_json -lzr_miniz -lzr_tiny_dir "       \
+    ZR_VM_TESTS_C_FLAGS " -Wl,--start-group -lzr_vm_library -lzr_vm_core -lzr_c_json "              \
+    "-lzr_miniz -lzr_tiny_dir "                                                                  \
     "-lzr_xx_hash -lzr_utf8proc -Wl,--end-group -lm -ldl -pthread "
 #endif
 #else

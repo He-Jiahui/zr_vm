@@ -356,7 +356,7 @@ static void test_aot_c_generated_source_compiles_and_exports_module_descriptor(v
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "args[0].type != (TZrUInt16)ZR_VALUE_TYPE_INT64"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 5u:"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrInt64 zr_aot_arg0 = args[0].value.nativeObject.nativeInt64;"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_return_value = zr_aot_typed_i64_fn_5(zr_aot_arg0);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_return_value = zr_aot_typed_i64_fn_5(state, zr_aot_arg0);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_try_invoke_i64_one_arg(state, method, args, outReturn))"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_u64_one_arg("));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
@@ -389,7 +389,7 @@ static void test_aot_c_generated_source_compiles_and_exports_module_descriptor(v
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "args[1].type != (TZrUInt16)ZR_VALUE_TYPE_INT64"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 9u:"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrInt64 zr_aot_arg1 = args[1].value.nativeObject.nativeInt64;"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_return_value = zr_aot_typed_i64_fn_9(zr_aot_arg0, zr_aot_arg1);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_return_value = zr_aot_typed_i64_fn_9(state, zr_aot_arg0, zr_aot_arg1);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_try_invoke_i64_two_arg(state, method, args, outReturn))"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_u64_two_arg("));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
@@ -444,7 +444,7 @@ static void test_aot_c_generated_source_compiles_and_exports_module_descriptor(v
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "case 16u:"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "TZrInt64 zr_aot_arg2 = args[2].value.nativeObject.nativeInt64;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
-                                "zr_aot_return_value = zr_aot_typed_i64_fn_16(zr_aot_arg0, zr_aot_arg1, zr_aot_arg2);"));
+                                "zr_aot_return_value = zr_aot_typed_i64_fn_16(state, zr_aot_arg0, zr_aot_arg1, zr_aot_arg2);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "if (zr_aot_try_invoke_i64_three_arg(state, method, args, outReturn))"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "static TZrBool zr_aot_try_invoke_u64_three_arg("));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "method->signature->returnType->baseType != (TZrUInt16)ZR_VALUE_TYPE_UINT64"));

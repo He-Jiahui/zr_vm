@@ -11,6 +11,20 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/string.h"
 
+typedef struct SZrSemanticPrimaryPrefix {
+    SZrAstNode node;
+    SZrAstNodeArray members;
+    struct SZrSemanticPrimaryPrefix *next;
+} SZrSemanticPrimaryPrefix;
+
+static void semantic_context_free_primary_prefixes(SZrSemanticContext *context) {
+    while (context->primaryPrefixes != ZR_NULL) {
+        SZrSemanticPrimaryPrefix *prefix = context->primaryPrefixes;
+        context->primaryPrefixes = prefix->next;
+        ZrCore_Memory_RawFree(context->state->global, prefix, sizeof(*prefix));
+    }
+}
+
 /**
  * @brief 保存可见候选的来源 URI，供导入符号查询核对来源身份。
  * @pre 输入 URI 在创建期间由其实际 owner 保持 GC 可达。
@@ -41,6 +55,7 @@ static SZrString *semantic_context_clone_string(
  * @note 调用前 state 已写入，只构造一次；Array_Init 无失败返回，types/scopeFacts 初始化 OOM 后仍标有效的失败链单独记录。
  */
 static void semantic_context_init_arrays(SZrSemanticContext *context) {
+    context->primaryPrefixes = ZR_NULL;
     ZrCore_Array_Init(context->state,
                 &context->canonicalTypes,
                 sizeof(SZrCanonicalTypeNode),
@@ -181,6 +196,7 @@ void ZrParser_SemanticContext_Free(SZrSemanticContext *context) {
     ZrCore_Array_Free(context->state, &context->queryDiagnostics);
     ZrParser_SemanticCalls_Free(context);
     ZrParser_SemanticFacts_Free(context);
+    semantic_context_free_primary_prefixes(context);
     ZrCore_Array_Free(context->state, &context->typeDisplayAliasFacts);
     ZrCore_Array_Free(context->state, &context->documentationFacts);
     ZrCore_Array_Free(context->state, &context->propertyContracts);
@@ -235,6 +251,35 @@ void ZrParser_SemanticContext_Reset(SZrSemanticContext *context) {
     semantic_context_reset_query_diagnostics(context);
     ZrParser_SemanticCalls_Reset(context);
     ZrParser_SemanticFacts_Reset(context);
+    semantic_context_free_primary_prefixes(context);
+}
+
+SZrAstNode *ZrParser_SemanticContext_CreatePrimaryPrefix(
+        SZrSemanticContext *context, const SZrAstNode *source, TZrSize memberCount) {
+    SZrSemanticPrimaryPrefix *prefix;
+
+    if (source == ZR_NULL || source->type != ZR_AST_PRIMARY_EXPRESSION ||
+        source->data.primaryExpression.members == ZR_NULL ||
+        memberCount > source->data.primaryExpression.members->count) {
+        return ZR_NULL;
+    }
+    if (memberCount == 0U) {
+        return source->data.primaryExpression.property;
+    }
+    if (context == ZR_NULL || context->state == ZR_NULL) {
+        return ZR_NULL;
+    }
+    prefix = ZrCore_Memory_RawMalloc(context->state->global, sizeof(*prefix));
+    if (prefix == ZR_NULL) {
+        return ZR_NULL;
+    }
+    prefix->node = *source;
+    prefix->members = *source->data.primaryExpression.members;
+    prefix->members.count = memberCount;
+    prefix->node.data.primaryExpression.members = &prefix->members;
+    prefix->next = context->primaryPrefixes;
+    context->primaryPrefixes = prefix;
+    return &prefix->node;
 }
 
 TZrTypeId ZrParser_Semantic_ReserveTypeId(SZrSemanticContext *context) {

@@ -365,6 +365,7 @@ if (TARGET zr_vm_parser_static AND TARGET zr_vm_core_static AND TARGET zr_vm_lib
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_scalar_constant.c)
     target_include_directories(zr_vm_ssa_source_scalar_constant_noalloc_object PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser)
     target_compile_definitions(zr_vm_ssa_source_scalar_constant_noalloc_object PRIVATE

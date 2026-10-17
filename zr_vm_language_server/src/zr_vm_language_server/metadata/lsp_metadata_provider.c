@@ -749,7 +749,11 @@ static void metadata_provider_resolve_symbol_descriptor(
     }
 
     outResolved->declarationSymbol = symbol;
-    if (symbol->type == ZR_SYMBOL_FUNCTION || symbol->type == ZR_SYMBOL_METHOD) {
+    if (symbol->type == ZR_SYMBOL_FUNCTION || symbol->type == ZR_SYMBOL_METHOD ||
+        (outResolved->memberKind == ZR_LSP_METADATA_MEMBER_FUNCTION &&
+         outResolved->typeMemberInfo != ZR_NULL &&
+         (outResolved->typeMemberInfo->memberType == ZR_AST_CLASS_METHOD ||
+          outResolved->typeMemberInfo->memberType == ZR_AST_STRUCT_METHOD))) {
         outResolved->memberKind = ZR_LSP_METADATA_MEMBER_FUNCTION;
     } else if (symbol->type == ZR_SYMBOL_PROPERTY) {
         outResolved->memberKind = ZR_LSP_METADATA_MEMBER_PROPERTY;

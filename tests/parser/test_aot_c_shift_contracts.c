@@ -88,13 +88,15 @@ static char *read_repo_text_file_owned(const char *relativePath) {
 /* 用共用匹配器验证必需源码片段。 */
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
+    int missing = 0;
 
     for (index = 0; index < needleCount; index++) {
         if (!zr_test_aot_source_contract_contains(text, needles[index])) {
             printf("Missing source contract text: %s\n", needles[index]);
-            TEST_FAIL_MESSAGE("missing required source contract text");
+            missing = 1;
         }
     }
+    TEST_ASSERT_FALSE_MESSAGE(missing, "missing required source contract text");
 }
 
 /* 排除旧移位实现的文本标记。 */
@@ -127,8 +129,8 @@ static void test_aot_c_source_lowers_generic_integer_shift_to_direct_c(void) {
             "backend_aot_write_c_integer_like_extract(file, \"zr_aot_left\", \"zr_aot_left_scalar\")",
             "backend_aot_write_c_integer_like_extract(file, \"zr_aot_right\", \"zr_aot_shift_count\")",
             "backend_aot_write_c_shift_count_guard(file, \"zr_aot_shift_count\")",
-            "(TZrInt64)(zr_aot_left_unsigned << zr_aot_shift_count)",
-            "zr_aot_left_scalar >> zr_aot_shift_count",
+            "ZrCore_Integer_FromBits(zr_aot_left_unsigned << zr_aot_shift_count)",
+            "ZrCore_Integer_ShiftRight(zr_aot_left_scalar, (TZrUInt64)zr_aot_shift_count)",
             "unsupported AOT generic integer shift",
             "ZR_VALUE_FAST_SET(zr_aot_destination",
             "ZR_VALUE_TYPE_INT64",

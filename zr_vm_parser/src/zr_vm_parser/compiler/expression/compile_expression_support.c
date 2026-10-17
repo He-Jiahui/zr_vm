@@ -213,6 +213,14 @@ TZrBool reserve_member_slot_get_cache(SZrCompilerState *cs,
                                                 argumentCount,
                                                 outCacheIndex,
                                                 location)) return ZR_FALSE;
+    if (memberInfo != ZR_NULL && !memberInfo->isStatic &&
+        compiler_native_call_binding_is_provider_contract(&memberInfo->callBindingFact)) {
+        SZrTypePrototypeInfo *owner = find_compiler_type_prototype(cs, memberInfo->ownerTypeName);
+        /* Native interfaces have no VM dispatch table. Resolve the member on
+         * the concrete receiver instead of binding the interface as its class. */
+        if (owner != ZR_NULL && owner->type == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE)
+            return ZR_TRUE;
+    }
     if (memberInfo != ZR_NULL &&
         (memberInfo->compiledFunction != ZR_NULL ||
          memberInfo->callBindingFact.bindingKind != ZR_CALL_BINDING_NONE ||
@@ -226,8 +234,17 @@ TZrBool reserve_member_slot_get_cache(SZrCompilerState *cs,
             compiler_get_member_call_binding_fact(cs, memberInfo, &entry->binding.contract);
         }
         if (memberInfo->callBindingLocationKind == ZR_CALL_BINDING_RELOCATION_VM_MODULE) {
+            SZrTypePrototypeInfo *owner = find_compiler_type_prototype(cs, memberInfo->ownerTypeName);
+            if (owner == ZR_NULL || owner->importModuleName == ZR_NULL) {
+                ZrParser_Compiler_Error(cs, "Imported callable has no module identity", location);
+                return ZR_FALSE;
+            }
+            ZrCore_Value_InitAsRawObject(cs->state, &value,
+                    ZR_CAST_RAW_OBJECT_AS_SUPER(owner->importModuleName));
+            /* Module ABI hashes can match across distinct modules. Persist
+             * the canonical import name as well as the signature contract. */
             entry->bindingLocation.kind = ZR_CALL_BINDING_RELOCATION_VM_MODULE;
-            entry->bindingLocation.targetIndex = 0u;
+            entry->bindingLocation.targetIndex = add_constant(cs, &value);
         } else if (compiler_native_call_binding_is_provider_contract(&entry->binding.contract)) {
             (void)compiler_native_call_binding_prepare_cache(
                     entry, &entry->binding.contract, memberEntryIndex);
@@ -261,6 +278,20 @@ TZrBool reserve_meta_call_binding_cache(SZrCompilerState *cs,
                                         TZrUInt16 *outCacheIndex,
                                         SZrFileRange location) {
     SZrFunctionCallSiteCacheEntry *entry;
+
+    /* Virtual @call lives in the receiver's meta table, outside the ordinary
+     * descriptor slots. Resolve it through the runtime meta cache; the base
+     * declaration may be all that is compiled while a derived body is built. */
+    if (memberInfo != ZR_NULL &&
+        memberInfo->virtualSlotIndex != ZR_CALL_BINDING_SLOT_NONE &&
+        (memberInfo->modifierFlags & (ZR_DECLARATION_MODIFIER_VIRTUAL |
+                                     ZR_DECLARATION_MODIFIER_OVERRIDE |
+                                     ZR_DECLARATION_MODIFIER_ABSTRACT)) != 0u) {
+        return compiler_append_callsite_cache_entry(cs,
+                ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL,
+                (TZrUInt32)cs->instructionCount, memberEntryIndex,
+                argumentCount, outCacheIndex, location);
+    }
 
     /* Reuse the same contract construction as a bound member call.  META_CALL
      * has a distinct cache kind because the interpreter prepares the callable
@@ -306,6 +337,11 @@ TZrBool emit_known_vm_member_call_cached(SZrCompilerState *cs,
 TZrBool compiler_record_known_call_binding(SZrCompilerState *cs,
         const SZrTypeMemberInfo *memberInfo, TZrUInt32 argumentCount, SZrFileRange location) {
     TZrUInt16 cacheIndex;
+    /* Imported instance methods carry their owner/receiver contract on the
+     * bound GET_MEMBER_SLOT. A second static call binding would lose it. */
+    if (memberInfo != ZR_NULL && !memberInfo->isStatic &&
+        memberInfo->callBindingLocationKind == ZR_CALL_BINDING_RELOCATION_VM_MODULE)
+        return ZR_TRUE;
     if (memberInfo == ZR_NULL ||
         (memberInfo->callBindingLocationKind != ZR_CALL_BINDING_RELOCATION_VM_MODULE &&
          !compiler_native_call_binding_is_provider_contract(&memberInfo->callBindingFact) &&
@@ -314,6 +350,9 @@ TZrBool compiler_record_known_call_binding(SZrCompilerState *cs,
     if (!reserve_member_slot_get_cache(cs, ZR_PARSER_MEMBER_ID_NONE, memberInfo,
                                       argumentCount, &cacheIndex, location)) return ZR_FALSE;
     cs->currentFunction->callSiteCaches[cacheIndex].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_KNOWN_CALL;
+    /* An explicitly selected super meta method is loaded as a function
+     * constant. Its invocation uses CALL, even though the declaration is @call. */
+    cs->currentFunction->callSiteCaches[cacheIndex].binding.contract.operation = ZR_CALL_BINDING_OPERATION_CALL;
     return ZR_TRUE;
 }
 

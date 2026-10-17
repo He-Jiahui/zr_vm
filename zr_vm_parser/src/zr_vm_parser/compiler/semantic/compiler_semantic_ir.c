@@ -2267,7 +2267,10 @@ TZrBool compiler_semantic_ir_lower_store(SZrCompilerState *cs,
     const SZrSemanticIrInstruction *instruction;
     EZrInstructionCode opcode;
 
-    if (cs != ZR_NULL && cs->preSemanticIrCfgTerminated) {
+    if ((cs != ZR_NULL && cs->preSemanticIrCfgTerminated) ||
+        (compiler_semantic_ir_find_slot(cs, stackSlot) == ZR_NULL &&
+         compiler_semantic_ir_has_untyped_local_legacy_fallback(cs, stackSlot))) {
+        /* Match lower_load: an untyped local has no canonical place to store. */
         emit_instruction(
                 cs,
                 create_instruction_1(

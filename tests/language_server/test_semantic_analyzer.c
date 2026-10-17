@@ -4692,6 +4692,7 @@ int main(void) {
 
     test_semantic_analyzer_records_using_cleanup_and_template_segments(state);
     test_semantic_analyzer_source_metadata_survives_cached_and_forced_analysis(state);
+    test_semantic_analyzer_import_target_change_invalidates_cache(state);
     test_semantic_analyzer_nested_source_metadata_is_complete(state);
     TEST_DIVIDER();
     test_semantic_analyzer_records_owned_field_cleanup_metadata(state);

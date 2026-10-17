@@ -1126,7 +1126,7 @@ static void test_aot_c_generated_shared_library_compiles_meta_value_access_bound
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_unsupported_meta_value_access"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_UnsupportedMetaValueAccess(state,"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "META_GET"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "SUPER_META_SET_STATIC_CACHED"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_bound_meta_set_cached"));
     TEST_ASSERT_NULL(strstr(generatedCText, "const char *zr_aot_opcode_name"));
     TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_primary"));
     TEST_ASSERT_NULL(strstr(generatedCText, "SZrTypeValue *zr_aot_secondary"));
@@ -1135,10 +1135,10 @@ static void test_aot_c_generated_shared_library_compiles_meta_value_access_bound
             strstr(generatedCText, "ZrCore_Debug_RunError(state, \"unsupported AOT meta value access: %s\""));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_MetaGet(state, &frame"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_MetaSet(state, &frame"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_MetaGetCached(state, &frame"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_MetaSetCached(state, &frame"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_MetaGetStaticCached(state, &frame"));
-    TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_MetaSetStaticCached(state, &frame"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_MetaGetCached(state, &frame, 0, 1, 2)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_MetaSetCached(state, &frame, 1, 0, 3)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_MetaGetStaticCached(state, &frame, 0, 1, 4)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_MetaSetStaticCached(state, &frame, 1, 0, 5)"));
     free(generatedCText);
 
     snprintf(command,

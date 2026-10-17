@@ -266,7 +266,9 @@ static void test_aot_c_type_layout_descriptor_preserves_canonical_identity_and_m
 /* 检查帧别名保留寻址信息且不重复执行生命周期处理。 */
 static void test_aot_c_frame_alias_preserves_addressing_without_duplicate_lifecycle(void) {
     static const char *const execIrNeedles[] = {
-            "destinationLayout->reserved0 = sourceLayout->reserved0;",
+            "destinationLayout->reserved0 =\n"
+            "                    sourceLayout->reserved0 &\n"
+            "                    (TZrUInt16)~ZR_FUNCTION_FRAME_SLOT_FLAG_DIRECT_VALUE;",
     };
     static const char *const cleanupNeedles[] = {
             "layout->reserved0 & ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS",

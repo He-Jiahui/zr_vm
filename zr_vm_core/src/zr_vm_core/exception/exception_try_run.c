@@ -52,6 +52,7 @@ void ZrCore_Exception_RestoreLocalTryRunScopes(SZrState *state) {
 EZrThreadStatus ZrCore_Exception_TryRun(
         SZrState *state, FZrTryFunction tryFunction, TZrPtr arguments) {
     const TZrUInt32 prevNestedNativeCalls = state->nestedNativeCalls;
+    const TZrUInt32 prevNestedNativeCallYieldFlag = state->nestedNativeCallYieldFlag;
     volatile TZrBool callbackReturnedNormally = ZR_FALSE;
     /* The recovery status changes after setjmp; keep the containing automatic
      * object volatile as well so its saved fields remain defined after longjmp. */
@@ -82,6 +83,7 @@ EZrThreadStatus ZrCore_Exception_TryRun(
     });
     state->exceptionRecoverPoint = context.recoverPoint.previous;
     state->nestedNativeCalls = prevNestedNativeCalls;
+    state->nestedNativeCallYieldFlag = prevNestedNativeCallYieldFlag;
 /* 不再次释放域锁；本地Throw已恢复scopes，旧转发路径无本地锁租约 */
     if (!callbackReturnedNormally) {
         /* Local Throw already restored GC scopes before unwinding. Catch only

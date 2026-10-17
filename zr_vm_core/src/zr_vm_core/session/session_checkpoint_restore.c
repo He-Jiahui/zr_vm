@@ -22,7 +22,11 @@ void checkpoint_commit_restore_plan(
     for (index = 0u; index < ZR_META_ENUM_MAX; index++) {
         state->global->metaFunctionName[index] = roots.metaFunctionNames[index];
     }
-    memset(state->global->stringHashApiCache, 0, sizeof(state->global->stringHashApiCache));
+    /* API string-cache slots use the permanent OOM string as their empty
+     * sentinel; CreateTryHitCache intentionally expects every slot populated. */
+    for (TZrSize bucket = 0u; bucket < ZR_GLOBAL_API_STRING_CACHE_BUCKET_COUNT; ++bucket)
+        for (TZrSize slot = 0u; slot < ZR_GLOBAL_API_STRING_CACHE_BUCKET_DEPTH; ++slot)
+            state->global->stringHashApiCache[bucket][slot] = state->global->memoryErrorMessage;
     memset(state->global->stringConcatPairCache, 0, sizeof(state->global->stringConcatPairCache));
 
     for (index = 0u; index < checkpoint->objectCount; index++) {
@@ -292,7 +296,12 @@ void checkpoint_commit_restore_plan(
             object->superArrayRawIntDirty = snapshot->rawIntDirty;
         } else if (snapshot->type == ZR_RAW_OBJECT_TYPE_CLOSURE) {
             SZrClosure *closure = (SZrClosure *)raw;
-            if (!closure->super.isNative) {
+            if (closure->super.isNative) {
+                ((SZrClosureNative *)raw)->nativeBindingOwnerPrototype = prepared->nativeBindingOwner;
+                if (prepared->nativeBindingOwner != ZR_NULL)
+                    ZrCore_RawObject_Barrier(state, raw,
+                            ZR_CAST_RAW_OBJECT_AS_SUPER(prepared->nativeBindingOwner));
+            } else {
                 closure->function = prepared->closureFunction;
                 if (closure->function != ZR_NULL) {
                     ZrCore_RawObject_Barrier(state, raw,

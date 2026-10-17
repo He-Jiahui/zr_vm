@@ -431,6 +431,75 @@ static const TZrChar *semantic_display_passing_prefix(
     }
 }
 
+/* A declaration can have a stable symbol before its callable type is known.
+ * Keep its source shape for editor display without publishing a callable
+ * contract. Only resolved annotation facts may supply types in this path. */
+static TZrBool semantic_display_partial_type(const SZrSemanticContext *context,
+        const SZrType *annotation, TZrChar *buffer, TZrSize bufferSize) {
+    TZrTypeId typeId = ZR_SEMANTIC_ID_INVALID;
+    if (annotation != ZR_NULL && annotation->name != ZR_NULL) {
+        for (TZrSize index = 0u; index < context->referenceFacts.length; ++index) {
+            const SZrSemanticReferenceFact *fact = ZrCore_Array_Get(
+                    (SZrArray *)&context->referenceFacts, index);
+            if (fact->kind == ZR_SEMANTIC_REFERENCE_TYPE && fact->node == annotation->name) {
+                if (!fact->isResolved || fact->typeId == ZR_SEMANTIC_ID_INVALID ||
+                    (typeId != ZR_SEMANTIC_ID_INVALID && typeId != fact->typeId)) {
+                    typeId = ZR_SEMANTIC_ID_INVALID;
+                    break;
+                }
+                typeId = fact->typeId;
+            }
+        }
+    }
+    if (typeId != ZR_SEMANTIC_ID_INVALID &&
+        semantic_display_declared_type(context, annotation, typeId, buffer, bufferSize))
+        return ZR_TRUE;
+    int length = snprintf(buffer, bufferSize, "cannot infer exact type");
+    return length >= 0 && (TZrSize)length < bufferSize;
+}
+
+static SZrString *semantic_display_partial_callable_signature(SZrSemanticContext *context,
+        const SZrSemanticSymbolRecord *symbol) {
+    const SZrAstNodeArray *parameters = semantic_display_callable_parameters(symbol->astNode);
+    TZrChar buffer[1024] = {0}, typeBuffer[256];
+    TZrSize offset = 0u;
+    static const TZrChar *passingPrefixes[] = {
+        "", "in ", "ref ", "ref readonly ", "scoped ref ", "scoped ref readonly ", "out "
+    };
+    if (symbol->astNode->type != ZR_AST_FUNCTION_DECLARATION ||
+        (symbol->astNode->data.functionDeclaration.isAsync &&
+         !semantic_display_append(buffer, sizeof(buffer), &offset, "async ")) ||
+        !semantic_display_append(buffer, sizeof(buffer), &offset,
+                                 ZrCore_String_GetNativeString(symbol->name)) ||
+        !semantic_display_append_generic_clause(buffer, sizeof(buffer), &offset,
+                semantic_display_callable_generic(symbol->astNode)) ||
+        !semantic_display_append(buffer, sizeof(buffer), &offset, "("))
+        return ZR_NULL;
+    for (TZrSize index = 0u; parameters != ZR_NULL && index < parameters->count; ++index) {
+        const SZrAstNode *node = parameters->nodes[index];
+        const SZrParameter *parameter;
+        if (node == ZR_NULL || node->type != ZR_AST_PARAMETER) return ZR_NULL;
+        parameter = &node->data.parameter;
+        if (parameter->name == ZR_NULL || parameter->name->name == ZR_NULL ||
+            (TZrUInt32)parameter->sourcePassingForm >= ZR_ARRAY_COUNT(passingPrefixes) ||
+            !semantic_display_partial_type(context, parameter->typeInfo, typeBuffer, sizeof(typeBuffer)) ||
+            (index > 0u && !semantic_display_append(buffer, sizeof(buffer), &offset, ", ")) ||
+            !semantic_display_append(buffer, sizeof(buffer), &offset,
+                                     ZrCore_String_GetNativeString(parameter->name->name)) ||
+            !semantic_display_append(buffer, sizeof(buffer), &offset, ": ") ||
+            !semantic_display_append(buffer, sizeof(buffer), &offset,
+                                     passingPrefixes[parameter->sourcePassingForm]) ||
+            !semantic_display_append(buffer, sizeof(buffer), &offset, typeBuffer))
+            return ZR_NULL;
+    }
+    if (!semantic_display_partial_type(context,
+                semantic_display_callable_return_type(symbol->astNode), typeBuffer, sizeof(typeBuffer)) ||
+        !semantic_display_append(buffer, sizeof(buffer), &offset, "): ") ||
+        !semantic_display_append(buffer, sizeof(buffer), &offset, typeBuffer))
+        return ZR_NULL;
+    return ZrCore_String_Create(context->state, buffer, offset);
+}
+
 /**
  * @brief 将函数规范调用契约与关联声明名称组合成供查询展示的 VM 签名。
  * @pre context/state、AST 与引用事实保持有效；关联节点应为受支持的函数、extern 或方法声明。
@@ -460,10 +529,11 @@ SZrString *ZrParser_SemanticDisplay_CreateCallableSignature(
     }
     symbol = ZrParser_Semantic_FindSymbolById(context, symbolId);
     if (symbol == ZR_NULL || symbol->kind != ZR_SEMANTIC_SYMBOL_KIND_FUNCTION ||
-        symbol->name == ZR_NULL || symbol->astNode == ZR_NULL ||
-        symbol->typeId == ZR_SEMANTIC_ID_INVALID) {
+        symbol->name == ZR_NULL || symbol->astNode == ZR_NULL) {
         return ZR_NULL;
     }
+    if (symbol->typeId == ZR_SEMANTIC_ID_INVALID)
+        return semantic_display_partial_callable_signature(context, symbol);
     functionType = ZrParser_CanonicalType_Find(context, symbol->typeId);
     if (functionType == ZR_NULL || functionType->kind != ZR_CANONICAL_TYPE_FUNCTION ||
         (TZrInt32)functionType->data.function.receiverEffect <

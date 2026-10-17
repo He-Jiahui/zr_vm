@@ -656,7 +656,7 @@ fn native_argument_views_read_byte_arrays_by_length_and_checked_index(
             })
             .parameter(
                 "bytes",
-                "container.Array<uint>",
+                "int[4]",
                 "borrowed byte-array argument",
             )
             .return_type("int")

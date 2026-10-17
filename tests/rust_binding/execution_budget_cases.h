@@ -56,15 +56,15 @@ static void execution_budget_fixture_start(ExecutionBudgetFixture *fixture, cons
     static const TZrChar *source =
             "let host = import(\"budget_host\");\n"
             "var caught: int = 0;\n"
-            "pub ping(): int { return 123; }\n"
-            "pub spin(): int { while (true) { } return 0; }\n"
-            "pub protectedSpin(): int {\n"
+            "pub fn ping(): int { return 123; }\n"
+            "pub fn spin(): int { while (true) { } return 0; }\n"
+            "pub fn protectedSpin(): int {\n"
             "  try { spin(); } catch (error) { caught = caught + 1; }\n"
             "  finally { caught = caught + 10; }\n"
             "  return 0;\n"
             "}\n"
-            "pub caughtCount(): int { return caught; }\n"
-            "pub nativeTwice(): int { host.boundary(); return host.boundary(); }\n"
+            "pub fn caughtCount(): int { return caught; }\n"
+            "pub fn nativeTwice(): int { host.boundary(); return host.boundary(); }\n"
             "return 0;\n";
     TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
     TZrChar mainPath[ZR_TESTS_PATH_MAX];
@@ -139,6 +139,9 @@ static void test_rust_binding_execution_budget_instruction_boundary_and_recovery
     TZrUInt64 limit;
 
     execution_budget_fixture_start(&fixture, "execution_budget_instruction");
+    /* The first lookup can initialize the module. Measure the retained export
+     * itself so the exact and shortened budgets cover the same work. */
+    execution_budget_assert_unbounded_int(&fixture, "ping", 123);
     TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
                           ZrRustBinding_ProjectSession_CallModuleExportWithBudget(
                                   fixture.session, "main", "ping", ZR_NULL, 0, &budget, &usage, &result));
@@ -182,6 +185,7 @@ static void test_rust_binding_execution_budget_deadline_and_native_cancel(void) 
     ZrRustBindingValue *result = ZR_NULL;
 
     execution_budget_fixture_start(&fixture, "execution_budget_native");
+    execution_budget_assert_unbounded_int(&fixture, "ping", 123);
     budget.hasInstructionLimit = ZR_TRUE;
     TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
                           ZrRustBinding_ProjectSession_CallModuleExportWithBudget(

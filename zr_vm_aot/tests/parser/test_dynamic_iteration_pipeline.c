@@ -103,7 +103,7 @@ static char *read_text_file_owned(const TZrChar *path) {
 // 从动态容器 foreach 源码建立可供 SemIR、ExecBC 和后端共享的编译输入。
 static SZrFunction *compile_dynamic_foreach_fixture(SZrState *state) {
     const char *source =
-            "fn makeValues() {\n"
+            "fn makeValues(): object {\n"
             "    return [1, 2, 3];\n"
             "}\n"
             "var values = makeValues();\n"

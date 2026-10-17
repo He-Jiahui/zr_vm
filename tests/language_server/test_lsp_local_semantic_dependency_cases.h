@@ -62,8 +62,7 @@ static TZrBool local_dependency_has_closure_identifier(
     return ZR_FALSE;
 }
 
-/* 与闭包标识符检查配合确认引用指向被改声明；此 helper 只核对目标，不区分引用种类。
- * TODO: 两次扫描未绑定同一 AST 节点；若 fixture 增加其他闭包或调用，可能误证值依赖，需关联引用类别与范围。 */
+/* 函数值读取必须指向被改声明；声明自身或 CALL 事实不证明值引用依赖。 */
 static TZrBool local_dependency_has_resolved_reference(
         const SZrSemanticContext *semanticContext,
         const SZrFileRange *declarationRange) {
@@ -79,6 +78,7 @@ static TZrBool local_dependency_has_resolved_reference(
                         (SZrArray *)&semanticContext->referenceFacts,
                         index);
         if (fact != ZR_NULL && fact->isResolved &&
+            fact->kind == ZR_SEMANTIC_REFERENCE_READ &&
             local_dependency_ranges_equal(
                     &fact->declarationRange,
                     declarationRange)) {

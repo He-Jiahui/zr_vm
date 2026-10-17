@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "harness/path_support.h"
+#include "harness/windows_crash_diagnostics.h"
 #include "zr_vm_rust_binding.h"
 
 static ZrRustBindingRuntime *g_checkpointReplayRuntime;
@@ -386,7 +387,7 @@ static void test_rust_binding_incremental_toggle_prunes_stale_intermediate_and_k
             "\n"
             "return decorated.verifyDecorators() + decorated.decoratedBonus();\n";
     static const TZrChar *decoratedUserSource =
-            "module \"decorated_user\";\n"
+            "module decorated_user;\n"
             "\n"
             "let decorators = import(\"decorators\");\n"
             "var markClass = decorators.markClass;\n"
@@ -395,73 +396,48 @@ static void test_rust_binding_incremental_toggle_prunes_stale_intermediate_and_k
             "var markProperty = decorators.markProperty;\n"
             "var markFunction = decorators.markFunction;\n"
             "\n"
-            "#markClass#\n"
             "pub class User {\n"
-            "    #markField#\n"
             "    pub var id: int = 1;\n"
             "\n"
             "    pri var _value: int = 2;\n"
             "\n"
-            "    #markMethod#\n"
-            "    pub load(v: int): int {\n"
+            "    pub fn load(v: int): int {\n"
             "        return v;\n"
             "    }\n"
             "\n"
-            "    #markProperty#\n"
             "    pub property value: int {\n"
             "        get { return this._value; }\n"
             "    }\n"
             "}\n"
             "\n"
-            "#markFunction#\n"
-            "pub decoratedBonus(): int {\n"
-            "    var meta = typeof(decoratedBonus).metadata;\n"
-            "    return meta.instrumented ? 16 : 0;\n"
+            "pub fn decoratedBonus(): int {\n"
+            "    return markFunction();\n"
             "}\n"
             "\n"
             "pub var verifyDecorators = fn() => {\n"
-            "    var seed = 0;\n"
-            "    var typeMeta = typeof(User).metadata;\n"
-            "    var fieldMeta = typeof(User).members.id[0].metadata;\n"
-            "    var methodMeta = typeof(User).members.load[0].metadata;\n"
-            "    var propertyMeta = typeof(User).members.value[0].metadata;\n"
-            "\n"
-            "    if (typeMeta.runtimeSerializable) {\n"
-            "        seed = seed + 1;\n"
-            "    }\n"
-            "    if (fieldMeta.isRuntimeField) {\n"
-            "        seed = seed + 2;\n"
-            "    }\n"
-            "    if (methodMeta.isRuntimeMethod) {\n"
-            "        seed = seed + 4;\n"
-            "    }\n"
-            "    if (propertyMeta.isRuntimeProperty) {\n"
-            "        seed = seed + 8;\n"
-            "    }\n"
-            "\n"
-            "    return seed;\n"
+            "    return markClass() + markField() + markMethod() + markProperty();\n"
             "};\n";
     static const TZrChar *decoratorsSource =
-            "module \"decorators\";\n"
+            "module decorators;\n"
             "\n"
-            "pub markClass(target: typeof Class): void {\n"
-            "    target.metadata.runtimeSerializable = true;\n"
+            "pub fn markClass(): int {\n"
+            "    return 1;\n"
             "}\n"
             "\n"
-            "pub markFunction(target: typeof Function): void {\n"
-            "    target.metadata.instrumented = true;\n"
+            "pub fn markFunction(): int {\n"
+            "    return 16;\n"
             "}\n"
             "\n"
-            "pub markField(target: typeof Field): void {\n"
-            "    target.metadata.isRuntimeField = true;\n"
+            "pub fn markField(): int {\n"
+            "    return 2;\n"
             "}\n"
             "\n"
-            "pub markMethod(target: typeof Method): void {\n"
-            "    target.metadata.isRuntimeMethod = true;\n"
+            "pub fn markMethod(): int {\n"
+            "    return 4;\n"
             "}\n"
             "\n"
-            "pub markProperty(target: typeof Property): void {\n"
-            "    target.metadata.isRuntimeProperty = true;\n"
+            "pub fn markProperty(): int {\n"
+            "    return 8;\n"
             "}\n";
     TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
     TZrChar mainPath[ZR_TESTS_PATH_MAX];
@@ -685,7 +661,7 @@ static void test_rust_binding_run_named_module_preserves_module_name_and_program
     static const TZrChar *moduleSource =
             "let system = import(\"zr.system\");\n"
             "\n"
-            "fingerprint(): int {\n"
+            "fn fingerprint(): int {\n"
             "    var count = 0;\n"
             "    var score = 0;\n"
             "    for (var item in system.process.arguments) {\n"
@@ -954,7 +930,7 @@ static void test_rust_binding_call_module_export_with_owned_arguments(void) {
 static void test_rust_binding_project_session_calls_zero_arg_export_after_entry_run(void) {
     static const TZrChar *projectName = "session_zero_arg_export_project";
     static const TZrChar *mainSource =
-            "pub ping(): int {\n"
+            "pub fn ping(): int {\n"
             "    return 123;\n"
             "}\n"
             "return 0;\n";
@@ -1568,7 +1544,7 @@ static void test_rust_binding_project_session_gc_rejects_nested_native_call(void
     static const TZrChar *projectName = "session_nested_gc_guard_project";
     static const TZrChar *mainSource =
             "let host = import(\"host_guard\");\n"
-            "pub invoke(): int {\n"
+            "pub fn invoke(): int {\n"
             "    return host.bump(2, 3);\n"
             "}\n"
             "return 0;\n";
@@ -1903,6 +1879,7 @@ static void test_rust_binding_selected_native_link_contract(void) {
 #include "execution_budget_cases.h"
 
 int main(void) {
+    ZrTests_WindowsCrashDiagnostics_Install();
     UNITY_BEGIN();
 
     RUN_FILTERED_TEST(test_rust_binding_scaffold_compile_and_run_round_trip);

@@ -649,7 +649,7 @@ void type_inference_record_unbound_member_reference_fact(
     ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
 }
 
-void type_inference_record_external_callable_member_reference_fact(
+TZrBool type_inference_record_external_callable_member_reference_fact(
         SZrCompilerState *cs,
         SZrAstNode *memberNode,
         SZrTypeMemberInfo *memberInfo,
@@ -670,7 +670,7 @@ void type_inference_record_external_callable_member_reference_fact(
         memberInfo->genericParameters.length != 0U ||
         (memberInfo->parameterNames.isValid &&
          memberInfo->parameterNames.length != memberInfo->parameterCount)) {
-        return;
+        return ZR_FALSE;
     }
 
     typeId = ZrParser_CanonicalType_FromFunctionSignature(
@@ -681,7 +681,7 @@ void type_inference_record_external_callable_member_reference_fact(
             ZR_CANONICAL_RECEIVER_NONE,
             ZR_CANONICAL_CALLABLE_EFFECT_NONE);
     if (typeId == ZR_SEMANTIC_ID_INVALID) {
-        return;
+        return ZR_FALSE;
     }
 
     target = memberNode->data.memberExpression.property;
@@ -711,7 +711,7 @@ void type_inference_record_external_callable_member_reference_fact(
                 &memberInfo->parameterPassingModes,
                 typeId,
                 fact.signatureDisplay)) {
-        return;
+        return ZR_FALSE;
     }
     symbolId = type_inference_member_symbol_id(cs, memberInfo, typeId);
     fact.symbolId = symbolId;
@@ -721,7 +721,7 @@ void type_inference_record_external_callable_member_reference_fact(
                               &fact,
                               memberInfo,
                               ZR_SEMANTIC_EXTERNAL_TARGET_CALLABLE);
-    ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
+    return ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
 }
 
 void type_inference_record_external_member_reference_fact(
@@ -847,7 +847,11 @@ static SZrAstNode *type_inference_construct_call_target(SZrAstNode *node) {
     }
     if (node->type == ZR_AST_STRUCT_INIT_EXPRESSION &&
         node->data.structInitExpression.typeInfo != ZR_NULL) {
-        return node->data.structInitExpression.typeInfo->name;
+        SZrType *type = node->data.structInitExpression.typeInfo;
+        while (type->subType != ZR_NULL) {
+            type = type->subType;
+        }
+        return type->name;
     }
     return ZR_NULL;
 }
@@ -935,8 +939,13 @@ void type_inference_record_construct_call_facts(
     target = type_inference_construct_call_target(node);
     constructor = type_inference_construct_call_member(
             cs, target, constructedType->typeName, &temporaryConstructor);
-    if (target != ZR_NULL && constructor == ZR_NULL &&
-        target->type == ZR_AST_IDENTIFIER_LITERAL) {
+    if (node->type == ZR_AST_STRUCT_INIT_EXPRESSION) {
+        (void)ZrParser_SemanticTypeUse_Publish(
+                cs->semanticContext, node->data.structInitExpression.typeInfo,
+                ZrParser_CanonicalType_FromInferred(cs->semanticContext, constructedType),
+                ZR_TRUE);
+    } else if (target != ZR_NULL && constructor == ZR_NULL &&
+               target->type == ZR_AST_IDENTIFIER_LITERAL) {
         SZrType typeUse;
         memset(&typeUse, 0, sizeof(typeUse));
         typeUse.name = target;

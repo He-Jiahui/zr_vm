@@ -204,7 +204,7 @@ static void test_metadata_runtime_reads_typespec_layout_binding_view(void) {
     SZrMetadataRuntime *runtime;
     SZrMetadataRuntimeTypeSpecLayoutBindingView view;
     TZrByte signaturePayload[sizeof(genericInstanceSignature) + sizeof(baseTypeDefSignature)] = {0};
-    TZrByte bytes[ZR_ZRP_METADATA_HEADER_SIZE +
+    _Alignas(8) TZrByte bytes[1u + ZR_ZRP_METADATA_HEADER_SIZE +
                   sizeof(SZrZrpMetadataTypeSpecRow) +
                   sizeof(signaturePayload)] = {0};
 
@@ -221,8 +221,8 @@ static void test_metadata_runtime_reads_typespec_layout_binding_view(void) {
     registeredLayouts[42] = &typeSpecLayout;
     registration.typeLayouts = registeredLayouts;
     registration.typeLayoutCount = 43u;
-    write_typespec_layout_metadata(bytes,
-                                   sizeof(bytes),
+    write_typespec_layout_metadata(bytes + 1u,
+                                   sizeof(bytes) - 1u,
                                    signaturePayload,
                                    (TZrUInt32)sizeof(genericInstanceSignature),
                                    (TZrUInt32)sizeof(signaturePayload),
@@ -240,7 +240,7 @@ static void test_metadata_runtime_reads_typespec_layout_binding_view(void) {
     TEST_ASSERT_FALSE(ZrCore_MetadataRuntime_ReadTypeSpecLayoutBindingView(
             runtime, TEST_TYPE_SPEC_TOKEN, &view));
 
-    TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_AttachZrpMetadata(runtime, bytes, sizeof(bytes)));
+    TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_AttachZrpMetadata(runtime, bytes + 1u, sizeof(bytes) - 1u));
     TEST_ASSERT_TRUE(ZrCore_MetadataRuntime_ReadTypeSpecLayoutBindingView(
             runtime, TEST_TYPE_SPEC_TOKEN, &view));
 

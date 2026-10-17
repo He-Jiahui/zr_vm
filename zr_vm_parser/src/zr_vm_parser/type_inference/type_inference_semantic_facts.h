@@ -6,6 +6,8 @@
 
 void type_inference_record_identifier_reference_fact(
         SZrCompilerState *cs, SZrAstNode *node, const SZrTypeBinding *binding);
+void type_inference_record_function_value_reference_fact(
+        SZrCompilerState *cs, SZrAstNode *node, const SZrFunctionTypeInfo *function);
 #include "zr_vm_parser/semantic_facts.h"
 
 typedef struct SZrResolvedCallSignature SZrResolvedCallSignature;
@@ -103,7 +105,7 @@ void type_inference_record_unbound_member_reference_fact(
         SZrAstNode *memberNode,
         SZrTypeMemberInfo *memberInfo);
 
-void type_inference_record_external_callable_member_reference_fact(
+TZrBool type_inference_record_external_callable_member_reference_fact(
         SZrCompilerState *cs,
         SZrAstNode *memberNode,
         SZrTypeMemberInfo *memberInfo,

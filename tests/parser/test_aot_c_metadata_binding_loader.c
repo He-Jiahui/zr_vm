@@ -375,7 +375,7 @@ static void assert_generated_call_binding_rows_backend(const char *source, const
              ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              backend == ZR_AOT_BACKEND_KIND_C ? ZR_VM_TESTS_C_COMPILER : "clang",
-             backend == ZR_AOT_BACKEND_KIND_C ? "-std=c11" : "-mllvm -opaque-pointers",
+             backend == ZR_AOT_BACKEND_KIND_C ? "-std=c11" : ZR_VM_TESTS_LLVM_POINTER_FLAGS,
              ZR_VM_TESTS_REPO_ROOT,
              ZR_VM_TESTS_REPO_ROOT,
              ZR_VM_TESTS_REPO_ROOT,

@@ -382,6 +382,10 @@ TZrBool compiler_semantic_cfg_try_finally_is_supported(
              statement->catchClauses->count == 0U) &&
             compiler_semantic_cfg_finally_protected_flow(
                     cs, statement->block, &flowInfo) &&
+            /* Declared callable returns use the legacy cleanup path and do
+             * not publish a pending return into the disposable Semantic IR. */
+            (cs->currentFunctionNode == ZR_NULL ||
+             (flowInfo.flow & ZR_COMPILER_SEMANTIC_FINALLY_FLOW_RETURN) == 0U) &&
             compiler_semantic_cfg_finally_loop_target_is_supported(
                     cs, flowInfo.flow) &&
             (flowInfo.exceptionalSiteCount == 0U ||
