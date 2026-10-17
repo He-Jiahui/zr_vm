@@ -1289,3 +1289,750 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+# @unit SourceKind [type]
+# ## Summary
+# 把输入划分为 Zr 文件、宿主字面量和当前文档三类，使消费者按来源解释 finding 坐标。
+# ## Fields
+# ZR_SOURCE 对应 zrSource；EMBEDDED_ZR_FIXTURE 对应 embeddedZrFixture；CURRENT_DOCUMENTATION 对应 currentDocumentation。
+# ## Constraints and lifecycle
+# str Enum 的 value 是 JSON 协议值；不是文件格式探测器或信任级别。fixture 与仓库模式通过不同路径规则选择它。
+# 枚举及成员不持有待释放资源；类本身不验证传入路径或文本。
+# ## References
+# scripts/syntax_migration_inventory.py:19
+# scripts/syntax_migration_inventory.py:245
+# scripts/syntax_migration_inventory.py:1159
+# tests/scripts/test_syntax_migration_inventory.py:104
+
+# @unit MigrationClassification [type]
+# ## Summary
+# 记录某种旧写法的迁移责任和可自动化程度，供排期和报告统计使用。
+# ## Fields
+# machineApplicable、maybeIncorrect、requiresReview、blocked、targetNotPromoted 为五种对外值。
+# ## Constraints and lifecycle
+# 分类是规则表给出的政策数据，不会触发改写，也不证明语义绑定、所有权或目标计划已验证。
+# 五个字符串值构成报告协议；maybeIncorrect 即使当前没有规则使用，也保留零计数。
+# ## References
+# scripts/syntax_migration_inventory.py:26
+# scripts/syntax_migration_inventory.py:259
+# scripts/syntax_migration_inventory.py:411
+# tests/scripts/test_syntax_migration_inventory.py:114
+
+# @unit SourcePosition [type]
+# ## Summary
+# 保存扫描文本的一基字符行列，连接片段定位、宿主映射和 JSON 报告。
+# ## Fields
+# line 与 column 共同指向同一文本中的字符边界；尾后边界也可表达。
+# ## Constraints and lifecycle
+# frozen dataclass 只限制通常的属性重赋值，不检查 line/column 为正数；构造者须遵守坐标域。
+# 列是 Python str 字符计数，不是 UTF-8 字节或 LSP UTF-16 单位；read_text 换行规范化后的文本才是定位对象。
+# ## References
+# scripts/syntax_migration_inventory.py:35
+# scripts/syntax_migration_inventory.py:283
+# scripts/syntax_migration_inventory.py:882
+# tests/scripts/test_syntax_migration_embedded_positions.py:21
+
+# @unit SourceRange [type]
+# ## Summary
+# 将 finding 的起点和尾后终点绑定为同一来源文本中的范围。
+# ## Fields
+# start 与 end 都是 SourcePosition；end 为尾后边界。
+# ## Constraints and lifecycle
+# 构造者负责两端属于同一文本并满足起点不晚于终点；自动构造器不检查排序或边界。
+# 嵌入片段的两端分别映射回宿主后再组成范围，不能只移动起点或假定转义前后长度相同。
+# ## References
+# scripts/syntax_migration_inventory.py:42
+# scripts/syntax_migration_inventory.py:299
+# scripts/syntax_migration_inventory.py:881
+# tests/scripts/test_syntax_migration_embedded_positions.py:21
+
+# @unit ScannedFile [type]
+# ## Summary
+# 记录实际完成扫描的输入，即使没有 finding 也让消费者看到候选覆盖边界。
+# ## Fields
+# file 与 source_kind 必须解释同一个输入；扫描集合不等于全部跟踪文件。
+# ## Constraints and lifecycle
+# file 是构造方给出的相对路径字符串，source_kind 是同次分派选择的来源；此记录不自行读取文件。
+# frozen 记录没有文件句柄；被缓存报告持有时可独立保留，不保证磁盘文件以后仍存在或未变。
+# ## References
+# scripts/syntax_migration_inventory.py:49
+# scripts/syntax_migration_inventory.py:938
+# scripts/syntax_migration_inventory.py:1202
+# tests/scripts/test_syntax_migration_inventory.py:112
+
+# @unit InventoryFinding [type]
+# ## Summary
+# 把旧形式的位置、迁移分类和责任计划作为一个不可拆开的报告条目交付。
+# ## Fields
+# file/source_kind/source_range 共同标识来源；legacy_form 对应规则键；classification/target_plan/reason 来自同一 MigrationRule。
+# ## Constraints and lifecycle
+# 字段一致性由 _append_finding 和规则表保证；直接构造不验证范围、枚举或理由。
+# 条目持有字符串和坐标值，不借用已打开文件；它描述扫描时文本，不随磁盘或规则表后续变化更新。
+# ## References
+# scripts/syntax_migration_inventory.py:56
+# scripts/syntax_migration_inventory.py:356
+# scripts/syntax_migration_inventory.py:1205
+# tests/scripts/test_syntax_migration_inventory.py:319
+
+# @unit InventoryExclusion [type]
+# ## Summary
+# 为已选中却未扫描的候选保留明确理由，供消费者与 scanned_files 对账。
+# ## Fields
+# file 指向候选相对路径；reason 是稳定的排除类别。
+# ## Constraints and lifecycle
+# 排除理由来自路径规则或扫描时缺失；该记录不证明输入由生成器产生、没有维护价值或可安全删除。
+# 记录只持有路径和理由字符串；与实际文件的生命周期无所有权关系。
+# ## References
+# scripts/syntax_migration_inventory.py:68
+# scripts/syntax_migration_inventory.py:1136
+# scripts/syntax_migration_inventory.py:1187
+# scripts/syntax_migration_inventory.py:1199
+# tests/scripts/test_syntax_migration_inventory.py:443
+
+# @unit InventoryAllowlistedFinding [type]
+# ## Summary
+# 单列允许存在于负向测试中的旧写法，保留出现位置而不计入待迁移 findings。
+# ## Fields
+# line 保留本次实际行号；column 与 legacy_form 参与 allowlist 查找；reason 来自命中的表项。
+# ## Constraints and lifecycle
+# 匹配键仅为 file、起点 column、legacy_form，不含 line；插入行不会改变匹配，但同文件同列同形式的其他出现也可能匹配。
+# 这是静态路径表分类，不执行负向测试或证明某个输入已经被 parser 拒绝。
+# ## References
+# scripts/syntax_migration_inventory.py:75
+# scripts/syntax_migration_inventory.py:980
+# scripts/syntax_migration_inventory.py:1206
+# tests/scripts/test_syntax_migration_inventory.py:428
+
+# @unit InventoryReviewedCurrentFinding [type]
+# ## Summary
+# 保留词面似旧形式但被政策集合列为当前候选的出现，避免混入待迁移列表。
+# ## Fields
+# syntax_form 来自原 legacy_form；source_kind/source_range 仍解释该次输入；reason 使用固定分类理由。
+# ## Constraints and lifecycle
+# 此分支按形式名集合归类，不在扫描时调用 parser 或语义绑定器；reason 文本不是每个片段均已独立验证的证明。
+# 来源与范围沿用原 finding；记录不改写输入，也不延长任何文件句柄生命周期。
+# ## References
+# scripts/syntax_migration_inventory.py:85
+# scripts/syntax_migration_inventory.py:1053
+# scripts/syntax_migration_inventory.py:1224
+# tests/scripts/test_syntax_migration_inventory.py:347
+
+# @unit MigrationRule [type]
+# ## Summary
+# 为识别出的旧形式提供一组稳定的分类、目标计划和理由，集中迁移政策。
+# ## Fields
+# classification、target_plan、reason 必须作为同一政策合同一起使用。
+# ## Constraints and lifecycle
+# 规则值是 frozen 记录，但保存它的字典可变；扫描期间调用方应保持规则和百分号映射一致且不并发改写。
+# 规则不执行目标计划或自动转换；缺少所需规则键会使 _append_finding 抛 KeyError。
+# ## References
+# scripts/syntax_migration_inventory.py:95
+# scripts/syntax_migration_inventory.py:367
+# scripts/syntax_migration_inventory.py:411
+# tests/scripts/test_syntax_migration_inventory.py:319
+
+# @unit InventoryReport [type]
+# ## Summary
+# 持有一次构造结果的扫描分区，供 JSON、人工文本和 fixture 合同三个投影共同消费。
+# ## Fields
+# scanned_files/exclusions 分开表示完成扫描与跳过的候选；findings、allowlisted_findings、reviewed_current_findings 表示三类出现。
+# scanner_version 与 selected_roots 是构造方声明的报告上下文，不是内容哈希或全仓一致性令牌。
+# ## Constraints and lifecycle
+# frozen 和 tuple 使通常的条目替换受限，但类型注解不做运行时校验；手工构造者必须提供相容的记录与枚举。
+# build_inventory 与 build_repository_inventory 在构造报告前负责排序、分类和分区；dataclass 自动 __init__ 只保存传入字段。投影不再扫描或重排报告元组；to_fixture_json 另将新建的 contracts 数组按形式名排序。默认 scanner_version 为1，仓库构造器显式使用3。
+# 报告只持有 Python 值；缓存可延长其进程内寿命，但不保证之后的文件内容一致。无显式 Free 或文件句柄。
+# ## References
+# scripts/syntax_migration_inventory.py:103
+# scripts/syntax_migration_inventory.py:114
+# scripts/syntax_migration_inventory.py:929
+# scripts/syntax_migration_inventory.py:1258
+# tests/scripts/test_syntax_migration_inventory.py:341
+
+# @unit InventoryReport.to_json [function]
+# ## Summary
+# 将同一报告投影为消费者依赖的 JSON 文本，保持字段协议、Unicode 文本和末尾 LF。
+# ## Parameters
+# self [in] 字段相容且在调用期间稳定的 InventoryReport；不转移其条目。
+# ## Returns
+# 返回新 str；sort_keys 只排序 JSON 对象键，数组沿用报告顺序；固定 unknownCount=0 不表示不存在未知指令或遗漏。
+# ## Constraints and lifecycle
+# 不读取输入文件或刷新缓存；枚举 value、asdict、JSON 编码及分配异常传播，self 不被修改。
+# 字符串由 Python 引用管理；输出编码及文件写入由调用方另行负责。
+# ## References
+# scripts/syntax_migration_inventory.py:114
+# scripts/syntax_migration_inventory.py:120
+# scripts/syntax_migration_inventory.py:164
+# scripts/syntax_migration_inventory.py:1282
+# tests/scripts/test_syntax_migration_inventory.py:98
+# tests/scripts/test_syntax_migration_inventory.py:341
+
+# @unit InventoryReport.to_text [function]
+# ## Summary
+# 为人工审阅展示报告规模、分类、计划和逐项位置，不重新进行扫描。
+# ## Parameters
+# self [in] 具有有效条目、枚举和坐标的报告，只读借用。
+# ## Returns
+# 返回带末尾 LF 的新 str；分类保留零项，计划名按字符串排序，条目顺序沿用报告。
+# ## Constraints and lifecycle
+# 不为 findings、allowlisted 或 reviewed-current 再做政策判断；输出只展开 findings 的逐项详情。
+# 格式化或分配异常传播；不修改报告、不打开文件，也不保证终端能够编码所有字符。
+# ## References
+# scripts/syntax_migration_inventory.py:173
+# scripts/syntax_migration_inventory.py:186
+# scripts/syntax_migration_inventory.py:191
+# scripts/syntax_migration_inventory.py:194
+# scripts/syntax_migration_inventory.py:1282
+
+# @unit InventoryReport.to_fixture_json [function]
+# ## Summary
+# 把合成 fixture 中每个旧形式的唯一分类合同序列化为稳定基线。
+# ## Parameters
+# self [in] 其 findings 用于提炼合同的报告；其他分区不进入 contracts。
+# ## Returns
+# 返回带末尾 LF 的 JSON str；同一 legacy_form 出现不同合同则抛 ValueError，不返回部分文本。
+# ## Constraints and lifecycle
+# classificationCounts 仍按 finding 出现次数统计，contracts 则按形式去重；不能把合同条数当命中数。
+# 局部字典及编码失败不改写 self 或磁盘 golden；生成文本的持有由 Python 管理。
+# ## References
+# scripts/syntax_migration_inventory.py:210
+# scripts/syntax_migration_inventory.py:218
+# scripts/syntax_migration_inventory.py:220
+# scripts/syntax_migration_inventory.py:226
+# tests/scripts/test_syntax_migration_inventory.py:331
+
+# @unit _source_kind_for [function]
+# ## Summary
+# 在合成 fixture 遍历中用后缀和相对路径目录约定决定扫描来源。
+# ## Parameters
+# path [in] 待分派 Path；此函数不打开或验证存在性。
+# relative_path [in] 相对于同一 fixture 根的路径；目录段用于 embedded/docs 约定。
+# ## Returns
+# 返回 SourceKind；不符合 .zr、embedded 中 C/C++/H、docs 中 .md 的路径返回 None。
+# ## Constraints and lifecycle
+# 后缀匹配区分大小写；不能套用仓库模式的根选择和小写后缀规则。
+# 只做路径分类，没有资源取得或输入修改；路径对象须与调用方当前遍历条目相符。
+# ## References
+# scripts/syntax_migration_inventory.py:245
+# scripts/syntax_migration_inventory.py:933
+# scripts/syntax_migration_inventory.py:934
+# tests/scripts/test_syntax_migration_inventory.py:104
+
+# @unit _classification_counts [function]
+# ## Summary
+# 为报告各投影统计每种迁移分类的出现次数，并保留零计数类别。
+# ## Parameters
+# findings [in] 可重复遍历、调用期间稳定且 classification 为已知枚举的条目序列。
+# ## Returns
+# 返回新的类别字符串到整数计数字典；不会修改条目。
+# ## Constraints and lifecycle
+# 实际依赖可迭代行为，不执行输入类型检查；未知 classification 或无效字段导致异常。
+# 计数按出现累加，不按文件或旧形式去重；没有 I/O 或共享可变状态。
+# ## References
+# scripts/syntax_migration_inventory.py:256
+# scripts/syntax_migration_inventory.py:164
+# scripts/syntax_migration_inventory.py:186
+# scripts/syntax_migration_inventory.py:226
+# tests/scripts/test_syntax_migration_inventory.py:343
+
+# @unit _target_plan_counts [function]
+# ## Summary
+# 按目标计划聚合命中次数，使机器和人工投影使用同一统计口径。
+# ## Parameters
+# findings [in] 调用期间稳定、target_plan 为可比较字符串的 finding 序列。
+# ## Returns
+# 返回按计划名字符串排序的新计数字典。
+# ## Constraints and lifecycle
+# 顺序是字符串顺序，不是计划号的数值或依赖顺序；每条出现都计数。
+# 不做目标计划晋升判断，不修改报告或文件；字段、比较和分配异常传播。
+# ## References
+# scripts/syntax_migration_inventory.py:266
+# scripts/syntax_migration_inventory.py:165
+# scripts/syntax_migration_inventory.py:191
+
+# @unit _iter_files [function]
+# ## Summary
+# 为合成 fixture 模式惰性枚举本地文件，不依赖 Git 跟踪状态。
+# ## Parameters
+# root [in] 在迭代期间保持可遍历的 fixture 根 Path。
+# ## Returns
+# 返回生成器；每次推进交付文件 Path 及相对 root 的 Path，不承诺发现顺序。
+# ## Constraints and lifecycle
+# rglob 与 is_file 决定输入边界，不能视为不可信路径隔离或普通文件所有权认证；仓库模式不用此生成器。
+# 推进时才访问文件系统，相关异常可能在消费期间出现；关闭或丢弃迭代器释放 Python 引用，不持有跨 yield 的显式打开文件。
+# ## References
+# scripts/syntax_migration_inventory.py:276
+# scripts/syntax_migration_inventory.py:933
+# scripts/syntax_migration_inventory.py:245
+
+# @unit _position_at [function]
+# ## Summary
+# 将文本字符偏移投影为一基位置，首行继承基点列，后续行从列1重新计。
+# ## Parameters
+# text [in] 本次定位所依据的 Python str。
+# offset [in] 由调用者保证位于0到len(text)之间的字符边界；函数不校验或统一夹取该范围。
+# base [in] 此文本首字符在外部坐标系中的一基位置。
+# ## Returns
+# 返回新的 SourcePosition；offset 为尾后边界时也可定位。
+# ## Constraints and lifecycle
+# 按换行字符和 str 长度计算，不恢复 UTF-8 字节、CRLF 物理字节或 UTF-16 单位。
+# 无文件 I/O 或共享状态；负数或过大 offset 不具有这里约定的定位意义。
+# ## References
+# scripts/syntax_migration_inventory.py:283
+# scripts/syntax_migration_inventory.py:306
+# scripts/syntax_migration_inventory.py:307
+# scripts/syntax_migration_inventory.py:882
+# scripts/syntax_migration_inventory.py:883
+# tests/scripts/test_syntax_migration_embedded_positions.py:17
+
+# @unit _range_for [function]
+# ## Summary
+# 集中构造同一文本的起点及尾后终点，供 finding 保存一致坐标系。
+# ## Parameters
+# text [in] 两个偏移所依据的同一 str。
+# start [in] 起点字符偏移；调用方保证0<=start<=end。
+# end [in] 尾后字符偏移；调用方保证end<=len(text)。
+# base [in] 该片段首字符的外部一基位置。
+# ## Returns
+# 返回新的 SourceRange，分别调用 _position_at 转换两端。
+# ## Constraints and lifecycle
+# 函数不检查范围排序或边界；不能把 decoded 终点直接当宿主终点。
+# 仅构造值对象，不改写输入、申请文件资源或借用可失效缓冲区。
+# ## References
+# scripts/syntax_migration_inventory.py:299
+# scripts/syntax_migration_inventory.py:372
+# scripts/syntax_migration_inventory.py:882
+# scripts/syntax_migration_inventory.py:883
+
+# @unit _code_mask [function]
+# ## Summary
+# 为启发式旧形式匹配屏蔽注释和引号内容，保留字符长度与换行位置。
+# ## Parameters
+# text [in] 待扫描的 Python str；函数不修改它。
+# ## Returns
+# 返回同长度掩码 str；被屏蔽的非换行字符变为空格。
+# ## Constraints and lifecycle
+# 只识别 //、非嵌套 /* */ 及单/双/反引号，反斜杠跳过下一字符；未闭合片段消耗到EOF而不报告语法错误。
+# 它不是完整 Zr lexer，不能从掩码无命中推断语法有效，也不能保证所有求余形式均被语义区分。
+# 只使用局部状态；分配异常传播，没有 I/O。
+# ## References
+# scripts/syntax_migration_inventory.py:313
+# scripts/syntax_migration_inventory.py:319
+# scripts/syntax_migration_inventory.py:327
+# scripts/syntax_migration_inventory.py:335
+# scripts/syntax_migration_inventory.py:636
+# tests/scripts/test_syntax_migration_inventory.py:125
+
+# @unit _append_finding [function]
+# ## Summary
+# 把一次正则候选与集中政策及位置合成为完整 finding，避免匹配路径各自解释责任。
+# ## Parameters
+# findings [in,out] 接收条目的 list；此前已有条目不会被本函数重算。
+# file [in] 在报告中原样保存的相对路径标签。
+# source_kind [in] 与本次文本来源一致的枚举。
+# text [in] 原始待定位文本，须与start/end/base对应。
+# start [in] 起点字符边界。
+# end [in] 尾后字符边界；须满足start<=end<=len(text)。
+# base [in] 此片段的外部一基基点。
+# legacy_form [in] 必须存在于当前 _MIGRATION_RULES 的形式名。
+# ## Returns
+# 成功追加一条记录并返回None；规则或输入不满足约束时通过Python异常传达，不发布独立状态码。
+# ## Constraints and lifecycle
+# 先查规则再构造范围和记录，最后 append；缺键抛 KeyError。不得并发修改 findings 或规则表。
+# 不验证路径、文本语法或绑定；不写文件。整个上层扫描发生异常时没有发布完整报告的承诺。
+# ## References
+# scripts/syntax_migration_inventory.py:356
+# scripts/syntax_migration_inventory.py:367
+# scripts/syntax_migration_inventory.py:368
+# scripts/syntax_migration_inventory.py:644
+# scripts/syntax_migration_inventory.py:781
+
+# @unit _PERCENT_FORMS [state]
+# ## Summary
+# 将已知百分号标识符映射为稳定旧形式名，供词法扫描选择政策。
+# ## Constraints and lifecycle
+# 键匹配区分大小写；未命中由扫描器使用unrecognizedPercentDirective，表值须存在于_MIGRATION_RULES。字典可变，调用方不得在扫描期间改写。
+# 这些状态由模块导入建立；除缓存由构造器写入外，正常调用把政策值作为只读配置。
+# ## References
+# scripts/syntax_migration_inventory.py:382
+# scripts/syntax_migration_inventory.py:639
+# scripts/syntax_migration_inventory.py:640
+# scripts/syntax_migration_inventory.py:367
+
+# @unit _MIGRATION_RULES [state]
+# ## Summary
+# 集中旧形式的分类、责任计划和理由，防止不同来源扫描各自决定迁移政策。
+# ## Constraints and lifecycle
+# 字典可变而值为frozen记录；表项覆盖扫描器可能发布的形式名。不执行转换、绑定检查或计划晋升，修改须与fixture合同保持一致。
+# 这些状态由模块导入建立；除缓存由构造器写入外，正常调用把政策值作为只读配置。
+# ## References
+# scripts/syntax_migration_inventory.py:411
+# scripts/syntax_migration_inventory.py:367
+# tests/scripts/test_syntax_migration_inventory.py:319
+# tests/scripts/test_syntax_migration_inventory.py:331
+
+# @unit _callable_open_before_arrow [function]
+# ## Summary
+# 为箭头分类寻找紧邻的闭括号及其配对开括号，限制回溯到当前局部语句。
+# ## Parameters
+# text [in] 已经 _code_mask 处理的文本。
+# arrow_start [in] 当前箭头在text中的合法起点偏移。
+# ## Returns
+# 找到配对括号时返回开括号索引；遇边界、没有闭括号或没有配对开括号时返回 None。
+# ## Constraints and lifecycle
+# 前向回找闭括号时以换行、分号和花括号为停止边界，之后做括号深度回溯；不是完整 callable/parser 判断。
+# 调用方仍负责解释前词与箭头后缀；无 I/O、输入修改或持久资源。
+# ## References
+# scripts/syntax_migration_inventory.py:596
+# scripts/syntax_migration_inventory.py:680
+# scripts/syntax_migration_inventory.py:704
+
+# @unit _word_before_offset [function]
+# ## Summary
+# 从掩码文本中提取括号前相邻单词，帮助区分 fn/func 等箭头上下文。
+# ## Parameters
+# text [in] 已屏蔽注释与字符串的文本。
+# offset [in] 调用方给出的合法开括号索引或其他词边界。
+# ## Returns
+# 返回前一个由 isalnum 或下划线组成的单词片段，无法形成时为空串。
+# ## Constraints and lifecycle
+# 会跳过前置空白；isalnum 接受 Unicode 字符，不等同于完整语言标识符规则。
+# 不验证偏移和 callable 语义，且不修改输入；只产生 Python 字符串。
+# ## References
+# scripts/syntax_migration_inventory.py:617
+# scripts/syntax_migration_inventory.py:681
+# scripts/syntax_migration_inventory.py:705
+
+# @unit _scan_zr_text [function]
+# ## Summary
+# 对纯 Zr 文本、文档围栏或解码片段执行共享的启发式旧写法检测，返回人工可审的候选。
+# ## Parameters
+# text [in] 待检测的str；坐标按此文本计算。
+# file [in] 报告用来源路径标签。
+# source_kind [in] 调用方已经选择的来源类型。
+# base [in] 文本首字符的一基位置，默认(1,1)。
+# ## Returns
+# 返回新 finding list；未知百分号指令归 blocked；空列表不证明语言解析或绑定成功。
+# ## Constraints and lifecycle
+# 各正则独立运行，结果按检测分组追加，可能存在重叠候选；最终位置排序由上层构造器承担。
+# 箭头、构造器、属性等判断仅依词面与有限上下文；大写调用/new 的 reviewed-current 分流在仓库构造器中完成。
+# 规则表与输入须在调用期间稳定；异常不转成诊断对象，不执行代码或改写任何文件。
+# ## References
+# scripts/syntax_migration_inventory.py:629
+# scripts/syntax_migration_inventory.py:636
+# scripts/syntax_migration_inventory.py:639
+# scripts/syntax_migration_inventory.py:679
+# scripts/syntax_migration_inventory.py:703
+# scripts/syntax_migration_inventory.py:777
+# scripts/syntax_migration_inventory.py:854
+# scripts/syntax_migration_inventory.py:914
+# tests/scripts/test_syntax_migration_inventory.py:125
+
+# @unit _embedded_context_is_zr_input [function]
+# ## Summary
+# 在仓库宿主扫描中要求有限 source/parse 调用上下文与疑似 Zr 起始形式同时出现，减少诊断和格式串误报。
+# ## Parameters
+# host_text [in] 宿主文本str，与literal_start同一坐标域。
+# literal_start [in] 开引号之后的合法字符偏移，供截取前256个字符。
+# payload [in] 当前字面量有限解码后的str。
+# ## Returns
+# 返回bool，仅表示启发式准入，不证明字面量最终交给Zr解析器。
+# ## Constraints and lifecycle
+# 上下文只看有限赋值名/调用名前缀及开头规则，不是C/JS语法或数据流分析；可能不能识别其他合法宿主构造。
+# 不与相邻 payload 拼接；邻接准入传播由 _scan_path 决定。函数无 I/O 或持久状态。
+# ## References
+# scripts/syntax_migration_inventory.py:809
+# scripts/syntax_migration_inventory.py:814
+# scripts/syntax_migration_inventory.py:832
+# scripts/syntax_migration_inventory.py:862
+# tests/scripts/test_syntax_migration_inventory.py:494
+# tests/scripts/test_syntax_migration_inventory.py:528
+
+# @unit _scan_path [function]
+# ## Summary
+# 读取一个已分派输入，并将纯源、宿主片段或文档围栏的 finding 统一交回上层。
+# ## Parameters
+# path [in] 可按UTF-8读取的文件Path；读取异常向上传播。
+# file [in] 报告标签，须由调用方与path相配。
+# source_kind [in] 已选择的SourceKind；已知三类是正常调用约定。
+# require_embedded_source_context [in] True时仅保留有输入上下文或同一邻接序列准入的宿主片段。
+# ## Returns
+# 返回finding list；不会返回已完成一部分扫描的报告对象。
+# ## Constraints and lifecycle
+# read_text 使用通用换行；报告坐标属于读入str，不是原始字节或UTF-16位置。
+# 嵌入路径逐片扫描并用 source_offset 分别投影两端；邻接仅继承准入，不把 payload 合并为一段或识别跨片段拆开的token。
+# 所有非ZR_SOURCE/EMBEDDED分支均落入文档扫描，不另做enum值校验。读取、解码、映射、正则和分配异常均可传播。
+# 函数不迁移输入、不打开持久句柄，也不对不可信路径提供隔离。
+# ## References
+# scripts/syntax_migration_inventory.py:845
+# scripts/syntax_migration_inventory.py:852
+# scripts/syntax_migration_inventory.py:859
+# scripts/syntax_migration_inventory.py:872
+# scripts/syntax_migration_inventory.py:879
+# scripts/syntax_migration_inventory.py:882
+# scripts/syntax_migration_inventory.py:887
+# scripts/syntax_migration_inventory.py:944
+# scripts/syntax_migration_inventory.py:1191
+# tests/scripts/test_syntax_migration_inventory.py:519
+# tests/scripts/test_syntax_migration_embedded_positions.py:14
+
+# @unit _scan_documentation [function]
+# ## Summary
+# 仅扫描闭合的显式 zr Markdown 围栏，并将片段行号还原为文档行号。
+# ## Parameters
+# text [in] 已读入的Markdown str。
+# file [in] finding使用的文档路径标签。
+# ## Returns
+# 返回新finding list；只发布看到结束围栏的代码块，EOF未闭合块不进入结果。
+# ## Constraints and lifecycle
+# 只认strip后等于```zr的开头和等于```的结尾，不解释一般Markdown嵌套或其他围栏语法。
+# TODO: 核对 docs/wiki 中被旧注记列出的反例/过时示例及 repository 空findings/golden 合同；已知入口为本函数与专用仓库测试，历史“五处”数量须与当次输入重新核对，不能代替当前结果。
+# 只做候选提取，不决定文档示例应删除还是进入有证据的负向清单；不改写文档或golden。
+# ## References
+# scripts/syntax_migration_inventory.py:891
+# scripts/syntax_migration_inventory.py:896
+# scripts/syntax_migration_inventory.py:907
+# scripts/syntax_migration_inventory.py:912
+# scripts/syntax_migration_inventory.py:914
+# tests/scripts/test_syntax_migration_inventory.py:333
+# tests/scripts/test_syntax_migration_inventory.py:342
+
+# @unit build_inventory [function]
+# ## Summary
+# 为人工合成 fixture 构建扫描和分类报告，隔离于仓库 Git 候选与排除政策。
+# ## Parameters
+# root [in] fixture 根Path；解析为绝对路径后遍历，允许未跟踪文件。
+# ## Returns
+# 返回排序后的新InventoryReport；exclusions为空，使用默认报告版本和空selected_roots。
+# ## Constraints and lifecycle
+# 通过 _source_kind_for 选择文件，宿主扫描不开启repository上下文过滤；不使用全仓cache/allowlist/reviewed-current分流。
+# 遍历、读取、排序与分配异常传播；没有输入写入或全树原子快照。需要稳定结果时调用方须保持fixture不变。
+# 生成器由for消费；所有报告值可由Python独立持有，无需显式Free。
+# ## References
+# scripts/syntax_migration_inventory.py:929
+# scripts/syntax_migration_inventory.py:933
+# scripts/syntax_migration_inventory.py:944
+# scripts/syntax_migration_inventory.py:951
+# scripts/syntax_migration_inventory.py:960
+# tests/scripts/test_syntax_migration_inventory.py:97
+# tests/scripts/test_syntax_migration_inventory.py:211
+
+# @unit _REPOSITORY_SELECTED_ROOTS [state]
+# ## Summary
+# 给仓库报告声明有限根范围，便于消费者解释候选来源。
+# ## Constraints and lifecycle
+# tuple只是报告字段；真实宽选仍由_is_repository_candidate执行，包含glob样名称不表示使用glob遍历。值不持有文件资源。
+# 这些状态由模块导入建立；除缓存由构造器写入外，正常调用把政策值作为只读配置。
+# ## References
+# scripts/syntax_migration_inventory.py:968
+# scripts/syntax_migration_inventory.py:1109
+# scripts/syntax_migration_inventory.py:1265
+
+# @unit _BINARY_ARTIFACT_SUFFIXES [state]
+# ## Summary
+# 把二进制后缀先纳入候选再显式排除，以便报告保留理由。
+# ## Constraints and lifecycle
+# 集合可变；候选和排除两个阶段必须读取同一政策。后缀判断不检查内容或生成归属，不能用于删除授权。
+# 这些状态由模块导入建立；除缓存由构造器写入外，正常调用把政策值作为只读配置。
+# ## References
+# scripts/syntax_migration_inventory.py:977
+# scripts/syntax_migration_inventory.py:1112
+# scripts/syntax_migration_inventory.py:1139
+# tests/scripts/test_syntax_migration_inventory.py:450
+
+# @unit _EMBEDDED_HOST_SUFFIXES [state]
+# ## Summary
+# 限定仓库哪些宿主后缀可进入字面量扫描，控制有限词法模型的输入域。
+# ## Constraints and lifecycle
+# 只在tests/examples/extensions根使用；case-normalized后缀命中不证明文件一定包含Zr或完整支持该宿主语言。集合在扫描窗口须稳定。
+# 这些状态由模块导入建立；除缓存由构造器写入外，正常调用把政策值作为只读配置。
+# ## References
+# scripts/syntax_migration_inventory.py:978
+# scripts/syntax_migration_inventory.py:1117
+# scripts/syntax_migration_inventory.py:845
+
+# @unit _REPOSITORY_FINDING_ALLOWLIST [state]
+# ## Summary
+# 为现有负向测试保留静态旧形式身份，避免其进入待迁移findings。
+# ## Constraints and lifecycle
+# 键为file/起点column/legacy_form，没有line，也不执行测试；reason是政策数据。调用方须核对新增相同键出现，不把表命中当语义拒绝证明。
+# 这些状态由模块导入建立；除缓存由构造器写入外，正常调用把政策值作为只读配置。
+# ## References
+# scripts/syntax_migration_inventory.py:980
+# scripts/syntax_migration_inventory.py:1206
+# scripts/syntax_migration_inventory.py:1215
+# tests/scripts/test_syntax_migration_inventory.py:355
+
+# @unit _REPOSITORY_REVIEWED_CURRENT_FORMS [state]
+# ## Summary
+# 把大写调用和new等当前词面候选单列，保留可审记录而不触发旧形式门禁。
+# ## Constraints and lifecycle
+# 集合仅含legacyBareTypeCall/legacyNewStruct；按形式名分流，不逐片段调用parser或证明绑定。集合改变会影响报告及golden政策。
+# 这些状态由模块导入建立；除缓存由构造器写入外，正常调用把政策值作为只读配置。
+# ## References
+# scripts/syntax_migration_inventory.py:1053
+# scripts/syntax_migration_inventory.py:1224
+# scripts/syntax_migration_inventory.py:1226
+# tests/scripts/test_syntax_migration_inventory.py:347
+
+# @unit _repository_inventory_cache [state]
+# ## Summary
+# 在同一进程按解析后的仓库根缓存元数据签名及完整报告，复用稳定请求。
+# ## Constraints and lifecycle
+# 字典项只有完整新报告构造后发布；签名不含内容哈希。缓存保留根和记录对象，无自动逐根逐出；没有锁，调用方应串行处理显式清理、规则修改及需要稳定结果的请求。
+# 这些状态由模块导入建立；除缓存由构造器写入外，正常调用把政策值作为只读配置。
+# ## References
+# scripts/syntax_migration_inventory.py:1061
+# scripts/syntax_migration_inventory.py:1174
+# scripts/syntax_migration_inventory.py:1175
+# scripts/syntax_migration_inventory.py:1267
+# tests/scripts/test_syntax_migration_inventory.py:67
+
+# @unit _repository_inventory_signature [function]
+# ## Summary
+# 为进程内缓存建立候选路径及文件元数据签名，避免相同可观察快照重复扫描。
+# ## Parameters
+# root [in] 已解析的仓库根Path。
+# candidate_paths [in] 本次已经排序的相对候选路径tuple，遍历期间应稳定。
+# ## Returns
+# 返回逐路径的(path,mtime_ns,ctime_ns,size,mode,ino)元组；FileNotFoundError用全-1元数据占位。
+# ## Constraints and lifecycle
+# 不读取内容或计算内容哈希；所有列保持相同的内容改写无法被此签名察觉。
+# stat与后续读取不是原子操作，其他OSError不被包装。没有锁或文件句柄跨调用保留。
+# ## References
+# scripts/syntax_migration_inventory.py:1069
+# scripts/syntax_migration_inventory.py:1076
+# scripts/syntax_migration_inventory.py:1078
+# scripts/syntax_migration_inventory.py:1173
+# tests/scripts/test_syntax_migration_inventory.py:67
+
+# @unit _tracked_files [function]
+# ## Summary
+# 从实际仓库索引取得NUL分隔的跟踪路径，为repository候选选择提供输入。
+# ## Parameters
+# root [in] git -C 使用的仓库根Path，调用方须允许只读Git子进程。
+# ## Returns
+# Git成功时返回Path tuple；Git缺失、非零退出或文本解码错误通过Python异常传达。
+# ## Constraints and lifecycle
+# 执行git ls-files -z，未请求--others，不包括未跟踪文件；结果仍需存在性与候选分类过滤。
+# text=True按当前Python默认文本编码解释输出，UTF-8执行模式由环境或解释器配置提供；函数没有子进程timeout。
+# 同步等待并捕获stdout/stderr，不修改索引或源码；不是对Git之外目录的信任认证。
+# ## References
+# scripts/syntax_migration_inventory.py:1094
+# scripts/syntax_migration_inventory.py:1096
+# scripts/syntax_migration_inventory.py:1129
+# tests/scripts/test_syntax_migration_inventory.py:57
+
+# @unit _is_repository_candidate [function]
+# ## Summary
+# 根据当前扫描根和扩展名宽选候选，随后由排除阶段解释不扫描的原因。
+# ## Parameters
+# path [in] Git返回的相对路径Path，按目录段和小写后缀判断。
+# ## Returns
+# 返回是否属于候选；二进制后缀在根判断之前即被选入，以便显式排除。
+# ## Constraints and lifecycle
+# docs只选Markdown；tests/examples/extensions选zr或宿主后缀；库根只选zr。它不检查文件存在、内容或来源。
+# selected_roots是报告声明，实际规则以此函数为准；不提供路径隔离或生命周期管理。
+# ## References
+# scripts/syntax_migration_inventory.py:1109
+# scripts/syntax_migration_inventory.py:1112
+# scripts/syntax_migration_inventory.py:1114
+# scripts/syntax_migration_inventory.py:1116
+# scripts/syntax_migration_inventory.py:1118
+# scripts/syntax_migration_inventory.py:1130
+
+# @unit repository_candidate_paths [function]
+# ## Summary
+# 生成当前工作树仍存在的Git跟踪候选列表，供扫描与分区对账共用。
+# ## Parameters
+# root [in] 仓库根Path；函数resolve后交给Git并检查对应路径。
+# ## Returns
+# 返回排序后的POSIX相对路径tuple；缺失或非is_file条目不进入结果。
+# ## Constraints and lifecycle
+# 不包含未跟踪输入；is_file为观察时条件，之后仍可能消失或变化，且不是不跟随符号链接的安全认证。
+# Git/路径/权限等异常可传播；不扫描内容或修改文件。
+# ## References
+# scripts/syntax_migration_inventory.py:1124
+# scripts/syntax_migration_inventory.py:1129
+# scripts/syntax_migration_inventory.py:1130
+# scripts/syntax_migration_inventory.py:1172
+# tests/scripts/test_syntax_migration_inventory.py:64
+# tests/scripts/test_syntax_migration_inventory.py:447
+
+# @unit _repository_exclusion_reason [function]
+# ## Summary
+# 为已选候选按明确优先级给出排除类别，使报告不静默丢弃路径。
+# ## Parameters
+# relative_path [in] 同一仓库中的相对Path，按目录段与POSIX字符串匹配。
+# ## Returns
+# 返回稳定reason字符串；没有命中规则时返回None以继续扫描。
+# ## Constraints and lifecycle
+# 二进制、third_party、历史计划、自身fixture、参考负向输入、含legacy/migration片段、negative和产物目录按源码顺序判断。
+# 这是命名政策，不验证内容是否生成、负向用例是否运行或能否删除；没有文件I/O。
+# ## References
+# scripts/syntax_migration_inventory.py:1136
+# scripts/syntax_migration_inventory.py:1139
+# scripts/syntax_migration_inventory.py:1143
+# scripts/syntax_migration_inventory.py:1149
+# scripts/syntax_migration_inventory.py:1153
+# scripts/syntax_migration_inventory.py:1185
+# tests/scripts/test_syntax_migration_inventory.py:456
+
+# @unit _repository_source_kind [function]
+# ## Summary
+# 把已经通过候选与排除阶段的路径映射到三种扫描入口。
+# ## Parameters
+# relative_path [in] 由上层完成候选选择和排除的相对Path。
+# ## Returns
+# 小写zr后缀返回ZR_SOURCE，md返回CURRENT_DOCUMENTATION，其余返回EMBEDDED_ZR_FIXTURE。
+# ## Constraints and lifecycle
+# 函数本身不拒绝任意其他后缀，也不验证存在性；上层过滤是正常调用前提。
+# 不读取文件、不修改路径或取得资源。
+# ## References
+# scripts/syntax_migration_inventory.py:1159
+# scripts/syntax_migration_inventory.py:1189
+# scripts/syntax_migration_inventory.py:1191
+
+# @unit build_repository_inventory [function]
+# ## Summary
+# 为CLI和仓库基线构造Git候选的扫描/排除分区，并把允许旧例和当前候选形式从待迁移finding中分开。
+# ## Parameters
+# root [in] 实际仓库根Path；resolve后的根是进程cache键，输入文件与政策表应在调用窗口稳定。
+# ## Returns
+# 缓存签名相同时返回缓存的同一个报告对象；否则成功扫描后构造、排序并发布新报告；异常不返回局部报告。
+# ## Constraints and lifecycle
+# 签名基于文件元数据而非内容；枚举、stat、读取与最后cache发布没有全仓原子快照或同步锁。调用方要求可重放结果时须自行固定输入并串行管理cache/规则修改。
+# 只有扫描时FileNotFoundError被记为missingTrackedFile；解码、权限、Git、其他I/O和分配异常传播，旧cache项不会被提前替换。
+# allowlist按file/column/form匹配；reviewed-current仅按形式名分流，不在这里执行Parser语义验证。
+# 固定输出排序不证明底层树在构造期间未变；缓存持有报告和根Path直到进程结束或显式移除，不持有打开文件。
+# ## References
+# scripts/syntax_migration_inventory.py:1170
+# scripts/syntax_migration_inventory.py:1173
+# scripts/syntax_migration_inventory.py:1175
+# scripts/syntax_migration_inventory.py:1191
+# scripts/syntax_migration_inventory.py:1197
+# scripts/syntax_migration_inventory.py:1206
+# scripts/syntax_migration_inventory.py:1224
+# scripts/syntax_migration_inventory.py:1258
+# scripts/syntax_migration_inventory.py:1267
+# tests/scripts/test_syntax_migration_inventory.py:84
+# tests/scripts/test_syntax_migration_inventory.py:337
+
+# @unit main [function]
+# ## Summary
+# 提供显式CLI输出入口，把实际仓库报告写到stdout或调用方指定的UTF-8文件。
+# ## Parameters
+# argv [in] argparse参数列表；None表示读取进程sys.argv。root默认当前目录，format仅json/text，output可省略。
+# ## Returns
+# 正常渲染和输出后返回0，即使仍有findings；参数解析可SystemExit，扫描或输出错误通过异常退出。
+# ## Constraints and lifecycle
+# --output直接write_bytes指定目标，不创建父目录、不提供原子替换或输入重叠保护；调用方必须选择可写且不覆盖输入的报告路径。失败时该目标可能已部分写入。
+# stdout编码由流配置决定；文件输出显式UTF-8并继承渲染末尾LF。CLI不执行迁移或把finding数量转成失败码。
+# 同步扫描可能调用Git且无内部timeout；外层执行者负责预算、路径与缓存环境。
+# ## References
+# scripts/syntax_migration_inventory.py:1272
+# scripts/syntax_migration_inventory.py:1276
+# scripts/syntax_migration_inventory.py:1281
+# scripts/syntax_migration_inventory.py:1283
+# scripts/syntax_migration_inventory.py:1286
+# scripts/syntax_migration_inventory.py:1291
+# tests/scripts/test_syntax_migration_inventory.py:563
