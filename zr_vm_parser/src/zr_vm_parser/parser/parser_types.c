@@ -884,13 +884,21 @@ static SZrType *parse_type_internal(SZrParserState *ps, TZrBool noGeneric) {
 // 解析类型
 
 SZrType *parse_type(SZrParserState *ps) {
-    return parse_type_internal(ps, ZR_FALSE);
+    SZrType *type;
+    if (!parser_enter_recursion(ps)) return ZR_NULL;
+    type = parse_type_internal(ps, ZR_FALSE);
+    --ps->recursionDepth;
+    return type;
 }
 
 // 解析类型（不解析泛型类型，用于 intermediate 声明的返回类型）
 
 SZrType *parse_type_no_generic(SZrParserState *ps) {
-    return parse_type_internal(ps, ZR_TRUE);
+    SZrType *type;
+    if (!parser_enter_recursion(ps)) return ZR_NULL;
+    type = parse_type_internal(ps, ZR_TRUE);
+    --ps->recursionDepth;
+    return type;
 }
 
 // 解析数组大小约束；先尝试字面量/范围，不匹配时完整恢复词法游标再交给表达式解析。

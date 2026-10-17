@@ -16,6 +16,9 @@ void ZrParser_State_Init(SZrParserState *ps, SZrState *state, const TZrChar *sou
     ps->errorUserData = ZR_NULL;
     ps->suppressErrorOutput = ZR_FALSE;
     ps->enableLegacyMigrationParsing = ZR_FALSE;
+    ps->recursionDepth = 0u;
+    ps->hasNestingError = ZR_FALSE;
+    ps->nestingErrorReported = ZR_FALSE;
 
     // 初始化词法分析器
     ps->lexer = ZrCore_Memory_RawMallocWithType(state->global, sizeof(SZrLexState), ZR_MEMORY_NATIVE_TYPE_STRING);
@@ -68,7 +71,7 @@ SZrAstNode *parse_script(SZrParserState *ps) {
 
     TZrSize stmtCount = 0;
     TZrSize errorCount = 0;
-    while (ps->lexer->t.token != ZR_TK_EOS) {
+    while (ps->lexer->t.token != ZR_TK_EOS && !ps->hasNestingError) {
         // 保存错误状态
         ZR_UNUSED_PARAMETER(ps->hasError);
         ZR_UNUSED_PARAMETER(ps->errorMessage);
@@ -175,7 +178,8 @@ SZrAstNode *ZrParser_ParseWithState(SZrParserState *ps) {
 
     // 旧语法禁用时，fatal 标志使整棵可恢复 AST 无效；普通错误仍按历史策略返回节点。
     ast = parse_script(ps);
-    if (ps->hasFatalError && !ps->enableLegacyMigrationParsing) {
+    parser_report_nesting_error(ps);
+    if (ps->hasNestingError || (ps->hasFatalError && !ps->enableLegacyMigrationParsing)) {
         if (ast != ZR_NULL) {
             ZrParser_Ast_Free(ps->state, ast);
         }
@@ -212,6 +216,7 @@ SZrAstNode *ZrParser_ParseTopLevelStatementWithState(SZrParserState *ps) {
 
     // 局部重解析只能转移完整且无错误的子树，失败分支自行释放半成品。
     statement = parse_top_level_statement(ps);
+    parser_report_nesting_error(ps);
     if (statement == ZR_NULL || ps->hasError ||
         (ps->hasFatalError && !ps->enableLegacyMigrationParsing)) {
         if (statement != ZR_NULL) {
