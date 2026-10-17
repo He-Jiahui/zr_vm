@@ -25,6 +25,8 @@ endif ()
 
 
 if (MSVC)
+    # Parallel C and C++ compilations in a target share its compiler PDB.
+    add_compile_options(/FS)
     add_compile_options(
             "$<$<COMPILE_LANGUAGE:C>:/W4>"
             "$<$<COMPILE_LANGUAGE:C>:/wd4819>"
