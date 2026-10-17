@@ -510,7 +510,9 @@ if (DEFINED BENCHMARKS_DIR AND IS_DIRECTORY "${BENCHMARKS_DIR}")
                         --persistent
                         --checksum-contract benchmark-checksum-v1:numeric_loops:smoke
                         --expected-checksum "${expected_checksum}"
-                        --ready-timeout-ms 2000
+                        # Cold runtime startup can exceed two seconds on shared CI hosts.
+                        # The fixture cases above separately verify short READY timeouts.
+                        --ready-timeout-ms 15000
                         --request-timeout-ms 2000
                         --stop-timeout-ms 2000
                         -- ${ARGN}
