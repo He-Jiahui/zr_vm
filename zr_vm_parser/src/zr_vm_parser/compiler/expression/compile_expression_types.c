@@ -3369,6 +3369,12 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                 pendingDirectMemberCallMemberEntryIndex = memberId;
                             } else if (canUseInlineCompiledMemberCall) {
                                 TZrBool receiverBound;
+                                /* The current slot can alias a projected receiver field.
+                                 * Give the callable its own slot before storing its value. */
+                                currentSlot = allocate_fresh_stack_slot_after(cs, currentSlot);
+                                if (currentSlot == ZR_PARSER_SLOT_NONE) {
+                                    goto cleanup;
+                                }
                                 if (!note_inline_struct_result_slot(
                                             cs, currentSlot + 1u, rootTypeName)) {
                                     goto cleanup;
