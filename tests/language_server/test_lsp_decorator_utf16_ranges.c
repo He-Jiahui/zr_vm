@@ -8,6 +8,7 @@
 
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/global.h"
+#include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server.h"
@@ -211,8 +212,8 @@ static void test_lsp_decorator_navigation_after_utf8_prefix_uses_utf16_columns(S
         !test_lsp_position_for_substring(content, "#trace#", 1, &methodDecoratorPosition) ||
         !test_lsp_position_for_substring(content, "SingletonClass", 0, &classNamePosition) ||
         !test_lsp_position_for_substring(content, "run(): int", 0, &methodNamePosition) ||
-        !test_lsp_position_for_substring(content, "race#", 0, &decoratorAstRangeStart) ||
-        !test_lsp_position_for_substring(content, "fn run(): int", 0, &decoratorAstRangeEnd)) {
+        !test_lsp_position_for_substring(content, "#trace#", 0, &decoratorAstRangeStart) ||
+        !test_lsp_position_for_substring(content, "#trace#", strlen("#trace#"), &decoratorAstRangeEnd)) {
         printf("FAIL: Decorator UTF-16 ranges could not compute expected fixture positions\n");
         ZrLanguageServer_LspContext_Free(state, context);
         g_failures++;
@@ -232,8 +233,10 @@ static void test_lsp_decorator_navigation_after_utf8_prefix_uses_utf16_columns(S
         printf("\n");
         passed = ZR_FALSE;
     }
-    /* BUG: 两次 GetDefinition 的位置元素独立 RawMalloc；本函数两处
-     * Array_Free 只释放指针数组，任一非空结果都会泄漏元素。 */
+    for (TZrSize index = 0; index < definitions.length; index++) {
+        SZrLspLocation *location = *(SZrLspLocation **)ZrCore_Array_Get(&definitions, index);
+        ZrCore_Memory_RawFree(state->global, location, sizeof(*location));
+    }
     ZrCore_Array_Free(state, &definitions);
 
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 2);
@@ -249,6 +252,10 @@ static void test_lsp_decorator_navigation_after_utf8_prefix_uses_utf16_columns(S
         printf("\n");
         passed = ZR_FALSE;
     }
+    for (TZrSize index = 0; index < definitions.length; index++) {
+        SZrLspLocation *location = *(SZrLspLocation **)ZrCore_Array_Get(&definitions, index);
+        ZrCore_Memory_RawFree(state->global, location, sizeof(*location));
+    }
     ZrCore_Array_Free(state, &definitions);
 
     if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, methodDecoratorPosition, &hover) ||
@@ -257,7 +264,7 @@ static void test_lsp_decorator_navigation_after_utf8_prefix_uses_utf16_columns(S
         hover->range.start.character != decoratorAstRangeStart.character ||
         hover->range.end.line != decoratorAstRangeEnd.line ||
         hover->range.end.character != decoratorAstRangeEnd.character) {
-        printf("FAIL: Decorator hover expected UTF-16 parser range %d:%d-%d:%d",
+        printf("FAIL: Decorator hover expected UTF-16 token range %d:%d-%d:%d",
                decoratorAstRangeStart.line,
                decoratorAstRangeStart.character,
                decoratorAstRangeEnd.line,
@@ -273,8 +280,10 @@ static void test_lsp_decorator_navigation_after_utf8_prefix_uses_utf16_columns(S
         passed = ZR_FALSE;
     }
 
-    /* BUG: GetHover 成功返回的 hover 及 contents 由调用方另行释放；
-     * 此处只释放 context，固定非空结果每次都会泄漏原生对象。 */
+    if (hover != ZR_NULL) {
+        ZrCore_Array_Free(state, &hover->contents);
+        ZrCore_Memory_RawFree(state->global, hover, sizeof(*hover));
+    }
     ZrLanguageServer_LspContext_Free(state, context);
 
     if (!passed) {
