@@ -226,8 +226,17 @@ TZrBool reserve_member_slot_get_cache(SZrCompilerState *cs,
             compiler_get_member_call_binding_fact(cs, memberInfo, &entry->binding.contract);
         }
         if (memberInfo->callBindingLocationKind == ZR_CALL_BINDING_RELOCATION_VM_MODULE) {
+            SZrTypePrototypeInfo *owner = find_compiler_type_prototype(cs, memberInfo->ownerTypeName);
+            if (owner == ZR_NULL || owner->importModuleName == ZR_NULL) {
+                ZrParser_Compiler_Error(cs, "Imported callable has no module identity", location);
+                return ZR_FALSE;
+            }
+            ZrCore_Value_InitAsRawObject(cs->state, &value,
+                    ZR_CAST_RAW_OBJECT_AS_SUPER(owner->importModuleName));
+            /* Module ABI hashes can match across distinct modules. Persist
+             * the canonical import name as well as the signature contract. */
             entry->bindingLocation.kind = ZR_CALL_BINDING_RELOCATION_VM_MODULE;
-            entry->bindingLocation.targetIndex = 0u;
+            entry->bindingLocation.targetIndex = add_constant(cs, &value);
         } else if (compiler_native_call_binding_is_provider_contract(&entry->binding.contract)) {
             (void)compiler_native_call_binding_prepare_cache(
                     entry, &entry->binding.contract, memberEntryIndex);

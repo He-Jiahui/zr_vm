@@ -1371,6 +1371,8 @@ static void test_cli_compile_keeps_imports_valid_when_module_collection_grows(vo
     TZrChar mainSource[1024] = {0};
     TZrChar dependencySource[128];
     SZrCliCommand command;
+    SZrCliCommand runCommand;
+    SZrCliRunCapture capture = {0};
     SZrCliCompileSummary summary = {0};
     size_t used = 0u;
 
@@ -1390,8 +1392,8 @@ static void test_cli_compile_keeps_imports_valid_when_module_collection_grows(vo
         snprintf(dependencySource, sizeof(dependencySource), "pub fn value(): int { return %u; }\n", index);
         TEST_ASSERT_TRUE(write_text_file(sourcePath, dependencySource));
     }
-    TEST_ASSERT_TRUE(used + strlen("return 0;\n") < sizeof(mainSource));
-    strcat(mainSource, "return 0;\n");
+    TEST_ASSERT_TRUE(used + strlen("return dep8.value() + dep0.value();\n") < sizeof(mainSource));
+    strcat(mainSource, "return dep8.value() + dep0.value();\n");
     TEST_ASSERT_TRUE(join_path_suffix(projectRoot, "/src/main.zr", sourcePath, sizeof(sourcePath)));
     TEST_ASSERT_TRUE(write_text_file(sourcePath, mainSource));
 
@@ -1402,6 +1404,12 @@ static void test_cli_compile_keeps_imports_valid_when_module_collection_grows(vo
     TEST_ASSERT_TRUE(ZrCli_Compiler_CompileProjectWithSummary(&command, &summary));
     TEST_ASSERT_EQUAL_UINT32(0u, (unsigned)summary.compiledCount);
     TEST_ASSERT_EQUAL_UINT32(10u, (unsigned)summary.skippedCount);
+    /* All dependencies have the same exported ABI. Relocation must retain
+     * which module each call names, including after binary serialization. */
+    init_binary_run_command(&runCommand, projectPath);
+    TEST_ASSERT_TRUE(ZrCli_Runtime_RunProjectCapture(&runCommand, &capture));
+    assert_capture_returns_expected_int(&capture, 8, "binary");
+    ZrCli_Runtime_RunCapture_Free(&capture);
 }
 
 #include "test_cli_comptime_cache_incremental_cases.h"

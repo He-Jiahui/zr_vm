@@ -221,6 +221,15 @@ static TZrBool link_imported_function(SZrFunction *consumer, void *data) {
         const SZrTypeValue *callable = ZR_NULL;
         if (entry->bindingLocation.kind != ZR_CALL_BINDING_RELOCATION_VM_MODULE ||
             entry->binding.contract.moduleSignatureHash != context->provider->moduleSignatureHash) continue;
+        if (entry->bindingLocation.targetIndex >= consumer->constantValueLength ||
+            consumer->constantValueList == ZR_NULL ||
+            consumer->constantValueList[entry->bindingLocation.targetIndex].type != ZR_VALUE_TYPE_STRING ||
+            consumer->constantValueList[entry->bindingLocation.targetIndex].value.object == ZR_NULL)
+            return imported_fail(context, entry, ZR_CALL_BINDING_INVALID_RELOCATION);
+        if (context->module->moduleName == ZR_NULL || !ZrCore_String_Equal(
+                    ZR_CAST_STRING(context->state,
+                            consumer->constantValueList[entry->bindingLocation.targetIndex].value.object),
+                    context->module->moduleName)) continue;
         if (!zr_call_binding_site_matches(consumer, index))
             return imported_fail(context, entry, ZR_CALL_BINDING_INVALID_RELOCATION);
         if (entry->binding.target.targetKind != ZR_CALL_BINDING_TARGET_NONE) {

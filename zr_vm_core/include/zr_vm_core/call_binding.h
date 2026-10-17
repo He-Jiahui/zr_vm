@@ -32,6 +32,7 @@ typedef enum EZrCallBindingRelocationKind {
  */
 typedef struct SZrCallBindingLocation {
     TZrUInt32 kind;
+    /* VM_MODULE: constant-pool string containing the canonical import name. */
     TZrUInt32 targetIndex;
     TZrUInt32 ownerDepth;
     TZrUInt32 flags;
