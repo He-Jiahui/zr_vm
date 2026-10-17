@@ -540,7 +540,7 @@ static void construction_store_cached_plan(
         const SZrTypeValue *functionValue,
         EZrReflectionConstructionStatus status) {
     TZrChar key[96];
-    SZrTypeValue cached;
+    SZrTypeValue cached = {0};
 
     if (!construction_cache_key(
                 argumentCount, argumentSignature, key, sizeof(key))) {
