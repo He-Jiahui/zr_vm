@@ -13,6 +13,8 @@ static SZrState *state;
 static SZrIoSource *loaded;
 static TZrBytePtr encoded;
 static TZrSize encodedLength;
+static TZrSize instructionsOffset, instructionCount, constantCount;
+static TZrUInt32 stackSlots;
 static FZrAllocator originalAllocator;
 static TZrSize ioBytes, allocationCalls, failAllocation;
 
@@ -74,8 +76,20 @@ void setUp(void) {
     TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("binary_loader_rejection", "", "valid", ".zro", path, sizeof(path)));
     TEST_ASSERT_TRUE(ZrTests_Path_EnsureParentDirectory(path));
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, path));
-    ZrCore_Function_Free(state, function);
     TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(path, &encoded, &encodedLength));
+    instructionCount = function->instructionsLength;
+    constantCount = function->constantValueLength;
+    stackSlots = function->stackSize;
+    instructionsOffset = 0;
+    for (TZrSize offset = 32u; offset + instructionCount * sizeof(TZrInstruction) <= encodedLength; ++offset) {
+        if (memcmp(encoded + offset, function->instructionsList,
+                   instructionCount * sizeof(TZrInstruction)) == 0) {
+            TEST_ASSERT_EQUAL_size_t(0, instructionsOffset);
+            instructionsOffset = offset;
+        }
+    }
+    ZrCore_Function_Free(state, function);
+    TEST_ASSERT_NOT_EQUAL(0, instructionsOffset);
     originalAllocator = state->global->allocator;
     state->global->allocator = tracked_allocator;
 }
@@ -141,11 +155,80 @@ static void test_sticky_short_reads_initialize_destinations(void) {
     TEST_ASSERT_EQUAL_UINT64(0, value);
 }
 
+static void reject_instruction(TZrUInt16 opcode, TZrUInt16 extra,
+                               TZrUInt16 a, TZrUInt16 b) {
+    TZrInstruction saved, invalid = {0};
+    memcpy(&saved, encoded + instructionsOffset, sizeof(saved));
+    invalid.instruction.operationCode = opcode;
+    invalid.instruction.operandExtra = extra;
+    invalid.instruction.operand.operand1[0] = a;
+    invalid.instruction.operand.operand1[1] = b;
+    memcpy(encoded + instructionsOffset, &invalid, sizeof(invalid));
+    TEST_ASSERT_FALSE(read_binary(encoded, encodedLength, 19u));
+    memcpy(encoded + instructionsOffset, &saved, sizeof(saved));
+}
+
+static void test_invalid_instruction_boundaries_are_rejected(void) {
+    TEST_ASSERT_TRUE(stackSlots > 0u && stackSlots < 128u);
+    TEST_ASSERT_TRUE(constantCount > 0u && constantCount < UINT16_MAX);
+    reject_instruction(ZR_INSTRUCTION_ENUM(ENUM_MAX), 0, 0, 0);
+    reject_instruction(UINT16_MAX, 0, 0, 0);
+    reject_instruction(ZR_INSTRUCTION_ENUM(GET_STACK), 0, UINT16_MAX, UINT16_MAX);
+    reject_instruction(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, (TZrUInt16)constantCount, 0);
+    reject_instruction(ZR_INSTRUCTION_ENUM(ADD_SIGNED), (TZrUInt16)stackSlots, 0, 0);
+    reject_instruction(ZR_INSTRUCTION_ENUM(ADD_SIGNED), 0, (TZrUInt16)stackSlots, 0);
+    reject_instruction(ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST), 0, 0, (TZrUInt16)constantCount);
+    reject_instruction(ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST), ZR_INSTRUCTION_USE_RET_FLAG, 0, 0);
+    reject_instruction(ZR_INSTRUCTION_ENUM(JUMP), 0, 0, 0x8000u);
+    reject_instruction(ZR_INSTRUCTION_ENUM(JUMP), 0, UINT16_MAX, 0x7fffu);
+    reject_instruction(ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED), 0, 0, (TZrUInt16)instructionCount);
+    reject_instruction(ZR_INSTRUCTION_ENUM(FUNCTION_CALL), 0, (TZrUInt16)(stackSlots - 1u), 1);
+    reject_instruction(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 2, (TZrUInt16)(stackSlots - 1u), 0);
+    reject_instruction(ZR_INSTRUCTION_ENUM(GET_CLOSURE), 0, UINT16_MAX, 0);
+    reject_instruction(ZR_INSTRUCTION_ENUM(GETUPVAL), 0, UINT16_MAX, 0);
+    reject_instruction(ZR_INSTRUCTION_ENUM(CREATE_CLOSURE), 0, (TZrUInt16)constantCount, 0);
+    reject_instruction(ZR_INSTRUCTION_ENUM(TRY), UINT16_MAX, 0, 0);
+    reject_instruction(ZR_INSTRUCTION_ENUM(CREATE_ARRAY), 0, UINT16_MAX, UINT16_MAX);
+    reject_instruction(ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4), 0, (TZrUInt16)(stackSlots - 3u), 0);
+    /* Packed operands include an otherwise invisible materialization slot. */
+    reject_instruction(ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST), 0, (TZrUInt16)(stackSlots << 8u), 0);
+    reject_instruction(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 0, 0, UINT16_MAX);
+    reject_instruction(ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8), 0, UINT16_MAX, 0);
+    TEST_ASSERT_TRUE(read_binary(encoded, encodedLength, 7u));
+}
+
+static void test_valid_nested_functions_loops_and_prototypes_are_accepted(void) {
+    const char *sources[] = {
+        "fn makeRunner() { var seed = 4; return fn() => { return seed + 1; }; }"
+        "var runner = makeRunner(); return runner();",
+        "fn step(x: int): int { if (x > 0) { return x + 1; } return 0; }"
+        "var total: int = 0; var i: int = 0;"
+        "while (i < 5) { total = total + step(i); i = i + 1; } return total;",
+        "class Empty {} return 1;"
+    };
+    char path[ZR_TESTS_PATH_MAX];
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("binary_loader_rejection", "", "nested", ".zro", path, sizeof(path)));
+    for (unsigned n = 0; n < ZR_ARRAY_COUNT(sources); ++n) {
+        TZrBytePtr bytes = ZR_NULL;
+        TZrSize length = 0;
+        SZrFunction *function = ZrParser_Source_Compile(state, sources[n], strlen(sources[n]),
+                ZrCore_String_CreateFromNative(state, "nested.zr"));
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, path));
+        ZrCore_Function_Free(state, function);
+        TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(path, &bytes, &length));
+        TEST_ASSERT_TRUE(read_binary(bytes, length, 13u));
+        free(bytes);
+    }
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_chunked_round_trip_and_all_truncations);
     RUN_TEST(test_header_and_length_bombs_are_rejected);
     RUN_TEST(test_all_native_allocation_failures_release_partial_tree);
     RUN_TEST(test_sticky_short_reads_initialize_destinations);
+    RUN_TEST(test_invalid_instruction_boundaries_are_rejected);
+    RUN_TEST(test_valid_nested_functions_loops_and_prototypes_are_accepted);
     return UNITY_END();
 }

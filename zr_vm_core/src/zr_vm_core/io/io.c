@@ -20,6 +20,8 @@
 #define ZR_IO_MAX_DECODE_BYTES ((TZrSize)512u * 1024u * 1024u)
 #define ZR_IO_MAX_DECODE_DEPTH 128u
 
+#include "io_bytecode_verify.h"
+
 static TZrPtr io_read_array(SZrIo *io, TZrSize count, TZrSize elementSize) {
     TZrPtr result;
     TZrSize bytes;
@@ -2014,6 +2016,9 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
             io_read_function_debug_infos(io, function->debugInfos, function->debugInfosLength);
         } else {
             function->debugInfos = ZR_NULL;
+        }
+        if (!io->hasReadError && !io_verify_function(function)) {
+            io->hasReadError = ZR_TRUE;
         }
     }
     --io->decodeDepth;
