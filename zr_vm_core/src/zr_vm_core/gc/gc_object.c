@@ -1095,6 +1095,11 @@ SZrRawObject *ZrCore_RawObject_New(SZrState *state, EZrValueType type, TZrSize s
         return ZR_NULL;
     }
     object->isNative = isNative;
+    /* Region descriptors and the object list belong to the whole domain,
+     * including when no concurrent major collection is active. */
+    /* No safepoint is allowed after publication until the caller roots and
+     * finishes initializing this object. These bookkeeping operations cannot throw. */
+    ZrCore_GcDomain_MutationLock(state->gcDomain);
     object->garbageCollectMark.status = global->garbageCollector->gcInitializeObjectStatus;
     object->garbageCollectMark.generation = global->garbageCollector->gcGeneration;
     object->garbageCollectMark.regionId = garbage_collector_try_allocate_region_id_current_fast(
@@ -1117,6 +1122,7 @@ SZrRawObject *ZrCore_RawObject_New(SZrState *state, EZrValueType type, TZrSize s
                      (void *)global->garbageCollector->gcObjectList);
     ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_ALLOCATION_COUNT, 1u);
     ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_ALLOCATION_BYTES, (TZrUInt64)size);
+    ZrCore_GcDomain_MutationUnlock(state->gcDomain);
     return object;
 }
 
@@ -1149,6 +1155,7 @@ SZrRawObject *garbage_collector_new_raw_object_in_region(SZrState *state,
         return ZR_NULL;
     }
     object->isNative = isNative;
+    ZrCore_GcDomain_MutationLock(state->gcDomain);
     object->garbageCollectMark.status = global->garbageCollector->gcInitializeObjectStatus;
     object->garbageCollectMark.generation = global->garbageCollector->gcGeneration;
     ZrCore_RawObject_SetStorageKind(object, storageKind);
@@ -1163,6 +1170,7 @@ SZrRawObject *garbage_collector_new_raw_object_in_region(SZrState *state,
     global->garbageCollector->gcObjectList = object;
     ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_ALLOCATION_COUNT, 1u);
     ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_ALLOCATION_BYTES, (TZrUInt64)size);
+    ZrCore_GcDomain_MutationUnlock(state->gcDomain);
     return object;
 }
 

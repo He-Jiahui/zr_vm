@@ -4869,6 +4869,8 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_core(zr_vm_task_frame_runtime_test)
 
     if (TARGET zr_vm_thread_runtime_test)
+        add_test(NAME thread_attached_domain COMMAND zr_vm_thread_runtime_test --attached)
+        set_tests_properties(thread_attached_domain PROPERTIES TIMEOUT 60)
         target_include_directories(zr_vm_thread_runtime_test PRIVATE
                 ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
                 ${CMAKE_SOURCE_DIR}/zr_vm_core/include
