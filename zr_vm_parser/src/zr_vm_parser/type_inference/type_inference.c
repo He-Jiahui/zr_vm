@@ -94,6 +94,30 @@ static void type_inference_cache_add_tree(SZrExpressionTypeCache *cache, SZrAstN
     }
 }
 
+/* Keep the large inference frame out of the recursive tree walk. All children
+ * have cached types before a parent is inferred, so flat binary chains do not
+ * consume one inference frame per operator on Windows' default stack. */
+static TZrBool type_inference_cache_infer_node(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrInferredType type;
+    TZrBool success;
+    ZrParser_InferredType_Init(cs->state, &type, ZR_VALUE_TYPE_OBJECT);
+    success = ZrParser_ExpressionType_Infer(cs, node, &type);
+    ZrParser_InferredType_Free(cs->state, &type);
+    return success;
+}
+
+static TZrBool type_inference_cache_fill_tree(SZrCompilerState *cs, SZrAstNode *node) {
+    if (node->type == ZR_AST_BINARY_EXPRESSION) {
+        if (!type_inference_cache_fill_tree(cs, node->data.binaryExpression.left) ||
+            !type_inference_cache_fill_tree(cs, node->data.binaryExpression.right)) return ZR_FALSE;
+    } else if (node->type == ZR_AST_UNARY_EXPRESSION) {
+        if (!type_inference_cache_fill_tree(cs, node->data.unaryExpression.argument)) return ZR_FALSE;
+    } else if (node->type == ZR_AST_PRIMARY_EXPRESSION) {
+        if (!type_inference_cache_fill_tree(cs, node->data.primaryExpression.property)) return ZR_FALSE;
+    }
+    return type_inference_cache_infer_node(cs, node);
+}
+
 void type_inference_cache_begin(SZrCompilerState *cs, SZrAstNode *node,
                                 SZrExpressionTypeCache *cache) {
     TZrSize count, capacity = 16;
@@ -113,6 +137,7 @@ void type_inference_cache_begin(SZrCompilerState *cs, SZrAstNode *node,
     /* Do not cache incidental inference requests for synthetic or temporary ASTs. */
     type_inference_cache_add_tree(cache, node);
     cs->expressionTypeCache = cache;
+    (void)type_inference_cache_fill_tree(cs, node);
 }
 
 void type_inference_cache_end(SZrCompilerState *cs, SZrExpressionTypeCache *cache) {
@@ -2914,7 +2939,7 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
 }
 
 // 从AST节点推断类型（主入口函数）
-TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result) {
+static TZrBool type_inference_expression_infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result) {
     EZrSemanticNumericFactKind numericFactKind = ZR_SEMANTIC_NUMERIC_FACT_UNKNOWN;
     TZrBool success = ZR_FALSE;
 
@@ -3238,6 +3263,17 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
             cached->hasType = ZR_TRUE;
         }
     }
+    return success;
+}
+
+TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result) {
+    SZrExpressionTypeCache cache = {0};
+    TZrBool success;
+    if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL) return ZR_FALSE;
+    /* Return and binding inference can run before expression compilation. */
+    type_inference_cache_begin(cs, node, &cache);
+    success = type_inference_expression_infer(cs, node, result);
+    type_inference_cache_end(cs, &cache);
     return success;
 }
 
