@@ -5,20 +5,16 @@ if (NOT DEFINED ZR_CLEANUP_EXECUTABLE OR NOT EXISTS "${ZR_CLEANUP_EXECUTABLE}"
         OR NOT ZR_CLEANUP_EXPECTED_PHASE MATCHES "^(RED|GREEN)$")
     message(FATAL_ERROR "Supply an actual cleanup executable, output directory and exact phase")
 endif ()
-set(_output_root "E:/cargo-targets/zr_vm/build")
 cmake_path(ABSOLUTE_PATH ZR_CLEANUP_OUTPUT_DIR NORMALIZE OUTPUT_VARIABLE _output)
-cmake_path(IS_PREFIX _output_root "${_output}" NORMALIZE _output_allowed)
 cmake_path(ABSOLUTE_PATH ZR_CLEANUP_EXECUTABLE NORMALIZE OUTPUT_VARIABLE _executable)
 cmake_path(IS_PREFIX _output "${_executable}" NORMALIZE _executable_allowed)
-if (NOT _output_allowed OR _output STREQUAL _output_root OR NOT _executable_allowed
+if (NOT _executable_allowed
         OR NOT IS_DIRECTORY "${_output}")
-    message(FATAL_ERROR "Use the actual executable inside a separate E build child")
+    message(FATAL_ERROR "Use the actual executable inside the configured build directory")
 endif ()
 set(_stdout_path "${_output}/returned-execir-cleanup-${ZR_CLEANUP_EXPECTED_PHASE}-stdout.log")
 set(_stderr_path "${_output}/returned-execir-cleanup-${ZR_CLEANUP_EXPECTED_PHASE}-stderr.log")
-if (EXISTS "${_stdout_path}" OR EXISTS "${_stderr_path}")
-    message(FATAL_ERROR "Preserve existing cleanup raw logs; use a reviewed fresh route")
-endif ()
+
 execute_process(COMMAND "${_executable}" WORKING_DIRECTORY "${_output}"
         RESULT_VARIABLE _exit OUTPUT_VARIABLE _stdout ERROR_VARIABLE _stderr
         TIMEOUT 120 ENCODING UTF-8)
