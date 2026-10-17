@@ -802,6 +802,8 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) ;
 
 void ZrParser_CompilerState_Free(SZrCompilerState *cs) ;
 
+SZrFunction *compiler_new_function(SZrCompilerState *cs);
+
 void print_error_suggestion(const TZrChar *msg) ;
 
 void ZrParser_CompileTime_Error(SZrCompilerState *cs, EZrCompileTimeErrorLevel level, const TZrChar *message, SZrFileRange location) ;

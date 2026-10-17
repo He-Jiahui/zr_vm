@@ -99,13 +99,13 @@ static void check_source(unsigned caseIndex, const char *source, TZrBool expecte
              ZR_VM_TESTS_REPO_ROOT, ZR_VM_TESTS_REPO_ROOT, ZR_VM_TESTS_REPO_ROOT,
              cPath, ZR_VM_TESTS_BUILD_LIB_DIR, ZR_VM_TESTS_BUILD_LIB_DIR, libraryPath);
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, system(command), command);
-    /* Generated code loads its own function tree from the embedded binary. */
-    ZrCore_Function_Free(state, function);
     project = ZrLibrary_Project_New(state, (TZrNativeString)projectJson, projectPath);
     TEST_ASSERT_NOT_NULL(project);
     state->global->userData = project;
     TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_ConfigureGlobal(state->global, ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C, ZR_TRUE));
     success = ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_C, &result);
+    /* Keep the original compiler result across generated code's GC safepoints. */
+    ZrCore_Function_Free(state, function);
     if (success != expectedSuccess) {
         printf("Case %u: %s\n%s\n", caseIndex, source, ZrLibrary_AotRuntime_GetLastError(state->global));
     }

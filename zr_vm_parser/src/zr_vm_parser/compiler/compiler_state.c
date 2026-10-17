@@ -8,6 +8,19 @@
 #include "compiler/tool/compile_tool_project_provider.h"
 #include "compiler/compile_time/comptime_runtime_contract.h"
 #include "zr_vm_parser/parser.h"
+#include "zr_vm_core/gc.h"
+
+SZrFunction *compiler_new_function(SZrCompilerState *cs) {
+    SZrGcRootLease root = {ZR_NULL};
+    SZrFunction *function = ZrCore_Function_New(cs->state);
+    if (function == ZR_NULL) return ZR_NULL;
+    if (!ZrCore_Gc_RootLeaseAcquire(cs->state, &function->super, &root)) {
+        ZrCore_Function_Free(cs->state, function);
+        return ZR_NULL;
+    }
+    ZrCore_Array_Push(cs->state, &cs->functionRoots, &root);
+    return function;
+}
 
 static void compiler_free_type_environment_chain(SZrState *state, SZrTypeEnvironment *env) {
     while (state != ZR_NULL && env != ZR_NULL) {
@@ -27,6 +40,7 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     cs->currentFunction = ZR_NULL;
     cs->currentAst = ZR_NULL;
     cs->expressionTypeCache = ZR_NULL;
+    ZrCore_Array_Init(state, &cs->functionRoots, sizeof(SZrGcRootLease), ZR_PARSER_INITIAL_CAPACITY_SMALL);
     cs->semanticContext = ZrParser_SemanticContext_New(state);
     cs->hirModule = ZR_NULL;
     compiler_semantic_ir_init(cs);
@@ -750,6 +764,12 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
         ZrParser_StructuredDiagnostic_Free(state, &cs->structuredError);
         cs->hasStructuredError = ZR_FALSE;
     }
+
+    for (TZrSize index = 0; index < cs->functionRoots.length; ++index) {
+        SZrGcRootLease *root = ZrCore_Array_Get(&cs->functionRoots, index);
+        ZrCore_Gc_RootLeaseRelease(state->global, root);
+    }
+    ZrCore_Array_Free(state, &cs->functionRoots);
 }
 
 // 报告编译错误

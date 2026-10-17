@@ -150,6 +150,7 @@ typedef struct SZrCompilerState {
     
     // 嵌套函数
     SZrArray childFunctions;            // 子函数数组（SZrFunction*）
+    SZrArray functionRoots;             // temporary SZrGcRootLease owners until assembly/cleanup
     TZrBool emitTestManifest;
     SZrArray testManifestEntries;       // SZrParserTestEntry
     
@@ -555,6 +556,9 @@ ZR_PARSER_API TZrBool ZrParser_Compiler_ValidatePreSemanticIr(
  * @return 成功返回 VM 管理的函数，临时编译状态不会销毁它；显式编译失败返回空指针。
  * @note 不传入当前模块键，不生成 TestManifest；需提供项目模块身份时使用 keyed 入口。
  */
+/* All Compiler_Compile and Source_Compile variants return a host-rooted GC
+ * object. Call Function_Free when no VM references remain, or release just
+ * the host root with Function_ReleaseHostRoot to hand lifetime to GC. */
 ZR_PARSER_API SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast);
 /** @brief 以 Test 提供者阶段编译 AST，并保留已发现测试的 TestManifest。
  * @pre state 已初始化，AST 在调用期间有效；调用方负责 AST 生命周期。
@@ -777,6 +781,7 @@ typedef struct SZrParserSubmissionResult {
 } SZrParserSubmissionResult;
 
 // 编译源代码为函数（封装了从解析到编译的全流程）
+/* Successful results retain the host root described at Compiler_Compile. */
 // 这是提供给 globalState 的统一接口
 ZR_PARSER_API struct SZrFunction *ZrParser_Source_Compile(struct SZrState *state, const TZrChar *source, TZrSize sourceLength, struct SZrString *sourceName);
 ZR_PARSER_API struct SZrFunction *ZrParser_Source_CompileTest(struct SZrState *state, const TZrChar *source, TZrSize sourceLength, struct SZrString *sourceName);

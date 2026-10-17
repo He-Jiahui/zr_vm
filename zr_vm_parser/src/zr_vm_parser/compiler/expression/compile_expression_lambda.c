@@ -178,7 +178,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     cs->currentFunctionNode = node;
     cs->constLocalVars.length = 0;
     cs->constParameters.length = 0;
-    cs->currentFunction = ZrCore_Function_New(cs->state);
+    cs->currentFunction = compiler_new_function(cs);
     if (cs->currentFunction == ZR_NULL) {
         ZrParser_Compiler_Error(cs, "Failed to create lambda function object", node->location);
         if (savedParentInstructions != ZR_NULL) {
@@ -504,7 +504,7 @@ lambda_type_scope_cleanup:
             SZrFunction **srcArray = (SZrFunction **)cs->childFunctions.head;
             for (TZrSize i = 0; i < cs->childFunctions.length; i++) {
                 if (srcArray[i] != ZR_NULL) {
-                    newFunc->childFunctionList[i] = *srcArray[i];
+                    ZrCore_Function_CopyToInline(&newFunc->childFunctionList[i], srcArray[i]);
                 }
             }
             newFunc->childFunctionLength = (TZrUInt32)cs->childFunctions.length;

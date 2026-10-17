@@ -579,7 +579,7 @@ void ZrCli_ReplSession_Free(ZrCliReplSession *session) {
 int ZrCli_ReplSession_Submit(ZrCliReplSession *session, const TZrChar *code) {
     SZrParserSubmissionContext context;
     SZrParserSubmissionResult result;
-    SZrFunction *function;
+    SZrFunction *function = ZR_NULL;
     SZrClosure *successor = ZR_NULL;
     SZrGcRootHandle functionRoot;
     SZrGcRootHandle successorRoot;
@@ -632,6 +632,8 @@ int ZrCli_ReplSession_Submit(ZrCliReplSession *session, const TZrChar *code) {
         !zr_cli_repl_session_copy_prior_captures(session, successor)) {
         goto cleanup;
     }
+    ZrCore_Function_ReleaseHostRoot(session->state, function);
+    function = ZR_NULL;
     ZrCore_GcRootHandle_Release(session->state, &functionRoot);
 
     if (!zr_cli_repl_session_execute_rooted(session, &successorRoot, &value)) {
@@ -678,6 +680,7 @@ int ZrCli_ReplSession_Submit(ZrCliReplSession *session, const TZrChar *code) {
     success = ZR_TRUE;
 
 cleanup:
+    ZrCore_Function_ReleaseHostRoot(session->state, function);
     ZrCore_GcRootHandle_Release(session->state, &valueRoot);
     ZrCore_GcRootHandle_Release(session->state, &functionRoot);
     ZrCore_GcRootHandle_Release(session->state, &successorRoot);

@@ -625,6 +625,7 @@ static TZrBool zr_cli_runtime_prepare_and_execute_entry(SZrState *state,
     if (ignoredFunction) {
         ZrCore_GarbageCollector_UnignoreObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
     }
+    ZrCore_Function_ReleaseHostRoot(state, entryFunction);
     return success;
 }
 
@@ -1029,6 +1030,7 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
             if (ignoredFunction) {
                 ZrCore_GarbageCollector_UnignoreObject(global, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
             }
+            ZrCore_Function_ReleaseHostRoot(state, entryFunction);
             zr_cli_runtime_stop_profile(&profile, &profileStarted);
             zr_cli_runtime_stop_coverage(&coverage, &coverageStarted);
             ZrCli_Runtime_PreparedProject_Free(prepared);
@@ -1053,6 +1055,7 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
             if (ignoredFunction) {
                 ZrCore_GarbageCollector_UnignoreObject(global, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
             }
+            ZrCore_Function_ReleaseHostRoot(state, entryFunction);
             zr_cli_runtime_stop_profile(&profile, &profileStarted);
             zr_cli_runtime_stop_coverage(&coverage, &coverageStarted);
             ZrCli_Runtime_PreparedProject_Free(prepared);
@@ -1069,6 +1072,7 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
         if (ignoredFunction) {
             ZrCore_GarbageCollector_UnignoreObject(global, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
         }
+        ZrCore_Function_ReleaseHostRoot(state, entryFunction);
         executedVia = loadedBinary ? "binary" : "interp";
 
         if (!success) {

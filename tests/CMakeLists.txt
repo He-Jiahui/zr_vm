@@ -8924,6 +8924,12 @@ if (TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static)
     zr_vm_link_parser_core(zr_vm_flat_expression_compile_test)
     add_test(NAME flat_expression_compile COMMAND zr_vm_flat_expression_compile_test)
     set_tests_properties(flat_expression_compile PROPERTIES TIMEOUT 20)
+    zr_vm_add_unity_test_target(zr_vm_compiled_function_lifetime_test
+        ${CMAKE_SOURCE_DIR}/tests/parser/test_compiled_function_lifetime.c)
+    target_include_directories(zr_vm_compiled_function_lifetime_test PRIVATE ${CMAKE_SOURCE_DIR}/tests)
+    zr_vm_link_parser_core(zr_vm_compiled_function_lifetime_test)
+    add_test(NAME compiled_function_lifetime COMMAND zr_vm_compiled_function_lifetime_test)
+    set_tests_properties(compiled_function_lifetime PROPERTIES TIMEOUT 20)
 endif()
 
 if(TARGET zr_vm_cli_executable)

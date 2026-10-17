@@ -714,6 +714,8 @@ ZR_CORE_API SZrIoSource *ZrCore_Io_LoadSource(struct SZrState *state, TZrNativeS
 
 /** @brief 将首个模块的入口函数复制到运行时并链接调用绑定；源树可随后释放。 */
 /** @return 成功返回由运行时管理的函数，验证或分配失败返回空指针。 */
+/** The result owns a host GC root. Use Function_Free, or release only that
+ * root with Function_ReleaseHostRoot after handing the graph to the VM. */
 ZR_CORE_API struct SZrFunction *ZrCore_Io_LoadEntryFunctionToRuntime(struct SZrState *state,
                                                                      const SZrIoSource *source);
 /** @brief 按持久化编号恢复内建原生 helper；未知或预留编号返回空指针。 */

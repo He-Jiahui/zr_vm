@@ -3165,11 +3165,13 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
 
     if (!aot_runtime_build_function_table(state, moduleFunction, &functionTable, &functionCount, &functionCapacity) ||
         functionCount == 0) {
+        ZrCore_Function_ReleaseHostRoot(state, moduleFunction);
         aot_runtime_close_library(handle);
         aot_runtime_fail(state, runtimeState, "failed to build AOT function table for module '%s'", normalizedModule);
         return ZR_FALSE;
     }
     if (!aot_runtime_build_generated_slot_count_table(global, functionTable, functionCount, &generatedFrameSlotCounts)) {
+        ZrCore_Function_ReleaseHostRoot(state, moduleFunction);
         aot_runtime_close_library(handle);
         if (functionTable != ZR_NULL) {
             aot_runtime_reallocate(global, functionTable, sizeof(*functionTable) * functionCapacity, 0);
@@ -3185,6 +3187,7 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
         (descriptor->codeRegistration->functionPointers == ZR_NULL ||
          descriptor->codeRegistration->functionCount != functionCount)) {
         TZrUInt32 descriptorThunkCount = descriptor != ZR_NULL ? descriptor->codeRegistration->functionCount : 0;
+        ZrCore_Function_ReleaseHostRoot(state, moduleFunction);
         aot_runtime_close_library(handle);
         if (generatedFrameSlotCounts != ZR_NULL) {
             aot_runtime_reallocate(global, generatedFrameSlotCounts, sizeof(*generatedFrameSlotCounts) * functionCount, 0);
@@ -3202,6 +3205,8 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
     }
 
     functionPins = aot_runtime_pin_function_table(state, functionTable, functionCount);
+    /* The table's independent native pins take over the loaded result's root. */
+    ZrCore_Function_ReleaseHostRoot(state, moduleFunction);
     if (functionPins == ZR_NULL) {
         aot_runtime_close_library(handle);
         if (generatedFrameSlotCounts != ZR_NULL) {
