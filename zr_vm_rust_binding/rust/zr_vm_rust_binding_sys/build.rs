@@ -28,6 +28,9 @@ fn main() {
             "ZR_VM_RUST_BINDING_LIB_DIR must name an existing import library directory"
         );
         link_search(lib_dir_path);
+        // Static native libraries are bundled into the sys rlib. Rebuild it
+        // when CMake replaces an archive, even if no Rust source changed.
+        println!("cargo:rerun-if-changed={}", lib_dir_path.display());
     } else {
         build_native(link_kind);
     }
