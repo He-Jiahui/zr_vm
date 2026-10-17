@@ -4286,15 +4286,20 @@ static void test_native_binding_inline_label_inspector_keeps_raw_layout_without_
         const SZrTypeValue *directStackContextValue;
         const SZrTypeValue *gcStableValue;
         const SZrTypeValue *ignoredObjectCountValue;
+        TZrSize ignoredBeforeCompile;
+        TZrSize ignoredBeforeExecute;
         SZrObjectModule *module;
         SZrObjectPrototype *inspectPrototype;
 
         TEST_ASSERT_NOT_NULL(state);
         TEST_ASSERT_TRUE(register_probe_native_module(state));
 
+        ignoredBeforeCompile = state->global->garbageCollector->ignoredObjectCount;
         sourceName = ZrCore_String_Create(state, "probe_native_inline_label_inspector_test.zr", 43);
         entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(entryFunction);
+        ignoredBeforeExecute = state->global->garbageCollector->ignoredObjectCount;
+        TEST_ASSERT_EQUAL_UINT64(ignoredBeforeCompile + 1u, ignoredBeforeExecute);
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.type);
 
@@ -4322,9 +4327,12 @@ static void test_native_binding_inline_label_inspector_keeps_raw_layout_without_
         TEST_ASSERT_EQUAL_INT64(1, layoutPreservedValue->value.nativeObject.nativeInt64);
         TEST_ASSERT_EQUAL_INT64(1, directStackContextValue->value.nativeObject.nativeInt64);
         TEST_ASSERT_EQUAL_INT64(1, gcStableValue->value.nativeObject.nativeInt64);
-        TEST_ASSERT_EQUAL_INT64(0, ignoredObjectCountValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64((TZrInt64)ignoredBeforeExecute,
+                               ignoredObjectCountValue->value.nativeObject.nativeInt64);
 
         ZrCore_Function_Free(state, entryFunction);
+        TEST_ASSERT_EQUAL_UINT64(ignoredBeforeCompile,
+                                state->global->garbageCollector->ignoredObjectCount);
         destroy_test_state(state);
     }
 
