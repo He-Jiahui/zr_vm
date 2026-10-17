@@ -1545,8 +1545,6 @@ static EZrCompoundPropertyAssignmentResult compile_assignment_try_compound_prope
     SZrAstNode *lastMemberNode;
     SZrMemberExpression *lastMember;
     SZrString *propertyName;
-    SZrAstNode prefixNode;
-    SZrAstNodeArray prefixMembers;
     SZrAstNode *receiverNode;
     SZrInferredType receiverType;
     SZrString *receiverTypeName;
@@ -1592,11 +1590,12 @@ static EZrCompoundPropertyAssignmentResult compile_assignment_try_compound_prope
         return ZR_COMPOUND_PROPERTY_NOT_APPLICABLE;
     }
 
-    prefixNode = *left;
-    prefixMembers = *primary->members;
-    prefixMembers.count--;
-    prefixNode.data.primaryExpression.members = &prefixMembers;
-    receiverNode = prefixMembers.count == 0u ? primary->property : &prefixNode;
+    receiverNode = ZrParser_SemanticContext_CreatePrimaryPrefix(
+            cs->semanticContext, left, primary->members->count - 1U);
+    if (receiverNode == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Failed to retain property receiver", location);
+        return ZR_COMPOUND_PROPERTY_ERROR;
+    }
 
     ZrParser_InferredType_Init(cs->state, &receiverType, ZR_VALUE_TYPE_OBJECT);
     if (!ZrParser_ExpressionType_Infer(cs, receiverNode, &receiverType)) {
