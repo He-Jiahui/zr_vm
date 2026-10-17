@@ -2,8 +2,9 @@ const { spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { pathToFileURL, fileURLToPath } = require('url');
+const { pathToFileURL } = require('url');
 const { StdioProtocolClient } = require('./stdio_protocol_client');
+const { documentUriMatches: diagnosticRelatedUriMatches } = require('./uri_support');
 const assertStrict = require('assert').strict;
 
 // 集成 smoke 同时约束响应正确性和子进程峰值工作集；阈值可供 CI 环境覆盖。
@@ -178,26 +179,6 @@ async function measureWarmDiagnosticsLatency(client, uri, baseText, sampleCount 
         p95: percentile(samples, 0.95),
         p99: percentile(samples, 0.99),
     };
-}
-
-// 服务端可能回传等价的 file URI 字节形式；测试跨平台按原生路径核对诊断来源。
-function diagnosticRelatedUriMatches(expectedUri, actualUri) {
-    if (actualUri === expectedUri) {
-        return true;
-    }
-    if (typeof actualUri !== 'string' || typeof expectedUri !== 'string') {
-        return false;
-    }
-    try {
-        const expectedPath = fileURLToPath(expectedUri);
-        const actualPath = fileURLToPath(actualUri);
-        if (process.platform === 'win32') {
-            return expectedPath.toLowerCase() === actualPath.toLowerCase();
-        }
-        return expectedPath === actualPath;
-    } catch {
-        return false;
-    }
 }
 
 // 结构化 parser/语义诊断同时核对稳定 code 和面向用户的消息片段。
@@ -380,16 +361,17 @@ function assertSemanticTokensDoNotOverlap(tokens, reason) {
 function workspaceEditTextEdits(workspaceEdit, uri) {
     const documentChange = workspaceEdit && Array.isArray(workspaceEdit.documentChanges)
         ? workspaceEdit.documentChanges.find((change) => change &&
-            change.textDocument && change.textDocument.uri === uri &&
+            change.textDocument && diagnosticRelatedUriMatches(uri, change.textDocument.uri) &&
             Array.isArray(change.edits))
         : undefined;
 
     if (documentChange) {
         return documentChange.edits;
     }
-    return workspaceEdit && workspaceEdit.changes && Array.isArray(workspaceEdit.changes[uri])
-        ? workspaceEdit.changes[uri]
-        : [];
+    const changes = workspaceEdit && workspaceEdit.changes;
+    const key = changes && Object.keys(changes).find((candidate) =>
+        diagnosticRelatedUriMatches(uri, candidate));
+    return key && Array.isArray(changes[key]) ? changes[key] : [];
 }
 
 // 跨文件重命名时核对精确范围和替换文本，避免仅凭非空 edit 误判成功。
@@ -407,7 +389,7 @@ function workspaceEditDocumentVersion(workspaceEdit, uri) {
     const documentChange = workspaceEdit &&
         Array.isArray(workspaceEdit.documentChanges)
         ? workspaceEdit.documentChanges.find((change) => change &&
-            change.textDocument && change.textDocument.uri === uri)
+            change.textDocument && diagnosticRelatedUriMatches(uri, change.textDocument.uri))
         : undefined;
     return documentChange ? documentChange.textDocument.version : undefined;
 }
