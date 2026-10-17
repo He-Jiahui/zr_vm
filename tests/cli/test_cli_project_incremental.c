@@ -1364,11 +1364,52 @@ static void test_cli_compile_emit_zrm_packs_reachable_modules_and_resources(void
     ZrLibrary_Zrm_Close(&archive);
 }
 
+static void test_cli_compile_keeps_imports_valid_when_module_collection_grows(void) {
+    TZrChar projectRoot[ZR_TESTS_PATH_MAX];
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
+    TZrChar mainSource[1024] = {0};
+    TZrChar dependencySource[128];
+    SZrCliCommand command;
+    SZrCliCompileSummary summary = {0};
+    size_t used = 0u;
+
+    build_generated_project_root("module_collection_growth", projectRoot, sizeof(projectRoot));
+    clean_directory_tree(projectRoot);
+    TEST_ASSERT_TRUE(join_path_suffix(projectRoot, "/project.zrp", projectPath, sizeof(projectPath)));
+    TEST_ASSERT_TRUE(write_text_file(projectPath,
+            "{\"name\":\"module-growth\",\"source\":\"src\",\"binary\":\"bin\",\"entry\":\"main\"}"));
+    /* The initial collection has eight records; siblings after dep6 must
+     * still be visited after recursively appending dep7 grows the buffer. */
+    for (unsigned index = 0u; index < 9u; ++index) {
+        int written = snprintf(mainSource + used, sizeof(mainSource) - used,
+                "let dep%u = import(\"dep%u\");\n", index, index);
+        TEST_ASSERT_TRUE(written > 0 && (size_t)written < sizeof(mainSource) - used);
+        used += (size_t)written;
+        snprintf(sourcePath, sizeof(sourcePath), "%s/src/dep%u.zr", projectRoot, index);
+        snprintf(dependencySource, sizeof(dependencySource), "pub fn value(): int { return %u; }\n", index);
+        TEST_ASSERT_TRUE(write_text_file(sourcePath, dependencySource));
+    }
+    TEST_ASSERT_TRUE(used + strlen("return 0;\n") < sizeof(mainSource));
+    strcat(mainSource, "return 0;\n");
+    TEST_ASSERT_TRUE(join_path_suffix(projectRoot, "/src/main.zr", sourcePath, sizeof(sourcePath)));
+    TEST_ASSERT_TRUE(write_text_file(sourcePath, mainSource));
+
+    init_incremental_compile_command(&command, projectPath);
+    TEST_ASSERT_TRUE(ZrCli_Compiler_CompileProjectWithSummary(&command, &summary));
+    TEST_ASSERT_EQUAL_UINT32(10u, (unsigned)summary.compiledCount);
+    memset(&summary, 0, sizeof(summary));
+    TEST_ASSERT_TRUE(ZrCli_Compiler_CompileProjectWithSummary(&command, &summary));
+    TEST_ASSERT_EQUAL_UINT32(0u, (unsigned)summary.compiledCount);
+    TEST_ASSERT_EQUAL_UINT32(10u, (unsigned)summary.skippedCount);
+}
+
 #include "test_cli_comptime_cache_incremental_cases.h"
 
 int main(void) {
     UNITY_BEGIN();
 
+    RUN_TEST(test_cli_compile_keeps_imports_valid_when_module_collection_grows);
     RUN_TEST(test_cli_incremental_decorator_import_compile_skips_clean_rebuild_and_keeps_binary_run_stable);
     RUN_TEST(test_cli_incremental_decorator_import_prunes_removed_modules_and_keeps_binary_run_consistent);
     RUN_TEST(test_cli_incremental_decorator_import_rename_reuses_clean_dependencies_and_prunes_old_artifacts);
