@@ -403,7 +403,7 @@ static void test_rust_binding_incremental_toggle_prunes_stale_intermediate_and_k
             "    pri var _value: int = 2;\n"
             "\n"
             "    #markMethod#\n"
-            "    pub load(v: int): int {\n"
+            "    pub fn load(v: int): int {\n"
             "        return v;\n"
             "    }\n"
             "\n"
@@ -414,7 +414,7 @@ static void test_rust_binding_incremental_toggle_prunes_stale_intermediate_and_k
             "}\n"
             "\n"
             "#markFunction#\n"
-            "pub decoratedBonus(): int {\n"
+            "pub fn decoratedBonus(): int {\n"
             "    var meta = typeof(decoratedBonus).metadata;\n"
             "    return meta.instrumented ? 16 : 0;\n"
             "}\n"
@@ -444,23 +444,23 @@ static void test_rust_binding_incremental_toggle_prunes_stale_intermediate_and_k
     static const TZrChar *decoratorsSource =
             "module \"decorators\";\n"
             "\n"
-            "pub markClass(target: typeof Class): void {\n"
+            "pub fn markClass(target: typeof Class): void {\n"
             "    target.metadata.runtimeSerializable = true;\n"
             "}\n"
             "\n"
-            "pub markFunction(target: typeof Function): void {\n"
+            "pub fn markFunction(target: typeof Function): void {\n"
             "    target.metadata.instrumented = true;\n"
             "}\n"
             "\n"
-            "pub markField(target: typeof Field): void {\n"
+            "pub fn markField(target: typeof Field): void {\n"
             "    target.metadata.isRuntimeField = true;\n"
             "}\n"
             "\n"
-            "pub markMethod(target: typeof Method): void {\n"
+            "pub fn markMethod(target: typeof Method): void {\n"
             "    target.metadata.isRuntimeMethod = true;\n"
             "}\n"
             "\n"
-            "pub markProperty(target: typeof Property): void {\n"
+            "pub fn markProperty(target: typeof Property): void {\n"
             "    target.metadata.isRuntimeProperty = true;\n"
             "}\n";
     TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
@@ -954,7 +954,7 @@ static void test_rust_binding_call_module_export_with_owned_arguments(void) {
 static void test_rust_binding_project_session_calls_zero_arg_export_after_entry_run(void) {
     static const TZrChar *projectName = "session_zero_arg_export_project";
     static const TZrChar *mainSource =
-            "pub ping(): int {\n"
+            "pub fn ping(): int {\n"
             "    return 123;\n"
             "}\n"
             "return 0;\n";
@@ -1568,7 +1568,7 @@ static void test_rust_binding_project_session_gc_rejects_nested_native_call(void
     static const TZrChar *projectName = "session_nested_gc_guard_project";
     static const TZrChar *mainSource =
             "let host = import(\"host_guard\");\n"
-            "pub invoke(): int {\n"
+            "pub fn invoke(): int {\n"
             "    return host.bump(2, 3);\n"
             "}\n"
             "return 0;\n";

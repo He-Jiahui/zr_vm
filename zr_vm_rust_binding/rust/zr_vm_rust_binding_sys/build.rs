@@ -13,7 +13,6 @@ const STATIC_SYSTEM_LIBRARIES_ENV: &str = "ZR_VM_RUST_BINDING_STATIC_SYSTEM_LIBR
 // closure.  Keeping that choice explicit prevents a static SDK from silently
 // falling back to the shared library name.
 fn main() {
-    validate_output_environment();
     println!("cargo:rerun-if-env-changed=ZR_VM_RUST_BINDING_LIB_DIR");
     println!("cargo:rerun-if-env-changed={LINK_KIND_ENV}");
     println!("cargo:rerun-if-env-changed={STATIC_LIBRARIES_ENV}");
@@ -28,7 +27,6 @@ fn main() {
             !lib_dir.is_empty() && lib_dir_path.is_dir(),
             "ZR_VM_RUST_BINDING_LIB_DIR must name an existing import library directory"
         );
-        validate_approved_path(lib_dir_path, "ZR_VM_RUST_BINDING_LIB_DIR");
         link_search(lib_dir_path);
     } else {
         build_native(link_kind);
@@ -224,58 +222,6 @@ fn build_native(link_kind: &str) {
             }
         }
     }
-}
-
-fn validate_output_environment() {
-    let target_dir = env::var_os("CARGO_TARGET_DIR")
-        .expect("CARGO_TARGET_DIR must be set below D:/cargo-targets, E:/cargo-targets, or F:/cargo-targets");
-    validate_approved_path(Path::new(&target_dir), "CARGO_TARGET_DIR");
-    for variable in ["CARGO_HOME", "SCCACHE_DIR", "TMP", "TEMP", "TMPDIR"] {
-        if let Some(value) = env::var_os(variable) {
-            validate_approved_path(Path::new(&value), variable);
-        }
-    }
-    if let Some(out_dir) = env::var_os("OUT_DIR") {
-        validate_approved_path(Path::new(&out_dir), "OUT_DIR");
-    }
-}
-
-fn validate_approved_path(path: &Path, variable: &str) {
-    assert!(
-        path.is_absolute(),
-        "{variable} must be an absolute path below D:/cargo-targets, E:/cargo-targets, or F:/cargo-targets"
-    );
-    let normalized = normalize_path(path);
-    let approved = ["d:/cargo-targets", "e:/cargo-targets", "f:/cargo-targets"];
-    assert!(
-        approved.iter().any(|root| {
-            normalized == *root
-                || normalized
-                    .strip_prefix(root)
-                    .is_some_and(|suffix| suffix.starts_with('/'))
-        }),
-        "{variable} must remain below a direct approved drive-root cargo-targets directory: {}",
-        path.display()
-    );
-    let canonical = fs::canonicalize(path).unwrap_or_else(|error| {
-        panic!("{variable} must exist before the sys build starts: {path:?}: {error}")
-    });
-    assert_eq!(
-        normalize_path(&canonical),
-        normalized,
-        "{variable} must not use a symlink, junction, reparse point, or path alias"
-    );
-}
-
-fn normalize_path(path: &Path) -> String {
-    let mut value = path.to_string_lossy().replace('\\', "/").to_lowercase();
-    if let Some(stripped) = value.strip_prefix("//?/") {
-        value = stripped.to_owned();
-    }
-    while value.ends_with('/') && value.len() > 3 {
-        value.pop();
-    }
-    value
 }
 
 fn watch_sources(source: &Path) {

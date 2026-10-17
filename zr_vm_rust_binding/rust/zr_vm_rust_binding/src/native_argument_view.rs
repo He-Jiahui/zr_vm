@@ -114,11 +114,13 @@ impl NativeArgumentView<'_> {
     }
 
     /// 在 C 的同步字符串 visitor 内暂借 UTF-8 视图，闭包返回后不保留该指针。
-    /// BUG: cargo check --workspace 在 trampoline::<_, T> 处报 E0283，当前签名无法推断 F，安全 crate 无法编译。
-    pub fn with_str<T>(
+    pub fn with_str<T, F>(
         &self,
-        visitor: impl for<'value> FnOnce(&'value str) -> Result<T, Error>,
-    ) -> Result<T, Error> {
+        visitor: F,
+    ) -> Result<T, Error>
+    where
+        F: for<'value> FnOnce(&'value str) -> Result<T, Error>,
+    {
         let mut state = NativeStringVisitorState {
             visitor: Some(visitor),
             result: None,
@@ -126,8 +128,8 @@ impl NativeArgumentView<'_> {
         let status = unsafe {
             sys::ZrRustBinding_NativeArgumentView_WithString(
                 self.raw,
-                Some(native_string_visitor_trampoline::<_, T>),
-                (&mut state as *mut NativeStringVisitorState<_, T>).cast::<c_void>(),
+                Some(native_string_visitor_trampoline::<F, T>),
+                (&mut state as *mut NativeStringVisitorState<F, T>).cast::<c_void>(),
             )
         };
         match state.result {
@@ -241,12 +243,14 @@ where
 
 impl NativeCallContext<'_> {
     /// 以 visitor 限定参数视图的生命周期；闭包不能把 view 交给回调外持有。
-    /// BUG: cargo check --workspace 在 trampoline::<_, T> 处报 E0283，当前签名无法推断 F，安全 crate 无法编译。
-    pub fn with_argument<T>(
+    pub fn with_argument<T, F>(
         &self,
         index: usize,
-        visitor: impl for<'argument> FnOnce(NativeArgumentView<'argument>) -> Result<T, Error>,
-    ) -> Result<T, Error> {
+        visitor: F,
+    ) -> Result<T, Error>
+    where
+        F: for<'argument> FnOnce(NativeArgumentView<'argument>) -> Result<T, Error>,
+    {
         let mut state = NativeArgumentVisitorState {
             visitor: Some(visitor),
             result: None,
@@ -255,8 +259,8 @@ impl NativeCallContext<'_> {
             sys::ZrRustBinding_NativeCallContext_WithArgument(
                 self.raw,
                 index,
-                Some(native_argument_visitor_trampoline::<_, T>),
-                (&mut state as *mut NativeArgumentVisitorState<_, T>).cast::<c_void>(),
+                Some(native_argument_visitor_trampoline::<F, T>),
+                (&mut state as *mut NativeArgumentVisitorState<F, T>).cast::<c_void>(),
             )
         };
         match state.result {

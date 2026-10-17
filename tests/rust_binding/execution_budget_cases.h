@@ -56,15 +56,15 @@ static void execution_budget_fixture_start(ExecutionBudgetFixture *fixture, cons
     static const TZrChar *source =
             "let host = import(\"budget_host\");\n"
             "var caught: int = 0;\n"
-            "pub ping(): int { return 123; }\n"
-            "pub spin(): int { while (true) { } return 0; }\n"
-            "pub protectedSpin(): int {\n"
+            "pub fn ping(): int { return 123; }\n"
+            "pub fn spin(): int { while (true) { } return 0; }\n"
+            "pub fn protectedSpin(): int {\n"
             "  try { spin(); } catch (error) { caught = caught + 1; }\n"
             "  finally { caught = caught + 10; }\n"
             "  return 0;\n"
             "}\n"
-            "pub caughtCount(): int { return caught; }\n"
-            "pub nativeTwice(): int { host.boundary(); return host.boundary(); }\n"
+            "pub fn caughtCount(): int { return caught; }\n"
+            "pub fn nativeTwice(): int { host.boundary(); return host.boundary(); }\n"
             "return 0;\n";
     TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
     TZrChar mainPath[ZR_TESTS_PATH_MAX];

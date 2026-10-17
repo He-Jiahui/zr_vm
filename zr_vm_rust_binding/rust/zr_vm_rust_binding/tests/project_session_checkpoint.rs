@@ -59,7 +59,7 @@ fn rollback_restores_retained_container_uint_array() -> Result<(), Box<dyn std::
         workspace.project_root()?.join("src").join("main.zr"),
         concat!(
             "module main;\n",
-            "let container = %import(\"zr.container\");\n",
+            "let container = import(\"zr.container\");\n",
             "var retained = new container.Array<uint>();\n",
             "retained.add(<uint>7);\n",
             "pub fn tick(): int {\n",

@@ -4486,6 +4486,7 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
                 ${CMAKE_SOURCE_DIR}/zr_vm_core/include
                 ${CMAKE_SOURCE_DIR}/zr_vm_library/include
                 ${CMAKE_SOURCE_DIR}/zr_vm_rust_binding/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_rust_binding/src/zr_vm_rust_binding
         )
         if (BUILD_SHARED_LIB)
             target_compile_definitions(zr_vm_rust_binding_api_test PRIVATE
