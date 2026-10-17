@@ -139,6 +139,9 @@ static void test_rust_binding_execution_budget_instruction_boundary_and_recovery
     TZrUInt64 limit;
 
     execution_budget_fixture_start(&fixture, "execution_budget_instruction");
+    /* The first lookup can initialize the module. Measure the retained export
+     * itself so the exact and shortened budgets cover the same work. */
+    execution_budget_assert_unbounded_int(&fixture, "ping", 123);
     TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
                           ZrRustBinding_ProjectSession_CallModuleExportWithBudget(
                                   fixture.session, "main", "ping", ZR_NULL, 0, &budget, &usage, &result));
@@ -182,6 +185,7 @@ static void test_rust_binding_execution_budget_deadline_and_native_cancel(void) 
     ZrRustBindingValue *result = ZR_NULL;
 
     execution_budget_fixture_start(&fixture, "execution_budget_native");
+    execution_budget_assert_unbounded_int(&fixture, "ping", 123);
     budget.hasInstructionLimit = ZR_TRUE;
     TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
                           ZrRustBinding_ProjectSession_CallModuleExportWithBudget(

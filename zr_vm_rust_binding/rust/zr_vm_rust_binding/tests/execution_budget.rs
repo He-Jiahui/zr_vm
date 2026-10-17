@@ -106,6 +106,8 @@ fn retained_export_execution_budget_regressions() -> Result<(), Box<dyn std::err
                 ..RunOptions::default()
             },
         )?;
+        // Resolve lazy module initialization before measuring repeatable export work.
+        assert_recovered(&mut session)?;
         let unlimited = CallBudget::default();
         let measured = session.call_module_export_with_budget("main", "ping", &[], &unlimited)?;
         let exact = measured.usage.executed_instructions;
