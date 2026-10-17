@@ -533,8 +533,13 @@ static void test_checkpoint_result_cannot_supply_its_before_effect_recipe(void) 
             &function, &result, 1u, &function.instructions[0].resultRange));
     function.values[result - 1u].definition = 1u;
     function.deoptAggregateFields[4].valueId = result;
-    TEST_ASSERT_TRUE(ZrCore_ExecIr_VerifyFunction(
-            &function, ZR_EXEC_IR_VERIFY_ALL, &diagnostic));
+    /* The published map describes the old recipe. Check the new instruction
+     * graph independently, then retain the map to test transactional rebuild. */
+    function.stateMap = NULL;
+    TZrBool valid = ZrCore_ExecIr_VerifyFunction(
+            &function, ZR_EXEC_IR_VERIFY_ALL, &diagnostic);
+    function.stateMap = published;
+    TEST_ASSERT_TRUE(valid);
     TEST_ASSERT_FALSE(ZrParser_ExecIr_BuildStateMaps(&function, &diagnostic));
     TEST_ASSERT_EQUAL(ZR_EXEC_IR_DIAGNOSTIC_STATE_MAP_INVALID, diagnostic.code);
     assert_location();
