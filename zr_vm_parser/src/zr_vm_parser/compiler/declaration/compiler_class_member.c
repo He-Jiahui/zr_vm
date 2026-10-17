@@ -877,7 +877,7 @@ class_member_type_scope_cleanup:
                 }
             }
             newFunc->childFunctionLength = (TZrUInt32)cs->childFunctions.length;
-            ZrCore_Function_RebindConstantFunctionValuesToChildren(newFunc);
+            compiler_rebind_moved_child_constants(newFunc, srcArray);
             for (TZrSize i = 0; i < cs->childFunctions.length; i++) {
                 if (srcArray[i] != ZR_NULL) {
                     ZrCore_Function_DetachOwnedBuffers(srcArray[i]);
