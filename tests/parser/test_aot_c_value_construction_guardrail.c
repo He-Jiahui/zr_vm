@@ -620,8 +620,9 @@ static void test_full_aot_typed_i64_counting_loop_emits_checked_thunk(void) {
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
                                 "        zr_aot_loop_index = ZrCore_Integer_Add(state, zr_aot_loop_index, 1);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "    return zr_aot_loop_accumulator;"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_direct_static_function_call */"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_static_direct_succeeded = (TZrBool)(zr_aot_fn_1(state) != 0);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_static_i64_one_arg_direct_call_full_aot */"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s2 = zr_aot_typed_i64_fn_1(state, zr_aot_s3);"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_ReturnI64(state, zr_aot_s2)"));
     free(generatedCText);
 
     ZrCore_Function_Free(state, function);
