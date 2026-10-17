@@ -120,7 +120,9 @@ async function main() {
         const initialProvider = reportForUri(initial, first.providerUri);
         const secondMain = reportForUri(initial, second.mainUri);
         assert(initialMain && initialProvider && secondMain,
-            'multi-root diagnostics must include both roots and the unopened provider source');
+            `multi-root diagnostics must include both roots and the unopened provider source: ${JSON.stringify({
+                expected: [first.mainUri, first.providerUri, second.mainUri], actual: initial.items,
+            })}`);
         assert.equal(initialMain.version, null,
             'unopened importer diagnostics must not claim an editor version');
         assert.equal(initialProvider.version, null,

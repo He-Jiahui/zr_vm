@@ -3901,7 +3901,9 @@ async function main() {
         providerModuleStart,
         { line: providerModuleStart.line, character: providerModuleStart.character + 6 },
         'modern'),
-    'workspace/willRenameFiles must edit the explicit provider module declaration');
+    `workspace/willRenameFiles must edit the explicit provider module declaration: ${JSON.stringify({
+        expectedUri: moduleIdentityRenameFixture.oldProviderUri, actual: moduleIdentityWillRename,
+    })}`);
     assert(Array.isArray(moduleIdentityWillRename.documentChanges) &&
         moduleIdentityWillRename.documentChanges.length === 3,
     'workspace/willRenameFiles must publish versioned documentChanges for all edited source files');
