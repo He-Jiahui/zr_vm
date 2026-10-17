@@ -4141,7 +4141,19 @@ static TZrBool module_init_export_matches_typed_symbol(const SZrModuleInitExport
     if (info->symbolKind == symbol->symbolKind) {
         if (symbol->symbolKind == ZR_FUNCTION_TYPED_SYMBOL_FUNCTION &&
             info->callableChildIndex != symbol->callableChildIndex) {
-            return ZR_FALSE;
+            /* Prescanning has no compiled child index yet. Match the source
+             * declaration so inferred signatures replace the provisional type,
+             * while keeping overloads with the same name distinct. */
+            if (info->callableChildIndex != ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE ||
+                symbol->lineInSourceStart == 0u ||
+                symbol->lineInSourceStart < info->lineInSourceStart ||
+                (symbol->lineInSourceStart == info->lineInSourceStart &&
+                 symbol->columnInSourceStart < info->columnInSourceStart) ||
+                symbol->lineInSourceEnd > info->lineInSourceEnd ||
+                (symbol->lineInSourceEnd == info->lineInSourceEnd &&
+                 symbol->columnInSourceEnd > info->columnInSourceEnd)) {
+                return ZR_FALSE;
+            }
         }
 
         return ZR_TRUE;

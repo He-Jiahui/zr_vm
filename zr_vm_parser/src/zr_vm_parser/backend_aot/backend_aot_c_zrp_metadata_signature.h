@@ -59,7 +59,7 @@ TZrBool backend_aot_c_zrp_build_signature_blob_remap(
         TZrUInt32 retainedMethodDefCount);
 
 TZrBool backend_aot_c_zrp_remap_retained_signature_token(
-        TZrMetadataToken *token,
+        void *token,
         const SZrMetadataTokenRecord *tokenRecords,
         TZrUInt32 tokenRecordCount,
         const SZrZrpMetadataTypeDefRow *typeRows,
@@ -154,7 +154,7 @@ TZrBool backend_aot_c_zrp_rewrite_retained_signature_type_def_tokens(
         const SZrAotCZrpSignatureBlobRemap *signatureRemap,
         const SZrAotCZrpStringPoolRemap *stringRemap);
 
-TZrBool backend_aot_c_zrp_remap_signature_blob_offset(TZrUInt32 *signatureBlobOffset,
+TZrBool backend_aot_c_zrp_remap_signature_blob_offset(void *signatureBlobOffset,
                                                       TZrUInt32 signatureBlobLength,
                                                       const SZrAotCZrpSignatureBlobRemap *remap);
 

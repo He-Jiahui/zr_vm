@@ -184,6 +184,37 @@ static TZrBool io_runtime_validate_function_frame_layout(
                       ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS)) != 0u) {
             return ZR_FALSE;
         }
+        if ((flags & (ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT |
+                      ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS)) ==
+                (ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT |
+                 ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS)) {
+            TZrBool hasSourceBinding = ZR_FALSE;
+            /* A forwarded receiver shares an already initialized alias binding. */
+            if (layout->isParameter) {
+                return ZR_FALSE;
+            }
+            for (TZrSize previous = 0u; previous < index; ++previous) {
+                const SZrIoFunctionFrameSlotLayout *parent =
+                        &source->frameSlotLayouts[previous];
+                const TZrUInt16 storageFlags =
+                        ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+                        ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
+                        ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS;
+                if (parent->stackSlot < layout->stackSlot &&
+                    parent->slotKind == layout->slotKind &&
+                    parent->byteOffset == layout->byteOffset &&
+                    parent->byteSize == layout->byteSize &&
+                    parent->byteAlign == layout->byteAlign &&
+                    parent->typeLayoutId == layout->typeLayoutId &&
+                    (parent->reserved0 & storageFlags) == (flags & storageFlags)) {
+                    hasSourceBinding = ZR_TRUE;
+                    break;
+                }
+            }
+            if (!hasSourceBinding) {
+                return ZR_FALSE;
+            }
+        }
         if ((flags & ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS) != 0u) {
             const TZrUInt16 required =
                     ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
@@ -191,12 +222,12 @@ static TZrBool io_runtime_validate_function_frame_layout(
                     ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS;
             if (source->sourceVersionPatch <
                         ZR_IO_SOURCE_PATCH_HAS_BORROWED_FRAME_ALIAS ||
-                (flags & required) != required || !layout->isParameter ||
+                (flags & required) != required ||
+                (!layout->isParameter &&
+                 (flags & ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT) == 0u) ||
                 layout->slotKind !=
                         (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT ||
-                (flags & (ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT |
-                          ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP)) !=
-                        0u) {
+                (flags & ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP) != 0u) {
                 return ZR_FALSE;
             }
             storageSize =
@@ -204,10 +235,6 @@ static TZrBool io_runtime_validate_function_frame_layout(
             storageAlign = (TZrUInt32)_Alignof(
                     SZrFunctionFrameBorrowedAliasBinding);
         } else if ((flags & ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS) != 0u) {
-            if ((flags & ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT) !=
-                0u) {
-                return ZR_FALSE;
-            }
             storageSize =
                     (TZrUInt32)sizeof(SZrFunctionFrameIndirectAliasBinding);
             storageAlign = (TZrUInt32)_Alignof(
@@ -1458,7 +1485,7 @@ static TZrBool io_runtime_populate_function(SZrState *state,
 
     ZrCore_Function_FinalizeDirectFrameValueSlots(function);
     ZrCore_Function_RebindConstantFunctionValuesToChildren(function);
-    ZrCore_Function_ClearChildOwnerLinks(function);
+    /* Embedded children must retain the allocation that owns their storage. */
 
     return ZR_TRUE;
 }

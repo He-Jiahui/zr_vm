@@ -212,4 +212,42 @@ static void test_type_use_identity_rejects_inconsistent_whole_range(void) {
     check_type_use_publication_identity(ZR_FALSE, ZR_FALSE, ZR_FALSE, ZR_TRUE);
 }
 
+static void test_qualified_type_use_publishes_terminal_name_only(void) {
+    SZrSemanticContext *context = ZrParser_SemanticContext_New(g_state);
+    SZrString *module = ZrCore_String_CreateFromNative(g_state, "source.models");
+    SZrString *name = ZrCore_String_CreateFromNative(g_state, "Box");
+    SZrAstNode prefixNode;
+    SZrAstNode terminalNode;
+    SZrType terminal = {0};
+    SZrType qualified = {0};
+    SZrParserSemanticTypeQuery query;
+    TZrTypeId typeId;
+
+    TEST_ASSERT_NOT_NULL(context);
+    typeId = ZrParser_CanonicalType_InternNominal(context, module, name, 0U);
+    symbol_init_node(&prefixNode, 40U, 46U);
+    prefixNode.type = ZR_AST_IDENTIFIER_LITERAL;
+    prefixNode.data.identifier.name = module;
+    symbol_init_node(&terminalNode, 47U, 50U);
+    terminalNode.type = ZR_AST_IDENTIFIER_LITERAL;
+    terminalNode.data.identifier.name = name;
+    terminal.name = &terminalNode;
+    qualified.name = &prefixNode;
+    qualified.subType = &terminal;
+
+    TEST_ASSERT_TRUE(ZrParser_SemanticTypeUse_Publish(context, &qualified, typeId, ZR_TRUE));
+    TEST_ASSERT_TRUE(ZrParser_SemanticTypeUse_Publish(context, &qualified, typeId, ZR_TRUE));
+    TEST_ASSERT_EQUAL_UINT(1U, context->referenceFacts.length);
+    TEST_ASSERT_FALSE(ZrParser_SemanticQuery_CanonicalTypeAt(
+            context, symbol_range(41U, 41U), ZR_NULL, &query));
+    TEST_ASSERT_TRUE(ZrParser_SemanticQuery_CanonicalTypeAt(
+            context, symbol_range(48U, 48U), ZR_NULL, &query));
+    TEST_ASSERT_EQUAL_UINT32(typeId, query.typeId);
+    TEST_ASSERT_EQUAL_PTR(&terminalNode, query.reference->node);
+    TEST_ASSERT_EQUAL_UINT64(47U, query.reference->range.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(50U, query.reference->range.end.offset);
+    TEST_ASSERT_EQUAL_STRING("Box", ZrCore_String_GetNativeString(query.reference->name));
+    ZrParser_SemanticContext_Free(context);
+}
+
 #endif

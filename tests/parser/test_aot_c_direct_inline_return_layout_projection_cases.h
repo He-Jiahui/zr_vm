@@ -373,6 +373,9 @@ static void test_aot_exec_ir_projects_and_validates_direct_inline_return_layout(
     unreachableReturnSourceLayout->slotKind = originalSourceSlotKind;
     root->childFunctionList = originalChildFunctionList;
     root->childFunctionLength = originalChildFunctionLength;
+    /* AOT publication rebound callable constants to the temporary child
+     * array. Restore those graph edges before releasing its storage. */
+    ZrCore_Function_RebindConstantFunctionValuesToChildren(root);
     ZrCore_Memory_RawFreeWithType(
             state->global,
             unreachableSemIrInstructions,

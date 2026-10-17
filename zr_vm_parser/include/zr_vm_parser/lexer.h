@@ -202,9 +202,9 @@ ZR_PARSER_API void ZrParser_Lexer_Next(SZrLexState *ls);
  * @note 前瞻可能分配 VM 字符串，也可能触发词法诊断。 */
 ZR_PARSER_API EZrToken ZrParser_Lexer_Lookahead(SZrLexState *ls);
 
-/** @brief 标记当前扫描 token 的首个词法错误，并打印源位置及片段。
- * @note msg 原样借入 token，调用方须保持它到 token 不再使用；函数直接写 stdout，
- *       不经解析器的错误回调或 suppressErrorOutput。 */
+/** @brief Record the current token's first lexical error without writing output.
+ * @note msg is borrowed until the token is no longer used. The parser or
+ * analyzer consumes the token diagnostic through its own reporting policy. */
 ZR_PARSER_API void ZrParser_Lexer_SyntaxError(SZrLexState *ls, const TZrChar *msg);
 
 /** @brief 返回 token 的诊断拼写。

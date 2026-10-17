@@ -89,13 +89,15 @@ static char *read_repo_text_file_owned(const char *relativePath) {
 /* 必需片段允许空白差异；此检查只证明源码形态存在。 */
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
+    int missing = 0;
 
     for (index = 0; index < needleCount; index++) {
         if (!zr_test_aot_source_contract_contains(text, needles[index])) {
             printf("Missing source contract text: %s\n", needles[index]);
-            TEST_FAIL_MESSAGE("missing required source contract text");
+            missing = 1;
         }
     }
+    TEST_ASSERT_FALSE_MESSAGE(missing, "missing required source contract text");
 }
 
 /* 逐字排除已迁移的旧实现片段。 */
@@ -504,14 +506,13 @@ static void test_aot_c_source_lowers_legacy_int_arithmetic_to_direct_c_expressio
             "backend_aot_write_c_direct_sub_int_const",
     };
     static const char *const legacyIntLoweringNeedles[] = {
-            "backend_aot_c_lowering_legacy_int_arithmetic.c",
             "zr_aot_arith_exec_int",
             "zr_aot_arith_exec_int_const",
             "backend_aot_c_format_integer_like_literal",
-            "zr_aot_left_int + zr_aot_right_int",
-            "zr_aot_left_int + zr_aot_right_literal",
-            "zr_aot_left_int - zr_aot_right_int",
-            "zr_aot_left_int - zr_aot_right_literal",
+            "ZrCore_Integer_Add(state, zr_aot_left_int, zr_aot_right_int)",
+            "ZrCore_Integer_Add(state, zr_aot_left_int, zr_aot_right_literal)",
+            "ZrCore_Integer_Subtract(state, zr_aot_left_int, zr_aot_right_int)",
+            "ZrCore_Integer_Subtract(state, zr_aot_left_int, zr_aot_right_literal)",
             "unsupported AOT ADD_INT_CONST constant",
             "unsupported AOT SUB_INT_CONST constant",
             "ZR_AOT_C_FAIL();",
@@ -563,7 +564,6 @@ static void test_aot_c_source_lowers_generic_numeric_arithmetic_to_boundary_help
             "backend_aot_write_c_direct_neg",
     };
     static const char *const genericNumericNeedles[] = {
-            "backend_aot_c_lowering_generic_numeric_arithmetic.c",
             "const SZrAotExecIrFunction *functionIr,",
             "zr_aot_arith_exec_generic_numeric_binary_boundary",
             "zr_aot_arith_exec_generic_numeric_unary_boundary",
@@ -598,7 +598,7 @@ static void test_aot_c_source_lowers_generic_numeric_arithmetic_to_boundary_help
             "zr_aot_generic_numeric_u64_div_scalar_local",
             "backend_aot_c_write_generic_numeric_u64_mod_scalar_local(",
             "zr_aot_generic_numeric_u64_mod_scalar_local",
-            "zr_aot_s%u = zr_aot_s%u %s zr_aot_s%u;",
+            "zr_aot_s%u = %s(state, zr_aot_s%u, zr_aot_s%u);",
             "zr_aot_u%u = zr_aot_u%u %s zr_aot_u%u;",
             "backend_aot_c_write_generic_numeric_i64_div_scalar_local(",
             "zr_aot_generic_numeric_i64_div_scalar_local",
@@ -612,10 +612,10 @@ static void test_aot_c_source_lowers_generic_numeric_arithmetic_to_boundary_help
             "zr_aot_u%u = zr_aot_u%u %% zr_aot_u%u;",
             "backend_aot_c_write_generic_numeric_i64_neg_scalar_local(",
             "zr_aot_generic_numeric_i64_neg_scalar_local",
-            "zr_aot_s%u = -zr_aot_s%u;",
+            "zr_aot_s%u = ZrCore_Integer_Negate(state, zr_aot_s%u);",
             "backend_aot_c_write_generic_numeric_u64_neg_to_i64_scalar_local(",
             "zr_aot_generic_numeric_u64_neg_to_i64_scalar_local",
-            "zr_aot_s%u = -(TZrInt64)zr_aot_u%u;",
+            "zr_aot_s%u = ZrCore_Integer_NegateUnsigned(state, zr_aot_u%u);",
             "zr_aot_generic_numeric_mixed_i64_u64_add_scalar_local",
             "zr_aot_generic_numeric_mixed_i64_u64_sub_scalar_local",
             "zr_aot_generic_numeric_mixed_i64_u64_mul_scalar_local",
@@ -700,7 +700,7 @@ static void test_aot_c_source_lowers_generic_numeric_arithmetic_to_boundary_help
             "const SZrTypeValue *zr_aot_left = ZrCore_Stack_GetValue(frame.slotBase + %u);",
             "ZR_VALUE_IS_TYPE_NUMBER(zr_aot_left->type)",
             "zr_aot_left_float + zr_aot_right_float",
-            "zr_aot_left_int + zr_aot_right_int",
+            "ZrCore_Integer_Add(state, zr_aot_left_int, zr_aot_right_int)",
             "zr_aot_left_uint + zr_aot_right_uint",
             "-zr_aot_source->value.nativeObject.nativeInt64",
     };
@@ -748,7 +748,6 @@ static void test_aot_c_source_lowers_generic_primitive_conversions_to_boundary_h
             "const SZrAotExecIrFunction *functionIr",
     };
     static const char *const genericConversionNeedles[] = {
-            "backend_aot_c_lowering_generic_conversion.c",
             "#include \"backend_aot/backend_aot_c_scalar_locals.h\"",
             "backend_aot_write_c_scalar_to_bool(",
             "backend_aot_c_scalar_locals_bool_result_can_skip_value_slot(",
@@ -867,7 +866,6 @@ static void test_aot_c_source_lowers_generic_primitive_conversions_to_boundary_h
 /* 检查逻辑布尔同步表达式的括号，防止 C 优先级改变值流。 */
 static void test_aot_c_source_parenthesizes_generic_logical_bool_sync_expressions(void) {
     static const char *const genericLogicalNeedles[] = {
-            "backend_aot_c_lowering_generic_logical.c",
             "backend_aot_c_write_string_bool_scalar_local(",
             "backend_aot_c_write_bool_local_sync(",
             "zr_aot_b%u = (TZrBool)((%s) != 0u);",
@@ -955,26 +953,26 @@ static void test_aot_c_source_lowers_typed_arithmetic_to_c_expressions(void) {
             "zr_aot_arith_exec_unsigned_const",
             "backend_aot_c_format_signed_integer_literal",
             "backend_aot_c_format_unsigned_integer_literal",
-            "zr_aot_left_scalar + zr_aot_right_scalar",
+            "ZrCore_Integer_Add(state, zr_aot_left_scalar, zr_aot_right_scalar)",
             "zr_aot_left_scalar - zr_aot_right_scalar",
-            "zr_aot_left_scalar * zr_aot_right_scalar",
+            "ZrCore_Integer_Multiply(state, zr_aot_left_scalar, zr_aot_right_scalar)",
             "zr_aot_left_scalar / zr_aot_right_scalar",
-            "zr_aot_left_scalar + zr_aot_right_literal",
-            "zr_aot_left_scalar - zr_aot_right_literal",
-            "zr_aot_left_scalar * zr_aot_right_literal",
+            "ZrCore_Integer_Add(state, zr_aot_left_scalar, zr_aot_right_literal)",
+            "ZrCore_Integer_Subtract(state, zr_aot_left_scalar, zr_aot_right_literal)",
+            "ZrCore_Integer_Multiply(state, zr_aot_left_scalar, zr_aot_right_literal)",
             "zr_aot_left_scalar / zr_aot_right_literal",
             "-zr_aot_source_scalar",
             "zr_aot_s%u = %s;",
             "zr_aot_left_scalar = zr_aot_s%u;",
             "zr_aot_s%u = zr_aot_result;",
             "zr_aot_f%u = %s;",
-            "zr_aot_s%u = -zr_aot_s%u;",
+            "zr_aot_s%u = ZrCore_Integer_Negate(state, zr_aot_s%u);",
             "zr_aot_f%u = -zr_aot_f%u;",
             "zr_aot_arith_exec_signed_mod",
             "zr_aot_arith_exec_unsigned_mod",
             "zr_aot_left_scalar % zr_aot_right_scalar",
             "zr_aot_left_scalar % zr_aot_right_literal",
-            "(zr_aot_left_scalar + zr_aot_right_scalar) % zr_aot_mod_literal",
+            "ZrCore_Integer_Modulo(state, ZrCore_Integer_Add(state, zr_aot_left_scalar, zr_aot_right_scalar), zr_aot_mod_literal)",
             "zr_aot_arith_exec_signed_add_mod_const",
             "ZrCore_Debug_RunError(state, \\\"divide by zero\\\")",
             "ZrCore_Debug_RunError(state, \\\"modulo by zero\\\")",
@@ -1153,13 +1151,13 @@ static void test_aot_c_source_lowers_typed_arithmetic_to_c_expressions(void) {
             "*outLeftSlot = instruction->instruction.operand.operand0[0];",
             "constantIndex = instruction->instruction.operand.operand1[1];",
             "hasRightLiteral ? 0u : (unsigned)rightSlot",
-            "zr_aot_s%u = zr_aot_s%u %s (TZrInt64)%lld;",
+            "zr_aot_s%u = %s(state, zr_aot_s%u, (TZrInt64)%lld);",
             "backend_aot_c_scalar_locals_has_u64_slot(functionIr, destinationSlot)",
             "backend_aot_c_scalar_locals_has_u64_slot(functionIr, leftSlot)",
             "backend_aot_c_scalar_locals_has_u64_slot(functionIr, rightSlot)",
             "TZrBool useScalarDestination",
             "zr_aot_s%u = frame.slotBase[%u].value.value.nativeObject.nativeInt64;",
-            "zr_aot_s%u = zr_aot_s%u %s zr_aot_s%u;",
+            "zr_aot_s%u = %s(state, zr_aot_s%u, zr_aot_s%u);",
             "zr_aot_s_result = zr_aot_s%u;",
             "zr_aot_s%u = zr_aot_s_result;",
             "zr_aot_u%u = frame.slotBase[%u].value.value.nativeObject.nativeUInt64;",
@@ -1240,9 +1238,9 @@ static void test_aot_c_source_lowers_typed_signed_load_const_arithmetic_to_c_exp
             "backend_aot_c_signed_load_const_value_type_literal",
             "zr_aot_materialized_constant",
             "ZR_VALUE_FAST_SET(zr_aot_materialized_constant",
-            "zr_aot_left_scalar + zr_aot_right_literal",
-            "zr_aot_left_scalar - zr_aot_right_literal",
-            "zr_aot_left_scalar * zr_aot_right_literal",
+            "ZrCore_Integer_Add(state, zr_aot_left_scalar, zr_aot_right_literal)",
+            "ZrCore_Integer_Subtract(state, zr_aot_left_scalar, zr_aot_right_literal)",
+            "ZrCore_Integer_Multiply(state, zr_aot_left_scalar, zr_aot_right_literal)",
             "zr_aot_left_scalar / zr_aot_right_literal",
             "zr_aot_left_scalar % zr_aot_right_literal",
             "ZrCore_Debug_RunError(state, \\\"divide by zero\\\")",
@@ -1307,9 +1305,9 @@ static void test_aot_c_source_lowers_typed_signed_load_stack_const_arithmetic_to
             "zr_aot_arith_exec_signed_load_stack_const",
             "zr_aot_materialized_left",
             "*zr_aot_materialized_left = *zr_aot_source;",
-            "zr_aot_left_scalar + zr_aot_right_literal",
-            "zr_aot_left_scalar - zr_aot_right_literal",
-            "zr_aot_left_scalar * zr_aot_right_literal",
+            "ZrCore_Integer_Add(state, zr_aot_left_scalar, zr_aot_right_literal)",
+            "ZrCore_Integer_Subtract(state, zr_aot_left_scalar, zr_aot_right_literal)",
+            "ZrCore_Integer_Multiply(state, zr_aot_left_scalar, zr_aot_right_literal)",
             "zr_aot_left_scalar / zr_aot_right_literal",
             "zr_aot_left_scalar % zr_aot_right_literal",
             "ZrCore_Debug_RunError(state, \\\"divide by zero\\\")",
@@ -1371,7 +1369,7 @@ static void test_aot_c_source_lowers_typed_signed_load_stack_load_const_arithmet
             "zr_aot_materialized_constant",
             "*zr_aot_materialized_left = *zr_aot_source;",
             "ZR_VALUE_FAST_SET(zr_aot_materialized_constant",
-            "zr_aot_left_scalar + zr_aot_right_literal",
+            "ZrCore_Integer_Add(state, zr_aot_left_scalar, zr_aot_right_literal)",
             "zr_aot_load_stack_load_const_result_type",
     };
     static const char *const functionBodyNeedles[] = {
@@ -1415,8 +1413,8 @@ static void test_aot_c_source_lowers_typed_signed_load_stack_arithmetic_to_c_exp
     static const char *const loadStackSourceNeedles[] = {
             "backend_aot_c_lowering_typed_arithmetic_load_stack.c",
             "zr_aot_arith_exec_signed_load_stack",
-            "zr_aot_left_scalar + zr_aot_right_scalar",
-            "zr_aot_left_scalar * zr_aot_right_scalar",
+            "ZrCore_Integer_Add(state, zr_aot_left_scalar, zr_aot_right_scalar)",
+            "ZrCore_Integer_Multiply(state, zr_aot_left_scalar, zr_aot_right_scalar)",
             "zr_aot_load_stack_result_type",
             "ZR_VALUE_TYPE_INT64",
     };
@@ -1470,15 +1468,15 @@ static void test_aot_c_source_lowers_typed_bitwise_to_c_expressions(void) {
     static const char *const sourceNeedles[] = {
             "zr_aot_bitwise_exec_unary",
             "zr_aot_bitwise_exec_binary",
-            "zr_aot_bitwise_exec_unsigned_shift_right",
+            "zr_aot_shift_exec_generic_right",
             "~zr_aot_source_scalar",
             "zr_aot_left_scalar & zr_aot_right_scalar",
             "zr_aot_left_scalar | zr_aot_right_scalar",
             "zr_aot_left_scalar ^ zr_aot_right_scalar",
-            "(TZrInt64)(zr_aot_left_unsigned << zr_aot_shift_count)",
-            "zr_aot_left_scalar >> zr_aot_shift_count",
-            "(TZrInt64)(zr_aot_left_unsigned >> zr_aot_shift_count)",
-            "shift count out of range",
+            "ZrCore_Integer_FromBits(zr_aot_left_unsigned << zr_aot_shift_count)",
+            "ZrCore_Integer_ShiftRight(zr_aot_left_scalar, (TZrUInt64)zr_aot_shift_count)",
+            "ZrCore_Integer_ShiftRight(zr_aot_left_scalar, (TZrUInt64)zr_aot_shift_count)",
+            "%s = (TZrInt64)((TZrUInt64)%s & 63u);",
     };
     static const char *const functionBodyNeedles[] = {
             "backend_aot_write_c_direct_bitwise_not(file, destinationSlot, operandA1);",
@@ -1521,15 +1519,16 @@ static void test_aot_c_source_lowers_typed_bitwise_to_c_expressions(void) {
             "zr_aot_u_result = zr_aot_u%u;",
             "zr_aot_u%u = ~zr_aot_u%u;",
             "zr_aot_u_result = ~zr_aot_u%u;",
-            "zr_aot_u%u = zr_aot_u%u << zr_aot_s%u;",
-            "zr_aot_u_result = zr_aot_u%u << zr_aot_s%u;",
-            "if (ZR_UNLIKELY(zr_aot_s%u < 0 || zr_aot_s%u >= 64)) {",
+            "zr_aot_u%u = zr_aot_u%u << ((TZrUInt64)zr_aot_s%u & 63u);",
+            "zr_aot_u_result = zr_aot_u%u << ((TZrUInt64)zr_aot_s%u & 63u);",
+            "ZrCore_Integer_ShiftLeft",
+            "ZrCore_Integer_ShiftRight",
             "TZrBool useScalarOperands",
             "TZrBool useScalarDestination",
             "zr_aot_s%u = zr_aot_s_result;",
             "zr_aot_u%u = zr_aot_u_result;",
-            "zr_aot_s%u = (TZrInt64)((TZrUInt64)zr_aot_s%u << zr_aot_s%u);",
-            "zr_aot_s_result = (TZrInt64)((TZrUInt64)zr_aot_s%u << zr_aot_s%u);",
+            "zr_aot_s%u = ZrCore_Integer_ShiftLeft(zr_aot_s%u, (TZrUInt64)zr_aot_s%u);",
+            "zr_aot_s_result = ZrCore_Integer_ShiftLeft(zr_aot_s%u, (TZrUInt64)zr_aot_s%u);",
             "zr_aot_s%u = ~zr_aot_s%u;",
             "zr_aot_s_result = ~zr_aot_s%u;",
     };
@@ -2218,6 +2217,7 @@ static void test_aot_c_source_emits_value_frame_cleanup_exit(void) {
             "ZrCore_Function_ResolvePrototypeFrameTypeLayout(frame.function",
     };
     static const char *const functionBodyNeedles[] = {
+            "backend_aot_write_c_begin_instruction(",
             "#include \"backend_aot/backend_aot_c_frame_cleanup.h\"",
             "ZrAotGeneratedFrame frame = {0};",
             "const TZrUInt32 zr_aot_function_index = %uu;",
@@ -2292,7 +2292,6 @@ static void test_aot_c_source_emits_value_frame_cleanup_exit(void) {
             "\"        return 1;\\n\"",
     };
     static const char *const forbiddenFunctionBodyNeedles[] = {
-            "backend_aot_write_c_begin_instruction(",
             "publishExports || entry->function->exceptionHandlerCount > 0",
             "ZrLibrary_AotRuntime_Return(state, &frame, %u, %s)",
             "ZrLibrary_AotRuntime_Return(state, &frame, %u, ZR_TRUE)",

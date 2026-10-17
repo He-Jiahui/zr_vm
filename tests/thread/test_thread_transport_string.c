@@ -1,4 +1,5 @@
 /* Actual Thread transport must preserve VM string bytes, including NUL. */
+#include "runtime/runtime_internal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6,7 +7,6 @@
 #include <windows.h>
 #include <crtdbg.h>
 #endif
-#include "runtime/runtime_internal.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"

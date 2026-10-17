@@ -3525,13 +3525,27 @@ translate_module_info:
             TZrUInt32 contractRole =
                     (TZrUInt32)native_module_info_get_int_field(cs->state, fieldEntry, "contractRole", 0);
             if (fieldName != ZR_NULL && !runtimeOnly) {
-                native_module_info_add_field_member(cs->state,
+                SZrNativeModuleMemberIdentity identity;
+                native_module_info_next_member_identity(cs->state,
+                                                        ZR_METADATA_SIGNATURE_NODE_FIELD_SIG,
+                                                        fieldMemberType,
+                                                        typePrototype.name,
+                                                        fieldName,
+                                                        fieldTypeName,
+                                                        0u,
+                                                        0u,
+                                                        ZR_NULL,
+                                                        &nativeMemberRidCursor,
+                                                        &nativeSignatureRidCursor,
+                                                        &identity);
+                native_module_info_add_field_member_with_identity(cs->state,
                                                     &typePrototype,
                                                     fieldMemberType,
                                                     fieldName,
                                                     fieldTypeName,
                                                     ZR_FALSE,
-                                                    contractRole);
+                                                    contractRole,
+                                                    &identity);
             }
         }
 
@@ -3579,7 +3593,10 @@ translate_module_info:
                                                         &nativeSignatureRidCursor,
                                                         &identity);
                 if (nativeDescriptor != ZR_NULL && i < nativeDescriptor->typeCount &&
-                    methodIndex < nativeDescriptor->types[i].methodCount) {
+                    methodIndex < nativeDescriptor->types[i].methodCount &&
+                    nativeDescriptor->types[i].methods[methodIndex].callback != ZR_NULL) {
+                    /* Abstract native declarations have no provider target.
+                     * Keep receiver-based member lookup for their implementations. */
                     (void)ZrLibrary_NativeCallBinding_GetDescriptorContract(
                             nativeDescriptor, &nativeDescriptor->types[i],
                             ZR_NATIVE_CALL_BINDING_METHOD, &nativeDescriptor->types[i].methods[methodIndex],
@@ -4457,9 +4474,7 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                             memberInfo,
                             &nextType,
                             ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS);
-                    if (memberInfo->declarationNode == ZR_NULL &&
-                        type_name_is_module_prototype_inference(
-                                cs, currentType.typeName)) {
+                    if (memberInfo->declarationNode == ZR_NULL) {
                         EZrSemanticExternalTargetKind externalTargetKind =
                                 ZR_SEMANTIC_EXTERNAL_TARGET_UNKNOWN;
 
@@ -4475,7 +4490,9 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                             externalTargetKind = ZR_SEMANTIC_EXTERNAL_TARGET_PROPERTY;
                         } else if (memberInfo->memberType == ZR_AST_CLASS_FIELD ||
                                    memberInfo->memberType == ZR_AST_STRUCT_FIELD) {
-                            externalTargetKind = ZR_SEMANTIC_EXTERNAL_TARGET_VALUE;
+                            externalTargetKind = type_name_is_module_prototype_inference(cs, currentType.typeName)
+                                    ? ZR_SEMANTIC_EXTERNAL_TARGET_VALUE
+                                    : ZR_SEMANTIC_EXTERNAL_TARGET_FIELD;
                         }
                         type_inference_record_external_member_reference_fact(
                                 cs,
@@ -4492,12 +4509,21 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                                  ZR_AST_INTERFACE_METHOD_SIGNATURE)) {
                         type_inference_record_unbound_member_reference_fact(
                                 cs, memberNode, memberInfo);
-                    } else if (hasExternalCallableReturnType) {
-                        type_inference_record_external_callable_member_reference_fact(
-                                cs,
-                                memberNode,
-                                memberInfo,
-                                &externalCallableReturnType);
+                    } else {
+                        TZrBool publishedCallable = hasExternalCallableReturnType &&
+                                type_inference_record_external_callable_member_reference_fact(
+                                        cs,
+                                        memberNode,
+                                        memberInfo,
+                                        &externalCallableReturnType);
+                        if (!publishedCallable && memberInfo->declarationNode == ZR_NULL &&
+                            (memberInfo->memberType == ZR_AST_STRUCT_METHOD ||
+                             memberInfo->memberType == ZR_AST_CLASS_METHOD)) {
+                            /* Partial/optional signatures still have an exact provider identity. */
+                            type_inference_record_external_member_reference_fact(
+                                    cs, memberNode, memberInfo, &nextType,
+                                    ZR_SEMANTIC_EXTERNAL_TARGET_CALLABLE);
+                        }
                     }
                     ZrParser_InferredType_Free(cs->state, &externalCallableReturnType);
                 }

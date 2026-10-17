@@ -505,7 +505,7 @@ static void register_function_type_binding_in_env(SZrState *state,
                     declarationNode,
                     funcDecl->returnType,
                     resolvedReturnTypeInfo,
-                    &returnFullyResolved)) {
+                    &returnFullyResolved) || !returnFullyResolved) {
             if (resolvedReturnTypeInfo != ZR_NULL) {
                 ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
                         state, analyzer, returnDiagnosticLocation);
@@ -516,10 +516,6 @@ static void register_function_type_binding_in_env(SZrState *state,
                 ZrCore_Array_Free(state, &parameterPassingModes);
             }
             return;
-        }
-        if (!returnFullyResolved) {
-            ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(
-                    state, analyzer, returnDiagnosticLocation);
         }
     } else {
         resolvedReturnTypeInfo =
@@ -577,6 +573,9 @@ static void register_function_type_binding_in_env(SZrState *state,
                             state,
                             analyzer,
                             semantic_parameter_diagnostic_location(paramNode));
+                    ZrParser_InferredType_Free(state, &paramType);
+                    hasUnresolvedParameter = ZR_TRUE;
+                    continue;
                 }
             } else {
                 ZrLanguageServer_SemanticAnalyzer_ReportCannotInferExactType(

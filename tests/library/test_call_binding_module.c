@@ -76,6 +76,12 @@ static void test_source_module_static_type_method_is_token_bound(void) {
             "var provider = import(\"call_binding_provider\"); return provider.Math.answer();", 37);
 }
 
+static void test_source_module_call_meta_is_token_bound(void) {
+    assert_module_call("pub class Callable { pub @call(value: int): int { return value + 5; } }",
+            "var provider = import(\"call_binding_provider\"); "
+            "var callable = new provider.Callable(); return callable(3);", 8);
+}
+
 /* 直接绑定不得绕开模块初始化产生的闭包状态。 */
 static void test_module_function_keeps_captured_module_state(void) {
     assert_module_call("var offset: int = 41; pub fn answer(): int { return offset; }",
@@ -90,17 +96,20 @@ static void test_binary_provider_keeps_function_and_type_contracts(void) {
     TZrInt64 result = 0;
     snprintf(path, sizeof(path), "%s/call_binding_provider.zro", ZR_VM_TESTS_BINARY_DIR);
     bytes = ZrTests_Fixture_BuildBinaryFile(state,
-            "pub fn answer(): int { return 7; } pub class Math { pub static fn answer(): int { return 13; } }",
+            "pub fn answer(): int { return 7; } "
+            "pub class Math { pub static fn answer(): int { return 13; } "
+            "pub @call(value: int): int { return value + 5; } }",
             path, ZR_FALSE, &provider.length);
     TEST_ASSERT_NOT_NULL(bytes);
     provider.bytes = bytes;
     provider.isBinary = ZR_TRUE;
     consumer = compile_consumer("var provider = import(\"call_binding_provider\"); "
-            "return provider.answer() + provider.Math.answer();");
+            "var callable = new provider.Math(); "
+            "return provider.answer() + provider.Math.answer() + callable(3);");
     TEST_ASSERT_NOT_NULL(consumer);
     TEST_ASSERT_NOT_NULL(module_binding(consumer));
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, consumer, &result));
-    TEST_ASSERT_EQUAL_INT64(20, result);
+    TEST_ASSERT_EQUAL_INT64(28, result);
     free(bytes);
     remove(path);
 }
@@ -139,6 +148,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_source_module_function_is_token_bound);
     RUN_TEST(test_source_module_static_type_method_is_token_bound);
+    RUN_TEST(test_source_module_call_meta_is_token_bound);
     RUN_TEST(test_module_function_keeps_captured_module_state);
     RUN_TEST(test_binary_provider_keeps_function_and_type_contracts);
     RUN_TEST(test_provider_reload_rebinds_existing_calls);

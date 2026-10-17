@@ -202,12 +202,17 @@ static TZrBool backend_aot_c_zrp_manifest_export_build_published_row(
         outRow->flags |= ZR_AOT_MANIFEST_EXPORT_ENTRY_FLAG_HAS_MEMBER_TOKEN;
         outRow->memberToken = memberToken;
     }
-    return backend_aot_c_zrp_manifest_export_get_target_string_offset(stringPoolView,
-                                                                      extraStringPool,
-                                                                      extraStringPoolCapacity,
-                                                                      extraStringPoolBytes,
-                                                                      declaration->target,
-                                                                      &outRow->targetStringOffset);
+    TZrUInt32 targetStringOffset;
+    if (!backend_aot_c_zrp_manifest_export_get_target_string_offset(stringPoolView,
+                                                                   extraStringPool,
+                                                                   extraStringPoolCapacity,
+                                                                   extraStringPoolBytes,
+                                                                   declaration->target,
+                                                                   &targetStringOffset)) {
+        return ZR_FALSE;
+    }
+    outRow->targetStringOffset = targetStringOffset;
+    return ZR_TRUE;
 }
 
 static TZrBool backend_aot_c_zrp_manifest_export_build_published_header(

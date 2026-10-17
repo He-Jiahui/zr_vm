@@ -22,6 +22,10 @@
 #define ZR_VM_TESTS_C_COMPILER "cc"
 #endif
 
+#ifndef ZR_VM_TESTS_C_FLAGS
+#define ZR_VM_TESTS_C_FLAGS ""
+#endif
+
 #ifndef ZR_VM_TESTS_REPO_ROOT
 #define ZR_VM_TESTS_REPO_ROOT "."
 #endif
@@ -1061,7 +1065,7 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
 
     snprintf(command,
              sizeof(command),
-             "\"%s\" -std=c11 -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
+             "\"%s\" %s -std=c11 -fPIC -shared -DZR_PLATFORM_UNIX -DZR_DEBUG "
              "-I\"%s/zr_vm_common/include\" "
              "-I\"%s/zr_vm_core/include\" "
              "-I\"%s/zr_vm_library/include\" "
@@ -1070,6 +1074,7 @@ static void test_aot_c_typed_i64_scalar_uses_plain_c_and_matches_interpreter(voi
              ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS
              "-o \"%s\"",
              ZR_VM_TESTS_C_COMPILER,
+             ZR_VM_TESTS_C_FLAGS,
              ZR_VM_TESTS_REPO_ROOT,
              ZR_VM_TESTS_REPO_ROOT,
              ZR_VM_TESTS_REPO_ROOT,

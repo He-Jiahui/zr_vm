@@ -696,17 +696,20 @@ static void test_body_edit_preserves_unaffected_scoped_query_cache(
 
 /* 隔离主符号表后连续发起空文档补全，验证回退分析器只执行一次并复用局部缓存。
  * TODO: 测试未断言补全数组为空；若回退返回原生项，当前仅 Array_Free 会遗漏项对象，需核对该 fixture 的结果数量。 */
-static void test_completion_fallback_reuses_scoped_query_analyzer_cache(
+static void test_completion_reuses_published_snapshot_without_reanalysis(
         SZrState *state) {
     const TZrChar *summary =
-            "Completion Fallback Reuses Scoped Query Analyzer Cache";
+            "Completion Reuses Published Snapshot Without Reanalysis";
     const TZrChar *uriText = "file:///completion_scope_cache.zr";
-    const TZrChar *content = "\n";
+    const TZrChar *content = "fn offer(): int { return 7; }\n\n";
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
     SZrString *uri;
     SZrSemanticAnalyzer *owner;
-    SZrSemanticAnalyzer *scopedAnalyzer;
+    SZrSemanticContext *semanticContext;
+    SZrSemanticAnalysisMetrics before;
+    TZrSize referenceCount;
+    TZrSize expressionCount;
     SZrSymbolTable *originalSymbolTable;
     SZrSymbolTable *emptySymbolTable;
     SZrSemanticAnalysisMetrics metrics;
@@ -729,11 +732,11 @@ static void test_completion_fallback_reuses_scoped_query_analyzer_cache(
         if (context != ZR_NULL) {
             ZrLanguageServer_LspContext_Free(state, context);
         }
-        TEST_FAIL(timer, summary, "Failed to prepare empty completion fixture");
+        TEST_FAIL(timer, summary, "Failed to prepare snapshot completion fixture");
         return;
     }
 
-    position.line = 0;
+    position.line = 1;
     position.character = 0;
     owner = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
     emptySymbolTable = ZrLanguageServer_SymbolTable_New(state);
@@ -745,9 +748,14 @@ static void test_completion_fallback_reuses_scoped_query_analyzer_cache(
         TEST_FAIL(timer, summary, "Failed to isolate the primary completion provider");
         return;
     }
-    /* 暂借空符号表强制进入局部回退；每条退出路径先恢复 owner 指针，再释放替身。 */
+    /* An empty legacy table must still use the published canonical snapshot. */
     originalSymbolTable = owner->symbolTable;
     owner->symbolTable = emptySymbolTable;
+
+    semanticContext = owner->semanticContext;
+    referenceCount = semanticContext->referenceFacts.length;
+    expressionCount = semanticContext->expressionFacts.length;
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(owner, &before);
 
     for (requestIndex = 0; requestIndex < 2; requestIndex++) {
         ZrCore_Array_Init(
@@ -768,18 +776,33 @@ static void test_completion_fallback_reuses_scoped_query_analyzer_cache(
             TEST_FAIL(timer, summary, "Completion fallback request failed");
             return;
         }
+        TZrBool found = ZR_FALSE;
+        for (TZrSize index = 0; index < completions.length; index++) {
+            SZrLspCompletionItem *item = *(SZrLspCompletionItem **)ZrCore_Array_Get(&completions, index);
+            if (item->label != ZR_NULL && ZrCore_String_GetByteLength(item->label) == 5 &&
+                memcmp(ZrCore_String_GetNativeString(item->label), "offer", 5) == 0) found = ZR_TRUE;
+            ZrCore_Memory_RawFree(state->global, item, sizeof(*item));
+        }
         ZrCore_Array_Free(state, &completions);
+        if (!found) {
+            owner->symbolTable = originalSymbolTable;
+            ZrLanguageServer_SymbolTable_Free(state, emptySymbolTable);
+            ZrLanguageServer_LspContext_Free(state, context);
+            TEST_FAIL(timer, summary, "Published function is missing from snapshot completion");
+            return;
+        }
     }
 
-    scopedAnalyzer = owner->scopedQueryAnalyzer;
-    ZrLanguageServer_SemanticAnalyzer_GetMetrics(scopedAnalyzer, &metrics);
-    if (scopedAnalyzer == ZR_NULL || metrics.requestCount != 2 ||
-        metrics.executionCount != 1 || metrics.cacheHitCount != 1) {
+    ZrLanguageServer_SemanticAnalyzer_GetMetrics(owner, &metrics);
+    if (owner->scopedQueryAnalyzer != ZR_NULL || owner->semanticContext != semanticContext ||
+        metrics.executionCount != before.executionCount ||
+        semanticContext->referenceFacts.length != referenceCount ||
+        semanticContext->expressionFacts.length != expressionCount) {
         snprintf(reason,
                  sizeof(reason),
-                 "Repeated fallback cache mismatch: owner=%p scoped=%p requests=%zu executions=%zu hits=%zu",
+                 "Snapshot completion changed analysis: owner=%p scoped=%p requests=%zu executions=%zu hits=%zu",
                  (void *)owner,
-                 (void *)scopedAnalyzer,
+                 (void *)owner->scopedQueryAnalyzer,
                  (size_t)metrics.requestCount,
                  (size_t)metrics.executionCount,
                  (size_t)metrics.cacheHitCount);

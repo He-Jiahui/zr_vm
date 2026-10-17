@@ -83,7 +83,7 @@ static void assert_i64_return_metadata(const SZrFunction *entry) {
     TEST_ASSERT_NULL(type->typeName);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, type->elementBaseType);
     TEST_ASSERT_NULL(type->elementTypeName);
-    TEST_ASSERT_EQUAL_INT(ZR_STATIC_C_TYPE_DYNAMIC, type->staticCType);
+    TEST_ASSERT_EQUAL_INT(ZR_STATIC_C_TYPE_I64, type->staticCType);
     TEST_ASSERT_EQUAL_UINT32(0u, type->staticCTypeId);
     TEST_ASSERT_NULL(entry->moduleVersion);
     TEST_ASSERT_EQUAL_UINT32(0u, entry->exportedVariableLength);
@@ -200,8 +200,8 @@ static void test_guard_script_none_return(void) {
     assert_no_script_identity("return;\n");
 }
 
-static void test_guard_script_binary_return(void) {
-    assert_no_script_identity("return 4 + 5;\n");
+static void test_script_entry_binary_return_identity(void) {
+    assert_script_identity_witness(compile_entry("return 4 + 5;\n", 0u, ZR_TRUE));
 }
 
 static void test_guard_script_multiple_statements(void) {
@@ -244,7 +244,7 @@ static void test_script_entry_identity_same_name_success_guard_success(void) {
     SZrFunctionTypedTypeRef expected_return = first->callableReturnType;
     TZrUInt64 expected_module_hash = first->moduleSignatureHash;
     SZrFunction *unsupported = compile_named_entry(
-            "return 4 + 5;\n", source_name, 1u, ZR_TRUE);
+            "return true;\n", source_name, 1u, ZR_TRUE);
     SZrFunction *third;
     assert_entry_has_no_identity(unsupported);
     assert_identity_unchanged(had_identity, &expected, first);
@@ -267,7 +267,7 @@ int main(void) {
     RUN_TEST(test_guard_script_conditional_paths);
     RUN_TEST(test_guard_script_implicit_return);
     RUN_TEST(test_guard_script_none_return);
-    RUN_TEST(test_guard_script_binary_return);
+    RUN_TEST(test_script_entry_binary_return_identity);
     RUN_TEST(test_guard_script_multiple_statements);
     RUN_TEST(test_guard_script_local_return);
     RUN_TEST(test_guard_script_fallthrough);

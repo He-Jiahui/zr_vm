@@ -7,20 +7,15 @@
 
 /** @brief 取得 using 资源在当前编译或语义分析上下文中的推断类型。
  * @pre outType 已由调用方初始化；资源 AST 与类型环境在查询期间有效。
- * @return 标识符优先使用变量绑定中已知的所有权限定，其他情况回退到表达式推断；失败返回 ZR_FALSE。
+ * @return 使用表达式推断保留绑定中的所有权限定并发布读取事实；失败返回 ZR_FALSE。
  */
 TZrBool ZrParser_SemanticMetadata_InferUsingResourceType(
         SZrCompilerState *cs, SZrAstNode *resource, SZrInferredType *outType) {
     if (cs == ZR_NULL || resource == ZR_NULL || outType == ZR_NULL) {
         return ZR_FALSE;
     }
-    /* 变量绑定可能保留表达式重推无法恢复的借用限定，因此先查环境再走通用推断。 */
-    if (resource->type == ZR_AST_IDENTIFIER_LITERAL && cs->typeEnv != ZR_NULL &&
-        resource->data.identifier.name != ZR_NULL &&
-        ZrParser_TypeEnvironment_LookupVariable(
-                cs->state, cs->typeEnv, resource->data.identifier.name, outType)) {
-        return ZR_TRUE;
-    }
+    /* Inference preserves binding qualifiers and publishes the resource read
+     * used by ownership flow to apply the scope-exit cleanup. */
     return ZrParser_ExpressionType_Infer(cs, resource, outType);
 }
 

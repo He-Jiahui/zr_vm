@@ -1,3 +1,4 @@
+#include "backend_aot/backend_aot_c_zrp_metadata_unaligned.h"
 #include "backend_aot/backend_aot_c_zrp_metadata_type_spec.h"
 
 #include "backend_aot/backend_aot_c_zrp_metadata_remap.h"
@@ -222,7 +223,7 @@ TZrMetadataToken backend_aot_c_zrp_compacted_type_spec_token(const SZrZrpMetadat
     return ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_TYPE_SPEC, newRid);
 }
 
-TZrBool backend_aot_c_zrp_remap_type_spec_token(TZrMetadataToken *token,
+TZrBool backend_aot_c_zrp_remap_type_spec_token(void *tokenStorage,
                                                 const SZrZrpMetadataTypeSpecRow *rows,
                                                 TZrUInt32 count,
                                                 const SZrMetadataTokenRecord *tokenRecords,
@@ -239,15 +240,17 @@ TZrBool backend_aot_c_zrp_remap_type_spec_token(TZrMetadataToken *token,
                                                 TZrUInt32 genericParamConstraintCount,
                                                 const SZrAotFunctionTable *functionTable,
                                                 TZrUInt32 retainedMethodDefCount) {
+    SZrAotCZrpUInt32Field *token = (SZrAotCZrpUInt32Field *)tokenStorage;
+
     TZrUInt32 typeSpecIndex;
 
     if (token == ZR_NULL) {
         return ZR_FALSE;
     }
-    if (*token == 0u || !backend_aot_c_zrp_token_is_type_spec(*token)) {
+    if (token->value == 0u || !backend_aot_c_zrp_token_is_type_spec(token->value)) {
         return ZR_TRUE;
     }
-    if (!backend_aot_c_zrp_find_type_spec_index_for_token(rows, count, *token, &typeSpecIndex) ||
+    if (!backend_aot_c_zrp_find_type_spec_index_for_token(rows, count, token->value, &typeSpecIndex) ||
         !backend_aot_c_zrp_type_spec_row_is_retained(&rows[typeSpecIndex],
                                                      tokenRecords,
                                                      tokenRecordCount,
@@ -266,7 +269,7 @@ TZrBool backend_aot_c_zrp_remap_type_spec_token(TZrMetadataToken *token,
         return ZR_FALSE;
     }
 
-    *token = backend_aot_c_zrp_compacted_type_spec_token(rows,
+    token->value = backend_aot_c_zrp_compacted_type_spec_token(rows,
                                                         count,
                                                         typeSpecIndex,
                                                         tokenRecords,

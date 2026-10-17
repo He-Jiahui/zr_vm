@@ -86,13 +86,15 @@ static char *read_repo_text_file_owned(const char *relativePath) {
 /* BUG: 缺失片段时 Unity 跳出用例，调用者末尾的 free 不执行，已读取源码缓冲区泄漏至进程退出。 */
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
+    int missing = 0;
 
     for (index = 0; index < needleCount; index++) {
         if (!zr_test_aot_source_contract_contains(text, needles[index])) {
             printf("Missing source contract text: %s\n", needles[index]);
-            TEST_FAIL_MESSAGE("missing required source contract text");
+            missing = 1;
         }
     }
+    TEST_ASSERT_FALSE_MESSAGE(missing, "missing required source contract text");
 }
 
 /* BUG: 禁止旧入口复活的断言失败同样跳过调用者对源码缓冲区的释放。 */
@@ -669,7 +671,7 @@ static void test_aot_c_member_index_heap_stores_use_public_gc_write_barrier(void
             "ZrCore_Object_SuperArraySetInt(state, receiverValue, keyValue, sourceValue)",
     };
     static const char *const objectSourceNeedles[] = {
-            "ZrCore_Gc_WriteBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &pair->key);",
+            "ZrCore_Gc_WriteBarrier(state, &object->super, &pair->key);",
             "ZrCore_Gc_WriteBarrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &pair->value);",
     };
     static const char *const objectInternalNeedles[] = {
@@ -844,13 +846,13 @@ static void test_aot_c_source_makes_meta_value_access_explicit_boundary(void) {
             "case ZR_INSTRUCTION_ENUM(META_SET):",
             "\"META_SET\"",
             "case ZR_INSTRUCTION_ENUM(SUPER_META_GET_CACHED):",
-            "\"SUPER_META_GET_CACHED\"",
+            "backend_aot_write_c_bound_meta_get_cached(",
             "case ZR_INSTRUCTION_ENUM(SUPER_META_SET_CACHED):",
-            "\"SUPER_META_SET_CACHED\"",
+            "backend_aot_write_c_bound_meta_set_cached(",
             "case ZR_INSTRUCTION_ENUM(SUPER_META_GET_STATIC_CACHED):",
-            "\"SUPER_META_GET_STATIC_CACHED\"",
+            "backend_aot_write_c_bound_meta_get_cached(",
             "case ZR_INSTRUCTION_ENUM(SUPER_META_SET_STATIC_CACHED):",
-            "\"SUPER_META_SET_STATIC_CACHED\"",
+            "backend_aot_write_c_bound_meta_set_cached(",
             "backend_aot_write_c_unsupported_meta_value_access(file,",
     };
     static const char *const forbiddenValueLoweringNeedles[] = {

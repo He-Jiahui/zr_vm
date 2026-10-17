@@ -44,10 +44,10 @@ static void test_semantic_analyzer_records_borrow_and_loan_regions(SZrState *sta
 
     borrowFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "shared", 1));
+            file_range_for_nth_substring(testCode, "shared", 1, sourceName));
     loanFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "unique", 1));
+            file_range_for_nth_substring(testCode, "unique", 1, sourceName));
     if (borrowFact == ZR_NULL ||
         borrowFact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_BORROW ||
         borrowFact->qualifier != ZR_OWNERSHIP_QUALIFIER_BORROWED ||
@@ -131,7 +131,7 @@ static void test_semantic_analyzer_reports_borrow_after_owner_release(SZrState *
             0);
     violationFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "borrowed", 1));
+            file_range_for_nth_substring(testCode, "borrowed", 1, sourceName));
     if (related == ZR_NULL ||
         !test_string_equals(related->message, "Owner was released here") ||
         related->location.start.line != 5 ||
@@ -276,7 +276,7 @@ static void test_semantic_analyzer_releases_using_owner_at_scope_exit(SZrState *
     outsideDiagnostic = find_diagnostic_by_code_and_line(analyzer, "borrow_escape", 8);
     releaseFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "owner", 2));
+            file_range_for_nth_substring(testCode, "owner", 2, sourceName));
     if (insideDiagnostic != ZR_NULL ||
         outsideDiagnostic == ZR_NULL ||
         outsideDiagnostic->severity != ZR_DIAGNOSTIC_ERROR ||
@@ -358,7 +358,7 @@ static void test_semantic_analyzer_releases_using_borrow_at_scope_exit(SZrState 
     outsideDiagnostic = find_diagnostic_by_code_and_line(analyzer, "borrow_escape", 8);
     releaseFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "borrowed", 1));
+            file_range_for_nth_substring(testCode, "borrowed", 1, sourceName));
     if (insideDiagnostic != ZR_NULL ||
         outsideDiagnostic == ZR_NULL ||
         outsideDiagnostic->severity != ZR_DIAGNOSTIC_ERROR ||
@@ -437,7 +437,7 @@ static void test_semantic_analyzer_links_weak_use_to_possible_owner_release(SZrS
     diagnostic = find_diagnostic_by_code_and_line(analyzer, "weak_value_requires_wake", 7);
     violationFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "watcher", 1));
+            file_range_for_nth_substring(testCode, "watcher", 1, sourceName));
     if (diagnosticCount != 1 ||
         diagnostic == ZR_NULL ||
         diagnostic->severity != ZR_DIAGNOSTIC_ERROR ||
@@ -521,10 +521,10 @@ static void test_semantic_analyzer_rebinds_borrowed_alias_owner(SZrState *state)
     newOwnerDiagnostic = find_diagnostic_by_code_and_line(analyzer, "borrow_escape", 9);
     initialFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "first", 1));
+            file_range_for_nth_substring(testCode, "first", 1, sourceName));
     rebindFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "second", 1));
+            file_range_for_nth_substring(testCode, "second", 1, sourceName));
     if (oldOwnerDiagnostic != ZR_NULL ||
         newOwnerDiagnostic == ZR_NULL ||
         !newOwnerDiagnostic->relatedInformation.isValid ||
@@ -605,10 +605,10 @@ static void test_semantic_analyzer_rebinds_loaned_alias_owner(SZrState *state) {
     newOwnerDiagnostic = find_diagnostic_by_code_and_line(analyzer, "loan_escape", 9);
     initialFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "first", 1));
+            file_range_for_nth_substring(testCode, "first", 1, sourceName));
     rebindFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "second", 1));
+            file_range_for_nth_substring(testCode, "second", 1, sourceName));
     if (oldOwnerDiagnostic != ZR_NULL ||
         newOwnerDiagnostic == ZR_NULL ||
         !newOwnerDiagnostic->relatedInformation.isValid ||
@@ -707,10 +707,10 @@ static void test_semantic_analyzer_rebinds_weak_alias_owner(SZrState *state) {
             10);
     initialFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "first", 1));
+            file_range_for_nth_substring(testCode, "first", 1, sourceName));
     rebindFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
             analyzer->semanticContext,
-            file_range_for_nth_substring(testCode, "second", 1));
+            file_range_for_nth_substring(testCode, "second", 1, sourceName));
     if (weakDiagnosticCount != 2 ||
         oldOwnerDiagnostic == ZR_NULL ||
         (oldOwnerDiagnostic->relatedInformation.isValid &&

@@ -319,7 +319,7 @@ void test_char_literals_parsing(void) {
         return;
     }
     
-    SZrString* sourceName = ZrCore_String_Create(state, "test_char_literals.zr", 22);
+    SZrString* sourceName = ZrCore_String_CreateFromNative(state, "test_char_literals.zr");
     SZrAstNode* ast = ZrParser_Parse(state, source, fileSize, sourceName);
     
     free(source);
@@ -381,7 +381,7 @@ void test_char_literals_compilation(void) {
         return;
     }
     
-    SZrString* sourceName = ZrCore_String_Create(state, "test_char_literals.zr", 22);
+    SZrString* sourceName = ZrCore_String_CreateFromNative(state, "test_char_literals.zr");
     SZrAstNode* ast = ZrParser_Parse(state, source, fileSize, sourceName);
     
     free(source);
@@ -452,7 +452,7 @@ void test_type_cast_basic_parsing(void) {
         return;
     }
     
-    SZrString* sourceName = ZrCore_String_Create(state, "test_type_cast_basic.zr", 24);
+    SZrString* sourceName = ZrCore_String_CreateFromNative(state, "test_type_cast_basic.zr");
     SZrAstNode* ast = ZrParser_Parse(state, source, fileSize, sourceName);
     
     free(source);
@@ -514,7 +514,7 @@ void test_type_cast_basic_compilation(void) {
         return;
     }
     
-    SZrString* sourceName = ZrCore_String_Create(state, "test_type_cast_basic.zr", 24);
+    SZrString* sourceName = ZrCore_String_CreateFromNative(state, "test_type_cast_basic.zr");
     SZrAstNode* ast = ZrParser_Parse(state, source, fileSize, sourceName);
     
     free(source);
@@ -585,7 +585,7 @@ void test_type_cast_struct_parsing(void) {
         return;
     }
     
-    SZrString* sourceName = ZrCore_String_Create(state, "test_type_cast_struct.zr", 25);
+    SZrString* sourceName = ZrCore_String_CreateFromNative(state, "test_type_cast_struct.zr");
     SZrAstNode* ast = ZrParser_Parse(state, source, fileSize, sourceName);
     
     free(source);
@@ -648,7 +648,7 @@ void test_type_cast_class_parsing(void) {
         return;
     }
     
-    SZrString* sourceName = ZrCore_String_Create(state, "test_type_cast_class.zr", 24);
+    SZrString* sourceName = ZrCore_String_CreateFromNative(state, "test_type_cast_class.zr");
     SZrAstNode* ast = ZrParser_Parse(state, source, fileSize, sourceName);
     
     free(source);
@@ -1176,7 +1176,7 @@ void test_reference_unclosed_string_fixture_surfaces_invalid_literal_node(void) 
     source = read_reference_file("core_semantics/literals/unclosed_string_fail.zr", &fileSize);
     TEST_ASSERT_NOT_NULL(source);
 
-    sourceName = ZrCore_String_Create(state, "reference_unclosed_string_fail.zr", 34);
+    sourceName = ZrCore_String_CreateFromNative(state, "reference_unclosed_string_fail.zr");
     ast = ZrParser_Parse(state, source, fileSize, sourceName);
     TEST_ASSERT_NOT_NULL(ast);
     TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
@@ -1205,7 +1205,7 @@ void test_reference_unclosed_string_fixture_surfaces_invalid_literal_node(void) 
  * 解析非法十六进制转义负例，检查错误恢复产出的字符串字面量保留无效值标记。
  *
  * ## Returns
- * 本例通过 Unity 断言或显式失败分支交付判定；到达 PASS 只表明已执行至该日志位置。检查字符串节点值为空；源名构造还存在独立的数组越界读取 BUG。
+ * 本例通过 Unity 断言或显式失败分支交付判定；到达 PASS 只表明已执行至该日志位置。检查字符串节点值为空。
  *
  * ## Constraints and lifecycle
  * 正常路径在源码及适用的 AST 释放后采样并打印 PASS，随后才销毁 State；耗时不包含该 State 销毁。 本例拥有 State、源码缓冲与 AST，正常路径手工释放；后续硬断言可能跳过释放，空 tearDown 不负责兜底，见相应 BUG。
@@ -1234,8 +1234,7 @@ void test_reference_invalid_hex_escape_fixture_surfaces_invalid_literal_node(voi
     source = read_reference_file("core_semantics/lexing_literals_diagnostics/invalid_hex_escape_fail.zr", &fileSize);
     TEST_ASSERT_NOT_NULL(source);
 
-    /* BUG: 此源名本体 36 字节、含 NUL 37 字节，却请求 38；String_Create 的短串哈希会读取到数组外。需按实际 payload 长度构造源名。 */
-    sourceName = ZrCore_String_Create(state, "reference_invalid_hex_escape_fail.zr", 38);
+    sourceName = ZrCore_String_CreateFromNative(state, "reference_invalid_hex_escape_fail.zr");
     ast = ZrParser_Parse(state, source, fileSize, sourceName);
     TEST_ASSERT_NOT_NULL(ast);
     TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
@@ -1265,7 +1264,7 @@ void test_reference_invalid_hex_escape_fixture_surfaces_invalid_literal_node(voi
  * 解析被拒绝的多行字面量负例，检查 parser 以值为空的字符串字面量表达恢复结果。
  *
  * ## Returns
- * 本例通过 Unity 断言或显式失败分支交付判定；到达 PASS 只表明已执行至该日志位置。不执行该负例；源名构造还存在独立的数组越界读取 BUG。
+ * 本例通过 Unity 断言或显式失败分支交付判定；到达 PASS 只表明已执行至该日志位置。不执行该负例。
  *
  * ## Constraints and lifecycle
  * 正常路径在源码及适用的 AST 释放后采样并打印 PASS，随后才销毁 State；耗时不包含该 State 销毁。 本例拥有 State、源码缓冲与 AST，正常路径手工释放；后续硬断言可能跳过释放，空 tearDown 不负责兜底，见相应 BUG。
@@ -1295,8 +1294,7 @@ void test_reference_multiline_literal_fixture_surfaces_invalid_literal_node(void
                                  &fileSize);
     TEST_ASSERT_NOT_NULL(source);
 
-    /* BUG: 此源名本体 42 字节、含 NUL 43 字节，却请求 44；String_Create 的短串哈希会读取到数组外。需按实际 payload 长度构造源名。 */
-    sourceName = ZrCore_String_Create(state, "reference_multiline_literal_reject_fail.zr", 44);
+    sourceName = ZrCore_String_CreateFromNative(state, "reference_multiline_literal_reject_fail.zr");
     ast = ZrParser_Parse(state, source, fileSize, sourceName);
     TEST_ASSERT_NOT_NULL(ast);
     TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
@@ -1356,7 +1354,7 @@ void test_reference_invalid_char_width_fixture_surfaces_invalid_char_literal_nod
                                  &fileSize);
     TEST_ASSERT_NOT_NULL(source);
 
-    sourceName = ZrCore_String_Create(state, "reference_invalid_char_width_fail.zr", 37);
+    sourceName = ZrCore_String_CreateFromNative(state, "reference_invalid_char_width_fail.zr");
     ast = ZrParser_Parse(state, source, fileSize, sourceName);
     TEST_ASSERT_NOT_NULL(ast);
     TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
@@ -1413,7 +1411,7 @@ void test_reference_const_reassign_fixture_is_rejected(void) {
     source = read_reference_file("core_semantics/casts-and-const/const_reassign_fail.zr", &fileSize);
     TEST_ASSERT_NOT_NULL(source);
 
-    sourceName = ZrCore_String_Create(state, "reference_const_reassign_fail.zr", 33);
+    sourceName = ZrCore_String_CreateFromNative(state, "reference_const_reassign_fail.zr");
     function = ZrParser_Source_Compile(state, source, fileSize, sourceName);
     TEST_ASSERT_NULL(function);
 

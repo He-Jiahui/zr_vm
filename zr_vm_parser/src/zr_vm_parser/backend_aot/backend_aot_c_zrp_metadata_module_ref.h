@@ -83,7 +83,7 @@ TZrMetadataToken backend_aot_c_zrp_compacted_module_ref_token(
         const SZrAotCZrpSignatureBlobRemap *signatureRemap);
 
 TZrBool backend_aot_c_zrp_remap_module_ref_token(
-        TZrMetadataToken *token,
+        void *token,
         const SZrZrpMetadataModuleRefRow *rows,
         TZrUInt32 count,
         const SZrMetadataTokenRecord *tokenRecords,

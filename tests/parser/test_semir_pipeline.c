@@ -856,7 +856,7 @@ static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
         char *functionHeaderText = read_repo_text_file_owned(
                 "zr_vm_core/include/zr_vm_core/function.h");
         char *typedMetadataSourceText = read_repo_text_file_owned(
-                "zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c");
+                "zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_typed_metadata.c");
         char *valueSemIrCallSourceText = read_repo_text_file_owned(
                 "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_value_semir_calls.c");
         char *methodMetadataSourceText = read_repo_text_file_owned(

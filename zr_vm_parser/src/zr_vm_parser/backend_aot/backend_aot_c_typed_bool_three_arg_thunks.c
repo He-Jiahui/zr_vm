@@ -205,6 +205,66 @@ static TZrBool backend_aot_c_try_get_bool_arg0_arg1_arg2_short_circuit_or_return
 }
 
 /* 长度与跳转偏移共同限定短路模板，防止仅按 opcode 误认其他控制流。 */
+/* Each nested short-circuit expression owns its result slot. Recognize the
+ * extra copy that initializes the outer result, including optional resets. */
+static TZrBool backend_aot_c_try_get_bool_three_arg_nested_short_circuit(
+        const SZrFunction *function,
+        EZrInstructionCode logicalOperationCode) {
+    const TZrInstruction *instructions = function->instructionsList;
+    TZrBool isOr = (TZrBool)(logicalOperationCode == ZR_INSTRUCTION_ENUM(LOGICAL_OR));
+    TZrUInt32 baseLength = isOr ? 13u : 11u;
+    TZrBool hasReset = (TZrBool)(function->instructionsLength == baseLength + 2u);
+    TZrUInt32 firstRightIndex = isOr ? 4u : 3u;
+    TZrUInt32 secondCopyIndex = firstRightIndex + 2u + (hasReset ? 1u : 0u);
+    TZrUInt32 secondJumpIndex = secondCopyIndex + 2u;
+    TZrUInt32 lastRightIndex = secondJumpIndex + (isOr ? 2u : 1u);
+    TZrUInt32 leftTemp, middleTemp, firstResult, secondCondition, finalResult, rightTemp, destination;
+
+    if (function->instructionsLength != baseLength && !hasReset) {
+        return ZR_FALSE;
+    }
+    if (!backend_aot_c_bool_stack_copy_reads_slot(&instructions[0], 0u, &leftTemp) ||
+        !backend_aot_c_bool_stack_copy_reads_slot(&instructions[1], leftTemp, &firstResult) ||
+        instructions[2].instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE) ||
+        instructions[2].instruction.operandExtra != leftTemp ||
+        instructions[2].instruction.operand.operand2[0] !=
+                (isOr ? 1 : (hasReset ? 3 : 2)) ||
+        (isOr && (instructions[3].instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP) ||
+                  instructions[3].instruction.operand.operand2[0] != (hasReset ? 3 : 2))) ||
+        !backend_aot_c_bool_stack_copy_reads_slot(&instructions[firstRightIndex], 1u, &middleTemp) ||
+        !backend_aot_c_bool_stack_copy_reads_slot(&instructions[firstRightIndex + 1u], middleTemp, &destination) ||
+        destination != firstResult ||
+        (hasReset && !backend_aot_c_bool_reset_stack_null_targets_slot(
+                             &instructions[firstRightIndex + 2u], middleTemp)) ||
+        !backend_aot_c_bool_stack_copy_reads_slot(&instructions[secondCopyIndex], firstResult, &secondCondition) ||
+        !backend_aot_c_bool_stack_copy_reads_slot(&instructions[secondCopyIndex + 1u], secondCondition, &finalResult) ||
+        instructions[secondJumpIndex].instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE) ||
+        instructions[secondJumpIndex].instruction.operandExtra != secondCondition ||
+        instructions[secondJumpIndex].instruction.operand.operand2[0] !=
+                (isOr ? 1 : (hasReset ? 3 : 2)) ||
+        (isOr && (instructions[secondJumpIndex + 1u].instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP) ||
+                  instructions[secondJumpIndex + 1u].instruction.operand.operand2[0] != (hasReset ? 3 : 2))) ||
+        !backend_aot_c_bool_stack_copy_reads_slot(&instructions[lastRightIndex], 2u, &rightTemp) ||
+        !backend_aot_c_bool_stack_copy_reads_slot(&instructions[lastRightIndex + 1u], rightTemp, &destination) ||
+        destination != finalResult ||
+        (hasReset && !backend_aot_c_bool_reset_stack_null_targets_slot(
+                             &instructions[lastRightIndex + 2u], rightTemp))) {
+        return ZR_FALSE;
+    }
+    /* Temporary stores/resets must not overwrite an unread argument or the
+     * result that a short-circuit branch will return. */
+    if (leftTemp < 3u || middleTemp < 3u || rightTemp < 3u ||
+        firstResult < 3u || secondCondition < 3u || finalResult < 3u ||
+        (hasReset && (middleTemp == firstResult || rightTemp == finalResult))) {
+        return ZR_FALSE;
+    }
+    return (TZrBool)(
+            instructions[function->instructionsLength - 1u].instruction.operationCode ==
+                    ZR_INSTRUCTION_ENUM(FUNCTION_RETURN) &&
+            instructions[function->instructionsLength - 1u].instruction.operandExtra == 1u &&
+            instructions[function->instructionsLength - 1u].instruction.operand.operand1[0] == finalResult);
+}
+
 static TZrBool backend_aot_c_try_get_bool_arg0_arg1_arg2_logical_return(
         const SZrFunction *function,
         EZrInstructionCode logicalOperationCode) {
@@ -222,7 +282,10 @@ static TZrBool backend_aot_c_try_get_bool_arg0_arg1_arg2_logical_return(
         function->instructionsList == ZR_NULL ||
         (function->instructionsLength != 3u &&
          function->instructionsLength != 10u &&
-         function->instructionsLength != 12u) ||
+         function->instructionsLength != 11u &&
+         function->instructionsLength != 12u &&
+         function->instructionsLength != 13u &&
+         function->instructionsLength != 15u) ||
         function->parameterCount != 3 ||
         function->parameterMetadata == ZR_NULL ||
         function->parameterMetadataCount < 3u ||
@@ -233,6 +296,13 @@ static TZrBool backend_aot_c_try_get_bool_arg0_arg1_arg2_logical_return(
         !backend_aot_c_type_ref_is_bool(&function->parameterMetadata[1].type) ||
         !backend_aot_c_type_ref_is_bool(&function->parameterMetadata[2].type)) {
         return ZR_FALSE;
+    }
+
+    if (function->instructionsLength == 11u ||
+        function->instructionsLength == 13u ||
+        function->instructionsLength == 15u) {
+        return backend_aot_c_try_get_bool_three_arg_nested_short_circuit(
+                function, logicalOperationCode);
     }
 
     /* 两种短路展开拥有不同长度和跳转位移，必须先分流再验证各自拓扑。 */

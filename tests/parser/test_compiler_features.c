@@ -560,6 +560,7 @@ void test_function_parameter_handling(void) {
 
         // 输出操作码名称（简化版本，只输出常见的指令）
         const char *opcodeName = "UNKNOWN";
+        char opcodeBuffer[32];
         switch (opcode) {
             case ZR_INSTRUCTION_ENUM(GET_STACK):
                 opcodeName = "GET_STACK";
@@ -722,9 +723,8 @@ void test_function_parameter_handling(void) {
                 break;
             default: {
                 // 对于未知的指令，输出数字
-                char buf[32];
-                snprintf(buf, sizeof(buf), "OPCODE_%u", (TZrUInt32) opcode);
-                opcodeName = buf;
+                snprintf(opcodeBuffer, sizeof(opcodeBuffer), "OPCODE_%u", (TZrUInt32) opcode);
+                opcodeName = opcodeBuffer;
                 break;
             }
         }
@@ -901,6 +901,7 @@ void test_global_object_access(void) {
 
         // 输出操作码名称（简化版本，只输出常见的指令）
         const char *opcodeName = "UNKNOWN";
+        char opcodeBuffer[32];
         switch (opcode) {
             case ZR_INSTRUCTION_ENUM(GET_STACK):
                 opcodeName = "GET_STACK";
@@ -1063,9 +1064,8 @@ void test_global_object_access(void) {
                 break;
             default: {
                 // 对于未知的指令，输出数字
-                char buf[32];
-                snprintf(buf, sizeof(buf), "OPCODE_%u", (TZrUInt32) opcode);
-                opcodeName = buf;
+                snprintf(opcodeBuffer, sizeof(opcodeBuffer), "OPCODE_%u", (TZrUInt32) opcode);
+                opcodeName = opcodeBuffer;
                 break;
             }
         }
@@ -2703,7 +2703,8 @@ void test_binary_roundtrip_preserves_function_frame_layout_metadata(void) {
             "struct Snapshot {\n"
             "    pub var value: int;\n"
             "    pub @constructor(value: int) { this.value = value; }\n"
-            "    pub const fn read(): int { return this.value; }\n"
+            "    pub const fn inner(): int { return this.value; }\n"
+            "    pub const fn read(): int { return this.inner(); }\n"
             "}\n"
             "fn useProbe(p: FrameProbe) { var n: int = 7; return n; }\n"
             "var snapshot: Snapshot = init Snapshot(7);\n"

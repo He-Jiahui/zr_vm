@@ -3291,6 +3291,8 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                     nextIsFunctionCall &&
                                     pendingReceiverRequiresBinding &&
                                     !memberUsesSuperLookup &&
+                                    typeMember != ZR_NULL &&
+                                    typeMember->callBindingLocationKind != ZR_CALL_BINDING_RELOCATION_VM_MODULE &&
                                     (memberEntryBoundAtCompileTime ||
                                      (typeMember != ZR_NULL && compiler_native_call_binding_is_provider_contract(
                                              &typeMember->callBindingFact))) &&
@@ -3305,6 +3307,11 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                     typeMember->compiledFunction != ZR_NULL &&
                                     typeMember->compiledFunction->closureValueLength == 0 &&
                                     type_name_is_inline_struct_or_union_prototype(cs, rootTypeName);
+                            /* Inline receivers need the value/borrow staging below,
+                             * even when a bound descriptor also permits a direct call. */
+                            if (canUseInlineCompiledMemberCall) {
+                                canUseDirectKnownMemberCall = ZR_FALSE;
+                            }
 
                             canLowerContiguousViewCall =
                                     nextIsFunctionCall &&
@@ -3362,6 +3369,12 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                 pendingDirectMemberCallMemberEntryIndex = memberId;
                             } else if (canUseInlineCompiledMemberCall) {
                                 TZrBool receiverBound;
+                                /* The current slot can alias a projected receiver field.
+                                 * Give the callable its own slot before storing its value. */
+                                currentSlot = allocate_fresh_stack_slot_after(cs, currentSlot);
+                                if (currentSlot == ZR_PARSER_SLOT_NONE) {
+                                    goto cleanup;
+                                }
                                 if (!note_inline_struct_result_slot(
                                             cs, currentSlot + 1u, rootTypeName)) {
                                     goto cleanup;
@@ -3458,6 +3471,16 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                                 member->location);
                                         goto cleanup;
                                     }
+                                } else if (nextIsFunctionCall && typeMember != ZR_NULL &&
+                                           typeMember->callBindingLocationKind == ZR_CALL_BINDING_RELOCATION_VM_MODULE) {
+                                    TZrUInt16 providerCacheIndex;
+                                    if (!reserve_member_slot_get_cache(cs, memberId, typeMember, 0u,
+                                                                      &providerCacheIndex, member->location))
+                                        goto cleanup;
+                                    emit_instruction(cs, create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT),
+                                                                             (TZrUInt16)resultSlot,
+                                                                             (TZrUInt16)currentSlot,
+                                                                             providerCacheIndex));
                                 } else if (!emit_member_slot_get(cs,
                                                                  resultSlot,
                                                                  currentSlot,
@@ -4315,6 +4338,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                 TZrBool useKnownVmMemberCallOpcode =
                         activeCallMemberInfo != ZR_NULL &&
                         !useMetaCallOpcode &&
+                        activeCallMemberInfo->callBindingLocationKind != ZR_CALL_BINDING_RELOCATION_VM_MODULE &&
                         activeCallMemberInfo->compiledFunction != ZR_NULL;
                 TZrBool emitMetaCallOpcode = useMetaCallOpcode || useResolvedFunctionMetaCallOpcode;
                 if (emitMetaCallOpcode && !hasSpreadArgument &&

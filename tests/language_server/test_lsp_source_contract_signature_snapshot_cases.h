@@ -7,8 +7,7 @@ static void test_signature_semantic_facts_are_snapshot_read_only(void) {
             "zr_vm_language_server/src/zr_vm_language_server/interface/"
             "lsp_signature_semantic_facts.c");
     char *dispatcher = read_repo_text_file_owned(
-            "zr_vm_language_server/src/zr_vm_language_server/"
-            "lsp_signature_help.c");
+        "zr_vm_language_server/src/zr_vm_language_server/features/lsp_signature_help.c");
     const char *canonicalResolve;
     const char *canonicalConstructResolve;
     const char *canonicalSuperResolve;

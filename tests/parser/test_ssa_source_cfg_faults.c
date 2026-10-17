@@ -574,6 +574,9 @@ static void assert_retry_builds_and_oracle_returns_nine(
      * the same valid identities for both checks here. */
     if (output.id == ZR_EXEC_IR_FUNCTION_ID_INVALID) output.id = 1u;
     if (output.functionToken == 0u) output.functionToken = 1u;
+    output.contract.targetToken = output.functionToken;
+    if (output.stateMap != ZR_NULL)
+        output.stateMap->functionToken = output.functionToken;
     TEST_ASSERT_TRUE(ZrCore_ExecIr_VerifyFunction(
             &output, ZR_EXEC_IR_VERIFY_ALL, &diagnostic));
     input.function = &output;

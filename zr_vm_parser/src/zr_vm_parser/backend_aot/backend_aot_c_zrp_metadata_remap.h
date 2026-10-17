@@ -44,7 +44,7 @@ TZrBool backend_aot_c_zrp_remap_retained_token_record(
         TZrUInt32 genericParamConstraintCount,
         const SZrAotFunctionTable *functionTable,
         TZrUInt32 retainedMethodDefCount);
-TZrBool backend_aot_c_zrp_remap_export_member_token(TZrMetadataToken *token,
+TZrBool backend_aot_c_zrp_remap_export_member_token(void *token,
                                                     const SZrZrpMetadataMethodDefRow *methodRows,
                                                     TZrUInt32 methodCount,
                                                     const SZrZrpMetadataFieldDefRow *fieldRows,
@@ -52,7 +52,7 @@ TZrBool backend_aot_c_zrp_remap_export_member_token(TZrMetadataToken *token,
                                                     const SZrAotFunctionTable *functionTable,
                                                     TZrUInt32 retainedMethodDefCount);
 TZrBool backend_aot_c_zrp_remap_retained_export_member_token(
-        TZrMetadataToken *token,
+        void *token,
         const SZrZrpMetadataMethodDefRow *methodRows,
         TZrUInt32 methodCount,
         const SZrZrpMetadataFieldDefRow *fieldRows,
@@ -107,7 +107,7 @@ TZrUInt32 backend_aot_c_zrp_count_retained_method_specs(const SZrZrpMetadataMeth
                                                         TZrUInt32 genericParamConstraintCount,
                                                         const SZrAotFunctionTable *functionTable,
                                                         TZrUInt32 retainedMethodDefCount);
-TZrBool backend_aot_c_zrp_remap_generic_param_owner_token(TZrMetadataToken *token,
+TZrBool backend_aot_c_zrp_remap_generic_param_owner_token(void *token,
                                                           const SZrZrpMetadataTypeDefRow *typeRows,
                                                           TZrUInt32 typeCount,
                                                           const SZrMetadataTokenRecord *tokenRecords,
@@ -186,8 +186,8 @@ TZrUInt32 backend_aot_c_zrp_count_retained_generic_param_constraints(
         TZrUInt32 genericParamConstraintCount,
         const SZrAotFunctionTable *functionTable,
         TZrUInt32 retainedMethodDefCount);
-void backend_aot_c_zrp_adjust_generic_param_range(TZrUInt32 *firstGenericParamIndex,
-                                                  TZrUInt32 *genericParamCount,
+void backend_aot_c_zrp_adjust_generic_param_range(void *firstGenericParamIndex,
+                                                  void *genericParamCount,
                                                   const SZrZrpMetadataGenericParamRow *genericParamRows,
                                                   TZrUInt32 genericParamRowCount,
                                                   const SZrZrpMetadataTypeDefRow *typeRows,
@@ -203,8 +203,8 @@ void backend_aot_c_zrp_adjust_generic_param_range(TZrUInt32 *firstGenericParamIn
                                                   const SZrAotFunctionTable *functionTable,
                                                   TZrUInt32 retainedMethodDefCount);
 void backend_aot_c_zrp_adjust_generic_param_constraint_range(
-        TZrUInt32 *firstConstraintIndex,
-        TZrUInt32 *constraintCount,
+        void *firstConstraintIndex,
+        void *constraintCount,
         const SZrZrpMetadataGenericParamConstraintRow *constraintRows,
         TZrUInt32 constraintRowCount,
         const SZrZrpMetadataGenericParamRow *genericParamRows,

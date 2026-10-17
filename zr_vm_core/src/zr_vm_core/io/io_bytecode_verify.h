@@ -121,8 +121,10 @@ static TZrBool io_verify_instruction(const SZrIoFunction *f, TZrSize pc) {
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT_ITEMS):
-        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT):
             return (TZrBool)(S(e) && S(a) && S(b));
+
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT):
+            return (TZrBool)(D(e) && S(a) && S(b));
 
         case ZR_INSTRUCTION_ENUM(ADD_INT_CONST):
         case ZR_INSTRUCTION_ENUM(SUB_INT_CONST):
@@ -303,7 +305,6 @@ static TZrBool io_verify_instruction(const SZrIoFunction *f, TZrSize pc) {
         case ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL):
-        case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL):
         case ZR_INSTRUCTION_ENUM(DYN_CALL):
         case ZR_INSTRUCTION_ENUM(META_CALL):
         case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
@@ -333,6 +334,11 @@ static TZrBool io_verify_instruction(const SZrIoFunction *f, TZrSize pc) {
 
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
             return (TZrBool)(a < f->callSiteCacheLength && W(e, (TZrSize)f->callSiteCaches[a].argumentCount + 1u));
+
+        case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL):
+            /* A is a cache index; the call window starts at E and includes
+             * the callable, receiver, and explicit arguments. */
+            return (TZrBool)(a < f->callSiteCacheLength && b > 0u && W(e, (TZrSize)b + 1u));
 
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8):
             return (TZrBool)(x < f->callSiteCacheLength && W(e, 3u) && S(y) && S(z));

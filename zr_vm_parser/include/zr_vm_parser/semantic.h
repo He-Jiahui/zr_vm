@@ -352,6 +352,8 @@ typedef struct SZrSemanticContext {
     SZrArray callEdgeFacts;     // SZrSemanticCallEdgeFact
     SZrArray typeDisplayAliasFacts; // SZrSemanticTypeDisplayAliasFact
     SZrArray documentationFacts; // SZrSemanticDocumentationFact
+    /* Snapshot-owned prefix views; their source AST children remain borrowed. */
+    struct SZrSemanticPrimaryPrefix *primaryPrefixes;
 } SZrSemanticContext;
 
 /**
@@ -378,6 +380,12 @@ ZR_PARSER_API void ZrParser_SemanticContext_Free(SZrSemanticContext *context);
  * @note NULL 为无操作；所有记录、旧 ID 与借用元素地址失去旧身份；五个计数器从 FIRST 重启，provider/resolver 配置清零，由有意跨快照的宿主重新设置。
  */
 ZR_PARSER_API void ZrParser_SemanticContext_Reset(SZrSemanticContext *context);
+
+/* Create a stable primary-expression prefix for compiler-generated accesses.
+ * The view lives until context Reset/Free; its source AST must outlive it.
+ * An empty prefix returns the original base node. Invalid input/OOM returns NULL. */
+ZR_PARSER_API SZrAstNode *ZrParser_SemanticContext_CreatePrimaryPrefix(
+        SZrSemanticContext *context, const SZrAstNode *source, TZrSize memberCount);
 
 /**
  * @brief 为 canonical 类型构造保留快照内 TypeId。

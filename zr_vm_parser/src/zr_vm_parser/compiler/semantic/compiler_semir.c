@@ -1495,7 +1495,42 @@ static TZrBool semir_map_instruction_list(const SZrFunction *function,
         return ZR_TRUE;
     }
 
-    if (!semir_map_exec_instruction(&function->instructionsList[instructionIndex], &mapped)) {
+    TZrInstruction semanticInstruction = function->instructionsList[instructionIndex];
+    EZrFunctionCallSiteCacheKind accessorCacheKind = ZR_FUNCTION_CALLSITE_CACHE_KIND_NONE;
+    switch ((EZrInstructionCode)semanticInstruction.instruction.operationCode) {
+        case ZR_INSTRUCTION_ENUM(SUPER_META_GET_CACHED):
+            accessorCacheKind = ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET;
+            break;
+        case ZR_INSTRUCTION_ENUM(SUPER_META_GET_STATIC_CACHED):
+            accessorCacheKind = ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET_STATIC;
+            break;
+        case ZR_INSTRUCTION_ENUM(SUPER_META_SET_CACHED):
+            accessorCacheKind = ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET;
+            break;
+        case ZR_INSTRUCTION_ENUM(SUPER_META_SET_STATIC_CACHED):
+            accessorCacheKind = ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET_STATIC;
+            break;
+        default:
+            break;
+    }
+    if (accessorCacheKind != ZR_FUNCTION_CALLSITE_CACHE_KIND_NONE) {
+        TZrUInt32 cacheIndex = semanticInstruction.instruction.operand.operand1[1];
+        if (function->callSiteCaches == ZR_NULL || cacheIndex >= function->callSiteCacheLength ||
+            !semir_callsite_cache_kind_matches(&function->callSiteCaches[cacheIndex], accessorCacheKind)) {
+            return ZR_FALSE;
+        }
+        /* Bound accessors can already be cached before SemIR is built. Keep
+         * the property operation and member identity, rather than dropping it
+         * or treating the cache index as a member index. */
+        semanticInstruction.instruction.operationCode = (TZrUInt16)(
+                accessorCacheKind == ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET ||
+                accessorCacheKind == ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET_STATIC
+                        ? ZR_INSTRUCTION_ENUM(META_GET) : ZR_INSTRUCTION_ENUM(META_SET));
+        semanticInstruction.instruction.operand.operand1[1] =
+                (TZrUInt16)function->callSiteCaches[cacheIndex].memberEntryIndex;
+    }
+
+    if (!semir_map_exec_instruction(&semanticInstruction, &mapped)) {
         return ZR_FALSE;
     }
 

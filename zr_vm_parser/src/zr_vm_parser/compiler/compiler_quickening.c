@@ -2330,6 +2330,13 @@ static SZrFunction *compiler_quickening_resolve_bound_member_callable_metadata_f
     }
 
     cacheIndex = (TZrUInt32)writer->instruction.operand.operand1[1];
+    if (function->callSiteCaches != ZR_NULL && cacheIndex < function->callSiteCacheLength &&
+        function->callSiteCaches[cacheIndex].bindingLocation.kind == ZR_CALL_BINDING_RELOCATION_VM_MODULE) {
+        /* Imported prototypes may contain native signature placeholders. The
+         * provider linker selects the real VM/AOT callable at runtime, so a
+         * placeholder cannot prove which specialized call opcode is valid. */
+        return ZR_NULL;
+    }
     resolvedFunction = compiler_quickening_resolve_bound_member_callable_metadata_function_from_cache(
             state,
             function,
@@ -9742,6 +9749,19 @@ static TZrBool compiler_quicken_array_int_index_accesses(SZrState *state, SZrFun
         compiler_quickening_try_fold_dead_super_array_add_setup(function, blockStarts, index);
     }
 
+    /* Direct native member calls have no legacy callee staging to fold. Wait
+     * until all adds are lowered so subsequent calls no longer conservatively
+     * read the result slot when proving that an ignored add result is dead. */
+    for (index = 0; index < function->instructionsLength; index++) {
+        TZrInstruction *instruction = &function->instructionsList[index];
+        if ((EZrInstructionCode)instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT) &&
+            instruction->instruction.operandExtra != ZR_INSTRUCTION_USE_RET_FLAG &&
+            compiler_quickening_temp_slot_is_dead_after_instruction_cfg(
+                    function, blockStarts, index, instruction->instruction.operandExtra)) {
+            instruction->instruction.operandExtra = ZR_INSTRUCTION_USE_RET_FLAG;
+        }
+    }
+
     if (constantSlotsValid != ZR_NULL && constantSlotIndices != ZR_NULL && aliasCount > 0) {
         memset(constantSlotsValid, 0, sizeof(*constantSlotsValid) * aliasCount);
         memset(constantSlotIndices, 0, sizeof(*constantSlotIndices) * aliasCount);
@@ -9903,6 +9923,7 @@ static TZrUInt32 compiler_quickening_find_deopt_id(const SZrFunction *function, 
 
 static TZrBool compiler_quicken_known_calls(SZrState *state, SZrFunction *function) {
     TZrBool *blockStarts = ZR_NULL;
+    TZrBool *importedCalls = ZR_NULL;
     TZrUInt32 index;
     TZrBool success = ZR_FALSE;
 
@@ -9911,13 +9932,24 @@ static TZrBool compiler_quicken_known_calls(SZrState *state, SZrFunction *functi
     }
 
     blockStarts = (TZrBool *)malloc(sizeof(*blockStarts) * function->instructionsLength);
-    if (blockStarts == ZR_NULL) {
+    importedCalls = (TZrBool *)calloc(function->instructionsLength, sizeof(*importedCalls));
+    if (blockStarts == ZR_NULL || importedCalls == ZR_NULL) {
+        free(importedCalls);
+        free(blockStarts);
         return ZR_FALSE;
     }
 
     if (!compiler_quickening_build_block_starts(function, blockStarts)) {
+        free(importedCalls);
         free(blockStarts);
         return ZR_FALSE;
+    }
+
+    for (index = 0u; index < function->callSiteCacheLength; ++index) {
+        const SZrFunctionCallSiteCacheEntry *entry = &function->callSiteCaches[index];
+        if (entry->instructionIndex < function->instructionsLength &&
+            entry->bindingLocation.kind == ZR_CALL_BINDING_RELOCATION_VM_MODULE)
+            importedCalls[entry->instructionIndex] = ZR_TRUE;
     }
 
     for (index = 0; index < function->instructionsLength; index++) {
@@ -9943,6 +9975,8 @@ static TZrBool compiler_quicken_known_calls(SZrState *state, SZrFunction *functi
                 continue;
         }
 
+        if (importedCalls[index]) continue;
+
         provenance = compiler_quickening_resolve_callable_provenance_before_instruction(
                 state,
                 function,
@@ -9963,6 +9997,7 @@ static TZrBool compiler_quicken_known_calls(SZrState *state, SZrFunction *functi
     }
 
     success = ZR_TRUE;
+    free(importedCalls);
     free(blockStarts);
     return success;
 }
@@ -10982,6 +11017,16 @@ static TZrBool compiler_quicken_child_functions(SZrState *state,
     ZR_QUICKENING_RUN_PASS("known_native_member_call_recv_u8_after_compact",
                            compiler_quickening_fuse_known_native_member_call_recv_u8(function));
     ZR_QUICKENING_RUN_PASS("compact_nops_12b", compiler_quickening_compact_nops(state, function));
+    /* Late copy forwarding exposes the consecutive array receiver slots. */
+    ZR_QUICKENING_RUN_PASS("fold_super_array_add_int4_bursts_final",
+                           compiler_quickening_fold_super_array_add_int4_bursts(function));
+    ZR_QUICKENING_RUN_PASS("compact_add_bursts_final", compiler_quickening_compact_nops(state, function));
+    ZR_QUICKENING_RUN_PASS("fold_super_array_add_int4_const_bursts_final",
+                           compiler_quickening_fold_super_array_add_int4_const_bursts(function));
+    ZR_QUICKENING_RUN_PASS("compact_const_add_bursts_final", compiler_quickening_compact_nops(state, function));
+    ZR_QUICKENING_RUN_PASS("fold_super_array_fill_int4_const_loops_final",
+                           compiler_quickening_fold_super_array_fill_int4_const_loops(function));
+    ZR_QUICKENING_RUN_PASS("compact_fill_loops_final", compiler_quickening_compact_nops(state, function));
     ZR_QUICKENING_RUN_PASS("super_array_items_cache_bindings",
                            compiler_quickening_insert_super_array_items_cache_bindings(state, function));
     ZR_QUICKENING_RUN_PASS("promote_plain_destination_after_items_cache",
@@ -11035,7 +11080,7 @@ TZrBool compiler_quicken_execbc_function(SZrState *state, SZrFunction *function)
         return ZR_FALSE;
     }
 
-    ZrCore_Function_ClearChildOwnerLinks(function);
+    /* Embedded children must retain the allocation that owns their storage. */
     return ZR_TRUE;
 }
 
@@ -11048,7 +11093,7 @@ TZrBool compiler_quicken_execbc_function_shallow(SZrState *state, SZrFunction *f
         return ZR_FALSE;
     }
 
-    ZrCore_Function_ClearChildOwnerLinks(function);
+    /* Embedded children must retain the allocation that owns their storage. */
     return ZR_TRUE;
 }
 

@@ -60,7 +60,7 @@ static void write_binding_aot_module(SZrState *state, const char *suite,
             "\"%s\" -L\"%s\" -Wl,-rpath,\"%s\" -Wl,--no-undefined "
             ZR_TESTS_AOT_C_RUNTIME_LINK_FLAGS "-o \"%s\"",
             backend == ZR_AOT_BACKEND_KIND_C ? ZR_VM_TESTS_C_COMPILER : "clang",
-            backend == ZR_AOT_BACKEND_KIND_C ? "-std=c11" : "-mllvm -opaque-pointers",
+            backend == ZR_AOT_BACKEND_KIND_C ? "-std=c11" : ZR_VM_TESTS_LLVM_POINTER_FLAGS,
             ZR_VM_TESTS_REPO_ROOT, ZR_VM_TESTS_REPO_ROOT,
             ZR_VM_TESTS_REPO_ROOT, generatedPath, ZR_VM_TESTS_BUILD_LIB_DIR,
             ZR_VM_TESTS_BUILD_LIB_DIR, libraryPath);

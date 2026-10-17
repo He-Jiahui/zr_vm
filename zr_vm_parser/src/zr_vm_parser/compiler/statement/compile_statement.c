@@ -3287,8 +3287,7 @@ static TZrUInt32 compile_property_reference_return_value(
     SZrPrimaryExpression *primary;
     SZrAstNode *projectionNode;
     SZrMemberExpression *projection;
-    SZrAstNode prefixNode;
-    SZrAstNodeArray prefixMembers;
+    SZrAstNode *prefixNode;
     TZrUInt32 baseSlot;
     TZrUInt32 referenceSlot;
 
@@ -3320,21 +3319,23 @@ static TZrUInt32 compile_property_reference_return_value(
         return ZR_PARSER_SLOT_NONE;
     }
     projection = &projectionNode->data.memberExpression;
-    prefixNode = *expression;
-    prefixMembers = *primary->members;
-    prefixMembers.count--;
-    prefixNode.data.primaryExpression.members = &prefixMembers;
-    ZrParser_Expression_Compile(cs, &prefixNode);
+    prefixNode = ZrParser_SemanticContext_CreatePrimaryPrefix(
+            cs->semanticContext, expression, primary->members->count - 1U);
+    if (prefixNode == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Failed to retain ref property Place receiver", location);
+        return ZR_PARSER_SLOT_NONE;
+    }
+    ZrParser_Expression_Compile(cs, prefixNode);
     baseSlot = cs->lastExpressionSlot;
-    if (prefixMembers.count == 0U &&
-        prefixNode.data.primaryExpression.property != ZR_NULL &&
-        prefixNode.data.primaryExpression.property->type ==
+    if (primary->members->count == 1U &&
+        primary->property != ZR_NULL &&
+        primary->property->type ==
                 ZR_AST_IDENTIFIER_LITERAL &&
-        prefixNode.data.primaryExpression.property->data.identifier.name !=
+        primary->property->data.identifier.name !=
                 ZR_NULL) {
         TZrUInt32 directLocalSlot = find_local_var(
                 cs,
-                prefixNode.data.primaryExpression.property->data.identifier.name);
+                primary->property->data.identifier.name);
         if (directLocalSlot != ZR_PARSER_SLOT_NONE) {
             baseSlot = directLocalSlot;
         }
@@ -3374,7 +3375,7 @@ static TZrUInt32 compile_property_reference_return_value(
 
         ZrParser_InferredType_Init(
                 cs->state, &baseType, ZR_VALUE_TYPE_OBJECT);
-        if (!ZrParser_ExpressionType_Infer(cs, &prefixNode, &baseType)) {
+        if (!ZrParser_ExpressionType_Infer(cs, prefixNode, &baseType)) {
             ZrParser_InferredType_Free(cs->state, &baseType);
             ZrParser_Compiler_Error(
                     cs,

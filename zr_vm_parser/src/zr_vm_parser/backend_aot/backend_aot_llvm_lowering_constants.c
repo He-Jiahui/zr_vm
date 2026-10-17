@@ -6,10 +6,24 @@ static TZrBool backend_aot_llvm_lower_immediate_constant_instruction(const SZrAo
                                                                      const SZrTypeValue *constantValue) {
     TZrUInt32 destinationValueTemp;
     TZrChar bitsBuffer[64];
+    TZrChar argsBuffer[128];
+    TZrChar storeLabel[96];
 
     if (context == ZR_NULL || instruction == ZR_NULL || constantValue == ZR_NULL) {
         return ZR_FALSE;
     }
+    if (constantValue->type != ZR_VALUE_TYPE_NULL && constantValue->type != ZR_VALUE_TYPE_BOOL &&
+        !ZR_VALUE_IS_TYPE_NUMBER(constantValue->type)) return ZR_FALSE;
+
+    /* A reused temporary may still own a Shared/Weak value. Release it before
+     * overwriting its tag, and reload its address after destructor callbacks. */
+    snprintf(argsBuffer, sizeof(argsBuffer), "ptr %%state, ptr %%frame, i32 %u",
+             (unsigned)instruction->destinationSlot);
+    snprintf(storeLabel, sizeof(storeLabel), "zr_aot_constant_store_%u",
+             (unsigned)backend_aot_llvm_next_temp(context->tempCounter));
+    backend_aot_llvm_write_guarded_call_text(context->file, context->tempCounter,
+            "ZrLibrary_AotRuntime_ResetStackNull", argsBuffer, storeLabel, context->failLabel);
+    fprintf(context->file, "%s:\n", storeLabel);
 
     destinationValueTemp = backend_aot_llvm_emit_stack_value_pointer(context->file,
                                                                      context->tempCounter,

@@ -31,8 +31,12 @@ TZrBool backend_aot_c_scalar_call_result_has_nonprimitive_type(
         TZrUInt32 execInstructionIndex,
         TZrUInt32 destinationSlot) {
     if (calleeFunction != ZR_NULL && calleeFunction->hasCallableReturnType == ZR_TRUE &&
-        backend_aot_c_scalar_call_result_type_is_nonprimitive(&calleeFunction->callableReturnType)) {
-        return ZR_TRUE;
+        calleeFunction->callableReturnType.baseType != ZR_VALUE_TYPE_UNKNOWN) {
+        /* A temporary call destination can reuse a slot whose legacy SemIR
+         * annotation describes a previous value. The known callee's return
+         * contract describes this write; slot-wide facts do not override it. */
+        return backend_aot_c_scalar_call_result_type_is_nonprimitive(
+                &calleeFunction->callableReturnType);
     }
     if (function == ZR_NULL || function->semIrInstructions == ZR_NULL ||
         function->semIrTypeTable == ZR_NULL) {

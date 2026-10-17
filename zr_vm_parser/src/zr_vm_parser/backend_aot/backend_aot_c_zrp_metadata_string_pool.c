@@ -1,3 +1,4 @@
+#include "backend_aot/backend_aot_c_zrp_metadata_unaligned.h"
 #include "backend_aot/backend_aot_c_zrp_metadata_string_pool.h"
 
 #include "backend_aot/backend_aot_c_zrp_metadata_manifest_export.h"
@@ -848,8 +849,10 @@ void backend_aot_c_zrp_copy_string_pool(TZrByte *targetBlob,
     }
 }
 
-TZrBool backend_aot_c_zrp_remap_string_offset(TZrUInt32 *stringOffset,
+TZrBool backend_aot_c_zrp_remap_string_offset(void *stringOffsetStorage,
                                               const SZrAotCZrpStringPoolRemap *remap) {
+    SZrAotCZrpUInt32Field *stringOffset = (SZrAotCZrpUInt32Field *)stringOffsetStorage;
+
     if (stringOffset == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -858,8 +861,8 @@ TZrBool backend_aot_c_zrp_remap_string_offset(TZrUInt32 *stringOffset,
     }
 
     for (TZrUInt32 index = 0u; index < remap->count; index++) {
-        if (remap->entries[index].oldOffset == *stringOffset) {
-            *stringOffset = remap->entries[index].newOffset;
+        if (remap->entries[index].oldOffset == stringOffset->value) {
+            stringOffset->value = remap->entries[index].newOffset;
             return ZR_TRUE;
         }
     }

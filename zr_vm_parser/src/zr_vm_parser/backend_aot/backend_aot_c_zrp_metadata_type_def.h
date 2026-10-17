@@ -144,7 +144,7 @@ TZrMetadataToken backend_aot_c_zrp_compacted_type_def_token(
         const SZrAotFunctionTable *functionTable,
         TZrUInt32 retainedMethodDefCount);
 TZrBool backend_aot_c_zrp_remap_type_def_token(
-        TZrMetadataToken *token,
+        void *token,
         const SZrZrpMetadataTypeDefRow *rows,
         TZrUInt32 count,
         const SZrMetadataTokenRecord *tokenRecords,

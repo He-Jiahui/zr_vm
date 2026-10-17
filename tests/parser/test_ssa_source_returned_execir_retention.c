@@ -1,3 +1,4 @@
+#include "support/ssa_host_aot_support.h"
 #include <stdio.h>
 #include <string.h>
 #include "unity.h"
@@ -496,7 +497,9 @@ static const SZrAotIrModule *aot(unsigned slot,const char *source,TZrUInt64 lite
     return m;
 }
 static void prerequisites(void){(void)none(0u,g_nine,ZR_TRUE,ZR_NULL);ZrTests_Returned_FreeFunction(0u);
+#if ZR_TESTS_HOST_SCALAR_AOT_SUPPORTED
     (void)aot(0u,g_nine,9u);ZrTests_Returned_FreeFunction(0u);
+#endif
     TEST_ASSERT_EQUAL_UINT(0u,ZrTests_Returned_Stats(ZR_RETURNED_OWNER).live);}
 static void identity(SZrFunction *f,const SZrExecIrModule *m,TZrUInt64 literal){
     const SZrMetadataTokenRecord *module=ZR_NULL,*entry=ZR_NULL;
@@ -866,8 +869,10 @@ static void test_source_child_expression_null_cleanup_retry(void){
 int main(void){UNITY_BEGIN();
     RUN_TEST(test_none_nine_returns_without_owners);
     RUN_TEST(test_zero_eight_and_null_options_nine_without_owners);
+#if ZR_TESTS_HOST_SCALAR_AOT_SUPPORTED
     RUN_TEST(test_aot_nine_returns_only_aot);
     RUN_TEST(test_aot_eight_returns_only_aot);
+#endif
     RUN_TEST(test_execir_nine_survives_actual_producer_cleanup);
     RUN_TEST(test_execir_eight_preserves_actual_source_metadata);
     RUN_TEST(test_execir_null_diagnostic_preserves_content);
@@ -879,8 +884,10 @@ int main(void){UNITY_BEGIN();
     RUN_TEST(test_execir_bool_reports_actual_constant_refusal);
     RUN_TEST(test_execir_float_reports_actual_constant_refusal);
     RUN_TEST(test_two_returned_execir_owners_are_independent);
+#if ZR_TESTS_HOST_SCALAR_AOT_SUPPORTED
     RUN_TEST(test_returned_aot_and_execir_owners_coexist);
     RUN_TEST(test_aot_replacement_preserves_returned_execir);
+#endif
     RUN_TEST(test_function_free_then_global_shutdown_releases_execir);
     RUN_TEST(test_sixteen_alternating_compile_free_lifecycles);
     RUN_TEST(test_each_source_snapshot_allocation_fault_cleanup_retry);

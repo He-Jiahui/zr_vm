@@ -79,8 +79,8 @@ static TZrBool checkpoint_object_is_recoverable(const SZrRawObject *raw) {
             if (checkpoint_native_closure_is_immortal_stateless(raw)) {
                 return ZR_TRUE;
             }
-            /* Native callback/shim/binding state is not represented by the
-             * graph-indexed checkpoint contract, even for zero captures. */
+            /* Captured, receiver-bound and nonpermanent native state is not
+             * represented by the graph-indexed checkpoint contract. */
             return !raw->isNative && raw->finalizerData == ZR_NULL;
         default:
             return ZR_FALSE;
@@ -646,6 +646,7 @@ static TZrBool checkpoint_capture_object(SZrSessionCheckpoint *checkpoint,
     memset(snapshot, 0, sizeof(*snapshot));
     snapshot->prototypeIndex = ZR_CHECKPOINT_NO_INDEX;
     snapshot->functionIndex = ZR_CHECKPOINT_NO_INDEX;
+    snapshot->nativeBindingOwnerIndex = ZR_CHECKPOINT_NO_INDEX;
     snapshot->closureValueIndex = ZR_CHECKPOINT_NO_INDEX;
     snapshot->cachedStatelessClosureIndex = ZR_CHECKPOINT_NO_INDEX;
     if (!ZrCore_GcRootHandle_Create(checkpoint->state, raw, &snapshot->handle)) {
@@ -797,7 +798,15 @@ static TZrBool checkpoint_capture_object(SZrSessionCheckpoint *checkpoint,
             return ZR_FALSE;
         }
     } else if (raw->type == ZR_RAW_OBJECT_TYPE_CLOSURE) {
-        if (!raw->isNative) {
+        if (raw->isNative) {
+            const SZrClosureNative *closure = (const SZrClosureNative *)raw;
+            if (closure->nativeBindingOwnerPrototype != ZR_NULL) {
+                TZrSize ownerIndex;
+                if (!checkpoint_capture_object(checkpoint,
+                        closure->nativeBindingOwnerPrototype, &ownerIndex)) return ZR_FALSE;
+                checkpoint->objects[index].nativeBindingOwnerIndex = ownerIndex;
+            }
+        } else {
             SZrClosure *closure = (SZrClosure *)raw;
             TZrSize captureCount = closure->closureValueCount;
             checkpoint->objects[index].captureCount = captureCount;

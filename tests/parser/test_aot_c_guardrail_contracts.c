@@ -514,7 +514,9 @@ static void test_aot_c_guardrail_generated_scalar_typed_direct_calls_stay_value_
     TEST_ASSERT_NULL(aot_c_guardrail_find_forbidden_token(generatedCText,
                                                           forbiddenTokens,
                                                           ARRAY_COUNT(forbiddenTokens)));
-    for (index = 0u; index < ARRAY_COUNT(typedThunkPrefixes); index++) {
+    /* Checked signed arithmetic needs state to report overflow (H2). */
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Integer_Add(state,"));
+    for (index = 1u; index < ARRAY_COUNT(typedThunkPrefixes); index++) {
         TEST_ASSERT_NULL(aot_c_guardrail_find_stateful_typed_thunk_use(generatedCText, typedThunkPrefixes[index]));
     }
 
@@ -522,7 +524,7 @@ static void test_aot_c_guardrail_generated_scalar_typed_direct_calls_stay_value_
 }
 
 /* 检查四类 typed thunk 首个函数体不读取 state、frame 或值对象。 */
-static void test_aot_c_guardrail_generated_scalar_typed_thunk_bodies_stay_environment_free(void) {
+static void test_aot_c_guardrail_generated_scalar_typed_thunk_bodies_keep_checked_arithmetic(void) {
     static const char *const typedThunkDefinitionPrefixes[] = {
             "static TZrInt64 zr_aot_typed_i64_fn_",
             "static TZrUInt64 zr_aot_typed_u64_fn_",
@@ -533,7 +535,6 @@ static void test_aot_c_guardrail_generated_scalar_typed_thunk_bodies_stay_enviro
             "zr_aot_begin_instruction",
             "SZrCallInfo",
             "frame.",
-            "state",
             "state->stackTop",
             "programCounter",
             "publishAllInstructions",
@@ -553,6 +554,11 @@ static void test_aot_c_guardrail_generated_scalar_typed_thunk_bodies_stay_enviro
                                                      "typed_direct_scalar_body_guardrail");
     for (index = 0u; index < ARRAY_COUNT(typedThunkDefinitionPrefixes); index++) {
         TEST_ASSERT_NOT_NULL(strstr(generatedCText, typedThunkDefinitionPrefixes[index]));
+        const char *const stateToken[] = {"state"};
+        const char *stateUse = aot_c_guardrail_find_forbidden_token_in_function_body(
+                generatedCText, typedThunkDefinitionPrefixes[index], stateToken, 1u);
+        if (index == 0u) TEST_ASSERT_NOT_NULL(stateUse);
+        else TEST_ASSERT_NULL(stateUse);
         TEST_ASSERT_NULL(aot_c_guardrail_find_forbidden_token_in_function_body(
                 generatedCText,
                 typedThunkDefinitionPrefixes[index],
@@ -575,6 +581,6 @@ int main(void) {
     RUN_TEST(test_aot_c_guardrail_classifies_allowed_runtime_boundary_calls);
     RUN_TEST(test_aot_c_guardrail_rejects_vm_fallback_runtime_calls);
     RUN_TEST(test_aot_c_guardrail_generated_scalar_typed_direct_calls_stay_value_free);
-    RUN_TEST(test_aot_c_guardrail_generated_scalar_typed_thunk_bodies_stay_environment_free);
+    RUN_TEST(test_aot_c_guardrail_generated_scalar_typed_thunk_bodies_keep_checked_arithmetic);
     return UNITY_END();
 }

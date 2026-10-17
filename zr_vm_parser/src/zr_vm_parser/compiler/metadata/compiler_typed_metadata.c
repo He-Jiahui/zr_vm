@@ -34,6 +34,22 @@ static void typed_type_ref_from_inferred(SZrFunctionTypedTypeRef *dest, const SZ
     dest->isNullable = src->isNullable;
     dest->ownershipQualifier = src->ownershipQualifier;
     dest->typeName = src->typeName;
+    if (!src->isNullable && src->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_NONE) {
+        switch (src->baseType) {
+            case ZR_VALUE_TYPE_BOOL: dest->staticCType = ZR_STATIC_C_TYPE_BOOL; break;
+            case ZR_VALUE_TYPE_INT8: dest->staticCType = ZR_STATIC_C_TYPE_I8; break;
+            case ZR_VALUE_TYPE_INT16: dest->staticCType = ZR_STATIC_C_TYPE_I16; break;
+            case ZR_VALUE_TYPE_INT32: dest->staticCType = ZR_STATIC_C_TYPE_I32; break;
+            case ZR_VALUE_TYPE_INT64: dest->staticCType = ZR_STATIC_C_TYPE_I64; break;
+            case ZR_VALUE_TYPE_UINT8: dest->staticCType = ZR_STATIC_C_TYPE_U8; break;
+            case ZR_VALUE_TYPE_UINT16: dest->staticCType = ZR_STATIC_C_TYPE_U16; break;
+            case ZR_VALUE_TYPE_UINT32: dest->staticCType = ZR_STATIC_C_TYPE_U32; break;
+            case ZR_VALUE_TYPE_UINT64: dest->staticCType = ZR_STATIC_C_TYPE_U64; break;
+            case ZR_VALUE_TYPE_FLOAT: dest->staticCType = ZR_STATIC_C_TYPE_F32; break;
+            case ZR_VALUE_TYPE_DOUBLE: dest->staticCType = ZR_STATIC_C_TYPE_F64; break;
+            default: break;
+        }
+    }
     if (src->baseType == ZR_VALUE_TYPE_ARRAY) {
         dest->isArray = ZR_TRUE;
         if (src->elementTypes.length > 0) {
@@ -1362,20 +1378,34 @@ TZrBool compiler_build_typed_local_bindings(SZrCompilerState *cs,
             bindings[index].declarationEndColumn =
                     semanticIdentity.declarationRange.end.column;
         }
-        /* 参数在进入函数体前就登记了声明符号，但未必形成可执行 Semantic IR 槽。
-         * 元数据仍要带上该声明的规范符号，同名参数在不同函数里不能共用一个 id。 */
+        /* Unused parameters still need a complete declaration identity. Their
+         * local place belongs to the source declaration even when no executable
+         * Semantic IR instruction materialized that slot. */
         if (bindings[index].symbolId == ZR_SEMANTIC_ID_INVALID &&
-            localVar->name != ZR_NULL &&
-            cs->typeEnv != ZR_NULL) {
+            localVar->name != ZR_NULL && cs->typeEnv != ZR_NULL &&
+            cs->preSemanticIrInitialized) {
             const SZrTypeBinding *typeBinding =
-                    ZrParser_TypeEnvironment_FindVariableBinding(
-                            cs->typeEnv, localVar->name);
-            if (typeBinding != ZR_NULL &&
-                typeBinding->symbolId != ZR_SEMANTIC_ID_INVALID) {
-                bindings[index].symbolId = typeBinding->symbolId;
-                if (bindings[index].typeId == ZR_SEMANTIC_ID_INVALID) {
-                    bindings[index].typeId = typeBinding->typeId;
+                    ZrParser_TypeEnvironment_FindVariableBinding(cs->typeEnv, localVar->name);
+            if (typeBinding != ZR_NULL && typeBinding->symbolId != ZR_SEMANTIC_ID_INVALID &&
+                typeBinding->typeId != ZR_SEMANTIC_ID_INVALID) {
+                SZrParserPlaceBase base = {0};
+                base.kind = ZR_PARSER_PLACE_BASE_LOCAL;
+                base.identity = localVar->stackSlot;
+                TZrPlaceId placeId = ZrParser_PlaceGraph_AddBase(
+                        &cs->preSemanticIr.places, &base, typeBinding->typeId,
+                        typeBinding->declarationRange);
+                if (placeId == ZR_PLACE_ID_INVALID) {
+                    ZrCore_Memory_RawFreeWithType(cs->state->global, bindings,
+                            sizeof(*bindings) * localCount, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+                    return ZR_FALSE;
                 }
+                bindings[index].symbolId = typeBinding->symbolId;
+                bindings[index].typeId = typeBinding->typeId;
+                bindings[index].placeId = placeId;
+                bindings[index].declarationStartLine = typeBinding->declarationRange.start.line;
+                bindings[index].declarationStartColumn = typeBinding->declarationRange.start.column;
+                bindings[index].declarationEndLine = typeBinding->declarationRange.end.line;
+                bindings[index].declarationEndColumn = typeBinding->declarationRange.end.column;
             }
         }
 
@@ -2297,7 +2327,10 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
             layouts[slot].isParameter = slotIsParameter ? 1 : 0;
             layouts[slot].reserved0 =
                     ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
-                    ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT;
+                    ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT |
+                    (receiverLayout->reserved0 &
+                     (ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
+                      ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS));
             continue;
         }
 

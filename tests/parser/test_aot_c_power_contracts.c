@@ -86,13 +86,15 @@ static char *read_repo_text_file_owned(const char *relativePath) {
 /* BUG: 缺失片段时 Unity 跳出用例，调用者末尾的 free 不执行，已读取源码缓冲区泄漏至进程退出。 */
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
+    int missing = 0;
 
     for (index = 0; index < needleCount; index++) {
         if (!zr_test_aot_source_contract_contains(text, needles[index])) {
             printf("Missing source contract text: %s\n", needles[index]);
-            TEST_FAIL_MESSAGE("missing required source contract text");
+            missing = 1;
         }
     }
+    TEST_ASSERT_FALSE_MESSAGE(missing, "missing required source contract text");
 }
 
 /* BUG: 禁止旧入口复活的断言失败同样跳过调用者对源码缓冲区的释放。 */
@@ -120,7 +122,7 @@ static void test_aot_c_source_lowers_typed_power_to_direct_c(void) {
             "#include <math.h>\\n",
     };
     static const char *const moduleNeedles[] = {
-            "#include \"backend_aot_c_scalar_locals.h\"",
+            "#include \"backend_aot/backend_aot_c_scalar_locals.h\"",
             "backend_aot_write_c_direct_pow_signed(",
             "backend_aot_write_c_direct_pow_unsigned(",
             "backend_aot_write_c_direct_pow_float(",

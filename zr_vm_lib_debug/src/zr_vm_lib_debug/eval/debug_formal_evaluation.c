@@ -24,6 +24,27 @@ static TZrBool zr_debug_formal_is_reference_free_value_expression(const SZrAstNo
         case ZR_AST_NULL_LITERAL:
         case ZR_AST_FLOAT_LITERAL:
         case ZR_AST_INTEGER_LITERAL:
+        case ZR_AST_STRING_LITERAL:
+            return ZR_TRUE;
+        case ZR_AST_ARRAY_LITERAL:
+            if (expression->data.arrayLiteral.elements != ZR_NULL) {
+                for (TZrSize index = 0u; index < expression->data.arrayLiteral.elements->count; ++index) {
+                    if (!zr_debug_formal_is_reference_free_value_expression(
+                                expression->data.arrayLiteral.elements->nodes[index])) return ZR_FALSE;
+                }
+            }
+            return ZR_TRUE;
+        case ZR_AST_OBJECT_LITERAL:
+            if (expression->data.objectLiteral.properties != ZR_NULL) {
+                for (TZrSize index = 0u; index < expression->data.objectLiteral.properties->count; ++index) {
+                    const SZrAstNode *property = expression->data.objectLiteral.properties->nodes[index];
+                    if (property == ZR_NULL || property->type != ZR_AST_KEY_VALUE_PAIR ||
+                        (property->data.keyValuePair.keyIsComputed &&
+                         !zr_debug_formal_is_reference_free_value_expression(property->data.keyValuePair.key)) ||
+                        !zr_debug_formal_is_reference_free_value_expression(property->data.keyValuePair.value))
+                        return ZR_FALSE;
+                }
+            }
             return ZR_TRUE;
         case ZR_AST_UNARY_EXPRESSION:
             return zr_debug_formal_is_reference_free_value_expression(
@@ -235,8 +256,10 @@ TZrBool zr_debug_formal_prepare_expression_with_failure(
     outContext->compilerState.currentAst = outContext->expression;
     outContext->compilerState.scriptAst = outContext->expression;
     outContext->compilerState.suppressErrorOutput = ZR_TRUE;
-    /* 暂停帧绑定注册失败后不继续推断；已初始化的上下文仍交给调用方检查与释放。 */
-    if (!zr_debug_semantic_register_bindings(agent, frameId, &outContext->compilerState)) {
+    /* Literal expressions do not depend on paused-frame metadata. Continue
+     * inference for those; allocation still requires the caller's capability. */
+    if (!zr_debug_semantic_register_bindings(agent, frameId, &outContext->compilerState) &&
+        !zr_debug_formal_is_reference_free_value_expression(outContext->expression)) {
         return ZR_TRUE;
     }
 

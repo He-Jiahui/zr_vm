@@ -8,7 +8,6 @@
 #include "exec_ir/aot_ir_projection_descriptor.h"
 #include "zr_vm_parser/canonical_type.h"
 #include "exec_ir/exec_ir_dead_source_places.h"
-#include "exec_ir/exec_ir_host_aot_target.h"
 #include "exec_ir/exec_ir_host_primitive_layout.h"
 #include "exec_ir/source/exec_ir_source_frame.h"
 #include "exec_ir/source/exec_ir_source_module_contract.h"
@@ -165,9 +164,12 @@ static const SZrAotIrModule *prepare(unsigned index, EZrSsaLiteralScriptSource s
             s->fixture.module.layouts, s->fixture.module.layoutCount,
             s->fixture.compiler.semanticContext, s->fixture.compiler.preSemanticIr.callableTypeId,
             &s->projection, &diagnostic));
-    TEST_ASSERT_TRUE(ZrParser_ExecIr_MakeHostNoArgsI64AotTarget(
-            s->fixture.compiler.semanticContext, s->fixture.compiler.preSemanticIr.callableTypeId,
-            &s->fixture.module.layouts[0], &s->target, &aotDiagnostic));
+    /* This allocator test validates and copies descriptors without executing
+     * native code. Use an explicit fixture target, as in the descriptor tests,
+     * instead of requiring the finite Win64-only host ABI helper. */
+    s->target = (SZrAotIrTargetContract){
+        ZR_AOT_IR_TARGET_ABI_VERSION, sizeof(void *), 0u, 0u, 67u, 66u
+    };
     TEST_ASSERT_TRUE(ZrParser_AotIrProjection_BuildDescriptor(&s->projection, &s->target,
             &s->fixture.module.contract, &s->descriptor, &aotDiagnostic));
     TEST_ASSERT_EQUAL_PTR(&s->projection, s->descriptor.owner);

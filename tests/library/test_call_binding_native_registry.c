@@ -5,6 +5,7 @@
 #include "harness/runtime_support.h"
 #include "harness/module_fixture_support.h"
 #include "zr_vm_core/closure.h"
+#include "zr_vm_core/artifact_schema.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
@@ -204,6 +205,18 @@ int main(void) {
             if (fact->moduleSignatureHash == ZrLibrary_NativeRegistry_ComputeModuleSignatureHash(&kTypeModule)) {
                 sawProviderBinding = ZR_TRUE;
                 assert(compiled->callSiteCaches[cacheIndex].bindingLocation.kind == ZR_CALL_BINDING_RELOCATION_MODULE);
+                SZrArtifactCallBindingRow row = {
+                    .schemaVersion = ZR_CALL_BINDING_SCHEMA_VERSION,
+                    .functionIndex = 0u,
+                    .cacheIndex = cacheIndex,
+                    .instructionIndex = compiled->callSiteCaches[cacheIndex].instructionIndex,
+                    .contract = *fact,
+                    .location = compiled->callSiteCaches[cacheIndex].bindingLocation,
+                };
+                TZrByte encoded[ZR_ARTIFACT_CALL_BINDING_ROW_ENCODED_SIZE];
+                assert(row.location.targetIndex != ZR_CALL_BINDING_SLOT_NONE);
+                assert(ZrCore_Artifact_WriteCallBindingRow(&row, encoded,
+                        sizeof(encoded), ZR_NULL) == ZR_ARTIFACT_STATUS_OK);
             }
         }
         assert(sawProviderBinding);

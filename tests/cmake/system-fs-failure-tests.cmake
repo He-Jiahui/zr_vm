@@ -23,13 +23,17 @@ else()
 endif()
 set(ZR_VM_SYSTEM_FS_FAILURE_FIXTURE_ROOT
         "${CMAKE_CURRENT_BINARY_DIR}/system-fs-failures"
-        CACHE PATH "Registered fixture parent; root cleans children by hash after process exit")
+        CACHE PATH "Registered parent for generated filesystem failure fixtures")
 set(system_fs_failure_cases module_nul stream_nul module_plain module_empty stream_plain stream_empty open_control)
 if(WIN32)
     list(APPEND system_fs_failure_cases open_oom)
 endif()
 foreach(case IN LISTS system_fs_failure_cases)
     add_test(NAME system_fs_failure_${case}
-            COMMAND zr_vm_system_fs_failures_test ${case} "${ZR_VM_SYSTEM_FS_FAILURE_FIXTURE_ROOT}/${case}")
+            COMMAND ${CMAKE_COMMAND}
+            "-DTEST_EXECUTABLE=$<TARGET_FILE:zr_vm_system_fs_failures_test>"
+            "-DTEST_CASE=${case}"
+            "-DFIXTURE_PARENT=${ZR_VM_SYSTEM_FS_FAILURE_FIXTURE_ROOT}/${case}"
+            -P "${CMAKE_SOURCE_DIR}/tests/cmake/run_fresh_filesystem_fixture.cmake")
     set_tests_properties(system_fs_failure_${case} PROPERTIES TIMEOUT 30)
 endforeach()

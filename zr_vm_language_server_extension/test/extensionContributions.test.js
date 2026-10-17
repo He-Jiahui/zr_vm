@@ -32,3 +32,11 @@ test('import cleanup commands are exposed through activation, commands, and edit
         entry.command === 'zr.removeUnusedImports' &&
         entry.when === 'editorLangId == zr'));
 });
+
+test('native tools require workspace trust and executable settings stay restricted', () => {
+    const manifest = readPackageJson();
+    assert.equal(manifest.capabilities?.untrustedWorkspaces?.supported, false);
+    for (const setting of ['zr.executablePath', 'zr.debug.cli.path', 'zr.languageServer.native.path']) {
+        assert.equal(manifest.contributes.configuration.properties[setting].restricted, true, setting);
+    }
+});

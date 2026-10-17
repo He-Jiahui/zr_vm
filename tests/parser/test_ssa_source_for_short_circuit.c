@@ -201,6 +201,8 @@ static void test_reused_initializer_slot_preserves_its_own_value(void) {
             "var step: int = 0;\nreturn step;\n");
     TZrValueId literal = ZR_VALUE_ID_INVALID;
     TZrValueId convertedSource = ZR_VALUE_ID_INVALID;
+    TZrValueId convertedResult = ZR_VALUE_ID_INVALID;
+    TZrValueId initialized = ZR_VALUE_ID_INVALID;
     TZrSize index;
     TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
     for (index = 0u; index < compiler.preSemanticIr.instructions.length; ++index) {
@@ -210,12 +212,22 @@ static void test_reused_initializer_slot_preserves_its_own_value(void) {
             instruction->opcode == ZR_SEMANTIC_IR_CONSTANT)
             literal = instruction->resultValueId;
         if (instruction->sourceRange.start.line == 3 &&
-            instruction->opcode == ZR_SEMANTIC_IR_CONVERT)
+            instruction->opcode == ZR_SEMANTIC_IR_CONVERT) {
             convertedSource = instruction->valueId;
+            convertedResult = instruction->resultValueId;
+        }
+        if (instruction->sourceRange.start.line == 3 &&
+            instruction->opcode == ZR_SEMANTIC_IR_INITIALIZE)
+            initialized = instruction->valueId;
     }
     TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, literal);
-    TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, convertedSource);
-    TEST_ASSERT_EQUAL_UINT32(literal, convertedSource);
+    TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, initialized);
+    if (convertedSource != ZR_VALUE_ID_INVALID) {
+        TEST_ASSERT_EQUAL_UINT32(literal, convertedSource);
+        TEST_ASSERT_EQUAL_UINT32(convertedResult, initialized);
+    } else {
+        TEST_ASSERT_EQUAL_UINT32(literal, initialized);
+    }
     free_source(&compiler, ast);
 }
 
@@ -330,6 +342,14 @@ static void assert_for_execution(const char *source, TZrInt64 expectedResult,
             constants[index].kind = ZR_EXEC_IR_ORACLE_VALUE_UNSIGNED;
             constants[index].as.unsignedInteger = constant->value.nativeObject.nativeUInt64;
         }
+    }
+    /* These cases observe writes through the memory provider. Withhold the
+     * scalar-promotion proof so local assignments remain observable stores;
+     * the structural cases above still exercise normal SSA promotion. */
+    for (index = 0u; index < compiler.preSemanticIr.locals.length; ++index) {
+        SZrSemanticIrLocal *local = (SZrSemanticIrLocal *)ZrCore_Array_Get(
+                &compiler.preSemanticIr.locals, index);
+        local->isScalar = ZR_FALSE;
     }
     ZrCore_ExecIr_FunctionInit(&output);
     TEST_ASSERT_TRUE(ZrParser_ExecIr_Build(

@@ -2325,7 +2325,7 @@ static void test_value_frame_parameter_copy_uses_dense_source_when_frame_value_s
     callerLayouts[0].stackSlot = 6u;
     callerLayouts[0].byteOffset = 16u * (TZrUInt32)sizeof(SZrTypeValueOnStack) + 32u;
     callerLayouts[0].byteSize = sizeof(SZrTypeValue);
-    callerLayouts[0].byteAlign = ZR_ALIGN_SIZE;
+    callerLayouts[0].byteAlign = _Alignof(SZrTypeValue);
     callerLayouts[0].typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
     callerLayouts[0].slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
     callerLayouts[0].isParameter = ZR_FALSE;
@@ -2341,7 +2341,7 @@ static void test_value_frame_parameter_copy_uses_dense_source_when_frame_value_s
     calleeLayouts[1].stackSlot = 1u;
     calleeLayouts[1].byteOffset = 4u * (TZrUInt32)sizeof(SZrTypeValueOnStack) + 32u;
     calleeLayouts[1].byteSize = sizeof(SZrTypeValue);
-    calleeLayouts[1].byteAlign = ZR_ALIGN_SIZE;
+    calleeLayouts[1].byteAlign = _Alignof(SZrTypeValue);
     calleeLayouts[1].typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
     calleeLayouts[1].slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
     calleeLayouts[1].isParameter = ZR_TRUE;
@@ -2350,14 +2350,14 @@ static void test_value_frame_parameter_copy_uses_dense_source_when_frame_value_s
     callerFunction.frameSlotLayouts = callerLayouts;
     callerFunction.frameSlotLayoutLength = ZR_ARRAY_COUNT(callerLayouts);
     callerFunction.frameByteSize = callerLayouts[0].byteOffset + callerLayouts[0].byteSize;
-    callerFunction.frameByteAlign = ZR_ALIGN_SIZE;
+    callerFunction.frameByteAlign = _Alignof(SZrTypeValue);
 
     calleeFunction.stackSize = 4u;
     calleeFunction.parameterCount = 2u;
     calleeFunction.frameSlotLayouts = calleeLayouts;
     calleeFunction.frameSlotLayoutLength = ZR_ARRAY_COUNT(calleeLayouts);
     calleeFunction.frameByteSize = calleeLayouts[1].byteOffset + calleeLayouts[1].byteSize;
-    calleeFunction.frameByteAlign = ZR_ALIGN_SIZE;
+    calleeFunction.frameByteAlign = _Alignof(SZrTypeValue);
 
     callerFrameBase = state->stackBase.valuePointer + 1;
     calleeFrameBase = state->stackBase.valuePointer + 24;

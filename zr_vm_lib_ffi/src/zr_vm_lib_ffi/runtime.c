@@ -244,6 +244,11 @@ TZrBool ZrFfi_CreateCallback(ZrLibCallContext *context, SZrTypeValue *result) {
         return ZR_FALSE;
     }
     callbackData->ownerObject = callbackObject;
+    /* The native trampoline retains this callable beyond the binding call.
+     * Temporary argument roots alone do not describe that escape. */
+    ZrCore_GarbageCollector_MarkValueEscaped(context->state, callbackValue,
+            ZR_GARBAGE_COLLECT_ESCAPE_KIND_NATIVE_HANDLE,
+            ZR_GC_SCOPE_DEPTH_NONE, ZR_GARBAGE_COLLECT_PROMOTION_REASON_ESCAPE);
     ZrLib_Value_SetObject(context->state, result, callbackObject, ZR_VALUE_TYPE_OBJECT);
     return ZR_TRUE;
 #endif

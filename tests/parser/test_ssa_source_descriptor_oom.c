@@ -5,6 +5,7 @@
 #include "support/ssa_source_descriptor_oom_shim.h"
 #include "support/ssa_literal_script_fixture.h"
 #include "unity.h"
+#include "support/ssa_host_aot_support.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/gc.h"
@@ -241,8 +242,15 @@ static SSource *prepare(unsigned index) {
             s->fixture.module.constants, s->fixture.module.constantCount,
             s->fixture.module.layouts, s->fixture.module.layoutCount,
             s->fixture.compiler.semanticContext, s->fixture.compiler.preSemanticIr.callableTypeId, &s->projection, &d));
-    TEST_ASSERT_TRUE(ZrParser_ExecIr_MakeHostNoArgsI64AotTarget(s->fixture.compiler.semanticContext,
-            s->fixture.compiler.preSemanticIr.callableTypeId, &s->fixture.module.layouts[0], &s->target, &a));
+    TZrBool targetReady = ZrParser_ExecIr_MakeHostNoArgsI64AotTarget(s->fixture.compiler.semanticContext,
+            s->fixture.compiler.preSemanticIr.callableTypeId, &s->fixture.module.layouts[0], &s->target, &a);
+#if ZR_TESTS_HOST_SCALAR_AOT_SUPPORTED
+    TEST_ASSERT_TRUE(targetReady);
+#else
+    TEST_ASSERT_FALSE(targetReady);
+    TEST_ASSERT_EQUAL_INT(ZR_AOT_IR_UNSUPPORTED, a.status);
+    return s;
+#endif
     TEST_ASSERT_EQUAL_UINT32(3u, s->projection.instructionCount);
     TEST_ASSERT_EQUAL_UINT32(1u, s->projection.blockCount);
     TEST_ASSERT_EQUAL_UINT32(1u, s->projection.frameSlotCount);
@@ -589,8 +597,18 @@ static void test_null_descriptor_arguments_preserve_existing_owner(void) {
     release();
 }
 static void test_optional_diagnostic_oom_cleanup_then_retry(void) { fault(6u, ZR_TRUE, ZR_TRUE); }
+#if !ZR_TESTS_HOST_SCALAR_AOT_SUPPORTED
+static void test_host_target_refused_before_descriptor_allocations(void) {
+    SSource *source = prepare(0u);
+    TEST_ASSERT_NOT_NULL(source);
+    TEST_ASSERT_EQUAL_UINT(0u, g_ledger.attempts);
+    TEST_ASSERT_EQUAL_UINT(0u, g_ledger.live);
+    TEST_ASSERT_NULL(g_descriptor.function.instructions);
+}
+#endif
 int main(void) {
     UNITY_BEGIN();
+#if ZR_TESTS_HOST_SCALAR_AOT_SUPPORTED
     RUN_TEST(test_actual_nine_descriptor_allocation_prerequisite);
     RUN_TEST(test_actual_eight_descriptor_allocation_prerequisite);
     RUN_TEST(test_first_descriptor_instruction_oom_retry);
@@ -607,5 +625,8 @@ int main(void) {
     RUN_TEST(test_replace_descriptor_layout_oom_retry);
     RUN_TEST(test_null_descriptor_arguments_preserve_existing_owner);
     RUN_TEST(test_optional_diagnostic_oom_cleanup_then_retry);
+#else
+    RUN_TEST(test_host_target_refused_before_descriptor_allocations);
+#endif
     return UNITY_END();
 }

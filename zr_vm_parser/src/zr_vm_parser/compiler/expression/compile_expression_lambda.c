@@ -55,6 +55,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     SZrCompilerArraySnapshot savedParentChildFunctions = {0};
     SZrCompilerArraySnapshot savedParentChildFunctionNameMap = {0};
     SZrCompilerCallableTypeScope callableTypeScope = {0};
+    SZrCompilerSemanticIrIsolation semanticIrIsolation = {0};
     TZrSize oldStackSlotTypeHintScopeStart = 0;
     TZrSize savedParentInstructionsSize = oldInstructionLength * sizeof(TZrInstruction);
     TZrSize savedParentLocalVarsSize = oldLocalVarLength * sizeof(SZrFunctionLocalVariable);
@@ -231,9 +232,14 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     SZrCompilerState *parentCompiler = (oldFunction != ZR_NULL) ? cs : ZR_NULL;
     enter_scope(cs);
     if (!compiler_callable_type_scope_begin(cs, &callableTypeScope)) {
-        exit_scope(cs);
         ZrParser_Compiler_Error(
                 cs, "Failed to isolate lambda parameter types", node->location);
+        goto lambda_type_scope_cleanup;
+    }
+    if (!compiler_semantic_ir_isolation_begin(cs, &semanticIrIsolation)) {
+        compiler_semantic_ir_isolation_end(cs, &semanticIrIsolation);
+        ZrParser_Compiler_Error(
+                cs, "Failed to isolate lambda Semantic IR", node->location);
         goto lambda_type_scope_cleanup;
     }
     if (parentCompiler != ZR_NULL && cs->scopeStack.length > 0) {
@@ -304,9 +310,9 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
         parentCompilerSnapshot.closureVars.capacity = oldClosureVarLength;
         parentCompilerSnapshot.closureVars.isValid = ZR_TRUE;
         parentCompilerSnapshot.typeEnv = callableTypeScope.parent;
-        parentCompilerSnapshot.preSemanticIr = cs->preSemanticIr;
-        parentCompilerSnapshot.preSemanticIrSlots = cs->preSemanticIrSlots;
-        parentCompilerSnapshot.preSemanticIrInitialized = cs->preSemanticIrInitialized;
+        parentCompilerSnapshot.preSemanticIr = semanticIrIsolation.function;
+        parentCompilerSnapshot.preSemanticIrSlots = semanticIrIsolation.slots;
+        parentCompilerSnapshot.preSemanticIrInitialized = semanticIrIsolation.initialized;
         ZrParser_ExternalVariables_Analyze(cs, lambda->block, &parentCompilerSnapshot);
     }
     
@@ -388,6 +394,7 @@ lambda_type_scope_cleanup:
         }
     }
 
+    compiler_semantic_ir_isolation_end(cs, &semanticIrIsolation);
     if (callableTypeScope.child != ZR_NULL &&
         !compiler_callable_type_scope_end(cs, &callableTypeScope)) {
         ZrParser_Compiler_Error(
@@ -508,7 +515,7 @@ lambda_type_scope_cleanup:
                 }
             }
             newFunc->childFunctionLength = (TZrUInt32)cs->childFunctions.length;
-            ZrCore_Function_RebindConstantFunctionValuesToChildren(newFunc);
+            compiler_rebind_moved_child_constants(newFunc, srcArray);
             for (TZrSize i = 0; i < cs->childFunctions.length; i++) {
                 if (srcArray[i] != ZR_NULL) {
                     ZrCore_Function_DetachOwnedBuffers(srcArray[i]);

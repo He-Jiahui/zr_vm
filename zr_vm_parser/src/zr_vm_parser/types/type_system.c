@@ -937,7 +937,12 @@ TZrBool ZrParser_InferredType_IsCompatible(const SZrInferredType *fromType, cons
 
     if (!inferred_type_reference_access_is_compatible(fromType, toType) ||
         !ownership_qualifier_is_compatible(
-                inferred_type_effective_reference_qualifier(fromType),
+                /* Reading a canonical reference into a value copies its payload.
+                 * Only reference targets inherit borrow/loan access qualifiers;
+                 * explicit ownership qualifiers still constrain value copies. */
+                toType->referenceAccess == ZR_REFERENCE_ACCESS_NONE
+                        ? fromType->ownershipQualifier
+                        : inferred_type_effective_reference_qualifier(fromType),
                 inferred_type_effective_reference_qualifier(toType))) {
         return ZR_FALSE;
     }
@@ -1549,6 +1554,7 @@ static TZrBool type_environment_register_function_ex(
     funcInfo->signatureDisplay = ZR_NULL;
     funcInfo->isExternalCallable = ZR_FALSE;
     funcInfo->isCallableValueBinding = isCallableValueBinding;
+    funcInfo->hasInferredReturnType = ZR_FALSE;
     
     // Deep-copy parameter type array values.
     if (paramTypes != ZR_NULL && paramTypes->isValid && paramTypes->capacity > 0 && paramTypes->length > 0) {

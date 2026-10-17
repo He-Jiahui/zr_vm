@@ -132,8 +132,9 @@ static TZrBool backend_aot_c_type_layout_metadata_type_ref_token_root(
     }
 
     for (TZrUInt32 rowIndex = 0u; rowIndex < view.count; rowIndex++) {
-        const SZrMetadataTokenRecord *record =
-                &((const SZrMetadataTokenRecord *)(const void *)view.data)[rowIndex];
+        SZrMetadataTokenRecord recordStorage;
+        const SZrMetadataTokenRecord *record = &recordStorage;
+        memcpy(&recordStorage, view.data + rowIndex * sizeof(recordStorage), sizeof(recordStorage));
 
         if (record->token != typeToken) {
             continue;

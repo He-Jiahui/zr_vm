@@ -86,7 +86,7 @@ static void test_patch_44_writer_and_reader_compatibility_gate(void) {
 
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_EQUAL_UINT32(44u, ZR_IO_SOURCE_PATCH_HAS_MARK_CLOSE_PROXY);
-    TEST_ASSERT_EQUAL_UINT32(44u, ZR_IO_SOURCE_PATCH_CURRENT);
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT32(44u, ZR_IO_SOURCE_PATCH_CURRENT);
     function = ZrCore_Function_New(state);
     TEST_ASSERT_NOT_NULL(function);
     function->instructionsList = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(
@@ -102,9 +102,10 @@ static void test_patch_44_writer_and_reader_compatibility_gate(void) {
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, path));
     TEST_ASSERT_TRUE(ZrTests_ReadFileBytes(path, &bytes, &length));
     TEST_ASSERT_TRUE(length > patchOffset + sizeof(TZrUInt32));
-    TEST_ASSERT_EQUAL_UINT32(44u, close_proxy_read_u32_le(bytes, patchOffset));
+    TEST_ASSERT_EQUAL_UINT32(ZR_IO_SOURCE_PATCH_CURRENT, close_proxy_read_u32_le(bytes, patchOffset));
 
-    /* Patch 44 introduces no fields: its opcode-free payload is valid as patch 43. */
+    /* Patches 44 and 45 only change opcode semantics. This NOP-only function
+     * has no close proxy or CREATE_ARRAY operands and is also valid at 43. */
     close_proxy_write_u32_le(bytes, patchOffset, 43u);
     reader.bytes = bytes;
     reader.length = length;
@@ -117,7 +118,7 @@ static void test_patch_44_writer_and_reader_compatibility_gate(void) {
     TEST_ASSERT_EQUAL_UINT32(43u, context.source->versionPatch);
     ZrCore_Io_ReadSourceFree(state->global, context.source);
 
-    close_proxy_write_u32_le(bytes, patchOffset, 45u);
+    close_proxy_write_u32_le(bytes, patchOffset, ZR_IO_SOURCE_PATCH_CURRENT + 1u);
     reader.consumed = ZR_FALSE;
     memset(&io, 0, sizeof(io));
     ZrCore_Io_Init(state, &io, close_proxy_binary_read,
@@ -126,7 +127,8 @@ static void test_patch_44_writer_and_reader_compatibility_gate(void) {
     context.io = &io;
     context.source = ZR_NULL;
     status = ZrCore_Exception_TryRun(state, close_proxy_read_in_try, &context);
-    TEST_ASSERT_TRUE(ZrCore_Exception_IsStausError(status));
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, status);
+    TEST_ASSERT_TRUE(io.hasReadError);
     TEST_ASSERT_NULL(context.source);
 
     TEST_ASSERT_EQUAL_INT(0, remove(path));
