@@ -88,13 +88,15 @@ static char *read_repo_text_file_owned(const char *relativePath) {
 /* 用共用匹配器核对必需片段，允许格式空白差异。 */
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
+    int missing = 0;
 
     for (index = 0; index < needleCount; index++) {
         if (!zr_test_aot_source_contract_contains(text, needles[index])) {
             printf("Missing source contract text: %s\n", needles[index]);
-            TEST_FAIL_MESSAGE("missing required source contract text");
+            missing = 1;
         }
     }
+    TEST_ASSERT_FALSE_MESSAGE(missing, "missing required source contract text");
 }
 
 /* 防止 lowering 重引入原有内联生命周期代码。 */
@@ -118,7 +120,8 @@ static void test_aot_c_source_lowers_scope_lifecycle_to_boundary_helpers(void) {
     static const char *const runtimeSourceNeedles[] = {
             "ZrLibrary_AotRuntime_MarkToBeClosed(",
             "aot_runtime_frame_slot(frame, slotIndex)",
-            "ZrCore_Closure_ToBeClosedValueClosureNew(state, slotPointer);",
+            "aot_runtime_cleanup_registration_prepare(state, frame, slotIndex, &registrationPointer)",
+            "ZrCore_Closure_ToBeClosedValueClosureNew(state, registrationPointer);",
             "ZrLibrary_AotRuntime_CloseScope(",
             "aot_runtime_close_scope_registrations(state, cleanupCount);",
     };

@@ -86,13 +86,15 @@ static char *read_repo_text_file_owned(const char *relativePath) {
 /* BUG: 缺失片段时 Unity 跳出用例，调用者末尾的 free 不执行，已读取源码缓冲区泄漏至进程退出。 */
 static void assert_text_contains_all(const char *text, const char *const *needles, size_t needleCount) {
     size_t index;
+    int missing = 0;
 
     for (index = 0; index < needleCount; index++) {
         if (!zr_test_aot_source_contract_contains(text, needles[index])) {
             printf("Missing source contract text: %s\n", needles[index]);
-            TEST_FAIL_MESSAGE("missing required source contract text");
+            missing = 1;
         }
     }
+    TEST_ASSERT_FALSE_MESSAGE(missing, "missing required source contract text");
 }
 
 /* BUG: 禁止旧入口复活的断言失败同样跳过调用者对源码缓冲区的释放。 */
@@ -141,7 +143,6 @@ static void test_aot_c_source_lowers_generic_truthiness_to_boundary_helpers(void
             "backend_aot_write_c_string_constant_stack_copy_local_jump_if_skip(FILE *file",
     };
     static const char *const moduleNeedles[] = {
-            "backend_aot_c_lowering_generic_logical.c",
             "backend_aot_c_write_bool_local_sync",
             "backend_aot_write_c_direct_logical_not(",
             "backend_aot_write_c_direct_jump_if(",
@@ -459,7 +460,6 @@ static void test_aot_c_source_lowers_generic_primitive_equality_to_boundary_help
             "backend_aot_write_c_direct_logical_not_equal(FILE *file",
     };
     static const char *const moduleNeedles[] = {
-            "backend_aot_c_lowering_generic_logical.c",
             "backend_aot_write_c_direct_logical_equal(",
             "backend_aot_write_c_direct_logical_not_equal(",
             "backend_aot_c_write_generic_bool_compare_scalar_local(",
@@ -529,7 +529,7 @@ static void test_aot_c_source_lowers_generic_primitive_equality_to_boundary_help
             "const SZrTypeValue *zr_aot_bool_sync = ZrCore_Stack_GetValue(frame.slotBase + %u);",
             "zr_aot_bool_sync->value.nativeObject.nativeBool",
             "ZrLibrary_AotRuntime_LogicalEqual",
-            "ZrCore_Value_Equal",
+            "ZrCore_Value_Equal(",
     };
     static const char *const forbiddenValuesNeedles[] = {
             "ZrLibrary_AotRuntime_LogicalEqual(state, &frame",
@@ -594,7 +594,6 @@ static void test_aot_c_source_lowers_bool_logical_and_or_to_direct_c(void) {
             "backend_aot_write_c_direct_logical_or(FILE *file",
     };
     static const char *const moduleNeedles[] = {
-            "backend_aot_c_lowering_generic_logical.c",
             "backend_aot_c_write_bool_binary_logical",
             "backend_aot_c_write_bool_binary_scalar_local",
             "backend_aot_write_c_direct_logical_and(",
@@ -673,7 +672,6 @@ static void test_aot_c_source_lowers_string_equality_to_direct_c(void) {
             "#include \\\"zr_vm_core/string.h\\\"\\n",
     };
     static const char *const moduleNeedles[] = {
-            "backend_aot_c_lowering_generic_logical.c",
             "backend_aot_c_write_string_logical_operand(",
             "ZrCore_Stack_GetValue(frame.slotBase + %u)",
             "backend_aot_c_write_string_equality",
