@@ -2327,7 +2327,10 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
             layouts[slot].isParameter = slotIsParameter ? 1 : 0;
             layouts[slot].reserved0 =
                     ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
-                    ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT;
+                    ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT |
+                    (receiverLayout->reserved0 &
+                     (ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
+                      ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS));
             continue;
         }
 

@@ -508,6 +508,59 @@ static void test_io_loader_rebuilds_direct_value_parameter_summary(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+/* Forwarding a borrowed receiver must share a validated source binding in this frame. */
+static void test_io_loader_validates_forwarded_receiver_alias_source(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrIoFunctionFrameSlotLayout layouts[2] = {0};
+    TZrInstruction instruction = {0};
+    SZrIoFunction function = {0};
+    SZrIoModule module = {0};
+    SZrIoSource source = {0};
+    SZrFunction *loaded;
+
+    TEST_ASSERT_NOT_NULL(state);
+    layouts[0].stackSlot = 0u;
+    layouts[0].byteOffset = 2u * (TZrUInt32)sizeof(SZrTypeValueOnStack);
+    layouts[0].byteSize = ZR_ALIGN_SIZE;
+    layouts[0].byteAlign = ZR_ALIGN_SIZE;
+    layouts[0].typeLayoutId = 0u;
+    layouts[0].slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+    layouts[0].isParameter = 1u;
+    layouts[0].reserved0 = ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
+            ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
+            ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS;
+    layouts[1] = layouts[0];
+    layouts[1].stackSlot = 1u;
+    layouts[1].isParameter = 0u;
+    layouts[1].reserved0 |= ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT;
+    function.parametersLength = 1u;
+    function.stackSize = 2u;
+    function.sourceVersionPatch = ZR_IO_SOURCE_PATCH_HAS_BORROWED_FRAME_ALIAS;
+    function.frameByteAlign = ZR_ALIGN_SIZE;
+    function.frameByteSize = 8u * (TZrUInt32)sizeof(SZrTypeValueOnStack);
+    function.frameSlotLayoutsLength = 2u;
+    function.frameSlotLayouts = layouts;
+    instruction.instruction.operationCode = ZR_INSTRUCTION_ENUM(GET_GLOBAL);
+    function.instructionsLength = 1u;
+    function.instructions = &instruction;
+    module.entryFunction = &function;
+    source.modulesLength = 1u;
+    source.modules = &module;
+
+    loaded = ZrCore_Io_LoadEntryFunctionToRuntime(state, &source);
+    TEST_ASSERT_NOT_NULL(loaded);
+    ZrCore_Function_Free(state, loaded);
+    layouts[1].byteOffset += ZR_ALIGN_SIZE;
+    TEST_ASSERT_NULL(ZrCore_Io_LoadEntryFunctionToRuntime(state, &source));
+    layouts[1].byteOffset = layouts[0].byteOffset;
+    layouts[1].typeLayoutId = 1u;
+    TEST_ASSERT_NULL(ZrCore_Io_LoadEntryFunctionToRuntime(state, &source));
+    layouts[1].typeLayoutId = 0u;
+    layouts[1].isParameter = 1u;
+    TEST_ASSERT_NULL(ZrCore_Io_LoadEntryFunctionToRuntime(state, &source));
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_value_parameter_copy_profiles_empty_argument_fast_path(void) {
     SZrFunctionFrameSlotLayout layout = {0};
     SZrFunction function = {0};
@@ -992,6 +1045,7 @@ int main(void) {
     RUN_TEST(test_direct_value_frame_summary_rejects_gapped_mirror);
     RUN_TEST(test_packed_direct_value_slot_uses_fixed_stride_address);
     RUN_TEST(test_io_loader_rebuilds_direct_value_parameter_summary);
+    RUN_TEST(test_io_loader_validates_forwarded_receiver_alias_source);
     RUN_TEST(test_value_parameter_copy_profiles_empty_argument_fast_path);
     RUN_TEST(test_value_parameter_copy_visits_only_required_layout_prefix);
     RUN_TEST(test_direct_value_slot_profile_counts_distinguish_direct_and_checked);

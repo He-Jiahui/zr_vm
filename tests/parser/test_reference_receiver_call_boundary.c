@@ -186,7 +186,7 @@ static void test_top_level_const_fn_is_rejected(void) {
     parserState.errorCallback = capture_parser_error;
     parserState.errorUserData = &capture;
     script = ZrParser_ParseWithState(&parserState);
-    TEST_ASSERT_NOT_NULL(script);
+    TEST_ASSERT_NULL(script);
     TEST_ASSERT_GREATER_THAN_UINT32(0U, capture.count);
     ZrParser_Ast_Free(g_state, script);
     ZrParser_State_Free(&parserState);
