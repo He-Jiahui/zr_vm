@@ -26,6 +26,7 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     (void)ZrLibrary_NativeRegistry_Attach(state->global);
     cs->currentFunction = ZR_NULL;
     cs->currentAst = ZR_NULL;
+    cs->expressionTypeCache = ZR_NULL;
     cs->semanticContext = ZrParser_SemanticContext_New(state);
     cs->hirModule = ZR_NULL;
     compiler_semantic_ir_init(cs);

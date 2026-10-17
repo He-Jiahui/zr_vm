@@ -8918,6 +8918,12 @@ if (TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static)
     zr_vm_link_parser_core(zr_vm_parser_nesting_limit_test)
     add_test(NAME parser_nesting_limit COMMAND zr_vm_parser_nesting_limit_test)
     set_tests_properties(parser_nesting_limit PROPERTIES TIMEOUT 30)
+    zr_vm_add_unity_test_target(zr_vm_flat_expression_compile_test
+        ${CMAKE_SOURCE_DIR}/tests/parser/test_flat_expression_compile.c)
+    target_include_directories(zr_vm_flat_expression_compile_test PRIVATE ${CMAKE_SOURCE_DIR}/tests)
+    zr_vm_link_parser_core(zr_vm_flat_expression_compile_test)
+    add_test(NAME flat_expression_compile COMMAND zr_vm_flat_expression_compile_test)
+    set_tests_properties(flat_expression_compile PROPERTIES TIMEOUT 20)
 endif()
 
 if(TARGET zr_vm_cli_executable)

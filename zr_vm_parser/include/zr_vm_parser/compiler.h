@@ -181,6 +181,7 @@ typedef struct SZrCompilerState {
     // 类型环境
     SZrTypeEnvironment *typeEnv;         // 当前类型环境
     SZrArray typeEnvStack;               // 类型环境栈（用于作用域管理）
+    struct SZrExpressionTypeCache *expressionTypeCache; // borrowed, one pure expression compilation
     
     // 模块导出跟踪（仅用于脚本级变量）
     SZrArray pubVariables;               // pub 变量列表（SZrExportedVariable）
