@@ -3305,6 +3305,11 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                     typeMember->compiledFunction != ZR_NULL &&
                                     typeMember->compiledFunction->closureValueLength == 0 &&
                                     type_name_is_inline_struct_or_union_prototype(cs, rootTypeName);
+                            /* Inline receivers need the value/borrow staging below,
+                             * even when a bound descriptor also permits a direct call. */
+                            if (canUseInlineCompiledMemberCall) {
+                                canUseDirectKnownMemberCall = ZR_FALSE;
+                            }
 
                             canLowerContiguousViewCall =
                                     nextIsFunctionCall &&
