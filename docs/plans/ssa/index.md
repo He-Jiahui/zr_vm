@@ -53,12 +53,14 @@ AOT25、CTest2 全部通过。整数表达式 ExecIR 保留已提交 `7adc0e22`�
 
 ### 已完成有限交付（2026-10-16）
 
-已核实 **33 项有限交付：16 项功能、7 项代码修正、5 项专项验证、5 项文档**。
+已核实 **34 项有限交付：16 项功能、8 项代码修正、5 项专项验证、5 项文档**。
 原32项的逐项验收与提交证明保留；最新第33项为
 `150f641f4b5d50d67e888fb8b34987d264a18ac1`，父提交
 `3f7d8d8cbc7601c292afefb594de0e05969b2b17`，精确98路径、双He身份，
 postcommit独审接受且4条foreign cached保持。按交付目的分类，功能数量含测试
-基础设施；支持回归与本次索引维护不重复计为第34项成果。
+基础设施；支持回归与本次索引维护不另计成果。第34项GC-map outer-shape修正已提交为
+`403e8d474d9e1f2001edff261594fa50ae8385ec`，父提交`122fdb317089ebb52895ef5c1f46ecebd13b891a`，精确20路径、双He身份；
+Root与独立postcommit审查接受，标准清理7文件（3helpers、4私有indexes）4032562B，24必保pins匹配，3个复用builds及原成功/失败证据保留；finite-close accepted=true。
 
 | 已完成有限子任务 | 完整提交 SHA | 已验收有限范围 |
 | --- | --- | --- |
@@ -95,15 +97,16 @@ postcommit独审接受且4条foreign cached保持。按交付目的分类，功�
 | logical-only版本诊断与执行契约路径迁移 | `da71cb7aaac984de9a2bf669572446f2afb3ab69` | RED7实际双compiler均以精确43B错误自然exit1；修正后GREEN53E4C611…12DC31，12phase/W0、两次精确PASS，原4组+新6组覆盖九字段/优先级/边界/清零/输入保持。候选18路径仅含13CMake的35处必要引用、旧flat删除、新runtime生产C、test及两文档；commitreceiptA99D0B0C…52C19，actualparent67a3fed、双He身份。10foreigncached raw及所有非选中indexentry前后保持，选中WT哈希不变。仅纯checker，不计Source/VM/后端或整叶通过。 |
 | AOTIR执行契约保留字段校验 | `d1b3aad7f2bbe26aae1a241a71fbaa8b17ac9235` | GREEN931C57FA…3023：14phase、6次编译W0、2link/2run均自然0，214输入/199实际头依赖/8产物及所有raw range已独立验收。实际commitreceipt6327CE73…B063，精确5路径、双He身份、4外来cached及范围外index原字节保持。原RED驱动整体失败保留；只计纯AOTIR Validate/Hash，不计Source/VM/网络/FFI/整叶。 |
 | 纯契约checker完整诊断矩阵 | `dc10784ab7d9d7b910a874798531e3c7884df9e0` | 新增6组：NULL、scalar/mask边界、45字段配对优先关系、失败→成功清空及输入保持。GREEN9B7B2936…EDC88：12phase、4compileW0、2link/2run自然0，209输入/195实际头依赖/6产物及24raw range已独立验收。commitreceiptD9AC8FBC…0DF94，精确2路径、双He、4foreigncached及7172范围外index保持。仅Windows纯checker；schema/ABI共用分支，不计整叶/Source/VM。 |
+| [GC-map outer-shape有限准入](../../../tests/acceptance/ssa-gc-map-outer-shape.md) | `403e8d474d9e1f2001edff261594fa50ae8385ec` | main GREEN-r2四项CTest/50TU；primitive-r3一项CTest内18项Unity、18/18故障；Try原12-case协议11PASS加一次intentional prior-failure FAIL、90/90/live0；MSVC-r3为16次syntax/12唯一C/10roles、有限syntax W0。68 Git commands/121 raw records/20 blobs核对，7320范围外index及4条foreign cached保持；标准清理7文件（3helpers、4私有indexes）4032562B，24必保pins匹配，3个复用builds及原成功/失败证据保留；finite-close accepted=true。仅此子清单closed，完整consumer链/GC/01.01/47叶、fullW0/Linux/VM仍开放。 |
 
 上述有意失败验证 prior-failure 与清理协议，检查器按精确预期验收；非预期失败不计通过。
-上述33项均有实际验收和提交；本次索引维护不新增第34项成果。
-47个叶计划仍须分别闭合完整退出门禁，不能用33/47表示整体完成率，
+上述34项均有实际验收和提交；本次索引维护不另计第35项成果。
+47个叶计划仍须分别闭合完整退出门禁，不能用34/47表示整体完成率，
 也不能从43 planned/4 in-progress或complete=0标签推导没有完成项目。
 旧整数表达式11失败保留为历史RED；整数表达式7adc0e22及私有接口边界150f641f
-均已有限验收提交和清理。第33项子清单closed，完整SSA及Parent未知项仍active。
-下一项GC-map outer shape设计已审；纯metadata guard fixture接线计划补齐后实施，
-尚无implementation GO或新RED信用，见
+均已有限验收提交和清理。第33项及第34项子清单closed，完整SSA及Parent未知项仍active。
+第34项GC-map outer shape已按有限证据验收，见[专门验收](../../../tests/acceptance/ssa-gc-map-outer-shape.md)。
+下一项Parser消费者99个fixture及standalone runner已静态接受；实际RED、production GO及native GO仍为false，不预计第35项。 余项见
 [ExecIR模型剩余工作](01-execir-ssa/01-core-model.md)。
 
 ### 测量与基础契约（00-measurement-contracts）
