@@ -778,6 +778,9 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     struct SZrAotIrOwnedModule *ownedAotIr;
     /* Unique runtime-only ExecIR storage owner; never serialized or shallow-aliased. */
     struct SZrExecIrOwnedModule *ownedExecIr;
+    /* Runtime-only host root token. A shallow inline copy does not own the
+     * source object's root: ownership is valid only when this points to self. */
+    struct SZrFunction *hostRootOwner;
 };
 
 typedef struct SZrFunction SZrFunction;
@@ -802,9 +805,20 @@ typedef void (*FZrFunctionFrameGcValueVisitor)(struct SZrState *state,
 //
 // typedef struct SZrFunctionOverload SZrFunctionOverload;
 
+/** GC-managed allocation; a bare C pointer is not a GC root. */
 ZR_CORE_API SZrFunction *ZrCore_Function_New(struct SZrState *state);
 
+/** Destroys owned buffers and releases the host root, if present. The raw
+ * object remains GC-managed. Call only when no VM closure/frame uses it. */
 ZR_CORE_API void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function);
+
+/** Acquires one idempotent host root for a standalone function. Additional
+ * independent native owners must use their own GC root lease/handle. */
+ZR_CORE_API TZrBool ZrCore_Function_AcquireHostRoot(struct SZrState *state, SZrFunction *function);
+/** Releases only host ownership, preserving all executable buffers. Establish
+ * a VM reference or another root first if the function must remain alive.
+ * After release a bare C pointer must not be used across GC. */
+ZR_CORE_API void ZrCore_Function_ReleaseHostRoot(struct SZrState *state, SZrFunction *function);
 
 ZR_CORE_API struct SZrString *ZrCore_Function_GetLocalVariableName(SZrFunction *function, TZrUInt32 index,
                                                              TZrUInt32 programCounter);
@@ -843,6 +857,9 @@ ZR_CORE_API SZrFunction *ZrCore_Function_ResolveGraphFunctionByFlatIndex(
         SZrFunction *rootFunction,
         TZrUInt32 flatIndex);
 ZR_CORE_API void ZrCore_Function_ClearChildOwnerLinks(SZrFunction *function);
+/** Copies into newly allocated inline child storage without copying native
+ * root ownership. Rebind the graph, then detach the source's owned buffers. */
+ZR_CORE_API void ZrCore_Function_CopyToInline(SZrFunction *destination, const SZrFunction *source);
 ZR_CORE_API void ZrCore_Function_DetachOwnedBuffers(SZrFunction *function);
 
 /* Returns canonical capture identity only when the typed sidecar matches a legacy capture slot. */

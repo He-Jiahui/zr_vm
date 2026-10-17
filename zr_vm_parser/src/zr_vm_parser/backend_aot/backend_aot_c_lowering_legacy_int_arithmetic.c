@@ -91,7 +91,7 @@ void backend_aot_write_c_direct_add_int(FILE *file,
             "        }\n"
             "        ZR_VALUE_FAST_SET(zr_aot_destination,\n"
             "                          nativeInt64,\n"
-            "                          zr_aot_left_int + zr_aot_right_int,\n"
+            "                          ZrCore_Integer_Add(state, zr_aot_left_int, zr_aot_right_int),\n"
             "                          ZR_VALUE_TYPE_INT64);\n"
             "    }\n",
             (unsigned)destinationSlot,
@@ -140,7 +140,7 @@ void backend_aot_write_c_direct_add_int_const(FILE *file,
             "        }\n"
             "        ZR_VALUE_FAST_SET(zr_aot_destination,\n"
             "                          nativeInt64,\n"
-            "                          zr_aot_left_int + zr_aot_right_literal,\n"
+            "                          ZrCore_Integer_Add(state, zr_aot_left_int, zr_aot_right_literal),\n"
             "                          ZR_VALUE_TYPE_INT64);\n"
             "    }\n",
             (unsigned)destinationSlot,
@@ -187,7 +187,7 @@ void backend_aot_write_c_direct_sub_int(FILE *file,
             "        }\n"
             "        ZR_VALUE_FAST_SET(zr_aot_destination,\n"
             "                          nativeInt64,\n"
-            "                          zr_aot_left_int - zr_aot_right_int,\n"
+            "                          ZrCore_Integer_Subtract(state, zr_aot_left_int, zr_aot_right_int),\n"
             "                          zr_aot_left->type);\n"
             "    }\n",
             (unsigned)destinationSlot,
@@ -236,7 +236,7 @@ void backend_aot_write_c_direct_sub_int_const(FILE *file,
             "        }\n"
             "        ZR_VALUE_FAST_SET(zr_aot_destination,\n"
             "                          nativeInt64,\n"
-            "                          zr_aot_left_int - zr_aot_right_literal,\n"
+            "                          ZrCore_Integer_Subtract(state, zr_aot_left_int, zr_aot_right_literal),\n"
             "                          zr_aot_left->type);\n"
             "    }\n",
             (unsigned)destinationSlot,

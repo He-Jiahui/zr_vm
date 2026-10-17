@@ -1798,13 +1798,13 @@ TZrBool ZrCore_Object_SuperArrayTryGetIntFast(SZrState *state,
 
     if (indexValue < 0 ||
         (TZrUInt64)indexValue >= (TZrUInt64)zr_super_array_raw_int_length_or_node_count(itemsObject)) {
-        ZrCore_Value_ResetAsNull(result);
+        ZrCore_Debug_RunError(state, "Array index out of range");
         return ZR_TRUE;
     }
 
     pair = object_find_int_key_pair(itemsObject, indexValue);
     if (pair == ZR_NULL) {
-        ZrCore_Value_ResetAsNull(result);
+        ZrCore_Debug_RunError(state, "Array index out of range");
     } else if (object_value_is_plain_primitive(&pair->value)) {
         object_assign_primitive_value_or_copy(state, result, &pair->value);
     } else {

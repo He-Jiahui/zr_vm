@@ -9,6 +9,18 @@
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/semantic_facts.h"
 
+typedef struct SZrExpressionTypeCache {
+    struct SZrExpressionTypeCacheEntry *entries;
+    TZrSize capacity;
+    SZrTypeEnvironment *environment;
+} SZrExpressionTypeCache;
+
+/* Only literals, identifiers, and pure operators qualify. The scope ends before
+ * assignments, calls, branch refinements, or AST destruction can invalidate it. */
+void type_inference_cache_begin(SZrCompilerState *cs, SZrAstNode *node,
+                                SZrExpressionTypeCache *cache);
+void type_inference_cache_end(SZrCompilerState *cs, SZrExpressionTypeCache *cache);
+
 typedef struct SZrGenericCallBinding {
     const SZrTypeGenericParameterInfo *parameterInfo;
     TZrBool isBound;

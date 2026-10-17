@@ -30,6 +30,7 @@ foreach (_zr_execir_owner_target IN ITEMS zr_vm_ssa_execir_owner_private_core
     target_include_directories(${_zr_execir_owner_target} PRIVATE
             "${_zr_execir_owner_root}/zr_vm_common/include"
             "${_zr_execir_owner_root}/zr_vm_core/include"
+            "${_zr_execir_owner_root}/zr_vm_core/src/zr_vm_core"
             "${_zr_execir_owner_root}/tests"
             "${_zr_execir_owner_root}/tests/third_party/zr_unity/Unity/src")
     target_compile_definitions(${_zr_execir_owner_target} PRIVATE

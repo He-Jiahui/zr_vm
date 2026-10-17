@@ -120,6 +120,9 @@ void report_error_with_token(SZrParserState *ps, const TZrChar *msg, EZrToken to
 
 void report_error(SZrParserState *ps, const TZrChar *msg);
 
+TZrBool parser_enter_recursion(SZrParserState *ps);
+void parser_report_nesting_error(SZrParserState *ps);
+
 TZrBool report_reserved_ownership_intrinsic_name(SZrParserState *ps);
 
 /** @brief 先发布结构化诊断，再将 error 级别映射到旧错误状态。

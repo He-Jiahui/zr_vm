@@ -10,14 +10,12 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 
 #include "zr_vm_common/zr_runtime_sentinel_conf.h"
 
-/* BUG: 默认 allocator 可由多个 ThreadScheduler worker 并发调用；此进程级数组
- * 在 BuiltinAllocator 中直接 ++/--。ExecutionBudget_Allocate 调用 upstreamAllocator
- * 发生在其记账锁之前，因此并发写入构成数据竞争，计数也会丢失。 */
-static TZrUInt64 CZrLibrary_CommonState_MemoryCounter[ZR_MEMORY_NATIVE_TYPE_ENUM_MAX] = {0};
+static atomic_uint_fast64_t CZrLibrary_CommonState_MemoryCounter[ZR_MEMORY_NATIVE_TYPE_ENUM_MAX] = {0};
 
 static TZrBool zr_library_common_state_trace_enabled(void) {
     static TZrBool initialized = ZR_FALSE;
@@ -62,7 +60,7 @@ TZrPtr ZrLibrary_CommonState_BuiltinAllocator(TZrPtr userData, TZrPtr pointer, T
     trackCounter = flag >= 0 && flag < ZR_MEMORY_NATIVE_TYPE_ENUM_MAX;
     if (newSize == 0) {
         if (trackCounter && canReleasePointer) {
-            CZrLibrary_CommonState_MemoryCounter[flag]--;
+            atomic_fetch_sub_explicit(&CZrLibrary_CommonState_MemoryCounter[flag], 1u, memory_order_relaxed);
         }
         if (canReleasePointer) {
             free(pointer);
@@ -70,10 +68,11 @@ TZrPtr ZrLibrary_CommonState_BuiltinAllocator(TZrPtr userData, TZrPtr pointer, T
         return ZR_NULL;
     }
     if (pointer == ZR_NULL || !canReleasePointer) {
-        if (trackCounter) {
-            CZrLibrary_CommonState_MemoryCounter[flag]++;
+        TZrPtr allocated = (TZrPtr)malloc(newSize);
+        if (trackCounter && allocated != ZR_NULL) {
+            atomic_fetch_add_explicit(&CZrLibrary_CommonState_MemoryCounter[flag], 1u, memory_order_relaxed);
         }
-        return (TZrPtr) malloc(newSize);
+        return allocated;
     }
     return (TZrPtr) realloc(pointer, newSize);
 }

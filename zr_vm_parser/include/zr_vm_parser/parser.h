@@ -38,7 +38,14 @@ typedef struct SZrParserState {
     TZrPtr errorUserData;             // 错误回调用户数据
     TZrBool suppressErrorOutput;      // 是否抑制 stderr 输出
     TZrBool enableLegacyMigrationParsing; // 仅供显式 migration frontend 捕获旧语法修复
+    /* Shared by recursive grammar paths, including nested template parsers. */
+    TZrUInt32 recursionDepth;
+    TZrBool hasNestingError;
+    TZrBool nestingErrorReported;
 } SZrParserState;
+
+/* Leave headroom for semantic analysis and AST cleanup on native thread stacks. */
+#define ZR_PARSER_MAX_RECURSION_DEPTH 256u
 
 /** @brief 初始化状态并预读第一个 token；词法状态对象分配失败时设置 hasError。
  * @pre ps、state、source 非空，源字节在 State_Free 前有效。

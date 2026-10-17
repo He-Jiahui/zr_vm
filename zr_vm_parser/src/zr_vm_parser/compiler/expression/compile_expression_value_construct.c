@@ -155,6 +155,7 @@ static TZrBool value_construct_emit_explicit_constructor(
     TZrBool *provided = ZR_NULL;
     TZrSize parameterCount;
     TZrBool success = ZR_FALSE;
+    TZrBool nativeConstructor;
 
     if (cs == ZR_NULL || node == ZR_NULL || expression == ZR_NULL ||
         typeName == ZR_NULL || bound == ZR_NULL || targetSlot == 0U) {
@@ -174,7 +175,10 @@ static TZrBool value_construct_emit_explicit_constructor(
                 cs, "Resolved struct constructor target is unavailable", node->location);
         return ZR_FALSE;
     }
-    if (member->compiledFunction == ZR_NULL) {
+    /* Compiling arguments can import modules and reallocate typePrototypes.
+     * Keep the decision by value; prototype is borrowed only until that point. */
+    nativeConstructor = (TZrBool)(member->compiledFunction == ZR_NULL);
+    if (nativeConstructor) {
         ZrCore_Value_InitAsRawObject(
                 cs->state, &typeNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(typeName));
         typeNameValue.type = ZR_VALUE_TYPE_STRING;
@@ -290,7 +294,7 @@ static TZrBool value_construct_emit_explicit_constructor(
         }
     }
 
-    if (member->compiledFunction != ZR_NULL) {
+    if (!nativeConstructor) {
         if (!emit_member_function_constant_to_slot(
                     cs, functionSlot, member, node->location)) {
             goto cleanup;
@@ -337,8 +341,7 @@ static TZrBool value_construct_emit_explicit_constructor(
                     (TZrUInt16)functionSlot,
                     (TZrUInt16)functionSlot,
                     (TZrUInt16)(parameterCount + 1U)));
-    if (member->compiledFunction == ZR_NULL && prototype != ZR_NULL &&
-        prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+    if (nativeConstructor) {
         emit_instruction(
                 cs,
                 create_instruction_1(

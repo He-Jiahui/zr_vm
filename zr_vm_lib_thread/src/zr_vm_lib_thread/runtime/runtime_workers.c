@@ -49,38 +49,53 @@ static ZrVmAttachedDomainRuntime *zr_vm_thread_attached_scheduler_runtime(
 static TZrBool zr_vm_thread_attached_scheduler_await(SZrState *state,
                                                       SZrObject *task,
                                                       TZrPtr context) {
-    /* BUG: Task 已终结仅表示结果可见，worker 还可能在释放工作项/退出 mutator/释放 state；
-     * 宿主按 result 返回后立刻销毁 callerGlobal，可与仍使用同一 global 的 worker 交错。 */
-    /* TODO: Task.result 的 native 回调为 GC_AWARE，此条件等待不进入阻塞域或轮询 safepoint；
-     * 同域 worker 请求 GC 时，等待者可能阻塞暂停直到超时。需以并发 GC 用例验证。 */
     ZrVmAttachedDomainRuntime *runtime = (ZrVmAttachedDomainRuntime *)context;
 
     if (state == ZR_NULL || task == ZR_NULL || runtime == ZR_NULL) {
         return ZR_FALSE;
     }
-    while (!ZrLibrary_TaskRuntime_IsTaskComplete(state, task)) {
+    for (;;) {
+        TZrBool pending = ZR_FALSE;
         zr_vm_task_sync_mutex_lock(&runtime->mutex);
-        if (!ZrLibrary_TaskRuntime_IsTaskComplete(state, task)) {
-            zr_vm_task_sync_condition_wait(&runtime->condition, &runtime->mutex, 10u);
+        for (ZrVmAttachedDomainRequest *request = runtime->pending;
+             request != ZR_NULL; request = request->pendingNext) {
+            SZrRawObject *target = ZR_NULL;
+            if (ZrCore_GcRootHandle_Resolve(state, &request->workItem.taskRoot, &target) &&
+                target == &task->super) {
+                pending = ZR_TRUE;
+                break;
+            }
         }
+        /* The last result also fences state teardown on every drained worker. */
+        pending = (TZrBool)(pending ||
+                (runtime->pending == ZR_NULL && runtime->activeWorkerCount > 0u));
+        if (!pending) {
+            zr_vm_task_sync_mutex_unlock(&runtime->mutex);
+            break;
+        }
+        zr_vm_task_sync_condition_wait(&runtime->condition, &runtime->mutex, 10u);
         zr_vm_task_sync_mutex_unlock(&runtime->mutex);
+        ZrCore_GcDomain_MutatorPoll(state);
     }
     return ZR_TRUE;
 }
-static void zr_vm_thread_attached_scheduler_worker_finished(ZrVmAttachedDomainRuntime *runtime) {
+static void zr_vm_thread_attached_scheduler_worker_finished(
+        ZrVmAttachedDomainRuntime *runtime, TZrBool workerIsLive) {
     if (runtime == ZR_NULL) {
         return;
     }
     zr_vm_task_sync_mutex_lock(&runtime->mutex);
-    if (runtime->liveWorkerCount > 0u) {
+    if (workerIsLive && runtime->liveWorkerCount > 0u) {
         runtime->liveWorkerCount--;
     }
+    runtime->activeWorkerCount--;
     zr_vm_task_sync_condition_signal(&runtime->condition);
     zr_vm_task_sync_mutex_unlock(&runtime->mutex);
 }
 
 static void zr_vm_thread_attached_scheduler_worker_run(ZrVmAttachedDomainWorkerLaunch *launch) {
-    /* worker 在 caller GcDomain 内运行 canonical Job；Task 终态发布早于 mutator/state 退出。 */
+    /* Keep requests pending until their roots are released, and count native
+     * workers until state teardown has stopped using the caller global. */
     ZrVmAttachedDomainRuntime *runtime;
     SZrState *workerState;
     TZrBool workerIsLive = ZR_TRUE;
@@ -95,7 +110,7 @@ static void zr_vm_thread_attached_scheduler_worker_run(ZrVmAttachedDomainWorkerL
         if (workerState != ZR_NULL && workerState->global != ZR_NULL) {
             ZrCore_State_Free(workerState->global, workerState);
         }
-        zr_vm_thread_attached_scheduler_worker_finished(runtime);
+        zr_vm_thread_attached_scheduler_worker_finished(runtime, ZR_TRUE);
         return;
     }
 
@@ -125,23 +140,29 @@ static void zr_vm_thread_attached_scheduler_worker_run(ZrVmAttachedDomainWorkerL
                                                    &request->workItem,
                                                    "AttachedDomain worker could not execute Job");
         }
-        ZrLibrary_TaskRuntime_ReleasePreparedJob(workerState, &request->workItem);
-        free(request);
-
         zr_vm_task_sync_mutex_lock(&runtime->mutex);
+        {
+            ZrVmAttachedDomainRequest **pending = &runtime->pending;
+            while (*pending != ZR_NULL && *pending != request) {
+                pending = &(*pending)->pendingNext;
+            }
+            if (*pending == request) {
+                *pending = request->pendingNext;
+            }
+            ZrLibrary_TaskRuntime_ReleasePreparedJob(workerState, &request->workItem);
+        }
         if (runtime->queuedRequestCount > 0u) {
             runtime->queuedRequestCount--;
         }
         zr_vm_task_sync_condition_signal(&runtime->condition);
         zr_vm_task_sync_mutex_unlock(&runtime->mutex);
+        free(request);
         ZrCore_GcDomain_MutatorPoll(workerState);
     }
 
     ZrCore_State_MutatorExit(workerState);
     ZrCore_State_Free(workerState->global, workerState);
-    if (workerIsLive) {
-        zr_vm_thread_attached_scheduler_worker_finished(runtime);
-    }
+    zr_vm_thread_attached_scheduler_worker_finished(runtime, workerIsLive);
 }
 
 #if defined(ZR_PLATFORM_WIN)
@@ -271,9 +292,12 @@ TZrBool zr_vm_thread_attached_scheduler_schedule(SZrState *state,
         runtime->head = request;
     }
     runtime->tail = request;
+    request->pendingNext = runtime->pending;
+    runtime->pending = request;
     runtime->queuedRequestCount++;
     if (runtime->liveWorkerCount < runtime->workerLimit) {
         runtime->liveWorkerCount++;
+        runtime->activeWorkerCount++;
         startWorker = ZR_TRUE;
     }
     zr_vm_task_sync_condition_signal(&runtime->condition);
@@ -287,6 +311,7 @@ TZrBool zr_vm_thread_attached_scheduler_schedule(SZrState *state,
         if (runtime->liveWorkerCount > 0u) {
             runtime->liveWorkerCount--;
         }
+        runtime->activeWorkerCount--;
         pending = &runtime->head;
         while (*pending != ZR_NULL) {
             if (*pending == request) {
@@ -301,6 +326,15 @@ TZrBool zr_vm_thread_attached_scheduler_schedule(SZrState *state,
                     runtime->queuedRequestCount--;
                 }
                 requestStillQueued = ZR_TRUE;
+                {
+                    ZrVmAttachedDomainRequest **tracked = &runtime->pending;
+                    while (*tracked != ZR_NULL && *tracked != request) {
+                        tracked = &(*tracked)->pendingNext;
+                    }
+                    if (*tracked == request) {
+                        *tracked = request->pendingNext;
+                    }
+                }
                 break;
             }
             pending = &(*pending)->next;

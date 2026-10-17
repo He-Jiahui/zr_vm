@@ -1309,7 +1309,7 @@ static void test_checkpoint_restores_prototype_layout_and_function_caches(void) 
     TEST_ASSERT_EQUAL_PTR(&structPrototype->super, functionA->prototypeInstances[0]);
 
     ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
-    structPrototype = global->stackFramePrototype;
+    structPrototype = (SZrStructPrototype *)global->stackFramePrototype;
     functionA = checkpoint_test_lookup_registry_function(state, &functionAKey);
     dispatchA = global->errorPrototype;
     dispatchB = global->basicTypeObjectPrototype[ZR_VALUE_TYPE_OBJECT];

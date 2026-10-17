@@ -625,7 +625,33 @@ static TZrBool zr_cli_runtime_prepare_and_execute_entry(SZrState *state,
     if (ignoredFunction) {
         ZrCore_GarbageCollector_UnignoreObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
     }
+    ZrCore_Function_ReleaseHostRoot(state, entryFunction);
     return success;
+}
+
+static SZrIoSource *zr_cli_runtime_read_binary_source(SZrState *state, const TZrChar *path) {
+    SZrIo io;
+    SZrIoSource *source;
+    if (!ZrCli_Project_OpenFileIo(state, path, ZR_TRUE, &io)) return ZR_NULL;
+    source = ZrCore_Io_ReadSourceNew(&io);
+    if (io.close != ZR_NULL) io.close(state, io.customData);
+    return source;
+}
+
+/* CLI compilation records the source content hash in the module header. File
+ * timestamps cannot detect edits that preserve mtimes or copied artifacts. */
+static TZrBool zr_cli_runtime_binary_matches_source(const SZrIoSource *binary,
+                                                    const TZrChar *sourcePath) {
+    TZrChar *text = ZR_NULL;
+    TZrSize length = 0;
+    TZrChar hash[ZR_CLI_SOURCE_HASH_HEX_LENGTH];
+    const TZrChar *encodedHash;
+    if (binary->modulesLength != 1u || binary->modules[0].md5 == ZR_NULL ||
+        !ZrCli_Project_ReadTextFile(sourcePath, &text, &length)) return ZR_FALSE;
+    ZrCli_Project_HashToHex(ZrCli_Project_StableHashBytes((const TZrByte *)text, length), hash, sizeof(hash));
+    free(text);
+    encodedHash = ZrCore_String_GetNativeString(binary->modules[0].md5);
+    return (TZrBool)(encodedHash != ZR_NULL && strcmp(encodedHash, hash) == 0);
 }
 
 static TZrBool zr_cli_runtime_load_entry_function(SZrState *state,
@@ -633,52 +659,45 @@ static TZrBool zr_cli_runtime_load_entry_function(SZrState *state,
                                                   const TZrChar *entryModule,
                                                   TZrBool preferBinary,
                                                   SZrFunction **outFunction,
+                                                  TZrBool *outLoadedBinary,
                                                   TZrChar *loadedPathBuffer,
                                                   TZrSize loadedPathBufferSize) {
     TZrChar entryBinaryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar entrySourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrBool hasSource;
 
-    if (state == ZR_NULL || project == ZR_NULL || outFunction == ZR_NULL) {
+    if (state == ZR_NULL || project == ZR_NULL || outFunction == ZR_NULL || outLoadedBinary == ZR_NULL) {
         return ZR_FALSE;
     }
 
     *outFunction = ZR_NULL;
-    ZrCli_Project_ResolveBinaryPath(project, entryModule, entryBinaryPath, sizeof(entryBinaryPath));
-    ZrCli_Project_ResolveSourcePath(project, entryModule, entrySourcePath, sizeof(entrySourcePath));
+    *outLoadedBinary = ZR_FALSE;
+    if (!ZrCli_Project_ResolveBinaryPath(project, entryModule, entryBinaryPath, sizeof(entryBinaryPath)) ||
+        !ZrCli_Project_ResolveSourcePath(project, entryModule, entrySourcePath, sizeof(entrySourcePath))) return ZR_FALSE;
+    hasSource = (TZrBool)(ZrLibrary_File_Exist(entrySourcePath) == ZR_LIBRARY_FILE_IS_FILE);
 
-    /* 显式 binary 模式优先成品字节码；成品缺失时仍可回落到源文件。 */
+    /* Prefer current bytecode; missing or stale artifacts fall back to source. */
     if (preferBinary && ZrLibrary_File_Exist(entryBinaryPath) == ZR_LIBRARY_FILE_IS_FILE) {
-        SZrIo io;
-        SZrIoSource *ioSource;
-
-        if (!ZrCli_Project_OpenFileIo(state, entryBinaryPath, ZR_TRUE, &io)) {
-            return ZR_FALSE;
-        }
-
-        ioSource = ZrCore_Io_ReadSourceNew(&io);
-        if (io.close != ZR_NULL) {
-            io.close(state, io.customData);
-        }
+        SZrIoSource *ioSource = zr_cli_runtime_read_binary_source(state, entryBinaryPath);
 
         if (ioSource == ZR_NULL) {
             return ZR_FALSE;
         }
 
-        *outFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, ioSource);
-        ZrCore_Io_ReadSourceFree(state->global, ioSource);
-        if (*outFunction == ZR_NULL) {
-            return ZR_FALSE;
-        }
-
-        if (loadedPathBuffer != ZR_NULL && loadedPathBufferSize > 0) {
-            snprintf(loadedPathBuffer, loadedPathBufferSize, "%s", entryBinaryPath);
+        if (!hasSource || zr_cli_runtime_binary_matches_source(ioSource, entrySourcePath)) {
+            *outFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, ioSource);
+            ZrCore_Io_ReadSourceFree(state->global, ioSource);
+            if (*outFunction == ZR_NULL) return ZR_FALSE;
+            *outLoadedBinary = ZR_TRUE;
+            if (loadedPathBuffer != ZR_NULL && loadedPathBufferSize > 0) {
+                snprintf(loadedPathBuffer, loadedPathBufferSize, "%s", entryBinaryPath);
+            }
             return ZR_TRUE;
         }
-
-        return ZR_TRUE;
+        ZrCore_Io_ReadSourceFree(state->global, ioSource);
     }
 
-    if (ZrLibrary_File_Exist(entrySourcePath) == ZR_LIBRARY_FILE_IS_FILE) {
+    if (hasSource) {
         TZrChar *source = ZR_NULL;
         TZrSize sourceLength = 0;
         SZrString *sourceName;
@@ -739,7 +758,9 @@ static TZrBool zr_cli_runtime_source_first_loader(SZrState *state, TZrNativeStri
 static TZrBool zr_cli_runtime_binary_first_loader(SZrState *state, TZrNativeString path, TZrNativeString md5, SZrIo *io) {
     SZrCliProjectContext project;
     SZrLibrary_Project *libraryProject;
-    TZrChar resolvedPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar sourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar binaryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrBool hasSource;
 
     ZR_UNUSED_PARAMETER(md5);
 
@@ -755,15 +776,22 @@ static TZrBool zr_cli_runtime_binary_first_loader(SZrState *state, TZrNativeStri
         return ZR_FALSE;
     }
 
-    /* binary 运行模式让 import 与入口采用同一优先级，找不到成品时回退源文件。 */
-    if (ZrCli_Project_ResolveBinaryPath(&project, path, resolvedPath, sizeof(resolvedPath)) &&
-        ZrLibrary_File_Exist(resolvedPath) == ZR_LIBRARY_FILE_IS_FILE) {
-        return ZrCli_Project_OpenFileIo(state, resolvedPath, ZR_TRUE, io);
+    hasSource = (TZrBool)(ZrCli_Project_ResolveSourcePath(&project, path, sourcePath, sizeof(sourcePath)) &&
+            ZrLibrary_File_Exist(sourcePath) == ZR_LIBRARY_FILE_IS_FILE);
+    if (ZrCli_Project_ResolveBinaryPath(&project, path, binaryPath, sizeof(binaryPath)) &&
+        ZrLibrary_File_Exist(binaryPath) == ZR_LIBRARY_FILE_IS_FILE) {
+        TZrBool current = ZR_TRUE;
+        if (hasSource) {
+            SZrIoSource *binary = zr_cli_runtime_read_binary_source(state, binaryPath);
+            if (binary == ZR_NULL) return ZR_FALSE;
+            current = zr_cli_runtime_binary_matches_source(binary, sourcePath);
+            ZrCore_Io_ReadSourceFree(state->global, binary);
+        }
+        if (current) return ZrCli_Project_OpenFileIo(state, binaryPath, ZR_TRUE, io);
     }
 
-    if (ZrCli_Project_ResolveSourcePath(&project, path, resolvedPath, sizeof(resolvedPath)) &&
-        ZrLibrary_File_Exist(resolvedPath) == ZR_LIBRARY_FILE_IS_FILE) {
-        return ZrCli_Project_OpenFileIo(state, resolvedPath, ZR_FALSE, io);
+    if (hasSource) {
+        return ZrCli_Project_OpenFileIo(state, sourcePath, ZR_FALSE, io);
     }
 
     if (ZrLibrary_Project_SourceLoadImplementation(state, path, md5, io)) {
@@ -911,6 +939,7 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
     SZrTypeValue result;
     TZrChar loadedEntryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrBool success = ZR_FALSE;
+    TZrBool loadedBinary = ZR_FALSE;
     const TZrChar *executedVia = ZR_NULL;
 #if defined(ZR_VM_CLI_HAS_DEBUG_AGENT)
     ZrDebugProfile profile;
@@ -984,6 +1013,7 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
                                                 effectiveEntryModule,
                                                 command->executionMode == ZR_CLI_EXECUTION_MODE_BINARY,
                                                 &entryFunction,
+                                                &loadedBinary,
                                                 loadedEntryPath,
                                                 sizeof(loadedEntryPath))) {
             ZrCore_Log_Error(state, "failed to load project entry: %s\n", effectiveEntryModule);
@@ -1000,6 +1030,7 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
             if (ignoredFunction) {
                 ZrCore_GarbageCollector_UnignoreObject(global, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
             }
+            ZrCore_Function_ReleaseHostRoot(state, entryFunction);
             zr_cli_runtime_stop_profile(&profile, &profileStarted);
             zr_cli_runtime_stop_coverage(&coverage, &coverageStarted);
             ZrCli_Runtime_PreparedProject_Free(prepared);
@@ -1024,6 +1055,7 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
             if (ignoredFunction) {
                 ZrCore_GarbageCollector_UnignoreObject(global, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
             }
+            ZrCore_Function_ReleaseHostRoot(state, entryFunction);
             zr_cli_runtime_stop_profile(&profile, &profileStarted);
             zr_cli_runtime_stop_coverage(&coverage, &coverageStarted);
             ZrCli_Runtime_PreparedProject_Free(prepared);
@@ -1040,7 +1072,8 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
         if (ignoredFunction) {
             ZrCore_GarbageCollector_UnignoreObject(global, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
         }
-        executedVia = zr_cli_runtime_mode_name(command->executionMode);
+        ZrCore_Function_ReleaseHostRoot(state, entryFunction);
+        executedVia = loadedBinary ? "binary" : "interp";
 
         if (!success) {
             zr_cli_runtime_handle_failure(state, state->threadStatus);
@@ -1061,6 +1094,7 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
                                                         effectiveEntryModule,
                                                         ZR_FALSE,
                                                         &entryFunction,
+                                                        &loadedBinary,
                                                         loadedEntryPath,
                                                         sizeof(loadedEntryPath))) {
                     ZrCore_Log_Error(state, "failed to load project entry: %s\n", effectiveEntryModule);
@@ -1093,7 +1127,7 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
         } break;
 
         case ZR_CLI_EXECUTION_MODE_BINARY:
-            if (!zr_cli_runtime_load_entry_function(state, project, effectiveEntryModule, ZR_TRUE, &entryFunction, loadedEntryPath,
+            if (!zr_cli_runtime_load_entry_function(state, project, effectiveEntryModule, ZR_TRUE, &entryFunction, &loadedBinary, loadedEntryPath,
                                                     sizeof(loadedEntryPath))) {
                 ZrCore_Log_Error(state, "failed to load project entry: %s\n", effectiveEntryModule);
                 zr_cli_runtime_stop_profile(&profile, &profileStarted);
@@ -1116,7 +1150,7 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
                 return ZR_FALSE;
             }
             success = zr_cli_runtime_prepare_and_execute_entry(state, entryFunction, loadedEntryPath, &result);
-            executedVia = "binary";
+            executedVia = loadedBinary ? "binary" : "interp";
             break;
 
         default:

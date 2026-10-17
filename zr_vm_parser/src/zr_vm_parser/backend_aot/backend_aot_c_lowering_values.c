@@ -1425,7 +1425,7 @@ void backend_aot_write_c_direct_create_object(FILE *file, TZrUInt32 destinationS
     fprintf(file, "    } while (0);\n");
 }
 
-void backend_aot_write_c_direct_create_array(FILE *file, TZrUInt32 destinationSlot) {
+void backend_aot_write_c_direct_create_array(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 length) {
     if (file == ZR_NULL) {
         return;
     }
@@ -1433,8 +1433,8 @@ void backend_aot_write_c_direct_create_array(FILE *file, TZrUInt32 destinationSl
     fprintf(file,
             "    do {\n"
             "        /* zr_aot_value_exec_create_array */\n"
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CreateArray(state, &frame, %u));\n",
-            (unsigned)destinationSlot);
+            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CreateArrayWithLength(state, &frame, %u, %u));\n",
+            (unsigned)destinationSlot, (unsigned)length);
     backend_aot_write_c_gc_safepoint(file, "        ", "zr_aot_gc_safepoint_allocation");
     fprintf(file, "    } while (0);\n");
 }

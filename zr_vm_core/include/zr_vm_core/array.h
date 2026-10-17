@@ -86,8 +86,9 @@ ZR_FORCE_INLINE TZrPtr ZrCore_Array_Pop(SZrArray *array) {
 /** @brief 为 Push/Append 的完整目标长度预留容量，成功后才发布新 head/capacity。
  * @pre array 已初始化且 length <= capacity；required 是经过字节上界检查的总元素数。
  * @return 成功为 true，OOM 为 false；失败时旧块、容量和长度不变，不引入 GC 安全点。
- * 增长比例分解为整数和余数计算，避免 capacity * percent 在 32/64 位上回绕。 */
-static ZR_FORCE_INLINE TZrBool zr_core_array_try_reserve(SZrState *state, SZrArray *array, TZrSize required) {
+ * 增长比例分解为整数和余数计算，避免 capacity * percent 在 32/64 位上回绕。
+ * 与本头文件其余函数同为外部链接的 inline 定义：C11 6.7.4p3 禁止它们引用 static 函数。 */
+ZR_FORCE_INLINE TZrBool zr_core_array_try_reserve(SZrState *state, SZrArray *array, TZrSize required) {
     TZrSize maximum = ZR_MAX_SIZE / array->elementSize;
     TZrSize percent = ZR_MATH_MAX(ZR_ARRAY_INCREASEMENT_MULTIPLIER_PERCENT, 100);
     TZrSize whole = percent / 100;

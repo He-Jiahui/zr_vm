@@ -177,7 +177,7 @@ static TZrBool compiler_copy_function_children(SZrCompilerState *cs, SZrFunction
     SZrFunction **sourceChildren = (SZrFunction **) cs->childFunctions.head;
     for (TZrSize index = 0; index < cs->childFunctions.length; index++) {
         if (sourceChildren[index] != ZR_NULL) {
-            function->childFunctionList[index] = *sourceChildren[index];
+            ZrCore_Function_CopyToInline(&function->childFunctionList[index], sourceChildren[index]);
         }
     }
 

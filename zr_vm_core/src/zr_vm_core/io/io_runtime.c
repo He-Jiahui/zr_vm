@@ -1703,7 +1703,8 @@ struct SZrFunction *ZrCore_Io_LoadEntryFunctionToRuntime(struct SZrState *state,
         return ZR_NULL;
     }
 
-    if (!io_runtime_populate_function(state, module->entryFunction, function) ||
+    if (!ZrCore_Function_AcquireHostRoot(state, function) ||
+        !io_runtime_populate_function(state, module->entryFunction, function) ||
         !ZrCore_CallBinding_LinkFunction(state, function, &state->lastCallBindingError)) {
         ZrCore_Function_Free(state, function);
         return ZR_NULL;

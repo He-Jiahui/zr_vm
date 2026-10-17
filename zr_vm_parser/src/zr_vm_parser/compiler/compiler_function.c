@@ -198,7 +198,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->isInConstructor = ZR_FALSE;
     cs->initializationPhase = ZR_COMPILER_INITIALIZATION_NONE;
     cs->currentFunctionNode = node;
-    cs->currentFunction = ZrCore_Function_New(cs->state);
+    cs->currentFunction = compiler_new_function(cs);
     if (cs->currentFunction == ZR_NULL) {
         ZrParser_Compiler_Error(cs, "Failed to create function object", node->location);
         if (savedParentInstructions != ZR_NULL) {
@@ -597,7 +597,7 @@ function_type_scope_cleanup:
             SZrFunction **srcArray = (SZrFunction **) cs->childFunctions.head;
             for (TZrSize i = 0; i < cs->childFunctions.length; i++) {
                 if (srcArray[i] != ZR_NULL) {
-                    newFunc->childFunctionList[i] = *srcArray[i];
+                    ZrCore_Function_CopyToInline(&newFunc->childFunctionList[i], srcArray[i]);
                 }
             }
             newFunc->childFunctionLength = (TZrUInt32) cs->childFunctions.length;

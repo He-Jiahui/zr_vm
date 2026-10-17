@@ -188,8 +188,8 @@ if (DEFINED ZR_SSA_ACTIVE_PACKED_FRAME_SOURCE_ROOT)
     # latest selected header dependency before execution.
     set(_zr_active_frame_headers "absolute_header\tsha256\n")
     foreach (_relative IN ITEMS
-            zr_vm_parser/include/zr_vm_parser/exec_ir_frame_roots.h
-            zr_vm_parser/include/zr_vm_parser/exec_ir_frame_layout.h
+            zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_frame_roots.h
+            zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_frame_layout.h
             zr_vm_core/include/zr_vm_core/exec_ir.h
             zr_vm_core/include/zr_vm_core/exec_ir_state_map.h
             zr_vm_core/include/zr_vm_core/execution_contract.h

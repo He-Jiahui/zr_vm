@@ -1,5 +1,7 @@
 #include "runtime/runtime_internal.h"
 
+#include <stdatomic.h>
+
 #include "zr_vm_library/task_runtime.h"
 
 #include <string.h>
@@ -209,11 +211,8 @@ TZrBool zr_vm_task_default_support_multithread(SZrState *state) {
 }
 
 TZrUInt64 zr_vm_task_next_worker_isolate_id(void) {
-    /* TODO: 进程内计数器没有同步；若不同宿主线程同时创建隔离任务，需验证诊断 isolateId 的唯一性与数据竞争。 */
-    static TZrUInt64 nextId = 0x1000u;
-
-    nextId++;
-    return nextId;
+    static atomic_uint_fast64_t nextId = 0x1000u;
+    return (TZrUInt64)atomic_fetch_add_explicit(&nextId, 1u, memory_order_relaxed) + 1u;
 }
 
 static ZrVmTaskSchedulerRuntime *zr_vm_task_scheduler_alloc_runtime(TZrUInt64 isolateId) {

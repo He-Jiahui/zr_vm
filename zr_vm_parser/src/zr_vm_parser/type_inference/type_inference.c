@@ -29,6 +29,111 @@
 #include <string.h>
 #include <math.h>
 #include <limits.h>
+#include <stdint.h>
+
+typedef struct SZrExpressionTypeCacheEntry {
+    SZrAstNode *node;
+    SZrInferredType type;
+    TZrBool hasType;
+} SZrExpressionTypeCacheEntry;
+
+static SZrExpressionTypeCacheEntry *type_inference_cache_slot(SZrExpressionTypeCache *cache,
+                                                              SZrAstNode *node) {
+    TZrSize index = ((uintptr_t)node >> 4) * (uintptr_t)2654435761u & (cache->capacity - 1);
+    for (TZrSize i = 0; i < cache->capacity; ++i) {
+        SZrExpressionTypeCacheEntry *entry = &cache->entries[index];
+        if (entry->node == ZR_NULL || entry->node == node) return entry;
+        index = (index + 1) & (cache->capacity - 1);
+    }
+    return ZR_NULL;
+}
+
+static TZrSize type_inference_cacheable_node_count(SZrAstNode *node) {
+    TZrSize left, right;
+    const TZrChar *op;
+    if (node == ZR_NULL) return 0;
+    switch (node->type) {
+        case ZR_AST_BOOLEAN_LITERAL:
+        case ZR_AST_INTEGER_LITERAL:
+        case ZR_AST_FLOAT_LITERAL:
+        case ZR_AST_STRING_LITERAL:
+        case ZR_AST_CHAR_LITERAL:
+        case ZR_AST_NULL_LITERAL:
+        case ZR_AST_IDENTIFIER_LITERAL:
+            return 1;
+        case ZR_AST_PRIMARY_EXPRESSION:
+            if (node->data.primaryExpression.members != ZR_NULL &&
+                node->data.primaryExpression.members->count != 0) return 0;
+            left = type_inference_cacheable_node_count(node->data.primaryExpression.property);
+            return left != 0 ? left + 1 : 0;
+        case ZR_AST_UNARY_EXPRESSION:
+            op = node->data.unaryExpression.op.op;
+            if (op == ZR_NULL || (strcmp(op, "+") != 0 && strcmp(op, "-") != 0 &&
+                                 strcmp(op, "!") != 0 && strcmp(op, "~") != 0)) return 0;
+            left = type_inference_cacheable_node_count(node->data.unaryExpression.argument);
+            return left != 0 ? left + 1 : 0;
+        case ZR_AST_BINARY_EXPRESSION:
+            left = type_inference_cacheable_node_count(node->data.binaryExpression.left);
+            if (left == 0) return 0;
+            right = type_inference_cacheable_node_count(node->data.binaryExpression.right);
+            return right != 0 && left < SIZE_MAX - right ? left + right + 1 : 0;
+        default:
+            return 0;
+    }
+}
+
+static void type_inference_cache_add_tree(SZrExpressionTypeCache *cache, SZrAstNode *node) {
+    type_inference_cache_slot(cache, node)->node = node;
+    if (node->type == ZR_AST_BINARY_EXPRESSION) {
+        type_inference_cache_add_tree(cache, node->data.binaryExpression.left);
+        type_inference_cache_add_tree(cache, node->data.binaryExpression.right);
+    } else if (node->type == ZR_AST_UNARY_EXPRESSION) {
+        type_inference_cache_add_tree(cache, node->data.unaryExpression.argument);
+    } else if (node->type == ZR_AST_PRIMARY_EXPRESSION) {
+        type_inference_cache_add_tree(cache, node->data.primaryExpression.property);
+    }
+}
+
+void type_inference_cache_begin(SZrCompilerState *cs, SZrAstNode *node,
+                                SZrExpressionTypeCache *cache) {
+    TZrSize count, capacity = 16;
+    if (cs->expressionTypeCache != ZR_NULL || node->type != ZR_AST_BINARY_EXPRESSION) return;
+    count = type_inference_cacheable_node_count(node);
+    if (count == 0 || count > SIZE_MAX / 2) return;
+    while (capacity < count * 2) {
+        if (capacity > SIZE_MAX / 2) return;
+        capacity *= 2;
+    }
+    if (capacity > SIZE_MAX / sizeof(*cache->entries)) return;
+    cache->entries = ZrCore_Memory_RawMalloc(cs->state->global, capacity * sizeof(*cache->entries));
+    if (cache->entries == ZR_NULL) return;
+    memset(cache->entries, 0, capacity * sizeof(*cache->entries));
+    cache->capacity = capacity;
+    cache->environment = cs->typeEnv;
+    /* Do not cache incidental inference requests for synthetic or temporary ASTs. */
+    type_inference_cache_add_tree(cache, node);
+    cs->expressionTypeCache = cache;
+}
+
+void type_inference_cache_end(SZrCompilerState *cs, SZrExpressionTypeCache *cache) {
+    if (cache->entries == ZR_NULL) return;
+    for (TZrSize i = 0; i < cache->capacity; ++i) {
+        if (cache->entries[i].hasType)
+            ZrParser_InferredType_Free(cs->state, &cache->entries[i].type);
+    }
+    ZrCore_Memory_RawFree(cs->state->global, cache->entries,
+                         cache->capacity * sizeof(*cache->entries));
+    cs->expressionTypeCache = ZR_NULL;
+}
+
+static SZrExpressionTypeCacheEntry *type_inference_cache_entry(SZrCompilerState *cs,
+                                                               SZrAstNode *node) {
+    SZrExpressionTypeCache *cache = cs->expressionTypeCache;
+    SZrExpressionTypeCacheEntry *entry;
+    if (cache == ZR_NULL || cache->environment != cs->typeEnv) return ZR_NULL;
+    entry = type_inference_cache_slot(cache, node);
+    return entry != ZR_NULL && entry->node == node ? entry : ZR_NULL;
+}
 
 static TZrBool type_inference_convert_ast_type(
         SZrCompilerState *cs, const SZrType *astType, SZrInferredType *result);
@@ -2815,6 +2920,12 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
         return ZR_FALSE;
     }
 
+    SZrExpressionTypeCacheEntry *cached = type_inference_cache_entry(cs, node);
+    if (cached != ZR_NULL && cached->hasType) {
+        ZrParser_InferredType_Copy(cs->state, result, &cached->type);
+        return ZR_TRUE;
+    }
+
     if (!cs->externBindingsPredeclared &&
         cs->scriptAst != ZR_NULL &&
         cs->scriptAst->type == ZR_AST_SCRIPT &&
@@ -3119,6 +3230,11 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
     if (success) {
         type_inference_record_expression_and_numeric_facts(cs, node, result, numericFactKind);
         type_inference_record_construct_call_facts(cs, node, result);
+        cached = type_inference_cache_entry(cs, node);
+        if (cached != ZR_NULL && !cached->hasType) {
+            ZrParser_InferredType_Copy(cs->state, &cached->type, result);
+            cached->hasType = ZR_TRUE;
+        }
     }
     return success;
 }

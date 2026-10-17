@@ -6,6 +6,7 @@
 #include "compiler/expression/compile_expression_contiguous_view.h"
 #include "compiler/semantic/compiler_semantic_compare.h"
 #include "type_inference/type_inference_semantic_facts.h"
+#include "type_inference/type_inference_internal.h"
 #include "zr_vm_parser/const_assignment.h"
 
 static TZrBool note_inline_struct_field_result_slot(SZrCompilerState *cs,
@@ -2638,6 +2639,7 @@ static void compile_conditional_expression(SZrCompilerState *cs, SZrAstNode *nod
 
 ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode *node) {
     SZrAstNode *oldCurrentAst;
+    SZrExpressionTypeCache typeCache = {0};
 
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
@@ -2645,6 +2647,7 @@ ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode 
 
     oldCurrentAst = cs->currentAst;
     cs->currentAst = node;
+    type_inference_cache_begin(cs, node, &typeCache);
     
     switch (node->type) {
         // 字面量
@@ -2824,6 +2827,7 @@ ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode 
             break;
     }
 
+    type_inference_cache_end(cs, &typeCache);
     cs->currentAst = oldCurrentAst;
 }
 

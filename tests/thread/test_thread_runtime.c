@@ -692,6 +692,43 @@ static void test_thread_scheduler_constructs_with_worker_count_and_consumes_job(
     destroy_thread_test_state(state);
 }
 
+static void test_attached_workers_allocate_in_shared_gc_regions(void) {
+    static const char *source =
+            "let task = import(\"zr.task\");\n"
+            "let thread = import(\"zr.thread\");\n"
+            "fn work(seed: int): int {\n"
+            "  var sum: int = 0; var k: int = 0;\n"
+            "  while (k < 2000) {\n"
+            "    var a: int[] = [k, seed, k + seed];\n"
+            "    sum = sum + a[1]; k = k + 1;\n"
+            "  }\n"
+            "  return sum;\n"
+            "}\n"
+            "var scheduler = new thread.ThreadScheduler(4);\n"
+            "var j1 = init task.Job<int>(fn() => { return work(1); });\n"
+            "var j2 = init task.Job<int>(fn() => { return work(2); });\n"
+            "var j3 = init task.Job<int>(fn() => { return work(3); });\n"
+            "var j4 = init task.Job<int>(fn() => { return work(4); });\n"
+            "var t1 = scheduler.schedule<int>(j1);\n"
+            "var t2 = scheduler.schedule<int>(j2);\n"
+            "var t3 = scheduler.schedule<int>(j3);\n"
+            "var t4 = scheduler.schedule<int>(j4);\n"
+            "return t1.result() + t2.result() + t3.result() + t4.result();\n";
+    SZrState *state = create_thread_test_state_with_project_flags(ZR_TRUE, ZR_TRUE);
+    SZrFunction *function;
+    TZrInt64 result = 0;
+    SZrGcDomainMutatorSnapshot snapshot;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_thread_source(state, source, "attached_allocation_stress.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(20000, result);
+    ZrCore_GcDomain_GetMutatorSnapshot(state, &snapshot);
+    TEST_ASSERT_EQUAL_UINT32(1u, snapshot.registeredMutatorCount);
+    destroy_thread_test_state(state);
+}
+
 static void test_thread_scheduler_isolated_domain_completes_caller_task(void) {
     static const char *source =
             "let task = import(\"zr.task\");\n"
@@ -1038,8 +1075,15 @@ static void test_thread_scheduler_rejects_reused_job(void) {
     destroy_thread_test_state(state);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
     UNITY_BEGIN();
+    if (argc == 2 && strcmp(argv[1], "--attached") == 0) {
+        RUN_TEST(test_thread_worker_state_attaches_to_caller_gc_domain);
+        RUN_TEST(test_thread_scheduler_constructs_with_worker_count_and_consumes_job);
+        RUN_TEST(test_attached_workers_allocate_in_shared_gc_regions);
+        RUN_TEST(test_thread_scheduler_drains_one_worker_queue_in_submission_order);
+        return UNITY_END();
+    }
     RUN_TEST(test_zr_thread_registers_canonical_scheduler_without_legacy_wrappers);
     RUN_TEST(test_zr_thread_descriptors_express_send_sync_contracts);
     RUN_TEST(test_zr_thread_descriptor_publishes_canonical_thread_scheduler_contract);
@@ -1052,6 +1096,7 @@ int main(void) {
     RUN_TEST(test_lock_guard_rejects_transfer_storage);
     RUN_TEST(test_thread_worker_state_attaches_to_caller_gc_domain);
     RUN_TEST(test_thread_scheduler_constructs_with_worker_count_and_consumes_job);
+    RUN_TEST(test_attached_workers_allocate_in_shared_gc_regions);
     RUN_TEST(test_thread_scheduler_isolated_domain_completes_caller_task);
     RUN_TEST(test_thread_scheduler_isolated_domain_transfers_scalar_capture);
     RUN_TEST(test_thread_scheduler_isolated_domain_clones_string_capture);

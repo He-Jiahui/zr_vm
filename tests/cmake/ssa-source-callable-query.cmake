@@ -8,8 +8,8 @@ else ()
     set(_zr_callable_root "${CMAKE_SOURCE_DIR}")
 endif ()
 add_library(zr_vm_ssa_source_callable_query_private OBJECT
-        "${_zr_callable_root}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_callable_query.c"
-        "${_zr_callable_root}/zr_vm_parser/src/zr_vm_parser/canonical_type_lookup.c")
+        "${_zr_callable_root}/zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_callable_query.c"
+        "${_zr_callable_root}/zr_vm_parser/src/zr_vm_parser/types/canonical_type_lookup.c")
 add_executable(zr_vm_ssa_source_callable_query_test
         "${_zr_callable_root}/tests/parser/test_ssa_source_callable_query.c"
         "${_zr_callable_root}/tests/third_party/zr_unity/Unity/src/unity.c")
@@ -20,6 +20,7 @@ foreach (_target IN ITEMS zr_vm_ssa_source_callable_query_private
             "${_zr_callable_root}/zr_vm_core/include"
             "${_zr_callable_root}/zr_vm_parser/include"
             "${_zr_callable_root}/zr_vm_parser/src"
+            "${_zr_callable_root}/zr_vm_parser/src/zr_vm_parser"
             "${_zr_callable_root}/tests"
             "${_zr_callable_root}/tests/third_party/zr_unity/Unity/src")
     target_compile_definitions(${_target} PRIVATE

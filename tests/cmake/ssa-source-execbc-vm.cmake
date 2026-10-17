@@ -362,7 +362,7 @@ endif ()
 if (TARGET zr_vm_parser_static AND TARGET zr_vm_core_static AND TARGET zr_vm_library_static
         AND NOT TARGET zr_vm_ssa_source_scalar_constant_test)
     add_library(zr_vm_ssa_source_scalar_constant_noalloc_object OBJECT
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_scalar_constant.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_scalar_constant.c)
     target_include_directories(zr_vm_ssa_source_scalar_constant_noalloc_object PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include ${CMAKE_SOURCE_DIR}/zr_vm_core/include
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
@@ -433,8 +433,8 @@ endif ()
 # Instrument both production TUs for the two direct Attach allocation failures.
 if (NOT TARGET zr_vm_ssa_primitive_source_frame_oom_test)
     add_library(zr_vm_ssa_primitive_source_frame_oom_object OBJECT
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame_validation.c)
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_frame.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_frame_validation.c)
     target_include_directories(zr_vm_ssa_primitive_source_frame_oom_object PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include

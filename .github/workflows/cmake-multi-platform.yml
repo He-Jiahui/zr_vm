@@ -8,6 +8,27 @@ on:
     branches: [ "main" ]
 
 jobs:
+  thread-sanitizer:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - name: Configure thread sanitizer
+        run: >
+          cmake -S . -B build-tsan
+          -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=gcc
+          -DCMAKE_C_FLAGS="-fsanitize=thread -fno-omit-frame-pointer -g"
+          -DBUILD_STATIC_LIB=ON -DBUILD_SHARED_LIB=OFF
+          -DBUILD_NETWORK_LIB=OFF -DBUILD_DEBUG_LIB=OFF
+          -DBUILD_RUST_BINDING=OFF -DBUILD_LANGUAGE_SERVER=OFF -DBUILD_CLI=OFF
+      - name: Build thread runtime tests
+        run: cmake --build build-tsan --target zr_vm_thread_runtime_test --parallel 2
+      - name: Test attached workers
+        env:
+          TSAN_OPTIONS: halt_on_error=1
+        run: ctest --test-dir build-tsan -R '^thread_attached_domain$' --output-on-failure
+
   build:
     runs-on: ${{ matrix.os }}
 

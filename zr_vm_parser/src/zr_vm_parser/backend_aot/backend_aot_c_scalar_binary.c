@@ -347,6 +347,10 @@ static void backend_aot_write_c_scalar_i64_binary(FILE *file,
                                                   TZrUInt32 rightSlot,
                                                   TZrBool hasRightLiteral,
                                                   TZrInt64 rightLiteral) {
+    const char *checkedOperator = operatorText[0] == '+' ? "ZrCore_Integer_Add" :
+                                  operatorText[0] == '-' ? "ZrCore_Integer_Subtract" :
+                                  operatorText[0] == '*' ? "ZrCore_Integer_Multiply" :
+                                  operatorText[0] == '/' ? "ZrCore_Integer_Divide" : "ZrCore_Integer_Modulo";
     TZrBool useScalarDestination = backend_aot_c_scalar_locals_has_i64_slot(functionIr, destinationSlot);
     TZrBool useScalarLocals =
             useScalarDestination &&
@@ -389,10 +393,10 @@ static void backend_aot_write_c_scalar_i64_binary(FILE *file,
                         (long long)rightLiteral);
             }
             fprintf(file,
-                    "        zr_aot_s%u = zr_aot_s%u %s (TZrInt64)%lld;\n",
+                    "        zr_aot_s%u = %s(state, zr_aot_s%u, (TZrInt64)%lld);\n",
                     (unsigned)destinationSlot,
+                    checkedOperator,
                     (unsigned)leftSlot,
-                    operatorText,
                     (long long)rightLiteral);
         } else {
             if (semIrInstruction->semIrOpcode == ZR_SEMIR_OPCODE_DIV ||
@@ -405,10 +409,10 @@ static void backend_aot_write_c_scalar_i64_binary(FILE *file,
                         (unsigned)rightSlot);
             }
             fprintf(file,
-                    "        zr_aot_s%u = zr_aot_s%u %s zr_aot_s%u;\n",
+                    "        zr_aot_s%u = %s(state, zr_aot_s%u, zr_aot_s%u);\n",
                     (unsigned)destinationSlot,
+                    checkedOperator,
                     (unsigned)leftSlot,
-                    operatorText,
                     (unsigned)rightSlot);
         }
         fprintf(file, "    }\n");
@@ -470,10 +474,10 @@ static void backend_aot_write_c_scalar_i64_binary(FILE *file,
                         (long long)rightLiteral);
             }
             fprintf(file,
-                    "        zr_aot_s%u = zr_aot_s%u %s (TZrInt64)%lld;\n",
+                    "        zr_aot_s%u = %s(state, zr_aot_s%u, (TZrInt64)%lld);\n",
                     (unsigned)destinationSlot,
+                    checkedOperator,
                     (unsigned)leftSlot,
-                    operatorText,
                     (long long)rightLiteral);
         } else {
             if (!rightLocalWrittenBefore) {
@@ -492,10 +496,10 @@ static void backend_aot_write_c_scalar_i64_binary(FILE *file,
                         (unsigned)rightSlot);
             }
             fprintf(file,
-                    "        zr_aot_s%u = zr_aot_s%u %s zr_aot_s%u;\n",
+                    "        zr_aot_s%u = %s(state, zr_aot_s%u, zr_aot_s%u);\n",
                     (unsigned)destinationSlot,
+                    checkedOperator,
                     (unsigned)leftSlot,
-                    operatorText,
                     (unsigned)rightSlot);
         }
         fprintf(file,
@@ -523,8 +527,8 @@ static void backend_aot_write_c_scalar_i64_binary(FILE *file,
                     "        }\n");
         }
         fprintf(file,
-                "        zr_aot_s_result = zr_aot_s_left %s zr_aot_s_right;\n",
-                operatorText);
+                "        zr_aot_s_result = %s(state, zr_aot_s_left, zr_aot_s_right);\n",
+                checkedOperator);
     }
     if (!useScalarLocals && useScalarDestination) {
         fprintf(file, "        zr_aot_s%u = zr_aot_s_result;\n", (unsigned)destinationSlot);

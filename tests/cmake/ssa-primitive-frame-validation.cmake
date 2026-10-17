@@ -10,8 +10,8 @@ endif ()
 include(${CMAKE_CURRENT_LIST_DIR}/ssa-execir-owned-module.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/ssa-canonical-type-lookup.cmake)
 add_library(zr_vm_ssa_primitive_frame_validation_private OBJECT
-        "${_zr_frame_validation_root}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame.c"
-        "${_zr_frame_validation_root}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame_validation.c"
+        "${_zr_frame_validation_root}/zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_frame.c"
+        "${_zr_frame_validation_root}/zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_frame_validation.c"
         "${_zr_frame_validation_root}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_frame_layout.c")
 add_executable(zr_vm_ssa_primitive_frame_validation_test
         "${_zr_frame_validation_root}/tests/parser/test_ssa_primitive_frame_validation.c"

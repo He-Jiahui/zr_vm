@@ -18,6 +18,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/hash_set.h"
+#include "zr_vm_core/integer.h"
 #include "zr_vm_core/math.h"
 #include "zr_vm_core/meta.h"
 #include "zr_vm_core/module.h"
@@ -760,7 +761,7 @@ static ZR_FORCE_INLINE TZrBool execution_builtin_add_has_fast_safe_string_concat
     return ZR_FALSE;
 }
 
-static ZR_FORCE_INLINE TZrBool execution_try_builtin_add_exact_numeric_fast(SZrTypeValue *outResult,
+static ZR_FORCE_INLINE TZrBool execution_try_builtin_add_exact_numeric_fast(SZrState *state, SZrTypeValue *outResult,
                                                                             const SZrTypeValue *opA,
                                                                             const SZrTypeValue *opB) {
     EZrValueType typeA;
@@ -776,7 +777,7 @@ static ZR_FORCE_INLINE TZrBool execution_try_builtin_add_exact_numeric_fast(SZrT
     if (ZR_LIKELY(ZR_VALUE_IS_TYPE_SIGNED_INT(typeA) && ZR_VALUE_IS_TYPE_SIGNED_INT(typeB))) {
         TZrInt64 leftValue = opA->value.nativeObject.nativeInt64;
         TZrInt64 rightValue = opB->value.nativeObject.nativeInt64;
-        ZR_VALUE_FAST_SET(outResult, nativeInt64, leftValue + rightValue, ZR_VALUE_TYPE_INT64);
+        ZR_VALUE_FAST_SET(outResult, nativeInt64, ZrCore_Integer_Add(state, leftValue, rightValue), ZR_VALUE_TYPE_INT64);
         return ZR_TRUE;
     }
 

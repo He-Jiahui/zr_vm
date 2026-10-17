@@ -6175,7 +6175,7 @@ static TZrInt64 zr_container_native_array_get_iterator_native(SZrState *state) {
  * @param[out] result 派发层提供、调用期间有效的结果槽；接收null、整数或复制的元素，不保留槽指针。
  *
  * ## Returns
- * @return 负索引/raw-int越界写null并true；普通backing路径返回result_copy_no_profile状态；参数或backing准备普通失败false。 此处bool描述普通绑定回调的局部状态；dispatcher在false且threadStatus仍为FINE时将guest调用完成为null，非FINE沿线程错误路径处理。
+ * @return Invalid indices raise a runtime bounds error. Valid indices copy the element.
  *
  * ## Constraints and lifecycle
  * 调用要求有效的同域Array实例及正确私有backing不变量；本wrapper筛接收标签，不验证Array原型、泛型或完整内部布局。实参槽及结果槽须由调用帧保持有效。READONLY_RECEIVER决定绑定receiver派发角色，不禁止ensure_items_array_fast维护隐藏backing。普通元素是短期借用输入，结果经Core Value copy保留ownership语义，不跨调用保留槽指针。 普通dispatcher预先将局部result置null并传入非NULL短期结果槽；实参与receiver由调用帧保持有效。回调false不等同guest调用失败，也不证明状态回滚。
@@ -6197,15 +6197,10 @@ static TZrBool zr_container_array_get_item(ZrLibCallContext *context, SZrTypeVal
     if (items == ZR_NULL) {
         return ZR_FALSE;
     }
-    if (indexValue < 0) {
-        zr_container_result_set_null_fast(result);
-        return ZR_TRUE;
+    if (indexValue < 0 || (TZrUInt64)indexValue >= (TZrUInt64)zr_container_array_length_fast(items)) {
+        ZrCore_Debug_RunError(context->state, "Array index out of range");
     }
     if (zr_container_array_raw_int_active(items)) {
-        if ((TZrUInt64)indexValue >= (TZrUInt64)items->superArrayRawIntLength) {
-            zr_container_result_set_null_fast(result);
-            return ZR_TRUE;
-        }
         zr_container_result_set_int_fast(result, items->superArrayRawIntData[(TZrSize)indexValue]);
         return ZR_TRUE;
     }

@@ -3,6 +3,7 @@
 
 #include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_core/state.h"
+#include "zr_vm_core/integer.h"
 #include "zr_vm_library/conf.h"
 
 struct SZrGlobalState;
@@ -506,6 +507,10 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CreateObject(struct SZrState *state,
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CreateArray(struct SZrState *state,
                                                         ZrAotGeneratedFrame *frame,
                                                         TZrUInt32 destinationSlot);
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_CreateArrayWithLength(struct SZrState *state,
+                                                                  ZrAotGeneratedFrame *frame,
+                                                                  TZrUInt32 destinationSlot,
+                                                                  TZrUInt32 length);
 
 /** @brief 按当前函数类型布局创建内联元素数组。
  * @note 同时建立稠密与分离物理 VALUE 表示；布局或分配失败返回 false。
