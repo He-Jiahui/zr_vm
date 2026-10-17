@@ -2425,6 +2425,7 @@ static void test_builtin_array_length_member_uses_native_contract(void) {
 
         ZrCore_Value_InitAsRawObject(state, &receiver, ZR_CAST_RAW_OBJECT_AS_SUPER(array));
         receiver.type = ZR_VALUE_TYPE_ARRAY;
+        ZrCore_Object_InitializeArrayElements(state, array, 2u);
 
         ZrCore_Value_InitAsInt(state, &key, 0);
         ZrCore_Value_InitAsInt(state, &inputValue, 11);
