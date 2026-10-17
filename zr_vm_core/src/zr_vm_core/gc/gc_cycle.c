@@ -2904,6 +2904,26 @@ static TZrSize garbage_collector_free_minor_from_space(SZrState *state) {
     return work;
 }
 
+/* Embedded functions are not on gcObjectList. A forced major collection may
+ * restart marking without changing the generation, so their old black/gray
+ * marks must be discarded along with their allocated owner's marks. */
+static TZrSize garbage_collector_reset_embedded_function_marks(
+        SZrGarbageCollector *collector, SZrFunction *function) {
+    TZrSize work = 0u;
+    for (TZrUInt32 index = 0u; index < function->childFunctionLength; ++index) {
+        SZrFunction *child = &function->childFunctionList[index];
+        if (child->super.type != ZR_RAW_OBJECT_TYPE_FUNCTION ||
+            ZrCore_RawObject_IsReleased(&child->super)) {
+            continue;
+        }
+        child->super.garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED;
+        child->super.garbageCollectMark.generation = collector->gcGeneration;
+        child->super.gcList = ZR_NULL;
+        work += 1u + garbage_collector_reset_embedded_function_marks(collector, child);
+    }
+    return work;
+}
+
 TZrSize garbage_collector_prepare_major_collection(SZrState *state) {
     SZrGarbageCollector *collector;
     SZrRawObject *object;
@@ -2917,6 +2937,9 @@ TZrSize garbage_collector_prepare_major_collection(SZrState *state) {
     garbage_collector_clear_forwarding_metadata(collector);
     object = collector->gcObjectList;
     while (object != ZR_NULL) {
+        if (object->type == ZR_RAW_OBJECT_TYPE_FUNCTION && !ZrCore_RawObject_IsReleased(object)) {
+            work += garbage_collector_reset_embedded_function_marks(collector, ZR_CAST_FUNCTION(state, object));
+        }
         if (object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT) {
             object->garbageCollectMark.generation = ZR_GC_OTHER_GENERATION(collector);
             object->gcList = ZR_NULL;

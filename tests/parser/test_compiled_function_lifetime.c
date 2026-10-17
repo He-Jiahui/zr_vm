@@ -4,6 +4,8 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/io.h"
+#include "zr_vm_core/memory.h"
+#include "zr_vm_core/object.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/compiler.h"
 
@@ -47,6 +49,32 @@ static void test_compiled_functions_survive_gc_before_and_between_executions(voi
     ZrCore_Function_Free(state, second);
     ZrCore_Function_Free(state, first);
     ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+}
+
+static void test_full_gc_restarts_embedded_child_marks_after_partial_collection(void) {
+    SZrFunction *function = compile_answer();
+    SZrFunction *child = &function->childFunctionList[0];
+    SZrObject *receiver = ZrCore_Object_New(state, ZR_NULL);
+    TEST_ASSERT_NOT_NULL(receiver);
+    ZrCore_Object_Init(state, receiver);
+    TEST_ASSERT_EQUAL_UINT32(0, child->callSiteCacheLength);
+    child->callSiteCaches = ZrCore_Memory_RawMallocWithType(state->global,
+            sizeof(*child->callSiteCaches), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(child->callSiteCaches);
+    memset(child->callSiteCaches, 0, sizeof(*child->callSiteCaches));
+    child->callSiteCacheLength = 1u;
+    child->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET;
+    child->callSiteCaches[0].picSlotCount = 1u;
+    child->callSiteCaches[0].picSlots[0].cachedReceiverObject = receiver;
+    for (unsigned i = 0; i < 3; ++i) {
+        ZrGarbageCollectorRestartCollection(state);
+        ZrGarbageCollectorPropagateAll(state);
+        ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+        TEST_ASSERT_EQUAL_INT(ZR_RAW_OBJECT_TYPE_OBJECT, receiver->super.type);
+        ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+        expect_answer(function);
+    }
+    ZrCore_Function_Free(state, function);
 }
 
 static void test_host_ownership_and_explicit_roots_are_independent(void) {
@@ -155,6 +183,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_null_function_super_conversion_is_safe);
     RUN_TEST(test_compiled_functions_survive_gc_before_and_between_executions);
+    RUN_TEST(test_full_gc_restarts_embedded_child_marks_after_partial_collection);
     RUN_TEST(test_host_ownership_and_explicit_roots_are_independent);
     RUN_TEST(test_host_root_can_transfer_to_a_vm_closure);
     RUN_TEST(test_nested_closure_retains_embedded_function_storage);
