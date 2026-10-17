@@ -176,7 +176,7 @@ static void test_call_spread_executes_dynamic_array_arguments(void) {
             g_state, function, &result));
     TEST_ASSERT_EQUAL_INT64(42, result);
 
-    ZrCore_Function_Free(g_state, function);
+    ZrCore_Function_ReleaseHostRoot(g_state, function);
 }
 
 // 展开引用对象数组时压低堆上限并请求 full GC，检查调用结果仍可读取实参。
@@ -206,7 +206,7 @@ static void test_call_spread_struct_values_survive_gc_during_expansion(void) {
             g_state, function, &result));
     TEST_ASSERT_EQUAL_INT64(42, result);
 
-    ZrCore_Function_Free(g_state, function);
+    ZrCore_Function_ReleaseHostRoot(g_state, function);
 }
 
 // 成功场景共用的编译与执行断言；调用者提供独立源文本和期望值。
@@ -227,7 +227,7 @@ static void assert_source_executes_to_int64(
             g_state, function, &result));
     TEST_ASSERT_EQUAL_INT64(expected, result);
 
-    ZrCore_Function_Free(g_state, function);
+    ZrCore_Function_ReleaseHostRoot(g_state, function);
 }
 
 // 固定前缀实参与尾随展开共存时仍应按源顺序传参。
@@ -314,7 +314,7 @@ static void test_call_spread_lowers_to_aot_c_runtime_boundary(void) {
             generatedText, "ZrLibrary_AotRuntime_CallSpread(state, &frame,"));
 
     free(generatedText);
-    ZrCore_Function_Free(g_state, function);
+    ZrCore_Function_ReleaseHostRoot(g_state, function);
 }
 
 // LLVM 路径须保留运行时声明、调用及失败边，以匹配 C 路径语义。
@@ -353,7 +353,7 @@ static void test_call_spread_lowers_to_aot_llvm_runtime_boundary(void) {
     TEST_ASSERT_NOT_NULL(strstr(generatedText, "spread_ok"));
 
     free(generatedText);
-    ZrCore_Function_Free(g_state, function);
+    ZrCore_Function_ReleaseHostRoot(g_state, function);
 }
 
 // 负向用例只在编译阶段拒绝；运行时参数个数不足另由执行用例覆盖。
@@ -429,7 +429,10 @@ static void test_call_spread_rejects_dynamic_argument_count_mismatch_at_runtime(
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_FALSE(ZrTests_Runtime_Function_ExecuteExpectInt64(
             g_state, function, &result));
-    ZrCore_Function_Free(g_state, function);
+    /* Exception frames/closures may still refer to embedded children. Drop
+     * host ownership and let GC reclaim the graph after those roots unwind. */
+    ZrCore_Function_ReleaseHostRoot(g_state, function);
+    ZrCore_GarbageCollector_GcFull(g_state, ZR_FALSE);
 }
 
 // 独立 Unity 可执行入口；按 AST、执行、AOT 和拒绝路径注册全部场景。

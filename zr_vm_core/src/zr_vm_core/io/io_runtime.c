@@ -1458,7 +1458,7 @@ static TZrBool io_runtime_populate_function(SZrState *state,
 
     ZrCore_Function_FinalizeDirectFrameValueSlots(function);
     ZrCore_Function_RebindConstantFunctionValuesToChildren(function);
-    ZrCore_Function_ClearChildOwnerLinks(function);
+    /* Embedded children must retain the allocation that owns their storage. */
 
     return ZR_TRUE;
 }

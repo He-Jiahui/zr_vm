@@ -11035,7 +11035,7 @@ TZrBool compiler_quicken_execbc_function(SZrState *state, SZrFunction *function)
         return ZR_FALSE;
     }
 
-    ZrCore_Function_ClearChildOwnerLinks(function);
+    /* Embedded children must retain the allocation that owns their storage. */
     return ZR_TRUE;
 }
 
@@ -11048,7 +11048,7 @@ TZrBool compiler_quicken_execbc_function_shallow(SZrState *state, SZrFunction *f
         return ZR_FALSE;
     }
 
-    ZrCore_Function_ClearChildOwnerLinks(function);
+    /* Embedded children must retain the allocation that owns their storage. */
     return ZR_TRUE;
 }
 

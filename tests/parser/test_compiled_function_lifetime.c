@@ -75,6 +75,27 @@ static void test_host_root_can_transfer_to_a_vm_closure(void) {
     /* Let GC destroy the function after all VM references disappear. */
 }
 
+static void test_nested_closure_retains_embedded_function_storage(void) {
+    const char *source = "fn factory() { fn answer(): int { return 42; } return answer; } return factory();";
+    SZrFunction *function = ZrParser_Source_Compile(state, source, strlen(source),
+            ZrCore_String_CreateFromNative(state, "nested_function_lifetime.zr"));
+    SZrTypeValue result;
+    SZrGcRootLease closureRoot = {ZR_NULL};
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, function, &result));
+    TEST_ASSERT_NOT_NULL(result.value.object);
+    TEST_ASSERT_EQUAL_INT(ZR_RAW_OBJECT_TYPE_CLOSURE, result.value.object->type);
+    SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, result.value.object);
+    TEST_ASSERT_NOT_NULL(closure->function->ownerFunction);
+    TEST_ASSERT_TRUE(ZrCore_Gc_RootLeaseAcquire(state, &closure->super, &closureRoot));
+    ZrCore_Function_ReleaseHostRoot(state, function);
+    for (unsigned i = 0; i < 3; ++i) {
+        ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+        expect_answer(closure->function);
+    }
+    ZrCore_Gc_RootLeaseRelease(state->global, &closureRoot);
+}
+
 static void test_free_releases_the_compilation_root(void) {
     for (unsigned i = 0; i < 10; ++i) {
         SZrFunction *function = compile_answer();
@@ -130,6 +151,7 @@ int main(void) {
     RUN_TEST(test_compiled_functions_survive_gc_before_and_between_executions);
     RUN_TEST(test_host_ownership_and_explicit_roots_are_independent);
     RUN_TEST(test_host_root_can_transfer_to_a_vm_closure);
+    RUN_TEST(test_nested_closure_retains_embedded_function_storage);
     RUN_TEST(test_free_releases_the_compilation_root);
     RUN_TEST(test_loaded_function_has_the_same_host_lifetime);
     RUN_TEST(test_inline_children_do_not_copy_compiler_root_ownership);
