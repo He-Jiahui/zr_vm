@@ -9230,6 +9230,7 @@ static void test_benchmark_string_build_binary_roundtrip_loads_runtime_entry(voi
         SZrFunction *runtimeFunction = ZR_NULL;
 
         TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_TRUE(ZrVmLibContainer_Register(state->global));
 
         binaryBytes = read_repo_binary_file_owned("tests/benchmarks/cases/string_build/zr/bin/main.zro", &binaryLength);
         TEST_ASSERT_NOT_NULL(binaryBytes);
@@ -9251,6 +9252,7 @@ static void test_benchmark_string_build_binary_roundtrip_loads_runtime_entry(voi
         TEST_ASSERT_TRUE(runtimeFunction->instructionsLength > 0u);
 
         ZrCore_Function_Free(state, runtimeFunction);
+        ZrCore_Io_ReadSourceFree(state->global, sourceObject);
         free(binaryBytes);
         ZrTests_Runtime_State_Destroy(state);
     }
