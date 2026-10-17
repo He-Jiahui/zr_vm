@@ -649,7 +649,7 @@ void type_inference_record_unbound_member_reference_fact(
     ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
 }
 
-void type_inference_record_external_callable_member_reference_fact(
+TZrBool type_inference_record_external_callable_member_reference_fact(
         SZrCompilerState *cs,
         SZrAstNode *memberNode,
         SZrTypeMemberInfo *memberInfo,
@@ -670,7 +670,7 @@ void type_inference_record_external_callable_member_reference_fact(
         memberInfo->genericParameters.length != 0U ||
         (memberInfo->parameterNames.isValid &&
          memberInfo->parameterNames.length != memberInfo->parameterCount)) {
-        return;
+        return ZR_FALSE;
     }
 
     typeId = ZrParser_CanonicalType_FromFunctionSignature(
@@ -681,7 +681,7 @@ void type_inference_record_external_callable_member_reference_fact(
             ZR_CANONICAL_RECEIVER_NONE,
             ZR_CANONICAL_CALLABLE_EFFECT_NONE);
     if (typeId == ZR_SEMANTIC_ID_INVALID) {
-        return;
+        return ZR_FALSE;
     }
 
     target = memberNode->data.memberExpression.property;
@@ -711,7 +711,7 @@ void type_inference_record_external_callable_member_reference_fact(
                 &memberInfo->parameterPassingModes,
                 typeId,
                 fact.signatureDisplay)) {
-        return;
+        return ZR_FALSE;
     }
     symbolId = type_inference_member_symbol_id(cs, memberInfo, typeId);
     fact.symbolId = symbolId;
@@ -721,7 +721,7 @@ void type_inference_record_external_callable_member_reference_fact(
                               &fact,
                               memberInfo,
                               ZR_SEMANTIC_EXTERNAL_TARGET_CALLABLE);
-    ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
+    return ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
 }
 
 void type_inference_record_external_member_reference_fact(

@@ -4509,12 +4509,21 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                                  ZR_AST_INTERFACE_METHOD_SIGNATURE)) {
                         type_inference_record_unbound_member_reference_fact(
                                 cs, memberNode, memberInfo);
-                    } else if (hasExternalCallableReturnType) {
-                        type_inference_record_external_callable_member_reference_fact(
-                                cs,
-                                memberNode,
-                                memberInfo,
-                                &externalCallableReturnType);
+                    } else {
+                        TZrBool publishedCallable = hasExternalCallableReturnType &&
+                                type_inference_record_external_callable_member_reference_fact(
+                                        cs,
+                                        memberNode,
+                                        memberInfo,
+                                        &externalCallableReturnType);
+                        if (!publishedCallable && memberInfo->declarationNode == ZR_NULL &&
+                            (memberInfo->memberType == ZR_AST_STRUCT_METHOD ||
+                             memberInfo->memberType == ZR_AST_CLASS_METHOD)) {
+                            /* Partial/optional signatures still have an exact provider identity. */
+                            type_inference_record_external_member_reference_fact(
+                                    cs, memberNode, memberInfo, &nextType,
+                                    ZR_SEMANTIC_EXTERNAL_TARGET_CALLABLE);
+                        }
                     }
                     ZrParser_InferredType_Free(cs->state, &externalCallableReturnType);
                 }
