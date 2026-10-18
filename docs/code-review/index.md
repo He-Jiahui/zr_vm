@@ -297,3 +297,8 @@ doc_type: category-index
 ## Parser ExecIR读写与规范文件适配合同
 
 - [ExecIR读写与规范文件适配：20单元](batches/20261018-parser-exec-ir-writer-adapters-contracts.md)：私有头和两写入适配器，0旧键、20遗漏项已按本批交付登记；有界direct运行与源等价范围见批次记录。
+
+
+## Parser scheduler工件写出合同
+
+- [Scheduler工件写出：11单元](batches/20261018-parser-scheduler-artifact-writer-contracts.md)：0旧键、11个遗漏单元补齐；共享artifact_schema运行结果不重复计数，失败清理与非原子限制保留。文件末尾空行的格式修订及其与原生验证版本的区别见批次记录。
