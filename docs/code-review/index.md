@@ -336,3 +336,5 @@ doc_type: category-index
 - [IO 公共标记与二进制布局契约审查](batches/common-io-header-contracts.md)：80单元、39段Doxygen；当前调用证据及两组已有decoder测试修改前后有限验证。
 
 - [Math 公共数值与 VM 转换契约](batches/20261018-math-common-scalars-contracts.md)：118 既有单元；52 段 Doxygen、107 处注释行校正；构建与 9 个现有选择器修改前后有限验证。
+
+- [会话交接后的首方文件范围补录（13 pending，0 单元信用）](batches/20261018-released-session-scope-supplement.md)
