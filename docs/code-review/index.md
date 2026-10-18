@@ -307,3 +307,8 @@ doc_type: category-index
 ## 首方范围与陈旧状态维护
 
 - [首方范围与陈旧状态维护](batches/20261018-inventory-scope-reconciliation.md)：补录54个pending文件、撤回49个陈旧reviewed标签；仅维护文件清单，不计函数审查或运行信用。
+
+
+## Artifact Schema 基础格式与合同测试
+
+- [Artifact Schema 基础格式与合同测试](batches/20261018-parser-artifact-schema-main-tests-contracts.md)：54 单元，26 旧键原位复核、28 新键补齐；合同、既有问题与验证范围以该批绑定的实际证据为准。
