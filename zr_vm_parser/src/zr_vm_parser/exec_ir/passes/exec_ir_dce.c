@@ -57,6 +57,26 @@ static TZrBool zr_dce_storage_valid(const SZrExecIrFunction *function,
         return ZR_FALSE;
     }
     for (index = 0u; index < function->blockCount; ++index) {
+        const SZrExecIrBlock *block = &function->blocks[index];
+        TZrUInt32 region;
+        if (!zr_dce_range_valid(block->phis, function->phiCount) ||
+            !zr_dce_range_valid(block->effectPhiIncomings, function->phiIncomingCount) ||
+            ((block->effectPhiResult == ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID) !=
+             (block->effectPhiIncomings.count == 0u))) {
+            ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE,
+                                           function, block->id, 0u, 0u, 0u);
+            return ZR_FALSE;
+        }
+        for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region) {
+            if (!zr_dce_range_valid(block->memoryPhiIncomings[region],
+                                     function->phiIncomingCount) ||
+                ((block->memoryPhiResults[region] == ZR_EXEC_IR_MEMORY_TOKEN_ID_INVALID) !=
+                 (block->memoryPhiIncomings[region].count == 0u))) {
+                ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE,
+                                               function, block->id, 0u, 0u, 0u);
+                return ZR_FALSE;
+            }
+        }
         if (function->blocks[index].id != index + 1u) {
             ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_BLOCK,
                                            function, function->blocks[index].id, 0u,
@@ -110,7 +130,30 @@ static TZrBool zr_dce_storage_valid(const SZrExecIrFunction *function,
                 return ZR_FALSE;
             }
         }
-        (void)info;
+        for (TZrUInt32 at = instruction->results.start;
+             at < instruction->results.start + instruction->results.count; ++at) {
+            if (function->results[at] == ZR_EXEC_IR_VALUE_ID_INVALID ||
+                function->results[at] > function->valueCount) {
+                ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                                               function, 0u, index + 1u,
+                                               function->valueCount, function->results[at]);
+                return ZR_FALSE;
+            }
+        }
+        /* Retained legacy opcode PHIs carry ordinary values, even if the
+         * same backing row is also declared by a token consumer. */
+        if (instruction->opcode == ZR_EXEC_IR_OPCODE_PHI) {
+            for (TZrUInt32 at = instruction->phiRange.start;
+                 at < instruction->phiRange.start + instruction->phiRange.count; ++at) {
+                TZrExecIrValueId value = function->phiIncoming[at].value;
+                if (value == ZR_EXEC_IR_VALUE_ID_INVALID || value > function->valueCount) {
+                    ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                                                   function, 0u, index + 1u,
+                                                   function->valueCount, value);
+                    return ZR_FALSE;
+                }
+            }
+        }
     }
     for (index = 0u; index < function->phiCount; ++index) {
         const SZrExecIrPhi *phi = &function->phiPool[index];
@@ -120,12 +163,19 @@ static TZrBool zr_dce_storage_valid(const SZrExecIrFunction *function,
                                            function, 0u, 0u, function->valueCount, phi->result);
             return ZR_FALSE;
         }
+        for (TZrUInt32 at = phi->incomings.start;
+             at < phi->incomings.start + phi->incomings.count; ++at) {
+            TZrExecIrValueId value = function->phiIncoming[at].value;
+            if (value == ZR_EXEC_IR_VALUE_ID_INVALID || value > function->valueCount) {
+                ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                                               function, 0u, 0u, function->valueCount, value);
+                return ZR_FALSE;
+            }
+        }
     }
     for (index = 0u; index < function->phiIncomingCount; ++index) {
         const SZrExecIrPhiIncoming *incoming = &function->phiIncoming[index];
-        if (incoming->value == ZR_EXEC_IR_VALUE_ID_INVALID ||
-            incoming->value > function->valueCount || incoming->predecessor == 0u ||
-            incoming->predecessor > function->blockCount) {
+        if (incoming->predecessor == 0u || incoming->predecessor > function->blockCount) {
             ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
                                            function, incoming->predecessor, 0u,
                                            function->valueCount, incoming->value);
@@ -357,119 +407,235 @@ static void zr_dce_remove_metadata_for_instruction(SZrExecIrFunction *function,
     }
 }
 
+/* All scratch and work reservations precede publication. Token membership is
+ * only a storage-domain classification; it never turns tokens into ValueIds. */
+typedef struct SZrDceScratch {
+    TZrUInt8 *used;
+    TZrUInt8 *activePhis;
+    TZrUInt8 *tokenRows;
+    TZrUInt8 *erase;
+    TZrUInt32 *prefix;
+} SZrDceScratch;
+
+static void zr_dce_scratch_free(SZrDceScratch *scratch) {
+    free(scratch->used);
+    free(scratch->activePhis);
+    free(scratch->tokenRows);
+    free(scratch->erase);
+    free(scratch->prefix);
+}
+
+static TZrBool zr_dce_work_add(TZrUInt64 *work, TZrUInt64 extra) {
+    if (extra > UINT64_MAX - *work) return ZR_FALSE;
+    *work += extra;
+    return ZR_TRUE;
+}
+
+static TZrBool zr_dce_preflight_work(const SZrExecIrFunction *function,
+                                      TZrUInt64 *work) {
+    TZrUInt32 index, region;
+    *work = function->phiIncomingCount;
+    if (!zr_dce_work_add(work, function->phiCount) ||
+        !zr_dce_work_add(work, function->blockCount)) return ZR_FALSE;
+    for (index = 0u; index < function->phiCount; ++index)
+        if (!zr_dce_work_add(work, function->phiPool[index].incomings.count)) return ZR_FALSE;
+    for (index = 0u; index < function->blockCount; ++index) {
+        const SZrExecIrBlock *block = &function->blocks[index];
+        if (!zr_dce_work_add(work, block->phis.count) ||
+            !zr_dce_work_add(work, block->effectPhiIncomings.count) ||
+            !zr_dce_work_add(work, ZR_EXEC_IR_MEMORY_CLASS_COUNT)) return ZR_FALSE;
+        for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region)
+            if (!zr_dce_work_add(work, block->memoryPhiIncomings[region].count)) return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+static void zr_dce_mark_rows(TZrUInt8 *rows, SZrExecIrRange range) {
+    TZrUInt32 at;
+    for (at = range.start; at < range.start + range.count; ++at) rows[at] = 1u;
+}
+
+static TZrBool zr_dce_classify(const SZrExecIrFunction *function,
+                                SZrDceScratch *scratch,
+                                SZrExecIrDiagnostic *diagnostic) {
+    TZrUInt32 index, region;
+    for (index = 0u; index < function->blockCount; ++index) {
+        const SZrExecIrBlock *block = &function->blocks[index];
+        zr_dce_mark_rows(scratch->activePhis, block->phis);
+        zr_dce_mark_rows(scratch->tokenRows, block->effectPhiIncomings);
+        for (region = 0u; region < ZR_EXEC_IR_MEMORY_CLASS_COUNT; ++region)
+            zr_dce_mark_rows(scratch->tokenRows, block->memoryPhiIncomings[region]);
+    }
+    for (index = 0u; index < function->phiIncomingCount; ++index) {
+        TZrExecIrValueId value = function->phiIncoming[index].value;
+        if (scratch->tokenRows[index] == 0u &&
+            (value == ZR_EXEC_IR_VALUE_ID_INVALID || value > function->valueCount)) {
+            ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
+                                           function, function->phiIncoming[index].predecessor,
+                                           0u, function->valueCount, value);
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool zr_dce_result_used(const SZrExecIrFunction *function,
+                                   const SZrExecIrInstruction *instruction,
+                                   const TZrUInt8 *used) {
+    TZrUInt32 at;
+    for (at = instruction->results.start;
+         at < instruction->results.start + instruction->results.count; ++at)
+        if (used[function->results[at]] != 0u) return ZR_TRUE;
+    return ZR_FALSE;
+}
+
+static void zr_dce_mark_incomings(const SZrExecIrFunction *function,
+                                   SZrExecIrRange range, TZrUInt8 *used,
+                                   TZrBool *progress) {
+    TZrUInt32 at;
+    for (at = range.start; at < range.start + range.count; ++at) {
+        TZrExecIrValueId value = function->phiIncoming[at].value;
+        if (used[value] == 0u) *progress = ZR_TRUE;
+        used[value] = 1u;
+    }
+}
+
 TZrBool ZrParser_ExecIr_RunDcePass(SZrExecIrFunction *function,
                                    SZrExecIrPassContext *context,
                                    TZrBool *changed,
                                    SZrExecIrDiagnostic *diagnostic) {
-    TZrUInt8 *used;
-    size_t bytes;
+    SZrDceScratch scratch = {0};
+    TZrUInt64 work;
     TZrUInt32 index;
-    TZrBool progress;
+    TZrBool progress, result = ZR_FALSE;
 
     if (changed != ZR_NULL) *changed = ZR_FALSE;
     if (!zr_dce_storage_valid(function, diagnostic) ||
         function->valueCount == UINT32_MAX ||
         zr_dce_size_mul_overflow((TZrUInt64)function->valueCount + 1u,
-                                  sizeof(*used))) {
+                                  sizeof(*scratch.used)) ||
+        zr_dce_size_mul_overflow((TZrUInt64)function->phiCount + 1u,
+                                  sizeof(*scratch.prefix)) ||
+        zr_dce_size_mul_overflow((TZrUInt64)function->phiIncomingCount + 1u,
+                                  sizeof(*scratch.tokenRows)) ||
+        zr_dce_size_mul_overflow((TZrUInt64)function->instructionCount + 1u,
+                                  sizeof(*scratch.erase))) {
         ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXECUTION_DIAGNOSTIC_INVALID_ARGUMENT,
                                        function, 0u, 0u, 0u, 0u);
         return ZR_FALSE;
     }
-    bytes = (size_t)((TZrUInt64)function->valueCount + 1u) * sizeof(*used);
-    used = (TZrUInt8 *)calloc(1u, bytes);
-    if (used == ZR_NULL) {
+    if (!zr_dce_preflight_work(function, &work)) goto overflow;
+    if (!ZrParser_ExecIr_PassConsumeBudget(function, context, work)) return ZR_TRUE;
+    scratch.used = (TZrUInt8 *)calloc((size_t)function->valueCount + 1u, sizeof(*scratch.used));
+    scratch.activePhis = (TZrUInt8 *)calloc((size_t)function->phiCount + 1u, sizeof(*scratch.activePhis));
+    scratch.tokenRows = (TZrUInt8 *)calloc((size_t)function->phiIncomingCount + 1u, sizeof(*scratch.tokenRows));
+    scratch.erase = (TZrUInt8 *)calloc((size_t)function->instructionCount + 1u, sizeof(*scratch.erase));
+    scratch.prefix = (TZrUInt32 *)calloc((size_t)function->phiCount + 1u, sizeof(*scratch.prefix));
+    if (scratch.used == ZR_NULL || scratch.activePhis == ZR_NULL ||
+        scratch.tokenRows == ZR_NULL || scratch.erase == ZR_NULL || scratch.prefix == ZR_NULL) {
         ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
                                        function, 0u, 0u, function->valueCount, 0u);
-        return ZR_FALSE;
+        goto done;
     }
-    if (!zr_dce_mark_metadata(function, used, diagnostic)) {
-        free(used);
-        return ZR_FALSE;
-    }
+    if (!zr_dce_classify(function, &scratch, diagnostic) ||
+        !zr_dce_mark_metadata(function, scratch.used, diagnostic)) goto done;
     do {
         progress = ZR_FALSE;
-        /* Retained PHIs require defined inputs even when their result is
-         * unused. PHI removal is a separate CFG transformation. */
         for (index = 0u; index < function->phiCount; ++index) {
             const SZrExecIrPhi *phi = &function->phiPool[index];
-            if (!ZrParser_ExecIr_PassConsumeBudget(function, context, 1u)) {
-                free(used);
-                return ZR_TRUE;
-            }
-            for (TZrUInt32 at = phi->incomings.start;
-                 at < phi->incomings.start + phi->incomings.count; ++at) {
-                TZrExecIrValueId value = function->phiIncoming[at].value;
-                if (used[value] == 0u) {
-                    used[value] = 1u;
-                    progress = ZR_TRUE;
-                }
+            if (!ZrParser_ExecIr_PassConsumeBudget(function, context, 1u)) goto budget;
+            if (scratch.activePhis[index] != 0u && scratch.used[phi->result] != 0u) {
+                if (!ZrParser_ExecIr_PassConsumeBudget(function, context, phi->incomings.count))
+                    goto budget;
+                zr_dce_mark_incomings(function, phi->incomings, scratch.used, &progress);
             }
         }
         for (index = function->instructionCount; index != 0u; --index) {
-            SZrExecIrInstruction *instruction = &function->instructions[index - 1u];
-            TZrBool observable;
-            TZrBool resultUsed = ZR_FALSE;
-            TZrUInt32 resultIndex;
-            if (!ZrParser_ExecIr_PassConsumeBudget(function, context, 1u)) {
-                free(used);
-                return ZR_TRUE;
-            }
-            if (!zr_dce_range_valid(instruction->results, function->resultCount) ||
-                (instruction->results.count != 0u && function->results == ZR_NULL)) {
-                ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE,
-                                               function, 0u, index, 0u, 0u);
-                free(used);
-                return ZR_FALSE;
-            }
-            for (resultIndex = instruction->results.start;
-                 resultIndex < instruction->results.start + instruction->results.count;
-                 ++resultIndex) {
-                TZrExecIrValueId value = function->results[resultIndex];
-                if (value == ZR_EXEC_IR_VALUE_ID_INVALID || value > function->valueCount) {
-                    ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
-                                                   function, 0u, index, function->valueCount, value);
-                    free(used);
-                    return ZR_FALSE;
-                }
-                if (used[value] != 0u) resultUsed = ZR_TRUE;
-            }
-            observable = (TZrBool)(!zr_dce_pure((EZrExecIrOpcode)instruction->opcode) ||
-                                   zr_dce_effectful(instruction) ||
-                                   zr_dce_boundary_observable(function, index));
-            if (observable || resultUsed) {
-                if (!zr_dce_mark_instruction_operands(function, instruction, used, &progress)) {
+            const SZrExecIrInstruction *instruction = &function->instructions[index - 1u];
+            TZrBool observable = (TZrBool)(!zr_dce_pure((EZrExecIrOpcode)instruction->opcode) ||
+                                           zr_dce_effectful(instruction) ||
+                                           zr_dce_boundary_observable(function, index));
+            if (!ZrParser_ExecIr_PassConsumeBudget(function, context, 1u)) goto budget;
+            if (observable || zr_dce_result_used(function, instruction, scratch.used)) {
+                if (!ZrParser_ExecIr_PassConsumeBudget(function, context, instruction->operands.count))
+                    goto budget;
+                if (!zr_dce_mark_instruction_operands(function, instruction, scratch.used, &progress)) {
                     ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_INVALID_VALUE,
                                                    function, 0u, index, function->valueCount, 0u);
-                    free(used);
-                    return ZR_FALSE;
+                    goto done;
                 }
+            }
+            if (instruction->opcode == ZR_EXEC_IR_OPCODE_PHI) {
+                /* Legacy PHI opcodes stay conservative: retain their ordinary
+                 * side definition as well as operand/phiRange dependencies. */
+                work = (TZrUInt64)instruction->results.count + instruction->phiRange.count;
+                if (!ZrParser_ExecIr_PassConsumeBudget(function, context, work)) goto budget;
+                for (TZrUInt32 at = instruction->results.start;
+                     at < instruction->results.start + instruction->results.count; ++at) {
+                    TZrExecIrValueId value = function->results[at];
+                    if (scratch.used[value] == 0u) progress = ZR_TRUE;
+                    scratch.used[value] = 1u;
+                }
+                zr_dce_mark_incomings(function, instruction->phiRange, scratch.used, &progress);
             }
         }
     } while (progress != ZR_FALSE);
-    /* Reserve the full deletion sweep before publishing any tombstones so
-     * a direct caller also receives unchanged IR on budget cancellation. */
-    if (!ZrParser_ExecIr_PassConsumeBudget(function, context, function->instructionCount)) {
-        free(used);
-        return ZR_TRUE;
+
+    /* Compute every decision and reserve prefix/remap/deletion work before
+     * the first write. The fixed point only grows ValueId bits (<= V+1 rounds). */
+    work = (TZrUInt64)function->phiCount + function->blockCount + function->instructionCount;
+    for (index = 0u; index < function->phiCount; ++index) {
+        TZrBool keep = (TZrBool)(scratch.activePhis[index] != 0u &&
+                                 scratch.used[function->phiPool[index].result] != 0u);
+        scratch.prefix[index + 1u] = scratch.prefix[index] + (keep ? 1u : 0u);
     }
     for (index = 0u; index < function->instructionCount; ++index) {
-        SZrExecIrInstruction *instruction = &function->instructions[index];
-        TZrBool resultUsed = ZR_FALSE;
+        const SZrExecIrInstruction *instruction = &function->instructions[index];
         TZrBool observable = (TZrBool)(!zr_dce_pure((EZrExecIrOpcode)instruction->opcode) ||
-                                      zr_dce_effectful(instruction) ||
-                                      zr_dce_boundary_observable(function, index + 1u));
-        for (TZrUInt32 at = instruction->results.start;
-             at < instruction->results.start + instruction->results.count; ++at)
-            if (used[function->results[at]] != 0u) resultUsed = ZR_TRUE;
-        if (!observable && !resultUsed) {
-            TZrExecIrSourceId sourceId = instruction->sourceId;
-            zr_dce_nop(instruction);
+                                       zr_dce_effectful(instruction) ||
+                                       zr_dce_boundary_observable(function, index + 1u));
+        if (!zr_dce_work_add(&work, instruction->results.count)) goto overflow;
+        if (!observable && !zr_dce_result_used(function, instruction, scratch.used)) {
+            scratch.erase[index] = 1u;
+            if (!zr_dce_work_add(&work, function->sourceMapCount) ||
+                !zr_dce_work_add(&work, function->gcMap == ZR_NULL ? 0u : function->gcMap->entryCount) ||
+                !zr_dce_work_add(&work, function->stateMap == ZR_NULL ? 0u : function->stateMap->entryCount))
+                goto overflow;
+        }
+    }
+    if (!ZrParser_ExecIr_PassConsumeBudget(function, context, work)) goto budget;
+
+    for (index = 0u; index < function->blockCount; ++index) {
+        SZrExecIrRange old = function->blocks[index].phis;
+        function->blocks[index].phis.start = scratch.prefix[old.start];
+        function->blocks[index].phis.count = scratch.prefix[old.start + old.count] - scratch.prefix[old.start];
+    }
+    for (index = 0u; index < function->phiCount; ++index) {
+        if (scratch.prefix[index + 1u] != scratch.prefix[index])
+            function->phiPool[scratch.prefix[index]] = function->phiPool[index];
+    }
+    if (function->phiCount != scratch.prefix[function->phiCount] && changed != ZR_NULL)
+        *changed = ZR_TRUE;
+    function->phiCount = scratch.prefix[function->phiCount];
+    for (index = 0u; index < function->instructionCount; ++index) {
+        if (scratch.erase[index] != 0u) {
+            TZrExecIrSourceId sourceId = function->instructions[index].sourceId;
+            zr_dce_nop(&function->instructions[index]);
             zr_dce_remove_metadata_for_instruction(function, index + 1u);
             if (changed != ZR_NULL) *changed = ZR_TRUE;
             if (context != ZR_NULL && context->lastSourceId == 0u)
                 context->lastSourceId = sourceId;
         }
     }
-    free(used);
-    return ZR_TRUE;
+    result = ZR_TRUE;
+    goto done;
+ overflow:
+    ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_CAPACITY_OVERFLOW,
+                                   function, 0u, 0u, 0u, 0u);
+    goto done;
+ budget:
+    result = ZR_TRUE;
+ done:
+    zr_dce_scratch_free(&scratch);
+    return result;
 }

@@ -336,6 +336,8 @@ if (NOT TARGET zr_vm_ssa_deopt_aggregates_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effect_loops.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_cfg.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_constant_materialize.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_copy_aliases.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_manager.c
@@ -594,6 +596,8 @@ if (NOT TARGET zr_vm_ssa_pass_manager_scalar_test)
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effect_loops.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_cfg.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_constant_materialize.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_copy_aliases.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c
@@ -601,6 +605,7 @@ if (NOT TARGET zr_vm_ssa_pass_manager_scalar_test)
     target_include_directories(zr_vm_ssa_pass_manager_scalar_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
     target_compile_definitions(zr_vm_ssa_pass_manager_scalar_test PRIVATE _CRT_SECURE_NO_WARNINGS)
     add_test(NAME ssa_pass_manager_scalar COMMAND zr_vm_ssa_pass_manager_scalar_test)
@@ -978,18 +983,9 @@ if (NOT TARGET zr_vm_ssa_platform_matrix_test)
     set_tests_properties(ssa_platform_matrix PROPERTIES LABELS "ssa")
 endif ()
 
-if (NOT TARGET zr_vm_ssa_backend_service_test)
-    add_executable(zr_vm_ssa_backend_service_test
-            ${CMAKE_SOURCE_DIR}/tests/core/test_ssa_backend_service.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution/execution_backend.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c)
-    target_include_directories(zr_vm_ssa_backend_service_test PRIVATE
-            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
-            ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
-    target_compile_definitions(zr_vm_ssa_backend_service_test PRIVATE _CRT_SECURE_NO_WARNINGS)
-    add_test(NAME ssa_backend_service COMMAND zr_vm_ssa_backend_service_test)
-    set_tests_properties(ssa_backend_service PROPERTIES LABELS "ssa")
-endif ()
+include("${CMAKE_CURRENT_LIST_DIR}/ssa-backend-tests.cmake")
+zr_vm_add_ssa_backend_test(service)
+zr_vm_add_ssa_backend_test(admission)
 
 if (NOT TARGET zr_vm_ssa_schema_relocation_test)
     add_executable(zr_vm_ssa_schema_relocation_test

@@ -1,5 +1,8 @@
 ---
 related_code:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_frame_validation.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_finalized_module_validation.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_gc_map_internal.h
   - zr_vm_parser/include/zr_vm_parser/exec_ir_source_frame.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame_validation.c
@@ -10,15 +13,23 @@ related_code:
   - tests/parser/support/ssa_primitive_frame_validation_fixture.h
   - tests/parser/support/ssa_primitive_frame_validation_fixture.c
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_frame_validation.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_finalized_module_validation.c
   - zr_vm_parser/include/zr_vm_parser/exec_ir_source_frame.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame_internal.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_frame_validation.c
 plan_sources:
+  - .codex/plans/20261017-ssa-gc-map-source-preflight.md
   - .codex/plans/20261009-ssa-primitive-frame-validation-design-v1.md
   - .codex/plans/20261009-ssa-primitive-frame-validation-tests-v1.md
   - .codex/plans/20261009-ssa-primitive-frame-validation-extraction-addendum.md
 tests:
+  - tests/parser/test_ssa_gc_map_source_preflight.c
+  - tests/parser/support/ssa_gc_map_source_preflight_fixture.h
+  - tests/parser/support/ssa_gc_map_source_preflight_fixture.c
+  - tests/cmake/ssa-gc-map-source-preflight.cmake
+  - tests/cmake/ssa-execir-owned-direct-validation/CMakeLists.txt
   - tests/parser/test_ssa_primitive_frame_validation.c
   - docs/acceptance/primitive-frame-validation.md
 doc_type: module-detail
@@ -152,3 +163,24 @@ is credited. Normal/Linux/full MSVC and backend runtime parity remain OPEN.
 
 - [Eighteen-case finite validation](../testing-and-validation/primitive-frame-validation.md)
 - [Actual finite evidence](../acceptance/primitive-frame-validation.md)
+
+## GC-map outer-header preflight
+
+The private storage preflight now applies the canonical Core outer-header
+predicate after existing owner/header prerequisites and before reading any
+GC-map inner pools. An absent map requires NULL/0/0; a present readable header
+requires count=capacity=1. Empty or multiple inner entries remain valid under
+their existing checks. After owner/header prerequisites succeed, a malformed
+outer shape returns INVALID_RANGE before inner-header access. The guard itself
+allocates nothing; earlier witness growth, OOM priority and the established
+diagnostic channel retain their existing behavior.
+
+The focused fixture covers actual primitive, selected-function, finalized and
+candidate storage paths with readable owned headers and strict owner cleanup.
+The repaired focused run passes all 110 lifecycles with a balanced allocation
+ledger. The existing 18-case primitive-frame and 24-case finalized-module
+regressions also pass. Four MSVC syntax checks cover the changed production files
+and new fixture; they provide no full-build or Linux acceptance.
+See [the shared contract and finite validation](../testing-and-validation/ssa-gc-map-source-preflight.md)
+for reproduction and remaining scope. Historical acceptance above retains its
+original validation scope.

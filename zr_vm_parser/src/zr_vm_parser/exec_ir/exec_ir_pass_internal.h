@@ -28,4 +28,28 @@ TZrBool ZrParser_ExecIr_RunDcePass(
         SZrExecIrFunction *function, SZrExecIrPassContext *context,
         TZrBool *changed, SZrExecIrDiagnostic *diagnostic);
 
+/* The owner is an independently cloned, verified candidate.  A FALSE result
+ * discards that entire candidate; these helpers do not roll back its pool.
+ * Function membership is checked and context's constant view is refreshed. */
+TZrBool ZrParser_ExecIr_RunModulePassPipeline(
+        SZrExecIrModule *owner, SZrExecIrFunction *function,
+        const SZrExecIrPassInfo *passes, TZrUInt32 passCount,
+        SZrExecIrPassContext *context, SZrExecIrDiagnostic *diagnostic);
+TZrBool ZrParser_ExecIr_RunModuleSccpPass(
+        SZrExecIrModule *owner, SZrExecIrFunction *function,
+        SZrExecIrPassContext *context, TZrBool *changed,
+        SZrExecIrDiagnostic *diagnostic);
+
+/* Only canonical INT64 or BOOL (bits 0 or 1) tuples are materialized.
+ * instructionId is one based; outIndex is a zero based constant pool index.
+ * On TRUE, outReady==FALSE means budget exhaustion without an append.  When
+ * ready, the caller must perform its non-failing rewrite immediately: pool
+ * search and the reuse/append plus rewrite cost have already been charged. */
+TZrBool ZrParser_ExecIr_MaterializeScalarConstant(
+        SZrExecIrModule *owner, SZrExecIrFunction *function,
+        SZrExecIrPassContext *context, TZrExecIrInstructionId instructionId,
+        TZrExecIrTypeToken typeToken, TZrUInt64 bits,
+        TZrUInt32 *outIndex, TZrBool *outReady,
+        SZrExecIrDiagnostic *diagnostic);
+
 #endif

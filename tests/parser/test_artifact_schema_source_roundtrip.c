@@ -501,3 +501,396 @@ void test_scheduler_artifact_writer_rejects_unavailable_provider(void) {
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
 }
+
+/**
+ * @fn void test_real_source_compile_and_binary_signature_import_are_identical(void)
+ * ## Summary
+ * 解析并编译单int参数/int返回的identity函数，从AST声明构造canonical函数签名，再导入同一context比较类型ID、签名字节和公开身份。
+ *
+ * ## Unit
+ * test_artifact_schema_source_roundtrip.c::test_real_source_compile_and_binary_signature_import_are_identical
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * 不执行编译得到的identity函数；AST/推断类型/数组/projectionCompiler均只由当前测试管理，正常路径按尾部顺序释放。BUG: 建立资源后的Unity断言失败可跳过这些释放与state销毁。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1251 — Unity callback registration; not direct C call (test_real_source_compile_and_binary_signature_import_are_identical)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:36 — physical definition or protocol span (test_real_source_compile_and_binary_signature_import_are_identical)
+ */
+
+/**
+ * ## Summary
+ * 给test_real_source_compile_and_binary_signature_import_are_identical提供固定内存源码，限定编译器应发布或不应发布的canonical身份/调用事实。
+ *
+ * ## Unit
+ * test_artifact_schema_source_roundtrip.c::test_real_source_compile_and_binary_signature_import_are_identical::source
+ *
+ * ## Value model
+ * static const字符数组，含尾NUL；Parse长度按sizeof(source)-1。包含1段函数或lambda文本，仅解析/编译，当前C用例没有执行该源码函数、schedule或result。
+ *
+ * ## Parameters
+ * 内嵌identity的输入形参value为int。
+ *
+ * ## Returns
+ * 内嵌identity的函数体return value交回同一int值；本C路径只编译其声明/签名。
+ *
+ * ## Constraints and lifecycle
+ * 数组为进程期只读存储，调用中借用给Parse；诊断sourceName不代表磁盘输入。VM、AST及compiled function各有独立生命期，字符串常量不负责其清理。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:36 — enclosing scene/helper (test_real_source_compile_and_binary_signature_import_are_identical)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:60 — scoped initializer consumer (source)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:37 — physical definition or protocol span (test_real_source_compile_and_binary_signature_import_are_identical::source)
+ */
+
+/**
+ * @fn static SZrState *create_scheduler_artifact_test_state(void)
+ * ## Summary
+ * 为源码scheduler场景创建独立测试VM，登记Parser与task/thread provider以便编译器解析真实调用合同。
+ *
+ * ## Unit
+ * test_artifact_schema_source_roundtrip.c::create_scheduler_artifact_test_state
+ *
+ * ## Returns
+ * @return 正常成功返回调用者持有的state，须用ZrTests_Runtime_State_Destroy回收；state/global缺失或注册失败分支按上述规则返回NULL或原state。
+ *
+ * ## Constraints and lifecycle
+ * state或global缺失时按当前代码直接返回state；只有具global的普通路径才继续注册。task或thread注册返回FALSE时销毁state并返回NULL；不承诺非局部异常路径自动清理，不创建工作线程来运行源码。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:203 — direct call expression (create_scheduler_artifact_test_state)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:243 — direct call expression (create_scheduler_artifact_test_state)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:267 — direct call expression (create_scheduler_artifact_test_state)
+ * - zr_vm_parser/src/zr_vm_parser/writer/writer_scheduler_artifact.c:108 — writer fact rejection precedes file I/O (ZrParser_Writer_WriteSchedulerArtifactFile)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:150 — physical definition or protocol span (create_scheduler_artifact_test_state)
+ */
+
+/**
+ * @fn static SZrFunction *compile_scheduler_artifact_source(SZrState *state, const TZrChar *source, TZrSize sourceLength, const TZrChar *sourceNameText)
+ * ## Summary
+ * 为当前内存源码建立诊断sourceName，Parse后Compile，并在编译普通返回后先释放AST，再把function交回测试调用者。
+ *
+ * ## Unit
+ * test_artifact_schema_source_roundtrip.c::compile_scheduler_artifact_source
+ *
+ * ## Parameters
+ * @param[in,out] state 供字符串、AST及编译结果所属的当前VM；不得在调用中销毁。
+ * @param[in] source 借用的内存源码。
+ * @param[in] sourceLength source中送入Parse的字节数，不含调用者尾NUL。
+ * @param[in] sourceNameText 诊断源名NUL字符串，调用期借用。
+ *
+ * ## Returns
+ * @return NULL表示当前显式参数/字符串/Parse拒绝或Compiler返回NULL；成功function归当前VM，调用者在使用fact等借用后按现有Free/State_Destroy顺序回收。
+ *
+ * ## Constraints and lifecycle
+ * sourceNameText必须NUL结尾，source至少sourceLength可读字节，state须为已初始化VM。sourceName只是诊断身份，不按该名称打开源文件；编译可能改变VM元数据，AST释放只描述普通返回，不保证Throw/fatal/Unity跳转自动清理。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:208 — direct call expression (compile_scheduler_artifact_source)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:247 — direct call expression (compile_scheduler_artifact_source)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:271 — direct call expression (compile_scheduler_artifact_source)
+ * - zr_vm_parser/src/zr_vm_parser/writer/writer_scheduler_artifact.c:108 — writer fact rejection precedes file I/O (ZrParser_Writer_WriteSchedulerArtifactFile)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:166 — physical definition or protocol span (compile_scheduler_artifact_source)
+ */
+
+/**
+ * @fn void test_real_source_scheduler_call_publishes_canonical_source_fact(void)
+ * ## Summary
+ * 编译含一次ThreadScheduler.schedule<int>的固定源字符串，检查唯一canonical source fact的类型、token、签名、role和protocol位。
+ *
+ * ## Unit
+ * test_artifact_schema_source_roundtrip.c::test_real_source_scheduler_call_publishes_canonical_source_fact
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * 只编译并读取fact，不执行Job lambda、schedule或result；fact借用function，所有检查均在Function_Free之前。BUG: 断言失败可跳过function/state清理。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1252 — Unity callback registration; not direct C call (test_real_source_scheduler_call_publishes_canonical_source_fact)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:150 — paired helper definition (create_scheduler_artifact_test_state)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:166 — paired helper definition (compile_scheduler_artifact_source)
+ * - zr_vm_parser/src/zr_vm_parser/writer/writer_scheduler_artifact.c:108 — writer fact rejection precedes file I/O (ZrParser_Writer_WriteSchedulerArtifactFile)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:195 — physical definition or protocol span (test_real_source_scheduler_call_publishes_canonical_source_fact)
+ */
+
+/**
+ * ## Summary
+ * 给test_real_source_scheduler_call_publishes_canonical_source_fact提供固定内存源码，限定编译器应发布或不应发布的canonical身份/调用事实。
+ *
+ * ## Unit
+ * test_artifact_schema_source_roundtrip.c::test_real_source_scheduler_call_publishes_canonical_source_fact::source
+ *
+ * ## Value model
+ * static const字符数组，含尾NUL；Parse长度按sizeof(source)-1。包含1段函数或lambda文本，仅解析/编译，当前C用例没有执行该源码函数、schedule或result。
+ *
+ * ## Returns
+ * 内嵌Job lambda无显式形参，若执行则只return 7；构造/调用相关语法由编译器读取，当前lambda体本身未运行。
+ *
+ * ## Constraints and lifecycle
+ * 数组为进程期只读存储，调用中借用给Parse；诊断sourceName不代表磁盘输入。VM、AST及compiled function各有独立生命期，字符串常量不负责其清理。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:195 — enclosing scene/helper (test_real_source_scheduler_call_publishes_canonical_source_fact)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:210 — scoped initializer consumer (source)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:211 — scoped initializer consumer (source)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:196 — physical definition or protocol span (test_real_source_scheduler_call_publishes_canonical_source_fact::source)
+ */
+
+/**
+ * @fn void test_repeated_scheduler_calls_coalesce_canonical_source_fact(void)
+ * ## Summary
+ * 编译同一scheduler上的两个int Job调用，要求共享一个canonical source fact。
+ *
+ * ## Unit
+ * test_artifact_schema_source_roundtrip.c::test_repeated_scheduler_calls_coalesce_canonical_source_fact
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * 只约束该固定源与相同scheduler合同的去重，不代表任意provider/泛型实例均应合并。BUG: 编译后断言失败越过局部function/state释放。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1253 — Unity callback registration; not direct C call (test_repeated_scheduler_calls_coalesce_canonical_source_fact)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:150 — paired helper definition (create_scheduler_artifact_test_state)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:166 — paired helper definition (compile_scheduler_artifact_source)
+ * - zr_vm_parser/src/zr_vm_parser/writer/writer_scheduler_artifact.c:108 — writer fact rejection precedes file I/O (ZrParser_Writer_WriteSchedulerArtifactFile)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:233 — physical definition or protocol span (test_repeated_scheduler_calls_coalesce_canonical_source_fact)
+ */
+
+/**
+ * ## Summary
+ * 给test_repeated_scheduler_calls_coalesce_canonical_source_fact提供固定内存源码，限定编译器应发布或不应发布的canonical身份/调用事实。
+ *
+ * ## Unit
+ * test_artifact_schema_source_roundtrip.c::test_repeated_scheduler_calls_coalesce_canonical_source_fact::source
+ *
+ * ## Value model
+ * static const字符数组，含尾NUL；Parse长度按sizeof(source)-1。包含2段函数或lambda文本，仅解析/编译，当前C用例没有执行该源码函数、schedule或result。
+ *
+ * ## Returns
+ * 内嵌第一、第二个Job lambda均无显式形参，若执行则分别return 7与return 8；构造/调用相关语法由编译器读取，当前lambda体本身未运行。
+ *
+ * ## Constraints and lifecycle
+ * 数组为进程期只读存储，调用中借用给Parse；诊断sourceName不代表磁盘输入。VM、AST及compiled function各有独立生命期，字符串常量不负责其清理。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:233 — enclosing scene/helper (test_repeated_scheduler_calls_coalesce_canonical_source_fact)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:249 — scoped initializer consumer (source)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:250 — scoped initializer consumer (source)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:234 — physical definition or protocol span (test_repeated_scheduler_calls_coalesce_canonical_source_fact::source)
+ */
+
+/**
+ * @fn void test_source_without_scheduler_call_publishes_no_scheduler_fact(void)
+ * ## Summary
+ * 编译只构造ThreadScheduler而未调用schedule的源字符串，要求fact长度为0且Find返回NULL。
+ *
+ * ## Unit
+ * test_artifact_schema_source_roundtrip.c::test_source_without_scheduler_call_publishes_no_scheduler_fact
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * 源文本的return scheduler未被执行；类型出现不应凭空产生调用事实。BUG: 断言失败可跳过function/state销毁。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1254 — Unity callback registration; not direct C call (test_source_without_scheduler_call_publishes_no_scheduler_fact)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:150 — paired helper definition (create_scheduler_artifact_test_state)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:166 — paired helper definition (compile_scheduler_artifact_source)
+ * - zr_vm_parser/src/zr_vm_parser/writer/writer_scheduler_artifact.c:108 — writer fact rejection precedes file I/O (ZrParser_Writer_WriteSchedulerArtifactFile)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:262 — physical definition or protocol span (test_source_without_scheduler_call_publishes_no_scheduler_fact)
+ */
+
+/**
+ * ## Summary
+ * 给test_source_without_scheduler_call_publishes_no_scheduler_fact提供固定内存源码，限定编译器应发布或不应发布的canonical身份/调用事实。
+ *
+ * ## Unit
+ * test_artifact_schema_source_roundtrip.c::test_source_without_scheduler_call_publishes_no_scheduler_fact::source
+ *
+ * ## Value model
+ * static const字符数组，含尾NUL；Parse长度按sizeof(source)-1。包含0段函数或lambda文本，仅解析/编译，当前C用例没有执行该源码函数、schedule或result。
+ *
+ * ## Constraints and lifecycle
+ * 数组为进程期只读存储，调用中借用给Parse；诊断sourceName不代表磁盘输入。VM、AST及compiled function各有独立生命期，字符串常量不负责其清理。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:262 — enclosing scene/helper (test_source_without_scheduler_call_publishes_no_scheduler_fact)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:273 — scoped initializer consumer (source)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:274 — scoped initializer consumer (source)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:263 — physical definition or protocol span (test_source_without_scheduler_call_publishes_no_scheduler_fact::source)
+ */
+
+/**
+ * @fn void test_real_source_scheduler_call_writes_and_imports_canonical_artifact(void)
+ * ## Summary
+ * 编译实际scheduler源事实，写固定相对ZRO文件再读取到栈缓冲，以canonical consumer核查scheduler/domain-transfer合同及若干精确失配。
+ *
+ * ## Unit
+ * test_artifact_schema_source_roundtrip.c::test_real_source_scheduler_call_writes_and_imports_canonical_artifact
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * scheduler_source_contract.zro属于进程cwd；调用方须提供独占可写目录，禁止与其他执行并发复用该文件。普通路径读后fclose/remove再读内存；BUG: ferror断言失败可跳过关文件/删除，其他断言失败也可能跳过function/state清理。fact只在Function_Free前借用。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1255 — Unity callback registration; not direct C call (test_real_source_scheduler_call_writes_and_imports_canonical_artifact)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:150 — paired helper definition (create_scheduler_artifact_test_state)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:166 — paired helper definition (compile_scheduler_artifact_source)
+ * - zr_vm_parser/src/zr_vm_parser/writer/writer_scheduler_artifact.c:108 — writer fact rejection precedes file I/O (ZrParser_Writer_WriteSchedulerArtifactFile)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:286 — physical definition or protocol span (test_real_source_scheduler_call_writes_and_imports_canonical_artifact)
+ */
+
+/**
+ * ## Summary
+ * 给test_real_source_scheduler_call_writes_and_imports_canonical_artifact提供固定内存源码，限定编译器应发布或不应发布的canonical身份/调用事实。
+ *
+ * ## Unit
+ * test_artifact_schema_source_roundtrip.c::test_real_source_scheduler_call_writes_and_imports_canonical_artifact::source
+ *
+ * ## Value model
+ * static const字符数组，含尾NUL；Parse长度按sizeof(source)-1。包含1段函数或lambda文本，仅解析/编译，当前C用例没有执行该源码函数、schedule或result。
+ *
+ * ## Returns
+ * 内嵌Job lambda无显式形参，若执行则只return 7；构造/调用相关语法由编译器读取，当前lambda体本身未运行。
+ *
+ * ## Constraints and lifecycle
+ * 数组为进程期只读存储，调用中借用给Parse；诊断sourceName不代表磁盘输入。VM、AST及compiled function各有独立生命期，字符串常量不负责其清理。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:286 — enclosing scene/helper (test_real_source_scheduler_call_writes_and_imports_canonical_artifact)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:312 — scoped initializer consumer (source)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:313 — scoped initializer consumer (source)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:287 — physical definition or protocol span (test_real_source_scheduler_call_writes_and_imports_canonical_artifact::source)
+ */
+
+/**
+ * ## Summary
+ * 为scheduler产物场景固定cwd内的输出文件名，使写入、读取和普通删除访问同一目标。
+ *
+ * ## Unit
+ * test_artifact_schema_source_roundtrip.c::test_real_source_scheduler_call_writes_and_imports_canonical_artifact::artifactPath
+ *
+ * ## Value model
+ * static const NUL字符串 scheduler_source_contract.zro；相对进程cwd，不是全局绝对夹具目录。
+ *
+ * ## Constraints and lifecycle
+ * 运行者须给本进程独占可写cwd；不与其它该测试并发复用文件。普通读取后fclose/remove，Unity跳转可跳过清理；数组不拥有FILE句柄。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:286 — enclosing scene/helper (test_real_source_scheduler_call_writes_and_imports_canonical_artifact)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:340 — scoped initializer consumer (artifactPath)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:344 — scoped initializer consumer (artifactPath)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:294 — physical definition or protocol span (test_real_source_scheduler_call_writes_and_imports_canonical_artifact::artifactPath)
+ */
+
+/**
+ * ## Summary
+ * 把磁盘产物读入栈缓冲后，在普通路径关闭并删除文件，再进行内存合同消费。
+ *
+ * ## Unit
+ * test_artifact_schema_source_roundtrip.c::test_real_source_scheduler_call_writes_and_imports_canonical_artifact::file_read_cleanup
+ *
+ * ## Constraints and lifecycle
+ * BUG: 文件打开成功后ferror断言位于fclose/remove前；非零触发Unity跳转可遗留FILE与产物。fread长度是后续内存读取边界，空tearDown无法回收本地句柄。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:286 — executed within enclosing function (test_real_source_scheduler_call_writes_and_imports_canonical_artifact)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:344 — physical definition or protocol span (test_real_source_scheduler_call_writes_and_imports_canonical_artifact::file_read_cleanup)
+ */
+
+/**
+ * @fn void test_source_without_scheduler_call_rejects_artifact_write(void)
+ * ## Summary
+ * 编译无schedule事实的源字符串，要求writer在缺失事实时返回INVALID_ARGUMENT。
+ *
+ * ## Unit
+ * test_artifact_schema_source_roundtrip.c::test_source_without_scheduler_call_rejects_artifact_write
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * 当前writer在事实检查失败处尚未到fopen；测试只断言状态，没有额外文件不存在断言。BUG: 断言失败可跳过局部function/state释放。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1256 — Unity callback registration; not direct C call (test_source_without_scheduler_call_rejects_artifact_write)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:150 — paired helper definition (create_scheduler_artifact_test_state)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:166 — paired helper definition (compile_scheduler_artifact_source)
+ * - zr_vm_parser/src/zr_vm_parser/writer/writer_scheduler_artifact.c:108 — writer fact rejection precedes file I/O (ZrParser_Writer_WriteSchedulerArtifactFile)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:439 — physical definition or protocol span (test_source_without_scheduler_call_rejects_artifact_write)
+ */
+
+/**
+ * ## Summary
+ * 给test_source_without_scheduler_call_rejects_artifact_write提供固定内存源码，限定编译器应发布或不应发布的canonical身份/调用事实。
+ *
+ * ## Unit
+ * test_artifact_schema_source_roundtrip.c::test_source_without_scheduler_call_rejects_artifact_write::source
+ *
+ * ## Value model
+ * static const字符数组，含尾NUL；Parse长度按sizeof(source)-1。包含0段函数或lambda文本，仅解析/编译，当前C用例没有执行该源码函数、schedule或result。
+ *
+ * ## Constraints and lifecycle
+ * 数组为进程期只读存储，调用中借用给Parse；诊断sourceName不代表磁盘输入。VM、AST及compiled function各有独立生命期，字符串常量不负责其清理。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:439 — enclosing scene/helper (test_source_without_scheduler_call_rejects_artifact_write)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:451 — scoped initializer consumer (source)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:452 — scoped initializer consumer (source)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:440 — physical definition or protocol span (test_source_without_scheduler_call_rejects_artifact_write::source)
+ */
+
+/**
+ * @fn void test_scheduler_artifact_writer_rejects_unavailable_provider(void)
+ * ## Summary
+ * 编译合法scheduler调用后仅将jobProvider.moduleSignatureHash清零，要求writer拒绝不完整provider身份。
+ *
+ * ## Unit
+ * test_artifact_schema_source_roundtrip.c::test_scheduler_artifact_writer_rejects_unavailable_provider
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * 这是修改后的数据夹具，不能推广为任意provider错误或文件失败；当前拒绝先于fopen。BUG: 断言失败可跳过function/state清理。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1257 — Unity callback registration; not direct C call (test_scheduler_artifact_writer_rejects_unavailable_provider)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:150 — paired helper definition (create_scheduler_artifact_test_state)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:166 — paired helper definition (compile_scheduler_artifact_source)
+ * - zr_vm_parser/src/zr_vm_parser/writer/writer_scheduler_artifact.c:108 — writer fact rejection precedes file I/O (ZrParser_Writer_WriteSchedulerArtifactFile)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:471 — physical definition or protocol span (test_scheduler_artifact_writer_rejects_unavailable_provider)
+ */
+
+/**
+ * ## Summary
+ * 给test_scheduler_artifact_writer_rejects_unavailable_provider提供固定内存源码，限定编译器应发布或不应发布的canonical身份/调用事实。
+ *
+ * ## Unit
+ * test_artifact_schema_source_roundtrip.c::test_scheduler_artifact_writer_rejects_unavailable_provider::source
+ *
+ * ## Value model
+ * static const字符数组，含尾NUL；Parse长度按sizeof(source)-1。包含1段函数或lambda文本，仅解析/编译，当前C用例没有执行该源码函数、schedule或result。
+ *
+ * ## Returns
+ * 内嵌Job lambda无显式形参，若执行则只return 7；构造/调用相关语法由编译器读取，当前lambda体本身未运行。
+ *
+ * ## Constraints and lifecycle
+ * 数组为进程期只读存储，调用中借用给Parse；诊断sourceName不代表磁盘输入。VM、AST及compiled function各有独立生命期，字符串常量不负责其清理。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:471 — enclosing scene/helper (test_scheduler_artifact_writer_rejects_unavailable_provider)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:486 — scoped initializer consumer (source)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:487 — scoped initializer consumer (source)
+ * - tests/parser/test_artifact_schema_source_roundtrip.c:472 — physical definition or protocol span (test_scheduler_artifact_writer_rejects_unavailable_provider::source)
+ */

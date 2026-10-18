@@ -1,5 +1,6 @@
 #include "exec_ir/source/exec_ir_source_frame_internal.h"
 #include "exec_ir/source/exec_ir_source_integer_expression_internal.h"
+#include "exec_ir/exec_ir_gc_map_internal.h"
 #include "zr_vm_core/exec_ir_state_map.h"
 #include "zr_vm_parser/canonical_type.h"
 
@@ -123,7 +124,7 @@ TZrBool source_frame_storage(const SZrExecIrFunction *function, const SZrSemanti
     OWNER(gcMap);
     OWNER(stateMap);
 #undef OWNER
-    if (function->gcMapCount > function->gcMapCapacity || (function->gcMapCount != 0u && function->gcMap == ZR_NULL)) {
+    if (!zr_exec_ir_gc_map_outer_shape_is_valid(function)) {
         storage->error = ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE;
         return ZR_FALSE;
     }

@@ -36,9 +36,9 @@ jobs:
       # 保留所有平台结果；一个组合失败时继续收集其余组合的构建和测试证据。
       fail-fast: false
 
-      # Ubuntu validates optimized Release builds with both supported toolchains.
-      # Windows validates the full Debug build and test suite. The current Release
-      # build is blocked by MSVC optimizing execution_dispatch.c for over 40 minutes.
+      # Ubuntu 的两个 Release 组合分别选择 GCC 和 Clang；Windows 组合选择 MSVC Debug。
+      # 当前矩阵没有 Windows Release 条目，不由此推断该配置无法构建或仍有历史阻塞。
+      # 具体 runner 工具与构建、CTest 结果由各组合实际执行记录确定。
       matrix:
         include:
           - os: windows-latest
@@ -117,3 +117,139 @@ jobs:
       working-directory: ${{ steps.strings.outputs.build-output-dir }}
       # CTest 消费当前配置注册的测试；Windows Visual Studio 是多配置生成器，必须传 --build-config。
       run: ctest --build-config ${{ matrix.build_type }} --output-on-failure
+
+# @unit GHWF-002 build matrix
+#
+# ## Summary
+# 建立 Windows MSVC Debug 与 Ubuntu GCC、Clang Release 三个 build 组合，保留各组合结果。
+#
+# ## Configuration inputs
+# matrix.include 的 os、build_type、c_compiler、cpp_compiler；runs-on 消费 matrix.os。
+#
+# ## Outputs
+# 每个组合按同一组步骤配置、构建并调用其当前注册 CTest。
+#
+# ## Constraints and lifecycle
+# strategy.fail-fast=false 只禁止矩阵某组合失败时主动取消其它组合；没有 Windows Release 条目，不推断该配置无法构建或仍存在历史40分钟问题。runner标签与外部action主版本不是工具二进制固定身份。
+# 每个组合仍按本组合步骤失败传播；其它组合继续不表示失败被忽略。
+#
+# ## References
+# - .github/workflows/cmake-multi-platform.yml:37
+# - .github/workflows/cmake-multi-platform.yml:44
+# - .github/workflows/cmake-multi-platform.yml:48
+# - .github/workflows/cmake-multi-platform.yml:52
+# - .github/workflows/cmake-multi-platform.yml:83
+# - .github/workflows/cmake-multi-platform.yml:96
+
+# @unit GHWF-004 build-output-dir
+#
+# ## Summary
+# 由bash步骤向GITHUB_OUTPUT发布同一job后续配置、构建、CTest复用的构建目录。
+#
+# ## Configuration inputs
+# RUNNER_OS、github.workspace，以及Actions提供的GITHUB_OUTPUT文件；只有此步骤显式shell=bash。
+#
+# ## Outputs
+# steps.strings.outputs.build-output-dir 在Windows为D:/b，其他runner为checkout下build。
+#
+# ## Constraints and lifecycle
+# Windows 短路径用于限制 MSVC 对象路径长度，其它 runner 使用 checkout 下 build。GITHUB_OUTPUT 只发布路径、不创建目录；后续 CMake 生成构建树。没有缓存或上传动作。
+# bash或追加GITHUB_OUTPUT失败会阻止依赖此输出的正常流水线；不能把写输出变量当构建产物存在。
+#
+# ## References
+# - .github/workflows/cmake-multi-platform.yml:75
+# - .github/workflows/cmake-multi-platform.yml:77
+# - .github/workflows/cmake-multi-platform.yml:83
+# - .github/workflows/cmake-multi-platform.yml:96
+# - .github/workflows/cmake-multi-platform.yml:105
+# - .github/workflows/cmake-multi-platform.yml:109
+# - .github/workflows/cmake-multi-platform.yml:117
+
+# @unit GHWF-005 configure/build/test
+#
+# ## Summary
+# 按OS选择CMake配置和构建命令，再在所选构建目录执行当前配置的CTest注册集合。
+#
+# ## Configuration inputs
+# 已发布build-output-dir、matrix编译器与构建类型、当前checkout根；Windows另传-A x64和C_FLAGS=/MP。
+#
+# ## Outputs
+# CMake生成及编译输出位于所选build树；CTest用--build-config读取对应配置并保留失败输出。
+#
+# ## Constraints and lifecycle
+# 测试集合取决于当前 CMake 条件和可用工具，不等价全仓所有测试。Windows 构建限并行 2 并传 --config；Unix 也传 --config，但生成器未显式指定。这里不上传二进制。
+# 无continue-on-error；配置、构建、npm前置或CTest失败会使当前组合失败。原命令没有显式--no-tests=error，静态文本不能证明实际选中非零测试。
+#
+# ## References
+# - CMakeLists.txt:50
+# - CMakeLists.txt:52
+# - CMakeLists.txt:185
+# - CMakeLists.txt:187
+# - .github/workflows/cmake-multi-platform.yml:114
+# - .github/workflows/cmake-multi-platform.yml:119
+
+# @unit GHWF-006 thread-sanitizer configure
+#
+# ## Summary
+# 在独立Ubuntu22.04 job建立Debug GCC线程sanitizer静态构建树，关闭不需要的部分产品入口。
+#
+# ## Configuration inputs
+# cmake -S . -B build-tsan；C_FLAGS包含-fsanitize=thread、-fno-omit-frame-pointer和-g；静态ON/sharedOFF，network/debug/Rust/LSP/CLI OFF。
+#
+# ## Outputs
+# 配置build-tsan，后续只请求thread runtime测试target；BUILD_TESTS和线程库保持当前项目默认启用条件。
+#
+# ## Constraints and lifecycle
+# 这些是传给CMake的配置请求，不证明所有第三方或汇编对象受TSAN仪器化。job无matrix，不受build矩阵fail-fast的取消策略影响；无显式job timeout。
+# 配置失败则本 job 后续成功条件步骤不运行。
+#
+# ## References
+# - CMakeLists.txt:56
+# - CMakeLists.txt:185
+# - tests/cmake/container-task-ffi-targets.cmake:205
+# - tests/cmake/container-task-ffi-targets.cmake:207
+# - .github/workflows/cmake-multi-platform.yml:26
+
+# @unit GHWF-008 thread-sanitizer attached CTest
+#
+# ## Summary
+# 用TSAN halt_on_error=1执行唯一名称过滤thread_attached_domain的现有CTest入口。
+#
+# ## Configuration inputs
+# CTest树build-tsan、锚定正则^thread_attached_domain$与步骤级TSAN_OPTIONS；不修改普通矩阵环境。
+#
+# ## Outputs
+# 实际CTest命令映射至zr_vm_thread_runtime_test --attached；该C分支静态注册4个Unity方法并返回UNITY_END。
+#
+# ## Constraints and lifecycle
+# 实际测试注册 TIMEOUT 60；工作流没有新增超时或确认非零匹配的开关。4 个方法是 --attached 分支的静态注册范围；实际通过与竞态结果由执行日志确认。TSAN 检测错误时要求停止，失败日志由 --output-on-failure 交付。
+# CTest失败传播至本job；runtime或sanitizer错误不被fail-fast=false忽略。
+#
+# ## References
+# - tests/cmake/container-task-ffi-targets.cmake:305
+# - tests/cmake/container-task-ffi-targets.cmake:306
+# - tests/thread/test_thread_runtime.c:1080
+# - tests/thread/test_thread_runtime.c:1081
+# - tests/thread/test_thread_runtime.c:1085
+
+# @unit GHWF-009 language-server TypeScript prerequisites
+#
+# ## Summary
+# 在CTest前为extension安装锁定npm依赖，供LSP的源码inventory探针加载TypeScript与browser协议模块。
+#
+# ## Configuration inputs
+# working-directory=zr_vm_language_server_extension 与npm ci；package.json/package-lock.json和runner可用的npm。
+#
+# ## Outputs
+# 由npm建立extension/node_modules，供Node探针解析真实Worker源码；此步骤不等价编译或发布扩展。
+#
+# ## Constraints and lifecycle
+# probeWorker按固定extension/node_modules路径require typescript及vscode-languageserver/browser；不能仅有全局tsc。npm命令本身可能访问依赖源和写缓存；这里没有setup-node或产物清理/上传动作。
+# npm安装失败阻止正常CTest步骤；即使安装成功也没有授予WASM真实资产或浏览器运行证明。
+#
+# ## References
+# - zr_vm_language_server_extension/package.json:425
+# - tests/language_server/wasm_capability_inventory.js:109
+# - tests/language_server/lsp_wasm_worker_probe.js:52
+# - tests/language_server/lsp_wasm_worker_probe.js:53
+# - .github/workflows/cmake-multi-platform.yml:116

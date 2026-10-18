@@ -8,7 +8,7 @@
  * 同步派发。context、参数视图和 result 槽只在这次调用中借用，不能缓存到下一次调用。
  * 应通过模块导出调用这些接口，让 binding 完成参数和返回值的栈、根与异常管理。
  *
- * ## Ownership and constraints
+ * ## Constraints and lifecycle
  * state/global 必须属于已初始化且仍有效的项目 VM。资源 entry 借用 archive；普通返回前
  * 关闭 archive 并释放临时 bytes。交付后的 VM string/array 不借用 ZRM 缓冲区，由 VM
  * 管理；宿主若保存其裸对象指针，仍须遵守调用层的根与生命周期规则。
@@ -48,7 +48,7 @@
  * ## References
  * - `zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly_registry.c:18` 注册函数指针；`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h:277` 实际派发。
  * - `zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c:147` 与 `zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c:148` 将归档/条目不可用解释为正常 false 结果。
- * - `zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1207` 和 `zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1211` 处理缺参与类型错误。
+ * - `zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1215` 和 `zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1219` 处理缺参与类型错误。
  * - `tests/system/test_system_assembly_module.c:237`、`tests/system/test_system_assembly_module.c:247` 是存在与缺失的实际导出调用。
  */
 TZrBool ZrSystem_Assembly_ResourceExists(ZrLibCallContext *context, SZrTypeValue *result);
@@ -74,17 +74,17 @@ TZrBool ZrSystem_Assembly_ResourceExists(ZrLibCallContext *context, SZrTypeValue
  * 资源名只定位当前项目的输出归档，不选择另一磁盘文件。文本 setter 使用 NUL 终止语义。
  * BUG: 合法资源可含 `41 00 42`，但本路径经 C 字符串长度只交付 `A`，丢失 NUL 后内容。
  *      `zr_vm_library/src/zr_vm_library/zrm.c:746` 按原始文件读取资源，`zr_vm_library/src/zr_vm_library/zrm.c:845` 按显式长度入包，
- *      `zr_vm_library/src/zr_vm_library/zrm.c:1328` 返回解压字节数；`zr_vm_core/src/zr_vm_core/string/string.c:973` 按 NUL 文本长度建 VM 字符串。
+ *      `zr_vm_library/src/zr_vm_library/zrm.c:1328` 返回解压字节数；`zr_vm_core/src/zr_vm_core/string/string.c:842` 经 `zr_vm_core/include/zr_vm_core/string.h:131` 按 NUL 文本长度建 VM 字符串。
  * BUG: 已找到条目仍可能读取失败；zr_vm_library/third_party/zr_miniz/miniz/miniz_zip.c:1640 先清输出长度，
  *      zr_vm_library/third_party/zr_miniz/miniz/miniz_zip.c:1655 和 zr_vm_library/third_party/zr_miniz/miniz/miniz_zip.c:1661 在分配或解压失败时返回 NULL。
  *      zr_vm_library/src/zr_vm_library/zrm.c:1322 仅拒绝 NULL 且长度非零，故 NULL/0 被误报成功，
  *      本回调可把失败误交付为空结果；此处是静态失败链证据，未执行故障注入。
- * BUG: 合法资源已读且临时文本 malloc 成功时，若未驻留的短文本发生 API cache miss，
- *      先前 VM 对象创建成功，而驻留表达到扩容阈值后 HASH_BUCKET 申请失败并保留旧桶，
- *      zr_vm_core/src/zr_vm_core/base/hash_set.c:181 与 zr_vm_core/include/zr_vm_core/hash_set.h:537 正常返回失败，
- *      zr_vm_core/src/zr_vm_core/string/string.c:808、zr_vm_core/src/zr_vm_core/string/string.c:974 传递 NULL；
- *      zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1313 不写结果，而 zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c:191 仍报告成功。
- *      短串上限由 zr_vm_common/include/zr_vm_common/zr_string_conf.h:16 定为 127 字节；这是完整静态失败链，未执行故障注入。
+ * VM 字符串创建失败返回 NULL 时，`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1317`
+ * 检查创建结果并在下一行调用 `ZrCore_Exception_Throw(..., MEMORY_ERROR)`；该路径不会普通返回成功。
+ * 文本回调只在 setter 正常完成后，于 `zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c:191`
+ * 将 success 置为 true。VM 内存异常与本函数临时文本 malloc 返回 NULL 的普通失败不同。
+ * 非局部退出不执行本回调下方的常规释放语句；资源清理责任仍须按下一条 TODO 核查外层恢复边界。
+ * `zr_vm_core/src/zr_vm_core/exception/exception.c:99` 是抛出入口，恢复点或最终 panic 决定控制流去向。
  * TODO: 沿 zr_vm_core/src/zr_vm_core/base/memory.c:46 的异常入口与 zr_vm_lib_system/src/zr_vm_lib_system/assembly/assembly.c:195 的普通收尾核查非局部退出时 text/bytes/archive 的清理责任。
  *
  * ## References

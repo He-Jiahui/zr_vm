@@ -1,4 +1,5 @@
 #include "exec_ir/source/exec_ir_source_finalized_module_internal.h"
+#include "exec_ir/exec_ir_gc_map_internal.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -118,6 +119,7 @@ static TZrBool function_storage(SSourceFinalizedModuleWitness *w, const SZrExecI
         HEADER(f->gcMap, SZrExecIrGcMap);
     if (f->stateMap)
         HEADER(f->stateMap, SZrExecIrStateMap);
+    REQUIRE(zr_exec_ir_gc_map_outer_shape_is_valid(f), ZR_EXEC_IR_DIAGNOSTIC_INVALID_RANGE);
     if (f->frameLayout)
         POOL(f->frameLayout, slots, slotCount, slotCapacity, SZrExecIrFrameSlot);
     if (f->gcMap) {

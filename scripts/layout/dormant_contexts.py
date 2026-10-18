@@ -507,8 +507,8 @@ def propagate_dormant_headers(root: Path,
 # - scripts/layout/dormant_contexts.py:290
 # - scripts/layout/dormant_contexts.py:304
 # - scripts/layout/dormant_contexts.py:312
-# - scripts/layout/apply_moves.py:1264
-# - scripts/layout/apply_moves.py:1328
+# - scripts/layout/apply_moves.py:2681
+# - scripts/layout/apply_moves.py:2745
 # - tests/tooling/test_layout_dormant_contexts.py:208
 
 # @unit scripts/layout/dormant_contexts.py::SourceContext [class]
@@ -528,8 +528,8 @@ def propagate_dormant_headers(root: Path,
 # - scripts/layout/dormant_contexts.py:390
 # - scripts/layout/dormant_contexts.py:418
 # - scripts/layout/dormant_contexts.py:420
-# - scripts/layout/apply_moves.py:1266
-# - scripts/layout/apply_moves.py:1272
+# - scripts/layout/apply_moves.py:2683
+# - scripts/layout/apply_moves.py:2689
 # - scripts/layout/dormant_contexts.py:394
 
 # @unit scripts/layout/dormant_contexts.py::_Registration [class]
@@ -888,8 +888,8 @@ def propagate_dormant_headers(root: Path,
 # - scripts/layout/dormant_contexts.py:404
 # - scripts/layout/dormant_contexts.py:409
 # - scripts/layout/dormant_contexts.py:417
-# - scripts/layout/apply_moves.py:1260
-# - scripts/layout/apply_moves.py:1266
+# - scripts/layout/apply_moves.py:2677
+# - scripts/layout/apply_moves.py:2683
 # - tests/tooling/test_layout_dormant_contexts.py:101
 # - tests/tooling/test_layout_dormant_contexts.py:136
 # - tests/tooling/test_layout_dormant_contexts.py:197
@@ -963,7 +963,7 @@ def propagate_dormant_headers(root: Path,
 # - scripts/layout/dormant_contexts.py:487
 # - scripts/layout/dormant_contexts.py:490
 # - scripts/layout/dormant_contexts.py:494
-# - scripts/layout/apply_moves.py:1269
-# - scripts/layout/apply_moves.py:1270
+# - scripts/layout/apply_moves.py:2686
+# - scripts/layout/apply_moves.py:2687
 # - tests/tooling/test_layout_dormant_contexts.py:238
 # - tests/tooling/test_layout_dormant_contexts.py:241

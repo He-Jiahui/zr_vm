@@ -522,3 +522,206 @@ void test_artifact_metadata_projection_matches_source_native_and_binary(void) {
                     &nativeState,
                     &diagnostic));
 }
+
+/**
+ * @struct SZrArtifactMetadataGraphFixture
+ * ## Summary
+ * 为metadata graph场景把行、载荷和section视图放在同一栈对象内，维持编解码期间可追踪的借用关系。
+ *
+ * ## Unit
+ * test_artifact_schema_metadata_graph.c::SZrArtifactMetadataGraphFixture
+ *
+ * ## Fields
+ * - TZrByte signature[5]; — 手写签名缓冲；基础夹具只使用signatureLength前缀，graph夹具使用固定5字节。
+ * - TZrByte metadataBlob[4]; — metadata记录所借用的4字节载荷。
+ * - TZrByte layoutMap[20]; — 20字节布局映射载荷；由layout的ownershipMapOffset/ownershipMapLength引用，校验版本、分段计数和槽偏移边界。
+ * - TZrByte executablePayload[1]; — ZRI/ZRO载荷的1字节夹具，不执行。
+ * - SZrArtifactTypeDefRow typeDef; — 类型定义token及canonical ID基线。
+ * - SZrArtifactTypeIdentityRow typeRef; — type-ref身份行，与公开identity哈希配对。
+ * - SZrArtifactTypeIdentityRow typeSpec; — type-spec身份行，与公开identity哈希配对。
+ * - SZrArtifactMemberDefRow member; — metadata owner/member token关联。
+ * - SZrArtifactContractRow contract; — 公开contract身份及版本基线。
+ * - SZrArtifactLayoutRow layout; — 布局身份、版本与大小关系。
+ * - SZrArtifactMetadataStateRow metadataState; — generation、preservation及聚合hash状态行。
+ * - SZrArtifactMetadataRecordRow metadataRecord; — 记录owner、kind、retention、generation及metadataBlob内payload范围；recordHash绑定记录字段和有效载荷。
+ * - SZrArtifactSectionInput sections[12]; — 节输入视图数组；实际count由document记录，data借用本对象字段或静态载荷。
+ * - SZrArtifactDocument document; — 编码器入口文档，sections指针及公开identity须与各行一致。
+ *
+ * ## Value model
+ * 调用者持有完整值；初始化辅助器把document.sections和section.data指向本对象或只读静态载荷，不转移任何指针所有权。
+ *
+ * ## Invariants and lifecycle
+ * 初始化后对象地址与被借用字段须保持有效直至编码完成；普通按值复制不会重定位内部指针。未建立跨线程共享或ABI持久化约定，写磁盘的是schema编码而非此C内存布局。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema_metadata_graph.c:53 — type use (SZrArtifactMetadataGraphFixture)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:186 — type use (SZrArtifactMetadataGraphFixture)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:211 — type use (SZrArtifactMetadataGraphFixture)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:27 — physical definition or protocol span (SZrArtifactMetadataGraphFixture)
+ */
+
+/**
+ * @fn static void graph_init_fixture( SZrArtifactMetadataGraphFixture *fixture, EZrArtifactKind kind)
+ * ## Summary
+ * 把metadata state、record、blob和layout-map组合成同一类型身份下的完整ZRI/ZRO栈夹具，供正常往返及单点篡改使用。
+ *
+ * ## Unit
+ * test_artifact_schema_metadata_graph.c::graph_init_fixture
+ *
+ * ## Parameters
+ * @param[out] fixture 非NULL可写完整图夹具，清零后建立行、blob和document自借用。
+ * @param[in] kind 当前选择ZRI语义载荷或ZRO代码载荷。
+ *
+ * ## Returns
+ * 无返回值；将document.sections指向fixture.sections，借用有效到编码结束。
+ *
+ * ## Constraints and lifecycle
+ * 所有12个节均借用fixture内部字段且带mandatory标志；先构造依赖字段再计算状态/记录哈希。kind由当前调用限ZRI/ZRO；不提供NULL/容量防护，浅拷贝不重定位指针。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema_metadata_graph.c:220 — direct call expression (graph_init_fixture)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:272 — direct call expression (graph_init_fixture)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:438 — direct call expression (graph_init_fixture)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:44 — paired helper definition (graph_write_u32)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:52 — physical definition or protocol span (graph_init_fixture)
+ */
+
+/**
+ * @def GRAPH_ADD_SECTION(KIND, COUNT, DATA)
+ * ## Summary
+ * 在graph_init_fixture内追加一个mandatory节视图，集中保持12节的写入次序和sectionCount递增。
+ *
+ * ## Unit
+ * test_artifact_schema_metadata_graph.c::GRAPH_ADD_SECTION(KIND, COUNT, DATA)
+ *
+ * ## Parameters
+ * @param[in] KIND 写入当前节的schema种类常量。
+ * @param[in] COUNT 当前节行数；只写入目录元数据，不核验DATA容量。
+ * @param[in] DATA 借用fixture内行/载荷的指针，不转移所有权。
+ *
+ * ## Returns
+ * 无返回值；写fixture->sections[sectionCount]并推进sectionCount。
+ *
+ * ## Constraints and lifecycle
+ * 宏捕获当前函数的fixture与sectionCount，调用者维持sections[12]边界与行大小关系；当前12次调用为固定输入。宏不提供普通错误返回，末尾#undef限制后续预处理作用域。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema_metadata_graph.c:147 — macro expansion (GRAPH_ADD_SECTION)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:148 — macro expansion (GRAPH_ADD_SECTION)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:149 — macro expansion (GRAPH_ADD_SECTION)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:144 — physical definition or protocol span (GRAPH_ADD_SECTION(KIND, COUNT, DATA))
+ */
+
+/**
+ * @fn static TZrSize graph_write_fixture( SZrArtifactMetadataGraphFixture *fixture, TZrByte *buffer, TZrSize capacity)
+ * ## Summary
+ * 在metadata graph测试中先核所需容量再调用编码器，把合法图写入调用者缓冲。
+ *
+ * ## Unit
+ * test_artifact_schema_metadata_graph.c::graph_write_fixture
+ *
+ * ## Parameters
+ * @param[in] fixture 已建立的图文档；本辅助器不修改其行。
+ * @param[out] buffer 至少capacity字节的编码输出。
+ * @param[in] capacity buffer可写字节范围。
+ *
+ * ## Returns
+ * @return 编码断言通过后返回实际written字节数；缓冲所有权不转移。
+ *
+ * ## Constraints and lifecycle
+ * required<=capacity由Unity断言检查；编码后只断言status==OK并返回written，没有另行断言written==required。所有输入行/输出缓冲在调用期有效，断言失败不作为普通错误返回。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema_metadata_graph.c:221 — direct call expression (graph_write_fixture)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:330 — direct call expression (graph_write_fixture)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:440 — direct call expression (graph_write_fixture)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:185 — physical definition or protocol span (graph_write_fixture)
+ */
+
+/**
+ * @fn static void graph_assert_roundtrip(EZrArtifactKind kind)
+ * ## Summary
+ * 对一种ZRI/ZRO图夹具编码并读取状态、记录节，核对metadataGeneration及两个选定哈希。
+ *
+ * ## Unit
+ * test_artifact_schema_metadata_graph.c::graph_assert_roundtrip
+ *
+ * ## Parameters
+ * @param[in] kind 由调用者选定的ZRI或ZRO格式。
+ *
+ * ## Returns
+ * 无返回值；失败经Unity结束当前用例。
+ *
+ * ## Constraints and lifecycle
+ * 所有fixture、buffer、section和行都是栈上值或借用；只对当前3个字段进行读回断言，不代表全图每字段逐一相等。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema_metadata_graph.c:257 — direct call expression (graph_assert_roundtrip)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:258 — direct call expression (graph_assert_roundtrip)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:52 — paired helper definition (graph_init_fixture)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:185 — paired helper definition (graph_write_fixture)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:210 — physical definition or protocol span (graph_assert_roundtrip)
+ */
+
+/**
+ * @fn void test_artifact_metadata_graph_roundtrips_zri_and_zro(void)
+ * ## Summary
+ * 分别以ZRI和ZRO调用同一完整metadata graph夹具的往返核查器，要求generation和metadata/record哈希被保留。
+ *
+ * ## Unit
+ * test_artifact_schema_metadata_graph.c::test_artifact_metadata_graph_roundtrips_zri_and_zro
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * 两个kind共用一个Unity注册；首个场景失败会跳过第二个，不是完整reflection API验证。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1241 — Unity callback registration; not direct C call (test_artifact_metadata_graph_roundtrips_zri_and_zro)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:210 — paired helper definition (graph_assert_roundtrip)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:256 — physical definition or protocol span (test_artifact_metadata_graph_roundtrips_zri_and_zro)
+ */
+
+/**
+ * @fn void test_artifact_metadata_graph_rejects_stripped_forged_and_corrupt_inputs(void)
+ * ## Summary
+ * 依次破坏preservation/category/owner/state hash/blob/layout-map，再对合法编码的category/blob/map字节做篡改，核验写前和读取拒绝。
+ *
+ * ## Unit
+ * test_artifact_schema_metadata_graph.c::test_artifact_metadata_graph_rejects_stripped_forged_and_corrupt_inputs
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * 夹具修复只针对下一段所需字段；只断言这些具体篡改对应ILLEGAL_TOKEN，不把顺序测试解读为独立故障隔离运行。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1242 — Unity callback registration; not direct C call (test_artifact_metadata_graph_rejects_stripped_forged_and_corrupt_inputs)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:52 — paired helper definition (graph_init_fixture)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:44 — paired helper definition (graph_write_u32)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:185 — paired helper definition (graph_write_fixture)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:262 — physical definition or protocol span (test_artifact_metadata_graph_rejects_stripped_forged_and_corrupt_inputs)
+ */
+
+/**
+ * @fn void test_artifact_metadata_projection_matches_source_native_and_binary(void)
+ * ## Summary
+ * 对同一reflection identity分别以无native descriptor和栈上native struct descriptor构建状态行，要求与二进制读回一致，并覆盖类别/空methods/propertyName拒绝及enum接受。
+ *
+ * ## Unit
+ * test_artifact_schema_metadata_graph.c::test_artifact_metadata_projection_matches_source_native_and_binary
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * nativeMethod等descriptor仅为数据夹具，未派发native函数；方法名、全部反射字段或所有类别组合不在此测试保证内。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1243 — Unity callback registration; not direct C call (test_artifact_metadata_projection_matches_source_native_and_binary)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:52 — paired helper definition (graph_init_fixture)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:185 — paired helper definition (graph_write_fixture)
+ * - tests/parser/test_artifact_schema_metadata_graph.c:381 — physical definition or protocol span (test_artifact_metadata_projection_matches_source_native_and_binary)
+ */

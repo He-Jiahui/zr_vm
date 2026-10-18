@@ -22,6 +22,8 @@ if (NOT TARGET zr_vm_ssa_sccp_conversion_test)
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effect_loops.c
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_cfg.c
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_constant_materialize.c
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_copy_aliases.c
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c
@@ -41,6 +43,7 @@ if (NOT TARGET zr_vm_ssa_sccp_conversion_test)
     target_include_directories(zr_vm_ssa_sccp_conversion_test PRIVATE
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/include
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_core/include
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_core/src/zr_vm_core
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_common/include)
     target_compile_definitions(zr_vm_ssa_sccp_conversion_test PRIVATE _CRT_SECURE_NO_WARNINGS)
     zr_vm_link_core(zr_vm_ssa_sccp_conversion_test)

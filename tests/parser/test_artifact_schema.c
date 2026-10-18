@@ -1259,3 +1259,611 @@ int main(void) {
     RUN_TEST(test_scheduler_contract_roundtrips_as_independent_artifact_schema);
     return UNITY_END();
 }
+
+/**
+ * @struct SZrArtifactTestFixture
+ * ## Summary
+ * 为基础schema场景把行、载荷和section视图放在同一栈对象内，维持编解码期间可追踪的借用关系。
+ *
+ * ## Unit
+ * test_artifact_schema.c::SZrArtifactTestFixture
+ *
+ * ## Fields
+ * - TZrByte signature[16]; — 手写签名缓冲；基础夹具只使用signatureLength前缀，graph夹具使用固定5字节。
+ * - TZrUInt32 signatureLength; — signature已构造的有效字节数。
+ * - SZrArtifactTypeDefRow typeDef; — 类型定义token及canonical ID基线。
+ * - SZrArtifactTypeIdentityRow typeRef; — type-ref身份行，与公开identity哈希配对。
+ * - SZrArtifactTypeIdentityRow typeSpec; — type-spec身份行，与公开identity哈希配对。
+ * - SZrArtifactContractRow contract; — 公开contract身份及版本基线。
+ * - SZrArtifactLayoutRow layout; — 布局身份、版本与大小关系。
+ * - SZrArtifactSectionInput sections[9]; — 节输入视图数组；实际count由document记录，data借用本对象字段或静态载荷。
+ * - SZrArtifactDocument document; — 编码器入口文档，sections指针及公开identity须与各行一致。
+ *
+ * ## Value model
+ * 调用者持有完整值；初始化辅助器把document.sections和section.data指向本对象或只读静态载荷，不转移任何指针所有权。
+ *
+ * ## Invariants and lifecycle
+ * 初始化后对象地址与被借用字段须保持有效直至编码完成；普通按值复制不会重定位内部指针。未建立跨线程共享或ABI持久化约定，写磁盘的是schema编码而非此C内存布局。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:83 — type use (SZrArtifactTestFixture)
+ * - tests/parser/test_artifact_schema.c:189 — type use (SZrArtifactTestFixture)
+ * - tests/parser/test_artifact_schema.c:211 — type use (SZrArtifactTestFixture)
+ * - tests/parser/test_artifact_schema.c:28 — physical definition or protocol span (SZrArtifactTestFixture)
+ */
+
+/**
+ * @fn void tearDown(void)
+ * ## Summary
+ * Unity在普通测试结算路径调用的空钩子；它没有保存或回收测试函数局部VM、context、AST、function或FILE句柄。
+ *
+ * ## Unit
+ * test_artifact_schema.c::tearDown
+ *
+ * ## Returns
+ * 无返回值；当前不会回收夹具资源。
+ *
+ * ## Constraints and lifecycle
+ * BUG: Unity断言的longjmp可以越过用例尾部释放，空钩子不能补偿。fatal信号恢复还可能由独立crash guard跳过tearDown。
+ *
+ * ## References
+ * - tests/third_party/zr_unity/Unity/src/unity.c:2303 — UnityDefaultTestRun dispatches linked hook (tearDown)
+ * - tests/third_party/zr_unity/Unity/src/unity.c:2247 — assertion failure bails to protected runner (UnityFail)
+ * - tests/parser/test_artifact_schema.c:43 — physical definition or protocol span (tearDown)
+ */
+
+/**
+ * @fn static SZrArtifactPublicIdentity make_identity(void)
+ * ## Summary
+ * 构造各格式测试共享的公开身份基线，使后续单字段变异能定位明确的哈希或版本拒绝。
+ *
+ * ## Unit
+ * test_artifact_schema.c::make_identity
+ *
+ * ## Returns
+ * @return 返回当前固定公开身份的值副本；各调用者可独立修改，不是加密签名或真实模块身份。
+ *
+ * ## Constraints and lifecycle
+ * 先清零整个值再设置固定token/哈希和layoutVersion；返回的是普通值，不分配VM或持有外部指针。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:183 — direct call expression (make_identity)
+ * - tests/parser/test_artifact_schema.c:346 — direct call expression (make_identity)
+ * - tests/parser/test_artifact_schema.c:353 — direct call expression (make_identity)
+ * - tests/parser/test_artifact_schema.c:64 — physical definition or protocol span (make_identity)
+ */
+
+/**
+ * @fn static void init_fixture(SZrArtifactTestFixture *fixture, EZrArtifactKind kind)
+ * ## Summary
+ * 按ZRS、ZRI、ZRO建立栈上文档及自借用行/节关系，为schema编解码测试提供一致基线。
+ *
+ * ## Unit
+ * test_artifact_schema.c::init_fixture
+ *
+ * ## Parameters
+ * @param[out] fixture 非NULL可写夹具，整体重新初始化；其字段和sections保持有效到消费结束。
+ * @param[in] kind 当前场景的ZRS、ZRI或ZRO种类；本辅助器不提供参数拒绝状态。
+ *
+ * ## Returns
+ * 无返回值；通过fixture发布自借用文档，不转移静态载荷所有权。
+ *
+ * ## Constraints and lifecycle
+ * 当前调用只传三种合法kind；清零后重新建立document.sections及各data指针。fixture须覆盖全部编码访问；按值复制不会自动重定位内部借用指针。ZRS只用字符串/语法节，ZRI/ZRO共享类型/签名/契约/布局并选择不同载荷。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:222 — direct call expression (init_fixture)
+ * - tests/parser/test_artifact_schema.c:296 — direct call expression (init_fixture)
+ * - tests/parser/test_artifact_schema.c:341 — direct call expression (init_fixture)
+ * - tests/parser/test_artifact_schema.c:56 — paired helper definition (write_u32)
+ * - tests/parser/test_artifact_schema.c:64 — paired helper definition (make_identity)
+ * - tests/parser/test_artifact_schema.c:83 — physical definition or protocol span (init_fixture)
+ */
+
+/**
+ * ## Summary
+ * 为init_fixture提供可稳定借用的只读strings载荷。
+ *
+ * ## Unit
+ * test_artifact_schema.c::init_fixture::strings
+ *
+ * ## Value model
+ * app和尾NUL构成字符串节的手写载荷。
+ *
+ * ## Constraints and lifecycle
+ * static const数组保留至进程结束，section只借用其地址并按显式长度编码；不分配、释放或发布可变共享状态。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:83 — enclosing scene/helper (init_fixture)
+ * - tests/parser/test_artifact_schema.c:142 — scoped initializer consumer (strings)
+ * - tests/parser/test_artifact_schema.c:84 — physical definition or protocol span (init_fixture::strings)
+ */
+
+/**
+ * ## Summary
+ * 为init_fixture提供可稳定借用的只读syntaxTree载荷。
+ *
+ * ## Unit
+ * test_artifact_schema.c::init_fixture::syntaxTree
+ *
+ * ## Value model
+ * FunctionDefinition范围描述是ZRS文本载荷，不由本测试执行为函数。
+ *
+ * ## Constraints and lifecycle
+ * static const数组保留至进程结束，section只借用其地址并按显式长度编码；不分配、释放或发布可变共享状态。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:83 — enclosing scene/helper (init_fixture)
+ * - tests/parser/test_artifact_schema.c:169 — scoped initializer consumer (syntaxTree)
+ * - tests/parser/test_artifact_schema.c:85 — physical definition or protocol span (init_fixture::syntaxTree)
+ */
+
+/**
+ * ## Summary
+ * 为init_fixture提供可稳定借用的只读semanticIr载荷。
+ *
+ * ## Unit
+ * test_artifact_schema.c::init_fixture::semanticIr
+ *
+ * ## Value model
+ * 类型描述行是ZRI文本载荷，不是本测试执行的IR。
+ *
+ * ## Constraints and lifecycle
+ * static const数组保留至进程结束，section只借用其地址并按显式长度编码；不分配、释放或发布可变共享状态。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:83 — enclosing scene/helper (init_fixture)
+ * - tests/parser/test_artifact_schema.c:173 — scoped initializer consumer (semanticIr)
+ * - tests/parser/test_artifact_schema.c:86 — physical definition or protocol span (init_fixture::semanticIr)
+ */
+
+/**
+ * ## Summary
+ * 为init_fixture提供可稳定借用的只读code载荷。
+ *
+ * ## Unit
+ * test_artifact_schema.c::init_fixture::code
+ *
+ * ## Value model
+ * 短字节序列仅供ZRO代码节及边界校验；没有在该用例交给解释器执行。
+ *
+ * ## Constraints and lifecycle
+ * static const数组保留至进程结束，section只借用其地址并按显式长度编码；不分配、释放或发布可变共享状态。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:83 — enclosing scene/helper (init_fixture)
+ * - tests/parser/test_artifact_schema.c:177 — scoped initializer consumer (code)
+ * - tests/parser/test_artifact_schema.c:87 — physical definition or protocol span (init_fixture::code)
+ */
+
+/**
+ * ## Summary
+ * 按格式选择被编码的节，避免把ZRS文本夹具与ZRI/ZRO公开合同/执行载荷混在一起。
+ *
+ * ## Unit
+ * test_artifact_schema.c::init_fixture::kind_sections
+ *
+ * ## Constraints and lifecycle
+ * ZRS分支只建立字符串和语法树；其余分支先建立公共类型/签名/合同/布局，再在ZRI语义IR和ZRO代码中选一项。所有section.data借用已建立字段或static const载荷。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:83 — executed within enclosing function (init_fixture)
+ * - tests/parser/test_artifact_schema.c:144 — physical definition or protocol span (init_fixture::kind_sections)
+ */
+
+/**
+ * @fn static TZrSize write_fixture(const SZrArtifactTestFixture *fixture, TZrByte *buffer, TZrSize capacity)
+ * ## Summary
+ * 为给定夹具先求编码长度、断言容量足够，再写入调用者缓冲并检查实际长度等于所需长度。
+ *
+ * ## Unit
+ * test_artifact_schema.c::write_fixture
+ *
+ * ## Parameters
+ * @param[in] fixture 已初始化的只读文档及其借用行。
+ * @param[out] buffer 调用者提供的编码缓冲。
+ * @param[in] capacity buffer可写字节数，测试断言requiredSize<=capacity。
+ *
+ * ## Returns
+ * @return 全部断言通过时返回writtenSize；缓冲由调用者持有。
+ *
+ * ## Constraints and lifecycle
+ * fixture及所有section借用在调用期保持有效；buffer至少capacity字节。失败通过Unity断言中止当前用例，不能把它当成可返回错误码的通用writer；输出在失败时不保证恢复原内容。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:223 — direct call expression (write_fixture)
+ * - tests/parser/test_artifact_schema.c:297 — direct call expression (write_fixture)
+ * - tests/parser/test_artifact_schema.c:342 — direct call expression (write_fixture)
+ * - tests/parser/test_artifact_schema.c:189 — physical definition or protocol span (write_fixture)
+ */
+
+/**
+ * @fn static void test_zro_roundtrips_fixed_width_public_contract_sections(void)
+ * ## Summary
+ * 用最小ZRO夹具核验魔数、schema低字节、公开身份以及定宽类型/契约/布局行的读取，防止编码行与读取视图错配。
+ *
+ * ## Unit
+ * test_artifact_schema.c::test_zro_roundtrips_fixed_width_public_contract_sections
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * 只断言当前夹具的选定字段、行大小和状态；不代表全部schema字段或所有ABI平台已覆盖。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1235 — Unity callback registration; not direct C call (test_zro_roundtrips_fixed_width_public_contract_sections)
+ * - tests/parser/test_artifact_schema.c:83 — paired helper definition (init_fixture)
+ * - tests/parser/test_artifact_schema.c:189 — paired helper definition (write_fixture)
+ * - tests/parser/test_artifact_schema.c:210 — physical definition or protocol span (test_zro_roundtrips_fixed_width_public_contract_sections)
+ */
+
+/**
+ * @fn static void assert_text_roundtrip(EZrArtifactKind kind, const TZrChar *sectionName)
+ * ## Summary
+ * 对单个ZRS或ZRI夹具执行二进制→文本→二进制往返，检查kind/节名/文本片段和原二进制逐字相同。
+ *
+ * ## Unit
+ * test_artifact_schema.c::assert_text_roundtrip
+ *
+ * ## Parameters
+ * @param[in] kind 选择当前两种非执行产物格式之一。
+ * @param[in] sectionName 文本中必须出现的节名片段，借用至调用返回。
+ *
+ * ## Returns
+ * 无返回值；通过Unity记录有限往返断言结果。
+ *
+ * ## Constraints and lifecycle
+ * kind只由当前调用传ZRS/ZRI，sectionName是可读NUL结尾字符串；所有栈视图在函数内消费完毕。断言失败中止当前Unity用例，不保证调用者后续场景继续。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:328 — direct call expression (assert_text_roundtrip)
+ * - tests/parser/test_artifact_schema.c:329 — direct call expression (assert_text_roundtrip)
+ * - tests/parser/test_artifact_schema.c:83 — paired helper definition (init_fixture)
+ * - tests/parser/test_artifact_schema.c:189 — paired helper definition (write_fixture)
+ * - tests/parser/test_artifact_schema.c:284 — physical definition or protocol span (assert_text_roundtrip)
+ */
+
+/**
+ * @fn static void test_zrs_and_zri_have_readable_stable_roundtrips(void)
+ * ## Summary
+ * 分别以ZRS语法文本和ZRI语义文本夹具调用文本往返辅助器，约束可读节名与二进制稳定性。
+ *
+ * ## Unit
+ * test_artifact_schema.c::test_zrs_and_zri_have_readable_stable_roundtrips
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * 两次调用顺序固定；第一个场景断言失败时会跳过第二个，静态两个场景不是额外Unity用例。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1236 — Unity callback registration; not direct C call (test_zrs_and_zri_have_readable_stable_roundtrips)
+ * - tests/parser/test_artifact_schema.c:284 — paired helper definition (assert_text_roundtrip)
+ * - tests/parser/test_artifact_schema.c:327 — physical definition or protocol span (test_zrs_and_zri_have_readable_stable_roundtrips)
+ */
+
+/**
+ * @fn static void test_public_identity_mismatches_are_precise(void)
+ * ## Summary
+ * 每次从相同公开身份重新复制后只扰动一个哈希或布局版本，要求校验器返回该字段对应的失配状态。
+ *
+ * ## Unit
+ * test_artifact_schema.c::test_public_identity_mismatches_are_precise
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * typeRefHash场景额外核对diagnostic.expectedHash/actualHash；其余场景仅断言状态，不能扩称逐字段诊断载荷全部通过。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1237 — Unity callback registration; not direct C call (test_public_identity_mismatches_are_precise)
+ * - tests/parser/test_artifact_schema.c:83 — paired helper definition (init_fixture)
+ * - tests/parser/test_artifact_schema.c:189 — paired helper definition (write_fixture)
+ * - tests/parser/test_artifact_schema.c:64 — paired helper definition (make_identity)
+ * - tests/parser/test_artifact_schema.c:333 — physical definition or protocol span (test_public_identity_mismatches_are_precise)
+ */
+
+/**
+ * @fn static void test_reader_rejects_unknown_mandatory_but_skips_unknown_optional_section(void)
+ * ## Summary
+ * 先将首目录kind改为未知值并要求必需节拒绝，再只改optional标志要求读取成功。
+ *
+ * ## Unit
+ * test_artifact_schema.c::test_reader_rejects_unknown_mandatory_but_skips_unknown_optional_section
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * 修改的是已编码栈缓冲；第二次允许跳过未知节，不证明未知节载荷有任何执行能力或任意可选节无副作用。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1238 — Unity callback registration; not direct C call (test_reader_rejects_unknown_mandatory_but_skips_unknown_optional_section)
+ * - tests/parser/test_artifact_schema.c:83 — paired helper definition (init_fixture)
+ * - tests/parser/test_artifact_schema.c:189 — paired helper definition (write_fixture)
+ * - tests/parser/test_artifact_schema.c:56 — paired helper definition (write_u32)
+ * - tests/parser/test_artifact_schema.c:385 — physical definition or protocol span (test_reader_rejects_unknown_mandatory_but_skips_unknown_optional_section)
+ */
+
+/**
+ * @fn static void test_reader_rejects_truncation_count_limit_and_illegal_tokens(void)
+ * ## Summary
+ * 依次覆盖总字节截断、节数超过上限、错误token表和签名blob长度越界的拒绝状态。
+ *
+ * ## Unit
+ * test_artifact_schema.c::test_reader_rejects_truncation_count_limit_and_illegal_tokens
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * 后两个场景重新初始化夹具；依序断言不是四个独立Unity注册，前段失败会跳过后段。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1239 — Unity callback registration; not direct C call (test_reader_rejects_truncation_count_limit_and_illegal_tokens)
+ * - tests/parser/test_artifact_schema.c:83 — paired helper definition (init_fixture)
+ * - tests/parser/test_artifact_schema.c:189 — paired helper definition (write_fixture)
+ * - tests/parser/test_artifact_schema.c:56 — paired helper definition (write_u32)
+ * - tests/parser/test_artifact_schema.c:407 — physical definition or protocol span (test_reader_rejects_truncation_count_limit_and_illegal_tokens)
+ */
+
+/**
+ * @fn static void test_writer_and_reader_reject_dangling_member_owner_token(void)
+ * ## Summary
+ * 先建立合法member节，再分别篡改内存行和编码缓冲中的owner token，核验写前及读取边界的ILLEGAL_TOKEN。
+ *
+ * ## Unit
+ * test_artifact_schema.c::test_writer_and_reader_reject_dangling_member_owner_token
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * 保留合法编码的encodedLength以便内存拒绝后仍以原缓冲长度检查读取；各section/data视图都只借用本次栈存储。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1240 — Unity callback registration; not direct C call (test_writer_and_reader_reject_dangling_member_owner_token)
+ * - tests/parser/test_artifact_schema.c:83 — paired helper definition (init_fixture)
+ * - tests/parser/test_artifact_schema.c:189 — paired helper definition (write_fixture)
+ * - tests/parser/test_artifact_schema.c:56 — paired helper definition (write_u32)
+ * - tests/parser/test_artifact_schema.c:435 — physical definition or protocol span (test_writer_and_reader_reject_dangling_member_owner_token)
+ */
+
+/**
+ * @fn static void test_signature_nodes_validate_ref_readonly_owner_and_callable_contracts(void)
+ * ## Summary
+ * 手工组合function、参数、owner、readonly-view和ref签名节点，核验合法输入、尾部截断及未知节点拒绝。
+ *
+ * ## Unit
+ * test_artifact_schema.c::test_signature_nodes_validate_ref_readonly_owner_and_callable_contracts
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * TODO: HashBytes的相同输入与自身比较不能构成独立哈希正确性预言；只有非零检查和当前签名/拒绝状态被直接约束。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1244 — Unity callback registration; not direct C call (test_signature_nodes_validate_ref_readonly_owner_and_callable_contracts)
+ * - tests/parser/test_artifact_schema.c:56 — paired helper definition (write_u32)
+ * - tests/parser/test_artifact_schema.c:490 — physical definition or protocol span (test_signature_nodes_validate_ref_readonly_owner_and_callable_contracts)
+ */
+
+/**
+ * ## Summary
+ * 在合法签名构造后检查哈希非零，并显式保留自比较缺乏独立预言的问题。
+ *
+ * ## Unit
+ * test_artifact_schema.c::test_signature_nodes_validate_ref_readonly_owner_and_callable_contracts::hash_self_check
+ *
+ * ## Constraints and lifecycle
+ * TODO: 同一次HashBytes输入与自身比较不能验证预期哈希。下一步在本用例HashBytes断言处核对固定期望或独立编码往返基准；现有非零断言不消除该疑点。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:490 — executed within enclosing function (test_signature_nodes_validate_ref_readonly_owner_and_callable_contracts)
+ * - tests/parser/test_artifact_schema.c:521 — physical definition or protocol span (test_signature_nodes_validate_ref_readonly_owner_and_callable_contracts::hash_self_check)
+ */
+
+/**
+ * @fn static void test_repeat_encoding_and_text_roundtrip_keep_hashes_stable(void)
+ * ## Summary
+ * 对同一ZRO文档重复二进制编码，要求长度、完整字节和哈希一致，再读取并校验公开身份。
+ *
+ * ## Unit
+ * test_artifact_schema.c::test_repeat_encoding_and_text_roundtrip_keep_hashes_stable
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * 本函数没有调用WriteText或ReadText；名称中的text_roundtrip不应被当作本函数实际文本格式覆盖。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1245 — Unity callback registration; not direct C call (test_repeat_encoding_and_text_roundtrip_keep_hashes_stable)
+ * - tests/parser/test_artifact_schema.c:83 — paired helper definition (init_fixture)
+ * - tests/parser/test_artifact_schema.c:189 — paired helper definition (write_fixture)
+ * - tests/parser/test_artifact_schema.c:534 — physical definition or protocol span (test_repeat_encoding_and_text_roundtrip_keep_hashes_stable)
+ */
+
+/**
+ * @fn static void test_internal_public_rows_report_the_exact_mismatch(void)
+ * ## Summary
+ * 分别扰动typeRef、typeSpec、contract和layout内部行，要求GetEncodedSize返回对应公开身份失配。
+ *
+ * ## Unit
+ * test_artifact_schema.c::test_internal_public_rows_report_the_exact_mismatch
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * 每次重建夹具；仅typeRef场景额外断言expectedHash，其他诊断字段未逐项断言。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1246 — Unity callback registration; not direct C call (test_internal_public_rows_report_the_exact_mismatch)
+ * - tests/parser/test_artifact_schema.c:83 — paired helper definition (init_fixture)
+ * - tests/parser/test_artifact_schema.c:559 — physical definition or protocol span (test_internal_public_rows_report_the_exact_mismatch)
+ */
+
+/**
+ * @fn static void test_zero_many_and_duplicate_signature_rows_roundtrip_safely(void)
+ * ## Summary
+ * 先编码0行member节，再加入两个共享签名的typeRef和256个member，检查计数及最后一行token/contractHash。
+ *
+ * ## Unit
+ * test_artifact_schema.c::test_zero_many_and_duplicate_signature_rows_roundtrip_safely
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * 只覆盖该0/256规模和共享签名构造；不证明所有最大计数或全部member字段均被逐行核对。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1247 — Unity callback registration; not direct C call (test_zero_many_and_duplicate_signature_rows_roundtrip_safely)
+ * - tests/parser/test_artifact_schema.c:83 — paired helper definition (init_fixture)
+ * - tests/parser/test_artifact_schema.c:592 — physical definition or protocol span (test_zero_many_and_duplicate_signature_rows_roundtrip_safely)
+ */
+
+/**
+ * @fn static void test_duplicate_forbidden_and_recursive_signature_inputs_are_rejected(void)
+ * ## Summary
+ * 用重复节、ZRO中的禁止节、超深nullable递归和超宽tuple计数约束拒绝入口。
+ *
+ * ## Unit
+ * test_artifact_schema.c::test_duplicate_forbidden_and_recursive_signature_inputs_are_rejected
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * 深度/宽度数组按既有常量构造；结果只针对这些非法输入，不代表实际源递归执行或任意攻击输入已测试。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1248 — Unity callback registration; not direct C call (test_duplicate_forbidden_and_recursive_signature_inputs_are_rejected)
+ * - tests/parser/test_artifact_schema.c:83 — paired helper definition (init_fixture)
+ * - tests/parser/test_artifact_schema.c:56 — paired helper definition (write_u32)
+ * - tests/parser/test_artifact_schema.c:665 — physical definition or protocol span (test_duplicate_forbidden_and_recursive_signature_inputs_are_rejected)
+ */
+
+/**
+ * @fn static void test_member_property_and_relocation_contracts_validate_tokens_and_code_bounds(void)
+ * ## Summary
+ * 合并类型、成员、属性和重定位行，先编码合法文档，再分别破坏owner/accessor/属性标志及代码偏移。
+ *
+ * ## Unit
+ * test_artifact_schema.c::test_member_property_and_relocation_contracts_validate_tokens_and_code_bounds
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * 合法路径没有读取并逐字段比较全部property/relocation行；负向断言覆盖具体改动和状态，不能扩称完整对象模型验证。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1249 — Unity callback registration; not direct C call (test_member_property_and_relocation_contracts_validate_tokens_and_code_bounds)
+ * - tests/parser/test_artifact_schema.c:83 — paired helper definition (init_fixture)
+ * - tests/parser/test_artifact_schema.c:56 — paired helper definition (write_u32)
+ * - tests/parser/test_artifact_schema.c:703 — physical definition or protocol span (test_member_property_and_relocation_contracts_validate_tokens_and_code_bounds)
+ */
+
+/**
+ * @fn static void test_source_canonical_type_and_binary_import_share_type_id_and_public_contract(void)
+ * ## Summary
+ * 在独立VM与semantic context中创建nominal/ref/readonly-view/owner/function canonical类型，导出签名、编码ZRO并导入同一上下文，比较type ID及公开身份。
+ *
+ * ## Unit
+ * test_artifact_schema.c::test_source_canonical_type_and_binary_import_share_type_id_and_public_contract
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * 签名缓冲和section视图只在当前栈帧有效；正常路径先释放context再销毁state。BUG: 分配成功后的Unity断言失败可越过二者清理，共享空tearDown不持有这些局部句柄。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1250 — Unity callback registration; not direct C call (test_source_canonical_type_and_binary_import_share_type_id_and_public_contract)
+ * - tests/parser/test_artifact_schema.c:820 — physical definition or protocol span (test_source_canonical_type_and_binary_import_share_type_id_and_public_contract)
+ */
+
+/**
+ * ## Summary
+ * 为test_source_canonical_type_and_binary_import_share_type_id_and_public_contract提供可稳定借用的只读code载荷。
+ *
+ * ## Unit
+ * test_artifact_schema.c::test_source_canonical_type_and_binary_import_share_type_id_and_public_contract::code
+ *
+ * ## Value model
+ * 短字节序列仅供ZRO代码节及边界校验；没有在该用例交给解释器执行。
+ *
+ * ## Constraints and lifecycle
+ * static const数组保留至进程结束，section只借用其地址并按显式长度编码；不分配、释放或发布可变共享状态。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:820 — enclosing scene/helper (test_source_canonical_type_and_binary_import_share_type_id_and_public_contract)
+ * - tests/parser/test_artifact_schema.c:960 — scoped initializer consumer (code)
+ * - tests/parser/test_artifact_schema.c:852 — physical definition or protocol span (test_source_canonical_type_and_binary_import_share_type_id_and_public_contract::code)
+ */
+
+/**
+ * @fn static void test_domain_transfer_contract_roundtrips_as_independent_artifact_schema(void)
+ * ## Summary
+ * 用五种domain-transfer行核对序列化字段，再破坏重复type、provider及schema范围以核验拒绝。
+ *
+ * ## Unit
+ * test_artifact_schema.c::test_domain_transfer_contract_roundtrips_as_independent_artifact_schema
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * 这里只读写schema行，没有真正复制、克隆或跨域移动运行时资源；循环中的多个字段断言不另计Unity用例。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1258 — Unity callback registration; not direct C call (test_domain_transfer_contract_roundtrips_as_independent_artifact_schema)
+ * - tests/parser/test_artifact_schema.c:83 — paired helper definition (init_fixture)
+ * - tests/parser/test_artifact_schema.c:1015 — physical definition or protocol span (test_domain_transfer_contract_roundtrips_as_independent_artifact_schema)
+ */
+
+/**
+ * @fn static void test_scheduler_contract_roundtrips_as_independent_artifact_schema(void)
+ * ## Summary
+ * 把可选scheduler-contract节附加到ZRO，往返比较整行并依次核验token类型、policy、isolated要求及reserved字段。
+ *
+ * ## Unit
+ * test_artifact_schema.c::test_scheduler_contract_roundtrips_as_independent_artifact_schema
+ *
+ * ## Returns
+ * 无返回值；由Unity断言记录该场景结果，失败可中止当前用例的剩余语句。
+ *
+ * ## Constraints and lifecycle
+ * schema允许的token与策略不等于调度器执行保证；本用例未启动线程、调用schedule或执行任务。
+ *
+ * ## References
+ * - tests/parser/test_artifact_schema.c:1259 — Unity callback registration; not direct C call (test_scheduler_contract_roundtrips_as_independent_artifact_schema)
+ * - tests/parser/test_artifact_schema.c:83 — paired helper definition (init_fixture)
+ * - zr_vm_parser/src/zr_vm_parser/writer/writer_scheduler_artifact.c:108 — writer fact rejection precedes file I/O (ZrParser_Writer_WriteSchedulerArtifactFile)
+ * - tests/parser/test_artifact_schema.c:1136 — physical definition or protocol span (test_scheduler_contract_roundtrips_as_independent_artifact_schema)
+ */
+
+/**
+ * @fn int main(void)
+ * ## Summary
+ * 在一个Unity会话中依序汇合本文件15个、metadata graph3个、source roundtrip7个测试，提供本target的唯一进程入口。
+ *
+ * ## Unit
+ * test_artifact_schema.c::main
+ *
+ * ## Returns
+ * @return 返回UnityEnd记录的TestFailures数，由进程宿主解释退出状态。
+ *
+ * ## Constraints and lifecycle
+ * RUN_TEST把函数地址交给UnityDefaultTestRun；每个用例使用本目标的setUp/tearDown。无CLI selector或参数解析，不适合并发共享固定产物cwd；一个断言失败通常结束该用例而后续注册仍可执行。
+ *
+ * ## References
+ * - tests/cmake/parser-foundation-targets.cmake:221 — add_test runs target executable; process entry (zr_vm_artifact_schema_test)
+ * - tests/parser/test_artifact_schema.c:1233 — physical definition or protocol span (main)
+ */

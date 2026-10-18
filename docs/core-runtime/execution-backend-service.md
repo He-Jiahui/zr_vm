@@ -11,20 +11,31 @@ related_code:
   - tests/cmake/ssa-tests.cmake
   - zr_vm_core/CMakeLists.txt
   - zr_vm_common/CommonMacros.cmake
+  - zr_vm_core/src/zr_vm_core/execution/execution_backend_compile.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_backend_facade.c
+  - zr_vm_core/src/zr_vm_core/runtime/execution_contract.c
+  - tests/core/test_ssa_backend_admission.c
+  - tests/cmake/ssa-backend-tests.cmake
+  - tests/cmake/ssa-backend-admission/CMakeLists.txt
 implementation_files:
   - zr_vm_core/include/zr_vm_core/execution_backend.h
   - zr_vm_core/src/zr_vm_core/execution/execution_backend_internal.h
   - zr_vm_core/src/zr_vm_core/execution/execution_backend.c
   - zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_backend_compile.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_backend_facade.c
 plan_sources:
   - docs/plans/ssa/10-jit-platforms/01-backend-service.md
   - docs/plans/ssa/00-measurement-contracts/02-contract-freeze.md
   - "user: 2026-09-14 SSA 10.01 backend service contract implementation"
   - "user: 2026-10-04 caller-first 中文意图注释与当前调用契约核查"
+  - "user: 2026-10-18 backend owner admission, module split and precise generation diagnostics"
 tests:
   - tests/core/test_ssa_backend_service.c
   - tests/core/test_ssa_host_jit_optional.c
   - tests/acceptance/ssa-backend-service.md
+  - tests/core/test_ssa_backend_admission.c
+  - docs/testing-and-validation/ssa-backend-admission.md
 doc_type: module-detail
 ---
 
@@ -51,20 +62,45 @@ descriptor、注册、提交，再显式调用 `ProcessNext`/`Complete`。可选
 | --- | --- |
 | `execution_backend.h` | 公开 C ABI：标量请求、descriptor、票据、代码记录、借用视图与租约 |
 | `execution_backend_internal.h` | 服务形状、完整键、查找和锁内回调计数等内部共同前提 |
-| `execution_backend.c` | 注册、排队、完成、发布、失效和服务关闭 |
+| `execution_backend.c` | 注册、状态/键 helper、取消、失效、服务初始化/关闭及现有 Resume 转发 |
+| `execution_backend_compile.c` | 请求接纳、candidate/回退、队列、ProcessNext/Complete/Publish/QueryTicket |
+| `execution_backend_facade.c` | 默认借用指针、默认锁与短 facade；无新增指针保活 |
 | `execution_code_handle.c` | 代码/图查询、两类租约、退役收集及未发布结果处置 |
 | `execution_contract.h` | 执行 ABI、布局、签名、模块与效果等标量契约 |
 
 `Init` 清零宿主传入的服务和三个数组；数组及 service 存储一直归宿主。
 `Register` 复制 descriptor，函数指针与 `userData` 仍是运行期借用。
-清零 descriptor/service 的保留字段属于构造行为；当前接收或校验不要求这些
-保留字段为零，也不据其赋予状态或寿命含义。注册资源销毁由 `destroy` 回调完成；
+Register 要求 descriptor/target 的 reserved 为零；请求和结果的 execution
+contract reserved0/reserved1 也须为零。其他 service/job 内部保留字段仍不因此
+获得公开状态或寿命含义。注册资源销毁由 `destroy` 回调完成；
 服务不释放宿主数组。`Deinit` 只在已完成最终关闭时清空服务壳的借用信息，宿主
 必须独占该操作并自行释放存储。
 
 默认 facade 借用显式安装的 service。默认锁只保护指针读写，不能保活返回的
 service，也不能替宿主协调替换与关闭。仓内尚未发现安装/解绑及这些 facade 的
 实际上游；公开 ABI 的仓外使用未知。
+
+## 接纳 owner、版本分域与准确诊断
+
+backend schema 当前为1；请求所带 execution contract 的 schema/logical 当前为
+6/1。这是服务接收者的支持政策，不是把 generic `execution_contract.c` 的纯相等
+checker 改成 current-only。服务没有逻辑版本协商。ABI 要求非零并匹配实际选中的
+registration；layout 同样参与 candidate 匹配。execution/AOT ABI 宏17不是所有
+backend 的唯一版本，admission 正例使用23。
+
+Register 保留原 magic/schema/flags/target/operation/必需回调错误在前，全部原验证
+通过后才拒绝 descriptor/target reserved。CompileAsync 保留参数、请求
+magic/backend schema、flags、immutable 的优先级，再报告 contract schema、
+logical 或 reserved 不符。Complete 保留票据/取消/状态及 generation 优先；
+错误结果在建立 READY 前进入 FAILED，沿原 owner 的 U→R 处置路径清理。
+
+诊断 expected/actual 给出首个契约差异的真实标量，expectedState/actualState 用于
+状态和掩码；source/instruction 与结果 ticket/code identity 保留。完整
+generation key 不等时仍报告原 key-generation 载荷；只有完整键相等而
+contract.generation 不等时，使用 contract 的 expected/actual。请求1/结果2
+现在准确报告1/2，避免把两个相等 key 的1/1写成差异。NULL diagnostic 不改变拒绝
+或清理语义。详细优先级、固定槽恢复与实际 RED/GREEN 证据见
+[admission 验证页](../testing-and-validation/ssa-backend-admission.md)。
 
 ## 编译票据与结果协议
 
@@ -179,22 +215,45 @@ RECLAIMING 并计数保活，在锁外注销图；注销成功才请求 retire�
 重复结果处置、跨域隔离、恢复诊断及关闭销毁顺序。入口哨兵没有实际执行，恢复
 内容没有验证；这些断言不能证明多 worker 调度、真实机器码、真实解释器或全 VM GC。
 
-当前 `tests/cmake/ssa-tests.cmake` 已注册 `zr_vm_ssa_backend_service_test` 和
-CTest `ssa_backend_service`，显式编入 mock、backend.c 与 code_handle.c。
-可选 `ssa_host_jit_optional` 位于 host-JIT 开关下。core 的模块声明通过
-CommonMacros.cmake 收集 src C 文件。这些构建事实是静态注册证据，不是业务调用链。
+当前 `tests/cmake/ssa-tests.cmake` 调用共享的
+`tests/cmake/ssa-backend-tests.cmake`，注册 service 与 admission 两目标。
+每目标显式编入自己的测试 TU，以及 backend.c、backend_compile.c、backend_facade.c、
+code_handle.c 四个生产 TU；private header 复用共同 helper。standalone
+`tests/cmake/ssa-backend-admission/CMakeLists.txt` 也使用同一列表，
+形成10个编译角色与两个 CTest。service 的5个角色显式 /UNDEBUG 或 -UNDEBUG，
+生成 argv 中不能被后置 NDEBUG 覆盖；574行 admission 使用始终生效的 CHECK。
+core 常规模块仍经 CommonMacros.cmake 收集 src C；可选 host-JIT 仍单独由开关控制。
+
+2026-10-18 Root已实际运行当前有限 GREEN：四阶段0/0/0/0、admission33行全部PASS、
+service七场景通过、50输入不变、五个service断言角色有效、进程和handle闭合。
+本轮复用前轮构建，仅重编两个compile.c角色并重链两个程序；不能将10条当前
+compile_commands称为本轮10次fresh。独立GREEN审查221A4D88已接受该有限结果，详见
+[实际阶段、收据和限制](../testing-and-validation/ssa-backend-admission.md)。
+这组有限运行结果不代替整仓或真实 provider 验收。
+
+补充2026-10-18实际 MSVC 兼容性检查：六个唯一 C 文件（两个 fixture 及四个生产 TU）
+均以 /Zs /W4 /WX /UNDEBUG /showIncludes 自然exit0，50输入未变，输出目录无文件。
+独立语法审查394EB90F已接受。实际本地依赖闭包38个头/def，与Ninja逐角色一致；
+原50项实时guard保持原义，额外8个头由先前封定且当前匹配的Source41基线离线补足，保护并集58项。
+这只是 MSVC 语法检查，不是 MSVC 链接/运行、Linux 或全矩阵验收。
+
 
 [历史验收记录](../../tests/acceptance/ssa-backend-service.md) 保留当时直接 GCC、
-Clang、ASan/UBSan、Memcheck 和 Helgrind 的命令与结果；其单线程 fixture 限定
-仍有效。本次只核对源码注释、当前调用契约、台账和文档，没有新建或运行 native、
-CMake/CTest，也未把历史结果升级为当前整仓或并发验收。
-
-具体 AOT、ExecBC、JIT provider 的真实执行、平台图/代码所有权、宿主调度和
-仓外 ABI 使用仍需要各自的调用与验收证据。
-不能把另一 `SZrHostJitCodeHandle`/manager 家族或其 ownerref 当作本服务的消费链。
+Clang、ASan/UBSan、Memcheck 和 Helgrind 的命令与结果。旧两源命令及 /tmp 路径
+只描述当时环境，不是当前可直接重跑的模块列表，也不把单线程证据升级为并发验收。
+具体 AOT、ExecBC、JIT provider 的真实执行、平台图/代码所有权、宿主调度与仓外 ABI
+仍需各自证据。不能把另一 SZrHostJitCodeHandle/manager 家族或 ownerref 当作本服务消费链。
 
 ### 当前有限代码证据
 
-消费与释放：`zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c:229`、`zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c:357`、`zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c:369`。入口与 map 派发：`zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c:476`、`zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c:569`。回收状态：`zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c:653`、`zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c:691`。
-
-未入表产物清理：`zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c:94`、`zr_vm_core/src/zr_vm_core/execution/execution_code_handle.c:105`；Complete 窗口：`zr_vm_core/src/zr_vm_core/execution/execution_backend.c:950`、`zr_vm_core/src/zr_vm_core/execution/execution_backend.c:958`、`zr_vm_core/src/zr_vm_core/execution/execution_backend.c:962`。mock 注册：`tests/core/test_ssa_backend_service.c:229`、`tests/core/test_ssa_backend_service.c:232`；service descriptor 复制：`zr_vm_core/src/zr_vm_core/execution/execution_backend.c:483`；生产回收调用：`zr_vm_core/src/zr_vm_core/execution/execution_backend.c:1518`；当前 CTest 登记：`tests/cmake/ssa-tests.cmake:977`、`tests/cmake/ssa-tests.cmake:984`。
+- 注册准入：`execution_backend.c:65`；descriptor复制：`execution_backend.c:210`。
+- 请求与candidate：`execution_backend_compile.c:15`、`execution_backend_compile.c:132`；
+  入队：`execution_backend_compile.c:226`；目标查询并发TODO：`execution_backend_compile.c:304`。
+- 完成/首差异诊断：`execution_backend_compile.c:553`、`execution_backend_compile.c:396`；
+  Complete handoff TODO：`execution_backend_compile.c:641`；generation诊断修正：`execution_backend_compile.c:671`。
+- 默认指针锁与借用：`execution_backend_facade.c:4`、`execution_backend_facade.c:28`。
+- 未入表产物清理：`execution_code_handle.c:59`；入口/图查询：`execution_code_handle.c:419`、
+  `execution_code_handle.c:497`；回收：`execution_code_handle.c:588`、`execution_code_handle.c:709`。
+- Finalize收集：`execution_backend.c:688`；Resume关闭交错TODO：`execution_backend.c:785`。
+- 共享源列表：`tests/cmake/ssa-backend-tests.cmake:14`；
+  聚合注册：`tests/cmake/ssa-tests.cmake:986`；admission：`tests/core/test_ssa_backend_admission.c`。

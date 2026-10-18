@@ -234,3 +234,97 @@ doc_type: category-index
 - [本地 Scheduler 队列复用测试的调用契约](../testing-and-validation/task-scheduler-queue-reuse-caller-contract.md)：59 个单元、重入与根清理、只读拒写和限定 OOM 的真实观察范围。
 
 - [Job/Scheduler 父测试的调用契约](../testing-and-validation/task-job-scheduler-caller-contract.md)：27 项完整审查、描述符和源调用边界、完成值目标槽 BUG 与诊断/次数 TODO。
+
+
+- [Math 输入边界测试的调用与生命周期契约](batches/20261017-math-input-boundaries-tests-contracts.md)：[28 个完整单元](coverage/math_input_boundaries_tests.tsv)，覆盖数值拒绝、数组/裸 Tensor 外壳、继续执行与普通清理边界；同配置目标和九个原 selector 修改前后均退出 0，限本批有界验证。
+
+- [首方范围与内容摘要校正](batches/20261017-scope-inventory-reconciliation.md)：补登 102 个 pending 文件、撤回 59 个内容已变文件的完成状态，保留外来清单差异；本批新增代码审查单元 0，全仓验收尚未完成。
+
+
+- [Benchmark 查看器的当前调用与生命周期契约](batches/20261017-benchmark-viewer-current-contracts.md)：[25 个完整单元](coverage/scripts_remaining.tsv)，15 段 JSDoc、9 个现有测试前后通过；记录已复现的 __proto__ 矩阵漏列与 FileReader 时序 TODO，限 Node VM 验证。
+
+
+- [Layout 迁移工具与测试的调用及生命周期契约](batches/20261017-layout-move-script-contracts.md)：[118 个完整单元](coverage/layout_move_script.tsv)，107 份中文注释、36 项现有测试前后通过；保留非 ASCII 别名字符域 TODO。
+
+
+- [Layout 辅助模块既有注释引用更正](batches/20261017-layout-borrowed-comment-references.md)：四份已审源码的 22 处引用数字、11 个既有单元，0 新单元；现有测试前后各 18 通过、1 Windows 权限跳过，程序和源码行数保持不变。
+
+
+## 人工测试样例补充审查
+
+- manual-fixtures.tsv：主 scanner 后缀之外经逐文件核实的人工 fixture 六列补充清单，只列显式路径。
+- manual-fixture-ledgers/：手工域独立九列台账，不放入当前只认识主 scanner known 集合的 coverage/ 全局检查。
+主清单与手工补充清单的并集构成审查范围；分别 fresh 重扫且交集为空。两个域互不代授完成信用，不改变 scanner 分类行为。
+
+- [fixturedep JSON 占位元数据合同](batches/20261017-fixturedep-json-placeholder-contracts.md)：[1个 metadata-interface](manual-fixture-ledgers/fixturedep_placeholder.tsv)，原 JSON 169B保持不变；手工域独立静态核验，不重复计入原 fixtureArtifact 单元。
+
+
+## Plugin 影子副本 I/O 合同复核
+
+- [Plugin 影子副本 I/O：20单元、6旧键迁移及14新键补齐](batches/20261017-native-plugin-shadow-io-contracts.md)
+
+
+## 程序集资源公开合同复核
+
+- [程序集资源公开合同复核：8单元，0新键](batches/20261018-system-assembly-public-current-contracts.md)
+
+
+## SSA人工GDB诊断脚本合同
+
+- [SSA人工GDB诊断脚本合同：5单元，5新键](batches/20261017-ssa-diagnostics-gdb-contracts.md)
+
+
+## 日志失败探针当前合同复核
+
+- [日志失败探针当前合同复核：6单元，0新键](batches/20261018-harness-log-failure-probe-current-contracts.md)
+
+
+## 调试工件类型转发合同
+
+- [调试工件类型转发合同：1单元，0新键](batches/20261017-core-debug-artifact-forwarder-contracts.md)
+
+
+## 构造器prototype增长手写回归合同
+
+- [构造器prototype增长手写回归合同：3单元，3新键](batches/20261018-constructor-prototype-growth-contracts.md)
+
+
+## Parser artifact 投影合同
+
+- [Artifact投影：53单元，15旧键迁移与38遗漏补齐](batches/20261018-parser-artifact-projection-contracts.md)。上表“parser artifact调用绑定与元数据投影15项”为历史复审口径，当前53项及有界验证证据以此记录为准；2项既有BUG意图与4项TODO问题保持。
+
+
+## Parser ExecIR读写与规范文件适配合同
+
+- [ExecIR读写与规范文件适配：20单元](batches/20261018-parser-exec-ir-writer-adapters-contracts.md)：私有头和两写入适配器，0旧键、20遗漏项已按本批交付登记；有界direct运行与源等价范围见批次记录。
+
+
+## Parser scheduler工件写出合同
+
+- [Scheduler工件写出：11单元](batches/20261018-parser-scheduler-artifact-writer-contracts.md)：0旧键、11个遗漏单元补齐；共享artifact_schema运行结果不重复计数，失败清理与非原子限制保留。文件末尾空行的格式修订及其与原生验证版本的区别见批次记录。
+
+
+## 首方范围与陈旧状态维护
+
+- [首方范围与陈旧状态维护](batches/20261018-inventory-scope-reconciliation.md)：补录54个pending文件、撤回49个陈旧reviewed标签；仅维护文件清单，不计函数审查或运行信用。
+
+
+## Artifact Schema 基础格式与合同测试
+
+- [Artifact Schema 基础格式与合同测试](batches/20261018-parser-artifact-schema-main-tests-contracts.md)：54 单元，26 旧键原位复核、28 新键补齐；合同、既有问题与验证范围以该批绑定的实际证据为准。
+
+
+## Artifact Schema 元数据图测试
+
+- [Artifact Schema 元数据图测试](batches/20261018-parser-artifact-schema-metadata-graph-tests-contracts.md)：23 单元，9 旧键原位复核、14 新键补齐；合同、既有问题与验证范围以该批绑定的实际证据为准。
+
+
+## Artifact Schema 源码往返与调度事实测试
+
+- [Artifact Schema 源码往返与调度事实测试](batches/20261018-parser-artifact-schema-source-roundtrip-tests-contracts.md)：34 单元，10 旧键原位复核、24 新键补齐；6 个语言体仅 Parse/Compile；合同、既有问题与验证范围以该批绑定的实际证据为准。
+
+- [扩展贡献清单测试审查](batches/20261018-extension-contributions-contracts.md)：10单元、3份JSDoc，5旧键复核、5新键；现有单文件Node测试前后各2PASS。
+
+- [CMake 多平台与 sanitizer 工作流审查](batches/20261018-github-cmake-multi-platform-contracts.md)：9配置/块、6份中文文档；5旧键复核、4新键；验证保留原有失败。
+
+- [Wiki 验证与 Pages 工作流审查](batches/20261018-github-wiki-pages-contracts.md)：11配置/块、7份中文文档；4旧键复核、7新键；验证保留原有失败。

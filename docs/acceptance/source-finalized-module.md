@@ -1,5 +1,8 @@
 ---
 related_code:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_frame_validation.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_finalized_module_validation.c
+  - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_gc_map_internal.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_finalized_module_internal.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_finalized_module.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_finalized_module_validation.c
@@ -16,15 +19,23 @@ related_code:
   - tests/core/support/ssa_exec_ir_owned_module_allocator.h
   - tests/core/support/ssa_exec_ir_owned_module_allocator.c
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_frame_validation.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/source/exec_ir_source_finalized_module_validation.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_finalized_module_internal.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_finalized_module.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_source_finalized_module_validation.c
   - tests/core/support/ssa_exec_ir_owned_module_allocator.h
   - tests/core/support/ssa_exec_ir_owned_module_allocator.c
 plan_sources:
+  - .codex/plans/20261017-ssa-gc-map-source-preflight.md
   - .codex/plans/20261009-ssa-source-finalized-module-design-v3.md
   - .codex/plans/20261009-ssa-source-finalized-module-test-protocol-v1.md
 tests:
+  - tests/parser/test_ssa_gc_map_source_preflight.c
+  - tests/parser/support/ssa_gc_map_source_preflight_fixture.h
+  - tests/parser/support/ssa_gc_map_source_preflight_fixture.c
+  - tests/cmake/ssa-gc-map-source-preflight.cmake
+  - tests/cmake/ssa-execir-owned-direct-validation/CMakeLists.txt
   - tests/parser/test_ssa_source_finalized_module.c
   - docs/testing-and-validation/source-finalized-module.md
 doc_type: acceptance-record
@@ -352,3 +363,24 @@ Separate returned Source docs remain frozen and retain their own build-only/fail
 - [Frame validation](primitive-frame-validation.md)
 - [Core copy](exec-ir-module-copy.md)
 - [Generic owner](ssa-execir-owned-module.md)
+
+## GC-map outer-header preflight
+
+The private storage preflight now applies the canonical Core outer-header
+predicate after existing owner/header prerequisites and before reading any
+GC-map inner pools. An absent map requires NULL/0/0; a present readable header
+requires count=capacity=1. Empty or multiple inner entries remain valid under
+their existing checks. After owner/header prerequisites succeed, a malformed
+outer shape returns INVALID_RANGE before inner-header access. The guard itself
+allocates nothing; earlier witness growth, OOM priority and the established
+diagnostic channel retain their existing behavior.
+
+The focused fixture covers actual primitive, selected-function, finalized and
+candidate storage paths with readable owned headers and strict owner cleanup.
+The repaired focused run passes all 110 lifecycles with a balanced allocation
+ledger. The existing 18-case primitive-frame and 24-case finalized-module
+regressions also pass. Four MSVC syntax checks cover the changed production files
+and new fixture; they provide no full-build or Linux acceptance.
+See [the shared contract and finite validation](../testing-and-validation/ssa-gc-map-source-preflight.md)
+for reproduction and remaining scope. Historical acceptance above retains its
+original validation scope.

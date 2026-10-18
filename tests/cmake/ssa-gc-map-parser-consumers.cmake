@@ -15,6 +15,8 @@ set(_zr_parser_gc_providers
         exec_ir/exec_ir_pass_manager.c
         exec_ir/passes/exec_ir_dce.c
         exec_ir/passes/exec_ir_sccp.c
+        exec_ir/passes/exec_ir_sccp_owner.c
+        exec_ir/passes/exec_ir_constant_materialize.c
         exec_ir/passes/exec_ir_copy_aliases.c
         exec_ir/exec_ir_cfg.c
         exec_ir/exec_ir_effects.c
