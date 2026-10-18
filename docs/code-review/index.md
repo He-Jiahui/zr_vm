@@ -338,3 +338,5 @@ doc_type: category-index
 - [Math 公共数值与 VM 转换契约](batches/20261018-math-common-scalars-contracts.md)：118 既有单元；52 段 Doxygen、107 处注释行校正；构建与 9 个现有选择器修改前后有限验证。
 
 - [会话交接后的首方文件范围补录（13 pending，0 单元信用）](batches/20261018-released-session-scope-supplement.md)
+
+- [Canonical consumer 与引用 callable 测试契约](batches/20261018-parser-canonical-consumer-tests-contracts-current.md)：123 新单元、105 段 Doxygen；两源原始字节前缀不变，同一目标的 21 个 Unity 用例修改前后有限验证。

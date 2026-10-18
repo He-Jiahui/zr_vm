@@ -438,3 +438,174 @@ void test_reference_callable_ref_export_matches_return_access(void) {
     ZrParser_SemanticContext_Free(context);
     ZrTests_Runtime_State_Destroy(state);
 }
+
+/**
+ * @unit CCONS-063 declaration::test_reference_callable_contract_roundtrips_across_artifact_vm_and_aot
+ * @brief 固定跨TU Unity 用例原型：验证七种引用参数合同在 parser、artifact、VM 与 AOT 间一致
+ *
+ * ## Summary
+ * 在 reference TU 中固定随后定义的外部函数原型；main TU 另有相同原型。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 无返回值；预期条件不符时 Unity 中断当前用例。
+ *
+ * ## Constraints and lifecycle
+ * Parse/Compile 唯一 contract 语言体并单独 intern callable；检查七参数签名、readonly ref 导出、SCOPED合同和非法导出/flags拒绝，不执行语言体或artifact code。
+ * 声明本身不分配或转移资源；定义的普通清理和失败边界见对应函数。
+ *
+ * ## References
+ * tests/parser/test_reference_callable_consumers.c:32
+ * tests/parser/test_reference_callable_consumers.c:142
+ */
+
+/**
+ * @unit CCONS-064 declaration::test_reference_callable_ref_export_matches_return_access
+ * @brief 固定跨TU Unity 用例原型：验证引用返回访问模式与签名导出字节一致
+ *
+ * ## Summary
+ * 在 reference TU 中固定随后定义的外部函数原型；main TU 另有相同原型。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 无返回值；断言失败由 Unity 中断。
+ *
+ * ## Constraints and lifecycle
+ * 分别 intern writable/readonly ref 返回 callable，核 signature[2]；将 readonly 签名该字节改为 writable 后期望 INVALID_SIGNATURE 且 out id 重设为 INVALID。
+ * 声明本身不分配或转移资源；定义的普通清理和失败边界见对应函数。
+ *
+ * ## References
+ * tests/parser/test_reference_callable_consumers.c:33
+ * tests/parser/test_reference_callable_consumers.c:354
+ */
+
+/**
+ * @unit CCONS-065 function::write_reference_callable_artifact
+ * @brief 同步构建七节引用 callable artifact 的内存编码
+ *
+ * ## Summary
+ * reference roundtrip 用例用同一 signature/identity 改变 contract flags/refExportEffect 比较两个消费者。
+ *
+ * ## Parameters
+ * @param[in] typeId 已 intern 的 canonical callable 类型ID。
+ * @param[in] signature 非NULL签名字节，借用至少 signatureLength 字节。
+ * @param[in] signatureLength 签名长度；写入节长度和32位行字段前由调用者保证可表示。
+ * @param[in] identity 非NULL public identity，提供签名、layout及callable contract哈希。
+ * @param[in] contractFlags 写入 contract.flags 的测试输入，可用于构造负例。
+ * @param[in] refExportEffect 写入 contract.refExportEffect 的读写导出效果。
+ * @param[out] buffer 至少 bufferCapacity 字节的调用者写缓冲。
+ * @param[in] bufferCapacity buffer 容量，不足时 writer 的非OK状态触发 Unity 中断。
+ *
+ * ## Returns
+ * @return 成功断言后返回 writtenSize；失败不返回普通错误值。
+ *
+ * ## Constraints and lifecycle
+ * 固定 parameterCount=7、receiver NONE、layout size/alignment=sizeof(void*)、GC_FREE；这些是本 helper 的合成fixture合同，不是任意签名的通用序列化器。
+ * 七节和行是栈对象、code 为静态数组，ZrCore_Artifact_Write 同步消费；仅字节写入 caller buffer，不保存这些栈指针，不进行文件I/O。
+ *
+ * ## References
+ * tests/parser/test_reference_callable_consumers.c:35
+ */
+
+/**
+ * @unit CCONS-067 function::test_reference_callable_contract_roundtrips_across_artifact_vm_and_aot
+ * @brief 验证七种引用参数合同在 parser、artifact、VM 与 AOT 间一致
+ *
+ * ## Summary
+ * 由 main 的 RUN_TEST 经跨TU声明调用。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 无返回值；预期条件不符时 Unity 中断当前用例。
+ *
+ * ## Constraints and lifecycle
+ * Parse/Compile 唯一 contract 语言体并单独 intern callable；检查七参数签名、readonly ref 导出、SCOPED合同和非法导出/flags拒绝，不执行语言体或artifact code。
+ * 独立 local state/context/compiled/AST 只在普通尾路径依次释放，与 main g_state 不同。BUG: local state 已建立后 context 首次 RawMalloc 普通NULL会在失败断言处 longjmp，跳过本地 Destroy；默认 tearDown 只销毁 g_state，局部VM可留到进程结束。
+ *
+ * ## References
+ * tests/parser/test_reference_callable_consumers.c:142
+ * tests/parser/test_canonical_consumers.c:1732
+ * zr_vm_parser/src/zr_vm_parser/semantic/semantic.c:195
+ * tests/third_party/zr_unity/Unity/src/unity.c:2247
+ * tests/parser/test_canonical_consumers.c:54
+ */
+
+/**
+ * @unit CCONS-068 state::test_reference_callable_contract_roundtrips_across_artifact_vm_and_aot::source
+ * @brief 保存该用例的人工Zr源码字符串
+ *
+ * ## Summary
+ * 验证七种引用参数合同在 parser、artifact、VM 与 AOT 间一致时作为Parse/Compile输入。
+ *
+ * ## Fields
+ * source自动指针或静态const字符数组；字面量具有静态存储期。
+ *
+ * ## Value model
+ * Parse/Compile 唯一 contract 语言体并单独 intern callable；检查七参数签名、readonly ref 导出、SCOPED合同和非法导出/flags拒绝，不执行语言体或artifact code。
+ *
+ * ## Invariants and lifecycle
+ * 由所属C用例 Parse/Compile；语言函数、构造器与lambda没有经过 Function_Execute。各独立语言定义另列unit，字符串字节不能被文档改动。
+ * 源码名是VM诊断字符串，不是磁盘文件路径；AST/context只在各自有效期内查询，普通尾路径释放，不承诺Unity中断后的局部资源恢复。
+ *
+ * ## References
+ * tests/parser/test_reference_callable_consumers.c:143
+ */
+
+/**
+ * @unit CCONS-070 function::test_reference_callable_ref_export_matches_return_access
+ * @brief 验证引用返回访问模式与签名导出字节一致
+ *
+ * ## Summary
+ * 由 main 的第二个 reference RUN_TEST 调用。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 无返回值；断言失败由 Unity 中断。
+ *
+ * ## Constraints and lifecycle
+ * 分别 intern writable/readonly ref 返回 callable，核 signature[2]；将 readonly 签名该字节改为 writable 后期望 INVALID_SIGNATURE 且 out id 重设为 INVALID。
+ * local context/state 只在普通尾路径释放。BUG: local state 已建立而 context 首次分配普通NULL时，Unity longjmp 跳过本地 Destroy；默认 hook 不回收这个独立VM，影响限于当前测试进程余下生命周期。
+ *
+ * ## References
+ * tests/parser/test_reference_callable_consumers.c:354
+ * tests/parser/test_canonical_consumers.c:1733
+ * zr_vm_parser/src/zr_vm_parser/semantic/semantic.c:195
+ * tests/third_party/zr_unity/Unity/src/unity.c:2247
+ * tests/parser/test_canonical_consumers.c:54
+ */
+
+/**
+ * @unit CCONS-123 fixture::test_reference_callable_contract_roundtrips_across_artifact_vm_and_aot::module::contract
+ * @brief 提供七种参数模式与readonly引用返回的语言函数体
+ *
+ * ## Summary
+ * reference roundtrip C用例仅Parse/Compile并从参数AST合成canonical合同。
+ *
+ * ## Parameters
+ * @param[in] value 普通 int 值，写入 result。
+ * @param[in] input in int 接口形参，本体未使用。
+ * @param[in] writable 可写 ref int 接口形参，本体未读写；仅保留签名访问模式。
+ * @param[in] observed ref readonly int 借用，作为 readonly ref 返回值。
+ * @param[in] local scoped ref int 接口形参，本体未使用，不保存到外部。
+ * @param[in] localView scoped ref readonly int 接口形参，本体未使用。
+ * @param[out] result out int 引用，语言体赋值为 value。
+ *
+ * ## Returns
+ * @return 语言体先把 value 写到 result，再以只读引用返回 observed；其他引用形参不读写。
+ *
+ * ## Constraints and lifecycle
+ * 参数模式是接口合同；返回借用的有效期必须覆盖调用方使用，函数体不拥有被引用值，也不提供脱离该值的快照。
+ * 当前C测试没有执行本体或验证运行时引用存活；它只断言解析、编译及序列化合同。
+ *
+ * ## References
+ * tests/parser/test_reference_callable_consumers.c:144
+ * tests/parser/test_reference_callable_consumers.c:142
+ */
