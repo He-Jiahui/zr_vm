@@ -30,7 +30,7 @@ static SZrObject *zr_math_make_object_with_fields(SZrState *state,
         return ZR_NULL;
     }
     for (index = 0; index < fieldCount; index++) {
-        ZrMath_WriteFloatField(state, object, fieldNames[index], fieldValues[index]); /* setter无状态返回；一次字段失败不打断循环。 */
+        ZrMath_WriteFloatField(state, object, fieldNames[index], fieldValues[index]); /* 写入失败经底层 Throw 离开；已写字段不回滚。 */
     }
     return object;
 }
@@ -174,20 +174,20 @@ TZrBool ZrMath_ReadFloatField(SZrState *state, SZrObject *object, const TZrChar 
 void ZrMath_WriteFloatField(SZrState *state, SZrObject *object, const TZrChar *fieldName, TZrFloat64 value) {
     SZrTypeValue fieldValue;
     ZrLib_Value_SetFloat(state, &fieldValue, value);
-    ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue); /* BUG: setter 无状态返回；软失败不阻止工厂报告成功。 */
+    ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue); /* TrySet 失败经 Throw 传播，不会从失败点普通返回。 */
 }
 
 void ZrMath_WriteIntField(SZrState *state, SZrObject *object, const TZrChar *fieldName, TZrInt64 value) {
     SZrTypeValue fieldValue;
     ZrLib_Value_SetInt(state, &fieldValue, value);
-    ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue); /* BUG: 新 Tensor 第四个 size 字段扩桶软失败时此 void setter 不报告状态，Populate 仍返回 true。 */
+    ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue); /* 有效 state 下写入失败经 Throw 传播；已完成字段不回滚。 */
 }
 
 void ZrMath_WriteBoolField(SZrState *state, SZrObject *object, const TZrChar *fieldName, TZrBool value) {
     /* TODO: 全仓只有声明和定义；核对未来 callback/注册表是否仍需要布尔字段写入 helper。 */
     SZrTypeValue fieldValue;
     ZrLib_Value_SetBool(state, &fieldValue, value);
-    ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue); /* 同一 void setter 失败边界。 */
+    ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue); /* TZrBool 不在此规范化；字段写入失败可 Throw。 */
 }
 
 SZrObject *ZrMath_SelfObject(ZrLibCallContext *context) {
@@ -364,8 +364,8 @@ TZrBool ZrMath_ArrayReadInt(SZrState *state, SZrObject *array, TZrSize index, TZ
 }
 
 TZrBool ZrMath_ArraySetValue(SZrState *state, SZrObject *array, TZrSize index, const SZrTypeValue *value) {
-    /* TODO: 本 helper 无条件返回成功，Fill/Set 也未检查写入状态；底层 SetValue 无返回值，
-     * 需用分配失败或不可写数组场景确认错误是否可由 VM 状态传出。 */
+    /* SetValue 普通返回后本 helper 才返回 TRUE；底层 TrySet 失败会 Throw，
+     * 不以普通 FALSE 交付。index 须可表示为 TZrInt64，异常不回滚更早修改。 */
     SZrTypeValue key;
     ZrLib_Value_SetInt(state, &key, (TZrInt64)index);
     ZrCore_Object_SetValue(state, array, &key, value);
@@ -403,8 +403,8 @@ SZrObject *ZrMath_TensorMakeZeroData(SZrState *state, TZrInt64 size) {
 }
 
 TZrBool ZrMath_TensorGetStorage(SZrState *state, SZrObject *tensor, ZrMathTensorStorage *outStorage) {
-    /* TODO: 这里只做字段类型检查；公开的 shape/rank/size 若被脚本修改，运算仍信任缓存值。
-     * 需检查字段可写性和修改后 get/matmul 的实际行为，再决定是否重验存储不变量。 */
+    /* TODO: 数组标签及 rank/size 数值转换通过，不代表非负 rank、维数或 size/data 一致；
+     * 核公开字段修改策略及 get/set/matmul 消费入口，保持借用数组的 VM 根。 */
     const SZrTypeValue *shapeValue;
     const SZrTypeValue *dataValue;
     const SZrTypeValue *rankValue;
@@ -461,7 +461,7 @@ TZrBool ZrMath_TensorPopulate(SZrState *state, SZrObject *tensor, SZrObject *sha
     }
 
     ZrMath_WriteIntField(state, tensor, "rank", (TZrInt64)ZrLib_Array_Length(shapeArray));
-    ZrMath_WriteIntField(state, tensor, "size", totalSize); /* BUG: 初始空 map 的第四次插入；仅此 HASH_BUCKET 扩容返回 NULL、其余步骤成功时 size 缺失却继续报告成功。 */
+    ZrMath_WriteIntField(state, tensor, "size", totalSize); /* 写入失败可 Throw；完成四字段后才普通返回成功。 */
     return ZR_TRUE;
 }
 
@@ -529,7 +529,7 @@ TZrBool ZrMath_MakeStringResult(SZrState *state, SZrTypeValue *result, const TZr
     va_start(arguments, format);
     vsnprintf(buffer, sizeof(buffer), format, arguments);
     va_end(arguments);
-    ZrLib_Value_SetString(state, result, buffer); /* BUG: 短串缓存桶扩容软失败不写 result；本 helper 仍返回 ZR_TRUE。 */
+    ZrLib_Value_SetString(state, result, buffer); /* 有效 state/result 下字符串创建失败 Throw；普通返回后才报告 TRUE。 */
     return ZR_TRUE;
 }
 
@@ -540,21 +540,91 @@ TZrBool ZrMath_MakeStringResult(SZrState *state, SZrTypeValue *result, const TZr
  * 它集中处理对象创建与字段发布；各 wrapper 负责确定类型、字段顺序和结果含义。
  *
  * ## Parameters
- * @param[in] state 当前 VM state；仅在同步 native callback/factory 调用期间借用。
+ * @param[in,out] state 当前 VM state；同步借用，创建实例与字段发布可分配并改变错误/GC 状态。
  * @param[in] typeName 已注册 Math 类型名，供 VM 创建其实例。
  * @param[in] fieldNames 字段名数组；必须至少有 fieldCount 项，顺序须与 fieldValues 对应。
  * @param[in] fieldValues 本次调用的浮点快照；必须至少有 fieldCount 项，不转移 VM 所有权。
  * @param[in] fieldCount 要尝试写入的字段数；由每个 wrapper 的固定布局决定。
  *
  * ## Returns
- * @return 创建失败时为 ZR_NULL；否则返回 VM 管理的新对象。非空只证明实例创建成功，不能证明每个字段写入成功。
+ * @return 实例创建普通失败返回 ZR_NULL；正常返回交付已完成该字段循环的 VM 对象，发布失败可 Throw。
  *
  * ## Constraints and lifecycle
- * 实例创建成功后按数组顺序调用 void WriteFloatField；单次字段 setter 的软失败不会中断循环，也不会在这里传播给调用者。
- * 受支持的 allocator 若仅在 HASH_BUCKET 扩容时返回 NULL 并保留旧桶，第四、七或第十三次插入可漏掉该字段，wrapper 仍可能交付缺字段对象；数组和快照只在本次调用中有效。
+ * 按字段顺序调用 WriteFloatField；TrySet 失败经 Throw 离开，不在失败字段后继续循环，之前的字段不回滚。
+ * 字段名与数值数组至少覆盖 fieldCount 并在同步调用期间有效；新对象属于 VM，调用方遵守有效根与异常恢复边界。
  * VM 实例由 VM 管理；本 helper 不释放对象，也不提供跨线程或异步保存这些参数的保证。
  *
  * ## References
- * 七个本地 wrapper 为 ZrMath_MakeVector2/3/4、ZrMath_MakeQuaternion、ZrMath_MakeComplex、ZrMath_MakeMatrix3x3 和 ZrMath_MakeMatrix4x4；字段写入由 ZrMath_WriteFloatField 完成。
- * 分配与缺字段路径见 docs/code-review/batches/20261014-math-common-contracts.md。
+ * 本地 wrapper 为 ZrMath_MakeVector2、ZrMath_MakeVector3、ZrMath_MakeVector4、ZrMath_MakeQuaternion、ZrMath_MakeComplex、ZrMath_MakeMatrix3x3 和 ZrMath_MakeMatrix4x4；字段写入由 ZrMath_WriteFloatField 完成。
+ * ZrLib_Object_SetFieldCString 委托 Core TrySet 并在失败时 Throw；不能由 void 签名推断静默缺字段。
+ */
+
+/** @file common.c
+ * ## Summary
+ * 实现 Math 声明层的数值转换、字段访问、固定布局工厂与 Tensor 操作；业务 callback 负责各运算及参数政策。
+ *
+ * ## Value model
+ * 输入 VM 值、对象与 callback context 按 math_common.h 的声明契约同步借用；纯数值快照不拥有 VM 对象。调用者保持有效 VM 根和异常恢复边界。
+ *
+ * ## Constraints and lifecycle
+ * 字段发布和字符串创建失败可由 Throw 非局部离开，不能靠 void 签名推断继续执行；多字段修改无回滚。后端宏仅选编译路径，模块不提供跨 VM/原生线程同步。
+ *
+ * ## References
+ * zr_vm_lib_math/include/zr_vm_lib_math/math_common.h:1
+ * zr_vm_lib_math/src/zr_vm_lib_math/common.c:22
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_object_write.c:14
+ * zr_vm_core/src/zr_vm_core/object/object_write.c:198
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:1311
+ * zr_vm_lib_math/src/zr_vm_lib_math/module.c:168
+ */
+
+/** @def ZR_VM_LIB_MATH_USE_AVX2
+ * ## Summary
+ * 在编译器定义 __AVX2__ 时选择 Dot 的四分量向量循环及标量尾项。
+ *
+ * ## Value model
+ * 该宏在本翻译单元定义为 1，优先于 SSE2/NEON；没有运行时 CPU 探测或独立数据存储。
+ *
+ * ## Constraints and lifecycle
+ * 调用 Dot 必须提供 count 个真实数组元素并满足当前 ISA。循环和尾项求和顺序会影响舍入；结构体首成员跨界调用的既有问题仍按布局证据区分。
+ *
+ * ## References
+ * zr_vm_lib_math/src/zr_vm_lib_math/common.c:10
+ * zr_vm_lib_math/src/zr_vm_lib_math/common.c:11
+ * zr_vm_lib_math/src/zr_vm_lib_math/common.c:48
+ * zr_vm_lib_math/include/zr_vm_lib_math/math_common.h:134
+ */
+
+/** @def ZR_VM_LIB_MATH_USE_SSE2
+ * ## Summary
+ * AVX2 未选中且编译目标声明 SSE 能力时选择 Dot 的两分量向量循环。
+ *
+ * ## Value model
+ * 由 __SSE4_1__/__SSE2__/_M_X64 或 _M_IX86_FP>=2 的互斥分支定义为 1，仅在本翻译单元生效。
+ *
+ * ## Constraints and lifecycle
+ * 无运行时 ISA 检测；调用者遵守 Dot 数组边界，奇数尾项走标量。不能把合法数组路径与快照地址转换的对象边界问题混为一谈。
+ *
+ * ## References
+ * zr_vm_lib_math/src/zr_vm_lib_math/common.c:13
+ * zr_vm_lib_math/src/zr_vm_lib_math/common.c:14
+ * zr_vm_lib_math/src/zr_vm_lib_math/common.c:66
+ * zr_vm_lib_math/include/zr_vm_lib_math/math_common.h:134
+ */
+
+/** @def ZR_VM_LIB_MATH_USE_NEON
+ * ## Summary
+ * 前两个后端均未选中且同时具有 __ARM_NEON 与 __aarch64__ 时选择 Dot 的 NEON 分支。
+ *
+ * ## Value model
+ * 本翻译单元的编译期标志，值为 1；包含 arm_neon.h，未满足条件时不定义此宏。
+ *
+ * ## Constraints and lifecycle
+ * 不是运行时 ARM 探测；要求当前平台支持相应 intrinsic，尾项仍走标量，不承诺与其他后端逐位相同结果。
+ *
+ * ## References
+ * zr_vm_lib_math/src/zr_vm_lib_math/common.c:16
+ * zr_vm_lib_math/src/zr_vm_lib_math/common.c:17
+ * zr_vm_lib_math/src/zr_vm_lib_math/common.c:83
+ * zr_vm_lib_math/include/zr_vm_lib_math/math_common.h:134
  */
