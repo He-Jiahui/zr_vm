@@ -91,7 +91,11 @@ static const union {
 /* 当前 writer 输出的 patch；reader 拒绝更高版本，并按历史门槛解析可选字段。 */
 /* CREATE_ARRAY operand2[0] is the initial length for checked literal stores. */
 #define ZR_IO_SOURCE_PATCH_HAS_ARRAY_INITIAL_LENGTH 45U
-#define ZR_IO_SOURCE_PATCH_CURRENT ZR_IO_SOURCE_PATCH_HAS_ARRAY_INITIAL_LENGTH
+/* Frame coordinates are (physical stack-slot index, intra-slot byte offset).
+ * Earlier artifacts contain ABI-dependent raw offsets; rebuild from source. */
+#define ZR_IO_SOURCE_PATCH_HAS_SLOT_RELATIVE_FRAME_LAYOUT 46U
+#define ZR_IO_SOURCE_PATCH_MIN_SUPPORTED ZR_IO_SOURCE_PATCH_HAS_SLOT_RELATIVE_FRAME_LAYOUT
+#define ZR_IO_SOURCE_PATCH_CURRENT ZR_IO_SOURCE_PATCH_HAS_SLOT_RELATIVE_FRAME_LAYOUT
 
 /* .MODULE:
  * NAME [string]

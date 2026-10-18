@@ -454,13 +454,20 @@ static void write_function_exception_metadata(SZrState *state, FILE *file, SZrFu
     }
 }
 
+static void write_frame_coordinate(FILE *file, TZrUInt32 byteOffset) {
+    TZrUInt32 slot = byteOffset / (TZrUInt32)sizeof(SZrTypeValueOnStack);
+    TZrUInt32 intraSlot = byteOffset % (TZrUInt32)sizeof(SZrTypeValueOnStack);
+    fwrite(&slot, sizeof(slot), 1, file);
+    fwrite(&intraSlot, sizeof(intraSlot), 1, file);
+}
+
 static void write_function_frame_layout(FILE *file, const SZrFunction *function) {
     TZrUInt32 frameByteSize = function != ZR_NULL ? function->frameByteSize : 0;
     TZrUInt32 frameByteAlign = function != ZR_NULL ? function->frameByteAlign : 0;
     TZrUInt64 frameSlotLayoutLength =
             (function != ZR_NULL && function->frameSlotLayouts != ZR_NULL) ? function->frameSlotLayoutLength : 0;
 
-    fwrite(&frameByteSize, sizeof(TZrUInt32), 1, file);
+    write_frame_coordinate(file, frameByteSize);
     fwrite(&frameByteAlign, sizeof(TZrUInt32), 1, file);
     fwrite(&frameSlotLayoutLength, sizeof(TZrUInt64), 1, file);
     for (TZrUInt64 index = 0; index < frameSlotLayoutLength; index++) {
@@ -469,7 +476,7 @@ static void write_function_frame_layout(FILE *file, const SZrFunction *function)
                 layout->reserved0 &
                 (TZrUInt16)~ZR_FUNCTION_FRAME_SLOT_FLAG_DIRECT_VALUE;
         fwrite(&layout->stackSlot, sizeof(TZrUInt32), 1, file);
-        fwrite(&layout->byteOffset, sizeof(TZrUInt32), 1, file);
+        write_frame_coordinate(file, layout->byteOffset);
         fwrite(&layout->byteSize, sizeof(TZrUInt32), 1, file);
         fwrite(&layout->byteAlign, sizeof(TZrUInt32), 1, file);
         fwrite(&layout->typeLayoutId, sizeof(TZrUInt32), 1, file);

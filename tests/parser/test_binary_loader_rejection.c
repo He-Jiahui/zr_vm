@@ -14,7 +14,7 @@ static SZrIoSource *loaded;
 static TZrBytePtr encoded;
 static TZrSize encodedLength;
 static TZrSize instructionsOffset, instructionCount, constantCount;
-static TZrUInt32 stackSlots;
+static TZrUInt32 stackSlots, frameLayoutCount, expectedFrameBytes, expectedFirstOffset;
 static FZrAllocator originalAllocator;
 static TZrSize ioBytes, allocationCalls, failAllocation;
 
@@ -80,6 +80,10 @@ void setUp(void) {
     instructionCount = function->instructionsLength;
     constantCount = function->constantValueLength;
     stackSlots = function->stackSize;
+    frameLayoutCount = function->frameSlotLayoutLength;
+    expectedFrameBytes = function->frameByteSize;
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, frameLayoutCount);
+    expectedFirstOffset = function->frameSlotLayouts[0].byteOffset;
     instructionsOffset = 0;
     for (TZrSize offset = 32u; offset + instructionCount * sizeof(TZrInstruction) <= encodedLength; ++offset) {
         if (memcmp(encoded + offset, function->instructionsList,
@@ -128,6 +132,46 @@ static void test_header_and_length_bombs_are_rejected(void) {
         }
         memcpy(encoded + offset, &saved, sizeof(saved));
     }
+}
+
+static void test_old_raw_frame_offset_format_requires_recompilation(void) {
+    TZrUInt32 savedPatch, oldPatch = ZR_IO_SOURCE_PATCH_MIN_SUPPORTED - 1u;
+    memcpy(&savedPatch, encoded + 12u, sizeof(savedPatch));
+    TEST_ASSERT_EQUAL_UINT32(ZR_IO_SOURCE_PATCH_CURRENT, savedPatch);
+    memcpy(encoded + 12u, &oldPatch, sizeof(oldPatch));
+    TEST_ASSERT_FALSE(read_binary(encoded, encodedLength, 7u));
+    memcpy(encoded + 12u, &savedPatch, sizeof(savedPatch));
+    TEST_ASSERT_TRUE(read_binary(encoded, encodedLength, 7u));
+}
+
+static void test_slot_relative_frame_coordinates_round_trip_and_reject_overflow(void) {
+    Input input = {encoded, encodedLength, 0, 7u};
+    SZrIo io;
+    ZrCore_Io_Init(state, &io, read_chunk, ZR_NULL, &input);
+    loaded = ZrCore_Io_ReadSourceNew(&io);
+    TEST_ASSERT_NOT_NULL(loaded);
+    const SZrIoFunction *function = loaded->modules[0].entryFunction;
+    TEST_ASSERT_EQUAL_UINT32(expectedFrameBytes, function->frameByteSize);
+    TEST_ASSERT_EQUAL_UINT32(expectedFirstOffset, function->frameSlotLayouts[0].byteOffset);
+    ZrCore_Io_ReadSourceFree(state->global, loaded);
+    loaded = ZR_NULL;
+    TEST_ASSERT_EQUAL_size_t(0u, ioBytes);
+
+    /* Frame header: coordinate[2], alignment, count64; each layout is 28 bytes.
+     * The instruction count follows immediately, so no byte-pattern search is
+     * needed to locate the four coordinate fields under test. */
+    TZrSize frameStart = instructionsOffset - sizeof(TZrUInt64) -
+            (TZrSize)frameLayoutCount * 28u - 20u;
+    const TZrSize positions[] = {frameStart, frameStart + 4u,
+            frameStart + 24u, frameStart + 28u};
+    for (unsigned n = 0; n < ZR_ARRAY_COUNT(positions); ++n) {
+        TZrUInt32 saved, invalid = (n & 1u) ? (TZrUInt32)sizeof(SZrTypeValueOnStack) : UINT32_MAX;
+        memcpy(&saved, encoded + positions[n], sizeof(saved));
+        memcpy(encoded + positions[n], &invalid, sizeof(invalid));
+        TEST_ASSERT_FALSE(read_binary(encoded, encodedLength, 7u));
+        memcpy(encoded + positions[n], &saved, sizeof(saved));
+    }
+    TEST_ASSERT_TRUE(read_binary(encoded, encodedLength, 7u));
 }
 
 static void test_all_native_allocation_failures_release_partial_tree(void) {
@@ -268,6 +312,8 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_empty_and_unterminated_bodies_are_rejected);
     RUN_TEST(test_chunked_round_trip_and_all_truncations);
+    RUN_TEST(test_old_raw_frame_offset_format_requires_recompilation);
+    RUN_TEST(test_slot_relative_frame_coordinates_round_trip_and_reject_overflow);
     RUN_TEST(test_header_and_length_bombs_are_rejected);
     RUN_TEST(test_all_native_allocation_failures_release_partial_tree);
     RUN_TEST(test_sticky_short_reads_initialize_destinations);
