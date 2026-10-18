@@ -1,5 +1,10 @@
 ---
 related_code:
+  - tests/parser/test_ssa_dce_dead_phis.c
+  - tests/parser/support/ssa_dce_dead_phis_fixture.h
+  - tests/parser/support/ssa_dce_dead_phis_fixture.c
+  - tests/parser/support/ssa_dce_dead_phis_faults.c
+  - tests/cmake/ssa-dce-dead-phis.cmake
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_internal.h
   - tests/parser/test_ssa_sccp_branch_sensitive_pool.c
@@ -40,12 +45,18 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
 plan_sources:
+  - .codex/plans/20261017-ssa-scalar-pipeline.md
   - .codex/plans/20261017-ssa-sccp-bool-edges.md
   - .codex/plans/20261017-ssa-sccp-pooled-int64.md
   - .codex/plans/20261016-ssa-gc-map-parser-consumers.md
   - docs/plans/ssa/01-execir-ssa/03-effects-verifier.md
   - docs/plans/ssa/02-automatic-optimization/01-pass-manager-scalar.md
 tests:
+  - tests/parser/test_ssa_dce_dead_phis.c
+  - tests/parser/support/ssa_dce_dead_phis_fixture.h
+  - tests/parser/support/ssa_dce_dead_phis_fixture.c
+  - tests/parser/support/ssa_dce_dead_phis_faults.c
+  - tests/cmake/ssa-dce-dead-phis.cmake
   - tests/parser/test_ssa_sccp_branch_sensitive_pool.c
   - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.h
   - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.c
@@ -119,40 +130,52 @@ MSVC evidence for this direct metadata path. Historical pass execution fixtures 
 
 ## DCE PHI Liveness And Publication
 
-DCE first validates storage and seeds uses from GC roots, deoptimization
-values and aggregate fields, and state-map live/root values. Owner states are
-paired with state-map live values, so those definitions remain rooted. It then
-repeatedly visits PHI incoming edge uses and instruction operands until marking
-does not discover any new used value. Control-flow instructions, owner operations,
-memory reads/writes, explicit memory/effect-token carriers, throw/GC/suspend/
-allocation/debug/guard boundaries, and existing GC/state-map sites retain their
-operands even when their result is unused.
+DCE validates storage, ranges, and ordinary value IDs before reading new PHI
+consumers. GC roots, deoptimization values and aggregate fields, and state-map
+live/root values seed liveness. Observable instructions retain their operands:
+control flow, owner operations, memory reads/writes, explicit effect or memory
+tokens, throw/GC/suspend/allocation/debug/guard boundaries, and existing GC or
+state-map sites. NOP remains observable under the existing opcode policy.
 
-PHIs remain structurally present in this pass. Every retained PHI incoming is
-therefore a structural use, including when the PHI result is unused: the full
-SSA verifier still requires its incoming definitions. This also keeps transitive
-instruction operands behind incoming copies and chained PHIs alive. Removing
-unused PHIs and their CFG bookkeeping is a separate optimization, and this DCE
-pass makes no claim to remove definitions needed by retained unused PHIs.
+An ordinary PHI propagates its incoming values only when its result is live.
+Repeated PHI and instruction visits find a monotone fixed point, so an unrooted
+self cycle or mutually recursive pure component can be removed. A legacy PHI
+opcode remains observable and conservatively roots its result and ordinary
+incoming dependencies. Metadata roots continue to keep the whole required
+producer chain alive.
 
-The marking phase never rewrites instructions or metadata. PHI and instruction
-visits consume the pass work budget. After the fixed point, DCE reserves the
-entire instruction-deletion sweep budget before changing the function. Budget
-exhaustion returns success with `budgetExhausted` set and `changed` false; direct
-callers receive unchanged IR and metadata, with no source remark published.
-After reservation, deletion cannot encounter a budget cancellation halfway
-through publishing tombstones. Deleted instructions become NOPs in place and
-their source-map metadata is removed without changing instruction IDs or CFG.
-The pass manager retains its existing full verification and rollback protocol.
+DCE compacts the logical `phiPool` in its original physical order. A prefix
+indexed by the old PHI position remaps every block's `phis` range, including
+ranges whose block order differs from physical storage and inactive holes.
+It preserves `phiIncoming` storage, pointer, count, capacity, and bytes, together
+with all surviving ordinary, legacy, effect, and memory incoming ranges.
+Unused backing rows remain allocated. Value IDs, instruction IDs, CFG edges,
+predecessor occurrences, and successor order remain stable.
 
-The independent `ssa_dce_phi_liveness` CTest exercises a strict diamond, incoming
-copies, chained PHIs, a loop backedge, unused structural PHIs, and unrelated dead
-pure chains. Each successful fixture fully verifies and executes through both
-Oracle and ExecBC before/after DCE and, where applicable, SCCP+DCE; a repeated
-pipeline must be idempotent. Metadata and observable-boundary cases cover GC/
-deopt roots, debug state maps, owner MOVE, and throw effects. Every smaller work
-budget than a complete direct DCE run must leave the function unchanged, and an
-intentionally invalid following pass verifies transaction rollback after DCE.
+The shared incoming pool contains separate ordinary and token domains. Ordinary
+PHI consumers and legacy opcode PHI ranges independently require ordinary value
+IDs, even when a row also belongs to a token range. Effect and memory tokens
+can exceed `valueCount`; they never index the ordinary liveness array. Initial
+zero tokens remain legal where Core's predecessor terminal contract permits
+them. Domain classification does not replace the complete Core effect verifier.
+
+All scratch allocations, validation, marking, deletion decisions, and publication
+work reservations finish before the first IR mutation. Budget exhaustion returns
+success with `budgetExhausted` set and `changed` false, leaving IR, backing pools,
+and metadata unchanged. Allocation failure returns false before publication.
+After reservation, logical PHI compaction and instruction deletion cannot fail.
+Dead pure instructions become NOPs in place and their removable source/GC/state
+site entries are compacted. PHI-only deletion reports `changed=true`; a genuine
+repeat with no IR change reports false. The manager's full verification,
+transaction rollback, hash, remark, and analysis policy remain in force.
+
+The IR-only `ssa_dce_dead_phis` fixture covers dead diamonds, chains, cycles,
+mixed live/dead PHIs, shared token storage, duplicate predecessor occurrences,
+metadata and observable roots, publication budgets, allocation failure/retry,
+module transactions, and actual changed/cache/remark fixed points. The original
+`ssa_dce_phi_liveness` fixture has a separate Oracle/ExecBC execution scope.
+Source39's current native evidence and its explicit validation limits are recorded
+in [the dead-PHI validation record](../testing-and-validation/ssa-dce-dead-phis.md).
 
 The public `SZrExecIrPassInfo` contract records required, preserved, and
 invalidated analyses.  SCCP requires dominators when a function has blocks;

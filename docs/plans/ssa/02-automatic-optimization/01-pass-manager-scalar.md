@@ -1,5 +1,11 @@
 ---
 related_code:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
+  - tests/parser/test_ssa_dce_dead_phis.c
+  - tests/parser/support/ssa_dce_dead_phis_fixture.h
+  - tests/parser/support/ssa_dce_dead_phis_fixture.c
+  - tests/parser/support/ssa_dce_dead_phis_faults.c
+  - tests/cmake/ssa-dce-dead-phis.cmake
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_internal.h
   - tests/parser/test_ssa_sccp_branch_sensitive_pool.c
@@ -30,11 +36,17 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
 plan_sources:
+  - .codex/plans/20261017-ssa-scalar-pipeline.md
   - .codex/plans/20261017-ssa-sccp-bool-edges.md
   - .codex/plans/20261017-ssa-sccp-pooled-int64.md
   - docs/plans/ssa/index.md
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
 tests:
+  - tests/parser/test_ssa_dce_dead_phis.c
+  - tests/parser/support/ssa_dce_dead_phis_fixture.h
+  - tests/parser/support/ssa_dce_dead_phis_fixture.c
+  - tests/parser/support/ssa_dce_dead_phis_faults.c
+  - tests/cmake/ssa-dce-dead-phis.cmake
   - tests/parser/test_ssa_sccp_branch_sensitive_pool.c
   - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.h
   - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.c
@@ -51,6 +63,12 @@ tests:
   - tests/parser/ssa_dead_source_places_edges.inc
   - docs/acceptance/ssa-dead-source-places.md
 source_refs:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
+  - tests/parser/test_ssa_dce_dead_phis.c
+  - tests/parser/support/ssa_dce_dead_phis_fixture.h
+  - tests/parser/support/ssa_dce_dead_phis_fixture.c
+  - tests/parser/support/ssa_dce_dead_phis_faults.c
+  - tests/cmake/ssa-dce-dead-phis.cmake
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_internal.h
@@ -131,6 +149,27 @@ compiler_quickening.c 包含大量后期 opcode 选择，不能继续承载 SSA 
 当前focused-r2、三项回归及有限MSVC补证独审均已接受，实际提交与有限关闭完成。main计数类型按Unity字段改为UNITY_UINT后，focused configure/build/test r2实际通过：1fresh main compile+30 exact GREEN-r1 cache+1link，fresh warning0；22/47、452预算边界、746故障与388768/live0/errors0保持。
 
 三项当前生产回归已独审：31自然0phase=25compile+26精确GREEN cache+3link+3CTest，强53/113 PASS、239fault、四W=51共204边界、117024attempts/live0/errors0，metadata15/GC99全部PASS。GC日志99 LEGAL=21 standalone+78 fresh baseline，另有78 MALFORMED，不能把原case分类当成日志行数。原MSVC r2一C4244记录保持；修复后1fresh main /W4/Zs+4 unchanged实际syntax复用=5currentC，96actualheaders/35protected保持、warning/error/unknown0，补证独审334CA901接受；focused-r2独审D9532A0D接受。实际提交`c90666fa38ef4eff3d5b4ceaed54744e9cad8eaf`，postcommit独审63B71E82与finite-close A0DBE118接受。标准清理5个自有文件释放2026503B，610必保pins复核一致且task tmp为空；保留build inventory390文件/69825703B包含other/unknown，不宣称全属Source38或全已验。当前完成38=18功能/10修正/5验证/5文档，本次文档同步adds0；只有限syntax零警告，不授fullMSVC/W0/Linux信用，不勾本叶任何完整出口；不授 VM/Oracle/FFI、Linux/fullW0 或完整47信用。详见[实现合同](../../../instruction-generation/execir-pass-pipeline.md#branch-sensitive-nonempty-owner-analysis-source38-validation-in-progress)与[Source38验证记录](../../../testing-and-validation/ssa-sccp-branch-sensitive-pool.md)。
+
+## Source39 有限进展：rooted普通PHI DCE（实际有限验证通过，待提交清理）
+
+普通PHI只在结果存活时传播incoming，由observable指令及GC/deopt/state引用根化，
+无根self/mutual cycle与其纯producer可删除。只按旧物理顺序压缩phiPool，用prefix
+重映射全部block.phis；共享incoming指针/count/capacity/bytes及surviving ranges不写，
+CFG/ValueId/InstructionId身份保持。Token按typed consumer分类，不索引ordinary used；
+普通/legacy PHI即使与token range别名仍独立验证1..valueCount。Core允许的初始零token
+保持。五scratch、验证、marking、全部publish work预付在首次mutation之前；预算中断
+TRUE/changedFALSE且IR不变，OOM FALSE在publish之前，PHI-only修改TRUE及真正repeatFALSE。
+
+实际RED8有效，原116语义profile前后Verify全部有效；早期夹具前置错误证据保留而未
+冒充RED。实际GREEN构建4compile+27精确cache+1link零诊断，默认21case/140profiles全PASS，
+120语义profile全部pre/run/post/stable/expected1、CHANGE12/FIXEDPOINT12通过。8组测W85共
+680个fresh边界，public有限上界202×2=404（并非实测public W）；610/610实际分配故障与
+retry/cleanup通过，532777attempts/live0/errors0，无UBSan诊断。相应raw/收据及严格parser
+已登记且GREEN独审2F818FD5接受。三回归实际24phase=18compile/33cache/3link/3CTest，
+强53/113、四W51共204边界、239fault/117024attempts/ledger0，metadata15与GC99全PASS，
+原始协议独审FC3716B2接受。四C有限MSVC r2实际自然0/诊断0，94actualheaders/228protected
+保持；首轮中文include采集拒绝的失败收据保留，修复采集后复验通过，不扩大平台信用。
+双He提交与自有清理待完成，不提前增加已提交38项或勾整叶出口。详见[验证记录](../../../testing-and-validation/ssa-dce-dead-phis.md)。
 
 ## 可逐项执行的重构任务
 
