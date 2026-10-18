@@ -10,7 +10,7 @@
 #include <intrin.h>
 #endif
 
-/* 共享 static helper 在两个翻译单元中按需使用；unused 属性只抑制未引用告警，不改变协议。 */
+/* 共享 static helper 在服务、编译、门面和代码寿命翻译单元中按需使用；unused 属性不改变协议。 */
 #if defined(__GNUC__) || defined(__clang__)
 #define ZR_EXECUTION_BACKEND_INTERNAL_UNUSED __attribute__((unused))
 #else
@@ -227,7 +227,8 @@ static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool zr_execution_backend_request
         !zr_execution_backend_key_valid(&request->generationKey, ZR_FALSE) ||
         request->contract.schemaVersion != ZR_EXECUTION_CONTRACT_SCHEMA_VERSION ||
         request->contract.abiVersion == 0u ||
-        request->contract.logicalVersion == 0u ||
+        request->contract.logicalVersion != ZR_EXECUTION_CONTRACT_LOGICAL_VERSION ||
+        request->contract.reserved0 != 0u || request->contract.reserved1 != 0u ||
         request->contract.generation != request->generationKey.generation ||
         request->contract.targetToken == 0u ||
         request->contract.signatureHash == 0u ||
@@ -283,6 +284,7 @@ static ZR_EXECUTION_BACKEND_INTERNAL_UNUSED TZrBool zr_execution_backend_code_sh
         code->contract.moduleHash != request->contract.moduleHash ||
         code->contract.requiredCapabilities != request->contract.requiredCapabilities ||
         code->contract.declaredEffects != request->contract.declaredEffects ||
+        code->contract.reserved0 != 0u || code->contract.reserved1 != 0u ||
         code->immutableIrHash != request->immutableIrHash ||
         code->compileInputHash != request->compileInputHash ||
         code->codeIdentity == 0u || code->codeSize == 0u ||

@@ -186,3 +186,5 @@ the full type-inference runner under Clang ASan/UBSan; see
 - [FS 文本及包装失败](system-fs-failures.md)：内嵌零字节长度与指定文件句柄的失败清理。
 
 - [Thread worker count](thread-worker-count.md)：构造前的 uint32 计数边界与正常控制。
+
+- [后端服务版本与保留字段准入](ssa-backend-admission.md)：33项诊断、错误优先级、失败恢复及当前有限编译与CTest证据。

@@ -26,7 +26,7 @@ plan_sources:
 tests:
   - tests/parser/test_ssa_contract_freeze.c
 doc_type: milestone-detail
-status: planned
+status: in-progress
 ---
 
 # 00.02 共享契约、语义边界与版本冻结
@@ -173,3 +173,11 @@ assert RECOMPILE_REQUIRED; no partial module published
 
 本任务的 acceptance 至少附上：上述断言对应的测试名称、实际执行后端/平台、失败注入位置、verifier 输入/输出摘要，以及涉及所有权时的分配/释放或 lease 平衡。新增入口的 OOM、取消、重复调用和部分初始化退出应有明确处理；不适用的状态写明原因。
 
+
+## 后端服务准入的有限交付（2026-10-18 UTC）
+
+后端服务的当前支持集合已固定：execution schema6/logical1，目标ABI由非零注册descriptor负责且请求精确匹配（ABI23为合法正例）；descriptor、target与请求/结果contract的reserved均须零。backend API schema1保持独立，纯checker仍可比较相等的任意logical11。Register旧错误、请求flags/immutable及Complete generation优先级保留；独立contract generation失配现精确报告expected/actual。原单一实现按生命周期、编译协议、默认facade拆成三个TU，共享CMake同时登记四个生产TU。
+
+[准入验证指南](../../../testing-and-validation/ssa-backend-admission.md)记录实际10案RED、扩充33案32PASS/1FAIL及最小修正后的33/33 GREEN、7服务场景与2/2 CTest。GREEN独审221A4D88与6C有限MSVC语法独审394EB90F均接受；旧后置解析失败收据原样保留，由离线记录解释。实际依赖闭包38头/def，50项实时输入与8项先前封定头离线补充分别登记。固定metadata mock不执行真实机器码或VM，原并发寿命TODO保留。
+
+这完成了后端消费者准入这一子任务。四编号任务、I/F/H/C完整字段与接口归属、磁盘generation到运行期epoch、历史ABI2隔离和兼容矩阵仍须完成；上方整叶复选框保持其实际状态。
