@@ -101,7 +101,7 @@ AOT25、CTest2 全部通过。整数表达式 ExecIR 保留已提交 `7adc0e22`�
 
 ### 已完成有限交付（2026-10-18 UTC）
 
-已核实 **41 项有限交付：21 项功能、10 项代码修正、5 项专项验证、5 项文档**。
+已核实 **42 项有限交付：21 项功能、11 项代码修正、5 项专项验证、5 项文档**。
 原32项的逐项验收与提交证明保留；第33项为
 `150f641f4b5d50d67e888fb8b34987d264a18ac1`，父提交
 `3f7d8d8cbc7601c292afefb594de0e05969b2b17`，精确98路径、双He身份，
@@ -156,8 +156,20 @@ postcommit独审B1FD0DFA接受，7415条范围外index完整raw和4条foreign ca
 109个当前可复用构建产品37350149B和3份CTest元数据28216B保留。
 另有2个未知归属小文件4081B保留；全局清单未关闭。此处同步既有交付，不另计成果。
 
+第42项[后端契约准入与精确诊断](../../testing-and-validation/ssa-backend-admission.md)已提交为
+`7c006421d17c1a61bb0ea716057e1e4bf7f7e408`，精确15路径、双He-Jiahui身份。
+实际33/33准入、7服务场景、2/2 CTest及6C有限MSVC语法均已独审；仅2fresh compile+8精确缓存角色/2link，
+38本地头/def由50实时guard加8先前封定头离线补充分别证明。发布独审F02D1081、自有清理E4581746接受，
+精确2项临时文件实际释放987853B；39个当前复用构建文件5520150B和必要证据保留。原并发寿命TODO及全局未知项保持。
+
+00.02四页字典已形成Git候选并通过独立语义/数据复审：
+[运行期owner](../../core-runtime/execution-contract-ownership.md)、[持久字段](../../module-system/persistent-contract-fields.md)、
+[接口矩阵](../../testing-and-validation/ssa-interface-contract-matrix.md)、[兼容政策](../../testing-and-validation/ssa-contract-compatibility.md)。
+本次字典交付独立于既有42项；00.02仍须完成逐操作数值基线、逐断言验收与完整前置门禁，不能由导航或字段计数签收整叶。
+
 | 已完成有限子任务 | 完整提交 SHA | 已验收有限范围 |
 | --- | --- | --- |
+| [后端契约准入与精确诊断](../../testing-and-validation/ssa-backend-admission.md) | `7c006421d17c1a61bb0ea716057e1e4bf7f7e408` | 三TU职责拆分；schema/logical/reserved准入、独立generation expected/actual及原错误优先级。实际33/7/2、6C有限MSVC语法和当前输入闭包独审接受。精确15路径、双He、7452 foreign raw/REUC/cached4保持；实际释放987853B，保留39复用构建文件5520150B及必要证据。仅本地metadata mock，不授并发/VM/FFI/Linux/fullMSVC/完整00.02或47叶信用。 |
 | [普通PHI同源身份传播](../../testing-and-validation/ssa-phi-identity.md) | `4f53caa8154e0f5ef36a2003e2320f61c0524637` | 21/21组、974/974分配故障、1556644attempts/live0/errors0；六回归6/6 CTest、232 Unity、2350故障；13C有限MSVC语法。精确24路径、双He、7433条外来index raw/REUC与9条cached保持；发布及自有清理独审接受，释放3036382B。完整02.01/47叶与全局未知项仍待验收。 |
 | [非空池BOOL比较常量写回](../../testing-and-validation/ssa-sccp-pooled-bool.md) | `c6847c3a093245b554d34672dd0440ddc949b4e1` | 六个严格Int64谓词写回精确BOOL0/1；focused22/84、8W37共296private预算边界、public显式上界138×2共276边界，746/746故障、459698attempts/ledger0。31当前role对象为27accepted精确cache+4fresh；五回归53/113、22/47、21/140、metadata15、GC99，共210Unity全PASS，35fresh/26cache/5link/5CTest；正常lld stderr有限reconciliation，旧failed收据保持。8C有限MSVC syntax、98actualheaders/233protected；exact16/dualHe/postcommit接受，7415外来index原始entry及4cached保持。自有清理和90复用构建文件30756095B保留以本批清单为准；不授整叶/47/Linux/fullMSVC/fullW0信用。 |
 | [Rooted普通PHI DCE](../../testing-and-validation/ssa-dce-dead-phis.md) | `6e6bc819b35ccee5ac3fea2bbabb389af5840213` | 实际focused21/140/120semantic、8W85共680cutoffs、public明确上界202共404边界、610/610fault、532777attempts/ledger0。4compile/27exactcache/1link、诊断0；三回归24phase=18compile/33cache/3link/3CTest，强53/113、239fault/204cutoffs/117024attempts/ledger0，metadata15/GC99全PASS。MSVC-r2四C有限syntax、94actualheaders/228protected、诊断0；旧中文采集失败保留。exact9/dualHe/postcommit接受、7409外部index与cached保持；全局未知项、Linux/fullMSVC与完整02.01/47继续开放。 |
@@ -201,14 +213,14 @@ postcommit独审B1FD0DFA接受，7415条范围外index完整raw和4条foreign ca
 | [GC-map outer-shape有限准入](../../../tests/acceptance/ssa-gc-map-outer-shape.md) | `403e8d474d9e1f2001edff261594fa50ae8385ec` | main GREEN-r2四项CTest/50TU；primitive-r3一项CTest内18项Unity、18/18故障；Try原12-case协议11PASS加一次intentional prior-failure FAIL、90/90/live0；MSVC-r3为16次syntax/12唯一C/10roles、有限syntax W0。68 Git commands/121 raw records/20 blobs核对，7320范围外index及4条foreign cached保持；标准清理7文件（3helpers、4私有indexes）4032562B，24必保pins匹配，3个复用builds及原成功/失败证据保留；finite-close accepted=true。仅此子清单closed，完整consumer链/GC/01.01/47叶、fullW0/Linux/VM仍开放。 |
 
 上述有意失败验证 prior-failure 与清理协议，检查器按精确预期验收；非预期失败不计通过。
-上述41项均有实际验收和提交，2026-10-18已逐提交核对均可从当前main到达；本次索引维护不增加成果数量。
+上述42项均有实际验收和提交；此前41项逐提交可达核对及第42项实际postcommit独审分别保留，本次既有进度同步不增加成果数量。
 47个叶计划仍须分别闭合完整退出门禁，有限交付数量不能用于计算整体完成率。
-42 planned/5 in-progress及complete=0是当前整叶文档登记状态；已有41项子任务完成，
+42 planned/5 in-progress及complete=0是当前整叶文档登记状态；已有42项子任务完成，
 整叶尚无完整出口签收记录。这两个进度口径应分别记录。
 旧整数表达式11失败保留为历史RED；整数表达式7adc0e22及私有接口边界150f641f
-均已有限验收提交和清理。第33至38项子清单均closed；第39、40、41项已实际交付，各自产物范围以对应清单收据为准，完整SSA及Parent未知项仍active。
+均已有限验收提交和清理。第33至38项子清单均closed；第39、40、41、42项已实际交付，各自产物范围以对应清单收据为准，完整SSA及Parent未知项仍active。
 第34项GC-map outer shape已按有限证据验收，见[专门验收](../../../tests/acceptance/ssa-gc-map-outer-shape.md)。
-当前进入[02.01 SCCP与标量优化](02-automatic-optimization/01-pass-manager-scalar.md)：
+[02.01 SCCP与标量优化](02-automatic-optimization/01-pass-manager-scalar.md)已有以下有限交付：
 非空模块常量池的signed Int64写回已完成实际RED复核：53用例中28 PASS、25个已知缺口FAIL；
 生产修复已取得独审接受的实际GREEN53PASS/113profiles、236/236故障、100个owner预算边界和ledger0；
 metadata15/GC-parser99原始运行经离线reconciliation接受（旧控制器失败保持，未重复native），
@@ -223,7 +235,7 @@ GREEN22/47、四W=113共452预算边界、746/746故障、388768attempts/live0/e
 有限MSVC为1fresh main syntax+4unchanged actual syntax=5currentC，96headers/35protected保持、诊断0；
 原r2一C4244保留，focused-r2及MSVC补证独审均接受，不授fullMSVC/fullW0/Linux。
 实际提交`c90666fa38ef4eff3d5b4ceaed54744e9cad8eaf`及postcommit、5文件2026503B清理/610必保pins、finite-close均接受；
-Source38闭合时计38=18功能/10修正/5验证/5文档；Source39后39=19/10/5/5；Source40后40=20功能/10修正/5验证/5文档；Source41后当前41=21功能/10修正/5验证/5文档。完整推进顺序与47叶出口保持；本次文档同步adds0。
+Source38闭合时计38=18功能/10修正/5验证/5文档；Source39后39=19/10/5/5；Source40后40=20功能/10修正/5验证/5文档；Source41后41=21功能/10修正/5验证/5文档；Source42后当前42=21功能/11修正/5验证/5文档。完整推进顺序与47叶出口保持；本次文档同步adds0。
 
 ### 到完整验收的推进顺序
 
@@ -232,7 +244,7 @@ Source38闭合时计38=18功能/10修正/5验证/5文档；Source39后39=19/10/5
 
 | 阶段 | 当前状态 | 完整完成还需满足 |
 | --- | --- | --- |
-| 1. 当前Source与准入链 | 第36项已交付；00.02后端准入33案GREEN/7服务场景/2CTest及6C有限MSVC已独审通过、待提交 | 完整表达式与控制流、GC消费者链、全量W0、Linux及完整MSVC证据 |
+| 1. 当前Source与准入链 | 第36项已交付；00.02后端准入第42项7c006421已验证、提交及自有清理；四页契约字典已通过独立数据/语义复审，整叶仍待数值基线、逐断言验收及前置门禁 | 完整表达式与控制流、GC消费者链、全量W0、Linux及完整MSVC证据 |
 | 2. IR、SSA与状态映射 | 部分已交付 | 契约、模型、verifier、facts与四后端语义门禁闭合 |
 | 3. 生命周期与运行时状态 | 部分已交付 | frame与roots、异常、GC搬迁、并发、恢复、取消和预算压力证据 |
 | 4. 优化与数据布局 | 第37项Int64池写回、第38项分支敏感SCCP、第39项PHI DCE、第40项BOOL写回、第41项PHI身份传播已有限交付 | 各pass差分、分析失效、预算、布局语义与可靠性能证据 |

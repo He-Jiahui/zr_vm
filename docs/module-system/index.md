@@ -99,3 +99,5 @@ doc_type: category-index
 4. 需要落代码时，再沿 frontmatter 的 `related_code` / `tests` 进入具体实现和验证入口。
 
 - [Artifact row boundaries](artifact-row-boundaries.md)：固定行视图、输出与诊断失败契约及状态名称。
+
+- [Persistent contract fields](persistent-contract-fields.md)：固定codec、旧IO与声明字段的坐标、读写/准入owner及hash覆盖；运行期地址不得落盘。

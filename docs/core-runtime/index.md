@@ -234,3 +234,5 @@ boundaries remain future work.
 - [Meta string allocation failures](meta-string-oom.md)：null、bool 和 number 字符串转换的失败发布边界。
 
 - [Error construction roots](exception-construction-roots.md)：分配失败触发完整回收时保护构造中的 Error、栈帧和输入。
+
+- [Execution contract ownership](execution-contract-ownership.md)：字段与接口唯一owner、运行期句柄、域快照/复制及load epoch政策；planned实现另列。

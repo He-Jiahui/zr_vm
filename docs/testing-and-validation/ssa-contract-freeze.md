@@ -17,6 +17,10 @@ related_code:
   - tests/cmake/ssa-source-direct-validation/CMakeLists.txt
   - tests/cmake/ssa-tests.cmake
 implementation_files:
+  - zr_vm_core/src/zr_vm_core/execution/execution_backend.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_backend_compile.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_backend_facade.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_backend_internal.h
   - zr_vm_core/include/zr_vm_core/execution_contract.h
   - zr_vm_core/src/zr_vm_core/runtime/execution_contract.c
   - zr_vm_core/src/zr_vm_core/exec_ir/exec_ir.c
@@ -34,6 +38,8 @@ plan_sources:
 tests:
   - tests/parser/test_ssa_contract_freeze.c
   - tests/parser/test_ssa_aotir_contract.c
+  - tests/core/test_ssa_backend_admission.c
+  - tests/core/test_ssa_backend_service.c
 doc_type: testing-guide
 ---
 
@@ -42,10 +48,12 @@ doc_type: testing-guide
 ## Scope and declaration owners
 
 This 2026-10-15 source audit records the version owners, the pure contract
-checker's current boundaries and the finite AOTIR consumer check below. It
-does not close plan 00.02: the complete
-interface-family and persistent-field ownership dictionary, hash input rules,
-and compatibility matrix remain open.
+checker's current boundaries and the finite AOTIR consumer check below. The
+historical evidence is retained. The current four-page dictionary now freezes
+the declared interface/field owners, hash domains and compatibility policies;
+see the current delivery and original assertion ledger below. Plan00.02 remains
+open for its strict numeric operation baseline, unverified original runtime
+assertions and explicit00.01 prerequisite.
 
 The current Core API declarations of `SZrExecutionContract`, the nine-field
 `SZrExecIrDiagnostic`, their status/code enums, and the two
@@ -55,8 +63,10 @@ The checker and status-name implementation belong to
 [`runtime/execution_contract.c`](../../zr_vm_core/src/zr_vm_core/runtime/execution_contract.c).
 No parallel diagnostic declaration is needed in a plan or consumer.
 The records contain scalar identities and masks, with no AST, runtime pointer,
-or host address. The lifecycle mapping of persisted generation to a process
-load epoch still requires a separate ownership decision.
+or host address. D4 now freezes persisted generation separately from the
+process load epoch: the Core loader registry is the unique signer of nonzero,
+nonreused u64 epochs. Actual registry/lease/invalidation integration is planned
+in08.03/08.04/10.01; the current public generation-key ABI is unchanged.
 
 ## Version owners and consumers
 
@@ -75,7 +85,7 @@ transfer ownership.
 | Execution / `ZR_EXECUTION_CONTRACT_ABI_VERSION` | 17, `TZrUInt32` | `execution_contract.h` | ExecIR function construction writes `contract.abiVersion` |
 | Execution / `ZR_EXECUTION_CONTRACT_LOGICAL_VERSION` | 1, `TZrUInt32` | `execution_contract.h` | ExecIR function construction writes `contract.logicalVersion` |
 
-### Historical AOT header and unresolved repository-wide uniqueness
+### Historical AOT header and current isolation policy
 
 [`zr_vm_aot/zr_vm_common/include/zr_vm_common/zr_aot_abi.h`](../../zr_vm_aot/zr_vm_common/include/zr_vm_common/zr_aot_abi.h)
 also defines `ZR_VM_AOT_ABI_VERSION`, as **2u**. It is tracked by this repository
@@ -98,8 +108,12 @@ These observations establish the inspected targets' canonical include route,
 not repository-wide uniqueness or an inventory of every external/manual
 consumer. Both trees expose the same include-relative header name and macro;
 selecting the historical include root can select ABI 2 instead. The complete
-consumer inventory and ownership policy for that collision remain open under
-00.02. This documentation neither merges, deletes, nor synchronizes either
+known-route inventory and D5 isolation policy are now recorded in the
+four-page compatibility guide: top-level ABI17 is production; nested ABI2 is
+reference-only. Any future historical build requires a separately named target
+and explicit include closure, with no ABI2/current17 object mixing. All68 original
+known routes plus two library-header additions are indexed; external/manual
+consumers remain outside this observed closure. This documentation neither merges, deletes, nor synchronizes either
 header, and does not authorize changing the historical reference.
 
 The execution-field writes occur in `ZrCore_ExecIr_ModuleAddFunction` in
@@ -149,22 +163,39 @@ keeps its earlier priority and payload. This change does not alter the accepted
 contract set or require the current logical macro value: the test baseline uses
 equal logical versions of 11, while the current producer macro remains 1.
 
-### Decisions still open
+### Current frozen decisions and implementation limits
 
-- **Equal unsupported versions:** the checker tests equality, not membership
-  in supported versions. Equal arbitrary schema/ABI/logical versions can pass
-  when the other checks pass. The admission owner and rejection policy remain
-  to be assigned; `OK` here is not artifact compatibility acceptance.
-- **Reserved fields:** `reserved0` and `reserved1` are not checked. Whether
-  the pure checker must require zero, and its admission policy, remain open.
-  The separate AOTIR module/function validator requires both fields to be zero;
-  that consumer requirement does not close the pure checker's policy.
-- **Generation lifecycle and hash authority:** equality checks do not establish
-  a persistent-to-runtime generation mapping, a unique producer for every
-  hash, or canonical hash inputs. Those parts of 00.02 remain open.
-- **Historical AOT name collision:** canonical ABI 17 and the tracked historical
-  ABI 2 header coexist. The include-route evidence above does not close the
-  repository-wide owner and consumer boundary.
+- CoreIR is the legacy name for ExecIR, not another semantic IR. ExecBC and
+  AOTIR are projections. Failed inference preserves only legal original semantics;
+  invalid borrow or a missing static contract is not a dynamic fallback.
+- The generic checker remains an equality comparator, including equal logical11.
+  Each admission owner chooses supported versions. Current backend requires
+  schema6/logical1 and the selected registration ABI, including legal23; this
+  does not alter generic checker acceptance.
+- Reserved words are record/consumer-specific: generic checker unchanged,
+  backend/AOTIR owner gates strict zero; ZRAF writer-zero/reader-ignore fields
+  retain current ignore behavior and gain no semantics or authority. New use
+  or tightening requires explicit compatibility/version review.
+- D1 GetContract is a planned Core GC-domain policy snapshot, not GetIdentity
+  renamed. D2 TransferValue is a planned independent-copy transaction, not
+  cross-domain GC pointer/control/lease sharing. D3 Gc_GetStats retains its
+  actual budget telemetry meaning, not a general heap census.
+- D4 separates disk semantic generation from planned process nonzero u64 epoch,
+  with no wrap/reuse across reload or manager recreation. Old leases live until
+  release; rollback publishes a new epoch. Registry/provider integration is not
+  implemented by this policy delivery.
+- D5 freezes production ABI17 and all known ABI2 route isolation; external/manual
+  build resolution remains the consuming owner's responsibility.
+- Hot-reloadable cross-target inline requires a version entry plus
+  invalidation/deopt dependencies. Only a proven frozen target may inline
+  unconditionally. This is a requirement, not an implemented compiler claim.
+- H31 input widths/order/domain and C315 consumers are a finite deduplicated
+  inventory. Context-local TypeIds may enter current hashes/ExecIR contracts:
+  cross-context reuse requires mapping/recomputation or verified same-context
+  identity. Independent hash-construction failure reporting remains downstream.
+- The current strict numeric per-operation baseline still needs source-grounded
+  overflow/shift/division/conversion/NaN/signed-zero/rounding/exception rules.
+  Future09.02 profiles/vector/fast-math do not substitute for that current table.
 
 ## Focused logical tests and finite RED/GREEN evidence
 
@@ -238,10 +269,9 @@ checker change. Neither selected diff supplies a complete dirty-tree digest.
 
 This accepts only the focused logical diagnostic repair. No CTest, Linux,
 UBSan, Source, VM, Oracle, Global initialization, network or FFI execution
-is credited. Supported-version admission, the pure checker's reserved-field
-policy, historical ABI 2
-consumers and the full interface-family matrix remain open; plan 00.02 and
-whole-leaf acceptance remain open.
+is credited by this historical run. The later four-page delivery freezes
+support-owner/reserved/known ABI2/I-family policy without enlarging these native
+results. Plan00.02 and whole-leaf acceptance remain open.
 
 ## AOTIR consumer reserved-zero boundary
 
@@ -259,9 +289,10 @@ the return status, and validation leaves the caller's input unchanged.
 `ZrCore_AotIr_HashModule` already calls module validation before hashing, so a
 nonzero reserved word now reaches the existing invalid-input return of zero.
 Valid zero-reserved inputs retain the prior hash algorithm and field order.
-This is the AOTIR consumer's admission rule. Equal unsupported versions and
-reserved-field admission in `ZrCore_ExecutionContract_Check` remain open; the
-logical checker repair and its evidence above retain their finite scope.
+This is the AOTIR consumer's admission rule. Support-membership and
+reserved admission belong to the consuming owners; the generic equality checker
+is not a supported-version gate. Historically those policies in `ZrCore_ExecutionContract_Check` were still open at that run; the current policy above supersedes that pending
+statement. The logical checker repair and evidence retain their finite scope.
 
 The related fixture is
 [`test_ssa_aotir_contract.c`](../../tests/parser/test_ssa_aotir_contract.c).
@@ -355,8 +386,8 @@ through this review; neither of these documentation files was a GREEN input.
 This accepts only the eight reserved-word combinations and their recorded
 diagnostic, hash-zero, input-preservation and recovery behavior. Nonzero
 function-index propagation and simultaneous contamination of both reserved
-words remain statically reviewed only. The pure checker's reserved policy and
-equal unsupported-version admission remain open. The standalone work credits
+words remain statically reviewed only. The later owner policy preserves the
+generic equality checker and assigns support/reserved admission to consumers. The standalone work credits
 no CTest, Linux, Source, Global, VM, backend artifact execution, network, FFI or
 full-project validation. Plan 00.02, whole-leaf acceptance and the overall
 47-leaf plan remain open.
@@ -381,8 +412,8 @@ output remain part of the test.
 
 Schema and ABI occupy two payload entries in the same implementation branch.
 The 45 field pairs do not establish separate schema-versus-ABI priority.
-Equality of unsupported versions and the generic checker's reserved-field
-admission policy still require their separate decisions. This test does not
+Equal unsupported values may compare successfully; current supported-set and
+reserved admission now belong to each consumer under the frozen policy. This test does not
 supply runtime or persisted-format admission rules.
 
 ### Actual standalone execution
@@ -419,3 +450,82 @@ physical source, tool, actual dependency and output identities.
 This accepts the pure diagnostic matrix on the two recorded Windows tools.
 Source, Global, VM, Function execution, plugins, FFI, network, Linux, CTest,
 backend semantics and the complete 00.02 leaf were outside this invocation.
+
+## Four-page dictionary delivery and original exit ledger
+
+- [Runtime owner and D1–D4](../core-runtime/execution-contract-ownership.md).
+- [Persistent field dictionary](../module-system/persistent-contract-fields.md).
+- [I19/20 interface/status matrix](ssa-interface-contract-matrix.md).
+- [Compatibility, H31/C315 and D5 ABI isolation](ssa-contract-compatibility.md).
+
+The original semantic review100C1763 accepted bounded core policy.
+Initial data review32813B7A found defects and stays failed; correctionFF4067A7
+plus corrected-data review B5CB0E4D8D2CF6CDE76DBB3FBAA5C9CFEBCE3F774F92B730A32CAB3899D3FD0F
+provide the accepted current four-page view. Reports are under
+E:/cargo-targets/zr_vm/reports/ssa-contract-freeze-01a0fe2b/.
+This does not attach corrected-page hashes to an earlier review without its bridge.
+
+The declared index is I19 families/20 ReadWrite operations; F117 records and
+836 paths (824 wire,12 execution semantic-only). Legacy117 functions/976 events
+and15 runtime records/115 paths are separate denominators, not additive fields.
+H31/C315 is the bounded deduplicated source union. Eight-record/208-field
+coordinate correction changes no wire count; legacy sourcepins35→18 is a data
+correction. The packed prototype14+31=45 fields have existing layout guarantees.
+Opaque inner payloads remain bounded outer windows with named downstream owners;
+no complete unknown inner codec is inferred from byte count.
+
+### Source, artifact, profile and patch compatibility
+
+| Case / frozen policy | Current actual boundary / evidence | Planned integration or missing evidence |
+| --- | --- | --- |
+| Changed source: recompile; reject mismatched complete cache key | H16 Parser IR-cache key binds source/dependency/profile/compilerABI/pipeline/target/numeric/layout/profile identities. Pure checker version mismatch returns RECOMPILE_REQUIRED. | Neither establishes a full source-change→miss→successful-recompile caller transaction.11.01/Parser cache owner provides that fixture. |
+| Old artifact: reject unsupported schema and publish no partial module | Core artifact/codec owner has version/range admission; pure checker version-payload cases are actually tested below. | An in-memory checker rejection is not old-file loading or publication rollback.08.01 loader supplies old-artifact typed rejection and zero partial publication/storage/lease proof. Unverified here. |
+| Profile mismatch: ignore imported profile while legal compilation continues | Parser profile validation/hash and cache key distinguish identities; actual producer/consumer boundaries are in I/H tables. | Validator rejection alone does not prove caller ignore-and-continue.02.05/11.01 needs an importedProfile.compilerABI mismatch fixture and legal compilation without that profile. No such run credited here. |
+| Patch contract mismatch: reject patch and retain active generation | Current Core validator has base/publicABI/profile/capability/signature/content checks. I12 records no production host caller in the finite scan. |08.02–08.04 production validate→publish/lease/rollback integration requires separate evidence. No real patch/loader/security execution is credited here. |
+
+### Original 00.02 assertion ledger
+
+This retains the original four test requirements and three assertion drafts.
+Each row states actual evidence and gaps; a source declaration or policy is not
+a passing runtime fixture. Pure checker diagnostic block/instruction/source IDs
+are intentionally0; N/A below does not mean measured zero.
+
+| Original requirement | Exact available test / platform and scope | Diagnostic position / verifier | FI and ownership evidence / missing gate |
+| --- | --- | --- | --- |
+| T1 same token, different signature/layout: reject before pointer resolve | test_signature_and_layout_mismatch_are_structured; test_scalar_mismatch_payloads_preserve_both_boundary_directions; Windows Clang-cl/MSVC standalone matrix9B7B2936 | Pure status/payload, expected token; no resolver exists and no resolver-order trace or ExecIR verifier run | Stack-only checker: allocations/FI/leases N/A. Backend result_signature/result_layout PASS with cleanup, but not linker lookup proof. |
+| T2 guard miss versus stale generation: deopt versus link error, no static string lookup | test_version_and_generation_fail_before_identity_resolution and matrix cover checker stale status; backend result_generation_reserved/result_contract_generation cover key/contract mismatch | Backend expected1/actual2 asserted through diagnostic helper. No actual deopt/name resolver invoked; no runtime source-position proof | Backend failure U→R cleanup checked. Real guard-miss provider, deopt/link-position/no-lookup trace remain unverified;01.04/08.03/10.01. |
+| T3 cross-domain borrowed/thread-affine native handle rejected or independently materialized | D1/D2 policy and clone/share/ownership source boundaries only; no corresponding actual run credited here | No materializer, verifier or source-position execution credited |06.03/06.04 preflight/host permission, independent resource, Throw/OOM/abort/claims/release fixture still required. Backend counters do not cover it. |
+| T4 hot reload with cross-target inline requires invalidation/deopt dependency | Frozen policy above; no actual compiler+hotreload case attached | No inline decision/verifier/event trace credited |04.02/08.03/10.01 must prove absent-dependency rejection and old-lease retention. Unverified here. |
+| A1 same token/layoutHash differs: checker fails before pointer resolve | T1 plus backend result_layout covers scalar rejection | Expected/actual layout payload tested; actual pointer-resolution ordering outside pure checker | Reuse T1 finite evidence, not an extra case count. |
+| A2 importedProfile.compilerABI differs: ignore profile, compile legally | Four-row policy table; no matching actual import-and-compile fixture attached | No compilation/verifier/profile-ignore event credited |02.05/11.01 caller fixture missing; no fabricated FI or ledger values. |
+| A3 old artifact schema: RECOMPILE_REQUIRED, no partial module | Checker schema mismatch is tested; old-artifact load transaction is not | Checker version payload proven, loader mapping/publication diagnostic not proven |08.01 module/storage/lease rollback, failure and retry fixture unverified here. |
+
+The logical/pure-checker Windows standalone receipts above retain their actual
+scope, including matrix9B7B2936; they are not Linux/CTest/full SSA validation.
+Source42 GREEN review221A4D88 separately accepts Windows Clang-cl Debug UBSan
+metadata admission33 plus seven serial service scenarios via2/2 CTest.
+Generation review07C498FE binds the unchanged test's sole expanded-RED failure
+result_contract_generation (32PASS/1FAIL) becoming GREEN33PASS/0FAIL.
+Actual CASE totals query/compile/U/R19 each and D28 are finite callback/cleanup
+counts, not allocator FI or concurrent lease telemetry. MSVC394EB90F accepts
+six C syntax checks only, no MSVC runtime. PostcommitF02D1081 proves finite backend
+publication, not the runtime requirements in this ledger.
+
+### Exit accounting
+
+D1 GetContract/06.03, D2 TransferValue/06.04, D4 process epoch/08.03 with08.04/10.01
+consumers, and real resume/01.04 remain planned APIs or integration. Their owner
+and policy can freeze without pretending their implementations exist.
+The declared dictionary and D1–D6 policy are finite accepted documentation.
+
+Original00.02 Task2 still lacks its current source-grounded numeric operation
+table: checked/wrapping behavior, shift rules, division by zero, conversions,
+NaN/±0, rounding and visible exception order.09.02 owns subsequent numeric
+profiles/vector/fast-math permissions, not a substitute for the current baseline.
+Original runtime/transaction assertions above remain partly unverified.
+00.01 remains an explicit planned prerequisite; its M0 closure depends on07.04.
+No performance benefit, completed00.01 baseline or M0 completion is asserted.
+
+Navigation integration and this finite dictionary delivery do not complete all
+four numbered tasks, all three batches,00.02 or the47-leaf plan. No new native
+execution is authorized or performed by this documentation integration.
