@@ -1,0 +1,3 @@
+let system = import("zr.system");
+system.console.printLine("Swarm Arena: feature-readiness gate pending (GD-C1)");
+return 0;
