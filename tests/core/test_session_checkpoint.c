@@ -1670,6 +1670,7 @@ static void test_checkpoint_old_to_young_restore_edge_survives_reservation_failu
     collector->gcDebtSize = 4096;
     collector->gcLastStepWork = 0u;
     priorMinorCollectionCount = collector->statsSnapshot.minorCollectionCount;
+    ZrCore_GarbageCollector_ScheduleCollection(global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
     ZrCore_GarbageCollector_GcStep(state);
     TEST_ASSERT_GREATER_THAN_UINT64(priorMinorCollectionCount,
                                     collector->statsSnapshot.minorCollectionCount);

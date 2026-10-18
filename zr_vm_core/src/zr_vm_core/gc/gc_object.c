@@ -1225,9 +1225,24 @@ void ZrCore_RawObject_MarkAsPermanent(SZrState *state, SZrRawObject *object) {
     EZrGarbageCollectIncrementalObjectStatus previousStatus = object->garbageCollectMark.status;
 #endif
 
+    ZrCore_GcDomain_MutationLock(state->gcDomain);
     if (object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT) {
+        ZrCore_GcDomain_MutationUnlock(state->gcDomain);
         return;
     }
+    SZrGarbageCollector *collector = global->garbageCollector;
+    if (collector->permanentRootCount == collector->permanentRootCapacity) {
+        if (collector->permanentRootCapacity > ZR_MAX_SIZE / (2u * sizeof(SZrRawObject *))) {
+            collector->permanentRootRegistryComplete = ZR_FALSE;
+        } else {
+            TZrSize capacity = collector->permanentRootCapacity ? collector->permanentRootCapacity * 2u : 256u;
+            SZrRawObject **roots = (SZrRawObject **)realloc(collector->permanentRoots, capacity * sizeof(*roots));
+            if (roots == ZR_NULL) collector->permanentRootRegistryComplete = ZR_FALSE;
+            else { collector->permanentRoots = roots; collector->permanentRootCapacity = capacity; }
+        }
+    }
+    if (collector->permanentRootCount < collector->permanentRootCapacity)
+        collector->permanentRoots[collector->permanentRootCount++] = object;
 
     ZR_ASSERT(object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED ||
               object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_WAIT_TO_SCAN ||
@@ -1253,6 +1268,7 @@ void ZrCore_RawObject_MarkAsPermanent(SZrState *state, SZrRawObject *object) {
                      (void *)object,
                      (int)previousStatus,
                      (unsigned int)object->garbageCollectMark.regionId);
+    ZrCore_GcDomain_MutationUnlock(state->gcDomain);
 }
 
 void ZrCore_Gc_ValueStaticAssertIsAlive(SZrState *state, SZrTypeValue *value) {

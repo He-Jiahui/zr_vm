@@ -487,6 +487,7 @@ void ZrCore_StringTable_New(SZrGlobalState *global) {
     stringTable->minorYoungBucketCapacity = 0u;
     stringTable->minorYoungBucketCount = 0u;
     stringTable->shortStringListHead = ZR_NULL;
+    stringTable->minorOldShortStringBoundary = ZR_NULL;
 }
 
 /* 全局状态销毁时释放驻留表原生索引；字符串对象本身交由 GC 管理。 */
@@ -624,6 +625,8 @@ static void string_unlink_short_candidate(SZrStringTable *table, SZrString *cand
         link = &(*link)->nextShortString;
     }
     if (*link == candidate) {
+        if (table->minorOldShortStringBoundary == candidate)
+            table->minorOldShortStringBoundary = ZR_NULL;
         *link = candidate->nextShortString;
     }
     candidate->nextShortString = ZR_NULL;

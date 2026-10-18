@@ -8,7 +8,7 @@
 TZrSize garbage_collector_finalize_unreachable(SZrState *state, TZrBool minor, TZrBool shutdown) {
     TZrSize work = 0u;
     SZrRawObject *object = state->global->garbageCollector->gcObjectList;
-    while (object != ZR_NULL) {
+    while (object != ZR_NULL && (!minor || object != state->global->garbageCollector->minorOldBoundary)) {
         if (object->scanMarkGcFunction != ZR_NULL &&
             (object->type == ZR_RAW_OBJECT_TYPE_NATIVE_DATA ||
              object->type == ZR_RAW_OBJECT_TYPE_OBJECT || object->type == ZR_RAW_OBJECT_TYPE_ARRAY) &&
@@ -80,6 +80,7 @@ SZrRawObject **garbage_collector_sweep_list(SZrState *state, SZrRawObject **list
 void garbage_collector_enter_sweep(SZrState *state) {
     SZrGlobalState *global = state->global;
 
+    global->garbageCollector->minorOldBoundary = ZR_NULL;
     global->garbageCollector->gcObjectListSweeper = &global->garbageCollector->gcObjectList;
 }
 

@@ -50,6 +50,7 @@ struct ZR_STRUCT_ALIGN SZrStringTable {
     TZrSize minorYoungBucketCapacity;
     TZrSize minorYoungBucketCount;
     SZrString *shortStringListHead;
+    SZrString *minorOldShortStringBoundary;
 };
 
 typedef struct SZrStringTable SZrStringTable;

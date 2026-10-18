@@ -54,3 +54,47 @@ following rebuilds. Callgrind depth 100: **2.916 G Ir** versus 28.4 G;
 FrameStackSlotIntersectsFrameGcValue **0.77%** exclusive; the former linear
 presence helper is inlined and absent from attribution (combined target < 1%).
 Evidence: `build/r2-c1-*`, `build/r2-ab/c1*/results.json`.
+
+## R2-H2: occupancy scheduling and minor work sets
+
+Automatic generational steps now wait for nursery occupancy and schedule the
+next check from remaining headroom. Explicit requests still collect immediately;
+skips do not inflate collection counts. Completed-minor telemetry adjusts a
+nursery cap against the configured pause budget, with a 64 KiB floor. This is a
+feedback target for synchronous minors, not a hard pause guarantee.
+
+Minors record scanned objects for forwarding, and maintain a young/new prefix
+before a consolidated old suffix for preparation, evacuation, finalization and
+reclamation. Major sweep invalidates that suffix. Permanent roots have a native
+registry, with conservative heap discovery on registration OOM. Short-string
+pruning uses a corresponding young/new prefix plus the existing young bucket
+indexes. Rewrite-worklist OOM retains the original checked heap walk. Debug
+builds assert the old suffix contains no movable young objects.
+
+Collection fixtures that previously relied on a few bytes of debt now request
+minors explicitly; their forwarding and ownership assertions are preserved.
+The stress runner also resolves relative build paths before changing directory.
+
+Validation: final full Release rebuild and **417/417** core CTests pass
+(62.58 s). ASan+UBSan+forced-full GC: **70/70** GC, **15/15** interpreter GC,
+**12/12** AOT root, **95/95** instruction checks, both session-checkpoint and
+SSA dispatch boundary CTests, and the 15 smoke probes pass. The first full gate
+found additional instruction/checkpoint/stack-reload fixtures relying on tiny
+debt; these now request the minor they assert, with the original assertions.
+
+Final timings, CPU 5, no builds/tests overlapping, initial load **0.89 / 1.73 /
+1.82**: scale-16 checksum **47994849** and banner preserved, **3,486** minors
+(wrapper sees 3,485 idle minors plus one major-completion/minor step) versus
+8,400. Idle minors total **1,766.5 ms**, average **506.9 us**, maximum
+**2,708.3 us**, **60** over 800 us; major completion maximum **5,436.9 us**.
+The average-minor target is met; synchronous minor/major worst-pause bounds
+remain open. Core source/binary medians: baseline **1491.362 / 1473.789 ms**;
+stress **1489.196 / 1445.002 ms** (C **17.605 / 18.227 ms**). Baseline improves
+68% from r2's 4,647.99 ms but still misses both the 1 s intermediate and 300 ms
+final goals; M2 addresses the next identified mutator costs. Raw suite reports
+mark the environment INCOMPARABLE without a captured environment report, so
+these timings do not establish a universal 5% regression gate.
+
+The requested stress runner passes for C/source/binary at scale 16: baseline
+**9502.104 / 8613.377 ms**, stress **9074.002 / 8513.626 ms** (source/binary).
+Evidence: `build/r2-h2-final-*` and `build/r2-h2-verified-ctest.log`.

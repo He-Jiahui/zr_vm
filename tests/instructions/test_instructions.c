@@ -3382,16 +3382,19 @@ static void test_get_member_slot_instruction_minor_gc_prunes_remembered_set_afte
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
 
@@ -3520,6 +3523,7 @@ test_get_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
 
         forwardedInstanceE = ZR_CAST_OBJECT(state, function->constantValueList[0].value.object);
@@ -3580,16 +3584,19 @@ test_get_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
         TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
@@ -3725,6 +3732,7 @@ static void test_get_member_slot_instruction_exact_pair_hit_survives_receiver_re
         state->stackTop.valuePointer = rootSlot + 1;
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
 
         forwardedInstanceE = ZR_CAST_OBJECT(state, function->constantValueList[0].value.object);
@@ -3751,6 +3759,7 @@ static void test_get_member_slot_instruction_exact_pair_hit_survives_receiver_re
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
         TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
@@ -4031,16 +4040,19 @@ test_get_member_slot_instruction_same_prototype_safe_hit_refreshes_cached_receiv
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
         TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
@@ -4648,16 +4660,19 @@ static void test_set_member_slot_instruction_minor_gc_prunes_remembered_set_afte
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
 
@@ -4798,16 +4813,19 @@ static void test_set_member_slot_instruction_minor_gc_readds_and_reprunes_rememb
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
         TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
@@ -4886,16 +4904,19 @@ static void test_set_member_slot_instruction_minor_gc_readds_and_reprunes_rememb
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
         TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
@@ -5060,6 +5081,7 @@ test_set_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
 
         forwardedInstanceE = ZR_CAST_OBJECT(state, function->constantValueList[0].value.object);
@@ -5134,16 +5156,19 @@ test_set_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
         TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
@@ -5287,6 +5312,7 @@ test_set_member_slot_instruction_second_minor_gc_prunes_stale_remembered_after_f
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
 
         forwardedInstanceE = ZR_CAST_OBJECT(state, function->constantValueList[0].value.object);
@@ -5320,6 +5346,7 @@ test_set_member_slot_instruction_second_minor_gc_prunes_stale_remembered_after_f
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
         TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
@@ -5503,6 +5530,7 @@ static void test_set_member_slot_instruction_exact_pair_hit_survives_receiver_re
         state->stackTop.valuePointer = rootSlot + 1;
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
 
         forwardedInstanceE = ZR_CAST_OBJECT(state, function->constantValueList[0].value.object);
@@ -5534,6 +5562,7 @@ static void test_set_member_slot_instruction_exact_pair_hit_survives_receiver_re
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
         TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
@@ -5855,16 +5884,19 @@ test_set_member_slot_instruction_same_prototype_safe_hit_refreshes_cached_receiv
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
         TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));

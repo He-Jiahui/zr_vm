@@ -223,6 +223,7 @@ static void dispatch_vm_call_minor_gc_worker_run(
     ZrCore_GarbageCollector_GetStatsSnapshot(
             context->ownerState->global, &statsBefore);
     context->minorCollectionCountBefore = statsBefore.minorCollectionCount;
+    ZrCore_GarbageCollector_ScheduleCollection(context->collectorState.global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
     ZrCore_GarbageCollector_GcStep(&context->collectorState);
     context->collectionStepReturned = ZR_TRUE;
     ZrCore_GarbageCollector_GetStatsSnapshot(

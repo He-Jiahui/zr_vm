@@ -5850,7 +5850,10 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     do {                                                                                                          \
         SZrGarbageCollector *gc__ = state->global->garbageCollector;                                                \
         if (!gc__->stopGcFlag && (ZrCore_GarbageCollector_IsSweeping(state->global) ||                               \
-            ZrCore_GarbageCollector_GetDebtSpace(gc__) >= ((TZrMemoryOffset)1 << ZR_GARBAGE_COLLECT_STEP_LOG2_SIZE))) \
+            ZrCore_GarbageCollector_GetDebtSpace(gc__) >= (TZrMemoryOffset)(                                        \
+                    gc__->gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL && !gc__->concurrentMajorActive &&        \
+                    gc__->nextStepDebtBytes != 0u ? gc__->nextStepDebtBytes :                                       \
+                    ((TZrUInt64)1u << ZR_GARBAGE_COLLECT_STEP_LOG2_SIZE))))                                         \
             mutatorPollBudget = ZR_EXECUTION_SAFEPOINT_POLL_INSTRUCTION_BUDGET - 1u;                                \
     } while (0)
 #define EXECUTION_MUTATOR_POLL_BEFORE_FETCH(N)                                                                         \

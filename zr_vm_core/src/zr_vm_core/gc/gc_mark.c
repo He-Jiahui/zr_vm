@@ -658,6 +658,7 @@ void ZrGarbageCollectorReallyMarkObject(SZrState *state, SZrRawObject *object) {
             SZrClosureValue *closureValue = ZR_CAST_VM_CLOSURE_VALUE(state, object);
 
             if (ZrCore_ClosureValue_IsClosed(closureValue)) {
+                garbage_collector_minor_record_rewrite(global->garbageCollector, object);
                 ZR_GC_SET_REFERENCED(object);
             } else {
                 garbage_collector_link_to_gray_list(object, &global->garbageCollector->waitToScanObjectList);
@@ -666,6 +667,7 @@ void ZrGarbageCollectorReallyMarkObject(SZrState *state, SZrRawObject *object) {
             break;
         }
         case ZR_RAW_OBJECT_TYPE_NATIVE_DATA: {
+            garbage_collector_minor_record_rewrite(global->garbageCollector, object);
             struct SZrNativeData *nativeData = ZR_CAST(struct SZrNativeData *, object);
 
             ZR_GC_SET_REFERENCED(object);
@@ -698,6 +700,7 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
         return 0;
     }
 
+    garbage_collector_minor_record_rewrite(state->global->garbageCollector, object);
     ZrCore_Profile_RecordMemoryFromState(
             state,
             ZR_PROFILE_MEMORY_SCAN_BYTES,

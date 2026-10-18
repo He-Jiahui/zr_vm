@@ -12,6 +12,67 @@
 #include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_common/zr_runtime_sentinel_conf.h"
 
+/* No GC allocation while recording the stopped-world rewrite set. Failure
+ * keeps the old checked heap walk for this collection. */
+void garbage_collector_minor_record_rewrite(SZrGarbageCollector *collector, SZrRawObject *object) {
+    if (!garbage_collector_minor_collection_is_active_fast(collector) || collector->minorRewriteOverflow) return;
+    if (collector->minorRewriteCount == collector->minorRewriteCapacity) {
+        if (collector->minorRewriteCapacity > ZR_MAX_SIZE / (2u * sizeof(SZrRawObject *))) {
+            collector->minorRewriteOverflow = ZR_TRUE;
+            return;
+        }
+        TZrSize capacity = collector->minorRewriteCapacity ? collector->minorRewriteCapacity * 2u : 256u;
+        SZrRawObject **items = (SZrRawObject **)realloc(collector->minorRewriteObjects, capacity * sizeof(*items));
+        if (items == ZR_NULL) { collector->minorRewriteOverflow = ZR_TRUE; return; }
+        collector->minorRewriteObjects = items;
+        collector->minorRewriteCapacity = capacity;
+    }
+    collector->minorRewriteObjects[collector->minorRewriteCount++] = object;
+}
+
+static TZrUInt64 garbage_collector_young_bytes(SZrGarbageCollector *collector) {
+    TZrUInt64 bytes = 0u;
+    for (TZrSize i = 0u; i < collector->regionCount; ++i)
+        if (collector->regions[i].kind == ZR_GARBAGE_COLLECT_REGION_KIND_EDEN ||
+            collector->regions[i].kind == ZR_GARBAGE_COLLECT_REGION_KIND_SURVIVOR)
+            bytes += collector->regions[i].usedBytes;
+    return bytes;
+}
+
+static TZrUInt64 garbage_collector_nursery_target(SZrGarbageCollector *collector) {
+    TZrUInt64 target = collector->youngRegionSize * collector->youngRegionCountTarget;
+    if (target < 65536u) target = 65536u;
+    if (collector->minorNurseryCapBytes != 0u && collector->minorNurseryCapBytes < target)
+        target = collector->minorNurseryCapBytes;
+    return target;
+}
+
+/* Partition only the new/surviving prefix. New old/pinned allocations may
+ * also appear there; moving them into the suffix costs once per allocation. */
+static void garbage_collector_consolidate_minor_prefix(SZrGarbageCollector *collector) {
+    SZrRawObject *young = ZR_NULL, **youngTail = &young;
+    SZrRawObject *old = collector->minorOldBoundary;
+    SZrRawObject *object = collector->gcObjectList;
+    while (object != collector->minorOldBoundary && object != ZR_NULL) {
+        SZrRawObject *next = object->next;
+        if (object->garbageCollectMark.storageKind == ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE) {
+            *youngTail = object;
+            youngTail = &object->next;
+        } else {
+            object->next = old;
+            old = object;
+        }
+        object = next;
+    }
+    *youngTail = old;
+    collector->gcObjectList = young;
+    collector->minorOldBoundary = old;
+#ifdef ZR_DEBUG
+    for (SZrRawObject *check = old; check != ZR_NULL; check = check->next)
+        ZR_ASSERT(check->garbageCollectMark.storageKind != ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE);
+#endif
+}
+
 static TZrBool garbage_collector_trace_rewrite_slots_enabled(void) {
     static TZrBool initialized = ZR_FALSE;
     static TZrBool enabled = ZR_FALSE;
@@ -1038,9 +1099,12 @@ static TZrSize garbage_collector_prepare_minor_collection(SZrState *state) {
     }
 
     collector = state->global->garbageCollector;
-    garbage_collector_clear_forwarding_metadata(collector);
+    collector->minorRewriteCount = 0u;
+    collector->minorRewriteOverflow = ZR_FALSE;
     object = collector->gcObjectList;
-    while (object != ZR_NULL) {
+    while (object != ZR_NULL && object != collector->minorOldBoundary) {
+        object->garbageCollectMark.forwardingAddress = ZR_NULL;
+        object->garbageCollectMark.forwardingRefLocation = ZR_NULL;
         if (object->garbageCollectMark.storageKind == ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE &&
             object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_UNREFERENCED &&
             object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED &&
@@ -1101,10 +1165,14 @@ static TZrSize garbage_collector_restart_minor_collection(SZrState *state) {
     work += garbage_collector_prepare_minor_collection(state);
     /* Permanent objects are roots even when their former owners have died.
      * Their metadata can still contain young strings and must be scanned. */
-    for (SZrRawObject *object = collector->gcObjectList; object != ZR_NULL; object = object->next) {
-        if (object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT) {
-            work += garbage_collector_mark_minor_root_object(state, object);
-        }
+    if (collector->permanentRootRegistryComplete) {
+        for (TZrSize index = 0u; index < collector->permanentRootCount; ++index)
+            work += garbage_collector_mark_minor_root_object(state, collector->permanentRoots[index]);
+    } else {
+        /* Registration OOM retains conservative root discovery. */
+        for (SZrRawObject *object = collector->gcObjectList; object != ZR_NULL; object = object->next)
+            if (object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT)
+                work += garbage_collector_mark_minor_root_object(state, object);
     }
     work += garbage_collector_mark_minor_root_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(state));
     work += garbage_collector_mark_minor_root_value(state, &global->loadedModulesRegistry);
@@ -1333,8 +1401,9 @@ static TZrSize garbage_collector_prune_weak_strings(SZrState *state, TZrBool min
     ZrCore_Memory_RawSet(global->stringConcatPairCache, 0, sizeof(global->stringConcatPairCache));
     if (table == ZR_NULL) return work;
 
+    if (!minor) table->minorOldShortStringBoundary = ZR_NULL;
     SZrString **link = &table->shortStringListHead;
-    while (*link != ZR_NULL) {
+    while (*link != ZR_NULL && (!minor || *link != table->minorOldShortStringBoundary)) {
         SZrString *string = *link;
         SZrString *next = string->nextShortString;
         if (garbage_collector_weak_string_is_dead(collector, &string->super, minor)) {
@@ -1349,6 +1418,26 @@ static TZrSize garbage_collector_prune_weak_strings(SZrState *state, TZrBool min
             link = &string->nextShortString;
         }
         work++;
+    }
+
+    if (minor) {
+        SZrString *young = ZR_NULL, **tail = &young;
+        SZrString *old = table->minorOldShortStringBoundary;
+        SZrString *string = table->shortStringListHead;
+        while (string != ZR_NULL && string != table->minorOldShortStringBoundary) {
+            SZrString *next = string->nextShortString;
+            if (string->super.garbageCollectMark.storageKind == ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE) {
+                *tail = string;
+                tail = &string->nextShortString;
+            } else {
+                string->nextShortString = old;
+                old = string;
+            }
+            string = next;
+        }
+        *tail = old;
+        table->shortStringListHead = young;
+        table->minorOldShortStringBoundary = old;
     }
 
     SZrHashSet *set = &table->stringHashSet;
@@ -2894,7 +2983,7 @@ static TZrSize garbage_collector_run_minor_evacuation(SZrState *state) {
     SZrRawObject *object = collector->gcObjectList;
     TZrSize work = 0;
 
-    while (object != ZR_NULL) {
+    while (object != ZR_NULL && object != collector->minorOldBoundary) {
         SZrRawObject *nextObject = object->next;
 
         if (object->garbageCollectMark.storageKind == ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE) {
@@ -2969,13 +3058,19 @@ static TZrSize garbage_collector_rewrite_minor_forwarding(SZrState *state) {
     collector = state->global->garbageCollector;
     work += garbage_collector_rewrite_forwarded_roots(state);
 
-    object = collector->gcObjectList;
+    TZrSize index = 0u;
+    object = collector->minorRewriteOverflow ? collector->gcObjectList :
+             (collector->minorRewriteCount ? collector->minorRewriteObjects[0] : ZR_NULL);
     while (object != ZR_NULL) {
+        SZrRawObject *next = collector->minorRewriteOverflow ? object->next :
+                (++index < collector->minorRewriteCount ? collector->minorRewriteObjects[index] : ZR_NULL);
+        if (!collector->minorRewriteOverflow && object->garbageCollectMark.forwardingAddress != ZR_NULL)
+            object = object->garbageCollectMark.forwardingAddress;
         if (object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_UNREFERENCED &&
             object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED &&
             object->garbageCollectMark.forwardingAddress == ZR_NULL &&
             garbage_collector_object_can_hold_gc_references(object) &&
-            (collector->minorCollectionEpoch == 0u ||
+            (!collector->minorRewriteOverflow || collector->minorCollectionEpoch == 0u ||
              object->garbageCollectMark.minorScanEpoch == collector->minorCollectionEpoch)) {
             /*
              * After root/registry slots are redirected, forwarded from-space originals are
@@ -2984,17 +3079,18 @@ static TZrSize garbage_collector_rewrite_minor_forwarding(SZrState *state) {
              */
             work += garbage_collector_rewrite_object_graph(state, object);
         }
-        object = object->next;
+        object = next;
     }
 
     return work;
 }
 
 static TZrSize garbage_collector_free_minor_from_space(SZrState *state) {
-    SZrRawObject **current = &state->global->garbageCollector->gcObjectList;
+    SZrGarbageCollector *collector = state->global->garbageCollector;
+    SZrRawObject **current = &collector->gcObjectList;
     TZrSize work = 0;
 
-    while (*current != ZR_NULL) {
+    while (*current != ZR_NULL && *current != collector->minorOldBoundary) {
         SZrRawObject *object = *current;
         TZrBool shouldFree = ZR_FALSE;
 
@@ -3014,6 +3110,7 @@ static TZrSize garbage_collector_free_minor_from_space(SZrState *state) {
         current = &object->next;
     }
 
+    garbage_collector_consolidate_minor_prefix(collector);
     return work;
 }
 
@@ -3047,6 +3144,7 @@ TZrSize garbage_collector_prepare_major_collection(SZrState *state) {
         return 0u;
     }
     collector = state->global->garbageCollector;
+    collector->minorOldBoundary = ZR_NULL;
     garbage_collector_clear_forwarding_metadata(collector);
     object = collector->gcObjectList;
     while (object != ZR_NULL) {
@@ -3470,6 +3568,18 @@ void garbage_collector_run_generational_step(SZrState *state) {
         return;
     }
 
+    TZrUInt64 youngBytes = garbage_collector_young_bytes(collector);
+    TZrUInt64 target = garbage_collector_nursery_target(collector);
+    if (!explicitRequest && youngBytes < target) {
+        collector->minorCollectionDeferred = ZR_TRUE;
+        collector->nextStepDebtBytes = target - youngBytes;
+        ZrCore_GarbageCollector_AddDebtSpace(global, -ZrCore_GarbageCollector_GetDebtSpace(collector));
+        collector->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE;
+        collector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED;
+        collector->gcLastStepWork = 0u;
+        return;
+    }
+    collector->minorYoungBytesBefore = youngBytes;
     ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_MINOR_COLLECTION_COUNT, 1u);
     work += garbage_collector_restart_minor_collection(state);
     work += ZrGarbageCollectorPropagateAll(state);
@@ -3489,6 +3599,8 @@ void garbage_collector_run_generational_step(SZrState *state) {
     collector->gcFlags &= ~ZR_GC_FLAG_EXPLICIT_COLLECTION_REQUEST;
     collector->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE;
     collector->statsSnapshot.collectionPhase = collector->collectionPhase;
+    TZrUInt64 remainingYoung = garbage_collector_young_bytes(collector);
+    collector->nextStepDebtBytes = target > remainingYoung ? target - remainingYoung : 65536u;
     collector->gcLastStepWork = work > 0 ? work : 1;
     garbage_collector_check_sizes(state, global);
 }

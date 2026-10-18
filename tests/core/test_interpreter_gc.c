@@ -291,6 +291,22 @@ static void test_finalizers_run_with_their_object_graph_intact(void) {
         TEST_ASSERT_EQUAL_UINT(1u, finalizerCalls);
     }
 }
+static void test_automatic_minor_waits_for_nursery_occupancy(void) {
+    SZrGarbageCollector *collector = state->global->garbageCollector;
+    collector->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+    ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+    TZrUInt64 before = collector->collectionCounts[ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR];
+    collector->gcDebtSize = 1;
+    ZrCore_GarbageCollector_GcStep(state);
+    TEST_ASSERT_EQUAL_UINT64(before, collector->collectionCounts[ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR]);
+    TEST_ASSERT_TRUE(collector->nextStepDebtBytes > 128u * 1024u);
+    TEST_ASSERT_EQUAL(ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE, collector->collectionPhase);
+    /* Explicit host requests bypass occupancy and remain accurately counted. */
+    ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
+    ZrCore_GarbageCollector_CheckGc(state);
+    TEST_ASSERT_EQUAL_UINT64(before + 1u, collector->collectionCounts[ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR]);
+    TEST_ASSERT_NOT_NULL(collector->minorOldBoundary);
+}
 static void test_gc_coverage_summary_tracks_sparse_and_cross_slot_layouts(void) {
     SZrFunction function = {0};
     SZrFunctionFrameSlotLayout layouts[2] = {{0}};
@@ -338,6 +354,7 @@ static void test_deep_frame_scan_has_linear_coverage_work(void) {
 }
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_automatic_minor_waits_for_nursery_occupancy);
     RUN_TEST(test_gc_coverage_summary_tracks_sparse_and_cross_slot_layouts);
     RUN_TEST(test_deep_frame_scan_has_linear_coverage_work);
     RUN_TEST(test_idle_barrier_preserves_a_new_transitive_graph);

@@ -81,6 +81,7 @@ static void test_gc_native_base_function_root_skips_inactive_frame_on_minor_rewr
     collector->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
     collector->gcDebtSize = 4096;
     collector->gcLastStepWork = 0;
+    gc_test_request_minor_if_idle(state);
     ZrCore_GarbageCollector_GcStep(state);
     TEST_ASSERT_TRUE(collector->minorCollectionEpoch > previousMinorEpoch);
     gc_test_assert_native_root_survived_and_destroy(state);

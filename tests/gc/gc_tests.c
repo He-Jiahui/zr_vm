@@ -27,6 +27,16 @@
 #include "zr_vm_library/native_binding.h"
 #include "zr_vm_lib_system/gc.h"
 
+/* Root/forwarding fixtures request a minor explicitly; ordinary debt no
+ * longer forces a collection below the nursery occupancy threshold. */
+static void gc_test_request_minor_if_idle(SZrState *state) {
+    SZrGarbageCollector *collector = state->global->garbageCollector;
+    if (collector->gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL &&
+        !collector->concurrentMajorActive &&
+        collector->scheduledCollectionKind == ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR)
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
+}
+
 // 推进到并发 major 不再活动后再读快照，避免断言尚未提交的统计。
 static void gc_test_finish_concurrent_major(SZrState *state) {
     TZrUInt32 stepCount = 0u;
@@ -1549,6 +1559,7 @@ static void test_gc_snapshot_accumulates_collection_counts_and_durations(void) {
         ZrCore_Stack_SetRawObjectValue(state, rootSlot, ZR_CAST_RAW_OBJECT_AS_SUPER(youngObject));
         state->stackTop.valuePointer = rootSlot + 1;
         gc->gcDebtSize = 4096;
+        gc_test_request_minor_if_idle(state);
         ZrCore_GarbageCollector_CheckGc(state);
 
         oldObject = ZrCore_Object_New(state, ZR_NULL);
@@ -1559,6 +1570,7 @@ static void test_gc_snapshot_accumulates_collection_counts_and_durations(void) {
         ZrCore_Stack_SetRawObjectValue(state, rootSlot, oldRawObject);
         state->stackTop.valuePointer = rootSlot + 1;
         ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR);
+        gc_test_request_minor_if_idle(state);
         ZrCore_GarbageCollector_CheckGc(state);
         gc_test_finish_concurrent_major(state);
 
@@ -1634,6 +1646,7 @@ static void test_gc_snapshot_reports_region_pressure_shape(void) {
                                                      3u,
                                                      ZR_GARBAGE_COLLECT_PROMOTION_REASON_ESCAPE);
         gc->gcDebtSize = 4096;
+        gc_test_request_minor_if_idle(state);
         ZrCore_GarbageCollector_GcStep(state);
 
         rootValue = ZrCore_Stack_GetValue(rootSlot);
@@ -2891,6 +2904,7 @@ static void test_function_return_escape_promotes_returned_object_during_minor_gc
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        gc_test_request_minor_if_idle(state);
         ZrCore_GarbageCollector_GcStep(state);
 
         rootValue = ZrCore_Stack_GetValue(rootSlot);
@@ -3173,6 +3187,8 @@ static void test_gc_minor_collection_evacuates_stack_root_young_object(void) {
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE,
                                  oldObject->garbageCollectMark.storageKind);
 
+        gc_test_request_minor_if_idle(state);
+
         ZrCore_GarbageCollector_GcStep(state);
 
         rootValue = ZrCore_Stack_GetValue(rootSlot);
@@ -3227,6 +3243,8 @@ static void test_gc_minor_collection_reassigns_root_function_and_stamps_minor_sc
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_EDEN, functionObject->garbageCollectMark.regionKind);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE,
                                  functionObject->garbageCollectMark.storageKind);
+
+        gc_test_request_minor_if_idle(state);
 
         ZrCore_GarbageCollector_GcStep(state);
 
@@ -3296,6 +3314,8 @@ static void test_gc_minor_collection_rewrites_generated_frame_slot_above_stack_t
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_EDEN, oldObject->garbageCollectMark.regionKind);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE,
                                  oldObject->garbageCollectMark.storageKind);
+
+        gc_test_request_minor_if_idle(state);
 
         ZrCore_GarbageCollector_GcStep(state);
 
@@ -3433,6 +3453,8 @@ static void test_gc_minor_collection_rewrites_inline_frame_value_with_layout_vis
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE,
                                  oldObject->garbageCollectMark.storageKind);
 
+        gc_test_request_minor_if_idle(state);
+
         ZrCore_GarbageCollector_GcStep(state);
 
         TEST_ASSERT_TRUE(inlineValue->isGarbageCollectable);
@@ -3506,6 +3528,8 @@ static void test_gc_minor_collection_preserves_young_descendant_through_old_stac
         state->stackTop.valuePointer = rootSlot + 1;
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+
+        gc_test_request_minor_if_idle(state);
 
         ZrCore_GarbageCollector_GcStep(state);
 
@@ -3688,6 +3712,8 @@ static void test_gc_minor_collection_rewrites_old_reference_to_forwarded_child(v
         TEST_ASSERT_NOT_NULL(resolvedChildValue);
         TEST_ASSERT_EQUAL_PTR(oldChild, resolvedChildValue->value.object);
 
+        gc_test_request_minor_if_idle(state);
+
         ZrCore_GarbageCollector_GcStep(state);
         TEST_ASSERT_TRUE(gc->gcDebtSize < debtBefore);
 
@@ -3770,6 +3796,8 @@ static void test_gc_minor_collection_preserves_hidden_items_array_on_promoted_pa
 
         TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
 
+        gc_test_request_minor_if_idle(state);
+
         ZrCore_GarbageCollector_GcStep(state);
 
         rootValue = ZrCore_Stack_GetValue(rootSlot);
@@ -3801,6 +3829,7 @@ static void test_gc_minor_collection_preserves_hidden_items_array_on_promoted_pa
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        gc_test_request_minor_if_idle(state);
         ZrCore_GarbageCollector_GcStep(state);
 
         memberName = ZrCore_String_CreateFromNative(state, "__zr_items");
@@ -3882,6 +3911,8 @@ static void test_gc_minor_collection_preserves_replaced_hidden_items_array_on_pr
                                                      oldParent->garbageCollectMark.anchorScopeDepth,
                                                      ZR_GARBAGE_COLLECT_PROMOTION_REASON_GLOBAL_ROOT);
 
+        gc_test_request_minor_if_idle(state);
+
         ZrCore_GarbageCollector_GcStep(state);
 
         rootValue = ZrCore_Stack_GetValue(rootSlot);
@@ -3914,6 +3945,7 @@ static void test_gc_minor_collection_preserves_replaced_hidden_items_array_on_pr
 
             gc->gcDebtSize = 4096;
             gc->gcLastStepWork = 0;
+            gc_test_request_minor_if_idle(state);
             ZrCore_GarbageCollector_GcStep(state);
 
             rootValue = ZrCore_Stack_GetValue(rootSlot);
@@ -4000,6 +4032,8 @@ static void test_gc_minor_collection_remembers_promoted_parent_holding_young_chi
 
         TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
 
+        gc_test_request_minor_if_idle(state);
+
         ZrCore_GarbageCollector_GcStep(state);
 
         rootValue = ZrCore_Stack_GetValue(rootSlot);
@@ -4030,6 +4064,7 @@ static void test_gc_minor_collection_remembers_promoted_parent_holding_young_chi
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        gc_test_request_minor_if_idle(state);
         ZrCore_GarbageCollector_GcStep(state);
 
         memberName = ZrCore_String_CreateFromNative(state, "child");
@@ -4109,6 +4144,8 @@ static void test_gc_repeated_minor_collections_do_not_churn_region_ids_without_n
                                                      oldParent->garbageCollectMark.anchorScopeDepth,
                                                      ZR_GARBAGE_COLLECT_PROMOTION_REASON_GLOBAL_ROOT);
 
+        gc_test_request_minor_if_idle(state);
+
         ZrCore_GarbageCollector_GcStep(state);
 
         rootValue = ZrCore_Stack_GetValue(rootSlot);
@@ -4129,6 +4166,7 @@ static void test_gc_repeated_minor_collections_do_not_churn_region_ids_without_n
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        gc_test_request_minor_if_idle(state);
         ZrCore_GarbageCollector_GcStep(state);
 
         memberName = ZrCore_String_CreateFromNative(state, "child");
@@ -4149,6 +4187,7 @@ static void test_gc_repeated_minor_collections_do_not_churn_region_ids_without_n
         for (iteration = 0u; iteration < 6u; iteration++) {
             gc->gcDebtSize = 4096;
             gc->gcLastStepWork = 0;
+            gc_test_request_minor_if_idle(state);
             ZrCore_GarbageCollector_GcStep(state);
 
             rootValue = ZrCore_Stack_GetValue(rootSlot);
@@ -4231,6 +4270,8 @@ static void test_gc_major_collection_deduplicates_shared_old_region_in_compactio
                                                      oldParent->garbageCollectMark.anchorScopeDepth,
                                                      ZR_GARBAGE_COLLECT_PROMOTION_REASON_GLOBAL_ROOT);
 
+        gc_test_request_minor_if_idle(state);
+
         ZrCore_GarbageCollector_GcStep(state);
 
         rootValue = ZrCore_Stack_GetValue(rootSlot);
@@ -4251,6 +4292,7 @@ static void test_gc_major_collection_deduplicates_shared_old_region_in_compactio
 
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        gc_test_request_minor_if_idle(state);
         ZrCore_GarbageCollector_GcStep(state);
 
         memberName = ZrCore_String_CreateFromNative(state, "child");
@@ -4274,6 +4316,8 @@ static void test_gc_major_collection_deduplicates_shared_old_region_in_compactio
 
         ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR);
         TEST_ASSERT_TRUE(gc->gcDebtSize > 0);
+
+        gc_test_request_minor_if_idle(state);
 
         ZrCore_GarbageCollector_CheckGc(state);
         gc_test_finish_concurrent_major(state);

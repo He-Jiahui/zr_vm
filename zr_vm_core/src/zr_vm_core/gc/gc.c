@@ -11,6 +11,7 @@
 #include "zr_vm_core/execution_budget.h"
 
 #include <stdint.h>
+#include <stdlib.h>
 
 /* 暂停域等待上界，完整回收与步骤失败时均按此边界放弃本次尝试。 */
 #define ZR_GC_DOMAIN_PAUSE_TIMEOUT_MILLISECONDS ((TZrUInt32)1000u)
@@ -184,10 +185,27 @@ static void garbage_collector_record_step_telemetry(SZrGarbageCollector *collect
     collector->statsSnapshot.lastStepWork = (TZrUInt64)collector->gcLastStepWork;
 
     kindIndex = (TZrUInt32)collector->statsSnapshot.lastCollectionKind;
-    if (kindIndex < ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAX &&
+    if (!collector->minorCollectionDeferred && kindIndex < ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAX &&
         collector->gcRunningStatus == ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED &&
         collector->collectionPhase == ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE &&
         (collector->gcLastStepWork > 0 || durationUs > 0u)) {
+        if (kindIndex == ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR &&
+            collector->minorYoungBytesBefore != 0u && durationUs != 0u) {
+            TZrUInt64 budget = collector->pauseBudgetUs;
+            if (collector->budgetConfigured && collector->budget.maxAtomicPauseUs != 0u &&
+                (budget == 0u || collector->budget.maxAtomicPauseUs < budget))
+                budget = collector->budget.maxAtomicPauseUs;
+            if (budget != 0u) {
+                TZrUInt64 cap = collector->minorYoungBytesBefore * budget / durationUs;
+                TZrUInt64 target = collector->youngRegionSize * collector->youngRegionCountTarget;
+                if (cap < 65536u) cap = 65536u;
+                if (cap > target) cap = target;
+                collector->minorNurseryCapBytes = collector->minorNurseryCapBytes == 0u ? cap :
+                        (collector->minorNurseryCapBytes * 3u + cap) / 4u;
+                if (collector->nextStepDebtBytes > collector->minorNurseryCapBytes)
+                    collector->nextStepDebtBytes = collector->minorNurseryCapBytes;
+            }
+        }
         collector->collectionCounts[kindIndex] += 1u;
         collector->collectionTotalDurationUs[kindIndex] += durationUs;
         if (collector->collectionMaxDurationUs[kindIndex] < durationUs) {
@@ -394,6 +412,7 @@ static void garbage_collector_schedule_collection_internal(SZrGlobalState *globa
     }
 
     collector = global->garbageCollector;
+    collector->nextStepDebtBytes = 1u;
     collector->scheduledCollectionKind = kind;
     collector->statsSnapshot.lastRequestedCollectionKind = kind;
     if (isExplicitRequest) {
@@ -550,6 +569,15 @@ void ZrCore_GarbageCollector_New(SZrGlobalState *global) {
             gc->budgetCompactDeferredCount;
     gc->statsSnapshot.budgetPressure = gc->budgetPressure;
     gc->statsSnapshot.budgetFallback = gc->budgetFallback;
+    gc->permanentRoots = ZR_NULL;
+    gc->permanentRootCount = gc->permanentRootCapacity = 0u;
+    gc->permanentRootRegistryComplete = ZR_TRUE;
+    gc->minorOldBoundary = ZR_NULL;
+    gc->minorRewriteObjects = ZR_NULL;
+    gc->minorRewriteCount = gc->minorRewriteCapacity = 0u;
+    gc->minorRewriteOverflow = gc->minorCollectionDeferred = ZR_FALSE;
+    gc->minorNurseryCapBytes = gc->minorYoungBytesBefore = 0u;
+    gc->nextStepDebtBytes = (TZrUInt64)1u << ZR_GARBAGE_COLLECT_STEP_LOG2_SIZE;
     memset(gc->collectionCounts, 0, sizeof(gc->collectionCounts));
     memset(gc->collectionTotalDurationUs, 0, sizeof(gc->collectionTotalDurationUs));
     memset(gc->collectionMaxDurationUs, 0, sizeof(gc->collectionMaxDurationUs));
@@ -653,6 +681,8 @@ void ZrCore_GarbageCollector_Free(SZrGlobalState *global, SZrGarbageCollector *c
     collector->regionCount = 0;
     collector->regionCapacity = 0;
 
+    free(collector->permanentRoots);
+    free(collector->minorRewriteObjects);
     ZrCore_Memory_RawFreeWithType(global, collector, sizeof(SZrGarbageCollector), ZR_MEMORY_NATIVE_TYPE_MANAGER);
 }
 
@@ -676,6 +706,7 @@ void ZrCore_GarbageCollector_GcFull(SZrState *state, TZrBool isImmediate) {
         return;
     }
     ZrCore_GcDomain_MutationLock(state->gcDomain);
+    collector->minorCollectionDeferred = ZR_FALSE;
     garbage_collector_concurrent_major_cancel(state);
     startedUs = garbage_collector_now_us();
 
@@ -739,6 +770,7 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
     collector = global->garbageCollector;
     ZrCore_ExecutionBudget_GcBegin(state);
     collector->gcLastStepWork = 0;
+    collector->minorCollectionDeferred = ZR_FALSE;
     debtBefore = ZrCore_GarbageCollector_GetDebtSpace(collector);
     statusBefore = collector->gcRunningStatus;
     startedUs = garbage_collector_now_us();
@@ -1095,6 +1127,15 @@ void ZrCore_GarbageCollector_CheckGc(SZrState *state) {
     if (collector->heapLimitBytes > 0 && collector->managedMemories >= collector->heapLimitBytes) {
         garbage_collector_schedule_collection_internal(global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL, ZR_FALSE);
     }
+
+    if (collector->gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL &&
+        !collector->concurrentMajorActive &&
+        collector->gcRunningStatus == ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED &&
+        !(collector->gcFlags & ZR_GC_FLAG_EXPLICIT_COLLECTION_REQUEST) &&
+        collector->scheduledCollectionKind == ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR &&
+        collector->nextStepDebtBytes != 0u &&
+        (TZrUInt64)ZrCore_GarbageCollector_GetDebtSpace(collector) < collector->nextStepDebtBytes)
+        return;
 
     if (ZrCore_GarbageCollector_GetDebtSpace(collector) > 0 ||
         collector->gcRunningStatus != ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED) {

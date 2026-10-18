@@ -484,6 +484,7 @@ TZrSize garbage_collector_finish_generational_major_collection(
         TZrBool *outDidCompact);
 /* root discovery、对象/值边遍历与 gray worklist propagation 分属不同 marking 阶段。 */
 void garbage_collector_mark_object(SZrState *state, SZrRawObject *object);
+void garbage_collector_minor_record_rewrite(SZrGarbageCollector *collector, SZrRawObject *object);
 void garbage_collector_mark_value(SZrState *state, SZrTypeValue *value);
 TZrSize garbage_collector_mark_string_roots(SZrState *state);
 TZrSize garbage_collector_snapshot_ignored_trace_roots(SZrState *state);
