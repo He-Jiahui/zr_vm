@@ -69,7 +69,9 @@ static void close_proxy_write_u32_le(TZrByte *bytes, TZrSize offset,
 static void test_appended_opcode_preserves_legacy_instruction_numbers(void) {
     TEST_ASSERT_EQUAL_UINT32(244u, ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL));
     TEST_ASSERT_EQUAL_UINT32(245u, ZR_INSTRUCTION_ENUM(MARK_CLOSE_PROXY));
-    TEST_ASSERT_EQUAL_UINT32(246u, ZR_INSTRUCTION_ENUM(ENUM_MAX));
+    TEST_ASSERT_EQUAL_UINT32(246u, ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST));
+    TEST_ASSERT_EQUAL_UINT32(249u, ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST));
+    TEST_ASSERT_EQUAL_UINT32(250u, ZR_INSTRUCTION_ENUM(ENUM_MAX));
 }
 
 static void test_patch_44_writer_and_reader_compatibility_gate(void) {

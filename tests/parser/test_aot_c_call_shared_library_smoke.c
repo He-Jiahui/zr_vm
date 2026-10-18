@@ -278,12 +278,12 @@ static void test_aot_c_generated_shared_library_executes_quickened_dynamic_call_
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_PrepareStaticDirectCall(state,"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_CompletePreparedDirectCallWithResume("));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "goto zr_aot_fn_"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_i64 dstSlot=4 srcSlot=1"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_i64 dstSlot=3 srcSlot=1"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
                                 "zr_aot_s_value = zr_aot_source->value.nativeObject.nativeInt64;"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s4 = zr_aot_s_value;"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_s3 = zr_aot_s_value;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_destination->value.nativeObject.nativeInt64 = zr_aot_s_value;"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_i64 dstSlot=3 srcSlot=4"));
+    TEST_ASSERT_NULL(strstr(generatedCText, "zr_aot_scalar_stack_copy_i64 dstSlot=3 srcSlot=4"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_destination = &frame.slotBase[3].value;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "/* zr_aot_publish_exports_boundary */"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_PublishModuleExports(state, &frame)"));

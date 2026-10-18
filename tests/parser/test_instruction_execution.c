@@ -1978,7 +1978,7 @@ static void test_execute_function_stack_anchor_restores_base_after_stack_grow(vo
 // 测试常量除数优化后的 DIV_SIGNED_LOAD_CONST 指令
 static void test_execute_div_signed_instruction(void) {
     SZrTestTimer timer;
-    const char *testSummary = "DIV_SIGNED_LOAD_CONST Instruction";
+    const char *testSummary = "Signed division by a constant";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -1986,9 +1986,9 @@ static void test_execute_div_signed_instruction(void) {
     SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    TEST_INFO("DIV_SIGNED_LOAD_CONST instruction", "Testing optimized signed division: 10 / 2");
+    TEST_INFO("DIV_SIGNED_LOAD_CONST instruction", "Testing signed division: dividend / 2");
 
-    const char *source = "return 10 / 2;";
+    const char *source = "var dividend: int = 10; return dividend / 2;";
     SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
     SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
 
@@ -2006,12 +2006,15 @@ static void test_execute_div_signed_instruction(void) {
         return;
     }
 
-    // 两个字面量应 quicken 为常量装载专用有符号除法指令。
+    // Keep the dividend in a variable so literal folding cannot remove the division.
     TZrBool hasDivSigned = ZR_FALSE;
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
         for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
             EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
-            if (opcode == ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_CONST)) {
+            if (opcode == ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_CONST) ||
+                opcode == ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST) ||
+                opcode == ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST) ||
+                opcode == ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST_PLAIN_DEST)) {
                 hasDivSigned = ZR_TRUE;
                 break;
             }
@@ -2025,7 +2028,7 @@ static void test_execute_div_signed_instruction(void) {
     ZrParser_Ast_Free(state, ast);
 
     if (!hasDivSigned) {
-        TEST_FAIL_CUSTOM(timer, testSummary, "DIV_SIGNED_LOAD_CONST instruction not found in compiled function");
+        TEST_FAIL_CUSTOM(timer, testSummary, "Signed division instruction not found in compiled function");
         destroy_test_state(state);
         return;
     }
