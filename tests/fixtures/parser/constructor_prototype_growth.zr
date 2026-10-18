@@ -3,3 +3,33 @@ var sys = import("zr.system");
 var job = init task.Job<int>(fn() => { var v = sys.vm; return 7; });
 var t = task.currentScheduler.schedule<int>(job);
 return t.result();
+
+// @unit fixture::constructor_prototype_growth
+// ## Summary
+// 构造 task.Job<int> 时把包含原生模块成员读取的 lambda 作为实参，随后 schedule 并取 Task.result，作为构造器参数编译期间 prototype 表可增长的回归场景。
+// 历史回归在编译参数时仍借用旧 prototype 指针；构造器发射器须在参数编译前保存按值决策。该场景与返回 7 的检查配合，不直接测量表容量或地址变化。
+// ## Returns
+// 脚本返回 t.result()；配套 runner 要求 CLI 正常退出且去除首尾空白后的 stdout 为 7。编译、构造、调度或取结果失败由 CLI/runner 的失败路径交付。
+// ## Constraints and lifecycle
+// 需要 CLI 注册 zr.task 与 zr.system 原生模块；先构造一次 cold Job，再把它交给 currentScheduler.schedule<int>，不重复消费该 Job。
+// 脚本中的模块、Job、Task 和局部值由 VM 管理；这里没有宿主文件写入、手工释放或跨线程同步协议。夹具不证明其它 scheduler/provider、构造器分支或全部异常清理。
+// lambda 保留 sys.vm 读取以覆盖原生元数据解析场景；不能仅把它改成直接返回常量而仍声称覆盖相同编译交互。
+// ## References
+// tests/cmake/run_constructor_prototype_growth.cmake:1 — 读入本夹具并传给 CLI 的 -e。
+// tests/cmake/runtime-compiler-boundary-tests.cmake:68 — 仅在 CLI target 存在时注册 compiler_constructor_prototype_growth。
+// zr_vm_parser/src/zr_vm_parser/compiler/expression/compile_expression_value_construct.c:178 — 在编译构造器参数前按值保存决策。
+
+// @unit lambda::constructor_prototype_growth_job_callable@L3
+// ## Summary
+// 作为 task.Job<int> 的无参数回调，读取外层 sys 绑定的 vm 成员后返回整数 7，使构造器参数中的 lambda 编译保留原生模块元数据解析入口。
+// ## Returns
+// 成员读取完成后的普通返回值为 7；局部 v 不作为结果交付。函数没有自己的异常捕获，编译或成员读取失败不能解释为成功返回 7。
+// ## Constraints and lifecycle
+// 此匿名函数是第 3 行 fn() => { ... } 的完整函数单元；Job 构造保存 callable，schedule 消费 Job 后由任务运行期派发，不能把构造 Job 等同于已经执行回调。
+// sys 必须在回调的词法环境中可解析；函数不向宿主转移 sys.vm 的所有权，也不交付局部 v 的引用。夹具没有宿主资源取得或释放语句。
+// 回调的普通返回、任务失败结算及运行时非局部退出由任务运行期协作；本函数没有独立重试或并发安全承诺。
+// ## References
+// tests/fixtures/parser/constructor_prototype_growth.zr:3 — lambda 定义及 Job 构造实参。
+// zr_vm_library/src/zr_vm_library/task/task_runtime.c:1298 — Job constructor 描述符指向保存 callable 的回调。
+// zr_vm_library/src/zr_vm_library/task/task_runtime.c:498 — 任务派发通过 ZrLib_CallValue 以零个参数调用 callable。
+// zr_vm_lib_system/src/zr_vm_lib_system/module.c:37 — zr.system 的 vm 模块链接。

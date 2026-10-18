@@ -282,3 +282,8 @@ doc_type: category-index
 ## 调试工件类型转发合同
 
 - [调试工件类型转发合同：1单元，0新键](batches/20261017-core-debug-artifact-forwarder-contracts.md)
+
+
+## 构造器prototype增长手写回归合同
+
+- [构造器prototype增长手写回归合同：3单元，3新键](batches/20261018-constructor-prototype-growth-contracts.md)
