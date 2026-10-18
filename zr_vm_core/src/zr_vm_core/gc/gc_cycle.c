@@ -1409,7 +1409,13 @@ static const SZrTypeLayout *garbage_collector_resolve_metadata_frame_type_layout
 
 static TZrBool garbage_collector_function_has_frame_gc_layouts(SZrState *threadState,
                                                                const SZrFunction *function) {
-    TZrBool hasGcLayout = ZR_FALSE;
+    TZrBool hasGcLayout = ZrCore_Function_HasFrameGcLayouts(function);
+    if (!hasGcLayout) return ZR_FALSE;
+    if (function->frameGcSummaryValid &&
+        function->frameGcSummaryLayouts == function->frameSlotLayouts &&
+        function->frameGcSummaryLength == function->frameSlotLayoutLength &&
+        function->frameGcSummaryByteSize == function->frameByteSize &&
+        !function->frameGcInlineLayoutsPresent) return ZR_TRUE;
 
     if (threadState == ZR_NULL || function == ZR_NULL ||
         function->frameSlotLayouts == ZR_NULL ||
@@ -1560,12 +1566,13 @@ static TZrBool garbage_collector_rewrite_resolved_inline_frame_values(SZrState *
 static TZrSize garbage_collector_rewrite_thread_frame_slots(SZrState *threadState) {
     TZrSize work = 0;
     SZrCallInfo *callInfo;
-    TZrStackValuePointer youngerFrameBase = ZR_NULL;
+    TZrStackValuePointer youngerFrameBase;
 
     if (threadState == ZR_NULL) {
         return 0;
     }
 
+    youngerFrameBase = threadState->stackTop.valuePointer;
     callInfo = threadState->callInfoList;
     while (callInfo != ZR_NULL) {
         if (garbage_collector_rewrite_value_if_forwarded(
@@ -1591,11 +1598,14 @@ static TZrSize garbage_collector_rewrite_thread_frame_slots(SZrState *threadStat
                                                                            frameBase,
                                                                            &work);
 
-            if (funcTop == ZR_NULL) {
-                funcTop = ZR_CALL_INFO_IS_VM(callInfo) && callInfo->functionTop.valuePointer != ZR_NULL
-                                  ? callInfo->functionTop.valuePointer
-                                  : threadState->stackTop.valuePointer;
-            }
+            if (callInfo == threadState->callInfoList &&
+                ZR_CALL_INFO_IS_VM(callInfo) && callInfo->functionTop.valuePointer > funcTop)
+                funcTop = callInfo->functionTop.valuePointer;
+            ZR_ASSERT(functionBase >= threadState->stackBase.valuePointer &&
+                      funcTop <= threadState->stackTail.valuePointer);
+            ZR_ASSERT(!inlineFrameRewritten || (funcTop >= frameBase &&
+                      metadataFunction->frameByteSize <=
+                      (TZrSize)(funcTop - frameBase) * sizeof(SZrTypeValueOnStack)));
 
             if (funcTop != ZR_NULL && funcTop > funcBase) {
                 while (funcBase < funcTop) {
@@ -1616,6 +1626,9 @@ static TZrSize garbage_collector_rewrite_thread_frame_slots(SZrState *threadStat
         callInfo = callInfo->previous;
     }
 
+    for (TZrStackValuePointer slot = threadState->stackBase.valuePointer;
+         slot < youngerFrameBase; ++slot)
+        if (garbage_collector_rewrite_value_if_forwarded(&slot->value)) work++;
     return work;
 }
 

@@ -37,6 +37,8 @@ def expected_checksum(name, smoke):
         "floatloop": 5000000, "fields": 3000000, "arrays": 3000000,
         "strcat": 300000, "intloop": 10000000, "closure": 2000000,
     }.get(name, 0)
+    if name in ("deep_alloc0", "deep_alloc"):
+        return 2000 if smoke else 300000
     if name == "fib":
         return 196418
     if name == "methods":
@@ -88,9 +90,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cli", required=True, type=Path)
     parser.add_argument("--work-dir", required=True, type=Path)
-    parser.add_argument("--cases", default="objauto,strdrop,calls,fib,methods,loop_lt,loop_le,floatloop,closure,fields,arrays,strcat,intloop")
+    parser.add_argument("--cases", default="objauto,strdrop,calls,fib,methods,loop_lt,loop_le,floatloop,closure,fields,arrays,strcat,intloop,deep_alloc0,deep_alloc")
     parser.add_argument("--repeat", type=int, default=3)
     parser.add_argument("--smoke", action="store_true", help="Reduce loop trips for GC stress builds")
+    parser.add_argument("--check-deep-ratio", action="store_true", help="Require depth-400 allocation time <= twice depth-0")
     args = parser.parse_args()
     args.work_dir.mkdir(parents=True, exist_ok=True)
     results = {}
@@ -118,6 +121,11 @@ def main():
         results[name] = dict(median_ms=statistics.median(s["ms"] for s in samples), samples=samples)
         print(f"{name}: {results[name]['median_ms']:.2f} ms, peak RSS {samples[-1]['peak_rss_bytes']}", flush=True)
     (args.work_dir / "results.json").write_text(json.dumps(results, indent=2) + "\n")
+    if args.check_deep_ratio:
+        ratio = results["deep_alloc"]["median_ms"] / results["deep_alloc0"]["median_ms"]
+        print(f"deep allocation depth-400 / depth-0: {ratio:.3f}", flush=True)
+        if ratio > 2.0:
+            raise RuntimeError(f"deep allocation ratio {ratio:.3f} exceeds 2.0")
 
 
 if __name__ == "__main__":

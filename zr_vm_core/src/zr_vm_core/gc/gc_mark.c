@@ -338,7 +338,13 @@ static SZrFunction *garbage_collector_call_info_metadata_function(SZrState *thre
 
 static TZrBool garbage_collector_function_has_frame_gc_layouts(SZrState *threadState,
                                                                const SZrFunction *function) {
-    TZrBool hasGcLayout = ZR_FALSE;
+    TZrBool hasGcLayout = ZrCore_Function_HasFrameGcLayouts(function);
+    if (!hasGcLayout) return ZR_FALSE;
+    if (function->frameGcSummaryValid &&
+        function->frameGcSummaryLayouts == function->frameSlotLayouts &&
+        function->frameGcSummaryLength == function->frameSlotLayoutLength &&
+        function->frameGcSummaryByteSize == function->frameByteSize &&
+        !function->frameGcInlineLayoutsPresent) return ZR_TRUE;
 
     if (threadState == ZR_NULL || function == ZR_NULL ||
         function->frameSlotLayouts == ZR_NULL ||
@@ -466,31 +472,6 @@ static TZrSize garbage_collector_mark_aot_root_frames(SZrState *state, SZrState 
     }
 
     return work;
-}
-
-static TZrBool garbage_collector_stack_slot_intersects_resolved_inline_frame(SZrState *threadState,
-                                                                            TZrStackValuePointer stackSlot) {
-    SZrCallInfo *callInfo;
-
-    if (threadState == ZR_NULL || stackSlot == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    callInfo = threadState->callInfoList;
-    while (callInfo != ZR_NULL) {
-        SZrFunction *function = garbage_collector_call_info_metadata_function(threadState, callInfo);
-
-        if (callInfo->functionBase.valuePointer != ZR_NULL &&
-            garbage_collector_function_has_frame_gc_layouts(threadState, function) &&
-            ZrCore_Function_FrameStackSlotIntersectsFrameGcValue(function,
-                                                                 callInfo->functionBase.valuePointer + 1,
-                                                                 stackSlot)) {
-            return ZR_TRUE;
-        }
-        callInfo = callInfo->previous;
-    }
-
-    return ZR_FALSE;
 }
 
 static TZrBool garbage_collector_mark_resolved_inline_frame_values(SZrState *state,
@@ -1019,13 +1000,9 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
             SZrCallInfo *callInfo;
             SZrClosureValue *closureValue;
 
-            while (stackPtr < stackTop) {
-                if (!garbage_collector_stack_slot_intersects_resolved_inline_frame(threadState, stackPtr)) {
-                    garbage_collector_mark_value(state, &stackPtr->value);
-                }
-                stackPtr++;
-                work++;
-            }
+#ifdef ZR_DEBUG
+            TZrSize scannedSlots = 0u, coverageChecks = 0u;
+#endif
             work += garbage_collector_mark_aot_root_frames(state, threadState);
 
             closureValue = threadState->stackClosureValueList;
@@ -1065,7 +1042,7 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
 
             callInfo = threadState->callInfoList;
             {
-                TZrStackValuePointer youngerFrameBase = ZR_NULL;
+                TZrStackValuePointer youngerFrameBase = stackTop;
 
                 while (callInfo != ZR_NULL) {
                     garbage_collector_mark_value(state, &callInfo->interpreterGenericContext);
@@ -1086,14 +1063,23 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
                                                                                     frameBase,
                                                                                     &work);
 
-                        if (funcTop == ZR_NULL) {
-                            funcTop = ZR_CALL_INFO_IS_VM(callInfo) && callInfo->functionTop.valuePointer != ZR_NULL
-                                              ? callInfo->functionTop.valuePointer
-                                              : threadState->stackTop.valuePointer;
-                        }
+                        if (callInfo == threadState->callInfoList &&
+                            ZR_CALL_INFO_IS_VM(callInfo) && callInfo->functionTop.valuePointer > funcTop)
+                            funcTop = callInfo->functionTop.valuePointer;
+                        /* VM call windows start above the caller's physical
+                         * storage (execution_prepare_frame_layout_call_window).
+                         * Native frames have no active layout. */
+                        ZR_ASSERT(functionBase >= stackPtr && funcTop <= threadState->stackTail.valuePointer);
+                        ZR_ASSERT(!inlineFrameVisited || (funcTop >= frameBase &&
+                                  metadataFunction->frameByteSize <=
+                                  (TZrSize)(funcTop - frameBase) * sizeof(SZrTypeValueOnStack)));
 
                         if (funcTop != ZR_NULL && funcTop > funcBase) {
                             while (funcBase < funcTop) {
+#ifdef ZR_DEBUG
+                                scannedSlots++;
+                                if (inlineFrameVisited) coverageChecks++;
+#endif
                                 if (!inlineFrameVisited ||
                                     !ZrCore_Function_FrameStackSlotIntersectsFrameGcValue(metadataFunction,
                                                                                           frameBase,
@@ -1110,6 +1096,23 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
                     }
                     callInfo = callInfo->previous;
                 }
+                /* Slots below the oldest frame (or all slots with no frames)
+                 * are ordinary roots. The youngest window also includes the
+                 * live staging gap above functionTop. */
+                while (stackPtr < youngerFrameBase) {
+                    garbage_collector_mark_value(state, &stackPtr->value);
+                    stackPtr++;
+                    work++;
+#ifdef ZR_DEBUG
+                    scannedSlots++;
+#endif
+                }
+#ifdef ZR_DEBUG
+                ZR_ASSERT(coverageChecks <= scannedSlots);
+                threadState->gcThreadScanSlots += scannedSlots;
+                threadState->gcThreadScanCoverageChecks += coverageChecks;
+                threadState->gcThreadScanCount++;
+#endif
             }
             break;
         }

@@ -130,6 +130,12 @@ struct ZR_STRUCT_ALIGN SZrState {
     /** Native provider 默认为 Runtime 阶段；非 Runtime 宿主显式切换。 */
     TZrUInt8 nativeProviderPhase;
     TZrUInt64 debugFrameGenerationNext; /**< 新调用帧的非零 generation 计数。 */
+#ifdef ZR_DEBUG
+    TZrUInt64 gcThreadScanSlots;
+    TZrUInt64 gcThreadScanCoverageChecks;
+    TZrUInt64 gcThreadScanCount;
+#endif
+
 };
 
 typedef struct SZrState SZrState;

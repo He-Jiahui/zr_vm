@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "unity.h"
 #include "harness/runtime_support.h"
@@ -290,8 +291,55 @@ static void test_finalizers_run_with_their_object_graph_intact(void) {
         TEST_ASSERT_EQUAL_UINT(1u, finalizerCalls);
     }
 }
+static void test_gc_coverage_summary_tracks_sparse_and_cross_slot_layouts(void) {
+    SZrFunction function = {0};
+    SZrFunctionFrameSlotLayout layouts[2] = {{0}};
+    SZrTypeValueOnStack stack[6] = {0};
+    function.stackSize = 6u;
+    function.frameByteSize = sizeof(stack);
+    function.frameSlotLayouts = layouts;
+    function.frameSlotLayoutLength = 2u;
+    layouts[0].slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+    layouts[0].byteOffset = sizeof(stack[0]) + 8u;
+    layouts[0].byteSize = sizeof(SZrTypeValue);
+    layouts[1].slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+    layouts[1].byteOffset = 3u * sizeof(stack[0]) + 32u;
+    layouts[1].byteSize = sizeof(stack[0]) + 16u;
+    ZrCore_Function_FinalizeDirectFrameValueSlots(&function);
+    TEST_ASSERT_TRUE(function.frameGcSummaryValid);
+    TEST_ASSERT_NOT_NULL(function.frameGcSlotBitmap);
+    for (unsigned i = 0u; i < 6u; ++i)
+        TEST_ASSERT_EQUAL(i == 1u || i == 3u || i == 4u,
+                ZrCore_Function_FrameStackSlotIntersectsFrameGcValue(&function, stack, stack + i));
+    layouts[1].byteOffset = 4u * sizeof(stack[0]);
+    ZrCore_Function_FinalizeDirectFrameValueSlots(&function);
+    TEST_ASSERT_FALSE(ZrCore_Function_FrameStackSlotIntersectsFrameGcValue(&function, stack, stack + 3u));
+    TEST_ASSERT_TRUE(ZrCore_Function_FrameStackSlotIntersectsFrameGcValue(&function, stack, stack + 5u));
+    free(function.frameGcSlotBitmap);
+}
+static void test_deep_frame_scan_has_linear_coverage_work(void) {
+    SZrFunction *function = compile(
+        "fn rec(n: int): int { if (n == 0) { var i = 0;"
+        "while (i < 600) { var o = { value: i }; i = i + 1; } return i; }"
+        "return rec(n - 1) + 0; } return rec(80);");
+#ifdef ZR_DEBUG
+    TZrUInt64 scans = state->gcThreadScanCount;
+    TZrUInt64 slots = state->gcThreadScanSlots;
+    TZrUInt64 checks = state->gcThreadScanCoverageChecks;
+#endif
+    expect_int(function, 600);
+    ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+#ifdef ZR_DEBUG
+    TEST_ASSERT_TRUE(state->gcThreadScanCount > scans);
+    TEST_ASSERT_TRUE(state->gcThreadScanCoverageChecks > checks);
+    TEST_ASSERT_TRUE(state->gcThreadScanCoverageChecks - checks <= state->gcThreadScanSlots - slots);
+#endif
+    ZrCore_Function_Free(state, function);
+}
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_gc_coverage_summary_tracks_sparse_and_cross_slot_layouts);
+    RUN_TEST(test_deep_frame_scan_has_linear_coverage_work);
     RUN_TEST(test_idle_barrier_preserves_a_new_transitive_graph);
     RUN_TEST(test_sweep_barrier_preserves_graph_allocated_behind_cursor);
     RUN_TEST(test_incremental_linked_graph_survives_interpreter_churn);

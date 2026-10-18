@@ -3,6 +3,7 @@
 //
 
 #include "zr_vm_core/function.h"
+#include <stdlib.h>
 #include "zr_vm_core/function_identity.h"
 
 #include "zr_vm_core/closure.h"
@@ -254,6 +255,15 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->frameByteAlign = 0;
     function->frameSlotLayoutLength = 0;
     function->frameSlotLayouts = ZR_NULL;
+    function->frameGcSummaryLayouts = ZR_NULL;
+    function->frameGcSlotBitmap = ZR_NULL;
+    function->frameGcSummaryLength = 0u;
+    function->frameGcSummaryByteSize = 0u;
+    function->frameGcFirstSlot = 0u;
+    function->frameGcEndSlot = 0u;
+    function->frameGcSummaryValid = ZR_FALSE;
+    function->frameGcLayoutsPresent = ZR_FALSE;
+    function->frameGcInlineLayoutsPresent = ZR_FALSE;
     function->prototypeFrameTypeLayouts = ZR_NULL;
     function->prototypeFrameTypeLayoutFields = ZR_NULL;
     function->prototypeFrameTypeLayoutStates = ZR_NULL;
@@ -851,6 +861,7 @@ void ZrCore_Function_FinalizeDirectFrameValueSlots(SZrFunction *function) {
     if (function == ZR_NULL) {
         return;
     }
+    ZrCore_Function_FinalizeFrameGcCoverage(function);
     function->directValueParameterCountPlusOne = 0u;
     function->directValueParameterScanLength = 0u;
     function->directValueFrameSlotCountPlusOne = 0u;
@@ -1277,6 +1288,15 @@ static void function_reset_to_tombstone(SZrFunction *function) {
     function->frameByteAlign = 0;
     function->frameSlotLayoutLength = 0;
     function->frameSlotLayouts = ZR_NULL;
+    function->frameGcSummaryLayouts = ZR_NULL;
+    function->frameGcSlotBitmap = ZR_NULL;
+    function->frameGcSummaryLength = 0u;
+    function->frameGcSummaryByteSize = 0u;
+    function->frameGcFirstSlot = 0u;
+    function->frameGcEndSlot = 0u;
+    function->frameGcSummaryValid = ZR_FALSE;
+    function->frameGcLayoutsPresent = ZR_FALSE;
+    function->frameGcInlineLayoutsPresent = ZR_FALSE;
     function->prototypeFrameTypeLayouts = ZR_NULL;
     function->prototypeFrameTypeLayoutFields = ZR_NULL;
     function->prototypeFrameTypeLayoutStates = ZR_NULL;
@@ -1357,6 +1377,8 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
     SZrGlobalState *global = state->global;
     ZR_ASSERT(function != ZR_NULL);
     ZrCore_Function_ReleaseIrOwners(function);
+    free(function->frameGcSlotBitmap);
+    function->frameGcSlotBitmap = ZR_NULL;
 #define ZR_FUNCTION_FREE_METADATA_PARAMETERS(PARAMETERS, COUNT)                                                      \
     do {                                                                                                             \
         if ((PARAMETERS) != ZR_NULL && (COUNT) > 0) {                                                                \

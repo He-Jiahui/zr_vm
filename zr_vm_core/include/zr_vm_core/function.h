@@ -781,6 +781,17 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     /* Runtime-only host root token. A shallow inline copy does not own the
      * source object's root: ownership is valid only when this points to self. */
     struct SZrFunction *hostRootOwner;
+    /* Derived GC coverage, rebuilt with frame metadata; never serialized.
+     * A null bitmap with a valid summary denotes one contiguous slot range. */
+    const SZrFunctionFrameSlotLayout *frameGcSummaryLayouts;
+    TZrUInt32 frameGcSummaryLength;
+    TZrUInt32 frameGcSummaryByteSize;
+    TZrUInt32 frameGcFirstSlot;
+    TZrUInt32 frameGcEndSlot;
+    TZrUInt8 *frameGcSlotBitmap;
+    TZrBool frameGcSummaryValid;
+    TZrBool frameGcLayoutsPresent;
+    TZrBool frameGcInlineLayoutsPresent;
 };
 
 typedef struct SZrFunction SZrFunction;
@@ -881,6 +892,8 @@ ZR_CORE_API TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFuncti
  */
 ZR_CORE_API const SZrFunctionFrameSlotLayout *ZrCore_Function_FindFrameSlotLayout(const SZrFunction *function,
           TZrUInt32 stackSlot);
+ZR_CORE_API void ZrCore_Function_FinalizeFrameGcCoverage(SZrFunction *function);
+ZR_CORE_API TZrBool ZrCore_Function_HasFrameGcLayouts(const SZrFunction *function);
 ZR_CORE_API void ZrCore_Function_FinalizeDirectFrameValueSlots(
         SZrFunction *function);
 static ZR_FORCE_INLINE TZrBool ZrCore_Function_IsDirectFrameValueSlotLayout(
