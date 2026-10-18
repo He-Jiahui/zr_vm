@@ -36,7 +36,7 @@ typedef struct SZrExecutionBudget {
     const SZrExecutionCancelToken *cancelToken;
 /** @brief 区分未设置指令限额与限额为零；零限额仍允许不消费指令的 native 边界。 */
     TZrBool hasInstructionLimit;
-/** @brief 启用绝对期限门禁；未开启时 deadlineMicros 不参与 Poll。 */
+/** @brief 启用绝对期限门禁；解释器最多每 256 条指令及 native/GC 边界检查资源限制。 */
     TZrBool hasDeadline;
 /** @brief 按 dispatch 入场累计，未放行的下一条不计；饱和后不回绕，供宿主 usage。 */
     TZrUInt64 executedInstructions;
@@ -81,7 +81,8 @@ ZR_CORE_API void ZrCore_ExecutionCancelToken_Free(SZrExecutionCancelToken *token
 ZR_CORE_API TZrUInt64 ZrCore_ExecutionBudget_NowMicros(void);
 
 /**
- * @brief 在解释器字节码分派前收费，或在 native/GC 边界只检查其他限制。
+ * @brief 在解释器量子边界收费并检查资源，或在 native/GC 边界只检查其他限制。
+ * @note 量子内的解释器直接累计指令并精确检查指令上限；资源检查间隔最多 256 条指令。
  * @return 预算缺失或仍可执行时为真；终止时设置线程状态并返回假，
  *         让宿主按正常 C 返回路径退出外部回调栈。
  */

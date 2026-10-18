@@ -7,6 +7,7 @@
 #include "execution/execution_inline_frame_copy_fast.h"
 #include "execution/execution_dynamic_call_guard.h"
 #include "execution/execution_checked_integer.h"
+#include "execution/execution_budget_fast.h"
 #include "function/function_call_spread_internal.h"
 #include "function/function_precall_internal.h"
 #include "object/object_internal.h"
@@ -2407,6 +2408,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     SZrTypeValue *opA;
     SZrTypeValue *opB;
     TZrUInt32 mutatorPollBudget = 0u;
+    SZrExecutionBudget *executionBudget = state->executionBudget;
+    TZrUInt32 budgetResourcePollCountdown = 0u;
     SZrExecutionContext executionContext;
     EZrExecutionBoundaryStatus executionBoundaryStatus;
     /*
@@ -5825,6 +5828,10 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define UPDATE_BASE(CALL_INFO)                                                                                        \
     do {                                                                                                               \
+        if (executionBudget != state->executionBudget) {                                                               \
+            executionBudget = state->executionBudget;                                                                  \
+            budgetResourcePollCountdown = 0u;                                                                          \
+        }                                                                                                              \
         base = (CALL_INFO)->functionBase.valuePointer + 1;                                                            \
         packedDirectValueBase =                                                                                       \
                 (CALL_INFO)->functionBase.valuePointer == frameFunctionBase                                            \
@@ -5852,6 +5859,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             mutatorPollBudget = 0u;                                                                                    \
             ZR_ASSERT(callInfo == state->callInfoList);                                                                \
             (callInfo)->context.context.programCounter = programCounter + (N);                                        \
+            state->previousProgramCounter = (TZrUInt32)(programCounter + (N) - frameFunction->instructionsList);       \
             (state)->stackTop.valuePointer = (callInfo)->functionTop.valuePointer;                                    \
             executionBoundaryStatus = execution_poll_with_result_root(                                                \
                     &executionContext, state, programCounter + (N), &ret);                                             \
@@ -5868,8 +5876,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                                       ZrCore_Execution_BoundaryStatusName(executionBoundaryStatus));                  \
             }                                                                                                          \
         }                                                                                                              \
-        if (ZR_UNLIKELY(state->executionBudget != ZR_NULL) &&                                                         \
-            !ZrCore_ExecutionBudget_Poll(state, ZR_TRUE)) {                                                            \
+        if (ZR_UNLIKELY(executionBudget != ZR_NULL) &&                                                                 \
+            !execution_budget_admit_instruction(state, executionBudget, &budgetResourcePollCountdown)) {               \
             callInfo->context.context.programCounter = programCounter + (N);                                         \
             state->stackTop.valuePointer = callInfo->functionTop.valuePointer;                                        \
             ZrCore_ExecutionBudget_UnwindVmFrames(state);                                                              \
@@ -5933,6 +5941,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 
 #define RESUME_AFTER_NATIVE_CALL(STATE, CALL_INFO)                                                                     \
     do {                                                                                                               \
+        executionBudget = (STATE)->executionBudget;                                                                    \
+        budgetResourcePollCountdown = 0u;                                                                              \
         if (ZR_UNLIKELY((STATE)->executionBudget != ZR_NULL) &&                                                       \
             !ZrCore_ExecutionBudget_Poll((STATE), ZR_FALSE)) {                                                         \
             ZrCore_ExecutionBudget_UnwindVmFrames(STATE);                                                              \
@@ -5979,6 +5989,8 @@ LZrStart:
     recordHelpers = (profileRuntime != ZR_NULL && profileRuntime->recordHelpers) ? ZR_TRUE : ZR_FALSE;
     UPDATE_FAST_DISPATCH_MODE();
 LZrReturning: {
+        executionBudget = state->executionBudget;
+        budgetResourcePollCountdown = 0u;
         SZrTypeValue *functionBaseValue = ZrCore_Stack_GetValueNoProfile(callInfo->functionBase.valuePointer);
         SZrFunction *function = callInfo->metadataFunction;
         frameCallableObject = functionBaseValue->value.object;

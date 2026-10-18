@@ -201,7 +201,7 @@ void ZrCore_GcDomain_Free(SZrGcDomain *domain) {
     ZrCore_GcDomain_Lock(domain);
     domain->active = ZR_FALSE;
     domain->identity.generation++;
-    domain->pauseRequested = ZR_FALSE;
+    gc_domain_set_pause_requested(domain, ZR_FALSE);
     domain->collectorState = ZR_NULL;
     domain->pauseDepth = 0u;
     ZrCore_GcDomain_Broadcast(domain);

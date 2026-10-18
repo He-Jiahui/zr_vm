@@ -149,6 +149,22 @@ EZrExecutionBoundaryStatus ZrCore_Execution_ReloadBoundary(
     return ZR_EXECUTION_BOUNDARY_OK;
 }
 
+static TZrBool execution_context_has_gc_work(const SZrState *state) {
+    const SZrGarbageCollector *collector;
+    if (state->global == ZR_NULL || state->global->garbageCollector == ZR_NULL ||
+        state->nestedNativeCalls > 1u) {
+        return ZR_FALSE;
+    }
+    collector = state->global->garbageCollector;
+    return (TZrBool)(!collector->stopGcFlag && !collector->isImmediateGcFlag &&
+            collector->gcStatus != ZR_GARBAGE_COLLECT_STATUS_STOP_BY_USER &&
+            collector->gcStatus != ZR_GARBAGE_COLLECT_STATUS_STOP_BY_EXITING &&
+            (ZrCore_GarbageCollector_GetDebtSpace(collector) >=
+                     ((TZrMemoryOffset)1 << ZR_GARBAGE_COLLECT_STEP_LOG2_SIZE) ||
+             collector->gcRunningStatus != ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED ||
+             (collector->heapLimitBytes > 0 && collector->managedMemories >= collector->heapLimitBytes)));
+}
+
 EZrExecutionBoundaryStatus ZrCore_Execution_SafepointPoll(
         SZrExecutionContext *context,
         SZrState *state,
@@ -156,7 +172,15 @@ EZrExecutionBoundaryStatus ZrCore_Execution_SafepointPoll(
     EZrExecutionBoundaryStatus status;
     TZrBool reload = ZR_FALSE;
 
-    status = ZrCore_Execution_PublishBoundary(context, state, state != ZR_NULL ? state->callInfoList : ZR_NULL,
+    if (context == ZR_NULL || state == ZR_NULL) {
+        return ZR_EXECUTION_BOUNDARY_INVALID_ARGUMENT;
+    }
+    /* Publication and its validation are needed only when another thread or
+     * the local collector can actually inspect/move this frame. */
+    if (!ZrCore_GcDomain_HasPauseRequest(state) && !execution_context_has_gc_work(state)) {
+        return ZR_EXECUTION_BOUNDARY_OK;
+    }
+    status = ZrCore_Execution_PublishBoundary(context, state, state->callInfoList,
                                                resumeProgramCounter);
     if (status != ZR_EXECUTION_BOUNDARY_OK) {
         return status;
@@ -164,29 +188,15 @@ EZrExecutionBoundaryStatus ZrCore_Execution_SafepointPoll(
     if (state->gcDomain != ZR_NULL && ZrCore_GcDomain_MutatorPoll(state)) {
         reload = ZR_TRUE;
     }
-    if (state->global != ZR_NULL && state->global->garbageCollector != ZR_NULL) {
-        SZrGarbageCollector *collector = state->global->garbageCollector;
-        /* Depth one includes the embedding call into the VM. A deeper entry
-         * may have an outer native frame with unpublished C temporaries. */
-        if (state->nestedNativeCalls <= 1u &&
-            !collector->stopGcFlag && !collector->isImmediateGcFlag &&
-            collector->gcStatus != ZR_GARBAGE_COLLECT_STATUS_STOP_BY_USER &&
-            collector->gcStatus != ZR_GARBAGE_COLLECT_STATUS_STOP_BY_EXITING &&
-            /* Debt saturates at zero, so a positive byte is not a new GC
-             * quantum. Batch fresh allocation at the configured step size. */
-            (ZrCore_GarbageCollector_GetDebtSpace(collector) >=
-                     ((TZrMemoryOffset)1 << ZR_GARBAGE_COLLECT_STEP_LOG2_SIZE) ||
-             collector->gcRunningStatus != ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED ||
-             (collector->heapLimitBytes > 0 && collector->managedMemories >= collector->heapLimitBytes)
-             )) {
+    if (execution_context_has_gc_work(state)) {
 #if defined(ZR_DEBUG_GARBAGE_COLLECT_MEM_TEST)
-            if (!collector->concurrentMajorActive)
-                ZrCore_GarbageCollector_GcFull(state, ZR_FALSE);
-            else
+        SZrGarbageCollector *collector = state->global->garbageCollector;
+        if (!collector->concurrentMajorActive)
+            ZrCore_GarbageCollector_GcFull(state, ZR_FALSE);
+        else
 #endif
-                ZrCore_GarbageCollector_CheckGc(state);
-            reload = ZR_TRUE;
-        }
+            ZrCore_GarbageCollector_CheckGc(state);
+        reload = ZR_TRUE;
     }
     if (reload) {
         status = ZrCore_Execution_ReloadBoundary(context, state);

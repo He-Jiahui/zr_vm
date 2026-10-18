@@ -133,6 +133,8 @@ ZR_CORE_API void ZrCore_GcDomain_MutatorUnwindScopes(
         struct SZrState *state);
 /** @brief 执行安全点轮询；暂停请求存在时停靠并等到恢复，实际停靠后返回 true。 */
 ZR_CORE_API TZrBool ZrCore_GcDomain_MutatorPoll(struct SZrState *state);
+/** @brief Read the atomic pause request without locking; state/domain must remain attached and alive. */
+ZR_CORE_API TZrBool ZrCore_GcDomain_HasPauseRequest(const struct SZrState *state);
 /**
  * @brief 将未附着且共享 ownerState 全局状态的 mutatorState 加入同一域。
  * @return 登记或分配失败时为 false；成功后由调用方负责 Detach。

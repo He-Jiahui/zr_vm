@@ -575,12 +575,24 @@ void ZrCore_GcDomain_MutatorUnwindScopes(SZrState *state) {
     ZrCore_GcDomain_Unlock(domain);
 }
 
+TZrBool ZrCore_GcDomain_HasPauseRequest(const SZrState *state) {
+    if (state == ZR_NULL || state->gcDomain == ZR_NULL) {
+        return ZR_FALSE;
+    }
+#if defined(ZR_PLATFORM_WIN)
+    return (TZrBool)(InterlockedCompareExchange(
+            (volatile LONG *)&state->gcDomain->pauseRequested, 0, 0) != 0);
+#else
+    return (TZrBool)(__atomic_load_n(&state->gcDomain->pauseRequested, __ATOMIC_ACQUIRE) != 0);
+#endif
+}
+
 /* VM/GC 安全点响应暂停请求，并在 collector 结束前保持当前 epoch 的停靠状态。 */
 TZrBool ZrCore_GcDomain_MutatorPoll(SZrState *state) {
     SZrGcDomain *domain;
     SZrGcDomainMutatorRecord *record;
 
-    if (state == ZR_NULL || state->gcDomain == ZR_NULL) {
+    if (!ZrCore_GcDomain_HasPauseRequest(state)) {
         return ZR_FALSE;
     }
     domain = state->gcDomain;
@@ -823,7 +835,7 @@ TZrBool ZrCore_GcDomain_StopTheWorldBegin(
     if (domain->safepointEpoch == 0u) {
         domain->safepointEpoch = 1u;
     }
-    domain->pauseRequested = ZR_TRUE;
+    gc_domain_set_pause_requested(domain, ZR_TRUE);
     domain->collectorState = state;
     domain->pauseDepth = 1u;
     ZrCore_GcDomain_Broadcast(domain);
@@ -855,7 +867,7 @@ TZrBool ZrCore_GcDomain_StopTheWorldBegin(
                                 ? blocker->state->callInfoList
                                 : ZR_NULL;
             }
-            domain->pauseRequested = ZR_FALSE;
+            gc_domain_set_pause_requested(domain, ZR_FALSE);
             domain->collectorState = ZR_NULL;
             domain->pauseDepth = 0u;
             ZrCore_GcDomain_Broadcast(domain);
@@ -884,7 +896,7 @@ void ZrCore_GcDomain_StopTheWorldEnd(SZrState *state) {
         ZrCore_GcDomain_Unlock(domain);
         return;
     }
-    domain->pauseRequested = ZR_FALSE;
+    gc_domain_set_pause_requested(domain, ZR_FALSE);
     domain->collectorState = ZR_NULL;
     domain->pauseDepth = 0u;
     ZrCore_GcDomain_Broadcast(domain);

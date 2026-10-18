@@ -94,7 +94,8 @@ typedef struct SZrGcDomain {
     TZrUInt64 safepointEpoch;
     struct SZrState *collectorState;
     TZrUInt32 pauseDepth;
-    TZrBool pauseRequested;
+    /* Atomic publication for idle mutator polls; remaining pause state is locked. */
+    volatile TZrInt32 pauseRequested;
     TZrUInt64 safepointWaitCount;
     TZrUInt64 safepointWaitTotalUs;
     TZrUInt64 safepointWaitMaxUs;
@@ -121,6 +122,15 @@ typedef struct SZrGcDomain {
     TZrBool mutationLockInitialized;
     TZrBool active;
 } SZrGcDomain;
+
+/* All writes, including shutdown and timeout, publish through this helper. */
+static inline void gc_domain_set_pause_requested(SZrGcDomain *domain, TZrBool requested) {
+#if defined(ZR_PLATFORM_WIN)
+    (void)InterlockedExchange((volatile LONG *)&domain->pauseRequested, requested ? 1 : 0);
+#else
+    __atomic_store_n(&domain->pauseRequested, requested ? 1 : 0, __ATOMIC_RELEASE);
+#endif
+}
 
 /* global 创建/销毁域；次 state 只借用域，并须先退出作用域再解除登记。 */
 SZrGcDomain *ZrCore_GcDomain_New(
