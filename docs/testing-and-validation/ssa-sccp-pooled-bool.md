@@ -29,7 +29,7 @@ plan_sources:
 
 ## 当前状态
 
-Source40的实现、focused、五项必要回归与有限MSVC已实际通过；提交和清理以本批索引及清单收据为准。最小实际RED使用真实Module构建、Core与Parser Verify及public Optimize：2案4profiles，要求写回EQ(40,40)的用例因缺失变换FAIL，disabled SCCP对照PASS；全部preverify/run/postverify/safety均1，634 allocation attempts、live/errors0。自然exit1是一个已登记Unity功能失败。生产三文件修改后，完整focused CTest实际22案、84固定profiles全部PASS，focused独审A9214238与有限MSVC独审AC90E867均已接受；五项必要回归亦全部实际PASS，详见下表。
+Source40的实现、focused、五项必要回归与有限MSVC已实际通过。功能已提交为`c6847c3a093245b554d34672dd0440ddc949b4e1`，精确16路径、作者与提交者均为He-Jiahui；postcommit独审B1FD0DFA接受。7415条范围外index完整raw及4条foreign cached保持，当前整index哈希与历史发布值不同的限制已在报告说明。自有清理及保留构建以本批清单收据为准。最小实际RED使用真实Module构建、Core与Parser Verify及public Optimize：2案4profiles，要求写回EQ(40,40)的用例因缺失变换FAIL，disabled SCCP对照PASS；全部preverify/run/postverify/safety均1，634 allocation attempts、live/errors0。自然exit1是一个已登记Unity功能失败。生产三文件修改后，完整focused CTest实际22案、84固定profiles全部PASS，focused独审A9214238与有限MSVC独审AC90E867均已接受；五项必要回归亦全部实际PASS，详见下表。
 
 构建复用实际checkout和同一物理E盘目录；31个C单元全部fresh编译、1link、零诊断。初次configure检查因无关foreign文件变化而在子进程启动前拒绝；第一轮compile01自然0但collector漏列真实exec_ir_opcode.def依赖而拒绝。两个原失败收据保持失败；修正范围与dependency声明后实际r2 configure、31fresh build、最小RED分别收据接受，未重写旧失败证据。
 
@@ -61,7 +61,7 @@ Source37 case32保留ID及非Int64要求，预期改为精确BOOL tuple。Source
 
 ## 回归与交付范围
 
-focused实际证据独审A9214238与有限MSVC独审AC90E867已经接受。五项必要IR回归的实际r2收据0DC200AA及Root协议验收A192C7D2接受，总计210个Unity用例、零失败：
+focused实际证据独审A9214238与有限MSVC独审AC90E867已经接受。五项必要IR回归的实际r2收据0DC200AA、Root协议验收A192C7D2与独审CA091A58均接受，总计210个Unity用例、零失败：
 
 | 回归 | 实际验收范围 |
 | --- | --- |

@@ -1,5 +1,12 @@
 ---
 related_code:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_constant_materialize.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_internal.h
+  - tests/parser/test_ssa_sccp_pooled_bool.c
+  - tests/parser/support/ssa_sccp_pooled_bool_fixture.h
+  - tests/parser/support/ssa_sccp_pooled_bool_fixture.c
+  - tests/parser/support/ssa_sccp_pooled_bool_faults.c
+  - tests/cmake/ssa-sccp-pooled-bool.cmake
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_internal.h
   - tests/parser/test_ssa_sccp_branch_sensitive_pool.c
@@ -16,14 +23,22 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/compiler_source_retention.h
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_source_retention.c
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_constant_materialize.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_internal.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_internal.h
 
 plan_sources:
+  - .codex/plans/20261018-ssa-scalar-completion.md
   - .codex/plans/20261017-ssa-sccp-bool-edges.md
   - "user: 2026-09-12 SSA 全栈自动优化计划拆分与详细重构指导"
 tests:
+  - tests/parser/test_ssa_sccp_pooled_bool.c
+  - tests/parser/support/ssa_sccp_pooled_bool_fixture.h
+  - tests/parser/support/ssa_sccp_pooled_bool_fixture.c
+  - tests/parser/support/ssa_sccp_pooled_bool_faults.c
+  - tests/cmake/ssa-sccp-pooled-bool.cmake
   - tests/parser/test_ssa_sccp_branch_sensitive_pool.c
   - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.h
   - tests/parser/support/ssa_sccp_branch_sensitive_pool_fixture.c
@@ -35,6 +50,13 @@ tests:
   - tests/core/test_ssa_function_aot_owner.c
   - tests/parser/test_ssa_source_returned_retention.c
 source_refs:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_constant_materialize.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_internal.h
+  - tests/parser/test_ssa_sccp_pooled_bool.c
+  - tests/parser/support/ssa_sccp_pooled_bool_fixture.h
+  - tests/parser/support/ssa_sccp_pooled_bool_fixture.c
+  - tests/parser/support/ssa_sccp_pooled_bool_faults.c
+  - tests/cmake/ssa-sccp-pooled-bool.cmake
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_internal.h
@@ -77,9 +99,9 @@ AOT25、CTest2 全部通过。整数表达式 ExecIR 保留已提交 `7adc0e22`�
 这些测试覆盖 SourceCompile/CoreGlobal 元数据和所有权，不含VM执行。
 完整表达式家族、状态恢复、后端及Linux/完整MSVC仍按47叶出口推进。
 
-### 已完成有限交付（2026-10-17）
+### 已完成有限交付（2026-10-18 UTC）
 
-已核实 **39 项有限交付：19 项功能、10 项代码修正、5 项专项验证、5 项文档**。
+已核实 **40 项有限交付：20 项功能、10 项代码修正、5 项专项验证、5 项文档**。
 原32项的逐项验收与提交证明保留；第33项为
 `150f641f4b5d50d67e888fb8b34987d264a18ac1`，父提交
 `3f7d8d8cbc7601c292afefb594de0e05969b2b17`，精确98路径、双He身份，
@@ -116,10 +138,20 @@ finite-close accepted=true，仅本批closed，完整47目标与全局未知归�
 三回归强53/113+metadata15+GC99及四C有限MSVC均已验收，postcommit独审接受，
 7409条范围外index原始stat/flags/padding及foreign cached保持。自有临时清理与保留结果
 以本批`ssa-scalar-pipeline-01a0fe2b`的artifacts/cleanup/finite-close收据为准，复用构建与
-必要成功/失败依据保留；全局未知归属和完整47目标仍active。进度同步不另计第40项。
+必要成功/失败依据保留；全局未知归属和完整47目标仍active。此处历史进度同步不另计成果。
+
+第40项[非空池BOOL比较常量写回](../../testing-and-validation/ssa-sccp-pooled-bool.md)已提交为
+`c6847c3a093245b554d34672dd0440ddc949b4e1`，精确16路径、作者和提交者均为He-Jiahui。
+focused22案/84profiles、746/746分配故障、五项回归共210个Unity及8C有限MSVC语法均通过；
+postcommit独审B1FD0DFA接受，7415条范围外index完整raw和4条foreign cached保持。
+当前整index哈希与发布时历史值不同，不将二者声称相等；所选blob及外来条目分别核对一致。
+已清理首批2个自有私有索引1984183B；最终临时清理、90个复用构建文件30756095B和必要
+成功/失败证据的保留情况，以本批`ssa-scalar-completion-01a0fe2b`清单与收据为准。
+本项是新增功能交付，当前索引同步不再增加第41项；完整02.01/47及全局未知归属仍active。
 
 | 已完成有限子任务 | 完整提交 SHA | 已验收有限范围 |
 | --- | --- | --- |
+| [非空池BOOL比较常量写回](../../testing-and-validation/ssa-sccp-pooled-bool.md) | `c6847c3a093245b554d34672dd0440ddc949b4e1` | 六个严格Int64谓词写回精确BOOL0/1；focused22/84、8W37共296private预算边界、public显式上界138×2共276边界，746/746故障、459698attempts/ledger0。31当前role对象为27accepted精确cache+4fresh；五回归53/113、22/47、21/140、metadata15、GC99，共210Unity全PASS，35fresh/26cache/5link/5CTest；正常lld stderr有限reconciliation，旧failed收据保持。8C有限MSVC syntax、98actualheaders/233protected；exact16/dualHe/postcommit接受，7415外来index原始entry及4cached保持。自有清理和90复用构建文件30756095B保留以本批清单为准；不授整叶/47/Linux/fullMSVC/fullW0信用。 |
 | [Rooted普通PHI DCE](../../testing-and-validation/ssa-dce-dead-phis.md) | `6e6bc819b35ccee5ac3fea2bbabb389af5840213` | 实际focused21/140/120semantic、8W85共680cutoffs、public明确上界202共404边界、610/610fault、532777attempts/ledger0。4compile/27exactcache/1link、诊断0；三回归24phase=18compile/33cache/3link/3CTest，强53/113、239fault/204cutoffs/117024attempts/ledger0，metadata15/GC99全PASS。MSVC-r2四C有限syntax、94actualheaders/228protected、诊断0；旧中文采集失败保留。exact9/dualHe/postcommit接受、7409外部index与cached保持；全局未知项、Linux/fullMSVC与完整02.01/47继续开放。 |
 | [分支敏感 pooled SCCP](../../testing-and-validation/ssa-sccp-branch-sensitive-pool.md) | `c90666fa38ef4eff3d5b4ceaed54744e9cad8eaf` | focused22/47、四W113共452预算边界、746/746故障、388768attempts/ledger0；main消警后1fresh compile+30exact GREEN cache+1link、fresh warning0。强53/113+metadata15+GC99三回归独审接受（31phase/25compile/26cache/3link/3CTest、239fault/四W51共204cutoffs/117024attempts/ledger0）；MSVC1fresh main+4 unchanged actual syntax=5currentC、96headers/35protected保持、诊断0，仅有限syntax。postcommit63B71E82、finite-close A0DBE118接受；5自有文件2026503B清理，610必保pins保持。完整叶/fullW0/Linux与全局未知项仍active。 |
 | [非空池Int64 SCCP写回](../../testing-and-validation/ssa-sccp-pooled-int64.md) | `729c950d969663230e0171d60592939aabd60a00` | 独审接受实际GREEN53PASS/113profiles/492metrics、236/236故障、100owner预算边界、108726attempts/live0/errors0；metadata15+GC99由原24phase（19compile/25exact-cache/2link/2CTest）离线reconciliation接受，旧failed收据保留且native未重复。MSVC7C/8phase、99headers/106consumed，仅有限syntax W0。实际提交及自有清理独审接受：6文件2080877B，91复用构建文件17409863B与必要raw保留，finite-close accepted=true；完整02.01/47叶与全局未知项仍active。 |
@@ -161,12 +193,12 @@ finite-close accepted=true，仅本批closed，完整47目标与全局未知归�
 | [GC-map outer-shape有限准入](../../../tests/acceptance/ssa-gc-map-outer-shape.md) | `403e8d474d9e1f2001edff261594fa50ae8385ec` | main GREEN-r2四项CTest/50TU；primitive-r3一项CTest内18项Unity、18/18故障；Try原12-case协议11PASS加一次intentional prior-failure FAIL、90/90/live0；MSVC-r3为16次syntax/12唯一C/10roles、有限syntax W0。68 Git commands/121 raw records/20 blobs核对，7320范围外index及4条foreign cached保持；标准清理7文件（3helpers、4私有indexes）4032562B，24必保pins匹配，3个复用builds及原成功/失败证据保留；finite-close accepted=true。仅此子清单closed，完整consumer链/GC/01.01/47叶、fullW0/Linux/VM仍开放。 |
 
 上述有意失败验证 prior-failure 与清理协议，检查器按精确预期验收；非预期失败不计通过。
-上述39项均有实际验收和提交；本次索引维护不增加成果数量。
+上述40项均有实际验收和提交；本次索引维护不增加成果数量。
 47个叶计划仍须分别闭合完整退出门禁，有限交付数量不能用于计算整体完成率。
-43 planned/4 in-progress及complete=0是此前的整叶文档登记状态；已有39项子任务完成，
+43 planned/4 in-progress及complete=0是此前的整叶文档登记状态；已有40项子任务完成，
 整叶尚无完整出口签收记录。这两个进度口径应分别记录。
 旧整数表达式11失败保留为历史RED；整数表达式7adc0e22及私有接口边界150f641f
-均已有限验收提交和清理。第33至38项子清单均closed；第39项已实际交付，产物范围以本批清单收据为准，完整SSA及Parent未知项仍active。
+均已有限验收提交和清理。第33至38项子清单均closed；第39、40项已实际交付，各自产物范围以对应清单收据为准，完整SSA及Parent未知项仍active。
 第34项GC-map outer shape已按有限证据验收，见[专门验收](../../../tests/acceptance/ssa-gc-map-outer-shape.md)。
 当前进入[02.01 SCCP与标量优化](02-automatic-optimization/01-pass-manager-scalar.md)：
 非空模块常量池的signed Int64写回已完成实际RED复核：53用例中28 PASS、25个已知缺口FAIL；
@@ -183,7 +215,7 @@ GREEN22/47、四W=113共452预算边界、746/746故障、388768attempts/live0/e
 有限MSVC为1fresh main syntax+4unchanged actual syntax=5currentC，96headers/35protected保持、诊断0；
 原r2一C4244保留，focused-r2及MSVC补证独审均接受，不授fullMSVC/fullW0/Linux。
 实际提交`c90666fa38ef4eff3d5b4ceaed54744e9cad8eaf`及postcommit、5文件2026503B清理/610必保pins、finite-close均接受；
-Source38闭合时计38=18功能/10修正/5验证/5文档；新增Source39后当前39=19功能/10修正/5验证/5文档。完整推进顺序与47叶出口保持；本次文档同步adds0。
+Source38闭合时计38=18功能/10修正/5验证/5文档；Source39后39=19/10/5/5；Source40后当前40=20功能/10修正/5验证/5文档。完整推进顺序与47叶出口保持；本次文档同步adds0。
 
 ### 到完整验收的推进顺序
 
@@ -195,7 +227,7 @@ Source38闭合时计38=18功能/10修正/5验证/5文档；新增Source39后当�
 | 1. 当前Source与准入链 | 第36项已交付 | 完整表达式与控制流、GC消费者链、全量W0、Linux及完整MSVC证据 |
 | 2. IR、SSA与状态映射 | 部分已交付 | 契约、模型、verifier、facts与四后端语义门禁闭合 |
 | 3. 生命周期与运行时状态 | 部分已交付 | frame与roots、异常、GC搬迁、并发、恢复、取消和预算压力证据 |
-| 4. 优化与数据布局 | 第37项池写回、第38项分支敏感SCCP、第39项PHI DCE已有限交付 | 各pass差分、分析失效、预算、布局语义与可靠性能证据 |
+| 4. 优化与数据布局 | 第37项Int64池写回、第38项分支敏感SCCP、第39项PHI DCE、第40项BOOL写回已有限交付 | 各pass差分、分析失效、预算、布局语义与可靠性能证据 |
 | 5. AOT与持久产物 | 部分元数据已交付 | 唯一producer、sections与relocation、真实C/LLVM runner、coverage与fallback成本 |
 | 6. 版本、语言与平台 | 部分契约checker已交付 | lease与回滚、能力和数值、向量化、JIT生命周期及实际平台矩阵 |
 | 7. 47项整体收口 | 未完成 | 逐项需求→实现→实测→提交签收；回归、平台、性能、旧路径退出和文档齐备 |
