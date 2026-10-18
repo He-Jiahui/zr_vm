@@ -58,6 +58,19 @@ static void test_user_disable_defers_automatic_collection(void) {
     TEST_ASSERT_TRUE(collections() > before);
     ZrCore_Function_Free(state, function);
 }
+static void test_native_reentry_defers_automatic_collection(void) {
+    SZrFunction *function = compile(
+        "var i = 0; while (i < 2000) { var o = { value: i }; i = i + 1; } return i;");
+    TZrUInt64 before = collections();
+    /* ExecuteExpectInt64 adds one native call. Simulate an outer callback. */
+    state->nestedNativeCalls = 1u;
+    expect_int(function, 2000);
+    state->nestedNativeCalls = 0u;
+    TEST_ASSERT_EQUAL_UINT64(before, collections());
+    expect_int(function, 2000);
+    TEST_ASSERT_TRUE(collections() > before);
+    ZrCore_Function_Free(state, function);
+}
 static void test_generational_work_repays_debt_without_new_allocations(void) {
     SZrGarbageCollector *collector = state->global->garbageCollector;
     collector->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
@@ -71,6 +84,30 @@ static void test_generational_work_repays_debt_without_new_allocations(void) {
     collector->gcDebtSize = 1;
     ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
     TEST_ASSERT_TRUE(ZrCore_GarbageCollector_GetDebtSpace(collector) <= 0);
+}
+static void test_automatic_major_reclaims_dropped_old_strings(void) {
+    SZrGarbageCollector *collector = state->global->garbageCollector;
+    collector->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+    ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+    TZrSize baseline = live_strings();
+    TZrUInt64 before = collector->collectionCounts[ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR];
+    for (unsigned i = 0u; i < 16000u; ++i) {
+        char text[64];
+        SZrGcNativeCallPin pin = {0};
+        snprintf(text, sizeof(text), "dropped-old-string-%u", i);
+        SZrString *string = ZrCore_String_CreateFromNative(state, text);
+        /* Native pins promote targets to stable old storage even after unpin. */
+        TEST_ASSERT_TRUE(ZrCore_Gc_NativeCallPinObject(state, &string->super, &pin));
+        ZrCore_Gc_NativeCallUnpin(state->global, &pin);
+    }
+    ZrCore_GarbageCollector_CheckGc(state);
+    TEST_ASSERT_TRUE(collector->concurrentMajorActive);
+    for (unsigned step = 0u; step < 10000u && collector->concurrentMajorActive; ++step)
+        ZrCore_GarbageCollector_CheckGc(state);
+    TEST_ASSERT_FALSE(collector->concurrentMajorActive);
+    TEST_ASSERT_TRUE(collector->collectionCounts[ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR] > before);
+    TEST_ASSERT_TRUE(live_strings() <= baseline + 1u);
+    TEST_ASSERT_TRUE(collector->managedMemories < 1024u * 1024u);
 }
 static void test_dropped_interpreter_strings_are_collectable(void) {
     SZrFunction *function = compile(
@@ -165,7 +202,9 @@ int main(void) {
     RUN_TEST(test_finalizers_run_with_their_object_graph_intact);
     RUN_TEST(test_allocation_debt_is_repaid_at_interpreter_boundaries);
     RUN_TEST(test_user_disable_defers_automatic_collection);
+    RUN_TEST(test_native_reentry_defers_automatic_collection);
     RUN_TEST(test_generational_work_repays_debt_without_new_allocations);
+    RUN_TEST(test_automatic_major_reclaims_dropped_old_strings);
     RUN_TEST(test_dropped_interpreter_strings_are_collectable);
     RUN_TEST(test_intern_identity_survives_only_while_referenced);
     RUN_TEST(test_function_metadata_context_is_a_traced_and_forwarded_edge);

@@ -166,9 +166,10 @@ EZrExecutionBoundaryStatus ZrCore_Execution_SafepointPoll(
     }
     if (state->global != ZR_NULL && state->global->garbageCollector != ZR_NULL) {
         SZrGarbageCollector *collector = state->global->garbageCollector;
-        /* A stopped-by-self collector resumes on debt. User stops and native
-         * frames without an interpreter boundary must remain respected. */
-        if (!collector->stopGcFlag && !collector->isImmediateGcFlag &&
+        /* Depth one includes the embedding call into the VM. A deeper entry
+         * may have an outer native frame with unpublished C temporaries. */
+        if (state->nestedNativeCalls <= 1u &&
+            !collector->stopGcFlag && !collector->isImmediateGcFlag &&
             collector->gcStatus != ZR_GARBAGE_COLLECT_STATUS_STOP_BY_USER &&
             collector->gcStatus != ZR_GARBAGE_COLLECT_STATUS_STOP_BY_EXITING &&
             /* Debt saturates at zero, so a positive byte is not a new GC

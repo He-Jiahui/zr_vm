@@ -413,6 +413,21 @@ void garbage_collector_check_sizes(SZrState *state, SZrGlobalState *global) {
     }
 }
 
+static TZrUInt64 garbage_collector_old_live_bytes(const SZrGarbageCollector *collector) {
+    TZrUInt64 bytes = 0u;
+    for (TZrSize index = 0u; index < collector->regionCount; ++index) {
+        const SZrGarbageCollectRegionDescriptor *region = &collector->regions[index];
+        if (region->kind == ZR_GARBAGE_COLLECT_REGION_KIND_OLD ||
+            region->kind == ZR_GARBAGE_COLLECT_REGION_KIND_PINNED ||
+            region->kind == ZR_GARBAGE_COLLECT_REGION_KIND_LARGE) {
+            if (region->liveBytes > (TZrUInt64)ZR_MAX_MEMORY_OFFSET - bytes)
+                return (TZrUInt64)ZR_MAX_MEMORY_OFFSET;
+            bytes += region->liveBytes;
+        }
+    }
+    return bytes;
+}
+
 static TZrBool garbage_collector_object_is_live_in_minor(const SZrRawObject *object) {
     if (object == ZR_NULL) {
         return ZR_FALSE;
@@ -3153,6 +3168,7 @@ TZrSize garbage_collector_finish_generational_major_collection(
     collector->releasedObjectList = ZR_NULL;
     collector->gcObjectListSweeper = ZR_NULL;
     collector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED;
+    collector->aliveMemories = (TZrSize)garbage_collector_old_live_bytes(collector);
 
     if (outDidCompact != ZR_NULL) {
         *outDidCompact = didCompact;
@@ -3377,20 +3393,30 @@ TZrBool gcrunning(SZrGlobalState *global) {
 void garbage_collector_run_generational_step(SZrState *state) {
     SZrGlobalState *global = state->global;
     SZrGarbageCollector *collector = global->garbageCollector;
-    TZrMemoryOffset managedMemories = collector->managedMemories;
-    TZrMemoryOffset threshold = collector->gcPauseThresholdPercent * managedMemories / 100;
+    TZrUInt64 oldBytes = garbage_collector_old_live_bytes(collector);
+    TZrUInt64 baseline = collector->aliveMemories;
+    TZrUInt64 percent = collector->gcPauseThresholdPercent;
+    TZrUInt64 threshold;
     TZrSize work = 0;
     TZrBool explicitRequest = (collector->gcFlags & ZR_GC_FLAG_EXPLICIT_COLLECTION_REQUEST) != 0u;
     TZrBool forceFull;
     TZrBool requestMajor;
     TZrBool didCompact = ZR_FALSE;
 
+    /* Compare old-space growth with the last completed major's live size.
+     * Comparing the current heap with a multiple of itself never starts a
+     * major collection. A floor avoids repeatedly tracing tiny startup heaps. */
+    threshold = percent != 0u && baseline > (TZrUInt64)ZR_MAX_MEMORY_OFFSET / percent
+            ? (TZrUInt64)ZR_MAX_MEMORY_OFFSET : baseline * percent / 100u;
+    if (threshold < 4u * 1024u * 1024u) threshold = 4u * 1024u * 1024u;
+    garbage_collector_check_sizes(state, global);
+
     forceFull = collector->scheduledCollectionKind == ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL ||
                 (!explicitRequest &&
                  collector->heapLimitBytes > 0 &&
-                 managedMemories >= collector->heapLimitBytes);
+                 collector->managedMemories >= collector->heapLimitBytes);
     requestMajor = collector->scheduledCollectionKind == ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR ||
-                   (!explicitRequest && managedMemories > threshold);
+                   (!explicitRequest && oldBytes > threshold);
 
     if (collector->concurrentMajorActive) {
         if (forceFull) {
@@ -3451,4 +3477,5 @@ void garbage_collector_run_generational_step(SZrState *state) {
     collector->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE;
     collector->statsSnapshot.collectionPhase = collector->collectionPhase;
     collector->gcLastStepWork = work > 0 ? work : 1;
+    garbage_collector_check_sizes(state, global);
 }

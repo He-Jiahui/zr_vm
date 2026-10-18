@@ -204,7 +204,7 @@ struct ZR_STRUCT_ALIGN SZrGarbageCollector {
     TZrMemoryOffset gcDebtSize;
 
     TZrSize atomicMemories;
-    TZrSize aliveMemories;
+    TZrSize aliveMemories; /**< Old-space live bytes after the last major collection. */
     TZrSize ignoredObjectCount;
     TZrSize ignoredObjectCapacity;
     TZrSize gcLastStepWork;
