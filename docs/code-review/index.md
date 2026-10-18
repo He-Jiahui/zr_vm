@@ -326,3 +326,5 @@ doc_type: category-index
 - [扩展贡献清单测试审查](batches/20261018-extension-contributions-contracts.md)：10单元、3份JSDoc，5旧键复核、5新键；现有单文件Node测试前后各2PASS。
 
 - [CMake 多平台与 sanitizer 工作流审查](batches/20261018-github-cmake-multi-platform-contracts.md)：9配置/块、6份中文文档；5旧键复核、4新键；验证保留原有失败。
+
+- [Wiki 验证与 Pages 工作流审查](batches/20261018-github-wiki-pages-contracts.md)：11配置/块、7份中文文档；4旧键复核、7新键；验证保留原有失败。

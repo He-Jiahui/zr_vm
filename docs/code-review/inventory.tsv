@@ -1,6 +1,6 @@
 file	module	kind	sha256	status	note
 .github/workflows/cmake-multi-platform.yml	.github	config	34cae52a00a6487b1a7a78ed955a5af5411e739ecce69c08c74845db1d4c7b7d	reviewed	coverage/root_build_ci.tsv；9配置/块逐项复核，6中文文档；原程序行不变；现有Python前后9ok/1FAIL/2ERROR及Wiki81诊断一致；配对4233fb4b488ebcce4211e02d0f292358e28f6862d4c8c268e3c0849aa743d1ee，不授CI/Pages通过。
-.github/workflows/wiki-pages.yml	.github	config	3a51c00413b65dbc0361e5d982e3bafe134aa54473f7078adab99d7e98d76a6c	pending	旧审查版本已漂移，须按逐单位契约复审；oldhash=ae5880295c8efaef9384d0e7a6d68be25022a7085c1c731c549ae32c3b60adfa；原leaf=docs/code-review/coverage/wiki_rendering.tsv:31;docs/code-review/coverage/wiki_rendering.tsv:32;docs/code-review/coverage/wiki_rendering.tsv:33；归因入口=E:/cargo-targets/zr_vm/reports/first-party-review-01a13463/20261016-reviewed-drift-attribution-audit-r1.json（原42逐文件）；前次记录：-
+.github/workflows/wiki-pages.yml	.github	config	135447ab285aa0c3c37835a9b6f8de54b446198cb462ec36dea6d4a27e37028e	reviewed	coverage/wiki_rendering.tsv；11配置/块逐项复核，7中文文档；原程序行不变；现有Python前后9ok/1FAIL/2ERROR及Wiki81诊断一致；配对4233fb4b488ebcce4211e02d0f292358e28f6862d4c8c268e3c0849aa743d1ee，不授CI/Pages通过。
 CMakeLists.txt	CMakeLists.txt	config	37535be59cd1d2602018a8fef1cf06cd0eca7167815e2d8136df22d2e3c006dc	pending	本次有限清点观察到内容变化，调用链待复核；前次记录：-
 docs/pygments_zr/pyproject.toml	docs/pygments_zr	config	4643d9d9b06a901003ba03ce68aeeed081da13ded380ea27d6c6710ae067372d	reviewed	-
 docs/pygments_zr/zr_pygments/__init__.py	docs/pygments_zr	code	cc78725f63c5df870bccf98d20c67794ca94466deeaa19b9f92d5ccc70274ecd	reviewed	-

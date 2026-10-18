@@ -97,3 +97,172 @@ jobs:
       - name: Deploy Pages artifact
         id: deployment
         uses: actions/deploy-pages@v5
+
+# @unit GHWF-011 permissions and concurrency
+#
+# ## Summary
+# 分离只读Wiki构建和Pages发布权限，并按共享github-pages并发组限制发布流水线冲突。
+#
+# ## Configuration inputs
+# 全局contents:read；build另声明pages:read；deploy有pages:write与id-token:write；concurrency.group=github-pages。
+#
+# ## Outputs
+# job令牌和environment受各自配置限制，deploy URL取deployment输出；cancel-in-progress=false不主动取消已经运行的同组执行。
+#
+# ## Constraints and lifecycle
+# 不是仓库所有workflow的全局锁，不承诺pending请求FIFO或全部保留；外部Actions/仓库Pages与environment设置仍是前提。权限配置不证明实际token或发布成功。
+# 权限不足、环境保护或外部动作失败仍可阻止构建/发布；此文件没有源码回滚或重试逻辑。
+#
+# ## References
+# - .github/workflows/wiki-pages.yml:36
+# - .github/workflows/wiki-pages.yml:37
+# - .github/workflows/wiki-pages.yml:46
+# - .github/workflows/wiki-pages.yml:91
+# - .github/workflows/wiki-pages.yml:92
+# - .github/workflows/wiki-pages.yml:95
+
+# @unit GHWF-012 build
+#
+# ## Summary
+# 以受限Ubuntu job安装docs工具、测试源码合同、校验Wiki并严格生成站点，按事件门禁交付Pages artifact。
+#
+# ## Configuration inputs
+# checkout（fetch-depth0）、Python3.x、requirements-docs.txt、本地Pygments包、docs/wiki及根项目配置。
+#
+# ## Outputs
+# 前置全部成功后产生site/并按main条件上传；build状态是deploy的needs输入。
+#
+# ## Constraints and lifecycle
+# job timeout10分钟；外部action主版本/Python3.x和依赖下界不是全工具链锁。源校验与HTML探针各有有限范围，不是语言编译或所有HTML正确性证明。
+# 无continue-on-error；任一依赖安装、unittest、assert、CLI或strict构建失败均阻断正常上传与依赖它的deploy。
+#
+# ## References
+# - requirements-docs.txt:1
+# - requirements-docs.txt:2
+# - .github/workflows/wiki-pages.yml:43
+# - .github/workflows/wiki-pages.yml:62
+# - .github/workflows/wiki-pages.yml:72
+# - .github/workflows/wiki-pages.yml:75
+# - .github/workflows/wiki-pages.yml:77
+# - .github/workflows/wiki-pages.yml:86
+
+# @unit GHWF-013 deploy
+#
+# ## Summary
+# 在build成功并交付对应Pages artifact后，用专用发布权限调用deploy-pages。
+#
+# ## Configuration inputs
+# main push或main dispatch条件、needs:build、github-pages environment、actions/deploy-pages@v5。
+#
+# ## Outputs
+# 外部部署动作交付page_url供environment URL显示；配置不等价实际Pages发布成功。
+#
+# ## Constraints and lifecycle
+# PR和非main dispatch不执行此job；timeout10分钟。没有源码修改、发布失败回滚或站点内容人工替换逻辑；artifact来自前置build，不能把生成站点当手写源码。
+# 前置失败、artifact缺失、权限或environment门禁失败不由本job吞掉；外部部署结果只由实际运行证据确认。
+#
+# ## References
+# - .github/workflows/wiki-pages.yml:77
+# - .github/workflows/wiki-pages.yml:78
+# - .github/workflows/wiki-pages.yml:80
+# - .github/workflows/wiki-pages.yml:85
+# - .github/workflows/wiki-pages.yml:86
+# - .github/workflows/wiki-pages.yml:91
+# - .github/workflows/wiki-pages.yml:92
+# - .github/workflows/wiki-pages.yml:95
+# - .github/workflows/wiki-pages.yml:99
+
+# @unit GHWF-015 build documentation toolchain
+#
+# ## Summary
+# 选择Python3.x并安装固定Zensical版本及本地Pygments entry point供测试和站点渲染使用。
+#
+# ## Configuration inputs
+# actions/setup-python@v6 的3.x，pip -r requirements-docs.txt；本地docs/pygments_zr的pyproject元数据。
+#
+# ## Outputs
+# 安装zensical0.0.59与本地zr-vm-pygments，后者注册pygments.lexers的zr入口；不是生成或编译ZR源码。
+#
+# ## Constraints and lifecycle
+# 本地插件声明Python>=3.9而theme测试实际import tomllib，实际运行环境需满足测试依赖。Pygments>=2.17和setuptools>=61为下界，不能称完整可复现锁；安装可能访问网络及写工具/缓存。
+# 环境或安装错误阻断测试与strict site；未设置忽略依赖失败。
+#
+# ## References
+# - requirements-docs.txt:1
+# - requirements-docs.txt:2
+# - docs/pygments_zr/pyproject.toml:2
+# - docs/pygments_zr/pyproject.toml:10
+# - docs/pygments_zr/pyproject.toml:13
+# - tests/scripts/test_wiki_theme_assets.py:6
+# - .github/workflows/wiki-pages.yml:64
+# - .github/workflows/wiki-pages.yml:72
+
+# @unit GHWF-017 build lexer registration probe
+#
+# ## Summary
+# 在安装后的Python环境按zr别名取Pygments lexer并检查返回对象的aliases，再打印名称。
+#
+# ## Configuration inputs
+# 内嵌python -c模块块，get_lexer_by_name('zr') 与lexer.aliases；不是函数或lambda定义。
+#
+# ## Outputs
+# 检查成功时打印lexer.name，失败由Python异常/原assert反映；本地插件声明提供entry point。
+#
+# ## Constraints and lifecycle
+# 探针只核注册可取和zr别名，不证明lexer来源唯一、全部token规则正确或ZR编译执行。原assert语义受实际Python启动模式约束，工作流未设置优化开关。
+# 插件查找或断言失败使此步骤失败；不能因安装命令成功就省略注册验证。
+#
+# ## References
+# - docs/pygments_zr/pyproject.toml:13
+# - tests/scripts/test_zr_pygments.py:21
+# - .github/workflows/wiki-pages.yml:60
+# - .github/workflows/wiki-pages.yml:64
+
+# @unit GHWF-019 build strict site and rendered HTML gates
+#
+# ## Summary
+# 先清除checkout内旧site，再strict构建，依次要求非空index、cookbook着色标记和站点入口校验。
+#
+# ## Configuration inputs
+# 显式bash set -euo pipefail；site固定目录、zensical build --clean --strict、两段现有验证命令。
+#
+# ## Outputs
+# site/index.html必须非空；UTF8读取site/02-language/cookbook/index.html并检查language-zr及k/kn class片段；最后validator --site-dir site统计并检查入口。
+#
+# ## Constraints and lifecycle
+# rm -rf site 只处理此 runner checkout 的相对目录。HTML 一行 Python 是模块块而非函数；字符串探针仅覆盖一页着色标记，不保证全 HTML 结构、安全或所有页面。validator 的 site-dir 只核目录、index 与文件计数，不能替代 Zensical 构建退出状态。
+# 严格bash按原命令退出状态停止；删目录后后续失败可能留下部分site，无回滚或finally清理；上传仍要求前序成功。
+#
+# ## References
+# - .github/workflows/wiki-pages.yml:70
+# - .github/workflows/wiki-pages.yml:71
+# - .github/workflows/wiki-pages.yml:72
+# - .github/workflows/wiki-pages.yml:73
+# - .github/workflows/wiki-pages.yml:74
+# - .github/workflows/wiki-pages.yml:75
+# - scripts/validate_wiki.py:339
+# - scripts/validate_wiki.py:343
+# - scripts/validate_wiki.py:344
+
+# @unit GHWF-020 build main Pages artifact upload
+#
+# ## Summary
+# 仅在main push或main手动dispatch的成功build中上传site作为Pages部署输入。
+#
+# ## Configuration inputs
+# 与deploy一致的事件+ref条件，actions/upload-pages-artifact@v5，path=site。
+#
+# ## Outputs
+# 外部Pages artifact供后续needs:build的deploy消费；不是把site写回源码仓库。
+#
+# ## Constraints and lifecycle
+# PR 及非 main dispatch 不上传；本配置不声明自定保留期限或完整内容身份。上传动作及平台存储由外部 Actions 实现。
+# 上传失败使build不能作为正常成功输入交付deploy；该步骤不会修复前面的partial site。
+#
+# ## References
+# - .github/workflows/wiki-pages.yml:77
+# - .github/workflows/wiki-pages.yml:78
+# - .github/workflows/wiki-pages.yml:80
+# - .github/workflows/wiki-pages.yml:85
+# - .github/workflows/wiki-pages.yml:86
+# - .github/workflows/wiki-pages.yml:99
