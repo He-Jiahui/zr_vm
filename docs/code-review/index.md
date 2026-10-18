@@ -277,3 +277,8 @@ doc_type: category-index
 ## 日志失败探针当前合同复核
 
 - [日志失败探针当前合同复核：6单元，0新键](batches/20261018-harness-log-failure-probe-current-contracts.md)
+
+
+## 调试工件类型转发合同
+
+- [调试工件类型转发合同：1单元，0新键](batches/20261017-core-debug-artifact-forwarder-contracts.md)
