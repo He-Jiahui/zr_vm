@@ -212,3 +212,185 @@ EZrArtifactStatus ZrParser_ArtifactMetadata_BuildState(
     outState->metadataHash = ZrCore_Artifact_ComputeMetadataStateHash(outState);
     return ZR_ARTIFACT_STATUS_OK;
 }
+
+/**
+ * @fn static EZrArtifactStatus artifact_metadata_projection_fail( SZrArtifactDiagnostic *diagnostic, EZrArtifactStatus status, TZrUInt64 expected, TZrUInt64 actual)
+ *
+ * ## Summary
+ * 为metadata state的局部拒绝生成统一节诊断。 形状、身份、保留级别及计数拒绝分支传入各自比较值。
+ *
+ * ## Parameters
+ * @param[out] diagnostic 可空诊断输出，仅按本单元Returns与约束所述字段更新；对象由调用者持有。
+ * @param[in] status 本拒绝分支需要传播的artifact状态，原样返回。
+ * @param[in] expected 分支的预期比较载荷，可能为计数/类别而非哈希。
+ * @param[in] actual 分支的实际比较载荷，可能为计数/类别而非哈希。
+ *
+ * ## Returns
+ * @return 原样返回status；可选诊断不残留上一错误的字段。
+ *
+ * ## Constraints and lifecycle
+ * diagnostic可空；非空时先完整清零，再写status、METADATA_STATE_TABLE与expected/actual；两个数是分支的比较载荷，不始终表示哈希。无分配。
+ *
+ * ## References
+ * zr_vm_parser/src/zr_vm_parser/artifact/artifact_metadata_projection.c:9; zr_vm_parser/src/zr_vm_parser/artifact/artifact_metadata_projection.c:113; zr_vm_parser/src/zr_vm_parser/artifact/artifact_metadata_projection.c:118。这些位置分别为本单元定义/使用或下层合同证据。
+ */
+
+/**
+ * @fn static TZrBool artifact_metadata_native_category_matches( EZrReflectionTypeCategory category, EZrObjectPrototypeType prototypeType)
+ *
+ * ## Summary
+ * 比较反射类别与原生描述符原型种类，作为metadata状态发布前的局部门禁。 仅由BuildState在提供nativeTypeDescriptor时调用。
+ *
+ * ## Parameters
+ * @param[in] category 待匹配的反射类别；ERASED的保留级别另由入口限制。
+ * @param[in] prototypeType 原生描述符的原型枚举；采用本函数列出的映射。
+ *
+ * ## Returns
+ * @return TRUE表示此映射接受；FALSE表示类别不兼容，不自行填写诊断或证明完整native元数据可物化。
+ *
+ * ## Constraints and lifecycle
+ * ERASED直接匹配，但非identity-only的ERASED由外层保留级别拒绝。CLASS可匹配四种class类别，STRUCT可匹配STRUCT/REF_STRUCT；INVALID落入拒绝，NATIVE仅匹配RESOURCE_CLASS。TODO: INVALID在native_registry_add_type默认CLASS而此处拒绝，NATIVE与reflection_type_category_for_prototype默认ERASED也不同；下一步核查这两类描述符是否允许进入BuildState。
+ *
+ * ## References
+ * zr_vm_parser/src/zr_vm_parser/artifact/artifact_metadata_projection.c:27; zr_vm_parser/src/zr_vm_parser/artifact/artifact_metadata_projection.c:173; zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:1670; zr_vm_core/src/zr_vm_core/reflection/reflection.c:4674; zr_vm_core/src/zr_vm_core/reflection/reflection.c:4753。这些位置分别为本单元定义/使用或下层合同证据。
+ */
+
+/**
+ * @fn static TZrBool artifact_metadata_native_shape_is_valid( const ZrLibTypeDescriptor *descriptor)
+ *
+ * ## Summary
+ * 在读取原生声明表之前检查各非零count具有数组地址。 native_counts先调用本门禁，再累计槽位与遍历methods。
+ *
+ * ## Parameters
+ * @param[in] descriptor 非空原生类型描述符及计数所指数组，生命周期覆盖整个读取。
+ *
+ * ## Returns
+ * @return TRUE仅表示四组形状条件成立；FALSE不写输出或诊断。
+ *
+ * ## Constraints and lifecycle
+ * descriptor由调用链保证非空；分别检查fields/methods/metaMethods/enumMembers的count-pointer配对。不能验证实际分配长度、元素内容或回调有效性；数组仍由描述符提供者持有。
+ *
+ * ## References
+ * zr_vm_parser/src/zr_vm_parser/artifact/artifact_metadata_projection.c:54; zr_vm_parser/src/zr_vm_parser/artifact/artifact_metadata_projection.c:112。这些位置分别为本单元定义/使用或下层合同证据。
+ */
+
+/**
+ * @fn static TZrSize artifact_metadata_native_property_count( const ZrLibTypeDescriptor *descriptor)
+ *
+ * ## Summary
+ * 按非空且非空串的propertyName归纳去重属性名称数，供native状态对账。 native_counts已验证methods形状后调用；结果作为BuildState的nativePropertyCount。
+ *
+ * ## Parameters
+ * @param[in] descriptor 非空原生类型描述符及计数所指数组，生命周期覆盖整个读取。
+ *
+ * ## Returns
+ * @return 返回按名称去重的数量，不等同于已实际物化的PropertyDef行数。
+ *
+ * ## Constraints and lifecycle
+ * descriptor与方法数组/名称字符串借用至返回；遍历不分配。BUG: 此计数未应用native_registry_add_methods的有效name/callback和propertyReferenceAccess!=NONE条件；可接受的方法带propertyName但access=NONE时不会发布属性，本投影仍计1，可能误拒retainedPropertyCount=0。tests/parser/test_artifact_schema_metadata_graph.c中的propertyName="x"输入具有非空名称而access=NONE的组合；本函数不核对发布条件。
+ *
+ * ## References
+ * zr_vm_parser/src/zr_vm_parser/artifact/artifact_metadata_projection.c:69; zr_vm_parser/src/zr_vm_parser/artifact/artifact_metadata_projection.c:124; zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:1301; zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:1344; zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:1345; zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:1377; tests/parser/test_artifact_schema_metadata_graph.c:489; tests/parser/test_artifact_schema_metadata_graph.c:492。这些位置分别为本单元定义/使用或下层合同证据。
+ */
+
+/**
+ * @par artifact_metadata_native_property_count::deduplicate_names
+ *
+ * ## Summary
+ * 同名propertyName只增加一次逻辑属性名称计数。 每个非空当前名称通过对比此前全部名称判断是否已见。
+ *
+ * ## Constraints and lifecycle
+ * 输入名称只借用；先前相同名称不要求对应条目有效。TODO: native_registry_add_methods逐声明追加属性，需在PropertyDef身份/保留计数契约处确认是否应按名称折叠。
+ *
+ * ## References
+ * zr_vm_parser/src/zr_vm_parser/artifact/artifact_metadata_projection.c:80; zr_vm_parser/src/zr_vm_parser/artifact/artifact_metadata_projection.c:82; zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:1377。这些位置分别为本单元定义/使用或下层合同证据。
+ */
+
+/**
+ * @fn static EZrArtifactStatus artifact_metadata_native_counts( const ZrLibTypeDescriptor *descriptor, TZrSize *outMemberCount, TZrSize *outPropertyCount, SZrArtifactDiagnostic *diagnostic)
+ *
+ * ## Summary
+ * 检查四类原生声明表形状及总成员计数的UINT32上界，计算声明槽位与属性名称数。 BuildState核对native与retained计数前使用。
+ *
+ * ## Parameters
+ * @param[in] descriptor 非空原生类型描述符及计数所指数组，生命周期覆盖整个读取。
+ * @param[out] outMemberCount 必填声明槽位总数输出，仅成功时赋值。
+ * @param[out] outPropertyCount 必填去重属性名称数输出，仅成功时赋值。
+ * @param[out] diagnostic 可空诊断输出，仅按本单元Returns与约束所述字段更新；对象由调用者持有。
+ *
+ * ## Returns
+ * @return OK时交付总声明槽位数和去重属性名称数；INVALID_ARGUMENT或COUNT_LIMIT拒绝。属性计数沿用同一既有发布条件问题。
+ *
+ * ## Constraints and lifecycle
+ * descriptor及两个输出指针非空；先形状检查，再用maxCount-count防止总和溢出。普通拒绝发生在输出赋值前，输出旧值不在本函数清零；可选diagnostic只在失败时改写。TODO: 直接累加声明槽位而注册会跳过无效条目，需在BuildState/MemberDef契约处确认retainedMemberCount按槽位还是实际发布行计算。
+ *
+ * ## References
+ * zr_vm_parser/src/zr_vm_parser/artifact/artifact_metadata_projection.c:98; zr_vm_parser/src/zr_vm_parser/artifact/artifact_metadata_projection.c:181; zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:1301; zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:1597。这些位置分别为本单元定义/使用或下层合同证据。
+ */
+
+/**
+ * @fn EZrArtifactStatus ZrParser_ArtifactMetadata_BuildState( const SZrReflectionTypeIdentity *identity, const ZrLibTypeDescriptor *nativeTypeDescriptor, EZrArtifactMetadataPreservationState preservationState, TZrUInt32 retainedMemberCount, TZrUInt32 retainedPropertyCount, TZrUInt32 retainedMetaRecordCount, TZrUInt64 layoutHash, TZrUInt64 callableContractHash, SZrArtifactMetadataStateRow *outState, SZrArtifactDiagnostic *diagnostic)
+ *
+ * ## Summary
+ * 将已确定的反射身份、保留级别及稳定契约投影成metadata state行与可复算摘要。 由源/native/binary对照消费者准备局部状态；完整artifact写读端另做跨表图一致性校验。
+ *
+ * ## Parameters
+ * @param[in] identity 非空反射身份，TypeDef token/签名摘要/metadataGeneration已设置。
+ * @param[in] nativeTypeDescriptor 可空原生描述符；非空时数组和名称须可读，参与类别/计数对账。
+ * @param[in] preservationState IDENTITY_ONLY至FULL的保留级别，与三个保留数及ERASED限制一致。
+ * @param[in] retainedMemberCount 调用者声明保留的成员数；本函数不会实际创建成员。
+ * @param[in] retainedPropertyCount 调用者声明保留的属性数；须与采用的native投影计数规则相符。
+ * @param[in] retainedMetaRecordCount 保留记录数；identity-only和Members级别要求为0。
+ * @param[in] layoutHash 非零稳定布局摘要，本层不从布局重新推导。
+ * @param[in] callableContractHash 非零调用合同摘要，本层不从方法实现重新推导。
+ * @param[out] outState 必填且与输入不重叠的状态行，入口先清零，成功最后计算摘要。
+ * @param[out] diagnostic 可空诊断输出，仅按本单元Returns与约束所述字段更新；对象由调用者持有。
+ *
+ * ## Returns
+ * @return OK时所有字段齐备后计算metadataHash；普通失败使非空outState保持全零并返回具体状态。提供native时还受原型映射、形状及声明计数规则约束，不能把OK视为实际native成员已物化。
+ *
+ * ## Constraints and lifecycle
+ * identity/outState必填且输出不与identity或native描述符重叠；可选native数组/名称借用至返回。先清输出/诊断，再核TypeDef RID、签名/代数、类别、保留级别和非零布局/调用哈希；identity-only不留表，Members不留记录，ERASED仅identity-only。无分配，不代替跨表计数证明。BUG: 仅属性数不符时仍将member数写入expected/actual，可能同为1；该既有诊断问题详见native_count_diagnostic块。
+ *
+ * ## References
+ * zr_vm_parser/src/zr_vm_parser/artifact/artifact_metadata_projection.c:132; tests/parser/test_artifact_schema_metadata_graph.c:412; tests/parser/test_artifact_schema_metadata_graph.c:425; tests/parser/test_artifact_schema_metadata_graph.c:492; zr_vm_core/src/zr_vm_core/artifact/artifact_identity.c:95。这些位置分别为本单元定义/使用或下层合同证据。
+ */
+
+/**
+ * @par ZrParser_ArtifactMetadata_BuildState::preservation_gate
+ *
+ * ## Summary
+ * 限定消费者按保留级别能够依赖的表，防止擦除身份声明完整元数据。 身份/类别/版本/哈希基础门禁通过后，在读取native描述符之前执行。
+ *
+ * ## Constraints and lifecycle
+ * identity-only要求三保留数全0；Members要求记录数0；ERASED不能使用非identity-only。失败尚未发布outState。
+ *
+ * ## References
+ * zr_vm_parser/src/zr_vm_parser/artifact/artifact_metadata_projection.c:161; zr_vm_parser/src/zr_vm_parser/artifact/artifact_metadata_projection.c:162。这些位置分别为本单元定义/使用或下层合同证据。
+ */
+
+/**
+ * @par ZrParser_ArtifactMetadata_BuildState::native_count_diagnostic
+ *
+ * ## Summary
+ * 在native计数与retained声明不符时拒绝状态发布。 非identity-only且任意成员/属性计数不相等时进入。
+ *
+ * ## Constraints and lifecycle
+ * BUG: 条件同时检查member/property，诊断却仅填写nativeMemberCount/retainedMemberCount；属性单独不符时expectedHash与actualHash可同为1，不能从这两个值定位属性差异。
+ *
+ * ## References
+ * zr_vm_parser/src/zr_vm_parser/artifact/artifact_metadata_projection.c:187; zr_vm_parser/src/zr_vm_parser/artifact/artifact_metadata_projection.c:190; tests/parser/test_artifact_schema_metadata_graph.c:489; tests/parser/test_artifact_schema_metadata_graph.c:492。这些位置分别为本单元定义/使用或下层合同证据。
+ */
+
+/**
+ * @par ZrParser_ArtifactMetadata_BuildState::stable_hash
+ *
+ * ## Summary
+ * 在所有稳定状态字段填写完成后计算可由写读图验证复算的metadata摘要。 全部局部门禁成功后一次性填写调用者outState。
+ *
+ * ## Constraints and lifecycle
+ * outState先前已清零，flags保持0；摘要不含metadataHash自身，覆盖token/保留级别/类别/代数/计数/签名/布局/调用哈希。此发布不代替跨表行一致性检查。
+ *
+ * ## References
+ * zr_vm_parser/src/zr_vm_parser/artifact/artifact_metadata_projection.c:201; zr_vm_parser/src/zr_vm_parser/artifact/artifact_metadata_projection.c:202; zr_vm_core/src/zr_vm_core/artifact/artifact_identity.c:95; zr_vm_core/src/zr_vm_core/artifact/artifact_identity.c:100。这些位置分别为本单元定义/使用或下层合同证据。
+ */

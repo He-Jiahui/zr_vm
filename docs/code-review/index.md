@@ -287,3 +287,8 @@ doc_type: category-index
 ## 构造器prototype增长手写回归合同
 
 - [构造器prototype增长手写回归合同：3单元，3新键](batches/20261018-constructor-prototype-growth-contracts.md)
+
+
+## Parser artifact 投影合同
+
+- [Artifact投影：53单元，15旧键迁移与38遗漏补齐](batches/20261018-parser-artifact-projection-contracts.md)。上表“parser artifact调用绑定与元数据投影15项”为历史复审口径，当前53项及有界验证证据以此记录为准；2项既有BUG意图与4项TODO问题保持。
