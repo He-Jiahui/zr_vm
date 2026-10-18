@@ -317,3 +317,8 @@ doc_type: category-index
 ## Artifact Schema 元数据图测试
 
 - [Artifact Schema 元数据图测试](batches/20261018-parser-artifact-schema-metadata-graph-tests-contracts.md)：23 单元，9 旧键原位复核、14 新键补齐；合同、既有问题与验证范围以该批绑定的实际证据为准。
+
+
+## Artifact Schema 源码往返与调度事实测试
+
+- [Artifact Schema 源码往返与调度事实测试](batches/20261018-parser-artifact-schema-source-roundtrip-tests-contracts.md)：34 单元，10 旧键原位复核、24 新键补齐；6 个语言体仅 Parse/Compile；合同、既有问题与验证范围以该批绑定的实际证据为准。
