@@ -1,0 +1,26 @@
+# 日志失败探针当前合同复核
+
+本批逐项审查6个单元；6个旧键不重复计数，新增0个键。定义、全部可检索调用、间接入口、现有测试、约束与每项结论记录于[逐单元台账](../coverage/tests_harness.tsv)；选中行无未审查项。
+
+复核6个旧键：4个函数完整body、1个私有状态、1个文件单元。现有5份Doxygen及状态注释足以说明故意失败后继续执行的观察协议，源码无需追加注释。本批只更新两处CMake caller位置。直接探针必须退出1，并同时给出Unity失败汇总及cleanup_reached=1/unity_exit=1尾部标记；既有CMake包装器核对这些结果后退出0。标记只证明到达赋值，不证明资源释放、tearDown、GC或计时精度。
+
+仅现有单用例探针及包装器；1是内层预期结果，不作构建失败；没有新增测试、资源释放或全harness覆盖信用。
+
+## 验证与边界
+
+复用实际checkout与E:/cargo-targets/zr_vm/build/first-party-review-01a13463/clang-cl-products-debug；ClangCL/Debug、Ninja，配置、工具及选中依赖按真实前后记录核对。共同验证构建六目标，直接运行七步骤；故意失败探针的退出1为必要结果。以下只授予本模块对应步骤的有限证据。
+
+| 现有步骤 | BEFORE实际退出 | AFTER实际退出 | 预期 |
+| --- | ---: | ---: | ---: |
+| probe_direct | 1 | 1 | 1 |
+| probe_wrapper | 0 | 0 | 0 |
+
+第一轮真实build-only尝试因外部compile_expression_types.c在构建期间变化而actual1，七测试均未启动，原失败保留，不升级为通过。后续baseline将该源加入strict106并重新运行；七个本任务文件仅有注释变化，原程序文本与位置保持，公开API签名及行为未修改。
+
+实际pair验收：released-contracts-native-final-acceptance-r1.json，SHA256 5d5cff63a88d2315c9510c098632c845063ae9f56e713cc45c31c4dde21827ed；注释等价证明SHA256 003df9bdde1a52b86298fddd4823411089fe308e9921a9214144b36ad4c23765；独审 harness-log-failure-probe-current-contract-independent-review-r1.json，SHA256 2ced51985dcd1f7581ddf6863cf1ccc3f81f47267702e23dbe63ad0d09954e35。完整收据及原始输出在E:/cargo-targets/zr_vm/reports/first-party-review-01a13463/。全仓清单仍存在外域pending，不据本批声称全仓完成。
+
+## 源身份与提交
+
+- tests/harness/test_zr_test_log_failure_probe.c：fafd8cfb57ce8761088ee1e97036c7019a6c3daeffeaccd76e4ca1489c8f6632
+
+提交前必须核对仅本批差异并通过git diff --cached --check、既有check-batch及独立暂存审查；本批不增加重复实现的测试。其他会话的暂存、源码与混合台账外行保留。构建与必要成功/失败证据保留，生命周期OPEN，manual freed0B。

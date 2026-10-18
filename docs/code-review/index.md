@@ -272,3 +272,8 @@ doc_type: category-index
 ## SSA人工GDB诊断脚本合同
 
 - [SSA人工GDB诊断脚本合同：5单元，5新键](batches/20261017-ssa-diagnostics-gdb-contracts.md)
+
+
+## 日志失败探针当前合同复核
+
+- [日志失败探针当前合同复核：6单元，0新键](batches/20261018-harness-log-failure-probe-current-contracts.md)
