@@ -4951,7 +4951,7 @@ SZrCallInfo *ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource
         TZrUInt32 argumentSourceStartSlot) {
     SZrCallInfo *caller = state->callInfoList;
     SZrFunction *callerFunction = caller != ZR_NULL ? caller->metadataFunction : ZR_NULL;
-    /* The interpreter already staged these scalars in a fresh dense window.
+    /* The interpreter already staged these arguments in a fresh dense window.
      * They require no source-place transaction, ownership transfer or inline
      * binding. Reuse the exact-argument entry path instead of staging twice. */
     if (caller != ZR_NULL && caller->functionBase.valuePointer != ZR_NULL &&
@@ -4964,8 +4964,18 @@ SZrCallInfo *ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource
                                      argumentSourceStartSlot;
         TZrSize index = 0u;
         for (; index < argumentsCount; ++index) {
-            if (!function_precall_value_is_plain_scalar(&source[index].value) ||
-                !function_precall_value_is_plain_scalar(&stackPointer[1u + index].value) ||
+            const SZrTypeValue *argument = &source[index].value;
+            const SZrTypeValue *staged = &stackPointer[1u + index].value;
+            TZrBool receiver = (TZrBool)(index == 0u &&
+                    argument->type == ZR_VALUE_TYPE_OBJECT && staged->type == ZR_VALUE_TYPE_OBJECT &&
+                    argument->isGarbageCollectable && staged->isGarbageCollectable &&
+                    !argument->isNative && !staged->isNative &&
+                    argument->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE &&
+                    staged->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE &&
+                    argument->ownershipControl == ZR_NULL && staged->ownershipControl == ZR_NULL &&
+                    argument->ownershipWeakRef == ZR_NULL && staged->ownershipWeakRef == ZR_NULL);
+            if ((!receiver && (!function_precall_value_is_plain_scalar(argument) ||
+                               !function_precall_value_is_plain_scalar(staged))) ||
                 source[index].value.type != stackPointer[1u + index].value.type ||
                 source[index].value.value.nativeObject.nativeUInt64 !=
                         stackPointer[1u + index].value.value.nativeObject.nativeUInt64) break;

@@ -8832,6 +8832,7 @@ add_executable(zr_vm_test_runner ${CMAKE_SOURCE_DIR}/tests/test_runner.c)
 # targets/helpers have been declared.  This keeps future SSA slices isolated
 # from the large historical test list.
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-tests.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-argument-staging-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-analysis-fact-capacity-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-branch-range-null-tests.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ssa-branch-arithmetic-constraints-tests.cmake")

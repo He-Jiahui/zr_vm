@@ -367,6 +367,21 @@ static ZR_FORCE_INLINE void execution_drop_call_info_inline_frame_values_if_avai
         return;
     }
 
+    if (ZrCore_Function_HasDirectValueFrameSlotSummary(function) &&
+        state->stackBase.valuePointer != ZR_NULL && state->stackTail.valuePointer != ZR_NULL &&
+        frameBase >= state->stackBase.valuePointer && frameBase <= state->stackTail.valuePointer &&
+        (TZrSize)(state->stackTail.valuePointer - frameBase) >=
+                (TZrSize)function->stackSize + function->frameSlotLayoutLength) {
+        /* Packed VALUE frames have no inline destructors. Retain the full
+         * cleanup whenever either mirror owns a value. */
+        TZrUInt32 kinds = ZR_OWNERSHIP_VALUE_KIND_NONE;
+        for (TZrUInt32 slot = 0u; slot < function->frameSlotLayoutLength; ++slot) {
+            kinds |= frameBase[slot].value.ownershipKind |
+                     frameBase[function->stackSize + slot].value.ownershipKind;
+        }
+        if (ZR_LIKELY(kinds == ZR_OWNERSHIP_VALUE_KIND_NONE)) return;
+    }
+
     (void)ZrCore_Function_DropInlineFrameValues(state,
                                                 function,
                                                 frameBase,
@@ -4720,13 +4735,18 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrSize resultSlot__ = A1(instruction);                                                                        \
         TZrSize variableArguments__ = B1(instruction);                                                                 \
                                                                                                                         \
+        const SZrTypeValue *singleReturnValue__ = returnCount__ == 1u ? FRAME_VALUE_SLOT(resultSlot__) : ZR_NULL;     \
         callInfo->context.context.programCounter = programCounter;                                                     \
         if (ZR_LIKELY(returnCount__ == 1u && variableArguments__ == 0u &&                                             \
                       state->exceptionHandlerStackLength == 0u &&                                                      \
-                      (currentFunction == ZR_NULL || currentFunction->returnEscapeSlotCount == 0u) &&                 \
                       state->debugHookSignal == 0u && callInfo->expectedReturnCount == 1u &&                          \
                       callInfo->callStatus == ZR_CALL_STATUS_NONE && callInfo->hasReturnDestination &&                \
                       !execution_callinfo_has_pending_close_work(state, callInfo))) {                                  \
+            if (currentFunction != ZR_NULL && currentFunction->returnEscapeSlotCount > 0u &&                         \
+                ZrCore_Value_IsGarbageCollectable(singleReturnValue__)) {                                              \
+                PROTECT_ESH(state, callInfo, ZrCore_Function_ApplyReturnEscape(                                         \
+                        state, currentFunction, (TZrUInt32)resultSlot__, singleReturnValue__));                        \
+            }                                                                                                          \
             TZrStackValuePointer returnSource__ = BASE(resultSlot__);                                                  \
             const SZrTypeValue *returnSourceValue__ = FRAME_VALUE_SLOT(resultSlot__);                                  \
             SZrCallInfo *previousCallInfo__ = callInfo->previous;                                                     \
@@ -4752,7 +4772,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             for (TZrSize returnIndex__ = 0; returnIndex__ < returnCount__; returnIndex__++) {                         \
                 const SZrTypeValue *returnEscapeValue__ =                                                             \
                         FRAME_VALUE_SLOT(resultSlot__ + returnIndex__);                                                \
-                if (returnEscapeValue__ != ZR_NULL) {                                                                  \
+                if (returnEscapeValue__ != ZR_NULL && ZrCore_Value_IsGarbageCollectable(returnEscapeValue__)) {       \
                     ZrCore_Function_ApplyReturnEscape(state,                                                          \
                                                       currentFunction,                                                 \
                                                       (TZrUInt32)(resultSlot__ + returnIndex__),                      \

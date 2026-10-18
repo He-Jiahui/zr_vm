@@ -684,6 +684,33 @@ static TZrBool compiler_return_slot_exists(const TZrUInt32 *slots, TZrUInt32 cou
     return ZR_FALSE;
 }
 
+/* Typed bindings have no PC range. Require a live local and an unambiguous
+ * scalar binding for this slot; reused or temporary slots stay conservative. */
+static TZrBool compiler_return_slot_is_plain_scalar(const SZrFunction *function,
+                                                    TZrUInt32 slot, TZrUInt32 pc) {
+    const SZrFunctionLocalVariable *active = ZR_NULL;
+    TZrBool found = ZR_FALSE;
+    for (TZrUInt32 i = 0u; i < function->localVariableLength; ++i) {
+        const SZrFunctionLocalVariable *local = &function->localVariableList[i];
+        if (local->stackSlot == slot && local->offsetActivate <= (TZrMemoryOffset)pc &&
+            (TZrMemoryOffset)pc < local->offsetDead) {
+            if (active != ZR_NULL) return ZR_FALSE;
+            active = local;
+        }
+    }
+    if (active == ZR_NULL) return ZR_FALSE;
+    for (TZrUInt32 i = 0u; i < function->typedLocalBindingLength; ++i) {
+        const SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[i];
+        if (binding->stackSlot != slot) continue;
+        if (binding->name != active->name || binding->type.ownershipQualifier != 0u || binding->type.isArray ||
+            !(ZR_VALUE_IS_TYPE_INT(binding->type.baseType) ||
+              ZR_VALUE_IS_TYPE_FLOAT(binding->type.baseType) ||
+              binding->type.baseType == ZR_VALUE_TYPE_BOOL)) return ZR_FALSE;
+        found = ZR_TRUE;
+    }
+    return found;
+}
+
 static TZrBool compiler_collect_return_escape_slots(SZrCompilerState *cs, SZrFunction *function) {
     SZrGlobalState *global;
     TZrUInt32 *collectedSlots;
@@ -721,6 +748,9 @@ static TZrBool compiler_collect_return_escape_slots(SZrCompilerState *cs, SZrFun
             continue;
         }
 
+        if (returnCount == 1u && compiler_return_slot_is_plain_scalar(function, resultSlot, instructionIndex)) {
+            continue;
+        }
         collectedSlots[slotCount++] = resultSlot;
     }
 

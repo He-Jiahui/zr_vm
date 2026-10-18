@@ -98,3 +98,36 @@ these timings do not establish a universal 5% regression gate.
 The requested stress runner passes for C/source/binary at scale 16: baseline
 **9502.104 / 8613.377 ms**, stress **9074.002 / 8513.626 ms** (source/binary).
 Evidence: `build/r2-h2-final-*` and `build/r2-h2-verified-ctest.log`.
+
+## R2-H3: scalar returns and receiver staging
+
+Single-result returns no longer reject compiled escape metadata. Scalars skip
+escape marking; GC results retain it under state publication and frame reload.
+All debug, exception, call-status, return-destination and close-work guards
+remain. Packed VALUE frames skip the out-of-line drop only when both mirrors
+have no ownership; other frames retain the complete cleanup. The compiler
+omits escape metadata for live, unambiguous scalar typed locals, checking the
+binding's base type, ownership and array flags and retaining reused/temporary
+slots conservatively.
+
+Exact argument staging now accepts a GC object receiver with no ownership,
+control or weak metadata and identical source/staged bits. Enabled the two
+existing argument-staging CTests, previously orphaned from the CMake graph;
+the VM fixture now uses non-overlapping physical call windows and checks the
+receiver entry as well as its existing stale-window scalar fallback.
+
+Validation: full Release rebuild; **53/53** report-selected call/return/escape/
+frame/closure/exception/ownership/staging CTests; **5/5** selected sanitizer
+CTests and all four call-heavy sanitizer smoke probes pass.
+
+CPU 5, medians of 3, initial load **0.33 / 0.77 / 1.16**, no overlapping
+builds: calls **662.67 ms**, fib **164.26 ms**, methods **727.77 ms**, closure
+**803.64 ms**. Methods improve about 44% from the report's 1289.64 ms; the
+400/60/450 ms and closure 25% targets remain open. The exported-helper probe
+sees escape/drop **0/1** for calls, fib and methods, and **1/2** for closure:
+only startup/teardown work, **zero per iteration**. Callgrind trip-count diffs
+(100k/300k calls, 20k/120k methods): **2154.6 Ir/call** versus 2288 and
+**3823.4 Ir/method iteration** versus 7416. Evidence: `build/r2-h3-*`.
+Further call-state caching, direct caller dispatch and null-fill redesign
+remain the report's prerequisite-heavy next stage; M1 addresses bytecode
+staging first.
