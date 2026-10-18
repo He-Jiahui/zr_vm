@@ -332,3 +332,5 @@ doc_type: category-index
 - [Common 公共类型与基础宏契约审查](batches/common-public-header-contracts.md)：60单元、47段Doxygen；59旧键复核及1新预处理块，现有GC/Frame/Matrix验证及Math静态构建前后通过。
 
 - [Object 对象标记与 GC 配置契约审查](batches/common-object-header-contracts.md)：25旧单元、22段Doxygen；当前调用补证及既有GC/Frame/Matrix有限验证，Math仅静态构建。
+
+- [IO 公共标记与二进制布局契约审查](batches/common-io-header-contracts.md)：80单元、39段Doxygen；当前调用证据及两组已有decoder测试修改前后有限验证。
