@@ -322,3 +322,5 @@ doc_type: category-index
 ## Artifact Schema 源码往返与调度事实测试
 
 - [Artifact Schema 源码往返与调度事实测试](batches/20261018-parser-artifact-schema-source-roundtrip-tests-contracts.md)：34 单元，10 旧键原位复核、24 新键补齐；6 个语言体仅 Parse/Compile；合同、既有问题与验证范围以该批绑定的实际证据为准。
+
+- [扩展贡献清单测试审查](batches/20261018-extension-contributions-contracts.md)：10单元、3份JSDoc，5旧键复核、5新键；现有单文件Node测试前后各2PASS。
