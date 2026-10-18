@@ -3,6 +3,7 @@
 #endif
 
 #include "zr_vm_core/execution_budget.h"
+#include "execution/execution_budget_fast.h"
 #include "zr_vm_core/execution_control.h"
 #include "zr_vm_core/state.h"
 
@@ -71,6 +72,7 @@ TZrUInt64 ZrCore_ExecutionBudget_NowMicros(void) {
 
 /* 先同步内存峰值，再按取消、期限、资源、指令的顺序锁存首次终止原因。 */
 TZrBool ZrCore_ExecutionBudget_Poll(SZrState *state, TZrBool consumeInstruction) {
+    if (state != ZR_NULL) execution_admission_suspend(state->executionAdmission);
     SZrExecutionBudget *budget = state != ZR_NULL ? state->executionBudget : ZR_NULL;
     if (budget == ZR_NULL) {
         return ZR_TRUE;
@@ -184,4 +186,33 @@ void ZrCore_ExecutionBudget_UnwindVmFrames(SZrState *state) {
     }
     state->threadStatus = ZR_THREAD_STATUS_EXECUTION_TERMINATED;
     state->hasCurrentException = ZR_FALSE;
+}
+
+void execution_admission_restore(SZrState *state, SZrExecutionAdmission *saved) {
+    while (state->executionAdmission != saved) {
+        SZrExecutionAdmission *current = state->executionAdmission;
+        ZR_ASSERT(current != ZR_NULL);
+        if (current == ZR_NULL) break;
+        execution_admission_suspend(current);
+        state->executionAdmission = current->previous;
+    }
+    execution_admission_suspend(saved);
+}
+
+void execution_admission_publish_error(SZrState *state) {
+    SZrExecutionAdmission *admission = state != ZR_NULL ? state->executionAdmission : ZR_NULL;
+    execution_admission_suspend(admission);
+    if (admission != ZR_NULL && *admission->callInfo != ZR_NULL &&
+        *admission->callInfo == state->callInfoList && ZR_CALL_INFO_IS_VM(state->callInfoList) &&
+        *admission->programCounter != ZR_NULL) {
+        SZrCallInfo *callInfo = *admission->callInfo;
+        SZrFunction *function = callInfo->metadataFunction;
+        const TZrInstruction *pc = *admission->programCounter;
+        if (function != ZR_NULL && function->instructionsList != ZR_NULL &&
+            pc >= function->instructionsList && pc < function->instructionsList + function->instructionsLength) {
+            callInfo->context.context.programCounter = pc;
+            state->previousProgramCounter = (TZrMemoryOffset)(pc - function->instructionsList);
+            state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
+        }
+    }
 }

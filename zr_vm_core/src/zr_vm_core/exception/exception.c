@@ -5,6 +5,7 @@
 #include "zr_vm_core/exception.h"
 #include "exception/exception_internal.h"
 #include "exception_error_internal.h"
+#include "execution/execution_budget_fast.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -30,6 +31,7 @@ static void exception_throw_on_state(SZrState *state, EZrThreadStatus errorCode)
 /* state 必须非空；本地恢复先还原入口 GC scopes，转发分支采用整域 unwind；没有恢复点最终 abort。 */
 static void exception_throw_impl(
         SZrState *state, EZrThreadStatus errorCode, TZrBool restoreLocalRootSnapshot) {
+    if (restoreLocalRootSnapshot) execution_admission_suspend(state->executionAdmission);
     if (state->exceptionRecoverPoint != ZR_NULL) {
         SZrExceptionLongJump *recoverPoint = state->exceptionRecoverPoint;
         /*

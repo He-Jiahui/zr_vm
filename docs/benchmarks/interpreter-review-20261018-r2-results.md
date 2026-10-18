@@ -265,3 +265,35 @@ outlier under concurrent sanitizer work; the final Release gate is recorded
 below. Evidence: `build/r2-m4-clean-*`, `build/r2-m4-final-fuzz.log`.
 
 Final full Release rebuild succeeds; core CTest **424/424 pass** (62.14 s).
+
+## R2-H4 countdown and CORR-L2 prerequisite
+
+A single dispatch countdown now covers the next mutator safepoint, resource
+quantum and exact instruction limit. Admitted counts settle at observable
+boundaries, including helper protection, VM transitions, trace callbacks,
+native/resource polls and completion. Resource intervals survive VM calls.
+A state-reachable context lets the real integer-helper error path publish the
+throwing PC/stack and pending count before allocation. TryRun snapshots and
+restores the context while its C locals are live, before longjmp; catch never
+traverses abandoned contexts. Counts saturate at UINT64_MAX.
+
+Validation: full Release rebuild and core **424/424** CTests pass (62.42 s).
+All **8/8** exactness unit tests pass, including the new saturation and
+post-loop inline overflow regression, with identical traced/untraced admission
+counts and source line 4 in the captured Error. **8/8** report-selected
+ASan/UBSan/forced-full-GC budget/dispatch/close/integer CTests pass.
+
+CPU 5, five alternating samples, no concurrent builds/tests; load about 3.0:
+
+| Program | Plain ms | Budget ms | Overhead | ns/instruction | Clock reads/run |
+|---|---:|---:|---:|---:|---:|
+| default loop | 232.736 | 239.593 | 2.95% | 0.098 | — |
+| intloop file | 214.715 | 228.147 | 6.26% | 0.192 | 273445.4 |
+| calls | 576.129 | 583.247 | 1.24% | 0.264 | 105476.4 |
+| fib | 149.173 | 152.686 | 2.35% | 0.850 | 16146.4 |
+
+All measured overheads meet <=10%. Clock counts are the wrapper's total divided
+by five budgeted samples, about instructions/256 plus eight startup/timing
+reads per sample. Counts are 70,000,005 / 27,000,008 / 4,131,540 instructions
+for intloop/calls/fib after M1. Absolute calls/fib and GC worst-pause/throughput
+targets remain unmet. Evidence: `build/r2-h4b-*`.

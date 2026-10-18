@@ -2425,9 +2425,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     SZrTypeValue *opA;
     SZrTypeValue *opB;
     TZrBool verifiedFastBody = ZR_FALSE;
-    TZrUInt32 mutatorPollBudget = 0u;
-    SZrExecutionBudget *executionBudget = state->executionBudget;
-    TZrUInt32 budgetResourcePollCountdown = 0u;
+    TZrUInt32 untilBoundary = 0u;
+    SZrExecutionAdmission admission = {0};
     SZrExecutionContext executionContext;
     EZrExecutionBoundaryStatus executionBoundaryStatus;
     /*
@@ -2440,6 +2439,15 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     if (!ZrCore_GcDomain_MutatorEnter(state)) {
         return;
     }
+    execution_admission_suspend(state->executionAdmission);
+    admission.previous = state->executionAdmission;
+    admission.budget = state->executionBudget;
+    admission.callInfo = &callInfo;
+    admission.programCounter = &programCounter;
+    admission.remaining = &untilBoundary;
+    /* Preserve the established first safepoint before instruction 256. */
+    admission.mutatorRemaining = ZR_EXECUTION_SAFEPOINT_POLL_INSTRUCTION_BUDGET - 1u;
+    state->executionAdmission = &admission;
     ZrCore_ExecutionContext_Init(&executionContext);
 
     ZR_INSTRUCTION_DISPATCH_TABLE
@@ -2803,13 +2811,14 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             instruction = ((N) == 1 ? *++programCounter : *(programCounter += (N)));                                   \
         } else if (ZR_UNLIKELY(state->debugTraceObserver != ZR_NULL)) {                                                \
             /* Per-instruction observers are independent of pending hook traps. */                                     \
+            execution_admission_suspend(&admission);                                                                  \
             trap = ZrCore_Debug_TraceExecution(state, programCounter);                                                  \
             UPDATE_STACK(callInfo);                                                                                    \
             instruction = *(programCounter += (N));                                                                    \
         } else {                                                                                                       \
             ZR_INSTRUCTION_FETCH(instruction,                                                                          \
                                  programCounter,                                                                       \
-                                 trap = ZrCore_Debug_TraceExecution(state, programCounter); UPDATE_STACK(callInfo),    \
+                                 execution_admission_suspend(&admission); trap = ZrCore_Debug_TraceExecution(state, programCounter); UPDATE_STACK(callInfo),    \
                                  N);                                                                                   \
             if (ZR_UNLIKELY(recordInstructions)) {                                                                     \
                 profileRuntime->instructionCounts[(EZrInstructionCode)ZR_INSTRUCTION_OPCODE(instruction)]++;          \
@@ -5872,10 +5881,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define UPDATE_BASE(CALL_INFO)                                                                                        \
     do {                                                                                                               \
-        if (executionBudget != state->executionBudget) {                                                               \
-            executionBudget = state->executionBudget;                                                                  \
-            budgetResourcePollCountdown = 0u;                                                                          \
-        }                                                                                                              \
+        execution_admission_refresh(&admission, state);                                                               \
         base = (CALL_INFO)->functionBase.valuePointer + 1;                                                            \
         packedDirectValueBase =                                                                                       \
                 (CALL_INFO)->functionBase.valuePointer == frameFunctionBase                                            \
@@ -5887,7 +5893,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     {                                                                                                                  \
         UPDATE_BASE(CALL_INFO);                                                                                        \
     }
-#define SAVE_PC(STATE, CALL_INFO) ((CALL_INFO)->context.context.programCounter = programCounter)
+#define SAVE_PC(STATE, CALL_INFO) (execution_admission_suspend(&admission), \
+                                         (CALL_INFO)->context.context.programCounter = programCounter)
 /* Poll promptly under allocation pressure, and let incremental sweeping keep
  * pace even when more than one object is allocated per bytecode instruction. */
 #define EXECUTION_POLL_AFTER_ALLOCATION()                                                                          \
@@ -5898,38 +5905,42 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                     gc__->gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL && !gc__->concurrentMajorActive &&        \
                     gc__->nextStepDebtBytes != 0u ? gc__->nextStepDebtBytes :                                       \
                     ((TZrUInt64)1u << ZR_GARBAGE_COLLECT_STEP_LOG2_SIZE))))                                         \
-            mutatorPollBudget = ZR_EXECUTION_SAFEPOINT_POLL_INSTRUCTION_BUDGET - 1u;                                \
+        {                                                                                                         \
+            execution_admission_suspend(&admission);                                                               \
+            admission.mutatorRemaining = 0u;                                                                      \
+        }                                                                                                         \
     } while (0)
 #define EXECUTION_MUTATOR_POLL_BEFORE_FETCH(N)                                                                         \
     do {                                                                                                               \
-        if (ZR_UNLIKELY(++mutatorPollBudget >= ZR_EXECUTION_SAFEPOINT_POLL_INSTRUCTION_BUDGET)) {                     \
-            mutatorPollBudget = 0u;                                                                                    \
-            ZR_ASSERT(callInfo == state->callInfoList);                                                                \
-            (callInfo)->context.context.programCounter = programCounter + (N);                                        \
-            state->previousProgramCounter = (TZrUInt32)(programCounter + (N) - frameFunction->instructionsList);       \
-            (state)->stackTop.valuePointer = (callInfo)->functionTop.valuePointer;                                    \
-            executionBoundaryStatus = execution_poll_with_result_root(                                                \
-                    &executionContext, state, programCounter + (N), &ret);                                             \
-            if (executionBoundaryStatus == ZR_EXECUTION_BOUNDARY_RELOADED) {                                         \
-                callInfo = executionContext.callInfo;                                                                  \
-                goto LZrReturning;                                                                                     \
-            }                                                                                                          \
-            if (ZR_UNLIKELY(executionBoundaryStatus != ZR_EXECUTION_BOUNDARY_OK)) {                                   \
-                callInfo = state->callInfoList;                                                                        \
-                if (callInfo == ZR_NULL) {                                                                             \
-                    ZR_ABORT();                                                                                         \
+        if (ZR_UNLIKELY(untilBoundary == 0u)) {                                                                        \
+            execution_admission_refresh(&admission, state);                                                           \
+            if (admission.mutatorRemaining == 0u) {                                                                   \
+                admission.mutatorRemaining = ZR_EXECUTION_SAFEPOINT_POLL_INSTRUCTION_BUDGET;                          \
+                ZR_ASSERT(callInfo == state->callInfoList);                                                            \
+                callInfo->context.context.programCounter = programCounter + (N);                                     \
+                state->previousProgramCounter = (TZrUInt32)(programCounter + (N) - frameFunction->instructionsList);   \
+                state->stackTop.valuePointer = callInfo->functionTop.valuePointer;                                    \
+                executionBoundaryStatus = execution_poll_with_result_root(                                            \
+                        &executionContext, state, programCounter + (N), &ret);                                         \
+                if (executionBoundaryStatus == ZR_EXECUTION_BOUNDARY_RELOADED) {                                     \
+                    callInfo = executionContext.callInfo;                                                              \
+                    goto LZrReturning;                                                                                 \
                 }                                                                                                      \
-                ZrCore_Debug_RunError(state, "execution safepoint poll failed: %s",                                  \
-                                      ZrCore_Execution_BoundaryStatusName(executionBoundaryStatus));                  \
+                if (ZR_UNLIKELY(executionBoundaryStatus != ZR_EXECUTION_BOUNDARY_OK)) {                               \
+                    callInfo = state->callInfoList;                                                                    \
+                    if (callInfo == ZR_NULL) ZR_ABORT();                                                               \
+                    ZrCore_Debug_RunError(state, "execution safepoint poll failed: %s",                              \
+                                          ZrCore_Execution_BoundaryStatusName(executionBoundaryStatus));              \
+                }                                                                                                      \
+            }                                                                                                          \
+            if (!execution_admission_prepare(&admission, state)) {                                                     \
+                callInfo->context.context.programCounter = programCounter + (N);                                     \
+                state->stackTop.valuePointer = callInfo->functionTop.valuePointer;                                    \
+                ZrCore_ExecutionBudget_UnwindVmFrames(state);                                                          \
+                goto LZrExecutionDone;                                                                                 \
             }                                                                                                          \
         }                                                                                                              \
-        if (ZR_UNLIKELY(executionBudget != ZR_NULL) &&                                                                 \
-            !execution_budget_admit_instruction(state, executionBudget, &budgetResourcePollCountdown)) {               \
-            callInfo->context.context.programCounter = programCounter + (N);                                         \
-            state->stackTop.valuePointer = callInfo->functionTop.valuePointer;                                        \
-            ZrCore_ExecutionBudget_UnwindVmFrames(state);                                                              \
-            goto LZrExecutionDone;                                                                                     \
-        }                                                                                                              \
+        --untilBoundary;                                                                                               \
     } while (0)
 #define SAVE_STATE(STATE, CALL_INFO)                                                                                   \
     (SAVE_PC(STATE, CALL_INFO), ((STATE)->stackTop.valuePointer = (CALL_INFO)->functionTop.valuePointer))
@@ -5988,8 +5999,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 
 #define RESUME_AFTER_NATIVE_CALL(STATE, CALL_INFO)                                                                     \
     do {                                                                                                               \
-        executionBudget = (STATE)->executionBudget;                                                                    \
-        budgetResourcePollCountdown = 0u;                                                                              \
+        execution_admission_refresh(&admission, (STATE));                                                             \
+        admission.resourceRemaining = 0u;                                                                            \
         if (ZR_UNLIKELY((STATE)->executionBudget != ZR_NULL) &&                                                       \
             !ZrCore_ExecutionBudget_Poll((STATE), ZR_FALSE)) {                                                         \
             ZrCore_ExecutionBudget_UnwindVmFrames(STATE);                                                              \
@@ -6036,7 +6047,7 @@ LZrStart:
     recordHelpers = (profileRuntime != ZR_NULL && profileRuntime->recordHelpers) ? ZR_TRUE : ZR_FALSE;
     UPDATE_FAST_DISPATCH_MODE();
 LZrReturning: {
-        executionBudget = state->executionBudget;
+        execution_admission_refresh(&admission, state);
         SZrTypeValue *functionBaseValue = ZrCore_Stack_GetValueNoProfile(callInfo->functionBase.valuePointer);
         SZrFunction *function = callInfo->metadataFunction;
         frameCallableObject = functionBaseValue->value.object;
@@ -10215,6 +10226,8 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
     }
 
 LZrExecutionDone:
+    execution_admission_suspend(&admission);
+    state->executionAdmission = admission.previous;
     ZrCore_GcDomain_MutatorLeave(state);
 
 #undef DONE

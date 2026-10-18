@@ -1,3 +1,4 @@
+#include "execution/execution_budget_fast.h"
 //
 // Created by HeJiahui on 2025/6/26.
 //
@@ -1085,6 +1086,8 @@ ZR_NO_RETURN void ZrCore_Debug_RunError(struct SZrState *state, TZrNativeString 
     if (state == ZR_NULL || format == ZR_NULL) {
         ZR_ABORT();
     }
+
+    execution_admission_publish_error(state);
 
     va_start(args, format);
     vsnprintf(errorBuffer, sizeof(errorBuffer), format, args);

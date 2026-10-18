@@ -7,6 +7,7 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/stack.h"
+#include "zr_vm_core/object.h"
 #ifdef ZR_BUDGET_SOURCE_TESTS
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser.h"
@@ -23,6 +24,8 @@ typedef struct Observation {
     SZrFunction *rootFunction;
     TZrUInt64 firstNestedInstruction;
     TZrBool countMismatch;
+    TZrUInt32 lastOffset;
+    TZrUInt32 lastLine;
 } Observation;
 
 static TZrDebugSignal observe(SZrState *state, SZrFunction *function,
@@ -30,6 +33,8 @@ static TZrDebugSignal observe(SZrState *state, SZrFunction *function,
     Observation *observation = data;
     (void)pc; (void)offset; (void)line;
     ++observation->instructions;
+    observation->lastOffset = offset;
+    observation->lastLine = line;
     if (state->executionBudget != ZR_NULL &&
         state->executionBudget->executedInstructions != observation->instructions)
         observation->countMismatch = ZR_TRUE;
@@ -83,6 +88,7 @@ static void test_instruction_limits_are_exact_across_resource_quanta(void) {
             state->executionBudget = &budget;
             if (observed) ZrCore_Debug_SetTraceObserver(state, observe, &observation);
             success = ZrTests_Runtime_Function_ExecuteCaptureFailure(state, function, &result);
+            TEST_ASSERT_NULL(state->executionAdmission);
             state->executionBudget = ZR_NULL;
             ZrCore_Debug_SetTraceObserver(state, ZR_NULL, ZR_NULL);
             ZrTests_Runtime_State_Destroy(state);
@@ -216,6 +222,7 @@ static void check_control_flow_limits(SZrState *state, SZrFunction *function, TZ
             state->executionBudget = &budget;
             if (traced) ZrCore_Debug_SetTraceObserver(state, observe, &observation);
             success = ZrTests_Runtime_Function_ExecuteCaptureFailure(state, function, &result);
+            TEST_ASSERT_NULL(state->executionAdmission);
             state->executionBudget = ZR_NULL;
             ZrCore_Debug_SetTraceObserver(state, ZR_NULL, ZR_NULL);
             TZrUInt64 admitted = limits[i] < complete.instructions ? limits[i] : complete.instructions;
@@ -244,6 +251,21 @@ static void test_native_reentry_shares_exact_instruction_count(void) {
     nestedFunction = ZR_NULL;
 }
 
+static void test_instruction_count_saturates(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+    SZrFunction *function = new_function(state);
+    SZrExecutionBudget budget = {0};
+    SZrTypeValue result;
+    budget.executedInstructions = (TZrUInt64)-11;
+    state->executionBudget = &budget;
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteCaptureFailure(state, function, &result));
+    TEST_ASSERT_EQUAL_UINT64((TZrUInt64)-1, budget.executedInstructions);
+    TEST_ASSERT_NULL(state->executionAdmission);
+    state->executionBudget = ZR_NULL;
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 #ifdef ZR_BUDGET_SOURCE_TESTS
 static void check_source_control_flow(const char *source, TZrBool hasNestedVm) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -262,6 +284,66 @@ static void test_vm_call_return_and_limit_inside_callee_are_exact(void) {
 static void test_caught_throw_keeps_exact_instruction_and_trace_counts(void) {
     check_source_control_flow("var result = 0; try { throw 7; } catch (error) { result = 42; } return result;", ZR_FALSE);
 }
+/* An integer.h inline calls the real no-return Debug_RunError. It must settle
+ * counts and publish the throwing PC before constructing the exception. */
+static void test_inline_overflow_publishes_counts_and_source_line(void) {
+    const char *source = "var n: int = 0;\nwhile (n < 300) { n = n + 1; }\n"
+            "var x: int = 9223372036854775807;\nreturn x + n;\n";
+    TZrUInt64 admitted = 0;
+    TZrUInt32 errorOffset = 0;
+    for (unsigned traced = 0; traced < 2u; ++traced) {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        SZrTypeValue result, stacksKey, lineKey, offsetKey, zero;
+        Observation observation = {0};
+        SZrExecutionBudget budget = {0};
+        TEST_ASSERT_NOT_NULL(state);
+        SZrFunction *function = ZrParser_Source_Compile(state, source, strlen(source),
+                ZrCore_String_CreateFromNative(state, "budget_overflow.zr"));
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(ZrCore_Function_AcquireHostRoot(state, function));
+        const char *names[] = {"stacks", "sourceLine", "instructionOffset"};
+        SZrTypeValue *keys[] = {&stacksKey, &lineKey, &offsetKey};
+        for (unsigned k = 0; k < 3u; ++k) {
+            SZrString *name = ZrCore_String_CreateFromNative(state, (TZrNativeString)names[k]);
+            TEST_ASSERT_NOT_NULL(name);
+            ZrCore_RawObject_MarkAsPermanent(state, &name->super);
+            ZrCore_Value_InitAsRawObject(state, keys[k], &name->super);
+            keys[k]->type = ZR_VALUE_TYPE_STRING;
+        }
+        state->executionBudget = &budget;
+        if (traced) ZrCore_Debug_SetTraceObserver(state, observe, &observation);
+        TEST_ASSERT_FALSE(ZrTests_Runtime_Function_ExecuteCaptureFailure(state, function, &result));
+        TEST_ASSERT_NULL(state->executionAdmission);
+        TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_TERMINATION_NONE, budget.termination);
+        TEST_ASSERT_TRUE(state->hasCurrentException);
+        const SZrTypeValue *frames = ZrCore_Object_GetValue(state,
+                (SZrObject *)state->currentException.value.object, &stacksKey);
+        TEST_ASSERT_NOT_NULL(frames);
+        ZrCore_Value_InitAsInt(state, &zero, 0);
+        const SZrTypeValue *frame = ZrCore_Object_GetValue(state, (SZrObject *)frames->value.object, &zero);
+        TEST_ASSERT_NOT_NULL(frame);
+        const SZrTypeValue *line = ZrCore_Object_GetValue(state, (SZrObject *)frame->value.object, &lineKey);
+        const SZrTypeValue *offset = ZrCore_Object_GetValue(state, (SZrObject *)frame->value.object, &offsetKey);
+        TEST_ASSERT_NOT_NULL(line);
+        TEST_ASSERT_NOT_NULL(offset);
+        TEST_ASSERT_EQUAL_INT64(4, line->value.nativeObject.nativeInt64);
+        if (!traced) {
+            admitted = budget.executedInstructions;
+            errorOffset = (TZrUInt32)offset->value.nativeObject.nativeInt64;
+        } else {
+            TEST_ASSERT_EQUAL_UINT64(admitted, budget.executedInstructions);
+            TEST_ASSERT_EQUAL_UINT64(admitted, observation.instructions);
+            TEST_ASSERT_EQUAL_UINT32(errorOffset, observation.lastOffset);
+            TEST_ASSERT_EQUAL_UINT32(4u, observation.lastLine);
+            TEST_ASSERT_EQUAL_INT64(errorOffset, offset->value.nativeObject.nativeInt64);
+            TEST_ASSERT_FALSE(observation.countMismatch);
+        }
+        state->executionBudget = ZR_NULL;
+        ZrCore_Debug_SetTraceObserver(state, ZR_NULL, ZR_NULL);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+}
+
 #endif
 
 int main(void) {
@@ -270,9 +352,11 @@ int main(void) {
     RUN_TEST(test_cancellation_is_observed_within_one_quantum);
     RUN_TEST(test_expired_deadline_admits_no_instructions);
     RUN_TEST(test_native_reentry_shares_exact_instruction_count);
+    RUN_TEST(test_instruction_count_saturates);
 #ifdef ZR_BUDGET_SOURCE_TESTS
     RUN_TEST(test_vm_call_return_and_limit_inside_callee_are_exact);
     RUN_TEST(test_caught_throw_keeps_exact_instruction_and_trace_counts);
+    RUN_TEST(test_inline_overflow_publishes_counts_and_source_line);
 #endif
     return UNITY_END();
 }

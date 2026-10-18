@@ -18,6 +18,7 @@ struct SZrFunction;
 struct SZrAotGcRootMap;
 struct SZrGcDomain;
 struct SZrExecutionBudget;
+struct SZrExecutionAdmission;
 
 /** 异常处理器所处的 try/catch/finally 阶段；同一 handler 随控制流更新 phase。 */
 typedef enum EZrVmExceptionHandlerPhase {
@@ -76,6 +77,7 @@ struct ZR_STRUCT_ALIGN SZrState {
 
     EZrThreadStatus threadStatus; /**< 当前线程运行状态。 */
     struct SZrExecutionBudget *executionBudget; /**< 可选的当前执行预算上下文；绑定层设置/清除此借用指针。 */
+    struct SZrExecutionAdmission *executionAdmission; /**< Borrowed active dispatch context; restored before nonlocal exit. */
     TZrMemoryOffset previousProgramCounter; /**< 调试/恢复使用的上一条指令偏移。 */
 
     /** 活动帧由 callInfoList 指向；baseCallInfo 内嵌，扩展帧由 State_Free 回收。 */
