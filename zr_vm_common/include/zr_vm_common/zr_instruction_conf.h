@@ -269,7 +269,11 @@
     Z(FUNCTION_CALL_SPREAD)                                                                                            \
     Z(PROPERTY_REF_CREATE_LOCAL)                                                                                       \
     Z(REQUIRE_NON_NULL)                                                                                                \
-    Z(MARK_CLOSE_PROXY)
+    Z(MARK_CLOSE_PROXY) \
+    Z(JUMP_IF_GREATER_EQUAL_SIGNED_CONST) \
+    Z(JUMP_IF_GREATER_SIGNED_CONST) \
+    Z(ADD_FLOAT_CONST) \
+    Z(MUL_FLOAT_CONST)
 
 
 /** @brief 从指令联合体取分发编号，供执行器与诊断共享同一解码入口。

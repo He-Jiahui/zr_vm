@@ -1988,7 +1988,15 @@ TZrBool compile_expression_try_get_inline_union_identifier_slot_for_type(SZrComp
     return ZR_TRUE;
 }
 
+static TZrUInt32 compile_expression_into_slot_impl(SZrCompilerState *, SZrAstNode *, TZrUInt32, TZrBool);
 TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot) {
+    return compile_expression_into_slot_impl(cs, node, targetSlot, ZR_FALSE);
+}
+TZrUInt32 compile_scalar_argument_into_slot(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot) {
+    return compile_expression_into_slot_impl(cs, node, targetSlot, ZR_TRUE);
+}
+
+static TZrUInt32 compile_expression_into_slot_impl(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot, TZrBool scalarArgument) {
     TZrBool oldTailCallContext;
     TZrUInt32 directInlineSourceSlot = ZR_PARSER_SLOT_NONE;
 
@@ -2064,6 +2072,26 @@ TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, T
             ZrParser_InferredType_Free(cs->state, &sourceType);
             collapse_stack_to_slot(cs, targetSlot);
             cs->isInTailCallContext = oldTailCallContext;
+            return targetSlot;
+        }
+        if (scalarArgument && !cs->preservePropertyReferenceResult && sourceSlot != ZR_PARSER_SLOT_NONE && targetSlot != ZR_PARSER_SLOT_NONE &&
+            sourceType.ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_NONE &&
+            (ZR_VALUE_IS_TYPE_INT(sourceType.baseType) || ZR_VALUE_IS_TYPE_FLOAT(sourceType.baseType) ||
+             sourceType.baseType == ZR_VALUE_TYPE_BOOL)) {
+            if (cs->stackSlotCount <= (TZrSize)targetSlot) {
+                cs->stackSlotCount = (TZrSize)targetSlot + 1u;
+                if (cs->maxStackSlotCount < cs->stackSlotCount) cs->maxStackSlotCount = cs->stackSlotCount;
+            }
+            TZrBool lowered = (TZrBool)(compiler_register_stack_slot_type_hint(cs, targetSlot, &sourceType) &&
+                    compiler_semantic_ir_lower_load(cs, sourceSlot, targetSlot, node->location));
+            ZrParser_InferredType_Free(cs->state, &sourceType);
+            cs->isInTailCallContext = oldTailCallContext;
+            if (!lowered) {
+                ZrParser_Compiler_Error(cs, "Failed to load scalar directly into result slot", node->location);
+                return ZR_PARSER_SLOT_NONE;
+            }
+            collapse_stack_to_slot(cs, targetSlot);
+            cs->lastExpressionSlot = targetSlot;
             return targetSlot;
         }
         ZrParser_InferredType_Free(cs->state, &sourceType);

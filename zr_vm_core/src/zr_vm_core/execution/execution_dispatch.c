@@ -2442,7 +2442,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     ZR_INSTRUCTION_DISPATCH_TABLE
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
     /* This reviewed opcode count makes schema changes require a complete table update. */
-    enum { ZR_FAST_DISPATCH_OPCODE_COUNT = 246 };
+    enum { ZR_FAST_DISPATCH_OPCODE_COUNT = 250 };
     _Static_assert(ZR_FAST_DISPATCH_OPCODE_COUNT == ZR_INSTRUCTION_ENUM(ENUM_MAX),
                    "Update every fast-dispatch entry when the opcode schema changes");
     static void *const fastDispatchTable[ZR_INSTRUCTION_ENUM(ENUM_MAX)] = {
@@ -2718,6 +2718,10 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             [ZR_INSTRUCTION_ENUM(FUNCTION_CALL_SPREAD)] = &&LZrFastInstruction_FALLBACK,
             [ZR_INSTRUCTION_ENUM(PROPERTY_REF_CREATE_LOCAL)] = &&LZrFastInstruction_FALLBACK,
             [ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST)] = &&LZrFastInstruction_JUMP_IF_GREATER_EQUAL_SIGNED_CONST,
+            [ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST)] = &&LZrFastInstruction_JUMP_IF_GREATER_SIGNED_CONST,
+            [ZR_INSTRUCTION_ENUM(ADD_FLOAT_CONST)] = &&LZrFastInstruction_ADD_FLOAT_CONST,
+            [ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST)] = &&LZrFastInstruction_MUL_FLOAT_CONST,
             [ZR_INSTRUCTION_ENUM(MARK_CLOSE_PROXY)] = &&LZrFastInstruction_FALLBACK,
     };
 #define ZR_FAST_INSTRUCTION_DISPATCH(INSTRUCTION) goto *fastDispatchTable[ZR_INSTRUCTION_OPCODE(INSTRUCTION)];
@@ -2928,10 +2932,11 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTION_STORE_PLAIN_REUSE(REGION, DATA, TYPE)                                                                \
     do {                                                                                                               \
         TZrUInt64 rawValue__ = ZR_CAST(TZrUInt64, (DATA));                                                             \
+        EZrValueType executionPlainReuseType__ = (TYPE);                                                               \
         ZR_ASSERT(destination != ZR_NULL);                                                                             \
         ZR_ASSERT(state != ZR_NULL);                                                                                   \
         ZrCore_Value_PrepareDestinationForOverwriteNoProfile(state, destination);                                       \
-        destination->type = (TYPE);                                                                                    \
+        destination->type = executionPlainReuseType__;                                                                 \
         destination->value.nativeObject.nativeUInt64 = rawValue__;                                                     \
         destination->isGarbageCollectable = ZR_FALSE;                                                                  \
         destination->isNative = ZR_TRUE;                                                                               \
@@ -2940,6 +2945,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     do {                                                                                                               \
         SZrTypeValue *executionPlainDestination__ = (DESTINATION_VALUE);                                               \
         ZR_ASSERT(executionPlainDestination__ != ZR_NULL);                                                             \
+        TZrNativeObject executionPlainResult__;                                                                        \
+        executionPlainResult__.REGION = (DATA);                                                                        \
+        EZrValueType executionPlainType__ = (TYPE);                                                                    \
         TZrBool executionPlainDestinationHasDirtyMetadata__ =                                                           \
                 (TZrBool)(executionPlainDestination__->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE ||                \
                           executionPlainDestination__->ownershipControl != ZR_NULL ||                                  \
@@ -2957,8 +2965,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         } else {                                                                                                       \
             EXECUTION_REQUIRE_OPERANDS(!executionPlainDestinationHasDirtyMetadata__);                                 \
         }                                                                                                              \
-        executionPlainDestination__->type = (TYPE);                                                                    \
-        executionPlainDestination__->value.nativeObject.REGION = (DATA);                                               \
+        executionPlainDestination__->type = executionPlainType__;                                                     \
+        executionPlainDestination__->value.nativeObject.REGION = executionPlainResult__.REGION;                                               \
         if (executionPlainDestinationAllowsMetadata__) {                                                               \
             executionPlainDestination__->isGarbageCollectable = ZR_FALSE;                                              \
             executionPlainDestination__->isNative = ZR_TRUE;                                                           \
@@ -5604,6 +5612,26 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             JUMP_IMPL(CALL_INFO, instruction, 0);                                                                      \
         }                                                                                                              \
     } while (0)
+#define EXECUTE_JUMP_IF_GREATER_EQUAL_SIGNED_CONST_BODY(JUMP_IMPL, CALL_INFO)                                             \
+    do {                                                                                                               \
+        const SZrTypeValue *leftValue__ = SIGNED_FRAME_VALUE_SLOT(E(instruction));                                     \
+        const SZrTypeValue *constValue__ = CONST(A1(instruction));                                                     \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue__->type) &&                                  \
+                  ZR_VALUE_IS_TYPE_SIGNED_INT(constValue__->type));                                                    \
+        if (leftValue__->value.nativeObject.nativeInt64 >= constValue__->value.nativeObject.nativeInt64) {             \
+            JUMP_IMPL(CALL_INFO, instruction, 0);                                                                      \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_JUMP_IF_GREATER_SIGNED_CONST_BODY(JUMP_IMPL, CALL_INFO)                                             \
+    do {                                                                                                               \
+        const SZrTypeValue *leftValue__ = SIGNED_FRAME_VALUE_SLOT(E(instruction));                                     \
+        const SZrTypeValue *constValue__ = CONST(A1(instruction));                                                     \
+        EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue__->type) &&                                  \
+                  ZR_VALUE_IS_TYPE_SIGNED_INT(constValue__->type));                                                    \
+        if (leftValue__->value.nativeObject.nativeInt64 > constValue__->value.nativeObject.nativeInt64) {             \
+            JUMP_IMPL(CALL_INFO, instruction, 0);                                                                      \
+        }                                                                                                              \
+    } while (0)
 #define EXECUTE_JUMP_IF_NULL_BODY(JUMP_IMPL, CALL_INFO)                                                               \
     do {                                                                                                               \
         const SZrTypeValue *value__ = FRAME_VALUE_SLOT(E(instruction));                                                \
@@ -6960,6 +6988,24 @@ LZrFastInstruction_ADD_FLOAT:
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_ADD_FLOAT_CONST:
+                FAST_PREPARE_DESTINATION();
+#endif
+            ZR_INSTRUCTION_LABEL(ADD_FLOAT_CONST) {
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = CONST(B1(instruction));
+                if (ZR_LIKELY(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type))) {
+                    TZrFloat64 result = opA->value.nativeObject.nativeDouble + opB->value.nativeObject.nativeDouble;
+                    ZrCore_Value_PrepareDestinationForOverwriteNoProfile(state, destination);
+                    ZR_VALUE_FAST_SET(destination, nativeDouble, result, ZR_VALUE_TYPE_DOUBLE);
+                } else {
+                    SAVE_STATE(state, callInfo);
+                    execution_apply_binary_numeric_float_or_raise(
+                            state, ZR_EXEC_NUMERIC_FALLBACK_ADD, destination, opA, opB, "ADD_FLOAT_CONST");
+                }
+            }
+            DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 LZrFastInstruction_ADD_STRING:
                 FAST_PREPARE_DESTINATION();
 #endif
@@ -7379,6 +7425,24 @@ LZrFastInstruction_MUL_FLOAT:
                     SAVE_STATE(state, callInfo);
                     execution_apply_binary_numeric_float_or_raise(
                             state, ZR_EXEC_NUMERIC_FALLBACK_MUL, destination, opA, opB, "MUL_FLOAT");
+                }
+            }
+            DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_MUL_FLOAT_CONST:
+                FAST_PREPARE_DESTINATION();
+#endif
+            ZR_INSTRUCTION_LABEL(MUL_FLOAT_CONST) {
+                opA = FRAME_VALUE_SLOT(A1(instruction));
+                opB = CONST(B1(instruction));
+                if (ZR_LIKELY(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type))) {
+                    TZrFloat64 result = opA->value.nativeObject.nativeDouble * opB->value.nativeObject.nativeDouble;
+                    ZrCore_Value_PrepareDestinationForOverwriteNoProfile(state, destination);
+                    ZR_VALUE_FAST_SET(destination, nativeDouble, result, ZR_VALUE_TYPE_DOUBLE);
+                } else {
+                    SAVE_STATE(state, callInfo);
+                    execution_apply_binary_numeric_float_or_raise(
+                            state, ZR_EXEC_NUMERIC_FALLBACK_MUL, destination, opA, opB, "MUL_FLOAT_CONST");
                 }
             }
             DONE(1);
@@ -9501,6 +9565,32 @@ LZrFastInstruction_JUMP_IF_NOT_EQUAL_SIGNED_CONST: {
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_JUMP_IF_GREATER_EQUAL_SIGNED_CONST: {
+                EXECUTE_JUMP_IF_GREATER_EQUAL_SIGNED_CONST_BODY(JUMP1_16_FAST, callInfo);
+            }
+            DONE_AFTER_TRAP_FAST_ONE();
+#endif
+            ZR_INSTRUCTION_LABEL(JUMP_IF_GREATER_EQUAL_SIGNED_CONST) {
+                // operandExtra (E) = leftSlot
+                // operand1[0] (A1) = signed int constant index
+                // operand1[1] (B1) = 16-bit relative jump offset
+                EXECUTE_JUMP_IF_GREATER_EQUAL_SIGNED_CONST_BODY(JUMP1_16, callInfo);
+            }
+            DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_JUMP_IF_GREATER_SIGNED_CONST: {
+                EXECUTE_JUMP_IF_GREATER_SIGNED_CONST_BODY(JUMP1_16_FAST, callInfo);
+            }
+            DONE_AFTER_TRAP_FAST_ONE();
+#endif
+            ZR_INSTRUCTION_LABEL(JUMP_IF_GREATER_SIGNED_CONST) {
+                // operandExtra (E) = leftSlot
+                // operand1[0] (A1) = signed int constant index
+                // operand1[1] (B1) = 16-bit relative jump offset
+                EXECUTE_JUMP_IF_GREATER_SIGNED_CONST_BODY(JUMP1_16, callInfo);
+            }
+            DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 LZrFastInstruction_JUMP_IF_NULL: {
                 EXECUTE_JUMP_IF_NULL_BODY(JUMP1_16_FAST, callInfo);
             }
@@ -10253,6 +10343,8 @@ LZrExecutionDone:
 #undef EXECUTE_JUMP_IF_GREATER_SIGNED_BODY
 #undef EXECUTE_JUMP_IF_LESS_EQUAL_SIGNED_BODY
 #undef EXECUTE_JUMP_IF_NOT_EQUAL_SIGNED_BODY
+#undef EXECUTE_JUMP_IF_GREATER_EQUAL_SIGNED_CONST_BODY
+#undef EXECUTE_JUMP_IF_GREATER_SIGNED_CONST_BODY
 #undef EXECUTE_JUMP_IF_NOT_EQUAL_SIGNED_CONST_BODY
 #undef EXECUTE_JUMP_IF_NULL_BODY
 #undef EXECUTE_JUMP_IF_BOOL_FALSE_BODY

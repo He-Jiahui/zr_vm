@@ -1429,4 +1429,5 @@ ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitTypeQueryExpression(SZrCompilerSta
                                                                   SZrAstNode *operand,
                                                                   SZrFileRange location);
 
+TZrUInt32 compile_scalar_argument_into_slot(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot);
 #endif // ZR_VM_PARSER_COMPILER_INTERNAL_H

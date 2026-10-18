@@ -738,6 +738,10 @@ static TZrBool backend_aot_c_frame_descriptor_instruction_can_use_local_only(
                     operandA1,
                     (TZrInt64)(TZrInt16)operandB1);
 
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
+
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
             return backend_aot_c_frame_descriptor_signed_const_branch_can_use_local_only(
                     functionIr,

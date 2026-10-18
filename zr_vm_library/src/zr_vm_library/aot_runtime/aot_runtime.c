@@ -5684,6 +5684,12 @@ static TZrBool aot_runtime_should_jump_signed_compare(
     }
 
     switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+            *outShouldJump = (TZrBool)(leftNumber >= rightNumber);
+            break;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
+            *outShouldJump = (TZrBool)(leftNumber > rightNumber);
+            break;
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
             *outShouldJump = leftNumber > rightNumber ? ZR_TRUE : ZR_FALSE;
             break;
@@ -11296,4 +11302,56 @@ TZrInt64 ZrLibrary_AotRuntime_InvokeCurrentClosureShim(SZrState *state, EZrAotBa
     }
 
     return 1;
+}
+TZrBool ZrLibrary_AotRuntime_ShouldJumpIfGreaterEqualSignedConst(SZrState *state,
+                                                            ZrAotGeneratedFrame *frame,
+                                                            TZrUInt32 leftSlot,
+                                                            TZrUInt32 constantIndex,
+                                                            TZrBool *outShouldJump) {
+    return aot_runtime_should_jump_signed_compare(state,
+                                                  frame,
+                                                  leftSlot,
+                                                  constantIndex,
+                                                  ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST),
+                                                  ZR_TRUE,
+                                                  outShouldJump);
+}
+
+TZrBool ZrLibrary_AotRuntime_ShouldJumpIfGreaterSignedConst(SZrState *state,
+                                                            ZrAotGeneratedFrame *frame,
+                                                            TZrUInt32 leftSlot,
+                                                            TZrUInt32 constantIndex,
+                                                            TZrBool *outShouldJump) {
+    return aot_runtime_should_jump_signed_compare(state,
+                                                  frame,
+                                                  leftSlot,
+                                                  constantIndex,
+                                                  ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST),
+                                                  ZR_TRUE,
+                                                  outShouldJump);
+}
+
+
+TZrBool ZrLibrary_AotRuntime_AddFloatConst(SZrState *state, ZrAotGeneratedFrame *frame,
+        TZrUInt32 destinationSlot, TZrUInt32 leftSlot, TZrUInt32 constantIndex) {
+    TZrStackValuePointer destination = aot_runtime_frame_slot(frame, destinationSlot);
+    TZrStackValuePointer left = aot_runtime_frame_slot(frame, leftSlot);
+    const SZrTypeValue *right = aot_runtime_frame_constant(frame, constantIndex);
+    if (state == ZR_NULL || destination == ZR_NULL || left == ZR_NULL || right == ZR_NULL ||
+        !ZR_VALUE_IS_TYPE_FLOAT(left->value.type) || !ZR_VALUE_IS_TYPE_FLOAT(right->type)) return ZR_FALSE;
+    TZrFloat64 result = left->value.value.nativeObject.nativeDouble + right->value.nativeObject.nativeDouble;
+    ZrCore_Value_InitAsFloat(state, ZrCore_Stack_GetValue(destination), result);
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_MulFloatConst(SZrState *state, ZrAotGeneratedFrame *frame,
+        TZrUInt32 destinationSlot, TZrUInt32 leftSlot, TZrUInt32 constantIndex) {
+    TZrStackValuePointer destination = aot_runtime_frame_slot(frame, destinationSlot);
+    TZrStackValuePointer left = aot_runtime_frame_slot(frame, leftSlot);
+    const SZrTypeValue *right = aot_runtime_frame_constant(frame, constantIndex);
+    if (state == ZR_NULL || destination == ZR_NULL || left == ZR_NULL || right == ZR_NULL ||
+        !ZR_VALUE_IS_TYPE_FLOAT(left->value.type) || !ZR_VALUE_IS_TYPE_FLOAT(right->type)) return ZR_FALSE;
+    TZrFloat64 result = left->value.value.nativeObject.nativeDouble * right->value.nativeObject.nativeDouble;
+    ZrCore_Value_InitAsFloat(state, ZrCore_Stack_GetValue(destination), result);
+    return ZR_TRUE;
 }

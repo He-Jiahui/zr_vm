@@ -1726,6 +1726,8 @@ static TZrBool backend_aot_c_scalar_locals_slot_has_later_scalar_consumer(const 
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) ||
+            opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST) ||
+            opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST) ||
             opcode == ZR_INSTRUCTION_OP_FUNCTION_RETURN) {
             return ZR_TRUE;
@@ -4305,6 +4307,8 @@ static TZrBool backend_aot_c_scalar_locals_signed_consumer_reads_slot(const TZrI
         case ZR_INSTRUCTION_OP_MOD_SIGNED_CONST:
         case ZR_INSTRUCTION_OP_MOD_SIGNED_CONST_PLAIN_DEST:
         case ZR_INSTRUCTION_OP_LOGICAL_EQUAL_SIGNED_CONST:
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
             return (TZrBool)(leftSlot == slot);
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
@@ -4423,6 +4427,8 @@ static TZrBool backend_aot_c_scalar_locals_signed_consumer_has_i64_operand_local
         case ZR_INSTRUCTION_OP_MOD_SIGNED_CONST:
         case ZR_INSTRUCTION_OP_MOD_SIGNED_CONST_PLAIN_DEST:
         case ZR_INSTRUCTION_OP_LOGICAL_EQUAL_SIGNED_CONST:
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
             return backend_aot_c_scalar_locals_has_i64_slot(functionIr, leftSlot);
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
@@ -4454,6 +4460,8 @@ static TZrBool backend_aot_c_scalar_locals_instruction_is_i64_local_consumer(EZr
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(BITWISE_NOT):
         case ZR_INSTRUCTION_ENUM(BITWISE_AND):
@@ -4673,6 +4681,8 @@ static TZrBool backend_aot_c_scalar_locals_i64_consumer_reads_slot(
                                      functionIr, instruction->instruction.operandExtra, instructionIndex) &&
                              backend_aot_c_scalar_locals_i64_written_before(
                                      functionIr, instruction->instruction.operand.operand1[0], instructionIndex));
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
             return (TZrBool)(instruction->instruction.operandExtra == slot &&
                              backend_aot_c_scalar_locals_i64_written_before(
@@ -4760,6 +4770,8 @@ static TZrBool backend_aot_c_scalar_locals_i64_consumer_mentions_slot(const TZrI
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
             return (TZrBool)(instruction->instruction.operandExtra == slot ||
                              instruction->instruction.operand.operand1[0] == slot);
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
             return (TZrBool)(instruction->instruction.operandExtra == slot);
         case ZR_INSTRUCTION_ENUM(BITWISE_NOT):
@@ -5767,6 +5779,8 @@ static TZrBool backend_aot_c_scalar_locals_i64_instruction_overwrites_slot(
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
             return ZR_FALSE;
         case ZR_INSTRUCTION_OP_GET_CONSTANT:

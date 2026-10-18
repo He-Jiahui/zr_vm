@@ -1169,6 +1169,13 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
+            case ZR_INSTRUCTION_ENUM(ADD_FLOAT_CONST):
+            case ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST):
+                backend_aot_write_c_direct_float_const(file, entry->function, destinationSlot, operandA1, operandB1,
+                        instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST));
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices, entry->function,
+                        destinationSlot, ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
             case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
                 backend_aot_write_c_direct_add_float(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
@@ -2525,6 +2532,52 @@ void backend_aot_write_c_function_body(FILE *file,
                     TZrUInt32 targetInstructionIndex =
                             (TZrUInt32)((TZrInt64)instructionIndex + (TZrInt64)(TZrInt16)operandB1 + 1);
                     backend_aot_write_c_direct_jump_if_not_equal_signed_const(
+                            file,
+                            functionIr,
+                            entry->function,
+                            entry->flatIndex,
+                            destinationSlot,
+                            operandA1,
+                            instructionIndex,
+                            targetInstructionIndex,
+                            backend_aot_target_is_back_edge(instructionIndex, targetInstructionIndex));
+                }
+                break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+                if ((TZrInt64)instructionIndex + (TZrInt64)(TZrInt16)operandB1 + 1 < 0 ||
+                    (TZrUInt32)((TZrInt64)instructionIndex + (TZrInt64)(TZrInt16)operandB1 + 1) >=
+                            entry->function->instructionsLength) {
+                    backend_aot_write_c_unsupported_instruction(file,
+                                                                entry->flatIndex,
+                                                                instructionIndex,
+                                                                instruction->instruction.operationCode);
+                } else {
+                    TZrUInt32 targetInstructionIndex =
+                            (TZrUInt32)((TZrInt64)instructionIndex + (TZrInt64)(TZrInt16)operandB1 + 1);
+                    backend_aot_write_c_direct_jump_if_greater_equal_signed_const(
+                            file,
+                            functionIr,
+                            entry->function,
+                            entry->flatIndex,
+                            destinationSlot,
+                            operandA1,
+                            instructionIndex,
+                            targetInstructionIndex,
+                            backend_aot_target_is_back_edge(instructionIndex, targetInstructionIndex));
+                }
+                break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
+                if ((TZrInt64)instructionIndex + (TZrInt64)(TZrInt16)operandB1 + 1 < 0 ||
+                    (TZrUInt32)((TZrInt64)instructionIndex + (TZrInt64)(TZrInt16)operandB1 + 1) >=
+                            entry->function->instructionsLength) {
+                    backend_aot_write_c_unsupported_instruction(file,
+                                                                entry->flatIndex,
+                                                                instructionIndex,
+                                                                instruction->instruction.operationCode);
+                } else {
+                    TZrUInt32 targetInstructionIndex =
+                            (TZrUInt32)((TZrInt64)instructionIndex + (TZrInt64)(TZrInt16)operandB1 + 1);
+                    backend_aot_write_c_direct_jump_if_greater_signed_const(
                             file,
                             functionIr,
                             entry->function,

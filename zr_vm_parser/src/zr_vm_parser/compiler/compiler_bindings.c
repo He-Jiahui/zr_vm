@@ -1003,7 +1003,7 @@ ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitTypeQueryExpression(SZrCompilerSta
     }
 
     argumentSlot = allocate_stack_slot(cs);
-    if (compile_expression_into_slot(cs, operand, argumentSlot) == ZR_PARSER_SLOT_NONE || cs->hasError) {
+    if (compile_scalar_argument_into_slot(cs, operand, argumentSlot) == ZR_PARSER_SLOT_NONE || cs->hasError) {
         return ZR_PARSER_SLOT_NONE;
     }
 

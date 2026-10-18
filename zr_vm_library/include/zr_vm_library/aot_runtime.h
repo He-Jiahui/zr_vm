@@ -1076,6 +1076,16 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ShouldJumpIfNotEqualSignedConst(stru
                                                                             TZrUInt32 leftSlot,
                                                                             TZrUInt32 constantIndex,
                                                                             TZrBool *outShouldJump);
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ShouldJumpIfGreaterEqualSignedConst(struct SZrState *state,
+                                                                            ZrAotGeneratedFrame *frame,
+                                                                            TZrUInt32 leftSlot,
+                                                                            TZrUInt32 constantIndex,
+                                                                            TZrBool *outShouldJump);
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ShouldJumpIfGreaterSignedConst(struct SZrState *state,
+                                                                            ZrAotGeneratedFrame *frame,
+                                                                            TZrUInt32 leftSlot,
+                                                                            TZrUInt32 constantIndex,
+                                                                            TZrBool *outShouldJump);
 
 /**
  * @brief 复用解释器 ADD 执行边界，让生成代码保留动态加法行为。
@@ -1096,6 +1106,16 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_Add(struct SZrState *state,
  * @return 操作成功状态；比较和转换的实际结果由目标槽或 out 参数承载。
  */
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_AddFloat(struct SZrState *state,
+                                                     ZrAotGeneratedFrame *frame,
+                                                     TZrUInt32 destinationSlot,
+                                                     TZrUInt32 leftSlot,
+                                                     TZrUInt32 rightSlot);
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_AddFloatConst(struct SZrState *state,
+                                                     ZrAotGeneratedFrame *frame,
+                                                     TZrUInt32 destinationSlot,
+                                                     TZrUInt32 leftSlot,
+                                                     TZrUInt32 rightSlot);
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_MulFloatConst(struct SZrState *state,
                                                      ZrAotGeneratedFrame *frame,
                                                      TZrUInt32 destinationSlot,
                                                      TZrUInt32 leftSlot,

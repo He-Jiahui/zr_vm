@@ -648,6 +648,50 @@ void backend_aot_write_c_direct_jump_if_not_equal_signed_const(FILE *file,
                                                    isBackEdge);
 }
 
+void backend_aot_write_c_direct_jump_if_greater_equal_signed_const(FILE *file,
+                                                               const SZrAotExecIrFunction *functionIr,
+                                                               const SZrFunction *function,
+                                                               TZrUInt32 functionIndex,
+                                                               TZrUInt32 leftSlot,
+                                                               TZrUInt32 constantIndex,
+                                                               TZrUInt32 execInstructionIndex,
+                                                               TZrUInt32 targetInstructionIndex,
+                                                               TZrBool isBackEdge) {
+    backend_aot_write_c_direct_signed_branch_const(file,
+                                                   functionIr,
+                                                   function,
+                                                   "zr_aot_left_scalar >= zr_aot_right_literal",
+                                                   ">=",
+                                                   functionIndex,
+                                                   leftSlot,
+                                                   constantIndex,
+                                                   execInstructionIndex,
+                                                   targetInstructionIndex,
+                                                   isBackEdge);
+}
+
+void backend_aot_write_c_direct_jump_if_greater_signed_const(FILE *file,
+                                                               const SZrAotExecIrFunction *functionIr,
+                                                               const SZrFunction *function,
+                                                               TZrUInt32 functionIndex,
+                                                               TZrUInt32 leftSlot,
+                                                               TZrUInt32 constantIndex,
+                                                               TZrUInt32 execInstructionIndex,
+                                                               TZrUInt32 targetInstructionIndex,
+                                                               TZrBool isBackEdge) {
+    backend_aot_write_c_direct_signed_branch_const(file,
+                                                   functionIr,
+                                                   function,
+                                                   "zr_aot_left_scalar > zr_aot_right_literal",
+                                                   ">",
+                                                   functionIndex,
+                                                   leftSlot,
+                                                   constantIndex,
+                                                   execInstructionIndex,
+                                                   targetInstructionIndex,
+                                                   isBackEdge);
+}
+
 /* 通用返回交给 runtime 处理帧、作用域关闭及值所有权；不能直接 C return 源槽。 */
 void backend_aot_write_c_direct_return(FILE *file, TZrUInt32 sourceSlot) {
     if (file == ZR_NULL) {

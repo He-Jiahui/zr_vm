@@ -2172,6 +2172,8 @@ static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstructi
                    compiler_instruction_binary_operands_match_slot(instruction, slot);
         case ZR_INSTRUCTION_ENUM(ADD_INT_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_INT_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_FLOAT_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST):
@@ -2217,6 +2219,8 @@ static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstructi
                    compiler_instruction_operand0_triple_matches_slot(instruction, slot);
         case ZR_INSTRUCTION_ENUM(JUMP_IF):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
         case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):

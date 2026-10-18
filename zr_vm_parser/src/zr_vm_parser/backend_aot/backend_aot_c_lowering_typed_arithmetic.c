@@ -1277,3 +1277,25 @@ void backend_aot_write_c_direct_logical_greater_equal_float(FILE *file,
                                                 leftSlot,
                                                 rightSlot);
 }
+
+/* Literal operands remain in the function pool; no temporary stack copy. */
+void backend_aot_write_c_direct_float_const(FILE *file, const SZrFunction *function,
+                                            TZrUInt32 destinationSlot, TZrUInt32 leftSlot,
+                                            TZrUInt32 constantIndex, TZrBool multiply) {
+    const SZrTypeValue *constant = function != ZR_NULL && constantIndex < function->constantValueLength
+            ? &function->constantValueList[constantIndex] : ZR_NULL;
+    if (constant == ZR_NULL || !ZR_VALUE_IS_TYPE_FLOAT(constant->type)) {
+        fprintf(file, "    ZR_AOT_C_FAIL();\n");
+        return;
+    }
+    fprintf(file,
+            "    {\n"
+            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        const SZrTypeValue *zr_aot_left = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        if (!ZR_VALUE_IS_TYPE_FLOAT(zr_aot_left->type)) { ZR_AOT_C_FAIL(); }\n"
+            "        TZrFloat64 zr_aot_result = zr_aot_left->value.nativeObject.nativeDouble %s %a;\n"
+            "        ZrCore_Value_PrepareDestinationForOverwriteNoProfile(state, zr_aot_destination);\n"
+            "        ZR_VALUE_FAST_SET(zr_aot_destination, nativeDouble, zr_aot_result, ZR_VALUE_TYPE_DOUBLE);\n"
+            "    }\n", (unsigned)destinationSlot, (unsigned)leftSlot,
+            multiply ? "*" : "+", constant->value.nativeObject.nativeDouble);
+}

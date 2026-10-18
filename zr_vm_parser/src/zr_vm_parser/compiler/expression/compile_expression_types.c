@@ -1311,7 +1311,7 @@ static TZrBool emit_hidden_constructor_call(SZrCompilerState *cs,
                                       i)
                             : ZR_NULL;
             if (argNode != ZR_NULL &&
-                compile_expression_into_slot(cs, argNode, argSlot) == ZR_PARSER_SLOT_NONE) {
+                compile_scalar_argument_into_slot(cs, argNode, argSlot) == ZR_PARSER_SLOT_NONE) {
                 return ZR_FALSE;
             }
             if (expectedType != ZR_NULL && !compiler_register_stack_slot_type_hint(cs, argSlot, expectedType)) {
@@ -1954,7 +1954,7 @@ static TZrUInt32 compile_call_argument_into_slot(
         cs->preservePropertyReferenceResult =
                 passingMode == ZR_PARAMETER_PASSING_MODE_REF ||
                 passingMode == ZR_PARAMETER_PASSING_MODE_OUT;
-        resultSlot = compile_expression_into_slot(
+        resultSlot = compile_scalar_argument_into_slot(
                 cs, argument, evaluationSlot);
         cs->preservePropertyReferenceResult =
                 oldPreservePropertyReferenceResult;
@@ -4200,7 +4200,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                         if (argNode != ZR_NULL) {
                             compiler_ensure_stack_slot_available(cs, argBaseSlot + (TZrUInt32)j);
                             TZrUInt32 argSlot =
-                                    compile_expression_into_slot(cs, argNode, argBaseSlot + (TZrUInt32)j);
+                                    compile_scalar_argument_into_slot(cs, argNode, argBaseSlot + (TZrUInt32)j);
                             if (argSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
                                 if (argsToCompile != call->args && argsToCompile != ZR_NULL) {
                                     ZrParser_AstNodeArray_Free(cs->state, argsToCompile);

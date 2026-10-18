@@ -2808,6 +2808,8 @@ static EZrInstructionCode compiler_quickening_specialized_equality_opcode(
 
 static EZrInstructionCode compiler_quickening_specialized_arithmetic_const_opcode(EZrInstructionCode opcode) {
     switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(ADD_FLOAT): return ZR_INSTRUCTION_ENUM(ADD_FLOAT_CONST);
+        case ZR_INSTRUCTION_ENUM(MUL_FLOAT): return ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST);
         case ZR_INSTRUCTION_ENUM(ADD_INT):
             return ZR_INSTRUCTION_ENUM(ADD_INT_CONST);
         case ZR_INSTRUCTION_ENUM(ADD_INT_PLAIN_DEST):
@@ -2860,6 +2862,9 @@ static TZrBool compiler_quickening_constant_matches_arithmetic_opcode(const SZrF
             compiler_quickening_function_constant_slot_kind(function, constantIndex);
 
     switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
+        case ZR_INSTRUCTION_ENUM(MUL_FLOAT):
+            return constantKind == ZR_COMPILER_QUICKENING_SLOT_KIND_FLOAT;
         case ZR_INSTRUCTION_ENUM(ADD_INT):
         case ZR_INSTRUCTION_ENUM(ADD_INT_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(SUB_INT):
@@ -2992,6 +2997,8 @@ static TZrBool compiler_quickening_is_control_only_opcode(EZrInstructionCode opc
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
         case ZR_INSTRUCTION_ENUM(REQUIRE_NON_NULL):
@@ -3068,6 +3075,8 @@ static TZrBool compiler_quickening_build_block_starts(const SZrFunction *functio
         if (opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) ||
+            opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST) ||
+            opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NULL)) {
             TZrInt32 targetIndex = (TZrInt32)index + (TZrInt16)instruction->instruction.operand.operand1[1] + 1;
@@ -3142,6 +3151,8 @@ static TZrBool compiler_quickening_instruction_destination_becomes_plain(const S
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_FLOAT_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(SUB_INT):
@@ -4318,6 +4329,8 @@ static TZrBool compiler_quickening_rewrite_compacted_branches(TZrInstruction *in
             opcode != ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) &&
             opcode != ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED) &&
             opcode != ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) &&
+            opcode != ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST) &&
+            opcode != ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST) &&
             opcode != ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST) &&
             opcode != ZR_INSTRUCTION_ENUM(JUMP_IF_NULL) &&
             opcode != ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE) &&
@@ -4331,6 +4344,8 @@ static TZrBool compiler_quickening_rewrite_compacted_branches(TZrInstruction *in
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) ||
+            opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST) ||
+            opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NULL)) {
             targetIndex += (TZrInt16)instruction->instruction.operand.operand1[1];
@@ -4375,6 +4390,8 @@ static TZrBool compiler_quickening_rewrite_compacted_branches(TZrInstruction *in
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) ||
+            opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST) ||
+            opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NULL)) {
             if (newOffset < INT16_MIN || newOffset > INT16_MAX) {
@@ -4445,6 +4462,8 @@ static TZrBool compiler_quickening_rewrite_inserted_super_array_items_cache_bran
             opcode != ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) &&
             opcode != ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED) &&
             opcode != ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) &&
+            opcode != ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST) &&
+            opcode != ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST) &&
             opcode != ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST) &&
             opcode != ZR_INSTRUCTION_ENUM(JUMP_IF_NULL) &&
             opcode != ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE) &&
@@ -4458,6 +4477,8 @@ static TZrBool compiler_quickening_rewrite_inserted_super_array_items_cache_bran
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) ||
+            opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST) ||
+            opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NULL)) {
             targetIndex += (TZrInt16)instruction->instruction.operand.operand1[1];
@@ -4493,6 +4514,8 @@ static TZrBool compiler_quickening_rewrite_inserted_super_array_items_cache_bran
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) ||
+            opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST) ||
+            opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NULL)) {
             if (newOffset < INT16_MIN || newOffset > INT16_MAX) {
@@ -5853,6 +5876,8 @@ static TZrBool compiler_quickening_instruction_may_read_slot(const TZrInstructio
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
             return instruction->instruction.operandExtra == slot ||
                    instruction->instruction.operand.operand1[0] == slot;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
             return instruction->instruction.operandExtra == slot;
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
@@ -5970,6 +5995,8 @@ static TZrBool compiler_quickening_instruction_may_read_slot(const TZrInstructio
         case ZR_INSTRUCTION_ENUM(ADD_INT_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_FLOAT_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(SUB_INT_CONST):
@@ -6175,6 +6202,8 @@ static TZrBool compiler_quickening_instruction_writes_slot(const TZrInstruction 
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_FLOAT_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
@@ -6368,6 +6397,8 @@ static TZrBool compiler_quickening_instruction_replace_read_slot_if_supported(TZ
                 replaced = ZR_TRUE;
             }
             break;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
             if (instruction->instruction.operandExtra == oldSlot) {
                 if (applyChanges) {
@@ -6432,6 +6463,8 @@ static TZrBool compiler_quickening_instruction_replace_read_slot_if_supported(TZ
         case ZR_INSTRUCTION_ENUM(ADD_INT_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_FLOAT_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(SUB_INT_CONST):
@@ -6763,6 +6796,8 @@ static TZrUInt32 compiler_quickening_collect_block_successor_indices(const SZrFu
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
             targetIndex = (TZrInt64)blockEndIndex + 1 + (TZrInt16)instruction->instruction.operand.operand1[1];
@@ -7023,6 +7058,10 @@ static TZrBool compiler_quickening_opcode_supports_direct_result_store(const SZr
             return compiler_quickening_function_constant_is_plain_primitive(
                     function,
                     (TZrUInt32)instruction->instruction.operand.operand2[0]);
+        case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
+        case ZR_INSTRUCTION_ENUM(SUB_FLOAT):
+        case ZR_INSTRUCTION_ENUM(MUL_FLOAT):
+        case ZR_INSTRUCTION_ENUM(DIV_FLOAT):
         case ZR_INSTRUCTION_ENUM(ADD_INT):
         case ZR_INSTRUCTION_ENUM(ADD_INT_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(ADD_INT_CONST):
@@ -7034,6 +7073,8 @@ static TZrBool compiler_quickening_opcode_supports_direct_result_store(const SZr
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_FLOAT_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(SUB_INT):
@@ -7103,6 +7144,29 @@ static TZrBool compiler_quickening_direct_result_store_preserves_producer_reads(
 
     opcode = (EZrInstructionCode)producerInstruction->instruction.operationCode;
     switch (opcode) {
+        /* These scalar handlers snapshot operands and type before overwriting
+         * destination metadata, including a destination that aliases a read. */
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_FLOAT_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
+        case ZR_INSTRUCTION_ENUM(SUB_FLOAT):
+        case ZR_INSTRUCTION_ENUM(MUL_FLOAT):
+        case ZR_INSTRUCTION_ENUM(DIV_FLOAT):
+        case ZR_INSTRUCTION_ENUM(BITWISE_AND):
+        case ZR_INSTRUCTION_ENUM(BITWISE_OR):
+        case ZR_INSTRUCTION_ENUM(BITWISE_XOR):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
         case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
@@ -7754,6 +7818,43 @@ static TZrBool compiler_quickening_try_fuse_jump_if_not_equal_signed(SZrFunction
     return ZR_TRUE;
 }
 
+static TZrBool compiler_quickening_fold_constant_signed_branches(SZrFunction *function) {
+    if (function == ZR_NULL || function->instructionsLength < 2u) return ZR_TRUE;
+    TZrBool *blocks = (TZrBool *)malloc(function->instructionsLength * sizeof(*blocks));
+    if (blocks == ZR_NULL) return ZR_FALSE;
+    if (!compiler_quickening_build_block_starts(function, blocks)) { free(blocks); return ZR_FALSE; }
+    for (TZrUInt32 i = 1u; i < function->instructionsLength; ++i) {
+        TZrInstruction *branch = &function->instructionsList[i];
+        TZrInstruction *load = &function->instructionsList[i - 1u];
+        EZrInstructionCode opcode = (EZrInstructionCode)branch->instruction.operationCode;
+        if (blocks[i] || load->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_CONSTANT)) continue;
+        TZrInt32 k = load->instruction.operand.operand2[0];
+        if (k < 0 || k > UINT16_MAX ||
+            compiler_quickening_function_constant_slot_kind(function, (TZrUInt32)k) !=
+                    ZR_COMPILER_QUICKENING_SLOT_KIND_SIGNED_INT) continue;
+        TZrUInt32 temporary = load->instruction.operandExtra;
+        TZrUInt32 variable;
+        EZrInstructionCode replacement;
+        if (opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED) &&
+            branch->instruction.operandExtra == temporary) {
+            variable = branch->instruction.operand.operand1[0];
+            replacement = ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST);
+        } else if (opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) &&
+                   branch->instruction.operand.operand1[0] == temporary) {
+            variable = branch->instruction.operandExtra;
+            replacement = ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST);
+        } else continue;
+        if (variable == temporary || !compiler_quickening_temp_slot_is_dead_after_instruction_cfg(
+                    function, blocks, i, temporary)) continue;
+        branch->instruction.operationCode = (TZrUInt16)replacement;
+        branch->instruction.operandExtra = (TZrUInt16)variable;
+        branch->instruction.operand.operand1[0] = (TZrUInt16)k;
+        compiler_quickening_write_nop(load);
+    }
+    free(blocks);
+    return ZR_TRUE;
+}
+
 static TZrBool compiler_quickening_fuse_jump_if_not_equal_signed(SZrFunction *function) {
     TZrBool *blockStarts = ZR_NULL;
     TZrUInt32 index;
@@ -7966,6 +8067,8 @@ static TZrBool compiler_quickening_try_fold_right_const_arithmetic(SZrState *sta
 
 static TZrBool compiler_quickening_opcode_supports_left_const_commutative_fold(EZrInstructionCode opcode) {
     switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
+        case ZR_INSTRUCTION_ENUM(MUL_FLOAT):
         case ZR_INSTRUCTION_ENUM(ADD_INT):
         case ZR_INSTRUCTION_ENUM(ADD_INT_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED):
@@ -9688,6 +9791,8 @@ static TZrBool compiler_quicken_array_int_index_accesses(SZrState *state, SZrFun
                 case ZR_INSTRUCTION_ENUM(TO_FLOAT):
                 case ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED):
                 case ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED):
+                case ZR_INSTRUCTION_ENUM(ADD_FLOAT_CONST):
+                case ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST):
                 case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
                 case ZR_INSTRUCTION_ENUM(SUB_FLOAT):
                 case ZR_INSTRUCTION_ENUM(MUL_FLOAT):
@@ -10901,6 +11006,36 @@ static TZrBool compiler_quickening_sync_value_semir_operands(SZrFunction *functi
     return ZR_TRUE;
 }
 
+/* Literal-tree folding can leave reserved scratch slots with no VM use.
+ * Their loop-exit null fills are redundant: frame entry initializes them. */
+static TZrBool compiler_quickening_remove_unused_scratch_resets(SZrFunction *function) {
+    for (TZrUInt32 i = 0u; i < function->instructionsLength; ++i) {
+        TZrInstruction *reset = &function->instructionsList[i];
+        TZrUInt16 opcode = reset->instruction.operationCode;
+        if (opcode != ZR_INSTRUCTION_ENUM(RESET_STACK_NULL) && opcode != ZR_INSTRUCTION_ENUM(RESET_STACK_NULL2)) continue;
+        TZrUInt32 slots[2] = {reset->instruction.operandExtra, reset->instruction.operand.operand1[0]};
+        TZrBool used[2] = {ZR_FALSE, ZR_FALSE};
+        unsigned count = opcode == ZR_INSTRUCTION_ENUM(RESET_STACK_NULL2) ? 2u : 1u;
+        for (unsigned n = 0u; n < count; ++n) {
+            used[n] = compiler_quickening_slot_has_any_binding(function, slots[n]);
+            for (TZrUInt32 j = 0u; !used[n] && j < function->instructionsLength; ++j) {
+                const TZrInstruction *other = &function->instructionsList[j];
+                if (other->instruction.operationCode == ZR_INSTRUCTION_ENUM(RESET_STACK_NULL) ||
+                    other->instruction.operationCode == ZR_INSTRUCTION_ENUM(RESET_STACK_NULL2)) continue;
+                used[n] = (TZrBool)(compiler_quickening_instruction_may_read_slot(other, slots[n]) ||
+                                    compiler_quickening_instruction_writes_slot(other, slots[n]));
+            }
+        }
+        if (!used[0] && !used[1]) compiler_quickening_write_nop(reset);
+        else if (count == 2u && (!used[0] || !used[1])) {
+            reset->instruction.operationCode = ZR_INSTRUCTION_ENUM(RESET_STACK_NULL);
+            reset->instruction.operandExtra = (TZrUInt16)slots[used[0] ? 0u : 1u];
+            reset->instruction.operand.operand2[0] = 0;
+        }
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool compiler_quicken_child_functions(SZrState *state,
                                                 SZrFunction *function,
                                                 TZrBool recurseChildren) {
@@ -10962,6 +11097,8 @@ static TZrBool compiler_quicken_child_functions(SZrState *state,
                            compiler_quickening_fuse_jump_if_not_equal_signed(function));
     ZR_QUICKENING_RUN_PASS("fuse_jump_if_not_equal_signed_const",
                            compiler_quickening_fuse_jump_if_not_equal_signed_const(function));
+    ZR_QUICKENING_RUN_PASS("constant_signed_branches",
+                           compiler_quickening_fold_constant_signed_branches(function));
     ZR_QUICKENING_RUN_PASS("compact_nops_10", compiler_quickening_compact_nops(state, function));
     ZR_QUICKENING_RUN_PASS("fuse_jump_if_not_equal_signed_late",
                            compiler_quickening_fuse_jump_if_not_equal_signed(function));
@@ -11058,6 +11195,8 @@ static TZrBool compiler_quicken_child_functions(SZrState *state,
                            compiler_quickening_compact_nops(state, function));
     ZR_QUICKENING_RUN_PASS("promote_plain_destination_after_items_cache_forward",
                            compiler_quickening_promote_plain_destination_opcodes_with_fresh_blocks(function));
+    ZR_QUICKENING_RUN_PASS("unused_scratch_resets", compiler_quickening_remove_unused_scratch_resets(function));
+    ZR_QUICKENING_RUN_PASS("compact_unused_resets", compiler_quickening_compact_nops(state, function));
     ZR_QUICKENING_RUN_PASS("sync_value_semir_operands",
                            compiler_quickening_sync_value_semir_operands(function));
 

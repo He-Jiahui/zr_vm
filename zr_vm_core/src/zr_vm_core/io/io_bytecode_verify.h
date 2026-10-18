@@ -132,6 +132,8 @@ static TZrBool io_verify_instruction(const SZrIoFunction *f, TZrSize pc) {
         case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_FLOAT_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_FLOAT_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_CONST):
@@ -290,6 +292,10 @@ static TZrBool io_verify_instruction(const SZrIoFunction *f, TZrSize pc) {
         case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
             return (TZrBool)(S(e) && S(a) && io_verify_relative_target(f, pc, (TZrInt16)b, 1u));
+
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
 
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
             return (TZrBool)(S(e) && K(a) && io_verify_relative_target(f, pc, (TZrInt16)b, 1u));

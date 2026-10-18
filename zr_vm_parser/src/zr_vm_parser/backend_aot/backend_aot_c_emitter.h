@@ -427,6 +427,24 @@ void backend_aot_write_c_direct_jump_if_not_equal_signed_const(FILE *file,
                                                                TZrUInt32 execInstructionIndex,
                                                                TZrUInt32 targetInstructionIndex,
                                                                TZrBool isBackEdge);
+void backend_aot_write_c_direct_jump_if_greater_equal_signed_const(FILE *file,
+                                                               const SZrAotExecIrFunction *functionIr,
+                                                               const SZrFunction *function,
+                                                               TZrUInt32 functionIndex,
+                                                               TZrUInt32 leftSlot,
+                                                               TZrUInt32 constantIndex,
+                                                               TZrUInt32 execInstructionIndex,
+                                                               TZrUInt32 targetInstructionIndex,
+                                                               TZrBool isBackEdge);
+void backend_aot_write_c_direct_jump_if_greater_signed_const(FILE *file,
+                                                               const SZrAotExecIrFunction *functionIr,
+                                                               const SZrFunction *function,
+                                                               TZrUInt32 functionIndex,
+                                                               TZrUInt32 leftSlot,
+                                                               TZrUInt32 constantIndex,
+                                                               TZrUInt32 execInstructionIndex,
+                                                               TZrUInt32 targetInstructionIndex,
+                                                               TZrBool isBackEdge);
 void backend_aot_write_c_direct_to_bool(FILE *file,
                                         const SZrAotExecIrFunction *functionIr,
                                         TZrUInt32 destinationSlot,
@@ -1120,5 +1138,7 @@ void backend_aot_write_c_set_pending_break(FILE *file, TZrUInt32 functionFlatInd
 void backend_aot_write_c_set_pending_continue(FILE *file,
                                               TZrUInt32 functionFlatIndex,
                                               TZrUInt32 targetInstructionIndex);
+
+void backend_aot_write_c_direct_float_const(FILE *file, const SZrFunction *function, TZrUInt32 destinationSlot, TZrUInt32 leftSlot, TZrUInt32 constantIndex, TZrBool multiply);
 
 #endif

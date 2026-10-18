@@ -544,6 +544,8 @@ static void compiler_store_relative_jump_offset(
         opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
         opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED) ||
         opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) ||
+        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST) ||
+        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST) ||
         opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST) ||
         opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NULL)) {
         instruction->instruction.operand.operand1[1] =

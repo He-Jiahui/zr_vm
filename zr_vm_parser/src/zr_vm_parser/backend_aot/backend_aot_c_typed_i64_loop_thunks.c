@@ -52,7 +52,7 @@ TZrBool backend_aot_c_can_emit_typed_i64_counting_sum_loop_thunk(const SZrFuncti
 
     if (function == ZR_NULL ||
         function->instructionsList == ZR_NULL ||
-        (function->instructionsLength != 10u && function->instructionsLength != 9u) ||
+        (function->instructionsLength != 10u && function->instructionsLength != 9u && function->instructionsLength != 8u) ||
         function->parameterCount != 1u ||
         function->parameterMetadata == ZR_NULL ||
         function->parameterMetadataCount < 1u ||
@@ -87,14 +87,15 @@ TZrBool backend_aot_c_can_emit_typed_i64_counting_sum_loop_thunk(const SZrFuncti
         return ZR_FALSE;
     }
 
-    bodyStart = function->instructionsLength == 9u ? 4u : 5u;
+    bodyStart = function->instructionsLength <= 9u ? 4u : 5u;
+    TZrUInt32 copyCount = function->instructionsLength == 8u ? 0u : 1u;
     conditionSlot = instructions[3].instruction.operandExtra;
     if (bodyStart == 4u) {
         /* !(index < limit) is limit <= index, targeting the return. */
         if (instructions[3].instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED) ||
             instructions[3].instruction.operandExtra != 0u ||
             instructions[3].instruction.operand.operand1[0] != indexSlot ||
-            (TZrInt16)instructions[3].instruction.operand.operand1[1] != 4) {
+            (TZrInt16)instructions[3].instruction.operand.operand1[1] != (TZrInt16)(3u + copyCount)) {
             return ZR_FALSE;
         }
     } else if (instructions[3].instruction.operationCode != ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED) ||
@@ -109,24 +110,23 @@ TZrBool backend_aot_c_can_emit_typed_i64_counting_sum_loop_thunk(const SZrFuncti
     sumResultSlot = instructions[bodyStart].instruction.operandExtra;
     if (!backend_aot_c_loop_is_signed_add(&instructions[bodyStart]) ||
         instructions[bodyStart].instruction.operand.operand1[0] != accumulatorSlot ||
-        instructions[bodyStart].instruction.operand.operand1[1] != indexSlot ||
-        (instructions[bodyStart + 1u].instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_STACK) &&
-         instructions[bodyStart + 1u].instruction.operationCode != ZR_INSTRUCTION_ENUM(SET_STACK)) ||
-        instructions[bodyStart + 1u].instruction.operandExtra != accumulatorSlot ||
-        instructions[bodyStart + 1u].instruction.operand.operand2[0] < 0 ||
-        (TZrUInt32)instructions[bodyStart + 1u].instruction.operand.operand2[0] != sumResultSlot) {
-        return ZR_FALSE;
-    }
-
-    oneIndex = (TZrInt32)instructions[bodyStart + 2u].instruction.operand.operand1[1];
-    if (!backend_aot_c_loop_is_signed_add_const(&instructions[bodyStart + 2u]) ||
-        instructions[bodyStart + 2u].instruction.operandExtra != indexSlot ||
-        instructions[bodyStart + 2u].instruction.operand.operand1[0] != indexSlot ||
+        instructions[bodyStart].instruction.operand.operand1[1] != indexSlot) return ZR_FALSE;
+    if (copyCount == 0u) {
+        if (sumResultSlot != accumulatorSlot) return ZR_FALSE;
+    } else if ((instructions[bodyStart + 1u].instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_STACK) &&
+                instructions[bodyStart + 1u].instruction.operationCode != ZR_INSTRUCTION_ENUM(SET_STACK)) ||
+               instructions[bodyStart + 1u].instruction.operandExtra != accumulatorSlot ||
+               (TZrUInt32)instructions[bodyStart + 1u].instruction.operand.operand2[0] != sumResultSlot) return ZR_FALSE;
+    TZrUInt32 increment = bodyStart + 1u + copyCount;
+    oneIndex = (TZrInt32)instructions[increment].instruction.operand.operand1[1];
+    if (!backend_aot_c_loop_is_signed_add_const(&instructions[increment]) ||
+        instructions[increment].instruction.operandExtra != indexSlot ||
+        instructions[increment].instruction.operand.operand1[0] != indexSlot ||
         !backend_aot_c_loop_constant_is_i64(function, oneIndex, 1) ||
-        instructions[bodyStart + 3u].instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP) ||
-        instructions[bodyStart + 3u].instruction.operand.operand2[0] != -(TZrInt32)(bodyStart + 1u) ||
-        instructions[bodyStart + 4u].instruction.operationCode != ZR_INSTRUCTION_ENUM(FUNCTION_RETURN) ||
-        instructions[bodyStart + 4u].instruction.operand.operand1[0] != accumulatorSlot) {
+        instructions[increment + 1u].instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP) ||
+        instructions[increment + 1u].instruction.operand.operand2[0] != -(TZrInt32)(bodyStart + copyCount) ||
+        instructions[increment + 2u].instruction.operationCode != ZR_INSTRUCTION_ENUM(FUNCTION_RETURN) ||
+        instructions[increment + 2u].instruction.operand.operand1[0] != accumulatorSlot) {
         return ZR_FALSE;
     }
 

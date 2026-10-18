@@ -171,3 +171,38 @@ full-allocation deep pair with the ratio check, and intloop/calls/fib budget
 JSON. Both retain evidence artifacts even on failure. The commands have been
 exercised locally in the batches above; hosted runner results are pending CI.
 The existing TSan attached-domain job remains enabled in the platform workflow.
+
+## R2-M1: compact scalar bytecode
+
+Scalar self-aliasing result stores snapshot payload and type before clearing
+metadata. Float producers now support direct result stores. Numeric literal
+trees fold only when their checked result is representable and finite;
+source SemIR retains the original operations for CFG/ExecIR admission. Dead
+scratch-only null resets left by folding are removed. Constant signed branch
+and float ADD/MUL opcodes are appended, preserving existing opcode numbers.
+Their operand roles, relocation, verifier, C/LLVM AOT lowering and writers
+are updated. Scalar call arguments load directly into the call window;
+managed reference arguments retain their reference staging. The typed AOT
+counting-loop matcher accepts the compact self-update shape.
+
+Validation: full Release build and **57/57** compiler/quickening/execbc/AOT/
+loader/staging checks; **25/25** focused quickening assertions, including
+checked literal overflow, direct arguments and loop shapes. ASan/UBSan with
+forced full GC passes quickening and integer boundaries, and **15/15** smoke
+probes. Floatloop compiles, reloads and runs as binary with checksum 4950494;
+its generated AOT C passes host C syntax checking. Existing generated AOT
+execution and frame-free shape gates pass.
+
+CPU 5, median of three, no overlapping builds/tests (load about 1.1):
+
+| Probe | ms | r2 target |
+|---|---:|---|
+| loop_lt | 251.08 | <=400; met |
+| loop_le | 250.99 | <=467; met |
+| floatloop | 142.31 | <=250; met |
+| calls | 606.50 | <=400; still open |
+| intloop | 249.01 | >=30% below 454; met |
+
+Both canonical integer loop bodies are **4 instructions**, floatloop is
+**7**, satisfying the <=4/<=8 shape targets. Loop_lt/loop_le ratio is 1.000.
+Evidence: `build/r2-m1-*`, `build/r2-ab/m1-final/results.json`.

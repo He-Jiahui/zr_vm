@@ -792,6 +792,8 @@ static TZrUInt32 function_scan_generated_frame_slot_count(
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
                 function_note_generated_frame_slot(operandA1, &slotCount);
                 break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
             case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
                 break;
