@@ -6013,7 +6013,6 @@ LZrStart:
     UPDATE_FAST_DISPATCH_MODE();
 LZrReturning: {
         executionBudget = state->executionBudget;
-        budgetResourcePollCountdown = 0u;
         SZrTypeValue *functionBaseValue = ZrCore_Stack_GetValueNoProfile(callInfo->functionBase.valuePointer);
         SZrFunction *function = callInfo->metadataFunction;
         frameCallableObject = functionBaseValue->value.object;

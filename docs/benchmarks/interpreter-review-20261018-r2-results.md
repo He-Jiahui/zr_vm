@@ -131,3 +131,32 @@ only startup/teardown work, **zero per iteration**. Callgrind trip-count diffs
 Further call-state caching, direct caller dispatch and null-fill redesign
 remain the report's prerequisite-heavy next stage; M1 addresses bytecode
 staging first.
+
+## R2-H4 first step: polls across VM transitions
+
+Removed only the per-transition resource countdown reset. Budget-pointer
+changes and native returns retain immediate checks. Added exact admission and
+trace equality tests across VM calls/returns (including a callee limit), a
+caught throw, and native callback reentry into ZrCore_Execute through the real
+call API. Tests include zero, quantum boundaries, the last instruction and
+completion, and assert counts observed inside trace callbacks. The benchmark
+accepts `--source FILE [--expected INTEGER]`, preserves the numeric loop mode,
+checks every sample, and emits JSON including cost per admitted instruction.
+Small calls/fib source fixtures are registered CTests.
+
+Validation: full Release rebuild; **9/9** report-selected budget/dispatch/close
+CTests pass in both Release and ASan+UBSan+forced-full GC; **6/6** exact budget
+unit tests. CPU 5, five alternating samples, no overlapping builds:
+
+| Program | Plain ms | Budget ms | Overhead | ns/instruction | Clock reads/run |
+|---|---:|---:|---:|---:|---:|
+| default loop | 311.897 | 442.463 | 41.86% | 1.451 | — |
+| intloop file | 322.880 | 455.176 | 40.97% | 1.470 | 351,570 |
+| calls | 621.790 | 701.813 | 12.87% | 2.425 | 128,914 |
+| fib | 153.300 | 157.155 | 2.51% | 0.809 | 18,629 |
+
+Clock counts are totals divided by five budgeted samples, including about
+eight timer/startup reads per sample. They match instructions/256, versus the
+report's two reads per call. Timing samples exclude the preload counter.
+The loop and calls 10% goals remain open for the later countdown step after
+M4. Evidence: `build/r2-h4a-*`.
