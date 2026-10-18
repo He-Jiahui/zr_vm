@@ -1,5 +1,10 @@
 ---
 related_code:
+  - tests/parser/test_ssa_sccp_pooled_bool.c
+  - tests/parser/support/ssa_sccp_pooled_bool_fixture.h
+  - tests/parser/support/ssa_sccp_pooled_bool_fixture.c
+  - tests/parser/support/ssa_sccp_pooled_bool_faults.c
+  - tests/cmake/ssa-sccp-pooled-bool.cmake
   - tests/parser/test_ssa_dce_dead_phis.c
   - tests/parser/support/ssa_dce_dead_phis_fixture.h
   - tests/parser/support/ssa_dce_dead_phis_fixture.c
@@ -45,6 +50,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
 plan_sources:
+  - .codex/plans/20261018-ssa-scalar-completion.md
   - .codex/plans/20261017-ssa-scalar-pipeline.md
   - .codex/plans/20261017-ssa-sccp-bool-edges.md
   - .codex/plans/20261017-ssa-sccp-pooled-int64.md
@@ -52,6 +58,11 @@ plan_sources:
   - docs/plans/ssa/01-execir-ssa/03-effects-verifier.md
   - docs/plans/ssa/02-automatic-optimization/01-pass-manager-scalar.md
 tests:
+  - tests/parser/test_ssa_sccp_pooled_bool.c
+  - tests/parser/support/ssa_sccp_pooled_bool_fixture.h
+  - tests/parser/support/ssa_sccp_pooled_bool_fixture.c
+  - tests/parser/support/ssa_sccp_pooled_bool_faults.c
+  - tests/cmake/ssa-sccp-pooled-bool.cmake
   - tests/parser/test_ssa_dce_dead_phis.c
   - tests/parser/support/ssa_dce_dead_phis_fixture.h
   - tests/parser/support/ssa_dce_dead_phis_fixture.c
@@ -304,16 +315,26 @@ an executable external input is TOP and prevents a false constant proof.
 Budget interruption or a defensive convergence cap returns incomplete facts;
 the caller skips cache publication and rewrite and invalidates old SCCP facts.
 
-Only pure flags=0 ADD/ARITHMETIC, SUB, MUL and NEG with no effect or memory
-boundary become pooled CONSTANT instructions. Normal DIV retains MAY_THROW,
+Pure flags=0 ADD/ARITHMETIC, SUB, MUL and NEG with no effect or memory
+boundary become pooled Int64 CONSTANT instructions. The owner path also writes
+canonical BOOL results of EQ, LT, LE, GT, GE and NE when both actual operands
+retain strict canonical Int64 facts. This comparison rewrite requires a BOOL
+result and exact BOOL lattice fact with bits 0/1, two operands, one result and
+no flags, effect/memory, binding, deopt, match or control-range payload. Its
+CONSTANT typeToken is explicitly BOOL: the former COMPARE typeToken encoded a
+predicate and cannot be retained as a result type. Instruction/result/source
+identities and CFG remain stable. Normal DIV retains MAY_THROW,
 effect tokens and its instruction; its safely evaluated quotient may feed a
 pure ADD/NEG consumer. Zero, MIN/-1, overflow, non-Int64 origins and independent
 observable boundaries do not gain a writeback proof. Negative values and
 results above UINT32_MAX use full 64-bit bits in the pool, never an immediate
 truncated into layoutId.
 
-`MaterializeInt64Constant` deduplicates exactly `(Int64, flags=0, bits)`. Each
-scanned tuple consumes one work unit; reuse reserves one rewrite unit and a
+The single private `MaterializeScalarConstant` accepts only Int64 or canonical
+BOOL and deduplicates exactly `(typeToken, flags=0, bits)`. Identical Int64 and
+BOOL bits are distinct tuples, and BOOL bits outside 0/1 are rejected before
+pool mutation. The existing Int64 instruction typeToken=0 compatibility is
+retained. Each scanned tuple consumes one work unit; reuse reserves one rewrite unit and a
 new append reserves two units for append plus rewrite before changing the
 pool. Instruction IDs are one based and returned pool indices zero based.
 TRUE/not-ready means budget exhaustion without an append. TRUE/ready is
@@ -378,7 +399,7 @@ compaction or arbitrary BOOL/foreign numeric truthiness.
 Analysis traversal consumes the existing work budget. Incomplete/budget-stopped
 owner facts are never exported to the cache or used for rewriting. A real rewrite
 invalidates pre-rewrite SCCP cache values even if the caller supplies no `changed`
-output. The existing Int64 materializer, tuple deduplication, pre-paid append and
+output. The existing typed scalar materializer, tuple deduplication, pre-paid append and
 rewrite work, public module candidate transaction, Verify-before-publication and
 private whole-candidate failure rule above remain in force. DIV keeps its throwing
 effect; dead or unknown arms do not authorize deleting observable instructions.
@@ -444,3 +465,42 @@ SIGNED proof or loses it through a BOOL-producing comparison with equal bits.
 Run with `ctest --test-dir E:/cargo-targets/zr_vm/build/<registered-config> -R '^ssa_sccp_conversion$'
 --output-on-failure --no-tests=error`. The acceptance record contains the
 concrete build paths, commands, and observed results.
+
+## Canonical BOOL comparison writeback validation
+
+[Source40 validation](../testing-and-validation/ssa-sccp-pooled-bool.md) records
+the initial real RED: two cases, four NULL/writable-diagnostic profiles, all
+Core/Parser pre/post verification and safety checks successful; EQ BOOL
+writeback alone missing, disabled-SCCP control passes, allocation ledger zero.
+The three production files implement typed BOOL writeback. Focused GREEN and
+its independent review A9214238 are accepted: 22 cases/84 profiles, eight
+independently measured private W=37 sweeps (296 cutoffs), and 746/746 actual
+allocation faults with successful retries. The public two-function sweep uses
+an explicit upper bound of 138 for each diagnostic mode (276 cutoffs); this is
+not measured public workUsed. The run recorded 459698 allocation attempts and
+live/errors=0. The current 31-TU evidence consists of 27 individually accepted
+prior phases plus four fresh compiles, one link and the focused CTest; fresh
+diagnostics are zero and the original failed compile receipt is preserved.
+
+Finite MSVC /W4 /Zs syntax evidence is independently accepted (AC90E867) for
+eight current C files, 98 actual headers and 233 protected build products.
+Five unchanged successful syntax phases are combined with three fresh phases
+after the old Int64 main counter repair; the original warning-bearing receipt
+remains failed. This grants no object/link/runtime, full MSVC/W0 or Linux credit.
+The five IR-only regressions also pass: pooled Int64 53 cases/113 profiles,
+branch-sensitive 22/47, Source39 DCE 21/140, metadata15 and GC99. Their actual
+fault schedules complete 239, 746 and 610 injected failures respectively, with
+zero live allocations and ledger errors. The regression build uses 35 fresh
+role objects and 26 exactly validated provider objects, five links and five
+anchored CTests. The first link's normal verbose stderr required a collector
+correction; its failed controller receipt remains failed. Publication and owned
+artifact cleanup are recorded separately in the Source40 ledger. No VM, Oracle,
+ExecBC, FFI or MaterializeState execution is credited; the full scalar leaf and
+SSA47 remain open.
+
+The historical Source37 compare-BOOL control is migrated to require a BOOL
+constant while still rejecting an Int64 same-bit replacement. Source38's
+representation-sensitive COMPARE witness is migrated only for proven pure
+comparisons, with separate exact BOOL tuple/identity checks; ordered CFG/PHI,
+DIV/effect and unsupported comparisons remain protected. Original historical
+receipts are not rewritten as if the new behavior existed then.

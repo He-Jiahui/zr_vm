@@ -11,6 +11,7 @@ typedef struct SBeResult { unsigned safety,feature; } SBeResult;
 typedef struct SBeOwner { uintptr_t address; unsigned count,capacity,record; } SBeOwner;
 typedef struct SBeSnapshot { SBeOwner owners[BE_OWNER_LIMIT]; unsigned count; TZrUInt64 hash; } SBeSnapshot;
 typedef struct SBeTarget { unsigned function,source,fold; TZrUInt64 bits; SZrExecIrInstruction original; } SBeTarget;
+typedef struct SBeCompare { unsigned function,instruction,expected; SZrExecIrInstruction original; } SBeCompare;
 typedef struct SBeFixture {
     SZrExecIrModule module;
     SZrExecIrAnalysisCache cache;
@@ -21,6 +22,7 @@ typedef struct SBeFixture {
     SZrExecIrOptimizationResult result;
     SZrExecIrDiagnostic diagnostic;
     SBeTarget targets[BE_TARGET_LIMIT]; unsigned targetCount,source,initialCount;
+    SBeCompare compares[BE_TARGET_LIMIT]; unsigned compareCount;
     SZrExecIrConstant initial[16];
     TZrUInt64 cfgHash;
 } SBeFixture;

@@ -77,7 +77,8 @@ static int pi_target(SPiFixture *f, SZrExecIrFunction *fn, unsigned v,
     if (!v || f->targetCount == PI_MAX_TARGETS) return 0;
     t = &f->targets[f->targetCount++]; t->function = fn->id - 1u;
     t->original = fn->instructions[fn->values[v-1u].definition - 1u];
-    t->source = t->original.sourceId; t->fold = fold; t->bits = bits; return 1;
+    t->source = t->original.sourceId; t->fold = fold; t->bits = bits;
+    t->type = fn->values[v-1u].typeToken; return 1;
 }
 static int pi_end(SPiFixture *f, SZrExecIrFunction *fn, unsigned value, unsigned block, unsigned start) {
     unsigned id = pi_emit(f, fn, ZR_EXEC_IR_OPCODE_RETURN, 0u, &value, 1u, 0u, 0u, 0u);
@@ -254,6 +255,7 @@ int Pi_Build(SPiFixture *f, unsigned id, unsigned profile) {
             if(!pi_end(f,fn,current,1u,0u))return 0;continue;
         }
         if(id==32u) {
+            expected=0u;
             v=pi_op(f,fn,ZR_EXEC_IR_OPCODE_COMPARE,ZR_VALUE_TYPE_BOOL,a,b,0u);
             if(!v)return 0;fn->instructions[fn->values[v-1u].definition-1u].typeToken=ZR_EXEC_IR_COMPARE_KIND_EQUAL;
         } else v=pi_op(f,fn,op,type,a,b,flags);
@@ -275,7 +277,7 @@ int Pi_Build(SPiFixture *f, unsigned id, unsigned profile) {
                 if(!pi_target(f,fn,consumer,id==13u?1u:0u,UINT64_C(0)-42u))return 0;}
             v=consumer;
         } else {
-            unsigned fold=(id<=20u || id==41u || id==44u || id>=47u) && id!=48u && id!=52u;
+            unsigned fold=(id<=20u || id==32u || id==41u || id==44u || id>=47u) && id!=48u && id!=52u;
             if(!pi_target(f,fn,v,fold,expected))return 0;
             if(id==15u){v=pi_op(f,fn,op,type,a,b,0u);if(!pi_target(f,fn,v,1u,42u))return 0;}
         }
@@ -389,7 +391,8 @@ static int pi_check_targets(const SPiFixture *f,unsigned partial) {
         if(!f->module.constantCount){if(in->layoutId!=t->bits)good=0u;}
         else if(in->layoutId>=f->module.constantCount)good=0u;
         else {const SZrExecIrConstant *c=&f->module.constants[in->layoutId];
-            if(c->typeToken!=ZR_VALUE_TYPE_INT64||c->flags||c->bits!=t->bits)good=0u;}
+            if(c->typeToken!=t->type||c->flags||c->bits!=t->bits||
+               (t->type==ZR_VALUE_TYPE_BOOL&&in->typeToken!=ZR_VALUE_TYPE_BOOL))good=0u;}
     }return good;
 }
 int Pi_CheckTargets(const SPiFixture *f) {return pi_check_targets(f,0u);}
@@ -419,7 +422,8 @@ static SPiResult pi_standard(unsigned id,unsigned profile,unsigned writable) {
     if(id==14u||id==15u||id==16u)r.feature&=(unsigned)(after==3u);
     if(id==17u)r.feature&=(unsigned)(after==4u);
     if(id==16u)r.safety&=(unsigned)(f.result.functionsVisited==2u);
-    if((id>=21u&&id<=43u)&&id!=41u)r.safety&=(unsigned)(after==before);
+    if((id>=21u&&id<=43u)&&id!=32u&&id!=41u)r.safety&=(unsigned)(after==before);
+    if(id==32u)r.feature&=(unsigned)(after==before+1u);
     if(id==41u)r.safety&=(unsigned)(after==0u);
     if(id==18u){unsigned j,growth=0u;SZrOwnerHeapEvent ev;SZrOwnerLiveSpan pool;
         unsigned have=(unsigned)ZrTests_ExecOwner_TryLiveSpan(0u,ZrTests_ExecOwner_Stats().records,f.module.constants,f.module.constantCapacity,sizeof(*f.module.constants),&pool);

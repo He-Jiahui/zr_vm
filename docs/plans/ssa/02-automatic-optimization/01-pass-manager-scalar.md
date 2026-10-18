@@ -1,5 +1,10 @@
 ---
 related_code:
+  - tests/parser/test_ssa_sccp_pooled_bool.c
+  - tests/parser/support/ssa_sccp_pooled_bool_fixture.h
+  - tests/parser/support/ssa_sccp_pooled_bool_fixture.c
+  - tests/parser/support/ssa_sccp_pooled_bool_faults.c
+  - tests/cmake/ssa-sccp-pooled-bool.cmake
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
   - tests/parser/test_ssa_dce_dead_phis.c
   - tests/parser/support/ssa_dce_dead_phis_fixture.h
@@ -36,12 +41,18 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
 plan_sources:
+  - .codex/plans/20261018-ssa-scalar-completion.md
   - .codex/plans/20261017-ssa-scalar-pipeline.md
   - .codex/plans/20261017-ssa-sccp-bool-edges.md
   - .codex/plans/20261017-ssa-sccp-pooled-int64.md
   - docs/plans/ssa/index.md
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
 tests:
+  - tests/parser/test_ssa_sccp_pooled_bool.c
+  - tests/parser/support/ssa_sccp_pooled_bool_fixture.h
+  - tests/parser/support/ssa_sccp_pooled_bool_fixture.c
+  - tests/parser/support/ssa_sccp_pooled_bool_faults.c
+  - tests/cmake/ssa-sccp-pooled-bool.cmake
   - tests/parser/test_ssa_dce_dead_phis.c
   - tests/parser/support/ssa_dce_dead_phis_fixture.h
   - tests/parser/support/ssa_dce_dead_phis_fixture.c
@@ -172,6 +183,14 @@ retry/cleanup通过，532777attempts/live0/errors0，无UBSan诊断。相应raw/
 实际功能提交`6e6bc819b35ccee5ac3fea2bbabb389af5840213`与postcommit独审7AB375DF接受，精确9路径、
 双He身份、7409条范围外index与foreign cached保持。当前39项=19功能/10修正/5验证/5文档；
 产物清理保留结果见本批清单收据。此进度同步adds0，不勾整叶完整出口。详见[验证记录](../../../testing-and-validation/ssa-dce-dead-phis.md)。
+
+## Source40 有限进展：非空池 BOOL 比较写回
+
+独立读码确认owner typed lattice已有六种严格Int64比较的BOOL事实，旧rewrite仅接收Int64算术。最小实际RED已真实构建与Core/Parser Verify：2案4profiles，BOOL写回缺口1FAIL、disabled SCCP对照1PASS；全preverify/run/postverify/safety为1，634分配attempts、live/errors0。31fresh C单元与1link零诊断，Root与Luna独审接受；此前collector/无关foreign前置拒绝保留为失败证据。
+
+三生产文件已实现非空池BOOL写回，focused实际证据独审A9214238接受22案/84profiles全部PASS：八组private实测W=37，完整1..W共296边界；public显式上界138×2=276点，不是实测public W；746/746实际故障与重试通过，459698attempts/live0/errors0。31TU当前证据为先前27个逐项accepted phase与4次fresh compile、1link、focused CTest，fresh诊断0，原warning失败收据保持失败。有限MSVC /W4 /Zs独审AC90E867接受8个当前C、98actualheaders/233protected保持；前5个未变实际syntax与修复旧Int64 main计数类型后3个fresh syntax组合，不授对象、链接、运行时、Linux/fullMSVC/fullW0信用。
+
+实现复用唯一typed scalar materializer，按(type,flags0,bits)去重，BOOL仅0/1；COMPARE谓词token改CONSTANT必须写BOOL；严格来源、可观察元数据边界、预算ready与public候选事务保持。Source37 case32与Source38 COMPARE witness按精确BOOL语义迁移，保留旧安全断言。必要五项IR-only回归实际全PASS：pooled Int64 53/113及239故障、branch-sensitive 22/47及746故障、Source39 DCE 21/140及610故障、metadata15、GC99；三组故障与重试的ledger均0。回归35个fresh role对象与26个精确provider cache、5link/5CTest，actual r2 0DC200AA；原collector因正常link stderr拒绝的整体失败收据保持，未重复已通过编译。提交、自有清理与有限完成计数见总索引和本批收据；未执行VM/Oracle/ExecBC/FFI/MaterializeState。实现与验证详见[BOOL写回记录](../../../testing-and-validation/ssa-sccp-pooled-bool.md)。整叶与完整47出口不勾选。
 
 ## 可逐项执行的重构任务
 

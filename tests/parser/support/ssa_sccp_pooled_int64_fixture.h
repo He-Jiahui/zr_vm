@@ -10,7 +10,7 @@
 enum { PI_MAX_TARGETS = 80, PI_MAX_OWNERS = 100, PI_MAX_CONSTANTS = 48,
        PI_PHI_PROFILES = 4, PI_GREEN_PROFILES = 113 };
 typedef struct SPiTarget {
-    unsigned function, source, fold;
+    unsigned function, source, fold, type;
     TZrUInt64 bits;
     SZrExecIrInstruction original;
 } SPiTarget;

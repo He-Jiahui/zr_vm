@@ -40,14 +40,16 @@ TZrBool ZrParser_ExecIr_RunModuleSccpPass(
         SZrExecIrPassContext *context, TZrBool *changed,
         SZrExecIrDiagnostic *diagnostic);
 
-/* instructionId is one based; outIndex is a zero based constant pool index.
+/* Only canonical INT64 or BOOL (bits 0 or 1) tuples are materialized.
+ * instructionId is one based; outIndex is a zero based constant pool index.
  * On TRUE, outReady==FALSE means budget exhaustion without an append.  When
  * ready, the caller must perform its non-failing rewrite immediately: pool
  * search and the reuse/append plus rewrite cost have already been charged. */
-TZrBool ZrParser_ExecIr_MaterializeInt64Constant(
+TZrBool ZrParser_ExecIr_MaterializeScalarConstant(
         SZrExecIrModule *owner, SZrExecIrFunction *function,
         SZrExecIrPassContext *context, TZrExecIrInstructionId instructionId,
-        TZrUInt64 bits, TZrUInt32 *outIndex, TZrBool *outReady,
+        TZrExecIrTypeToken typeToken, TZrUInt64 bits,
+        TZrUInt32 *outIndex, TZrBool *outReady,
         SZrExecIrDiagnostic *diagnostic);
 
 #endif

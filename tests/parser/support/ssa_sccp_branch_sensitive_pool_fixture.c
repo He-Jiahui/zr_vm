@@ -38,9 +38,13 @@ static TZrUInt64 be_cfg(const SBeFixture *f) {
         }
         for(i=0;i<fn->instructionCount;++i){const SZrExecIrInstruction *in=fn->instructions+i;
             h=be_mix(be_mix(h,in->effectIn),in->effectOut);
-            if(in->opcode==ZR_EXEC_IR_OPCODE_COMPARE||in->opcode==ZR_EXEC_IR_OPCODE_DIV){
-                h=be_mix(be_mix(be_mix(h,in->opcode),in->flags),in->typeToken);
-                h=be_mix(h,in->operands.count);
+            const SZrExecIrInstruction *witness=in;unsigned q;
+            for(q=0u;q<f->compareCount;++q)
+                if(f->compares[q].function==n&&f->compares[q].instruction==i)
+                    witness=&f->compares[q].original;
+            if(witness->opcode==ZR_EXEC_IR_OPCODE_COMPARE||in->opcode==ZR_EXEC_IR_OPCODE_DIV){
+                h=be_mix(be_mix(be_mix(h,witness->opcode),witness->flags),witness->typeToken);
+                h=be_mix(h,witness->operands.count);
                 if(in->opcode==ZR_EXEC_IR_OPCODE_DIV)
                     for(j=0;j<in->operands.count;++j)h=be_mix(h,fn->operands[in->operands.start+j]);}
         }
@@ -164,6 +168,10 @@ static int be_function(SBeFixture *f,unsigned id,unsigned profile,unsigned empty
         args[0]=be_const(f,fn,ZR_VALUE_TYPE_INT64,left,empty);args[1]=be_const(f,fn,ZR_VALUE_TYPE_INT64,right,empty);
         c=be_emit(f,fn,ZR_EXEC_IR_OPCODE_COMPARE,ZR_VALUE_TYPE_BOOL,args,2u,0u,0u);
         if(!c)return 0;fn->instructions[fn->values[c-1u].definition-1u].typeToken=kind;
+        if(f->compareCount==BE_TARGET_LIMIT)return 0;
+        {SBeCompare *w=f->compares+f->compareCount++;
+            w->function=fn->id-1u;w->instruction=fn->values[c-1u].definition-1u;
+            w->expected=selected;w->original=fn->instructions[w->instruction];}
     }
     if(id==9u)c=be_emit(f,fn,ZR_EXEC_IR_OPCODE_COPY,ZR_VALUE_TYPE_BOOL,&c,1u,0u,0u);
     if(id==14u){unsigned raw,x,args[2];origin=profile==0u?ZR_VALUE_TYPE_DOUBLE:profile==1u?ZR_VALUE_TYPE_UINT64:ZR_VALUE_TYPE_INT32;
@@ -251,6 +259,23 @@ int Be_Check(SBeFixture *f,unsigned requireFold) {
         for(j=0;j<f->module.functionCount;++j)for(k=0;k<f->module.functions[j].instructionCount;++k){const SZrExecIrInstruction *in=f->module.functions[j].instructions+k;
             if(in->opcode==ZR_EXEC_IR_OPCODE_CONSTANT&&in->layoutId==i)used=1u;}
         if(!used)return 0;}
+    for(i=0u;i<f->compareCount;++i){const SBeCompare *w=f->compares+i;
+        const SZrExecIrFunction *fn=f->module.functions+w->function;
+        const SZrExecIrInstruction *in=fn->instructions+w->instruction;
+        const SZrExecIrConstant *c;
+        if(!requireFold&&be_instruction_equal(in,&w->original))continue;
+        if(in->opcode!=ZR_EXEC_IR_OPCODE_CONSTANT||in->typeToken!=ZR_VALUE_TYPE_BOOL||
+           in->flags||in->bindingRow||in->deoptId||in->matchTypeToken||
+           in->effectIn||in->effectOut||in->operands.count||in->phiRange.count||
+           in->successorRange.count||in->memoryIn.count||in->memoryOut.count||
+           in->sourceId!=w->original.sourceId||in->results.start!=w->original.results.start||
+           in->results.count!=w->original.results.count||in->results.count!=1u||
+           fn->values[fn->results[in->results.start]-1u].typeToken!=ZR_VALUE_TYPE_BOOL||
+           fn->values[fn->results[in->results.start]-1u].definition!=w->instruction+1u||
+           in->layoutId>=f->module.constantCount)return 0;
+        c=f->module.constants+in->layoutId;
+        if(c->typeToken!=ZR_VALUE_TYPE_BOOL||c->flags||c->bits!=w->expected)return 0;
+    }
     for(i=0;i<f->targetCount;++i){const SBeTarget *t=f->targets+i;const SZrExecIrFunction *fn=f->module.functions+t->function;const SZrExecIrInstruction *in=NULL;
         for(j=0;j<fn->instructionCount;++j)if(fn->instructions[j].sourceId==t->source)in=fn->instructions+j;
         if(!in)return 0;

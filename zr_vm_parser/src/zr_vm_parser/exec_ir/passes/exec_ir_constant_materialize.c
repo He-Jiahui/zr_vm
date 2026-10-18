@@ -5,10 +5,11 @@
 #include <limits.h>
 #include <stdint.h>
 
-TZrBool ZrParser_ExecIr_MaterializeInt64Constant(
+TZrBool ZrParser_ExecIr_MaterializeScalarConstant(
         SZrExecIrModule *owner, SZrExecIrFunction *function,
         SZrExecIrPassContext *context, TZrExecIrInstructionId instructionId,
-        TZrUInt64 bits, TZrUInt32 *outIndex, TZrBool *outReady,
+        TZrExecIrTypeToken typeToken, TZrUInt64 bits,
+        TZrUInt32 *outIndex, TZrBool *outReady,
         SZrExecIrDiagnostic *diagnostic) {
     TZrUInt32 index;
     TZrUInt64 requested;
@@ -24,7 +25,9 @@ TZrBool ZrParser_ExecIr_MaterializeInt64Constant(
         owner->functionCount > owner->functionCapacity ||
         owner->constants == ZR_NULL || owner->constantCount == 0u ||
         owner->constantCount > owner->constantCapacity ||
-        instructionId == 0u || instructionId > function->instructionCount)
+        instructionId == 0u || instructionId > function->instructionCount ||
+        (typeToken != ZR_VALUE_TYPE_INT64 && typeToken != ZR_VALUE_TYPE_BOOL) ||
+        (typeToken == ZR_VALUE_TYPE_BOOL && bits > 1u))
         goto invalid_argument;
     for (index = 0u; index < owner->functionCount; ++index) {
         if (&owner->functions[index] == function) break;
@@ -41,7 +44,7 @@ TZrBool ZrParser_ExecIr_MaterializeInt64Constant(
         if (!ZrParser_ExecIr_PassConsumeBudget(function, context, 1u))
             return ZR_TRUE;
         entry = &owner->constants[index];
-        if (entry->typeToken == ZR_VALUE_TYPE_INT64 &&
+        if (entry->typeToken == typeToken &&
             entry->flags == 0u && entry->bits == bits) {
             if (!ZrParser_ExecIr_PassConsumeBudget(function, context, 1u))
                 return ZR_TRUE;
@@ -71,7 +74,7 @@ TZrBool ZrParser_ExecIr_MaterializeInt64Constant(
      * caller has no allocation, budget check or other failure after ready. */
     if (!ZrParser_ExecIr_PassConsumeBudget(function, context, 2u))
         return ZR_TRUE;
-    constant.typeToken = ZR_VALUE_TYPE_INT64;
+    constant.typeToken = typeToken;
     constant.flags = 0u;
     constant.bits = bits;
     if (!ZrCore_ExecIr_ModuleAppendConstant(owner, &constant, 1u, &range)) {

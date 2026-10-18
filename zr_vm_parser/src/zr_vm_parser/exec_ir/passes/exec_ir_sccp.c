@@ -654,7 +654,38 @@ static TZrBool zr_sccp_rewrite(SZrExecIrFunction *function,
         if (owner != ZR_NULL) {
             TZrUInt32 poolIndex;
             TZrBool ready;
-            if (!lattice[result].strictInt64 ||
+            TZrExecIrTypeToken materializeType = ZR_VALUE_TYPE_INT64;
+            if (instruction->opcode == ZR_EXEC_IR_OPCODE_COMPARE) {
+                TZrExecIrValueId left;
+                TZrExecIrValueId right;
+                /* COMPARE's type token is its predicate, not its result type. */
+                if (instruction->typeToken > ZR_EXEC_IR_COMPARE_KIND_NOT_EQUAL ||
+                    instruction->operands.count != 2u ||
+                    lattice[result].typeToken != ZR_VALUE_TYPE_BOOL ||
+                    function->values[result - 1u].typeToken != ZR_VALUE_TYPE_BOOL ||
+                    lattice[result].bits > 1u || instruction->flags != 0u ||
+                    instruction->effectIn != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID ||
+                    instruction->effectOut != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID ||
+                    instruction->memoryIn.count != 0u || instruction->memoryOut.count != 0u ||
+                    instruction->bindingRow != 0u || instruction->deoptId != 0u ||
+                    instruction->phiRange.count != 0u ||
+                    instruction->successorRange.count != 0u ||
+                    instruction->matchTypeToken != 0u)
+                    continue;
+                left = function->operands[instruction->operands.start];
+                right = function->operands[instruction->operands.start + 1u];
+                if (left == ZR_EXEC_IR_VALUE_ID_INVALID || left > function->valueCount ||
+                    right == ZR_EXEC_IR_VALUE_ID_INVALID || right > function->valueCount ||
+                    function->values[left - 1u].typeToken != ZR_VALUE_TYPE_INT64 ||
+                    function->values[right - 1u].typeToken != ZR_VALUE_TYPE_INT64 ||
+                    lattice[left].kind != ZR_EXEC_IR_SCCP_CONSTANT ||
+                    lattice[right].kind != ZR_EXEC_IR_SCCP_CONSTANT ||
+                    lattice[left].typeToken != ZR_VALUE_TYPE_INT64 ||
+                    lattice[right].typeToken != ZR_VALUE_TYPE_INT64 ||
+                    !lattice[left].strictInt64 || !lattice[right].strictInt64)
+                    continue;
+                materializeType = ZR_VALUE_TYPE_BOOL;
+            } else if (!lattice[result].strictInt64 ||
                 function->values[result - 1u].typeToken != ZR_VALUE_TYPE_INT64 ||
                 (instruction->typeToken != 0u &&
                  instruction->typeToken != ZR_VALUE_TYPE_INT64) ||
@@ -668,12 +699,15 @@ static TZrBool zr_sccp_rewrite(SZrExecIrFunction *function,
                 instruction->effectOut != ZR_EXEC_IR_EFFECT_TOKEN_ID_INVALID ||
                 instruction->memoryIn.count != 0u || instruction->memoryOut.count != 0u)
                 continue;
-            if (!ZrParser_ExecIr_MaterializeInt64Constant(owner, function, context,
-                    index + 1u, lattice[result].bits, &poolIndex, &ready, diagnostic))
+            if (!ZrParser_ExecIr_MaterializeScalarConstant(owner, function, context,
+                    index + 1u, materializeType, lattice[result].bits,
+                    &poolIndex, &ready, diagnostic))
                 return ZR_FALSE;
             if (!ready) break;
             /* Materializer prepaid rewrite; no allocation or failure follows. */
             instruction->opcode = (TZrUInt16)ZR_EXEC_IR_OPCODE_CONSTANT;
+            if (materializeType == ZR_VALUE_TYPE_BOOL)
+                instruction->typeToken = ZR_VALUE_TYPE_BOOL;
             instruction->flags = 0u;
             instruction->operands = zr_sccp_empty_range();
             instruction->phiRange = zr_sccp_empty_range();

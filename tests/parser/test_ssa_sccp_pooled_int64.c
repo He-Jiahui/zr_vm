@@ -37,7 +37,7 @@ static const SPiCase g_cases[] = {
     {29u, "no_int64_materialize_retagged_copy", "control"},
     {30u, "no_int64_materialize_retagged_phi", "control"},
     {31u, "no_int64_materialize_int32_not_int64", "control"},
-    {32u, "no_int64_materialize_compare_bool", "control"},
+    {32u, "materialize_compare_as_bool_not_int64", "feature"},
     {33u, "barrier_may_allocate", "control"},
     {34u, "barrier_may_gc", "control"},
     {35u, "barrier_may_suspend", "control"},
@@ -80,7 +80,7 @@ int main(void) {
     SPiTotals totals;
     UNITY_BEGIN();
     for(g_case=0u;g_case<sizeof(g_cases)/sizeof(g_cases[0]);++g_case) {
-        unsigned before=Unity.TestFailures;
+        UNITY_UINT before=Unity.TestFailures;
         UnityDefaultTestRun(pi_case,g_cases[g_case].name,(int)(g_case+1u));
         if(Unity.TestFailures==before)++passed;else ++failed;
         printf("POOLED_INT64_CASE id=%u name=%s kind=%s safety=%u feature=%u result=%s\n",
