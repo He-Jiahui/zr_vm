@@ -2287,7 +2287,7 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
         return ZR_FALSE;
     }
 
-    cursor = frame_layout_align_offset((TZrUInt32)(slotCount * sizeof(SZrTypeValueOnStack)), ZR_ALIGN_SIZE);
+    cursor = (TZrUInt32)(slotCount * sizeof(SZrTypeValueOnStack));
 
     for (TZrUInt32 slot = 0; slot < slotCount; slot++) {
         SZrFunctionTypedLocalBinding *binding =
@@ -2305,7 +2305,7 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
         SZrFunctionTypedTypeRef hintTypeRef;
         const SZrFunctionTypedTypeRef *slotTypeRef = binding != ZR_NULL ? &binding->type : ZR_NULL;
         TZrUInt32 byteSize = (TZrUInt32)sizeof(SZrTypeValue);
-        TZrUInt32 byteAlign = ZR_ALIGN_SIZE;
+        TZrUInt32 byteAlign = (TZrUInt32)_Alignof(SZrTypeValueOnStack);
         TZrUInt32 typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
         TZrUInt32 inlineFieldCount = 0u;
         TZrUInt8 slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
@@ -2479,7 +2479,12 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
             continue;
         }
 
-        cursor = frame_layout_align_offset(cursor, byteAlign);
+        /* VALUE storage participates in the stack close/upvalue chains. Its
+         * address must be a physical slot boundary, even when the slot stride
+         * is not a power of two or follows a smaller inline payload. */
+        cursor = frame_layout_align_offset(cursor,
+                slotKind == ZR_FUNCTION_FRAME_SLOT_KIND_VALUE
+                        ? (TZrUInt32)sizeof(SZrTypeValueOnStack) : byteAlign);
         ZrCore_Memory_RawSet(&layouts[slot], 0, sizeof(layouts[slot]));
         layouts[slot].stackSlot = slot;
         layouts[slot].byteOffset = cursor;
@@ -2499,7 +2504,8 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
                         ZR_FUNCTION_FRAME_SLOT_FLAG_CONSTRUCTOR_INITIALIZATION_BITMAP;
             }
         }
-        cursor += byteSize;
+        cursor += slotKind == ZR_FUNCTION_FRAME_SLOT_KIND_VALUE
+                          ? (TZrUInt32)sizeof(SZrTypeValueOnStack) : byteSize;
     }
 
     if (frameAlign == 0) {

@@ -17,7 +17,8 @@
  * @brief VM 栈上的值槽，同时携带待关闭值链的紧凑链接。
  * @note value 是运行时值与 GC 追踪所见的表示；栈搬移时整个槽随分配一起移动。
  */
-struct ZR_STRUCT_ALIGN SZrTypeValueOnStack {
+/* Natural payload alignment avoids padding every scalar value/stack slot. */
+struct SZrTypeValueOnStack {
     /** tagged value 内容；读写应经 stack/value helper 保持所有权与 GC 规则。 */
     SZrTypeValue value;
     /** 到前一登记待关闭槽的反向槽距；零也用于长跨度链的桥接槽。 */

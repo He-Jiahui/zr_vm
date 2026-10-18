@@ -3388,7 +3388,7 @@ static void test_gc_minor_collection_rewrites_inline_frame_value_with_layout_vis
         layouts[0].stackSlot = 4u;
         layouts[0].byteOffset = inlineByteOffset;
         layouts[0].byteSize = (TZrUInt32)sizeof(SZrTypeValue);
-        layouts[0].byteAlign = ZR_ALIGN_SIZE;
+        layouts[0].byteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
         layouts[0].typeLayoutId = 0u;
         layouts[0].slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
         layouts[0].isParameter = ZR_TRUE;
@@ -3405,14 +3405,14 @@ static void test_gc_minor_collection_rewrites_inline_frame_value_with_layout_vis
                 gc_test_write_single_compiled_struct_prototype(prototypeData,
                                                                prototypeDataLength,
                                                                (TZrUInt32)sizeof(SZrTypeValue),
-                                                               ZR_ALIGN_SIZE,
+                                                               (TZrUInt32)_Alignof(SZrTypeValue),
                                                                0u,
                                                                (TZrUInt32)sizeof(SZrTypeValue)));
 
         function->frameSlotLayouts = layouts;
         function->frameSlotLayoutLength = 1u;
         function->frameByteSize = inlineByteOffset + (TZrUInt32)sizeof(SZrTypeValue);
-        function->frameByteAlign = ZR_ALIGN_SIZE;
+        function->frameByteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
         function->prototypeData = prototypeData;
         function->prototypeDataLength = prototypeDataLength;
         function->prototypeCount = 1u;

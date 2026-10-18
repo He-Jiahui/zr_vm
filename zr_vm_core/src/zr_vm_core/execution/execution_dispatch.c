@@ -2772,6 +2772,15 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         }                                                                                                              \
     } while (0)
 #define FAST_PREPARE_DESTINATION() FAST_PREPARE_DESTINATION_FROM_OFFSET(E(instruction))
+/* Shared dispatch also visits control opcodes whose extra field is a count
+ * or flag, rather than a destination. Only actual slot operands may use the
+ * verified packed addressing path. */
+#define PREPARE_SHARED_DESTINATION()                                                                                   \
+    do {                                                                                                               \
+        TZrUInt16 offset__ = E(instruction);                                                                           \
+        destination = offset__ == ZR_INSTRUCTION_USE_RET_FLAG ? &ret                                                  \
+                      : offset__ < currentFunction->stackSize ? FRAME_VALUE_SLOT(offset__) : ZR_NULL;              \
+    } while (0)
 #define FAST_PREPARE_SIGNED_DESTINATION_FROM_OFFSET(DESTINATION_OFFSET)                                                 \
     do {                                                                                                               \
         TZrUInt16 fastDestinationOffset__ = (DESTINATION_OFFSET);                                                      \
@@ -2840,7 +2849,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         ZR_ASSERT(base <= state->stackTop.valuePointer &&                                                              \
                   state->stackTop.valuePointer <= state->stackTail.valuePointer);                                      \
         if (ZR_UNLIKELY(!fastDispatchMode)) {                                                                          \
-            FAST_PREPARE_DESTINATION();                                                                                \
+            PREPARE_SHARED_DESTINATION();                                                                              \
         }                                                                                                              \
     } while (0)
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
@@ -6146,7 +6155,7 @@ LZrReturning: {
             ZR_FAST_INSTRUCTION_DISPATCH(instruction)
         }
 LZrFastInstruction_FALLBACK:
-        FAST_PREPARE_DESTINATION();
+        PREPARE_SHARED_DESTINATION();
 #endif
         ZR_INSTRUCTION_DISPATCH(instruction) {
             ZR_INSTRUCTION_LABEL(NOP) {
@@ -10240,6 +10249,7 @@ LZrExecutionDone:
 #undef EXECUTION_MUTATOR_POLL_BEFORE_FETCH
 #undef FAST_PREPARE_DESTINATION_FROM_OFFSET
 #undef FAST_PREPARE_DESTINATION
+#undef PREPARE_SHARED_DESTINATION
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 #undef DONE_AFTER_TRAP_FAST_ONE
 #undef FETCH_PREPARE_OR_GOTO_DONE

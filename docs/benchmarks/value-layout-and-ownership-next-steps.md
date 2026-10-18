@@ -17,6 +17,17 @@ already determine strides. Numeric 48/64 constants in arithmetic lowering are
 integer widths, not value or stack strides. Generated C, shared-library,
 artifact round-trip and frame-layout tests remain required after ABI changes.
 
+The implementation also keeps every compiler-generated VALUE mirror on a
+physical stack-slot boundary. Its payload remains 40 bytes and its reserved
+stride is 48 bytes, including after inline structures; close/upvalue chains
+can therefore continue to use stack-slot coordinates. Native entry frames
+retain their full reserved window when placing children and use dense return
+values. Generated native AOT entries initialize and explicitly activate their
+physical layouts so GC visits inline fields and skips overlapping dense slots;
+plain native frames carrying metadata leave that layout inactive. Cross-mutator GC visits
+validate addresses against the scanned mutator's stack and mark through the
+collector state. Focused regressions cover these ABI-sensitive boundaries.
+
 ## Ownership side table
 
 A future compact scalar value should separate uncommon ownership metadata

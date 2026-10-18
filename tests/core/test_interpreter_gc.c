@@ -352,8 +352,82 @@ static void test_deep_frame_scan_has_linear_coverage_work(void) {
 #endif
     ZrCore_Function_Free(state, function);
 }
+
+static void check_other_mutator_frame_roots(TZrBool generatedNative) {
+    SZrFunction *function = ZrCore_Function_New(state);
+    SZrFunctionFrameSlotLayout layout = {0};
+    SZrState *worker;
+    SZrCallInfo *frame;
+    TZrStackValuePointer base;
+    SZrTypeValue *root;
+    SZrObject *object;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrCore_Function_AcquireHostRoot(state, function));
+    worker = ZrCore_State_New(state->global);
+    TEST_ASSERT_NOT_NULL(worker);
+    TEST_ASSERT_TRUE(ZrCore_State_MutatorLaunch(worker));
+    frame = ZrCore_CallInfo_Extend(worker);
+    TEST_ASSERT_NOT_NULL(frame);
+    base = worker->stackTop.valuePointer + 1;
+    layout.stackSlot = 0u;
+    layout.byteOffset = (TZrUInt32)(2u * sizeof(SZrTypeValueOnStack) + 16u);
+    layout.byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+    layout.byteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
+    layout.slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+    function->stackSize = 1u;
+    function->frameSlotLayouts = &layout;
+    function->frameSlotLayoutLength = 1u;
+    function->frameByteSize = layout.byteOffset + layout.byteSize;
+    function->frameByteAlign = layout.byteAlign;
+    ZrCore_Function_FinalizeDirectFrameValueSlots(function);
+    for (TZrSize i = 0u; i < 5u; ++i) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(base + i));
+    }
+    frame->functionBase.valuePointer = base;
+    frame->functionTop.valuePointer = base + 5;
+    frame->metadataFunction = function;
+    frame->callStatus = generatedNative
+            ? ZR_CALL_STATUS_NATIVE_CALL | ZR_CALL_STATUS_GENERATED_FRAME_LAYOUT
+            : ZR_CALL_STATUS_NONE;
+    frame->previous = worker->callInfoList;
+    frame->previous->next = frame;
+    worker->callInfoList = frame;
+    worker->stackTop.valuePointer = frame->functionTop.valuePointer;
+    object = new_initialized_object();
+    root = (SZrTypeValue *)((TZrByte *)(base + 1) + layout.byteOffset);
+    ZrCore_Value_InitAsRawObject(worker, root, &object->super);
+    ZrCore_State_MutatorExit(worker);
+
+    /* The partial-slot span is the object's sole root. Both marking and
+     * forwarding must use the scanned mutator's active physical layout. */
+    state->global->garbageCollector->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+    ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
+    ZrCore_GarbageCollector_GcStep(state);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, root->type);
+    TEST_ASSERT_TRUE(heap_contains(root->value.object));
+    ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, root->type);
+    TEST_ASSERT_TRUE(heap_contains(root->value.object));
+
+    ZrCore_State_Free(state->global, worker);
+    function->frameSlotLayouts = ZR_NULL;
+    function->frameSlotLayoutLength = 0u;
+    function->frameByteSize = 0u;
+    ZrCore_Function_FinalizeDirectFrameValueSlots(function);
+    ZrCore_Function_ReleaseHostRoot(state, function);
+    ZrCore_Function_Free(state, function);
+}
+static void test_other_mutator_frame_uses_its_own_stack_bounds(void) {
+    check_other_mutator_frame_roots(ZR_FALSE);
+}
+static void test_generated_native_layout_traces_and_forwards_partial_slots(void) {
+    check_other_mutator_frame_roots(ZR_TRUE);
+}
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_generated_native_layout_traces_and_forwards_partial_slots);
+    RUN_TEST(test_other_mutator_frame_uses_its_own_stack_bounds);
     RUN_TEST(test_automatic_minor_waits_for_nursery_occupancy);
     RUN_TEST(test_gc_coverage_summary_tracks_sparse_and_cross_slot_layouts);
     RUN_TEST(test_deep_frame_scan_has_linear_coverage_work);

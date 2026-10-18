@@ -3828,6 +3828,8 @@ TZrBool ZrLibrary_AotRuntime_BeginGeneratedFunction(SZrState *state,
         for (TZrUInt32 slot = (TZrUInt32)argumentCount; slot < (TZrUInt32)frameSlotCount; slot++) {
             ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(slotBase + slot));
         }
+        ZrCore_Function_InitializeFrameLayoutStorage(state, functionBase, metadataFunction, 0u);
+        callInfo->callStatus |= ZR_CALL_STATUS_GENERATED_FRAME_LAYOUT;
     }
 
     if (callInfo->functionTop.valuePointer < frameTop) {

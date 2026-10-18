@@ -297,3 +297,41 @@ by five budgeted samples, about instructions/256 plus eight startup/timing
 reads per sample. Counts are 70,000,005 / 27,000,008 / 4,131,540 instructions
 for intloop/calls/fib after M1. Absolute calls/fib and GC worst-pause/throughput
 targets remain unmet. Evidence: `build/r2-h4b-*`.
+
+## R2-M3: versioned frame coordinates and smaller values
+
+Bytecode patch 46 encodes frame sizes and layout offsets as physical slot
+coordinates plus a checked intra-slot remainder. Older artifacts are rejected
+with a clear recompile diagnostic; loader tests cover old versions and invalid
+coordinates. The tracked string-build benchmark artifacts were regenerated
+from their unchanged sources. All native consumers must rebuild for this ABI.
+
+Values and stack slots now use natural alignment: **40 bytes / 48 bytes**,
+alignment **8**. CallInfo is **240 bytes**; RawObject/String/Object remain
+**208/240/480**; Function is **1280** including the GC coverage caches. A
+registered footprint probe guards the 64-bit value/slot target. The separate
+ownership/header design is `value-layout-and-ownership-next-steps.md`.
+
+Compiler VALUE mirrors start at physical slot boundaries and reserve a full
+slot even after inline payloads. Native returns use dense values and native
+children start beyond the whole reserved window. Generated native AOT entries
+initialize and explicitly activate their byte layout before GC can scan inline
+fields; metadata-only native frames keep that layout inactive. Both AOT entry
+paths and minor forwarding follow the same rule. Cross-mutator visits validate
+against the scanned stack and mark through the collecting state. Shared/traced
+dispatch also avoids treating control counts/flags as destination slots.
+
+Regressions cover native general/fast returns, active generated partial slots,
+other-mutator roots, mixed compiler layouts and tail reuse ownership release.
+The tail fixture checks the released shared reference and new dense null slots
+instead of reading the overwritten inactive partial-slot view.
+
+Validation so far: full Release rebuild and **425/425** core CTests pass
+(286.79 s). ASan/UBSan/forced-full GC: **94/94** selected AOT/artifact/loader/
+frame/GC/budget/dispatch/debug CTests, **17/17** interpreter GC unit tests,
+**70/70** standalone GC, **5/5** native return checks, **4/4** tail reuse,
+**40/40** inline layout tests and **15/15** smoke probes pass. The native
+value-type shared-library smoke passes **6/6**. Patch-46 mutation probe:
+**118 cases, 71 rejected / 47 normal**, zero sanitizer reports/crashes/timeouts.
+Evidence: `build/r2-m3-active-layout-*`, `build/r2-m3-complete-*`,
+`build/r2-m3-final-release-*`. Final ASan and timing evidence follows below.

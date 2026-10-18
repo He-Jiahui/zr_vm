@@ -302,6 +302,7 @@ static void garbage_collector_mark_call_info_function(SZrState *state,
 
 typedef struct SZrGcInlineFrameMarkWork {
     TZrSize work;
+    SZrState *collectorState;
 } SZrGcInlineFrameMarkWork;
 
 static const SZrTypeLayout *garbage_collector_resolve_metadata_frame_type_layout(
@@ -327,9 +328,9 @@ static const SZrTypeLayout *garbage_collector_resolve_metadata_frame_type_layout
 
 static SZrFunction *garbage_collector_call_info_metadata_function(SZrState *threadState,
                                                                   const SZrCallInfo *callInfo) {
-    /* A native frame can hold a function root at functionBase without executing its layout. */
+    /* Plain native metadata is inactive; generated entries explicitly activate it. */
     if (threadState == ZR_NULL || callInfo == ZR_NULL ||
-        !ZR_CALL_INFO_IS_VM(callInfo) || callInfo->functionBase.valuePointer == ZR_NULL) {
+        !ZrCore_CallInfo_HasActiveFrameLayout(callInfo) || callInfo->functionBase.valuePointer == ZR_NULL) {
         return ZR_NULL;
     }
 
@@ -383,7 +384,7 @@ static void garbage_collector_mark_inline_frame_value(SZrState *state, SZrTypeVa
         return;
     }
 
-    garbage_collector_mark_value(state, value);
+    garbage_collector_mark_value(markWork != ZR_NULL ? markWork->collectorState : state, value);
     if (markWork != ZR_NULL) {
         markWork->work++;
     }
@@ -483,13 +484,15 @@ static TZrBool garbage_collector_mark_resolved_inline_frame_values(SZrState *sta
                                                                    const SZrFunction *function,
                                                                    TZrStackValuePointer frameBase,
                                                                    TZrSize *work) {
-    SZrGcInlineFrameMarkWork markWork = {0u};
+    SZrGcInlineFrameMarkWork markWork = {0u, state};
 
     if (!garbage_collector_function_has_frame_gc_layouts(threadState, function)) {
         return ZR_FALSE;
     }
 
-    if (!ZrCore_Function_VisitFrameGcValues(state,
+    /* Address validation belongs to the scanned mutator's stack; marking
+     * still uses the collector state through markWork. */
+    if (!ZrCore_Function_VisitFrameGcValues(threadState,
                                             function,
                                             frameBase,
                                             garbage_collector_resolve_metadata_frame_type_layout,
@@ -1071,11 +1074,13 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
                                                                                     &work);
 
                         if (callInfo == threadState->callInfoList &&
-                            ZR_CALL_INFO_IS_VM(callInfo) && callInfo->functionTop.valuePointer > funcTop)
+                            ZrCore_CallInfo_HasActiveFrameLayout(callInfo) &&
+                            callInfo->functionTop.valuePointer > funcTop)
                             funcTop = callInfo->functionTop.valuePointer;
                         /* VM call windows start above the caller's physical
                          * storage (execution_prepare_frame_layout_call_window).
-                         * Native frames have no active layout. */
+                         * Generated native entries reserve their full layout
+                         * before activating it. */
                         ZR_ASSERT(functionBase >= stackPtr && funcTop <= threadState->stackTail.valuePointer);
                         ZR_ASSERT(!inlineFrameVisited || (funcTop >= frameBase &&
                                   metadataFunction->frameByteSize <=

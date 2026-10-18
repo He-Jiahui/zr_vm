@@ -34,7 +34,8 @@ typedef enum EZrOwnershipValueKind {
     ZR_OWNERSHIP_VALUE_KIND_LOANED,
 } EZrOwnershipValueKind;
 
-struct ZR_STRUCT_ALIGN SZrTypeValue {
+/* Natural payload alignment avoids padding every scalar value/stack slot. */
+struct SZrTypeValue {
     EZrValueType type;
     TZrPureValue value;
     TZrBool isGarbageCollectable;

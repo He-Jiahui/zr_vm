@@ -1679,8 +1679,8 @@ static TZrSize garbage_collector_rewrite_thread_frame_slots(SZrState *threadStat
             TZrStackValuePointer frameBase = functionBase + 1;
             TZrStackValuePointer funcBase = functionBase;
             TZrStackValuePointer funcTop = youngerFrameBase;
-            /* Native call-info stack roots have no active VM frame layout to rewrite. */
-            SZrFunction *metadataFunction = ZR_CALL_INFO_IS_VM(callInfo)
+            /* Only explicitly activated generated native layouts participate. */
+            SZrFunction *metadataFunction = ZrCore_CallInfo_HasActiveFrameLayout(callInfo)
                                                    ? ZrCore_Closure_GetMetadataFunctionFromCallInfo(threadState, callInfo)
                                                    : ZR_NULL;
             TZrBool inlineFrameRewritten =
@@ -1690,7 +1690,8 @@ static TZrSize garbage_collector_rewrite_thread_frame_slots(SZrState *threadStat
                                                                            &work);
 
             if (callInfo == threadState->callInfoList &&
-                ZR_CALL_INFO_IS_VM(callInfo) && callInfo->functionTop.valuePointer > funcTop)
+                ZrCore_CallInfo_HasActiveFrameLayout(callInfo) &&
+                callInfo->functionTop.valuePointer > funcTop)
                 funcTop = callInfo->functionTop.valuePointer;
             ZR_ASSERT(functionBase >= threadState->stackBase.valuePointer &&
                       funcTop <= threadState->stackTail.valuePointer);

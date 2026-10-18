@@ -8,6 +8,7 @@
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/ownership.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/type_layout.h"
@@ -86,7 +87,7 @@ static void test_tail_reuse_install_managed_inline_frame_metadata(SZrState *stat
     layouts[0].stackSlot = stackSlot;
     layouts[0].byteOffset = byteOffset;
     layouts[0].byteSize = (TZrUInt32)sizeof(SZrTypeValue);
-    layouts[0].byteAlign = ZR_ALIGN_SIZE;
+    layouts[0].byteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
     layouts[0].typeLayoutId = 0u;
     layouts[0].slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
     layouts[0].isParameter = ZR_FALSE;
@@ -96,7 +97,7 @@ static void test_tail_reuse_install_managed_inline_frame_metadata(SZrState *stat
     prototype.type = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT;
     prototype.membersCount = 1u;
     prototype.layoutByteSize = (TZrUInt32)sizeof(SZrTypeValue);
-    prototype.layoutByteAlign = ZR_ALIGN_SIZE;
+    prototype.layoutByteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
 
     memset(&member, 0, sizeof(member));
     member.memberType = ZR_AST_CONSTANT_STRUCT_FIELD;
@@ -113,7 +114,7 @@ static void test_tail_reuse_install_managed_inline_frame_metadata(SZrState *stat
     function->frameSlotLayouts = layouts;
     function->frameSlotLayoutLength = 1u;
     function->frameByteSize = byteOffset + (TZrUInt32)sizeof(SZrTypeValue);
-    function->frameByteAlign = ZR_ALIGN_SIZE;
+    function->frameByteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
     function->prototypeData = prototypeData;
     function->prototypeDataLength = test_tail_reuse_write_compiled_prototype_data(
             prototypeData,
@@ -231,6 +232,7 @@ static void test_tail_reuse_drops_inline_frame_values_before_reusing_storage(voi
     SZrTypeValue *currentCallableValue;
     SZrTypeValue *tailCallableValue;
     SZrTypeValue *inlineValue;
+    SZrTypeValue retained;
     SZrCallInfo *callInfo;
     TZrUInt32 inlineByteOffset =
             3u * (TZrUInt32)sizeof(SZrTypeValueOnStack) - ZR_ALIGN_SIZE;
@@ -277,6 +279,10 @@ static void test_tail_reuse_drops_inline_frame_values_before_reusing_storage(voi
     inlineValue = (SZrTypeValue *)inlinePlace.address;
     ZrCore_Value_InitAsRawObject(state, inlineValue, ZR_CAST_RAW_OBJECT_AS_SUPER(text));
     inlineValue->type = ZR_VALUE_TYPE_STRING;
+    ZrCore_Value_ResetAsNull(&retained);
+    TEST_ASSERT_TRUE(ZrCore_Ownership_SharePlainValue(state, &retained, inlineValue));
+    ZrCore_Value_Copy(state, inlineValue, &retained);
+    TEST_ASSERT_EQUAL_UINT32(2u, ZrCore_Ownership_GetStrongRefCount(&text->super));
 
     tailCallableSlot = callInfo->functionBase.valuePointer + 1;
     tailCallableValue = ZrCore_Stack_GetValue(tailCallableSlot);
@@ -290,10 +296,15 @@ static void test_tail_reuse_drops_inline_frame_values_before_reusing_storage(voi
 
     TEST_ASSERT_TRUE(ZrCore_Function_TryReuseTailVmCall(state, callInfo, tailCallableSlot));
 
-    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_NULL, inlineValue->type);
+    /* Reuse replaces the old partial-slot payload with dense null slots.
+     * Observe its released ownership rather than reading that inactive view. */
+    TEST_ASSERT_EQUAL_UINT32(1u, ZrCore_Ownership_GetStrongRefCount(&text->super));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_NULL, frameBase[2].value.type);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_NULL, frameBase[3].value.type);
     TEST_ASSERT_EQUAL_PTR(callBase, callInfo->functionBase.valuePointer);
     TEST_ASSERT_EQUAL_PTR(callBase + 1, state->stackTop.valuePointer);
 
+    ZrCore_Ownership_ReleaseValue(state, &retained);
     ZrTests_Runtime_State_Destroy(state);
 }
 

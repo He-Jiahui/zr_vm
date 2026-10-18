@@ -36,6 +36,8 @@ enum EZrCallStatus {
     ZR_CALL_STATUS_CALL_INFO_TRANSFER = 1 << 8,
     /** @brief 旧关闭调用状态位；当前返回快路径排除，未见生产置位。 */
     ZR_CALL_STATUS_CLOSE_CALL = 1 << 9,
+    /** @brief A generated native entry has initialized its physical frame layout. */
+    ZR_CALL_STATUS_GENERATED_FRAME_LAYOUT = 1 << 10,
 };
 
 typedef enum EZrCallStatus EZrCallStatus;
@@ -163,6 +165,14 @@ typedef struct SZrCallInfo SZrCallInfo;
 /** @brief 按 NATIVE_CALL 状态位判定当前帧是否可作为 VM 帧解释。
  *  @pre CALL_INFO 非空，且该帧的 callStatus 已初始化。 */
 #define ZR_CALL_INFO_IS_VM(CALL_INFO) ((TZrBool) (!((CALL_INFO)->callStatus & ZR_CALL_STATUS_NATIVE_CALL)))
+
+/* Metadata alone does not activate a native frame's byte layout. Generated
+ * entries set this bit only after reserving and initializing that storage. */
+ZR_FORCE_INLINE TZrBool ZrCore_CallInfo_HasActiveFrameLayout(const SZrCallInfo *callInfo) {
+    return callInfo != ZR_NULL &&
+           (ZR_CALL_INFO_IS_VM(callInfo) ||
+            (callInfo->callStatus & ZR_CALL_STATUS_GENERATED_FRAME_LAYOUT) != 0);
+}
 
 /** @brief 解码压缩在既有对齐空隙中的帧存储槽数加一值。
  *  @return 零表示无缓存，应回退到函数元数据查询；非零值减一才是槽数。 */

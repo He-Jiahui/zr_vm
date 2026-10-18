@@ -2438,7 +2438,7 @@ void test_function_frame_layout_metadata_marks_struct_parameter_inline(void) {
                 test_align_offset_u32((TZrUInt32)(declaredFunction->stackSize * sizeof(SZrTypeValueOnStack)),
                                       ZR_ALIGN_SIZE);
         expectedLocalOffset = test_align_offset_u32(expectedFrameByteBaseOffset + expectedStructSize,
-                                                    ZR_ALIGN_SIZE);
+                                                    (TZrUInt32)sizeof(SZrTypeValueOnStack));
 
         parameterLayout = ZrCore_Function_FindFrameSlotLayout(declaredFunction, 0);
         localLayout = ZrCore_Function_FindFrameSlotLayout(declaredFunction, 1);
@@ -2456,7 +2456,8 @@ void test_function_frame_layout_metadata_marks_struct_parameter_inline(void) {
         TEST_ASSERT_FALSE(localLayout->isParameter);
         TEST_ASSERT_EQUAL_UINT32(expectedLocalOffset, localLayout->byteOffset);
         TEST_ASSERT_EQUAL_UINT32((TZrUInt32)sizeof(SZrTypeValue), localLayout->byteSize);
-        TEST_ASSERT_EQUAL_UINT32(ZR_ALIGN_SIZE, localLayout->byteAlign);
+        TEST_ASSERT_EQUAL_UINT32(_Alignof(SZrTypeValueOnStack), localLayout->byteAlign);
+        TEST_ASSERT_EQUAL_UINT32(0u, localLayout->byteOffset % sizeof(SZrTypeValueOnStack));
         TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE, localLayout->typeLayoutId);
         TEST_ASSERT_GREATER_OR_EQUAL_UINT32(localLayout->byteOffset + localLayout->byteSize,
                                            declaredFunction->frameByteSize);

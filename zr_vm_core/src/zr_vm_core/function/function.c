@@ -2672,6 +2672,12 @@ TZrStackValuePointer ZrCore_Function_GetCallInfoFrameStorageTop(struct SZrState 
         return ZR_NULL;
     }
 
+    /* Native/AOT entries reserve a dense window, which may exceed their VM
+     * metadata's storage. A child must start beyond that whole live window. */
+    if (!ZR_CALL_INFO_IS_VM(callInfo)) {
+        return callInfo->functionTop.valuePointer;
+    }
+
     frameBase = function_inline_frame_base_from_call_info(callInfo);
     if (frameBase == ZR_NULL) {
         return ZR_NULL;
@@ -2796,6 +2802,10 @@ static ZR_FORCE_INLINE const SZrTypeValue *function_get_frame_return_source_valu
         return ZR_NULL;
     }
 
+    /* Native/AOT entry frames use dense stack values. Merely carrying a VM
+     * metadata function does not activate its byte-frame VALUE mirrors. */
+    if (!ZR_CALL_INFO_IS_VM(callInfo)) return ZrCore_Stack_GetValue(returnSource);
+
     calleeFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, (SZrCallInfo *)callInfo);
     calleeFrameBase = function_inline_frame_base_from_call_info(callInfo);
     if (calleeFunction == ZR_NULL || calleeFrameBase == ZR_NULL) {
@@ -2840,6 +2850,8 @@ static ZR_FORCE_INLINE SZrTypeValue *function_get_frame_return_destination_value
         returnDestination == ZR_NULL) {
         return returnDestination != ZR_NULL ? ZrCore_Stack_GetValue(returnDestination) : ZR_NULL;
     }
+
+    if (!ZR_CALL_INFO_IS_VM(callInfo->previous)) return ZrCore_Stack_GetValue(returnDestination);
 
     callerFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo->previous);
     callerFrameBase = function_inline_frame_base_from_call_info(callInfo->previous);

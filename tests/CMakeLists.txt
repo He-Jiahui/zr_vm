@@ -9024,3 +9024,5 @@ if(TARGET zr_vm_cli_executable AND ZR_VM_BENCHMARK_PYTHON_EXECUTABLE)
 endif()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/function-instruction-verification.cmake")
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/runtime-value-layout.cmake")
