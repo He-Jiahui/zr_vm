@@ -2,6 +2,7 @@
 // Created by HeJiahui on 2025/6/5.
 //
 #include "zr_vm_core/state.h"
+#include "gc/gc_temporary_roots.h"
 
 #include "zr_vm_common/zr_vm_conf.h"
 #include "zr_vm_common/zr_debug_conf.h"
@@ -243,6 +244,7 @@ void ZrCore_State_Free(SZrGlobalState *global, SZrState *state) {
     }
 
     // 先退出 GC 域登记，之后才释放该线程持有的运行时缓冲区。
+    ZrCore_Gc_TemporaryRootsFree(state);
     if (state->gcDomain != ZR_NULL) {
         ZrCore_GcDomain_DetachState(state->gcDomain, state);
     }

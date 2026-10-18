@@ -1,3 +1,4 @@
+#include "gc/gc_temporary_roots.h"
 //
 // Created by HeJiahui on 2025/6/15.
 //
@@ -657,14 +658,14 @@ static SZrString *string_create_short(SZrState *state, TZrNativeString string, T
         // create a new string
         SZrString *newString = string_object_create(state, string, length, hash);
         TZrSize previousCapacity;
-        SZrGcRootLease lease = {0};
+        TZrSize rootDepth = state->temporaryRootLength;
 
         if (newString == ZR_NULL) {
             string_trace("string create short object create failed length=%llu", (unsigned long long)length);
             return ZR_NULL;
         }
         /* The intern table is weak, including during OOM recovery in AddRawObject. */
-        if (!ZrCore_Gc_RootLeaseAcquire(state, &newString->super, &lease)) {
+        if (!ZrCore_Gc_TemporaryRootPush(state, &newString->super)) {
             ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
             return ZR_NULL;
         }
@@ -679,7 +680,7 @@ static SZrString *string_create_short(SZrState *state, TZrNativeString string, T
         EZrThreadStatus status = ZrCore_Exception_TryRun(state, string_insert_short_run, &insertion);
         if (status != ZR_THREAD_STATUS_FINE || insertion.result == ZR_NULL) {
             string_unlink_short_candidate(stringTable, newString);
-            ZrCore_Gc_RootLeaseRelease(global, &lease);
+            ZrCore_Gc_TemporaryRootsRestore(state, rootDepth);
             string_trace("string create short add raw object failed string=%p threadStatus=%d",
                          (void *)newString,
                          state != ZR_NULL ? (int)state->threadStatus : -1);
@@ -692,7 +693,7 @@ static SZrString *string_create_short(SZrState *state, TZrNativeString string, T
             (void)string_table_rebuild_minor_young_bucket_flags(global, stringTable);
         }
         string_table_record_young_short_string(global, newString);
-        ZrCore_Gc_RootLeaseRelease(global, &lease);
+        ZrCore_Gc_TemporaryRootsRestore(state, rootDepth);
         string_trace("string create short add raw object done string=%p elementCount=%llu",
                      (void *)newString,
                      (unsigned long long)stringTable->stringHashSet.elementCount);

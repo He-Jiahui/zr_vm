@@ -89,13 +89,13 @@ static void fill_ignore_registry_to_capacity(SZrState *state) {
     TEST_ASSERT_NOT_NULL(state->global->garbageCollector);
 
     collector = state->global->garbageCollector;
-    while (collector->ignoredObjectCount < collector->ignoredObjectCapacity) {
+    do {
         SZrObject *fillerObject = ZrCore_Object_New(state, ZR_NULL);
 
         TEST_ASSERT_NOT_NULL(fillerObject);
         ZrCore_Object_Init(state, fillerObject);
         TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(fillerObject)));
-    }
+    } while (collector->ignoredObjectCount < collector->ignoredObjectCapacity);
 }
 
 /* 与当前 GC 的双倍扩容布局配对；只供选择性分配器设定失败阈值。 */

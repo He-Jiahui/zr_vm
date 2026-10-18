@@ -438,6 +438,10 @@ static TZrSize garbage_collector_mark_aot_root_frames(SZrState *state, SZrState 
         return 0;
     }
 
+    for (TZrSize i = 0u; i < threadState->temporaryRootLength; ++i) {
+        garbage_collector_mark_object(state, threadState->temporaryRoots[i]);
+        work++;
+    }
     frame = threadState->aotGcRootFrameStack;
     while (frame != ZR_NULL) {
         const SZrAotGcRootMap *rootMap = frame->rootMap;
@@ -1404,9 +1408,17 @@ void ZrCore_GarbageCollector_Barrier(SZrState *state, SZrRawObject *object, SZrR
     if (global == ZR_NULL || global->garbageCollector == ZR_NULL) {
         return;
     }
+    TZrBool exclusive = ZrCore_GcDomain_TryExclusiveMutation(state->gcDomain);
+    if (exclusive && valueObject->garbageCollectMark.ignoredRegistryIndex == ZR_MAX_SIZE &&
+        !(garbage_collector_object_is_old_or_pinned(object) && garbage_collector_object_is_young(valueObject)) &&
+        ((!ZrCore_GarbageCollector_IsInvariant(global) && !ZrCore_GarbageCollector_IsSweeping(global)) ||
+         !garbage_collector_object_is_barrier_source_live(object) || !ZrCore_RawObject_IsMarkInited(valueObject))) {
+        ZrCore_GcDomain_MutationUnlock(state->gcDomain);
+        return;
+    }
     /* Root leases can update registry indices on any object, including interned
      * keys, while attached mutators run between collection phases. */
-    mutationLocked = ZrCore_GcDomain_SharedMutationBegin(state);
+    mutationLocked = exclusive ? ZR_FALSE : ZrCore_GcDomain_SharedMutationBegin(state);
     if (global->garbageCollector->concurrentMajorActive) {
         global->garbageCollector->statsSnapshot.concurrentBarrierCount++;
     }
@@ -1469,6 +1481,7 @@ void ZrCore_GarbageCollector_Barrier(SZrState *state, SZrRawObject *object, SZrR
 
 barrier_done:
     ZrCore_GcDomain_MutationEnd(state, mutationLocked);
+    if (exclusive) ZrCore_GcDomain_MutationUnlock(state->gcDomain);
 }
 
 void ZrCore_GarbageCollector_BarrierBack(SZrState *state, SZrRawObject *object) {

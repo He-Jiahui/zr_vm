@@ -1,6 +1,7 @@
 /* Shared ignored-root registry and independently owned temporary leases. */
 #include "gc/gc_internal.h"
 #include "gc/gc_domain_internal.h"
+#include "gc/gc_temporary_roots.h"
 
 /* Acquiring a root must not park before registration: the input may be a
  * newly allocated object held only in a C local. The mutation lock serializes
@@ -179,4 +180,53 @@ void ZrCore_Gc_NativeCallUnpin(SZrGlobalState *global, SZrGcNativeCallPin *pin) 
     }
     reset_native_pin(pin);
     ZrCore_GcDomain_MutationUnlock(global->gcDomain);
+}
+
+TZrBool ZrCore_Gc_TemporaryRootPush(SZrState *state, SZrRawObject *object) {
+    if (object == ZR_NULL) return ZR_TRUE;
+    if (state == ZR_NULL || state->global == ZR_NULL || state->gcDomain == ZR_NULL) return ZR_FALSE;
+    ZrCore_GcDomain_MutationLock(state->gcDomain);
+    if (state->temporaryRootLength == state->temporaryRootCapacity) {
+        TZrSize capacity = state->temporaryRootCapacity == 0u ? 8u : state->temporaryRootCapacity * 2u;
+        if (capacity <= state->temporaryRootCapacity || capacity > ZR_MAX_SIZE / sizeof(*state->temporaryRoots)) {
+            ZrCore_GcDomain_MutationUnlock(state->gcDomain);
+            return ZR_FALSE;
+        }
+        SZrRawObject **roots = (SZrRawObject **)ZrCore_Memory_RawMallocWithType(
+                state->global, capacity * sizeof(*roots), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        if (roots == ZR_NULL) { ZrCore_GcDomain_MutationUnlock(state->gcDomain); return ZR_FALSE; }
+        if (state->temporaryRoots != ZR_NULL) {
+            ZrCore_Memory_RawCopy(roots, state->temporaryRoots, state->temporaryRootLength * sizeof(*roots));
+            ZrCore_Memory_RawFreeWithType(state->global, state->temporaryRoots,
+                    state->temporaryRootCapacity * sizeof(*roots), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        }
+        state->temporaryRoots = roots;
+        state->temporaryRootCapacity = capacity;
+    }
+    if (object->garbageCollectMark.temporaryRootRefCount == ZR_MAX_SIZE) {
+        ZrCore_GcDomain_MutationUnlock(state->gcDomain);
+        return ZR_FALSE;
+    }
+    state->temporaryRoots[state->temporaryRootLength++] = object;
+    object->garbageCollectMark.temporaryRootRefCount++;
+    garbage_collector_mark_ignored_root_if_needed_fast(state, object);
+    ZrCore_GcDomain_MutationUnlock(state->gcDomain);
+    return ZR_TRUE;
+}
+void ZrCore_Gc_TemporaryRootsRestore(SZrState *state, TZrSize depth) {
+    if (state == ZR_NULL || depth >= state->temporaryRootLength) return;
+    ZrCore_GcDomain_MutationLock(state->gcDomain);
+    while (state->temporaryRootLength > depth) {
+        SZrRawObject *object = state->temporaryRoots[--state->temporaryRootLength];
+        root_release(state->global, object);
+        state->temporaryRoots[state->temporaryRootLength] = ZR_NULL;
+    }
+    ZrCore_GcDomain_MutationUnlock(state->gcDomain);
+}
+void ZrCore_Gc_TemporaryRootsFree(SZrState *state) {
+    ZrCore_Gc_TemporaryRootsRestore(state, 0u);
+    if (state->temporaryRoots != ZR_NULL) ZrCore_Memory_RawFreeWithType(state->global, state->temporaryRoots,
+            state->temporaryRootCapacity * sizeof(*state->temporaryRoots), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    state->temporaryRoots = ZR_NULL;
+    state->temporaryRootCapacity = 0u;
 }

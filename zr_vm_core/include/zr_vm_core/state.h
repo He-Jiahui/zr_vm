@@ -89,6 +89,9 @@ struct ZR_STRUCT_ALIGN SZrState {
     TZrStackPointer stackBase; /**< 栈分配起点，扩容后用于偏移重定位。 */
 
     TZrStackPointer toBeClosedValueList; /**< 待关闭值链头；与栈槽中的反向偏移配对。 */
+    SZrRawObject **temporaryRoots;
+    TZrSize temporaryRootLength;
+    TZrSize temporaryRootCapacity;
     SZrAotGcRootFrame *aotGcRootFrameStack; /**< 当前 AOT 根帧链顶。 */
     TZrUInt32 aotGcRootFrameDepth; /**< Push/Pop 必须成对维护的链深度。 */
     /** 栈闭包链成员状态；自身指针是未加入全局链的哨兵。 */

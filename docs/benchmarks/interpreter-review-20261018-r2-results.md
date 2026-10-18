@@ -206,3 +206,33 @@ CPU 5, median of three, no overlapping builds/tests (load about 1.1):
 Both canonical integer loop bodies are **4 instructions**, floatloop is
 **7**, satisfying the <=4/<=8 shape targets. Loop_lt/loop_le ratio is 1.000.
 Evidence: `build/r2-m1-*`, `build/r2-ab/m1-final/results.json`.
+
+## R2-M2: single-owner synchronization and temporary roots
+
+Domain mutexes now elide on the native owner thread, with an atomic draining
+handoff before any foreign root API or second attached mutator can enter.
+Nested owner scopes may finish during handoff. Per-state LIFO roots replace
+object-write and weak-string insertion leases; collection scans them, native
+pointers remain pinned, reserve failure preserves state, and TryRun unwinding
+restores the saved depth. Barrier early exits run inside an exclusive owner
+scope and retain remembered-set and ignored-root maintenance. ELF profiling
+TLS uses initial-exec. Stack growth no longer races a shared stop flag: its
+raw allocator cannot collect, and stack pointers are restored before the
+mutator can acknowledge a safepoint.
+
+Validation: full Release rebuild and **423/423** core CTests; **24/24** selected
+ASan/UBSan/forced-full-GC CTests, **70/70** standalone GC checks, and **15/15**
+sanitizer smoke probes. All **3/3 TSan** checks pass, including attached-domain,
+foreign root handoff and distinct-root threads. An extra full forced-GC language
+suite was stopped in its expensive compiler integration test; full ASan coverage
+is reserved for the final layout batch. Full-suite fixtures now exercise runtime
+division through a variable and the direct AOT argument copy, and preserve all
+legacy opcode number assertions while checking the appended opcodes.
+
+Scale-1 gc_fragment Callgrind: **2.782 G Ir**, pthread mutex lock/unlock only
+**150 Ir total** (well below 1%); barrier **197.5 Ir/call** versus 669, still
+above the 150 target. The methods trip-count diff has **zero `__tls_get_addr`**.
+CPU 5, no overlapping builds/tests: methods median of three **744.53 ms**;
+core GC source/binary one-sample checks baseline **1432.792 / 1433.831 ms**,
+stress **1482.369 / 1366.008 ms**. These remain above the 450/300 ms goals.
+Evidence: `build/r2-m2-*`, `build/r2-ab/m2*-*.callgrind` and `m2-final/results.json`.

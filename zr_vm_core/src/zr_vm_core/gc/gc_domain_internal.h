@@ -118,6 +118,16 @@ typedef struct SZrGcDomain {
     pthread_mutex_t mutationLock;
     pthread_cond_t coordinationCondition;
 #endif
+    /* Owner-only elision drains permanently before a foreign thread or a
+     * second mutator can use native mutexes. Atomic scopes bridge the handoff. */
+#if defined(ZR_PLATFORM_WIN)
+    DWORD elisionOwner;
+#else
+    pthread_t elisionOwner;
+#endif
+    volatile TZrInt32 elisionMode; /* 1 enabled, 2 draining, 0 native mutexes */
+    volatile TZrInt32 elidedCoordinationDepth;
+    volatile TZrInt32 elidedMutationDepth;
     TZrBool coordinationInitialized;
     TZrBool mutationLockInitialized;
     TZrBool active;
@@ -147,6 +157,7 @@ void ZrCore_GcDomain_Unlock(SZrGcDomain *domain);
 void ZrCore_GcDomain_Broadcast(SZrGcDomain *domain);
 /* 并发 major 写入与标记共享递归锁，允许屏障在受保护写入中重入。 */
 void ZrCore_GcDomain_MutationLock(SZrGcDomain *domain);
+TZrBool ZrCore_GcDomain_TryExclusiveMutation(SZrGcDomain *domain);
 void ZrCore_GcDomain_MutationUnlock(SZrGcDomain *domain);
 /* ownership transfer 在各阶段向身份仍匹配的两端域写入统计，不拥有传入的对象。 */
 void ZrCore_GcDomain_RecordTransferTelemetry(

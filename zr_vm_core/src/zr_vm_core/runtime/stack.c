@@ -123,17 +123,15 @@ static void stack_mark_stack_as_absolute(SZrState *state) {
         rootFrame = previous;
     }
 }
-/* 暂停 GC 后保存/恢复栈内指针和 AOT 根帧基址，再跨过宿主 realloc。 */
+/* Raw allocation cannot collect. The running mutator cannot be scanned until
+ * its next safepoint, after all relative stack pointers have been restored. */
 static TZrBool stack_realloc_internal(SZrState *state, TZrUInt64 newSize, TZrBool throwError) {
     SZrGlobalState *global = state->global;
     TZrSize previousStackSize = ZrCore_State_StackGetSize(state);
     TZrSize previousStackByteSize =
             sizeof(SZrTypeValueOnStack) * (previousStackSize + ZR_THREAD_STACK_SIZE_EXTRA);
     TZrSize newStackByteSize = sizeof(SZrTypeValueOnStack) * (newSize + ZR_THREAD_STACK_SIZE_EXTRA);
-    SZrGarbageCollector *collector = global->garbageCollector;
-    TZrBool previousStopGcFlag = collector->stopGcFlag;
     ZR_ASSERT(newSize <= ZR_VM_MAX_STACK || newSize == ZR_VM_ERROR_STACK);
-    collector->stopGcFlag = ZR_TRUE;
     stack_mark_stack_as_relative(state, previousStackByteSize);
     TZrStackValuePointer newStackPointer = ZR_CAST_STACK_VALUE(
             ZrCore_Memory_Allocate(global, state->stackBase.valuePointer, previousStackByteSize,
@@ -141,7 +139,6 @@ static TZrBool stack_realloc_internal(SZrState *state, TZrUInt64 newSize, TZrBoo
     if (ZR_UNLIKELY(newStackPointer == ZR_NULL)) {
         // TODO: 失败后会用旧 stackBase 恢复指针；FZrAllocator 的失败保留契约未统一，需核验所有当前宿主 allocator。
         stack_mark_stack_as_absolute(state);
-        collector->stopGcFlag = previousStopGcFlag;
         if (throwError) {
             ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
         }
@@ -160,7 +157,6 @@ static TZrBool stack_realloc_internal(SZrState *state, TZrUInt64 newSize, TZrBoo
         ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(slot));
         slot->toBeClosedValueOffset = 0u;
     }
-    collector->stopGcFlag = previousStopGcFlag;
     return ZR_TRUE;
 }
 /* 按 stackTop 所在槽计算所需容量，并保留当前逻辑容量以避免意外缩栈。 */

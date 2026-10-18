@@ -80,7 +80,13 @@ struct SZrState;
  * - 真实用途位置：`zr_vm_core/include/zr_vm_core/profile.h:422`。
  *
  */
+#if defined(__ELF__) && (defined(__GNUC__) || defined(__clang__))
+/* One pointer in the loader's static TLS reserve; avoids dynamic TLS calls
+ * throughout shared-library value/staging helpers. */
+#define ZR_PROFILE_THREAD_LOCAL ZR_THREAD_LOCAL __attribute__((tls_model("initial-exec")))
+#else
 #define ZR_PROFILE_THREAD_LOCAL ZR_THREAD_LOCAL
+#endif
 /** @brief helperCounts 下标；新增计数项须保留已有数值和报告名称。 */
 /**
  * ## Summary

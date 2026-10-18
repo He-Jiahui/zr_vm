@@ -1594,6 +1594,8 @@ static TZrSize garbage_collector_rewrite_aot_root_frames(SZrState *threadState) 
         return 0;
     }
 
+    for (TZrSize i = 0u; i < threadState->temporaryRootLength; ++i)
+        work += garbage_collector_rewrite_raw_object_slot_counted(&threadState->temporaryRoots[i]);
     frame = threadState->aotGcRootFrameStack;
     while (frame != ZR_NULL) {
         const SZrAotGcRootMap *rootMap = frame->rootMap;
