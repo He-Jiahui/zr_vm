@@ -238,6 +238,7 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->ownerFunction = ZR_NULL;
     function->instructionsList = ZR_NULL;
     function->instructionsLength = 0;
+    function->instructionsVerified = ZR_FALSE;
     function->executionLocationInfoList = ZR_NULL;
     function->executionLocationInfoLength = 0;
     function->catchClauseList = ZR_NULL;
@@ -1190,6 +1191,7 @@ static void function_reset_to_tombstone(SZrFunction *function) {
     ZrCore_Function_ForgetIrOwnersAfterMove(function);
     function->instructionsList = ZR_NULL;
     function->instructionsLength = 0;
+    function->instructionsVerified = ZR_FALSE;
     function->childFunctionList = ZR_NULL;
     function->childFunctionLength = 0;
     function->childFunctionGraphIsBorrowed = ZR_FALSE;
@@ -5448,4 +5450,59 @@ void ZrCore_Function_PostCallPreparedSingleResultFast(struct SZrState *state,
                                                       struct SZrCallInfo *callInfo,
                                                       TZrSize resultCount) {
     function_post_call_single_result_no_debug_fast(state, callInfo, resultCount);
+}
+
+#include "bytecode/bytecode_verify.h"
+#include "function/function_bytecode_internal.h"
+
+static TZrBool function_verify_constant_function(const void *context, TZrSize index) {
+    const SZrTypeValue *value = &((const SZrFunction *)context)->constantValueList[index];
+    return (TZrBool)((value->type == ZR_VALUE_TYPE_FUNCTION || value->type == ZR_VALUE_TYPE_CLOSURE) &&
+            !value->isNative && value->value.object != ZR_NULL &&
+            value->value.object->type == ZR_RAW_OBJECT_TYPE_FUNCTION);
+}
+static TZrSize function_verify_call_arguments(const void *context, TZrSize index) {
+    return ((const SZrFunction *)context)->callSiteCaches[index].argumentCount;
+}
+static TZrBool function_verify_instructions(const SZrFunction *f, TZrBool guarded) {
+    SZrBytecodeVerificationView view = {0};
+    if (f == ZR_NULL || f->parameterCount > f->stackSize ||
+        (f->constantValueLength && !f->constantValueList) ||
+        (f->callSiteCacheLength && !f->callSiteCaches) ||
+        (f->catchClauseCount && !f->catchClauseList) ||
+        (f->exceptionHandlerCount && !f->exceptionHandlerList)) return ZR_FALSE;
+    view.allowGuardedFallthrough = guarded;
+    view.instructions = f->instructionsList;
+    view.instructionsLength = f->instructionsLength;
+    view.stackSize = f->stackSize;
+    view.constantVariablesLength = f->constantValueLength;
+    view.closureVariablesLength = f->closureValueLength;
+    view.memberEntriesLength = f->memberEntryLength;
+    view.callSiteCacheLength = f->callSiteCacheLength;
+    view.prototypesLength = f->prototypeCount;
+    view.exceptionHandlerCount = f->exceptionHandlerCount;
+    view.arrayInitialLengthAllowed = ZR_TRUE;
+    view.arrayInitialLengthLimit = ((TZrSize)512u * 1024u * 1024u) / sizeof(SZrTypeValue);
+    view.context = f;
+    view.constantIsFunction = function_verify_constant_function;
+    view.callArgumentCount = function_verify_call_arguments;
+    if (!bytecode_verify_body(&view)) return ZR_FALSE;
+    for (TZrSize n = 0; n < f->catchClauseCount; ++n)
+        if (f->catchClauseList[n].targetInstructionOffset >= f->instructionsLength) return ZR_FALSE;
+    for (TZrSize n = 0; n < f->exceptionHandlerCount; ++n) {
+        const SZrFunctionExceptionHandlerInfo *h = &f->exceptionHandlerList[n];
+        if (h->protectedStartInstructionOffset >= f->instructionsLength ||
+            h->catchClauseStartIndex > f->catchClauseCount ||
+            h->catchClauseCount > f->catchClauseCount - h->catchClauseStartIndex ||
+            (h->hasFinally && (h->finallyTargetInstructionOffset >= f->instructionsLength ||
+                              h->afterFinallyInstructionOffset >= f->instructionsLength))) return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Function_VerifyInstructions(const SZrFunction *f) {
+    return function_verify_instructions(f, ZR_FALSE);
+}
+TZrBool function_verify_guarded_instructions(const SZrFunction *f) {
+    return function_verify_instructions(f, ZR_TRUE);
 }

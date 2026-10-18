@@ -792,9 +792,16 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrBool frameGcSummaryValid;
     TZrBool frameGcLayoutsPresent;
     TZrBool frameGcInlineLayoutsPresent;
+    /* Runtime-only. Instructions/operand metadata are immutable while verified.
+     * Hosts must clear this flag before modifying a published function. */
+    TZrBool instructionsVerified;
 };
 
 typedef struct SZrFunction SZrFunction;
+
+/* Nonallocating structural verifier. It does not mutate the const function or
+ * prove runtime value types. The caller records success before publication. */
+ZR_CORE_API TZrBool ZrCore_Function_VerifyInstructions(const SZrFunction *function);
 
 typedef const SZrTypeLayout *(*FZrFunctionFrameTypeLayoutResolver)(const SZrFunction *function,
                                                                    TZrUInt32 typeLayoutId,

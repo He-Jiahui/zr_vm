@@ -1159,6 +1159,15 @@ static SZrFunction *create_test_function(SZrState *state, TZrInstruction *instru
     return function;
 }
 
+/* Hand-built capture instructions must describe their closure storage too. */
+static void set_test_capture_metadata(SZrState *state, SZrFunction *function) {
+    function->closureValueList = ZrCore_Memory_RawMallocWithType(state->global,
+            sizeof(*function->closureValueList), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(function->closureValueList);
+    memset(function->closureValueList, 0, sizeof(*function->closureValueList));
+    function->closureValueLength = 1u;
+}
+
 /* The GC scenarios below use two named hot receivers. Fill the remaining PIC
  * ways with permanent receivers before requesting replacement, so eviction is
  * exercised at the production capacity. Original constant indices stay fixed. */
@@ -6792,6 +6801,7 @@ static void test_get_closure(void) {
     instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CLOSURE), 0, 0); // dest=0, closureIndex=0
 
     SZrFunction *testFunction = create_test_function(state, instructions, 1, &constant, 1, 2);
+    set_test_capture_metadata(state, testFunction);
     TEST_ASSERT_NOT_NULL(testFunction);
 
     // 创建带闭包值的闭包，使用 testFunction
@@ -6846,6 +6856,7 @@ static void test_set_closure(void) {
     instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_CLOSURE), 0, 0); // closureIndex=0, src=0
 
     SZrFunction *testFunction = create_test_function(state, instructions, 2, &constant, 1, 2);
+    set_test_capture_metadata(state, testFunction);
 
     // 创建带闭包值的闭包，使用 testFunction
     SZrClosure *closure = ZrCore_Closure_New(state, 1);
@@ -6894,6 +6905,7 @@ static void test_getupval(void) {
     instructions[0] = create_instruction_2(ZR_INSTRUCTION_ENUM(GETUPVAL), 0, 0, 0); // dest=0, upvalIndex=0
 
     SZrFunction *testFunction = create_test_function(state, instructions, 1, ZR_NULL, 0, 2);
+    set_test_capture_metadata(state, testFunction);
     
     // 创建带upvalue的闭包，使用 testFunction
     SZrClosure *closure = ZrCore_Closure_New(state, 1);
@@ -6994,6 +7006,7 @@ static void test_setupval(void) {
     instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(SETUPVAL), 0, 0, 0); // upvalIndex=0, src=0
 
     SZrFunction *testFunction = create_test_function(state, instructions, 2, &constant, 1, 3);
+    set_test_capture_metadata(state, testFunction);
     
     // 创建带upvalue的闭包，使用 testFunction
     SZrClosure *closure = ZrCore_Closure_New(state, 1);

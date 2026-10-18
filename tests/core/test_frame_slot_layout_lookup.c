@@ -479,8 +479,8 @@ static void test_io_loader_rebuilds_direct_value_parameter_summary(void) {
     ioFunction.frameSlotLayoutsLength = 1u;
     ioFunction.frameSlotLayouts = &layout;
     instruction.instruction.operationCode =
-            (TZrUInt16)ZR_INSTRUCTION_ENUM(GET_GLOBAL);
-    instruction.instruction.operandExtra = 32u;
+            (TZrUInt16)ZR_INSTRUCTION_ENUM(FUNCTION_RETURN);
+    instruction.instruction.operandExtra = 0u;
     ioFunction.instructionsLength = 1u;
     ioFunction.instructions = &instruction;
     module.entryFunction = &ioFunction;
@@ -498,9 +498,9 @@ static void test_io_loader_rebuilds_direct_value_parameter_summary(void) {
     TEST_ASSERT_EQUAL_UINT32(
             2u, runtimeFunction->directValueFrameSlotCountPlusOne);
     TEST_ASSERT_EQUAL_UINT32(
-            34u, runtimeFunction->generatedFrameSlotCountPlusOne);
+            2u, runtimeFunction->generatedFrameSlotCountPlusOne);
     TEST_ASSERT_EQUAL_UINT32(
-            33u, ZrCore_Function_GetGeneratedFrameSlotCount(runtimeFunction));
+            1u, ZrCore_Function_GetGeneratedFrameSlotCount(runtimeFunction));
     ZrCore_Function_Free(state, runtimeFunction);
 
     layout.reserved0 = ZR_FUNCTION_FRAME_SLOT_FLAG_DIRECT_VALUE;
@@ -540,7 +540,7 @@ static void test_io_loader_validates_forwarded_receiver_alias_source(void) {
     function.frameByteSize = 8u * (TZrUInt32)sizeof(SZrTypeValueOnStack);
     function.frameSlotLayoutsLength = 2u;
     function.frameSlotLayouts = layouts;
-    instruction.instruction.operationCode = ZR_INSTRUCTION_ENUM(GET_GLOBAL);
+    instruction.instruction.operationCode = ZR_INSTRUCTION_ENUM(FUNCTION_RETURN);
     function.instructionsLength = 1u;
     function.instructions = &instruction;
     module.entryFunction = &function;

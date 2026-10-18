@@ -195,6 +195,18 @@ static void read_source_try_body(SZrState *state, TZrPtr arguments) {
     }
 }
 
+static SZrFunction *create_metadata_body(SZrState *state) {
+    SZrFunction *function = ZrCore_Function_New(state);
+    if (function == ZR_NULL) return ZR_NULL;
+    function->instructionsList = ZrCore_Memory_RawMallocWithType(state->global,
+            sizeof(TZrInstruction), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (function->instructionsList == ZR_NULL) { ZrCore_Function_Free(state, function); return ZR_NULL; }
+    memset(function->instructionsList, 0, sizeof(TZrInstruction));
+    function->instructionsList[0].instruction.operationCode = ZR_INSTRUCTION_ENUM(FUNCTION_RETURN);
+    function->instructionsLength = 1u;
+    return function;
+}
+
 static SZrFunction *create_metadata_token_fixture_with_return_type_and_version(SZrState *state,
                                                                                EZrValueType returnBaseType,
                                                                                const TZrChar *moduleVersion) {
@@ -206,7 +218,7 @@ static SZrFunction *create_metadata_token_fixture_with_return_type_and_version(S
         return ZR_NULL;
     }
 
-    function = ZrCore_Function_New(state);
+    function = create_metadata_body(state);
     if (function == ZR_NULL) {
         return ZR_NULL;
     }
@@ -319,7 +331,7 @@ static SZrFunction *create_union_metadata_token_fixture(SZrState *state, SZrAstN
         return ZR_NULL;
     }
 
-    function = ZrCore_Function_New(state);
+    function = create_metadata_body(state);
     if (function == ZR_NULL) {
         return ZR_NULL;
     }
@@ -375,7 +387,7 @@ static SZrFunction *create_named_signature_metadata_token_fixture(SZrState *stat
         return ZR_NULL;
     }
 
-    function = ZrCore_Function_New(state);
+    function = create_metadata_body(state);
     if (function == ZR_NULL) {
         return ZR_NULL;
     }
@@ -442,7 +454,7 @@ static SZrFunction *create_import_member_ref_metadata_token_fixture(SZrState *st
         return ZR_NULL;
     }
 
-    function = ZrCore_Function_New(state);
+    function = create_metadata_body(state);
     if (function == ZR_NULL) {
         return ZR_NULL;
     }
@@ -513,7 +525,7 @@ static SZrFunction *create_module_ref_aggregation_fixture(SZrState *state) {
         return ZR_NULL;
     }
 
-    function = ZrCore_Function_New(state);
+    function = create_metadata_body(state);
     if (function == ZR_NULL) {
         return ZR_NULL;
     }

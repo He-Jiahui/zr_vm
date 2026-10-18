@@ -3112,6 +3112,10 @@ static void test_borrowed_frame_alias_artifact_version_and_flags_are_validated(v
             ZR_FUNCTION_FRAME_SLOT_FLAG_INDIRECT_ALIAS |
             ZR_FUNCTION_FRAME_SLOT_FLAG_BORROWED_ALIAS;
 
+    TZrInstruction returnInstruction = {0};
+    returnInstruction.instruction.operationCode = ZR_INSTRUCTION_ENUM(FUNCTION_RETURN);
+    ioFunction.instructions = &returnInstruction;
+    ioFunction.instructionsLength = 1u;
     ioFunction.parametersLength = 1u;
     ioFunction.stackSize = 1u;
     ioFunction.sourceVersionPatch =

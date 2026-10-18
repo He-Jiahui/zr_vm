@@ -143,6 +143,10 @@ static void test_loaded_function_has_the_same_host_lifetime(void) {
     SZrIoSource source = {0};
     SZrIoModule module = {0};
     SZrIoFunction ioFunction = {0};
+    TZrInstruction instruction = {0};
+    instruction.instruction.operationCode = ZR_INSTRUCTION_ENUM(FUNCTION_RETURN);
+    ioFunction.instructions = &instruction;
+    ioFunction.instructionsLength = 1u;
     SZrFunction *function;
     module.entryFunction = &ioFunction;
     source.modulesLength = 1;
@@ -151,7 +155,7 @@ static void test_loaded_function_has_the_same_host_lifetime(void) {
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, &function->super));
     ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
-    TEST_ASSERT_NULL(function->instructionsList);
+    TEST_ASSERT_NOT_NULL(function->instructionsList);
     ZrCore_Function_Free(state, function);
     TEST_ASSERT_FALSE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, &function->super));
     ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);

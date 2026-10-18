@@ -436,7 +436,8 @@ TZrBool execution_jump_to_instruction_offset(SZrState *state,
 
     function = execution_call_info_function(state, targetCallInfo);
     if (function == ZR_NULL || function->instructionsList == ZR_NULL ||
-        instructionOffset > function->instructionsLength) {
+        (instructionOffset > function->instructionsLength ||
+         (function->instructionsVerified && instructionOffset == function->instructionsLength))) {
         return ZR_FALSE;
     }
 

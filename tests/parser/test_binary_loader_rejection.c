@@ -237,8 +237,36 @@ static void test_valid_nested_functions_loops_and_prototypes_are_accepted(void) 
     }
 }
 
+static void test_empty_and_unterminated_bodies_are_rejected(void) {
+    TZrSize last = instructionsOffset + (instructionCount - 1u) * sizeof(TZrInstruction);
+    TZrInstruction saved, invalid = {0};
+    memcpy(&saved, encoded + last, sizeof(saved));
+    invalid.instruction.operationCode = ZR_INSTRUCTION_ENUM(NOP);
+    memcpy(encoded + last, &invalid, sizeof(invalid));
+    TEST_ASSERT_FALSE(read_binary(encoded, encodedLength, 7u));
+    memcpy(encoded + last, &saved, sizeof(saved));
+
+    /* The instruction count precedes the encoded array. Remove the array too,
+     * so subsequent metadata remains well formed and zero length is the error. */
+    TZrSize countOffset = instructionsOffset - sizeof(TZrUInt64);
+    TZrUInt64 savedCount, zero = 0;
+    memcpy(&savedCount, encoded + countOffset, sizeof(savedCount));
+    TEST_ASSERT_EQUAL_UINT64(instructionCount, savedCount);
+    TZrSize removed = instructionCount * sizeof(TZrInstruction);
+    TZrByte *empty = malloc(encodedLength - removed);
+    TEST_ASSERT_NOT_NULL(empty);
+    memcpy(empty, encoded, instructionsOffset);
+    memcpy(empty + countOffset, &zero, sizeof(zero));
+    memcpy(empty + instructionsOffset, encoded + instructionsOffset + removed,
+           encodedLength - instructionsOffset - removed);
+    TZrBool accepted = read_binary(empty, encodedLength - removed, 7u);
+    free(empty);
+    TEST_ASSERT_FALSE(accepted);
+}
+
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_empty_and_unterminated_bodies_are_rejected);
     RUN_TEST(test_chunked_round_trip_and_all_truncations);
     RUN_TEST(test_header_and_length_bombs_are_rejected);
     RUN_TEST(test_all_native_allocation_failures_release_partial_tree);

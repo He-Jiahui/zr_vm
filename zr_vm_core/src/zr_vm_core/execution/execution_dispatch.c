@@ -10,6 +10,7 @@
 #include "execution/execution_budget_fast.h"
 #include "function/function_call_spread_internal.h"
 #include "function/function_precall_internal.h"
+#include "function/function_bytecode_internal.h"
 #include "object/object_internal.h"
 #include "object/object_super_array_internal.h"
 
@@ -77,8 +78,8 @@ static inline SZrTypeValue *execution_frame_value_slot_signed_fast_inline(
         TZrUInt32 stackSlot,
         SZrProfileRuntime *profileRuntime,
         TZrBool recordHelpers) {
-    if (ZR_LIKELY(packedDirectValueBase != ZR_NULL &&
-                  stackSlot < function->frameSlotLayoutLength)) {
+    if (ZR_LIKELY(packedDirectValueBase != ZR_NULL)) {
+        ZR_ASSERT(stackSlot < function->stackSize);
         if (ZR_UNLIKELY(recordHelpers)) {
             ZR_ASSERT(profileRuntime != ZR_NULL);
             profileRuntime->helperCounts[
@@ -101,6 +102,7 @@ static ZR_FORCE_INLINE TZrStackValuePointer
 execution_packed_direct_value_frame_base(const SZrFunction *function,
                                          TZrStackValuePointer frameBase) {
     if (!ZrCore_Function_HasDirectValueFrameSlotSummary(function) ||
+        !function->instructionsVerified || function->frameSlotLayoutLength < function->stackSize ||
         frameBase == ZR_NULL) {
         return ZR_NULL;
     }
@@ -2422,6 +2424,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     SZrFunction *profilePreviousFrameFunction = ZR_NULL;
     SZrTypeValue *opA;
     SZrTypeValue *opB;
+    TZrBool verifiedFastBody = ZR_FALSE;
     TZrUInt32 mutatorPollBudget = 0u;
     SZrExecutionBudget *executionBudget = state->executionBudget;
     TZrUInt32 budgetResourcePollCountdown = 0u;
@@ -2735,7 +2738,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 #define UPDATE_FAST_DISPATCH_MODE()                                                                                     \
     do {                                                                                                               \
-        fastDispatchMode = (trap == ZR_DEBUG_SIGNAL_NONE && !recordInstructions &&                                    \
+        fastDispatchMode = (verifiedFastBody && trap == ZR_DEBUG_SIGNAL_NONE && !recordInstructions &&                                    \
                             state->debugTraceObserver == ZR_NULL)                                                     \
                                    ? ZR_TRUE                                                                          \
                                    : ZR_FALSE;                                                                         \
@@ -2780,6 +2783,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define FAST_PREPARE_STACK_DESTINATION() FAST_PREPARE_STACK_DESTINATION_FROM_OFFSET(E(instruction))
 #define FETCH_PREPARE_FAST_ONLY(N)                                                                                      \
     do {                                                                                                               \
+        ZR_ASSERT(verifiedFastBody);                                                                                   \
+        ZR_ASSERT((N) == 1 ? programCounter < instructionsEndFast1 : programCounter + (N) < instructionsEnd);          \
         EXECUTION_MUTATOR_POLL_BEFORE_FETCH(N);                                                                        \
         if ((N) == 1) {                                                                                                \
             instruction = *++programCounter;                                                                           \
@@ -2843,18 +2848,12 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define DONE_FAST(N)                                                                                                   \
     do {                                                                                                               \
-        if (ZR_UNLIKELY((N) == 1 ? programCounter >= instructionsEndFast1 : programCounter + (N) >= instructionsEnd)) { \
-            goto LZrExecutionDone;                                                                                     \
-        }                                                                                                              \
         FETCH_PREPARE_FAST_ONLY(N);                                                                                    \
         ZR_FAST_INSTRUCTION_DISPATCH(instruction)                                                                      \
     } while (0)
 #define DONE_AFTER_TRAP_FAST_ONE()                                                                                     \
     do {                                                                                                               \
-        if (ZR_LIKELY(trap == ZR_DEBUG_SIGNAL_NONE)) {                                                                 \
-            if (ZR_UNLIKELY(programCounter >= instructionsEndFast1)) {                                                 \
-                goto LZrExecutionDone;                                                                                 \
-            }                                                                                                          \
+        if (ZR_LIKELY(fastDispatchMode)) {                                                                 \
             FETCH_PREPARE_FAST_ONLY(1);                                                                                \
             ZR_FAST_INSTRUCTION_DISPATCH(instruction)                                                                  \
         }                                                                                                              \
@@ -2864,9 +2863,6 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define DONE(N)                                                                                                        \
     do {                                                                                                               \
         if (ZR_LIKELY(fastDispatchMode)) {                                                                             \
-            if (ZR_UNLIKELY((N) == 1 ? programCounter >= instructionsEndFast1 : programCounter + (N) >= instructionsEnd)) { \
-                goto LZrExecutionDone;                                                                                 \
-            }                                                                                                          \
             FETCH_PREPARE_FAST_ONLY(N);                                                                                \
             ZR_FAST_INSTRUCTION_DISPATCH(instruction)                                                                  \
         }                                                                                                              \
@@ -6060,6 +6056,13 @@ LZrReturning: {
                    !functionBaseValue->isNative)
                           ? ZR_CAST_VM_CLOSURE(state, functionBaseValue->value.object)
                           : ZR_NULL;
+        if (ZR_UNLIKELY(!function->instructionsVerified)) {
+            function->instructionsVerified = ZrCore_Function_VerifyInstructions(function);
+            if (!function->instructionsVerified && !function_verify_guarded_instructions(function))
+                ZrCore_Debug_RunError(state, "invalid VM bytecode body");
+        }
+        verifiedFastBody = (function->instructionsVerified && function->instructionsList[function->instructionsLength - 1u].instruction.operationCode ==
+                            ZR_INSTRUCTION_ENUM(FUNCTION_RETURN));
         constants = function->constantValueList;
         instructionsEnd = function->instructionsList + function->instructionsLength;
         instructionsEndFast1 = instructionsEnd - 1;
@@ -6105,6 +6108,13 @@ LZrReturning: {
                            !currentFunctionBaseValue->isNative)
                                   ? ZR_CAST_VM_CLOSURE(state, currentCallableObject)
                                   : ZR_NULL;
+                if (ZR_UNLIKELY(!currentFunction->instructionsVerified)) {
+                    currentFunction->instructionsVerified = ZrCore_Function_VerifyInstructions(currentFunction);
+                    if (!currentFunction->instructionsVerified && !function_verify_guarded_instructions(currentFunction))
+                        ZrCore_Debug_RunError(state, "invalid VM bytecode body");
+                }
+                verifiedFastBody = (currentFunction->instructionsVerified && currentFunction->instructionsList[currentFunction->instructionsLength - 1u].instruction.operationCode ==
+                                    ZR_INSTRUCTION_ENUM(FUNCTION_RETURN));
                 constants = currentFunction->constantValueList;
                 instructionsEnd = currentFunction->instructionsList + currentFunction->instructionsLength;
                 instructionsEndFast1 = instructionsEnd - 1;

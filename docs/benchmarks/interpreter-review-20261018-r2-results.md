@@ -236,3 +236,32 @@ CPU 5, no overlapping builds/tests: methods median of three **744.53 ms**;
 core GC source/binary one-sample checks baseline **1432.792 / 1433.831 ms**,
 stress **1482.369 / 1366.008 ms**. These remain above the 450/300 ms goals.
 Evidence: `build/r2-m2-*`, `build/r2-ab/m2*-*.callgrind` and `m2-final/results.json`.
+
+## R2-M4: verified bytecode and guarded host compatibility
+
+A shared nonallocating operand/control-flow validator now covers IO, final
+source quickening, ExecIR lowering and lazy host entry. Strict bodies must be
+nonempty and end in a non-yielding return, tail call or in-body unconditional
+jump. Jump-to-end and fused iterator skip/branch overruns are rejected. Source
+quickening adds an explicit empty return landing for former fallthrough/end
+sentinels, preserving source and execution-location metadata.
+
+Verified return-terminated functions use unchecked fast fetches and, when all
+slots have a packed VALUE mirror, direct slot addressing. Debug assertions stay
+in place. Nonempty legacy host bodies may fall through only after operand and
+control-flow validation, with the guarded dispatcher and bounded slot lookup;
+they never acquire the strict verification flag. Hosts must clear the runtime
+flag before mutating published instructions/operand metadata. Low-level capture
+fixtures now describe their closure storage, and metadata-only IO fixtures have
+an explicit return.
+
+Validation: strict verifier regressions cover empty/missing terminators, final
+yields, invalid opcodes/slots/constants/call windows, jumps and fused skips.
+ASan/UBSan/forced-full GC: **7/7** loader/ExecIR/verifier/integer/budget CTests,
+**95/95** low-level instruction checks. The report mutation probe completes
+**118 cases: 70 rejected, 48 valid executions; zero sanitizer reports, crashes
+or timeouts**. A timing-sensitive persistent-protocol test had a 650 ms sleep
+outlier under concurrent sanitizer work; the final Release gate is recorded
+below. Evidence: `build/r2-m4-clean-*`, `build/r2-m4-final-fuzz.log`.
+
+Final full Release rebuild succeeds; core CTest **424/424 pass** (62.14 s).

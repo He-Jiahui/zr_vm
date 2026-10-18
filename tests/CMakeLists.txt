@@ -9022,3 +9022,5 @@ if(TARGET zr_vm_cli_executable AND ZR_VM_BENCHMARK_PYTHON_EXECUTABLE)
             --cases objauto,strdrop --repeat 1 --smoke)
     set_tests_properties(interpreter_gc_cli PROPERTIES TIMEOUT 90 LABELS "core;gc;benchmark")
 endif()
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/function-instruction-verification.cmake")

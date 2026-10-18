@@ -11,6 +11,15 @@
 #include "zr_vm_parser/semantic_calls.h"
 #include "semantic/semantic_scope_facts.h"
 
+/* Children finish quickening before their owner. A source graph is published
+ * only when every final instruction array satisfies the VM contract. */
+static TZrBool compiler_instruction_graph_verified(const SZrFunction *function) {
+    if (!function->instructionsVerified) return ZR_FALSE;
+    for (TZrUInt32 i = 0u; i < function->childFunctionLength; ++i)
+        if (!compiler_instruction_graph_verified(&function->childFunctionList[i])) return ZR_FALSE;
+    return ZR_TRUE;
+}
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1115,7 +1124,8 @@ static SZrFunction *zr_parser_compiler_compile_mode_active(
     }
     zr_parser_compile_trace("build semir metadata ok func=%p", (void *)func);
 
-    if (!compiler_quicken_execbc_function(state, func)) {
+    if (!compiler_quicken_execbc_function(state, func) ||
+        !compiler_instruction_graph_verified(func)) {
         ZrCore_Function_Free(state, func);
         ZrParser_CompilerState_Free(&cs);
         return ZR_NULL;

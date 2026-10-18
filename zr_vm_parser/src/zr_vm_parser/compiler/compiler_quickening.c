@@ -11036,6 +11036,92 @@ static TZrBool compiler_quickening_remove_unused_scratch_resets(SZrFunction *fun
     return ZR_TRUE;
 }
 
+/* Legacy compilation can leave an unreachable branch to the end sentinel
+ * after an explicit return. Give that target an actual empty return. Metadata
+ * index ranges keep their meaning; only the new landing instruction is added. */
+static TZrBool compiler_quickening_terminal_landing(SZrState *state, SZrFunction *f) {
+    TZrBool needed = (TZrBool)(f->instructionsLength == 0u ||
+            (f->instructionsList[f->instructionsLength - 1u].instruction.operationCode != ZR_INSTRUCTION_ENUM(FUNCTION_RETURN) &&
+             f->instructionsList[f->instructionsLength - 1u].instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP)));
+    for (TZrUInt32 pc = 0; pc < f->instructionsLength; ++pc) {
+        const TZrInstruction *i = &f->instructionsList[pc];
+        TZrInt64 target = -1;
+        switch (i->instruction.operationCode) {
+            case ZR_INSTRUCTION_ENUM(JUMP):
+            case ZR_INSTRUCTION_ENUM(JUMP_IF):
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
+                target = (TZrInt64)pc + i->instruction.operand.operand2[0] + 1; break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_EQUAL_SIGNED_CONST):
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED_CONST):
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
+                target = (TZrInt64)pc + (TZrInt16)i->instruction.operand.operand1[1] + 1; break;
+            case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):
+            case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
+                target = (TZrInt64)pc + (TZrInt16)i->instruction.operand.operand1[1] + 2; break;
+            case ZR_INSTRUCTION_ENUM(SET_PENDING_RETURN):
+            case ZR_INSTRUCTION_ENUM(SET_PENDING_BREAK):
+            case ZR_INSTRUCTION_ENUM(SET_PENDING_CONTINUE):
+                target = i->instruction.operand.operand2[0]; break;
+            default: break;
+        }
+        if (target == f->instructionsLength) needed = ZR_TRUE;
+    }
+    if (!needed) return ZR_TRUE;
+    TZrUInt32 length = f->instructionsLength;
+    if (length >= INT32_MAX) return ZR_FALSE;
+    TZrInstruction *code = ZrCore_Memory_RawMallocWithType(state->global,
+            ((TZrSize)length + 1u) * sizeof(*code), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    SZrFunctionExecutionLocationInfo *locations = ZR_NULL;
+    TZrUInt32 *lines = ZR_NULL;
+    if (!code) return ZR_FALSE;
+    if (f->executionLocationInfoList) {
+        locations = ZrCore_Memory_RawMallocWithType(state->global,
+                ((TZrSize)f->executionLocationInfoLength + 1u) * sizeof(*locations), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (!locations) goto fail;
+        TZrSize locationCount = f->executionLocationInfoLength;
+        memcpy(locations, f->executionLocationInfoList, locationCount * sizeof(*locations));
+        memset(&locations[locationCount], 0, sizeof(*locations));
+        locations[locationCount].currentInstructionOffset = length;
+        if (locationCount) locations[locationCount].lineInSource = locations[locationCount - 1u].lineInSource;
+    }
+    if (f->lineInSourceList) {
+        lines = ZrCore_Memory_RawMallocWithType(state->global,
+                ((TZrSize)length + 1u) * sizeof(*lines), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (!lines) goto fail;
+        memcpy(lines, f->lineInSourceList, length * sizeof(*lines));
+        lines[length] = length ? lines[length - 1u] : 0u;
+    }
+    if (length) memcpy(code, f->instructionsList, length * sizeof(*code));
+    memset(&code[length], 0, sizeof(*code));
+    code[length].instruction.operationCode = ZR_INSTRUCTION_ENUM(FUNCTION_RETURN);
+    if (f->instructionsList) ZrCore_Memory_RawFreeWithType(state->global, f->instructionsList,
+            length * sizeof(*code), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (locations) {
+        ZrCore_Memory_RawFreeWithType(state->global, f->executionLocationInfoList,
+                f->executionLocationInfoLength * sizeof(*locations), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        f->executionLocationInfoList = locations;
+        ++f->executionLocationInfoLength;
+    }
+    if (lines) {
+        ZrCore_Memory_RawFreeWithType(state->global, f->lineInSourceList,
+                length * sizeof(*lines), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        f->lineInSourceList = lines;
+    }
+    f->instructionsList = code;
+    f->instructionsLength = length + 1u;
+    return ZR_TRUE;
+fail:
+    if (locations) ZrCore_Memory_RawFreeWithType(state->global, locations,
+            ((TZrSize)f->executionLocationInfoLength + 1u) * sizeof(*locations), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    ZrCore_Memory_RawFreeWithType(state->global, code,
+            ((TZrSize)length + 1u) * sizeof(*code), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    return ZR_FALSE;
+}
+
 static TZrBool compiler_quicken_child_functions(SZrState *state,
                                                 SZrFunction *function,
                                                 TZrBool recurseChildren) {
@@ -11215,6 +11301,13 @@ static TZrBool compiler_quicken_child_functions(SZrState *state,
                            compiler_quickening_quicken_constant_function_values(state, function));
     compiler_quickening_rebind_constant_function_values_to_children(function);
     ZrCore_Function_FinalizeDirectFrameValueSlots(function);
+    if (!compiler_quickening_terminal_landing(state, function)) return ZR_FALSE;
+    function->instructionsVerified = ZrCore_Function_VerifyInstructions(function);
+    if (!function->instructionsVerified && getenv("ZR_VM_TRACE_BYTECODE_VERIFY"))
+        fprintf(stderr, "invalid function %s length=%u last=%u parameters=%u stack=%u\n",
+                compiler_quickening_function_name_text(function->functionName), function->instructionsLength,
+                function->instructionsLength ? function->instructionsList[function->instructionsLength - 1u].instruction.operationCode : 0u,
+                function->parameterCount, function->stackSize);
 
     return ZR_TRUE;
 }

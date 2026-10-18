@@ -95,7 +95,7 @@ static void test_patch_44_writer_and_reader_compatibility_gate(void) {
             state->global, sizeof(TZrInstruction), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     TEST_ASSERT_NOT_NULL(function->instructionsList);
     memset(function->instructionsList, 0, sizeof(TZrInstruction));
-    function->instructionsList[0].instruction.operationCode = ZR_INSTRUCTION_ENUM(NOP);
+    function->instructionsList[0].instruction.operationCode = ZR_INSTRUCTION_ENUM(FUNCTION_RETURN);
     function->instructionsLength = 1u;
     function->stackSize = 1u;
 
@@ -106,7 +106,7 @@ static void test_patch_44_writer_and_reader_compatibility_gate(void) {
     TEST_ASSERT_TRUE(length > patchOffset + sizeof(TZrUInt32));
     TEST_ASSERT_EQUAL_UINT32(ZR_IO_SOURCE_PATCH_CURRENT, close_proxy_read_u32_le(bytes, patchOffset));
 
-    /* Patches 44 and 45 only change opcode semantics. This NOP-only function
+    /* Patches 44 and 45 only change opcode semantics. This empty-return function
      * has no close proxy or CREATE_ARRAY operands and is also valid at 43. */
     close_proxy_write_u32_le(bytes, patchOffset, 43u);
     reader.bytes = bytes;

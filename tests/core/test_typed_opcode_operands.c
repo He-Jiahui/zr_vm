@@ -153,6 +153,8 @@ static void check(const Case *test, unsigned badOperand, TZrBool observed) {
         code[2].instruction.operand.operand1[1] = 1;
     } else if (test->layout == BRANCH || test->layout == CONST_BRANCH) {
         code[2] = instruction(test->opcode, 0, 1, 0);
+        if (test->opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE))
+            code[2].instruction.operand.operand2[0] = 0;
     }
     code[3] = instruction(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1, 2, 0);
     success = execute_and_destroy(state, code, ZR_ARRAY_COUNT(code), values, ZR_ARRAY_COUNT(values), observed);

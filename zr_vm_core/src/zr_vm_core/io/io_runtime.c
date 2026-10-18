@@ -1486,8 +1486,8 @@ static TZrBool io_runtime_populate_function(SZrState *state,
     ZrCore_Function_FinalizeDirectFrameValueSlots(function);
     ZrCore_Function_RebindConstantFunctionValuesToChildren(function);
     /* Embedded children must retain the allocation that owns their storage. */
-
-    return ZR_TRUE;
+    function->instructionsVerified = ZrCore_Function_VerifyInstructions(function);
+    return function->instructionsVerified;
 }
 
 /* 静态模块导入名需复制到函数自有数组，供源树释放后的导入解析使用。 */
