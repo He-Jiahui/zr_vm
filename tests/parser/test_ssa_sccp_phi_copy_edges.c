@@ -281,6 +281,11 @@ static void run(enum ECase kind, const char *name) {
     TZrBool positive = (TZrBool)(kind == C_COPY || kind == C_CHAIN || kind == C_PARALLEL);
     TZrBool interiorBoundary = (TZrBool)(kind == C_INTERIOR_SUSPEND_CALL ||
                                         kind == C_INTERIOR_CALL_ORDERING);
+    /* PHI identity may bypass a singleton PHI even when the legacy edge
+     * COPY rewrite is blocked. Ownership and mapped functions stay frozen. */
+    TZrExecIrValueId expectedReturn =
+            kind == C_PARALLEL || kind == C_OWNED || kind == C_MAPPED ? V_PHI :
+            kind == C_MOVE || kind == C_DROP ? V_COPY : V_SOURCE;
     TZrUInt64 boundaryHash = 0u;
     TZrUInt32 instructionCount, incomingCount;
     case_name = name; case_ok = ZR_TRUE; ++cases;
@@ -305,7 +310,12 @@ static void run(enum ECase kind, const char *name) {
             EXPECT(s.instructions[1].opcode == ZR_EXEC_IR_OPCODE_CALL);
             EXPECT(s.instructions[2].opcode == ZR_EXEC_IR_OPCODE_BRANCH);
             EXPECT(s.blocks[0].terminatorInstructionId == 3u);
+            TZrUInt32 returnOperand = s.instructions[
+                    s.blocks[s.join - 1u].terminatorInstructionId - 1u].operands.offset;
+            TZrExecIrValueId optimizedReturn = s.operands[returnOperand];
+            s.operands[returnOperand] = V_PHI;
             EXPECT(boundaryHash == ZrParser_ExecIr_FunctionHash(&s.function));
+            s.operands[returnOperand] = optimizedReturn;
             for (TZrUInt32 i = 0u; i < instructionCount; ++i)
                 EXPECT(s.instructions[i].sourceId == 101u + i);
             if (kind == C_INTERIOR_SUSPEND_CALL)
@@ -324,15 +334,15 @@ static void run(enum ECase kind, const char *name) {
         }
         for (TZrUInt32 i = 0u; i < incomingCount; ++i)
             EXPECT(s.incoming[i].predecessor == s.predecessors[s.blocks[s.join - 1u].predecessors.offset + i]);
-        EXPECT(s.operands[s.instructions[s.blocks[s.join - 1u].terminatorInstructionId - 1u].operands.offset] == V_PHI);
+        EXPECT(s.operands[s.instructions[s.blocks[s.join - 1u].terminatorInstructionId - 1u].operands.offset] == expectedReturn);
         if (positive) {
             EXPECT(s.incoming[0].value == V_SOURCE);
             if (kind == C_PARALLEL) EXPECT(s.incoming[1].value == V_OTHER);
         } else if (kind != C_BAD_AVAILABILITY && kind != C_BAD_PREDECESSOR)
             EXPECT(s.incoming[0].value == V_COPY);
     }
-    if (positive) EXPECT(changed[0] && !changed[1]);
-    else if (kind != C_BAD_AVAILABILITY && kind != C_BAD_PREDECESSOR) EXPECT(!changed[0] && !changed[1]);
+    if (positive || expectedReturn != V_PHI) EXPECT(changed[0] && !changed[1]);
+    else EXPECT(!changed[0] && !changed[1]);
     if (kind == C_BAD_PREDECESSOR) {
         s.incoming[0].predecessor = s.join;
         expected_diagnostic(&s, "predecessor", ZR_EXEC_IR_DIAGNOSTIC_PHI_PREDECESSOR_MISMATCH,

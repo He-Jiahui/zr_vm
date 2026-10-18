@@ -1,3 +1,4 @@
+include("${CMAKE_CURRENT_LIST_DIR}/ssa-pass-sources.cmake")
 get_filename_component(ZR_SSA_SOURCE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 
 if (NOT TARGET zr_vm_ssa_sccp_conversion_test)
@@ -21,11 +22,7 @@ if (NOT TARGET zr_vm_ssa_sccp_conversion_test)
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effects_linear.c
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_effect_loops.c
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_cfg.c
-            ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
-            ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
-            ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_constant_materialize.c
-            ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_copy_aliases.c
-            ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
+            ${ZR_VM_EXEC_IR_SCALAR_PASS_SOURCES}
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_state_maps.c
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_manager.c
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_core/src/zr_vm_core/exec_ir/exec_ir_interpreter.c
