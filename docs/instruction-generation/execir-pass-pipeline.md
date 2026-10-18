@@ -1,5 +1,22 @@
 ---
 related_code:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_copy_aliases.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_phi_identity.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_phi_identity.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_alias_availability.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_alias_availability.h
+  - tests/parser/test_ssa_phi_identity.c
+  - tests/parser/support/ssa_phi_identity_fixture.h
+  - tests/parser/support/ssa_phi_identity_fixture.c
+  - tests/parser/support/ssa_phi_identity_faults.c
+  - tests/parser/support/ssa_phi_identity_support.h
+  - tests/parser/support/ssa_phi_identity_builders.c
+  - tests/parser/support/ssa_phi_identity_edge_cases.c
+  - tests/parser/support/ssa_phi_identity_metadata.c
+  - tests/parser/support/ssa_phi_identity_oracle.c
+  - tests/parser/support/ssa_phi_identity_budget.c
+  - tests/parser/support/ssa_phi_identity_transactions.c
+  - tests/cmake/ssa-phi-identity.cmake
   - tests/parser/test_ssa_sccp_pooled_bool.c
   - tests/parser/support/ssa_sccp_pooled_bool_fixture.h
   - tests/parser/support/ssa_sccp_pooled_bool_fixture.c
@@ -42,6 +59,11 @@ related_code:
   - tests/parser/support/ssa_gc_map_parser_consumers_fixture.h
   - tests/cmake/ssa-gc-map-parser-consumers.cmake
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_copy_aliases.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_phi_identity.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_phi_identity.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_alias_availability.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_alias_availability.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_internal.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_internal.h
@@ -50,6 +72,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
 plan_sources:
+  - .codex/plans/20261018-ssa-phi-identity.md
   - .codex/plans/20261018-ssa-scalar-completion.md
   - .codex/plans/20261017-ssa-scalar-pipeline.md
   - .codex/plans/20261017-ssa-sccp-bool-edges.md
@@ -58,6 +81,18 @@ plan_sources:
   - docs/plans/ssa/01-execir-ssa/03-effects-verifier.md
   - docs/plans/ssa/02-automatic-optimization/01-pass-manager-scalar.md
 tests:
+  - tests/parser/test_ssa_phi_identity.c
+  - tests/parser/support/ssa_phi_identity_fixture.h
+  - tests/parser/support/ssa_phi_identity_fixture.c
+  - tests/parser/support/ssa_phi_identity_faults.c
+  - tests/parser/support/ssa_phi_identity_support.h
+  - tests/parser/support/ssa_phi_identity_builders.c
+  - tests/parser/support/ssa_phi_identity_edge_cases.c
+  - tests/parser/support/ssa_phi_identity_metadata.c
+  - tests/parser/support/ssa_phi_identity_oracle.c
+  - tests/parser/support/ssa_phi_identity_budget.c
+  - tests/parser/support/ssa_phi_identity_transactions.c
+  - tests/cmake/ssa-phi-identity.cmake
   - tests/parser/test_ssa_sccp_pooled_bool.c
   - tests/parser/support/ssa_sccp_pooled_bool_fixture.h
   - tests/parser/support/ssa_sccp_pooled_bool_fixture.c
@@ -93,6 +128,12 @@ tests:
   - tests/parser/ssa_dce_phi_liveness_cases.inc
   - tests/acceptance/2026-10-02-ssa-dce-phi-liveness.md
 source_refs:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_copy_aliases.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_phi_identity.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_phi_identity.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_alias_availability.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_alias_availability.h
+  - tests/parser/test_ssa_phi_identity.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_internal.h
@@ -504,3 +545,27 @@ representation-sensitive COMPARE witness is migrated only for proven pure
 comparisons, with separate exact BOOL tuple/identity checks; ordered CFG/PHI,
 DIV/effect and unsupported comparisons remain protected. Original historical
 receipts are not rewritten as if the new behavior existed then.
+
+
+## Source41 PHI identity: finite validation
+
+The alias entry prepares same-source PHI identity rewrites within the existing
+SCCP/DCE pipeline. Exact descriptors, global consumption, true CFG/exception
+availability and every slot owner are proved before allocation-free writes.
+Identity metadata and active token overlap remain conservative boundaries.
+
+The actual graph has 39 primary and 34 GC roles. The full21 first run produced
+20 PASS and one direct-FI safety failure: initial allocation failures retained
+an old diagnostic. The rejected receipt remains false. The existing SCCP worker
+now separates storage rejection from allocation OOM; EDA4E6D4 accepts this exact
+sixth production source correction, with the original test oracle unchanged.
+The original 12C and additional SCCP1C finite MSVC syntax are independently
+accepted (3D114506 and 2D89B6E0). The current full-matrix retry is independently
+accepted by 5A51F4D4: 21/21 cases and 974/974 allocation-fault sites pass; the
+original failed run remains rejected. Six dependency regressions pass 232/232
+Unity cases and 2350/2350 fault scenarios; independent actual review 8EE2FF6D
+accepts these results. Publication and artifact disposition are recorded in
+the task manifest and final finite-close receipt. See the
+[module contract](execir-phi-identity.md) and
+[validation record](../testing-and-validation/ssa-phi-identity.md).
+This evidence does not accept the whole scalar leaf or all 47 plans.

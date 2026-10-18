@@ -780,11 +780,10 @@ static TZrBool zr_sccp_worker(SZrExecIrFunction *function,
     size_t bytes;
     TZrBool complete = ZR_TRUE;
     if (changed != ZR_NULL) *changed = ZR_FALSE;
-    if (!zr_sccp_storage_valid(function, diagnostic) ||
-        !zr_sccp_alloc_arrays(function, &lattice, &blockExecutable, &edgeExecutable)) {
-        if (diagnostic != ZR_NULL && diagnostic->code == ZR_EXECUTION_DIAGNOSTIC_NONE)
-            ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
-                                           function, 0u, 0u, 0u, 0u);
+    if (!zr_sccp_storage_valid(function, diagnostic)) return ZR_FALSE;
+    if (!zr_sccp_alloc_arrays(function, &lattice, &blockExecutable, &edgeExecutable)) {
+        ZrParser_ExecIr_PassDiagnostic(diagnostic, ZR_EXEC_IR_DIAGNOSTIC_OUT_OF_MEMORY,
+                                       function, 0u, 0u, 0u, 0u);
         free(lattice);
         free(blockExecutable);
         free(edgeExecutable);

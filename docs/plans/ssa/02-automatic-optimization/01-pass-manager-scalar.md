@@ -1,5 +1,22 @@
 ---
 related_code:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_copy_aliases.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_phi_identity.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_phi_identity.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_alias_availability.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_alias_availability.h
+  - tests/parser/test_ssa_phi_identity.c
+  - tests/parser/support/ssa_phi_identity_fixture.h
+  - tests/parser/support/ssa_phi_identity_fixture.c
+  - tests/parser/support/ssa_phi_identity_faults.c
+  - tests/parser/support/ssa_phi_identity_support.h
+  - tests/parser/support/ssa_phi_identity_builders.c
+  - tests/parser/support/ssa_phi_identity_edge_cases.c
+  - tests/parser/support/ssa_phi_identity_metadata.c
+  - tests/parser/support/ssa_phi_identity_oracle.c
+  - tests/parser/support/ssa_phi_identity_budget.c
+  - tests/parser/support/ssa_phi_identity_transactions.c
+  - tests/cmake/ssa-phi-identity.cmake
   - tests/parser/test_ssa_sccp_pooled_bool.c
   - tests/parser/support/ssa_sccp_pooled_bool_fixture.h
   - tests/parser/support/ssa_sccp_pooled_bool_fixture.c
@@ -32,6 +49,11 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_dead_source_places.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_dead_source_places.c
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_copy_aliases.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_phi_identity.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_phi_identity.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_alias_availability.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_alias_availability.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_owner.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp_internal.h
   - zr_vm_parser/src/zr_vm_parser/exec_ir/exec_ir_pass_internal.h
@@ -41,6 +63,7 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_sccp.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
 plan_sources:
+  - .codex/plans/20261018-ssa-phi-identity.md
   - .codex/plans/20261018-ssa-scalar-completion.md
   - .codex/plans/20261017-ssa-scalar-pipeline.md
   - .codex/plans/20261017-ssa-sccp-bool-edges.md
@@ -48,6 +71,18 @@ plan_sources:
   - docs/plans/ssa/index.md
   - "user: 2026-09-12 按方向拆解 SSA 计划并提供重构指导"
 tests:
+  - tests/parser/test_ssa_phi_identity.c
+  - tests/parser/support/ssa_phi_identity_fixture.h
+  - tests/parser/support/ssa_phi_identity_fixture.c
+  - tests/parser/support/ssa_phi_identity_faults.c
+  - tests/parser/support/ssa_phi_identity_support.h
+  - tests/parser/support/ssa_phi_identity_builders.c
+  - tests/parser/support/ssa_phi_identity_edge_cases.c
+  - tests/parser/support/ssa_phi_identity_metadata.c
+  - tests/parser/support/ssa_phi_identity_oracle.c
+  - tests/parser/support/ssa_phi_identity_budget.c
+  - tests/parser/support/ssa_phi_identity_transactions.c
+  - tests/cmake/ssa-phi-identity.cmake
   - tests/parser/test_ssa_sccp_pooled_bool.c
   - tests/parser/support/ssa_sccp_pooled_bool_fixture.h
   - tests/parser/support/ssa_sccp_pooled_bool_fixture.c
@@ -74,6 +109,12 @@ tests:
   - tests/parser/ssa_dead_source_places_edges.inc
   - docs/acceptance/ssa-dead-source-places.md
 source_refs:
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_copy_aliases.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_phi_identity.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_phi_identity.h
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_alias_availability.c
+  - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_alias_availability.h
+  - tests/parser/test_ssa_phi_identity.c
   - zr_vm_parser/src/zr_vm_parser/exec_ir/passes/exec_ir_dce.c
   - tests/parser/test_ssa_dce_dead_phis.c
   - tests/parser/support/ssa_dce_dead_phis_fixture.h
@@ -191,6 +232,26 @@ retry/cleanup通过，532777attempts/live0/errors0，无UBSan诊断。相应raw/
 三生产文件已实现非空池BOOL写回，focused实际证据独审A9214238接受22案/84profiles全部PASS：八组private实测W=37，完整1..W共296边界；public显式上界138×2=276点，不是实测public W；746/746实际故障与重试通过，459698attempts/live0/errors0。31TU当前证据为先前27个逐项accepted phase与4次fresh compile、1link、focused CTest，fresh诊断0，原warning失败收据保持失败。有限MSVC /W4 /Zs独审AC90E867接受8个当前C、98actualheaders/233protected保持；前5个未变实际syntax与修复旧Int64 main计数类型后3个fresh syntax组合，不授对象、链接、运行时、Linux/fullMSVC/fullW0信用。
 
 实现复用唯一typed scalar materializer，按(type,flags0,bits)去重，BOOL仅0/1；COMPARE谓词token改CONSTANT必须写BOOL；严格来源、可观察元数据边界、预算ready与public候选事务保持。Source37 case32与Source38 COMPARE witness按精确BOOL语义迁移，保留旧安全断言。必要五项IR-only回归实际全PASS：pooled Int64 53/113及239故障、branch-sensitive 22/47及746故障、Source39 DCE 21/140及610故障、metadata15、GC99；三组故障与重试的ledger均0。回归35个fresh role对象与26个精确provider cache、5link/5CTest，actual r2 0DC200AA；原collector因正常link stderr拒绝的整体失败收据保持，未重复已通过编译。提交、自有清理与有限完成计数见总索引和本批收据；未执行VM/Oracle/ExecBC/FFI/MaterializeState。实现与验证详见[BOOL写回记录](../../../testing-and-validation/ssa-sccp-pooled-bool.md)。整叶与完整47出口不勾选。
+
+## Source41 普通 PHI 身份传播：有限验证
+
+在现有SCCP/COPY alias职责中传播`PHI(a,a)`普通身份，由既有DCE删除无用
+logical PHI，scalar列表仍为两阶段。descriptor、全局消费、真实CFG/异常可用性
+和全部共享slot owner均在写入前证明；token与身份metadata保守门禁保持。
+原五生产源和十一测试源已有独立静审；fixture类型修正6581保持断言含义。
+同B实际图D768C344核实主图39、GC图34、153条compdb。
+
+完整首跑12补编、1link接受，21组20PASS/1FAIL；只有direct前三个OOM站仍留A5
+诊断，原收据294A8994保持失败。284B75A5仅接受构建前缀，并核实524合法profile、
+992次调用、W180/245与public有限上界554；974实际故障仅971完成。第六生产源
+SCCP最小拆分storage与alloc失败，EDA4E6D4静审接受，测试oracle不变。当前完整
+重试经5A51F4D4独审接受：21/21组、974/974故障点、owner全部平衡。原12C与
+新增SCCP1C有限MSVC语法经3D114506及2D89B6E0接受。六回归已自然通过
+232/232个Unity用例、2350/2350个故障场景，8EE2FF6D独立实际审查接受。
+精确提交和自有产物处置以本批artifacts.json及finite-close.json为准；
+这些有限证据不代替本叶全部编号任务及出口验收。
+详见[模块合同](../../../instruction-generation/execir-phi-identity.md)与
+[验证记录](../../../testing-and-validation/ssa-phi-identity.md)。
 
 ## 可逐项执行的重构任务
 

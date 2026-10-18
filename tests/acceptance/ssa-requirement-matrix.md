@@ -31,7 +31,7 @@ missing case, duplicate ID, or unbound evidence is a gate failure.
 | 01.03 | ExecIR / `01-execir-ssa/03-effects-verifier.md` | `ssa_effects_verifier` | ordered effect tokens | empty effect range is checked | effect reordering rejected | open |
 | 01.04 | ExecIR / `01-execir-ssa/04-state-maps.md` | `ssa_state_maps` | logical state materialized | partial state map is visible | state-slot alias rejected | open |
 | 01.05 | ExecIR / `01-execir-ssa/05-oracle-projections.md` | `ssa_oracle_projections` | oracle/ExecBC/AOT projection | unsupported projection is reported | projection event mismatch rejected | open |
-| 02.01 | optimization / `02-automatic-optimization/01-pass-manager-scalar.md` | `ssa_pass_manager_scalar` | ordered scalar passes | zero budget is a no-op | verifier failure rolls back | open |
+| 02.01 | optimization / `02-automatic-optimization/01-pass-manager-scalar.md` | `ssa_pass_manager_scalar` | ordered scalar passes | zero limits are unlimited; positive cutoffs preserve valid IR | verifier failure rolls back | open |
 | 02.02 | optimization / `02-automatic-optimization/02-gvn-range.md` | `ssa_gvn_range` | range guard elision | unknown range keeps check | stale generation rejected | open |
 | 02.03 | optimization / `02-automatic-optimization/03-escape-ownership.md` | `ssa_escape_ownership` | nonescaping allocation plan | unknown escape is conservative | borrowed value escape rejected | open |
 | 02.04 | optimization / `02-automatic-optimization/04-interprocedural-inlining.md` | `ssa_interprocedural_inlining` | guarded inline summary | recursive call not inlined | signature/effect mismatch rejected | open |
