@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
+      ZR_VM_TEST_TIER: core
       ASAN_OPTIONS: detect_leaks=0
       UBSAN_OPTIONS: halt_on_error=1
     steps:
