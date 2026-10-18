@@ -160,3 +160,14 @@ eight timer/startup reads per sample. They match instructions/256, versus the
 report's two reads per call. Timing samples exclude the preload counter.
 The loop and calls 10% goals remain open for the later countdown step after
 M4. Evidence: `build/r2-h4a-*`.
+
+## R2-M5: CI wiring
+
+Added `interpreter-gates.yml` for main/perf-branch pushes, main PRs and manual
+runs. The gating Ubuntu job builds all dependencies with ASan/UBSan and forced
+full GC, runs the standalone GC suite plus the report's selected CTests, and
+runs all 15 smoke probes. The non-gating Release job records smoke JSON, the
+full-allocation deep pair with the ratio check, and intloop/calls/fib budget
+JSON. Both retain evidence artifacts even on failure. The commands have been
+exercised locally in the batches above; hosted runner results are pending CI.
+The existing TSan attached-domain job remains enabled in the platform workflow.
