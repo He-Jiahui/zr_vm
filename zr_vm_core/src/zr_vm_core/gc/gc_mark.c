@@ -1445,6 +1445,8 @@ void ZrCore_GarbageCollector_Barrier(SZrState *state, SZrRawObject *object, SZrR
         goto barrier_done;
     }
 
+    /* Only active marking consumes gray work. Idle queues are reset on the
+     * next restart, so enqueuing here while paused would lose descendants. */
     if (ZrCore_GarbageCollector_IsInvariant(global)) {
         garbage_collector_mark_object(state, valueObject);
         if (ZrCore_RawObject_IsGenerationalThroughBarrier(object) &&
@@ -1452,10 +1454,10 @@ void ZrCore_GarbageCollector_Barrier(SZrState *state, SZrRawObject *object, SZrR
             ZrCore_RawObject_SetGenerationalStatus(
                     valueObject, ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_BARRIER);
         }
-    } else if (ZR_GC_IS_INITED(valueObject)) {
-        garbage_collector_mark_object(state, valueObject);
     } else if (ZrCore_GarbageCollector_IsSweeping(global) &&
                global->garbageCollector->gcMode == ZR_GARBAGE_COLLECT_MODE_INCREMENTAL) {
+        /* Sweeping has no gray propagation phase. Keep the target white in
+         * the new epoch so the next cycle scans its transitive graph. */
         ZrCore_RawObject_MarkAsInit(state, valueObject);
     }
 

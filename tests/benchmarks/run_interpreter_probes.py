@@ -30,7 +30,8 @@ def worker(command):
 
 
 def expected_checksum(name, smoke):
-    trips = 2000 if smoke else {
+    # Enough allocation to finish a sliced cycle without adding explicit GC.
+    trips = (20000 if name == "objauto" else 2000) if smoke else {
         "objauto": 2000000, "strdrop": 200000, "calls": 3000000,
         "methods": 2000000, "loop_lt": 20000000, "loop_le": 20000000,
         "floatloop": 5000000, "fields": 3000000, "arrays": 3000000,
@@ -98,7 +99,7 @@ def main():
         source = (sources / (name + ".zr")).read_text()
         if args.smoke:
             for trips in (20000000, 10000000, 5000000, 3000000, 2000000, 300000, 200000):
-                source = source.replace(str(trips), "2000")
+                source = source.replace(str(trips), "20000" if name == "objauto" else "2000")
         project = args.work_dir / name
         (project / "src").mkdir(parents=True, exist_ok=True)
         (project / "src" / "main.zr").write_text(source)

@@ -796,8 +796,11 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
         }
     } else {
         collector->statsSnapshot.lastCollectionKind = collector->scheduledCollectionKind;
-        collector->collectionPhase = collector->scheduledCollectionKind == ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR
-                                             ? ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MINOR_MARK
+        /* Temporary root registration uses this phase to decide whether to
+         * enqueue gray objects. Sweep slices must not look like marking. */
+        collector->collectionPhase = collector->gcRunningStatus >= ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_OBJECTS &&
+                                    collector->gcRunningStatus < ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED
+                                             ? ZR_GARBAGE_COLLECT_COLLECTION_PHASE_SWEEP
                                              : ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_MARK_CONCURRENT;
         collector->statsSnapshot.collectionPhase = collector->collectionPhase;
         pauseBudget = collector->gcPauseBudget > 0 ? (TZrSize)collector->gcPauseBudget : 1;
@@ -825,6 +828,11 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
         }
 
         collector->gcLastStepWork = totalWork;
+        if (collector->gcRunningStatus >= ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_OBJECTS &&
+            collector->gcRunningStatus < ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED) {
+            collector->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_SWEEP;
+            collector->statsSnapshot.collectionPhase = collector->collectionPhase;
+        }
     }
 
     /* Generational work repays allocation debt too. Without this, the first

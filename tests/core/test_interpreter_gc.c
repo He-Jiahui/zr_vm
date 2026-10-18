@@ -160,6 +160,99 @@ static void test_function_metadata_context_is_a_traced_and_forwarded_edge(void) 
                          function->prototypeContextFunction->functionName);
     ZrCore_Gc_RootLeaseRelease(state->global, &lease);
 }
+static SZrObject *new_initialized_object(void) {
+    SZrObject *object = ZrCore_Object_New(state, ZR_NULL);
+    TEST_ASSERT_NOT_NULL(object);
+    ZrCore_Object_Init(state, object);
+    return object;
+}
+static TZrBool heap_contains(const SZrRawObject *wanted) {
+    for (SZrRawObject *object = state->global->garbageCollector->gcObjectList;
+         object != ZR_NULL; object = object->next)
+        if (object == wanted) return ZR_TRUE;
+    return ZR_FALSE;
+}
+static void run_incremental_cycle(void) {
+    SZrGarbageCollector *collector = state->global->garbageCollector;
+    unsigned steps = 0u;
+    ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
+    do {
+        TEST_ASSERT_TRUE(++steps < 10000u);
+        ZrCore_GarbageCollector_GcStep(state);
+    } while (collector->gcRunningStatus != ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED);
+}
+static void publish_child_graph(SZrObject *owner, SZrTypeValue *key,
+                                 SZrObject **child, SZrObject **grandchild) {
+    SZrTypeValue value;
+    *child = new_initialized_object();
+    *grandchild = new_initialized_object();
+    ZrCore_Value_InitAsRawObject(state, &value, &(*grandchild)->super);
+    ZrCore_Object_SetValue(state, *child, key, &value);
+    ZrCore_Value_InitAsRawObject(state, &value, &(*child)->super);
+    ZrCore_Object_SetValue(state, owner, key, &value);
+}
+static void test_idle_barrier_preserves_a_new_transitive_graph(void) {
+    SZrObject *owner = new_initialized_object(), *child, *grandchild;
+    SZrTypeValue key;
+    ZrCore_Value_InitAsInt(state, &key, 0);
+    ZrCore_RawObject_MarkAsPermanent(state, &owner->super);
+    ZrCore_GarbageCollector_GcFull(state, ZR_TRUE);
+    publish_child_graph(owner, &key, &child, &grandchild);
+    for (unsigned cycle = 0u; cycle < 2u; ++cycle) {
+        run_incremental_cycle();
+        TEST_ASSERT_TRUE(heap_contains((SZrRawObject *)child));
+        TEST_ASSERT_TRUE(heap_contains((SZrRawObject *)grandchild));
+    }
+}
+static void test_sweep_barrier_preserves_graph_allocated_behind_cursor(void) {
+    SZrGarbageCollector *collector = state->global->garbageCollector;
+    SZrObject *owner = new_initialized_object(), *child, *grandchild;
+    SZrGcRootLease ownerLease = {0}, headLease = {0};
+    SZrTypeValue key;
+    ZrCore_Value_InitAsInt(state, &key, 0);
+    TEST_ASSERT_TRUE(ZrCore_Gc_RootLeaseAcquire(state, &owner->super, &ownerLease));
+    SZrObject *head = new_initialized_object();
+    TEST_ASSERT_TRUE(ZrCore_Gc_RootLeaseAcquire(state, &head->super, &headLease));
+    collector->gcPauseBudget = 1u;
+    collector->gcSweepSliceBudget = 1u;
+    ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR);
+    unsigned steps = 0u;
+    while (collector->gcRunningStatus != ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_OBJECTS) {
+        TEST_ASSERT_TRUE(++steps < 10000u);
+        ZrCore_GarbageCollector_GcStep(state);
+    }
+    ZrCore_GarbageCollector_GcStep(state);
+    TEST_ASSERT_TRUE(collector->gcObjectListSweeper != &collector->gcObjectList);
+    TEST_ASSERT_TRUE(ZrCore_RawObject_IsMarkReferenced(&owner->super));
+    publish_child_graph(owner, &key, &child, &grandchild);
+    TEST_ASSERT_EQUAL_INT(ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED,
+                          child->super.garbageCollectMark.status);
+    while (collector->gcRunningStatus != ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED) {
+        TEST_ASSERT_TRUE(++steps < 10000u);
+        ZrCore_GarbageCollector_GcStep(state);
+    }
+    for (unsigned cycle = 0u; cycle < 2u; ++cycle) {
+        run_incremental_cycle();
+        TEST_ASSERT_TRUE(heap_contains((SZrRawObject *)child));
+        TEST_ASSERT_TRUE(heap_contains((SZrRawObject *)grandchild));
+    }
+    ZrCore_Gc_RootLeaseRelease(state->global, &headLease);
+    ZrCore_Gc_RootLeaseRelease(state->global, &ownerLease);
+}
+static void test_incremental_linked_graph_survives_interpreter_churn(void) {
+    SZrFunction *function = compile(
+        "var queue = { first: null, last: null, count: 0 }; var i = 0;"
+        "while (i < 4096) { var node = { value: i, next: null };"
+        " if (queue.last != null) { queue.last.next = node; } else { queue.first = node; }"
+        " queue.last = node; queue.count = queue.count + 1; i = i + 1; }"
+        "var sum = 0; while (queue.count > 0) { var head = queue.first;"
+        " queue.first = head.next; sum = sum + <int> head.value; head.next = null;"
+        " queue.count = queue.count - 1; } return sum;");
+    TZrUInt64 before = collections();
+    expect_int(function, 8386560);
+    TEST_ASSERT_TRUE(collections() > before);
+    ZrCore_Function_Free(state, function);
+}
 static SZrString *finalizerKey;
 static unsigned finalizerCalls;
 static TZrBool finalizerSawValue;
@@ -199,6 +292,9 @@ static void test_finalizers_run_with_their_object_graph_intact(void) {
 }
 int main(void) {
     UNITY_BEGIN();
+    RUN_TEST(test_idle_barrier_preserves_a_new_transitive_graph);
+    RUN_TEST(test_sweep_barrier_preserves_graph_allocated_behind_cursor);
+    RUN_TEST(test_incremental_linked_graph_survives_interpreter_churn);
     RUN_TEST(test_finalizers_run_with_their_object_graph_intact);
     RUN_TEST(test_allocation_debt_is_repaid_at_interpreter_boundaries);
     RUN_TEST(test_user_disable_defers_automatic_collection);
