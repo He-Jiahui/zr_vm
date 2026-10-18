@@ -3,7 +3,10 @@
 A deterministic arena-survival demo for zr_vm, based on Claude's design report
 `/workspace/zr_vm-review/game-demo-design-20261018.md` (2026-10-18).
 
-Status: GD-C0 scaffold. Gameplay begins only after the GD-C1 feature gate passes.
+Status: **GD-C0 complete; GD-C1 blocked by required P01**. Struct-array element
+writeback fails in both interp and binary. Implementation stopped under John's
+required-probe rule; see [feature readiness](docs/feature-readiness.md) for the
+reproducers and all 22 statuses. Gameplay has not started.
 The intended v1 has DOD, OOP, Hybrid and C lanes, CLI and embedded-host drivers,
 null and software renderers, deterministic hashes and frame/GC metrics.
 
@@ -20,6 +23,25 @@ worktrees are read-only. Demos are disabled by default and use CTest label `demo
 /workspace/zr_vm-perf/build/tools/bin/cmake --build build/demo-release -j6 --target zr_vm_cli
 /workspace/zr_vm-perf/build/tools/bin/ctest --test-dir build/demo-release -L demo --output-on-failure
 ```
+
+The demo CTests currently return nonzero: six reproduction/control checks pass
+and `demo_feature_gate` fails. Four reproduction tests use `WILL_FAIL`; their
+passing CTest status records the known errors, not feature readiness. Binary
+probes remove the copied source directory after compilation to prevent fallback.
+Release, ASan/UBSan and forced-GC trees all reproduce these outcomes; sanitizer
+checks report no errors with leak detection disabled. These probe checks do not
+provide the game's still-missing v1 smoke/performance coverage.
+
+```sh
+python3 -I demos/swarm_arena/tools/run_probe.py --cli build/demo-release/bin/zr_vm_cli \
+  --mode binary --variant main --out out/p01-binary
+python3 -I demos/swarm_arena/tools/run_probe.py --gate
+```
+
+Both commands correctly exit 1 until P01 is resolved. To inspect the unchanged
+core test inventory, use `ctest --test-dir build/demo-release -N -LE demo
+-E '^performance_report$'`: 425 tests. `ZR_VM_TEST_TIER=core` selects fixture tiers
+inside the engine runners; standalone demo tests need the explicit `-LE demo`.
 
 Run commands from the repository root. The CLI executable target is
 `zr_vm_cli_executable` (its output name is `zr_vm_cli`); Ninja also accepts the

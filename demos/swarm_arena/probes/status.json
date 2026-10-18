@@ -1,0 +1,29 @@
+{
+  "schema": "zr-swarm-readiness/1",
+  "stopped_at": "P01",
+  "reason": "Required Array<Vec2> element read/modify/write fails in interp and binary. John He's required-probe stop rule applies; no fallback adopted.",
+  "probes": [
+    {"id":"P01","required":true,"interp":"FAIL","binary":"FAIL","note":"GET_MEMBER after explicit Array<Vec2> element writeback. Independent nested constructor failure: KNOWN_VM_CALL."},
+    {"id":"P02","required":false,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; optional struct operators."},
+    {"id":"P03","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; interface dispatch and inheritance."},
+    {"id":"P04","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; unions and generic storage."},
+    {"id":"P05","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; generic RingQueue required, out T optional; concrete out required."},
+    {"id":"P06","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; iteration forms."},
+    {"id":"P07","required":false,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; optional user iterable."},
+    {"id":"P08","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; resource ownership, destructor and close."},
+    {"id":"P09","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; captured/stored closures."},
+    {"id":"P10","required":false,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; M-tier Job/Scheduler."},
+    {"id":"P11","required":false,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; M-tier Pool<T>."},
+    {"id":"P12","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; GC stats/budget/collection and arguments."},
+    {"id":"P13","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; native extern FFI."},
+    {"id":"P14","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; descriptor plugin required, package/alias optional."},
+    {"id":"P15","required":false,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; optional template strings."},
+    {"id":"P16","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; integer overflow/RNG safety."},
+    {"id":"P17","required":false,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; optional f32 layout/precision."},
+    {"id":"P18","required":false,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; M-tier compile features."},
+    {"id":"P19","required":false,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; M-tier reflection/attributes."},
+    {"id":"P20","required":false,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; optional inline native argument view."},
+    {"id":"P21","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; required embedded-host export-call spike."},
+    {"id":"P22","required":true,"interp":"SKIP","binary":"SKIP","note":"Full P01-P20 binary parity not reached; P01 fails identically with source removed after compile."}
+  ]
+}

@@ -1,0 +1,18 @@
+let {Array} = import("zr.container");
+let system = import("zr.system");
+struct Vec2 {
+    pub var x: float;
+    pub var y: float;
+    pub @constructor(x: float, y: float) { this.x = x; this.y = y; }
+}
+var point = init Vec2(1.0, 2.0);
+point.x = 7.0;
+if (point.x != 7.0 || point.y != 2.0) { throw "P01 standalone struct control"; }
+var values = new Array<float>();
+values.add(1.0);
+var copy = values[0];
+copy = 7.0;
+values[0] = copy;
+if (values[0] != 7.0) { throw "P01 scalar array control"; }
+system.console.printLine("PROBE_OK P01 standalone-struct scalar-array");
+return 0;

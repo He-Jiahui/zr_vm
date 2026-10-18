@@ -1,0 +1,12 @@
+let {Array} = import("zr.container");
+let system = import("zr.system");
+struct Vec2 {
+    pub var x: float;
+    pub var y: float;
+    pub @constructor(x: float, y: float) { this.x = x; this.y = y; }
+}
+var points = new Array<Vec2>();
+points.add(init Vec2(1.0, 2.0));
+if (points[0].x != 1.0) { throw "P01 nested constructor mismatch"; }
+system.console.printLine("PROBE_OK P01 nested");
+return 0;
