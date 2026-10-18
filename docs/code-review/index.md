@@ -292,3 +292,8 @@ doc_type: category-index
 ## Parser artifact 投影合同
 
 - [Artifact投影：53单元，15旧键迁移与38遗漏补齐](batches/20261018-parser-artifact-projection-contracts.md)。上表“parser artifact调用绑定与元数据投影15项”为历史复审口径，当前53项及有界验证证据以此记录为准；2项既有BUG意图与4项TODO问题保持。
+
+
+## Parser ExecIR读写与规范文件适配合同
+
+- [ExecIR读写与规范文件适配：20单元](batches/20261018-parser-exec-ir-writer-adapters-contracts.md)：私有头和两写入适配器，0旧键、20遗漏项已按本批交付登记；有界direct运行与源等价范围见批次记录。
