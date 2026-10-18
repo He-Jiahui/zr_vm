@@ -2600,33 +2600,33 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             [ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)] = &&LZrFastInstruction_FUNCTION_RETURN,
             /* All other current opcodes retain the ordinary dispatch fallback. */
             [ZR_INSTRUCTION_ENUM(SET_CONSTANT)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(GET_CLOSURE)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(SET_CLOSURE)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(GETUPVAL)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(SETUPVAL)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(GET_MEMBER)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(SET_MEMBER)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(SET_BY_INDEX)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(GET_CLOSURE)] = &&LZrFastInstruction_GET_CLOSURE,
+            [ZR_INSTRUCTION_ENUM(SET_CLOSURE)] = &&LZrFastInstruction_SET_CLOSURE,
+            [ZR_INSTRUCTION_ENUM(GETUPVAL)] = &&LZrFastInstruction_GETUPVAL,
+            [ZR_INSTRUCTION_ENUM(SETUPVAL)] = &&LZrFastInstruction_SETUPVAL,
+            [ZR_INSTRUCTION_ENUM(GET_MEMBER)] = &&LZrFastInstruction_GET_MEMBER,
+            [ZR_INSTRUCTION_ENUM(SET_MEMBER)] = &&LZrFastInstruction_SET_MEMBER,
+            [ZR_INSTRUCTION_ENUM(SET_BY_INDEX)] = &&LZrFastInstruction_SET_BY_INDEX,
             [ZR_INSTRUCTION_ENUM(TO_BOOL)] = &&LZrFastInstruction_FALLBACK,
             [ZR_INSTRUCTION_ENUM(TO_INT)] = &&LZrFastInstruction_FALLBACK,
             [ZR_INSTRUCTION_ENUM(TO_UINT)] = &&LZrFastInstruction_FALLBACK,
             [ZR_INSTRUCTION_ENUM(TO_FLOAT)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(TO_STRING)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(TO_STRING)] = &&LZrFastInstruction_TO_STRING,
             [ZR_INSTRUCTION_ENUM(TO_STRUCT)] = &&LZrFastInstruction_FALLBACK,
             [ZR_INSTRUCTION_ENUM(TO_OBJECT)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(ADD_FLOAT)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(ADD_STRING)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(ADD_FLOAT)] = &&LZrFastInstruction_ADD_FLOAT,
+            [ZR_INSTRUCTION_ENUM(ADD_STRING)] = &&LZrFastInstruction_ADD_STRING,
             [ZR_INSTRUCTION_ENUM(SUB)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(SUB_FLOAT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(SUB_FLOAT)] = &&LZrFastInstruction_SUB_FLOAT,
             [ZR_INSTRUCTION_ENUM(MUL_UNSIGNED)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(MUL_FLOAT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(MUL_FLOAT)] = &&LZrFastInstruction_MUL_FLOAT,
             [ZR_INSTRUCTION_ENUM(NEG)] = &&LZrFastInstruction_FALLBACK,
             [ZR_INSTRUCTION_ENUM(DIV)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(DIV_SIGNED)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(DIV_UNSIGNED)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(DIV_FLOAT)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(MOD_SIGNED)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(MOD_UNSIGNED)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(DIV_SIGNED)] = &&LZrFastInstruction_DIV_SIGNED,
+            [ZR_INSTRUCTION_ENUM(DIV_UNSIGNED)] = &&LZrFastInstruction_DIV_UNSIGNED,
+            [ZR_INSTRUCTION_ENUM(DIV_FLOAT)] = &&LZrFastInstruction_DIV_FLOAT,
+            [ZR_INSTRUCTION_ENUM(MOD_SIGNED)] = &&LZrFastInstruction_MOD_SIGNED,
+            [ZR_INSTRUCTION_ENUM(MOD_UNSIGNED)] = &&LZrFastInstruction_MOD_UNSIGNED,
             [ZR_INSTRUCTION_ENUM(MOD_FLOAT)] = &&LZrFastInstruction_FALLBACK,
             [ZR_INSTRUCTION_ENUM(POW)] = &&LZrFastInstruction_FALLBACK,
             [ZR_INSTRUCTION_ENUM(POW_SIGNED)] = &&LZrFastInstruction_FALLBACK,
@@ -2639,29 +2639,29 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             [ZR_INSTRUCTION_ENUM(LOGICAL_NOT)] = &&LZrFastInstruction_FALLBACK,
             [ZR_INSTRUCTION_ENUM(LOGICAL_AND)] = &&LZrFastInstruction_FALLBACK,
             [ZR_INSTRUCTION_ENUM(LOGICAL_OR)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_UNSIGNED)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(LOGICAL_LESS_UNSIGNED)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED)] = &&LZrFastInstruction_LOGICAL_GREATER_SIGNED,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_UNSIGNED)] = &&LZrFastInstruction_LOGICAL_GREATER_UNSIGNED,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT)] = &&LZrFastInstruction_LOGICAL_GREATER_FLOAT,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED)] = &&LZrFastInstruction_LOGICAL_LESS_SIGNED,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_LESS_UNSIGNED)] = &&LZrFastInstruction_LOGICAL_LESS_UNSIGNED,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT)] = &&LZrFastInstruction_LOGICAL_LESS_FLOAT,
             [ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL)] = &&LZrFastInstruction_FALLBACK,
             [ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_SIGNED)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_UNSIGNED)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_FLOAT)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_UNSIGNED)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_FLOAT)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(BITWISE_NOT)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(BITWISE_AND)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(BITWISE_OR)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_LEFT)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_RIGHT)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(GET_GLOBAL)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_SIGNED)] = &&LZrFastInstruction_LOGICAL_GREATER_EQUAL_SIGNED,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_UNSIGNED)] = &&LZrFastInstruction_LOGICAL_GREATER_EQUAL_UNSIGNED,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_FLOAT)] = &&LZrFastInstruction_LOGICAL_GREATER_EQUAL_FLOAT,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_UNSIGNED)] = &&LZrFastInstruction_LOGICAL_LESS_EQUAL_UNSIGNED,
+            [ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_FLOAT)] = &&LZrFastInstruction_LOGICAL_LESS_EQUAL_FLOAT,
+            [ZR_INSTRUCTION_ENUM(BITWISE_NOT)] = &&LZrFastInstruction_BITWISE_NOT,
+            [ZR_INSTRUCTION_ENUM(BITWISE_AND)] = &&LZrFastInstruction_BITWISE_AND,
+            [ZR_INSTRUCTION_ENUM(BITWISE_OR)] = &&LZrFastInstruction_BITWISE_OR,
+            [ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_LEFT)] = &&LZrFastInstruction_BITWISE_SHIFT_LEFT,
+            [ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_RIGHT)] = &&LZrFastInstruction_BITWISE_SHIFT_RIGHT,
+            [ZR_INSTRUCTION_ENUM(GET_GLOBAL)] = &&LZrFastInstruction_GET_GLOBAL,
             [ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(CREATE_CLOSURE)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(CREATE_OBJECT)] = &&LZrFastInstruction_FALLBACK,
-            [ZR_INSTRUCTION_ENUM(CREATE_ARRAY)] = &&LZrFastInstruction_FALLBACK,
+            [ZR_INSTRUCTION_ENUM(CREATE_CLOSURE)] = &&LZrFastInstruction_CREATE_CLOSURE,
+            [ZR_INSTRUCTION_ENUM(CREATE_OBJECT)] = &&LZrFastInstruction_CREATE_OBJECT,
+            [ZR_INSTRUCTION_ENUM(CREATE_ARRAY)] = &&LZrFastInstruction_CREATE_ARRAY,
             [ZR_INSTRUCTION_ENUM(OWN_UNIQUE)] = &&LZrFastInstruction_FALLBACK,
             [ZR_INSTRUCTION_ENUM(OWN_BORROW)] = &&LZrFastInstruction_FALLBACK,
             [ZR_INSTRUCTION_ENUM(OWN_LOAN)] = &&LZrFastInstruction_FALLBACK,
@@ -6125,6 +6125,10 @@ LZrFastInstruction_RESET_STACK_NULL2: {
                 *CONST(A2(instruction)) = *destination;
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_GET_CLOSURE:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(GET_CLOSURE) {
                 // ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(A2(instruction)));
                 // closure function to access
@@ -6132,6 +6136,10 @@ LZrFastInstruction_RESET_STACK_NULL2: {
                 // BASE(B1(instruction))->value = CLOSURE(ret.value.nativeObject.nativeUInt64);
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SET_CLOSURE:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(SET_CLOSURE) {
                 // ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(A2(instruction)));
                 SZrClosureValue *closureValue = CLOSURE(A2(instruction));
@@ -6445,6 +6453,9 @@ LZrFastInstruction_TO_UINT_SIGNED: {
                 EXECUTE_TYPED_TO_UINT_SIGNED_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_TO_STRING:
+#endif
             ZR_INSTRUCTION_LABEL(TO_STRING) {
                 SZrString *resultString;
 
@@ -6896,13 +6907,28 @@ LZrFastInstruction_ADD_UNSIGNED_CONST_PLAIN_DEST: {
                 EXECUTE_TYPED_UNSIGNED_CONST_BINARY_BODY_PLAIN_DEST(+);
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_ADD_FLOAT:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(ADD_FLOAT) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                execution_apply_binary_numeric_float_or_raise(
-                        state, ZR_EXEC_NUMERIC_FALLBACK_ADD, destination, opA, opB, "ADD_FLOAT");
+                if (ZR_LIKELY(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type))) {
+                    TZrFloat64 result = opA->value.nativeObject.nativeDouble + opB->value.nativeObject.nativeDouble;
+                    ZrCore_Value_PrepareDestinationForOverwriteNoProfile(state, destination);
+                    ZR_VALUE_FAST_SET(destination, nativeDouble, result, ZR_VALUE_TYPE_DOUBLE);
+                } else {
+                    SAVE_STATE(state, callInfo);
+                    execution_apply_binary_numeric_float_or_raise(
+                            state, ZR_EXEC_NUMERIC_FALLBACK_ADD, destination, opA, opB, "ADD_FLOAT");
+                }
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_ADD_STRING:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(ADD_STRING) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
@@ -7102,11 +7128,22 @@ LZrFastInstruction_SUB_UNSIGNED_CONST_PLAIN_DEST: {
                 EXECUTE_TYPED_UNSIGNED_CONST_BINARY_BODY_PLAIN_DEST(-);
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SUB_FLOAT:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(SUB_FLOAT) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                execution_apply_binary_numeric_float_or_raise(
-                        state, ZR_EXEC_NUMERIC_FALLBACK_SUB, destination, opA, opB, "SUB_FLOAT");
+                if (ZR_LIKELY(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type))) {
+                    TZrFloat64 result = opA->value.nativeObject.nativeDouble - opB->value.nativeObject.nativeDouble;
+                    ZrCore_Value_PrepareDestinationForOverwriteNoProfile(state, destination);
+                    ZR_VALUE_FAST_SET(destination, nativeDouble, result, ZR_VALUE_TYPE_DOUBLE);
+                } else {
+                    SAVE_STATE(state, callInfo);
+                    execution_apply_binary_numeric_float_or_raise(
+                            state, ZR_EXEC_NUMERIC_FALLBACK_SUB, destination, opA, opB, "SUB_FLOAT");
+                }
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
@@ -7293,11 +7330,22 @@ LZrFastInstruction_MUL_UNSIGNED_CONST_PLAIN_DEST: {
                 EXECUTE_MUL_UNSIGNED_CONST_BODY_PLAIN_DEST();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_MUL_FLOAT:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(MUL_FLOAT) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                execution_apply_binary_numeric_float_or_raise(
-                        state, ZR_EXEC_NUMERIC_FALLBACK_MUL, destination, opA, opB, "MUL_FLOAT");
+                if (ZR_LIKELY(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type))) {
+                    TZrFloat64 result = opA->value.nativeObject.nativeDouble * opB->value.nativeObject.nativeDouble;
+                    ZrCore_Value_PrepareDestinationForOverwriteNoProfile(state, destination);
+                    ZR_VALUE_FAST_SET(destination, nativeDouble, result, ZR_VALUE_TYPE_DOUBLE);
+                } else {
+                    SAVE_STATE(state, callInfo);
+                    execution_apply_binary_numeric_float_or_raise(
+                            state, ZR_EXEC_NUMERIC_FALLBACK_MUL, destination, opA, opB, "MUL_FLOAT");
+                }
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
@@ -7409,6 +7457,10 @@ LZrFastInstruction_NEG_FLOAT: {
                 }
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_DIV_SIGNED:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(DIV_SIGNED) {
                 EXECUTE_DIV_SIGNED_BODY();
             }
@@ -7456,6 +7508,10 @@ LZrFastInstruction_DIV_SIGNED_LOAD_STACK_CONST: {
                 EXECUTE_DIV_SIGNED_LOAD_STACK_CONST_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_DIV_UNSIGNED:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(DIV_UNSIGNED) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
@@ -7493,11 +7549,22 @@ LZrFastInstruction_DIV_UNSIGNED_CONST_PLAIN_DEST: {
                 EXECUTE_DIV_UNSIGNED_CONST_BODY_PLAIN_DEST();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_DIV_FLOAT:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(DIV_FLOAT) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                execution_apply_binary_numeric_float_or_raise(
-                        state, ZR_EXEC_NUMERIC_FALLBACK_DIV, destination, opA, opB, "DIV_FLOAT");
+                if (ZR_LIKELY(ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type))) {
+                    TZrFloat64 result = opA->value.nativeObject.nativeDouble / opB->value.nativeObject.nativeDouble;
+                    ZrCore_Value_PrepareDestinationForOverwriteNoProfile(state, destination);
+                    ZR_VALUE_FAST_SET(destination, nativeDouble, result, ZR_VALUE_TYPE_DOUBLE);
+                } else {
+                    SAVE_STATE(state, callInfo);
+                    execution_apply_binary_numeric_float_or_raise(
+                            state, ZR_EXEC_NUMERIC_FALLBACK_DIV, destination, opA, opB, "DIV_FLOAT");
+                }
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
@@ -7576,6 +7643,10 @@ LZrFastInstruction_MOD: {
                 }
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_MOD_SIGNED:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(MOD_SIGNED) {
                 opA = SIGNED_FRAME_VALUE_SLOT(A1(instruction));
                 opB = SIGNED_FRAME_VALUE_SLOT(B1(instruction));
@@ -7638,6 +7709,10 @@ LZrFastInstruction_MOD_SIGNED_LOAD_STACK_CONST: {
                 EXECUTE_MOD_SIGNED_LOAD_STACK_CONST_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_MOD_UNSIGNED:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(MOD_UNSIGNED) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
@@ -7896,13 +7971,21 @@ LZrFastInstruction_LOGICAL_NOT_BOOL: {
                 ALGORITHM_2(nativeBool, ||, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_LOGICAL_GREATER_SIGNED:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_SIGNED) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeInt64, >, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_LOGICAL_GREATER_UNSIGNED:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_UNSIGNED) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
@@ -7910,6 +7993,10 @@ LZrFastInstruction_LOGICAL_NOT_BOOL: {
                 ALGORITHM_CVT_2(nativeBool, nativeUInt64, >, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_LOGICAL_GREATER_FLOAT:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_FLOAT) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
@@ -7917,13 +8004,21 @@ LZrFastInstruction_LOGICAL_NOT_BOOL: {
                         state, ZR_EXEC_NUMERIC_COMPARE_GREATER, destination, opA, opB, "LOGICAL_GREATER_FLOAT");
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_LOGICAL_LESS_SIGNED:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_SIGNED) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeInt64, <, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_LOGICAL_LESS_UNSIGNED:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_UNSIGNED) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
@@ -7931,6 +8026,10 @@ LZrFastInstruction_LOGICAL_NOT_BOOL: {
                 ALGORITHM_CVT_2(nativeBool, nativeUInt64, <, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_LOGICAL_LESS_FLOAT:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_FLOAT) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
@@ -8073,13 +8172,21 @@ LZrFastInstruction_LOGICAL_NOT_EQUAL_STRING: {
                 EXECUTE_TYPED_EQUALITY_STRING_BODY(ZR_TRUE);
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_LOGICAL_GREATER_EQUAL_SIGNED:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_EQUAL_SIGNED) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
-                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type));
+                EXECUTION_REQUIRE_OPERANDS(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type));
                 ALGORITHM_CVT_2(nativeBool, nativeInt64, >=, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_LOGICAL_GREATER_EQUAL_UNSIGNED:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_EQUAL_UNSIGNED) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
@@ -8087,6 +8194,10 @@ LZrFastInstruction_LOGICAL_NOT_EQUAL_STRING: {
                 ALGORITHM_CVT_2(nativeBool, nativeUInt64, >=, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_LOGICAL_GREATER_EQUAL_FLOAT:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(LOGICAL_GREATER_EQUAL_FLOAT) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
@@ -8110,6 +8221,10 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                 EXECUTE_LOGICAL_LESS_EQUAL_SIGNED_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_LOGICAL_LESS_EQUAL_UNSIGNED:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_EQUAL_UNSIGNED) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
@@ -8117,6 +8232,10 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                 ALGORITHM_CVT_2(nativeBool, nativeUInt64, <=, ZR_VALUE_TYPE_BOOL);
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_LOGICAL_LESS_EQUAL_FLOAT:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(LOGICAL_LESS_EQUAL_FLOAT) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
@@ -8129,14 +8248,26 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                         "LOGICAL_LESS_EQUAL_FLOAT");
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_BITWISE_NOT:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(BITWISE_NOT) {
                 EXECUTE_BITWISE_NOT_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_BITWISE_AND:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(BITWISE_AND) {
                 EXECUTE_BITWISE_BINARY_BODY(&);
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_BITWISE_OR:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(BITWISE_OR) {
                 EXECUTE_BITWISE_BINARY_BODY(|);
             }
@@ -8151,6 +8282,10 @@ LZrFastInstruction_BITWISE_XOR: {
                 EXECUTE_BITWISE_BINARY_BODY(^);
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_BITWISE_SHIFT_LEFT:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(BITWISE_SHIFT_LEFT) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
@@ -8166,6 +8301,10 @@ LZrFastInstruction_BITWISE_XOR: {
                 }
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_BITWISE_SHIFT_RIGHT:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(BITWISE_SHIFT_RIGHT) {
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
@@ -8491,6 +8630,9 @@ LZrFastInstruction_FUNCTION_RETURN: {
             }
         }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_GETUPVAL:
+#endif
             ZR_INSTRUCTION_LABEL(GETUPVAL) {
                 // GETUPVAL 指令格式：
                 // operandExtra (E) = destination slot
@@ -8512,6 +8654,9 @@ LZrFastInstruction_FUNCTION_RETURN: {
             }
             DONE(1);
 
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SETUPVAL:
+#endif
             ZR_INSTRUCTION_LABEL(SETUPVAL) {
                 // SETUPVAL 指令格式：
                 // operandExtra (E) = source slot (destination)
@@ -8604,6 +8749,10 @@ LZrFastInstruction_FUNCTION_RETURN: {
             DONE(1);
 
 
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_GET_GLOBAL:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(GET_GLOBAL) {
                 // GET_GLOBAL 指令格式：
                 // operandExtra (E) = destSlot (destination已通过E(instruction)定义)
@@ -8644,6 +8793,10 @@ LZrFastInstruction_FUNCTION_RETURN: {
             }
             DONE(1);
 
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_GET_MEMBER:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(GET_MEMBER) {
                 SZrString *memberName = execution_resolve_function_member_symbol(currentFunction, B1(instruction));
                 TZrNativeString memberNativeName;
@@ -8666,6 +8819,10 @@ LZrFastInstruction_FUNCTION_RETURN: {
             }
             DONE(1);
 
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SET_MEMBER:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(SET_MEMBER) {
                 SZrString *memberName = execution_resolve_function_member_symbol(currentFunction, B1(instruction));
                 TZrBool isInitializationWrite = execution_function_member_entry_has_flag(
@@ -8887,6 +9044,10 @@ LZrFastInstruction_GET_BY_INDEX: {
             }
             DONE(1);
 
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SET_BY_INDEX:
+                FAST_PREPARE_DESTINATION();
+#endif
             ZR_INSTRUCTION_LABEL(SET_BY_INDEX) {
                 EXECUTE_SET_BY_INDEX_BODY();
             }
@@ -9339,6 +9500,9 @@ LZrFastInstruction_JUMP_IF_NULL: {
                 }
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_CREATE_CLOSURE:
+#endif
             ZR_INSTRUCTION_LABEL(CREATE_CLOSURE) {
                 // CREATE_CLOSURE 指令格式：
                 // operandExtra (E) = destSlot (destination已通过E(instruction)定义)
@@ -9381,6 +9545,9 @@ LZrFastInstruction_JUMP_IF_NULL: {
                 EXECUTION_POLL_AFTER_ALLOCATION();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_CREATE_OBJECT:
+#endif
             ZR_INSTRUCTION_LABEL(CREATE_OBJECT) {
                 // 创建空对象
                 SZrObject *object = ZrCore_Object_New(state, ZR_NULL);
@@ -9395,6 +9562,9 @@ LZrFastInstruction_JUMP_IF_NULL: {
                 EXECUTION_POLL_AFTER_ALLOCATION();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_CREATE_ARRAY:
+#endif
             ZR_INSTRUCTION_LABEL(CREATE_ARRAY) {
                 // The operand is the initial length; zero preserves empty-array bytecode.
                 SZrObject *array = ZrCore_Object_NewCustomized(state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_ARRAY);

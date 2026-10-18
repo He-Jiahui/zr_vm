@@ -7,6 +7,7 @@ void test_w2_dispatch_loops_materialized_constant_signed_arithmetic_fuses(void);
 void test_w2_signed_equality_branch_fuses_slot_operands(void);
 void test_w2_signed_greater_equal_branch_reuses_greater_signed_jump(void);
 void test_w2_signed_greater_branch_fuses_to_less_equal_jump(void);
+void test_w2_signed_less_branch_reuses_less_equal_jump(void);
 void test_w2_static_iterator_move_next_branch_fuses(void);
 void test_w2_static_iterator_plain_dest_state_does_not_cross_loop_exit(void);
 void test_w2_super_array_add_variable_value_elides_dead_receiver_setup(void);
@@ -32,6 +33,7 @@ int main(void) {
     RUN_TEST(test_w2_signed_equality_branch_fuses_slot_operands);
     RUN_TEST(test_w2_signed_greater_equal_branch_reuses_greater_signed_jump);
     RUN_TEST(test_w2_signed_greater_branch_fuses_to_less_equal_jump);
+    RUN_TEST(test_w2_signed_less_branch_reuses_less_equal_jump);
     RUN_TEST(test_w2_static_iterator_move_next_branch_fuses);
     RUN_TEST(test_w2_static_iterator_plain_dest_state_does_not_cross_loop_exit);
     RUN_TEST(test_w2_super_array_add_variable_value_elides_dead_receiver_setup);

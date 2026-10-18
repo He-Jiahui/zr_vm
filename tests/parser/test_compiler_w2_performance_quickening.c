@@ -30,6 +30,7 @@ void test_w2_dispatch_loops_materialized_constant_signed_arithmetic_fuses(void);
 void test_w2_signed_equality_branch_fuses_slot_operands(void);
 void test_w2_signed_greater_equal_branch_reuses_greater_signed_jump(void);
 void test_w2_signed_greater_branch_fuses_to_less_equal_jump(void);
+void test_w2_signed_less_branch_reuses_less_equal_jump(void);
 void test_w2_static_iterator_move_next_branch_fuses(void);
 void test_w2_static_iterator_plain_dest_state_does_not_cross_loop_exit(void);
 void test_w2_super_array_add_variable_value_elides_dead_receiver_setup(void);
@@ -886,6 +887,28 @@ void test_w2_signed_greater_branch_fuses_to_less_equal_jump(void) {
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
+}
+
+void test_w2_signed_less_branch_reuses_less_equal_jump(void) {
+    const char *source =
+            "fn work(limit: int): int { var sum = 0; var i = 0;"
+            "while (i < limit) { sum = sum + i; i = i + 1; } return sum; }"
+            "return work(5) + work(0) + work(-3);";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TZrInt64 result = 0;
+    TEST_ASSERT_NOT_NULL(state);
+    ZrParser_ToGlobalState_Register(state);
+    SZrFunction *function = ZrParser_Source_Compile(state, source, strlen(source),
+            ZrCore_String_CreateFromNative(state, "w2_signed_less_branch.zr"));
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED)));
+    TEST_ASSERT_EQUAL_UINT32(0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED)));
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(10, result);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
 }
 
 void test_w2_static_iterator_move_next_branch_fuses(void) {

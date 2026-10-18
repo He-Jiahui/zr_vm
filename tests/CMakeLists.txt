@@ -9006,6 +9006,11 @@ if(TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static)
     set_tests_properties(interpreter_gc PROPERTIES TIMEOUT 90 LABELS "core;gc")
 endif()
 
+if(TARGET zr_vm_compiler_w2_performance_quickening_test)
+    add_test(NAME interpreter_quickening COMMAND zr_vm_compiler_w2_performance_quickening_test)
+    set_tests_properties(interpreter_quickening PROPERTIES TIMEOUT 120 LABELS "core;benchmark")
+endif()
+
 if(TARGET zr_vm_cli_executable AND ZR_VM_BENCHMARK_PYTHON_EXECUTABLE)
     add_test(NAME interpreter_gc_cli
         COMMAND ${ZR_VM_BENCHMARK_PYTHON_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/benchmarks/run_interpreter_probes.py

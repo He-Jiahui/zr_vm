@@ -7578,6 +7578,7 @@ static TZrBool compiler_quickening_try_fuse_jump_if_less_equal_signed(SZrFunctio
                                                                       TZrUInt32 instructionIndex) {
     TZrInstruction *compareInstruction;
     TZrInstruction *jumpIfInstruction;
+    EZrInstructionCode compareOpcode;
     TZrUInt32 compareResultSlot;
     TZrUInt32 leftSlot;
     TZrUInt32 rightSlot;
@@ -7590,8 +7591,9 @@ static TZrBool compiler_quickening_try_fuse_jump_if_less_equal_signed(SZrFunctio
 
     compareInstruction = &function->instructionsList[instructionIndex];
     jumpIfInstruction = &function->instructionsList[instructionIndex + 1];
-    if ((EZrInstructionCode)compareInstruction->instruction.operationCode !=
-                ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED) ||
+    compareOpcode = (EZrInstructionCode)compareInstruction->instruction.operationCode;
+    if ((compareOpcode != ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED) &&
+         compareOpcode != ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED)) ||
         !compiler_quickening_opcode_is_false_branch((EZrInstructionCode)jumpIfInstruction->instruction.operationCode) ||
         blockStarts[instructionIndex + 1]) {
         return ZR_FALSE;
@@ -7616,6 +7618,13 @@ static TZrBool compiler_quickening_try_fuse_jump_if_less_equal_signed(SZrFunctio
 
     leftSlot = compareInstruction->instruction.operand.operand1[0];
     rightSlot = compareInstruction->instruction.operand.operand1[1];
+    /* !(a < b) is b <= a. Reuse the existing branch encoding, preserving
+     * artifact opcode numbers and all current consumers of branch metadata. */
+    if (compareOpcode == ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED)) {
+        TZrUInt32 temporary = leftSlot;
+        leftSlot = rightSlot;
+        rightSlot = temporary;
+    }
     compareInstruction->instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED);
     compareInstruction->instruction.operandExtra = (TZrUInt16)leftSlot;
     compareInstruction->instruction.operand.operand1[0] = (TZrUInt16)rightSlot;
