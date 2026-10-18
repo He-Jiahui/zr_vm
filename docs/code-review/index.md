@@ -262,3 +262,8 @@ doc_type: category-index
 ## Plugin 影子副本 I/O 合同复核
 
 - [Plugin 影子副本 I/O：20单元、6旧键迁移及14新键补齐](batches/20261017-native-plugin-shadow-io-contracts.md)
+
+
+## 程序集资源公开合同复核
+
+- [程序集资源公开合同复核：8单元，0新键](batches/20261018-system-assembly-public-current-contracts.md)

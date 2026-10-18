@@ -3,7 +3,7 @@
  * 声明 `zr.system.assembly` 静态模块描述符的借用入口，供系统库注册阶段发布资源 API。
  * 注册数据关联三个 callback、参数提示、返回类型和工具提示；资源读取发生在后续派发。
  *
- * ## Value model and lifecycle
+ * ## Constraints and lifecycle
  * 描述符及嵌套表位于模块静态只读存储；不拥有项目、VM、archive 或一次调用的结果槽。
  * 调用方在模块仍加载时借用它们，不修改或释放。getter 不创建 global，也不执行 callback。
  *
