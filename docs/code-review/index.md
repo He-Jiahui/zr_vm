@@ -328,3 +328,9 @@ doc_type: category-index
 - [CMake 多平台与 sanitizer 工作流审查](batches/20261018-github-cmake-multi-platform-contracts.md)：9配置/块、6份中文文档；5旧键复核、4新键；验证保留原有失败。
 
 - [Wiki 验证与 Pages 工作流审查](batches/20261018-github-wiki-pages-contracts.md)：11配置/块、7份中文文档；4旧键复核、7新键；验证保留原有失败。
+
+- [Common 公共类型与基础宏契约审查](batches/common-public-header-contracts.md)：60单元、47段Doxygen；59旧键复核及1新预处理块，现有GC/Frame/Matrix验证及Math静态构建前后通过。
+
+- [Object 对象标记与 GC 配置契约审查](batches/common-object-header-contracts.md)：25旧单元、22段Doxygen；当前调用补证及既有GC/Frame/Matrix有限验证，Math仅静态构建。
+
+- [IO 公共标记与二进制布局契约审查](batches/common-io-header-contracts.md)：80单元、39段Doxygen；当前调用证据及两组已有decoder测试修改前后有限验证。

@@ -1,3 +1,24 @@
+---
+related_code:
+  - .github/workflows/cmake-multi-platform.yml
+  - .github/workflows/wiki-pages.yml
+  - scripts/validate_wiki.py
+  - tests/scripts/test_validate_wiki.py
+  - tests/scripts/test_wiki_theme_assets.py
+  - tests/scripts/test_zr_pygments.py
+implementation_files:
+  - .github/workflows/cmake-multi-platform.yml
+plan_sources:
+  - "user: 首方全量中文契约注释，保持程序行为和公开 API 不变。"
+  - docs/code-review/comment-standard.md
+tests:
+  - tests/scripts/test_validate_wiki.py
+  - tests/scripts/test_wiki_theme_assets.py
+  - tests/scripts/test_zr_pygments.py
+  - scripts/validate_wiki.py
+doc_type: workflow-detail
+---
+
 # CMake 多平台与 sanitizer 工作流合同审查
 
 本批逐项审查 .github/workflows/cmake-multi-platform.yml 的9个配置与有意义语句块，补6段中文文档；5个旧台账键复核、4个新键。没有函数定义，不能按函数或运行用例计数。定义、消费入口、失败传播、工具与产物边界记录在[九列表](../coverage/root_build_ci.tsv)。
