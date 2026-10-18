@@ -257,3 +257,8 @@ doc_type: category-index
 主清单与手工补充清单的并集构成审查范围；分别 fresh 重扫且交集为空。两个域互不代授完成信用，不改变 scanner 分类行为。
 
 - [fixturedep JSON 占位元数据合同](batches/20261017-fixturedep-json-placeholder-contracts.md)：[1个 metadata-interface](manual-fixture-ledgers/fixturedep_placeholder.tsv)，原 JSON 169B保持不变；手工域独立静态核验，不重复计入原 fixtureArtifact 单元。
+
+
+## Plugin 影子副本 I/O 合同复核
+
+- [Plugin 影子副本 I/O：20单元、6旧键迁移及14新键补齐](batches/20261017-native-plugin-shadow-io-contracts.md)
