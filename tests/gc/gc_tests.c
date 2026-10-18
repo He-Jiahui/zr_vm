@@ -725,6 +725,9 @@ static void test_gc_barrier(void) {
     
     TEST_INFO("Test barrier: REFERENCED object pointing to INITED object", 
               "Calling ZrCore_GarbageCollector_Barrier when REFERENCED parent points to INITED child");
+    /* Tri-color propagation applies during marking, not between cycles. */
+    state->global->garbageCollector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_FLAG_PROPAGATION;
+    state->global->garbageCollector->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_MARK_CONCURRENT;
     ZrCore_GarbageCollector_Barrier(state, parent, child);
     
     TEST_INFO("Verify child object is marked", 
@@ -1029,8 +1032,10 @@ static void test_gc_barrier_unignores_escaped_object(void) {
     TEST_ASSERT_NOT_NULL(state->global);
     TEST_ASSERT_NOT_NULL(state->global->garbageCollector);
 
-    {
+    for (unsigned marking = 0u; marking < 2u; ++marking) {
         SZrGarbageCollector* gc = state->global->garbageCollector;
+        gc->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED;
+        gc->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE;
         SZrRawObject* parent = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
         SZrRawObject* child = createTestObject(state, ZR_VALUE_TYPE_STRING, sizeof(SZrRawObject));
 
@@ -1047,11 +1052,16 @@ static void test_gc_barrier_unignores_escaped_object(void) {
 
         TEST_INFO("Barrier on shared escape",
                   "Writing an ignored child through the GC barrier should restore normal tracing ownership");
+        if (marking) {
+            gc->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_FLAG_PROPAGATION;
+            gc->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_MARK_CONCURRENT;
+        }
         ZrCore_GarbageCollector_Barrier(state, parent, child);
 
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, child));
         TEST_ASSERT_EQUAL_INT(0, (int)gc->ignoredObjectCount);
-        TEST_ASSERT_TRUE(ZR_GC_IS_WAIT_TO_SCAN(child) || ZR_GC_IS_REFERENCED(child));
+        if (marking) TEST_ASSERT_TRUE(ZR_GC_IS_WAIT_TO_SCAN(child) || ZR_GC_IS_REFERENCED(child));
+        else TEST_ASSERT_TRUE(ZR_GC_IS_INITED(child));
     }
 
     destroyTestState(state);
