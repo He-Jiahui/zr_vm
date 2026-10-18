@@ -302,3 +302,8 @@ doc_type: category-index
 ## Parser scheduler工件写出合同
 
 - [Scheduler工件写出：11单元](batches/20261018-parser-scheduler-artifact-writer-contracts.md)：0旧键、11个遗漏单元补齐；共享artifact_schema运行结果不重复计数，失败清理与非原子限制保留。文件末尾空行的格式修订及其与原生验证版本的区别见批次记录。
+
+
+## 首方范围与陈旧状态维护
+
+- [首方范围与陈旧状态维护](batches/20261018-inventory-scope-reconciliation.md)：补录54个pending文件、撤回49个陈旧reviewed标签；仅维护文件清单，不计函数审查或运行信用。
