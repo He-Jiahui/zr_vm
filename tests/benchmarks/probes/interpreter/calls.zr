@@ -1,0 +1,11 @@
+// calls
+fn add1(a: int): int {
+    return a + 1;
+}
+var i = 0;
+var sum = 0;
+while (i < 3000000) {
+    sum = add1(sum);
+    i = i + 1;
+}
+return sum;

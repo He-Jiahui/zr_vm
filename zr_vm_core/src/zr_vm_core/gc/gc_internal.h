@@ -456,7 +456,8 @@ TZrUInt32 garbage_collector_reassign_region_id(SZrGlobalState *global,
 void garbage_collector_forget_object_from_registries(SZrGarbageCollector *collector, SZrRawObject *object);
 void garbage_collector_free_object_sized(SZrState *state, SZrRawObject *object, TZrSize objectSize);
 void garbage_collector_free_object(SZrState *state, SZrRawObject *object);
-/* BUG: 清扫仅释放对象时递增 count；存活结点不消耗 maxCount，可使可达增量步骤遍历整条存活链（gc_sweep.c:13; gc_sweep.c:35; gc_sweep.c:44; gc_cycle.c:3161）。 */
+/* maxCount bounds visited nodes; the returned cursor resumes the next slice. */
+TZrSize garbage_collector_finalize_unreachable(SZrState *state, TZrBool minor, TZrBool shutdown);
 SZrRawObject **garbage_collector_sweep_list(SZrState *state, SZrRawObject **list, int maxCount, int *count);
 void garbage_collector_enter_sweep(SZrState *state);
 TZrSize garbage_collector_run_a_few_finalizers(SZrState *state, int maxCount); /* TODO: cycle 有消费点，但未发现 waitToReleaseObjectList 入队生产者；需确认终结对象如何入队（gc_sweep.c:62; gc_sweep.c:68; gc_cycle.c:2992）。 */
@@ -464,7 +465,7 @@ TZrSize garbage_collector_run_a_few_finalizers(SZrState *state, int maxCount); /
 void garbage_collector_run_until_state(SZrState *state, EZrGarbageCollectRunningStatus targetState);
 void garbage_collector_check_sizes(SZrState *state, SZrGlobalState *global);
 TZrSize garbage_collector_run_generational_full(SZrState *state);
-TZrSize garbage_collector_process_weak_tables(SZrState *state); /* TODO: atomic 会调用，但实现明确在弱表 metadata 接入前保留 no-op（gc_cycle.c:3085; gc_cycle.c:3138）。 */
+TZrSize garbage_collector_process_weak_tables(SZrState *state);
 TZrSize garbage_collector_atomic(SZrState *state);
 int garbage_collector_sweep_step(SZrState *state, EZrGarbageCollectRunningStatus nextstate, SZrRawObject **nextlist);
 TZrSize garbage_collector_single_step(SZrState *state);
@@ -485,6 +486,7 @@ TZrSize garbage_collector_finish_generational_major_collection(
 void garbage_collector_mark_object(SZrState *state, SZrRawObject *object);
 void garbage_collector_mark_value(SZrState *state, SZrTypeValue *value);
 TZrSize garbage_collector_mark_string_roots(SZrState *state);
+TZrSize garbage_collector_snapshot_ignored_trace_roots(SZrState *state);
 TZrSize garbage_collector_mark_ignored_roots(SZrState *state);
 TZrSize garbage_collector_mark_domain_roots(SZrState *state);
 TZrSize garbage_collector_snapshot_concurrent_thread_roots(SZrState *state);

@@ -233,6 +233,7 @@ typedef struct SZrLibrary_ProjectExportDeclaration {
 /** @brief 一个项目 manifest 的运行期视图；GC 字符串归 VM 管理，原始数组和归档由 Free 回收。 */
 struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     TZrUInt64 signature;
+    struct SZrObject *gcOwner; /* Traces project-owned strings independently of interning. */
     TZrUInt32 manifestVersion;
     SZrString *file;
     SZrString *directory;

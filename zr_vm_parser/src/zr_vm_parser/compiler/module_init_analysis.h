@@ -82,6 +82,7 @@ typedef struct SZrParserModuleInitSummary {
 
 typedef struct SZrParserModuleInitCache {
     SZrArray summaries;
+    SZrObject *gcOwner;
 } SZrParserModuleInitCache;
 
 ZR_PARSER_API const SZrParserModuleInitSummary *ZrParser_ModuleInitAnalysis_FindSummary(SZrGlobalState *global,

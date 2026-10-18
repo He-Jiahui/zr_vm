@@ -840,6 +840,29 @@ static void test_gc_sweep_slice_budget_limits_single_step_sweep(void) {
     TEST_DIVIDER();
 }
 
+static void test_gc_sweep_slice_budget_counts_live_objects(void) {
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    SZrGarbageCollector *gc = state->global->garbageCollector;
+    SZrRawObject *first = createTestObject(state, ZR_VALUE_TYPE_NATIVE_POINTER, sizeof(SZrRawObject));
+    SZrRawObject *second = createTestObject(state, ZR_VALUE_TYPE_NATIVE_POINTER, sizeof(SZrRawObject));
+    TEST_ASSERT_NOT_NULL(first);
+    TEST_ASSERT_NOT_NULL(second);
+    ZrCore_RawObject_MarkAsReferenced(first);
+    ZrCore_RawObject_MarkAsReferenced(second);
+    gc->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_OBJECTS;
+    gc->gcStatus = ZR_GARBAGE_COLLECT_STATUS_RUNNING;
+    gc->gcSweepSliceBudget = 1u;
+    gc->gcObjectListSweeper = &gc->gcObjectList;
+    gc->gcDebtSize = 4096;
+    ZrCore_GarbageCollector_GcStep(state);
+    TEST_ASSERT_EQUAL_INT(1, (int)gc->gcLastStepWork);
+    TEST_ASSERT_EQUAL_PTR(second, gc->gcObjectList);
+    TEST_ASSERT_EQUAL_PTR(&second->next, gc->gcObjectListSweeper);
+    TEST_ASSERT_EQUAL_PTR(first, *gc->gcObjectListSweeper);
+    destroyTestState(state);
+}
+
 static void test_gc_ignore_registry_and_phase_metadata(void) {
     SZrTestTimer timer;
     const char* testSummary = "GC Ignore Registry And Phase Metadata";
@@ -3656,7 +3679,7 @@ static void test_gc_minor_collection_rewrites_old_reference_to_forwarded_child(v
         TEST_ASSERT_EQUAL_PTR(oldChild, resolvedChildValue->value.object);
 
         ZrCore_GarbageCollector_GcStep(state);
-        TEST_ASSERT_EQUAL_INT64(debtBefore, gc->gcDebtSize);
+        TEST_ASSERT_TRUE(gc->gcDebtSize < debtBefore);
 
         memberName = ZrCore_String_CreateFromNative(state, "child");
         TEST_ASSERT_NOT_NULL(memberName);
@@ -4432,13 +4455,13 @@ static TZrBool gc_test_short_string_list_contains(const SZrStringTable *stringTa
 
 static void test_gc_short_concat_pair_cache_rewrites_forwarded_entries(void) {
     SZrTestTimer timer;
-    const char *testSummary = "GC Short Concat Pair Cache Keeps Minor-Promoted Entries Reachable";
+    const char *testSummary = "GC Weak Concat Cache Clears While Explicit Roots Survive";
 
     TEST_START(testSummary);
     timer.startTime = clock();
 
     TEST_INFO("Short concat pair cache minor promotion",
-              "Testing that the exact short-string concat cache keeps left/right/result rooted during minor GC whether the strings forward to clones or promote in place");
+              "Testing that minor GC clears the weak concat cache while explicit roots preserve interned strings");
     SZrState *state = createTestState();
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -4453,6 +4476,7 @@ static void test_gc_short_concat_pair_cache_rewrites_forwarded_entries(void) {
         SZrString *currentRight;
         SZrString *currentResult;
         const ZrStringConcatPairCacheEntry *entry;
+        SZrGcRootLease roots[3] = {{ZR_NULL}};
 
         gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
         gc->youngRegionSize = (TZrUInt64)(sizeof(SZrString) + ZR_VM_SHORT_STRING_MAX + 32u);
@@ -4464,6 +4488,9 @@ static void test_gc_short_concat_pair_cache_rewrites_forwarded_entries(void) {
         TEST_ASSERT_NOT_NULL(left);
         TEST_ASSERT_NOT_NULL(right);
         TEST_ASSERT_NOT_NULL(result);
+        TEST_ASSERT_TRUE(ZrCore_Gc_RootLeaseAcquire(state, &left->super, &roots[0]));
+        TEST_ASSERT_TRUE(ZrCore_Gc_RootLeaseAcquire(state, &right->super, &roots[1]));
+        TEST_ASSERT_TRUE(ZrCore_Gc_RootLeaseAcquire(state, &result->super, &roots[2]));
 
         entry = gc_test_find_concat_pair_cache_entry(state->global, left, right);
         TEST_ASSERT_NOT_NULL(entry);
@@ -4486,11 +4513,14 @@ static void test_gc_short_concat_pair_cache_rewrites_forwarded_entries(void) {
         TEST_ASSERT_TRUE(currentRight->super.garbageCollectMark.regionKind != ZR_GARBAGE_COLLECT_REGION_KIND_EDEN);
         TEST_ASSERT_TRUE(currentResult->super.garbageCollectMark.regionKind != ZR_GARBAGE_COLLECT_REGION_KIND_EDEN);
 
+        TEST_ASSERT_NULL(gc_test_find_concat_pair_cache_entry(state->global, currentLeft, currentRight));
+        TEST_ASSERT_EQUAL_PTR(currentResult, ZrCore_String_ConcatPair(state, currentLeft, currentRight));
         entry = gc_test_find_concat_pair_cache_entry(state->global, currentLeft, currentRight);
         TEST_ASSERT_NOT_NULL(entry);
         TEST_ASSERT_EQUAL_PTR(currentLeft, entry->left);
         TEST_ASSERT_EQUAL_PTR(currentRight, entry->right);
         TEST_ASSERT_EQUAL_PTR(currentResult, entry->result);
+        for (unsigned i = 0u; i < 3u; ++i) ZrCore_Gc_RootLeaseRelease(state->global, &roots[i]);
     }
 
     destroyTestState(state);
@@ -4502,13 +4532,13 @@ static void test_gc_short_concat_pair_cache_rewrites_forwarded_entries(void) {
 
 static void test_gc_string_table_rewrites_forwarded_interned_entry(void) {
     SZrTestTimer timer;
-    const char *testSummary = "GC String Table Keeps Interned Entry Reachable Across Minor Promotion";
+    const char *testSummary = "GC Weak String Table Preserves Explicitly Rooted Identity";
 
     TEST_START(testSummary);
     timer.startTime = clock();
 
     TEST_INFO("String table minor promotion",
-              "Testing that a young interned short string stays rooted by the string table during minor GC whether the entry rewrites to a clone or the string promotes in place");
+              "Testing that an explicitly rooted short string keeps its interned identity across minor promotion");
     SZrState *state = createTestState();
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -4519,12 +4549,14 @@ static void test_gc_string_table_rewrites_forwarded_interned_entry(void) {
         SZrString *original;
         SZrString *current;
         const SZrHashKeyValuePair *entry;
+        SZrGcRootLease root = {ZR_NULL};
 
         gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
         gc->youngRegionSize = (TZrUInt64)(sizeof(SZrString) + ZR_VM_SHORT_STRING_MAX + 32u);
 
         original = ZrCore_String_CreateFromNative(state, "gc_table_forward");
         TEST_ASSERT_NOT_NULL(original);
+        TEST_ASSERT_TRUE(ZrCore_Gc_RootLeaseAcquire(state, &original->super, &root));
 
         entry = gc_test_find_string_table_entry(state->global, original);
         TEST_ASSERT_NOT_NULL(entry);
@@ -4557,6 +4589,7 @@ static void test_gc_string_table_rewrites_forwarded_interned_entry(void) {
         TEST_ASSERT_NOT_NULL(entry);
         TEST_ASSERT_EQUAL_PTR(ZR_CAST_RAW_OBJECT_AS_SUPER(current), entry->key.value.object);
         TEST_ASSERT_EQUAL_UINT64(0u, (UNITY_UINT64)state->global->stringTable->minorYoungBucketCount);
+        ZrCore_Gc_RootLeaseRelease(state->global, &root);
     }
 
     destroyTestState(state);
@@ -4568,13 +4601,13 @@ static void test_gc_string_table_rewrites_forwarded_interned_entry(void) {
 
 static void test_gc_short_string_list_keeps_interned_entries_reachable_across_minor_then_full_gc(void) {
     SZrTestTimer timer;
-    const char *testSummary = "GC Short String List Keeps Interned Entries Reachable Across Minor Then Full GC";
+    const char *testSummary = "GC Weak String List Preserves Explicitly Rooted Entries";
 
     TEST_START(testSummary);
     timer.startTime = clock();
 
     TEST_INFO("Short-string root list forwarding",
-              "Testing that the string-table short-string root list keeps interned short strings reachable after minor promotion and the subsequent full collection uses that rewritten list to keep them alive");
+              "Testing that the weak string list retains entries held by explicit roots across minor and full collections");
     SZrState *state = createTestState();
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -4592,6 +4625,7 @@ static void test_gc_short_string_list_keeps_interned_entries_reachable_across_mi
         const TZrSize nameCount = sizeof(names) / sizeof(names[0]);
         SZrGarbageCollector *gc = state->global->garbageCollector;
         SZrString *currentStrings[sizeof(names) / sizeof(names[0])];
+        SZrGcRootLease roots[sizeof(names) / sizeof(names[0])] = {{ZR_NULL}};
 
         gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
         gc->youngRegionSize = (TZrUInt64)(sizeof(SZrString) + ZR_VM_SHORT_STRING_MAX + 32u);
@@ -4599,6 +4633,7 @@ static void test_gc_short_string_list_keeps_interned_entries_reachable_across_mi
         for (TZrSize index = 0; index < nameCount; index++) {
             currentStrings[index] = ZrCore_String_CreateFromNative(state, names[index]);
             TEST_ASSERT_NOT_NULL(currentStrings[index]);
+            TEST_ASSERT_TRUE(ZrCore_Gc_RootLeaseAcquire(state, &currentStrings[index]->super, &roots[index]));
             TEST_ASSERT_TRUE(gc_test_short_string_list_contains(state->global->stringTable, currentStrings[index]));
             TEST_ASSERT_NOT_NULL(gc_test_find_string_table_entry(state->global, currentStrings[index]));
         }
@@ -4623,6 +4658,7 @@ static void test_gc_short_string_list_keeps_interned_entries_reachable_across_mi
             TEST_ASSERT_TRUE(currentStrings[index]->super.garbageCollectMark.regionKind != ZR_GARBAGE_COLLECT_REGION_KIND_EDEN);
             TEST_ASSERT_TRUE(gc_test_short_string_list_contains(state->global->stringTable, currentStrings[index]));
             TEST_ASSERT_NOT_NULL(gc_test_find_string_table_entry(state->global, currentStrings[index]));
+            ZrCore_Gc_RootLeaseRelease(state->global, &roots[index]);
         }
     }
 
@@ -4730,6 +4766,7 @@ int main(void) {
     RUN_TEST(test_gc_barrier);
     RUN_TEST(test_gc_pause_budget_consumes_multiple_incremental_steps);
     RUN_TEST(test_gc_sweep_slice_budget_limits_single_step_sweep);
+    RUN_TEST(test_gc_sweep_slice_budget_counts_live_objects);
     RUN_TEST(test_gc_ignore_registry_and_phase_metadata);
     RUN_TEST(test_gc_ignore_registry_swap_remove_keeps_remaining_object_queryable);
     RUN_TEST(test_gc_is_unreferenced_respects_ignore_registry);

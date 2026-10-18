@@ -11,6 +11,7 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/module.h"
+#include "zr_vm_core/object.h"
 #include "zr_vm_core/reflection.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
@@ -30,6 +31,118 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+/* Project arrays live in native memory; the owner exposes their strong edges. */
+static void library_project_trace_string(SZrState *state, SZrString **slot,
+        FZrRawObjectGcValueVisitor visitor, TZrPtr data) {
+    SZrTypeValue value;
+    if (*slot == ZR_NULL) return;
+    ZrCore_Value_ResetAsNullNoProfile(&value);
+    ZrCore_Value_InitAsRawObject(state, &value, &(*slot)->super);
+    visitor(state, &value, data);
+    *slot = (SZrString *)value.value.object;
+}
+
+static void library_project_trace(SZrState *state, SZrRawObject *owner,
+        FZrRawObjectGcValueVisitor visitor, TZrPtr data) {
+    SZrLibrary_Project *project = owner->finalizerData;
+    if (project == ZR_NULL) return;
+#define TRACE(SLOT) library_project_trace_string(state, &(SLOT), visitor, data)
+    TRACE(project->file);
+    TRACE(project->directory);
+    TRACE(project->name);
+    TRACE(project->assemblyName);
+    TRACE(project->version);
+    TRACE(project->assemblyCulture);
+    TRACE(project->assemblyPublicKeyToken);
+    TRACE(project->assemblyKind);
+    TRACE(project->assemblyOutput);
+    TRACE(project->description);
+    TRACE(project->author);
+    TRACE(project->email);
+    TRACE(project->url);
+    TRACE(project->license);
+    TRACE(project->copyright);
+    TRACE(project->binary);
+    TRACE(project->source);
+    TRACE(project->entry);
+    TRACE(project->dependency);
+    TRACE(project->local);
+    for (TZrSize i = 0u; i < project->pathAliasCount; ++i) {
+        SZrLibrary_ProjectPathAlias *item = &project->pathAliases[i];
+        TRACE(item->alias);
+        TRACE(item->modulePrefix);
+    }
+    for (TZrSize i = 0u; i < project->manifestAliasCount; ++i) {
+        SZrLibrary_ProjectManifestAlias *item = &project->manifestAliases[i];
+        TRACE(item->root);
+    }
+    for (TZrSize i = 0u; i < project->packageExportCount; ++i) {
+        SZrLibrary_ProjectPackageExport *item = &project->packageExports[i];
+        TRACE(item->key);
+    }
+    for (TZrSize i = 0u; i < project->manifestDependencyCount; ++i) {
+        SZrLibrary_ProjectManifestDependency *item = &project->manifestDependencies[i];
+        TRACE(item->versionRequirement);
+        TRACE(item->source);
+    }
+    for (TZrSize i = 0u; i < project->manifestBuildDependencyCount; ++i) {
+        SZrLibrary_ProjectManifestDependency *item = &project->manifestBuildDependencies[i];
+        TRACE(item->versionRequirement);
+        TRACE(item->source);
+    }
+    for (TZrSize i = 0u; i < project->resourceCount; ++i) {
+        SZrLibrary_ProjectResource *item = &project->resources[i];
+        TRACE(item->logicalName);
+        TRACE(item->sourcePath);
+    }
+    for (TZrSize i = 0u; i < project->featureSwitchCount; ++i) {
+        SZrLibrary_ProjectFeatureSwitch *item = &project->featureSwitches[i];
+        TRACE(item->name);
+    }
+    for (TZrSize i = 0u; i < project->preserveRuleCount; ++i) {
+        SZrLibrary_ProjectPreserveRule *item = &project->preserveRules[i];
+        TRACE(item->target);
+        TRACE(item->feature);
+        for (TZrSize j = 0u; j < item->genericArgumentCount; ++j) TRACE(item->genericArguments[j]);
+    }
+    for (TZrSize i = 0u; i < project->exportDeclarationCount; ++i) {
+        SZrLibrary_ProjectExportDeclaration *item = &project->exportDeclarations[i];
+        TRACE(item->target);
+    }
+    for (TZrSize i = 0u; i < project->dependencyRefCount; ++i) {
+        SZrLibrary_ProjectDependencyReference *item = &project->dependencyRefs[i];
+        TRACE(item->name);
+        TRACE(item->assemblyName);
+        TRACE(item->minVersionInclusive);
+        TRACE(item->maxVersionExclusive);
+    }
+    for (TZrSize i = 0u; i < project->dependencyPackageCount; ++i) {
+        SZrLibrary_ProjectDependencyPackage *item = &project->dependencyPackages[i];
+        TRACE(item->name);
+        TRACE(item->assemblyName);
+        TRACE(item->version);
+        TRACE(item->file);
+        TRACE(item->directory);
+        TRACE(item->culture);
+        TRACE(item->publicKeyToken);
+        TRACE(item->kind);
+        TRACE(item->source);
+        TRACE(item->binary);
+        TRACE(item->entry);
+        for (TZrSize j = 0u; j < item->pathAliasCount; ++j) {
+            TRACE(item->pathAliases[j].alias);
+            TRACE(item->pathAliases[j].modulePrefix);
+        }
+        for (TZrSize j = 0u; j < item->dependencyRefCount; ++j) {
+            TRACE(item->dependencyRefs[j].name);
+            TRACE(item->dependencyRefs[j].assemblyName);
+            TRACE(item->dependencyRefs[j].minVersionInclusive);
+            TRACE(item->dependencyRefs[j].maxVersionExclusive);
+        }
+    }
+#undef TRACE
+}
 
 /* 旧版项目可选字符串统一转为 VM 字符串；调用方必须自行决定缺失字段是否允许。 */
 #define ZR_JSON_READ_STRING(STATE, OBJECT, NAME)                                                                       \
@@ -2241,6 +2354,14 @@ SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, 
         return ZR_NULL;
     }
 
+    SZrObject *owner = ZrCore_Object_New(state, ZR_NULL);
+    if (owner == ZR_NULL || !ZrCore_GarbageCollector_IgnoreObject(state, &owner->super)) {
+        ZrLibrary_Project_Free(state, project);
+        return ZR_NULL;
+    }
+    owner->super.finalizerData = project;
+    owner->super.traceGcFunction = library_project_trace;
+    project->gcOwner = owner;
     return project;
 }
 
@@ -2250,6 +2371,12 @@ void ZrLibrary_Project_Free(SZrState *state, SZrLibrary_Project *project) {
         return;
     }
     SZrGlobalState *global = state->global;
+    if (project->gcOwner != ZR_NULL) {
+        project->gcOwner->super.traceGcFunction = ZR_NULL;
+        project->gcOwner->super.finalizerData = ZR_NULL;
+        ZrCore_GarbageCollector_UnignoreObject(global, &project->gcOwner->super);
+        project->gcOwner = ZR_NULL;
+    }
     ZrLibrary_AotRuntime_FreeProjectState(state, project);
     library_project_manifest_v2_free_declarations(global, project);
     library_project_free_feature_switches(global, project);

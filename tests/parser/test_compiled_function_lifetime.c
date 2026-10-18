@@ -171,6 +171,9 @@ static void test_inline_children_do_not_copy_compiler_root_ownership(void) {
 
 static void test_compilation_failure_releases_temporary_function_roots(void) {
     const char *source = "fn answer(): int { return missing; } return answer();";
+    /* The parser's persistent summary cache owns an independent GC root. */
+    SZrFunction *primed = compile_answer();
+    ZrCore_Function_Free(state, primed);
     TZrSize rootsBefore = state->global->garbageCollector->ignoredObjectCount;
     SZrFunction *function = ZrParser_Source_Compile(state, source, strlen(source),
             ZrCore_String_CreateFromNative(state, "failed_function.zr"));

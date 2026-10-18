@@ -113,10 +113,9 @@ static void task_runtime_set_value_field(SZrState *state,
 
     /* BUG: ignore registry 已满且宿主 ARRAY 扩容分配返回 null 时，底层 pin 失败
      * 会跳过字段写入；此 void 包装不回传失败，登记 hook 等调用者仍可报告成功。 */
-    if (ZrCore_GcDomain_SharedMutationBegin(state)) {
-        ZrLib_Object_SetFieldCString(state, object, fieldName, value);
-        ZrCore_GcDomain_MutationEnd(state, ZR_TRUE);
-    }
+    /* The storage write roots its owner and value before entering a mutation
+     * boundary. Parking here first could collect a newly constructed handle. */
+    ZrLib_Object_SetFieldCString(state, object, fieldName, value);
 }
 
 /* 解除私有字段保存的 callable/result/error 等引用。
@@ -890,6 +889,8 @@ TZrBool ZrLibrary_TaskRuntime_PrepareJob(SZrState *state,
                                          ZrLibraryTaskRuntimeWorkItem *outItem) {
     const SZrTypeValue *callable;
     SZrObject *handle;
+    SZrRawObject *rootedHandle;
+    SZrTypeValue fieldValue;
 
     if (outItem != ZR_NULL) {
         memset(outItem, 0, sizeof(*outItem));
@@ -916,17 +917,33 @@ TZrBool ZrLibrary_TaskRuntime_PrepareJob(SZrState *state,
         task_runtime_set_null_field(state, job, kTaskJobCallableField);
         return ZR_FALSE;
     }
-    task_runtime_set_null_field(state, job, kTaskJobCallableField);
-
     handle = ZR_CAST_OBJECT(state, result->value.object);
-    task_runtime_set_int_field(state, handle, kTaskStatusField, ZR_VM_TASK_STATUS_QUEUED);
+    /* Publish the handoff root before any field write can park this mutator.
+     * The native result temporary alone is not a GC root. */
     if (!ZrCore_GcRootHandle_Create(state, ZR_CAST_RAW_OBJECT_AS_SUPER(handle), &outItem->taskRoot)) {
-        SZrTypeValue errorValue;
-        ZrLib_Value_SetString(state, &errorValue, "Scheduler could not root Job completion");
-        task_runtime_handle_mark_faulted(state, handle, ZR_THREAD_STATUS_RUNTIME_ERROR, &errorValue);
+        ZrLib_Value_SetNull(result);
+        task_runtime_set_null_field(state, job, kTaskJobCallableField);
         return ZR_FALSE;
     }
-    return ZR_TRUE;
+    ZrLib_Value_SetNull(&fieldValue);
+    if (!ZrLib_Object_TrySetFieldCString(state, job, kTaskJobCallableField, &fieldValue)) {
+        goto prepare_failed;
+    }
+    if (!ZrCore_GcRootHandle_Resolve(state, &outItem->taskRoot, &rootedHandle) || rootedHandle == ZR_NULL) {
+        state->threadStatus = ZR_THREAD_STATUS_RUNTIME_ERROR;
+        goto prepare_failed;
+    }
+    handle = ZR_CAST_OBJECT(state, rootedHandle);
+    ZrLib_Value_SetInt(state, &fieldValue, ZR_VM_TASK_STATUS_QUEUED);
+    if (!ZrLib_Object_TrySetFieldCString(state, handle, kTaskStatusField, &fieldValue)) {
+        goto prepare_failed;
+    }
+    return task_runtime_finish_object(state, result, handle);
+
+prepare_failed:
+    ZrLibrary_TaskRuntime_ReleasePreparedJob(state, outItem);
+    ZrLib_Value_SetNull(result);
+    ZrCore_Exception_Throw(state, state->threadStatus);
 }
 
 /** @brief 在兼容 domain 的 state 中解析 WorkItem Task 并同步结算 callable。

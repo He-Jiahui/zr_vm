@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include "zr_vm_core/closure.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/gc_domain.h"
 
 static TZrBool execution_context_pc_is_valid(const SZrFunction *function,
@@ -153,6 +154,7 @@ EZrExecutionBoundaryStatus ZrCore_Execution_SafepointPoll(
         SZrState *state,
         const TZrInstruction *resumeProgramCounter) {
     EZrExecutionBoundaryStatus status;
+    TZrBool reload = ZR_FALSE;
 
     status = ZrCore_Execution_PublishBoundary(context, state, state != ZR_NULL ? state->callInfoList : ZR_NULL,
                                                resumeProgramCounter);
@@ -160,6 +162,32 @@ EZrExecutionBoundaryStatus ZrCore_Execution_SafepointPoll(
         return status;
     }
     if (state->gcDomain != ZR_NULL && ZrCore_GcDomain_MutatorPoll(state)) {
+        reload = ZR_TRUE;
+    }
+    if (state->global != ZR_NULL && state->global->garbageCollector != ZR_NULL) {
+        SZrGarbageCollector *collector = state->global->garbageCollector;
+        /* A stopped-by-self collector resumes on debt. User stops and native
+         * frames without an interpreter boundary must remain respected. */
+        if (!collector->stopGcFlag && !collector->isImmediateGcFlag &&
+            collector->gcStatus != ZR_GARBAGE_COLLECT_STATUS_STOP_BY_USER &&
+            collector->gcStatus != ZR_GARBAGE_COLLECT_STATUS_STOP_BY_EXITING &&
+            /* Debt saturates at zero, so a positive byte is not a new GC
+             * quantum. Batch fresh allocation at the configured step size. */
+            (ZrCore_GarbageCollector_GetDebtSpace(collector) >=
+                     ((TZrMemoryOffset)1 << ZR_GARBAGE_COLLECT_STEP_LOG2_SIZE) ||
+             collector->gcRunningStatus != ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED ||
+             (collector->heapLimitBytes > 0 && collector->managedMemories >= collector->heapLimitBytes)
+             )) {
+#if defined(ZR_DEBUG_GARBAGE_COLLECT_MEM_TEST)
+            if (!collector->concurrentMajorActive)
+                ZrCore_GarbageCollector_GcFull(state, ZR_FALSE);
+            else
+#endif
+                ZrCore_GarbageCollector_CheckGc(state);
+            reload = ZR_TRUE;
+        }
+    }
+    if (reload) {
         status = ZrCore_Execution_ReloadBoundary(context, state);
         return status == ZR_EXECUTION_BOUNDARY_OK
                      ? ZR_EXECUTION_BOUNDARY_RELOADED

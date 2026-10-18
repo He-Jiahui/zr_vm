@@ -560,6 +560,7 @@ void ZrCore_GarbageCollector_New(SZrGlobalState *global) {
 static void garbage_collector_release_shutdown_objects(SZrState *state, SZrGarbageCollector *collector) {
     SZrRawObject *stateObject = ZR_CAST_RAW_OBJECT_AS_SUPER(state);
 
+    garbage_collector_finalize_unreachable(state, ZR_FALSE, ZR_TRUE);
     while (collector->gcObjectList != ZR_NULL) {
         SZrRawObject *object = collector->gcObjectList;
 
@@ -697,6 +698,7 @@ void ZrCore_GarbageCollector_GcFull(SZrState *state, TZrBool isImmediate) {
      * StopTheWorldEnd 和 GcEnd，后续 mutator 可被留在暂停域外等待。 */
     if (collector->gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL) {
         work += garbage_collector_run_generational_full(state);
+        ZrCore_GarbageCollector_AddDebtSpace(global, -ZR_GC_DEBT_CREDIT_BYTES);
     } else {
         work += garbage_collector_prepare_major_collection(state);
         garbage_collector_full_inc(state, global);
@@ -823,13 +825,16 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
         }
 
         collector->gcLastStepWork = totalWork;
-        if (collector->gcLastStepWork > 0 && ZrCore_GarbageCollector_GetDebtSpace(collector) > 0) {
-            TZrMemoryOffset workBytes = collector->gcLastStepWork >
-                    (TZrSize)ZR_MAX_MEMORY_OFFSET / ZR_GC_WORK_TO_MEMORY_BYTES
-                    ? ZR_MAX_MEMORY_OFFSET
-                    : (TZrMemoryOffset)(collector->gcLastStepWork * ZR_GC_WORK_TO_MEMORY_BYTES);
-            ZrCore_GarbageCollector_AddDebtSpace(global, -workBytes);
-        }
+    }
+
+    /* Generational work repays allocation debt too. Without this, the first
+     * explicit minor collection can leave every later allocation polling GC. */
+    if (collector->gcLastStepWork > 0 && ZrCore_GarbageCollector_GetDebtSpace(collector) > 0) {
+        TZrMemoryOffset workBytes = collector->gcLastStepWork >
+                (TZrSize)ZR_MAX_MEMORY_OFFSET / ZR_GC_WORK_TO_MEMORY_BYTES
+                ? ZR_MAX_MEMORY_OFFSET
+                : (TZrMemoryOffset)(collector->gcLastStepWork * ZR_GC_WORK_TO_MEMORY_BYTES);
+        ZrCore_GarbageCollector_AddDebtSpace(global, -workBytes);
     }
 
     if (collector->gcRunningStatus == ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED) {
@@ -1074,19 +1079,23 @@ void ZrCore_GarbageCollector_CheckGc(SZrState *state) {
     global = state->global;
     collector = global->garbageCollector;
 
+    if (collector->stopGcFlag || collector->isImmediateGcFlag ||
+        collector->gcStatus == ZR_GARBAGE_COLLECT_STATUS_STOP_BY_USER ||
+        collector->gcStatus == ZR_GARBAGE_COLLECT_STATUS_STOP_BY_EXITING) {
+        return;
+    }
     if (collector->heapLimitBytes > 0 && collector->managedMemories >= collector->heapLimitBytes) {
         garbage_collector_schedule_collection_internal(global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL, ZR_FALSE);
     }
 
-    if (ZrCore_GarbageCollector_GetDebtSpace(collector) > 0) {
+    if (ZrCore_GarbageCollector_GetDebtSpace(collector) > 0 ||
+        collector->gcRunningStatus != ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED) {
         ZrCore_GarbageCollector_GcStep(state);
     }
 #if defined(ZR_DEBUG_GARBAGE_COLLECT_MEM_TEST)
     if (collector->gcStatus == ZR_GARBAGE_COLLECT_STATUS_RUNNING &&
-        !collector->isImmediateGcFlag &&
-        !collector->concurrentMajorActive) {
+        !collector->isImmediateGcFlag && !collector->concurrentMajorActive)
         ZrCore_GarbageCollector_GcFull(state, ZR_FALSE);
-    }
 #endif
 }
 

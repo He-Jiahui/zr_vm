@@ -2,6 +2,9 @@
 #include "gc/gc_internal.h"
 #include "gc/gc_domain_internal.h"
 
+/* Acquiring a root must not park before registration: the input may be a
+ * newly allocated object held only in a C local. The mutation lock serializes
+ * publication; interpreter/native boundaries provide the actual safepoints. */
 /* All helpers below require the domain mutation lock. Raw allocations here
  * neither collect nor poll; reserve finishes before object metadata changes. */
 static TZrBool root_insert(SZrState *state, SZrRawObject *object) {
@@ -39,10 +42,11 @@ TZrBool ZrCore_Gc_RootLeaseAcquire(SZrState *state, SZrRawObject *object, SZrGcR
     if (object == ZR_NULL) return ZR_TRUE;
     if (state == ZR_NULL || state->global == ZR_NULL ||
         state->global->garbageCollector == ZR_NULL ||
-        !ZrCore_GcDomain_SharedMutationBegin(state)) return ZR_FALSE;
+        state->gcDomain == ZR_NULL) return ZR_FALSE;
+    ZrCore_GcDomain_MutationLock(state->gcDomain);
     succeeded = root_acquire(state, object);
     if (succeeded) lease->object = object;
-    ZrCore_GcDomain_MutationEnd(state, ZR_TRUE);
+    ZrCore_GcDomain_MutationUnlock(state->gcDomain);
     return succeeded;
 }
 
@@ -59,10 +63,11 @@ TZrBool ZrCore_GarbageCollector_IgnoreObject(SZrState *state, SZrRawObject *obje
     TZrBool succeeded;
     if (state == ZR_NULL || state->global == ZR_NULL || object == ZR_NULL ||
         state->global->garbageCollector == ZR_NULL ||
-        !ZrCore_GcDomain_SharedMutationBegin(state)) return ZR_FALSE;
+        state->gcDomain == ZR_NULL) return ZR_FALSE;
+    ZrCore_GcDomain_MutationLock(state->gcDomain);
     succeeded = root_insert(state, object);
     if (succeeded) object->garbageCollectMark.explicitIgnoredRoot = ZR_TRUE;
-    ZrCore_GcDomain_MutationEnd(state, ZR_TRUE);
+    ZrCore_GcDomain_MutationUnlock(state->gcDomain);
     return succeeded;
 }
 
@@ -72,7 +77,8 @@ TZrBool ZrCore_GarbageCollector_IgnoreObjectIfNeededFast(SZrGlobalState *global,
     if (outAddedByCaller != ZR_NULL) *outAddedByCaller = ZR_FALSE;
     if (global == ZR_NULL || state == ZR_NULL || state->global != global ||
         global->garbageCollector == ZR_NULL || object == ZR_NULL ||
-        !ZrCore_GcDomain_SharedMutationBegin(state)) return ZR_FALSE;
+        state->gcDomain == ZR_NULL) return ZR_FALSE;
+    ZrCore_GcDomain_MutationLock(state->gcDomain);
     if (!garbage_collector_ignore_registry_contains(global->garbageCollector, object)) {
         succeeded = root_insert(state, object);
         if (succeeded) {
@@ -80,7 +86,7 @@ TZrBool ZrCore_GarbageCollector_IgnoreObjectIfNeededFast(SZrGlobalState *global,
             if (outAddedByCaller != ZR_NULL) *outAddedByCaller = ZR_TRUE;
         }
     }
-    ZrCore_GcDomain_MutationEnd(state, ZR_TRUE);
+    ZrCore_GcDomain_MutationUnlock(state->gcDomain);
     return succeeded;
 }
 
@@ -122,7 +128,8 @@ TZrBool ZrCore_Gc_NativeCallPinObject(SZrState *state, SZrRawObject *object, SZr
     if (object == ZR_NULL) return ZR_TRUE;
     if (state == ZR_NULL || state->global == ZR_NULL ||
         state->global->garbageCollector == ZR_NULL ||
-        !ZrCore_GcDomain_SharedMutationBegin(state)) return ZR_FALSE;
+        state->gcDomain == ZR_NULL) return ZR_FALSE;
+    ZrCore_GcDomain_MutationLock(state->gcDomain);
     if (object->garbageCollectMark.nativeCallPinRefCount == ZR_MAX_SIZE) goto done;
     addedRoot = !garbage_collector_ignore_registry_contains(state->global->garbageCollector, object);
     if (!root_acquire(state, object)) goto done;
@@ -143,7 +150,7 @@ TZrBool ZrCore_Gc_NativeCallPinObject(SZrState *state, SZrRawObject *object, SZr
     pin->pinKindAddedByCaller = ownsPin;
     succeeded = ZR_TRUE;
 done:
-    ZrCore_GcDomain_MutationEnd(state, ZR_TRUE);
+    ZrCore_GcDomain_MutationUnlock(state->gcDomain);
     return succeeded;
 }
 

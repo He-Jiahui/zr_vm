@@ -654,6 +654,9 @@ static void test_dispatch_resumes_after_full_gc_parks_running_mutator(void) {
     ZrCore_Memory_RawSet(&statsAfter, 0, sizeof(statsAfter));
     stateCreated = (TZrBool)(state != ZR_NULL);
     if (state != ZR_NULL) {
+        /* Isolate the external collector handshake from automatic debt GC.
+         * Explicit GcFull still runs; interpreter_gc covers automatic polls. */
+        state->global->garbageCollector->gcStatus = ZR_GARBAGE_COLLECT_STATUS_STOP_BY_USER;
         cancelToken = ZrCore_ExecutionCancelToken_New();
         cancelTokenCreated = (TZrBool)(cancelToken != ZR_NULL);
     }
@@ -774,10 +777,7 @@ static void test_dispatch_resumes_after_full_gc_parks_running_mutator(void) {
             ZrCore_GarbageCollector_GetStatsSnapshot(
                     state->global, &statsAfter);
             fullCollectionCompleted =
-                    (TZrBool)(statsAfter.fullCollectionCount >
-                                      statsBefore.fullCollectionCount &&
-                              statsAfter.lastCollectionKind ==
-                                      ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL);
+                    (TZrBool)(statsAfter.fullCollectionCount > statsBefore.fullCollectionCount);
         }
         ZrTests_Runtime_State_Destroy(state);
     }

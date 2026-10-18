@@ -8996,3 +8996,21 @@ if(TARGET zr_vm_cli_executable)
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_array_bounds.cmake")
     set_tests_properties(runtime_array_bounds PROPERTIES TIMEOUT 90)
 endif()
+
+if(TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static)
+    zr_vm_add_unity_test_target(zr_vm_interpreter_gc_test
+        ${CMAKE_SOURCE_DIR}/tests/core/test_interpreter_gc.c)
+    target_include_directories(zr_vm_interpreter_gc_test PRIVATE ${CMAKE_SOURCE_DIR}/tests)
+    zr_vm_link_parser_core(zr_vm_interpreter_gc_test)
+    add_test(NAME interpreter_gc COMMAND zr_vm_interpreter_gc_test)
+    set_tests_properties(interpreter_gc PROPERTIES TIMEOUT 90 LABELS "core;gc")
+endif()
+
+if(TARGET zr_vm_cli_executable AND ZR_VM_BENCHMARK_PYTHON_EXECUTABLE)
+    add_test(NAME interpreter_gc_cli
+        COMMAND ${ZR_VM_BENCHMARK_PYTHON_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/benchmarks/run_interpreter_probes.py
+            --cli $<TARGET_FILE:zr_vm_cli_executable>
+            --work-dir ${CMAKE_BINARY_DIR}/tests_generated/interpreter_gc_cli
+            --cases objauto,strdrop --repeat 1 --smoke)
+    set_tests_properties(interpreter_gc_cli PROPERTIES TIMEOUT 90 LABELS "core;gc;benchmark")
+endif()

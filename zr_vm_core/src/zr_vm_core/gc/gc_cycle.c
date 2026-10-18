@@ -378,6 +378,7 @@ void garbage_collector_run_until_state(SZrState *state, EZrGarbageCollectRunning
     const TZrSize maxIterations = ZR_GC_RUN_UNTIL_STATE_ITERATION_LIMIT;
 
     while (global->garbageCollector->gcRunningStatus != targetState) {
+        EZrGarbageCollectRunningStatus previous = global->garbageCollector->gcRunningStatus;
         if (++iterationCount > maxIterations) {
             global->garbageCollector->gcRunningStatus = targetState;
             global->garbageCollector->waitToScanObjectList = ZR_NULL;
@@ -385,7 +386,9 @@ void garbage_collector_run_until_state(SZrState *state, EZrGarbageCollectRunning
             break;
         }
 
-        garbage_collector_single_step(state);
+        /* The guard detects a stalled state machine, not a large valid heap. */
+        if (garbage_collector_single_step(state) > 0u ||
+            previous != global->garbageCollector->gcRunningStatus) iterationCount = 0u;
         if (global->garbageCollector->stopGcFlag) {
             break;
         }
@@ -592,6 +595,7 @@ static TZrBool garbage_collector_function_references_live_young(SZrState *state,
     }
 
     if (garbage_collector_raw_object_is_live_young(ZR_CAST_RAW_OBJECT_AS_SUPER(function->ownerFunction)) ||
+        garbage_collector_raw_object_is_live_young(ZR_CAST_RAW_OBJECT_AS_SUPER(function->prototypeContextFunction)) ||
         garbage_collector_string_references_live_young(function->functionName) ||
         garbage_collector_raw_object_is_live_young(ZR_CAST_RAW_OBJECT_AS_SUPER(function->cachedStatelessClosure)) ||
         garbage_collector_string_references_live_young(function->sourceCodeList) ||
@@ -659,6 +663,23 @@ static TZrBool garbage_collector_function_references_live_young(SZrState *state,
             }
         }
     }
+    if (garbage_collector_string_references_live_young(function->moduleVersion) ||
+        (function->hasCallableReturnType &&
+         garbage_collector_typed_type_ref_references_live_young(&function->callableReturnType))) return ZR_TRUE;
+    for (TZrUInt32 i = 0u; i < function->metadataStringHeapLength; ++i) {
+        if (garbage_collector_string_references_live_young(function->metadataStringHeap[i].value)) return ZR_TRUE;
+    }
+    for (TZrUInt32 table = 0u; table < 2u; ++table) {
+        const SZrMetadataTokenRecord *records = table == 0u
+                ? function->metadataTokenRecords : function->moduleMetadataTokenRecords;
+        TZrUInt32 count = table == 0u
+                ? function->metadataTokenRecordLength : function->moduleMetadataTokenRecordLength;
+        for (TZrUInt32 i = 0u; i < count; ++i) {
+            if (garbage_collector_string_references_live_young(records[i].requestedModuleVersion) ||
+                garbage_collector_string_references_live_young(records[i].minModuleVersionInclusive) ||
+                garbage_collector_string_references_live_young(records[i].maxModuleVersionExclusive)) return ZR_TRUE;
+        }
+    }
     if (function->staticImports != ZR_NULL) {
         for (TZrUInt32 index = 0; index < function->staticImportLength; index++) {
             if (garbage_collector_string_references_live_young(function->staticImports[index])) {
@@ -670,7 +691,10 @@ static TZrBool garbage_collector_function_references_live_young(SZrState *state,
         for (TZrUInt32 index = 0; index < function->moduleEntryEffectLength; index++) {
             if (garbage_collector_string_references_live_young(function->moduleEntryEffects[index].moduleName) ||
                 garbage_collector_string_references_live_young(function->moduleEntryEffects[index].assemblyName) ||
-                garbage_collector_string_references_live_young(function->moduleEntryEffects[index].symbolName)) {
+                garbage_collector_string_references_live_young(function->moduleEntryEffects[index].symbolName) ||
+                garbage_collector_string_references_live_young(function->moduleEntryEffects[index].requestedModuleVersion) ||
+                garbage_collector_string_references_live_young(function->moduleEntryEffects[index].minModuleVersionInclusive) ||
+                garbage_collector_string_references_live_young(function->moduleEntryEffects[index].maxModuleVersionExclusive)) {
                 return ZR_TRUE;
             }
         }
@@ -686,7 +710,10 @@ static TZrBool garbage_collector_function_references_live_young(SZrState *state,
                 for (TZrUInt32 effectIndex = 0; effectIndex < summary->effectCount; effectIndex++) {
                     if (garbage_collector_string_references_live_young(summary->effects[effectIndex].moduleName) ||
                         garbage_collector_string_references_live_young(summary->effects[effectIndex].assemblyName) ||
-                        garbage_collector_string_references_live_young(summary->effects[effectIndex].symbolName)) {
+                        garbage_collector_string_references_live_young(summary->effects[effectIndex].symbolName) ||
+                garbage_collector_string_references_live_young(summary->effects[effectIndex].requestedModuleVersion) ||
+                garbage_collector_string_references_live_young(summary->effects[effectIndex].minModuleVersionInclusive) ||
+                garbage_collector_string_references_live_young(summary->effects[effectIndex].maxModuleVersionExclusive)) {
                         return ZR_TRUE;
                     }
                 }
@@ -1057,6 +1084,13 @@ static TZrSize garbage_collector_restart_minor_collection(SZrState *state) {
     garbage_collector_begin_minor_scan_epoch(collector);
 
     work += garbage_collector_prepare_minor_collection(state);
+    /* Permanent objects are roots even when their former owners have died.
+     * Their metadata can still contain young strings and must be scanned. */
+    for (SZrRawObject *object = collector->gcObjectList; object != ZR_NULL; object = object->next) {
+        if (object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT) {
+            work += garbage_collector_mark_minor_root_object(state, object);
+        }
+    }
     work += garbage_collector_mark_minor_root_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(state));
     work += garbage_collector_mark_minor_root_value(state, &global->loadedModulesRegistry);
     work += garbage_collector_mark_minor_root_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(global->errorPrototype));
@@ -1256,60 +1290,80 @@ static TZrSize garbage_collector_rewrite_string_table_keys(SZrHashSet *set) {
     return work;
 }
 
-static TZrSize garbage_collector_rewrite_string_table_keys_minor(SZrGlobalState *global) {
-    SZrStringTable *stringTable;
-    TZrSize work = 0;
+/* Run before freeing young from-space, or before flipping the major epoch.
+ * Short strings currently promote in place; retain forwarding support so that
+ * weak keys and the diagnostic chain remain valid if that policy changes. */
+static TZrBool garbage_collector_weak_string_is_dead(
+        SZrGarbageCollector *collector, SZrRawObject *object, TZrBool minor) {
+    if (object == ZR_NULL) return ZR_TRUE;
+    if (object->garbageCollectMark.forwardingAddress != ZR_NULL ||
+        object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT ||
+        garbage_collector_ignore_registry_contains(collector, object)) return ZR_FALSE;
+    if (minor && object->garbageCollectMark.storageKind != ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE)
+        return ZR_FALSE;
+    return !ZR_GC_IS_REFERENCED(object) && !ZR_GC_IS_WAIT_TO_SCAN(object);
+}
 
-    if (global == ZR_NULL || global->stringTable == ZR_NULL) {
-        return 0;
-    }
+static TZrSize garbage_collector_prune_weak_strings(SZrState *state, TZrBool minor) {
+    SZrGlobalState *global = state->global;
+    SZrGarbageCollector *collector = global->garbageCollector;
+    SZrStringTable *table = global->stringTable;
+    TZrSize work = 0u;
 
-    stringTable = global->stringTable;
-    if (!stringTable->stringHashSet.isValid ||
-        stringTable->stringHashSet.buckets == ZR_NULL ||
-        stringTable->stringHashSet.elementCount == 0u ||
-        (!ZrCore_StringTable_MinorYoungBucketFlagsReady(stringTable) &&
-         !ZrCore_StringTable_SyncMinorYoungBucketFlags(global)) ||
-        stringTable->minorYoungBucketFlags == ZR_NULL ||
-        stringTable->minorYoungBucketCount == 0u) {
-        return 0;
-    }
+    /* Clear caches before any pointed-to string can be freed. API cache misses
+     * use the permanent OOM string as their sentinel. */
+    for (TZrSize bucket = 0u; bucket < ZR_GLOBAL_API_STRING_CACHE_BUCKET_COUNT; ++bucket)
+        for (TZrSize depth = 0u; depth < ZR_GLOBAL_API_STRING_CACHE_BUCKET_DEPTH; ++depth)
+            global->stringHashApiCache[bucket][depth] = global->memoryErrorMessage;
+    ZrCore_Memory_RawSet(global->stringConcatPairCache, 0, sizeof(global->stringConcatPairCache));
+    if (table == ZR_NULL) return work;
 
-    for (TZrSize activeIndex = 0; activeIndex < stringTable->minorYoungBucketCount;) {
-        SZrHashKeyValuePair *pair;
-        TZrBool bucketHasYoungString = ZR_FALSE;
-        TZrSize bucketIndex = stringTable->minorYoungBucketIndexes[activeIndex];
-
-        pair = stringTable->stringHashSet.buckets[bucketIndex];
-        while (pair != ZR_NULL) {
-            SZrRawObject *currentObject = pair->key.value.object;
-            SZrRawObject *forwardedObject;
-
-            if (currentObject != ZR_NULL) {
-                forwardedObject = (SZrRawObject *)currentObject->garbageCollectMark.forwardingAddress;
-                if (forwardedObject != ZR_NULL) {
-                    pair->key.value.object = forwardedObject;
-                    pair->key.type = ZR_VALUE_TYPE_STRING;
-                    pair->key.isNative = forwardedObject->isNative;
-                    currentObject = forwardedObject;
-                    work++;
-                }
-            }
-
-            if (currentObject != ZR_NULL &&
-                currentObject->garbageCollectMark.storageKind == ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE) {
-                bucketHasYoungString = ZR_TRUE;
-            }
-            pair = pair->next;
-        }
-
-        if (!bucketHasYoungString) {
-            ZrCore_StringTable_ClearMinorYoungBucketAt(stringTable, activeIndex);
+    SZrString **link = &table->shortStringListHead;
+    while (*link != ZR_NULL) {
+        SZrString *string = *link;
+        SZrString *next = string->nextShortString;
+        if (garbage_collector_weak_string_is_dead(collector, &string->super, minor)) {
+            *link = next;
+            string->nextShortString = ZR_NULL;
         } else {
-            activeIndex++;
+            if (string->super.garbageCollectMark.forwardingAddress != ZR_NULL) {
+                string = (SZrString *)string->super.garbageCollectMark.forwardingAddress;
+                *link = string;
+                string->nextShortString = next;
+            }
+            link = &string->nextShortString;
         }
+        work++;
     }
 
+    SZrHashSet *set = &table->stringHashSet;
+    if (!set->isValid || set->buckets == ZR_NULL) return work;
+    TZrBool indexed = minor && (ZrCore_StringTable_MinorYoungBucketFlagsReady(table) ||
+                                ZrCore_StringTable_SyncMinorYoungBucketFlags(global));
+    for (TZrSize index = 0u; index < (indexed ? table->minorYoungBucketCount : set->capacity);) {
+        TZrSize bucket = indexed ? table->minorYoungBucketIndexes[index] : index;
+        SZrHashKeyValuePair **pairLink = &set->buckets[bucket];
+        TZrBool hasYoung = ZR_FALSE;
+        while (*pairLink != ZR_NULL) {
+            SZrHashKeyValuePair *pair = *pairLink;
+            SZrRawObject *object = pair->key.value.object;
+            if (garbage_collector_weak_string_is_dead(collector, object, minor)) {
+                *pairLink = pair->next;
+                set->elementCount--;
+                if (!zr_hash_pair_pool_contains(set, pair))
+                    ZrCore_Memory_RawFreeWithType(global, pair, sizeof(*pair), ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
+            } else {
+                if (object->garbageCollectMark.forwardingAddress != ZR_NULL)
+                    pair->key.value.object = object = object->garbageCollectMark.forwardingAddress;
+                if (object->garbageCollectMark.storageKind == ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE)
+                    hasYoung = ZR_TRUE;
+                pairLink = &pair->next;
+            }
+            work++;
+        }
+        if (indexed && !hasYoung) ZrCore_StringTable_ClearMinorYoungBucketAt(table, index);
+        else index++;
+    }
     return work;
 }
 
@@ -1674,6 +1728,25 @@ static TZrSize garbage_collector_rewrite_typed_type_ref(SZrFunctionTypedTypeRef 
     return work;
 }
 
+static TZrSize garbage_collector_rewrite_module_effect(SZrFunctionModuleEffect *effect) {
+    return garbage_collector_rewrite_string_slot(&effect->moduleName) +
+           garbage_collector_rewrite_string_slot(&effect->assemblyName) +
+           garbage_collector_rewrite_string_slot(&effect->symbolName) +
+           garbage_collector_rewrite_string_slot(&effect->requestedModuleVersion) +
+           garbage_collector_rewrite_string_slot(&effect->minModuleVersionInclusive) +
+           garbage_collector_rewrite_string_slot(&effect->maxModuleVersionExclusive);
+}
+
+static TZrSize garbage_collector_rewrite_metadata_records(SZrMetadataTokenRecord *records, TZrUInt32 count) {
+    TZrSize work = 0u;
+    for (TZrUInt32 i = 0u; i < count; ++i) {
+        work += garbage_collector_rewrite_string_slot(&records[i].requestedModuleVersion);
+        work += garbage_collector_rewrite_string_slot(&records[i].minModuleVersionInclusive);
+        work += garbage_collector_rewrite_string_slot(&records[i].maxModuleVersionExclusive);
+    }
+    return work;
+}
+
 static TZrSize garbage_collector_rewrite_metadata_parameters(SZrFunctionMetadataParameter *parameters,
                                                              TZrUInt32 parameterCount) {
     TZrSize work = 0;
@@ -1716,6 +1789,7 @@ static TZrSize garbage_collector_rewrite_function_graph(SZrState *state, SZrFunc
 
     garbage_collector_trace_rewrite_function_slot("ownerFunction", function, function->ownerFunction);
     work += garbage_collector_rewrite_function_slot(&function->ownerFunction);
+    work += garbage_collector_rewrite_function_slot(&function->prototypeContextFunction);
     work += garbage_collector_rewrite_string_slot(&function->functionName);
     work += garbage_collector_rewrite_string_slot(&function->sourceCodeList);
     work += garbage_collector_rewrite_string_slot(&function->sourceHash);
@@ -1758,6 +1832,17 @@ static TZrSize garbage_collector_rewrite_function_graph(SZrState *state, SZrFunc
             }
         }
     }
+    work += garbage_collector_rewrite_string_slot(&function->moduleVersion);
+    work += garbage_collector_rewrite_metadata_records(function->metadataTokenRecords,
+                                                       function->metadataTokenRecordLength);
+    work += garbage_collector_rewrite_metadata_records(function->moduleMetadataTokenRecords,
+                                                       function->moduleMetadataTokenRecordLength);
+    for (TZrUInt32 i = 0u; i < function->metadataStringHeapLength; ++i) {
+        work += garbage_collector_rewrite_string_slot(&function->metadataStringHeap[i].value);
+    }
+    if (function->hasCallableReturnType) {
+        work += garbage_collector_rewrite_typed_type_ref(&function->callableReturnType);
+    }
     if (function->staticImports != ZR_NULL) {
         for (TZrUInt32 index = 0; index < function->staticImportLength; index++) {
             work += garbage_collector_rewrite_string_slot(&function->staticImports[index]);
@@ -1765,8 +1850,7 @@ static TZrSize garbage_collector_rewrite_function_graph(SZrState *state, SZrFunc
     }
     if (function->moduleEntryEffects != ZR_NULL) {
         for (TZrUInt32 index = 0; index < function->moduleEntryEffectLength; index++) {
-            work += garbage_collector_rewrite_string_slot(&function->moduleEntryEffects[index].moduleName);
-            work += garbage_collector_rewrite_string_slot(&function->moduleEntryEffects[index].symbolName);
+            work += garbage_collector_rewrite_module_effect(&function->moduleEntryEffects[index]);
         }
     }
     if (function->exportedCallableSummaries != ZR_NULL) {
@@ -1776,8 +1860,7 @@ static TZrSize garbage_collector_rewrite_function_graph(SZrState *state, SZrFunc
             work += garbage_collector_rewrite_string_slot(&summary->name);
             if (summary->effects != ZR_NULL) {
                 for (TZrUInt32 effectIndex = 0; effectIndex < summary->effectCount; effectIndex++) {
-                    work += garbage_collector_rewrite_string_slot(&summary->effects[effectIndex].moduleName);
-                    work += garbage_collector_rewrite_string_slot(&summary->effects[effectIndex].symbolName);
+                    work += garbage_collector_rewrite_module_effect(&summary->effects[effectIndex]);
                 }
             }
         }
@@ -1893,6 +1976,8 @@ static TZrSize garbage_collector_rewrite_call_info_functions(SZrState *state, SZ
 
     callInfo = threadState->callInfoList;
     while (callInfo != ZR_NULL) {
+        /* This cache is authoritative even when the callable slot is replaced. */
+        work += garbage_collector_rewrite_function_slot(&callInfo->metadataFunction);
         SZrFunction *function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(threadState, callInfo);
         if (function != ZR_NULL) {
             work += garbage_collector_rewrite_function_graph(state, function);
@@ -2130,12 +2215,12 @@ static TZrSize garbage_collector_rewrite_forwarded_roots(SZrState *state) {
     if (global->stringTable != ZR_NULL) {
         /*
          * Interned short strings now stay at stable addresses across the accepted
-         * minor-promotion and old-compaction paths, so the short-string root list
+         * minor-promotion and old-compaction paths, so the weak short-string list
          * does not need a forwarding rewrite walk here.
          */
         if (global->garbageCollector != ZR_NULL &&
             global->garbageCollector->collectionPhase == ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MINOR_EVACUATE) {
-            work += garbage_collector_rewrite_string_table_keys_minor(global);
+            work += garbage_collector_prune_weak_strings(state, ZR_TRUE);
         } else {
             work += garbage_collector_rewrite_string_table_keys(&global->stringTable->stringHashSet);
         }
@@ -2965,6 +3050,7 @@ TZrSize garbage_collector_finish_generational_major_collection(
     TZrSize sweepIterationCount = 0;
     const TZrSize maxSweepIterations = ZR_GC_GENERATIONAL_FULL_SWEEP_ITERATION_LIMIT;
     SZrRawObject **previousSweeper = ZR_NULL;
+    SZrRawObject *previousSweepObject = ZR_NULL;
     SZrRawObject *object;
     TZrBool didCompact = ZR_FALSE;
     TZrBool wasConcurrentMajor = collector->concurrentMajorActive;
@@ -3006,12 +3092,15 @@ TZrSize garbage_collector_finish_generational_major_collection(
             break;
         }
 
-        if (collector->gcObjectListSweeper == previousSweeper && previousSweeper != ZR_NULL) {
+        if (collector->gcObjectListSweeper == previousSweeper && previousSweeper != ZR_NULL &&
+            *previousSweeper == previousSweepObject) {
             collector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_END;
             collector->gcObjectListSweeper = ZR_NULL;
             break;
         }
         previousSweeper = collector->gcObjectListSweeper;
+        previousSweepObject = previousSweeper != ZR_NULL ? *previousSweeper : ZR_NULL;
+        sweepIterationCount = 0u;
         garbage_collector_sweep_step(state, ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_END, NULL);
     }
 
@@ -3104,15 +3193,7 @@ TZrSize garbage_collector_run_generational_full(SZrState *state) {
 }
 
 TZrSize garbage_collector_process_weak_tables(SZrState *state) {
-    ZR_UNUSED_PARAMETER(state);
-
-    /*
-     * Weak table support is not wired up yet. The previous placeholder walked
-     * every object nodeMap and eagerly removed entries based on GC color,
-     * which corrupts ordinary tables during shutdown/full collections.
-     * Leave the phase as a no-op until dedicated weak-table metadata exists.
-     */
-    return 0;
+    return garbage_collector_prune_weak_strings(state, ZR_FALSE);
 }
 
 TZrSize garbage_collector_atomic(SZrState *state) {
@@ -3162,7 +3243,12 @@ TZrSize garbage_collector_atomic(SZrState *state) {
         }
     }
 
+    /* Stack stores do not use heap write barriers. Rescan every parked
+     * mutator, including attached states outside gcObjectList, at remark. */
+    work += garbage_collector_snapshot_concurrent_thread_roots(state);
+    work += garbage_collector_snapshot_ignored_trace_roots(state);
     work += ZrGarbageCollectorPropagateAll(state);
+    work += garbage_collector_finalize_unreachable(state, ZR_FALSE, ZR_FALSE);
     work += garbage_collector_process_weak_tables(state);
     global->garbageCollector->gcGeneration = ZR_GC_OTHER_GENERATION(global->garbageCollector);
     return work;
@@ -3348,6 +3434,7 @@ void garbage_collector_run_generational_step(SZrState *state) {
     ZrCore_Profile_RecordMemoryFromState(state, ZR_PROFILE_MEMORY_MINOR_COLLECTION_COUNT, 1u);
     work += garbage_collector_restart_minor_collection(state);
     work += ZrGarbageCollectorPropagateAll(state);
+    work += garbage_collector_finalize_unreachable(state, ZR_TRUE, ZR_FALSE);
     collector->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MINOR_EVACUATE;
     collector->statsSnapshot.collectionPhase = collector->collectionPhase;
     work += garbage_collector_run_minor_evacuation(state);

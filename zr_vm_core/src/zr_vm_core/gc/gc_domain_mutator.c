@@ -146,11 +146,10 @@ static SZrGcDomainMutatorRecord *gc_domain_wait_for_entry_boundary_locked(
     if (record != ZR_NULL && record->mutationDepth > 0u) {
         return record;
     }
-    /* BUG: 前次 PARKED 尚未恢复时新 collector 可推进 epoch；旧代数的记录继续等待，
-     * first_blocker 会把它视为阻塞者，直到新暂停超时。 */
     while (record != ZR_NULL && domain->pauseRequested &&
            domain->collectorState != state) {
-        if (record->status == ZR_GC_DOMAIN_MUTATOR_STATUS_RUNNING &&
+        if ((record->status == ZR_GC_DOMAIN_MUTATOR_STATUS_RUNNING ||
+             record->status == ZR_GC_DOMAIN_MUTATOR_STATUS_PARKED) &&
             record->nativeMode == ZR_GC_NATIVE_SAFEPOINT_MODE_GC_AWARE) {
             record->observedEpoch = domain->safepointEpoch;
             record->status = ZR_GC_DOMAIN_MUTATOR_STATUS_PARKED;
@@ -601,9 +600,14 @@ TZrBool ZrCore_GcDomain_MutatorPoll(SZrState *state) {
     record->observedEpoch = domain->safepointEpoch;
     record->status = ZR_GC_DOMAIN_MUTATOR_STATUS_PARKED;
     ZrCore_GcDomain_Broadcast(domain);
-    /* BUG: 前一轮 End 与下一轮 Begin 可在本线程醒来前连续发生；旧 PARKED
-     * 记录没有更新到新 epoch，collector 把它当阻塞者，直到新请求超时。 */
     while (domain->pauseRequested && domain->collectorState != state) {
+        /* A new collector can begin before this waiter resumes. Acknowledge
+         * its epoch while remaining parked, and reacquire registry pointers. */
+        record = gc_domain_find_mutator_locked(domain, state);
+        if (record != ZR_NULL) {
+            record->observedEpoch = domain->safepointEpoch;
+            ZrCore_GcDomain_Broadcast(domain);
+        }
         gc_domain_wait_locked(domain, ZR_GC_DOMAIN_WAIT_SLICE_MILLISECONDS);
     }
     record = gc_domain_find_mutator_locked(domain, state);
@@ -786,12 +790,21 @@ TZrBool ZrCore_GcDomain_StopTheWorldBegin(
         ZrCore_GcDomain_Unlock(domain);
         return ZR_TRUE;
     }
-    /* BUG: 第二个 RUNNING mutator 竞争暂停时直接在此等待，未承认首个请求的 epoch；
-     * 首个 collector 把它当阻塞者，双方直到首个请求超时才可前进。 */
     /* TODO: now_milliseconds 失败返回 0，若已记录非零起点，此处无符号差值会提前超时；核查时钟故障策略。 */
     while (domain->pauseRequested) {
+        SZrGcDomainMutatorRecord *caller = gc_domain_find_mutator_locked(domain, state);
         TZrUInt64 elapsed = gc_domain_now_milliseconds() - started;
+        if (caller != ZR_NULL && caller->mutationDepth == 0u &&
+            caller->nativeMode == ZR_GC_NATIVE_SAFEPOINT_MODE_GC_AWARE &&
+            (caller->status == ZR_GC_DOMAIN_MUTATOR_STATUS_RUNNING ||
+             caller->status == ZR_GC_DOMAIN_MUTATOR_STATUS_PARKED)) {
+            caller->status = ZR_GC_DOMAIN_MUTATOR_STATUS_PARKED;
+            caller->observedEpoch = domain->safepointEpoch;
+            ZrCore_GcDomain_Broadcast(domain);
+        }
         if (elapsed >= timeoutMilliseconds) {
+            if (caller != ZR_NULL && caller->status == ZR_GC_DOMAIN_MUTATOR_STATUS_PARKED)
+                caller->status = ZR_GC_DOMAIN_MUTATOR_STATUS_RUNNING;
             if (outDiagnostic != ZR_NULL) {
                 outDiagnostic->timedOut = ZR_TRUE;
                 outDiagnostic->safepointEpoch = domain->safepointEpoch;
@@ -800,6 +813,11 @@ TZrBool ZrCore_GcDomain_StopTheWorldBegin(
             return ZR_FALSE;
         }
         gc_domain_wait_locked(domain, ZR_GC_DOMAIN_WAIT_SLICE_MILLISECONDS);
+    }
+    {
+        SZrGcDomainMutatorRecord *caller = gc_domain_find_mutator_locked(domain, state);
+        if (caller != ZR_NULL && caller->status == ZR_GC_DOMAIN_MUTATOR_STATUS_PARKED)
+            caller->status = ZR_GC_DOMAIN_MUTATOR_STATUS_RUNNING;
     }
     domain->safepointEpoch++;
     if (domain->safepointEpoch == 0u) {

@@ -1,0 +1,17 @@
+// arrays
+let {Array} = import("zr.container");
+var a = new Array<int>();
+var k = 0;
+while (k < 1024) {
+    a.add(k);
+    k = k + 1;
+}
+var i = 0;
+var sum = 0;
+while (i < 3000000) {
+    var j = i & 1023;
+    a[j] = a[j] + 1;
+    sum = sum + a[j];
+    i = i + 1;
+}
+return sum;

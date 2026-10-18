@@ -18,11 +18,34 @@
 #include "zr_vm_core/gc_domain.h"
 #include "zr_vm_core/property_reference.h"
 #include "zr_vm_core/profile.h"
+#include "zr_vm_common/zr_aot_abi.h"
 
 #include <stdarg.h>
 #include <stdlib.h>
 
 #define ZR_EXECUTION_SAFEPOINT_POLL_INSTRUCTION_BUDGET 256u
+
+/* The expression result register lives in C, outside the VM stack. Publish it
+ * as a local root across polls, including forwarding after a minor collection. */
+static EZrExecutionBoundaryStatus execution_poll_with_result_root(
+        SZrExecutionContext *context, SZrState *state,
+        const TZrInstruction *resume, SZrTypeValue *result) {
+    static const SZrAotGcRootSlot slot = {
+        0u, 0u, 0u, 0u, ZR_AOT_GC_ROOT_LOCATION_LOCAL_ADDRESS, 0u, 0u
+    };
+    static const SZrAotGcRootMap map = {1u, &slot};
+    SZrRawObject *root = ZrCore_Value_IsGarbageCollectable(result)
+                              ? ZrCore_Value_GetRawObject(result) : ZR_NULL;
+    SZrAotGcRootFrame frame;
+    EZrExecutionBoundaryStatus status;
+    if (root == ZR_NULL) return ZrCore_Execution_SafepointPoll(context, state, resume);
+    if (!ZrCore_Gc_AotRootFramePush(state, &frame, (TZrStackValuePointer)&root, &map))
+        return ZR_EXECUTION_BOUNDARY_INVALID_FRAME;
+    status = ZrCore_Execution_SafepointPoll(context, state, resume);
+    result->value.object = root;
+    ZrCore_Gc_AotRootFramePop(state, &frame);
+    return status;
+}
 
 static inline SZrTypeValue *execution_frame_value_slot_dispatch_fast_inline(
         SZrState *state,
@@ -5786,6 +5809,15 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         UPDATE_BASE(CALL_INFO);                                                                                        \
     }
 #define SAVE_PC(STATE, CALL_INFO) ((CALL_INFO)->context.context.programCounter = programCounter)
+/* Poll promptly under allocation pressure, and let incremental sweeping keep
+ * pace even when more than one object is allocated per bytecode instruction. */
+#define EXECUTION_POLL_AFTER_ALLOCATION()                                                                          \
+    do {                                                                                                          \
+        SZrGarbageCollector *gc__ = state->global->garbageCollector;                                                \
+        if (!gc__->stopGcFlag && (ZrCore_GarbageCollector_IsSweeping(state->global) ||                               \
+            ZrCore_GarbageCollector_GetDebtSpace(gc__) >= ((TZrMemoryOffset)1 << ZR_GARBAGE_COLLECT_STEP_LOG2_SIZE))) \
+            mutatorPollBudget = ZR_EXECUTION_SAFEPOINT_POLL_INSTRUCTION_BUDGET - 1u;                                \
+    } while (0)
 #define EXECUTION_MUTATOR_POLL_BEFORE_FETCH(N)                                                                         \
     do {                                                                                                               \
         if (ZR_UNLIKELY(++mutatorPollBudget >= ZR_EXECUTION_SAFEPOINT_POLL_INSTRUCTION_BUDGET)) {                     \
@@ -5793,8 +5825,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             ZR_ASSERT(callInfo == state->callInfoList);                                                                \
             (callInfo)->context.context.programCounter = programCounter + (N);                                        \
             (state)->stackTop.valuePointer = (callInfo)->functionTop.valuePointer;                                    \
-            executionBoundaryStatus = ZrCore_Execution_SafepointPoll(                                                 \
-                    &executionContext, state, programCounter + (N));                                                   \
+            executionBoundaryStatus = execution_poll_with_result_root(                                                \
+                    &executionContext, state, programCounter + (N), &ret);                                             \
             if (executionBoundaryStatus == ZR_EXECUTION_BOUNDARY_RELOADED) {                                         \
                 callInfo = executionContext.callInfo;                                                                  \
                 goto LZrReturning;                                                                                     \
@@ -5888,6 +5920,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         }                                                                                                              \
         UPDATE_BASE(CALL_INFO);                                                                                        \
         UPDATE_TRAP(CALL_INFO);                                                                                        \
+        EXECUTION_POLL_AFTER_ALLOCATION();                                                                            \
     } while (0)
 
 #define JUMP(CALL_INFO, INSTRUCTION, OFFSET)                                                                           \
@@ -6394,6 +6427,7 @@ LZrFastInstruction_TO_UINT_SIGNED: {
                     // 转换失败，返回 null
                     ZrCore_Value_ResetAsNull(destination);
                 }
+                EXECUTION_POLL_AFTER_ALLOCATION();
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(TO_STRUCT) {
@@ -6846,6 +6880,7 @@ LZrFastInstruction_ADD_UNSIGNED_CONST_PLAIN_DEST: {
                     destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
                     ZrCore_Value_ResetAsNull(destination);
                 }
+                EXECUTION_POLL_AFTER_ALLOCATION();
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SUB) {
@@ -9311,6 +9346,7 @@ LZrFastInstruction_JUMP_IF_NULL: {
                     execution_prepare_destination_for_direct_store_no_profile(state, destination);
                     ZrCore_Value_ResetAsNull(destination);
                 }
+                EXECUTION_POLL_AFTER_ALLOCATION();
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(CREATE_OBJECT) {
@@ -9324,6 +9360,7 @@ LZrFastInstruction_JUMP_IF_NULL: {
                 } else {
                     ZrCore_Value_ResetAsNull(destination);
                 }
+                EXECUTION_POLL_AFTER_ALLOCATION();
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(CREATE_ARRAY) {
@@ -9340,6 +9377,7 @@ LZrFastInstruction_JUMP_IF_NULL: {
                 } else {
                     ZrCore_Value_ResetAsNull(destination);
                 }
+                EXECUTION_POLL_AFTER_ALLOCATION();
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
@@ -9364,6 +9402,7 @@ LZrFastInstruction_CREATE_INLINE_ARRAY:
                     ZrCore_Value_ResetAsNull(destination);
                     ZrCore_Debug_RunError(state, "CREATE_INLINE_ARRAY: invalid inline array layout");
                 }
+                EXECUTION_POLL_AFTER_ALLOCATION();
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
@@ -9848,6 +9887,7 @@ LZrExecutionDone:
 #undef FETCH_PREPARE_FAST_ONLY
 #undef FETCH_PREPARE_SHARED
 #undef FETCH_DEBUG_BASE_SYNC
+#undef EXECUTION_POLL_AFTER_ALLOCATION
 #undef EXECUTION_MUTATOR_POLL_BEFORE_FETCH
 #undef FAST_PREPARE_DESTINATION_FROM_OFFSET
 #undef FAST_PREPARE_DESTINATION

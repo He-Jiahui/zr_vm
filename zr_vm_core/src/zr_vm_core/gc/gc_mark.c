@@ -8,109 +8,6 @@
 
 #include "zr_vm_common/zr_aot_abi.h"
 
-static ZR_FORCE_INLINE void garbage_collector_mark_known_string_object_major_fast(SZrRawObject *object) {
-    if (object == ZR_NULL ||
-        object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT) {
-        return;
-    }
-
-    if (ZR_GC_IS_REFERENCED(object) || ZR_GC_IS_WAIT_TO_SCAN(object)) {
-        return;
-    }
-
-    if (ZrCore_RawObject_IsMarkInited(object)) {
-        ZR_GC_SET_REFERENCED(object);
-    }
-}
-
-static ZR_FORCE_INLINE void garbage_collector_mark_known_string_object_minor_fast(SZrRawObject *object) {
-    if (object == ZR_NULL || object->garbageCollectMark.storageKind != ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE) {
-        /*
-         * Root-known strings have no outgoing GC edges. During minor collections we
-         * only need to keep young strings alive; old/pinned/permanent strings do not
-         * need a per-epoch stamp here because they will never enqueue child work.
-         */
-        return;
-    }
-
-    if (ZR_GC_IS_REFERENCED(object) || ZR_GC_IS_WAIT_TO_SCAN(object)) {
-        return;
-    }
-
-    if (ZrCore_RawObject_IsMarkInited(object)) {
-        ZR_GC_SET_REFERENCED(object);
-    }
-}
-
-static ZR_FORCE_INLINE void garbage_collector_mark_noninterned_string_object_major_fast(SZrString *stringValue) {
-    if (stringValue == ZR_NULL || ZrCore_String_IsShort(stringValue)) {
-        return;
-    }
-
-    garbage_collector_mark_known_string_object_major_fast(ZR_CAST_RAW_OBJECT_AS_SUPER(stringValue));
-}
-
-static ZR_FORCE_INLINE void garbage_collector_mark_noninterned_string_object_minor_fast(SZrString *stringValue) {
-    if (stringValue == ZR_NULL || ZrCore_String_IsShort(stringValue)) {
-        return;
-    }
-
-    garbage_collector_mark_known_string_object_minor_fast(ZR_CAST_RAW_OBJECT_AS_SUPER(stringValue));
-}
-
-static TZrSize garbage_collector_mark_string_table_major_roots(SZrStringTable *stringTable) {
-    TZrSize work = 0;
-
-    if (stringTable == ZR_NULL) {
-        return 0;
-    }
-
-    if (stringTable->shortStringListHead != ZR_NULL) {
-        SZrString *current = stringTable->shortStringListHead;
-
-#if defined(ZR_DEBUG)
-        TZrSize remaining = stringTable->stringHashSet.capacity + 1u;
-#endif
-        while (current != ZR_NULL) {
-#if defined(ZR_DEBUG)
-            ZR_ASSERT(remaining > 0u);
-            remaining--;
-#endif
-            garbage_collector_mark_known_string_object_major_fast(ZR_CAST_RAW_OBJECT_AS_SUPER(current));
-            current = current->nextShortString;
-            work++;
-        }
-
-        return work;
-    }
-
-    if (stringTable->stringHashSet.isValid && stringTable->stringHashSet.buckets != ZR_NULL) {
-        for (TZrSize bucketIndex = 0; bucketIndex < stringTable->stringHashSet.capacity; bucketIndex++) {
-            SZrHashKeyValuePair *pair = stringTable->stringHashSet.buckets[bucketIndex];
-
-            while (pair != ZR_NULL) {
-                garbage_collector_mark_known_string_object_major_fast(pair->key.value.object);
-                pair = pair->next;
-                work++;
-            }
-        }
-    }
-
-    return work;
-}
-
-static ZR_FORCE_INLINE TZrBool garbage_collector_minor_string_table_roots_ready(SZrGlobalState *global) {
-    SZrStringTable *stringTable;
-
-    if (global == ZR_NULL || global->stringTable == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    stringTable = global->stringTable;
-    return ZrCore_StringTable_MinorYoungBucketFlagsReady(stringTable) ||
-           ZrCore_StringTable_SyncMinorYoungBucketFlags(global);
-}
-
 #if defined(ZR_DEBUG)
 static ZR_FORCE_INLINE TZrBool garbage_collector_debug_gray_list_contains(SZrRawObject *object, SZrRawObject *list) {
     while (list != ZR_NULL) {
@@ -201,247 +98,22 @@ static TZrSize garbage_collector_mark_inline_array(
     return work;
 }
 
-static TZrSize garbage_collector_mark_string_table_minor_roots(SZrGlobalState *global) {
-    SZrStringTable *stringTable;
-    TZrSize work = 0;
-
-    if (global == ZR_NULL || global->stringTable == ZR_NULL) {
-        return 0;
-    }
-
-    stringTable = global->stringTable;
-    if (!stringTable->stringHashSet.isValid ||
-        stringTable->stringHashSet.buckets == ZR_NULL ||
-        stringTable->stringHashSet.capacity == 0u ||
-        (!ZrCore_StringTable_MinorYoungBucketFlagsReady(stringTable) &&
-         !ZrCore_StringTable_SyncMinorYoungBucketFlags(global)) ||
-        stringTable->minorYoungBucketFlags == ZR_NULL ||
-        stringTable->minorYoungBucketCount == 0u) {
-        return 0;
-    }
-
-    for (TZrSize activeIndex = 0; activeIndex < stringTable->minorYoungBucketCount;) {
-        SZrHashKeyValuePair *pair;
-        TZrBool bucketHasYoungString = ZR_FALSE;
-        TZrSize bucketIndex = stringTable->minorYoungBucketIndexes[activeIndex];
-
-        pair = stringTable->stringHashSet.buckets[bucketIndex];
-        while (pair != ZR_NULL) {
-            SZrRawObject *object = pair->key.value.object;
-
-            if (object != ZR_NULL &&
-                object->garbageCollectMark.storageKind == ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE) {
-                bucketHasYoungString = ZR_TRUE;
-                garbage_collector_mark_known_string_object_minor_fast(object);
-            }
-            pair = pair->next;
-            work++;
-        }
-
-        if (!bucketHasYoungString) {
-            ZrCore_StringTable_ClearMinorYoungBucketAt(stringTable, activeIndex);
-        } else {
-            activeIndex++;
-        }
-    }
-
-    return work;
-}
-
-static ZR_FORCE_INLINE TZrSize garbage_collector_mark_api_string_cache_minor_known_roots(SZrGlobalState *global) {
-    TZrSize work = 0;
-
-    if (global == ZR_NULL) {
-        return 0;
-    }
-
-    for (TZrSize bucketIndex = 0; bucketIndex < ZR_GLOBAL_API_STRING_CACHE_BUCKET_COUNT; bucketIndex++) {
-        for (TZrSize depthIndex = 0; depthIndex < ZR_GLOBAL_API_STRING_CACHE_BUCKET_DEPTH; depthIndex++) {
-            SZrString *cachedString = global->stringHashApiCache[bucketIndex][depthIndex];
-
-            if (cachedString == ZR_NULL) {
-                continue;
-            }
-
-            garbage_collector_mark_known_string_object_minor_fast(ZR_CAST_RAW_OBJECT_AS_SUPER(cachedString));
-            work++;
-        }
-    }
-
-    return work;
-}
-
-static ZR_FORCE_INLINE TZrSize garbage_collector_mark_api_string_cache_minor_noninterned_roots(
-        SZrGlobalState *global) {
-    TZrSize work = 0;
-
-    if (global == ZR_NULL) {
-        return 0;
-    }
-
-    for (TZrSize bucketIndex = 0; bucketIndex < ZR_GLOBAL_API_STRING_CACHE_BUCKET_COUNT; bucketIndex++) {
-        for (TZrSize depthIndex = 0; depthIndex < ZR_GLOBAL_API_STRING_CACHE_BUCKET_DEPTH; depthIndex++) {
-            SZrString *cachedString = global->stringHashApiCache[bucketIndex][depthIndex];
-
-            if (cachedString == ZR_NULL) {
-                continue;
-            }
-
-            garbage_collector_mark_noninterned_string_object_minor_fast(cachedString);
-            work++;
-        }
-    }
-
-    return work;
-}
-
-static ZR_FORCE_INLINE TZrSize garbage_collector_mark_concat_pair_cache_minor_known_roots(SZrGlobalState *global) {
-    TZrSize work = 0;
-
-    if (global == ZR_NULL) {
-        return 0;
-    }
-
-    for (TZrSize bucketIndex = 0; bucketIndex < ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_COUNT; bucketIndex++) {
-        for (TZrSize depthIndex = 0; depthIndex < ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_DEPTH; depthIndex++) {
-            ZrStringConcatPairCacheEntry *entry = &global->stringConcatPairCache[bucketIndex][depthIndex];
-
-            if (entry->left != ZR_NULL) {
-                garbage_collector_mark_known_string_object_minor_fast(ZR_CAST_RAW_OBJECT_AS_SUPER(entry->left));
-                work++;
-            }
-            if (entry->right != ZR_NULL) {
-                garbage_collector_mark_known_string_object_minor_fast(ZR_CAST_RAW_OBJECT_AS_SUPER(entry->right));
-                work++;
-            }
-            if (entry->result != ZR_NULL) {
-                garbage_collector_mark_known_string_object_minor_fast(ZR_CAST_RAW_OBJECT_AS_SUPER(entry->result));
-                work++;
-            }
-        }
-    }
-
-    return work;
-}
-
-static ZR_FORCE_INLINE TZrSize garbage_collector_mark_concat_pair_cache_minor_noninterned_roots(
-        SZrGlobalState *global) {
-    TZrSize work = 0;
-
-    if (global == ZR_NULL) {
-        return 0;
-    }
-
-    for (TZrSize bucketIndex = 0; bucketIndex < ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_COUNT; bucketIndex++) {
-        for (TZrSize depthIndex = 0; depthIndex < ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_DEPTH; depthIndex++) {
-            ZrStringConcatPairCacheEntry *entry = &global->stringConcatPairCache[bucketIndex][depthIndex];
-
-            if (entry->left != ZR_NULL) {
-                garbage_collector_mark_noninterned_string_object_minor_fast(entry->left);
-                work++;
-            }
-            if (entry->right != ZR_NULL) {
-                garbage_collector_mark_noninterned_string_object_minor_fast(entry->right);
-                work++;
-            }
-            if (entry->result != ZR_NULL) {
-                garbage_collector_mark_noninterned_string_object_minor_fast(entry->result);
-                work++;
-            }
-        }
-    }
-
-    return work;
-}
-
-static ZR_FORCE_INLINE TZrSize garbage_collector_mark_api_string_cache_major_roots(SZrGlobalState *global) {
-    TZrSize work = 0;
-
-    if (global == ZR_NULL) {
-        return 0;
-    }
-
-    for (TZrSize bucketIndex = 0; bucketIndex < ZR_GLOBAL_API_STRING_CACHE_BUCKET_COUNT; bucketIndex++) {
-        for (TZrSize depthIndex = 0; depthIndex < ZR_GLOBAL_API_STRING_CACHE_BUCKET_DEPTH; depthIndex++) {
-            SZrString *cachedString = global->stringHashApiCache[bucketIndex][depthIndex];
-
-            if (cachedString == ZR_NULL) {
-                continue;
-            }
-
-            garbage_collector_mark_noninterned_string_object_major_fast(cachedString);
-            work++;
-        }
-    }
-
-    return work;
-}
-
-static ZR_FORCE_INLINE TZrSize garbage_collector_mark_concat_pair_cache_major_roots(SZrGlobalState *global) {
-    TZrSize work = 0;
-
-    if (global == ZR_NULL) {
-        return 0;
-    }
-
-    for (TZrSize bucketIndex = 0; bucketIndex < ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_COUNT; bucketIndex++) {
-        for (TZrSize depthIndex = 0; depthIndex < ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_DEPTH; depthIndex++) {
-            ZrStringConcatPairCacheEntry *entry = &global->stringConcatPairCache[bucketIndex][depthIndex];
-
-            if (entry->left != ZR_NULL) {
-                garbage_collector_mark_noninterned_string_object_major_fast(entry->left);
-                work++;
-            }
-            if (entry->right != ZR_NULL) {
-                garbage_collector_mark_noninterned_string_object_major_fast(entry->right);
-                work++;
-            }
-            if (entry->result != ZR_NULL) {
-                garbage_collector_mark_noninterned_string_object_major_fast(entry->result);
-                work++;
-            }
-        }
-    }
-
-    return work;
-}
-
+/* Interning and lookup caches are weak. Only runtime-owned names are roots. */
 TZrSize garbage_collector_mark_string_roots(SZrState *state) {
     SZrGlobalState *global;
-    SZrGarbageCollector *collector;
-    TZrBool minorActive;
-    TZrSize work = 0;
-
-    if (state == ZR_NULL || state->global == ZR_NULL) {
-        return 0;
-    }
-
+    TZrSize work = 0u;
+    if (state == ZR_NULL || state->global == ZR_NULL) return 0u;
     global = state->global;
-    collector = global->garbageCollector;
-    if (collector == ZR_NULL) {
-        return 0;
+    if (global->memoryErrorMessage != ZR_NULL) {
+        garbage_collector_mark_object(state, &global->memoryErrorMessage->super);
+        work++;
     }
-
-    minorActive = garbage_collector_minor_collection_is_active_fast(collector);
-
-    if (minorActive) {
-        TZrBool skipInternedShortCacheRoots = garbage_collector_minor_string_table_roots_ready(global);
-
-        if (skipInternedShortCacheRoots) {
-            work += garbage_collector_mark_api_string_cache_minor_noninterned_roots(global);
-            work += garbage_collector_mark_concat_pair_cache_minor_noninterned_roots(global);
-        } else {
-            work += garbage_collector_mark_api_string_cache_minor_known_roots(global);
-            work += garbage_collector_mark_concat_pair_cache_minor_known_roots(global);
+    for (TZrSize index = 0u; index < ZR_META_ENUM_MAX; ++index) {
+        if (global->metaFunctionName[index] != ZR_NULL) {
+            garbage_collector_mark_object(state, &global->metaFunctionName[index]->super);
+            work++;
         }
-
-        work += garbage_collector_mark_string_table_minor_roots(global);
-    } else {
-        work += garbage_collector_mark_api_string_cache_major_roots(global);
-        work += garbage_collector_mark_concat_pair_cache_major_roots(global);
-        work += garbage_collector_mark_string_table_major_roots(global->stringTable);
     }
-
     return work;
 }
 
@@ -465,6 +137,18 @@ TZrSize garbage_collector_mark_ignored_roots(SZrState *state) {
         work++;
     }
 
+    return work;
+}
+
+TZrSize garbage_collector_snapshot_ignored_trace_roots(SZrState *state) {
+    SZrGarbageCollector *collector = state->global->garbageCollector;
+    TZrSize work = 0u;
+    for (TZrSize i = 0u; i < collector->ignoredObjectCount; ++i) {
+        SZrRawObject *owner = collector->ignoredObjects[i];
+        if (garbage_collector_object_is_markable_root_fast(owner) && owner->traceGcFunction != ZR_NULL) {
+            owner->traceGcFunction(state, owner, garbage_collector_mark_custom_trace_value, &work);
+        }
+    }
     return work;
 }
 
@@ -536,6 +220,24 @@ static void garbage_collector_mark_typed_type_ref(SZrState *state, const SZrFunc
 
     garbage_collector_mark_string_if_present(state, typeRef->typeName);
     garbage_collector_mark_string_if_present(state, typeRef->elementTypeName);
+}
+
+static void garbage_collector_mark_module_effect(SZrState *state, const SZrFunctionModuleEffect *effect) {
+    garbage_collector_mark_string_if_present(state, effect->moduleName);
+    garbage_collector_mark_string_if_present(state, effect->assemblyName);
+    garbage_collector_mark_string_if_present(state, effect->symbolName);
+    garbage_collector_mark_string_if_present(state, effect->requestedModuleVersion);
+    garbage_collector_mark_string_if_present(state, effect->minModuleVersionInclusive);
+    garbage_collector_mark_string_if_present(state, effect->maxModuleVersionExclusive);
+}
+
+static void garbage_collector_mark_metadata_records(SZrState *state,
+        const SZrMetadataTokenRecord *records, TZrUInt32 count) {
+    for (TZrUInt32 i = 0u; i < count; ++i) {
+        garbage_collector_mark_string_if_present(state, records[i].requestedModuleVersion);
+        garbage_collector_mark_string_if_present(state, records[i].minModuleVersionInclusive);
+        garbage_collector_mark_string_if_present(state, records[i].maxModuleVersionExclusive);
+    }
 }
 
 static void garbage_collector_mark_metadata_parameters(SZrState *state,
@@ -1121,6 +823,7 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
                 garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(function->ownerFunction));
                 work++;
             }
+            garbage_collector_mark_function_if_present(state, function->prototypeContextFunction, &work);
             if (function->functionName != ZR_NULL) {
                 garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(function->functionName));
             }
@@ -1179,6 +882,17 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
                     }
                 }
             }
+            garbage_collector_mark_string_if_present(state, function->moduleVersion);
+            garbage_collector_mark_metadata_records(state, function->metadataTokenRecords,
+                                                    function->metadataTokenRecordLength);
+            garbage_collector_mark_metadata_records(state, function->moduleMetadataTokenRecords,
+                                                    function->moduleMetadataTokenRecordLength);
+            for (TZrUInt32 i = 0u; i < function->metadataStringHeapLength; ++i) {
+                garbage_collector_mark_string_if_present(state, function->metadataStringHeap[i].value);
+            }
+            if (function->hasCallableReturnType) {
+                garbage_collector_mark_typed_type_ref(state, &function->callableReturnType);
+            }
             if (function->staticImports != ZR_NULL) {
                 for (TZrUInt32 i = 0; i < function->staticImportLength; i++) {
                     garbage_collector_mark_string_if_present(state, function->staticImports[i]);
@@ -1186,8 +900,7 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
             }
             if (function->moduleEntryEffects != ZR_NULL) {
                 for (TZrUInt32 i = 0; i < function->moduleEntryEffectLength; i++) {
-                    garbage_collector_mark_string_if_present(state, function->moduleEntryEffects[i].moduleName);
-                    garbage_collector_mark_string_if_present(state, function->moduleEntryEffects[i].symbolName);
+                    garbage_collector_mark_module_effect(state, &function->moduleEntryEffects[i]);
                 }
             }
             if (function->exportedCallableSummaries != ZR_NULL) {
@@ -1197,8 +910,7 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
                     garbage_collector_mark_string_if_present(state, summary->name);
                     if (summary->effects != ZR_NULL) {
                         for (TZrUInt32 effectIndex = 0; effectIndex < summary->effectCount; effectIndex++) {
-                            garbage_collector_mark_string_if_present(state, summary->effects[effectIndex].moduleName);
-                            garbage_collector_mark_string_if_present(state, summary->effects[effectIndex].symbolName);
+                            garbage_collector_mark_module_effect(state, &summary->effects[effectIndex]);
                         }
                     }
                 }

@@ -1,0 +1,14 @@
+// strdrop: CORR-C2 (expect < 5k live strings after the fix)
+let system = import("zr.system");
+fn toText(value: int): string {
+    return <string> value;
+}
+var i = 0;
+var keep = 0;
+while (i < 200000) {
+    var s = "a-" + toText(i) + "-b";
+    keep = keep + 1;
+    i = i + 1;
+}
+system.gc.collect("full");
+return keep;
