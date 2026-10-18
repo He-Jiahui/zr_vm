@@ -326,7 +326,7 @@ other-mutator roots, mixed compiler layouts and tail reuse ownership release.
 The tail fixture checks the released shared reference and new dense null slots
 instead of reading the overwritten inactive partial-slot view.
 
-Validation so far: full Release rebuild and **425/425** core CTests pass
+Validation: full Release rebuild and **425/425** core CTests pass
 (286.79 s). ASan/UBSan/forced-full GC: **94/94** selected AOT/artifact/loader/
 frame/GC/budget/dispatch/debug CTests, **17/17** interpreter GC unit tests,
 **70/70** standalone GC, **5/5** native return checks, **4/4** tail reuse,
@@ -335,3 +335,171 @@ value-type shared-library smoke passes **6/6**. Patch-46 mutation probe:
 **118 cases, 71 rejected / 47 normal**, zero sanitizer reports/crashes/timeouts.
 Evidence: `build/r2-m3-active-layout-*`, `build/r2-m3-complete-*`,
 `build/r2-m3-final-release-*`. Final ASan and timing evidence follows below.
+
+## Final verification and measurement scope
+
+The full Debug ASan+UBSan core invocation passed **424/425** tests (872.27 s).
+Its sole failure, `benchmark_persistent_protocol`, reported that the hanging
+process had not recorded its descendant PID within its short startup window
+while compilation was active. After builds stopped, the isolated retry passed
+**1/1** (28.33 s). All 425 tests therefore passed across the invocation and
+retry, with zero runtime sanitizer reports; this was not a single green full
+invocation. The full language pipeline, projects and debug/protocol checks
+passed. Forced-full-GC coverage is the **94/94 selected CTests** and unit/smoke
+checks above, not a completed 425-test forced-GC invocation. The **3/3 TSan**
+checks belong to the M2 batch and were not rerun after the M3 ABI change.
+
+Final timings use GCC 14.2, Release `-O3 -DNDEBUG`, CPU 5, and sequential
+measurements without overlapping builds/tests. The registered subset uses
+three calibrated samples after one warmup. The environment capture records
+clean source commit `c8650bfd`, no source changes during measurement, affinity
+mask `5`, and load averages **0.85/1.54/2.52** at start and **1.37/1.48/2.39**
+at end. Isolation is affinity only; the frequency governor is unavailable.
+The captured environment fingerprint is
+`a22e7b7d5c497d1d072c5e7bcaa4aeeb9ff2d5046506512bd89b9dd6aa514894`.
+
+All **13 registered C/source/binary rows** pass checksum checks and report
+STABLE. The attached aggregate environment says COMPARABLE; aggregate row and
+Markdown gate flags retain their provisional values. These are measured subset
+results, not a universal regression gate. The comparison uses r2's retained
+pre-merge runtime binary at `dc0459cd` in `build/perf-release`, on this machine
+and CPU, with the same cases and sampling. Its current source checkout does
+not identify that older binary; it has no matching captured source fingerprint.
+No rebuilt `a149c17e`, full registered matrix, or universal <=5% versus-r1 claim
+is made. The largest source-row increase in this subset is call chain +0.49%.
+
+| Registered core case | Retained source ms | Final source ms | Change | Final binary ms |
+|---|---:|---:|---:|---:|
+| dispatch_loops | 572.931 | 381.344 | -33.44% | 379.174 |
+| fib_recursive | 78.735 | 64.843 | -17.64% | not registered |
+| call_chain_polymorphic | 21.936 | 22.043 | +0.49% | not registered |
+| gc_fragment_baseline | 5018.460 | 1424.040 | -71.62% | 1405.417 |
+| gc_fragment_stress | 3891.126 | 1374.424 | -64.68% | 1381.365 |
+
+C medians for those rows are **3.729 / 1.117 / 1.116 / 17.918 / 18.094 ms**.
+GC stress/baseline is **0.965 source / 0.983 binary**, meeting <=1.5.
+
+All **15 full-size probes**, three samples each, pass checksum/GC assertions.
+The depth pair is **284.926 / 306.074 ms**, ratio **1.074**. The ABI-matched
+GcStep wrapper records maxima **127.6 / 305.3 / 757.0 us** at depths
+0/400/1600, with zero steps over 800 us. This meets C1's depth-1600 <2 ms gate.
+The earlier C1 Callgrind result (<1% in the two former linear helpers) is
+recorded above; it was not reprofiled after M3.
+
+The scale-16 stress pause run preserves banner and checksum **47994849**.
+It completes **3,181 minors**, 62.1% fewer than r2's 8,400. The 3,180 idle
+minors total **1,626.5 ms**, average **511.5 us**, max **3,054.7 us**, with
+**74** over 800 us; one additional minor completes with a major phase.
+Major-start max is **1,915.0 us**; major-completion max is **6,731.3 us**
+(59 completions). Global worst-pause <=800 us remains unmet. Pause-run load
+is **1.16/1.22/1.86** at start and **1.21/1.22/1.85** at end.
+
+Final budget medians use five alternating plain/budgeted samples. Clock counts
+come from separate preload runs and include about eight setup/timer reads per
+budgeted sample. They continue to match instructions/256 rather than calls.
+
+| Program | Plain ms | Budget ms | Overhead | ns/instruction | Clock reads/run |
+|---|---:|---:|---:|---:|---:|
+| default loop | 204.639 | 213.397 | 4.28% | 0.125 | — |
+| intloop file | 204.810 | 208.817 | 1.96% | 0.057 | 273445.4 |
+| calls | 598.041 | 621.659 | 3.95% | 0.875 | 105476.4 |
+| fib | 143.755 | 146.603 | 1.98% | 0.689 | 16146.4 |
+
+## Final r2 target status and deferrals
+
+Probe timings below are medians of three process runs; registered-suite rows
+are identified separately. The registered Fibonacci case and `fib` probe have
+different workloads and are not interchangeable.
+
+| Target | Final evidence | Verdict |
+|---|---|---|
+| objauto RSS <64 MiB with collections | max 12.918 MiB; 599–600 minors | met |
+| strdrop <5,000 live strings | 556 in all samples | met |
+| gc_fragment_baseline <=300 ms; intermediate <=1 s | core source 1424.040 ms | open |
+| gc_fragment_stress <=1.5x baseline | 0.965 source / 0.983 binary | met |
+| global worst GcStep <=800 us | stress max 6731.3 us | open |
+| deep400/deep0 <=2; deep1600 step <2 ms | 1.074; 757.0 us | met |
+| average minor <800 us | stress 511.5 us | met |
+| calls <=400 ms | 637.018 ms | open |
+| fib <=60 ms | 151.805 ms | open |
+| methods <=450 ms | 742.334 ms | open |
+| dispatch_loops core <=200 ms | source 381.344 ms | open |
+| loop_lt <=1.05x loop_le | 214.722 / 217.319 ms = 0.988x | met |
+| loop_lt >=30% below 811 ms; canonical <=400 ms | 214.722 ms | met |
+| loop_le >=30% below 667 ms (<=467 ms) | 217.319 ms | met |
+| floatloop <=250 ms; <=8 instructions/iteration | 115.954 ms; 7 instructions | met |
+| closure >=25% below 1036 ms | 753.931 ms; -27.23% | met |
+| strcat <=50 ms | 123.118 ms | deferred n-ary concatenation |
+| intloop >=30% below 454 ms | 213.506 ms; -52.97% | met |
+| canonical integer loops <=4 instructions/iteration | both 4 | met |
+| budget overhead <=10% | 1.96–4.28% across four programs | met |
+| values/stack slots 40/48 bytes | runtime layout probe and registered CTest | met |
+| full Release CTest | 425/425 | met |
+| full ASan+UBSan; forced-full-GC checks | 424/425 then 1/1 retry; forced-GC 94/94 | passed with scope above |
+| M2 mutex <1% Ir; methods TLS ~0 | 150 mutex Ir total; zero TLS lookups (M2 batch) | met |
+| M2 barrier <150 Ir/call | 197.5 Ir/call (M2 batch) | open |
+| no registered case >5% regression vs r1 | five-case retained-binary comparison only | not established globally |
+
+H1, C1, H2's occupancy/worklist steps, H3's scalar-return/member-staging steps,
+both H4 stages, M1, M2, M4 and M3's version/alignment/design work have landed
+in the requested order. M5 CI wiring is included. Further call-state caching,
+direct return into caller dispatch and whole-frame null-fill redesign remain
+separate work after the recorded call profiles. Synchronous minor and major
+completion still require bounded/sliced work to meet the worst-pause goal;
+nursery feedback alone cannot guarantee it. GC throughput and barrier cost
+also need further work. Ownership side tables and object/header reduction are
+designed separately, not implemented by the alignment change.
+
+CORR-L2 integer-helper error publication landed as the H4 prerequisite. L1
+integer-boundary test references now use symbols and their coverage ledger is
+re-anchored and passes `check-batch`; the other historical line references
+were not all migrated. Accepted narrowing/CLI/relocation/trap and n-ary concat
+deferrals remain. Windows/MSVC, a local Clang build, Rust-binding budgets,
+steady scope, the full stress matrix and hosted CI results remain unverified.
+
+## Commit ledger and reproduction
+
+| Commit | Batch |
+|---|---|
+| `d926d679` | H1 shared SSA pass sources, include path and PHI fixtures |
+| `5a16bbd4` | C1 cached frame coverage and linear thread scans |
+| `66b1f5d5` | H2 occupancy-triggered minors and young work sets |
+| `16b2539e` | H3 scalar fast returns and receiver staging |
+| `e5b1bb47` | H4 first step and exactness/reentry harness |
+| `ff6d83fa` | M5 sanitizer and performance CI |
+| `fc05263b`, `edad7333` | M1 compact scalar bytecode and fixtures |
+| `7b93060e` | M2 owner locks, temporary roots and TLS |
+| `c443bf5e` | M4 verified bytecode and guarded host entry |
+| `fbe8ce80` | H4 unified countdown and integer-error publication |
+| `a034c064` | M3 patch-46 slot-relative frame coordinates |
+| `cb8a2c50` | M3 40/48-byte ABI and frame/native tracing fixes |
+| `c8650bfd` | core CI tier and targeted L1 reference refresh |
+
+From the worktree root, with the report's local tools on PATH and their library
+directory on LD_LIBRARY_PATH, the final gates are reproducible with:
+
+```bash
+cmake --build build/r2-merged-release -j6
+ZR_VM_TEST_TIER=core ctest --test-dir build/r2-merged-release -j6 \
+  -E '^performance_report$' --output-on-failure
+ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 ZR_VM_TEST_TIER=core \
+  ctest --test-dir build/r2-asan -j6 -E '^performance_report$' --output-on-failure
+taskset -c 5 python3 tests/benchmarks/run_interpreter_probes.py \
+  --cli build/r2-merged-release/bin/zr_vm_cli \
+  --work-dir build/r2-ab/reproduce-probes --repeat 3 --check-deep-ratio
+taskset -c 5 build/r2-merged-release/bin/zr_vm_budgeted_loop
+python3 scripts/code_review_inventory.py check-batch \
+  docs/code-review/coverage/execution_integer_boundaries_tests.tsv
+```
+
+Final local evidence is intentionally ignored under `build/`:
+`r2-m3-final-release-ctest.log`, `r2-m3-complete-asan-ctest.log`,
+`r2-m3-final-asan-protocol-retry.log`, `r2-m3-complete-gcstress-ctest.log`,
+`r2-m3-complete-fuzz.log`, `r2-m3-final-probes.log`,
+`r2-m3-final-budget-*.json`, `r2-m3-final-clocks-*.log`,
+`r2-m3-final-deep{0,400,1600}.log` and `r2-m3-final-gcfrag16.log`.
+`build/r2-ab/run-final-measurements.sh` contains the complete sequential
+measurement commands; `final-environment.json`, `final-suite/performance`,
+`final-baseline-suite/performance` and `final-probes/results.json` under that
+directory hold the environment and raw results. The final pause wrapper is
+`build/r2-ab/gcstep_phase_m3.so`; the earlier wrapper has the old ABI.
