@@ -4927,6 +4927,33 @@ SZrCallInfo *ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource
         TZrStackValuePointer returnDestination,
         TZrStackValuePointer argumentSourceFrameBase,
         TZrUInt32 argumentSourceStartSlot) {
+    SZrCallInfo *caller = state->callInfoList;
+    SZrFunction *callerFunction = caller != ZR_NULL ? caller->metadataFunction : ZR_NULL;
+    /* The interpreter already staged these scalars in a fresh dense window.
+     * They require no source-place transaction, ownership transfer or inline
+     * binding. Reuse the exact-argument entry path instead of staging twice. */
+    if (caller != ZR_NULL && caller->functionBase.valuePointer != ZR_NULL &&
+        argumentSourceFrameBase == caller->functionBase.valuePointer + 1u &&
+        ZrCore_Function_HasDirectValueFrameSlotSummary(callerFunction) &&
+        ZrCore_Function_HasDirectValueFrameSlotSummary(function) &&
+        argumentSourceStartSlot <= callerFunction->frameSlotLayoutLength &&
+        argumentsCount <= callerFunction->frameSlotLayoutLength - argumentSourceStartSlot) {
+        TZrStackValuePointer source = argumentSourceFrameBase + callerFunction->stackSize +
+                                     argumentSourceStartSlot;
+        TZrSize index = 0u;
+        for (; index < argumentsCount; ++index) {
+            if (!function_precall_value_is_plain_scalar(&source[index].value) ||
+                !function_precall_value_is_plain_scalar(&stackPointer[1u + index].value) ||
+                source[index].value.type != stackPointer[1u + index].value.type ||
+                source[index].value.value.nativeObject.nativeUInt64 !=
+                        stackPointer[1u + index].value.value.nativeObject.nativeUInt64) break;
+        }
+        if (index == argumentsCount) {
+            SZrCallInfo *prepared = function_try_pre_call_prepared_resolved_vm_packed_direct_exact_args(
+                    state, stackPointer, function, argumentsCount, resultCount, returnDestination);
+            if (prepared != ZR_NULL) return prepared;
+        }
+    }
     return function_pre_call_resolved_vm_internal(
             state,
             stackPointer,

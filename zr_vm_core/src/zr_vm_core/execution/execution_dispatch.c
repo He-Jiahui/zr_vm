@@ -96,15 +96,7 @@ static inline SZrTypeValue *execution_frame_value_slot_signed_fast_inline(
             recordHelpers);
 }
 
-#if defined(_MSC_VER)
-#define ZR_EXECUTION_FRAME_BASE_NO_INLINE __declspec(noinline)
-#elif defined(__GNUC__) || defined(__clang__)
-#define ZR_EXECUTION_FRAME_BASE_NO_INLINE __attribute__((noinline))
-#else
-#define ZR_EXECUTION_FRAME_BASE_NO_INLINE
-#endif
-
-static ZR_EXECUTION_FRAME_BASE_NO_INLINE TZrStackValuePointer
+static ZR_FORCE_INLINE TZrStackValuePointer
 execution_packed_direct_value_frame_base(const SZrFunction *function,
                                          TZrStackValuePointer frameBase) {
     if (!ZrCore_Function_HasDirectValueFrameSlotSummary(function) ||
@@ -434,6 +426,11 @@ static ZR_FORCE_INLINE SZrTypeValue *execution_get_call_return_destination_value
         return ZrCore_Stack_GetValueNoProfile(destination);
     }
 
+    if (ZrCore_Function_HasDirectValueFrameSlotSummary(callerFunction) &&
+        (TZrSize)destinationStackSlot < callerFunction->frameSlotLayoutLength) {
+        return &callerFrameBase[callerFunction->stackSize + destinationStackSlot].value;
+    }
+
     slotLayout = ZrCore_Function_FindFrameSlotLayout(callerFunction, (TZrUInt32)destinationStackSlot);
     if (slotLayout == ZR_NULL ||
         slotLayout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE ||
@@ -476,22 +473,22 @@ static ZR_FORCE_INLINE void execution_post_call_single_result_resolved_source_fa
     frameOverlapsStack = (TZrBool)(destinationFrameValue != ZR_NULL &&
                                    destinationFrameValue != destinationValue &&
                                    ZrCore_Value_SlotsOverlapNoProfile(destinationFrameValue, destinationValue));
-    (void)ZrCore_Function_TryCopyInlineReceiverParameterBack(state, callInfo);
-    ZrCore_Function_TryCopyInlineConstructorReceiverBack(state, callInfo);
-
-    if (returnSource != ZR_NULL) {
-        copiedInlineReturn = ZrCore_Function_TryCopyInlineFrameReturnValue(
-                state,
-                callInfo,
-                returnSource,
-                destination,
-                ZrCore_Function_ResolvePrototypeFrameTypeLayout,
-                state);
+    TZrBool plainPackedReturn = (TZrBool)(
+            ZrCore_Function_HasDirectValueFrameSlotSummary(callInfo->metadataFunction) &&
+            function_precall_value_is_plain_scalar(returnSourceValue));
+    if (!plainPackedReturn) {
+        (void)ZrCore_Function_TryCopyInlineReceiverParameterBack(state, callInfo);
+        ZrCore_Function_TryCopyInlineConstructorReceiverBack(state, callInfo);
+        if (returnSource != ZR_NULL) {
+            copiedInlineReturn = ZrCore_Function_TryCopyInlineFrameReturnValue(
+                    state, callInfo, returnSource, destination,
+                    ZrCore_Function_ResolvePrototypeFrameTypeLayout, state);
+        }
     }
     if (returnSource == ZR_NULL || returnSourceValue == ZR_NULL) {
         ZrCore_Value_ResetAsNullNoProfile(destinationValue);
     } else if (!copiedInlineReturn && returnSource != destination) {
-        TZrBool copiedObjectInline = ZrCore_Function_TryCopyObjectReturnValueToInlineDestination(
+        TZrBool copiedObjectInline = !plainPackedReturn && ZrCore_Function_TryCopyObjectReturnValueToInlineDestination(
                 state, callInfo, destination, returnSourceValue);
         if (copiedObjectInline) {
             if (!frameOverlapsStack) {
@@ -977,6 +974,37 @@ static ZR_FORCE_INLINE TZrStackValuePointer execution_prepare_frame_layout_call_
     allocationCount = valueCount + extraSlotCount;
     if (allocationCount < valueCount) {
         return ZR_NULL;
+    }
+    if (ZrCore_Function_HasDirectValueFrameSlotSummary(function) &&
+        functionSlot < function->frameSlotLayoutLength &&
+        valueCount <= function->frameSlotLayoutLength - functionSlot) {
+        TZrStackValuePointer source = frameBase + function->stackSize + functionSlot;
+        TZrSize offset = 0u;
+        if (execution_call_window_value_is_callable(&source[0].value) &&
+            source[0].value.ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE &&
+            source[0].value.ownershipControl == ZR_NULL && source[0].value.ownershipWeakRef == ZR_NULL) {
+            for (offset = 1u; offset < valueCount; ++offset) {
+                if (!function_precall_value_is_plain_scalar(&source[offset].value)) break;
+            }
+        }
+        if (offset == valueCount) {
+            /* Stack growth can relocate the source; read it only afterwards.
+             * This helper does not collect, and the frame roots the callable. */
+            ZrCore_Function_StackAnchorInit(state, frameBase, &frameBaseAnchor);
+            callWindowBase = ZrCore_Function_GetCallInfoFrameStorageTop(state, callInfo);
+            if (callWindowBase == ZR_NULL || callWindowBase < state->stackTop.valuePointer)
+                callWindowBase = state->stackTop.valuePointer;
+            callWindow = ZrCore_Function_CheckStackAndGc(state, allocationCount, callWindowBase);
+            frameBase = ZrCore_Function_StackAnchorRestore(state, &frameBaseAnchor);
+            *ioFrameBase = frameBase;
+            if (callWindow == ZR_NULL) return ZR_NULL;
+            source = frameBase + function->stackSize + functionSlot;
+            for (offset = 0u; offset < valueCount; ++offset)
+                callWindow[offset].value = source[offset].value;
+            for (; offset < allocationCount; ++offset)
+                ZrCore_Value_ResetAsNullNoProfile(&callWindow[offset].value);
+            return callWindow;
+        }
     }
     if (valueCount > (sizeof(stackSnapshot) / sizeof(stackSnapshot[0]))) {
         snapshot = (SZrTypeValue *)malloc(sizeof(*snapshot) * valueCount);
@@ -2852,8 +2880,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 
 #define BASE(OFFSET) (base + (OFFSET))
 #define FRAME_VALUE_SLOT(OFFSET)                                                                   \
-    execution_frame_value_slot_dispatch_fast_inline(                                               \
-            state, currentFunction, base, (TZrUInt32)(OFFSET), profileRuntime, recordHelpers)
+    execution_frame_value_slot_signed_fast_inline(                                                 \
+            state, currentFunction, base, packedDirectValueBase, (TZrUInt32)(OFFSET), profileRuntime, recordHelpers)
 #define SIGNED_FRAME_VALUE_SLOT(OFFSET)                                                             \
     execution_frame_value_slot_signed_fast_inline(                                                  \
             state,                                                                                  \
@@ -5952,9 +5980,13 @@ LZrStart:
     UPDATE_FAST_DISPATCH_MODE();
 LZrReturning: {
         SZrTypeValue *functionBaseValue = ZrCore_Stack_GetValueNoProfile(callInfo->functionBase.valuePointer);
-        SZrFunction *function = execution_try_resolve_vm_metadata_function_fast(state,
-                                                                                functionBaseValue,
-                                                                                &frameCallableObject);
+        SZrFunction *function = callInfo->metadataFunction;
+        frameCallableObject = functionBaseValue->value.object;
+        if (function == ZR_NULL) {
+            function = execution_try_resolve_vm_metadata_function_fast(
+                    state, functionBaseValue, &frameCallableObject);
+            callInfo->metadataFunction = function;
+        }
 
         frameFunctionBase = callInfo->functionBase.valuePointer;
         if (function == ZR_NULL || frameCallableObject == ZR_NULL) {
