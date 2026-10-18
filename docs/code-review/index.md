@@ -312,3 +312,8 @@ doc_type: category-index
 ## Artifact Schema 基础格式与合同测试
 
 - [Artifact Schema 基础格式与合同测试](batches/20261018-parser-artifact-schema-main-tests-contracts.md)：54 单元，26 旧键原位复核、28 新键补齐；合同、既有问题与验证范围以该批绑定的实际证据为准。
+
+
+## Artifact Schema 元数据图测试
+
+- [Artifact Schema 元数据图测试](batches/20261018-parser-artifact-schema-metadata-graph-tests-contracts.md)：23 单元，9 旧键原位复核、14 新键补齐；合同、既有问题与验证范围以该批绑定的实际证据为准。
