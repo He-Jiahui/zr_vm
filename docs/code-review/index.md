@@ -267,3 +267,8 @@ doc_type: category-index
 ## 程序集资源公开合同复核
 
 - [程序集资源公开合同复核：8单元，0新键](batches/20261018-system-assembly-public-current-contracts.md)
+
+
+## SSA人工GDB诊断脚本合同
+
+- [SSA人工GDB诊断脚本合同：5单元，5新键](batches/20261017-ssa-diagnostics-gdb-contracts.md)
