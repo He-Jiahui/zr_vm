@@ -26,8 +26,9 @@ doc_type: testing-guide
 ## 当前状态
 
 实际 RED、focused GREEN、三项适用回归及四C有限 MSVC 均已验收；实现和测试
-通过对侧 Sol 静态审查，GREEN 与回归原始协议通过 Luna 独审。提交与自有清理
-仍待完成，本批暂不计入已提交38项。只有下面登记的实际结果具有运行信用。
+通过对侧 Sol 静态审查，GREEN、回归原始协议和有限MSVC均通过独审。实际功能
+提交 `6e6bc819b35ccee5ac3fea2bbabb389af5840213` 及postcommit独审接受，本批计为第39项有限交付。
+产物清理与保留以本批收据为准；完整02.01与47叶目标仍active。
 
 ## 实现合同
 
@@ -152,8 +153,14 @@ vcpkg_ext。缓存只在 source/object/实际 headers/argv/tool/env 对上时复
 
 ## 提交与产物
 
-本批尚未提交。产物先登记在
+实际功能提交 `6e6bc819b35ccee5ac3fea2bbabb389af5840213`，parent `f3b9018477843b11554160e51edfcd4c6be30658`，
+精确9路径、双He-Jiahui身份。postcommit独审 `7AB375DF…B77C` 接受，7409条范围外
+index原始entry/stat/flags/padding及foreign cached保持。当前完成39=19功能/10修正/
+5专项验证/5文档；本次进度同步不另计成果。产物先登记在
 `E:/cargo-targets/zr_vm/reports/ssa-scalar-pipeline-01a0fe2b/artifacts.json`，
-reports 保留实际成功和失败依据，当前构建复用；tmp 自有 helper 在终态后按
-明确路径/hash 清理。当前实际释放0B，Parent1/B11/共享 cache/未知归属原位保留，
-全局 cleanup 未关闭。未创建源码副本、snapshot、worktree、source.tar 或跨盘镜像。
+reports 保留实际成功和失败依据，当前构建复用；tmp 自有 helper与私有二进制Git
+index按明确路径/hash清理，实际释放字节与保留项见同目录 `cleanup-receipt.json`
+和 `finite-close.json`。Parent1/B11/共享cache/未知归属原位保留，全局cleanup未关闭。
+未创建源码副本、snapshot、worktree、source.tar 或跨盘镜像。
+
+有限MSVC实际独审：`msvc-final-independent-review.json`，14708B，SHA `C3172A467E2B4640A8902461378FB2D9A9D04D4E3DE8776449A18751D3D45A5A`；349条实际include、94唯一header及228保护项均接受。

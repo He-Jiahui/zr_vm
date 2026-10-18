@@ -150,7 +150,7 @@ compiler_quickening.c 包含大量后期 opcode 选择，不能继续承载 SSA 
 
 三项当前生产回归已独审：31自然0phase=25compile+26精确GREEN cache+3link+3CTest，强53/113 PASS、239fault、四W=51共204边界、117024attempts/live0/errors0，metadata15/GC99全部PASS。GC日志99 LEGAL=21 standalone+78 fresh baseline，另有78 MALFORMED，不能把原case分类当成日志行数。原MSVC r2一C4244记录保持；修复后1fresh main /W4/Zs+4 unchanged实际syntax复用=5currentC，96actualheaders/35protected保持、warning/error/unknown0，补证独审334CA901接受；focused-r2独审D9532A0D接受。实际提交`c90666fa38ef4eff3d5b4ceaed54744e9cad8eaf`，postcommit独审63B71E82与finite-close A0DBE118接受。标准清理5个自有文件释放2026503B，610必保pins复核一致且task tmp为空；保留build inventory390文件/69825703B包含other/unknown，不宣称全属Source38或全已验。当前完成38=18功能/10修正/5验证/5文档，本次文档同步adds0；只有限syntax零警告，不授fullMSVC/W0/Linux信用，不勾本叶任何完整出口；不授 VM/Oracle/FFI、Linux/fullW0 或完整47信用。详见[实现合同](../../../instruction-generation/execir-pass-pipeline.md#branch-sensitive-nonempty-owner-analysis-source38-validation-in-progress)与[Source38验证记录](../../../testing-and-validation/ssa-sccp-branch-sensitive-pool.md)。
 
-## Source39 有限进展：rooted普通PHI DCE（实际有限验证通过，待提交清理）
+## Source39 有限交付：rooted普通PHI DCE
 
 普通PHI只在结果存活时传播incoming，由observable指令及GC/deopt/state引用根化，
 无根self/mutual cycle与其纯producer可删除。只按旧物理顺序压缩phiPool，用prefix
@@ -169,7 +169,9 @@ retry/cleanup通过，532777attempts/live0/errors0，无UBSan诊断。相应raw/
 强53/113、四W51共204边界、239fault/117024attempts/ledger0，metadata15与GC99全PASS，
 原始协议独审FC3716B2接受。四C有限MSVC r2实际自然0/诊断0，94actualheaders/228protected
 保持；首轮中文include采集拒绝的失败收据保留，修复采集后复验通过，不扩大平台信用。
-双He提交与自有清理待完成，不提前增加已提交38项或勾整叶出口。详见[验证记录](../../../testing-and-validation/ssa-dce-dead-phis.md)。
+实际功能提交`6e6bc819b35ccee5ac3fea2bbabb389af5840213`与postcommit独审7AB375DF接受，精确9路径、
+双He身份、7409条范围外index与foreign cached保持。当前39项=19功能/10修正/5验证/5文档；
+产物清理保留结果见本批清单收据。此进度同步adds0，不勾整叶完整出口。详见[验证记录](../../../testing-and-validation/ssa-dce-dead-phis.md)。
 
 ## 可逐项执行的重构任务
 
