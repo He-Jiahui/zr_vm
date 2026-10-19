@@ -1,0 +1,18 @@
+let {Array} = import("zr.container");
+struct Vec2 {
+    pub var x: float;
+    pub var y: float;
+    pub @constructor(x: float, y: float) { this.x = x; this.y = y; }
+}
+var points = new Array<Vec2>();
+var initial = init Vec2(1.0, 2.0);
+points.add(initial);
+points.add(initial);
+var copy = points[0];
+points[0].x = 9.0;
+points[0].y += 3.0;
+if (points[0].x != 9.0 || points[0].y != 5.0 || points[1].x != 1.0) {
+    throw "element field assignment must write through";
+}
+if (copy.x != 1.0 || initial.x != 1.0) { throw "field assignment must preserve copies"; }
+return 42;

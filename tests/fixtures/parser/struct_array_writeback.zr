@@ -1,0 +1,40 @@
+let {Array} = import("zr.container");
+struct Vec2 {
+    pub var x: float;
+    pub var y: float;
+    pub @constructor(x: float, y: float) { this.x = x; this.y = y; }
+}
+var points = new Array<Vec2>();
+var initial = init Vec2(1.0, 2.0);
+points.add(initial);
+points.add(initial);
+var copy = points[0];
+copy.x = 7.0;
+if (points[0].x != 1.0) { throw "element read must copy"; }
+points[0] = copy;
+copy.x = 8.0;
+if (points[0].x != 7.0 || points[0].y != 2.0 || points[1].x != 1.0) {
+    throw "element store must copy the complete struct";
+}
+var i = 0;
+while (i < 128) {
+    var p = points[0];
+    p.y += 1.0;
+    points[0] = p;
+    i += 1;
+}
+if (points[0].y != 130.0 || initial.y != 2.0) { throw "repeated writeback"; }
+// The same boundary must retain GC references as well as POD fields.
+struct Label {
+    pub var text: string;
+    pub @constructor(text: string) { this.text = text; }
+}
+var labels = new Array<Label>();
+var label = init Label("before");
+labels.add(label);
+var changed = labels[0];
+changed.text = "af" + "ter";
+labels[0] = changed;
+changed.text = "local";
+if (labels[0].text != "after" || label.text != "before") { throw "reference field writeback"; }
+return 42;

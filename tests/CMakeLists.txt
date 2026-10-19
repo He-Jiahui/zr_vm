@@ -8994,6 +8994,18 @@ if(TARGET zr_vm_cli_executable)
             "-DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/parser/constructor_prototype_growth.zr"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_constructor_prototype_growth.cmake")
     set_tests_properties(compiler_constructor_prototype_growth PROPERTIES TIMEOUT 40)
+    foreach(case IN ITEMS writeback field_write nested_init)
+        foreach(mode IN ITEMS interp binary)
+            add_test(NAME struct_array_${case}_${mode}
+                    COMMAND ${CMAKE_COMMAND}
+                    "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
+                    "-DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/parser/struct_array_${case}.zr"
+                    "-DTEST_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/struct_array_${case}_${mode}"
+                    "-DEXECUTION_MODE=${mode}"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_struct_array.cmake")
+            set_tests_properties(struct_array_${case}_${mode} PROPERTIES TIMEOUT 90)
+        endforeach()
+    endforeach()
     add_test(NAME runtime_array_bounds
             COMMAND ${CMAKE_COMMAND} "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_array_bounds.cmake")
