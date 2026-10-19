@@ -3367,3 +3367,946 @@ void ZrDebug_Free(void *pointer) {
         free(pointer);
     }
 }
+
+/**
+ * @def ZR_DEBUG_TYPE_OBJECT_FIELD_COUNT
+ *
+ * ## Summary
+ * 规定类型对象向变量视图公开的六个合成入口数量，使分配大小、namedVariables 与固定填充位置使用同一展示模型。
+ *
+ * ## Value model
+ * 值为 TZrSize 的 6；仅约束调试展示层，不是 SZrObjectPrototype 的内存字段数、ABI 大小或任意描述符总数。
+ *
+ * ## Invariants and lifecycle
+ * 宏没有资源和线程状态；改变其值必须同时核对 expand_type_object_handle 的六个写入位置，不能只调整数量。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1128 (zr_debug_expand_type_object_handle)。
+ */
+
+/**
+ * @def ZR_DEBUG_STRING_CHUNK_SIZE
+ *
+ * ## Summary
+ * 规定长字符串每个索引子项的原始字节跨度，供块数计算、区间名称和局部复制缓冲区共同使用。
+ *
+ * ## Value model
+ * 值为 TZrSize 的 64，单位是字节而非字符；末块可短于 64。固定切片不保证 UTF-8 字符边界，既有 byte_slice BUG 仍保留。
+ *
+ * ## Invariants and lifecycle
+ * 宏不分配、不改变 VM 字符串；分页数组和字符串借用寿命由各自函数负责。调整该值需一起核对块数、乘法、局部缓冲区和协议文本。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:186 (zr_debug_string_chunk_count)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1036 (zr_debug_expand_string_chunks_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1038 (zr_debug_expand_string_chunks_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1042 (zr_debug_expand_string_chunks_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1043 (zr_debug_expand_string_chunks_handle)。
+ */
+
+/**
+ * @fn const SZrTypeValue *zr_debug_object_get_field(SZrState *state, SZrObject *object, const TZrChar *fieldName)
+ *
+ * ## Summary
+ * 为快照枚举或异常元数据投影，把字段名转换为 Core 字符串键后读取原始对象字段；不走脚本成员求值或用户 getter。
+ *
+ * ## Parameters
+ * @param[in,out] state 键驻留与原始字段查询使用的 VM 状态；可为 null，届时失败。
+ * @param[in] object 被查询对象，需由同一 VM 保持存活。
+ * @param[in] fieldName 以 NUL 结束的原生字段名。
+ *
+ * ## Returns
+ * @return 找到时返回借用的 SZrTypeValue 指针；普通无效输入、键创建失败或查无字段返回 null，非局部 Throw 不转换为 null。
+ *
+ * ## Constraints and lifecycle
+ * state/object/fieldName 为空时返回 null；字符串创建普通失败或字段缺失也返回 null。Core 字符串创建可分配并 Throw；Object_GetValue 可沿 prototype 查询，不能把本函数称为无分配或仅查自有哈希项。
+ *
+ * 返回指针借用对象存储，随 VM 对象/字段变更失效；调用方不得 free 或跨恢复执行保存。此处不建立异常保护或 GC 根。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:227 (zr_debug_exception_frames_object)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:275 (zr_debug_exception_read_frame)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:284 (zr_debug_exception_read_frame)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:291 (zr_debug_exception_read_frame)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:296 (zr_debug_exception_read_frame)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:872 (zr_debug_try_resolve_indexed_storage)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:887 (zr_debug_try_resolve_indexed_storage)。
+ */
+
+/**
+ * @fn TZrBool zr_debug_make_string_key(SZrState *state, const TZrChar *name, SZrTypeValue *outKey)
+ *
+ * ## Summary
+ * 把原生名称构造成仅用于 Core 对象查表的字符串值，供描述符视图及借用的安全成员读取复用。
+ *
+ * ## Parameters
+ * @param[in,out] state 用于字符串驻留的 VM 状态。
+ * @param[in] name NUL 结束的待查询名称。
+ * @param[out] outKey 字符串查表键；普通失败时保持 null 值。
+ *
+ * ## Returns
+ * @return 字符串创建并写入 STRING 类型键后返回 TRUE；普通参数或创建失败返回 FALSE。
+ *
+ * ## Constraints and lifecycle
+ * outKey 非空时首先 ResetAsNull；state、name、outKey 任一为空普通返回 FALSE。字符串驻留可普通返回 null，也可经 Core Throw；不执行 getter。
+ *
+ * 输出仅引用 VM 管理的字符串，不创建可由 ZrDebug_Free 释放的独立内存；VM 与该字符串必须覆盖查表期间。失败不承诺捕获非局部退出。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1454 (zr_debug_expand_prototype_view)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2106 (zr_debug_safe_get_member_value)。
+ */
+
+/**
+ * @fn void zr_debug_copy_value_snapshot(SZrTypeValue *destination, const SZrTypeValue *source)
+ *
+ * ## Summary
+ * 为调试读取复制 SZrTypeValue 的展示快照，并去掉会使接收方误以为取得对象所有权的元数据。
+ *
+ * ## Parameters
+ * @param[out] destination 待覆盖的快照槽；允许 null。
+ * @param[in] source 借用源值；允许 null，且不得与 destination 别名以免先清零源。
+ *
+ * ## Returns
+ * 无返回值；destination 非空时写入借用快照，destination 为 null 时无操作。
+ *
+ * ## Constraints and lifecycle
+ * destination 为 null 时无操作；source 为 null 时输出被清为 null。非 GC 对象值或空对象清空所有权和弱引用数据；GC 对象仅在原 ownership 非 NONE 时降为 BORROWED，并清空 weakReference。
+ *
+ * 这是浅复制，不 retain、pin 或复制 VM 对象。目标仅在原对象仍存活的停点内读取；不能据该快照释放原对象，也不提供独立跨 GC/恢复执行保活。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:689 (zr_debug_register_string_chunks_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:830 (zr_debug_read_indexed_storage_value)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2020 (zr_debug_resolve_identifier_value)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2049 (zr_debug_resolve_identifier_value)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2057 (zr_debug_resolve_identifier_value)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2061 (zr_debug_resolve_identifier_value)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2065 (zr_debug_resolve_identifier_value)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2117 (zr_debug_safe_get_member_value)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2143 (zr_debug_safe_get_member_value)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2196 (zr_debug_safe_get_index_value)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2218 (zr_debug_safe_get_index_value)。
+ */
+
+/**
+ * @fn const TZrChar *zr_debug_protocol_name(EZrProtocolId protocolId)
+ *
+ * ## Summary
+ * 将原型协议枚举转成协议视图所用的稳定展示名称。
+ *
+ * ## Parameters
+ * @param[in] protocolId 待显示的协议枚举值。
+ *
+ * ## Returns
+ * @return 返回静态、NUL 结束的名称；未识别值返回 None。
+ *
+ * ## Constraints and lifecycle
+ * 仅映射实现中列出的协议；NONE 或未知值回退为 None。该名称不是协议注册、有效性校验或脚本成员解析。
+ *
+ * 返回静态常量字符串，不分配、不释放，也不依赖停点句柄生命周期。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1339 (zr_debug_expand_prototype_view)。
+ */
+
+/**
+ * @fn const TZrChar *zr_debug_value_type_name_safe(SZrState *state, const SZrTypeValue *value)
+ *
+ * ## Summary
+ * 为变量预览、窗口和求值结果选择类型名，优先显示对象原型名称，其余回退 Core 值类型名称。
+ *
+ * ## Parameters
+ * @param[in] state 查询原型使用的 VM 状态；需与 value 匹配。
+ * @param[in] value 只读值，可为 null。
+ *
+ * ## Returns
+ * @return 返回可供立即复制的类型名称；空 state/value 为 value，无可用原型名称时使用本地类型枚举回退。
+ *
+ * ## Constraints and lifecycle
+ * state 或 value 为空时返回静态 value；对 OBJECT/ARRAY 尝试原型名，原型名存在才优先使用，否则回退 zr_debug_value_type_name。类型名选择不执行表达式，也不证明对象可安全跨停点借用。
+ *
+ * 结果可能借用 VM 原型字符串，也可能是静态名称；调用方通常立即复制到固定预览缓冲区，不应 free 或跨 VM/原型销毁缓存。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:764 (zr_debug_fill_value_preview)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2452 (zr_debug_try_evaluate_index_window)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2557 (zr_debug_evaluate_with_policy)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2763 (ZrDebug_ReadStack)。
+ */
+
+/**
+ * @fn TZrBool zr_debug_value_is_expandable(SZrState *state, const SZrTypeValue *value)
+ *
+ * ## Summary
+ * 在创建预览之前判定值是否具有对象/数组的可展开载体。
+ *
+ * ## Parameters
+ * @param[in] state 为统一辅助接口保留，本实现不读取。
+ * @param[in] value 待检查的只读值；允许 null。
+ *
+ * ## Returns
+ * @return 满足 OBJECT/ARRAY 与非空载体条件时 TRUE，其余 FALSE。
+ *
+ * ## Constraints and lifecycle
+ * value 必须为 OBJECT 或 ARRAY 且 value.object 非空；只据类型与载体判断，不枚举字段、不检查授权，也不保证后续句柄分配成功。state 参数在本实现中未使用。
+ *
+ * 不分配、不 retain、不注册句柄；返回 TRUE 不能延长对象或停点寿命。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:757 (zr_debug_fill_value_preview)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2562 (zr_debug_evaluate_with_policy)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2769 (ZrDebug_ReadStack)。
+ */
+
+/**
+ * @fn SZrString *zr_debug_value_as_string(SZrState *state, const SZrTypeValue *value)
+ *
+ * ## Summary
+ * 从类型正确的值中取得用于长字符串分页的 Core 字符串对象。
+ *
+ * ## Parameters
+ * @param[in] state 用于 Core 字符串类型转换的 VM 状态。
+ * @param[in] value 借用的候选字符串值。
+ *
+ * ## Returns
+ * @return 返回借用 SZrString 指针；普通类型或参数不满足时返回 null。
+ *
+ * ## Constraints and lifecycle
+ * state/value 为空、非 STRING 类型或载体为空时返回 null；不进行类型转换或脚本字符串化。
+ *
+ * 返回 VM 管理对象的借用指针；不分配、不取得所有权，使用者必须保证 VM 和值仍存活。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:192 (zr_debug_string_needs_chunk_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1006 (zr_debug_expand_string_chunks_handle)。
+ */
+
+/**
+ * @fn TZrSize zr_debug_string_chunk_count(TZrSize byteLength)
+ *
+ * ## Summary
+ * 按固定字节块大小计算字符串分页的逻辑子项总数。
+ *
+ * ## Parameters
+ * @param[in] byteLength Core 字符串的字节长度。
+ *
+ * ## Returns
+ * @return 返回以 ZR_DEBUG_STRING_CHUNK_SIZE 字节为单位的块数。
+ *
+ * ## Constraints and lifecycle
+ * 0 字节对应 0 块；非零长度使用向上取整的字节算术。该数量不是 Unicode 字符数，未增加对 TZrSize 极端加法溢出的独立保护。
+ *
+ * 纯算术，不分配、不触碰字符串或句柄表；调用方提供实际 Core 字节长度。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:209 (zr_debug_string_needs_chunk_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1013 (zr_debug_expand_string_chunks_handle)。
+ */
+
+/**
+ * @fn TZrBool zr_debug_string_needs_chunk_handle(SZrState *state, const SZrTypeValue *value, TZrSize *outChunkCount)
+ *
+ * ## Summary
+ * 判定字符串原始字节长度是否达到预览容量，从而需要向客户端暴露分页句柄。
+ *
+ * ## Parameters
+ * @param[in] state 字符串类型转换使用的 VM 状态。
+ * @param[in] value 候选字符串值。
+ * @param[out] outChunkCount 可选块数输出；普通不需分页时为 0。
+ *
+ * ## Returns
+ * @return 达到阈值且块数大于 0 时 TRUE，否则 FALSE。
+ *
+ * ## Constraints and lifecycle
+ * outChunkCount 非空时先清零；非字符串或字节长度小于 ZR_DEBUG_TEXT_CAPACITY 返回 FALSE。达到阈值后用固定块大小计算数量，不按字符边界切分。
+ *
+ * 不注册句柄或分配缓冲区；输入字符串借用，仅在当前 VM 值有效期间读取。后续注册仍可能普通失败。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:679 (zr_debug_register_string_chunks_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:704 (zr_debug_attach_string_chunk_handle)。
+ */
+
+/**
+ * @fn const TZrChar *zr_debug_prototype_type_name(EZrObjectPrototypeType type)
+ *
+ * ## Summary
+ * 把原型类别转换为原型摘要和安全格式化使用的文本类别。
+ *
+ * ## Parameters
+ * @param[in] type 被显示的原型类别枚举。
+ *
+ * ## Returns
+ * @return 返回静态类别名称，未知类别为 prototype。
+ *
+ * ## Constraints and lifecycle
+ * 仅展示已列举的原型类型；未知枚举回退 prototype，不验证实际原型布局。
+ *
+ * 返回静态字符串，无分配和释放义务。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:447 (zr_debug_format_value_text_safe)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1237 (zr_debug_expand_prototype_summary)。
+ */
+
+/**
+ * @fn SZrObjectPrototype *zr_debug_resolve_value_prototype(SZrState *state, const SZrTypeValue *value)
+ *
+ * ## Summary
+ * 从借用值解析展示所需的原型：原型对象载体先返回自身，其余对象优先使用显式 prototype，再按值类型回退 global 的基础类型原型。
+ *
+ * ## Parameters
+ * @param[in] state 拥有基础类型原型表的 VM 状态。
+ * @param[in] value 只读的候选值。
+ *
+ * ## Returns
+ * @return 返回借用原型；参数不成立或该类型无基础原型时返回 null。
+ *
+ * ## Constraints and lifecycle
+ * state、global 或 value 为空时返回 null；OBJECT/ARRAY 的载体若为 OBJECT_PROTOTYPE，先返回载体自身；其余对象先取非空 prototype，再按类型枚举回退基础原型表。结果是元数据指针，不进行脚本类型转换、成员访问或注册。
+ *
+ * 无所有权转移；原型及其名称借用 VM/编译元数据，调用者需保证同一 VM 生命周期和安全读取时序。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_child_shape.c:101 (zr_debug_value_child_shape)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_child_shape.c:122 (zr_debug_semantic_type_name)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:154 (zr_debug_value_type_name_safe)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:442 (zr_debug_format_value_text_safe)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:612 (zr_debug_register_value_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:648 (zr_debug_register_index_window_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1726 (zr_debug_expand_value_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2125 (zr_debug_safe_get_member_value)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2204 (zr_debug_safe_get_index_value)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3340 (ZrDebug_ReadVariables)。
+ */
+
+/**
+ * @fn void zr_debug_format_value_text_safe(SZrState *state, const SZrTypeValue *value, TZrChar *buffer, TZrSize bufferSize)
+ *
+ * ## Summary
+ * 为协议变量和 logpoint 生成有限长度的值文本；以基本值、函数元数据或对象类别摘要替代任意脚本字符串化。
+ *
+ * ## Parameters
+ * @param[in] state 读取对象/函数元数据所用 VM 状态，需与 value 一致。
+ * @param[in] value 要显示的借用值；null 指针使有效缓冲区保持空串。
+ * @param[out] buffer 调用方提供的文本缓冲区。
+ * @param[in] bufferSize 缓冲区字节容量；0 时无操作。
+ *
+ * ## Returns
+ * 无返回值；结果写入有效缓冲区，缓冲区为空或容量为 0 时不写。
+ *
+ * ## Constraints and lifecycle
+ * buffer 为空或容量为 0 时不写；有效缓冲区先清空，state/value 为空时直接返回空串。实际 NULL 类型显示 null，其它已实现分支保留 NUL。字符串按字节拷贝并可能截断，不保证完整 UTF-8 字符、嵌入 NUL 的无损表示或对象全部内容。
+ *
+ * 调用方拥有缓冲区，输入值及元数据只借用。此函数不求值表达式或执行 getter；safe 是当前格式化策略，不等于对任意无效指针、并发 VM 或所有底层异常免疫。
+ *
+ * ## References
+ * tests/debug/test_debug_truncation.c:51 (test_long_string_value_preview_marks_truncation)；zr_vm_lib_debug/src/zr_vm_lib_debug/breakpoint/debug_breakpoint_logpoint.c:89 (zr_debug_breakpoint_logpoint_format)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:772 (zr_debug_fill_value_preview)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1780 (zr_debug_expand_value_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2560 (zr_debug_evaluate_with_policy)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2764 (ZrDebug_ReadStack)。
+ */
+
+/**
+ * @fn ZrDebugVariableHandle *zr_debug_find_variable_handle(ZrDebugAgent *agent, TZrUInt32 handleId)
+ *
+ * ## Summary
+ * 按协议句柄号查找当前 stopStateId 的变量句柄，拒绝恢复执行前的旧停点引用。
+ *
+ * ## Parameters
+ * @param[in] agent 拥有当前停点和句柄表的 Agent。
+ * @param[in] handleId 客户端提供的变量句柄号。
+ *
+ * ## Returns
+ * @return 匹配时返回内部条目，否则 null；不分配或修改表。
+ *
+ * ## Constraints and lifecycle
+ * agent 为空或 ID 小于 ZR_DEBUG_VARIABLE_HANDLE_BASE 返回 null；遍历只接受 handle_id 与 agent 当前 state_id 同时相等的条目。无匹配时不退回低位作用域解码。
+ *
+ * 返回 Agent 动态数组内部借用地址；任何后续注册的 realloc、clear 或 AgentStop 都可能使地址失效。函数不加锁，调用方须已进入正确的暂停线程访问上下文。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3023 (ZrDebug_ReadVariables)。
+ */
+
+/**
+ * @fn ZrDebugVariableHandle *zr_debug_alloc_variable_handle(ZrDebugAgent *agent)
+ *
+ * ## Summary
+ * 为当前停点追加清零的句柄条目，统一生成所有动态变量视图的协议 ID。
+ *
+ * ## Parameters
+ * @param[in,out] agent 当前安全访问上下文中的 Agent，句柄数组和下一个 ID 将被更新。
+ *
+ * ## Returns
+ * @return 成功返回新的内部条目；无效 Agent、ID 区间或普通分配失败返回 null。
+ *
+ * ## Constraints and lifecycle
+ * 无 Agent 或 nextVariableHandleId 已低于保留区时失败；容量不足以 16 起步、之后翻倍 realloc。普通 realloc 失败保留旧数组/数量；成功后数量递增并记录 stopStateId 与下一个 ID。
+ *
+ * 返回内部数组地址，只供本次注册立即填充。后续 realloc 可使旧条目指针失效；clear 不回退 ID。此处不加锁、pin VM 值，也未新增容量乘法极值保护。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:534 (zr_debug_register_prototype_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:555 (zr_debug_register_prototype_view_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:575 (zr_debug_register_global_state_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:591 (zr_debug_register_exception_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:618 (zr_debug_register_value_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:641 (zr_debug_register_index_window_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:663 (zr_debug_register_inline_union_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:683 (zr_debug_register_string_chunks_handle)。
+ */
+
+/**
+ * @fn TZrUInt32 zr_debug_register_prototype_handle(ZrDebugAgent *agent, SZrObjectPrototype *prototype)
+ *
+ * ## Summary
+ * 把原型元数据保存为停点内可展开的 PROTOTYPE 句柄，供类型对象和 $prototype 子项读取。
+ *
+ * ## Parameters
+ * @param[in,out] agent 拥有当前停点句柄表及有效 VM state 的 Agent。
+ * @param[in] prototype 由 VM/编译元数据保持存活的原型。
+ *
+ * ## Returns
+ * @return 成功返回动态句柄 ID，普通参数或分配失败返回 0。
+ *
+ * ## Constraints and lifecycle
+ * agent 或 prototype 为空返回 0；普通句柄分配失败返回 0。记录原型并初始化展示用 OBJECT 值，不复制原型内容。有效 Agent 的 state 必须符合 Core 初始化前提。
+ *
+ * 原型和其中的 VM 对象均借用；C 句柄表没有独立 retain/释放原型的职责。协议 ID 仅限创建停点，恢复/clear 后失效。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:615 (zr_debug_register_value_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1247 (zr_debug_expand_prototype_summary)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1807 (zr_debug_expand_value_handle)。
+ */
+
+/**
+ * @fn TZrUInt32 zr_debug_register_prototype_view_handle(ZrDebugAgent *agent, SZrObjectPrototype *prototype, EZrDebugPrototypeViewKind viewKind)
+ *
+ * ## Summary
+ * 为指定原型建立一个元数据、成员、方法、属性、静态项或协议的子视图句柄。
+ *
+ * ## Parameters
+ * @param[in,out] agent 当前安全停点中的 Agent 及句柄表。
+ * @param[in] prototype 被展示的借用原型。
+ * @param[in] viewKind 要记录的非 NONE 子视图枚举。
+ *
+ * ## Returns
+ * @return 注册成功的句柄 ID；普通参数或分配失败为 0。
+ *
+ * ## Constraints and lifecycle
+ * agent/prototype 为空或 viewKind 为 NONE 时拒绝；非 NONE 的其它枚举值原样保存，具体展开由视图分支决定。普通句柄分配失败返回 0。
+ *
+ * 只保存借用原型与枚举，不提前枚举描述符或执行属性。有效 Agent state 为 Core 初始化前提；ID 和原型借用不得越过当前停点/元数据寿命。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1156 (zr_debug_expand_type_object_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1164 (zr_debug_expand_type_object_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1172 (zr_debug_expand_type_object_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1180 (zr_debug_expand_type_object_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1188 (zr_debug_expand_type_object_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1196 (zr_debug_expand_type_object_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1283 (zr_debug_expand_prototype_summary)。
+ */
+
+/**
+ * @fn TZrUInt32 zr_debug_register_global_state_handle(ZrDebugAgent *agent)
+ *
+ * ## Summary
+ * 为 Globals 中的 zrState 合成节点建立 GLOBAL_STATE 句柄，展开时再读取当前状态摘要。
+ *
+ * ## Parameters
+ * @param[in,out] agent 拥有有效 state 的当前停点 Agent。
+ *
+ * ## Returns
+ * @return 成功返回句柄 ID，普通无效输入或分配失败返回 0。
+ *
+ * ## Constraints and lifecycle
+ * agent 或 state 为空拒绝；普通分配失败返回 0。句柄本身不复制全局状态，也不枚举脚本全局对象。
+ *
+ * 只给 Agent 当前 state 一个停点内入口；继续运行、换停点或停止时由清表失效，不取得 VM 状态所有权。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3289 (ZrDebug_ReadVariables)。
+ */
+
+/**
+ * @fn TZrUInt32 zr_debug_register_exception_handle(ZrDebugAgent *agent)
+ *
+ * ## Summary
+ * 在当前 VM 存在异常时建立 EXCEPTION 句柄，保存当前异常值供变量展示。
+ *
+ * ## Parameters
+ * @param[in,out] agent 具有当前异常的暂停 Agent。
+ *
+ * ## Returns
+ * @return 注册成功的异常句柄 ID，否则 0。
+ *
+ * ## Constraints and lifecycle
+ * agent/state 为空或 hasCurrentException 为 FALSE 时返回 0；普通分配失败也返回 0。保存 currentException 的浅副本，不单独复制异常栈或消息。
+ *
+ * 值仍由 VM 异常状态保持存活；句柄清理仅释放 C 表，不按副本的 ownership 字段释放 VM 对象。只在创建停点内使用。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3314 (ZrDebug_ReadVariables)。
+ */
+
+/**
+ * @fn TZrUInt32 zr_debug_register_value_handle(ZrDebugAgent *agent, const SZrTypeValue *value)
+ *
+ * ## Summary
+ * 为 OBJECT/ARRAY 的变量预览建立 VALUE 句柄；原型对象转用专用 PROTOTYPE 句柄。
+ *
+ * ## Parameters
+ * @param[in,out] agent 当前停点的 Agent/句柄表。
+ * @param[in] value 要展开的借用对象或数组值。
+ *
+ * ## Returns
+ * @return 成功返回 VALUE 或 PROTOTYPE 句柄 ID，普通无效输入或分配失败为 0。
+ *
+ * ## Constraints and lifecycle
+ * 要求有效 agent/state、值类型和非空载体。普通分配失败返回 0；原型对象先委托原型注册。其它值存储浅拷贝及当前解析出的原型，不执行 getter。
+ *
+ * 不取得输入对象的独立所有权或 GC pin；即使保存原 ownership 位，清表也只 free C 数组。调用方保证对象在停点内存活且不并发恢复 VM。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:758 (zr_debug_fill_value_preview)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2563 (zr_debug_evaluate_with_policy)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2770 (ZrDebug_ReadStack)。
+ */
+
+/**
+ * @fn TZrUInt32 zr_debug_register_index_window_handle(ZrDebugAgent *agent, const SZrTypeValue *value, TZrSize start, TZrSize count)
+ *
+ * ## Summary
+ * 保存对象/数组基值及一个逻辑索引窗口，供后续 ReadVariables 在窗口内分页。
+ *
+ * ## Parameters
+ * @param[in,out] agent 当前停点 Agent。
+ * @param[in] value 窗口的借用容器基值。
+ * @param[in] start 保存的底层窗口起点。
+ * @param[in] count 保存的窗口长度。
+ *
+ * ## Returns
+ * @return 成功返回索引窗口句柄 ID，普通拒绝或分配失败为 0。
+ *
+ * ## Constraints and lifecycle
+ * 要求有效 agent/state、OBJECT/ARRAY 类型及非空载体；保存 start/count 而不在此验证底层索引长度，也不执行窗口表达式。普通分配失败返回 0。
+ *
+ * 输入值、原型为浅借用；窗口在后续读取时重解析存储，不能据此冻结容器内容。ID 随停点失效；表达式解析本身属于借用调用者，不计本单元覆盖。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2444 (zr_debug_try_evaluate_index_window)。
+ */
+
+/**
+ * @fn TZrUInt32 zr_debug_register_inline_union_handle(ZrDebugAgent *agent, TZrUInt32 frameId, TZrUInt32 stackSlot)
+ *
+ * ## Summary
+ * 仅记录帧 ID 和槽号，建立稍后由 Union 展开器解析的 INLINE_UNION 句柄。
+ *
+ * ## Parameters
+ * @param[in,out] agent 当前停点 Agent。
+ * @param[in] frameId 非零协议帧 ID。
+ * @param[in] stackSlot 保存的帧槽索引，由后续展开器验证。
+ *
+ * ## Returns
+ * @return 成功返回 INLINE_UNION 句柄 ID，普通输入或分配失败返回 0。
+ *
+ * ## Constraints and lifecycle
+ * 要求有效 agent/state 和非零 frameId；不在此验证 stackSlot 是否可读，不物化 Union，不执行后续展开。普通分配失败返回 0。
+ *
+ * 该条目只保留标量定位信息，引用的帧/槽必须仍属于同一暂停状态；Union 物化实现和类型合同属于借用模块，不转移到本批信用。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1971 (zr_debug_fill_inline_union_preview)。
+ */
+
+/**
+ * @fn TZrUInt32 zr_debug_register_string_chunks_handle(ZrDebugAgent *agent, const SZrTypeValue *value)
+ *
+ * ## Summary
+ * 为达到预览阈值的字符串注册 STRING_CHUNKS 句柄，并保存借用字符串快照和逻辑块数。
+ *
+ * ## Parameters
+ * @param[in,out] agent 具有有效 state 的当前停点 Agent。
+ * @param[in] value 借用的候选长字符串值。
+ *
+ * ## Returns
+ * @return 成功的字符串分页句柄 ID；不需分页或普通失败为 0。
+ *
+ * ## Constraints and lifecycle
+ * 先复核实际字符串/阈值；短字符串、无效输入或普通句柄分配失败返回 0。窗口初始为 0 与完整块数，块计数按原始字节。
+ *
+ * copy_value_snapshot 不 retain 或 pin 字符串；只在 VM 保持源字符串且停点未失效时使用。注册成功不修正既有 UTF-8 字节切片问题。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:708 (zr_debug_attach_string_chunk_handle)。
+ */
+
+/**
+ * @fn void zr_debug_attach_string_chunk_handle(ZrDebugAgent *agent, const SZrTypeValue *value, TZrUInt32 *variablesReference, TZrSize *namedVariables, TZrSize *indexedVariables)
+ *
+ * ## Summary
+ * 在已有变量/求值预览上附加长字符串分页引用和索引子项数量。
+ *
+ * ## Parameters
+ * @param[in,out] agent 当前停点 Agent；可能新增句柄。
+ * @param[in] value 待检查的借用字符串值。
+ * @param[in,out] variablesReference 可选引用输出；成功才覆盖。
+ * @param[in,out] namedVariables 可选命名子项数；成功才设 0。
+ * @param[in,out] indexedVariables 可选索引子项数；成功才写块数。
+ *
+ * ## Returns
+ * 无返回值；仅在分页句柄注册成功后覆盖所提供的输出，未附加时保留原值。
+ *
+ * ## Constraints and lifecycle
+ * 只在达到字符串阈值且注册成功后改写非空输出：引用为新 ID、named 为 0、indexed 为块数。不需分页或普通注册失败时保留调用者原输出值，不转换为错误返回。
+ *
+ * 会修改句柄表，可能 realloc；输出仅是协议标量，字符串仍借用并受当前停点限制。函数无错误返回，调用者不能据已完成预览假定句柄一定存在。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:774 (zr_debug_fill_value_preview)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2569 (zr_debug_evaluate_with_policy)。
+ */
+
+/**
+ * @fn void zr_debug_fill_text_preview(ZrDebugValuePreview *preview, EZrDebugScopeKind scopeKind, const TZrChar *name, const TZrChar *typeName, const TZrChar *valueText, TZrUInt32 variablesReference)
+ *
+ * ## Summary
+ * 初始化一个纯文本变量预览，复制名称、类型、值文本和调用者给出的子句柄引用。
+ *
+ * ## Parameters
+ * @param[out] preview 可写预览结构；允许 null，届时无操作。
+ * @param[in] scopeKind 展示所属作用域枚举。
+ * @param[in] name 可为空的名称文本。
+ * @param[in] typeName 可为空或空串的类型文本。
+ * @param[in] valueText 可为空的展示文本。
+ * @param[in] variablesReference 直接记录的子句柄号，0 表示无子引用。
+ *
+ * ## Returns
+ * 无返回值；preview 为 null 时无操作，否则重置并填充预览。
+ *
+ * ## Constraints and lifecycle
+ * preview 为 null 时无操作；非空时先 memset。name/typeName/valueText 为 null 时分别使用空名称、默认 value 类型和空值，非空空串原样保留；semantic_summary 取非空值文本否则取类型名。固定数组按 copy_text 截断。
+ *
+ * 预览持有文本副本和协议 ID，不拥有任何 VM 对象，也不注册/验证引用。调用者负责让给定句柄与本停点一致。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:761 (zr_debug_fill_value_preview)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1056 (zr_debug_expand_string_chunks_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1095 (zr_debug_expand_global_state)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1100 (zr_debug_expand_global_state)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1102 (zr_debug_expand_global_state)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1104 (zr_debug_expand_global_state)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1106 (zr_debug_expand_global_state)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1109 (zr_debug_expand_global_state)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1151 (zr_debug_expand_type_object_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1159 (zr_debug_expand_type_object_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1167 (zr_debug_expand_type_object_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1175 (zr_debug_expand_type_object_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1183 (zr_debug_expand_type_object_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1191 (zr_debug_expand_type_object_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1227 (zr_debug_expand_prototype_summary)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1233 (zr_debug_expand_prototype_summary)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1239 (zr_debug_expand_prototype_summary)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1253 (zr_debug_expand_prototype_summary)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1255 (zr_debug_expand_prototype_summary)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1257 (zr_debug_expand_prototype_summary)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1260 (zr_debug_expand_prototype_summary)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1266 (zr_debug_expand_prototype_summary)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1277 (zr_debug_expand_prototype_summary)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1337 (zr_debug_expand_prototype_view)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1362 (zr_debug_expand_prototype_view)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1465 (zr_debug_expand_prototype_view)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1569 (zr_debug_expand_union_value_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1590 (zr_debug_expand_union_value_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1649 (zr_debug_expand_inline_union_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1667 (zr_debug_expand_inline_union_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1802 (zr_debug_expand_value_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1973 (zr_debug_fill_inline_union_preview)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3284 (ZrDebug_ReadVariables)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3309 (ZrDebug_ReadVariables)。
+ */
+
+/**
+ * @fn TZrBool zr_debug_fill_value_preview(ZrDebugAgent *agent, const TZrChar *name, EZrDebugScopeKind scopeKind, const SZrTypeValue *value, ZrDebugValuePreview *preview)
+ *
+ * ## Summary
+ * 从同一个借用值生成类型、值文本、语义摘要和子节点数量，并在适用时注册对象或长字符串的停点句柄。
+ *
+ * ## Parameters
+ * @param[in,out] agent 当前安全停点 Agent，句柄表可能增长。
+ * @param[in] name 预览名称，可为空。
+ * @param[in] scopeKind 预览归属作用域。
+ * @param[in] value VM 保持存活的借用值。
+ * @param[out] preview 可写预览结构。
+ *
+ * ## Returns
+ * @return 必要指针非空并完成普通路径时 TRUE；显式无效指针守卫时 FALSE，不以子句柄分配结果作为全局成功判据。
+ *
+ * ## Constraints and lifecycle
+ * agent/preview/value 为空时 FALSE；其它输入按各辅助函数前提读取。Union 格式化失败才回退普通格式化。对象注册普通 OOM 只留下引用 0，函数仍可返回 TRUE；child_shape/字符串及元数据辅助路径不因名称 safe 而保证不分配或不 Throw。
+ *
+ * 输出文本是副本，子引用和底层值仍受停点/VM 寿命限制。不取得新对象所有权，不对已成功注册的其它句柄做整体回滚，也不捕获跨层非局部退出。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:962 (zr_debug_expand_indexed_window)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1459 (zr_debug_expand_prototype_view)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1515 (zr_debug_expand_exception_value)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1567 (zr_debug_expand_union_value_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1588 (zr_debug_expand_union_value_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1665 (zr_debug_expand_inline_union_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1784 (zr_debug_expand_value_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1796 (zr_debug_expand_value_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3212 (ZrDebug_ReadVariables)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3258 (ZrDebug_ReadVariables)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3290 (ZrDebug_ReadVariables)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3299 (ZrDebug_ReadVariables)。
+ */
+
+/**
+ * @fn void zr_debug_read_indexed_storage_value(SZrState *state, SZrObject *storage, TZrSize index, SZrTypeValue *outValue)
+ *
+ * ## Summary
+ * 按整数索引读取内部数组存储中的一个值，转成不取得对象所有权的调试快照。
+ *
+ * ## Parameters
+ * @param[in,out] state 原始索引查询使用的 VM 状态。
+ * @param[in,out] storage 当前有效的内部数组对象，Core 读取可物化 raw 存储。
+ * @param[in] index 要读取的实际底层数组索引。
+ * @param[out] outValue 可选快照输出，缺失项为 null 值。
+ *
+ * ## Returns
+ * 无返回值；outValue 非空时先清为 null，查询成功才写入借用快照；不捕获 Core 非局部退出。
+ *
+ * ## Constraints and lifecycle
+ * outValue 非空时先清为 null；state/storage/outValue 缺失时无进一步读取。缺失索引保留 null。Core Object_GetValue 对活动 raw-array 索引可能先物化，不能承诺无分配或无 Throw。
+ *
+ * 输出由调用者栈槽持有但对象内容仍借用；不 retain、不释放原数组值，不捕获底层非局部退出。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:961 (zr_debug_expand_indexed_window)。
+ */
+
+/**
+ * @fn TZrBool zr_debug_try_resolve_indexed_storage(SZrState *state, const SZrTypeValue *value, SZrObject **outStorage, const TZrChar **outSyntheticName, TZrSize *outLength)
+ *
+ * ## Summary
+ * 为 child-shape、变量展开及借用的安全索引调用解析实际索引存储：直接数组，或容器内部 __zr_items/__zr_entries。
+ *
+ * ## Parameters
+ * @param[in,out] state 同一 VM 的查表状态。
+ * @param[in] value 候选对象/数组值。
+ * @param[out] outStorage 可选内部存储对象输出。
+ * @param[out] outSyntheticName 可选 data/entries 名称输出；直接数组为 null。
+ * @param[out] outLength 可选逻辑长度输出，受合成分支 outStorage 前提限制。
+ *
+ * ## Returns
+ * @return 找到直接数组或合成数组来源时 TRUE；普通无效参数或无相应来源时 FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 可选输出先清零；只处理有载体的 OBJECT/ARRAY。直接数组给逻辑长度；内部字段依次映射 data/entries，不执行索引运算符或脚本 getter。合成分支只有同时提供 outStorage 且转换结果为 ARRAY 才写出长度，TRUE 不保证所有可选输出都非空。
+ *
+ * storage 和合成名称分别借用 VM 对象与静态文本；字段名驻留/读取可分配、Throw 或物化 Core raw 存储。函数不锁定容器或取得所有权。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_child_shape.c:92 (zr_debug_value_child_shape)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1738 (zr_debug_expand_value_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2186 (zr_debug_safe_get_index_value)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2422 (zr_debug_try_evaluate_index_window)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3073 (ZrDebug_ReadVariables)。
+ */
+
+/**
+ * @fn TZrBool zr_debug_expand_indexed_window(ZrDebugAgent *agent, SZrObject *storage, TZrSize baseIndex, TZrSize totalIndexed, TZrSize start, TZrSize countLimit, EZrDebugScopeKind scopeKind, ZrDebugValuePreview **outValues, TZrSize *outCount, TZrSize *outNamedVariables, TZrSize *outIndexedVariables)
+ *
+ * ## Summary
+ * 在一个已解析的索引存储中生成分页预览；start/count 相对于窗口，baseIndex 才是底层绝对索引。
+ *
+ * ## Parameters
+ * @param[in,out] agent 当前安全停点 Agent。
+ * @param[in,out] storage 有效内部数组存储。
+ * @param[in] baseIndex 底层窗口的绝对索引起点。
+ * @param[in] totalIndexed 该窗口的逻辑索引总数。
+ * @param[in] start 本页相对窗口的起点。
+ * @param[in] countLimit 本页上限，0 表示剩余全部。
+ * @param[in] scopeKind 每个预览的作用域类型。
+ * @param[out] outValues 必须非空的 C 预览数组输出。
+ * @param[out] outCount 必须非空的本页实际数量输出。
+ * @param[out] outNamedVariables 可选命名数量，设 0。
+ * @param[out] outIndexedVariables 可选完整窗口数量，不是本页数量。
+ *
+ * ## Returns
+ * @return 成功或空页为 TRUE；普通参数/分配失败为 FALSE，空页允许数组为 null 且数量 0。
+ *
+ * ## Constraints and lifecycle
+ * outValues/outCount 必须非空，进入即清为 null/0；可选 named 为 0、indexed 为 totalIndexed。start 超界夹到末尾，countLimit=0 表示剩余全部；非空页 calloc 普通失败返回 FALSE，但 indexed 可能已写完整数量。未新增极端加法溢出保护。
+ *
+ * 成功数组由调用者 ZrDebug_Free；VM 值与新增子句柄仍借用停点。逐项 Core 读取和预览可能分配/Throw，未对非局部退出或已注册子句柄承诺统一回滚。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1744 (zr_debug_expand_value_handle)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3088 (ZrDebug_ReadVariables)。
+ */
+
+/**
+ * @fn TZrBool zr_debug_expand_string_chunks_handle(ZrDebugAgent *agent, const SZrTypeValue *value, TZrSize start, TZrSize countLimit, EZrDebugScopeKind scopeKind, ZrDebugValuePreview **outValues, TZrSize *outCount, TZrSize *outNamedVariables, TZrSize *outIndexedVariables)
+ *
+ * ## Summary
+ * 把长字符串按块索引分页成命名为 [byteStart..byteEnd) 的子项，向协议层返回独立的 C 预览数组。
+ *
+ * ## Parameters
+ * @param[in] agent 当前停点 Agent，仅提供字符串所属 state。
+ * @param[in] value VM 保持存活的借用字符串值。
+ * @param[in] start 本页开始的块索引。
+ * @param[in] countLimit 块数上限，0 为剩余全部。
+ * @param[in] scopeKind 每项预览的作用域。
+ * @param[out] outValues 必须非空，成功接收 C 预览数组。
+ * @param[out] outCount 必须非空，本页块数。
+ * @param[out] outNamedVariables 可选，设 0。
+ * @param[out] outIndexedVariables 可选，写完整块数，普通分配失败也可能已经写入。
+ *
+ * ## Returns
+ * @return 普通成功或空页为 TRUE；无效输入、非字符串或非空页 calloc 失败为 FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 输出先清零；要求有效 agent/state、STRING 值和两个必需输出。start/countLimit 以块计，0 上限表示剩余全部；indexed 输出为完整块数。块内最多拷贝 64 字节并补 NUL，不做 Unicode 边界修整，也不保证嵌入 NUL 后的文本保真。
+ *
+ * 数组由 ZrDebug_Free 释放；只在调用期间借用字符串原生字节。BUG: 沿用既有 byte_slice 家族，63 个 ASCII 后接 é 可使首块仅含 C3，协议 JSON/客户端 UTF-8 解码产生 U+FFFD；本批只记录静态链，不修复、不声称已运行复现。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3110 (ZrDebug_ReadVariables)。
+ * 本函数 1031–1057 的 byte_slice 旧块与函数行是同一既有 BUG 家族的两个台账镜像，不能重复计问题。
+ */
+
+/**
+ * @fn TZrUInt32 zr_debug_loaded_module_count(ZrDebugAgent *agent)
+ *
+ * ## Summary
+ * 读取 loadedModulesRegistry 原生数组的逻辑长度，供全局调试摘要展示。
+ *
+ * ## Parameters
+ * @param[in] agent 提供当前 VM/global 的只读 Agent。
+ *
+ * ## Returns
+ * @return 逻辑数组长度转换后的计数；无有效注册表时 0。
+ *
+ * ## Constraints and lifecycle
+ * 无 agent/state/global 或注册表对象载体为空时为 0；实现没有独立的值类型 ARRAY 检查，调用前提是 global 注册表确为 Core 数组对象。调用 ZrCore_Object_SuperArrayLength，不能以 nodeMap.elementCount 替代逻辑长度；TZrUInt32 转换未新增超大长度保护。
+ *
+ * 只借用注册表，不枚举、加载或卸载模块，不分配/释放对象。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1099 (zr_debug_expand_global_state)。
+ */
+
+/**
+ * @fn TZrBool zr_debug_expand_global_state(ZrDebugAgent *agent, ZrDebugValuePreview **outValues, TZrSize *outCount)
+ *
+ * ## Summary
+ * 展开 zrState 合成节点的六个摘要：模块名、已加载模块数、帧深度、异常标志、线程状态和停止行。
+ *
+ * ## Parameters
+ * @param[in] agent 当前暂停状态的 Agent。
+ * @param[out] outValues 必须非空的六项数组输出。
+ * @param[out] outCount 必须非空的实际数量输出。
+ *
+ * ## Returns
+ * @return 六项构造完成为 TRUE，普通参数或分配失败为 FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 先清 outValues/outCount；要求有效 agent/state 及必需输出，六项 calloc 普通失败返回 FALSE。此处不是脚本全局变量全集，loadedModuleCount 使用逻辑长度。
+ *
+ * 成功数组归调用者并用 ZrDebug_Free；文本复制到预览，不转移 VM 状态所有权。当前线程/停点必须保持稳定，函数不加锁或暂停执行。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3041 (ZrDebug_ReadVariables)。
+ */
+
+/**
+ * @fn TZrBool zr_debug_expand_type_object_handle(ZrDebugAgent *agent, SZrObjectPrototype *prototype, ZrDebugValuePreview **outValues, TZrSize *outCount, TZrSize *outNamedVariables, TZrSize *outIndexedVariables)
+ *
+ * ## Summary
+ * 把一个类型对象展开成六个原型子视图入口：metadata、members、methods、properties、statics、protocols。
+ *
+ * ## Parameters
+ * @param[in,out] agent 有效 state 的当前停点 Agent，可能注册六个句柄。
+ * @param[in] prototype 存活的借用原型。
+ * @param[out] outValues 必须非空的输出数组指针。
+ * @param[out] outCount 必须非空，成功为六项。
+ * @param[out] outNamedVariables 可选，普通参数/分配失败前也已可写六项。
+ * @param[out] outIndexedVariables 可选，设 0。
+ *
+ * ## Returns
+ * @return 六项 C 数组构造成功为 TRUE，不等价于六个子句柄全部分配成功；普通参数/calloc 失败为 FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 数组/数量先清，named 先写固定六项、indexed 为 0；无效必需参数或 calloc 失败为 FALSE。逐子视图注册失败只使对应 reference 为 0，不使整组返回 FALSE。
+ *
+ * 数组归调用者；子句柄保存借用原型并受停点失效规则限制。不会复制完整类型描述符、执行属性或取得原型所有权。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3047 (ZrDebug_ReadVariables)。
+ */
+
+/**
+ * @fn TZrBool zr_debug_expand_prototype_summary(ZrDebugAgent *agent, SZrObjectPrototype *prototype, ZrDebugValuePreview **outValues, TZrSize *outCount)
+ *
+ * ## Summary
+ * 为原型元数据构造固定九项摘要，并为父原型及 managedFields 在适用时提供停点子句柄。
+ *
+ * ## Parameters
+ * @param[in,out] agent 当前安全停点且 state 有效的 Agent。
+ * @param[in] prototype 只借用的原型元数据。
+ * @param[out] outValues 必须非空的九项数组输出。
+ * @param[out] outCount 必须非空的数量输出。
+ *
+ * ## Returns
+ * @return 九项构造成功为 TRUE；普通必需参数或数组分配失败为 FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 必需输出先清；agent/prototype/输出缺失或 calloc 失败为 FALSE。摘要是当前实现选取的九个展示字段，不代表完整 ABI 布局；嵌套句柄普通失败可留下引用 0。
+ *
+ * 调用者释放 C 数组；原型、名称、描述符继续借用 VM/编译元数据。新增句柄不会独立保活原型，不承诺整个摘要的子句柄原子注册。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1315 (zr_debug_expand_prototype_view)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3346 (ZrDebug_ReadVariables)。
+ */
+
+/**
+ * @fn TZrBool zr_debug_expand_prototype_view(ZrDebugAgent *agent, SZrObjectPrototype *prototype, EZrDebugPrototypeViewKind viewKind, EZrDebugScopeKind scopeKind, ZrDebugValuePreview **outValues, TZrSize *outCount)
+ *
+ * ## Summary
+ * 按指定视图筛选协议、managed fields 或描述符，先计数再生成对应变量预览；元数据视图委托九项摘要。
+ *
+ * ## Parameters
+ * @param[in,out] agent 当前安全停点 Agent 及有效 state。
+ * @param[in] prototype 计数和填充期间必须稳定的借用原型。
+ * @param[in] viewKind 筛选或委托的原型视图枚举。
+ * @param[in] scopeKind 结果预览所属作用域。
+ * @param[out] outValues 必须非空的 C 数组输出，空视图可为 null。
+ * @param[out] outCount 必须非空的实际条目数量。
+ *
+ * ## Returns
+ * @return 普通筛选/空视图成功为 TRUE；无效必需参数或数组分配失败为 FALSE，底层 Throw 不转换为 FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 协议遍历 NONE 之后到 ARRAY_LIKE 的已实现区间；成员仅非静态 field，方法包括 method，属性取 property，静态项取 staticMember 或 isStatic。通过直接 Core 字段查找显示现值，未找到时显示描述符信息，不调用属性 getter；未知空视图可成功返回空数组。
+ *
+ * 数组由 ZrDebug_Free；名称/描述符/原型只借用。字符串键驻留和 Core 查表可 Throw，且计数/填充期间要求元数据稳定；普通 calloc 失败返回 FALSE，非局部退出和已注册子句柄无整体回滚保证。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:1486 (zr_debug_expand_statics_scope)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3054 (ZrDebug_ReadVariables)。
+ */
+
+/**
+ * @fn TZrBool zr_debug_expand_statics_scope(ZrDebugAgent *agent, SZrObjectPrototype *prototype, ZrDebugValuePreview **outValues, TZrSize *outCount)
+ *
+ * ## Summary
+ * 将帧作用域中的 statics 请求复用到原型 STATICS 视图，并统一标记静态作用域。
+ *
+ * ## Parameters
+ * @param[in,out] agent 传给原型视图的当前停点 Agent。
+ * @param[in] prototype 借用原型。
+ * @param[out] outValues 原型视图的必需数组输出。
+ * @param[out] outCount 原型视图的必需数量输出。
+ *
+ * ## Returns
+ * @return 原样返回 STATICS 视图展开结果；非局部退出不转换。
+ *
+ * ## Constraints and lifecycle
+ * 只做枚举参数绑定；输入检查、直接字段查找、描述符回退、普通失败与 Throw 语义均来自 expand_prototype_view。并非脚本静态属性求值器。
+ *
+ * 原型借用和输出 C 数组的 ZrDebug_Free 责任不变，不建立新的所有权层或异常保护。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3354 (ZrDebug_ReadVariables)。
+ */
+
+/**
+ * @fn TZrBool zr_debug_expand_exception_value(ZrDebugAgent *agent, ZrDebugValuePreview **outValues, TZrSize *outCount)
+ *
+ * ## Summary
+ * 把当前 VM 异常值生成名为 error 的单个变量预览，供异常作用域或 EXCEPTION 句柄展开。
+ *
+ * ## Parameters
+ * @param[in,out] agent 拥有当前异常的安全停点 Agent。
+ * @param[out] outValues 必须非空的单项数组输出。
+ * @param[out] outCount 必须非空，成功为 1。
+ *
+ * ## Returns
+ * @return 普通单项构造成功为 TRUE；无异常、无效参数或数组分配失败为 FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 先清必需输出；要求有效 agent/state、hasCurrentException 和非空输出。calloc 普通失败为 FALSE；不在此验证外部异常帧号，也不展开异常栈数组。
+ *
+ * 输出数组由 ZrDebug_Free；异常对象借用 VM 当前异常根。预览辅助可能注册句柄/Throw，不承诺非局部退出时局部数组自动释放。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3065 (ZrDebug_ReadVariables)；zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3133 (ZrDebug_ReadVariables)。
+ */
+
+/**
+ * @fn TZrBool zr_debug_expand_value_handle(ZrDebugAgent *agent, const SZrTypeValue *value, TZrSize start, TZrSize countLimit, EZrDebugScopeKind scopeKind, ZrDebugValuePreview **outValues, TZrSize *outCount, TZrSize *outNamedVariables, TZrSize *outIndexedVariables)
+ *
+ * ## Summary
+ * 把对象/数组句柄分流为 Union、原生数组窗口或普通对象可见成员，并为内部数组来源及原型附加合成节点。
+ *
+ * ## Parameters
+ * @param[in,out] agent 当前安全停点 Agent。
+ * @param[in] value 要展开的借用对象/数组值。
+ * @param[in] start 原生数组/委托分支的分页起点。
+ * @param[in] countLimit 原生数组/委托分支的分页上限，0 为全部。
+ * @param[in] scopeKind 结果作用域。
+ * @param[out] outValues 必须非空的预览数组输出。
+ * @param[out] outCount 必须非空的实际返回数。
+ * @param[out] outNamedVariables 可选命名数量；普通对象成功后为实际项数。
+ * @param[out] outIndexedVariables 可选索引数量；委托分支按自身合同写入。
+ *
+ * ## Returns
+ * @return 普通构造或委托成功为 TRUE；无效输入、普通数组分配失败或委托普通失败为 FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 输出先清；要求有效 agent/state、OBJECT/ARRAY 载体及必需输出。Union 分支借用专用展开器，原生数组尊重 start/count；普通对象枚举自身 nodeMap 并隐藏格式化名称以 __zr_ 开头的项，不在该分支分页。计数与填充期间要求对象布局稳定。
+ *
+ * 成功 C 数组由 ZrDebug_Free；值、哈希节点、原型及子句柄只借用当前停点。普通 calloc 失败为 FALSE；子句柄普通 OOM 可显示引用 0，Core 查表/辅助路径可能 Throw，无统一回滚或并发安全保证。Union 实现只借证，不扩大本批单元信用。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3031 (ZrDebug_ReadVariables)。
+ */
+
+/**
+ * @fn void zr_debug_variable_handles_clear(ZrDebugAgent *agent)
+ *
+ * ## Summary
+ * 释放本停点的 C 句柄表，供恢复执行、换停点及停止 Agent 时统一使旧变量引用失效。
+ *
+ * ## Parameters
+ * @param[in,out] agent 要清理句柄表的 Agent，允许 null。
+ *
+ * ## Returns
+ * 无返回值；释放并清空 Agent 的 C 句柄表，agent 为 null 时无操作。
+ *
+ * ## Constraints and lifecycle
+ * agent 为 null 时无操作；释放后指针设 null、数量和容量清零。nextVariableHandleId 保持不变，避免旧数字 ID 在清表后立即重用。
+ *
+ * 只 free C 数组，不按条目 ownership 位释放 VM 值、原型或异常，也不调用 GC unpin。所有内部条目指针立即失效；调用方必须同步暂停/恢复状态，函数本身不加锁。
+ *
+ * ## References
+ * zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:1661 (ZrDebug_AgentStop)；zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:1859 (ZrDebug_Continue)；zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:1888 (zr_debug_begin_step)；zr_vm_lib_debug/src/zr_vm_lib_debug/protocol/debug_protocol.c:233 (zr_debug_agent_fill_stop_event)；zr_vm_lib_debug/src/zr_vm_lib_debug/protocol/debug_protocol.c:1432 (zr_debug_agent_pause_loop)。
+ */
+
+/**
+ * @fn void ZrDebug_Free(void *pointer)
+ *
+ * ## Summary
+ * 释放调试快照接口交给调用者的 malloc/calloc 兼容 C 缓冲区。
+ *
+ * ## Parameters
+ * @param[in] pointer 由调试快照接口移交、尚未释放的 C 分配块，允许 null。
+ *
+ * ## Returns
+ * 无返回值；将非空 C 分配块交给 free，pointer 为 null 时无操作。
+ *
+ * ## Constraints and lifecycle
+ * 仅非空时调用标准 free，null 可安全传入。不检查来源、大小或重复释放；不能传入 VM 对象、栈内存、借用原型或内部句柄条目地址。
+ *
+ * 释放后调用方自己的指针不自动清零，不能再次读取或释放；对子句柄引用的 VM 值不做析构，不替代 Agent 的停点清理。
+ *
+ * ## References
+ * tests/debug/test_debug_agent_protocol.c:490 (test_debug_agent_projects_typed_test_manifest)；tests/debug/test_debug_formal_evaluation_cases.h:144 (test_debug_formal_array_literal_requires_explicit_allocation)；tests/debug/test_debug_formal_evaluation_cases.h:145 (test_debug_formal_array_literal_requires_explicit_allocation)；tests/debug/test_debug_truncation.c:128 (test_long_string_value_preview_exposes_paged_chunks)；tests/debug/test_debug_truncation.c:129 (test_long_string_value_preview_exposes_paged_chunks)；zr_vm_lib_debug/src/zr_vm_lib_debug/protocol/debug_protocol.c:931 (zr_debug_agent_make_stack_trace_result)；zr_vm_lib_debug/src/zr_vm_lib_debug/protocol/debug_protocol.c:1056 (zr_debug_agent_make_stack_trace_result)；zr_vm_lib_debug/src/zr_vm_lib_debug/protocol/debug_protocol.c:1065 (zr_debug_agent_make_stack_trace_result)；zr_vm_lib_debug/src/zr_vm_lib_debug/protocol/debug_protocol.c:1098 (zr_debug_agent_make_scopes_result)；zr_vm_lib_debug/src/zr_vm_lib_debug/protocol/debug_protocol.c:1119 (zr_debug_agent_make_scopes_result)；zr_vm_lib_debug/src/zr_vm_lib_debug/protocol/debug_protocol.c:1165 (zr_debug_agent_make_variables_result)；zr_vm_lib_debug/src/zr_vm_lib_debug/protocol/debug_protocol.c:1191 (zr_debug_agent_make_variables_result)。
+ */

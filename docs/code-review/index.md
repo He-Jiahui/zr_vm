@@ -378,3 +378,5 @@ doc_type: category-index
 - [Union调试检查合同](batches/20261019-debug-union-inspection-current-contracts.md)：56旧项、52段中文Doxygen，43目录键迁移0新增；保留既有GC根BUG及布局TODO家族，H仅13/89其余pending；前后variable_child_shape3全PASS，原始输出一致。
 
 - [调试Agent、线程与连接生命周期合同](batches/20261019-debug-agent-thread-lifecycle-current-contracts.md)：32旧项、20段中文Doxygen、0新增；三个文件仅部分审查，前后threads1及agent_protocol8全PASS，原始输出一致。
+
+- [调试值预览、变量句柄与子项快照合同](batches/20261019-debug-variable-handles-children-current-contracts.md)：42旧项、41段中文Doxygen、0新增；文件余39项待审，前后直接3+5+17+3各28全PASS，原始输出一致。
