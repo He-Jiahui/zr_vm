@@ -346,3 +346,5 @@ doc_type: category-index
 - [Native registry OOM 场景与所有权契约](batches/20261019-native-registry-oom-current-contracts.md)：15 个首次物化单元、12 段 Doxygen；九个既有普通进程场景修改前后有限验证，保留注入命中与影子清理的覆盖限制。
 
 - [Testing 当前 provider、断言与失败记录契约](batches/20261019-testing-current-contracts.md)：173 个既有单元、58 处同物理行注释精修；既有 BUG/TODO 保留，不增加定义信用。
+
+- [Debug 兼容诊断与表达式跳读契约](batches/20261019-debug-eval-diagnostics-current-contracts.md)：45旧键迁移、24段Doxygen；同一56项普通入口前后各55PASS/1FAIL，静态零容量BUG未运行复现。
