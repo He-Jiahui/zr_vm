@@ -344,3 +344,5 @@ doc_type: category-index
 - [Complex 当前调用与生命周期契约](batches/20261018-math-complex-current-contracts.md)：61 个既有单元复审、18 段现有 Doxygen；55 行注释精修，当前 CLI 与 core 项目前35项及既有网络配置失败的修改前后对照。
 
 - [Native registry OOM 场景与所有权契约](batches/20261019-native-registry-oom-current-contracts.md)：15 个首次物化单元、12 段 Doxygen；九个既有普通进程场景修改前后有限验证，保留注入命中与影子清理的覆盖限制。
+
+- [Testing 当前 provider、断言与失败记录契约](batches/20261019-testing-current-contracts.md)：173 个既有单元、58 处同物理行注释精修；既有 BUG/TODO 保留，不增加定义信用。
