@@ -18,7 +18,7 @@ related_code:
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_reference_summary.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_semantic_facts.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_snapshot.c
-  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_union.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_union.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/profile.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c
   - zr_vm_lib_network/CMakeLists.txt
@@ -53,7 +53,7 @@ implementation_files:
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_reference_summary.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_semantic_facts.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_snapshot.c
-  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_union.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_union.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/profile.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c
   - zr_vm_lib_network/CMakeLists.txt

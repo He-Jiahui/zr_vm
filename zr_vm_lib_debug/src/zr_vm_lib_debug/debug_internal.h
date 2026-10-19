@@ -576,3 +576,336 @@ void zr_debug_evaluate_failure_set(ZrDebugEvaluateFailure *failure,
  * - \ref zr_debug_frame_depth：本单元定义/声明（zr_vm_lib_debug/src/zr_vm_lib_debug/debug_internal.h:233）。
  * - \ref zr_debug_agent_should_stop_for_step：配套调用或事件构造入口（zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:1414）。
  */
+
+/**
+ * @struct ZrDebugUnionView
+ * @unit UNION-001
+ *
+ * ## Summary
+ * 统一 boxed carrier 与暂停帧 inline union 的展示信息，使预览、子节点展开和受限成员访问共享名称与 payload 描述。
+ *
+ * ## Fields
+ * - `type_name`：固定容量、NUL 终止的展示类型名拷贝；允许截断。
+ * - `variant_name`：固定容量、NUL 终止的当前变体名拷贝；允许截断。
+ * - `entry_function`：可选的编译元数据上下文，借用函数而不持有引用。
+ * - `prototype`：可选 union 原型记录的借用地址。
+ * - `members`：可选原型成员数组，与 prototype 的成员数配套。
+ * - `variant_member`：可选已匹配变体成员，提供声明参数数量和装饰器索引。
+ * - `variant_metadata`：可选变体装饰器对象，由函数常量及 VM 维持存活。
+ * - `payload_fields`：可选 payloadFields 数组，不拥有数组或元素。
+ * - `payload_count`：有匹配变体时取声明参数数；boxed 降级视图可取自身内部字段条目数。
+ * - `tag_size`：inline 视图来自类型布局；boxed 视图仅在可选元数据提供整数时填写。
+ *
+ * ## Invariants and lifecycle
+ * 构造入口先清零。boxed 视图可在元数据指针均为空时仍成功，不能据此证明 canonical 类型身份；inline 视图已经验证 tag 范围但不保证每个 payload 布局可解码。名称是拷贝，其余对象/表指针均只借用，不构成 GC 根；不得跨函数释放或暂停帧恢复继续解引用。
+ *
+ * ## References
+ * - zr_debug_union_value_view。
+ * - zr_debug_inline_union_view。
+ * - zr_debug_union_payload_value_from_inline。
+ * - zr_debug_expand_union_value_handle。
+ */
+
+/**
+ * @fn TZrBool zr_debug_value_is_union_carrier(SZrState *state, const SZrTypeValue *value)
+ * @unit UNION-045
+ *
+ * ## Summary
+ * 检查对象能否提供字符串型内部 variant 字段，为 union 形状分支提供窄判别。
+ *
+ * ## Parameters
+ * @param[in,out] state 借用 VM 状态，查字段名可能分配字符串键。
+ * @param[in] value 借用 OBJECT/ARRAY 值；其它标签或空对象不匹配。
+ *
+ * ## Returns
+ * @return TRUE 只说明内部 variant 字段读取到非空字符串对象；FALSE 表示类型/字段不满足。
+ *
+ * ## Constraints and lifecycle
+ * 不要求 type 字段、原型记录或 canonical 事实，不证明对象由编译器生成。可经原型取得字段，不调用脚本 getter但可能分配或 Throw。
+ *
+ * ## References
+ * - zr_debug_union_object_string_field。
+ * - zr_debug_value_child_shape。
+ * - zr_debug_evaluate_with_policy。
+ */
+
+/**
+ * @fn TZrSize zr_debug_count_union_carrier_payload_fields(SZrState *state, const SZrTypeValue *value)
+ * @unit UNION-046
+ *
+ * ## Summary
+ * 统计 carrier 自身哈希表内采用内部 payload 数字键的条目，为子节点形状和缺编译元数据时的展示提供数量。
+ *
+ * ## Parameters
+ * @param[in] state 借用状态，用于把字符串对象解释成原生文本。
+ * @param[in] value 借用 OBJECT/ARRAY 值；空值、无对象或无有效 nodeMap 时计零。
+ *
+ * ## Returns
+ * @return 返回自身哈希条目中前缀和十进制后缀可解析的数量；零不能区分无 payload 与无效输入。
+ *
+ * ## Constraints and lifecycle
+ * 只计自身表，不计原型继承字段；不是最大索引加一，不保证索引连续，也不校验编译来源。
+ *
+ * ## References
+ * - zr_debug_union_value_view。
+ * - zr_debug_value_child_shape。
+ * - zr_debug_union_parse_payload_index。
+ */
+
+/**
+ * @fn TZrBool zr_debug_union_value_view(ZrDebugAgent *agent, const SZrTypeValue *value, ZrDebugUnionView *outView)
+ * @unit UNION-047
+ *
+ * ## Summary
+ * 为 boxed carrier 构造统一 union 展示视图，先使用运行时名称和自身 payload 数，再在名称匹配时补充编译原型。
+ *
+ * ## Parameters
+ * @param[in,out] agent 借用调试代理及 state，元数据字段名读取可能分配。
+ * @param[in] value 借用非空 OBJECT/ARRAY carrier 值。
+ * @param[out] outView 非 NULL 的独立视图槽，入口清零；名称为固定容量拷贝，元数据指针均借用。
+ *
+ * ## Returns
+ * @return TRUE 表示取得非空 variant 文本并完成展示视图；即使没有匹配编译原型也可 TRUE。
+ *
+ * ## Constraints and lifecycle
+ * 有匹配变体时 payload_count 改为声明参数数；否则保留自身字段计数。名称可截断，视图不是类型身份认证；对象、函数元数据及暂停上下文必须保持有效。字段读取可 Throw。
+ *
+ * ## References
+ * - zr_debug_union_find_prototype_record_by_name。
+ * - zr_debug_union_find_variant_member。
+ * - zr_debug_expand_union_value_handle。
+ */
+
+/**
+ * @fn TZrBool zr_debug_inline_union_view(ZrDebugAgent *agent, const SZrFunction *function, const SZrFunctionFrameSlotLayout *slotLayout, const SZrStackFramePlace *place, ZrDebugUnionView *outView)
+ * @unit UNION-048
+ *
+ * ## Summary
+ * 从暂停帧的 inline union 存储读取 tag，并连接函数布局、编译原型和变体元数据形成展示视图。
+ *
+ * ## Parameters
+ * @param[in,out] agent 借用提供 state 的代理，元数据字段读取可能分配。
+ * @param[in] function 借用当前有效函数及其帧布局上下文。
+ * @param[in] slotLayout 借用该函数中 INLINE_STRUCT 且有 typeLayoutId 的槽布局。
+ * @param[in] place 借用已取得的槽地址及 byteSize，至少在本次暂停访问期间有效。
+ * @param[out] outView 非 NULL 的输出视图，入口清零；成功时交付拷贝名称和借用元数据。
+ *
+ * ## Returns
+ * @return TRUE 表示 union 类型布局、tag边界、原型及tag对应变体均有效；FALSE 可留下已清零或部分构建的视图。
+ *
+ * ## Constraints and lifecycle
+ * 读取 tag 前验证宽度和 place 边界；不证明所有 payload 字段都可解码。元数据读取仍可能分配/Throw；继续执行或函数释放后不可继续借用该视图。
+ *
+ * ## References
+ * - ZrCore_Function_ResolvePrototypeFrameTypeLayout。
+ * - zr_debug_union_find_variant_by_tag。
+ * - zr_debug_inline_union_slot_view。
+ */
+
+/**
+ * @fn TZrBool zr_debug_inline_union_slot_view(ZrDebugAgent *agent, const SZrFunction *function, const SZrCallInfo *callInfo, TZrUInt32 stackSlot, SZrStackFramePlace *outPlace, ZrDebugUnionView *outView)
+ * @unit UNION-049
+ *
+ * ## Summary
+ * 将当前调用帧的指定 inline 槽解析为可读原始地址与 union 视图，供展开、预览及 legacy 物化共用。
+ *
+ * ## Parameters
+ * @param[in,out] agent 借用提供 state 的代理，后续视图构造可分配。
+ * @param[in] function 借用与 callInfo/stackSlot 相符的函数。
+ * @param[in] callInfo 借用仍存活且 functionBase.valuePointer 非空的调用帧。
+ * @param[in] stackSlot 函数帧布局中的槽号。
+ * @param[out] outPlace 可为 NULL；非空入口清零，只有整体成功后发布槽地址。
+ * @param[out] outView 必需视图，非空入口清零；底层视图构造失败可留下部分内容。
+ *
+ * ## Returns
+ * @return TRUE 表示槽为 inline struct、帧位置取得成功并可识别为 union；FALSE 表示任一步不满足。
+ *
+ * ## Constraints and lifecycle
+ * frameBase 为函数基指针之后一个值槽；要求在同一暂停窗口访问，不能跨恢复执行保存 place 地址。普通失败不等同捕获 Throw。
+ *
+ * ## References
+ * - ZrCore_Function_FindFrameSlotLayout。
+ * - ZrCore_Function_MakeFrameSlotPlace。
+ * - zr_debug_inline_union_view。
+ */
+
+/**
+ * @fn TZrBool zr_debug_union_payload_display_name(SZrState *state, const ZrDebugUnionView *view, TZrUInt32 payloadIndex, TZrChar *buffer, TZrSize bufferSize)
+ * @unit UNION-050
+ *
+ * ## Summary
+ * 为 payload 子节点选择装饰器用户名称，缺失时生成 payloadN，统一展示与受限成员查找的名称。
+ *
+ * ## Parameters
+ * @param[in,out] state 可为空；非空时用于借用元数据字段，查询可分配。
+ * @param[in] view 可为空；缺少 payload_fields 时使用编号回退。
+ * @param[in] payloadIndex 欲展示的零基 payload 序号，本函数不校验 payload_count。
+ * @param[out] buffer 非空、至少 bufferSize 字节的写入缓冲区。
+ * @param[in] bufferSize 必须大于零，包括结尾 NUL；容量不足会截断。
+ *
+ * ## Returns
+ * @return TRUE 表示有效输出缓冲区已写元数据名称或编号回退；FALSE 只表示缓冲区为空或零容量。
+ *
+ * ## Constraints and lifecycle
+ * 入口在有容量时先清零；名称截断不视为失败。输入元数据及文本只借用；元数据查询仍可能 Throw。
+ *
+ * ## References
+ * - zr_debug_union_array_object_at。
+ * - zr_debug_union_safe_get_member_value。
+ * - zr_debug_expand_inline_union_handle。
+ */
+
+/**
+ * @fn TZrBool zr_debug_union_payload_value_from_carrier(ZrDebugAgent *agent, const SZrTypeValue *value, const ZrDebugUnionView *view, TZrUInt32 payloadIndex, SZrTypeValue *outValue)
+ * @unit UNION-051
+ *
+ * ## Summary
+ * 从 boxed carrier 直接读取一个内部 payload，缺槽时保留可展示的 null，供展开及受限成员求值。
+ *
+ * ## Parameters
+ * @param[in,out] agent 借用提供 state 的代理，内部字段名和键读取可分配。
+ * @param[in] value 借用非空 OBJECT/ARRAY carrier；须与 outValue 独立。
+ * @param[in] view 可为空，只参与内部名选择；本函数不重新验证整个视图。
+ * @param[in] payloadIndex 调用者验证的 payload 序号，本函数不检查 payload_count。
+ * @param[out] outValue 非 NULL 输出，入口重置为 null；成功时为存储值的浅拷贝。
+ *
+ * ## Returns
+ * @return TRUE 表示字段取得或字段缺失按 null 展示；FALSE 表示参数或名称缓冲区规则不满足。
+ *
+ * ## Constraints and lifecycle
+ * NULL 字段也可能来自字符串键创建普通失败，故 TRUE/null 不是强错误区分。浅拷贝不增加所有权或独立 GC 根；源 carrier 必须维持存活。Throw 可非局部退出。
+ *
+ * ## References
+ * - zr_debug_union_object_get_field。
+ * - zr_debug_union_payload_internal_name。
+ * - zr_debug_union_safe_get_member_value。
+ */
+
+/**
+ * @fn TZrBool zr_debug_union_payload_value_from_inline(ZrDebugAgent *agent, const SZrFunction *function, const SZrStackFramePlace *place, const ZrDebugUnionView *view, TZrUInt32 payloadIndex, SZrTypeValue *outValue)
+ * @unit UNION-052
+ *
+ * ## Summary
+ * 根据当前变体的 payload 元数据读取暂停帧字节，为 inline 展开或 carrier 物化提供一个值。
+ *
+ * ## Parameters
+ * @param[in,out] agent 借用 state，元数据读取和带所有权值的复制可分配。
+ * @param[in] function 必须非空的当前函数上下文；当前函数体仅保留该参数，不参与字段解码。
+ * @param[in] place 借用有效地址和完整 byteSize 的帧槽位置。
+ * @param[in] view 借用与该槽当前变体对应的视图及 payload_fields。
+ * @param[in] payloadIndex 必须小于 view->payload_count 的零基序号。
+ * @param[out] outValue 非 NULL 独立输出，入口重置为 null，不释放其旧资源。
+ *
+ * ## Returns
+ * @return TRUE 表示字段元数据可解释、offset/size 落在 place 内且底层解码返回成功；FALSE 时输出通常为入口 null。
+ *
+ * ## Constraints and lifecycle
+ * 不验证 place 与 view 的身份一致性，调用者须从同一次槽视图取得二者。地址只在暂停帧有效；布局启发式 TODO 与 Copy/分配 Throw 限制均沿用。
+ *
+ * ## References
+ * - zr_debug_union_payload_field_layout。
+ * - zr_debug_union_load_field。
+ * - zr_debug_inline_union_slot_view。
+ */
+
+/**
+ * @fn TZrBool zr_debug_materialize_inline_union_slot(ZrDebugAgent *agent, const SZrFunction *function, const SZrCallInfo *callInfo, TZrUInt32 stackSlot, SZrTypeValue *outValue)
+ * @unit UNION-053
+ *
+ * ## Summary
+ * 在 legacy 标识符解析需要值对象时，将当前 inline union 槽物化成包含类型、变体与 payload 的 carrier。
+ *
+ * ## Parameters
+ * @param[in,out] agent 借用当前暂停代理与 state，创建对象和写字段可分配/Throw。
+ * @param[in] function 借用与调用帧和槽号相符的函数。
+ * @param[in] callInfo 借用仍处于当前暂停窗口的调用帧。
+ * @param[in] stackSlot 欲物化的 inline union 槽号。
+ * @param[out] outValue 非 NULL 独立输出，入口重置为 null，只有全部字段成功后才发布 carrier。
+ *
+ * ## Returns
+ * @return TRUE 表示 carrier 已完整构建并发布；普通失败返回 FALSE，输出保持 null；Throw 可绕过普通返回。
+ *
+ * ## Constraints and lifecycle
+ * BUG: 允许 legacy fallback 的公开求值在解析失败表达式左侧 inline union 局部变量时可达；对象被显式 Ignore 后本路径及句柄清理都无 Unignore，成功重复物化或后续构造失败均可使 carrier 根滞留至 VM/GC 销毁。先前字段无回滚；本注释仅记录完整静态路径，未运行故障复现。
+ *
+ * ## References
+ * - zr_debug_resolve_identifier_value。
+ * - ZrCore_GarbageCollector_IgnoreObject。
+ * - ZrCore_GarbageCollector_UnignoreObject。
+ * - zr_debug_variable_handles_clear。
+ */
+
+/**
+ * @fn TZrBool zr_debug_union_safe_get_member_value(ZrDebugAgent *agent, const SZrTypeValue *receiver, const TZrChar *memberName, SZrTypeValue *outValue)
+ * @unit UNION-054
+ *
+ * ## Summary
+ * 为 boxed union 暴露受限的 type、variant 和 payload 名称访问，使用直接存储而不执行脚本 getter。
+ *
+ * ## Parameters
+ * @param[in,out] agent 借用调试代理和 state，名称或字段查询可分配/Throw。
+ * @param[in] receiver 借用可构造 union 展示视图的 OBJECT/ARRAY 值，不与输出重叠。
+ * @param[in] memberName 借用 NUL 终止的请求名称。
+ * @param[out] outValue 非 NULL 输出，入口清为 null；类型/变体为 VM 字符串，payload 为浅拷贝。
+ *
+ * ## Returns
+ * @return TRUE 表示命中 type/variant、有效编号或匹配的展示名并交付结果；FALSE 表示输入/视图/成员不满足。
+ *
+ * ## Constraints and lifecycle
+ * 只读语义不保证零分配；不存在脚本 getter 派发不等于可以绕过正式求值策略。名称截断及 payload 浅借用规则沿用下层。
+ *
+ * ## References
+ * - zr_debug_union_value_view。
+ * - zr_debug_union_make_string_value。
+ * - zr_debug_safe_get_member_value。
+ * - zr_debug_expand_union_value_handle。
+ */
+
+/**
+ * @fn TZrBool zr_debug_format_union_value_text(ZrDebugAgent *agent, const SZrTypeValue *value, TZrChar *buffer, TZrSize bufferSize)
+ * @unit UNION-055
+ *
+ * ## Summary
+ * 在普通值预览之前尝试生成 boxed union 的类型与变体文本，供 snapshot 及公开求值结果复用。
+ *
+ * ## Parameters
+ * @param[in,out] agent 借用调试代理与 state，构造展示视图时可分配。
+ * @param[in] value 借用待识别的 carrier 值。
+ * @param[out] buffer 非空且可写的输出文本缓冲区，有容量时入口清空。
+ * @param[in] bufferSize 必须大于零，包含结尾 NUL。
+ *
+ * ## Returns
+ * @return TRUE 表示成功构成 union 视图并格式化，文本可截断；FALSE 表示缓冲区或视图条件不满足，调用者可采用其它格式器。
+ *
+ * ## Constraints and lifecycle
+ * 不校验 canonical 类型身份，不承诺无分配或捕获 Throw；输出只是停点时的展示文本，不延长底层值存活。
+ *
+ * ## References
+ * - zr_debug_union_value_view。
+ * - zr_debug_format_inline_union_text。
+ * - zr_debug_fill_value_preview。
+ * - zr_debug_evaluate_with_policy。
+ */
+
+/**
+ * @fn void zr_debug_format_inline_union_text(const ZrDebugUnionView *view, TZrChar *buffer, TZrSize bufferSize)
+ * @unit UNION-056
+ *
+ * ## Summary
+ * 将已构成的 union 视图格式化为固定的类型.变体预览，不再读取 VM 字段。
+ *
+ * ## Parameters
+ * @param[in] view 借用视图，可为 NULL；非空时两个固定容量名称应已 NUL 终止。
+ * @param[out] buffer 可为空；非空且有容量时写入文本并保证结尾 NUL。
+ * @param[in] bufferSize 缓冲区总容量；零表示不写入。
+ *
+ * ## Returns
+ * 无返回值；无效缓冲区直接返回，NULL 视图使有效缓冲区保持空串，正常输出允许截断。
+ *
+ * ## Constraints and lifecycle
+ * 只读取视图内已拷贝名称，无分配或字段访问；不由文本判断原型有效性。
+ *
+ * ## References
+ * - zr_debug_format_union_value_text。
+ * - zr_debug_fill_inline_union_preview。
+ */
