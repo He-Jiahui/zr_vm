@@ -239,6 +239,35 @@ static TZrBool ownership_move_expression_is_direct_reference(
            expression->data.primaryExpression.property == fact->node;
 }
 
+/* Rejected arguments have no resolved CALL; retain their explicit wake contract. */
+static TZrBool ownership_weak_read_has_rejected_argument_evidence(
+        const SZrSemanticContext *context,
+        SZrAstNode *expression,
+        const SZrSemanticReferenceFact *fact) {
+    TZrSize index;
+
+    if (context == ZR_NULL || !context->ownershipFacts.isValid ||
+        fact == ZR_NULL || fact->kind != ZR_SEMANTIC_REFERENCE_READ ||
+        !fact->isResolved || fact->symbolId == ZR_SEMANTIC_ID_INVALID ||
+        fact->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_WEAK ||
+        !ownership_move_node_contains_fact(expression, fact)) {
+        return ZR_FALSE;
+    }
+    for (index = 0; index < context->ownershipFacts.length; index++) {
+        const SZrSemanticOwnershipFact *error =
+                (const SZrSemanticOwnershipFact *)ZrCore_Array_Get(
+                        (SZrArray *)&context->ownershipFacts, index);
+        if (error != ZR_NULL &&
+            error->kind == ZR_SEMANTIC_OWNERSHIP_FACT_ERROR &&
+            error->qualifier == ZR_OWNERSHIP_QUALIFIER_WEAK &&
+            error->isViolation && error->requiresWake &&
+            ownership_move_expression_is_direct_reference(error->node, fact)) {
+            return ZR_TRUE;
+        }
+    }
+    return ZR_FALSE;
+}
+
 /* 从已解析调用事实沿符号声明找到实参对应形参；任何缺失环节都不推断参数模式。 */
 static const SZrParameter *ownership_move_argument_parameter(
         const SZrSemanticContext *context,
@@ -402,7 +431,7 @@ static TZrBool ownership_weak_read_has_error(
         if (error->node == fact->node &&
             error->kind == ZR_SEMANTIC_OWNERSHIP_FACT_ERROR &&
             error->qualifier == ZR_OWNERSHIP_QUALIFIER_WEAK &&
-            error->isViolation) {
+            error->isViolation && error->requiresWake) {
             return ZR_TRUE;
         }
     }
@@ -693,8 +722,9 @@ TZrBool ZrParser_DataflowOwnership_StatementWeakReadRequiresWake(
         const SZrSemanticContext *context,
         SZrAstNode *statement,
         const SZrSemanticReferenceFact *fact) {
-    return ownership_weak_expression_requires_wake(
-            context,
-            ownership_move_statement_expression(statement),
-            fact);
+    SZrAstNode *expression = ownership_move_statement_expression(statement);
+
+    return ownership_weak_read_has_rejected_argument_evidence(
+                   context, expression, fact) ||
+           ownership_weak_expression_requires_wake(context, expression, fact);
 }

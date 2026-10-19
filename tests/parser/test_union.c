@@ -931,7 +931,7 @@ static void test_union_owner_payload_metadata_marks_value_slot_ownership(void) {
                                         "__zr_unionPayload0",
                                         "Box");
     assert_compiled_object_int_field(handleField, "byteSize", (TZrInt64)sizeof(SZrTypeValue));
-    assert_compiled_object_int_field(handleField, "byteAlign", (TZrInt64)ZR_ALIGN_SIZE);
+    assert_compiled_object_int_field(handleField, "byteAlign", (TZrInt64)_Alignof(SZrTypeValue));
     assert_compiled_object_int_field(handleField,
                                      "ownershipQualifier",
                                      ZR_OWNERSHIP_QUALIFIER_SHARED);

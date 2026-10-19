@@ -3,6 +3,8 @@
 //
 
 #include "compiler/expression/compile_expression_internal.h"
+#include "compiler/compiler_child_function_relocation.h"
+#include "compiler/compiler_function_parameters.h"
 #include "compiler/compiler_typed_call_binding.h"
 
 void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
@@ -54,6 +56,9 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     SZrFunctionClosureVariable *savedParentClosureVars = ZR_NULL;
     SZrCompilerArraySnapshot savedParentChildFunctions = {0};
     SZrCompilerArraySnapshot savedParentChildFunctionNameMap = {0};
+    SZrCompilerArraySnapshot savedParentLocalBindingIdentities = {0};
+    SZrCompilerArraySnapshot savedParentClosureBindingIdentities = {0};
+    SZrCompilerArraySnapshot savedParentChildFunctionBindingIdentities = {0};
     SZrCompilerCallableTypeScope callableTypeScope = {0};
     SZrCompilerSemanticIrIsolation semanticIrIsolation = {0};
     TZrSize oldStackSlotTypeHintScopeStart = 0;
@@ -126,7 +131,41 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
         memcpy(savedParentClosureVars, cs->closureVars.head, savedParentClosureVarsSize);
     }
 
+    if (!compiler_capture_array_snapshot(
+                cs, &cs->localBindingIdentities, &savedParentLocalBindingIdentities) ||
+        !compiler_capture_array_snapshot(
+                cs, &cs->closureBindingIdentities, &savedParentClosureBindingIdentities) ||
+        !compiler_capture_array_snapshot(
+                cs,
+                &cs->childFunctionBindingIdentities,
+                &savedParentChildFunctionBindingIdentities)) {
+        compiler_release_array_snapshot(cs, &savedParentLocalBindingIdentities);
+        compiler_release_array_snapshot(cs, &savedParentClosureBindingIdentities);
+        compiler_release_array_snapshot(cs, &savedParentChildFunctionBindingIdentities);
+        if (savedParentInstructions != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentInstructions, savedParentInstructionsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        if (savedParentLocalVars != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentLocalVars, savedParentLocalVarsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        if (savedParentConstants != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentConstants, savedParentConstantsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        if (savedParentClosureVars != ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentClosureVars, savedParentClosureVarsSize,
+                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        ZrParser_Compiler_Error(cs, "Failed to backup parent binding identities for lambda expression", node->location);
+        return;
+    }
+
     if (!compiler_capture_array_snapshot(cs, &cs->childFunctions, &savedParentChildFunctions)) {
+        compiler_release_array_snapshot(cs, &savedParentLocalBindingIdentities);
+        compiler_release_array_snapshot(cs, &savedParentClosureBindingIdentities);
+        compiler_release_array_snapshot(cs, &savedParentChildFunctionBindingIdentities);
         if (savedParentInstructions != ZR_NULL) {
             ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentInstructions, savedParentInstructionsSize,
                                     ZR_MEMORY_NATIVE_TYPE_FUNCTION);
@@ -148,6 +187,9 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     if (!compiler_capture_array_snapshot(cs, &cs->childFunctionNameMap, &savedParentChildFunctionNameMap)) {
+        compiler_release_array_snapshot(cs, &savedParentLocalBindingIdentities);
+        compiler_release_array_snapshot(cs, &savedParentClosureBindingIdentities);
+        compiler_release_array_snapshot(cs, &savedParentChildFunctionBindingIdentities);
         if (savedParentInstructions != ZR_NULL) {
             ZrCore_Memory_RawFreeWithType(cs->state->global, savedParentInstructions, savedParentInstructionsSize,
                                     ZR_MEMORY_NATIVE_TYPE_FUNCTION);
@@ -200,6 +242,9 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
         }
         compiler_release_array_snapshot(cs, &savedParentChildFunctions);
         compiler_release_array_snapshot(cs, &savedParentChildFunctionNameMap);
+        compiler_release_array_snapshot(cs, &savedParentLocalBindingIdentities);
+        compiler_release_array_snapshot(cs, &savedParentClosureBindingIdentities);
+        compiler_release_array_snapshot(cs, &savedParentChildFunctionBindingIdentities);
         cs->isInConstructor = oldIsInConstructor;
         cs->initializationPhase = oldInitializationPhase;
         cs->currentFunctionNode = oldFunctionNode;
@@ -221,10 +266,13 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     // 清空数组（但保留已分配的内存）
     cs->instructions.length = 0;
     cs->localVars.length = 0;
+    cs->localBindingIdentities.length = 0;
     cs->constants.length = 0;
     cs->closureVars.length = 0;
+    cs->closureBindingIdentities.length = 0;
     cs->childFunctions.length = 0;
     cs->childFunctionNameMap.length = 0;
+    cs->childFunctionBindingIdentities.length = 0;
     cs->cachedNullConstantIndex = 0;
     cs->hasCachedNullConstantIndex = ZR_FALSE;
     
@@ -259,7 +307,8 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
                     SZrString *paramName = param->name->name;
                     if (paramName != ZR_NULL) {
                         // 分配参数槽位
-                        TZrUInt32 parameterSlot = allocate_local_var(cs, paramName);
+                        TZrUInt32 parameterSlot = allocate_local_var_with_context(
+                                cs, paramName, param->name->syntaxContext);
                         parameterCount++;
                         compiler_register_typed_owner_cleanup_slot(
                                 cs, parameterSlot, param->typeInfo);
@@ -267,9 +316,10 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
 
                         if (callableTypeScope.child != ZR_NULL) {
                             SZrInferredType paramType;
+                            TZrBool registered;
                             if (param->typeInfo != ZR_NULL &&
                                 ZrParser_AstTypeToInferredType_Convert(cs, param->typeInfo, &paramType)) {
-                                ZrParser_TypeEnvironment_RegisterVariableEx(
+                                registered = ZrParser_TypeEnvironment_RegisterVariableEx(
                                         cs->state,
                                         cs->typeEnv,
                                         paramName,
@@ -277,11 +327,19 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
                                         paramNode,
                                         paramNode->location);
                                 ZrParser_InferredType_Free(cs->state, &paramType);
-                                if (!compiler_register_typed_callable_parameter(cs, paramName, param->typeInfo))
+                                if (!registered) {
+                                    ZrParser_Compiler_Error(cs, "Cannot register lambda parameter type", paramNode->location);
+                                    goto lambda_type_scope_cleanup;
+                                }
+                                if (!compiler_register_typed_callable_annotation(
+                                            cs, paramName, param->typeInfo,
+                                            param->name->syntaxContext)) {
                                     ZrParser_Compiler_Error(cs, "Cannot register typed callable parameter", paramNode->location);
+                                    goto lambda_type_scope_cleanup;
+                                }
                             } else {
                                 ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
-                                ZrParser_TypeEnvironment_RegisterVariableEx(
+                                registered = ZrParser_TypeEnvironment_RegisterVariableEx(
                                         cs->state,
                                         cs->typeEnv,
                                         paramName,
@@ -289,6 +347,17 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
                                         paramNode,
                                         paramNode->location);
                                 ZrParser_InferredType_Free(cs->state, &paramType);
+                                if (!registered) {
+                                    ZrParser_Compiler_Error(cs, "Cannot register lambda parameter type", paramNode->location);
+                                    goto lambda_type_scope_cleanup;
+                                }
+                            }
+                            if (compiler_register_parameter_semantic_identity(
+                                        cs, paramName, param->name->syntaxContext,
+                                        parameterSlot, paramNode->location) ==
+                                        ZR_COMPILER_PARAMETER_IDENTITY_ERROR) {
+                                ZrParser_Compiler_Error(cs, "Cannot register lambda parameter identity", paramNode->location);
+                                goto lambda_type_scope_cleanup;
                             }
                         }
                     }
@@ -304,11 +373,21 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
         parentCompilerSnapshot.localVars.length = oldLocalVarLength;
         parentCompilerSnapshot.localVars.capacity = oldLocalVarLength;
         parentCompilerSnapshot.localVars.isValid = ZR_TRUE;
+        parentCompilerSnapshot.localBindingIdentities.head = savedParentLocalBindingIdentities.data;
+        parentCompilerSnapshot.localBindingIdentities.elementSize = savedParentLocalBindingIdentities.elementSize;
+        parentCompilerSnapshot.localBindingIdentities.length = savedParentLocalBindingIdentities.length;
+        parentCompilerSnapshot.localBindingIdentities.capacity = savedParentLocalBindingIdentities.length;
+        parentCompilerSnapshot.localBindingIdentities.isValid = ZR_TRUE;
         parentCompilerSnapshot.closureVars.head = (TZrByte *)savedParentClosureVars;
         parentCompilerSnapshot.closureVars.elementSize = sizeof(SZrFunctionClosureVariable);
         parentCompilerSnapshot.closureVars.length = oldClosureVarLength;
         parentCompilerSnapshot.closureVars.capacity = oldClosureVarLength;
         parentCompilerSnapshot.closureVars.isValid = ZR_TRUE;
+        parentCompilerSnapshot.closureBindingIdentities.head = savedParentClosureBindingIdentities.data;
+        parentCompilerSnapshot.closureBindingIdentities.elementSize = savedParentClosureBindingIdentities.elementSize;
+        parentCompilerSnapshot.closureBindingIdentities.length = savedParentClosureBindingIdentities.length;
+        parentCompilerSnapshot.closureBindingIdentities.capacity = savedParentClosureBindingIdentities.length;
+        parentCompilerSnapshot.closureBindingIdentities.isValid = ZR_TRUE;
         parentCompilerSnapshot.typeEnv = callableTypeScope.parent;
         parentCompilerSnapshot.preSemanticIr = semanticIrIsolation.function;
         parentCompilerSnapshot.preSemanticIrSlots = semanticIrIsolation.slots;
@@ -394,7 +473,9 @@ lambda_type_scope_cleanup:
         }
     }
 
-    compiler_semantic_ir_isolation_end(cs, &semanticIrIsolation);
+    if (semanticIrIsolation.isActive) {
+        compiler_semantic_ir_isolation_end(cs, &semanticIrIsolation);
+    }
     if (callableTypeScope.child != ZR_NULL &&
         !compiler_callable_type_scope_end(cs, &callableTypeScope)) {
         ZrParser_Compiler_Error(
@@ -437,14 +518,19 @@ lambda_type_scope_cleanup:
         cs->hasCachedNullConstantIndex = oldHasCachedNullConstantIndex;
         cs->instructions.length = oldInstructionLength;
         cs->localVars.length = oldLocalVarLength;
+        compiler_restore_array_snapshot(cs, &cs->localBindingIdentities, &savedParentLocalBindingIdentities);
         cs->constants.length = oldConstantLength;
         cs->closureVars.length = oldClosureVarLength;
+        compiler_restore_array_snapshot(cs, &cs->closureBindingIdentities, &savedParentClosureBindingIdentities);
         cs->executionLocations.length = oldExecutionLocationLength;
         cs->catchClauseInfos.length = oldCatchClauseInfoLength;
         cs->exceptionHandlerInfos.length = oldExceptionHandlerInfoLength;
         cs->tryContextStack.length = oldTryContextLength;
         compiler_restore_array_snapshot(cs, &cs->childFunctions, &savedParentChildFunctions);
         compiler_restore_array_snapshot(cs, &cs->childFunctionNameMap, &savedParentChildFunctionNameMap);
+        compiler_restore_array_snapshot(cs,
+                                        &cs->childFunctionBindingIdentities,
+                                        &savedParentChildFunctionBindingIdentities);
         cs->isInConstructor = oldIsInConstructor;
         cs->initializationPhase = oldInitializationPhase;
         cs->currentFunctionNode = oldFunctionNode;
@@ -515,6 +601,7 @@ lambda_type_scope_cleanup:
                 }
             }
             newFunc->childFunctionLength = (TZrUInt32)cs->childFunctions.length;
+            compiler_relocate_copied_child_constants(newFunc, srcArray);
             compiler_rebind_moved_child_constants(newFunc, srcArray);
             for (TZrSize i = 0; i < cs->childFunctions.length; i++) {
                 if (srcArray[i] != ZR_NULL) {
@@ -591,14 +678,19 @@ lambda_type_scope_cleanup:
     cs->hasCachedNullConstantIndex = oldHasCachedNullConstantIndex;
     cs->instructions.length = oldInstructionLength;
     cs->localVars.length = oldLocalVarLength;
+    compiler_restore_array_snapshot(cs, &cs->localBindingIdentities, &savedParentLocalBindingIdentities);
     cs->constants.length = oldConstantLength;
     cs->closureVars.length = oldClosureVarLength;
+    compiler_restore_array_snapshot(cs, &cs->closureBindingIdentities, &savedParentClosureBindingIdentities);
     cs->executionLocations.length = oldExecutionLocationLength;
     cs->catchClauseInfos.length = oldCatchClauseInfoLength;
     cs->exceptionHandlerInfos.length = oldExceptionHandlerInfoLength;
     cs->tryContextStack.length = oldTryContextLength;
     compiler_restore_array_snapshot(cs, &cs->childFunctions, &savedParentChildFunctions);
     compiler_restore_array_snapshot(cs, &cs->childFunctionNameMap, &savedParentChildFunctionNameMap);
+    compiler_restore_array_snapshot(cs,
+                                    &cs->childFunctionBindingIdentities,
+                                    &savedParentChildFunctionBindingIdentities);
     cs->isInConstructor = oldIsInConstructor;
     cs->initializationPhase = oldInitializationPhase;
     cs->currentFunctionNode = oldFunctionNode;
@@ -647,6 +739,13 @@ void compile_block_as_expression(SZrCompilerState *cs, SZrAstNode *blockNode) {
     }
     
     SZrBlock *block = &blockNode->data.block;
+    SZrCompilerCallableTypeScope blockTypeScope = {0};
+
+    if (!compiler_callable_type_scope_begin(cs, &blockTypeScope)) {
+        ZrParser_Compiler_Error(
+                cs, "Failed to isolate block expression types", blockNode->location);
+        return;
+    }
     
     // 进入新作用域
     enter_scope(cs);
@@ -659,8 +758,7 @@ void compile_block_as_expression(SZrCompilerState *cs, SZrAstNode *blockNode) {
             if (stmt != ZR_NULL) {
                 ZrParser_Statement_Compile(cs, stmt);
                 if (cs->hasError) {
-                    exit_scope(cs);
-                    return;
+                    goto block_cleanup;
                 }
             }
         }
@@ -715,8 +813,13 @@ void compile_block_as_expression(SZrCompilerState *cs, SZrAstNode *blockNode) {
         emit_instruction(cs, inst);
     }
     
+block_cleanup:
     // 退出作用域
     exit_scope(cs);
+    if (!compiler_callable_type_scope_end(cs, &blockTypeScope)) {
+        ZrParser_Compiler_Error(
+                cs, "Failed to restore block expression types", blockNode->location);
+    }
 }
 
 // 编译 If 表达式

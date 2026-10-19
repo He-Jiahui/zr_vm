@@ -1,6 +1,7 @@
 #include "type_inference_internal.h"
 #include "compiler/compiler_call_binding.h"
 #include "type_inference_call_diagnostics.h"
+#include "type_inference_nominal_member.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -401,6 +402,7 @@ static void member_resolution_capture_first_mismatch(SZrCompilerState *cs,
 
 static TZrBool member_resolution_scan_direct_members(SZrCompilerState *cs,
                                                      SZrString *typeName,
+                                                     const SZrTypePrototypeInfo *selectedPrototype,
                                                      SZrString *memberName,
                                                      SZrFunctionCall *call,
                                                      const SZrArray *callArgTypes,
@@ -418,7 +420,8 @@ static TZrBool member_resolution_scan_direct_members(SZrCompilerState *cs,
                                                       TZrBool *ioHasGenericDiagnostic,
                                                      TZrChar *ioGenericDiagnostic,
                                                      TZrSize genericDiagnosticSize) {
-    SZrTypePrototypeInfo *info;
+    const SZrTypePrototypeInfo *info;
+    SZrTypePrototypeInfo prototypeSnapshot;
     SZrArray membersSnapshot;
     SZrArray implementsSnapshot;
     SZrArray inheritsSnapshot;
@@ -434,11 +437,14 @@ static TZrBool member_resolution_scan_direct_members(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
-    info = find_compiler_type_prototype_inference(cs, typeName);
+    info = selectedPrototype != ZR_NULL ? selectedPrototype :
+            find_compiler_type_prototype_inference(cs, typeName);
     if (info == ZR_NULL) {
         return ZR_TRUE;
     }
 
+    prototypeSnapshot = *info;
+    info = &prototypeSnapshot;
     membersSnapshot = info->members;
     implementsSnapshot = info->implements;
     inheritsSnapshot = info->inherits;
@@ -536,12 +542,19 @@ static TZrBool member_resolution_scan_direct_members(SZrCompilerState *cs,
 
     for (TZrSize index = 0; index < implementsSnapshot.length; index++) {
         SZrString **implementedTypeNamePtr = (SZrString **)ZrCore_Array_Get(&implementsSnapshot, index);
-        if (implementedTypeNamePtr == ZR_NULL || *implementedTypeNamePtr == ZR_NULL ||
-            ZrCore_String_Equal(*implementedTypeNamePtr, typeName)) {
+        SZrTypePrototypeInfo *relatedPrototype;
+
+        if (implementedTypeNamePtr == ZR_NULL || *implementedTypeNamePtr == ZR_NULL) {
+            continue;
+        }
+        relatedPrototype = find_compiler_type_prototype_inference(cs, *implementedTypeNamePtr);
+        if (relatedPrototype == ZR_NULL ||
+            type_inference_member_prototypes_have_same_identity(cs, info, relatedPrototype)) {
             continue;
         }
         if (!member_resolution_scan_direct_members(cs,
                                                    *implementedTypeNamePtr,
+                                                   relatedPrototype,
                                                    memberName,
                                                    call,
                                                    callArgTypes,
@@ -568,12 +581,19 @@ static TZrBool member_resolution_scan_direct_members(SZrCompilerState *cs,
 
     for (TZrSize index = 0; index < inheritsSnapshot.length; index++) {
         SZrString **inheritTypeNamePtr = (SZrString **)ZrCore_Array_Get(&inheritsSnapshot, index);
-        if (inheritTypeNamePtr == ZR_NULL || *inheritTypeNamePtr == ZR_NULL ||
-            ZrCore_String_Equal(*inheritTypeNamePtr, typeName)) {
+        SZrTypePrototypeInfo *relatedPrototype;
+
+        if (inheritTypeNamePtr == ZR_NULL || *inheritTypeNamePtr == ZR_NULL) {
+            continue;
+        }
+        relatedPrototype = find_compiler_type_prototype_inference(cs, *inheritTypeNamePtr);
+        if (relatedPrototype == ZR_NULL ||
+            type_inference_member_prototypes_have_same_identity(cs, info, relatedPrototype)) {
             continue;
         }
         if (!member_resolution_scan_direct_members(cs,
                                                    *inheritTypeNamePtr,
+                                                   relatedPrototype,
                                                    memberName,
                                                    call,
                                                    callArgTypes,
@@ -601,13 +621,12 @@ static TZrBool member_resolution_scan_direct_members(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
-TZrBool find_compiler_type_member_call_inference(SZrCompilerState *cs,
-                                                 SZrString *typeName,
-                                                 SZrString *memberName,
-                                                 SZrFunctionCall *call,
-                                                 SZrFileRange location,
-                                                 SZrTypeMemberInfo **outMember) {
+static TZrBool find_compiler_type_member_call_for_prototype(
+        SZrCompilerState *cs, SZrString *typeName,
+        const SZrTypePrototypeInfo *selectedPrototype, SZrString *memberName,
+        SZrFunctionCall *call, SZrFileRange location, SZrTypeMemberInfo **outMember) {
     SZrArray callArgTypes;
+    SZrTypePrototypeInfo prototypeSnapshot;
     SZrTypeMemberInfo *bestMember = ZR_NULL;
     TZrInt32 bestScore = INT_MAX;
     TZrBool hasTie = ZR_FALSE;
@@ -628,6 +647,12 @@ TZrBool find_compiler_type_member_call_inference(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
+    /* Argument inference and generic signatures can grow the prototype table. */
+    if (selectedPrototype != ZR_NULL) {
+        prototypeSnapshot = *selectedPrototype;
+        selectedPrototype = &prototypeSnapshot;
+    }
+
     genericDiagnostic[0] = '\0';
     ZrParser_InferredType_Init(cs->state, &firstExpectedType, ZR_VALUE_TYPE_OBJECT);
     ZrParser_InferredType_Init(cs->state, &firstActualType, ZR_VALUE_TYPE_OBJECT);
@@ -639,6 +664,7 @@ TZrBool find_compiler_type_member_call_inference(SZrCompilerState *cs,
 
     if (!member_resolution_scan_direct_members(cs,
                                                typeName,
+                                               selectedPrototype,
                                                memberName,
                                                call,
                                                &callArgTypes,
@@ -695,7 +721,9 @@ TZrBool find_compiler_type_member_call_inference(SZrCompilerState *cs,
             ZrParser_InferredType_Free(cs->state, &firstActualType);
             return ZR_FALSE;
         }
-        bestMember = find_compiler_type_member_inference(cs, typeName, memberName);
+        bestMember = selectedPrototype != ZR_NULL ?
+                type_inference_find_member_on_prototype(cs, selectedPrototype, memberName) :
+                find_compiler_type_member_inference(cs, typeName, memberName);
         if (bestMember != ZR_NULL &&
             bestMember->accessorRole != ZR_PROPERTY_ACCESSOR_ROLE_NONE) {
             bestMember = ZR_NULL;
@@ -724,4 +752,20 @@ TZrBool find_compiler_type_member_call_inference(SZrCompilerState *cs,
     ZrParser_InferredType_Free(cs->state, &firstExpectedType);
     ZrParser_InferredType_Free(cs->state, &firstActualType);
     return ZR_TRUE;
+}
+
+TZrBool find_compiler_type_member_call_inference(
+        SZrCompilerState *cs, SZrString *typeName, SZrString *memberName,
+        SZrFunctionCall *call, SZrFileRange location, SZrTypeMemberInfo **outMember) {
+    return find_compiler_type_member_call_for_prototype(
+            cs, typeName, ZR_NULL, memberName, call, location, outMember);
+}
+
+TZrBool type_inference_find_member_call_on_prototype(
+        SZrCompilerState *cs, const SZrTypePrototypeInfo *prototype,
+        SZrString *memberName, SZrFunctionCall *call, SZrFileRange location,
+        SZrTypeMemberInfo **outMember) {
+    return find_compiler_type_member_call_for_prototype(
+            cs, prototype != ZR_NULL ? prototype->name : ZR_NULL,
+            prototype, memberName, call, location, outMember);
 }

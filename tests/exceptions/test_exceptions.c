@@ -547,7 +547,9 @@ static void test_ordinary_function_throw_is_not_wrapped(void) {
     TEST_DIVIDER();
 }
 
-/** @brief 通过 Unity 执行八项异常契约；测试框架由顶层 CMake 目标提供。 */
+#include "test_named_finally_completion_cases.h"
+
+/** @brief Run fifteen exception contracts through the top-level CMake Unity target. */
 int main(void) {
     UNITY_BEGIN();
 
@@ -563,6 +565,13 @@ int main(void) {
     RUN_TEST(test_return_from_catch_discards_frame_exception_handlers);
     RUN_TEST(test_caught_error_exposes_stack_frames_in_throw_order);
     RUN_TEST(test_ordinary_function_throw_is_not_wrapped);
+    RUN_TEST(test_named_conditional_return_preserves_both_pending_values);
+    RUN_TEST(test_named_both_arm_returns_preserve_values_and_run_finally_once);
+    RUN_TEST(test_named_throw_runs_finally_before_outer_catch);
+    RUN_TEST(test_named_linear_finally_conditional_return_preserves_values);
+    RUN_TEST(test_named_linear_finally_both_arm_returns_preserve_values);
+    RUN_TEST(test_named_linear_finally_throw_preserves_payload);
+    RUN_TEST(test_named_linear_finally_void_return_runs_cleanup);
 
     return UNITY_END();
 }

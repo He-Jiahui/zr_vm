@@ -391,6 +391,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionalColon(
         return ZR_TRUE;
     }
 
+    fixLocation = ZrParser_FileRange_WithoutEvidence(fixLocation);
     fixLocation.end = fixLocation.start;
     if (!ZrParser_StructuredDiagnostic_AddFix(
                 state,

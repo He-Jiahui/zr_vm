@@ -31,7 +31,7 @@ void tearDown(void) {
 
 /* 给 AST 和事实位置查询提供同一虚拟源文件，避免跨源同偏移命中。 */
 static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
-    SZrFileRange range;
+    SZrFileRange range = {0};
 
     range.start.offset = startOffset;
     range.start.line = 1;

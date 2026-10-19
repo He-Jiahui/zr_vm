@@ -418,9 +418,19 @@ static SZrCompilerSemanticIrSlot *compiler_semantic_ir_materialize_slot(
                         &cs->localVars, index - 1U);
         if (local != ZR_NULL && local->stackSlot == stackSlot &&
             local->name != ZR_NULL) {
+            if (index > cs->localBindingIdentities.length) {
+                break;
+            }
+            const SZrCompilerBindingIdentity *identity =
+                    (const SZrCompilerBindingIdentity *)ZrCore_Array_Get(
+                            &cs->localBindingIdentities, index - 1U);
+            if (identity == ZR_NULL) {
+                break;
+            }
             if (compiler_semantic_ir_register_local(
                         cs,
                         local->name,
+                        identity->syntaxContext,
                         stackSlot,
                         sourceRange,
                         ZR_TRUE)) {
@@ -1554,6 +1564,7 @@ TZrBool ZrParser_Compiler_ValidatePreSemanticIr(SZrCompilerState *cs) {
 
 TZrBool compiler_semantic_ir_register_local(SZrCompilerState *cs,
                                              SZrString *name,
+                                             SZrSyntaxContext syntaxContext,
                                              TZrUInt32 stackSlot,
                                              SZrFileRange sourceRange,
                                              TZrBool initialized) {
@@ -1577,7 +1588,8 @@ TZrBool compiler_semantic_ir_register_local(SZrCompilerState *cs,
     if (cs->preSemanticIrCfgTerminated) {
         return ZR_TRUE;
     }
-    binding = ZrParser_TypeEnvironment_FindVariableBinding(cs->typeEnv, name);
+    binding = ZrParser_TypeEnvironment_FindVariableBindingWithContext(
+            cs->typeEnv, name, syntaxContext);
     if (binding == ZR_NULL || binding->symbolId == ZR_SEMANTIC_ID_INVALID) {
         return ZR_FALSE;
     }
@@ -1963,10 +1975,15 @@ static TZrBool compiler_semantic_ir_has_untyped_local_legacy_fallback(
                 (const SZrFunctionLocalVariable *)ZrCore_Array_Get(
                         (SZrArray *)&cs->localVars, index - 1U);
         const SZrTypeBinding *binding;
+        const SZrCompilerBindingIdentity *identity;
         if (local == ZR_NULL || local->stackSlot != stackSlot ||
             local->name == ZR_NULL) continue;
-        binding = ZrParser_TypeEnvironment_FindVariableBinding(
-                cs->typeEnv, local->name);
+        if (index > cs->localBindingIdentities.length) return ZR_FALSE;
+        identity = (const SZrCompilerBindingIdentity *)ZrCore_Array_Get(
+                (SZrArray *)&cs->localBindingIdentities, index - 1U);
+        if (identity == ZR_NULL) return ZR_FALSE;
+        binding = ZrParser_TypeEnvironment_FindVariableBindingWithContext(
+                cs->typeEnv, local->name, identity->syntaxContext);
         return (TZrBool)(binding != ZR_NULL &&
                 binding->symbolId != ZR_SEMANTIC_ID_INVALID &&
                 binding->typeId == ZR_SEMANTIC_ID_INVALID);
@@ -2271,6 +2288,18 @@ TZrBool compiler_semantic_ir_lower_store(SZrCompilerState *cs,
         (compiler_semantic_ir_find_slot(cs, stackSlot) == ZR_NULL &&
          compiler_semantic_ir_has_untyped_local_legacy_fallback(cs, stackSlot))) {
         /* Match lower_load: an untyped local has no canonical place to store. */
+        emit_instruction(
+                cs,
+                create_instruction_1(
+                        ZR_INSTRUCTION_ENUM(SET_STACK),
+                        (TZrUInt16)stackSlot,
+                        (TZrInt32)valueSlot));
+        return ZR_TRUE;
+    }
+    if (cs != ZR_NULL && cs->preSemanticIrInitialized &&
+        valueSlot != ZR_PARSER_SLOT_NONE &&
+        compiler_semantic_ir_find_slot(cs, stackSlot) == ZR_NULL &&
+        compiler_semantic_ir_has_untyped_local_legacy_fallback(cs, stackSlot)) {
         emit_instruction(
                 cs,
                 create_instruction_1(

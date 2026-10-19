@@ -31,7 +31,7 @@ void tearDown(void) {
 
 // 所有合成节点共用一份单行源码坐标，使事实查询能按节点起点定位到对应 catch 语句。
 static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
-    SZrFileRange range;
+    SZrFileRange range = {0};
 
     range.start.offset = startOffset;
     range.start.line = 1;

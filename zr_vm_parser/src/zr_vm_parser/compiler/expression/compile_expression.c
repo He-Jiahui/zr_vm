@@ -4,7 +4,7 @@
 
 #include "compiler/expression/compile_expression_internal.h"
 #include "compiler/expression/compile_expression_contiguous_view.h"
-#include "compiler/semantic/compiler_semantic_compare.h"
+#include "compiler/expression/compile_expression_binary.h"
 #include "type_inference/type_inference_semantic_facts.h"
 #include "type_inference/type_inference_internal.h"
 #include "zr_vm_parser/const_assignment.h"
@@ -135,8 +135,10 @@ static TZrBool compile_assignment_capture_identifier_binding(SZrCompilerState *c
         return ZR_FALSE;
     }
 
-    binding = ZrParser_TypeEnvironment_FindVariableBinding(cs->typeEnv,
-                                                           left->data.identifier.name);
+    binding = ZrParser_TypeEnvironment_FindVariableBindingWithContext(
+            cs->typeEnv,
+            left->data.identifier.name,
+            left->data.identifier.syntaxContext);
     if (binding == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -444,318 +446,7 @@ static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node)
     }
 }
 
-// 编译二元表达式
-static void compile_binary_expression_from_slots(SZrCompilerState *cs, SZrAstNode *node,
-                                                   TZrUInt32 leftSlot, TZrUInt32 rightSlot) {
-    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
-        return;
-    }
-    
-    if (node->type != ZR_AST_BINARY_EXPRESSION) {
-        ZrParser_Compiler_Error(cs, "Expected binary expression", node->location);
-        return;
-    }
-    
-    const TZrChar *op = node->data.binaryExpression.op.op;
-    SZrAstNode *left = node->data.binaryExpression.left;
-    SZrAstNode *right = node->data.binaryExpression.right;
-    // 调试：检查操作符字符串
-    if (op == ZR_NULL) {
-        ZrParser_Compiler_Error(cs, "Binary operator string is NULL", node->location);
-        return;
-    }
-    
-    // 临时调试：输出操作符字符串的实际值
-    // 注意：这里使用 fprintf 来调试，确认 op 的实际值
-    // fprintf(stderr, "DEBUG: Binary operator op='%s' (first char=%d, len=%zu)\n", 
-    //         op, (int)(unsigned char)op[0], strlen(op));
-    
-    // 推断左右操作数的类型
-    SZrInferredType leftType, rightType, resultType;
-    EZrValueType effectiveLeftType = ZR_VALUE_TYPE_OBJECT;
-    EZrValueType effectiveRightType = ZR_VALUE_TYPE_OBJECT;
-    ZrParser_InferredType_Init(cs->state, &leftType, ZR_VALUE_TYPE_OBJECT);
-    ZrParser_InferredType_Init(cs->state, &rightType, ZR_VALUE_TYPE_OBJECT);
-    ZrParser_InferredType_Init(cs->state, &resultType, ZR_VALUE_TYPE_OBJECT);
-    TZrBool hasTypeInfo = ZR_FALSE;
-    if (cs->typeEnv != ZR_NULL) {
-        if (ZrParser_ExpressionType_Infer(cs, left, &leftType) && ZrParser_ExpressionType_Infer(cs, right, &rightType)) {
-            hasTypeInfo = ZR_TRUE;
-            effectiveLeftType = leftType.baseType;
-            effectiveRightType = rightType.baseType;
-            // 推断结果类型
-            if (!ZrParser_BinaryExpressionType_Infer(cs, node, &resultType)) {
-                // 类型推断失败，使用默认类型
-                ZrParser_InferredType_Init(cs->state, &resultType, ZR_VALUE_TYPE_OBJECT);
-            }
-        } else {
-            // 类型推断失败，清理已推断的类型
-            if (ZrParser_ExpressionType_Infer(cs, left, &leftType)) {
-                ZrParser_InferredType_Free(cs->state, &leftType);
-            }
-            if (ZrParser_ExpressionType_Infer(cs, right, &rightType)) {
-                ZrParser_InferredType_Free(cs->state, &rightType);
-            }
-        }
-    }
-    
-    // 编译左操作数
-    if (leftSlot == ZR_PARSER_SLOT_NONE) {
-        compile_expression_non_tail(cs, left);
-        leftSlot = cs->lastExpressionSlot;
-    }
-    if (leftSlot == ZR_PARSER_SLOT_NONE) {
-        ZrParser_Compiler_Error(cs, "Failed to compile left operand", node->location);
-        return;
-    }
-    
-    // 编译右操作数
-    if (rightSlot == ZR_PARSER_SLOT_NONE) {
-        compile_expression_non_tail(cs, right);
-        rightSlot = cs->lastExpressionSlot;
-    }
-    if (rightSlot == ZR_PARSER_SLOT_NONE) {
-        ZrParser_Compiler_Error(cs, "Failed to compile right operand", node->location);
-        return;
-    }
-    
-    // 如果需要类型转换，插入转换指令
-    // 注意：对于比较操作，需要保留 leftType 和 rightType 用于选择正确的比较指令
-    TZrBool isComparisonOp = (strcmp(op, "<") == 0 || strcmp(op, ">") == 0 || 
-                            strcmp(op, "<=") == 0 || strcmp(op, ">=") == 0 ||
-                            strcmp(op, "==") == 0 || strcmp(op, "!=") == 0);
-    TZrBool isShiftOp = (strcmp(op, "<<") == 0 || strcmp(op, ">>") == 0);
-    
-    if (hasTypeInfo) {
-        if (isComparisonOp) {
-            // 对于比较操作，不应该根据 resultType（布尔类型）来转换操作数
-            // 比较操作的结果才是布尔类型，但操作数应该保持其原始数值类型
-            // 实现完整的类型提升逻辑（例如：int 和 float 比较时，将 int 提升为 float）
-            // 类型提升规则：
-            // 1. 如果一个是float，另一个是int，将int提升为float
-            // 2. 如果一个是更大的整数类型，将较小的整数类型提升为较大的类型
-            // 3. 其他情况保持原类型
-            EZrValueType leftValueType = leftType.baseType;
-            EZrValueType rightValueType = rightType.baseType;
-            
-            // 检查是否需要类型提升
-            if (ZR_VALUE_IS_TYPE_FLOAT(leftValueType) && ZR_VALUE_IS_TYPE_SIGNED_INT(rightValueType)) {
-                // 左操作数是float，右操作数是int，将右操作数提升为float
-                TZrUInt32 promotedRightSlot = allocate_stack_slot(cs);
-                emit_type_conversion(cs, promotedRightSlot, rightSlot, ZR_INSTRUCTION_ENUM(TO_FLOAT));
-                rightSlot = promotedRightSlot;
-                effectiveRightType = ZR_VALUE_TYPE_DOUBLE;
-            } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(leftValueType) && ZR_VALUE_IS_TYPE_FLOAT(rightValueType)) {
-                // 左操作数是int，右操作数是float，将左操作数提升为float
-                TZrUInt32 promotedLeftSlot = allocate_stack_slot(cs);
-                emit_type_conversion(cs, promotedLeftSlot, leftSlot, ZR_INSTRUCTION_ENUM(TO_FLOAT));
-                leftSlot = promotedLeftSlot;
-                effectiveLeftType = ZR_VALUE_TYPE_DOUBLE;
-            } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(leftValueType) && ZR_VALUE_IS_TYPE_SIGNED_INT(rightValueType)) {
-                // 两个都是整数类型，提升到较大的类型
-                // 类型提升顺序：INT8 < INT16 < INT32 < INT64
-                // 注意：目前只有 TO_INT 指令（提升到 INT32），对于 INT16 和 INT64 的提升需要特殊处理
-                if (leftValueType < rightValueType) {
-                    // 左操作数类型较小，提升左操作数
-                    // 如果目标是 INT32 或更大，使用 TO_INT 提升到 INT32
-                    if (rightValueType == ZR_VALUE_TYPE_INT32 || rightValueType == ZR_VALUE_TYPE_INT64) {
-                        if (leftValueType < ZR_VALUE_TYPE_INT32) {
-                            TZrUInt32 promotedLeftSlot = allocate_stack_slot(cs);
-                            emit_type_conversion(cs, promotedLeftSlot, leftSlot, ZR_INSTRUCTION_ENUM(TO_INT));
-                            leftSlot = promotedLeftSlot;
-                            effectiveLeftType = ZR_VALUE_TYPE_INT64;
-                        }
-                    }
-                    // TODO: 对于 INT16 的提升，需要添加 TO_INT16 指令支持
-                } else if (rightValueType < leftValueType) {
-                    // 右操作数类型较小，提升右操作数
-                    // 如果目标是 INT32 或更大，使用 TO_INT 提升到 INT32
-                    if (leftValueType == ZR_VALUE_TYPE_INT32 || leftValueType == ZR_VALUE_TYPE_INT64) {
-                        if (rightValueType < ZR_VALUE_TYPE_INT32) {
-                            TZrUInt32 promotedRightSlot = allocate_stack_slot(cs);
-                            emit_type_conversion(cs, promotedRightSlot, rightSlot, ZR_INSTRUCTION_ENUM(TO_INT));
-                            rightSlot = promotedRightSlot;
-                            effectiveRightType = ZR_VALUE_TYPE_INT64;
-                        }
-                    }
-                    // TODO: 对于 INT16 的提升，需要添加 TO_INT16 指令支持
-                }
-            }
-            // 其他情况（如都是float，或类型不兼容）保持原类型
-        } else if (!isShiftOp) {
-            // 对于非比较操作，根据结果类型进行转换
-            // 检查左操作数是否需要转换
-            EZrInstructionCode leftConvOp = ZrParser_InferredType_GetConversionOpcode(&leftType, &resultType);
-            if (leftConvOp != ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
-                TZrUInt32 convertedLeftSlot = allocate_stack_slot(cs);
-                emit_type_conversion(cs, convertedLeftSlot, leftSlot, leftConvOp);
-                leftSlot = convertedLeftSlot;
-                effectiveLeftType = binary_expression_effective_type_after_conversion(leftType.baseType, leftConvOp);
-            }
-            
-            // 检查右操作数是否需要转换
-            EZrInstructionCode rightConvOp = ZrParser_InferredType_GetConversionOpcode(&rightType, &resultType);
-            if (rightConvOp != ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
-                TZrUInt32 convertedRightSlot = allocate_stack_slot(cs);
-                emit_type_conversion(cs, convertedRightSlot, rightSlot, rightConvOp);
-                rightSlot = convertedRightSlot;
-                effectiveRightType = binary_expression_effective_type_after_conversion(rightType.baseType, rightConvOp);
-            }
-            
-            // 对于非比较操作，可以立即清理类型信息
-            ZrParser_InferredType_Free(cs->state, &leftType);
-            ZrParser_InferredType_Free(cs->state, &rightType);
-        }
-        // resultType 在比较操作中需要使用，所以稍后清理
-    }
-    
-    TZrUInt32 destSlot = allocate_stack_slot(cs);
-    EZrInstructionCode opcode = ZR_INSTRUCTION_ENUM(ADD);  // 默认（通用加法指令）
-    if (hasTypeInfo && resultType.typeName != ZR_NULL) {
-        (void)note_inline_struct_field_result_slot(cs, destSlot, resultType.typeName);
-    }
-    
-    // 根据操作符和类型选择指令
-    // 临时调试输出：检查操作符字符串的实际值
-    // fprintf(stderr, "DEBUG: Binary operator op='%s' (first char=%d, len=%zu), hasTypeInfo=%d\n", 
-    //         op, (int)(unsigned char)op[0], strlen(op), hasTypeInfo);
-    
-    if (strcmp(op, "+") == 0 || strcmp(op, "-") == 0 || strcmp(op, "*") == 0 || strcmp(op, "/") == 0 ||
-        strcmp(op, "%") == 0 || strcmp(op, "**") == 0) {
-        opcode = compiler_select_binary_arithmetic_opcode(
-                op, hasTypeInfo, resultType.baseType, effectiveLeftType, effectiveRightType);
-    } else if (strcmp(op, "<<") == 0) {
-        opcode = hasTypeInfo && (ZR_VALUE_IS_TYPE_UNSIGNED_INT(effectiveLeftType) ||
-                                 ZR_VALUE_IS_TYPE_UNSIGNED_INT(effectiveRightType))
-                ? ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_LEFT)
-                : ZR_INSTRUCTION_ENUM(SHIFT_LEFT_INT);
-    } else if (strcmp(op, ">>") == 0) {
-        opcode = hasTypeInfo && (ZR_VALUE_IS_TYPE_UNSIGNED_INT(effectiveLeftType) ||
-                                 ZR_VALUE_IS_TYPE_UNSIGNED_INT(effectiveRightType))
-                ? ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_RIGHT)
-                : ZR_INSTRUCTION_ENUM(SHIFT_RIGHT_INT);
-    } else if (strcmp(op, "==") == 0) {
-        opcode = compiler_select_binary_equality_opcode(ZR_FALSE, hasTypeInfo, effectiveLeftType, effectiveRightType);
-    } else if (strcmp(op, "!=") == 0) {
-        opcode = compiler_select_binary_equality_opcode(ZR_TRUE, hasTypeInfo, effectiveLeftType, effectiveRightType);
-    } else if (strcmp(op, "<") == 0) {
-        // 根据操作数类型选择比较指令
-        // 对于比较操作，使用 leftType 或 rightType 来判断操作数类型（它们应该相同或兼容）
-        if (hasTypeInfo) {
-            // 优先检查是否有浮点数类型
-            if (leftType.baseType == ZR_VALUE_TYPE_FLOAT || leftType.baseType == ZR_VALUE_TYPE_DOUBLE ||
-                rightType.baseType == ZR_VALUE_TYPE_FLOAT || rightType.baseType == ZR_VALUE_TYPE_DOUBLE) {
-                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT);
-            } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftType.baseType) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightType.baseType)) {
-                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_UNSIGNED);
-            } else {
-                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED);
-            }
-        } else {
-            opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED);  // 默认使用有符号整数比较
-        }
-    } else if (strcmp(op, ">") == 0) {
-        if (hasTypeInfo) {
-            if (leftType.baseType == ZR_VALUE_TYPE_FLOAT || leftType.baseType == ZR_VALUE_TYPE_DOUBLE ||
-                rightType.baseType == ZR_VALUE_TYPE_FLOAT || rightType.baseType == ZR_VALUE_TYPE_DOUBLE) {
-                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT);
-            } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftType.baseType) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightType.baseType)) {
-                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_UNSIGNED);
-            } else {
-                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED);
-            }
-        } else {
-            opcode = ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED);
-        }
-    } else if (strcmp(op, "<=") == 0) {
-        if (hasTypeInfo) {
-            if (leftType.baseType == ZR_VALUE_TYPE_FLOAT || leftType.baseType == ZR_VALUE_TYPE_DOUBLE ||
-                rightType.baseType == ZR_VALUE_TYPE_FLOAT || rightType.baseType == ZR_VALUE_TYPE_DOUBLE) {
-                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_FLOAT);
-            } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftType.baseType) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightType.baseType)) {
-                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_UNSIGNED);
-            } else {
-                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_SIGNED);
-            }
-        } else {
-            opcode = ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_SIGNED);
-        }
-    } else if (strcmp(op, ">=") == 0) {
-        if (hasTypeInfo) {
-            if (leftType.baseType == ZR_VALUE_TYPE_FLOAT || leftType.baseType == ZR_VALUE_TYPE_DOUBLE ||
-                rightType.baseType == ZR_VALUE_TYPE_FLOAT || rightType.baseType == ZR_VALUE_TYPE_DOUBLE) {
-                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_FLOAT);
-            } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftType.baseType) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightType.baseType)) {
-                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_UNSIGNED);
-            } else {
-                opcode = ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_SIGNED);
-            }
-        } else {
-            opcode = ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_SIGNED);
-        }
-    } else if (strcmp(op, "&&") == 0) {
-        opcode = ZR_INSTRUCTION_ENUM(LOGICAL_AND);
-    } else if (strcmp(op, "||") == 0) {
-        opcode = ZR_INSTRUCTION_ENUM(LOGICAL_OR);
-    } else if (strcmp(op, "&") == 0) {
-        opcode = ZR_INSTRUCTION_ENUM(BITWISE_AND);
-    } else if (strcmp(op, "|") == 0) {
-        opcode = ZR_INSTRUCTION_ENUM(BITWISE_OR);
-    } else if (strcmp(op, "^") == 0) {
-        opcode = ZR_INSTRUCTION_ENUM(BITWISE_XOR);
-    } else {
-        ZrParser_Compiler_Error(cs, "Unknown binary operator", node->location);
-        return;
-    }
-    
-    EZrCompilerSemanticCompareResult comparisonResult =
-            compiler_semantic_compare_lower(cs, node, opcode,
-                    leftSlot, rightSlot, destSlot,
-                    hasTypeInfo ? &resultType : ZR_NULL);
-    if (comparisonResult == ZR_COMPILER_SEMANTIC_COMPARE_NOT_APPLICABLE &&
-        !compiler_semantic_ir_lower_binary(
-                cs, opcode, leftSlot, rightSlot, destSlot,
-                hasTypeInfo ? &resultType : ZR_NULL, node->location)) {
-        TZrInstruction inst = create_instruction_2(
-                opcode,
-                ZR_COMPILE_SLOT_U16(destSlot),
-                ZR_COMPILE_SLOT_U16(leftSlot),
-                ZR_COMPILE_SLOT_U16(rightSlot));
-        emit_instruction(cs, inst);
-    }
-    collapse_stack_to_slot(cs, destSlot);
-    
-    // 清理类型信息
-    if (hasTypeInfo) {
-        if (isComparisonOp || isShiftOp) {
-            // 比较/位移操作保留操作数原始类型到指令选择阶段后再清理
-            ZrParser_InferredType_Free(cs->state, &leftType);
-            ZrParser_InferredType_Free(cs->state, &rightType);
-        }
-        ZrParser_InferredType_Free(cs->state, &resultType);
-    }
-}
 
-/* Cached pure operator trees have already been inferred. Compile operands in
- * a small frame before retaining the three large inferred types for emission. */
-static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
-    TZrUInt32 leftSlot;
-    TZrUInt32 rightSlot;
-
-    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) return;
-    if (cs->expressionTypeCache == ZR_NULL ||
-        cs->expressionTypeCache->environment != cs->typeEnv) {
-        compile_binary_expression_from_slots(cs, node, ZR_PARSER_SLOT_NONE, ZR_PARSER_SLOT_NONE);
-        return;
-    }
-    compile_expression_non_tail(cs, node->data.binaryExpression.left);
-    leftSlot = cs->lastExpressionSlot;
-    if (cs->hasError || leftSlot == ZR_PARSER_SLOT_NONE) return;
-    compile_expression_non_tail(cs, node->data.binaryExpression.right);
-    rightSlot = cs->lastExpressionSlot;
-    if (cs->hasError || rightSlot == ZR_PARSER_SLOT_NONE) return;
-    compile_binary_expression_from_slots(cs, node, leftSlot, rightSlot);
-}
 
 // 辅助函数：检查变量名是否在 const 数组中
 static TZrBool is_const_variable(SZrCompilerState *cs, SZrString *name, SZrArray *constArray) {
@@ -781,7 +472,8 @@ static TZrUInt32 assignment_target_direct_local_slot(SZrCompilerState *cs, SZrAs
         return ZR_PARSER_SLOT_NONE;
     }
 
-    return find_local_var(cs, node->data.identifier.name);
+    return find_local_var_with_context(
+            cs, node->data.identifier.name, node->data.identifier.syntaxContext);
 }
 
 static TZrBool note_inline_struct_field_result_slot(SZrCompilerState *cs,
@@ -1941,7 +1633,8 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                                                   &identifierWriteBinding);
         }
         
-        TZrUInt32 localVarIndex = find_local_var(cs, name);
+        TZrUInt32 localVarIndex = find_local_var_with_context(
+                cs, name, left->data.identifier.syntaxContext);
         
         if (localVarIndex != ZR_PARSER_SLOT_NONE) {
             // 简单赋值
@@ -1989,7 +1682,8 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
             }
         } else {
             // 查找闭包变量
-            TZrUInt32 closureVarIndex = find_closure_var(cs, name);
+            TZrUInt32 closureVarIndex = find_closure_var_with_context(
+                    cs, name, left->data.identifier.syntaxContext);
             if (closureVarIndex != ZR_PARSER_INDEX_NONE) {
                 // 获取闭包变量信息以检查 inStack 标志
                 SZrFunctionClosureVariable *closureVar = (SZrFunctionClosureVariable *)ZrCore_Array_Get(&cs->closureVars, closureVarIndex);
@@ -2662,6 +2356,85 @@ static void compile_conditional_expression(SZrCompilerState *cs, SZrAstNode *nod
 
 // 在脚本 AST 中查找函数声明
 
+static void compile_expression_cold_case(SZrCompilerState *cs, SZrAstNode *node) {
+    switch (node->type) {
+        case ZR_AST_GENERATOR_EXPRESSION:
+            if (node->data.generatorExpression.block == ZR_NULL) {
+                ZrParser_Compiler_Error(cs, "Generator expression block is null", node->location);
+                break;
+            }
+            compile_block_as_expression(cs, node->data.generatorExpression.block);
+            break;
+        // 控制流结构和语句不应该作为表达式编译，应该先转换为语句
+        case ZR_AST_IF_EXPRESSION:
+        case ZR_AST_SWITCH_EXPRESSION:
+        case ZR_AST_WHILE_LOOP:
+        case ZR_AST_FOR_LOOP:
+        case ZR_AST_FOREACH_LOOP:
+        case ZR_AST_BREAK_CONTINUE_STATEMENT:
+        case ZR_AST_OUT_STATEMENT:
+        case ZR_AST_THROW_STATEMENT:
+        case ZR_AST_TRY_CATCH_FINALLY_STATEMENT:
+            ZrParser_Compiler_Error(cs, "Loop or statement cannot be used as expression", node->location);
+            break;
+
+        // 解构对象和数组不是表达式，不应该在这里处理
+        case ZR_AST_DESTRUCTURING_OBJECT:
+        case ZR_AST_DESTRUCTURING_ARRAY:
+            // 这些类型应该在变量声明中处理，不应该作为表达式编译
+            ZrParser_Compiler_Error(cs, "Destructuring pattern cannot be used as expression", node->location);
+            break;
+
+        default:
+            // 未处理的表达式类型
+            if (node->type == ZR_AST_DESTRUCTURING_OBJECT || node->type == ZR_AST_DESTRUCTURING_ARRAY) {
+                // 这不应该作为表达式编译，应该在变量声明中处理
+                ZrParser_Compiler_Error(cs, "Destructuring pattern cannot be used as expression", node->location);
+            } else {
+                // 创建详细的错误消息，包含类型名称和位置信息
+                static TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
+                const TZrChar *typeName = "UNKNOWN";
+                switch (node->type) {
+                    case ZR_AST_INTERFACE_METHOD_SIGNATURE: typeName = "INTERFACE_METHOD_SIGNATURE"; break;
+                    case ZR_AST_INTERFACE_FIELD_DECLARATION: typeName = "INTERFACE_FIELD_DECLARATION"; break;
+                    case ZR_AST_INTERFACE_PROPERTY_SIGNATURE: typeName = "INTERFACE_PROPERTY_SIGNATURE"; break;
+                    case ZR_AST_INTERFACE_META_SIGNATURE: typeName = "INTERFACE_META_SIGNATURE"; break;
+                    case ZR_AST_STRUCT_FIELD: typeName = "STRUCT_FIELD"; break;
+                    case ZR_AST_STRUCT_METHOD: typeName = "STRUCT_METHOD"; break;
+                    case ZR_AST_STRUCT_META_FUNCTION: typeName = "STRUCT_META_FUNCTION"; break;
+                    case ZR_AST_CLASS_FIELD: typeName = "CLASS_FIELD"; break;
+                    case ZR_AST_CLASS_METHOD: typeName = "CLASS_METHOD"; break;
+                    case ZR_AST_CLASS_PROPERTY: typeName = "CLASS_PROPERTY"; break;
+                    case ZR_AST_PROPERTY_DECLARATION: typeName = "PROPERTY_DECLARATION"; break;
+                    case ZR_AST_PROPERTY_ACCESSOR: typeName = "PROPERTY_ACCESSOR"; break;
+                    case ZR_AST_CLASS_META_FUNCTION: typeName = "CLASS_META_FUNCTION"; break;
+                    case ZR_AST_FUNCTION_DECLARATION: typeName = "FUNCTION_DECLARATION"; break;
+                    case ZR_AST_STRUCT_DECLARATION: typeName = "STRUCT_DECLARATION"; break;
+                    case ZR_AST_CLASS_DECLARATION: typeName = "CLASS_DECLARATION"; break;
+                    case ZR_AST_INTERFACE_DECLARATION: typeName = "INTERFACE_DECLARATION"; break;
+                    case ZR_AST_ENUM_DECLARATION: typeName = "ENUM_DECLARATION"; break;
+                    case ZR_AST_UNION_DECLARATION: typeName = "UNION_DECLARATION"; break;
+                    case ZR_AST_ENUM_MEMBER: typeName = "ENUM_MEMBER"; break;
+                    case ZR_AST_UNION_VARIANT: typeName = "UNION_VARIANT"; break;
+                    case ZR_AST_MODULE_DECLARATION: typeName = "MODULE_DECLARATION"; break;
+                    case ZR_AST_IMPORT_EXPRESSION: typeName = "IMPORT_EXPRESSION"; break;
+                    case ZR_AST_TYPE_QUERY_EXPRESSION: typeName = "TYPE_QUERY_EXPRESSION"; break;
+                    case ZR_AST_TYPE_LITERAL_EXPRESSION: typeName = "TYPE_LITERAL_EXPRESSION"; break;
+                    case ZR_AST_SCRIPT: typeName = "SCRIPT"; break;
+                    default: break;
+                }
+                snprintf(errorMsg, sizeof(errorMsg),
+                        "Unexpected expression type: %s (type %d) at line %d:%d. "
+                        "This node type should not be compiled as an expression. "
+                        "Please check if it was incorrectly placed in an expression context.",
+                        typeName, node->type,
+                        node->location.start.line, node->location.start.column);
+                ZrParser_Compiler_Error(cs, errorMsg, node->location);
+            }
+            break;
+    }
+}
+
 ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode *node) {
     SZrAstNode *oldCurrentAst;
     SZrExpressionTypeCache typeCache = {0};
@@ -2771,11 +2544,7 @@ ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode 
             break;
 
         case ZR_AST_GENERATOR_EXPRESSION:
-            if (node->data.generatorExpression.block == ZR_NULL) {
-                ZrParser_Compiler_Error(cs, "Generator expression block is null", node->location);
-                break;
-            }
-            compile_block_as_expression(cs, node->data.generatorExpression.block);
+            compile_expression_cold_case(cs, node);
             break;
         
         case ZR_AST_BLOCK:
@@ -2793,62 +2562,10 @@ ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode 
         case ZR_AST_OUT_STATEMENT:
         case ZR_AST_THROW_STATEMENT:
         case ZR_AST_TRY_CATCH_FINALLY_STATEMENT:
-            ZrParser_Compiler_Error(cs, "Loop or statement cannot be used as expression", node->location);
-            break;
-        
-        // 解构对象和数组不是表达式，不应该在这里处理
         case ZR_AST_DESTRUCTURING_OBJECT:
         case ZR_AST_DESTRUCTURING_ARRAY:
-            // 这些类型应该在变量声明中处理，不应该作为表达式编译
-            ZrParser_Compiler_Error(cs, "Destructuring pattern cannot be used as expression", node->location);
-            break;
-        
         default:
-            // 未处理的表达式类型
-            if (node->type == ZR_AST_DESTRUCTURING_OBJECT || node->type == ZR_AST_DESTRUCTURING_ARRAY) {
-                // 这不应该作为表达式编译，应该在变量声明中处理
-                ZrParser_Compiler_Error(cs, "Destructuring pattern cannot be used as expression", node->location);
-            } else {
-                // 创建详细的错误消息，包含类型名称和位置信息
-                static TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
-                const TZrChar *typeName = "UNKNOWN";
-                switch (node->type) {
-                    case ZR_AST_INTERFACE_METHOD_SIGNATURE: typeName = "INTERFACE_METHOD_SIGNATURE"; break;
-                    case ZR_AST_INTERFACE_FIELD_DECLARATION: typeName = "INTERFACE_FIELD_DECLARATION"; break;
-                    case ZR_AST_INTERFACE_PROPERTY_SIGNATURE: typeName = "INTERFACE_PROPERTY_SIGNATURE"; break;
-                    case ZR_AST_INTERFACE_META_SIGNATURE: typeName = "INTERFACE_META_SIGNATURE"; break;
-                    case ZR_AST_STRUCT_FIELD: typeName = "STRUCT_FIELD"; break;
-                    case ZR_AST_STRUCT_METHOD: typeName = "STRUCT_METHOD"; break;
-                    case ZR_AST_STRUCT_META_FUNCTION: typeName = "STRUCT_META_FUNCTION"; break;
-                    case ZR_AST_CLASS_FIELD: typeName = "CLASS_FIELD"; break;
-                    case ZR_AST_CLASS_METHOD: typeName = "CLASS_METHOD"; break;
-                    case ZR_AST_CLASS_PROPERTY: typeName = "CLASS_PROPERTY"; break;
-                    case ZR_AST_PROPERTY_DECLARATION: typeName = "PROPERTY_DECLARATION"; break;
-                    case ZR_AST_PROPERTY_ACCESSOR: typeName = "PROPERTY_ACCESSOR"; break;
-                    case ZR_AST_CLASS_META_FUNCTION: typeName = "CLASS_META_FUNCTION"; break;
-                    case ZR_AST_FUNCTION_DECLARATION: typeName = "FUNCTION_DECLARATION"; break;
-                    case ZR_AST_STRUCT_DECLARATION: typeName = "STRUCT_DECLARATION"; break;
-                    case ZR_AST_CLASS_DECLARATION: typeName = "CLASS_DECLARATION"; break;
-                    case ZR_AST_INTERFACE_DECLARATION: typeName = "INTERFACE_DECLARATION"; break;
-                    case ZR_AST_ENUM_DECLARATION: typeName = "ENUM_DECLARATION"; break;
-                    case ZR_AST_UNION_DECLARATION: typeName = "UNION_DECLARATION"; break;
-                    case ZR_AST_ENUM_MEMBER: typeName = "ENUM_MEMBER"; break;
-                    case ZR_AST_UNION_VARIANT: typeName = "UNION_VARIANT"; break;
-                    case ZR_AST_MODULE_DECLARATION: typeName = "MODULE_DECLARATION"; break;
-                    case ZR_AST_IMPORT_EXPRESSION: typeName = "IMPORT_EXPRESSION"; break;
-                    case ZR_AST_TYPE_QUERY_EXPRESSION: typeName = "TYPE_QUERY_EXPRESSION"; break;
-                    case ZR_AST_TYPE_LITERAL_EXPRESSION: typeName = "TYPE_LITERAL_EXPRESSION"; break;
-                    case ZR_AST_SCRIPT: typeName = "SCRIPT"; break;
-                    default: break;
-                }
-                snprintf(errorMsg, sizeof(errorMsg), 
-                        "Unexpected expression type: %s (type %d) at line %d:%d. "
-                        "This node type should not be compiled as an expression. "
-                        "Please check if it was incorrectly placed in an expression context.",
-                        typeName, node->type, 
-                        node->location.start.line, node->location.start.column);
-                ZrParser_Compiler_Error(cs, errorMsg, node->location);
-            }
+            compile_expression_cold_case(cs, node);
             break;
     }
 

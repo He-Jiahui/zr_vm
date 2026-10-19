@@ -1132,3 +1132,5 @@ void test_binary_roundtrip_runtime_global_callable_capture_preserves_closed_capt
     ZR_TEST_PASS(timer, testSummary);
     ZR_TEST_DIVIDER();
 }
+
+#include "test_escape_native_member_cases.inc"

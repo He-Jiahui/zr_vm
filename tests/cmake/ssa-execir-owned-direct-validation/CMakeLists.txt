@@ -1,14 +1,9 @@
 cmake_minimum_required(VERSION 3.31)
-# Compile the actual checkout; this project stores no source copies.
-get_filename_component(ZR_SSA_EXECIR_OWNER_SOURCE_ROOT
-        "${CMAKE_CURRENT_LIST_DIR}/../../.." REALPATH)
-set(_zr_execir_owner_output_root "E:/cargo-targets/zr_vm/build")
-cmake_path(ABSOLUTE_PATH CMAKE_BINARY_DIR NORMALIZE OUTPUT_VARIABLE _zr_execir_owner_binary)
-cmake_path(IS_PREFIX _zr_execir_owner_output_root "${_zr_execir_owner_binary}"
-        NORMALIZE _zr_execir_owner_output_allowed)
-if (NOT _zr_execir_owner_output_allowed OR CMAKE_BINARY_DIR STREQUAL CMAKE_SOURCE_DIR)
-    message(FATAL_ERROR "Use a separate E:/cargo-targets/zr_vm/build directory")
-endif ()
+
+include("${CMAKE_CURRENT_LIST_DIR}/../ssa-direct-validation-paths.cmake")
+zr_ssa_validation_source_root(_zr_direct_source_root)
+set(ZR_SSA_EXECIR_OWNER_SOURCE_ROOT "${_zr_direct_source_root}")
+zr_ssa_validation_binary_dir(_zr_direct_binary_dir)
 if (DEFINED CMAKE_TRY_COMPILE_TARGET_TYPE AND
         NOT CMAKE_TRY_COMPILE_TARGET_TYPE STREQUAL "EXECUTABLE")
     message(FATAL_ERROR "Use the actual executable compiler ABI probe")

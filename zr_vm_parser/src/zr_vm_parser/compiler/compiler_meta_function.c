@@ -3,6 +3,7 @@
 //
 
 #include "compiler_internal.h"
+#include "compiler_child_function_relocation.h"
 
 void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType metaType) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -35,12 +36,31 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     TZrSize oldClosureVarCount = cs->closureVarCount;
     TZrSize oldChildFunctionLength = cs->childFunctions.length;
     TZrSize oldChildFunctionNameMapLength = cs->childFunctionNameMap.length;
+    SZrCompilerArraySnapshot savedParentLocalBindingIdentities = {0};
+    SZrCompilerArraySnapshot savedParentClosureBindingIdentities = {0};
+    SZrCompilerArraySnapshot savedParentChildFunctionBindingIdentities = {0};
     TZrUInt32 oldCachedNullConstantIndex = cs->cachedNullConstantIndex;
     TZrBool oldHasCachedNullConstantIndex = cs->hasCachedNullConstantIndex;
     TZrBool oldIsInConstructor = cs->isInConstructor;
     EZrCompilerInitializationPhase oldInitializationPhase =
             cs->initializationPhase;
     TZrSize oldStackSlotTypeHintScopeStart = compiler_enter_stack_slot_type_hint_scope(cs);
+
+    if (!compiler_capture_array_snapshot(
+                cs, &cs->localBindingIdentities, &savedParentLocalBindingIdentities) ||
+        !compiler_capture_array_snapshot(
+                cs, &cs->closureBindingIdentities, &savedParentClosureBindingIdentities) ||
+        !compiler_capture_array_snapshot(
+                cs,
+                &cs->childFunctionBindingIdentities,
+                &savedParentChildFunctionBindingIdentities)) {
+        compiler_release_array_snapshot(cs, &savedParentLocalBindingIdentities);
+        compiler_release_array_snapshot(cs, &savedParentClosureBindingIdentities);
+        compiler_release_array_snapshot(cs, &savedParentChildFunctionBindingIdentities);
+        ZrParser_Compiler_Error(cs, "Failed to backup parent binding identities for meta function", node->location);
+        compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
+        return;
+    }
     
     // 设置 isInConstructor 标志（如果是构造函数）
     cs->isInConstructor = (metaType == ZR_META_CONSTRUCTOR) ? ZR_TRUE : ZR_FALSE;
@@ -60,6 +80,9 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
         cs->isInConstructor = oldIsInConstructor;
         cs->initializationPhase = oldInitializationPhase;
         compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
+        compiler_release_array_snapshot(cs, &savedParentLocalBindingIdentities);
+        compiler_release_array_snapshot(cs, &savedParentClosureBindingIdentities);
+        compiler_release_array_snapshot(cs, &savedParentChildFunctionBindingIdentities);
         return;
     }
     
@@ -75,10 +98,13 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     // 清空数组（但保留已分配的内存）
     cs->instructions.length = 0;
     cs->localVars.length = 0;
+    cs->localBindingIdentities.length = 0;
     cs->constants.length = 0;
     cs->closureVars.length = 0;
+    cs->closureBindingIdentities.length = 0;
     cs->childFunctions.length = 0;
     cs->childFunctionNameMap.length = 0;
+    cs->childFunctionBindingIdentities.length = 0;
     cs->cachedNullConstantIndex = 0;
     cs->hasCachedNullConstantIndex = ZR_FALSE;
     
@@ -103,7 +129,8 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
                     SZrString *paramName = param->name->name;
                     if (paramName != ZR_NULL) {
                         // 分配参数槽位
-                        TZrUInt32 parameterSlot = allocate_local_var(cs, paramName);
+                        TZrUInt32 parameterSlot = allocate_local_var_with_context(
+                                cs, paramName, param->name->syntaxContext);
                         parameterCount++;
                         compiler_register_typed_owner_cleanup_slot(
                                 cs, parameterSlot, param->typeInfo);
@@ -249,10 +276,17 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
         cs->constParameters.length = 0;
         cs->instructions.length = 0;
         cs->localVars.length = 0;
+        compiler_release_array_snapshot(cs, &savedParentLocalBindingIdentities);
+        cs->localBindingIdentities.length = 0;
         cs->constants.length = 0;
         cs->closureVars.length = 0;
+        compiler_release_array_snapshot(cs, &savedParentClosureBindingIdentities);
+        cs->closureBindingIdentities.length = 0;
         cs->childFunctions.length = oldChildFunctionLength;
         cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
+        compiler_restore_array_snapshot(cs,
+                                        &cs->childFunctionBindingIdentities,
+                                        &savedParentChildFunctionBindingIdentities);
         compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
         return;
     }
@@ -311,6 +345,7 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
                 }
             }
             newFunc->childFunctionLength = (TZrUInt32) cs->childFunctions.length;
+            compiler_relocate_copied_child_constants(newFunc, srcArray);
             compiler_rebind_moved_child_constants(newFunc, srcArray);
             for (TZrSize i = 0; i < cs->childFunctions.length; i++) {
                 if (srcArray[i] != ZR_NULL) {
@@ -361,14 +396,21 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     cs->hasCachedNullConstantIndex = oldHasCachedNullConstantIndex;
     cs->childFunctions.length = oldChildFunctionLength;
     cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
+    compiler_restore_array_snapshot(cs,
+                                    &cs->childFunctionBindingIdentities,
+                                    &savedParentChildFunctionBindingIdentities);
     cs->isInConstructor = oldIsInConstructor;
     cs->initializationPhase = oldInitializationPhase;
     
     // 清空数组（但保留已分配的内存）
     cs->instructions.length = 0;
     cs->localVars.length = 0;
+    compiler_release_array_snapshot(cs, &savedParentLocalBindingIdentities);
+    cs->localBindingIdentities.length = 0;
     cs->constants.length = 0;
     cs->closureVars.length = 0;
+    compiler_release_array_snapshot(cs, &savedParentClosureBindingIdentities);
+    cs->closureBindingIdentities.length = 0;
     compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
 }
 

@@ -9,6 +9,7 @@ type OutputChannelName = 'stdout' | 'stderr';
 /** CLI 启动后打印的实际监听端点；DAP 适配器用它连接 zrdbg/1。 */
 export type ZrCliLaunchResult = {
     endpoint: string;
+    authToken: string;
 };
 
 /** 持有一次本地调试启动的子进程及诊断输出；与一个 DAP 会话同寿命。 */
@@ -18,6 +19,7 @@ export class ZrCliLauncher {
     // TODO: 端点识别后仍持续累积完整 stdout/stderr；长时间运行且持续输出的项目会
     // 增长会话内存。需以持续输出的调试会话测量后改为有界诊断尾部缓冲。
     private stdoutBuffer = '';
+    private stdoutForwardBuffer = '';
     private stderrBuffer = '';
 
     /** adapter 注入输出转发器，子进程日志由同一 DAP 会话呈现。 */
@@ -70,8 +72,10 @@ export class ZrCliLauncher {
         child.stderr.setEncoding('utf8');
         child.stdout.on('data', (chunk: string) => {
             this.stdoutBuffer += chunk;
-            this.onOutput('stdout', chunk);
+            this.forwardStdoutWithoutHandshake(chunk);
         });
+        child.stdout.once('end', () => this.forwardStdoutWithoutHandshake('', true));
+        child.stdout.once('close', () => this.forwardStdoutWithoutHandshake('', true));
         child.stderr.on('data', (chunk: string) => {
             this.stderrBuffer += chunk;
             this.onOutput('stderr', chunk);
@@ -93,6 +97,7 @@ export class ZrCliLauncher {
                 }
 
                 settled = true;
+                child.kill();
                 reject(new Error(this.formatStartupFailure('Timed out waiting for debug_endpoint=')));
             }, 15000);
             /** 清理启动阶段定时器；不负责终止子进程或释放会话。 */
@@ -103,9 +108,12 @@ export class ZrCliLauncher {
                 settled = true;
                 clearTimeout(timeoutHandle);
                 if (error) {
+                    child.kill();
                     reject(error);
                     return;
                 }
+                // Drop the private handshake and all accumulated startup output once parsed.
+                this.stdoutBuffer = '';
                 resolve(result!);
             };
 
@@ -113,7 +121,7 @@ export class ZrCliLauncher {
             child.stdout.on('data', () => {
                 const endpoint = this.extractEndpoint();
                 if (endpoint) {
-                    finish(undefined, { endpoint });
+                    finish(undefined, endpoint);
                 }
             });
             child.on('error', (error) => {
@@ -131,7 +139,7 @@ export class ZrCliLauncher {
 
     /** DAP disconnect/terminate 时停止本会话启动的 CLI，并等待进程退出。 */
     async stop(): Promise<void> {
-        if (!this.child || this.child.killed) {
+        if (!this.child || this.child.exitCode !== null || this.child.signalCode !== null) {
             return;
         }
 
@@ -157,22 +165,43 @@ export class ZrCliLauncher {
             // 需核查 signalCode 分支，避免 stop 永远等待不会再来的 exit 事件。
             child.once('exit', complete);
             child.kill();
-            if (child.exitCode !== null) {
+            if (child.exitCode !== null || child.signalCode !== null) {
                 complete();
             }
         });
     }
 
     /** 只从 CLI 启动协议的 stdout 标记读取端点，供 adapter 连接同一进程。 */
-    private extractEndpoint(): string | undefined {
-        // BUG: data 事件可在端点行结束前截断；若首块只有 debug_endpoint=127.0.0.1:12，
-        // 正则立即接受端口 12，后续的 345 才到也无法更正已返回的连接目标。
-        const match = this.stdoutBuffer.match(/debug_endpoint=([^\r\n]+)/);
-        return match ? match[1].trim() : undefined;
+    private extractEndpoint(): ZrCliLaunchResult | undefined {
+        const match = this.stdoutBuffer.match(/(?:^|\r?\n)debug_endpoint=([^\s]+) debug_token=([0-9a-f]{64})(?:\r?\n|$)/);
+        return match ? { endpoint: match[1], authToken: match[2] } : undefined;
+    }
+
+    /** The endpoint and credential travel only over the child pipe and never enter DAP output. */
+    private forwardStdoutWithoutHandshake(chunk: string, flush = false): void {
+        this.stdoutForwardBuffer += chunk;
+        const completeLines: string[] = [];
+        let newlineIndex = this.stdoutForwardBuffer.indexOf('\n');
+        while (newlineIndex >= 0) {
+            completeLines.push(this.stdoutForwardBuffer.slice(0, newlineIndex + 1));
+            this.stdoutForwardBuffer = this.stdoutForwardBuffer.slice(newlineIndex + 1);
+            newlineIndex = this.stdoutForwardBuffer.indexOf('\n');
+        }
+        if (flush && this.stdoutForwardBuffer.length > 0) {
+            completeLines.push(this.stdoutForwardBuffer);
+            this.stdoutForwardBuffer = '';
+        }
+        for (const line of completeLines) {
+            if (/^debug_endpoint=/.test(line)) {
+                continue;
+            }
+            this.onOutput('stdout', line);
+        }
     }
 
     /** 把启动前的两路输出附在错误后，帮助定位 CLI 参数或环境失败。 */
     private formatStartupFailure(reason: string): string {
-        return `${reason}\nstdout:\n${this.stdoutBuffer}\nstderr:\n${this.stderrBuffer}`;
+        const safeStdout = this.stdoutBuffer.replace(/debug_token=[0-9a-f]+/g, 'debug_token=[redacted]');
+        return `${reason}\nstdout:\n${safeStdout}\nstderr:\n${this.stderrBuffer}`;
     }
 }

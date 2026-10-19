@@ -26,6 +26,9 @@
 #define ZR_GC_FLAG_EXPLICIT_COLLECTION_REQUEST ((TZrUInt32)1u)
 /* GC 遥测使用该 elapsed-time 时钟；收集调度不能依赖此返回值设定 deadline。 */
 TZrUInt64 garbage_collector_now_us(void);
+/* Shared Full/Step pause timeout and completion telemetry; private to GC. */
+#define ZR_GC_DOMAIN_PAUSE_TIMEOUT_MILLISECONDS ((TZrUInt32)1000u)
+void garbage_collector_record_step_telemetry(SZrGarbageCollector *collector, TZrUInt64 startedUs);
 /* Caller owns the mutation lock, or has exclusive collector shutdown access. */
 static ZR_FORCE_INLINE TZrBool garbage_collector_ignore_registry_contains(SZrGarbageCollector *collector,
                                                                           SZrRawObject *object) {

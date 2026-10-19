@@ -29,10 +29,12 @@ TZrBool try_context_find_innermost_finally(const SZrCompilerState *cs, SZrCompil
     return ZR_FALSE;
 }
 
-TZrUInt32 bind_existing_stack_slot_as_local_var(SZrCompilerState *cs,
-                                                SZrString *name,
-                                                TZrUInt32 stackSlot,
-                                                TZrUInt32 activateOffset) {
+TZrUInt32 bind_existing_stack_slot_as_local_var_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext,
+        TZrUInt32 stackSlot,
+        TZrUInt32 activateOffset) {
     SZrFunctionLocalVariable localVar;
 
     if (cs == ZR_NULL || cs->hasError || name == ZR_NULL) {
@@ -58,6 +60,14 @@ TZrUInt32 bind_existing_stack_slot_as_local_var(SZrCompilerState *cs,
     }
 
     ZrCore_Array_Push(cs->state, &cs->localVars, &localVar);
+    {
+        SZrCompilerBindingIdentity identity;
+        identity.syntaxContext = ZrParser_SyntaxContext_IsValid(syntaxContext)
+                ? syntaxContext
+                : ZrParser_SyntaxContext_Root();
+        ZrCore_Array_Push(
+                cs->state, &cs->localBindingIdentities, &identity);
+    }
     cs->localVarCount = cs->localVars.length;
 
     if (cs->scopeStack.length > 0) {
@@ -68,6 +78,14 @@ TZrUInt32 bind_existing_stack_slot_as_local_var(SZrCompilerState *cs,
     }
 
     return stackSlot;
+}
+
+TZrUInt32 bind_existing_stack_slot_as_local_var(SZrCompilerState *cs,
+                                                SZrString *name,
+                                                TZrUInt32 stackSlot,
+                                                TZrUInt32 activateOffset) {
+    return bind_existing_stack_slot_as_local_var_with_context(
+            cs, name, ZrParser_SyntaxContext_Root(), stackSlot, activateOffset);
 }
 
 void emit_jump_to_label(SZrCompilerState *cs, TZrSize labelId) {
@@ -230,7 +248,10 @@ static void compile_switch_union_variant_payload_bindings(SZrCompilerState *cs,
             return;
         }
 
-        localSlot = allocate_local_var(cs, bindingNode->data.identifier.name);
+        localSlot = allocate_local_var_with_context(
+                cs,
+                bindingNode->data.identifier.name,
+                bindingNode->data.identifier.syntaxContext);
         valueSlot = allocate_stack_slot(cs);
         emit_instruction(cs,
                          create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER),
@@ -297,7 +318,8 @@ static TZrBool compile_switch_expression_slot(SZrCompilerState *cs,
     }
 
     if (preferLocalSlot && expr->type == ZR_AST_IDENTIFIER_LITERAL && expr->data.identifier.name != ZR_NULL) {
-        localSlot = find_local_var(cs, expr->data.identifier.name);
+        localSlot = find_local_var_with_context(
+                cs, expr->data.identifier.name, expr->data.identifier.syntaxContext);
         if (localSlot != ZR_PARSER_SLOT_NONE) {
             *outSlot = localSlot;
             cs->lastExpressionSlot = localSlot;
@@ -685,9 +707,8 @@ void compile_throw_statement(SZrCompilerState *cs, SZrAstNode *node) {
     }
     
     SZrThrowStatement *stmt = &node->data.throwStatement;
-    hasSemanticFinallyThrow = (TZrBool)(
-            cs->currentFunctionNode == ZR_NULL &&
-            compiler_semantic_cfg_throw_through_finally_is_active(cs));
+    hasSemanticFinallyThrow =
+            compiler_semantic_cfg_throw_through_finally_is_active(cs);
     
     // 编译异常表达式
     if (stmt->expr != ZR_NULL) {
@@ -749,6 +770,10 @@ static TZrBool compile_destructuring_register_binding_type(SZrCompilerState *cs,
         bindingType.ownershipQualifier = ownershipQualifier;
         registered = compile_statement_register_semantic_local(cs,
                                                                 bindingName,
+                                                                (declarationNode != ZR_NULL &&
+                                                                 declarationNode->type == ZR_AST_IDENTIFIER_LITERAL)
+                                                                        ? declarationNode->data.identifier.syntaxContext
+                                                                        : ZrParser_SyntaxContext_Root(),
                                                                 &bindingType,
                                                                 stackSlot,
                                                                 declarationNode,
@@ -921,7 +946,12 @@ void compile_destructuring_object(SZrCompilerState *cs, SZrAstNode *pattern, SZr
             }
             
             // 分配局部变量槽位
-            TZrUInt32 varIndex = allocate_local_var(cs, bindingName);
+            TZrUInt32 varIndex = allocate_local_var_with_context(
+                    cs,
+                    bindingName,
+                    (bindingNode->type == ZR_AST_IDENTIFIER_LITERAL)
+                            ? bindingNode->data.identifier.syntaxContext
+                            : ZrParser_SyntaxContext_Root());
             
             TZrUInt32 memberId = compiler_get_or_add_member_entry(cs, fieldName);
             SZrString *fieldTypeName = ZR_NULL;
@@ -1025,7 +1055,8 @@ void compile_destructuring_array(SZrCompilerState *cs, SZrAstNode *pattern, SZrA
             }
             
             // 分配局部变量槽位
-            TZrUInt32 varIndex = allocate_local_var(cs, elemName);
+            TZrUInt32 varIndex = allocate_local_var_with_context(
+                    cs, elemName, elemNode->data.identifier.syntaxContext);
             
             // 创建索引常量（整数 i）
             SZrTypeValue indexValue;

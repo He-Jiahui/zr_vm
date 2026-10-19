@@ -26,6 +26,7 @@
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser.h"
+#include "test_project_failure_diagnostic.inc"
 /* 仅记录单条用例的 CPU 时间，不持有测试资源。 */
 typedef struct SZrRegressionTestTimer {
     clock_t startTime;
@@ -96,6 +97,7 @@ static void run_project_body(SZrState *state, TZrPtr arguments) {
     }
 
     request->status = ZrLibrary_Project_Run(state, request->result);
+    project_failure_diagnostic_log(state, request->status);
 }
 /* 借用函数名供诊断；空函数或匿名函数显示占位文本。 */
 static const TZrChar *function_name_or_anonymous(const SZrFunction *function) {

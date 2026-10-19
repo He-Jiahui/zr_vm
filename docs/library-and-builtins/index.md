@@ -159,6 +159,10 @@ doc_type: category-index
 - [文件系统测试调用契约](system-fs-test-harness-contract.md)
   - 元数据、脚本执行与编译判据、生成路径和断言失败时的清理责任。
 
+- [Native plugin allocation and I/O](../library/native-registry-allocation-lifecycle.md)：注册回滚、影子副本复制与加载失败清理。
+
+- [文件路径、复制与移动](../library/file-path-operations.md)：join 截断、Windows 根路径及覆盖前的源与路径关系检查。
+
 - [Math input boundaries](../library/math-input-boundaries.md)：整数转换、Tensor 形状乘积及数值数据校验。
 
 - [Native numeric boundaries](../library/native-numeric-boundaries.md)：公开 ReadInt 的浮点范围、非有限值和诊断。
@@ -167,11 +171,7 @@ doc_type: category-index
 
 - [Setter caller cleanup](setter-caller-cleanup.md)：FFI 聚合写入与 Reflection 泛型字段调用的临时根清理。
 
-- [Native plugin allocation and I/O](../library/native-registry-allocation-lifecycle.md)：注册回滚、影子副本复制与加载失败清理。
-
 - [Thread transport string bytes](thread-transport-string-bytes.md)：显式长度、clone 和 decode 的内嵌 NUL 保真。
-
-- [文件路径、复制与移动](../library/file-path-operations.md)：join 截断、Windows 根路径及覆盖前的源与路径关系检查。
 
 - [Native dispatcher receiver cleanup](../library/native-dispatch-self-oom.md)：参数暂存分配失败时归还 receiver 副本。
 

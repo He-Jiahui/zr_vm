@@ -136,9 +136,8 @@ static TZrBool signature_ranges_equal(SZrFileRange left, SZrFileRange right) {
            left.end.column == right.end.column;
 }
 
-/* 为嵌套调用选择构造可比较的范围；参数和泛型实参可能比调用节点的位置更可信。 */
+/* Preserve the parser's complete call range for nested-call selection. */
 static SZrFileRange signature_call_context_range(SZrAstNode *callNode) {
-    SZrFunctionCall *call;
     SZrFileRange range;
 
     memset(&range, 0, sizeof(range));
@@ -146,21 +145,7 @@ static SZrFileRange signature_call_context_range(SZrAstNode *callNode) {
         return range;
     }
 
-    call = &callNode->data.functionCall;
-    range = callNode->location;
-    if (call->args != ZR_NULL && call->args->count > 0) {
-        SZrAstNode *lastArg = call->args->nodes[call->args->count - 1];
-        if (lastArg != ZR_NULL) {
-            range.end = lastArg->location.end;
-        }
-    } else if (call->genericArguments != ZR_NULL && call->genericArguments->count > 0) {
-        SZrAstNode *lastGenericArg = call->genericArguments->nodes[call->genericArguments->count - 1];
-        if (lastGenericArg != ZR_NULL) {
-            range.end = lastGenericArg->location.end;
-        }
-    }
-
-    return range;
+    return callNode->location;
 }
 
 /* 同位置重叠候选按跨度选最内层；无偏移时行列打包只是排序分数。 */

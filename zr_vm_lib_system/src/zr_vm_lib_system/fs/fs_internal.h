@@ -168,6 +168,10 @@ const SZrTypeValue *ZrSystem_Fs_GetFieldValue(SZrState *state, SZrObject *object
  */
 const TZrChar *ZrSystem_Fs_GetStringField(SZrState *state, SZrObject *object, const TZrChar *fieldName);
 
+/* Private entry/IO/listing accessor; returned path is borrowed and must be
+ * consumed before VM allocation. Clears outPath on invalid input. */
+TZrBool ZrSystem_Fs_SelfFullPath(SZrState *state, SZrObject *object, const TZrChar **outPath);
+
 /**
  * ## Summary
  * 读取 signed/unsigned integer 字段并将其规整为 TZrInt64，缺失或非整数回退到默认值。

@@ -4,6 +4,8 @@
 
 #include "zr_vm_core/string.h"
 #include "zr_vm_parser/type_inference.h"
+#include "type_inference/type_environment_context_lookup.h"
+#include "type_inference/type_inference_semantic_facts.h"
 
 /** @brief 取得 using 资源在当前编译或语义分析上下文中的推断类型。
  * @pre outType 已由调用方初始化；资源 AST 与类型环境在查询期间有效。
@@ -14,8 +16,44 @@ TZrBool ZrParser_SemanticMetadata_InferUsingResourceType(
     if (cs == ZR_NULL || resource == ZR_NULL || outType == ZR_NULL) {
         return ZR_FALSE;
     }
-    /* Inference preserves binding qualifiers and publishes the resource read
-     * used by ownership flow to apply the scope-exit cleanup. */
+    /* 变量绑定可能保留表达式重推无法恢复的借用限定，因此先查环境再走通用推断。 */
+    if (resource->type == ZR_AST_IDENTIFIER_LITERAL && cs->typeEnv != ZR_NULL &&
+        resource->data.identifier.name != ZR_NULL) {
+        const SZrTypeBinding *binding;
+        if (!type_environment_find_variable_binding(
+                cs->typeEnv,
+                resource->data.identifier.name,
+                resource->data.identifier.syntaxContext,
+                &binding)) {
+            return ZR_FALSE;
+        }
+        if (binding != ZR_NULL) {
+            ZrParser_InferredType_Copy(cs->state, outType, &binding->type);
+            if (cs->semanticContext != ZR_NULL && binding->name != ZR_NULL &&
+                (binding->originKind != ZR_SEMANTIC_REFERENCE_ORIGIN_SOURCE_DECLARATION ||
+                 (binding->hasDeclarationRange && binding->symbolId != ZR_SEMANTIC_ID_INVALID))) {
+                const SZrSemanticReferenceFact *reference =
+                        ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+                                cs->semanticContext, resource, ZR_SEMANTIC_REFERENCE_READ);
+                /* Compilation can revisit this resource while recording its slot type. */
+                if (reference == ZR_NULL || reference->isResolved != ZR_TRUE ||
+                    reference->symbolId != binding->symbolId ||
+                    reference->typeId != binding->typeId ||
+                    reference->placeId != binding->placeId ||
+                    reference->ownershipQualifier != binding->type.ownershipQualifier ||
+                    reference->originKind != binding->originKind ||
+                    reference->runtimeRootKind != binding->runtimeRootKind ||
+                    reference->originToken != binding->originToken ||
+                    reference->originIndex != binding->originIndex ||
+                    reference->name == ZR_NULL ||
+                    !ZrCore_String_Equal(reference->name, binding->name) ||
+                    !ZrParser_SyntaxContext_Equal(reference->syntaxContext, binding->syntaxContext)) {
+                    type_inference_record_identifier_reference_fact(cs, resource, binding);
+                }
+            }
+            return ZR_TRUE;
+        }
+    }
     return ZrParser_ExpressionType_Infer(cs, resource, outType);
 }
 
@@ -56,8 +94,10 @@ TZrBool ZrParser_SemanticMetadata_RecordUsingCleanup(
         return ZR_FALSE;
     }
     if (resource->type == ZR_AST_IDENTIFIER_LITERAL && cs->typeEnv != ZR_NULL) {
-        binding = ZrParser_TypeEnvironment_FindVariableBinding(
-                cs->typeEnv, resource->data.identifier.name);
+        binding = ZrParser_TypeEnvironment_FindVariableBindingWithContext(
+                cs->typeEnv,
+                resource->data.identifier.name,
+                resource->data.identifier.syntaxContext);
     }
     /* 只复制符号、区域和所有权身份；可执行清理由编译器另行注册到 scope 栈，不从此快照执行。 */
     memset(&step, 0, sizeof(step));

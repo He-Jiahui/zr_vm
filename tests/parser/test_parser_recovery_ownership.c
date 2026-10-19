@@ -14,6 +14,8 @@ static SZrAstNode *g_ast;
 // 只观察上游 allocator 的原生块；GC 对象须等 GlobalState_Free 后才能结算。
 static size_t g_liveBlocks;
 static size_t g_errorCount;
+static size_t g_missingSemicolonErrors;
+static size_t g_primaryErrors;
 
 // GlobalState_New 的上游分配回调，记录解析恢复路径留下的所有原生分配。
 // realloc 保持一个活动块，失败时原指针仍归调用方所有。
@@ -54,9 +56,16 @@ static void capture_legacy_error(TZrPtr userData, const SZrFileRange *location,
                                  const TZrChar *message, EZrToken token) {
     ZR_UNUSED_PARAMETER(userData);
     ZR_UNUSED_PARAMETER(location);
-    ZR_UNUSED_PARAMETER(message);
     ZR_UNUSED_PARAMETER(token);
     g_errorCount++;
+    if (message != ZR_NULL) {
+        if (strstr(message, "Missing ';' after expression statement") != ZR_NULL) {
+            g_missingSemicolonErrors++;
+        }
+        if (strstr(message, "Expected primary expression") != ZR_NULL) {
+            g_primaryErrors++;
+        }
+    }
 }
 
 // 每个 fixture 从空计数开始，以自定义 allocator 建立独立 VM。
@@ -64,6 +73,8 @@ void setUp(void) {
     SZrCallbackGlobal callbacks = {0};
     g_liveBlocks = 0;
     g_errorCount = 0;
+    g_missingSemicolonErrors = 0;
+    g_primaryErrors = 0;
     g_ast = ZR_NULL;
     memset(&g_parser, 0, sizeof(g_parser));
     g_global = ZrCore_GlobalState_New(tracking_allocator, ZR_NULL, 0, &callbacks);
@@ -176,6 +187,155 @@ static void test_parameter_missing_name_releases_decorators(void) {
     parse_source("fn pick(,): int { return 1; }", ZR_TRUE);
 }
 
+static SZrAstNode *recovery_function_named(const char *name) {
+    if (g_ast == ZR_NULL || g_ast->type != ZR_AST_SCRIPT ||
+        g_ast->data.script.statements == ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (TZrSize index = 0; index < g_ast->data.script.statements->count; index++) {
+        SZrAstNode *node = g_ast->data.script.statements->nodes[index];
+        if (node != ZR_NULL && node->type == ZR_AST_FUNCTION_DECLARATION &&
+            node->data.functionDeclaration.name != ZR_NULL &&
+            node->data.functionDeclaration.name->name != ZR_NULL &&
+            strcmp(ZrCore_String_GetNativeString(node->data.functionDeclaration.name->name), name) == 0) {
+            return node;
+        }
+    }
+    return ZR_NULL;
+}
+
+static void recovery_require_origin(const SZrAstNode *node, const char *source) {
+    TEST_ASSERT_NOT_NULL(node);
+    TEST_ASSERT_NOT_NULL(node->ownership);
+    TEST_ASSERT_EQUAL_PTR(g_ast->ownership, node->ownership);
+    TEST_ASSERT_NOT_NULL(node->location.source);
+    TEST_ASSERT_EQUAL_STRING("parser-recovery.zr", ZrCore_String_GetNativeString(node->location.source));
+    TEST_ASSERT_TRUE(node->location.start.offset <= node->location.end.offset);
+    TEST_ASSERT_TRUE(node->location.end.offset <= strlen(source));
+}
+
+static SZrAstNodeArray *recovery_require_block(SZrAstNode *node, TZrSize count, const char *source) {
+    recovery_require_origin(node, source);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_BLOCK, node->type);
+    TEST_ASSERT_NOT_NULL(node->data.block.body);
+    TEST_ASSERT_EQUAL_UINT64(count, node->data.block.body->count);
+    return node->data.block.body;
+}
+
+static SZrAstNode *recovery_require_call(SZrAstNode *statement, EZrPostfixAccessMode mode,
+                                        const char *source) {
+    SZrAstNode *primary;
+    SZrAstNode *call;
+
+    recovery_require_origin(statement, source);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_RETURN_STATEMENT, statement->type);
+    primary = statement->data.returnStatement.expr;
+    recovery_require_origin(primary, source);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_PRIMARY_EXPRESSION, primary->type);
+    TEST_ASSERT_NOT_NULL(primary->data.primaryExpression.property);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, primary->data.primaryExpression.property->type);
+    TEST_ASSERT_EQUAL_STRING("pick", ZrCore_String_GetNativeString(
+            primary->data.primaryExpression.property->data.identifier.name));
+    TEST_ASSERT_NOT_NULL(primary->data.primaryExpression.members);
+    TEST_ASSERT_EQUAL_UINT64(1U, primary->data.primaryExpression.members->count);
+    call = primary->data.primaryExpression.members->nodes[0];
+    recovery_require_origin(call, source);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_CALL, call->type);
+    TEST_ASSERT_EQUAL_INT(mode, call->data.functionCall.accessMode);
+    TEST_ASSERT_NOT_NULL(call->data.functionCall.args);
+    TEST_ASSERT_EQUAL_UINT64(1U, call->data.functionCall.args->count);
+    TEST_ASSERT_NOT_NULL(call->data.functionCall.argNames);
+    TEST_ASSERT_EQUAL_UINT64(1U, call->data.functionCall.argNames->length);
+    TEST_ASSERT_NOT_NULL(call->data.functionCall.argumentMarkers);
+    TEST_ASSERT_EQUAL_UINT64(1U, call->data.functionCall.argumentMarkers->length);
+    recovery_require_origin(call->data.functionCall.args->nodes[0], source);
+    return call;
+}
+
+static SZrAstNode *recovery_require_calc(const char *source) {
+    SZrAstNode *calc;
+
+    parse_source(source, ZR_TRUE);
+    TEST_ASSERT_TRUE_MESSAGE(g_missingSemicolonErrors > 0, "the original missing semicolon must remain visible");
+    TEST_ASSERT_TRUE(g_parser.hasError);
+    TEST_ASSERT_NOT_NULL(g_parser.errorMessage);
+    TEST_ASSERT_FALSE(g_parser.hasFatalError);
+    TEST_ASSERT_EQUAL_INT(ZR_TK_EOS, g_parser.lexer->t.token);
+    TEST_ASSERT_NOT_NULL(g_ast);
+    calc = recovery_function_named("calc");
+    TEST_ASSERT_NOT_NULL_MESSAGE(calc, "an earlier statement error must not discard a later valid call");
+    TEST_ASSERT_NOT_NULL(recovery_function_named("pick"));
+    TEST_ASSERT_EQUAL_UINT64(2U, g_ast->data.script.statements->count);
+    recovery_require_origin(calc, source);
+    return calc;
+}
+
+static void test_missing_semicolon_preserves_following_direct_call(void) {
+    const char *source = "fn pick(value: int): int { return value; }\n"
+                         "fn calc(): int { pending\n return pick(1); }";
+    SZrAstNode *calc = recovery_require_calc(source);
+    SZrAstNodeArray *body = recovery_require_block(calc->data.functionDeclaration.body, 2U, source);
+    SZrAstNode *call = recovery_require_call(body->nodes[1], ZR_POSTFIX_ACCESS_DIRECT, source);
+    const char *open = strstr(source, "(1)");
+
+    TEST_ASSERT_EQUAL_INT(ZR_AST_EXPRESSION_STATEMENT, body->nodes[0]->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_INTEGER_LITERAL, call->data.functionCall.args->nodes[0]->type);
+    TEST_ASSERT_EQUAL_INT64(1, call->data.functionCall.args->nodes[0]->data.integerLiteral.value);
+    TEST_ASSERT_NOT_NULL(open);
+    TEST_ASSERT_EQUAL_UINT64((TZrSize)(open - source), call->location.start.offset);
+    TEST_ASSERT_EQUAL_UINT64((TZrSize)(open - source) + 3U, call->location.end.offset);
+}
+
+static void test_missing_semicolon_preserves_following_nested_call(void) {
+    const char *source = "fn pick(value: int): int { return value; }\n"
+                         "fn calc(seed: u8): int { if (seed == 1) {\n"
+                         " var segmented = seed + 1;\n seg\n return pick(segmented);\n } return 0; }";
+    SZrAstNode *calc = recovery_require_calc(source);
+    SZrAstNodeArray *body = recovery_require_block(calc->data.functionDeclaration.body, 2U, source);
+    SZrAstNode *branch = body->nodes[0];
+    SZrAstNodeArray *thenBody;
+    SZrAstNode *call;
+    SZrAstNode *argument;
+
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IF_EXPRESSION, branch->type);
+    thenBody = recovery_require_block(branch->data.ifExpression.thenExpr, 3U, source);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, thenBody->nodes[0]->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_EXPRESSION_STATEMENT, thenBody->nodes[1]->type);
+    call = recovery_require_call(thenBody->nodes[2], ZR_POSTFIX_ACCESS_DIRECT, source);
+    argument = call->data.functionCall.args->nodes[0];
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, argument->type);
+    TEST_ASSERT_EQUAL_STRING("segmented", ZrCore_String_GetNativeString(argument->data.identifier.name));
+    TEST_ASSERT_EQUAL_INT(ZR_AST_RETURN_STATEMENT, body->nodes[1]->type);
+}
+
+static void test_missing_semicolon_preserves_following_optional_call(void) {
+    const char *source = "fn pick(value: int): int { return value; }\n"
+                         "fn calc(): int { pending\n return pick?.(1); }";
+    SZrAstNode *calc = recovery_require_calc(source);
+    SZrAstNodeArray *body = recovery_require_block(calc->data.functionDeclaration.body, 2U, source);
+
+    recovery_require_call(body->nodes[1], ZR_POSTFIX_ACCESS_OPTIONAL, source);
+}
+
+static void recovery_require_fresh_call_error(const char *source) {
+    parse_source(source, ZR_TRUE);
+    TEST_ASSERT_TRUE(g_missingSemicolonErrors > 0);
+    TEST_ASSERT_TRUE_MESSAGE(g_primaryErrors > 0, "a fresh argument error must remain visible after an earlier error");
+    TEST_ASSERT_FALSE(g_parser.hasFatalError);
+    TEST_ASSERT_NOT_NULL(recovery_function_named("pick"));
+    TEST_ASSERT_NULL_MESSAGE(recovery_function_named("calc"), "a fresh argument error must not publish a partial call");
+}
+
+static void test_prior_error_does_not_accept_invalid_first_call_argument(void) {
+    recovery_require_fresh_call_error("fn pick(value: int): int { return value; }\n"
+                                      "fn calc(): int { pending\n return pick(+); }");
+}
+
+static void test_prior_error_does_not_accept_partial_call_arguments(void) {
+    recovery_require_fresh_call_error("fn pick(value: int): int { return value; }\n"
+                                      "fn calc(): int { pending\n return pick(1, +); }");
+}
+
 // CTest 的独立 Unity 入口注册所有恢复场景；每项都经 tearDown 做零块断言。
 int main(void) {
     UNITY_BEGIN();
@@ -194,5 +354,10 @@ int main(void) {
     RUN_TEST(test_function_missing_body_releases_signature);
     RUN_TEST(test_function_missing_variadic_close_releases_parameter);
     RUN_TEST(test_parameter_missing_name_releases_decorators);
+    RUN_TEST(test_missing_semicolon_preserves_following_direct_call);
+    RUN_TEST(test_missing_semicolon_preserves_following_nested_call);
+    RUN_TEST(test_missing_semicolon_preserves_following_optional_call);
+    RUN_TEST(test_prior_error_does_not_accept_invalid_first_call_argument);
+    RUN_TEST(test_prior_error_does_not_accept_partial_call_arguments);
     return UNITY_END();
 }

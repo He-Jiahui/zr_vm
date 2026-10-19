@@ -3,8 +3,11 @@
 //
 
 #include "compiler/compiler_internal.h"
+#include "compiler/compiler_type_prototype_lifecycle.h"
+#include "compiler/compiler_type_field.h"
 #include "compiler/declaration/compiler_attribute_binding.h"
 #include "compiler/extern/compiler_extern_parameter_decorators.h"
+#include "compiler/compiler_top_level_duplicate.h"
 
 #include "compiler/extern/ffi_contract.h"
 
@@ -34,6 +37,15 @@ static void compiler_enum_init_member_defaults(SZrTypeMemberInfo *memberInfo) {
     ZrCore_Array_Construct(&memberInfo->parameterPassingModes);
     ZrCore_Array_Construct(&memberInfo->decorators);
     ZrCore_Value_ResetAsNull(&memberInfo->decoratorMetadataValue);
+}
+
+static void compiler_extern_free_unpublished_prototype(
+        SZrCompilerState *cs,
+        SZrTypePrototypeInfo *info) {
+    if (cs == ZR_NULL || info == ZR_NULL) {
+        return;
+    }
+    compiler_type_prototype_free_owned_metadata(cs->state, info);
 }
 
 static TZrBool compiler_extern_validate_parameter_decorators(
@@ -96,19 +108,54 @@ static TZrBool compiler_extern_validate_declaration_decorators(
     }
 }
 
-TZrBool extern_compiler_has_registered_type(SZrCompilerState *cs, SZrString *typeName) {
-    if (cs == ZR_NULL || typeName == ZR_NULL) {
-        return ZR_FALSE;
+static TZrBool compiler_extern_skip_type_declaration(
+        SZrCompilerState *cs, SZrAstNode *declarationNode) {
+    if (compiler_report_duplicate_top_level_type(cs, declarationNode)) {
+        return ZR_TRUE;
     }
 
     for (TZrSize index = 0; index < cs->typePrototypes.length; index++) {
         SZrTypePrototypeInfo *info = (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, index);
-        if (info != ZR_NULL && info->name != ZR_NULL && ZrCore_String_Equal(info->name, typeName)) {
-            return ZR_TRUE;
+        if (info != ZR_NULL && info->declarationNode == declarationNode &&
+            info->genericInstanceTypeId == ZR_SEMANTIC_ID_INVALID) {
+            return !info->isDeclarationShell;
         }
     }
 
     return ZR_FALSE;
+}
+
+static TZrBool compiler_extern_register_type_declaration(
+        SZrCompilerState *cs, SZrString *typeName, SZrAstNode *declarationNode) {
+    if ((cs->typeEnv != ZR_NULL &&
+         !ZrParser_TypeEnvironment_RegisterTypeDeclaration(
+                 cs->state, cs->typeEnv, typeName, declarationNode)) ||
+        (cs->compileTimeTypeEnv != ZR_NULL &&
+         !ZrParser_TypeEnvironment_RegisterTypeDeclaration(
+                 cs->state, cs->compileTimeTypeEnv, typeName, declarationNode))) {
+        ZrParser_Compiler_Error(cs, "Cannot register type declaration syntax context",
+                declarationNode->location);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+static void compiler_extern_publish_type_prototype(
+        SZrCompilerState *cs, SZrTypePrototypeInfo *info) {
+    /* Construction may grow the table; find the old shell only after success. */
+    if (info->genericInstanceTypeId == ZR_SEMANTIC_ID_INVALID) {
+        for (TZrSize index = 0U; index < cs->typePrototypes.length; index++) {
+            SZrTypePrototypeInfo *previous = ZrCore_Array_Get(&cs->typePrototypes, index);
+            if (previous->declarationNode == info->declarationNode &&
+                previous->genericInstanceTypeId == ZR_SEMANTIC_ID_INVALID &&
+                previous->isDeclarationShell) {
+                compiler_type_prototype_free_owned_metadata(cs->state, previous);
+                *previous = *info;
+                return;
+            }
+        }
+    }
+    ZrCore_Array_Push(cs->state, &cs->typePrototypes, info);
 }
 
 static SZrString *compiler_enum_resolve_underlying_type_name(SZrCompilerState *cs,
@@ -249,6 +296,7 @@ static TZrBool compiler_enum_fill_prototype_info(SZrCompilerState *cs,
 
     memset(info, 0, sizeof(*info));
     info->name = enumDecl->name->name;
+    info->declarationNode = declarationNode;
     info->type = ZR_OBJECT_PROTOTYPE_TYPE_ENUM;
     info->accessModifier = enumDecl->accessModifier;
     info->isImportedNative = ZR_FALSE;
@@ -386,12 +434,13 @@ void extern_compiler_register_struct_prototype(SZrCompilerState *cs, SZrAstNode 
 
     structDecl = &declarationNode->data.structDeclaration;
     if (structDecl->name == ZR_NULL || structDecl->name->name == ZR_NULL ||
-        extern_compiler_has_registered_type(cs, structDecl->name->name)) {
+        compiler_extern_skip_type_declaration(cs, declarationNode)) {
         return;
     }
 
     memset(&info, 0, sizeof(info));
     info.name = structDecl->name->name;
+    info.declarationNode = declarationNode;
     info.type = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT;
     info.accessModifier = structDecl->accessModifier;
     info.isImportedNative = ZR_FALSE;
@@ -416,12 +465,19 @@ void extern_compiler_register_struct_prototype(SZrCompilerState *cs, SZrAstNode 
             memset(&memberInfo, 0, sizeof(memberInfo));
             memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
             memberInfo.memberType = ZR_AST_STRUCT_FIELD;
+            memberInfo.declarationNode = member;
             memberInfo.name = member->data.structField.name->name;
             memberInfo.accessModifier = member->data.structField.access;
             memberInfo.isStatic = member->data.structField.isStatic;
             memberInfo.isConst = member->data.structField.isConst;
             memberInfo.fieldType = member->data.structField.typeInfo;
             memberInfo.fieldTypeName = extract_type_name_string(cs, member->data.structField.typeInfo);
+            if (!compiler_type_field_capture_annotation(
+                        cs, &memberInfo, member->data.structField.typeInfo)) {
+                compiler_type_member_free_owned_metadata(cs->state, &memberInfo);
+                compiler_type_prototype_free_owned_metadata(cs->state, &info);
+                return;
+            }
             memberInfo.fieldSize = calculate_type_size(cs, member->data.structField.typeInfo);
             if (memberInfo.fieldSize == 0) {
                 memberInfo.fieldSize = ZR_ALIGN_SIZE;
@@ -440,18 +496,18 @@ void extern_compiler_register_struct_prototype(SZrCompilerState *cs, SZrAstNode 
         }
     }
 
-    ZrCore_Array_Push(cs->state, &cs->typePrototypes, &info);
-    if (cs->typeEnv != ZR_NULL) {
-        ZrParser_TypeEnvironment_RegisterType(cs->state, cs->typeEnv, info.name);
+    if (!compiler_extern_register_type_declaration(cs, info.name, declarationNode)) {
+        compiler_extern_free_unpublished_prototype(cs, &info);
+        return;
     }
-    if (cs->compileTimeTypeEnv != ZR_NULL) {
-        ZrParser_TypeEnvironment_RegisterType(cs->state, cs->compileTimeTypeEnv, info.name);
-    }
+    compiler_extern_publish_type_prototype(cs, &info);
 }
 
 void extern_compiler_register_enum_prototype(SZrCompilerState *cs, SZrAstNode *declarationNode) {
     SZrTypePrototypeInfo info;
     SZrEnumDeclaration *enumDecl;
+
+    memset(&info, 0, sizeof(info));
 
     if (cs == ZR_NULL || declarationNode == ZR_NULL || declarationNode->type != ZR_AST_ENUM_DECLARATION || cs->hasError) {
         return;
@@ -459,21 +515,20 @@ void extern_compiler_register_enum_prototype(SZrCompilerState *cs, SZrAstNode *d
 
     enumDecl = &declarationNode->data.enumDeclaration;
     if (enumDecl->name == ZR_NULL || enumDecl->name->name == ZR_NULL ||
-        extern_compiler_has_registered_type(cs, enumDecl->name->name)) {
+        compiler_extern_skip_type_declaration(cs, declarationNode)) {
         return;
     }
 
     if (!compiler_enum_fill_prototype_info(cs, declarationNode, &info, ZR_TRUE)) {
+        compiler_extern_free_unpublished_prototype(cs, &info);
         return;
     }
 
-    ZrCore_Array_Push(cs->state, &cs->typePrototypes, &info);
-    if (cs->typeEnv != ZR_NULL) {
-        ZrParser_TypeEnvironment_RegisterType(cs->state, cs->typeEnv, info.name);
+    if (!compiler_extern_register_type_declaration(cs, info.name, declarationNode)) {
+        compiler_extern_free_unpublished_prototype(cs, &info);
+        return;
     }
-    if (cs->compileTimeTypeEnv != ZR_NULL) {
-        ZrParser_TypeEnvironment_RegisterType(cs->state, cs->compileTimeTypeEnv, info.name);
-    }
+    compiler_extern_publish_type_prototype(cs, &info);
 }
 
 void compile_enum_declaration(SZrCompilerState *cs, SZrAstNode *node) {
@@ -481,17 +536,20 @@ void compile_enum_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     SZrTypePrototypeInfo info;
     TZrBool decoratorsValid;
 
+    memset(&info, 0, sizeof(info));
+
     if (cs == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_ENUM_DECLARATION || cs->hasError) {
         return;
     }
 
     enumDecl = &node->data.enumDeclaration;
     if (enumDecl->name == ZR_NULL || enumDecl->name->name == ZR_NULL ||
-        extern_compiler_has_registered_type(cs, enumDecl->name->name)) {
+        compiler_extern_skip_type_declaration(cs, node)) {
         return;
     }
 
     if (!compiler_enum_fill_prototype_info(cs, node, &info, ZR_FALSE)) {
+        compiler_extern_free_unpublished_prototype(cs, &info);
         return;
     }
 
@@ -502,16 +560,15 @@ void compile_enum_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 cs, enumDecl->decorators, &info, node->location);
     }
     if (!decoratorsValid) {
+        compiler_extern_free_unpublished_prototype(cs, &info);
         return;
     }
 
-    ZrCore_Array_Push(cs->state, &cs->typePrototypes, &info);
-    if (cs->typeEnv != ZR_NULL) {
-        ZrParser_TypeEnvironment_RegisterType(cs->state, cs->typeEnv, info.name);
+    if (!compiler_extern_register_type_declaration(cs, info.name, node)) {
+        compiler_extern_free_unpublished_prototype(cs, &info);
+        return;
     }
-    if (cs->compileTimeTypeEnv != ZR_NULL) {
-        ZrParser_TypeEnvironment_RegisterType(cs->state, cs->compileTimeTypeEnv, info.name);
-    }
+    compiler_extern_publish_type_prototype(cs, &info);
 }
 
 void compiler_register_extern_block_bindings(SZrCompilerState *cs, SZrExternBlock *externBlock) {
@@ -760,6 +817,7 @@ void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     for (TZrSize index = 0; index < externBlock->declarations->count; index++) {
         SZrAstNode *declaration = externBlock->declarations->nodes[index];
         SZrString *bindingName = ZR_NULL;
+        SZrSyntaxContext bindingContext = ZrParser_SyntaxContext_Root();
 
         if (declaration == ZR_NULL) {
             continue;
@@ -770,6 +828,7 @@ void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 ZrExternCompilerTempRoot descriptorRoot = {0};
                 if (declaration->data.externDelegateDeclaration.name != ZR_NULL) {
                     bindingName = declaration->data.externDelegateDeclaration.name->name;
+                    bindingContext = declaration->data.externDelegateDeclaration.name->syntaxContext;
                 }
                 if (bindingName != ZR_NULL &&
                     extern_compiler_temp_root_begin(cs, &descriptorRoot) &&
@@ -779,7 +838,7 @@ void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                             declaration,
                             ZR_TRUE,
                             extern_compiler_temp_root_value(&descriptorRoot))) {
-                    TZrUInt32 localSlot = allocate_local_var(cs, bindingName);
+                    TZrUInt32 localSlot = allocate_local_var_with_context(cs, bindingName, bindingContext);
                     emit_constant_to_slot(cs, localSlot, extern_compiler_temp_root_value(&descriptorRoot));
                     ZrParser_Compiler_TrimStackToSlot(cs, localSlot);
                 }
@@ -792,6 +851,7 @@ void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 ZrExternCompilerTempRoot descriptorRoot = {0};
                 if (declaration->data.structDeclaration.name != ZR_NULL) {
                     bindingName = declaration->data.structDeclaration.name->name;
+                    bindingContext = declaration->data.structDeclaration.name->syntaxContext;
                 }
                 if (bindingName != ZR_NULL &&
                     extern_compiler_temp_root_begin(cs, &descriptorRoot) &&
@@ -800,7 +860,7 @@ void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                             externBlock,
                             declaration,
                             extern_compiler_temp_root_value(&descriptorRoot))) {
-                    TZrUInt32 localSlot = allocate_local_var(cs, bindingName);
+                    TZrUInt32 localSlot = allocate_local_var_with_context(cs, bindingName, bindingContext);
                     emit_constant_to_slot(cs, localSlot, extern_compiler_temp_root_value(&descriptorRoot));
                     ZrParser_Compiler_TrimStackToSlot(cs, localSlot);
                 }
@@ -813,12 +873,13 @@ void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 ZrExternCompilerTempRoot descriptorRoot = {0};
                 if (declaration->data.enumDeclaration.name != ZR_NULL) {
                     bindingName = declaration->data.enumDeclaration.name->name;
+                    bindingContext = declaration->data.enumDeclaration.name->syntaxContext;
                 }
                 if (bindingName != ZR_NULL &&
                     extern_compiler_temp_root_begin(cs, &descriptorRoot) &&
                     extern_compiler_build_enum_descriptor_value(
                             cs, declaration, extern_compiler_temp_root_value(&descriptorRoot))) {
-                    TZrUInt32 localSlot = allocate_local_var(cs, bindingName);
+                    TZrUInt32 localSlot = allocate_local_var_with_context(cs, bindingName, bindingContext);
                     emit_constant_to_slot(cs, localSlot, extern_compiler_temp_root_value(&descriptorRoot));
                     ZrParser_Compiler_TrimStackToSlot(cs, localSlot);
                 }
@@ -879,7 +940,10 @@ void compile_extern_block_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     }
                 }
 
-                localSlot = allocate_local_var(cs, functionDecl->name->name);
+                localSlot = allocate_local_var_with_context(
+                        cs,
+                        functionDecl->name->name,
+                        functionDecl->name->syntaxContext);
                 if (!extern_compiler_emit_method_call_to_local(cs,
                                                                librarySlot,
                                                                getSymbolName,

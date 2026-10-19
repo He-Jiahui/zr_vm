@@ -1,4 +1,6 @@
 #include "compiler/compiler_internal.h"
+#include "compiler/compiler_child_function_relocation.h"
+#include "compiler/compiler_native_call_binding.h"
 
 static TZrBool compiler_constant_refs_function(const SZrTypeValue *value, SZrFunction *function) {
     if (value == ZR_NULL || function == ZR_NULL || value->value.object == ZR_NULL) {
@@ -203,6 +205,7 @@ static TZrBool compiler_copy_function_children(SZrCompilerState *cs, SZrFunction
     }
 
     function->childFunctionLength = (TZrUInt32) cs->childFunctions.length;
+    compiler_relocate_copied_child_constants(function, sourceChildren);
     compiler_rebind_moved_child_constants(function, sourceChildren);
     /* Embedded children must retain the allocation that owns their storage. */
     for (TZrSize index = 0; index < cs->childFunctions.length; index++) {
@@ -481,6 +484,10 @@ static TZrBool compiler_instruction_is_native_callback_handle_creation(const SZr
     }
 
     if (opcode == ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL)) {
+        return ZR_TRUE;
+    }
+
+    if (compiler_native_call_binding_is_provider_known_call(function, instructionIndex)) {
         return ZR_TRUE;
     }
 

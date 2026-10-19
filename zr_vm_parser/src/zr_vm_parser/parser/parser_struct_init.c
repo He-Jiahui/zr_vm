@@ -82,10 +82,11 @@ SZrAstNode *parse_struct_init_expression(SZrParserState *ps) {
     closeLocation = get_current_token_location(ps);
     ZrParser_Lexer_Next(ps->lexer);
 
-    node = create_ast_node(ps,
+    SZrFileRange mergedLocation;
+    if (!ZrParser_MergeLocations(ps, startLocation, closeLocation, &mergedLocation) ||
+        (node = create_ast_node(ps,
                            ZR_AST_STRUCT_INIT_EXPRESSION,
-                           ZrParser_FileRange_Merge(startLocation, closeLocation));
-    if (node == ZR_NULL) {
+                           mergedLocation)) == ZR_NULL) {
         free_struct_init_parts(ps, typeInfo, args, argNames, argumentMarkers);
         return ZR_NULL;
     }

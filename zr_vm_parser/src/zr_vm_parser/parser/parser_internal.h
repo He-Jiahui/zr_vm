@@ -7,15 +7,30 @@
 #include "zr_vm_core/log.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/string.h"
+#include "syntax/token_source.h"
+#include "parser/parser_ownership.h"
+#include "parser/parser_source_projection.h"
 
 #include <math.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
+/**
+ * Parser-owned AST containers charge both the container and growth storage to
+ * the lexer's shared ownership budget.  These helpers are intentionally
+ * checked: on failure the input node remains owned by the caller and must be
+ * released before returning from the current parser operation.
+ */
+SZrAstNodeArray *parser_ast_array_new(SZrParserState *ps, TZrSize initialCapacity);
+TZrBool parser_ast_array_add(SZrParserState *ps,
+                             SZrAstNodeArray *array,
+                             SZrAstNode *node);
+
 /** @brief 推测解析的词法快照；token 负载仍借用同一 lexer/state。
  * @note 恢复时必须使用保存时的 parser，且源文本与 token 负载仍有效。 */
 typedef struct SZrParserCursor {
+    SZrTokenSourceCheckpoint tokenSource;
     TZrSize currentPos;
     TZrInt32 currentChar;
     TZrInt32 lineNumber;
@@ -97,7 +112,7 @@ SZrAstNodeArray *parse_leading_decorators(SZrParserState *ps);
 /** @brief 在泛型类型上下文消费一个右尖括号，必要时拆分右移 token。 */
 TZrBool consume_type_closing_angle(SZrParserState *ps);
 
-/** @brief 从当前 lexer 游标计算 AST 位置；首行列号偏差见实现处 BUG。 */
+/** @brief Read the current token's owner-backed source projection without allocating. */
 SZrFileRange get_current_location(SZrParserState *ps);
 
 void get_string_view_for_length(SZrString *value, const TZrChar **text, TZrSize *length);
@@ -107,7 +122,7 @@ SZrFilePosition get_file_position_from_offset(SZrLexState *lexer, TZrSize offset
 
 TZrSize get_current_token_length(SZrParserState *ps);
 
-/** @brief 基于 lexer 的 token 起点和源文本求精确范围，供诊断与 AST 定位。 */
+/** @brief Read the same checked source projection for diagnostics and AST locations. */
 ZR_PARSER_API SZrFileRange get_current_token_location(SZrParserState *ps);
 
 /** @brief 从当前源行提取日志片段，并给出片段内的错误列。
@@ -217,6 +232,14 @@ SZrAstNode *create_ast_node(SZrParserState *ps, EZrAstNodeType type, SZrFileRang
 
 SZrAstNode *create_identifier_node_with_location(SZrParserState *ps, SZrString *name, SZrFileRange location);
 
+/* Construct an identifier from a captured token context.  Callers that
+ * consume the lexer token before allocating the AST node must use this form;
+ * the current lexer token may already belong to a different expansion. */
+SZrAstNode *create_identifier_node_with_context(SZrParserState *ps,
+                                                SZrString *name,
+                                                SZrFileRange location,
+                                                SZrSyntaxContext syntaxContext);
+
 SZrAstNode *create_identifier_node(SZrParserState *ps, SZrString *name);
 
 SZrAstNode *create_boolean_literal_node(SZrParserState *ps, TZrBool value);
@@ -249,12 +272,23 @@ TZrBool zr_string_equals_literal(SZrString *value, const TZrChar *literal);
 
 TZrBool try_get_ownership_qualifier(SZrString *name, EZrOwnershipQualifier *qualifier);
 
-SZrAstNode *parse_embedded_expression(SZrParserState *ps, const TZrChar *source, TZrSize sourceLength);
+void ZrParser_State_InitEmbeddedSource(
+        SZrParserState *ps, SZrParserState *parent, const TZrChar *source,
+        TZrSize sourceLength, SZrSyntaxContext context, SZrTokenSpan origin,
+        const SZrFileRange *originLocation);
+
+SZrAstNode *parse_embedded_expression(
+        SZrParserState *ps, const TZrChar *source, TZrSize sourceLength,
+        SZrSyntaxContext context, SZrTokenSpan origin,
+        const SZrFileRange *originLocation);
 
 TZrBool append_template_static_segment(SZrParserState *ps, SZrAstNodeArray *segments, const TZrChar *text,
                                               TZrSize length);
 
-SZrAstNode *parse_template_string_literal(SZrParserState *ps, SZrString *rawValue);
+SZrAstNode *parse_template_string_literal(
+        SZrParserState *ps, SZrString *rawValue,
+        SZrSyntaxContext context, SZrTokenSpan origin,
+        const SZrFileRange *originLocation);
 
 SZrAstNode *parse_literal(SZrParserState *ps);
 
@@ -277,8 +311,12 @@ SZrAstNodeArray *parse_argument_list(
         SZrArray **argNames,
         SZrArray **argumentMarkers);
 
+void parser_call_metadata_free(SZrParserState *ps, SZrAstNodeArray *args,
+                               SZrArray *argNames, SZrArray *argumentMarkers);
+
 TZrBool call_has_explicit_argument_marker(const SZrArray *markers);
 
+/* Valid inputs transfer ownership on entry, including every failure path. */
 SZrAstNode *append_primary_member(SZrParserState *ps, SZrAstNode *base, SZrAstNode *memberNode,
                                          SZrFileRange startLoc);
 
@@ -300,6 +338,8 @@ SZrAstNode *create_construct_expression_node(SZrParserState *ps, SZrAstNode *tar
                                                     TZrBool isNew, EZrOwnershipBuiltinKind builtinKind,
                                                     SZrFileRange location);
 
+SZrAstNode *parse_generic_construct_target(SZrParserState *ps);
+
 SZrAstNode *parse_prototype_path_expression(SZrParserState *ps);
 
 SZrAstNode *parse_construct_expression(SZrParserState *ps,
@@ -307,6 +347,8 @@ SZrAstNode *parse_construct_expression(SZrParserState *ps,
                                               EZrOwnershipQualifier ownershipQualifier,
                                               TZrBool isUsing,
                                               EZrOwnershipBuiltinKind builtinKind);
+
+SZrAstNode *parse_resource_own_expression(SZrParserState *ps);
 
 SZrAstNode *parse_struct_init_expression(SZrParserState *ps);
 

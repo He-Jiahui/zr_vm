@@ -420,7 +420,7 @@ static SZrAstNode *semantic_scope_facts_destructuring_binding_node(
  * TODO: 详细查询契约只投影精确解析声明事实，缺项会省略（docs/parser-and-semantics/semantic-query-api-foundation.md:256；
  * docs/plans/lsp/optimize/2026-08-24-plan03-task02-source-scopes.md:5-20）；概览虽将“locals”列为
  * VisibleSymbols 覆盖类别（docs/parser-and-semantics/semantic-query-api-foundation.md:1242），却未列绑定语法。
- * 数组解构编译分支分配局部槽位但未按 pattern binding 节点登记事实（zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c:3130-3134；zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c:1015-1047）。
+ * 数组解构编译分支分配局部槽位但未按 pattern binding 节点登记事实（zr_vm_parser/src/zr_vm_parser/compiler/statement/compile_statement.c:3130-3134；zr_vm_parser/src/zr_vm_parser/compiler/statement/compile_statement_flow.c:1015-1047）。
  * 本函数只按对象绑定节点或整体变量声明节点查既有事实（semantic_scope_facts.c:445-448）；VisibleSymbols 只读已发布项
  * （zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c:632-645），故数组绑定目前省略。
  * 数组模式尚无专门查询用例；普通局部用例见 tests/parser/test_semantic_query_symbols.c:885-927。需明确概览是否承诺该模式；
@@ -939,20 +939,6 @@ static TZrBool semantic_scope_facts_visit_extern_block(
     return ZR_TRUE;
 }
 
-/** @brief 计算循环词法范围：保留循环起点，并在有循环体时延伸到体末端。
- * @note 范围使用 AST 自带的位置与 source 指针，不复制源码缓冲区。
- */
-static SZrFileRange semantic_scope_facts_loop_range(
-        const SZrAstNode *node,
-        const SZrAstNode *body) {
-    SZrFileRange range = node->location;
-
-    if (body != ZR_NULL) {
-        range.end = body->location.end;
-    }
-    return range;
-}
-
 /** @brief 用一个块作用域覆盖 for 初始化式和循环体。
  * @note 初始化式与循环体共享该作用域，循环体自身的块可再建立内层作用域。
  */
@@ -965,7 +951,7 @@ static TZrBool semantic_scope_facts_visit_for_loop(
             builder,
             parentScopeId,
             ZR_SEMANTIC_SCOPE_KIND_BLOCK,
-            semantic_scope_facts_loop_range(node, node->data.forLoop.block),
+            node->location,
             ownerSymbolId,
             ZR_FALSE);
 
@@ -988,7 +974,7 @@ static TZrBool semantic_scope_facts_visit_foreach_loop(
             builder,
             parentScopeId,
             ZR_SEMANTIC_SCOPE_KIND_BLOCK,
-            semantic_scope_facts_loop_range(node, node->data.foreachLoop.block),
+            node->location,
             ownerSymbolId,
             ZR_FALSE);
 
@@ -1005,8 +991,8 @@ static TZrBool semantic_scope_facts_visit_foreach_loop(
  * TODO: 详细契约只投影精确声明事实且缺项省略（docs/parser-and-semantics/semantic-query-api-foundation.md:256；
  * docs/plans/lsp/optimize/2026-08-24-plan03-task02-source-scopes.md:5-20）；概览虽把“locals”列为 VisibleSymbols
  * 覆盖类别（docs/parser-and-semantics/semantic-query-api-foundation.md:1242），未逐项界定 catch/using。catch 只遍历 block，
- * using 只遍历 body/else，均不发布 pattern；编译器仍创建对应局部（zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_try.c:54-75；zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c:2216,2291）。
- * using 注册不带声明节点/范围（zr_vm_parser/src/zr_vm_parser/type_system.c:1304-1316）；VisibleSymbols 只消费已发布项
+ * using 只遍历 body/else，均不发布 pattern；编译器仍创建对应局部（zr_vm_parser/src/zr_vm_parser/compiler/statement/compile_statement_try.c:54-75；zr_vm_parser/src/zr_vm_parser/compiler/statement/compile_statement.c:2216,2291）。
+ * using 注册不带声明节点/范围（zr_vm_parser/src/zr_vm_parser/types/type_system.c:1304-1316）；VisibleSymbols 只消费已发布项
  * （zr_vm_parser/src/zr_vm_parser/semantic/semantic_query_symbols.c:632-645），故这些绑定当前省略；尚无专门查询用例。
  * 普通局部用例见 tests/parser/test_semantic_query_symbols.c:885-927。需先明确概览的 locals 是否承诺这些模式；若承诺，发布精确绑定事实并补查询回归。
  */

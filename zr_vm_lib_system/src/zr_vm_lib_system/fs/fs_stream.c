@@ -3,6 +3,7 @@
 //
 
 #include "fs/fs_internal.h"
+#include "fs_resource_roots_internal.h"
 
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/exception.h"
@@ -302,50 +303,62 @@ void ZrSystem_Fs_StreamFinalize(SZrState *state, SZrRawObject *rawObject) {
     system_fs_set_hidden_native_pointer(state, object, ZR_SYSTEM_FS_HIDDEN_STREAM_FIELD, ZR_NULL);
 }
 
-/* 二进制路径保留所有字节，数组中的元素固定为 0..255 整数。 */
+/* Native bytes stay owned by the caller through VM array construction. */
+typedef struct ZrSystemFsBytesConversion {
+    unsigned char *bytes;
+    TZrSize size;
+    TZrLibrary_File_Handle handle;
+    SZrTypeValue *result;
+    ZrSystemFsResourceRoots roots;
+    TZrBool success;
+} ZrSystemFsBytesConversion;
+
+static void system_fs_publish_bytes(SZrState *state, TZrPtr arguments) {
+    ZrSystemFsBytesConversion *context = arguments;
+    SZrObject *array = ZrLib_Array_New(state);
+    if (array == ZR_NULL) return;
+    context->roots.objects[0] = ZR_CAST_RAW_OBJECT_AS_SUPER(array);
+    for (TZrSize index = 0; index < context->size; ++index) {
+        SZrTypeValue value;
+        ZrLib_Value_SetInt(state, &value, (TZrInt64)context->bytes[index]);
+        array = system_fs_resource_object(state, &context->roots, 0u);
+        if (!ZrLib_Array_PushValue(state, array, &value)) return;
+    }
+    array = system_fs_resource_object(state, &context->roots, 0u);
+    ZrLib_Value_SetObject(state, context->result, array, ZR_VALUE_TYPE_ARRAY);
+    context->success = ZR_TRUE;
+}
+
 TZrBool ZrSystem_Fs_ReadBytesFromHandle(SZrState *state,
                                         TZrLibrary_File_Handle handle,
                                         TZrInt64 count,
                                         SZrTypeValue *result,
                                         ZR_OUT TZrInt64 *outReadCount) {
-    SZrObject *array;
-    unsigned char *bytes = ZR_NULL;
-    TZrSize size = 0;
-    TZrSize index;
-
-    if (outReadCount != ZR_NULL) {
-        *outReadCount = 0;
-    }
+    ZrSystemFsBytesConversion context = {0};
+    if (outReadCount != ZR_NULL) *outReadCount = 0;
     if (state == ZR_NULL || result == ZR_NULL) {
         errno = EINVAL;
         return ZR_FALSE;
     }
-
-    if (!system_fs_read_buffer_from_handle(handle, count, &bytes, &size)) {
+    if (!system_fs_read_buffer_from_handle(handle, count, &context.bytes, &context.size)) {
         return ZR_FALSE;
     }
-
-    array = ZrLib_Array_New(state);
-    if (array == ZR_NULL) {
-        free(bytes);
+    if (!system_fs_resource_roots_begin(state, &context.roots)) {
+        free(context.bytes);
         return ZR_FALSE;
     }
-
-    for (index = 0; index < size; index++) {
-        SZrTypeValue value;
-        ZrLib_Value_SetInt(state, &value, (TZrInt64)bytes[index]);
-        if (!ZrLib_Array_PushValue(state, array, &value)) {
-            free(bytes);
-            return ZR_FALSE;
-        }
+    context.result = result;
+    EZrThreadStatus status = ZrCore_Exception_TryRun(state, system_fs_publish_bytes, &context);
+    int savedErrno = errno;
+    free(context.bytes);
+    system_fs_resource_roots_end(state, &context.roots);
+    if (status != ZR_THREAD_STATUS_FINE) {
+        ZrCore_Exception_Throw(state, status);
+        return ZR_FALSE;
     }
-
-    free(bytes);
-    ZrLib_Value_SetObject(state, result, array, ZR_VALUE_TYPE_ARRAY);
-    if (outReadCount != ZR_NULL) {
-        *outReadCount = (TZrInt64)size;
-    }
-    return ZR_TRUE;
+    errno = savedErrno;
+    if (context.success && outReadCount != ZR_NULL) *outReadCount = (TZrInt64)context.size;
+    return context.success;
 }
 
 typedef struct ZrSystemFsTextPublication {
@@ -409,59 +422,59 @@ TZrBool ZrSystem_Fs_ReadTextFromHandle(SZrState *state,
     return ZR_TRUE;
 }
 
-/* 先校验整组整数再写入，避免数组中较晚出现非法元素时已部分写出。 */
+/* Validate every byte before the first write. Array_Get may materialize raw
+ * storage and throw; the caller still owns bytes during that conversion. */
+static void system_fs_write_bytes(SZrState *state, TZrPtr arguments) {
+    ZrSystemFsBytesConversion *context = arguments;
+    for (TZrSize index = 0; index < context->size; ++index) {
+        SZrObject *array = system_fs_resource_object(state, &context->roots, 0u);
+        const SZrTypeValue *value = ZrLib_Array_Get(state, array, index);
+        if (value == ZR_NULL ||
+            (!ZR_VALUE_IS_TYPE_SIGNED_INT(value->type) && !ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type))) {
+            errno = EINVAL;
+            return;
+        }
+        TZrInt64 intValue = ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)
+            ? value->value.nativeObject.nativeInt64 : (TZrInt64)value->value.nativeObject.nativeUInt64;
+        if (intValue < 0 || intValue > 255) {
+            errno = EINVAL;
+            return;
+        }
+        context->bytes[index] = (unsigned char)intValue;
+    }
+    context->success = system_fs_write_all(context->handle, context->bytes, context->size);
+}
+
 TZrBool ZrSystem_Fs_WriteBytesToHandle(SZrState *state,
                                        TZrLibrary_File_Handle handle,
                                        SZrObject *array,
                                        ZR_OUT TZrInt64 *outWrittenCount) {
-    TZrSize length;
-    unsigned char *bytes;
-    TZrSize index;
-
-    if (outWrittenCount != ZR_NULL) {
-        *outWrittenCount = 0;
-    }
+    ZrSystemFsBytesConversion context = {0};
+    if (outWrittenCount != ZR_NULL) *outWrittenCount = 0;
     if (state == ZR_NULL || array == ZR_NULL) {
         errno = EINVAL;
         return ZR_FALSE;
     }
-
-    length = ZrLib_Array_Length(array);
-    bytes = (unsigned char *)malloc(length > 0 ? length : 1);
-    if (bytes == ZR_NULL) {
+    if (!system_fs_resource_roots_begin(state, &context.roots)) return ZR_FALSE;
+    context.roots.objects[0] = ZR_CAST_RAW_OBJECT_AS_SUPER(array);
+    context.size = ZrLib_Array_Length(array);
+    context.bytes = (unsigned char *)malloc(context.size > 0 ? context.size : 1);
+    if (context.bytes == ZR_NULL) {
+        system_fs_resource_roots_end(state, &context.roots);
         return ZR_FALSE;
     }
-
-    for (index = 0; index < length; index++) {
-        const SZrTypeValue *value = ZrLib_Array_Get(state, array, index);
-        TZrInt64 intValue = 0;
-        if (value == ZR_NULL ||
-            (!ZR_VALUE_IS_TYPE_SIGNED_INT(value->type) && !ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type))) {
-            free(bytes);
-            errno = EINVAL;
-            return ZR_FALSE;
-        }
-        intValue = ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)
-                           ? value->value.nativeObject.nativeInt64
-                           : (TZrInt64)value->value.nativeObject.nativeUInt64;
-        if (intValue < 0 || intValue > 255) {
-            free(bytes);
-            errno = EINVAL;
-            return ZR_FALSE;
-        }
-        bytes[index] = (unsigned char)intValue;
-    }
-
-    if (!system_fs_write_all(handle, bytes, length)) {
-        free(bytes);
+    context.handle = handle;
+    EZrThreadStatus status = ZrCore_Exception_TryRun(state, system_fs_write_bytes, &context);
+    int savedErrno = errno;
+    free(context.bytes);
+    system_fs_resource_roots_end(state, &context.roots);
+    if (status != ZR_THREAD_STATUS_FINE) {
+        ZrCore_Exception_Throw(state, status);
         return ZR_FALSE;
     }
-
-    free(bytes);
-    if (outWrittenCount != ZR_NULL) {
-        *outWrittenCount = (TZrInt64)length;
-    }
-    return ZR_TRUE;
+    errno = savedErrno;
+    if (context.success && outWrittenCount != ZR_NULL) *outWrittenCount = (TZrInt64)context.size;
+    return context.success;
 }
 
 /* 文本写入使用 NUL 结尾的宿主字符串；需要保留任意二进制字节时使用 writeBytes。 */
@@ -837,9 +850,8 @@ TZrBool ZrSystem_Fs_Stream_Close(ZrLibCallContext *context, SZrTypeValue *result
  * @return 缓冲读取、数组构造及所有 push 成功返回 `ZR_TRUE`；任一普通失败返回 `ZR_FALSE`。成功返回只表示
  * array 已完成构造，不代表此前输入位置可回滚。
  * ## Constraints and lifecycle
- * malloc 缓冲在 array 构造结束或普通失败后释放；失败时未发布的 VM array 留待 GC 回收，句柄位置不回滚。
- * 结果数组由 VM 所有，outReadCount 不表示宿主事务保证。BUG: Array_New/PushValue 的 VM 分配异常非局部退出时，
- * 已成功 malloc 的 bytes 缓冲越过 free；Exception_Throw/exception_try_run.c 只恢复 VM roots/scopes，不遍历放弃的 C 栈。
+ * caller-owned context 在 Array_New/PushValue 异常后释放精确 native bytes，再按原 status 重抛。临时 AOT 根保留未发布数组，调用者仍拥有 handle；读取位置不回滚。成功后才发布 outReadCount。
+ *
  * ## References
  * `Stream_ReadBytes` :449、`fs_entry.c` 的 `ReadBytes` aliases、`system_fs_read_buffer_from_handle`、`ZrLib_Array_PushValue`。
  */
@@ -867,8 +879,8 @@ TZrBool ZrSystem_Fs_Stream_Close(ZrLibCallContext *context, SZrTypeValue *result
  * ## Returns
  * @return 预校验和 write-all 成功返回 `ZR_TRUE`；元素类型/范围、原生 malloc 或宿主写失败返回 `ZR_FALSE`；VM 分配异常可非局部退出。
  * ## Constraints and lifecycle
- * 所有元素先复制到 malloc 缓冲，避免后段非法元素造成提前写；宿主短写循环完成后才发布 count。部分写失败
- * 无法回滚已写前缀；输入数组由 VM 持有。BUG: 合法未物化 RAW_CANONICAL 连续整数数组首次 Array_Get 需物化 pair pool；该 VM 分配抛异常非局部退出时，已 malloc 的 bytes 越过 free；一次性 File bytes 入口也越过 CloseHandle，普通 false 及非 raw 数组不属于此条件。
+ * 所有元素在首次写前复制并校验；Array_Get 的 RAW 物化异常经 caller-owned TryRun 返回后释放 native bytes，再传播原 status。临时 AOT 根保活并重取输入 array。handle 始终借用，不关闭；宿主部分写失败不回滚前缀。
+ *
  * ## References
  * `Stream_WriteBytes` :492、`fs_entry.c` 的 bytes aliases、`system_fs_write_all`、`ZrLib_Array_Get`。
  */
@@ -917,11 +929,11 @@ TZrBool ZrSystem_Fs_Stream_Close(ZrLibCallContext *context, SZrTypeValue *result
  * ## Returns
  * @return 成功返回 `ZR_TRUE`；closed、不可读、读取或字段同步失败抛 IOException 并返回 `ZR_FALSE`。
  * ## Constraints and lifecycle
- * count 缺省 -1 且按字节计；首 NUL 截断返回 string，UTF-8 不验证，切断多字节边界仍待用例明确。I/O
+ * count 缺省 -1 且按字节计；保留内嵌 NUL，UTF-8 不验证，切断多字节边界仍待用例明确。I/O
  * 已消费后再同步公开字段，查询失败不回滚位置。
- * BUG: ReadTextFromHandle 的 void SetString 在短串 HASH_BUCKET 扩容软失败时可不写 dispatcher 预置的 null 结果；若后续字段查询成功，本回调仍返回 true，已读字节不回滚。
+ * ReadTextFromHandle 按实际 byte count 创建 STRING；创建失败经释放文本缓冲后传播 MemoryError，已读字节不回滚。
  * ## References
- * `fs_registry.c:196-198,216-218`、`ReadTextFromHandle`、首 NUL BUG :344-347、UTF-8 byte-count TODO :469-470。
+ * `fs_registry.c:196-198,216-218`、`ReadTextFromHandle`、UTF-8 byte-count TODO（Stream_ReadText）。
  */
 
 /**

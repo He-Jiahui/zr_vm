@@ -387,24 +387,28 @@ void compile_foreach_statement(SZrCompilerState *cs, SZrAstNode *node) {
     if (foreachLoop->pattern != ZR_NULL &&
         foreachLoop->pattern->type == ZR_AST_IDENTIFIER_LITERAL &&
         foreachLoop->pattern->data.identifier.name != ZR_NULL) {
-        currentValueSlot = allocate_local_var(
-                cs, foreachLoop->pattern->data.identifier.name);
+        currentValueSlot = allocate_local_var_with_context(
+                cs,
+                foreachLoop->pattern->data.identifier.name,
+                foreachLoop->pattern->data.identifier.syntaxContext);
         if (cs->typeEnv != ZR_NULL) {
             if (hasResolvedBindingType) {
-                ZrParser_TypeEnvironment_RegisterVariable(
+                ZrParser_TypeEnvironment_RegisterVariableWithContext(
                         cs->state,
                         cs->typeEnv,
                         foreachLoop->pattern->data.identifier.name,
-                        &bindingType);
+                        &bindingType,
+                        foreachLoop->pattern->data.identifier.syntaxContext);
             } else {
                 SZrInferredType defaultType;
                 ZrParser_InferredType_Init(
                         cs->state, &defaultType, ZR_VALUE_TYPE_OBJECT);
-                ZrParser_TypeEnvironment_RegisterVariable(
+                ZrParser_TypeEnvironment_RegisterVariableWithContext(
                         cs->state,
                         cs->typeEnv,
                         foreachLoop->pattern->data.identifier.name,
-                        &defaultType);
+                        &defaultType,
+                        foreachLoop->pattern->data.identifier.syntaxContext);
                 ZrParser_InferredType_Free(cs->state, &defaultType);
             }
         }
@@ -485,6 +489,7 @@ void compile_foreach_statement(SZrCompilerState *cs, SZrAstNode *node) {
         if (!compiler_semantic_ir_register_local(
                     cs,
                     foreachLoop->pattern->data.identifier.name,
+                    foreachLoop->pattern->data.identifier.syntaxContext,
                     currentValueSlot,
                     foreachLoop->pattern->location,
                     ZR_FALSE) ||

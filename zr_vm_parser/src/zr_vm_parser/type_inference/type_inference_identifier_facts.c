@@ -49,6 +49,7 @@ static void type_inference_record_identifier_fact(SZrCompilerState *cs,
     fact.originIndex = binding->originIndex;
     fact.ownershipQualifier = binding->type.ownershipQualifier;
     fact.name = binding->name;
+    fact.syntaxContext = binding->syntaxContext;
     fact.isResolved = ZR_TRUE;
     if (kind == ZR_SEMANTIC_REFERENCE_WRITE) {
         /* 写入点先以自身范围作为定义并标为 INIT；线性事实解析据此推导后续 READ 的定义与赋值状态。 */
@@ -72,15 +73,38 @@ void type_inference_record_identifier_write_reference_fact(SZrCompilerState *cs,
     type_inference_record_identifier_fact(cs, node, binding, ZR_SEMANTIC_REFERENCE_WRITE);
 }
 
-void type_inference_record_function_value_reference_fact(
+void type_inference_record_function_identifier_reference_fact(
         SZrCompilerState *cs, SZrAstNode *node, const SZrFunctionTypeInfo *function) {
-    SZrTypeBinding binding = {0};
-    if (function == ZR_NULL || function->isExternalCallable) return;
-    binding.name = function->name;
-    binding.typeId = function->typeId;
-    binding.symbolId = function->symbolId;
-    binding.declarationRange = function->declarationRange;
-    binding.hasDeclarationRange = function->hasDeclarationRange;
-    binding.originKind = ZR_SEMANTIC_REFERENCE_ORIGIN_SOURCE_DECLARATION;
-    type_inference_record_identifier_reference_fact(cs, node, &binding);
+    SZrSemanticReferenceFact fact = {0};
+    SZrSemanticReferenceFact *existing;
+    SZrSemanticReferenceFact *target;
+
+    if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
+        node == ZR_NULL || node->type != ZR_AST_IDENTIFIER_LITERAL ||
+        function == ZR_NULL || function->isExternalCallable || function->name == ZR_NULL ||
+        function->symbolId == ZR_SEMANTIC_ID_INVALID ||
+        function->typeId == ZR_SEMANTIC_ID_INVALID || !function->hasDeclarationRange) {
+        return;
+    }
+    existing = (SZrSemanticReferenceFact *)ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+            cs->semanticContext, node, ZR_SEMANTIC_REFERENCE_READ);
+    if (existing != ZR_NULL && existing->isResolved) {
+        return;
+    }
+
+    /* Upgrade identity without replacing an existing fact's owned payloads. */
+    target = existing != ZR_NULL ? existing : &fact;
+    target->node = node;
+    target->range = node->location;
+    target->declarationRange = function->declarationRange;
+    target->kind = ZR_SEMANTIC_REFERENCE_READ;
+    target->symbolId = function->symbolId;
+    target->typeId = function->typeId;
+    target->name = function->name;
+    target->syntaxContext = node->data.identifier.syntaxContext;
+    target->originKind = ZR_SEMANTIC_REFERENCE_ORIGIN_SOURCE_DECLARATION;
+    target->isResolved = ZR_TRUE;
+    if (existing == ZR_NULL) {
+        ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
+    }
 }

@@ -1961,11 +1961,13 @@ static void test_module_restores_owned_field_prototype_metadata(void) {
     {
         const char *source =
             "module field_meta;\n"
+            "pub resource class Resource {}\n"
             "pub struct HandleBox { var handle: Unique<Resource>; var count: int; }\n"
             "pub class Holder { var resource: Shared<Resource>; var version: int; }";
         SZrString *sourceName = ZrCore_String_Create(state, "field_meta.zr", 13);
         SZrFunction *entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         SZrObjectModule *module;
+        SZrObjectPrototype *resourcePrototype;
         SZrObjectPrototype *handleBoxPrototype;
         SZrObjectPrototype *holderPrototype;
         const SZrManagedFieldInfo *handleInfo;
@@ -1976,7 +1978,7 @@ static void test_module_restores_owned_field_prototype_metadata(void) {
 
         TEST_ASSERT_NOT_NULL(entryFunction);
         TEST_ASSERT_NOT_NULL(entryFunction->prototypeData);
-        TEST_ASSERT_EQUAL_UINT32(2, entryFunction->prototypeCount);
+        TEST_ASSERT_EQUAL_UINT32(3, entryFunction->prototypeCount);
 
         module = ZrCore_Module_Create(state);
         TEST_ASSERT_NOT_NULL(module);
@@ -1987,7 +1989,13 @@ static void test_module_restores_owned_field_prototype_metadata(void) {
                         ZrCore_String_Create(state, "field_meta.zr", 13));
 
         createdCount = ZrCore_Module_CreatePrototypesFromData(state, module, entryFunction);
-        TEST_ASSERT_EQUAL_UINT64(2, createdCount);
+        TEST_ASSERT_EQUAL_UINT64(3, createdCount);
+
+        resourcePrototype = get_module_exported_prototype(state, module, "Resource");
+        TEST_ASSERT_NOT_NULL(resourcePrototype);
+        TEST_ASSERT_EQUAL_INT(ZR_OBJECT_PROTOTYPE_TYPE_CLASS, resourcePrototype->type);
+        TEST_ASSERT_NOT_EQUAL_UINT32(0, resourcePrototype->modifierFlags & ZR_DECLARATION_MODIFIER_RESOURCE);
+        TEST_ASSERT_EQUAL_UINT32(0, resourcePrototype->managedFieldCount);
 
         handleBoxPrototype = get_module_exported_prototype(state, module, "HandleBox");
         holderPrototype = get_module_exported_prototype(state, module, "Holder");

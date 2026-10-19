@@ -1,3 +1,7 @@
+#if !defined(_WIN32) && !defined(_XOPEN_SOURCE)
+#define _XOPEN_SOURCE 700
+#endif
+
 #include "project/lsp_workspace.h"
 
 #include "interface/lsp_interface_internal.h"
@@ -8,7 +12,17 @@
 #include "zr_vm_core/string.h"
 
 #include <ctype.h>
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
+
+#ifdef ZR_VM_PLATFORM_IS_WIN
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 /* 根集合只保存经文件 URI 往返规范化的 SZrString*；字符串由 VM 状态管理，数组缓冲由 workspace 持有。 */
 struct SZrLspWorkspace {
@@ -44,9 +58,14 @@ static void workspace_normalize_path(const TZrChar *source, TZrChar *target, TZr
             value = '/';
         }
 #ifdef ZR_VM_PLATFORM_IS_WIN
-        value = (TZrChar)tolower((unsigned char)value);
+        /* UTF-8 bytes cannot be case-folded individually; compare canonical paths with
+         * CompareStringOrdinal after converting them to UTF-16 below. */
 #endif
         target[length++] = value;
+    }
+    if (*source != '\0') {
+        target[0] = '\0';
+        return;
     }
 
     while (length > 1 && target[length - 1] == '/') {
@@ -60,26 +79,246 @@ static void workspace_normalize_path(const TZrChar *source, TZrChar *target, TZr
     target[length] = '\0';
 }
 
+#ifdef ZR_VM_PLATFORM_IS_WIN
+static TZrBool workspace_utf8_to_wide(const TZrChar *source, WCHAR *target, TZrSize targetCount) {
+    int converted;
+    if (source == ZR_NULL || target == ZR_NULL || targetCount == 0 || targetCount > INT_MAX) {
+        return ZR_FALSE;
+    }
+    converted = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, source, -1, target, (int)targetCount);
+    return converted > 0 ? ZR_TRUE : ZR_FALSE;
+}
+
+static TZrBool workspace_wide_to_utf8(const WCHAR *source, TZrChar *target, TZrSize targetSize) {
+    int converted;
+    if (source == ZR_NULL || target == ZR_NULL || targetSize == 0 || targetSize > INT_MAX) {
+        return ZR_FALSE;
+    }
+    converted = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, source, -1, target, (int)targetSize, ZR_NULL, ZR_NULL);
+    return converted > 0 ? ZR_TRUE : ZR_FALSE;
+}
+#endif
+
+/* Collapse dot segments before checking; input paths are absolute native paths from file URIs. */
+static TZrBool workspace_collapse_dot_segments(const TZrChar *source,
+                                              TZrChar *target,
+                                              TZrSize targetSize) {
+    TZrChar normalized[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrSize segmentStarts[ZR_LIBRARY_MAX_PATH_LENGTH / 2U];
+    TZrSize segmentCount = 0;
+    TZrSize cursor = 0;
+    TZrSize outputLength = 0;
+    TZrSize prefixLength = 0;
+
+    workspace_normalize_path(source, normalized, sizeof(normalized));
+    if (normalized[0] == '\0') {
+        return ZR_FALSE;
+    }
+#ifdef ZR_VM_PLATFORM_IS_WIN
+    if (isalpha((unsigned char)normalized[0]) && normalized[1] == ':' && normalized[2] == '/') {
+        prefixLength = 3;
+    } else if (normalized[0] == '/' && normalized[1] == '/') {
+        /* Preserve UNC server/share as the root prefix. */
+        cursor = 2;
+        while (normalized[cursor] != '\0' && normalized[cursor] != '/') cursor++;
+        if (normalized[cursor] == '/') cursor++;
+        while (normalized[cursor] != '\0' && normalized[cursor] != '/') cursor++;
+        prefixLength = cursor;
+        if (normalized[cursor] == '/') prefixLength++;
+    } else {
+        return ZR_FALSE;
+    }
+#else
+    if (normalized[0] != '/') {
+        return ZR_FALSE;
+    }
+    prefixLength = 1;
+#endif
+    if (prefixLength >= targetSize) {
+        return ZR_FALSE;
+    }
+    memcpy(target, normalized, prefixLength);
+    outputLength = prefixLength;
+    cursor = prefixLength;
+    while (normalized[cursor] != '\0') {
+        TZrSize start;
+        while (normalized[cursor] == '/') cursor++;
+        if (normalized[cursor] == '\0') break;
+        start = cursor;
+        while (normalized[cursor] != '\0' && normalized[cursor] != '/') cursor++;
+        if (cursor - start == 1U && normalized[start] == '.') continue;
+        if (cursor - start == 2U && normalized[start] == '.' && normalized[start + 1U] == '.') {
+            if (segmentCount > 0U) {
+                outputLength = segmentStarts[--segmentCount];
+            }
+            continue;
+        }
+        if (segmentCount >= sizeof(segmentStarts) / sizeof(segmentStarts[0]) ||
+            outputLength + (outputLength > prefixLength ? 1U : 0U) + (cursor - start) + 1U > targetSize) {
+            return ZR_FALSE;
+        }
+        segmentStarts[segmentCount++] = outputLength;
+        if (outputLength > prefixLength && target[outputLength - 1U] != '/') target[outputLength++] = '/';
+        else if (outputLength == prefixLength && target[outputLength - 1U] != '/') target[outputLength++] = '/';
+        memcpy(target + outputLength, normalized + start, cursor - start);
+        outputLength += cursor - start;
+    }
+    target[outputLength] = '\0';
+    return ZR_TRUE;
+}
+
+/* Resolve existing filesystem aliases; for deleted paths resolve the nearest existing parent. */
+static TZrBool workspace_resolve_filesystem_path(TZrChar *path, TZrSize pathSize) {
+    TZrChar probe[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar suffix[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar resolved[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    snprintf(probe, sizeof(probe), "%s", path);
+    suffix[0] = '\0';
+#ifdef ZR_VM_PLATFORM_IS_WIN
+    /* Keep dot segments in the spelling passed to CreateFile: resolving them first can
+     * change their meaning when an earlier component is a junction or symbolic link. */
+    {
+        TZrChar normalizedProbe[ZR_LIBRARY_MAX_PATH_LENGTH];
+        workspace_normalize_path(probe, normalizedProbe, sizeof(normalizedProbe));
+        snprintf(probe, sizeof(probe), "%s", normalizedProbe);
+    }
+    if (probe[0] == '\0') return ZR_FALSE;
+#endif
+    for (;;) {
+#ifdef ZR_VM_PLATFORM_IS_WIN
+        WCHAR wideProbe[ZR_LIBRARY_MAX_PATH_LENGTH];
+        WCHAR wideResolved[ZR_LIBRARY_MAX_PATH_LENGTH];
+        HANDLE handle;
+        if (!workspace_utf8_to_wide(probe, wideProbe, sizeof(wideProbe) / sizeof(wideProbe[0]))) {
+            return ZR_FALSE;
+        }
+        handle = CreateFileW(wideProbe,
+                                    FILE_READ_ATTRIBUTES,
+                                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                    ZR_NULL,
+                                    OPEN_EXISTING,
+                                    FILE_FLAG_BACKUP_SEMANTICS,
+                                    ZR_NULL);
+        if (handle != INVALID_HANDLE_VALUE) {
+            DWORD length = GetFinalPathNameByHandleW(handle,
+                                                     wideResolved,
+                                                     (DWORD)(sizeof(wideResolved) / sizeof(wideResolved[0])),
+                                                     FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+            CloseHandle(handle);
+            if (length == 0 || length >= sizeof(wideResolved) / sizeof(wideResolved[0])) return ZR_FALSE;
+            if (wcsncmp(wideResolved, L"\\\\?\\UNC\\", 8) == 0) {
+                memmove(wideResolved + 2, wideResolved + 8, (wcslen(wideResolved + 8) + 1U) * sizeof(WCHAR));
+                wideResolved[0] = L'\\';
+                wideResolved[1] = L'\\';
+            } else if (wcsncmp(wideResolved, L"\\\\?\\", 4) == 0) {
+                memmove(wideResolved, wideResolved + 4, (wcslen(wideResolved + 4) + 1U) * sizeof(WCHAR));
+            }
+            if (!workspace_wide_to_utf8(wideResolved, resolved, sizeof(resolved))) return ZR_FALSE;
+            {
+                TZrChar normalizedResolved[ZR_LIBRARY_MAX_PATH_LENGTH];
+                workspace_normalize_path(resolved, normalizedResolved, sizeof(normalizedResolved));
+                if (normalizedResolved[0] == '\0') return ZR_FALSE;
+                snprintf(resolved, sizeof(resolved), "%s", normalizedResolved);
+            }
+            if (suffix[0] == '\0') {
+                if (strlen(resolved) >= pathSize) return ZR_FALSE;
+                strcpy(path, resolved);
+                return ZR_TRUE;
+            }
+            {
+                TZrChar combined[ZR_LIBRARY_MAX_PATH_LENGTH];
+                if (snprintf(combined, sizeof(combined), "%s/%s", resolved, suffix) >= (int)sizeof(combined) ||
+                    !workspace_collapse_dot_segments(combined, path, pathSize)) return ZR_FALSE;
+                return ZR_TRUE;
+            }
+        }
+#else
+        if (realpath(probe, resolved) != ZR_NULL) {
+            if (suffix[0] == '\0') {
+                snprintf(path, pathSize, "%s", resolved);
+                return ZR_TRUE;
+            }
+            {
+                TZrChar combined[ZR_LIBRARY_MAX_PATH_LENGTH];
+                if (snprintf(combined, sizeof(combined), "%s/%s", resolved, suffix) >= (int)sizeof(combined) ||
+                    !workspace_collapse_dot_segments(combined, path, pathSize)) return ZR_FALSE;
+                return ZR_TRUE;
+            }
+        }
+#endif
+        {
+            TZrChar *separator = strrchr(probe, '/');
+            TZrSize suffixLength;
+            if (separator == ZR_NULL || separator == probe) return ZR_FALSE;
+            suffixLength = strlen(separator + 1U);
+            if (suffixLength + strlen(suffix) + 2U >= sizeof(suffix)) return ZR_FALSE;
+            memmove(suffix + suffixLength + 1U, suffix, strlen(suffix) + 1U);
+            memcpy(suffix, separator + 1U, suffixLength);
+            suffix[suffixLength] = '/';
+            if (separator == probe + 2 && probe[1] == ':') {
+                probe[3] = '\0';
+            } else {
+                *separator = '\0';
+            }
+            if (probe[0] == '\0') return ZR_FALSE;
+        }
+    }
+}
+
 /* 以目录边界判断归属，防止相同字符串前缀的兄弟目录接收文件事件。 */
-static TZrBool workspace_path_is_within_root(const TZrChar *candidatePath, const TZrChar *rootPath) {
+TZrBool ZrLanguageServer_LspWorkspace_IsPathWithinRoot(const TZrChar *candidatePath,
+                                                       const TZrChar *rootPath) {
     TZrChar normalizedCandidate[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar normalizedRoot[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar candidate[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar root[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrSize rootLength;
 
-    workspace_normalize_path(candidatePath, normalizedCandidate, sizeof(normalizedCandidate));
-    workspace_normalize_path(rootPath, normalizedRoot, sizeof(normalizedRoot));
+    /* Resolve before lexical collapse: a symlink followed by `..` is interpreted by the
+     * filesystem after traversing the link, so collapsing it first can hide an escape. */
+    if (candidatePath == ZR_NULL || rootPath == ZR_NULL ||
+        strlen(candidatePath) >= sizeof(candidate) || strlen(rootPath) >= sizeof(root) ||
+        snprintf(candidate, sizeof(candidate), "%s", candidatePath) >= (int)sizeof(candidate) ||
+        snprintf(root, sizeof(root), "%s", rootPath) >= (int)sizeof(root) ||
+        !workspace_resolve_filesystem_path(candidate, sizeof(candidate)) ||
+        !workspace_resolve_filesystem_path(root, sizeof(root)) ||
+        !workspace_collapse_dot_segments(candidate, normalizedCandidate, sizeof(normalizedCandidate)) ||
+        !workspace_collapse_dot_segments(root, normalizedRoot, sizeof(normalizedRoot)) ||
+        normalizedCandidate[0] == '\0' || normalizedRoot[0] == '\0') {
+        return ZR_FALSE;
+    }
     rootLength = strlen(normalizedRoot);
 
-    /* BUG: file:///workspace/../outside.zr 仍通过 /workspace 的词法前缀检查；
-     * FileToNativePath 保留 '..'，didChangeWatchedFiles 因此可越过工作区边界读取磁盘文件。
-     * 证据：lsp_uri.c 的解码路径与 stdio_workspace_files.c 的事件读取调用链。 */
+#ifdef ZR_VM_PLATFORM_IS_WIN
+    {
+        WCHAR wideCandidate[ZR_LIBRARY_MAX_PATH_LENGTH];
+        WCHAR wideRoot[ZR_LIBRARY_MAX_PATH_LENGTH];
+        TZrSize wideRootLength;
+        int comparison;
+        if (!workspace_utf8_to_wide(normalizedCandidate, wideCandidate, sizeof(wideCandidate) / sizeof(wideCandidate[0])) ||
+            !workspace_utf8_to_wide(normalizedRoot, wideRoot, sizeof(wideRoot) / sizeof(wideRoot[0]))) {
+            return ZR_FALSE;
+        }
+        wideRootLength = wcslen(wideRoot);
+        if (wideRootLength == 0 || wcslen(wideCandidate) < wideRootLength) return ZR_FALSE;
+        comparison = CompareStringOrdinal(wideCandidate, (int)wideRootLength, wideRoot, (int)wideRootLength, TRUE);
+        if (comparison != CSTR_EQUAL) return ZR_FALSE;
+        return wideCandidate[wideRootLength] == L'\0' || wideRoot[wideRootLength - 1] == L'/' ||
+               wideRoot[wideRootLength - 1] == L'\\' || wideCandidate[wideRootLength] == L'/' ||
+               wideCandidate[wideRootLength] == L'\\';
+    }
+#else
     if (rootLength == 0 || strncmp(normalizedCandidate, normalizedRoot, rootLength) != 0) {
         return ZR_FALSE;
     }
 
     return normalizedCandidate[rootLength] == '\0' || normalizedRoot[rootLength - 1] == '/' ||
            normalizedCandidate[rootLength] == '/';
+#endif
 }
+
+#define workspace_path_is_within_root ZrLanguageServer_LspWorkspace_IsPathWithinRoot
 
 /* 供文件监听过滤和根移除时的项目保留判定共用；只读借用根集合。 */
 static TZrBool workspace_contains_native_path(const SZrLspWorkspace *workspace,

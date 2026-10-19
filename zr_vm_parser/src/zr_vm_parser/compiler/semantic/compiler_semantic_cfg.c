@@ -421,11 +421,13 @@ TZrBool compiler_semantic_cfg_begin_if(SZrCompilerState *cs,
         cs->preSemanticIrCfgStartupBlocked = ZR_TRUE;
         return ZR_FALSE;
     }
-    /* Declared callable control flow is compiled in a disposable SemanticIR
-     * isolation, but its returns intentionally stay on the legacy callable
-     * path. Keep an internal join there so an unclosed arm never targets the
-     * entry sidecar's no-continuation sentinel. */
-    bothTerminate = (TZrBool)(cs->currentFunctionNode == ZR_NULL &&
+    /* Ordinary declared callable returns stay on the legacy callable path.
+     * Keep their isolation join; active finally plans own both arm
+     * completions and require no fallthrough join. */
+    bothTerminate = (TZrBool)(
+            (cs->currentFunctionNode == ZR_NULL ||
+             compiler_semantic_cfg_return_through_finally_is_active(cs) ||
+             compiler_semantic_cfg_throw_through_finally_is_active(cs)) &&
             thenFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES &&
             elseFlow == ZR_COMPILER_SEMANTIC_CFG_ARM_TERMINATES);
     condition = compiler_semantic_ir_slot_value(cs, conditionSlot);

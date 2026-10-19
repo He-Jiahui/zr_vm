@@ -366,7 +366,8 @@ static void test_union_compiler_path_unifies_declaration_and_use_type_ids(void) 
         ZrParser_Compiler_CompileUnionDeclaration(
                 &compiler,
                 ast->data.script.statements->nodes[0]);
-        TEST_ASSERT_TRUE(compiler.hasError);
+        /* Re-entering the exact source node is an idempotent publication pass. */
+        TEST_ASSERT_FALSE(compiler.hasError);
         TEST_ASSERT_EQUAL_UINT32((TZrUInt32)typeNameCount, (TZrUInt32)compiler.typeEnv->typeNames.length);
         TEST_ASSERT_EQUAL_UINT32((TZrUInt32)prototypeCount, (TZrUInt32)compiler.typePrototypes.length);
         TEST_ASSERT_EQUAL_UINT32((TZrUInt32)symbolCount, (TZrUInt32)compiler.semanticContext->symbols.length);

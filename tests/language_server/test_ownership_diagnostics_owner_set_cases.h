@@ -57,6 +57,26 @@ static void test_possible_owner_release_case(
           related->location.start.line != releaseLine ||
           !test_string_equals(related->message, "Owner was released here"))) ||
         (!expectDiagnostic && diagnostic != ZR_NULL)) {
+        TZrSize relatedCount = diagnostic != ZR_NULL && diagnostic->relatedInformation.isValid
+                                      ? diagnostic->relatedInformation.length
+                                      : 0;
+
+        printf("Ownership owner-set observation: code=%s line=%d diagnostic=%d related=%llu\n",
+               diagnosticCode, (int)diagnosticLine, diagnostic != ZR_NULL,
+               (unsigned long long)relatedCount);
+        for (TZrSize index = 0; index < relatedCount; index++) {
+            const SZrDiagnosticRelatedInformation *item =
+                    (const SZrDiagnosticRelatedInformation *)ZrCore_Array_Get(
+                            &diagnostic->relatedInformation, index);
+            const TZrChar *message = item != ZR_NULL && item->message != ZR_NULL
+                                            ? ZrCore_String_GetNativeString(item->message)
+                                            : ZR_NULL;
+
+            printf("  related[%llu] line=%d message=%s\n",
+                   (unsigned long long)index,
+                   item != ZR_NULL ? (int)item->location.start.line : -1,
+                   message != ZR_NULL ? message : "<null>");
+        }
         ZrParser_Ast_Free(state, ast);
         ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
         TEST_FAIL(timer,

@@ -187,7 +187,7 @@ void ZrCore_TypeLayout_InitValue(SZrTypeLayout *layout) {
     }
 
     layout->byteSize = (TZrUInt32)sizeof(SZrTypeValue);
-    layout->byteAlign = (TZrUInt32)ZR_ALIGN_SIZE;
+    layout->byteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
     layout->kind = (TZrUInt8)ZR_TYPE_LAYOUT_KIND_VALUE;
     layout->copyKind = (TZrUInt8)ZR_TYPE_LAYOUT_COPY_KIND_FIELDWISE;
     layout->dropKind = (TZrUInt8)ZR_TYPE_LAYOUT_DROP_KIND_FIELDWISE;

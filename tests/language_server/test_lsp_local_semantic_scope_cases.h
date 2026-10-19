@@ -1,6 +1,9 @@
 #ifndef ZR_VM_TEST_LSP_LOCAL_SEMANTIC_SCOPE_CASES_H
 #define ZR_VM_TEST_LSP_LOCAL_SEMANTIC_SCOPE_CASES_H
 
+#include "zr_vm_core/memory.h"
+#include "zr_vm_parser/semantic_query.h"
+
 /* 从文档 AST 按序取得顶层节点，供缓存测试绑定作用域；调用者须另核对函数类型，指针由文件版本持有。 */
 static SZrAstNode *local_scope_test_function_at(SZrAstNode *ast, TZrSize index) {
     if (ast == ZR_NULL || ast->type != ZR_AST_SCRIPT ||
@@ -694,8 +697,176 @@ static void test_body_edit_preserves_unaffected_scoped_query_cache(
     TEST_PASS(timer, summary);
 }
 
-/* 隔离主符号表后连续发起空文档补全，验证回退分析器只执行一次并复用局部缓存。
- * TODO: 测试未断言补全数组为空；若回退返回原生项，当前仅 Array_Free 会遗漏项对象，需核对该 fixture 的结果数量。 */
+static void local_scope_test_free_protocol_completions(
+        SZrState *state, SZrArray *items) {
+    if (items == ZR_NULL || !items->isValid) {
+        return;
+    }
+    for (TZrSize index = 0U; index < items->length; index++) {
+        SZrLspCompletionItem **item =
+                (SZrLspCompletionItem **)ZrCore_Array_Get(items, index);
+        if (item != ZR_NULL && *item != ZR_NULL) {
+            ZrCore_Memory_RawFree(
+                    state->global, *item, sizeof(SZrLspCompletionItem));
+        }
+    }
+    ZrCore_Array_Free(state, items);
+}
+
+static void test_completion_reads_canonical_snapshot_twice(SZrState *state) {
+    const char *summary = "Completion Reads Canonical Snapshot Twice";
+    const char *uriText = "file:///completion_canonical_snapshot.zr";
+    const char *content =
+            "fn make(seed: int): int {\n"
+            "    return seed + 0;\n"
+            "}\n"
+            "fn main(): void {\n"
+            "    var canonicalLocal: int = 1;\n"
+            "    make(1);\n"
+            "}\n";
+    const char *failure = "Fixture prerequisite: canonical completion setup failed";
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri = ZR_NULL;
+    SZrSemanticAnalyzer *owner = ZR_NULL;
+    SZrSemanticAnalyzer *currentOwner;
+    SZrSemanticContext *semanticContext = ZR_NULL;
+    SZrFileVersion *version = ZR_NULL;
+    SZrAstNode *ast = ZR_NULL;
+    SZrLspPosition position;
+    SZrFilePosition filePosition;
+    SZrFileRange queryRange;
+    SZrParserSemanticVisibleSymbolOptions options = {0};
+    SZrArray visibleSymbols = {0};
+    SZrArray completions = {0};
+    TZrSymbolId expectedSymbolId = ZR_SEMANTIC_ID_INVALID;
+    TZrTypeId expectedTypeId = ZR_SEMANTIC_ID_INVALID;
+    TZrSize symbolCount = 0U;
+    TZrSize expressionCount = 0U;
+    TZrSize referenceCount = 0U;
+    TZrBool passed = ZR_FALSE;
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(
+                state, context, uri, content, strlen(content), 1U) ||
+        !lsp_find_position_for_substring(content, "make(1)", 0U, 0, &position)) {
+        goto cleanup;
+    }
+    owner = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    version = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    if (owner == ZR_NULL || owner->semanticContext == ZR_NULL ||
+        version == ZR_NULL || version->version != 1U ||
+        version->usesFallbackAst || version->isDesynchronized ||
+        version->ast == ZR_NULL || version->ast->ownership == ZR_NULL) {
+        failure = "Fixture prerequisite: current owned semantic snapshot is required";
+        goto cleanup;
+    }
+    semanticContext = owner->semanticContext;
+    ast = version->ast;
+    filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
+    queryRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
+    ZrCore_Array_Construct(&visibleSymbols);
+    if (!ZrParser_SemanticQuery_VisibleSymbols(
+                semanticContext, queryRange, ZR_NULL, &options, &visibleSymbols)) {
+        failure = "Fixture prerequisite: canonical visible-symbol query failed";
+        goto cleanup;
+    }
+    for (TZrSize index = 0U; index < visibleSymbols.length; index++) {
+        const SZrParserSemanticSymbolQuery *symbol =
+                (const SZrParserSemanticSymbolQuery *)ZrCore_Array_Get(
+                        &visibleSymbols, index);
+        const char *name = symbol != ZR_NULL && symbol->displayName != ZR_NULL
+                ? ZrCore_String_GetNativeString(symbol->displayName) : ZR_NULL;
+        if (name != ZR_NULL && strcmp(name, "canonicalLocal") == 0 &&
+            symbol->declarationNode != ZR_NULL &&
+            symbol->declarationNode->ownership == ast->ownership &&
+            symbol->declarationRange.source != ZR_NULL) {
+            expectedSymbolId = symbol->symbolId;
+            expectedTypeId = symbol->typeId;
+            break;
+        }
+    }
+    ZrCore_Array_Free(state, &visibleSymbols);
+    if (expectedSymbolId == ZR_SEMANTIC_ID_INVALID ||
+        expectedTypeId == ZR_SEMANTIC_ID_INVALID) {
+        failure = "Fixture prerequisite: real typed local must have canonical visible identity";
+        goto cleanup;
+    }
+    symbolCount = semanticContext->symbols.length;
+    expressionCount = semanticContext->expressionFacts.length;
+    referenceCount = semanticContext->referenceFacts.length;
+
+    for (TZrSize request = 0U; request < 2U; request++) {
+        TZrBool found = ZR_FALSE;
+
+        ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8U);
+        if (!completions.isValid ||
+            !ZrLanguageServer_Lsp_GetCompletion(
+                    state, context, uri, position, &completions)) {
+            failure = "Canonical completion request failed";
+            goto cleanup;
+        }
+        for (TZrSize index = 0U; index < completions.length; index++) {
+            SZrLspCompletionItem **item =
+                    (SZrLspCompletionItem **)ZrCore_Array_Get(&completions, index);
+            if (item != ZR_NULL && *item != ZR_NULL && (*item)->label != ZR_NULL &&
+                strcmp(ZrCore_String_GetNativeString((*item)->label), "canonicalLocal") == 0) {
+                found = (*item)->kind == ZR_LSP_COMPLETION_ITEM_KIND_VARIABLE && (*item)->detail != ZR_NULL &&
+                        strncmp(ZrCore_String_GetNativeString((*item)->detail),
+                                "int\nSemantic facts: ",
+                                sizeof("int\nSemantic facts: ") - 1U) == 0;
+                if (!found) {
+                    fprintf(stderr, "Completion request %zu: label=%s kind=%d detail=%s\n",
+                            (size_t)request, ZrCore_String_GetNativeString((*item)->label),
+                            (int)(*item)->kind, (*item)->detail != ZR_NULL
+                                    ? ZrCore_String_GetNativeString((*item)->detail) : "<null>");
+                }
+                break;
+            }
+        }
+        local_scope_test_free_protocol_completions(state, &completions);
+        if (!found) {
+            fprintf(stderr, "Completion request %zu did not match the canonical typed local\n",
+                    (size_t)request);
+            failure = "Repeated completion must return the canonical typed local";
+            goto cleanup;
+        }
+    }
+
+    currentOwner = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    version = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    if (currentOwner == owner && currentOwner->semanticContext == semanticContext &&
+        version != ZR_NULL && version->version == 1U && version->ast == ast &&
+        semanticContext->symbols.length == symbolCount &&
+        semanticContext->expressionFacts.length == expressionCount &&
+        semanticContext->referenceFacts.length == referenceCount) {
+        const SZrSemanticSymbolRecord *symbol =
+                ZrParser_Semantic_FindSymbolById(semanticContext, expectedSymbolId);
+        passed = symbol != ZR_NULL && symbol->typeId == expectedTypeId;
+    }
+    failure = "Repeated completion must consume the same canonical snapshot";
+
+cleanup:
+    local_scope_test_free_protocol_completions(state, &completions);
+    if (visibleSymbols.isValid) {
+        ZrCore_Array_Free(state, &visibleSymbols);
+    }
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+    if (passed) {
+        TEST_PASS(timer, summary);
+    } else {
+        TEST_FAIL(timer, summary, failure);
+    }
+}
+
+
+
+/* Completion must use canonical facts even when the legacy symbol table is empty. */
 static void test_completion_reuses_published_snapshot_without_reanalysis(
         SZrState *state) {
     const TZrChar *summary =

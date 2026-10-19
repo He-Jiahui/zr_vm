@@ -135,7 +135,7 @@ void type_inference_record_super_constructor_call_facts(
     type_inference_publish_member_declaration_fact(
             cs, constructor, symbolId, callTypeId);
 
-    targetRange = callRange;
+    targetRange = ZrParser_FileRange_WithoutEvidence(callRange);
     targetRange.end = targetRange.start;
     targetRange.end.offset += sizeof("super") - 1u;
     targetRange.end.column += sizeof("super") - 1u;

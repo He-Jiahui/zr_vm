@@ -1822,6 +1822,8 @@ static TZrBool semantic_type_prototypes_register_shell(SZrState *state,
     }
 
     semantic_type_prototypes_init_prototype(state, &prototypeInfo, typeName, prototypeType, accessModifier);
+    prototypeInfo.declarationNode = node;
+    prototypeInfo.isDeclarationShell = ZR_TRUE;
     switch (node->type) {
         case ZR_AST_CLASS_DECLARATION:
             semantic_type_prototypes_collect_generic_parameters(analyzer,

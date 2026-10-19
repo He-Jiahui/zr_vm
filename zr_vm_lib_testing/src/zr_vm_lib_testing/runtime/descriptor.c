@@ -199,7 +199,7 @@ static const ZrLibFunctionDescriptor g_testing_functions[] = {
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:1224
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:809
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_call_binding_hash.c:151
- * zr_vm_parser/src/zr_vm_parser/attribute_contract.c:102
+ * zr_vm_parser/src/zr_vm_parser/contract/attribute_contract.c:102
  * zr_vm_parser/src/zr_vm_parser/compiler/compiler_test.c:732
  */
 static const ZrLibFieldDescriptor g_skip_fields[] = {
@@ -332,7 +332,7 @@ static const ZrLibFieldDescriptor g_value_snapshot_fields[] = {
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:982
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_call_binding_hash.c:219
  * tests/testing/test_assertions.c:88
- * zr_vm_parser/src/zr_vm_parser/attribute_contract.c:69
+ * zr_vm_parser/src/zr_vm_parser/contract/attribute_contract.c:69
  * zr_vm_parser/src/zr_vm_parser/compiler/compiler_test.c:506
  */
 static const ZrLibTypeDescriptor g_testing_types[] = {
@@ -347,7 +347,7 @@ static const ZrLibTypeDescriptor g_testing_types[] = {
  * 编译绑定由parser builtin实施；provider type供反射/契约核查和物化，不能把VM对象构造当测试注册。
  *
  * ## References
- * zr_vm_parser/src/zr_vm_parser/attribute_contract.c:69
+ * zr_vm_parser/src/zr_vm_parser/contract/attribute_contract.c:69
  * tests/testing/test_assertions.c:88
  * zr_vm_parser/src/zr_vm_parser/compiler/compiler_test.c:506
  */
@@ -367,7 +367,7 @@ static const ZrLibTypeDescriptor g_testing_types[] = {
  * function target/artifact retention，可重复；参数绑定和序列化由parser/test contract，不由字段数组完成。
  *
  * ## References
- * zr_vm_parser/src/zr_vm_parser/attribute_contract.c:86
+ * zr_vm_parser/src/zr_vm_parser/contract/attribute_contract.c:86
  * zr_vm_parser/src/zr_vm_parser/compiler/compiler_test.c:720
  */
         ZR_LIB_TYPE_DESCRIPTOR_INIT("Case", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT,
@@ -386,7 +386,7 @@ static const ZrLibTypeDescriptor g_testing_types[] = {
  * function target/artifact retention，不可重复；不是运行时抛出的AssertionFailure。
  *
  * ## References
- * zr_vm_parser/src/zr_vm_parser/attribute_contract.c:102
+ * zr_vm_parser/src/zr_vm_parser/contract/attribute_contract.c:102
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:207
  */
         ZR_LIB_TYPE_DESCRIPTOR_INIT("Skip", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT,
@@ -478,7 +478,7 @@ static const ZrLibTypeDescriptor g_testing_types[] = {
  * tests/testing/test_assertions.c:88
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_call_binding_hash.c:220
  * tests/testing/test_assertions.c:90
- * zr_vm_parser/src/zr_vm_parser/attribute_contract.c:69
+ * zr_vm_parser/src/zr_vm_parser/contract/attribute_contract.c:69
  * zr_vm_parser/src/zr_vm_parser/compiler/compiler_test.c:506
  * zr_vm_parser/src/zr_vm_parser/compiler/compiler_test.c:716
  */

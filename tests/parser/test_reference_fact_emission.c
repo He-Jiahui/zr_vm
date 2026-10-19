@@ -69,6 +69,8 @@ static SZrAstNode *expression_statement_expression_at(SZrAstNode *ast, TZrSize i
     return statement->data.expressionStatement.expr;
 }
 
+#include "test_reference_function_identity_fact_cases.h"
+
 static void test_assignment_identifier_records_write_reference_fact(void) {
     SZrCompilerState *cs = create_compiler_state();
     SZrString *sourceName;
@@ -629,6 +631,8 @@ static void test_resolved_extern_function_call_reuses_declaration_identity(void)
     SZrAstNode *ast;
     SZrAstNode *externBlock;
     SZrAstNode *externDeclaration;
+    const SZrAstNode *nameNode;
+    SZrParserRangeEvidenceDescription nameEvidence = {0};
     SZrAstNode *callExpr;
     SZrAstNode *callTarget;
     SZrInferredType intType;
@@ -666,6 +670,26 @@ static void test_resolved_extern_function_call_reuses_declaration_identity(void)
     TEST_ASSERT_NOT_NULL(externDeclaration);
     TEST_ASSERT_EQUAL_INT(ZR_AST_EXTERN_FUNCTION_DECLARATION, externDeclaration->type);
     TEST_ASSERT_NOT_NULL(declarationStart);
+    nameNode = function_identity_name_node(
+            externDeclaration->data.externFunctionDeclaration.name);
+    TEST_ASSERT_NOT_NULL(nameNode);
+    TEST_ASSERT_NOT_NULL(externDeclaration->ownership);
+    TEST_ASSERT_EQUAL_PTR(externDeclaration->ownership, nameNode->ownership);
+    TEST_ASSERT_EQUAL_PTR(ast->ownership, nameNode->ownership);
+    TEST_ASSERT_EQUAL_PTR(externDeclaration->location.source, nameNode->location.source);
+    TEST_ASSERT_TRUE(ZrParser_RangeEvidence_Validate(
+            nameNode->ownership, nameNode->location));
+    TEST_ASSERT_TRUE(ZrParser_RangeEvidence_Describe(
+            nameNode->ownership, nameNode->location, &nameEvidence));
+    TEST_ASSERT_EQUAL_INT(ZR_PARSER_RANGE_EVIDENCE_SOURCE, nameEvidence.kind);
+    TEST_ASSERT_EQUAL_STRING(
+            ZrCore_String_GetNativeString(sourceName),
+            ZrCore_String_GetNativeString(nameNode->location.source));
+    TEST_ASSERT_EQUAL_UINT64(
+            (TZrSize)(declarationStart - source), nameNode->location.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(
+            (TZrSize)(declarationStart - source) + strlen(declarationName),
+            nameNode->location.end.offset);
 
     TEST_ASSERT_NOT_NULL(callExpr);
     TEST_ASSERT_EQUAL_INT(ZR_AST_PRIMARY_EXPRESSION, callExpr->type);
@@ -737,12 +761,7 @@ static void test_resolved_extern_function_call_reuses_declaration_identity(void)
     TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, callExpr, &result));
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
 
-    declarationRange = externDeclaration->location;
-    declarationRange.start.offset -= strlen(declarationName) + 1U;
-    declarationRange.start.column -= (TZrInt32)(strlen(declarationName) + 1U);
-    declarationRange.end = declarationRange.start;
-    declarationRange.end.offset += strlen(declarationName);
-    declarationRange.end.column += (TZrInt32)strlen(declarationName);
+    declarationRange = nameNode->location;
     TEST_ASSERT_EQUAL_UINT64((TZrSize)(declarationStart - source),
                              declarationRange.start.offset);
     callFact = ZrParser_SemanticFacts_FindReferenceAtPosition(
@@ -793,5 +812,9 @@ int main(void) {
     RUN_TEST(test_inaccessible_field_assignment_preserves_inference_failure);
     RUN_TEST(test_field_identity_preserves_unavailable_exact_type);
     RUN_TEST(test_protected_field_access_checks_the_immediate_receiver);
+    RUN_TEST(test_native_extern_function_name_range_preserves_canonical_identity);
+    RUN_TEST(test_runtime_bare_function_value_records_one_canonical_read);
+    RUN_TEST(test_compile_time_bare_function_value_records_one_canonical_read);
+    RUN_TEST(test_function_value_read_upgrade_preserves_owned_payloads);
     return UNITY_END();
 }

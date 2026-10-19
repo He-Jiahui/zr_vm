@@ -261,6 +261,8 @@ typedef struct SZrSemanticReferenceFact {
     EZrSemanticRuntimeRootKind runtimeRootKind;
     TZrUInt64 originToken;
     TZrUInt32 originIndex;
+    /* Use-site context; name remains display text and is never mangled. */
+    SZrSyntaxContext syntaxContext;
 } SZrSemanticReferenceFact;
 
 /** @brief 保存数值表达式的范围和风险证据，供语义查询、范围展示及溢出诊断使用。
@@ -322,6 +324,7 @@ typedef struct SZrSemanticOwnershipFact {
     TZrLifetimeRegionId ownerLifetimeRegionId;
     SZrAstNode *relatedNode;
     TZrBool isViolation;
+    TZrBool requiresWake; /* Explicit rejected-argument contract, not inferred from message text. */
     SZrString *diagnosticMessage;
 } SZrSemanticOwnershipFact;
 
@@ -495,6 +498,8 @@ ZR_PARSER_API TZrBool ZrParser_SemanticFacts_AppendOwnershipIntrinsic(
         const SZrOwnershipIntrinsicFact *fact);
 /** @brief 发布 receiver guard 的访问链证据，供 compiler 在当前 AST 快照中解释 guard。
  * @note context 管理类型的独立原生容器；类型名、receiver/firstSegment/node/source 以及链序号仍绑定当前快照。
+ * @note A non-NULL node replaces its complete previous fact; NULL-node facts remain append-only.
+ * @note Both inferred-type payloads are copied before replacement frees the old payloads, so fact may alias the stored record.
  * @return FALSE 表示输入或事实数组有效性检查失败；类型 Copy 无失败返回，不保证检测分配失败。
  */
 ZR_PARSER_API TZrBool ZrParser_SemanticFacts_AppendReceiverGuard(

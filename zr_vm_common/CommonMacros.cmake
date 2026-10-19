@@ -8,7 +8,6 @@ function(zr_declare_module module_name use_common_lib)
     get_filename_component(zr_module_src_dir_name ${CMAKE_CURRENT_SOURCE_DIR} NAME)
     file(GLOB_RECURSE zr_module_src CONFIGURE_DEPENDS
             "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c"
-            "${CMAKE_CURRENT_SOURCE_DIR}/src/**/*.c"
     )
     list(REMOVE_DUPLICATES zr_module_src)
     if (${use_common_lib})
@@ -65,7 +64,6 @@ function(zr_declare_executable module_name use_common_lib)
     get_filename_component(zr_module_src_dir_name ${CMAKE_CURRENT_SOURCE_DIR} NAME)
     file(GLOB_RECURSE zr_module_src CONFIGURE_DEPENDS
             "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c"
-            "${CMAKE_CURRENT_SOURCE_DIR}/src/**/*.c"
     )
     list(REMOVE_DUPLICATES zr_module_src)
 
@@ -132,15 +130,13 @@ function(zr_link_library_for_executable module_name library_name)
     set(zr_module_name ${module_name})
     set(zr_module_executable ${zr_module_name}_executable)
 
-    # BUG: 此处使用 plain target_link_libraries；若同一目标随后经
-    # zr_link_third_party_for_target 使用 PRIVATE 签名，CMake 配置报签名混用错误。
-    # 复现：依次对 app 调用本函数、对 app_executable 调用第三方链接函数。
+    # Use the same keyword signature as all other first/third-party helpers.
     if (BUILD_STATIC_LIB)
         target_include_directories(${zr_module_executable} PRIVATE ${CMAKE_SOURCE_DIR}/${library_name}/include)
-        target_link_libraries(${zr_module_executable} ${library_name}_static)
+        target_link_libraries(${zr_module_executable} PRIVATE ${library_name}_static)
     elseif (BUILD_SHARED_LIB)
         target_include_directories(${zr_module_executable} PRIVATE ${CMAKE_SOURCE_DIR}/${library_name}/include)
-        target_link_libraries(${zr_module_executable} ${library_name}_shared)
+        target_link_libraries(${zr_module_executable} PRIVATE ${library_name}_shared)
     endif ()
 endfunction()
 

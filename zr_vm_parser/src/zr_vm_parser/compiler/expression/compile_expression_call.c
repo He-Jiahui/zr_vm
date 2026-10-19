@@ -887,7 +887,10 @@ static TZrBool primary_expression_resolve_direct_ownership_receiver(
         return ZR_FALSE;
     }
 
-    receiverSlot = find_local_var(cs, primary->property->data.identifier.name);
+    receiverSlot = find_local_var_with_context(
+            cs,
+            primary->property->data.identifier.name,
+            primary->property->data.identifier.syntaxContext);
     if (receiverSlot == ZR_PARSER_SLOT_NONE) {
         return ZR_FALSE;
     }
@@ -1022,7 +1025,8 @@ static TZrUInt32 compile_inline_receiver_property_into_slot(SZrCompilerState *cs
         return compile_expression_into_slot(cs, property, targetSlot);
     }
 
-    localSlot = find_local_var(cs, property->data.identifier.name);
+    localSlot = find_local_var_with_context(
+            cs, property->data.identifier.name, property->data.identifier.syntaxContext);
     if (localSlot == ZR_PARSER_SLOT_NONE) {
         return compile_expression_into_slot(cs, property, targetSlot);
     }

@@ -12,9 +12,6 @@
 
 #include <stdint.h>
 
-/* 暂停域等待上界，完整回收与步骤失败时均按此边界放弃本次尝试。 */
-#define ZR_GC_DOMAIN_PAUSE_TIMEOUT_MILLISECONDS ((TZrUInt32)1000u)
-
 #if defined(ZR_PLATFORM_WIN)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -165,7 +162,7 @@ static void garbage_collector_refresh_pressure_snapshot(SZrGarbageCollector *col
 }
 
 /* 仅在一轮回收到达终态时累计次数，避免把切片计作完整周期。 */
-static void garbage_collector_record_step_telemetry(SZrGarbageCollector *collector, TZrUInt64 startedUs) {
+void garbage_collector_record_step_telemetry(SZrGarbageCollector *collector, TZrUInt64 startedUs) {
     TZrUInt64 finishedUs;
     TZrUInt64 durationUs;
     TZrUInt32 kindIndex;
@@ -653,68 +650,6 @@ void ZrCore_GarbageCollector_Free(SZrGlobalState *global, SZrGarbageCollector *c
     collector->regionCapacity = 0;
 
     ZrCore_Memory_RawFreeWithType(global, collector, sizeof(SZrGarbageCollector), ZR_MEMORY_NATIVE_TYPE_MANAGER);
-}
-
-/* 供关闭、内存压力和宿主强制回收共用的暂停域完整回收入口。 */
-void ZrCore_GarbageCollector_GcFull(SZrState *state, TZrBool isImmediate) {
-    SZrGlobalState *global;
-    SZrGarbageCollector *collector;
-    TZrUInt64 startedUs;
-    TZrSize work = 0;
-
-    if (state == ZR_NULL || state->global == ZR_NULL || state->global->garbageCollector == ZR_NULL) {
-        return;
-    }
-
-    global = state->global;
-    collector = global->garbageCollector;
-    ZrCore_ExecutionBudget_GcBegin(state);
-    if (!ZrCore_GcDomain_StopTheWorldBegin(
-                state, ZR_GC_DOMAIN_PAUSE_TIMEOUT_MILLISECONDS, ZR_NULL)) {
-        ZrCore_ExecutionBudget_GcEnd(state);
-        return;
-    }
-    ZrCore_GcDomain_MutationLock(state->gcDomain);
-    garbage_collector_concurrent_major_cancel(state);
-    startedUs = garbage_collector_now_us();
-
-    collector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED;
-    collector->scheduledCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL;
-    collector->statsSnapshot.lastRequestedCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL;
-    collector->statsSnapshot.lastCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL;
-    collector->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_REMARK;
-    collector->statsSnapshot.collectionPhase = collector->collectionPhase;
-    collector->gcObjectListSweeper = ZR_NULL;
-    collector->waitToScanObjectList = ZR_NULL;
-    collector->waitToScanAgainObjectList = ZR_NULL;
-    collector->waitToReleaseObjectList = ZR_NULL;
-    collector->releasedObjectList = ZR_NULL;
-    collector->gcStatus = ZR_GARBAGE_COLLECT_STATUS_RUNNING;
-
-    ZR_ASSERT(!collector->isImmediateGcFlag);
-    collector->isImmediateGcFlag = isImmediate;
-    /* BUG: 对象 scanMarkGcFunction 在受保护调用内抛异常时，longjmp 越过下方 mutation unlock、
-     * StopTheWorldEnd 和 GcEnd，后续 mutator 可被留在暂停域外等待。 */
-    if (collector->gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL) {
-        work += garbage_collector_run_generational_full(state);
-    } else {
-        work += garbage_collector_prepare_major_collection(state);
-        garbage_collector_full_inc(state, global);
-        work += collector->gcLastStepWork;
-    }
-    collector->isImmediateGcFlag = ZR_FALSE;
-    collector->scheduledCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
-    collector->gcFlags &= ~ZR_GC_FLAG_EXPLICIT_COLLECTION_REQUEST;
-    collector->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE;
-    collector->statsSnapshot.collectionPhase = collector->collectionPhase;
-    collector->gcLastStepWork = work > 0 ? work : 1;
-    garbage_collector_record_step_telemetry(collector, startedUs);
-    if (collector->gcRunningStatus == ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED) {
-        collector->gcStatus = ZR_GARBAGE_COLLECT_STATUS_STOP_BY_SELF;
-    }
-    ZrCore_GcDomain_MutationUnlock(state->gcDomain);
-    ZrCore_GcDomain_StopTheWorldEnd(state);
-    ZrCore_ExecutionBudget_GcEnd(state);
 }
 
 /* 安全点的债务偿还入口：按回收模式执行一个暂停或并发标记切片。 */

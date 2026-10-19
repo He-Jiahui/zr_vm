@@ -15,6 +15,8 @@ extern void test_binary_roundtrip_runtime_returned_callable_capture_preserves_cl
 extern void test_binary_roundtrip_runtime_global_callable_capture_preserves_closed_capture_escape_flags(void);
 extern void test_runtime_compiled_child_functions_retain_owner_links(void);
 extern void test_binary_roundtrip_runtime_child_functions_retain_owner_links(void);
+extern void test_public_compile_native_callback_capture_escape_flags(void);
+extern void test_public_compile_native_callback_nominal_metadata_respects_parent_shadowing(void);
 
 // 独立 escape_pipeline 目标注册全部跨编译单元用例；compiler_integration 还复用其中两例。
 /**
@@ -67,6 +69,8 @@ int main(void) {
     RUN_TEST(test_binary_roundtrip_runtime_global_callable_capture_preserves_closed_capture_escape_flags);
     RUN_TEST(test_runtime_compiled_child_functions_retain_owner_links);
     RUN_TEST(test_binary_roundtrip_runtime_child_functions_retain_owner_links);
+    RUN_TEST(test_public_compile_native_callback_capture_escape_flags);
+    RUN_TEST(test_public_compile_native_callback_nominal_metadata_respects_parent_shadowing);
 
     printf("\n");
     ZR_TEST_MODULE_DIVIDER();

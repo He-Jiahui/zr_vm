@@ -4,6 +4,9 @@
 #include <string.h>
 
 #include "zr_vm_core/string.h"
+#include "parser/parser_range_evidence.h"
+
+#include <stddef.h>
 
 static TZrBool member_owner_is_same_type(SZrCompilerState *cs,
                                         SZrString *left, SZrString *right) {
@@ -186,6 +189,7 @@ void type_inference_record_resolved_member_reference_fact(
     SZrSemanticSymbolRecord *symbol = ZR_NULL;
     TZrTypeId typeId;
     TZrSymbolId symbolId;
+    SZrSyntaxContext syntaxContext = ZrParser_SyntaxContext_Root();
 
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL || memberNode == ZR_NULL ||
         memberNode->type != ZR_AST_MEMBER_EXPRESSION || memberInfo == ZR_NULL ||
@@ -207,7 +211,33 @@ void type_inference_record_resolved_member_reference_fact(
                 memberInfo->memberType == ZR_AST_STRUCT_FIELD) &&
                declaration != ZR_NULL && valueType != ZR_NULL &&
                (declaration->type == ZR_AST_CLASS_FIELD ||
-                declaration->type == ZR_AST_STRUCT_FIELD)) {
+                declaration->type == ZR_AST_STRUCT_FIELD ||
+                declaration->type == ZR_AST_ENUM_MEMBER)) {
+        if (declaration->type == ZR_AST_ENUM_MEMBER) {
+            const SZrIdentifier *identifier = declaration->data.enumMember.name;
+            const SZrAstNode *nameNode;
+
+            if (identifier == ZR_NULL || identifier->name == ZR_NULL ||
+                declaration->ownership == ZR_NULL || memberInfo->name == ZR_NULL ||
+                !ZrCore_String_Equal(identifier->name, memberInfo->name) ||
+                !ZrParser_SyntaxContext_IsValid(identifier->syntaxContext)) {
+                return;
+            }
+            nameNode = (const SZrAstNode *)((const char *)identifier -
+                    offsetof(SZrAstNode, data.identifier));
+            if (nameNode->type != ZR_AST_IDENTIFIER_LITERAL ||
+                nameNode->ownership != declaration->ownership ||
+                !ZrParser_RangeEvidence_Validate(nameNode->ownership, nameNode->location)) {
+                return;
+            }
+            fact.definitionRange = nameNode->location;
+            syntaxContext = identifier->syntaxContext;
+        } else {
+            fact.definitionRange = declaration->type == ZR_AST_CLASS_FIELD
+                                           ? declaration->data.classField.nameLocation
+                                           : declaration->location;
+        }
+        fact.hasDefinitionRange = ZR_TRUE;
         symbol = (SZrSemanticSymbolRecord *)ZrParser_Semantic_FindSymbolById(
                 cs->semanticContext, memberInfo->symbolId);
         if (symbol != ZR_NULL &&
@@ -237,19 +267,16 @@ void type_inference_record_resolved_member_reference_fact(
                             ? ZR_SEMANTIC_TYPE_KIND_REFERENCE : ZR_SEMANTIC_TYPE_KIND_VALUE,
                     valueType->typeName, declaration);
         }
-        fact.definitionRange = declaration->type == ZR_AST_CLASS_FIELD
-                                       ? declaration->data.classField.nameLocation
-                                       : declaration->location;
-        fact.hasDefinitionRange = ZR_TRUE;
-        symbolId = symbol != ZR_NULL ? symbol->id : ZrParser_Semantic_RegisterSymbol(
+        symbolId = symbol != ZR_NULL ? symbol->id : ZrParser_Semantic_RegisterSymbolWithContext(
                 cs->semanticContext, memberInfo->name, ZR_SEMANTIC_SYMBOL_KIND_FIELD,
-                typeId, ZR_SEMANTIC_ID_INVALID, declaration, fact.definitionRange);
+                typeId, ZR_SEMANTIC_ID_INVALID, declaration, fact.definitionRange, syntaxContext);
         memberInfo->symbolId = symbolId;
     } else {
         return;
     }
     if (symbolId == ZR_SEMANTIC_ID_INVALID ||
-        (memberInfo->memberType == ZR_AST_PROPERTY_DECLARATION &&
+        ((memberInfo->memberType == ZR_AST_PROPERTY_DECLARATION ||
+          (declaration != ZR_NULL && declaration->type == ZR_AST_ENUM_MEMBER)) &&
          typeId == ZR_SEMANTIC_ID_INVALID)) {
         return;
     }

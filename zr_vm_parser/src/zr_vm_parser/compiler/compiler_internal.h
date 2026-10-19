@@ -444,6 +444,7 @@ TZrBool compiler_semantic_ir_get_slot_identity(
         SZrCompilerSemanticIrSlotIdentity *outIdentity);
 TZrBool compiler_semantic_ir_register_local(SZrCompilerState *cs,
                                              SZrString *name,
+                                             SZrSyntaxContext syntaxContext,
                                              TZrUInt32 stackSlot,
                                              SZrFileRange sourceRange,
                                              TZrBool initialized);
@@ -870,6 +871,14 @@ TZrBool compiler_is_runtime_safe_compile_time_value_internal(SZrCompilerState *c
                                                                   TZrUInt32 depth) ;
 
 TZrUInt32 allocate_local_var(SZrCompilerState *cs, SZrString *name) ;
+TZrBool compiler_binding_contexts_equal(
+        SZrSyntaxContext left,
+        SZrSyntaxContext right,
+        EZrSyntaxNamespace namespaceKind);
+TZrUInt32 allocate_local_var_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext) ;
 
 TZrSize ZrParser_Compiler_GetLocalStackFloor(const SZrCompilerState *cs) ;
 
@@ -902,12 +911,29 @@ void ZrParser_Compiler_TrimStackToSlot(SZrCompilerState *cs, TZrUInt32 slot) ;
 void ZrParser_Compiler_TrimStackBy(SZrCompilerState *cs, TZrSize amount) ;
 
 TZrUInt32 find_local_var(SZrCompilerState *cs, SZrString *name) ;
+TZrUInt32 find_local_var_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext) ;
 
 TZrUInt32 find_closure_var(SZrCompilerState *cs, SZrString *name) ;
+TZrUInt32 find_closure_var_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext) ;
 
 TZrUInt32 allocate_closure_var(SZrCompilerState *cs, SZrString *name, TZrBool inStack) ;
+TZrUInt32 allocate_closure_var_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext,
+        TZrBool inStack) ;
 
 TZrUInt32 find_child_function_index(SZrCompilerState *cs, SZrString *name) ;
+TZrUInt32 find_child_function_index_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext) ;
 SZrAstNode *find_function_declaration(SZrCompilerState *cs, SZrString *funcName);
 
 TZrUInt32 generate_function_reference_path_constant(SZrCompilerState *cs, TZrUInt32 childFunctionIndex) ;
@@ -925,6 +951,12 @@ void emit_constant_to_slot(SZrCompilerState *cs, TZrUInt32 slot, const SZrTypeVa
 void emit_string_constant_to_slot(SZrCompilerState *cs, TZrUInt32 slot, SZrString *value) ;
 
 void compiler_register_function_type_binding(SZrCompilerState *cs, SZrFunctionDeclaration *funcDecl) ;
+TZrBool compiler_refine_member_callable_variable_binding(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext,
+        SZrAstNode *declarationNode,
+        const SZrInferredType *type);
 TZrBool compiler_refine_function_type_binding_return(
         SZrCompilerState *cs,
         SZrAstNode *declarationNode,
@@ -946,6 +978,10 @@ void compiler_register_extern_function_type_binding_to_env(SZrCompilerState *cs,
                                                            SZrExternFunctionDeclaration *functionDecl) ;
 
 TZrUInt32 find_local_var_in_current_scope(SZrCompilerState *cs, SZrString *name) ;
+TZrUInt32 find_local_var_in_current_scope_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext) ;
 
 ZR_PARSER_API void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState *cs, SZrAstNodeArray *statements) ;
 
@@ -1250,7 +1286,6 @@ TZrUInt32 get_type_alignment(SZrCompilerState *cs, SZrType *type) ;
 
 void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) ;
 
-TZrBool extern_compiler_has_registered_type(SZrCompilerState *cs, SZrString *typeName) ;
 
 void extern_compiler_register_struct_prototype(SZrCompilerState *cs, SZrAstNode *declarationNode) ;
 

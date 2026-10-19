@@ -48,7 +48,7 @@ static TZrBool parser_keywordless_function_declaration_starts_here(SZrParserStat
     }
 
     restore_parser_cursor(ps, &cursor);
-    return result;
+    return result && !ps->lexer->hasSourceEvidenceError;
 }
 
 // 分派器借此选择声明解析器；包含可见性修饰符与无关键字函数两种入口。
@@ -245,76 +245,6 @@ static SZrAstNode *try_parse_function_declaration_from_current(SZrParserState *p
     return ZR_NULL;
 }
 
-// 块解析是语句递归入口；declarationKind 仅改变缺失右花括号的诊断上下文。
-// 成功返回的块节点持有已加入的语句数组及其所有元素。
-static SZrAstNode *parse_block_contents(SZrParserState *ps, const TZrChar *declarationKind) {
-    SZrFileRange startLoc = get_current_token_location(ps);
-    SZrFileRange endLoc;
-    expect_token(ps, ZR_TK_LBRACE);
-    ZrParser_Lexer_Next(ps->lexer);
-
-    SZrAstNodeArray *statements = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_SMALL);
-    if (statements == ZR_NULL) {
-        report_error(ps, "Failed to allocate statement array");
-        return ZR_NULL;
-    }
-
-    while (ps->lexer->t.token != ZR_TK_RBRACE && ps->lexer->t.token != ZR_TK_EOS) {
-        SZrAstNode *stmt = parse_statement(ps);
-        if (stmt != ZR_NULL) {
-            ZrParser_AstNodeArray_Add(ps->state, statements, stmt);
-        } else {
-            break; // 遇到错误
-        }
-    }
-
-    if (ps->lexer->t.token != ZR_TK_RBRACE) {
-        if (ps->lexer->t.token == ZR_TK_EOS) {
-            if (declarationKind != ZR_NULL) {
-                report_missing_declaration_body_close(ps, declarationKind, startLoc);
-            } else {
-                report_missing_block_close(ps, startLoc);
-            }
-        } else {
-            expect_token(ps, ZR_TK_RBRACE);
-        }
-        free_ast_node_array_with_elements(ps->state, statements);
-        return ZR_NULL;
-    }
-
-    endLoc = get_current_token_location(ps);
-    consume_token(ps, ZR_TK_RBRACE);
-    SZrFileRange blockLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
-
-    SZrAstNode *node = create_ast_node(ps, ZR_AST_BLOCK, blockLoc);
-    if (node == ZR_NULL) {
-        free_ast_node_array_with_elements(ps->state, statements);
-        return ZR_NULL;
-    }
-
-    node->data.block.body = statements;
-    node->data.block.isStatement = ZR_TRUE;
-    return node;
-}
-
-static SZrAstNode *parse_block_impl(SZrParserState *ps, const TZrChar *declarationKind) {
-    SZrAstNode *node;
-    if (!parser_enter_recursion(ps)) return ZR_NULL;
-    node = parse_block_contents(ps, declarationKind);
-    --ps->recursionDepth;
-    return node;
-}
-
-// 普通语句体、控制流体及函数体共用的块入口，调用前必须位于左花括号。
-SZrAstNode *parse_block(SZrParserState *ps) {
-    return parse_block_impl(ps, ZR_NULL);
-}
-
-// 声明解析器使用此入口，使缺失右花括号的诊断指向具体声明种类。
-SZrAstNode *parse_declaration_body_block(SZrParserState *ps, const TZrChar *declarationKind) {
-    return parse_block_impl(ps, declarationKind);
-}
-
 // 解析表达式语句
 
 // 在声明/控制流预读未接管 token 后兜底解析表达式；分号错误仍交给统一诊断器。
@@ -334,6 +264,7 @@ SZrAstNode *parse_expression_statement(SZrParserState *ps) {
     SZrAstNode *node = create_ast_node(ps, ZR_AST_EXPRESSION_STATEMENT, startLoc);
     if (node == ZR_NULL) {
         // BUG: 表达式已成功构造但语句节点分配失败时，expr 未释放。
+        ZrParser_Ast_Free(ps->state, expr);
         return ZR_NULL;
     }
 
@@ -406,9 +337,12 @@ SZrAstNode *parse_return_statement(SZrParserState *ps) {
         consume_token(ps, ZR_TK_SEMICOLON);
     }
 
-    SZrAstNode *node = create_ast_node(ps, ZR_AST_RETURN_STATEMENT, ZrParser_FileRange_Merge(startLoc, endLoc));
-    if (node == ZR_NULL) {
+    SZrFileRange returnLocation;
+    SZrAstNode *node;
+    if (!ZrParser_MergeLocations(ps, startLoc, endLoc, &returnLocation) ||
+        (node = create_ast_node(ps, ZR_AST_RETURN_STATEMENT, returnLocation)) == ZR_NULL) {
         // BUG: 已解析返回值未移交节点时直接返回，非空 expr 会泄漏。
+        ZrParser_Ast_Free(ps->state, expr);
         return ZR_NULL;
     }
 
@@ -416,148 +350,6 @@ SZrAstNode *parse_return_statement(SZrParserState *ps) {
     node->data.returnStatement.isReferenceReturn = isReferenceReturn;
     node->data.returnStatement.referenceLocation = referenceLocation;
     return node;
-}
-
-// 解析 switch 表达式/语句
-
-// 语句/顶层分派构造 switch 表达式形 AST；case 头部先试 move 模式再回退通用表达式。
-// expr、各 case 和默认分支只有在 switchNode 成功建立后才转移所有权。
-SZrAstNode *parse_switch_expression(SZrParserState *ps) {
-    SZrFileRange startLoc = get_current_location(ps);
-    expect_token(ps, ZR_TK_SWITCH);
-    ZrParser_Lexer_Next(ps->lexer);
-
-    expect_token(ps, ZR_TK_LPAREN);
-    ZrParser_Lexer_Next(ps->lexer);
-
-    if (ps->lexer->t.token == ZR_TK_RPAREN) {
-        report_missing_condition(ps, "switch", get_current_token_location(ps));
-        return ZR_NULL;
-    }
-
-    SZrAstNode *expr = parse_expression(ps);
-    if (expr == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (ps->lexer->t.token != ZR_TK_RPAREN) {
-        report_missing_condition_close(ps, "switch", get_current_token_location(ps));
-        ZrParser_Ast_Free(ps->state, expr);
-        return ZR_NULL;
-    }
-
-    expect_token(ps, ZR_TK_RPAREN);
-    ZrParser_Lexer_Next(ps->lexer);
-
-    if (ps->lexer->t.token != ZR_TK_LBRACE) {
-        report_missing_statement_body_open(ps, "switch statement", get_current_token_location(ps));
-        ZrParser_Ast_Free(ps->state, expr);
-        return ZR_NULL;
-    }
-
-    expect_token(ps, ZR_TK_LBRACE);
-    ZrParser_Lexer_Next(ps->lexer);
-
-    SZrAstNodeArray *cases = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
-    // BUG: cases 分配失败仍可继续解析；Add 对空数组静默返回，case AST 会丢失。
-    SZrAstNode *defaultCase = ZR_NULL;
-
-    // 解析 switch cases
-    while (ps->lexer->t.token != ZR_TK_RBRACE && ps->lexer->t.token != ZR_TK_EOS) {
-        if (consume_token(ps, ZR_TK_LPAREN)) {
-            if (ps->lexer->t.token == ZR_TK_RPAREN) {
-                // 默认 case
-                ZrParser_Lexer_Next(ps->lexer);
-                if (ps->lexer->t.token != ZR_TK_LBRACE) {
-                    report_missing_statement_body_open(ps, "switch default", get_current_token_location(ps));
-                    ZrParser_Ast_Free(ps->state, expr);
-                    // BUG: 此前已解析的 case 元素未释放；可能还遗失先前 defaultCase。
-                    ZrParser_AstNodeArray_Free(ps->state, cases);
-                    return ZR_NULL;
-                }
-
-                SZrAstNode *block = parse_block(ps);
-                if (block != ZR_NULL) {
-                    SZrFileRange defaultLoc = get_current_location(ps);
-                    // BUG: 第二个默认分支直接覆盖前一个节点，既丢失其块，也让后续阶段看不到重复分支。
-                    defaultCase = create_ast_node(ps, ZR_AST_SWITCH_DEFAULT, defaultLoc);
-                    if (defaultCase != ZR_NULL) {
-                        defaultCase->data.switchDefault.block = block;
-                    }
-                }
-            } else {
-                // 普通 case
-                SZrAstNode *value = try_parse_switch_move_variant_pattern_case(ps);
-                if (value == ZR_NULL) {
-                    value = parse_expression(ps);
-                    value = try_parse_switch_struct_variant_payload_case(ps, value);
-                }
-                if (ps->lexer->t.token != ZR_TK_RPAREN) {
-                    report_missing_switch_case_header_close(ps, get_current_token_location(ps));
-                    if (value != ZR_NULL) {
-                        ZrParser_Ast_Free(ps->state, value);
-                    }
-                    ZrParser_Ast_Free(ps->state, expr);
-                    // BUG: 先前已加入的 case 元素不会由数组容器的 Free 递归释放。
-                    ZrParser_AstNodeArray_Free(ps->state, cases);
-                    return ZR_NULL;
-                }
-
-                consume_token(ps, ZR_TK_RPAREN);
-                if (ps->lexer->t.token != ZR_TK_LBRACE) {
-                    report_missing_statement_body_open(ps, "switch case", get_current_token_location(ps));
-                    if (value != ZR_NULL) {
-                        ZrParser_Ast_Free(ps->state, value);
-                    }
-                    ZrParser_Ast_Free(ps->state, expr);
-                    // BUG: 此出口仍可能持有已加入的 case 和 defaultCase。
-                    ZrParser_AstNodeArray_Free(ps->state, cases);
-                    return ZR_NULL;
-                }
-
-                SZrAstNode *block = parse_block(ps);
-                if (value != ZR_NULL && block != ZR_NULL) {
-                    SZrFileRange caseLoc = get_current_location(ps);
-                    SZrAstNode *caseNode = create_ast_node(ps, ZR_AST_SWITCH_CASE, caseLoc);
-                    if (caseNode != ZR_NULL) {
-                        caseNode->data.switchCase.value = value;
-                        caseNode->data.switchCase.block = block;
-                        ZrParser_AstNodeArray_Add(ps->state, cases, caseNode);
-                    }
-                }
-                // BUG: block 或 caseNode 构造失败时，value/已构造的 block 无清理路径。
-            }
-        } else {
-            break;
-        }
-    }
-
-    if (ps->lexer->t.token != ZR_TK_RBRACE) {
-        report_missing_switch_body_close(ps, get_current_token_location(ps));
-        ZrParser_Ast_Free(ps->state, expr);
-        // BUG: 普通数组 Free 不释放已加入的 case AST。
-        ZrParser_AstNodeArray_Free(ps->state, cases);
-        if (defaultCase != ZR_NULL) {
-            ZrParser_Ast_Free(ps->state, defaultCase);
-        }
-        return ZR_NULL;
-    }
-
-    consume_token(ps, ZR_TK_RBRACE);
-
-    SZrFileRange endLoc = get_current_location(ps);
-    SZrFileRange switchLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
-
-    SZrAstNode *switchNode = create_ast_node(ps, ZR_AST_SWITCH_EXPRESSION, switchLoc);
-    if (switchNode != ZR_NULL) {
-        switchNode->data.switchExpression.expr = expr;
-        switchNode->data.switchExpression.cases = cases;
-        switchNode->data.switchExpression.defaultCase = defaultCase;
-        switchNode->data.switchExpression.isStatement = ZR_TRUE; // 默认是语句
-        return switchNode;
-    }
-    // BUG: 最终节点分配失败时 expr/cases/defaultCase 均未释放。
-    return ZR_NULL;
 }
 
 // 解析 if 表达式/语句
@@ -636,11 +428,15 @@ static SZrAstNode *parse_if_expression_impl(SZrParserState *ps) {
     }
 
     SZrFileRange endLoc = get_current_location(ps);
-    SZrFileRange ifLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
+    SZrFileRange ifLoc;
 
-    SZrAstNode *node = create_ast_node(ps, ZR_AST_IF_EXPRESSION, ifLoc);
-    if (node == ZR_NULL) {
+    SZrAstNode *node;
+    if (!ZrParser_MergeLocations(ps, startLoc, endLoc, &ifLoc) ||
+        (node = create_ast_node(ps, ZR_AST_IF_EXPRESSION, ifLoc)) == ZR_NULL) {
         // BUG: 最终节点分配失败时条件与已解析分支均未释放。
+        ZrParser_Ast_Free(ps->state, condition);
+        ZrParser_Ast_Free(ps->state, thenExpr);
+        ZrParser_Ast_Free(ps->state, elseExpr);
         return ZR_NULL;
     }
 
@@ -690,15 +486,19 @@ SZrAstNode *parse_while_loop(SZrParserState *ps) {
     SZrAstNode *block = parse_block(ps);
     if (block == ZR_NULL) {
         // BUG: 块失败时 cond 仍由本函数持有，却直接返回。
+        ZrParser_Ast_Free(ps->state, cond);
         return ZR_NULL;
     }
 
     SZrFileRange endLoc = get_current_location(ps);
-    SZrFileRange loopLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
+    SZrFileRange loopLoc;
 
-    SZrAstNode *node = create_ast_node(ps, ZR_AST_WHILE_LOOP, loopLoc);
-    if (node == ZR_NULL) {
+    SZrAstNode *node;
+    if (!ZrParser_MergeLocations(ps, startLoc, endLoc, &loopLoc) ||
+        (node = create_ast_node(ps, ZR_AST_WHILE_LOOP, loopLoc)) == ZR_NULL) {
         // BUG: 最终节点分配失败时 cond 和 block 均未释放。
+        ZrParser_Ast_Free(ps->state, cond);
+        ZrParser_Ast_Free(ps->state, block);
         return ZR_NULL;
     }
 
@@ -740,6 +540,7 @@ SZrAstNode *parse_break_continue_statement(SZrParserState *ps) {
     SZrAstNode *node = create_ast_node(ps, ZR_AST_BREAK_CONTINUE_STATEMENT, startLoc);
     if (node == ZR_NULL) {
         // BUG: 可选表达式已分配时，节点分配失败会遗失 expr。
+        ZrParser_Ast_Free(ps->state, expr);
         return ZR_NULL;
     }
 
@@ -768,10 +569,12 @@ SZrAstNode *parse_out_statement(SZrParserState *ps) {
     }
 
     SZrFileRange endLoc = get_current_location(ps);
-    SZrFileRange stmtLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
+    SZrFileRange stmtLoc;
 
-    SZrAstNode *node = create_ast_node(ps, ZR_AST_OUT_STATEMENT, stmtLoc);
-    if (node == ZR_NULL) {
+    SZrAstNode *node;
+    if (!ZrParser_MergeLocations(ps, startLoc, endLoc, &stmtLoc) ||
+        (node = create_ast_node(ps, ZR_AST_OUT_STATEMENT, stmtLoc)) == ZR_NULL) {
+        ZrParser_Ast_Free(ps->state, expr);
         return ZR_NULL;
     }
 
@@ -843,11 +646,10 @@ SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps) {
         if (ps->lexer->t.token != ZR_TK_RPAREN) {
             report_missing_catch_pattern_close(ps, get_current_token_location(ps));
             if (catchPattern != ZR_NULL) {
-                ZrParser_AstNodeArray_Free(ps->state, catchPattern);
+                free_ast_node_array_with_elements(ps->state, catchPattern);
             }
             if (catchClauses != ZR_NULL) {
-                // BUG: 之前已加入的 catch 节点不会随数组容器释放；其他同类错误出口亦然。
-                ZrParser_AstNodeArray_Free(ps->state, catchClauses);
+                free_ast_node_array_with_elements(ps->state, catchClauses);
             }
             ZrParser_Ast_Free(ps->state, block);
             return ZR_NULL;
@@ -858,10 +660,10 @@ SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps) {
         if (ps->lexer->t.token != ZR_TK_LBRACE) {
             report_missing_statement_body_open(ps, "catch statement", get_current_token_location(ps));
             if (catchPattern != ZR_NULL) {
-                ZrParser_AstNodeArray_Free(ps->state, catchPattern);
+                free_ast_node_array_with_elements(ps->state, catchPattern);
             }
             if (catchClauses != ZR_NULL) {
-                ZrParser_AstNodeArray_Free(ps->state, catchClauses);
+                free_ast_node_array_with_elements(ps->state, catchClauses);
             }
             ZrParser_Ast_Free(ps->state, block);
             return ZR_NULL;
@@ -870,42 +672,48 @@ SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps) {
         catchBlock = parse_block(ps);
         if (catchBlock == ZR_NULL) {
             if (catchPattern != ZR_NULL) {
-                ZrParser_AstNodeArray_Free(ps->state, catchPattern);
+                free_ast_node_array_with_elements(ps->state, catchPattern);
             }
             if (catchClauses != ZR_NULL) {
-                ZrParser_AstNodeArray_Free(ps->state, catchClauses);
+                free_ast_node_array_with_elements(ps->state, catchClauses);
             }
             // BUG: 当前出口遗失先前成功解析的 try block。
+            ZrParser_Ast_Free(ps->state, block);
             return ZR_NULL;
         }
 
         if (catchClauses == ZR_NULL) {
-            catchClauses = ZrParser_AstNodeArray_New(ps->state, 2);
+            catchClauses = parser_ast_array_new(ps, 2);
             if (catchClauses == ZR_NULL) {
                 if (catchPattern != ZR_NULL) {
-                    ZrParser_AstNodeArray_Free(ps->state, catchPattern);
+                    free_ast_node_array_with_elements(ps->state, catchPattern);
                 }
                 ZrParser_Ast_Free(ps->state, catchBlock);
-                // BUG: try block 在 catch 数组分配失败时未释放。
+                ZrParser_Ast_Free(ps->state, block);
                 return ZR_NULL;
             }
         }
 
-        catchClauseNode = create_ast_node(ps,
-                                          ZR_AST_CATCH_CLAUSE,
-                                          ZrParser_FileRange_Merge(catchStartLoc, get_current_location(ps)));
-        if (catchClauseNode == ZR_NULL) {
+        SZrFileRange catchLocation;
+        if (!ZrParser_MergeLocations(ps, catchStartLoc, get_current_location(ps), &catchLocation) ||
+            (catchClauseNode = create_ast_node(ps, ZR_AST_CATCH_CLAUSE, catchLocation)) == ZR_NULL) {
             if (catchPattern != ZR_NULL) {
-                ZrParser_AstNodeArray_Free(ps->state, catchPattern);
+                free_ast_node_array_with_elements(ps->state, catchPattern);
             }
             ZrParser_Ast_Free(ps->state, catchBlock);
-            // BUG: try block 和此前的 catch 数组在此出口仍由本函数持有。
+            free_ast_node_array_with_elements(ps->state, catchClauses);
+            ZrParser_Ast_Free(ps->state, block);
             return ZR_NULL;
         }
 
         catchClauseNode->data.catchClause.pattern = catchPattern;
         catchClauseNode->data.catchClause.block = catchBlock;
-        ZrParser_AstNodeArray_Add(ps->state, catchClauses, catchClauseNode);
+        if (!parser_ast_array_add(ps, catchClauses, catchClauseNode)) {
+            ZrParser_Ast_Free(ps->state, catchClauseNode);
+            free_ast_node_array_with_elements(ps->state, catchClauses);
+            ZrParser_Ast_Free(ps->state, block);
+            return ZR_NULL;
+        }
     }
 
     // 解析 finally（可选）
@@ -914,7 +722,7 @@ SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps) {
         if (ps->lexer->t.token != ZR_TK_LBRACE) {
             report_missing_statement_body_open(ps, "finally statement", get_current_token_location(ps));
             if (catchClauses != ZR_NULL) {
-                ZrParser_AstNodeArray_Free(ps->state, catchClauses);
+                free_ast_node_array_with_elements(ps->state, catchClauses);
             }
             ZrParser_Ast_Free(ps->state, block);
             return ZR_NULL;
@@ -925,15 +733,16 @@ SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps) {
     }
 
     SZrFileRange endLoc = get_current_location(ps);
-    SZrFileRange tryLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
+    SZrFileRange tryLoc;
 
-    SZrAstNode *node = create_ast_node(ps, ZR_AST_TRY_CATCH_FINALLY_STATEMENT, tryLoc);
-    if (node == ZR_NULL) {
+    SZrAstNode *node;
+    if (!ZrParser_MergeLocations(ps, startLoc, endLoc, &tryLoc) ||
+        (node = create_ast_node(ps, ZR_AST_TRY_CATCH_FINALLY_STATEMENT, tryLoc)) == ZR_NULL) {
         if (catchClauses != ZR_NULL) {
-            // BUG: 已加入的 catch 节点不随数组容器释放。
-            ZrParser_AstNodeArray_Free(ps->state, catchClauses);
+            free_ast_node_array_with_elements(ps->state, catchClauses);
         }
-        // BUG: 分配失败时 try/finally 块和 catch 元素没有释放。
+        ZrParser_Ast_Free(ps->state, block);
+        ZrParser_Ast_Free(ps->state, finallyBlock);
         return ZR_NULL;
     }
 
@@ -1259,7 +1068,7 @@ static TZrBool using_no_block_pattern_starts_here(SZrParserState *ps) {
     ps->structuredErrorCallback = savedStructuredErrorCallback;
     ps->errorUserData = savedErrorUserData;
     restore_parser_cursor(ps, &cursor);
-    return result;
+    return result && !ps->lexer->hasSourceEvidenceError;
 }
 
 // 守卫绑定统一生成可供编译器识别的标识符、变体、数组或对象模式。
@@ -1314,8 +1123,13 @@ static SZrAstNode *parse_using_binding_identifier(SZrParserState *ps) {
 
     identifier = parse_identifier(ps);
     if (identifier != ZR_NULL && isMoveBinding) {
+        SZrFileRange bindingLocation;
+        if (!ZrParser_MergeLocations(ps, moveLocation, identifier->location, &bindingLocation)) {
+            ZrParser_Ast_Free(ps->state, identifier);
+            return ZR_NULL;
+        }
         identifier->data.identifier.isMoveBinding = ZR_TRUE;
-        identifier->location = ZrParser_FileRange_Merge(moveLocation, identifier->location);
+        identifier->location = bindingLocation;
     }
 
     return identifier;
@@ -1332,7 +1146,7 @@ static SZrAstNode *parse_using_array_destructuring_pattern(SZrParserState *ps) {
     expect_token(ps, ZR_TK_LBRACKET);
     ZrParser_Lexer_Next(ps->lexer);
 
-    keys = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
+    keys = parser_ast_array_new(ps, ZR_PARSER_INITIAL_CAPACITY_TINY);
     if (keys == ZR_NULL) {
         return ZR_NULL;
     }
@@ -1343,7 +1157,11 @@ static SZrAstNode *parse_using_array_destructuring_pattern(SZrParserState *ps) {
             free_ast_node_array_with_elements(ps->state, keys);
             return ZR_NULL;
         }
-        ZrParser_AstNodeArray_Add(ps->state, keys, first);
+        if (!parser_ast_array_add(ps, keys, first)) {
+            ZrParser_Ast_Free(ps->state, first);
+            free_ast_node_array_with_elements(ps->state, keys);
+            return ZR_NULL;
+        }
 
         while (consume_token(ps, ZR_TK_COMMA)) {
             SZrAstNode *key;
@@ -1357,7 +1175,11 @@ static SZrAstNode *parse_using_array_destructuring_pattern(SZrParserState *ps) {
                 free_ast_node_array_with_elements(ps->state, keys);
                 return ZR_NULL;
             }
-            ZrParser_AstNodeArray_Add(ps->state, keys, key);
+            if (!parser_ast_array_add(ps, keys, key)) {
+                ZrParser_Ast_Free(ps->state, key);
+                free_ast_node_array_with_elements(ps->state, keys);
+                return ZR_NULL;
+            }
         }
     }
 
@@ -1368,9 +1190,8 @@ static SZrAstNode *parse_using_array_destructuring_pattern(SZrParserState *ps) {
     }
 
     endLoc = get_current_location(ps);
-    destructuringLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
-    node = create_ast_node(ps, ZR_AST_DESTRUCTURING_ARRAY, destructuringLoc);
-    if (node == ZR_NULL) {
+    if (!ZrParser_MergeLocations(ps, startLoc, endLoc, &destructuringLoc) ||
+        (node = create_ast_node(ps, ZR_AST_DESTRUCTURING_ARRAY, destructuringLoc)) == ZR_NULL) {
         free_ast_node_array_with_elements(ps->state, keys);
         return ZR_NULL;
     }
@@ -1393,7 +1214,7 @@ static SZrAstNode *parse_using_object_destructuring_pattern(SZrParserState *ps) 
     expect_token(ps, ZR_TK_LBRACE);
     ZrParser_Lexer_Next(ps->lexer);
 
-    properties = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
+    properties = parser_ast_array_new(ps, ZR_PARSER_INITIAL_CAPACITY_TINY);
     if (properties == ZR_NULL) {
         return ZR_NULL;
     }
@@ -1419,9 +1240,11 @@ static SZrAstNode *parse_using_object_destructuring_pattern(SZrParserState *ps) 
                 return ZR_NULL;
             }
         } else {
-            key = create_identifier_node_with_location(ps,
-                                                       first->data.identifier.name,
-                                                       first->location);
+            key = create_identifier_node_with_context(
+                    ps,
+                    first->data.identifier.name,
+                    first->location,
+                    first->data.identifier.syntaxContext);
             value = first;
             if (key == ZR_NULL) {
                 ZrParser_Ast_Free(ps->state, value);
@@ -1430,9 +1253,8 @@ static SZrAstNode *parse_using_object_destructuring_pattern(SZrParserState *ps) 
             }
         }
 
-        kvLoc = ZrParser_FileRange_Merge(key->location, value->location);
-        kvNode = create_ast_node(ps, ZR_AST_KEY_VALUE_PAIR, kvLoc);
-        if (kvNode == ZR_NULL) {
+        if (!ZrParser_MergeLocations(ps, key->location, value->location, &kvLoc) ||
+            (kvNode = create_ast_node(ps, ZR_AST_KEY_VALUE_PAIR, kvLoc)) == ZR_NULL) {
             ZrParser_Ast_Free(ps->state, key);
             ZrParser_Ast_Free(ps->state, value);
             free_ast_node_array_with_elements(ps->state, properties);
@@ -1441,7 +1263,11 @@ static SZrAstNode *parse_using_object_destructuring_pattern(SZrParserState *ps) 
         kvNode->data.keyValuePair.key = key;
         kvNode->data.keyValuePair.value = value;
         kvNode->data.keyValuePair.keyIsComputed = ZR_FALSE;
-        ZrParser_AstNodeArray_Add(ps->state, properties, kvNode);
+        if (!parser_ast_array_add(ps, properties, kvNode)) {
+            ZrParser_Ast_Free(ps->state, kvNode);
+            free_ast_node_array_with_elements(ps->state, properties);
+            return ZR_NULL;
+        }
 
         if (ps->lexer->t.token == ZR_TK_COMMA || ps->lexer->t.token == ZR_TK_SEMICOLON) {
             ZrParser_Lexer_Next(ps->lexer);
@@ -1461,8 +1287,9 @@ static SZrAstNode *parse_using_object_destructuring_pattern(SZrParserState *ps) 
     }
     consume_token(ps, ZR_TK_RBRACE);
 
-    node = create_ast_node(ps, ZR_AST_OBJECT_LITERAL, ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
-    if (node == ZR_NULL) {
+    SZrFileRange objectLocation;
+    if (!ZrParser_MergeLocations(ps, startLoc, get_current_location(ps), &objectLocation) ||
+        (node = create_ast_node(ps, ZR_AST_OBJECT_LITERAL, objectLocation)) == ZR_NULL) {
         free_ast_node_array_with_elements(ps->state, properties);
         return ZR_NULL;
     }
@@ -1529,11 +1356,71 @@ static TZrBool parser_brace_starts_object_literal_statement(SZrParserState *ps) 
     return result;
 }
 
+static TZrBool parser_try_consume_access_modifier_before_comptime(SZrParserState *ps) {
+    SZrParserCursor cursor;
+
+    save_parser_cursor(ps, &cursor);
+    (void)parse_access_modifier(ps);
+    if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "comptime")) {
+        return ZR_TRUE;
+    }
+    restore_parser_cursor(ps, &cursor);
+    return ZR_FALSE;
+}
+
+static TZrBool parser_statement_keywordless_function_starts_here(SZrParserState *ps) {
+    SZrParserCursor savedCursor;
+    TZrBool isFunction = ZR_FALSE;
+    memset(&savedCursor, 0, sizeof(savedCursor));
+    save_parser_cursor(ps, &savedCursor);
+
+    // 跳过标识符和左括号（或泛型）
+    ZrParser_Lexer_Next(ps->lexer); // 消费标识符
+    if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
+        // 跳过泛型参数
+        while (ps->lexer->t.token != ZR_TK_GREATER_THAN && ps->lexer->t.token != ZR_TK_EOS) {
+            ZrParser_Lexer_Next(ps->lexer);
+        }
+        if (ps->lexer->t.token == ZR_TK_GREATER_THAN) {
+            ZrParser_Lexer_Next(ps->lexer); // 消费 >
+        }
+    }
+    if (ps->lexer->t.token == ZR_TK_LPAREN) {
+        ZrParser_Lexer_Next(ps->lexer); // 消费 (
+        // 跳过参数列表（直到遇到 )）
+        while (ps->lexer->t.token != ZR_TK_RPAREN && ps->lexer->t.token != ZR_TK_EOS) {
+            ZrParser_Lexer_Next(ps->lexer);
+        }
+        if (ps->lexer->t.token == ZR_TK_RPAREN) {
+            ZrParser_Lexer_Next(ps->lexer); // 消费 )
+            // 跳过可选的返回类型注解
+            if (ps->lexer->t.token == ZR_TK_COLON) {
+                ZrParser_Lexer_Next(ps->lexer); // 消费 :
+                // 跳过类型
+                while (ps->lexer->t.token != ZR_TK_LBRACE && ps->lexer->t.token != ZR_TK_EOS &&
+                       ps->lexer->t.token != ZR_TK_SEMICOLON) {
+                    ZrParser_Lexer_Next(ps->lexer);
+                }
+            }
+            // 检查下一个 token 是否是函数体 { }
+            if (ps->lexer->t.token == ZR_TK_LBRACE) {
+                isFunction = ZR_TRUE;
+            }
+        }
+    }
+    // 恢复状态
+    restore_parser_cursor(ps, &savedCursor);
+    return isFunction;
+}
+
 // 块内语句分派的递归入口；优先识别声明与控制流，再交给表达式兜底。
 // 返回节点由 parse_block_impl 接管；NULL 使块停止并交由外层错误恢复。
 SZrAstNode *parse_statement(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
 
+    if (ps->lexer->hasSourceEvidenceError) {
+        return ZR_NULL;
+    }
     if (token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "iterator") &&
         peek_token(ps) == ZR_TK_FN) {
         report_error(ps,
@@ -1550,14 +1437,9 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
 
     if (token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO) {
         EZrToken nextToken = peek_token(ps);
-        if (nextToken == ZR_TK_IDENTIFIER) {
-            SZrParserCursor cursor;
-            save_parser_cursor(ps, &cursor);
-            (void)parse_access_modifier(ps);
-            if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "comptime")) {
-                return parse_compile_time_declaration(ps);
-            }
-            restore_parser_cursor(ps, &cursor);
+        if (nextToken == ZR_TK_IDENTIFIER &&
+            parser_try_consume_access_modifier_before_comptime(ps)) {
+            return parse_compile_time_declaration(ps);
         }
         if (parser_function_declaration_starts_here(ps)) {
             return parse_function_declaration(ps);
@@ -1681,82 +1563,9 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
             if (token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST) {
                 // 查看下一个 token 判断是否是函数声明
                 EZrToken lookahead = peek_token(ps);
-                if (lookahead == ZR_TK_LPAREN || lookahead == ZR_TK_LESS_THAN) {
-                    // 可能是函数声明，需要进一步检查后面是否有函数体 { }
-                    // 保存状态以便向前看
-                    TZrSize savedPos = ps->lexer->currentPos;
-                    TZrInt32 savedChar = ps->lexer->currentChar;
-                    TZrInt32 savedLine = ps->lexer->lineNumber;
-                    TZrInt32 savedLastLine = ps->lexer->lastLine;
-                    SZrToken savedToken = ps->lexer->t;
-                    SZrToken savedLookahead = ps->lexer->lookahead;
-                    TZrSize savedLookaheadPos = ps->lexer->lookaheadPos;
-                    TZrInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
-                    TZrInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
-                    TZrInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
-
-                    // 跳过标识符和左括号（或泛型）
-                    ZrParser_Lexer_Next(ps->lexer); // 消费标识符
-                    if (ps->lexer->t.token == ZR_TK_LESS_THAN) {
-                        // 跳过泛型参数
-                        while (ps->lexer->t.token != ZR_TK_GREATER_THAN && ps->lexer->t.token != ZR_TK_EOS) {
-                            ZrParser_Lexer_Next(ps->lexer);
-                        }
-                        if (ps->lexer->t.token == ZR_TK_GREATER_THAN) {
-                            ZrParser_Lexer_Next(ps->lexer); // 消费 >
-                        }
-                    }
-                    if (ps->lexer->t.token == ZR_TK_LPAREN) {
-                        ZrParser_Lexer_Next(ps->lexer); // 消费 (
-                        // 跳过参数列表（直到遇到 )）
-                        while (ps->lexer->t.token != ZR_TK_RPAREN && ps->lexer->t.token != ZR_TK_EOS) {
-                            ZrParser_Lexer_Next(ps->lexer);
-                        }
-                        if (ps->lexer->t.token == ZR_TK_RPAREN) {
-                            ZrParser_Lexer_Next(ps->lexer); // 消费 )
-                            // 跳过可选的返回类型注解
-                            if (ps->lexer->t.token == ZR_TK_COLON) {
-                                ZrParser_Lexer_Next(ps->lexer); // 消费 :
-                                // 跳过类型
-                                while (ps->lexer->t.token != ZR_TK_LBRACE && ps->lexer->t.token != ZR_TK_EOS &&
-                                       ps->lexer->t.token != ZR_TK_SEMICOLON) {
-                                    ZrParser_Lexer_Next(ps->lexer);
-                                }
-                            }
-                            // 检查下一个 token 是否是函数体 { }
-                            if (ps->lexer->t.token == ZR_TK_LBRACE) {
-                                // 是函数声明，恢复状态并解析
-                                ps->lexer->currentPos = savedPos;
-                                ps->lexer->currentChar = savedChar;
-                                ps->lexer->lineNumber = savedLine;
-                                ps->lexer->lastLine = savedLastLine;
-                                ps->lexer->t = savedToken;
-                                ps->lexer->lookahead = savedLookahead;
-                                ps->lexer->lookaheadPos = savedLookaheadPos;
-                                ps->lexer->lookaheadChar = savedLookaheadChar;
-                                ps->lexer->lookaheadLine = savedLookaheadLine;
-                                ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
-                                SZrAstNode *funcDecl = parse_function_declaration(ps);
-                                // 如果解析失败，直接返回 NULL（无论是否有错误）
-                                // 因为如果标识符后跟括号和函数体，它应该是函数声明，不应该回退到表达式解析
-                                if (funcDecl == ZR_NULL) {
-                                    return ZR_NULL;
-                                }
-                                return funcDecl;
-                            }
-                        }
-                    }
-                    // 恢复状态
-                    ps->lexer->currentPos = savedPos;
-                    ps->lexer->currentChar = savedChar;
-                    ps->lexer->lineNumber = savedLine;
-                    ps->lexer->lastLine = savedLastLine;
-                    ps->lexer->t = savedToken;
-                    ps->lexer->lookahead = savedLookahead;
-                    ps->lexer->lookaheadPos = savedLookaheadPos;
-                    ps->lexer->lookaheadChar = savedLookaheadChar;
-                    ps->lexer->lookaheadLine = savedLookaheadLine;
-                    ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+                if ((lookahead == ZR_TK_LPAREN || lookahead == ZR_TK_LESS_THAN) &&
+                    parser_statement_keywordless_function_starts_here(ps)) {
+                    return parse_function_declaration(ps);
                 }
             }
             // 尝试解析为表达式语句
@@ -1857,11 +1666,14 @@ static SZrAstNode *try_parse_top_level_decorated_comptime_declaration(
 SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
 
+    if (ps->lexer->hasSourceEvidenceError) {
+        return ZR_NULL;
+    }
     if (token == ZR_TK_SHARP) {
         TZrBool handled = ZR_FALSE;
         SZrAstNode *decoratedComptime =
                 try_parse_top_level_decorated_comptime_declaration(ps, &handled);
-        if (handled) {
+        if (handled || ps->lexer->hasSourceEvidenceError) {
             return decoratedComptime;
         }
     }
@@ -2163,43 +1975,6 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
             if ((token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST) &&
                 parser_keywordless_function_declaration_starts_here(ps)) {
                 return parse_function_declaration(ps);
-            }
-            if (token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST) {
-                // 查看下一个 token 判断是否是函数声明
-                EZrToken lookahead = peek_token(ps);
-                if (lookahead == ZR_TK_LPAREN || lookahead == ZR_TK_LESS_THAN) {
-                    SZrParserCursor cursor;
-                    TZrBool savedSuppressErrorOutput = ps->suppressErrorOutput;
-                    TZrParserErrorCallback savedErrorCallback = ps->errorCallback;
-                    TZrParserStructuredErrorCallback savedStructuredErrorCallback = ps->structuredErrorCallback;
-                    TZrPtr savedErrorUserData = ps->errorUserData;
-                    SZrAstNode *funcDecl;
-
-                    save_parser_cursor(ps, &cursor);
-                    ps->suppressErrorOutput = ZR_TRUE;
-                    ps->errorCallback = ZR_NULL;
-                    ps->structuredErrorCallback = ZR_NULL;
-                    ps->errorUserData = ZR_NULL;
-                    ps->hasError = ZR_FALSE;
-                    ps->errorMessage = ZR_NULL;
-
-                    funcDecl = parse_function_declaration(ps);
-                    ps->suppressErrorOutput = savedSuppressErrorOutput;
-                    ps->errorCallback = savedErrorCallback;
-                    ps->structuredErrorCallback = savedStructuredErrorCallback;
-                    ps->errorUserData = savedErrorUserData;
-                    if (funcDecl != ZR_NULL && !ps->hasError) {
-                        ps->hasError = cursor.hasError;
-                        ps->errorMessage = cursor.errorMessage;
-                        return funcDecl;
-                    }
-
-                    if (funcDecl != ZR_NULL) {
-                        ZrParser_Ast_Free(ps->state, funcDecl);
-                    }
-
-                    restore_parser_cursor(ps, &cursor);
-                }
             }
             // 尝试解析为表达式语句
             return parse_expression_statement(ps);

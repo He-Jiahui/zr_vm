@@ -4,17 +4,33 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/comptime_cache.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/gc_domain.h"
+#include "compiler/compile_time/compile_time_control_flow.h"
 
 typedef struct SZrCompileTimeBinding {
     SZrString *name;
+    SZrSyntaxContext syntaxContext;
     SZrTypeValue value;
+    SZrGcRootHandle nameRoot;
+    SZrGcRootHandle valueRoot;
+    TZrBool hasNameRoot;
+    TZrBool hasValueRoot;
+    TZrBool isConst;
 } SZrCompileTimeBinding;
 
-typedef struct SZrCompileTimeFrame {
+struct SZrCompileTimeFrame {
     SZrArray bindings;
+    /* Strong roots for expression results that must survive later CT
+     * allocations until this frame is released. */
+    SZrArray temporaryRoots;
     struct SZrCompileTimeFrame *parent;
-} SZrCompileTimeFrame;
+    SZrState *state;
+};
 
+TZrBool ct_contexts_equal(
+        SZrSyntaxContext left, SZrSyntaxContext right,
+        EZrSyntaxNamespace namespaceKind);
+TZrBool ct_value_needs_root(const SZrTypeValue *value);
 const TZrChar *ct_name(SZrString *name);
 void ct_error_name(SZrCompilerState *cs, SZrString *name, const TZrChar *prefix, SZrFileRange location);
 TZrBool ct_truthy(const SZrTypeValue *value);
@@ -24,9 +40,66 @@ TZrBool ct_eval_import_expression(SZrCompilerState *cs, SZrAstNode *node, SZrTyp
 void ct_frame_init(SZrCompilerState *cs, SZrCompileTimeFrame *frame, SZrCompileTimeFrame *parent);
 void ct_frame_free(SZrCompilerState *cs, SZrCompileTimeFrame *frame);
 TZrBool ct_frame_get(SZrCompileTimeFrame *frame, SZrString *name, SZrTypeValue *result);
+TZrBool ct_frame_get_with_context(SZrCompileTimeFrame *frame,
+                                  SZrString *name,
+                                  SZrSyntaxContext syntaxContext,
+                                  SZrTypeValue *result);
 TZrBool ct_frame_set(SZrCompilerState *cs, SZrCompileTimeFrame *frame, SZrString *name, const SZrTypeValue *value);
+TZrBool ct_frame_declare(SZrCompilerState *cs,
+                         SZrCompileTimeFrame *frame,
+                         SZrString *name,
+                         const SZrTypeValue *value,
+                         TZrBool isConst);
+TZrBool ct_frame_declare_with_context(
+        SZrCompilerState *cs,
+        SZrCompileTimeFrame *frame,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext,
+        const SZrTypeValue *value,
+        TZrBool isConst);
+TZrBool ct_frame_update(SZrCompilerState *cs,
+                        SZrCompileTimeFrame *frame,
+                        SZrString *name,
+                        const SZrTypeValue *value,
+                        SZrFileRange location);
+TZrBool ct_frame_update_with_context(
+        SZrCompilerState *cs,
+        SZrCompileTimeFrame *frame,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext,
+        const SZrTypeValue *value,
+        SZrFileRange location);
+TZrBool ct_frame_has_binding(SZrCompileTimeFrame *frame, SZrString *name);
+TZrBool ct_frame_has_binding_with_context(
+        SZrCompileTimeFrame *frame,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext);
+TZrBool ct_frame_root_value(SZrCompilerState *cs,
+                            SZrCompileTimeFrame *frame,
+                            SZrTypeValue *value);
+TZrBool ct_compile_time_variable_set_value(
+        SZrCompilerState *cs,
+        SZrCompileTimeVariable *variable,
+        const SZrTypeValue *value);
+TZrBool ct_compile_time_variable_get_value(
+        SZrCompilerState *cs,
+        SZrCompileTimeVariable *variable,
+        SZrTypeValue *result);
 SZrCompileTimeVariable *find_compile_time_variable(SZrCompilerState *cs, SZrString *name);
+SZrCompileTimeVariable *find_compile_time_variable_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext);
 SZrCompileTimeFunction *find_compile_time_function(SZrCompilerState *cs, SZrString *name);
+SZrCompileTimeFunction *find_compile_time_function_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext);
+TZrBool ct_try_get_compile_time_value_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext,
+        SZrTypeValue *result);
 SZrCompileTimeFunction *resolve_imported_compile_time_function(
         SZrCompilerState *cs,
         SZrString *moduleName,
@@ -39,6 +112,21 @@ TZrBool evaluate_compile_time_expression_internal(SZrCompilerState *cs,
                                                   SZrAstNode *node,
                                                   SZrCompileTimeFrame *frame,
                                                   SZrTypeValue *result);
+TZrBool ct_eval_call_arg(SZrCompilerState *cs,
+                        SZrFunctionCall *call,
+                        SZrParameter *param,
+                        TZrSize paramIndex,
+                        SZrCompileTimeFrame *frame,
+                        SZrTypeValue *result);
+TZrBool ct_execute_compile_time_decorator_function(
+        SZrCompilerState *cs,
+        SZrCompileTimeFunction *decoratorFunction,
+        SZrFunctionCall *constructorCall,
+        const SZrTypeValue *targetSnapshot,
+        const TZrChar *expectedTargetName,
+        SZrCompileTimeFrame *lifetimeFrame,
+        SZrTypeValue *patchResult,
+        SZrFileRange location);
 TZrBool register_compile_time_variable_declaration(SZrCompilerState *cs, SZrAstNode *node, SZrFileRange location);
 TZrBool register_compile_time_function_declaration(SZrCompilerState *cs, SZrAstNode *node, SZrFileRange location);
 TZrBool register_compile_time_function_alias(SZrCompilerState *cs,

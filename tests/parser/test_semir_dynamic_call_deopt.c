@@ -168,18 +168,24 @@ static void test_spread_call_preserves_its_dynamic_boundary_kind(void) {
             3u);
 }
 
+#include "test_semir_call_result_type_identity_cases.h"
+
 /* Unity 要求的用例前钩子；夹具在测试函数内创建。 */
 void setUp(void) {}
 
 /* BUG: state 创建成功后任一 Unity 断言失败会经 TEST_ABORT/longjmp 跳过
  * 测试函数末尾的 Function_Free/destroy_test_state；空钩子无法补救，
  * 当时已取得的函数或 VM 原生资源在本进程内失去正常清理路径。 */
-void tearDown(void) {}
+void tearDown(void) {
+    semir_call_type_identity_cleanup();
+}
 
 /* 独立 Unity 入口；CMake 以 semir_dynamic_call_deopt 注册 CTest。 */
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_generic_call_exec_opcodes_become_dynamic_deopt_boundaries);
     RUN_TEST(test_spread_call_preserves_its_dynamic_boundary_kind);
+    RUN_TEST(test_semir_call_without_result_binding_preserves_unknown_type);
+    RUN_TEST(test_semir_explicit_object_call_result_remains_nonprimitive);
     return UNITY_END();
 }

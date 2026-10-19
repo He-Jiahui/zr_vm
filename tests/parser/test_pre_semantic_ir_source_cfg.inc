@@ -289,7 +289,7 @@ static void test_nested_untracked_condition_abandons_outer_source_cfg(void) {
     static const TZrChar source[] =
             "var flag: bool = true;\n"
             "var value: int = 1;\n"
-            "if (flag) { if (value > 0) { var inner: int = 2; } }\n";
+            "if (flag) { if (value == 0) { var inner: int = 2; } }\n";
     SZrString *name = ZrCore_String_Create(g_state, "nested_expr.zr", 14U);
     SZrAstNode *ast = ZrParser_Parse(g_state, source, sizeof(source) - 1U, name);
     SZrCompilerState compiler;
@@ -310,6 +310,147 @@ static void test_nested_untracked_condition_abandons_outer_source_cfg(void) {
     function = ZrParser_Compiler_PreSemanticIr(&compiler);
     TEST_ASSERT_EQUAL_UINT64(2U, function->cfg.blocks.length);
     TEST_ASSERT_FALSE(semantic_ir_has_opcode(function, ZR_SEMANTIC_IR_BRANCH));
+    ZrCore_Function_Free(g_state, compiler.currentFunction);
+    compiler.currentFunction = ZR_NULL;
+    ZrParser_CompilerState_Free(&compiler);
+    ZrParser_Ast_Free(g_state, ast);
+}
+
+static void test_nested_source_compare_preserves_outer_source_cfg(void) {
+    static const TZrChar source[] =
+            "var flag: bool = true;\n"
+            "var value: int = 1;\n"
+            "if (flag) { if (value > 0) { var inner: int = 2; } }\n";
+    static const EZrSemanticIrOpcode operandOpcodes[] = {
+        ZR_SEMANTIC_IR_LOAD, ZR_SEMANTIC_IR_CONSTANT
+    };
+    SZrString *name = ZrCore_String_Create(g_state, "nested_compare.zr", 17U);
+    SZrAstNode *ast = ZrParser_Parse(g_state, source, sizeof(source) - 1U, name);
+    SZrCompilerState compiler;
+    const SZrAstNode *outerIf;
+    const SZrAstNode *innerIf;
+    const SZrAstNode *condition;
+    const SZrSemanticIrFunction *function;
+    const SZrSemanticIrInstruction *comparison = ZR_NULL;
+    const SZrSemanticIrValue *result;
+    const SZrCanonicalTypeNode *resultType;
+    const SZrCanonicalTypeNode *operandType;
+    TZrBool branchUsesComparison = ZR_FALSE;
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_UINT64(3U, ast->data.script.statements->count);
+    outerIf = ast->data.script.statements->nodes[2U];
+    TEST_ASSERT_NOT_NULL(outerIf);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IF_EXPRESSION, outerIf->type);
+    TEST_ASSERT_NOT_NULL(outerIf->data.ifExpression.thenExpr);
+    TEST_ASSERT_EQUAL_INT(
+            ZR_AST_BLOCK, outerIf->data.ifExpression.thenExpr->type);
+    TEST_ASSERT_NOT_NULL(outerIf->data.ifExpression.thenExpr->data.block.body);
+    TEST_ASSERT_EQUAL_UINT64(
+            1U, outerIf->data.ifExpression.thenExpr->data.block.body->count);
+    innerIf = outerIf->data.ifExpression.thenExpr->data.block.body->nodes[0U];
+    TEST_ASSERT_NOT_NULL(innerIf);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IF_EXPRESSION, innerIf->type);
+    condition = innerIf->data.ifExpression.condition;
+    TEST_ASSERT_NOT_NULL(condition);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_BINARY_EXPRESSION, condition->type);
+    TEST_ASSERT_EQUAL_STRING(">", condition->data.binaryExpression.op.op);
+    ZrParser_CompilerState_Init(&compiler, g_state);
+    compiler.currentAst = ast;
+    compiler.currentFunction = ZrCore_Function_New(g_state);
+    TEST_ASSERT_NOT_NULL(compiler.currentFunction);
+    for (index = 0U; index < ast->data.script.statements->count; index++) {
+        ZrParser_Statement_Compile(
+                &compiler, ast->data.script.statements->nodes[index]);
+    }
+    TEST_ASSERT_FALSE(compiler.hasError);
+    TEST_ASSERT_TRUE(ZrParser_Compiler_ValidatePreSemanticIr(&compiler));
+    TEST_ASSERT_TRUE(compiler.preSemanticIrCfgActive);
+    function = ZrParser_Compiler_PreSemanticIr(&compiler);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT64(8U, function->cfg.blocks.length);
+    TEST_ASSERT_TRUE(semantic_ir_has_opcode(function, ZR_SEMANTIC_IR_BRANCH));
+    for (index = 0U; index < function->instructions.length; index++) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+        TEST_ASSERT_NOT_NULL(instruction);
+        if (instruction->opcode == ZR_SEMANTIC_IR_COMPARE) {
+            TEST_ASSERT_NULL(comparison);
+            comparison = instruction;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(comparison);
+    TEST_ASSERT_EQUAL_UINT32(
+            ZR_EXEC_IR_COMPARE_KIND_GREATER, comparison->comparisonPredicate);
+    TEST_ASSERT_EQUAL_PTR(
+            condition->location.source, comparison->sourceRange.source);
+    TEST_ASSERT_EQUAL_UINT64(
+            condition->location.start.offset, comparison->sourceRange.start.offset);
+    TEST_ASSERT_EQUAL_UINT64(
+            condition->location.end.offset, comparison->sourceRange.end.offset);
+    result = ZrParser_SemanticIr_Value(function, comparison->resultValueId);
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_EQUAL_UINT32(comparison->id, result->definitionInstructionId);
+    TEST_ASSERT_EQUAL_UINT32(comparison->typeId, result->typeId);
+    resultType = ZrParser_CanonicalType_Find(
+            compiler.semanticContext, result->typeId);
+    operandType = ZrParser_CanonicalType_Find(
+            compiler.semanticContext, comparison->comparisonOperandTypeId);
+    TEST_ASSERT_NOT_NULL(resultType);
+    TEST_ASSERT_NOT_NULL(operandType);
+    TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_PRIMITIVE, resultType->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, resultType->data.primitive.valueType);
+    TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_PRIMITIVE, operandType->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, operandType->data.primitive.valueType);
+    TEST_ASSERT_EQUAL_UINT32(2U, comparison->operandCount);
+    for (index = 0U; index < ZR_ARRAY_COUNT(operandOpcodes); index++) {
+        const SZrAstNode *sourceOperand = index == 0U
+                ? condition->data.binaryExpression.left
+                : condition->data.binaryExpression.right;
+        const TZrValueId *operand = (const TZrValueId *)ZrCore_Array_Get(
+                (SZrArray *)&function->valueOperands,
+                comparison->operandStart + index);
+        const SZrSemanticIrValue *value;
+        const SZrSemanticIrInstruction *definition;
+        TEST_ASSERT_NOT_NULL(sourceOperand);
+        TEST_ASSERT_NOT_NULL(operand);
+        value = ZrParser_SemanticIr_Value(function, *operand);
+        TEST_ASSERT_NOT_NULL(value);
+        TEST_ASSERT_NOT_EQUAL(
+                ZR_SEMANTIC_INSTRUCTION_ID_INVALID, value->definitionInstructionId);
+        definition = ZrParser_SemanticIr_InstructionAt(
+                function, value->definitionInstructionId - 1U);
+        TEST_ASSERT_NOT_NULL(definition);
+        TEST_ASSERT_EQUAL_INT(operandOpcodes[index], definition->opcode);
+        TEST_ASSERT_EQUAL_UINT32(value->id, definition->resultValueId);
+        TEST_ASSERT_EQUAL_UINT32(operandType->id, value->typeId);
+        TEST_ASSERT_EQUAL_UINT32(value->typeId, definition->typeId);
+        TEST_ASSERT_EQUAL_PTR(
+                sourceOperand->location.source, definition->sourceRange.source);
+        TEST_ASSERT_EQUAL_UINT64(
+                sourceOperand->location.start.offset,
+                definition->sourceRange.start.offset);
+        TEST_ASSERT_EQUAL_UINT64(
+                sourceOperand->location.end.offset,
+                definition->sourceRange.end.offset);
+    }
+    for (index = 0U; index < function->instructions.length; index++) {
+        const SZrSemanticIrInstruction *instruction =
+                ZrParser_SemanticIr_InstructionAt(function, index);
+        if (instruction->opcode == ZR_SEMANTIC_IR_BRANCH &&
+            instruction->operandCount == 1U) {
+            const TZrValueId *operand = (const TZrValueId *)ZrCore_Array_Get(
+                    (SZrArray *)&function->valueOperands, instruction->operandStart);
+            TEST_ASSERT_NOT_NULL(operand);
+            if (*operand == comparison->resultValueId) {
+                branchUsesComparison = ZR_TRUE;
+            }
+        }
+    }
+    TEST_ASSERT_TRUE(branchUsesComparison);
     ZrCore_Function_Free(g_state, compiler.currentFunction);
     compiler.currentFunction = ZR_NULL;
     ZrParser_CompilerState_Free(&compiler);

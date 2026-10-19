@@ -25,7 +25,7 @@ if (NOT TARGET zr_vm_ssa_branch_arithmetic_constraints_test)
             ${_zr_branch_arithmetic_core}/exec_ir/exec_ir_interpreter_run.c
             ${_zr_branch_arithmetic_core}/exec_ir/exec_ir_interpreter_phi.c
             ${_zr_branch_arithmetic_core}/exec_ir/exec_ir_interpreter_resume.c
-            ${_zr_branch_arithmetic_core}/runtime/execution_contract.c)
+            ${ZR_SSA_SOURCE_ROOT}/zr_vm_core/src/zr_vm_core/runtime/execution_contract.c)
     target_include_directories(zr_vm_ssa_branch_arithmetic_constraints_test PRIVATE
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_parser/include
             ${ZR_SSA_SOURCE_ROOT}/zr_vm_core/include

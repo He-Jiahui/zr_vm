@@ -422,7 +422,8 @@ void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
     // 重要：先查找局部变量（包括闭包变量）
     // 如果存在同名的局部变量，它会覆盖全局的 zr 对象
     // 这是作用域规则：局部变量优先于全局对象
-    TZrUInt32 localVarIndex = find_local_var(cs, name);
+    TZrUInt32 localVarIndex = find_local_var_with_context(
+            cs, name, node->data.identifier.syntaxContext);
     if (localVarIndex != ZR_PARSER_SLOT_NONE) {
         // 找到局部变量：使用 GET_STACK
         // 即使这个变量名是 "zr"，也使用局部变量而不是全局 zr 对象
@@ -441,7 +442,8 @@ void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
     }
     
     // 查找闭包变量（在局部变量之后，但在全局对象之前）
-    TZrUInt32 closureVarIndex = find_closure_var(cs, name);
+    TZrUInt32 closureVarIndex = find_closure_var_with_context(
+            cs, name, node->data.identifier.syntaxContext);
     if (closureVarIndex != ZR_PARSER_INDEX_NONE) {
         // 闭包变量：根据 inStack 标志选择使用 GET_CLOSURE 还是 GETUPVAL
         // 即使这个变量名是 "zr"，也使用闭包变量而不是全局 zr 对象
@@ -501,7 +503,8 @@ void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
     // 尝试作为父函数的子函数访问（使用 GET_SUB_FUNCTION）
     // 在编译时查找子函数索引，而不是使用名称常量
     // GET_SUB_FUNCTION 通过索引直接访问 childFunctionList，这是编译时确定的静态索引
-    TZrUInt32 childFunctionIndex = find_child_function_index(cs, name);
+    TZrUInt32 childFunctionIndex = find_child_function_index_with_context(
+            cs, name, node->data.identifier.syntaxContext);
     if (childFunctionIndex != ZR_PARSER_INDEX_NONE) {
         // 找到子函数索引，生成 GET_SUB_FUNCTION 指令
         // GET_SUB_FUNCTION 格式: operandExtra = destSlot, operand1[0] = childFunctionIndex, operand1[1] = 0

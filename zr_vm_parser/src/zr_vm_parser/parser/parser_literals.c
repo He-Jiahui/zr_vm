@@ -2,9 +2,15 @@
 
 // 统一分配并清零 AST 节点，分配失败设置 parser 错误；子树所有权由具体构造器赋予。
 SZrAstNode *create_ast_node(SZrParserState *ps, EZrAstNodeType type, SZrFileRange location) {
-    SZrAstNode *node =
-            ZrCore_Memory_RawMallocWithType(ps->state->global, sizeof(SZrAstNode), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    if (ps == ZR_NULL || ps->lexer == ZR_NULL || ps->hasFatalError ||
+        ps->lexer->hasSourceEvidenceError) {
+        return ZR_NULL;
+    }
+    SZrAstNode *node = ZrParser_Ownership_Allocate(
+            ps->lexer->ownership, sizeof(SZrAstNode),
+            ZR_MEMORY_NATIVE_TYPE_ARRAY, ZR_TRUE);
     if (node == ZR_NULL) {
+        ps->hasFatalError = ZR_TRUE;
         report_error(ps, "Failed to allocate AST node");
         return ZR_NULL;
     }
@@ -12,18 +18,44 @@ SZrAstNode *create_ast_node(SZrParserState *ps, EZrAstNodeType type, SZrFileRang
     ZrCore_Memory_RawSet(node, 0, sizeof(SZrAstNode));
     node->type = type;
     node->location = location;
+    node->ownership = ps->lexer->ownership;
+    ZrParser_Ownership_Retain(node->ownership);
     return node;
 }
 
-// 把词法名称与精确源位置装入标识符节点；名称由 VM 状态持有。
-SZrAstNode *create_identifier_node_with_location(SZrParserState *ps, SZrString *name, SZrFileRange location) {
+// 把词法名称、原始位置和已捕获的语法上下文装入标识符节点；名称由 VM 状态持有。
+SZrAstNode *create_identifier_node_with_context(SZrParserState *ps,
+                                                SZrString *name,
+                                                SZrFileRange location,
+                                                SZrSyntaxContext syntaxContext) {
+    if (!ZrParser_Lexer_HoldString(ps->lexer, name)) {
+        ps->hasFatalError = ZR_TRUE;
+        report_error(ps, "Failed to retain identifier string");
+        return ZR_NULL;
+    }
     SZrAstNode *node = create_ast_node(ps, ZR_AST_IDENTIFIER_LITERAL, location);
     if (node == ZR_NULL) {
         return ZR_NULL;
     }
 
     node->data.identifier.name = name;
+    node->data.identifier.syntaxContext =
+            ZrParser_SyntaxContext_IsValid(syntaxContext)
+                    ? syntaxContext
+                    : ZrParser_SyntaxContext_Root();
     return node;
+}
+
+// 把词法名称与精确源位置装入标识符节点；调用者仍位于当前 token 时，
+// 读取当前 token 的上下文并转交给显式构造器。
+SZrAstNode *create_identifier_node_with_location(SZrParserState *ps,
+                                                 SZrString *name,
+                                                 SZrFileRange location) {
+    SZrSyntaxContext syntaxContext =
+            ps != ZR_NULL && ps->lexer != ZR_NULL
+                    ? ps->lexer->t.syntaxContext
+                    : ZrParser_SyntaxContext_Root();
+    return create_identifier_node_with_context(ps, name, location, syntaxContext);
 }
 
 // 为当前 lexer 位置创建标识符节点，供不需要显式位置的解析分支使用。
@@ -47,6 +79,11 @@ SZrAstNode *create_boolean_literal_node(SZrParserState *ps, TZrBool value) {
 
 // 保留整数值和原始拼写，后续诊断与类型阶段可区分源码表示。
 SZrAstNode *create_integer_literal_node(SZrParserState *ps, TZrInt64 value, SZrString *literal) {
+    if (!ZrParser_Lexer_HoldString(ps->lexer, literal)) {
+        ps->hasFatalError = ZR_TRUE;
+        report_error(ps, "Failed to retain integer spelling");
+        return ZR_NULL;
+    }
     SZrFileRange loc = get_current_location(ps);
     SZrAstNode *node = create_ast_node(ps, ZR_AST_INTEGER_LITERAL, loc);
     if (node == ZR_NULL) {
@@ -61,6 +98,11 @@ SZrAstNode *create_integer_literal_node(SZrParserState *ps, TZrInt64 value, SZrS
 // 保留浮点值、原始拼写与单精度后缀标志。
 SZrAstNode *create_float_literal_node(SZrParserState *ps, TZrDouble value, SZrString *literal,
                                              TZrBool isSingle) {
+    if (!ZrParser_Lexer_HoldString(ps->lexer, literal)) {
+        ps->hasFatalError = ZR_TRUE;
+        report_error(ps, "Failed to retain float spelling");
+        return ZR_NULL;
+    }
     SZrFileRange loc = get_current_location(ps);
     SZrAstNode *node = create_ast_node(ps, ZR_AST_FLOAT_LITERAL, loc);
     if (node == ZR_NULL) {
@@ -86,6 +128,12 @@ SZrAstNode *create_string_literal_node_with_location(SZrParserState *ps,
                                                             TZrBool hasError,
                                                             SZrString *literal,
                                                             SZrFileRange location) {
+    if (!ZrParser_Lexer_HoldString(ps->lexer, value) ||
+        !ZrParser_Lexer_HoldString(ps->lexer, literal)) {
+        ps->hasFatalError = ZR_TRUE;
+        report_error(ps, "Failed to retain string literal");
+        return ZR_NULL;
+    }
     SZrAstNode *node = create_ast_node(ps, ZR_AST_STRING_LITERAL, location);
     if (node == ZR_NULL) {
         return ZR_NULL;
@@ -99,6 +147,11 @@ SZrAstNode *create_string_literal_node_with_location(SZrParserState *ps,
 
 // 构造字符叶子并保留词法错误与原始拼写。
 SZrAstNode *create_char_literal_node(SZrParserState *ps, TZrChar value, TZrBool hasError, SZrString *literal) {
+    if (!ZrParser_Lexer_HoldString(ps->lexer, literal)) {
+        ps->hasFatalError = ZR_TRUE;
+        report_error(ps, "Failed to retain character spelling");
+        return ZR_NULL;
+    }
     SZrFileRange loc = get_current_location(ps);
     SZrAstNode *node = create_ast_node(ps, ZR_AST_CHAR_LITERAL, loc);
     if (node == ZR_NULL) {
@@ -181,208 +234,6 @@ TZrBool zr_string_equals_literal(SZrString *value, const TZrChar *literal) {
     return memcmp(nativeValue, literal, literalLength) == 0;
 }
 
-// 为模板插值建立独立 lexer 与源码副本；成功 AST 交外层模板段。
-SZrAstNode *parse_embedded_expression(SZrParserState *ps, const TZrChar *source, TZrSize sourceLength) {
-    SZrParserState nestedParser;
-    SZrAstNode *expression = ZR_NULL;
-    TZrChar *sourceCopy;
-
-    if (ps == ZR_NULL || source == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    sourceCopy = ZrCore_Memory_RawMallocWithType(ps->state->global, sourceLength + 1, ZR_MEMORY_NATIVE_TYPE_STRING);
-    if (sourceCopy == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    memcpy(sourceCopy, source, sourceLength);
-    sourceCopy[sourceLength] = '\0';
-
-    ZrParser_State_Init(&nestedParser, ps->state, sourceCopy, sourceLength,
-                        ps->lexer != ZR_NULL ? ps->lexer->sourceName : ZR_NULL);
-    nestedParser.recursionDepth = ps->recursionDepth;
-    nestedParser.errorCallback = ps->errorCallback;
-    nestedParser.structuredErrorCallback = ps->structuredErrorCallback;
-    nestedParser.errorUserData = ps->errorUserData;
-    nestedParser.suppressErrorOutput = ps->suppressErrorOutput;
-    if (!nestedParser.hasError) {
-        expression = parse_expression(&nestedParser);
-        if (nestedParser.hasError || expression == ZR_NULL || nestedParser.lexer->t.token != ZR_TK_EOS) {
-            ZrParser_Ast_Free(ps->state, expression);
-            expression = ZR_NULL;
-        }
-    }
-    if (nestedParser.hasNestingError) {
-        ps->hasNestingError = ps->hasFatalError = ps->hasError = ZR_TRUE;
-        ps->errorMessage = nestedParser.errorMessage;
-        ps->nestingErrorReported = nestedParser.nestingErrorReported;
-    }
-
-    ZrParser_State_Free(&nestedParser);
-    ZrCore_Memory_RawFreeWithType(ps->state->global, sourceCopy, sourceLength + 1, ZR_MEMORY_NATIVE_TYPE_STRING);
-    return expression;
-}
-
-// 将静态文本复制为 VM 字符串并追加为模板片段，片段 AST 随数组转移。
-TZrBool append_template_static_segment(SZrParserState *ps, SZrAstNodeArray *segments, const TZrChar *text,
-                                              TZrSize length) {
-    SZrString *segmentString;
-    SZrAstNode *segmentNode;
-
-    if (ps == ZR_NULL || segments == ZR_NULL || text == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    segmentString = ZrCore_String_Create(ps->state, (TZrNativeString)text, length);
-    if (segmentString == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    segmentNode = create_string_literal_node(ps, segmentString, ZR_FALSE, segmentString);
-    if (segmentNode == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    // BUG: Add 扩容失败会静默返回；函数仍报成功，segmentNode 泄漏且模板缺段。
-    ZrParser_AstNodeArray_Add(ps->state, segments, segmentNode);
-    return ZR_TRUE;
-}
-
-// 扫描嵌套花括号、字符串与注释边界后分别解析静态段和插值表达式。
-SZrAstNode *parse_template_string_literal(SZrParserState *ps, SZrString *rawValue) {
-    TZrNativeString rawText;
-    TZrSize rawLength;
-    SZrAstNodeArray *segments;
-    TZrSize segmentStart = 0;
-    TZrSize index = 0;
-
-    if (ps == ZR_NULL || rawValue == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    get_string_native_parts(rawValue, &rawText, &rawLength);
-    if (rawText == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    segments = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
-    if (segments == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    while (index < rawLength) {
-        if (rawText[index] == '$' && index + 1 < rawLength && rawText[index + 1] == '{') {
-            TZrSize expressionStart = index + 2;
-            TZrSize cursor = expressionStart;
-            TZrInt32 braceDepth = 1;
-            TZrInt32 stringDelimiter = 0;
-
-            if (!append_template_static_segment(ps, segments, rawText + segmentStart, index - segmentStart)) {
-                // BUG: 这里只浅释放 segments，先前成功加入的片段 AST 不会被回收。
-                ZrParser_AstNodeArray_Free(ps->state, segments);
-                return ZR_NULL;
-            }
-
-            while (cursor < rawLength) {
-                TZrChar current = rawText[cursor];
-
-                if (stringDelimiter != 0) {
-                    if (current == '\\' && cursor + 1 < rawLength) {
-                        cursor += 2;
-                        continue;
-                    }
-                    if (current == stringDelimiter) {
-                        stringDelimiter = 0;
-                    }
-                    cursor++;
-                    continue;
-                }
-
-                if (current == '/' && cursor + 1 < rawLength) {
-                    if (rawText[cursor + 1] == '/') {
-                        cursor += 2;
-                        while (cursor < rawLength && rawText[cursor] != '\n' &&
-                               rawText[cursor] != '\r') {
-                            cursor++;
-                        }
-                        continue;
-                    }
-                    if (rawText[cursor + 1] == '*') {
-                        cursor += 2;
-                        while (cursor + 1 < rawLength &&
-                               !(rawText[cursor] == '*' && rawText[cursor + 1] == '/')) {
-                            cursor++;
-                        }
-                        cursor = cursor + 1 < rawLength ? cursor + 2 : rawLength;
-                        continue;
-                    }
-                }
-
-                if (current == '\'' || current == '"' || current == '`') {
-                    stringDelimiter = current;
-                    cursor++;
-                    continue;
-                }
-
-                if (current == '{') {
-                    braceDepth++;
-                } else if (current == '}') {
-                    braceDepth--;
-                    if (braceDepth == 0) {
-                        break;
-                    }
-                }
-                cursor++;
-            }
-
-            if (cursor >= rawLength || braceDepth != 0) {
-                report_error(ps, "Unterminated template string interpolation");
-                // BUG: 未闭合插值的错误路径只浅释放 segments，已加入的片段 AST 泄漏。
-                ZrParser_AstNodeArray_Free(ps->state, segments);
-                return ZR_NULL;
-            }
-
-            {
-                SZrAstNode *expression =
-                        parse_embedded_expression(ps, rawText + expressionStart, cursor - expressionStart);
-                SZrAstNode *segmentNode;
-
-                if (expression == ZR_NULL) {
-                    report_error(ps, "Failed to parse template string interpolation");
-                    free_ast_node_array_with_elements(ps->state, segments);
-                    return ZR_NULL;
-                }
-
-                segmentNode = create_interpolated_segment_node(ps, expression);
-                if (segmentNode == ZR_NULL) {
-                    ZrParser_Ast_Free(ps->state, expression);
-                    // BUG: 当前 expression 已释放，但先前加入的 segments 元素仍因浅释放泄漏。
-                    ZrParser_AstNodeArray_Free(ps->state, segments);
-                    return ZR_NULL;
-                }
-
-                // BUG: Add 扩容失败时静默丢弃新插值段，节点泄漏且解析结果缺段。
-                ZrParser_AstNodeArray_Add(ps->state, segments, segmentNode);
-            }
-
-            index = cursor + 1;
-            segmentStart = index;
-            continue;
-        }
-
-        index++;
-    }
-
-    if (!append_template_static_segment(ps, segments, rawText + segmentStart, rawLength - segmentStart)) {
-        // BUG: 尾段追加失败只浅释放 segments，先前片段 AST 泄漏。
-        ZrParser_AstNodeArray_Free(ps->state, segments);
-        return ZR_NULL;
-    }
-
-    // BUG: 根节点分配失败时未释放 segments 及其元素，所有模板片段泄漏。
-    return create_template_string_literal_node(ps, segments);
-}
 
 // ==================== 字面量解析 ====================
 
@@ -462,8 +313,10 @@ SZrAstNode *parse_literal(SZrParserState *ps) {
 
         case ZR_TK_TEMPLATE_STRING: {
             SZrString *value = ps->lexer->t.seminfo.stringValue;
+            SZrSyntaxContext syntaxContext = ps->lexer->t.syntaxContext;
+            SZrTokenSpan origin = ps->lexer->t.span;
             ZrParser_Lexer_Next(ps->lexer);
-            node = parse_template_string_literal(ps, value);
+            node = parse_template_string_literal(ps, value, syntaxContext, origin, &literalLoc);
             if (node != ZR_NULL) {
                 node->location = literalLoc;
             }
@@ -492,7 +345,7 @@ SZrAstNode *parse_literal(SZrParserState *ps) {
         }
 
         case ZR_TK_INFINITY: {
-            SZrString *literal = ZrCore_String_Create(ps->state, "Infinity", 8);
+            SZrString *literal = ZrParser_Lexer_CreateString(ps->lexer, "Infinity", 8);
             node = create_float_literal_node(ps, INFINITY, literal, ZR_FALSE); // 正无穷
             if (node != ZR_NULL) {
                 node->location = literalLoc;
@@ -502,7 +355,7 @@ SZrAstNode *parse_literal(SZrParserState *ps) {
         }
 
         case ZR_TK_NEG_INFINITY: {
-            SZrString *literal = ZrCore_String_Create(ps->state, "NegativeInfinity", 16);
+            SZrString *literal = ZrParser_Lexer_CreateString(ps->lexer, "NegativeInfinity", 16);
             node = create_float_literal_node(ps, -INFINITY, literal, ZR_FALSE); // 负无穷
             if (node != ZR_NULL) {
                 node->location = literalLoc;
@@ -512,7 +365,7 @@ SZrAstNode *parse_literal(SZrParserState *ps) {
         }
 
         case ZR_TK_NAN: {
-            SZrString *literal = ZrCore_String_Create(ps->state, "NaN", 3);
+            SZrString *literal = ZrParser_Lexer_CreateString(ps->lexer, "NaN", 3);
             node = create_float_literal_node(ps, NAN, literal, ZR_FALSE); // NaN
             if (node != ZR_NULL) {
                 node->location = literalLoc;
@@ -531,6 +384,7 @@ SZrAstNode *parse_literal(SZrParserState *ps) {
 SZrAstNode *parse_identifier(SZrParserState *ps) {
     SZrFileRange identifierLoc;
     SZrString *name;
+    SZrSyntaxContext identifierContext;
     if (is_ownership_intrinsic_token(ps->lexer->t.token)) {
         if (!report_reserved_ownership_intrinsic_name(ps)) {
             report_error(
@@ -547,12 +401,14 @@ SZrAstNode *parse_identifier(SZrParserState *ps) {
 
     name = ps->lexer->t.seminfo.stringValue;
     if (ps->lexer->t.token == ZR_TK_TEST && name == ZR_NULL) {
-        name = ZrCore_String_Create(ps->state, "test", 4);
+        name = ZrParser_Lexer_CreateString(ps->lexer, "test", 4);
     }
 
     identifierLoc = get_current_token_location(ps);
+    identifierContext = ps->lexer->t.syntaxContext;
     ZrParser_Lexer_Next(ps->lexer);
-    return create_identifier_node_with_location(ps, name, identifierLoc);
+    return create_identifier_node_with_context(
+            ps, name, identifierLoc, identifierContext);
 }
 
 // ==================== 表达式解析（按优先级从低到高）====================
@@ -628,7 +484,7 @@ SZrAstNode *parse_array_literal(SZrParserState *ps) {
     expect_token(ps, ZR_TK_LBRACKET);
     ZrParser_Lexer_Next(ps->lexer);
 
-    SZrAstNodeArray *elements = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    SZrAstNodeArray *elements = parser_ast_array_new(ps, ZR_PARSER_INITIAL_CAPACITY_SMALL);
     if (elements == ZR_NULL) {
         report_error(ps, "Failed to allocate array");
         return ZR_NULL;
@@ -639,7 +495,11 @@ SZrAstNode *parse_array_literal(SZrParserState *ps) {
         // 数组元素不应该包含赋值表达式，使用 conditional_expression
         SZrAstNode *first = parse_array_literal_value_element(ps);
         if (first != ZR_NULL) {
-            ZrParser_AstNodeArray_Add(ps->state, elements, first);
+            if (!parser_ast_array_add(ps, elements, first)) {
+                ZrParser_Ast_Free(ps->state, first);
+                free_ast_node_array_with_elements(ps->state, elements);
+                return ZR_NULL;
+            }
         } else {
             free_ast_node_array_with_elements(ps->state, elements);
             return ZR_NULL;
@@ -654,8 +514,11 @@ SZrAstNode *parse_array_literal(SZrParserState *ps) {
             // 数组元素不应该包含赋值表达式，使用 conditional_expression
             SZrAstNode *elem = parse_array_literal_value_element(ps);
             if (elem != ZR_NULL) {
-                // BUG: 后续元素的 Add 扩容失败也会静默丢弃 elem。
-                ZrParser_AstNodeArray_Add(ps->state, elements, elem);
+                if (!parser_ast_array_add(ps, elements, elem)) {
+                    ZrParser_Ast_Free(ps->state, elem);
+                    free_ast_node_array_with_elements(ps->state, elements);
+                    return ZR_NULL;
+                }
             } else {
                 free_ast_node_array_with_elements(ps->state, elements);
                 return ZR_NULL;
@@ -682,10 +545,11 @@ SZrAstNode *parse_array_literal(SZrParserState *ps) {
     consume_token(ps, ZR_TK_RBRACKET);
 
     SZrFileRange endLoc = get_current_location(ps);
-    SZrFileRange arrayLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
+    SZrFileRange arrayLoc;
 
-    SZrAstNode *node = create_ast_node(ps, ZR_AST_ARRAY_LITERAL, arrayLoc);
-    if (node == ZR_NULL) {
+    SZrAstNode *node;
+    if (!ZrParser_MergeLocations(ps, startLoc, endLoc, &arrayLoc) ||
+        (node = create_ast_node(ps, ZR_AST_ARRAY_LITERAL, arrayLoc)) == ZR_NULL) {
         free_ast_node_array_with_elements(ps->state, elements);
         return ZR_NULL;
     }
@@ -702,7 +566,7 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
     expect_token(ps, ZR_TK_LBRACE);
     ZrParser_Lexer_Next(ps->lexer);
 
-    SZrAstNodeArray *properties = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    SZrAstNodeArray *properties = parser_ast_array_new(ps, ZR_PARSER_INITIAL_CAPACITY_SMALL);
     if (properties == ZR_NULL) {
         report_error(ps, "Failed to allocate properties array");
         return ZR_NULL;
@@ -738,6 +602,10 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
             return ZR_NULL;
         }
 
+        if (key == ZR_NULL) {
+            free_ast_node_array_with_elements(ps->state, properties);
+            return ZR_NULL;
+        }
         if (!consume_token(ps, ZR_TK_COLON)) {
             report_missing_object_property_colon(ps, get_current_token_location(ps));
         }
@@ -751,10 +619,10 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
         }
 
         // 创建键值对节点
-        // BUG: 计算键只校验右中括号，不校验 parse_expression 返回的 key；{[]: 1} 可在此解引用 NULL。
-        SZrFileRange kvLoc = ZrParser_FileRange_Merge(key->location, value->location);
-        SZrAstNode *kvNode = create_ast_node(ps, ZR_AST_KEY_VALUE_PAIR, kvLoc);
-        if (kvNode == ZR_NULL) {
+        SZrFileRange kvLoc;
+        SZrAstNode *kvNode;
+        if (!ZrParser_MergeLocations(ps, key->location, value->location, &kvLoc) ||
+            (kvNode = create_ast_node(ps, ZR_AST_KEY_VALUE_PAIR, kvLoc)) == ZR_NULL) {
             ZrParser_Ast_Free(ps->state, key);
             ZrParser_Ast_Free(ps->state, value);
             free_ast_node_array_with_elements(ps->state, properties);
@@ -763,7 +631,11 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
         kvNode->data.keyValuePair.key = key;
         kvNode->data.keyValuePair.value = value;
         kvNode->data.keyValuePair.keyIsComputed = keyIsComputed;
-        ZrParser_AstNodeArray_Add(ps->state, properties, kvNode);
+        if (!parser_ast_array_add(ps, properties, kvNode)) {
+            ZrParser_Ast_Free(ps->state, kvNode);
+            free_ast_node_array_with_elements(ps->state, properties);
+            return ZR_NULL;
+        }
 
         // 解析后续键值对
         while (ps->lexer->t.token == ZR_TK_COMMA || ps->lexer->t.token == ZR_TK_SEMICOLON) {
@@ -797,6 +669,10 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
                 break;
             }
 
+            if (key == ZR_NULL) {
+                free_ast_node_array_with_elements(ps->state, properties);
+                return ZR_NULL;
+            }
             if (!consume_token(ps, ZR_TK_COLON)) {
                 report_missing_object_property_colon(ps, get_current_token_location(ps));
             }
@@ -807,8 +683,12 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
                 break;
             }
 
-            // BUG: 后续计算键同样可为空，仍直接读取 key->location。
-            kvLoc = ZrParser_FileRange_Merge(key->location, value->location);
+            if (!ZrParser_MergeLocations(ps, key->location, value->location, &kvLoc)) {
+                ZrParser_Ast_Free(ps->state, key);
+                ZrParser_Ast_Free(ps->state, value);
+                free_ast_node_array_with_elements(ps->state, properties);
+                return ZR_NULL;
+            }
             kvNode = create_ast_node(ps, ZR_AST_KEY_VALUE_PAIR, kvLoc);
             if (kvNode == ZR_NULL) {
                 ZrParser_Ast_Free(ps->state, key);
@@ -818,8 +698,11 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
             kvNode->data.keyValuePair.key = key;
             kvNode->data.keyValuePair.value = value;
             kvNode->data.keyValuePair.keyIsComputed = keyIsComputed;
-            // BUG: 后续属性触发 Add 扩容失败时静默丢弃 kvNode，其键值子树泄漏且成功对象缺属性。
-            ZrParser_AstNodeArray_Add(ps->state, properties, kvNode);
+            if (!parser_ast_array_add(ps, properties, kvNode)) {
+                ZrParser_Ast_Free(ps->state, kvNode);
+                free_ast_node_array_with_elements(ps->state, properties);
+                return ZR_NULL;
+            }
         }
     }
 
@@ -842,10 +725,11 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
     consume_token(ps, ZR_TK_RBRACE);
 
     SZrFileRange endLoc = get_current_location(ps);
-    SZrFileRange objectLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
+    SZrFileRange objectLoc;
 
-    SZrAstNode *node = create_ast_node(ps, ZR_AST_OBJECT_LITERAL, objectLoc);
-    if (node == ZR_NULL) {
+    SZrAstNode *node;
+    if (!ZrParser_MergeLocations(ps, startLoc, endLoc, &objectLoc) ||
+        (node = create_ast_node(ps, ZR_AST_OBJECT_LITERAL, objectLoc)) == ZR_NULL) {
         free_ast_node_array_with_elements(ps->state, properties);
         return ZR_NULL;
     }

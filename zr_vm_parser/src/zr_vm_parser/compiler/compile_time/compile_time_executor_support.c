@@ -21,6 +21,33 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Compiler-only names carry the same context identity as their AST spelling.
+ * Keep the evaluator's lookup rule in one place so local bindings and item
+ * declarations cannot accidentally compare raw mark ids. */
+TZrBool ct_contexts_equal(
+        SZrSyntaxContext left,
+        SZrSyntaxContext right,
+        EZrSyntaxNamespace namespaceKind) {
+    SZrSyntaxContext normalizedLeft;
+    SZrSyntaxContext normalizedRight;
+
+    if (!ZrParser_SyntaxContext_IsValid(left) ||
+        !ZrParser_SyntaxContext_IsValid(right)) {
+        return ZR_FALSE;
+    }
+    normalizedLeft = ZrParser_SyntaxContext_Normalize(left, namespaceKind);
+    normalizedRight = ZrParser_SyntaxContext_Normalize(right, namespaceKind);
+    return ZrParser_SyntaxContext_IsValid(normalizedLeft) &&
+           ZrParser_SyntaxContext_IsValid(normalizedRight) &&
+           ZrParser_SyntaxContext_Equal(normalizedLeft, normalizedRight);
+}
+
+TZrBool ct_value_needs_root(const SZrTypeValue *value) {
+    return value != ZR_NULL && value->isGarbageCollectable &&
+           value->value.object != ZR_NULL;
+}
+
+
 const TZrChar *ct_name(SZrString *name) {
     if (name == ZR_NULL) {
         return "<null>";
@@ -174,79 +201,91 @@ TZrBool ct_eval_import_expression(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
-void ct_frame_init(SZrCompilerState *cs, SZrCompileTimeFrame *frame, SZrCompileTimeFrame *parent) {
-    frame->parent = parent;
-    ZrCore_Array_Init(cs->state,
-                      &frame->bindings,
-                      sizeof(SZrCompileTimeBinding),
-                      ZR_PARSER_INITIAL_CAPACITY_TINY);
-}
 
-void ct_frame_free(SZrCompilerState *cs, SZrCompileTimeFrame *frame) {
-    if (frame->bindings.isValid && frame->bindings.head != ZR_NULL) {
-        ZrCore_Array_Free(cs->state, &frame->bindings);
-    }
-}
-
-TZrBool ct_frame_get(SZrCompileTimeFrame *frame, SZrString *name, SZrTypeValue *result) {
-    if (frame == ZR_NULL || name == ZR_NULL || result == ZR_NULL) {
+TZrBool ct_compile_time_variable_set_value(
+        SZrCompilerState *cs,
+        SZrCompileTimeVariable *variable,
+        const SZrTypeValue *value) {
+    if (cs == ZR_NULL || variable == ZR_NULL || value == ZR_NULL) {
         return ZR_FALSE;
     }
-    for (TZrSize i = frame->bindings.length; i > 0; i--) {
-        SZrCompileTimeBinding *binding = (SZrCompileTimeBinding *)ZrCore_Array_Get(&frame->bindings, i - 1);
-        if (binding != ZR_NULL && binding->name != ZR_NULL && ZrCore_String_Equal(binding->name, name)) {
-            *result = binding->value;
-            return ZR_TRUE;
+    if (ct_value_needs_root(value)) {
+        if (!variable->hasEvaluatedValueRoot) {
+            if (!ZrCore_GcRootHandle_Create(
+                        cs->state,
+                        value->value.object,
+                        &variable->evaluatedValueRoot)) {
+                return ZR_FALSE;
+            }
+            variable->hasEvaluatedValueRoot = ZR_TRUE;
+        } else if (!ZrCore_GcRootHandle_Update(
+                           cs->state,
+                           &variable->evaluatedValueRoot,
+                           value->value.object)) {
+            return ZR_FALSE;
         }
+    } else if (variable->hasEvaluatedValueRoot) {
+        ZrCore_GcRootHandle_Release(
+                cs->state, &variable->evaluatedValueRoot);
+        variable->hasEvaluatedValueRoot = ZR_FALSE;
     }
-    return frame->parent != ZR_NULL ? ct_frame_get(frame->parent, name, result) : ZR_FALSE;
-}
-
-TZrBool ct_frame_set(SZrCompilerState *cs, SZrCompileTimeFrame *frame, SZrString *name, const SZrTypeValue *value) {
-    if (cs == ZR_NULL || frame == ZR_NULL || name == ZR_NULL || value == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    for (TZrSize i = frame->bindings.length; i > 0; i--) {
-        SZrCompileTimeBinding *binding = (SZrCompileTimeBinding *)ZrCore_Array_Get(&frame->bindings, i - 1);
-        if (binding != ZR_NULL && binding->name != ZR_NULL && ZrCore_String_Equal(binding->name, name)) {
-            binding->value = *value;
-            return ZR_TRUE;
-        }
-    }
-    SZrCompileTimeBinding binding;
-    if (!ZrParser_ComptimeRuntime_Consume(
-                cs,
-                ZR_PARSER_COMPTIME_BUDGET_HEAP_BYTES,
-                sizeof(binding),
-                (SZrFileRange){{0, 0, 0}, {0, 0, 0}, ZR_NULL}) ||
-        !ZrParser_ComptimeRuntime_Consume(
-                cs,
-                ZR_PARSER_COMPTIME_BUDGET_AGGREGATE_COUNT,
-                1U,
-                (SZrFileRange){{0, 0, 0}, {0, 0, 0}, ZR_NULL})) {
-        return ZR_FALSE;
-    }
-    binding.name = name;
-    binding.value = *value;
-    ZrCore_Array_Push(cs->state, &frame->bindings, &binding);
+    variable->evaluatedValue = *value;
     return ZR_TRUE;
 }
 
-SZrCompileTimeVariable *find_compile_time_variable(SZrCompilerState *cs, SZrString *name) {
+TZrBool ct_compile_time_variable_get_value(
+        SZrCompilerState *cs,
+        SZrCompileTimeVariable *variable,
+        SZrTypeValue *result) {
+    SZrRawObject *resolved = ZR_NULL;
+
+    if (cs == ZR_NULL || variable == ZR_NULL || result == ZR_NULL ||
+        !variable->hasEvaluatedValue) {
+        return ZR_FALSE;
+    }
+    if (variable->hasEvaluatedValueRoot) {
+        if (!ZrCore_GcRootHandle_Resolve(
+                    cs->state, &variable->evaluatedValueRoot, &resolved) ||
+            resolved == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        variable->evaluatedValue.value.object = resolved;
+    }
+    *result = variable->evaluatedValue;
+    return ZR_TRUE;
+}
+
+SZrCompileTimeVariable *find_compile_time_variable_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext) {
     if (cs == ZR_NULL || name == ZR_NULL) {
         return ZR_NULL;
     }
     for (TZrSize i = 0; i < cs->compileTimeVariables.length; i++) {
         SZrCompileTimeVariable **varPtr = (SZrCompileTimeVariable **)ZrCore_Array_Get(&cs->compileTimeVariables, i);
         if (varPtr != ZR_NULL && *varPtr != ZR_NULL && (*varPtr)->name != ZR_NULL &&
-            ZrCore_String_Equal((*varPtr)->name, name)) {
+            ZrCore_String_Equal((*varPtr)->name, name) &&
+            ct_contexts_equal((*varPtr)->syntaxContext,
+                              syntaxContext,
+                              ZR_SYNTAX_NAMESPACE_ITEM)) {
             return *varPtr;
         }
     }
     return ZR_NULL;
 }
 
-SZrCompileTimeFunction *find_compile_time_function(SZrCompilerState *cs, SZrString *name) {
+SZrCompileTimeVariable *find_compile_time_variable(
+        SZrCompilerState *cs,
+        SZrString *name) {
+    return find_compile_time_variable_with_context(
+            cs, name, ZrParser_SyntaxContext_Root());
+}
+
+SZrCompileTimeFunction *find_compile_time_function_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext) {
     if (cs == ZR_NULL || name == ZR_NULL) {
         return ZR_NULL;
     }
@@ -259,19 +298,33 @@ SZrCompileTimeFunction *find_compile_time_function(SZrCompilerState *cs, SZrStri
                             functions, index);
             if (function != ZR_NULL && *function != ZR_NULL &&
                 (*function)->name != ZR_NULL &&
-                ZrCore_String_Equal((*function)->name, name)) {
+                ZrCore_String_Equal((*function)->name, name) &&
+                ct_contexts_equal((*function)->syntaxContext,
+                                  syntaxContext,
+                                  ZR_SYNTAX_NAMESPACE_ITEM)) {
                 return *function;
             }
         }
+        return ZR_NULL;
     }
     for (TZrSize i = 0; i < cs->compileTimeFunctions.length; i++) {
         SZrCompileTimeFunction **funcPtr = (SZrCompileTimeFunction **)ZrCore_Array_Get(&cs->compileTimeFunctions, i);
         if (funcPtr != ZR_NULL && *funcPtr != ZR_NULL && (*funcPtr)->name != ZR_NULL &&
-            ZrCore_String_Equal((*funcPtr)->name, name)) {
+            ZrCore_String_Equal((*funcPtr)->name, name) &&
+            ct_contexts_equal((*funcPtr)->syntaxContext,
+                              syntaxContext,
+                              ZR_SYNTAX_NAMESPACE_ITEM)) {
             return *funcPtr;
         }
     }
     return ZR_NULL;
+}
+
+SZrCompileTimeFunction *find_compile_time_function(
+        SZrCompilerState *cs,
+        SZrString *name) {
+    return find_compile_time_function_with_context(
+            cs, name, ZrParser_SyntaxContext_Root());
 }
 
 static void ct_compile_time_function_init_record(SZrCompilerState *cs,
@@ -345,81 +398,22 @@ static TZrBool ct_compile_time_function_append_parameter(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
-TZrBool ct_value_from_compile_time_function(SZrCompilerState *cs,
-                                                 SZrCompileTimeFunction *func,
-                                                 SZrTypeValue *result) {
-    SZrObjectModule *module;
-    const SZrTypeValue *projectedValue;
-
-    if (cs == ZR_NULL || func == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (func->isRuntimeProjection &&
-        func->runtimeProjectionModuleName != ZR_NULL &&
-        func->runtimeProjectionExportName != ZR_NULL) {
-        module = ZrCore_Module_ImportByPath(cs->state, func->runtimeProjectionModuleName);
-        if (module == ZR_NULL) {
-            return ZR_FALSE;
-        }
-
-        projectedValue = ZrCore_Module_GetProExport(cs->state, module, func->runtimeProjectionExportName);
-        if (projectedValue == ZR_NULL) {
-            projectedValue = ZrCore_Module_GetPubExport(cs->state, module, func->runtimeProjectionExportName);
-        }
-        if (projectedValue == ZR_NULL) {
-            return ZR_FALSE;
-        }
-
-        *result = *projectedValue;
-        return ZR_TRUE;
-    }
-
-    ZrCore_Value_InitAsNativePointer(cs->state, result, func);
-    return ZR_TRUE;
-}
-
-TZrBool ct_value_try_get_compile_time_function(SZrCompilerState *cs,
-                                                    const SZrTypeValue *value,
-                                                    SZrCompileTimeFunction **result) {
-    TZrPtr pointerValue;
-
-    if (cs == ZR_NULL || value == ZR_NULL || result == ZR_NULL ||
-        value->type != ZR_VALUE_TYPE_NATIVE_POINTER) {
-        return ZR_FALSE;
-    }
-
-    pointerValue = value->value.nativeObject.nativePointer;
-    if (pointerValue == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    for (TZrSize i = 0; i < cs->compileTimeFunctions.length; i++) {
-        SZrCompileTimeFunction **funcPtr =
-                (SZrCompileTimeFunction **)ZrCore_Array_Get(&cs->compileTimeFunctions, i);
-        if (funcPtr != ZR_NULL && *funcPtr != ZR_NULL && (TZrPtr)(*funcPtr) == pointerValue) {
-            *result = *funcPtr;
-            return ZR_TRUE;
-        }
-    }
-
-    return ZR_FALSE;
-}
-
-ZR_PARSER_API TZrBool ZrParser_Compiler_TryGetCompileTimeValue(SZrCompilerState *cs,
-                                                     SZrString *name,
-                                                     SZrTypeValue *result) {
+TZrBool ct_try_get_compile_time_value_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext,
+        SZrTypeValue *result) {
     if (cs == ZR_NULL || name == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    SZrCompileTimeVariable *var = find_compile_time_variable(cs, name);
+    SZrCompileTimeVariable *var = find_compile_time_variable_with_context(
+            cs, name, syntaxContext);
     if (var == ZR_NULL) {
         return ZR_FALSE;
     }
     if (var->hasEvaluatedValue) {
-        *result = var->evaluatedValue;
-        return ZR_TRUE;
+        return ct_compile_time_variable_get_value(cs, var, result);
     }
     if (var->isEvaluating) {
         ct_error_name(cs, name, "Circular compile-time variable dependency: ", var->location);
@@ -428,22 +422,42 @@ ZR_PARSER_API TZrBool ZrParser_Compiler_TryGetCompileTimeValue(SZrCompilerState 
 
     var->isEvaluating = ZR_TRUE;
     if (var->value == ZR_NULL) {
-        ZrCore_Value_ResetAsNull(&var->evaluatedValue);
+        SZrTypeValue nullValue;
+        ZrCore_Value_ResetAsNull(&nullValue);
+        if (!ct_compile_time_variable_set_value(cs, var, &nullValue)) {
+            var->isEvaluating = ZR_FALSE;
+            return ZR_FALSE;
+        }
         var->hasEvaluatedValue = ZR_TRUE;
         var->isEvaluating = ZR_FALSE;
-        *result = var->evaluatedValue;
-        return ZR_TRUE;
+        return ct_compile_time_variable_get_value(cs, var, result);
     }
 
-    if (!evaluate_compile_time_expression_internal(cs, var->value, ZR_NULL, &var->evaluatedValue)) {
+    SZrTypeValue evaluatedValue;
+    SZrCompileTimeFrame scratchFrame;
+    TZrBool evaluated = ZR_FALSE;
+    ct_frame_init(cs, &scratchFrame, ZR_NULL);
+    evaluated = evaluate_compile_time_expression_internal(
+            cs, var->value, &scratchFrame, &evaluatedValue);
+    if (!evaluated ||
+        !ct_compile_time_variable_set_value(cs, var, &evaluatedValue)) {
+        ct_frame_free(cs, &scratchFrame);
         var->isEvaluating = ZR_FALSE;
         return ZR_FALSE;
     }
+    ct_frame_free(cs, &scratchFrame);
 
     var->hasEvaluatedValue = ZR_TRUE;
     var->isEvaluating = ZR_FALSE;
-    *result = var->evaluatedValue;
-    return ZR_TRUE;
+    return ct_compile_time_variable_get_value(cs, var, result);
+}
+
+ZR_PARSER_API TZrBool ZrParser_Compiler_TryGetCompileTimeValue(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrTypeValue *result) {
+    return ct_try_get_compile_time_value_with_context(
+            cs, name, ZrParser_SyntaxContext_Root(), result);
 }
 
 
@@ -463,7 +477,10 @@ TZrBool register_compile_time_variable_declaration(SZrCompilerState *cs,
 
     varDecl = &node->data.variableDeclaration;
     varName = varDecl->pattern->data.identifier.name;
-    var = find_compile_time_variable(cs, varName);
+    var = find_compile_time_variable_with_context(
+            cs,
+            varName,
+            varDecl->pattern->data.identifier.syntaxContext);
     if (var == ZR_NULL) {
         var = ZrCore_Memory_RawMallocWithType(cs->state->global,
                                         sizeof(SZrCompileTimeVariable),
@@ -471,6 +488,7 @@ TZrBool register_compile_time_variable_declaration(SZrCompilerState *cs,
         if (var == ZR_NULL) {
             return ZR_FALSE;
         }
+        ZrCore_Memory_RawSet(var, 0, sizeof(*var));
         var->name = varName;
         ZrParser_InferredType_Init(cs->state, &var->type, ZR_VALUE_TYPE_OBJECT);
         ZrCore_Array_Push(cs->state, &cs->compileTimeVariables, &var);
@@ -480,7 +498,14 @@ TZrBool register_compile_time_variable_declaration(SZrCompilerState *cs,
     }
 
     var->value = varDecl->value;
+    var->syntaxContext = varDecl->pattern->data.identifier.syntaxContext;
     var->location = location;
+    if (var->hasEvaluatedValueRoot) {
+        ZrCore_GcRootHandle_Release(
+                cs->state, &var->evaluatedValueRoot);
+        var->hasEvaluatedValueRoot = ZR_FALSE;
+    }
+    ZrCore_Value_ResetAsNull(&var->evaluatedValue);
     var->hasEvaluatedValue = ZR_FALSE;
     var->isEvaluating = ZR_FALSE;
 
@@ -491,7 +516,11 @@ TZrBool register_compile_time_variable_declaration(SZrCompilerState *cs,
     }
 
     if (varDecl->value != ZR_NULL) {
-        if (!ZrParser_Compiler_TryGetCompileTimeValue(cs, varName, &value)) {
+        if (!ct_try_get_compile_time_value_with_context(
+                    cs,
+                    varName,
+                    varDecl->pattern->data.identifier.syntaxContext,
+                    &value)) {
             return ZR_FALSE;
         }
         if (varDecl->typeInfo == ZR_NULL) {
@@ -499,7 +528,11 @@ TZrBool register_compile_time_variable_declaration(SZrCompilerState *cs,
             ct_init_type_from_value(cs, &value, &var->type);
         }
     } else {
-        ZrCore_Value_ResetAsNull(&var->evaluatedValue);
+        SZrTypeValue nullValue;
+        ZrCore_Value_ResetAsNull(&nullValue);
+        if (!ct_compile_time_variable_set_value(cs, var, &nullValue)) {
+            return ZR_FALSE;
+        }
         var->hasEvaluatedValue = ZR_TRUE;
         if (varDecl->typeInfo == ZR_NULL) {
             ZrParser_InferredType_Free(cs->state, &var->type);
@@ -533,7 +566,10 @@ TZrBool register_compile_time_function_declaration(SZrCompilerState *cs,
     if (ct_function_decl_is_async_wrapper(funcDecl)) {
         return ZR_TRUE;
     }
-    func = find_compile_time_function(cs, funcDecl->name->name);
+    func = find_compile_time_function_with_context(
+            cs,
+            funcDecl->name->name,
+            funcDecl->name->syntaxContext);
     if (func == ZR_NULL) {
         func = ZrCore_Memory_RawMallocWithType(cs->state->global,
                                          sizeof(SZrCompileTimeFunction),
@@ -548,6 +584,7 @@ TZrBool register_compile_time_function_declaration(SZrCompilerState *cs,
     }
 
     func->name = funcDecl->name->name;
+    func->syntaxContext = funcDecl->name->syntaxContext;
     func->declaration = node;
     func->isExported =
             (funcDecl->accessModifier == ZR_ACCESS_PUBLIC ||
@@ -606,6 +643,7 @@ TZrBool register_compile_time_function_alias(SZrCompilerState *cs,
     }
 
     func->name = aliasName;
+    func->syntaxContext = ZrParser_SyntaxContext_Root();
     func->declaration = node;
     func->isExported =
             (funcDecl->accessModifier == ZR_ACCESS_PUBLIC ||

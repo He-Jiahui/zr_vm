@@ -106,7 +106,10 @@ static TZrBool loop_assignment_self_dependency_integer_range(
         return ZR_FALSE;
     }
 
-    binding = ZrParser_TypeEnvironment_FindVariableBinding(cs->typeEnv, node->data.identifier.name);
+    binding = ZrParser_TypeEnvironment_FindVariableBindingWithContext(
+            cs->typeEnv,
+            node->data.identifier.name,
+            node->data.identifier.syntaxContext);
     if (binding == ZR_NULL ||
         binding->type.baseType != ZR_VALUE_TYPE_INT64 ||
         !binding->type.hasRangeConstraint) {

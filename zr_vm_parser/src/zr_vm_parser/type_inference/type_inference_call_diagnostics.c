@@ -273,6 +273,7 @@ TZrBool type_inference_diagnostic_report_ownership_mismatch(
         fact.lifetimeRegionId = ZR_SEMANTIC_ID_INVALID;
         fact.ownerLifetimeRegionId = ZR_SEMANTIC_ID_INVALID;
         fact.isViolation = ZR_TRUE;
+        fact.requiresWake = kind == ZR_CALL_OWNERSHIP_DIAGNOSTIC_WEAK_REQUIRES_WAKE;
         fact.diagnosticMessage = diagnostic.message;
         (void)ZrParser_SemanticFacts_AppendOwnership(
                 cs->semanticContext, &fact);

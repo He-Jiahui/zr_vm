@@ -85,15 +85,21 @@ SZrAstNode *parse_for_loop(SZrParserState *ps) {
     SZrAstNode *block = parse_block(ps);
     if (block == ZR_NULL) {
         // BUG: 非空头部已分配时，块解析失败直接返回会遗失 init/cond/step。
+        free_for_loop_parts(ps, init, cond, step);
         return ZR_NULL;
     }
 
-    SZrFileRange endLoc = get_current_location(ps);
-    SZrFileRange loopLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
+    SZrFileRange endLoc = block->location;
+    SZrFileRange loopLoc;
 
-    SZrAstNode *node = create_ast_node(ps, ZR_AST_FOR_LOOP, loopLoc);
-    if (node == ZR_NULL) {
+    SZrAstNode *node;
+    if (!ZrParser_MergeLocations(ps, startLoc, endLoc, &loopLoc) ||
+        (node = create_ast_node(ps, ZR_AST_FOR_LOOP, loopLoc)) == ZR_NULL) {
         // BUG: 节点分配失败时头部与 block 均未移交，也未释放。
+        ZrParser_Ast_Free(ps->state, init);
+        ZrParser_Ast_Free(ps->state, cond);
+        ZrParser_Ast_Free(ps->state, step);
+        ZrParser_Ast_Free(ps->state, block);
         return ZR_NULL;
     }
 
@@ -155,6 +161,8 @@ SZrAstNode *parse_foreach_loop(SZrParserState *ps) {
     SZrAstNode *expr = parse_expression(ps);
     if (expr == ZR_NULL) {
         // BUG: iterable 解析失败时，已取得的 pattern/typeInfo 未释放。
+        ZrParser_Ast_Free(ps->state, pattern);
+        free_owned_type(ps->state, typeInfo);
         return ZR_NULL;
     }
 
@@ -183,15 +191,23 @@ SZrAstNode *parse_foreach_loop(SZrParserState *ps) {
     SZrAstNode *block = parse_block(ps);
     if (block == ZR_NULL) {
         // BUG: 块解析失败时，pattern/typeInfo/expr 仍由本函数持有。
+        ZrParser_Ast_Free(ps->state, pattern);
+        free_owned_type(ps->state, typeInfo);
+        ZrParser_Ast_Free(ps->state, expr);
         return ZR_NULL;
     }
 
-    SZrFileRange endLoc = get_current_location(ps);
-    SZrFileRange loopLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
+    SZrFileRange endLoc = block->location;
+    SZrFileRange loopLoc;
 
-    SZrAstNode *node = create_ast_node(ps, ZR_AST_FOREACH_LOOP, loopLoc);
-    if (node == ZR_NULL) {
+    SZrAstNode *node;
+    if (!ZrParser_MergeLocations(ps, startLoc, endLoc, &loopLoc) ||
+        (node = create_ast_node(ps, ZR_AST_FOREACH_LOOP, loopLoc)) == ZR_NULL) {
         // BUG: 最终节点分配失败时四个已解析子对象都未释放。
+        ZrParser_Ast_Free(ps->state, pattern);
+        free_owned_type(ps->state, typeInfo);
+        ZrParser_Ast_Free(ps->state, expr);
+        ZrParser_Ast_Free(ps->state, block);
         return ZR_NULL;
     }
 

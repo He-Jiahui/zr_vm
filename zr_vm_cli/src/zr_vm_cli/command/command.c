@@ -1,4 +1,5 @@
 #include "command/command.h"
+#include "command/command_numbers_internal.h"
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -104,55 +105,6 @@ static TZrBool zr_cli_command_parse_execution_mode(const TZrChar *text, EZrCliEx
     }
 
     return ZR_FALSE;
-}
-
-static TZrBool zr_cli_command_parse_positive_uint32(
-        const TZrChar *text,
-        TZrUInt32 *outValue) {
-    TZrChar *end = ZR_NULL;
-    unsigned long value;
-
-    if (text == ZR_NULL || text[0] == '\0' || outValue == ZR_NULL || text[0] == '-') {
-        return ZR_FALSE;
-    }
-    value = strtoul(text, &end, 10);
-    if (end == text || *end != '\0' || value == 0UL || value > UINT32_MAX) {
-        return ZR_FALSE;
-    }
-    *outValue = (TZrUInt32)value;
-    return ZR_TRUE;
-}
-
-static TZrBool zr_cli_command_parse_duration_milliseconds(
-        const TZrChar *text,
-        TZrUInt64 *outMilliseconds) {
-    TZrChar *end = ZR_NULL;
-    unsigned long long value;
-    TZrUInt64 multiplier;
-
-    if (text == ZR_NULL || text[0] == '\0' || outMilliseconds == ZR_NULL || text[0] == '-') {
-        return ZR_FALSE;
-    }
-    /* BUG: 未检查 ERANGE；超出 ULLONG_MAX 的 `--timeout ...ms` 被 strtoull
-     * 饱和成 UINT64_MAX 后仍可通过校验，实际执行与输入值不符。 */
-    value = strtoull(text, &end, 10);
-    if (end == text || value == 0ULL) {
-        return ZR_FALSE;
-    }
-    if (strcmp(end, "ms") == 0) {
-        multiplier = 1U;
-    } else if (strcmp(end, "s") == 0) {
-        multiplier = 1000U;
-    } else if (strcmp(end, "m") == 0) {
-        multiplier = 60000U;
-    } else {
-        return ZR_FALSE;
-    }
-    if ((TZrUInt64)value > UINT64_MAX / multiplier) {
-        return ZR_FALSE;
-    }
-    *outMilliseconds = (TZrUInt64)value * multiplier;
-    return ZR_TRUE;
 }
 
 /* 将 help/version/项目/工具子命令保持互斥，避免 app 收到含混的混合命令。 */
@@ -408,6 +360,7 @@ TZrBool ZrCli_Command_Parse(int argc,
     TZrBool positionalSeen = ZR_FALSE;
     TZrBool testJobsSeen = ZR_FALSE;
     TZrBool testTimeoutSeen = ZR_FALSE;
+    TZrBool executionModeSpecified = ZR_FALSE;
     const TZrChar *compilePath = ZR_NULL;
     const TZrChar *explicitProjectPath = ZR_NULL;
     const TZrChar *positionalPath = ZR_NULL;
@@ -903,6 +856,7 @@ TZrBool ZrCli_Command_Parse(int argc,
                 zr_cli_write_error(errorBuffer, errorBufferSize, "Unknown execution mode: %s", argv[index + 1]);
                 return ZR_FALSE;
             }
+            executionModeSpecified = ZR_TRUE;
             index += 1;
             continue;
         }
@@ -1191,9 +1145,7 @@ TZrBool ZrCli_Command_Parse(int argc,
                                    "--interactive cannot be combined with help, version, or compile-only paths");
                 return ZR_FALSE;
             }
-            /* BUG: 这里无法区分默认 interp 与用户显式指定的
-             * `--execution-mode interp`，后者也被静默改成 binary。 */
-            if (outCommand->runAfterCompile && outCommand->executionMode == ZR_CLI_EXECUTION_MODE_INTERP) {
+            if (outCommand->runAfterCompile && !executionModeSpecified) {
                 outCommand->executionMode = ZR_CLI_EXECUTION_MODE_BINARY;
             }
             if (interactiveRequested) {

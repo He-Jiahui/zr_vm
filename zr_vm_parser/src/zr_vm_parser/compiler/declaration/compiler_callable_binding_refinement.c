@@ -71,6 +71,91 @@ static void compiler_rebind_reference_fact_types(SZrSemanticContext *semanticCon
     }
 }
 
+/* Preserve a member's callable shape before the local's Semantic IR is created. */
+TZrBool compiler_refine_member_callable_variable_binding(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext,
+        SZrAstNode *declarationNode,
+        const SZrInferredType *type) {
+    SZrPrimaryExpression *primary;
+    SZrAstNode *memberNode;
+    SZrAstNode *property;
+    const SZrSemanticReferenceFact *reference;
+    const SZrCanonicalTypeNode *canonicalType;
+    const SZrTypeBinding *binding;
+    const SZrSemanticSymbolRecord *symbol;
+    TZrTypeId typeId;
+    TZrSymbolId symbolId;
+    TZrUInt32 placeId;
+    SZrFileRange declarationRange;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL || cs->typeEnv == ZR_NULL ||
+        cs->semanticContext == ZR_NULL ||
+        cs->typeEnv->semanticContext != cs->semanticContext ||
+        name == ZR_NULL || type == ZR_NULL || type->baseType != ZR_VALUE_TYPE_CLOSURE ||
+        declarationNode == ZR_NULL || declarationNode->type != ZR_AST_VARIABLE_DECLARATION ||
+        declarationNode->data.variableDeclaration.typeInfo != ZR_NULL ||
+        declarationNode->data.variableDeclaration.pattern == ZR_NULL ||
+        declarationNode->data.variableDeclaration.pattern->type != ZR_AST_IDENTIFIER_LITERAL ||
+        declarationNode->data.variableDeclaration.value == ZR_NULL ||
+        declarationNode->data.variableDeclaration.value->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return ZR_TRUE;
+    }
+
+    primary = &declarationNode->data.variableDeclaration.value->data.primaryExpression;
+    if (primary->members == ZR_NULL || primary->members->count == 0U) {
+        return ZR_TRUE;
+    }
+    memberNode = primary->members->nodes[primary->members->count - 1U];
+    if (memberNode == ZR_NULL || memberNode->type != ZR_AST_MEMBER_EXPRESSION) {
+        return ZR_TRUE;
+    }
+    property = memberNode->data.memberExpression.property;
+    reference = ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+            cs->semanticContext,
+            property != ZR_NULL ? property : memberNode,
+            ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS);
+    if (reference == ZR_NULL || reference->typeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_TRUE;
+    }
+    typeId = reference->typeId;
+    canonicalType = ZrParser_CanonicalType_Find(cs->semanticContext, typeId);
+    if (canonicalType == ZR_NULL || canonicalType->kind != ZR_CANONICAL_TYPE_FUNCTION) {
+        return ZR_TRUE;
+    }
+
+    binding = ZrParser_TypeEnvironment_FindVariableBindingWithContext(
+            cs->typeEnv, name, syntaxContext);
+    if (binding == ZR_NULL || binding->symbolId == ZR_SEMANTIC_ID_INVALID ||
+        !binding->hasDeclarationRange || type == &binding->type) {
+        return ZR_FALSE;
+    }
+    symbol = ZrParser_Semantic_FindSymbolById(cs->semanticContext, binding->symbolId);
+    if (symbol == ZR_NULL || symbol->kind != ZR_SEMANTIC_SYMBOL_KIND_VARIABLE ||
+        symbol->astNode != declarationNode) {
+        return ZR_FALSE;
+    }
+
+    symbolId = binding->symbolId;
+    placeId = binding->placeId;
+    declarationRange = binding->declarationRange;
+    if (!ZrParser_Semantic_RebindSymbolType(cs->semanticContext, symbolId, typeId) ||
+        !ZrParser_TypeEnvironment_RegisterCanonicalVariableWithPlace(
+                cs->state,
+                cs->typeEnv,
+                name,
+                type,
+                symbolId,
+                typeId,
+                placeId,
+                declarationRange)) {
+        return ZR_FALSE;
+    }
+    compiler_rebind_reference_fact_types(cs->semanticContext, symbolId, typeId);
+    return ZR_TRUE;
+}
+
 /*
  * 将省略返回类型的函数体推断结果写回声明对应的 callable binding；按 declaration AST
  * 在当前及祖先 type environment 中查找，以更新原有 canonical contract 和其语义事实。

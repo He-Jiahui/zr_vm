@@ -17,7 +17,7 @@
  * ## Constraints and lifecycle
  * 状态/Global或builtins注册失败会销毁已得状态并返回NULL。Parser注册是void设置compileSource回调，不执行源代码；成功状态仍由每个用例最终Destroy。
  * ## References
- * tests/task/test_task_job_scheduler.c:23；tests/task/test_task_job_scheduler.c:28；tests/task/test_task_job_scheduler.c:29；tests/task/test_task_job_scheduler.c:33；tests/task/test_task_job_scheduler.c:35；zr_vm_library/src/zr_vm_library/task/task_runtime.c:1389；zr_vm_library/src/zr_vm_library/task/task_runtime.c:1393；zr_vm_parser/src/zr_vm_parser/compiler.c:1458；tests/harness/runtime_support.c:410
+ * tests/task/test_task_job_scheduler.c:23；tests/task/test_task_job_scheduler.c:28；tests/task/test_task_job_scheduler.c:29；tests/task/test_task_job_scheduler.c:33；tests/task/test_task_job_scheduler.c:35；zr_vm_library/src/zr_vm_library/task/task_runtime.c:1389；zr_vm_library/src/zr_vm_library/task/task_runtime.c:1393；zr_vm_parser/src/zr_vm_parser/compiler/compiler.c:1458；tests/harness/runtime_support.c:410
  */
 static SZrState *create_task_job_scheduler_test_state(void) {
     SZrState *state = ZrTests_State_Create(ZR_NULL);
@@ -79,7 +79,7 @@ static const ZrLibTypeDescriptor *find_type_descriptor(const ZrLibModuleDescript
  * ## Constraints and lifecycle
  * state/source/name非空；source/name都是NUL结尾C字符串，strlen使嵌入NUL之后内容不参与编译。SourceName分配失败与解析/编译失败均可返回NULL；这里只返回指针，不输出结构化诊断。TODO: 需要区分预期拒绝时读取当前编译诊断；当前成功调用方同步立即消费Function；若未来要跨后续分配保存它，需核查显式GC保护，不能把裸返回地址当根。
  * ## References
- * tests/task/test_task_job_scheduler.c:88；tests/task/test_task_job_scheduler.c:92；tests/task/test_task_job_scheduler.c:93；tests/task/test_task_job_scheduler.c:96；zr_vm_parser/src/zr_vm_parser/compiler.c:1387
+ * tests/task/test_task_job_scheduler.c:88；tests/task/test_task_job_scheduler.c:92；tests/task/test_task_job_scheduler.c:93；tests/task/test_task_job_scheduler.c:96；zr_vm_parser/src/zr_vm_parser/compiler/compiler.c:1387
  */
 static SZrFunction *compile_task_job_scheduler_source(SZrState *state, const char *source, const char *name) {
     SZrString *sourceName;
@@ -373,7 +373,7 @@ static void test_scheduler_consumes_job_at_source_call_boundary(void) {
  * ## Constraints and lifecycle
  * 只断言Compile返回NULL，不执行yieldNow。TODO: 读取must-use诊断及具体位置，区分导入/其他编译失败；它不是成功运行或Task资源清理测试。
  * ## References
- * tests/task/test_task_job_scheduler.c:389；tests/task/test_task_job_scheduler.c:394；tests/task/test_task_job_scheduler.c:396；zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c:2957；zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c:2958；zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c:2959
+ * tests/task/test_task_job_scheduler.c:389；tests/task/test_task_job_scheduler.c:394；tests/task/test_task_job_scheduler.c:396；zr_vm_parser/src/zr_vm_parser/compiler/statement/compile_statement.c:2957；zr_vm_parser/src/zr_vm_parser/compiler/statement/compile_statement.c:2958；zr_vm_parser/src/zr_vm_parser/compiler/statement/compile_statement.c:2959
  */
 static void test_discarded_task_expression_is_rejected(void) {
     /**

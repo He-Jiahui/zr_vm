@@ -55,6 +55,5 @@ TZrBool parse_parameter_source_passing_form(
         }
     }
 
-    *location = ZrParser_FileRange_Merge(startLoc, get_current_location(ps));
-    return ZR_TRUE;
+    return ZrParser_MergeLocations(ps, startLoc, get_current_location(ps), location);
 }

@@ -17,10 +17,9 @@ static SZrAstNode *parse_type_literal_expression(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    node = create_ast_node(ps,
-                           ZR_AST_TYPE_LITERAL_EXPRESSION,
-                           ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
-    if (node == ZR_NULL) {
+    SZrFileRange typeLocation;
+    if (!ZrParser_MergeLocations(ps, startLoc, get_current_location(ps), &typeLocation) ||
+        (node = create_ast_node(ps, ZR_AST_TYPE_LITERAL_EXPRESSION, typeLocation)) == ZR_NULL) {
         free_owned_type(ps->state, typeInfo);
         return ZR_NULL;
     }
@@ -30,14 +29,10 @@ static SZrAstNode *parse_type_literal_expression(SZrParserState *ps) {
 }
 
 // 用左右子树合并表达式范围，并为错误恢复中的空侧保留有效位置。
-static SZrFileRange parser_expression_node_range(SZrAstNode *left, SZrAstNode *right) {
-    if (left == ZR_NULL) {
-        return right != ZR_NULL ? right->location : (SZrFileRange){{0, 1, 1}, {0, 1, 1}, ZR_NULL};
-    }
-    if (right == ZR_NULL) {
-        return left->location;
-    }
-    return ZrParser_FileRange_Merge(left->location, right->location);
+static TZrBool parser_expression_node_range(
+        SZrParserState *ps, SZrAstNode *left, SZrAstNode *right, SZrFileRange *outRange) {
+    return left != ZR_NULL && right != ZR_NULL &&
+           ZrParser_MergeLocations(ps, left->location, right->location, outRange);
 }
 
 // 给缺失操作数诊断提供起始 token 集，避免把分隔符继续当右操作数解析。
@@ -128,10 +123,9 @@ static SZrAstNode *parse_reflection_type_query_expression(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    node = create_ast_node(ps,
-                           ZR_AST_TYPE_QUERY_EXPRESSION,
-                           ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
-    if (node == ZR_NULL) {
+    SZrFileRange queryLocation;
+    if (!ZrParser_MergeLocations(ps, startLoc, get_current_location(ps), &queryLocation) ||
+        (node = create_ast_node(ps, ZR_AST_TYPE_QUERY_EXPRESSION, queryLocation)) == ZR_NULL) {
         free_owned_type(ps->state, typeOperand);
         if (operand != ZR_NULL) {
             ZrParser_Ast_Free(ps->state, operand);
@@ -229,7 +223,8 @@ static SZrAstNode *parse_unary_expression_impl(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer); // 跳过 <
         SZrType *targetType = parse_type(ps);
 
-        if (targetType != ZR_NULL && ps->lexer->t.token == ZR_TK_GREATER_THAN) {
+        if (targetType != ZR_NULL && !ps->lexer->hasSourceEvidenceError &&
+            ps->lexer->t.token == ZR_TK_GREATER_THAN) {
             ZrParser_Lexer_Next(ps->lexer); // 跳过 >
 
             // 检查后面是否是表达式（不是类型声明上下文）
@@ -246,7 +241,16 @@ static SZrAstNode *parse_unary_expression_impl(SZrParserState *ps) {
 
                 if (expression != ZR_NULL) {
                     SZrFileRange endLoc = get_current_location(ps);
-                    SZrFileRange castLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
+                    SZrFileRange castLoc;
+                    if (!ZrParser_MergeLocations(ps, startLoc, endLoc, &castLoc)) {
+                        free_owned_type(ps->state, targetType);
+                        ZrParser_Ast_Free(ps->state, expression);
+                        ps->suppressErrorOutput = savedSuppressErrorOutput;
+                        ps->errorCallback = savedErrorCallback;
+                        ps->structuredErrorCallback = savedStructuredErrorCallback;
+                        ps->errorUserData = savedErrorUserData;
+                        return ZR_NULL;
+                    }
                     SZrAstNode *node = create_ast_node(ps, ZR_AST_TYPE_CAST_EXPRESSION, castLoc);
                     if (node != ZR_NULL) {
                         ps->suppressErrorOutput = savedSuppressErrorOutput;
@@ -263,6 +267,7 @@ static SZrAstNode *parse_unary_expression_impl(SZrParserState *ps) {
 
                 // BUG: cast 节点分配失败只释放 targetType，已解析的 expression 泄漏；游标未复原且分配错误仍留在状态中。
                 // 如果创建节点失败，释放类型
+                ZrParser_Ast_Free(ps->state, expression);
                 if (targetType != ZR_NULL) {
                     free_owned_type(ps->state, targetType);
                 }
@@ -291,6 +296,9 @@ static SZrAstNode *parse_unary_expression_impl(SZrParserState *ps) {
             if (targetType != ZR_NULL) {
                 free_owned_type(ps->state, targetType);
             }
+        }
+        if (ps->lexer->hasSourceEvidenceError) {
+            return ZR_NULL;
         }
     }
 
@@ -331,12 +339,16 @@ static SZrAstNode *parse_unary_expression_impl(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
         SZrAstNode *argument = parse_unary_expression(ps); // 右结合
 
-        SZrFileRange unaryLoc = argument != ZR_NULL
-                                     ? ZrParser_FileRange_Merge(startLoc, argument->location)
-                                     : startLoc;
+        SZrFileRange unaryLoc = startLoc;
+        if (argument != ZR_NULL &&
+            !ZrParser_MergeLocations(ps, startLoc, argument->location, &unaryLoc)) {
+            ZrParser_Ast_Free(ps->state, argument);
+            return ZR_NULL;
+        }
         SZrAstNode *node = create_ast_node(ps, ZR_AST_UNARY_EXPRESSION, unaryLoc);
         // BUG: 节点分配失败时 argument 尚未移交，直接返回会泄漏该子树。
         if (node == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, argument);
             return ZR_NULL;
         }
 
@@ -370,10 +382,13 @@ SZrAstNode *parse_multiplicative_expression(SZrParserState *ps) {
             return ZR_NULL;
         }
 
-        SZrAstNode *node =
-            create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
+        SZrFileRange expressionLocation;
+        SZrAstNode *node;
         // BUG: 二元节点分配失败后直接返回，已解析的 left/right 未交给节点也未释放。
-        if (node == ZR_NULL) {
+        if (!parser_expression_node_range(ps, left, right, &expressionLocation) ||
+            (node = create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, expressionLocation)) == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
+            ZrParser_Ast_Free(ps->state, right);
             return ZR_NULL;
         }
 
@@ -407,10 +422,13 @@ SZrAstNode *parse_additive_expression(SZrParserState *ps) {
             return ZR_NULL;
         }
 
-        SZrAstNode *node =
-            create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
+        SZrFileRange expressionLocation;
+        SZrAstNode *node;
         // BUG: 二元节点分配失败时 left/right 尚未移交，直接返回会泄漏两棵子树。
-        if (node == ZR_NULL) {
+        if (!parser_expression_node_range(ps, left, right, &expressionLocation) ||
+            (node = create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, expressionLocation)) == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
+            ZrParser_Ast_Free(ps->state, right);
             return ZR_NULL;
         }
 
@@ -444,10 +462,13 @@ SZrAstNode *parse_shift_expression(SZrParserState *ps) {
             return ZR_NULL;
         }
 
-        SZrAstNode *node =
-            create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
+        SZrFileRange expressionLocation;
+        SZrAstNode *node;
         // BUG: 二元节点分配失败时 left/right 尚未移交，直接返回会泄漏两棵子树。
-        if (node == ZR_NULL) {
+        if (!parser_expression_node_range(ps, left, right, &expressionLocation) ||
+            (node = create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, expressionLocation)) == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
+            ZrParser_Ast_Free(ps->state, right);
             return ZR_NULL;
         }
 
@@ -482,10 +503,13 @@ SZrAstNode *parse_relational_expression(SZrParserState *ps) {
             return ZR_NULL;
         }
 
-        SZrAstNode *node =
-            create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
+        SZrFileRange expressionLocation;
+        SZrAstNode *node;
         // BUG: 二元节点分配失败时 left/right 尚未移交，直接返回会泄漏两棵子树。
-        if (node == ZR_NULL) {
+        if (!parser_expression_node_range(ps, left, right, &expressionLocation) ||
+            (node = create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, expressionLocation)) == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
+            ZrParser_Ast_Free(ps->state, right);
             return ZR_NULL;
         }
 
@@ -519,10 +543,13 @@ SZrAstNode *parse_equality_expression(SZrParserState *ps) {
             return ZR_NULL;
         }
 
-        SZrAstNode *node =
-            create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
+        SZrFileRange expressionLocation;
+        SZrAstNode *node;
         // BUG: 二元节点分配失败时 left/right 尚未移交，直接返回会泄漏两棵子树。
-        if (node == ZR_NULL) {
+        if (!parser_expression_node_range(ps, left, right, &expressionLocation) ||
+            (node = create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, expressionLocation)) == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
+            ZrParser_Ast_Free(ps->state, right);
             return ZR_NULL;
         }
 
@@ -556,10 +583,13 @@ SZrAstNode *parse_binary_and_expression(SZrParserState *ps) {
             return ZR_NULL;
         }
 
-        SZrAstNode *node =
-            create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
+        SZrFileRange expressionLocation;
+        SZrAstNode *node;
         // BUG: 二元节点分配失败时 left/right 尚未移交，直接返回会泄漏两棵子树。
-        if (node == ZR_NULL) {
+        if (!parser_expression_node_range(ps, left, right, &expressionLocation) ||
+            (node = create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, expressionLocation)) == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
+            ZrParser_Ast_Free(ps->state, right);
             return ZR_NULL;
         }
 
@@ -593,10 +623,13 @@ SZrAstNode *parse_binary_xor_expression(SZrParserState *ps) {
             return ZR_NULL;
         }
 
-        SZrAstNode *node =
-            create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
+        SZrFileRange expressionLocation;
+        SZrAstNode *node;
         // BUG: 二元节点分配失败时 left/right 尚未移交，直接返回会泄漏两棵子树。
-        if (node == ZR_NULL) {
+        if (!parser_expression_node_range(ps, left, right, &expressionLocation) ||
+            (node = create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, expressionLocation)) == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
+            ZrParser_Ast_Free(ps->state, right);
             return ZR_NULL;
         }
 
@@ -630,10 +663,13 @@ SZrAstNode *parse_binary_or_expression(SZrParserState *ps) {
             return ZR_NULL;
         }
 
-        SZrAstNode *node =
-            create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
+        SZrFileRange expressionLocation;
+        SZrAstNode *node;
         // BUG: 二元节点分配失败时 left/right 尚未移交，直接返回会泄漏两棵子树。
-        if (node == ZR_NULL) {
+        if (!parser_expression_node_range(ps, left, right, &expressionLocation) ||
+            (node = create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, expressionLocation)) == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
+            ZrParser_Ast_Free(ps->state, right);
             return ZR_NULL;
         }
 
@@ -665,10 +701,13 @@ SZrAstNode *parse_logical_and_expression(SZrParserState *ps) {
             return ZR_NULL;
         }
 
-        SZrAstNode *node =
-            create_ast_node(ps, ZR_AST_LOGICAL_EXPRESSION, parser_expression_node_range(left, right));
+        SZrFileRange expressionLocation;
+        SZrAstNode *node;
         // BUG: 逻辑节点分配失败时 left/right 尚未移交，直接返回会泄漏两棵子树。
-        if (node == ZR_NULL) {
+        if (!parser_expression_node_range(ps, left, right, &expressionLocation) ||
+            (node = create_ast_node(ps, ZR_AST_LOGICAL_EXPRESSION, expressionLocation)) == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
+            ZrParser_Ast_Free(ps->state, right);
             return ZR_NULL;
         }
 
@@ -700,10 +739,13 @@ SZrAstNode *parse_logical_or_expression(SZrParserState *ps) {
             return ZR_NULL;
         }
 
-        SZrAstNode *node =
-            create_ast_node(ps, ZR_AST_LOGICAL_EXPRESSION, parser_expression_node_range(left, right));
+        SZrFileRange expressionLocation;
+        SZrAstNode *node;
         // BUG: 逻辑节点分配失败时 left/right 尚未移交，直接返回会泄漏两棵子树。
-        if (node == ZR_NULL) {
+        if (!parser_expression_node_range(ps, left, right, &expressionLocation) ||
+            (node = create_ast_node(ps, ZR_AST_LOGICAL_EXPRESSION, expressionLocation)) == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
+            ZrParser_Ast_Free(ps->state, right);
             return ZR_NULL;
         }
 
@@ -780,11 +822,14 @@ static SZrAstNode *parse_conditional_expression_impl(SZrParserState *ps) {
             return ZR_NULL;
         }
 
-        SZrAstNode *node = create_ast_node(ps,
-                                           ZR_AST_CONDITIONAL_EXPRESSION,
-                                           parser_expression_node_range(test, alternate));
+        SZrFileRange expressionLocation;
+        SZrAstNode *node;
         // BUG: 三元节点分配失败时 test/consequent/alternate 均未移交，直接返回会泄漏三棵子树。
-        if (node == ZR_NULL) {
+        if (!parser_expression_node_range(ps, test, alternate, &expressionLocation) ||
+            (node = create_ast_node(ps, ZR_AST_CONDITIONAL_EXPRESSION, expressionLocation)) == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, test);
+            ZrParser_Ast_Free(ps->state, consequent);
+            ZrParser_Ast_Free(ps->state, alternate);
             return ZR_NULL;
         }
 
@@ -831,10 +876,13 @@ static SZrAstNode *parse_assignment_expression_impl(SZrParserState *ps) {
             return ZR_NULL;
         }
 
-        SZrAstNode *node =
-            create_ast_node(ps, ZR_AST_ASSIGNMENT_EXPRESSION, parser_expression_node_range(left, right));
+        SZrFileRange expressionLocation;
+        SZrAstNode *node;
         // BUG: 赋值节点分配失败时 left/right 尚未移交，直接返回会泄漏两棵子树。
-        if (node == ZR_NULL) {
+        if (!parser_expression_node_range(ps, left, right, &expressionLocation) ||
+            (node = create_ast_node(ps, ZR_AST_ASSIGNMENT_EXPRESSION, expressionLocation)) == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, left);
+            ZrParser_Ast_Free(ps->state, right);
             return ZR_NULL;
         }
 

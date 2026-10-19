@@ -28,7 +28,10 @@ TZrBool compiler_semantic_scalar_expression_typed(SZrCompilerState *cs,
     if (cs == ZR_NULL || cs->semanticContext == ZR_NULL ||
         !compiler_semantic_scalar_expression_shape(node)) return ZR_FALSE;
     if (node->type == ZR_AST_IDENTIFIER_LITERAL) {
-        TZrUInt32 slotId = find_local_var(cs, node->data.identifier.name);
+        TZrUInt32 slotId = find_local_var_with_context(
+                cs,
+                node->data.identifier.name,
+                node->data.identifier.syntaxContext);
         const SZrCompilerSemanticIrSlot *slot =
                 compiler_semantic_ir_find_slot(cs, slotId);
         return (TZrBool)(slotId != ZR_PARSER_SLOT_NONE && slot != ZR_NULL &&

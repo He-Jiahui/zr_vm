@@ -8,6 +8,7 @@
 #include "compiler/compile_time/compile_time_executor_internal.h"
 #include "compiler/compile_time/compile_time_binding_metadata.h"
 #include "compiler/declaration/compiler_attribute_binding.h"
+#include "semantic/semantic_type_publication.h"
 #include "zr_vm_core/stack.h"
 
 static void typed_type_ref_init_unknown(SZrFunctionTypedTypeRef *typeRef) {
@@ -66,6 +67,42 @@ static void typed_type_ref_from_inferred(SZrFunctionTypedTypeRef *dest, const SZ
 void compiler_typed_type_ref_from_inferred(SZrFunctionTypedTypeRef *dest,
                                            const SZrInferredType *src) {
     typed_type_ref_from_inferred(dest, src);
+}
+
+static const SZrInferredType *typed_metadata_find_plain_nominal_type(
+        const SZrSemanticContext *context, const SZrCanonicalTypeNode *node) {
+    const SZrCanonicalTypeNode *definition;
+
+    if (context == ZR_NULL || node == ZR_NULL || !context->types.isValid ||
+        (node->kind != ZR_CANONICAL_TYPE_NOMINAL &&
+         node->kind != ZR_CANONICAL_TYPE_UNION)) {
+        return ZR_NULL;
+    }
+    definition = semantic_type_nominal_definition(context, node->id);
+    if (definition == ZR_NULL || definition->data.nominal.moduleIdentity != ZR_NULL) {
+        return ZR_NULL;
+    }
+    for (TZrSize index = 0; index < context->types.length; ++index) {
+        const SZrSemanticTypeRecord *record =
+                ZrCore_Array_Get((SZrArray *)&context->types, index);
+        if (record == ZR_NULL || record->id != node->id) {
+            continue;
+        }
+        const SZrInferredType *type = &record->inferredType;
+        if (type->baseType == ZR_VALUE_TYPE_OBJECT && type->typeName != ZR_NULL &&
+            type->elementTypes.length == 0U &&
+            type->genericArgumentKind == ZR_INFERRED_GENERIC_ARGUMENT_TYPE &&
+            type->nominalDefinitionToken == definition->data.nominal.definitionToken &&
+            type->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_NONE &&
+            type->gcBridgeKind == ZR_GC_BRIDGE_NONE &&
+            type->referenceAccess == ZR_REFERENCE_ACCESS_NONE &&
+            !type->isReadonlyView && !type->isNullable &&
+            ZrCore_String_Equal(type->typeName, definition->data.nominal.name)) {
+            return type;
+        }
+        return ZR_NULL;
+    }
+    return ZR_NULL;
 }
 
 static const SZrCompilerStackSlotTypeHint *find_stack_slot_type_hint_for_slot(const SZrCompilerState *cs,
@@ -1353,6 +1390,13 @@ TZrBool compiler_build_typed_local_bindings(SZrCompilerState *cs,
         SZrCompilerSemanticIrSlotIdentity semanticIdentity;
         SZrInferredType inferredType;
         SZrAstNode *functionDeclNode;
+        const SZrCompilerBindingIdentity *bindingIdentity =
+                index < cs->localBindingIdentities.length
+                        ? ZrCore_Array_Get(&cs->localBindingIdentities, index)
+                        : ZR_NULL;
+        SZrSyntaxContext syntaxContext = bindingIdentity != ZR_NULL
+                                                ? bindingIdentity->syntaxContext
+                                                : ZrParser_SyntaxContext_Root();
 
         ZrCore_Memory_RawSet(&bindings[index], 0, sizeof(bindings[index]));
         if (localVar == ZR_NULL) {
@@ -1416,10 +1460,34 @@ TZrBool compiler_build_typed_local_bindings(SZrCompilerState *cs,
             continue;
         }
 
+        {
+            const SZrCanonicalTypeNode *canonicalType =
+                    ZrParser_CanonicalType_Find(cs->semanticContext, bindings[index].typeId);
+            if (canonicalType != ZR_NULL && canonicalType->kind == ZR_CANONICAL_TYPE_PRIMITIVE) {
+                EZrValueType valueType = canonicalType->data.primitive.valueType;
+                if (ZR_VALUE_IS_TYPE_NULL(valueType) ||
+                    ZR_VALUE_IS_TYPE_BOOL(valueType) ||
+                    ZR_VALUE_IS_TYPE_NUMBER(valueType) ||
+                    ZR_VALUE_IS_TYPE_STRING(valueType)) {
+                    typed_type_ref_init_unknown(&bindings[index].type);
+                    bindings[index].type.baseType = valueType;
+                    continue;
+                }
+            }
+            const SZrInferredType *nominalType =
+                    typed_metadata_find_plain_nominal_type(cs->semanticContext, canonicalType);
+            if (nominalType != ZR_NULL) {
+                typed_type_ref_from_inferred(&bindings[index].type, nominalType);
+                continue;
+            }
+        }
+
         ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
         if (localVar->name != ZR_NULL &&
             cs->typeEnv != ZR_NULL &&
-            ZrParser_TypeEnvironment_LookupVariable(cs->state, cs->typeEnv, localVar->name, &inferredType)) {
+            ZrParser_TypeEnvironment_LookupVariableWithContext(
+                    cs->state, cs->typeEnv, localVar->name,
+                    syntaxContext, &inferredType)) {
             typed_type_ref_from_inferred(&bindings[index].type, &inferredType);
             ZrParser_InferredType_Free(cs->state, &inferredType);
             continue;
@@ -1588,7 +1656,8 @@ static void compiler_finalize_current_struct_inline_layout(SZrCompilerState *cs,
             continue;
         }
 
-        align = memberInfo->fieldType != ZR_NULL ? get_type_alignment(cs, memberInfo->fieldType) : ZR_ALIGN_SIZE;
+        align = memberInfo->fieldType != ZR_NULL ? get_type_alignment(cs, memberInfo->fieldType)
+                                                : (TZrUInt32)_Alignof(SZrTypeValue);
         if (align > maxAlign) {
             maxAlign = align;
         }
@@ -2301,7 +2370,7 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
         SZrFunctionTypedTypeRef hintTypeRef;
         const SZrFunctionTypedTypeRef *slotTypeRef = binding != ZR_NULL ? &binding->type : ZR_NULL;
         TZrUInt32 byteSize = (TZrUInt32)sizeof(SZrTypeValue);
-        TZrUInt32 byteAlign = ZR_ALIGN_SIZE;
+        TZrUInt32 byteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
         TZrUInt32 typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
         TZrUInt32 inlineFieldCount = 0u;
         TZrUInt8 slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
@@ -2325,7 +2394,7 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
             layouts[slot] = *receiverLayout;
             layouts[slot].stackSlot = slot;
             layouts[slot].isParameter = slotIsParameter ? 1 : 0;
-            layouts[slot].reserved0 =
+            layouts[slot].reserved0 |=
                     ZR_FUNCTION_FRAME_SLOT_FLAG_ALIAS |
                     ZR_FUNCTION_FRAME_SLOT_FLAG_INLINE_RECEIVER_ARGUMENT |
                     (receiverLayout->reserved0 &
@@ -2441,7 +2510,7 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
         }
 
         if (byteAlign == 0) {
-            byteAlign = ZR_ALIGN_SIZE;
+            byteAlign = (TZrUInt32)_Alignof(SZrTypeValue);
         }
         if (byteAlign > frameAlign) {
             frameAlign = byteAlign;
@@ -2499,7 +2568,7 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
     }
 
     if (frameAlign == 0) {
-        frameAlign = ZR_ALIGN_SIZE;
+        frameAlign = (TZrUInt32)_Alignof(SZrTypeValueOnStack);
     }
 
     function->frameSlotLayouts = layouts;

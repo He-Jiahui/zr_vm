@@ -64,7 +64,7 @@ static TZrBool semantic_query_range_contains_range(const SZrFileRange *outer,
         return ZR_FALSE;
     }
 
-    endPosition = *inner;
+    endPosition = ZrParser_FileRange_WithoutEvidence(*inner);
     endPosition.start = inner->end;
     return semantic_query_range_contains_position(outer, &endPosition);
 }

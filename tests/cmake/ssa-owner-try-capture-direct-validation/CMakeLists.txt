@@ -1,18 +1,9 @@
 cmake_minimum_required(VERSION 3.31)
-# Actual checkout, separate E build and an executable compiler ABI probe.
-get_filename_component(_zr_try_capture_actual_root "${CMAKE_CURRENT_LIST_DIR}/../../.." REALPATH)
-cmake_path(CONVERT "E:/Git/zr_vm" TO_CMAKE_PATH_LIST _zr_try_capture_expected_root NORMALIZE)
-if (NOT _zr_try_capture_actual_root STREQUAL _zr_try_capture_expected_root)
-    message(FATAL_ERROR "Finite capture observer validation requires actual E:/Git/zr_vm")
-endif ()
-set(ZR_SSA_OWNER_TRY_CAPTURE_SOURCE_ROOT "${_zr_try_capture_actual_root}")
-set(_zr_try_capture_output_root "E:/cargo-targets/zr_vm/build")
-cmake_path(ABSOLUTE_PATH CMAKE_BINARY_DIR NORMALIZE OUTPUT_VARIABLE _zr_try_capture_binary)
-cmake_path(IS_PREFIX _zr_try_capture_output_root "${_zr_try_capture_binary}" NORMALIZE _zr_try_capture_output_allowed)
-if (NOT _zr_try_capture_output_allowed OR _zr_try_capture_binary STREQUAL _zr_try_capture_output_root
-        OR CMAKE_BINARY_DIR STREQUAL CMAKE_SOURCE_DIR)
-    message(FATAL_ERROR "Use a separate child directory under E:/cargo-targets/zr_vm/build")
-endif ()
+
+include("${CMAKE_CURRENT_LIST_DIR}/../ssa-direct-validation-paths.cmake")
+zr_ssa_validation_source_root(_zr_direct_source_root)
+set(ZR_SSA_OWNER_TRY_CAPTURE_SOURCE_ROOT "${_zr_direct_source_root}")
+zr_ssa_validation_binary_dir(_zr_direct_binary_dir)
 if (DEFINED CMAKE_TRY_COMPILE_TARGET_TYPE AND NOT CMAKE_TRY_COMPILE_TARGET_TYPE STREQUAL "EXECUTABLE")
     message(FATAL_ERROR "Use the actual executable compiler ABI probe")
 endif ()

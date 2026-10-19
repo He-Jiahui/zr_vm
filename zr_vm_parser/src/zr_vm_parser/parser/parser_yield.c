@@ -29,11 +29,9 @@ SZrAstNode *parse_yield_statement(SZrParserState *ps) {
     }
 
     endLocation = get_current_location(ps);
-    node = create_ast_node(
-            ps,
-            ZR_AST_YIELD_STATEMENT,
-            ZrParser_FileRange_Merge(startLocation, endLocation));
-    if (node == ZR_NULL) {
+    SZrFileRange yieldLocation;
+    if (!ZrParser_MergeLocations(ps, startLocation, endLocation, &yieldLocation) ||
+        (node = create_ast_node(ps, ZR_AST_YIELD_STATEMENT, yieldLocation)) == ZR_NULL) {
         ZrParser_Ast_Free(ps->state, expression);
         return ZR_NULL;
     }

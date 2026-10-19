@@ -16,6 +16,9 @@ static SZrAstNode *parse_union_field(SZrParserState *ps) {
 
     startLoc = get_current_location(ps);
     decorators = parse_leading_decorators(ps);
+    if (decorators == ZR_NULL) {
+        return ZR_NULL;
+    }
     nameNode = parse_identifier(ps);
     if (nameNode == ZR_NULL) {
         if (decorators != ZR_NULL) {
@@ -44,8 +47,9 @@ static SZrAstNode *parse_union_field(SZrParserState *ps) {
     }
 
     endLoc = get_current_location(ps);
-    node = create_ast_node(ps, ZR_AST_PARAMETER, ZrParser_FileRange_Merge(startLoc, endLoc));
-    if (node == ZR_NULL) {
+    SZrFileRange mergedLocation;
+    if (!ZrParser_MergeLocations(ps, startLoc, endLoc, &mergedLocation) ||
+        (node = create_ast_node(ps, ZR_AST_PARAMETER, mergedLocation)) == ZR_NULL) {
         free_identifier_node_from_ptr(ps->state, name);
         free_owned_type(ps->state, typeInfo);
         if (decorators != ZR_NULL) {
@@ -78,7 +82,7 @@ static SZrAstNodeArray *parse_union_tuple_fields(SZrParserState *ps) {
     expect_token(ps, ZR_TK_LPAREN);
     ZrParser_Lexer_Next(ps->lexer);
 
-    fields = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
+    fields = parser_ast_array_new(ps, ZR_PARSER_INITIAL_CAPACITY_TINY);
     if (fields == ZR_NULL) {
         return ZR_NULL;
     }
@@ -89,7 +93,11 @@ static SZrAstNodeArray *parse_union_tuple_fields(SZrParserState *ps) {
             free_ast_node_array_with_elements(ps->state, fields);
             return ZR_NULL;
         }
-        ZrParser_AstNodeArray_Add(ps->state, fields, field);
+        if (!parser_ast_array_add(ps, fields, field)) {
+            ZrParser_Ast_Free(ps->state, field);
+            free_ast_node_array_with_elements(ps->state, fields);
+            return ZR_NULL;
+        }
 
         if (!consume_token(ps, ZR_TK_COMMA)) {
             break;
@@ -112,7 +120,7 @@ static SZrAstNodeArray *parse_union_struct_fields(SZrParserState *ps) {
     expect_token(ps, ZR_TK_LBRACE);
     ZrParser_Lexer_Next(ps->lexer);
 
-    fields = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
+    fields = parser_ast_array_new(ps, ZR_PARSER_INITIAL_CAPACITY_TINY);
     if (fields == ZR_NULL) {
         return ZR_NULL;
     }
@@ -123,7 +131,11 @@ static SZrAstNodeArray *parse_union_struct_fields(SZrParserState *ps) {
             free_ast_node_array_with_elements(ps->state, fields);
             return ZR_NULL;
         }
-        ZrParser_AstNodeArray_Add(ps->state, fields, field);
+        if (!parser_ast_array_add(ps, fields, field)) {
+            ZrParser_Ast_Free(ps->state, field);
+            free_ast_node_array_with_elements(ps->state, fields);
+            return ZR_NULL;
+        }
 
         if (ps->lexer->t.token == ZR_TK_SEMICOLON || ps->lexer->t.token == ZR_TK_COMMA) {
             ZrParser_Lexer_Next(ps->lexer);
@@ -164,6 +176,9 @@ SZrAstNode *parse_union_variant(SZrParserState *ps) {
 
     startLoc = get_current_location(ps);
     decorators = parse_leading_decorators(ps);
+    if (decorators == ZR_NULL) {
+        return ZR_NULL;
+    }
     if (consume_token(ps, ZR_TK_AT)) {
         isDefaultUsingVariant = ZR_TRUE;
     }
@@ -204,8 +219,9 @@ SZrAstNode *parse_union_variant(SZrParserState *ps) {
     }
 
     endLoc = get_current_location(ps);
-    node = create_ast_node(ps, ZR_AST_UNION_VARIANT, ZrParser_FileRange_Merge(startLoc, endLoc));
-    if (node == ZR_NULL) {
+    SZrFileRange mergedLocation;
+    if (!ZrParser_MergeLocations(ps, startLoc, endLoc, &mergedLocation) ||
+        (node = create_ast_node(ps, ZR_AST_UNION_VARIANT, mergedLocation)) == ZR_NULL) {
         if (fields != ZR_NULL) {
             free_ast_node_array_with_elements(ps->state, fields);
         }
@@ -247,6 +263,9 @@ SZrAstNode *parse_union_declaration(SZrParserState *ps) {
     startLoc = get_current_location(ps);
     bodyOpenLoc = startLoc;
     decorators = parse_leading_decorators(ps);
+    if (decorators == ZR_NULL) {
+        return ZR_NULL;
+    }
     accessModifier = parse_access_modifier(ps);
 
     expect_token(ps, ZR_TK_UNION);
@@ -289,7 +308,7 @@ SZrAstNode *parse_union_declaration(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
     }
 
-    variants = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    variants = parser_ast_array_new(ps, ZR_PARSER_INITIAL_CAPACITY_SMALL);
     if (variants == ZR_NULL) {
         free_identifier_node_from_ptr(ps->state, name);
         free_generic_declaration(ps->state, generic);
@@ -309,7 +328,14 @@ SZrAstNode *parse_union_declaration(SZrParserState *ps) {
                                  "union_default_variant_duplicate: only one union variant can be marked with '@'");
                 }
             }
-            ZrParser_AstNodeArray_Add(ps->state, variants, variant);
+            if (!parser_ast_array_add(ps, variants, variant)) {
+                ZrParser_Ast_Free(ps->state, variant);
+                free_ast_node_array_with_elements(ps->state, variants);
+                free_identifier_node_from_ptr(ps->state, name);
+                free_generic_declaration(ps->state, generic);
+                free_ast_node_array_with_elements(ps->state, decorators);
+                return ZR_NULL;
+            }
         } else {
             if (ps->hasError) {
                 break;
@@ -332,8 +358,9 @@ SZrAstNode *parse_union_declaration(SZrParserState *ps) {
     consume_token(ps, ZR_TK_RBRACE);
 
     endLoc = get_current_location(ps);
-    node = create_ast_node(ps, ZR_AST_UNION_DECLARATION, ZrParser_FileRange_Merge(startLoc, endLoc));
-    if (node == ZR_NULL) {
+    SZrFileRange mergedLocation;
+    if (!ZrParser_MergeLocations(ps, startLoc, endLoc, &mergedLocation) ||
+        (node = create_ast_node(ps, ZR_AST_UNION_DECLARATION, mergedLocation)) == ZR_NULL) {
         free_ast_node_array_with_elements(ps->state, variants);
         free_identifier_node_from_ptr(ps->state, name);
         free_generic_declaration(ps->state, generic);

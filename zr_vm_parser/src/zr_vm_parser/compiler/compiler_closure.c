@@ -10,6 +10,25 @@ static TZrBool compiler_ownership_qualifier_is_borrow_escape(EZrOwnershipQualifi
            qualifier == ZR_OWNERSHIP_QUALIFIER_LOANED;
 }
 
+/* Explicit ref syntax stores its ownership contract in referenceAccess while
+ * inferred ref expressions store the equivalent qualifier directly. */
+static EZrOwnershipQualifier compiler_inferred_type_effective_ownership(
+        const SZrInferredType *type) {
+    if (type == ZR_NULL) {
+        return ZR_OWNERSHIP_QUALIFIER_NONE;
+    }
+    if (type->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE) {
+        return type->ownershipQualifier;
+    }
+    if (type->referenceAccess == ZR_REFERENCE_ACCESS_READONLY) {
+        return ZR_OWNERSHIP_QUALIFIER_BORROWED;
+    }
+    if (type->referenceAccess == ZR_REFERENCE_ACCESS_WRITABLE) {
+        return ZR_OWNERSHIP_QUALIFIER_LOANED;
+    }
+    return ZR_OWNERSHIP_QUALIFIER_NONE;
+}
+
 /* 递归检查推断类型及其 elementTypes，覆盖容器或泛型参数中的嵌套 Borrow/Loan。 */
 static TZrBool compiler_inferred_type_contains_borrow_escape_ownership(const SZrInferredType *type) {
     TZrSize index;
@@ -18,7 +37,8 @@ static TZrBool compiler_inferred_type_contains_borrow_escape_ownership(const SZr
         return ZR_FALSE;
     }
 
-    if (compiler_ownership_qualifier_is_borrow_escape(type->ownershipQualifier)) {
+    if (compiler_ownership_qualifier_is_borrow_escape(
+                compiler_inferred_type_effective_ownership(type))) {
         return ZR_TRUE;
     }
 
@@ -38,6 +58,7 @@ static TZrBool compiler_inferred_type_contains_borrow_escape_ownership(const SZr
 static TZrBool compiler_validate_closure_capture_ownership_escape(SZrCompilerState *cs,
                                                                   SZrCompilerState *parentCompiler,
                                                                   SZrString *name,
+                                                                  SZrSyntaxContext syntaxContext,
                                                                   SZrFileRange location) {
     SZrInferredType capturedType;
     TZrBool hasType;
@@ -52,10 +73,12 @@ static TZrBool compiler_validate_closure_capture_ownership_escape(SZrCompilerSta
     }
 
     ZrParser_InferredType_Init(cs->state, &capturedType, ZR_VALUE_TYPE_OBJECT);
-    hasType = ZrParser_TypeEnvironment_LookupVariable(cs->state,
-                                                      parentCompiler->typeEnv,
-                                                      name,
-                                                      &capturedType);
+    hasType = ZrParser_TypeEnvironment_LookupVariableWithContext(
+            cs->state,
+            parentCompiler->typeEnv,
+            name,
+            syntaxContext,
+            &capturedType);
     if (!hasType) {
         ZrParser_InferredType_Free(cs->state, &capturedType);
         /* TODO: 父级槽位存在但 TypeEnvironment 查不到 binding 时也会放行；核实注册覆盖范围并补查找失败测试。 */
@@ -79,6 +102,7 @@ static void compiler_closure_capture_identity_from_parent(
         SZrFunctionClosureVariable *capture,
         const SZrCompilerState *parentCompiler,
         SZrString *name,
+        SZrSyntaxContext syntaxContext,
         TZrUInt32 parentLocalIndex,
         TZrUInt32 parentClosureIndex) {
     const SZrTypeBinding *binding;
@@ -89,7 +113,8 @@ static void compiler_closure_capture_identity_from_parent(
         return;
     }
 
-    binding = ZrParser_TypeEnvironment_FindVariableBinding(parentCompiler->typeEnv, name);
+    binding = ZrParser_TypeEnvironment_FindVariableBindingWithContext(
+            parentCompiler->typeEnv, name, syntaxContext);
     if (binding != ZR_NULL &&
         binding->symbolId != ZR_SEMANTIC_ID_INVALID &&
         binding->typeId != ZR_SEMANTIC_ID_INVALID) {
@@ -184,21 +209,30 @@ void collect_identifiers_from_node(SZrCompilerState *cs, SZrAstNode *node, SZrAr
         return;
     }
     
-    /* 标识符节点是收集终点；用对象指针去重以复用解析阶段的字符串对象。 */
+    /* 标识符节点是收集终点；绑定身份由原始拼写与语法上下文共同决定。 */
     if (node->type == ZR_AST_IDENTIFIER_LITERAL) {
         SZrString *name = node->data.identifier.name;
         if (name != ZR_NULL) {
+            SZrSemanticBindingKey key;
+            key.name = name;
+            key.syntaxContext = node->data.identifier.syntaxContext;
+
             // 检查是否已存在（避免重复）
             TZrBool exists = ZR_FALSE;
             for (TZrSize i = 0; i < identifierNames->length; i++) {
-                SZrString **existingName = (SZrString **)ZrCore_Array_Get(identifierNames, i);
-                if (existingName != ZR_NULL && *existingName == name) {
+                SZrSemanticBindingKey *existingKey =
+                        (SZrSemanticBindingKey *)ZrCore_Array_Get(identifierNames, i);
+                if (existingKey != ZR_NULL && existingKey->name == name &&
+                    compiler_binding_contexts_equal(
+                            existingKey->syntaxContext,
+                            key.syntaxContext,
+                            ZR_SYNTAX_NAMESPACE_LOCAL)) {
                     exists = ZR_TRUE;
                     break;
                 }
             }
             if (!exists) {
-                ZrCore_Array_Push(cs->state, identifierNames, &name);
+                ZrCore_Array_Push(cs->state, identifierNames, &key);
             }
         }
         return;
@@ -325,7 +359,7 @@ void collect_identifiers_from_node(SZrCompilerState *cs, SZrAstNode *node, SZrAr
         }
         case ZR_AST_LAMBDA_EXPRESSION: {
             SZrLambdaExpression *lambda = &node->data.lambdaExpression;
-            /* BUG: 外层扫描递归进入嵌套 lambda 的 block，却没有把 lambda->params 当作内层绑定屏蔽；当形参遮蔽父级同名 Borrow/Loan 局部变量时，外层会误记捕获并报“Borrowed and loaned owners cannot escape through closure capture”。触发路径：参数字段见 zr_vm_parser/include/zr_vm_parser/ast.h:456-459；lambda 在清空子级局部表后、编译 body 前执行分析见 zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_lambda.c:222-224,310。 */
+            /* BUG: 外层扫描递归进入嵌套 lambda 的 block，却没有把 lambda->params 当作内层绑定屏蔽；当形参遮蔽父级同名 Borrow/Loan 局部变量时，外层会误记捕获并报“Borrowed and loaned owners cannot escape through closure capture”。触发路径：参数字段见 zr_vm_parser/include/zr_vm_parser/ast.h:456-459；lambda 在清空子级局部表后、编译 body 前执行分析见 zr_vm_parser/src/zr_vm_parser/compiler/expression/compile_expression_lambda.c:222-224,310。 */
             if (lambda->block != ZR_NULL) {
                 collect_identifiers_from_node(cs, lambda->block, identifierNames);
             }
@@ -488,7 +522,7 @@ void collect_identifiers_from_node(SZrCompilerState *cs, SZrAstNode *node, SZrAr
             break;
         }
         default:
-            /* BUG: ZR_AST_TEMPLATE_STRING_LITERAL 及其 ZR_AST_INTERPOLATED_SEGMENT.expression 不会进入 visitor；lambda 只在插值中引用父级局部变量时不会登记捕获。lambda 先清空子级 localVars/closureVars 再调用本分析（zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_lambda.c:222-224,310），随后插值编译 identifier 时只查子级 local/closure 并报告未解析名字（zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_values.c:425,444,531；表达式入口见 zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_values.c:261-264）。AST 子字段和构造路径见 zr_vm_parser/include/zr_vm_parser/ast.h:403-409、zr_vm_parser/src/zr_vm_parser/parser/parser_literals.c:135,348。 */
+            /* BUG: ZR_AST_TEMPLATE_STRING_LITERAL 及其 ZR_AST_INTERPOLATED_SEGMENT.expression 不会进入 visitor；lambda 只在插值中引用父级局部变量时不会登记捕获。lambda 先清空子级 localVars/closureVars 再调用本分析（zr_vm_parser/src/zr_vm_parser/compiler/expression/compile_expression_lambda.c:222-224,310），随后插值编译 identifier 时只查子级 local/closure 并报告未解析名字（zr_vm_parser/src/zr_vm_parser/compiler/expression/compile_expression_values.c:425,444,531；表达式入口见 zr_vm_parser/src/zr_vm_parser/compiler/expression/compile_expression_values.c:261-264）。AST 子字段和构造路径见 zr_vm_parser/include/zr_vm_parser/ast.h:403-409、zr_vm_parser/src/zr_vm_parser/parser/parser_literals.c:135,348。 */
             /* TODO: 还需对照 ast.h 的完整表达式 AST/子字段表，补齐类型转换、await、spread、解包和生成器等当前未递归的包装节点，并逐类补捕获测试。 */
             break;
     }
@@ -500,32 +534,39 @@ void ZrParser_ExternalVariables_Analyze(SZrCompilerState *cs, SZrAstNode *node, 
         return;
     }
     
-    /* 先建立临时名字数组；数组只存 SZrString*，清理时不释放字符串对象。 */
+    /* 先建立临时绑定数组；数组只借用字符串对象和上下文值。 */
     SZrArray identifierNames;
     /* BUG: Array_Init/Push 为无返回值 API；共享实现的 Init 分配失败会保留空 head，Push 仍断言/写入该缓冲区。闭包体含标识符且底层分配失败时，本分析不能转成编译诊断，会中止或空指针写入；closureVars 扩容也有同类路径。证据：zr_vm_core/include/zr_vm_core/array.h:29-38,73-88；下方初始化与追加见本函数。 */
-    ZrCore_Array_Init(cs->state, &identifierNames, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_MEDIUM);
+    ZrCore_Array_Init(cs->state,
+                      &identifierNames,
+                      sizeof(SZrSemanticBindingKey),
+                      ZR_PARSER_INITIAL_CAPACITY_MEDIUM);
     collect_identifiers_from_node(cs, node, &identifierNames);
     
     /* 只处理当前作用域未绑定、但父级存在局部槽或上值索引的名字。 */
     for (TZrSize i = 0; i < identifierNames.length; i++) {
-        SZrString **namePtr = (SZrString **)ZrCore_Array_Get(&identifierNames, i);
-        if (namePtr == ZR_NULL || *namePtr == ZR_NULL) {
+        SZrSemanticBindingKey *bindingKey =
+                (SZrSemanticBindingKey *)ZrCore_Array_Get(&identifierNames, i);
+        if (bindingKey == ZR_NULL || bindingKey->name == ZR_NULL) {
             continue;
         }
-        SZrString *name = *namePtr;
+        SZrString *name = bindingKey->name;
+        SZrSyntaxContext syntaxContext = bindingKey->syntaxContext;
         
         /* 当前绑定优先，避免把自身局部变量误记为外部捕获。 */
-        TZrUInt32 localIndex = find_local_var(cs, name);
-        TZrUInt32 closureIndex = find_closure_var(cs, name);
+        TZrUInt32 localIndex = find_local_var_with_context(cs, name, syntaxContext);
+        TZrUInt32 closureIndex = find_closure_var_with_context(cs, name, syntaxContext);
         
         // 如果既不是局部变量也不是闭包变量，可能是外部变量
         if (localIndex == ZR_PARSER_SLOT_NONE && closureIndex == ZR_PARSER_INDEX_NONE) {
             /* 父级 local/closure 索引是后续 GETUPVAL/GET_CLOSURE 的来源。 */
-            TZrUInt32 parentLocalIndex = find_local_var(parentCompiler, name);
-            TZrUInt32 parentClosureIndex = find_closure_var(parentCompiler, name);
+            TZrUInt32 parentLocalIndex =
+                    find_local_var_with_context(parentCompiler, name, syntaxContext);
+            TZrUInt32 parentClosureIndex =
+                    find_closure_var_with_context(parentCompiler, name, syntaxContext);
             if (parentLocalIndex != ZR_PARSER_SLOT_NONE || parentClosureIndex != ZR_PARSER_INDEX_NONE) {
                 /* 捕获只追加一次；index 必须保持父级真实槽位或上值索引，不能使用当前 closureVars 长度。 */
-                if (find_closure_var(cs, name) == ZR_PARSER_INDEX_NONE) {
+                if (find_closure_var_with_context(cs, name, syntaxContext) == ZR_PARSER_INDEX_NONE) {
                     SZrFunctionClosureVariable closureVar;
 
                     ZrCore_Memory_RawSet(&closureVar, 0, sizeof(closureVar));
@@ -533,6 +574,7 @@ void ZrParser_ExternalVariables_Analyze(SZrCompilerState *cs, SZrAstNode *node, 
                     if (!compiler_validate_closure_capture_ownership_escape(cs,
                                                                             parentCompiler,
                                                                             name,
+                                                                            syntaxContext,
                                                                             node->location)) {
                         break;
                     }
@@ -553,9 +595,17 @@ void ZrParser_ExternalVariables_Analyze(SZrCompilerState *cs, SZrAstNode *node, 
                     compiler_closure_capture_identity_from_parent(&closureVar,
                                                                    parentCompiler,
                                                                    name,
+                                                                   syntaxContext,
                                                                    parentLocalIndex,
                                                                    parentClosureIndex);
                     ZrCore_Array_Push(cs->state, &cs->closureVars, &closureVar);
+                    {
+                        SZrCompilerBindingIdentity bindingIdentity;
+                        bindingIdentity.syntaxContext = syntaxContext;
+                        ZrCore_Array_Push(cs->state,
+                                          &cs->closureBindingIdentities,
+                                          &bindingIdentity);
+                    }
                     cs->closureVarCount++;
                 }
             }

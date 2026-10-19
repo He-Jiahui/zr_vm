@@ -32,7 +32,7 @@ void tearDown(void) {
 
 /* 为同一虚拟源文件的 AST 节点和事实查询构造稳定的单行区间。 */
 static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
-    SZrFileRange range;
+    SZrFileRange range = {0};
 
     range.start.offset = startOffset;
     range.start.line = 1;

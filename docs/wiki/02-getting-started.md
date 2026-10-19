@@ -30,22 +30,27 @@ doc_type: workflow-detail
 
 必需：
 
-- CMake 3.12 或更高版本。
+- CMake 3.20 或更高版本；独立 SSA 验证夹具要求 3.31。
 - C11 编译器：Linux/macOS 上的 GCC 或 Clang，Windows 上的 Visual Studio 2022 MSVC。
 - Ninja 可选；Visual Studio generator 使用 `--config` 选择配置。
 
-可选：Node.js/npm（VS Code extension）、Rust/Cargo（Rust binding tests）、Emscripten（WASM LSP）、libffi（FFI provider；Windows 可使用 bundled fallback）。
+可选：Node.js/npm（VS Code extension，使用 `npm ci` 和 `package-lock.json`）、Rust/Cargo（Rust binding tests）、Emscripten（WASM LSP）、libffi（FFI provider；Windows 可使用 bundled fallback）。
+
+首次获取源码使用 `git clone --recurse-submodules`；已有 checkout 使用
+`git submodule update --init --recursive`。源码压缩包不含子模块。
+受管理 Codex 环境遵循 `.codex/config.toml`，产物使用 E:/cargo-targets；
+下面的 WSL 命令直接编译当前 checkout，不复制源码。
 
 ## Linux/WSL GCC
 
 ```bash
-cmake -S . -B build/codex-wsl-gcc-debug -G Ninja \
+cmake -S . -B /mnt/e/cargo-targets/zr_vm/build/local-gcc-debug -G Ninja \
   -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_C_COMPILER=gcc \
   -DCMAKE_CXX_COMPILER=g++
-cmake --build build/codex-wsl-gcc-debug -j 8
-ctest --test-dir build/codex-wsl-gcc-debug --output-on-failure --parallel 8
-./build/codex-wsl-gcc-debug/bin/zr_vm_cli \
+cmake --build /mnt/e/cargo-targets/zr_vm/build/local-gcc-debug -j 8
+ctest --test-dir /mnt/e/cargo-targets/zr_vm/build/local-gcc-debug --output-on-failure --parallel 8
+/mnt/e/cargo-targets/zr_vm/build/local-gcc-debug/bin/zr_vm_cli \
   ./tests/fixtures/projects/hello_world/hello_world.zrp
 ```
 
@@ -54,12 +59,12 @@ CLI smoke 的成功标志是项目输出 `hello world`。仓库当前可能有�
 ## Linux/WSL Clang
 
 ```bash
-cmake -S . -B build/codex-wsl-clang-debug -G Ninja \
+cmake -S . -B /mnt/e/cargo-targets/zr_vm/build/local-clang-debug -G Ninja \
   -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_C_COMPILER=clang \
   -DCMAKE_CXX_COMPILER=clang++
-cmake --build build/codex-wsl-clang-debug -j 8
-ctest --test-dir build/codex-wsl-clang-debug --output-on-failure --parallel 8
+cmake --build /mnt/e/cargo-targets/zr_vm/build/local-clang-debug -j 8
+ctest --test-dir /mnt/e/cargo-targets/zr_vm/build/local-clang-debug --output-on-failure --parallel 8
 ```
 
 GCC 与 Clang 都是主验证环境。共享 header、CMake、parser/core/library 或跨模块测试变更后应重跑两套 toolchain。
@@ -67,11 +72,11 @@ GCC 与 Clang 都是主验证环境。共享 header、CMake、parser/core/librar
 ## Windows MSVC smoke
 
 ```powershell
-cmake -S . -B build\codex-msvc-cli-debug -G "Visual Studio 17 2022" -A x64 `
+cmake -S . -B E:/cargo-targets/zr_vm/build/local-msvc-cli-debug -G "Visual Studio 17 2022" -A x64 `
   -DBUILD_TESTS=OFF -DBUILD_LANGUAGE_SERVER_EXTENSION=OFF
-cmake --build build\codex-msvc-cli-debug --config Debug `
+cmake --build E:/cargo-targets/zr_vm/build/local-msvc-cli-debug --config Debug `
   --target zr_vm_cli_executable --parallel 8
-.\build\codex-msvc-cli-debug\bin\Debug\zr_vm_cli.exe `
+& E:/cargo-targets/zr_vm/build/local-msvc-cli-debug/bin/Debug/zr_vm_cli.exe `
   .\tests\fixtures\projects\hello_world\hello_world.zrp
 ```
 

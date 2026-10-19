@@ -3,6 +3,126 @@
 
 #include <ctype.h>
 
+static void legacy_property_report_resource_failure(
+        SZrParserState *ps, const TZrChar *message) {
+    if (ps == ZR_NULL) {
+        return;
+    }
+    ps->hasFatalError = ZR_TRUE;
+    report_error(ps, message);
+}
+
+static TZrBool legacy_property_size(
+        TZrSize elementSize, TZrSize capacity, TZrSize *outBytes) {
+    if (outBytes == ZR_NULL || elementSize == 0U || capacity == 0U ||
+        capacity > ZR_MAX_SIZE / elementSize) {
+        return ZR_FALSE;
+    }
+    *outBytes = elementSize * capacity;
+    return ZR_TRUE;
+}
+
+static TZrBool legacy_property_append_entry_storage(
+        SZrState *state,
+        SZrLegacyPropertyMigrationCollection *collection,
+        SZrAstNode *declaration) {
+    SZrAstOwnership *owner;
+    TZrSize capacity;
+    TZrSize bytes;
+    TZrUInt8 *storage;
+
+    if (state == ZR_NULL || collection == ZR_NULL || declaration == ZR_NULL ||
+        declaration->ownership == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    owner = declaration->ownership;
+    if (!collection->entries.isValid) {
+        capacity = ZR_PARSER_INITIAL_CAPACITY_TINY;
+        if (!legacy_property_size(
+                    sizeof(SZrLegacyPropertyMigrationEntry),
+                    capacity,
+                    &bytes)) {
+            return ZR_FALSE;
+        }
+        storage = (TZrUInt8 *)ZrParser_Ownership_Allocate(
+                owner, bytes, ZR_MEMORY_NATIVE_TYPE_ARRAY, ZR_FALSE);
+        if (storage == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        collection->entries.head = storage;
+        collection->entries.elementSize =
+                sizeof(SZrLegacyPropertyMigrationEntry);
+        collection->entries.length = 0U;
+        collection->entries.capacity = capacity;
+        collection->entries.isValid = ZR_TRUE;
+        return ZR_TRUE;
+    }
+    if (collection->entries.length < collection->entries.capacity) {
+        return ZR_TRUE;
+    }
+    if (collection->entries.capacity >
+        ZR_MAX_SIZE / ZR_PARSER_DYNAMIC_CAPACITY_GROWTH_FACTOR) {
+        return ZR_FALSE;
+    }
+    capacity = collection->entries.capacity *
+               ZR_PARSER_DYNAMIC_CAPACITY_GROWTH_FACTOR;
+    if (capacity <= collection->entries.capacity ||
+        !legacy_property_size(collection->entries.elementSize, capacity, &bytes)) {
+        return ZR_FALSE;
+    }
+    storage = (TZrUInt8 *)ZrParser_Ownership_Allocate(
+            owner, bytes, ZR_MEMORY_NATIVE_TYPE_ARRAY, ZR_FALSE);
+    if (storage == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    memcpy(
+            storage,
+            collection->entries.head,
+            collection->entries.length * collection->entries.elementSize);
+    ZrCore_Memory_RawFreeWithType(
+            state->global,
+            collection->entries.head,
+            collection->entries.capacity * collection->entries.elementSize,
+            ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    collection->entries.head = storage;
+    collection->entries.capacity = capacity;
+    return ZR_TRUE;
+}
+
+static void legacy_property_collection_free_storage(
+        SZrState *state,
+        SZrLegacyPropertyMigrationCollection *collection) {
+    if (state == ZR_NULL || collection == ZR_NULL ||
+        !collection->entries.isValid || collection->entries.head == ZR_NULL) {
+        if (collection != ZR_NULL) {
+            ZrCore_Array_Construct(&collection->entries);
+        }
+        return;
+    }
+    ZrCore_Memory_RawFreeWithType(
+            state->global,
+            collection->entries.head,
+            collection->entries.capacity * collection->entries.elementSize,
+            ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    ZrCore_Array_Construct(&collection->entries);
+}
+
+static void legacy_property_collection_free_entries(
+        SZrState *state,
+        SZrLegacyPropertyMigrationCollection *collection) {
+    if (state == ZR_NULL || collection == ZR_NULL ||
+        !collection->entries.isValid || collection->entries.head == ZR_NULL) {
+        return;
+    }
+    for (TZrSize index = 0U; index < collection->entries.length; index++) {
+        SZrLegacyPropertyMigrationEntry *entry =
+                (SZrLegacyPropertyMigrationEntry *)ZrCore_Array_Get(
+                        &collection->entries, index);
+        ZrParser_Ast_Free(state, entry->declaration);
+        entry->declaration = ZR_NULL;
+    }
+}
+
 /* 源文本中的字节切片；迁移建议必须保留原始拼写而非重新打印 AST。 */
 typedef struct SZrLegacyPropertySlice {
     TZrSize start;
@@ -34,6 +154,7 @@ static SZrFileRange legacy_property_range_from_slice(
     if (!legacy_property_slice_is_valid(ps, slice)) {
         return range;
     }
+    range = ZrParser_FileRange_WithoutEvidence(get_current_token_location(ps));
     range.start = get_file_position_from_offset(ps->lexer, slice.start);
     range.end = get_file_position_from_offset(
             ps->lexer,
@@ -448,14 +569,30 @@ static TZrChar *legacy_property_build_replacement(
     node = first->declaration;
     spanLength = node->location.end.offset - node->location.start.offset;
     if (second != ZR_NULL && second->declaration != ZR_NULL) {
+        TZrSize secondLength = second->declaration->location.end.offset -
+                               second->declaration->location.start.offset;
+        if (spanLength > ZR_MAX_SIZE - secondLength) {
+            legacy_property_report_resource_failure(
+                    ps, "Legacy property replacement is too large");
+            return ZR_NULL;
+        }
         spanLength += second->declaration->location.end.offset -
                       second->declaration->location.start.offset;
     }
+    if (spanLength > ZR_MAX_SIZE - 512U) {
+        legacy_property_report_resource_failure(
+                ps, "Legacy property replacement is too large");
+        return ZR_NULL;
+    }
     builder.capacity = spanLength + 512U;
-    builder.data = (TZrChar *)ZrCore_Memory_RawMalloc(
-            ps->state->global,
-            builder.capacity);
+    builder.data = (TZrChar *)ZrParser_Ownership_Allocate(
+            ps->lexer->ownership,
+            builder.capacity,
+            ZR_MEMORY_NATIVE_TYPE_ARRAY,
+            ZR_FALSE);
     if (builder.data == ZR_NULL) {
+        legacy_property_report_resource_failure(
+                ps, "Legacy property replacement budget exceeded");
         return ZR_NULL;
     }
     builder.length = 0U;
@@ -480,10 +617,11 @@ static TZrChar *legacy_property_build_replacement(
                     nameSlice.start,
                     's',
                     &keywordOffset)) {
-            ZrCore_Memory_RawFree(
+            ZrCore_Memory_RawFreeWithType(
                     ps->state->global,
                     builder.data,
-                    builder.capacity);
+                    builder.capacity,
+                    ZR_MEMORY_NATIVE_TYPE_ARRAY);
             return ZR_NULL;
         }
         prefixSlice.length = keywordOffset - prefixSlice.start;
@@ -495,10 +633,11 @@ static TZrChar *legacy_property_build_replacement(
         !legacy_property_text_append(&builder, ": ", 2U) ||
         !legacy_property_text_append_slice(ps, &builder, typeSlice) ||
         !legacy_property_text_append(&builder, " {\n", 3U)) {
-        ZrCore_Memory_RawFree(
+        ZrCore_Memory_RawFreeWithType(
                 ps->state->global,
                 builder.data,
-                builder.capacity);
+                builder.capacity,
+                ZR_MEMORY_NATIVE_TYPE_ARRAY);
         return ZR_NULL;
     }
     if (node->type == ZR_AST_INTERFACE_PROPERTY_SIGNATURE) {
@@ -506,26 +645,29 @@ static TZrChar *legacy_property_build_replacement(
              !legacy_property_text_append(&builder, "    get;\n", 9U)) ||
             (node->data.interfacePropertySignature.hasSet &&
              !legacy_property_text_append(&builder, "    set;\n", 9U))) {
-            ZrCore_Memory_RawFree(
+            ZrCore_Memory_RawFreeWithType(
                     ps->state->global,
                     builder.data,
-                    builder.capacity);
+                    builder.capacity,
+                    ZR_MEMORY_NATIVE_TYPE_ARRAY);
             return ZR_NULL;
         }
     } else if (!legacy_property_append_class_accessor(ps, &builder, first) ||
                (second != ZR_NULL &&
                 !legacy_property_append_class_accessor(ps, &builder, second))) {
-        ZrCore_Memory_RawFree(
+        ZrCore_Memory_RawFreeWithType(
                 ps->state->global,
                 builder.data,
-                builder.capacity);
+                builder.capacity,
+                ZR_MEMORY_NATIVE_TYPE_ARRAY);
         return ZR_NULL;
     }
     if (!legacy_property_text_append(&builder, "}", 1U)) {
-        ZrCore_Memory_RawFree(
+        ZrCore_Memory_RawFreeWithType(
                 ps->state->global,
                 builder.data,
-                builder.capacity);
+                builder.capacity,
+                ZR_MEMORY_NATIVE_TYPE_ARRAY);
         return ZR_NULL;
     }
     *outCapacity = builder.capacity;
@@ -533,7 +675,7 @@ static TZrChar *legacy_property_build_replacement(
 }
 
 /* 为迁移入口发布结构化错误；只有无歧义的源切片才携带机器适用的替换。 */
-static void legacy_property_publish_diagnostic(
+static TZrBool legacy_property_publish_diagnostic(
         SZrParserState *ps,
         const SZrLegacyPropertyMigrationEntry *first,
         const SZrLegacyPropertyMigrationEntry *second,
@@ -548,20 +690,30 @@ static void legacy_property_publish_diagnostic(
     TZrChar *replacement = ZR_NULL;
     TZrSize replacementCapacity = 0U;
 
-    if (ps == ZR_NULL || first == ZR_NULL || first->declaration == ZR_NULL ||
+    if (ps == ZR_NULL || ps->lexer == ZR_NULL || ps->lexer->hasSourceEvidenceError) {
+        return ZR_FALSE;
+    }
+    if (ps->hasFatalError || first == ZR_NULL ||
+        first->declaration == ZR_NULL ||
         !legacy_property_find_name_slice(ps, first, &nameSlice)) {
-        return;
+        return ZR_TRUE;
     }
     declarationRange = first->declaration->location;
     if (second != ZR_NULL && second->declaration != ZR_NULL) {
-        declarationRange = ZrParser_FileRange_Merge(
+        if (!ZrParser_MergeLocations(ps,
                 declarationRange,
-                second->declaration->location);
+                second->declaration->location,
+                &declarationRange)) {
+            return ZR_FALSE;
+        }
     }
     nameRange = legacy_property_range_from_slice(ps, nameSlice);
     memset(&typeRange, 0, sizeof(typeRange));
     if (legacy_property_find_type_slice(ps, first, &typeSlice)) {
         typeRange = legacy_property_range_from_slice(ps, typeSlice);
+    }
+    if (ps->lexer->hasSourceEvidenceError) {
+        return ZR_FALSE;
     }
     bodyRange = legacy_property_body_range(first);
     if (allowFix) {
@@ -570,6 +722,9 @@ static void legacy_property_publish_diagnostic(
                 first,
                 second,
                 &replacementCapacity);
+        if (ps->hasFatalError) {
+            return ZR_TRUE;
+        }
     }
     if (!ZrParser_DiagnosticBuilder_BuildLegacyPropertySyntax(
                 ps->state,
@@ -580,12 +735,13 @@ static void legacy_property_publish_diagnostic(
                 bodyRange.source != ZR_NULL ? &bodyRange : ZR_NULL,
                 replacement)) {
         if (replacement != ZR_NULL) {
-            ZrCore_Memory_RawFree(
+            ZrCore_Memory_RawFreeWithType(
                     ps->state->global,
                     replacement,
-                    replacementCapacity);
+                    replacementCapacity,
+                    ZR_MEMORY_NATIVE_TYPE_ARRAY);
         }
-        return;
+        return ZR_TRUE;
     }
     if (second != ZR_NULL) {
         SZrFileRange secondBody = legacy_property_body_range(second);
@@ -600,11 +756,13 @@ static void legacy_property_publish_diagnostic(
     report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
     ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
     if (replacement != ZR_NULL) {
-        ZrCore_Memory_RawFree(
+        ZrCore_Memory_RawFreeWithType(
                 ps->state->global,
                 replacement,
-                replacementCapacity);
+                replacementCapacity,
+                ZR_MEMORY_NATIVE_TYPE_ARRAY);
     }
+    return ZR_TRUE;
 }
 
 /* class/interface 声明各自创建一个短期收集器；成员 AST 尚未交付正常编译器。 */
@@ -615,13 +773,7 @@ void parser_property_migration_collection_init(
         return;
     }
     memset(collection, 0, sizeof(*collection));
-    if (state != ZR_NULL) {
-        ZrCore_Array_Init(
-                state,
-                &collection->entries,
-                sizeof(SZrLegacyPropertyMigrationEntry),
-                ZR_PARSER_INITIAL_CAPACITY_TINY);
-    }
+    ZR_UNUSED_PARAMETER(state);
 }
 
 /* 成功后收集器暂持 declaration，直到 publish_and_free；失败则仍归调用者。 */
@@ -631,15 +783,22 @@ TZrBool parser_property_migration_collection_append(
         SZrAstNode *declaration) {
     SZrLegacyPropertyMigrationEntry entry;
 
-    /* BUG: Array_Init 分配 head 失败仍将 isValid 置真；这里通过校验后
-     * Array_Push 会断言空 head，OOM 时无法可靠返回失败给调用方。 */
     if (state == ZR_NULL || collection == ZR_NULL || declaration == ZR_NULL ||
-        !collection->entries.isValid) {
+        collection->resourceFailure ||
+        !legacy_property_append_entry_storage(state, collection, declaration)) {
+        if (collection != ZR_NULL) {
+            collection->resourceFailure = ZR_TRUE;
+        }
         return ZR_FALSE;
     }
     entry.declaration = declaration;
     entry.memberOrdinal = collection->nextMemberOrdinal++;
-    ZrCore_Array_Push(state, &collection->entries, &entry);
+    memcpy(
+            collection->entries.head +
+                    collection->entries.length * collection->entries.elementSize,
+            &entry,
+            sizeof(entry));
+    collection->entries.length++;
     return ZR_TRUE;
 }
 
@@ -667,28 +826,57 @@ static TZrBool legacy_property_entries_share_identity(
 
 /* 迁移解析完成后先处理相邻 getter/setter，再处理单项或歧义项；
  * 无论诊断是否成功构建，最终都释放暂存 AST，不交给声明成员数组。 */
-void parser_property_migration_collection_publish_and_free(
+TZrBool parser_property_migration_collection_publish_and_free(
         SZrParserState *ps,
         SZrLegacyPropertyMigrationCollection *collection) {
     TZrBool *handled = ZR_NULL;
     TZrSize handledSize;
+    TZrBool published = ZR_TRUE;
 
-    if (ps == ZR_NULL || collection == ZR_NULL ||
-        !collection->entries.isValid) {
-        return;
+    if (ps == ZR_NULL || ps->lexer == ZR_NULL || collection == ZR_NULL) {
+        return ZR_FALSE;
     }
-    handledSize = collection->entries.length * sizeof(TZrBool);
+    if (collection->resourceFailure) {
+        legacy_property_report_resource_failure(
+                ps, "Legacy property migration storage budget exceeded");
+        legacy_property_collection_free_entries(ps->state, collection);
+        legacy_property_collection_free_storage(ps->state, collection);
+        memset(collection, 0, sizeof(*collection));
+        return ZR_FALSE;
+    }
+    if (!collection->entries.isValid) {
+        return !ps->lexer->hasSourceEvidenceError;
+    }
+    if (ps->hasFatalError) {
+        legacy_property_collection_free_entries(ps->state, collection);
+        legacy_property_collection_free_storage(ps->state, collection);
+        memset(collection, 0, sizeof(*collection));
+        return !ps->lexer->hasSourceEvidenceError;
+    }
+    if (collection->entries.length > ZR_MAX_SIZE / sizeof(TZrBool)) {
+        legacy_property_report_resource_failure(
+                ps, "Legacy property migration metadata is too large");
+        handledSize = 0U;
+    } else {
+        handledSize = collection->entries.length * sizeof(TZrBool);
+    }
     if (handledSize > 0U) {
-        handled = (TZrBool *)ZrCore_Memory_RawMalloc(
-                ps->state->global,
-                handledSize);
+        handled = (TZrBool *)ZrParser_Ownership_Allocate(
+                ps->lexer->ownership,
+                handledSize,
+                ZR_MEMORY_NATIVE_TYPE_ARRAY,
+                ZR_FALSE);
         if (handled != ZR_NULL) {
             memset(handled, 0, handledSize);
+        } else {
+            legacy_property_report_resource_failure(
+                    ps, "Legacy property migration budget exceeded");
         }
     }
 
     for (TZrSize index = 0U;
-         handled != ZR_NULL && index + 1U < collection->entries.length;
+         !ps->hasFatalError && handled != ZR_NULL &&
+                 index + 1U < collection->entries.length;
          index++) {
         SZrLegacyPropertyMigrationEntry *left =
                 (SZrLegacyPropertyMigrationEntry *)ZrCore_Array_Get(
@@ -717,28 +905,32 @@ void parser_property_migration_collection_publish_and_free(
             continue;
         }
         if (legacy_property_contracts_match(ps, left, right)) {
-            legacy_property_publish_diagnostic(
+            published = legacy_property_publish_diagnostic(
                     ps,
                     left,
                     right,
                     ZR_TRUE);
         } else {
-            legacy_property_publish_diagnostic(
+            published = legacy_property_publish_diagnostic(
                     ps,
                     left,
                     ZR_NULL,
-                    ZR_FALSE);
-            legacy_property_publish_diagnostic(
+                    ZR_FALSE) && legacy_property_publish_diagnostic(
                     ps,
                     right,
                     ZR_NULL,
                     ZR_FALSE);
         }
+        if (!published) {
+            break;
+        }
         handled[index] = ZR_TRUE;
         handled[index + 1U] = ZR_TRUE;
     }
 
-    for (TZrSize index = 0U; index < collection->entries.length; index++) {
+    for (TZrSize index = 0U;
+         published && !ps->hasFatalError && index < collection->entries.length;
+         index++) {
         SZrLegacyPropertyMigrationEntry *entry =
                 (SZrLegacyPropertyMigrationEntry *)ZrCore_Array_Get(
                         &collection->entries,
@@ -764,26 +956,22 @@ void parser_property_migration_collection_publish_and_free(
                 break;
             }
         }
-        legacy_property_publish_diagnostic(
+        published = legacy_property_publish_diagnostic(
                 ps,
                 entry,
                 ZR_NULL,
                 !hasIdentityConflict);
     }
 
-    for (TZrSize index = 0U; index < collection->entries.length; index++) {
-        SZrLegacyPropertyMigrationEntry *entry =
-                (SZrLegacyPropertyMigrationEntry *)ZrCore_Array_Get(
-                        &collection->entries,
-                        index);
-        if (entry != ZR_NULL && entry->declaration != ZR_NULL) {
-            ZrParser_Ast_Free(ps->state, entry->declaration);
-            entry->declaration = ZR_NULL;
-        }
-    }
+    legacy_property_collection_free_entries(ps->state, collection);
     if (handled != ZR_NULL) {
-        ZrCore_Memory_RawFree(ps->state->global, handled, handledSize);
+        ZrCore_Memory_RawFreeWithType(
+                ps->state->global,
+                handled,
+                handledSize,
+                ZR_MEMORY_NATIVE_TYPE_ARRAY);
     }
-    ZrCore_Array_Free(ps->state, &collection->entries);
+    legacy_property_collection_free_storage(ps->state, collection);
     memset(collection, 0, sizeof(*collection));
+    return published && !ps->lexer->hasSourceEvidenceError;
 }
