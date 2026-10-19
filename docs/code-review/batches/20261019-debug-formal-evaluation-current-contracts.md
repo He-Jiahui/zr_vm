@@ -1,0 +1,46 @@
+---
+related_code:
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_formal_evaluation.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_formal_evaluation_execute.c
+implementation_files:
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_formal_evaluation.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_formal_evaluation_execute.c
+tests:
+  - tests/debug/test_debug_expression_diagnostics.c
+  - tests/debug/test_debug_formal_evaluation_cases.h
+  - tests/debug/test_debug_canonical_binding_cases.h
+  - tests/debug/test_debug_evaluation_effect_policy_cases.h
+plan_sources:
+  - user: 全量首方审查、按需补充中文职责和生命周期注释
+doc_type: module-detail
+---
+
+# 调试正式求值准备与受限执行合同
+
+本批完整复核29个既有单元：prepare文件9函数及2重要块，execute文件14函数及4重要块。23函数以23段完整中文Doxygen说明职责、使用时机、参数方向、返回状态、实际引用及失败和生命周期；6块随所属函数审查，28项commented，1项保留既有left-shift-range TODO，无未审查项。29个旧扁平路径键一一迁至eval目录，不新增单元或问题家族，不改公开签名及程序行为。
+
+准备层为一次调试表达式建立临时解析、AST、推断类型、编译状态和结构化诊断上下文。prepare返回TRUE只说明当前阶段允许继续，不保证每个引用均有规范事实或后续执行受支持。reference-free分类只检查有限AST形状，不能当成执行器覆盖证明；没有引用的值表达式可在绑定注册失败时继续推断。legacy兼容窗口还要按实际规范读取/成员形状、事实缺口及外层入口和能力状态决定，不是仅允许一种已解析读取，也不是任意规范错误都回退。
+
+上下文及内部AST/事实指针在请求期间借用。普通Free按临时推断类型、编译状态、AST、诊断、解析状态的实际依赖顺序释放并清零上下文；应在所属VM销毁前完成。分配及核心对象操作可能非局部Throw；本函数的普通清理尾部不证明全部OOM/Throw/Unity长跳转会清理，不形成环境写入或对象构造的全程回滚。
+
+正式求值先对完整AST做副作用及能力门禁，再按节点解释执行；因此运行时短路不绕过已执行的整树门禁。禁止赋值等修改行为，显式能力也不会让未实现的AST自动可执行。外层布尔返回与outHandled必须共同检查：FALSE表示硬错误；TRUE/outHandled FALSE表示当前正式执行器不处理，可由实际允许的兼容路径继续；TRUE/outHandled TRUE表示已有结果。硬错误也可能保留outHandled TRUE，不能只看这一输出判断成功。内部hook的条件断点和logpoint可在公共暂停入口之前按其自身NONE能力路径运行，本批不把所有入口描述成必须已进入公共paused状态。
+
+暂停帧引用必须联合symbol/type/place身份、槽范围和当前Core状态核对，不以名称相同作为回退匹配。捕获读取复核原始来源指针、索引、范围与generation；runtime-root读取遵循已有代际令牌。返回值及字符串、对象仍借用VM/GC生命周期，函数不延长其所有者有效期。仅本层保护的数组TrySetValue租约不使整个表达式成为事务。
+
+数组执行只接受当前实现的形状，根节点所借用expressionFact应属于对应AST；实际gate仅检查非NULL、EXACT以及kind非ERROR，不比较node身份，也不额外检验resultType为ERROR。元素逐个递归执行，普通失败可在对象或先前元素已构造后发生；引用注释中execute:323明确是元素递归调用，ARRAY_LITERAL分派在388，二者没有混同。数组分配/填充与临时类型的失败边界以当前调用链为准。
+
+八种整数标签分类不保证完整uint64数学语义；当前数值中间值、int64范围检查及double精度各有实际限制。保留唯一既有left-shift-range TODO及其公开入口核查线索，不把未补全的合法入口范围证明升级为新BUG，不修复行为，也不增加重复实现的测试。
+
+独审提出3处必要合同收窄，经14项严格标量修订同时更新文档文本、引用解释和源码后缀/预测针：outHandled硬错误边界、数组事实gate的实际检查，以及323/388引用角色。原F和I不可变；正向重建effective报告，逆向恢复原F原始字节；29行合同不变。
+
+prepare原461CRLF、execute原861CRLF共1322行完整字节前缀保留；EOF分别新增204和307LF，仅含完整注释。7453个有限正则程序atom与91个字符串/字符字面量的拼写、物理行和UTF8字节列三元坐标一致，精确移除后缀可恢复原raw；该投影不是编译器lexer/AST证明。26个整文件原针及130个EOL锚、23个完整函数跨度和6个父函数覆盖的重要块、当前可检索调用和间接入口支持合同。借用的2个Semantic48文件已由精确原前缀加完整EOF注释桥接，不静默重冻旧契约，其余24针保持。借用模块不获本批完整审查信用。
+
+在实际checkout复用E盘clang-cl构建目录，前后均构建zr_vm_debug_expression_diagnostics_test并无argv直接运行全部56个有序既有用例。两次build退出0，两次test均55PASS/1FAIL/0IGNORE、退出1；stdout和stderr原始字节一致，无归一化。4个formal场景及9个canonical场景属于这56例，不另增不同用例计数；测试只支持已执行的普通路径，不证明全部AST、OOM、错误恢复、线程安全或完整注册成功。
+
+唯一失败仍为test_debug_evaluation_effect_policy_marks_resolved_property_getter。Unity显示主C第484行，实际断言位于included test_debug_evaluation_effect_policy_cases.h:484：policy.hasCanonicalFacts为false；485 isPure与486 getter能力断言未到达，根因未分配。本轮保留此修改前后相同的失败，不修行为。
+
+输入经内存sourceLabel编译，独占cwd起初不存在，两阶段无生成文件。空tearDown和普通VM/Hook释放不保证Unity长跳转清理。CTest使用既有run_suite/shared-host约束，目标未显式TIMEOUT；build900/direct120秒是本次任务watchdog，直接顺序运行不授CTest调度、WSL或全仓验收信用。
+
+两源inventory原pending更新reviewed并记录本批after raw hash；prepare的旧inventory摘要未与修改前实际raw相同，原单元尚未授信用，本批以F、Git三态与真实修改前构建核对实际源码并更正摘要。全叶742行其余713行原字节保持，外来inventory48行85格及正常索引4个既有暂存路径保留。510叶43979完整键不增，整叶及全局历史诊断仅比较选中项清除与外部原文相同，不声称全仓完成。
+
+配对证据：debug-formal-evaluation-current-native-pair-r1.json，SHA256 0ecf97756df9b11b524491dd97cbf7d26b759b02217925b9c4083faf215ab6a0；源码应用：debug-formal-evaluation-current-source-application-r1.json，SHA256 7bfebab8d492c51761c64f8c5f182db6ab2c9aee0686a2bde1eb7d67d1c14d6e。
