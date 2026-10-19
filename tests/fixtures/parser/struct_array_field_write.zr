@@ -15,4 +15,20 @@ if (points[0].x != 9.0 || points[0].y != 5.0 || points[1].x != 1.0) {
     throw "element field assignment must write through";
 }
 if (copy.x != 1.0 || initial.x != 1.0) { throw "field assignment must preserve copies"; }
+var indexCalls = 0;
+fn nextIndex(): int { indexCalls += 1; return 0; }
+points[nextIndex()].x += 1.0;
+if (indexCalls != 1 || points[0].x != 10.0) { throw "index must be evaluated once"; }
+struct Particle {
+    pub var position: Vec2;
+    pub @constructor(position: Vec2) { this.position = position; }
+}
+var particles = new Array<Particle>();
+var particle = init Particle(initial);
+particles.add(particle);
+particles[0].position.x = 17.0;
+particles[0].position.y += 4.0;
+if (particles[0].position.x != 17.0 || particles[0].position.y != 6.0 || particle.position.x != 1.0) {
+    throw "nested element field writeback";
+}
 return 42;
