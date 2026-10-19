@@ -354,3 +354,5 @@ doc_type: category-index
 - [动态迭代与已知调用流水线测试合同](batches/20261019-aot-dynamic-known-pipeline-current-contracts.md)：50旧键+4嵌入语言首交付，50段Doxygen；既有2+5Unity前后全PASS，AOT生成物执行缺口保留。
 
 - [条件断点与 logpoint 当前合同](batches/20261019-breakpoint-condition-logpoint-current-contracts.md)：9旧单元路径迁移、6段Doxygen；前后本批两例PASS，完整56例的1项既有失败保留。
+
+- [ExecBC AOT 底层夹具与资源辅助合同](batches/20261019-aot-execbc-fixture-helpers-current-contracts.md)：47旧单元、47段Doxygen；前后完整98例与重复manual3例通过，余157旧单元待审。

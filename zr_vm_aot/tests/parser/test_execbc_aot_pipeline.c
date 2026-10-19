@@ -9889,3 +9889,1225 @@ int main(void) {
     RUN_TEST(test_aot_source_sync_keeps_extended_opcode_surfaces_aligned);
     return UNITY_END();
 }
+
+/**
+ * @unit EXBCFIX-001
+ * @typedef SZrExecBcAotTestTimer
+ *
+ * ## Summary
+ * 保存用例开始、结束两次 clock() 读数，供测试打印耗时。
+ *
+ * ## Fields
+ * - startTime：用例开始时的 clock() 读数。
+ * - endTime：用例结束时的 clock() 读数；与开始读数取差仅供诊断。
+ *
+ * ## Value model
+ * 结构体值；无独立资源释放。
+ *
+ * ## Invariants and lifecycle
+ * 两个 clock_t 字段由用例栈上局部实例持有；不传入编译器、VM 或 AOT 模块。
+ *
+ * 只在同一用例正常路径取差；计时不是正确性、性能阈值或线程同步的证明。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:28
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1428
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1482
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1554
+ */
+
+/**
+ * @unit EXBCFIX-002
+ * @typedef SZrBinaryFixtureReader
+ *
+ * ## Summary
+ * 把调用测试拥有的二进制缓冲包装成一次性核心 IO 输入。
+ *
+ * ## Fields
+ * - bytes：借用的测试 heap 缓冲，不由 IO close 释放。
+ * - length：首轮交付的字节数，由分配/读取测试保证有效。
+ * - consumed：首次交付后为真；后续 callback 返回 EOF。
+ *
+ * ## Value model
+ * 结构体值；缓冲仍由测试 free。
+ *
+ * ## Invariants and lifecycle
+ * bytes 是借用的原始字节，length 是可读字节数，consumed 记录是否已交付；核心 IO 可在随后读取中继续引用该缓冲。
+ *
+ * 缓冲必须活到 IO 最后一次使用之后；close 回调不 free。长度与实际分配由构造测试保证，不补 NUL。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:34
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:861
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6032
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6131
+ * - zr_vm_core/src/zr_vm_core/io/io.c:52
+ */
+
+/**
+ * @unit EXBCFIX-003
+ * @typedef SZrAotDebugHookCapture
+ *
+ * ## Summary
+ * 记录调试行事件总数、最后行号及前八个行号样本。
+ *
+ * ## Fields
+ * - eventCount：收到的有效 LINE 事件总数。
+ * - lastLine：最近一次 LINE 事件行号；reset 时为 NONE。
+ * - lines：只保存最初八次 LINE 行号；尚无顺序断言。
+ *
+ * ## Value model
+ * 结构体值；不拥有 heap 或回调参数。
+ *
+ * ## Invariants and lifecycle
+ * eventCount/lastLine/lines[8] 由静态捕获槽及回调共同使用；注册回调前由 reset 清零。
+ *
+ * 串行测试状态，不提供并发隔离；超过八次仍更新计数与末行但不再写样本。TODO: 当前用例只断言计数和最后行，尚未以 lines[] 断言完整事件顺序。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:42
+ */
+
+/**
+ * @unit EXBCFIX-004
+ * @typedef SZrAotSourceSyncExpectation
+ *
+ * ## Summary
+ * 为源码同步测试关联 opcode 名、运行时 helper 名和可选 C 直接 lowering 名。
+ *
+ * ## Fields
+ * - opcodeName：指令表中的借用字面名字。
+ * - runtimeHelperName：源码中应匹配的 runtime helper 名字。
+ * - cDirectLoweringName：可选的 C 直接 lowering 锚点，允许 NULL。
+ *
+ * ## Value model
+ * 只读期望项；不转移字符串所有权。
+ *
+ * ## Invariants and lifecycle
+ * 三个 const char* 借用静态字符串，按测试矩阵逐项在源码文本中检索。
+ *
+ * cDirectLoweringName 可为空；文本出现次数仅证明约定锚点，不证明对应分支执行或语义完备。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:49
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9651
+ */
+
+/**
+ * @unit EXBCFIX-005
+ * @typedef SZrExecBcAotTestLoadedModule
+ *
+ * ## Summary
+ * 镜像当前根库私有 AOT 已加载记录，供少量生成帧测试注入项目状态。
+ *
+ * ## Fields
+ * - backendKind：本记录所属的请求后端。
+ * - moduleName：真实记录拥有的模块名；当前手工 fixture 留零。
+ * - sourcePath：真实记录拥有的源码路径；手工 fixture 留零。
+ * - zroPath：真实记录拥有的二进制路径；手工 fixture 留零。
+ * - libraryPath：真实记录拥有的动态库路径；手工 fixture 留零。
+ * - libraryHandle：真实动态库句柄；手工 fixture 不装载库。
+ * - descriptor：借用库内 descriptor；本手工记录初始为空。
+ * - codeRegistration：借用库内注册元信息；本手工记录初始为空。
+ * - moduleFunction：借用的根函数，须活到记录不再使用。
+ * - functionTable：记录拥有的 native 指针数组，其中函数对象只借用。
+ * - functionPins：真实记录用于逐函数 GC pin 的凭据数组；手工 fixture 清零。
+ * - functionCount：有效函数数：本 fixture 为根加直接子函数数。
+ * - functionCapacity：functionTable 分配容量，释放按此计。
+ * - generatedFrameSlotCounts：记录拥有的逐函数物理槽数表。
+ * - module：真实加载模块的借用指针，当前手工 fixture 清零。
+ * - modulePin：真实模块 pin 凭据，当前手工 fixture 清零。
+ * - moduleExecuted：记录执行状态，手工 fixture 初始为假。
+ *
+ * ## Value model
+ * 记录镜像；安装器分配的表由根库项目释放链接管。
+ *
+ * ## Invariants and lifecycle
+ * backendKind、路径、句柄、descriptor、注册信息、函数表/pin/槽数及模块状态的字段次序对应当前 SZrLibraryAotLoadedModule。测试安装器只填所需字段并将表交项目释放链。
+ *
+ * 不能作为公开稳定 ABI；真实动态库记录中的指针与 pin 各有专门生命周期，测试零值不代表装载成功。TODO: 尚无跨模块 sizeof/offsetof 编译期校验，库内字段变化须同步镜像。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:58
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:510
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:531
+ * - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c:64
+ */
+
+/**
+ * @unit EXBCFIX-006
+ * @typedef SZrExecBcAotTestRuntimeState
+ *
+ * ## Summary
+ * 镜像项目 AOT 状态，供测试直接配置记录数组并检查生成帧缓存。
+ *
+ * ## Fields
+ * - configuredExecutionMode：最近配置的项目执行模式。
+ * - executedVia：实际后端报告值，配置时由根库清回 NONE。
+ * - requireAotPath：保存的配置请求，不据此推断当前消费者强制策略。
+ * - strictProjectAot：根库从 AOT_C/AOT_LLVM 模式导出的严格标记。
+ * - lastError：状态内固定错误缓冲，借用内容可被后续操作覆盖。
+ * - records：项目拥有的记录数组；本 fixture 发布一条。
+ * - recordCount：当前已发布的记录数。
+ * - recordCapacity：记录数组分配容量。
+ * - activeRecord：同步派发过程中的借用活动记录；安装时为空。
+ *
+ * ## Value model
+ * 借用的状态视图；不得另行 free 或跨项目释放保存。
+ *
+ * ## Invariants and lifecycle
+ * 模式、实际后端、严格标记、错误缓冲、records/数量/容量/activeRecord 对应当前根库私有状态；cast 借用 project->aotRuntime。
+ *
+ * records 元素和本结构均依赖私有布局，activeRecord 只是借用。TODO: 缺少编译期布局证明；当前字段逐项一致不等于长期 ABI 保障。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:80
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:509
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:528
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3749
+ * - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c:102
+ */
+
+/**
+ * @unit EXBCFIX-007
+ * @var g_aotDebugHookCapture
+ *
+ * ## Summary
+ * 为两个行调试事件用例提供共享捕获槽。
+ *
+ * ## Value model
+ * 静态存储，无调用方释放。
+ *
+ * ## Invariants and lifecycle
+ * reset 写初始值，debug hook 更新计数、最后行和有限样本，用例在回调运行后读取。
+ *
+ * 静态进程状态；每个相关用例必须先 reset，不声称可并行使用或保证全部行事件顺序。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:93
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:173
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:174
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:185
+ */
+
+/**
+ * @unit EXBCFIX-008
+ * @def ZR_EXECBC_TEST_OPCODE_NAME_CASE(INSTRUCTION)
+ *
+ * ## Summary
+ * 把指令声明表中的每个名字展开为诊断 switch 的 case 和字符串。
+ *
+ * ## Parameters
+ * @param[in] INSTRUCTION 指令声明表提供的单个符号名；须能用于枚举拼接与字符串化。
+ *
+ * ## Expansion
+ * 展开后的 case 返回静态名字字符串。
+ *
+ * ## Constraints and lifecycle
+ * 与 ZR_INSTRUCTION_DECLARE 共同使用，枚举值来自 ZR_INSTRUCTION_ENUM，字符串来自预处理器 #INSTRUCTION。
+ *
+ * 仅在 opcode-name switch 中展开；不维护第二份 opcode 表，不产生指令执行逻辑。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:96
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:103
+ * - zr_vm_common/include/zr_vm_common/zr_instruction_conf.h:26
+ */
+
+/**
+ * @unit EXBCFIX-009
+ * @fn static const char *execbc_test_instruction_opcode_name(EZrInstructionCode opcode)
+ *
+ * ## Summary
+ * 将指令枚举映射为可读诊断名，供可选函数树 trace 使用。
+ *
+ * ## Parameters
+ * @param[in] opcode 待打印的指令枚举；未知值走默认分支。
+ *
+ * ## Returns
+ * @return 借用的静态 C 字符串，调用者不得 free。
+ *
+ * ## Constraints and lifecycle
+ * switch 由统一指令声明表生成；未知枚举返回静态 UNKNOWN_OPCODE。
+ *
+ * 返回值只读、进程期有效；名称查询不校验指令操作数，也不执行 opcode。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:101
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:146
+ */
+
+/**
+ * @unit EXBCFIX-010
+ * @fn static TZrBool execbc_test_trace_enabled(void)
+ *
+ * ## Summary
+ * 按环境变量是否存在决定是否启用 ExecBC 测试 trace，并缓存首次结果。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * @return 存在变量时真，否则假；不分配资源。
+ *
+ * ## Constraints and lifecycle
+ * 首次调用 getenv("ZR_VM_TRACE_EXECBC_AOT_TEST")，之后使用两个函数内静态布尔值。
+ *
+ * 空字符串或值 "0" 也算存在；首次调用后再改环境不会生效。此静态缓存无并发初始化协议。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:110
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:127
+ */
+
+/**
+ * @unit EXBCFIX-011
+ * @fn static void execbc_test_dump_function_tree(const SZrFunction *function, TZrUInt32 depth)
+ *
+ * ## Summary
+ * 在 trace 开启时递归输出函数、字节码、SemIR 和直接子函数诊断。
+ *
+ * ## Parameters
+ * @param[in] function 借用的函数树根；允许 NULL。
+ * @param[in] depth 仅用于打印的当前递归深度，子结点加一。
+ *
+ * ## Returns
+ * 无返回值，不取得函数、名字或指令数组所有权。
+ *
+ * ## Constraints and lifecycle
+ * 借用完整函数树，从 stderr 打印当前结点和指令，再对 childFunctionList 深度递归。
+ *
+ * NULL 或未开 trace 直接返回；有效数组、计数、无环树及生命周期由调用方保证，没有损坏树或深度防护。打印不是 AOT 执行验证。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:123
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:161
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1458
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1514
+ */
+
+/**
+ * @unit EXBCFIX-012
+ * @fn static TZrInt64 aot_runtime_test_dummy_entry_thunk(struct SZrState *state)
+ *
+ * ## Summary
+ * 为手工项目记录提供固定成功值的最小 native 入口。
+ *
+ * ## Parameters
+ * @param[in] state 入口 ABI 要求的状态参数，本桩不读取。
+ *
+ * ## Returns
+ * @return 固定 TZrInt64 值 1。
+ *
+ * ## Constraints and lifecycle
+ * 忽略 state 并返回整数 1，供生成帧/静态直调用协议测试绑定。
+ *
+ * 不装载动态库，不执行 ZR 程序，也不能证明真实生成入口 ABI 或模块初始化。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:166
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3745
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3746
+ */
+
+/**
+ * @unit EXBCFIX-013
+ * @fn static void aot_debug_hook_capture_reset(void)
+ *
+ * ## Summary
+ * 在行事件测试前清空共享捕获槽并设置无行号哨兵。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 无返回值；静态槽仍由本测试翻译单元持有。
+ *
+ * ## Constraints and lifecycle
+ * memset 清零计数和样本，再把 lastLine 设为 ZR_RUNTIME_DEBUG_HOOK_LINE_NONE。
+ *
+ * 需在安装/触发行事件之前调用；不注销已有 hook，不提供并行隔离。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:172
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:4203
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:4293
+ */
+
+/**
+ * @unit EXBCFIX-014
+ * @fn static void aot_debug_hook_capture(struct SZrState *state, SZrDebugInfo *debugInfo)
+ *
+ * ## Summary
+ * 作为 runtime debug hook 接收 LINE 事件并更新共享捕获状态。
+ *
+ * ## Parameters
+ * @param[in] state 回调 ABI 参数，此捕获器不读取。
+ * @param[in] debugInfo 本次事件信息的借用指针；NULL 或非 LINE 事件不计入。
+ *
+ * ## Returns
+ * 无返回值，不分配或释放资源。
+ *
+ * ## Constraints and lifecycle
+ * NULL 调试信息或非 LINE 事件被忽略；前八次写 lines[]，每次有效事件均更新 lastLine 并增加 eventCount。
+ *
+ * state 未使用；debugInfo 仅在调用期间借用，不保存其地址。样本容量与事件总数分开，未证明事件序列完整性。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:178
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:4201
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:4291
+ */
+
+/**
+ * @unit EXBCFIX-015
+ * @fn static char *read_text_file_owned(const TZrChar *path)
+ *
+ * ## Summary
+ * 以二进制方式完整读取文件并补一个 NUL，返回调用方拥有的文本缓冲。
+ *
+ * ## Parameters
+ * @param[in] path 借用的文件路径，函数不修改；允许 NULL 并返回失败。
+ *
+ * ## Returns
+ * @return 成功返回 malloc 缓冲，由调用方 free；失败返回 NULL。
+ *
+ * ## Constraints and lifecycle
+ * 打开后 seek/ftell 获取长度，分配长度加一，短读时 free 并关闭，成功时补 NUL、关闭并返回。
+ *
+ * NULL 路径及已检查的打开/定位/分配/短读失败返回 NULL；长度来自同一次打开，但不保证并发文件变更下的原子快照或文本编码有效。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:224
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:638
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:645
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1521
+ */
+
+/**
+ * @unit EXBCFIX-016
+ * @fn static void assert_generated_aot_c_text_uses_new_code_shape(const char *text)
+ *
+ * ## Summary
+ * 断言生成 C 文本使用当前函数入口和统一退出形态。
+ *
+ * ## Parameters
+ * @param[in] text 调用方持有的生成 C 文本，要求非 NULL。
+ *
+ * ## Returns
+ * 无返回值；text 保持调用方所有。
+ *
+ * ## Constraints and lifecycle
+ * 检查旧 prepared/shim/goto/return-0 形态不存在，并要求上下文解析或 BeginGeneratedFunction、退出或失败 helper 的约定标记。
+ *
+ * 输入须为 NUL 终止文本；Unity 断言失败可非局部退出当前用例。仅字符串形状验证，不编译或执行生成 C。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:267
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1531
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:2379
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:4574
+ */
+
+/**
+ * @unit EXBCFIX-017
+ * @fn static void assert_generated_aot_llvm_text_uses_true_backend_shape(const char *text)
+ *
+ * ## Summary
+ * 断言 LLVM 文本包含独立内部函数入口且不调用活动 shim。
+ *
+ * ## Parameters
+ * @param[in] text NUL 终止的生成 LLVM 文本，要求非 NULL。
+ *
+ * ## Returns
+ * 无返回值，不转移文本所有权。
+ *
+ * ## Constraints and lifecycle
+ * 检查 InvokeActiveShim 不存在，并匹配 define internal i64 @zr_aot_fn_0(ptr %state)。
+ *
+ * 只约束具体文本形状；不证明 LLVM 解析、链接、ABI 或入口执行。Unity 失败不保证调用方尾部清理。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:280
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1536
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1656
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1709
+ */
+
+/**
+ * @unit EXBCFIX-018
+ * @fn static void assert_generated_aot_llvm_text_uses_aligned_stack_value_layout(const char *text)
+ *
+ * ## Summary
+ * 检查 LLVM 输出采用字节布局寻址并拒绝旧的未对齐栈值文本形态。
+ *
+ * ## Parameters
+ * @param[in] text NUL 终止的生成 LLVM 文本，要求非 NULL。
+ *
+ * ## Returns
+ * 无返回值，所有权不变。
+ *
+ * ## Constraints and lifecycle
+ * 要求两种 value 类型的数组形态及 getelementptr i8，排除旧结构字面量和按值结构 GEP。
+ *
+ * 这些标记对应布局策略的文本契约；并未进行 sizeof/offsetof、LLVM 编译或运行时地址验证。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:287
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:2208
+ */
+
+/**
+ * @unit EXBCFIX-019
+ * @fn static void assert_generated_aot_llvm_text_lowers_simple_return_path(const char *text)
+ *
+ * ## Summary
+ * 检查最短 LLVM 返回路径引用生成函数、指令、常量复制和返回 helper。
+ *
+ * ## Parameters
+ * @param[in] text 调用方持有的 LLVM 文本，要求非 NULL 且 NUL 终止。
+ *
+ * ## Returns
+ * 无返回值；Unity 断言失败终止当前用例路径。
+ *
+ * ## Constraints and lifecycle
+ * 逐项 strstr 检查 BeginGeneratedFunction、BeginInstruction、CopyConstant、Return 四个符号。
+ *
+ * 符号出现不等于其顺序、控制流可达或被执行；该 helper 本身不运行 LLVM。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:299
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1657
+ */
+
+/**
+ * @unit EXBCFIX-020
+ * @fn static void assert_generated_aot_llvm_text_lowers_static_direct_call_path(const char *text)
+ *
+ * ## Summary
+ * 检查 LLVM 静态直调用文本具备准备、调用子函数和完成协议标记。
+ *
+ * ## Parameters
+ * @param[in] text NUL 终止的 LLVM 文本，要求非 NULL。
+ *
+ * ## Returns
+ * 无返回值。
+ *
+ * ## Constraints and lifecycle
+ * 要求 PrepareStaticDirectCall、call i64 @zr_aot_fn_1(ptr %state) 和 FinishDirectCall。
+ *
+ * 只检查约定片段存在，不证明运行帧、返回值或清理顺序；文本保持借用。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:308
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1710
+ */
+
+/**
+ * @unit EXBCFIX-021
+ * @fn static TZrBool aot_llvm_text_contains_unsupported_opcode(const char *text, TZrUInt32 opcode)
+ *
+ * ## Summary
+ * 检测 LLVM 文本中指定 opcode 的 unsupported 报告调用。
+ *
+ * ## Parameters
+ * @param[in] text 只读 NUL 终止文本；可为 NULL。
+ * @param[in] opcode 要匹配的无符号 opcode 数值，用 %u 写入固定后缀。
+ *
+ * ## Returns
+ * @return 检测到同一行匹配时真，否则假。
+ *
+ * ## Constraints and lifecycle
+ * 扫描精确 ReportUnsupportedInstruction 前缀，在同一换行前寻找格式化的 i32 opcode 后缀，命中即返回真。
+ *
+ * NULL 返回假；这是生成文本模式查询，既不解码完整 IR，也不能把假值当作后端执行成功。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:316
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:619
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:2281
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:2578
+ */
+
+/**
+ * @unit EXBCFIX-022
+ * @fn static TZrBool aot_c_text_contains_unsupported_opcode(const char *text, TZrUInt32 opcode)
+ *
+ * ## Summary
+ * 检测 C 文本中指定 opcode 的 unsupported 返回包装。
+ *
+ * ## Parameters
+ * @param[in] text 只读 NUL 终止的 C 文本；可为 NULL。
+ * @param[in] opcode 要查询的无符号 opcode 数值。
+ *
+ * ## Returns
+ * @return 同一行前缀与数值后缀都匹配时真，否则假。
+ *
+ * ## Constraints and lifecycle
+ * 扫描精确 ZR_AOT_C_RETURN(ReportUnsupportedInstruction...) 前缀，并限制数值后缀在当前行内。
+ *
+ * NULL 返回假；仅文本匹配，不保证该行可达或其余 opcode 全部受支持。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:339
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:618
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9096
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9098
+ */
+
+/**
+ * @unit EXBCFIX-023
+ * @fn static void assert_generated_aot_c_elides_instruction_observation(const char *text)
+ *
+ * ## Summary
+ * 断言无观察需求的 C 文本没有逐指令观察标记或调用。
+ *
+ * ## Parameters
+ * @param[in] text 调用方拥有的 C 文本，须非 NULL、NUL 终止。
+ *
+ * ## Returns
+ * 无返回值；不释放输入。
+ *
+ * ## Constraints and lifecycle
+ * 排除 zr_aot_begin_instruction 注释标记和 BeginInstruction 名字。
+ *
+ * 仅验证该生成文本的观察代码消去形态，不代表调试事件、性能或异常路径已运行。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:362
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9491
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9525
+ */
+
+/**
+ * @unit EXBCFIX-024
+ * @fn static void assert_generated_aot_llvm_begin_instruction_step_flags(const char *text, TZrUInt32 instructionIndex, TZrUInt32 stepFlags)
+ *
+ * ## Summary
+ * 断言 LLVM 文本中存在指定指令下标和 stepFlags 的观察 helper 调用。
+ *
+ * ## Parameters
+ * @param[in] text NUL 终止的 LLVM 文本，要求非 NULL。
+ * @param[in] instructionIndex 预期写入调用串的指令下标。
+ * @param[in] stepFlags 预期写入调用串的观察位集合。
+ *
+ * ## Returns
+ * 无返回值。
+ *
+ * ## Constraints and lifecycle
+ * 把 instructionIndex 和 stepFlags 格式化进固定调用串，在借用文本中检索。
+ *
+ * 不执行观察回调，不验证其出现次数或控制流位置；两个数值由 fixture 负责匹配生成上下文。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:369
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9492
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9493
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9526
+ */
+
+/**
+ * @unit EXBCFIX-025
+ * @fn static TZrInstruction make_instruction_no_operands(EZrInstructionCode opcode, TZrUInt16 operandExtra)
+ *
+ * ## Summary
+ * 构造其余位清零的手工指令，仅填写 opcode 和 operandExtra。
+ *
+ * ## Parameters
+ * @param[in] opcode 要写入 operationCode 的枚举。
+ * @param[in] operandExtra 直接写入额外位字段的值。
+ *
+ * ## Returns
+ * @return 初始化后的指令值，不拥有堆资源。
+ *
+ * ## Constraints and lifecycle
+ * 按值返回完整 TZrInstruction，供另外两个构造器与手工 opcode fixture 复用。
+ *
+ * opcode 转为 TZrUInt16；不校验枚举、位宽截断或 opcode 对额外位的语义要求。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:385
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:398
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:409
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9582
+ */
+
+/**
+ * @unit EXBCFIX-026
+ * @fn static TZrInstruction make_instruction_constant_operand(EZrInstructionCode opcode, TZrUInt16 operandExtra, TZrInt32 operandA2)
+ *
+ * ## Summary
+ * 在基础零初始化指令上写入一个 32 位 operand2 槽。
+ *
+ * ## Parameters
+ * @param[in] opcode 目标 opcode。
+ * @param[in] operandExtra 原样传入基础构造器的额外位。
+ * @param[in] operandA2 写入首个 32 位操作数的索引或数值。
+ *
+ * ## Returns
+ * @return 指令值；无资源转移。
+ *
+ * ## Constraints and lifecycle
+ * 复用 no_operands，再设置 operand.operand2[0]；常用于常量索引 fixture。
+ *
+ * 不验证常量表长度或 opcode 的操作数格式，索引有效性由调用方保证。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:395
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3196
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3197
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3769
+ */
+
+/**
+ * @unit EXBCFIX-027
+ * @fn static TZrInstruction make_instruction_slot_operands(EZrInstructionCode opcode, TZrUInt16 operandExtra, TZrUInt16 operandA1, TZrUInt16 operandB1)
+ *
+ * ## Summary
+ * 在基础零初始化指令上写入两个 16 位 operand1 槽。
+ *
+ * ## Parameters
+ * @param[in] opcode 目标 opcode。
+ * @param[in] operandExtra 原样写入的额外位。
+ * @param[in] operandA1 第一个 16 位操作数。
+ * @param[in] operandB1 第二个 16 位操作数。
+ *
+ * ## Returns
+ * @return 指令值；不分配资源。
+ *
+ * ## Constraints and lifecycle
+ * 依次设置 operand1[0] 和 operand1[1]，用于 fixture 的目标/源栈槽等编码。
+ *
+ * 不校验栈槽范围、读写方向或 opcode 格式；手工函数布局必须与编码一致。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:405
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:418
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3198
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9337
+ */
+
+/**
+ * @unit EXBCFIX-028
+ * @fn static TZrInstruction make_instruction_return(TZrUInt16 sourceSlot)
+ *
+ * ## Summary
+ * 构造携带一个返回值源槽的 FUNCTION_RETURN 指令。
+ *
+ * ## Parameters
+ * @param[in] sourceSlot 返回值所在的源槽索引。
+ *
+ * ## Returns
+ * @return 按值返回单条返回指令。
+ *
+ * ## Constraints and lifecycle
+ * 调用槽构造器，固定 operandExtra=1、第二操作数=0。
+ *
+ * sourceSlot 必须是该手工函数的有效返回源槽；本函数不追加数组或检查容量。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:417
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3199
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3657
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3770
+ */
+
+/**
+ * @unit EXBCFIX-029
+ * @fn static SZrFunction *compile_source_without_quickening(SZrState *state, const char *source, const char *sourcePath)
+ *
+ * ## Summary
+ * 走内部解析、编译、优化和装配链取得未走公开 quickening 路径的函数。
+ *
+ * ## Parameters
+ * @param[in,out] state 有效 VM 状态；允许 NULL 并返回失败。
+ * @param[in] source 借用的 NUL 终止源码，长度用 strlen 计算。
+ * @param[in] sourcePath 借用的源名字/路径文本，转为 VM 字符串；要求非 NULL。
+ *
+ * ## Returns
+ * @return 成功返回生成函数；已检查的参数、解析、验证、分配、编译或装配失败返回 NULL。
+ *
+ * ## Constraints and lifecycle
+ * 建立源名字和 AST，初始化 compiler state，验证 task effects、compile_script、optimize_instructions，再 assemble；普通失败分支显式释放 AST/compiler state，部分分支释放函数。
+ *
+ * 名称不意味着完全未优化：这里仍调用 optimize_instructions。只描述显式普通返回清理，不保证 Throw 或 Unity 非局部退出清理。成功函数由调用测试管理。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:422
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:8193
+ */
+
+/**
+ * @unit EXBCFIX-030
+ * @fn static void *aot_runtime_test_project_alloc(SZrState *state, TZrSize size)
+ *
+ * ## Summary
+ * 通过当前 global 的 allocator 分配 PROJECT 类别的 native 内存。
+ *
+ * ## Parameters
+ * @param[in] state 提供 global/allocator/用户分配参数的借用状态。
+ * @param[in] size 请求的字节数，原样传递给 allocator。
+ *
+ * ## Returns
+ * @return allocator 返回的原始指针或 NULL。
+ *
+ * ## Constraints and lifecycle
+ * 向 allocator 传入旧指针 NULL、旧大小 0、请求 size 和 ZR_MEMORY_NATIVE_TYPE_PROJECT。
+ *
+ * state/global/allocator 任一空则返回 NULL；返回内存未初始化，调用方须按同一分配器类别与项目生命周期归还。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:492
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:531
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:541
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:544
+ */
+
+/**
+ * @unit EXBCFIX-031
+ * @fn static SZrExecBcAotTestRuntimeState *aot_runtime_test_install_project_record(SZrState *state, SZrLibrary_Project *project, SZrFunction *function, EZrAotBackendKind backendKind)
+ *
+ * ## Summary
+ * 为四个生成帧/索引测试配置临时项目并安装一个手工 AOT 记录。
+ *
+ * ## Parameters
+ * @param[in,out] state 具有有效 global 的测试状态。
+ * @param[out] project 调用方持有的临时项目对象，将被 memset 并供 global 借用。
+ * @param[in] function 在项目记录使用期间存活的根函数，子函数数组及槽数须有效。
+ * @param[in] backendKind 决定请求 AOT_C 或 AOT_LLVM 模式并写入记录的后端值。
+ *
+ * ## Returns
+ * @return 借用 project->aotRuntime 的镜像指针，项目释放后失效。
+ *
+ * ## Constraints and lifecycle
+ * 清空调用方 project，挂到 global->userData，ConfigureGlobal 后分配 records、根和直接子函数表、对应 frame-slot 表，填完后发布单条记录。
+ *
+ * project 必须是可覆盖的临时对象；函数树借用，三张 native 表交根库释放。Unity 分配断言可非局部退出，未提供通用 OOM 回滚。只列根与直接子函数，不声称递归装载或真实 DLL。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:505
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3666
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3785
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3905
+ * - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c:3375
+ * - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c:3398
+ */
+
+/**
+ * @unit EXBCFIX-032
+ * @brief aot_runtime_test_install_project_record::records publication（所属函数关键块）
+ *
+ * ## Summary
+ * 把填充完成的测试记录数组发布到私有运行时状态。
+ *
+ * ## Control flow
+ * 所属安装函数随后返回借用状态；此块不独立返回。
+ *
+ * ## Constraints and lifecycle
+ * 设置 records、recordCount=1、recordCapacity=1、activeRecord=NULL，使根库生成函数消费者可查该记录。
+ *
+ * 发布后表由项目释放链负责；此前分配断言失败并无完整回滚。TODO: 该 cast 和 records 元素依赖私有布局，需同步类型并增加编译期偏移校验。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:563
+ * - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c:102
+ * - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c:3398
+ */
+
+/**
+ * @unit EXBCFIX-033
+ * @fn static void aot_runtime_test_remove_project_record(SZrState *state, SZrLibrary_Project *project)
+ *
+ * ## Summary
+ * 经根库项目释放入口清理临时 AOT 状态，再断开 global 对项目的借用。
+ *
+ * ## Parameters
+ * @param[in,out] state 有效 state/global；为空时无操作。
+ * @param[in,out] project 调用方的临时项目；为空时无操作。
+ *
+ * ## Returns
+ * 无返回值；项目状态与表由被调用释放链管理。
+ *
+ * ## Constraints and lifecycle
+ * 参数有效且 aotRuntime 非空时调用 FreeProjectState，随后把 global->userData 清空。
+ *
+ * 不释放调用方栈上的 project 或借用函数；真实根库释放包含撤 pin 和延迟动态库处理，不能把返回解释为全部 GC 后关闭完成。无效参数直接返回。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:572
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3719
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3841
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3951
+ * - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c:3398
+ */
+
+/**
+ * @unit EXBCFIX-034
+ * @fn static void init_manual_test_function(SZrFunction *function, TZrInstruction *instructions, TZrUInt32 instructionCount, SZrTypeValue *constants, TZrUInt32 constantCount, SZrFunction *childFunctions, TZrUInt32 childFunctionCount, TZrUInt32 stackSize)
+ *
+ * ## Summary
+ * 用调用方数组组装最小手工 SZrFunction，供 VM 与两个生成后端共用。
+ *
+ * ## Parameters
+ * @param[out] function 待覆盖初始化的函数对象，须非 NULL 且无待释放旧资源。
+ * @param[in] instructions 借用的指令数组。
+ * @param[in] instructionCount 有效指令条数。
+ * @param[in] constants 借用的常量值数组。
+ * @param[in] constantCount 常量条数。
+ * @param[in] childFunctions 借用的直接子函数数组。
+ * @param[in] childFunctionCount 直接子函数数。
+ * @param[in] stackSize 手工函数声明的栈槽大小。
+ *
+ * ## Returns
+ * 无返回值；所有数组所有权仍在构造测试。
+ *
+ * ## Constraints and lifecycle
+ * 清零函数对象后借用 instructions/constants/childFunctions，设置各长度、stackSize 及源行范围 1..1。
+ *
+ * 只断言 function 非空；数组、计数和指令语义由 fixture 保证。清零会覆盖旧内容，不能用于仍拥有资源的活动函数；栈数组不能据此交给常规拥有式释放。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:584
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3200
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3658
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3771
+ */
+
+/**
+ * @unit EXBCFIX-035
+ * @fn static void assert_generated_aot_texts_do_not_report_unsupported_opcodes(const char *cText, const char *llvmText, const EZrInstructionCode *opcodes, TZrSize opcodeCount)
+ *
+ * ## Summary
+ * 逐项断言 C 和 LLVM 文本未报告指定 opcode 为 unsupported。
+ *
+ * ## Parameters
+ * @param[in] cText NUL 终止的 C 文本。
+ * @param[in] llvmText NUL 终止的 LLVM 文本。
+ * @param[in] opcodes 要逐项检查的 opcode 数组。
+ * @param[in] opcodeCount 数组有效元素数。
+ *
+ * ## Returns
+ * 无返回值；所有输入只借用。
+ *
+ * ## Constraints and lifecycle
+ * 遍历 opcodes[0..opcodeCount)，调用两个同一行文本检测器并要求假。
+ *
+ * 三个指针须非 NULL，列表长度由调用方保证；不覆盖列表外 opcode，也不证明生成工件被编译或执行。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:607
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9419
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9631
+ */
+
+/**
+ * @unit EXBCFIX-036
+ * @fn static char *read_reference_file(const char *relativePath, size_t *outSize)
+ *
+ * ## Summary
+ * 通过 reference fixture 支持层读取文本，供参考语言用例编译。
+ *
+ * ## Parameters
+ * @param[in] relativePath 相对 reference fixture 根的路径，借用。
+ * @param[out] outSize 可选长度接收指针，原样转交支持层。
+ *
+ * ## Returns
+ * @return 成功为调用方需 free 的文本，失败 NULL；outSize 由支持层处理。
+ *
+ * ## Constraints and lifecycle
+ * 直接转发 relativePath/outSize；支持层把路径解析到 tests/fixtures/reference 并调用文本读取器。
+ *
+ * 路径按 reference fixture 根解释，非当前工作目录；失败及长度规则沿被调用接口，不扩大为任意仓库文件读取。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:624
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6888
+ * - tests/harness/reference_support.c:51
+ */
+
+/**
+ * @unit EXBCFIX-037
+ * @fn static char *read_repo_file_owned(const char *repoRelativePath)
+ *
+ * ## Summary
+ * 尝试按仓库根及 zr_vm_aot 回退根读取源码文本。
+ *
+ * ## Parameters
+ * @param[in] repoRelativePath 借用的仓库相对路径，不取得所有权。
+ *
+ * ## Returns
+ * @return 返回 malloc 文本或 NULL；成功由调用方 free。
+ *
+ * ## Constraints and lifecycle
+ * 用 1024 字节路径缓冲拼接 tests/../relativePath；首次读取失败才尝试 tests/../zr_vm_aot/relativePath。
+ *
+ * 相对根来自编译期 ZR_VM_TESTS_SOURCE_DIR，不随 cwd；NULL 返回 NULL。snprintf 截断结果未单独诊断，现有固定路径须适合缓冲；不保证并发快照。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:629
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:682
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:700
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:2365
+ * - tests/harness/path_support.c:18
+ */
+
+/**
+ * @unit EXBCFIX-038
+ * @fn static TZrUInt32 count_substring_occurrences(const char *text, const char *needle)
+ *
+ * ## Summary
+ * 统计 NUL 终止文本中互不重叠的字面子串出现次数。
+ *
+ * ## Parameters
+ * @param[in] text 只读 NUL 终止文本，可为 NULL。
+ * @param[in] needle 只读匹配串；NULL 或空串得到零。
+ *
+ * ## Returns
+ * @return TZrUInt32 次数。
+ *
+ * ## Constraints and lifecycle
+ * 每次 strstr 命中后前移 needleLength；源码同步断言用它检查锚点数量。
+ *
+ * NULL 或空 needle 返回 0；不解析 C token，注释和字符串中的字面内容也可能计入，不等价于语义调用次数。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:651
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9062
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9066
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9070
+ */
+
+/**
+ * @unit EXBCFIX-039
+ * @fn static char *join_repo_files_owned(const char *const *repoRelativePaths, TZrSize pathCount)
+ *
+ * ## Summary
+ * 两遍读取多个仓库源码并用换行拼接为调用方拥有的文本。
+ *
+ * ## Parameters
+ * @param[in] repoRelativePaths 借用的路径指针数组；不可为 NULL。
+ * @param[in] pathCount 要读取的数组元素数；零返回失败。
+ *
+ * ## Returns
+ * @return 成功返回需 free 的拼接文本，参数、读取或分配失败返回 NULL。
+ *
+ * ## Constraints and lifecycle
+ * 第一遍累加每份 strlen+换行并释放临时文本，分配总缓冲；第二遍重新读取、memcpy、写换行并释放，最后补 NUL。
+ *
+ * 输入数组和路径在调用期有效；普通读失败释放已有 joined 缓冲。BUG: 两遍之间文件增长时，第二遍没有容量复核，可越过第一遍分配的 joinedText；未做运行复现。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:671
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9724
+ */
+
+/**
+ * @unit EXBCFIX-040
+ * @brief join_repo_files_owned::second read and copy（所属函数关键块）
+ *
+ * ## Summary
+ * 第二遍重读并把每份当前文件内容复制到首次统计的拼接缓冲。
+ *
+ * ## Control flow
+ * 所属函数在该块后返回 joinedText；此块读失败走所属函数 NULL 返回。
+ *
+ * ## Constraints and lifecycle
+ * 对每个路径重新取得文本，按当次 strlen 复制并写换行，释放当次临时缓冲；读失败释放 joinedText 后返回。
+ *
+ * BUG: writeCursor 不带剩余容量校验；合法文件在两遍间增长即可超过首次估计。与所属函数是同一既有问题的块镜像，不新增缺陷家族。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:698
+ */
+
+/**
+ * @unit EXBCFIX-041
+ * @fn static TZrByte *read_binary_file_owned(const TZrChar *path, TZrSize *outLength)
+ *
+ * ## Summary
+ * 以二进制方式完整读取文件并返回原始字节及长度。
+ *
+ * ## Parameters
+ * @param[in] path 借用的文件路径，NULL 返回失败。
+ * @param[out] outLength 可选输出；入口先置零，成功写原始字节数。
+ *
+ * ## Returns
+ * @return 成功返回调用方需 free 的字节缓冲，失败 NULL。
+ *
+ * ## Constraints and lifecycle
+ * 先把可选 outLength 置零，rb 打开/seek/ftell/分配/完整读，成功关闭后写入长度。
+ *
+ * 不补 NUL，不能作为 C 字符串；空文件 malloc(0) 的结果依实现，可能返回 NULL。已检查失败关闭文件并释放缓冲；无原子快照承诺。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:720
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:779
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:801
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6070
+ */
+
+/**
+ * @unit EXBCFIX-042
+ * @fn static TZrByte *read_repo_binary_file_owned(const char *repoRelativePath, TZrSize *outLength)
+ *
+ * ## Summary
+ * 从编译期 tests 根的父目录解析仓库相对二进制路径并读取。
+ *
+ * ## Parameters
+ * @param[in] repoRelativePath 借用的仓库相对二进制路径。
+ * @param[out] outLength 可选长度输出，沿底层读取器规则。
+ *
+ * ## Returns
+ * @return 成功返回需 free 的字节缓冲，失败 NULL。
+ *
+ * ## Constraints and lifecycle
+ * 用 1024 字节缓冲拼接 tests/../relativePath，随后调用二进制读取器；不同于文本 helper，这里没有 zr_vm_aot 回退。
+ *
+ * outLength 可选且入口清零；NULL 路径失败。路径必须适合固定缓冲，原始字节无 NUL 保证。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:768
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9235
+ * - tests/harness/path_support.c:18
+ */
+
+/**
+ * @unit EXBCFIX-043
+ * @fn static TZrBool write_embedded_aot_c_file(SZrState *state, SZrFunction *function, const TZrChar *moduleName, const TZrChar *filename, const TZrChar *binaryPath)
+ *
+ * ## Summary
+ * 先生成并读取二进制模块，再以借用 blob 生成严格嵌入式 C 文本。
+ *
+ * ## Parameters
+ * @param[in,out] state 有效测试 VM 状态。
+ * @param[in] function 调用期间存活的借用函数。
+ * @param[in] moduleName 借用的模块名，同时用作 inputHash 标识。
+ * @param[in] filename C 文本输出路径，借用。
+ * @param[in] binaryPath 临时二进制写入/读取/尝试删除路径，须由任务登记。
+ *
+ * ## Returns
+ * @return 返回 C writer 的布尔结果或前置失败假；blob 不逃逸到返回调用方。
+ *
+ * ## Constraints and lifecycle
+ * WriteBinaryFile 成功后读取 binaryPath 并尝试 remove；设置 SOURCE、moduleName/inputHash、blob/长度及 requireExecutableLowering，再同步调用 C writer 并 free blob。
+ *
+ * 所有输入须非 NULL；二进制写失败、读取失败或零长返回假。remove 返回未检查，写失败可能留文件；只保证普通返回后的本地 blob 释放，不承诺异常清理或外部 C 编译/DLL 装载。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:783
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1586
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1916
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:4357
+ * - zr_vm_parser/src/zr_vm_parser/writer/writer_binary.c:29
+ */
+
+/**
+ * @unit EXBCFIX-044
+ * @fn static TZrBool write_standalone_strict_aot_c_file(SZrState *state, SZrFunction *function, const TZrChar *moduleName, const TZrChar *filename)
+ *
+ * ## Summary
+ * 不提供嵌入 blob，以要求可执行 lowering 的选项生成独立 C 文本。
+ *
+ * ## Parameters
+ * @param[in,out] state 有效 VM 状态。
+ * @param[in] function 调用期间借用的待生成函数。
+ * @param[in] moduleName 借用模块名并用作输入标识。
+ * @param[in] filename C 文本输出路径，借用且须登记。
+ *
+ * ## Returns
+ * @return C writer 布尔结果或参数失败假。
+ *
+ * ## Constraints and lifecycle
+ * 零初始化 options，设置 moduleName、SOURCE、inputHash=moduleName 和 requireExecutableLowering=TRUE 后调用 C writer。
+ *
+ * 四个参数任一 NULL 返回假；不运行外部 C 编译器、链接器或 DLL，返回真也不是持久化/执行证明。文件及函数由调用方管理。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:822
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1995
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:2063
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:2133
+ */
+
+/**
+ * @unit EXBCFIX-045
+ * @fn static TZrBool write_standalone_strict_aot_llvm_file(SZrState *state, SZrFunction *function, const TZrChar *moduleName, const TZrChar *filename)
+ *
+ * ## Summary
+ * 不提供嵌入 blob，以严格 lowering 选项生成独立 LLVM 文本。
+ *
+ * ## Parameters
+ * @param[in,out] state 有效 VM 状态。
+ * @param[in] function 调用期间存活的借用函数。
+ * @param[in] moduleName 借用模块名兼输入标识。
+ * @param[in] filename LLVM 文本输出路径，须由任务登记。
+ *
+ * ## Returns
+ * @return LLVM writer 的布尔结果或参数失败假。
+ *
+ * ## Constraints and lifecycle
+ * 零初始化 options，填写 SOURCE、moduleName/inputHash 及 requireExecutableLowering，然后同步调用 LLVM writer。
+ *
+ * 参数 NULL 返回假；只生成文件，不执行 LLVM 编译、链接或入口。普通布尔结果不覆盖 Throw 或调用方 Unity 清理。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:841
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:2200
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:2271
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3123
+ */
+
+/**
+ * @unit EXBCFIX-046
+ * @fn static TZrBytePtr binary_fixture_reader_read(struct SZrState *state, TZrPtr customData, ZR_OUT TZrSize *size)
+ *
+ * ## Summary
+ * 向核心 IO 一次性交付测试拥有的二进制缓冲。
+ *
+ * ## Parameters
+ * @param[in] state 回调 ABI 状态参数，本实现不读取。
+ * @param[in,out] customData 借用的 SZrBinaryFixtureReader，需活到 IO 关闭。
+ * @param[out] size 核心 IO 提供的长度输出指针；正常交付时写入 length。
+ *
+ * ## Returns
+ * @return 首次有效调用返回借用 bytes，以后或无效输入返回 NULL。
+ *
+ * ## Constraints and lifecycle
+ * customData 转成 reader；有效未消费且 bytes 非空时先置 consumed，写 length 并返回 bytes。
+ *
+ * 无效 reader/size、已消费或空 bytes 返回 NULL，早退不写 size；当前 io_refill 在回调前置 readSize=0 并按 NULL/零判断 EOF。借用缓冲须覆盖后续 IO 使用。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:860
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6080
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6156
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6221
+ * - zr_vm_core/src/zr_vm_core/io/io.c:52
+ */
+
+/**
+ * @unit EXBCFIX-047
+ * @fn static void binary_fixture_reader_close(struct SZrState *state, TZrPtr customData)
+ *
+ * ## Summary
+ * 作为核心 IO close 回调保留外部二进制缓冲所有权。
+ *
+ * ## Parameters
+ * @param[in] state 回调 ABI 参数，未使用。
+ * @param[in] customData 调用方 reader 指针，未使用且不释放。
+ *
+ * ## Returns
+ * 无返回值，不释放资源。
+ *
+ * ## Constraints and lifecycle
+ * state/customData 均不读取，函数无操作；调用测试在 IO 不再使用 bytes 后负责 free。
+ *
+ * 不能把 close 当作缓冲释放或 reader 销毁；不保存指针，也不承担重复关闭的额外状态转换。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:875
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6080
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6156
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6221
+ * - zr_vm_core/src/zr_vm_core/io/io.c:52
+ */
