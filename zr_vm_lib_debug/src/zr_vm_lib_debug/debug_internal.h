@@ -909,3 +909,45 @@ void zr_debug_evaluate_failure_set(ZrDebugEvaluateFailure *failure,
  * - zr_debug_format_union_value_text。
  * - zr_debug_fill_inline_union_preview。
  */
+
+/**
+ * @struct ZrDebugThreadEntry
+ *
+ * ## Summary
+ * 把会话内协议线程 ID 映射到借用的 VM state，并记录 Agent 卸载自身 observer 时恢复的旧 hook 掩码；它是 Agent 数组元素，不是 OS 线程句柄。
+ *
+ * ## Fields
+ * - thread_id：登记时分配的会话内标量 ID，零用作查找失败或未指定，不代表 OS 线程号。
+ * - previous_debug_hook_signal：首次登记前的 debugHookSignal；只保存掩码，不保存旧 observer 函数和 userData。
+ * - state：借用的存活 VM 状态，Agent 不销毁它，也不凭该字段建立独立 GC 根。
+ * - name：登记时复制或生成的固定容量零终止显示文本，可按字节截断。
+ *
+ * ## Invariants and lifecycle
+ * Agent 拥有包含条目的 threads 数组；realloc 后旧条目地址失效，AgentStop 释放数组。状态须存活到卸载完成；仅在 state 的 userData 仍属于本 Agent 时恢复旧掩码。表读写由调用方协调，字段不提供同步。
+ *
+ * ## References
+ * zr_debug_agent_register_thread_state 创建条目；zr_debug_agent_find_thread_by_id/by_state 仅借用查找；ZrDebug_AgentStop 检查回调归属后卸载。
+ */
+
+/**
+ * @struct ZrDebugAgent
+ *
+ * ## Summary
+ * 把调试会话的网络、协议状态、停止/单步状态及只读快照索引集中在一起，使 trace 回调、协议处理和生命周期入口共享一个上下文。
+ *
+ * ## Fields
+ * - state/currentThreadId 是当前请求上下文；state 与 entryFunction 借用 VM 对象，读取其它线程时由 begin/end 临时切换并恢复。
+ * - testManifest/hasTestManifest 记录已成功解码的自有原生清单；AgentStop 使用仍存活的 state/global 配对释放。
+ * - config 按值复制配置，auth_token 等指针字段不随复制转移所有权；listener/client 拥有网络句柄，hasClient/clientInitialized 标识连接和初始化阶段。
+ * - waitForClientPending/startStopPending、pauseRequested/exceptionStopPending、异常订阅和 clientDisconnectContinue 协作决定协议等待/停止；volatile 字段本身不构成完整线程同步保证。
+ * - runMode、stepDepth/stepCallInfo、resumeFunction/resumeInstruction、stopStateId/lastStopEvent 保存执行控制和停止代际；指向 VM 的字段仍为借用。
+ * - breakpoints 及其各计数、dataBreakpoints 及容量、variableHandles 及容量/nextVariableHandleId 是会话管理的数组或索引；句柄记录不等于取得所有 VM 对象所有权。
+ * - threads/threadCount/threadCapacity/nextThreadId 持有协议线程登记；条目 state 借用，新增登记可移动整个数组。
+ * - moduleName/endpoint 为会话内部文本副本；客户端拷贝、条目数组和 Agent 自身有各自释放边界。
+ *
+ * ## Invariants and lifecycle
+ * 正常公开会话由 AgentStart 分配并发布，再由 AgentStop 一次销毁；内部测试也可构造最小栈上上下文，但必须自行维护其子资源且不可把栈对象交给 AgentStop。所有注册 state、入口函数和仍使用的鉴权令牌须有效；宿主负责 VM 根及运行/请求/销毁的顺序。先卸载本会话回调，再释放其 userData 所指存储；不恢复旧 observer、不 join，不承诺可并发或重入使用整个结构。
+ *
+ * ## References
+ * ZrDebug_AgentStart/ZrDebug_AgentStop 管理完整会话；zr_debug_agent_trace_observer 进入停止/协议链；zr_debug_agent_begin_thread_access/end_thread_access 配对切换上下文；test_debug_evaluate_result_publishes_canonical_type_and_stop_state 构造并自行释放最小上下文。
+ */

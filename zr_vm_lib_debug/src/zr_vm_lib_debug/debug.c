@@ -2758,3 +2758,235 @@ void ZrDebug_NotifyException(ZrDebugAgent *agent) {
  * - \ref ZrDebug_NotifyException：本单元定义/声明（zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:1905）。
  * - \ref ZrDebug_NotifyException：配套调用或事件构造入口（zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:1086）。
  */
+
+/**
+ * @fn ZrDebugThreadEntry *zr_debug_agent_find_thread_by_id(ZrDebugAgent *agent, TZrUInt32 threadId)
+ *
+ * ## Summary
+ * 在协议请求已经得到线程号后，从 Agent 线程表取得对应 VM 状态条目；begin_thread_access 用它在切换上下文前验证线程是否已登记。
+ *
+ * ## Parameters
+ * @param[in] agent 待查询的存活 Agent；可为 null，此时查询失败。
+ * @param[in] threadId 非零协议线程号；零作为无有效线程的输入处理。
+ *
+ * ## Returns
+ * @return 找到时返回 Agent 数组内部的借用条目；Agent 为空、线程号为零或未匹配时返回 null，线程表不变。
+ *
+ * ## Constraints and lifecycle
+ * 不分配、不取得锁，也不暂停 VM。返回指针不可释放；后续注册触发 realloc 或 AgentStop 后失效，调用方不得跨越这些变更缓存条目地址。
+ *
+ * ## References
+ * zr_debug_agent_begin_thread_access 使用条目选择请求状态；zr_debug_agent_register_thread_state 可能移动同一线程数组。
+ */
+
+/**
+ * @fn ZrDebugThreadEntry *zr_debug_agent_find_thread_by_state(ZrDebugAgent *agent, SZrState *state)
+ *
+ * ## Summary
+ * 以 VM state 指针身份查询现有线程登记，供 trace observer 取协议线程号及注册入口去重；不按操作系统线程号或状态内容合并。
+ *
+ * ## Parameters
+ * @param[in] agent 持有线程表的 Agent；null 返回未找到。
+ * @param[in] state 借用的 VM 状态指针；null 返回未找到，不解引用该参数。
+ *
+ * ## Returns
+ * @return 匹配时返回 Agent 数组内部的借用条目，否则返回 null；不改变登记或回调。
+ *
+ * ## Constraints and lifecycle
+ * 结果有效期受线程数组 realloc 和 AgentStop 限制。查找本身不锁定数组；注册、查询和销毁须由调用方按 Agent 会话顺序协调。
+ *
+ * ## References
+ * zr_debug_agent_thread_id_for_state 将结果转换为标量 ID；zr_debug_agent_register_thread_state 用它避免重复安装同一 state。
+ */
+
+/**
+ * @fn TZrUInt32 zr_debug_agent_thread_id_for_state(ZrDebugAgent *agent, SZrState *state)
+ *
+ * ## Summary
+ * 把 trace observer 收到的 VM 状态转换为本会话协议线程号，使停止事件可以携带线程身份；未登记状态由调用方决定是否注册。
+ *
+ * ## Parameters
+ * @param[in] agent 待查询会话；可为 null。
+ * @param[in] state 待匹配的借用 VM 状态；可为 null。
+ *
+ * ## Returns
+ * @return 返回已登记条目的 thread_id；任一空输入或查找失败时返回零。返回的是标量，不延长 state 或 Agent 的生命周期。
+ *
+ * ## Constraints and lifecycle
+ * 只做查找，不创建线程条目、不安装 observer，也不保证非零 ID 在会话外有效。调用期间线程表须稳定。
+ *
+ * ## References
+ * zr_debug_agent_trace_observer 先查询该 ID，必要时调用 zr_debug_agent_register_thread_state；zr_debug_agent_find_thread_by_state 执行实际匹配。
+ */
+
+/**
+ * @fn TZrUInt32 zr_debug_agent_effective_thread_id(ZrDebugAgent *agent, TZrUInt32 requestedThreadId)
+ *
+ * ## Summary
+ * 统一协议请求省略线程号时的选择规则，供栈、作用域、变量和停止事件构造共用；选择身份与验证登记是两个步骤。
+ *
+ * ## Parameters
+ * @param[in] agent 用于读取上次停止线程和当前线程的会话；null 时使用主线程默认值。
+ * @param[in] requestedThreadId 请求提供的协议线程号；非零原样优先返回，零表示需要默认选择。
+ *
+ * ## Returns
+ * @return 依次返回显式非零请求、lastStopEvent.thread_id、currentThreadId 或 ZR_DEBUG_MAIN_THREAD_ID；不验证所选 ID 是否存在于线程表。
+ *
+ * ## Constraints and lifecycle
+ * 不修改 Agent、不分配、不暂停目标线程。需要状态指针的调用方仍须通过 begin_thread_access 或线程表查找检查有效性。
+ *
+ * ## References
+ * zr_debug_agent_begin_thread_access 在选择后校验登记；zr_debug_agent_make_stack_trace_result、zr_debug_agent_make_scopes_result 和 ZrDebug_ReadStack 消费同一默认规则。
+ */
+
+/**
+ * @fn TZrBool zr_debug_agent_register_thread_state(ZrDebugAgent *agent, SZrState *state, const TZrChar *name, TZrUInt32 *outThreadId)
+ *
+ * ## Summary
+ * 为新观察到的 VM 状态建立协议线程登记，并把该 Agent 安装为 state 的 trace observer；AgentStart 登记主状态，后续 trace 路径可登记其它状态。
+ *
+ * ## Parameters
+ * @param[in,out] agent 存活且由调用方串行维护的会话；持有并可能扩容线程数组。
+ * @param[in,out] state 待登记且须保持存活的 VM 状态；首次登记会增加 LINE hook 位并覆写其 observer/userData。
+ * @param[in] name 可选名称；非空文本按字节复制到固定数组，空名称按 ID 生成默认名，可截断。
+ * @param[out] outThreadId 可选 ID 输出；进入时先清零，成功时写入既有或新分配的协议 ID。
+ *
+ * ## Returns
+ * @return 已登记或新登记成功返回 true；空 Agent/state 或 realloc 返回 null 时返回 false。扩容失败不增加条目数、不改 state hook，既有线程表仍由 Agent 持有。
+ *
+ * ## Constraints and lifecycle
+ * 已登记的 state 直接复用旧条目，不改名、不重复安装回调。新条目保存旧 debugHookSignal，但不保存先前 observer 函数或 userData；AgentStop 仅在 userData 仍属于本 Agent 时卸载并恢复该掩码。条目只借用 state，不建立 OS 线程或 VM 所有权；调用方负责状态存活、observer 归属和同步。ID 递增及容量乘法没有额外回绕/溢出检测，不承诺无限登记。
+ *
+ * ## References
+ * ZrDebug_AgentStart 注册 main；zr_debug_agent_trace_observer 处理尚无 ID 的状态；ZrCore_Debug_SetTraceObserver 写入回调，ZrDebug_AgentStop 执行归属检查后卸载。
+ */
+
+/**
+ * @fn SZrState *zr_debug_agent_begin_thread_access(ZrDebugAgent *agent, TZrUInt32 requestedThreadId, TZrUInt32 *outResolvedThreadId, SZrState **outPreviousState, TZrUInt32 *outPreviousThreadId)
+ *
+ * ## Summary
+ * 在单个协议读栈、变量或求值请求期间，把 Agent 的当前 state/线程号暂时指向所选登记状态，使既有读取接口可以复用该上下文。
+ *
+ * ## Parameters
+ * @param[in,out] agent 请求使用的存活会话；成功时临时改写当前上下文，null 时失败。
+ * @param[in] requestedThreadId 显式线程号，或零以使用 effective_thread_id 的默认顺序。
+ * @param[out] outResolvedThreadId 可选输出；先写零，成功后写实际登记 ID。
+ * @param[out] outPreviousState 可选输出；在验证前保存旧借用 state，空 Agent 时为 null。需要恢复的调用方应提供独立局部存储。
+ * @param[out] outPreviousThreadId 可选输出；在验证前保存旧线程号，空 Agent 时为零。
+ *
+ * ## Returns
+ * @return 成功返回所选登记 state 的借用指针，并切换 Agent 当前上下文；Agent 为空、ID 未登记或条目 state 为空时返回 null，Agent 上下文保持原值。
+ *
+ * ## Constraints and lifecycle
+ * 该操作不暂停线程、不取得锁，也不提供异常清理屏障。成功后调用方须在所有普通退出分支用 end_thread_access 恢复保存值；嵌套访问按逆序结束。非局部退出不会由本辅助函数自动恢复，读取/求值的线程稳定性仍由上层保证。
+ *
+ * ## References
+ * zr_debug_agent_make_stack_trace_result、zr_debug_agent_make_scopes_result、zr_debug_agent_make_variables_result 与 zr_debug_protocol_make_evaluate_result_detailed 使用该配对；zr_debug_agent_end_thread_access 恢复保存值。
+ */
+
+/**
+ * @fn void zr_debug_agent_end_thread_access(ZrDebugAgent *agent, SZrState *previousState, TZrUInt32 previousThreadId)
+ *
+ * ## Summary
+ * 结束一次临时线程访问，将 Agent 上下文恢复为 begin_thread_access 前保存的值；不恢复 VM 栈、句柄或其它请求副作用。
+ *
+ * ## Parameters
+ * @param[in,out] agent 待恢复的会话；null 为无操作。
+ * @param[in] previousState 配对 begin 调用保存的借用状态，可为 null；本函数不验证或释放。
+ * @param[in] previousThreadId 同次 begin 保存的线程号；按原值恢复，不重新查找登记。
+ *
+ * ## Returns
+ * 结果通过 agent->state/currentThreadId 的赋值体现；无返回值、无分配，null Agent 不产生副作用。
+ *
+ * ## Constraints and lifecycle
+ * 调用方负责使用正确配对的保存值，并在会话仍存活且访问顺序受控时调用；本函数不是锁释放或异常处理器。恢复后不得继续假定 Agent 指向刚读取的目标线程。
+ *
+ * ## References
+ * zr_debug_agent_begin_thread_access 提供保存值；协议 stackTrace/scopes/variables/evaluate 的普通成功和失败分支调用本函数。
+ */
+
+/**
+ * @fn TZrBool ZrDebug_AgentStart(SZrState *state, SZrFunction *entryFunction, const TZrChar *moduleName, const ZrDebugAgentConfig *config, ZrDebugAgent **outAgent, TZrChar *errorBuffer, TZrSize errorBufferSize)
+ *
+ * ## Summary
+ * 在入口函数执行前创建调试会话，解码入口 TestManifest、打开 loopback 监听器并登记主 VM 状态；只建立调试设施，不执行入口函数，也不创建执行线程。
+ *
+ * ## Parameters
+ * @param[in,out] state 必需的存活 VM 状态；成功后其 trace observer/hook 由会话使用，宿主保留状态和 global。
+ * @param[in] entryFunction 必需的入口函数；元数据在启动时读取，函数指针仍借用到 AgentStop，宿主负责其有效性和 GC 根。
+ * @param[in] moduleName 可选显示名称；null 视为空串，启动时复制到 Agent 固定数组，可截断。
+ * @param[in] config 可选配置；null 使用零值配置与 127.0.0.1:0。结构按值复制，其中 auth_token 仍借用。
+ * @param[out] outAgent 必需的会话输出；进入时清零，成功后移交新 Agent，必须以 AgentStop 释放。
+ * @param[out] errorBuffer 可选普通失败诊断缓冲；可为 null，与容量一起交给有界文本复制，不保证成功时清空。
+ * @param[in] errorBufferSize 诊断缓冲字节容量；零表示不写，非零且缓冲非空时须提供相应可写空间。
+ *
+ * ## Returns
+ * @return 成功返回 true 并发布 *outAgent；必需参数缺失、C 分配失败、Manifest 不合法或监听器/线程登记失败时普通返回 false。已取得的会话资源在这些失败分支经部分初始化安全的 AgentStop 清理，输出保持 null。
+ *
+ * ## Constraints and lifecycle
+ * state、entryFunction、注册的其它 state 和鉴权令牌在会话使用期间保持有效；配置不替宿主管理 VM/函数根。启动覆写 state observer，不保存先前 observer，只保存其 hook 掩码。调用方须协调 observer 归属，停止执行/请求访问后再 Stop；本接口没有并发或重入保护。原生分配失败走 bool/NULL 路径，不借此承诺任意宿主分配器回调的非局部异常清理。
+ *
+ * ## References
+ * ZrCli_Runtime_RunPreparedProjectCapture 在执行前启动并在执行后停止；ZrParser_TestManifest_Decode 解码副本，ZrNetwork_ListenerOpenLoopback 建立监听，zr_debug_agent_register_thread_state 安装主状态回调，ZrDebug_AgentStop 配对释放。
+ */
+
+/**
+ * @fn void ZrDebug_AgentStop(ZrDebugAgent *agent)
+ *
+ * ## Summary
+ * 销毁启动成功或启动途中构造的 Agent，先解除仍归属于它的 VM 回调，再关闭网络和释放会话拥有的数组、句柄表及解码清单，防止释放后回调继续使用会话。
+ *
+ * ## Parameters
+ * @param[in,out] agent 由 AgentStart 分配的会话；null 为无操作。非空调用后该指针及其内部借用视图失效，调用方变量不会被自动清零。
+ *
+ * ## Returns
+ * 无返回值；卸载满足归属条件的 observer、恢复对应旧 hook 掩码并释放会话。不会销毁借用 VM 状态、入口函数或鉴权令牌。
+ *
+ * ## Constraints and lifecycle
+ * 调用前须确保 VM 执行、协议请求和临时线程访问已结束，且所有登记 state/global 仍存活；本函数不 join、不等待回调、不提供并发销毁保护。仅当 state->debugTraceUserData 仍等于本 Agent 才卸载并恢复掩码；不恢复注册前的 observer，也不触碰已改由其它 owner 持有的回调。非空会话只能销毁一次。
+ *
+ * ## References
+ * ZrDebug_AgentStart 的普通失败分支调用本函数；CLI 在入口执行结束后调用，test_debug_threads_enumerates_main_thread_and_routes_snapshots 先 join 执行线程再 Stop；zr_debug_agent_close_client、ZrParser_TestManifest_Free 释放所属资源。
+ */
+
+/**
+ * @fn TZrBool ZrDebug_ReadTestManifest(ZrDebugAgent *agent, ZrDebugTestEntrySnapshot **outEntries, TZrSize *outCount)
+ *
+ * ## Summary
+ * 把启动时已解码的入口测试清单投影为调试客户端可读取的平面快照，供测试发现列出标识、用例数量和显示文本；不执行测试或复制完整参数描述。
+ *
+ * ## Parameters
+ * @param[in] agent 存活会话；读取其解码清单但不改变它。
+ * @param[out] outEntries 必需数组输出；进入时先清零，成功非空数组由调用方用 ZrDebug_Free 释放。
+ * @param[out] outCount 必需元素数输出；进入时先置零，成功后与数组长度对应。
+ *
+ * ## Returns
+ * @return 无清单或条目数为零时 true 并交付 null/0；复制成功时 true 并交付独立 calloc 数组；空必需输入或分配失败时 false，能够写入的输出保持空值。
+ *
+ * ## Constraints and lifecycle
+ * 快照的标量和固定文本数组均复制，成功结果不借用 Agent 内部字符串，可在 AgentStop 后继续持有至 ZrDebug_Free。文本按字节截断到固定容量；case_count/is_async 是元数据，不表示实际执行结果。读取须与会话销毁协调，无内部同步。
+ *
+ * ## References
+ * ZrDebug_AgentStart 负责解码并持有源清单；test_debug_agent_projects_typed_test_manifest 读取并释放快照；ZrDebugTestEntrySnapshot 定义投影字段，ZrDebug_Free 释放结果。
+ */
+
+/**
+ * @fn TZrBool ZrDebug_AgentGetEndpoint(ZrDebugAgent *agent, TZrChar *buffer, TZrSize bufferSize)
+ *
+ * ## Summary
+ * 把监听器实际绑定端点复制给 CLI 握手输出或测试 TCP 连接代码，避免客户端继续使用配置中的临时端口零；不建立连接。
+ *
+ * ## Parameters
+ * @param[in] agent 已完成启动且仍存活的会话。
+ * @param[out] buffer 调用方提供的文本缓冲；非空且容量大于零时才可复制。
+ * @param[in] bufferSize 可写字节容量，包含终止零空间。
+ *
+ * ## Returns
+ * @return 空 Agent/缓冲、容量零或会话端点为空时 false，缓冲不改；其它情况 true 并复制一个零终止串。true 仅表示进行了有界复制，不保证端点未截断，容量为一时也可能只得到空串。
+ *
+ * ## Constraints and lifecycle
+ * 不分配、不转移网络资源。完整端点要求调用方提供足够容量并在使用前保持会话/监听器有效；截断按字节发生，不承诺 UTF-8 字符边界。与 Stop 并发读取不受保护。
+ *
+ * ## References
+ * zr_cli_runtime_emit_debug_endpoint 发布握手信息；test_debug_threads 和 test_debug_agent_protocol 的 connect helper 取得该地址；ZrNetwork_FormatEndpoint 在 AgentStart 中生成实际地址。
+ */

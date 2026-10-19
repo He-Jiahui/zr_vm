@@ -601,3 +601,143 @@ ZR_DEBUG_API void ZrDebug_NotifyTerminated(ZrDebugAgent *agent, TZrBool success)
  * - \ref ZrDebug_NotifyException：本单元定义/声明（zr_vm_lib_debug/include/zr_vm_lib_debug/debug.h:335）。
  * - \ref ZrDebug_NotifyException：配套调用或事件构造入口（zr_vm_cli/src/zr_vm_cli/runtime/runtime.c:1086）。
  */
+
+/**
+ * @struct ZrDebugAgent
+ *
+ * ## Summary
+ * 公开 API 使用的不透明调试会话身份，连接宿主保留的 VM/入口函数与调试客户端；内部布局和分配大小不是公开 ABI。
+ *
+ * ## Value model
+ * 正常调用方只通过 AgentStart 得到指针，以协议/快照 API 使用，再交给 AgentStop 销毁；不能按公开头猜测布局、复制结构或用 ZrDebug_Free 代替销毁。
+ *
+ * ## Invariants and lifecycle
+ * 会话拥有监听器、客户端连接及内部原生表，但不接管 VM 状态、入口函数和配置令牌。成功指针在 AgentStop 后立即失效；Stop 不会清零宿主变量，也不等待执行线程。宿主须先结束并发执行/访问并维持所有借用对象有效，直到卸载回调完成。
+ *
+ * ## References
+ * ZrDebug_AgentStart 发布会话；ZrDebug_AgentStop 配对释放；ZrDebugAgentConfig 定义启动选项，ZrDebugTestEntrySnapshot 是另行释放的复制结果。
+ */
+
+/**
+ * @struct ZrDebugAgentConfig
+ *
+ * ## Summary
+ * 在启动时选择 loopback 监听地址、入口停点与客户端等待/鉴权方式；Agent 复制配置值，再由 trace/协议链消费待停标志和令牌。
+ *
+ * ## Fields
+ * - address：启动时读取的零终止地址；null 或空串使用 127.0.0.1:0，端口零由系统分配，监听器只允许当前 loopback 实现认可的地址。
+ * - suspend_on_start：设置入口待停请求；没有客户端且不要求等待时，trace observer 可清除此请求继续执行，不等于无条件立即暂停。
+ * - wait_for_client：要求入口等待/保留待停行为，后续 trace 与异常通知也读取该策略；启动本身不执行目标或创建线程。
+ * - auth_token：借用鉴权文本，初始化请求由 TokenMatches 比较；不是启动时深复制的秘密存储。
+ * - stop_on_uncaught_exception：初始化未捕获异常停点订阅，之后可由异常断点接口修改会话订阅。
+ *
+ * ## Invariants and lifecycle
+ * 配置结构可在启动返回后由调用方回收；其字符串指针未深复制。address 必须至少在启动解析期间有效；auth_token 须在会话可能鉴权期间保持可读且按宿主约定管理，通常保持到 AgentStop。传 null 配置等价于零值选项；这些布尔选项不提供线程同步或网络可达性保证。
+ *
+ * ## References
+ * ZrDebug_AgentStart 建立 effectiveConfig；zr_debug_agent_trace_observer 处理入口待停，zr_debug_agent_process_initialize 使用 auth_token；CLI 在 Stop 后清除自己的令牌缓冲。
+ */
+
+/**
+ * @struct ZrDebugTestEntrySnapshot
+ *
+ * ## Summary
+ * 调试测试发现使用的平面元数据快照，描述入口清单中的一个测试声明；它不包含完整参数数据，也不代表该测试已经执行或通过。
+ *
+ * ## Fields
+ * - function_symbol_id/function_type_id/callable_child_index 从解码声明复制，用于关联入口测试函数身份。
+ * - case_count/is_async 是声明的用例数量和异步标记；不能据此推导本次运行数量、结果或调度完成。
+ * - module_id/qualified_name/skip_reason 是固定容量自有字符数组，缺失源文本转为空串，过长文本按字节截断并终止。
+ *
+ * ## Invariants and lifecycle
+ * ReadTestManifest 成功时返回独立数组，所有公开字段为值或内嵌数组，可在 AgentStop 后继续读取。调用方用 ZrDebug_Free 一次释放数组，不逐字段释放，不把字段文本当作无截断的完整清单标识。
+ *
+ * ## References
+ * ZrDebug_ReadTestManifest 构造投影；ZrParser_TestManifest_Decode 提供内部源记录；test_debug_agent_projects_typed_test_manifest 核对复制出的 ID、数量和名称。
+ */
+
+/**
+ * @fn TZrBool ZrDebug_AgentStart(SZrState *state, SZrFunction *entryFunction, const TZrChar *moduleName, const ZrDebugAgentConfig *config, ZrDebugAgent **outAgent, TZrChar *errorBuffer, TZrSize errorBufferSize)
+ *
+ * ## Summary
+ * 在入口函数执行前创建调试会话，解码入口 TestManifest、打开 loopback 监听器并登记主 VM 状态；只建立调试设施，不执行入口函数，也不创建执行线程。
+ *
+ * ## Parameters
+ * @param[in,out] state 必需的存活 VM 状态；成功后其 trace observer/hook 由会话使用，宿主保留状态和 global。
+ * @param[in] entryFunction 必需的入口函数；元数据在启动时读取，函数指针仍借用到 AgentStop，宿主负责其有效性和 GC 根。
+ * @param[in] moduleName 可选显示名称；null 视为空串，启动时复制到 Agent 固定数组，可截断。
+ * @param[in] config 可选配置；null 使用零值配置与 127.0.0.1:0。结构按值复制，其中 auth_token 仍借用。
+ * @param[out] outAgent 必需的会话输出；进入时清零，成功后移交新 Agent，必须以 AgentStop 释放。
+ * @param[out] errorBuffer 可选普通失败诊断缓冲；可为 null，与容量一起交给有界文本复制，不保证成功时清空。
+ * @param[in] errorBufferSize 诊断缓冲字节容量；零表示不写，非零且缓冲非空时须提供相应可写空间。
+ *
+ * ## Returns
+ * @return 成功返回 true 并发布 *outAgent；必需参数缺失、C 分配失败、Manifest 不合法或监听器/线程登记失败时普通返回 false。已取得的会话资源在这些失败分支经部分初始化安全的 AgentStop 清理，输出保持 null。
+ *
+ * ## Constraints and lifecycle
+ * state、entryFunction、注册的其它 state 和鉴权令牌在会话使用期间保持有效；配置不替宿主管理 VM/函数根。启动覆写 state observer，不保存先前 observer，只保存其 hook 掩码。调用方须协调 observer 归属，停止执行/请求访问后再 Stop；本接口没有并发或重入保护。原生分配失败走 bool/NULL 路径，不借此承诺任意宿主分配器回调的非局部异常清理。
+ *
+ * ## References
+ * ZrCli_Runtime_RunPreparedProjectCapture 在执行前启动并在执行后停止；ZrParser_TestManifest_Decode 解码副本，ZrNetwork_ListenerOpenLoopback 建立监听，zr_debug_agent_register_thread_state 安装主状态回调，ZrDebug_AgentStop 配对释放。
+ */
+
+/**
+ * @fn void ZrDebug_AgentStop(ZrDebugAgent *agent)
+ *
+ * ## Summary
+ * 销毁启动成功或启动途中构造的 Agent，先解除仍归属于它的 VM 回调，再关闭网络和释放会话拥有的数组、句柄表及解码清单，防止释放后回调继续使用会话。
+ *
+ * ## Parameters
+ * @param[in,out] agent 由 AgentStart 分配的会话；null 为无操作。非空调用后该指针及其内部借用视图失效，调用方变量不会被自动清零。
+ *
+ * ## Returns
+ * 无返回值；卸载满足归属条件的 observer、恢复对应旧 hook 掩码并释放会话。不会销毁借用 VM 状态、入口函数或鉴权令牌。
+ *
+ * ## Constraints and lifecycle
+ * 调用前须确保 VM 执行、协议请求和临时线程访问已结束，且所有登记 state/global 仍存活；本函数不 join、不等待回调、不提供并发销毁保护。仅当 state->debugTraceUserData 仍等于本 Agent 才卸载并恢复掩码；不恢复注册前的 observer，也不触碰已改由其它 owner 持有的回调。非空会话只能销毁一次。
+ *
+ * ## References
+ * ZrDebug_AgentStart 的普通失败分支调用本函数；CLI 在入口执行结束后调用，test_debug_threads_enumerates_main_thread_and_routes_snapshots 先 join 执行线程再 Stop；zr_debug_agent_close_client、ZrParser_TestManifest_Free 释放所属资源。
+ */
+
+/**
+ * @fn TZrBool ZrDebug_ReadTestManifest(ZrDebugAgent *agent, ZrDebugTestEntrySnapshot **outEntries, TZrSize *outCount)
+ *
+ * ## Summary
+ * 把启动时已解码的入口测试清单投影为调试客户端可读取的平面快照，供测试发现列出标识、用例数量和显示文本；不执行测试或复制完整参数描述。
+ *
+ * ## Parameters
+ * @param[in] agent 存活会话；读取其解码清单但不改变它。
+ * @param[out] outEntries 必需数组输出；进入时先清零，成功非空数组由调用方用 ZrDebug_Free 释放。
+ * @param[out] outCount 必需元素数输出；进入时先置零，成功后与数组长度对应。
+ *
+ * ## Returns
+ * @return 无清单或条目数为零时 true 并交付 null/0；复制成功时 true 并交付独立 calloc 数组；空必需输入或分配失败时 false，能够写入的输出保持空值。
+ *
+ * ## Constraints and lifecycle
+ * 快照的标量和固定文本数组均复制，成功结果不借用 Agent 内部字符串，可在 AgentStop 后继续持有至 ZrDebug_Free。文本按字节截断到固定容量；case_count/is_async 是元数据，不表示实际执行结果。读取须与会话销毁协调，无内部同步。
+ *
+ * ## References
+ * ZrDebug_AgentStart 负责解码并持有源清单；test_debug_agent_projects_typed_test_manifest 读取并释放快照；ZrDebugTestEntrySnapshot 定义投影字段，ZrDebug_Free 释放结果。
+ */
+
+/**
+ * @fn TZrBool ZrDebug_AgentGetEndpoint(ZrDebugAgent *agent, TZrChar *buffer, TZrSize bufferSize)
+ *
+ * ## Summary
+ * 把监听器实际绑定端点复制给 CLI 握手输出或测试 TCP 连接代码，避免客户端继续使用配置中的临时端口零；不建立连接。
+ *
+ * ## Parameters
+ * @param[in] agent 已完成启动且仍存活的会话。
+ * @param[out] buffer 调用方提供的文本缓冲；非空且容量大于零时才可复制。
+ * @param[in] bufferSize 可写字节容量，包含终止零空间。
+ *
+ * ## Returns
+ * @return 空 Agent/缓冲、容量零或会话端点为空时 false，缓冲不改；其它情况 true 并复制一个零终止串。true 仅表示进行了有界复制，不保证端点未截断，容量为一时也可能只得到空串。
+ *
+ * ## Constraints and lifecycle
+ * 不分配、不转移网络资源。完整端点要求调用方提供足够容量并在使用前保持会话/监听器有效；截断按字节发生，不承诺 UTF-8 字符边界。与 Stop 并发读取不受保护。
+ *
+ * ## References
+ * zr_cli_runtime_emit_debug_endpoint 发布握手信息；test_debug_threads 和 test_debug_agent_protocol 的 connect helper 取得该地址；ZrNetwork_FormatEndpoint 在 AgentStart 中生成实际地址。
+ */

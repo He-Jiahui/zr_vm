@@ -376,3 +376,5 @@ doc_type: category-index
 - [调试兼容求值合同](batches/20261019-debug-compat-evaluation-current-contracts.md)：36旧单元、34段中文Doxygen，保留1既有BUG镜像，36目录键迁移不增信用；前后diagnostics56同55PASS1FAIL，原始输出一致。
 
 - [Union调试检查合同](batches/20261019-debug-union-inspection-current-contracts.md)：56旧项、52段中文Doxygen，43目录键迁移0新增；保留既有GC根BUG及布局TODO家族，H仅13/89其余pending；前后variable_child_shape3全PASS，原始输出一致。
+
+- [调试Agent、线程与连接生命周期合同](batches/20261019-debug-agent-thread-lifecycle-current-contracts.md)：32旧项、20段中文Doxygen、0新增；三个文件仅部分审查，前后threads1及agent_protocol8全PASS，原始输出一致。
