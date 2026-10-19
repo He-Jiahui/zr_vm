@@ -2923,7 +2923,11 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                 }
             }
 
-            initializerSlot = compile_expression_into_slot(cs, decl->value, reservedVarSlot);
+            /* A local init already owns a callable/receiver window. Keep its
+             * final destination place instead of staging it as a nested value. */
+            initializerSlot = valueConstructFunctionSlot != ZR_PARSER_SLOT_NONE
+                                      ? compile_struct_init_expression_into_slot(cs, decl->value, reservedVarSlot)
+                                      : compile_expression_into_slot(cs, decl->value, reservedVarSlot);
             compile_statement_trace("var decl initializer compile done hasError=%d stackCount=%llu initializerSlot=%u",
                                     (int)cs->hasError,
                                     (unsigned long long)cs->stackSlotCount,
