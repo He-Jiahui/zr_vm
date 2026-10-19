@@ -358,3 +358,5 @@ doc_type: category-index
 - [ExecBC AOT 底层夹具与资源辅助合同](batches/20261019-aot-execbc-fixture-helpers-current-contracts.md)：47旧单元、47段Doxygen；前后完整98例与重复manual3例通过，余157旧单元待审。
 
 - [调试断点、暂停和单步控制合同](batches/20261019-debug-breakpoint-trace-control-current-contracts.md)：67旧单元、60段Doxygen；前后29例PASS，修改前协议watchdog/驱动1保留，三个源文件维持pending。
+
+- [ExecBC AOT 检查与断言辅助合同](batches/20261019-aot-execbc-inspection-helpers-current-contracts.md)：31旧单元、31段Doxygen及3处旧说明更正；前后完整98与重复manual3通过，余126旧单元待审。
