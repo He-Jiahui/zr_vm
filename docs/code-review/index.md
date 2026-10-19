@@ -340,3 +340,5 @@ doc_type: category-index
 - [会话交接后的首方文件范围补录（13 pending，0 单元信用）](batches/20261018-released-session-scope-supplement.md)
 
 - [Canonical consumer 与引用 callable 测试契约](batches/20261018-parser-canonical-consumer-tests-contracts-current.md)：123 新单元、105 段 Doxygen；两源原始字节前缀不变，同一目标的 21 个 Unity 用例修改前后有限验证。
+
+- [Complex 当前调用与生命周期契约](batches/20261018-math-complex-current-contracts.md)：61 个既有单元复审、18 段现有 Doxygen；55 行注释精修，当前 CLI 与 core 项目前35项及既有网络配置失败的修改前后对照。
