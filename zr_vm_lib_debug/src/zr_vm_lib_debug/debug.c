@@ -2990,3 +2990,561 @@ void ZrDebug_NotifyException(ZrDebugAgent *agent) {
  * ## References
  * zr_cli_runtime_emit_debug_endpoint 发布握手信息；test_debug_threads 和 test_debug_agent_protocol 的 connect helper 取得该地址；ZrNetwork_FormatEndpoint 在 AgentStart 中生成实际地址。
  */
+
+/**
+ * @fn TZrBool zr_debug_text_looks_like_path(const TZrChar *text)
+ *
+ * ## Summary
+ * 为定长文本截断选择保留方向：只把含目录分隔符的文本识别为路径形态。
+ *
+ * ## Parameters
+ * @param[in] text 调用期间可读的 NUL 结尾文本；允许 NULL。
+ *
+ * ## Returns
+ * @return text 非 NULL 且含 / 或反斜杠时为 TRUE；否则为 FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 这是截断启发式，不检查路径存在性、盘符、规范化、编码或安全性；含分隔符的普通文本也会被按路径处理。
+ *
+ * 不分配、不保存输入；结果仅供 copy_text 决定保留前缀或尾部。
+ *
+ * ## References
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:79
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:14
+ */
+
+/**
+ * @fn TZrSize zr_debug_format_truncation_marker(TZrChar *buffer, TZrSize bufferSize, TZrSize omittedCount)
+ *
+ * ## Summary
+ * 在调用方提供的缓冲区内生成带省略字节数的截断标记，供 copy_text 计算文本与标记的容量分配。
+ *
+ * ## Parameters
+ * @param[out] buffer 可写字符缓冲区；NULL 表示无法输出。
+ * @param[in] bufferSize 缓冲区实际容量，包含终止 NUL 的空间。
+ * @param[in] omittedCount 显示在标记中的省略字节数；不是 Unicode 码点数。
+ *
+ * ## Returns
+ * @return 成功时为标记字节数，不含末尾 NUL；缓冲区无效、容量为零、snprintf 失败或标记放不下时为零。
+ *
+ * ## Constraints and lifecycle
+ * 格式固定为 ...[+N]；对非 NULL 且容量非零的格式化失败会写入空串。返回零不承诺写出完整标记。
+ *
+ * 不分配、不持有 buffer；由 copy_text 使用局部标记缓冲区，可按最新省略量重复计算。
+ *
+ * ## References
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:55
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:64
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:68
+ */
+
+/**
+ * @fn void zr_debug_copy_text(TZrChar *buffer, TZrSize bufferSize, const TZrChar *text)
+ *
+ * ## Summary
+ * 把借用文本写入定长调试字段；空间不足时尽量附加省略字节标记，并为路径形态保留更有用的尾部。
+ *
+ * ## Parameters
+ * @param[out] buffer 调用期间可写的目标缓冲区；NULL 时不写。
+ * @param[in] bufferSize 目标实际字节容量；零时不写，非零输出均保留终止 NUL。
+ * @param[in] text 调用期间可读且与目标写入区不重叠的 NUL 结尾文本；NULL 生成空串。
+ *
+ * ## Returns
+ * void；结果通过 buffer 输出，不报告是否截断。
+ *
+ * ## Constraints and lifecycle
+ * 容量足够时复制完整文本；可放下标记时，含 / 或反斜杠的文本采用标记加尾部，其他文本采用前缀加标记。极小缓冲区或标记格式失败退回容量减一的前缀。strlen 和截断量按字节，不能承诺 UTF-8 码点完整；既有 TODO 保持。
+ *
+ * 不分配、不保存指针；调用者拥有输入与输出。不能借此延长 VM 字符串生命周期，也不提供重叠区域复制保证。
+ *
+ * @note TODO: 多字节协议字段要求尚待核实；保留既有 UTF-8 字节截断家族，不新增已复现缺陷。
+ *
+ * ## References
+ * - tests/debug/test_debug_truncation.c:12
+ * - tests/debug/test_debug_truncation.c:24
+ * - tests/debug/test_debug_truncation.c:33
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:78
+ */
+
+/**
+ * @fn const TZrChar *zr_debug_string_native(SZrString *value)
+ *
+ * ## Summary
+ * 把可选的 VM 字符串转换为调试显示所用的借用 NUL 字节视图。
+ *
+ * ## Parameters
+ * @param[in] value 借用的有效 VM 字符串对象；允许 NULL。
+ *
+ * ## Returns
+ * @return value 为 NULL 时返回 NULL，否则返回 Core 按短串或长串布局取得的字节指针。
+ *
+ * ## Constraints and lifecycle
+ * 不执行编码转换，不以 strlen 代替对象的完整字节长度；对象可含内嵌 NUL，因此以 C 字符串消费的调用者只看到其前缀。
+ *
+ * 返回指针不归调用者释放；对象释放或移动 GC 后应重新取得，调用者须保持对象有效。
+ *
+ * ## References
+ * - zr_vm_core/include/zr_vm_core/string.h:218
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:95
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:100
+ */
+
+/**
+ * @fn const TZrChar *zr_debug_function_name(SZrFunction *function)
+ *
+ * ## Summary
+ * 为函数调试展示提供可读名称，在缺失或空名称时采用匿名函数占位文字。
+ *
+ * ## Parameters
+ * @param[in] function 借用的可选函数对象；允许 NULL，非 NULL 时须在调用期间有效，函数名字段也允许 NULL。
+ *
+ * ## Returns
+ * @return 非空函数名的借用字节视图，或静态字符串 <anonymous>。
+ *
+ * ## Constraints and lifecycle
+ * 仅供展示和既有断点匹配流程消费，不生成稳定函数身份；不验证名称编码或唯一性。
+ *
+ * 不分配、不复制函数名；VM 名称视图受其字符串生命周期约束，静态占位串不得释放。
+ *
+ * ## References
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:1036
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2831
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/protocol/debug_protocol.c:248
+ */
+
+/**
+ * @fn const TZrChar *zr_debug_function_source(SZrFunction *function)
+ *
+ * ## Summary
+ * 为栈帧和断点流程取得函数携带的源码标识文本。
+ *
+ * ## Parameters
+ * @param[in] function 借用的可选函数对象；允许 NULL，非 NULL 时须在调用期间有效，源码字符串字段也允许 NULL。
+ *
+ * ## Returns
+ * @return 源码字段的借用字节视图；function 或源码字符串字段为 NULL 时返回静态空串，已有空字符串保持为空。
+ *
+ * ## Constraints and lifecycle
+ * 源码标识可能是虚拟编译标签，不证明文件存在、绝对路径或与模块名相同；规范化和匹配由上层负责。
+ *
+ * 不分配或保留对象；VM 字节视图在对象释放或移动后失效，静态空串不得释放。
+ *
+ * ## References
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:1031
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2834
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/protocol/debug_protocol.c:245
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/protocol/debug_protocol.c:334
+ */
+
+/**
+ * @fn const TZrChar *zr_debug_stop_reason_name(EZrDebugStopReason reason)
+ *
+ * ## Summary
+ * 把 Agent 停止原因映射为当前调试协议使用的固定文本。
+ *
+ * ## Parameters
+ * @param[in] reason 待显示的停止原因枚举。
+ *
+ * ## Returns
+ * @return entry、breakpoint、pause、step、exception、terminated 或 dataBreakpoint；NONE 及未知值返回 none。
+ *
+ * ## Constraints and lifecycle
+ * 只映射枚举，不触发暂停、不决定停止优先级；优先级在 trace observer 中实现。
+ *
+ * 返回静态只读字符串，无分配、无状态修改，调用者不得释放或写入。
+ *
+ * ## References
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/protocol/debug_protocol.c:266
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:1518
+ */
+
+/**
+ * @fn const TZrChar *zr_debug_exception_filter_name(EZrDebugExceptionFilter filter)
+ *
+ * ## Summary
+ * 把停止事件中的异常捕获类别映射为协议字段。
+ *
+ * ## Parameters
+ * @param[in] filter 异常过滤类别枚举。
+ *
+ * ## Returns
+ * @return caught 或 uncaught；NONE 及未知值返回 none。
+ *
+ * ## Constraints and lifecycle
+ * 不判断异常是否已被处理，也不配置异常断点；仅反映上层已选择的类别。
+ *
+ * 返回静态只读字符串，不分配、不持有状态，调用者不得释放。
+ *
+ * ## References
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/protocol/debug_protocol.c:267
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:1520
+ */
+
+/**
+ * @fn const TZrChar *zr_debug_scope_kind_name(EZrDebugScopeKind kind)
+ *
+ * ## Summary
+ * 为作用域列表生成客户端展示名称。
+ *
+ * ## Parameters
+ * @param[in] kind 待显示的作用域类别。
+ *
+ * ## Returns
+ * @return Arguments、Locals、Closures、Globals、Prototype、Statics 或 Exception；未知值为 Unknown。
+ *
+ * ## Constraints and lifecycle
+ * 名称不代表该作用域在当前帧中存在或可监视，实际枚举与读取资格由 ReadScopes 和 data breakpoint 解码各自决定。
+ *
+ * 返回静态只读字符串，无分配；调用者不得释放或写入。
+ *
+ * ## References
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2901
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2934
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2967
+ */
+
+/**
+ * @fn const TZrChar *zr_debug_value_type_name(EZrValueType type)
+ *
+ * ## Summary
+ * 为调试预览和错误诊断提供 VM 值类型的简短展示名。
+ *
+ * ## Parameters
+ * @param[in] type 原始 VM 值类型枚举。
+ *
+ * ## Returns
+ * @return 已识别类型返回固定名称；整数和浮点宽度合并为展示类别，未覆盖类型返回 value。
+ *
+ * ## Constraints and lifecycle
+ * 这是展示映射，不提供反射类型名、泛型信息或可逆序列化；不读取实际值或对象。
+ *
+ * 返回静态只读字符串，无分配、不延长 VM 对象生命周期。
+ *
+ * ## References
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_eval_diagnostics.c:19
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_child_shape.c:129
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:457
+ */
+
+/**
+ * @fn TZrUInt32 zr_debug_scope_id(TZrUInt32 frameId, EZrDebugScopeKind kind)
+ *
+ * ## Summary
+ * 把一基帧号与作用域类别编码为旧式 variablesReference，供作用域和协议栈帧输出往返使用。
+ *
+ * ## Parameters
+ * @param[in] frameId 调用者提供的一基帧号；本函数不校验范围。
+ * @param[in] kind 编码到末位的作用域枚举；本函数不验证枚举范围。
+ *
+ * ## Returns
+ * @return 按无符号运算得到 frameId * 10 + kind。
+ *
+ * ## Constraints and lifecycle
+ * 没有溢出、动态句柄区间或帧存在性检查。既有 BUG：第 100 层起编码达到 1000，与动态变量句柄分派域重叠；不得将其描述为所有深度均可逆的稳定 ID。
+ *
+ * 纯算术不分配；ID 不含线程或停点代次，不能脱离相应帧与暂停状态持久使用。
+ *
+ * @note BUG: 深帧作用域 ID 与动态变量句柄区间重叠，保留既有同族问题。
+ *
+ * ## References
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:227
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:2900
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_snapshot.c:3024
+ * - zr_vm_core/src/zr_vm_core/debug/debug.c:290
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_internal.h:36
+ */
+
+/**
+ * @fn void zr_debug_data_breakpoint_copy_value_snapshot(SZrTypeValue *destination, const SZrTypeValue *source)
+ *
+ * ## Summary
+ * 复制用于下一次 trace 比较的值描述，并将拥有型对象引用降为非拥有借用。
+ *
+ * ## Parameters
+ * @param[out] destination 非拥有用途的可写目标值；允许 NULL，此时不操作；不得与 source 为同一对象。
+ * @param[in] source 本次读取的借用值；允许 NULL，此时目标保持 null。
+ *
+ * ## Returns
+ * void；通过 destination 输出浅快照，不返回对象所有权。
+ *
+ * ## Constraints and lifecycle
+ * 先 ResetAsNull 再按值复制；非 GC 值清除 ownership 控制字段，拥有型 GC 值改为 BORROWED 并去掉 weakOwner。已有 ownershipControl 可保留；这不是深拷贝、GC root 或可跨任意对象释放/移动的固定地址。
+ *
+ * 不申请、不增加拥有计数、不释放旧拥有值；调用者须提供可覆盖的非拥有目标并在有效 VM/trace 生命周期内消费。相关 block 与函数共用同一基线契约。
+ *
+ * ## References
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:403
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:565
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:629
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:865
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:915
+ */
+
+/**
+ * @fn TZrBool zr_debug_data_breakpoint_decode_scope_id(TZrUInt32 variablesReference, TZrUInt32 *outFrameId, EZrDebugScopeKind *outScopeKind)
+ *
+ * ## Summary
+ * 从旧式作用域引用中解出可用于数据断点的帧号与作用域类别。
+ *
+ * ## Parameters
+ * @param[in] variablesReference 客户端返回的旧式作用域引用。
+ * @param[out] outFrameId 可选帧号输出；进入时先写零，允许 NULL。
+ * @param[out] outScopeKind 可选类别输出；进入时先写 Globals，允许 NULL。
+ *
+ * ## Returns
+ * @return 只有 1..999 范围内、帧号非零且末位为 Arguments、Locals 或 Closures 时为 TRUE；其余为 FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 不接受动态变量句柄、Globals、Prototype 等类别；这里只验证编码，不检查线程、帧是否仍存在或当前变量是否可读。深帧碰撞仍受 scope_id 既有 BUG 限制。
+ *
+ * 不分配、不持有引用；失败保留初始化后的可选输出，成功仅写数值。
+ *
+ * ## References
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:706
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:226
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_internal.h:36
+ */
+
+/**
+ * @fn TZrBool zr_debug_data_breakpoint_local_scope_accepts_slot(EZrDebugScopeKind scopeKind, const SZrFunction *function, TZrUInt32 stackSlot)
+ *
+ * ## Summary
+ * 按函数参数数目把待监视栈槽划分到参数或局部变量作用域。
+ *
+ * ## Parameters
+ * @param[in] scopeKind 要求 Arguments 或 Locals 的作用域类别。
+ * @param[in] function 借用函数元数据；允许 NULL，NULL 不接受。
+ * @param[in] stackSlot 待检查的零基函数栈槽。
+ *
+ * ## Returns
+ * @return 槽小于 stackSize 且满足相应参数边界时为 TRUE；函数为空、槽越界或类别不支持时为 FALSE。
+ *
+ * ## Constraints and lifecycle
+ * Arguments 使用槽小于 parameterCount，Locals 使用槽大于等于 parameterCount；不另行识别 this/self，也不核对当前 PC 活跃性。不能套用 Snapshot 其他非排他 Locals 视图的规则。
+ *
+ * 只读元数据，不分配或改变槽值；活跃元数据筛选由 resolve_local 在调用前后完成。
+ *
+ * ## References
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:548
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:533
+ */
+
+/**
+ * @fn SZrClosure *zr_debug_data_breakpoint_try_get_vm_closure_from_value(const SZrTypeValue *value)
+ *
+ * ## Summary
+ * 从当前帧的闭包值中识别能由 Core upvalue API 读取的非原生 VM 闭包。
+ *
+ * ## Parameters
+ * @param[in] value 调用期间有效的借用值描述；允许 NULL。
+ *
+ * ## Returns
+ * @return 值类型为 Closure、值与闭包均非 native 且对象存在时返回借用 SZrClosure 指针；否则返回 NULL。
+ *
+ * ## Constraints and lifecycle
+ * 只检查表示类别与指针，不验证任意悬空地址、闭包与当前函数的完整一致性或捕获项数量；后续 Core API 继续检查具体索引。
+ *
+ * 不分配、不保活闭包；调用者须在当前 VM 帧有效期间立即使用，不能释放返回值。
+ *
+ * ## References
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:607
+ * - zr_vm_core/src/zr_vm_core/debug/debug.c:897
+ * - zr_vm_core/src/zr_vm_core/debug/debug.c:958
+ */
+
+/**
+ * @fn TZrBool zr_debug_data_breakpoint_resolve_local(ZrDebugAgent *agent, TZrUInt32 frameId, EZrDebugScopeKind scopeKind, const TZrChar *name, TZrInt32 *outLocalIndex, TZrUInt32 *outStackSlot, SZrTypeValue *outValue)
+ *
+ * ## Summary
+ * 在当前线程选定帧的活跃变量中按名称解析参数或局部变量，并产生供数据断点比较的借用值。
+ *
+ * ## Parameters
+ * @param[in,out] agent 借用 Agent；读取其当前 state，本函数不负责切换或恢复线程；允许无效输入并返回 FALSE。
+ * @param[in] frameId 一基可见 VM 帧号，必须大于零。
+ * @param[in] scopeKind 仅允许 Arguments 或 Locals。
+ * @param[in] name 非空、NUL 结尾且调用期间有效的变量名。
+ * @param[out] outLocalIndex 可选 Core 活跃变量一基序号输出；进入时写零。
+ * @param[out] outStackSlot 可选元数据零基栈槽输出；进入时写零。
+ * @param[out] outValue 可选非拥有快照输出；进入时重置为 null，不转移 VM 对象所有权。
+ *
+ * ## Returns
+ * @return 活跃元数据、Core 局部值名称和要求的作用域均匹配时为 TRUE；缺帧、无效输入或找不到名称时为 FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 活跃变量序号在作用域过滤前递增，不能用 metadata 下标或 stackSlot 代替；循环依赖元数据按激活偏移排列。Core 可能物化 inline 值，既有 Core 读取失败语义原样传播，不把 TRUE 泛化为无分配或无异常。
+ *
+ * 不缓存 activation 或名称；调用方在 info/add 的正常返回路径成对切换/恢复线程，trace 中直接使用当前 state。本函数不建立异常捕获或全事务回滚，输出对象仍是借用。
+ *
+ * ## References
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:533
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:553
+ * - zr_vm_core/src/zr_vm_core/debug/debug.c:804
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:723
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:820
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:889
+ */
+
+/**
+ * @fn TZrBool zr_debug_data_breakpoint_resolve_upvalue(ZrDebugAgent *agent, TZrUInt32 frameId, const TZrChar *name, TZrInt32 *outUpvalueIndex, SZrTypeValue *outValue)
+ *
+ * ## Summary
+ * 在当前帧的 VM 闭包中按捕获名解析 upvalue，供数据断点安装与后续比较。
+ *
+ * ## Parameters
+ * @param[in,out] agent 借用 Agent 及其当前 state；本函数不切换线程，允许无效输入返回 FALSE。
+ * @param[in] frameId 一基可见 VM 帧号，必须大于零。
+ * @param[in] name 非空、NUL 结尾的捕获名称。
+ * @param[out] outUpvalueIndex 可选一基 upvalue 索引输出；进入时写零。
+ * @param[out] outValue 可选非拥有快照输出；进入时重置为 null。
+ *
+ * ## Returns
+ * @return 找到当前 VM 闭包中同名且具有有效 upvalue ID 的捕获项时为 TRUE；其余为 FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只接受非原生 VM 闭包；按函数捕获元数据逐项调用 Core，索引是一基且名称重新解析，不证明 dataId 能跨帧更替或重新编译持久定位同一对象。
+ *
+ * 不持有 closureValue 或捕获对象，不注册 GC root；借用值只在相应 VM 生命周期内使用。Core 调用未被局部异常处理包装，正常失败保持初始化输出。
+ *
+ * ## References
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:607
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:617
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:623
+ * - zr_vm_core/src/zr_vm_core/debug/debug.c:897
+ * - zr_vm_core/src/zr_vm_core/debug/debug.c:958
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:897
+ */
+
+/**
+ * @fn TZrBool zr_debug_data_breakpoint_parse_id(const TZrChar *dataId, ZrDebugDataBreakpoint *outBreakpoint)
+ *
+ * ## Summary
+ * 把客户端回传的 local 或 upvalue 文本标识解析为待安装的数据断点描述。
+ *
+ * ## Parameters
+ * @param[in] dataId 调用期间可读的非空 NUL 结尾文本。
+ * @param[out] outBreakpoint 必须可写；若非 NULL，解析前先清零整个描述。
+ *
+ * ## Returns
+ * @return sscanf 解析到相应字段数且线程、帧、索引为正，名称非空、local 类别受支持时为 TRUE；其余为 FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 名称采用 %127s，空白截断且有长度上限；没有全串耗尽检查，不是严格完整语法或认证令牌。解析索引只作描述，add 会按当前线程、帧和名称再次解析；复制文本也可按定长规则截断。
+ *
+ * 不分配、不引用原 dataId；成功字段保存在调用方结构内，原文本只需在调用期间有效。dataId 不包含停点代次。
+ *
+ * ## References
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:651
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:654
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:672
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:800
+ */
+
+/**
+ * @fn TZrBool zr_debug_agent_data_breakpoint_info(ZrDebugAgent *agent, TZrUInt32 requestedThreadId, TZrUInt32 variablesReference, const TZrChar *name, TZrChar *outDataId, TZrSize outDataIdSize, TZrChar *outDescription, TZrSize outDescriptionSize)
+ *
+ * ## Summary
+ * 把当前可读参数、局部变量或 upvalue 转成客户端可回传的数据断点标识与说明。
+ *
+ * ## Parameters
+ * @param[in,out] agent Agent 与已登记线程状态；正常路径临时切换其 state/currentThreadId 后恢复。
+ * @param[in] requestedThreadId 要求的线程 ID；零值由 Agent 的有效线程规则解析。
+ * @param[in] variablesReference 由旧式作用域编码得到的引用，不能是动态子变量句柄。
+ * @param[in] name 非空的借用变量名，按当前帧重新解析。
+ * @param[out] outDataId 标识输出；非零容量必须对应可写缓冲区，NULL 只可与零容量配对。
+ * @param[in] outDataIdSize 标识缓冲区实际字节容量，包含 NUL 空间。
+ * @param[out] outDescription 可选说明输出；非零容量必须对应可写缓冲区，NULL 只可与零容量配对。
+ * @param[in] outDescriptionSize 说明缓冲区实际字节容量。
+ *
+ * ## Returns
+ * @return 当前作用域和变量解析成功时为 TRUE；不支持的引用、缺少线程或目标未找到时为 FALSE。TRUE 不代表标识缓冲区足够或 snprintf 没有截断。
+ *
+ * ## Constraints and lifecycle
+ * 正常路径生成 local:thread:frame:scope:index:name 或 upvalue:thread:frame:index:name。当前实现不检查 snprintf 返回值；不能承诺任意容量都可往返。协议调用者提供完整固定数组，只向客户端公布 write 类别。
+ *
+ * 普通返回前成对恢复临时线程访问；本函数不保存持久 VM 值，也不直接分配数据断点 C 数组，但 Core 局部值查询可能物化并分配 VM 对象。Core 非局部异常未由此函数捕获，不能声称异常路径也有 finally 式恢复。
+ *
+ * ## References
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:706
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:713
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:767
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/protocol/debug_protocol.c:750
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/protocol/debug_protocol.c:778
+ */
+
+/**
+ * @fn void zr_debug_agent_clear_data_breakpoints(ZrDebugAgent *agent)
+ *
+ * ## Summary
+ * 释放 Agent 持有的 C 数据断点数组，并将集合恢复为空状态。
+ *
+ * ## Parameters
+ * @param[in,out] agent 待清理 Agent；允许 NULL，NULL 时不操作。
+ *
+ * ## Returns
+ * void；将数组指针、数量和容量归零。
+ *
+ * ## Constraints and lifecycle
+ * 数组中的 last_value 为非拥有快照，不逐项释放 VM 值；不改变 Core 栈值、线程注册或停止事件。
+ *
+ * 数组由 add/realloc 建立，此处或 AgentStop 负责 free。任何先前返回的条目指针在清理后失效；协议替换先清空再安装，不承诺整体替换原子性。
+ *
+ * ## References
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:1660
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/protocol/debug_protocol.c:811
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:852
+ */
+
+/**
+ * @fn TZrBool zr_debug_agent_add_data_breakpoint(ZrDebugAgent *agent, const TZrChar *dataId, const TZrChar *accessType, TZrChar *outDescription, TZrSize outDescriptionSize)
+ *
+ * ## Summary
+ * 在当前可解析的线程与帧中验证 dataId，安装一项以当前值为初始基线的数据变化监视。
+ *
+ * ## Parameters
+ * @param[in,out] agent 拥有数据断点数组的 Agent；NULL 返回 FALSE。
+ * @param[in] dataId 借用的非空 dataId；安装时再次按名称解析目标。
+ * @param[in] accessType 允许 NULL、空串、write 或 readWrite；其他非空值拒绝。
+ * @param[out] outDescription 可选结果说明缓冲区，进入时先清空。
+ * @param[in] outDescriptionSize 说明缓冲区实际字节容量。
+ *
+ * ## Returns
+ * @return 语法、访问类别、线程与目标解析通过且数组空间取得成功时为 TRUE；普通失败为 FALSE，未增加条目。
+ *
+ * ## Constraints and lifecycle
+ * readWrite 只被接受，不实现读取事件或硬件写入陷阱；命中来自 trace 值比较。只支持参数、局部变量和 VM upvalue，无重复项去重或代次身份保证。realloc 使用临时指针，失败保留原数组/count/capacity；不宣称容量乘法具备溢出检查。
+ *
+ * 先正常恢复临时线程访问，再按需扩容和提交条目。成功条目与 C 数组由 Agent 持有，last_value 仅借用 VM 对象；clear/AgentStop 释放数组，后续 realloc 可使条目地址失效。Core 非局部异常不由此函数回滚。
+ *
+ * ## References
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:800
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:810
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:850
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:859
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/protocol/debug_protocol.c:831
+ */
+
+/**
+ * @fn ZrDebugDataBreakpoint *zr_debug_agent_check_data_breakpoints(ZrDebugAgent *agent)
+ *
+ * ## Summary
+ * 在当前线程的 trace 观察点重新解析已验证监视项，返回首个与借用基线不同的条目。
+ *
+ * ## Parameters
+ * @param[in,out] agent 当前 trace 所属 Agent；读取当前 state/thread，并可更新条目基线。
+ *
+ * ## Returns
+ * @return 首个检测到值变化的数组内借用条目；无 Agent/state、空集合、无适用项或未发现变化时返回 NULL。
+ *
+ * ## Constraints and lifecycle
+ * 只处理当前有效线程的 verified 项，按数组顺序检查；目标暂时解析失败时保留基线，下一次继续尝试。比较采用 Core CompareDirectly：类型不同即不同、字符串按内容、对象按地址等既有规则，不是递归对象内容或每次写入事件检测。命中后先更新该项基线再返回，后续条目留待下一次 trace。
+ *
+ * 返回指针仅在数组未 realloc/clear 前有效，由 trace observer 立即复制 dataId/description 到停止事件；不移交所有权、不注册 VM root、不提供跨线程同步。其他更高优先级停止原因可使本次 trace 不检查数据断点；无局部异常捕获。
+ *
+ * ## References
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:889
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:903
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:914
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:1539
+ * - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:1551
+ * - zr_vm_core/src/zr_vm_core/value/value.c:275
+ */

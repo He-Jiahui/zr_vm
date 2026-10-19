@@ -382,3 +382,5 @@ doc_type: category-index
 - [调试值预览、变量句柄与子项快照合同](batches/20261019-debug-variable-handles-children-current-contracts.md)：42旧项、41段中文Doxygen、0新增；文件余39项待审，前后直接3+5+17+3各28全PASS，原始输出一致。
 
 - [调试栈帧、作用域与安全求值合同](batches/20261019-debug-frame-scope-safe-evaluation-current-contracts.md)：完成剩余39旧项、34段中文Doxygen、0新增；与前批42项合计本文件81项，前后直接3+5+17+3各28全PASS，原始输出一致。
+
+- [调试文本与数据断点合同](batches/20261019-debug-text-data-breakpoint-current-contracts.md)：完成剩余29旧项、22段中文Doxygen、0新增；与此前61项合计本文件90项，前后直接2+5+8各15全PASS，原始输出一致。
