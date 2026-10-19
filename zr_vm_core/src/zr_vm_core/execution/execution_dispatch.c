@@ -13,6 +13,7 @@
 #include "function/function_bytecode_internal.h"
 #include "object/object_internal.h"
 #include "object/object_super_array_internal.h"
+#include "gc/gc_temporary_roots.h"
 
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/execution_budget.h"
@@ -3467,6 +3468,29 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));        \
         if (opA->type != ZR_VALUE_TYPE_OBJECT && opA->type != ZR_VALUE_TYPE_ARRAY) {                                  \
             ZrCore_Debug_RunError(state, "SET_BY_INDEX: receiver must be an object or array");                       \
+        } else if (E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG &&                                                 \
+                   execution_frame_slot_is_inline_struct_destination(currentFunction, E(instruction))) {             \
+            /* Inline payloads have no ordinary value mirror. Materialize before crossing the index contract. */     \
+            PROTECT_E(state, callInfo, {                                                                               \
+                SZrTypeValue materializedValue__;                                                                      \
+                TZrSize rootDepth__ = state->temporaryRootLength;                                                       \
+                if (!execution_inline_frame_try_materialize_stack_slot_value(                                         \
+                            state, currentFunction, base, E(instruction), &materializedValue__)) {                    \
+                    ZrCore_Debug_RunError(state, "SET_BY_INDEX: failed to materialize inline value");                 \
+                } else if (!ZrCore_Gc_TemporaryRootPush(state, materializedValue__.value.object)) {                    \
+                    ZrCore_Debug_RunError(state, "SET_BY_INDEX: failed to root inline value");                        \
+                } else {                                                                                               \
+                    UPDATE_BASE(callInfo);                                                                             \
+                    resolved__ = ZrCore_Object_SetByIndexUnchecked(                                                    \
+                            state, FRAME_VALUE_SLOT(A1(instruction)), FRAME_VALUE_SLOT(B1(instruction)),             \
+                            &materializedValue__);                                                                     \
+                    ZrCore_Gc_TemporaryRootsRestore(state, rootDepth__);                                                \
+                }                                                                                                      \
+            });                                                                                                        \
+            RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);                                                  \
+            if (!resolved__ && state->threadStatus == ZR_THREAD_STATUS_FINE) {                                        \
+                ZrCore_Debug_RunError(state, "SET_BY_INDEX: inline value store failed");                             \
+            }                                                                                                          \
         } else {                                                                                                       \
             resolved__ = ZrCore_Object_TrySetByIndexReadonlyInlineFastStackOperands(                                  \
                     state, opA, opB, destination);                                                                     \
