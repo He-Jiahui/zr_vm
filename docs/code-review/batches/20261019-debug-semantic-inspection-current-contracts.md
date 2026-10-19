@@ -1,0 +1,46 @@
+---
+related_code:
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_semantic_facts.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_semantic_bindings.c
+implementation_files:
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_semantic_facts.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_semantic_bindings.c
+tests:
+  - tests/debug/test_debug_expression_diagnostics.c
+  - tests/debug/test_debug_canonical_binding_cases.h
+  - tests/debug/test_debug_formal_evaluation_cases.h
+  - tests/debug/test_debug_evaluation_effect_policy_cases.h
+plan_sources:
+  - user: 全量首方审查、按需补充中文职责和生命周期注释
+doc_type: module-detail
+---
+
+# 调试语义事实摘要与规范绑定合同
+
+本批完整复核48个既有单元：facts文件26函数、1私有结构、3重要块，bindings文件16函数、2重要块。42函数与1结构以43段完整中文Doxygen解释职责、参数方向、返回、必要约束、引用及生命周期；5块随所属函数审查，48项均有结论，无未审查项。48个旧扁平路径键一一迁至inspect目录，不新增单元或问题家族，公开签名和行为保持。
+
+事实摘要回放已有推断结果，分别格式化表达式、数值范围、引用、所有权、逻辑短路及不可达信息；它不执行表达式、getter或所有权操作。遍历结构借用本次AST和semanticContext，分类别保留相邻去重指针；只省略本类别连续相同的指针，不能当成全树全局去重。支持的AST分支和位置补查只还原当前可检索事实，不证明未来全部节点种类覆盖或规范事实完整。
+
+输出缓冲区由调用方拥有，调用方先保证其在容量内以NUL终止；追加器按各自容量约束保留终止符及较早片段；追加可能在分隔符、转义或多字节文本中截断，不保证完整JSON或完整UTF8。string_text只选择短串/长串文本地址，NULL映射静态空文本；读取长度由各调用方决定。常量字符串摘要按VM真实字节长度处理内嵌NUL和控制字节，不能把这一约束推广成每个文本调用都按真实长度读取。
+
+正式绑定注册按活动帧、捕获、runtime root、原型及入口callable的实际顺序补齐推断来源。活动槽须联合编译类型与Core Debug提供的symbol/type/place、原声明范围和代际令牌验证；runtime root有已有同名源码绑定时不覆盖，元数据不可用时允许跳过，TRUE不因此证明该根已注册。活动帧查询只在INVALID_ARGUMENT这一窄分支退到入口类型；其他帧错误不降级。
+
+注册FALSE表示本次规范准备不足，先前环境写入不回滚；现有部分变量/callable注册调用没有传播返回值，TRUE也不能保证每一项完成。准备层对reference-free值表达式保留继续推断的例外，摘要层还允许按暂停值补充有限类型；旧台账“失败时正式推断不得继续”已按实际调用更正，不能改成全局禁止回退或推断。
+
+类型引用转换、参数类型与传参模式收集、临时类型数组释放借用compilerState的state分配或回收本地资源，这些辅助函数本身不向环境注册绑定。可调用签名由注册接口复制后，普通路径释放临时类型与数组；值范围补充保留既有bool/int64范围边界，不承诺所有uint64均可无损放入int64。VM对象、活动帧和编译元数据的身份仍借用其所有者，摘要不提供新的暂停锁或持久GC根。
+
+重新解析与推断使用新建的临时解析/编译状态；事实须在其上下文释放前转换为输出文本，调用方不能保留内部事实指针。普通失败释放已取得的临时资源，不回滚已注册的绑定。类型与数组分配可能非局部Throw，当前代码没有通用异常恢复；普通Free、goto及VM尾部释放不能证明全部OOM或Unity长跳转均清理。本批没有据此新增未经完整路径证实的BUG/TODO。
+
+独审后对四处参数说明作26项严格标量修订，纠正string_text只选地址，以及临时类型辅助函数不注册绑定；正向重建effective报告，逆向恢复原报告原字节，48行合同first8不变。原F和I保持不可变，相关历史失败与纠正过程存入外部证据。
+
+facts原911LF、bindings原737LF的1648行字节前缀全部保留，EOF分别新增596和362LF；移除精确后缀可还原。8418个有限正则程序atom与135个字符串/字符字面量的拼写、物理行、UTF8字节列及绝对偏移一致。该有限文字投影不是编译器lexer/AST证明。26个整文件、224个EOL锚、48个定义/重要块跨度、完整可检索调用及回调入口支持合同，借用模块不获本批完整审查信用。
+
+修改前后复用实际checkout和E盘clang-cl构建目录，构建zr_vm_debug_expression_diagnostics_test并无argv直接运行全部56个有序既有用例。两次build退出0，两次test均55PASS/1FAIL/0IGNORE、退出1，stdout和stderr原字节一致，无归一化。既有摘要和规范绑定用例支持普通文本与身份边界，不证明全部AST、分配失败、异常回滚、所有注册成功或并发安全；9个effect policy用例属于56的子集，不增加不同用例计数。
+
+唯一失败仍为test_debug_evaluation_effect_policy_marks_resolved_property_getter。Unity显示主C第484行，实际断言在included test_debug_evaluation_effect_policy_cases.h:484，policy.hasCanonicalFacts为false；485的isPure和486的getter能力断言未到达，根因未分配。本轮保留失败，不修复行为。
+
+测试输入通过内存sourceLabel编译，独占cwd起初不存在，两阶段无生成文件。空tearDown及普通VM/Hook释放尾部不保证Unity长跳转清理。CTest经run_suite/shared-host约束，目标未显式TIMEOUT；build900/direct120秒是本轮任务watchdog，直接顺序运行不授CTest调度、WSL或全仓验收信用。
+
+两源inventory原pending更新reviewed并记录实际hash；全叶742行其余694行原字节保持，外来inventory48行85格和正常索引4个既有暂存路径保留。510叶43979完整键总量不增加，整叶和全局历史诊断只比较选中项清除及外部原文相同，不声称全仓已完成，也不新增重复实现的测试。
+
+配对证据：debug-semantic-inspection-current-native-pair-r1.json，SHA256 3f70fd57f5546ab53b9e7c81d93535ec0efb50864961f7fa661d4e9d358a1e17；源码应用：debug-semantic-inspection-current-source-application-r1.json，SHA256 2350f7d91c829e81c51d9fce470e39f23649e6b0029f1279d4d6ca272c719dd6。
