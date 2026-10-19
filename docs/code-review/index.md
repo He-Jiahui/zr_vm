@@ -362,3 +362,5 @@ doc_type: category-index
 - [ExecBC AOT 检查与断言辅助合同](batches/20261019-aot-execbc-inspection-helpers-current-contracts.md)：31旧单元、31段Doxygen及3处旧说明更正；前后完整98与重复manual3通过，余126旧单元待审。
 
 - [Profiling 聚合、采样与 hook 生命周期合同](batches/20261019-debug-profile-current-contracts.md)：54旧单元、51段中文Doxygen、6项既有TODO及3宏无需注释；前后既有2例通过。
+
+- [调试变量子节点与语义摘要合同](batches/20261019-debug-variable-display-summaries-current-contracts.md)：18旧单元、10段中文Doxygen及5关联声明无需重复注释；13目录键迁移不增信用，前后既有3例通过。
