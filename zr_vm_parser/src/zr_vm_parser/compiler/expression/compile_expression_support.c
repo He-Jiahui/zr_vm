@@ -2134,10 +2134,22 @@ static TZrUInt32 compile_expression_into_slot_impl(SZrCompilerState *cs, SZrAstN
         return slot;
     }
     if (node->type == ZR_AST_STRUCT_INIT_EXPRESSION) {
-        TZrUInt32 slot = compile_struct_init_expression_into_slot(
-                cs, node, targetSlot);
+        /* The constructor uses the slot before its receiver as the callable.
+         * An expression destination may belong to an enclosing call, so reserve
+         * a separate window before copying the completed value into that slot. */
+        TZrUInt32 functionSlot = allocate_fresh_stack_slot_after(cs, targetSlot);
+        TZrUInt32 slot = allocate_stack_slot(cs);
+        if (functionSlot == ZR_PARSER_SLOT_NONE || slot == ZR_PARSER_SLOT_NONE ||
+            slot != functionSlot + 1u ||
+            compile_struct_init_expression_into_slot(cs, node, slot) == ZR_PARSER_SLOT_NONE) {
+            cs->isInTailCallContext = oldTailCallContext;
+            return ZR_PARSER_SLOT_NONE;
+        }
+        emit_instruction(cs, create_instruction_1(
+                ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)targetSlot, (TZrInt32)slot));
+        collapse_stack_to_slot(cs, targetSlot);
         cs->isInTailCallContext = oldTailCallContext;
-        return slot;
+        return targetSlot;
     }
 
     compile_expression_non_tail(cs, node);

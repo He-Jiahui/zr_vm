@@ -8,6 +8,8 @@ var points = new Array<Vec2>();
 points.add(init Vec2(1.0, 2.0));
 points.add(init Vec2(3.0, 4.0));
 if (points[0].x != 1.0 || points[1].y != 4.0) { throw "nested add constructor"; }
+points[1] = init Vec2(13.0, 14.0);
+if (points[1].x != 13.0 || points[1].y != 14.0) { throw "nested store constructor"; }
 fn check(a: int, p: Vec2, q: Vec2, b: int): bool {
     return a == 11 && p.x == 5.0 && p.y == 6.0 && q.x == 7.0 && q.y == 8.0 && b == 22;
 }
