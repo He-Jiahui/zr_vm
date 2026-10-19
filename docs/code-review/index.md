@@ -364,3 +364,5 @@ doc_type: category-index
 - [Profiling 聚合、采样与 hook 生命周期合同](batches/20261019-debug-profile-current-contracts.md)：54旧单元、51段中文Doxygen、6项既有TODO及3宏无需注释；前后既有2例通过。
 
 - [调试变量子节点与语义摘要合同](batches/20261019-debug-variable-display-summaries-current-contracts.md)：18旧单元、10段中文Doxygen及5关联声明无需重复注释；13目录键迁移不增信用，前后既有3例通过。
+
+- [调试表达式副作用与准备上下文合同](batches/20261019-debug-evaluation-effect-current-contracts.md)：20旧单元、19段中文Doxygen，20目录键迁移不增信用；前后diagnostics56同55PASS1FAIL，原始输出一致。
