@@ -352,3 +352,5 @@ doc_type: category-index
 - [System VM 调用与注册契约复核](batches/20261019-system-vm-current-contracts.md)：29旧键原位复核，27项注释更正；当前module78/provider9前后全PASS，保留静态BUG/TODO边界。
 
 - [动态迭代与已知调用流水线测试合同](batches/20261019-aot-dynamic-known-pipeline-current-contracts.md)：50旧键+4嵌入语言首交付，50段Doxygen；既有2+5Unity前后全PASS，AOT生成物执行缺口保留。
+
+- [条件断点与 logpoint 当前合同](batches/20261019-breakpoint-condition-logpoint-current-contracts.md)：9旧单元路径迁移、6段Doxygen；前后本批两例PASS，完整56例的1项既有失败保留。
