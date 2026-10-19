@@ -366,3 +366,5 @@ doc_type: category-index
 - [调试变量子节点与语义摘要合同](batches/20261019-debug-variable-display-summaries-current-contracts.md)：18旧单元、10段中文Doxygen及5关联声明无需重复注释；13目录键迁移不增信用，前后既有3例通过。
 
 - [调试表达式副作用与准备上下文合同](batches/20261019-debug-evaluation-effect-current-contracts.md)：20旧单元、19段中文Doxygen，20目录键迁移不增信用；前后diagnostics56同55PASS1FAIL，原始输出一致。
+
+- [覆盖率会话与行快照合同](batches/20261019-debug-coverage-current-contracts.md)：56旧单元、24段新增Doxygen、H保留14段系统文档，15条注释行修订；前后coverage2例均PASS，原始输出一致。
