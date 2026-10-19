@@ -372,3 +372,5 @@ doc_type: category-index
 - [调试语义事实摘要与规范绑定合同](batches/20261019-debug-semantic-inspection-current-contracts.md)：48旧单元、43段中文Doxygen，48目录键迁移不增信用；前后diagnostics56同55PASS1FAIL，原始输出一致。
 
 - [调试正式求值准备与受限执行合同](batches/20261019-debug-formal-evaluation-current-contracts.md)：29旧单元、23段中文Doxygen，保留1既有TODO，29目录键迁移不增信用；前后diagnostics56同55PASS1FAIL，原始输出一致。
+
+- [调试兼容求值合同](batches/20261019-debug-compat-evaluation-current-contracts.md)：36旧单元、34段中文Doxygen，保留1既有BUG镜像，36目录键迁移不增信用；前后diagnostics56同55PASS1FAIL，原始输出一致。
