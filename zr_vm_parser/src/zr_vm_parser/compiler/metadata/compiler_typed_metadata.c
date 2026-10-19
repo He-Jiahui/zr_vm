@@ -2041,8 +2041,9 @@ static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstructi
         case ZR_INSTRUCTION_ENUM(GETUPVAL):
         case ZR_INSTRUCTION_ENUM(GET_GLOBAL):
         case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION):
+        /* GET_BY_INDEX can copy a boxed struct into an inline destination.
+         * Keep its type hint so subsequent member writes see the full payload. */
         case ZR_INSTRUCTION_ENUM(GET_MEMBER):
-        case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_BIND_ITEMS):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS):

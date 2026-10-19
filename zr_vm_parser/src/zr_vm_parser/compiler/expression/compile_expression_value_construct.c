@@ -547,6 +547,8 @@ void compile_struct_init_expression(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
     }
+    /* Earlier expressions may have left inline layout hints on recycled slots. */
+    compiler_advance_stack_to_fresh_slot(cs);
     functionSlot = allocate_stack_slot(cs);
     targetSlot = allocate_stack_slot(cs);
     if (functionSlot == ZR_PARSER_SLOT_NONE || targetSlot == ZR_PARSER_SLOT_NONE ||

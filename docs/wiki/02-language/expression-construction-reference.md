@@ -260,6 +260,26 @@ compound assignment、member write、index write、property setter 和 `ref/out`
 必须用同一份 canonical call/property contract 判断。native callback 在 C 层写回 argument
 时也不能跳过这个模型，参见 [Native Callback 实战配方](../05-interop/native-callback-recipes.md)。
 
+For an `Array<T>` whose element type is a value struct, reading an element produces
+an independent value. Assigning a struct to an element copies its complete value,
+including reference fields. Explicit read/modify/write is supported:
+
+```zr
+var copy = points[0];
+copy.x = 7.0;       // points[0] is unchanged
+points[0] = copy;   // copies the modified value back
+copy.x = 8.0;       // points[0].x remains 7.0
+```
+
+A field assignment through an index, such as `points[i].x = 9.0` or
+`points[i].x += 1.0`, writes through to the element. The compiler retains the
+evaluated index and writes the modified struct back after updating its field;
+the index is evaluated once. Nested struct fields are copied back from the
+innermost field to the containing element. Existing local copies remain
+independent. These rules apply in both interpreter and `.zro` binary execution.
+Struct construction can also appear in an argument expression, for example
+`points.add(init Vec2(1.0, 2.0))`.
+
 ## 8. 宿主观察 AST 的方式
 
 宿主通常不手工解释 parser AST 以执行表达式，而是交给 compiler/VM。若工具确实只需分析

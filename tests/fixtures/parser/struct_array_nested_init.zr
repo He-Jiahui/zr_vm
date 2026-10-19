@@ -1,0 +1,24 @@
+let {Array} = import("zr.container");
+struct Vec2 {
+    pub var x: float;
+    pub var y: float;
+    pub @constructor(x: float, y: float) { this.x = x; this.y = y; }
+}
+var points = new Array<Vec2>();
+points.add(init Vec2(1.0, 2.0));
+points.add(init Vec2(3.0, 4.0));
+if (points[0].x != 1.0 || points[1].y != 4.0) { throw "nested add constructor"; }
+points[1] = init Vec2(13.0, 14.0);
+if (points[1].x != 13.0 || points[1].y != 14.0) { throw "nested store constructor"; }
+fn check(a: int, p: Vec2, q: Vec2, b: int): bool {
+    return a == 11 && p.x == 5.0 && p.y == 6.0 && q.x == 7.0 && q.y == 8.0 && b == 22;
+}
+if (!check(11, init Vec2(5.0, 6.0), init Vec2(7.0, 8.0), 22)) { throw "nested call constructors"; }
+struct VecPair {
+    pub var first: Vec2;
+    pub var second: Vec2;
+    pub @constructor(first: Vec2, second: Vec2) { this.first = first; this.second = second; }
+}
+var pair = init VecPair(init Vec2(9.0, 10.0), init Vec2(11.0, 12.0));
+if (pair.first.x != 9.0 || pair.second.y != 12.0) { throw "nested constructor arguments"; }
+return 42;

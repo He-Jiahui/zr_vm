@@ -882,6 +882,7 @@ typedef struct SZrAssignmentInlineStructParentWriteback {
     TZrUInt32 parentSlot;
     TZrUInt32 childSlot;
     TZrUInt32 memberId;
+    TZrUInt32 indexSlot;
     TZrBool propertyReference;
     SZrFileRange location;
 } SZrAssignmentInlineStructParentWriteback;
@@ -911,6 +912,17 @@ static TZrBool emit_assignment_inline_struct_writebacks(
 
     for (TZrSize index = writebackCount; index > 0u; index--) {
         const SZrAssignmentInlineStructParentWriteback *writeback = &writebacks[index - 1u];
+        if (writeback->indexSlot != ZR_PARSER_SLOT_NONE) {
+            emit_instruction(cs, create_instruction_2(
+                    ZR_INSTRUCTION_ENUM(SET_BY_INDEX),
+                    (TZrUInt16)writeback->childSlot,
+                    (TZrUInt16)writeback->parentSlot,
+                    (TZrUInt16)writeback->indexSlot));
+            if (cs->hasError) {
+                return ZR_FALSE;
+            }
+            continue;
+        }
         TZrBool stored = writeback->propertyReference
                                  ? compiler_property_reference_store(
                                            cs,
@@ -1189,6 +1201,7 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                         writebacks[*outWritebackCount].childSlot = valueSlot;
                         writebacks[*outWritebackCount].memberId =
                                 ZR_PARSER_MEMBER_ID_NONE;
+                        writebacks[*outWritebackCount].indexSlot = ZR_PARSER_SLOT_NONE;
                         writebacks[*outWritebackCount].propertyReference =
                                 ZR_TRUE;
                         writebacks[*outWritebackCount].location =
@@ -1277,6 +1290,7 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                         writebacks[*outWritebackCount].parentSlot = parentSlot;
                         writebacks[*outWritebackCount].childSlot = destinationSlot;
                         writebacks[*outWritebackCount].memberId = memberId;
+                        writebacks[*outWritebackCount].indexSlot = ZR_PARSER_SLOT_NONE;
                         writebacks[*outWritebackCount].propertyReference =
                                 ZR_FALSE;
                         writebacks[*outWritebackCount].location = memberNode->location;
@@ -1303,27 +1317,69 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                                             memberNode->location);
                     return ZR_FALSE;
                 }
-                TZrUInt32 keyTargetSlot =
-                        compile_assignment_safe_member_key_target_slot(cs, currentSlot + 1, preservedSlot);
+                /* Keep the evaluated index alive until all nested value fields
+                 * have been copied back, including compound assignments. */
+                TZrUInt32 keyTargetSlot = allocate_fresh_stack_slot_after(cs, currentSlot);
                 TZrUInt32 keySlot = compile_member_key_into_slot(cs, memberExpr, keyTargetSlot);
                 if (keySlot == ZR_PARSER_SLOT_NONE) {
                     return ZR_FALSE;
                 }
 
                 {
+                    TZrUInt32 parentSlot = currentSlot;
                     TZrUInt32 destinationSlot = allocate_fresh_stack_slot_after(cs, currentSlot);
+                    SZrAstNode prefixNode = {0};
+                    SZrAstNodeArray prefixMembers = *primary->members;
+                    SZrInferredType elementType;
+                    TZrBool inlineElement;
 
                     if (destinationSlot == ZR_PARSER_SLOT_NONE) {
                         return ZR_FALSE;
                     }
+                    /* Infer this prefix, not the final field's scalar type. */
+                    prefixMembers.count = memberIndex + 1u;
+                    prefixNode.type = ZR_AST_PRIMARY_EXPRESSION;
+                    prefixNode.location = memberNode->location;
+                    prefixNode.data.primaryExpression = *primary;
+                    prefixNode.data.primaryExpression.members = &prefixMembers;
+                    ZrParser_InferredType_Init(cs->state, &elementType, ZR_VALUE_TYPE_OBJECT);
+                    if (!ZrParser_PrimaryExpressionType_Infer(cs, &prefixNode, &elementType)) {
+                        ZrParser_InferredType_Free(cs->state, &elementType);
+                        return ZR_FALSE;
+                    }
+                    inlineElement = compiler_find_inline_type_layout_for_inferred(
+                            cs, &elementType, ZR_NULL, ZR_NULL, ZR_NULL);
+                    rootTypeName = inlineElement ? get_type_name_from_inferred_type(cs, &elementType) : ZR_NULL;
+                    if (inlineElement && !compiler_register_stack_slot_type_hint(cs, destinationSlot, &elementType)) {
+                        ZrParser_InferredType_Free(cs->state, &elementType);
+                        return ZR_FALSE;
+                    }
+                    ZrParser_InferredType_Free(cs->state, &elementType);
                     emit_instruction(cs,
                                      create_instruction_2(ZR_INSTRUCTION_ENUM(GET_BY_INDEX),
                                                           (TZrUInt16)destinationSlot,
                                                           (TZrUInt16)currentSlot,
                                                           (TZrUInt16)keySlot));
+                    if (inlineElement && writebacks != ZR_NULL && outWritebackCount != ZR_NULL) {
+                        if (*outWritebackCount >= writebackCapacity) {
+                            ZrParser_Compiler_Error(cs, "Too many nested struct elements in assignment target", memberNode->location);
+                            return ZR_FALSE;
+                        }
+                        writebacks[*outWritebackCount].parentSlot = parentSlot;
+                        writebacks[*outWritebackCount].childSlot = destinationSlot;
+                        writebacks[*outWritebackCount].memberId = ZR_PARSER_MEMBER_ID_NONE;
+                        writebacks[*outWritebackCount].indexSlot = keySlot;
+                        writebacks[*outWritebackCount].propertyReference = ZR_FALSE;
+                        writebacks[*outWritebackCount].location = memberNode->location;
+                        (*outWritebackCount)++;
+                    }
                     currentSlot = destinationSlot;
                     collapse_stack_to_slot(cs, currentSlot);
                 }
+                rootIsTypeReference = ZR_FALSE;
+                rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+                usesSuperLookup = ZR_FALSE;
+                continue;
             }
 
             if (declaredFieldMatch) {
