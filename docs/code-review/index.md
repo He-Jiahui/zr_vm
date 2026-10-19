@@ -334,3 +334,11 @@ doc_type: category-index
 - [Object 对象标记与 GC 配置契约审查](batches/common-object-header-contracts.md)：25旧单元、22段Doxygen；当前调用补证及既有GC/Frame/Matrix有限验证，Math仅静态构建。
 
 - [IO 公共标记与二进制布局契约审查](batches/common-io-header-contracts.md)：80单元、39段Doxygen；当前调用证据及两组已有decoder测试修改前后有限验证。
+
+- [Math 公共数值与 VM 转换契约](batches/20261018-math-common-scalars-contracts.md)：118 既有单元；52 段 Doxygen、107 处注释行校正；构建与 9 个现有选择器修改前后有限验证。
+
+- [会话交接后的首方文件范围补录（13 pending，0 单元信用）](batches/20261018-released-session-scope-supplement.md)
+
+- [Canonical consumer 与引用 callable 测试契约](batches/20261018-parser-canonical-consumer-tests-contracts-current.md)：123 新单元、105 段 Doxygen；两源原始字节前缀不变，同一目标的 21 个 Unity 用例修改前后有限验证。
+
+- [Complex 当前调用与生命周期契约](batches/20261018-math-complex-current-contracts.md)：61 个既有单元复审、18 段现有 Doxygen；55 行注释精修，当前 CLI 与 core 项目前35项及既有网络配置失败的修改前后对照。
