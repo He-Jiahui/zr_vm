@@ -446,3 +446,133 @@ void zr_debug_evaluate_failure_set(ZrDebugEvaluateFailure *failure,
                                    const TZrChar *message);
 
 #endif
+
+/**
+ * @fn static ZR_FORCE_INLINE void zr_debug_memory_barrier(void)
+ *
+ * ## Summary
+ * 发布或读取跨线程布尔请求时调用平台全栅栏。
+ *
+ * ## Returns
+ * 无返回值。
+ *
+ * ## Constraints and lifecycle
+ * Win 使用 MemoryBarrier，其余分支使用 __sync_synchronize；栅栏不把 volatile 对象变成标准 C 原子。保留既有 TODO: 核对外部 Pause 线程和 VM 的同步协议，不以本函数证明线程安全。
+ *
+ * ## References
+ * - \ref zr_debug_memory_barrier：本单元定义/声明（zr_vm_lib_debug/src/zr_vm_lib_debug/debug_internal.h:44）。
+ * - \ref zr_debug_bool_store：配套调用或事件构造入口（zr_vm_lib_debug/src/zr_vm_lib_debug/debug_internal.h:52）。
+ */
+/**
+ * @fn static ZR_FORCE_INLINE void zr_debug_bool_store(volatile TZrBool *slot, TZrBool value)
+ *
+ * ## Summary
+ * 写入暂停或异常请求槽，再执行全栅栏。
+ *
+ * ## Parameters
+ * @param[in,out] slot 借用的 volatile 布尔槽；NULL 时不访问。
+ * @param[in] value 本次要发布的布尔值。
+ *
+ * ## Returns
+ * 无返回值。
+ *
+ * ## Constraints and lifecycle
+ * 只进行普通 volatile 赋值和随后栅栏；不提供互斥、原子读改写或请求排队。既有同步 TODO 与 load/barrier 同族保留。
+ *
+ * ## References
+ * - \ref zr_debug_bool_store：本单元定义/声明（zr_vm_lib_debug/src/zr_vm_lib_debug/debug_internal.h:52）。
+ * - \ref ZrDebug_Pause：配套调用或事件构造入口（zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:1864）。
+ */
+/**
+ * @fn static ZR_FORCE_INLINE TZrBool zr_debug_bool_load(const volatile TZrBool *slot)
+ *
+ * ## Summary
+ * 在 trace 观察点前置全栅栏并读取控制请求槽。
+ *
+ * ## Parameters
+ * @param[in] slot 借用的 volatile 布尔槽；NULL 返回假。
+ *
+ * ## Returns
+ * @return NULL 返回 ZR_FALSE，否则返回本次普通 volatile 读取值。
+ *
+ * ## Constraints and lifecycle
+ * 不消费或清零槽；消费方另行 store。既有 TODO: 全栅栏和 volatile 不能单独证明 C 线程同步。
+ *
+ * ## References
+ * - \ref zr_debug_bool_load：本单元定义/声明（zr_vm_lib_debug/src/zr_vm_lib_debug/debug_internal.h:61）。
+ * - \ref zr_debug_agent_trace_observer：配套调用或事件构造入口（zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:1492）。
+ */
+/**
+ * @enum EZrDebugRunMode
+ *
+ * ## Summary
+ * 区分连续运行、暂停循环和三种单步意图。
+ *
+ * ## Value model
+ * - RUNNING/PAUSED 表达运行意图和暂停循环状态。
+ * - STEP_INTO/STEP_OVER/STEP_OUT 分别配合位置推进、逻辑帧身份及深度判断。
+ *
+ * ## Invariants and lifecycle
+ * 值保存在 Agent；单步还依赖 stepDepth、stepCallInfo、resumeFunction/Instruction 和 lastStopEvent。模式写入不会自行执行或等待 VM，指针均借用当前会话。
+ *
+ * ## References
+ * - \ref EZrDebugRunMode：本单元定义/声明（zr_vm_lib_debug/src/zr_vm_lib_debug/debug_internal.h:71）。
+ * - \ref zr_debug_begin_step：配套调用或事件构造入口（zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:1873）。
+ */
+/**
+ * @struct ZrDebugBreakpoint
+ *
+ * ## Summary
+ * 保存 Agent 拥有的断点规格副本与延迟解析位置。
+ *
+ * ## Fields
+ * - kind 与 line 选择定位规则；模块/源码/函数/条件/命中条件/日志六组固定字符数组拥有复制文本。
+ * - hit_count 累计实际位置命中，再用于条件过滤；计数使用 uint32。
+ * - resolved、resolved_function、resolved_instruction_index 联合描述借用函数中的位置；函数及其指令不能先于使用结束释放。
+ *
+ * ## Invariants and lifecycle
+ * 固定数组复制文本并可能截断；hit_count 是 uint32 命中计数。resolved_function 及其指令索引借用仍存活的函数元数据，不在此记录中持有 GC 根或释放函数；替换数组会使记录地址失效。
+ *
+ * ## References
+ * - \ref ZrDebugBreakpoint：本单元定义/声明（zr_vm_lib_debug/src/zr_vm_lib_debug/debug_internal.h:92）。
+ * - \ref zr_debug_replace_breakpoints_of_kind：配套调用或事件构造入口（zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:1784）。
+ */
+/**
+ * @fn TZrUInt32 zr_debug_instruction_offset(SZrCallInfo *callInfo, SZrFunction *function)
+ *
+ * ## Summary
+ * 把当前借用调用帧的 PC 换算为指定函数的指令偏移。
+ *
+ * ## Parameters
+ * @param[in] callInfo 当前有效调用帧，可为 NULL。
+ * @param[in] function 与 PC 对应的函数元数据，可为 NULL。
+ *
+ * ## Returns
+ * @return 无帧、函数、指令起点、PC 或 PC 在起点之前时返回 0；否则返回指针差转 uint32。
+ *
+ * ## Constraints and lifecycle
+ * 有效 PC 必须与函数指令数组具有合法的指针比较/相减关系；这里不检查数组上界，0 也可能是合法首指令。结果不延长任何对象生命周期。
+ *
+ * ## References
+ * - \ref zr_debug_instruction_offset：本单元定义/声明（zr_vm_lib_debug/src/zr_vm_lib_debug/debug_internal.h:232）。
+ * - \ref zr_debug_begin_step：配套调用或事件构造入口（zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:1873）。
+ */
+/**
+ * @fn TZrUInt32 zr_debug_frame_depth(SZrState *state)
+ *
+ * ## Summary
+ * 统计当前调用链中可取得元数据函数的调试帧。
+ *
+ * ## Parameters
+ * @param[in] state 借用且调用链稳定的 VM 状态；NULL 视为无帧。
+ *
+ * ## Returns
+ * @return 返回可调试帧个数；NULL 返回 0。
+ *
+ * ## Constraints and lifecycle
+ * 遍历 previous 链，忽略不能解析为元数据函数的帧；不检测链环、不持锁、不拥有帧。单步把该逻辑深度与帧身份一并比较。
+ *
+ * ## References
+ * - \ref zr_debug_frame_depth：本单元定义/声明（zr_vm_lib_debug/src/zr_vm_lib_debug/debug_internal.h:233）。
+ * - \ref zr_debug_agent_should_stop_for_step：配套调用或事件构造入口（zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c:1414）。
+ */

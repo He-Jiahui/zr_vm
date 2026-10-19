@@ -356,3 +356,5 @@ doc_type: category-index
 - [条件断点与 logpoint 当前合同](batches/20261019-breakpoint-condition-logpoint-current-contracts.md)：9旧单元路径迁移、6段Doxygen；前后本批两例PASS，完整56例的1项既有失败保留。
 
 - [ExecBC AOT 底层夹具与资源辅助合同](batches/20261019-aot-execbc-fixture-helpers-current-contracts.md)：47旧单元、47段Doxygen；前后完整98例与重复manual3例通过，余157旧单元待审。
+
+- [调试断点、暂停和单步控制合同](batches/20261019-debug-breakpoint-trace-control-current-contracts.md)：67旧单元、60段Doxygen；前后29例PASS，修改前协议watchdog/驱动1保留，三个源文件维持pending。
