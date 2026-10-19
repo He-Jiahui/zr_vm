@@ -69,19 +69,19 @@ kTypes 与字段表供 native metadata layer 建立 VM 原型；kHints 与 kHint
 
 loadedModules 从当前 state 所属 global 的 registry 遍历条目，按 NativeRegistry 元数据构造 SystemLoadedModuleInfo 并最终把数组放入 result；state 将 global collector 的模式/debt/threshold 与当前线程的 stack/frame 深度组合成 SystemVmState。两类 snapshot 读取和 VM 对象/字段物化不是一个原子操作。
 
-callModuleExport 借出模块名和导出名字符串，先把参数数组元素浅拷贝到临时 native allocation，再委托 ZrLib_CallModuleExport。Core 查找目标 export 时可能触发 lazy import；本 callback 在 helper 返回后释放临时参数缓冲。导入时是否有足够的 VM root 覆盖浅拷贝 values 与借用名称、以及局部异常处理建立前发生非局部跳转时的清理边界仍记为 TODO。
+callModuleExport 借出模块名和导出名字符串，把参数数组元素浅拷贝到临时 native allocation，再委托 ZrLib_CallModuleExport。当前 helper 在查找目标 export 和可能的 lazy import 前已安装局部 TryRun；helper 普通返回后本 callback 释放临时参数缓冲。导入触发 GC、目标参数入栈前，浅拷贝 values 与借用名称的保活协议仍为 TODO；局部异常保护不承诺回滚目标导入或调用的全部副作用。 Array_Get 的 raw-array 物化也可能在进入共享 helper 前报告运行时错误；该临时 C 缓冲的非局部退出清理需另核，不能由导入已受保护推断。
 
 ## 已证实缺陷与未闭合契约
 
-本批记录的四个 BUG 都限定在已闭合的合法调用路径和具体软失败，不代表做过故障注入。
+以下保留该批次历史问题的出处；按当前 callee 重新核实后，原 SetString 未初始化及两个 factory 静默缺字段前提已撤回，ignored Array_PushValue 失败仍有静态证据。未做故障注入，也不把此次文档更正计为行为修复。
 
-system_vm_write_string_field 先以 ZrLib_Value_SetString 创建字符串，再把局部 fieldValue 交给 void ZrLib_Object_SetFieldCString。合法 sourceKind 短串（native 或 source）遇到 string cache miss 时，如果 HashSet bucket 扩容的 ZrCore_Memory_Allocate 返回 null，Core 返回 null 而不抛 VM 异常；SetString 因而没有写入 fieldValue，后续 void setter 仍继续读该值。该链可能使新 metadata 对象得到未定义/错误字段值。范围不包含会通过 GcMalloc 抛出并非局部跳转的失败。
+原 system_vm_write_string_field 的 SetString 未初始化前提现已失效：当前 ZrLib_Value_SetString 在字符串创建返回 null 时调用 ZrCore_Exception_Throw，不会沿普通返回继续把未初始化 fieldValue 交给 setter。本次仅更正当前契约和旧结论，不归因于某次历史提交，也不声称新修复。
 
-system_vm_make_state 与 system_vm_make_loaded_module_info 均通过 void setter 逐字段构造新对象；返回非空只表示对象构造成功，不保证每个字段都已写入。各自已核实的窄风险有三类：对象首次 nodeMap 创建及 setter 内重试都遇到软 bucket 分配失败，setter 记录后返回而 factory 继续；初始容量 4、3/4 threshold 下，写到第四个总字段时后续 bucket Rehash 软失败，void 写入仍继续；ignored-root pin table 扩容软失败使对象/key 固定失败并由 void setter 吞掉。value 为 bool 不豁免 nodeMap 扩容；合法来源模块先写 name/sourceKind/sourcePath 且没有 registrationKind 时，hasTypeHints 正是第4字段，也可触发该 HASH_BUCKET rehash。源码 bool helper 的生命周期说明只是非穷举风险列举，没有承诺免扩桶。SystemVmState 的 native-field-layout 用例核验字段布局，不制造这些失败；SystemLoadedModuleInfo 的相关用例也只核验原型/字段信息。
+原两个 factory 的 void setter 静默失败前提现已失效：当前 ZrLib_Object_SetFieldCString 委托 TrySet，失败时 Throw；Core 单次对象写入具备暂存和清理路径。字段构造按顺序执行，后续失败并不保证整个 factory 回滚此前成功字段、扩容或其他 VM 副作用。SystemVmState 与 SystemLoadedModuleInfo 的原型布局用例不制造字符串 OOM、字段写入失败或 GC 压力。
 
 LoadedModules 在 Array_PushValue 返回 bool 后没有检查结果。Core 在 ignored-root pin table 所需的 RawMallocWithType 软失败时可返回 false 且不设置 VM 异常；callback 忽略 false，最后仍把数组发布并返回 true，因此当前已加载模块列表可能静默少一项。
 
-待核问题分四组；各接口/所属函数与独立语句块在台账分别记录。首先，遍历期间 registry、bucket pair、module/name/sourcePath 与 descriptor 被借用，后续 VM 字符串/对象分配是否可能搬迁或失效需沿实际 GC root 协议和 plugin image 生命周期确认。另须核同 global 多 mutator 的调用限制：State_New/State_MutatorLaunch 可建立另一执行者（runtime/state.c:61-70,173-182；静态测试入口 tests/thread/test_thread_runtime.c:652-658），Module_AddToCache 在 module/module.c:300-316 写共享 registry；gc_domain_mutator.c:316-383 的 MutationBegin 并非始终持有模块表专属锁。需追踪受支持的并发导入/快照是否由调用方串行化、以及现有同步协议；本批没有并发压力执行证据，未闭合前仅为 traversal TODO，不标 BUG。state() 的 count helper 也遍历该 registry，factory 又读取共享 gcMode/gcDebtSize/gcPauseThresholdPercent；需沿 gc.h:177,199,204 和 gc.c:658-671 的写路径核实 mutator 协议/调用方同步。不是同一瞬间的快照与读写是否受保护是两个问题，后者同样保留 TODO。其次，reviewer 发现此前单列的 traversal 指针 TODO 没覆盖局部 array 和条目 info：vm.c:321 创建 array，到 callback 末尾 :396 才写入 result；info 由 :285 创建，在每个字符串 setter 中 :291-308 先做字符串分配，后调用字段 setter 固定对象。当前证据没有证明受支持协议在这段窗口自动 root 两个对象；后续应沿 RawObject_New、callback roots、Object_SetFieldCString 的 pin 顺序和受控 GC 压力入口核实，暂不升级为 BUG。最后，CallModuleExport 在局部异常保护范围建立前可能查找/导入目标模块；需验证借用字符串、浅拷贝 VM values、GC 与 longjmp 的完整时序。
+待核协议仍按原接口/函数及语句块分别记录：遍历借用 registry、pair、module/name/sourcePath 和 descriptor，后续分配期间的 GC root 及 plugin image 驻留需继续核实；同 global 多 mutator 下的模块缓存遍历/写入串行化协议也未闭合，不据此标数据竞争 BUG。当前 debt 经原子 accessor 读取，mode/threshold 与模块数量等分开采样，不提供跨字段一致快照。局部 array 及新 info 在发布结果前跨分配的保活协议另列 TODO。CallModuleExport 的查找与 lazy import 已受 TryRun 保护；保留的是参数入栈前浅拷贝 VM values 和借用字符串的 GC 保活 TODO，而不是旧的 pre-handler import 前提。 参数复制阶段 Array_Get 的 raw-array 物化错误发生在共享 helper 前，其非局部退出清理仍需另核；这不同于已撤回的 lazy-import 保护次序前提。
 
 计数转换另保留 source vm.c:156 的 TODO：loaded_module_count 以 TZrSize 累加后在 :186 转为 TZrInt64；需结合实际类型宽度、registry 可达容量上界和超范围转换约定核实，尚未证明可触发，不标 BUG。
 

@@ -348,3 +348,5 @@ doc_type: category-index
 - [Testing 当前 provider、断言与失败记录契约](batches/20261019-testing-current-contracts.md)：173 个既有单元、58 处同物理行注释精修；既有 BUG/TODO 保留，不增加定义信用。
 
 - [Debug 兼容诊断与表达式跳读契约](batches/20261019-debug-eval-diagnostics-current-contracts.md)：45旧键迁移、24段Doxygen；同一56项普通入口前后各55PASS/1FAIL，静态零容量BUG未运行复现。
+
+- [System VM 调用与注册契约复核](batches/20261019-system-vm-current-contracts.md)：29旧键原位复核，27项注释更正；当前module78/provider9前后全PASS，保留静态BUG/TODO边界。

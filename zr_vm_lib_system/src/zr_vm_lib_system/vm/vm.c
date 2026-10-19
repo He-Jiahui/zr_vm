@@ -19,16 +19,16 @@
  * 将有符号整数投影写入新建的 VM 结构对象；字段和值的复制交由 native object setter 完成。
  *
  * ## Parameters
- * @param[in] state 当前 VM state，借用至 setter 返回。
- * @param[in] object 待填充的 VM 对象；须在本次写入期间保持有效。
+ * @param[in,out] state 当前 VM state，字段写入可能分配并改变其异常/GC 状态。
+ * @param[in,out] object 待填充的 VM 对象；须在本次写入期间保持有效。
  * @param[in] fieldName 非空 NUL 结尾字段名，借用至 setter 返回。
  * @param[in] value 已按调用方定义转换的有符号值。
  *
  * ## Returns
- * 无返回值；空参数时不写入。`ZrLib_Object_SetFieldCString` 为 void，写入失败不会反馈给调用者。
+ * 无返回值；空参数时不写入。有效参数下 setter 失败会 Throw，不把 void 返回解释为静默成功。
  *
  * ## Constraints and lifecycle
- * 只用于尚未发布的快照对象。setter 会临时固定对象和值，并创建字段键；底层软失败可留下缺字段。
+ * 只用于尚未发布的快照对象。setter 临时固定写入对象和值并准备字段键；逐次写入不提供整个 factory 的事务回滚。
  *
  * ## References
  * 由 `system_vm_make_state` 与 `system_vm_make_loaded_module_info` 填充声明类型的字段。
@@ -49,16 +49,16 @@ static void system_vm_write_int_field(SZrState *state, SZrObject *object, const 
  * 将布尔值投影写入新建的 VM 结构对象；不自行创建键或返回字段写入状态。
  *
  * ## Parameters
- * @param[in] state 当前 VM state，借用至 setter 返回。
- * @param[in] object 待填充的 VM 对象，须在调用期间保持有效。
+ * @param[in,out] state 当前 VM state，字段写入可能分配并改变其异常/GC 状态。
+ * @param[in,out] object 待填充的 VM 对象，须在调用期间保持有效。
  * @param[in] fieldName 非空 NUL 结尾字段名，借用至 setter 返回。
  * @param[in] value 要写入的布尔值。
  *
  * ## Returns
- * 无返回值；空参数或底层 void setter 的失败都表现为字段未写入。
+ * 无返回值；空参数时不写入，有效参数下字段写入失败沿 setter 的 Throw 路径报告。
  *
  * ## Constraints and lifecycle
- * 面向本模块尚未发布的快照对象。setter 会临时固定相关对象；新对象 nodeMap 初始化或忽略根登记失败可使写入静默落空。
+ * 面向尚未发布的快照对象。setter 对单次写入提供暂存/清理；本 helper 不回滚此前成功字段或其他 VM 副作用。
  *
  * ## References
  * 由 `system_vm_make_loaded_module_info` 写入类型提示和插件身份字段。
@@ -79,19 +79,19 @@ static void system_vm_write_bool_field(SZrState *state, SZrObject *object, const
  * 将 NUL 结尾文本复制为 VM string，再尝试写入快照对象字段。
  *
  * ## Parameters
- * @param[in] state 当前 VM state；字符串创建和字段写入期间借用。
- * @param[in] object 尚未发布的目标 VM 对象，须在调用期间保持有效。
+ * @param[in,out] state 当前 VM state；字符串创建和字段写入可能分配并改变其异常/GC 状态。
+ * @param[in,out] object 尚未发布的目标 VM 对象，须在调用期间保持有效。
  * @param[in] fieldName 非空 NUL 结尾字段名，借用至 setter 返回。
  * @param[in] value 非空 NUL 结尾源文本；字符串 API 按 C 字符串长度读取，借用至 `ZrLib_Value_SetString` 返回。
  *
  * ## Returns
- * 无返回值。该实现未检查 `ZrLib_Value_SetString` 是否成功；短串驻留表扩容软失败时 `fieldValue` 未初始化，随后 void setter 仍读取它。
+ * 无返回值；空参数时不写入。SetString 的创建空结果会 Throw，字段 setter 失败也会 Throw，不继续传递未初始化值。
  *
  * ## Constraints and lifecycle
- * 仅在字符串对象构造期间源文本保持有效时调用。BUG: `LoadedModules` 可把固定短字面值 `sourceKind` 传入此处；当短串缓存扩容的 `ZrCore_Memory_Allocate` 返回 null 时，创建返回 null 而不会抛异常或写入 `fieldValue`，本函数继续传递未初始化值并发布记录。该范围不包括会抛 VM 异常的 `GcMalloc` 路径。
+ * 源文本须在字符串构造期间有效；新字符串归 VM 管理。单次写入保护不保证整个条目构造回滚，跨分配的借用/root 协议另须核实。
  *
  * ## References
- * `system_vm_make_loaded_module_info` 是本 helper 的调用方；字符串写入经过 `ZrLib_Value_SetString`、`ZrCore_String_CreateTryHitCache` 和 `ZrLib_Object_SetFieldCString`。
+ * `system_vm_make_loaded_module_info` 调用本 helper；失败边界见 `ZrLib_Value_SetString`、`ZrLib_Object_TrySetFieldCString` 与 `ZrCore_Exception_Throw`。
  */
 static void system_vm_write_string_field(SZrState *state,
                                          SZrObject *object,
@@ -157,7 +157,7 @@ static TZrBool system_vm_read_string_argument(const ZrLibCallContext *context,
  * TODO: 同 global 多 mutator 可经 Module_AddToCache 改写 registry；沿 State_MutatorLaunch 核实调用方串行化或其他同步协议。
  *
  * ## References
- * 仅由 `system_vm_make_state` 调用；实例缓存由 Core module loader 管理。
+ * 由 `ZrSystem_Vm_State` 在调用 `system_vm_make_state` 前读取计数；实例缓存由 Core module loader 管理。
  */
 static TZrInt64 system_vm_loaded_module_count(SZrState *state) {
     SZrObject *registry;
@@ -191,16 +191,16 @@ static TZrInt64 system_vm_loaded_module_count(SZrState *state) {
  * 创建 `SystemVmState` VM 对象，并把已加载模块数、collector 数据及当前线程栈/帧深度写成值字段。
  *
  * ## Parameters
- * @param[in] state 当前执行线程 state；对象由该 state 所属 VM 管理。
+ * @param[in,out] state 当前执行线程 state；对象由该 VM 管理，字段物化可能改变异常/GC 状态。
  * @param[in] loadedModuleCount 已由调用方读取的模块实例数值快照。
  *
  * ## Returns
- * @return 类型实例构造成功时返回 VM 管理的对象；state 无效或原型/对象构造失败时返回 null。字段写入是 void 操作，返回非空不保证六字段全部存在。
+ * @return 成功完成字段写入时返回 VM 管理对象；state 无效或实例构造返回空时为 null；字段写入失败沿 VM 异常路径报告。
  *
  * ## Constraints and lifecycle
  * GC 值来自 global collector，栈/帧来自当前 state，读取和字段物化不是原子事务。
- * TODO: gcMode/debt/threshold 是共享字段；沿 Core GC 写入口和 mutator 协议核实读取同步，非原子说明不等于读写已受保护。
- * BUG: 初始 nodeMap 分配及首个 setter 的重试都软失败，或第四个字段跨越容量 4 的 3/4 负载阈值而桶扩容失败时，void setter 静默跳过字段，本函数仍发布对象；ignored-root pin 表扩容软失败也会独立造成缺字段。
+ * TODO: debt 由原子 accessor 读取；仍须沿 Core GC 写入口及 mutator 协议核实 gcMode/threshold 与 registry 读取的同步，不能据此声称跨字段原子快照。
+ * 每次字段写入的暂存/清理不构成六字段构造事务；后续 Throw 不保证回滚先前成功字段、扩容或其他 VM 副作用。
  *
  * ## References
  * 由 `ZrSystem_Vm_State` 调用；字段布局由 `kVmStateFields` 声明。
@@ -245,7 +245,7 @@ static SZrObject *system_vm_make_state(SZrState *state, TZrInt64 loadedModuleCou
  * 从已加载模块实例和 NativeRegistry 描述符信息组装 `SystemLoadedModuleInfo` 快照；注册来源与插件标志以 registry 信息为准。
  *
  * ## Parameters
- * @param[in] state 当前 VM state，负责创建并管理返回对象。
+ * @param[in,out] state 当前 VM state，负责创建并管理返回对象；物化可能分配并改变异常/GC 状态。
  * @param[in] name 模块名文本；非空时写入 name 字段，调用期间借用。
  * @param[in] sourceKind 模块来源类别文本，通常是 `native` 或 `source`。
  * @param[in] sourcePath 注册路径/原生模块标识文本；可能为空并因此不写字段。
@@ -257,11 +257,11 @@ static SZrObject *system_vm_make_state(SZrState *state, TZrInt64 loadedModuleCou
  * @param[in] isDescriptorPlugin 是否来自动态 descriptor plugin。
  *
  * ## Returns
- * @return 实例构造成功时返回 VM 管理对象；构造失败返回 null。逐字段 setter 为 void，部分写入失败不会改变返回对象状态。
+ * @return 成功完成所选字段写入时返回 VM 管理对象；state 无效或实例构造返回空时为 null；字符串或字段写入失败沿 VM 异常路径报告。
  *
  * ## Constraints and lifecycle
  * 文本指针由 registry/模块对象借用，调用方须保证它们在各字符串创建调用期间有效。fieldName/type 元数据来自静态 descriptor。
- * BUG: nodeMap 初始分配及首个 setter 的重试都软失败，或第四个已插入字段跨越容量 4 的 3/4 负载阈值且桶扩容软失败时，void setter 不报告缺字段，本函数仍返回对象；ignored-root pin 表扩容软失败是另一条独立缺字段路径。
+ * 可空文本对应字段按实现省略；逐字段写入不是整个条目的事务，后续 Throw 不保证回滚先前字段，调用方仍须核实跨分配借用/root 协议。
  *
  * ## References
  * 由 `ZrSystem_Vm_LoadedModules` 调用，布局见 `kLoadedModuleInfoFields`；descriptor 来源查询见 `ZrLibrary_NativeRegistry_GetModuleInfo`。
@@ -451,7 +451,7 @@ TZrBool ZrSystem_Vm_CallModuleExport(ZrLibCallContext *context, SZrTypeValue *re
     }
 
     /* TODO: 目标导入可能在 CallValue 将参数放上 VM 栈前触发 GC；需以 GC 压力测试确认
-     * malloc 中的浅拷贝值及 moduleName/exportName 借用指针是否保持有效。 */
+     * malloc 浅拷贝值/借用名称的保活；另核 helper 前 Array_Get 物化失败时非局部退出的缓冲清理。 */
     success = ZrLib_CallModuleExport(context->state, moduleName, exportName, arguments, argumentCount, result);
     free(arguments);
     return success;
