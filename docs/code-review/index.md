@@ -350,3 +350,5 @@ doc_type: category-index
 - [Debug 兼容诊断与表达式跳读契约](batches/20261019-debug-eval-diagnostics-current-contracts.md)：45旧键迁移、24段Doxygen；同一56项普通入口前后各55PASS/1FAIL，静态零容量BUG未运行复现。
 
 - [System VM 调用与注册契约复核](batches/20261019-system-vm-current-contracts.md)：29旧键原位复核，27项注释更正；当前module78/provider9前后全PASS，保留静态BUG/TODO边界。
+
+- [动态迭代与已知调用流水线测试合同](batches/20261019-aot-dynamic-known-pipeline-current-contracts.md)：50旧键+4嵌入语言首交付，50段Doxygen；既有2+5Unity前后全PASS，AOT生成物执行缺口保留。
