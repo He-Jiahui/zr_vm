@@ -384,3 +384,5 @@ doc_type: category-index
 - [调试栈帧、作用域与安全求值合同](batches/20261019-debug-frame-scope-safe-evaluation-current-contracts.md)：完成剩余39旧项、34段中文Doxygen、0新增；与前批42项合计本文件81项，前后直接3+5+17+3各28全PASS，原始输出一致。
 
 - [调试文本与数据断点合同](batches/20261019-debug-text-data-breakpoint-current-contracts.md)：完成剩余29旧项、22段中文Doxygen、0新增；与此前61项合计本文件90项，前后直接2+5+8各15全PASS，原始输出一致。
+
+- [规范类型索引合同](batches/20261019-parser-canonical-type-index-current-contracts.md)：完成10旧项、9段中文Doxygen；按当前Throw路径撤回旧OOM误报、收窄既有重复插入TODO；前后各19全PASS，原始输出相同。
