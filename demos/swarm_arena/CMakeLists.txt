@@ -1,36 +1,70 @@
-# These tests are registered after the engine's test inventory, labelled only
-# "demo", and have no effect when ZR_VM_BUILD_DEMOS is OFF.
+# These tests are registered after the engine's inventory under the "demo"
+# label, and have no effect when ZR_VM_BUILD_DEMOS is OFF.
+add_library(zrgame_ffi SHARED native/ffi/zrgame_ffi.c)
+set_target_properties(zrgame_ffi PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/native")
+add_library(zrgame_probe MODULE probes/native/probe_module.c)
+target_link_libraries(zrgame_probe PRIVATE zr_vm_library_shared)
+target_include_directories(zrgame_probe PRIVATE "${PROJECT_SOURCE_DIR}/zr_vm_core/include"
+    "${PROJECT_SOURCE_DIR}/zr_vm_common/include")
+set_target_properties(zrgame_probe PROPERTIES PREFIX "" OUTPUT_NAME "zrvm_native_zrgame_probe"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/native")
+add_library(zrgame_inline_probe MODULE probes/native/probe_module.c)
+target_compile_definitions(zrgame_inline_probe PRIVATE SWARM_INLINE_PROBE=1)
+target_link_libraries(zrgame_inline_probe PRIVATE zr_vm_library_shared)
+target_include_directories(zrgame_inline_probe PRIVATE "${PROJECT_SOURCE_DIR}/zr_vm_core/include"
+    "${PROJECT_SOURCE_DIR}/zr_vm_common/include")
+set_target_properties(zrgame_inline_probe PROPERTIES PREFIX "" OUTPUT_NAME "zrvm_native_zrgame_inlineprobe"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/native")
+add_executable(zr_swarm_probe_host probes/native/host_calls.c)
+target_include_directories(zr_swarm_probe_host PRIVATE "${PROJECT_SOURCE_DIR}/zr_vm_common/include"
+    "${PROJECT_SOURCE_DIR}/zr_vm_core/include" "${PROJECT_SOURCE_DIR}/zr_vm_parser/include"
+    "${PROJECT_SOURCE_DIR}/zr_vm_library/include" "${PROJECT_SOURCE_DIR}/zr_vm_lib_system/include"
+    "${PROJECT_SOURCE_DIR}/zr_vm_lib_container/include")
+target_link_libraries(zr_swarm_probe_host PRIVATE zr_vm_parser_shared zr_vm_lib_system_shared
+    zr_vm_lib_container_shared zr_vm_library_shared zr_vm_core_shared)
+set_target_properties(zr_swarm_probe_host PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
 if (BUILD_TESTS)
     if (NOT TARGET zr_vm_cli_executable)
         message(FATAL_ERROR "Swarm Arena feature probes require BUILD_CLI=ON")
     endif ()
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     set(swarm_probe_runner "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_probe.py")
-    foreach(mode interp binary)
-        foreach(variant main nested control)
-            set(probe_name "demo_probe_p01_${variant}_${mode}")
-            set(probe_args
-                --cli $<TARGET_FILE:zr_vm_cli_executable>
-                --mode ${mode} --variant ${variant}
-                --out "${CMAKE_CURRENT_BINARY_DIR}/probe-results/${variant}-${mode}")
-            if (variant STREQUAL "main")
-                list(APPEND probe_args --expect-failure
-                    "GET_MEMBER: receiver must be an object, array, or string")
-            elseif (variant STREQUAL "nested")
-                list(APPEND probe_args --expect-failure
-                    "KNOWN_VM_CALL: invalid known VM callable")
-            endif ()
+    set(swarm_probe_results "${CMAKE_CURRENT_BINARY_DIR}/probe-results")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/probes/cases.json")
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/probes/cases.json" swarm_cases)
+    string(JSON swarm_case_count LENGTH "${swarm_cases}")
+    math(EXPR swarm_case_last "${swarm_case_count} - 1")
+    set(swarm_probe_tests)
+    foreach(index RANGE 0 ${swarm_case_last})
+        string(JSON case_name GET "${swarm_cases}" ${index} name)
+        foreach(mode interp binary)
+            string(REPLACE "-" "_" test_suffix "${case_name}")
+            set(probe_name "demo_probe_${test_suffix}_${mode}")
             add_test(NAME ${probe_name}
-                COMMAND "${Python3_EXECUTABLE}" -I "${swarm_probe_runner}" ${probe_args})
-            set_tests_properties(${probe_name} PROPERTIES LABELS "demo;probe" TIMEOUT 45)
-            if (NOT variant STREQUAL "control")
-                # Only the exact recorded runtime diagnostic inverts to pass.
-                # The separate, non-inverted gate below still blocks GD-C2+.
+                COMMAND "${Python3_EXECUTABLE}" -I "${swarm_probe_runner}"
+                --case "${case_name}" --mode ${mode}
+                --cli $<TARGET_FILE:zr_vm_cli_executable>
+                --host-exe $<TARGET_FILE:zr_swarm_probe_host>
+                --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native"
+                --out "${swarm_probe_results}/${case_name}-${mode}")
+            set_tests_properties(${probe_name} PROPERTIES LABELS "demo;probe" TIMEOUT 90)
+            string(JSON expected_error ERROR_VARIABLE no_expectation GET "${swarm_cases}" ${index} expect ${mode})
+            if (NOT no_expectation)
+                # The runner returns 1 only for the exact known failure, without
+                # a timeout or sanitizer diagnostic. Its readiness stays FAIL.
                 set_tests_properties(${probe_name} PROPERTIES WILL_FAIL TRUE)
             endif ()
+            list(APPEND swarm_probe_tests ${probe_name})
         endforeach()
     endforeach()
+    add_test(NAME demo_probe_p22
+        COMMAND "${Python3_EXECUTABLE}" -I "${swarm_probe_runner}" --parity --out "${swarm_probe_results}")
+    set_tests_properties(demo_probe_p22 PROPERTIES LABELS "demo;probe;readiness"
+        DEPENDS "${swarm_probe_tests}" TIMEOUT 10)
     add_test(NAME demo_feature_gate
-        COMMAND "${Python3_EXECUTABLE}" -I "${swarm_probe_runner}" --gate)
-    set_tests_properties(demo_feature_gate PROPERTIES LABELS "demo;readiness" TIMEOUT 10)
+        COMMAND "${Python3_EXECUTABLE}" -I "${swarm_probe_runner}" --gate --out "${swarm_probe_results}")
+    set_tests_properties(demo_feature_gate PROPERTIES LABELS "demo;readiness"
+        DEPENDS "${swarm_probe_tests};demo_probe_p22" TIMEOUT 10)
 endif ()

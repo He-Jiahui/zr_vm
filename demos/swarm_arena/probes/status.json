@@ -1,29 +1,169 @@
 {
   "schema": "zr-swarm-readiness/1",
-  "stopped_at": "P01",
-  "reason": "Required Array<Vec2> element read/modify/write fails in interp and binary. John He's required-probe stop rule applies; no fallback adopted.",
+  "stopped_at": "GD-C1",
+  "reason": "P01 is resolved. Required P04, P05, P09, P14 (binary), P22, and P08 (sanitizers) fail; stop rule gates GD-C2 onward. All P01-P22 have executed checks or an evidence-based parity aggregate.",
   "probes": [
-    {"id":"P01","required":true,"interp":"FAIL","binary":"FAIL","note":"GET_MEMBER after explicit Array<Vec2> element writeback. Independent nested constructor failure: KNOWN_VM_CALL."},
-    {"id":"P02","required":false,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; optional struct operators."},
-    {"id":"P03","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; interface dispatch and inheritance."},
-    {"id":"P04","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; unions and generic storage."},
-    {"id":"P05","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; generic RingQueue required, out T optional; concrete out required."},
-    {"id":"P06","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; iteration forms."},
-    {"id":"P07","required":false,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; optional user iterable."},
-    {"id":"P08","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; resource ownership, destructor and close."},
-    {"id":"P09","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; captured/stored closures."},
-    {"id":"P10","required":false,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; M-tier Job/Scheduler."},
-    {"id":"P11","required":false,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; M-tier Pool<T>."},
-    {"id":"P12","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; GC stats/budget/collection and arguments."},
-    {"id":"P13","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; native extern FFI."},
-    {"id":"P14","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; descriptor plugin required, package/alias optional."},
-    {"id":"P15","required":false,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; optional template strings."},
-    {"id":"P16","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; integer overflow/RNG safety."},
-    {"id":"P17","required":false,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; optional f32 layout/precision."},
-    {"id":"P18","required":false,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; M-tier compile features."},
-    {"id":"P19","required":false,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; M-tier reflection/attributes."},
-    {"id":"P20","required":false,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; optional inline native argument view."},
-    {"id":"P21","required":true,"interp":"SKIP","binary":"SKIP","note":"Stopped at P01; required embedded-host export-call spike."},
-    {"id":"P22","required":true,"interp":"SKIP","binary":"SKIP","note":"Full P01-P20 binary parity not reached; P01 fails identically with source removed after compile."}
+    {
+      "id": "P01",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "PASS after merged engine fixes: explicit writeback, direct field write-through, copy isolation, nested constructor and 10k-loop checks; host access-cost probe also passes."
+    },
+    {
+      "id": "P02",
+      "required": false,
+      "interp": "FAIL",
+      "binary": "FAIL",
+      "note": "GET_MEMBER while evaluating struct operator expression; optional operator path unavailable."
+    },
+    {
+      "id": "P03",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Interface-typed field dispatch, virtual/override/super, properties and static counter all pass."
+    },
+    {
+      "id": "P04",
+      "required": true,
+      "interp": "FAIL",
+      "binary": "FAIL",
+      "note": "Required FAIL: Array<GameEvent>.add(GameEvent.Hit(4, 9)) raises KNOWN_VM_CALL before union/generic storage assertions. Stopped; no workaround adopted."
+    },
+    {
+      "id": "P05",
+      "required": true,
+      "interp": "FAIL",
+      "binary": "FAIL",
+      "note": "Required FAIL: generic RingQueue<int>.push raises GET_MEMBER: missing member 'size'. Stopped; no concrete replacement adopted. Generic out and wrap checks are not reached."
+    },
+    {
+      "id": "P06",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Array<float> for-in, C-style for with += and while return equal sums."
+    },
+    {
+      "id": "P07",
+      "required": false,
+      "interp": "FAIL",
+      "binary": "FAIL",
+      "note": "User Enumerator/Iterable implementation rejected as not implementing all abstract/interface members. Optional; no fallback selected."
+    },
+    {
+      "id": "P08",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Release scope/using and host program-end destructor checks pass. Required sanitizer FAIL: ASan and forced-GC report heap-use-after-free at value.h:152 / execution_dispatch.c:10019 after a destructor grows the VM stack. Stopped; no workaround adopted.",
+      "asan": {
+        "interp": "FAIL",
+        "binary": "FAIL"
+      },
+      "gcstress": {
+        "interp": "FAIL",
+        "binary": "FAIL"
+      }
+    },
+    {
+      "id": "P09",
+      "required": true,
+      "interp": "FAIL",
+      "binary": "FAIL",
+      "note": "Required FAIL: function-typed field invocation this.callback(x) is rejected with Argument count mismatch. Stopped; escaping capture/array assertions not reached."
+    },
+    {
+      "id": "P10",
+      "required": false,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Job<int> construction, currentScheduler.schedule and result return 17."
+    },
+    {
+      "id": "P11",
+      "required": false,
+      "interp": "OK",
+      "binary": "FAIL",
+      "note": "Interp pool deliver/borrow/write/close/recycle passes. Source-removed binary repeatedly fails at tryBorrow(out view): PROPERTY_REF_CREATE_LOCAL: invalid local Place. Optional M3 is unavailable; no fallback selected."
+    },
+    {
+      "id": "P12",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "GC stats, 500us budget, minor request and process.arguments pass. A request need not finish after one step; snapshot allocation can trigger a full GC in Debug, so last-request kind is not asserted."
+    },
+    {
+      "id": "P13",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "native extern into absolute libzrgame_ffi.so path passes i64 and f64 checks. Relative/search resolution not needed for the selected absolute-path contract."
+    },
+    {
+      "id": "P14",
+      "required": true,
+      "interp": "OK",
+      "binary": "FAIL",
+      "note": "Required plugin loads via ZR_VM_NATIVE_PATH and project/native in interp; fresh binary compiles but fails to load the entry with source removed. Optional #gfx metadata and @swarmcore imports also fail. No workaround adopted."
+    },
+    {
+      "id": "P15",
+      "required": false,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Runtime template interpolation produces value=7."
+    },
+    {
+      "id": "P16",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Safe Park-Miller (10k steps), bounded mod-prime hash and wide uint pass. Separate runtime observations prove signed +/* overflow errors and uint addition wraps to zero."
+    },
+    {
+      "id": "P17",
+      "required": false,
+      "interp": "FAIL",
+      "binary": "FAIL",
+      "note": "f32 cast/field probe raises invalid operand for bytecode instruction 209. Size/precision unverified; no f32 claim."
+    },
+    {
+      "id": "P18",
+      "required": false,
+      "interp": "FAIL",
+      "binary": "FAIL",
+      "note": "Declared trace feature rejected as conditional.unknown_feature; profiles/comptime combined probe cannot complete."
+    },
+    {
+      "id": "P19",
+      "required": false,
+      "interp": "FAIL",
+      "binary": "FAIL",
+      "note": "Runtime import zr.reflection fails with import_load_unavailable; field/attribute enumeration unverified."
+    },
+    {
+      "id": "P20",
+      "required": false,
+      "interp": "FAIL",
+      "binary": "FAIL",
+      "note": "Valid native SpriteInstance descriptor and constructor compile. Interp raises invalid operand for bytecode instruction 209; source-removed binary cannot load entry. Native InlineArgumentView assertion not reached."
+    },
+    {
+      "id": "P21",
+      "required": true,
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Host spike passes: entry side effects, canonical module key game, 10000 tick calls, expected exception, ResetThread and a succeeding call. Source compilation is disabled in binary host."
+    },
+    {
+      "id": "P22",
+      "required": true,
+      "interp": "FAIL",
+      "binary": "FAIL",
+      "note": "Aggregate FAIL: successful interp/source-removed binary parity for P01-P20 is blocked by P02/P04/P05/P07/P09/P11/P14/P17/P18/P19/P20. Matching failure diagnostics are not successful feature parity."
+    }
   ]
 }

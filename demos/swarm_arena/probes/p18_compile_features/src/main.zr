@@ -1,0 +1,9 @@
+let system = import("zr.system");
+var n = 0;
+#zr.compile.conditional("trace")#
+fn trace(): void { n += 1; }
+comptime if (true) { fn constant(): int { return 7; } }
+trace();
+if (constant() != 7) { throw "P18 comptime if"; }
+system.console.printLine("PROBE_OK P18 traceCalls=" + <string> n);
+return 0;

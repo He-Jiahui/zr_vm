@@ -1,0 +1,8 @@
+let game = import("game");
+let system = import("zr.system");
+pub var started: int = 0;
+pub fn boot(): int { return started; }
+started = 1;
+if (game.tick(41) != 42) { throw "P21 script control"; }
+system.console.printLine("PROBE_OK P21 script-control (host required separately)");
+return 0;

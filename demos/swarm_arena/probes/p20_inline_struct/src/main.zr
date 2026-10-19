@@ -1,0 +1,6 @@
+let probe = import("zrgame.inlineprobe");
+let system = import("zr.system");
+var sprite = init probe.SpriteInstance(2.0, 3.0, 4.0, 5.0, 6);
+if (probe.spriteSum(sprite) != 20.0) { throw "P20 inline native struct values/layout"; }
+system.console.printLine("PROBE_OK P20 inline-native-SpriteInstance");
+return 0;

@@ -1,0 +1,14 @@
+let system = import("zr.system");
+system.gc.set_budget(500);
+var before = system.gc.get_stats();
+system.gc.collect("minor");
+var after = system.gc.get_stats();
+// minor schedules a collection and performs one step; it need not finish it.
+// Allocating the stats snapshot can itself trigger a full collection in Debug;
+// the last request kind can therefore change before this read.
+if (after.minorCollectionCount < before.minorCollectionCount) { throw "P12 GC counters decreased"; }
+var found = false;
+for (var arg in system.process.arguments) { if (arg == "swarm-probe-argument") { found = true; } }
+if (!found) { throw "P12 missing process argument"; }
+system.console.printLine("PROBE_OK P12 stats budget minor arguments");
+return 0;

@@ -1,0 +1,225 @@
+[
+  {
+    "name": "p01-main",
+    "probe": "P01",
+    "required": true
+  },
+  {
+    "name": "p02-main",
+    "probe": "P02",
+    "required": false,
+    "expect": {
+      "interp": "GET_MEMBER: receiver must be an object, array, or string",
+      "binary": "GET_MEMBER: receiver must be an object, array, or string"
+    }
+  },
+  {
+    "name": "p03-main",
+    "probe": "P03",
+    "required": true
+  },
+  {
+    "name": "p04-main",
+    "probe": "P04",
+    "required": true,
+    "expect": {
+      "interp": "KNOWN_VM_CALL: invalid known VM callable",
+      "binary": "KNOWN_VM_CALL: invalid known VM callable"
+    }
+  },
+  {
+    "name": "p05-main",
+    "probe": "P05",
+    "required": true,
+    "expect": {
+      "interp": "GET_MEMBER: missing member 'size'",
+      "binary": "GET_MEMBER: missing member 'size'"
+    }
+  },
+  {
+    "name": "p06-main",
+    "probe": "P06",
+    "required": true
+  },
+  {
+    "name": "p07-main",
+    "probe": "P07",
+    "required": false,
+    "expect": {
+      "interp": "Concrete class does not implement all abstract/interface members",
+      "binary": "Concrete class does not implement all abstract/interface members"
+    }
+  },
+  {
+    "name": "p08-main",
+    "probe": "P08",
+    "required": true
+  },
+  {
+    "name": "p09-main",
+    "probe": "P09",
+    "required": true,
+    "expect": {
+      "interp": "Argument count mismatch",
+      "binary": "Argument count mismatch"
+    }
+  },
+  {
+    "name": "p10-main",
+    "probe": "P10",
+    "required": false
+  },
+  {
+    "name": "p11-main",
+    "probe": "P11",
+    "required": false,
+    "expect": {
+      "binary": "PROPERTY_REF_CREATE_LOCAL: invalid local Place"
+    }
+  },
+  {
+    "name": "p12-main",
+    "probe": "P12",
+    "required": true
+  },
+  {
+    "name": "p13-main",
+    "probe": "P13",
+    "required": true
+  },
+  {
+    "name": "p14-main",
+    "probe": "P14",
+    "required": true,
+    "expect": {
+      "binary": "failed to load project entry: main"
+    }
+  },
+  {
+    "name": "p15-main",
+    "probe": "P15",
+    "required": false
+  },
+  {
+    "name": "p16-main",
+    "probe": "P16",
+    "required": true
+  },
+  {
+    "name": "p17-main",
+    "probe": "P17",
+    "required": false,
+    "expect": {
+      "interp": "invalid operand for bytecode instruction 209",
+      "binary": "invalid operand for bytecode instruction 209"
+    }
+  },
+  {
+    "name": "p18-main",
+    "probe": "P18",
+    "required": false,
+    "expect": {
+      "interp": "conditional.unknown_feature: project feature is not declared",
+      "binary": "conditional.unknown_feature: project feature is not declared"
+    }
+  },
+  {
+    "name": "p19-main",
+    "probe": "P19",
+    "required": false,
+    "expect": {
+      "interp": "import_load_unavailable: module 'zr.reflection'",
+      "binary": "import_load_unavailable: module 'zr.reflection'"
+    }
+  },
+  {
+    "name": "p20-main",
+    "probe": "P20",
+    "required": false,
+    "expect": {
+      "interp": "invalid operand for bytecode instruction 209",
+      "binary": "failed to load project entry: main"
+    }
+  },
+  {
+    "name": "p21-main",
+    "probe": "P21",
+    "required": true,
+    "host": true
+  },
+  {
+    "name": "p01-nested",
+    "probe": "P01",
+    "variant": "nested",
+    "required": true
+  },
+  {
+    "name": "p01-control",
+    "probe": "P01",
+    "variant": "control",
+    "required": true
+  },
+  {
+    "name": "p01-cost",
+    "probe": "P01",
+    "variant": "bench",
+    "host": true,
+    "required": false
+  },
+  {
+    "name": "p08-end",
+    "probe": "P08",
+    "variant": "end",
+    "host": true,
+    "required": true
+  },
+  {
+    "name": "p14-project",
+    "probe": "P14",
+    "plugin_search": "project",
+    "required": true,
+    "expect": {
+      "binary": "failed to load project entry: main"
+    }
+  },
+  {
+    "name": "p14-alias",
+    "probe": "P14",
+    "variant": "aliases",
+    "required": false,
+    "expect": {
+      "interp": "failed to load import metadata for module '#gfx'",
+      "binary": "failed to load import metadata for module '#gfx'"
+    }
+  },
+  {
+    "name": "p14-package",
+    "probe": "P14",
+    "variant": "package",
+    "required": false,
+    "expect": {
+      "interp": "unknown import alias '@swarmcore'",
+      "binary": "unknown import alias '@swarmcore'"
+    }
+  },
+  {
+    "name": "p16-add-overflow",
+    "probe": "P16",
+    "variant": "add_overflow",
+    "required": true,
+    "observe_error": "signed integer addition overflow"
+  },
+  {
+    "name": "p16-mul-overflow",
+    "probe": "P16",
+    "variant": "mul_overflow",
+    "required": true,
+    "observe_error": "signed integer multiplication overflow"
+  },
+  {
+    "name": "p16-uint-overflow",
+    "probe": "P16",
+    "variant": "uint_overflow",
+    "required": true
+  }
+]

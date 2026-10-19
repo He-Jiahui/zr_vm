@@ -1,0 +1,9 @@
+{
+  "manifestVersion": 2,
+  "name": "p10_jobs",
+  "version": "0.1.0",
+  "kind": "application",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

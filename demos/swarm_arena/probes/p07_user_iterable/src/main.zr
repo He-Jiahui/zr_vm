@@ -1,0 +1,15 @@
+let iteration = import("zr.iteration");
+let system = import("zr.system");
+class Cursor: iteration.Enumerator<int> {
+    pub var current: int = 0;
+    pub fn moveNext(): bool { this.current += 1; return this.current <= 3; }
+}
+class Range: iteration.Iterable<int> {
+    pub fn getEnumerator(): iteration.Enumerator<int> { return new Cursor(); }
+}
+var range = new Range();
+var sum = 0;
+for (var value in range) { sum += value; }
+if (sum != 6) { throw "P07 iterable sum"; }
+system.console.printLine("PROBE_OK P07 user-Iterable Enumerator");
+return 0;

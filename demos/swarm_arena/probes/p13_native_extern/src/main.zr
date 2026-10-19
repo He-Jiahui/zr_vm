@@ -1,0 +1,8 @@
+let system = import("zr.system");
+native extern("@FFI_LIBRARY@") {
+    #zr.ffi.entry("zrg_add_i64")# fn addI64(a: i64, b: i64): i64;
+    #zr.ffi.entry("zrg_noise2")# fn noise2(x: f64, y: f64): f64;
+}
+if (addI64(7, 9) != 16 || noise2(2.0, 3.0) != 2.75) { throw "P13 FFI result"; }
+system.console.printLine("PROBE_OK P13 native-extern absolute-library");
+return 0;

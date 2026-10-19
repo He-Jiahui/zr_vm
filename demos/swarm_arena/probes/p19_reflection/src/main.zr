@@ -1,0 +1,15 @@
+let reflection = import("zr.reflection");
+let system = import("zr.system");
+#zr.reflection.attributeUsage(targets: zr.reflection.AttributeTargets.type, retention: zr.reflection.AttributeRetention.runtime, repeatable: false, inherited: false)#
+readonly struct Tunable { pub let value: int; }
+#Tunable(7)#
+struct Point { pub var x: float = 1.0; pub var y: float = 2.0; }
+var point = init Point();
+var runtime = typeof(point);
+var resolved = reflection.resolve(typeid(Point));
+var fields = resolved.getFields();
+if (fields.length != 2) { throw "P19 reflected field count"; }
+var attrs = resolved.attributes;
+if (attrs.length != 1) { throw "P19 runtime attribute count"; }
+system.console.printLine("PROBE_OK P19 typeid typeof fields runtime-attribute");
+return 0;

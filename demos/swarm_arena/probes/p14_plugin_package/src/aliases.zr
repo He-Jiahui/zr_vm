@@ -1,0 +1,5 @@
+let probe = import("#gfx");
+let system = import("zr.system");
+if (probe.value() != 37) { throw "P14 alias value"; }
+system.console.printLine("PROBE_OK P14 native-alias");
+return 0;

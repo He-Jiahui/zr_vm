@@ -1,0 +1,24 @@
+{
+  "manifestVersion": 2,
+  "name": "p18_compile_features",
+  "version": "0.1.0",
+  "kind": "application",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main",
+  "build": {
+    "features": [
+      "trace"
+    ],
+    "profiles": {
+      "debug": {
+        "enableFeatures": [
+          "trace"
+        ]
+      },
+      "release": {
+        "enableFeatures": []
+      }
+    }
+  }
+}

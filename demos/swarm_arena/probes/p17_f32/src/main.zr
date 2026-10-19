@@ -1,0 +1,6 @@
+let system = import("zr.system");
+struct Point { pub var x: f32; pub @constructor(x: f32) { this.x = x; } }
+var p = init Point(<f32> 16777217.0);
+if (p.x != <f32> 16777216.0) { throw "P17 field does not round to f32"; }
+system.console.printLine("PROBE_OK P17 f32-precision value=" + <string> p.x);
+return 0;

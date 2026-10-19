@@ -1,0 +1,24 @@
+let system = import("zr.system");
+interface Behavior { fn value(): int; }
+class Actor {
+    pri var _hp: int;
+    pub @constructor(hp: int) { this._hp = hp; }
+    pub property hp: int { get { return this._hp; } set { this._hp = value; } }
+    pub virtual fn value(): int { return this.hp; }
+}
+class Enemy: Actor, Behavior {
+    pub static var created: int = 0;
+    pub @constructor(hp: int) super(hp) { Enemy.created += 1; }
+    pub override fn value(): int { return super.value() + 2; }
+}
+class Holder {
+    pub var behavior: Behavior;
+    pub @constructor(b: Behavior) { this.behavior = b; }
+    pub fn call(): int { return this.behavior.value(); }
+}
+var enemy = new Enemy(7);
+enemy.hp = 9;
+var holder = new Holder(enemy);
+if (holder.call() != 11 || Enemy.created != 1) { throw "P03 dispatch/property/static mismatch"; }
+system.console.printLine("PROBE_OK P03 interface-field virtual override super property static");
+return 0;

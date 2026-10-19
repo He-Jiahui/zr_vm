@@ -1,0 +1,27 @@
+let {Pool, PoolRef, PoolReadRef} = import("zr.pooling");
+let system = import("zr.system");
+struct Particle { pub var x: int = 0; pub var y: int = 0; }
+fn run(): void {
+    var pool = new Pool<Particle>();
+    var particle = init Particle();
+    particle.x = 17; particle.y = 29;
+    var handle = pool.deliver(particle);
+    {
+        var view: PoolRef<Particle>;
+        if (!pool.tryBorrow(handle, out view)) { throw "P11 borrow"; }
+        view.value.x = 41;
+        view.close();
+    }
+    {
+        var view: PoolReadRef<Particle>;
+        if (!pool.tryRead(handle, out view)) { throw "P11 read"; }
+        if (view.value.x != 41 || view.value.y != 29) { throw "P11 writeback"; }
+        view.close();
+    }
+    if (!pool.recycle(handle)) { throw "P11 recycle"; }
+    var stale: PoolReadRef<Particle>;
+    if (pool.tryRead(handle, out stale)) { throw "P11 stale handle accepted"; }
+}
+run();
+system.console.printLine("PROBE_OK P11 deliver borrow close recycle stale-rejection");
+return 0;

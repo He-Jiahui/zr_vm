@@ -1,0 +1,7 @@
+let task = import("zr.task");
+let system = import("zr.system");
+var job = init task.Job<int>(fn() => { return 17; });
+var completion = task.currentScheduler.schedule<int>(job);
+if (completion.result() != 17) { throw "P10 Job result"; }
+system.console.printLine("PROBE_OK P10 Job schedule result");
+return 0;

@@ -1,0 +1,5 @@
+{
+  "manifestVersion": 2, "name": "swarmcore", "version": "0.1.0",
+  "kind": "library", "source": "src", "binary": "bin", "entry": "main",
+  "package": {"name": "@swarmcore", "exports": {".": "main"}}
+}

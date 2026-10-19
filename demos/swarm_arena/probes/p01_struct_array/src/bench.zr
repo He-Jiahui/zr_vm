@@ -1,0 +1,33 @@
+let {Array} = import("zr.container");
+struct Vec2 {
+    pub var x: float;
+    pub var y: float;
+    pub @constructor(x: float, y: float) { this.x = x; this.y = y; }
+}
+pub fn direct(n: int): float {
+    var points = new Array<Vec2>();
+    points.add(init Vec2(1.0, 2.0));
+    var i = 0;
+    while (i < n) { points[0].x += 1.0; points[0].y += 1.0; i += 1; }
+    return points[0].x + points[0].y;
+}
+pub fn copy(n: int): float {
+    var points = new Array<Vec2>();
+    points.add(init Vec2(1.0, 2.0));
+    var i = 0;
+    while (i < n) {
+        var point = points[0];
+        point.x += 1.0; point.y += 1.0;
+        points[0] = point;
+        i += 1;
+    }
+    return points[0].x + points[0].y;
+}
+pub fn soa(n: int): float {
+    var xs = new Array<float>(); var ys = new Array<float>();
+    xs.add(1.0); ys.add(2.0);
+    var i = 0;
+    while (i < n) { xs[0] += 1.0; ys[0] += 1.0; i += 1; }
+    return xs[0] + ys[0];
+}
+return 0;

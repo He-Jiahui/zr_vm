@@ -1,0 +1,6 @@
+let system = import("zr.system");
+var n = 7;
+var s = `value=${n}`;
+if (s != "value=7") { throw "P15 template interpolation"; }
+system.console.printLine("PROBE_OK P15 " + s);
+return 0;

@@ -1,155 +1,169 @@
-# Feature readiness — GD-C1 BLOCKED
+# Feature readiness — GD-C1 blocked after the P01 fix
 
-**Required P01 FAILS in interp and binary. Implementation stopped at GD-C1 on
-2026-10-18 under John He's explicit required-probe stop rule.** GD-C2–C5, H1–H6
-and M-tier have not started. No SoA fallback or lane reduction has been adopted,
-and no VM/compiler/library source has been changed.
+P01 **PASSES** in interpreter and source-removed binary mode after the engine
+fixes merged by `3fc8b406`. All probes P01–P22 have now been evaluated. Required
+P04, P05, P09, P14 (binary) and P22 fail. **P08 also fails under ASan and forced
+GC with a heap use-after-free**, despite passing Release. John's required-probe
+stop rule gates GD-C2 and every later phase. No fallback, lane reduction, or
+engine edit has been adopted in this batch.
 
-The design's §5 marks value structs and container arrays **R** and names P01 as
-their verification. P01 cannot complete even explicit element read/modify/write,
-before testing the direct-field write-through question or measuring its cost.
-Although the report discusses SoA as a fallback for unexpected struct-array
-behaviour, John's instruction requires stopping and escalating an R failure.
+## Inventory
 
-## Probe inventory
+These mode columns describe Release. ASan/UBSan and forced-GC checks reproduce
+the same statuses, except P08, which fails in both modes under both sanitizer
+configurations. OK requires assertions, the probe marker and the requested
+execution-mode marker. Signed overflow observations in P16 instead require
+the exact checked-arithmetic error. FAIL is a real feature failure, even when
+CTest accepts its documented diagnostic through `WILL_FAIL`.
 
-OK means the runtime assertions and mode marker passed; FAIL means the probe
-could not satisfy its contract; SKIP means **unverified**, not supported.
-R/P/L match design §5; some probes cover more than one tier.
-The machine-readable inventory is [status.json](../probes/status.json).
+R/P/L follow design §5; P05's generic `out T` and P14's aliases/packages are
+optional parts of otherwise required probes. The machine-readable inventory is
+[status.json](../probes/status.json); [cases.json](../probes/cases.json) defines
+the 31 reproducible cases (62 mode checks).
 
-| Probe | Contract / tier | Interp | Binary | Evidence / decision |
+| Probe | Tier | Interp | Binary | Evidence / decision |
 |---|---|---|---|---|
-| P01 | `Array<Vec2>` read/modify/write; structs/arrays R | **FAIL** | **FAIL** | Explicit element writeback followed by `.x` raises `GET_MEMBER`; separate nested constructor raises `KNOWN_VM_CALL`. Stop; no fallback selected. |
-| P02 | Struct operators, mixed scalar multiply; P | SKIP | SKIP | Stop at P01. |
-| P03 | Interface field dispatch, inheritance, override/super, properties/statics; R | SKIP | SKIP | Stop at P01. |
-| P04 | Union payload/switch, array and generic storage; R | SKIP | SKIP | Stop at P01. |
-| P05 | Generic RingQueue R, `out T` P, concrete `out` R | SKIP | SKIP | Stop at P01; no generic fallback selected. |
-| P06 | Array iteration, C-style for, while; R | SKIP | SKIP | Stop at P01. |
-| P07 | User-defined iterable; P | SKIP | SKIP | Stop at P01. |
-| P08 | Resource ownership/destructor; using/close; R | SKIP | SKIP | Stop at P01. |
-| P09 | Captured closures in fields and arrays; R | SKIP | SKIP | Stop at P01. |
-| P10 | Job/schedule/result; L | SKIP | SKIP | Stop at P01; M4. |
-| P11 | Pool of structs and borrow/recycle; L | SKIP | SKIP | Stop at P01; M3. |
-| P12 | GC stats/budget/collect and process arguments; R | SKIP | SKIP | Stop at P01. |
-| P13 | Native extern libffi resolution; R | SKIP | SKIP | Stop at P01. |
-| P14 | Descriptor plugin R; package dependency and alias P | SKIP | SKIP | Stop at P01; neither plugin search path verified. |
-| P15 | Runtime template strings; P | SKIP | SKIP | Stop at P01. |
-| P16 | Integer overflow / safe RNG and hash arithmetic; required safety check | SKIP | SKIP | Stop at P01. |
-| P17 | f32 field layout/precision; P | SKIP | SKIP | Stop at P01; planned f64 retained only in rules. |
-| P18 | Conditional compilation/profiles/comptime; L | SKIP | SKIP | Stop at P01; M4. |
-| P19 | Reflection and runtime attributes; L | SKIP | SKIP | Stop at P01; M4. |
-| P20 | Inline native struct argument view; P | SKIP | SKIP | Stop at P01; no mode B decision. |
-| P21 | Embedded-host export call ×10k and exception reset; R | SKIP | SKIP | Stop at P01; no W0 timing. |
-| P22 | Successful binary parity for P01–P20; R | SKIP | SKIP | Full set not reached. P01 main/nested fail identically with actual `.zro` execution; control passes in both modes. |
+| P01 | R | OK | OK | PASS after merged engine fixes: explicit writeback, direct field write-through, copy isolation, nested constructor and 10k-loop checks; host access-cost probe also passes. |
+| P02 | P | FAIL | FAIL | GET_MEMBER while evaluating struct operator expression; optional operator path unavailable. |
+| P03 | R | OK | OK | Interface-typed field dispatch, virtual/override/super, properties and static counter all pass. |
+| P04 | R | FAIL | FAIL | Required FAIL: Array<GameEvent>.add(GameEvent.Hit(4, 9)) raises KNOWN_VM_CALL before union/generic storage assertions. Stopped; no workaround adopted. |
+| P05 | R | FAIL | FAIL | Required FAIL: generic RingQueue<int>.push raises GET_MEMBER: missing member 'size'. Stopped; no concrete replacement adopted. Generic out and wrap checks are not reached. |
+| P06 | R | OK | OK | Array<float> for-in, C-style for with += and while return equal sums. |
+| P07 | P | FAIL | FAIL | User Enumerator/Iterable implementation rejected as not implementing all abstract/interface members. Optional; no fallback selected. |
+| P08 | R | OK | OK | Release scope/using and host program-end destructor checks pass. Required sanitizer FAIL: ASan and forced-GC report heap-use-after-free at value.h:152 / execution_dispatch.c:10019 after a destructor grows the VM stack. Stopped; no workaround adopted. |
+| P09 | R | FAIL | FAIL | Required FAIL: function-typed field invocation this.callback(x) is rejected with Argument count mismatch. Stopped; escaping capture/array assertions not reached. |
+| P10 | L | OK | OK | Job<int> construction, currentScheduler.schedule and result return 17. |
+| P11 | L | OK | FAIL | Interp pool deliver/borrow/write/close/recycle passes. Source-removed binary repeatedly fails at tryBorrow(out view): PROPERTY_REF_CREATE_LOCAL: invalid local Place. Optional M3 is unavailable; no fallback selected. |
+| P12 | R | OK | OK | GC stats, 500us budget, minor request and process.arguments pass. A request need not finish after one step; snapshot allocation can trigger a full GC in Debug, so last-request kind is not asserted. |
+| P13 | R | OK | OK | native extern into absolute libzrgame_ffi.so path passes i64 and f64 checks. Relative/search resolution not needed for the selected absolute-path contract. |
+| P14 | R | OK | FAIL | Required plugin loads via ZR_VM_NATIVE_PATH and project/native in interp; fresh binary compiles but fails to load the entry with source removed. Optional #gfx metadata and @swarmcore imports also fail. No workaround adopted. |
+| P15 | P | OK | OK | Runtime template interpolation produces value=7. |
+| P16 | R | OK | OK | Safe Park-Miller (10k steps), bounded mod-prime hash and wide uint pass. Separate runtime observations prove signed +/* overflow errors and uint addition wraps to zero. |
+| P17 | P | FAIL | FAIL | f32 cast/field probe raises invalid operand for bytecode instruction 209. Size/precision unverified; no f32 claim. |
+| P18 | L | FAIL | FAIL | Declared trace feature rejected as conditional.unknown_feature; profiles/comptime combined probe cannot complete. |
+| P19 | L | FAIL | FAIL | Runtime import zr.reflection fails with import_load_unavailable; field/attribute enumeration unverified. |
+| P20 | P | FAIL | FAIL | Valid native SpriteInstance descriptor and constructor compile. Interp raises invalid operand for bytecode instruction 209; source-removed binary cannot load entry. Native InlineArgumentView assertion not reached. |
+| P21 | R | OK | OK | Host spike passes: entry side effects, canonical module key game, 10000 tick calls, expected exception, ResetThread and a succeeding call. Source compilation is disabled in binary host. |
+| P22 | R | FAIL | FAIL | Aggregate FAIL: successful interp/source-removed binary parity for P01-P20 is blocked by P02/P04/P05/P07/P09/P11/P14/P17/P18/P19/P20. Matching failure diagnostics are not successful feature parity. |
 
-## C1 engine findings
+P22 is an aggregate check of successful P01–P20 execution, not another simulation.
+Matching failure messages do not count as successful binary feature parity.
+Package sources are also removed after compilation. The source filenames in
+binary exception stacks come from retained debug metadata.
 
-### C1 — Struct array element writeback makes the next member read fail
+## Required engine findings
 
-Reproducer: [p01_struct_array/src/main.zr](../probes/p01_struct_array/src/main.zr).
-It constructs the value in a separate statement so the nested-constructor issue
-below cannot mask this failure:
+### C01 — Nested union payload call in Array.add fails (P04)
 
-```zr
-var initial = init Vec2(1.0, 2.0);
-points.add(initial);
-var copy = points[0];
-copy.x = 7.0;
-if (points[0].x != 1.0) { throw "local copy unexpectedly aliases"; }
-points[0] = copy;
-if (points[0].x != 7.0) { throw "writeback failed"; }
-```
+[p04 main.zr](../probes/p04_union_storage/src/main.zr:19) compiles, but
+`events.add(GameEvent.Hit(4, 9))` raises
+`KNOWN_VM_CALL: invalid known VM callable` in both modes. The later array,
+generic-box and switch assertions are not reached. This is a distinct remaining
+call shape from P01's now-passing nested struct constructor. No split-construction
+workaround has been adopted.
 
-The first check succeeds. The final `.x` read at main.zr:19 exits 1:
+### C02 — Generic RingQueue loses a member (P05)
+
+[p05 main.zr](../probes/p05_generic_queue/src/main.zr:15) constructs a
+`RingQueue<int>(2, 0)`. Its first `push` raises
+`GET_MEMBER: missing member 'size'` at `this.size`. Generic queue storage is R;
+this failure occurs before the optional generic-out and concrete-out assertions.
+No concrete queue replacement has been selected.
+
+### C03 — Function-typed field call is rejected (P09)
+
+[p09 main.zr](../probes/p09_closures/src/main.zr:6) declares
+`callback: fn(int) -> int`, assigns it in the constructor and calls
+`this.callback(x)`. Compilation reports `Argument count mismatch`. Both modes
+fail compilation; the escaping shared-capture and array-call assertions remain
+unverified. The source is retained as the required OOP EventBus blocker.
+
+### C04 — Descriptor plugin cannot be consumed by source-removed binary (P14)
+
+[p14 main.zr](../probes/p14_plugin_package/src/main.zr) imports the minimal
+`zrgame.probe` descriptor and asserts `value() == 37`. Interpreter execution
+passes via both `ZR_VM_NATIVE_PATH` and `<project>/native`. Compilation returns 0
+and creates a fresh entry `.zro`, but after removal of source, binary execution
+exits 1 with `failed to load project entry: main` for both search paths. The
+provider contains only the value function; P20's native struct is in a separate
+plugin so it cannot contaminate P14's contract. The loader's root cause is not
+established. Optional native alias/package checks fail separately.
+
+### C05 — Ownership release uses freed stack storage (P08, sanitizer)
+
+[p08 main.zr](../probes/p08_lifetimes/src/main.zr) passes the Release checks for
+scope cleanup, `@close`, and no duplicate destructor after full GC. In **both
+interpreter and binary** runs, **both ASan and forced-GC** builds report:
 
 ```text
-Error: GET_MEMBER: receiver must be an object, array, or string
-payload: GET_MEMBER: receiver must be an object, array, or string
+ERROR: AddressSanitizer: heap-use-after-free
+ZrCore_Value_PrepareDestinationForOverwriteNoProfile  value.h:152
+execution_prepare_destination_for_direct_store_no_profile
+ZrCore_Execute  execution_dispatch.c:10019 (OWN_DROP)
 ```
 
-This is a language/runtime result, not an assertion failure. The direct
-`points[0].x = 9.0` write-through check and 10k-access cost loop are never reached.
-No access-cost measurement or claim about direct-field aliasing is made.
-The generated bytecode reaches `SET_BY_INDEX` at source line 18, then
-`GET_BY_INDEX` and `GET_MEMBER` at line 19. The root cause is not established.
+The freed-by stack includes `stack_realloc_internal` → `ZrCore_Stack_GrowTo` →
+VM destructor invocation through `ownership_resource_call_destructor`. This
+supports a stale destination after destructor-induced stack growth; the complete
+root cause has not been established. These tests stay **red**, without
+`WILL_FAIL`; the harness refuses to accept any sanitizer error as a known
+feature diagnostic. Program-end cleanup is independently observed after entry
+return through the embedded host's `finished()` / `afterGC()` calls and passes.
 
-### H1 — A nested struct constructor argument fails before the array test
+P22 remains a required aggregate failure because the underlying features above
+and optional probes do not all execute successfully from binary artifacts.
 
-Reproducer: [p01_struct_array/src/nested.zr](../probes/p01_struct_array/src/nested.zr).
-`points.add(init Vec2(1.0, 2.0))` exits 1 at nested.zr:9 with:
+## Other findings (H/M)
+
+- **H01, P02:** struct operator expression raises `GET_MEMBER`; no claim of
+  working mixed Vec2/scalar operators.
+- **H02, P11:** pool operations pass in interpreter mode; source-removed binary
+  raises `PROPERTY_REF_CREATE_LOCAL: invalid local Place` at `tryBorrow(out view)`.
+  This reproduced in three additional fresh Release compilations. Pool lane M3
+  remains unavailable.
+- **H03, P17/P20:** f32 lowering and native SpriteInstance construction hit
+  invalid bytecode operand 209. InlineArgumentView's C assertion is not reached;
+  mode B has not been selected. P20 binary also cannot load its entry.
+- **M01, P07:** the user Enumerator/Iterable implementation is rejected as not
+  implementing all interface members; custom iteration remains unverified.
+- **M02, P18:** `trace` is rejected as undeclared despite the manifest's build
+  feature/profile declarations; profile stripping/comptime contract is unverified.
+- **M03, P19:** `zr.reflection` cannot load at runtime; field and runtime
+  attribute enumeration are unverified.
+- **M04, P14 extras:** `#gfx` import metadata and `@swarmcore` package resolution
+  fail independently. The primary plugin test uses a direct module import.
+
+## Reproduction and retained evidence
+
+Build and run commands are in the [README](../README.md). Every individual case
+retains a fresh project, commands, exit statuses, elapsed time, CLI SHA-256,
+source-removal state, `compile.log`, `run.log`, and `result.json` under:
 
 ```text
-Error: KNOWN_VM_CALL: invalid known VM callable
-payload: KNOWN_VM_CALL: invalid known VM callable
+build/demo-{release,asan,gcstress}/demos/swarm_arena/probe-results/<case>-<mode>/
 ```
 
-Separating construction from add permits the first read, but still exposes C1.
-This diagnostic control is not an adopted workaround or a P01 pass.
-
-### Passing controls
-
-[control.zr](../probes/p01_struct_array/src/control.zr) verifies standalone struct
-construction/mutation and scalar `Array<float>` read/modify/write. It prints
-`PROBE_OK P01 standalone-struct scalar-array` and the requested execution-mode
-marker in interp and binary. These checks narrow the failure; they do not replace
-the required struct-array probe.
-
-## Reproduction and evidence
-
-From `/workspace/zr_vm-demo`, after the README build:
-
-```sh
-build/demo-release/bin/zr_vm_cli demos/swarm_arena/probes/p01_struct_array/probe.zrp --execution-mode interp
-build/demo-release/bin/zr_vm_cli --compile demos/swarm_arena/probes/p01_struct_array/probe.zrp --run --execution-mode binary
-python3 -I demos/swarm_arena/tools/run_probe.py --cli build/demo-release/bin/zr_vm_cli --mode binary --variant main --out out/p01-main-binary
-python3 -I demos/swarm_arena/tools/run_probe.py --gate
-```
-
-All four commands intentionally exit nonzero while C1 remains blocked. The
-Python runner compiles to a fresh, retained project under `--out`, requires the
-entry `.zro`, renames its source directory away, and then executes binary mode.
-Each invocation retains commands, outputs, exits, CLI SHA-256 and source-removal
-state in `result.json`, with separate `compile.log` and `run.log` files.
-
-Release evidence: `build/demo-release/demos/swarm_arena/probe-results/`:
-
-| Variant | Interp | Binary (source removed) |
-|---|---|---|
-| main | FAIL, exit 1, GET_MEMBER | FAIL, compile 0/run 1, GET_MEMBER |
-| nested | FAIL, exit 1, KNOWN_VM_CALL | FAIL, compile 0/run 1, KNOWN_VM_CALL |
-| control | OK, exit 0, interp marker | OK, compile 0/run 0, binary marker |
-
-`ctest -L demo` reports **6/7 pass, 1 fail**. Four known-failure reproduction
-checks use `WILL_FAIL` as required by design §8.4; they accept only the exact
-recorded diagnostic, rejecting timeouts, unrelated failures and sanitizer errors.
-Their JSON status remains FAIL. Two controls pass normally. The seventh test,
-`demo_feature_gate`, is deliberately **not inverted** and fails on the required
-P01 result and unverified required probes. The demo suite is **not green**.
-
-Bytecode evidence: `build/demo-release/probes/p01-main-bytecode.txt` and
-`p01-main-bytecode-run.log`. Build and CTest evidence is also listed in
+Important paths: `p01-main-{interp,binary}`, `p01-nested-*`, `p04-main-*`,
+`p05-main-*`, `p09-main-*`, `p14-main-binary`, `p14-project-binary`, and
+`p08-main-*` in the sanitizer trees. `p22-result.json` lists every successful and
+failed parity dependency. Exact CTest results and core inventory evidence are in
 [verification.md](verification.md).
-
-The same six probe checks were also run in `build/demo-asan` and
-`build/demo-gcstress` (Debug ASan/UBSan, with forced full GC in the latter).
-Both produce the same **6/7** CTest outcome, with only the readiness gate failing,
-and no sanitizer errors in the probes. `ASAN_OPTIONS=detect_leaks=0` matches r2;
-leak-clean shutdown has not been established. See the verification document for
-exact flags, commands and evidence paths.
 
 ## Remaining v1 definition-of-done gaps (§8.5)
 
-1. Release demo suite is blocked by required P01. Gameplay smoke tests do not
-   exist yet; sanitizer probe controls cannot stand in for game smoke coverage.
-2. No game simulation, golden hashes, lane equivalence or CLI/host parity yet.
-3. All 22 probes have a status, but P02–P22 remain SKIP under the stop rule.
-4. H4 has not started: no W0–W14 baseline, capacity numbers, GC policy
-   distributions, regression thresholds or software snapshot exists. No game
-   performance conclusion is supported.
-5. The core inventory remains 425 tests (exclude demo label and performance
-   report). The sole root change is the opt-in CMake option/subdirectory. Full
-   core execution has not been repeated for this scaffold/probe-only batch.
+1. The Release suite remains red at P22 and the feature gate; sanitizer suites
+   also expose P08's memory error. Game smoke coverage does not yet exist.
+2. No DOD/OOP/Hybrid/C simulation, gameplay golden hashes, lane equivalence,
+   three-run game determinism or CLI/host game parity exists. P21 is only a host
+   API spike and cannot substitute for GD-C4.
+3. All 22 probes have statuses and actionable evidence; required failures above
+   must be resolved and rerun before GD-C2 onward.
+4. No W0–W14 game baseline, capacity@60Hz, GC policy distributions, thresholds,
+   software renderer or snapshot exists. C1 timings are exploratory only.
+5. Demo OFF/ON core inventories are identical at **431** tests. The six-test
+   increase over the old 425 baseline comes from the already-merged P01 fixes.
+   This batch changes only `demos/swarm_arena/**`. The complete core suite has
+   not been rerun; its six P01 regression checks pass.
 
-Resumption needs the required failure resolved or an explicit decision from John
-about its design impact. Engine fixes remain outside this demo branch's scope.
+GD-C2–C5, GD-H1–H6 and M-tier have not started. Resumption requires the remaining
+required failures to be resolved or an explicit change from John to their scope.

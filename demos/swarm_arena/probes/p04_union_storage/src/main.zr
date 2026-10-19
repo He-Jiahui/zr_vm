@@ -1,0 +1,21 @@
+let {Array} = import("zr.container");
+let system = import("zr.system");
+union GameEvent { Nothing; Hit(slot: int, damage: int); }
+class Box<T> {
+    pub var item: T;
+    pub @constructor(item: T) { this.item = item; }
+    pub fn read(): T { return this.item; }
+}
+fn amount(ev: GameEvent): int {
+    switch (ev) {
+        (Nothing) { return 0; }
+        (Hit(slot, damage)) { return slot + damage; }
+    }
+    return -1;
+}
+var events = new Array<GameEvent>();
+events.add(GameEvent.Hit(4, 9));
+var box = new Box<GameEvent>(events[0]);
+if (amount(events[0]) != 13 || amount(box.read()) != 13) { throw "P04 union payload/storage mismatch"; }
+system.console.printLine("PROBE_OK P04 union-array-generic-switch");
+return 0;
