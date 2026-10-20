@@ -1,5 +1,11 @@
 # These tests are registered after the engine's inventory under the "demo"
 # label, and have no effect when ZR_VM_BUILD_DEMOS is OFF.
+add_library(zrgame_runtime SHARED native/runtime/clock.c native/runtime/sprite_batch.c
+    native/runtime/metrics_sink.c native/runtime/backend_null.c)
+target_include_directories(zrgame_runtime PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/native/runtime")
+set_target_properties(zrgame_runtime PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/native")
+
 add_library(zrgame_ffi SHARED native/ffi/zrgame_ffi.c)
 set_target_properties(zrgame_ffi PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/native")
 add_library(zrgame_probe MODULE probes/native/probe_module.c)
@@ -29,6 +35,10 @@ if (BUILD_TESTS)
         message(FATAL_ERROR "Swarm Arena feature probes require BUILD_CLI=ON")
     endif ()
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_executable(zrgame_native_tests native/tests/test_runtime.c)
+    target_link_libraries(zrgame_native_tests PRIVATE zrgame_runtime)
+    add_test(NAME demo_native_runtime COMMAND zrgame_native_tests)
+    set_tests_properties(demo_native_runtime PROPERTIES LABELS "demo;native" TIMEOUT 10)
     set(swarm_probe_runner "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_probe.py")
     set(swarm_probe_results "${CMAKE_CURRENT_BINARY_DIR}/probe-results")
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
