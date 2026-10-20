@@ -6,6 +6,9 @@
 #include "compiler/compiler_internal.h"
 #include "compiler/declaration/compiler_attribute_binding.h"
 #include "compiler/compiler_source_callable_identity.h"
+#include "compiler/compiler_typed_call_binding.h"
+#include "compiler/compiler_type_value_alias.h"
+#include "compiler/compiler_import_type_alias.h"
 #include "compiler/expression/compile_expression_internal.h"
 #include "compiler/compile_time/compile_time_binding_metadata.h"
 #include "compiler/compile_time/compile_time_executor_internal.h"
@@ -106,280 +109,6 @@ static TZrBool compile_statement_type_has_inline_byte_layout(SZrCompilerState *c
                       prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_UNION) &&
                      prototype->layoutByteSize > 0u &&
                      prototype->layoutByteAlign > 0u);
-}
-
-static void compile_statement_register_type_value_alias(SZrCompilerState *cs,
-                                                        SZrString *name,
-                                                        SZrAstNode *valueNode) {
-    SZrInferredType aliasType;
-
-    if (cs == ZR_NULL || name == ZR_NULL || valueNode == ZR_NULL ||
-        valueNode->type != ZR_AST_TYPE_LITERAL_EXPRESSION ||
-        valueNode->data.typeLiteralExpression.typeInfo == ZR_NULL) {
-        return;
-    }
-
-    ZrParser_InferredType_Init(cs->state, &aliasType, ZR_VALUE_TYPE_OBJECT);
-    if (!ZrParser_AstTypeToInferredType_Convert(cs, valueNode->data.typeLiteralExpression.typeInfo, &aliasType)) {
-        ZrParser_InferredType_Free(cs->state, &aliasType);
-        return;
-    }
-
-    for (TZrSize index = 0; index < cs->typeValueAliases.length; index++) {
-        SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(&cs->typeValueAliases, index);
-        if (binding != ZR_NULL && binding->name != ZR_NULL && ZrCore_String_Equal(binding->name, name)) {
-            ZrParser_InferredType_Free(cs->state, &binding->type);
-            ZrParser_InferredType_Copy(cs->state, &binding->type, &aliasType);
-            ZrParser_InferredType_Free(cs->state, &aliasType);
-            return;
-        }
-    }
-
-    {
-        SZrTypeBinding binding;
-        binding.name = name;
-        ZrParser_InferredType_Init(cs->state, &binding.type, ZR_VALUE_TYPE_OBJECT);
-        ZrParser_InferredType_Copy(cs->state, &binding.type, &aliasType);
-        ZrCore_Array_Push(cs->state, &cs->typeValueAliases, &binding);
-    }
-
-    ZrParser_InferredType_Free(cs->state, &aliasType);
-}
-
-static TZrBool compile_statement_has_type_value_alias(SZrCompilerState *cs, SZrString *name) {
-    if (cs == ZR_NULL || name == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    for (TZrSize index = 0; index < cs->typeValueAliases.length; index++) {
-        SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(&cs->typeValueAliases, index);
-        if (binding != ZR_NULL && binding->name != ZR_NULL && ZrCore_String_Equal(binding->name, name)) {
-            return ZR_TRUE;
-        }
-    }
-
-    return ZR_FALSE;
-}
-
-static void compile_statement_register_type_binding_alias(SZrCompilerState *cs,
-                                                          SZrString *name,
-                                                          SZrString *qualifiedTypeName) {
-    SZrInferredType aliasType;
-
-    if (cs == ZR_NULL || name == ZR_NULL || qualifiedTypeName == ZR_NULL) {
-        return;
-    }
-
-    ZrParser_InferredType_InitFull(cs->state, &aliasType, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, qualifiedTypeName);
-    for (TZrSize index = 0; index < cs->typeValueAliases.length; index++) {
-        SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(&cs->typeValueAliases, index);
-        if (binding != ZR_NULL && binding->name != ZR_NULL && ZrCore_String_Equal(binding->name, name)) {
-            ZrParser_InferredType_Free(cs->state, &binding->type);
-            ZrParser_InferredType_Copy(cs->state, &binding->type, &aliasType);
-            ZrParser_InferredType_Free(cs->state, &aliasType);
-            return;
-        }
-    }
-
-    {
-        SZrTypeBinding binding;
-        binding.name = name;
-        ZrParser_InferredType_Init(cs->state, &binding.type, ZR_VALUE_TYPE_OBJECT);
-        ZrParser_InferredType_Copy(cs->state, &binding.type, &aliasType);
-        ZrCore_Array_Push(cs->state, &cs->typeValueAliases, &binding);
-    }
-
-    ZrParser_InferredType_Free(cs->state, &aliasType);
-}
-
-static SZrString *compile_statement_build_qualified_type_name(SZrCompilerState *cs,
-                                                              SZrString *moduleName,
-                                                              SZrString *typeName) {
-    TZrNativeString moduleNameText;
-    TZrNativeString typeNameText;
-    TZrChar buffer[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
-    TZrInt32 written;
-
-    if (cs == ZR_NULL || moduleName == ZR_NULL || typeName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    moduleNameText = compile_statement_get_native_string(moduleName);
-    typeNameText = compile_statement_get_native_string(typeName);
-    if (moduleNameText == ZR_NULL || typeNameText == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    written = snprintf(buffer, sizeof(buffer), "%s.%s", moduleNameText, typeNameText);
-    if (written <= 0 || (TZrSize)written >= sizeof(buffer)) {
-        return ZR_NULL;
-    }
-
-    return ZrCore_String_Create(cs->state, buffer, (TZrSize)written);
-}
-
-static TZrBool compile_statement_report_duplicate_type_name(SZrCompilerState *cs,
-                                                            SZrString *name,
-                                                            SZrFileRange location) {
-    TZrNativeString nameText;
-    TZrChar errorMessage[ZR_PARSER_ERROR_BUFFER_LENGTH];
-
-    if (cs == ZR_NULL || name == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    nameText = compile_statement_get_native_string(name);
-    if (nameText != ZR_NULL) {
-        snprintf(errorMessage,
-                 sizeof(errorMessage),
-                 "Type name '%s' is already declared in this context",
-                 nameText);
-    } else {
-        snprintf(errorMessage, sizeof(errorMessage), "Type name is already declared in this context");
-    }
-
-    ZrParser_Compiler_Error(cs, errorMessage, location);
-    return ZR_FALSE;
-}
-
-static TZrBool compile_statement_register_explicit_type_name(SZrCompilerState *cs,
-                                                             SZrString *name,
-                                                             SZrFileRange location) {
-    if (cs == ZR_NULL || name == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (compile_statement_has_type_value_alias(cs, name) ||
-        (cs->typeEnv != ZR_NULL && ZrParser_TypeEnvironment_LookupType(cs->typeEnv, name)) ||
-        find_type_declaration(cs, name) != ZR_NULL) {
-        return compile_statement_report_duplicate_type_name(cs, name, location);
-    }
-
-    if (cs->typeEnv != ZR_NULL && !ZrParser_TypeEnvironment_RegisterType(cs->state, cs->typeEnv, name)) {
-        ZrParser_Compiler_Error(cs, "Failed to register explicit imported type binding", location);
-        return ZR_FALSE;
-    }
-
-    return ZR_TRUE;
-}
-
-static TZrBool compile_statement_destructuring_entry_names(SZrAstNode *entry,
-                                                           SZrString **outBindingName,
-                                                           SZrString **outFieldName,
-                                                           SZrFileRange *outLocation) {
-    if (outBindingName != ZR_NULL) {
-        *outBindingName = ZR_NULL;
-    }
-    if (outFieldName != ZR_NULL) {
-        *outFieldName = ZR_NULL;
-    }
-    if (entry == ZR_NULL || outBindingName == ZR_NULL || outFieldName == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (entry->type == ZR_AST_IDENTIFIER_LITERAL) {
-        if (entry->data.identifier.name == ZR_NULL) {
-            return ZR_FALSE;
-        }
-        *outBindingName = entry->data.identifier.name;
-        *outFieldName = entry->data.identifier.name;
-        if (outLocation != ZR_NULL) {
-            *outLocation = entry->location;
-        }
-        return ZR_TRUE;
-    }
-
-    if (entry->type == ZR_AST_KEY_VALUE_PAIR) {
-        SZrKeyValuePair *pair = &entry->data.keyValuePair;
-        if (pair->keyIsComputed ||
-            pair->key == ZR_NULL ||
-            pair->key->type != ZR_AST_IDENTIFIER_LITERAL ||
-            pair->key->data.identifier.name == ZR_NULL ||
-            pair->value == ZR_NULL ||
-            pair->value->type != ZR_AST_IDENTIFIER_LITERAL ||
-            pair->value->data.identifier.name == ZR_NULL) {
-            return ZR_FALSE;
-        }
-        *outBindingName = pair->key->data.identifier.name;
-        *outFieldName = pair->value->data.identifier.name;
-        if (outLocation != ZR_NULL) {
-            *outLocation = entry->location;
-        }
-        return ZR_TRUE;
-    }
-
-    return ZR_FALSE;
-}
-
-static TZrBool compile_statement_try_register_imported_destructured_type_aliases(SZrCompilerState *cs,
-                                                                                 SZrAstNode *node) {
-    SZrVariableDeclaration *decl;
-    SZrString *moduleName;
-    SZrTypePrototypeInfo *modulePrototype;
-    SZrDestructuringObject *destructuring;
-
-    if (cs == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_VARIABLE_DECLARATION) {
-        return ZR_TRUE;
-    }
-
-    decl = &node->data.variableDeclaration;
-    if (decl->pattern == ZR_NULL || decl->pattern->type != ZR_AST_DESTRUCTURING_OBJECT ||
-        decl->value == ZR_NULL || decl->value->type != ZR_AST_IMPORT_EXPRESSION ||
-        decl->value->data.importExpression.modulePath == ZR_NULL ||
-        decl->value->data.importExpression.modulePath->type != ZR_AST_STRING_LITERAL ||
-        decl->value->data.importExpression.modulePath->data.stringLiteral.value == ZR_NULL) {
-        return ZR_TRUE;
-    }
-
-    moduleName = decl->value->data.importExpression.modulePath->data.stringLiteral.value;
-    if (moduleName == ZR_NULL || !ensure_import_module_compile_info(cs, moduleName)) {
-        return ZR_TRUE;
-    }
-
-    modulePrototype = find_compiler_type_prototype(cs, moduleName);
-    if (modulePrototype == ZR_NULL || modulePrototype->type != ZR_OBJECT_PROTOTYPE_TYPE_MODULE) {
-        return ZR_TRUE;
-    }
-
-    destructuring = &decl->pattern->data.destructuringObject;
-    if (destructuring->keys == ZR_NULL) {
-        return ZR_TRUE;
-    }
-
-    for (TZrSize index = 0; index < destructuring->keys->count; index++) {
-        SZrAstNode *keyNode = destructuring->keys->nodes[index];
-        SZrString *bindingName = ZR_NULL;
-        SZrString *fieldName = ZR_NULL;
-        SZrFileRange bindingLocation;
-        SZrTypeMemberInfo *memberInfo;
-
-        if (!compile_statement_destructuring_entry_names(keyNode,
-                                                         &bindingName,
-                                                         &fieldName,
-                                                         &bindingLocation)) {
-            continue;
-        }
-
-        memberInfo = find_compiler_type_member(cs, moduleName, fieldName);
-        if (memberInfo == ZR_NULL || memberInfo->fieldTypeName == ZR_NULL ||
-            !ZrCore_String_Equal(memberInfo->fieldTypeName, fieldName) ||
-            find_compiler_type_prototype(cs, fieldName) == ZR_NULL) {
-            continue;
-        }
-
-        if (!compile_statement_register_explicit_type_name(cs, bindingName, bindingLocation)) {
-            return ZR_FALSE;
-        }
-
-        {
-            SZrString *qualifiedTypeName = compile_statement_build_qualified_type_name(cs, moduleName, fieldName);
-            if (qualifiedTypeName != ZR_NULL) {
-                compile_statement_register_type_binding_alias(cs, bindingName, qualifiedTypeName);
-            }
-        }
-    }
-
-    return ZR_TRUE;
 }
 
 static TZrBool compile_statement_refill_io_chunk(SZrIo *io) {
@@ -1870,7 +1599,10 @@ static TZrBool compile_using_resource_slot(SZrCompilerState *cs,
     }
 
     if (resource->type == ZR_AST_IDENTIFIER_LITERAL && resource->data.identifier.name != ZR_NULL) {
-        existingLocalSlot = find_local_var(cs, resource->data.identifier.name);
+        existingLocalSlot = find_local_var_with_context(
+                cs,
+                resource->data.identifier.name,
+                resource->data.identifier.syntaxContext);
         if (existingLocalSlot != ZR_PARSER_SLOT_NONE) {
             *slot = existingLocalSlot;
             return ZR_TRUE;
@@ -2107,7 +1839,10 @@ static void compile_using_union_pattern_bindings(SZrCompilerState *cs,
             return;
         }
 
-        localSlot = allocate_local_var(cs, bindingNode->data.identifier.name);
+        localSlot = allocate_local_var_with_context(
+                cs,
+                bindingNode->data.identifier.name,
+                bindingNode->data.identifier.syntaxContext);
         valueSlot = allocate_stack_slot(cs);
         emit_instruction(cs,
                          create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER),
@@ -2204,7 +1939,12 @@ static void compile_using_plugin_guard_statement(SZrCompilerState *cs, SZrAstNod
     ZrParser_Compiler_TrimStackToSlot(cs, resourceSlot);
 
     activateOffset = (TZrUInt32)cs->instructionCount;
-    localSlot = bind_existing_stack_slot_as_local_var(cs, bindingName, resourceSlot, activateOffset);
+    localSlot = bind_existing_stack_slot_as_local_var_with_context(
+            cs,
+            bindingName,
+            stmt->pattern->data.identifier.syntaxContext,
+            resourceSlot,
+            activateOffset);
     if (localSlot == ZR_PARSER_SLOT_NONE) {
         ZrParser_Compiler_Error(cs, "Failed to bind using import guard variable", stmt->pattern->location);
         exit_scope(cs);
@@ -2284,7 +2024,10 @@ static TZrBool compile_using_import_variant_guard_binding(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
-    localSlot = allocate_local_var(cs, bindingNode->data.identifier.name);
+    localSlot = allocate_local_var_with_context(
+            cs,
+            bindingNode->data.identifier.name,
+            bindingNode->data.identifier.syntaxContext);
     emit_instruction(cs,
                      create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
                                           (TZrUInt16)localSlot,
@@ -2635,6 +2378,7 @@ static void compile_using_pattern_guard_statement(SZrCompilerState *cs, SZrAstNo
 TZrBool compile_statement_register_semantic_local(
         SZrCompilerState *cs,
         SZrString *name,
+        SZrSyntaxContext syntaxContext,
         const SZrInferredType *resolvedType,
         TZrUInt32 stackSlot,
         SZrAstNode *declarationNode,
@@ -2651,15 +2395,18 @@ TZrBool compile_statement_register_semantic_local(
         defaultTypeInitialized = ZR_TRUE;
     }
     success = (TZrBool)(cs->typeEnv != ZR_NULL &&
-                        ZrParser_TypeEnvironment_RegisterVariableEx(
+                        ZrParser_TypeEnvironment_RegisterVariableExWithContext(
                                 cs->state,
                                 cs->typeEnv,
                                 name,
                                 type,
                                 declarationNode,
-                                sourceRange) &&
+                                sourceRange,
+                                syntaxContext) &&
+                        compiler_refine_member_callable_variable_binding(
+                                cs, name, syntaxContext, declarationNode, type) &&
                         compiler_semantic_ir_register_local(
-                                cs, name, stackSlot, sourceRange, initialized));
+                                cs, name, syntaxContext, stackSlot, sourceRange, initialized));
     if (defaultTypeInitialized) {
         ZrParser_InferredType_Free(cs->state, &defaultType);
     }
@@ -2692,7 +2439,10 @@ static TZrUInt32 compile_variable_mutable_reference_source_slot(
         construct->target->data.identifier.name == ZR_NULL) {
         return ZR_PARSER_SLOT_NONE;
     }
-    return find_local_var(cs, construct->target->data.identifier.name);
+    return find_local_var_with_context(
+            cs,
+            construct->target->data.identifier.name,
+            construct->target->data.identifier.syntaxContext);
 }
 
 static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node) {
@@ -2907,6 +2657,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                 semanticLocalPreRegistered = compile_statement_register_semantic_local(
                         cs,
                         varName,
+                        decl->pattern->data.identifier.syntaxContext,
                         hasResolvedType ? &resolvedType : ZR_NULL,
                         reservedVarSlot,
                         node,
@@ -2949,6 +2700,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                 !compile_statement_register_semantic_local(
                         cs,
                         varName,
+                        decl->pattern->data.identifier.syntaxContext,
                         hasResolvedType ? &resolvedType : ZR_NULL,
                         reservedVarSlot,
                         node,
@@ -2979,19 +2731,31 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                                                       (TZrInt32)reservedVarSlot));
             }
             ZrParser_Compiler_TrimStackToSlot(cs, reservedVarSlot);
-            varIndex = bind_existing_stack_slot_as_local_var(cs, varName, reservedVarSlot, activateOffset);
+            varIndex = bind_existing_stack_slot_as_local_var_with_context(
+                    cs,
+                    varName,
+                    decl->pattern->data.identifier.syntaxContext,
+                    reservedVarSlot,
+                    activateOffset);
             compile_statement_trace("var decl local binding done varIndex=%u", (unsigned int)varIndex);
         } else {
             TZrSize fixedArraySize;
             if (hasInlineLocalLayout) {
                 compiler_advance_stack_to_fresh_slot(cs);
             }
-            varIndex = allocate_local_var(cs, varName);
+            varIndex = allocate_local_var_with_context(
+                    cs,
+                    varName,
+                    (decl->pattern != ZR_NULL &&
+                     decl->pattern->type == ZR_AST_IDENTIFIER_LITERAL)
+                            ? decl->pattern->data.identifier.syntaxContext
+                            : ZrParser_SyntaxContext_Root());
             compile_statement_trace("var decl allocate local no initializer varIndex=%u", (unsigned int)varIndex);
 
             if (!compile_statement_register_semantic_local(
                         cs,
                         varName,
+                        decl->pattern->data.identifier.syntaxContext,
                         hasResolvedType ? &resolvedType : ZR_NULL,
                         varIndex,
                         node,
@@ -3027,9 +2791,18 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
         }
 
         if (decl->value != ZR_NULL) {
-            ZrParser_Compiler_RegisterCallableValueBinding(cs, varName, decl->value);
-            compile_statement_register_type_value_alias(cs, varName, decl->value);
+            ZrParser_Compiler_RegisterCallableValueBindingWithContext(
+                    cs, varName, decl->value,
+                    decl->pattern->data.identifier.syntaxContext);
+            compiler_register_type_value_alias_literal(cs, varName, decl->value,
+                    decl->pattern->data.identifier.syntaxContext);
             compile_statement_trace("var decl runtime alias registration done");
+        }
+        if (!compiler_register_typed_callable_annotation(
+                    cs, varName, decl->typeInfo,
+                    decl->pattern->data.identifier.syntaxContext)) {
+            ZrParser_Compiler_Error(
+                    cs, "Cannot register typed callable variable", node->location);
         }
 
         if (cs->submissionContext != ZR_NULL &&
@@ -3126,7 +2899,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
         compile_statement_trace("compile_variable_declaration exit success");
     } else if (decl->pattern->type == ZR_AST_DESTRUCTURING_OBJECT) {
         // 处理解构对象赋值：var {key1, key2, ...} = value;
-        if (!compile_statement_try_register_imported_destructured_type_aliases(cs, node)) {
+        if (!compiler_register_imported_destructured_type_aliases(cs, node)) {
             return;
         }
         compile_destructuring_object(cs, decl->pattern, decl->value);
@@ -3284,7 +3057,7 @@ static TZrBool validate_return_ownership_escape(SZrCompilerState *cs, SZrAstNode
 }
 
 // 编译返回语句
-static TZrUInt32 compile_property_reference_return_value(
+TZrUInt32 compile_property_reference_place(
         SZrCompilerState *cs,
         SZrAstNode *expression,
         SZrFileRange location) {
@@ -3337,9 +3110,10 @@ static TZrUInt32 compile_property_reference_return_value(
                 ZR_AST_IDENTIFIER_LITERAL &&
         primary->property->data.identifier.name !=
                 ZR_NULL) {
-        TZrUInt32 directLocalSlot = find_local_var(
+        TZrUInt32 directLocalSlot = find_local_var_with_context(
                 cs,
-                primary->property->data.identifier.name);
+                primary->property->data.identifier.name,
+                primary->property->data.identifier.syntaxContext);
         if (directLocalSlot != ZR_PARSER_SLOT_NONE) {
             baseSlot = directLocalSlot;
         }
@@ -3457,9 +3231,8 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
 
     hasFinallyContext = try_context_find_innermost_finally(cs, &finallyContext);
     hasOwnershipCleanupContext = compiler_has_active_scope_ownership_cleanups(cs);
-    hasSemanticFinallyReturn = (TZrBool)(
-            cs->currentFunctionNode == ZR_NULL &&
-            compiler_semantic_cfg_return_through_finally_is_active(cs));
+    hasSemanticFinallyReturn =
+            compiler_semantic_cfg_return_through_finally_is_active(cs);
 
     if (cs->currentFunctionNode == ZR_NULL &&
         (hasFinallyContext || hasOwnershipCleanupContext) &&
@@ -3482,7 +3255,7 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
         TZrSize exprInstBefore = cs->instructions.length;
         TZrSize exprInstAfter;
 
-        if (cs->currentFunctionNode != ZR_NULL) {
+        if (cs->currentFunctionNode != ZR_NULL && !hasSemanticFinallyReturn) {
             if (!compiler_semantic_ir_isolation_begin(
                         cs, &semanticIrIsolation)) {
                 cs->isInTailCallContext = oldTailCallContext;
@@ -3499,7 +3272,7 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
             cs->currentFunctionNode != ZR_NULL &&
             cs->currentFunctionNode->type ==
                     ZR_AST_PROPERTY_DECLARATION) {
-            resultSlot = compile_property_reference_return_value(
+            resultSlot = compile_property_reference_place(
                     cs, stmt->expr, stmt->referenceLocation);
         } else {
             ZrParser_Expression_Compile(cs, stmt->expr);
@@ -3538,7 +3311,7 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
         resultSlot = allocate_stack_slot(cs);
         ZrCore_Value_ResetAsNull(&nullValue);
         constantIndex = add_constant(cs, &nullValue);
-        if (cs->currentFunctionNode == ZR_NULL) {
+        if (cs->currentFunctionNode == ZR_NULL || hasSemanticFinallyReturn) {
             if (!compiler_semantic_ir_lower_literal(
                         cs,
                         resultSlot,
@@ -3564,7 +3337,7 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
 
     cs->isInTailCallContext = oldTailCallContext;
 
-    if (cs->currentFunctionNode == ZR_NULL) {
+    if (cs->currentFunctionNode == ZR_NULL || hasSemanticFinallyReturn) {
         TZrBool semanticReturnSucceeded = hasSemanticFinallyReturn
                 ? compiler_semantic_cfg_redirect_return_through_finally(
                           cs, resultSlot, node->location)
@@ -3620,13 +3393,20 @@ static void compile_block_statement(SZrCompilerState *cs, SZrAstNode *node) {
     }
     
     SZrBlock *block = &node->data.block;
+    SZrCompilerCallableTypeScope blockTypeScope = {0};
+
+    if (!compiler_callable_type_scope_begin(cs, &blockTypeScope)) {
+        ZrParser_Compiler_Error(
+                cs, "Failed to isolate block statement types", node->location);
+        return;
+    }
     
     // 进入新作用域
     enter_scope(cs);
 
     ZrParser_Compiler_PredeclareFunctionBindings(cs, block->body);
     if (cs->hasError) {
-        return;
+        goto block_cleanup;
     }
     
     // 编译块内所有语句
@@ -3642,8 +3422,13 @@ static void compile_block_statement(SZrCompilerState *cs, SZrAstNode *node) {
         }
     }
     
+block_cleanup:
     // 退出作用域
     exit_scope(cs);
+    if (!compiler_callable_type_scope_end(cs, &blockTypeScope)) {
+        ZrParser_Compiler_Error(
+                cs, "Failed to restore block statement types", node->location);
+    }
 }
 
 static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node) {
@@ -3708,7 +3493,10 @@ static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node) {
         }
         if (stmt->resource->type == ZR_AST_IDENTIFIER_LITERAL &&
             stmt->resource->data.identifier.name != ZR_NULL &&
-            find_local_var(cs, stmt->resource->data.identifier.name) == resourceSlot) {
+            find_local_var_with_context(
+                    cs,
+                    stmt->resource->data.identifier.name,
+                    stmt->resource->data.identifier.syntaxContext) == resourceSlot) {
             if (stmt->body != ZR_NULL ||
                 !compiler_current_scope_has_cleanup_for_source(cs, resourceSlot)) {
                 SZrString *proxyName = create_hidden_using_local_name(cs);
@@ -3907,7 +3695,9 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
     if (isolateTerminatedSemanticIr ||
         (cs->currentFunctionNode != ZR_NULL &&
          ((node->type == ZR_AST_IF_EXPRESSION &&
-           node->data.ifExpression.isStatement) ||
+           node->data.ifExpression.isStatement &&
+           !compiler_semantic_cfg_return_through_finally_is_active(cs) &&
+           !compiler_semantic_cfg_throw_through_finally_is_active(cs)) ||
           node->type == ZR_AST_WHILE_LOOP ||
           node->type == ZR_AST_FOR_LOOP ||
           node->type == ZR_AST_FOREACH_LOOP ||

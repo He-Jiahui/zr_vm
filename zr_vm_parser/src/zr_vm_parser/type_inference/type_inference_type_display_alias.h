@@ -15,6 +15,7 @@
 TZrBool type_inference_resolve_type_value_alias(
         SZrCompilerState *cs,
         SZrString *name,
+        SZrSyntaxContext syntaxContext,
         SZrInferredType *result);
 
 /**

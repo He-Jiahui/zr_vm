@@ -988,6 +988,12 @@ ZR_CORE_API TZrBool ZrCore_Function_BindMatchingTypeRefMetadataWithStatus(
         SZrFunction *callerFunction,
         const SZrFunction *providerFunction,
         SZrMetadataTypeRefBindStatus *status);
+/* Validate exact storage, or the declared capacity of an open generic
+ * prototype resolved through its unique concrete instance. */
+ZR_CORE_API TZrBool ZrCore_Function_ValidatePrototypeFrameTypeLayoutStorage(
+        const SZrFunction *function, TZrUInt32 typeLayoutId,
+        TZrUInt32 byteSize, TZrUInt32 byteAlign, struct SZrState *state);
+
 ZR_CORE_API const SZrTypeLayout *ZrCore_Function_ResolvePrototypeFrameTypeLayout(const SZrFunction *function,
                                                                                  TZrUInt32 typeLayoutId,
                                                                                  TZrPtr userData);

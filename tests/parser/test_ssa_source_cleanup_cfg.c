@@ -639,6 +639,14 @@ static void test_terminal_repeated_return_try_finally_merges_payload(void) {
     const SZrParserCfgBlock *returnBlock;
     const SZrParserCfgEdge *completionEdge;
     const SZrSemanticIrInstruction *returnInstruction;
+    const SZrSemanticIrInstruction *returnDefinition;
+    const SZrSemanticIrValue *returnValue;
+    const TZrValueId *returnOperand;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    TZrBool cleanupRetainsSourceLine;
+    TZrBool returnHasLoadDefinition;
+    TZrBool execIrBuilt;
 
     TEST_ASSERT_NOT_NULL(ast);
     TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
@@ -667,7 +675,36 @@ static void test_terminal_repeated_return_try_finally_merges_payload(void) {
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_RETURN, returnInstruction->opcode);
     TEST_ASSERT_EQUAL_UINT32(1U, returnInstruction->operandCount);
 
+    cleanupRetainsSourceLine = block_has_source_line(function, cleanup, 6U);
+    returnOperand = (const TZrValueId *)ZrCore_Array_Get(
+            (SZrArray *)&function->valueOperands,
+            returnInstruction->operandStart);
+    returnValue = returnOperand != ZR_NULL
+                          ? ZrParser_SemanticIr_Value(function, *returnOperand)
+                          : ZR_NULL;
+    returnDefinition =
+            returnValue != ZR_NULL &&
+                    returnValue->definitionInstructionId !=
+                            ZR_SEMANTIC_INSTRUCTION_ID_INVALID
+                    ? ZrParser_SemanticIr_InstructionAt(
+                              function,
+                              returnValue->definitionInstructionId - 1U)
+                    : ZR_NULL;
+    returnHasLoadDefinition = (TZrBool)(
+            returnOperand != ZR_NULL && returnDefinition != ZR_NULL &&
+            returnDefinition->opcode == ZR_SEMANTIC_IR_LOAD &&
+            returnDefinition->resultValueId == *returnOperand);
+    ZrCore_ExecIr_FunctionInit(&output);
+    memset(&diagnostic, 0, sizeof(diagnostic));
+    execIrBuilt = ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic);
+    ZrCore_ExecIr_FreeFunction(&output);
     free_source(&compiler, ast);
+
+    TEST_ASSERT_TRUE(cleanupRetainsSourceLine);
+    TEST_ASSERT_TRUE(returnHasLoadDefinition);
+    TEST_ASSERT_TRUE(execIrBuilt);
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
 }
 
 static void test_terminal_repeated_throw_try_finally_merges_payload(void) {
@@ -690,6 +727,14 @@ static void test_terminal_repeated_throw_try_finally_merges_payload(void) {
     const SZrParserCfgBlock *throwBlock;
     const SZrParserCfgEdge *completionEdge;
     const SZrSemanticIrInstruction *throwInstruction;
+    const SZrSemanticIrInstruction *throwDefinition;
+    const SZrSemanticIrValue *throwValue;
+    const TZrValueId *throwOperand;
+    SZrExecIrFunction output;
+    SZrExecIrDiagnostic diagnostic;
+    TZrBool cleanupRetainsSourceLine;
+    TZrBool throwHasLoadDefinition;
+    TZrBool execIrBuilt;
 
     TEST_ASSERT_NOT_NULL(ast);
     TEST_ASSERT_FALSE_MESSAGE(compiler.hasError, compiler.errorMessage);
@@ -718,7 +763,36 @@ static void test_terminal_repeated_throw_try_finally_merges_payload(void) {
     TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_THROW, throwInstruction->opcode);
     TEST_ASSERT_EQUAL_UINT32(1U, throwInstruction->operandCount);
 
+    cleanupRetainsSourceLine = block_has_source_line(function, cleanup, 6U);
+    throwOperand = (const TZrValueId *)ZrCore_Array_Get(
+            (SZrArray *)&function->valueOperands,
+            throwInstruction->operandStart);
+    throwValue = throwOperand != ZR_NULL
+                          ? ZrParser_SemanticIr_Value(function, *throwOperand)
+                          : ZR_NULL;
+    throwDefinition =
+            throwValue != ZR_NULL &&
+                    throwValue->definitionInstructionId !=
+                            ZR_SEMANTIC_INSTRUCTION_ID_INVALID
+                    ? ZrParser_SemanticIr_InstructionAt(
+                              function,
+                              throwValue->definitionInstructionId - 1U)
+                    : ZR_NULL;
+    throwHasLoadDefinition = (TZrBool)(
+            throwOperand != ZR_NULL && throwDefinition != ZR_NULL &&
+            throwDefinition->opcode == ZR_SEMANTIC_IR_LOAD &&
+            throwDefinition->resultValueId == *throwOperand);
+    ZrCore_ExecIr_FunctionInit(&output);
+    memset(&diagnostic, 0, sizeof(diagnostic));
+    execIrBuilt = ZrParser_ExecIr_Build(
+            function, ZR_NULL, &output, &diagnostic);
+    ZrCore_ExecIr_FreeFunction(&output);
     free_source(&compiler, ast);
+
+    TEST_ASSERT_TRUE(cleanupRetainsSourceLine);
+    TEST_ASSERT_TRUE(throwHasLoadDefinition);
+    TEST_ASSERT_TRUE(execIrBuilt);
+    TEST_ASSERT_EQUAL_INT(ZR_EXECUTION_DIAGNOSTIC_NONE, diagnostic.code);
 }
 
 static void test_mixed_return_throw_try_finally_stays_on_legacy_path(void) {

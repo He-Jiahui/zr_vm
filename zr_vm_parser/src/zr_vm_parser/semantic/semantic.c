@@ -7,6 +7,7 @@
 #include "zr_vm_parser/diagnostic_builder.h"
 #include "zr_vm_parser/semantic_calls.h"
 #include "zr_vm_parser/semantic_display.h"
+#include "semantic/semantic_context_ownership.h"
 
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/string.h"
@@ -107,11 +108,57 @@ static void semantic_context_init_arrays(SZrSemanticContext *context) {
                 sizeof(SZrSemanticTypeDisplayAliasFact),
                 ZR_PARSER_INITIAL_CAPACITY_TINY);
     ZrCore_Array_Init(context->state,
-                &context->documentationFacts,
-                sizeof(SZrSemanticDocumentationFact),
-                ZR_PARSER_INITIAL_CAPACITY_TINY);
+                      &context->documentationFacts,
+                      sizeof(SZrSemanticDocumentationFact),
+                      ZR_PARSER_INITIAL_CAPACITY_TINY);
+    ZrCore_Array_Init(context->state,
+                      &context->syntaxContextTables,
+                      sizeof(SZrSyntaxContextTable *),
+                      ZR_PARSER_INITIAL_CAPACITY_TINY);
     ZrParser_SemanticFacts_Init(context);
     ZrParser_SemanticCalls_Init(context);
+}
+
+/* Semantic records borrow context values; retain each distinct table while the
+ * semantic snapshot is alive so cloned ASTs/token streams may be released first. */
+TZrBool semantic_context_retain_syntax_table(
+        SZrSemanticContext *context,
+        SZrSyntaxContext syntaxContext) {
+    SZrSyntaxContextTable *table;
+
+    if (context == ZR_NULL || syntaxContext.table == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    table = syntaxContext.table;
+    for (TZrSize index = 0U; index < context->syntaxContextTables.length; index++) {
+        SZrSyntaxContextTable **existing =
+                (SZrSyntaxContextTable **)ZrCore_Array_Get(
+                        &context->syntaxContextTables, index);
+        if (existing != ZR_NULL && *existing == table) {
+            return ZR_TRUE;
+        }
+    }
+    ZrParser_SyntaxContextTable_Retain(table);
+    ZrCore_Array_Push(context->state,
+                      &context->syntaxContextTables,
+                      &table);
+    return ZR_TRUE;
+}
+
+static void semantic_context_release_syntax_tables(SZrSemanticContext *context) {
+    if (context == ZR_NULL || !context->syntaxContextTables.isValid) {
+        return;
+    }
+    for (TZrSize index = 0U; index < context->syntaxContextTables.length; index++) {
+        SZrSyntaxContextTable **table =
+                (SZrSyntaxContextTable **)ZrCore_Array_Get(
+                        &context->syntaxContextTables, index);
+        if (table != ZR_NULL && *table != ZR_NULL) {
+            ZrParser_SyntaxContextTable_Release(*table);
+            *table = ZR_NULL;
+        }
+    }
+    context->syntaxContextTables.length = 0U;
 }
 
 /**
@@ -199,6 +246,8 @@ void ZrParser_SemanticContext_Free(SZrSemanticContext *context) {
     semantic_context_free_primary_prefixes(context);
     ZrCore_Array_Free(context->state, &context->typeDisplayAliasFacts);
     ZrCore_Array_Free(context->state, &context->documentationFacts);
+    semantic_context_release_syntax_tables(context);
+    ZrCore_Array_Free(context->state, &context->syntaxContextTables);
     ZrCore_Array_Free(context->state, &context->propertyContracts);
     ZrCore_Memory_RawFree(context->state->global, context, sizeof(SZrSemanticContext));
 }
@@ -248,6 +297,7 @@ void ZrParser_SemanticContext_Reset(SZrSemanticContext *context) {
     context->propertyContracts.length = 0;
     context->typeDisplayAliasFacts.length = 0;
     context->documentationFacts.length = 0;
+    semantic_context_release_syntax_tables(context);
     semantic_context_reset_query_diagnostics(context);
     ZrParser_SemanticCalls_Reset(context);
     ZrParser_SemanticFacts_Reset(context);
@@ -476,11 +526,14 @@ TZrBool ZrParser_Semantic_RegisterCanonicalType(
         SZrString *name,
         SZrAstNode *astNode) {
     SZrSemanticTypeRecord record;
+    const SZrCanonicalTypeNode *canonicalType;
     TZrSize index;
 
-    if (context == ZR_NULL ||
-        typeId == ZR_SEMANTIC_ID_INVALID ||
-        ZrParser_CanonicalType_Find(context, typeId) == ZR_NULL) {
+    if (context == ZR_NULL || typeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_FALSE;
+    }
+    canonicalType = ZrParser_CanonicalType_Find(context, typeId);
+    if (canonicalType == ZR_NULL) {
         return ZR_FALSE;
     }
     for (index = 0; index < context->types.length; index++) {
@@ -503,35 +556,14 @@ TZrBool ZrParser_Semantic_RegisterCanonicalType(
             ZR_VALUE_TYPE_OBJECT,
             ZR_FALSE,
             name);
+    if (canonicalType->kind == ZR_CANONICAL_TYPE_NOMINAL) {
+        record.inferredType.nominalDefinitionToken = canonicalType->data.nominal.definitionToken;
+    }
     ZrCore_Array_Push(context->state, &context->types, &record);
     return ZR_TRUE;
 }
 
-TZrSymbolId ZrParser_Semantic_RegisterSymbol(SZrSemanticContext *context,
-                                     SZrString *name,
-                                     EZrSemanticSymbolKind kind,
-                                     TZrTypeId typeId,
-                                     TZrOverloadSetId overloadSetId,
-                                     SZrAstNode *astNode,
-                                     SZrFileRange location) {
-    TZrSymbolId symbolId;
-
-    if (context == ZR_NULL || name == ZR_NULL) {
-        return ZR_SEMANTIC_ID_INVALID;
-    }
-    symbolId = ZrParser_Semantic_ReserveSymbolId(context);
-    return ZrParser_Semantic_RegisterSymbolWithId(
-            context,
-            symbolId,
-            name,
-            kind,
-            typeId,
-            overloadSetId,
-            astNode,
-            location);
-}
-
-TZrSymbolId ZrParser_Semantic_RegisterSymbolWithId(
+static TZrSymbolId semantic_register_symbol_with_id_and_context(
         SZrSemanticContext *context,
         TZrSymbolId symbolId,
         SZrString *name,
@@ -539,13 +571,17 @@ TZrSymbolId ZrParser_Semantic_RegisterSymbolWithId(
         TZrTypeId typeId,
         TZrOverloadSetId overloadSetId,
         SZrAstNode *astNode,
-        SZrFileRange location) {
+        SZrFileRange location,
+        SZrSyntaxContext syntaxContext) {
     SZrSemanticSymbolRecord record;
     TZrSize index;
 
     if (context == ZR_NULL ||
         symbolId == ZR_SEMANTIC_ID_INVALID ||
         name == ZR_NULL) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    if (!semantic_context_retain_syntax_table(context, syntaxContext)) {
         return ZR_SEMANTIC_ID_INVALID;
     }
     for (index = 0; index < context->symbols.length; index++) {
@@ -563,9 +599,105 @@ TZrSymbolId ZrParser_Semantic_RegisterSymbolWithId(
     record.overloadSetId = overloadSetId;
     record.astNode = astNode;
     record.location = location;
+    record.syntaxContext = syntaxContext;
 
     ZrCore_Array_Push(context->state, &context->symbols, &record);
     return record.id;
+}
+
+TZrSymbolId ZrParser_Semantic_RegisterSymbol(SZrSemanticContext *context,
+                                     SZrString *name,
+                                     EZrSemanticSymbolKind kind,
+                                     TZrTypeId typeId,
+                                     TZrOverloadSetId overloadSetId,
+                                     SZrAstNode *astNode,
+                                     SZrFileRange location) {
+    TZrSymbolId symbolId;
+
+    if (context == ZR_NULL || name == ZR_NULL) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    symbolId = ZrParser_Semantic_ReserveSymbolId(context);
+    return semantic_register_symbol_with_id_and_context(
+            context,
+            symbolId,
+            name,
+            kind,
+            typeId,
+            overloadSetId,
+            astNode,
+            location,
+            ZrParser_SyntaxContext_Root());
+}
+
+TZrSymbolId ZrParser_Semantic_RegisterSymbolWithId(
+        SZrSemanticContext *context,
+        TZrSymbolId symbolId,
+        SZrString *name,
+        EZrSemanticSymbolKind kind,
+        TZrTypeId typeId,
+        TZrOverloadSetId overloadSetId,
+        SZrAstNode *astNode,
+        SZrFileRange location) {
+    return ZrParser_Semantic_RegisterSymbolWithIdAndContext(
+            context,
+            symbolId,
+            name,
+            kind,
+            typeId,
+            overloadSetId,
+            astNode,
+            location,
+            ZrParser_SyntaxContext_Root());
+}
+
+TZrSymbolId ZrParser_Semantic_RegisterSymbolWithIdAndContext(
+        SZrSemanticContext *context,
+        TZrSymbolId symbolId,
+        SZrString *name,
+        EZrSemanticSymbolKind kind,
+        TZrTypeId typeId,
+        TZrOverloadSetId overloadSetId,
+        SZrAstNode *astNode,
+        SZrFileRange location,
+        SZrSyntaxContext syntaxContext) {
+    return semantic_register_symbol_with_id_and_context(
+            context,
+            symbolId,
+            name,
+            kind,
+            typeId,
+            overloadSetId,
+            astNode,
+            location,
+            syntaxContext);
+}
+
+TZrSymbolId ZrParser_Semantic_RegisterSymbolWithContext(
+        SZrSemanticContext *context,
+        SZrString *name,
+        EZrSemanticSymbolKind kind,
+        TZrTypeId typeId,
+        TZrOverloadSetId overloadSetId,
+        SZrAstNode *astNode,
+        SZrFileRange location,
+        SZrSyntaxContext syntaxContext) {
+    TZrSymbolId symbolId;
+
+    if (context == ZR_NULL || name == ZR_NULL) {
+        return ZR_SEMANTIC_ID_INVALID;
+    }
+    symbolId = ZrParser_Semantic_ReserveSymbolId(context);
+    return semantic_register_symbol_with_id_and_context(
+            context,
+            symbolId,
+            name,
+            kind,
+            typeId,
+            overloadSetId,
+            astNode,
+            location,
+            syntaxContext);
 }
 
 const SZrSemanticSymbolRecord *ZrParser_Semantic_FindSymbolById(
@@ -639,6 +771,15 @@ TZrBool ZrParser_Semantic_PublishVisibleSymbolFact(
     }
 
     copy = *fact;
+    /* Visibility is a projection of a resolved declaration; take its context
+     * from the symbol so old producers cannot accidentally erase hygiene. */
+    {
+        const SZrSemanticSymbolRecord *symbol =
+                ZrParser_Semantic_FindSymbolById(context, fact->symbolId);
+        if (symbol != ZR_NULL) {
+            copy.syntaxContext = symbol->syntaxContext;
+        }
+    }
     copy.externalOriginUri = semantic_context_clone_string(
             context, fact->externalOriginUri);
     if (fact->externalOriginUri != ZR_NULL && copy.externalOriginUri == ZR_NULL) {
@@ -672,6 +813,73 @@ const SZrSemanticSymbolRecord *ZrParser_Semantic_FindSymbolByNameAndKind(
     return ZR_NULL;
 }
 
+const SZrSemanticSymbolRecord *ZrParser_Semantic_FindSymbolByBindingKey(
+        const SZrSemanticContext *context,
+        TZrSemanticScopeId scopeId,
+        const SZrSemanticBindingKey *key,
+        EZrSemanticSymbolKind kind) {
+    TZrSemanticScopeId currentScopeId;
+    EZrSyntaxNamespace namespaceKind;
+
+    if (context == ZR_NULL || key == ZR_NULL || key->name == ZR_NULL ||
+        scopeId == ZR_SEMANTIC_ID_INVALID) {
+        return ZR_NULL;
+    }
+    namespaceKind = (kind == ZR_SEMANTIC_SYMBOL_KIND_FUNCTION ||
+                     kind == ZR_SEMANTIC_SYMBOL_KIND_TYPE)
+                            ? ZR_SYNTAX_NAMESPACE_ITEM
+                            : ZR_SYNTAX_NAMESPACE_LOCAL;
+
+    currentScopeId = scopeId;
+    while (currentScopeId != ZR_SEMANTIC_ID_INVALID) {
+        const SZrSemanticSymbolRecord *best = ZR_NULL;
+        TZrUInt32 bestOrder = 0U;
+
+        for (TZrSize index = 0U;
+             index < context->visibleSymbolFacts.length;
+             index++) {
+            const SZrSemanticVisibleSymbolFact *visible =
+                    (const SZrSemanticVisibleSymbolFact *)ZrCore_Array_Get(
+                            (SZrArray *)&context->visibleSymbolFacts,
+                            index);
+            const SZrSemanticSymbolRecord *symbol;
+
+            if (visible == ZR_NULL || visible->scopeId != currentScopeId) {
+                continue;
+            }
+            symbol = ZrParser_Semantic_FindSymbolById(context, visible->symbolId);
+            if (symbol == ZR_NULL || symbol->kind != kind ||
+                symbol->name == ZR_NULL ||
+                !ZrCore_String_Equal(symbol->name, key->name) ||
+                !ZrParser_SyntaxContext_Equal(
+                        ZrParser_SyntaxContext_Normalize(
+                                symbol->syntaxContext, namespaceKind),
+                        ZrParser_SyntaxContext_Normalize(
+                                key->syntaxContext, namespaceKind))) {
+                continue;
+            }
+            if (best == ZR_NULL || visible->declarationOrder >= bestOrder) {
+                best = symbol;
+                bestOrder = visible->declarationOrder;
+            }
+        }
+        if (best != ZR_NULL) {
+            return best;
+        }
+
+        {
+            const SZrSemanticScopeFact *scope =
+                    ZrParser_Semantic_FindScopeFactById(context, currentScopeId);
+            if (scope == ZR_NULL) {
+                return ZR_NULL;
+            }
+            currentScopeId = scope->parentScopeId;
+        }
+    }
+
+    return ZR_NULL;
+}
+
 TZrBool ZrParser_Semantic_RebindSymbolType(
         SZrSemanticContext *context,
         TZrSymbolId symbolId,
@@ -693,70 +901,6 @@ TZrBool ZrParser_Semantic_RebindSymbolType(
         }
     }
     return ZR_FALSE;
-}
-
-TZrBool ZrParser_Semantic_PublishCanonicalTypeSymbol(
-        SZrSemanticContext *context,
-        TZrTypeId typeId,
-        EZrSemanticTypeKind typeKind,
-        SZrString *name,
-        SZrAstNode *astNode,
-        TZrSymbolId symbolId,
-        SZrFileRange location) {
-    SZrSemanticTypeRecord typeRecord;
-    SZrSemanticSymbolRecord symbolRecord;
-    TZrSize index;
-
-    if (context == ZR_NULL ||
-        typeId == ZR_SEMANTIC_ID_INVALID ||
-        symbolId == ZR_SEMANTIC_ID_INVALID ||
-        name == ZR_NULL ||
-        ZrParser_CanonicalType_Find(context, typeId) == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    for (index = 0; index < context->types.length; index++) {
-        const SZrSemanticTypeRecord *existing =
-                (const SZrSemanticTypeRecord *)ZrCore_Array_Get(&context->types, index);
-        if (existing != ZR_NULL && existing->id == typeId) {
-            return ZR_FALSE;
-        }
-    }
-    for (index = 0; index < context->symbols.length; index++) {
-        const SZrSemanticSymbolRecord *existing =
-                (const SZrSemanticSymbolRecord *)ZrCore_Array_Get(&context->symbols, index);
-        if (existing != ZR_NULL &&
-            (existing->id == symbolId ||
-             (existing->kind == ZR_SEMANTIC_SYMBOL_KIND_TYPE &&
-              existing->name != ZR_NULL &&
-              ZrCore_String_Equal(existing->name, name)))) {
-            return ZR_FALSE;
-        }
-    }
-
-    typeRecord.id = typeId;
-    typeRecord.kind = typeKind;
-    typeRecord.baseType = ZR_VALUE_TYPE_OBJECT;
-    typeRecord.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
-    typeRecord.name = name;
-    typeRecord.astNode = astNode;
-    ZrParser_InferredType_InitFull(
-            context->state,
-            &typeRecord.inferredType,
-            ZR_VALUE_TYPE_OBJECT,
-            ZR_FALSE,
-            name);
-
-    symbolRecord.id = symbolId;
-    symbolRecord.kind = ZR_SEMANTIC_SYMBOL_KIND_TYPE;
-    symbolRecord.name = name;
-    symbolRecord.typeId = typeId;
-    symbolRecord.overloadSetId = ZR_SEMANTIC_ID_INVALID;
-    symbolRecord.astNode = astNode;
-    symbolRecord.location = location;
-
-    ZrCore_Array_Push(context->state, &context->types, &typeRecord);
-    ZrCore_Array_Push(context->state, &context->symbols, &symbolRecord);
-    return ZR_TRUE;
 }
 
 TZrOverloadSetId ZrParser_Semantic_GetOrCreateOverloadSet(SZrSemanticContext *context,

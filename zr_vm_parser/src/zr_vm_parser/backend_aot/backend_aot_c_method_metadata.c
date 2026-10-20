@@ -306,6 +306,24 @@ static const SZrFunctionTypedTypeRef *backend_aot_c_signature_return_type(
             backend_aot_exec_ir_callable_return_type(functionIr);
 
     if (callableReturnType != ZR_NULL) {
+        SZrFunctionTypedTypeRef provenReturnType;
+
+        if (inferredReturnType != ZR_NULL &&
+            callableReturnType->staticCType == ZR_STATIC_C_TYPE_DYNAMIC &&
+            !callableReturnType->isNullable &&
+            callableReturnType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_NONE &&
+            !callableReturnType->isArray && callableReturnType->typeName == ZR_NULL &&
+            callableReturnType->elementBaseType == ZR_VALUE_TYPE_OBJECT &&
+            callableReturnType->elementTypeName == ZR_NULL &&
+            (callableReturnType->staticCTypeId == 0u ||
+             callableReturnType->staticCTypeId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) &&
+            backend_aot_c_signature_try_infer_static_return(functionIr, &provenReturnType) &&
+            provenReturnType.baseType == callableReturnType->baseType) {
+            /* Refine the emitted representation without replacing the semantic type. */
+            *inferredReturnType = *callableReturnType;
+            inferredReturnType->staticCType = provenReturnType.staticCType;
+            return inferredReturnType;
+        }
         return callableReturnType;
     }
 

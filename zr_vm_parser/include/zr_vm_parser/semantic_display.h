@@ -20,8 +20,10 @@ typedef struct SZrSemanticDocumentationFact {
 } SZrSemanticDocumentationFact;
 
 /*
- * Type display aliases are copied into the semantic snapshot and keyed by the
- * exact TypeId/use-site range. Canonical formatting remains TypeId-only.
+ * Alias text is copied into the semantic snapshot, keyed by TypeId/use-site.
+ * The range and its source string are borrowed. Native evidence additionally
+ * requires its AST owner to remain live; legacy callers retain their source
+ * strings independently. Canonical formatting remains TypeId-only.
  */
 ZR_PARSER_API TZrBool ZrParser_SemanticTypeDisplayAlias_Publish(
         SZrSemanticContext *context,

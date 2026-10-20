@@ -30,8 +30,9 @@ SZrAstNode *parse_module_declaration(SZrParserState *ps) {
         consume_token(ps, ZR_TK_SEMICOLON);
     }
 
-    node = create_ast_node(ps, ZR_AST_MODULE_DECLARATION, ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
-    if (node == ZR_NULL) {
+    SZrFileRange mergedLocation;
+    if (!ZrParser_MergeLocations(ps, startLoc, get_current_location(ps), &mergedLocation) ||
+        (node = create_ast_node(ps, ZR_AST_MODULE_DECLARATION, mergedLocation)) == ZR_NULL) {
         ZrParser_Ast_Free(ps->state, name);
         return ZR_NULL;
     }
@@ -174,11 +175,17 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
     memset(&returnDelimiterLoc, 0, sizeof(returnDelimiterLoc));
 
     // 解析装饰器（可选）
-    SZrAstNodeArray *decorators = ZrParser_AstNodeArray_New(ps->state, 2);
+    SZrAstNodeArray *decorators = parser_ast_array_new(ps, 2);
+    if (decorators == ZR_NULL) {
+        goto cleanup;
+    }
     while (ps->lexer->t.token == ZR_TK_SHARP) {
         SZrAstNode *decorator = parse_decorator_expression(ps);
         if (decorator != ZR_NULL) {
-            ZrParser_AstNodeArray_Add(ps->state, decorators, decorator);
+            if (!parser_ast_array_add(ps, decorators, decorator)) {
+                ZrParser_Ast_Free(ps->state, decorator);
+                goto cleanup;
+            }
         } else {
             break;
         }
@@ -237,7 +244,10 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
             // parse_parameter 已经报告了错误（如果 token 不是标识符）
             goto cleanup;
         }
-        params = ZrParser_AstNodeArray_New(ps->state, 0);
+        params = parser_ast_array_new(ps, 0);
+        if (params == ZR_NULL) {
+            goto cleanup;
+        }
     } else {
         params = parse_parameter_list(ps);
         /* TODO: parse_parameter_list 会吞掉后续逗号及 params 参数；
@@ -296,10 +306,11 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
     }
 
     SZrFileRange endLoc = body->location;
-    SZrFileRange funcLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
+    SZrFileRange funcLoc;
 
-    SZrAstNode *node = create_ast_node(ps, ZR_AST_FUNCTION_DECLARATION, funcLoc);
-    if (node == ZR_NULL) {
+    SZrAstNode *node;
+    if (!ZrParser_MergeLocations(ps, startLoc, endLoc, &funcLoc) ||
+        (node = create_ast_node(ps, ZR_AST_FUNCTION_DECLARATION, funcLoc)) == ZR_NULL) {
         goto cleanup;
     }
 

@@ -77,6 +77,23 @@ static void test_semantic_analyzer_guards_direct_weak_receiver_after_owner_relea
             8);
     directGuardCount = count_direct_weak_receiver_guards(analyzer->semanticContext);
     if (beforeRelease != ZR_NULL || afterRelease != ZR_NULL || directGuardCount != 2) {
+        printf("Ownership weak receiver observation: guards=%llu beforeDiagnostic=%d afterDiagnostic=%d\n",
+               (unsigned long long)directGuardCount,
+               beforeRelease != ZR_NULL, afterRelease != ZR_NULL);
+        if (analyzer->semanticContext != ZR_NULL &&
+            analyzer->semanticContext->receiverGuardFacts.isValid) {
+            for (TZrSize index = 0; index < analyzer->semanticContext->receiverGuardFacts.length; index++) {
+                const SZrReceiverGuardFact *guard =
+                        (const SZrReceiverGuardFact *)ZrCore_Array_Get(
+                                &analyzer->semanticContext->receiverGuardFacts, index);
+
+                if (guard != ZR_NULL) {
+                    printf("  guard[%llu] node=%p kind=%d mode=%d\n",
+                           (unsigned long long)index, (void *)guard->node,
+                           (int)guard->kind, (int)guard->mode);
+                }
+            }
+        }
         ZrParser_Ast_Free(state, ast);
         ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
         TEST_FAIL(timer, summary, "Direct weak receiver access did not retain its receiver guards");
@@ -138,6 +155,22 @@ static void test_semantic_analyzer_guards_rebound_direct_weak_receiver(
             10);
     directGuardCount = count_direct_weak_receiver_guards(analyzer->semanticContext);
     if (diagnostic != ZR_NULL || directGuardCount != 1) {
+        printf("Ownership weak receiver observation: guards=%llu diagnostic=%d\n",
+               (unsigned long long)directGuardCount, diagnostic != ZR_NULL);
+        if (analyzer->semanticContext != ZR_NULL &&
+            analyzer->semanticContext->receiverGuardFacts.isValid) {
+            for (TZrSize index = 0; index < analyzer->semanticContext->receiverGuardFacts.length; index++) {
+                const SZrReceiverGuardFact *guard =
+                        (const SZrReceiverGuardFact *)ZrCore_Array_Get(
+                                &analyzer->semanticContext->receiverGuardFacts, index);
+
+                if (guard != ZR_NULL) {
+                    printf("  guard[%llu] node=%p kind=%d mode=%d\n",
+                           (unsigned long long)index, (void *)guard->node,
+                           (int)guard->kind, (int)guard->mode);
+                }
+            }
+        }
         ZrParser_Ast_Free(state, ast);
         ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
         TEST_FAIL(timer, summary, "Rebound direct weak receiver did not retain its guard contract");

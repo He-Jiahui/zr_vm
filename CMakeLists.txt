@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.20)
 project(ZR_VM
         VERSION 0.0.1
         LANGUAGES C          # 默认只启用 C；WASM 分支按需启用 C++
@@ -51,8 +51,6 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-# TODO: 当前构建图仅在此声明 USE_SYSTEM_PACKAGES，没有下游读取；确认是否接入依赖选择或移除此无效开关。
-option(USE_SYSTEM_PACKAGES "Use system package manager for dependencies" ON)
 option(BUILD_NETWORK_LIB "Build zr_vm_lib_network module" ON)
 option(BUILD_DEBUG_LIB "Build zr_vm_lib_debug module" ON)
 option(BUILD_THREAD_LIB "Build zr_vm_lib_thread module" ON)
@@ -210,31 +208,26 @@ if(BUILD_LANGUAGE_SERVER_EXTENSION)
         
         # 设置 extension 目录
         set(EXTENSION_DIR ${CMAKE_SOURCE_DIR}/zr_vm_language_server_extension)
-        set(EXTENSION_WASM_DIR ${EXTENSION_DIR}/wasm)
-        
-        # 确保 WASM 目录存在
-        file(MAKE_DIRECTORY ${EXTENSION_WASM_DIR})
-        
-        # BUG: 普通 MSVC/GCC/Clang 配置中，此命令用原生工具链原地重配置 BUILD_WASM；
-        # language-server 子目录只在 Emscripten 下创建 *_wasm 目标，下一命令遂找不到目标。
-        # 扩展脚本已有 emcmake 独立构建目录；此目标应复用它，再复制 wasm 产物。
+        set(EXTENSION_WASM_BUILD_DIR "${CMAKE_BINARY_DIR}/extension-wasm")
+
+        # The script selects Emscripten (WSL on Windows) in a separate build tree;
+        # never reconfigure the host toolchain cache as a WASM build.
         add_custom_target(build_wasm_for_extension
-            COMMAND ${CMAKE_COMMAND} -DBUILD_WASM=ON ${CMAKE_SOURCE_DIR}
-            COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target zr_vm_language_server_wasm
+            COMMAND ${CMAKE_COMMAND} -E env
+                "ZR_WASM_BUILD_DIR=${EXTENSION_WASM_BUILD_DIR}"
+                ${NODE_EXECUTABLE} "${EXTENSION_DIR}/scripts/build-wasm-server.js"
+            COMMAND ${CMAKE_COMMAND} -E env
+                "ZR_WASM_BUILD_DIR=${EXTENSION_WASM_BUILD_DIR}"
+                ${NODE_EXECUTABLE} "${EXTENSION_DIR}/scripts/sync-wasm-server.js"
+                "${EXTENSION_WASM_BUILD_DIR}/wasm"
+            WORKING_DIRECTORY ${EXTENSION_DIR}
             COMMENT "Building WASM for VS Code Extension"
-        )
-        
-        # 复制 WASM 文件到 extension 目录
-        add_custom_command(TARGET build_wasm_for_extension POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                ${CMAKE_BINARY_DIR}/wasm/zr_vm_language_server.wasm
-                ${EXTENSION_WASM_DIR}/zr_vm_language_server.wasm
-            COMMENT "Copying WASM file to extension directory"
+            VERBATIM
         )
         
         # 安装 npm 依赖
         add_custom_target(install_extension_dependencies
-            COMMAND ${NPM_EXECUTABLE} install
+            COMMAND ${NPM_EXECUTABLE} ci
             WORKING_DIRECTORY ${EXTENSION_DIR}
             COMMENT "Installing VS Code Extension dependencies"
         )

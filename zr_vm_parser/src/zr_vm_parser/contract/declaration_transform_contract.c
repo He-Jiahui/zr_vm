@@ -2,6 +2,55 @@
 
 #include <string.h>
 
+static TZrBool compile_phase_rank(
+        EZrParserCompilePhase phase,
+        TZrUInt32 *outRank) {
+    if (outRank == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    switch (phase) {
+        case ZR_PARSER_COMPILE_PHASE_BUILD_FACTS:
+            *outRank = 0U;
+            return ZR_TRUE;
+        case ZR_PARSER_COMPILE_PHASE_SYNTAX_EXPANSION:
+            *outRank = 1U;
+            return ZR_TRUE;
+        case ZR_PARSER_COMPILE_PHASE_SIGNATURE:
+            *outRank = 2U;
+            return ZR_TRUE;
+        case ZR_PARSER_COMPILE_PHASE_SEMANTIC_EXPANSION:
+            *outRank = 3U;
+            return ZR_TRUE;
+        case ZR_PARSER_COMPILE_PHASE_LAYOUT:
+            *outRank = 4U;
+            return ZR_TRUE;
+        case ZR_PARSER_COMPILE_PHASE_LATE_CHECK:
+            *outRank = 5U;
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+TZrBool ZrParser_CompilePhase_IsValid(EZrParserCompilePhase phase) {
+    TZrUInt32 rank;
+
+    return compile_phase_rank(phase, &rank);
+}
+
+TZrBool ZrParser_CompilePhase_IsAtLeast(
+        EZrParserCompilePhase currentPhase,
+        EZrParserCompilePhase minimumPhase) {
+    TZrUInt32 currentRank;
+    TZrUInt32 minimumRank;
+
+    if (!compile_phase_rank(currentPhase, &currentRank) ||
+        !compile_phase_rank(minimumPhase, &minimumRank)) {
+        return ZR_FALSE;
+    }
+    return currentRank >= minimumRank;
+}
+
 static TZrBool declaration_name_is_valid(const TZrChar *name) {
     const unsigned char *cursor = (const unsigned char *)name;
 
@@ -133,13 +182,11 @@ EZrParserDeclarationPatchError ZrParser_DeclarationPatch_Validate(
 EZrParserDeclarationPatchError ZrParser_DeclarationView_ValidatePhaseAccess(
         EZrParserCompilePhase currentPhase,
         EZrParserCompilePhase minimumFieldPhase) {
-    if (currentPhase < ZR_PARSER_COMPILE_PHASE_BUILD_FACTS ||
-        currentPhase > ZR_PARSER_COMPILE_PHASE_LATE_CHECK ||
-        minimumFieldPhase < ZR_PARSER_COMPILE_PHASE_BUILD_FACTS ||
-        minimumFieldPhase > ZR_PARSER_COMPILE_PHASE_LATE_CHECK) {
+    if (!ZrParser_CompilePhase_IsValid(currentPhase) ||
+        !ZrParser_CompilePhase_IsValid(minimumFieldPhase)) {
         return ZR_PARSER_DECLARATION_PATCH_ERROR_ARGUMENT;
     }
-    return currentPhase >= minimumFieldPhase
+    return ZrParser_CompilePhase_IsAtLeast(currentPhase, minimumFieldPhase)
                    ? ZR_PARSER_DECLARATION_PATCH_VALID
                    : ZR_PARSER_DECLARATION_PATCH_ERROR_PHASE_CYCLE;
 }

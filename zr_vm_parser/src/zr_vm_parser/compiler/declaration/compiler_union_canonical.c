@@ -1,6 +1,33 @@
 #include "compiler/declaration/compiler_union_canonical.h"
 
 #include "compiler/compiler_internal.h"
+#include "semantic/semantic_type_publication.h"
+#include "semantic/type_declaration_context.h"
+
+static TZrBool compiler_union_can_publish_type(
+        const SZrSemanticContext *context,
+        SZrString *name,
+        SZrAstNode *declarationNode,
+        SZrSyntaxContext normalizedContext) {
+    for (TZrSize index = 0U; index < context->symbols.length; index++) {
+        const SZrSemanticSymbolRecord *symbol =
+                ZrCore_Array_Get((SZrArray *)&context->symbols, index);
+        SZrSyntaxContext symbolContext;
+
+        if (symbol == ZR_NULL || symbol->kind != ZR_SEMANTIC_SYMBOL_KIND_TYPE ||
+            symbol->name == ZR_NULL || !ZrCore_String_Equal(symbol->name, name)) {
+            continue;
+        }
+        if (!type_declaration_normalize_context(symbol->syntaxContext, &symbolContext)) {
+            return ZR_FALSE;
+        }
+        if (ZrParser_SyntaxContext_Equal(symbolContext, normalizedContext) &&
+            symbol->astNode != declarationNode) {
+            return ZR_FALSE;
+        }
+    }
+    return ZR_TRUE;
+}
 
 /* 将变体字段类型归一为 canonical payload ID，供 union 节点复用同一类型图。 */
 static TZrBool compiler_union_build_canonical_payload_type(
@@ -90,6 +117,10 @@ TZrBool compiler_union_register_canonical_type(
     TZrTypeId definitionTypeId;
     TZrTypeId unionTypeId;
     TZrSymbolId symbolId;
+    const SZrNamedTypeBinding *existingBinding;
+    const SZrSemanticSymbolRecord *existingSymbol;
+    SZrSyntaxContext syntaxContext;
+    SZrSyntaxContext normalizedContext;
     EZrCanonicalGcScanKind gcScanKind;
     TZrUInt32 capabilityFlags = ZR_CANONICAL_TYPE_CAPABILITY_VALUE_TYPE;
     TZrSize index;
@@ -104,11 +135,20 @@ TZrBool compiler_union_register_canonical_type(
     }
     /* 重复名和不支持的 generic kind 在预留 symbol ID 前拒绝，不让无效声明进入 canonical 登记。 */
     if (cs->typeEnv == ZR_NULL ||
-        ZrParser_TypeEnvironment_LookupType(cs->typeEnv, prototype->name) ||
-        ZrParser_Semantic_FindSymbolByNameAndKind(
+        !type_declaration_raw_context(node, &syntaxContext) ||
+        !type_declaration_normalize_context(syntaxContext, &normalizedContext)) {
+        return ZR_FALSE;
+    }
+    existingBinding = ZrParser_TypeEnvironment_FindTypeBindingWithContext(
+            cs->typeEnv, prototype->name, syntaxContext);
+    if (existingBinding != ZR_NULL && existingBinding->declarationNode != node) {
+        return ZR_FALSE;
+    }
+    if (!compiler_union_can_publish_type(
                 cs->semanticContext,
                 prototype->name,
-                ZR_SEMANTIC_SYMBOL_KIND_TYPE) != ZR_NULL) {
+                node,
+                normalizedContext)) {
         return ZR_FALSE;
     }
 
@@ -125,15 +165,34 @@ TZrBool compiler_union_register_canonical_type(
         }
     }
 
-    /* 预留的 symbol ID 标识泛型 owner；每个类型形参由 owner 与 ordinal 唯一定位。 */
-    symbolId = ZrParser_Semantic_ReserveSymbolId(cs->semanticContext);
-    definitionTypeId = ZrParser_CanonicalType_InternNominal(
-            cs->semanticContext,
-            ZR_NULL,
-            prototype->name,
-            0U);
-    if (symbolId == ZR_SEMANTIC_ID_INVALID || definitionTypeId == ZR_SEMANTIC_ID_INVALID) {
-        return ZR_FALSE;
+    /* A forward annotation may already own a provisional nominal identity; publish the union through it. */
+    if (existingBinding != ZR_NULL) {
+        existingSymbol = ZrParser_Semantic_FindSymbolById(
+                cs->semanticContext, existingBinding->symbolId);
+        if (existingSymbol == ZR_NULL ||
+            existingSymbol->astNode != node ||
+            existingSymbol->name == ZR_NULL ||
+            !ZrCore_String_Equal(existingSymbol->name, prototype->name) ||
+            existingBinding->typeId == ZR_SEMANTIC_ID_INVALID) {
+            return ZR_FALSE;
+        }
+        symbolId = existingBinding->symbolId;
+        definitionTypeId = existingBinding->typeId;
+    } else {
+        /* Reserve the symbol ID as generic owner; each type parameter is keyed by owner and ordinal. */
+        symbolId = ZrParser_Semantic_ReserveSymbolId(cs->semanticContext);
+        if (symbolId == ZR_SEMANTIC_ID_INVALID) {
+            return ZR_FALSE;
+        }
+        definitionTypeId = ZrParser_CanonicalType_InternNominal(
+                cs->semanticContext,
+                ZR_NULL,
+                prototype->name,
+                ZrParser_SyntaxContext_Equal(normalizedContext, ZrParser_SyntaxContext_Root())
+                        ? 0U : symbolId);
+        if (definitionTypeId == ZR_SEMANTIC_ID_INVALID) {
+            return ZR_FALSE;
+        }
     }
 
     /*
@@ -273,21 +332,51 @@ TZrBool compiler_union_register_canonical_type(
         return ZR_FALSE;
     }
 
-    if (!ZrParser_Semantic_PublishCanonicalTypeSymbol(
-                cs->semanticContext,
-                unionTypeId,
-                ZR_SEMANTIC_TYPE_KIND_UNION,
-                prototype->name,
-                node,
-                symbolId,
-                node->location)) {
+    if (existingBinding != ZR_NULL) {
+        if (!ZrParser_Semantic_RegisterCanonicalType(
+                    cs->semanticContext,
+                    unionTypeId,
+                    ZR_SEMANTIC_TYPE_KIND_UNION,
+                    prototype->name,
+                    node) ||
+            !ZrParser_Semantic_RebindSymbolType(
+                    cs->semanticContext, symbolId, unionTypeId)) {
+            ZrCore_Array_Free(cs->state, &genericParameterKinds);
+            ZrCore_Array_Free(cs->state, &genericBindings);
+            return ZR_FALSE;
+        }
+        /* RegisterCanonicalType does not project the nominal token for unions. */
+        for (index = 0U; index < cs->semanticContext->types.length; index++) {
+            SZrSemanticTypeRecord *record = (SZrSemanticTypeRecord *)ZrCore_Array_Get(
+                    &cs->semanticContext->types, index);
+            const SZrCanonicalTypeNode *definition = semantic_type_nominal_definition(
+                    cs->semanticContext, unionTypeId);
+            if (record != ZR_NULL && record->id == unionTypeId && definition != ZR_NULL) {
+                record->inferredType.nominalDefinitionToken =
+                        definition->data.nominal.definitionToken;
+                break;
+            }
+        }
+    } else if (!ZrParser_Semantic_PublishCanonicalTypeSymbol(
+                       cs->semanticContext,
+                       unionTypeId,
+                       ZR_SEMANTIC_TYPE_KIND_UNION,
+                       prototype->name,
+                       node,
+                       symbolId,
+                       node->location)) {
         ZrCore_Array_Free(cs->state, &genericParameterKinds);
         ZrCore_Array_Free(cs->state, &genericBindings);
         return ZR_FALSE;
     }
-    {
-        SZrString *publishedName = prototype->name;
-        ZrCore_Array_Push(cs->state, &cs->typeEnv->typeNames, &publishedName);
+    if (!ZrParser_TypeEnvironment_RegisterTypeDeclaration(
+                cs->state, cs->typeEnv, prototype->name, node) ||
+        (cs->compileTimeTypeEnv != ZR_NULL &&
+         !ZrParser_TypeEnvironment_RegisterTypeDeclaration(
+                 cs->state, cs->compileTimeTypeEnv, prototype->name, node))) {
+        ZrCore_Array_Free(cs->state, &genericParameterKinds);
+        ZrCore_Array_Free(cs->state, &genericBindings);
+        return ZR_FALSE;
     }
 
     ZrCore_Array_Free(cs->state, &genericParameterKinds);

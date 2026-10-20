@@ -1,6 +1,8 @@
 #include "compiler/compiler_internal.h"
 #include "compiler/declaration/compiler_attribute_binding.h"
 #include "compiler/metadata/compiler_parameter_metadata.h"
+#include "compiler/compiler_top_level_duplicate.h"
+#include "compiler/compiler_type_declaration.h"
 #include "compiler/declaration/compiler_union_canonical.h"
 
 typedef struct SZrUnionPayloadFieldLayout {
@@ -349,7 +351,7 @@ static void compiler_union_layout_info_init(SZrCompilerState *cs,
                     SZrAstNode *fieldNode = fields->nodes[fieldIndex];
                     SZrUnionPayloadFieldLayout fieldLayout;
                     TZrUInt32 fieldSize = ZR_ALIGN_SIZE;
-                    TZrUInt32 fieldAlign = ZR_ALIGN_SIZE;
+                    TZrUInt32 fieldAlign = (TZrUInt32)_Alignof(SZrTypeValue);
 
                     memset(&fieldLayout, 0, sizeof(fieldLayout));
                     if (fieldNode != ZR_NULL && fieldNode->type == ZR_AST_PARAMETER) {
@@ -361,7 +363,7 @@ static void compiler_union_layout_info_init(SZrCompilerState *cs,
                                                                        field->typeInfo,
                                                                        fieldLayout.ownershipQualifier)) {
                                 fieldSize = (TZrUInt32)sizeof(SZrTypeValue);
-                                fieldAlign = (TZrUInt32)ZR_ALIGN_SIZE;
+                                fieldAlign = (TZrUInt32)_Alignof(SZrTypeValue);
                             } else {
                                 fieldSize = calculate_type_size(cs, field->typeInfo);
                                 fieldAlign = get_type_alignment(cs, field->typeInfo);
@@ -372,7 +374,7 @@ static void compiler_union_layout_info_init(SZrCompilerState *cs,
                         fieldSize = ZR_ALIGN_SIZE;
                     }
                     if (fieldAlign == 0) {
-                        fieldAlign = ZR_ALIGN_SIZE;
+                        fieldAlign = (TZrUInt32)_Alignof(SZrTypeValue);
                     }
 
                     currentOffset = align_offset(currentOffset, fieldAlign);
@@ -690,6 +692,8 @@ void compile_union_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     SZrAstNode *oldTypeNode;
     SZrTypePrototypeInfo info;
     SZrUnionLayoutInfo layoutInfo;
+    SZrSyntaxContext declarationContext;
+    const SZrNamedTypeBinding *existingTypeBinding;
     TZrBool layoutInfoInitialized = ZR_FALSE;
 
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -708,8 +712,30 @@ void compile_union_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     typeName = unionDecl->name->name;
+    if (!compiler_type_declaration_item_context(node, &declarationContext) ||
+        compiler_report_duplicate_top_level_type(cs, node)) {
+        if (!cs->hasError) {
+            ZrParser_Compiler_Error(cs, "Cannot normalize union declaration syntax context",
+                    node->location);
+        }
+        return;
+    }
+    for (TZrSize index = 0U; index < cs->typePrototypes.length; index++) {
+        const SZrTypePrototypeInfo *prototype = ZrCore_Array_Get(&cs->typePrototypes, index);
+
+        if (prototype != ZR_NULL && prototype->declarationNode == node) {
+            return;
+        }
+    }
+    existingTypeBinding = cs->typeEnv != ZR_NULL
+            ? ZrParser_TypeEnvironment_FindTypeBindingWithContext(
+                    cs->typeEnv, typeName, unionDecl->name->syntaxContext)
+            : ZR_NULL;
     if (cs->typeEnv == ZR_NULL ||
-        ZrParser_TypeEnvironment_LookupType(cs->typeEnv, typeName)) {
+        (ZrParser_TypeEnvironment_LookupTypeWithContext(
+                 cs->typeEnv, typeName, unionDecl->name->syntaxContext) &&
+         (existingTypeBinding == ZR_NULL ||
+          existingTypeBinding->declarationNode != node))) {
         ZrParser_Compiler_Error(cs, "Union type is already defined", node->location);
         return;
     }
@@ -736,6 +762,7 @@ void compile_union_declaration(SZrCompilerState *cs, SZrAstNode *node) {
 
     memset(&info, 0, sizeof(info));
     info.name = typeName;
+    info.declarationNode = node;
     info.type = ZR_OBJECT_PROTOTYPE_TYPE_UNION;
     info.accessModifier = unionDecl->accessModifier;
     info.isImportedNative = ZR_FALSE;

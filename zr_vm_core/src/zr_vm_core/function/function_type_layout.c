@@ -1845,6 +1845,29 @@ zr_function_type_layout_retry_record:
     return &entryFunction->prototypeFrameTypeLayouts[typeLayoutId];
 }
 
+TZrBool ZrCore_Function_ValidatePrototypeFrameTypeLayoutStorage(
+        const SZrFunction *function, TZrUInt32 typeLayoutId,
+        TZrUInt32 byteSize, TZrUInt32 byteAlign, SZrState *state) {
+    const SZrTypeLayout *layout =
+            ZrCore_Function_ResolvePrototypeFrameTypeLayout(function, typeLayoutId, state);
+    const SZrFunction *entry = function_type_layout_entry_function(state, function);
+    SZrFunctionPrototypeRecord declared;
+    SZrFunctionPrototypeRecord instance;
+    if (layout == ZR_NULL || layout->byteAlign != byteAlign || layout->byteSize > byteSize) {
+        return ZR_FALSE;
+    }
+    if (layout->byteSize == byteSize) return ZR_TRUE;
+    return (TZrBool)(
+            function_type_layout_find_prototype_record(entry, typeLayoutId, &declared, ZR_NULL) &&
+            declared.prototype != ZR_NULL &&
+            declared.prototype->layoutByteSize == byteSize &&
+            declared.prototype->layoutByteAlign == byteAlign &&
+            function_type_layout_find_unambiguous_generic_instance_record(
+                    state, entry, typeLayoutId, &instance, ZR_NULL) &&
+            instance.prototype->layoutByteSize == layout->byteSize &&
+            instance.prototype->layoutByteAlign == layout->byteAlign);
+}
+
 TZrBool ZrCore_Function_GetPrototypeFrameTypeLayoutRegistry(
         SZrState *state,
         const SZrFunction *function,

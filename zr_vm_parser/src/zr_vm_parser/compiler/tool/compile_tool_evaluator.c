@@ -1,5 +1,6 @@
 #include "compiler/tool/compile_tool_evaluator.h"
 
+#include "compiler/compile_time/compile_time_aggregate.h"
 #include "compiler/tool/compile_tool_binding.h"
 #include "compiler/compile_time/comptime_runtime_contract.h"
 #include "contract/declaration_transform_contract.h"
@@ -11,6 +12,24 @@
 
 #include <string.h>
 
+static TZrBool compile_tool_phase_allows_descriptor(
+        SZrCompilerState *cs,
+        EZrParserCompilePhase minimumPhase,
+        SZrFileRange location) {
+    if (cs != ZR_NULL && ZrParser_CompilePhase_IsAtLeast(
+                               cs->compilePhase, minimumPhase)) {
+        return ZR_TRUE;
+    }
+    if (cs != ZR_NULL) {
+        ZrParser_CompileTime_Error(
+                cs,
+                ZR_COMPILE_TIME_ERROR_ERROR,
+                "compiletool.phase_violation: descriptor is not available in this compile phase",
+                location);
+    }
+    return ZR_FALSE;
+}
+
 static SZrObject *compile_tool_new_object(
         SZrCompilerState *cs,
         EZrObjectInternalType internalType,
@@ -18,12 +37,7 @@ static SZrObject *compile_tool_new_object(
     SZrObject *object;
 
     if (cs == ZR_NULL || cs->state == ZR_NULL ||
-        !ZrParser_ComptimeRuntime_Consume(
-                cs, ZR_PARSER_COMPTIME_BUDGET_HEAP_BYTES,
-                sizeof(SZrObject), location) ||
-        !ZrParser_ComptimeRuntime_Consume(
-                cs, ZR_PARSER_COMPTIME_BUDGET_AGGREGATE_COUNT,
-                1U, location)) {
+        !ct_reserve_aggregate_allocation(cs, location)) {
         return ZR_NULL;
     }
     object = internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT
@@ -274,6 +288,10 @@ static TZrBool compile_tool_try_evaluate_struct_init(
                 node->location)) {
         return ZR_FALSE;
     }
+    if (!compile_tool_phase_allows_descriptor(
+                cs, typeDescriptor->minimumPhase, node->location)) {
+        return ZR_FALSE;
+    }
     if (init->args == ZR_NULL || init->argNames == ZR_NULL ||
         init->args->count != init->argNames->length) {
         ZrParser_CompileTime_Error(
@@ -497,6 +515,10 @@ static TZrBool compile_tool_try_evaluate_feature(
                 cs, callable->effect, callNode->location)) {
         return ZR_FALSE;
     }
+    if (!compile_tool_phase_allows_descriptor(
+                cs, callable->minimumPhase, callNode->location)) {
+        return ZR_FALSE;
+    }
     if (callNode->data.functionCall.args == ZR_NULL ||
         callNode->data.functionCall.args->count != 1 ||
         callNode->data.functionCall.args->nodes[0] == ZR_NULL) {
@@ -643,6 +665,10 @@ static TZrBool compile_tool_try_evaluate_diagnostic(
                 cs, callable->effect, callNode->location)) {
         return ZR_FALSE;
     }
+    if (!compile_tool_phase_allows_descriptor(
+                cs, callable->minimumPhase, callNode->location)) {
+        return ZR_FALSE;
+    }
     call = &callNode->data.functionCall;
     if (call->args == ZR_NULL) {
         ZrParser_CompileTime_Error(
@@ -784,6 +810,21 @@ TZrBool ZrParser_CompileToolEvaluator_TryEvaluate(
         return ZR_FALSE;
     }
     *handled = ZR_FALSE;
+    if (node != ZR_NULL && node->type == ZR_AST_PRIMARY_EXPRESSION) {
+        SZrPrimaryExpression *primary = &node->data.primaryExpression;
+        if (primary->property != ZR_NULL &&
+            primary->property->type == ZR_AST_IDENTIFIER_LITERAL &&
+            primary->members != ZR_NULL && primary->members->count > 0U) {
+            SZrIdentifier *identifier = &primary->property->data.identifier;
+            for (SZrCompileTimeFrame *cursor = frame; cursor != ZR_NULL;
+                 cursor = cursor->parent) {
+                if (ct_frame_has_binding_with_context(
+                            cursor, identifier->name, identifier->syntaxContext)) {
+                    return ZR_TRUE;
+                }
+            }
+        }
+    }
     if (!compile_tool_try_evaluate_struct_init(
                 cs, node, frame, result, handled) || *handled) {
         return !cs->hasCompileTimeError && !cs->hasError &&

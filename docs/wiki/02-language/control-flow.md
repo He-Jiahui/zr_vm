@@ -1,6 +1,7 @@
 ---
 related_code:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_switch.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_loops.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_switch_patterns.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_yield.c
@@ -10,12 +11,14 @@ related_code:
   - tests/fixtures/projects/syntax_reference_v1/src/ownership.zr
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_switch.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_loops.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_switch_patterns.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_yield.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/cfg.c
 tests:
   - tests/parser/test_parser.c
+  - tests/parser/test_parser_primary_budget.c
   - tests/parser/test_syntax_reference_v1.c
   - tests/parser/test_place_cfg_graph.c
   - tests/fixtures/projects/syntax_reference_v1/golden/coverage.json
@@ -112,8 +115,7 @@ ZR 的 switch case 头部不是 `case` 关键字，而是括号包裹的值/vari
 
 ```ebnf
 switch-statement = "switch", "(", expr, ")", "{",
-                   { "(", ( expr | variant-pattern ), ")", block },
-                   [ "(", ")", block ], "}" ;
+                   { "(", [ expr | variant-pattern ], ")", block }, "}" ;
 ```
 
 ```zr
@@ -130,7 +132,9 @@ switch (state) {
 }
 ```
 
-union variant 的 move pattern 可以写成 `Variant(move value)` 或 `Variant { field: move local }`；struct payload pattern 会被 parser 以 object-like AST 保存。switch 节点同时保存 cases、可选 defaultCase、匹配表达式和 statement/expression 标记。variant 穷尽性、重复分支、不可达性和 move binding 合法性在 semantic/CFG 阶段检查。
+同一 switch 至多有一个 `()` default 分支，可以放在任意分支位置；重复 default 在 parser 阶段报错。
+
+union variant 的 move pattern 可以写成 `Variant(move value)` 或 `Variant { field: move local }`；struct payload pattern 会被 parser 以 object-like AST 保存。switch 节点同时保存 cases、可选 defaultCase、匹配表达式和 statement/expression 标记。variant 穷尽性、重复普通分支、不可达性和 move binding 合法性在 semantic/CFG 阶段检查。
 
 ## break、continue、return
 

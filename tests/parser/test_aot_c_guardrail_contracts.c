@@ -16,6 +16,8 @@
 
 #define ARRAY_COUNT(array_) (sizeof(array_) / sizeof((array_)[0]))
 
+#include "test_aot_c_scalar_call_proof_observation.h"
+
 /* 编译标量调用夹具，函数由生成文本 helper 释放。 */
 static SZrFunction *aot_c_guardrail_compile_source(SZrState *state,
                                                    const char *source,
@@ -181,6 +183,11 @@ static char *aot_c_guardrail_generate_c_text(const char *source,
     TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFileWithOptions(state, function, generatedCPath, &aotOptions));
 
     generatedCText = aot_c_guardrail_read_text_file_owned_or_fail(generatedCPath);
+
+    if (strcmp(projectDirectory, "typed_direct_scalar_guardrail_project") == 0 &&
+        strstr(generatedCText, "/* zr_aot_static_bool_two_arg_direct_call_sync_stack_slot */") != NULL) {
+        aot_c_guardrail_observe_scalar_call_proof(state, function);
+    }
 
     free(embeddedBlob);
     ZrCore_Function_Free(state, function);
@@ -569,6 +576,71 @@ static void test_aot_c_guardrail_generated_scalar_typed_thunk_bodies_keep_checke
     free(generatedCText);
 }
 
+static void test_aot_c_guardrail_checked_i64_add_keeps_typed_direct_call(void) {
+    static const char *const requiredTokens[] = {
+            "static TZrInt64 zr_aot_typed_i64_fn_1(struct SZrState *state,",
+            "return ZrCore_Integer_Add(state, zr_aot_arg0, zr_aot_arg1);",
+            "/* zr_aot_static_i64_two_arg_direct_call */",
+            "zr_aot_typed_i64_fn_1(state, zr_aot_s",
+    };
+    static const char *const forbiddenTokens[] = {
+            "/* zr_aot_static_i64_two_arg_direct_call_sync_stack_slot */",
+            "SZrTypeValue *zr_aot_typed_destination",
+            "ZR_VALUE_FAST_SET(zr_aot_typed_destination,",
+            "ZrLibrary_AotRuntime_CallStaticDirect(state,",
+            "ZrLibrary_AotRuntime_CallStackValue(state,",
+    };
+    static const char *const forbiddenBodyTokens[] = {
+            "zr_aot_begin_instruction",
+            "SZrCallInfo",
+            "frame.",
+            "state->stackTop",
+            "programCounter",
+            "publishAllInstructions",
+            "Debug_Hook",
+            "SZrTypeValue",
+            "->ownershipKind",
+            "ZR_VALUE_FAST_SET",
+            "ZrCore_Stack_GetValue(",
+            "ZrCore_Ownership_ReleaseValue",
+            "ZrLibrary_AotRuntime_",
+    };
+    const char *source =
+            "fn add_i64(left: int, right: int): int {\n"
+            "    return left + right;\n"
+            "}\n"
+            "var left: int = 19;\n"
+            "var right: int = 23;\n"
+            "return add_i64(left, right);\n";
+    int requiredFound[ARRAY_COUNT(requiredTokens)];
+    const char *forbiddenToken;
+    const char *forbiddenBodyToken;
+    char *generatedCText;
+    size_t index;
+
+    generatedCText = aot_c_guardrail_generate_c_text(source,
+                                                     "typed_direct_checked_i64_guardrail_project",
+                                                     "typed_direct_checked_i64_guardrail");
+    for (index = 0u; index < ARRAY_COUNT(requiredTokens); index++) {
+        requiredFound[index] = strstr(generatedCText, requiredTokens[index]) != NULL;
+    }
+    forbiddenToken = aot_c_guardrail_find_forbidden_token(generatedCText,
+                                                          forbiddenTokens,
+                                                          ARRAY_COUNT(forbiddenTokens));
+    forbiddenBodyToken = aot_c_guardrail_find_forbidden_token_in_function_body(
+            generatedCText,
+            "static TZrInt64 zr_aot_typed_i64_fn_",
+            forbiddenBodyTokens,
+            ARRAY_COUNT(forbiddenBodyTokens));
+    free(generatedCText);
+
+    for (index = 0u; index < ARRAY_COUNT(requiredTokens); index++) {
+        TEST_ASSERT_TRUE_MESSAGE(requiredFound[index], requiredTokens[index]);
+    }
+    TEST_ASSERT_NULL(forbiddenToken);
+    TEST_ASSERT_NULL(forbiddenBodyToken);
+}
+
 void setUp(void) {}
 
 /* BUG: 用例局部持有的 state、FILE 或文本在 Unity 断言跳出后无法由空 tearDown 回收。 */
@@ -582,5 +654,6 @@ int main(void) {
     RUN_TEST(test_aot_c_guardrail_rejects_vm_fallback_runtime_calls);
     RUN_TEST(test_aot_c_guardrail_generated_scalar_typed_direct_calls_stay_value_free);
     RUN_TEST(test_aot_c_guardrail_generated_scalar_typed_thunk_bodies_keep_checked_arithmetic);
+    RUN_TEST(test_aot_c_guardrail_checked_i64_add_keeps_typed_direct_call);
     return UNITY_END();
 }

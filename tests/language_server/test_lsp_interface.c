@@ -2841,8 +2841,8 @@ static void test_lsp_class_member_navigation_and_completion(SZrState *state) {
     SZrLspPosition bossHeroDefinition;
     SZrLspPosition totalUsage;
     SZrLspHover *totalHover = ZR_NULL;
-    SZrFileRange bossHeroDefinitionRange;
-    SZrFileRange bossHeroUsageRange;
+    SZrFileRange bossHeroDefinitionRange = {0};
+    SZrFileRange bossHeroUsageRange = {0};
     SZrParserSemanticSymbolQuery bossHeroDeclarationQuery;
     SZrParserSemanticSymbolQuery bossHeroUsageQuery;
     SZrSemanticAnalyzer *analyzer;
@@ -4685,8 +4685,8 @@ static void test_lsp_extern_function_navigation_and_signature_help(SZrState *sta
     SZrLspPosition signaturePosition;
     SZrLspPosition completionPosition;
     SZrSemanticAnalyzer *analyzer;
-    SZrFileRange firstCallQueryRange;
-    SZrFileRange secondCallQueryRange;
+    SZrFileRange firstCallQueryRange = {0};
+    SZrFileRange secondCallQueryRange = {0};
     SZrParserSemanticSymbolQuery firstCallSymbol;
     SZrParserSemanticSymbolQuery secondCallSymbol;
     SZrString *externName;
@@ -5900,7 +5900,7 @@ static void test_lsp_web_uri_local_symbol_navigation(SZrState *state) {
     SZrLspPosition definitionPosition;
     SZrLspPosition declarationPosition;
     SZrSemanticAnalyzer *analyzer;
-    SZrFileRange queryRange;
+    SZrFileRange queryRange = {0};
     SZrFilePosition declarationFilePosition;
     SZrParserSemanticSymbolQuery canonicalSymbol;
     TZrSize resolvedReadCount = 0U;

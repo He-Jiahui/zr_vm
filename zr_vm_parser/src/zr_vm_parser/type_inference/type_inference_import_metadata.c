@@ -8,6 +8,7 @@
 #include "type_inference_import_call_binding.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/io.h"
+#include "zr_vm_library/native_registry.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -879,6 +880,15 @@ static void import_add_function_member_from_symbol(SZrCompilerState *cs,
     memberInfo.isStatic = ZR_TRUE;
     memberInfo.parameterCount = symbol->parameterCount;
     memberInfo.returnTypeName = typed_type_ref_to_type_name(cs, &symbol->valueType);
+    if (!symbol->valueType.isArray &&
+            (ZR_VALUE_IS_TYPE_NULL(symbol->valueType.baseType) ||
+             ZR_VALUE_IS_TYPE_BOOL(symbol->valueType.baseType) ||
+             ZR_VALUE_IS_TYPE_NUMBER(symbol->valueType.baseType) ||
+             ZR_VALUE_IS_TYPE_STRING(symbol->valueType.baseType))) {
+        function_typed_type_ref_to_inferred(cs, &symbol->valueType,
+                &memberInfo.structuredReturnType);
+        memberInfo.hasStructuredReturnType = ZR_TRUE;
+    }
     memberInfo.ownerTypeName = modulePrototype->name;
     memberInfo.baseDefinitionOwnerTypeName = modulePrototype->name;
     memberInfo.baseDefinitionName = symbol->name;
@@ -945,6 +955,15 @@ static void import_add_function_member_from_io_symbol(SZrCompilerState *cs,
     memberInfo.isStatic = ZR_TRUE;
     memberInfo.parameterCount = (TZrUInt32)symbol->parameterCount;
     memberInfo.returnTypeName = io_typed_type_ref_to_type_name(cs, &symbol->valueType);
+    if (!symbol->valueType.isArray &&
+            (ZR_VALUE_IS_TYPE_NULL(symbol->valueType.baseType) ||
+             ZR_VALUE_IS_TYPE_BOOL(symbol->valueType.baseType) ||
+             ZR_VALUE_IS_TYPE_NUMBER(symbol->valueType.baseType) ||
+             ZR_VALUE_IS_TYPE_STRING(symbol->valueType.baseType))) {
+        io_typed_type_ref_to_inferred(cs, &symbol->valueType,
+                &memberInfo.structuredReturnType);
+        memberInfo.hasStructuredReturnType = ZR_TRUE;
+    }
     memberInfo.ownerTypeName = modulePrototype->name;
     memberInfo.baseDefinitionOwnerTypeName = modulePrototype->name;
     memberInfo.baseDefinitionName = symbol->name;
@@ -1905,6 +1924,15 @@ static TZrBool register_summary_import_metadata(SZrCompilerState *cs,
             memberInfo.isStatic = ZR_TRUE;
             memberInfo.parameterCount = exportInfo->parameterCount;
             memberInfo.returnTypeName = typed_type_ref_to_type_name(cs, &exportInfo->valueType);
+            if (!exportInfo->valueType.isArray &&
+                    (ZR_VALUE_IS_TYPE_NULL(exportInfo->valueType.baseType) ||
+                     ZR_VALUE_IS_TYPE_BOOL(exportInfo->valueType.baseType) ||
+                     ZR_VALUE_IS_TYPE_NUMBER(exportInfo->valueType.baseType) ||
+                     ZR_VALUE_IS_TYPE_STRING(exportInfo->valueType.baseType))) {
+                function_typed_type_ref_to_inferred(cs, &exportInfo->valueType,
+                        &memberInfo.structuredReturnType);
+                memberInfo.hasStructuredReturnType = ZR_TRUE;
+            }
             memberInfo.ownerTypeName = modulePrototype.name;
             memberInfo.baseDefinitionOwnerTypeName = modulePrototype.name;
             memberInfo.baseDefinitionName = exportInfo->name;
@@ -1982,8 +2010,16 @@ TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *modul
     }
 
     if (ensure_native_module_compile_info(cs, moduleName)) {
-        import_metadata_trace("ensure import compile info satisfied by native module");
-        return ZR_TRUE;
+        const SZrParserModuleInitSummary *summary =
+                ZrParser_ModuleInitAnalysis_FindSummary(cs->state->global, moduleName);
+        if (find_registered_type_prototype_inference_exact_only(cs, moduleName) != ZR_NULL ||
+                !import_compile_info_stack_contains(cs->state->global, moduleName) ||
+                summary == ZR_NULL || !summary->hasPrescan || summary->isBinary ||
+                ZrLibrary_NativeRegistry_FindModule(cs->state->global,
+                        import_metadata_string_text(moduleName)) != ZR_NULL) {
+            import_metadata_trace("ensure import compile info satisfied by native module");
+            return ZR_TRUE;
+        }
     }
 
     if (import_compile_info_stack_contains(cs->state->global, moduleName)) {

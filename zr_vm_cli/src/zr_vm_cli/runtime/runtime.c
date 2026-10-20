@@ -25,6 +25,10 @@
 #include "zr_vm_parser/compiler.h"
 
 #if defined(ZR_VM_CLI_HAS_DEBUG_AGENT)
+#include "zr_vm_lib_network/network.h"
+#endif
+
+#if defined(ZR_VM_CLI_HAS_DEBUG_AGENT)
 #include "zr_vm_lib_debug/coverage.h"
 #include "zr_vm_lib_debug/debug.h"
 #include "zr_vm_lib_debug/profile.h"
@@ -516,15 +520,17 @@ TZrBool ZrCli_Runtime_InjectProcessArguments(SZrState *state,
 #if defined(ZR_VM_CLI_HAS_DEBUG_AGENT)
 static void zr_cli_runtime_emit_debug_endpoint(SZrState *state,
                                                const SZrCliCommand *command,
-                                               ZrDebugAgent *agent) {
+                                               ZrDebugAgent *agent,
+                                               const TZrChar *authToken) {
     TZrChar endpoint[ZR_NETWORK_ENDPOINT_TEXT_CAPACITY];
 
-    if (command == ZR_NULL || !command->debugPrintEndpoint || agent == ZR_NULL) {
+    if (command == ZR_NULL || !command->debugPrintEndpoint || agent == ZR_NULL || authToken == ZR_NULL) {
         return;
     }
 
     if (ZrDebug_AgentGetEndpoint(agent, endpoint, sizeof(endpoint))) {
-        ZrCore_Log_Metaf(state, "debug_endpoint=%s\n", endpoint);
+        /* stdout is the private launcher handshake pipe; the extension redacts this complete line. */
+        ZrCore_Log_Metaf(state, "debug_endpoint=%s debug_token=%s\n", endpoint, authToken);
     }
 }
 #endif
@@ -1002,6 +1008,7 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
         ZrDebugAgentConfig debugConfig;
         ZrDebugAgent *debugAgent = ZR_NULL;
         TZrChar debugError[256];
+        TZrChar debugAuthToken[65];
         TZrBool ignoredFunction = ZR_FALSE;
 
         if (command->executionMode == ZR_CLI_EXECUTION_MODE_BINARY) {
@@ -1038,10 +1045,20 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
         }
 
         memset(&debugConfig, 0, sizeof(debugConfig));
+        if (!ZrNetwork_GenerateDebugToken(debugAuthToken, sizeof(debugAuthToken))) {
+            ZrCore_Log_Error(state, "failed to generate debug authentication token\n");
+            if (ignoredFunction) {
+                ZrCore_GarbageCollector_UnignoreObject(global, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
+            }
+            zr_cli_runtime_stop_profile(&profile, &profileStarted);
+            zr_cli_runtime_stop_coverage(&coverage, &coverageStarted);
+            ZrCli_Runtime_PreparedProject_Free(prepared);
+            return ZR_FALSE;
+        }
         debugConfig.address = command->debugAddress;
         debugConfig.suspend_on_start = command->debugWait;
         debugConfig.wait_for_client = command->debugWait;
-        debugConfig.auth_token = ZR_NULL;
+        debugConfig.auth_token = debugAuthToken;
         debugConfig.stop_on_uncaught_exception = ZR_TRUE;
 
         if (!ZrDebug_AgentStart(state,
@@ -1052,6 +1069,7 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
                                 debugError,
                                 sizeof(debugError))) {
             ZrCore_Log_Error(state, "failed to start debug agent: %s\n", debugError);
+            memset(debugAuthToken, 0, sizeof(debugAuthToken));
             if (ignoredFunction) {
                 ZrCore_GarbageCollector_UnignoreObject(global, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
             }
@@ -1062,13 +1080,14 @@ TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *pr
             return ZR_FALSE;
         }
 
-        zr_cli_runtime_emit_debug_endpoint(state, command, debugAgent);
+        zr_cli_runtime_emit_debug_endpoint(state, command, debugAgent, debugAuthToken);
         success = zr_cli_runtime_execute_function(state, entryFunction, &result);
         if (!success) {
             ZrDebug_NotifyException(debugAgent);
         }
         ZrDebug_NotifyTerminated(debugAgent, success);
         ZrDebug_AgentStop(debugAgent);
+        memset(debugAuthToken, 0, sizeof(debugAuthToken));
         if (ignoredFunction) {
             ZrCore_GarbageCollector_UnignoreObject(global, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
         }

@@ -116,6 +116,10 @@ SZrAstNode *try_parse_switch_struct_variant_payload_case(SZrParserState *ps, SZr
         ps->errorCallback = savedErrorCallback;
         ps->structuredErrorCallback = savedStructuredErrorCallback;
         ps->errorUserData = savedErrorUserData;
+        if (ps->hasFatalError) {
+            ZrParser_Ast_Free(ps->state, value);
+            return ZR_NULL;
+        }
         return value;
     }
 
@@ -127,10 +131,7 @@ SZrAstNode *try_parse_switch_struct_variant_payload_case(SZrParserState *ps, SZr
     ps->errorMessage = cursor.errorMessage;
 
     patternNode = append_primary_member(ps, value, objectNode, value->location);
-    if (patternNode == value) {
-        ZrParser_Ast_Free(ps->state, objectNode);
-    }
-    return patternNode != ZR_NULL ? patternNode : value;
+    return patternNode;
 }
 
 // 专用模式解析器使用此入口保留 move 标记，供后续所有权检查区分普通绑定。
@@ -149,8 +150,13 @@ static SZrAstNode *parse_switch_binding_identifier(SZrParserState *ps) {
 
     identifier = parse_identifier(ps);
     if (identifier != ZR_NULL && isMoveBinding) {
+        SZrFileRange bindingLocation;
+        if (!ZrParser_MergeLocations(ps, moveLocation, identifier->location, &bindingLocation)) {
+            ZrParser_Ast_Free(ps->state, identifier);
+            return ZR_NULL;
+        }
         identifier->data.identifier.isMoveBinding = ZR_TRUE;
-        identifier->location = ZrParser_FileRange_Merge(moveLocation, identifier->location);
+        identifier->location = bindingLocation;
     }
 
     return identifier;
@@ -173,7 +179,7 @@ static SZrAstNode *parse_switch_tuple_move_payload_pattern(SZrParserState *ps, T
 
     startLoc = get_current_token_location(ps);
     consume_token(ps, ZR_TK_LPAREN);
-    args = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
+    args = parser_ast_array_new(ps, ZR_PARSER_INITIAL_CAPACITY_TINY);
     if (args == ZR_NULL) {
         return ZR_NULL;
     }
@@ -188,7 +194,11 @@ static SZrAstNode *parse_switch_tuple_move_payload_pattern(SZrParserState *ps, T
             if (binding->data.identifier.isMoveBinding && outHasMoveBinding != ZR_NULL) {
                 *outHasMoveBinding = ZR_TRUE;
             }
-            ZrParser_AstNodeArray_Add(ps->state, args, binding);
+            if (!parser_ast_array_add(ps, args, binding)) {
+                ZrParser_Ast_Free(ps->state, binding);
+                free_ast_node_array_with_elements(ps->state, args);
+                return ZR_NULL;
+            }
 
             if (ps->lexer->t.token != ZR_TK_COMMA) {
                 break;
@@ -208,8 +218,9 @@ static SZrAstNode *parse_switch_tuple_move_payload_pattern(SZrParserState *ps, T
     endLoc = get_current_token_location(ps);
     consume_token(ps, ZR_TK_RPAREN);
 
-    callNode = create_ast_node(ps, ZR_AST_FUNCTION_CALL, ZrParser_FileRange_Merge(startLoc, endLoc));
-    if (callNode == ZR_NULL) {
+    SZrFileRange mergedLocation;
+    if (!ZrParser_MergeLocations(ps, startLoc, endLoc, &mergedLocation) ||
+        (callNode = create_ast_node(ps, ZR_AST_FUNCTION_CALL, mergedLocation)) == ZR_NULL) {
         free_ast_node_array_with_elements(ps->state, args);
         return ZR_NULL;
     }
@@ -236,7 +247,7 @@ static SZrAstNode *parse_switch_struct_move_payload_pattern(SZrParserState *ps, 
 
     startLoc = get_current_token_location(ps);
     consume_token(ps, ZR_TK_LBRACE);
-    properties = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
+    properties = parser_ast_array_new(ps, ZR_PARSER_INITIAL_CAPACITY_TINY);
     if (properties == ZR_NULL) {
         return ZR_NULL;
     }
@@ -262,9 +273,11 @@ static SZrAstNode *parse_switch_struct_move_payload_pattern(SZrParserState *ps, 
                 return ZR_NULL;
             }
         } else {
-            key = create_identifier_node_with_location(ps,
-                                                       first->data.identifier.name,
-                                                       first->location);
+            key = create_identifier_node_with_context(
+                    ps,
+                    first->data.identifier.name,
+                    first->location,
+                    first->data.identifier.syntaxContext);
             value = first;
             if (key == ZR_NULL) {
                 ZrParser_Ast_Free(ps->state, value);
@@ -277,7 +290,12 @@ static SZrAstNode *parse_switch_struct_move_payload_pattern(SZrParserState *ps, 
             *outHasMoveBinding = ZR_TRUE;
         }
 
-        kvLoc = ZrParser_FileRange_Merge(key->location, value->location);
+        if (!ZrParser_MergeLocations(ps, key->location, value->location, &kvLoc)) {
+            ZrParser_Ast_Free(ps->state, key);
+            ZrParser_Ast_Free(ps->state, value);
+            free_ast_node_array_with_elements(ps->state, properties);
+            return ZR_NULL;
+        }
         kvNode = create_ast_node(ps, ZR_AST_KEY_VALUE_PAIR, kvLoc);
         if (kvNode == ZR_NULL) {
             ZrParser_Ast_Free(ps->state, key);
@@ -288,7 +306,11 @@ static SZrAstNode *parse_switch_struct_move_payload_pattern(SZrParserState *ps, 
         kvNode->data.keyValuePair.key = key;
         kvNode->data.keyValuePair.value = value;
         kvNode->data.keyValuePair.keyIsComputed = ZR_FALSE;
-        ZrParser_AstNodeArray_Add(ps->state, properties, kvNode);
+        if (!parser_ast_array_add(ps, properties, kvNode)) {
+            ZrParser_Ast_Free(ps->state, kvNode);
+            free_ast_node_array_with_elements(ps->state, properties);
+            return ZR_NULL;
+        }
 
         if (ps->lexer->t.token == ZR_TK_COMMA || ps->lexer->t.token == ZR_TK_SEMICOLON) {
             ZrParser_Lexer_Next(ps->lexer);
@@ -308,8 +330,9 @@ static SZrAstNode *parse_switch_struct_move_payload_pattern(SZrParserState *ps, 
     }
     consume_token(ps, ZR_TK_RBRACE);
 
-    objectNode = create_ast_node(ps, ZR_AST_OBJECT_LITERAL, ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
-    if (objectNode == ZR_NULL) {
+    SZrFileRange mergedLocation;
+    if (!ZrParser_MergeLocations(ps, startLoc, get_current_location(ps), &mergedLocation) ||
+        (objectNode = create_ast_node(ps, ZR_AST_OBJECT_LITERAL, mergedLocation)) == ZR_NULL) {
         free_ast_node_array_with_elements(ps->state, properties);
         return ZR_NULL;
     }
@@ -366,6 +389,10 @@ SZrAstNode *try_parse_switch_move_variant_pattern_case(SZrParserState *ps) {
         memberNode->data.memberExpression.computed = ZR_FALSE;
         memberNode->data.memberExpression.accessMode = ZR_POSTFIX_ACCESS_DIRECT;
         base = append_primary_member(ps, base, memberNode, startLoc);
+        if (base == ZR_NULL) {
+            restore_parser_cursor(ps, &cursor);
+            return ZR_NULL;
+        }
     }
 
     if (ps->lexer->t.token != ZR_TK_LPAREN && ps->lexer->t.token != ZR_TK_LBRACE) {
@@ -391,6 +418,5 @@ SZrAstNode *try_parse_switch_move_variant_pattern_case(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    // BUG: append_primary_member 分配失败可原样返回 base；payloadNode 此时无人释放。
     return append_primary_member(ps, base, payloadNode, startLoc);
 }

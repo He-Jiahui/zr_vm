@@ -686,11 +686,14 @@ static void test_local_expression_query_returns_numeric_overflow_fact(SZrState *
 }
 
 /* 浮点表达式的范围与推断类型须一致，避免整数专用数值投影吞掉 double 事实。 */
+static SZrAstNode *local_scope_test_function_at(SZrAstNode *ast, TZrSize index);
+static SZrAstNode *local_scope_test_return_expression(SZrAstNode *functionNode);
+
 static void test_local_expression_query_returns_float_numeric_range_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Returns Float Numeric Range Fact";
     const TZrChar *uriText = "file:///local_float_numeric_range_fact.zr";
     const TZrChar *content =
-        "fn calc(): float {\n"
+        "fn calc(): f64 {\n"
         "    return 1.5 + 2.25;\n"
         "}\n";
     SZrTestTimer timer;
@@ -746,6 +749,69 @@ static void test_local_expression_query_returns_float_numeric_range_fact(SZrStat
                  query.numericFact != ZR_NULL ? query.numericFact->minDoubleValue : -1.0,
                  query.numericFact != ZR_NULL ? query.numericFact->maxDoubleValue : -1.0,
                  query.numericFact != ZR_NULL ? (int)query.numericFact->mayOverflow : -1);
+        {
+            SZrArray diagnostics = {0};
+            TZrBool collected = ZR_FALSE;
+            SZrSemanticAnalyzer *evidenceAnalyzer;
+            SZrFileVersion *evidenceVersion;
+            SZrAstNode *functionNode;
+            SZrAstNode *returnExpression;
+            SZrAstNode *returnName = ZR_NULL;
+            const SZrSemanticExpressionFact *expressionFact = ZR_NULL;
+            const char *returnNameText = "<missing>";
+
+            ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4U);
+            if (diagnostics.isValid) {
+                collected = ZrLanguageServer_Lsp_GetDiagnostics(
+                        state, context, uri, &diagnostics);
+            }
+            /* Reacquire snapshot/array borrows after the diagnostic request. */
+            evidenceAnalyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+            evidenceVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+            functionNode = evidenceVersion != ZR_NULL
+                    ? local_scope_test_function_at(evidenceVersion->ast, 0U) : ZR_NULL;
+            returnExpression = local_scope_test_return_expression(functionNode);
+            if (functionNode != ZR_NULL &&
+                functionNode->type == ZR_AST_FUNCTION_DECLARATION &&
+                functionNode->data.functionDeclaration.returnType != ZR_NULL) {
+                returnName = functionNode->data.functionDeclaration.returnType->name;
+            }
+            if (returnName != ZR_NULL && returnName->type == ZR_AST_IDENTIFIER_LITERAL &&
+                returnName->data.identifier.name != ZR_NULL) {
+                const char *nameText = ZrCore_String_GetNativeString(
+                        returnName->data.identifier.name);
+                returnNameText = nameText != ZR_NULL ? nameText : "<null>";
+            }
+            if (evidenceAnalyzer != ZR_NULL &&
+                evidenceAnalyzer->semanticContext != ZR_NULL &&
+                returnExpression != ZR_NULL) {
+                expressionFact = ZrParser_SemanticFacts_FindExpressionByNode(
+                        evidenceAnalyzer->semanticContext, returnExpression);
+            }
+            printf("Evidence - LocalFloatFixture: diagnosticsOk=%d count=%zu version=%zu parserDiagnostics=%zu analyzer=%p ast=%p returnType=%s typeNode=%p returnExpr=%p exprFact=%p exprType=%d nameOwner=%p exprOwner=%p\n",
+                   (int)collected, (size_t)diagnostics.length,
+                   evidenceVersion != ZR_NULL ? (size_t)evidenceVersion->version : 0U,
+                   evidenceVersion != ZR_NULL ? (size_t)evidenceVersion->parserDiagnostics.length : 0U,
+                   (void *)evidenceAnalyzer,
+                   evidenceVersion != ZR_NULL ? (void *)evidenceVersion->ast : ZR_NULL,
+                   returnNameText, (void *)returnName, (void *)returnExpression,
+                   (const void *)expressionFact,
+                   expressionFact != ZR_NULL ? (int)expressionFact->inferredType.baseType : -1,
+                   returnName != ZR_NULL ? (void *)returnName->ownership : ZR_NULL,
+                   returnExpression != ZR_NULL ? (void *)returnExpression->ownership : ZR_NULL);
+            for (TZrSize index = 0U; index < diagnostics.length; index++) {
+                SZrLspDiagnostic **item =
+                        (SZrLspDiagnostic **)ZrCore_Array_Get(&diagnostics, index);
+                if (item != ZR_NULL && *item != ZR_NULL) {
+                    const char *message = (*item)->message != ZR_NULL
+                            ? ZrCore_String_GetNativeString((*item)->message) : ZR_NULL;
+                    printf("Evidence - LocalFloatDiagnostic[%zu]: severity=%d message=%s\n",
+                           (size_t)index, (int)(*item)->severity,
+                           message != ZR_NULL ? message : "<missing>");
+                }
+            }
+            ZrLanguageServer_Lsp_FreeDiagnostics(state, &diagnostics);
+        }
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer, summary, reason);
         return;
@@ -1753,6 +1819,7 @@ int main(void) {
     test_inferred_method_body_edit_invalidates_resolved_direct_caller(state);
     TEST_DIVIDER();
     test_completion_reuses_published_snapshot_without_reanalysis(state);
+    test_completion_reads_canonical_snapshot_twice(state);
     TEST_DIVIDER();
     test_analysis_root_resolver_rejects_non_callable_wrappers(state);
     TEST_DIVIDER();

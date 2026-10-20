@@ -3,6 +3,9 @@
 //
 
 #include "compiler/compiler_internal.h"
+#include "compiler/compiler_type_prototype_lifecycle.h"
+#include "compiler/compiler_type_prototype_lookup.h"
+#include "compiler/compiler_type_field.h"
 #include "compiler/expression/compile_expression_internal.h"
 #include "compiler/compile_time/compile_time_executor_internal.h"
 #include "type_inference/cfg/cfg_internal.h"
@@ -920,7 +923,24 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                             ? extract_type_name_string(cs, &inheritType->data.type)
                             : ZR_NULL;
             if (inheritTypeName != ZR_NULL) {
-                SZrTypePrototypeInfo *inheritPrototype = find_compiler_type_prototype(cs, inheritTypeName);
+                SZrTypePrototypeInfo *inheritPrototype = ZR_NULL;
+                SZrTypePrototypeInfo inheritSnapshot;
+
+                if (!compiler_resolve_type_annotation_prototype(cs,
+                            &inheritType->data.type, inheritTypeName, &inheritPrototype)) {
+                    if (!cs->hasError) {
+                        ZrParser_Compiler_Error(cs, "Failed to resolve class base type", inheritType->location);
+                    }
+                    compiler_type_prototype_free_owned_metadata(cs->state, &info);
+                    cs->currentTypeName = oldTypeName;
+                    cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                    cs->currentTypeNode = oldTypeNode;
+                    return;
+                }
+                if (inheritPrototype != ZR_NULL) {
+                    inheritSnapshot = *inheritPrototype;
+                    inheritPrototype = &inheritSnapshot;
+                }
                 if (inheritPrototype != ZR_NULL && inheritPrototype->type == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE) {
                     ZrCore_Array_Push(cs->state, &info.implements, &inheritTypeName);
                 }
@@ -932,6 +952,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                              cs, node, inheritPrototype, ZR_TRUE))) {
                     ZrParser_Compiler_Error(
                             cs, "Failed to publish resolved class type relation", node->location);
+                    compiler_type_prototype_free_owned_metadata(cs->state, &info);
                     cs->currentTypeName = oldTypeName;
                     cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
                     cs->currentTypeNode = oldTypeNode;
@@ -983,6 +1004,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 }
 
             if (!compiler_test_validate_non_module_roles(cs, member)) {
+                compiler_type_prototype_free_owned_metadata(cs->state, &info);
                 cs->currentTypeName = oldTypeName;
                 cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
                 cs->currentTypeNode = oldTypeNode;
@@ -999,6 +1021,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                             ZR_COMPILER_PROPERTY_CONTAINER_CLASS,
                             (TZrUInt32)i,
                             ZR_TRUE)) {
+                    compiler_type_prototype_free_owned_metadata(cs->state, &info);
                     cs->currentTypeName = oldTypeName;
                     cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
                     cs->currentTypeNode = oldTypeNode;
@@ -1011,6 +1034,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         cs,
                         "legacy property accessor syntax is not a semantic source",
                         member->location);
+                compiler_type_prototype_free_owned_metadata(cs->state, &info);
                 cs->currentTypeName = oldTypeName;
                 cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
                 cs->currentTypeNode = oldTypeNode;
@@ -1079,6 +1103,15 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         const SZrType *intrinsicGcBridgeInnerType = ZR_NULL;
                         memberInfo.fieldType = field->typeInfo;
                         memberInfo.fieldTypeName = extract_type_name_string(cs, field->typeInfo);
+                        if (!compiler_type_field_capture_annotation(
+                                    cs, &memberInfo, field->typeInfo)) {
+                            compiler_type_member_free_owned_metadata(cs->state, &memberInfo);
+                            compiler_type_prototype_free_owned_metadata(cs->state, &info);
+                            cs->currentTypeName = oldTypeName;
+                            cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
+                            cs->currentTypeNode = oldTypeNode;
+                            return;
+                        }
                         memberInfo.ownershipQualifier = field->typeInfo->ownershipQualifier;
                         if (ZrParser_AstType_TryUnwrapOwnershipGeneric(field->typeInfo,
                                                                        &intrinsicOwnershipQualifier,
@@ -1098,6 +1131,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     } else if (field->init != ZR_NULL) {
                         // 没有类型注解，从初始值推断类型
                         SZrInferredType inferredType;
+                        ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
                         if (ZrParser_ExpressionType_Infer(cs, field->init, &inferredType)) {
                             memberInfo.fieldTypeName = get_type_name_from_inferred_type(cs, &inferredType);
                             memberInfo.ownershipQualifier = inferredType.ownershipQualifier;
@@ -1121,8 +1155,10 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                     memberInfo.fieldSize = sizeof(TZrPtr); // 指针大小
                                     break;
                             }
+                            compiler_type_field_move_inferred_type(cs, &memberInfo, &inferredType);
                             ZrParser_InferredType_Free(cs->state, &inferredType);
                         } else {
+                            ZrParser_InferredType_Free(cs->state, &inferredType);
                             // 类型推断失败，默认为object类型
                             memberInfo.fieldTypeName = ZrCore_String_CreateFromNative(cs->state, "object");
                             memberInfo.fieldSize = sizeof(TZrPtr);
@@ -1177,6 +1213,8 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                                               method->returnType == ZR_NULL ? &inferredReturnTypeName
                                                                                             : ZR_NULL);
                         if (compiledMethod == ZR_NULL) {
+                            compiler_type_member_free_owned_metadata(cs->state, &memberInfo);
+                            compiler_type_prototype_free_owned_metadata(cs->state, &info);
                             cs->currentTypeName = oldTypeName;
                             cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
                             cs->currentTypeNode = oldTypeNode;
@@ -1216,6 +1254,8 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                 cs,
                                 "Resource Drop body must be non-throwing",
                                 metaFunc->body != ZR_NULL ? metaFunc->body->location : member->location);
+                        compiler_type_member_free_owned_metadata(cs->state, &memberInfo);
+                        compiler_type_prototype_free_owned_metadata(cs->state, &info);
                         cs->currentTypeName = oldTypeName;
                         cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
                         cs->currentTypeNode = oldTypeNode;
@@ -1243,6 +1283,8 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                                                       ? &inferredReturnTypeName
                                                                       : ZR_NULL);
                         if (compiledMeta == ZR_NULL) {
+                            compiler_type_member_free_owned_metadata(cs->state, &memberInfo);
+                            compiler_type_prototype_free_owned_metadata(cs->state, &info);
                             cs->currentTypeName = oldTypeName;
                             cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
                             cs->currentTypeNode = oldTypeNode;
@@ -1277,6 +1319,8 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                            ? member->data.classMethod.decorators
                                            : member->data.classProperty.decorators),
                         &memberInfo)) {
+                compiler_type_member_free_owned_metadata(cs->state, &memberInfo);
+                compiler_type_prototype_free_owned_metadata(cs->state, &info);
                 cs->currentTypeName = oldTypeName;
                 cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
                 cs->currentTypeNode = oldTypeNode;
@@ -1298,6 +1342,8 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                            : ZR_PARSER_ATTRIBUTE_TARGET_PROPERTY),
                         &memberInfo,
                         member->location)) {
+                compiler_type_member_free_owned_metadata(cs->state, &memberInfo);
+                compiler_type_prototype_free_owned_metadata(cs->state, &info);
                 cs->currentTypeName = oldTypeName;
                 cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
                 cs->currentTypeNode = oldTypeNode;
@@ -1314,6 +1360,8 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                             cs,
                             "Failed to register canonical class member symbol",
                             member->location);
+                    compiler_type_member_free_owned_metadata(cs->state, &memberInfo);
+                    compiler_type_prototype_free_owned_metadata(cs->state, &info);
                     cs->currentTypeName = oldTypeName;
                     cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
                     cs->currentTypeNode = oldTypeNode;
@@ -1327,6 +1375,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     compiler_type_members_restore_declaration_order(&info.members);
 
     if (!ZrParser_Compiler_ApplyCompileTimeTypeDecorators(cs, node, classDecl->decorators, &info)) {
+        compiler_type_prototype_free_owned_metadata(cs->state, &info);
         cs->currentTypeName = oldTypeName;
         cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
         cs->currentTypeNode = oldTypeNode;
@@ -1334,6 +1383,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     }
     if (!ZrParser_Metadata_ApplyTypeAttributes(
                 cs, classDecl->decorators, &info, node->location)) {
+        compiler_type_prototype_free_owned_metadata(cs->state, &info);
         cs->currentTypeName = oldTypeName;
         cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
         cs->currentTypeNode = oldTypeNode;
@@ -1348,6 +1398,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     if (compiler_class_has_modifier(&info, ZR_DECLARATION_MODIFIER_ABSTRACT) &&
         compiler_class_has_modifier(&info, ZR_DECLARATION_MODIFIER_FINAL)) {
         ZrParser_Compiler_Error(cs, "abstract final class is not allowed", node->location);
+        compiler_type_prototype_free_owned_metadata(cs->state, &info);
         cs->currentTypeName = oldTypeName;
         cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
         cs->currentTypeNode = oldTypeNode;
@@ -1359,6 +1410,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         if (superPrototype != ZR_NULL &&
             compiler_class_has_modifier(superPrototype, ZR_DECLARATION_MODIFIER_FINAL)) {
             ZrParser_Compiler_Error(cs, "Cannot inherit from a final class", node->location);
+            compiler_type_prototype_free_owned_metadata(cs->state, &info);
             cs->currentTypeName = oldTypeName;
             cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
             cs->currentTypeNode = oldTypeNode;
@@ -1376,6 +1428,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                                                    &info,
                                                                    memberInfo,
                                                                    memberInfo->declarationNode->location)) {
+                compiler_type_prototype_free_owned_metadata(cs->state, &info);
                 cs->currentTypeName = oldTypeName;
                 cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
                 cs->currentTypeNode = oldTypeNode;
@@ -1391,6 +1444,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         }
 
         if (!compiler_class_validate_required_members_recursive(cs, &info, *inheritNamePtr, 0)) {
+            compiler_type_prototype_free_owned_metadata(cs->state, &info);
             cs->currentTypeName = oldTypeName;
             cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
             cs->currentTypeNode = oldTypeNode;
@@ -1399,6 +1453,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     if (!compiler_class_validate_interface_const_fields(cs, node)) {
+        compiler_type_prototype_free_owned_metadata(cs->state, &info);
         cs->currentTypeName = oldTypeName;
         cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
         cs->currentTypeNode = oldTypeNode;
@@ -1406,6 +1461,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     if (!compiler_class_apply_builtin_ffi_wrapper_decorators(cs, node, &info)) {
+        compiler_type_prototype_free_owned_metadata(cs->state, &info);
         cs->currentTypeName = oldTypeName;
         cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
         cs->currentTypeNode = oldTypeNode;

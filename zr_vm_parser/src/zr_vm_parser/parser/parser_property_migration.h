@@ -15,6 +15,7 @@ typedef struct SZrLegacyPropertyMigrationEntry {
 typedef struct SZrLegacyPropertyMigrationCollection {
     SZrArray entries;
     TZrUInt32 nextMemberOrdinal;
+    TZrBool resourceFailure;
 } SZrLegacyPropertyMigrationCollection;
 
 /** @brief 为一次 class/interface 成员扫描准备旧属性诊断收集器。
@@ -25,7 +26,7 @@ void parser_property_migration_collection_init(
 
 /** @brief 暂存一个旧式 getter/setter AST，供相邻配对与替换建议使用。
  * @return 成功时收集器接管 declaration；失败时调用方仍负责释放。
- * @note BUG: 当前底层数组分配失败不总能被此返回值反映，见实现处的 OOM 标记。 */
+ *        首次 append 才分配收集器存储，并从 declaration 的 parser owner 计费。 */
 TZrBool parser_property_migration_collection_append(
         SZrState *state,
         SZrLegacyPropertyMigrationCollection *collection,
@@ -37,7 +38,7 @@ void parser_property_migration_collection_mark_current_member(
 
 /** @brief 发布旧属性的结构化迁移诊断并释放所有暂存节点。
  * @pre 必须在 class/interface 成员循环结束、解析器源文本仍有效时调用。 */
-void parser_property_migration_collection_publish_and_free(
+TZrBool parser_property_migration_collection_publish_and_free(
         SZrParserState *ps,
         SZrLegacyPropertyMigrationCollection *collection);
 

@@ -14,6 +14,8 @@
 #include "type_inference_reflection_surface.h"
 #include "type_inference_semantic_facts.h"
 #include "type_inference_call_diagnostics.h"
+#include "type_inference_nominal_member.h"
+#include "type_inference_function_type.h"
 #include "zr_vm_parser/ast.h"
 
 #include "zr_vm_core/array.h"
@@ -2201,7 +2203,10 @@ static TZrBool inferred_type_from_member_access(SZrCompilerState *cs,
                     cs, memberInfo->fieldTypeName, result);
         case ZR_AST_STRUCT_FIELD:
         case ZR_AST_CLASS_FIELD:
-            if (!inferred_type_from_type_name(cs, memberInfo->fieldTypeName, result)) {
+            if (memberInfo->hasStructuredReturnType) {
+                ZrParser_InferredType_Copy(
+                        cs->state, result, &memberInfo->structuredReturnType);
+            } else if (!inferred_type_from_type_name(cs, memberInfo->fieldTypeName, result)) {
                 return ZR_FALSE;
             }
             result->ownershipQualifier = memberInfo->ownershipQualifier;
@@ -4202,8 +4207,8 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                 }
 
                 if (nextIsFunctionCall) {
-                    if (!find_compiler_type_member_call_inference(cs,
-                                                                  currentType.typeName,
+                    if (!type_inference_find_receiver_member_call(cs,
+                                                                  &currentType,
                                                                   memberLookupName,
                                                                   &members->nodes[i + 1]->data.functionCall,
                                                                   members->nodes[i + 1]->location,
@@ -4212,7 +4217,7 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                         return ZR_FALSE;
                     }
                 } else {
-                    memberInfo = find_compiler_type_member_inference(cs, currentType.typeName, memberLookupName);
+                    memberInfo = type_inference_find_receiver_member(cs, &currentType, memberLookupName);
                 }
                 if (memberInfo == ZR_NULL) {
                     if (currentType.typeName != ZR_NULL &&
@@ -4226,8 +4231,8 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                     }
                     type_inference_ensure_imported_module_runtime_metadata(cs, currentType.typeName);
                     if (nextIsFunctionCall) {
-                        if (!find_compiler_type_member_call_inference(cs,
-                                                                      currentType.typeName,
+                        if (!type_inference_find_receiver_member_call(cs,
+                                                                      &currentType,
                                                                       memberLookupName,
                                                                       &members->nodes[i + 1]->data.functionCall,
                                                                       members->nodes[i + 1]->location,
@@ -4236,7 +4241,7 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                             return ZR_FALSE;
                         }
                     } else {
-                        memberInfo = find_compiler_type_member_inference(cs, currentType.typeName, memberLookupName);
+                        memberInfo = type_inference_find_receiver_member(cs, &currentType, memberLookupName);
                     }
                 }
                 if (memberInfo == ZR_NULL) {
@@ -4294,7 +4299,34 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                 }
 
                 ZrParser_InferredType_Init(cs->state, &nextType, ZR_VALUE_TYPE_OBJECT);
-                if (nextIsFunctionCall) {
+                if (nextIsFunctionCall && type_inference_function_field_type(memberInfo) != ZR_NULL) {
+                    SZrResolvedCallSignature signature = {0};
+                    SZrTypeMemberInfo callable = {0};
+                    TZrBool valid = type_inference_infer_function_type_signature(
+                            cs, type_inference_function_field_type(memberInfo),
+                            &signature.parameterTypes, &signature.parameterPassingModes, &signature.returnType);
+                    callable.name = memberInfo->name;
+                    callable.parameterCount = (TZrUInt32)signature.parameterTypes.length;
+                    callable.minArgumentCount = callable.parameterCount;
+                    if (valid) {
+                        valid = validate_member_call_arguments(
+                                cs, &callable, &signature, &members->nodes[i + 1]->data.functionCall,
+                                members->nodes[i + 1]->location);
+                    }
+                    if (!valid) {
+                        free_resolved_call_signature(cs->state, &signature);
+                        ZrParser_InferredType_Free(cs->state, &currentType);
+                        ZrParser_InferredType_Free(cs->state, &nextType);
+                        return ZR_FALSE;
+                    }
+                    type_inference_record_resolved_member_reference_fact(
+                            cs, memberNode, memberInfo, &memberInfo->structuredReturnType,
+                            ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS);
+                    ZrParser_InferredType_Copy(cs->state, &nextType, &signature.returnType);
+                    free_resolved_call_signature(cs->state, &signature);
+                    i++;
+                    nextIsPrototypeReference = ZR_FALSE;
+                } else if (nextIsFunctionCall) {
                     SZrResolvedCallSignature resolvedMemberSignature;
                     TZrChar genericDiagnostic[ZR_PARSER_ERROR_BUFFER_LENGTH];
                     TZrBool ffiHandled = ZR_FALSE;

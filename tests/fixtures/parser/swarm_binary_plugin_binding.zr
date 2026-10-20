@@ -1,0 +1,3 @@
+let probe = import("zr.swarmprobe");
+if (probe.value() != 42 || probe.value() != 42) { throw "plugin binding result"; }
+return 42;

@@ -1,6 +1,7 @@
 #include "compiler_typed_call_binding.h"
 
 #include "zr_vm_parser/canonical_type.h"
+#include "type_inference/type_environment_callable_internal.h"
 
 void compiler_typed_call_use_generic_dispatch(SZrFunction *function, TZrUInt32 instructionIndex) {
     TZrInstruction *instruction;
@@ -23,8 +24,8 @@ void compiler_typed_call_use_generic_dispatch(SZrFunction *function, TZrUInt32 i
     }
 }
 
-TZrBool compiler_register_typed_callable_parameter(SZrCompilerState *compiler,
-        SZrString *name, SZrType *type) {
+TZrBool compiler_register_typed_callable_annotation(SZrCompilerState *compiler,
+        SZrString *name, SZrType *type, SZrSyntaxContext syntaxContext) {
     SZrResolvedCallSignature signature;
     SZrFunctionType *functionType;
     TZrBool valid = ZR_FALSE;
@@ -55,9 +56,46 @@ TZrBool compiler_register_typed_callable_parameter(SZrCompilerState *compiler,
         ZrCore_Array_Push(compiler->state, &signature.parameterTypes, &parameterType);
         ZrCore_Array_Push(compiler->state, &signature.parameterPassingModes, &mode);
     }
-    valid = ZrParser_TypeEnvironment_RegisterCallableValueFunction(compiler->state, compiler->typeEnv,
+    for (TZrSize index = 0U; index < compiler->typeEnv->functionReturnTypes.length; index++) {
+        SZrFunctionTypeInfo **entry = ZrCore_Array_Get(
+                &compiler->typeEnv->functionReturnTypes, index);
+        SZrFunctionTypeInfo *existing = entry != ZR_NULL ? *entry : ZR_NULL;
+        TZrBool modesMatch = ZR_TRUE;
+        TZrBool contextEqual;
+
+        if (existing == ZR_NULL || !existing->isCallableValueBinding ||
+            existing->name == ZR_NULL || !ZrCore_String_Equal(existing->name, name)) {
+            continue;
+        }
+        if (!type_environment_callable_context_equal(
+                    existing->syntaxContext, syntaxContext, ZR_TRUE, &contextEqual)) {
+            goto cleanup;
+        }
+        if (!contextEqual ||
+            !type_environment_callable_matches_signature(
+                    existing, &signature.returnType, &signature.parameterTypes) ||
+            existing->parameterPassingModes.length != signature.parameterPassingModes.length) {
+            continue;
+        }
+        for (TZrSize parameter = 0U; parameter < signature.parameterPassingModes.length; parameter++) {
+            const EZrParameterPassingMode *left = ZrCore_Array_Get(
+                    &existing->parameterPassingModes, parameter);
+            const EZrParameterPassingMode *right = ZrCore_Array_Get(
+                    &signature.parameterPassingModes, parameter);
+
+            if (left == ZR_NULL || right == ZR_NULL || *left != *right) {
+                modesMatch = ZR_FALSE;
+                break;
+            }
+        }
+        if (modesMatch) {
+            valid = ZR_TRUE;
+            goto cleanup;
+        }
+    }
+    valid = ZrParser_TypeEnvironment_RegisterCallableValueFunctionWithContext(compiler->state, compiler->typeEnv,
             name, &signature.returnType, &signature.parameterTypes, ZR_NULL,
-            &signature.parameterPassingModes, ZR_NULL);
+            &signature.parameterPassingModes, ZR_NULL, syntaxContext);
 cleanup:
     for (TZrSize index = 0u; index < signature.parameterTypes.length; ++index)
         ZrParser_InferredType_Free(compiler->state, ZrCore_Array_Get(&signature.parameterTypes, index));
@@ -112,11 +150,13 @@ static TZrBool typed_value_type(SZrCompilerState *compiler, TZrTypeId typeId,
 }
 
 TZrBool compiler_resolve_typed_callable_value(SZrCompilerState *compiler,
-        SZrString *name, SZrResolvedCallSignature *signature, SZrFileRange location) {
+        SZrString *name, SZrSyntaxContext syntaxContext,
+        SZrResolvedCallSignature *signature, SZrFileRange location) {
     const SZrTypeBinding *binding;
     const SZrCanonicalTypeNode *node;
     if (compiler->typeEnv == ZR_NULL || compiler->typeEnv->semanticContext == ZR_NULL) return ZR_FALSE;
-    binding = ZrParser_TypeEnvironment_FindVariableBinding(compiler->typeEnv, name);
+    binding = ZrParser_TypeEnvironment_FindVariableBindingWithContext(
+            compiler->typeEnv, name, syntaxContext);
     if (binding == ZR_NULL) return ZR_FALSE;
     node = ZrParser_CanonicalType_Find(compiler->typeEnv->semanticContext, binding->typeId);
     if (node == ZR_NULL || node->kind != ZR_CANONICAL_TYPE_FUNCTION) return ZR_FALSE;

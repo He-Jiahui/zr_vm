@@ -315,6 +315,10 @@ static void test_typed_native_import_member_binary_roundtrip(void) {
     remove(path);
 }
 
+#include "test_typed_call_binding_imported_returns.inc"
+#include "test_typed_call_binding_cyclic_returns.inc"
+#include "test_typed_call_binding_member_semantics.inc"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_typed_parameter_is_signature_bound);
@@ -329,5 +333,17 @@ int main(void) {
     RUN_TEST(test_typed_signature_record_tampering_is_rejected);
     RUN_TEST(test_typed_binary_roundtrip_retains_signature_without_target);
     RUN_TEST(test_typed_native_import_member_binary_roundtrip);
+    RUN_TEST(test_imported_primitive_return_matches_live_typed_call);
+    RUN_TEST(test_imported_nominal_return_keeps_provider_identity);
+    RUN_TEST(test_imported_closed_generic_return_keeps_canonical_arguments);
+    RUN_TEST(test_imported_width_return_keeps_provider_spelling);
+    RUN_TEST(test_imported_binary_primitive_return_matches_live_typed_call);
+    RUN_TEST(test_cyclic_summary_primitive_return_matches_live_typed_call);
+    RUN_TEST(test_imported_callable_local_keeps_canonical_identity);
+    RUN_TEST(test_imported_noncallable_local_keeps_primitive_type);
+    RUN_TEST(test_imported_callable_shape_respects_lexical_shadowing);
+    RUN_TEST(test_explicit_callable_arity_mismatch_is_not_refined);
+    RUN_TEST(test_callable_binding_survives_statement_block_shadow);
+    RUN_TEST(test_callable_binding_survives_failed_block_expression_shadow);
     return UNITY_END();
 }

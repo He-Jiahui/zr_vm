@@ -142,6 +142,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyOpen(SZrState *sta
         return ZR_FALSE;
     }
 
+    fixLocation = ZrParser_FileRange_WithoutEvidence(fixLocation);
     fixLocation.end = fixLocation.start;
     if (!ZrParser_StructuredDiagnostic_AddFix(
                 state,
@@ -192,6 +193,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyClose(SZrState *st
         return ZR_FALSE;
     }
 
+    fixLocation = ZrParser_FileRange_WithoutEvidence(fixLocation);
     fixLocation.end = fixLocation.start;
     if (!ZrParser_StructuredDiagnostic_AddFix(
                 state,
@@ -242,6 +244,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingStatementBodyOpen(SZrState *state
         return ZR_FALSE;
     }
 
+    fixLocation = ZrParser_FileRange_WithoutEvidence(fixLocation);
     fixLocation.end = fixLocation.start;
     if (!ZrParser_StructuredDiagnostic_AddFix(
                 state,
@@ -272,6 +275,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingBlockClose(SZrState *state,
         return ZR_FALSE;
     }
 
+    fixLocation = ZrParser_FileRange_WithoutEvidence(fixLocation);
     fixLocation.end = fixLocation.start;
     if (!ZrParser_StructuredDiagnostic_AddFix(
                 state,
@@ -302,6 +306,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingCatchPatternClose(SZrState *state
         return ZR_FALSE;
     }
 
+    fixLocation = ZrParser_FileRange_WithoutEvidence(fixLocation);
     fixLocation.end = fixLocation.start;
     if (!ZrParser_StructuredDiagnostic_AddFix(
                 state,
@@ -332,6 +337,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingUsingResourceClose(SZrState *stat
         return ZR_FALSE;
     }
 
+    fixLocation = ZrParser_FileRange_WithoutEvidence(fixLocation);
     fixLocation.end = fixLocation.start;
     if (!ZrParser_StructuredDiagnostic_AddFix(
                 state,
@@ -369,6 +375,7 @@ static TZrBool build_missing_header_fix(SZrState *state,
         return ZR_FALSE;
     }
 
+    fixLocation = ZrParser_FileRange_WithoutEvidence(fixLocation);
     fixLocation.end = fixLocation.start;
     if (!ZrParser_StructuredDiagnostic_AddFix(
                 state,
@@ -530,6 +537,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionClose(SZrState *state,
         return ZR_FALSE;
     }
 
+    fixLocation = ZrParser_FileRange_WithoutEvidence(fixLocation);
     fixLocation.end = fixLocation.start;
     if (!ZrParser_StructuredDiagnostic_AddFix(
                 state,
@@ -561,6 +569,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingIndexClose(SZrState *state,
         return ZR_FALSE;
     }
 
+    fixLocation = ZrParser_FileRange_WithoutEvidence(fixLocation);
     fixLocation.end = fixLocation.start;
     if (!ZrParser_StructuredDiagnostic_AddFix(
                 state,
@@ -591,6 +600,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingCallClose(SZrState *state,
         return ZR_FALSE;
     }
 
+    fixLocation = ZrParser_FileRange_WithoutEvidence(fixLocation);
     fixLocation.end = fixLocation.start;
     if (!ZrParser_StructuredDiagnostic_AddFix(
                 state,
@@ -623,6 +633,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingParameterListClose(SZrState *stat
     }
 
     fixLocation = location;
+    fixLocation = ZrParser_FileRange_WithoutEvidence(fixLocation);
     fixLocation.end = fixLocation.start;
     if (!ZrParser_StructuredDiagnostic_AddFix(
                 state,
@@ -653,6 +664,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingGroupClose(SZrState *state,
         return ZR_FALSE;
     }
 
+    fixLocation = ZrParser_FileRange_WithoutEvidence(fixLocation);
     fixLocation.end = fixLocation.start;
     if (!ZrParser_StructuredDiagnostic_AddFix(
                 state,
@@ -683,6 +695,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingArrayClose(SZrState *state,
         return ZR_FALSE;
     }
 
+    fixLocation = ZrParser_FileRange_WithoutEvidence(fixLocation);
     fixLocation.end = fixLocation.start;
     if (!ZrParser_StructuredDiagnostic_AddFix(
                 state,
@@ -715,6 +728,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingArrayElementSeparator(SZrState *s
         return ZR_FALSE;
     }
 
+    fixLocation = ZrParser_FileRange_WithoutEvidence(fixLocation);
     fixLocation.end = fixLocation.start;
     if (!ZrParser_StructuredDiagnostic_AddFix(
                 state,
@@ -745,6 +759,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingObjectClose(SZrState *state,
         return ZR_FALSE;
     }
 
+    fixLocation = ZrParser_FileRange_WithoutEvidence(fixLocation);
     fixLocation.end = fixLocation.start;
     if (!ZrParser_StructuredDiagnostic_AddFix(
                 state,
@@ -775,6 +790,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingObjectComputedKeyClose(SZrState *
         return ZR_FALSE;
     }
 
+    fixLocation = ZrParser_FileRange_WithoutEvidence(fixLocation);
     fixLocation.end = fixLocation.start;
     if (!ZrParser_StructuredDiagnostic_AddFix(
                 state,
@@ -804,6 +820,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingObjectPropertyColon(SZrState *sta
         return ZR_FALSE;
     }
 
+    location = ZrParser_FileRange_WithoutEvidence(location);
     location.end = location.start;
     if (!ZrParser_StructuredDiagnostic_AddFix(
                 state,
@@ -833,6 +850,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingObjectPropertySeparator(SZrState 
         return ZR_FALSE;
     }
 
+    location = ZrParser_FileRange_WithoutEvidence(location);
     location.end = location.start;
     if (!ZrParser_StructuredDiagnostic_AddFix(
                 state,
@@ -883,6 +901,7 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingStatementSemicolon(SZrState *stat
         return ZR_FALSE;
     }
 
+    fixLocation = ZrParser_FileRange_WithoutEvidence(fixLocation);
     fixLocation.end = fixLocation.start;
     if (!ZrParser_StructuredDiagnostic_AddFix(
                 state,

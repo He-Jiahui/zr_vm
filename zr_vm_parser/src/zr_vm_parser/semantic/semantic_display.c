@@ -145,9 +145,9 @@ static TZrBool semantic_display_ranges_equal(
 
 /**
  * @brief 为推导得到的规范类型保存一个源码位置的可选拼写，不改变类型身份。
- * @pre 输入字符串在复制期间有效；context 的原生事实容器已成功初始化。
+ * @pre 来源字符串及 native evidence 的 AST owner 在事实存续期有效；原生事实容器已成功初始化。
  * @return 首次或同键同文发布返回 true；无效输入、冲突或可报告复制失败返回 false。
- * @note 来源与别名字节通过 VM 字符串创建保存；同键冲突保留原事实，规范格式不读取这些别名。
+ * @note 借用原范围及来源并复制别名；同键冲突保留原事实，规范格式不读取这些别名。
  */
 TZrBool ZrParser_SemanticTypeDisplayAlias_Publish(
         SZrSemanticContext *context,
@@ -184,20 +184,16 @@ TZrBool ZrParser_SemanticTypeDisplayAlias_Publish(
     }
 
     /**
-     * @brief 通过 VM 字符串创建保存来源与别名字节，逻辑归属仍限于当前快照。
-     * @note 原生事实数组仅保存指针，不建立 GC 根；短串可复用驻留对象，长串可为独立副本。
+     * @brief 保存别名字节，来源与范围借用原输入并保持证据身份。
+     * @note 原生事实数组仅保存指针，不建立 GC 根；调用方保持来源、AST owner 及别名可达。
      * @todo TODO: 核对别名、文档和生成签名的长串根交接：从 SemanticContext_New、发布及宿主 trace
      * 注册入口检查，以发布后 FullGC 再查询并 Reset/Free 的用例验证保活与释放交接。
      */
     fact.typeId = typeId;
     fact.useRange = *useRange;
-    fact.useRange.source = ZrCore_String_Create(
-            context->state,
-            sourceText,
-            ZrCore_String_GetByteLength(useRange->source));
     fact.alias = ZrCore_String_Create(
             context->state, aliasText, ZrCore_String_GetByteLength(alias));
-    if (fact.useRange.source == ZR_NULL || fact.alias == ZR_NULL) {
+    if (fact.alias == ZR_NULL) {
         return ZR_FALSE;
     }
     /**

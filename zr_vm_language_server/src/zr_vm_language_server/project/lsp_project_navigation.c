@@ -387,6 +387,7 @@ static SZrFileRange project_navigation_refine_import_module_path_location(const 
             continue;
         }
 
+        range = ZrParser_FileRange_WithoutEvidence(range);
         range.start.offset = index;
         range.end.offset = index + moduleLength;
         range.start.line = targetLine;

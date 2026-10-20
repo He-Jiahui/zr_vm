@@ -1,0 +1,47 @@
+let system = import("zr.system");
+let {Array} = import("zr.container");
+fn assignValue(value: out int): void { value = 23; }
+fn forward(value: out int): void { assignValue(out value); }
+fn add(value: ref int, amount: int): int { value += amount; return value; }
+fn writeBoth(left: ref int, right: ref int): void {
+    left += 1;
+    if (right != 24) { throw "ref arguments must share caller storage"; }
+    right += 1;
+}
+fn grow(depth: int): int {
+    if (depth == 0) { return 1; }
+    return grow(depth - 1) + 1;
+}
+fn live(value: ref int): void {
+    if (grow(160) != 161) { throw "stack growth"; }
+    system.gc.collect("full");
+    value += 17;
+}
+fn label(value: out string): void { value = "caller" + <string>42; }
+class Box<T> {
+    pub var item: T;
+    pub @constructor(item: T) { this.item = item; }
+    pub fn read(value: out T): void { value = this.item; }
+}
+var item = 0;
+forward(out item);
+if (item != 23) { throw "forwarded out result"; }
+writeBoth(ref item, ref item);
+if (item != 25 || add(ref item, 0) != 25) { throw "ref write/read result"; }
+live(ref item);
+if (item != 42) { throw "ref after stack growth and GC"; }
+var text = "before";
+label(out text);
+var box = new Box<string>(text);
+text = "reset";
+box.read(out text);
+system.gc.collect("full");
+if (text != "caller42") { throw "generic out string result"; }
+var object = new Box<int>(0);
+forward(out object.item);
+if (object.item != 23 || add(ref object.item, 19) != 42) { throw "field out/ref result"; }
+var numbers = new Array<int>();
+numbers.add(0);
+forward(out numbers[0]);
+if (numbers[0] != 23 || add(ref numbers[0], 19) != 42) { throw "element out/ref result"; }
+return 42;

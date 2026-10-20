@@ -44,9 +44,9 @@ SZrAstNode *try_parse_braced_primary_member(SZrParserState *ps,
     *outHandled = ZR_TRUE;
     objectNode = parse_object_literal(ps);
     if (objectNode == ZR_NULL) {
+        ZrParser_Ast_Free(ps->state, base);
         return ZR_NULL;
     }
 
-    // BUG: append_primary_member 分配失败时只返回 base，已解析的 objectNode 未被接管或释放。
     return append_primary_member(ps, base, objectNode, startLoc);
 }

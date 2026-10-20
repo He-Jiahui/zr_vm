@@ -29,7 +29,7 @@ void tearDown(void) {
 
 static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
     TZrChar sourceName[] = "semantic_query_test.zr";
-    SZrFileRange range;
+    SZrFileRange range = {0};
 
     range.start.offset = startOffset;
     range.start.line = 1;

@@ -292,7 +292,7 @@ for (var item in values) {
   - `.` 只能落成 `GET_MEMBER` / `SET_MEMBER`
   - `[]` 只能落成 `GET_BY_INDEX` / `SET_BY_INDEX`
   - emitted `.zri` 不允许再出现 `GETTABLE` / `SETTABLE` / `DYN_GET` / `DYN_SET`
-- SemIR / ExecBC / AOT artifact: `tests/parser/test_semir_pipeline.c` + `tests/parser/test_execbc_aot_pipeline.c` + `tests/parser/test_dynamic_iteration_pipeline.c`
+- SemIR / ExecBC / AOT artifact: `tests/parser/test_semir_pipeline.c` + `tests/parser/test_execbc_aot_pipeline.c` + `zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c`
   - SemIR enum 与文本产物不再保留 `DYN_GET` / `DYN_SET`
   - AOT C / LLVM artifact 不再声明仅服务旧动态访问 quickening 的 runtime contract
   - 禁止保留旧访问兼容 quickening，例如 `SUPER_GET_GLOBAL_NAMED`

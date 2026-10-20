@@ -1047,7 +1047,7 @@ static TZrUInt32 function_find_debug_line_for_instruction(const SZrFunction *fun
     return bestLine;
 }
 
-// 为加载前后字符串字段提供空值安全比较，避免指针身份替代内容比较。
+// 比较仍有效的非空字符串内容；可空字段先由 assert_optional_string_equal 分流。
 static TZrBool execbc_aot_pipeline_string_equal(const SZrString *string1, const SZrString *string2) {
     return ZrCore_String_Equal((SZrString *)string1, (SZrString *)string2);
 }
@@ -1235,7 +1235,7 @@ static TZrBool semir_contains_opcode(const SZrFunction *function, EZrSemIrOpcode
     return ZR_FALSE;
 }
 
-// 递归查询函数树的 SemIR 和 deopt 备份路径，避免忽略嵌套函数。
+// 递归检查当前函数及 childFunctionList 的 SemIR；按需要求匹配指令的 deoptId 非零。
 static TZrBool semir_tree_contains_opcode_with_deopt(const SZrFunction *function,
                                                      EZrSemIrOpcode opcode,
                                                      TZrBool requireDeopt) {
@@ -1257,7 +1257,7 @@ static TZrBool semir_tree_contains_opcode_with_deopt(const SZrFunction *function
     return ZR_FALSE;
 }
 
-// 把 SemIR 正常路径与 deopt 路径一同检查，保证优化回退契约。
+// 检查本函数的 SemIR opcode，并可额外要求同一指令的 deoptId 非零。
 static TZrBool semir_contains_opcode_with_deopt(const SZrFunction *function,
                                                 EZrSemIrOpcode opcode,
                                                 TZrBool requireDeopt) {
@@ -9889,3 +9889,1895 @@ int main(void) {
     RUN_TEST(test_aot_source_sync_keeps_extended_opcode_surfaces_aligned);
     return UNITY_END();
 }
+
+/**
+ * @unit EXBCFIX-001
+ * @typedef SZrExecBcAotTestTimer
+ *
+ * ## Summary
+ * 保存用例开始、结束两次 clock() 读数，供测试打印耗时。
+ *
+ * ## Fields
+ * - startTime：用例开始时的 clock() 读数。
+ * - endTime：用例结束时的 clock() 读数；与开始读数取差仅供诊断。
+ *
+ * ## Value model
+ * 结构体值；无独立资源释放。
+ *
+ * ## Invariants and lifecycle
+ * 两个 clock_t 字段由用例栈上局部实例持有；不传入编译器、VM 或 AOT 模块。
+ *
+ * 只在同一用例正常路径取差；计时不是正确性、性能阈值或线程同步的证明。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:28
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1428
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1482
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1554
+ */
+
+/**
+ * @unit EXBCFIX-002
+ * @typedef SZrBinaryFixtureReader
+ *
+ * ## Summary
+ * 把调用测试拥有的二进制缓冲包装成一次性核心 IO 输入。
+ *
+ * ## Fields
+ * - bytes：借用的测试 heap 缓冲，不由 IO close 释放。
+ * - length：首轮交付的字节数，由分配/读取测试保证有效。
+ * - consumed：首次交付后为真；后续 callback 返回 EOF。
+ *
+ * ## Value model
+ * 结构体值；缓冲仍由测试 free。
+ *
+ * ## Invariants and lifecycle
+ * bytes 是借用的原始字节，length 是可读字节数，consumed 记录是否已交付；核心 IO 可在随后读取中继续引用该缓冲。
+ *
+ * 缓冲必须活到 IO 最后一次使用之后；close 回调不 free。长度与实际分配由构造测试保证，不补 NUL。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:34
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:861
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6032
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6131
+ * - zr_vm_core/src/zr_vm_core/io/io.c:52
+ */
+
+/**
+ * @unit EXBCFIX-003
+ * @typedef SZrAotDebugHookCapture
+ *
+ * ## Summary
+ * 记录调试行事件总数、最后行号及前八个行号样本。
+ *
+ * ## Fields
+ * - eventCount：收到的有效 LINE 事件总数。
+ * - lastLine：最近一次 LINE 事件行号；reset 时为 NONE。
+ * - lines：只保存最初八次 LINE 行号；尚无顺序断言。
+ *
+ * ## Value model
+ * 结构体值；不拥有 heap 或回调参数。
+ *
+ * ## Invariants and lifecycle
+ * eventCount/lastLine/lines[8] 由静态捕获槽及回调共同使用；注册回调前由 reset 清零。
+ *
+ * 串行测试状态，不提供并发隔离；超过八次仍更新计数与末行但不再写样本。TODO: 当前用例只断言计数和最后行，尚未以 lines[] 断言完整事件顺序。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:42
+ */
+
+/**
+ * @unit EXBCFIX-004
+ * @typedef SZrAotSourceSyncExpectation
+ *
+ * ## Summary
+ * 为源码同步测试关联 opcode 名、运行时 helper 名和可选 C 直接 lowering 名。
+ *
+ * ## Fields
+ * - opcodeName：指令表中的借用字面名字。
+ * - runtimeHelperName：源码中应匹配的 runtime helper 名字。
+ * - cDirectLoweringName：可选的 C 直接 lowering 锚点，允许 NULL。
+ *
+ * ## Value model
+ * 只读期望项；不转移字符串所有权。
+ *
+ * ## Invariants and lifecycle
+ * 三个 const char* 借用静态字符串，按测试矩阵逐项在源码文本中检索。
+ *
+ * cDirectLoweringName 可为空；文本出现次数仅证明约定锚点，不证明对应分支执行或语义完备。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:49
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9651
+ */
+
+/**
+ * @unit EXBCFIX-005
+ * @typedef SZrExecBcAotTestLoadedModule
+ *
+ * ## Summary
+ * 镜像当前根库私有 AOT 已加载记录，供少量生成帧测试注入项目状态。
+ *
+ * ## Fields
+ * - backendKind：本记录所属的请求后端。
+ * - moduleName：真实记录拥有的模块名；当前手工 fixture 留零。
+ * - sourcePath：真实记录拥有的源码路径；手工 fixture 留零。
+ * - zroPath：真实记录拥有的二进制路径；手工 fixture 留零。
+ * - libraryPath：真实记录拥有的动态库路径；手工 fixture 留零。
+ * - libraryHandle：真实动态库句柄；手工 fixture 不装载库。
+ * - descriptor：借用库内 descriptor；本手工记录初始为空。
+ * - codeRegistration：借用库内注册元信息；本手工记录初始为空。
+ * - moduleFunction：借用的根函数，须活到记录不再使用。
+ * - functionTable：记录拥有的 native 指针数组，其中函数对象只借用。
+ * - functionPins：真实记录用于逐函数 GC pin 的凭据数组；手工 fixture 清零。
+ * - functionCount：有效函数数：本 fixture 为根加直接子函数数。
+ * - functionCapacity：functionTable 分配容量，释放按此计。
+ * - generatedFrameSlotCounts：记录拥有的逐函数物理槽数表。
+ * - module：真实加载模块的借用指针，当前手工 fixture 清零。
+ * - modulePin：真实模块 pin 凭据，当前手工 fixture 清零。
+ * - moduleExecuted：记录执行状态，手工 fixture 初始为假。
+ *
+ * ## Value model
+ * 记录镜像；安装器分配的表由根库项目释放链接管。
+ *
+ * ## Invariants and lifecycle
+ * backendKind、路径、句柄、descriptor、注册信息、函数表/pin/槽数及模块状态的字段次序对应当前 SZrLibraryAotLoadedModule。测试安装器只填所需字段并将表交项目释放链。
+ *
+ * 不能作为公开稳定 ABI；真实动态库记录中的指针与 pin 各有专门生命周期，测试零值不代表装载成功。TODO: 尚无跨模块 sizeof/offsetof 编译期校验，库内字段变化须同步镜像。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:58
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:510
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:531
+ * - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c:64
+ */
+
+/**
+ * @unit EXBCFIX-006
+ * @typedef SZrExecBcAotTestRuntimeState
+ *
+ * ## Summary
+ * 镜像项目 AOT 状态，供测试直接配置记录数组并检查生成帧缓存。
+ *
+ * ## Fields
+ * - configuredExecutionMode：最近配置的项目执行模式。
+ * - executedVia：实际后端报告值，配置时由根库清回 NONE。
+ * - requireAotPath：保存的配置请求，不据此推断当前消费者强制策略。
+ * - strictProjectAot：根库从 AOT_C/AOT_LLVM 模式导出的严格标记。
+ * - lastError：状态内固定错误缓冲，借用内容可被后续操作覆盖。
+ * - records：项目拥有的记录数组；本 fixture 发布一条。
+ * - recordCount：当前已发布的记录数。
+ * - recordCapacity：记录数组分配容量。
+ * - activeRecord：同步派发过程中的借用活动记录；安装时为空。
+ *
+ * ## Value model
+ * 借用的状态视图；不得另行 free 或跨项目释放保存。
+ *
+ * ## Invariants and lifecycle
+ * 模式、实际后端、严格标记、错误缓冲、records/数量/容量/activeRecord 对应当前根库私有状态；cast 借用 project->aotRuntime。
+ *
+ * records 元素和本结构均依赖私有布局，activeRecord 只是借用。TODO: 缺少编译期布局证明；当前字段逐项一致不等于长期 ABI 保障。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:80
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:509
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:528
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3749
+ * - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c:102
+ */
+
+/**
+ * @unit EXBCFIX-007
+ * @var g_aotDebugHookCapture
+ *
+ * ## Summary
+ * 为两个行调试事件用例提供共享捕获槽。
+ *
+ * ## Value model
+ * 静态存储，无调用方释放。
+ *
+ * ## Invariants and lifecycle
+ * reset 写初始值，debug hook 更新计数、最后行和有限样本，用例在回调运行后读取。
+ *
+ * 静态进程状态；每个相关用例必须先 reset，不声称可并行使用或保证全部行事件顺序。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:93
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:173
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:174
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:185
+ */
+
+/**
+ * @unit EXBCFIX-008
+ * @def ZR_EXECBC_TEST_OPCODE_NAME_CASE(INSTRUCTION)
+ *
+ * ## Summary
+ * 把指令声明表中的每个名字展开为诊断 switch 的 case 和字符串。
+ *
+ * ## Parameters
+ * @param[in] INSTRUCTION 指令声明表提供的单个符号名；须能用于枚举拼接与字符串化。
+ *
+ * ## Expansion
+ * 展开后的 case 返回静态名字字符串。
+ *
+ * ## Constraints and lifecycle
+ * 与 ZR_INSTRUCTION_DECLARE 共同使用，枚举值来自 ZR_INSTRUCTION_ENUM，字符串来自预处理器 #INSTRUCTION。
+ *
+ * 仅在 opcode-name switch 中展开；不维护第二份 opcode 表，不产生指令执行逻辑。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:96
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:103
+ * - zr_vm_common/include/zr_vm_common/zr_instruction_conf.h:26
+ */
+
+/**
+ * @unit EXBCFIX-009
+ * @fn static const char *execbc_test_instruction_opcode_name(EZrInstructionCode opcode)
+ *
+ * ## Summary
+ * 将指令枚举映射为可读诊断名，供可选函数树 trace 使用。
+ *
+ * ## Parameters
+ * @param[in] opcode 待打印的指令枚举；未知值走默认分支。
+ *
+ * ## Returns
+ * @return 借用的静态 C 字符串，调用者不得 free。
+ *
+ * ## Constraints and lifecycle
+ * switch 由统一指令声明表生成；未知枚举返回静态 UNKNOWN_OPCODE。
+ *
+ * 返回值只读、进程期有效；名称查询不校验指令操作数，也不执行 opcode。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:101
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:146
+ */
+
+/**
+ * @unit EXBCFIX-010
+ * @fn static TZrBool execbc_test_trace_enabled(void)
+ *
+ * ## Summary
+ * 按环境变量是否存在决定是否启用 ExecBC 测试 trace，并缓存首次结果。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * @return 存在变量时真，否则假；不分配资源。
+ *
+ * ## Constraints and lifecycle
+ * 首次调用 getenv("ZR_VM_TRACE_EXECBC_AOT_TEST")，之后使用两个函数内静态布尔值。
+ *
+ * 空字符串或值 "0" 也算存在；首次调用后再改环境不会生效。此静态缓存无并发初始化协议。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:110
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:127
+ */
+
+/**
+ * @unit EXBCFIX-011
+ * @fn static void execbc_test_dump_function_tree(const SZrFunction *function, TZrUInt32 depth)
+ *
+ * ## Summary
+ * 在 trace 开启时递归输出函数、字节码、SemIR 和直接子函数诊断。
+ *
+ * ## Parameters
+ * @param[in] function 借用的函数树根；允许 NULL。
+ * @param[in] depth 仅用于打印的当前递归深度，子结点加一。
+ *
+ * ## Returns
+ * 无返回值，不取得函数、名字或指令数组所有权。
+ *
+ * ## Constraints and lifecycle
+ * 借用完整函数树，从 stderr 打印当前结点和指令，再对 childFunctionList 深度递归。
+ *
+ * NULL 或未开 trace 直接返回；有效数组、计数、无环树及生命周期由调用方保证，没有损坏树或深度防护。打印不是 AOT 执行验证。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:123
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:161
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1458
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1514
+ */
+
+/**
+ * @unit EXBCFIX-012
+ * @fn static TZrInt64 aot_runtime_test_dummy_entry_thunk(struct SZrState *state)
+ *
+ * ## Summary
+ * 为手工项目记录提供固定成功值的最小 native 入口。
+ *
+ * ## Parameters
+ * @param[in] state 入口 ABI 要求的状态参数，本桩不读取。
+ *
+ * ## Returns
+ * @return 固定 TZrInt64 值 1。
+ *
+ * ## Constraints and lifecycle
+ * 忽略 state 并返回整数 1，供生成帧/静态直调用协议测试绑定。
+ *
+ * 不装载动态库，不执行 ZR 程序，也不能证明真实生成入口 ABI 或模块初始化。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:166
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3745
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3746
+ */
+
+/**
+ * @unit EXBCFIX-013
+ * @fn static void aot_debug_hook_capture_reset(void)
+ *
+ * ## Summary
+ * 在行事件测试前清空共享捕获槽并设置无行号哨兵。
+ *
+ * ## Parameters
+ * 无参数。
+ *
+ * ## Returns
+ * 无返回值；静态槽仍由本测试翻译单元持有。
+ *
+ * ## Constraints and lifecycle
+ * memset 清零计数和样本，再把 lastLine 设为 ZR_RUNTIME_DEBUG_HOOK_LINE_NONE。
+ *
+ * 需在安装/触发行事件之前调用；不注销已有 hook，不提供并行隔离。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:172
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:4203
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:4293
+ */
+
+/**
+ * @unit EXBCFIX-014
+ * @fn static void aot_debug_hook_capture(struct SZrState *state, SZrDebugInfo *debugInfo)
+ *
+ * ## Summary
+ * 作为 runtime debug hook 接收 LINE 事件并更新共享捕获状态。
+ *
+ * ## Parameters
+ * @param[in] state 回调 ABI 参数，此捕获器不读取。
+ * @param[in] debugInfo 本次事件信息的借用指针；NULL 或非 LINE 事件不计入。
+ *
+ * ## Returns
+ * 无返回值，不分配或释放资源。
+ *
+ * ## Constraints and lifecycle
+ * NULL 调试信息或非 LINE 事件被忽略；前八次写 lines[]，每次有效事件均更新 lastLine 并增加 eventCount。
+ *
+ * state 未使用；debugInfo 仅在调用期间借用，不保存其地址。样本容量与事件总数分开，未证明事件序列完整性。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:178
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:4201
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:4291
+ */
+
+/**
+ * @unit EXBCFIX-015
+ * @fn static char *read_text_file_owned(const TZrChar *path)
+ *
+ * ## Summary
+ * 以二进制方式完整读取文件并补一个 NUL，返回调用方拥有的文本缓冲。
+ *
+ * ## Parameters
+ * @param[in] path 借用的文件路径，函数不修改；允许 NULL 并返回失败。
+ *
+ * ## Returns
+ * @return 成功返回 malloc 缓冲，由调用方 free；失败返回 NULL。
+ *
+ * ## Constraints and lifecycle
+ * 打开后 seek/ftell 获取长度，分配长度加一，短读时 free 并关闭，成功时补 NUL、关闭并返回。
+ *
+ * NULL 路径及已检查的打开/定位/分配/短读失败返回 NULL；长度来自同一次打开，但不保证并发文件变更下的原子快照或文本编码有效。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:224
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:638
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:645
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1521
+ */
+
+/**
+ * @unit EXBCFIX-016
+ * @fn static void assert_generated_aot_c_text_uses_new_code_shape(const char *text)
+ *
+ * ## Summary
+ * 断言生成 C 文本使用当前函数入口和统一退出形态。
+ *
+ * ## Parameters
+ * @param[in] text 调用方持有的生成 C 文本，要求非 NULL。
+ *
+ * ## Returns
+ * 无返回值；text 保持调用方所有。
+ *
+ * ## Constraints and lifecycle
+ * 检查旧 prepared/shim/goto/return-0 形态不存在，并要求上下文解析或 BeginGeneratedFunction、退出或失败 helper 的约定标记。
+ *
+ * 输入须为 NUL 终止文本；Unity 断言失败可非局部退出当前用例。仅字符串形状验证，不编译或执行生成 C。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:267
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1531
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:2379
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:4574
+ */
+
+/**
+ * @unit EXBCFIX-017
+ * @fn static void assert_generated_aot_llvm_text_uses_true_backend_shape(const char *text)
+ *
+ * ## Summary
+ * 断言 LLVM 文本包含独立内部函数入口且不调用活动 shim。
+ *
+ * ## Parameters
+ * @param[in] text NUL 终止的生成 LLVM 文本，要求非 NULL。
+ *
+ * ## Returns
+ * 无返回值，不转移文本所有权。
+ *
+ * ## Constraints and lifecycle
+ * 检查 InvokeActiveShim 不存在，并匹配 define internal i64 @zr_aot_fn_0(ptr %state)。
+ *
+ * 只约束具体文本形状；不证明 LLVM 解析、链接、ABI 或入口执行。Unity 失败不保证调用方尾部清理。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:280
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1536
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1656
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1709
+ */
+
+/**
+ * @unit EXBCFIX-018
+ * @fn static void assert_generated_aot_llvm_text_uses_aligned_stack_value_layout(const char *text)
+ *
+ * ## Summary
+ * 检查 LLVM 输出采用字节布局寻址并拒绝旧的未对齐栈值文本形态。
+ *
+ * ## Parameters
+ * @param[in] text NUL 终止的生成 LLVM 文本，要求非 NULL。
+ *
+ * ## Returns
+ * 无返回值，所有权不变。
+ *
+ * ## Constraints and lifecycle
+ * 要求两种 value 类型的数组形态及 getelementptr i8，排除旧结构字面量和按值结构 GEP。
+ *
+ * 这些标记对应布局策略的文本契约；并未进行 sizeof/offsetof、LLVM 编译或运行时地址验证。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:287
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:2208
+ */
+
+/**
+ * @unit EXBCFIX-019
+ * @fn static void assert_generated_aot_llvm_text_lowers_simple_return_path(const char *text)
+ *
+ * ## Summary
+ * 检查最短 LLVM 返回路径引用生成函数、指令、常量复制和返回 helper。
+ *
+ * ## Parameters
+ * @param[in] text 调用方持有的 LLVM 文本，要求非 NULL 且 NUL 终止。
+ *
+ * ## Returns
+ * 无返回值；Unity 断言失败终止当前用例路径。
+ *
+ * ## Constraints and lifecycle
+ * 逐项 strstr 检查 BeginGeneratedFunction、BeginInstruction、CopyConstant、Return 四个符号。
+ *
+ * 符号出现不等于其顺序、控制流可达或被执行；该 helper 本身不运行 LLVM。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:299
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1657
+ */
+
+/**
+ * @unit EXBCFIX-020
+ * @fn static void assert_generated_aot_llvm_text_lowers_static_direct_call_path(const char *text)
+ *
+ * ## Summary
+ * 检查 LLVM 静态直调用文本具备准备、调用子函数和完成协议标记。
+ *
+ * ## Parameters
+ * @param[in] text NUL 终止的 LLVM 文本，要求非 NULL。
+ *
+ * ## Returns
+ * 无返回值。
+ *
+ * ## Constraints and lifecycle
+ * 要求 PrepareStaticDirectCall、call i64 @zr_aot_fn_1(ptr %state) 和 FinishDirectCall。
+ *
+ * 只检查约定片段存在，不证明运行帧、返回值或清理顺序；文本保持借用。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:308
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1710
+ */
+
+/**
+ * @unit EXBCFIX-021
+ * @fn static TZrBool aot_llvm_text_contains_unsupported_opcode(const char *text, TZrUInt32 opcode)
+ *
+ * ## Summary
+ * 检测 LLVM 文本中指定 opcode 的 unsupported 报告调用。
+ *
+ * ## Parameters
+ * @param[in] text 只读 NUL 终止文本；可为 NULL。
+ * @param[in] opcode 要匹配的无符号 opcode 数值，用 %u 写入固定后缀。
+ *
+ * ## Returns
+ * @return 检测到同一行匹配时真，否则假。
+ *
+ * ## Constraints and lifecycle
+ * 扫描精确 ReportUnsupportedInstruction 前缀，在同一换行前寻找格式化的 i32 opcode 后缀，命中即返回真。
+ *
+ * NULL 返回假；这是生成文本模式查询，既不解码完整 IR，也不能把假值当作后端执行成功。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:316
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:619
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:2281
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:2578
+ */
+
+/**
+ * @unit EXBCFIX-022
+ * @fn static TZrBool aot_c_text_contains_unsupported_opcode(const char *text, TZrUInt32 opcode)
+ *
+ * ## Summary
+ * 检测 C 文本中指定 opcode 的 unsupported 返回包装。
+ *
+ * ## Parameters
+ * @param[in] text 只读 NUL 终止的 C 文本；可为 NULL。
+ * @param[in] opcode 要查询的无符号 opcode 数值。
+ *
+ * ## Returns
+ * @return 同一行前缀与数值后缀都匹配时真，否则假。
+ *
+ * ## Constraints and lifecycle
+ * 扫描精确 ZR_AOT_C_RETURN(ReportUnsupportedInstruction...) 前缀，并限制数值后缀在当前行内。
+ *
+ * NULL 返回假；仅文本匹配，不保证该行可达或其余 opcode 全部受支持。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:339
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:618
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9096
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9098
+ */
+
+/**
+ * @unit EXBCFIX-023
+ * @fn static void assert_generated_aot_c_elides_instruction_observation(const char *text)
+ *
+ * ## Summary
+ * 断言无观察需求的 C 文本没有逐指令观察标记或调用。
+ *
+ * ## Parameters
+ * @param[in] text 调用方拥有的 C 文本，须非 NULL、NUL 终止。
+ *
+ * ## Returns
+ * 无返回值；不释放输入。
+ *
+ * ## Constraints and lifecycle
+ * 排除 zr_aot_begin_instruction 注释标记和 BeginInstruction 名字。
+ *
+ * 仅验证该生成文本的观察代码消去形态，不代表调试事件、性能或异常路径已运行。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:362
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9491
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9525
+ */
+
+/**
+ * @unit EXBCFIX-024
+ * @fn static void assert_generated_aot_llvm_begin_instruction_step_flags(const char *text, TZrUInt32 instructionIndex, TZrUInt32 stepFlags)
+ *
+ * ## Summary
+ * 断言 LLVM 文本中存在指定指令下标和 stepFlags 的观察 helper 调用。
+ *
+ * ## Parameters
+ * @param[in] text NUL 终止的 LLVM 文本，要求非 NULL。
+ * @param[in] instructionIndex 预期写入调用串的指令下标。
+ * @param[in] stepFlags 预期写入调用串的观察位集合。
+ *
+ * ## Returns
+ * 无返回值。
+ *
+ * ## Constraints and lifecycle
+ * 把 instructionIndex 和 stepFlags 格式化进固定调用串，在借用文本中检索。
+ *
+ * 不执行观察回调，不验证其出现次数或控制流位置；两个数值由 fixture 负责匹配生成上下文。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:369
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9492
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9493
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9526
+ */
+
+/**
+ * @unit EXBCFIX-025
+ * @fn static TZrInstruction make_instruction_no_operands(EZrInstructionCode opcode, TZrUInt16 operandExtra)
+ *
+ * ## Summary
+ * 构造其余位清零的手工指令，仅填写 opcode 和 operandExtra。
+ *
+ * ## Parameters
+ * @param[in] opcode 要写入 operationCode 的枚举。
+ * @param[in] operandExtra 直接写入额外位字段的值。
+ *
+ * ## Returns
+ * @return 初始化后的指令值，不拥有堆资源。
+ *
+ * ## Constraints and lifecycle
+ * 按值返回完整 TZrInstruction，供另外两个构造器与手工 opcode fixture 复用。
+ *
+ * opcode 转为 TZrUInt16；不校验枚举、位宽截断或 opcode 对额外位的语义要求。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:385
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:398
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:409
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9582
+ */
+
+/**
+ * @unit EXBCFIX-026
+ * @fn static TZrInstruction make_instruction_constant_operand(EZrInstructionCode opcode, TZrUInt16 operandExtra, TZrInt32 operandA2)
+ *
+ * ## Summary
+ * 在基础零初始化指令上写入一个 32 位 operand2 槽。
+ *
+ * ## Parameters
+ * @param[in] opcode 目标 opcode。
+ * @param[in] operandExtra 原样传入基础构造器的额外位。
+ * @param[in] operandA2 写入首个 32 位操作数的索引或数值。
+ *
+ * ## Returns
+ * @return 指令值；无资源转移。
+ *
+ * ## Constraints and lifecycle
+ * 复用 no_operands，再设置 operand.operand2[0]；常用于常量索引 fixture。
+ *
+ * 不验证常量表长度或 opcode 的操作数格式，索引有效性由调用方保证。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:395
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3196
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3197
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3769
+ */
+
+/**
+ * @unit EXBCFIX-027
+ * @fn static TZrInstruction make_instruction_slot_operands(EZrInstructionCode opcode, TZrUInt16 operandExtra, TZrUInt16 operandA1, TZrUInt16 operandB1)
+ *
+ * ## Summary
+ * 在基础零初始化指令上写入两个 16 位 operand1 槽。
+ *
+ * ## Parameters
+ * @param[in] opcode 目标 opcode。
+ * @param[in] operandExtra 原样写入的额外位。
+ * @param[in] operandA1 第一个 16 位操作数。
+ * @param[in] operandB1 第二个 16 位操作数。
+ *
+ * ## Returns
+ * @return 指令值；不分配资源。
+ *
+ * ## Constraints and lifecycle
+ * 依次设置 operand1[0] 和 operand1[1]，用于 fixture 的目标/源栈槽等编码。
+ *
+ * 不校验栈槽范围、读写方向或 opcode 格式；手工函数布局必须与编码一致。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:405
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:418
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3198
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9337
+ */
+
+/**
+ * @unit EXBCFIX-028
+ * @fn static TZrInstruction make_instruction_return(TZrUInt16 sourceSlot)
+ *
+ * ## Summary
+ * 构造携带一个返回值源槽的 FUNCTION_RETURN 指令。
+ *
+ * ## Parameters
+ * @param[in] sourceSlot 返回值所在的源槽索引。
+ *
+ * ## Returns
+ * @return 按值返回单条返回指令。
+ *
+ * ## Constraints and lifecycle
+ * 调用槽构造器，固定 operandExtra=1、第二操作数=0。
+ *
+ * sourceSlot 必须是该手工函数的有效返回源槽；本函数不追加数组或检查容量。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:417
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3199
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3657
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3770
+ */
+
+/**
+ * @unit EXBCFIX-029
+ * @fn static SZrFunction *compile_source_without_quickening(SZrState *state, const char *source, const char *sourcePath)
+ *
+ * ## Summary
+ * 走内部解析、编译、优化和装配链取得未走公开 quickening 路径的函数。
+ *
+ * ## Parameters
+ * @param[in,out] state 有效 VM 状态；允许 NULL 并返回失败。
+ * @param[in] source 借用的 NUL 终止源码，长度用 strlen 计算。
+ * @param[in] sourcePath 借用的源名字/路径文本，转为 VM 字符串；要求非 NULL。
+ *
+ * ## Returns
+ * @return 成功返回生成函数；已检查的参数、解析、验证、分配、编译或装配失败返回 NULL。
+ *
+ * ## Constraints and lifecycle
+ * 建立源名字和 AST，初始化 compiler state，验证 task effects、compile_script、optimize_instructions，再 assemble；普通失败分支显式释放 AST/compiler state，部分分支释放函数。
+ *
+ * 名称不意味着完全未优化：这里仍调用 optimize_instructions。只描述显式普通返回清理，不保证 Throw 或 Unity 非局部退出清理。成功函数由调用测试管理。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:422
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:8193
+ */
+
+/**
+ * @unit EXBCFIX-030
+ * @fn static void *aot_runtime_test_project_alloc(SZrState *state, TZrSize size)
+ *
+ * ## Summary
+ * 通过当前 global 的 allocator 分配 PROJECT 类别的 native 内存。
+ *
+ * ## Parameters
+ * @param[in] state 提供 global/allocator/用户分配参数的借用状态。
+ * @param[in] size 请求的字节数，原样传递给 allocator。
+ *
+ * ## Returns
+ * @return allocator 返回的原始指针或 NULL。
+ *
+ * ## Constraints and lifecycle
+ * 向 allocator 传入旧指针 NULL、旧大小 0、请求 size 和 ZR_MEMORY_NATIVE_TYPE_PROJECT。
+ *
+ * state/global/allocator 任一空则返回 NULL；返回内存未初始化，调用方须按同一分配器类别与项目生命周期归还。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:492
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:531
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:541
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:544
+ */
+
+/**
+ * @unit EXBCFIX-031
+ * @fn static SZrExecBcAotTestRuntimeState *aot_runtime_test_install_project_record(SZrState *state, SZrLibrary_Project *project, SZrFunction *function, EZrAotBackendKind backendKind)
+ *
+ * ## Summary
+ * 为四个生成帧/索引测试配置临时项目并安装一个手工 AOT 记录。
+ *
+ * ## Parameters
+ * @param[in,out] state 具有有效 global 的测试状态。
+ * @param[out] project 调用方持有的临时项目对象，将被 memset 并供 global 借用。
+ * @param[in] function 在项目记录使用期间存活的根函数，子函数数组及槽数须有效。
+ * @param[in] backendKind 决定请求 AOT_C 或 AOT_LLVM 模式并写入记录的后端值。
+ *
+ * ## Returns
+ * @return 借用 project->aotRuntime 的镜像指针，项目释放后失效。
+ *
+ * ## Constraints and lifecycle
+ * 清空调用方 project，挂到 global->userData，ConfigureGlobal 后分配 records、根和直接子函数表、对应 frame-slot 表，填完后发布单条记录。
+ *
+ * project 必须是可覆盖的临时对象；函数树借用，三张 native 表交根库释放。Unity 分配断言可非局部退出，未提供通用 OOM 回滚。只列根与直接子函数，不声称递归装载或真实 DLL。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:505
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3666
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3785
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3905
+ * - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c:3375
+ * - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c:3398
+ */
+
+/**
+ * @unit EXBCFIX-032
+ * @brief aot_runtime_test_install_project_record::records publication（所属函数关键块）
+ *
+ * ## Summary
+ * 把填充完成的测试记录数组发布到私有运行时状态。
+ *
+ * ## Control flow
+ * 所属安装函数随后返回借用状态；此块不独立返回。
+ *
+ * ## Constraints and lifecycle
+ * 设置 records、recordCount=1、recordCapacity=1、activeRecord=NULL，使根库生成函数消费者可查该记录。
+ *
+ * 发布后表由项目释放链负责；此前分配断言失败并无完整回滚。TODO: 该 cast 和 records 元素依赖私有布局，需同步类型并增加编译期偏移校验。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:563
+ * - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c:102
+ * - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c:3398
+ */
+
+/**
+ * @unit EXBCFIX-033
+ * @fn static void aot_runtime_test_remove_project_record(SZrState *state, SZrLibrary_Project *project)
+ *
+ * ## Summary
+ * 经根库项目释放入口清理临时 AOT 状态，再断开 global 对项目的借用。
+ *
+ * ## Parameters
+ * @param[in,out] state 有效 state/global；为空时无操作。
+ * @param[in,out] project 调用方的临时项目；为空时无操作。
+ *
+ * ## Returns
+ * 无返回值；项目状态与表由被调用释放链管理。
+ *
+ * ## Constraints and lifecycle
+ * 参数有效且 aotRuntime 非空时调用 FreeProjectState，随后把 global->userData 清空。
+ *
+ * 不释放调用方栈上的 project 或借用函数；真实根库释放包含撤 pin 和延迟动态库处理，不能把返回解释为全部 GC 后关闭完成。无效参数直接返回。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:572
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3719
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3841
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3951
+ * - zr_vm_library/src/zr_vm_library/aot_runtime/aot_runtime.c:3398
+ */
+
+/**
+ * @unit EXBCFIX-034
+ * @fn static void init_manual_test_function(SZrFunction *function, TZrInstruction *instructions, TZrUInt32 instructionCount, SZrTypeValue *constants, TZrUInt32 constantCount, SZrFunction *childFunctions, TZrUInt32 childFunctionCount, TZrUInt32 stackSize)
+ *
+ * ## Summary
+ * 用调用方数组组装最小手工 SZrFunction，供 VM 与两个生成后端共用。
+ *
+ * ## Parameters
+ * @param[out] function 待覆盖初始化的函数对象，须非 NULL 且无待释放旧资源。
+ * @param[in] instructions 借用的指令数组。
+ * @param[in] instructionCount 有效指令条数。
+ * @param[in] constants 借用的常量值数组。
+ * @param[in] constantCount 常量条数。
+ * @param[in] childFunctions 借用的直接子函数数组。
+ * @param[in] childFunctionCount 直接子函数数。
+ * @param[in] stackSize 手工函数声明的栈槽大小。
+ *
+ * ## Returns
+ * 无返回值；所有数组所有权仍在构造测试。
+ *
+ * ## Constraints and lifecycle
+ * 清零函数对象后借用 instructions/constants/childFunctions，设置各长度、stackSize 及源行范围 1..1。
+ *
+ * 只断言 function 非空；数组、计数和指令语义由 fixture 保证。清零会覆盖旧内容，不能用于仍拥有资源的活动函数；栈数组不能据此交给常规拥有式释放。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:584
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3200
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3658
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3771
+ */
+
+/**
+ * @unit EXBCFIX-035
+ * @fn static void assert_generated_aot_texts_do_not_report_unsupported_opcodes(const char *cText, const char *llvmText, const EZrInstructionCode *opcodes, TZrSize opcodeCount)
+ *
+ * ## Summary
+ * 逐项断言 C 和 LLVM 文本未报告指定 opcode 为 unsupported。
+ *
+ * ## Parameters
+ * @param[in] cText NUL 终止的 C 文本。
+ * @param[in] llvmText NUL 终止的 LLVM 文本。
+ * @param[in] opcodes 要逐项检查的 opcode 数组。
+ * @param[in] opcodeCount 数组有效元素数。
+ *
+ * ## Returns
+ * 无返回值；所有输入只借用。
+ *
+ * ## Constraints and lifecycle
+ * 遍历 opcodes[0..opcodeCount)，调用两个同一行文本检测器并要求假。
+ *
+ * 三个指针须非 NULL，列表长度由调用方保证；不覆盖列表外 opcode，也不证明生成工件被编译或执行。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:607
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9419
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9631
+ */
+
+/**
+ * @unit EXBCFIX-036
+ * @fn static char *read_reference_file(const char *relativePath, size_t *outSize)
+ *
+ * ## Summary
+ * 通过 reference fixture 支持层读取文本，供参考语言用例编译。
+ *
+ * ## Parameters
+ * @param[in] relativePath 相对 reference fixture 根的路径，借用。
+ * @param[out] outSize 可选长度接收指针，原样转交支持层。
+ *
+ * ## Returns
+ * @return 成功为调用方需 free 的文本，失败 NULL；outSize 由支持层处理。
+ *
+ * ## Constraints and lifecycle
+ * 直接转发 relativePath/outSize；支持层把路径解析到 tests/fixtures/reference 并调用文本读取器。
+ *
+ * 路径按 reference fixture 根解释，非当前工作目录；失败及长度规则沿被调用接口，不扩大为任意仓库文件读取。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:624
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6888
+ * - tests/harness/reference_support.c:51
+ */
+
+/**
+ * @unit EXBCFIX-037
+ * @fn static char *read_repo_file_owned(const char *repoRelativePath)
+ *
+ * ## Summary
+ * 尝试按仓库根及 zr_vm_aot 回退根读取源码文本。
+ *
+ * ## Parameters
+ * @param[in] repoRelativePath 借用的仓库相对路径，不取得所有权。
+ *
+ * ## Returns
+ * @return 返回 malloc 文本或 NULL；成功由调用方 free。
+ *
+ * ## Constraints and lifecycle
+ * 用 1024 字节路径缓冲拼接 tests/../relativePath；首次读取失败才尝试 tests/../zr_vm_aot/relativePath。
+ *
+ * 相对根来自编译期 ZR_VM_TESTS_SOURCE_DIR，不随 cwd；NULL 返回 NULL。snprintf 截断结果未单独诊断，现有固定路径须适合缓冲；不保证并发快照。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:629
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:682
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:700
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:2365
+ * - tests/harness/path_support.c:18
+ */
+
+/**
+ * @unit EXBCFIX-038
+ * @fn static TZrUInt32 count_substring_occurrences(const char *text, const char *needle)
+ *
+ * ## Summary
+ * 统计 NUL 终止文本中互不重叠的字面子串出现次数。
+ *
+ * ## Parameters
+ * @param[in] text 只读 NUL 终止文本，可为 NULL。
+ * @param[in] needle 只读匹配串；NULL 或空串得到零。
+ *
+ * ## Returns
+ * @return TZrUInt32 次数。
+ *
+ * ## Constraints and lifecycle
+ * 每次 strstr 命中后前移 needleLength；源码同步断言用它检查锚点数量。
+ *
+ * NULL 或空 needle 返回 0；不解析 C token，注释和字符串中的字面内容也可能计入，不等价于语义调用次数。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:651
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9062
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9066
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9070
+ */
+
+/**
+ * @unit EXBCFIX-039
+ * @fn static char *join_repo_files_owned(const char *const *repoRelativePaths, TZrSize pathCount)
+ *
+ * ## Summary
+ * 两遍读取多个仓库源码并用换行拼接为调用方拥有的文本。
+ *
+ * ## Parameters
+ * @param[in] repoRelativePaths 借用的路径指针数组；不可为 NULL。
+ * @param[in] pathCount 要读取的数组元素数；零返回失败。
+ *
+ * ## Returns
+ * @return 成功返回需 free 的拼接文本，参数、读取或分配失败返回 NULL。
+ *
+ * ## Constraints and lifecycle
+ * 第一遍累加每份 strlen+换行并释放临时文本，分配总缓冲；第二遍重新读取、memcpy、写换行并释放，最后补 NUL。
+ *
+ * 输入数组和路径在调用期有效；普通读失败释放已有 joined 缓冲。BUG: 两遍之间文件增长时，第二遍没有容量复核，可越过第一遍分配的 joinedText；未做运行复现。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:671
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9724
+ */
+
+/**
+ * @unit EXBCFIX-040
+ * @brief join_repo_files_owned::second read and copy（所属函数关键块）
+ *
+ * ## Summary
+ * 第二遍重读并把每份当前文件内容复制到首次统计的拼接缓冲。
+ *
+ * ## Control flow
+ * 所属函数在该块后返回 joinedText；此块读失败走所属函数 NULL 返回。
+ *
+ * ## Constraints and lifecycle
+ * 对每个路径重新取得文本，按当次 strlen 复制并写换行，释放当次临时缓冲；读失败释放 joinedText 后返回。
+ *
+ * BUG: writeCursor 不带剩余容量校验；合法文件在两遍间增长即可超过首次估计。与所属函数是同一既有问题的块镜像，不新增缺陷家族。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:698
+ */
+
+/**
+ * @unit EXBCFIX-041
+ * @fn static TZrByte *read_binary_file_owned(const TZrChar *path, TZrSize *outLength)
+ *
+ * ## Summary
+ * 以二进制方式完整读取文件并返回原始字节及长度。
+ *
+ * ## Parameters
+ * @param[in] path 借用的文件路径，NULL 返回失败。
+ * @param[out] outLength 可选输出；入口先置零，成功写原始字节数。
+ *
+ * ## Returns
+ * @return 成功返回调用方需 free 的字节缓冲，失败 NULL。
+ *
+ * ## Constraints and lifecycle
+ * 先把可选 outLength 置零，rb 打开/seek/ftell/分配/完整读，成功关闭后写入长度。
+ *
+ * 不补 NUL，不能作为 C 字符串；空文件 malloc(0) 的结果依实现，可能返回 NULL。已检查失败关闭文件并释放缓冲；无原子快照承诺。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:720
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:779
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:801
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6070
+ */
+
+/**
+ * @unit EXBCFIX-042
+ * @fn static TZrByte *read_repo_binary_file_owned(const char *repoRelativePath, TZrSize *outLength)
+ *
+ * ## Summary
+ * 从编译期 tests 根的父目录解析仓库相对二进制路径并读取。
+ *
+ * ## Parameters
+ * @param[in] repoRelativePath 借用的仓库相对二进制路径。
+ * @param[out] outLength 可选长度输出，沿底层读取器规则。
+ *
+ * ## Returns
+ * @return 成功返回需 free 的字节缓冲，失败 NULL。
+ *
+ * ## Constraints and lifecycle
+ * 用 1024 字节缓冲拼接 tests/../relativePath，随后调用二进制读取器；不同于文本 helper，这里没有 zr_vm_aot 回退。
+ *
+ * outLength 可选且入口清零；NULL 路径失败。路径必须适合固定缓冲，原始字节无 NUL 保证。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:768
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:9235
+ * - tests/harness/path_support.c:18
+ */
+
+/**
+ * @unit EXBCFIX-043
+ * @fn static TZrBool write_embedded_aot_c_file(SZrState *state, SZrFunction *function, const TZrChar *moduleName, const TZrChar *filename, const TZrChar *binaryPath)
+ *
+ * ## Summary
+ * 先生成并读取二进制模块，再以借用 blob 生成严格嵌入式 C 文本。
+ *
+ * ## Parameters
+ * @param[in,out] state 有效测试 VM 状态。
+ * @param[in] function 调用期间存活的借用函数。
+ * @param[in] moduleName 借用的模块名，同时用作 inputHash 标识。
+ * @param[in] filename C 文本输出路径，借用。
+ * @param[in] binaryPath 临时二进制写入/读取/尝试删除路径，须由任务登记。
+ *
+ * ## Returns
+ * @return 返回 C writer 的布尔结果或前置失败假；blob 不逃逸到返回调用方。
+ *
+ * ## Constraints and lifecycle
+ * WriteBinaryFile 成功后读取 binaryPath 并尝试 remove；设置 SOURCE、moduleName/inputHash、blob/长度及 requireExecutableLowering，再同步调用 C writer 并 free blob。
+ *
+ * 所有输入须非 NULL；二进制写失败、读取失败或零长返回假。remove 返回未检查，写失败可能留文件；只保证普通返回后的本地 blob 释放，不承诺异常清理或外部 C 编译/DLL 装载。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:783
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1586
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1916
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:4357
+ * - zr_vm_parser/src/zr_vm_parser/writer/writer_binary.c:29
+ */
+
+/**
+ * @unit EXBCFIX-044
+ * @fn static TZrBool write_standalone_strict_aot_c_file(SZrState *state, SZrFunction *function, const TZrChar *moduleName, const TZrChar *filename)
+ *
+ * ## Summary
+ * 不提供嵌入 blob，以要求可执行 lowering 的选项生成独立 C 文本。
+ *
+ * ## Parameters
+ * @param[in,out] state 有效 VM 状态。
+ * @param[in] function 调用期间借用的待生成函数。
+ * @param[in] moduleName 借用模块名并用作输入标识。
+ * @param[in] filename C 文本输出路径，借用且须登记。
+ *
+ * ## Returns
+ * @return C writer 布尔结果或参数失败假。
+ *
+ * ## Constraints and lifecycle
+ * 零初始化 options，设置 moduleName、SOURCE、inputHash=moduleName 和 requireExecutableLowering=TRUE 后调用 C writer。
+ *
+ * 四个参数任一 NULL 返回假；不运行外部 C 编译器、链接器或 DLL，返回真也不是持久化/执行证明。文件及函数由调用方管理。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:822
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1995
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:2063
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:2133
+ */
+
+/**
+ * @unit EXBCFIX-045
+ * @fn static TZrBool write_standalone_strict_aot_llvm_file(SZrState *state, SZrFunction *function, const TZrChar *moduleName, const TZrChar *filename)
+ *
+ * ## Summary
+ * 不提供嵌入 blob，以严格 lowering 选项生成独立 LLVM 文本。
+ *
+ * ## Parameters
+ * @param[in,out] state 有效 VM 状态。
+ * @param[in] function 调用期间存活的借用函数。
+ * @param[in] moduleName 借用模块名兼输入标识。
+ * @param[in] filename LLVM 文本输出路径，须由任务登记。
+ *
+ * ## Returns
+ * @return LLVM writer 的布尔结果或参数失败假。
+ *
+ * ## Constraints and lifecycle
+ * 零初始化 options，填写 SOURCE、moduleName/inputHash 及 requireExecutableLowering，然后同步调用 LLVM writer。
+ *
+ * 参数 NULL 返回假；只生成文件，不执行 LLVM 编译、链接或入口。普通布尔结果不覆盖 Throw 或调用方 Unity 清理。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:841
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:2200
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:2271
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3123
+ */
+
+/**
+ * @unit EXBCFIX-046
+ * @fn static TZrBytePtr binary_fixture_reader_read(struct SZrState *state, TZrPtr customData, ZR_OUT TZrSize *size)
+ *
+ * ## Summary
+ * 向核心 IO 一次性交付测试拥有的二进制缓冲。
+ *
+ * ## Parameters
+ * @param[in] state 回调 ABI 状态参数，本实现不读取。
+ * @param[in,out] customData 借用的 SZrBinaryFixtureReader，需活到 IO 关闭。
+ * @param[out] size 核心 IO 提供的长度输出指针；正常交付时写入 length。
+ *
+ * ## Returns
+ * @return 首次有效调用返回借用 bytes，以后或无效输入返回 NULL。
+ *
+ * ## Constraints and lifecycle
+ * customData 转成 reader；有效未消费且 bytes 非空时先置 consumed，写 length 并返回 bytes。
+ *
+ * 无效 reader/size、已消费或空 bytes 返回 NULL，早退不写 size；当前 io_refill 在回调前置 readSize=0 并按 NULL/零判断 EOF。借用缓冲须覆盖后续 IO 使用。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:860
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6080
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6156
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6221
+ * - zr_vm_core/src/zr_vm_core/io/io.c:52
+ */
+
+/**
+ * @unit EXBCFIX-047
+ * @fn static void binary_fixture_reader_close(struct SZrState *state, TZrPtr customData)
+ *
+ * ## Summary
+ * 作为核心 IO close 回调保留外部二进制缓冲所有权。
+ *
+ * ## Parameters
+ * @param[in] state 回调 ABI 参数，未使用。
+ * @param[in] customData 调用方 reader 指针，未使用且不释放。
+ *
+ * ## Returns
+ * 无返回值，不释放资源。
+ *
+ * ## Constraints and lifecycle
+ * state/customData 均不读取，函数无操作；调用测试在 IO 不再使用 bytes 后负责 free。
+ *
+ * 不能把 close 当作缓冲释放或 reader 销毁；不保存指针，也不承担重复关闭的额外状态转换。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:875
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6080
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6156
+ * - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6221
+ * - zr_vm_core/src/zr_vm_core/io/io.c:52
+ */
+
+/**
+ * @unit EXECBC-INSP-01 function_contains_opcode
+ * @fn static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode)
+ *
+ * ## Summary
+ * 在quickening相关断言或后端生成前检查当前函数是否保留指定ExecBC指令，供测试断言区分专门化编码与通用编码；不扫描子函数。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ * @param[in] opcode 待匹配的ExecBC操作码值；只作相等比较。
+ *
+ * ## Returns
+ * @return TRUE表示当前指令数组至少一项匹配；NULL函数、缺失数组或未命中返回FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只读取借用数组；不执行指令、不证明可达性或运行结果。并发改写/释放数组不受此助手保护。
+ *
+ * ## References
+ * - `function_tree_contains_opcode`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1139）。
+ * - `test_access_lowering_preserves_explicit_member_and_index_ops`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1427）。
+ */
+
+/**
+ * @unit EXECBC-INSP-02 function_contains_super_array_get_int_family
+ * @fn static TZrBool function_contains_super_array_get_int_family(const SZrFunction *function)
+ *
+ * ## Summary
+ * 接受普通、plain-destination及items读取快路径，避免数组专门化测试锁定一种合法编码。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ *
+ * ## Returns
+ * @return TRUE表示本函数含至少一种本助手列举的整数数组读取编码；NULL、无指令数组或全部未命中返回FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只查询当前函数，复用function_contains_opcode的借用边界。谓词覆盖显式列出的有限变体，不证明指令执行、数值结果或完整指令族覆盖；新增编码须重新核对此检查集合。
+ *
+ * ## References
+ * - `function_contains_opcode`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:881）。
+ * - `test_execbc_quickens_array_int_index_sites_and_true_aot_lowers_specialized_helpers`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:8497）。
+ */
+
+/**
+ * @unit EXECBC-INSP-03 function_contains_super_array_set_int_family
+ * @fn static TZrBool function_contains_super_array_set_int_family(const SZrFunction *function)
+ *
+ * ## Summary
+ * 把普通与items写入快路径视为同一检查目标，保留优化器在这两种编码间选择的空间。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ *
+ * ## Returns
+ * @return TRUE表示本函数含至少一种本助手列举的整数数组写入编码；NULL、无指令数组或全部未命中返回FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只查询当前函数，复用function_contains_opcode的借用边界。谓词覆盖显式列出的有限变体，不证明指令执行、数值结果或完整指令族覆盖；新增编码须重新核对此检查集合。
+ *
+ * ## References
+ * - `function_contains_opcode`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:881）。
+ * - `test_execbc_quickens_array_int_index_sites_and_true_aot_lowers_specialized_helpers`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:8497）。
+ */
+
+/**
+ * @unit EXECBC-INSP-04 function_contains_add_int_family
+ * @fn static TZrBool function_contains_add_int_family(const SZrFunction *function)
+ *
+ * ## Summary
+ * 让C/LLVM生成与数组quickening用例接受已列出的寄存器或常量加法变体。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ *
+ * ## Returns
+ * @return TRUE表示本函数含至少一种本助手列举的通用int加法编码；NULL、无指令数组或全部未命中返回FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只查询当前函数，复用function_contains_opcode的借用边界。谓词覆盖显式列出的有限变体，不证明指令执行、数值结果或完整指令族覆盖；新增编码须重新核对此检查集合。
+ *
+ * ## References
+ * - `function_contains_opcode`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:881）。
+ * - `test_aot_c_backend_lowers_generic_add_with_fast_path_and_helper_fallback`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:2093）。
+ */
+
+/**
+ * @unit EXECBC-INSP-05 function_contains_add_signed_family
+ * @fn static TZrBool function_contains_add_signed_family(const SZrFunction *function)
+ *
+ * ## Summary
+ * 使类型化、常量及加载融合的加法路径用共同谓词表达，而不把某一寄存器布局当语义要求。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ *
+ * ## Returns
+ * @return TRUE表示本函数含至少一种本助手列举的有符号加法编码；NULL、无指令数组或全部未命中返回FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只查询当前函数，复用function_contains_opcode的借用边界。谓词覆盖显式列出的有限变体，不证明指令执行、数值结果或完整指令族覆盖；新增编码须重新核对此检查集合。
+ *
+ * ## References
+ * - `function_contains_opcode`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:881）。
+ * - `test_execbc_true_aot_lowers_typed_signed_unsigned_and_equality_opcodes`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:5809）。
+ */
+
+/**
+ * @unit EXECBC-INSP-06 function_contains_add_unsigned_family
+ * @fn static TZrBool function_contains_add_unsigned_family(const SZrFunction *function)
+ *
+ * ## Summary
+ * 在有符号/无符号lowering矩阵中独立识别无符号加法，防止其他数值族误满足断言。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ *
+ * ## Returns
+ * @return TRUE表示本函数含至少一种本助手列举的无符号加法编码；NULL、无指令数组或全部未命中返回FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只查询当前函数，复用function_contains_opcode的借用边界。谓词覆盖显式列出的有限变体，不证明指令执行、数值结果或完整指令族覆盖；新增编码须重新核对此检查集合。
+ *
+ * ## References
+ * - `function_contains_opcode`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:881）。
+ * - `test_execbc_true_aot_lowers_typed_signed_unsigned_and_equality_opcodes`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:5809）。
+ */
+
+/**
+ * @unit EXECBC-INSP-07 function_contains_sub_int_family
+ * @fn static TZrBool function_contains_sub_int_family(const SZrFunction *function)
+ *
+ * ## Summary
+ * 为通用减法及数组快路径提供编码族断言，接受已列出的目的寄存器和常量形态。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ *
+ * ## Returns
+ * @return TRUE表示本函数含至少一种本助手列举的通用int减法编码；NULL、无指令数组或全部未命中返回FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只查询当前函数，复用function_contains_opcode的借用边界。谓词覆盖显式列出的有限变体，不证明指令执行、数值结果或完整指令族覆盖；新增编码须重新核对此检查集合。
+ *
+ * ## References
+ * - `function_contains_opcode`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:881）。
+ * - `test_aot_backends_lower_benchmark_style_generic_sub_paths`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3223）。
+ */
+
+/**
+ * @unit EXECBC-INSP-08 function_contains_sub_signed_family
+ * @fn static TZrBool function_contains_sub_signed_family(const SZrFunction *function)
+ *
+ * ## Summary
+ * 把类型化减法的已列出常量和寄存器形态归为同一测试条件。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ *
+ * ## Returns
+ * @return TRUE表示本函数含至少一种本助手列举的有符号减法编码；NULL、无指令数组或全部未命中返回FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只查询当前函数，复用function_contains_opcode的借用边界。谓词覆盖显式列出的有限变体，不证明指令执行、数值结果或完整指令族覆盖；新增编码须重新核对此检查集合。
+ *
+ * ## References
+ * - `function_contains_opcode`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:881）。
+ * - `test_aot_c_backend_lowers_signed_compare_div_and_neg_paths`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3003）。
+ */
+
+/**
+ * @unit EXECBC-INSP-09 function_contains_sub_unsigned_family
+ * @fn static TZrBool function_contains_sub_unsigned_family(const SZrFunction *function)
+ *
+ * ## Summary
+ * 在类型化数值矩阵中区分无符号减法与int或有符号减法。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ *
+ * ## Returns
+ * @return TRUE表示本函数含至少一种本助手列举的无符号减法编码；NULL、无指令数组或全部未命中返回FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只查询当前函数，复用function_contains_opcode的借用边界。谓词覆盖显式列出的有限变体，不证明指令执行、数值结果或完整指令族覆盖；新增编码须重新核对此检查集合。
+ *
+ * ## References
+ * - `function_contains_opcode`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:881）。
+ * - `test_execbc_true_aot_lowers_typed_signed_unsigned_and_equality_opcodes`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:5809）。
+ */
+
+/**
+ * @unit EXECBC-INSP-10 function_contains_mul_signed_family
+ * @fn static TZrBool function_contains_mul_signed_family(const SZrFunction *function)
+ *
+ * ## Summary
+ * 使通用乘法与数组专门化用例接受已列出的常量/加载融合乘法形态。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ *
+ * ## Returns
+ * @return TRUE表示本函数含至少一种本助手列举的有符号乘法编码；NULL、无指令数组或全部未命中返回FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只查询当前函数，复用function_contains_opcode的借用边界。谓词覆盖显式列出的有限变体，不证明指令执行、数值结果或完整指令族覆盖；新增编码须重新核对此检查集合。
+ *
+ * ## References
+ * - `function_contains_opcode`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:881）。
+ * - `test_aot_backends_lower_benchmark_style_generic_mul_paths`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3319）。
+ */
+
+/**
+ * @unit EXECBC-INSP-11 function_contains_div_signed_family
+ * @fn static TZrBool function_contains_div_signed_family(const SZrFunction *function)
+ *
+ * ## Summary
+ * 识别已列出的除法及常量/加载融合形态，供后端快路径存在性检查。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ *
+ * ## Returns
+ * @return TRUE表示本函数含至少一种本助手列举的有符号除法编码；NULL、无指令数组或全部未命中返回FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只查询当前函数，复用function_contains_opcode的借用边界。谓词覆盖显式列出的有限变体，不证明指令执行、数值结果或完整指令族覆盖；新增编码须重新核对此检查集合。
+ *
+ * ## References
+ * - `function_contains_opcode`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:881）。
+ * - `test_aot_backends_lower_benchmark_style_generic_div_paths`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3405）。
+ */
+
+/**
+ * @unit EXECBC-INSP-12 function_contains_mod_signed_family
+ * @fn static TZrBool function_contains_mod_signed_family(const SZrFunction *function)
+ *
+ * ## Summary
+ * 在综合数值和数组用例中识别已列出的取模及常量/加载融合形态。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ *
+ * ## Returns
+ * @return TRUE表示本函数含至少一种本助手列举的有符号取模编码；NULL、无指令数组或全部未命中返回FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只查询当前函数，复用function_contains_opcode的借用边界。谓词覆盖显式列出的有限变体，不证明指令执行、数值结果或完整指令族覆盖；新增编码须重新核对此检查集合。
+ *
+ * ## References
+ * - `function_contains_opcode`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:881）。
+ * - `test_aot_backends_lower_benchmark_style_mod_string_and_compare_paths`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:3071）。
+ */
+
+/**
+ * @unit EXECBC-INSP-13 function_contains_get_member_name
+ * @fn static TZrBool function_contains_get_member_name(const SZrFunction *function, const TZrChar *memberName)
+ *
+ * ## Summary
+ * 在super成员分派用例中同时检查GET_MEMBER编码和其成员表符号，避免只出现正确操作码却绑定错误成员。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ * @param[in] memberName 借用的NUL终止目标成员名；NULL直接未命中。
+ *
+ * ## Returns
+ * @return 找到一个GET_MEMBER，其成员索引在范围内、symbol非NULL且名称相同则TRUE；否则FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只扫描当前函数的GET_MEMBER；跳过越界成员索引和NULL symbol。非空memberEntries仍须与memberEntryLength一致；不扩展到其他member opcode或子函数。
+ *
+ * ## References
+ * - `test_super_member_dispatch_uses_direct_base_lookup_for_methods_properties_and_meta_calls`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:7791）。
+ * - `find_member_entry_by_symbol`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1360）。
+ */
+
+/**
+ * @unit EXECBC-INSP-14 function_find_debug_line_for_instruction
+ * @fn static TZrUInt32 function_find_debug_line_for_instruction(const SZrFunction *function, TZrUInt32 instructionIndex)
+ *
+ * ## Summary
+ * 把ExecBC位置映射到源调试行，供二进制加载后逐指令行表对照，而不要求源行表一项对应一条指令。
+ *
+ * ## Parameters
+ * @param[in] function 借用函数；NULL、缺失调试表或表长为0时直接返回0。
+ * @param[in] instructionIndex 要查询的指令偏移；不检查其是否小于instructionsLength。
+ *
+ * ## Returns
+ * @return 返回有序调试表中最后一个offset<=查询值的lineInSource；有表但尚未选出非零行时可回退lineInSourceStart；无表直接0。
+ *
+ * ## Constraints and lifecycle
+ * 依赖调试表按currentInstructionOffset升序且长度/指针有效；遇首个更大偏移即停止。0是无可用行的结果，不取得表的所有权。
+ *
+ * ## References
+ * - `assert_runtime_function_matches_source_function`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1056）。
+ * - `test_binary_roundtrip_preserves_debug_line_metadata_for_runtime_loading`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6247）。
+ */
+
+/**
+ * @unit EXECBC-INSP-15 execbc_aot_pipeline_string_equal
+ * @fn static TZrBool execbc_aot_pipeline_string_equal(const SZrString *string1, const SZrString *string2)
+ *
+ * ## Summary
+ * 为源函数与回读函数的非空字符串字段比较内容，避免用GC对象地址代替字符串内容相等。
+ *
+ * ## Parameters
+ * @param[in] string1 仍有效的非空GC字符串借用。
+ * @param[in] string2 仍有效的非空GC字符串借用。
+ *
+ * ## Returns
+ * @return 转交ZrCore_String_Equal的内容比较结果，不分配或转移字符串所有权。
+ *
+ * ## Constraints and lifecycle
+ * 本包装不提供单边NULL保护；可空字段应先走assert_optional_string_equal的分支。底层相同指针捷径不能作为任意NULL输入保证。
+ *
+ * ## References
+ * - `ZrCore_String_Equal`（zr_vm_core/src/zr_vm_core/string/string.c:928）。
+ * - `assert_optional_string_equal`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1116）。
+ * - `assert_runtime_function_matches_source_function`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1056）。
+ */
+
+/**
+ * @unit EXECBC-INSP-16 assert_runtime_function_matches_source_function
+ * @fn static void assert_runtime_function_matches_source_function(const SZrFunction *expected, const SZrFunction *actual)
+ *
+ * ## Summary
+ * 在二进制回读后递归比较测试所依赖的函数结构、ExecBC、成员表及调试行映射，检出加载过程丢失这些字段的退化。
+ *
+ * ## Parameters
+ * @param[in] expected 由编译器生成且仍存活的源函数图；内部数组须与长度一致。
+ * @param[in] actual 由加载器生成且仍存活的函数图；与expected对应。
+ *
+ * ## Returns
+ * 成功表示本助手列出的断言全部成立；不返回值或交付新对象。不相等或顶层NULL经Unity断言终止当前测试。
+ *
+ * ## Constraints and lifecycle
+ * 比较stack/参数/数组长度、指令字段、成员表和childFunctionList；只比较callSiteCacheLength而非缓存内容，亦不比较所有类型/绑定/运行时字段。调试元数据存在时要求actual逐指令映射；无源调试表时要求actual三项为空/零。无回滚或资源释放，断言失败可非局部跳过调用方尾部清理。
+ *
+ * ## References
+ * - `function_find_debug_line_for_instruction`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1027）。
+ * - `execbc_aot_pipeline_string_equal`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1051）。
+ * - `test_execbc_quickens_cached_meta_and_dynamic_call_sites_and_preserves_binary_metadata`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6015）。
+ */
+
+/**
+ * @unit EXECBC-INSP-17 assert_optional_string_equal
+ * @fn static void assert_optional_string_equal(const SZrString *expected, const SZrString *actual)
+ *
+ * ## Summary
+ * 在可空的类型名/元素类型名对照中区分缺失值与实际字符串，随后复用非空内容比较。
+ *
+ * ## Parameters
+ * @param[in] expected 可为NULL；非NULL时为仍有效的GC字符串借用。
+ * @param[in] actual 可为NULL；非NULL时为仍有效的GC字符串借用。
+ *
+ * ## Returns
+ * 两者都NULL或非空内容相等时完成；一空一非空或内容不同则Unity失败，不交付新对象。
+ *
+ * ## Constraints and lifecycle
+ * NULL分支仅做指针相等断言并直接返回，保证后续内容比较的两参数均非空。对象所有权仍归上层测试；Unity非局部退出不负责调用方清理。
+ *
+ * ## References
+ * - `execbc_aot_pipeline_string_equal`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1051）。
+ * - `assert_typed_type_ref_equal`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1126）。
+ */
+
+/**
+ * @unit EXECBC-INSP-18 assert_typed_type_ref_equal
+ * @fn static void assert_typed_type_ref_equal(const SZrFunctionTypedTypeRef *expected, const SZrFunctionTypedTypeRef *actual)
+ *
+ * ## Summary
+ * 在map/array二进制回读场景中比较实际使用的类型引用字段，包含可空性、所有权限定和数组元素说明。
+ *
+ * ## Parameters
+ * @param[in] expected 非空且字段有效的源类型引用借用。
+ * @param[in] actual 非空且字段有效的加载后类型引用借用。
+ *
+ * ## Returns
+ * 所列标量/可空字符串全部相等则完成；NULL或不相等触发Unity失败。
+ *
+ * ## Constraints and lifecycle
+ * 比较baseType/isNullable/ownershipQualifier/isArray/typeName/elementBaseType/elementTypeName；不比较staticCType/staticCTypeId，不能据此宣称整个结构相等。只借用，不释放；失败可非局部退出当前测试。
+ *
+ * ## References
+ * - `assert_optional_string_equal`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1116）。
+ * - `test_binary_roundtrip_preserves_map_stored_array_iterable_contract`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6324）。
+ */
+
+/**
+ * @unit EXECBC-INSP-19 function_tree_contains_opcode
+ * @fn static TZrBool function_tree_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode)
+ *
+ * ## Summary
+ * 为包含嵌套可调用对象的工件检查提供ExecBC存在性查询，避免只检查模块入口漏掉真正函数体。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ * @param[in] opcode 待匹配的ExecBC操作码。
+ *
+ * ## Returns
+ * @return 当前函数、childFunctionList，或FUNCTION/CLOSURE常量中raw type为FUNCTION的对象任一命中返回TRUE；其余FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 深度优先，先本函数再子函数再合格常量；不解包实际CLOSURE对象，不做访问集去重或环检测。借用图须有效并在递归可终止的范围内；不执行函数或证明可达性。
+ *
+ * ## References
+ * - `function_contains_opcode`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:881）。
+ * - `test_aot_c_backend_lowers_indexed_child_access_even_with_embedded_blob`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:4435）。
+ */
+
+/**
+ * @unit EXECBC-INSP-20 function_contains_callsite_cache_kind
+ * @fn static TZrBool function_contains_callsite_cache_kind(const SZrFunction *function, EZrFunctionCallSiteCacheKind kind)
+ *
+ * ## Summary
+ * 为当前层quickening断言判断是否建立了指定kind的调用点缓存；与树级查询保持边界分明。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ * @param[in] kind 要计数的缓存kind值。
+ *
+ * ## Returns
+ * @return 当前函数有效缓存表中对应kind数量>0则TRUE；NULL、无表或零项则FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只核kind存在，不验证缓存绑定、指令索引、热点PIC或运行时命中；不扫描子函数，也不取得缓存所有权。
+ *
+ * ## References
+ * - `function_count_callsite_cache_kind`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1203）。
+ * - `function_tree_contains_callsite_cache_kind`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1182）。
+ */
+
+/**
+ * @unit EXECBC-INSP-21 function_tree_contains_callsite_cache_kind
+ * @fn static TZrBool function_tree_contains_callsite_cache_kind(const SZrFunction *function, EZrFunctionCallSiteCacheKind kind)
+ *
+ * ## Summary
+ * 为元/动态调用的嵌套fixture检查缓存kind，防止只检查入口遗漏childFunctionList中的调用点。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ * @param[in] kind 待匹配的缓存kind。
+ *
+ * ## Returns
+ * @return 根或按childFunctionList深度优先遍历的任一函数命中则TRUE；缺失图或未命中FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只走childFunctionList，不走函数常量；结果不带缓存所属函数或索引。数据在查询期间须稳定，不做环检测。
+ *
+ * ## References
+ * - `function_contains_callsite_cache_kind`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1175）。
+ * - `test_execbc_quickens_cached_meta_and_dynamic_call_sites_and_preserves_binary_metadata`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6015）。
+ */
+
+/**
+ * @unit EXECBC-INSP-22 function_count_callsite_cache_kind
+ * @fn static TZrUInt32 function_count_callsite_cache_kind(const SZrFunction *function, EZrFunctionCallSiteCacheKind kind)
+ *
+ * ## Summary
+ * 统计当前函数指定kind的缓存项，让quickening测试约束建项数量而非仅检查某种缓存存在。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ * @param[in] kind 仅作缓存kind字段相等匹配的目标值。
+ *
+ * ## Returns
+ * @return 返回当前缓存表的匹配项数；NULL函数或NULL表返回0，不区分缺失表与零匹配。
+ *
+ * ## Constraints and lifecycle
+ * 不递归、不验证各项member/argument/deopt等字段；长度与缓存数组的有效性由构造/加载fixture保证，返回值不代表实际执行次数。
+ *
+ * ## References
+ * - `function_contains_callsite_cache_kind`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1175）。
+ * - `test_meta_access_semir_and_true_aot_c_preserve_dedicated_meta_get_set_opcodes`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:7519）。
+ */
+
+/**
+ * @unit EXECBC-INSP-23 semir_contains_opcode
+ * @fn static TZrBool semir_contains_opcode(const SZrFunction *function, EZrSemIrOpcode opcode)
+ *
+ * ## Summary
+ * 在访问lowering测试中检查当前函数保留独立SemIR操作，作为ExecBC专门化之外的语义表示对照。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ * @param[in] opcode 待匹配的SemIR操作码。
+ *
+ * ## Returns
+ * @return 当前semIrInstructions中至少一项opcode相等则TRUE；NULL函数、缺表或未命中FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只查询当前SemIR数组；不检查deoptId、不递归、不执行指令，也不验证SemIR CFG或反优化表。
+ *
+ * ## References
+ * - `test_access_lowering_preserves_explicit_member_and_index_ops`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1427）。
+ * - `semir_contains_opcode_with_deopt`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1261）。
+ */
+
+/**
+ * @unit EXECBC-INSP-24 semir_tree_contains_opcode_with_deopt
+ * @fn static TZrBool semir_tree_contains_opcode_with_deopt(const SZrFunction *function, EZrSemIrOpcode opcode, TZrBool requireDeopt)
+ *
+ * ## Summary
+ * 在嵌套元调用、尾调用或所有权测试中查询指定SemIR操作，并按调用方要求附加非零deoptId条件。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ * @param[in] opcode 待匹配的SemIR操作码。
+ * @param[in] requireDeopt FALSE只要求opcode；TRUE额外要求同一指令deoptId非零。
+ *
+ * ## Returns
+ * @return 当前函数或childFunctionList递归任一指令满足条件则TRUE；否则FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 先本函数再子函数；不扫描常量中的函数，不遍历反优化备份/表，也不验证deoptId是否有效。递归图须稳定且可终止，结果只表示有限字段存在性。
+ *
+ * ## References
+ * - `semir_contains_opcode_with_deopt`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1261）。
+ * - `test_execbc_quickens_zero_arg_tail_call_sites_without_changing_semir_contracts`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:8444）。
+ */
+
+/**
+ * @unit EXECBC-INSP-25 semir_contains_opcode_with_deopt
+ * @fn static TZrBool semir_contains_opcode_with_deopt(const SZrFunction *function, EZrSemIrOpcode opcode, TZrBool requireDeopt)
+ *
+ * ## Summary
+ * 把SemIR opcode检查与可选的非零deoptId检查集中到一个谓词，供quickening前后契约断言复用。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ * @param[in] opcode 待匹配的SemIR操作码。
+ * @param[in] requireDeopt 为TRUE时要求匹配指令deoptId!=0；FALSE不限制该字段。
+ *
+ * ## Returns
+ * @return 存在满足opcode和可选deoptId条件的指令则TRUE；NULL、缺表或未命中FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只读本函数SemIR，不访问semIrDeoptTable或任何备份路径，不验证反优化记录、还原行为或执行可达性。
+ *
+ * ## References
+ * - `semir_tree_contains_opcode_with_deopt`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1239）。
+ * - `test_execbc_quickens_zero_arg_call_sites_without_changing_semir_contracts`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:5737）。
+ */
+
+/**
+ * @unit EXECBC-INSP-26 function_tree_find_first_callsite_cache_kind
+ * @fn static const SZrFunctionCallSiteCacheEntry *function_tree_find_first_callsite_cache_kind(const SZrFunction *function, EZrFunctionCallSiteCacheKind kind)
+ *
+ * ## Summary
+ * 为缓存元数据断言返回根优先、子函数深度优先搜索到的第一个kind匹配项。
+ *
+ * ## Parameters
+ * @param[in] function 编译或加载完成的函数借用；允许NULL并按未命中处理，非空时指针/长度及被扫描数组必须一致，所有者在调用期间保持对象存活。
+ * @param[in] kind 待匹配的缓存kind。
+ *
+ * ## Returns
+ * @return 返回某一函数callSiteCaches内元素的借用指针；未命中返回NULL。指针在所属函数/缓存数组销毁、重建或移动前有效，调用方不得释放。
+ *
+ * ## Constraints and lifecycle
+ * 顺序是根缓存表的原序，再childFunctionList原序；不扫描函数常量，不返回所属函数。memberEntryIndex等局部索引必须按真实owner解释，不能仅由根参数推定owner。
+ *
+ * ## References
+ * - `assert_first_callsite_cache_member_binding`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1410）。
+ * - `test_execbc_quickens_cached_meta_and_dynamic_call_sites_and_preserves_binary_metadata`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6015）。
+ */
+
+/**
+ * @unit EXECBC-INSP-27 rewrite_cached_meta_access_tree_to_plain
+ * @fn static TZrUInt32 rewrite_cached_meta_access_tree_to_plain(SZrFunction *function)
+ *
+ * ## Summary
+ * 仅为纯元属性lowering测试原位撤销GET/SET缓存化，隔离后端对普通META_GET/META_SET的生成支持。
+ *
+ * ## Parameters
+ * @param[in,out] function 独占借用的可写fixture函数树；NULL直接返回0。指令/缓存/子函数数组及索引必须由有效编译结果建立。
+ *
+ * ## Returns
+ * @return 返回实际改写的指令条数，包含childFunctionList；0同时涵盖NULL、无适用指令和所有候选被跳过。
+ *
+ * ## Constraints and lifecycle
+ * 只改相符kind且缓存索引有效的SUPER_META_GET_CACHED/SET_CACHED，写回操作码及16位memberEntryIndex操作数；其余指令保留。保留缓存表和SemIR、不走常量函数、不验证或扩展member索引范围，无事务回滚/同步。调用者在后端生成前独占使用fixture。
+ *
+ * ## References
+ * - `test_aot_c_backend_lowers_plain_meta_get_set_with_runtime_helpers`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:2594）。
+ * - `compile_meta_access_fixture`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:6639）。
+ */
+
+/**
+ * @unit EXECBC-INSP-28 find_member_entry_by_symbol
+ * @fn static const SZrFunctionMemberEntry *find_member_entry_by_symbol(const SZrFunction *function, const char *expectedSymbol)
+ *
+ * ## Summary
+ * 为成员标志断言在当前函数成员表中按符号内容定位条目，区分成员名绑定与缓存opcode存在。
+ *
+ * ## Parameters
+ * @param[in] function 借用函数；NULL或成员表NULL返回NULL。
+ * @param[in] expectedSymbol 借用的NUL终止符号名；NULL返回NULL。
+ *
+ * ## Returns
+ * @return 返回表内首个非空symbol且名称相同的成员元素借用，未命中NULL；调用方不释放，表移动/释放后失效。
+ *
+ * ## Constraints and lifecycle
+ * 仅查当前函数，跳过NULL symbol；memberEntryLength须与数组有效容量一致。对比字符串内容，不验证条目kind/flags/prototype或descriptor索引。
+ *
+ * ## References
+ * - `assert_member_entry_symbol_flags`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1381）。
+ * - `ZrCore_String_GetNativeString`（zr_vm_core/include/zr_vm_core/string.h）。
+ */
+
+/**
+ * @unit EXECBC-INSP-29 assert_member_entry_symbol_flags
+ * @fn static void assert_member_entry_symbol_flags(const SZrFunction *function, const char *expectedSymbol, TZrUInt8 expectedFlags)
+ *
+ * ## Summary
+ * 核对当前函数指定成员的reserved0标志，以阻止只有操作码正确而成员符号/flags错绑的退化；缺项时打印当前表供定位。
+ *
+ * ## Parameters
+ * @param[in] function 当前编译fixture的有效非空函数借用。
+ * @param[in] expectedSymbol 有效NUL终止预期名称；当前调用均为字符串字面量。
+ * @param[in] expectedFlags 与成员reserved0逐字节相等的预期标志。
+ *
+ * ## Returns
+ * 成功表示找到了非空symbol成员且reserved0相等；否则Unity失败。缺项但有成员表时会向stderr列出表内容，不交付对象。
+ *
+ * ## Constraints and lifecycle
+ * 不递归，不验证所有成员属性；输入表及字符串必须仍有效。诊断输出后失败可非局部退出当前测试，不执行调用方资源清理。
+ *
+ * ## References
+ * - `find_member_entry_by_symbol`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1360）。
+ * - `test_static_meta_access_quickens_to_static_callsite_cache_variants`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:7666）。
+ */
+
+/**
+ * @unit EXECBC-INSP-30 assert_first_callsite_cache_member_binding
+ * @fn static void assert_first_callsite_cache_member_binding(const SZrFunction *function, EZrFunctionCallSiteCacheKind kind, const char *expectedSymbol, TZrUInt8 expectedFlags)
+ *
+ * ## Summary
+ * 将指定kind的首个缓存项与成员符号及reserved0交叉断言，供元属性工件与回读测试检查绑定。
+ *
+ * ## Parameters
+ * @param[in] function 当前测试的非空根函数借用；此助手要求首个命中缓存确属根函数。
+ * @param[in] kind 用于根优先树搜索的缓存kind。
+ * @param[in] expectedSymbol 借用的NUL终止预期成员名。
+ * @param[in] expectedFlags 预期成员reserved0标志。
+ *
+ * ## Returns
+ * 成功表示首个缓存非空且按根成员表解释的索引、符号和标志均满足断言；不满足则Unity失败，不返回缓存或owner。
+ *
+ * ## Constraints and lifecycle
+ * TODO: 树搜索返回缓存但未返回其所属函数；memberEntryIndex是owner局部索引。当前用例先证明根缓存存在并依赖根优先搜索，扩展到只在子函数命中前须核对或传回owner。 仅作测试断言，无owner修正、回滚或资源回收；Unity失败可非局部离开调用方。
+ *
+ * ## References
+ * - `function_tree_find_first_callsite_cache_kind`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1284）。
+ * - `test_meta_access_semir_and_true_aot_c_preserve_dedicated_meta_get_set_opcodes`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:7519）。
+ * - `test_reference_property_fixture_preserves_meta_access_artifacts_with_true_aot_c_lowering`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:8250）。
+ */
+
+/**
+ * @unit EXECBC-INSP-31 assert_first_callsite_cache_member_binding::member table lookup
+ *
+ * ## Summary
+ * 仅在首个缓存属于传入根函数的前提下，用memberEntryIndex核对根成员表中的符号和标志；这是跨表索引解释边界。
+ *
+ * ## Constraints and lifecycle
+ * TODO: 树搜索返回缓存但未返回其所属函数；memberEntryIndex是owner局部索引。当前用例先证明根缓存存在并依赖根优先搜索，扩展到只在子函数命中前须核对或传回owner。
+ *
+ * ## References
+ * - `assert_first_callsite_cache_member_binding`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1410）。
+ * - `function_tree_find_first_callsite_cache_kind`（zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c:1284）。
+ */

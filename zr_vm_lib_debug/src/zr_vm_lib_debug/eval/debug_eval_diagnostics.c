@@ -314,3 +314,43 @@ TZrBool zr_debug_eval_parse_right_operand_with_skip(ZrDebugEvalParser *parser,
     parser->skip_evaluation = previousSkip;
     return parsed;
 }
+
+/**
+ * @fn static TZrBool zr_debug_eval_error_is_expected_expression(const ZrDebugEvalParser *parser)
+ *
+ * ## Summary
+ * 识别唯一可以细化的完整通用错误文字，避免右操作数包装器覆盖更具体原因。
+ *
+ * ## Parameters
+ * @param[in] parser 只读解析状态；可为 NULL，error_buffer 可为 NULL；非空缓冲区必须可读且 NUL 结尾。 这是当前文本读取所需前提；公开零容量入口没有建立它，不能当作已保证的调用合同。
+ *
+ * ## Returns
+ * @return 仅完整等于 expected expression in debug evaluate 时返回 TRUE；NULL、其他文字或截断形式均为 FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 精确文本比较不改写错误区，也不按容量推断截断后的原始错误类别。
+ * BUG: DED-BUG-001：上游允许非空错误指针配零容量且不清零；失败路径仍读取该区并按 NUL 文本比较。有效暂停状态下，以 1 +、char error[1]={0x65} 和容量 0 进入兼容回退，strcmp 首字节匹配后可读过实际数组；这是完整静态路径结论，未经运行复现，当前未修复。
+ *
+ * ## References
+ * - zr_debug_eval_refine_right_operand_error — zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_eval_diagnostics.c:264
+ * - 容量零的原错误指针仍传入兼容 parser — zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_eval.c:1020
+ */
+
+/**
+ * @fn static TZrBool zr_debug_eval_cursor_is_missing_expression_boundary(const ZrDebugEvalParser *parser)
+ *
+ * ## Summary
+ * 为右操作数错误区分缺失输入与非法起点，保留调用方的解析位置。
+ *
+ * ## Parameters
+ * @param[in] parser 只读解析状态；NULL 或 cursor 为 NULL 视为缺失边界；其他情况须为有效 NUL 结尾输入。
+ *
+ * ## Returns
+ * @return 跳过四种 ASCII 空白后，结尾、右圆括号或右方括号返回 TRUE，其余返回 FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只使用局部 cursor；不消费输入，也不是完整词法分析或条件分支分隔符判定。
+ *
+ * ## References
+ * - zr_debug_eval_refine_right_operand_error — zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_eval_diagnostics.c:268
+ */

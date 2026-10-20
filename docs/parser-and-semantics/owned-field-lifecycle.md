@@ -259,7 +259,7 @@ rules, cleanup mirrors, and the current nullable-upgrade compatibility boundary.
 - lexical block 内的 `ref readonly` / `ref` binding 在 scope-end 结束 view；`using(ref owner)` 被拒绝，不再进入旧 `Loan<T>` source-slot 归还 lowering
 - `ref readonly T` / `ref T` 赋值、变量初始化、字段赋值表达式和调用参数逃逸诊断已接入；只读 view 只能流向只读 view，mutable view 可以在同一有效 region 内流向 mutable 或 readonly view
 - `ref readonly T` / `ref T` 脚本级 `pub/pro var` 导出全局逃逸诊断已接入，并会递归拒绝普通泛型外壳中嵌套的 reference 实参；private 顶层临时 owner/reference 仅保留给受控 runtime smoke path
-- `ref readonly T` / `ref T` 闭包捕获逃逸诊断已接入；闭包和嵌套函数不能保存直接或嵌套在普通泛型实参里的 reference view
+- `ref readonly T` / `ref T` 闭包捕获逃逸诊断已接入；显式类型注解与 initializer 推断都会按等价的 borrowed/loaned contract 检查，闭包和嵌套函数不能保存直接或嵌套在普通泛型实参里的 reference view
 - `ref readonly T` / `ref T` async/task await-boundary 基础诊断已接入；显式 mutable view、嵌套 reference typed local 和 `using` guard `else` 分支在 `await` 后不能继续使用已越界 view；`import(...)` guard binder、默认 `@Available(m: Module)` payload binding，以及由赋值、条件/逻辑/type-cast、`type(...)`/prototype wrapper、array/object/key-value/unpack 容器 initializer、construct/decorator expression 和普通 `=` assignment-expression initializer 传播出的 guard alias 也不能在同一 guard body 内跨 `await` 后继续使用；父 context 已跨 `await` 后继承到 nested function/lambda 的旧 reference/affine/plugin guard binding 也会触发同一诊断，fresh child local/parameter 不受影响
 - `ref readonly T` / `ref T` / `Shared<T>` / `Weak<T>` 嵌入 thread `Send` / `Sync` 泛型实参时的基础拒绝已接入；thread marker 检查会递归扫描 `elementTypes`
 - 普通泛型外壳中的 reference view、`Unique<T>` 和 `Shared<T>` 实参会递归参与赋值和类型兼容性检查，不能隐式流入 plain 泛型目标

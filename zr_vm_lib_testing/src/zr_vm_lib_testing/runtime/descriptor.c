@@ -160,7 +160,7 @@ static const ZrLibGenericParameterDescriptor g_single_e[] = {
  * ## References
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c:598
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c:597
- * zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:972
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:862
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:964
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_call_binding_hash.c:203
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:607
@@ -199,7 +199,7 @@ static const ZrLibFunctionDescriptor g_testing_functions[] = {
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:1224
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:809
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_call_binding_hash.c:151
- * zr_vm_parser/src/zr_vm_parser/attribute_contract.c:102
+ * zr_vm_parser/src/zr_vm_parser/contract/attribute_contract.c:102
  * zr_vm_parser/src/zr_vm_parser/compiler/compiler_test.c:732
  */
 static const ZrLibFieldDescriptor g_skip_fields[] = {
@@ -224,8 +224,8 @@ static const ZrLibFieldDescriptor g_skip_fields[] = {
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:809
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_call_binding_hash.c:151
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:701
- * zr_vm_core/src/zr_vm_core/exception/exception.c:407
- * zr_vm_core/src/zr_vm_core/exception/exception.c:684
+ * zr_vm_core/src/zr_vm_core/exception/exception_errors.c:433
+ * zr_vm_core/src/zr_vm_core/exception/exception_errors.c:629
  * zr_vm_core/src/zr_vm_core/object/object.c:2393
  */
 static const ZrLibFieldDescriptor g_assertion_failure_fields[] = {
@@ -261,7 +261,7 @@ static const ZrLibFieldDescriptor g_assertion_failure_fields[] = {
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:429
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:436
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:616
- * zr_vm_core/src/zr_vm_core/io/io_runtime.c:695
+ * zr_vm_core/src/zr_vm_core/io/io_runtime.c:701
  * tests/testing/test_assertions.c:503
  */
 static const ZrLibFieldDescriptor g_source_span_fields[] = {
@@ -328,11 +328,11 @@ static const ZrLibFieldDescriptor g_value_snapshot_fields[] = {
  * ## References
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c:619
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c:618
- * zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:948
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:838
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:982
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_call_binding_hash.c:219
  * tests/testing/test_assertions.c:88
- * zr_vm_parser/src/zr_vm_parser/attribute_contract.c:69
+ * zr_vm_parser/src/zr_vm_parser/contract/attribute_contract.c:69
  * zr_vm_parser/src/zr_vm_parser/compiler/compiler_test.c:506
  */
 static const ZrLibTypeDescriptor g_testing_types[] = {
@@ -347,7 +347,7 @@ static const ZrLibTypeDescriptor g_testing_types[] = {
  * 编译绑定由parser builtin实施；provider type供反射/契约核查和物化，不能把VM对象构造当测试注册。
  *
  * ## References
- * zr_vm_parser/src/zr_vm_parser/attribute_contract.c:69
+ * zr_vm_parser/src/zr_vm_parser/contract/attribute_contract.c:69
  * tests/testing/test_assertions.c:88
  * zr_vm_parser/src/zr_vm_parser/compiler/compiler_test.c:506
  */
@@ -367,7 +367,7 @@ static const ZrLibTypeDescriptor g_testing_types[] = {
  * function target/artifact retention，可重复；参数绑定和序列化由parser/test contract，不由字段数组完成。
  *
  * ## References
- * zr_vm_parser/src/zr_vm_parser/attribute_contract.c:86
+ * zr_vm_parser/src/zr_vm_parser/contract/attribute_contract.c:86
  * zr_vm_parser/src/zr_vm_parser/compiler/compiler_test.c:720
  */
         ZR_LIB_TYPE_DESCRIPTOR_INIT("Case", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT,
@@ -386,7 +386,7 @@ static const ZrLibTypeDescriptor g_testing_types[] = {
  * function target/artifact retention，不可重复；不是运行时抛出的AssertionFailure。
  *
  * ## References
- * zr_vm_parser/src/zr_vm_parser/attribute_contract.c:102
+ * zr_vm_parser/src/zr_vm_parser/contract/attribute_contract.c:102
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/descriptor.c:207
  */
         ZR_LIB_TYPE_DESCRIPTOR_INIT("Skip", ZR_OBJECT_PROTOTYPE_TYPE_STRUCT,
@@ -449,8 +449,8 @@ static const ZrLibTypeDescriptor g_testing_types[] = {
  *
  * ## References
  * zr_vm_lib_testing/src/zr_vm_lib_testing/runtime/assertions.c:701
- * zr_vm_core/src/zr_vm_core/exception/exception.c:407
- * zr_vm_core/src/zr_vm_core/exception/exception.c:684
+ * zr_vm_core/src/zr_vm_core/exception/exception_errors.c:433
+ * zr_vm_core/src/zr_vm_core/exception/exception_errors.c:629
  */
         ZR_LIB_TYPE_DESCRIPTOR_INIT("AssertionFailure", ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
                                     g_assertion_failure_fields,
@@ -478,7 +478,7 @@ static const ZrLibTypeDescriptor g_testing_types[] = {
  * tests/testing/test_assertions.c:88
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_call_binding_hash.c:220
  * tests/testing/test_assertions.c:90
- * zr_vm_parser/src/zr_vm_parser/attribute_contract.c:69
+ * zr_vm_parser/src/zr_vm_parser/contract/attribute_contract.c:69
  * zr_vm_parser/src/zr_vm_parser/compiler/compiler_test.c:506
  * zr_vm_parser/src/zr_vm_parser/compiler/compiler_test.c:716
  */
@@ -509,7 +509,7 @@ static const ZrLibAttributeRoleDescriptor g_testing_roles[] = {
  * 解析/物化目标失败可使本模块链接建立失败；不能把静态数组存在等同依赖已可用。
  *
  * ## References
- * zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:983
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:873
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:991
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:1142
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_call_binding_hash.c:214
@@ -539,7 +539,7 @@ static const ZrLibModuleLinkDescriptor g_testing_links[] = {
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c:939
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_call_binding_hash.c:192
  * zr_vm_library/include/zr_vm_library/native_binding.h:496
- * zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:738
+ * zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c:628
  * zr_vm_library/src/zr_vm_library/native_binding/native_binding_call_binding_hash.c:188
  * tests/testing/test_assertions.c:59
  */

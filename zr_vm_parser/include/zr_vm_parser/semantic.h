@@ -47,6 +47,16 @@ typedef TZrUInt32 TZrLifetimeRegionId;
 typedef TZrUInt32 TZrSemanticScopeId;
 #endif
 
+/**
+ * @brief 词法绑定查找的显示拼写与语法上下文。
+ * @note name 保留原始用户拼写；syntaxContext 是同一语法上下文 owner
+ * 内可比较的值，不能用字符串后缀替代，也不能脱离其 owner 跨快照复用。
+ */
+typedef struct SZrSemanticBindingKey {
+    SZrString *name;
+    SZrSyntaxContext syntaxContext;
+} SZrSemanticBindingKey;
+
 // Semantic IDs reserve 0 as "invalid / not assigned"; allocation starts at 1.
 /**
  * @brief 规定语义 ID 的无效值。
@@ -136,6 +146,8 @@ typedef struct SZrSemanticSymbolRecord {
     TZrOverloadSetId overloadSetId;
     SZrAstNode *astNode;
     SZrFileRange location;
+    /* Definition context; display and diagnostics continue to use name. */
+    SZrSyntaxContext syntaxContext;
 } SZrSemanticSymbolRecord;
 
 /**
@@ -223,6 +235,8 @@ typedef struct SZrSemanticVisibleSymbolFact {
     TZrBool isImport;
     TZrBool isAlias;
     TZrBool isGenericParameter;
+    /* Copied from the published symbol for context-aware visibility queries. */
+    SZrSyntaxContext syntaxContext;
 } SZrSemanticVisibleSymbolFact;
 
 /**
@@ -354,6 +368,8 @@ typedef struct SZrSemanticContext {
     SZrArray documentationFacts; // SZrSemanticDocumentationFact
     /* Snapshot-owned prefix views; their source AST children remain borrowed. */
     struct SZrSemanticPrimaryPrefix *primaryPrefixes;
+    /* Retained owners for syntax contexts carried by semantic identities. */
+    SZrArray syntaxContextTables; // SZrSyntaxContextTable *
 } SZrSemanticContext;
 
 /**
@@ -451,6 +467,20 @@ ZR_PARSER_API TZrSymbolId ZrParser_Semantic_RegisterSymbol(SZrSemanticContext *c
                                                    SZrAstNode *astNode,
                                                    SZrFileRange location);
 /**
+ * @brief 为声明分配身份并保存其词法绑定上下文。
+ * @note 参数顺序保留 RegisterSymbol 的原有字段，syntaxContext 追加在末尾；
+ *       context/name 为空返回 INVALID，名称仍借用调用方存储。
+ */
+ZR_PARSER_API TZrSymbolId ZrParser_Semantic_RegisterSymbolWithContext(
+        SZrSemanticContext *context,
+        SZrString *name,
+        EZrSemanticSymbolKind kind,
+        TZrTypeId typeId,
+        TZrOverloadSetId overloadSetId,
+        SZrAstNode *astNode,
+        SZrFileRange location,
+        SZrSyntaxContext syntaxContext);
+/**
  * @brief 以调用者提供的 SymbolId 发布一条声明身份记录。
  * @note 拒绝空 context/name、INVALID 和重复符号 ID；不查验 typeId/overloadSetId，不推进 nextSymbolId；调用者保持关联 ID 的快照归属并避免与预留编号冲突；输入指针为借用。
  */
@@ -462,6 +492,20 @@ ZR_PARSER_API TZrSymbolId ZrParser_Semantic_RegisterSymbolWithId(SZrSemanticCont
                                                          TZrOverloadSetId overloadSetId,
                                                           SZrAstNode *astNode,
                                                           SZrFileRange location);
+/**
+ * @brief 以调用者提供的 SymbolId 发布一条声明身份记录并保留其语法上下文。
+ * @note 与 RegisterSymbolWithId 相同，但函数/类型等 item 声明不会丢失 def-site context。
+ */
+ZR_PARSER_API TZrSymbolId ZrParser_Semantic_RegisterSymbolWithIdAndContext(
+        SZrSemanticContext *context,
+        TZrSymbolId symbolId,
+        SZrString *name,
+        EZrSemanticSymbolKind kind,
+        TZrTypeId typeId,
+        TZrOverloadSetId overloadSetId,
+        SZrAstNode *astNode,
+        SZrFileRange location,
+        SZrSyntaxContext syntaxContext);
 /**
  * @brief 按当前快照的身份查询已发布符号。
  * @note 无效输入或缺失返回 NULL；返回 symbols 元素的借用地址，数组扩容、Reset 或 Free 后不可继续使用。
@@ -499,6 +543,16 @@ ZR_PARSER_API TZrBool ZrParser_Semantic_PublishVisibleSymbolFact(
 ZR_PARSER_API const SZrSemanticSymbolRecord *ZrParser_Semantic_FindSymbolByNameAndKind(
         const SZrSemanticContext *context,
         SZrString *name,
+        EZrSemanticSymbolKind kind);
+/**
+ * @brief 从给定词法作用域向父作用域查找同拼写、同上下文的最近绑定。
+ * @note 每层作用域只消费已发布 visible facts，再执行名称/种类/上下文匹配；
+ *       不回退到全局字符串扫描。访问控制仍由调用方依据 visible fact 执行。
+ */
+ZR_PARSER_API const SZrSemanticSymbolRecord *ZrParser_Semantic_FindSymbolByBindingKey(
+        const SZrSemanticContext *context,
+        TZrSemanticScopeId scopeId,
+        const SZrSemanticBindingKey *key,
         EZrSemanticSymbolKind kind);
 /**
  * @brief 保持 SymbolId，将其类型投影改绑到已存在的 canonical TypeId。

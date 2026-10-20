@@ -4,7 +4,26 @@
 
 #include "compiler_internal.h"
 
+TZrBool compiler_binding_contexts_equal(
+        SZrSyntaxContext left,
+        SZrSyntaxContext right,
+        EZrSyntaxNamespace namespaceKind) {
+    SZrSyntaxContext normalizedLeft = ZrParser_SyntaxContext_Normalize(
+            left, namespaceKind);
+    SZrSyntaxContext normalizedRight = ZrParser_SyntaxContext_Normalize(
+            right, namespaceKind);
+    return ZrParser_SyntaxContext_Equal(normalizedLeft, normalizedRight);
+}
+
 TZrUInt32 allocate_local_var(SZrCompilerState *cs, SZrString *name) {
+    return allocate_local_var_with_context(
+            cs, name, ZrParser_SyntaxContext_Root());
+}
+
+TZrUInt32 allocate_local_var_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext) {
     if (cs == ZR_NULL || cs->hasError || name == ZR_NULL) {
         return ZR_PARSER_SLOT_NONE;
     }
@@ -26,6 +45,12 @@ TZrUInt32 allocate_local_var(SZrCompilerState *cs, SZrString *name) {
     }
 
     ZrCore_Array_Push(cs->state, &cs->localVars, &localVar);
+    {
+        SZrCompilerBindingIdentity identity;
+        identity.syntaxContext = syntaxContext;
+        ZrCore_Array_Push(
+                cs->state, &cs->localBindingIdentities, &identity);
+    }
     // localVarCount 应该与 localVars.length 保持同步
     cs->localVarCount = cs->localVars.length;
     cs->stackSlotCount++;
@@ -146,8 +171,16 @@ void ZrParser_Compiler_TrimStackBy(SZrCompilerState *cs, TZrSize amount) {
     ZrParser_Compiler_TrimStackToCount(cs, targetCount);
 }
 
-// 查找局部变量
+// 查找局部变量；legacy callers remain root-context lookups.
 TZrUInt32 find_local_var(SZrCompilerState *cs, SZrString *name) {
+    return find_local_var_with_context(
+            cs, name, ZrParser_SyntaxContext_Root());
+}
+
+TZrUInt32 find_local_var_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext) {
     if (cs == ZR_NULL || name == ZR_NULL) {
         return ZR_PARSER_SLOT_NONE;
     }
@@ -160,9 +193,17 @@ TZrUInt32 find_local_var(SZrCompilerState *cs, SZrString *name) {
         // 确保索引在有效范围内
         if (index < cs->localVars.length) {
             SZrFunctionLocalVariable *var = (SZrFunctionLocalVariable *) ZrCore_Array_Get(&cs->localVars, index);
-            if (var != ZR_NULL && var->name != ZR_NULL) {
-                // 比较字符串
-                if (ZrCore_String_Equal(var->name, name)) {
+            if (var != ZR_NULL && var->name != ZR_NULL &&
+                ZrCore_String_Equal(var->name, name) &&
+                index < cs->localBindingIdentities.length) {
+                const SZrCompilerBindingIdentity *identity =
+                        (const SZrCompilerBindingIdentity *)ZrCore_Array_Get(
+                                &cs->localBindingIdentities, index);
+                if (identity != ZR_NULL &&
+                    compiler_binding_contexts_equal(
+                            identity->syntaxContext,
+                            syntaxContext,
+                            ZR_SYNTAX_NAMESPACE_LOCAL)) {
                     return var->stackSlot;
                 }
             }
@@ -172,8 +213,16 @@ TZrUInt32 find_local_var(SZrCompilerState *cs, SZrString *name) {
     return ZR_PARSER_SLOT_NONE;
 }
 
-// 查找闭包变量
+// 查找闭包变量；legacy callers remain root-context lookups.
 TZrUInt32 find_closure_var(SZrCompilerState *cs, SZrString *name) {
+    return find_closure_var_with_context(
+            cs, name, ZrParser_SyntaxContext_Root());
+}
+
+TZrUInt32 find_closure_var_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext) {
     if (cs == ZR_NULL || name == ZR_NULL) {
         return ZR_PARSER_INDEX_NONE;
     }
@@ -182,8 +231,17 @@ TZrUInt32 find_closure_var(SZrCompilerState *cs, SZrString *name) {
     TZrSize closureVarCount = cs->closureVars.length;
     for (TZrSize i = 0; i < closureVarCount; i++) {
         SZrFunctionClosureVariable *var = (SZrFunctionClosureVariable *) ZrCore_Array_Get(&cs->closureVars, i);
-        if (var != ZR_NULL && var->name != ZR_NULL) {
-            if (ZrCore_String_Equal(var->name, name)) {
+        if (var != ZR_NULL && var->name != ZR_NULL &&
+            ZrCore_String_Equal(var->name, name) &&
+            i < cs->closureBindingIdentities.length) {
+            const SZrCompilerBindingIdentity *identity =
+                    (const SZrCompilerBindingIdentity *)ZrCore_Array_Get(
+                            &cs->closureBindingIdentities, i);
+            if (identity != ZR_NULL &&
+                compiler_binding_contexts_equal(
+                        identity->syntaxContext,
+                        syntaxContext,
+                        ZR_SYNTAX_NAMESPACE_LOCAL)) {
                 return (TZrUInt32) i;
             }
         }
@@ -192,14 +250,24 @@ TZrUInt32 find_closure_var(SZrCompilerState *cs, SZrString *name) {
     return ZR_PARSER_INDEX_NONE;
 }
 
-// 分配闭包变量
+// 分配闭包变量；legacy callers remain root-context allocations.
 TZrUInt32 allocate_closure_var(SZrCompilerState *cs, SZrString *name, TZrBool inStack) {
+    return allocate_closure_var_with_context(
+            cs, name, ZrParser_SyntaxContext_Root(), inStack);
+}
+
+TZrUInt32 allocate_closure_var_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext,
+        TZrBool inStack) {
     if (cs == ZR_NULL || name == ZR_NULL) {
         return ZR_PARSER_INDEX_NONE;
     }
 
     // 检查是否已存在
-    TZrUInt32 existingIndex = find_closure_var(cs, name);
+    TZrUInt32 existingIndex = find_closure_var_with_context(
+            cs, name, syntaxContext);
     if (existingIndex != ZR_PARSER_INDEX_NONE) {
         return existingIndex;
     }
@@ -222,6 +290,12 @@ TZrUInt32 allocate_closure_var(SZrCompilerState *cs, SZrString *name, TZrBool in
     }
 
     ZrCore_Array_Push(cs->state, &cs->closureVars, &closureVar);
+    {
+        SZrCompilerBindingIdentity identity;
+        identity.syntaxContext = syntaxContext;
+        ZrCore_Array_Push(
+                cs->state, &cs->closureBindingIdentities, &identity);
+    }
     cs->closureVarCount++;
     
     return (TZrUInt32) (cs->closureVarCount - 1);
@@ -232,6 +306,14 @@ TZrUInt32 allocate_closure_var(SZrCompilerState *cs, SZrString *name, TZrBool in
 // 注意：这个函数用于在编译时查找子函数索引
 // 通过编译时建立的函数名到索引的映射来查找，不依赖遍历比较函数名
 TZrUInt32 find_child_function_index(SZrCompilerState *cs, SZrString *name) {
+    return find_child_function_index_with_context(
+            cs, name, ZrParser_SyntaxContext_Root());
+}
+
+TZrUInt32 find_child_function_index_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext) {
     if (cs == ZR_NULL || name == ZR_NULL) {
         return ZR_PARSER_INDEX_NONE;
     }
@@ -241,8 +323,17 @@ TZrUInt32 find_child_function_index(SZrCompilerState *cs, SZrString *name) {
     // 运行时查找完全基于索引，不依赖函数名
     for (TZrSize i = 0; i < cs->childFunctionNameMap.length; i++) {
         SZrChildFunctionNameMap *map = (SZrChildFunctionNameMap *)ZrCore_Array_Get(&cs->childFunctionNameMap, i);
-        if (map != ZR_NULL && map->name != ZR_NULL) {
-            if (ZrCore_String_Equal(map->name, name)) {
+        if (map != ZR_NULL && map->name != ZR_NULL &&
+            ZrCore_String_Equal(map->name, name) &&
+            i < cs->childFunctionBindingIdentities.length) {
+            const SZrCompilerBindingIdentity *identity =
+                    (const SZrCompilerBindingIdentity *)ZrCore_Array_Get(
+                            &cs->childFunctionBindingIdentities, i);
+            if (identity != ZR_NULL &&
+                compiler_binding_contexts_equal(
+                        identity->syntaxContext,
+                        syntaxContext,
+                        ZR_SYNTAX_NAMESPACE_ITEM)) {
                 // 找到匹配的函数名，返回对应的子函数索引
                 return map->childFunctionIndex;
             }

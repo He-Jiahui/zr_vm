@@ -27,7 +27,7 @@ void tearDown(void) {
 
 static SZrFileRange contract_range(TZrSize startOffset, TZrSize endOffset) {
     TZrChar sourceName[] = "semantic_query_contract.zr";
-    SZrFileRange range;
+    SZrFileRange range = {0};
 
     range.start.offset = startOffset;
     range.start.line = 1;

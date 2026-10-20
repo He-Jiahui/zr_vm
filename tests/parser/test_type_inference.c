@@ -8288,7 +8288,7 @@ static void test_type_inference_ffi_pointer_helpers_propagate_extern_wrapper_typ
                 "native extern(\"fixture\") {"
                 "    struct NativePoint {"
                 "        var x: i32;"
-                "        var y: i32;"
+                "        pub var y: i32;"
                 "    }"
                 "}"
                 "let ffi = import(\"zr.ffi\");"
@@ -8707,6 +8707,7 @@ static void test_type_inference_cyclic_import_local_import_outside_entry_path_pa
 
 // 主测试函数
 #include "test_type_inference_dynamic_return.inc"
+#include "test_type_inference_extern_visibility_cases.h"
 
 int main(void) {
     printf("\n");
@@ -8854,6 +8855,10 @@ int main(void) {
 
     printf("\n");
     TEST_MODULE_DIVIDER();
+    RUN_TEST(test_ffi_extern_wrapper_default_private_field_is_rejected);
+    RUN_TEST(test_ffi_extern_wrapper_explicit_private_field_is_rejected);
+    RUN_TEST(test_ffi_extern_wrapper_public_field_keeps_provider_types);
+
     printf("All Test Cases Completed\n");
     TEST_MODULE_DIVIDER();
     printf("\n");

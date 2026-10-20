@@ -128,6 +128,7 @@ doc_type: category-index
 
 # Core Runtime
 
+- [Integer power helpers](integer-power.md): shared interpreter/AOT integer exponentiation, overflow behavior, signed minimum handling, and direct boundary tests.
 - [CallInfo runtime](call-info-runtime.md): 调用帧的活动链、复用缓存、栈借用与返回/GC 约束；仅静态审查。
 - [Metadata token contract](metadata-token-contract.md): token 域、签名正文、局部 child alias、绑定快照与具体 TODO 边界；仅该 header 全 114 单元静态审查。
 
@@ -234,5 +235,8 @@ boundaries remain future work.
 - [Meta string allocation failures](meta-string-oom.md)：null、bool 和 number 字符串转换的失败发布边界。
 
 - [Error construction roots](exception-construction-roots.md)：分配失败触发完整回收时保护构造中的 Error、栈帧和输入。
+- [GC contract boundaries](gc-contract-boundaries.md)：预算拒绝结果、major 诊断与压缩分区校验。
+
+- [GC scan exception cleanup](gc-scan-exception-cleanup.md)：完整回收标记异常的锁、暂停和预算清理。
 
 - [Execution contract ownership](execution-contract-ownership.md)：字段与接口唯一owner、运行期句柄、域快照/复制及load epoch政策；planned实现另列。

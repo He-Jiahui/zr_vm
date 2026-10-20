@@ -1,30 +1,39 @@
 ---
 related_code:
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_time/compile_time_frame.c
+  - tests/compileTime/test_comptime_frame_lifetime.c
+  - tests/compileTime/test_comptime_frame_budget_cases.h
+  - tests/compileTime/test_comptime_frame_transaction_cases.h
   - zr_vm_parser/include/zr_vm_parser/compile_tool.h
   - zr_vm_parser/include/zr_vm_parser/comptime_contract.h
   - zr_vm_parser/include/zr_vm_parser/comptime_cache.h
   - zr_vm_parser/include/zr_vm_parser/compiler.h
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_descriptor.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_evaluator.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_binding.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_artifact.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_executor.c
-  - zr_vm_parser/src/zr_vm_parser/comptime_contract.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/tool/compile_tool_descriptor.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/tool/compile_tool_evaluator.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/tool/compile_tool_binding.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/tool/compile_tool_artifact.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_time/compile_time_executor.c
+  - zr_vm_parser/src/zr_vm_parser/contract/comptime_contract.c
   - zr_vm_library/include/zr_vm_library/project.h
 implementation_files:
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_descriptor.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_evaluator.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_execution_scope.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_tool_project_provider.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_time_executor.c
-  - zr_vm_parser/src/zr_vm_parser/comptime_contract.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_time/compile_time_frame.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/tool/compile_tool_descriptor.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/tool/compile_tool_evaluator.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/tool/compile_tool_execution_scope.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/tool/compile_tool_project_provider.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_time/compile_time_executor.c
+  - zr_vm_parser/src/zr_vm_parser/contract/comptime_contract.c
 plan_sources:
-  - user: 2026-09-09 在 docs/wiki 构建完整 ZrVm 说明书
+  - "user: 2026-09-09 在 docs/wiki 构建完整 ZrVm 说明书"
   - docs/parser-and-semantics/compile-time-typed-generation.md
   - docs/plans/syntax/2026-07-20-11-compile-time-attribute-decorator-typed-generation-design.md
 tests:
+  - tests/compileTime/test_comptime_frame_lifetime.c
+  - tests/compileTime/test_comptime_frame_budget_cases.h
+  - tests/compileTime/test_comptime_frame_transaction_cases.h
   - tests/compileTime/test_comptime_contract.c
   - tests/compileTime/test_comptime_runtime_contract.c
+  - tests/compileTime/test_compile_tool_phase_gate.c
   - tests/compileTime/test_compile_time_execution.c
   - tests/parser/test_compile_tool_project_import.c
   - tests/acceptance/2026-07-29-syntax-11-m1-build-facts-comptime-if.md
@@ -99,19 +108,27 @@ name lookup、访问检查、重载选择和类型检查。该 role 只接受直
 
 ## 阶段、effect 与隔离
 
-编译阶段顺序为 `BuildFacts -> Signature -> Expansion -> Layout -> LateCheck`。effect
-策略如下：
+编译阶段 rank 顺序为 `BuildFacts -> SyntaxExpansion -> Signature -> Expansion -> Layout -> LateCheck`
+（`Expansion` 保留既有 semantic-expansion 的序列化 ID）。effect 策略如下：
 
 | context | 允许的 effect |
 | --- | --- |
 | `PURE_VALUE` | 仅 `PureValue` |
 | `CHECK` | `PureValue`、`Diagnostic` |
-| `DECLARATION_TRANSFORM` | 三种 effect 全部允许 |
+| `DECLARATION_TRANSFORM` | `PureValue`、`Diagnostic`、`DeclarationBuild` |
+| `SYNTAX_EXPANSION` | `PureValue`、`Diagnostic`、`SyntaxBuild` |
 
 每次 evaluator 调用都进入 `CompileToolExecutionScope`：provider binding、导入别名、
 临时对象和 private helper 在 scope 结束时恢复；runtime 代码尝试读取 compile-only
 binding 会得到 `compiletool.phase_mismatch`。编译期 predicate 不能读取时钟、随机数、
 环境或文件系统；外部输入只能通过锁定的 build dependency artifact 进入。
+
+evaluator 对已识别的 descriptor 先检查当前 context 是否允许其 effect；拒绝时报告
+`comptime.effect_violation`，不执行 descriptor，也不求值参数。effect 获准后，再按
+`ZrParser_CompilePhase_IsAtLeast` 对当前 phase 与 descriptor 的 `minimumPhase` 做显式
+rank 比较（`minimumPhase` 是下界，不要求 phase 相等）。当前 phase 太早或无效时报告
+`compiletool.phase_violation`；除该拒绝诊断外，不分配 typed result、不求值参数，也不
+发出 `compile.assert`/`compile.error`/`compile.warning` 的 descriptor 诊断。
 
 ## 预算与缓存
 
@@ -121,6 +138,10 @@ usage，并报告 `comptime.budget_exceeded`。缓存 key 包含 provider/module
 调用位置、context、typed arguments、resolved version、package hash、lock graph hash、
 artifact entry/hash 和 public contract；同长度源码改动也会失效。快照以固定宽度、摘要
 排序格式导出，导入前验证 magic、大小、SHA-256 和顺序，失败时保留旧 cache。
+
+编译器求值帧的绑定和临时根向量也计入 heap：空帧不预分配，扩容按完整候选容量
+计费，复用容量不重复收费，释放后不退回累计用量；失败保留旧帧和此前有效用量。
+详见[宏底层资源契约](../../parser-and-semantics/macro-token-foundation.md#comptime-frame-storage-admission)。
 
 ## CompileTool 依赖与 `.zrm`
 

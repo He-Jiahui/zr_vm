@@ -82,7 +82,7 @@ TZrBool ZrLanguageServer_Lsp_TryRangeFromBinaryMetadataCoordinates(SZrLspContext
                                                                          &endOffset) &&
                                   startOffset <= endOffset;
             if (hasOffsets) {
-                offsetRange = range;
+                offsetRange = ZrParser_FileRange_WithoutEvidence(range);
                 offsetRange.start.offset = startOffset;
                 offsetRange.end.offset = endOffset;
                 *outRange = ZrLanguageServer_LspRange_FromFileRangeWithContent(offsetRange,

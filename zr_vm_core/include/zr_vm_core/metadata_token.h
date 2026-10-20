@@ -28,7 +28,7 @@
  *
  * ## References
  * `SZrMetadataTokenRecord::requestedModuleVersion`（zr_vm_core/include/zr_vm_core/metadata_token.h:345）：公开 record 仅用 struct SZrString* 参数布局，属于 compile type-use。
- * `write_metadata_token_records`（zr_vm_parser/src/zr_vm_parser/writer.c:994）：writer 按字符串内容消费 record 的借用指针。
+ * `write_metadata_token_records`（zr_vm_parser/src/zr_vm_parser/writer/writer.c:994）：writer 按字符串内容消费 record 的借用指针。
  */
 struct SZrString;
 
@@ -46,7 +46,7 @@ struct SZrString;
  *
  * ## References
  * `artifact_token_is`（zr_vm_core/src/zr_vm_core/artifact/artifact_schema.c:22）：表号门禁与 RID 非零门禁共同验证输入，不查找执行地址。
- * `compiler_metadata_module_record_emit`（zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_module_record.c:121）：在所属模块 metadata 域构造 MODULE RID 1。
+ * `compiler_metadata_module_record_emit`（zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_metadata_module_record.c:121）：在所属模块 metadata 域构造 MODULE RID 1。
  */
 typedef TZrUInt32 TZrMetadataToken;
 
@@ -63,7 +63,7 @@ typedef TZrUInt32 TZrMetadataToken;
  * AssemblyRef 可映射为 MODULE；TypeRef 统计只处理携带 TYPE_DEF 目标的项。具体行用途还依赖 reserved0、正文和适用消费者。
  *
  * ## References
- * `compiler_metadata_module_record_emit`（zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_module_record.c:121）：MODULE 的实际 token 生产。
+ * `compiler_metadata_module_record_emit`（zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_metadata_module_record.c:121）：MODULE 的实际 token 生产。
  * `ZrCore_Function_BindMatchingTypeRefMetadataWithStatus`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:910）：TypeRef 扫描按表号筛选适用记录。
  */
 typedef enum EZrMetadataTableTag {
@@ -114,8 +114,8 @@ typedef enum EZrMetadataTableTag {
  * 这是固定编码 ABI 的纯值；被 MAKE/TABLE/RID 表达式读取，不独立验证输入。修改会影响生成与读取编码，当前值保持不变。
  *
  * ## References
- * `metadata_token_string_heap_reserve`（zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_token.c:87）：字符串堆扩容先限制容量上界。
- * `compiler_build_function_metadata_tokens`（zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_token.c:1422）：显式模块数量及和 AssemblyRef 数的和先核 24 位上界。
+ * `metadata_token_string_heap_reserve`（zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_metadata_token.c:87）：字符串堆扩容先限制容量上界。
+ * `compiler_build_function_metadata_tokens`（zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_metadata_token.c:1422）：显式模块数量及和 AssemblyRef 数的和先核 24 位上界。
  */
 #define ZR_METADATA_TOKEN_RID_MASK ((TZrUInt32)0x00FFFFFFu)
 /**
@@ -149,7 +149,7 @@ typedef enum EZrMetadataTableTag {
  * TODO:MAKE 的一般 AOT compacted retained-count 总上界仍需核 remap 输入与 24 位边界；这不扩大现有生产者容量检查保证。
  *
  * ## References
- * `compiler_metadata_module_record_emit`（zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_module_record.c:121）：生成 MODULE1。
+ * `compiler_metadata_module_record_emit`（zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_metadata_module_record.c:121）：生成 MODULE1。
  * `binding_publish_definition`（zr_vm_parser/src/zr_vm_parser/compiler/compiler_call_binding.c:227）：生成 callable MEMBER_DEF 身份。
  */
 #define ZR_METADATA_TOKEN_MAKE(TABLE, RID)                                                                            \
@@ -208,7 +208,7 @@ typedef enum EZrMetadataTableTag {
  *
  * ## References
  * `zrp_metadata_validate_signature_type_node`（zr_vm_core/src/zr_vm_core/artifact/zrp_metadata.c:265）：字节节点转枚举后按适用 payload 分支验证。
- * `metadata_token_write_type_ref_signature`（zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_signature.c:360）：类型签名 writer 输出节点字节。
+ * `metadata_token_write_type_ref_signature`（zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_metadata_signature.c:360）：类型签名 writer 输出节点字节。
  */
 typedef enum EZrMetadataSignatureNode {
     /** @brief 未初始化或无有效签名节点；现有结构型校验和类型节点读取均拒绝。 */
@@ -279,8 +279,8 @@ typedef enum EZrMetadataSignatureNode {
  * 数组由函数 native 存储持有；三个版本指针借用 GC 字符串。source 按内容重建，runtime/native ZRP 可复制指针。TODO:核 native ZRP 跨进程发布及 gc_mark/gc_cycle 与 loader 安装的版本根/移动转发；不能由 native 数组释放推断根保持。
  *
  * ## References
- * `metadata_token_write_record_pair`（zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_token.c:1207）：普通 pair 实体行字段实际生产。
- * `metadata_token_write_record_pair`（zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_token.c:1226）：配对签名行继承 export/effect ownerIndex。
+ * `metadata_token_write_record_pair`（zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_metadata_token.c:1207）：普通 pair 实体行字段实际生产。
+ * `metadata_token_write_record_pair`（zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_metadata_token.c:1226）：配对签名行继承 export/effect ownerIndex。
  */
 typedef struct SZrMetadataTokenRecord {
     /** @brief 在函数元数据域内定位该实体或签名记录。
@@ -440,8 +440,8 @@ typedef struct SZrMetadataTokenRecord {
  * 仅记录已验证无参数 i64 签名，不授予运行时 token 派发能力；这是 record.reserved0 的用途值，不是函数地址、GC 所有者或跨域身份。其 ownerIndex/关联字段由所属行协议核验。
  *
  * ## References
- * `compiler_script_entry_metadata_emit`（zr_vm_parser/src/zr_vm_parser/compiler/compiler_script_entry_metadata.c:100）：已通过受限入口签名资格才生产标记。
- * `compiler_script_entry_metadata_hash`（zr_vm_parser/src/zr_vm_parser/compiler/compiler_script_entry_metadata.c:115）：脚本元数据 hash 只取带入口标记的 MEMBER_DEF。
+ * `compiler_script_entry_metadata_emit`（zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_script_entry_metadata.c:100）：已通过受限入口签名资格才生产标记。
+ * `compiler_script_entry_metadata_hash`（zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_script_entry_metadata.c:115）：脚本元数据 hash 只取带入口标记的 MEMBER_DEF。
  */
 #define ZR_METADATA_TOKEN_RECORD_SCRIPT_ENTRY ((TZrUInt32)6u)
 
@@ -460,7 +460,7 @@ typedef struct SZrMetadataTokenRecord {
  * native entries 数组仅借用 value，lookup 不转移对象所有权。source 按内容重建，runtime 安装复制指针。TODO:核 gc_mark/gc_cycle 函数 metadata 堆根、跨代与移动转发和 loader/runtime 安装边界。
  *
  * ## References
- * `metadata_token_string_heap_add`（zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_token.c:142）：检查 stable 编号冲突/去重后发布 entries.stringIndex。
+ * `metadata_token_string_heap_add`（zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_metadata_token.c:142）：检查 stable 编号冲突/去重后发布 entries.stringIndex。
  * `function_metadata_string_heap_lookup`（zr_vm_core/src/zr_vm_core/function/function_metadata_binding.c:157）：lookup 只借出数组项内 GC 字符串指针。
  */
 typedef struct SZrMetadataStringHeapEntry {

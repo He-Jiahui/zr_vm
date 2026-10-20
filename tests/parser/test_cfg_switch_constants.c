@@ -33,7 +33,7 @@ void tearDown(void) {
 
 /* 合成同一虚拟源中的位置，供 CFG 事实范围查询使用。 */
 static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
-    SZrFileRange range;
+    SZrFileRange range = {0};
 
     range.start.offset = startOffset;
     range.start.line = 1;

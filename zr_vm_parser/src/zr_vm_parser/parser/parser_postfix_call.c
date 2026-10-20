@@ -1,7 +1,7 @@
 #include "parser_internal.h"
 
 /* 失败路径递归释放实参 AST，同时释放只保存字符串引用的名称和标记数组。 */
-static void free_call_metadata(SZrParserState *ps,
+void parser_call_metadata_free(SZrParserState *ps,
                                SZrAstNodeArray *args,
                                SZrArray *argNames,
                                SZrArray *argumentMarkers) {
@@ -47,9 +47,15 @@ SZrAstNode *parse_postfix_call_segment(SZrParserState *ps,
     callOpenLocation = get_current_token_location(ps);
     consume_token(ps, ZR_TK_LPAREN);
     args = parse_argument_list(ps, &argNames, &argumentMarkers);
+    if (args == ZR_NULL || ps->hasError) {
+        parser_call_metadata_free(ps, args, argNames, argumentMarkers);
+        ZrParser_Ast_Free(ps->state, base);
+        return ZR_NULL;
+    }
     if (ps->lexer->t.token != ZR_TK_RPAREN) {
         report_missing_call_close(ps, callOpenLocation);
-        free_call_metadata(ps, args, argNames, argumentMarkers);
+        parser_call_metadata_free(ps, args, argNames, argumentMarkers);
+        ZrParser_Ast_Free(ps->state, base);
         return ZR_NULL;
     }
     callCloseLocation = get_current_token_location(ps);
@@ -63,8 +69,9 @@ SZrAstNode *parse_postfix_call_segment(SZrParserState *ps,
 
         if (!reject_named_construct_arguments(ps, argNames, chainStartLoc)) {
             /* 拒绝函数已释放 argNames；此处只清理实参节点与标记，避免二次释放。 */
-            free_call_metadata(ps, args, ZR_NULL, argumentMarkers);
-            return base;
+            parser_call_metadata_free(ps, args, ZR_NULL, argumentMarkers);
+            ZrParser_Ast_Free(ps->state, base);
+            return ZR_NULL;
         }
         argNames = ZR_NULL;
         if (argumentMarkers != ZR_NULL) {
@@ -77,14 +84,14 @@ SZrAstNode *parse_postfix_call_segment(SZrParserState *ps,
             argumentMarkers = ZR_NULL;
         }
 
+        if (!ZrParser_MergeLocations(ps, chainStartLoc, get_current_location(ps), &fullLoc)) {
+            parser_call_metadata_free(ps, args, ZR_NULL, ZR_NULL);
+            ZrParser_Ast_Free(ps->state, base);
+            return ZR_NULL;
+        }
         /* 从 prototype 包装节点取走 target，再用构造节点接管它和 args。 */
         base->data.prototypeReferenceExpression.target = ZR_NULL;
-        ZrCore_Memory_RawFreeWithType(
-                ps->state->global,
-                base,
-                sizeof(SZrAstNode),
-                ZR_MEMORY_NATIVE_TYPE_ARRAY);
-        fullLoc = ZrParser_FileRange_Merge(chainStartLoc, get_current_location(ps));
+        ZrParser_Ast_Free(ps->state, base);
         constructNode = create_construct_expression_node(
                 ps,
                 target,
@@ -95,22 +102,18 @@ SZrAstNode *parse_postfix_call_segment(SZrParserState *ps,
                 ZR_OWNERSHIP_BUILTIN_KIND_NONE,
                 fullLoc);
         if (constructNode == ZR_NULL) {
-            /* BUG: 构造节点分配失败只释放数组容器，已解析的实参节点不随之释放。 */
-            if (args != ZR_NULL) {
-                ZrParser_AstNodeArray_Free(ps->state, args);
-            }
+            free_ast_node_array_with_elements(ps->state, args);
             ZrParser_Ast_Free(ps->state, target);
         }
         return constructNode;
     }
 
-    callNode = create_ast_node(
-            ps,
-            ZR_AST_FUNCTION_CALL,
-            ZrParser_FileRange_Merge(segmentStartLoc, callCloseLocation));
-    if (callNode == ZR_NULL) {
-        free_call_metadata(ps, args, argNames, argumentMarkers);
-        return base;
+    SZrFileRange callLocation;
+    if (!ZrParser_MergeLocations(ps, segmentStartLoc, callCloseLocation, &callLocation) ||
+        (callNode = create_ast_node(ps, ZR_AST_FUNCTION_CALL, callLocation)) == ZR_NULL) {
+        parser_call_metadata_free(ps, args, argNames, argumentMarkers);
+        ZrParser_Ast_Free(ps->state, base);
+        return ZR_NULL;
     }
     callNode->data.functionCall.args = args;
     callNode->data.functionCall.argNames = argNames;
@@ -129,6 +132,6 @@ SZrAstNode *parse_postfix_call_segment(SZrParserState *ps,
         }
     }
 
-    /* BUG: append_primary_member 分配失败仅返回 base，不释放刚交给它的 callNode 与实参。 */
+    /* append_primary_member owns both inputs on failure and returns NULL. */
     return append_primary_member(ps, base, callNode, chainStartLoc);
 }

@@ -7,35 +7,37 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_switch_patterns.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c
-  - zr_vm_parser/src/zr_vm_parser/type_inference.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_internal.h
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_union.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_union.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_token.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_type_publication.h
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_type_publication.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/expression/compile_expression_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/expression/compile_expression.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/expression/compile_expression_call.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/expression/compile_expression_support.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/expression/compile_expression_union.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/declaration/compiler_union.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_metadata_token.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/statement/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/statement/compile_statement_flow.c
   - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_diagnostics.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_type_def_layout.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_typed_metadata.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_metadata_type_def_layout.c
   - zr_vm_core/include/zr_vm_core/type_layout.h
-  - zr_vm_core/src/zr_vm_core/type_layout.c
+  - zr_vm_core/src/zr_vm_core/type/type_layout.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/execution/execution_inline_frame.c
-  - zr_vm_core/src/zr_vm_core/function.c
-  - zr_vm_core/src/zr_vm_core/function_frame_place.c
-  - zr_vm_core/src/zr_vm_core/function_type_layout.c
+  - zr_vm_core/src/zr_vm_core/function/function.c
+  - zr_vm_core/src/zr_vm_core/function/function_frame_place.c
+  - zr_vm_core/src/zr_vm_core/function/function_type_layout.c
   - zr_vm_core/include/zr_vm_core/metadata_token.h
-  - zr_vm_language_server/src/zr_vm_language_server/semantic_type_prototypes.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_union_patterns.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_union_patterns.h
-  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_type_prototypes.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_union_patterns.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_union_patterns.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_symbols.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_typecheck.c
   - tests/parser/test_union.c
   - tests/module/test_metadata_token_model.c
 implementation_files:
@@ -44,48 +46,63 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/parser/parser_types.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_switch_patterns.c
-  - zr_vm_parser/src/zr_vm_parser/type_inference.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_union.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_union.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_type_def_layout.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_metadata_token.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_type_publication.h
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_type_publication.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/expression/compile_expression_union.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/expression/compile_expression_call.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/expression/compile_expression_support.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/declaration/compiler_union.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_metadata_type_def_layout.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_metadata_token.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/statement/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/statement/compile_statement_flow.c
   - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_diagnostics.c
-  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/metadata/compiler_typed_metadata.c
   - zr_vm_core/include/zr_vm_core/type_layout.h
-  - zr_vm_core/src/zr_vm_core/type_layout.c
+  - zr_vm_core/src/zr_vm_core/type/type_layout.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/execution/execution_inline_frame.c
-  - zr_vm_core/src/zr_vm_core/function.c
-  - zr_vm_core/src/zr_vm_core/function_frame_place.c
-  - zr_vm_core/src/zr_vm_core/function_type_layout.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic_type_prototypes.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_union_patterns.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_union_patterns.h
-  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
+  - zr_vm_core/src/zr_vm_core/function/function.c
+  - zr_vm_core/src/zr_vm_core/function/function_frame_place.c
+  - zr_vm_core/src/zr_vm_core/function/function_type_layout.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_type_prototypes.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_union_patterns.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_union_patterns.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_symbols.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/analyzer/semantic_analyzer_typecheck.c
 plan_sources:
-  - user: 2026-06-17 Rust-like union syntax from docs/plans/using
+  - "user: 2026-06-17 Rust-like union syntax from docs/plans/using"
   - docs/plans/using/04-union-types.md
 tests:
   - tests/parser/test_union.c
   - tests/language_server/test_union_pattern_diagnostics.c
   - tests/module/test_metadata_token_model.c
   - tests/acceptance/2026-06-17-union-types.md
-  - tests/fixtures/projects/using_real_world_checkout
-  - tests/fixtures/projects/using_feature_matrix
-  - tests/fixtures/projects/using_edge_matrix
+  - tests/fixtures/projects/using_real_world_checkout/using_real_world_checkout.zrp
+  - tests/fixtures/projects/using_real_world_checkout/using_union_normal.zrp
+  - tests/fixtures/projects/using_real_world_checkout/using_union_edge_cases.zrp
+  - tests/fixtures/projects/using_feature_matrix/using_feature_matrix.zrp
+  - tests/fixtures/projects/using_edge_matrix/using_edge_matrix.zrp
 doc_type: module-detail
 ---
 
 # Union Types Frontend Slice
 
 This page records the implemented P3 union slice from `docs/plans/using`.
+
+## Canonical Metadata Recovery
+
+`typed_metadata_find_plain_nominal_type` accepts a canonical `NOMINAL` or `UNION`
+and resolves its nominal definition through the bounded, non-allocating
+`semantic_type_nominal_definition`. It never interprets a UNION payload as
+`data.nominal`. Module identity, declaration token and name are checked on the
+resolved definition; semantic-record identity still uses the original outer
+canonical type ID. The existing element/generic-kind, ownership, GC-bridge,
+reference-access, readonly and nullable filters are unchanged. This is metadata
+lookup recovery, not a relaxation of the plain-type contract or native evidence.
 
 ## Implemented Surface
 

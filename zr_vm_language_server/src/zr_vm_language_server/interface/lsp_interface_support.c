@@ -311,6 +311,7 @@ static SZrFileRange lsp_symbol_normalize_name_range(SZrSymbol *symbol, SZrFileRa
         return range;
     }
 
+    range = ZrParser_FileRange_WithoutEvidence(range);
     if (range.start.offset >= nameLength) {
         range.start.offset -= nameLength;
     }

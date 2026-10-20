@@ -46,6 +46,13 @@ static TZrBool super_navigation_meta_function_is_constructor(SZrAstNode *metaFun
            strcmp(ZrCore_String_GetNativeStringShort(metaName), "constructor") == 0;
 }
 
+/* Target resolution has already selected a class or struct constructor. */
+static SZrFileRange super_navigation_constructor_name_range(const SZrAstNode *constructor) {
+    return constructor->type == ZR_AST_CLASS_META_FUNCTION
+            ? constructor->data.classMetaFunction.nameLocation
+            : constructor->data.structMetaFunction.nameLocation;
+}
+
 /* 原文扫描中的标识符边界门控；是否处于可执行代码由 code-span helper 再判断。 */
 static TZrBool super_navigation_is_identifier_char(TZrChar value) {
     return isalnum((unsigned char)value) || value == '_';
@@ -108,7 +115,6 @@ static TZrSize super_navigation_offset_from_file_position(const TZrChar *content
 }
 
 /* 给定义、引用和高亮共用的 super 命中范围；仅把代码 span 中的完整 token 发布为位置。 */
-/* TODO: parser 已保存 classMetaFunction.superCallRange；核对能否直接采用该事实，避免在构造器头部重新猜测 token。 */
 static TZrBool super_navigation_find_super_token_range(const TZrChar *content,
                                                        TZrSize contentLength,
                                                        SZrFileRange scope,
@@ -187,42 +193,19 @@ static TZrBool super_navigation_position_is_super_token(const TZrChar *content,
     return end - start == 5 && memcmp(content + start, "super", 5) == 0;
 }
 
-/* token 扫描失败时仍给调用者一个构造器头部回退范围，供 super 引用展示路径使用。 */
-/* TODO: 回退范围从首个实参向前推六字节；空格或换行会改变其含义，需与 parser.superCallRange 对照。 */
+/* Keep the parser's explicit super call range, including its native evidence. */
 static SZrFileRange super_navigation_super_call_context_range(SZrAstNode *metaFunctionNode) {
     SZrFileRange range;
 
     memset(&range, 0, sizeof(range));
-    if (metaFunctionNode != ZR_NULL) {
-        range = metaFunctionNode->location;
-    }
     if (metaFunctionNode == ZR_NULL || metaFunctionNode->type != ZR_AST_CLASS_META_FUNCTION) {
         return range;
     }
 
-    if (metaFunctionNode->data.classMetaFunction.superArgs != ZR_NULL &&
-        metaFunctionNode->data.classMetaFunction.superArgs->count > 0 &&
-        metaFunctionNode->data.classMetaFunction.superArgs->nodes != ZR_NULL &&
-        metaFunctionNode->data.classMetaFunction.superArgs->nodes[0] != ZR_NULL) {
-        SZrAstNode *lastArgNode =
-            metaFunctionNode->data.classMetaFunction.superArgs
-                ->nodes[metaFunctionNode->data.classMetaFunction.superArgs->count - 1];
-        range.start = metaFunctionNode->data.classMetaFunction.superArgs->nodes[0]->location.start;
-        if (range.start.offset >= 6) {
-            range.start.offset -= 6;
-        }
-        if (range.start.column >= 6) {
-            range.start.column -= 6;
-        }
-        range.end = lastArgNode != ZR_NULL ? lastArgNode->location.end : range.end;
-    } else if (metaFunctionNode->data.classMetaFunction.body != ZR_NULL) {
-        range.end = metaFunctionNode->data.classMetaFunction.body->location.start;
-    }
-
-    return range;
+    return metaFunctionNode->data.classMetaFunction.superCallRange;
 }
 
-/* 在 constructor body 之前定位显式 super 调用，避免正文内的同名文本充当引用锚点。 */
+/* Scan only matching source text; foreign calls keep their parser anchor. */
 static SZrFileRange super_navigation_super_call_token_range(SZrAstNode *metaFunctionNode,
                                                             const TZrChar *content,
                                                             TZrSize contentLength,
@@ -231,18 +214,13 @@ static SZrFileRange super_navigation_super_call_token_range(SZrAstNode *metaFunc
     SZrFileRange tokenRange;
 
     scope = super_navigation_super_call_context_range(metaFunctionNode);
-    if (metaFunctionNode != ZR_NULL && metaFunctionNode->type == ZR_AST_CLASS_META_FUNCTION) {
-        scope = metaFunctionNode->location;
-        if (metaFunctionNode->data.classMetaFunction.body != ZR_NULL) {
-            scope.end = metaFunctionNode->data.classMetaFunction.body->location.start;
-        }
-    }
-
-    if (super_navigation_find_super_token_range(content, contentLength, scope, uri, &tokenRange)) {
+    if (scope.source != ZR_NULL && uri != ZR_NULL &&
+        ZrLanguageServer_Lsp_StringsEqual(scope.source, uri) &&
+        super_navigation_find_super_token_range(content, contentLength, scope, uri, &tokenRange)) {
         return tokenRange;
     }
 
-    return super_navigation_super_call_context_range(metaFunctionNode);
+    return scope;
 }
 
 /* 仅对声明过 super(...) 的构造器尝试特殊导航，其他位置应让通用语义查询处理。 */
@@ -855,7 +833,8 @@ TZrBool ZrLanguageServer_Lsp_TryGetSuperConstructorDefinition(SZrState *state,
         ZrCore_Array_Init(state, result, sizeof(SZrLspLocation *), 1);
     }
 
-    if (!super_navigation_append_location(state, context, result, uri, baseConstructorDeclaration->location)) {
+    if (!super_navigation_append_location(state, context, result, uri,
+            super_navigation_constructor_name_range(baseConstructorDeclaration))) {
         ZrLanguageServer_FileVersionContentSnapshot_Free(state, &snapshot);
         return ZR_FALSE;
     }
@@ -914,7 +893,8 @@ TZrBool ZrLanguageServer_Lsp_TryFindSuperConstructorReferences(SZrState *state,
     /* BUG: append_location 分配失败会返回 false，但声明项和下面循环均忽略该结果；
      * 此入口最后仍返回 true，客户端可能收到不完整的引用集。 */
     if (includeDeclaration) {
-        super_navigation_append_location(state, context, result, uri, baseConstructorDeclaration->location);
+        super_navigation_append_location(state, context, result, uri,
+                super_navigation_constructor_name_range(baseConstructorDeclaration));
     }
 
     ZrCore_Array_Init(state, &ranges, sizeof(SZrFileRange), ZR_LSP_ARRAY_INITIAL_CAPACITY);
@@ -984,9 +964,10 @@ TZrBool ZrLanguageServer_Lsp_TryGetSuperConstructorDocumentHighlights(SZrState *
 
     /* BUG: append_highlight 分配失败会返回 false，声明项与引用项都忽略失败；
      * 此入口仍返回 true，客户端可能收到不完整的高亮集。 */
-    if (baseConstructorDeclaration->location.source == ZR_NULL ||
-        ZrLanguageServer_Lsp_StringsEqual(baseConstructorDeclaration->location.source, uri)) {
-        super_navigation_append_highlight(state, context, result, uri, baseConstructorDeclaration->location, 3);
+    SZrFileRange declarationRange = super_navigation_constructor_name_range(baseConstructorDeclaration);
+    if (declarationRange.source == ZR_NULL ||
+        ZrLanguageServer_Lsp_StringsEqual(declarationRange.source, uri)) {
+        super_navigation_append_highlight(state, context, result, uri, declarationRange, 3);
     }
 
     ZrCore_Array_Init(state, &ranges, sizeof(SZrFileRange), ZR_LSP_ARRAY_INITIAL_CAPACITY);

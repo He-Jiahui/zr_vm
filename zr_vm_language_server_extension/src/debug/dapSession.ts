@@ -216,7 +216,6 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         // BUG: CLI 成功启动后若 connect/initialize 失败，此 handler 仅把错误交给 DAP 队列；
         // launcher 未 stop，而 dispose() 调 shutdown(false)，--debug-wait 进程可继续留存。
         const args = request.arguments as unknown as ZrLaunchRequestArguments;
-        const authToken = typeof args.authToken === 'string' ? args.authToken : undefined;
         const cliPath = typeof args.cliPath === 'string' ? args.cliPath : '';
         if (!cliPath) {
             throw new Error('ZR launch configuration requires cliPath.');
@@ -237,12 +236,17 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
             }
         });
 
-        const launchResult = await this.launcher.launch({
-            ...args,
-            cliPath,
-            executionMode: args.executionMode ?? 'interp',
-        });
-        await this.connectRuntime(launchResult.endpoint, authToken);
+        try {
+            const launchResult = await this.launcher.launch({
+                ...args,
+                cliPath,
+                executionMode: args.executionMode ?? 'interp',
+            });
+            await this.connectRuntime(launchResult.endpoint, launchResult.authToken);
+        } catch (error) {
+            await this.launcher.stop();
+            throw error;
+        }
         this.sendResponse(request);
     }
 

@@ -21,6 +21,8 @@
 
 static SZrState *g_state;
 
+static void semantic_loop_range_evidence_cleanup(void);
+
 static const ZrLibGenericParameterDescriptor kSymbolGenericEchoParameters[] = {
         {"T", "The generic value passed through the native receiver method.", ZR_NULL, 0U},
 };
@@ -113,6 +115,7 @@ void setUp(void) {
 }
 
 void tearDown(void) {
+    semantic_loop_range_evidence_cleanup();
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
         g_state = ZR_NULL;
@@ -2481,6 +2484,7 @@ static void test_visible_symbols_projects_source_struct_and_interface_members(vo
 #include "test_semantic_external_provider_generation_cases.h"
 
 #include "test_semantic_declaration_binding_cases.h"
+#include "test_semantic_loop_range_evidence_cases.h"
 
 int main(void) {
     UNITY_BEGIN();
@@ -2527,5 +2531,7 @@ int main(void) {
     RUN_TEST(test_type_use_identity_keeps_unresolved_reference_unavailable);
     RUN_TEST(test_type_use_identity_rejects_inconsistent_whole_range);
     RUN_TEST(test_qualified_type_use_publishes_terminal_name_only);
+    RUN_TEST(test_for_scope_preserves_complete_mixed_source_body_interval);
+    RUN_TEST(test_foreach_scope_preserves_complete_mixed_source_body_interval);
     return UNITY_END();
 }

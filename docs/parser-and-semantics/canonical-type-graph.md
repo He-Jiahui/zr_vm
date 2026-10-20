@@ -3,6 +3,7 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/canonical_type.h
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/include/zr_vm_parser/semantic.h
+  - zr_vm_parser/include/zr_vm_parser/type_system.h
   - zr_vm_parser/src/zr_vm_parser/canonical_type.c
   - zr_vm_parser/src/zr_vm_parser/canonical_type_index.c
   - zr_vm_parser/src/zr_vm_parser/canonical_type_adapter.c
@@ -15,13 +16,24 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_union_canonical.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_union_canonical.h
   - zr_vm_parser/src/zr_vm_parser/semantic.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_type_publication.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_type_publication.h
+  - zr_vm_parser/src/zr_vm_parser/type_declaration_context.h
+  - zr_vm_parser/src/zr_vm_parser/type_environment_types.c
   - zr_vm_parser/src/zr_vm_parser/type_system.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_tuple.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_nominal_identity.c
   - zr_vm_language_server/include/zr_vm_language_server/semantic_analyzer.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_type_format.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.c
 implementation_files:
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_type_publication.c
+  - zr_vm_parser/src/zr_vm_parser/semantic/semantic_type_publication.h
+  - zr_vm_parser/src/zr_vm_parser/type_declaration_context.h
+  - zr_vm_parser/src/zr_vm_parser/type_environment_types.c
+  - zr_vm_parser/include/zr_vm_parser/type_system.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_nominal_identity.c
   - zr_vm_parser/include/zr_vm_parser/canonical_type.h
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/include/zr_vm_parser/semantic.h
@@ -44,10 +56,13 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_type_format.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.c
 plan_sources:
+  - .codex/plans/20261008-macro-tokenstream-structured-generation.md
   - user: 2026-07-19 按 docs/plans/syntax 严格实施语法优化并逐里程碑记录和提交
   - docs/plans/syntax/README.md
   - docs/plans/syntax/2026-07-18-01-canonical-type-place-cfg-artifact-design.md
 tests:
+  - tests/parser/test_nominal_declaration_publication.c
+  - tests/parser/test_syntax_hygiene_nominal_types.c
   - tests/parser/test_canonical_type_graph.c
   - tests/parser/test_canonical_type_graph_semantic_cases.h
   - tests/parser/test_parser.c
@@ -125,9 +140,39 @@ acceptance evidence.
 
 Generic name decomposition reuses the existing type-inference generic parser. The adapter does not add a second generic string grammar. The remaining `typeName` fields belong to the compatibility representation and diagnostics; new semantic consumers should query `TypeId` and the canonical graph.
 
+Marked source declarations also carry `nominalDefinitionToken` in
+`SZrInferredType`. The adapter uses that existing nominal key when interning
+the ordinary type or generic definition, then applies the existing recursive
+arguments and qualifiers. Zero preserves name-based compatibility; nonzero
+tokens are valid only within the owning semantic snapshot and module domain.
+Primitive/unnamed types cannot carry a nominal token, and an explicit generic
+name binding cannot override a resolved marked nominal. Init/Free clear the
+field, Copy preserves it, and equality/compatibility distinguish different
+tokens even when names match. Canonical nominal semantic records retain the
+same key when projected back through their inferred representation.
+
+Context-qualified annotation binding and forward registration are described
+in [Macro Token Foundation](macro-token-foundation.md). Its focused RED/GREEN
+ledger is independent of prototype/construction identity, module serialization
+and cross-snapshot migration; those are not implied by the adapter change.
+
 `ZrParser_Semantic_RegisterInferredType` and `ZrParser_Semantic_RegisterNamedType` now obtain a canonical ID before publishing compatibility records. Registrations of structurally identical types reuse the same ID even when their use sites differ. The inferred-registration path copies structural inferred fields and removes numeric ranges, known values and array-size refinements; it clears the compatibility AST pointer. The named-registration path also retains the supplied name and AST pointer. Those borrowed names and ASTs still need their actual owners to remain valid; the native registry is not an independent VM string root.
 
 Top-level union compilation registers a nominal definition, reserves its type symbol, binds type and const generic parameters to that symbol, converts unit/tuple/struct payload fields through inference, interns the ordered canonical union payload list, and rebinds the semantic type symbol to the resulting Union `TypeId`. Projection recursively substitutes nested type and const parameters and gives a closed union the closed generic instance as its definition identity. The union-specific builder lives in `compiler_union_canonical.c` so layout/lowering orchestration remains focused.
+
+Source union publication now preserves declaration context through the shared
+private canonical publisher. The named binding adopts the same TYPE SymbolId
+and stores its nominal definition ID, while the semantic symbol/type record
+retain the union projection. Marked definitions use the real SymbolId token;
+Root definitions retain zero for existing name projection. Inferred projection
+preserves the token through union and generic-instance definition wrappers.
+This repair has actual focused RED; its native GREEN and the forward provisional
+declaration boundary are covered by the native publication replay. The direct
+canonical graph fixture passes 19/19, and the forward annotation case verifies
+that a provisional non-root nominal binding is adopted in place rather than
+duplicated. The broader aggregate and cross-toolchain M1 gates remain separate
+from this focused result in
+[Macro Foundation Validation](../testing-and-validation/macro-foundation-validation.md).
 
 Known class, struct, and union generic contracts validate arity, argument kind, and constraints before publishing a prototype, type-environment entry, variable, symbol, or semantic type. This describes the checked upper-layer publication order, not a transaction over the entire canonical graph. Recursive inferred-type conversion may intern child or base nodes before a later conversion or qualifier check fails; those nodes and consumed IDs need not be rolled back. That partial graph mutation alone does not establish that a prototype, environment entry or semantic fact was half-published.
 

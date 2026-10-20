@@ -8,6 +8,10 @@
 TZrBool compiler_native_call_binding_is_provider_contract(
         const SZrCallBindingContract *contract);
 
+/* Recognize a unique native provider FUNCTION_CALL from its static binding. */
+TZrBool compiler_native_call_binding_is_provider_known_call(
+        const SZrFunction *function, TZrUInt32 instructionIndex);
+
 /** @brief 把已识别的提供者契约和成员定位值交给调用点缓存，供后续链接重定位。
  *  @pre 有效调用需提供可写 entry 和 provider 契约；memberEntryIndex 是调用点定位元数据，已知静态调用可传 ZR_PARSER_MEMBER_ID_NONE 哨兵。
  *  @note native registry 根据契约 token 与哈希选择 provider，不读取 memberEntryIndex。

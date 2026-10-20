@@ -1,5 +1,205 @@
 #include "parser_internal.h"
 
+/* Call metadata is parser-owned storage, so its header, backing allocation,
+ * and growth must use the same owner budget as the argument AST. */
+static SZrParserComptimeBudget *call_metadata_budget(SZrParserState *ps) {
+    if (ps == ZR_NULL || ps->lexer == ZR_NULL ||
+        ps->lexer->ownership == ZR_NULL) {
+        return ZR_NULL;
+    }
+    return ZrParser_Ownership_Budget(ps->lexer->ownership);
+}
+
+static TZrBool call_metadata_size(
+        TZrSize elementSize, TZrSize capacity, TZrSize *outBytes) {
+    if (outBytes == ZR_NULL || elementSize == 0U || capacity == 0U ||
+        capacity > ZR_MAX_SIZE / elementSize) {
+        return ZR_FALSE;
+    }
+    *outBytes = elementSize * capacity;
+    return ZR_TRUE;
+}
+
+static void call_metadata_report_failure(
+        SZrParserState *ps, const TZrChar *message) {
+    if (ps == ZR_NULL) {
+        return;
+    }
+    ps->hasFatalError = ZR_TRUE;
+    report_error(ps, message);
+}
+
+static TZrBool call_argument_resource_failed(SZrParserState *ps) {
+    SZrParserComptimeBudget *budget = call_metadata_budget(ps);
+
+    if (ps == ZR_NULL || ps->hasFatalError) {
+        return ZR_TRUE;
+    }
+    /* Native token decoding reports allocation failure through the lexer;
+     * preserve its shared-budget rejection before syntax recovery runs. */
+    if (budget != ZR_NULL &&
+        budget->exceededResource != ZR_PARSER_COMPTIME_BUDGET_NONE) {
+        call_metadata_report_failure(ps, "Call argument parsing budget exceeded");
+        return ZR_TRUE;
+    }
+    return ZR_FALSE;
+}
+
+static SZrArray *call_metadata_array_new(
+        SZrParserState *ps, TZrSize elementSize, TZrSize initialCapacity) {
+    SZrParserComptimeBudget *budget = call_metadata_budget(ps);
+    SZrParserComptimeBudgetTransaction transaction;
+    SZrArray *array;
+    TZrSize capacity = initialCapacity != 0U
+                               ? initialCapacity
+                               : ZR_PARSER_INITIAL_CAPACITY_SMALL;
+    TZrSize bytes;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL ||
+        budget == ZR_NULL || !call_metadata_size(elementSize, capacity, &bytes) ||
+        bytes > ZR_MAX_SIZE - sizeof(SZrArray)) {
+        call_metadata_report_failure(ps, "Failed to initialize call metadata");
+        return ZR_NULL;
+    }
+    ZrParser_ComptimeBudget_BeginTransaction(budget, &transaction);
+    if (!ZrParser_ComptimeBudget_TryConsumeTransaction(
+                &transaction, ZR_PARSER_COMPTIME_BUDGET_HEAP_BYTES,
+                (TZrUInt64)(sizeof(SZrArray) + bytes))) {
+        ZrParser_ComptimeBudget_AbortTransaction(&transaction);
+        call_metadata_report_failure(ps, "Call metadata allocation budget exceeded");
+        return ZR_NULL;
+    }
+    array = (SZrArray *)ZrCore_Memory_RawMallocWithType(
+            ps->state->global, sizeof(SZrArray), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    if (array == ZR_NULL) {
+        ZrParser_ComptimeBudget_AbortTransaction(&transaction);
+        call_metadata_report_failure(ps, "Failed to allocate call metadata");
+        return ZR_NULL;
+    }
+    array->head = (TZrUInt8 *)ZrCore_Memory_RawMallocWithType(
+            ps->state->global, bytes, ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    if (array->head == ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(
+                ps->state->global, array, sizeof(SZrArray),
+                ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        ZrParser_ComptimeBudget_AbortTransaction(&transaction);
+        call_metadata_report_failure(ps, "Failed to allocate call metadata");
+        return ZR_NULL;
+    }
+    if (!ZrParser_ComptimeBudget_CommitTransaction(&transaction)) {
+        ZrCore_Memory_RawFreeWithType(
+                ps->state->global, array->head, bytes,
+                ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        ZrCore_Memory_RawFreeWithType(
+                ps->state->global, array, sizeof(SZrArray),
+                ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        ZrParser_ComptimeBudget_AbortTransaction(&transaction);
+        call_metadata_report_failure(ps, "Call metadata allocation budget exceeded");
+        return ZR_NULL;
+    }
+    array->elementSize = elementSize;
+    array->length = 0U;
+    array->capacity = capacity;
+    array->isValid = ZR_TRUE;
+    return array;
+}
+
+static TZrBool call_metadata_array_add(
+        SZrParserState *ps, SZrArray *array, const void *element) {
+    TZrSize newCapacity;
+    TZrSize newBytes;
+    TZrUInt8 *newHead;
+
+    if (ps == ZR_NULL || ps->lexer == ZR_NULL || array == ZR_NULL ||
+        !array->isValid || array->head == ZR_NULL || element == ZR_NULL ||
+        array->length > array->capacity) {
+        call_metadata_report_failure(ps, "Invalid call metadata array");
+        return ZR_FALSE;
+    }
+    if (array->length < array->capacity) {
+        memcpy(
+                array->head + array->length * array->elementSize,
+                element,
+                array->elementSize);
+        array->length++;
+        return ZR_TRUE;
+    }
+    if (array->capacity > ZR_MAX_SIZE / ZR_PARSER_DYNAMIC_CAPACITY_GROWTH_FACTOR) {
+        call_metadata_report_failure(ps, "Call metadata array is too large");
+        return ZR_FALSE;
+    }
+    newCapacity = array->capacity * ZR_PARSER_DYNAMIC_CAPACITY_GROWTH_FACTOR;
+    if (newCapacity <= array->capacity ||
+        !call_metadata_size(array->elementSize, newCapacity, &newBytes)) {
+        call_metadata_report_failure(ps, "Call metadata array is too large");
+        return ZR_FALSE;
+    }
+    newHead = (TZrUInt8 *)ZrParser_Ownership_Allocate(
+            ps->lexer->ownership,
+            newBytes,
+            ZR_MEMORY_NATIVE_TYPE_ARRAY,
+            ZR_FALSE);
+    if (newHead == ZR_NULL) {
+        call_metadata_report_failure(ps, "Call metadata allocation budget exceeded");
+        return ZR_FALSE;
+    }
+    if (array->length != 0U) {
+        memcpy(
+                newHead,
+                array->head,
+                array->length * array->elementSize);
+    }
+    ZrCore_Memory_RawFreeWithType(
+            ps->state->global,
+            array->head,
+            array->capacity * array->elementSize,
+            ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    array->head = newHead;
+    array->capacity = newCapacity;
+    memcpy(
+            array->head + array->length * array->elementSize,
+            element,
+            array->elementSize);
+    array->length++;
+    return ZR_TRUE;
+}
+
+static void call_metadata_array_free(SZrParserState *ps, SZrArray **array) {
+    if (ps == ZR_NULL || ps->state == ZR_NULL || array == ZR_NULL ||
+        *array == ZR_NULL) {
+        return;
+    }
+    if ((*array)->head != ZR_NULL && (*array)->capacity != 0U) {
+        ZrCore_Memory_RawFreeWithType(
+                ps->state->global,
+                (*array)->head,
+                (*array)->capacity * (*array)->elementSize,
+                ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    }
+    ZrCore_Memory_RawFreeWithType(
+            ps->state->global,
+            *array,
+            sizeof(SZrArray),
+            ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    *array = ZR_NULL;
+}
+
+static void call_argument_list_fail(
+        SZrParserState *ps,
+        SZrAstNodeArray **args,
+        SZrArray **names,
+        SZrArray **markers) {
+    if (ps == ZR_NULL) {
+        return;
+    }
+    if (args != ZR_NULL && *args != ZR_NULL) {
+        free_ast_node_array_with_elements(ps->state, *args);
+        *args = ZR_NULL;
+    }
+    call_metadata_array_free(ps, names);
+    call_metadata_array_free(ps, markers);
+}
+
 /* 将 ref/out 前缀保存为调用点标记；无前缀时保留 NONE 占位以对齐实参数组。 */
 static SZrCallArgumentSyntax parse_call_argument_marker(SZrParserState *ps) {
     SZrCallArgumentSyntax syntax;
@@ -25,24 +225,35 @@ static SZrAstNode *parse_call_argument_expression(SZrParserState *ps) {
     SZrFileRange spreadLocation;
     SZrAstNode *expression;
     SZrAstNode *spread;
+    TZrBool isSpread;
 
-    if (ps->lexer->t.token != ZR_TK_PARAMS) {
-        return parse_expression(ps);
+    if (call_argument_resource_failed(ps)) {
+        return ZR_NULL;
     }
-
     spreadLocation = get_current_token_location(ps);
-    ZrParser_Lexer_Next(ps->lexer);
+    isSpread = ps->lexer->t.token == ZR_TK_PARAMS;
+    if (isSpread) {
+        ZrParser_Lexer_Next(ps->lexer);
+        if (call_argument_resource_failed(ps)) {
+            return ZR_NULL;
+        }
+    }
     expression = parse_expression(ps);
+    if (call_argument_resource_failed(ps)) {
+        ZrParser_Ast_Free(ps->state, expression);
+        return ZR_NULL;
+    }
+    if (!isSpread) {
+        return expression;
+    }
     if (expression == ZR_NULL) {
         report_error(ps, "Expected an expression after '...'");
         return ZR_NULL;
     }
 
-    spread = create_ast_node(
-            ps,
-            ZR_AST_SPREAD_ARGUMENT,
-            ZrParser_FileRange_Merge(spreadLocation, expression->location));
-    if (spread == ZR_NULL) {
+    SZrFileRange spreadRange;
+    if (!ZrParser_MergeLocations(ps, spreadLocation, expression->location, &spreadRange) ||
+        (spread = create_ast_node(ps, ZR_AST_SPREAD_ARGUMENT, spreadRange)) == ZR_NULL) {
         ZrParser_Ast_Free(ps->state, expression);
         return ZR_NULL;
     }
@@ -56,28 +267,32 @@ SZrAstNodeArray *parse_argument_list(
         SZrParserState *ps,
         SZrArray **argNames,
         SZrArray **argumentMarkers) {
-    SZrAstNodeArray *args = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
+    SZrAstNodeArray *args;
     SZrArray *names = ZR_NULL;
     SZrArray *markers = ZR_NULL;
     TZrBool hasNamedArgs = ZR_FALSE;
 
-    if (args == ZR_NULL) {
-        if (argNames != ZR_NULL) {
-            *argNames = ZR_NULL;
-        }
-        return ZR_NULL;
-    }
     if (argNames != ZR_NULL) {
         *argNames = ZR_NULL;
     }
-    /* TODO: 标记数组分配或初始化失败后仍继续解析；需用分配失败注入验证 ref/out 不会被误当普通表达式。 */
     if (argumentMarkers != ZR_NULL) {
         *argumentMarkers = ZR_NULL;
-        markers = ZrCore_Memory_RawMallocWithType(
-                ps->state->global, sizeof(SZrArray), ZR_MEMORY_NATIVE_TYPE_ARRAY);
-        if (markers != ZR_NULL) {
-            ZrCore_Array_Init(ps->state, markers, sizeof(SZrCallArgumentSyntax),
-                              ZR_PARSER_INITIAL_CAPACITY_TINY);
+    }
+    if (call_argument_resource_failed(ps)) {
+        return ZR_NULL;
+    }
+    args = parser_ast_array_new(ps, ZR_PARSER_INITIAL_CAPACITY_TINY);
+    if (args == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (argumentMarkers != ZR_NULL) {
+        markers = call_metadata_array_new(
+                ps,
+                sizeof(SZrCallArgumentSyntax),
+                ZR_PARSER_INITIAL_CAPACITY_TINY);
+        if (markers == ZR_NULL) {
+            call_argument_list_fail(ps, &args, &names, &markers);
+            return ZR_NULL;
         }
     }
 
@@ -97,33 +312,44 @@ SZrAstNodeArray *parse_argument_list(
         if (isNamed) {
             hasNamedArgs = ZR_TRUE;
         }
-        names = ZrCore_Memory_RawMallocWithType(
-                ps->state->global, sizeof(SZrArray), ZR_MEMORY_NATIVE_TYPE_ARRAY);
-        if (names != ZR_NULL) {
-            SZrString *storedName = isNamed ? paramName : ZR_NULL;
-            ZrCore_Array_Init(ps->state, names, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_TINY);
-            ZrCore_Array_Push(ps->state, names, &storedName);
+        if (argNames != ZR_NULL) {
+            names = call_metadata_array_new(
+                    ps, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_TINY);
+            if (names == ZR_NULL) {
+                call_argument_list_fail(ps, &args, &names, &markers);
+                return ZR_NULL;
+            }
+            {
+                SZrString *storedName = isNamed ? paramName : ZR_NULL;
+                if (!call_metadata_array_add(ps, names, &storedName)) {
+                    call_argument_list_fail(ps, &args, &names, &markers);
+                    return ZR_NULL;
+                }
+            }
         }
 
         if (markers != ZR_NULL) {
             SZrCallArgumentSyntax marker = parse_call_argument_marker(ps);
-            ZrCore_Array_Push(ps->state, markers, &marker);
+            if (!call_metadata_array_add(ps, markers, &marker)) {
+                call_argument_list_fail(ps, &args, &names, &markers);
+                return ZR_NULL;
+            }
         }
         {
             SZrAstNode *first = parse_call_argument_expression(ps);
             if (first != ZR_NULL) {
-                ZrParser_AstNodeArray_Add(ps->state, args, first);
+                if (!parser_ast_array_add(ps, args, first)) {
+                    ZrParser_Ast_Free(ps->state, first);
+                    call_argument_list_fail(ps, &args, &names, &markers);
+                    return ZR_NULL;
+                }
             } else {
-                if (names != ZR_NULL) {
-                    ZrCore_Array_Free(ps->state, names);
-                    ZrCore_Memory_RawFreeWithType(
-                            ps->state->global, names, sizeof(SZrArray), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                if (ps->hasFatalError) {
+                    call_argument_list_fail(ps, &args, &names, &markers);
+                    return ZR_NULL;
                 }
-                if (markers != ZR_NULL) {
-                    ZrCore_Array_Free(ps->state, markers);
-                    ZrCore_Memory_RawFreeWithType(
-                            ps->state->global, markers, sizeof(SZrArray), ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                }
+                call_metadata_array_free(ps, &names);
+                call_metadata_array_free(ps, &markers);
                 return args;
             }
         }
@@ -148,38 +374,43 @@ SZrAstNodeArray *parse_argument_list(
                 report_error(ps, "Positional arguments cannot come after named arguments");
                 break;
             }
-            if (names == ZR_NULL) {
-                names = ZrCore_Memory_RawMallocWithType(
-                        ps->state->global, sizeof(SZrArray), ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                if (names != ZR_NULL) {
-                    ZrCore_Array_Init(ps->state, names, sizeof(SZrString *), args->count + 1u);
-                    for (TZrSize index = 0u; index < args->count; index++) {
-                        SZrString *nullName = ZR_NULL;
-                        ZrCore_Array_Push(ps->state, names, &nullName);
-                    }
-                }
-            }
             if (names != ZR_NULL) {
                 SZrString *storedName = isNamed ? paramName : ZR_NULL;
-                ZrCore_Array_Push(ps->state, names, &storedName);
+                if (!call_metadata_array_add(ps, names, &storedName)) {
+                    call_argument_list_fail(ps, &args, &names, &markers);
+                    return ZR_NULL;
+                }
             }
             if (markers != ZR_NULL) {
                 SZrCallArgumentSyntax marker = parse_call_argument_marker(ps);
-                ZrCore_Array_Push(ps->state, markers, &marker);
+                if (!call_metadata_array_add(ps, markers, &marker)) {
+                    call_argument_list_fail(ps, &args, &names, &markers);
+                    return ZR_NULL;
+                }
             }
             {
                 SZrAstNode *arg = parse_call_argument_expression(ps);
                 if (arg != ZR_NULL) {
-                    /* BUG: 实参数达到当前容量后，增长分配失败会使 Add 静默保留原 count。
-                     * 此处未确认登记成功，arg 会丢失清理入口，已追加的名称/标记与表达式列表也会失配。 */
-                    ZrParser_AstNodeArray_Add(ps->state, args, arg);
+                    if (!parser_ast_array_add(ps, args, arg)) {
+                        ZrParser_Ast_Free(ps->state, arg);
+                        call_argument_list_fail(ps, &args, &names, &markers);
+                        return ZR_NULL;
+                    }
                 } else {
+                    if (ps->hasFatalError) {
+                        call_argument_list_fail(ps, &args, &names, &markers);
+                        return ZR_NULL;
+                    }
                     break;
                 }
             }
         }
     }
 
+    if (call_argument_resource_failed(ps)) {
+        call_argument_list_fail(ps, &args, &names, &markers);
+        return ZR_NULL;
+    }
     if (argNames != ZR_NULL) {
         *argNames = names;
     }

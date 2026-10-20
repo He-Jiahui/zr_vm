@@ -1,0 +1,27 @@
+let {Array} = import("zr.container");
+let system = import("zr.system");
+union GameEvent { Nothing; Hit(slot: int, damage: int); Label(text: string); }
+class Box<T> {
+    pub var item: T;
+    pub @constructor(item: T) { this.item = item; }
+    pub fn read(): T { return this.item; }
+}
+fn amount(ev: GameEvent): int {
+    switch (ev) {
+        (Nothing) { return 0; }
+        (Hit(slot, damage)) { return slot + damage; }
+        (Label(text)) { if (text == "event42") { return 42; } return -2; }
+    }
+    return -1;
+}
+var events = new Array<GameEvent>();
+events.add(GameEvent.Hit(4, 9));
+var box = new Box<GameEvent>(events[0]);
+if (amount(events[0]) != 13 || amount(box.read()) != 13) { throw "union array/generic call"; }
+if (amount(GameEvent.Hit(10, 32)) != 42 || amount(GameEvent.Nothing) != 0) { throw "direct union call"; }
+var local: GameEvent = GameEvent.Hit(11, 31);
+if (amount(local) != 42) { throw "inline union argument"; }
+events.add(GameEvent.Label("event" + <string>amount(local)));
+system.gc.collect("full");
+if (amount(events[1]) != 42) { throw "union GC payload"; }
+return 42;

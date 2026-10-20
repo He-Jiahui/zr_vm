@@ -72,7 +72,10 @@ static TZrUInt32 catch_clause_binding_slot(
         parameter->data.parameter.name->name == ZR_NULL) {
         return allocate_stack_slot(cs);
     }
-    return allocate_local_var(cs, parameter->data.parameter.name->name);
+    return allocate_local_var_with_context(
+            cs,
+            parameter->data.parameter.name->name,
+            parameter->data.parameter.name->syntaxContext);
 }
 
 void compile_try_catch_finally_statement(

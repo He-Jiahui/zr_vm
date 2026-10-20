@@ -19,6 +19,10 @@
 #if defined(_WIN32)
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 typedef SOCKET ZrNetworkSocket;
 typedef int ZrNetworkSockLen;
 #define ZR_NETWORK_INVALID_SOCKET INVALID_SOCKET
@@ -39,6 +43,9 @@ typedef socklen_t ZrNetworkSockLen;
 #define ZR_NETWORK_SHUT_RDWR SHUT_RDWR
 #define ZR_NETWORK_SOCKET_WOULD_BLOCK(errorCode) ((errorCode) == EWOULDBLOCK || (errorCode) == EAGAIN || (errorCode) == EINPROGRESS)
 #endif
+
+#define ZR_NETWORK_DEBUG_TOKEN_BYTES 32U
+#define ZR_NETWORK_DEBUG_TOKEN_TEXT_LENGTH (ZR_NETWORK_DEBUG_TOKEN_BYTES * 2U)
 
 #define ZR_NETWORK_FRAME_HEADER_SIZE 4U
 /** @brief 固定长度读取的内部结果；帧读取方将所有非成功结果视为断开帧流。 */
@@ -819,4 +826,71 @@ TZrBool ZrNetwork_TokenMatches(const TZrChar *expected, const TZrChar *actual) {
         diff |= (TZrUInt8)(expected[index] ^ actual[index]);
     }
     return diff == 0 ? ZR_TRUE : ZR_FALSE;
+}
+
+/* Fill a fixed-size cryptographic token from the operating system RNG; never fall back to PRNG state. */
+static TZrBool network_fill_secure_random(TZrByte *buffer, TZrSize length) {
+    if (buffer == ZR_NULL || length == 0) {
+        return ZR_FALSE;
+    }
+#if defined(_WIN32)
+    {
+        typedef LONG(WINAPI *TZrBCryptGenRandom)(void *, unsigned char *, unsigned long, unsigned long);
+        HMODULE bcrypt = LoadLibraryW(L"bcrypt.dll");
+        TZrBCryptGenRandom generate = bcrypt != ZR_NULL
+                                          ? (TZrBCryptGenRandom)(void *)GetProcAddress(bcrypt, "BCryptGenRandom")
+                                          : ZR_NULL;
+        TZrBool success = generate != ZR_NULL &&
+                          generate(ZR_NULL, buffer, (unsigned long)length, 0x00000002L) >= 0
+                              ? ZR_TRUE
+                              : ZR_FALSE;
+        if (bcrypt != ZR_NULL) {
+            FreeLibrary(bcrypt);
+        }
+        return success;
+    }
+#else
+    {
+        int descriptor = open("/dev/urandom", O_RDONLY);
+        TZrSize offset = 0;
+        if (descriptor < 0) {
+            return ZR_FALSE;
+        }
+        while (offset < length) {
+            ssize_t count = read(descriptor, buffer + offset, length - offset);
+            if (count > 0) {
+                offset += (TZrSize)count;
+            } else if (count < 0 && errno == EINTR) {
+                continue;
+            } else {
+                close(descriptor);
+                return ZR_FALSE;
+            }
+        }
+        close(descriptor);
+        return ZR_TRUE;
+    }
+#endif
+}
+
+TZrBool ZrNetwork_GenerateDebugToken(TZrChar *buffer, TZrSize bufferSize) {
+    static const TZrChar hex[] = "0123456789abcdef";
+    TZrByte bytes[ZR_NETWORK_DEBUG_TOKEN_BYTES];
+    TZrSize index;
+
+    if (buffer == ZR_NULL || bufferSize < ZR_NETWORK_DEBUG_TOKEN_TEXT_LENGTH + 1U) {
+        return ZR_FALSE;
+    }
+    buffer[0] = '\0';
+    if (!network_fill_secure_random(bytes, sizeof(bytes))) {
+        memset(bytes, 0, sizeof(bytes));
+        return ZR_FALSE;
+    }
+    for (index = 0; index < sizeof(bytes); index++) {
+        buffer[index * 2U] = hex[(bytes[index] >> 4) & 0x0fU];
+        buffer[index * 2U + 1U] = hex[bytes[index] & 0x0fU];
+    }
+    buffer[ZR_NETWORK_DEBUG_TOKEN_TEXT_LENGTH] = '\0';
+    memset(bytes, 0, sizeof(bytes));
+    return ZR_TRUE;
 }

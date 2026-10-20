@@ -18,12 +18,21 @@
 
 static SZrState *g_state;
 
+static void weak_owner_evidence_cleanup(void);
+static void using_release_evidence_cleanup(void);
+static void primary_expression_source_range_cleanup(void);
+static void da_callable_identity_cleanup(void);
+
 void setUp(void) {
     g_state = ZrTests_Runtime_State_Create(ZR_NULL);
     TEST_ASSERT_NOT_NULL(g_state);
 }
 
 void tearDown(void) {
+    da_callable_identity_cleanup();
+    primary_expression_source_range_cleanup();
+    using_release_evidence_cleanup();
+    weak_owner_evidence_cleanup();
     if (g_state != ZR_NULL) {
         ZrTests_Runtime_State_Destroy(g_state);
         g_state = ZR_NULL;
@@ -3512,6 +3521,11 @@ static void test_invalid_extern_callable_decorator_publishes_structured_query_di
     ZrParser_Ast_Free(g_state, ast);
 }
 
+#include "test_weak_owner_release_evidence_cases.h"
+#include "test_semantic_using_release_evidence_cases.h"
+#include "test_primary_expression_source_range_cases.h"
+#include "test_definite_assignment_callable_identity_cases.h"
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_compile_script_publishes_semantic_query_diagnostics_without_error);
@@ -3584,5 +3598,20 @@ int main(void) {
     RUN_TEST(test_missing_conditional_colon_builder_publishes_machine_fix);
     RUN_TEST(test_missing_conditional_branch_expression_builders_publish_no_fix);
     RUN_TEST(test_invalid_extern_callable_decorator_publishes_structured_query_diagnostic);
+    RUN_TEST(test_weak_call_owner_set_error_retains_release_evidence);
+    RUN_TEST(test_non_wake_weak_ownership_mismatches_preserve_diagnostics);
+    RUN_TEST(test_weak_to_shared_mismatch_does_not_require_wake);
+    RUN_TEST(test_weak_to_plain_mismatch_does_not_require_wake);
+    RUN_TEST(test_weak_by_value_calls_preserve_release_policy);
+    RUN_TEST(test_guarded_weak_receivers_preserve_release_policy);
+    RUN_TEST(test_using_shared_identifier_publishes_scope_release_evidence);
+    RUN_TEST(test_using_borrowed_identifier_publishes_scope_release_evidence);
+    RUN_TEST(test_weak_degrade_accepts_an_incoming_shared_parameter);
+    RUN_TEST(test_primary_expression_ranges_include_postfix_members);
+    RUN_TEST(test_definite_assignment_keeps_same_name_callable_bindings_separate);
+    RUN_TEST(test_definite_assignment_lambda_parameter_using_starts_initialized);
+    RUN_TEST(test_definite_assignment_still_reports_uninitialized_local);
+    RUN_TEST(test_definite_assignment_lambda_body_reports_uninitialized_local);
+    RUN_TEST(test_definite_assignment_finds_lambda_inside_if_body);
     return UNITY_END();
 }

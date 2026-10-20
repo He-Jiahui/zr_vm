@@ -3,6 +3,7 @@
 
 #include "zr_vm_parser/compiler.h"
 #include "compiler/compiler_internal.h"
+#include "compiler/compiler_type_declaration.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/type_inference.h"
 
@@ -145,6 +146,11 @@ TZrUInt32 compiler_get_or_add_member_entry_for_type_member(SZrCompilerState *cs,
 TZrBool emit_null_reset_to_identifier_binding_local(SZrCompilerState *cs,
                                                     SZrString *name,
                                                     SZrFileRange location);
+TZrBool emit_null_reset_to_identifier_binding_local_with_context(
+        SZrCompilerState *cs,
+        SZrString *name,
+        SZrSyntaxContext syntaxContext,
+        SZrFileRange location);
 TZrBool try_emit_compile_time_function_call(SZrCompilerState *cs, SZrAstNode *node);
 void emit_constant_to_slot_local(SZrCompilerState *cs,
                                  TZrUInt32 slot,
@@ -265,7 +271,6 @@ TZrBool union_variant_payload_binding_defaults_to_borrow(SZrAstNode *variant,
                                                          TZrBool moveBinding);
 SZrAstNode *try_find_union_declaration_for_type_name(SZrCompilerState *cs, SZrString *typeName);
 
-SZrAstNode *find_type_declaration(SZrCompilerState *cs, SZrString *typeName);
 TZrBool find_type_member_is_const(SZrCompilerState *cs, SZrString *typeName, SZrString *memberName);
 TZrBool find_current_type_field_metadata(SZrCompilerState *cs,
                                                 SZrString *typeName,

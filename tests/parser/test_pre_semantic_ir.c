@@ -384,23 +384,16 @@ static void test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar(vo
     static const EZrSemanticIrOpcode expectedOpcodes[] = {
         ZR_SEMANTIC_IR_CONSTANT,
         ZR_SEMANTIC_IR_PLACE_BASE,
-        ZR_SEMANTIC_IR_INITIALIZE,
         ZR_SEMANTIC_IR_PLACE_BASE,
-        ZR_SEMANTIC_IR_INITIALIZE,
         ZR_SEMANTIC_IR_PLACE_BASE,
-        ZR_SEMANTIC_IR_CONVERT,
         ZR_SEMANTIC_IR_INITIALIZE,
         ZR_SEMANTIC_IR_LOAD,
         ZR_SEMANTIC_IR_PLACE_BASE,
-        ZR_SEMANTIC_IR_INITIALIZE,
         ZR_SEMANTIC_IR_PLACE_BASE,
-        ZR_SEMANTIC_IR_INITIALIZE,
         ZR_SEMANTIC_IR_PLACE_BASE,
-        ZR_SEMANTIC_IR_CONVERT,
         ZR_SEMANTIC_IR_INITIALIZE,
         ZR_SEMANTIC_IR_LOAD,
         ZR_SEMANTIC_IR_PLACE_BASE,
-        ZR_SEMANTIC_IR_INITIALIZE,
         ZR_SEMANTIC_IR_STORE,
         ZR_SEMANTIC_IR_CONSTANT,
         ZR_SEMANTIC_IR_PLACE_BASE,
@@ -457,8 +450,6 @@ static void test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar(vo
         if (instruction->opcode == ZR_SEMANTIC_IR_CONSTANT) {
             const SZrSemanticIrInstruction *temporaryBase =
                     ZrParser_SemanticIr_InstructionAt(function, index + 1U);
-            const SZrSemanticIrInstruction *temporaryInit =
-                    ZrParser_SemanticIr_InstructionAt(function, index + 2U);
             const SZrSemanticIrValue *constantValue =
                     ZrParser_SemanticIr_Value(function, instruction->resultValueId);
             TEST_ASSERT_TRUE(instruction->hasConstantPoolIndex);
@@ -469,22 +460,39 @@ static void test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar(vo
             }
             TEST_ASSERT_NOT_EQUAL(ZR_SEMANTIC_ID_INVALID, instruction->typeId);
             TEST_ASSERT_NOT_NULL(temporaryBase);
-            TEST_ASSERT_NOT_NULL(temporaryInit);
             TEST_ASSERT_NOT_NULL(constantValue);
+            TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_PLACE_BASE,
+                                  temporaryBase->opcode);
             TEST_ASSERT_EQUAL_UINT32(instruction->typeId, constantValue->typeId);
             TEST_ASSERT_EQUAL_UINT32(instruction->typeId, temporaryBase->typeId);
-            TEST_ASSERT_EQUAL_UINT32(instruction->typeId, temporaryInit->typeId);
             TEST_ASSERT_EQUAL_UINT32(instruction->id,
                                      constantValue->definitionInstructionId);
-            TEST_ASSERT_EQUAL_UINT32(instruction->resultValueId,
-                                     temporaryInit->valueId);
-            if (index != 0U) {
+            if (index == 0U) {
+                const SZrCanonicalTypeNode *type =
+                        ZrParser_CanonicalType_Find(
+                                compiler.semanticContext, instruction->typeId);
+                TEST_ASSERT_NOT_NULL(type);
+                TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_PRIMITIVE, type->kind);
+                TEST_ASSERT_EQUAL_INT(
+                        ZR_VALUE_TYPE_INT64, type->data.primitive.valueType);
+            } else {
+                const SZrSemanticIrInstruction *temporaryInit =
+                        ZrParser_SemanticIr_InstructionAt(function, index + 2U);
                 TZrSize typeIndex;
                 const SZrTypeValue *poolValue =
                         (const SZrTypeValue *)ZrCore_Array_Get(
                                 &compiler.constants,
                                 instruction->constantPoolIndex);
                 const SZrSemanticTypeRecord *typeRecord = ZR_NULL;
+                TEST_ASSERT_NOT_NULL(temporaryInit);
+                TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_INITIALIZE,
+                                      temporaryInit->opcode);
+                TEST_ASSERT_EQUAL_UINT32(
+                        instruction->typeId, temporaryInit->typeId);
+                TEST_ASSERT_EQUAL_UINT32(
+                        temporaryBase->placeId, temporaryInit->placeId);
+                TEST_ASSERT_EQUAL_UINT32(
+                        instruction->resultValueId, temporaryInit->valueId);
                 TEST_ASSERT_NOT_NULL(poolValue);
                 TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, poolValue->type);
                 for (typeIndex = 0U;
@@ -509,24 +517,31 @@ static void test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar(vo
         if (instruction->opcode == ZR_SEMANTIC_IR_LOAD) {
             const SZrSemanticIrInstruction *temporaryBase =
                     ZrParser_SemanticIr_InstructionAt(function, index + 1U);
-            const SZrSemanticIrInstruction *temporaryInit =
-                    ZrParser_SemanticIr_InstructionAt(function, index + 2U);
+            const SZrSemanticIrValue *loadedValue =
+                    ZrParser_SemanticIr_Value(function, instruction->resultValueId);
+            const SZrCanonicalTypeNode *type =
+                    ZrParser_CanonicalType_Find(
+                            compiler.semanticContext, instruction->typeId);
             TEST_ASSERT_NOT_NULL(temporaryBase);
-            TEST_ASSERT_NOT_NULL(temporaryInit);
+            TEST_ASSERT_NOT_NULL(loadedValue);
+            TEST_ASSERT_NOT_NULL(type);
             TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_PLACE_BASE,
                                   temporaryBase->opcode);
-            TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_INITIALIZE,
-                                  temporaryInit->opcode);
-            TEST_ASSERT_EQUAL_UINT32(temporaryBase->placeId,
-                                     temporaryInit->placeId);
-            TEST_ASSERT_EQUAL_UINT32(instruction->resultValueId,
-                                     temporaryInit->valueId);
+            TEST_ASSERT_EQUAL_UINT32(instruction->id,
+                                     loadedValue->definitionInstructionId);
+            TEST_ASSERT_EQUAL_UINT32(instruction->typeId, loadedValue->typeId);
+            TEST_ASSERT_EQUAL_UINT32(instruction->typeId, temporaryBase->typeId);
+            TEST_ASSERT_EQUAL_INT(ZR_CANONICAL_TYPE_PRIMITIVE, type->kind);
+            TEST_ASSERT_EQUAL_INT(
+                    ZR_VALUE_TYPE_INT64, type->data.primitive.valueType);
         }
     }
     {
         const SZrSemanticIrInstruction *sourceLoad = ZR_NULL;
+        const SZrSemanticIrInstruction *copyLoad = ZR_NULL;
         const SZrSemanticIrInstruction *assignmentStore = ZR_NULL;
         const SZrSemanticIrInstruction *localInitialize = ZR_NULL;
+        const SZrSemanticIrInstruction *copyInitialize = ZR_NULL;
         const SZrSemanticIrInstruction *literalDefinition =
                 ZrParser_SemanticIr_InstructionAt(function, 0U);
         const SZrSemanticIrInstruction *localDefinition;
@@ -537,12 +552,18 @@ static void test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar(vo
                     ZrParser_SemanticIr_InstructionAt(function, index);
             if (instruction->opcode == ZR_SEMANTIC_IR_LOAD) {
                 sourceLoad = instruction;
+                if (copyLoad == ZR_NULL) {
+                    copyLoad = instruction;
+                }
             } else if (instruction->opcode == ZR_SEMANTIC_IR_STORE) {
                 assignmentStore = instruction;
             } else if (instruction->opcode == ZR_SEMANTIC_IR_INITIALIZE &&
-                       instruction->symbolId != ZR_SEMANTIC_ID_INVALID &&
-                       localInitialize == ZR_NULL) {
-                localInitialize = instruction;
+                       instruction->symbolId != ZR_SEMANTIC_ID_INVALID) {
+                if (localInitialize == ZR_NULL) {
+                    localInitialize = instruction;
+                } else if (copyInitialize == ZR_NULL) {
+                    copyInitialize = instruction;
+                }
             }
         }
         TEST_ASSERT_NOT_NULL(literalDefinition);
@@ -555,10 +576,18 @@ static void test_compiler_emits_validated_pre_semantic_ir_before_exec_sidecar(vo
         localDefinition = ZrParser_SemanticIr_InstructionAt(
                 function, assignedValue->definitionInstructionId - 1U);
         TEST_ASSERT_NOT_NULL(localDefinition);
-        TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_CONVERT,
+        TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_IR_CONSTANT,
                               localDefinition->opcode);
+        TEST_ASSERT_EQUAL_UINT32(literalDefinition->id, localDefinition->id);
         TEST_ASSERT_EQUAL_UINT32(literalDefinition->resultValueId,
-                                 localDefinition->valueId);
+                                 localInitialize->valueId);
+        TEST_ASSERT_EQUAL_UINT32(literalDefinition->typeId,
+                                 localInitialize->typeId);
+        TEST_ASSERT_NOT_NULL(copyLoad);
+        TEST_ASSERT_NOT_NULL(copyInitialize);
+        TEST_ASSERT_EQUAL_UINT32(copyLoad->resultValueId,
+                                 copyInitialize->valueId);
+        TEST_ASSERT_EQUAL_UINT32(copyLoad->typeId, copyInitialize->typeId);
         TEST_ASSERT_NOT_NULL(sourceLoad);
         TEST_ASSERT_NOT_NULL(assignmentStore);
         TEST_ASSERT_NOT_EQUAL(ZR_VALUE_ID_INVALID, sourceLoad->resultValueId);
@@ -1473,6 +1502,7 @@ int main(void) {
     RUN_TEST(test_unmodeled_loop_arm_keeps_legacy_cfg);
     RUN_TEST(test_late_unmodeled_arm_abandons_partial_source_cfg);
     RUN_TEST(test_nested_untracked_condition_abandons_outer_source_cfg);
+    RUN_TEST(test_nested_source_compare_preserves_outer_source_cfg);
     RUN_TEST(test_source_short_circuit_and_emits_rhs_control_flow);
     RUN_TEST(test_source_short_circuit_or_skips_rhs_on_true_edge);
     RUN_TEST(test_source_if_arm_composes_short_circuit_cfg);
@@ -1480,6 +1510,9 @@ int main(void) {
     RUN_TEST(test_source_if_undefined_semantic_condition_falls_back);
     RUN_TEST(test_explicit_scalar_local_keeps_source_cfg_load);
     RUN_TEST(test_unannotated_dynamic_object_local_read_keeps_legacy_cfg);
+    RUN_TEST(test_unannotated_dynamic_object_local_store_keeps_legacy_cfg);
+    RUN_TEST(test_explicit_scalar_local_store_rematerializes_source_slot);
+    RUN_TEST(test_untyped_local_store_does_not_bypass_active_source_cfg);
     RUN_TEST(test_source_optional_call_skips_argument_semantic_effects);
     RUN_TEST(test_source_optional_call_skips_nested_argument_invoke);
     RUN_TEST(test_source_optional_value_merges_present_and_absent_paths);

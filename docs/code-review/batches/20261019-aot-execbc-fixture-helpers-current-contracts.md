@@ -1,0 +1,38 @@
+---
+related_code:
+  - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c
+implementation_files:
+  - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c
+tests:
+  - zr_vm_execbc_aot_pipeline_test
+  - zr_vm_execbc_aot_manual_opcode_sync_test
+plan_sources:
+  - user: 全量首方审查、按需补充中文职责和生命周期注释
+doc_type: module-detail
+---
+
+# ExecBC AOT 底层夹具与资源辅助合同
+
+本批复核47个旧单元：37函数、6类型、1静态槽、1宏、2所属语句块。41项已注释、4项TODO、2项BUG，无未审查项。源文件原9891行用于追踪调用，其余157个旧单元不据此取得本批信用；inventory继续pending。混合叶879行只替换同一47键的合同列，表头及外832行逐字节保留，0新增信用。
+
+一次性binary reader把测试拥有的字节借给core IO，close不释放缓冲；core refill先将readSize置零，故EOF早退未写长度不构成当前未初始化读取。字节缓冲须活到IO最后一次使用之后。文本/二进制读取器在显式普通失败中关闭FILE并释放自有分配，成功缓冲由调用测试free；二进制无NUL保证。Unity断言或Throw的非局部退出不在普通返回清理保证内。
+
+手工SZrFunction借用调用方栈数组，不得交给常规拥有式释放。compile_source_without_quickening仍调用optimize_instructions，名称不表示完全未优化。项目安装器覆盖临时project、挂到global、ConfigureGlobal后分配PROJECT类别records/函数指针表/物理槽数表，完成后发布单条记录；根函数及直接子函数只借用，三张表交FreeProjectState释放，随后断开global->userData。真实句柄还依赖根库延迟关闭链；fixture零句柄与固定返回1的桩不证明DLL装载、ABI或入口执行。
+
+两种私有类型逐字段镜像当前根库布局，尚无sizeof/offsetof编译期保障。EXBCFIX-TODO-PRIVATE-ABI对应两个类型及发布块三行；EXBCFIX-TODO-DEBUG-SEQUENCE对应捕获结构一行，现有用例只断言计数与末行，未用lines[]证明完整事件顺序。两个TODO家族保留四行镜像，未新增缺陷家族。
+
+既有EXBCFIX-BUG-TWOPASS-GROWTH由函数与所属块两行映射同一缺陷：join_repo_files_owned第一遍估算并分配，第二遍重新读取且memcpy不复核剩余容量；两遍之间文件增长即可超过已分配缓冲。证据为当前671–717行及9724调用链，未运行故障复现。本轮只保留标记和证据，不修改行为。
+
+47段中文Doxygen只追加于EOF，含Summary、适用参数方向、返回/值模型、约束与生命周期和References。独审提出的336个精确标量格式修订已正向应用、反向还原报告验证；含83个参数方向及类型/void/块的适用格式。原506869字节/9891个CRLF前缀完全保留，追加49857字节/1222个CRLF。明确Python有限正则投影核对53340个程序atom及2313个字符串/字符字面量的拼写、原行、UTF-8列和绝对偏移；不宣称编译器lexer或AST等价。
+
+调用证据包含统一opcode宏展开、19处Io_Init回调入口、manual源include同一C并重命名main，以及根库项目记录的间接消费者。C/LLVM形状断言只检索文本，符号出现不证明控制流、布局、外部编译或生成入口执行；不得把这些oracle扩成完整后端语义保障。
+
+本批在同一实际checkout及物理E盘复用B执行新BEFORE/AFTER。两个阶段构建均退出0，直接无参数完整入口98PASS/0FAIL/0IGNORE，manual入口3PASS/0FAIL/0IGNORE；manual三例重复完整套件中的三例，共98个不同用例。有序原始Unity结果、footer与OK完全一致，stderr均空；stdout仅允许严格锚定Pass - Cost Time数值字段，完整98个计时字段中83个变化，manual3个中2个变化，其余字节完全一致。未新增测试，也未据通过结果声称故障路径已复现。
+
+运行前明确清除两个focused变量及trace变量；变量存在即生效，空串或0也不能当作关闭。原CTest没有本批内部超时；build900秒、直接入口各120秒仅为任务watchdog。两个阶段所有子进程均真实await且退出0，无超时。借用依赖按本轮FileAPI图982源码、编译include目录936头文件及93只读fixture/benchmark引用冻结；这是有限身份围栏，不是实际compiler include全闭包，也不授这些借用模块审查信用。
+
+静态显式生成路径为102个cwd相对文件及3个编译期tests_generated固定输出；后者不随cwd/TEMP迁移。每阶段运行前独占cwd为空、固定三路径不存在，full与manual运行后快照均为空。普通remove未检查返回的边界仍按静态合同记录；未知介入文件不得清理。
+
+本批只投影inventory该源的哈希及说明，状态保持pending；原有外来49行86格中，本源1格旧哈希按已释放文件的实际源码身份更新，其余48行85格逐字保留；正常索引4个既有暂存路径保持。全局check与整叶check仍可能含历史外围问题，原始输出与逐行归属单独保存；本批47行格式、锚点、合同及实际暂存差异独立验收，不宣称全仓完成。
+
+配对证据：aot-execbc-fixture-helpers-current-native-pair-r1.json，SHA256 1050983cdcb7905f39ccd98b7d752c97e45d63b11d44f16f98ebde65f53d8772；源码应用：aot-execbc-fixture-helpers-current-source-application-r1.json，SHA256 d8faf5bee64a1d8720af6ccabb804f5eef40800e9d0b9a1a8f4086257144988a。

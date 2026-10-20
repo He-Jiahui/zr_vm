@@ -742,6 +742,14 @@ void type_inference_record_external_member_reference_fact(
         targetKind == ZR_SEMANTIC_EXTERNAL_TARGET_UNKNOWN) {
         return;
     }
+    target = memberNode->data.memberExpression.property;
+    const SZrSemanticReferenceFact *existing =
+            ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+                    cs->semanticContext, target != ZR_NULL ? target : memberNode,
+                    ZR_SEMANTIC_REFERENCE_MEMBER_ACCESS);
+    if (existing != ZR_NULL && existing->isResolved) {
+        return;
+    }
     typeId = ZrParser_CanonicalType_FromInferred(cs->semanticContext, memberType);
     if (typeId == ZR_SEMANTIC_ID_INVALID) {
         return;

@@ -3,16 +3,20 @@ related_code:
   - zr_vm_core/include/zr_vm_core/call_binding.h
   - zr_vm_core/include/zr_vm_core/function_identity.h
   - zr_vm_core/include/zr_vm_core/function.h
-  - zr_vm_core/src/zr_vm_core/call_binding.c
-  - zr_vm_core/src/zr_vm_core/call_binding_encoding.c
-  - zr_vm_core/src/zr_vm_core/call_binding_contract_internal.h
-  - zr_vm_core/src/zr_vm_core/call_binding_link.c
-  - zr_vm_core/src/zr_vm_core/call_binding_graph.c
-  - zr_vm_core/src/zr_vm_core/call_binding_member.c
-  - zr_vm_core/src/zr_vm_core/call_binding_signature.c
-  - zr_vm_core/src/zr_vm_core/function_identity.c
-  - zr_vm_core/src/zr_vm_core/function.c
-  - zr_vm_core/src/zr_vm_core/function_graph.c
+  - zr_vm_core/src/zr_vm_core/call/call_binding.c
+  - zr_vm_core/src/zr_vm_core/call/call_binding_encoding.c
+  - zr_vm_core/src/zr_vm_core/call/call_binding_contract_internal.h
+  - zr_vm_core/src/zr_vm_core/call/call_binding_link.c
+  - zr_vm_core/src/zr_vm_core/call/call_binding_graph.c
+  - zr_vm_core/src/zr_vm_core/call/call_binding_member.c
+  - zr_vm_core/src/zr_vm_core/call/call_binding_signature.c
+  - zr_vm_core/src/zr_vm_core/function/function_identity.c
+  - zr_vm_core/src/zr_vm_core/function/function.c
+  - zr_vm_core/src/zr_vm_core/function/function_graph.c
+  - zr_vm_core/src/zr_vm_core/module/module_call_binding.c
+  - tests/library/test_call_binding_module_imported_meta.inc
+  - tests/library/test_call_binding_module_imported_instance.inc
+  - zr_vm_parser/src/zr_vm_parser/compiler/expression/compile_expression_types.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/execution/execution_member_access.c
   - zr_vm_core/src/zr_vm_core/execution/execution_meta_access.c
@@ -20,18 +24,24 @@ related_code:
   - zr_vm_core/src/zr_vm_core/gc/gc_cycle.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/call_binding.h
-  - zr_vm_core/src/zr_vm_core/call_binding.c
-  - zr_vm_core/src/zr_vm_core/call_binding_encoding.c
-  - zr_vm_core/src/zr_vm_core/call_binding_contract_internal.h
-  - zr_vm_core/src/zr_vm_core/call_binding_link.c
-  - zr_vm_core/src/zr_vm_core/call_binding_member.c
-  - zr_vm_core/src/zr_vm_core/function_identity.c
+  - zr_vm_core/src/zr_vm_core/call/call_binding.c
+  - zr_vm_core/src/zr_vm_core/call/call_binding_encoding.c
+  - zr_vm_core/src/zr_vm_core/call/call_binding_contract_internal.h
+  - zr_vm_core/src/zr_vm_core/call/call_binding_link.c
+  - zr_vm_core/src/zr_vm_core/call/call_binding_member.c
+  - zr_vm_core/src/zr_vm_core/function/function_identity.c
+  - zr_vm_core/src/zr_vm_core/module/module_call_binding.c
   - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/expression/compile_expression_types.c
 plan_sources:
-  - user: 2026-09-06 W2 / Call Binding M1 静态调用绑定与可重定位目标表
+  - "user: 2026-09-06 W2 / Call Binding M1 静态调用绑定与可重定位目标表"
+  - "user: 2026-10-18 合并远端、恢复本地改动并解决冲突"
+  - .codex/plans/20261008-macro-tokenstream-structured-generation.md
 tests:
   - tests/core/test_call_binding_runtime.c
   - tests/library/test_call_binding_module.c
+  - tests/library/test_call_binding_module_imported_meta.inc
+  - tests/library/test_call_binding_module_imported_instance.inc
   - tests/library/test_call_binding_native_registry.c
   - tests/library/test_call_binding_relocation.c
   - tests/parser/test_call_binding_pipeline.c
@@ -67,6 +77,85 @@ operations use the same contract while preserving receiver provenance,
 ownership cleanup, exceptions, and inline-struct writeback. Typed function
 values retain a zero-target signature contract because the live value can be a
 VM closure, native callback, or AOT callable.
+
+## Imported META owner validation
+
+An imported callable constant has an owning type token and serialized member
+metadata. Runtime materialization installs meta-functions in `metaTable` and
+keeps them out of ordinary method descriptors. The descriptor-only owner
+lookup therefore rejects a genuine imported `@call` with `target-not-found`,
+even when the consumer, provider, signature and serialized layout agree.
+
+The META branch validates the unique owning serialized member by
+constant identity, requires an instance `CALL`, and checks the actual runtime
+CALL slot, VM function identity and slot uniqueness. The serialized non-static
+flag matters because a META call passes the receiver. Ordinary descriptor
+selection, owner layout guards and the later VM/AOT resolution remain shared.
+The complete source patch and its inverse have independent reviews. Two enum
+comparisons use casts only after their slot ranges have been checked.
+
+The MSVC regression reports ten cases, five failures and zero ignored before
+that repair. The five original source/binary/static/capture/reload cases pass.
+The real positive META case and four negative groups fail: wrong/missing CALL
+representation, one function in two genuine META slots, a compiler-produced
+static CALL, and contract/receiver guards. Every mutation is restored and all
+native pins released before Unity assertions. The latter receiver checks have
+not been reached on the old linker and require successful linking first.
+Evidence is `m1-msvc-imported-meta-guards-red-r1-zr_vm_call_binding_module_test.log`
+under `E:/cargo-targets/zr_vm/reports`, SHA256
+`67E0D09C2241BB0D59773852B3A41B8C67DCA445C29D0F21E17D05B4454C83B1`,
+2912 bytes.
+
+After the repair, all ten module cases pass, including the restored live result
+42 and the later receiver checks. Missing CALL, wrong meta type, null function,
+duplicate callable, static CALL, signature and layout faults report their
+required statuses. Primitive or unrelated receivers and a changed owner
+generation reject preparation and clear the target; restoration permits it.
+The six focused suites pass 54 cases with zero ignored: module 10, runtime 8,
+pipeline 18, relocation 5, artifact 8 and AOT projection 5. The module log is
+`m1-msvc-imported-meta-green-r1-zr_vm_call_binding_module_test.log`, SHA256
+`AB96A5F9D670232CA3BB805312BDBB4B5722376505F59403D89C17EBCB759599`,
+3440 bytes. The two comparison warnings were then removed and all ten module
+cases passed again.
+
+The original integration replay remains incomplete: its first LSP case reaches
+`PreCallKnownNativeValue` with a VM callable and triggers the native assertion.
+Root terminated only that confirmed owned test process and retained the partial
+log. The actual failing LSP instruction has not been observed.
+
+An earlier focused imported ordinary-instance test reproduced the lower opcode
+error: a linked VM method selected `KNOWN_NATIVE_MEMBER_CALL` (216). The first
+local correction forced a VM direct-member opcode (213), obtained 42, and
+verified the exact method and owning type. Its 34-case result (module 11,
+pipeline 18, AOT projection 5) is historical evidence in
+`m1-msvc-imported-instance-green-r1-zr_vm_call_binding_module_test.log`, SHA256
+`83AA03469C6F7FD98FDD383B033BC4C6B5D098BC2EEDD4991F9E41F8920A2569`,
+3860 bytes.
+
+The current imported-instance contract follows upstream `2166c069`: signature
+placeholders in an imported prototype do not select the provider's VM/AOT
+implementation. The compiler retains the imported `DIRECT/CALL/VM_MODULE`
+contract on `GET_MEMBER_SLOT` and invokes the resulting callable through
+generic `FUNCTION_CALL` dispatch. Provider cache reservation must precede the
+field-only lowering branch; an ordinary method is not a class/struct field.
+Receiver staging remains the same as the generic member fallback. The linker
+validates the module, callable token/signature, owner layout and descriptor,
+then binds the exact provider target without a compile-time VM/native guess.
+
+`test_source_module_instance_method_uses_provider_dispatch` in
+`test_call_binding_module_imported_instance.inc` verifies one unresolved
+imported contract, the actual instruction/cache coordinate, generic dispatch,
+real provider metadata and prototype/descriptor identities, public linking,
+runtime hits on the exact VM function, and result 42. It rejects specialized
+VM/native member calls at this imported callsite. During the 2026-10-18 merge
+reconciliation the retained test first failed because the provider cache branch
+was nested inside field-only lowering; moving it ahead of that branch made all
+12 module-binding cases pass. Reproduction and validation receipts are
+`module-binding-provider-dispatch-red.json` and
+`module-binding-provider-dispatch-green.json` under
+`E:/cargo-targets/zr_vm/reports/git-pull-reconcile-20261018`.
+This focused VM-source result does not establish AOT instance execution support
+or complete the earlier full LSP/integration replay; M1 remains unaccepted.
 
 ## Function graph identity
 

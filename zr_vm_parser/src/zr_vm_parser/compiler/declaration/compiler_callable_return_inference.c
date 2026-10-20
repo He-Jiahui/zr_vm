@@ -295,6 +295,79 @@ static void compiler_register_function_like_local_variable_type(
     ZrParser_InferredType_Free(cs->state, &bindingType);
 }
 
+/* Return inference runs outside normal function code generation, so it must
+ * provide the same parameter bindings that the real function compiler uses.
+ * Keep this environment temporary: inferred metadata must never publish the
+ * callable's parameters into the caller's variable table. */
+static TZrBool compiler_register_callable_parameter_types(
+        SZrCompilerState *cs,
+        const SZrAstNode *declaration) {
+    const SZrAstNodeArray *params = ZR_NULL;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL || declaration == ZR_NULL ||
+        cs->typeEnv == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (declaration->type) {
+        case ZR_AST_FUNCTION_DECLARATION:
+            params = declaration->data.functionDeclaration.params;
+            break;
+        case ZR_AST_CLASS_METHOD:
+            params = declaration->data.classMethod.params;
+            break;
+        case ZR_AST_CLASS_META_FUNCTION:
+            params = declaration->data.classMetaFunction.params;
+            break;
+        case ZR_AST_LAMBDA_EXPRESSION:
+            params = declaration->data.lambdaExpression.params;
+            break;
+        default:
+            return ZR_FALSE;
+    }
+
+    if (params == ZR_NULL || params->nodes == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    for (TZrSize index = 0U; index < params->count; index++) {
+        SZrAstNode *parameterNode = params->nodes[index];
+        SZrParameter *parameter;
+        SZrInferredType parameterType;
+        SZrSyntaxContext syntaxContext;
+
+        if (parameterNode == ZR_NULL ||
+            parameterNode->type != ZR_AST_PARAMETER ||
+            parameterNode->data.parameter.name == ZR_NULL ||
+            parameterNode->data.parameter.name->name == ZR_NULL) {
+            continue;
+        }
+
+        parameter = &parameterNode->data.parameter;
+        syntaxContext = parameter->name->syntaxContext;
+        ZrParser_InferredType_Init(cs->state, &parameterType, ZR_VALUE_TYPE_OBJECT);
+        if (parameter->typeInfo != ZR_NULL &&
+            !ZrParser_AstTypeToInferredType_Convert(
+                    cs, parameter->typeInfo, &parameterType)) {
+            ZrParser_InferredType_Free(cs->state, &parameterType);
+            return ZR_FALSE;
+        }
+        if (!ZrParser_TypeEnvironment_RegisterVariableExWithContext(
+                    cs->state,
+                    cs->typeEnv,
+                    parameter->name->name,
+                    &parameterType,
+                    parameterNode,
+                    parameterNode->location,
+                    syntaxContext)) {
+            ZrParser_InferredType_Free(cs->state, &parameterType);
+            return ZR_FALSE;
+        }
+        ZrParser_InferredType_Free(cs->state, &parameterType);
+    }
+    return !cs->hasError;
+}
+
 /**
  * @brief 遍历 callable 体内受支持的控制结构并按词法块收集 return 类型候选。
  * @note 嵌套 callable 不属于当前 callable 的返回集合；块级临时环境在递归返回后恢复并释放。
@@ -591,6 +664,7 @@ TZrBool ZrParser_Compiler_InferCallableReturnType(
     SZrAstNode *body = ZR_NULL;
     TZrBool hasType = ZR_FALSE;
     TZrBool built;
+    SZrCompilerCallableTypeScope callableTypeScope;
 
     if (cs == ZR_NULL || cs->state == ZR_NULL || declaration == ZR_NULL ||
         result == ZR_NULL || cs->hasError) {
@@ -621,6 +695,15 @@ TZrBool ZrParser_Compiler_InferCallableReturnType(
 
     savedCurrentFunctionNode = cs->currentFunctionNode;
     cs->currentFunctionNode = (SZrAstNode *)declaration;
+    if (!compiler_callable_type_scope_begin(cs, &callableTypeScope)) {
+        cs->currentFunctionNode = savedCurrentFunctionNode;
+        return ZR_FALSE;
+    }
+    if (!compiler_register_callable_parameter_types(cs, declaration)) {
+        (void)compiler_callable_type_scope_end(cs, &callableTypeScope);
+        cs->currentFunctionNode = savedCurrentFunctionNode;
+        return ZR_FALSE;
+    }
     ZrParser_InferredType_Init(
             cs->state, &inferredType, ZR_VALUE_TYPE_NULL);
     built = compiler_build_callable_return_type_metadata_with_inferred(
@@ -630,6 +713,9 @@ TZrBool ZrParser_Compiler_InferCallableReturnType(
             &metadata,
             &hasType,
             &inferredType);
+    if (!compiler_callable_type_scope_end(cs, &callableTypeScope)) {
+        built = ZR_FALSE;
+    }
     cs->currentFunctionNode = savedCurrentFunctionNode;
 
     if (!built || cs->hasError || !hasType ||

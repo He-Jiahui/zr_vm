@@ -246,7 +246,7 @@ static TZrBool source_rename_append_explicit_module_declaration(
     if (moduleNameText == ZR_NULL) {
         return ZR_TRUE;
     }
-    moduleNameRange = moduleName->location;
+    moduleNameRange = ZrParser_FileRange_WithoutEvidence(moduleName->location);
     moduleNameLength = strlen(moduleNameText);
     if (moduleNameRange.start.line == moduleNameRange.end.line &&
         moduleNameRange.end.column - moduleNameRange.start.column ==

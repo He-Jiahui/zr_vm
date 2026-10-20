@@ -804,6 +804,7 @@ static void test_declaration_transform_interface_add_binds_prototype_and_contrac
     cs.suppressErrorOutput = ZR_TRUE;
     TEST_ASSERT_TRUE(
             ZrParser_CompileTime_PrepareBuildFactsInCompilerState(&cs, ast));
+    cs.compilePhase = ZR_PARSER_COMPILE_PHASE_SEMANTIC_EXPANSION;
     for (TZrSize index = 0; index < ast->data.script.statements->count; index++) {
         SZrAstNode *statement = ast->data.script.statements->nodes[index];
         if (statement != ZR_NULL && statement->type == ZR_AST_INTERFACE_DECLARATION) {
@@ -870,6 +871,7 @@ static void test_declaration_transform_interface_add_binds_value_type_contract_s
     cs.suppressErrorOutput = ZR_TRUE;
     TEST_ASSERT_TRUE(
             ZrParser_CompileTime_PrepareBuildFactsInCompilerState(&cs, ast));
+    cs.compilePhase = ZR_PARSER_COMPILE_PHASE_SEMANTIC_EXPANSION;
     for (TZrSize index = 0; index < ast->data.script.statements->count; index++) {
         SZrAstNode *statement = ast->data.script.statements->nodes[index];
         if (statement != ZR_NULL &&
@@ -1051,7 +1053,7 @@ static void test_declaration_transform_interface_add_rejects_alias_identity_dupl
     SZrString *aliasName;
     SZrAstNode *ast;
     SZrCompilerState cs;
-    SZrTypeBinding aliasBinding;
+    SZrTypeBinding aliasBinding = {0};
     SZrTypePrototypeInfo targetInfo;
     SZrReflectionTypeIdentity identity = {0};
     SZrObject *typeIdObject;
@@ -1078,6 +1080,7 @@ static void test_declaration_transform_interface_add_rejects_alias_identity_dupl
     TEST_ASSERT_NOT_NULL(readableName);
     TEST_ASSERT_NOT_NULL(aliasName);
     aliasBinding.name = aliasName;
+    aliasBinding.syntaxContext = ZrParser_SyntaxContext_Root();
     ZrParser_InferredType_InitFull(
             state,
             &aliasBinding.type,
@@ -1257,6 +1260,7 @@ static void test_declaration_transform_error_prevents_generated_member_registrat
     cs.suppressErrorOutput = ZR_TRUE;
     TEST_ASSERT_TRUE(
             ZrParser_CompileTime_PrepareBuildFactsInCompilerState(&cs, ast));
+    cs.compilePhase = ZR_PARSER_COMPILE_PHASE_SEMANTIC_EXPANSION;
     for (TZrSize index = 0;
          index < ast->data.script.statements->count;
          index++) {

@@ -16,7 +16,7 @@ target_compile_definitions(${zr_curr_module_exec} PRIVATE
 # 核查嵌入/外部构建消费者后，再决定是否保留这组主机环境注入。
 
 find_package(Threads REQUIRED)
-target_link_libraries(${zr_curr_module_exec} Threads::Threads)
+target_link_libraries(${zr_curr_module_exec} PRIVATE Threads::Threads)
 
 if (WIN32)
     file(TO_CMAKE_PATH "${CMAKE_C_COMPILER}" zr_vm_host_c_compiler)

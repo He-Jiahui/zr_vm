@@ -330,7 +330,8 @@ ZR_CORE_API TZrMemoryOffset ZrCore_GarbageCollector_GetDebtSpace(const SZrGarbag
 
 /** @brief 请求完整回收；关闭和分配压力路径也会调用。
  * @note 可能因跨 mutator 暂停超时而直接返回，void 结果不保证实际完成。
- * BUG: 对象 scanMarkGcFunction 在受保护调用内抛异常可跳过域锁、暂停和预算清理。 */
+ * @note 受保护扫描异常会恢复本次域锁、暂停和预算层；generation 翻转前会重置未完成的标记。
+ *       sweep/析构失败的堆修改不回滚，不保证该阶段失败后可重试。 */
 ZR_CORE_API void ZrCore_GarbageCollector_GcFull(struct SZrState *state, TZrBool isImmediate);
 
 /** @brief 偿还一个回收步骤，分代并发标记可在非暂停区执行。

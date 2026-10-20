@@ -342,3 +342,47 @@ doc_type: category-index
 - [Canonical consumer 与引用 callable 测试契约](batches/20261018-parser-canonical-consumer-tests-contracts-current.md)：123 新单元、105 段 Doxygen；两源原始字节前缀不变，同一目标的 21 个 Unity 用例修改前后有限验证。
 
 - [Complex 当前调用与生命周期契约](batches/20261018-math-complex-current-contracts.md)：61 个既有单元复审、18 段现有 Doxygen；55 行注释精修，当前 CLI 与 core 项目前35项及既有网络配置失败的修改前后对照。
+
+- [Native registry OOM 场景与所有权契约](batches/20261019-native-registry-oom-current-contracts.md)：15 个首次物化单元、12 段 Doxygen；九个既有普通进程场景修改前后有限验证，保留注入命中与影子清理的覆盖限制。
+
+- [Testing 当前 provider、断言与失败记录契约](batches/20261019-testing-current-contracts.md)：173 个既有单元、58 处同物理行注释精修；既有 BUG/TODO 保留，不增加定义信用。
+
+- [Debug 兼容诊断与表达式跳读契约](batches/20261019-debug-eval-diagnostics-current-contracts.md)：45旧键迁移、24段Doxygen；同一56项普通入口前后各55PASS/1FAIL，静态零容量BUG未运行复现。
+
+- [System VM 调用与注册契约复核](batches/20261019-system-vm-current-contracts.md)：29旧键原位复核，27项注释更正；当前module78/provider9前后全PASS，保留静态BUG/TODO边界。
+
+- [动态迭代与已知调用流水线测试合同](batches/20261019-aot-dynamic-known-pipeline-current-contracts.md)：50旧键+4嵌入语言首交付，50段Doxygen；既有2+5Unity前后全PASS，AOT生成物执行缺口保留。
+
+- [条件断点与 logpoint 当前合同](batches/20261019-breakpoint-condition-logpoint-current-contracts.md)：9旧单元路径迁移、6段Doxygen；前后本批两例PASS，完整56例的1项既有失败保留。
+
+- [ExecBC AOT 底层夹具与资源辅助合同](batches/20261019-aot-execbc-fixture-helpers-current-contracts.md)：47旧单元、47段Doxygen；前后完整98例与重复manual3例通过，余157旧单元待审。
+
+- [调试断点、暂停和单步控制合同](batches/20261019-debug-breakpoint-trace-control-current-contracts.md)：67旧单元、60段Doxygen；前后29例PASS，修改前协议watchdog/驱动1保留，三个源文件维持pending。
+
+- [ExecBC AOT 检查与断言辅助合同](batches/20261019-aot-execbc-inspection-helpers-current-contracts.md)：31旧单元、31段Doxygen及3处旧说明更正；前后完整98与重复manual3通过，余126旧单元待审。
+
+- [Profiling 聚合、采样与 hook 生命周期合同](batches/20261019-debug-profile-current-contracts.md)：54旧单元、51段中文Doxygen、6项既有TODO及3宏无需注释；前后既有2例通过。
+
+- [调试变量子节点与语义摘要合同](batches/20261019-debug-variable-display-summaries-current-contracts.md)：18旧单元、10段中文Doxygen及5关联声明无需重复注释；13目录键迁移不增信用，前后既有3例通过。
+
+- [调试表达式副作用与准备上下文合同](batches/20261019-debug-evaluation-effect-current-contracts.md)：20旧单元、19段中文Doxygen，20目录键迁移不增信用；前后diagnostics56同55PASS1FAIL，原始输出一致。
+
+- [覆盖率会话与行快照合同](batches/20261019-debug-coverage-current-contracts.md)：56旧单元、24段新增Doxygen、H保留14段系统文档，15条注释行修订；前后coverage2例均PASS，原始输出一致。
+
+- [调试语义事实摘要与规范绑定合同](batches/20261019-debug-semantic-inspection-current-contracts.md)：48旧单元、43段中文Doxygen，48目录键迁移不增信用；前后diagnostics56同55PASS1FAIL，原始输出一致。
+
+- [调试正式求值准备与受限执行合同](batches/20261019-debug-formal-evaluation-current-contracts.md)：29旧单元、23段中文Doxygen，保留1既有TODO，29目录键迁移不增信用；前后diagnostics56同55PASS1FAIL，原始输出一致。
+
+- [调试兼容求值合同](batches/20261019-debug-compat-evaluation-current-contracts.md)：36旧单元、34段中文Doxygen，保留1既有BUG镜像，36目录键迁移不增信用；前后diagnostics56同55PASS1FAIL，原始输出一致。
+
+- [Union调试检查合同](batches/20261019-debug-union-inspection-current-contracts.md)：56旧项、52段中文Doxygen，43目录键迁移0新增；保留既有GC根BUG及布局TODO家族，H仅13/89其余pending；前后variable_child_shape3全PASS，原始输出一致。
+
+- [调试Agent、线程与连接生命周期合同](batches/20261019-debug-agent-thread-lifecycle-current-contracts.md)：32旧项、20段中文Doxygen、0新增；三个文件仅部分审查，前后threads1及agent_protocol8全PASS，原始输出一致。
+
+- [调试值预览、变量句柄与子项快照合同](batches/20261019-debug-variable-handles-children-current-contracts.md)：42旧项、41段中文Doxygen、0新增；文件余39项待审，前后直接3+5+17+3各28全PASS，原始输出一致。
+
+- [调试栈帧、作用域与安全求值合同](batches/20261019-debug-frame-scope-safe-evaluation-current-contracts.md)：完成剩余39旧项、34段中文Doxygen、0新增；与前批42项合计本文件81项，前后直接3+5+17+3各28全PASS，原始输出一致。
+
+- [调试文本与数据断点合同](batches/20261019-debug-text-data-breakpoint-current-contracts.md)：完成剩余29旧项、22段中文Doxygen、0新增；与此前61项合计本文件90项，前后直接2+5+8各15全PASS，原始输出一致。
+
+- [规范类型索引合同](batches/20261019-parser-canonical-type-index-current-contracts.md)：完成10旧项、9段中文Doxygen；按当前Throw路径撤回旧OOM误报、收窄既有重复插入TODO；前后各19全PASS，原始输出相同。

@@ -8,6 +8,7 @@
 #include "runtime_support.h"
 #include "zr_vm_ffi_fixture_path.h"
 #include "zr_vm_common/zr_hash_conf.h"
+#include "zr_vm_core/artifact_schema.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/io.h"
@@ -1858,6 +1859,7 @@ static void test_native_extern_aot_uses_canonical_signature_vector(void) {
     SZrAstNode *script;
     SZrFunction *function;
     TZrChar *generatedText;
+    TZrChar expectedModuleTail[512];
 
     TEST_ASSERT_NOT_NULL(state);
     script = parse_source(state, source, "native_extern_aot.zr");
@@ -1912,7 +1914,7 @@ static void test_native_extern_aot_uses_canonical_signature_vector(void) {
     TEST_ASSERT_NOT_NULL(generatedText);
     TEST_ASSERT_NOT_NULL(strstr(
             generatedText,
-            "%ZrAotCompiledModule = type { i32, i32, ptr, i32, ptr, ptr, ptr, i64, ptr, i32, ptr, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr }"));
+            "%ZrAotCompiledModule = type { i32, i32, ptr, i32, ptr, ptr, ptr, i64, ptr, i32, ptr, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, i32, ptr, ptr, i32, i32, ptr }"));
     TEST_ASSERT_NOT_NULL(strstr(
             generatedText,
             "@zr_aot_native_import_contracts = private constant [6 x %SZrNativeImportContract]"));
@@ -1922,9 +1924,16 @@ static void test_native_extern_aot_uses_canonical_signature_vector(void) {
     TEST_ASSERT_NOT_NULL(strstr(
             generatedText,
             "@zr_aot_native_import_ranges = private constant [1 x %SZrAotNativeImportRange] [%SZrAotNativeImportRange { i32 0, i32 6 }]"));
-    TEST_ASSERT_NOT_NULL(strstr(
-            generatedText,
-            "  ptr @zr_aot_native_import_contracts,\n  i32 6,\n  ptr @zr_aot_native_import_ranges,\n  i32 1,\n  ptr @zr_aot_code_registration\n}"));
+    snprintf(expectedModuleTail,
+             sizeof(expectedModuleTail),
+             "  ptr @zr_aot_native_import_contracts,\n"
+             "  i32 6,\n"
+             "  ptr @zr_aot_native_import_ranges,\n"
+             "  i32 1,\n"
+             "  ptr @zr_aot_code_registration,\n"
+             "  ptr null, i32 0, i32 %u, ptr null\n}",
+             (unsigned)ZR_ARTIFACT_CALL_BINDING_ROW_ENCODED_SIZE);
+    TEST_ASSERT_NOT_NULL(strstr(generatedText, expectedModuleTail));
 
 #if defined(ZR_PLATFORM_UNIX)
     snprintf(command,

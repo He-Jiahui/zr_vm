@@ -1,0 +1,42 @@
+---
+related_code:
+  - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c
+implementation_files:
+  - zr_vm_aot/tests/parser/test_execbc_aot_pipeline.c
+tests:
+  - zr_vm_execbc_aot_pipeline_test
+  - zr_vm_execbc_aot_manual_opcode_sync_test
+plan_sources:
+  - user: 全量首方审查、按需补充中文职责和生命周期注释
+doc_type: module-detail
+---
+
+# ExecBC AOT 检查与断言辅助合同
+
+本批复核31个既有单元，29项已注释、2项TODO，无未审查项；其中30函数和1个随属块。两项TODO为同一既有缓存owner家族的镜像，未新增BUG或TODO家族。连同前批47项，此源204个旧单元中已有78项完成当前合同复核，余126项仍待审；inventory保持pending。879行混合叶仅替换同一31键，表头与外848行逐字节保留，0新增信用。
+
+这些助手用于现有Unity用例对编译产物、quickening相关断言和后端生成结果作有限检查。function_contains_opcode检查当前函数的ExecBC编码；家族函数组合枚举专门化/通用opcode，并不执行指令或证明可达性。独审把“在quickening或后端生成前检查”收窄为“在quickening相关断言或后端生成前检查”：8526处先编译，8528随即断言SUPER_ARRAY_ADD_INT，8615还复用已装载运行时函数，不能把助手误写成只用于quickening前。
+
+所有函数数组、callsite cache、SemIR、类型与字符串均借用调用方的稳定图，不注册GC根，也不保护并发释放/改写。单函数查询与树查询范围不同；ExecBC树先查当前函数和childFunctionList，再遍历constantValueList中值类型为FUNCTION/CLOSURE且raw type为FUNCTION的非空对象，不能宣称解包任意真实closure。SemIR树沿childFunctionList递归，with_deopt仅在requireDeopt为TRUE时额外要求对应deoptId非零；不证明运行时回退路径正确、完整或可执行。函数图有环时没有独立visited防护。
+
+function_find_debug_line_for_instruction只按现有debug表寻找匹配行；不存在时的返回值不是运行时可执行性结论。runtime/source比较器只逐项比较明确字段、指令、debug信息和缓存长度；没有比较的CType/id/缓存内容不能据此声称全部元数据等价。assert_typed_type_ref_equal只断言其实际选中字段。
+
+execbc_aot_pipeline_string_equal调用ZrCore_String_Equal；底层在指针相等时直接成功，否则继续解引用双方字段，因此两个不同实参必须均为非NULL。assert_optional_string_equal先处理双方NULL/单方NULL，其他已核调用也先断言所需非NULL；未据助手通用风险新增当前可达BUG。旧“空值安全比较”说明已据此更正。
+
+rewrite_cached_meta_access_tree_to_plain只处理指定GET/SET缓存种类及有效cache index，把operand改为16位memberEntryIndex并改opcode；cache和SemIR仍保留。该助手要求测试独占可写图，无回滚、并发同步或宽度扩展保证，不是通用去优化器。旧SemIR“备份路径保证回退”说明改为对实际childFunctionList、opcode和非零deoptId的有限查询。
+
+树搜索返回借用cache而不返回owner；memberEntryIndex是owner局部索引。assert_first_callsite_cache_member_binding及member table lookup块保留两项既有TODO：未来只在子函数命中的调用需核对或传回owner。当前7554–7555和8277–8278两个调用先证明根cache存在，搜索又根优先，不能把未来风险当作当前根表越界BUG。核查入口为1284、1414–1417及上述两条完整调用链。
+
+31段中文Doxygen追加于EOF，分别覆盖Summary、适用参数方向、返回/适用值、必要约束、生命周期和References；随属块另有其索引不变量。Root按独审43个具类型的精确标量替换重建候选，并反向还原原始F全文；原报告未改写。除追加37969字节/670个CRLF，还仅替换1050、1238、1260三处完整旧注释行，字节长度分别增3、20、5；其余11113原行及前批47段Dox内容保留。
+
+有限文本验证使用冻结的具名comment/literal/atom字节正则，核对53368个程序atom及2313个字符串/字符字面量：拼写、原行、UTF8字节列相同，每个绝对偏移仅受上述3处注释长度变化影响；逆操作逐字节还原修改前文件。不宣称编译器lexer或AST等价。所有26个有限整文件支持输入、1177条原始EOL锚点在应用前核对一致。
+
+本批在同一实际checkout和物理E盘复用构建目录执行新BEFORE/AFTER。两阶段构建均退出0，完整直接入口98PASS/0FAIL/0IGNORE，manual入口3PASS/0FAIL/0IGNORE；manual重复完整套件中的3例，共98个不同用例。有序原始Unity结果、footer和OK一致，stderr均空；stdout仅允许严格锚定Pass - Cost Time数值字段的差异，实际变化数量记录于配对证据。本轮没有新增仅重复实现的测试，也没有借通过结果声称TODO、Throw、OOM或全部分支覆盖。
+
+运行前明确移除两个focused及trace环境变量；这些开关按存在性生效，空串或0不等于关闭。build900秒、直接入口各120秒仅为任务watchdog，不修改CTest。借用依赖按当前FileAPI17目标982源码、编译include目录936头文件及93个只读fixture/benchmark引用冻结；这是有限输入身份围栏，既不是compiler include全闭包，也不授这些借用模块审查信用。
+
+生成路径为102个cwd相对名称与3个编译期tests_generated固定输出，后者不随cwd/TEMP迁移。两阶段运行前独占cwd为空、固定三路径不存在，full/manual运行后快照均为空。普通remove、Unity断言或Throw不提供普遍清理保证；未知介入文件不得清理。自有临时index按提交后实际哈希单独清理，复用构建和证据保持OPEN。
+
+本批仅投影inventory该源哈希和说明，pending不变；外来48行85格和正常索引4个既有暂存路径保留。整叶与全局check的退出、诊断及归属按新基线比较，选中31行独立验收；外围历史问题不借本批消除，也不宣称全仓完成。
+
+配对证据：aot-execbc-inspection-helpers-current-native-pair-r1.json，SHA256 5ae9f5b764e4699f3b4a33098c7d217220bb8ccd60c79dc3c3a2623e901f1a70；源码应用：aot-execbc-inspection-helpers-current-source-application-r1.json，SHA256 7dec40ce1b713f28296b0f9ab9f261dfb297f256ef153ceef7510fb81376f676。

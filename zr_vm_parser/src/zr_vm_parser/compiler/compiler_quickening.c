@@ -10,6 +10,7 @@
 
 #include "compiler_internal.h"
 #include "compiler_native_call_binding.h"
+#include "compiler_quickening_null_state.h"
 #include "zr_vm_core/function_identity.h"
 #include "zr_vm_library/native_binding.h"
 
@@ -5659,6 +5660,8 @@ static TZrBool compiler_quickening_try_fold_dead_super_array_add_setup(SZrFuncti
     }
 
     receiverReloadIndex = UINT32_MAX;
+    receiverStageIndex = UINT32_MAX;
+    receiverLoadIndex = UINT32_MAX;
     for (scan = instructionIndex; scan > blockStartIndex; scan--) {
         TZrUInt32 candidateIndex = scan - 1u;
         TZrInstruction *candidate = &function->instructionsList[candidateIndex];
@@ -5666,7 +5669,24 @@ static TZrBool compiler_quickening_try_fold_dead_super_array_add_setup(SZrFuncti
         if ((EZrInstructionCode)candidate->instruction.operationCode == ZR_INSTRUCTION_ENUM(GET_STACK) &&
             candidate->instruction.operandExtra == destinationSlot &&
             (TZrUInt32)candidate->instruction.operand.operand2[0] == receiverSlot) {
+            if (candidateIndex < 2) {
+                return ZR_FALSE;
+            }
             receiverReloadIndex = candidateIndex;
+            receiverStageIndex = candidateIndex - 1u;
+            receiverLoadIndex = candidateIndex - 2u;
+            break;
+        }
+
+        if (candidateIndex > blockStartIndex &&
+            (EZrInstructionCode)candidate->instruction.operationCode == ZR_INSTRUCTION_ENUM(SET_STACK) &&
+            candidate->instruction.operandExtra == receiverSlot &&
+            (TZrUInt32)candidate->instruction.operand.operand2[0] == destinationSlot &&
+            (EZrInstructionCode)function->instructionsList[candidateIndex - 1u].instruction.operationCode ==
+                    ZR_INSTRUCTION_ENUM(GET_STACK) &&
+            function->instructionsList[candidateIndex - 1u].instruction.operandExtra == destinationSlot) {
+            receiverStageIndex = candidateIndex;
+            receiverLoadIndex = candidateIndex - 1u;
             break;
         }
 
@@ -5677,12 +5697,10 @@ static TZrBool compiler_quickening_try_fold_dead_super_array_add_setup(SZrFuncti
             return ZR_FALSE;
         }
     }
-    if (receiverReloadIndex == UINT32_MAX || receiverReloadIndex < 2) {
+    if (receiverStageIndex == UINT32_MAX || receiverLoadIndex == UINT32_MAX) {
         return ZR_FALSE;
     }
 
-    receiverStageIndex = receiverReloadIndex - 1u;
-    receiverLoadIndex = receiverReloadIndex - 2u;
     destinationOverwrittenImmediately =
             (TZrBool)(instructionIndex + 1 < function->instructionsLength &&
                       !compiler_quickening_instruction_may_read_slot(
@@ -5690,19 +5708,21 @@ static TZrBool compiler_quickening_try_fold_dead_super_array_add_setup(SZrFuncti
                       compiler_quickening_instruction_writes_slot(
                               &function->instructionsList[instructionIndex + 1], destinationSlot));
 
-    if (blockStarts[instructionIndex] || blockStarts[receiverReloadIndex] ||
+    if (blockStarts[instructionIndex] ||
+        (receiverReloadIndex != UINT32_MAX && blockStarts[receiverReloadIndex]) ||
         blockStarts[receiverStageIndex] ||
         (!destinationOverwrittenImmediately && blockStarts[instructionIndex + 1])) {
         return ZR_FALSE;
     }
 
-    receiverReloadInstruction = &function->instructionsList[receiverReloadIndex];
+    receiverReloadInstruction = receiverReloadIndex == UINT32_MAX ? ZR_NULL : &function->instructionsList[receiverReloadIndex];
     receiverStageInstruction = &function->instructionsList[receiverStageIndex];
     receiverLoadInstruction = &function->instructionsList[receiverLoadIndex];
 
-    if ((EZrInstructionCode)receiverReloadInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_STACK) ||
-        receiverReloadInstruction->instruction.operandExtra != destinationSlot ||
-        (TZrUInt32)receiverReloadInstruction->instruction.operand.operand2[0] != receiverSlot) {
+    if (receiverReloadInstruction != ZR_NULL &&
+        ((EZrInstructionCode)receiverReloadInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_STACK) ||
+         receiverReloadInstruction->instruction.operandExtra != destinationSlot ||
+         (TZrUInt32)receiverReloadInstruction->instruction.operand.operand2[0] != receiverSlot)) {
         return ZR_FALSE;
     }
 
@@ -5742,7 +5762,9 @@ static TZrBool compiler_quickening_try_fold_dead_super_array_add_setup(SZrFuncti
     addInstruction->instruction.operandExtra = ZR_INSTRUCTION_USE_RET_FLAG;
     compiler_quickening_write_nop(receiverLoadInstruction);
     compiler_quickening_write_nop(receiverStageInstruction);
-    compiler_quickening_write_nop(receiverReloadInstruction);
+    if (receiverReloadInstruction != ZR_NULL) {
+        compiler_quickening_write_nop(receiverReloadInstruction);
+    }
     return ZR_TRUE;
 }
 
@@ -9916,6 +9938,23 @@ static TZrBool compiler_quicken_array_int_index_accesses(SZrState *state, SZrFun
         }
     }
 
+    for (index = 1u; index < function->instructionsLength; index++) {
+        TZrInstruction *instruction = &function->instructionsList[index];
+        const TZrInstruction *previous = &function->instructionsList[index - 1u];
+        TZrUInt32 slot = instruction->instruction.operandExtra;
+
+        if (instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(GET_CONSTANT) &&
+            previous->instruction.operationCode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT) &&
+            previous->instruction.operandExtra == ZR_INSTRUCTION_USE_RET_FLAG &&
+            !blockStarts[index] &&
+            compiler_quickening_find_active_local_variable(function, slot, index) == ZR_NULL &&
+            compiler_quickening_find_active_typed_local_binding(function, slot, index) == ZR_NULL &&
+            compiler_quickening_temp_slot_is_dead_after_instruction_cfg(function, blockStarts, index, slot) &&
+            compiler_quickening_slot_is_null_without_clear(function, index, slot)) {
+            compiler_quickening_write_nop(instruction);
+        }
+    }
+
     if (!compiler_quickening_promote_plain_destination_opcodes(function, blockStarts)) {
         free(blockStarts);
         free(constantSlotIndices);
@@ -9988,6 +10027,44 @@ static TZrBool compiler_quickening_fold_super_array_add_int4_const_bursts(SZrFun
     success = ZR_TRUE;
     free(blockStarts);
     return success;
+}
+
+static TZrBool compiler_quickening_fold_dead_backedge_null_clears(SZrFunction *function) {
+    TZrBool *blockStarts = ZR_NULL;
+
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL || function->instructionsLength < 3) {
+        return ZR_TRUE;
+    }
+
+    blockStarts = (TZrBool *)malloc(sizeof(*blockStarts) * function->instructionsLength);
+    if (blockStarts == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!compiler_quickening_build_block_starts(function, blockStarts)) {
+        free(blockStarts);
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 1; index + 1 < function->instructionsLength; index++) {
+        TZrInstruction *instruction = &function->instructionsList[index];
+        const TZrInstruction *next = &function->instructionsList[index + 1];
+        TZrUInt32 slot = instruction->instruction.operandExtra;
+        TZrInt64 target = (TZrInt64)index + 2 +
+                         (TZrInt32)next->instruction.operand.operand2[0];
+
+        if (instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(GET_CONSTANT) &&
+            next->instruction.operationCode == ZR_INSTRUCTION_ENUM(JUMP) &&
+            target >= 0 && (TZrUInt64)target <= index && !blockStarts[index] &&
+            compiler_quickening_find_active_local_variable(function, slot, index) == ZR_NULL &&
+            compiler_quickening_find_active_typed_local_binding(function, slot, index) == ZR_NULL &&
+            compiler_quickening_temp_slot_is_dead_after_instruction_cfg(function, blockStarts, index, slot) &&
+            compiler_quickening_slot_is_null_without_clear(function, index, slot)) {
+            compiler_quickening_write_nop(instruction);
+        }
+    }
+
+    free(blockStarts);
+    return ZR_TRUE;
 }
 
 static TZrBool compiler_quickening_fold_super_array_fill_int4_const_loops(SZrFunction *function) {
@@ -11191,6 +11268,10 @@ static TZrBool compiler_quicken_child_functions(SZrState *state,
     ZR_QUICKENING_RUN_PASS("fuse_jump_if_not_equal_signed_const_late",
                            compiler_quickening_fuse_jump_if_not_equal_signed_const(function));
     ZR_QUICKENING_RUN_PASS("compact_nops_10b", compiler_quickening_compact_nops(state, function));
+    /* Folded loop temporaries can leave an independently redundant NULL clear at the backedge. */
+    ZR_QUICKENING_RUN_PASS("fold_dead_backedge_null_clears",
+                           compiler_quickening_fold_dead_backedge_null_clears(function));
+    ZR_QUICKENING_RUN_PASS("compact_nops_10b_null", compiler_quickening_compact_nops(state, function));
     ZR_QUICKENING_RUN_PASS("fold_super_array_fill_int4_const_loops_late",
                            compiler_quickening_fold_super_array_fill_int4_const_loops(function));
     ZR_QUICKENING_RUN_PASS("compact_nops_10c", compiler_quickening_compact_nops(state, function));

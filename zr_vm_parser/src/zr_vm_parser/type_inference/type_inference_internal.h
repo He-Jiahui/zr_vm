@@ -71,7 +71,13 @@ ZR_PARSER_API TZrBool infer_member_call_contract_return_type(SZrCompilerState *c
                                                              SZrFunctionCall *call,
                                                              SZrInferredType *result);
 ZR_PARSER_API TZrBool type_name_is_explicitly_available_in_context_inference(SZrCompilerState *cs,
-                                                                               SZrString *typeName);
+                                                                              SZrString *typeName);
+TZrBool type_name_is_explicitly_available_with_context_inference(
+        SZrCompilerState *cs, SZrString *typeName, SZrSyntaxContext syntaxContext);
+TZrBool type_inference_bind_nominal_identity(SZrCompilerState *cs,
+        SZrString *typeName, SZrSyntaxContext syntaxContext, SZrInferredType *result);
+TZrBool type_inference_current_generic_context_contains_type_name(
+        SZrCompilerState *cs, SZrString *typeName);
 TZrBool type_inference_is_const_generic_parameter_reference(
         SZrCompilerState *cs,
         SZrString *name);
@@ -154,6 +160,15 @@ ZR_PARSER_API TZrBool resolve_best_function_overload(SZrCompilerState *cs,
                                                      SZrFileRange location,
                                                      SZrFunctionTypeInfo **resolvedFunction,
                                                      SZrResolvedCallSignature *resolvedSignature);
+ZR_PARSER_API TZrBool resolve_best_function_overload_with_context(
+        SZrCompilerState *cs,
+        SZrTypeEnvironment *env,
+        SZrString *funcName,
+        SZrSyntaxContext syntaxContext,
+        SZrFunctionCall *call,
+        SZrFileRange location,
+        SZrFunctionTypeInfo **resolvedFunction,
+        SZrResolvedCallSignature *resolvedSignature);
 TZrBool inferred_type_can_use_named_constraint_fallback(SZrCompilerState *cs,
                                                         const SZrInferredType *actualType,
                                                         const SZrInferredType *expectedType);

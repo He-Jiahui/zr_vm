@@ -513,6 +513,20 @@ TZrBool native_registry_link_call_binding(SZrState *state, SZrFunction *function
         return ZR_FALSE;
     cache = &function->callSiteCaches[cacheIndex];
     status = ZrLibrary_NativeRegistry_ResolveCallBinding(state, &cache->binding.contract, &target, diagnostic);
+    if (status == ZR_CALL_BINDING_MODULE_MISMATCH && registry != ZR_NULL) {
+        /* A fresh binary process has not executed import yet. Discover only
+         * its declared providers, then let the normal hash/token/signature
+         * resolver validate and materialize the matching contract. */
+        for (TZrUInt32 index = 0u; index < function->staticImportLength; ++index) {
+            SZrString *importName = function->staticImports[index];
+            const TZrChar *moduleName = importName != ZR_NULL
+                    ? ZrCore_String_GetNativeString(importName) : ZR_NULL;
+            if (moduleName != ZR_NULL) {
+                (void)native_registry_find_descriptor_or_plugin(state, registry, moduleName);
+            }
+        }
+        status = ZrLibrary_NativeRegistry_ResolveCallBinding(state, &cache->binding.contract, &target, diagnostic);
+    }
     if (status != ZR_CALL_BINDING_OK) {
         if (status == ZR_CALL_BINDING_MODULE_MISMATCH && registry != ZR_NULL &&
             registry->hostCallBindingModuleResolver != ZR_NULL)

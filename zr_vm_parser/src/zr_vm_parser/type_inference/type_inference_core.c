@@ -5,7 +5,13 @@
 #include "zr_vm_parser/type_inference.h"
 #include "zr_vm_parser/compiler.h"
 #include "compiler_internal.h"
+#include "compiler_type_declaration.h"
+#include "compiler_type_value_alias.h"
 #include "type_inference_internal.h"
+#include "type_inference_generic_prototype.h"
+#include "type_inference_generic_substitution.h"
+#include "type_inference_nominal_prototype.h"
+#include "type_inference_nominal_member.h"
 #include "type_inference_call_diagnostics.h"
 #include "compiler/statement/iteration_contract.h"
 #include "type_inference_semantic_facts.h"
@@ -33,136 +39,6 @@ TZrBool resolve_expression_root_type(SZrCompilerState *cs,
                                      SZrString **outTypeName,
                                      TZrBool *outIsTypeReference);
 
-static TZrBool type_inference_copy_generic_parameter_info_array(SZrState *state,
-                                                                SZrArray *dest,
-                                                                const SZrArray *src) {
-    if (state == ZR_NULL || dest == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    ZrCore_Array_Construct(dest);
-    if (src == ZR_NULL || src->length == 0) {
-        return ZR_TRUE;
-    }
-
-    ZrCore_Array_Init(state, dest, sizeof(SZrTypeGenericParameterInfo), src->length);
-    for (TZrSize index = 0; index < src->length; index++) {
-        SZrTypeGenericParameterInfo *srcInfo = (SZrTypeGenericParameterInfo *)ZrCore_Array_Get((SZrArray *)src, index);
-        SZrTypeGenericParameterInfo destInfo;
-
-        if (srcInfo == ZR_NULL) {
-            continue;
-        }
-
-        memset(&destInfo, 0, sizeof(destInfo));
-        destInfo = *srcInfo;
-        ZrCore_Array_Construct(&destInfo.constraintTypeNames);
-        if (srcInfo->constraintTypeNames.length > 0) {
-            ZrCore_Array_Init(state,
-                              &destInfo.constraintTypeNames,
-                              sizeof(SZrString *),
-                              srcInfo->constraintTypeNames.length);
-            for (TZrSize constraintIndex = 0; constraintIndex < srcInfo->constraintTypeNames.length; constraintIndex++) {
-                SZrString **constraintNamePtr =
-                        (SZrString **)ZrCore_Array_Get(&srcInfo->constraintTypeNames, constraintIndex);
-                if (constraintNamePtr != ZR_NULL && *constraintNamePtr != ZR_NULL) {
-                    ZrCore_Array_Push(state, &destInfo.constraintTypeNames, constraintNamePtr);
-                }
-            }
-        }
-
-        ZrCore_Array_Push(state, dest, &destInfo);
-    }
-
-    return ZR_TRUE;
-}
-
-static TZrBool type_inference_parse_const_int_generic_argument_name(
-        SZrString *argumentName,
-        TZrInt64 *outValue) {
-    const TZrChar *text;
-    TZrChar *end = ZR_NULL;
-    long long parsedValue;
-
-    if (argumentName == ZR_NULL || outValue == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    text = ZrCore_String_GetNativeString(argumentName);
-    if (text == ZR_NULL || text[0] == '\0') {
-        return ZR_FALSE;
-    }
-
-    parsedValue = strtoll(text, &end, 10);
-    if (end == text || end == ZR_NULL || *end != '\0') {
-        return ZR_FALSE;
-    }
-
-    *outValue = (TZrInt64)parsedValue;
-    return ZR_TRUE;
-}
-
-static TZrBool type_inference_copy_parameter_passing_mode_array(SZrState *state,
-                                                                SZrArray *dest,
-                                                                const SZrArray *src) {
-    if (state == ZR_NULL || dest == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    ZrCore_Array_Construct(dest);
-    if (src == ZR_NULL || src->length == 0) {
-        return ZR_TRUE;
-    }
-
-    ZrCore_Array_Init(state, dest, sizeof(EZrParameterPassingMode), src->length);
-    for (TZrSize index = 0; index < src->length; index++) {
-        EZrParameterPassingMode *mode = (EZrParameterPassingMode *)ZrCore_Array_Get((SZrArray *)src, index);
-        if (mode != ZR_NULL) {
-            ZrCore_Array_Push(state, dest, mode);
-        }
-    }
-
-    return ZR_TRUE;
-}
-
-static SZrString *type_inference_create_hidden_property_accessor_name(SZrCompilerState *cs,
-                                                                      SZrString *propertyName,
-                                                                      TZrBool isSetter) {
-    const TZrChar *prefix = isSetter ? "__set_" : "__get_";
-    TZrNativeString propertyNameString;
-    TZrSize prefixLength;
-    TZrSize propertyNameLength;
-    TZrSize bufferSize;
-    TZrChar *buffer;
-    SZrString *result;
-
-    if (cs == ZR_NULL || propertyName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    propertyNameString = ZrCore_String_GetNativeString(propertyName);
-    if (propertyNameString == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    prefixLength = strlen(prefix);
-    propertyNameLength = propertyName->shortStringLength < ZR_VM_LONG_STRING_FLAG
-                                 ? propertyName->shortStringLength
-                                 : propertyName->longStringLength;
-    bufferSize = prefixLength + propertyNameLength + 1;
-    buffer = (TZrChar *)ZrCore_Memory_RawMalloc(cs->state->global, bufferSize);
-    if (buffer == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    memcpy(buffer, prefix, prefixLength);
-    memcpy(buffer + prefixLength, propertyNameString, propertyNameLength);
-    buffer[bufferSize - 1] = '\0';
-
-    result = ZrCore_String_CreateFromNative(cs->state, buffer);
-    ZrCore_Memory_RawFree(cs->state->global, buffer, bufferSize);
-    return result;
-}
 
 //
 // Created by Auto on 2025/01/XX.
@@ -324,26 +200,6 @@ void free_inferred_type_array(SZrState *state, SZrArray *types) {
     }
 }
 
-static TZrBool append_text_fragment(TZrChar *buffer,
-                                  TZrSize bufferSize,
-                                  TZrSize *offset,
-                                  const TZrChar *fragment) {
-    TZrSize fragmentLength;
-
-    if (buffer == ZR_NULL || offset == ZR_NULL || fragment == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    fragmentLength = strlen(fragment);
-    if (*offset + fragmentLength + 1 >= bufferSize) {
-        return ZR_FALSE;
-    }
-
-    memcpy(buffer + *offset, fragment, fragmentLength);
-    *offset += fragmentLength;
-    buffer[*offset] = '\0';
-    return ZR_TRUE;
-}
 
 static TZrBool append_inferred_type_display_name(const SZrInferredType *type,
                                                TZrChar *buffer,
@@ -352,11 +208,11 @@ static TZrBool append_inferred_type_display_name(const SZrInferredType *type,
     const TZrChar *baseName;
 
     if (type == ZR_NULL) {
-        return append_text_fragment(buffer, bufferSize, offset, "object");
+        return type_inference_append_type_text(buffer, bufferSize, offset, "object");
     }
 
     if (type->typeName != ZR_NULL) {
-        return append_text_fragment(buffer,
+        return type_inference_append_type_text(buffer,
                                     bufferSize,
                                     offset,
                                     ZrCore_String_GetNativeString(type->typeName));
@@ -373,16 +229,16 @@ static TZrBool append_inferred_type_display_name(const SZrInferredType *type,
             if (written <= 0 || (TZrSize)written >= sizeof(sizeBuffer)) {
                 return ZR_FALSE;
             }
-            return append_text_fragment(buffer, bufferSize, offset, sizeBuffer);
+            return type_inference_append_type_text(buffer, bufferSize, offset, sizeBuffer);
         }
-        return append_text_fragment(buffer, bufferSize, offset, "[]");
+        return type_inference_append_type_text(buffer, bufferSize, offset, "[]");
     }
 
     baseName = get_base_type_name(type->baseType);
     if (baseName == ZR_NULL) {
         baseName = "object";
     }
-    return append_text_fragment(buffer, bufferSize, offset, baseName);
+    return type_inference_append_type_text(buffer, bufferSize, offset, baseName);
 }
 
 SZrString *build_generic_instance_name(SZrState *state,
@@ -396,14 +252,14 @@ SZrString *build_generic_instance_name(SZrState *state,
     }
 
     buffer[0] = '\0';
-    if (!append_text_fragment(buffer, sizeof(buffer), &offset, ZrCore_String_GetNativeString(baseName)) ||
-        !append_text_fragment(buffer, sizeof(buffer), &offset, "<")) {
+    if (!type_inference_append_type_text(buffer, sizeof(buffer), &offset, ZrCore_String_GetNativeString(baseName)) ||
+        !type_inference_append_type_text(buffer, sizeof(buffer), &offset, "<")) {
         return ZR_NULL;
     }
 
     for (TZrSize i = 0; i < typeArguments->length; i++) {
         SZrInferredType *argumentType = (SZrInferredType *)ZrCore_Array_Get((SZrArray *)typeArguments, i);
-        if (i > 0 && !append_text_fragment(buffer, sizeof(buffer), &offset, ", ")) {
+        if (i > 0 && !type_inference_append_type_text(buffer, sizeof(buffer), &offset, ", ")) {
             return ZR_NULL;
         }
         if (!append_inferred_type_display_name(argumentType, buffer, sizeof(buffer), &offset)) {
@@ -411,7 +267,7 @@ SZrString *build_generic_instance_name(SZrState *state,
         }
     }
 
-    if (!append_text_fragment(buffer, sizeof(buffer), &offset, ">")) {
+    if (!type_inference_append_type_text(buffer, sizeof(buffer), &offset, ">")) {
         return ZR_NULL;
     }
 
@@ -548,12 +404,16 @@ static SZrTypePrototypeInfo *find_registered_type_prototype_inference_exact_only
 
     for (TZrSize index = 0; index < cs->typePrototypes.length; index++) {
         SZrTypePrototypeInfo *info = (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, index);
-        if (info != ZR_NULL && info->name != ZR_NULL && ZrCore_String_Equal(info->name, typeName)) {
+        if (info != ZR_NULL && info->name != ZR_NULL &&
+            type_inference_prototype_is_root_visible(info) &&
+            type_inference_generic_prototype_is_root_visible(cs, info) && ZrCore_String_Equal(info->name, typeName)) {
             return info;
         }
     }
 
     if (type_prototype_pointer_is_currently_registered(cs, cs->currentTypePrototypeInfo) &&
+        type_inference_prototype_is_root_visible(cs->currentTypePrototypeInfo) &&
+        type_inference_generic_prototype_is_root_visible(cs, cs->currentTypePrototypeInfo) &&
         cs->currentTypePrototypeInfo->name != ZR_NULL &&
         ZrCore_String_Equal(cs->currentTypePrototypeInfo->name, typeName)) {
         return cs->currentTypePrototypeInfo;
@@ -570,6 +430,7 @@ TZrBool try_parse_generic_instance_type_name(SZrState *state,
     TZrSize nativeTypeNameLength;
     TZrSize genericStart = ZR_TYPE_INFERENCE_GENERIC_START_NOT_FOUND;
     TZrInt32 depth = 0;
+    TZrInt32 parameterDepth = 0;
     TZrSize segmentStart;
 
     if (outBaseName != ZR_NULL) {
@@ -611,11 +472,21 @@ TZrBool try_parse_generic_instance_type_name(SZrState *state,
     depth = 0;
     for (TZrSize index = genericStart + 1; index < nativeTypeNameLength - 1; index++) {
         TZrChar current = nativeTypeName[index];
+        /* Callable arguments contain commas and an arrow. Neither separates
+         * generic arguments nor closes a generic instance. */
+        if (current == '(' || current == '[') {
+            parameterDepth++;
+        } else if (current == ')' || current == ']') {
+            parameterDepth--;
+        }
         if (current == '<') {
             depth++;
             continue;
         }
         if (current == '>') {
+            if (index > 0 && nativeTypeName[index - 1] == '-') {
+                continue;
+            }
             if (depth == 0) {
                 ZrCore_Array_Free(state, outArgumentTypeNames);
                 ZrCore_Array_Construct(outArgumentTypeNames);
@@ -625,7 +496,7 @@ TZrBool try_parse_generic_instance_type_name(SZrState *state,
             depth--;
             continue;
         }
-        if (current == ',' && depth == 0) {
+        if (current == ',' && depth == 0 && parameterDepth == 0) {
             SZrString *argumentName;
             if (!create_trimmed_type_name_segment(state, nativeTypeName, segmentStart, index, &argumentName)) {
                 ZrCore_Array_Free(state, outArgumentTypeNames);
@@ -638,7 +509,7 @@ TZrBool try_parse_generic_instance_type_name(SZrState *state,
         }
     }
 
-    if (depth != 0) {
+    if (depth != 0 || parameterDepth != 0) {
         ZrCore_Array_Free(state, outArgumentTypeNames);
         ZrCore_Array_Construct(outArgumentTypeNames);
         *outBaseName = ZR_NULL;
@@ -663,7 +534,7 @@ TZrBool try_parse_generic_instance_type_name(SZrState *state,
     return outArgumentTypeNames->length > 0;
 }
 
-static SZrTypePrototypeInfo *find_compiler_type_prototype_inference_exact(SZrCompilerState *cs, SZrString *typeName) {
+SZrTypePrototypeInfo *find_compiler_type_prototype_inference_exact(SZrCompilerState *cs, SZrString *typeName) {
     SZrString *bestMatchName = ZR_NULL;
     TZrBool bestMatchIsImportedNative = ZR_TRUE;
     const TZrChar *typeNameText;
@@ -675,7 +546,9 @@ static SZrTypePrototypeInfo *find_compiler_type_prototype_inference_exact(SZrCom
 
     for (TZrSize i = 0; i < cs->typePrototypes.length; i++) {
         SZrTypePrototypeInfo *info = (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, i);
-        if (info != ZR_NULL && info->name != ZR_NULL && ZrCore_String_Equal(info->name, typeName)) {
+        if (info != ZR_NULL && info->name != ZR_NULL &&
+            type_inference_prototype_is_root_visible(info) &&
+            type_inference_generic_prototype_is_root_visible(cs, info) && ZrCore_String_Equal(info->name, typeName)) {
             if (bestMatchName == ZR_NULL || (bestMatchIsImportedNative && !info->isImportedNative)) {
                 bestMatchName = info->name;
                 bestMatchIsImportedNative = info->isImportedNative;
@@ -687,6 +560,8 @@ static SZrTypePrototypeInfo *find_compiler_type_prototype_inference_exact(SZrCom
     }
 
     if (cs->currentTypePrototypeInfo != ZR_NULL &&
+        type_inference_prototype_is_root_visible(cs->currentTypePrototypeInfo) &&
+        type_inference_generic_prototype_is_root_visible(cs, cs->currentTypePrototypeInfo) &&
         cs->currentTypePrototypeInfo->name != ZR_NULL &&
         ZrCore_String_Equal(cs->currentTypePrototypeInfo->name, typeName) &&
         (bestMatchName == ZR_NULL ||
@@ -694,32 +569,44 @@ static SZrTypePrototypeInfo *find_compiler_type_prototype_inference_exact(SZrCom
         return cs->currentTypePrototypeInfo;
     }
 
-    for (TZrSize index = 0; index < cs->typeValueAliases.length; index++) {
-        SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(&cs->typeValueAliases, index);
+    {
+        SZrTypeBinding *binding = compiler_find_type_value_alias(cs, typeName, ZrParser_SyntaxContext_Root());
         if (binding != ZR_NULL &&
-            binding->name != ZR_NULL &&
             binding->type.typeName != ZR_NULL &&
-            ZrCore_String_Equal(binding->name, typeName) &&
             !ZrCore_String_Equal(binding->type.typeName, typeName)) {
-            SZrTypePrototypeInfo *aliasMatch = find_compiler_type_prototype_inference_exact(cs, binding->type.typeName);
-            if (aliasMatch != ZR_NULL) {
+            SZrInferredType aliasType;
+            SZrTypePrototypeInfo *aliasMatch;
+            SZrString *bindingName = binding->name;
+
+            ZrParser_InferredType_Init(cs->state, &aliasType, ZR_VALUE_TYPE_OBJECT);
+            ZrParser_InferredType_Copy(cs->state, &aliasType, &binding->type);
+            if (aliasType.nominalDefinitionToken != 0U ||
+                (aliasType.baseType == ZR_VALUE_TYPE_OBJECT &&
+                 aliasType.elementTypes.length > 0U)) {
+                ensure_generic_instance_type_prototype_from_inferred(cs, &aliasType);
+                aliasMatch = type_inference_find_nominal_prototype(cs, &aliasType);
+                ZrParser_InferredType_Free(cs->state, &aliasType);
                 return aliasMatch;
             }
-            if (binding->type.typeName != ZR_NULL &&
-                getenv("ZR_VM_TRACE_PROJECT_STARTUP") != ZR_NULL &&
-                ZrCore_String_GetNativeString(binding->type.typeName) != ZR_NULL &&
-                strchr(ZrCore_String_GetNativeString(binding->type.typeName), '<') != ZR_NULL) {
-                fprintf(stderr,
-                        "[zr-debug-site] type_inference_core.bindingType=%s bindingName=%s lookup=%s\n",
-                        ZrCore_String_GetNativeString(binding->type.typeName),
-                        binding->name != ZR_NULL ? ZrCore_String_GetNativeString(binding->name) : "<null>",
-                        typeName != ZR_NULL ? ZrCore_String_GetNativeString(typeName) : "<null>");
-            }
-            if (ensure_import_module_compile_info(cs, binding->type.typeName)) {
-                aliasMatch = find_compiler_type_prototype_inference_exact(cs, binding->type.typeName);
-                if (aliasMatch != ZR_NULL) {
-                    return aliasMatch;
+            aliasMatch = find_compiler_type_prototype_inference_exact(cs, aliasType.typeName);
+            if (aliasMatch == ZR_NULL) {
+                if (aliasType.typeName != ZR_NULL &&
+                    getenv("ZR_VM_TRACE_PROJECT_STARTUP") != ZR_NULL &&
+                    ZrCore_String_GetNativeString(aliasType.typeName) != ZR_NULL &&
+                    strchr(ZrCore_String_GetNativeString(aliasType.typeName), '<') != ZR_NULL) {
+                    fprintf(stderr,
+                            "[zr-debug-site] type_inference_core.bindingType=%s bindingName=%s lookup=%s\n",
+                            ZrCore_String_GetNativeString(aliasType.typeName),
+                            bindingName != ZR_NULL ? ZrCore_String_GetNativeString(bindingName) : "<null>",
+                            typeName != ZR_NULL ? ZrCore_String_GetNativeString(typeName) : "<null>");
                 }
+                if (ensure_import_module_compile_info(cs, aliasType.typeName)) {
+                    aliasMatch = find_compiler_type_prototype_inference_exact(cs, aliasType.typeName);
+                }
+            }
+            ZrParser_InferredType_Free(cs->state, &aliasType);
+            if (aliasMatch != ZR_NULL) {
+                return aliasMatch;
             }
         }
     }
@@ -808,114 +695,6 @@ static SZrTypePrototypeInfo *find_compiler_type_prototype_inference_exact(SZrCom
     if (bestMatchName != ZR_NULL) {
         return find_registered_type_prototype_inference_exact_only_local(cs, bestMatchName);
     }
-    return ZR_NULL;
-}
-
-static SZrAstNode *find_type_declaration_in_array_inference(SZrAstNodeArray *declarations, SZrString *typeName) {
-    if (declarations == ZR_NULL || declarations->nodes == ZR_NULL || typeName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    for (TZrSize index = 0; index < declarations->count; index++) {
-        SZrAstNode *declaration = declarations->nodes[index];
-
-        if (declaration == ZR_NULL) {
-            continue;
-        }
-
-        switch (declaration->type) {
-            case ZR_AST_STRUCT_DECLARATION:
-                if (declaration->data.structDeclaration.name != ZR_NULL &&
-                    declaration->data.structDeclaration.name->name != ZR_NULL &&
-                    ZrCore_String_Equal(declaration->data.structDeclaration.name->name, typeName)) {
-                    return declaration;
-                }
-                break;
-
-            case ZR_AST_CLASS_DECLARATION:
-                if (declaration->data.classDeclaration.name != ZR_NULL &&
-                    declaration->data.classDeclaration.name->name != ZR_NULL &&
-                    ZrCore_String_Equal(declaration->data.classDeclaration.name->name, typeName)) {
-                    return declaration;
-                }
-                break;
-
-            case ZR_AST_INTERFACE_DECLARATION:
-                if (declaration->data.interfaceDeclaration.name != ZR_NULL &&
-                    declaration->data.interfaceDeclaration.name->name != ZR_NULL &&
-                    ZrCore_String_Equal(declaration->data.interfaceDeclaration.name->name, typeName)) {
-                    return declaration;
-                }
-                break;
-
-            case ZR_AST_ENUM_DECLARATION:
-                if (declaration->data.enumDeclaration.name != ZR_NULL &&
-                    declaration->data.enumDeclaration.name->name != ZR_NULL &&
-                    ZrCore_String_Equal(declaration->data.enumDeclaration.name->name, typeName)) {
-                    return declaration;
-                }
-                break;
-
-            case ZR_AST_UNION_DECLARATION:
-                if (declaration->data.unionDeclaration.name != ZR_NULL &&
-                    declaration->data.unionDeclaration.name->name != ZR_NULL &&
-                    ZrCore_String_Equal(declaration->data.unionDeclaration.name->name, typeName)) {
-                    return declaration;
-                }
-                break;
-
-            case ZR_AST_EXTERN_DELEGATE_DECLARATION:
-                if (declaration->data.externDelegateDeclaration.name != ZR_NULL &&
-                    declaration->data.externDelegateDeclaration.name->name != ZR_NULL &&
-                    ZrCore_String_Equal(declaration->data.externDelegateDeclaration.name->name, typeName)) {
-                    return declaration;
-                }
-                break;
-
-            default:
-                break;
-        }
-    }
-
-    return ZR_NULL;
-}
-
-static SZrAstNode *find_type_declaration_inference(SZrCompilerState *cs, SZrString *typeName) {
-    SZrScript *script;
-    SZrAstNode *match;
-
-    if (cs == ZR_NULL || cs->scriptAst == ZR_NULL || typeName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (cs->scriptAst->type != ZR_AST_SCRIPT) {
-        return ZR_NULL;
-    }
-
-    script = &cs->scriptAst->data.script;
-    if (script->statements == ZR_NULL || script->statements->nodes == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    match = find_type_declaration_in_array_inference(script->statements, typeName);
-    if (match != ZR_NULL) {
-        return match;
-    }
-
-    for (TZrSize index = 0; index < script->statements->count; index++) {
-        SZrAstNode *statement = script->statements->nodes[index];
-
-        if (statement == ZR_NULL || statement->type != ZR_AST_EXTERN_BLOCK ||
-            statement->data.externBlock.declarations == ZR_NULL) {
-            continue;
-        }
-
-        match = find_type_declaration_in_array_inference(statement->data.externBlock.declarations, typeName);
-        if (match != ZR_NULL) {
-            return match;
-        }
-    }
-
     return ZR_NULL;
 }
 
@@ -1020,8 +799,8 @@ TZrBool type_inference_is_const_generic_parameter_reference(
     return ZR_FALSE;
 }
 
-static TZrBool current_generic_context_contains_type_name_inference(SZrCompilerState *cs,
-                                                                    SZrString *typeName) {
+TZrBool type_inference_current_generic_context_contains_type_name(SZrCompilerState *cs,
+                                                                 SZrString *typeName) {
     SZrGenericDeclaration *generic;
 
     if (cs == ZR_NULL || typeName == ZR_NULL) {
@@ -1055,55 +834,6 @@ static TZrBool current_generic_context_contains_type_name_inference(SZrCompilerS
     }
 
     return ZR_FALSE;
-}
-
-ZR_PARSER_API TZrBool type_name_is_explicitly_available_in_context_inference(SZrCompilerState *cs,
-                                                                              SZrString *typeName) {
-    TZrNativeString typeNameText = ZR_NULL;
-
-    if (cs == ZR_NULL || typeName == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (typeName->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
-        typeNameText = ZrCore_String_GetNativeStringShort(typeName);
-    } else {
-        typeNameText = ZrCore_String_GetNativeString(typeName);
-    }
-
-    if (typeNameText != ZR_NULL && strcmp(typeNameText, "zr") == 0) {
-        if (find_compiler_type_prototype_inference(cs, typeName) != ZR_NULL ||
-            (ensure_import_module_compile_info(cs, typeName) &&
-             find_compiler_type_prototype_inference(cs, typeName) != ZR_NULL)) {
-            return ZR_TRUE;
-        }
-    }
-
-    if (typeNameText != ZR_NULL && strchr(typeNameText, '.') != ZR_NULL) {
-        if (find_compiler_type_prototype_inference(cs, typeName) != ZR_NULL) {
-            return ZR_TRUE;
-        }
-        if (find_type_declaration_inference(cs, typeName) != ZR_NULL) {
-            return ZR_TRUE;
-        }
-    }
-
-    for (TZrSize index = 0; index < cs->typeValueAliases.length; index++) {
-        SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(&cs->typeValueAliases, index);
-        if (binding != ZR_NULL && binding->name != ZR_NULL && ZrCore_String_Equal(binding->name, typeName)) {
-            return ZR_TRUE;
-        }
-    }
-
-    if (cs->typeEnv != ZR_NULL && ZrParser_TypeEnvironment_LookupType(cs->typeEnv, typeName)) {
-        return ZR_TRUE;
-    }
-
-    if (current_generic_context_contains_type_name_inference(cs, typeName)) {
-        return ZR_TRUE;
-    }
-
-    return find_type_declaration_inference(cs, typeName) != ZR_NULL;
 }
 
 static SZrString *resolve_source_declaration_lookup_type_name_inference(SZrCompilerState *cs, SZrString *typeName) {
@@ -1201,7 +931,7 @@ ZR_PARSER_API TZrBool resolve_source_type_declaration_target_inference(SZrCompil
         return ZR_FALSE;
     }
 
-    declarationNode = find_type_declaration_inference(cs, lookupTypeName);
+    declarationNode = find_type_declaration(cs, lookupTypeName);
     if (declarationNode == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -1360,10 +1090,10 @@ ZR_PARSER_API TZrBool inferred_type_implements_protocol_mask(SZrCompilerState *c
         return ZR_FALSE;
     }
 
-    prototype = find_compiler_type_prototype_inference(cs, type->typeName);
-    if (prototype == ZR_NULL) {
+    prototype = type_inference_find_nominal_prototype(cs, type);
+    if (prototype == ZR_NULL && type->nominalDefinitionToken == 0U) {
         ensure_generic_instance_type_prototype(cs, type->typeName);
-        prototype = find_compiler_type_prototype_inference(cs, type->typeName);
+        prototype = type_inference_find_nominal_prototype(cs, type);
     }
 
     return prototype != ZR_NULL && (prototype->protocolMask & protocolMask) == protocolMask;
@@ -1739,8 +1469,8 @@ static SZrTypePrototypeInfo *resolve_constraint_actual_prototype(SZrCompilerStat
         return ZR_NULL;
     }
 
-    ensure_generic_instance_type_prototype(cs, actualType->typeName);
-    return find_compiler_type_prototype_inference_exact(cs, actualType->typeName);
+    ensure_generic_instance_type_prototype_from_inferred(cs, actualType);
+    return type_inference_find_nominal_prototype(cs, actualType);
 }
 
 static TZrBool inferred_type_is_primitive_value_type(const SZrInferredType *actualType) {
@@ -2203,392 +1933,6 @@ ZR_PARSER_API TZrBool bind_foreach_element_type_from_inferred_iterable(SZrCompil
     return ZrParser_EnumeratorBinding_ResolveElementType(cs, iterableType, outType);
 }
 
-static SZrString *substitute_generic_type_name(SZrState *state,
-                                               SZrString *sourceTypeName,
-                                               const SZrArray *genericParameters,
-                                               const SZrArray *argumentTypeNames) {
-    SZrString *baseName = ZR_NULL;
-    SZrArray argumentNames;
-    TZrNativeString nativeTypeName;
-    TZrSize nativeTypeNameLength;
-
-    if (state == ZR_NULL || sourceTypeName == ZR_NULL || genericParameters == ZR_NULL || argumentTypeNames == ZR_NULL) {
-        return sourceTypeName;
-    }
-
-    for (TZrSize index = 0; index < genericParameters->length; index++) {
-        SZrTypeGenericParameterInfo *parameterInfo =
-                (SZrTypeGenericParameterInfo *)ZrCore_Array_Get((SZrArray *)genericParameters, index);
-        SZrString **argumentNamePtr = (SZrString **)ZrCore_Array_Get((SZrArray *)argumentTypeNames, index);
-        if (parameterInfo == ZR_NULL || parameterInfo->name == ZR_NULL || argumentNamePtr == ZR_NULL || *argumentNamePtr == ZR_NULL) {
-            continue;
-        }
-        if (ZrCore_String_Equal(parameterInfo->name, sourceTypeName)) {
-            return *argumentNamePtr;
-        }
-    }
-
-    nativeTypeName = ZrCore_String_GetNativeString(sourceTypeName);
-    nativeTypeNameLength = nativeTypeName != ZR_NULL ? strlen(nativeTypeName) : 0;
-    if (nativeTypeName != ZR_NULL &&
-        nativeTypeNameLength > 2 &&
-        strcmp(nativeTypeName + nativeTypeNameLength - 2, "[]") == 0) {
-        SZrString *elementTypeName = ZrCore_String_Create(state, nativeTypeName, nativeTypeNameLength - 2);
-        SZrString *substitutedElement = substitute_generic_type_name(state,
-                                                                     elementTypeName,
-                                                                     genericParameters,
-                                                                     argumentTypeNames);
-        TZrChar buffer[ZR_PARSER_TEXT_BUFFER_LENGTH];
-        TZrNativeString elementNative = substitutedElement != ZR_NULL ? ZrCore_String_GetNativeString(substitutedElement) : ZR_NULL;
-        if (elementNative == ZR_NULL) {
-            return sourceTypeName;
-        }
-        snprintf(buffer, sizeof(buffer), "%s[]", elementNative);
-        return ZrCore_String_CreateFromNative(state, buffer);
-    }
-
-    ZrCore_Array_Construct(&argumentNames);
-    if (try_parse_generic_instance_type_name(state, sourceTypeName, &baseName, &argumentNames)) {
-        TZrChar buffer[ZR_PARSER_TEXT_BUFFER_LENGTH];
-        TZrSize offset = 0;
-        SZrString *resultName = ZR_NULL;
-        buffer[0] = '\0';
-        if (!append_text_fragment(buffer, sizeof(buffer), &offset, ZrCore_String_GetNativeString(baseName)) ||
-            !append_text_fragment(buffer, sizeof(buffer), &offset, "<")) {
-            ZrCore_Array_Free(state, &argumentNames);
-            return sourceTypeName;
-        }
-        for (TZrSize index = 0; index < argumentNames.length; index++) {
-            SZrString **argumentNamePtr = (SZrString **)ZrCore_Array_Get(&argumentNames, index);
-            SZrString *substitutedName;
-            if (argumentNamePtr == ZR_NULL || *argumentNamePtr == ZR_NULL) {
-                continue;
-            }
-            if (index > 0 && !append_text_fragment(buffer, sizeof(buffer), &offset, ", ")) {
-                ZrCore_Array_Free(state, &argumentNames);
-                return sourceTypeName;
-            }
-            substitutedName = substitute_generic_type_name(state, *argumentNamePtr, genericParameters, argumentTypeNames);
-            if (substitutedName == ZR_NULL ||
-                !append_text_fragment(buffer, sizeof(buffer), &offset, ZrCore_String_GetNativeString(substitutedName))) {
-                ZrCore_Array_Free(state, &argumentNames);
-                return sourceTypeName;
-            }
-        }
-        if (append_text_fragment(buffer, sizeof(buffer), &offset, ">")) {
-            resultName = ZrCore_String_Create(state, buffer, offset);
-        }
-        ZrCore_Array_Free(state, &argumentNames);
-        if (resultName != ZR_NULL) {
-            return resultName;
-        }
-    }
-
-    return sourceTypeName;
-}
-
-static TZrSize generic_parameter_index_by_name(
-        const SZrArray *genericParameters,
-        SZrString *name) {
-    TZrSize index;
-
-    if (genericParameters == ZR_NULL || name == ZR_NULL) {
-        return ZR_MAX_SIZE;
-    }
-    for (index = 0; index < genericParameters->length; index++) {
-        const SZrTypeGenericParameterInfo *parameter =
-                (const SZrTypeGenericParameterInfo *)ZrCore_Array_Get(
-                        (SZrArray *)genericParameters,
-                        index);
-        if (parameter != ZR_NULL &&
-            parameter->name != ZR_NULL &&
-            ZrCore_String_Equal(parameter->name, name)) {
-            return index;
-        }
-    }
-    return ZR_MAX_SIZE;
-}
-
-static TZrBool substitute_parameter_type(SZrCompilerState *cs,
-                                         const SZrInferredType *sourceType,
-                                         const SZrArray *genericParameters,
-                                         const SZrArray *argumentTypeNames,
-                                         const SZrArray *argumentTypes,
-                                         SZrInferredType *outType) {
-    SZrString *substitutedTypeName = sourceType != ZR_NULL ? sourceType->typeName : ZR_NULL;
-    TZrSize bindingIndex;
-
-    if (cs == ZR_NULL ||
-        sourceType == ZR_NULL ||
-        genericParameters == ZR_NULL ||
-        argumentTypeNames == ZR_NULL ||
-        argumentTypes == ZR_NULL ||
-        outType == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    bindingIndex = sourceType->elementTypes.length == 0U
-                           ? generic_parameter_index_by_name(
-                                     genericParameters,
-                                     sourceType->typeName)
-                           : ZR_MAX_SIZE;
-    if (bindingIndex != ZR_MAX_SIZE && bindingIndex < argumentTypes->length) {
-        const SZrInferredType *argumentType =
-                (const SZrInferredType *)ZrCore_Array_Get(
-                        (SZrArray *)argumentTypes,
-                        bindingIndex);
-        if (argumentType == ZR_NULL) {
-            return ZR_FALSE;
-        }
-        ZrParser_InferredType_Copy(cs->state, outType, argumentType);
-        outType->ownershipQualifier = sourceType->ownershipQualifier;
-        outType->gcBridgeKind = sourceType->gcBridgeKind;
-        outType->referenceAccess = sourceType->referenceAccess;
-        outType->isReadonlyView = sourceType->isReadonlyView;
-        outType->protocolMask |= sourceType->protocolMask;
-        outType->isNullable = sourceType->isNullable;
-        outType->knownBoolValue = sourceType->knownBoolValue;
-        outType->hasKnownBoolValue = sourceType->hasKnownBoolValue;
-        return ZR_TRUE;
-    }
-
-    if (sourceType->typeName != ZR_NULL) {
-        SZrString *candidate = substitute_generic_type_name(
-                cs->state,
-                sourceType->typeName,
-                genericParameters,
-                argumentTypeNames);
-        if (candidate != ZR_NULL) {
-            substitutedTypeName = candidate;
-        }
-    }
-
-    ZrParser_InferredType_InitFull(
-            cs->state,
-            outType,
-            sourceType->baseType,
-            sourceType->isNullable,
-            substitutedTypeName);
-    outType->ownershipQualifier = sourceType->ownershipQualifier;
-    outType->gcBridgeKind = sourceType->gcBridgeKind;
-    outType->referenceAccess = sourceType->referenceAccess;
-    outType->isReadonlyView = sourceType->isReadonlyView;
-    outType->protocolMask = sourceType->protocolMask;
-    outType->genericArgumentKind = sourceType->genericArgumentKind;
-    outType->genericConstIntValue = sourceType->genericConstIntValue;
-    outType->minValue = sourceType->minValue;
-    outType->maxValue = sourceType->maxValue;
-    outType->hasRangeConstraint = sourceType->hasRangeConstraint;
-    ZrParser_InferredType_CopyRangeSegments(cs->state, outType, sourceType);
-    outType->knownBoolValue = sourceType->knownBoolValue;
-    outType->hasKnownBoolValue = sourceType->hasKnownBoolValue;
-    outType->arrayFixedSize = sourceType->arrayFixedSize;
-    outType->arrayMinSize = sourceType->arrayMinSize;
-    outType->arrayMaxSize = sourceType->arrayMaxSize;
-    outType->hasArraySizeConstraint = sourceType->hasArraySizeConstraint;
-
-    if (sourceType->elementTypes.length > 0U) {
-        TZrSize index;
-
-        ZrCore_Array_Init(
-                cs->state,
-                &outType->elementTypes,
-                sizeof(SZrInferredType),
-                sourceType->elementTypes.length);
-        for (index = 0; index < sourceType->elementTypes.length; index++) {
-            const SZrInferredType *sourceElement =
-                    (const SZrInferredType *)ZrCore_Array_Get(
-                            (SZrArray *)&sourceType->elementTypes,
-                            index);
-            SZrInferredType substitutedElement;
-
-            if (sourceElement == ZR_NULL ||
-                !substitute_parameter_type(
-                        cs,
-                        sourceElement,
-                        genericParameters,
-                        argumentTypeNames,
-                        argumentTypes,
-                        &substitutedElement)) {
-                ZrParser_InferredType_Free(cs->state, outType);
-                return ZR_FALSE;
-            }
-            ZrCore_Array_Push(cs->state, &outType->elementTypes, &substitutedElement);
-        }
-    }
-    return ZR_TRUE;
-}
-
-static TZrUInt32 generic_instance_field_size_for_value_type(EZrValueType baseType) {
-    switch (baseType) {
-        case ZR_VALUE_TYPE_INT8: return sizeof(TZrInt8);
-        case ZR_VALUE_TYPE_INT16: return sizeof(TZrInt16);
-        case ZR_VALUE_TYPE_INT32: return sizeof(TZrInt32);
-        case ZR_VALUE_TYPE_INT64: return sizeof(TZrInt64);
-        case ZR_VALUE_TYPE_UINT8: return sizeof(TZrUInt8);
-        case ZR_VALUE_TYPE_UINT16: return sizeof(TZrUInt16);
-        case ZR_VALUE_TYPE_UINT32: return sizeof(TZrUInt32);
-        case ZR_VALUE_TYPE_UINT64: return sizeof(TZrUInt64);
-        case ZR_VALUE_TYPE_FLOAT: return sizeof(TZrFloat32);
-        case ZR_VALUE_TYPE_DOUBLE: return sizeof(TZrDouble);
-        case ZR_VALUE_TYPE_BOOL: return sizeof(TZrBool);
-        case ZR_VALUE_TYPE_STRING:
-        case ZR_VALUE_TYPE_OBJECT:
-        case ZR_VALUE_TYPE_ARRAY:
-        case ZR_VALUE_TYPE_CLOSURE:
-            return sizeof(SZrTypeValue);
-        default:
-            return 0u;
-    }
-}
-
-static TZrUInt32 generic_instance_layout_align_for_size(TZrUInt32 size) {
-    if (size <= 1u) {
-        return 1u;
-    }
-    if (size <= 2u) {
-        return 2u;
-    }
-    if (size <= 4u) {
-        return 4u;
-    }
-    return ZR_ALIGN_SIZE;
-}
-
-static TZrBool generic_instance_type_name_primitive_layout(SZrString *typeName,
-                                                           TZrUInt32 *outSize,
-                                                           TZrUInt32 *outAlign) {
-    const TZrChar *typeNameText;
-    EZrValueType baseType;
-    TZrUInt32 fieldSize;
-
-    if (typeName == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    typeNameText = ZrCore_String_GetNativeString(typeName);
-    if (typeNameText == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    if (!inferred_type_try_map_primitive_name(
-                (TZrNativeString)typeNameText,
-                strlen(typeNameText),
-                &baseType)) {
-        if (strcmp(typeNameText, "object") == 0 ||
-            strcmp(typeNameText, "value") == 0 ||
-            strcmp(typeNameText, "any") == 0) {
-            baseType = ZR_VALUE_TYPE_OBJECT;
-        } else if (strcmp(typeNameText, "array") == 0) {
-            baseType = ZR_VALUE_TYPE_ARRAY;
-        } else if (strcmp(typeNameText, "function") == 0 ||
-                   strcmp(typeNameText, "closure") == 0) {
-            baseType = ZR_VALUE_TYPE_CLOSURE;
-        } else {
-            return ZR_FALSE;
-        }
-    }
-
-    fieldSize = generic_instance_field_size_for_value_type(baseType);
-    if (fieldSize == 0u) {
-        return ZR_FALSE;
-    }
-
-    if (outSize != ZR_NULL) {
-        *outSize = fieldSize;
-    }
-    if (outAlign != ZR_NULL) {
-        *outAlign = generic_instance_layout_align_for_size(fieldSize);
-    }
-    return ZR_TRUE;
-}
-
-static TZrBool generic_instance_type_name_layout(SZrCompilerState *cs,
-                                                 SZrString *typeName,
-                                                 TZrUInt32 *outSize,
-                                                 TZrUInt32 *outAlign) {
-    SZrTypePrototypeInfo *prototype;
-
-    if (generic_instance_type_name_primitive_layout(typeName, outSize, outAlign)) {
-        return ZR_TRUE;
-    }
-
-    prototype = find_compiler_type_prototype_inference_exact(cs, typeName);
-    if (prototype != ZR_NULL &&
-        prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT &&
-        prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_UNION) {
-        if (outSize != ZR_NULL) {
-            *outSize = (TZrUInt32)sizeof(SZrTypeValue);
-        }
-        if (outAlign != ZR_NULL) {
-            *outAlign = ZR_ALIGN_SIZE;
-        }
-        return ZR_TRUE;
-    }
-    if (prototype != ZR_NULL &&
-        prototype->layoutByteSize > 0u &&
-        prototype->layoutByteAlign > 0u) {
-        if (outSize != ZR_NULL) {
-            *outSize = prototype->layoutByteSize;
-        }
-        if (outAlign != ZR_NULL) {
-            *outAlign = prototype->layoutByteAlign;
-        }
-        return ZR_TRUE;
-    }
-
-    return ZR_FALSE;
-}
-
-static void finalize_generic_instance_inline_layout(SZrCompilerState *cs,
-                                                    SZrTypePrototypeInfo *prototypeInfo) {
-    TZrUInt32 currentOffset = 0u;
-    TZrUInt32 maxAlign = 0u;
-
-    if (cs == ZR_NULL ||
-        prototypeInfo == ZR_NULL ||
-        prototypeInfo->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
-        return;
-    }
-
-    for (TZrSize index = 0; index < prototypeInfo->members.length; index++) {
-        SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrCore_Array_Get(&prototypeInfo->members, index);
-        TZrUInt32 fieldSize;
-        TZrUInt32 align;
-
-        if (memberInfo == ZR_NULL ||
-            memberInfo->memberType != ZR_AST_STRUCT_FIELD ||
-            memberInfo->isStatic) {
-            continue;
-        }
-
-        fieldSize = memberInfo->fieldSize;
-        align = 0u;
-        if (!generic_instance_type_name_layout(cs, memberInfo->fieldTypeName, &fieldSize, &align)) {
-            fieldSize = fieldSize != 0u ? fieldSize : ZR_ALIGN_SIZE;
-            align = memberInfo->fieldType != ZR_NULL ? get_type_alignment(cs, memberInfo->fieldType)
-                                                     : ZR_ALIGN_SIZE;
-        }
-
-        if (fieldSize == 0u) {
-            fieldSize = ZR_ALIGN_SIZE;
-        }
-        if (align == 0u) {
-            align = ZR_ALIGN_SIZE;
-        }
-
-        if (align > maxAlign) {
-            maxAlign = align;
-        }
-
-        currentOffset = align_offset(currentOffset, align);
-        memberInfo->fieldOffset = currentOffset;
-        memberInfo->fieldSize = fieldSize;
-        currentOffset += fieldSize;
-    }
-
-    prototypeInfo->layoutByteAlign = maxAlign;
-    prototypeInfo->layoutByteSize = maxAlign > 0u ? align_offset(currentOffset, maxAlign) : 0u;
-}
 
 static SZrString *generic_call_binding_type_name(SZrCompilerState *cs, const SZrInferredType *argumentType) {
     TZrChar typeNameBuffer[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
@@ -2803,482 +2147,6 @@ ZR_PARSER_API EZrGenericCallResolveStatus validate_generic_call_bindings_constra
     return ZR_GENERIC_CALL_RESOLVE_OK;
 }
 
-static TZrBool ensure_generic_instance_type_prototype_internal(
-        SZrCompilerState *cs,
-        SZrString *typeName,
-        const SZrInferredType *structuredType) {
-    SZrString *baseName = ZR_NULL;
-    SZrArray argumentTypeNames;
-    SZrArray argumentTypes;
-    SZrTypePrototypeInfo *openPrototype;
-    SZrString *materializedTypeName;
-
-    if (cs == ZR_NULL || typeName == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (find_compiler_type_prototype_inference_exact(cs, typeName) != ZR_NULL) {
-        return ZR_TRUE;
-    }
-
-    ZrCore_Array_Construct(&argumentTypeNames);
-    if (!try_parse_generic_instance_type_name(cs->state, typeName, &baseName, &argumentTypeNames)) {
-        return ZR_FALSE;
-    }
-
-    openPrototype = find_compiler_type_prototype_inference_exact(cs, baseName);
-    if (openPrototype == ZR_NULL || openPrototype->genericParameters.length == 0 ||
-        openPrototype->genericParameters.length != argumentTypeNames.length) {
-        ZrCore_Array_Free(cs->state, &argumentTypeNames);
-        return ZR_FALSE;
-    }
-
-    ZrCore_Array_Init(cs->state, &argumentTypes, sizeof(SZrInferredType), argumentTypeNames.length);
-    for (TZrSize index = 0; index < argumentTypeNames.length; index++) {
-        SZrString **argumentNamePtr = (SZrString **)ZrCore_Array_Get(&argumentTypeNames, index);
-        TZrInt64 constIntValue;
-        const SZrInferredType *structuredArgument =
-                structuredType != ZR_NULL &&
-                        structuredType->elementTypes.length == argumentTypeNames.length
-                        ? (const SZrInferredType *)ZrCore_Array_Get(
-                                  (SZrArray *)&structuredType->elementTypes,
-                                  index)
-                        : ZR_NULL;
-        SZrInferredType argumentType;
-        if (argumentNamePtr == ZR_NULL || *argumentNamePtr == ZR_NULL) {
-            continue;
-        }
-        if (structuredArgument != ZR_NULL) {
-            ZrParser_InferredType_Copy(cs->state, &argumentType, structuredArgument);
-        } else if (type_inference_is_const_generic_parameter_reference(cs, *argumentNamePtr)) {
-            ZrParser_InferredType_InitConstParameterGenericArgument(
-                    cs->state,
-                    &argumentType,
-                    *argumentNamePtr);
-        } else if (type_inference_parse_const_int_generic_argument_name(
-                           *argumentNamePtr,
-                           &constIntValue)) {
-            ZrParser_InferredType_InitConstIntGenericArgument(
-                    cs->state,
-                    &argumentType,
-                    constIntValue,
-                    *argumentNamePtr);
-        } else if (!inferred_type_from_type_name(cs, *argumentNamePtr, &argumentType)) {
-            ZrParser_InferredType_Free(cs->state, &argumentType);
-            free_inferred_type_array(cs->state, &argumentTypes);
-            ZrCore_Array_Free(cs->state, &argumentTypeNames);
-            return ZR_FALSE;
-        }
-        if (argumentType.genericArgumentKind == ZR_INFERRED_GENERIC_ARGUMENT_TYPE &&
-            argumentType.typeName == ZR_NULL) {
-            argumentType.typeName = *argumentNamePtr;
-        }
-        ZrCore_Array_Push(cs->state, &argumentTypes, &argumentType);
-    }
-
-    for (TZrSize index = 0; index < argumentTypes.length; index++) {
-        SZrTypeGenericParameterInfo *parameterInfo;
-        SZrInferredType *argumentType = (SZrInferredType *)ZrCore_Array_Get(&argumentTypes, index);
-        SZrString **argumentNamePtr =
-                (SZrString **)ZrCore_Array_Get(&argumentTypeNames, index);
-        SZrString *argumentDisplayName;
-        SZrArray genericParametersSnapshot;
-        openPrototype = find_compiler_type_prototype_inference_exact(cs, baseName);
-        if (openPrototype == ZR_NULL) {
-            free_inferred_type_array(cs->state, &argumentTypes);
-            ZrCore_Array_Free(cs->state, &argumentTypeNames);
-            return ZR_FALSE;
-        }
-        genericParametersSnapshot = openPrototype->genericParameters;
-        parameterInfo =
-                (SZrTypeGenericParameterInfo *)ZrCore_Array_Get(&genericParametersSnapshot, index);
-        if (parameterInfo == ZR_NULL || argumentType == ZR_NULL) {
-            continue;
-        }
-        argumentDisplayName = argumentType->typeName != ZR_NULL
-                                      ? argumentType->typeName
-                                      : argumentNamePtr != ZR_NULL && *argumentNamePtr != ZR_NULL
-                                                ? *argumentNamePtr
-                                                : baseName;
-        if ((parameterInfo->genericKind == ZR_GENERIC_PARAMETER_TYPE &&
-             argumentType->genericArgumentKind != ZR_INFERRED_GENERIC_ARGUMENT_TYPE) ||
-            (parameterInfo->genericKind == ZR_GENERIC_PARAMETER_CONST_INT &&
-             argumentType->genericArgumentKind != ZR_INFERRED_GENERIC_ARGUMENT_CONST_INT &&
-             argumentType->genericArgumentKind != ZR_INFERRED_GENERIC_ARGUMENT_CONST_PARAMETER)) {
-            TZrChar errorMessage[ZR_PARSER_ERROR_BUFFER_LENGTH];
-            SZrFileRange errorLocation;
-
-            snprintf(
-                    errorMessage,
-                    sizeof(errorMessage),
-                    "Generic argument '%s' has the wrong kind for parameter '%s'",
-                    ZrCore_String_GetNativeString(argumentDisplayName),
-                    ZrCore_String_GetNativeString(
-                            parameterInfo->name != ZR_NULL ? parameterInfo->name : baseName));
-            memset(&errorLocation, 0, sizeof(errorLocation));
-            ZrParser_Compiler_Error(cs, errorMessage, errorLocation);
-            free_inferred_type_array(cs->state, &argumentTypes);
-            ZrCore_Array_Free(cs->state, &argumentTypeNames);
-            return ZR_FALSE;
-        }
-        if (parameterInfo->requiresClass && !inferred_type_satisfies_class_constraint(cs, argumentType)) {
-            static TZrChar errorMessage[ZR_PARSER_ERROR_BUFFER_LENGTH];
-            SZrFileRange errorLocation;
-            snprintf(errorMessage,
-                     sizeof(errorMessage),
-                     "Generic argument '%s' does not satisfy class constraint",
-                     ZrCore_String_GetNativeString(argumentDisplayName));
-            memset(&errorLocation, 0, sizeof(errorLocation));
-            ZrParser_Compiler_Error(cs, errorMessage, errorLocation);
-            free_inferred_type_array(cs->state, &argumentTypes);
-            ZrCore_Array_Free(cs->state, &argumentTypeNames);
-            return ZR_FALSE;
-        }
-        if (parameterInfo->requiresStruct && !inferred_type_satisfies_struct_constraint(cs, argumentType)) {
-            static TZrChar errorMessage[ZR_PARSER_ERROR_BUFFER_LENGTH];
-            SZrFileRange errorLocation;
-            snprintf(errorMessage,
-                     sizeof(errorMessage),
-                     "Generic argument '%s' does not satisfy struct constraint",
-                     ZrCore_String_GetNativeString(argumentDisplayName));
-            memset(&errorLocation, 0, sizeof(errorLocation));
-            ZrParser_Compiler_Error(cs, errorMessage, errorLocation);
-            free_inferred_type_array(cs->state, &argumentTypes);
-            ZrCore_Array_Free(cs->state, &argumentTypeNames);
-            return ZR_FALSE;
-        }
-        if (parameterInfo->requiresNew && !inferred_type_satisfies_new_constraint(cs, argumentType)) {
-            static TZrChar errorMessage[ZR_PARSER_ERROR_BUFFER_LENGTH];
-            SZrFileRange errorLocation;
-            snprintf(errorMessage,
-                     sizeof(errorMessage),
-                     "Generic argument '%s' does not satisfy new() constraint",
-                     ZrCore_String_GetNativeString(argumentDisplayName));
-            memset(&errorLocation, 0, sizeof(errorLocation));
-            ZrParser_Compiler_Error(cs, errorMessage, errorLocation);
-            free_inferred_type_array(cs->state, &argumentTypes);
-            ZrCore_Array_Free(cs->state, &argumentTypeNames);
-            return ZR_FALSE;
-        }
-        if (parameterInfo->requiredOwnershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE &&
-            !inferred_type_satisfies_specific_owner_constraint(argumentType,
-                                                               parameterInfo->requiredOwnershipQualifier)) {
-            static TZrChar errorMessage[ZR_PARSER_ERROR_BUFFER_LENGTH];
-            SZrFileRange errorLocation;
-            snprintf(errorMessage,
-                     sizeof(errorMessage),
-                     "Generic argument '%s' does not satisfy %s ownership constraint",
-                     ZrCore_String_GetNativeString(argumentDisplayName),
-                     ownership_constraint_qualifier_name(parameterInfo->requiredOwnershipQualifier));
-            memset(&errorLocation, 0, sizeof(errorLocation));
-            ZrParser_Compiler_Error(cs, errorMessage, errorLocation);
-            free_inferred_type_array(cs->state, &argumentTypes);
-            ZrCore_Array_Free(cs->state, &argumentTypeNames);
-            return ZR_FALSE;
-        }
-        if (parameterInfo->requiresOwner && !inferred_type_satisfies_owner_constraint(argumentType)) {
-            static TZrChar errorMessage[ZR_PARSER_ERROR_BUFFER_LENGTH];
-            SZrFileRange errorLocation;
-            snprintf(errorMessage,
-                     sizeof(errorMessage),
-                     "Generic argument '%s' does not satisfy owner constraint",
-                     ZrCore_String_GetNativeString(argumentDisplayName));
-            memset(&errorLocation, 0, sizeof(errorLocation));
-            ZrParser_Compiler_Error(cs, errorMessage, errorLocation);
-            free_inferred_type_array(cs->state, &argumentTypes);
-            ZrCore_Array_Free(cs->state, &argumentTypeNames);
-            return ZR_FALSE;
-        }
-        for (TZrSize constraintIndex = 0; constraintIndex < parameterInfo->constraintTypeNames.length; constraintIndex++) {
-            SZrString **constraintNamePtr =
-                    (SZrString **)ZrCore_Array_Get(&parameterInfo->constraintTypeNames, constraintIndex);
-            SZrString *resolvedConstraintName;
-            static TZrChar errorMessage[ZR_PARSER_ERROR_BUFFER_LENGTH];
-            SZrFileRange errorLocation;
-            if (constraintNamePtr == ZR_NULL || *constraintNamePtr == ZR_NULL) {
-                continue;
-            }
-            resolvedConstraintName = substitute_generic_type_name(cs->state,
-                                                                  *constraintNamePtr,
-                                                                  &genericParametersSnapshot,
-                                                                  &argumentTypeNames);
-            if (resolvedConstraintName == ZR_NULL) {
-                resolvedConstraintName = *constraintNamePtr;
-            }
-            if (inferred_type_satisfies_constraint(cs, argumentType, resolvedConstraintName)) {
-                continue;
-            }
-            snprintf(errorMessage,
-                     sizeof(errorMessage),
-                     "Generic argument '%s' does not satisfy constraint '%s'",
-                     ZrCore_String_GetNativeString(argumentDisplayName),
-                     ZrCore_String_GetNativeString(resolvedConstraintName));
-            memset(&errorLocation, 0, sizeof(errorLocation));
-            ZrParser_Compiler_Error(cs, errorMessage, errorLocation);
-            free_inferred_type_array(cs->state, &argumentTypes);
-            ZrCore_Array_Free(cs->state, &argumentTypeNames);
-            return ZR_FALSE;
-        }
-    }
-
-    {
-        SZrTypePrototypeInfo closedPrototype;
-        SZrTypePrototypeInfo openPrototypeSnapshot;
-        SZrTypePrototypeInfo *registeredPrototype;
-        TZrSize registeredPrototypeIndex;
-        openPrototype = find_compiler_type_prototype_inference_exact(cs, baseName);
-        if (openPrototype == ZR_NULL) {
-            free_inferred_type_array(cs->state, &argumentTypes);
-            ZrCore_Array_Free(cs->state, &argumentTypeNames);
-            return ZR_FALSE;
-        }
-        memset(&closedPrototype, 0, sizeof(closedPrototype));
-        openPrototypeSnapshot = *openPrototype;
-        materializedTypeName = typeName;
-        if (openPrototype->name != ZR_NULL && !ZrCore_String_Equal(openPrototype->name, baseName)) {
-            SZrString *canonicalTypeName = build_generic_instance_name(cs->state, openPrototype->name, &argumentTypes);
-            if (canonicalTypeName != ZR_NULL) {
-                materializedTypeName = canonicalTypeName;
-            }
-        }
-        if (find_compiler_type_prototype_inference_exact(cs, materializedTypeName) != ZR_NULL) {
-            free_inferred_type_array(cs->state, &argumentTypes);
-            ZrCore_Array_Free(cs->state, &argumentTypeNames);
-            return ZR_TRUE;
-        }
-        closedPrototype.name = materializedTypeName;
-        closedPrototype.type = openPrototypeSnapshot.type;
-        closedPrototype.accessModifier = openPrototypeSnapshot.accessModifier;
-        closedPrototype.modifierFlags = openPrototypeSnapshot.modifierFlags & ~ZR_TYPE_MODIFIER_FLAG_OPEN_GENERIC;
-        closedPrototype.isImportedNative = openPrototypeSnapshot.isImportedNative;
-        closedPrototype.importModuleName = openPrototypeSnapshot.importModuleName;
-        closedPrototype.isNativeRuntime = openPrototypeSnapshot.isNativeRuntime;
-        closedPrototype.protocolMask = openPrototypeSnapshot.protocolMask;
-        closedPrototype.extendsTypeName = substitute_generic_type_name(cs->state,
-                                                                       openPrototypeSnapshot.extendsTypeName,
-                                                                       &openPrototypeSnapshot.genericParameters,
-                                                                       &argumentTypeNames);
-        closedPrototype.enumValueTypeName = substitute_generic_type_name(cs->state,
-                                                                         openPrototypeSnapshot.enumValueTypeName,
-                                                                         &openPrototypeSnapshot.genericParameters,
-                                                                         &argumentTypeNames);
-        closedPrototype.allowValueConstruction = openPrototypeSnapshot.allowValueConstruction;
-        closedPrototype.allowBoxedConstruction = openPrototypeSnapshot.allowBoxedConstruction;
-        closedPrototype.constructorSignature = openPrototypeSnapshot.constructorSignature;
-        closedPrototype.nextVirtualSlotIndex = openPrototypeSnapshot.nextVirtualSlotIndex;
-        closedPrototype.nextPropertyIdentity = openPrototypeSnapshot.nextPropertyIdentity;
-        closedPrototype.layoutByteSize = openPrototypeSnapshot.layoutByteSize;
-        closedPrototype.layoutByteAlign = openPrototypeSnapshot.layoutByteAlign;
-        ZrCore_Array_Init(cs->state, &closedPrototype.inherits, sizeof(SZrString *), openPrototypeSnapshot.inherits.length);
-        ZrCore_Array_Init(cs->state, &closedPrototype.implements, sizeof(SZrString *), openPrototypeSnapshot.implements.length);
-        ZrCore_Array_Init(cs->state, &closedPrototype.genericParameters, sizeof(SZrTypeGenericParameterInfo), 1);
-        ZrCore_Array_Init(cs->state, &closedPrototype.decorators, sizeof(SZrTypeDecoratorInfo), openPrototypeSnapshot.decorators.length);
-        ZrCore_Array_Init(cs->state, &closedPrototype.members, sizeof(SZrTypeMemberInfo), openPrototypeSnapshot.members.length);
-
-        if (cs->typeEnv != ZR_NULL) {
-            ZrParser_TypeEnvironment_RegisterType(cs->state, cs->typeEnv, typeName);
-        }
-        ZrCore_Array_Push(cs->state, &cs->typePrototypes, &closedPrototype);
-        registeredPrototypeIndex = cs->typePrototypes.length - 1;
-        registeredPrototype =
-                (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, registeredPrototypeIndex);
-        if (registeredPrototype == ZR_NULL) {
-            free_inferred_type_array(cs->state, &argumentTypes);
-            ZrCore_Array_Free(cs->state, &argumentTypeNames);
-            return ZR_FALSE;
-        }
-
-        for (TZrSize index = 0; index < openPrototypeSnapshot.inherits.length; index++) {
-            SZrString **inheritNamePtr = (SZrString **)ZrCore_Array_Get(&openPrototypeSnapshot.inherits, index);
-            SZrString *inheritName;
-            if (inheritNamePtr == ZR_NULL || *inheritNamePtr == ZR_NULL) {
-                continue;
-            }
-            inheritName = substitute_generic_type_name(cs->state,
-                                                       *inheritNamePtr,
-                                                       &openPrototypeSnapshot.genericParameters,
-                                                       &argumentTypeNames);
-            ZrCore_Array_Push(cs->state, &registeredPrototype->inherits, &inheritName);
-        }
-
-        for (TZrSize index = 0; index < openPrototypeSnapshot.implements.length; index++) {
-            SZrString **implementNamePtr = (SZrString **)ZrCore_Array_Get(&openPrototypeSnapshot.implements, index);
-            SZrString *implementName;
-            if (implementNamePtr == ZR_NULL || *implementNamePtr == ZR_NULL) {
-                continue;
-            }
-            implementName = substitute_generic_type_name(cs->state,
-                                                         *implementNamePtr,
-                                                         &openPrototypeSnapshot.genericParameters,
-                                                         &argumentTypeNames);
-            ZrCore_Array_Push(cs->state, &registeredPrototype->implements, &implementName);
-        }
-
-        for (TZrSize index = 0; index < openPrototypeSnapshot.decorators.length; index++) {
-            SZrTypeDecoratorInfo *sourceDecorator =
-                    (SZrTypeDecoratorInfo *)ZrCore_Array_Get(&openPrototypeSnapshot.decorators, index);
-            if (sourceDecorator == ZR_NULL) {
-                continue;
-            }
-            ZrCore_Array_Push(cs->state, &registeredPrototype->decorators, sourceDecorator);
-        }
-
-        for (TZrSize index = 0; index < openPrototypeSnapshot.members.length; index++) {
-            SZrTypeMemberInfo *sourceMember = (SZrTypeMemberInfo *)ZrCore_Array_Get(&openPrototypeSnapshot.members, index);
-            SZrTypeMemberInfo copiedMember;
-            memset(&copiedMember, 0, sizeof(copiedMember));
-            if (sourceMember == ZR_NULL) {
-                continue;
-            }
-
-            copiedMember = *sourceMember;
-            copiedMember.ownerTypeName = registeredPrototype->name;
-            copiedMember.fieldTypeName = substitute_generic_type_name(cs->state,
-                                                                      sourceMember->fieldTypeName,
-                                                                      &openPrototypeSnapshot.genericParameters,
-                                                                      &argumentTypeNames);
-            copiedMember.returnTypeName = substitute_generic_type_name(cs->state,
-                                                                        sourceMember->returnTypeName,
-                                                                        &openPrototypeSnapshot.genericParameters,
-                                                                        &argumentTypeNames);
-            copiedMember.hasStructuredReturnType = ZR_FALSE;
-            memset(&copiedMember.structuredReturnType, 0, sizeof(copiedMember.structuredReturnType));
-            if (sourceMember->hasStructuredReturnType &&
-                substitute_parameter_type(
-                        cs,
-                        &sourceMember->structuredReturnType,
-                        &openPrototypeSnapshot.genericParameters,
-                        &argumentTypeNames,
-                        &argumentTypes,
-                        &copiedMember.structuredReturnType)) {
-                copiedMember.hasStructuredReturnType = ZR_TRUE;
-                if (copiedMember.structuredReturnType.typeName != ZR_NULL) {
-                    copiedMember.returnTypeName = copiedMember.structuredReturnType.typeName;
-                }
-            }
-            ZrCore_Array_Construct(&copiedMember.parameterTypes);
-            ZrCore_Array_Construct(&copiedMember.parameterNames);
-            ZrCore_Array_Construct(&copiedMember.parameterHasDefaultValues);
-            ZrCore_Array_Construct(&copiedMember.parameterDefaultValues);
-            ZrCore_Array_Construct(&copiedMember.genericParameters);
-            ZrCore_Array_Construct(&copiedMember.parameterPassingModes);
-            ZrCore_Array_Construct(&copiedMember.decorators);
-            copiedMember.declarationNode = sourceMember->declarationNode;
-            if (sourceMember->parameterTypes.length > 0) {
-                ZrCore_Array_Init(cs->state,
-                                  &copiedMember.parameterTypes,
-                                  sizeof(SZrInferredType),
-                                  sourceMember->parameterTypes.length);
-                for (TZrSize paramIndex = 0; paramIndex < sourceMember->parameterTypes.length; paramIndex++) {
-                    SZrInferredType *sourceParameter =
-                            (SZrInferredType *)ZrCore_Array_Get(&sourceMember->parameterTypes, paramIndex);
-                    SZrInferredType copiedParameter;
-                    if (sourceParameter == ZR_NULL) {
-                        continue;
-                    }
-                    if (!substitute_parameter_type(cs,
-                                                   sourceParameter,
-                                                   &openPrototypeSnapshot.genericParameters,
-                                                   &argumentTypeNames,
-                                                   &argumentTypes,
-                                                   &copiedParameter)) {
-                        continue;
-                    }
-                    ZrCore_Array_Push(cs->state, &copiedMember.parameterTypes, &copiedParameter);
-                }
-            }
-            if (sourceMember->parameterNames.length > 0) {
-                ZrCore_Array_Init(cs->state,
-                                  &copiedMember.parameterNames,
-                                  sizeof(SZrString *),
-                                  sourceMember->parameterNames.length);
-                for (TZrSize paramIndex = 0; paramIndex < sourceMember->parameterNames.length; paramIndex++) {
-                    SZrString **sourceName =
-                            (SZrString **)ZrCore_Array_Get(&sourceMember->parameterNames, paramIndex);
-                    SZrString *copiedName = sourceName != ZR_NULL ? *sourceName : ZR_NULL;
-                    ZrCore_Array_Push(cs->state, &copiedMember.parameterNames, &copiedName);
-                }
-            }
-            if (sourceMember->parameterHasDefaultValues.length > 0) {
-                ZrCore_Array_Init(cs->state,
-                                  &copiedMember.parameterHasDefaultValues,
-                                  sizeof(TZrBool),
-                                  sourceMember->parameterHasDefaultValues.length);
-                for (TZrSize paramIndex = 0; paramIndex < sourceMember->parameterHasDefaultValues.length; paramIndex++) {
-                    TZrBool *sourceHasDefault =
-                            (TZrBool *)ZrCore_Array_Get(&sourceMember->parameterHasDefaultValues, paramIndex);
-                    TZrBool copiedHasDefault = sourceHasDefault != ZR_NULL ? *sourceHasDefault : ZR_FALSE;
-                    ZrCore_Array_Push(cs->state, &copiedMember.parameterHasDefaultValues, &copiedHasDefault);
-                }
-            }
-            if (sourceMember->parameterDefaultValues.length > 0) {
-                ZrCore_Array_Init(cs->state,
-                                  &copiedMember.parameterDefaultValues,
-                                  sizeof(SZrTypeValue),
-                                  sourceMember->parameterDefaultValues.length);
-                for (TZrSize paramIndex = 0; paramIndex < sourceMember->parameterDefaultValues.length; paramIndex++) {
-                    SZrTypeValue *sourceDefault =
-                            (SZrTypeValue *)ZrCore_Array_Get(&sourceMember->parameterDefaultValues, paramIndex);
-                    SZrTypeValue copiedDefault;
-                    ZrCore_Value_ResetAsNull(&copiedDefault);
-                    if (sourceDefault != ZR_NULL) {
-                        copiedDefault = *sourceDefault;
-                    }
-                    ZrCore_Array_Push(cs->state, &copiedMember.parameterDefaultValues, &copiedDefault);
-                }
-            }
-            type_inference_copy_generic_parameter_info_array(cs->state,
-                                                             &copiedMember.genericParameters,
-                                                             &sourceMember->genericParameters);
-            type_inference_copy_parameter_passing_mode_array(cs->state,
-                                                             &copiedMember.parameterPassingModes,
-                                                             &sourceMember->parameterPassingModes);
-            if (sourceMember->decorators.length > 0) {
-                ZrCore_Array_Init(cs->state,
-                                  &copiedMember.decorators,
-                                  sizeof(SZrTypeDecoratorInfo),
-                                  sourceMember->decorators.length);
-                for (TZrSize decoratorIndex = 0; decoratorIndex < sourceMember->decorators.length; decoratorIndex++) {
-                    SZrTypeDecoratorInfo *sourceDecorator =
-                            (SZrTypeDecoratorInfo *)ZrCore_Array_Get(&sourceMember->decorators, decoratorIndex);
-                    if (sourceDecorator == ZR_NULL) {
-                        continue;
-                    }
-                    ZrCore_Array_Push(cs->state, &copiedMember.decorators, sourceDecorator);
-                }
-            }
-            registeredPrototype =
-                    (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, registeredPrototypeIndex);
-            if (registeredPrototype == ZR_NULL) {
-                free_inferred_type_array(cs->state, &argumentTypes);
-                ZrCore_Array_Free(cs->state, &argumentTypeNames);
-                return ZR_FALSE;
-            }
-            ZrCore_Array_Push(cs->state, &registeredPrototype->members, &copiedMember);
-        }
-        registeredPrototype =
-                (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, registeredPrototypeIndex);
-        type_inference_publish_property_contracts(cs, registeredPrototype);
-        finalize_generic_instance_inline_layout(cs, registeredPrototype);
-    }
-
-    free_inferred_type_array(cs->state, &argumentTypes);
-    ZrCore_Array_Free(cs->state, &argumentTypeNames);
-    return ZR_TRUE;
-}
-
-TZrBool ensure_generic_instance_type_prototype(SZrCompilerState *cs, SZrString *typeName) {
-    return ensure_generic_instance_type_prototype_internal(cs, typeName, ZR_NULL);
-}
-
-TZrBool ensure_generic_instance_type_prototype_from_inferred(
-        SZrCompilerState *cs,
-        const SZrInferredType *type) {
-    if (type == ZR_NULL || type->typeName == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    return ensure_generic_instance_type_prototype_internal(cs, type->typeName, type);
-}
 
 static TZrBool infer_function_call_argument_types(SZrCompilerState *cs,
                                                 SZrAstNodeArray *args,
@@ -4169,9 +3037,10 @@ static TZrInt32 score_function_overload_candidate(SZrCompilerState *cs,
     }
 }
 
-TZrBool resolve_best_function_overload(SZrCompilerState *cs,
+TZrBool resolve_best_function_overload_with_context(SZrCompilerState *cs,
                                        SZrTypeEnvironment *env,
                                        SZrString *funcName,
+                                       SZrSyntaxContext syntaxContext,
                                        SZrFunctionCall *call,
                                        SZrFileRange location,
                                        SZrFunctionTypeInfo **resolvedFunction,
@@ -4198,7 +3067,8 @@ TZrBool resolve_best_function_overload(SZrCompilerState *cs,
     ZrParser_InferredType_Init(cs->state, &bestResolvedSignature.returnType, ZR_VALUE_TYPE_OBJECT);
     ZrCore_Array_Construct(&bestResolvedSignature.parameterTypes);
     ZrCore_Array_Construct(&bestResolvedSignature.parameterPassingModes);
-    if (!ZrParser_TypeEnvironment_LookupFunctions(cs->state, env, funcName, &candidates)) {
+    if (!ZrParser_TypeEnvironment_LookupFunctionsWithContext(
+                cs->state, env, funcName, syntaxContext, &candidates)) {
         return ZR_FALSE;
     }
 
@@ -4377,6 +3247,19 @@ TZrBool resolve_best_function_overload(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+TZrBool resolve_best_function_overload(
+        SZrCompilerState *cs,
+        SZrTypeEnvironment *env,
+        SZrString *funcName,
+        SZrFunctionCall *call,
+        SZrFileRange location,
+        SZrFunctionTypeInfo **resolvedFunction,
+        SZrResolvedCallSignature *resolvedSignature) {
+    return resolve_best_function_overload_with_context(
+            cs, env, funcName, ZrParser_SyntaxContext_Root(), call, location,
+            resolvedFunction, resolvedSignature);
+}
+
 TZrBool ZrParser_FunctionCallOverload_Resolve(SZrCompilerState *cs,
                                               SZrTypeEnvironment *env,
                                               SZrString *funcName,
@@ -4466,7 +3349,8 @@ SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *c
     return ZR_NULL;
 }
 
-static SZrTypePrototypeInfo *find_member_relation_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName) {
+SZrTypePrototypeInfo *type_inference_find_member_relation_prototype_root(
+        SZrCompilerState *cs, SZrString *typeName) {
     SZrTypePrototypeInfo *info;
 
     if (cs == ZR_NULL || typeName == ZR_NULL) {
@@ -4481,124 +3365,9 @@ static SZrTypePrototypeInfo *find_member_relation_type_prototype_inference(SZrCo
     return find_compiler_type_prototype_inference(cs, typeName);
 }
 
-static SZrTypeMemberInfo *find_compiler_type_member_recursive_inference(SZrCompilerState *cs,
-                                                                        SZrString *typeName,
-                                                                        SZrString *memberName,
-                                                                        TZrUInt32 depth) {
-    SZrTypePrototypeInfo *info;
-    SZrArray membersSnapshot;
-    SZrArray implementsSnapshot;
-    SZrArray inheritsSnapshot;
-
-    if (cs == ZR_NULL || typeName == ZR_NULL || memberName == ZR_NULL ||
-        depth > ZR_PARSER_RECURSIVE_MEMBER_LOOKUP_MAX_DEPTH) {
-        return ZR_NULL;
-    }
-
-    info = find_member_relation_type_prototype_inference(cs, typeName);
-    if (info == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    membersSnapshot = info->members;
-    implementsSnapshot = info->implements;
-    inheritsSnapshot = info->inherits;
-
-    for (TZrSize i = 0; i < membersSnapshot.length; i++) {
-        SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrCore_Array_Get(&membersSnapshot, i);
-        if (memberInfo != ZR_NULL &&
-            memberInfo->name != ZR_NULL &&
-            ZrCore_String_Equal(memberInfo->name, memberName)) {
-            return memberInfo;
-        }
-    }
-
-    for (TZrSize i = 0; i < implementsSnapshot.length; i++) {
-        SZrString **implementedTypeNamePtr = (SZrString **)ZrCore_Array_Get(&implementsSnapshot, i);
-        if (implementedTypeNamePtr == ZR_NULL || *implementedTypeNamePtr == ZR_NULL) {
-            continue;
-        }
-
-        {
-            SZrTypeMemberInfo *implementedMember;
-            if (ZrCore_String_Equal(*implementedTypeNamePtr, typeName)) {
-                continue;
-            }
-
-            implementedMember =
-                    find_compiler_type_member_recursive_inference(cs, *implementedTypeNamePtr, memberName, depth + 1);
-            if (implementedMember != ZR_NULL) {
-                return implementedMember;
-            }
-        }
-    }
-
-    for (TZrSize i = 0; i < inheritsSnapshot.length; i++) {
-        SZrString **inheritTypeNamePtr = (SZrString **)ZrCore_Array_Get(&inheritsSnapshot, i);
-        if (inheritTypeNamePtr == ZR_NULL || *inheritTypeNamePtr == ZR_NULL) {
-            continue;
-        }
-
-        {
-            SZrTypeMemberInfo *inheritedMember;
-            if (ZrCore_String_Equal(*inheritTypeNamePtr, typeName)) {
-                continue;
-            }
-
-            inheritedMember =
-                    find_compiler_type_member_recursive_inference(cs, *inheritTypeNamePtr, memberName, depth + 1);
-            if (inheritedMember != ZR_NULL) {
-                return inheritedMember;
-            }
-        }
-    }
-
-    return ZR_NULL;
-}
-
-SZrTypeMemberInfo *find_compiler_type_member_inference(SZrCompilerState *cs,
-                                                       SZrString *typeName,
-                                                       SZrString *memberName) {
-    SZrTypePrototypeInfo *info = find_compiler_type_prototype_inference(cs, typeName);
-    SZrTypeMemberInfo *memberInfo;
-    SZrString *accessorName;
-    SZrString *resolvedPrototypeName = ZR_NULL;
-    SZrString *lookupTypeName;
-
-    if (info == ZR_NULL || memberName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (type_prototype_pointer_is_currently_registered(cs, info) && info->name != ZR_NULL) {
-        resolvedPrototypeName = info->name;
-    }
-    lookupTypeName = resolvedPrototypeName != ZR_NULL ? resolvedPrototypeName : typeName;
-
-    memberInfo = find_compiler_type_member_recursive_inference(cs, lookupTypeName, memberName, 0);
-    if (memberInfo != ZR_NULL &&
-        memberInfo->accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_NONE) {
-        return memberInfo;
-    }
-
-    accessorName = type_inference_create_hidden_property_accessor_name(cs, memberName, ZR_FALSE);
-    if (accessorName != ZR_NULL) {
-        memberInfo = find_compiler_type_member_recursive_inference(cs, lookupTypeName, accessorName, 0);
-        if (memberInfo != ZR_NULL &&
-            memberInfo->accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_NONE) {
-            return memberInfo;
-        }
-    }
-
-    accessorName = type_inference_create_hidden_property_accessor_name(cs, memberName, ZR_TRUE);
-    if (accessorName != ZR_NULL) {
-        memberInfo = find_compiler_type_member_recursive_inference(cs, lookupTypeName, accessorName, 0);
-        if (memberInfo != ZR_NULL &&
-            memberInfo->accessorRole == ZR_PROPERTY_ACCESSOR_ROLE_NONE) {
-            return memberInfo;
-        }
-    }
-
-    return ZR_NULL;
+TZrBool type_inference_member_prototype_is_registered(
+        SZrCompilerState *cs, const SZrTypePrototypeInfo *prototype) {
+    return type_prototype_pointer_is_currently_registered(cs, prototype);
 }
 
 TZrBool type_name_is_module_prototype_inference(SZrCompilerState *cs, SZrString *typeName) {
@@ -4653,7 +3422,12 @@ ZR_PARSER_API TZrBool resolve_prototype_target_inference(SZrCompilerState *cs,
             cs->typeEnv != ZR_NULL && typeName != ZR_NULL) {
             ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
             identifierBoundAsVariable =
-                    ZrParser_TypeEnvironment_LookupVariable(cs->state, cs->typeEnv, typeName, &inferredType);
+                    ZrParser_TypeEnvironment_LookupVariableWithContext(
+                            cs->state,
+                            cs->typeEnv,
+                            typeName,
+                            targetNode->data.identifier.syntaxContext,
+                            &inferredType);
             ZrParser_InferredType_Free(cs->state, &inferredType);
         }
 
@@ -4668,7 +3442,7 @@ ZR_PARSER_API TZrBool resolve_prototype_target_inference(SZrCompilerState *cs,
         }
         typeName = inferredType.typeName;
         ensure_generic_instance_type_prototype_from_inferred(cs, &inferredType);
-        prototype = find_compiler_type_prototype_inference(cs, typeName);
+        prototype = type_inference_find_nominal_prototype(cs, &inferredType);
         ZrParser_InferredType_Free(cs->state, &inferredType);
     }
 
@@ -4847,7 +3621,7 @@ static TZrBool type_name_is_resource_declaration_inference(SZrCompilerState *cs,
 
     lookupTypeName = resolve_source_declaration_lookup_type_name_inference(cs, typeName);
     declarationNode = lookupTypeName != ZR_NULL
-                              ? find_type_declaration_inference(cs, lookupTypeName)
+                              ? find_type_declaration(cs, lookupTypeName)
                               : ZR_NULL;
     return (TZrBool)(declarationNode != ZR_NULL &&
                      declarationNode->type == ZR_AST_CLASS_DECLARATION &&

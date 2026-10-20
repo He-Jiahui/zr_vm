@@ -58,6 +58,7 @@ static void repl_reference_fact_range_for_member(SZrAstNode *memberNode, SZrFile
     /* computed member 的 reference fact 可能锚定在 '['，因此优先尝试 key 前一个位置。 */
     *outRange = property->location;
     if (outRange->start.offset > memberNode->location.start.offset) {
+        *outRange = ZrParser_FileRange_WithoutEvidence(*outRange);
         outRange->start.offset -= 1;
         if (outRange->start.column > 0) {
             outRange->start.column -= 1;

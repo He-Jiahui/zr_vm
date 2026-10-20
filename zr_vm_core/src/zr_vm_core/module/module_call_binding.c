@@ -119,9 +119,58 @@ static TZrBool imported_fail(SZrImportedBindingContext *context, SZrFunctionCall
     return ZR_FALSE;
 }
 
+/* META_CALL consumes an instance @call, proved by the serialized owning member. */
+static EZrCallBindingStatus imported_meta_member(const SZrFunction *provider,
+        TZrUInt32 prototypeIndex, TZrUInt32 constantIndex, SZrCompiledMemberInfo *selected) {
+    TZrUInt32 count;
+    TZrSize offset = sizeof(count);
+    TZrBool found = ZR_FALSE;
+    if (provider->prototypeData == ZR_NULL || provider->prototypeDataLength < sizeof(count))
+        return ZR_CALL_BINDING_INVALID_RELOCATION;
+    memcpy(&count, provider->prototypeData, sizeof(count));
+    if (count != provider->prototypeCount || prototypeIndex >= count)
+        return ZR_CALL_BINDING_INVALID_RELOCATION;
+    for (TZrUInt32 index = 0u; index <= prototypeIndex; ++index) {
+        SZrCompiledPrototypeInfo info;
+        TZrUInt64 prefix, bytes;
+        if (offset > provider->prototypeDataLength || provider->prototypeDataLength - offset < sizeof(info))
+            return ZR_CALL_BINDING_INVALID_RELOCATION;
+        memcpy(&info, provider->prototypeData + offset, sizeof(info));
+        prefix = sizeof(info) + ((TZrUInt64)info.inheritsCount + info.decoratorsCount) * sizeof(TZrUInt32);
+        bytes = prefix + (TZrUInt64)info.membersCount * sizeof(*selected);
+        if (bytes > provider->prototypeDataLength - offset)
+            return ZR_CALL_BINDING_INVALID_RELOCATION;
+        if (index == prototypeIndex) {
+            for (TZrUInt32 row = 0u; row < info.membersCount; ++row) {
+                SZrCompiledMemberInfo member;
+                memcpy(&member, provider->prototypeData + offset + (TZrSize)prefix +
+                        (TZrSize)row * sizeof(member), sizeof(member));
+                if (member.functionConstantIndex != constantIndex ||
+                    (member.memberType != ZR_AST_CONSTANT_CLASS_METHOD &&
+                     member.memberType != ZR_AST_CONSTANT_STRUCT_METHOD &&
+                     member.memberType != ZR_AST_CONSTANT_CLASS_META_FUNCTION &&
+                     member.memberType != ZR_AST_CONSTANT_STRUCT_META_FUNCTION)) continue;
+                if (found) return ZR_CALL_BINDING_AMBIGUOUS_TARGET;
+                *selected = member;
+                found = ZR_TRUE;
+            }
+            break;
+        }
+        offset += (TZrSize)bytes;
+    }
+    if (!found) return ZR_CALL_BINDING_TARGET_NOT_FOUND;
+    if ((selected->memberType != ZR_AST_CONSTANT_CLASS_META_FUNCTION &&
+         selected->memberType != ZR_AST_CONSTANT_STRUCT_META_FUNCTION) ||
+        selected->isMetaMethod != ZR_TRUE || selected->metaType != ZR_META_CALL ||
+        selected->isStatic != ZR_FALSE)
+        return ZR_CALL_BINDING_INVALID_RELOCATION;
+    return ZR_CALL_BINDING_OK;
+}
+
 /* 验证 provider 类型原型的布局和成员描述符，再缓存供运行时接收者检查的原型。 */
 static TZrBool imported_owner(SZrImportedBindingContext *context, SZrFunction *consumer,
-        SZrFunctionCallSiteCacheEntry *entry, SZrCallBindingCandidate *candidate) {
+        SZrFunctionCallSiteCacheEntry *entry, SZrCallBindingCandidate *candidate,
+        const SZrMetadataTokenRecord *definition) {
     const SZrMetadataTokenRecord *owner = ZR_NULL;
     SZrObjectPrototype *prototype;
     SZrFunctionCallSitePicSlot *guard = &entry->picSlots[0];
@@ -151,14 +200,46 @@ static TZrBool imported_owner(SZrImportedBindingContext *context, SZrFunction *c
     guard->cachedReceiverVersion = prototype->super.memberVersion;
     guard->cachedFunction = candidate->target.vm.function;
     guard->cachedDescriptorIndex = ZR_CALL_BINDING_SLOT_NONE;
-    if (candidate->contract.operation == ZR_CALL_BINDING_OPERATION_META) {
-        /* META_CALL sites bind @call, which is installed in the meta table
-         * rather than the ordinary member descriptor array. Keep the exact
-         * provider function check for that slot as well. */
-        const SZrMeta *meta = prototype->metaTable.metas[ZR_META_CALL];
-        if (meta == ZR_NULL || meta->metaType != ZR_META_CALL ||
-            meta->function != candidate->target.vm.function)
+    if (entry->binding.contract.operation == ZR_CALL_BINDING_OPERATION_META ||
+        candidate->contract.operation == ZR_CALL_BINDING_OPERATION_META) {
+        SZrCompiledMemberInfo member;
+        const SZrMeta *meta;
+        EZrCallBindingStatus status;
+        TZrUInt32 matches = 0u;
+        if (entry->binding.contract.operation != ZR_CALL_BINDING_OPERATION_META ||
+            candidate->contract.operation != ZR_CALL_BINDING_OPERATION_META ||
+            entry->binding.contract.bindingKind != ZR_CALL_BINDING_DIRECT ||
+            candidate->contract.bindingKind != ZR_CALL_BINDING_DIRECT ||
+            entry->binding.contract.dispatchSlot != ZR_CALL_BINDING_SLOT_NONE ||
+            candidate->contract.dispatchSlot != ZR_CALL_BINDING_SLOT_NONE ||
+            (entry->kind != ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL &&
+             entry->kind != ZR_FUNCTION_CALLSITE_CACHE_KIND_META_TAIL_CALL) ||
+            definition->reserved0 != ZR_METADATA_TOKEN_RECORD_CALLABLE_CONSTANT)
+            return imported_fail(context, entry, ZR_CALL_BINDING_INVALID_RELOCATION);
+        if (candidate->target.vm.function == ZR_NULL ||
+            candidate->target.vm.function->super.type != ZR_RAW_OBJECT_TYPE_FUNCTION ||
+            candidate->target.vm.function->super.isNative)
+            return imported_fail(context, entry, ZR_CALL_BINDING_TARGET_KIND_MISMATCH);
+        status = imported_meta_member(context->provider, owner->ownerIndex, definition->ownerIndex, &member);
+        if (status != ZR_CALL_BINDING_OK) return imported_fail(context, entry, status);
+        meta = prototype->metaTable.metas[member.metaType];
+        if (meta == ZR_NULL) return imported_fail(context, entry, ZR_CALL_BINDING_TARGET_NOT_FOUND);
+        if (meta->metaType != (EZrMetaType)member.metaType)
+            return imported_fail(context, entry, ZR_CALL_BINDING_INVALID_RELOCATION);
+        if (meta->function == ZR_NULL || meta->function->super.type != ZR_RAW_OBJECT_TYPE_FUNCTION ||
+            meta->function->super.isNative)
+            return imported_fail(context, entry, ZR_CALL_BINDING_TARGET_KIND_MISMATCH);
+        if (meta->function != candidate->target.vm.function)
             return imported_fail(context, entry, ZR_CALL_BINDING_TARGET_NOT_FOUND);
+        for (TZrUInt32 slot = 0u; slot < ZR_META_ENUM_MAX; ++slot) {
+            const SZrMeta *item = prototype->metaTable.metas[slot];
+            if (item == ZR_NULL || item->function != candidate->target.vm.function) continue;
+            if (item->metaType != (EZrMetaType)slot)
+                return imported_fail(context, entry, ZR_CALL_BINDING_INVALID_RELOCATION);
+            if (++matches > 1u)
+                return imported_fail(context, entry, ZR_CALL_BINDING_AMBIGUOUS_TARGET);
+        }
+        guard->cachedIsStatic = (TZrBool)member.isStatic;
     } else {
         for (TZrUInt32 index = 0u; index < prototype->memberDescriptorCount; ++index) {
             const SZrMemberDescriptor *descriptor = &prototype->memberDescriptors[index];
@@ -282,7 +363,7 @@ static TZrBool link_imported_function(SZrFunction *consumer, void *data) {
         candidate.target.targetKind = ZR_CALL_BINDING_TARGET_VM;
         candidate.target.callableObject = callable->value.object;
         candidate.target.targetGeneration = candidate.target.vm.function->callBindingGeneration;
-        if (!imported_owner(context, consumer, entry, &candidate)) return ZR_FALSE;
+        if (!imported_owner(context, consumer, entry, &candidate, definition)) return ZR_FALSE;
         if (context->module->hasMetadataRuntime &&
             context->module->metadataRuntime.codeRegistration != ZR_NULL) {
             if (!imported_aot_target(context, entry, &candidate)) return ZR_FALSE;

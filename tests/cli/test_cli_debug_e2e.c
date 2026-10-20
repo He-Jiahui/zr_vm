@@ -50,6 +50,8 @@ typedef struct ZrCliE2eProcess {
     int hasExited;
 } ZrCliE2eProcess;
 
+static char g_cliDebugAuthToken[128];
+
 static int cli_fail(const char *testName, const char *format, ...);
 static void cli_normalize_separators(char *path);
 static int cli_paths_equal(const char *left, const char *right);
@@ -320,7 +322,10 @@ static int cli_process_wait_for_substring(ZrCliE2eProcess *process, const char *
         if (!cli_process_update_exit_status(process) || !cli_process_read_available(process)) {
             return 0;
         }
-        if (strstr(cli_process_output(process), needle) != NULL) {
+        const char *match = strstr(cli_process_output(process), needle);
+        if (match != NULL &&
+            (strcmp(needle, "debug_endpoint=") != 0 ||
+             strpbrk(match + strlen(needle), "\r\n") != NULL)) {
             return 1;
         }
         if (process->hasExited) {
@@ -440,13 +445,25 @@ static int cli_extract_prefixed_line_value(const char *text,
         return 0;
     }
     valueStart += strlen(prefix);
+    if (strcmp(prefix, "debug_endpoint=") == 0) {
+        const char *token = strstr(valueStart, " debug_token=");
+        g_cliDebugAuthToken[0] = '\0';
+        if (token != NULL) {
+            token += strlen(" debug_token=");
+            size_t length = strcspn(token, " \t\r\n");
+            if (length < sizeof(g_cliDebugAuthToken)) {
+                memcpy(g_cliDebugAuthToken, token, length);
+                g_cliDebugAuthToken[length] = '\0';
+            }
+        }
+    }
     valueEnd = valueStart;
-    while (*valueEnd != '\0' && *valueEnd != '\n' && *valueEnd != '\r') {
+    while (*valueEnd != '\0' && *valueEnd != '\n' && *valueEnd != '\r' && *valueEnd != ' ') {
         valueEnd++;
     }
 
     valueLength = (size_t)(valueEnd - valueStart);
-    if (valueLength == 0 || valueLength >= bufferSize) {
+    if (*valueEnd == '\0' || valueLength == 0 || valueLength >= bufferSize) {
         return 0;
     }
 
@@ -557,6 +574,10 @@ static int cli_debug_send_request(SZrNetworkStream *stream,
     cJSON_AddStringToObject(request, "jsonrpc", "2.0");
     cJSON_AddNumberToObject(request, "id", id);
     cJSON_AddStringToObject(request, "method", method);
+    if (strcmp(method, "initialize") == 0 && g_cliDebugAuthToken[0] != '\0') {
+        if (params == NULL) params = cJSON_CreateObject();
+        cJSON_AddStringToObject(params, "authToken", g_cliDebugAuthToken);
+    }
     cJSON_AddItemToObject(request, "params", params != NULL ? params : cJSON_CreateObject());
 
     text = cJSON_PrintUnformatted(request);

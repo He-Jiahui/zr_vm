@@ -11,6 +11,7 @@
 #include "function/function_call_spread_internal.h"
 #include "function/function_precall_internal.h"
 #include "function/function_bytecode_internal.h"
+#include "call/call_binding_inline_frame.h"
 #include "object/object_internal.h"
 #include "object/object_super_array_internal.h"
 #include "gc/gc_temporary_roots.h"
@@ -1208,6 +1209,7 @@ static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_frame_layout_generic_sing
     SZrFunctionStackAnchor callWindowAnchor;
     SZrFunctionStackAnchor frameBaseAnchor;
     SZrCallInfo *nextCallInfo;
+    SZrFunction *resolvedFunction;
 
     if (outCallWindow != ZR_NULL) {
         *outCallWindow = ZR_NULL;
@@ -1227,7 +1229,20 @@ static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_frame_layout_generic_sing
     state->stackTop.valuePointer = callWindow + parametersCount + 1u;
     ZrCore_Function_StackAnchorInit(state, callWindow, &callWindowAnchor);
     ZrCore_Function_StackAnchorInit(state, *ioFrameBase, &frameBaseAnchor);
-    nextCallInfo = ZrCore_Function_PreCall(state, callWindow, 1u, effectiveReturnDestination);
+    resolvedFunction = execution_try_resolve_vm_metadata_function_fast(
+            state, &callWindow->value, ZR_NULL);
+    if (resolvedFunction != ZR_NULL) {
+        /* Inline arguments can have a null dense mirror. Preserve their
+         * caller coordinates just as the known-VM call path does. */
+        nextCallInfo = execution_pre_call_prepared_resolved_vm_with_argument_source_fast(
+                state, callWindow, resolvedFunction, parametersCount, 1u,
+                effectiveReturnDestination, *ioFrameBase, functionSlot + 1u);
+        if (nextCallInfo == ZR_NULL) {
+            ZrCore_Debug_RunError(state, "FUNCTION_CALL: failed to bind VM arguments");
+        }
+    } else {
+        nextCallInfo = ZrCore_Function_PreCall(state, callWindow, 1u, effectiveReturnDestination);
+    }
     callWindow = ZrCore_Function_StackAnchorRestore(state, &callWindowAnchor);
     *ioFrameBase = ZrCore_Function_StackAnchorRestore(state, &frameBaseAnchor);
     execution_release_frame_layout_call_argument_owners(
@@ -1472,6 +1487,7 @@ static ZR_FORCE_INLINE TZrBool execution_try_resolve_known_vm_member_exact_singl
 
 static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_known_vm_member_fast(
         SZrState *state,
+        SZrCallInfo *callerCallInfo,
         const TZrInstruction *programCounter,
         SZrFunction *currentFunction,
         TZrUInt16 cacheIndex,
@@ -1495,11 +1511,20 @@ static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_known_vm_member_fast(
     callableValue = ZrCore_Stack_GetValueNoProfile(stackPointer);
     receiverValue = ZrCore_Stack_GetValueNoProfile(stackPointer + 1);
     if (cacheEntry != ZR_NULL && cacheEntry->binding.contract.bindingKind != ZR_CALL_BINDING_NONE) {
-        if (!ZrCore_CallBinding_PrepareMember(state, currentFunction, cacheIndex, receiverValue,
-                                             callableValue, &state->lastCallBindingError)) {
+        TZrBool prepared;
+        if (execution_frame_slot_is_borrowed_receiver_argument(currentFunction, argumentSourceStartSlot)) {
+            prepared = zr_call_binding_prepare_inline_frame_member(
+                    state, callerCallInfo, cacheIndex, argumentSourceStartSlot,
+                    &stackPointer, &argumentSourceFrameBase, &returnDestination, &state->lastCallBindingError);
+            callableValue = ZrCore_Stack_GetValueNoProfile(stackPointer);
+        } else {
+            prepared = ZrCore_CallBinding_PrepareMember(state, currentFunction, cacheIndex, receiverValue,
+                    callableValue, &state->lastCallBindingError);
+        }
+        if (!prepared) {
             ZrCore_Debug_RunError(state, "CallBinding link error: %s (token=0x%08x, instruction=%u)",
                     ZrCore_CallBinding_StatusName(state->lastCallBindingError.status),
-                    state->lastCallBindingError.targetMetadataToken, cacheEntry->instructionIndex);
+                    state->lastCallBindingError.targetMetadataToken, state->lastCallBindingError.instructionIndex);
         }
         resolvedFunction = ZR_CAST(SZrFunction *, callableValue->value.object);
         return execution_pre_call_prepared_resolved_vm_with_argument_source_fast(state,
@@ -3597,6 +3622,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         state->stackTop.valuePointer = callWindow__ + parametersCount__ + 1;                                          \
         argumentSourceStartSlot__ = (TZrUInt32)(resultSlot__ + 1u);                                                    \
         nextCallInfo__ = execution_pre_call_known_vm_member_fast(state,                                                \
+                                                                 callInfo,                                            \
                                                                  programCounter,                                      \
                                                                  currentFunction,                                     \
                                                                  cacheIndex__,                                        \
@@ -3646,6 +3672,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         state->stackTop.valuePointer = callWindow__ + 3u;                                                             \
         argumentSourceStartSlot__ = (TZrUInt32)(resultSlot__ + 1u);                                                    \
         nextCallInfo__ = execution_pre_call_known_vm_member_fast(state,                                                \
+                                                                 callInfo,                                            \
                                                                  programCounter,                                      \
                                                                  currentFunction,                                     \
                                                                  cacheIndex__,                                        \
@@ -10015,8 +10042,20 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 execution_clear_registered_owner_mirror(state, sourceBase, opA);
                 execution_clear_registered_owner_mirror(state, destinationBase, destination);
+                SAVE_STATE(state, callInfo);
                 ZrCore_Ownership_ReleaseValue(state, opA);
+                /* A destructor can grow the stack. No operand pointer from
+                 * before the release may be used after that call. */
+                UPDATE_BASE(callInfo);
+                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG
+                                      ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 execution_prepare_destination_for_direct_store_no_profile(state, destination);
+                UPDATE_BASE(callInfo);
+                sourceBase = BASE(A1(instruction));
+                destinationBase = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG
+                                          ? ZR_NULL : BASE(E(instruction));
+                destination = destinationBase == ZR_NULL ? &ret : FRAME_VALUE_SLOT(E(instruction));
+                opA = FRAME_VALUE_SLOT(A1(instruction));
                 ZrCore_Value_ResetAsNull(destination);
                 execution_refresh_registered_owner_mirror(state, sourceBase, opA);
                 execution_refresh_registered_owner_mirror(state, destinationBase, destination);

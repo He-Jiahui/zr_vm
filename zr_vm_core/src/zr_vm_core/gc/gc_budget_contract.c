@@ -15,7 +15,8 @@ enum {
     ZR_GC_BUDGET_FIELD_BYTES = 8u,
     ZR_GC_BUDGET_FIELD_OBJECTS = 9u,
     ZR_GC_BUDGET_FIELD_COMPACT = 10u,
-    ZR_GC_BUDGET_FIELD_OVERFLOW = 11u
+    ZR_GC_BUDGET_FIELD_OVERFLOW = 11u,
+    ZR_GC_BUDGET_FIELD_RESERVED = 12u
 };
 
 /* 诊断输出可省略，使同一契约可用于仅需布尔结果的宿主入口。 */
@@ -100,15 +101,19 @@ TZrBool ZrCore_GcBudget_Validate(
                                  budget->schemaVersion);
         return ZR_FALSE;
     }
-    if ((budget->flags & ~ZR_GC_BUDGET_FLAG_KNOWN_MASK) != 0u ||
-        budget->reserved != 0u) {
-        /* BUG: 仅 reserved 非零时仍报告 FLAGS，且 actual=合法的 flags；
-         * Init 后设置 reserved=1 再 Validate 会给出错误的失败字段和值。 */
+    if ((budget->flags & ~ZR_GC_BUDGET_FLAG_KNOWN_MASK) != 0u) {
         gc_budget_set_diagnostic(diagnostic,
                                  ZR_GC_BUDGET_DIAGNOSTIC_UNKNOWN_FLAGS,
                                  ZR_GC_BUDGET_FIELD_FLAGS,
                                  ZR_GC_BUDGET_FLAG_KNOWN_MASK,
                                  budget->flags);
+        return ZR_FALSE;
+    }
+    if (budget->reserved != 0u) {
+        gc_budget_set_diagnostic(diagnostic,
+                                 ZR_GC_BUDGET_DIAGNOSTIC_INVALID_BUDGET,
+                                 ZR_GC_BUDGET_FIELD_RESERVED,
+                                 0u, budget->reserved);
         return ZR_FALSE;
     }
     if (budget->maxElapsedUs == 0u && budget->maxWorkUnits == 0u &&
@@ -165,42 +170,34 @@ TZrBool ZrCore_GcBudget_EvaluateStep(
     TZrUInt64 nextCursor;
 
     ZrCore_GcBudget_DiagnosticClear(diagnostic);
-    /* BUG: 非空 result 遇到无效 budget 时在清零之前返回；
-     * GcMajor_Step 的局部 result 未初始化却在失败分支复制给宿主输出。 */
-    if (result == ZR_NULL ||
-        !ZrCore_GcBudget_Validate(budget, diagnostic)) {
-        if (result == ZR_NULL && diagnostic != ZR_NULL) {
-            gc_budget_set_diagnostic(diagnostic,
-                                     ZR_GC_BUDGET_DIAGNOSTIC_INVALID_ARGUMENT,
-                                     0u, 1u, 0u);
-        }
+    if (result == ZR_NULL) {
+        gc_budget_set_diagnostic(diagnostic,
+                                 ZR_GC_BUDGET_DIAGNOSTIC_INVALID_ARGUMENT,
+                                 0u, 1u, 0u);
         return ZR_FALSE;
     }
+    /* A rejected preflight must be safe for callers to copy or inspect. */
     memset(result, 0, sizeof(*result));
     result->status = ZR_GC_BUDGET_STEP_REJECTED;
-    result->phase = phase;
+    result->phase = ZR_GC_BUDGET_PHASE_IDLE;
     result->pauseReason = ZR_GC_BUDGET_PAUSE_NONE;
     result->nextCursor = cursor;
-    result->elapsedUs = elapsedUs;
-    result->bytesDone = bytes;
-    result->objectsDone = objects;
-    result->debtBytes = debtBytes;
-    result->maxAtomicPauseUs = atomicPauseUs;
-    result->consistentBoundary = ZR_TRUE;
-
-    if (!gc_budget_phase_valid(phase) || workUnits == 0u) {
-        /* BUG: 有符号枚举实现下的负数 phase 被归类为 WORK 错误；即使
-         * phase=IDLE，actual 也写成 workUnits，不能准确定位拒绝原因。 */
+    if (!ZrCore_GcBudget_Validate(budget, diagnostic)) {
+        return ZR_FALSE;
+    }
+    if (!gc_budget_phase_valid(phase)) {
         gc_budget_set_diagnostic(diagnostic,
-                                 phase == ZR_GC_BUDGET_PHASE_IDLE ||
-                                         phase >= ZR_GC_BUDGET_PHASE_COUNT
-                                     ? ZR_GC_BUDGET_DIAGNOSTIC_INVALID_PHASE
-                                     : ZR_GC_BUDGET_DIAGNOSTIC_INVALID_BUDGET,
-                                 phase == ZR_GC_BUDGET_PHASE_IDLE ||
-                                         phase >= ZR_GC_BUDGET_PHASE_COUNT
-                                     ? ZR_GC_BUDGET_FIELD_PHASE
-                                     : ZR_GC_BUDGET_FIELD_WORK,
-                                 1u, workUnits);
+                                 ZR_GC_BUDGET_DIAGNOSTIC_INVALID_PHASE,
+                                 ZR_GC_BUDGET_FIELD_PHASE,
+                                 ZR_GC_BUDGET_PHASE_INITIAL_SNAPSHOT,
+                                 (TZrUInt64)phase);
+        return ZR_FALSE;
+    }
+    if (workUnits == 0u) {
+        gc_budget_set_diagnostic(diagnostic,
+                                 ZR_GC_BUDGET_DIAGNOSTIC_INVALID_BUDGET,
+                                 ZR_GC_BUDGET_FIELD_WORK,
+                                 1u, 0u);
         return ZR_FALSE;
     }
     if (!gc_budget_add_u64(cursor, workUnits, &nextCursor)) {
@@ -210,6 +207,14 @@ TZrBool ZrCore_GcBudget_EvaluateStep(
                                  UINT64_MAX, cursor);
         return ZR_FALSE;
     }
+
+    result->phase = phase;
+    result->elapsedUs = elapsedUs;
+    result->bytesDone = bytes;
+    result->objectsDone = objects;
+    result->debtBytes = debtBytes;
+    result->maxAtomicPauseUs = atomicPauseUs;
+    result->consistentBoundary = ZR_TRUE;
 
     /* 压缩不能在未获许可或超出搬迁字节预算时被当作普通切片执行。 */
     if (phase == ZR_GC_BUDGET_PHASE_COMPACT &&

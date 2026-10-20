@@ -34,7 +34,7 @@ static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstruct
     return ZR_FALSE;
 }
 
-// 把普通 SemIR 与 deopt 备份路径一并纳入搜索，确保动态迭代契约在回退后仍可观察。
+// 仅扫描当前函数的 SemIR 表，并按需要求 deoptId 非零；不搜索子函数或独立 deopt 备份。
 static TZrBool semir_contains_opcode_with_deopt(const SZrFunction *function,
                                                 EZrSemIrOpcode opcode,
                                                 TZrBool requireDeopt) {
@@ -247,3 +247,190 @@ int main(void) {
     RUN_TEST(test_dynamic_foreach_aot_backends_emit_iterator_runtime_contracts);
     return UNITY_END();
 }
+
+/**
+ * @unit AOTPIPE-001
+ * @typedef SZrDynamicIterationTimer
+ *
+ * ## Summary
+ * 保存动态迭代用例的两次 clock() 读数，用于打印性能诊断。
+ *
+ * ## Fields
+ * - `clock_t startTime;`
+ * - `clock_t endTime;`
+ *
+ * ## Value model
+ * startTime/endTime 是用例局部 clock_t；不传入编译器或 VM。
+ *
+ * ## Invariants
+ * 只在同一用例普通返回路径中计算时间差；时间值不参与正确性断言。
+ *
+ * ## Constraints and lifecycle
+ * 本文件的局部测试记录，不形成公共 ABI 或跨线程共享协议。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:15
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:131
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:185
+ */
+
+/**
+ * @unit AOTPIPE-002
+ * @fn TZrBool function_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode)
+ *
+ * ## Summary
+ * 检查当前函数的 ExecBC 表是否含指定 opcode，供本文件断言使用。
+ *
+ * ## Parameters
+ * @param[in] function 借用待检查的函数及其数组；为空时按本函数的返回规则处理。
+ * @param[in] opcode 需要构造或查找的 opcode；本 helper 不验证其全部语义。
+ *
+ * ## Returns
+ * @return 找到返回 ZR_TRUE；函数或指令表为空、或未找到时返回 ZR_FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 只读当前 instructionList，不递归子函数，也不验证操作数或执行行为。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:21
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:150
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:151
+ */
+
+/**
+ * @unit AOTPIPE-003
+ * @fn TZrBool semir_contains_opcode_with_deopt(const SZrFunction *function, EZrSemIrOpcode opcode, TZrBool requireDeopt)
+ *
+ * ## Summary
+ * 在当前函数的 SemIR 表中查找 opcode，并可附加 deoptId 非零条件。
+ *
+ * ## Parameters
+ * @param[in] function 借用待检查的函数及其数组；为空时按本函数的返回规则处理。
+ * @param[in] opcode 需要构造或查找的 opcode；本 helper 不验证其全部语义。
+ * @param[in] requireDeopt 为真时还要求匹配 SemIR 指令的 deoptId 非零。
+ *
+ * ## Returns
+ * @return 匹配 opcode 且满足 requireDeopt 条件返回 ZR_TRUE；空表或无匹配返回 ZR_FALSE。
+ *
+ * ## Constraints and lifecycle
+ * 不读取独立 deopt 备份，也不递归子函数；requireDeopt 为真只检查同一条 SemIR 指令的 deoptId。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:38
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:156
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:157
+ */
+
+/**
+ * @unit AOTPIPE-004
+ * @fn char *read_text_file_owned(const TZrChar *path)
+ *
+ * ## Summary
+ * 把生成工件按字节读入独立的 NUL 结尾缓冲，供文本断言使用。
+ *
+ * ## Parameters
+ * @param[in] path 待只读打开的 NUL 结尾路径；为空返回 NULL。
+ *
+ * ## Returns
+ * @return 成功返回 malloc 缓冲，调用方负责 free；打开、定位、分配或短读失败返回 NULL。
+ *
+ * ## Constraints and lifecycle
+ * 失败分支关闭已打开的 FILE，并释放本函数已分配的缓冲；不删除源文件，不把工件文本当作可执行验证。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:61
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:160
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:209
+ */
+
+/**
+ * @unit AOTPIPE-005
+ * @fn SZrFunction *compile_dynamic_foreach_fixture(SZrState *state)
+ *
+ * ## Summary
+ * 编译 object 返回值参与 foreach 的固定源码，供 ExecBC、SemIR 和文本后端测试共享。
+ *
+ * ## Parameters
+ * @param[in,out] state 本用例的 VM 状态；分配、编译、包装或执行期间须保持有效，不跨线程共享。
+ *
+ * ## Returns
+ * @return state/sourceName 无效或编译普通失败返回 NULL；成功返回该 VM 中的编译函数。
+ *
+ * ## Constraints and lifecycle
+ * makeValues 返回数组但签名为 object；测试用显式 int 转换求和。调用方负责函数及 state 收尾，不改变源码字符串。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:104
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:148
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:203
+ */
+
+/**
+ * @unit AOTPIPE-006
+ * @fn void test_dynamic_foreach_emits_semir_dynamic_iterator_contracts(void)
+ *
+ * ## Summary
+ * 核对动态迭代的 ExecBC 融合、SemIR deopt 标记与 .zri 文本，再解释执行求和得到 6。
+ *
+ * ## Constraints and lifecycle
+ * 唯一 .zri 相对 cwd；正常路径 free 文本、remove 工件、释放函数并销毁 VM。clock 输出仅诊断。BUG: AOTPIPE-CLEANUP-01：工件 fopen 失败后 Unity longjmp 绕过局部 VM 收尾，空 tearDown 不接管。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:130
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:246
+ * - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c:1391
+ * - tests/third_party/zr_unity/Unity/src/unity_internals.h:891
+ * - tests/harness/runtime_support.c:403
+ */
+
+/**
+ * @unit AOTPIPE-007
+ * @fn void test_dynamic_foreach_aot_backends_emit_iterator_runtime_contracts(void)
+ *
+ * ## Summary
+ * 对同一动态 foreach 编译输入生成默认 C/LLVM 文本，核对迭代运行时符号。
+ *
+ * ## Constraints and lifecycle
+ * 使用默认 writer，不启用本文件以外的严格 lowering 选项；检查为 C 调用片段与 LLVM 声明文本，不编译或运行生成物。正常路径释放两缓冲并删除两个相对工件。TODO: AOTPIPE-AOT-EXEC-01：生成物的本机可执行语义待相关现有 smoke 入口补证。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:184
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:247
+ */
+
+/**
+ * @unit AOTPIPE-010
+ * @fn int main(void)
+ *
+ * ## Summary
+ * 通过 Unity 按固定顺序运行两个动态迭代测试。
+ *
+ * ## Returns
+ * @return 返回 UNITY_END() 的测试失败计数；不能将进程启动或未到达的断言视为通过。
+ *
+ * ## Constraints and lifecycle
+ * 无 argv selector；RUN_TEST 绑定本翻译单元静态函数，setUp/tearDown 为空。两个用例共享 cwd 工件名，需串行独占工作目录。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:244
+ */
+
+/**
+ * @unit AOTPIPE-L01
+ * @brief 内嵌 Zr fixture::makeValues；定义位于本文件字符串，未另建 C 实体。
+ *
+ * ## Summary
+ * 返回固定数组但对调用方声明 object，迫使 foreach 走动态迭代合同。
+ *
+ * ## Returns
+ * @return 返回包含 1、2、3 的数组对象，静态返回注记为 object。
+ *
+ * ## Constraints and lifecycle
+ * 源码字符串由 compile_dynamic_foreach_fixture 编译；首个 Unity 用例在 ExecuteExpectInt64 路径实际调用，双后端用例仅生成文本。
+ *
+ * ## References
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:105
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:106
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:169
+ * - zr_vm_aot/tests/parser/test_dynamic_iteration_pipeline.c:170
+ */

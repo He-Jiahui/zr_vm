@@ -2,6 +2,7 @@
 
 #include "execution_internal.h"
 #include "execution_inline_frame_copy_fast.h"
+#include "execution_union_storage.h"
 
 #include "zr_vm_common/zr_ast_constants.h"
 #include "zr_vm_core/constant_reference.h"
@@ -537,14 +538,6 @@ static TZrBool execution_inline_frame_store_nested_object_field(SZrState *state,
                                                           fieldLayout->byteSize,
                                                           value);
 }
-
-static TZrBool execution_inline_frame_materialize_union_carrier_to_inline_storage(
-        SZrState *state,
-        const SZrFunction *function,
-        TZrUInt32 typeLayoutId,
-        TZrPtr destinationAddress,
-        TZrUInt32 destinationByteSize,
-        SZrObject *carrier);
 
 static TZrBool execution_inline_frame_store_field_or_nested_object(
         SZrState *state,
@@ -1092,7 +1085,7 @@ static void execution_inline_frame_consume_union_carrier_ownership_payload(SZrSt
     ZrCore_Ownership_ReleaseValue(state, (SZrTypeValue *)payloadValue);
 }
 
-static TZrBool execution_inline_frame_materialize_union_carrier_to_inline_storage(
+TZrBool execution_inline_frame_materialize_union_carrier_to_inline_storage(
         SZrState *state,
         const SZrFunction *function,
         TZrUInt32 typeLayoutId,
@@ -1358,6 +1351,91 @@ static TZrBool execution_inline_frame_load_union_payload_member_to_slot(
 
     fieldAddress = (const TZrByte *)receiverPlace->address + fieldLayout.byteOffset;
     return execution_inline_frame_load_field(state, function, &fieldLayout, fieldAddress, result);
+}
+
+static TZrBool execution_inline_frame_set_carrier_member(
+        SZrState *state, SZrObject *carrier, const TZrChar *name,
+        const SZrTypeValue *value) {
+    SZrString *memberName = ZrCore_String_CreateFromNative(state, name);
+    SZrTypeValue key;
+    if (memberName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+    key.type = ZR_VALUE_TYPE_STRING;
+    ZrCore_Object_SetValue(state, carrier, &key, value);
+    return state->threadStatus == ZR_THREAD_STATUS_FINE;
+}
+
+TZrBool execution_inline_frame_materialize_union_storage_to_carrier(
+        SZrState *state, const SZrFunction *function, TZrUInt32 typeLayoutId,
+        const void *sourceAddress, TZrUInt32 sourceByteSize, SZrTypeValue *outValue) {
+    const SZrFunction *entryFunction = execution_inline_frame_entry_function(function);
+    SZrExecutionInlineFramePrototypeRecord record;
+    const SZrCompiledMemberInfo *variantMember;
+    SZrObject *carrier;
+    SZrString *typeName;
+    SZrString *variantName;
+    SZrTypeValue memberValue;
+    SZrStackFramePlace sourcePlace;
+    TZrBool ignored = ZR_FALSE;
+    TZrBool success = ZR_FALSE;
+    TZrUInt32 tagSize;
+
+    if (state == ZR_NULL || sourceAddress == ZR_NULL || outValue == ZR_NULL ||
+        !execution_inline_frame_find_prototype_record(entryFunction, typeLayoutId, &record) ||
+        record.prototype == ZR_NULL || record.members == ZR_NULL ||
+        record.prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_UNION ||
+        record.prototype->layoutByteSize > sourceByteSize) {
+        return ZR_FALSE;
+    }
+    tagSize = execution_inline_frame_select_union_tag_size(record.prototype->membersCount);
+    if (!execution_inline_frame_find_union_variant_by_tag(
+                &record, (const TZrByte *)sourceAddress, tagSize, &variantMember)) {
+        return ZR_FALSE;
+    }
+    typeName = execution_inline_frame_function_string_constant(entryFunction, record.prototype->nameStringIndex);
+    variantName = execution_inline_frame_function_string_constant(entryFunction, variantMember->nameStringIndex);
+    carrier = ZrCore_Object_New(state, ZR_NULL);
+    if (typeName == ZR_NULL || variantName == ZR_NULL || carrier == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Object_Init(state, carrier);
+    if (!ZrCore_GarbageCollector_IgnoreObjectIfNeededFast(
+                state->global, state, ZR_CAST_RAW_OBJECT_AS_SUPER(carrier), &ignored)) {
+        return ZR_FALSE;
+    }
+    ZrCore_Value_InitAsRawObject(state, &memberValue, ZR_CAST_RAW_OBJECT_AS_SUPER(typeName));
+    memberValue.type = ZR_VALUE_TYPE_STRING;
+    if (!execution_inline_frame_set_carrier_member(state, carrier, "__zr_unionType", &memberValue)) {
+        goto cleanup;
+    }
+    ZrCore_Value_InitAsRawObject(state, &memberValue, ZR_CAST_RAW_OBJECT_AS_SUPER(variantName));
+    memberValue.type = ZR_VALUE_TYPE_STRING;
+    if (!execution_inline_frame_set_carrier_member(state, carrier, "__zr_unionVariant", &memberValue)) {
+        goto cleanup;
+    }
+    memset(&sourcePlace, 0, sizeof(sourcePlace));
+    sourcePlace.address = (TZrPtr)sourceAddress;
+    sourcePlace.byteSize = sourceByteSize;
+    for (TZrUInt32 index = 0u; index < variantMember->parameterCount; ++index) {
+        TZrChar payloadName[64];
+        ZrCore_Value_ResetAsNull(&memberValue);
+        if (snprintf(payloadName, sizeof(payloadName), "__zr_unionPayload%u", (unsigned)index) <= 0 ||
+            !execution_inline_frame_load_union_payload_member_to_slot(
+                    state, function, entryFunction, variantMember, &sourcePlace, index, &memberValue) ||
+            !execution_inline_frame_set_carrier_member(state, carrier, payloadName, &memberValue)) {
+            goto cleanup;
+        }
+    }
+    ZrCore_Value_InitAsRawObject(state, outValue, ZR_CAST_RAW_OBJECT_AS_SUPER(carrier));
+    outValue->type = ZR_VALUE_TYPE_OBJECT;
+    success = ZR_TRUE;
+cleanup:
+    if (ignored) {
+        ZrCore_GarbageCollector_UnignoreObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(carrier));
+    }
+    return success;
 }
 
 static TZrBool execution_inline_frame_store_union_payload_member_from_slot(

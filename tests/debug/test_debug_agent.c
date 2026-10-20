@@ -587,7 +587,10 @@ static void test_debug_agent_rejects_invalid_token_and_continues_execution(void)
     memset(&client, 0, sizeof(client));
     debug_client_connect(agent, &client);
 
-    debug_client_send_request(&client, 1, "initialize", cJSON_CreateObject());
+    cJSON *invalidParams = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(invalidParams);
+    cJSON_AddStringToObject(invalidParams, "authToken", "incorrect");
+    debug_client_send_request(&client, 1, "initialize", invalidParams);
 
     memset(&thread, 0, sizeof(thread));
     thread.state = state;

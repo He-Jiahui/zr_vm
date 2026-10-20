@@ -10,15 +10,15 @@ related_code:
   - zr_vm_lib_debug/include/zr_vm_lib_debug/coverage.h
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_child_shape.c
-  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_eval.c
-  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_eval_diagnostics.c
-  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_eval_internal.h
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_eval.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_eval_diagnostics.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_eval_internal.h
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_internal.h
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_reference_summary.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_semantic_facts.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_snapshot.c
-  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_union.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_union.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/profile.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c
   - zr_vm_lib_network/CMakeLists.txt
@@ -45,15 +45,15 @@ implementation_files:
   - zr_vm_lib_debug/include/zr_vm_lib_debug/coverage.h
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_child_shape.c
-  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_eval.c
-  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_eval_diagnostics.c
-  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_eval_internal.h
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_eval.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_eval_diagnostics.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/eval/debug_eval_internal.h
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_internal.h
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_protocol.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_reference_summary.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_semantic_facts.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_snapshot.c
-  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug_union.c
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/inspect/debug_union.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/profile.c
   - zr_vm_lib_debug/src/zr_vm_lib_debug/coverage.c
   - zr_vm_lib_network/CMakeLists.txt
@@ -390,13 +390,15 @@ v1 事件集：
 
 括号、成员、索引和字符串结构错误也走同一类 richer diagnostic 文本。`(true || false`、`true.`、`true[0`、`"open` 和 `"bad\q"` 这类 safe-evaluate 表达式必须说明缺少的 token 或非法结构、错误原因和建议修复动作，而不是只返回 `missing ')'`、`expected member name`、`missing ']'`、`unsupported string escape` 或 `expected expression` 这类短句。字符串 literal 解析失败时，具体的 unterminated-string 或 unsupported-escape 诊断不能被 primary-expression fallback 覆盖。
 
-函数调用语法必须在 identifier lookup 前被识别并拒绝。`sideEffect()` 这类表达式不能退化成 `unknown identifier`，而要明确说明 `safe debug evaluate` 是只读子集、调用可能执行用户代码或改变状态，并给出检查局部变量、成员、索引或纯 literal 表达式的建议。
+legacy compatibility parser 会在 identifier lookup 前识别并拒绝函数调用语法；它不能执行 `sideEffect()` 这类调用，也不能只返回 `unknown identifier`，而应说明其只读子集不支持调用，并给出检查局部变量、成员、索引或纯 literal 表达式的建议。正式求值的调用由 canonical facts 和显式 capability 决定，兼容路径的拒绝规则不适用于所有 `evaluate` 入口。
 
 赋值语法也必须在 identifier lookup 或最终 trailing-token fallback 前被识别并拒绝。`true = false`、`local = 1` 这类表达式不能只返回 `unexpected trailing tokens` 或 `unknown identifier`，而要明确说明 safe evaluate 和条件断点是 read-only 子集，不能改变程序状态，并建议改用无 `=` 的检查表达式或在源码中改变状态。
 
-逻辑运算遵循语言层已经暴露给 LSP 的短路语义：`true || rhs` 和 `false && rhs` 会消费右侧表达式的语法，但不会解析局部变量、读取成员、读取索引或执行数值/比较计算。这样条件断点可以安全处理 `true || missingLocal`、`false && missingLocal` 这类被跳过的数据路径，不会因为右侧局部变量当前不存在而失败。未跳过的右侧仍按 safe evaluate 子集正常解析和只读求值。
+正式求值先为整个逻辑表达式建立并校验 canonical semantic facts，短路只决定通过校验后的执行路径。`true || missingLocal` 和 `false && missingLocal` 中的未知名字即使位于未执行的右侧，也会因缺少规范语义事实而被拒绝。已通过规范绑定的表达式在执行时才按 `&&` / `||` 的短路语义选择实际读取和计算。
 
-条件表达式遵循同一类安全跳过合同：先求值 condition，true/false 两个 branch 都会被语法消费，但只有被选中的 branch 会解析局部变量、读取成员/索引或执行计算。`true ? 1 : missingLocal` 和 `false ? missingLocal : 2` 可以作为 evaluate 或条件断点表达式通过；缺少 `:`、缺少 `?` 后的 consequent branch，或缺少 `:` 后的 alternate branch 时，必须报告具体缺失结构、原因和建议。这里仍是只读调试表达式子集，不承诺完整语言求值。
+条件表达式的 condition、consequent 和 alternate 均须先通过规范绑定检查，再按 condition 选择执行分支。`true ? 1 : missingLocal` 和 `false ? missingLocal : 2` 会因未选分支中的未知名字缺少规范语义事实而被拒绝。缺少 `:`、缺少 `?` 后的 consequent branch，或缺少 `:` 后的 alternate branch 时，仍须报告具体缺失结构、原因和建议。
+
+`ZrDebug_Evaluate` 先尝试正式求值；进入兼容 parser 必须先允许 legacy compatibility，并满足以下之一：正式调用失败且设置了 `formalParserFailure`，或正式调用成功但未处理表达式。正式层的语义或 capability 失败仍按失败返回；解析/准备失败后的回退不表示已完成 canonical 绑定或 capability 校验。`ZrDebug_EvaluateWithCapabilities`（含 Detailed）、条件断点和 logpoint 插值均禁用兼容回退。兼容 parser 的 `skip_evaluation` 在语法消费中抑制相应取值和计算；字符串 literal 解析仍可创建 VM 字符串，不能将 skip 视为零分配。`zr_debug_eval_parse_right_operand_with_skip` 仅在回调普通返回后恢复原标志；非局部退出可能越过该恢复，也不保证回滚 cursor、输出值或此前分配。
 
 这条消息会同时覆盖 VS Code/DAP adapter 未来会转发的 `evaluate` 失败响应，以及条件断点失败时写到 `stderr` 的输出事件。当前实现仍是调试时的安全求值器，不承诺完整语言表达式执行，也不替代 parser/LSP 的编译期语义事实层。
 
@@ -564,10 +566,10 @@ Formal `evaluate` does not select a compatibility evaluator from these synthetic
   - assignment semantic-summary bridge 验证 `globalSeed = 3`、`seed.value = 3` 和 `seed[index] = 4` 会追加 parser-owned write/member-write reference facts
   - compiled entry function 的 direct semantic-summary bridge 验证 `pick(1 + 2)` 会从 top-level callable metadata 追加 parser-owned `call pick args=1` / `reference call pick`，并保留实参的 `expression binary exact` / `constant 3` / `range 3..3`
   - direct semantic-summary bridge 验证 `seed[index]` 会输出 parser-owned `member index`、`reference member access index` 和索引 token 的 `reference read index`
-  - `true || missingLocal` 和 `false && missingLocal` 验证确定性短路不会解析被跳过的局部变量
+  - `true || missingLocal` 和 `false && missingLocal` 验证未执行的逻辑右侧仍须具备 canonical semantic facts，未知名字会被拒绝
   - `(1 < 2) && (3 < 4)`、`!(1 < 2)`、`(1 < 2) || missingLocal` 和 `(2 < 1) && missingLocal` 验证 Debug safe evaluate 已经能把比较结果组合进逻辑表达式和条件断点短路
-  - `true ? 1 : missingLocal` 和 `false ? missingLocal : 2` 验证条件表达式只解析被选中分支的数据路径，同时仍消费跳过分支语法
-  - `zr ? loadedModules : missingLocal` 验证 `referenceSummary` 累计 condition 和选中分支的实际读取，同时不把跳过分支的 `missingLocal` 误报为引用
+  - `true ? 1 : missingLocal` 和 `false ? missingLocal : 2` 验证条件表达式的两条分支均须通过规范绑定检查，未选分支的未知名字仍被拒绝
+  - `zr ? loadedModules : missingLocal` 验证已有运行时全局值不能替代完整的 canonical semantic facts，含未知名字的分支仍被拒绝
   - `true ? : 2` 和 `true ? 1 :` 验证条件表达式缺少 consequent 或 alternate branch 时返回 branch-specific cause/suggestion 诊断
   - `"text" + 1` 和 `1 / 0` 验证 safe evaluate 的数值语义错误也带具体原因和建议
   - `(true || false` 验证 grouped expression 缺少 `)` 时返回具体问题、原因和建议

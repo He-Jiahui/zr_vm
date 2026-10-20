@@ -52,7 +52,7 @@ void tearDown(void) {
 
 /** @brief 为合成 AST 提供一致的单行源码范围，source 字符串与本用例 state 同寿命。 */
 static SZrFileRange test_range(TZrSize startOffset, TZrSize endOffset) {
-    SZrFileRange range;
+    SZrFileRange range = {0};
 
     range.start.offset = startOffset;
     range.start.line = 1;
