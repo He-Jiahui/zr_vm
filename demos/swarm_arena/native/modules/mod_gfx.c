@@ -1,5 +1,6 @@
 #include "modules.h"
 #include "runtime.h"
+#include "zr_vm_core/object.h"
 #include "zr_vm_core/string.h"
 
 #include <float.h>
@@ -153,6 +154,13 @@ static TZrBool submit_soa(ZrLibCallContext *ctx, SZrTypeValue *result) {
         const SZrTypeValue *items = ZrLib_Object_GetFieldCString(ctx->state, wrapper, "__zr_items");
         if (!items || items->type != ZR_VALUE_TYPE_ARRAY) { error = "submitSoA requires zr.container.Array columns"; break; }
         if (!ZrLib_TempValueRoot_SetValue(&roots[i], items)) { error = "submitSoA array root failed"; break; }
+        /* Array_Get can materialize the engine's compact integer backing. Do that
+         * while rooted here, so the scalar validation/submission loops cannot allocate. */
+        if (!ZrCore_Object_SuperArrayMaterializeGeneric(ctx->state,
+                (SZrObject *)ZrLib_TempValueRoot_Value(&roots[i])->value.object)) {
+            error = "submitSoA array preparation failed";
+            break;
+        }
         size_t length = ZrLib_Array_Length((SZrObject *)ZrLib_TempValueRoot_Value(&roots[i])->value.object);
         if ((uint64_t)first > length || (uint64_t)count > length - (size_t)first) {
             error = "submitSoA range out of bounds";
