@@ -6,6 +6,20 @@ target_include_directories(zrgame_runtime PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/na
 set_target_properties(zrgame_runtime PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/native")
 
+# Descriptors can also be registered by an embedding host in a later milestone.
+add_library(zrgame_modules STATIC native/modules/mod_host.c native/modules/mod_gfx.c)
+target_include_directories(zrgame_modules PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/native/modules"
+    "${PROJECT_SOURCE_DIR}/zr_vm_core/include" "${PROJECT_SOURCE_DIR}/zr_vm_common/include")
+target_link_libraries(zrgame_modules PUBLIC zrgame_runtime zr_vm_library_shared)
+foreach(module host gfx)
+    add_library(zrgame_${module}_plugin MODULE native/modules/plugin_${module}.c)
+    target_link_libraries(zrgame_${module}_plugin PRIVATE zrgame_modules)
+    set_target_properties(zrgame_${module}_plugin PROPERTIES PREFIX ""
+        OUTPUT_NAME "zrvm_native_zrgame_${module}"
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/native")
+endforeach()
+add_custom_target(zrgame_plugins DEPENDS zrgame_host_plugin zrgame_gfx_plugin)
+
 add_library(zrgame_ffi SHARED native/ffi/zrgame_ffi.c)
 set_target_properties(zrgame_ffi PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/native")
 add_library(zrgame_probe MODULE probes/native/probe_module.c)
@@ -39,6 +53,13 @@ if (BUILD_TESTS)
     target_link_libraries(zrgame_native_tests PRIVATE zrgame_runtime)
     add_test(NAME demo_native_runtime COMMAND zrgame_native_tests)
     set_tests_properties(demo_native_runtime PROPERTIES LABELS "demo;native" TIMEOUT 10)
+    foreach(mode interp binary)
+        add_test(NAME demo_native_smoke_${mode}
+            COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_native_smoke.py"
+            --mode ${mode} --cli $<TARGET_FILE:zr_vm_cli_executable>
+            --native-dir "${CMAKE_CURRENT_BINARY_DIR}/native")
+        set_tests_properties(demo_native_smoke_${mode} PROPERTIES LABELS "demo;native" TIMEOUT 90)
+    endforeach()
     set(swarm_probe_runner "${CMAKE_CURRENT_SOURCE_DIR}/tools/run_probe.py")
     set(swarm_probe_results "${CMAKE_CURRENT_BINARY_DIR}/probe-results")
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS

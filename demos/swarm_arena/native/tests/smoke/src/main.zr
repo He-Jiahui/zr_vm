@@ -1,0 +1,112 @@
+let host = import("zrgame.host");
+let gfx = import("zrgame.gfx");
+let {Array} = import("zr.container");
+let system = import("zr.system");
+var started = host.nowMicros();
+if (started <= 0 || host.nowMicros() < started) { throw "GD-C2 clock mismatch"; }
+if (host.isHostDriven() || host.rssKb() <= 0) { throw "GD-C2 CLI host state mismatch"; }
+host.zoneBegin(2);
+host.zoneBegin(3);
+host.zoneEnd(3);
+host.zoneEnd(2);
+host.zoneBegin(2);
+host.zoneEnd(2);
+var report = host.zoneReport();
+var sink = host.openSink("@SINK_PATH@");
+if (sink <= 0) { throw "GD-C2 openSink failed"; }
+host.writeSink(sink, "GD-C2 sink");
+host.writeSink(sink, report);
+host.closeSink(sink);
+host.closeSink(sink);
+
+// Same content through A, B and C must have identical float32 instance hashes.
+gfx.beginFrame(0);
+gfx.camera(4.0, 5.0);
+gfx.sprite(1.0, 2.0, 3.0, 0.0, 4294967295);
+gfx.text(6.0, 7.0, "hud");
+if (gfx.endFrame() != 1) { throw "GD-C2 mode A count mismatch"; }
+var hash = gfx.snapshot("@SNAPSHOT_PATH@");
+if (hash <= 0) { throw "GD-C2 null hash missing"; }
+
+var instance = init gfx.SpriteInstance(1.0, 2.0, 3.0, 0.0, 4294967295);
+system.gc.collect("full");
+gfx.beginFrame(1);
+gfx.spriteInst(instance);
+gfx.text(6.0, 7.0, "hud");
+if (gfx.endFrame() != 1 || gfx.snapshot("") != hash) { throw "GD-C2 mode B hash mismatch"; }
+if (instance.x != 1.0 || instance.rgba != 4294967295) { throw "GD-C2 mode B copy mismatch"; }
+
+var xs = new Array<float>();
+var ys = new Array<float>();
+var sizes = new Array<float>();
+var colors = new Array<int>();
+xs.add(99.0); xs.add(1.0);
+ys.add(99.0); ys.add(2.0);
+sizes.add(99.0); sizes.add(3.0);
+colors.add(0); colors.add(4294967295);
+system.gc.collect("full");
+gfx.beginFrame(2);
+gfx.submitSoA(xs, ys, sizes, colors, 1, 1);
+gfx.submitSoA(xs, ys, sizes, colors, 2, 0);
+gfx.text(6.0, 7.0, "hud");
+if (gfx.endFrame() != 1 || gfx.snapshot("") != hash) { throw "GD-C2 mode C hash mismatch"; }
+
+gfx.beginFrame(3);
+gfx.sprite(1.0, 2.0, 3.0, 0.0, 4294967295);
+gfx.spriteInst(instance);
+gfx.submitSoA(xs, ys, sizes, colors, 1, 1);
+if (gfx.endFrame() != 3) { throw "GD-C2 combined count mismatch"; }
+
+// Nonzero rotation and float64-to-float32 rounding agree across scalar/inline paths.
+instance.x = 16777217.0;
+instance.rot = 0.125;
+gfx.beginFrame(4);
+gfx.sprite(16777217.0, 2.0, 3.0, 0.125, 4294967295);
+if (gfx.endFrame() != 1) { throw "GD-C2 rounded scalar count mismatch"; }
+var roundedHash = gfx.snapshot("");
+system.gc.collect("full");
+gfx.beginFrame(5);
+gfx.spriteInst(instance);
+if (gfx.endFrame() != 1 || gfx.snapshot("") != roundedHash) { throw "GD-C2 rounded inline hash mismatch"; }
+
+// Recover from native input errors, and reject a whole invalid SoA slice atomically.
+var rejected = 0;
+try { gfx.sprite(1.0, 2.0, 3.0, 0.0, 0); }
+catch (e) {
+    if (e.message != "sprite batch overflow or no active frame") { throw e; }
+    rejected += 1;
+}
+gfx.beginFrame(6);
+try { gfx.submitSoA(xs, ys, sizes, colors, -1, 1); }
+catch (e) {
+    if (e.message != "submitSoA range out of bounds") { throw e; }
+    rejected += 1;
+}
+try { gfx.submitSoA(xs, ys, sizes, colors, 1, 2); }
+catch (e) {
+    if (e.message != "submitSoA range out of bounds") { throw e; }
+    rejected += 1;
+}
+sizes[1] = -1.0;
+try { gfx.submitSoA(xs, ys, sizes, colors, 0, 2); }
+catch (e) {
+    if (e.message != "submitSoA requires finite float columns, nonnegative sizes and u32 rgba") { throw e; }
+    rejected += 1;
+}
+if (gfx.endFrame() != 0) { throw "GD-C2 partial invalid SoA append"; }
+try { host.writeSink(sink, "closed"); }
+catch (e) {
+    if (e.message != "sink write failed") { throw e; }
+    rejected += 1;
+}
+host.zoneBegin(5);
+try { host.zoneEnd(6); }
+catch (e) {
+    if (e.message != "zone nesting mismatch") { throw e; }
+    rejected += 1;
+}
+host.zoneEnd(5);
+if (rejected != 6 || host.openSink("") != 0) { throw "GD-C2 native error recovery mismatch"; }
+system.console.printLine("GD_C2_ZONES " + report);
+system.console.printLine("GD_C2_OK nowMicros=" + <string>started + " sprites=3 hash=" + <string>hash + " modeB=inline rejected=6");
+return 0;
