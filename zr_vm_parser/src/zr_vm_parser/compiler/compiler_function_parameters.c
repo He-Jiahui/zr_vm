@@ -25,6 +25,10 @@ TZrBool compiler_stack_slot_is_reference_parameter(SZrCompilerState *cs, TZrUInt
             return ZR_FALSE;
         }
         parameter = &symbol->astNode->data.parameter;
+        if (parameter->sourcePassingForm == ZR_PARAMETER_SOURCE_REF_READONLY ||
+            parameter->sourcePassingForm == ZR_PARAMETER_SOURCE_SCOPED_REF_READONLY) {
+            return ZR_FALSE;
+        }
         return (TZrBool)(parameter->passingMode == ZR_PARAMETER_PASSING_MODE_REF ||
                          parameter->passingMode == ZR_PARAMETER_PASSING_MODE_OUT);
     }

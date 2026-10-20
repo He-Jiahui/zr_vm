@@ -1524,6 +1524,17 @@ static TZrBool stack_slot_is_in_active_readonly_call_window(
     return ZR_FALSE;
 }
 
+static TZrBool call_parameter_uses_managed_reference(const SZrAstNodeArray *parameters, TZrSize index) {
+    const SZrAstNode *node = parameters != ZR_NULL && index < parameters->count
+            ? parameters->nodes[index] : ZR_NULL;
+    if (node != ZR_NULL && node->type == ZR_AST_PARAMETER) {
+        EZrParameterSourcePassingForm form = node->data.parameter.sourcePassingForm;
+        return (TZrBool)(form != ZR_PARAMETER_SOURCE_REF_READONLY &&
+                         form != ZR_PARAMETER_SOURCE_SCOPED_REF_READONLY);
+    }
+    return ZR_TRUE;
+}
+
 static TZrUInt32 compile_call_argument_into_slot(
         SZrCompilerState *cs,
         SZrAstNode *argument,
@@ -1730,7 +1741,7 @@ static TZrBool compile_arguments_against_parameter_types(SZrCompilerState *cs,
                         ? *passingMode
                         : ZR_PARAMETER_PASSING_MODE_VALUE,
                 expectedType,
-                ZR_TRUE);
+                call_parameter_uses_managed_reference(parameterList, index));
         if (argSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
             return ZR_FALSE;
         }
@@ -2281,7 +2292,8 @@ static TZrBool compile_arguments_against_imported_member_metadata(SZrCompilerSta
                         argSlot,
                         passingMode,
                         expectedType,
-                        ZR_TRUE) == ZR_PARSER_SLOT_NONE ||
+                        call_parameter_uses_managed_reference(
+                                member_call_parameter_list(memberInfo), index)) == ZR_PARSER_SLOT_NONE ||
                 cs->hasError) {
                 goto cleanup;
             }
@@ -2505,7 +2517,8 @@ static TZrBool compile_arguments_against_function_resolved_signature(SZrCompiler
                         ? *passingMode
                         : ZR_PARAMETER_PASSING_MODE_VALUE,
                 expectedType,
-                ZR_TRUE);
+                call_parameter_uses_managed_reference(
+                        function_call_parameter_list(resolvedFunctionType), index));
         if (argSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
             return ZR_FALSE;
         }
@@ -3815,7 +3828,10 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                         argSlot,
                                         passingMode,
                                         expectedType,
-                                        ZR_TRUE) == ZR_PARSER_SLOT_NONE ||
+                                        call_parameter_uses_managed_reference(
+                                                resolvedFunctionType != ZR_NULL
+                                                        ? function_call_parameter_list(resolvedFunctionType)
+                                                        : member_call_parameter_list(activeCallMemberInfo), j)) == ZR_PARSER_SLOT_NONE ||
                                 cs->hasError) {
                                 break;
                             }
