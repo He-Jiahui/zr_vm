@@ -6,7 +6,7 @@ if(TARGET zr_vm_cli_executable)
     set_target_properties(zr_vm_swarm_plugin_provider PROPERTIES
         PREFIX "" OUTPUT_NAME "zrvm_native_zr_swarmprobe"
         WINDOWS_EXPORT_ALL_SYMBOLS ON)
-    foreach(case IN ITEMS destructor_stack_growth union_call_storage callable_field class_field_initializers out_ref_arguments)
+    foreach(case IN ITEMS destructor_stack_growth union_call_storage callable_field class_field_initializers out_ref_arguments pool_view_out)
         foreach(mode IN ITEMS interp binary)
             add_test(NAME swarm_${case}_${mode}
                 COMMAND ${CMAKE_COMMAND}

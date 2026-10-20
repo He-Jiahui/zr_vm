@@ -3,6 +3,7 @@
 //
 
 #include "zr_vm_core/io.h"
+#include "gc/gc_domain_internal.h"
 
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
@@ -267,6 +268,8 @@ static void io_runtime_init_inline_function(SZrState *state, SZrFunction *functi
      * inline children copied from managed function objects.
      */
     if (state != ZR_NULL) {
+        /* Embedded functions can be stored in managed frame references too. */
+        (void)ZrCore_GcDomain_AssignObject(state->gcDomain, &function->super);
         ZrCore_RawObject_MarkAsInit(state, &function->super);
     }
 }
