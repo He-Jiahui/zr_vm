@@ -52,27 +52,44 @@ def gate(out=None):
 
 
 def parity(out):
-    """P22 requires working, source-removed binary execution of P01-P20."""
+    """P22 gates required P01-P20 cases and reports optional parity separately."""
     failed = []
     checked = []
-    for number in range(1, 21):
-        probe = "P" + str(number).zfill(2)
-        case_name = probe.lower() + "-main"
+    optional_failed = []
+    optional_checked = []
+    passed_probes = set()
+    cases = json.loads((DEMO / "probes/cases.json").read_text())
+    for case in cases:
+        if not 1 <= int(case["probe"][1:]) <= 20:
+            continue
         results = []
         for mode in ("interp", "binary"):
-            path = Path(out) / (case_name + "-" + mode) / "result.json"
+            path = Path(out) / (case["name"] + "-" + mode) / "result.json"
             results.append(json.loads(path.read_text()) if path.is_file() else {})
         ok = (all(r.get("status") == "OK" for r in results)
               and results[1].get("source_removed")
+              and results[0].get("cli_sha256")
               and results[0].get("cli_sha256") == results[1].get("cli_sha256"))
-        (checked if ok else failed).append(probe)
+        if case.get("required"):
+            (checked if ok else failed).append(case["name"])
+        else:
+            (optional_checked if ok else optional_failed).append(case["name"])
+        if ok and case["name"] == case["probe"].lower() + "-main":
+            passed_probes.add(case["probe"])
     result = {"schema": "zr-swarm-probe/1", "probe": "P22",
-              "status": "FAIL" if failed else "OK", "passed": checked, "failed": failed}
+              "scope": "required P01-P20 cases",
+              "status": "FAIL" if failed else "OK",
+              "passed": sorted(passed_probes), "failed": failed,
+              "required_passed": checked,
+              "optional_passed": optional_checked,
+              "optional_failed": optional_failed}
     Path(out).mkdir(parents=True, exist_ok=True)
     (Path(out) / "p22-result.json").write_text(json.dumps(result, indent=2) + "\n")
-    print("P22 " + result["status"] + ": working interp/binary=" + ",".join(checked))
+    print("P22 " + result["status"] + ": required interp/binary=" + ",".join(checked))
     if failed:
-        print("P22 lacks successful binary parity: " + ",".join(failed))
+        print("P22 lacks required binary parity: " + ",".join(failed))
+    if optional_failed:
+        print("Optional cases without successful binary parity: " + ",".join(optional_failed))
     return 1 if failed else 0
 
 

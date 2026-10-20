@@ -21,20 +21,12 @@
   {
     "name": "p04-main",
     "probe": "P04",
-    "required": true,
-    "expect": {
-      "interp": "KNOWN_VM_CALL: invalid known VM callable",
-      "binary": "KNOWN_VM_CALL: invalid known VM callable"
-    }
+    "required": true
   },
   {
     "name": "p05-main",
     "probe": "P05",
-    "required": true,
-    "expect": {
-      "interp": "GET_MEMBER: missing member 'size'",
-      "binary": "GET_MEMBER: missing member 'size'"
-    }
+    "required": true
   },
   {
     "name": "p06-main",
@@ -58,11 +50,7 @@
   {
     "name": "p09-main",
     "probe": "P09",
-    "required": true,
-    "expect": {
-      "interp": "Argument count mismatch",
-      "binary": "Argument count mismatch"
-    }
+    "required": true
   },
   {
     "name": "p10-main",
@@ -90,10 +78,7 @@
   {
     "name": "p14-main",
     "probe": "P14",
-    "required": true,
-    "expect": {
-      "binary": "failed to load project entry: main"
-    }
+    "required": true
   },
   {
     "name": "p15-main",
@@ -138,7 +123,7 @@
     "required": false,
     "expect": {
       "interp": "invalid operand for bytecode instruction 209",
-      "binary": "failed to load project entry: main"
+      "binary": "invalid operand for bytecode instruction 209"
     }
   },
   {
@@ -177,10 +162,7 @@
     "name": "p14-project",
     "probe": "P14",
     "plugin_search": "project",
-    "required": true,
-    "expect": {
-      "binary": "failed to load project entry: main"
-    }
+    "required": true
   },
   {
     "name": "p14-alias",
