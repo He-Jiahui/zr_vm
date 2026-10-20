@@ -4,6 +4,7 @@
 
 #include "zr_vm_core/function.h"
 #include "function/function_argument_staging.h"
+#include "execution/execution_union_storage.h"
 
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/conversion.h"
@@ -822,6 +823,10 @@ TZrBool ZrCore_Function_CopyInlineStorageToObjectValue(
     }
 
     typeLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(sourceFunction, sourceTypeLayoutId, state);
+    if (typeLayout != ZR_NULL && typeLayout->kind == (TZrUInt8)ZR_TYPE_LAYOUT_KIND_UNION) {
+        return execution_inline_frame_materialize_union_storage_to_carrier(
+                state, sourceFunction, sourceTypeLayoutId, sourceAddress, sourceByteSize, outValue);
+    }
     prototype = ZrCore_Function_ResolvePrototypeFrameStructPrototype(state, sourceFunction, sourceTypeLayoutId);
     if (typeLayout == ZR_NULL ||
         prototype == ZR_NULL ||
@@ -882,14 +887,28 @@ TZrBool ZrCore_Function_CopyObjectValueToInlineStorage(SZrState *state,
     if (state == ZR_NULL ||
         destinationFunction == ZR_NULL ||
         destinationAddress == ZR_NULL ||
-        !function_frame_value_is_struct_object(sourceValue, &sourceObject) ||
-        sourceObject->prototype == ZR_NULL ||
+        sourceValue == ZR_NULL ||
         destinationTypeLayoutId == ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) {
         return ZR_FALSE;
     }
 
     typeLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(destinationFunction, destinationTypeLayoutId, state);
     if (typeLayout == ZR_NULL || typeLayout->byteSize > destinationByteSize) {
+        return ZR_FALSE;
+    }
+
+    if (typeLayout->kind == (TZrUInt8)ZR_TYPE_LAYOUT_KIND_UNION) {
+        if (sourceValue->type != ZR_VALUE_TYPE_OBJECT || sourceValue->isNative ||
+            sourceValue->value.object == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        return execution_inline_frame_materialize_union_carrier_to_inline_storage(
+                state, destinationFunction, destinationTypeLayoutId,
+                destinationAddress, destinationByteSize,
+                ZR_CAST_OBJECT(state, sourceValue->value.object));
+    }
+    if (!function_frame_value_is_struct_object(sourceValue, &sourceObject) ||
+        sourceObject->prototype == ZR_NULL) {
         return ZR_FALSE;
     }
 
