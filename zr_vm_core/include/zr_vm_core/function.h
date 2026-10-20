@@ -1389,6 +1389,13 @@ ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallKnownNativeValue(struct S
                                                                  TZrSize resultCount,
                                                                  TZrStackValuePointer returnDestination);
 
+/* Retain the caller's physical inline argument storage for descriptor callbacks. */
+ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallKnownNativeValueWithArgumentSource(
+        struct SZrState *state, TZrStackValuePointer stackPointer,
+        struct SZrTypeValue *callableValue, TZrSize resultCount,
+        TZrStackValuePointer returnDestination, TZrStackValuePointer argumentSourceFrameBase,
+        TZrUInt32 argumentSourceStartSlot);
+
 ZR_CORE_API TZrBool ZrCore_Function_TryReuseTailVmCall(struct SZrState *state,
                                                    struct SZrCallInfo *callInfo,
                                                    TZrStackValuePointer stackPointer);

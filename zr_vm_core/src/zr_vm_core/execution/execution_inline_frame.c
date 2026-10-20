@@ -971,11 +971,11 @@ static TZrBool execution_inline_frame_union_payload_pod_value_type(const TZrChar
                execution_inline_frame_text_equals(typeNameText, "uint64")) {
         valueType = ZR_VALUE_TYPE_UINT64;
         byteSize = (TZrUInt32)sizeof(TZrUInt64);
-    } else if (execution_inline_frame_text_equals(typeNameText, "float") ||
-               execution_inline_frame_text_equals(typeNameText, "f32")) {
+    } else if (execution_inline_frame_text_equals(typeNameText, "f32")) {
         valueType = ZR_VALUE_TYPE_FLOAT;
         byteSize = (TZrUInt32)sizeof(TZrFloat32);
-    } else if (execution_inline_frame_text_equals(typeNameText, "double") ||
+    } else if (execution_inline_frame_text_equals(typeNameText, "float") ||
+        execution_inline_frame_text_equals(typeNameText, "double") ||
                execution_inline_frame_text_equals(typeNameText, "f64") ||
                execution_inline_frame_text_equals(typeNameText, "f")) {
         valueType = ZR_VALUE_TYPE_DOUBLE;

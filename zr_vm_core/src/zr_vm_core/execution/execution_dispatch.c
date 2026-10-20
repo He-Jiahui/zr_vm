@@ -1240,6 +1240,13 @@ static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_frame_layout_generic_sing
         if (nextCallInfo == ZR_NULL) {
             ZrCore_Debug_RunError(state, "FUNCTION_CALL: failed to bind VM arguments");
         }
+    } else if (callWindow->value.isNative &&
+               (callWindow->value.type == ZR_VALUE_TYPE_CLOSURE ||
+                callWindow->value.type == ZR_VALUE_TYPE_FUNCTION ||
+                callWindow->value.type == ZR_VALUE_TYPE_NATIVE_POINTER)) {
+        nextCallInfo = ZrCore_Function_PreCallKnownNativeValueWithArgumentSource(
+                state, callWindow, &callWindow->value, 1u, effectiveReturnDestination,
+                *ioFrameBase, functionSlot + 1u);
     } else {
         nextCallInfo = ZrCore_Function_PreCall(state, callWindow, 1u, effectiveReturnDestination);
     }

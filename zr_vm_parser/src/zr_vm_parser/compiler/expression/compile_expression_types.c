@@ -3734,6 +3734,54 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                         isolatedCallableSlot;
             }
 
+            /* A native inline argument needs its own physical slot for the
+             * whole function. Earlier scalar temporaries may reuse an ordinary
+             * call window and force that slot's layout back to a value. */
+            TZrBool hasNativeInlineArgument = ZR_FALSE;
+            if (!usesIsolatedReadonlyAggregateCallWindow &&
+                pendingReceiverSlot == ZR_PARSER_SLOT_NONE && !hasSpreadArgument &&
+                argsToCompile != ZR_NULL) {
+                for (TZrSize index = 0u; index < argsToCompile->count; index++) {
+                    SZrInferredType type;
+                    ZrParser_InferredType_Init(cs->state, &type, ZR_VALUE_TYPE_OBJECT);
+                    if (ZrParser_ExpressionType_Infer(cs, argsToCompile->nodes[index], &type)) {
+                        SZrTypePrototypeInfo *prototype = find_compiler_type_prototype(cs, type.typeName);
+                        hasNativeInlineArgument |= prototype != ZR_NULL && prototype->isImportedNative &&
+                                prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT &&
+                                compiler_type_prototype_serializes_to_runtime(prototype) &&
+                                type.referenceAccess == ZR_REFERENCE_ACCESS_NONE;
+                    }
+                    ZrParser_InferredType_Free(cs->state, &type);
+                }
+            }
+            if (hasNativeInlineArgument) {
+                TZrSize isolatedSlot = cs->maxStackSlotCount;
+                if (isolatedSlot + argsToCompile->count > UINT16_MAX) {
+                    ZrParser_Compiler_Error(cs, "Native aggregate call window exceeds the stack slot limit", member->location);
+                    free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
+                    free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                    ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                    goto cleanup;
+                }
+                for (TZrSize index = 0u; index <= argsToCompile->count; index++) {
+                    if (!compiler_register_isolated_call_window_slot(cs,
+                            (TZrUInt32)(isolatedSlot + index), (TZrUInt32)isolatedSlot,
+                            (TZrUInt32)argsToCompile->count)) {
+                        ZrParser_Compiler_Error(cs, "Failed to reserve native aggregate call window", member->location);
+                        free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
+                        free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                        ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                        goto cleanup;
+                    }
+                }
+                emit_instruction(cs, create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                        (TZrUInt16)isolatedSlot, (TZrInt32)currentSlot));
+                currentSlot = (TZrUInt32)isolatedSlot;
+                argBaseSlot = currentSlot + 1u;
+                usesIsolatedReadonlyAggregateCallWindow = ZR_TRUE;
+                isolatedReadonlyAggregateCallableSlot = currentSlot;
+            }
+
             if (activeCallMemberInfo != ZR_NULL &&
                 pendingReceiverSlot != ZR_PARSER_SLOT_NONE &&
                 activeCallMemberInfo->receiverEffect !=

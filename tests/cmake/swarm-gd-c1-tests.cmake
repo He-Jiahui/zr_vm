@@ -29,16 +29,19 @@ if(TARGET zr_vm_cli_executable)
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_swarm_regression.cmake")
         set_tests_properties(swarm_declared_features_${mode} PROPERTIES TIMEOUT 90)
     endforeach()
+    foreach(case IN ITEMS binary_plugin_binding native_inline_arguments)
     foreach(mode IN ITEMS interp binary)
-        add_test(NAME swarm_binary_plugin_binding_${mode}
+        add_test(NAME swarm_${case}_${mode}
             COMMAND ${CMAKE_COMMAND}
             "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
-            "-DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/parser/swarm_binary_plugin_binding.zr"
-            "-DTEST_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/swarm_binary_plugin_binding_${mode}"
+            "-DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/parser/swarm_${case}.zr"
+            "-DTEST_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/swarm_${case}_${mode}"
             "-DPLUGIN_FILE=$<TARGET_FILE:zr_vm_swarm_plugin_provider>"
             "-DPLUGIN_NAME=$<TARGET_FILE_NAME:zr_vm_swarm_plugin_provider>"
+            "-DMANIFEST_FILE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/parser/swarm_${case}.zrp"
             "-DEXECUTION_MODE=${mode}"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_swarm_regression.cmake")
-        set_tests_properties(swarm_binary_plugin_binding_${mode} PROPERTIES TIMEOUT 90)
+        set_tests_properties(swarm_${case}_${mode} PROPERTIES TIMEOUT 90)
+    endforeach()
     endforeach()
 endif()

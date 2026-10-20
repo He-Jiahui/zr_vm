@@ -225,7 +225,7 @@ static void compiler_log_failure_summary(SZrCompilerState *cs) {
                            reason);
 }
 
-static TZrBool compiler_prototype_serializes_to_function_metadata(
+TZrBool compiler_type_prototype_serializes_to_runtime(
         const SZrTypePrototypeInfo *info) {
     const TZrUInt64 contiguousViewProtocols =
             ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_MUTABLE) |
@@ -237,11 +237,27 @@ static TZrBool compiler_prototype_serializes_to_function_metadata(
     if (!info->isImportedNative) {
         return ZR_TRUE;
     }
+    TZrBool scalarStruct = info->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT &&
+            info->genericParameters.length == 0u && info->allowValueConstruction &&
+            (info->modifierFlags & ZR_DECLARATION_MODIFIER_REF_LIKE) == 0u;
+    TZrSize fieldCount = 0u;
+    for (TZrSize index = 0u; scalarStruct && index < info->members.length; index++) {
+        const SZrTypeMemberInfo *member = ZrCore_Array_Get((SZrArray *)&info->members, index);
+        EZrValueType primitive;
+        const TZrChar *text;
+        if (member->memberType != ZR_AST_STRUCT_FIELD || member->isStatic) continue;
+        text = member->fieldTypeName != ZR_NULL ? ZrCore_String_GetNativeString(member->fieldTypeName) : ZR_NULL;
+        scalarStruct = text != ZR_NULL && member->fieldSize > 0u &&
+                inferred_type_try_map_primitive_name(text, strlen(text), &primitive) &&
+                (ZR_VALUE_IS_TYPE_NUMBER(primitive) || primitive == ZR_VALUE_TYPE_BOOL);
+        fieldCount++;
+    }
     return (TZrBool)((info->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ||
                       info->type == ZR_OBJECT_PROTOTYPE_TYPE_UNION) &&
                      info->layoutByteSize > 0u &&
                      info->layoutByteAlign > 0u &&
-                     (info->protocolMask & contiguousViewProtocols) != 0u);
+                     ((info->protocolMask & contiguousViewProtocols) != 0u ||
+                      (scalarStruct && fieldCount > 0u)));
 }
 
 TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototypeInfo *info, 
@@ -926,7 +942,7 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
             // 序列化每个 prototype 信息
             for (TZrSize i = 0; i < cs->typePrototypes.length; i++) {
                 SZrTypePrototypeInfo *info = (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, i);
-                if (!compiler_prototype_serializes_to_function_metadata(info)) {
+                if (!compiler_type_prototype_serializes_to_runtime(info)) {
                     prototypeDataArray[i] = ZR_NULL;
                     prototypeDataSizes[i] = 0;
                     continue;

@@ -2,6 +2,8 @@
 #define ZR_VM_PARSER_COMPILER_INTERNAL_H
 
 #include "zr_vm_parser/compiler.h"
+TZrBool compiler_type_prototype_serializes_to_runtime(const SZrTypePrototypeInfo *info);
+
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/project_imports.h"
