@@ -1,0 +1,11 @@
+var calls = 0;
+#zr.compile.conditional("trace")#
+fn disabled(value: int): void { calls += value; }
+#zr.compile.conditional("enabled")#
+fn enabled(value: int): void { calls += value; }
+fn argument(): int { throw "disabled argument evaluated"; }
+disabled(argument());
+enabled(42);
+comptime if (true) { fn constant(): int { return 7; } }
+if (calls != 42 || constant() != 7) { throw "declared feature selection"; }
+return calls;

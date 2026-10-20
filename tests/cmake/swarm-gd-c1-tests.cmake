@@ -19,6 +19,17 @@ if(TARGET zr_vm_cli_executable)
         endforeach()
     endforeach()
     foreach(mode IN ITEMS interp binary)
+        add_test(NAME swarm_declared_features_${mode}
+            COMMAND ${CMAKE_COMMAND}
+            "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"
+            "-DSOURCE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/parser/swarm_declared_features.zr"
+            "-DMANIFEST_FILE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/parser/swarm_declared_features.zrp"
+            "-DTEST_WORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/swarm_declared_features_${mode}"
+            "-DEXECUTION_MODE=${mode}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_swarm_regression.cmake")
+        set_tests_properties(swarm_declared_features_${mode} PROPERTIES TIMEOUT 90)
+    endforeach()
+    foreach(mode IN ITEMS interp binary)
         add_test(NAME swarm_binary_plugin_binding_${mode}
             COMMAND ${CMAKE_COMMAND}
             "-DCLI_EXE=$<TARGET_FILE:zr_vm_cli_executable>"

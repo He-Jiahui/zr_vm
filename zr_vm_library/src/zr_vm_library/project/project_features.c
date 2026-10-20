@@ -56,12 +56,64 @@ TZrBool library_project_parse_feature_switches(SZrState *state, SZrLibrary_Proje
     cJSON *featureJson;
     TZrSize featureCount = 0;
     TZrSize featureIndex = 0;
+    cJSON *buildJson;
+    cJSON *declarationsJson;
+    cJSON *mergedFeatures = ZR_NULL;
 
     if (state == ZR_NULL || state->global == ZR_NULL || project == ZR_NULL || projectJson == ZR_NULL) {
         return ZR_FALSE;
     }
 
     featuresJson = cJSON_GetObjectItemCaseSensitive(projectJson, "features");
+    buildJson = cJSON_GetObjectItemCaseSensitive(projectJson, "build");
+    declarationsJson = cJSON_GetObjectItemCaseSensitive(buildJson, "features");
+    if (declarationsJson != ZR_NULL) {
+        if (!cJSON_IsArray(declarationsJson) ||
+            (featuresJson != ZR_NULL && !cJSON_IsObject(featuresJson))) {
+            return ZR_FALSE;
+        }
+        /* A declaration is known even when disabled. The existing boolean map
+         * supplies selected values; declaring a feature alone does not enable it. */
+        mergedFeatures = cJSON_CreateObject();
+        if (mergedFeatures == ZR_NULL) return ZR_FALSE;
+        cJSON_ArrayForEach(featureJson, declarationsJson) {
+            if (!cJSON_IsString(featureJson) ||
+                !library_project_feature_validate_name(featureJson->valuestring) ||
+                cJSON_HasObjectItem(mergedFeatures, featureJson->valuestring) ||
+                !cJSON_AddBoolToObject(mergedFeatures, featureJson->valuestring, 0)) {
+                cJSON_Delete(mergedFeatures);
+                return ZR_FALSE;
+            }
+        }
+        cJSON_ArrayForEach(featureJson, featuresJson) {
+            cJSON *prior;
+            for (prior = featuresJson->child; prior != featureJson; prior = prior->next) {
+                if (strcmp(prior->string, featureJson->string) == 0) {
+                    cJSON_Delete(mergedFeatures);
+                    return ZR_FALSE;
+                }
+            }
+            cJSON *copy = cJSON_Duplicate(featureJson, 1);
+            if (copy == ZR_NULL) {
+                cJSON_Delete(mergedFeatures);
+                return ZR_FALSE;
+            }
+            cJSON_DeleteItemFromObjectCaseSensitive(mergedFeatures, featureJson->string);
+            if (!cJSON_AddItemToObject(mergedFeatures, featureJson->string, copy)) {
+                cJSON_Delete(copy);
+                cJSON_Delete(mergedFeatures);
+                return ZR_FALSE;
+            }
+        }
+        /* Keep the normalized map in the parsed document, whose lifetime covers
+         * this parser, including every error return below. */
+        cJSON_DeleteItemFromObjectCaseSensitive(projectJson, "features");
+        if (!cJSON_AddItemToObject(projectJson, "features", mergedFeatures)) {
+            cJSON_Delete(mergedFeatures);
+            return ZR_FALSE;
+        }
+        featuresJson = mergedFeatures;
+    }
     if (featuresJson == ZR_NULL) {
         return ZR_TRUE;
     }
