@@ -995,6 +995,12 @@ void emit_object_field_assignment_from_expression(SZrCompilerState *cs,
                                                          SZrAstNode *expression) ;
 
 void emit_class_static_field_initializers(SZrCompilerState *cs, SZrAstNode *classNode) ;
+void emit_class_instance_field_initializers(SZrCompilerState *cs, SZrAstNode *classNode);
+
+/* ref/out parameters carry a managed reference to caller storage. */
+TZrBool compiler_stack_slot_is_reference_parameter(SZrCompilerState *cs, TZrUInt32 stackSlot);
+TZrUInt32 compile_property_reference_place(
+        SZrCompilerState *cs, SZrAstNode *expression, SZrFileRange location);
 
 void compiler_begin_constructor_const_field_tracking(SZrCompilerState *cs) ;
 

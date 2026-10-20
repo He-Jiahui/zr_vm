@@ -3057,7 +3057,7 @@ static TZrBool validate_return_ownership_escape(SZrCompilerState *cs, SZrAstNode
 }
 
 // 编译返回语句
-static TZrUInt32 compile_property_reference_return_value(
+TZrUInt32 compile_property_reference_place(
         SZrCompilerState *cs,
         SZrAstNode *expression,
         SZrFileRange location) {
@@ -3272,7 +3272,7 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
             cs->currentFunctionNode != ZR_NULL &&
             cs->currentFunctionNode->type ==
                     ZR_AST_PROPERTY_DECLARATION) {
-            resultSlot = compile_property_reference_return_value(
+            resultSlot = compile_property_reference_place(
                     cs, stmt->expr, stmt->referenceLocation);
         } else {
             ZrParser_Expression_Compile(cs, stmt->expr);

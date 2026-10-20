@@ -3,6 +3,7 @@
 //
 
 #include "compiler/compiler_internal.h"
+#include "compiler/expression/compile_expression_internal.h"
 
 static SZrAstNodeArray *compiler_get_current_type_members(const SZrCompilerState *cs) {
     if (cs == ZR_NULL || cs->currentTypeNode == ZR_NULL) {
@@ -1190,6 +1191,36 @@ void emit_object_field_assignment_from_expression(SZrCompilerState *cs,
                                                        (TZrUInt16)objectSlot,
                                                        (TZrUInt16)memberId);
     emit_instruction(cs, setTableInst);
+}
+
+void emit_class_instance_field_initializers(SZrCompilerState *cs, SZrAstNode *classNode) {
+    if (cs == ZR_NULL || classNode == ZR_NULL ||
+        classNode->type != ZR_AST_CLASS_DECLARATION || cs->hasError) {
+        return;
+    }
+    SZrAstNodeArray *members = classNode->data.classDeclaration.members;
+    SZrString *thisName = ZrCore_String_CreateFromNative(cs->state, "this");
+    TZrUInt32 receiverSlot = find_local_var(cs, thisName);
+    TZrSize savedSlotCount = cs->stackSlotCount;
+    if (members == ZR_NULL || receiverSlot == ZR_PARSER_SLOT_NONE) {
+        return;
+    }
+    /* Initializers run once per construction, in declaration order, with this
+     * bound to the new instance. Static fields use the separate entry path. */
+    for (TZrSize index = 0u; index < members->count && !cs->hasError; ++index) {
+        SZrAstNode *member = members->nodes[index];
+        if (member == ZR_NULL || member->type != ZR_AST_CLASS_FIELD) {
+            continue;
+        }
+        SZrClassField *field = &member->data.classField;
+        if (!field->isStatic && field->init != ZR_NULL && field->name != ZR_NULL) {
+            emit_object_field_assignment_from_expression(
+                    cs, receiverSlot, field->name->name, field->init);
+        }
+    }
+    if (!cs->hasError && savedSlotCount > 0u) {
+        collapse_stack_to_slot(cs, (TZrUInt32)savedSlotCount - 1u);
+    }
 }
 
 void emit_class_static_field_initializers(SZrCompilerState *cs, SZrAstNode *classNode) {

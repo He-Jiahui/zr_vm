@@ -742,6 +742,10 @@ static SZrFunction *compile_type_member_function(
         }
     }
 
+    if (!cs->hasError && isConstructor && injectThis) {
+        emit_class_instance_field_initializers(cs, cs->currentTypeNode);
+    }
+
     if (body != ZR_NULL && isPropertyExpressionBody &&
         propertyAccessorNode != ZR_NULL &&
         propertyAccessorNode->data.propertyAccessor.kind ==

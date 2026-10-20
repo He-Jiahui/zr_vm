@@ -2501,7 +2501,8 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
             slotTypeRef = &hintTypeRef;
         }
 
-        if (compiler_find_inline_type_layout(cs, slotTypeRef,
+        if (!(slotIsParameter && compiler_stack_slot_is_reference_parameter(cs, slot)) &&
+            compiler_find_inline_type_layout(cs, slotTypeRef,
                                              &typeLayoutId,
                                              &byteSize,
                                              &byteAlign,

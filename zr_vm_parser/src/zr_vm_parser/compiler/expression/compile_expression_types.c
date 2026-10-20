@@ -1542,6 +1542,13 @@ static TZrUInt32 compile_call_argument_into_slot(
          passingMode == ZR_PARAMETER_PASSING_MODE_OUT) &&
         (sourceSlot = call_argument_direct_local_slot(cs, argument)) !=
                 ZR_PARSER_SLOT_NONE) {
+        if (compiler_stack_slot_is_reference_parameter(cs, sourceSlot)) {
+            /* Forward the original target, rather than a reference to the
+             * parameter's carrier slot. */
+            emit_instruction(cs, create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                    (TZrUInt16)targetSlot, (TZrInt32)sourceSlot));
+            return cs->hasError ? ZR_PARSER_SLOT_NONE : targetSlot;
+        }
         emit_instruction(
                 cs,
                 create_instruction_1(
@@ -1549,6 +1556,30 @@ static TZrUInt32 compile_call_argument_into_slot(
                         (TZrUInt16)targetSlot,
                         (TZrInt32)sourceSlot));
         return cs->hasError ? ZR_PARSER_SLOT_NONE : targetSlot;
+    }
+    if (createManagedLocalReference &&
+        (passingMode == ZR_PARAMETER_PASSING_MODE_REF ||
+         passingMode == ZR_PARAMETER_PASSING_MODE_OUT) &&
+        argument->type == ZR_AST_PRIMARY_EXPRESSION) {
+        SZrInferredType argumentType;
+        TZrBool needsReference;
+        ZrParser_InferredType_Init(cs->state, &argumentType, ZR_VALUE_TYPE_OBJECT);
+        if (!ZrParser_ExpressionType_Infer(cs, argument, &argumentType)) {
+            ZrParser_InferredType_Free(cs->state, &argumentType);
+            return ZR_PARSER_SLOT_NONE;
+        }
+        needsReference = argumentType.referenceAccess == ZR_REFERENCE_ACCESS_NONE;
+        ZrParser_InferredType_Free(cs->state, &argumentType);
+        if (needsReference) {
+            sourceSlot = compile_property_reference_place(cs, argument, argument->location);
+            if (sourceSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
+                return ZR_PARSER_SLOT_NONE;
+            }
+            emit_instruction(cs, create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                    (TZrUInt16)targetSlot, (TZrInt32)sourceSlot));
+            collapse_stack_to_slot(cs, targetSlot);
+            return cs->hasError ? ZR_PARSER_SLOT_NONE : targetSlot;
+        }
     }
     if (!call_argument_is_owner_in_reborrow(
                 cs,
@@ -1699,7 +1730,7 @@ static TZrBool compile_arguments_against_parameter_types(SZrCompilerState *cs,
                         ? *passingMode
                         : ZR_PARAMETER_PASSING_MODE_VALUE,
                 expectedType,
-                ZR_FALSE);
+                ZR_TRUE);
         if (argSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
             return ZR_FALSE;
         }
@@ -2474,8 +2505,7 @@ static TZrBool compile_arguments_against_function_resolved_signature(SZrCompiler
                         ? *passingMode
                         : ZR_PARAMETER_PASSING_MODE_VALUE,
                 expectedType,
-                resolved_function_call_uses_meta_call_opcode(
-                        resolvedFunctionType));
+                ZR_TRUE);
         if (argSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
             return ZR_FALSE;
         }
@@ -3785,7 +3815,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                                         argSlot,
                                         passingMode,
                                         expectedType,
-                                        ZR_FALSE) == ZR_PARSER_SLOT_NONE ||
+                                        ZR_TRUE) == ZR_PARSER_SLOT_NONE ||
                                 cs->hasError) {
                                 break;
                             }
