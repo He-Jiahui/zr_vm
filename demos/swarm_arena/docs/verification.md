@@ -1,5 +1,51 @@
 # Verification evidence
 
+## GD-C1 optional probes integration (2026-10-20)
+
+Engine `ed10137f0dcc5c2ddf50eaeed1a41a70aef8fcc3` was pushed and then merged as
+`49428df9f880578e0ede99e8d254b95f91cf7c3c` without resetting the demo branch.
+The existing CLI, embedded host, FFI fixture, and both descriptor fixtures were
+rebuilt in all three existing demo trees. No game implementation started.
+
+| Configuration | Demo CTests | Required checks | Successful checks | P22 required pairs | CTest time |
+| --- | --- | --- | --- | --- | --- |
+| Release | 64/64 | 38/38 | 58/62 | 18/18 | 8.81 s |
+| ASan/UBSan | 64/64 | 38/38 | 58/62 | 18/18 | 15.77 s |
+| Forced full GC + ASan/UBSan | 64/64 | 38/38 | 58/62 | 18/18 | 15.33 s |
+
+P02, P07, P11 binary, P17, P18, P20, and the P14 native alias now pass, and their
+expected-failure settings were removed. P19 and the package case retain FAIL
+status and four exact expected diagnostics across the two execution modes.
+P22 reports only those two pairs without successful optional parity.
+There are no detector findings in the final runs. CLI/runtime-library hashes and
+per-case commands, source-removal state, and execution markers are in status.json and
+the raw evidence directories below.
+
+```sh
+export PATH="/workspace/zr_vm-perf/build/local-tools/usr/bin:/workspace/zr_vm-perf/build/tools/bin:$PATH"
+export LD_LIBRARY_PATH="/workspace/zr_vm-perf/build/local-tools/usr/lib/x86_64-linux-gnu"
+export ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 ZR_VM_TEST_TIER=core
+cmake --build build/demo-release -j3 --target zr_vm_cli_executable zr_swarm_probe_host zrgame_ffi zrgame_probe zrgame_inline_probe
+cmake --build build/demo-asan -j3 --target zr_vm_cli_executable zr_swarm_probe_host zrgame_ffi zrgame_probe zrgame_inline_probe
+cmake --build build/demo-gcstress -j3 --target zr_vm_cli_executable zr_swarm_probe_host zrgame_ffi zrgame_probe zrgame_inline_probe
+ctest --test-dir build/demo-release -L demo -j4 --output-on-failure
+ctest --test-dir build/demo-asan -L demo -j4 --output-on-failure
+ctest --test-dir build/demo-gcstress -L demo -j4 --output-on-failure
+```
+
+The detector and forced-GC build flags are unchanged. New raw build and CTest
+logs are `/tmp/zr-swarm-opt-demo-{release,asan,gcstress}-{build,ctest}.log`;
+private probe projects/results are under
+`/tmp/zr-swarm-opt-demo-{release,asan,gcstress}-probes/`. Local probe-results
+and CTest Temporary paths are symlinks to `/tmp`.
+
+Engine validation is Release 515/515, detector 515/515 final per-test outcomes
+(full run plus the two metadata-expectation reruns), forced-GC 129/129 selected,
+all 28 Swarm tests in each configuration, and the Release performance gate 1/1.
+See the optional-probe acceptance note for the precise coverage limits and
+remaining reflection/package work. Historical sections below describe prior
+revisions and are superseded by this section.
+
 ## GD-C1 engine integration (2026-10-20)
 
 Engine `d01387a9211dc6eed519f5fb0c4321fa258f2eab` was merged as `ae003e05ce4c8dc0b7c3f258ee4eaa6dacce1d9b` without resetting the demo

@@ -7,11 +7,7 @@
   {
     "name": "p02-main",
     "probe": "P02",
-    "required": false,
-    "expect": {
-      "interp": "GET_MEMBER: receiver must be an object, array, or string",
-      "binary": "GET_MEMBER: receiver must be an object, array, or string"
-    }
+    "required": false
   },
   {
     "name": "p03-main",
@@ -36,11 +32,7 @@
   {
     "name": "p07-main",
     "probe": "P07",
-    "required": false,
-    "expect": {
-      "interp": "Concrete class does not implement all abstract/interface members",
-      "binary": "Concrete class does not implement all abstract/interface members"
-    }
+    "required": false
   },
   {
     "name": "p08-main",
@@ -60,10 +52,7 @@
   {
     "name": "p11-main",
     "probe": "P11",
-    "required": false,
-    "expect": {
-      "binary": "PROPERTY_REF_CREATE_LOCAL: invalid local Place"
-    }
+    "required": false
   },
   {
     "name": "p12-main",
@@ -93,20 +82,12 @@
   {
     "name": "p17-main",
     "probe": "P17",
-    "required": false,
-    "expect": {
-      "interp": "invalid operand for bytecode instruction 209",
-      "binary": "invalid operand for bytecode instruction 209"
-    }
+    "required": false
   },
   {
     "name": "p18-main",
     "probe": "P18",
-    "required": false,
-    "expect": {
-      "interp": "conditional.unknown_feature: project feature is not declared",
-      "binary": "conditional.unknown_feature: project feature is not declared"
-    }
+    "required": false
   },
   {
     "name": "p19-main",
@@ -120,11 +101,7 @@
   {
     "name": "p20-main",
     "probe": "P20",
-    "required": false,
-    "expect": {
-      "interp": "invalid operand for bytecode instruction 209",
-      "binary": "invalid operand for bytecode instruction 209"
-    }
+    "required": false
   },
   {
     "name": "p21-main",
@@ -168,11 +145,7 @@
     "name": "p14-alias",
     "probe": "P14",
     "variant": "aliases",
-    "required": false,
-    "expect": {
-      "interp": "failed to load import metadata for module '#gfx'",
-      "binary": "failed to load import metadata for module '#gfx'"
-    }
+    "required": false
   },
   {
     "name": "p14-package",

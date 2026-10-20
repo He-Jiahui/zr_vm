@@ -1,7 +1,7 @@
 {
   "schema": "zr-swarm-readiness/1",
   "stopped_at": "GD-C1",
-  "reason": "All required GD-C1 probes pass in Release, ASan/UBSan, and forced-GC configurations, including source-removed binary execution. Optional failures remain recorded. Work stops at GD-C1 as requested; GD-C2 and game features have not started.",
+  "reason": "All required GD-C1 probes and seven corrected optional paths pass in Release, ASan/UBSan, and forced GC, including source-removed binary execution. Only P19 runtime reflection and the P14 package case remain deferred. GD-C2 and game work have not started.",
   "probes": [
     {
       "id": "P01",
@@ -21,16 +21,16 @@
     {
       "id": "P02",
       "required": false,
-      "interp": "FAIL",
-      "binary": "FAIL",
-      "note": "Struct operator evaluation reaches GET_MEMBER with an unsuitable receiver; optional operator path remains unavailable.",
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Vec2 add/sub/mul/neg and mixed Vec2 * float preserve inline operands and typed results; fixed by 5688215e.",
       "asan": {
-        "interp": "FAIL",
-        "binary": "FAIL"
+        "interp": "OK",
+        "binary": "OK"
       },
       "gcstress": {
-        "interp": "FAIL",
-        "binary": "FAIL"
+        "interp": "OK",
+        "binary": "OK"
       }
     },
     {
@@ -96,16 +96,16 @@
     {
       "id": "P07",
       "required": false,
-      "interp": "FAIL",
-      "binary": "FAIL",
-      "note": "User Enumerator/Iterable implementation rejected as not implementing all abstract/interface members. Optional; no fallback selected.",
+      "interp": "OK",
+      "binary": "OK",
+      "note": "User Enumerator/Iterable contracts match imported nominal types; default constructors run independent instance initializers; fixed by 4ccf219f.",
       "asan": {
-        "interp": "FAIL",
-        "binary": "FAIL"
+        "interp": "OK",
+        "binary": "OK"
       },
       "gcstress": {
-        "interp": "FAIL",
-        "binary": "FAIL"
+        "interp": "OK",
+        "binary": "OK"
       }
     },
     {
@@ -157,15 +157,15 @@
       "id": "P11",
       "required": false,
       "interp": "OK",
-      "binary": "FAIL",
-      "note": "Pool deliver/borrow/write/close/recycle passes in interp; binary tryBorrow(out view) still reports PROPERTY_REF_CREATE_LOCAL: invalid local Place.",
+      "binary": "OK",
+      "note": "Pool deliver/borrow/write/close/recycle and tryBorrow(out view) pass in both modes; embedded function GC domain identity fixed by b398492b.",
       "asan": {
         "interp": "OK",
-        "binary": "FAIL"
+        "binary": "OK"
       },
       "gcstress": {
         "interp": "OK",
-        "binary": "FAIL"
+        "binary": "OK"
       }
     },
     {
@@ -203,7 +203,7 @@
       "required": true,
       "interp": "OK",
       "binary": "OK",
-      "note": "Descriptor plugins link in fresh source-removed binary processes via both ZR_VM_NATIVE_PATH and project/native; fixed by 3d69cee7. Optional #gfx metadata and @swarmcore package imports still fail.",
+      "note": "Descriptor plugins pass both required search paths and optional #gfx metadata lookup in both modes; alias fixed by 206290fd. @swarmcore remains deferred because v2 package dependencies/exports are disconnected from production provider loading.",
       "asan": {
         "interp": "OK",
         "binary": "OK"
@@ -211,6 +211,36 @@
       "gcstress": {
         "interp": "OK",
         "binary": "OK"
+      },
+      "optional_variants": {
+        "aliases": {
+          "release": {
+            "interp": "OK",
+            "binary": "OK"
+          },
+          "asan": {
+            "interp": "OK",
+            "binary": "OK"
+          },
+          "gcstress": {
+            "interp": "OK",
+            "binary": "OK"
+          }
+        },
+        "package": {
+          "release": {
+            "interp": "FAIL",
+            "binary": "FAIL"
+          },
+          "asan": {
+            "interp": "FAIL",
+            "binary": "FAIL"
+          },
+          "gcstress": {
+            "interp": "FAIL",
+            "binary": "FAIL"
+          }
+        }
       }
     },
     {
@@ -246,31 +276,31 @@
     {
       "id": "P17",
       "required": false,
-      "interp": "FAIL",
-      "binary": "FAIL",
-      "note": "f32 cast/field lowering reports invalid operand for bytecode instruction 209; size/precision remain unverified.",
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Explicit f32 casts and field precision pass, including dynamic positive/negative rounding; serializable conversion fixed by 6deb6a3e.",
       "asan": {
-        "interp": "FAIL",
-        "binary": "FAIL"
+        "interp": "OK",
+        "binary": "OK"
       },
       "gcstress": {
-        "interp": "FAIL",
-        "binary": "FAIL"
+        "interp": "OK",
+        "binary": "OK"
       }
     },
     {
       "id": "P18",
       "required": false,
-      "interp": "FAIL",
-      "binary": "FAIL",
-      "note": "Declared trace feature rejected as conditional.unknown_feature; profiles/comptime combined probe cannot complete.",
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Declared trace feature is recognized while disabled; traceCalls=0, disabled argument skipping, enabled feature calls, and comptime checks pass; fixed by 1b1666f0. Build-profile selection is not added.",
       "asan": {
-        "interp": "FAIL",
-        "binary": "FAIL"
+        "interp": "OK",
+        "binary": "OK"
       },
       "gcstress": {
-        "interp": "FAIL",
-        "binary": "FAIL"
+        "interp": "OK",
+        "binary": "OK"
       }
     },
     {
@@ -278,7 +308,7 @@
       "required": false,
       "interp": "FAIL",
       "binary": "FAIL",
-      "note": "Runtime import zr.reflection fails with import_load_unavailable; field/attribute enumeration unverified.",
+      "note": "Runtime zr.reflection import still reports import_load_unavailable. Bytecode TypeId rehydration and declaration field/attribute resolution remain deferred. The independent ordinary typeid argument-slot fix is 8b1a45c9.",
       "asan": {
         "interp": "FAIL",
         "binary": "FAIL"
@@ -291,16 +321,16 @@
     {
       "id": "P20",
       "required": false,
-      "interp": "FAIL",
-      "binary": "FAIL",
-      "note": "Native inline-struct construction reports invalid operand for bytecode instruction 209 in both modes; binary linking now succeeds. InlineArgumentView assertion remains unreached.",
+      "interp": "OK",
+      "binary": "OK",
+      "note": "Native scalar struct construction, float precision, and InlineArgumentView pass in both modes; caller argument coordinates and native layout metadata fixed by da7eaa51.",
       "asan": {
-        "interp": "FAIL",
-        "binary": "FAIL"
+        "interp": "OK",
+        "binary": "OK"
       },
       "gcstress": {
-        "interp": "FAIL",
-        "binary": "FAIL"
+        "interp": "OK",
+        "binary": "OK"
       }
     },
     {
@@ -323,7 +353,7 @@
       "required": true,
       "interp": "OK",
       "binary": "OK",
-      "note": "Required-case parity aggregate passes all 18 required P01-P20 case pairs; nine optional pairs without successful parity are reported separately. P21 is gated independently.",
+      "note": "Required-case parity passes all 18 required P01-P20 pairs; only P19 and the optional package pair lack successful parity. P21 is gated independently.",
       "asan": {
         "interp": "OK",
         "binary": "OK"
@@ -334,102 +364,133 @@
       }
     }
   ],
-  "validated_engine_revision": "d01387a9211dc6eed519f5fb0c4321fa258f2eab",
-  "engine_merge_revision": "ae003e05ce4c8dc0b7c3f258ee4eaa6dacce1d9b",
+  "validated_engine_revision": "ed10137f0dcc5c2ddf50eaeed1a41a70aef8fcc3",
+  "engine_merge_revision": "49428df9f880578e0ede99e8d254b95f91cf7c3c",
   "validation": {
     "release": {
       "build": "build/demo-release",
       "ctest": {
         "passed": 64,
         "total": 64,
-        "seconds": 6.95
+        "seconds": 8.81
       },
       "required_mode_checks": {
         "passed": 38,
         "total": 38
       },
       "all_mode_checks": {
-        "passed": 45,
+        "passed": 58,
         "total": 62
       },
       "p22_required_pairs": 18,
       "p22_optional_without_parity": [
-        "p02-main",
-        "p07-main",
-        "p11-main",
-        "p17-main",
-        "p18-main",
         "p19-main",
-        "p20-main",
-        "p14-alias",
         "p14-package"
       ],
+      "optional_mode_failures": [
+        "p19-main-interp",
+        "p19-main-binary",
+        "p14-package-interp",
+        "p14-package-binary"
+      ],
       "cli_sha256": "9758ea0f29ef15d9ecf88b296d1ca4821346c2111a63629ee6cf51e53d41c572",
-      "evidence": "/tmp/zr-swarm-demo-release-probes",
-      "ctest_log": "/tmp/zr-swarm-demo-release-ctest.log"
+      "evidence": "/tmp/zr-swarm-opt-demo-release-probes",
+      "ctest_log": "/tmp/zr-swarm-opt-demo-release-ctest.log",
+      "runtime_library_sha256": {
+        "libzr_vm_core.so": "c03d7cd24818be7741ebc2f39c8044fa57701d088403a76532afccf4dc85d51c",
+        "libzr_vm_parser.so": "4f2847d414bbc1e1a133edbcc4be1e0c51d98bb6093814458ffe5376a494e6ba",
+        "libzr_vm_library.so": "078a5c8587fbfd45e51b1ac68aaca189f71afc873703195b5ec933d0858c55ff",
+        "libzr_vm_lib_iteration.so": "0ee07f68c54f709d99427de590bca4e63f74a4ad3e67047e1579d5a65058fafc",
+        "libzr_vm_lib_system.so": "0c0c3c1680aa9139421a54bdd922760f184d2727672ca4819b4f542746aed4e8",
+        "libzr_vm_lib_container.so": "57ff3302e5d6ed92685371d719fe37b917efad93588dbadc4c49d4c9dfd7548c"
+      }
     },
     "asan": {
       "build": "build/demo-asan",
       "ctest": {
         "passed": 64,
         "total": 64,
-        "seconds": 15.9
+        "seconds": 15.77
       },
       "required_mode_checks": {
         "passed": 38,
         "total": 38
       },
       "all_mode_checks": {
-        "passed": 45,
+        "passed": 58,
         "total": 62
       },
       "p22_required_pairs": 18,
       "p22_optional_without_parity": [
-        "p02-main",
-        "p07-main",
-        "p11-main",
-        "p17-main",
-        "p18-main",
         "p19-main",
-        "p20-main",
-        "p14-alias",
         "p14-package"
       ],
-      "cli_sha256": "c22a2f5ac06a517291bf117671518a9d23f60d79a11f811bb938d45ae18d4a5a",
-      "evidence": "/tmp/zr-swarm-demo-asan-probes",
-      "ctest_log": "/tmp/zr-swarm-demo-asan-ctest.log"
+      "optional_mode_failures": [
+        "p19-main-interp",
+        "p19-main-binary",
+        "p14-package-interp",
+        "p14-package-binary"
+      ],
+      "cli_sha256": "eb3cc59bd9daf1e327ee50a1a5d0150cd74e9c8900ae3c024376752398525c44",
+      "evidence": "/tmp/zr-swarm-opt-demo-asan-probes",
+      "ctest_log": "/tmp/zr-swarm-opt-demo-asan-ctest.log",
+      "runtime_library_sha256": {
+        "libzr_vm_core.so": "0fe1b3e2b5e40190b75d24379bc8327a7ec63d97eac81a2aa3560537813e13ef",
+        "libzr_vm_parser.so": "2cc8f236173953bc45bb5eb2111594a250da49d12e4692e3a14a1f4a58e1534e",
+        "libzr_vm_library.so": "645679e6d4e32602c21a46ab0d6273229c101fa5fa3a102cfd5fa3961a29f130",
+        "libzr_vm_lib_iteration.so": "f5d51a95473d4daf38d6ed0f59d65af36971becc4af1b52ac3ca1f4c129409bb",
+        "libzr_vm_lib_system.so": "1df27c2b4389f9c69fd63e07d56f3b76df24b0226e39018f8c752649ed1c084f",
+        "libzr_vm_lib_container.so": "cffc992b80bbd02ed32784a1347c9fc0aed2f80ef4a97d6230d8b4ef12dc2419"
+      }
     },
     "gcstress": {
       "build": "build/demo-gcstress",
       "ctest": {
         "passed": 64,
         "total": 64,
-        "seconds": 16.71
+        "seconds": 15.33
       },
       "required_mode_checks": {
         "passed": 38,
         "total": 38
       },
       "all_mode_checks": {
-        "passed": 45,
+        "passed": 58,
         "total": 62
       },
       "p22_required_pairs": 18,
       "p22_optional_without_parity": [
-        "p02-main",
-        "p07-main",
-        "p11-main",
-        "p17-main",
-        "p18-main",
         "p19-main",
-        "p20-main",
-        "p14-alias",
         "p14-package"
       ],
-      "cli_sha256": "7d053855be5292597db4a3d9ebf9a85d767865251c6ca252e9dd7aafcfc06fa7",
-      "evidence": "/tmp/zr-swarm-demo-gcstress-probes",
-      "ctest_log": "/tmp/zr-swarm-demo-gcstress-ctest.log"
+      "optional_mode_failures": [
+        "p19-main-interp",
+        "p19-main-binary",
+        "p14-package-interp",
+        "p14-package-binary"
+      ],
+      "cli_sha256": "aeb25c5d2b17458ad32aa2637a398ed36a23e85186ea5a3b0a3f0fab0d0edda2",
+      "evidence": "/tmp/zr-swarm-opt-demo-gcstress-probes",
+      "ctest_log": "/tmp/zr-swarm-opt-demo-gcstress-ctest.log",
+      "runtime_library_sha256": {
+        "libzr_vm_core.so": "bf7c0136b14176910b3ed2bcd4eb2bb184555443824d8b58763327f1aceded98",
+        "libzr_vm_parser.so": "ca222a1d86a717376cea5bec655fba19edc525b737df69e4cce5ece566ba4d4e",
+        "libzr_vm_library.so": "7eb6f8d20cdf7188855515b628df5db6c9d8fa3df2513fe29107686e51acc1b7",
+        "libzr_vm_lib_iteration.so": "4d9858a511955d277f72331bd409a6877e4a2e7f57690a3b43a57c8bd7e54fe9",
+        "libzr_vm_lib_system.so": "9599f047649a77b2ec6891244ebf9f974b51679dec6e490458dd7398cc702ff7",
+        "libzr_vm_lib_container.so": "36052a1538e57b53f42a9e88d246737577fe23c0ed166f61347074afd334c8fe"
+      }
     }
   },
-  "parity_scope": "P22 gates the 18 required P01-P20 case pairs. Optional failures remain failures and are listed separately; P21 is checked by the required-feature gate."
+  "parity_scope": "P22 gates 18 required P01-P20 pairs and reports optional parity separately. Only P19 and the package pair lack successful parity; P21 is checked by the feature gate.",
+  "optional_fix_commits": {
+    "P11": "b398492b",
+    "P02": "5688215e",
+    "P07": "4ccf219f",
+    "P17": "6deb6a3e",
+    "P20": "da7eaa51",
+    "P18": "1b1666f0",
+    "P14-alias": "206290fd",
+    "typeid-argument": "8b1a45c9"
+  }
 }
