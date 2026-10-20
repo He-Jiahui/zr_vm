@@ -1,5 +1,5 @@
 if(TARGET zr_vm_cli_executable)
-    foreach(case IN ITEMS destructor_stack_growth union_call_storage)
+    foreach(case IN ITEMS destructor_stack_growth union_call_storage callable_field)
         foreach(mode IN ITEMS interp binary)
             add_test(NAME swarm_${case}_${mode}
                 COMMAND ${CMAKE_COMMAND}

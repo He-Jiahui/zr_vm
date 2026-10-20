@@ -5,6 +5,7 @@
 #include "compiler/expression/compile_expression_internal.h"
 #include "compiler/expression/compile_expression_contiguous_view.h"
 #include "type_inference/type_inference_internal.h"
+#include "type_inference/type_inference_function_type.h"
 #include "compiler/compiler_native_call_binding.h"
 #include "compiler/compiler_call_binding.h"
 #include "compiler/compiler_typed_call_binding.h"
@@ -3488,6 +3489,25 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *primaryNode,
                     ZrParser_InferredType_Free(cs->state, &contractReturnType);
                     goto cleanup;
                 }
+            }
+
+            if (type_inference_function_field_type(activeCallMemberInfo) != ZR_NULL) {
+                hasResolvedFunctionSignature = type_inference_infer_function_type_signature(
+                        cs, type_inference_function_field_type(activeCallMemberInfo),
+                        &resolvedFunctionSignature.parameterTypes, &resolvedFunctionSignature.parameterPassingModes,
+                        &resolvedFunctionSignature.returnType);
+                if (!hasResolvedFunctionSignature) {
+                    free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
+                    free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                    ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                    goto cleanup;
+                }
+                typedCallableValue.isCallableValueBinding = ZR_TRUE;
+                typedCallableValue.returnType = resolvedFunctionSignature.returnType;
+                typedCallableValue.paramTypes = resolvedFunctionSignature.parameterTypes;
+                typedCallableValue.parameterPassingModes = resolvedFunctionSignature.parameterPassingModes;
+                resolvedFunctionType = &typedCallableValue;
+                activeCallMemberInfo = ZR_NULL;
             }
 
             if (activeCallMemberInfo == ZR_NULL &&

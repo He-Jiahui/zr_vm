@@ -430,6 +430,7 @@ TZrBool try_parse_generic_instance_type_name(SZrState *state,
     TZrSize nativeTypeNameLength;
     TZrSize genericStart = ZR_TYPE_INFERENCE_GENERIC_START_NOT_FOUND;
     TZrInt32 depth = 0;
+    TZrInt32 parameterDepth = 0;
     TZrSize segmentStart;
 
     if (outBaseName != ZR_NULL) {
@@ -471,11 +472,21 @@ TZrBool try_parse_generic_instance_type_name(SZrState *state,
     depth = 0;
     for (TZrSize index = genericStart + 1; index < nativeTypeNameLength - 1; index++) {
         TZrChar current = nativeTypeName[index];
+        /* Callable arguments contain commas and an arrow. Neither separates
+         * generic arguments nor closes a generic instance. */
+        if (current == '(' || current == '[') {
+            parameterDepth++;
+        } else if (current == ')' || current == ']') {
+            parameterDepth--;
+        }
         if (current == '<') {
             depth++;
             continue;
         }
         if (current == '>') {
+            if (index > 0 && nativeTypeName[index - 1] == '-') {
+                continue;
+            }
             if (depth == 0) {
                 ZrCore_Array_Free(state, outArgumentTypeNames);
                 ZrCore_Array_Construct(outArgumentTypeNames);
@@ -485,7 +496,7 @@ TZrBool try_parse_generic_instance_type_name(SZrState *state,
             depth--;
             continue;
         }
-        if (current == ',' && depth == 0) {
+        if (current == ',' && depth == 0 && parameterDepth == 0) {
             SZrString *argumentName;
             if (!create_trimmed_type_name_segment(state, nativeTypeName, segmentStart, index, &argumentName)) {
                 ZrCore_Array_Free(state, outArgumentTypeNames);
@@ -498,7 +509,7 @@ TZrBool try_parse_generic_instance_type_name(SZrState *state,
         }
     }
 
-    if (depth != 0) {
+    if (depth != 0 || parameterDepth != 0) {
         ZrCore_Array_Free(state, outArgumentTypeNames);
         ZrCore_Array_Construct(outArgumentTypeNames);
         *outBaseName = ZR_NULL;

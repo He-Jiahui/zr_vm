@@ -7,6 +7,16 @@
 
 #include <string.h>
 
+const SZrFunctionType *type_inference_function_field_type(const SZrTypeMemberInfo *memberInfo) {
+    if (memberInfo == ZR_NULL ||
+        (memberInfo->memberType != ZR_AST_CLASS_FIELD && memberInfo->memberType != ZR_AST_STRUCT_FIELD) ||
+        memberInfo->fieldType == ZR_NULL || memberInfo->fieldType->name == ZR_NULL ||
+        memberInfo->fieldType->name->type != ZR_AST_FUNCTION_TYPE) {
+        return ZR_NULL;
+    }
+    return &memberInfo->fieldType->name->data.functionType;
+}
+
 static const TZrChar *function_type_passing_mode_prefix(EZrParameterPassingMode passingMode) {
     switch (passingMode) {
         case ZR_PARAMETER_PASSING_MODE_IN: return "in ";

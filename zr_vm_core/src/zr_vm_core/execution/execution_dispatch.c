@@ -1209,6 +1209,7 @@ static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_frame_layout_generic_sing
     SZrFunctionStackAnchor callWindowAnchor;
     SZrFunctionStackAnchor frameBaseAnchor;
     SZrCallInfo *nextCallInfo;
+    SZrFunction *resolvedFunction;
 
     if (outCallWindow != ZR_NULL) {
         *outCallWindow = ZR_NULL;
@@ -1228,7 +1229,20 @@ static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_frame_layout_generic_sing
     state->stackTop.valuePointer = callWindow + parametersCount + 1u;
     ZrCore_Function_StackAnchorInit(state, callWindow, &callWindowAnchor);
     ZrCore_Function_StackAnchorInit(state, *ioFrameBase, &frameBaseAnchor);
-    nextCallInfo = ZrCore_Function_PreCall(state, callWindow, 1u, effectiveReturnDestination);
+    resolvedFunction = execution_try_resolve_vm_metadata_function_fast(
+            state, &callWindow->value, ZR_NULL);
+    if (resolvedFunction != ZR_NULL) {
+        /* Inline arguments can have a null dense mirror. Preserve their
+         * caller coordinates just as the known-VM call path does. */
+        nextCallInfo = execution_pre_call_prepared_resolved_vm_with_argument_source_fast(
+                state, callWindow, resolvedFunction, parametersCount, 1u,
+                effectiveReturnDestination, *ioFrameBase, functionSlot + 1u);
+        if (nextCallInfo == ZR_NULL) {
+            ZrCore_Debug_RunError(state, "FUNCTION_CALL: failed to bind VM arguments");
+        }
+    } else {
+        nextCallInfo = ZrCore_Function_PreCall(state, callWindow, 1u, effectiveReturnDestination);
+    }
     callWindow = ZrCore_Function_StackAnchorRestore(state, &callWindowAnchor);
     *ioFrameBase = ZrCore_Function_StackAnchorRestore(state, &frameBaseAnchor);
     execution_release_frame_layout_call_argument_owners(
