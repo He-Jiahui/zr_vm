@@ -10028,8 +10028,20 @@ LZrFastInstruction_BIND_INLINE_ARRAY_ELEMENT_PLACE:
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 execution_clear_registered_owner_mirror(state, sourceBase, opA);
                 execution_clear_registered_owner_mirror(state, destinationBase, destination);
+                SAVE_STATE(state, callInfo);
                 ZrCore_Ownership_ReleaseValue(state, opA);
+                /* A destructor can grow the stack. No operand pointer from
+                 * before the release may be used after that call. */
+                UPDATE_BASE(callInfo);
+                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG
+                                      ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 execution_prepare_destination_for_direct_store_no_profile(state, destination);
+                UPDATE_BASE(callInfo);
+                sourceBase = BASE(A1(instruction));
+                destinationBase = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG
+                                          ? ZR_NULL : BASE(E(instruction));
+                destination = destinationBase == ZR_NULL ? &ret : FRAME_VALUE_SLOT(E(instruction));
+                opA = FRAME_VALUE_SLOT(A1(instruction));
                 ZrCore_Value_ResetAsNull(destination);
                 execution_refresh_registered_owner_mirror(state, sourceBase, opA);
                 execution_refresh_registered_owner_mirror(state, destinationBase, destination);
