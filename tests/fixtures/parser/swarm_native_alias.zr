@@ -1,0 +1,4 @@
+let aliased = import("#provider");
+let direct = import("zr.swarmprobe");
+if (aliased.value() != 42 || direct.value() != 42) { throw "native alias binding"; }
+return 42;

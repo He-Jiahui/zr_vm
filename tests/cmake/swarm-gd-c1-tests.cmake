@@ -29,7 +29,7 @@ if(TARGET zr_vm_cli_executable)
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_swarm_regression.cmake")
         set_tests_properties(swarm_declared_features_${mode} PROPERTIES TIMEOUT 90)
     endforeach()
-    foreach(case IN ITEMS binary_plugin_binding native_inline_arguments)
+    foreach(case IN ITEMS binary_plugin_binding native_inline_arguments native_alias)
     foreach(mode IN ITEMS interp binary)
         add_test(NAME swarm_${case}_${mode}
             COMMAND ${CMAKE_COMMAND}
