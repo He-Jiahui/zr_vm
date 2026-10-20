@@ -529,23 +529,6 @@ static TZrBool compiler_type_member_emits_runtime_descriptor(const SZrTypeMember
     }
 }
 
-static TZrBool compiler_type_prototype_serializes_to_runtime(const SZrTypePrototypeInfo *prototypeInfo) {
-    const TZrUInt64 contiguousViewProtocols =
-            ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_MUTABLE) |
-            ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_READONLY);
-
-    if (prototypeInfo == ZR_NULL || prototypeInfo->name == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    if (!prototypeInfo->isImportedNative) {
-        return ZR_TRUE;
-    }
-    return (prototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ||
-            prototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_UNION) &&
-           prototypeInfo->layoutByteSize > 0u &&
-           prototypeInfo->layoutByteAlign > 0u &&
-           (prototypeInfo->protocolMask & contiguousViewProtocols) != 0u;
-}
 
 static TZrBool compiler_resolve_type_member_runtime_descriptor_binding(SZrCompilerState *cs,
                                                                        const SZrTypeMemberInfo *memberInfo,
@@ -2011,7 +1994,24 @@ TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, T
     return compile_expression_into_slot_impl(cs, node, targetSlot, ZR_FALSE);
 }
 TZrUInt32 compile_scalar_argument_into_slot(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot) {
-    return compile_expression_into_slot_impl(cs, node, targetSlot, ZR_TRUE);
+    TZrUInt32 resultSlot = compile_expression_into_slot_impl(cs, node, targetSlot, ZR_TRUE);
+    if (resultSlot == ZR_PARSER_SLOT_NONE || cs->hasError) return resultSlot;
+    if (!cs->preservePropertyReferenceResult) {
+        SZrInferredType type;
+        ZrParser_InferredType_Init(cs->state, &type, ZR_VALUE_TYPE_OBJECT);
+        if (ZrParser_ExpressionType_Infer(cs, node, &type) &&
+            type.referenceAccess == ZR_REFERENCE_ACCESS_NONE &&
+            type.ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_NONE) {
+            SZrTypePrototypeInfo *prototype = find_compiler_type_prototype(cs, type.typeName);
+            if (prototype != ZR_NULL && prototype->isImportedNative &&
+                prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT &&
+                prototype->layoutByteSize > 0u && prototype->genericParameters.length == 0u) {
+                (void)note_inline_struct_result_slot(cs, targetSlot, type.typeName);
+            }
+        }
+        ZrParser_InferredType_Free(cs->state, &type);
+    }
+    return resultSlot;
 }
 
 static TZrUInt32 compile_expression_into_slot_impl(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot, TZrBool scalarArgument) {

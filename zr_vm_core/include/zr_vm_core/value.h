@@ -61,6 +61,8 @@ ZR_CORE_API void ZrCore_Value_InitAsBool(struct SZrState *state, SZrTypeValue *v
 
 ZR_CORE_API void ZrCore_Value_InitAsFloat(struct SZrState *state, SZrTypeValue *value, TZrFloat64 floatValue);
 
+/* Serializable compiler helper for explicit f32 precision conversion. */
+ZR_CORE_API TZrInt64 ZrCore_Value_Float32NativeEntry(struct SZrState *state);
 ZR_CORE_API void ZrCore_Value_InitAsNativePointer(struct SZrState *state, SZrTypeValue *value, TZrPtr pointerValue);
 
 ZR_CORE_API TZrBool ZrCore_Value_Equal(struct SZrState *state, SZrTypeValue *value1, SZrTypeValue *value2);

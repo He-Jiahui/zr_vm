@@ -1240,6 +1240,13 @@ static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_frame_layout_generic_sing
         if (nextCallInfo == ZR_NULL) {
             ZrCore_Debug_RunError(state, "FUNCTION_CALL: failed to bind VM arguments");
         }
+    } else if (callWindow->value.isNative &&
+               (callWindow->value.type == ZR_VALUE_TYPE_CLOSURE ||
+                callWindow->value.type == ZR_VALUE_TYPE_FUNCTION ||
+                callWindow->value.type == ZR_VALUE_TYPE_NATIVE_POINTER)) {
+        nextCallInfo = ZrCore_Function_PreCallKnownNativeValueWithArgumentSource(
+                state, callWindow, &callWindow->value, 1u, effectiveReturnDestination,
+                *ioFrameBase, functionSlot + 1u);
     } else {
         nextCallInfo = ZrCore_Function_PreCall(state, callWindow, 1u, effectiveReturnDestination);
     }
@@ -6740,63 +6747,14 @@ LZrFastInstruction_ADD: {
                         if (try_builtin_add(state, destination, opA, opB)) {
                             // 基础数值和字符串拼接直接在运行时处理。
                         } else {
-                            SZrTypeValue metaArg0Value;
-                            SZrTypeValue metaArg1Value;
-                            SZrTypeValue *metaReceiver = opA;
-                            const SZrTypeValue *metaArg0 = opA;
-                            const SZrTypeValue *metaArg1 = opB;
-                            SZrMeta *meta;
-                            ZrCore_Value_ResetAsNull(&metaArg0Value);
-                            ZrCore_Value_ResetAsNull(&metaArg1Value);
-                            if (ZrCore_Function_CopyFrameSlotInlineToObjectValue(
-                                        state, currentFunction, base, A1(instruction), &metaArg0Value)) {
-                                metaReceiver = &metaArg0Value;
-                                metaArg0 = &metaArg0Value;
-                            }
-                            if (ZrCore_Function_CopyFrameSlotInlineToObjectValue(
-                                        state, currentFunction, base, B1(instruction), &metaArg1Value)) {
-                                metaArg1 = &metaArg1Value;
-                            }
-                            meta = ZrCore_Value_GetMeta(state, metaReceiver, ZR_META_ADD);
-                            if (meta != ZR_NULL && meta->function != ZR_NULL) {
-                            // 调用元方法
-                                TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
-                                SZrCallInfo *savedCallInfo = state->callInfoList;
-                                PROTECT_E(state, callInfo, {
-                                    TZrStackValuePointer metaBase = ZR_NULL;
-                                    TZrStackValuePointer restoredStackTop = savedStackTop;
-                                    TZrStackValuePointer metaReturnDestination =
-                                            E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? ZR_NULL : BASE(E(instruction));
-                                    TZrBool metaCallSucceeded = execution_invoke_meta_call_to_destination(
-                                            state,
-                                            savedCallInfo,
-                                            savedStackTop,
-                                            savedStackTop,
-                                            meta,
-                                            metaArg0,
-                                            metaArg1,
-                                            ZR_META_CALL_MAX_ARGUMENTS,
-                                            metaReturnDestination,
-                                            &metaBase,
-                                            &restoredStackTop);
-                                    RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
-                                    if (metaCallSucceeded) {
-                                        SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
-                                        if (metaReturnDestination == ZR_NULL && returnValue != ZR_NULL) {
-                                            ZrCore_Value_Copy(state, destination, returnValue);
-                                        }
-                                    } else {
-                                        ZrCore_Value_ResetAsNull(destination);
-                                    }
-                                    state->stackTop.valuePointer = restoredStackTop;
-                                    state->callInfoList = savedCallInfo;
-                                });
-                            } else {
-                                // 无元方法，返回 null
-                                ZrCore_Value_ResetAsNull(destination);
-                            }
-                            ZrCore_Value_ResetAsNull(&metaArg0Value);
-                            ZrCore_Value_ResetAsNull(&metaArg1Value);
+                            PROTECT_E(state, callInfo, {
+                                TZrBool succeeded = execution_invoke_frame_operator(
+                                        state, callInfo, currentFunction, base,
+                                        A1(instruction), B1(instruction), ZR_META_CALL_MAX_ARGUMENTS,
+                                        ZR_META_ADD, E(instruction), &ret);
+                                RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                                if (!succeeded) ZrCore_Value_ResetAsNull(destination);
+                            });
                         }
                     } else {
                         ZrCore_Value_ResetAsNull(&builtinResult);
@@ -6806,64 +6764,14 @@ LZrFastInstruction_ADD: {
                             ZrCore_Value_Copy(state, destination, &builtinResult);
                             // 基础数值和字符串拼接直接在运行时处理。
                         } else {
-                            SZrTypeValue metaArg0Value;
-                            SZrTypeValue metaArg1Value;
-                            SZrTypeValue *metaReceiver = opA;
-                            const SZrTypeValue *metaArg0 = opA;
-                            const SZrTypeValue *metaArg1 = opB;
-                            SZrMeta *meta;
-                            ZrCore_Value_ResetAsNull(&metaArg0Value);
-                            ZrCore_Value_ResetAsNull(&metaArg1Value);
-                            if (ZrCore_Function_CopyFrameSlotInlineToObjectValue(
-                                        state, currentFunction, base, A1(instruction), &metaArg0Value)) {
-                                metaReceiver = &metaArg0Value;
-                                metaArg0 = &metaArg0Value;
-                            }
-                            if (ZrCore_Function_CopyFrameSlotInlineToObjectValue(
-                                        state, currentFunction, base, B1(instruction), &metaArg1Value)) {
-                                metaArg1 = &metaArg1Value;
-                            }
-                            meta = ZrCore_Value_GetMeta(state, metaReceiver, ZR_META_ADD);
-                            if (meta != ZR_NULL && meta->function != ZR_NULL) {
-                            // 调用元方法
-                                TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
-                                SZrCallInfo *savedCallInfo = state->callInfoList;
-                                PROTECT_E(state, callInfo, {
-                                    TZrStackValuePointer metaBase = ZR_NULL;
-                                    TZrStackValuePointer restoredStackTop = savedStackTop;
-                                    TZrStackValuePointer metaReturnDestination = BASE(E(instruction));
-                                    TZrBool metaCallSucceeded = execution_invoke_meta_call_to_destination(
-                                            state,
-                                            savedCallInfo,
-                                            savedStackTop,
-                                            savedStackTop,
-                                            meta,
-                                            metaArg0,
-                                            metaArg1,
-                                            ZR_META_CALL_MAX_ARGUMENTS,
-                                            metaReturnDestination,
-                                            &metaBase,
-                                            &restoredStackTop);
-                                    UPDATE_BASE(callInfo);
-                                    destination = FRAME_VALUE_SLOT(E(instruction));
-                                    if (metaCallSucceeded) {
-                                        /* Return-destination calls copy object and inline frame results during call
-                                           post-processing. Re-copying from the physical slot here can overwrite a
-                                           freshly copied inline struct when the callee returned from inline storage. */
-                                    } else {
-                                        ZrCore_Value_ResetAsNull(destination);
-                                    }
-                                    state->stackTop.valuePointer = restoredStackTop;
-                                    state->callInfoList = savedCallInfo;
-                                });
-                            } else {
-                                // 无元方法，返回 null
-                                UPDATE_BASE(callInfo);
-                                destination = FRAME_VALUE_SLOT(E(instruction));
-                                ZrCore_Value_ResetAsNull(destination);
-                            }
-                            ZrCore_Value_ResetAsNull(&metaArg0Value);
-                            ZrCore_Value_ResetAsNull(&metaArg1Value);
+                            PROTECT_E(state, callInfo, {
+                                TZrBool succeeded = execution_invoke_frame_operator(
+                                        state, callInfo, currentFunction, base,
+                                        A1(instruction), B1(instruction), ZR_META_CALL_MAX_ARGUMENTS,
+                                        ZR_META_ADD, E(instruction), &ret);
+                                RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                                if (!succeeded) ZrCore_Value_ResetAsNull(destination);
+                            });
                         }
                     }
                 }
@@ -7106,38 +7014,16 @@ LZrFastInstruction_ADD_STRING:
                 opA = FRAME_VALUE_SLOT(A1(instruction));
                 opB = FRAME_VALUE_SLOT(B1(instruction));
                 if (!execution_try_builtin_sub(state, destination, opA, opB)) {
-                    SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_SUB);
-                    if (meta != ZR_NULL && meta->function != ZR_NULL) {
-                    // 调用元方法
-                        TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
-                        SZrCallInfo *savedCallInfo = state->callInfoList;
                     PROTECT_E(state, callInfo, {
-                        TZrStackValuePointer metaBase = ZR_NULL;
-                        TZrStackValuePointer restoredStackTop = savedStackTop;
-                        TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
-                                                                              savedCallInfo,
-                                                                              savedStackTop,
-                                                                              savedStackTop,
-                                                                              meta,
-                                                                              opA,
-                                                                              opB,
-                                                                              ZR_META_CALL_MAX_ARGUMENTS,
-                                                                              &metaBase,
-                                                                              &restoredStackTop);
+                        TZrBool succeeded = execution_invoke_frame_operator(
+                                state, callInfo, currentFunction, base,
+                                A1(instruction), B1(instruction), ZR_META_CALL_MAX_ARGUMENTS,
+                                ZR_META_SUB, E(instruction), &ret);
                         RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
-                        if (metaCallSucceeded) {
-                            SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
-                            ZrCore_Value_Copy(state, destination, returnValue);
-                        } else {
+                        if (!succeeded) {
                             ZrCore_Value_ResetAsNull(destination);
                         }
-                        state->stackTop.valuePointer = restoredStackTop;
-                        state->callInfoList = savedCallInfo;
-                        });
-                    } else {
-                    // 无元方法，返回 null
-                        ZrCore_Value_ResetAsNull(destination);
-                    }
+                    });
                 }
             }
             DONE(1);
@@ -7321,38 +7207,16 @@ LZrFastInstruction_MUL: {
                 } else if (execution_try_builtin_mul_mixed_numeric_fast(destination, opA, opB)) {
                     // Mixed numeric integral/bool pairs stay off the meta fallback path.
                 } else {
-                    SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_MUL);
-                    if (meta != ZR_NULL && meta->function != ZR_NULL) {
-                    // 调用元方法
-                        TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
-                        SZrCallInfo *savedCallInfo = state->callInfoList;
                     PROTECT_E(state, callInfo, {
-                        TZrStackValuePointer metaBase = ZR_NULL;
-                        TZrStackValuePointer restoredStackTop = savedStackTop;
-                        TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
-                                                                              savedCallInfo,
-                                                                              savedStackTop,
-                                                                              savedStackTop,
-                                                                              meta,
-                                                                              opA,
-                                                                              opB,
-                                                                              ZR_META_CALL_MAX_ARGUMENTS,
-                                                                              &metaBase,
-                                                                              &restoredStackTop);
+                        TZrBool succeeded = execution_invoke_frame_operator(
+                                state, callInfo, currentFunction, base,
+                                A1(instruction), B1(instruction), ZR_META_CALL_MAX_ARGUMENTS,
+                                ZR_META_MUL, E(instruction), &ret);
                         RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
-                        if (metaCallSucceeded) {
-                            SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
-                            ZrCore_Value_Copy(state, destination, returnValue);
-                        } else {
+                        if (!succeeded) {
                             ZrCore_Value_ResetAsNull(destination);
                         }
-                        state->stackTop.valuePointer = restoredStackTop;
-                        state->callInfoList = savedCallInfo;
-                        });
-                    } else {
-                    // 无元方法，返回 null
-                        ZrCore_Value_ResetAsNull(destination);
-                    }
+                    });
                 }
             }
             DONE(1);
@@ -7564,36 +7428,16 @@ LZrFastInstruction_NEG_FLOAT: {
                                       -opA->value.nativeObject.nativeDouble,
                                       opA->type);
                 } else {
-                    SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_NEG);
-                    if (meta != ZR_NULL && meta->function != ZR_NULL) {
-                        TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
-                        SZrCallInfo *savedCallInfo = state->callInfoList;
-                        PROTECT_E(state, callInfo, {
-                            TZrStackValuePointer metaBase = ZR_NULL;
-                            TZrStackValuePointer restoredStackTop = savedStackTop;
-                            TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
-                                                                                  savedCallInfo,
-                                                                                  savedStackTop,
-                                                                                  savedStackTop,
-                                                                                  meta,
-                                                                                  opA,
-                                                                                  ZR_NULL,
-                                                                                  ZR_META_CALL_UNARY_ARGUMENT_COUNT,
-                                                                                  &metaBase,
-                                                                                  &restoredStackTop);
-                            RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
-                            if (metaCallSucceeded) {
-                                SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
-                                ZrCore_Value_Copy(state, destination, returnValue);
-                            } else {
-                                ZrCore_Value_ResetAsNull(destination);
-                            }
-                            state->stackTop.valuePointer = restoredStackTop;
-                            state->callInfoList = savedCallInfo;
-                        });
-                    } else {
-                        ZrCore_Value_ResetAsNull(destination);
-                    }
+                    PROTECT_E(state, callInfo, {
+                        TZrBool succeeded = execution_invoke_frame_operator(
+                                state, callInfo, currentFunction, base,
+                                A1(instruction), 0u, ZR_META_CALL_UNARY_ARGUMENT_COUNT,
+                                ZR_META_NEG, E(instruction), &ret);
+                        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                        if (!succeeded) {
+                            ZrCore_Value_ResetAsNull(destination);
+                        }
+                    });
                 }
             }
             DONE(1);

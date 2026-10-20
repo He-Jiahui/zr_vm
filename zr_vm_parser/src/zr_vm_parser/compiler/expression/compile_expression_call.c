@@ -343,6 +343,7 @@ static TZrUInt32 compile_type_identity_expression(
 
     slot = allocate_stack_slot(cs);
     emit_constant_to_slot(cs, slot, &typeIdValue);
+    cs->lastExpressionSlot = slot;
     return slot;
 }
 

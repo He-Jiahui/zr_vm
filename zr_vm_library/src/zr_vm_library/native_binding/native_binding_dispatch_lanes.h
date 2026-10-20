@@ -442,6 +442,17 @@ static ZR_FORCE_INLINE void native_binding_context_refresh_inline_frame_layout_i
     TZrStackValuePointer functionBase;
     TZrStackValuePointer oldFunctionBase;
 
+    if (context != ZR_NULL && context->state != ZR_NULL) {
+        SZrCallInfo *callInfo = context->state->callInfoList;
+        if (callInfo != ZR_NULL && callInfo->hasArgumentSourceFrame &&
+            callInfo->previous != ZR_NULL &&
+            ZrCore_Closure_GetMetadataFunctionFromCallInfo(context->state, callInfo->previous) ==
+                    context->inlineFrameFunction) {
+            context->inlineFrameBase = callInfo->argumentSourceFrameBase.valuePointer;
+            return;
+        }
+    }
+
     if (context == ZR_NULL || context->stackLayoutAnchored || context->state == ZR_NULL ||
         context->stackBasePointer == ZR_NULL || context->stackBasePointer == context->state->stackBase.valuePointer ||
         context->inlineFrameFunction == ZR_NULL) {

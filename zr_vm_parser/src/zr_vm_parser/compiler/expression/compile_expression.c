@@ -265,6 +265,12 @@ static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node) {
                 }
             }
 
+            SZrInferredType resultType;
+            if (ZrParser_UnaryExpressionType_Infer(cs, node, &resultType)) {
+                (void)note_inline_struct_result_slot(cs, destSlot, resultType.typeName);
+                ZrParser_InferredType_Free(cs->state, &resultType);
+            }
+
             // 取负
             TZrInstruction inst = create_instruction_2(
                     negOpcode,
@@ -370,6 +376,27 @@ static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node)
             }
             // 转换为 uint
             compile_type_cast_emit_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_UINT));
+            return;
+        } else if (nameLen == 3 && strncmp(typeNameStr, "f32", 3) == 0) {
+            SZrClosureNative *helper = ZrCore_ClosureNative_New(cs->state, 0);
+            SZrTypeValue callable;
+            if (helper == ZR_NULL) {
+                ZrParser_Compiler_Error(cs, "failed to create f32 conversion helper", node->location);
+                return;
+            }
+            helper->nativeFunction = ZrCore_Value_Float32NativeEntry;
+            ZrCore_RawObject_MarkAsPermanent(cs->state, ZR_CAST_RAW_OBJECT_AS_SUPER(helper));
+            ZrCore_Value_InitAsRawObject(cs->state, &callable, ZR_CAST_RAW_OBJECT_AS_SUPER(helper));
+            callable.isNative = ZR_TRUE;
+            compile_type_cast_emit_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_FLOAT));
+            TZrUInt32 functionSlot = allocate_stack_slot(cs);
+            emit_constant_to_slot(cs, functionSlot, &callable);
+            TZrUInt32 argumentSlot = allocate_stack_slot(cs);
+            emit_instruction(cs, create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                    ZR_COMPILE_SLOT_U16(argumentSlot), (TZrInt32)destSlot));
+            emit_instruction(cs, create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
+                    ZR_COMPILE_SLOT_U16(destSlot), ZR_COMPILE_SLOT_U16(functionSlot), 1));
+            cs->lastExpressionSlot = destSlot;
             return;
         } else if (nameLen == 5 && strncmp(typeNameStr, "float", 5) == 0) {
             if (hasSourceTypeInfo && compile_type_cast_is_float(sourceBaseType)) {

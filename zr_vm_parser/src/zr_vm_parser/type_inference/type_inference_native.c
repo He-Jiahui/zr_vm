@@ -610,6 +610,43 @@ static void native_module_info_init_prototype(SZrState *state,
     info->constructorSignature = ZR_NULL;
 }
 
+/* Native POD descriptors use the same language field widths and alignment as
+ * source structs. Leave incomplete/generic layouts boxed. */
+static void native_module_info_finalize_scalar_struct_layout(
+        SZrCompilerState *cs, SZrTypePrototypeInfo *info) {
+    TZrUInt32 offset = 0u, alignment = 1u;
+    TZrUInt32 fieldCount = 0u;
+    if (info->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT || info->genericParameters.length != 0u) return;
+    for (TZrSize index = 0u; index < info->members.length; index++) {
+        SZrTypeMemberInfo *field = ZrCore_Array_Get(&info->members, index);
+        SZrAstNode name = {0};
+        SZrType type = {0};
+        EZrValueType primitive;
+        if (field->memberType != ZR_AST_STRUCT_FIELD || field->isStatic) continue;
+        const TZrChar *text = field->fieldTypeName != ZR_NULL
+                ? ZrCore_String_GetNativeString(field->fieldTypeName) : ZR_NULL;
+        if (text == ZR_NULL ||
+            !inferred_type_try_map_primitive_name(text, strlen(text), &primitive) ||
+            !(ZR_VALUE_IS_TYPE_NUMBER(primitive) || primitive == ZR_VALUE_TYPE_BOOL)) return;
+        name.type = ZR_AST_IDENTIFIER_LITERAL;
+        name.data.identifier.name = field->fieldTypeName;
+        type.name = &name;
+        TZrUInt32 size = calculate_type_size(cs, &type);
+        TZrUInt32 align = get_type_alignment(cs, &type);
+        if (size == 0u || align == 0u || offset > UINT32_MAX - align - size) return;
+        offset = align_offset(offset, align);
+        field->fieldOffset = offset;
+        field->fieldSize = size;
+        offset += size;
+        if (align > alignment) alignment = align;
+        fieldCount++;
+    }
+    if (fieldCount != 0u && offset <= UINT32_MAX - alignment) {
+        info->layoutByteAlign = alignment;
+        info->layoutByteSize = align_offset(offset, alignment);
+    }
+}
+
 static void native_module_info_free_empty_prototype_arrays(
         SZrState *state,
         SZrTypePrototypeInfo *info) {
@@ -1254,6 +1291,7 @@ static void native_module_info_add_field_member_with_identity(SZrState *state,
     }
 
     memset(&memberInfo, 0, sizeof(memberInfo));
+    memberInfo.metaType = ZR_META_ENUM_MAX;
     memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
     memberInfo.memberType = memberType;
     memberInfo.name = memberName;
@@ -1540,6 +1578,7 @@ static void native_module_info_add_method_member_with_identity(SZrCompilerState 
     }
 
     memset(&memberInfo, 0, sizeof(memberInfo));
+    memberInfo.metaType = ZR_META_ENUM_MAX;
     memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
     memberInfo.memberType = memberType;
     memberInfo.name = memberName;
@@ -1601,6 +1640,7 @@ static void native_module_info_add_meta_method_member(SZrCompilerState *cs,
     }
 
     memset(&memberInfo, 0, sizeof(memberInfo));
+    memberInfo.metaType = ZR_META_ENUM_MAX;
     memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
     memberInfo.memberType = info->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT
                                     ? ZR_AST_STRUCT_META_FUNCTION
@@ -2117,7 +2157,7 @@ static TZrBool type_inference_resolve_member_segment_names(SZrCompilerState *cs,
     return ZR_FALSE;
 }
 
-static SZrTypeMemberInfo *find_compiler_type_meta_member_inference(SZrCompilerState *cs,
+SZrTypeMemberInfo *find_compiler_type_meta_member_inference(SZrCompilerState *cs,
                                                                    SZrString *typeName,
                                                                    EZrMetaType metaType) {
     SZrTypePrototypeInfo *info;
@@ -3553,6 +3593,8 @@ translate_module_info:
                                                     &identity);
             }
         }
+
+        native_module_info_finalize_scalar_struct_layout(cs, &typePrototype);
 
         for (TZrSize methodIndex = 0; methodIndex < native_module_info_array_length(methodsArray); methodIndex++) {
             SZrObject *methodEntry = native_module_info_array_get_object(cs->state, methodsArray, methodIndex);

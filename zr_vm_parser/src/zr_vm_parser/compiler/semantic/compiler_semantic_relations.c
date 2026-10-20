@@ -266,6 +266,13 @@ TZrBool compiler_publish_member_implementation_relation(
         sourceMember == ZR_NULL || targetMember == ZR_NULL) {
         return ZR_TRUE;
     }
+    /* Native contracts have metadata identities, without source symbol ranges.
+     * Their checked implementation is bound through the interface contract slot. */
+    if (targetMember->declarationNode == ZR_NULL &&
+        targetMember->symbolId == ZR_SEMANTIC_ID_INVALID &&
+        targetMember->metadataToken != 0u) {
+        return ZR_TRUE;
+    }
     return ZrParser_SemanticRelations_PublishSymbolRelation(
             cs->semanticContext,
             ZR_SEMANTIC_RELATION_IMPLEMENTATION,
@@ -308,6 +315,7 @@ TZrBool compiler_publish_source_constructor_relations(SZrCompilerState *cs) {
                             (SZrArray *)&typeInfo->members, memberIndex);
 
             if (member == ZR_NULL || !member->isMetaMethod ||
+                member->declarationNode == ZR_NULL ||
                 member->metaType != ZR_META_CONSTRUCTOR ||
                 member->symbolId == ZR_SEMANTIC_ID_INVALID) {
                 continue;

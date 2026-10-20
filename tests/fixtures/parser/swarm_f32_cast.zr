@@ -1,0 +1,6 @@
+struct Point { pub var x: f32; pub @constructor(x: f32) { this.x = x; } }
+var p = init Point(<f32> 16777217.0);
+if (p.x != <f32> 16777216.0) { throw "P17 field does not round to f32"; }
+fn round(value: float): float { return <f32> value; }
+if (round(16777217.0) != 16777216.0 || round(1.5) != 1.5 || round(-16777217.0) != -16777216.0) { throw "dynamic f32 cast"; }
+return 42;

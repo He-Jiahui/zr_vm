@@ -3655,12 +3655,14 @@ void ZrCore_Function_TryCopyInlineConstructorReceiverBack(SZrState *state,
 }
 
 
-static ZR_FORCE_INLINE TZrSize function_call_resolved_native_prepared_frame(struct SZrState *state,
+static ZR_FORCE_INLINE TZrSize function_call_resolved_native_prepared_frame_with_argument_source(struct SZrState *state,
                                                                             TZrStackValuePointer stackPointer,
                                                                             TZrStackValuePointer preparedFunctionTop,
                                                                             TZrSize resultCount,
                                                                             FZrNativeFunction function,
-                                                                            TZrStackValuePointer returnDestination) {
+                                                                            TZrStackValuePointer returnDestination,
+                                                                            TZrStackValuePointer argumentSourceFrameBase,
+                                                                            TZrUInt32 argumentSourceStartSlot) {
     TZrSize returnCount = 0;
     SZrCallInfo *callInfo = ZR_NULL;
     SZrFunctionStackAnchor callInfoBaseAnchor;
@@ -3687,6 +3689,9 @@ static ZR_FORCE_INLINE TZrSize function_call_resolved_native_prepared_frame(stru
                                    preparedFunctionTop,
                                    resultCount,
                                    returnDestination);
+    if (argumentSourceFrameBase != ZR_NULL) {
+        ZrCore_Function_SetCallInfoArgumentSourceFrame(callInfo, argumentSourceFrameBase, argumentSourceStartSlot);
+    }
     state->callInfoList = callInfo;
     ZR_ASSERT(callInfo->functionTop.valuePointer <= state->stackTail.valuePointer);
     ZrCore_Function_StackAnchorInit(state, callInfo->functionBase.valuePointer, &callInfoBaseAnchor);
@@ -3733,6 +3738,15 @@ static ZR_FORCE_INLINE TZrSize function_call_resolved_native_prepared_frame(stru
     ZR_STACK_CHECK_CALL_INFO_STACK_COUNT(state, returnCount);
     ZrCore_Function_PostCall(state, callInfo, returnCount);
     return returnCount;
+}
+
+static ZR_FORCE_INLINE TZrSize function_call_resolved_native_prepared_frame(
+        SZrState *state, TZrStackValuePointer stackPointer,
+        TZrStackValuePointer preparedFunctionTop, TZrSize resultCount,
+        FZrNativeFunction function, TZrStackValuePointer returnDestination) {
+    return function_call_resolved_native_prepared_frame_with_argument_source(
+            state, stackPointer, preparedFunctionTop, resultCount, function,
+            returnDestination, ZR_NULL, 0u);
 }
 
 static ZR_FORCE_INLINE TZrBool function_can_use_resolved_native_single_result_fast_path(
@@ -5233,6 +5247,51 @@ SZrCallInfo *ZrCore_Function_PreCallKnownNativeValue(struct SZrState *state,
             nativeFunction,
             resultCount,
             returnDestination);
+}
+
+SZrCallInfo *ZrCore_Function_PreCallKnownNativeValueWithArgumentSource(struct SZrState *state,
+                                                 TZrStackValuePointer stackPointer,
+                                                 SZrTypeValue *callableValue,
+                                                 TZrSize resultCount,
+                                                 TZrStackValuePointer returnDestination,
+                                                 TZrStackValuePointer argumentSourceFrameBase,
+                                                 TZrUInt32 argumentSourceStartSlot) {
+    FZrNativeFunction nativeFunction = ZR_NULL;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(stackPointer != ZR_NULL);
+    ZR_ASSERT(callableValue != ZR_NULL);
+
+    switch (callableValue->type) {
+        case ZR_VALUE_TYPE_FUNCTION:
+        case ZR_VALUE_TYPE_CLOSURE: {
+            SZrClosureNative *nativeClosure;
+
+            ZR_ASSERT(callableValue->isNative);
+            nativeClosure = ZR_CAST_NATIVE_CLOSURE(state, callableValue->value.object);
+            ZR_ASSERT(nativeClosure != ZR_NULL);
+            nativeFunction = nativeClosure->nativeFunction;
+        } break;
+        case ZR_VALUE_TYPE_NATIVE_POINTER:
+            nativeFunction = ZR_CAST_FUNCTION_POINTER(callableValue);
+            break;
+        default:
+            ZR_ASSERT(ZR_FALSE && "known native call requires native callable");
+            return ZR_NULL;
+    }
+
+    ZR_ASSERT(nativeFunction != ZR_NULL);
+    SZrFunctionStackAnchor sourceAnchor;
+    ZrCore_Function_StackAnchorInit(state, argumentSourceFrameBase, &sourceAnchor);
+    function_restore_call_pointers_after_stack_check(state, ZR_STACK_NATIVE_CALL_RESERVED_MIN,
+            state->stackTop.valuePointer, &stackPointer, &returnDestination);
+    argumentSourceFrameBase = ZrCore_Function_StackAnchorRestore(state, &sourceAnchor);
+    TZrStackValuePointer preparedTop = state->stackTop.valuePointer + ZR_STACK_NATIVE_CALL_RESERVED_MIN;
+    function_reset_stack_slots_to_null(state->stackTop.valuePointer, preparedTop);
+    function_call_resolved_native_prepared_frame_with_argument_source(
+            state, stackPointer, preparedTop, resultCount, nativeFunction,
+            returnDestination, argumentSourceFrameBase, argumentSourceStartSlot);
+    return ZR_NULL;
 }
 
 SZrCallInfo *ZrCore_Function_PreCall(struct SZrState *state, TZrStackValuePointer stackPointer, TZrSize resultCount,

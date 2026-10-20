@@ -297,6 +297,10 @@ ZR_PARSER_API TZrUInt64 ZrParser_Writer_GetSerializableNativeHelperId(FZrNativeF
         return ZR_IO_NATIVE_HELPER_NONE;
     }
 
+    if (function == ZrCore_Value_Float32NativeEntry) {
+        return ZR_IO_NATIVE_HELPER_FLOAT32;
+    }
+
     if (function == ZrCore_Module_ImportNativeEntry) {
         return ZR_IO_NATIVE_HELPER_MODULE_IMPORT;
     }

@@ -5592,6 +5592,7 @@ static void test_typeof_source_type_reflection_exposes_parameters_layout_and_cod
                                                "y:int;\n"
                                                "length(scale:int): int;\n"
                                                "static add(left:Vector2, right:Vector2): Vector2;\n"
+                                               "@constructor(): void;\n"
                                                "}"));
 
         ZrCore_Function_Free(state, entryFunction);

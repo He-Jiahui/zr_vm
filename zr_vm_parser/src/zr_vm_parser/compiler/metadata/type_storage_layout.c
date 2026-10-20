@@ -59,10 +59,10 @@ static TZrUInt32 compiler_type_name_storage_alignment(const TZrChar *typeNameStr
     if (strcmp(typeNameStr, "u32") == 0) {
         return (TZrUInt32)_Alignof(TZrUInt32);
     }
-    if (strcmp(typeNameStr, "float") == 0 || strcmp(typeNameStr, "f32") == 0) {
+    if (strcmp(typeNameStr, "f32") == 0) {
         return (TZrUInt32)_Alignof(TZrFloat32);
     }
-    if (strcmp(typeNameStr, "double") == 0 || strcmp(typeNameStr, "f64") == 0 ||
+    if (strcmp(typeNameStr, "float") == 0 || strcmp(typeNameStr, "double") == 0 || strcmp(typeNameStr, "f64") == 0 ||
         strcmp(typeNameStr, "f") == 0) {
         return (TZrUInt32)_Alignof(TZrDouble);
     }
@@ -137,10 +137,10 @@ TZrUInt32 calculate_type_size(SZrCompilerState *cs, SZrType *type) {
         if (strcmp(typeNameStr, "u32") == 0) {
             return sizeof(TZrUInt32); // 4 bytes
         }
-        if (strcmp(typeNameStr, "float") == 0 || strcmp(typeNameStr, "f32") == 0) {
+        if (strcmp(typeNameStr, "f32") == 0) {
             return sizeof(TZrFloat32); // 4 bytes
         }
-        if (strcmp(typeNameStr, "double") == 0 || strcmp(typeNameStr, "f64") == 0 || strcmp(typeNameStr, "f") == 0) {
+        if (strcmp(typeNameStr, "float") == 0 || strcmp(typeNameStr, "double") == 0 || strcmp(typeNameStr, "f64") == 0 || strcmp(typeNameStr, "f") == 0) {
             return sizeof(TZrDouble); // 8 bytes
         }
         if (strcmp(typeNameStr, "bool") == 0) {

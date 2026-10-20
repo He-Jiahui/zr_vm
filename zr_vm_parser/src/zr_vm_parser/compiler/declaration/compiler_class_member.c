@@ -313,6 +313,10 @@ static SZrFunction *compile_type_member_function(
         body = structMethod->body;
         declaredReturnType = structMethod->returnType;
         functionName = structMethod->name != ZR_NULL ? structMethod->name->name : ZR_NULL;
+    } else if (node->type == ZR_AST_CLASS_DECLARATION) {
+        /* An implicit constructor still evaluates per-instance initializers. */
+        functionName = ZrCore_String_CreateFromNative(cs->state, "constructor");
+        isConstructor = ZR_TRUE;
     } else if (node->type == ZR_AST_CLASS_META_FUNCTION) {
         SZrClassMetaFunction *metaFunc = &node->data.classMetaFunction;
         params = metaFunc->params;
@@ -740,6 +744,12 @@ static SZrFunction *compile_type_member_function(
                     cs, node, superTypeName, metaFunc->superArgs);
             emit_super_constructor_call(cs, superTypeName, metaFunc->superArgs);
         }
+    }
+
+    if (!cs->hasError && isConstructor && injectThis &&
+        node->type == ZR_AST_CLASS_DECLARATION && superTypeName != ZR_NULL &&
+        compiler_type_has_constructor(cs, superTypeName)) {
+        emit_super_constructor_call(cs, superTypeName, ZR_NULL);
     }
 
     if (!cs->hasError && isConstructor && injectThis) {

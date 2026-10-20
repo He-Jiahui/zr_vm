@@ -1680,21 +1680,6 @@ static TZrBool compiler_prototype_has_inline_frame_layout(const SZrTypePrototype
                      prototypeInfo->layoutByteAlign > 0u);
 }
 
-static TZrBool compiler_type_prototype_serializes_to_runtime(const SZrTypePrototypeInfo *prototypeInfo) {
-    const TZrUInt64 contiguousViewProtocols =
-            ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_MUTABLE) |
-            ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_CONTIGUOUS_VIEW_READONLY);
-
-    if (prototypeInfo == ZR_NULL || prototypeInfo->name == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    if (!prototypeInfo->isImportedNative) {
-        return ZR_TRUE;
-    }
-    return (TZrBool)(compiler_prototype_has_inline_frame_layout(prototypeInfo) &&
-                     (prototypeInfo->protocolMask &
-                      contiguousViewProtocols) != 0u);
-}
 
 static TZrUInt32 compiler_serialized_type_prototype_count(SZrCompilerState *cs) {
     TZrUInt32 serializedCount = 0u;
@@ -2148,7 +2133,6 @@ static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstructi
         case ZR_INSTRUCTION_ENUM(BIND_INLINE_ARRAY_ELEMENT_PLACE):
             return (TZrBool)(instruction->instruction.operand.operand1[0] == slot ||
                              instruction->instruction.operand.operand1[1] == slot);
-        case ZR_INSTRUCTION_ENUM(NEG):
         case ZR_INSTRUCTION_ENUM(NEG_SIGNED):
         case ZR_INSTRUCTION_ENUM(NEG_FLOAT):
         case ZR_INSTRUCTION_ENUM(LOGICAL_NOT):
@@ -2177,7 +2161,6 @@ static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstructi
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST):
-        case ZR_INSTRUCTION_ENUM(SUB):
         case ZR_INSTRUCTION_ENUM(SUB_INT):
         case ZR_INSTRUCTION_ENUM(SUB_INT_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(SUB_FLOAT):
@@ -2185,7 +2168,6 @@ static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstructi
         case ZR_INSTRUCTION_ENUM(SUB_SIGNED_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED):
         case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_PLAIN_DEST):
-        case ZR_INSTRUCTION_ENUM(MUL):
         case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
         case ZR_INSTRUCTION_ENUM(MUL_SIGNED_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED):

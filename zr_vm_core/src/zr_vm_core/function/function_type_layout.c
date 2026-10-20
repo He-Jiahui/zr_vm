@@ -339,12 +339,12 @@ static TZrBool function_type_layout_primitive_pod_type_size(const TZrChar *typeN
         *outSize = (TZrUInt32)sizeof(TZrUInt64);
         return ZR_TRUE;
     }
-    if (function_type_layout_native_text_equals(typeNameText, "float") ||
-        function_type_layout_native_text_equals(typeNameText, "f32")) {
+    if (function_type_layout_native_text_equals(typeNameText, "f32")) {
         *outSize = (TZrUInt32)sizeof(TZrFloat32);
         return ZR_TRUE;
     }
-    if (function_type_layout_native_text_equals(typeNameText, "double") ||
+    if (function_type_layout_native_text_equals(typeNameText, "float") ||
+        function_type_layout_native_text_equals(typeNameText, "double") ||
         function_type_layout_native_text_equals(typeNameText, "f64") ||
         function_type_layout_native_text_equals(typeNameText, "f")) {
         *outSize = (TZrUInt32)sizeof(TZrDouble);
@@ -400,10 +400,10 @@ static TZrBool function_type_layout_primitive_pod_value_type(const TZrChar *type
                function_type_layout_native_text_equals(typeNameText, "u64") ||
                function_type_layout_native_text_equals(typeNameText, "uint64")) {
         valueType = ZR_VALUE_TYPE_UINT64;
-    } else if (function_type_layout_native_text_equals(typeNameText, "float") ||
-               function_type_layout_native_text_equals(typeNameText, "f32")) {
+    } else if (function_type_layout_native_text_equals(typeNameText, "f32")) {
         valueType = ZR_VALUE_TYPE_FLOAT;
-    } else if (function_type_layout_native_text_equals(typeNameText, "double") ||
+    } else if (function_type_layout_native_text_equals(typeNameText, "float") ||
+        function_type_layout_native_text_equals(typeNameText, "double") ||
                function_type_layout_native_text_equals(typeNameText, "f64") ||
                function_type_layout_native_text_equals(typeNameText, "f")) {
         valueType = ZR_VALUE_TYPE_DOUBLE;

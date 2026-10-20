@@ -1,0 +1,4 @@
+struct Point { pub var x: int; }
+fn accept(value: object): bool { return value != null; }
+if (!accept(typeid(Point))) { throw "typeid argument result"; }
+return 42;
