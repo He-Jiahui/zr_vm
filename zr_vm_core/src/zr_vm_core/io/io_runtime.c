@@ -277,6 +277,9 @@ static void io_runtime_init_inline_function(SZrState *state, SZrFunction *functi
 /* 写入器仅存稳定编号；加载时恢复允许的内建函数指针，预留旧编号保持不可执行。 */
 FZrNativeFunction ZrCore_Io_GetSerializableNativeHelperFunction(TZrUInt64 helperId) {
     switch ((EZrIoNativeHelperId) helperId) {
+        case ZR_IO_NATIVE_HELPER_FLOAT32:
+            return ZrCore_Value_Float32NativeEntry;
+
         case ZR_IO_NATIVE_HELPER_MODULE_IMPORT:
             return ZrCore_Module_ImportNativeEntry;
 
