@@ -1,5 +1,111 @@
 # Verification evidence
 
+## GD-C2 native runtime and null backend (2026-10-20)
+
+Implementation commits: `b2466ea3` (shared runtime and native C tests) and
+`05f9fd17` (host/gfx descriptor modules, plugins and native smokes), followed by
+`0e3c7965` (prepare compact SoA backing before the bulk read loops). No engine
+source changes were needed. A fresh engine fetch confirmed `origin/main`
+`291be0cb` was already an ancestor of engine HEAD `ed10137f`; no new merge or
+engine push was required.
+
+All three existing demo trees built `zr_vm_cli_executable`, `zrgame_plugins`,
+`zrgame_ffi` and `zrgame_native_tests` with zero warnings in the new native
+sources. Both plugins have a dynamic dependency on the single
+`libzrgame_runtime.so` in the native output directory. `zrgame_modules` also
+provides the descriptors as a static archive for later embedding.
+
+| Gate | Release | ASan/UBSan | Forced full GC + ASan/UBSan |
+| --- | --- | --- | --- |
+| Native C unit tests | 8/8 | 8/8 | 8/8 |
+| Native plugin smokes, interp + binary | 2/2 | 2/2 | 2/2 |
+| All demo CTests | 67/67 | 67/67 | 67/67 |
+| GD-C1 required mode checks | 38/38 | 38/38 | 38/38 |
+| GD-C1 successful mode checks, all cases | 58/62 | 58/62 | 58/62 |
+| P22 required parity pairs | 18/18 | 18/18 | 18/18 |
+| Engine CTest final outcomes | 515/515 | 515/515 | 129/129 selected |
+| Null content golden | 299488900 | 299488900 | 299488900 |
+| Detector findings | — | 0 | 0 |
+
+The full demo runs took 16.70 s, 31.24 s and 31.08 s respectively, while
+engine checks ran concurrently. The final native-only reruns cover exact
+messages for six caught errors and preparation of compact array backing before
+bulk reads. They pass 3/3 CTests in each configuration (0.14 s, 3.54 s, 3.58 s).
+The C runner contains eight tests;
+the other two CTests exercise interpreter and source-removed binary execution.
+
+Both smokes import `zrgame.host` and require positive, nondecreasing
+`nowMicros()`. They exercise every host/gfx API, the native STRUCT constructor
+and `spriteInst` inline view (mode B included), scalar/inline/SoA count and hash
+agreement, float32 rounding, nonzero rotation, explicit full GC, atomic invalid
+SoA rejection, native error recovery, nested zones, and exact sink bytes.
+The null snapshot leaves no image file. The C tests cover capacities and
+overflow, copied text/hash, exact nested/recursive zone durations, zone stack
+errors, sink capacity/stale handles, clock, RSS and drive state.
+
+No GD-C1 expectations changed: P19 and P14's package case retain their four
+expected failing mode checks, and the required gate remains green. These
+native smokes are separate from C1's probe inventory. `probes/status.json`
+adds a `gd_c2` result with current CLI/runtime/plugin hashes and source-removal
+evidence without changing the C1 probe statuses.
+
+Builds and tests use the unchanged settings:
+
+```sh
+export PATH="/workspace/zr_vm-perf/build/local-tools/usr/bin:/workspace/zr_vm-perf/build/tools/bin:$PATH"
+export LD_LIBRARY_PATH="/workspace/zr_vm-perf/build/local-tools/usr/lib/x86_64-linux-gnu"
+export ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 ZR_VM_TEST_TIER=core
+for configuration in release asan gcstress; do
+  cmake --build "build/demo-${configuration}" -j3 --target \
+    zr_vm_cli_executable zrgame_plugins zrgame_ffi zrgame_native_tests
+  ctest --test-dir "build/demo-${configuration}" -L demo -j4
+  ctest --test-dir "build/demo-${configuration}" -L native -j3
+done
+```
+
+The detector tree retains `-fsanitize=address,undefined -fno-omit-frame-pointer`;
+the GC tree additionally retains `-DZR_DEBUG_GARBAGE_COLLECT_MEM_TEST`.
+Leak detection remains disabled, so these results do not claim leak-clean
+shutdown. Raw logs are only under `/tmp/zr-swarm-gd-c2-*`, including
+`{release,asan,gcstress}-{build-final3,demo-final,native-final3}.log` and the
+smoke runner's private temporary directories. CTest Temporary and GD-C1
+probe-results retain their existing `/tmp` symlinks.
+
+Engine regression checks use the unchanged engine worktree and its existing
+builds. Release and ASan/UBSan each have successful final outcomes for 515/515
+tests; the existing forced-GC selection has successful final outcomes for
+129/129 tests. These exclude `performance_report` and use `ZR_VM_TEST_TIER=core`.
+The initial engine invocations omitted the documented LLVM tool `PATH`;
+`aot_c_metadata_binding_loader` and `language_pipeline` required targeted
+reruns with the correct environment. No code or expectations were changed.
+The full Release run passed 513/515 in 62.94 s and its corrected rerun passed
+2/2 in 17.79 s. The full engine detector run passed 513/515 in 916.89 s and its
+corrected rerun passed 2/2 in 597.77 s. The forced-GC selection passed 128/129
+in 23.28 s and its corrected rerun passed 1/1 in 5.60 s. Thus every test in
+each selected inventory has a successful final result, with zero detector
+findings in both the full runs and reruns.
+
+From `/workspace/zr_vm-perf`, with the environment exported above:
+
+```sh
+ctest --test-dir build/r2-merged-release -j4 -E '^performance_report$'
+ctest --test-dir build/r2-asan -j4 -E '^performance_report$'
+ctest --test-dir build/r2-merged-gcstress -j4 \
+  --tests-from-file /tmp/zr-swarm-opt-gc-tests.txt --no-tests=error
+ctest --test-dir build/r2-merged-release -j2 -R '^(aot_c_metadata_binding_loader|language_pipeline)$'
+ctest --test-dir build/r2-asan -j2 -R '^(aot_c_metadata_binding_loader|language_pipeline)$'
+ctest --test-dir build/r2-merged-gcstress -j2 -R '^aot_c_metadata_binding_loader$'
+```
+
+Current engine raw logs use `/tmp/zr-swarm-gd-c2-{release,asan,gcstress}-engine.log`
+and `-engine-rerun.log`. The forced-GC selection is the same 129 test names in
+`/tmp/zr-swarm-opt-gc-tests.txt` used by the previous engine acceptance note.
+This is not a full forced-GC language-suite run.
+
+Only GD-C2 is implemented. Game content, GD-C3+, `zr_swarm`, kernels/hybrid,
+software/GL rendering, images, performance matrices, runtime reflection and
+package import integration remain deferred.
+
 ## GD-C1 optional probes integration (2026-10-20)
 
 Engine `ed10137f0dcc5c2ddf50eaeed1a41a70aef8fcc3` was pushed and then merged as

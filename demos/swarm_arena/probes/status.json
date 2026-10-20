@@ -1,7 +1,7 @@
 {
   "schema": "zr-swarm-readiness/1",
-  "stopped_at": "GD-C1",
-  "reason": "All required GD-C1 probes and seven corrected optional paths pass in Release, ASan/UBSan, and forced GC, including source-removed binary execution. Only P19 runtime reflection and the P14 package case remain deferred. GD-C2 and game work have not started.",
+  "stopped_at": "GD-C2",
+  "reason": "GD-C2 native runtime and host/gfx modules pass with the null backend, including mode B spriteInst. All required GD-C1 probes remain green. P19 runtime reflection and the P14 package case remain deferred; GD-C3+, gameplay and the zr_swarm host are not implemented.",
   "probes": [
     {
       "id": "P01",
@@ -492,5 +492,142 @@
     "P18": "1b1666f0",
     "P14-alias": "206290fd",
     "typeid-argument": "8b1a45c9"
+  },
+  "gd_c2": {
+    "status": "complete",
+    "backend": "null",
+    "mode_b_sprite_inst": true,
+    "content_golden_hash": 299488900,
+    "runtime_revision": "b2466ea3",
+    "modules_revision": "05f9fd17",
+    "engine_changes_required": false,
+    "validated_at_utc": "2026-10-20T22:22:06.465213+00:00",
+    "targets": [
+      "zrgame_runtime",
+      "zrgame_modules",
+      "zrgame_plugins",
+      "zrgame_ffi",
+      "zrgame_native_tests"
+    ],
+    "validation": {
+      "release": {
+        "native_unit_tests_passed": 8,
+        "native_unit_tests_total": 8,
+        "demo_ctests_passed": 67,
+        "demo_ctests_total": 67,
+        "smoke": {
+          "interp": {
+            "status": "OK",
+            "hash": 299488900,
+            "now_micros": 172381612745,
+            "cli_sha256": "9758ea0f29ef15d9ecf88b296d1ca4821346c2111a63629ee6cf51e53d41c572",
+            "runtime_sha256": "5d913734575437e4d9cb48fb8756bf58e6ed588bef3a907c5b83f8522676acca"
+          },
+          "binary": {
+            "status": "OK",
+            "hash": 299488900,
+            "now_micros": 172381638158,
+            "cli_sha256": "9758ea0f29ef15d9ecf88b296d1ca4821346c2111a63629ee6cf51e53d41c572",
+            "runtime_sha256": "5d913734575437e4d9cb48fb8756bf58e6ed588bef3a907c5b83f8522676acca"
+          }
+        },
+        "binary_source_removed": true,
+        "detector_findings": 0,
+        "plugin_sha256": {
+          "host": "811a32685f2abc912b3c515d1765e30e7daf0cbc5b6d921a5cc54ed446f92d78",
+          "gfx": "758844e57c8cd47b2a3b5c253ebd803abbe1b95eaacf9f9eec20fec59a6e2b5a"
+        },
+        "engine_regressions": {
+          "worktree": "/workspace/zr_vm-perf",
+          "build": "build/r2-merged-release",
+          "scope": "core inventory excluding performance_report",
+          "final_passed": 515,
+          "total": 515,
+          "environment_reruns_passed": 2,
+          "detector_findings": 0
+        }
+      },
+      "asan": {
+        "native_unit_tests_passed": 8,
+        "native_unit_tests_total": 8,
+        "demo_ctests_passed": 67,
+        "demo_ctests_total": 67,
+        "smoke": {
+          "interp": {
+            "status": "OK",
+            "hash": 299488900,
+            "now_micros": 172383711229,
+            "cli_sha256": "eb3cc59bd9daf1e327ee50a1a5d0150cd74e9c8900ae3c024376752398525c44",
+            "runtime_sha256": "e3c137e12061e51a9e3a341fffc2637dc25b0d5ccd34b2a0b4aebfe40ccd06af"
+          },
+          "binary": {
+            "status": "OK",
+            "hash": 299488900,
+            "now_micros": 172384864467,
+            "cli_sha256": "eb3cc59bd9daf1e327ee50a1a5d0150cd74e9c8900ae3c024376752398525c44",
+            "runtime_sha256": "e3c137e12061e51a9e3a341fffc2637dc25b0d5ccd34b2a0b4aebfe40ccd06af"
+          }
+        },
+        "binary_source_removed": true,
+        "detector_findings": 0,
+        "plugin_sha256": {
+          "host": "f2d73410be0914c209589df1018272ec1bc715b2b16e593673456f3380bddf71",
+          "gfx": "55d0f58d37c8ab5f29a95690cfe5ceaba07c2de9c1602f68ad8a7190c9312924"
+        },
+        "engine_regressions": {
+          "worktree": "/workspace/zr_vm-perf",
+          "build": "build/r2-asan",
+          "scope": "core inventory excluding performance_report",
+          "final_passed": 515,
+          "total": 515,
+          "environment_reruns_passed": 2,
+          "detector_findings": 0
+        }
+      },
+      "gcstress": {
+        "native_unit_tests_passed": 8,
+        "native_unit_tests_total": 8,
+        "demo_ctests_passed": 67,
+        "demo_ctests_total": 67,
+        "smoke": {
+          "interp": {
+            "status": "OK",
+            "hash": 299488900,
+            "now_micros": 172383540922,
+            "cli_sha256": "aeb25c5d2b17458ad32aa2637a398ed36a23e85186ea5a3b0a3f0fab0d0edda2",
+            "runtime_sha256": "7d0fa84075d190daf9ae833c887c52c7441126b94f4a860d4194026ad7e02065"
+          },
+          "binary": {
+            "status": "OK",
+            "hash": 299488900,
+            "now_micros": 172384855097,
+            "cli_sha256": "aeb25c5d2b17458ad32aa2637a398ed36a23e85186ea5a3b0a3f0fab0d0edda2",
+            "runtime_sha256": "7d0fa84075d190daf9ae833c887c52c7441126b94f4a860d4194026ad7e02065"
+          }
+        },
+        "binary_source_removed": true,
+        "detector_findings": 0,
+        "plugin_sha256": {
+          "host": "dd6a63c6875bee80e606f166d45eb0645cd684db76cbcc1eef984a62d375e8af",
+          "gfx": "3f17bbca9b0cc59a9d2acc1f60d543a4c14f25a625bb5fa3f4240859e5cb9438"
+        },
+        "engine_regressions": {
+          "worktree": "/workspace/zr_vm-perf",
+          "build": "build/r2-merged-gcstress",
+          "scope": "selected forced-GC inventory",
+          "final_passed": 129,
+          "total": 129,
+          "environment_reruns_passed": 1,
+          "detector_findings": 0
+        }
+      }
+    },
+    "detector_options": {
+      "ASAN_OPTIONS": "detect_leaks=0",
+      "UBSAN_OPTIONS": "halt_on_error=1",
+      "gcstress_define": "ZR_DEBUG_GARBAGE_COLLECT_MEM_TEST"
+    },
+    "evidence_prefix": "/tmp/zr-swarm-gd-c2-",
+    "bulk_read_preparation_revision": "0e3c7965"
   }
 }

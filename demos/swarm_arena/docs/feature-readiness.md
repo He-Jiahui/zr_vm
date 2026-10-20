@@ -1,14 +1,47 @@
-# Feature readiness — GD-C1 optional probe corrections
+# Feature readiness — GD-C2 native runtime and null backend
 
 All required GD-C1 probes and seven corrected optional paths pass in Release,
 ASan/UBSan, and forced full GC with ASan/UBSan after merging engine
 `ed10137f`. Only P19 runtime reflection and P14's package import
-remain deferred. GD-C2 and game features have not started.
+remain deferred. **GD-C2 is complete**, including mode B `spriteInst`. Game
+features and GD-C3+ remain deferred.
 
 The engine [optional-probe acceptance note](../../../tests/acceptance/2026-10-20-swarm-optional-probes.md)
 records causes, semantics, regression coverage, and final engine gates. The
 [required-blocker acceptance note](../../../tests/acceptance/2026-10-19-swarm-gd-c1-engine-blockers.md)
 and its P04/P05/P08/P09/P14 fixes remain intact.
+
+## GD-C2 acceptance
+
+The shared `libzrgame_runtime.so` provides `CLOCK_MONOTONIC` microseconds,
+inclusive nested zones, fixed-capacity 20-byte sprite instances, copied text,
+metrics sinks and a deterministic null backend. `zrgame.host` and `zrgame.gfx`
+publish all GD-C2 APIs, including native STRUCT `SpriteInstance` and submission
+modes A, B and C. Their descriptor plugins share the runtime library. The
+existing `libzrgame_ffi.so` remains in the same native output directory.
+See [native-runtime.md](native-runtime.md) for capacities, APIs and semantics.
+
+| Gate | Release | ASan/UBSan | Forced full GC + ASan/UBSan |
+| --- | --- | --- | --- |
+| Native C runner | 8/8 | 8/8 | 8/8 |
+| Native plugin smokes, interp + source-removed binary | 2/2 | 2/2 | 2/2 |
+| All demo CTests (64 retained GD-C1 + 3 GD-C2) | 67/67 | 67/67 | 67/67 |
+| Null content golden, each of modes A/B/C | 299488900 | 299488900 | 299488900 |
+| Detector findings | — | 0 | 0 |
+
+The smokes verify positive, nondecreasing `host.nowMicros()`, RSS and CLI drive
+state, sink bytes and idempotent close, nested zone counts, sprite counts,
+inline field layout, rotation and float32 rounding after full GC, and six exact
+native errors with successful recovery. Invalid SoA slices leave the batch
+intact. Null snapshots create no image. The C runner covers sprite/text
+capacity and overflow, exact zone aggregation, stack errors, sink capacity and
+stale handles. No engine source changes were required for GD-C2.
+
+P19 and P14's package case retain their exact expected-failure checks. No
+previously passing probe was changed to expected failure. The existing
+detector flags remain in use, including `ASAN_OPTIONS=detect_leaks=0`; these
+results make no leak-clean shutdown claim. Raw logs are only under `/tmp`.
+Current commands and engine regression results are in [verification.md](verification.md).
 
 ## Inventory and parity scope
 
@@ -55,7 +88,7 @@ statuses hold in all three configurations.
 | P21 | R | OK | OK | Host spike passes: entry side effects, canonical module key game, 10000 tick calls, expected exception, ResetThread and a succeeding call. Source compilation is disabled in binary host. |
 | P22 | R | OK | OK | Required-case parity passes all 18 required P01-P20 pairs; only P19 and the optional package pair lack successful parity. P21 is gated independently. |
 
-## Validation
+## GD-C1 engine validation (retained)
 
 | Gate | Release | ASan/UBSan | Forced full GC + ASan/UBSan |
 | --- | --- | --- | --- |
@@ -96,6 +129,6 @@ regressions.
 
 No game lane or fallback is selected. DOD/OOP/Hybrid/C simulations, gameplay
 hashes, lane equivalence, game determinism, CLI/host gameplay parity, W0–W14
-baselines, capacity@60Hz, renderers, screenshots, and frame/GC distributions
-remain future work. P21 is an API spike. GD-C2–C5, GD-H1–H6, and M-tier
+baselines, capacity@60Hz, software/GL rendering, screenshots, and frame/GC distributions
+remain future work. P21 is an API spike. GD-C3–C5, GD-H1–H6, and M-tier
 implementation have not started.
