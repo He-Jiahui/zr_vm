@@ -3,6 +3,7 @@
 //
 
 #include "execution/execution_internal.h"
+#include "gc/gc_temporary_roots.h"
 
 #include <string.h>
 
@@ -201,6 +202,62 @@ TZrBool execution_invoke_meta_call_to_destination(SZrState *state,
     }
 
     return state->threadStatus == ZR_THREAD_STATUS_FINE;
+}
+
+/* Operator operands may have inline storage without a value mirror. Root each
+ * materialized carrier before constructing the next one, and return directly
+ * into the caller's typed slot so chained struct results retain their bytes. */
+TZrBool execution_invoke_frame_operator(SZrState *state,
+                                        SZrCallInfo *callInfo,
+                                        SZrFunction *function,
+                                        TZrStackValuePointer frameBase,
+                                        TZrUInt32 leftSlot,
+                                        TZrUInt32 rightSlot,
+                                        TZrSize argumentCount,
+                                        EZrMetaType metaType,
+                                        TZrUInt32 destinationSlot,
+                                        SZrTypeValue *returnValue) {
+    SZrTypeValue arguments[ZR_META_CALL_MAX_ARGUMENTS];
+    SZrFunctionStackAnchor frameAnchor;
+    TZrSize rootDepth = state->temporaryRootLength;
+    TZrBool succeeded = ZR_FALSE;
+    TZrStackValuePointer metaBase = ZR_NULL;
+    TZrStackValuePointer restoredTop;
+    SZrMeta *meta;
+
+    ZrCore_Function_StackAnchorInit(state, frameBase, &frameAnchor);
+    for (TZrSize index = 0u; index < argumentCount; index++) {
+        TZrUInt32 slot = index == 0u ? leftSlot : rightSlot;
+        frameBase = ZrCore_Function_StackAnchorRestore(state, &frameAnchor);
+        if (!ZrCore_Function_CopyFrameSlotInlineToObjectValue(
+                    state, function, frameBase, slot, &arguments[index])) {
+            arguments[index] = *execution_inline_frame_get_value_slot(
+                    state, function, frameBase, slot);
+        }
+        if (arguments[index].isGarbageCollectable &&
+            !ZrCore_Gc_TemporaryRootPush(state, arguments[index].value.object)) {
+            ZrCore_Gc_TemporaryRootsRestore(state, rootDepth);
+            ZrCore_Debug_RunError(state, "operator argument root allocation failed");
+        }
+    }
+    meta = ZrCore_Value_GetMeta(state, &arguments[0], metaType);
+    if (meta != ZR_NULL && meta->function != ZR_NULL) {
+        frameBase = ZrCore_Function_StackAnchorRestore(state, &frameAnchor);
+        restoredTop = state->stackTop.valuePointer;
+        succeeded = execution_invoke_meta_call_to_destination(
+                state, callInfo, restoredTop, restoredTop, meta,
+                &arguments[0], argumentCount == 1u ? ZR_NULL : &arguments[1],
+                argumentCount,
+                destinationSlot == ZR_INSTRUCTION_USE_RET_FLAG ? ZR_NULL : frameBase + destinationSlot,
+                &metaBase, &restoredTop);
+        if (succeeded && destinationSlot == ZR_INSTRUCTION_USE_RET_FLAG) {
+            ZrCore_Value_Copy(state, returnValue, ZrCore_Stack_GetValue(metaBase));
+        }
+        state->stackTop.valuePointer = restoredTop;
+        state->callInfoList = callInfo;
+    }
+    ZrCore_Gc_TemporaryRootsRestore(state, rootDepth);
+    return succeeded;
 }
 
 TZrBool execution_invoke_meta_call(SZrState *state,

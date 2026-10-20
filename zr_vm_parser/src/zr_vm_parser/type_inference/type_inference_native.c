@@ -2117,7 +2117,7 @@ static TZrBool type_inference_resolve_member_segment_names(SZrCompilerState *cs,
     return ZR_FALSE;
 }
 
-static SZrTypeMemberInfo *find_compiler_type_meta_member_inference(SZrCompilerState *cs,
+SZrTypeMemberInfo *find_compiler_type_meta_member_inference(SZrCompilerState *cs,
                                                                    SZrString *typeName,
                                                                    EZrMetaType metaType) {
     SZrTypePrototypeInfo *info;

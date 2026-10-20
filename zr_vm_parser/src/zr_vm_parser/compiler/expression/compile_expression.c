@@ -265,6 +265,12 @@ static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node) {
                 }
             }
 
+            SZrInferredType resultType;
+            if (ZrParser_UnaryExpressionType_Infer(cs, node, &resultType)) {
+                (void)note_inline_struct_result_slot(cs, destSlot, resultType.typeName);
+                ZrParser_InferredType_Free(cs->state, &resultType);
+            }
+
             // 取负
             TZrInstruction inst = create_instruction_2(
                     negOpcode,
